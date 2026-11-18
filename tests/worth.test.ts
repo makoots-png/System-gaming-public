@@ -1,0 +1,268 @@
+// What a made ability or status is worth against its budget (src/core/registry/worth.ts). The expected numbers are the
+// kits design's section 3 (tables 3.4 and 3.5, printed by `bun scripts/kits-paper.ts`) and the rules each correction of
+// docs/agent-handoff/kits/notes-worth.md states, not a run of the code. The last group plays the example kits on the real
+// reducer (tests/models/fight-sim.ts) and holds the bar to what the simulation measures.
+import { describe, expect, test } from 'bun:test';
+import { RULES } from '../src/core/rules.ts';
+import { parseFormula } from '../src/core/formula.ts';
+import type { Formula } from '../src/core/formula.ts';
+import { abilityOf, defaultTicks, recommended } from '../src/core/registry/ability-kinds.ts';
+import type { AbilityInput } from '../src/core/registry/ability-kinds.ts';
+import { suggestScaler } from '../src/core/registry/scalers.ts';
+import { abilityWorth, defWorth, delayedShare, deliveredShare, firings, gateCredit, lapseAfter, hpPriceWorth, hpRate, modeCredit, referenceBody, thresholdWorth, wornWorth, worthLine } from '../src/core/registry/worth.ts';
+import type { Rules } from '../src/core/rules.ts';
+import { exampleSkills } from '../src/core/registry/kit-examples.ts';
+import { place } from '../src/core/combat/space.ts';
+import { abilities, builtIns, hunter, playFight } from './models/fight-sim.ts';
+import type { Archetype, SimRow } from './models/fight-sim.ts';
+import { abilityId } from '../src/core/combat/ability-types.ts';
+import type { AbilityKind } from '../src/core/combat/ability-types.ts';
+import { statusKey } from '../src/core/combat/effect-ops.ts';
+import type { StackDef, StatusDef } from '../src/core/combat/effect-ops.ts';
+import { tick } from '../src/core/combat/timeline.ts';
+
+const f = (text: string): Formula => { const p = parseFormula(text, RULES); if (!p.ok) throw new Error(p.error); return p.formula; };
+const of = (kind: AbilityKind, o: Partial<AbilityInput> = {}) => abilityOf(kind, { id: abilityId('x'), name: 'x', ...o }, RULES);
+const TOL = RULES.fight.kit.tolerance;
+
+describe('the yardstick: a recommended ability is worth its pace\'s budget', () => {
+  test('a standard strike, curse and support are worth 1, a quick shot 0.7, a heavy blast 1.5, each inside its budget', () => {
+    const want: Record<AbilityKind, number> = { strike: 1, curse: 1, support: 1, shot: 0.7, blast: 1.5 };
+    for (const kind of Object.keys(want) as AbilityKind[]) {
+      const w = abilityWorth(of(kind), RULES);
+      expect([kind, Number(w.worth.toFixed(6)), w.over, w.unweighed]).toEqual([kind, want[kind], false, []]);
+      if (kind !== 'curse') expect(w.budget).toBe(want[kind]);
+    }
+  });
+
+  test('a curse\'s budget is what a Mage\'s Arc Bolt holds, 2d6 + mag over 1d8 + mag, since the simulation\'s cannon casts it every turn', () => {
+    const mag = (rank: 'E' | 'C' | 'S') => referenceBody('cannon', rank, RULES).sheet.mag;
+    for (const rank of ['E', 'C', 'S'] as const) {
+      const w = abilityWorth(of('curse'), RULES, { rank });
+      expect(w.budget).toBeCloseTo((7 + mag(rank)) / (4.5 + mag(rank)), 6);
+      expect(w.by).toBe('Arc Bolt');
+    }
+    expect(worthLine(abilityWorth(of('curse'), RULES))).toBe('Worth 1.00 of a standard action (budget 1.08, as Arc Bolt holds).');
+  });
+
+  test('a curse with no formula of its own is weighed against a magical curse, its kind\'s, not a physical one', () => {
+    const end: StatusDef = { label: 'Later', desc: '', ops: [], end: { ops: [{ op: 'damage', type: 'magical', amount: f('1d8 + mag'), when: 'use' }], cleanse: 'cancel' } };
+    const later = of('curse', { effect: null, ops: [{ op: 'applyStatus', key: statusKey('later'), def: end, duration: tick(3 * RULES.fight.round) }] });
+    // the end lands whole (against a curse that delivers 0.775 of its average), on 55% of uses, half the time 3 rounds late in 6
+    expect(abilityWorth(later, RULES).worth).toBeCloseTo(0.55 / 0.775 * 0.5, 6);
+  });
+});
+
+describe('what each block is worth (design 3, tables 3.4 and 3.5)', () => {
+  test('one HP paid is worth what a same-rank support\'s heal of 1.5 sup gives back: 0.064 SA at E, 0.025 at C, 0.011 at S', () => {
+    expect([hpRate('E', RULES), hpRate('C', RULES), hpRate('S', RULES)].map(x => Number(x.toFixed(3)))).toEqual([0.064, 0.025, 0.011]);
+    expect(1.5 * referenceBody('support', 'C', RULES).sheet.sup).toBeCloseTo(39.2, 1);
+  });
+
+  test('10% of max HP as a price is 0.21 SA for a C cannon and 0.26 for a C bruiser', () => {
+    const tenth = { kind: 'hp', amount: { kind: 'share', share: 0.1 } } as const;
+    expect(hpPriceWorth(tenth, referenceBody('cannon', 'C', RULES).sheet.hpMax, 'C', RULES)).toBeCloseTo(0.21, 2);
+    expect(hpPriceWorth(tenth, referenceBody('bruiser', 'C', RULES).sheet.hpMax, 'C', RULES)).toBeCloseTo(0.26, 2);
+  });
+
+  test('a mode of a standard action and 10% of max HP for 3 rounds gives each gated use 0.43 SA at E and 0.40 at C and S', () => {
+    const at = (rank: 'E' | 'C' | 'S') => modeCredit({ hpShare: 0.1, rounds: 3 }, rank, RULES);
+    expect([at('E').price, at('C').price, at('S').price].map(x => Number(x.toFixed(2)))).toEqual([1.29, 1.21, 1.2]);
+    expect([at('E').credit, at('C').credit, at('S').credit].map(x => Number(x.toFixed(2)))).toEqual([0.43, 0.4, 0.4]);
+  });
+
+  test('a threshold payoff of 1 SA at 5 stacks is worth 0.2 for each stack an ability adds, when every stack reaches a whole firing', () => {
+    expect(thresholdWorth(1, 5, 1, 1, 5)).toBeCloseTo(0.2, 10);
+    expect(thresholdWorth(1, 5, 5, 1, 1)).toBeCloseTo(1, 10);
+  });
+
+  test('a threshold pays in whole firings: over 6 uses landing 55% of the time, 0.70 of the stacks reach one at 3 and 0.85 at 2', () => {
+    // E[floor(L / n)] * n / E[L] for L binomial(6, 0.55), worked by hand from the binomial's terms
+    const p = 0.55, b = (l: number) => [1, 6, 15, 20, 15, 6, 1][l]! * p ** l * (1 - p) ** (6 - l);
+    const whole = (n: number) => [0, 1, 2, 3, 4, 5, 6].reduce((s, l) => s + b(l) * Math.floor(l / n), 0) * n / (6 * p);
+    expect(firings(3, 1, p, 6)).toBeCloseTo(whole(3), 10);
+    expect(firings(2, 1, p, 6)).toBeCloseTo(whole(2), 10);
+    expect([firings(3, 1, p, 6), firings(2, 1, p, 6)].map(x => Number(x.toFixed(2)))).toEqual([0.7, 0.85]);
+  });
+
+  test('stacks lasting d rounds, from uses a round apart, lapse after d - 1 uses in a row land nothing; every use landing never lapses', () => {
+    expect([lapseAfter(2, 1), lapseAfter(3, 1), lapseAfter(null, 1)]).toEqual([0, 1, Infinity]);
+    expect(firings(2, 1, 1, 6, 0)).toBe(1);
+    // at 2 stacks with no miss allowed over 4 uses: a firing at the 2nd use (LL), the 3rd (MLL), or the 4th (the count at 0
+    // after two uses, by LL or by a miss second, then LL)
+    const p = 0.55, q = 1 - p, fires = p * p + q * p * p + (p * p + q) * p * p;
+    expect(firings(2, 1, p, 4, 0)).toBeCloseTo(fires * 2 / (4 * p), 10);
+  });
+
+  test('a delayed end lands the share of the reference fight left after its delay; a cleanse takes its rule\'s share each round', () => {
+    expect(delayedShare(3, 'cancel', RULES)).toBeCloseTo(0.5, 10);
+    expect(delayedShare(6, 'cancel', RULES)).toBe(0);
+    const cleansing = { ...RULES, fight: { ...RULES.fight, kit: { ...RULES.fight.kit, cleanse: 0.1 } } } as Rules;
+    expect(delayedShare(3, 'cancel', cleansing)).toBeCloseTo(0.5 * 0.9 ** 3, 10);
+    expect(delayedShare(3, 'land', cleansing)).toBeCloseTo(0.5, 10);
+  });
+
+  test('a curse\'s own roll delivers 0.775 of its average at parity (resisted for half on 45%); a travel or a sure use all of it', () => {
+    expect(deliveredShare({ kind: 'direct' }, RULES)).toBeCloseTo(0.55 + 0.45 * 0.5, 10);
+    expect(deliveredShare({ kind: 'sure' }, RULES)).toBe(1);
+  });
+
+  test('a gated ability carries its mode\'s price: Hemoplague under Crimson Pact (a standard action and half max HP for 3 rounds)', () => {
+    const K = exampleSkills(RULES).flatMap(s => (s.type === 'active' && s.ability ? [s.ability] : []));
+    const hemo = K.find(a => a.name === 'Hemoplague')!, cannon = referenceBody('cannon', 'C', RULES).sheet;
+    const price = 1 + RULES.fight.kit.hpShare * cannon.hpMax * hpRate('C', RULES), uses = 3 * cannon.speed / RULES.fight.speedBase;
+    expect(gateCredit(hemo, K, RULES)).toBeCloseTo(price / uses, 6);
+    expect(gateCredit(hemo, K.filter(a => a.name !== 'Crimson Pact'), RULES)).toBe(0);
+  });
+});
+
+describe('the example kits sit inside the tolerance, and a GM\'s overreach is warned, never refused', () => {
+  test('an execute at its suggestion is worth its plain budget; a giant slayer typed to +100% is past the tolerance against a boss', () => {
+    const exec = of('strike', { ticks: { scalers: [suggestScaler('strike', 'execute', RULES)] } });
+    expect(abilityWorth(exec, RULES).worth).toBeCloseTo(1, 2);
+    const hot = of('strike', { ticks: { scalers: [{ measure: 'maxPair', dir: 'over', start: 0.5, scale: 1 }] } });
+    expect(abilityWorth(hot, RULES).over).toBe(true);
+  });
+
+  test('a scaler weighs the same in a threshold\'s burst as in an ability: an execute at its suggestion keeps the burst at its plain worth', () => {
+    const exec = suggestScaler('curse', 'execute', RULES), plain = recommended('curse', { ...defaultTicks('curse'), pace: 'standard' }, RULES);
+    const scaled = recommended('curse', { ...defaultTicks('curse'), pace: 'standard', scalers: [exec] }, RULES);
+    const mark = (formula: Formula): StackDef => ({ label: 'Mark', desc: '', ops: [], stack: { cap: 2, leave: { kind: 'never' }, keep: 'fight', threshold: {
+      at: { kind: 'count', n: 2 }, to: { kind: 'bearer' }, then: 'spend', ops: [{ op: 'damage', type: 'magical', amount: formula, when: 'use' }] } } });
+    const worth = (formula: Formula) => abilityWorth(of('curse', { effect: null, ops: [{ op: 'applyStatus', key: statusKey('mark'), def: mark(formula), duration: tick(2000), stacks: 1 }] }), RULES).worth;
+    // the base cut pays the scaler's mean back over the reference dungeon, so against the larger of its two foes it is within the tolerance of plain
+    expect(worth(scaled.formula) / worth(plain.formula)).toBeGreaterThanOrEqual(0.99);
+    expect(worth(scaled.formula) / worth(plain.formula)).toBeLessThanOrEqual(1 + RULES.fight.kit.tolerance);
+  });
+
+  test('an ability with a scaler says what it weighs against packs and against a boss', () => {
+    const slayer = abilityWorth(of('strike', { ticks: { scalers: [suggestScaler('strike', 'giantSlayer', RULES)] } }), RULES);
+    expect(slayer.against!.boss).toBeGreaterThan(slayer.against!.packs);
+    expect(slayer.against!.boss).toBeLessThanOrEqual(1 + RULES.fight.kit.tolerance + 1e-9);
+    expect(worthLine(slayer)).toContain(`against packs, ${slayer.against!.boss.toFixed(2)} against a boss.`);
+    expect(abilityWorth(of('strike'), RULES).against).toBeUndefined();
+  });
+
+  test('Bloodletting, a curse at 0.7 that adds a Resonance stack bursting for 1.6 SA at 3: 0.7 plus 1.6 / 3 of the 55% it lands, in whole firings, whole', () => {
+    const burst = recommended('curse', { ...defaultTicks('curse'), pace: 'standard' }, RULES).text;
+    const resonance: StackDef = { label: 'Resonance', desc: '', ops: [], stack: { cap: 3, leave: { kind: 'never' }, keep: 'fight', threshold: {
+      at: { kind: 'count', n: 3 }, to: { kind: 'bearer' }, then: 'spend', ops: [{ op: 'damage', type: 'magical', amount: f(`1.6 * (${burst})`), when: 'use' }] } } };
+    const blood = of('curse', { effect: { type: 'magical', by: 'hand', formula: f(`0.7 * (${burst})`) }, ops: [{ op: 'applyStatus', key: statusKey('resonance'), def: resonance, duration: tick(2000), stacks: 1 }] });
+    const w = abilityWorth(blood, RULES);
+    // its stacks last 2 rounds and the cannon casts once a round, so one miss lets them lapse (no use in a row may miss)
+    expect(w.worth).toBeCloseTo(0.7 + 1.6 / 3 * 0.55 * firings(3, 1, 0.55, 6, 0) / 0.775, 2);
+    expect(w.over).toBe(false);
+  });
+
+  test('Hemoplague at 1.4 of a curse is over a standard budget alone and inside it with Crimson Pact\'s credit of 0.40', () => {
+    const hemo = of('curse', { effect: { type: 'magical', by: 'hand', formula: f('1.4 * (1d8 + mag)') } });
+    expect(abilityWorth(hemo, RULES).over).toBe(true);
+    expect(abilityWorth(hemo, RULES, { credit: modeCredit({ hpShare: 0.1, rounds: 3 }, 'C', RULES).credit }).over).toBe(false);
+  });
+
+  test('an HP price buys power: a strike at 1.2 with a 10% HP price is inside its budget', () => {
+    const paid = of('strike', { effect: { type: 'physical', by: 'hand', formula: f('1.2 * (1d8 + phys)') } });
+    expect(abilityWorth(paid, RULES).over).toBe(true);
+    expect(abilityWorth({ ...paid, prices: [{ kind: 'hp', amount: { kind: 'share', share: 0.1 } }] }, RULES).over).toBe(false);
+  });
+
+  test('a worn status is held to the tolerance a round: a stack on each hit dealt is nothing on its own, a free hit on each hit is far past it', () => {
+    const pain: StatusDef = { label: 'Pain', desc: '', ops: [], stack: { cap: 10, leave: { kind: 'never' }, keep: 'fight', threshold: null } };
+    const stacker: StatusDef = { label: 'Pain is Power', desc: '', ops: [], triggers: [{ on: 'hitDealt', tag: null, to: 'self', limit: { kind: 'each' }, ops: [{ op: 'applyStatus', key: statusKey('pain'), def: pain, duration: null, stacks: 1 }] }] };
+    expect(wornWorth(stacker, RULES)).toEqual({ worth: 0, budget: TOL, over: false, unweighed: [] });
+    const echo: StatusDef = { label: 'Echo', desc: '', ops: [], triggers: [{ on: 'hitDealt', tag: null, to: 'other', limit: { kind: 'each' }, ops: [{ op: 'damage', type: 'physical', amount: f('1d8 + phys'), when: 'use' }] }] };
+    expect(wornWorth(echo, RULES).over).toBe(true);
+  });
+
+  test('the worth line says the worth and the budget, and past the tolerance by how much', () => {
+    expect(worthLine({ worth: 1.04, budget: 1, over: false, unweighed: [] })).toBe('Worth 1.04 of a standard action (budget 1.00).');
+    expect(worthLine({ worth: 1.12, budget: 1, over: true, unweighed: [] })).toBe('Worth 1.12 of a standard action (budget 1.00). Stronger than its pace allows by 12%: a kit this strong can flip a matchup by itself.');
+  });
+});
+
+describe('time is weighed as a share of a standard action, whoever gains or loses it', () => {
+  // A standard action is the unit (1 SA); a body at parity does as much with an action as the user, so time an ally
+  // gains or a foe loses is worth its share of one, as time back to the user (refund) already was.
+  const STD = RULES.fight.cost.standard, landsOnFoe = (RULES.fight.resistDc - 1) / 20;
+  test('a support that brings an ally\'s next turn half an action sooner is worth 0.5, named nowhere as unweighed', () => {
+    const w = abilityWorth(of('support', { effect: null, ops: [{ op: 'hasten', share: 0.5 }] }), RULES);
+    expect([Number(w.worth.toFixed(6)), w.unweighed]).toEqual([0.5, []]);
+  });
+  test('a curse that puts a foe\'s next turn one standard action later is worth one action of the foe, at the share a curse lands', () => {
+    const w = abilityWorth(of('curse', { effect: null, ops: [{ op: 'delay', ticks: tick(STD) }] }), RULES);
+    expect([Number(w.worth.toFixed(6)), w.unweighed]).toEqual([Number(landsOnFoe.toFixed(6)), []]);
+  });
+  test('an extra action is worth one whole action', () => {
+    const w = abilityWorth(of('support', { effect: null, aim: 'self', ops: [{ op: 'extra' }] }), RULES);
+    expect([Number(w.worth.toFixed(6)), w.unweighed]).toEqual([1, []]);
+  });
+});
+
+describe('what the bar cannot estimate it names, never counting it as 0', () => {
+  const K = exampleSkills(RULES);
+  const ability = (name: string) => { const s = K.find(x => x.name === name)!; if (s.type !== 'active' || !s.ability) throw new Error(name); return s.ability; };
+
+  test('Parry names its reaction and its guard, Call Sprite its summon, Violence and Fester the count they read', () => {
+    expect(abilityWorth(ability('Parry'), RULES).unweighed).toEqual(['guard', 'reaction']);
+    expect(abilityWorth(ability('Call Sprite'), RULES).unweighed).toEqual(['summon']);
+    expect(abilityWorth(ability('Violence'), RULES).unweighed).toEqual(['count']);
+    expect(abilityWorth(ability('Fester'), RULES).unweighed).toEqual(['count']);
+    expect(abilityWorth(ability('Bloodletting'), RULES).unweighed).toEqual([]);
+  });
+
+  test('the line says what it weighed and what to test in a fight', () => {
+    expect(worthLine(abilityWorth(ability('Call Sprite'), RULES))).toBe('Worth 0.00 of a standard action (budget 1.00) without its summon, which it cannot estimate: test it in a fight.');
+    expect(worthLine({ worth: 0, budget: 0.7, over: false, unweighed: ['guard', 'reaction'] })).toBe('Worth 0.00 of a standard action (budget 0.70) without a guard and its reaction, which it cannot estimate: test them in a fight.');
+  });
+
+  test('a status alone weighs its per-round damage over the reference fight, whole, and names its stat change and its end', () => {
+    const rot: StatusDef = { label: 'Rot', desc: '', ops: [{ op: 'damage', type: 'magical', amount: f('1d8 + mag'), when: 'turn' }, { op: 'stat', key: 'str', amount: -2 }],
+      end: { ops: [{ op: 'damage', type: 'magical', amount: f('1d8 + mag'), when: 'use' }], cleanse: 'cancel' } };
+    const w = defWorth(rot, RULES);
+    expect(w.worth).toBeCloseTo(RULES.fight.kit.referenceRounds / 0.775, 6);
+    expect(w.unweighed).toEqual(['stat', 'end']);
+    expect(w.over).toBe(true);
+  });
+});
+
+// ── the bar agrees with the simulation (notes-worth.md) ──
+// The simulation is the authority: it plays the real reducer. Each example kit is played against the tank (the duel its
+// bolt decides; against the speed build and the cannon the bolt is cast 1.5 times a fight and the rows move by noise),
+// both openings, 150 fights each, less its plain build in the same fights: the kit row's measure of
+// tests/fight-sim.test.ts. The bar's word on the same kit is its worth over the worth of the ability it replaces (Arc
+// Bolt, which is also a curse's budget, `standardHeld`), less 1. Stated tolerance 0.1: one band of the tolerance (0.08)
+// plus the noise floor of a difference of two win shares at 300 fights each (about 0.035) less what both share. The
+// verdicts must also agree: past +0.08 the bar warns exactly when the simulation's row is out.
+describe('the bar agrees with the simulation on the example kits', () => {
+  const START = { lines: [null, null], adjacent: [place(0, 2), place(0, 3)] } as const;
+  const FIGHTS = 150, AGREE = 0.1, TOLERANCE = RULES.fight.kit.tolerance;
+  const foe = (s: SimRow): SimRow => ({ ...s, row: { ...s.row, side: 'foe' } });
+  const at = (s: SimRow, p: (typeof START)['lines'][number] | (typeof START)['adjacent'][number]): SimRow => ({ ...s, row: { ...s.row, place: p } });
+  const wins = (a: Archetype, rank: 'C' | 'S', R: Rules): number => {
+    let won = 0;
+    for (const o of ['lines', 'adjacent'] as const) for (let seed = 1; seed <= FIGHTS; seed++) {
+      const r = playFight({ rows: [at(hunter(a, rank, a, R), START[o][0]), at(foe(hunter('tank', rank, 'tank', R)), START[o][1])], rules: R }, seed);
+      if (r.winner === 'party') won++;
+    }
+    return won / (2 * FIGHTS);
+  };
+  const withLever = (kit: 'blood' | 'mark', share: number): Rules => {
+    const ex = RULES.fight.kit.examples;
+    return { ...RULES, fight: { ...RULES.fight, kit: { ...RULES.fight.kit, examples: { ...ex, [kit]: { ...ex[kit], share } } } } } as Rules;
+  };
+  const CASES = [
+    { kit: 'blood', ability: 'bloodletting', shares: [0.7, RULES.fight.kit.examples.blood.share, 1] },
+    { kit: 'mark', ability: 'stroke', shares: [RULES.fight.kit.examples.mark.share, 1] },
+  ] as const;
+  for (const rank of ['C', 'S'] as const) {
+    test(`at ${rank}, Bloodletting and Disaster Stroke at the examples' shares and either side: the bar within ${AGREE} of the simulation, the same verdict`, () => {
+      const plain = wins('cannon', rank, RULES), bolt = abilityWorth(builtIns(RULES).arcBolt, RULES, { rank }).worth;
+      for (const c of CASES) for (const share of c.shares) {
+        const R = withLever(c.kit, share), w = abilityWorth(abilities(R)[c.ability], R, { rank });
+        const bar = w.worth / bolt - 1, sim = wins(c.kit, rank, R) - plain;
+        expect([c.kit, share, Math.abs(bar - sim) <= AGREE]).toEqual([c.kit, share, true]);
+        expect([c.kit, share, w.over]).toEqual([c.kit, share, sim > TOLERANCE]);
+      }
+    }, 120_000);
+  }
+});

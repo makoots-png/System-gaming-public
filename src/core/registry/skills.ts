@@ -1,0 +1,99 @@
+// skills.ts: the built-in skills a hunter can add from the Skills panel's list, and the starter hunters' skills, one typed
+// table each. To add a skill: add an entry to SKILL_SEEDS (an active one also to SKILL_ABILITIES in ./abilities.ts; the
+// typecheck asks) and run `bun run test` (tests/skills.test.ts checks every entry). The GM's own skills live in the save
+// (`library.skills`), a hunter's on its sheet.
+// `parseSkill` is the one reader of a skill from outside data: a save, a sheet, a form, a reward. The `Skill` type lives
+// here; save.ts re-exports it.
+import type { Ability } from '../combat/ability-types.ts';
+import type { StatusDef } from '../combat/effect-ops.ts';
+import { parseAbility, parseStatusDef } from '../combat/fight-parse.ts';
+import { PERK_KEYS, RULES } from '../rules.ts';
+import type { PerkKey } from '../rules.ts';
+import { oneOf } from '../one-of.ts';
+import type { SkillId } from '../ids.ts';
+import { SKILL_ABILITIES } from './abilities.ts';
+import type { BuiltInSkill, SkillRules } from './abilities.ts';
+
+// The skill enum lives here, beside the one parser that reads it; save.ts re-exports it.
+export const SKILL_TYPES = ['active', 'passive'] as const;
+export type SkillType = (typeof SKILL_TYPES)[number];
+
+/** What a passive skill adds while the hunter has it: points on a stat, max HP or max mana. */
+export type SkillBonus = Partial<Record<PerkKey, number>>;
+/**
+ * A skill as a hunter or the library holds it, before it has an id. `label`: the GM's words on its badge, kept as
+ * written; null (no words) shows its level, "Lv.n", which follows Lv +. An active one is used in a fight as its `ability`
+ * (null: it has none in a fight yet, as Arise, whose use is the extraction on the Shadows panel). A passive one adds its
+ * `bonus` to the sheet (src/core/hunter/sheet.ts), and its `worn` status, when it has one, is on its hunter's row in
+ * every fight (kits design 1.3.2: how a passive reacts to hits, kills and turns). Absent `worn` is none.
+ */
+export type SkillTemplate = { name: string; level: number; label: string | null; desc: string }
+  & ({ type: 'active'; ability: Ability | null } | { type: 'passive'; bonus: SkillBonus; worn?: StatusDef });
+export type Skill = SkillTemplate & { id: SkillId };
+
+/** A built-in skill. An active one's ability is its entry in SKILL_ABILITIES, by its name. */
+export type SkillDef =
+  | { name: BuiltInSkill; type: 'active'; desc: string }
+  | { name: string; type: 'passive'; desc: string; bonus: SkillBonus };
+
+// Restated by docs/agent-handoff/rw/m2-plan.md section 3.5: a passive's old bonus maps by the stat map (an old AC of N is
+// Vitality 2N); an active's MP cost, dice and cooldown are its ability's now.
+export const SKILL_SEEDS: readonly SkillDef[] = [
+  { name: 'Sprint', type: 'active', desc: 'Burst of speed: you are Hasted for a round.' },
+  { name: 'Bloodlust', type: 'passive', desc: 'Bloodthirst sharpens your strikes.', bonus: { str: 1 } },
+  { name: 'Dagger Rush', type: 'active', desc: 'Two lightning-fast dagger strikes.' },
+  { name: 'Stealth', type: 'active', desc: 'Vanish from sight. Advantage on Stealth checks until you attack.' },
+  { name: 'Mutilation', type: 'active', desc: 'A vicious strike that tears flesh.' },
+  { name: "Ruler's Authority", type: 'active', desc: 'Telekinetic force: move or crush objects and enemies within 30 ft.' },
+  { name: 'Shadow Exchange', type: 'active', desc: 'Swap places with one of your shadows.' },
+  { name: 'Arise', type: 'active', desc: 'Command the dead to rise as your shadow soldier.' },
+  { name: 'Mending Aura', type: 'active', desc: 'A soft light around you mends you and every ally near you for three rounds, and moves with you.' },
+];
+
+/** The skills the starter campaign's three hunters begin with (src/views/starter.js), two each. */
+export const STARTER_SKILLS = {
+  shieldWall: { name: 'Shield Wall', type: 'active', desc: 'Brace behind your shield and cover an ally within 30 ft.' },
+  ironSkin: { name: 'Iron Skin', type: 'passive', desc: 'Your hide toughens against blows. +2 Vitality.', bonus: { vit: 2 } },
+  markedShot: { name: 'Marked Shot', type: 'active', desc: 'A careful shot at a marked target.' },
+  trailsense: { name: 'Trailsense', type: 'passive', desc: 'You notice what others miss. Gates are never a surprise to you.', bonus: {} },
+  arcBolt: { name: 'Arc Bolt', type: 'active', desc: 'Hurl a bolt of blue mana at a target in sight.' },
+  manaSense: { name: 'Mana Sense', type: 'passive', desc: 'Feel the flow of mana around you, including hidden gates.', bonus: {} },
+} as const satisfies Record<string, SkillDef>;
+
+/** A built-in skill as a hunter holds it (no id yet): level 1, no label, an active one with its ability under `R`. */
+export function skillOf(def: SkillDef, R: SkillRules): SkillTemplate {
+  const base = { name: def.name, level: 1, label: null, desc: def.desc };
+  return def.type === 'passive' ? { ...base, type: 'passive', bonus: { ...def.bonus } } : { ...base, type: 'active', ability: SKILL_ABILITIES[def.name](R) };
+}
+
+// ── the one parser ──
+/** The bounds of every skill, wherever it comes from. */
+export const SKILL_BOUNDS = { name: 60, label: 12, desc: 500, level: 10, bonus: 999 } as const;
+type Rec = Record<string, unknown>;
+const isObj = (v: unknown): v is Rec => v !== null && typeof v === 'object' && !Array.isArray(v);
+/** A finite number cut to a whole one and clamped, or `d` when the value is not a number. */
+const whole = (v: unknown, lo: number, hi: number, d: number): number => (typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, Math.trunc(v))) : d);
+
+/**
+ * A skill read from outside data, without its id, or null when it is not an object or has no name. Each field of the
+ * wrong type or value takes the default a new skill has; a number is cut to a whole one inside `SKILL_BOUNDS`. An active
+ * skill's ability is read by the fight's ability reader with the shipped rules' limits (as a reward is), and is null when
+ * that refuses it. A passive one's bonus keeps the ten bonus keys (the eight stats, `hpMax`, `manaMax`) that are not 0,
+ * and its `worn` status is read by the status reader (one it refuses is none). Every other key is dropped.
+ */
+export function parseSkill(v: unknown): SkillTemplate | null {
+  if (!isObj(v)) return null;
+  const B = SKILL_BOUNDS;
+  const name = typeof v.name === 'string' ? v.name.trim().slice(0, B.name) : '';
+  if (!name) return null;
+  const base = {
+    name, level: whole(v.level, 1, B.level, 1), label: typeof v.label === 'string' ? v.label.trim().slice(0, B.label) || null : null,
+    desc: typeof v.desc === 'string' ? v.desc.slice(0, B.desc) : '',
+  };
+  if (oneOf(v.type, SKILL_TYPES, 'active') === 'active') return { ...base, type: 'active', ability: parseAbility(v.ability, RULES) };
+  const bonus: SkillBonus = {};
+  const rawBonus = isObj(v.bonus) ? v.bonus : {};
+  for (const k of PERK_KEYS) { const n = whole(Object.hasOwn(rawBonus, k) ? rawBonus[k] : 0, -B.bonus, B.bonus, 0); if (n) bonus[k] = n; }
+  const worn = v.worn === undefined ? null : parseStatusDef(v.worn, RULES);
+  return worn ? { ...base, type: 'passive', bonus, worn } : { ...base, type: 'passive', bonus };
+}

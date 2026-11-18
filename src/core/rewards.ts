@@ -1,0 +1,210 @@
+// rewards.ts: what a reward may hold, and `parseRewards`, its one reader from outside data: a save's quest, a bundle in
+// the library, a room's award or quest, a form. Pure. A reward is given by `applyRewards` in src/views/hunter.js.
+// A new kind of reward is a field of `Rewards`, its default in `newRewards`, its line in `parseRewards` and
+// `rewardLines`, and a case in tests/rewards.test.ts.
+import { titleKey } from './ids.ts';
+import { isStatusKey } from './combat/effect-ops.ts';
+import type { StatusDef, StatusKey } from './combat/effect-ops.ts';
+import { parseStatusDef } from './combat/fight-parse.ts';
+import { isStateChip } from './hunter/chips.ts';
+import { parseItem } from './registry/items.ts';
+import type { ItemTemplate } from './registry/items.ts';
+import { parseSkill } from './registry/skills.ts';
+import type { SkillTemplate } from './registry/skills.ts';
+import { PERK_KEYS, RULES } from './rules.ts';
+import type { Rules } from './rules.ts';
+import { refuse } from './save-step.ts';
+import type { Refused } from './save-step.ts';
+import type { BundleId } from './ids.ts';
+
+/**
+ * A title as a reward carries it: its bonus travels with it, so a title the receiving phone does not know still counts.
+ * `key`: the rule title it copies (src/core/rules.ts `titles`), when it does, so one held under another name is not given twice.
+ */
+export type RewardTitle = { name: string; desc: string; bonus: Record<string, number>; key?: string };
+/**
+ * A status a reward puts on the hunter. `rounds: null` lasts until removed. `def` for a status the receiver may not know;
+ * without it the receiver's rules name the key.
+ */
+export type RewardStatus = { key: StatusKey; rounds: number | null; def?: StatusDef };
+/** What a reward's words read: the statuses a key names. */
+export type RewardRules = { readonly conditions: Readonly<Record<string, StatusDef>> };
+/** A text reward the GM honours at the table. The hunter keeps it until the player redeems it. */
+export type BoonGrant = { name: string; text: string };
+/**
+ * What a reward gives. XP, gold and points may be negative: a GM may take away. `job` is the job's name as text. An item
+ * or skill has no id until the hunter holds it.
+ */
+export type Rewards = {
+  xp: number; points: number; gold: number; items: ItemTemplate[]; title: RewardTitle | null; job: string | null;
+  skills: SkillTemplate[]; statuses: RewardStatus[]; boons: BoonGrant[];
+};
+
+export const newRewards = (): Rewards => ({ xp: 0, points: 0, gold: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] });
+
+/**
+ * The bounds of every reward, wherever it comes from. XP and gold a billion either way, points 999 either way (a
+ * level holds 3); 20 items as a room award has carried; 8 skills, statuses and boons, as the design gives them.
+ */
+export const REWARD_BOUNDS = {
+  xp: 1e9, gold: 1e9, points: 999, items: 20, skills: 8, statuses: 8, boons: 8, rounds: 999,
+  title: 60, titleDesc: 200, bonus: 999, job: 60, boonName: 60, boonText: 200,
+} as const;
+
+type Rec = Record<string, unknown>;
+const isObj = (v: unknown): v is Rec => v !== null && typeof v === 'object' && !Array.isArray(v);
+const whole = (v: unknown, lo: number, hi: number, d: number): number => (typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, Math.trunc(v))) : d);
+/** Trimmed text cut to `n`, or '' when it is not text. */
+const line = (v: unknown, n: number): string => (typeof v === 'string' ? v.trim().slice(0, n) : '');
+/** At most `n` entries of a list, each read by `read`; an entry it refuses (null) is dropped. Not a list: none. */
+function listOf<T>(v: unknown, n: number, read: (x: unknown) => T | null): T[] {
+  const out: T[] = [];
+  for (const raw of Array.isArray(v) ? v : []) {
+    if (out.length >= n) break;
+    const x = read(raw);
+    if (x !== null) out.push(x);
+  }
+  return out;
+}
+
+function title(v: unknown): RewardTitle | null {
+  if (!isObj(v)) return null;
+  const B = REWARD_BOUNDS, name = line(v.name, B.title);
+  if (!name) return null;
+  const raw = isObj(v.bonus) ? v.bonus : {}, bonus: Record<string, number> = {};
+  for (const k of PERK_KEYS) { const n = whole(Object.hasOwn(raw, k) ? raw[k] : 0, -B.bonus, B.bonus, 0); if (n) bonus[k] = n; }
+  const key = titleKey(v.key);
+  return { name, desc: typeof v.desc === 'string' ? v.desc.slice(0, B.titleDesc) : '', bonus, ...(key ? { key } : {}) };
+}
+/**
+ * A status a reward gives: a key a status may have that is not a chip drawn from a hunter's state. Its def is read by
+ * `parseStatusDef` with the shipped rules' dice limits, as every reward is read before any GM's rules are known.
+ */
+function status(v: unknown): RewardStatus | null {
+  if (!isObj(v) || !isStatusKey(v.key) || isStateChip(v.key)) return null;
+  const out: RewardStatus = { key: v.key, rounds: v.rounds === null || v.rounds === undefined ? null : whole(v.rounds, 1, REWARD_BOUNDS.rounds, 1) };
+  const def = parseStatusDef(v.def, RULES);
+  if (def) out.def = def;
+  return out;
+}
+function boon(v: unknown): BoonGrant | null {
+  if (!isObj(v)) return null;
+  const name = line(v.name, REWARD_BOUNDS.boonName);
+  return name ? { name, text: typeof v.text === 'string' ? v.text.slice(0, REWARD_BOUNDS.boonText) : '' } : null;
+}
+
+/** The reader of one entry of each part of a reward, an entry it refuses null: also the rule overrides' (overrides.ts). */
+export const REWARD_ENTRY = { items: parseItem, skills: parseSkill, statuses: status, boons: boon, title } as const;
+
+/**
+ * A reward read from outside data, or null when it is not an object. Each field of the wrong type takes the default an
+ * empty reward has; a number is cut to a whole one inside `REWARD_BOUNDS`; each list keeps its first entries up to its
+ * bound, each read by its kind's parser (`parseItem`, `parseSkill`), an entry it refuses dropped. A title or boon needs a
+ * name. Every other key is dropped.
+ */
+export function parseRewards(v: unknown): Rewards | null {
+  if (!isObj(v)) return null;
+  const B = REWARD_BOUNDS;
+  return {
+    xp: whole(v.xp, -B.xp, B.xp, 0), points: whole(v.points, -B.points, B.points, 0), gold: whole(v.gold, -B.gold, B.gold, 0),
+    items: listOf(v.items, B.items, parseItem), title: title(v.title), job: line(v.job, B.job) || null,
+    skills: listOf(v.skills, B.skills, parseSkill), statuses: listOf(v.statuses, B.statuses, status), boons: listOf(v.boons, B.boons, boon),
+  };
+}
+
+/**
+ * The title named `name` as a reward carries it: a built-in title of the sender's rules brings its description and
+ * bonus, any other name is a title without a bonus. Null for a blank name.
+ */
+export function titleReward(R: Pick<Rules, 'titles'>, name: string): RewardTitle | null {
+  const n = name.trim().slice(0, REWARD_BOUNDS.title);
+  if (!n) return null;
+  const seed = R.titles.find(t => t.name === n);
+  return title({ name: n, desc: seed?.desc ?? '', bonus: seed?.bonus ?? {}, key: seed?.key });
+}
+
+/**
+ * A System window's words: its title, in the System's voice ("THE SYSTEM TOOK NOTE"), and one plain line. A bundle given
+ * by hand opens with them (the GM's awards for roleplay, src/core/registry/bundles.ts).
+ */
+export type SystemWords = { readonly title: string; readonly line: string };
+/** The bounds of a window's words: a title as a feat's or a title's, a line as a boon's text. */
+export const WORDS_BOUNDS = { title: 60, line: 200 } as const;
+/** A window's words from outside data, or null when it has no title. The title is cut and upper case (the System's voice). */
+export function parseWords(v: unknown): SystemWords | null {
+  if (!isObj(v)) return null;
+  const title = line(v.title, WORDS_BOUNDS.title).toUpperCase();
+  return title ? { title, line: line(v.line, WORDS_BOUNDS.line) } : null;
+}
+
+/** A named reward the GM saved to give again (`library.rewards`). `window`: the words it is given with; absent is "REWARD RECEIVED". */
+export type RewardBundle = { id: BundleId; name: string; rewards: Rewards; window?: SystemWords };
+export const BUNDLE_NAME = 60;
+
+/**
+ * The GM saves a reward bundle by its id (the library's `rewards`): the bundle with that id takes the name and the reward
+ * (an edit, a rename: one write), else a new bundle under `id`, refused past `cap` (`full`). A blank name is refused
+ * (`blank`), and so is a name another bundle holds in any case (`taken`), so a rename never deletes one bundle and
+ * overwrites another (implicit audit 3, R1).
+ */
+export function saveBundle<L extends { rewards: RewardBundle[] }>(lib: L, id: string, name: string, rewards: Rewards, cap: number, window: SystemWords | null = null): L | Refused<'blank' | 'full' | 'taken'> {
+  const n = String(name ?? '').trim().slice(0, BUNDLE_NAME);
+  if (!n) return refuse('blank');
+  if (lib.rewards.some(b => b.id !== id && b.name.toLowerCase() === n.toLowerCase())) return refuse('taken');
+  const made = (bid: string) => ({ id: bid, name: n, rewards, ...(window ? { window } : {}) });
+  if (lib.rewards.some(b => b.id === id)) return { ...lib, rewards: lib.rewards.map(b => (b.id === id ? { ...made(id), id: b.id } : b)) };
+  return lib.rewards.length >= cap ? refuse('full') : { ...lib, rewards: [...lib.rewards, made(id)] };
+}
+/** A saved bundle deleted. One that is not there is refused (`no-bundle`). */
+export function removeBundle<L extends { rewards: RewardBundle[] }>(lib: L, id: string): L | Refused<'no-bundle'> {
+  return lib.rewards.some(b => b.id === id) ? { ...lib, rewards: lib.rewards.filter(b => b.id !== id) } : refuse('no-bundle');
+}
+/** A bundle read from outside data, without its id, or null when it is not an object or has no name. Its rewards are read by `parseRewards`. */
+export function parseBundle(v: unknown): Omit<RewardBundle, 'id'> | null {
+  if (!isObj(v)) return null;
+  const name = line(v.name, BUNDLE_NAME), window = parseWords(v.window);
+  return name ? { name, rewards: parseRewards(v.rewards) ?? newRewards(), ...(window ? { window } : {}) } : null;
+}
+
+/** Whether a reward gives anything at all. */
+export const isEmptyReward = (r: Rewards): boolean =>
+  !r.xp && !r.points && !r.gold && !r.items.length && !r.title && !r.job && !r.skills.length && !r.statuses.length && !r.boons.length;
+
+const signed = (n: number): string => `${n < 0 ? '-' : '+'}${Math.abs(n).toLocaleString('en-US')}`;
+const rounds = (n: number | null): string => (n ? ` (${n} round${n === 1 ? '' : 's'})` : '');
+/** A reward status's label: its own def's, else the rules' status of its key, else the key. */
+const labelOf = (R: RewardRules, s: RewardStatus): string => s.def?.label ?? R.conditions[s.key]?.label ?? s.key;
+/** A reward in words, one line a part: "+50 XP", "Item: Potion ×2", "Title: Wolf Slayer", "Status: Hasted (3 rounds)", "Boon: ...". */
+export function rewardLines(R: RewardRules, r: Rewards): string[] {
+  const out: string[] = [];
+  if (r.xp) out.push(`${signed(r.xp)} XP`);
+  if (r.points) out.push(`${signed(r.points)} ability point${Math.abs(r.points) === 1 ? '' : 's'}`);
+  if (r.gold) out.push(`${signed(r.gold)} gold`);
+  for (const i of r.items) out.push(`Item: ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`);
+  if (r.title) out.push(`Title: ${r.title.name}`);
+  if (r.job) out.push(`Job: ${r.job}`);
+  for (const s of r.skills) out.push(`Skill: ${s.name}`);
+  for (const s of r.statuses) out.push(`Status: ${labelOf(R, s)}${rounds(s.rounds)}`);
+  for (const b of r.boons) out.push(`Boon: ${b.name}`);
+  return out;
+}
+
+/**
+ * The reward window's lines, as the player sees them when a reward arrives (`applyRewards` in src/views/hunter.js shows
+ * them; the reward editor's preview draws them): "+100 XP", "+50 gold", "Item acquired: Potion ×2", "Title acquired: ...",
+ * "Skill acquired: ...", "Status: Hasted (3 rounds)", "Boon: ...". `build` is a build change's line, shown after the items.
+ */
+export function grantLines(R: RewardRules, r: Rewards, build = ''): string[] {
+  const out: string[] = [], num = (n: number): string => `${n > 0 ? '+' : ''}${n.toLocaleString('en-US')}`;
+  if (r.xp) out.push(`${num(r.xp)} XP`);
+  if (r.gold) out.push(`${num(r.gold)} gold`);
+  if (r.points) out.push(`${num(r.points)} ability point${Math.abs(r.points) === 1 ? '' : 's'}`);
+  for (const i of r.items) out.push(`Item acquired: ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`);
+  if (build) out.push(build);
+  if (r.title) out.push(`Title acquired: ${r.title.name}`);
+  if (r.job) out.push(`Job: ${r.job}`);
+  for (const s of r.skills) out.push(`Skill acquired: ${s.name}`);
+  for (const s of r.statuses) out.push(`Status: ${labelOf(R, s)}${rounds(s.rounds)}`);
+  for (const b of r.boons) out.push(`Boon: ${b.name}`);
+  return out;
+}

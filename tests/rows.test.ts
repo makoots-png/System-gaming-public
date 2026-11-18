@@ -1,0 +1,303 @@
+// The fight rows of src/core/combat/rows.ts. Expected values come from the rules by name and the plan's decisions
+// (docs/agent-handoff/rw/m2-plan.md 1.2 for a shadow's grade, 3.2 for a monster's attacks, 3.3 for a weapon, design.md 4.3
+// for the stagger bar): a base hunter of level 1 has `hpBase` 45 HP, `manaBase` mana and `fatigueBase` capacity, and
+// speed `speedBase` 100. The same-rank hit is the simulation's own, from tests/models/fight-sim.ts.
+import { describe, expect, test } from 'bun:test';
+import { RULES } from '../src/core/rules.ts';
+import { SHADOW_GRADES } from '../src/core/save.ts';
+import type { ShadowGrade } from '../src/core/save.ts';
+import type { Stats } from '../src/core/stats.ts';
+import { buildOf } from '../src/core/hunter/sheet.ts';
+import { monsterSheet } from '../src/core/hunter/derive.ts';
+import type { MonsterKind } from '../src/core/hunter/derive.ts';
+import { tick } from '../src/core/combat/timeline.ts';
+import { abilityId, combatantId, hunterId } from '../src/core/combat/ability-types.ts';
+import { parseSheetKey } from '../src/core/ids.ts';
+import type { Ability, AbilityKind } from '../src/core/combat/ability-types.ts';
+import { onSheet, shadowId, statusKey } from '../src/core/combat/effect-ops.ts';
+import type { SheetStatus, StatusDef } from '../src/core/combat/effect-ops.ts';
+import { parseFight } from '../src/core/combat/fight-parse.ts';
+import { fightId, reduce } from '../src/core/combat/fight.ts';
+import type { Command, Ctx, Fight } from '../src/core/combat/fight.ts';
+import { abilityOf } from '../src/core/registry/ability-kinds.ts';
+import { ARCHETYPE_ATTACKS, ATTACK_ID, itemAbility, weaponAttack } from '../src/core/registry/abilities.ts';
+import { hunterAbilities, hunterRow, monsterRows, remoteRow, sameRankHit, shadowRow, shadowSheet, staggerOf, summonRow } from '../src/core/combat/rows.ts';
+import { pinKeyOf } from '../src/core/combat/map-view.ts';
+import { codexKey } from '../src/core/bestiary.ts';
+import type { RowHunter, RowMonster, RowShadow } from '../src/core/combat/rows.ts';
+import { sameRankHit as simHit } from './models/fight-sim.ts';
+import { iid } from './fixtures/ids.ts';
+const sheetKey = (s: string) => parseSheetKey(s) ?? (() => { throw new Error(`not a sheet key: ${s}`); })();
+
+const F = RULES.fight;
+const id = combatantId;
+const stats = (o: Partial<Stats> = {}): Stats => ({ str: 10, agi: 10, vit: 10, ins: 10, dis: 10, pre: 10, pow: 10, ctl: 10, ...o });
+const hunter = (o: Partial<RowHunter> = {}): RowHunter => ({
+  id: 'h1', name: 'Brakk', stats: stats(), level: 1, rank: 'E', life: { at: 'up', hp: 30 }, mana: 5, fatigue: 0, penalty: null,
+  hpAdj: 0, manaAdj: 0, titleId: null, titles: [], items: [], equipped: { weapon: null }, build: { path: null, picks: [] }, skills: [],
+  conditions: [], ...o,
+});
+const skill = (kind: AbilityKind, name: string): Ability => abilityOf(kind, { id: abilityId(name.toLowerCase().replace(/ /g, '-')), name }, RULES);
+const active = (a: Ability | null) => ({ type: 'active', ability: a }) as const;
+
+const SLOWED: StatusDef = { label: 'Slowed', desc: '', ops: [{ op: 'speed', pct: [-20, -25, -30, -35, -40, -50] }] };
+const STEALTH: StatusDef = { label: 'Stealth', desc: '', ops: [] };
+const REGEN: StatusDef = { label: 'Regenerating', desc: '', ops: [{ op: 'heal', amount: { kind: 'number', value: 10 } }] };
+const POISONED: StatusDef = { label: 'Poisoned', desc: '', ops: [{ op: 'stat', key: 'ctl', amount: -8 }] };
+const condition = (key: string, def: StatusDef, rounds: number | null): SheetStatus => ({ key: statusKey(key), def, source: { id: null, tier: 1 }, rounds });
+/** The rules with the new status defs a monster's start statuses are looked up in (W1a puts them in `RULES.conditions`). */
+const R = { ...RULES, conditions: { regenerating: REGEN, poisoned: POISONED } };
+
+const monster = (o: Partial<RowMonster> = {}): RowMonster =>
+  ({ name: 'Goblin', rank: 'E', archetype: 'skirmisher', kind: 'normal', tweak: {}, abilities: [], xp: 10, statuses: [], ...o });
+const shadow = (o: Partial<RowShadow> = {}): RowShadow => ({ id: 's1', name: 'Igris', rank: 'C', archetype: 'brute', grade: 'Knight', hp: 12, ...o });
+
+describe('a hunter on this phone', () => {
+  test('joins on the party side with its HP, mana and fatigue as its sheet holds them, written back to it', () => {
+    const h = hunter({ rank: 'C', fatigue: 7 });
+    const r = hunterRow(h, id('c1'), RULES);
+    expect([r.id, r.name, r.side, r.kind, r.tier, r.hp, r.mana, r.fatigue, r.xp, r.place]).toEqual([id('c1'), 'Brakk', 'party', 'hunter', 2, 30, 5, 7, 0, null]);
+    expect(r.holder).toEqual({ kind: 'local', hunterId: hunterId('h1') });
+    expect(r.origin).toEqual({ kind: 'hunter', build: buildOf(h, RULES) });
+    expect([r.threat, r.stagger, r.shield, r.channel, r.intent, r.readyAt]).toEqual([null, null, null, null, null, {}]);
+  });
+
+  test('a dying hunter joins at 0 HP, and HP, mana and fatigue above the maxima join at the maxima', () => {
+    expect(hunterRow(hunter({ life: { at: 'dying', successes: 1, failures: 0 } }), id('c1'), RULES).hp).toBe(0);
+    const r = hunterRow(hunter({ life: { at: 'up', hp: 999 }, mana: 999, fatigue: 999, hpAdj: 5 }), id('c1'), RULES);
+    expect([r.hp, r.mana, r.fatigue]).toEqual([F.hpBase + 5, F.manaBase, F.fatigueBase]);
+  });
+
+  test('attacks with its worn weapon, then each active skill in order; a passive and a skill with no ability add nothing', () => {
+    const bow = { id: 'bow', name: 'Hunting Bow', dice: '1d8', attack: 'shot', weight: 1 } as const;
+    const rush = skill('strike', 'Dagger Rush'), marked = skill('shot', 'Marked Shot');
+    const h = hunter({ items: [bow], equipped: { weapon: 'bow' }, skills: [active(rush), { type: 'passive', bonus: { str: 1 } }, active(null), active(marked)] });
+    const r = hunterRow(h, id('c1'), RULES);
+    expect(r.abilities).toEqual([weaponAttack({ name: 'Hunting Bow', dice: '1d8', attack: 'shot' }, RULES), rush, marked]);
+    expect([r.abilities[0]!.id, r.abilities[0]!.name, r.abilities[0]!.kind]).toEqual([ATTACK_ID, 'Hunting Bow', 'shot']);
+  });
+
+  test('with no weapon worn, or a worn item that is no weapon, strikes with Strike', () => {
+    const vest = { id: 'vest', name: 'Hunter\'s Leather', weight: 3, armor: 4, resist: 5 };
+    for (const h of [hunter(), hunter({ items: [vest], equipped: { weapon: 'vest' } })]) {
+      const first = hunterAbilities(h, RULES)[0]!;
+      expect(first).toEqual(weaponAttack(null, RULES));
+      expect([first.name, first.kind]).toEqual(['Strike', 'strike']);
+    }
+  });
+
+  test('each consumable in the bag follows the skills as an ability, for another or for its user; a used-up one does not', () => {
+    const num = (value: number) => ({ kind: 'number', value }) as const;
+    const bomb = { id: iid('b1'), name: 'Flash Bomb', type: 'consumable', rar: 'common', qty: 2, target: 'other', effects: [{ op: 'damage', type: 'magical', amount: num(5), when: 'use' }] } as const;
+    const potion = { id: iid('p1'), name: 'Health Potion', type: 'consumable', rar: 'common', qty: 1, effects: [{ op: 'heal', amount: num(30), when: 'use' }] } as const;
+    const items = [bomb, { ...bomb, id: iid('b0'), qty: 0 }, potion];
+    const all = hunterAbilities(hunter({ items, skills: [active(skill('strike', 'Move 0'))] }), RULES);
+    expect(all.map(a => a.name)).toEqual(['Strike', 'Move 0', 'Flash Bomb', 'Health Potion']);
+    expect(all[2]).toEqual(itemAbility(bomb, RULES)!);
+    expect([all[3]!.aim, all[3]!.effect]).toEqual(['self', { type: 'heal', by: 'hand', formula: num(30) }]);
+  });
+
+  test('never holds two abilities of one id, and holds at most 12', () => {
+    const clash = { ...skill('curse', 'Clash'), id: ATTACK_ID };
+    const many = Array.from({ length: 15 }, (_, i) => active(skill('strike', `Move ${i}`)));
+    expect(hunterAbilities(hunter({ skills: [active(clash), active(skill('strike', 'Move 0'))] }), RULES).map(a => a.name)).toEqual(['Strike', 'Move 0']);
+    const all = hunterAbilities(hunter({ skills: [active(skill('strike', 'Move 0')), ...many] }), RULES);
+    expect([all.length, new Set(all.map(a => a.id)).size, all[11]!.name]).toEqual([12, 12, 'Move 10']);
+  });
+
+  test('its conditions start at its joining with the rounds each has left, and change its sheet in the fight', () => {
+    const now = tick(0);
+    const h = hunter({ conditions: [condition('slowed', SLOWED, 2.5), condition('stealth', STEALTH, null)] });
+    const r = hunterRow(h, id('c1'), RULES);
+    expect(r.statuses).toEqual([
+      { key: statusKey('slowed'), def: SLOWED, source: { id: null, tier: 1 }, until: tick(2500), since: now, settledAt: now },
+      { key: statusKey('stealth'), def: STEALTH, source: { id: null, tier: 1 }, until: null, since: now, settledAt: now },
+    ]);
+    const plain = hunterRow({ ...hunter(), id: 'h2' }, id('c2'), RULES);
+    const f = reduce(null, { type: 'add', fightId: fightId('f'), rows: [r, plain], openings: [] }, { rules: RULES, life: () => null }).fight!;
+    // Slowed at the source's tier 1 is -25%: 100 * 0.75.
+    expect(f.rows.map(x => x.speed)).toEqual([F.speedBase * 0.75, F.speedBase]);
+  });
+});
+
+describe('what a hunter wears into a fight (kits design 1.3.2)', () => {
+  const PAIN_IS_POWER: StatusDef = { label: 'Pain is Power', desc: '', ops: [], triggers: [{ on: 'struck', tag: null, to: 'self', limit: { kind: 'each' }, ops: [{ op: 'note', text: 'pain' }] }] };
+  const THORNS: StatusDef = { label: 'Thorns', desc: '', ops: [] };
+  const ring = { id: 'i1', name: 'Thorn Ring', rar: 'rare', bonus: {}, worn: THORNS };
+  test('a passive skill\'s worn status is on its row until removed, the row its source at the hunter\'s rank', () => {
+    const h = hunter({ rank: 'C', skills: [{ type: 'passive', bonus: {}, worn: PAIN_IS_POWER }, { type: 'passive', bonus: { str: 1 } }] });
+    const r = hunterRow(h, id('c1'), RULES);
+    expect(r.statuses).toEqual([{ key: statusKey('pain-is-power'), def: PAIN_IS_POWER, source: { id: id('c1'), tier: 2 }, until: null, since: tick(0), settledAt: tick(0), worn: true }]);
+  });
+  test('a worn item\'s status comes at the item\'s rarity (rare is C, tier 2) and from no combatant; the same item in the bag gives none', () => {
+    const worn = hunterRow(hunter({ items: [ring], equipped: { weapon: null, ring1: 'i1' } }), id('c1'), RULES);
+    expect(worn.statuses.map(s => [s.key, s.source, s.worn])).toEqual([[statusKey('thorns'), { id: null, tier: 2 }, true]]);
+    expect(hunterRow(hunter({ items: [ring] }), id('c1'), RULES).statuses).toEqual([]);
+  });
+  test('a worn status takes a key no condition holds, so both stay', () => {
+    const h = hunter({ conditions: [condition('thorns', STEALTH, null)], items: [ring], equipped: { weapon: null, ring1: 'i1' } });
+    expect(hunterRow(h, id('c1'), RULES).statuses.map(s => s.key)).toEqual([statusKey('thorns'), statusKey('thorns-2')]);
+  });
+  test('a worn status never goes back to the sheet when the fight writes its statuses back', () => {
+    const r = hunterRow(hunter({ skills: [{ type: 'passive', bonus: {}, worn: PAIN_IS_POWER }], conditions: [condition('stealth', STEALTH, null)] }), id('c1'), RULES);
+    expect(r.statuses.filter(onSheet).map(s => s.key)).toEqual([statusKey('stealth')]);
+  });
+});
+
+test('a hunter on another phone joins as a hunter here does, written back to its room key', () => {
+  const h = hunter({ conditions: [condition('slowed', SLOWED, 1)], rank: 'B' });
+  const remote = remoteRow(h, sheetKey('dev-1:h1'), id('c1'), RULES);
+  expect(remote.holder).toEqual({ kind: 'remote', remote: sheetKey('dev-1:h1') });
+  expect({ ...remote, holder: null }).toEqual({ ...hunterRow(h, id('c1'), RULES), holder: null });
+});
+
+describe('a monster', () => {
+  test('a pack of three goblins is Goblin A, B and C, each a foe with full HP and mana, its XP and a threat table', () => {
+    const rows = monsterRows(monster(), [id('m1'), id('m2'), id('m3')], R);
+    const sheet = monsterSheet('E', 'skirmisher', 'normal', RULES);
+    expect(rows.map(r => r.name)).toEqual(['Goblin A', 'Goblin B', 'Goblin C']);
+    for (const r of rows) {
+      expect([r.side, r.kind, r.tier, r.hp, r.mana, r.fatigue, r.xp, r.threat, r.holder, r.stagger]).toEqual(['foe', 'monster', 0, sheet.hpMax, sheet.manaMax, 0, 10, {}, null, null]);
+    }
+    expect(monsterRows(monster(), [id('m1')], R).map(r => r.name)).toEqual(['Goblin']);
+  });
+
+  test('its seed\'s tweak scales its HP and adds to its stats', () => {
+    const tweak = { hp: 0.7, stats: { ins: 8 } };
+    const [r] = monsterRows(monster({ archetype: 'caster', tweak }), [id('m1')], R);
+    expect(r!.origin).toEqual({ kind: 'monster', name: 'Goblin', rank: 'E', archetype: 'caster', monsterKind: 'normal', tweak });
+    expect(r!.hp).toBe(monsterSheet('E', 'caster', 'normal', RULES, [], tweak).hpMax);
+    expect(r!.hp).toBeLessThan(monsterSheet('E', 'caster', 'normal', RULES).hpMax);
+  });
+
+  test('attacks with its archetype\'s attack first, then its own; its own of the same id is left out', () => {
+    const bite = skill('strike', 'Bite'), clash = { ...skill('shot', 'Clash'), id: ATTACK_ID };
+    const names = (archetype: RowMonster['archetype']) =>
+      monsterRows(monster({ archetype, abilities: [clash, bite] }), [id('m1')], R)[0]!.abilities.map(a => a.name);
+    expect([names('brute'), names('skirmisher'), names('caster')]).toEqual([['Strike', 'Bite'], ['Shot', 'Bite'], ['Curse', 'Bite']]);
+    expect(monsterRows(monster({ archetype: 'brute' }), [id('m1')], R)[0]!.abilities).toEqual([ARCHETYPE_ATTACKS.brute(RULES)]);
+  });
+
+  test('starts with its statuses from the rules\' defs at its joining, itself their source at its rank\'s tier; a key the rules lack is left out', () => {
+    const m = monster({ rank: 'B', statuses: [{ key: 'regenerating', rounds: null }, { key: 'nothing-known', rounds: 1 }, { key: 'poisoned', rounds: 2 }] });
+    const [a, b] = monsterRows(m, [id('m1'), id('m2')], R);
+    expect(a!.statuses).toEqual([
+      { key: statusKey('regenerating'), def: REGEN, source: { id: id('m1'), tier: 3 }, until: null, since: tick(0), settledAt: tick(0) },
+      { key: statusKey('poisoned'), def: POISONED, source: { id: id('m1'), tier: 3 }, until: tick(2000), since: tick(0), settledAt: tick(0) },
+    ]);
+    expect(b!.statuses.map(s => s.source.id)).toEqual([id('m2'), id('m2')]);
+  });
+
+  test('starts with the stacks its sheet names of a stacking status, cut to the def\'s cap; a plain status holds no count', () => {
+    const PAIN: StatusDef = { label: 'Pain', desc: '', ops: [], stack: { cap: 10, leave: { kind: 'never' }, keep: 'fight', threshold: null } };
+    const m = monster({ statuses: [{ key: 'pain', rounds: null, stacks: 3 }, { key: 'regenerating', rounds: null, stacks: 3 }] });
+    const [a] = monsterRows(m, [id('m1')], { ...R, conditions: { ...R.conditions, pain: PAIN } });
+    expect(a!.statuses.map(s => [s.key, s.stacks])).toEqual([[statusKey('pain'), 3], [statusKey('regenerating'), undefined]]);
+    const [b] = monsterRows(monster({ statuses: [{ key: 'pain', rounds: null, stacks: 15 }] }), [id('m1')], { ...R, conditions: { pain: PAIN } });
+    expect(b!.statuses[0]!.stacks).toBe(10);
+  });
+
+  test('an elite carries a stagger bar of 2.5 same-rank hits and a boss one of 4; a normal monster has none', () => {
+    for (const rank of ['E', 'C', 'S'] as const) {
+      const hit = simHit(rank);
+      expect(sameRankHit(rank, RULES)).toBe(hit);
+      expect(staggerOf(rank, 'elite', RULES)).toEqual({ fill: 0, max: 2.5 * hit, hit });
+      expect(staggerOf(rank, 'boss', RULES)).toEqual({ fill: 0, max: 4 * hit, hit });
+      expect(staggerOf(rank, 'normal', RULES)).toBeNull();
+    }
+    expect(monsterRows(monster({ rank: 'C', archetype: 'brute', kind: 'boss' }), [id('m1')], R)[0]!.stagger).toEqual({ fill: 0, max: 4 * simHit('C'), hit: simHit('C') });
+  });
+});
+
+describe('a shadow', () => {
+  test('has the body of its grade\'s kind: Normal a normal, Elite, Knight and Elite Knight an elite, Commander and Marshal a boss', () => {
+    const KIND: Record<ShadowGrade, MonsterKind> = { Normal: 'normal', Elite: 'elite', Knight: 'elite', 'Elite Knight': 'elite', Commander: 'boss', Marshal: 'boss' };
+    for (const grade of SHADOW_GRADES) {
+      const r = shadowRow(shadow({ grade, hp: 1e9 }), 'h1', id('x1'), RULES);
+      expect([grade, r.hp]).toEqual([grade, monsterSheet('C', 'brute', KIND[grade], RULES).hpMax]);
+      expect([grade, shadowSheet(shadow({ grade }), RULES).hpMax]).toEqual([grade, monsterSheet('C', 'brute', KIND[grade], RULES).hpMax]);
+    }
+  });
+
+  test('joins on the party side with its HP as its hunter keeps it and its archetype\'s attack, written back to its hunter', () => {
+    const r = shadowRow(shadow({ archetype: 'caster' }), 'h1', id('x1'), RULES);
+    expect([r.side, r.kind, r.name, r.tier, r.hp, r.xp, r.threat, r.stagger, r.statuses]).toEqual(['party', 'shadow', 'Igris', 2, 12, 0, null, null, []]);
+    expect(r.holder).toEqual({ kind: 'shadow', hunterId: hunterId('h1'), shadowId: shadowId('s1') });
+    expect(r.abilities).toEqual([ARCHETYPE_ATTACKS.caster(RULES)]);
+  });
+});
+
+test('a name past 60 characters is cut, and a pack keeps its letter', () => {
+  const long = 'x'.repeat(70);
+  expect(hunterRow(hunter({ name: long }), id('c1'), RULES).name).toBe('x'.repeat(60));
+  expect(shadowRow(shadow({ name: long }), 'h1', id('x1'), RULES).name).toBe('x'.repeat(60));
+  expect(monsterRows(monster({ name: long }), [id('m1'), id('m2')], R).map(r => r.name)).toEqual([`${'x'.repeat(58)} A`, `${'x'.repeat(58)} B`]);
+});
+
+test('every kind of row joins one fight, which starts and stores and reads back as it was', () => {
+  const ctx: Ctx = { rules: RULES, life: () => null };
+  const rows = [
+    hunterRow(hunter({ conditions: [condition('slowed', SLOWED, 2)] }), id('c1'), RULES),
+    remoteRow(hunter({ id: 'h2', name: 'Mira' }), sheetKey('dev-2:h2'), id('c2'), RULES),
+    shadowRow(shadow(), 'h1', id('x1'), RULES),
+    ...monsterRows(monster(), [id('m1'), id('m2')], R),
+    ...monsterRows(monster({ name: 'Kasaka', rank: 'D', archetype: 'brute', kind: 'boss', statuses: [{ key: 'regenerating', rounds: null }] }), [id('m3')], R),
+  ];
+  const commands: Command[] = [
+    { type: 'add', fightId: fightId('f'), rows, openings: [] },
+    { type: 'start', openings: rows.map((r, i) => ({ id: r.id, d20: 10, tie: i })) },
+  ];
+  let f: Fight | null = null;
+  for (const cmd of commands) {
+    const r = reduce(f, cmd, ctx);
+    expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
+    f = r.fight;
+  }
+  expect(f!.phase).toBe('running');
+  expect(f!.rows.map(r => r.name)).toEqual(['Brakk', 'Mira', 'Igris', 'Goblin A', 'Goblin B', 'Kasaka']);
+  expect(parseFight(JSON.parse(JSON.stringify(f)), RULES)).toEqual(f);
+});
+
+describe('a summon (kits design 1.9)', () => {
+  const R = { ...RULES, conditions: { slowed: SLOWED } };
+  const spec = { name: 'Sprite', archetype: 'skirmisher', rounds: 9, statuses: [{ key: statusKey('slowed'), rounds: 2 }, { key: statusKey('nowhere'), rounds: 1 }] } as const;
+  const row = summonRow({ id: id('c-hwei'), side: 'party', tier: 2 }, spec, id('c-sprite'), tick(3000), R);
+
+  test('is a normal monster\'s body of its archetype at its user\'s rank, with the archetype\'s attack, on its user\'s side', () => {
+    expect([row.kind, row.side, row.tier, row.origin]).toEqual(['summon', 'party', 2, { kind: 'monster', name: 'Sprite', rank: 'C', archetype: 'skirmisher', monsterKind: 'normal', tweak: { hp: 1, stats: {} } }]);
+    expect(row.abilities.map(a => a.id)).toEqual([ARCHETYPE_ATTACKS.skirmisher(RULES).id]);
+    expect([row.hp, row.xp, row.holder, row.threat, row.stagger]).toEqual([monsterSheet('C', 'skirmisher', 'normal', RULES, [{ op: 'speed', pct: -30 }]).hpMax, 0, null, null, null]);
+  });
+
+  test('is owned by its user and leaves after its rounds, at most `summonRounds`; its statuses the rules know come with it from now', () => {
+    expect([row.owner, row.until]).toEqual([id('c-hwei'), tick(3000 + F.kit.summonRounds * F.round)]);
+    expect(row.statuses.map(s => [s.key, s.until, s.source])).toEqual([['slowed', tick(3000 + 2 * F.round), { id: id('c-sprite'), tier: 2 }]]);
+  });
+
+  test('on the foes\' side keeps a threat table, as a monster does', () => {
+    expect(summonRow({ id: id('m'), side: 'foe', tier: 0 }, spec, id('s'), tick(0), R).threat).toEqual({});
+  });
+});
+
+describe('uses spent this rest (kits table 2.3)', () => {
+  test('a hunter\'s row starts with the uses its sheet spent of an ability limited a rest, and none of any other', () => {
+    const daily = { ...skill('strike', 'Daily'), gates: [{ kind: 'uses', per: 'rest', n: 1 }] } as Ability;
+    const row = hunterRow(hunter({ skills: [active(daily), active(skill('shot', 'Plain'))], used: { daily: 1, plain: 3 } }), id('c1'), RULES);
+    expect(row.used).toEqual({ daily: 1 });
+    expect(hunterRow(hunter(), id('c1'), RULES).used).toBeUndefined();
+  });
+});
+
+describe('a row knows its monster by a field, not by its name (implicit audit 3, B2 and C2)', () => {
+  test('a pack\'s rows carry their monster\'s own name in their origin, letters aside: "Type A" stays "Type A" for the codex', () => {
+    const rows = monsterRows(monster({ name: 'Type A' }), [id('m1'), id('m2')], R);
+    expect(rows.map(r => [r.name, r.origin.kind === 'monster' ? r.origin.name : null])).toEqual([['Type A A', 'Type A'], ['Type A B', 'Type A']]);
+    expect(codexKey(rows[1]!.origin.kind === 'monster' ? rows[1]!.origin.name : '', 'E')).toBe(codexKey('type a', 'E'));
+  });
+  test('a hotbar\'s pins key on a hunter\'s id and a monster\'s own name: one pack shares them, two hunters of one name do not', () => {
+    const [a, b] = monsterRows(monster({ name: 'Unit X' }), [id('m1'), id('m2')], R);
+    expect([pinKeyOf(a!), pinKeyOf(b!)]).toEqual(['monster:Unit X', 'monster:Unit X']);
+    const one = hunterRow(hunter({ id: 'h1', name: 'Kai' }), id('c1'), RULES), two = hunterRow(hunter({ id: 'h2', name: 'Kai' }), id('c2'), RULES);
+    expect([pinKeyOf(one), pinKeyOf(two)]).toEqual(['hunter:h1', 'hunter:h2']);
+  });
+});

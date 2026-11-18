@@ -1,0 +1,19 @@
+{
+  "name": "hunter-system",
+  "private": true,
+  "scripts": {
+    "start": "bun server.ts",
+    "build": "bun scripts/build.ts",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.views.json --noEmit",
+    "test": "tsc --noEmit && tsc -p tsconfig.views.json --noEmit && bun test",
+    "e2e": "playwright test",
+    "ci": "bun scripts/ci.ts",
+    "deps": "bun scripts/deps.ts",
+    "charts": "bun scripts/statecharts.ts --write",
+    "shots": "bun scripts/shots.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.49.1",
+    "typescript": "7.0.2"
+  }
+}

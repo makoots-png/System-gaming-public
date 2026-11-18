@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "checkJs": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "exactOptionalPropertyTypes": false
+  },
+  "include": ["src/views/**/*.js", "src/app.js", "types/**/*.d.ts"],
+  "exclude": ["node_modules", "dist", ".claude"]
+}

@@ -1,0 +1,523 @@
+/* ── The Hunter System: single dark "System" theme. No external fonts: system stacks only. ── */
+:root{
+  color-scheme:dark;
+  --ground:#04070f;
+  --panel:rgba(8,20,38,.82);
+  --panel-solid:#081426;
+  --line:#1b4a6e; /* rules and panel borders only */
+  --edge:#3f7fb0; /* the edge of a field or button: 4.4 to 1 on --panel */
+  --control-h:44px; /* a touch target */
+  --z-toast:60;
+  --ts:1; /* text scale; it and the accent (--acc-rgb …) come from the device-pref rules below */
+  --line-bright:rgb(var(--acc2-rgb));
+  --cyan:rgb(var(--acc-rgb));
+  --cyan-dim:#8ab8d6;
+  --muted:#7f9db5;
+  --ice:#dff3ff;
+  --gold:#ffc94d;
+  --red:#ff4d5e;
+  --mp:#4d8cff;
+  --xp:#ffc94d;
+  --green:#59e6a8;
+  --purple:#c79bff;
+  --warm:#ff8a5c; /* the map's shade for an ability aimed at a foe or a place: warm, never brown; one aimed at an ally is --green */
+  /* a wall and cover on the map and in the map maker: a solid block, its lit top edge and its shadowed foot (cover is the same block at half height) */
+  --wall-face:color-mix(in srgb,var(--line-bright) 34%,var(--panel-solid)); --wall-top:color-mix(in srgb,var(--line-bright) 80%,var(--ice)); --wall-foot:color-mix(in srgb,var(--ground) 70%,transparent);
+  --rank-e:#9fb6c9; --rank-d:#59e6a8; --rank-c:#4dd8ff; --rank-b:#4d8cff; --rank-a:#c79bff; --rank-s:#ffc94d;
+  --rar-common:#9fb6c9; --rar-uncommon:#59e6a8; --rar-rare:#4dd8ff; --rar-epic:#c79bff; --rar-legendary:#ffc94d; --rar-mythic:#ff6b3d;
+  --nav-h:60px;
+  --rail-w:64px;
+  --sat:env(safe-area-inset-top,0px); --sar:env(safe-area-inset-right,0px); --sab:env(safe-area-inset-bottom,0px); --sal:env(safe-area-inset-left,0px);
+  --content-max:1120px;
+  --font-display:system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
+  --font-body:system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
+  --font-mono:ui-monospace,'SF Mono',Consolas,'Liberation Mono',Menlo,monospace;
+  /* Motion: the only times and easings in the app. src/views/motion.ts reads them; the Motion block below uses them. */
+  --t-fast:120ms; /* a press or a chip: answers within the ~100 ms a touch still feels instant, and is seen */
+  --t-base:200ms; /* a window, a toast, a slide: long enough to follow where it came from, short enough never to wait on */
+  --t-slow:320ms; /* a bar or a number: the eye needs about a third of a second to read how far it moved */
+  --t-breath:3.2s; /* one breath of a lasting field on the map: slow enough to read as alive, never as a warning */
+  --t-hold:350ms; /* a press and hold that reads a hotbar ability: past a tap (a tap lifts within ~250 ms), short of a wait */
+  --ease-arrive:cubic-bezier(.2,.8,.2,1); /* leaves fast and settles: what arrives answers at once and lands softly */
+  --ease-leave:cubic-bezier(.4,0,1,1); /* leaves gently and speeds away: what goes does not snap, and is gone quickly */
+  --ease-pop:cubic-bezier(.34,1.56,.64,1); /* overshoots about 10% and settles: a pop for something new that matters */
+  --ease-sway:cubic-bezier(.45,0,.55,1); /* even both ways: a breath has no arrival */
+}
+/* Device accent + text size: the only copy of these values. <html data-accent/data-ts> is set from hunter-system-prefs by the
+   inline script in index.html (before first paint) and by custom.js; swatches reuse the same rules. acc2 = .85, deep = .3, deep2 = .45 of acc. */
+:root,[data-accent=cyan]{--acc-rgb:77,216,255;--acc2-rgb:63,192,255;--deep-rgb:20,80,130;--deep2-rgb:31,120,180}
+[data-accent=violet]{--acc-rgb:199,155,255;--acc2-rgb:169,132,217;--deep-rgb:60,47,77;--deep2-rgb:90,70,115}
+[data-accent=gold]{--acc-rgb:255,201,77;--acc2-rgb:217,171,65;--deep-rgb:77,60,23;--deep2-rgb:115,90,35}
+[data-accent=emerald]{--acc-rgb:89,230,168;--acc2-rgb:76,196,143;--deep-rgb:27,69,50;--deep2-rgb:40,104,76}
+[data-accent=crimson]{--acc-rgb:255,107,122;--acc2-rgb:217,91,104;--deep-rgb:77,32,37;--deep2-rgb:115,48,55}
+:root[data-ts="1.15"]{--ts:1.15}:root[data-ts="1.3"]{--ts:1.3}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+/* Chrome breakpoints (M1). Phone: (max-width:720px). Landscape phone, one exact string reused everywhere:
+   @media (min-width:721px) and (max-width:1099px) and (max-height:500px)
+   Modal scroll lock: any open modal overlay stops the page behind it from scrolling (works for every module, no bookkeeping). */
+html:has(.overlay.show),html:has(.ob-overlay){overflow:hidden;scrollbar-gutter:stable}
+body{
+  background:var(--ground);
+  background-image:
+    radial-gradient(1200px 600px at 50% -10%, rgba(var(--deep2-rgb),.16), transparent 60%),
+    radial-gradient(900px 500px at 85% 110%, rgba(var(--deep2-rgb),.10), transparent 60%),
+    repeating-linear-gradient(0deg, rgba(var(--acc-rgb),.025) 0 1px, transparent 1px 44px),
+    repeating-linear-gradient(90deg, rgba(var(--acc-rgb),.025) 0 1px, transparent 1px 44px);
+  color:var(--ice);
+  font-family:var(--font-body);
+  font-size:calc(15px*var(--ts));
+  line-height:1.5;
+  min-height:100vh;min-height:100dvh;
+  -webkit-tap-highlight-color:transparent; /* the browser's own blue tap flash drew over a window the tap opened; buttons show their own pressed state */
+  padding:calc(16px + var(--sat)) calc(16px + var(--sar)) 40px calc(16px + var(--sal));
+}
+.wrap{max-width:var(--content-max);margin:0 auto}
+/* the browser's own <small> is .83 of its line: under a 13 or 14 px line that drew 10.8 to 11.6 px, under the 12 px a phone needs */
+small{font-size:max(calc(12px*var(--ts)),.85em)}
+[hidden]{display:none!important}
+.slot{display:contents} /* a part of a template that updates in place (src/views/patch.ts): its children lay out as its parent's */
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+code{font-family:var(--font-mono);font-size:calc(13px*var(--ts));color:var(--cyan)}
+
+/* ── System header ── */
+.sys-head{max-width:var(--content-max);margin:0 auto 14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:14px}
+.sys-bang{
+  width:40px;height:40px;flex:0 0 auto;border:2px solid var(--cyan);border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--font-display);font-weight:700;font-size:calc(24px*var(--ts));color:var(--cyan);
+  text-shadow:0 0 12px rgba(var(--acc-rgb),.9);
+  box-shadow:0 0 14px rgba(var(--acc-rgb),.55), inset 0 0 10px rgba(var(--acc-rgb),.25);position:relative;
+}
+.sys-title{
+  font-family:var(--font-display);font-weight:700;font-size:calc(28px*var(--ts));letter-spacing:.4em;
+  text-transform:uppercase;color:var(--ice);text-shadow:0 0 18px rgba(var(--acc-rgb),.65);
+}
+.head-ctl{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.hunter-sel{max-width:200px}
+.pill{
+  border-radius:999px;padding:3px 14px;letter-spacing:.18em;font-size:calc(13px*var(--ts));
+  border-color:var(--line-bright);color:var(--cyan);
+}
+.pill.gm{border-color:var(--gold);color:var(--gold);box-shadow:0 0 8px rgba(255,201,77,.35)}
+#sync-pill:empty{display:none}
+
+/* banners */
+.banner{
+  max-width:var(--content-max);margin:0 auto 10px;padding:9px 14px;font-size:calc(13px*var(--ts));color:#ffd5d9;
+  border:1px solid rgba(255,77,94,.7);background:rgba(90,12,24,.55);
+}
+
+/* ── Nav: top tabs (desktop), bottom bar (mobile) ── */
+.nav-top{max-width:var(--content-max);margin:0 auto 18px;display:flex;flex-wrap:wrap;gap:6px;border-bottom:1px solid var(--line);padding-bottom:8px}
+.tab{
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:40px;padding:6px 14px;
+  font-family:var(--font-display);font-weight:600;letter-spacing:.12em;text-transform:uppercase;font-size:calc(13px*var(--ts));
+  color:var(--cyan-dim);text-decoration:none;background:transparent;border:1px solid transparent;cursor:pointer;
+}
+.tab:hover{color:var(--cyan);border-color:var(--line)}
+.tab[aria-current=page],.tab.on{color:var(--cyan);border-color:var(--line-bright);background:rgba(17,42,70,.7);box-shadow:0 0 10px rgba(var(--acc-rgb),.25)}
+.tab:focus-visible{outline:2px solid var(--cyan);outline-offset:1px}
+.tab .ni{font-size:calc(16px*var(--ts));line-height:1}
+/* A20: the text views read at about 70 characters a line */
+:is(#view-rules,#view-data) > :is(.view-main,.panels){max-width:74ch;margin-inline:auto}
+/* A19: the GM's thirteen views fit one row at 1280 */
+.nav-top{gap:2px}
+.nav-top .tab{padding:6px 7px;gap:4px;letter-spacing:.05em}
+.nav-bottom{display:none}
+
+#main:focus{outline:none}
+.view[hidden]{display:none}
+.panels{display:grid;gap:18px;grid-template-columns:repeat(auto-fit,minmax(min(100%,430px),1fr));align-items:start}
+.view-main:not(:empty){margin-bottom:18px}
+
+/* ── Window panels ── */
+.win{
+  position:relative;background:var(--panel);border:1px solid var(--line);
+  box-shadow:0 0 0 1px rgba(var(--acc2-rgb),.08), 0 0 28px rgba(var(--deep-rgb),.25), inset 0 0 60px rgba(var(--deep-rgb),.12);
+  padding:18px 20px 20px;min-width:0;
+}
+.win::before,.win::after,.win .cb::before,.win .cb::after,
+.sys-window::before,.sys-window::after,.sys-window .cb::before,.sys-window .cb::after{
+  content:"";position:absolute;width:14px;height:14px;border:2px solid var(--line-bright);
+  filter:drop-shadow(0 0 4px rgba(var(--acc2-rgb),.7));
+}
+.win::before,.sys-window::before{top:-2px;left:-2px;border-right:none;border-bottom:none}
+.win::after,.sys-window::after{top:-2px;right:-2px;border-left:none;border-bottom:none}
+.win .cb::before,.sys-window .cb::before{bottom:-2px;left:-2px;border-right:none;border-top:none}
+.win .cb::after,.sys-window .cb::after{bottom:-2px;right:-2px;border-left:none;border-top:none}
+
+.win h2{
+  margin:0 0 14px;font-family:var(--font-display);font-weight:600;font-size:calc(15px*var(--ts));
+  letter-spacing:.3em;text-transform:uppercase;color:var(--cyan);
+  text-shadow:0 0 10px rgba(var(--acc-rgb),.55);
+  display:flex;align-items:center;gap:10px;
+}
+.win h2::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--line-bright),transparent);opacity:.5}
+.win p{margin:0 0 10px}
+
+/* ── Labels, fields ── */
+.lbl{font-size:calc(12px*var(--ts));letter-spacing:.18em;text-transform:uppercase;color:var(--cyan-dim)}
+.field{display:flex;flex-direction:column;gap:3px;min-width:0}
+.id-row{display:flex;flex-wrap:wrap;gap:8px 16px;margin-bottom:14px}
+.id-item{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1 1 140px}
+.id-input{
+  font-family:var(--font-display);font-weight:600;font-size:calc(18px*var(--ts));color:var(--ice);
+  background:transparent;border:0;border-bottom:1px dashed rgba(var(--acc-rgb),.35);padding:2px 0;min-width:0;width:100%;
+}
+.id-input:hover{border-bottom-color:rgba(var(--acc-rgb),.7)}
+.id-input:focus{outline:none;border-bottom-color:var(--cyan);box-shadow:none}
+
+/* ── Rank + rarity ── */
+.rank-badge{
+  display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:26px;padding:0 7px;font-family:var(--font-display);font-weight:700;
+  font-size:calc(15px*var(--ts));border:1px solid currentColor;color:var(--rank-e);text-shadow:0 0 8px currentColor;
+}
+.rank-E{color:var(--rank-e)}.rank-D{color:var(--rank-d)}.rank-C{color:var(--rank-c)}.rank-B{color:var(--rank-b)}.rank-A{color:var(--rank-a)}.rank-S{color:var(--rank-s)}
+.rar{font-size:calc(12px*var(--ts));letter-spacing:.14em;text-transform:uppercase;padding:1px 7px;border:1px solid;white-space:nowrap}
+.rar-common{color:var(--rar-common);border-color:#3d566b}
+.rar-uncommon{color:var(--rar-uncommon);border-color:rgba(89,230,168,.5)}
+.rar-rare{color:var(--rar-rare);border-color:rgba(var(--acc-rgb),.5)}
+.rar-epic{color:var(--rar-epic);border-color:rgba(199,155,255,.5)}
+.rar-legendary{color:var(--rar-legendary);border-color:rgba(255,201,77,.55)}
+.rar-mythic{color:var(--rar-mythic);border-color:rgba(255,107,61,.65);text-shadow:0 0 8px rgba(255,107,61,.6)}
+
+/* ── Status window ── */
+.lv-block{display:flex;align-items:center;gap:16px;margin:6px 0 16px}
+.lv-num{
+  font-family:var(--font-display);font-weight:700;font-size:calc(56px*var(--ts));line-height:1;color:var(--ice);
+  text-shadow:0 0 20px rgba(var(--acc-rgb),.7);
+}
+.lv-tag{font-size:calc(12px*var(--ts));letter-spacing:.3em;text-transform:uppercase;color:var(--cyan)}
+.xp-wrap{flex:1;min-width:140px}
+.xp-pct{margin-left:6px;letter-spacing:0;color:var(--xp);font-family:var(--font-mono)}
+
+.bar-row{margin:10px 0}
+.bar-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;gap:8px}
+.bar-nums{font-family:var(--font-mono);font-size:calc(13px*var(--ts));color:var(--ice);display:inline-flex;align-items:center;gap:6px}
+.bar{height:12px;background:rgba(6,14,26,.9);border:1px solid var(--line);position:relative;overflow:hidden}
+.bar>i{
+  display:block;height:100%;width:100%;position:relative;transform-origin:0 50%;transform:scaleX(var(--f,1));
+  background:linear-gradient(90deg,rgba(255,255,255,.18),rgba(255,255,255,0) 40%),var(--bar-c,var(--cyan));
+  box-shadow:0 0 10px var(--bar-c,var(--cyan));
+}
+.bar-hp{--bar-c:var(--red)}
+.bar-mp,.bar-mana{--bar-c:var(--mp)}
+.bar-xp{--bar-c:var(--xp)}
+.bar-ft{--bar-c:#b78cff}
+.bar-ctrl{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+
+/* ── Buttons ── */
+button{
+  font-family:var(--font-display);font-weight:600;letter-spacing:.06em;
+  background:rgba(17,42,70,.85);color:var(--ice);border:1px solid var(--edge);
+  padding:4px 11px;font-size:calc(13px*var(--ts));cursor:pointer;
+}
+button:hover{border-color:var(--cyan);color:var(--cyan);box-shadow:0 0 8px rgba(var(--acc-rgb),.4)}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--cyan);outline-offset:1px}
+button:disabled{opacity:.35;cursor:default;box-shadow:none}
+/* four kinds: plain (above), primary (one per window: the action it exists for), quiet (text only), danger (destroys something) */
+button.primary{background:var(--cyan);border-color:var(--cyan);color:var(--ground)}
+button.primary:hover{background:var(--cyan);color:var(--ground);box-shadow:0 0 12px rgba(var(--acc-rgb),.6)}
+button.danger{border-color:var(--red);color:var(--red)}
+button.danger:hover{border-color:var(--red);color:var(--red);box-shadow:0 0 8px rgba(255,77,94,.4)}
+button.primary.danger,button.primary.danger:hover{background:var(--red);color:var(--ground)}
+button.quiet{background:none;border-color:transparent;color:var(--cyan-dim)}
+button.quiet:hover{border-color:transparent;box-shadow:none}
+/* a one-of-n choice (the makers' modes, Items and Shop, the quest tabs, Adv Normal Dis): the chosen one is filled, as a pressed chip */
+.seg{display:flex;flex-wrap:wrap;gap:4px}
+.seg>button{flex:1 1 auto}
+.seg>button[aria-pressed=true],.seg>button[aria-selected=true],button.mk-chip[aria-pressed=true]{background:var(--cyan);border-color:var(--cyan);color:var(--ground);box-shadow:none}
+/* a square button holding one glyph, such as the "×" that removes a row */
+.icon-btn{flex:0 0 var(--control-h);min-width:var(--control-h);min-height:var(--control-h);padding:0;font-size:calc(18px*var(--ts));line-height:1}
+button.linkish{background:none;border:0;border-bottom:1px dashed var(--cyan-dim);padding:0 2px;min-height:0;color:var(--ice);font-family:var(--font-mono);font-size:calc(13px*var(--ts))}
+
+/* stats grid */
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:16px}
+.stat{border:1px solid var(--line);background:rgba(10,26,46,.6);padding:8px 10px;text-align:center;position:relative}
+.stat .s-name{font-size:calc(12px*var(--ts));letter-spacing:.22em;text-transform:uppercase;color:var(--cyan-dim)}
+.stat .s-alias{font-size:calc(12px*var(--ts));color:var(--muted)}
+.stat .s-val{font-family:var(--font-display);font-weight:700;font-size:calc(30px*var(--ts));line-height:1.1;color:var(--ice)}
+.stat .s-mod{font-family:var(--font-mono);font-size:calc(13px*var(--ts));color:var(--cyan)}
+.stat .s-btns{display:flex;justify-content:center;gap:6px;margin-top:4px}
+.ap-row{display:flex;align-items:center;gap:10px;margin-top:14px;flex-wrap:wrap}
+.ap-num{font-family:var(--font-display);font-weight:700;font-size:calc(22px*var(--ts));color:var(--gold);text-shadow:0 0 10px rgba(255,201,77,.5)}
+
+/* ── Lists: quests, skills, items ── */
+ul.plain{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.quest{
+  border:1px solid var(--line);background:rgba(10,26,46,.55);padding:9px 12px;
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+}
+.quest.done{opacity:.55}
+.quest.done .q-text{text-decoration:line-through}
+.q-text{flex:1 1 160px;min-width:0;overflow-wrap:anywhere}
+.q-xp{font-family:var(--font-mono);font-size:calc(13px*var(--ts));color:var(--gold);white-space:nowrap}
+.q-daily{font-size:calc(12px*var(--ts));letter-spacing:.16em;color:var(--red);border:1px solid rgba(255,77,94,.5);padding:1px 6px;text-transform:uppercase;white-space:nowrap}
+.q-acts{display:flex;gap:6px;margin-left:auto}
+.warn{
+  margin-top:12px;font-size:calc(13px*var(--ts));color:#ff9aa5;border:1px solid rgba(255,77,94,.4);
+  background:rgba(60,10,18,.35);padding:8px 12px;letter-spacing:.03em;display:none;
+}
+.warn.show{display:block}
+.skill,.item{border:1px solid var(--line);background:rgba(10,26,46,.55);padding:8px 12px;display:flex;align-items:center;gap:10px}
+.skill .s-title,.item .i-name{flex:1;min-width:0;overflow-wrap:anywhere;font-weight:600}
+.skill .s-rank{font-family:var(--font-mono);font-size:calc(13px*var(--ts));color:var(--cyan)}
+.empty{color:var(--muted);font-size:calc(13px*var(--ts));font-style:italic;padding:4px 0}
+
+.add-row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:flex-end}
+.add-row .grow{flex:1 1 170px;min-width:0}
+.add-row .sm{flex:0 0 92px;min-width:0}
+.add-row .md{flex:0 0 128px;min-width:0}
+.add-row .field{width:100%}
+.add-row > button{min-height:var(--control-h);min-width:var(--control-h)}
+.field.chk{flex-direction:row;align-items:center;gap:6px;min-height:var(--control-h)} /* a checkbox and its words in a row of fields */
+.row-full{flex:1 1 100%} /* a field that takes a whole line of a wrapping row */
+.flush{margin-top:0}
+.lbl.sec{display:block;margin-top:12px} /* a label that starts a part of a panel */
+.note{font-size:calc(13px*var(--ts));color:var(--cyan-dim)}
+input[type=text],input[type=number],select,textarea{
+  font-family:var(--font-body);font-size:calc(14px*var(--ts));color:var(--ice);
+  background:rgba(6,14,26,.9);border:1px solid var(--edge);padding:6px 9px;min-width:0;
+}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--cyan);box-shadow:0 0 8px rgba(var(--acc-rgb),.3)}
+input::placeholder{color:#7a98b0}
+input[type=number]{font-family:var(--font-mono)}
+select{cursor:pointer}
+
+/* ── Dice ── */
+.dice-btns{display:flex;flex-wrap:wrap;gap:8px}
+.dice-btns button{font-family:var(--font-mono);font-size:calc(14px*var(--ts));padding:6px 12px}
+/* A30: at 360 the seven dice share one row instead of dropping d100 to a row of its own */
+@media (max-width:430px){.dice-btns{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}.dice-btns button{padding:6px 0;min-height:var(--control-h)}}
+.mod-row{display:flex;align-items:flex-end;gap:12px;margin-top:10px;flex-wrap:wrap}
+.mod-row .field{width:92px}
+.roll-out{
+  margin:14px 0 4px;text-align:center;border:1px solid var(--line);background:rgba(6,14,26,.7);
+  padding:12px;min-height:86px;display:flex;flex-direction:column;justify-content:center;gap:2px;
+}
+.roll-total{font-family:var(--font-display);font-weight:700;font-size:calc(44px*var(--ts));line-height:1;color:var(--ice);text-shadow:0 0 16px rgba(var(--acc-rgb),.6)}
+.roll-total.crit{color:var(--gold);text-shadow:0 0 18px rgba(255,201,77,.8)}
+.roll-total.fail{color:var(--red);text-shadow:0 0 18px rgba(255,77,94,.8)}
+.roll-detail{font-family:var(--font-mono);font-size:calc(13px*var(--ts));color:var(--cyan-dim)}
+.roll-hist{font-family:var(--font-mono);font-size:calc(13px*var(--ts));color:var(--cyan-dim);margin-top:8px;line-height:1.8;overflow-wrap:anywhere}
+
+/* ── System window popups (ui.system) ── */
+.overlay{position:fixed;inset:0;background:rgba(2,6,12,.78);display:none;align-items:center;justify-content:center;z-index:50;--ovp:16px;padding:calc(var(--ovp) + var(--sat)) calc(var(--ovp) + var(--sar)) calc(var(--ovp) + var(--sab)) calc(var(--ovp) + var(--sal));overscroll-behavior:contain}
+.overlay.show{display:flex}
+.sys-window{
+  position:relative;background:var(--panel-solid);border:1px solid var(--line-bright);
+  box-shadow:0 0 40px rgba(var(--acc2-rgb),.5), inset 0 0 40px rgba(var(--deep-rgb),.3);
+  padding:30px 34px 26px;text-align:center;width:min(480px,100%);max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px - var(--sat) - var(--sab));overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
+}
+.sys-window .n-tag,.toast .t-tag{font-size:calc(12px*var(--ts));letter-spacing:.3em;text-transform:uppercase;font-weight:600}
+.sys-window .n-tag{color:var(--cyan);margin-bottom:12px}
+.sys-window .n-big{display:block;font-family:var(--font-display);font-weight:700;font-size:calc(34px*var(--ts));line-height:1.15;letter-spacing:.14em;text-transform:uppercase;color:var(--ice);text-shadow:0 0 24px rgba(var(--acc-rgb),.8);margin:0 0 12px}
+.sys-window .n-big::after{display:none}
+.confirm-all{border-color:var(--gold);color:var(--gold)}
+.sys-window .n-body{color:var(--cyan-dim);font-size:calc(14px*var(--ts));margin:0 0 14px}
+.sys-lines{list-style:none;margin:0 0 14px;padding:0;color:var(--gold);font-weight:600;font-size:calc(16px*var(--ts))}
+.sys-rw-h{margin:4px 0 6px}
+.sys-rewards{list-style:none;margin:0 0 16px;padding:0;display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+.sys-rewards li{border:1px solid rgba(255,201,77,.5);color:var(--gold);padding:2px 10px;font-size:calc(13px*var(--ts));font-family:var(--font-mono)}
+.sys-field{text-align:left;margin:4px 0 6px}
+.sys-input{width:100%;font-size:calc(18px*var(--ts))}
+.sys-err{min-height:20px;color:var(--red);font-size:calc(13px*var(--ts));margin-bottom:8px;text-align:left}
+.sys-actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:6px}
+.sys-actions.list{flex-direction:column}
+.sys-actions.list button{text-align:left;padding:8px 14px;min-height:44px}
+.sys-window.k-warning,.sys-window.k-penalty{border-color:var(--red);box-shadow:0 0 40px rgba(255,77,94,.45), inset 0 0 40px rgba(110,16,30,.3)}
+.sys-window.k-warning .n-tag,.sys-window.k-penalty .n-tag,.sys-window.k-warning .n-big,.sys-window.k-penalty .n-big{color:#ff8a96;text-shadow:0 0 22px rgba(255,77,94,.8)}
+.sys-window.k-warning::before,.sys-window.k-warning::after,.sys-window.k-warning .cb::before,.sys-window.k-warning .cb::after,
+.sys-window.k-penalty::before,.sys-window.k-penalty::after,.sys-window.k-penalty .cb::before,.sys-window.k-penalty .cb::after{border-color:var(--red)}
+.sys-window.k-quest .n-big{color:var(--cyan)}
+.sys-window.k-levelup{border-color:var(--gold);box-shadow:0 0 44px rgba(255,201,77,.4), inset 0 0 40px rgba(110,80,10,.25)}
+.sys-window.k-levelup .n-big{color:var(--gold);text-shadow:0 0 24px rgba(255,201,77,.8)}
+.sys-window.k-arise{border-color:var(--purple);box-shadow:0 0 50px rgba(160,100,255,.55), inset 0 0 40px rgba(60,20,110,.4)}
+.sys-window.k-arise .n-big{color:var(--purple);text-shadow:0 0 26px rgba(160,100,255,.9)}
+
+/* ── Toasts ── */
+/* Bottom right above the dice button on a desktop, above the bottom bar on a phone; at most two (ui.toast). While a window
+   or the dice sheet is open the box moves to the top of the screen, so it never covers their buttons. */
+.toast-box{position:fixed;bottom:calc(84px + var(--sab));right:calc(14px + var(--sar));display:flex;flex-direction:column;gap:8px;z-index:var(--z-toast);max-width:min(340px,86vw);pointer-events:none}
+/* a fight on the map: news goes to the top, off the map's dock (Use, Cancel) and its hotbar */
+html:has(.overlay.show) .toast-box,html:has(.ob-overlay) .toast-box,html:has(.dx-sheet:not([hidden])) .toast-box,html:has(.view:not([hidden]) [data-mapbox]:not([hidden]) .mp) .toast-box{bottom:auto;top:calc(8px + var(--sat))}
+.toast{
+  pointer-events:auto;display:flex;align-items:center;gap:10px;flex-wrap:nowrap;
+  background:var(--panel-solid);border:1px solid var(--line-bright);color:var(--ice);
+  padding:8px 8px 8px 14px;font-size:calc(13px*var(--ts));box-shadow:0 0 18px rgba(var(--acc2-rgb),.4);
+}
+.toast .t-tag{color:var(--cyan)}
+.toast .t-msg{flex:1;min-width:0;overflow-wrap:anywhere}
+.toast .t-x{padding:0 8px;font-size:calc(16px*var(--ts));line-height:1.2;min-height:28px;border-color:transparent;background:none}
+/* a held toast's Undo (ui.toast `hold`): a full target, since it is the one way back */
+.toast .t-undo{min-height:var(--control-h);padding:0 14px;border-color:var(--cyan);color:var(--cyan);flex:0 0 auto}
+.toast-warning{border-color:var(--red)}.toast-warning .t-tag{color:#ff8a96}
+
+.foot{max-width:var(--content-max);margin:22px auto 0;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
+.foot small{color:var(--muted);font-size:calc(12px*var(--ts));letter-spacing:.05em}
+.data-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center}
+/* the sticky action bar of a long form (the Award form, the quest form, a System window form): Cancel or Close left,
+   the action right, in view while the form scrolls */
+.dlg-actions{position:sticky;bottom:0;z-index:2;display:flex;gap:10px;align-items:center;justify-content:flex-end;margin-top:10px;padding:10px 0;background:var(--panel-solid);border-top:1px solid var(--line)}
+.view .dlg-actions{padding-right:48px} /* clear of the dice button, which phones do not show */
+
+@media (max-width:720px){
+  body{padding:calc(12px + var(--sat)) calc(12px + var(--sar)) calc(var(--nav-h) + var(--sab) + 28px) calc(12px + var(--sal))}
+  html{scroll-padding-bottom:calc(var(--nav-h) + var(--sab) + 12px)}
+  .sys-title{font-size:calc(22px*var(--ts));letter-spacing:.3em}
+  .sys-bang{width:34px;height:34px;font-size:calc(20px*var(--ts))}
+  .nav-top{display:none}
+  .nav-bottom{
+    display:flex;position:fixed;left:0;right:0;bottom:0;z-index:40;height:calc(var(--nav-h) + var(--sab));
+    background:#050c18;box-shadow:0 -1px 0 var(--line-bright), 0 -4px 24px rgba(var(--deep-rgb),.4);
+    padding:0 var(--sar) var(--sab) var(--sal);
+  }
+  .nav-bottom .tab{flex:1 1 0;min-width:44px;overflow:hidden;flex-direction:column;gap:0;min-height:var(--nav-h);padding:4px 2px;font-size:calc(12px*var(--ts));letter-spacing:.06em;border:0;border-top:2px solid transparent}
+  .nav-bottom .tab[aria-current=page],.nav-bottom .tab.on{border-top-color:var(--cyan);box-shadow:none}
+  .nav-bottom .tab[aria-expanded=true]{color:var(--cyan);border-top-color:var(--cyan)}
+  /* A30: one lit tab. While the dice sheet is open its tab is the lit one, and the view behind it steps back. */
+  .nav-bottom:has(.tab[aria-expanded=true]) .tab[aria-current=page]{color:var(--muted);border-top-color:transparent;background:none;box-shadow:none}
+  .nav-bottom .tab .ni{font-size:calc(20px*var(--ts))}
+  .win{padding:16px 14px 16px}
+  .stats{gap:8px}
+  .stat{padding:8px 4px}
+  .stat .s-btns{gap:2px} /* two 44px buttons fit a third of a 375px screen */
+  .panels{grid-template-columns:minmax(0,1fr)}
+  .lv-num{font-size:calc(46px*var(--ts))}
+  .q-text{flex:1 1 100%}
+  .q-acts{margin-left:0;width:100%}
+  .q-acts button{flex:1}
+  .sys-window{padding:26px 18px 20px}
+  .sys-window .n-big{font-size:calc(26px*var(--ts))}
+  .brand .sys-title{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap} /* wordmark stays for screen readers */
+  body #view-combat .panels:has([data-live]){bottom:calc(var(--nav-h) + var(--sab))}
+  .view .dlg-actions{bottom:calc(var(--nav-h) + var(--sab))}
+  .dlg-actions>button{flex:1 1 0}
+}
+/* Touch chrome shared by phones and landscape phones: one-row header, full-width toasts, nav inset math */
+@media (max-width:720px),(min-width:721px) and (max-width:1099px) and (max-height:500px){
+  .sys-head{flex-wrap:nowrap;gap:8px}
+  .brand{gap:0;flex:0 0 auto}
+  .head-ctl{flex:1 1 0;min-width:0;flex-wrap:nowrap;gap:6px;justify-content:flex-end}
+  .head-ctl .hunter-sel{flex:1 1 0;min-width:0;max-width:none;min-height:44px;padding:6px 4px;text-overflow:ellipsis}
+  .head-ctl .pill{flex:0 0 auto;min-height:44px;min-width:44px;padding:0 8px;letter-spacing:.06em}
+  .head-ctl .help-btn{padding:0}
+  #sync-pill{display:flex;flex:0 1 auto;min-width:0}
+  #sync-pill:empty{display:none}
+  #sync-pill .pill{display:flex;align-items:center;justify-content:center;text-align:center;min-height:44px;min-width:44px;max-width:96px;padding:0 6px;letter-spacing:.02em;line-height:1.15;white-space:normal;overflow-wrap:anywhere}
+  .toast-box{bottom:calc(var(--nav-h) + var(--sab) + 8px);left:calc(12px + var(--sal));right:calc(12px + var(--sar));max-width:none;gap:6px}
+  .toast{padding:0 0 0 12px}
+  .toast .t-x{margin:-2px 0}
+  .overlay.mk-overlay{--ovp:8px}
+  nav.jump-chips{top:var(--sat)}
+  .view .dlg-actions{padding-right:0}
+}
+@media (min-width:721px) and (max-width:1099px) and (max-height:500px){
+  body{padding:calc(8px + var(--sat)) calc(12px + var(--sar)) calc(24px + var(--sab)) calc(var(--rail-w) + var(--sal) + 12px)}
+  .nav-top{display:none}
+  .nav-bottom{
+    display:flex;flex-direction:column;position:fixed;left:0;top:0;bottom:0;z-index:40;width:calc(var(--rail-w) + var(--sal));
+    background:#050c18;border-right:1px solid var(--line-bright);box-shadow:4px 0 24px rgba(var(--deep-rgb),.4);
+    padding:var(--sat) 0 var(--sab) var(--sal);overflow-y:auto;overscroll-behavior:contain;
+  }
+  .nav-bottom .tab{flex:0 0 auto;width:100%;min-width:44px;min-height:52px;overflow:hidden;flex-direction:column;gap:0;padding:4px 2px;font-size:calc(12px*var(--ts));letter-spacing:.04em;border:0;border-left:2px solid transparent}
+  .nav-bottom .tab[aria-current=page],.nav-bottom .tab.on{border-left-color:var(--cyan);box-shadow:none}
+  .nav-bottom .tab[aria-expanded=true]{color:var(--cyan);border-left-color:var(--cyan)}
+  .nav-bottom:has(.tab[aria-expanded=true]) .tab[aria-current=page]{color:var(--muted);border-left-color:transparent;background:none;box-shadow:none}
+  .nav-bottom .tab .ni{font-size:calc(20px*var(--ts))}
+  .sys-head{margin-bottom:8px}
+  .sys-title{font-size:calc(18px*var(--ts));letter-spacing:.25em}
+  .sys-bang{width:32px;height:32px;font-size:calc(18px*var(--ts))}
+  .brand{gap:10px}
+  .toast-box{left:auto;bottom:calc(8px + var(--sab));right:calc(12px + var(--sar));width:min(340px,calc(100vw - var(--rail-w) - var(--sal) - var(--sar) - 24px));max-width:340px}
+  nav.jump-chips{position:static}
+  .overlay{--ovp:8px}
+  .sys-window{padding:16px 20px 14px}
+  .overlay .sys-window,.overlay .sys-window.mk-win{max-height:calc(100vh - 16px);max-height:calc(100dvh - 16px - var(--sat) - var(--sab))}
+  .sys-window .n-big{font-size:calc(24px*var(--ts))}
+  .sys-window .n-body,.sys-lines{margin-bottom:8px}
+}
+/* Touch sizing (M2): ONE condition for every 44px / 16px rule, in app.css and in module CSS */
+@media (pointer:coarse),(max-width:720px){
+  button,summary,.tab,a[data-to]{min-height:var(--control-h);min-width:var(--control-h)}
+  button.linkish{min-height:44px;align-self:center;border-bottom:0;text-decoration:underline dashed var(--cyan-dim) 1px;text-underline-offset:4px;margin:-14px 0;padding:0 2px}
+  input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):not([type=color]):not([type=hidden]),select,textarea{min-height:var(--control-h);font-size:calc(16px*var(--ts))}
+  label:has(>input[type=checkbox]),label:has(>input[type=radio]){min-height:44px;display:inline-flex;align-items:center;gap:8px}
+  .toast .t-x{min-height:44px}
+}
+/* ── Desktop (D01, B1–B4): only these two breakpoints exist for desktop ── */
+.kbd-hint{display:none}
+.skip-link{position:absolute;left:8px;top:-60px;z-index:100;background:var(--panel-solid);color:var(--cyan);border:1px solid var(--cyan);padding:8px 14px;text-decoration:none;font-weight:600}
+.skip-link:focus{top:8px}
+.dlg-cols{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
+.kbd-list{list-style:none;margin:0 0 12px;padding:0;text-align:left}
+.kbd-list li{display:flex;gap:14px;align-items:baseline;padding:4px 0;border-bottom:1px solid rgba(27,74,110,.5)}
+.kbd-list kbd,.kbd-hint kbd{font-family:var(--font-mono);font-size:calc(12px*var(--ts));color:var(--cyan);border:1px solid var(--line-bright);padding:0 6px;min-width:1.6em;text-align:center;display:inline-block}
+.kbd-list .kl{flex:1;min-width:0}
+.kbd-grp{margin:12px 0 4px;text-align:left}
+@media (min-width:1100px){
+  :root{--content-max:1360px}
+  body{padding:calc(16px + var(--sat)) calc(24px + var(--sar)) 40px calc(24px + var(--sal))}
+  .dk-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:start}
+  .dk-grid>*{min-width:0}
+  .dk-span{grid-column:1 / -1}
+  .dk-sticky{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto}
+  .sys-window.dlg-form{width:min(760px,calc(100vw - 48px));max-height:min(880px,calc(100vh - 48px));max-height:min(880px,calc(100dvh - 48px))}
+  .dlg-form .dlg-cols{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 18px}
+  .dlg-form .dlg-cols>*{min-width:0}
+  .dlg-form .dlg-actions{bottom:-26px;margin:10px 0 -26px;padding:12px 0 26px;border-top:0}
+  .kbd-list{columns:2;column-gap:28px}
+  .kbd-list li{break-inside:avoid}
+}
+@media (min-width:1100px) and (hover:hover){
+  .foot .kbd-hint{display:inline}
+  .foot .kbd-hint{color:var(--muted);font-size:calc(12px*var(--ts));letter-spacing:.05em}
+}
+@media (min-width:1500px){
+  :root{--content-max:1680px}
+  body{font-size:calc(16px*var(--ts))}
+  .lbl,.rar,.stat .s-name,.stat .s-alias,.lv-tag,.q-daily,.sys-window .n-tag,.toast .t-tag,.foot small,.foot .kbd-hint,.kbd-list kbd{font-size:calc(13px*var(--ts))}
+  button,.tab,.toast,.empty,code,.bar-nums,.q-xp,.skill .s-rank,.stat .s-mod,.roll-detail,.roll-hist,.banner,.pill{font-size:calc(14px*var(--ts))}
+  input[type=text],input[type=number],select,textarea{font-size:calc(15px*var(--ts))}
+  .win h2{font-size:calc(16px*var(--ts))}
+  .dk-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .sys-window{width:min(520px,100%)}
+  .sys-window .n-big{font-size:calc(38px*var(--ts))}
+  .sys-window.dlg-form{width:min(760px,calc(100vw - 48px))}
+}
+@media (max-width:374px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* ── Motion: the block src/views/motion.ts owns. The only @keyframes and timed transitions of the app, timed by the tokens. ── */
+/* a press answers under the thumb in the frame it lands (no transition in), and springs back over --t-fast */
+button,.tab,[role=button],.m-press{transition:transform var(--t-fast) var(--ease-arrive)}
+:is(button,.tab,[role=button],.m-press):active:not(:disabled){transform:scale(.97);transition-duration:0s}
+/* a number that counts keeps its width */
+.m-num{font-variant-numeric:tabular-nums}
+/* a loss's pale trail, behind a bar's fill */
+.m-trail{position:absolute;inset:0;transform-origin:0 50%;transform:scaleX(var(--f,0));background:var(--bar-c,var(--cyan));opacity:.4}
+/* a window or toast on its way out: drawn, never in the way */
+.overlay.m-leaving{display:flex;pointer-events:none}
+.m-leaving{pointer-events:none}
+/* the layer a flash and a burst draw on */
+.m-layer{position:fixed;inset:0;z-index:80;pointer-events:none;overflow:hidden;contain:strict}
+.m-layer>*{position:absolute;left:0;top:0;opacity:0;will-change:transform,opacity}
+.m-bit{width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;box-shadow:0 0 6px currentColor}
+.m-flash{width:100px;height:100px;transform-origin:0 0}
+.m-travel{transform-origin:0 0;background:var(--cyan);box-shadow:0 0 8px var(--cyan)}.m-travel-top{width:100px;height:2px}.m-travel-left{width:2px;height:100px}
+.m-flash.m-acc{background:var(--cyan)}.m-flash.m-gold{background:var(--gold)}.m-flash.m-red{background:var(--red)}
+/* real progress: a bar and a whole percentage; or, with no number to show, a quiet pulse and words */
+.m-prog{display:flex;align-items:center;gap:8px;min-width:0}
+.m-prog-bar{flex:1 1 auto;min-width:60px;height:8px}
+.m-prog-pct{font-family:var(--font-mono);font-size:calc(13px*var(--ts));min-width:4ch;text-align:right}
+.m-prog-words{font-size:calc(13px*var(--ts));color:var(--cyan-dim)}
+.m-wait{flex:0 0 auto;width:8px;height:8px;border-radius:50%;background:currentColor;color:var(--cyan)}
+.m-wait,.m-waiting{animation:m-wait calc(var(--t-slow) * 4) var(--ease-leave) infinite alternate}
+@keyframes m-wait{to{opacity:.3}}
+/* ── end of Motion ── */
+
+@media (prefers-reduced-motion:reduce){
+  :root:not([data-motion=full]) *{animation:none!important;transition:none!important}
+}
+:root[data-motion=reduce] *{animation:none!important;transition:none!important}

@@ -1,0 +1,1069 @@
+// What a save is at schema 4 (docs/agent-handoff/rw/m2-plan.md section 1.2): a save from before the new combat rules is
+// not read, so the app opens a new campaign; a current save reads back as it was written; a damaged one is repaired.
+// Expected numbers come from the rules by name: a new hunter has `statBase` in each of the eight stats, the creation
+// points free, and the HP, mana and fatigue capacity of base stats at level 1, where every curve term of design 2.2 is 0
+// (`hpBase`, `manaBase`, `fatigueBase`).
+import { describe, expect, test } from 'bun:test';
+import { RULES, TIERS } from '../src/core/rules.ts';
+import { STAT_KEYS } from '../src/core/stats.ts';
+import {
+  RARITIES, SCHEMA, parseSheetHunter, SLOTS, exportedSave, fileKind, freshSave, keepGmKey, keepPhone, loadSave, newHunter, newMonster, newShadow, newSyncSettings, parseSave, parseSaveValue, repairSave,
+} from '../src/core/save.ts';
+import type { Hunter, ParseEnv, Parsed, Save, StoredKeys } from '../src/core/save.ts';
+import type { EventId, RoomCode } from '../src/core/ids.ts';
+import { newGate } from '../src/core/gates/gate.ts';
+import { available } from '../src/core/hunter/progress.ts';
+import { hunterSheet } from '../src/core/hunter/sheet.ts';
+import type { SheetHunter } from '../src/core/hunter/sheet.ts';
+import { hunterRow, monsterRows, shadowRow } from '../src/core/combat/rows.ts';
+import type { RowHunter, RowMonster, RowShadow } from '../src/core/combat/rows.ts';
+import { abilityId, combatantId } from '../src/core/combat/ability-types.ts';
+import { tick } from '../src/core/combat/timeline.ts';
+import { fightId, reduce } from '../src/core/combat/fight.ts';
+import type { Command, Ctx, Fight } from '../src/core/combat/fight.ts';
+import { MAX_STATUSES } from '../src/core/combat/fight-types.ts';
+import { ITEM_BOUNDS } from '../src/core/registry/items.ts';
+import { seedMonsters } from '../src/core/registry/monsters.ts';
+import { formulaOf, abilityOf } from '../src/core/registry/ability-kinds.ts';
+import { parseFormula, printFormula } from '../src/core/formula.ts';
+import { parseAbility, parseFight } from '../src/core/combat/fight-parse.ts';
+import { cid, day, dev, gmKey, hid, iid, qid, rbid, room, shid, tid } from './fixtures/ids.ts';
+import { dayKey } from '../src/core/day.ts';
+
+type Raw = Record<string, any>;
+
+const NOW = new Date('2026-11-12T12:00:00.000Z');
+function env(): ParseEnv {
+  let made = 0, tokens = 0;
+  return { now: NOW, newDeviceId: () => dev(`d-test${++made}`), newDeviceToken: () => `token-${String(++tokens).padStart(26, '0')}` };
+}
+
+/** Saves made by the app before the new combat rules: the first app's flat save (schema 1) and three of schema 2. */
+const OLD_FIXTURES = ['v1-save.json', 'main-gm-starter.json', 'main-player.json', 'main-export.json'];
+const fixtureText = (name: string): Promise<string> => Bun.file(`${import.meta.dir}/fixtures/saves/${name}`).text();
+const fixture = async (name: string): Promise<Raw> => JSON.parse(await fixtureText(name));
+const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value));
+
+function saved(parsed: Parsed): Save {
+  if (parsed.kind !== 'save') throw new Error(`expected a save, got ${JSON.stringify(parsed).slice(0, 200)}`);
+  return parsed.save;
+}
+const parseRaw = (value: unknown): Save => saved(parseSaveValue(copy(value), env()));
+/** A current save holding one hunter that has the given fields on top of the defaults. */
+const withHunter = (fields: Raw): Raw => ({ schema: SCHEMA, hunters: [{ ...newHunter(), ...fields }] });
+const onlyHunter = (save: Save): Hunter => {
+  expect(save.hunters).toHaveLength(1);
+  return save.hunters[0]!;
+};
+const BASE_STATS = Object.fromEntries(STAT_KEYS.map(k => [k, RULES.fight.statBase]));
+
+/** A running fight as the fight's reducer stores it: a new hunter against a goblin, the hunter's turn first. */
+const ctx: Ctx = { rules: RULES, life: () => null };
+function runningFight(): Fight {
+  const goblin = seedMonsters(RULES).find(m => m.name === 'Goblin')!;
+  const h = newHunter();
+  const commands: Command[] = [
+    { type: 'add', fightId: fightId('f-1'), rows: [hunterRow(h, combatantId('c1'), RULES), ...monsterRows(goblin, [combatantId('c2')], RULES)], openings: [] },
+    { type: 'start', openings: [{ id: combatantId('c1'), d20: 20, tie: 0 }, { id: combatantId('c2'), d20: 5, tie: 0 }] },
+  ];
+  let fight: Fight | null = null;
+  for (const cmd of commands) fight = reduce(fight, cmd, ctx).fight;
+  if (!fight || fight.phase !== 'running') throw new Error('the fight did not start');
+  return fight;
+}
+const POISONED = { key: 'poisoned', def: RULES.conditions.poisoned, source: { id: 'c3', tier: 3 }, rounds: 2.5 };
+const SLOWED = { key: 'slowed', def: RULES.conditions.slowed, source: { id: null, tier: 0 }, rounds: null };
+
+/** A campaign with a running fight, gates, a bestiary entry, a room link, a status on a hunter and a shadow, as the app keeps it. */
+function campaign(): Save {
+  const save = freshSave(env(), { onboarded: true });
+  const h = save.hunters[0]!;
+  h.conditions = copy([POISONED, SLOWED]) as Hunter['conditions'];
+  h.shadows = [{ ...newShadow(), id: shid('sh150'), name: 'Igris', rank: 'B', archetype: 'skirmisher', grade: 'Knight', hp: 80, notes: 'Loyal.' }];
+  h.titles.push({ id: tid('t151'), name: 'Gate Breaker', desc: '', bonus: { str: 2, manaMax: 3 } });
+  h.manaAdj = 4; h.hpAdj = -3;
+  h.life = { at: 'dying', successes: 1, failures: 2 };
+  save.monsters = seedMonsters(RULES).slice(0, 2);
+  save.gates = [{ ...newGate(), id: 'g152' as Save['gates'][number]['id'], name: 'Den', status: 'cleared', clearedDay: 3, xpPaid: 120 }];
+  save.fight = runningFight();
+  save.codex = { 'goblin|E': { name: 'Goblin', rank: 'E', kills: 2, firstAt: 'a', lastAt: 'b', monsterId: null, room: true, info: { hpMax: 30, armor: 4, resist: 2, speed: 110, abilities: ['Shot'] } } };
+  save.codexSeen = [cid('c2')];
+  save.settings.sync = { room: room('ABCDEF'), cursor: 41, serverOk: true, gmKey: gmKey('k'.repeat(32)), gmKeys: { ABCDEF: gmKey('k'.repeat(32)) },
+    lastRoom: { code: room('GHJKLM'), why: 'gone' }, boundHunterId: hid('h1'), deviceToken: 't'.repeat(32), joinedAt: '2026-11-10T12:00:00.000Z',
+    outbox: [{ id: 'tomb h111', room: 'ABCDEF' as RoomCode, letter: { kind: 'tomb', hid: hid('h111') }, key: null, at: 'refused', why: 'not your sheet' }], applied: ['d-gm1-mabc12xyz', 'd-gm1-mabc13xyz'] as EventId[] };
+  save.seq = 160;
+  return save;
+}
+
+describe('a save from before the new combat rules', () => {
+  for (const name of OLD_FIXTURES) {
+    test(`${name} is old, so nothing of it is read`, async () => {
+      expect(parseSave(await fixtureText(name), env())).toMatchObject({ kind: 'old' });
+    });
+  }
+
+  test('a save of schema 3, one of schema 2 and one with a hunters list but no schema number are old', async () => {
+    const raw = await fixture('main-player.json');
+    for (const schema of [3, 2, undefined]) expect(parseSaveValue({ ...copy(raw), schema }, env())).toMatchObject({ kind: 'old' });
+  });
+
+  test('a flat save of the first app with only a name, stats or quests is old', () => {
+    for (const v of [{ name: 'Solo' }, { stats: { str: 12 } }, { quests: [] }]) expect(parseSaveValue(v, env())).toMatchObject({ kind: 'old' });
+  });
+
+  test('an old save says whether this host had a room server, and nothing else', () => {
+    const reached = (serverOk: unknown): Parsed => parseSaveValue({ schema: 3, hunters: [], settings: { sync: { room: 'ABCDEF', serverOk } } }, env());
+    expect(reached(true)).toEqual({ kind: 'old', serverOk: true });
+    expect(reached(false)).toEqual({ kind: 'old', serverOk: false });
+    expect(reached('yes')).toEqual({ kind: 'old', serverOk: false });
+    expect(parseSaveValue({ name: 'Solo' }, env())).toEqual({ kind: 'old', serverOk: false });
+  });
+});
+
+describe('what the app opens with, from the text under each storage key', () => {
+  const NOTHING: StoredKeys = { v4: null, v3: null, v2: null, v1: null };
+  const current = (name: string): string => {
+    const save = freshSave(env(), { onboarded: true });
+    save.hunters[0]!.name = name;
+    return JSON.stringify(save);
+  };
+  const UNREADABLE = ['not json {name: Lost Hunter', '[]', '{"foo":1}', '{"schema":2,"hunters":{"h1":{"name":"Odd Shape Hunter"}}}'];
+  const OLD_RESULT = { readOnly: false, notice: 'old' };
+
+  test('a current save opens as it was stored, with no warning and nothing to back up', () => {
+    const text = current('Stored Hunter');
+    const loaded = loadSave({ ...NOTHING, v4: text }, env());
+    expect(loaded).toEqual({ save: JSON.parse(text), readOnly: false, backup: null, notice: null });
+  });
+
+  test('a save from a newer app opens read-only with the newer warning and its hunters', async () => {
+    const raw = await fixture('main-player.json');
+    raw.schema = 99;
+    const loaded = loadSave({ ...NOTHING, v4: JSON.stringify(raw) }, env());
+    expect(loaded).toMatchObject({ readOnly: true, backup: null, notice: null });
+    expect(loaded.save.schema).toBe(99);
+    expect(loaded.save.hunters[0]!.name).toBe('Mira Fixture');
+  });
+
+  test('a current save whose running fight is damaged opens without the fight, with the fight warning and the stored text to back up (implicit audit 3, FP1)', () => {
+    const save = JSON.parse(current('Stored Hunter'));
+    save.fight = { phase: 'running', rows: 'not rows' };
+    const text = JSON.stringify(save);
+    const loaded = loadSave({ ...NOTHING, v4: text }, env());
+    expect(loaded).toMatchObject({ readOnly: false, backup: { reason: 'a fight that could not be read', data: text }, notice: 'fight' });
+    expect(loaded.save.fight).toBeNull();
+    expect(loaded.save.hunters[0]!.name).toBe('Stored Hunter');
+  });
+
+  for (const text of UNREADABLE) {
+    test(`a current save that reads ${text.slice(0, 24)} gives a starter hunter, the unreadable warning and the old text to back up`, () => {
+      const loaded = loadSave({ ...NOTHING, v4: text }, env());
+      expect(loaded).toMatchObject({ readOnly: false, backup: { reason: 'unreadable', data: text }, notice: 'unreadable' });
+      expect(loaded.save).toEqual(freshSave(env(), { onboarded: true }));
+    });
+  }
+
+  for (const [key, name] of [['v3', 'main-player.json'], ['v2', 'main-gm-starter.json'], ['v1', 'v1-save.json']] as const) {
+    test(`a save from before the new combat rules under ${key} opens a new campaign with the old warning and its text to back up`, async () => {
+      const text = await fixtureText(name);
+      const loaded = loadSave({ ...NOTHING, [key]: text }, env());
+      expect(loaded).toMatchObject({ ...OLD_RESULT, backup: { reason: 'before the new combat rules', data: text } });
+      const fresh = freshSave(env(), { onboarded: true });
+      fresh.settings.sync.serverOk = key !== 'v1';
+      expect(loaded.save).toEqual(fresh);
+      expect(onlyHunter(loaded.save).name).toBe('Sung Jin-Woo');
+    });
+  }
+
+  test('a phone that reached the room server before the update still knows this host has one, and keeps no room', async () => {
+    const raw = await fixture('main-gm-starter.json');
+    raw.settings.sync = { room: 'ABCDEF', cursor: 41, serverOk: true, gmKey: 'k'.repeat(32), boundHunterId: 'h107' };
+    const loaded = loadSave({ ...NOTHING, v2: JSON.stringify(raw) }, env());
+    expect(loaded.save.settings.sync).toEqual({ ...newSyncSettings(), serverOk: true, deviceToken: loaded.save.settings.sync.deviceToken });
+    expect(loaded.save.settings.sync.deviceToken).toHaveLength(32);
+    expect(loaded.save.fight).toBeNull();
+  });
+
+  test('an unreadable save under an old key gives a starter hunter, the unreadable warning and the old text to back up', () => {
+    for (const key of ['v3', 'v2', 'v1'] as const) {
+      for (const text of UNREADABLE) {
+        const loaded = loadSave({ ...NOTHING, [key]: text }, env());
+        expect(loaded).toMatchObject({ readOnly: false, backup: { reason: 'unreadable', data: text }, notice: 'unreadable' });
+        expect(loaded.save).toEqual(freshSave(env(), { onboarded: true }));
+      }
+    }
+  });
+
+  test('a phone with nothing stored gets a starter hunter that has not been through the welcome, and no warning', () => {
+    const loaded = loadSave(NOTHING, env());
+    expect(loaded).toEqual({ save: freshSave(env(), { onboarded: false }), readOnly: false, backup: null, notice: null });
+    expect(onlyHunter(loaded.save).name).toBe('Sung Jin-Woo');
+  });
+
+  test('a current save wins over older saves, which are not backed up', async () => {
+    const loaded = loadSave({ v4: current('Newest Hunter'), v3: await fixtureText('main-player.json'), v2: await fixtureText('main-export.json'), v1: await fixtureText('v1-save.json') }, env());
+    expect(loaded).toMatchObject({ backup: null, notice: null });
+    expect(onlyHunter(loaded.save).name).toBe('Newest Hunter');
+  });
+
+  test('of the old keys only the newest is backed up', async () => {
+    const v3 = await fixtureText('main-player.json');
+    const loaded = loadSave({ v4: null, v3, v2: await fixtureText('main-export.json'), v1: await fixtureText('v1-save.json') }, env());
+    expect(loaded.backup).toEqual({ reason: 'before the new combat rules', data: v3 });
+  });
+
+  test('an unreadable current save does not fall back to an older key', async () => {
+    const loaded = loadSave({ v4: '{"foo":1}', v3: await fixtureText('main-player.json'), v2: null, v1: await fixtureText('v1-save.json') }, env());
+    expect(loaded).toMatchObject({ backup: { reason: 'unreadable', data: '{"foo":1}' }, notice: 'unreadable' });
+    expect(onlyHunter(loaded.save).name).toBe('Sung Jin-Woo');
+  });
+});
+
+describe('a new hunter', () => {
+  test('starts at level 1 with the base of each of the eight stats, its creation points free, and the full HP and mana of its sheet', () => {
+    const h = newHunter();
+    expect(h.stats).toEqual(BASE_STATS);
+    expect(h.pending).toEqual({});
+    expect(available(h, RULES)).toBe(RULES.fight.creationPoints);
+    expect(h).toMatchObject({ level: 1, life: { at: 'up', hp: RULES.fight.hpBase }, mana: RULES.fight.manaBase, fatigue: 0, collapsed: false, hpAdj: 0, manaAdj: 0 });
+    expect(hunterSheet(h, RULES).sheet).toMatchObject({ hpMax: RULES.fight.hpBase, manaMax: RULES.fight.manaBase, fatigueMax: RULES.fight.fatigueBase });
+  });
+
+  test('the starter hunter holds Sprint and Bloodlust, the Venom Fang and a Health Potion as the registries define them', () => {
+    const h = onlyHunter(freshSave(env(), { onboarded: true }));
+    expect(h.name).toBe('Sung Jin-Woo');
+    expect(h.stats).toEqual(BASE_STATS);
+    expect(available(h, RULES)).toBe(RULES.fight.creationPoints);
+    expect(h.skills.map(k => [k.name, k.type, k.label])).toEqual([['Sprint', 'active', null], ['Bloodlust', 'passive', null]]);
+    const [sprint, bloodlust] = h.skills;
+    expect(sprint!.type === 'active' && sprint!.ability?.name).toBe('Sprint');
+    expect(bloodlust!.type === 'passive' && bloodlust!.bonus).toEqual({ str: 1 });
+    expect(h.items.map(i => [i.name, i.type, i.attack ?? null])).toEqual([["Kasaka's Venom Fang", 'weapon', 'strike'], ['Health Potion', 'consumable', null]]);
+    expect(new Set([...h.skills, ...h.items].map(x => x.id)).size).toBe(4);
+  });
+});
+
+describe('a current save', () => {
+  test('a new profile reads back exactly as it was written', () => {
+    const save = freshSave(env(), { onboarded: false });
+    expect(save.schema).toBe(SCHEMA);
+    expect(save.settings.onboarded).toBe(false);
+    expect(parseSaveValue(copy(save), env())).toEqual({ kind: 'save', save, fightLost: false });
+    expect(parseSave(JSON.stringify(save), env())).toEqual({ kind: 'save', save, fightLost: false });
+  });
+
+  test('a campaign with a running fight, gates, monsters, statuses, a shadow and a room link reads back exactly as it was written', () => {
+    const before = campaign();
+    const written = copy(before);
+    const save = saved(parseSaveValue(copy(before), env()));
+    expect(save).toEqual(written);
+    expect(save.fight).toEqual(written.fight);
+    expect(save.fight!.phase).toBe('running');
+  });
+
+  test('the gate and the bestiary entries a running fight came from read back with it, and go when there is no fight', () => {
+    const before = { ...campaign(), fightRefs: { gate: 'g7', monsters: { c2: 'seed:goblin' } } };
+    expect(saved(parseSaveValue(copy(before), env())).fightRefs).toEqual({ gate: 'g7', monsters: { c2: 'seed:goblin' } });
+    const junk = saved(parseSaveValue(copy({ ...before, fightRefs: { gate: 7, monsters: { c2: 5, c3: 'm9' } } }), env()));
+    expect(junk.fightRefs).toEqual({ gate: null, monsters: { c3: 'm9' } });
+    expect('fightRefs' in saved(parseSaveValue(copy({ ...before, fight: null }), env()))).toBe(false);
+  });
+
+  test('the rows the codex counted and a codex entry\'s monster read back as ids; what is not an id is dropped', () => {
+    const before = { ...campaign(), codexSeen: ['c2', 'c3~400-1', 7, ''], codex: { 'goblin|E': { name: 'Goblin', rank: 'E', kills: 1, firstAt: 'a', lastAt: 'b', monsterId: 5 } } };
+    const s = parseRaw(before);
+    expect(s.codexSeen).toEqual([cid('c2'), cid('c3~400-1')]);
+    expect(s.codex['goblin|E']!.monsterId).toBeNull();
+  });
+
+  test('repairing a campaign a second time changes nothing', () => {
+    const save = repairSave(campaign(), env());
+    const once = copy(save);
+    expect(repairSave(save, env())).toBe(save);
+    expect(save).toEqual(once);
+  });
+
+  test('a new install\'s hunter is the seed; a stored seed mark that is not true is dropped, and one that is stays', () => {
+    const save = freshSave(env(), { onboarded: false });
+    expect(save.hunters[0]!.seed).toBe(true);
+    const odd = copy(save) as Save;
+    (odd.hunters[0] as Raw).seed = 'yes';
+    expect('seed' in repairSave(odd, env()).hunters[0]!).toBe(false);
+    expect(repairSave(copy(save) as Save, env()).hunters[0]!.seed).toBe(true);
+  });
+
+  test('a repair keeps the same hunter objects, so a view that holds one sees the repaired hunter', () => {
+    const save = freshSave(env(), { onboarded: true });
+    const held = save.hunters[0]!;
+    held.level = -4;
+    repairSave(save, env());
+    expect(save.hunters[0]).toBe(held);
+    expect(held.level).toBe(1);
+  });
+
+  test('an update keeps the fight its reducer stored as it is and still repairs the rest; a load reads the fight again', () => {
+    const save = repairSave(campaign(), env()), fight = save.fight;
+    save.hunters[0]!.level = -4;
+    repairSave(save, env(), 'kept');
+    expect(save.fight).toBe(fight);
+    expect(save.hunters[0]!.level).toBe(1);
+    const stored = { ...save, fight: { phase: 'running', rows: 'not rows' } } as unknown as Save;
+    expect(repairSave(stored, env()).fight).toBeNull();
+  });
+});
+
+describe('text that is not a save', () => {
+  const cases: [string, string, string][] = [
+    ['text that is not JSON', '{"hunters": [', 'not-json'],
+    ['an empty text', '', 'not-json'],
+    ['a list', '[]', 'not-an-object'],
+    ['a quoted text', '"text"', 'not-an-object'],
+    ['a number', '42', 'not-an-object'],
+    ['null', 'null', 'not-an-object'],
+    ['an empty object', '{}', 'not-a-save'],
+    ['an object of something else', '{"foo":1}', 'not-a-save'],
+    ['an object whose hunters is not a list', '{"hunters":"many","settings":{}}', 'not-a-save'],
+    ['an old save whose hunters is not a list', '{"schema":2,"hunters":{"h1":{"name":"Odd Shape Hunter","level":4}}}', 'not-a-save'],
+    ['a current save with no hunters list', '{"schema":4,"settings":{},"world":{"day":4}}', 'not-a-save'],
+  ];
+  for (const [what, text, reason] of cases) {
+    test(`${what} is refused as ${reason}`, () => {
+      expect(parseSave(text, env())).toEqual({ kind: 'invalid', reason } as Parsed);
+    });
+  }
+});
+
+describe('a save written by a newer app', () => {
+  test('is reported as newer with its schema number, and its hunters are still readable', async () => {
+    const raw = await fixture('main-player.json');
+    raw.schema = 99;
+    const parsed = parseSaveValue(raw, env());
+    expect(parsed).toMatchObject({ kind: 'newer', schema: 99 });
+    if (parsed.kind !== 'newer') throw new Error('expected newer');
+    expect(parsed.save.schema).toBe(99);
+    expect(parsed.save.hunters[0]!.name).toBe('Mira Fixture');
+  });
+});
+
+describe('a damaged or hostile save', () => {
+  test('ten thousand junk entries in the hunters list leave only the entries that are objects', () => {
+    const junk = [null, 3, 'x', [], true];
+    const hunters = Array.from({ length: 10_000 }, (_, i) => (i % 2500 === 0 ? {} : junk[i % junk.length]));
+    const save = parseRaw({ schema: SCHEMA, hunters });
+    expect(save.hunters).toHaveLength(4);
+    expect(new Set(save.hunters.map(h => h.id)).size).toBe(4);
+    expect(save.hunters.every(h => h.name === 'Hunter' && h.level === 1)).toBe(true);
+  });
+
+  test('a save with no hunter, or a hunters list of null, a number and a text, opens with the starter hunter active', () => {
+    for (const hunters of [[], [null, 3, 'x']]) {
+      const save = parseRaw({ schema: SCHEMA, hunters, settings: { activeHunterId: 'h9' } });
+      expect(save.hunters.map(h => [h.name, h.seed])).toEqual([['Sung Jin-Woo', true]]);
+      expect(save.settings.activeHunterId).toBe(save.hunters[0]!.id);
+      expect(repairSave(structuredClone(save), env())).toEqual(save);
+    }
+  });
+
+  test('every other part of the save being the wrong kind of value does not throw', () => {
+    const save = parseRaw({ schema: SCHEMA, seq: 'x', settings: 5, world: [], rulesOverrides: [], hunters: [null, 'x'], gates: 'g', monsters: 1,
+      library: 'x', fight: 'x', log: {}, rolls: 7, savedAt: 12 });
+    expect(save.hunters.map(h => h.name)).toEqual(['Sung Jin-Woo']);
+    expect(save).toMatchObject({ savedAt: '', gates: [], monsters: [], library: { items: [] }, fight: null, log: [], rolls: [],
+      rulesOverrides: {}, world: { day: 1 }, settings: { mode: 'player', deviceId: 'd-test1', sync: { room: null, cursor: 0, serverOk: false } } });
+  });
+
+  test('a hunter whose stats is a text gets the base stats', () => {
+    const h = onlyHunter(parseRaw(withHunter({ stats: 'strong', pending: 'yes' })));
+    expect(h.stats).toEqual(BASE_STATS);
+    expect(h.pending).toEqual({});
+  });
+
+  test('__proto__ and constructor keys in a save and its hunter change no prototype', () => {
+    const text = `{"schema":${SCHEMA},"__proto__":{"polluted":true},"constructor":{"prototype":{"polluted":true}},
+      "settings":{"__proto__":{"polluted":true}},"rulesOverrides":{"__proto__":{"polluted":true},"constructor":{"prototype":{"polluted":true}}},
+      "hunters":[{"name":"Proto","__proto__":{"polluted":true,"level":50},"constructor":"x","stats":{"__proto__":{"str":99}},
+        "items":[{"name":"Fang","bonus":{"__proto__":{"str":5}}}],"titles":[{"name":"T","bonus":{"__proto__":{"str":5}}}]}]}`;
+    const save = saved(parseSave(text, env()));
+    const h = onlyHunter(save);
+    expect(h.name).toBe('Proto');
+    expect(h.level).toBe(1);
+    expect(h.stats.str).toBe(RULES.fight.statBase);
+    expect(Object.getPrototypeOf(save)).toBe(Object.prototype);
+    expect(Object.getPrototypeOf(h)).toBe(Object.prototype);
+    expect(Object.getPrototypeOf(save.settings)).toBe(Object.prototype);
+    expect(({} as Raw).polluted).toBeUndefined();
+    expect(Object.hasOwn(Object.prototype, 'polluted')).toBe(false);
+  });
+
+  test('a name of 100,000 characters is cut to 60, and long notes and quest titles are cut too', () => {
+    const long = 'n'.repeat(100_000);
+    const h = onlyHunter(parseRaw(withHunter({ name: long, job: long, notes: long, quests: [{ title: long, desc: long, penaltyText: long }], items: [{ name: long }] })));
+    expect(h.name).toHaveLength(60);
+    expect(h.job).toHaveLength(60);
+    expect(h.notes).toHaveLength(500);
+    expect(h.quests[0]).toMatchObject({ title: 'n'.repeat(120), desc: 'n'.repeat(500), penaltyText: 'n'.repeat(300) });
+    expect(h.items[0]!.name).toHaveLength(60);
+  });
+
+  test('NaN, Infinity and numbers written as text in number fields fall back to the defaults', () => {
+    const base = newHunter();
+    const h = onlyHunter(parseRaw(withHunter({ level: 'NaN', xp: 'Infinity', gold: '-5', mana: 'NaN', bonusPoints: '1e9', spent: 'NaN', peakLevel: 'Infinity',
+      fatigue: '-Infinity', hpAdj: '7', manaAdj: 'x', stats: { ...BASE_STATS, str: 'NaN' } })));
+    expect(h).toMatchObject({ level: 1, xp: 0, gold: 0, life: base.life, mana: base.mana, bonusPoints: 0, spent: 0, peakLevel: 1, fatigue: 0, hpAdj: 0, manaAdj: 0 });
+    expect(h.stats.str).toBe(RULES.fight.statBase);
+  });
+
+  test('a number too large for JSON, negative numbers and fractions are clamped to whole numbers in their bounds', () => {
+    const text = JSON.stringify(withHunter({ level: -3, xp: -10, gold: -1, mana: -4, fatigue: -2, spent: -4, stats: { ...BASE_STATS, agi: 14.6, vit: -3 } }))
+      .replace('"gold":-1', '"gold":1e999');
+    const h = onlyHunter(saved(parseSave(text, env())));
+    expect(h).toMatchObject({ level: 1, xp: 0, gold: 0, mana: 0, fatigue: 0, spent: 0 });
+    expect(h.stats).toMatchObject({ agi: 15, vit: 0 });
+  });
+
+  test('entities that repeat an id get new ids, the first keeps its own, and seq ends above them all', () => {
+    const save = parseRaw({ schema: SCHEMA, seq: 5, hunters: [
+      { id: 'h7', name: 'First', items: [{ id: 'i300', name: 'A' }, { id: 'i300', name: 'B' }] },
+      { id: 'h7', name: 'Second', items: [{ id: 'i300', name: 'C' }, { name: 'D' }, { id: 'not an id', name: 'E' }] },
+    ] });
+    expect(save.hunters.map(h => h.name)).toEqual(['First', 'Second']);
+    expect(save.hunters[0]!.id).toBe(hid('h7'));
+    const ids = save.hunters.flatMap(h => [h.id, ...h.items.map(i => i.id)]);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids.every(id => /^[a-z]+\d+$/.test(id))).toBe(true);
+    expect(save.hunters[0]!.items.map(i => i.id)).toEqual(['i300', 'i301']);
+    expect(save.hunters[1]!.items.map(i => i.id)).toEqual(['i302', 'i0', 'i303']);
+    expect(save.hunters[1]!.id).toBe(hid('h304'));
+    expect(save.seq).toBe(304);
+  });
+
+  test('an id ending in a number too large to count from is replaced, so new ids never repeat', () => {
+    const save = parseRaw({ schema: SCHEMA, seq: 1e300, hunters: [{ id: 'h99999999999999999999999', name: 'Big' }, { name: 'Next' }, { name: 'Last' }] });
+    const ids = save.hunters.map(h => h.id);
+    expect(new Set(ids).size).toBe(3);
+    expect(ids.every(id => /^h\d{1,16}$/.test(id))).toBe(true);
+    expect(Number.isSafeInteger(save.seq)).toBe(true);
+    const again = copy(save);
+    expect(repairSave(save, env())).toEqual(again);
+  });
+
+  test('an active hunter that does not exist becomes the first hunter', () => {
+    const save = parseRaw({ schema: SCHEMA, settings: { activeHunterId: 'h999' }, hunters: [{ id: 'h3', name: 'A' }, { id: 'h4', name: 'B' }] });
+    expect(save.settings.activeHunterId).toBe(hid('h3'));
+  });
+
+  test('the hunter a player\'s phone sends its room is one of the save\'s: one that is gone is dropped, and a save in a room sends its active hunter', () => {
+    const two = [{ id: 'h3', name: 'A' }, { id: 'h4', name: 'B' }];
+    const inRoom = parseRaw({ schema: SCHEMA, settings: { activeHunterId: 'h4', sync: { room: 'ABCDEF', boundHunterId: 'h999' } }, hunters: two });
+    expect(inRoom.settings.sync.boundHunterId, 'a deleted hunter is never sent: the active one is').toBe(hid('h4'));
+    const alone = parseRaw({ schema: SCHEMA, settings: { activeHunterId: 'h4', sync: { room: null, boundHunterId: 'h999' } }, hunters: two });
+    expect('boundHunterId' in alone.settings.sync, 'out of a room no hunter is bound in its place').toBe(false);
+    const kept = parseRaw({ schema: SCHEMA, settings: { activeHunterId: 'h4', sync: { room: 'ABCDEF', boundHunterId: 'h3' } }, hunters: two });
+    expect(kept.settings.sync.boundHunterId, 'a hunter of the save stays bound while another is shown').toBe(hid('h3'));
+  });
+
+  test('oversized lists are cut to their caps', () => {
+    const many = (n: number, make: (i: number) => Raw): Raw[] => Array.from({ length: n }, (_, i) => make(i));
+    const heal = { op: 'heal', amount: { kind: 'number', value: 1 } };
+    const save = parseRaw({ schema: SCHEMA,
+      log: many(5000, i => ({ id: `l${i + 1}`, title: `entry ${i}` })), rolls: many(5000, i => ({ id: `r${i + 6000}` })),
+      library: { items: many(500, i => ({ id: `i${i + 20000}`, name: 'Stock' })) },
+      hunters: [{ id: 'h1', build: { path: 'vanguard', picks: many(50, () => 0 as unknown as Raw) },
+        items: [{ id: 'i1', name: 'Wand', effects: many(100, () => heal) }],
+        conditions: many(40, i => ({ ...SLOWED, key: `slowed-${i}` })),
+        loadouts: many(100, i => ({ id: `lo${i + 30000}`, name: `Set ${i}` })) }] });
+    expect(save.log).toHaveLength(RULES.logCap);
+    expect(save.log[0]!.title).toBe('entry 0');
+    expect(save.rolls).toHaveLength(RULES.rollCap);
+    expect(save.library.items).toHaveLength(200);
+    const h = onlyHunter(save);
+    expect(h.loadouts).toHaveLength(24);
+    expect(h.build.picks).toHaveLength(12);
+    expect(h.items[0]!.effects).toHaveLength(ITEM_BOUNDS.effects);
+    expect(h.conditions).toHaveLength(MAX_STATUSES);
+  });
+
+  test('the log cap comes from the rules stored in the save itself', () => {
+    const log = Array.from({ length: 10 }, (_, i) => ({ id: `l${i + 1}` }));
+    expect(parseRaw({ schema: SCHEMA, hunters: [], rulesOverrides: { logCap: 3 }, log }).log).toHaveLength(3);
+  });
+});
+
+describe('what a repair fixes', () => {
+  test('a stored life keeps only the fields of its state, within bounds', () => {
+    const life = (v: unknown) => onlyHunter(parseRaw(withHunter({ life: v }))).life;
+    expect(life({ at: 'dying', successes: 5, failures: -1, hp: 30 })).toEqual({ at: 'dying', successes: 2, failures: 0 });
+    expect(life({ at: 'up', hp: 12.4 })).toEqual({ at: 'up', hp: 12 });
+    expect(life({ at: 'dead', hp: 9 })).toEqual({ at: 'dead' });
+    expect(life({ at: 'up', hp: 0 }), 'up means at least 1 HP').toEqual({ at: 'up', hp: 1 });
+  });
+
+  test('a life that does not read is up at the full HP of the hunter\'s own sheet', () => {
+    // Base stats at level 1: hpBase; the GM's +5 to max HP adds to it.
+    const h = onlyHunter(parseRaw(withHunter({ life: { at: 'zombie' }, hpAdj: 5 })));
+    expect(h.life).toEqual({ at: 'up', hp: RULES.fight.hpBase + 5 });
+  });
+
+  test('a hunter\'s uses spent this rest keep each ability\'s count within the rules\' uses, and junk is none spent', () => {
+    const used = (v: unknown) => onlyHunter(parseRaw(withHunter({ used: v }))).used;
+    expect(used({ stormfront: 1, 'celestial-sea': 50, dash: 0, x: 'one' })).toEqual({ stormfront: 1, 'celestial-sea': RULES.fight.kit.fightUses });
+    expect(used('lots')).toEqual({});
+    expect(onlyHunter(parseRaw({ schema: SCHEMA, hunters: [newHunter()] })).used).toEqual({});
+  });
+
+  test('the peak level is never below the level, and spent points never below 0', () => {
+    const h = onlyHunter(parseRaw(withHunter({ level: 5, peakLevel: 2, spent: -4, bonusPoints: -2 })));
+    expect(h).toMatchObject({ level: 5, peakLevel: 5, spent: 0, bonusPoints: -2 });
+  });
+
+  test('the count of sessions the GM started is kept, and a save without one starts at none', () => {
+    expect(parseRaw({ schema: SCHEMA, hunters: [], world: { day: 9, session: 12 } }).world).toMatchObject({ day: 9, session: 12 });
+    expect(parseRaw({ schema: SCHEMA, hunters: [], world: { day: 9 } }).world.session).toBe(0);
+  });
+
+  test('a value outside its list falls back to the default of that field', () => {
+    const save = parseRaw({ schema: SCHEMA, settings: { mode: 'admin', dailyResetHour: 99 }, world: { day: -2, session: -3 },
+      hunters: [{ id: 'h1', rank: 'Z', emblem: 'dragon', color: 'red',
+        quests: [{ id: 'q1', kind: 'weird', status: 'lost', from: 'nobody' }], skills: [{ id: 's1', name: 'Dash', type: 'aura' }],
+        items: [{ id: 'i1', name: 'Gun', rar: 'godly', type: 'gun', slot: 'tail', qty: -2 }],
+        shadows: [{ id: 'sh1', rank: 'Q', grade: 'King', archetype: 'dragon', hp: -5 }] }],
+      gates: [{ id: 'g1', rank: 'X', type: 'blue', status: 'open' }], monsters: [{ id: 'm1', rank: 'F' }],
+      log: [{ id: 'l1', kind: 'gossip' }] });
+    expect(save.settings).toMatchObject({ mode: 'player', dailyResetHour: 23 });
+    expect(save.world).toMatchObject({ day: 1, session: 0 });
+    const h = onlyHunter(save);
+    expect(h).toMatchObject({ rank: 'E', emblem: '', color: '' });
+    expect(h.quests[0]).toMatchObject({ kind: 'side', status: 'active', from: 'self' });
+    expect(h.skills[0]).toMatchObject({ type: 'active' });
+    expect(h.items[0]).toMatchObject({ rar: 'common', type: 'misc', slot: null, qty: 1 });
+    expect(h.shadows[0]).toMatchObject({ rank: 'E', grade: 'Normal', archetype: 'brute', hp: 0 });
+    expect(save.gates[0]).toMatchObject({ rank: 'E', type: 'normal', status: 'detected' });
+    expect(save.monsters[0]).toMatchObject({ rank: 'E' });
+    expect(save.log[0]!.kind).toBe('system');
+  });
+
+  test('gear and a title that point at nothing are cleared, and a real one stays', () => {
+    const h = onlyHunter(parseRaw(withHunter({ items: [{ id: 'i1', name: 'Sword', slot: 'weapon' }], equipped: { weapon: 'i1', head: 'i404' },
+      titles: [{ id: 't1', name: 'Brave' }], titleId: 't404',
+      loadouts: [{ id: 'lo1', name: '  Raid   set  ', slots: { weapon: 'i1', offhand: 'i1', head: 'i404' } }] })));
+    expect(h.equipped.weapon).toBe(iid('i1'));
+    expect(h.equipped.head).toBeNull();
+    expect(h.titleId).toBeNull();
+    expect(h.loadouts[0]).toMatchObject({ name: 'Raid set', slots: { weapon: 'i1' } });
+    expect(Object.keys(h.loadouts[0]!.slots)).toEqual(['weapon']);
+  });
+
+  test('a title\'s bonus keeps the eight stats, max HP and max mana, each a number', () => {
+    const h = onlyHunter(parseRaw(withHunter({ titles: [{ id: 't1', name: 'Brave', bonus: { str: 2, manaMax: 3, hpMax: 'x', ac: 1, dex: 2, speed: 5, pre: 1 } }] })));
+    expect(h.titles[0]!.bonus).toEqual({ str: 2, manaMax: 3, pre: 1 });
+  });
+
+  test('a title keeps the rule title\'s key it was given from, and a key that is not one is dropped', () => {
+    const h = onlyHunter(parseRaw(withHunter({ titles: [{ id: 't1', name: 'Pack Breaker', seedKey: 'wolf-slayer' }, { id: 't2', name: 'Odd', seedKey: 'Not A Key!' }] })));
+    expect(h.titles.map(t => t.seedKey)).toEqual(['wolf-slayer', undefined]);
+  });
+
+  test('a pending count is a whole number of 1 or more on a stat that exists, anything else is nothing pending', () => {
+    const h = onlyHunter(parseRaw(withHunter({ pending: { str: 2, agi: 0, vit: -3, pow: 'x', luck: 4, ctl: 1.6 } })));
+    expect(h.pending).toEqual({ str: 2, ctl: 2 });
+  });
+
+  test('a hunter stored with locked stats keeps its unconfirmed points as pending, and they leave what was spent', () => {
+    // Stored: Strength 14 with 12 confirmed (2 unconfirmed), Agility 12 with 11 confirmed (1), a missing locked stat and
+    // one above its stat confirm nothing; 5 spent counted the 3 unconfirmed points, so 2 stay spent.
+    const h = onlyHunter(parseRaw(withHunter({ stats: { ...BASE_STATS, str: 14, agi: 12 }, statsLocked: { str: 12, agi: 11, vit: 99 }, spent: 5 })));
+    expect(h.stats).toEqual({ ...BASE_STATS, str: 12, agi: 11 });
+    expect(h.pending).toEqual({ str: 2, agi: 1 });
+    expect(h.spent).toBe(2);
+    expect('statsLocked' in h).toBe(false);
+  });
+
+  test('a hunter on a build path keeps its path and picks, and no skill is added for them: the sheet reads the path itself', () => {
+    const h = onlyHunter(parseRaw(withHunter({ build: { path: 'vanguard', picks: [0, 1, 0] }, skills: [{ id: 's9', name: 'Sprint' }] })));
+    expect(h.build).toEqual({ path: 'vanguard', picks: [0, 1, 0] });
+    expect(h.skills.map(k => k.name)).toEqual(['Sprint']);
+  });
+
+  test('a path the rules do not have is cleared with its picks', () => {
+    expect(onlyHunter(parseRaw(withHunter({ build: { path: 'pirate', picks: [0, 1] } }))).build).toEqual({ path: null, picks: [] });
+  });
+
+  test('picks stop at the first value that is not 0 or 1', () => {
+    expect(onlyHunter(parseRaw(withHunter({ build: { path: 'striker', picks: [1, 0, 2, 1] } }))).build.picks).toEqual([1, 0]);
+  });
+
+  test('a condition keeps its key, def, source and rounds left; one that does not read, or a chip the hunter\'s state draws, is dropped', () => {
+    const h = onlyHunter(parseRaw(withHunter({ conditions: [
+      { ...POISONED, extra: 1 }, SLOWED,
+      { ...POISONED, def: 'junk' }, { ...POISONED, source: { id: 'c3', tier: 12 } }, { ...POISONED, source: 'the GM' },
+      { ...POISONED, rounds: -1 }, { ...POISONED, rounds: 'soon' }, { ...POISONED, key: undefined }, 'poisoned',
+      { ...SLOWED, key: 'down' }, { ...SLOWED, key: 'penalized' },
+    ] })));
+    expect(h.conditions).toEqual([POISONED, SLOWED] as unknown as Hunter['conditions']);
+  });
+
+  test('the bestiary\'s codex, its counted combatants and the GM\'s shop keep only entries of their shape', () => {
+    const at = '2026-01-01T00:00:00.000Z';
+    const save = parseRaw({ schema: SCHEMA, hunters: [],
+      codex: { 'goblin|E': { name: 'Goblin', rank: 'Z', kills: 'x', firstAt: at, lastAt: at, monsterId: 4 }, junk: 5,
+        'wolf|D': { name: 'Wolf', rank: 'D', kills: 2, firstAt: at, lastAt: at, monsterId: null, room: true,
+          info: { hpMax: 90, armor: 'x', resist: -4, speed: 110, abilities: ['Bite', 3, 'Howl', 'Pounce', 'Rend', 'Five'] } } },
+      codexSeen: ['c1', 2, 'c3'], shop: [{ name: 'Rope', type: 'gizmo', value: 5 }, 7] });
+    expect(save.codex).toEqual({
+      'goblin|E': { name: 'Goblin', rank: 'E', kills: 1, firstAt: at, lastAt: at, monsterId: null },
+      'wolf|D': { name: 'Wolf', rank: 'D', kills: 2, firstAt: at, lastAt: at, monsterId: null, room: true,
+        info: { hpMax: 90, armor: 0, resist: 0, speed: 110, abilities: ['Bite', 'Howl', 'Pounce', 'Rend'] } },
+    });
+    expect(save.codexSeen).toEqual(['c1', 'c3']);
+    expect(save.shop!.map(t => [t.name, t.type, 'id' in t])).toEqual([['Rope', 'misc', false]]);
+    const empty = parseRaw({ schema: SCHEMA, hunters: [], codex: [], codexSeen: 'x', shop: 'x' });
+    expect([empty.codex, empty.codexSeen, empty.shop]).toEqual([{}, [], null]);
+  });
+
+  test('a coin in the air and a call the GM has to answer survive a reload; a coin that is not one, or names no hunter, is dropped', () => {
+    const inAir = { id: 'd-asha:r12', hunter: { kind: 'local', hunterId: 'h1' }, who: 'Asha', what: 'STR check', face: 20, at: 'called', call: 'heads' };
+    const call = { id: 'd-kai:r3', hunter: { kind: 'remote', remote: 'd-kai:h2' }, who: 'Kai', what: 'd20', face: 1, at: 'called', call: 'tails' };
+    const noHunter = { ...inAir, id: 'd-asha:r14', hunter: { kind: 'local', hunterId: 'Asha' } };
+    const save = parseRaw({ schema: SCHEMA, hunters: [], coins: [inAir, { ...inAir, id: 'd-asha:r13', face: 7 }, 'x', noHunter], calls: [call, { ...call, at: 'landed' }] });
+    expect(save.coins).toEqual([inAir]);
+    expect(save.calls).toEqual([call]);
+    const empty = parseRaw({ schema: SCHEMA, hunters: [], coins: 'x' });
+    expect([empty.coins, empty.calls]).toEqual([[], []]);
+  });
+
+  test('a quest\'s status and the time it ended agree: an active quest has none, a done or failed one has one', () => {
+    const quests = [
+      { id: 'q1', status: 'active', issuedAt: '2026-01-01T00:00:00.000Z', doneAt: '2026-01-02T00:00:00.000Z' },
+      { id: 'q2', status: 'done', issuedAt: '2026-01-01T00:00:00.000Z', doneAt: null },
+      { id: 'q3', status: 'failed', issuedAt: '2026-01-01T00:00:00.000Z', doneAt: '2026-01-03T00:00:00.000Z' },
+    ];
+    const h = onlyHunter(parseRaw({ schema: SCHEMA, hunters: [{ id: 'h1', quests }] }));
+    expect(h.quests.map(q => [q.id, q.status, q.doneAt])).toEqual([
+      ['q1', 'active', null], ['q2', 'done', '2026-01-01T00:00:00.000Z'], ['q3', 'failed', '2026-01-03T00:00:00.000Z'],
+    ]);
+  });
+
+  test('a hunter holds at most 50 boons: past that the oldest go; a boon without a name is dropped and its text is cut to 200', () => {
+    const boons = [{ id: 'bn1', name: '  ', text: 'x' }, ...Array.from({ length: 60 }, (_, i) => ({ id: `bn${i + 2}`, name: `Boon ${i}`, text: 't'.repeat(300), at: '2026-11-13T00:00:00.000Z' }))];
+    const h = onlyHunter(parseRaw({ schema: SCHEMA, hunters: [{ id: 'h1', boons }] }));
+    expect(h.boons).toHaveLength(50);
+    expect([h.boons[0]!.name, h.boons[49]!.name, h.boons[0]!.text.length]).toEqual(['Boon 10', 'Boon 59', 200]);
+    expect(onlyHunter(parseRaw({ schema: SCHEMA, hunters: [{ id: 'h1', boons: 'x' }] })).boons).toEqual([]);
+    const [favor] = onlyHunter(parseRaw({ schema: SCHEMA, hunters: [{ id: 'h1', boons: [{ name: 'Favor' }] }] })).boons;
+    expect(favor).toMatchObject({ name: 'Favor', text: '', at: '' });
+    expect(favor!.id).toMatch(/^bn\d+$/);
+  });
+
+  test('the GM\'s reward bundles: each named, its rewards read by parseRewards, an id each, at most 200', () => {
+    const library = { rewards: [
+      { id: 'rb1', name: ' Boss loot ', rewards: { xp: 500, boons: [{ name: 'Favor' }], fame: 3 } },
+      { id: 'rb1', name: 'Same id', rewards: 'x' }, { name: '', rewards: { xp: 1 } }, 'junk',
+    ] };
+    const kept = parseRaw({ schema: SCHEMA, hunters: [], library }).library.rewards;
+    expect(kept.map(b => b.name)).toEqual(['Boss loot', 'Same id']);
+    expect(kept[0]).toMatchObject({ id: 'rb1', rewards: { xp: 500, boons: [{ name: 'Favor', text: '' }] } });
+    expect(kept[0]!.rewards).not.toHaveProperty('fame');
+    expect(kept[1]!.rewards).toEqual({ xp: 0, points: 0, gold: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] });
+    expect(kept[1]!.id).not.toBe(rbid('rb1'));
+    const many = Array.from({ length: 250 }, (_, i) => ({ id: `rb${i + 1}`, name: `B${i}`, rewards: {} }));
+    expect(parseRaw({ schema: SCHEMA, hunters: [], library: { rewards: many } }).library.rewards).toHaveLength(200);
+    expect(parseRaw({ schema: SCHEMA, hunters: [], library: {} }).library.rewards).toEqual([]);
+  });
+
+  test('the GM\'s battle maps: each named, read by parseBattleMap, an id each, at most 50', () => {
+    const library = { maps: [{ id: 'mp1', name: ' Crypt ', w: 6, h: 4, tiles: '#'.repeat(24), fog: true, mood: 'grim' }, { name: '' }, 'junk', { name: 'Field' }] };
+    const kept = parseRaw({ schema: SCHEMA, hunters: [], library }).library.maps;
+    expect(kept.map(m => [m.name, m.w, m.h, m.fog])).toEqual([['Crypt', 6, 4, true], ['Field', RULES.fight.grid.w, RULES.fight.grid.h, false]]);
+    expect(kept[0]).not.toHaveProperty('mood');
+    expect(kept[1]!.id).toMatch(/^mp/);
+    const many = Array.from({ length: 60 }, (_, i) => ({ id: `mp${i + 1}`, name: `M${i}` }));
+    expect(parseRaw({ schema: SCHEMA, hunters: [], library: { maps: many } }).library.maps).toHaveLength(50);
+    expect(parseRaw({ schema: SCHEMA, hunters: [], library: {} }).library.maps).toEqual([]);
+  });
+
+  test('a quest\'s rewards are read by parseRewards: a wrong field takes its default and a list keeps its bound', () => {
+    const rewards = { xp: 'lots', gold: -40, skills: Array.from({ length: 12 }, (_, i) => ({ name: `S${i}` })), boons: [{ name: '' }, { name: 'Favor', text: 'One free question.' }] };
+    const q = onlyHunter(parseRaw({ schema: SCHEMA, hunters: [{ id: 'h1', quests: [{ id: 'q1', rewards }] }] })).quests[0]!;
+    expect(q.rewards).toMatchObject({ xp: 0, gold: -40, statuses: [], boons: [{ name: 'Favor', text: 'One free question.' }] });
+    expect(q.rewards.skills.map(s => s.name)).toEqual(['S0', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7']);
+  });
+
+  test('an optional field of the wrong kind is removed and a nullable one becomes null', () => {
+    const save = parseRaw({ schema: SCHEMA,
+      settings: { sync: { room: 7, gmKey: 5, gmKeys: { ABCDEF: 'key', GHJKLM: 9 }, lastRoom: 'ABCDEF', boundHunterId: 3, deviceToken: {}, joinedAt: 1,
+        outbox: [{ room: 'ABCDEF', letter: { kind: 'tomb', hid: 'h1' }, at: 'sending' }, { room: 1 }, 'x', { room: 'ABCDEF', letter: { kind: 'event', event: { type: 'roll', payload: {} } } }], applied: 'd-gm1-e1' } },
+      hunters: [{ id: 'h1', penalty: 'yes', titleId: 5, daily: { lastCheckedKey: 5 },
+        quests: [{ id: 'q1', doneAt: 5, dueAt: {}, chainId: 1, rewards: { job: [], items: [{ name: 'Gem', effects: 'shiny' }, 3] } }],
+        skills: [{ id: 's1', name: 'Dash', label: 9 }], shadows: [{ id: 'sh1', monster: 4 }] }],
+      gates: [{ id: 'g1', bossId: 4, clearedDay: 'today', monsters: [{ monsterId: 'm1', count: 2 }, 5] }],
+      log: [{ id: 'l1', hunterId: 9 }], rolls: [{ id: 'r1', natural: 'x', rolls: [3, 'x', 4] }] });
+    expect(save.settings.sync).toEqual({ room: null, cursor: 0, serverOk: false, deviceToken: `token-${'1'.padStart(26, '0')}`, gmKeys: { ABCDEF: 'key' }, outbox: [{ id: 'tomb h1', room: 'ABCDEF', letter: { kind: 'tomb', hid: 'h1' }, key: null, at: 'sending' }] });
+    expect(parseRaw({ schema: SCHEMA, hunters: [], settings: { sync: { applied: ['d-gm1-e1', 7, 'not an id', 'd-gm1-e2'] } } }).settings.sync.applied)
+      .toEqual(['d-gm1-e1', 'd-gm1-e2']);
+    const h = onlyHunter(save);
+    expect([h.penalty, h.titleId, h.daily.lastCheckedKey]).toEqual([null, null, null]);
+    const q = h.quests[0]!;
+    expect(q).toMatchObject({ doneAt: null, dueAt: null, rewards: { job: null, items: [{ name: 'Gem' }] } });
+    expect('chainId' in q).toBe(false);
+    expect(h.skills[0]).toMatchObject({ name: 'Dash', label: null });
+    expect(h.shadows[0]!.monster).toBeNull();
+    expect(save.gates[0]).toMatchObject({ bossId: null, monsters: [{ monsterId: 'm1', count: 2 }] });
+    expect('clearedDay' in save.gates[0]!, 'only a cleared gate has a cleared day').toBe(false);
+    expect(save.log[0]!.hunterId).toBeNull();
+    expect(save.rolls[0]).toMatchObject({ natural: null, rolls: [3, 4] });
+  });
+
+  test('a damaged rule override is dropped at load and a good one kept, so rulesOf never reads the damaged one', () => {
+    const save = parseRaw({ schema: SCHEMA, hunters: [], rulesOverrides: { xpPerLevel: 'lots', logCap: 50, luck: 3, rest: { short: { hpPct: 30, fatigue: null } } } });
+    expect(save.rulesOverrides).toEqual({ logCap: 50, rest: { short: { hpPct: 30 } } });
+  });
+
+  test('the status library drops a bad key, a hunter\'s state chip, a def without a name and what is not a def', () => {
+    const def = { label: 'Fine', desc: '', ops: [] };
+    const statuses = { fine: def, 'Bad Key': def, 'trailing-': def, ['x'.repeat(41)]: def, down: def, penalized: def, nameless: { desc: 'x', ops: [] }, junk: 5 };
+    const save = parseRaw({ schema: SCHEMA, hunters: [], library: { items: [], statuses } });
+    expect(save.library.statuses).toEqual({ fine: def });
+  });
+
+  test('the status library holds at most 200 statuses', () => {
+    const statuses = Object.fromEntries(Array.from({ length: 300 }, (_, i) => [`s-${i}`, { label: `S ${i}`, desc: '', ops: [] }]));
+    expect(Object.keys(parseRaw({ schema: SCHEMA, hunters: [], library: { items: [], statuses } }).library.statuses)).toHaveLength(200);
+  });
+
+  test('the GM\'s skills are kept, each read by parseSkill with an id of its own, and one without a name is dropped', () => {
+    const save = parseRaw({ schema: SCHEMA, seq: 10, hunters: [], library: { items: [], statuses: {}, skills: [
+      { id: 's7', name: 'Iron Will', type: 'passive', bonus: { dis: 2 }, mpCost: 3 }, { id: 's8', type: 'passive' }, { name: 'Guard', glow: 1 }, 'x',
+    ] } });
+    expect(save.library.skills.map(k => [k.id, k.name])).toEqual([['s7', 'Iron Will'], ['s0', 'Guard']]);
+    expect(save.library.skills[0]).toMatchObject({ type: 'passive', bonus: { dis: 2 } });
+    expect(save.library.skills[0]).not.toHaveProperty('mpCost');
+    expect(save.library.skills[1]).not.toHaveProperty('glow');
+  });
+
+  test('the skill library holds at most 200 skills, and a save without one has an empty list', () => {
+    const skills = Array.from({ length: 300 }, (_, i) => ({ id: `s${i + 1}`, name: `Skill ${i}` }));
+    expect(parseRaw({ schema: SCHEMA, hunters: [], library: { items: [], statuses: {}, skills } }).library.skills).toHaveLength(200);
+    expect(parseRaw({ schema: SCHEMA, hunters: [], library: { items: [] } }).library.skills).toEqual([]);
+  });
+
+  test('a hunter\'s skill keeps only a skill\'s fields and needs a name: it is read by parseSkill', () => {
+    const h = onlyHunter(parseRaw(withHunter({ skills: [{ id: 's1', name: 'Dash', aura: 'blue', perk: 'vanguard' }, { id: 's2', type: 'passive' }] })));
+    expect(h.skills.map(k => k.name)).toEqual(['Dash']);
+    expect(h.skills[0]).not.toHaveProperty('aura');
+    expect(h.skills[0]).not.toHaveProperty('perk');
+  });
+
+  test('a shadow keeps an archetype from the list and HP of 0 or more as a whole number; its max HP is not stored', () => {
+    const [shadow] = onlyHunter(parseRaw(withHunter({ shadows: [{ id: 'sh1', name: 'Igris', rank: 'B', grade: 'Knight', archetype: 'skirmisher', hp: 80.6 }] }))).shadows;
+    expect(shadow).toEqual({ ...newShadow(), id: 'sh1', name: 'Igris', rank: 'B', grade: 'Knight', archetype: 'skirmisher', hp: 81 });
+  });
+
+  test('a last room without a reason reads as left, and one marked gone by an older build as gone', () => {
+    const last = (lastRoom: unknown) => parseRaw({ schema: SCHEMA, hunters: [], settings: { sync: { lastRoom } } }).settings.sync.lastRoom;
+    expect(last({ code: 'ABCDEF' })).toEqual({ code: 'ABCDEF', why: 'left' });
+    expect(last({ code: 'ABCDEF', gone: true })).toEqual({ code: 'ABCDEF', why: 'gone' });
+    expect(last({ code: 'ABCDEF', why: 'removed' })).toEqual({ code: 'ABCDEF', why: 'removed' });
+    expect(last({ code: 'ABCDEF', why: 'banished' })).toEqual({ code: 'ABCDEF', why: 'left' });
+  });
+
+  test('a penalty tied to one of the hunter\'s quests keeps its start and whole days, and a missing start is the time of the repair', () => {
+    const zone = { id: 'q5', kind: 'penalty', title: 'Penalty Zone: Survive for 4 hours' };
+    expect(onlyHunter(parseRaw(withHunter({ quests: [zone], penalty: { since: '2026-11-01T00:00:00.000Z', days: 2.4, questId: 'q5' } }))).penalty)
+      .toEqual({ since: '2026-11-01T00:00:00.000Z', days: 2, questId: 'q5' });
+    expect(onlyHunter(parseRaw(withHunter({ quests: [zone], penalty: { questId: 'q5' } }))).penalty).toEqual({ since: NOW.toISOString(), days: 1, questId: 'q5' });
+  });
+
+  test('a penalty whose quest is gone is dropped: nothing could lift it', () => {
+    expect(onlyHunter(parseRaw(withHunter({ quests: [], penalty: { since: '2026-11-01T00:00:00.000Z', days: 2, questId: 'q5' } }))).penalty).toBeNull();
+  });
+
+  test('a Job Change chain on its open step\'s quest is kept; one whose quest was failed or deleted is failed at its step', () => {
+    const chain = { id: 'c1', job: 'Mage', step: 2, status: 'active', questId: 'q2' };
+    const step2 = { id: 'q2', kind: 'job', chainId: 'c1', title: 'Job Change 2/3: The Job Change Dungeon' };
+    expect(onlyHunter(parseRaw(withHunter({ quests: [step2], jobChain: chain }))).jobChain).toEqual(chain);
+    expect(onlyHunter(parseRaw(withHunter({ quests: [{ ...step2, status: 'failed' }], jobChain: chain }))).jobChain).toEqual({ ...chain, status: 'failed' });
+    expect(onlyHunter(parseRaw(withHunter({ quests: [], jobChain: chain }))).jobChain).toEqual({ ...chain, status: 'failed' });
+    expect(onlyHunter(parseRaw(withHunter({ quests: [step2], jobChain: { ...chain, job: 'Baker' } }))).jobChain).toBeNull();
+  });
+
+  test('a save with no device id gets one from the device, and one that has it keeps it', () => {
+    expect(parseRaw({ schema: SCHEMA, hunters: [] }).settings.deviceId).toBe(dev('d-test1'));
+    expect(parseRaw({ schema: SCHEMA, hunters: [], settings: { deviceId: 'd-mine' } }).settings.deviceId).toBe(dev('d-mine'));
+  });
+
+  test('a quest\'s due time that is no time opens as no due time, and one written another way opens as its time', () => {
+    const dueOf = (dueAt: unknown): string | null => onlyHunter(parseRaw(withHunter({ quests: [{ id: 'q1', kind: 'urgent', dueAt }] }))).quests[0]!.dueAt;
+    expect(dueOf('tomorrow-ish')).toBeNull();
+    expect(dueOf('')).toBeNull();
+    expect(dueOf('+275760-09-13T00:00:00.001Z')).toBeNull();
+    expect(dueOf('2026-11-15T10:00:00+02:00')).toBe('2026-11-15T08:00:00.000Z');
+    expect(dueOf('2026-11-15T08:00:00.000Z')).toBe('2026-11-15T08:00:00.000Z');
+  });
+
+  test('a save is given this phone\'s device token at load, beside its device id: one it holds is kept, a missing, short or wrong one is made', () => {
+    const made = `token-${'1'.padStart(26, '0')}`;
+    const tokenOf = (sync: Raw): string => parseRaw({ schema: SCHEMA, hunters: [], settings: { sync } }).settings.sync.deviceToken;
+    expect(tokenOf({})).toBe(made);
+    expect(tokenOf({ deviceToken: 'short' })).toBe(made);
+    expect(tokenOf({ deviceToken: 42 })).toBe(made);
+    expect(tokenOf({ deviceToken: 'k'.repeat(32) })).toBe('k'.repeat(32));
+    const save = parseRaw({ schema: SCHEMA, hunters: [] });
+    expect(repairSave(structuredClone(save), env()).settings.sync.deviceToken).toBe(save.settings.sync.deviceToken);
+  });
+
+  test('a running fight is kept as the fight\'s parser reads it, and one it refuses opens as no fight with the rest of the save kept', () => {
+    const fight = runningFight();
+    expect(parseRaw({ schema: SCHEMA, hunters: [], fight }).fight).toEqual(fight);
+    const broken = parseRaw({ schema: SCHEMA, hunters: [{ id: 'h1', name: 'Kai' }], fight: { ...fight, rows: [...fight.rows, { id: 'c9', kind: 'dragon' }] } });
+    expect(broken.fight).toBeNull();
+    expect(onlyHunter(broken).name).toBe('Kai');
+  });
+});
+
+describe('fields the types do not know', () => {
+  const extras = (): Raw => ({ schema: SCHEMA, futureThing: { a: [1, 2] }, settings: { theme: 'dark', sync: { relay: 'x' } }, world: { weather: 'rain' },
+    hunters: [{ id: 'h1', name: 'Kai', petName: 'Rex', stats: { luck: 3 }, items: [{ id: 'i1', name: 'Orb' }],
+      quests: [{ id: 'q1', title: 'Go', objectives: [{ label: 'Walk', target: 2, progress: 1, hint: 'north' }], rewards: { xp: 2 } }] }],
+    monsters: [{ id: 'm1', name: 'Wolf' }], library: { shelf: 2, items: [] } });
+
+  test('unknown keys on the save, a hunter and what a hunter holds survive a parse', () => {
+    const save = parseRaw(extras());
+    expect(save).toMatchObject(extras());
+  });
+
+  test('a monster keeps only a monster\'s fields: it is read by parseMonster', () => {
+    const save = parseRaw({ schema: SCHEMA, hunters: [], monsters: [{ id: 'm1', name: 'Wolf', lair: 'cave' }] });
+    expect(save.monsters[0]).toMatchObject({ id: 'm1', name: 'Wolf' });
+    expect(save.monsters[0]).not.toHaveProperty('lair');
+  });
+
+  test('an item keeps only an item\'s fields: it is read by parseItem, wherever it is kept', () => {
+    const item = { id: 'i1', name: 'Orb', glow: true };
+    const save = parseRaw({ schema: SCHEMA, hunters: [{ id: 'h1', items: [item], quests: [{ id: 'q1', rewards: { items: [item] } }] }],
+      library: { items: [{ ...item, id: 'i2' }] }, shop: [item] });
+    const h = onlyHunter(save);
+    for (const kept of [h.items[0], h.quests[0]!.rewards.items[0], save.library.items[0], save.shop![0]]) {
+      expect(kept).toMatchObject({ name: 'Orb' });
+      expect(kept).not.toHaveProperty('glow');
+    }
+    expect(save.shop![0]).not.toHaveProperty('id');
+  });
+
+  test('a quest\'s reward keeps only a reward\'s fields: it is read by parseRewards', () => {
+    const h = onlyHunter(parseRaw({ schema: SCHEMA, hunters: [{ id: 'h1', quests: [{ id: 'q1', rewards: { xp: 2, fame: 2, titleName: 'Wolf Slayer' } }] }] }));
+    expect(h.quests[0]!.rewards).toMatchObject({ xp: 2, title: null });
+    expect(h.quests[0]!.rewards).not.toHaveProperty('fame');
+    expect(h.quests[0]!.rewards).not.toHaveProperty('titleName');
+  });
+});
+
+describe('a save file brought in from the Data view', () => {
+  const file = (sync: Raw, extra: Raw = {}): Save => parseRaw({ schema: SCHEMA, hunters: [{ id: 'h1', name: 'Imported' }], settings: { sync }, ...extra });
+  const mine = { ...newSyncSettings(), room: room('ABCDEF'), gmKey: gmKey('k'.repeat(32)), gmKeys: { ABCDEF: gmKey('k'.repeat(32)), GHJKLM: gmKey('g'.repeat(32)) } };
+
+  test('a file exported without the GM key keeps this phone\'s key for the room both are in', () => {
+    const kept = keepGmKey(file({ room: 'ABCDEF' }), mine).settings.sync;
+    expect([kept.gmKey, kept.gmKeys]).toEqual([mine.gmKey, mine.gmKeys]);
+  });
+
+  test('a file of another room, with no room, or with a key of its own is imported as it is', () => {
+    for (const sync of [{ room: 'GHJKLM' }, { room: null }, { room: 'ABCDEF', gmKey: 'f'.repeat(32) }]) {
+      const f = file(sync);
+      expect(keepGmKey(f, mine)).toBe(f);
+    }
+    const f = file({ room: 'ABCDEF' });
+    expect(keepGmKey(f, { ...mine, gmKey: null })).toBe(f);
+  });
+
+  test('a file of one hunter is told from a campaign by its kind', () => {
+    expect(fileKind(file({}, { kind: 'hunter' }))).toBe('hunter');
+    expect(fileKind(file({}))).toBe('campaign');
+    expect(fileKind(file({}, { kind: 'library' }))).toBe('campaign');
+  });
+});
+
+describe('gates', () => {
+  test('a stored gate is read by the gate parser: a cleared one keeps its day and what it paid, another status loses its day', () => {
+    const save = parseRaw({ schema: SCHEMA, hunters: [], gates: [
+      { id: 'g1', name: 'Den', status: 'cleared', clearedDay: 4, xpPaid: 150, createdDay: 2 },
+      { id: 'g2', name: 'Pit', status: 'raiding', clearedDay: 4 },
+      { id: 'g3', name: 'Cave', status: 'cleared', createdDay: 6 },
+    ] });
+    expect(save.gates[0]).toMatchObject({ id: 'g1', status: 'cleared', clearedDay: 4, xpPaid: 150 });
+    expect(save.gates[1]).toMatchObject({ id: 'g2', status: 'raiding' });
+    expect('clearedDay' in save.gates[1]!).toBe(false);
+    // No stored day: the day the gate was created.
+    expect(save.gates[2]).toMatchObject({ status: 'cleared', clearedDay: 6 });
+  });
+
+  test('a gate names a battle map by an id of 1 to 40 characters, or none', () => {
+    const gates = parseRaw({ schema: SCHEMA, hunters: [], gates: [{ id: 'g1', mapId: 'mp3' }, { id: 'g2', mapId: 'x'.repeat(41) }, { id: 'g3', mapId: 7 }] }).gates;
+    expect(gates.map(g => g.mapId)).toEqual(['mp3', null, null]);
+  });
+
+  test('a gate keeps only the fields a gate has', () => {
+    expect(parseRaw({ schema: SCHEMA, hunters: [], gates: [{ id: 'g1', mood: 'grim' }] }).gates).toEqual([{ ...newGate(), id: 'g1' }]);
+  });
+
+  test('a gate with no id or a repeated one gets a new id, and seq ends above it', () => {
+    const save = parseRaw({ schema: SCHEMA, hunters: [{ id: 'h1' }], seq: 20, gates: [{ id: 'g5', name: 'A' }, { id: 'g5', name: 'B' }, { name: 'C' }, { id: 9, name: 'D' }] });
+    // 'C' and 'D' take the default id g0; the second of them repeats it, as 'B' repeats g5. Repeats count up from seq 20.
+    expect(save.gates.map(g => [g.name, g.id])).toEqual([['A', 'g5'], ['B', 'g21'], ['C', 'g0'], ['D', 'g22']]);
+    expect(save.seq).toBe(22);
+  });
+});
+
+describe('the Hunter type', () => {
+  test('a hunter missing a field does not compile', () => {
+    const { gold, ...noGold } = newHunter();
+    // @ts-expect-error
+    const broken: Hunter = noGold;
+    const whole: Hunter = { ...noGold, gold };
+    expect(Object.keys(whole)).toHaveLength(Object.keys(broken).length + 1);
+  });
+
+  test('a hunter, a shadow and a monster of the save are what the sheet and the fight\'s rows read, with no change', () => {
+    const h: SheetHunter & RowHunter = newHunter();
+    const shadow: RowShadow = { ...newShadow(), id: 'sh1' };
+    const monster: RowMonster = newMonster();
+    expect(hunterRow(h, combatantId('c1'), RULES).hp).toBe(RULES.fight.hpBase);
+    expect(shadowRow(shadow, 'h1', combatantId('c2'), RULES).kind).toBe('shadow');
+    expect(monsterRows(monster, [combatantId('c3')], RULES)).toHaveLength(1);
+  });
+});
+
+describe('the lists save.ts repeats from rules.ts', () => {
+  test('equipment slots and rarities match the rules', () => {
+    expect([...SLOTS]).toEqual(RULES.slots);
+    expect([...RARITIES]).toEqual(TIERS);
+  });
+});
+
+describe('an ability\'s effect, by the rule or by hand (implicit audit 3, M2)', () => {
+  const swing = abilityOf('strike', { id: abilityId('swing'), name: 'Swing' }, RULES);
+  const library = (ability: unknown) => parseRaw({ schema: SCHEMA, hunters: [], library: { items: [], statuses: {}, skills: [{ id: 's1', name: 'Swing', type: 'active', ability }] } }).library.skills[0]!;
+
+  test('one by the rule is saved as its ticks, not as a formula, and reads back the same', () => {
+    expect(JSON.parse(JSON.stringify(swing.effect))).toEqual({ type: 'physical', by: 'rule', ticks: { scale: 'str', gap: null, scalers: [] } });
+    const kept = library(copy(swing));
+    expect(kept.type === 'active' ? kept.ability : null).toEqual(swing);
+  });
+
+  test('one stored before `by` is read as typed by hand, its formula kept, so a hunter keeps the ability; anything else for `by` drops it', () => {
+    const formula = formulaOf(swing, RULES)!, old = { ...copy(swing), effect: { type: 'physical', formula: copy(formula) } };
+    const kept = library(old);
+    expect(kept.type === 'active' ? kept.ability?.effect : null).toEqual({ type: 'physical', by: 'hand', formula });
+    const odd = library({ ...copy(swing), effect: { type: 'physical', by: 'luck', formula: copy(formula) } });
+    expect(odd.type === 'active' ? odd.ability : 'not active').toBeNull();
+  });
+});
+
+describe('an ability typed with Roll20 dice', () => {
+  // Advantage and a floor are a GM's text read once by parseFormula; the tree is what a save and a room message hold.
+  const formula = (text: string) => { const p = parseFormula(text, RULES); if (!p.ok) throw new Error(p.error); return p.formula; };
+  const ability = abilityOf('strike', { id: abilityId('lucky'), name: 'Lucky Swing', effect: { type: 'physical', by: 'hand', formula: formula('2d20kh1 + floor(phys / 2)') } }, RULES);
+
+  test('keeps its keep-highest dice and its floor through the GM\'s skill library', () => {
+    const save = parseRaw({ schema: SCHEMA, hunters: [], library: { items: [], statuses: {}, skills: [{ id: 's1', name: 'Lucky Swing', type: 'active', ability }] } });
+    const kept = save.library.skills[0]!;
+    expect(kept.type === 'active' ? kept.ability : null).toEqual(ability);
+    expect(printFormula(formulaOf(ability, RULES)!)).toBe('2d20kh1 + floor(phys / 2)');
+  });
+
+  test('keeps them on a fight row of a stored fight', () => {
+    const fight = runningFight(), withLucky = { ...fight, rows: fight.rows.map((r, i) => i === 0 ? { ...r, abilities: [...r.abilities, ability] } : r) };
+    expect(parseFight(copy(withLucky), RULES)?.rows[0]!.abilities.at(-1)).toEqual(ability);
+  });
+
+  test('a stored term with a keep past its dice is not read', () => {
+    const bad = copy(ability) as unknown as { effect: { formula: { left: { mods: { cut: { n: number } } } } } };
+    bad.effect.formula.left.mods.cut.n = 3;
+    expect(parseAbility(bad, RULES)).toBeNull();
+  });
+});
+
+describe('the ids a save keeps are read at load (audit row 87)', () => {
+  test('a room code, GM key, last room or device id that is not one is not kept', () => {
+    const s = parseRaw({ schema: SCHEMA, hunters: [], settings: { deviceId: 'not an id', sync: {
+      room: 'abcdef', gmKey: 'two words', gmKeys: { ABCDEF: 'k'.repeat(32), nope: 'k'.repeat(32), GHJKLM: 'bad key!' }, lastRoom: { code: 'ABC', why: 'left' },
+    } } });
+    expect(s.settings.deviceId, 'a device id with a space is made again').toBe(dev('d-test1'));
+    expect(s.settings.sync.room).toBeNull();
+    expect('gmKey' in s.settings.sync).toBe(false);
+    expect(s.settings.sync.gmKeys).toEqual({ ABCDEF: gmKey('k'.repeat(32)) });
+    expect('lastRoom' in s.settings.sync).toBe(false);
+  });
+
+  test('a room code, GM key and last room that read are kept as they were', () => {
+    const s = parseRaw({ schema: SCHEMA, hunters: [], settings: { deviceId: 'd-mine', sync: { room: 'ABCDEF', gmKey: 'k'.repeat(32), lastRoom: { code: 'GHJKLM', why: 'removed' } } } });
+    expect([s.settings.deviceId, s.settings.sync.room, s.settings.sync.gmKey, s.settings.sync.lastRoom]).toEqual([dev('d-mine'), room('ABCDEF'), gmKey('k'.repeat(32)), { code: room('GHJKLM'), why: 'removed' }]);
+  });
+
+  test('a log line names a hunter only by a save id; anything else is a line about the campaign', () => {
+    const s = parseRaw({ schema: SCHEMA, hunters: [], log: [{ id: 'l1', hunterId: 'h1' }, { id: 'l2', hunterId: 'Ana' }, { id: 'l3', hunterId: 4 }] });
+    expect(s.log.map(l => l.hunterId)).toEqual([hid('h1'), null, null]);
+  });
+
+  test('a Job Change chain whose quest id is not a save id is no chain', () => {
+    const chain = { id: 'c1', job: 'Ranger', step: 1, status: 'active' };
+    expect(onlyHunter(parseRaw(withHunter({ jobChain: { ...chain, questId: 'quest one' } }))).jobChain).toBeNull();
+    expect(onlyHunter(parseRaw(withHunter({ quests: [{ id: 'q5' }], jobChain: { ...chain, questId: 'q5' } }))).jobChain).toMatchObject({ questId: qid('q5'), status: 'active' });
+  });
+});
+
+describe('a roll in the roll log keeps who rolled it, what for, and a check\'s result (audit rows 23, 24, 79)', () => {
+  test('a stored roll keeps its hunter id, kind and check', () => {
+    const s = parseRaw({ schema: SCHEMA, hunters: [], rolls: [{ id: 'r1', hid: 'h4', who: 'Ana', kind: 'check', check: { dc: 15, success: true } }] });
+    expect(s.rolls[0]).toMatchObject({ hid: hid('h4'), who: 'Ana', kind: 'check', check: { dc: 15, success: true } });
+  });
+
+  test('a hunter id that is not one is the GM\'s roll, a kind not in the list a rule\'s own, and only a check holds a result', () => {
+    const s = parseRaw({ schema: SCHEMA, hunters: [], rolls: [
+      { id: 'r1', hid: 'Ana', kind: 'damage', check: { dc: 15, success: true } },
+      { id: 'r2', kind: 'check', check: { dc: 'high', success: true } },
+      { id: 'r3' },
+    ] });
+    expect(s.rolls.map(r => [r.hid, r.kind, r.check])).toEqual([[null, 'other', null], [null, 'check', null], [null, 'other', null]]);
+  });
+});
+
+describe('a day key is read at load (U5 left it to U14)', () => {
+  test('a stored day key that is not a date is none; the world\'s last daily day is then the day the save is read on', () => {
+    const s = parseRaw({ schema: SCHEMA, hunters: [{ id: 'h1', daily: { streak: 2, lastCompleteKey: 'yesterday', lastCheckedKey: '2026-11-11' } }], world: { lastDailyKey: 'Tuesday' } });
+    expect([s.hunters[0]!.daily.lastCompleteKey, s.hunters[0]!.daily.lastCheckedKey]).toEqual([null, day('2026-11-11')]);
+    expect(s.world.lastDailyKey).toBe(dayKey(NOW, 0));
+  });
+});
+
+describe('this phone\'s identity stays on this phone (IO1)', () => {
+  const mine = freshSave({ now: new Date(0), newDeviceToken: () => 'mine-token-0123456789abcdefghijkl', newDeviceId: () => dev('d-mine') }, { onboarded: true });
+  const theirs = freshSave({ now: new Date(0), newDeviceToken: () => 'their-token-0123456789abcdefghijk', newDeviceId: () => dev('d-theirs') }, { onboarded: true });
+  const keyed = { ...mine, settings: { ...mine.settings, sync: { ...mine.settings.sync, gmKey: gmKey('gm-key-1'), gmKeys: { ABCD23: gmKey('gm-key-1') } } } };
+
+  test('an exported campaign carries no device id and no device token, and its GM keys only when asked', () => {
+    const file = JSON.parse(JSON.stringify(exportedSave(keyed, false)));
+    expect([file.settings.deviceId, file.settings.sync.deviceToken, file.settings.sync.gmKey, file.settings.sync.gmKeys]).toEqual([undefined, undefined, undefined, undefined]);
+    const withKeys = JSON.parse(JSON.stringify(exportedSave(keyed, true)));
+    expect([withKeys.settings.sync.gmKey, withKeys.settings.sync.deviceToken]).toEqual(['gm-key-1', undefined]);
+    expect(file.hunters).toEqual(JSON.parse(JSON.stringify(keyed.hunters)));
+  });
+
+  test('a campaign swapped in keeps this phone\'s device id and token, whatever it held', () => {
+    const next = keepPhone(theirs, mine);
+    expect([next.settings.deviceId as string, next.settings.sync.deviceToken]).toEqual(['d-mine', 'mine-token-0123456789abcdefghijkl']);
+    expect(next.hunters).toEqual(theirs.hunters);
+  });
+
+  test('round trip: a file read back on another phone is that phone to the room', () => {
+    const read = parseSave(JSON.stringify(exportedSave(keyed, false)), { now: new Date(0), newDeviceToken: () => 'fresh-token-0123456789abcdefghijk', newDeviceId: () => dev('d-fresh') });
+    if (read.kind !== 'save') throw new Error(`read as ${read.kind}`);
+    expect(keepPhone(read.save, theirs).settings.deviceId).toBe(dev('d-theirs'));
+  });
+});
+
+describe('a hunter\'s job as the save keeps it (H9)', () => {
+  test('a job is kept as its name; a blank, a non-string or the old default "None" is read as none (null)', () => {
+    const read = (job: unknown) => parseSheetHunter({ ...newHunter(RULES), id: 'h1', job })?.job;
+    expect([read('Mage'), read('  Shadow   Monarch '), read(''), read('None'), read(7), read(null)]).toEqual(['Mage', 'Shadow Monarch', null, null, null, null]);
+  });
+});

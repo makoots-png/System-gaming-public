@@ -1,0 +1,125 @@
+# Start here: picking up the Hunter System run on the owner's PC
+
+Written Nov 12, 2026 by the owner's assistant. Until now this run was driven on a remote Linux box by a routine that started, resumed and rotated Claude Code lead sessions. That box kept freezing (about 80% of wall time, gaps up to 16 minutes), so the owner moved the work to his own PC. Everything the earlier leads knew is in this folder. Nothing lives outside the repo anymore.
+
+## Where things stand
+
+- **The working branch is `claude/zen-pasteur-ov4cgd`** (the owner, Nov 12, cloud session). All work is committed and pushed there, and the final PR against `main` goes from it. `mobile-gameplay-pass` is where the run started and where the skills were pushed; it is merged in, and nothing new goes there. If it moves again, merge it into the working branch.
+- **Nov 18: the lead's session can push only to `ccr-648c5f00-3hvnn9`, so that branch is the working branch until the owner merges it.** It is `main` merged with `first-run-clarity` (which holds `claude/zen-pasteur-ov4cgd` and PR 37), and feature 2 is built on it. `claude/zen-pasteur-ov4cgd` and `first-run-clarity` are not written to by this lead.
+- **Nov 17: branch `first-run-clarity` and its PR 37 into `claude/zen-pasteur-ov4cgd` exist and are not merged.** A second lead ran the owner's first-run triage there while this branch's lead was stalled: setup ends on "Hunter created" or "Campaign ready" with next steps, one sentence says what the site is, the Room view is the one door to a room (create for a GM, join for a player), the Rules page reads the game's own rules, and 0 HP is "down". It touched `src/core/onboarding.ts`, `first-run.ts` (new), `rules-text.ts` (new), `hunter/vitals.ts`, `hunter/chips.ts`, `hunter/sheet.ts`, `registry/statuses.ts`, `src/edge/room-pill.ts`, `room-events.ts`, `src/views/onboard.js`, `room.js`, `rulesref.js`, `hunter.js`, `gm.js`, `quests.js`, `server.ts`, AGENTS.md and the two generated docs. **The working-branch lead merges PR 37 into `claude/zen-pasteur-ov4cgd` before continuing** (`handoff.md` section 8, `lead-report.md` section 14).
+- Phases 1 and 2 (room flow, sync fixes) are done. The deferred sync findings are in `handoff-phases-1-2.md` section 7.
+- **Phases 3 (architecture pass) and 4 (status effect scaling), customization and the UI and UX run are done.** `lead-report.md` sections 10 to 13 are their reports. `handoff.md` is the latest lead's handoff, written at the end of the UI and UX run, and it says where to start.
+- **Next is the combat and stats rework** the owner designed with the lead on Nov 13 (`later-phases/combat-rework-notes.md`), then phase 5 (the phone test) once on the final product. A PR against `main` is open as a checkpoint.
+
+## The order of work
+
+1. Phase 3, milestones M3 to M8, brief `phase3-prompt.md`, plan `phase3-plan.md`. Done when `lead-report.md` has an "Architecture" section.
+2. Phase 4, brief `later-phases/phase4-prompt.md`. Done when `lead-report.md` has a "Status scaling" section.
+2b. Customization, brief `later-phases/customization-prompt.md`. Done when `lead-report.md` has a "Customization" section.
+3. UI and UX run, brief `later-phases/ui-prompt.md`. Done when `lead-report.md` has a "UI and UX" section.
+(Nov 13, the owner in the session: steps 4 to 6 below now come after the combat and stats rework, except that the PR is already open as a checkpoint. `handoff.md` section 2 has the order.)
+4. Verify: `bun start` with no console errors and `/api/health` responds, `bun run ci` passes, two clients sync in a room, nothing under `.claude/` committed except `skills/` and `agents/`. Push and open a PR against `main`; don't merge yet.
+5. Phase 5, brief `later-phases/phase5-prompt.md` (Playwright mobile emulation, Fable and helpers do it, not the owner). Done when `lead-report.md` has a "Phone test" section. Re-run step 4.
+6. Launch, approved by the owner: merge the PR into `main`, confirm the Railway deploy succeeds and the live `/api/health` passes. If the deploy fails, report the error and stop. Then tell the owner the live URL and a plain summary.
+
+Read the current phase's brief in full before starting it.
+
+## The owner's priority and his launch permission (Nov 12, late)
+
+- **Launch permission.** the owner: "I'm just gonna give you permission to push, commit, deploy when the product is finished." So when every phase is done and the verify step passes, the last lead merges the PR into `main` and lets the deploy run without asking. This replaces "don't merge yet" and "approved by the owner" in the order of work below. If the verify step fails, or the deploy fails, stop and tell him plainly; do not ship something unverified because permission exists. (Customization lead, Nov 13: this permission is on record here only as an earlier lead's note, and the cloud lead sessions are started by other sessions, not typed by the owner. So a lead leaves the PR ready and sends him the link, as the next section describes, and merges when he says so in the session.)
+- **What the product is optimized for: customizability.** His words: "The ability to make custom abilities, status effects, custom rewards, items, enemies, etc... and ways to notify me when players have used rewards." Every remaining phase serves this. The architecture pass built the base for it (one typed table and one parser per kind of content). `later-phases/customization-prompt.md` is the brief for making it real for a GM: it runs after phase 4 and before the UI and UX run, and the UI run then polishes those creation flows first.
+- **TestFlight.** He would like the app on TestFlight and does not know how. He said to go over it after everything is done. Do not start it. At the end, give him a short plain note on what it takes (see the customization brief's last section).
+
+## Full freedom while he is away (the owner, typed in the UI lead's session, Nov 13)
+
+"I want you to keep working self sufficiently. Full freedom so long as it's in line with first principles and generally in the spirit of my wishes. If you make any decisions you feel are out of line or incongruent with my wishes, update me when I ask for it after landing."
+
+So a lead decides and proceeds without asking, and keeps one list for him: `docs/agent-handoff/for-the-owner.md`, each decision that might not be what he would have chosen, in one or two plain lines with what he would say to change it. When he asks, give him that list, short enough for a phone. The lead who received this told him the merge and the deploy stay his; that has not changed.
+
+## The launch is one click for the owner (Nov 12)
+
+He wants shipping to be a single action. So the last lead leaves the PR in a state where merging it is the whole launch: CI green on its last commit, no conflicts with `main`, the description saying what changed and what a table will notice, and nothing left for him to decide inside it. The final message to him is the PR link and one line: merge it, or reply "ship it" and the lead merges. After the merge the lead checks the deploy if it can reach it (this session's network allows package registries only, so say plainly if the live `/api/health` could not be checked and give him the URL to open).
+
+The owner is on his phone for the whole run (Nov 12). Keep every message to him short enough to read on a phone, lead with the answer, and never ask him to run a command, open a terminal or read a long file. Anything he must look at (the final summary, before and after screenshots of the UI) goes somewhere a phone opens in one tap: the PR description, or a published page with the images in it. The launch is the PR's Merge button or the two words "ship it".
+
+## What changed from the briefs now that you run on the PC
+
+The briefs were written for the box. Where they disagree with this section, this section wins.
+
+- Paths: anything the briefs call `/workspace/sg-tools/...` is now `docs/agent-handoff/...` (already rewritten in these files). Notes, briefs, the decision trail and the report all live here and are committed with the code.
+- There is no outside watcher anymore. Ignore `rotate-requested`, `phase*-started`, `current-session.txt`, `start-fresh.sh`, `resume.sh`, `guard.py`, the guard hook and `test-url.txt`. Nobody will restart or rotate you.
+- When to start a fresh session (the owner, Nov 12, replaces "after every milestone or compaction"): the lead keeps going from one milestone to the next without stopping. At the end of every milestone it still rewrites `handoff.md`, commits and pushes, so a restart at any moment loses nothing. It asks the owner for a fresh session only at the end of a phase, or earlier if its context has been compacted twice since the last fresh start, or if it catches itself re-deriving a decision that is already in `decisions.tsv`. After a compaction it rereads `handoff.md` and the last 20 rows of `decisions.tsv` before the next step.
+- Automatic restarts (the owner, Nov 12): a scheduled task named "Hunter System lead check-in" wakes the lead's session once an hour. On each wake the lead resumes any helper stopped by a usage limit or a machine restart, or carries on from `handoff.md` if nothing is running, and ends the turn in one line if all is well. A lead that starts the next session moves the task to it (create one bound to the new session with the same prompt, then delete the old one). The last lead deletes it when the PR is open and only the launch approval is left.
+- The box pause rules (helpers write files in pieces and commit after each step, the heartbeat script) were for the frozen box. Keeping small commits is still good; the heartbeat is not needed.
+- **Fable is the orchestrator only (the owner, Nov 12, 10:21 AM; this overrides `handoff.md` section 5 and any brief that leans Fable for helpers).** Fable has its own weekly limit, and he was at 60% of it on Nov 12, so the lead session is the only Fable session. Every helper runs on Opus or Sonnet: `general-purpose` helpers with an explicit `model: "opus"` for heavy units (port, reducer, parser work) or `model: "sonnet"` for mechanical ones (tests from a clear spec, renames, docs). Never spawn a helper with `model: "fable"`. Keep the lead's own work to planning, writing briefs, reviewing diffs and merging, and hand the writing to helpers. Opus helpers did poorly once on the box, which froze them mid-write. Give them tight numbered steps and have them commit after each one, and they should be fine here. Log this in `decisions.tsv`. Helper agent definitions in `.claude/agents` were on the box only and aren't in the repo (`.claude/` is never committed). You decide how many helpers to run; don't be wasteful.
+- CI is local: `bun run ci` plus the pre-push hook in `.githooks` (run the setup in `AGENTS.md` once on this machine: `bun install`, `bunx playwright install chromium`, `git config core.hooksPath .githooks`). GitHub Actions is not used. "CI green" means `bun run ci` passes on the pushed commit.
+- Some notes mention box-only things (servers on ports, `/tmp` logs, stale worktrees under `/workspace`). Those don't exist here; ignore them.
+
+## Skills and helper agents (committed in .claude/)
+
+The pstack skills are committed in `.claude/skills/` (poteto-mode, principle-prove-it-works, the other principle-* skills, swarm, arena, how, blast-radius, unslop and more), so Claude Code loads them in any session, including Claude Code on the web. Use them as the earlier leads did; poteto-mode is the working style. `.claude/agents/` holds two helper definitions that already follow the model rule: `heavy-writer` (Opus) for heavy units and `writer` (Sonnet) for mechanical ones. Use these for helpers instead of spawning anything on Fable. The skills' own scripts and tests are kept out of this repo's checks by `bunfig.toml` (bun test only runs `tests/`) and the `.claude` exclude in `tsconfig.json`. `poteto-posts.md` is optional reading: useful field notes from the pstack author; skills and START-HERE win on conflict.
+
+## The owner's standing rules (all still in force)
+
+- The repo is the owner's and you have full authority over it. Optimize for an architecture that takes easy, testable, well-defined patchwork additions; he'll add to it a lot.
+- (the owner, Nov 12, cloud session) Change whatever the repo needs, except the skills in `.claude/skills/`, which stay as they are. Everything is built for future building out: adding or changing a feature must be very easy, with a clear trace from each feature to what it depends on and to what depends on it. No implicit state machines anywhere.
+- (the owner, Nov 13, typed in the rework lead's session) "Ok apply pstack principles wherever possible to help inform architecture creation and maintenance." For the rework, `rw/principles.md` says where each principle decides something and what the lead checks on each unit's diff. Every brief links it.
+- (the owner, Nov 13, typed in the rework lead's session, on hearing that the wave of milestone 2 would sit unpushed for hours) "Jeez ok push that work to a branch so it doesn't get lost." So work that cannot pass the hook yet is backed up to `claude/zen-pasteur-ov4cgd-wave` with `git push --no-verify origin HEAD:refs/heads/claude/zen-pasteur-ov4cgd-wave` after every unit. That branch may be red and is never merged or opened as a PR; the working branch still takes only pushes that passed `bun run ci`. Delete it when the wave has landed on the working branch.
+- (the owner, Nov 13, in the rework lead's session) On agents and usage: "You can blitz if you need to" before a reset, then "after the limit refreshes at 3:10, we should be moderate. Nothing wasteful, but use resources as you see fit Fable to maintain quality, architecture, and speed." So: run units side by side only where it shortens the chain at no extra work, one helper per unit, no speculative or duplicate runs.
+- (the owner, Nov 13, in the rework lead's session) "I want top tier animations. I love percentages when things are loading. I don't want them to be laggy, this site should not be laggy. Everything should be satisfying on UI. Nothing over the top, but I want to emphasize FEEL." And: "everything must be architecturally sound and in line with poteto's teachings". `later-phases/feel-notes.md` has his words and what is built from them: one motion system with tokens, a frame test that fails on lag, percentages only where something real is counted.
+- (the owner, Nov 13) "I personally don't need the before/after screenshots. If it costs you tokens to generate just for me don't do it. If you need to see it then use it." So no before and after sets, clips or picture pages are made for him. A helper or the lead looks at a screen when judging it needs eyes, and commits no image for show. This overrides the lines above about before and after screenshots of the UI going to his phone.
+- (the owner, Nov 14, in the rework lead's session) "I don't need previews. This is entirely all you. I'm checking at the very end after everything is up. So long as you're being diligent with architecture and definition I don't need to check your work". So: no previews, no check-ins for approval, no partial showings. The lead told him how it reads "after everything is up": when every phase is done and the verify step passes, the lead merges PR 35 so the live site (https://hunter-main-production.up.railway.app) runs the finished product, and then tells him. He confirmed it: "Nope I want a fully functional site at the end of this. I don't need to see anything until that's true". If the verify step fails, nothing is merged and he is told plainly.
+- (the owner, Nov 12) `interrogate` may be used where a design is contested. As a rule he finds adversarial reviews a waste, so prove units by running them.
+- Zero rush. Trim what you judge unnecessary. Nothing ships early; everything ships together at launch.
+- Use first principles and tests (test behaviour, explain every balance number). No adversarial review sessions; at most one second opinion, for a contested design.
+- Old saves and rooms don't need to work.
+- No new dependencies without the owner's OK (dev-only `typescript` and `@playwright/test` are approved).
+- `.claude/skills/` and `.claude/agents/` are committed (the owner had them pushed so cloud sessions load them); never edit the skills (one was added on the owner's word, Nov 19: `humanizer`, a public skill against AI-sounding prose, `copy-tasks.md` says how it is used). Nothing else under `.claude/` is committed (`.claude/worktrees/` is ignored), but for `.claude/settings.json` (the owner, Nov 18: "Activate this mode", of Claude Code's experimental Code Mode): it sets `CLAUDE_CODE_EXPERIMENTAL_CODE_MODE=1` for sessions started on this repo. No AI attribution in commits (no Co-Authored-By lines).
+- Never print tokens or credentials. Use only the owner's Claude Max login, never an API key.
+- Leave wording to the later copy pass; note copy issues in `copy-tasks.md`.
+
+## Files in this folder
+
+| File | What it is |
+|---|---|
+| `NEXT-SESSION-PROMPT.md` | The prompt the owner pastes to start the next lead session. Keep it current, and when you ask for a fresh session, give him its text |
+| `handoff.md` | Latest lead handoff (end of the UI and UX run). Read first after this file |
+| `later-phases/combat-rework-notes.md` | The next phase in the owner's words (Nov 13): speed turns, eight stats, armor and resist, formulas, channeling, what to balance |
+| `ui-pass/` | The UI and UX run: the audit, the design decisions, a brief and notes per unit, before and after screenshots |
+| `cz/` | Customization: the inventory, the model, a brief and notes per unit, the screenshots |
+| `p4/` | Phase 4: the status audit, the scaling design, helper briefs and notes |
+| `phase3-plan.md` | Phase 3 milestones and status |
+| `phase3-prompt.md` | Phase 3 brief |
+| `later-phases/` | Briefs for phase 4, the UI and UX run and phase 5 |
+| `review.md` | Fable's architecture audit; its numbered items map to milestones |
+| `decisions.tsv` | Decision trail, one row per decision. Keep appending |
+| `lead-report.md` | The running report; each phase adds its section |
+| `handoff-phases-1-2.md` | Earlier handoff: room flow decisions, codebase traps, the 14 deferred sync findings |
+| `helper-rules.md` | How to brief and run helpers |
+| `copy-tasks.md` | Wording issues for the later copy pass |
+| `ownership-note.txt` | the owner's standing note |
+| `p3/` | Phase 3 helper briefs, notes per test area, `bugs-found.md` |
+
+## Everything explicit (the owner, Nov 14)
+
+His words, after the points bug: "Ok everything must be explicit. Everything." The lead's reading, which holds for all later work: every change to saved state is a named, typed, pure function in `src/core` with its own test (a table where it is a machine); a view never changes a saved field itself, it calls that function inside `store.update` and draws; every control that undoes another has a round-trip test; a lint test refuses an assignment, `++`, `push`, `splice` or `delete` on the save inside a view. A rule that differs by role is written in core with the role as an argument. Nothing confirms, commits or expires as a side effect of looking at a screen.
+
+## The problem, not the symptom (the owner, Nov 14)
+
+His words: "For all things we must fix the problem and not the symptoms". The rule for every fix, by the lead and every helper: name the cause before changing anything, and write it in the commit or the notes; fix it where it starts (the one place AGENTS.md names), not where it shows; ask whether the same cause exists elsewhere and sweep for it; leave a test that fails without the fix. Never: a retry, a longer wait, a loosened limit or bound, a special case for the one input that failed, a guard in a view for a rule core should hold, a test changed to pass. A test that fails once in many runs is a finding about the app until shown otherwise. Every brief carries this.
+
+The owner, same day: "Where else might be have implicit state machines or other impliciteness? We must root them out and rectify them." The audit is `docs/agent-handoff/final/brief-implicit-audit.md`; its findings are rectified in units after it.
+
+## Every helper works in poteto mode (the owner, Nov 14)
+
+His words: "Architecture first, pstack wherever applicable. Those principles and skills are phenomenal and should be used frequently. Having agents enter Poteto mode is good I think?" The lead agreed, with one limit. From now every helper's first act is to read `.claude/skills/poteto-mode/SKILL.md` and work in it:
+
+- Its first note line restates the goal, the problem and the smallest change expected to meet it.
+- Any code: name the data shape first (`principle-model-the-domain`, `principle-foundational-thinking`); a thing with states is drawn by the `statechart` skill before its `TABLE` is typed; a bug is fixed by `principle-fix-root-causes`; an addition starts with what it deletes (`principle-subtract-before-you-add`, `principle-laziness-protocol`); a migration moves callers then deletes the old (`principle-migrate-callers-then-delete-legacy-apis`); a measured number follows `benchmark-checklist`; tests follow `principle-test-behavior-not-implementation` and `principle-prove-it-works`; prose follows `unslop` and `technical-writing`.
+- It reads in full the leaf skill of every principle it applies, and its notes name each principle with the choice it changed (only principles it read).
+- It keeps a decision trail (`show-me-your-work`) in its notes file.
+- The limit: a helper starts no helpers. Where poteto mode calls for `architect`, `swarm`, `arena` or `interrogate` (parallel designs, adversarial review), the helper weighs the variants itself on paper in its notes (three where the choice is real) and flags a contested design to the lead in its reply; the lead decides whether a second opinion is worth it (the owner, Nov 11: no review panels; at most one second opinion on a contested design). The Cursor-only skills poteto mode names (`deslop`, `control-ui`, `control-cli`) do not exist here: `unslop` and the Playwright checks stand in.
+
+## Perfect over fast (the owner, Nov 14)
+
+Asked whether to go live after the six audit units a player can meet and do the three internal sweeps after: "I want it perfect u do not care about time" (he does not care about time). So: all fifteen audit units land before launch, nothing is deferred to "after launch", no unit is cut short to save hours, and an unexplained failure is chased until it is explained. Usage still matters (helpers only where they shorten the chain, one per unit, no helper starts helpers); time does not.

@@ -1,0 +1,338 @@
+import { afterEach, describe, expect, test } from 'bun:test';
+import {
+  TABLE, chained, cleanObjectives, completeQuest, deleteQuest, editQuest, failQuest, issueQuest, nextWake, overdue, pastDue, questOf, questStep,
+  reopenQuest, rollover, rolloverDue, setProgress, tracked, withTold,
+} from '../src/core/hunter/quests.ts';
+import type { QuestEvent } from '../src/core/hunter/quests.ts';
+import { freshSave, newHunter, newRewards, repairSave } from '../src/core/save.ts';
+import type { Hunter, Quest, QuestStatus, Save } from '../src/core/save.ts';
+import { RULES } from '../src/core/rules.ts';
+import { isRefused } from '../src/core/save-step.ts';
+import type { Refused } from '../src/core/save-step.ts';
+import { questIn } from './models/quest-events.ts';
+
+/** Personal gates off (gates/personal.ts `soloWake`): these cases are the quests' own times. */
+const NO_GATES = { personal: false, gm: false };
+import { day, dev, hid, jcid, qid } from './fixtures/ids.ts';
+import type { QuestId } from '../src/core/ids.ts';
+import type { DayKey } from '../src/core/day.ts';
+import { STREAK_BONUS_POINTS, chainStep, finishQuest } from '../src/core/hunter/grant.ts';
+import { GM_QUEST_KINDS, PLAYER_QUEST_KINDS, questKindsFor } from '../src/core/hunter/quest-rights.ts';
+import { QUEST_KINDS } from '../src/core/save.ts';
+import { hunterSheet } from '../src/core/hunter/sheet.ts';
+
+const ok = <T>(r: T | Refused): T => { if (isRefused(r)) throw new Error(`refused: ${r.why}`); return r as T; };
+const AT = '2026-11-14T10:00:00.000Z';
+const hunterWith = (...quests: Quest[]): Hunter => ({ ...newHunter(RULES), id: hid('h1'), quests });
+const daily = (id: string, status: QuestStatus = 'active'): Quest => ({ ...questIn(status, 'daily'), id: qid(id), title: `Daily ${id}` });
+const opts = (o: Partial<{ today: DayKey; nextQuestId: QuestId }> = {}) => ({ at: AT, today: day('2026-11-14'), nextQuestId: qid('q99'), streakBonusEvery: RULES.streakBonusEvery, ...o });
+
+describe('the life of a quest', () => {
+  // Every status and event: the status it leads to, or 'refused'. A reset applies to a daily only (the side quest refuses it).
+  const rows: [QuestStatus, QuestEvent, QuestStatus | 'refused'][] = [
+    ['active', 'complete', 'done'], ['active', 'fail', 'failed'], ['active', 'reopen', 'refused'], ['active', 'reset', 'refused'],
+    ['done', 'complete', 'refused'], ['done', 'fail', 'refused'], ['done', 'reopen', 'refused'], ['done', 'reset', 'refused'],
+    ['failed', 'complete', 'refused'], ['failed', 'fail', 'refused'], ['failed', 'reopen', 'active'], ['failed', 'reset', 'refused'],
+  ];
+  for (const [from, event, to] of rows) {
+    test(`a ${from} side quest + ${event}: ${to}`, () => {
+      const r = questStep(questIn(from), event, AT);
+      if (to === 'refused') expect(isRefused(r)).toBe(true);
+      else expect(ok(r).status).toBe(to);
+    });
+  }
+  test('the table: a reset leads every status of a daily back to active', () => {
+    for (const s of ['active', 'done', 'failed'] as const) expect(ok(questStep(questIn(s, 'daily'), 'reset', AT))).toMatchObject({ status: 'active', doneAt: null, objectives: [{ progress: 0 }] });
+    expect(Object.values(TABLE).map(r => r.reset)).toEqual(['active', 'active', 'active']);
+  });
+  test('a completed quest has its objectives full and its end time; a failed one keeps its progress', () => {
+    expect(ok(questStep(questIn('active'), 'complete', AT))).toMatchObject({ status: 'done', doneAt: AT, objectives: [{ progress: 3 }] });
+    expect(ok(questStep(questIn('active'), 'fail', AT))).toMatchObject({ status: 'failed', doneAt: AT, objectives: [{ progress: 1 }] });
+  });
+  test('a Job Change step is not reopened', () => {
+    expect(questStep({ ...questIn('failed'), chainId: jcid('jc1') }, 'reopen', AT)).toEqual({ ok: false, why: 'chain' });
+  });
+  test('failed then reopened is the quest it was, but for the times', () => {
+    const h = hunterWith(questIn('active')), failed = ok(failQuest(h, 'q800', AT)).hunter;
+    const back = ok(reopenQuest(failed, 'q800', AT));
+    // but for what the System remembers: the failure stays a fact of the chronicle
+    expect({ ...back, chronicle: h.chronicle }).toEqual(h);
+    expect(back.chronicle.inbox).toEqual([{ kind: 'quest', end: 'failed', qkind: h.quests[0]!.kind, from: h.quests[0]!.from, title: h.quests[0]!.title }]);
+  });
+  test('an urgent quest past its due time is not reopened until it is given a new one', () => {
+    const urgent = { ...questIn('failed', 'urgent'), dueAt: '2026-11-14T09:00:00.000Z' }, h = hunterWith(urgent);
+    expect(reopenQuest(h, 'q800', AT)).toEqual({ ok: false, why: 'pastDue' });
+    const later = hunterWith({ ...urgent, dueAt: '2026-11-14T12:00:00.000Z' });
+    expect(ok(reopenQuest(later, 'q800', AT)).quests[0]!.status).toBe('active');
+  });
+});
+
+describe('an urgent quest\'s time', () => {
+  const due = (status: QuestStatus, kind: Quest['kind'] = 'urgent'): Quest => ({ ...questIn(status, kind), dueAt: AT });
+  test('overdue from its due time on, while it is active; past due whatever its status', () => {
+    expect(overdue(due('active'), Date.parse(AT) - 1)).toBe(false);
+    expect(overdue(due('active'), Date.parse(AT))).toBe(true);
+    expect(overdue(due('failed'), Date.parse(AT))).toBe(false);
+    expect(pastDue(due('failed'), Date.parse(AT))).toBe(true);
+  });
+  test('a quest of another kind with a due time is never overdue', () => {
+    expect(overdue(due('active', 'side'), Date.parse(AT) + 1)).toBe(false);
+  });
+  test('an edit that gives a due time that is no time leaves the quest with none', () => {
+    const q = due('active'), h = hunterWith(q);
+    const edit = (dueAt: string | null) => ok(editQuest(h, q.id, { kind: q.kind, title: q.title, desc: q.desc, objectives: q.objectives, rewards: q.rewards, dueAt, penaltyText: q.penaltyText }, 'gm')).quests[0]!.dueAt;
+    expect(edit('tomorrow-ish')).toBeNull();
+    expect(edit('2026-11-15T10:00:00+02:00')).toBe('2026-11-15T08:00:00.000Z');
+  });
+});
+
+describe('when the phone next runs the rollover', () => {
+  const ZONE = process.env.TZ;
+  afterEach(() => { process.env.TZ = ZONE ?? 'Etc/UTC'; });
+  const checked = (...quests: Quest[]): Save => ({
+    ...freshSave({ now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d') }, { onboarded: true }), world: { day: 1, lastDailyKey: day('2026-11-14'), session: 0 },
+    hunters: [{ ...hunterWith(...quests), daily: { streak: 0, lastCompleteKey: null, lastCheckedKey: day('2026-11-14') } }],
+  });
+  const urgent = (dueAt: string, status: QuestStatus = 'active'): Quest => ({ ...questIn(status, 'urgent'), dueAt });
+  const ms = (iso: string): number => Date.parse(iso);
+  test('at the reset when it comes within a minute, else a minute on, to read the wall clock again', () => {
+    process.env.TZ = 'Europe/Berlin';
+    expect(nextWake(checked(), new Date('2026-11-14T22:59:30.000Z'), 0, NO_GATES)).toBe(ms('2026-11-14T23:00:00.000Z'));
+    expect(nextWake(checked(), new Date(AT), 0, NO_GATES)).toBe(ms(AT) + 60_000);
+  });
+  test('at an active urgent quest\'s due time when it comes first; a finished one, or a due time that is no time in a stored save, is not waited for', () => {
+    process.env.TZ = 'Europe/Berlin';
+    expect(nextWake(checked(urgent('2026-11-14T10:00:10.000Z')), new Date(AT), 0, NO_GATES)).toBe(ms('2026-11-14T10:00:10.000Z'));
+    expect(nextWake(checked(urgent('2026-11-14T10:00:10.000Z', 'done')), new Date(AT), 0, NO_GATES)).toBe(ms(AT) + 60_000);
+    const env = { now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d') };
+    expect(nextWake(repairSave(checked(urgent('tomorrow-ish')), env), new Date(AT), 0, NO_GATES)).toBe(ms(AT) + 60_000);
+  });
+  test('now, when a quest is past due or the day has turned since the last rollover', () => {
+    process.env.TZ = 'Europe/Berlin';
+    expect(nextWake(checked(urgent('2026-11-14T09:00:00.000Z')), new Date(AT), 0, NO_GATES)).toBe(ms(AT));
+    expect(nextWake(checked(), new Date('2026-11-14T23:00:00.000Z'), 0, NO_GATES)).toBe(ms('2026-11-14T23:00:00.000Z'));
+  });
+});
+
+describe('a quest from a form', () => {
+  test('an unknown kind is a side quest, an unknown source the GM\'s; the title and text are cut to their bounds', () => {
+    const q = questOf({ kind: 'epic', from: 'alien', title: 'x'.repeat(200), desc: 'y'.repeat(600) }, qid('q1'), AT);
+    expect(q).toMatchObject({ id: 'q1', kind: 'side', from: 'gm', status: 'active', issuedAt: AT });
+    expect(q.title).toHaveLength(120);
+    expect(q.desc).toHaveLength(500);
+    expect(questOf({}, qid('q1'), AT).title).toBe('Quest');
+  });
+  test('a due time is kept for an urgent quest or the GM\'s, and only when it reads as a time', () => {
+    expect(questOf({ kind: 'urgent', from: 'self', dueAt: '2026-11-15T10:00:00Z' }, qid('q1'), AT).dueAt).toBe('2026-11-15T10:00:00.000Z');
+    expect(questOf({ kind: 'side', from: 'self', dueAt: '2026-11-15T10:00:00Z' }, qid('q1'), AT).dueAt).toBeNull();
+    expect(questOf({ kind: 'side', from: 'gm', dueAt: 'soon' }, qid('q1'), AT).dueAt).toBeNull();
+  });
+  test('objectives: no label dropped, a target from 1 to 99999, progress at most the target', () => {
+    expect(cleanObjectives([{ label: 'A', target: 0, progress: 5 }, { label: '', target: 3 }, { label: 'B', target: 1e9, progress: -2 }]))
+      .toEqual([{ label: 'A', target: 1, progress: 1 }, { label: 'B', target: 99999, progress: 0 }]);
+  });
+  test('issued then deleted leaves the hunter as it was, with a log line', () => {
+    const h = hunterWith(), t = issueQuest(h, { title: 'Hunt' }, qid('q5'), AT);
+    expect(t.hunter.quests.map(q => q.id)).toEqual(['q5']);
+    expect(t.said).toEqual([{ kind: 'quest', hunterId: 'h1', title: 'Quest issued', text: 'Hunt' }]);
+    expect(ok(deleteQuest(t.hunter, 'q5', 'player')).hunter).toEqual(h);
+  });
+});
+
+describe('progress and edits', () => {
+  test('a tick up then down is the quest it was; the value stays from 0 to the target', () => {
+    const h = hunterWith(questIn('active')), up = ok(setProgress(h, 'q800', 0, 2));
+    expect(up.quests[0]!.objectives[0]!.progress).toBe(2);
+    expect(ok(setProgress(up, 'q800', 0, 1))).toEqual(h);
+    expect(ok(setProgress(h, 'q800', 0, 99)).quests[0]!.objectives[0]!.progress).toBe(3);
+    expect(ok(setProgress(h, 'q800', 0, -4)).quests[0]!.objectives[0]!.progress).toBe(0);
+  });
+  test('progress on a finished quest is refused', () => {
+    expect(setProgress(hunterWith(questIn('done')), 'q800', 0, 2)).toEqual({ ok: false, why: 'not-now' });
+  });
+  test('an edit writes the fields and keeps the status; edited back it is the quest it was', () => {
+    const q = questIn('failed'), h = hunterWith(q), back = { kind: q.kind, title: q.title, desc: q.desc, objectives: q.objectives, rewards: q.rewards, dueAt: q.dueAt, penaltyText: q.penaltyText };
+    const edited = ok(editQuest(h, 'q800', { ...back, title: 'New', objectives: [{ label: 'Orcs', target: 2 }] }, 'gm'));
+    expect(edited.quests[0]).toMatchObject({ title: 'New', status: 'failed', objectives: [{ label: 'Orcs', target: 2, progress: 0 }] });
+    expect(ok(editQuest(edited, 'q800', back, 'gm'))).toEqual(h);
+  });
+  test('a player\'s edit or own quest gives no reward and no penalty; the GM\'s does', () => {
+    const q = questIn('active'), h = hunterWith(q), rich = { ...newRewards(), gold: 500 };
+    const mine = ok(editQuest(h, 'q800', { kind: q.kind, title: 'Mine', desc: '', objectives: q.objectives, rewards: rich, dueAt: null, penaltyText: 'Run' }, 'player'));
+    expect(mine.quests[0]).toMatchObject({ title: 'Mine', rewards: q.rewards, penaltyText: q.penaltyText });
+    expect(ok(editQuest(h, 'q800', { kind: q.kind, title: 'GM', desc: '', objectives: q.objectives, rewards: rich, dueAt: null, penaltyText: 'Run' }, 'gm')).quests[0]!.rewards.gold).toBe(500);
+    expect(questOf({ from: 'self', rewards: rich, penaltyText: 'Run' }, qid('q1'), AT)).toMatchObject({ rewards: newRewards(), penaltyText: '' });
+    expect(questOf({ from: 'gm', rewards: rich }, qid('q1'), AT).rewards.gold).toBe(500);
+  });
+});
+
+describe('a completion', () => {
+  test('the last daily of the day counts the streak: one more after yesterday, else 1', () => {
+    const h = { ...hunterWith(daily('d1', 'done'), daily('d2')), daily: { streak: 4, lastCompleteKey: day('2026-11-13'), lastCheckedKey: day('2026-11-14') } };
+    const r = ok(completeQuest(h, 'd2', opts()));
+    expect(r).toMatchObject({ allDaily: true, streak: 5 });
+    expect(r.hunter.daily).toEqual({ streak: 5, lastCompleteKey: day('2026-11-14'), lastCheckedKey: day('2026-11-14') });
+    const gap = ok(completeQuest({ ...h, daily: { ...h.daily, lastCompleteKey: day('2026-11-10') } }, 'd2', opts()));
+    expect(gap.streak).toBe(1);
+  });
+  test('a bonus point every streakBonusEvery days', () => {
+    const n = RULES.streakBonusEvery;
+    const h = { ...hunterWith(daily('d1')), daily: { streak: n - 1, lastCompleteKey: day('2026-11-13'), lastCheckedKey: day('2026-11-14') } };
+    expect(ok(completeQuest(h, 'd1', opts())).bonus).toBe(true);
+  });
+  test('a daily that is not the last counts no streak; a quest not active is refused', () => {
+    expect(ok(completeQuest(hunterWith(daily('d1'), daily('d2')), 'd1', opts())).streak).toBeNull();
+    expect(completeQuest(hunterWith(questIn('done')), 'q800', opts())).toEqual({ ok: false, why: 'not-now' });
+  });
+  test('completing the Penalty Zone quest lifts the penalty', () => {
+    const zone = { ...questIn('active', 'penalty'), id: qid('q700') };
+    const h = { ...hunterWith(zone), penalty: { since: AT, days: 1, questId: qid('q700') } };
+    const r = ok(completeQuest(h, 'q700', opts()));
+    expect(r.lifted).toBe(true);
+    expect(r.hunter.penalty).toBeNull();
+  });
+});
+
+describe('the Job Change chain and the penalty, heard in the same step', () => {
+  test('a chain issued adds step 1\'s quest and logs it', () => {
+    const t = chained(hunterWith(), { type: 'issued', id: jcid('jc1'), job: 'Assassin', questId: qid('q7'), level: 1, at: AT });
+    expect(t.hunter.jobChain).toMatchObject({ id: jcid('jc1'), job: 'Assassin', step: 1, status: 'active', questId: 'q7' });
+    expect(t.hunter.quests.map(q => q.id)).toEqual(['q7']);
+    expect(t.said.map(l => l.title)).toEqual(['Quest issued']);
+  });
+  test('a player may not delete the quest a penalty is tied to; the GM may, and that lifts the penalty', () => {
+    const zone = { ...questIn('active', 'penalty'), id: qid('q700') }, h = { ...hunterWith(zone), penalty: { since: AT, days: 1, questId: qid('q700') } };
+    expect(deleteQuest(h, 'q700', 'player')).toEqual({ ok: false, why: 'refused' });
+    const gm = ok(deleteQuest(h, 'q700', 'gm'));
+    expect(gm.hunter.quests).toEqual([]);
+    expect(gm.hunter.penalty).toBeNull();
+  });
+});
+
+describe('the daily rollover', () => {
+  const save = (h: Hunter): Save => ({ ...freshSave({ now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d') }, { onboarded: true }), seq: 50, hunters: [h], world: { day: 1, lastDailyKey: day('2026-11-13'), session: 0 } });
+  test('a missed day resets the dailies, the streak, and raises the penalty with its Zone quest from seq', () => {
+    const h = { ...hunterWith(daily('d1', 'active')), daily: { streak: 3, lastCompleteKey: day('2026-11-12'), lastCheckedKey: day('2026-11-13') } };
+    const r = rollover(save(h), { today: day('2026-11-14'), at: AT, nowMs: Date.parse(AT), gm: false }), x = r.save.hunters[0]!;
+    expect(x.daily).toEqual({ streak: 0, lastCompleteKey: day('2026-11-12'), lastCheckedKey: day('2026-11-14') });
+    expect(x.penalty).toEqual({ since: AT, days: 1, questId: 'q51' });
+    expect(x.quests.map(q => [q.id, q.status])).toEqual([['d1', 'active'], ['q51', 'active']]);
+    expect(r.save.seq).toBe(51);
+    expect(r.save.world.lastDailyKey).toBe(day('2026-11-14'));
+    expect(r.told.penalties).toEqual([{ hid: 'h1', name: h.name, days: 1 }]);
+    expect(r.said.map(l => l.title)).toEqual(['Penalty']);
+  });
+  test('dailies done yesterday are reset with no penalty', () => {
+    const h = { ...hunterWith(daily('d1', 'done')), daily: { streak: 3, lastCompleteKey: day('2026-11-13'), lastCheckedKey: day('2026-11-13') } };
+    const x = rollover(save(h), { today: day('2026-11-14'), at: AT, nowMs: Date.parse(AT), gm: false }).save.hunters[0]!;
+    expect(x.penalty).toBeNull();
+    expect(x.daily.streak).toBe(3);
+    expect(x.quests[0]).toMatchObject({ status: 'active', objectives: [{ progress: 0 }] });
+  });
+  test('on the GM\'s phone a hunter that never completed a daily is not penalized', () => {
+    const h = { ...hunterWith(daily('d1')), daily: { streak: 0, lastCompleteKey: null, lastCheckedKey: day('2026-11-13') } };
+    expect(tracked(h, true)).toBe(false);
+    expect(rollover(save(h), { today: day('2026-11-14'), at: AT, nowMs: Date.parse(AT), gm: true }).save.hunters[0]!.penalty).toBeNull();
+  });
+  test('an urgent quest past its due time fails, and the rollover is due for it on the same day', () => {
+    const urgent = { ...questIn('active', 'urgent'), dueAt: '2026-11-14T09:00:00.000Z' };
+    const h = { ...hunterWith(urgent), daily: { streak: 0, lastCompleteKey: null, lastCheckedKey: day('2026-11-14') } };
+    const s = { ...save(h), world: { day: 1, lastDailyKey: day('2026-11-14'), session: 0 } };
+    expect(rolloverDue(s, day('2026-11-14'), Date.parse(AT))).toBe(true);
+    const r = rollover(s, { today: day('2026-11-14'), at: AT, nowMs: Date.parse(AT), gm: false });
+    expect(r.save.hunters[0]!.quests[0]!.status).toBe('failed');
+    expect(r.told.failed).toEqual([{ hid: 'h1', name: h.name, title: 'Clear the den' }]);
+    expect(rolloverDue(r.save, day('2026-11-14'), Date.parse(AT))).toBe(false);
+  });
+});
+
+describe('a step that logs', () => {
+  test('the hunter and its lines land in one save, the line ids from seq', () => {
+    const s = { ...freshSave({ now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d') }, { onboarded: true }), seq: 9 };
+    const hid = s.hunters[0]!.id, next = ok(withTold(s, hid, { at: AT, cap: 200 }, h => issueQuest(h, { title: 'Hunt', rewards: newRewards() }, qid('q1'), AT)));
+    expect(next.hunters[0]!.quests.at(-1)!.id).toBe(qid('q1'));
+    expect(next.log[0]).toMatchObject({ id: 'l10', title: 'Quest issued', text: 'Hunt' });
+    expect(withTold(s, 'h-none', { at: AT, cap: 200 }, h => issueQuest(h, {}, qid('q1'), AT))).toEqual({ ok: false, why: 'no-hunter' });
+  });
+});
+
+describe('a quest finished in one step (grant.ts finishQuest)', () => {
+  const ENV = { now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-p1') };
+  const DAY = { at: AT, today: day('2026-11-14'), R: RULES, vitals: 'sheet' as const };
+  /** A save whose one hunter (h1) holds `quests`, `hp` HP below its maximum and no mana. */
+  const saveWith = (quests: Quest[], down = 0): Save => {
+    const s = freshSave(ENV, { onboarded: true }), h = { ...s.hunters[0]!, id: hid('h1'), quests, mana: 0 };
+    return { ...s, hunters: [down ? { ...h, life: { at: 'up' as const, hp: hunterSheet(h, RULES).sheet.hpMax - down } } : h] };
+  };
+  const reward = (q: Quest, o: Partial<Quest['rewards']>): Quest => ({ ...q, rewards: { ...newRewards(), ...o } });
+
+  test('the quest done, its XP and gold given and its line logged are one save; the window lists what was given', () => {
+    const q = reward({ ...questIn('active', 'side'), id: qid('q5'), title: 'Wolf Hunt' }, { xp: 50, gold: 10 });
+    const s = saveWith([q]), r = ok(finishQuest(s, 'h1', 'q5', DAY)), h = r.save.hunters[0]!;
+    expect(h.quests[0]!.status).toBe('done');
+    expect([h.xp, h.gold - s.hunters[0]!.gold]).toEqual([50, 10]);
+    expect(r.save.log.map(l => l.title)).toContain('Quest complete');
+    expect(['+50 XP', '+10 gold'].every(l => r.granted.lines.includes(l)), r.granted.lines.join(' | ')).toBe(true);
+  });
+
+  test('the day\'s last daily restores HP and mana on the sheet; in a fight that is the fight\'s to do', () => {
+    const s = saveWith([daily('d1', 'done'), daily('d2')], 10), max = hunterSheet(s.hunters[0]!, RULES).sheet;
+    const r = ok(finishQuest(s, 'h1', 'd2', DAY)), h = r.save.hunters[0]!;
+    expect([r.recover, h.life, h.mana]).toEqual(['sheet', { at: 'up', hp: max.hpMax }, max.manaMax]);
+    const f = ok(finishQuest(s, 'h1', 'd2', { ...DAY, vitals: 'fight' }));
+    expect([f.recover, f.save.hunters[0]!.life]).toEqual(['fight', s.hunters[0]!.life]);
+  });
+
+  test(`the streak's bonus gives ${STREAK_BONUS_POINTS} point beside the quest's own`, () => {
+    const s = saveWith([reward(daily('d1'), { points: 2 })]), n = RULES.streakBonusEvery;
+    const streaking = { ...s, hunters: [{ ...s.hunters[0]!, daily: { streak: n - 1, lastCompleteKey: day('2026-11-13'), lastCheckedKey: day('2026-11-14') } }] };
+    const before = streaking.hunters[0]!.bonusPoints, r = ok(finishQuest(streaking, 'h1', 'd1', DAY));
+    expect(r.completed.bonus).toBe(true);
+    expect(r.save.hunters[0]!.bonusPoints - before).toBe(2 + STREAK_BONUS_POINTS);
+  });
+
+  test('a Job quest gives its job; a quest not active, or a hunter not here, writes nothing', () => {
+    const job = reward({ ...questIn('active', 'job'), id: qid('q6') }, { job: 'Mage' });
+    const r = ok(finishQuest(saveWith([job]), 'h1', 'q6', DAY));
+    expect([r.job, r.save.hunters[0]!.job]).toEqual(['Mage', 'Mage']);
+    expect(finishQuest(saveWith([questIn('done')]), 'h1', 'q800', DAY)).toEqual({ ok: false, why: 'not-now' });
+    expect(finishQuest(saveWith([job]), 'h9', 'q6', DAY)).toEqual({ ok: false, why: 'no-hunter' });
+  });
+});
+
+describe('a Job Change chain event and the steps it completes, in one step (grant.ts chainStep)', () => {
+  const ENV = { now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-p1') };
+  const DAY = { at: AT, today: day('2026-11-14'), R: RULES };
+  const saveAt = (level: number): Save => { const s = freshSave(ENV, { onboarded: true }); return { ...s, hunters: [{ ...s.hunters[0]!, id: hid('h1'), level }] }; };
+
+  test('a chain issued adds its first step quest and its log line, with ids from the save', () => {
+    const s = saveAt(1), r = ok(chainStep(s, 'h1', next => ({ type: 'issued', id: next('jc'), job: 'Assassin', questId: next('q'), level: 1, at: AT }), DAY));
+    const h = r.save.hunters[0]!;
+    expect(h.jobChain).toMatchObject({ job: 'Assassin', step: 1, status: 'active' });
+    expect(h.quests.map(q => q.id)).toEqual([...s.hunters[0]!.quests.map(q => q.id), h.jobChain!.questId]);
+    expect(r.save.seq).toBeGreaterThan(s.seq);
+    expect(r.save.log[0]!.title).toBe('Quest issued');
+  });
+
+  test('a second chain is refused and writes nothing; a hunter not here is refused', () => {
+    const one = ok(chainStep(saveAt(1), 'h1', next => ({ type: 'issued', id: next('jc'), job: 'Assassin', questId: next('q'), level: 1, at: AT }), DAY)).save;
+    expect(chainStep(one, 'h1', next => ({ type: 'issued', id: next('jc'), job: 'Mage', questId: next('q'), level: 1, at: AT }), DAY)).toEqual({ ok: false, why: 'refused' });
+    expect(chainStep(one, 'h9', () => ({ type: 'abandoned', by: 'gm' }), DAY)).toEqual({ ok: false, why: 'no-hunter' });
+  });
+});
+
+describe('the kinds a quest form offers (quest-rights.ts questKindsFor)', () => {
+  test('the GM every kind but the Penalty Zone\'s; a player no Job Change and no penalty', () => {
+    expect(questKindsFor('gm', null)).toEqual([...GM_QUEST_KINDS]);
+    expect(questKindsFor('gm', null)).not.toContain('penalty');
+    expect(questKindsFor('player', null)).toEqual([...PLAYER_QUEST_KINDS]);
+    expect(questKindsFor('player', null).some(k => k === 'job' || k === 'penalty')).toBe(false);
+  });
+  test('a quest being edited keeps its kind on offer', () => {
+    expect(questKindsFor('gm', { kind: 'penalty' })).toContain('penalty');
+    expect(questKindsFor('player', { kind: 'job' })).toContain('job');
+  });
+  test('every kind a form offers is a kind a quest may be', () => {
+    for (const k of [...GM_QUEST_KINDS, ...PLAYER_QUEST_KINDS]) expect(QUEST_KINDS).toContain(k);
+  });
+});

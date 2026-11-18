@@ -1,0 +1,499 @@
+import { describe, expect, test } from 'bun:test';
+import { RULES } from '../src/core/rules.ts';
+import { baseStats } from '../src/core/stats.ts';
+import type { Stats } from '../src/core/stats.ts';
+import { kitGear, NO_TWEAK } from '../src/core/hunter/derive.ts';
+import { parseFormula } from '../src/core/formula.ts';
+import type { Formula } from '../src/core/formula.ts';
+import { place, tiles } from '../src/core/combat/space.ts';
+import { tick } from '../src/core/combat/timeline.ts';
+import type { Tick } from '../src/core/combat/timeline.ts';
+import { combatantId } from '../src/core/combat/ability-types.ts';
+import {
+  addSheetStatus, applyStatus, controlFactor, cureStatus, describeStatus, dueAmount, FULL_HEAL, isControl, lasting, modified, modsOf, onSheet, opLines, removeStatus, settle,
+  sheetStatuses, shielded, statusKey, statusOn, withStatuses,
+} from '../src/core/combat/effect-ops.ts';
+import { parseOp, parseStatusDef } from '../src/core/combat/fight-parse.ts';
+import type { Body, Op, Origin, StackDef, StackRule, Status, StatusDef, StatusFields } from '../src/core/combat/effect-ops.ts';
+import { stackStep } from '../src/core/combat/stacks.ts';
+import { harmful, withSheetOps } from '../src/core/combat/standing.ts';
+import { zoneTone } from '../src/core/combat/zones.ts';
+import { payDue } from '../src/core/combat/fight-turn.ts';
+import { landOps } from '../src/core/combat/land.ts';
+import type { Stack, StackCtx } from '../src/core/combat/stacks.ts';
+import { WALK_EVENTS as STACK_WALK } from './models/stack-events.ts';
+import { rng } from './models/fight-play.ts';
+
+const f = (text: string): Formula => { const p = parseFormula(text, RULES); if (!p.ok) throw new Error(p.error); return p.formula; };
+const def = (...ops: Op[]): StatusDef => ({ label: 'Test', desc: '', ops });
+const status = (key: string, d: StatusDef, until: number | null, o: Partial<StatusFields> = {}): Status =>
+  statusOn(d, { key: statusKey(key), source: { id: null, tier: 0 }, until: until === null ? null : tick(until), since: tick(0), settledAt: tick(0), ...o });
+const stats = (o: Partial<Stats> = {}): Stats => ({ ...baseStats(RULES.fight), ...o });
+const hunterOf = (s: Stats = stats()): Origin => ({ kind: 'hunter', build: { stats: s, level: 1, gear: kitGear('light', RULES), perks: {} } });
+function body(origin: Origin = hunterOf(), o: Partial<Body> = {}): Body {
+  const { stats: st, sheet } = modified(origin, [], RULES);
+  return {
+    id: combatantId('b'), side: 'party', kind: origin.kind === 'hunter' ? 'hunter' : 'monster', origin, tier: 0, stats: st, sheet,
+    place: place(0, 0), hp: sheet.hpMax, mana: sheet.manaMax, fatigue: 0, shield: null, stagger: null, channel: null, threat: null,
+    statuses: [], readyAt: {}, abilities: [], intent: null, holder: null, xp: 0, name: 'Body', at: tick(1000), speed: sheet.speed, tie: 0, ...o,
+  };
+}
+const near = (actual: readonly number[], expected: readonly number[], digits: number): void => {
+  expect(actual.length).toBe(expected.length);
+  actual.forEach((a, i) => expect(a).toBeCloseTo(expected[i]!, digits));
+};
+const sheetUnder = (...ops: Op[]) => modified(hunterOf(), [status('s', def(...ops), null)], RULES).sheet;
+
+describe('what each op does to a sheet', () => {
+  test('a stat op adds to the stat before its curve: Strength 10 raised by 10 gives 0.6 * eff(20) = 10.45 physical power', () => {
+    expect(sheetUnder({ op: 'stat', key: 'str', amount: 10 }).phys).toBeCloseTo(10.45, 2);
+    expect(modified(hunterOf(), [status('s', def({ op: 'stat', key: 'str', amount: 10 }), null)], RULES).stats.str).toBe(20);
+  });
+
+  test('a speed op changes speed by its percent', () => {
+    expect([sheetUnder({ op: 'speed', pct: -30 }).speed, sheetUnder({ op: 'speed', pct: 20 }).speed]).toEqual([70, 120]);
+  });
+
+  test('a root makes a body move 0 tiles', () => {
+    expect([sheetUnder({ op: 'root' }).move, sheetUnder({ op: 'root' }).stride]).toEqual([0, 0]);
+  });
+
+  test('every other op leaves the sheet as it is', () => {
+    const plain = modified(hunterOf(), [], RULES).sheet;
+    const others: Op[] = [
+      { op: 'damage', type: 'physical', amount: f('2') }, { op: 'heal', amount: f('2') }, { op: 'mana', amount: f('2') },
+      { op: 'fatigue', amount: f('2') }, { op: 'applyStatus', key: statusKey('x'), def: def(), duration: tick(1000) },
+      { op: 'cureStatus', key: statusKey('x') }, { op: 'note', text: 'n' }, { op: 'delay', ticks: tick(300) }, { op: 'hold' },
+      { op: 'taunt' }, { op: 'threat', amount: 5 }, { op: 'shield', amount: f('10') }, { op: 'channel', mode: 'protect' },
+      { op: 'staggerRate', pct: 50 }, { op: 'refund', pct: 50, chance: 100 }, { op: 'aura', radius: 2, on: 'all' }, { op: 'spread', range: 1 },
+    ];
+    expect(others.filter(o => JSON.stringify(sheetUnder(o)) !== JSON.stringify(plain)).map(o => o.op)).toEqual([]);
+  });
+
+  test('an aura and a spread say what they do, and read back through the op parser as they were written', () => {
+    const aura: Op = { op: 'aura', radius: 2, on: 'allies' }, spread: Op = { op: 'spread', range: 1 };
+    expect(describeStatus(def(aura, spread), null, RULES)).toEqual([
+      'Gives off its other effects to allies within 2 tiles', 'Spreads each round to anyone within 1 tile who fails to resist it, once a fight',
+    ]);
+    expect([parseOp(aura, RULES), parseOp(spread, RULES)]).toEqual([aura, spread]);
+    for (const bad of [{ ...aura, radius: 0 }, { ...aura, on: 'friends' }, { ...spread, range: 1.5 }, { op: 'spread' }]) expect(parseOp(bad, RULES)).toBeNull();
+  });
+
+  test('a number given per tier is read at the source\'s tier', () => {
+    const slow = def({ op: 'speed', pct: [-10, -20, -30, -40, -50, -60] });
+    expect([0, 2, 5].map(tier => modified(hunterOf(), [status('s', slow, null, { source: { id: null, tier } })], RULES).sheet.speed)).toEqual([90, 70, 40]);
+  });
+});
+
+describe('speed changes', () => {
+  test('the strongest slow and the strongest haste both apply and multiply: 30% slow and 20% haste give 0.84', () => {
+    const list = [status('a', def({ op: 'speed', pct: -30 }), null), status('b', def({ op: 'speed', pct: -10 }), null),
+      status('c', def({ op: 'speed', pct: 20 }), null), status('d', def({ op: 'speed', pct: 5 }), null)];
+    expect(modified(hunterOf(), list, RULES).sheet.speed).toBe(84);
+    const [mod, ...rest] = modsOf(list).mods;
+    expect([mod?.op, rest]).toEqual(['speed', []]);
+    near([mod?.op === 'speed' ? mod.pct : NaN], [-16], 10);
+  });
+
+  test('a slow on a body rescales the wait left by old speed over new', () => {
+    const b = body(hunterOf(), { at: tick(1500) });
+    const slowed = withStatuses(b, [status('s', def({ op: 'speed', pct: -50 }), 3000)], tick(500), RULES);
+    expect([slowed.speed, slowed.sheet.speed, slowed.at]).toEqual([50, 50, 2500]);
+  });
+
+  test('a status that lowers max HP brings a full body down to the new max, and leaves a hurt one below it as it is', () => {
+    const full = body(hunterOf(stats({ vit: 40 })));
+    const weak = [status('weak', def({ op: 'stat', key: 'vit', amount: -30 }), 3000)];
+    const after = withStatuses(full, weak, tick(500), RULES);
+    expect(after.sheet.hpMax).toBeLessThan(full.sheet.hpMax);
+    expect(after.hp).toBe(after.sheet.hpMax);
+    expect(withStatuses({ ...full, hp: 5 }, weak, tick(500), RULES).hp).toBe(5);
+  });
+});
+
+describe('one instance per key, stronger wins', () => {
+  const burn = (tier: number, until: number, label = 'Burn'): Status =>
+    status('burning', { label, desc: '', ops: [] }, until, { source: { id: null, tier } });
+
+  test('a new key is added at the end', () => {
+    expect(applyStatus([burn(1, 1000)], status('slowed', def(), 500)).map(s => s.key)).toEqual(['burning', 'slowed']);
+  });
+
+  test('the higher tier wins and the later end is kept', () => {
+    const [weakFirst] = applyStatus([burn(1, 3000, 'Weak')], burn(3, 2000, 'Strong'));
+    const [strongFirst] = applyStatus([burn(3, 2000, 'Strong')], burn(1, 3000, 'Weak'));
+    expect([weakFirst!.def.label, weakFirst!.source.tier, weakFirst!.until]).toEqual(['Strong', 3, 3000]);
+    expect([strongFirst!.def.label, strongFirst!.until]).toEqual(['Strong', 3000]);
+  });
+
+  test('a tie goes to the new one, and a status with no end outlasts any end', () => {
+    const [s] = applyStatus([burn(2, 3000, 'Old')], { ...burn(2, 0, 'New'), until: null });
+    expect([s!.def.label, s!.until]).toEqual(['New', null]);
+  });
+
+  test('a status put on again keeps the time it was paid to', () => {
+    const [s] = applyStatus([{ ...burn(1, 3000), since: tick(1000), settledAt: tick(1200) }], { ...burn(1, 5000), since: tick(2500), settledAt: tick(2500) });
+    expect([s!.since, s!.settledAt]).toEqual([tick(1000), tick(1200)]);
+  });
+
+  test('a cure removes the key', () => {
+    expect(removeStatus([burn(1, 1000), status('slowed', def(), 500)], statusKey('burning')).map(s => s.key)).toEqual(['slowed']);
+  });
+});
+
+describe('durations (design 3.1 rule 18 and table 4.4)', () => {
+  const taunt = def({ op: 'taunt' });
+  const rounds = (t: Tick): number => t / RULES.fight.round;
+
+  test('a taunt of 2 rounds holds 1.92, 1.71 and 1.52 rounds on the E, C and S support\'s tenacity', () => {
+    near([4.30, 17.14, 31.55].map(ten => rounds(lasting(taunt, tick(2000), 0, 0, ten, 1))), [1.92, 1.71, 1.52], 2);
+  });
+
+  test('on an elite it holds three quarters of that and on a boss half', () => {
+    const elite = body({ kind: 'monster', name: 'Monster', rank: 'C', archetype: 'brute', monsterKind: 'elite', tweak: NO_TWEAK });
+    const boss = body({ kind: 'monster', name: 'Monster', rank: 'C', archetype: 'brute', monsterKind: 'boss', tweak: NO_TWEAK });
+    expect([controlFactor(elite, RULES), controlFactor(boss, RULES)]).toEqual([0.75, 0.5]);
+    near([4.30, 17.14, 31.55].map(ten => rounds(lasting(taunt, tick(2000), 0, 0, ten, controlFactor(elite, RULES)))), [1.44, 1.28, 1.14], 2);
+    near([4.30, 17.14, 31.55].map(ten => rounds(lasting(taunt, tick(2000), 0, 0, ten, controlFactor(boss, RULES)))), [0.96, 0.85, 0.76], 2);
+  });
+
+  test('a boss takes a hold, a root and a slow at half as well; a hunter or a shadow in full', () => {
+    const boss = body({ kind: 'monster', name: 'Monster', rank: 'C', archetype: 'brute', monsterKind: 'boss', tweak: NO_TWEAK });
+    const shadow = { ...boss, kind: 'shadow' as const };
+    for (const op of [{ op: 'hold' }, { op: 'root' }, { op: 'speed', pct: -20 }] as Op[])
+      expect(lasting(def(op), tick(2000), 0, 0, 0, controlFactor(boss, RULES))).toBe(tick(1000));
+    expect([controlFactor(body(), RULES), controlFactor(shadow, RULES)]).toEqual([1, 1]);
+  });
+
+  test('potency lengthens a control status as tenacity shortens it, so equal amounts cancel', () => {
+    expect(lasting(taunt, tick(2000), 0, 50, 0, 1)).toBe(tick(3000));
+    expect(lasting(taunt, tick(2000), 0, 30, 30, 1)).toBe(tick(2000));
+  });
+
+  test('a status that controls nothing lasts its duration whatever the tenacity', () => {
+    const burn = def({ op: 'damage', type: 'magical', amount: f('3') }), haste = def({ op: 'speed', pct: 20 });
+    expect([isControl(burn, 0), isControl(haste, 0), lasting(burn, tick(2000), 0, 0, 60, 0.5)]).toEqual([false, false, 2000]);
+  });
+});
+
+describe('settling a per-round op (design 1.3, table 1.6)', () => {
+  const tenARound = def({ op: 'damage', type: 'magical', amount: f('10') });
+  // Applied at 0.40 for 2 rounds; the bearer's turns start every interval from 0.
+  function paid(interval: number): number[] {
+    let list: Status[] = [status('burn', tenARound, 2400, { since: tick(400), settledAt: tick(400) })];
+    const out: number[] = [];
+    for (let now = interval; list.length; now += interval) {
+      if (now <= 400) continue;
+      const r = settle(list, tick(now), RULES);
+      out.push(...r.due.map(d => dueAmount(d, { user: SELF, target: SELF, charge: 0 }, [])));
+      list = r.statuses;
+    }
+    return out;
+  }
+  const SELF = { stats: stats(), sheet: modified(hunterOf(), [], RULES).sheet };
+
+  test('10 a round for 2 rounds pays 6 + 10 + 4 on a speed-100 bearer and 1 + 5 + 5 + 5 + 4 on a speed-200 one', () => {
+    expect(paid(1000)).toEqual([6, 10, 4]);
+    expect(paid(500)).toEqual([1, 5, 5, 5, 4]);
+  });
+
+  test('on a speed-80 bearer the two turns pay for 0.85 and 1.15 rounds, 20 in all', () => {
+    const first = settle([status('burn', tenARound, 2400, { since: tick(400), settledAt: tick(400) })], tick(1250), RULES);
+    const second = settle(first.statuses, tick(2500), RULES);
+    near([...first.due, ...second.due].map(d => d.share), [0.85, 1.15], 10);
+    expect([first.statuses.length, second.statuses.length, second.expired.length]).toEqual([1, 0, 1]);
+    expect(paid(1250)).toEqual([9, 11]);
+  });
+
+  test('the total over a span does not depend on how the span is split', () => {
+    const r = rng(47);
+    const sevenAThird = def({ op: 'damage', type: 'magical', amount: f('7.3') });
+    for (let run = 0; run < 300; run++) {
+      const until = r.int(1, 6000);
+      let list: Status[] = [status('burn', sevenAThird, until)], now = 0, total = 0;
+      while (list.length) {
+        now += r.int(1, 1700);
+        const res = settle(list, tick(now), RULES);
+        total += res.due.reduce((n, d) => n + dueAmount(d, { user: SELF, target: SELF, charge: 0 }, []), 0);
+        list = res.statuses;
+      }
+      expect(total).toBe(Math.round(7.3 * until / 1000));
+    }
+  });
+
+  test('a heal, mana and fatigue op settle the same way, and an op marked for use does not', () => {
+    const d = def({ op: 'heal', amount: f('4') }, { op: 'mana', amount: f('2') }, { op: 'fatigue', amount: f('-6') }, { op: 'damage', type: 'physical', amount: f('9'), when: 'use' });
+    const r = settle([status('regen', d, null)], tick(500), RULES);
+    expect(r.due.map(x => [x.op.op, dueAmount(x, { user: SELF, target: SELF, charge: 0 }, [])])).toEqual([['heal', 2], ['mana', 1], ['fatigue', -3]]);
+  });
+
+  test('the dice the edge rolled for a settle are the formula\'s dice', () => {
+    const r = settle([status('poison', def({ op: 'damage', type: 'magical', amount: f('1d6 + 2') }), null)], tick(1000), RULES);
+    expect(dueAmount(r.due[0]!, { user: SELF, target: SELF, charge: 0 }, [5])).toBe(7);
+  });
+
+  test('a status ends at the bearer\'s first turn at or after its end, and not before', () => {
+    const s = status('slowed', def({ op: 'speed', pct: -30 }), 2000);
+    expect([settle([s], tick(1999), RULES).statuses.length, settle([s], tick(2000), RULES).expired.length]).toEqual([1, 1]);
+  });
+
+  test('a status never settles twice for the same span of time, over seeded waits', () => {
+    const r = rng(31);
+    for (let run = 0; run < 300; run++) {
+      const start = r.int(0, 2000), until = start + r.int(1, 5000);
+      let list: Status[] = [status('burn', tenARound, until, { since: tick(start), settledAt: tick(start) })], now = start, spans = 0;
+      while (list.length) {
+        now += r.int(0, 1500);
+        const before = list[0]!.settledAt, res = settle(list, tick(now), RULES);
+        for (const d of res.due) spans += d.share * RULES.fight.round;
+        const after = (res.statuses[0] ?? res.expired[0])!.settledAt;
+        expect(after).toBeGreaterThanOrEqual(before);
+        expect(after).toBeLessThanOrEqual(Math.min(now, until));
+        list = res.statuses;
+      }
+      expect(Math.round(spans)).toBe(until - start);
+    }
+  });
+});
+
+describe('shields (design 4.4)', () => {
+  test('two shields do not add: the larger amount holds, with the later end of the two', () => {
+    expect(shielded({ amount: 30, until: tick(2000) }, { amount: 20, until: tick(3000) }, tick(500))).toEqual({ amount: 30, until: 3000 });
+    expect(shielded({ amount: 10, until: tick(4000) }, { amount: 20, until: tick(3000) }, tick(500))).toEqual({ amount: 20, until: 4000 });
+  });
+
+  test('a shield past its end counts for nothing', () => {
+    expect(shielded({ amount: 50, until: tick(400) }, { amount: 20, until: tick(3000) }, tick(500))).toEqual({ amount: 20, until: 3000 });
+  });
+});
+
+describe('a stacking status (kits design 1.1, table 2.1)', () => {
+  const rule = (o: Partial<StackRule> = {}): StackRule => ({ cap: 5, leave: { kind: 'never' }, keep: 'fight', threshold: null, ...o });
+  const stacking = (o: Partial<StackRule>, ...ops: Op[]): StackDef => ({ label: 'Pain', desc: '', ops, stack: rule(o) });
+  const of = (d: StatusDef, stacks: number, o: Partial<StatusFields> = {}): Status =>
+    statusOn(d, { key: statusKey('pain'), source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0), ...o }, stacks);
+  const count = (list: readonly Status[]): number | undefined => list.find(s => s.key === 'pain')?.stacks;
+
+  test('applying adds the incoming stacks to what the bearer holds, never past the cap, and a plain status holds no count', () => {
+    const pain = stacking({});
+    expect(count(applyStatus([], of(pain, 2)))).toBe(2);
+    expect(count(applyStatus([of(pain, 2)], of(pain, 2)))).toBe(4);
+    expect(count(applyStatus([of(pain, 4)], of(pain, 3)))).toBe(5);
+    expect(of(def(), 3).stacks).toBeUndefined();
+    expect(of(pain, 99).stacks).toBe(5);
+  });
+
+  test('every number of its ops is per stack: 3 stacks of +4 Strength are +12, of a 10% slow a 30% slow; a root acts from one', () => {
+    const at3 = (...ops: Op[]) => modified(hunterOf(), [of(stacking({}, ...ops), 3)], RULES);
+    expect(at3({ op: 'stat', key: 'str', amount: 4 }).stats.str).toBe(10 + 12);
+    expect(at3({ op: 'speed', pct: -10 }).sheet.speed).toBe(70);
+    expect(at3({ op: 'root' }).sheet.move).toBe(0);
+  });
+
+  test('a per-round op pays at the count the status holds when its bearer settles: 3 stacks of 4 a round pay 12 a round', () => {
+    const burn = stacking({}, { op: 'damage', type: 'magical', amount: f('4'), when: 'turn' });
+    const s = settle([of(burn, 3)], tick(RULES.fight.round), RULES);
+    expect(s.due.map(d => d.stacks)).toEqual([3]);
+    expect(dueAmount(s.due[0]!, { user: body(), target: body(), charge: 0 }, [])).toBe(12);
+  });
+
+  test('stacks that leave a round lose one for each whole round held, and the last to go is spent, not ended', () => {
+    const fading = stacking({ leave: { kind: 'round' } }), R1 = RULES.fight.round;
+    const half = settle([of(fading, 3)], tick(R1 / 2), RULES);
+    expect(count(half.statuses)).toBe(3);
+    const two = settle(half.statuses, tick(2 * R1), RULES);
+    expect(count(two.statuses)).toBe(1);
+    const gone = settle(two.statuses, tick(3 * R1), RULES);
+    expect([gone.statuses.length, gone.spent.length, gone.expired.length]).toEqual([0, 1, 0]);
+  });
+
+  test('stacks that never leave stay through any settle until the status\'s time runs out', () => {
+    expect(count(settle([of(stacking({}), 4)], tick(10 * RULES.fight.round), RULES).statuses)).toBe(4);
+  });
+
+  test('a cure of n stacks takes n and keeps the rest; a cure of more, or with no count, takes the status', () => {
+    const pain = stacking({});
+    expect(count(cureStatus([of(pain, 4)], statusKey('pain'), 3))).toBe(1);
+    expect(cureStatus([of(pain, 2)], statusKey('pain'), 3)).toEqual([]);
+    expect(cureStatus([of(pain, 4)], statusKey('pain'))).toEqual([]);
+    expect(cureStatus([of(def(), 1)], statusKey('pain'), 1)).toEqual([]);
+  });
+
+  test('the sheet keeps a stacking status\'s count and adds counts to its cap, and a fight\'s count is not the sheet\'s', () => {
+    const cold = stacking({ keep: 'sheet' }), pain = stacking({ keep: 'fight' });
+    const sheet = sheetStatuses([of(cold, 2)], tick(0), RULES);
+    expect(sheet.map(s => s.stacks)).toEqual([2]);
+    expect(addSheetStatus(sheet, { ...sheet[0]!, stacks: 4 })[0]!.stacks).toBe(5);
+    expect([onSheet(of(cold, 2)), onSheet(of(pain, 2)), onSheet(of(def(), 1))]).toEqual([true, false, true]);
+  });
+
+  test('a sheet keeps one instance per key by the body\'s rule: the same puts leave the same def, source and count on both', () => {
+    const cold = stacking({ keep: 'sheet', cap: 5 }), plain = def();
+    const cases: [StatusDef, number, number, StatusDef, number, number][] = [
+      [cold, 2, 0, cold, 4, 0], [cold, 4, 1, cold, 3, 0], [plain, 1, 2, cold, 3, 1], [cold, 3, 2, plain, 1, 1], [plain, 1, 0, plain, 1, 3],
+    ];
+    for (const [d0, n0, t0, d1, n1, t1] of cases) {
+      const old = of(d0, n0, { source: { id: null, tier: t0 } }), incoming = of(d1, n1, { source: { id: null, tier: t1 } });
+      const body = applyStatus([old], incoming)[0]!;
+      const sheet = addSheetStatus(sheetStatuses([old], tick(0), RULES), sheetStatuses([incoming], tick(0), RULES)[0]!)[0]!;
+      expect([sheet.def, sheet.source, sheet.stacks]).toEqual([body.def, body.source, 'stacks' in body ? body.stacks : undefined]);
+    }
+  });
+
+  test('a stack rule and a threshold read back through the parser as written; a cap past the rules is clamped, an unknown leave refused', () => {
+    const burst: StackDef = {
+      label: 'Resonance', desc: '', ops: [], stack: { cap: 3, leave: { kind: 'event', event: 'struck' }, keep: 'fight', threshold: {
+        at: { kind: 'count', n: 3 }, to: { kind: 'area', radius: tiles(2), on: 'foes' }, then: 'spend',
+        ops: [{ op: 'damage', type: 'magical', amount: f('1d8 + mag'), when: 'use' }, { op: 'refund', pct: 50 }],
+      } },
+    };
+    expect(parseStatusDef(JSON.parse(JSON.stringify(burst)), RULES)).toEqual(burst);
+    expect((parseStatusDef({ ...burst, stack: { ...burst.stack, cap: 99, threshold: null } }, RULES) as StackDef).stack.cap).toBe(RULES.fight.kit.stackCap);
+    expect(parseStatusDef({ ...burst, stack: { ...burst.stack, leave: { kind: 'sometimes' } } }, RULES)).toBeNull();
+    const add = parseOp({ op: 'applyStatus', key: 'pain', def: burst, duration: null, stacks: 9 }, RULES);
+    expect(add && add.op === 'applyStatus' ? add.stacks : null).toBe(RULES.fight.kit.stackAdd);
+  });
+
+  test('a stacking status says how it stacks, what each stack does and what its count sets off', () => {
+    const marked = stacking({ leave: { kind: 'round' }, threshold: { at: { kind: 'count', n: 3 }, to: { kind: 'bearer' }, then: 'spend', ops: [{ op: 'damage', type: 'magical', amount: f('2d8'), when: 'use' }] } },
+      { op: 'damage', type: 'magical', amount: f('4'), when: 'turn' });
+    expect(describeStatus(marked, 0, RULES)).toEqual([
+      'Stacks to 5. One leaves each round.', 'Each stack: 4 magical damage a round', 'At 3 stacks: Deals 2d8 magical damage. The stacks are spent.', 'Gone when the fight ends.',
+    ]);
+  });
+
+  test('a trigger and a delayed end each say when they act, on whom and how often (kits design 5.1)', () => {
+    const hemo: StatusDef = { label: 'Hemoplague', desc: '', ops: [], end: { ops: [{ op: 'damage', type: 'magical', amount: f('1d8 + mag'), when: 'use' }], cleanse: 'cancel' },
+      triggers: [{ on: 'hitDealt', tag: null, to: 'other', limit: { kind: 'each' }, ops: [{ op: 'note', text: 'Marked' }] },
+        { on: 'turnStart', to: { kind: 'area', radius: tiles(2), on: 'foes' }, limit: { kind: 'fight', n: 2 }, ops: [{ op: 'refund', pct: 50 }] }] };
+    expect(describeStatus(hemo, 0, RULES)).toEqual([
+      'When its bearer deals a hit: Marked on the other, every time.', 'When its bearer starts its turn: 50% of an action\'s time back on foes within 2 tiles, 2 times a fight.',
+      'When it ends: Deals 1d8 + mag magical damage. A cleanse saves you.',
+    ]);
+  });
+});
+
+describe('the stack machine, cell by cell (kits table 2.1)', () => {
+  const ctx = (o: Partial<StackRule> = {}, at: number | null = null): StackCtx => ({ rule: { cap: 5, leave: { kind: 'never' }, keep: 'fight', threshold: null, ...o }, at });
+  const at3 = (then: 'spend' | 'keep') => ctx({ threshold: { at: { kind: 'count', n: 3 }, to: { kind: 'bearer' }, ops: [], then } }, 3);
+  const held = (n: number): Stack => ({ at: 'held', n });
+  const ABSENT: Stack = { at: 'absent' };
+
+  test('absent, apply k: held k, to the cap', () => {
+    expect(stackStep(ABSENT, { type: 'apply', k: 2 }, ctx()).stack).toEqual(held(2));
+    expect(stackStep(ABSENT, { type: 'apply', k: 9 }, ctx()).stack).toEqual(held(5));
+  });
+
+  test('a crossing fires the threshold once: spend takes its count off, keep leaves the count and fires again only after it falls below', () => {
+    expect(stackStep(held(2), { type: 'apply', k: 2 }, at3('spend'))).toEqual({ stack: held(1), fired: true, gone: null });
+    expect(stackStep(held(2), { type: 'apply', k: 1 }, at3('spend'))).toEqual({ stack: ABSENT, fired: true, gone: 'spent' });
+    expect(stackStep(held(2), { type: 'apply', k: 1 }, at3('keep'))).toEqual({ stack: held(3), fired: true, gone: null });
+    expect(stackStep(held(3), { type: 'apply', k: 1 }, at3('keep')).fired).toBe(false);
+    expect(stackStep(held(1), { type: 'apply', k: 1 }, at3('spend')).fired).toBe(false);
+  });
+
+  test('a threshold not read here (the GM\'s window, a sheet) never fires', () => {
+    expect(stackStep(held(2), { type: 'apply', k: 1 }, { ...at3('spend'), at: null })).toEqual({ stack: held(3), fired: false, gone: null });
+  });
+
+  test('a round leave takes one a round, its named event takes all, another event nothing', () => {
+    expect(stackStep(held(3), { type: 'round', rounds: 2 }, ctx({ leave: { kind: 'round' } })).stack).toEqual(held(1));
+    expect(stackStep(held(3), { type: 'round', rounds: 2 }, ctx()).stack).toEqual(held(3));
+    expect(stackStep(held(3), { type: 'event', event: 'moved' }, ctx({ leave: { kind: 'event', event: 'moved' } }))).toEqual({ stack: ABSENT, fired: false, gone: 'spent' });
+    expect(stackStep(held(3), { type: 'event', event: 'struck' }, ctx({ leave: { kind: 'event', event: 'moved' } })).stack).toEqual(held(3));
+  });
+
+  test('a price takes m and never fires; its time ending ends it; a cure takes n or all; the fight\'s end drops a fight\'s count and keeps a sheet\'s', () => {
+    expect(stackStep(held(4), { type: 'price', m: 3 }, at3('spend'))).toEqual({ stack: held(1), fired: false, gone: null });
+    expect(stackStep(held(4), { type: 'timeEnds' }, ctx())).toEqual({ stack: ABSENT, fired: false, gone: 'ended' });
+    expect(stackStep(held(4), { type: 'cure', n: null }, ctx())).toEqual({ stack: ABSENT, fired: false, gone: 'cured' });
+    expect(stackStep(held(4), { type: 'fightEnds' }, ctx())).toEqual({ stack: ABSENT, fired: false, gone: 'dropped' });
+    expect(stackStep(held(4), { type: 'fightEnds' }, ctx({ keep: 'sheet' })).stack).toEqual(held(4));
+  });
+
+  test('nothing but an apply changes an absent count', () => {
+    for (const e of STACK_WALK.filter(x => x.type !== 'apply')) expect([e.type, stackStep(ABSENT, e, ctx()).stack]).toEqual([e.type, ABSENT]);
+  });
+});
+
+describe('wave 2\'s ops as data (kits design 8.1 to 8.6, table 8.1)', () => {
+  const K = RULES.fight.kit;
+  const OPS: Op[] = [
+    { op: 'sheet', key: 'armor', amount: 20 }, { op: 'sheet', key: 'exposed', amount: [0.5, 0.5, 1, 1, 1.5, 1.5] }, { op: 'share', on: 'taken', pct: 25 },
+    { op: 'untargetable' }, { op: 'invulnerable' }, { op: 'safeguard' }, { op: 'hidden' }, { op: 'alert' },
+    { op: 'edge', side: 'attack', keep: 'better', tag: null, spend: true }, { op: 'boost', side: 'defend', die: { kind: 'die', sides: 6 } },
+    { op: 'shove', dir: 'toward', from: 'user', tiles: 3 }, { op: 'move', key: 'harmful', take: 'all', from: 'target', as: null },
+    { op: 'move', key: statusKey('energize'), take: 2, from: 'user', as: statusKey('momentum') },
+    { op: 'hasten', share: 1 }, { op: 'extra' }, { op: 'guard', share: K.parry }, { op: 'negate' }, { op: 'dispel', which: 'first' },
+  ];
+
+  test('each reads back through the parser as written, and every kind is one of them', () => {
+    for (const o of OPS) expect(parseOp(JSON.parse(JSON.stringify(o)), RULES)).toEqual(o);
+    const kinds = new Set(OPS.map(o => o.op));
+    for (const k of ['sheet', 'share', 'untargetable', 'invulnerable', 'safeguard', 'edge', 'boost', 'hidden', 'alert', 'shove', 'move', 'hasten', 'extra', 'guard', 'negate', 'dispel']) expect(kinds.has(k as Op['op'])).toBe(true);
+  });
+
+  test('a number past its rule is held at it: armor at a suit of plate, a shove at half a walk, a held die at a d20, a share at 100%', () => {
+    expect(parseOp({ op: 'sheet', key: 'armor', amount: -500 }, RULES)).toEqual({ op: 'sheet', key: 'armor', amount: -K.armorOp });
+    expect(parseOp({ op: 'sheet', key: 'critSize', amount: 3 }, RULES)).toEqual({ op: 'sheet', key: 'critSize', amount: K.critSizeMax - RULES.fight.critSizeBase });
+    expect(parseOp({ op: 'shove', dir: 'away', from: 'aim', tiles: 9 }, RULES)).toEqual({ op: 'shove', dir: 'away', from: 'aim', tiles: K.shoveMax });
+    expect(parseOp({ op: 'boost', side: 'attack', die: { kind: 'die', sides: 100 } }, RULES)).toEqual({ op: 'boost', side: 'attack', die: { kind: 'die', sides: K.boostSides } });
+    expect(parseOp({ op: 'share', on: 'dealt', pct: 400 }, RULES)).toEqual({ op: 'share', on: 'dealt', pct: 100 });
+    expect(parseOp({ op: 'sheet', key: 'speed', amount: 3 }, RULES)).toBeNull();
+    expect(parseOp({ op: 'edge', side: 'up', keep: 'better', tag: null, spend: true }, RULES)).toBeNull();
+  });
+
+  test('each says what it does', () => {
+    const lines = OPS.map(o => describeStatus({ label: 'x', desc: '', ops: [o] }, 0, RULES)[0]);
+    expect(lines.every(l => typeof l === 'string' && l.length > 0)).toBe(true);
+    expect(lines[2]).toBe('Damage taken +25%');
+    expect(lines[8]).toBe('Its next use against a foe: the target rolls twice and keeps the lower. Spent once used');
+    expect(lines[10]).toBe('Pulls each target 3 tiles toward you');
+  });
+});
+
+describe('wave 2\'s sheet and share ops (kits design 8.1)', () => {
+  test('harmful is one rule: a slow, a lowered sheet number, raised exposure, raised damage taken or lowered healing; a haste or a ward is not', () => {
+    const is = (...ops: Op[]) => harmful({ ops });
+    expect([is({ op: 'speed', pct: -10 }), is({ op: 'sheet', key: 'armor', amount: -5 }), is({ op: 'sheet', key: 'exposed', amount: 1 }),
+      is({ op: 'share', on: 'taken', pct: 10 }), is({ op: 'share', on: 'healed', pct: -50 }), is({ op: 'share', on: 'dealt', pct: -10 })]).toEqual([true, true, true, true, true, true]);
+    expect([is({ op: 'speed', pct: 10 }), is({ op: 'sheet', key: 'armor', amount: 5 }), is({ op: 'share', on: 'taken', pct: -10 }), is({ op: 'invulnerable' })]).toEqual([false, false, false, false]);
+  });
+
+  test('a zone that lowers armor is drawn as one that holds back', () => {
+    expect(zoneTone([{ op: 'sheet', key: 'armor', amount: -10 }])).toBe('hinder');
+    expect(zoneTone([{ op: 'share', on: 'dealt', pct: 20 }])).toBe('plain');
+  });
+
+  test('a zone holds back exactly when a safeguard would refuse its status as harmful: a field that taunts is drawn as one that holds back', () => {
+    const ops: Op[][] = [[{ op: 'taunt' }], [{ op: 'root' }], [{ op: 'speed', pct: 10 }], [{ op: 'share', on: 'healed', pct: -50 }], [{ op: 'invulnerable' }]];
+    expect(ops.map(o => zoneTone(o) === 'hinder')).toEqual(ops.map(o => harmful({ ops: o })));
+  });
+
+  test('a status with no sheet op leaves the sheet derive made, to the last field', () => {
+    const plain = modified(hunterOf(), [], RULES).sheet;
+    expect(modified(hunterOf(), [status('x', def({ op: 'stat', key: 'str', amount: 0 }), null)], RULES).sheet).toEqual(plain);
+    expect(withSheetOps(plain, [status('x', def({ op: 'share', on: 'taken', pct: 10 }), null)], RULES)).toBe(plain);
+  });
+
+  test('a per-round damage reads its bearer\'s damage taken share at the settle: 10 a round on a body taking +50% is 15', () => {
+    const b = body(hunterOf(), { statuses: [status('brittle', def({ op: 'share', on: 'taken', pct: 50 }), null)] });
+    const due = { key: statusKey('burn'), op: { op: 'damage', type: 'magical', amount: f('10'), when: 'turn' } as const, tier: 0, before: 0, share: 1, stacks: 1 };
+    expect(b.hp - payDue(b, due, [], tick(0), RULES).hp).toBe(15);
+  });
+
+  test('a heal of the target\'s max HP reads "Heals fully" and fills any body; a heal that only reaches a big number is that number', () => {
+    expect(opLines([{ op: 'heal', amount: FULL_HEAL, when: 'use' }, { op: 'heal', amount: f('99999'), when: 'use' }], 0, RULES)).toEqual(['Heals fully', 'Heals 99999 HP']);
+    const b = body(hunterOf(), { hp: 1 }), rows = new Map([[b.id, b]]);
+    landOps(rows, [{ op: 'heal', amount: FULL_HEAL, when: 'use' }], null, [b.id], { id: null, tier: 0 }, tick(0), RULES);
+    expect(rows.get(b.id)!.hp).toBe(b.sheet.hpMax);
+  });
+
+  test('a burn meets a shield as a hit does (rule 13): a live shield takes it first, one past its end takes nothing', () => {
+    const due = { key: statusKey('burn'), op: { op: 'damage', type: 'magical', amount: f('10'), when: 'turn' } as const, tier: 0, before: 0, share: 1, stacks: 1 };
+    const shielded = body(hunterOf(), { shield: { amount: 4, until: tick(50) } });
+    const live = payDue(shielded, due, [], tick(40), RULES), past = payDue(shielded, due, [], tick(60), RULES);
+    expect([shielded.hp - live.hp, live.shield]).toEqual([6, null]);
+    expect(shielded.hp - past.hp).toBe(10);
+  });
+});

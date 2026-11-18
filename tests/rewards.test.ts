@@ -1,0 +1,295 @@
+// What a reward may hold (src/core/rewards.ts): one reader for a save's quest, a bundle, a room's award and a form.
+import { describe, expect, test } from 'bun:test';
+import { grantLines, newRewards, parseRewards, rewardLines, saveBundle, titleReward } from '../src/core/rewards.ts';
+import type { Rewards } from '../src/core/rewards.ts';
+import { RULES } from '../src/core/rules.ts';
+import { SHOP_ITEMS, itemOf } from '../src/core/registry/items.ts';
+import type { ItemTemplate } from '../src/core/registry/items.ts';
+import { SKILL_SEEDS, skillOf } from '../src/core/registry/skills.ts';
+import { statusKey } from '../src/core/combat/effect-ops.ts';
+import type { StatusDef } from '../src/core/combat/effect-ops.ts';
+import { finishQuest, grant } from '../src/core/hunter/grant.ts';
+import { useItem } from '../src/core/hunter/use.ts';
+import { settleClear } from '../src/core/gates/pay.ts';
+import { questIn } from './models/quest-events.ts';
+import { den } from './models/gate-events.ts';
+import type { Granted } from '../src/core/hunter/grant.ts';
+import { hunterSheet } from '../src/core/hunter/sheet.ts';
+import { freshSave } from '../src/core/save.ts';
+import type { Hunter, Save } from '../src/core/save.ts';
+import { isRefused } from '../src/core/save-step.ts';
+import { day, dev } from './fixtures/ids.ts';
+
+const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v));
+const many = <T>(n: number, make: (i: number) => T): T[] => Array.from({ length: n }, (_, i) => make(i));
+const BIG = 'x'.repeat(100_000);
+const POTION: ItemTemplate = { ...itemOf(RULES, SHOP_ITEMS.find(i => i.name === 'Health Potion')!), qty: 2 };
+const SLASH = { ...skillOf(SKILL_SEEDS.find(k => k.name === 'Mutilation')!, RULES), name: 'Slash' };
+/** A reward that uses every field, as a GM would build one. */
+const FULL: Rewards = {
+  xp: 250, points: 2, gold: -40, items: [POTION], title: { name: 'Gatebreaker', desc: 'Broke a red gate.', bonus: { str: 2, hpMax: 10 } }, job: 'Ranger',
+  skills: [SLASH], statuses: [{ key: statusKey('hasted'), rounds: 3 }, { key: statusKey('blessed-by-gm'), rounds: null, def: { label: 'Blessed', desc: 'The GM smiles.', ops: [] } }],
+  boons: [{ name: 'Free resurrection', text: 'Once, the GM brings you back at 1 HP.' }],
+};
+const read = (fields: Record<string, unknown>): Rewards => parseRewards({ ...copy(FULL), ...fields })!;
+
+describe('a reward read back', () => {
+  test('a reward with every field comes through as it was written', () => {
+    expect(parseRewards(copy(FULL))).toEqual(FULL);
+  });
+
+  test('an empty object is the empty reward, and each list is its own', () => {
+    const a = parseRewards({})!, b = newRewards();
+    expect(a).toEqual(b);
+    a.items.push(POTION);
+    expect(newRewards().items).toEqual([]);
+  });
+
+  test('the daily quest\'s rewards in the rules pass unchanged', () => {
+    expect(parseRewards(copy(RULES.dailyTemplate.rewards))).toEqual(copy(RULES.dailyTemplate.rewards));
+  });
+
+  test('a reward read twice is the same as read once', () => {
+    const once = read({ xp: 1e12, items: many(30, () => POTION), job: '  Mage  ' });
+    expect(parseRewards(copy(once))).toEqual(once);
+  });
+});
+
+describe('hostile input', () => {
+  test('a value that is not an object is refused', () => {
+    for (const v of [null, undefined, 'xp', 5, [FULL]]) expect(parseRewards(v)).toBeNull();
+  });
+
+  test('a field of the wrong type takes its default instead of refusing the reward', () => {
+    const r = parseRewards({ xp: '50', gold: null, points: NaN, items: 'potion', title: 'Wolf Slayer', job: 7, skills: {}, statuses: 'x', boons: 3 })!;
+    expect(r).toEqual(newRewards());
+  });
+
+  test('an unknown key and a __proto__ key are dropped, and no prototype changes', () => {
+    const r = parseRewards(JSON.parse(`{"__proto__": {"polluted": 1}, "titleName": "Wolf Slayer", "stray": "${'y'.repeat(1000)}", "xp": 5}`))!;
+    expect(r).toEqual({ ...newRewards(), xp: 5 });
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  test('an entry its kind refuses is dropped: an item or skill or boon without a name, a status with a bad key', () => {
+    const r = read({ items: [{ name: '' }, 4, POTION], skills: [{ name: '   ' }, SLASH], boons: [{ text: 'no name' }, null], statuses: [{ key: 'Bad Key' }, { key: 'hasted', rounds: 3 }] });
+    expect([r.items, r.skills, r.boons, r.statuses]).toEqual([[POTION], [SLASH], [], [{ key: 'hasted', rounds: 3 }]]);
+  });
+
+  test('a status drawn from a hunter\'s state (Dead, Down, Exhausted, Penalized) cannot be given', () => {
+    expect(read({ statuses: ['dead', 'down', 'exhausted', 'penalized', 'hasted'].map(key => ({ key, rounds: 1 })) }).statuses).toEqual([{ key: 'hasted', rounds: 1 }]);
+  });
+
+  test('a title without a name is none; its bonus keeps the eight stats, max HP and max mana where they are not 0', () => {
+    expect(read({ title: { name: '  ', bonus: { str: 2 } } }).title).toBeNull();
+    const bonus = JSON.parse('{"__proto__": 5, "str": 2, "agi": 0, "ctl": "3", "atk": 4, "hpMax": 20, "manaMax": 2, "ac": 1, "dex": 3, "mpMax": 5}');
+    expect(read({ title: { name: 'T', bonus } }).title).toEqual({ name: 'T', desc: '', bonus: { str: 2, hpMax: 20, manaMax: 2 } });
+  });
+
+  test('a reward skill is never the build path\'s skill', () => {
+    expect(read({ skills: [{ ...SLASH, perk: 'vanguard' }] }).skills).toEqual([SLASH]);
+  });
+
+  test('a status def that cannot be read is left out; the key stays', () => {
+    expect(read({ statuses: [{ key: 'hasted', rounds: 2, def: { desc: 'no label' } }] }).statuses).toEqual([{ key: 'hasted', rounds: 2 }]);
+    // a def of the old fight, a d20 modifier, is not a def of this one
+    const old = { label: 'Cursed', desc: '', ops: [{ op: 'mod', stat: 'atk', value: -2 }] };
+    expect(read({ statuses: [{ key: 'cursed', rounds: 2, def: old }] }).statuses).toEqual([{ key: 'cursed', rounds: 2 }]);
+  });
+
+  test('a status def of the fight\'s ops comes through as it was written', () => {
+    const def: StatusDef = { label: 'Chilled', desc: 'Slower in the cold.', ops: [{ op: 'speed', pct: -20 }, { op: 'stat', key: 'agi', amount: [-4, -6, -8, -10, -12, -16] }] };
+    expect(read({ statuses: [{ key: 'chilled', rounds: 2, def }] }).statuses).toEqual([{ key: statusKey('chilled'), rounds: 2, def }]);
+  });
+
+  test('a reward status names its own def\'s label first, then the rules\' status of its key, then the key', () => {
+    const r = { ...newRewards(), statuses: [
+      { key: statusKey('hasted'), rounds: null, def: { label: 'Quickened', desc: '', ops: [] } }, { key: statusKey('hasted'), rounds: null }, { key: statusKey('mystery'), rounds: null },
+    ] };
+    expect(rewardLines(RULES, r)).toEqual(['Status: Quickened', 'Status: Hasted', 'Status: mystery']);
+  });
+});
+
+describe('the bounds', () => {
+  test('XP and gold are a billion either way, points 999 either way, each a whole number', () => {
+    expect(read({ xp: 1e12, gold: -1e12, points: -5000 })).toMatchObject({ xp: 1e9, gold: -1e9, points: -999 });
+    expect(read({ xp: 12.9, gold: -3.7, points: 1.5 })).toMatchObject({ xp: 12, gold: -3, points: 1 });
+  });
+
+  test('at most 20 items, 8 skills, 8 statuses and 8 boons: the first ones are kept', () => {
+    const r = read({ items: many(10_000, i => ({ ...POTION, name: `P${i}` })), skills: many(50, i => ({ name: `S${i}` })),
+      statuses: many(50, i => ({ key: `s${i}`, rounds: 1 })), boons: many(50, i => ({ name: `B${i}` })) });
+    expect([r.items.length, r.skills.length, r.statuses.length, r.boons.length]).toEqual([20, 8, 8, 8]);
+    expect([r.items[0]!.name, r.skills[7]!.name, r.statuses[7]!.key, r.boons[7]!.name]).toEqual(['P0', 'S7', 's7', 'B7']);
+  });
+
+  test('a title\'s name is 60, its description 200, its bonus 999 either way', () => {
+    const t = read({ title: { name: BIG, desc: BIG, bonus: { str: 5000, agi: -5000 } } }).title!;
+    expect([t.name.length, t.desc.length, t.bonus]).toEqual([60, 200, { str: 999, agi: -999 }]);
+  });
+
+  test('a job is 60 and trimmed, a blank job is none', () => {
+    expect(read({ job: BIG }).job).toHaveLength(60);
+    expect(read({ job: '   ' }).job).toBeNull();
+  });
+
+  test('a boon\'s name is 60 and its text 200', () => {
+    const [b] = read({ boons: [{ name: BIG, text: BIG }] }).boons;
+    expect([b!.name.length, b!.text.length]).toEqual([60, 200]);
+  });
+
+  test('a status lasts 1 to 999 rounds, and none (or no number) means until removed', () => {
+    const r = read({ statuses: [{ key: 'a', rounds: 5000 }, { key: 'b', rounds: 0 }, { key: 'c', rounds: null }, { key: 'd' }, { key: 'e', rounds: 'x' }] });
+    expect(r.statuses.map(s => s.rounds)).toEqual([999, 1, null, null, 1]);
+  });
+});
+
+describe('a title by name', () => {
+  test('a built-in title brings its description and bonus from the sender\'s rules', () => {
+    const wolf = RULES.titles.find(t => t.name === 'Wolf Slayer')!;
+    expect(titleReward(RULES, ' Wolf Slayer ')).toEqual({ name: 'Wolf Slayer', desc: wolf.desc, bonus: { ...wolf.bonus }, key: 'wolf-slayer' });
+  });
+
+  test('another name is a title without a bonus; a blank name is none', () => {
+    expect(titleReward(RULES, 'Gate Crasher')).toEqual({ name: 'Gate Crasher', desc: '', bonus: {} });
+    expect(titleReward(RULES, '  ')).toBeNull();
+  });
+});
+
+describe('a reward in words', () => {
+  test('one line a part, signed amounts, a status by its label and how long it lasts', () => {
+    expect(rewardLines(RULES, FULL)).toEqual([
+      '+250 XP', '+2 ability points', '-40 gold', 'Item: Health Potion ×2', 'Title: Gatebreaker', 'Job: Ranger', 'Skill: Slash',
+      'Status: Hasted (3 rounds)', 'Status: Blessed', 'Boon: Free resurrection',
+    ]);
+  });
+  test('the reward window says what was acquired, with a build change after the items', () => {
+    expect(grantLines(RULES, { ...FULL, xp: 1500 }, 'Path: Vanguard')).toEqual([
+      '+1,500 XP', '-40 gold', '+2 ability points', 'Item acquired: Health Potion ×2', 'Path: Vanguard', 'Title acquired: Gatebreaker', 'Job: Ranger',
+      'Skill acquired: Slash', 'Status: Hasted (3 rounds)', 'Status: Blessed', 'Boon: Free resurrection',
+    ]);
+    expect(grantLines(RULES, { ...newRewards(), points: 1, statuses: [{ key: statusKey('hasted'), rounds: 1 }] })).toEqual(['+1 ability point', 'Status: Hasted (1 round)']);
+  });
+});
+
+describe('a reward given (src/core/hunter/grant.ts)', () => {
+  const AT = '2026-11-14T12:00:00.000Z';
+  const fresh = (): Save => freshSave({ now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-test') }, { onboarded: true });
+  const given = (save: Save, r: Rewards, vitals: 'sheet' | 'fight' = 'sheet'): Granted => {
+    const g = grant(save, 'h1', r, null, { at: AT, today: day(AT.slice(0, 10)), R: RULES, vitals });
+    if (isRefused(g)) throw new Error(g.why);
+    return g;
+  };
+  const hunter = (s: Save): Hunter => s.hunters[0]!;
+  const potions = (h: Hunter): number => h.items.filter(i => i.name === 'Health Potion').reduce((n, i) => n + i.qty, 0);
+
+  test('every part of a reward is on the hunter in the one save it answers, and the save it was given is unchanged', () => {
+    const save = fresh(), before = JSON.stringify(save), h = hunter(save);
+    const g = given(save, { ...FULL, gold: 40, xp: 30 });
+    const after = hunter(g.save);
+    expect(JSON.stringify(save)).toBe(before);
+    expect({
+      xp: after.xp, bonus: after.bonusPoints, gold: after.gold, job: after.job, titles: after.titles.map(t => t.name), skills: after.skills.map(k => k.name),
+      statuses: after.conditions.map(c => c.key), boons: after.boons.map(b => b.name), potions: potions(after),
+    }).toEqual({
+      xp: h.xp + 30, bonus: h.bonusPoints + 2, gold: h.gold + 40, job: 'Ranger', titles: [...h.titles.map(t => t.name), 'Gatebreaker'], skills: [...h.skills.map(k => k.name), 'Slash'],
+      statuses: ['hasted', 'blessed-by-gm'], boons: ['Free resurrection'], potions: potions(h) + 2,
+    });
+  });
+
+  test('the ids it gives come from the save\'s seq, each new, and the seq moves past them', () => {
+    const save = fresh(), g = given(save, FULL), after = hunter(g.save), old = JSON.stringify(save);
+    const made = [...after.titles, ...after.skills, ...after.boons].map(x => x.id).filter(id => !old.includes(`"${id}"`));
+    expect(made).toHaveLength(3);
+    expect(new Set(made).size).toBe(3);
+    expect(g.save.seq).toBeGreaterThanOrEqual(save.seq + 3);
+  });
+
+  test('a title the hunter holds is not given twice and is not in the window\'s lines', () => {
+    const once = given(fresh(), { ...newRewards(), title: FULL.title }).save, twice = given(once, { ...newRewards(), title: FULL.title });
+    expect(hunter(twice.save).titles.filter(t => t.name === 'Gatebreaker')).toHaveLength(1);
+    expect(twice.lines).toEqual([]);
+  });
+
+  test('a rule title the hunter holds under a name the GM gave it is not given again', () => {
+    const wolf = titleReward(RULES, 'Wolf Slayer')!, once = given(fresh(), { ...newRewards(), title: wolf }).save;
+    const h = hunter(once), renamed = { ...once, hunters: [{ ...h, titles: h.titles.map(t => (t.seedKey ? { ...t, name: 'Pack Breaker' } : t)) }] };
+    expect(hunter(renamed).titles.filter(t => t.seedKey === 'wolf-slayer').map(t => t.name)).toEqual(['Pack Breaker']);
+    const twice = given(renamed, { ...newRewards(), title: parseRewards({ title: wolf })!.title });
+    expect(hunter(twice.save).titles).toEqual(hunter(renamed).titles);
+    expect(twice.lines).toEqual([]);
+  });
+
+  test('a level-up above the peak refills HP and mana on the sheet', () => {
+    const save = fresh(), h = hunter(save), hurt = { ...save, hunters: [{ ...h, life: { at: 'up' as const, hp: 1 }, mana: 0 }] };
+    // level 1 costs 100 XP (xpPerLevel 100 times the level)
+    const g = given(hurt, { ...newRewards(), xp: 100 });
+    const after = hunter(g.save), max = hunterSheet(after, RULES).sheet;
+    expect(g.levelup).toEqual({ hunterId: 'h1', from: 1, to: 2, points: RULES.pointsPerLevel, refill: true });
+    expect([after.life, after.mana]).toEqual([{ at: 'up', hp: max.hpMax }, max.manaMax]);
+  });
+
+  test('while a fight holds the hunter\'s vitals, a status and the refill are left for the fight, and the rest lands', () => {
+    const save = fresh(), h = hunter(save), hurt = { ...save, hunters: [{ ...h, life: { at: 'up' as const, hp: 1 } }] };
+    const g = given(hurt, { ...newRewards(), xp: 100, gold: 5, statuses: [{ key: statusKey('hasted'), rounds: 3 }] }, 'fight');
+    const after = hunter(g.save);
+    expect([after.conditions, after.life, after.gold, after.level]).toEqual([[], { at: 'up', hp: 1 }, h.gold + 5, 2]);
+    expect(g.fight).toEqual({ statuses: [{ key: 'hasted', rounds: 3, source: { id: null, tier: 0 } }], refill: true });
+    expect(g.levelup?.refill).toBe(false);
+    expect(g.lines).toEqual(['+100 XP', '+5 gold']);
+  });
+
+  test('a hunter that is not there is refused', () => {
+    expect(grant(fresh(), 'h9', FULL, null, { at: AT, today: day(AT.slice(0, 10)), R: RULES, vitals: 'sheet' })).toEqual({ ok: false, why: 'no-hunter' });
+  });
+});
+
+describe('a Resurrection Crystal given in a reward, with no code of its own (notes-2b-crystal.md section 4)', () => {
+  // Each way a GM gives an item is read through its own step, then the hunter it was given is killed and uses it from
+  // the bag: the crystal arrived whole, its revive with it.
+  const AT = '2026-11-18T12:00:00.000Z', DAY = { at: AT, today: day(AT.slice(0, 10)), R: RULES, vitals: 'sheet' as const };
+  const CRYSTAL: ItemTemplate = itemOf(RULES, SHOP_ITEMS.find(i => i.name === 'Resurrection Crystal')!);
+  const WITH: Rewards = { ...newRewards(), items: [CRYSTAL] };
+  const fresh = (): Save => freshSave({ now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-test') }, { onboarded: true });
+  /** Hunter h1 of `s` dies, then uses the crystal it holds: up at 1 HP with none left. */
+  const raised = (s: Save): void => {
+    const h = { ...s.hunters[0]!, life: { at: 'dead' as const } }, it = h.items.find(i => i.revive)!;
+    expect(it).toMatchObject({ name: 'Resurrection Crystal', revive: true });
+    const u = useItem(h, it.id, [], RULES);
+    if (isRefused(u)) throw new Error(u.why);
+    expect([u.hunter.life, u.hunter.items.some(i => i.revive)]).toEqual([{ at: 'up', hp: 1 }, false]);
+  };
+  const granted = (s: Save, r: Rewards): Save => { const g = grant(s, 'h1', r, null, DAY); if (isRefused(g)) throw new Error(g.why); return g.save; };
+
+  test('read by the one reader every reward goes through, it keeps its revive', () => {
+    expect(parseRewards(copy(WITH))!.items).toEqual([CRYSTAL]);
+  });
+
+  test('an award, and a title\'s reward: the title and the crystal in one grant', () => {
+    raised(granted(fresh(), parseRewards(copy(WITH))!));
+    const s = granted(fresh(), parseRewards(copy({ ...WITH, title: { name: 'Twice Born', desc: 'Came back.', bonus: {} } }))!);
+    expect(s.hunters[0]!.titles.map(t => t.name)).toContain('Twice Born');
+    raised(s);
+  });
+
+  test('a bundle saved in the library, then awarded', () => {
+    const lib = saveBundle(fresh().library, 'rb1', 'Second life', parseRewards(copy(WITH))!, 10);
+    if (isRefused(lib)) throw new Error(lib.why);
+    raised(granted(fresh(), parseRewards(copy(lib.rewards[0]!.rewards))!));
+  });
+
+  test('a quest\'s reward, given as the quest is finished', () => {
+    const s = fresh(), q = { ...questIn('active', 'side'), rewards: parseRewards(copy(WITH))! };
+    const r = finishQuest({ ...s, hunters: [{ ...s.hunters[0]!, quests: [q] }] }, 'h1', q.id, DAY);
+    if (isRefused(r)) throw new Error(r.why);
+    raised(r.save);
+  });
+
+  test('a gate\'s Clear, with the crystal as the item the GM put in its share', () => {
+    const s = { ...fresh(), gates: [den('raiding')] };
+    const out = settleClear(s, 'g-den', { due: 0, xp: 0, gold: 0, items: ['Resurrection Crystal'], payees: ['Hunter'] }, [{ hid: 'h1', rewards: parseRewards(copy(WITH))! }], { room: null, events: [] }, DAY);
+    if (isRefused(out)) throw new Error(out.why);
+    expect(out.save.gates[0]!.status).toBe('cleared');
+    raised(out.save);
+  });
+});

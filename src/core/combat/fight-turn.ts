@@ -1,0 +1,441 @@
+// fight-turn.ts: how a fight's time moves and what follows from a change to its rows (docs/agent-handoff/rw/design.md
+// sections 1.3, 4.2, 4.4 and 4.7). `startTurn` is the one function that begins a turn; `consequences` is the one place that
+// turns a change of a row into effects (a defeat, a move, a channel, a stagger, and through `writeBack` a sheet's HP,
+// mana, fatigue and statuses); `grounded` keeps the zones' holds (zones.ts); `overIf` ends a fight whose side has nobody
+// up; `spreadsOf`, `spreadTo` and `marked` pass a spreading status on (design 4.8). Called only by the reducer in fight.ts.
+import { tallied } from './row-tally.ts';
+import { diceOf } from '../formula.ts';
+import type { Dice, Scope } from '../formula.ts';
+import { lifeAfter } from '../hunter/vitals.ts';
+import type { Life } from '../hunter/vitals.ts';
+import type { Rules } from '../rules.ts';
+import { acted, next, paceCost, roundOf, roundsOf, tick } from './timeline.ts';
+import type { Tick } from './timeline.ts';
+import { applyStatus, atTier, dueAmount, onSheet, perRound, settle, sheetStatuses, statusOn, withStatuses } from './effect-ops.ts';
+import type { Body, Due, SheetStatus, Status, StatusKey } from './effect-ops.ts';
+import type { AbilityId, CombatantId } from './ability-types.ts';
+import { resists } from './resolve.ts';
+import { channelStep } from './fight-channel.ts';
+import { anchorOf, oldEnough, payUpkeep, zoneStep, zoneSync } from './zones.ts';
+import type { Zone } from './zones.ts';
+import { fire, raised } from './triggers.ts';
+import { alive, held, landEnd, landOps, throughShield } from './land.ts';
+export { held };
+import { dismissed, isSummon, timeUp } from './summons.ts';
+import { damageShare, healShare, holds, stealthStep, wardedDamage } from './standing.ts';
+import { reactState, reactStep, restored, turnReaction, withReact } from './fight-react.ts';
+import { restUsed } from './uses.ts';
+import { ARMED, endStep } from './delayed.ts';
+import type { Raised } from './triggers.ts';
+import { dist, sees, seenBy } from './space.ts';
+import { line, LOG_CAP, LOG_LINE_MAX, MAX_PENDING, MAX_SPREAD, MAX_STATUSES, spreadKey } from './fight-types.ts';
+import type { Ctx, Effect, Ended, Fight, LogLine, Running, Spread, Summary } from './fight-types.ts';
+
+type Fx = Effect[];
+
+/** Up: able to take a turn. A hunter at 0 HP is dying, not up. */
+export const isUp = (b: Body): boolean => b.hp > 0;
+/** On the map: a monster or shadow at 0 HP is gone from it; a hunter at 0 still lies there and can be healed. */
+/** The tiles the party sees now (space.ts `seenBy`), or null when the fight has no fog: the party then sees the whole map. */
+export function partyView(f: Pick<Fight, 'rows' | 'grid' | 'fog'>): Set<number> | null {
+  return f.fog ? seenBy('party', f.rows.map(r => ({ place: r.place, side: r.side, up: isUp(r) })), f.grid, f.fog.sight) : null;
+}
+
+export const rowOf = (f: Fight, id: string): Body | undefined => f.rows.find(r => r.id === id);
+export const withRow = <F extends Fight>(f: F, row: Body): F => ({ ...f, rows: f.rows.map(r => r.id === row.id ? row : r) });
+
+/** The fight with `l` on top of its log, its words prefixed with the round once it has a time. */
+export function logged<F extends Fight>(f: F, l: LogLine, R: Rules): F {
+  const text = (f.phase === 'setup' ? l.text : `R${roundOf(f.now, R.fight)}: ${l.text}`).slice(0, LOG_LINE_MAX);
+  return { ...f, log: [{ ...l, text }, ...f.log].slice(0, LOG_CAP) };
+}
+
+const scopeOf = (b: Body): Scope => ({ user: { stats: b.stats, sheet: b.sheet }, target: { stats: b.stats, sheet: b.sheet }, charge: 0 });
+
+/** What a paid per-round op does to its bearer at `now`: damage takes the shield first (rule 13, `throughShield`), then HP; a heal, mana and fatigue stay in their bounds. */
+export function payDue(b: Body, due: Due, dice: readonly number[], now: Tick, R: Rules): Body {
+  if (!alive(b)) return b;
+  const n = dueAmount(due, scopeOf(b), dice);
+  switch (due.op.op) {
+    case 'damage': {
+      // rule 11c reads the bearer's damage taken share at the settle (kits design 8.1)
+      const hit = Math.max(0, Math.round(n * damageShare(null, b, R))), s = throughShield(b, hit, now);
+      return { ...s.target, hp: Math.max(0, b.hp - wardedDamage(s.target, hit - s.absorbed)) };
+    }
+    case 'heal': return { ...b, hp: Math.min(b.sheet.hpMax, b.hp + Math.max(0, Math.round(n * healShare(b, R)))) };
+    case 'mana': return { ...b, mana: Math.max(0, Math.min(b.sheet.manaMax, b.mana + n)) };
+    case 'fatigue': return { ...b, fatigue: Math.max(0, Math.min(b.sheet.fatigueMax, b.fatigue + n)) };
+    // A shield op is not per-round: `settle` never makes it due.
+    case 'shield': return b;
+    default: return due.op satisfies never;
+  }
+}
+
+/**
+ * A status its bearer's turn must still settle: per-round ops not paid to its end yet, or an end (a delayed effect,
+ * kits table 2.2) that lands at that settle. It stays until then.
+ */
+const owes = (s: Body['statuses'][number]): boolean => s.until !== null && ((s.settledAt < s.until && s.def.ops.some(perRound)) || s.def.end !== undefined);
+
+/**
+ * Time moves from `f.now` to `now` for everyone: every threat table falls by the decay for the time that passed (so a
+ * monster reads it decayed by elapsed time at its turn start), except the entry of a body holding a channel, which is not
+ * idle (design 4.1); and shields and statuses that ended are dropped, except a status that still owes its bearer a
+ * per-round op.
+ */
+function advance(f: Running, now: Tick, R: Rules): { fight: Running; ended: Raised[] } {
+  if (now === f.now) return { fight: f, ended: [] };
+  const ended: Raised[] = [];
+  const k = Math.pow(1 - R.fight.threatDecay, (now - f.now) / R.fight.round);
+  const holding = new Set(f.rows.filter(r => r.channel?.state === 'holding').map(r => r.id as string));
+  const rows = f.rows.map(r => {
+    let x = r;
+    if (x.threat) x = { ...x, threat: Object.fromEntries(Object.entries(x.threat).map(([id, t]) => [id, holding.has(id) ? t : t * k])) };
+    if (x.shield && x.shield.until <= now) x = { ...x, shield: null };
+    const kept = x.statuses.filter(s => s.until === null || s.until > now || owes(s));
+    if (kept.length !== x.statuses.length) {
+      for (const s of x.statuses) if (!kept.includes(s) && s.zone === undefined) ended.push(raised(x.id, 'statusEnded', null, [], s.key));
+      x = withStatuses(x, kept, now, R);
+    }
+    return x;
+  });
+  return { fight: { ...f, now, rows }, ended };
+}
+
+/**
+ * Rule 19b (kits design 1.3): the triggers `events` set off at the fight's now, fired on its rows; a line names those
+ * that fired.
+ */
+export function triggered<F extends Running>(f: F, events: readonly Raised[], ctx: Ctx): F {
+  const t = fire(f.rows, events, f.now, ctx.rules);
+  if (t.bodies.every((b, i) => b === f.rows[i])) return f;
+  const g = { ...f, rows: t.bodies };
+  return t.said.length ? logged(g, line(`Then: ${t.said.join(', ')}.`, [...t.about]), ctx.rules) : g;
+}
+
+/** Whether a row keeps its side in the fight: up, and not a summon (kits design 1.9: a fight is not held by a sprite). */
+export const holdsSide = (b: Body): boolean => isUp(b) && !isSummon(b);
+/** A side with nobody up ends the fight. A summon does not count. */
+export function overIf(f: Running, fx: Fx, R: Rules): Ended | null {
+  const sides = ['party', 'foe'] as const;
+  const standing = sides.filter(side => f.rows.some(r => r.side === side && holdsSide(r)));
+  if (standing.length === 2) return null;
+  return ended(f, standing[0] ?? null, fx, R);
+}
+
+/** The fight ended at its `now`, with the side still up. Its XP is the banked XP and that of every foe down. */
+export function ended(f: Fight, winner: Summary['winner'], fx: Fx, R: Rules): Ended {
+  const now = f.phase === 'setup' ? tick(0) : f.now;
+  const down = f.rows.filter(r => !isUp(r));
+  const xp = down.reduce((n, r) => r.side === 'foe' ? n + r.xp : n, f.banked);
+  const summary: Summary = { rounds: roundsOf(now, R, 'near'), winner, down: down.map(r => r.id), xp };
+  fx.push({ type: 'ended', summary });
+  const out: Ended = { phase: 'ended', id: f.id, grid: f.grid, zones: f.zones, fog: f.fog, rows: f.rows, log: f.log, banked: f.banked, had: f.had, now, summary };
+  return logged(out, line(`The fight ends${winner ? `: the ${winner === 'party' ? 'party' : 'foes'} won` : ''}.`), R);
+}
+
+/**
+ * Turns the difference between `before` and `after` rows into effects, and keeps what follows from it: a row that went
+ * down loses its channel, a row that came back up waits no less than `now`. Rows only in `after` (new) are skipped.
+ */
+export function consequences(before: readonly Body[], after: Running, ctx: Ctx, fx: Fx, forced?: ReadonlySet<string>): Running {
+  let f = grounded(sentAway(after, dismissed(after.rows), 'fades', ctx), ctx, fx, forced);
+  f = { ...f, rows: tallied(f.rows, { type: 'changed', before }) };
+  for (const b of before) {
+    let a = rowOf(f, b.id);
+    if (!a) continue;
+    if (isUp(b) && !isUp(a)) {
+      if (a.channel) a = { ...a, channel: channelStep(a.channel, { type: 'drop' }) };
+      // a reactor down is unarmed (kits table 8.9.1)
+      if (a.armed) a = withReact(a, reactStep(reactState(a), { type: 'down' }));
+      if (a.kind !== 'hunter') fx.push({ type: 'defeated', id: a.id });
+      f = logged(f, line(`${a.name} is ${a.kind === 'hunter' ? 'down' : 'defeated'}.`, [a.id]), ctx.rules);
+    }
+    if (!isUp(b) && isUp(a)) a = { ...a, at: tick(Math.max(a.at, f.now)) };
+    if (a.place.x !== b.place.x || a.place.y !== b.place.y) fx.push({ type: 'moved', id: a.id, to: a.place });
+    writeBack(b, a, f.now, ctx, fx);
+    if (a.channel?.state !== b.channel?.state || a.channel?.charge !== b.channel?.charge) {
+      fx.push({ type: 'channel', id: a.id, state: a.channel?.state ?? null, charge: a.channel?.charge ?? 0 });
+    }
+    if (a.stagger && b.stagger && a.stagger.max > b.stagger.max) {
+      fx.push({ type: 'staggered', id: a.id });
+      f = logged(f, line(`${a.name} is staggered.`, [a.id]), ctx.rules);
+    }
+    f = withRow(f, a);
+  }
+  return revealed(before, f, ctx);
+}
+
+/**
+ * Stealth's reveals after a change (kits design 8.7, table 8.9.4): a hidden body that lost HP, or that stands within
+ * `kit.hideReveal` tiles of a foe that is up, is seen again; its hidden status goes.
+ */
+function revealed(before: readonly Body[], f: Running, ctx: Ctx): Running {
+  let g = f;
+  for (const a of f.rows) {
+    if (!holds(a, 'hidden')) continue;
+    const b = before.find(x => x.id === a.id), hurt = b !== undefined && a.hp < b.hp;
+    const near = f.rows.some(o => o.side !== a.side && isUp(o) && dist(o.place, a.place) <= ctx.rules.fight.kit.hideReveal);
+    const to = hurt ? stealthStep('hidden', { type: 'hurt' }) : near ? stealthStep('hidden', { type: 'foeNear' }) : 'hidden';
+    if (to === 'revealed') g = logged(withRow(g, unhidden(a, g.now, ctx.rules)), line(`${a.name} is seen.`, [a.id]), ctx.rules);
+  }
+  return g;
+}
+/** `b` without its hidden statuses (kits design 8.7): what a reveal and acting on a foe take off. */
+export const unhidden = (b: Body, now: Tick, R: Rules): Body => withStatuses(b, b.statuses.filter(s => !s.def.ops.some(o => o.op === 'hidden')), now, R);
+/** `b` without its untargetable and hidden statuses: what using an ability against a foe or a place ends (kits design 8.1, 8.7). */
+export const uncovered = (b: Body, now: Tick, R: Rules): Body =>
+  withStatuses(b, b.statuses.filter(s => !s.def.ops.some(o => o.op === 'hidden' || o.op === 'untargetable')), now, R);
+
+/** Whether a sheet would see a change between two lists: a status put on, taken off, or changed in def, source, end or stacks. */
+const sameStatuses = (x: readonly Status[], y: readonly Status[]): boolean => x.length === y.length && x.every((s, i) => {
+  const t = y[i]!;
+  return s.key === t.key && s.def === t.def && s.source.id === t.source.id && s.source.tier === t.source.tier && s.until === t.until && s.stacks === t.stacks;
+});
+
+/**
+ * The write-back of a row whose sheet holder must hear of a change from `b` to `a` at `now`: a hunter's HP, mana, fatigue
+ * and statuses as `vitals` (this phone) or `sendRemote` (another phone), a shadow's HP as `shadowHp`. Totals, so a
+ * repeat changes nothing. A row no sheet holds, or with nothing changed, writes nothing. A stacking status whose count is
+ * the fight's (kits table 2.1, `keep: 'fight'`) is not the sheet's: it stays in the fight and ends with it.
+ */
+export function writeBack(b: Body, a: Body, now: Tick, ctx: Ctx, fx: Fx): void {
+  const h = a.holder;
+  if (!h) return;
+  if (h.kind === 'shadow') { if (a.hp !== b.hp) fx.push({ type: 'shadowHp', hunterId: h.hunterId, shadowId: h.shadowId, hp: a.hp }); return; }
+  if (a.hp === b.hp && a.mana === b.mana && a.fatigue === b.fatigue && sameStatuses(a.statuses, b.statuses) && a.used === b.used) return;
+  const t = sheetTotals(a, now, ctx.rules);
+  if (h.kind === 'remote') { fx.push({ type: 'sendRemote', remote: h.remote, hp: t.hp, mana: t.mana, fatigue: t.fatigue, statuses: t.statuses }); return; }
+  const was: Life = ctx.life(h.hunterId) ?? (b.hp > 0 ? { at: 'up', hp: b.hp } : { at: 'dying', successes: 0, failures: 0 });
+  const life = lifeAfter(was, { type: 'setHp', hp: a.hp }, a.sheet.hpMax);
+  fx.push({ type: 'vitals', hunterId: h.hunterId, hp: t.hp, life, mana: t.mana, fatigue: t.fatigue, statuses: t.statuses, ...(Object.keys(t.used).length ? { used: t.used } : {}) });
+}
+
+/** What a hunter's row leaves on its sheet at `now`: HP, mana, fatigue, the statuses a sheet keeps (`onSheet`), the uses spent this rest. */
+export type SheetTotals = {
+  readonly hp: number; readonly mana: number; readonly fatigue: number; readonly statuses: readonly SheetStatus[]; readonly used: Readonly<Record<AbilityId, number>>;
+};
+/** The one answer to what a row writes back to its sheet: the fight's write-back and a played fight's end (odds.ts) both read it. */
+export const sheetTotals = (a: Body, now: Tick, R: Rules): SheetTotals =>
+  ({ hp: a.hp, mana: a.mana, fatigue: a.fatigue, statuses: sheetStatuses(a.statuses.filter(onSheet), now, R), used: restUsed(a) });
+
+/**
+ * Pays what is due on `row`: each due op at once when its formula has no dice, and otherwise it waits in `pending` for
+ * the dice a `rollSettle` effect asks for (the `settle` command pays it).
+ */
+function owe(f: Running, row: Body, dues: readonly Due[], fx: Fx, R: Rules): Running {
+  let x = row;
+  const pending = [...f.pending];
+  for (const due of dues) {
+    const dice = diceOf(atTier(due.op.amount, due.tier));
+    fx.push({ type: 'rollSettle', id: x.id, key: due.key, dice, share: due.share });
+    if (!dice.length) x = payDue(x, due, [], f.now, R);
+    else if (pending.length < MAX_PENDING) pending.push({ id: x.id, due });
+  }
+  return { ...withRow(f, x), pending };
+}
+
+/**
+ * Settles `row`'s statuses at `now` (`settle`), paying what is due (`owe`), and asks for the d20s of each spreading
+ * status's pass (`spreadsOf`). A status that ended leaves after it settled.
+ */
+function settleRow(f: Running, row: Body, ctx: Ctx, fx: Fx): { fight: Running; ended: Raised[] } {
+  const R = ctx.rules, s = settle(row.statuses, f.now, R), passes = spreadsOf(f, row, R);
+  const ended = s.expired.filter(x => x.zone === undefined).map(x => raised(row.id, 'statusEnded', null, [], x.key));
+  let g = f;
+  for (const gone of s.expired) g = logged(g, line(`${row.name}: ${gone.def.label} ends.`, [row.id]), R);
+  for (const gone of s.spent) g = logged(g, line(`${row.name}: the last ${gone.def.label} wears off.`, [row.id]), R);
+  g = owe(g, withStatuses(row, s.statuses, f.now, R), s.due, fx, R);
+  // the settle's S2 (kits design 1.6, table 2.2): a delayed effect whose time ran out lands its end on its bearer
+  const due = s.expired.filter(x => x.def.end !== undefined && x.zone === undefined && endStep(ARMED, { type: 'due' }, x.def.end).lands);
+  if (due.length && isUp(rowOf(g, row.id)!)) {
+    const rows = new Map(g.rows.map(b => [b.id, b] as const));
+    for (const x of due) {
+      const e = landEnd(rows, row.id, x, f.now, R);
+      g = logged({ ...g, rows: g.rows.map(b => rows.get(b.id)!) }, line(`${row.name}: ${x.def.label} lands${e.dealt ? ` (${e.dealt})` : ''}.`, [row.id]), R);
+      if (e.dealt > 0) ended.push(raised(row.id, 'struck', x.source.id));
+    }
+  }
+  const pending = [...g.pending];
+  for (const p of passes) {
+    fx.push({ type: 'rollSettle', id: row.id, key: p.key, dice: p.targets.map(() => D20), share: 1 });
+    if (pending.length < MAX_PENDING) pending.push({ id: row.id, spread: p });
+  }
+  return { fight: passes.length ? { ...g, pending } : g, ended };
+}
+
+/** The die a spread's resist is rolled on (rule 8b). */
+export const D20: Dice = { count: 1, sides: 20 };
+/**
+ * The passes of `row`'s spreading statuses at its settle at `f.now` (design 4.8): for each status that is not a zone's
+ * hold, that the fight keeps a list for (`had`), whose first `spread` op reaches `range` tiles (at most `spreadRangeMax`)
+ * and in which a new whole round of holding it (from its `since`) has begun since it last settled: every other body
+ * that is up, that the bearer sees within that reach, that does not hold the status and has never held it. At most
+ * `MAX_STATUSES` statuses times the other rows, each measured once.
+ */
+function spreadsOf(f: Running, row: Body, R: Rules): Spread[] {
+  const out: Spread[] = [];
+  for (const s of row.statuses) {
+    const op = s.zone === undefined ? s.def.ops.find(o => o.op === 'spread') : undefined, had = f.had[s.key];
+    if (op?.op !== 'spread' || !had) continue;
+    const end = s.until === null ? f.now : Math.min(f.now, s.until), round = R.fight.round;
+    if (Math.floor((end - s.since) / round) <= Math.floor((s.settledAt - s.since) / round)) continue;
+    const reach = Math.min(op.range, R.fight.spreadRangeMax);
+    const targets = f.rows.filter(b => b.id !== row.id && isUp(b) && !had.includes(b.id) && !b.statuses.some(x => x.key === s.key)
+      && dist(row.place, b.place) <= reach && sees(row.place, b.place, f.grid)).map(b => b.id);
+    if (targets.length) out.push({ key: spreadKey(s.key), status: s.key, def: s.def, source: s.source, length: s.until === null ? null : tick(s.until - s.since), aim: row.sheet.aim, targets });
+  }
+  return out;
+}
+
+/**
+ * A spreading status's pass paid with its d20s, one a target in order (design 4.8): a target still up, not holding the
+ * status and not on the fight's list for it, resists on rule 8b's roll against the bearer's Accuracy, or takes the
+ * status from the same source for its first length from now.
+ */
+export function spreadTo(f: Running, p: Spread, dice: readonly number[], R: Rules): Running {
+  let g = f;
+  p.targets.forEach((id, i) => {
+    const t = rowOf(g, id);
+    if (!t || !isUp(t) || t.statuses.some(x => x.key === p.status) || (g.had[p.status] ?? []).includes(id) || t.statuses.length >= MAX_STATUSES) return;
+    if (resists(dice[i] ?? D20.sides, t.sheet.will, p.aim, R)) { g = logged(g, line(`${t.name} resists ${p.def.label}.`, [t.id]), R); return; }
+    const list = applyStatus(t.statuses, statusOn(p.def, { key: p.status, source: p.source, until: p.length === null ? null : tick(g.now + p.length), since: g.now, settledAt: g.now }));
+    g = logged(withRow(g, withStatuses(t, list, g.now, R)), line(`${t.name} catches ${p.def.label}.`, [t.id]), R);
+  });
+  return g;
+}
+
+/**
+ * The fight's list of who has held each spreading status (design 4.8) after a change: every row that holds a status
+ * with a `spread` op (not a zone's hold) is on that status's list, and an id no row has any more is dropped. A status
+ * that is not listed yet gets a list while there are fewer than `MAX_SPREAD`. The same fight back when nothing changed.
+ */
+export function marked<F extends Fight>(f: F): F {
+  const had: Record<string, CombatantId[]> = Object.fromEntries(Object.entries(f.had).map(([k, ids]) => [k, ids.filter(id => f.rows.some(r => r.id === id))]));
+  let more = Object.entries(had).some(([k, ids]) => ids.length !== f.had[k as StatusKey]!.length);
+  for (const r of f.rows) for (const s of r.statuses) {
+    if (s.zone !== undefined || !s.def.ops.some(o => o.op === 'spread')) continue;
+    const list = had[s.key] ?? (Object.keys(had).length < MAX_SPREAD ? (had[s.key] = []) : null);
+    if (list && !list.includes(r.id)) { list.push(r.id); more = true; }
+  }
+  return more ? { ...f, had } : f;
+}
+
+/**
+ * The ground at the fight's now (zones.ts `zoneSync`): zones that ended are gone, each body holds the zones it stands in,
+ * and what an entry pays is paid or waits for its dice. Called after every change of a place, a zone or the time.
+ */
+export function grounded(f: Running, ctx: Ctx, fx: Fx, forced?: ReadonlySet<string>): Running {
+  if (!f.zones.length && !f.rows.some(r => r.statuses.some(s => (s.zone !== undefined && s.until === null) || s.def.ops.some(o => o.op === 'aura')))) return f;
+  const s = zoneSync(f.rows, f.zones, f.grid, f.now, ctx.rules, forced);
+  // a zone whose time passed lands its end on who stood in it, when it is old enough (kits design 1.8.3, table 2.6)
+  const timed = f.zones.filter(z => z.end?.length && z.until !== null && z.until <= f.now && !s.zones.some(x => x.id === z.id)
+    && zoneStep({ at: 'laid' }, { type: 'time', old: oldEnough(z, z.until, ctx.rules) }).lands);
+  let g: Running = zoneEnds({ ...f, rows: s.rows, zones: s.zones }, timed, f.rows, ctx);
+  for (const z of f.zones) if (!s.zones.some(x => x.id === z.id)) g = logged(g, line(`${z.name} is gone.`, [], [z.id]), ctx.rules);
+  for (const z of s.zones) if (!f.zones.some(x => x.id === z.id)) g = logged(g, line(`${z.name} spreads around ${rowOf(g, anchorOf(z) ?? '')?.name ?? 'it'}.`, [...(anchorOf(z) === null ? [] : [anchorOf(z)!])], [z.id]), ctx.rules);
+  for (const e of s.entries) g = owe(g, rowOf(g, e.id)!, [e.due], fx, ctx.rules);
+  return g;
+}
+
+/**
+ * Zones that ended with their end landing (kits design 1.8.3): each lands its `end` ops once on every body that held it
+ * in `stood` (the rows before it ended), from its owner at its tier, at their averages; a line names each.
+ */
+export function zoneEnds(f: Running, ending: readonly Zone[], stood: readonly Body[], ctx: Ctx): Running {
+  let g = f;
+  for (const z of ending) {
+    const inside = stood.filter(b => b.statuses.some(s => s.zone === z.id && s.until === null)).map(b => b.id);
+    const rows = new Map(g.rows.map(b => [b.id, b] as const)), owner = z.owner === null ? null : rows.get(z.owner) ?? null;
+    const r = landOps(rows, (z.end ?? []).filter(o => o.op !== 'refund'), owner, inside, { id: z.owner, tier: z.tier }, g.now, ctx.rules);
+    g = logged({ ...g, rows: g.rows.map(b => rows.get(b.id)!) }, line(`${z.name} ends${r.landed.some(l => l.dealt) ? ` (${r.landed.filter(l => l.dealt).map(l => `${rows.get(l.target)?.name ?? l.target} ${l.dealt}`).join(', ')})` : ''}.`, [...r.landed.filter(l => l.dealt).map(l => l.target)], [z.id]), ctx.rules);
+  }
+  return g;
+}
+
+/**
+ * Summons that leave (kits table 2.4): their rows and what waits for their dice are gone, with a line each ("Sprite
+ * fades."). A summon is not written back and gives no XP, so nothing else follows.
+ */
+export function sentAway(f: Running, gone: readonly Body[], why: string, ctx: Ctx): Running {
+  if (!gone.length) return f;
+  const ids = new Set(gone.map(b => b.id as string));
+  let g: Running = { ...f, rows: f.rows.filter(r => !ids.has(r.id)), pending: f.pending.filter(p => !ids.has(p.id)) };
+  for (const b of gone) g = logged(g, line(`${b.name} ${why}.`, [b.id]), ctx.rules);
+  return g;
+}
+
+/** A guard on `startTurn`'s loop, not a rule: the passes it may take for each row (and one row more). */
+const PASSES_PER_ROW = 4;
+
+/**
+ * Begins the next turn: the lowest `at` among those up acts, `now` moves to it, time passes for everyone (`advance`), the
+ * body's statuses settle, a held body's turn is passed and a holding channel grows, its threat with it. Ends the fight when a side has
+ * nobody up, before or after a status's damage. Emits `turnStarted` for the turn that begins.
+ */
+export function startTurn(f: Running, ctx: Ctx, fx: Fx): Running | Ended {
+  const R = ctx.rules;
+  let g = f;
+  // Each pass either starts a turn, downs a body or moves a held body's turn past `now`, so the rows bound the passes.
+  for (let pass = 0; pass < PASSES_PER_ROW * (g.rows.length + 1); pass++) {
+    const over = overIf(g, fx, R);
+    if (over) return over;
+    const first = next(g.rows.filter(isUp))!;
+    // a `turn` reaction armed on the body whose turn comes next moves its reactor's turn before it (kits design 8.6.3)
+    const map = new Map(g.rows.map(b => [b.id, b] as const)), jumped = turnReaction(map, first, g.now, R);
+    if (jumped) { g = logged({ ...g, rows: g.rows.map(b => map.get(b.id)!) }, line(`${jumped.said}.`, [...jumped.about]), R); continue; }
+    // Taken before time moves, so a status that ends for anyone reaches its sheet.
+    const before = g.rows, time = advance(g, tick(Math.max(g.now, first.at)), R);
+    g = grounded(time.fight, ctx, fx);
+    const who = next(g.rows.filter(isUp))!;
+    // the settle's S0 (kits table 2.4): a summon whose time is up leaves before it acts
+    if (timeUp(who, g.now)) { g = sentAway(g, [who], 'leaves: its time is up', ctx); continue; }
+    g = { ...g, currentId: who.id };
+    const settled = settleRow(g, who, ctx, fx);
+    g = consequences(before, settled.fight, ctx, fx);
+    if (!rowOf(g, who.id)) continue;
+    // the settle's S4 (kits design 1.8.1): the row pays the upkeep of the zones it holds, or they lapse with no end
+    if (g.zones.some(z => z.upkeep && z.owner === who.id)) {
+      const pay = payUpkeep(rowOf(g, who.id)!, g.zones, g.now, R), pre = g.rows;
+      g = { ...withRow(g, pay.owner), zones: pay.zones };
+      for (const z of pay.lapsed) g = logged(g, line(`${z.name} lapses: ${who.name} cannot keep it.`, [who.id], [z.id]), R);
+      g = consequences(pre, g, ctx, fx);
+    }
+    // the settle's events (kits design 1.3.5, the settle's S3): statuses that ended by time, then the turn's start
+    const pre = g.rows;
+    g = consequences(pre, triggered(g, [...time.ended, ...settled.ended, ...(isUp(rowOf(g, who.id)!) ? [raised(who.id, 'turnStart')] : [])], ctx), ctx, fx);
+    const done = overIf(g, fx, R);
+    if (done) return done;
+    const found = rowOf(g, who.id);
+    // a summon its owner's fall sent away, or a row down, takes no turn
+    if (!found || !isUp(found)) continue;
+    let row = found;
+    if (held(row, g.now)) {
+      g = logged(withRow(g, acted(row, g.now, paceCost('standard', R.fight), R.fight)), line(`${row.name} is held and loses the turn.`, [row.id]), R);
+      continue;
+    }
+    if (row.channel?.state === 'holding') {
+      const a = row.abilities.find(x => x.id === row.channel!.ability);
+      const max = a?.channel?.max ?? R.fight.channelMax;
+      const was = row.channel;
+      row = { ...row, channel: channelStep(row.channel, { type: 'grow', max }) };
+      g = withRow(g, row);
+      if (row.channel?.charge !== was.charge) {
+        fx.push({ type: 'channel', id: row.id, state: 'holding', charge: row.channel!.charge });
+        // A channel's threat follows its payoff (design 4.1): each charge multiplies the channeler's entry in every foe's
+        // table by what the charge multiplied the payoff by, so a wind-up every foe can see draws its eye.
+        const id = row.id, side = row.side, k = row.channel!.charge;
+        const growth = a?.channel?.growth === 'linear' ? (1 + R.fight.channelLin * k) / (1 + R.fight.channelLin * (k - 1)) : R.fight.channelExp;
+        g = { ...g, rows: g.rows.map(b => b.side !== side && isUp(b) && b.threat ? { ...b, threat: { ...b.threat, [id]: (b.threat[id] ?? 0) * growth } } : b) };
+      }
+    }
+    // its turn began: it may be hastened again (kits table 8.9.6), and the reactions its turn restores are armed again (8.9.1)
+    if (row.hastened) { const { hastened: _was, ...rest } = row; row = rest; g = withRow(g, row); }
+    if (g.rows.some(b => b.armed?.spent)) { g = { ...g, rows: restored(g.rows, row.id) }; row = rowOf(g, row.id)!; }
+    // the turn counts on its row (row-tally.ts): a turn held or lost to a stagger was not begun
+    g = { ...g, rows: tallied(g.rows, { type: 'turn', id: row.id }) }; row = rowOf(g, row.id)!;
+    fx.push({ type: 'turnStarted', id: row.id, hunterId: row.holder?.kind === 'local' ? row.holder.hunterId : null, now: g.now });
+    return logged(g, line(`${row.name}'s turn.`, [row.id]), R);
+  }
+  return g;
+}

@@ -1,0 +1,74 @@
+// rules-text.ts: the lines of the Rules page that state a rule the game plays elsewhere, worked out from the functions
+// that play it, so the page cannot drift from the game (tests/rules-text.test.ts pins each one). Pure. The page itself
+// is src/views/rulesref.js, which keeps its layout and calls these.
+import type { Rank, Rules } from './rules.ts';
+import { above } from './stats.ts';
+import { statBonus } from './hunter/sheet.ts';
+import { VERDICT_WORDS, verdict } from './coin.ts';
+import { CAP_ROUNDS } from './combat/play.ts';
+import { ODDS_RUNS } from './combat/odds.ts';
+import { FUMBLE_FAILURES, REVIVE_HP, SAVES_TO_END, SAVE_FUMBLE, SAVE_SUCCESS, SAVE_UP, SAVE_UP_HP, WAYS_BACK } from './hunter/vitals.ts';
+
+const sign = (n: number): string => (n >= 0 ? '+' : '') + n;
+
+/** The worked example of a check: a hunter of `rank` with `score` in a stat against the Standard DC of that rank. */
+export interface CheckExample {
+  readonly score: number;
+  readonly rank: Rank;
+  /** The effective points of the score above the base. */
+  readonly above: number;
+  /** The stat's part of the check bonus (`statBonus`, the one `checksOf` adds). */
+  readonly stat: number;
+  readonly rankBonus: number;
+  readonly dc: number;
+  /** The lowest d20 that meets the DC, at least 1. */
+  readonly need: number;
+}
+
+export function checkExample(R: Rules): CheckExample {
+  const score = 14, rank: Rank = 'E';
+  const stat = statBonus(score, R.fight), rankBonus = R.rankBonus[rank], dc = R.rankTable[rank].dc[1]!;
+  return { score, rank, above: above(score, R.fight), stat, rankBonus, dc, need: Math.max(1, dc - stat - rankBonus) };
+}
+
+const fmtX = (n: number): string => String(Math.round(n * 10) / 10);
+
+/** What a stat adds to a check, stated for the worked example's own score. */
+export function statBonusLine(R: Rules): string {
+  const x = checkExample(R), base = R.fight.statBase;
+  return `Near ${base} the effective points are close to the score minus ${base}, and half of them, rounded down, is the bonus: a score of ${x.score} has about ${fmtX(x.above)} points above ${base} and adds ${sign(x.stat)}.`;
+}
+
+/** The natural 20 and natural 1 of a check, and the coin they call outside a fight. Each word is the coin's own. */
+export function naturalLines(): readonly string[] {
+  const w = VERDICT_WORDS;
+  return [
+    'A natural 20 on the d20 succeeds whatever the total, and a natural 1 fails whatever the total.',
+    `Outside a fight, a natural 1 or 20 on a check also calls the coin: you call heads or tails, and in a room the GM's phone picks the side. On a 1, a right call reads ${w[verdict(1, 'heads', 'heads')]} and a wrong one ${w[verdict(1, 'heads', 'tails')]}. On a 20, a right call reads ${w[verdict(20, 'heads', 'heads')]} and a wrong one ${w[verdict(20, 'heads', 'tails')]}. The coin changes no number: the GM rules what it means.`,
+  ];
+}
+
+/** How a stat's points are spent and locked in. */
+export function pointsLine(): string {
+  return 'Spend points with + on a stat. − takes back a point you have not confirmed. Confirm locks the points in; until then they wait, also after you leave the Status view. The GM can edit any stat, and that edit is confirmed at once.';
+}
+
+/** What happens at 0 HP, from the life machine's own numbers (vitals.ts), and the ways back from dead (`WAYS_BACK`). */
+export function downLine(): string {
+  return `At 0 HP a hunter is down and makes death saves: a d20, ${SAVE_SUCCESS} or higher succeeds. ${SAVES_TO_END} successes make the hunter stable (still down, no more saves) and ${SAVES_TO_END} failures are fatal. A ${SAVE_UP} gets up at ${SAVE_UP_HP} HP, and a ${SAVE_FUMBLE} counts as ${FUMBLE_FAILURES} failures. The GM can stabilize a hunter. Healing and rest do not raise the dead: ${WAYS_BACK} from the bag does, at ${REVIVE_HP} HP, outside a fight.`;
+}
+
+/**
+ * What a solo run is (gates/solo.ts): one play of the fight on the rules, the cost it leaves kept, a death possible,
+ * the time cap a retreat; and the System's personal gates from `RULES.solo`, the first of them the even gate (`soloTick`).
+ */
+export function soloLines(R: Pick<Rules, 'solo'>): readonly string[] {
+  const S = R.solo;
+  return [
+    `A solo run plays one fight to its end on the rules. Before it, the odds show how ${ODDS_RUNS} plays of that fight went; the run is one more play and can go better or worse. What it leaves of HP, mana and fatigue stays. A hunter can die alone. A run with no winner by round ${CAP_ROUNDS} is a retreat: its cost stays and the gate stays open.`,
+    ...(S.personal
+      ? [`The System opens a personal gate every ${S.hours} hours, at most ${S.held} at once. Each closes ${S.stays} hours after it opens, cleared or not.`,
+        `The first gate after personal gates start for a hunter (a new hunter, one revived, or personal gates turned back on) holds one monster of the hunter's own rank. The rest hold ${S.pack[0]} to ${S.pack[1]}, one rank below the hunter's to one above.`]
+      : ['Personal gates are off.']),
+  ];
+}

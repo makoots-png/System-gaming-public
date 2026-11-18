@@ -1,0 +1,20 @@
+import { expect, test } from 'bun:test';
+import { roleOf, type Role } from '../src/core/role.ts';
+
+type Case = { name: string; mode: Role; room: string | null; gmKey: string | null; role: Role };
+
+const CASES: Case[] = [
+  { name: 'alone, a phone that chose GM is the GM', mode: 'gm', room: null, gmKey: null, role: 'gm' },
+  { name: 'alone, a phone that chose player is a player', mode: 'player', room: null, gmKey: null, role: 'player' },
+  { name: 'alone, a key kept from a room the phone left does not make a player the GM', mode: 'player', room: null, gmKey: 'KEY', role: 'player' },
+  { name: 'in a room with its GM key, a phone that chose GM is the GM', mode: 'gm', room: 'ABC234', gmKey: 'KEY', role: 'gm' },
+  { name: 'in a room with its GM key, a phone that chose player is still the GM', mode: 'player', room: 'ABC234', gmKey: 'KEY', role: 'gm' },
+  { name: 'in a room without its GM key, a phone that chose GM is a player', mode: 'gm', room: 'ABC234', gmKey: null, role: 'player' },
+  { name: 'in a room without its GM key, a phone that chose player is a player', mode: 'player', room: 'ABC234', gmKey: null, role: 'player' },
+];
+
+for (const c of CASES) {
+  test(c.name, () => {
+    expect(roleOf({ mode: c.mode, sync: { room: c.room, gmKey: c.gmKey } })).toBe(c.role);
+  });
+}

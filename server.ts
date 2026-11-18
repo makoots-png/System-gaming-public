@@ -1,0 +1,519 @@
+// server.ts: serves the built app and the "campaign room" API for The Hunter System. Bun only, no dependencies.
+// Only files that scripts/build.ts produced are served, so nothing else in the repo is reachable.
+// The server's rules (a room's life, a removal's window, the database's life) are in src/core/room-server.ts; what a
+// message, sheet or doc may hold is src/core/protocol.ts. Everything a room holds is in its store: this file keeps no
+// room state of its own, so a restart changes nothing a player sees.
+
+import { CODE_CHARS, CODE_LEN } from './src/core/ids.ts';
+import { buildApp, type Built } from './scripts/build.ts';
+import { DOCS, DOC_MAX, SHEET_MAX, WIRES, wireDocs, EVENTS, ROOM_PAGE, ROOM_SHEETS, deviceOf, isEventType, parseDeviceId, parseDocName, parseEvent, parseRoomCode, parseSheet, parseSheetKey, speaksFor } from './src/core/protocol.ts';
+import type { DeviceId, DocName, DocOf, KickedDoc, RoomCode, RoomDocs, RoomEvent, RoomState, RoomSheet, SheetKey, Stored, StoredEvent } from './src/core/protocol.ts';
+import { DB_RETRY_MS, dbHealth, dbStep, keptOut, kickedAfter, liveSince, roomLive } from './src/core/room-server.ts';
+import type { Db, DbEvent } from './src/core/room-server.ts';
+
+const NO_CACHE = /\.(html|js|css)$/;
+const BASE_HEADERS = { 'Server-Timing': 'hunter-api', 'X-Content-Type-Options': 'nosniff' };
+
+/** A value made on first use and kept: the build, and this process's database. */
+function once<T>(make: () => T): () => T {
+  let made: { value: T } | null = null;
+  return () => (made ??= { value: make() }).value;
+}
+const built = once((): Promise<Built> => buildApp());
+
+async function staticFile(path: string): Promise<Response | null> {
+  const file = (await built()).files.get(path);
+  if (!file) return null;
+  const headers: Record<string, string> = { ...BASE_HEADERS, 'Content-Type': file.type };
+  if (NO_CACHE.test(path)) headers['Cache-Control'] = 'no-cache';
+  return new Response(file.body, { headers });
+}
+
+const iso = (ms: number) => new Date(ms).toISOString();
+const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+/** An error's code (Bun's Postgres errors carry one, ERR_POSTGRES_CONNECTION_REFUSED), safe to show: no host, no user. */
+const codeOf = (e: unknown): string => {
+  const code = e instanceof Error && 'code' in e ? e.code : null;
+  return typeof code === 'string' && /^[A-Z0-9_]{1,60}$/.test(code) ? code : 'unreachable';
+};
+
+// ── the store ──
+const MAX_BODY = 64 * 1024, MEM_ROOMS = 2000, MEM_EVENTS = 2000, PRESENCE_MAX = 200;
+/** A page of a room's events after a cursor: where to ask from next, and whether the page was full. */
+type Page = { events: StoredEvent[]; next: number; more: boolean };
+/** What a room holds besides its events: the hunter sheets by key and the room docs by name. */
+type Board = { sheets: Record<SheetKey, Stored<RoomSheet>>; docs: RoomDocs };
+/**
+ * Where rooms live. It keeps only what a protocol parser accepted and answers it typed; Postgres rows are parsed again
+ * on the way out, since the database is outside the process. `now` is the request's clock, read once per request.
+ * Presence (each phone's last poll) is kept in the process, never written to the database (S04), and goes with its room.
+ */
+export interface Store {
+  readonly kind: 'postgres' | 'memory';
+  /** Throws when the store cannot answer now; /api/health asks it. */
+  check(): Promise<void>;
+  /** Removes every room that is not live at `now`, with its events, sheets, owners and presence. The only sweep. */
+  sweep(now: number): Promise<RoomCode[]>;
+  /** False when the code is taken (or the memory store is full). Every room has a GM key. */
+  create(code: RoomCode, keyHash: string, now: number): Promise<boolean>;
+  /** Null when there is no such room. */
+  keyHash(code: RoomCode): Promise<string | null>;
+  /** Marks a live room used at `now`; false when it is unknown or no longer live. */
+  touch(code: RoomCode, now: number): Promise<boolean>;
+  /** As touch, but leaves the room's last use where it was. */
+  exists(code: RoomCode, now: number): Promise<boolean>;
+  /**
+   * Stores the event as the room's next and answers its seq. An event id the room already holds is that event again (a
+   * phone's outbox sends again what got no answer): it answers the stored event's seq and stores nothing.
+   */
+  addEvent(code: RoomCode, from: DeviceId, event: RoomEvent, now: number): Promise<number>;
+  events(code: RoomCode, after: number): Promise<Page>;
+  board(code: RoomCode): Promise<Board>;
+  putSheet(code: RoomCode, key: SheetKey, from: DeviceId, sheet: RoomSheet, now: number): Promise<void>;
+  putDoc<K extends DocName>(code: RoomCode, name: K, from: DeviceId, doc: DocOf<K>, now: number): Promise<void>;
+  deleteSheet(code: RoomCode, key: SheetKey): Promise<void>;
+  /** The sha256 of the device token that owns `dev`'s sheets in this room (S07). */
+  owner(code: RoomCode, dev: DeviceId): Promise<string | null>;
+  /** The first writer wins: a device already bound keeps its owner. */
+  bindOwner(code: RoomCode, dev: DeviceId, hash: string): Promise<void>;
+  releaseOwner(code: RoomCode, dev: DeviceId): Promise<void>;
+  see(code: RoomCode, dev: DeviceId, now: number): void;
+  presence(code: RoomCode): ReadonlyMap<DeviceId, number>;
+  close(): Promise<void>;
+}
+
+/** Each live room's phones and their last poll. At `PRESENCE_MAX` phones the stalest goes, so a real player is never refused. */
+function presenceBook() {
+  const rooms = new Map<RoomCode, Map<DeviceId, number>>();
+  return {
+    see(code: RoomCode, dev: DeviceId, now: number): void {
+      let m = rooms.get(code);
+      if (!m) rooms.set(code, m = new Map());
+      if (!m.has(dev) && m.size >= PRESENCE_MAX) {
+        let stalest: DeviceId | null = null;
+        for (const [d, t] of m) if (stalest === null || t < m.get(stalest)!) stalest = d;
+        if (stalest !== null) m.delete(stalest);
+      }
+      m.set(dev, now);
+    },
+    of: (code: RoomCode): ReadonlyMap<DeviceId, number> => rooms.get(code) ?? new Map(),
+    drop(codes: readonly RoomCode[]): void { for (const c of codes) rooms.delete(c); },
+  };
+}
+
+/** A doc kept under its name. One generic step, so each name keeps its own doc type. */
+function withDoc<K extends DocName>(docs: RoomDocs, name: K, doc: Stored<DocOf<K>>): void {
+  const typed: { [P in K]?: Stored<DocOf<P>> } = docs;
+  typed[name] = doc;
+}
+
+type MemRoom = { touched: number; seq: number; events: StoredEvent[]; board: Board; keyHash: string; owners: Map<DeviceId, string> };
+export function memoryStore(): Store {
+  const rooms = new Map<RoomCode, MemRoom>(), book = presenceBook();
+  /** A room a route already touched in this request. */
+  const room = (code: RoomCode): MemRoom => {
+    const r = rooms.get(code);
+    if (!r) throw new Error(`no room ${code}`);
+    return r;
+  };
+  const live = (code: RoomCode, now: number): MemRoom | null => {
+    const r = rooms.get(code);
+    return r && roomLive(r.touched, now) ? r : null;
+  };
+  return {
+    kind: 'memory',
+    async check() {},
+    async sweep(now) {
+      const gone = [...rooms].filter(([, r]) => !roomLive(r.touched, now)).map(([c]) => c);
+      for (const c of gone) rooms.delete(c);
+      book.drop(gone);
+      return gone;
+    },
+    async create(code, keyHash, now) {
+      if (rooms.size >= MEM_ROOMS || rooms.has(code)) return false;
+      rooms.set(code, { touched: now, seq: 0, events: [], board: { sheets: {}, docs: {} }, keyHash, owners: new Map() });
+      return true;
+    },
+    async keyHash(code) { return rooms.get(code)?.keyHash ?? null; },
+    async touch(code, now) { const r = live(code, now); if (r) r.touched = now; return !!r; },
+    async exists(code, now) { return !!live(code, now); },
+    async addEvent(code, from, event, now) {
+      const r = room(code), held = r.events.find(e => e.payload.eid === event.payload.eid);
+      if (held) return held.seq;
+      const seq = ++r.seq;
+      r.events.push({ ...event, seq, at: iso(now), from });
+      if (r.events.length > MEM_EVENTS) r.events.splice(0, r.events.length - MEM_EVENTS);
+      return seq;
+    },
+    async events(code, after) {
+      const events = room(code).events.filter(e => e.seq > after).slice(0, ROOM_PAGE);
+      return { events, next: events.length ? events[events.length - 1]!.seq : after, more: events.length >= ROOM_PAGE };
+    },
+    async board(code) { const b = room(code).board; return { sheets: { ...b.sheets }, docs: { ...b.docs } }; },
+    async putSheet(code, key, from, sheet, now) { room(code).board.sheets[key] = { at: iso(now), from, data: sheet }; },
+    async putDoc(code, name, from, doc, now) { withDoc(room(code).board.docs, name, { at: iso(now), from, data: doc }); },
+    async deleteSheet(code, key) { delete room(code).board.sheets[key]; },
+    async owner(code, dev) { return room(code).owners.get(dev) ?? null; },
+    async bindOwner(code, dev, hash) { const o = room(code).owners; if (!o.has(dev)) o.set(dev, hash); },
+    async releaseOwner(code, dev) { room(code).owners.delete(dev); },
+    see: book.see,
+    presence: book.of,
+    async close() {},
+  };
+}
+
+/** A stored row no parser of this build reads (a room from another build). It is left out of the answer, said in the log. */
+function unread(what: string, code: RoomCode, at: string): [] {
+  console.warn(`[server] room ${code}: ${what} ${at} is not one this build reads; left out`);
+  return [];
+}
+
+/** Opens Postgres at `url` and makes its tables. Throws when Postgres does not answer: the caller's database is then down. */
+export async function postgresStore(url: string): Promise<Store> {
+  const db = new Bun.SQL(url), book = presenceBook();
+  try {
+    await db`CREATE TABLE IF NOT EXISTS rooms (code text PRIMARY KEY, created bigint NOT NULL, touched bigint NOT NULL)`;
+    await db`CREATE TABLE IF NOT EXISTS events (room text NOT NULL, seq integer NOT NULL, at bigint NOT NULL, from_id text NOT NULL, type text NOT NULL, payload jsonb NOT NULL, PRIMARY KEY (room, seq))`;
+    await db`CREATE TABLE IF NOT EXISTS sheets (room text NOT NULL, hid text NOT NULL, at bigint NOT NULL, from_id text NOT NULL, data jsonb NOT NULL, PRIMARY KEY (room, hid))`;
+    await db`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS gm_key_hash text`;
+    await db`CREATE TABLE IF NOT EXISTS sheet_owners (room text NOT NULL, device text NOT NULL, token_hash text NOT NULL, PRIMARY KEY (room, device))`;
+    // A room's last seq is its own counter, taken under the room's row lock; an event id is held once per room. Rows of
+    // builds before this one: the counter is raised to the room's highest seq and each event's id is read from its
+    // payload (a repeat of an id keeps none). Both change nothing when run again.
+    await db`ALTER TABLE rooms ADD COLUMN IF NOT EXISTS seq integer NOT NULL DEFAULT 0`;
+    await db`ALTER TABLE events ADD COLUMN IF NOT EXISTS eid text`;
+    await db`UPDATE rooms SET seq = e.top FROM (SELECT room, MAX(seq) AS top FROM events GROUP BY room) e WHERE rooms.code = e.room AND rooms.seq < e.top`;
+    await db`UPDATE events e SET eid = e.payload->>'eid' WHERE e.eid IS NULL AND NOT EXISTS (SELECT 1 FROM events o WHERE o.room = e.room AND o.seq < e.seq AND o.payload->>'eid' = e.payload->>'eid')`;
+    await db`CREATE UNIQUE INDEX IF NOT EXISTS events_eid ON events (room, eid)`;
+    // Builds before this one bound the JSON text, which Bun sends as a JSON string, so a row held a string of JSON.
+    // Unwrapped once; a row already an object is left as it is, so this runs at every start and changes nothing after.
+    await db`UPDATE events SET payload = (payload #>> '{}')::jsonb WHERE jsonb_typeof(payload) = 'string'`;
+    await db`UPDATE sheets SET data = (data #>> '{}')::jsonb WHERE jsonb_typeof(data) = 'string'`;
+  } catch (e) {
+    await db.close();
+    throw e;
+  }
+  const text = (v: unknown): string | null => (typeof v === 'string' ? v : null);
+  // A value is bound as itself: Bun sends an object as JSON, and a string as a JSON string.
+  const put = async (code: RoomCode, hid: string, from: DeviceId, data: object, now: number): Promise<void> => {
+    await db`INSERT INTO sheets (room, hid, at, from_id, data) VALUES (${code}, ${hid}, ${now}, ${from}, ${data}::jsonb)
+      ON CONFLICT (room, hid) DO UPDATE SET at = EXCLUDED.at, from_id = EXCLUDED.from_id, data = EXCLUDED.data`;
+  };
+  return {
+    kind: 'postgres',
+    async check() { await db`SELECT 1`; },
+    async sweep(now) {
+      const gone = (await db`DELETE FROM rooms WHERE touched < ${liveSince(now)} RETURNING code`).flatMap(r => { const c = parseRoomCode(r.code); return c ? [c] : []; });
+      await db`DELETE FROM events WHERE NOT EXISTS (SELECT 1 FROM rooms WHERE rooms.code = events.room)`;
+      await db`DELETE FROM sheets WHERE NOT EXISTS (SELECT 1 FROM rooms WHERE rooms.code = sheets.room)`;
+      await db`DELETE FROM sheet_owners WHERE NOT EXISTS (SELECT 1 FROM rooms WHERE rooms.code = sheet_owners.room)`;
+      book.drop(gone);
+      return gone;
+    },
+    async create(code, keyHash, now) {
+      const r = await db`INSERT INTO rooms (code, created, touched, gm_key_hash) VALUES (${code}, ${now}, ${now}, ${keyHash}) ON CONFLICT (code) DO NOTHING RETURNING code`;
+      return r.length > 0;
+    },
+    async keyHash(code) { return text((await db`SELECT gm_key_hash FROM rooms WHERE code = ${code}`)[0]?.gm_key_hash); },
+    async touch(code, now) { return (await db`UPDATE rooms SET touched = ${now} WHERE code = ${code} AND touched >= ${liveSince(now)} RETURNING code`).length > 0; },
+    async exists(code, now) { return (await db`SELECT code FROM rooms WHERE code = ${code} AND touched >= ${liveSince(now)}`).length > 0; },
+    async addEvent(code, from, { type, payload }, now) {
+      // the room's row is locked until the event is in: two writers take seqs one after the other, and an id sent twice
+      // finds its first copy
+      return db.begin(async tx => {
+        const [r] = await tx`SELECT seq FROM rooms WHERE code = ${code} FOR UPDATE`;
+        if (!r) throw new Error(`no room ${code}`);
+        const [held] = await tx`SELECT seq FROM events WHERE room = ${code} AND eid = ${payload.eid}`;
+        if (held) return Number(held.seq);
+        const seq = Number(r.seq) + 1;
+        await tx`UPDATE rooms SET seq = ${seq} WHERE code = ${code}`;
+        await tx`INSERT INTO events (room, seq, at, from_id, type, payload, eid) VALUES (${code}, ${seq}, ${now}, ${from}, ${type}, ${payload}::jsonb, ${payload.eid})`;
+        return seq;
+      });
+    },
+    async events(code, after) {
+      const rows = await db`SELECT seq, at, from_id, type, payload FROM events WHERE room = ${code} AND seq > ${after} ORDER BY seq LIMIT ${ROOM_PAGE}`;
+      const events = rows.flatMap((r): StoredEvent[] => {
+        const event = parseEvent(r.type, r.payload), from = parseDeviceId(r.from_id), seq = Number(r.seq);
+        return event && from ? [{ ...event, seq, at: iso(Number(r.at)), from }] : unread('event', code, String(seq));
+      });
+      return { events, next: rows.length ? Number(rows[rows.length - 1]!.seq) : after, more: rows.length >= ROOM_PAGE };
+    },
+    async board(code) {
+      const board: Board = { sheets: {}, docs: {} };
+      const readDoc = <K extends DocName>(name: K, at: string, from: DeviceId, data: unknown): boolean => {
+        const doc = DOCS[name](data);
+        if (doc) withDoc(board.docs, name, { at, from, data: doc });
+        return !!doc;
+      };
+      for (const r of await db`SELECT hid, at, from_id, data FROM sheets WHERE room = ${code}`) {
+        const hid = String(r.hid), at = iso(Number(r.at)), from = parseDeviceId(r.from_id);
+        const name = hid.startsWith('_') ? parseDocName(hid.slice(1)) : null, key = hid.startsWith('_') ? null : parseSheetKey(hid);
+        const sheet = key && parseSheet(key, r.data);
+        if (from && name && readDoc(name, at, from, r.data)) continue;
+        if (from && key && sheet) { board.sheets[key] = { at, from, data: sheet }; continue; }
+        unread('row', code, hid);
+      }
+      return board;
+    },
+    async putSheet(code, key, from, sheet, now) { await put(code, key, from, sheet, now); },
+    async putDoc(code, name, from, doc, now) { await put(code, '_' + name, from, WIRES[name](doc), now); },
+    async deleteSheet(code, key) { await db`DELETE FROM sheets WHERE room = ${code} AND hid = ${key}`; },
+    async owner(code, dev) { return text((await db`SELECT token_hash FROM sheet_owners WHERE room = ${code} AND device = ${dev}`)[0]?.token_hash); },
+    async bindOwner(code, dev, hash) { await db`INSERT INTO sheet_owners (room, device, token_hash) VALUES (${code}, ${dev}, ${hash}) ON CONFLICT (room, device) DO NOTHING`; },
+    async releaseOwner(code, dev) { await db`DELETE FROM sheet_owners WHERE room = ${code} AND device = ${dev}`; },
+    see: book.see,
+    presence: book.of,
+    async close() { await db.close(); },
+  };
+}
+
+// ── the database's life (src/core/room-server.ts) ──
+export type Database = { readonly kind: Store['kind']; now(): Promise<Db<Store>>; close(): Promise<void> };
+/** A database over a store already open: a test's, or the memory store. */
+export const openDatabase = (store: Store): Database => {
+  const db: Db<Store> = { at: 'ready', store };
+  return { kind: store.kind, now: async () => db, close: () => store.close() };
+};
+/**
+ * The rooms' database: the memory store when `url` is not set, else Postgres and only Postgres. A Postgres that does
+ * not answer leaves the database down: no room route answers (503), /api/health says since when and why, the log says
+ * it loudly, and it is opened again every `retryMs` until it answers. `now()` waits for the first attempt.
+ */
+export function database(url: string | undefined, open: (url: string) => Promise<Store> = postgresStore, retryMs = DB_RETRY_MS): Database {
+  if (!url) return openDatabase(memoryStore());
+  const at = url;
+  let db: Db<Store> = { at: 'opening' };
+  let retry: ReturnType<typeof setTimeout> | null = null, closed = false;
+  const event = (e: DbEvent<Store>) => { db = dbStep(db, e); };
+  async function attempt(): Promise<void> {
+    retry = null;
+    try {
+      const store = await open(at);
+      if (closed) { await store.close(); return; }
+      event({ type: 'opened', store });
+      console.log('[server] Postgres answers: rooms are served');
+    } catch (e) {
+      event({ type: 'failed', at: Date.now(), error: codeOf(e) });
+      console.error(`[server] DATABASE_URL is set and Postgres does not answer (${messageOf(e)}). No room is served and /api/health answers 503 until it does. Trying again in ${retryMs / 1000} s.`);
+      if (!closed) retry = setTimeout(() => { void attempt(); }, retryMs);
+    }
+  }
+  const first = attempt();
+  return {
+    kind: 'postgres',
+    now: async () => { await first; return db; },
+    async close() {
+      closed = true;
+      if (retry) clearTimeout(retry);
+      if (db.at === 'ready') await db.store.close();
+    },
+  };
+}
+
+// ── API ──
+const J = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...BASE_HEADERS, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' } });
+const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
+const SERVER_DEVICE = 'server' as DeviceId;
+const newKey = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), b => CODE_CHARS[b % CODE_CHARS.length]).join('');
+const sha = async (t: string) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t))), b => b.toString(16).padStart(2, '0')).join('');
+/** Every code has a digit, so a code in a message never reads like a word ("thanks"): src/core/sync/invite.ts relies on it. */
+function newCode(): RoomCode {
+  for (;;) {
+    const code = parseRoomCode(Array.from(crypto.getRandomValues(new Uint8Array(CODE_LEN)), b => CODE_CHARS[b % CODE_CHARS.length]).join(''));
+    if (code && /\d/.test(code)) return code;
+  }
+}
+
+/**
+ * The `_kicked` doc: who the GM removed lately, the one record of a removal. Only the server writes it, in the same
+ * request that removes the sheet or lifts the removal, so a removal the server made is always one the player's next
+ * poll reads. A re-push within `REPUSH_MS` of it is refused by reading it (`keptOut`). `name` null lifts the removal.
+ */
+async function setRemoved(st: Store, code: RoomCode, key: SheetKey, name: string | null, now: number): Promise<KickedDoc> {
+  const doc = kickedAfter((await st.board(code)).docs.kicked?.data ?? null, key, name, now);
+  await st.putDoc(code, 'kicked', SERVER_DEVICE, doc, now);
+  return doc;
+}
+/** True when the request carries the room's GM key (a constant-time compare of hashes). */
+async function gmOk(req: Request, st: Store, code: RoomCode): Promise<boolean> {
+  const want = await st.keyHash(code); if (!want) return false;
+  const got = await sha(req.headers.get('x-gm-key') || '');
+  let d = got.length ^ want.length; for (let i = 0; i < want.length; i++) d |= (got.charCodeAt(i) || 0) ^ want.charCodeAt(i);
+  return d === 0;
+}
+/**
+ * S07: whether this request may write for the phone `dev`: the GM's key, or `dev`'s device token. A phone is bound to
+ * the hash of the first token it writes with, and every later write for it needs the same token. A write with no token
+ * proves nothing and is refused: every phone of this build sends one.
+ */
+async function mayWriteFor(req: Request, st: Store, code: RoomCode, dev: DeviceId, gm: boolean): Promise<boolean> {
+  if (gm) return true;
+  const tok = req.headers.get('x-device-token') || '';
+  if (tok.length < 16 || tok.length > 128) return false;
+  const hash = await sha(tok);
+  await st.bindOwner(code, dev, hash);
+  return (await st.owner(code, dev)) === hash;
+}
+
+async function readJson(req: Request): Promise<Record<string, unknown> | Response> {
+  const len = Number(req.headers.get('content-length') || 0);
+  if (len > MAX_BODY) return J({ error: 'too large' }, 413);
+  const text = await req.text();
+  if (new TextEncoder().encode(text).length > MAX_BODY) return J({ error: 'too large' }, 413);
+  try { const v = JSON.parse(text); return isObj(v) ? v : J({ error: 'bad json' }, 400); } catch { return J({ error: 'bad json' }, 400); } // the client sent a body that is not JSON
+}
+
+async function api(req: Request, parts: string[], database: Database): Promise<Response> {
+  const m = req.method, now = Date.now(), db = await database.now();
+  if (parts[0] === 'health' && parts.length === 1) {
+    if (db.at === 'ready') {
+      try { await db.store.check(); } catch (e) {
+        console.error(`[server] Postgres stopped answering (${messageOf(e)})`);
+        return J({ ok: false, db: database.kind, error: codeOf(e) }, 503);
+      }
+    }
+    const health = dbHealth(db, database.kind);
+    return J(health.body, health.status);
+  }
+  if (parts[0] !== 'rooms') return J({ error: 'not found' }, 404);
+  // Build handshake: an app from another build may speak another wire format, so no room route answers it.
+  // Nothing is touched or written. The client updates itself and reloads (src/edge/upgrade.ts).
+  const { build } = await built();
+  if (req.headers.get('X-Hunter-Build') !== build) return J({ error: 'upgrade', build }, 426);
+  // A database that does not answer serves no room. Never 404: a phone would take its room for gone.
+  if (db.at !== 'ready') return J({ error: 'no database' }, 503);
+  const st = db.store;
+  if (parts.length === 1) {
+    if (m !== 'POST') return J({ error: 'method' }, 405);
+    await st.sweep(now);
+    for (let i = 0; i < 8; i++) {
+      const code = newCode(), gmKey = newKey();
+      if (await st.create(code, await sha(gmKey), now)) return J({ code, gmKey });
+    }
+    return J({ error: 'busy' }, 503);
+  }
+  const code = parseRoomCode((parts[1] ?? '').toUpperCase()), query = new URL(req.url).searchParams;
+  // a typed code is checked before joining: always 200, so a wrong code prints no console error and downloads nothing
+  if (parts.length === 2 && m === 'GET' && query.get('peek') === '1') return J({ exists: !!code && (await st.exists(code, now)) }); // a peek is not a use: it never keeps a dead room alive
+  if (!code || !(await st.touch(code, now))) return J({ error: 'no such room' }, 404);
+  const gm = await gmOk(req, st, code);
+  if (parts.length === 2) {
+    if (m !== 'GET') return J({ error: 'method' }, 405);
+    const after = Math.max(0, Math.floor(Number(query.get('after'))) || 0);
+    const dev = parseDeviceId(query.get('d'));
+    if (dev) st.see(code, dev, now);
+    const [page, board] = await Promise.all([st.events(code, after), st.board(code)]);
+    const answer: RoomState = {
+      gm,
+      now: iso(now), // S11: server clock for everyone (joinedAt / kick stamps); presence stays GM-only
+      ...(gm ? { presence: Object.fromEntries([...st.presence(code)].map(([d, t]) => [d, iso(t)])) } : {}),
+      events: page.events, next: page.next, more: page.more, sheets: board.sheets, docs: board.docs,
+    };
+    // the docs go out in the shape `DOCS` reads (`WIRES`); the store keeps them as read
+    return J({ ...answer, docs: wireDocs(board.docs) });
+  }
+  if (parts[2] === 'events' && parts.length === 3) {
+    if (m !== 'POST') return J({ error: 'method' }, 405);
+    const b = await readJson(req); if (b instanceof Response) return b;
+    const from = parseDeviceId(b.from);
+    if (!from) return J({ error: 'bad event', reason: 'sender' }, 400);
+    if (!isEventType(b.type)) return J({ error: 'bad event', reason: 'type' }, 400);
+    if (EVENTS[b.type].gmOnly && !gm) return J({ error: 'gm only' }, 403);
+    if (!(await mayWriteFor(req, st, code, from, gm))) return J({ error: 'not your sheet' }, 403);
+    const event = parseEvent(b.type, b.payload); // only a parsed event is stored
+    if (!event) return J({ error: 'bad event', reason: 'payload' }, 400);
+    // an event that speaks for one hunter (`ownSheet` in DEFS, src/core/protocol.ts): only that hunter's phone may post it
+    const by = speaksFor(event);
+    if (by && deviceOf(by) !== from) return J({ error: 'not your sheet' }, 403);
+    return J({ seq: await st.addEvent(code, from, event, now) });
+  }
+  if (parts[2] === 'kicks' && parts.length === 4) { // S11: the GM lifts a removal so the player can rejoin at once
+    if (m !== 'DELETE') return J({ error: 'method' }, 405);
+    if (!gm) return J({ error: 'gm only' }, 403);
+    const key = parseSheetKey(parts[3]);
+    if (!key) return J({ error: 'bad hunter id' }, 400);
+    return J({ ok: true, kicked: await setRemoved(st, code, key, null, now) });
+  }
+  if (parts[2] === 'release' && parts.length === 3) { // S07: the GM frees a device's hunter binding so another device can claim it
+    if (m !== 'POST') return J({ error: 'method' }, 405);
+    if (!gm) return J({ error: 'gm only' }, 403);
+    const b = await readJson(req); if (b instanceof Response) return b;
+    const dev = parseDeviceId(b.device);
+    if (!dev) return J({ error: 'bad device' }, 400);
+    await st.releaseOwner(code, dev); return J({ ok: true });
+  }
+  if (parts[2] === 'sheets' && parts.length === 4) {
+    if (m !== 'PUT' && m !== 'DELETE') return J({ error: 'method' }, 405);
+    // a row is a hunter sheet under its sheet key, or a room doc under '_' and the doc's name
+    const hid = parts[3] ?? '', isDoc = hid.startsWith('_'), key = isDoc ? null : parseSheetKey(hid);
+    if (!isDoc && !key) return J({ error: 'bad hunter id' }, 400);
+    if (m === 'DELETE') { // R01: the GM removes a player's hunter from the room (their device keeps its own copy)
+      if (!key || !gm) return J({ error: 'gm only' }, 403);
+      const row = (await st.board(code)).sheets[key], name = row && 'hunter' in row.data ? row.data.hunter.name : '';
+      await st.deleteSheet(code, key);
+      await st.releaseOwner(code, deviceOf(key)); // S07: removal frees the binding
+      return J({ ok: true, kicked: await setRemoved(st, code, key, name, now) });
+    }
+    if (hid === '_kicked') return J({ error: 'server doc' }, 403); // only the removal routes write it
+    const board = key ? await st.board(code) : null;
+    if (key && keptOut(board!.docs.kicked?.data ?? null, key, now)) return J({ error: 'removed' }, 403); // so the player's phone reads the removal and stops
+    if (isDoc && !gm) return J({ error: 'gm only' }, 403);
+    const b = await readJson(req); if (b instanceof Response) return b;
+    const bad = J({ error: isDoc ? 'bad doc' : 'bad sheet' }, 400), from = parseDeviceId(b.from);
+    if (!from) return bad;
+    if (JSON.stringify(b.data ?? null).length > (isDoc ? DOC_MAX : SHEET_MAX)) return J({ error: 'too large' }, 413);
+    if (key) { // only a parsed sheet is stored
+      const sheet = parseSheet(key, b.data);
+      if (!sheet) return bad;
+      if (!(await mayWriteFor(req, st, code, deviceOf(key), gm))) return J({ error: 'not your sheet' }, 403);
+      if (!(key in board!.sheets) && Object.keys(board!.sheets).length >= ROOM_SHEETS) return J({ error: 'room full' }, 413);
+      await st.putSheet(code, key, from, sheet, now);
+      return J({ ok: true });
+    }
+    const name = parseDocName(hid.slice(1));
+    return name ? putDoc(st, code, name, from, b.data, now) : bad;
+  }
+  return J({ error: 'not found' }, 404);
+}
+/** Only a parsed doc is stored. One generic step, so the parser and the store agree on the doc's type. */
+async function putDoc<K extends DocName>(st: Store, code: RoomCode, name: K, from: DeviceId, data: unknown, now: number): Promise<Response> {
+  const doc = DOCS[name](data);
+  if (!doc) return J({ error: 'bad doc' }, 400);
+  await st.putDoc(code, name, from, doc, now);
+  return J({ ok: true });
+}
+
+/** The server over `database`: the room API and the built files. */
+export function serverOf(database: Database): (req: Request) => Promise<Response> {
+  return async (req: Request): Promise<Response> => {
+    try {
+      const url = new URL(req.url);
+      let path: string;
+      try { path = decodeURIComponent(url.pathname); } catch { return J({ error: 'bad path' }, 400); } // a path with a broken escape names no file
+      if (path === '/healthz') return J({ ok: true });
+      if (path.includes('..') || path.includes('\0') || path.includes('\\')) return J({ error: 'bad path' }, 400);
+      if (path.startsWith('/api/')) return await api(req, path.slice(5).split('/').filter(Boolean), database);
+      if (req.method !== 'GET' && req.method !== 'HEAD') return J({ error: 'method' }, 405);
+      if (path === '/') path = '/index.html';
+      if (path.split('/').some(s => s.startsWith('.'))) return new Response('Not found', { status: 404, headers: BASE_HEADERS });
+      return (await staticFile(path)) ?? new Response('Not found', { status: 404, headers: BASE_HEADERS });
+    } catch (e) {
+      console.error('[server]', messageOf(e));
+      return J({ error: 'server error' }, 500);
+    }
+  };
+}
+
+/** This process's database, from DATABASE_URL: opened at the server's start, or at a test's first request. */
+const processDatabase = once(() => database(Bun.env.DATABASE_URL));
+/** The server of this process. Tests that import it get the store DATABASE_URL names, as the deploy does. */
+export const handler = serverOf({ kind: Bun.env.DATABASE_URL ? 'postgres' : 'memory', now: () => processDatabase().now(), close: () => processDatabase().close() });
+
+if (import.meta.main) {
+  const port = Bun.env.PORT ? Number(Bun.env.PORT) : 3000;
+  const { build } = await built();
+  const db = await processDatabase().now();
+  const server = Bun.serve({ port, fetch: handler });
+  console.log(`The Hunter System (build ${build}) listening on :${server.port};${db.at === 'ready' ? `rooms in ${db.store.kind}` : 'NO ROOMS: Postgres does not answer, see above'}`);
+}

@@ -1,0 +1,44 @@
+# The browser tests, run on GitHub's machines to save the lead's box half an hour a push.
+# Only the public copy of the game runs this (scripts/publish-clean.ts makes that copy); the private repository does not.
+name: ci
+on:
+  push:
+    branches: [main, ci]
+  workflow_dispatch:
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  unit:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile
+      - run: bun run test
+  browser:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile
+      - run: bunx playwright install --with-deps chromium
+      # the full Chromium, not the headless shell: the shell refuses notifications (AGENTS.md, "Set up once")
+      - run: echo "E2E_CHROMIUM=$(ls -d "$HOME"/.cache/ms-playwright/chromium-*/chrome-linux/chrome | head -1)" >> "$GITHUB_ENV"
+      - run: bunx playwright test --shard=${{ matrix.shard }}/6
+        env:
+          CI: '1'
+          E2E_PORT: '3218'
+          E2E_FEEL: skip

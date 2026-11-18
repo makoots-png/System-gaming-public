@@ -1,0 +1,92 @@
+// kit-examples.ts: the kits' built-ins a GM opens and copies in the Workshop (docs/agent-handoff/kits/design.md sections
+// 5.2 and 8.12): a stacking status with a threshold, a trigger passive, an ability with an HP cost and a scaler, a
+// delayed curse, a mark and its detonation, a reaction and a summon, from Glas's, Einar's and Hwei's kits. They are not
+// in a hunter's list or the status pickers: a GM copies one into the library (the Workshop's Duplicate) and changes it
+// there. Their numbers are the simulation's (`RULES.fight.kit.examples`, tests/models/fight-sim.ts), so each stays inside
+// its budget; tests/kit-examples.test.ts checks every entry parses and is not past the tolerance. To add one: an entry
+// here, and `bun run test`.
+import { abilityId } from '../combat/ability-types.ts';
+import type { Ability } from '../combat/ability-types.ts';
+import { statusKey } from '../combat/effect-ops.ts';
+import type { StackDef, StatusDef, UseOp } from '../combat/effect-ops.ts';
+import { tiles } from '../combat/space.ts';
+import { tick } from '../combat/timeline.ts';
+import { parseFormula } from '../formula.ts';
+import type { Formula } from '../formula.ts';
+import type { Rules } from '../rules.ts';
+import { abilityOf, suggestedScaler } from './ability-kinds.ts';
+import type { AbilityInput } from './ability-kinds.ts';
+import type { SkillTemplate } from './skills.ts';
+
+const formula = (text: string, R: Rules): Formula => {
+  const p = parseFormula(text, R);
+  if ('error' in p) throw new Error(`A kit example's formula does not parse: ${text}: ${p.error}`);
+  return p.formula;
+};
+/** An ability of `kind`, as the skill maker writes it. */
+const make = (kind: Ability['kind'], name: string, o: Omit<AbilityInput, 'id' | 'name'>, R: Rules): Ability =>
+  abilityOf(kind, { id: abilityId(name.toLowerCase().replace(/[^a-z0-9]+/g, '-')), name, ...o }, R);
+const rounds = (n: number, R: Rules) => tick(n * R.fight.round);
+
+/** The example statuses by key, in the order the Workshop lists them. */
+export function exampleStatuses(R: Rules): Record<string, StatusDef> {
+  const K = R.fight.kit.examples;
+  const resonance: StackDef = {
+    label: 'Resonance', desc: 'Blood that answers its caller. Three stacks burst, harder the lower the bearer\'s HP.', ops: [],
+    stack: { cap: 3, leave: { kind: 'never' }, keep: 'fight', threshold: {
+      at: { kind: 'count', n: 3 }, to: { kind: 'bearer' }, then: 'spend',
+      // the burst with the suggested execute (design 8.0): from half HP, up to +100%, the base cut to 0.8
+      ops: [{ op: 'damage', type: 'magical', when: 'use', amount: formula(`(2d6 + mag) * ${K.blood.burst * K.blood.base} * (1 + 1 * max(0, min(1, (target.missing - 0.5) / 0.5)))`, R) }],
+    } },
+  };
+  const signature: StackDef = {
+    label: 'Signature', desc: 'The mark of the visionary. Two marks detonate on the bearer and its friends close by.', ops: [],
+    stack: { cap: 2, leave: { kind: 'never' }, keep: 'fight', threshold: {
+      at: { kind: 'count', n: 2 }, to: { kind: 'area', radius: tiles(2), on: 'allies' }, then: 'spend',
+      ops: [{ op: 'damage', type: 'magical', when: 'use', amount: formula(`${K.mark.burst} * (2d6 + mag)`, R) }],
+    } },
+  };
+  const pain: StackDef = { label: 'Pain', desc: 'Each hit dealt adds one; Violence spends them all.', ops: [], stack: { cap: 10, leave: { kind: 'never' }, keep: 'fight', threshold: null } };
+  return {
+    resonance, signature, pain,
+    'crimson-pact': { label: 'Crimson Pact', desc: 'A pact sealed in your own blood. Hemoplague answers only while it holds.', ops: [] },
+    hemoplague: {
+      label: 'Hemoplague', desc: 'Blood that turns on its host when the time comes.', ops: [],
+      end: { ops: [{ op: 'damage', type: 'magical', when: 'use', amount: formula(`${K.hemo.end} * (1d8 + mag)`, R) }], cleanse: 'cancel' },
+    },
+  };
+}
+
+/** The example skills, as a hunter or the library holds them (no id), in the order the Workshop lists them. */
+export function exampleSkills(R: Rules): SkillTemplate[] {
+  const K = R.fight.kit.examples, S = exampleStatuses(R);
+  const apply = (key: string, n: number | null, stacks?: number): Extract<UseOp, { op: 'applyStatus' }> =>
+    ({ op: 'applyStatus', key: statusKey(key), def: S[key]!, duration: n === null ? null : rounds(n, R), ...(stacks ? { stacks } : {}) });
+  const active = (name: string, desc: string, ability: Ability): SkillTemplate => ({ name, level: 1, label: null, desc, type: 'active', ability });
+  const execute = suggestedScaler('strike', 'execute', R);
+  return [
+    active('Bloodletting', 'A curse that leaves a Resonance on the one it reaches.',
+      make('curse', 'Bloodletting', { effect: { type: 'magical', by: 'hand', formula: formula(`${K.blood.share} * (2d6 + mag)`, R) }, ops: [apply('resonance', 2)] }, R)),
+    active('Fester', 'Hurts by the Resonance its target holds, and adds one more.',
+      make('curse', 'Fester', { effect: { type: 'magical', by: 'hand', formula: formula('0.6 * (2d6 + mag) * (1 + 0.15 * target.stacks(resonance))', R) }, ops: [apply('resonance', 2)] }, R)),
+    active('Crimson Pact', 'Pay half your max HP to seal the pact for 3 rounds.',
+      { ...make('support', 'Crimson Pact', { aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null, ops: [apply('crimson-pact', 3)] }, R),
+        prices: [{ kind: 'hp', amount: { kind: 'share', share: R.fight.kit.hpShare } }] }),
+    active('Hemoplague', 'Only under the Pact: a curse whose blood bursts 3 rounds later.',
+      { ...make('curse', 'Hemoplague', { effect: null, ops: [apply('hemoplague', 3)] }, R), gates: [{ kind: 'holds', key: statusKey('crimson-pact'), on: 'self', atLeast: 1 }] }),
+    active('Executioner\'s Cut', 'Costs 5% of your max HP; cuts deeper the lower the target\'s HP.',
+      { ...make('strike', 'Executioner\'s Cut', { ticks: { scalers: [execute] } }, R), prices: [{ kind: 'hp', amount: { kind: 'share', share: 0.05 } }] }),
+    active('Disaster Stroke', 'A curse that leaves the Signature; the second detonates.',
+      make('curse', 'Disaster Stroke', { effect: { type: 'magical', by: 'hand', formula: formula(`${K.mark.share} * (2d6 + mag)`, R) }, ops: [apply('signature', 2)] }, R)),
+    active('Violence', 'Spends every Pain: 6% more damage for each.',
+      { ...make('strike', 'Violence', { effect: { type: 'physical', by: 'hand', formula: formula(`(1d8 + phys) * (1 + ${K.pain.perStack} * spent)`, R) } }, R),
+        prices: [{ kind: 'stacks', key: statusKey('pain'), from: 'self', take: { kind: 'all' } }] }),
+    { name: 'Pain is Power', level: 1, label: null, desc: 'Each hit you deal adds a Pain.', type: 'passive', bonus: {},
+      worn: { label: 'Pain is Power', desc: '', ops: [], triggers: [{ on: 'hitDealt', tag: null, to: 'self', limit: { kind: 'each' }, ops: [apply('pain', null)] }] } },
+    active('Parry', 'A reaction: before a strike lands on you, take part of it off. Its time comes off your next turn.',
+      { ...make('strike', 'Parry', { effect: null, ops: [{ op: 'guard', share: R.fight.kit.parry }] }, R), cost: { ...make('shot', 'q', {}, R).cost, fatigue: 0 }, react: { when: 'before', reach: tiles(0) } }),
+    active('Call Sprite', 'A skirmisher at your side for a few rounds, once a fight.',
+      { ...make('support', 'Call Sprite', { aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null }, R), gates: [{ kind: 'uses', per: 'fight', n: 1 }],
+        summon: { name: 'Sprite', archetype: 'skirmisher', rounds: R.fight.kit.summonRounds, statuses: [] } }),
+  ];
+}

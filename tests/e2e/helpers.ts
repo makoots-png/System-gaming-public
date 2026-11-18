@@ -1,0 +1,273 @@
+import { writeFile } from 'node:fs/promises';
+import { test as base, expect, type BrowserContext, type Page } from '@playwright/test';
+
+export { expect };
+export type { Page, BrowserContext };
+
+/**
+ * Test lever, off by default: `E2E_POPUP_DELAY=100` opens every System window and confirm dialog 100 ms late (src/views/ui.js).
+ * A test that taps on before the window it expects is on screen then fails every time. This is the one place it is read.
+ */
+const POPUP_DELAY = Number(process.env.E2E_POPUP_DELAY) || 0;
+
+const IPHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
+export const ANDROID_UA = 'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36';
+export const PHONE = { width: 390, height: 844 }, SMALL_PHONE = { width: 360, height: 780 }, LANDSCAPE = { width: 844, height: 390 };
+export const ROOM_CODE = /^[A-HJ-NP-Z2-9]{6}$/;
+
+export type Device = { label: string; page: Page; ctx: BrowserContext; errors: string[] };
+
+export type DeviceOptions = {
+  viewport?: { width: number; height: number };
+  /** localStorage entries written once, before the app first loads. */
+  seed?: Record<string, string>;
+  /** Freeze Date at this ISO time. Timers keep running. The phone reads it in UTC unless `timezoneId` says otherwise. */
+  pinTo?: string;
+  /** The zone this phone reads local time in. Default: `noonZone`'s for the test. A test about the day's clock names its own. */
+  timezoneId?: string;
+  /** Needed for page.route and setOffline to reach app requests. */
+  blockServiceWorker?: boolean;
+  /** Console lines this test expects. Anything else fails the test. */
+  allowConsole?: RegExp[];
+  /** A window driven with a mouse rather than a touch screen (a laptop), so the page's pointer is fine, not coarse. */
+  mouse?: boolean;
+  /** A touch phone's browser, by its user agent (default an iPhone's Safari). */
+  userAgent?: string;
+};
+
+/**
+ * The zone where the test's start is noon, local time. The day turns at the reset hour (midnight by default), so a phone on
+ * the box's own zone that runs a test across midnight meets the rollover in the middle of it: a missed daily's PENALTY
+ * window then sits in front of the window the test waits for (push 49's two award tests, 23:59:56 to 00:00:16 UTC). In
+ * this zone the next midnight is at least eleven hours away, and the local date is the UTC date.
+ */
+export function noonZone(at: Date): string {
+  const ahead = 12 - at.getUTCHours();
+  return ahead === 0 ? 'UTC' : `Etc/GMT${ahead > 0 ? '-' : '+'}${Math.abs(ahead)}`;
+}
+
+type Fixtures = { device: (label: string, options?: DeviceOptions) => Promise<Device> };
+
+/**
+ * `device(label)` opens a fresh phone. Every device is closed after the test, and the test fails if any device
+ * logged a console error, a console warning or an uncaught exception that the test did not allow.
+ */
+export const test = base.extend<Fixtures>({
+  device: async ({ browser }, use, testInfo) => {
+    const made: { device: Device; allow: RegExp[] }[] = [];
+    const started = Date.now(), apiLog: string[] = [], zone = noonZone(new Date(started));
+    const logApi = (label: string, method: string, url: string, outcome: string | number) => {
+      const u = new URL(url);
+      if (u.pathname.startsWith('/api/')) apiLog.push(`${((Date.now() - started) / 1000).toFixed(1)}s ${label} ${method} ${u.pathname}${u.search} -> ${outcome}`);
+    };
+    await use(async (label, options = {}) => {
+      const allow = [...(options.allowConsole ?? [])];
+      if (options.blockServiceWorker) allow.push(/Service Worker registration blocked by Playwright/);
+      const ctx = await browser.newContext({
+        viewport: options.viewport ?? PHONE, deviceScaleFactor: 2, isMobile: !options.mouse, hasTouch: !options.mouse, ...(options.mouse ? {} : { userAgent: options.userAgent ?? IPHONE_UA }),
+        serviceWorkers: options.blockServiceWorker ? 'block' : 'allow',
+        timezoneId: options.timezoneId ?? (options.pinTo ? 'UTC' : zone),
+      });
+      if (POPUP_DELAY) await ctx.addInitScript(ms => { (globalThis as any).__e2ePopupDelay = ms; }, POPUP_DELAY);
+      if (options.seed) {
+        await ctx.addInitScript(entries => {
+          if (localStorage.getItem('__seeded') !== null) return;
+          for (const [k, v] of Object.entries(entries)) localStorage.setItem(k, v);
+          localStorage.setItem('__seeded', '1');
+        }, options.seed);
+      }
+      const page = await ctx.newPage();
+      const errors: string[] = [];
+      page.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') errors.push(`[${m.type()}] ${m.text()}`); });
+      page.on('pageerror', e => errors.push(`[pageerror] ${e.message}`));
+      page.on('response', r => logApi(label, r.request().method(), r.url(), r.status()));
+      page.on('requestfailed', r => logApi(label, r.method(), r.url(), `FAILED ${r.failure()?.errorText ?? ''}`));
+      if (options.pinTo) await page.clock.setFixedTime(new Date(options.pinTo));
+      const device = { label, page, ctx, errors };
+      made.push({ device, allow });
+      return device;
+    });
+    const unexpected = made.flatMap(({ device, allow }) => device.errors.filter(e => !allow.some(re => re.test(e))).map(e => `${device.label}: ${e}`));
+    for (const { device } of made) await device.ctx.close();
+    if (testInfo.status !== testInfo.expectedStatus) {
+      const file = testInfo.outputPath('api-requests.txt');
+      await writeFile(file, apiLog.join('\n'));
+      await testInfo.attach('api-requests', { path: file, contentType: 'text/plain' });
+    }
+    expect(unexpected, 'console errors, warnings or uncaught exceptions').toEqual([]);
+  },
+});
+
+export async function openApp(page: Page, path = '/'): Promise<void> {
+  await page.goto(path, { waitUntil: 'networkidle' });
+  await page.waitForFunction(() => window.hunterApp && document.querySelectorAll('#nav-top a').length > 0, null, { timeout: 15_000 });
+}
+
+/** Headers for a room request a test sends itself (`page.request`). The server refuses a room request without the page's build id. */
+export const roomHeaders = async (page: Page): Promise<Record<string, string>> => ({ 'X-Hunter-Build': await page.evaluate(() => hunterApp.build as string) });
+
+/** Tap the first match if it is on screen. Answers whether it tapped. */
+export async function tapIfShown(page: Page, selector: string): Promise<boolean> {
+  const target = page.locator(selector).first();
+  if (!(await target.count()) || !(await target.isVisible())) return false;
+  await target.tap();
+  await page.waitForTimeout(300);
+  return true;
+}
+
+/** Close System windows and the quick-start guide until none is left. */
+export async function dismissAll(page: Page, max = 12): Promise<void> {
+  for (let i = 0; i < max; i++) {
+    if (await tapIfShown(page, '.sys-overlay.show .primary')) continue;
+    if (await tapIfShown(page, '.sys-overlay.show button:not(.confirm-all):not([hidden])')) continue;
+    if (await tapIfShown(page, '.ob-overlay [data-ok]')) continue;
+    if (await tapIfShown(page, '.ob-overlay [data-obsheet]')) continue;
+    if (await tapIfShown(page, '.ob-overlay [data-oblater]')) continue;
+    if (await tapIfShown(page, '.ob-overlay [data-skip]')) continue;
+    break;
+  }
+}
+
+/**
+ * Wait for the System window whose text holds `title`, tap its button `label` (default: its primary or only button), and
+ * wait for it to close. Use it after a tap that opens a window: the window comes a moment after the tap, so a look
+ * that finds nothing on screen yet does not mean none is coming.
+ */
+export async function answerWindow(page: Page, title: string | RegExp, label?: string): Promise<void> {
+  const win = page.locator('.sys-overlay.show', { hasText: title });
+  await expect(win).toBeVisible();
+  await (label ? win.locator('.sys-actions button', { hasText: label }) : win.locator('.sys-actions button.primary, .sys-actions button:only-child')).first().tap();
+  await expect(win).toHaveCount(0);
+}
+
+/** First run as a GM with the starter campaign, answering Later on Campaign ready. */
+export async function onboardGM(page: Page, path = '/'): Promise<void> {
+  await openApp(page, path);
+  for (const step of ['[data-yes]', '[data-gm]', '[data-starter]']) await tapIfShown(page, `.ob-overlay ${step}`);
+  const ready = page.locator('.ob-overlay', { has: page.locator('h2', { hasText: 'Campaign ready' }) });
+  await expect(ready).toBeVisible();
+  await ready.locator('[data-oblater]').tap();
+  await expect(page.locator('.ob-overlay')).toHaveCount(0);
+  await page.waitForTimeout(500);
+  await dismissAll(page);
+}
+
+/**
+ * First run as a player with one new hunter, answering Open my sheet on Hunter created and Understood on the first
+ * personal gate's window. With a room code the player joins that room.
+ */
+export async function onboardPlayer(page: Page, name: string, roomCode = ''): Promise<void> {
+  await openApp(page);
+  await tapIfShown(page, '.ob-overlay [data-yes]');
+  await tapIfShown(page, '.ob-overlay [data-player]');
+  await page.fill('.ob-overlay [data-name]', name);
+  if (roomCode) await page.fill('.ob-overlay [data-room]', roomCode);
+  await page.locator('.ob-overlay [data-go]').tap();
+  const created = page.locator('.ob-overlay', { has: page.locator('h2', { hasText: 'Hunter created' }) });
+  await expect(created).toBeVisible();
+  await created.locator('[data-obsheet]').tap();
+  await expect(page.locator('.ob-overlay')).toHaveCount(0);
+  // the System opens the new hunter's first personal gate at once (src/core/gates/solo.ts `soloTick`), and says so
+  await answerWindow(page, 'A GATE HAS APPEARED');
+  await page.waitForTimeout(500);
+}
+
+export async function go(page: Page, view: string): Promise<void> {
+  await page.evaluate(v => hunterApp.go(v), view);
+  await page.waitForTimeout(300);
+}
+
+/** The sheet shows name, job and title as text: Edit opens the inputs, a change saves, Done closes them. */
+export async function editIdentity(page: Page, field: 'name' | 'job' | 'title', value: string): Promise<void> {
+  await page.locator('#view-status [data-idedit]').tap();
+  const input = page.locator(`#view-status [data-idform] [data-f="${field}"]`);
+  await input.fill(value);
+  await input.press('Enter');
+  await page.locator('#view-status [data-iddone]').tap();
+}
+
+/** The whole save as the app holds it. */
+export const save = (page: Page): Promise<any> => page.evaluate(() => JSON.parse(JSON.stringify(hunterApp.store.get())));
+
+/** The active hunter, with HP and mana as its sheet shows them and `derived`: its sheet's numbers and its stats after perks and conditions. */
+export const activeHunter = (page: Page): Promise<any> => page.evaluate(() => {
+  const h = hunterApp.store.active(), s = hunterApp.api.hunter.sheet(h);
+  return { ...JSON.parse(JSON.stringify(h)), hp: s.hp, mana: s.mana, derived: { ...s.sheet, stats: s.stats } };
+});
+
+/** The GM creates a room from the GM tab and gets its code. */
+export async function createRoom(gm: Page): Promise<string> {
+  await go(gm, 'gm');
+  await gm.locator('[data-gmcreate]').tap();
+  const shown = gm.locator('[data-gmroomcode]');
+  await expect(shown).toHaveText(ROOM_CODE);
+  return ((await shown.textContent()) ?? '').trim();
+}
+
+/** A gate on the GM's Gates tab, by name: its id and the "Total XP per hunter" its card shows. */
+export async function gateByName(page: Page, name: string): Promise<{ id: string; xp: number }> {
+  await go(page, 'gates');
+  const card = page.locator('#view-gates .gate').filter({ has: page.locator('.gt-name').getByText(name, { exact: true }) });
+  const id = (await card.getAttribute('data-id')) ?? '';
+  const xp = Number((await card.locator('.gt-notes', { hasText: 'Total XP per hunter' }).innerText()).replace(/\D/g, ''));
+  return { id, xp };
+}
+
+/**
+ * The starter campaign's Goblin Den fight, started from the Gates tab, with the turn order set to: a monster, then the
+ * named hunters, then the rest. The start rolls the openings; this setup then gives each row a turn time one tick after
+ * the one before it, so the order does not depend on the dice. Answers the gate's id and XP.
+ */
+export async function startGoblinDenFight(page: Page, hunters: string[] = ['Brakk Ironhide', 'Mira Vale']): Promise<{ id: string; xp: number }> {
+  const gate = await gateByName(page, 'Goblin Den');
+  await page.locator(`#view-gates .gate[data-id="${gate.id}"] [data-act=encounter]`).tap();
+  await page.locator('[aria-modal="true"] [data-apply]').tap();
+  await expect(page.locator('#view-combat .cmb-row.cur')).toHaveCount(1);
+  await page.evaluate(names => hunterApp.store.update((d: any) => {
+    const f = d.fight, ms = f.rows.filter((r: any) => r.kind !== 'hunter');
+    const picked = names.map((n: string) => f.rows.find((r: any) => r.name === n));
+    const rest = f.rows.filter((r: any) => r.kind === 'hunter' && !names.includes(r.name));
+    [ms[0], ...picked, ...ms.slice(1), ...rest].forEach((r: any, i: number) => { r.at = f.now + i; r.tie = 0; });
+    f.currentId = ms[0].id; f.log = [];
+  }, 'test-setup'), hunters);
+  await expect(page.locator('#view-combat .cmb-row.cur .cmb-nm').first()).toContainText(await page.evaluate(() => {
+    const f = hunterApp.store.get().fight;
+    return f.rows.find((r: any) => r.id === f.currentId).name;
+  }));
+  return gate;
+}
+
+/**
+ * This phone shows the fight as a list: the map is the default view, and a test that drives the list's rows, card or kit
+ * chooses it first. A device preference, set as setup before the fight screen draws.
+ */
+export async function chooseList(...pages: Page[]): Promise<void> {
+  for (const p of pages) await p.evaluate(() => hunterApp.store.setPrefs({ fightView: 'list' }));
+}
+
+/** The fight's row named `name`, as the save holds it. */
+export const fightRow = (page: Page, name: string): Promise<any> =>
+  page.evaluate(n => JSON.parse(JSON.stringify(hunterApp.store.get().fight.rows.find((r: any) => r.name === n) ?? null)), name);
+
+/** Under 1100 px the GM's Table feed in Combat is one line: open it so its rows show. */
+export async function openFeed(page: Page): Promise<void> {
+  const toggle = page.locator('#view-combat [data-tb-open]');
+  await expect(toggle).toBeAttached();
+  if (await toggle.isVisible() && (await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.tap();
+}
+
+/** Flip a device that onboarded as GM into player mode (setup only) and reload so the player view shows. */
+export async function switchToPlayerMode(page: Page): Promise<void> {
+  await page.evaluate(() => hunterApp.store.update((s: any) => { s.settings.mode = 'player'; }, 'test-mode'));
+  await openApp(page);
+  await dismissAll(page, 4);
+}
+
+/**
+ * Waits until the player's phone holds the fight doc of a test's setup: the row named `name` at `place`. The doc of the
+ * fight's start may already call that hunter's turn from where the fight first stood it, so "YOUR TURN" alone lets a
+ * tap through that was worked out from the older doc, and the GM's phone refuses it (too far).
+ */
+export async function setupDoc(player: Page, name: string, place: { x: number; y: number }): Promise<void> {
+  await expect.poll(() => player.evaluate(n => (hunterApp.api.sync.doc('fight') as any)?.rows.find((r: any) => r.name === n)?.place ?? null, name)).toEqual(place);
+}

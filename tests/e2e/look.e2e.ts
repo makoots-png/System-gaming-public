@@ -1,0 +1,591 @@
+import { test, expect, openApp, onboardGM, onboardPlayer, go, dismissAll, startGoblinDenFight, chooseList, PHONE, SMALL_PHONE } from './helpers.ts';
+import type { Locator } from '@playwright/test';
+
+test('on a phone, three toasts in a row show the last two above the bottom bar, and the bottom bar can still be tapped', async ({ device }) => {
+  const player = (await device('player', { viewport: SMALL_PHONE })).page;
+  await onboardPlayer(player, 'Mira Test');
+  const toasts = player.locator('#toasts .toast');
+  const bar = player.locator('#nav-bottom');
+
+  await test.step('three toasts are raised and the two newest show', async () => {
+    await player.evaluate(() => ['First', 'Second', 'Third'].forEach(m => hunterApp.ui.toast('System', `${m} notice.`)));
+    await expect(toasts).toHaveCount(2);
+    await expect(toasts.nth(0)).toContainText('Second notice.');
+    await expect(toasts.nth(1)).toContainText('Third notice.');
+    await expect(player.locator('#toasts')).toHaveAttribute('aria-live', 'polite');
+    await expect(toasts.last().getByRole('button', { name: 'Dismiss notification' })).toBeVisible();
+  });
+
+  await test.step('the toasts sit above the bottom bar, not over it', async () => {
+    const box = await player.locator('#toasts').boundingBox(), nav = await bar.boundingBox();
+    expect(box && nav && box.y + box.height <= nav.y).toBe(true);
+  });
+
+  await test.step('a tap on the Quests tab opens Quests while the toasts are up', async () => {
+    await expect(toasts).toHaveCount(2);
+    await bar.getByRole('link', { name: /Quests/ }).tap();
+    await expect(player).toHaveURL(/#\/quests$/);
+  });
+});
+
+test('on a 390 px phone, with an item, a title and a boon in the Award form, Send award is in view without scrolling and one tap sends it', async ({ device }) => {
+  const gm = (await device('gm', { viewport: PHONE })).page;
+  await onboardGM(gm);
+  await go(gm, 'gm');
+  const toggle = gm.locator('[data-tog="award"]');
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.tap();
+  const ed = gm.locator('#gm-rw');
+  const send = gm.locator('#gm-award-go');
+
+  await test.step('the GM picks Brakk and adds an item, the title Wolf Slayer and a boon', async () => {
+    await gm.locator('#gm-targets label', { hasText: 'Brakk Ironhide' }).locator('input').check();
+    await ed.locator('[data-add="item"]').tap();
+    await ed.locator('[data-kind="item"] [data-f="pick"]').selectOption({ index: 1 });
+    await ed.locator('[data-add="title"]').tap();
+    await ed.locator('[data-kind="title"] [data-f="tpick"]').selectOption('Wolf Slayer');
+    await ed.locator('[data-add="boon"]').tap();
+    await ed.locator('[data-kind="boon"] [data-f="name"]').fill('Free resurrection');
+    await ed.locator('[data-kind="boon"] [data-f="text"]').fill('Once.');
+  });
+
+  await test.step('Send award is on screen where the boon was typed, without a scroll', async () => {
+    const y = await gm.evaluate(() => scrollY);
+    await expect(send).toBeInViewport({ ratio: 1 });
+    expect(await gm.evaluate(() => scrollY)).toBe(y);
+  });
+
+  await test.step('one tap sends it: the form names Brakk, and Brakk has the boon and the title', async () => {
+    await send.tap();
+    await expect(gm.locator('#gm-award-msg')).toHaveText('Sent to Brakk Ironhide.');
+    await dismissAll(gm, 4);
+    const brakk = await gm.evaluate(() => hunterApp.store.get().hunters.find((h: any) => h.name === 'Brakk Ironhide'));
+    expect(brakk.boons.map((b: { name: string }) => b.name)).toEqual(['Free resurrection']);
+    expect(brakk.titles.map((t: { name: string }) => t.name)).toContain('Wolf Slayer');
+  });
+});
+
+test('on a 360 px phone a Poisoned, Penalized hunter sees both condition chips on the first screen of the sheet', async ({ device }) => {
+  const player = (await device('player', { viewport: SMALL_PHONE })).page;
+  await onboardPlayer(player, 'Mira Test');
+  await dismissAll(player, 4);
+
+  await test.step('the hunter misses a daily and is poisoned', async () => {
+    // the rollover runs as soon as the save shows a day unchecked, so the Penalty window follows the change itself
+    await player.evaluate(() => hunterApp.store.update(() => { hunterApp.store.active().daily.lastCheckedKey = '2000-01-01'; }, 'test-setup'));
+    await expect(player.locator('.sys-overlay.show .sys-window', { hasText: 'Penalty Zone' }).first()).toBeVisible();
+    await dismissAll(player, 6);
+    await go(player, 'status');
+    await player.locator('#view-status [data-cond-sel]').selectOption('poisoned');
+    await player.locator('#view-status [data-cond-add]').tap();
+  });
+
+  await test.step('both chips are in view without a scroll, and the identity is text with an Edit button', async () => {
+    await go(player, 'status');
+    expect(await player.evaluate(() => scrollY)).toBe(0);
+    await expect(player.locator('#view-status [data-chip="penalized"]')).toBeInViewport({ ratio: 1 });
+    await expect(player.locator('#view-status [data-chip="poisoned"]')).toBeInViewport({ ratio: 1 });
+    await expect(player.locator('#view-status [data-idname]')).toHaveText('Mira Test');
+    await expect(player.locator('#view-status [data-idform]')).toBeHidden();
+    await expect(player.locator('#view-status [data-delhunter]')).toHaveCount(0);
+  });
+
+  await test.step('the jump row fades at the right, where it still scrolls', async () => {
+    await expect(player.locator('#view-status .jump-chips')).toHaveClass(/fade-r/);
+  });
+});
+
+test('on a 360 px phone a dead hunter\'s sheet shows Dead and the way back on the first screen, in words that wrap within the width', async ({ device }) => {
+  const player = (await device('player', { viewport: SMALL_PHONE })).page;
+  await onboardPlayer(player, 'Mira Test');
+  await dismissAll(player, 4);
+  await player.evaluate(() => hunterApp.store.update((d: any) => { d.rulesOverrides.solo = { personal: false }; hunterApp.store.active().life = { at: 'dead' }; }, 'test-setup'));
+  await go(player, 'status');
+  const death = player.locator('#view-status [data-death]'), back = death.locator('[data-wayback]');
+  await expect(death.locator('[data-life]')).toHaveText('Dead');
+  await expect(back).toHaveText('The GM\'s Revive or a Resurrection Crystal brings you back.');
+  await expect(back).toBeInViewport({ ratio: 1 });
+  const box = await back.boundingBox(), size = await back.evaluate(e => parseFloat(getComputedStyle(e).fontSize));
+  expect(box!.x + box!.width, 'the line ends inside the screen').toBeLessThanOrEqual(360);
+  expect(size, 'the line is at least 12 px').toBeGreaterThanOrEqual(12);
+  expect(await player.evaluate(() => document.scrollingElement!.scrollWidth <= innerWidth), 'the page does not scroll sideways').toBe(true);
+});
+
+test('on the sheet, Edit opens the name, job and title inputs and a new name is saved and shown', async ({ device }) => {
+  const player = (await device('player', { viewport: SMALL_PHONE })).page;
+  await onboardPlayer(player, 'Mira Test');
+  await dismissAll(player, 4);
+  await go(player, 'status');
+  const form = player.locator('#view-status [data-idform]');
+
+  await player.locator('#view-status [data-idedit]').tap();
+  for (const f of ['name', 'job', 'title']) await expect(form.locator(`[data-f="${f}"]`)).toBeVisible();
+  await form.locator('[data-f="name"]').fill('Mira Vale');
+  await form.locator('[data-f="job"]').fill('Ranger');
+  await form.locator('[data-iddone]').tap();
+
+  await expect(form).toBeHidden();
+  await expect(player.locator('#view-status [data-idname]')).toHaveText('Mira Vale');
+  await expect(player.locator('#view-status [data-idsub]')).toHaveText('Ranger');
+  expect(await player.evaluate(() => hunterApp.store.active().name)).toBe('Mira Vale');
+});
+
+test('Delete hunter is in the Party panel, asks for the name and takes a backup first', async ({ device }) => {
+  const player = (await device('player', { viewport: SMALL_PHONE })).page;
+  await onboardPlayer(player, 'Mira Test');
+  await dismissAll(player, 4);
+  await go(player, 'status');
+  // setup: personal gates off, so the spare hunter's first gate window does not stand in front of the delete's
+  await player.evaluate(() => hunterApp.store.update((s: any) => { s.rulesOverrides.solo = { personal: false }; s.hunters.push(hunterApp.store.newHunter('Spare Test')); }, 'test-setup'));
+  const row = player.locator('#view-status [data-panel="party"] li', { hasText: 'Spare Test' });
+  const backups0 = await player.evaluate(() => hunterApp.store.backups().length);
+
+  await row.locator('[data-pdel]').tap();
+  const win = player.locator('.sys-overlay.show');
+  await expect(win).toContainText('Delete Spare Test?');
+  await win.locator('input').fill('Spare Test');
+  await win.locator('.sys-actions button.primary').tap();
+
+  await expect(player.locator('#view-status [data-panel="party"] li', { hasText: 'Spare Test' })).toHaveCount(0);
+  expect(await player.evaluate(() => hunterApp.store.backups().length)).toBe(backups0 + 1);
+  expect(await player.evaluate(() => hunterApp.store.get().hunters.map((h: any) => h.name))).toEqual(['Mira Test']);
+});
+
+test('Delete hunter with no room left for its backup says so and deletes only when asked again', async ({ device }) => {
+  const player = (await device('player', { viewport: SMALL_PHONE })).page;
+  await onboardPlayer(player, 'Mira Test');
+  await dismissAll(player, 4);
+  await go(player, 'status');
+  // setup: personal gates off, so the spare hunter's first gate window does not stand in front of the delete's
+  await player.evaluate(() => hunterApp.store.update((s: any) => { s.rulesOverrides.solo = { personal: false }; s.hunters.push(hunterApp.store.newHunter('Spare Test')); }, 'test-setup'));
+  await player.evaluate(() => {
+    const set = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (k: string, v: string) { if (k === 'hunter-system-backups') throw new DOMException('full', 'QuotaExceededError'); set.call(this, k, v); };
+  });
+  const row = () => player.locator('#view-status [data-panel="party"] li', { hasText: 'Spare Test' });
+  const win = player.locator('.sys-overlay.show');
+  const askDelete = async () => {
+    await row().locator('[data-pdel]').tap();
+    await expect(win).toContainText('Delete Spare Test?');
+    await win.locator('input').fill('Spare Test');
+    await win.locator('.sys-actions button.primary').tap();
+    await expect(win).toContainText('No backup saved');
+  };
+
+  await askDelete();
+  await win.locator('.sys-actions button', { hasText: 'Cancel' }).tap();
+  await expect(row()).toHaveCount(1);
+
+  await askDelete();
+  await win.locator('.sys-actions button', { hasText: 'Delete' }).tap();
+  await expect(row()).toHaveCount(0);
+});
+
+test('on a 360 px phone the quick dice sheet keeps the seven dice on one row and leaves one tab lit', async ({ device }) => {
+  const player = (await device('player', { viewport: SMALL_PHONE })).page;
+  await onboardPlayer(player, 'Mira Test');
+  await dismissAll(player, 4);
+  const bar = player.locator('#nav-bottom');
+  const status = bar.locator('a[href="#/status"]'), dice = bar.locator('a[href="#/dice"]');
+  const litTop = (target: typeof status) => target.evaluate(el => getComputedStyle(el).borderTopColor);
+  const statusLit = await litTop(status);
+
+  await test.step('the Dice tab opens the sheet and is the only lit tab', async () => {
+    await dice.tap();
+    await expect(player.locator('#dice-sheet')).toBeVisible();
+    await expect(dice).toHaveAttribute('aria-expanded', 'true');
+    expect(await litTop(dice)).toBe(statusLit);
+    expect(await litTop(status)).not.toBe(statusLit);
+  });
+
+  await test.step('d4 to d100 sit on one row', async () => {
+    const buttons = player.locator('#dice-sheet .dice-btns button');
+    await expect(buttons).toHaveCount(7);
+    const tops = await buttons.evaluateAll(els => els.map(el => Math.round(el.getBoundingClientRect().top)));
+    expect(new Set(tops).size).toBe(1);
+    const widths = await buttons.evaluateAll(els => els.map(el => el.getBoundingClientRect().width));
+    expect(Math.min(...widths)).toBeGreaterThanOrEqual(40);
+  });
+
+  await test.step('closing the sheet lights the Status tab again', async () => {
+    await player.locator('#dice-sheet [data-close]').tap();
+    await expect(player.locator('#dice-sheet')).toBeHidden();
+    expect(await litTop(status)).toBe(statusLit);
+  });
+});
+
+test('a new hunter with no job and no title shows no "None" under the name', async ({ device }) => {
+  const player = (await device('player', { viewport: SMALL_PHONE })).page;
+  await onboardPlayer(player, 'Mira Test');
+  await go(player, 'status');
+  await expect(player.locator('[data-idname]')).toHaveText('Mira Test');
+  await expect(player.locator('[data-idsub]')).toHaveText('');
+  await expect(player.locator('[data-idread]')).not.toContainText('None');
+});
+
+test('on the inventory, Store is the one filled button and is 44 px tall; Save current gear is plain', async ({ device }) => {
+  const player = (await device('player', { viewport: SMALL_PHONE })).page;
+  await onboardPlayer(player, 'Mira Test');
+  await go(player, 'status');
+  const store = player.getByRole('button', { name: 'Store', exact: true });
+  await store.scrollIntoViewIfNeeded();
+  const box = await store.boundingBox();
+  expect(box && box.height).toBeGreaterThanOrEqual(44);
+  await expect(player.locator('[data-losave]')).not.toHaveClass(/primary/);
+  await expect(store).toHaveClass(/primary/);
+});
+
+test('at 1280 the status maker keeps its preview in the right column in view while the effects scroll', async ({ device }) => {
+  const gm = (await device('gm', { viewport: { width: 1280, height: 800 }, mouse: true })).page;
+  await openApp(gm);
+  for (const step of ['[data-yes]', '[data-gm]', '[data-starter]', '[data-oblater]']) await gm.locator(`.ob-overlay ${step}`).click();
+  await expect(gm.locator('.ob-overlay')).toHaveCount(0);
+  await go(gm, 'workshop');
+  await gm.locator('#view-workshop [data-ws="status"] [data-new]').click();
+  const dlg = gm.locator('.fg-overlay [role=dialog]');
+  await expect(dlg.getByRole('heading', { name: 'New status' })).toBeVisible();
+  for (let i = 0; i < 6; i++) await dlg.locator('[data-quick] [data-q="d4"]').click();
+  await dlg.locator('.mk-scroll').evaluate(el => { el.scrollTop = 0; });
+  const preview = dlg.locator('.mk-preview');
+  await expect(preview).toBeInViewport({ ratio: 1 });
+  const box = await preview.boundingBox(), win = await dlg.boundingBox();
+  expect(box && win && box.x > win.x + win.width / 2 - 40).toBe(true);
+});
+
+test('on a 390 px phone the map maker shows its brushes and the map\'s first rows on the first screen, the map scrolls inside its frame, and every button is at least 44 px tall', async ({ device }) => {
+  const gm = (await device('gm', { viewport: PHONE })).page;
+  await onboardGM(gm);
+  await go(gm, 'workshop');
+  await gm.locator('#view-workshop [data-ws="map"] [data-new]').tap();
+  const d = gm.locator('.mpm-overlay [role=dialog]');
+  await expect(d.locator('[data-brush="wall"]')).toBeInViewport();
+  await expect(d.locator('[data-grid] [data-i="0"]')).toBeInViewport();
+  expect(await gm.evaluate(() => document.scrollingElement!.scrollWidth <= innerWidth), 'the page does not scroll sideways').toBe(true);
+  const scroller = d.locator('.mpm-scroll');
+  expect(await scroller.evaluate(el => el.scrollWidth > el.clientWidth), 'the 20 columns scroll inside the map\'s frame').toBe(true);
+  // measured once the window has finished arriving (it rises from 98% of its size)
+  await expect.poll(() => gm.evaluate(() => document.getAnimations().filter(a => a.playState === 'running').length)).toBe(0);
+  const short = await d.locator('button:visible').evaluateAll(els => els.filter(el => el.getBoundingClientRect().height < 44).map(el => el.textContent));
+  expect(short).toEqual([]);
+});
+
+test('on a 390 px phone in a fight on the map, the map and its hotbar fit the first screen, Paint and Grid are 44 px buttons and the fight\'s news sits clear of the hotbar and the dock', async ({ device }) => {
+  const gm = (await device('gm', { viewport: PHONE })).page;
+  await onboardGM(gm);
+  await chooseList(gm);
+  await startGoblinDenFight(gm);
+  await gm.locator('#view-combat [data-fview="map"]').tap();
+  const map = gm.locator('#view-combat [data-mapbox]');
+  await expect(map.locator('[data-hot] .mp-hb').first()).toBeVisible();
+
+  await test.step('Paint and Grid are buttons a thumb can hit, and Grid shows when it is on', async () => {
+    for (const name of ['Paint', 'Grid']) {
+      const b = (await map.getByRole('button', { name, exact: true }).boundingBox())!;
+      expect(Math.min(b.width, b.height), `${name} is at least 44 px each way`).toBeGreaterThanOrEqual(44);
+    }
+    await map.getByRole('button', { name: 'Grid', exact: true }).tap();
+    await expect(map.getByRole('button', { name: 'Grid', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  await test.step('with the page at its top the hotbar ends above the bottom bar', async () => {
+    await gm.evaluate(() => scrollTo(0, 0));
+    const hot = (await map.locator('[data-hot]').boundingBox())!, nav = (await gm.locator('.nav-bottom').boundingBox())!;
+    expect(hot.y + hot.height).toBeLessThanOrEqual(nav.y);
+  });
+
+  await test.step('the fight\'s news is one line over the map, not a toast, clear of Next, the hotbar and Use and Cancel', async () => {
+    await gm.evaluate(() => hunterApp.store.update((d: any) => {
+      const f = d.fight, me = f.rows.find((r: any) => r.id === f.currentId), others = f.rows.filter((r: any) => r !== me);
+      me.place = { x: 2, y: 2 }; others.forEach((r: any, i: number) => { r.place = r.name === 'Brakk Ironhide' ? { x: 3, y: 2 } : { x: 2 + i, y: 5 + i }; });
+    }, 'test-setup'));
+    await gm.evaluate(() => scrollTo(0, 0));
+    await map.locator('[data-frame]').dblclick({ position: { x: 4, y: 4 } });
+    const brakk = await gm.evaluate(() => hunterApp.store.get().fight.rows.find((r: any) => r.name === 'Brakk Ironhide').id);
+    await map.locator('[data-hot] [data-ab]').first().tap();
+    await expect(map.locator('[data-confirm]')).toBeVisible();
+    const at = await map.locator('[data-world]').evaluate(w => {
+      const r = w.getBoundingClientRect(), s = r.width / (w as HTMLElement).offsetWidth;
+      return { x: r.left + 3.5 * 40 * s, y: r.top + 2.5 * 40 * s };
+    });
+    await gm.touchscreen.tap(at.x, at.y);
+    await expect(map.locator('[data-words]')).toContainText('Brakk Ironhide');
+    const confirm = (await map.locator('[data-confirm]').boundingBox())!;
+    await map.locator('[data-go]').tap();
+    const news = map.locator('[data-news]');
+    await expect(news).toContainText(/uses .+ on Brakk Ironhide|Brakk Ironhide/);
+    await expect(gm.locator('#toasts .toast')).toHaveCount(0);
+    expect(await gm.evaluate(id => hunterApp.store.get().fight.currentId === id, brakk), 'the turn went on to Brakk').toBe(true);
+    const line = (await news.boundingBox())!;
+    for (const [name, b] of [['Next', (await gm.locator('#view-combat [data-next]').boundingBox())!], ['the hotbar', (await map.locator('[data-hot]').boundingBox())!], ['Use and Cancel', confirm]] as const) {
+      expect(line.y + line.height <= b.y || line.y >= b.y + b.height || line.x + line.width <= b.x || line.x >= b.x + b.width, `the news line and ${name} do not overlap`).toBe(true);
+    }
+  });
+});
+
+test('on a 360 px phone the Fight tools keep each map size stepper, its label, minus, number and plus, on one row', async ({ device }) => {
+  const gm = (await device('gm', { viewport: SMALL_PHONE })).page;
+  await onboardGM(gm);
+  await chooseList(gm);
+  await startGoblinDenFight(gm);
+  await gm.locator('#view-combat [data-fview="map"]').tap();
+  await gm.locator('#view-combat [data-tools-open]').tap();
+  const size = gm.locator('#view-combat [data-tools] .cmb-size');
+  await expect(size).toBeVisible();
+  const rows = await size.evaluate(el => ['w', 'h'].map(k => {
+    const minus = el.querySelector(`[data-resize="${k}"][data-d="-1"]`)!, plus = el.querySelector(`[data-resize="${k}"][data-d="1"]`)!;
+    const parts = [minus.previousElementSibling!, minus, el.querySelector(`[data-mapsize="${k}"]`)!, plus];
+    return parts.map(p => { const r = p.getBoundingClientRect(); return Math.round(r.top + r.height / 2); });
+  }));
+  for (const [i, k] of ['Width', 'Height'].entries()) {
+    const ys = rows[i]!;
+    expect(Math.max(...ys) - Math.min(...ys), `${k}'s label, minus, number and plus share a row (${ys.join(', ')})`).toBeLessThanOrEqual(4);
+  }
+});
+
+for (const width of [360, 390]) {
+  test(`on a ${width} px phone in a melee of three on the map, every name is clear of the other tokens and the other names, aimed or not`, async ({ device }) => {
+    const gm = (await device('gm', { viewport: { width, height: 800 } })).page;
+    await onboardGM(gm);
+    await chooseList(gm);
+    await startGoblinDenFight(gm);
+    await gm.evaluate(() => hunterApp.store.update((d: any) => {
+      const f = d.fight, me = f.rows.find((r: any) => r.id === f.currentId);
+      const brakk = f.rows.find((r: any) => r.name === 'Brakk Ironhide'), mira = f.rows.find((r: any) => r.name === 'Mira Vale');
+      me.place = { x: 3, y: 2 }; brakk.place = { x: 3, y: 3 }; mira.place = { x: 4, y: 3 };
+      f.rows.filter((r: any) => ![me, brakk, mira].includes(r)).forEach((r: any, i: number) => { r.place = { x: 7, y: 1 + 2 * i }; });
+    }, 'test-setup'));
+    await gm.locator('#view-combat [data-fview="map"]').tap();
+    const map = gm.locator('#view-combat [data-mapbox]');
+    await map.locator('[data-frame]').dblclick({ position: { x: 4, y: 4 } });
+    /** Each pair of a shown name and another token or another name whose boxes cross. */
+    const crossings = () => map.locator('[data-tokens]').evaluate(layer => {
+      const box = (el: Element) => el.getBoundingClientRect();
+      const cross = (a: DOMRect, b: DOMRect) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+      const toks = [...layer.querySelectorAll('.mp-tok')];
+      const names = toks.flatMap(t => [...t.querySelectorAll('.mp-name')].filter(n => (n as HTMLElement).offsetParent !== null).map(n => ({ t, n })));
+      const out: string[] = [];
+      for (const { t, n } of names) {
+        for (const o of toks) if (o !== t && cross(box(n), box(o))) out.push(`${n.textContent} over the token ${o.getAttribute('aria-label')!.split(',')[0]}`);
+        for (const m of names) if (m.n !== n && cross(box(n), box(m.n))) out.push(`${n.textContent} over the name ${m.n.textContent}`);
+      }
+      return { shown: names.map(x => x.n.textContent), out };
+    });
+    await test.step('nothing aimed', async () => {
+      const c = await crossings();
+      expect(c.shown, 'the names with room are shown').toContain('Mira');
+      expect(c.out).toEqual([]);
+    });
+    await test.step('the first ability aimed at Brakk', async () => {
+      await map.locator('[data-hot] [data-ab]').first().tap();
+      const at = await map.locator('[data-world]').evaluate(w => {
+        const r = w.getBoundingClientRect(), s = r.width / (w as HTMLElement).offsetWidth;
+        return { x: r.left + 3.5 * 40 * s, y: r.top + 3.5 * 40 * s };
+      });
+      await gm.touchscreen.tap(at.x, at.y);
+      await expect(map.locator('[data-words]')).toContainText('Brakk Ironhide');
+      expect((await crossings()).out).toEqual([]);
+    });
+  });
+}
+
+for (const width of [360, 390]) {
+  test(`on a ${width} px phone the kits' groups of the status and skill makers, every one open, scroll only up and down, and every control is at least 44 px tall`, async ({ device }) => {
+    const page = (await device('gm', { viewport: { width, height: 800 } })).page;
+    await onboardGM(page);
+    await go(page, 'workshop');
+    /** Controls in `box` that are shown and under 44 px tall, and whether the maker's scroll is wider than the window. */
+    const audit = (box: Locator) => box.evaluate(win => {
+      const scroll = win.querySelector('.mk-scroll') as HTMLElement;
+      const short = [...win.querySelectorAll('button, input:not([type=checkbox]), select, .mk-check, summary')]
+        // the laid-out height, not the drawn box: a chip just tapped is still in its press motion (a scale)
+        .filter(el => (el as HTMLElement).offsetParent !== null && (el as HTMLElement).offsetHeight < 44)
+        .map(el => `${el.tagName} ${el.getAttribute('data-k') || el.getAttribute('data-f') || el.getAttribute('data-chip') || el.className} ${(el as HTMLElement).offsetHeight}`);
+      return { wide: scroll.scrollWidth > scroll.clientWidth + 1, short };
+    });
+    const sm = page.locator('.fg-overlay [role=dialog]');
+    await page.locator('#view-workshop [data-ws="status"] [data-new]').tap();
+    await sm.locator('[data-name]').fill('Resonance');
+    for (const g of ['stacks', 'when', 'end']) await sm.locator(`[data-group="${g}"] > summary`).tap();
+    await sm.locator('[data-k="stack"]').check();
+    await sm.locator('[data-k="th"]').check();
+    await sm.locator('[data-chips="fgk-leave"] [data-chip="event"]').tap();
+    await sm.locator('[data-chips="fgk-th-to"] [data-chip="area"]').tap();
+    await sm.locator('[data-add-trig]').tap();
+    await sm.locator('[data-chips$="-limit"] [data-chip="fight"]').tap();
+    await sm.locator('[data-chips$="-to"] [data-chip="area"]').last().tap();
+    await sm.locator('[data-k="end"]').check();
+    expect(await audit(sm)).toEqual({ wide: false, short: [] });
+    await sm.locator('.mk-actions [data-cancel]').tap();
+    await expect(sm).toHaveCount(0);
+
+    const km = page.locator('.skm-overlay [role=dialog]');
+    await page.locator('#view-workshop [data-ws="skill"] [data-new]').tap();
+    await km.locator('#skm-name').fill('Executioner');
+    for (const g of ['ticks', 'names', 'prices', 'gates', 'tags', 'moves', 'react', 'summon']) await km.locator(`[data-group="${g}"] > summary`).first().tap();
+    await km.locator('[data-add-scaler]').tap();
+    await km.locator('[data-add="price"]').tap();
+    await km.locator('[data-add="gate"]').tap();
+    await km.locator('[data-f="react"]').check();
+    await km.locator('[data-f="summon"]').check();
+    await km.locator('[data-set="act"][data-v="shift"]').tap();
+    expect(await audit(km)).toEqual({ wide: false, short: [] });
+  });
+}
+
+for (const viewport of [SMALL_PHONE, PHONE]) {
+  test(`on a ${viewport.width} px phone a status chip, a sheet number and an item each open their detail under them, inside the screen, one at a time`, async ({ device }) => {
+    const p = (await device(`detail-${viewport.width}`, { viewport })).page;
+    await onboardPlayer(p, 'Mira Test');
+    await dismissAll(p);
+    await p.evaluate(() => {
+      const h = hunterApp.store.active();
+      hunterApp.api.hunter.addCondition(h.id, { key: 'poisoned', def: hunterApp.rules().conditions.poisoned, rounds: 3, source: { id: null, tier: 0 } });
+      hunterApp.api.inventory.addItem(h.id, { name: 'Ember Flask', rar: 'common', type: 'consumable', qty: 1, desc: 'Throw it.', effects: [{ op: 'applyStatus', key: 'burning', def: hunterApp.rules().conditions.burning, duration: 3000 }] });
+    });
+    await go(p, 'status');
+    const inside = async (sel: string) => {
+      const d = p.locator(sel);
+      await expect(d).toBeVisible();
+      const box = (await d.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+      const small = await d.evaluate(el => [...el.querySelectorAll('*')].map(x => parseFloat(getComputedStyle(x).fontSize)).filter(n => n < 12).length);
+      expect(small, 'no text under 12 px').toBe(0);
+    };
+    await test.step('Poisoned\'s chip opens what it does', async () => {
+      const chip = p.locator('#view-status [data-chips] [data-chip="poisoned"] [data-dt-key]');
+      await chip.tap();
+      await expect(chip).toHaveAttribute('aria-expanded', 'true');
+      await inside('#view-status [data-chips] .dt');
+      await expect(p.locator('#view-status [data-chips] .dt')).toContainText('3 rounds left.');
+    });
+    await test.step('Armor opens its parts', async () => {
+      await p.locator('#view-status [data-dv-k="armor"]').tap();
+      await inside('#view-status [data-dv] .dt');
+      await expect(p.locator('#view-status [data-dv] .dt')).toContainText('Base');
+    });
+    await test.step('the flask opens what it does, and a second tap closes it', async () => {
+      const name = p.locator('#view-status [data-panel="inventory"] .inv-card', { hasText: 'Ember Flask' }).locator('.i-name');
+      await name.tap();
+      await inside('#view-status [data-panel="inventory"] .dt');
+      await name.tap();
+      await expect(name).toHaveAttribute('aria-expanded', 'false');
+      await expect(p.locator('#view-status [data-panel="inventory"] .dt')).toHaveCount(0);
+    });
+  });
+}
+
+test('shadows take no room until someone holds one: the GM\'s Add to the fight form has no shadow block with none summoned and shows it once one is, and a player sees the Shadows tab only with a job that extracts or a shadow of their own', async ({ device }) => {
+  const gm = (await device('gm', { viewport: PHONE })).page;
+  await onboardGM(gm);
+  await go(gm, 'combat');
+  const block = gm.locator('#view-combat fieldset', { hasText: 'Summoned shadows' });
+  await expect(gm.locator('#view-combat [data-hsel]')).toBeVisible();
+  await expect(block).toBeHidden();
+  // setup: the active hunter holds a summoned shadow
+  await gm.evaluate(() => hunterApp.store.update((d: any) => {
+    const h = d.hunters.find((x: any) => x.id === d.activeId) ?? d.hunters[0];
+    h.shadows.push({ id: hunterApp.store.id('sh'), name: 'Igris', rank: 'E', archetype: 'brute', grade: 'Normal', monster: null, hp: 10, summoned: true, notes: '' });
+  }, 'test-setup'));
+  await expect(block).toBeVisible();
+  await expect(block.locator('[data-ssel] option')).toHaveText(/Igris/);
+
+  const player = (await device('player', { viewport: SMALL_PHONE })).page;
+  await onboardPlayer(player, 'Mira Test');
+  const listed = () => player.evaluate(() => [...document.querySelectorAll('#nav-top a')].some(a => a.getAttribute('href') === '#/shadows'));
+  expect(await listed()).toBe(false);
+  await player.evaluate(() => hunterApp.store.update((d: any) => {
+    d.hunters[0].shadows.push({ id: hunterApp.store.id('sh'), name: 'Igris', rank: 'E', archetype: 'brute', grade: 'Normal', monster: null, hp: 10, summoned: false, notes: '' });
+  }, 'test-setup'));
+  await expect.poll(listed).toBe(true);
+});
+
+for (const viewport of [PHONE, SMALL_PHONE]) {
+  test(`on a ${viewport.width} px phone the odds control and its line fit the screen`, async ({ device }) => {
+    const page = (await device('gm', { viewport })).page;
+    await onboardGM(page);
+    await go(page, 'combat');
+    await page.locator('#view-combat [data-addparty]').tap();
+    await page.locator('#view-combat [data-addm]').tap();
+    const box = page.locator('#view-combat [data-odds]');
+    await expect(box.locator('[data-odds-ask]')).toBeVisible();
+    const fits = () => box.evaluate(el => [...el.querySelectorAll('button, p')].every(c => { const r = c.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth; }) && document.documentElement.scrollWidth <= innerWidth);
+    expect(await fits(), 'the control fits').toBe(true);
+    await box.locator('[data-odds-ask]').tap();
+    await expect(box.locator('[data-oddsline]')).toBeVisible({ timeout: 60_000 });
+    expect(await fits(), 'the line fits').toBe(true);
+    const h = await box.locator('[data-oddsline]').evaluate(el => el.getBoundingClientRect().height);
+    expect(h, 'the line is a 44 px target').toBeGreaterThanOrEqual(44);
+  });
+}
+
+for (const viewport of [PHONE, SMALL_PHONE]) {
+  test(`on a ${viewport.width} px phone a personal gate's card, its odds and Enter alone fit the screen as 44 px targets`, async ({ device }) => {
+    const page = (await device('solo', { viewport })).page;
+    await onboardPlayer(page, 'Mira Test');
+    await go(page, 'gates');
+    const card = page.locator('#view-gates .gate.solo').first();
+    await expect(card).toBeVisible();
+    await expect(card).toContainText(/Closes in \d+ hours?/);
+    const fits = () => card.evaluate(el => [...el.querySelectorAll('button, p, li, .gt-timer')].every(c => { const r = c.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth; }) && document.documentElement.scrollWidth <= innerWidth);
+    expect(await fits(), 'the card fits').toBe(true);
+    for (const b of await card.locator('[data-odds-ask], [data-solo-enter]').all()) expect((await b.boundingBox())!.height, 'a 44 px target').toBeGreaterThanOrEqual(44);
+    await card.locator('[data-odds-ask]').tap();
+    await expect(card.locator('[data-oddsline]')).toBeVisible({ timeout: 60_000 });
+    expect(await fits(), 'the odds line fits').toBe(true);
+  });
+}
+
+for (const viewport of [SMALL_PHONE, PHONE]) {
+  test(`on a ${viewport.width} px phone the GM's shelf of awards keeps Cancel and its moment chips on screen while the list scrolls, each row says when and what it gives, and nothing scrolls sideways`, async ({ device }) => {
+    const gm = (await device('gm', { viewport })).page;
+    await onboardGM(gm);
+    await go(gm, 'gm');
+    const card = gm.locator('#gm-board .gm-card', { hasText: 'Brakk Ironhide' });
+    await card.locator('[data-ggive]').tap();
+    const shelf = gm.locator('.sys-overlay.show.gs-ov'), list = shelf.locator('[data-gs-list]');
+    const cancel = shelf.locator('[data-gs-cancel]');
+    await expect(shelf).toContainText('GIVE TO BRAKK IRONHIDE');
+
+    await test.step('Cancel, the guide and the chips are on the first screen, and every control there is 44 px tall', async () => {
+      await expect(cancel).toBeInViewport({ ratio: 1 });
+      await expect(shelf.locator('[data-gs-guide]')).toBeInViewport({ ratio: 1 });
+      await expect(shelf.locator('[data-gs-chip="all"]')).toBeInViewport({ ratio: 1 });
+      const short = await shelf.evaluate(win => [...win.querySelectorAll('button')]
+        .filter(b => (b as HTMLElement).offsetParent !== null && (b as HTMLElement).offsetHeight < 44).map(b => b.textContent!.trim().slice(0, 30)));
+      expect(short).toEqual([]);
+    });
+
+    await test.step('the first row says what it is for and what it gives, in lines that wrap within the window', async () => {
+      const row = shelf.locator('[data-give]').first();
+      await expect(row.locator('.gs-when')).not.toBeEmpty();
+      await expect(row.locator('.gs-gives')).not.toBeEmpty();
+      await expect(shelf.locator('[data-give="seed-scar-tissue"] .gs-gives')).toHaveText('Title: Scar Tissue (+1 DIS)');
+      const wide = await shelf.evaluate(win => {
+        // the window does not scroll (its list does), and its corner marks sit 2 px outside it by design
+        const w = win.querySelector('.gs-win') as HTMLElement, l = win.querySelector('[data-gs-list]') as HTMLElement;
+        w.scrollLeft = 50;
+        return { win: w.scrollLeft, list: l.scrollWidth - l.clientWidth, page: document.documentElement.scrollWidth - innerWidth };
+      });
+      expect(wide).toEqual({ win: 0, list: 0, page: 0 });
+    });
+
+    await test.step('the list scrolls to its end inside the window, and Cancel and the chips stay where they were', async () => {
+      // the window comes in at .98 of its size (motion.ts `enter`): measured before that ends, Cancel reads a hair small
+      await expect.poll(() => gm.evaluate(() => document.getAnimations().filter(a => a.playState === 'running' && (a.effect?.getTiming().iterations ?? 1) !== Infinity).length)).toBe(0);
+      const before = await cancel.boundingBox();
+      await list.evaluate(l => { l.scrollTop = l.scrollHeight; });
+      await expect(shelf.locator('[data-give="seed-seen"]')).toBeInViewport();
+      await expect(cancel).toBeInViewport({ ratio: 1 });
+      expect(await cancel.boundingBox()).toEqual(before);
+    });
+
+    await test.step('How to use these opens the guide at the top of the list; Cancel closes the shelf and gives nothing', async () => {
+      await shelf.locator('[data-gs-guide]').tap();
+      await expect(shelf.locator('.gs-guide li').first()).toBeInViewport();
+      await expect(shelf.locator('.gs-guide li')).toHaveCount(9);
+      await cancel.tap();
+      await expect(shelf).toHaveCount(0);
+      await expect(gm.locator('#toasts .toast[data-held]')).toHaveCount(0);
+    });
+  });
+}

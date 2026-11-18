@@ -1,0 +1,30 @@
+#!/bin/sh
+# Blocks the push unless local CI passes. CI tests the working tree, so the tree must match what is committed.
+if [ -n "$(git status --porcelain)" ]; then
+  echo "pre-push: uncommitted or untracked files. CI tests the working tree, so commit or remove them first." >&2
+  exit 1
+fi
+
+# The CI runs only the passes this push can change (scripts/ci-plan.ts decides, from the files the push changes).
+# git gives one line per ref on stdin: <local ref> <local sha> <remote ref> <remote sha>. A new branch, or a range
+# that cannot be read, hands over no list, and then everything runs.
+known=yes
+seen=no
+files=""
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+  [ -n "$local_sha" ] || continue   # an empty line is not a ref
+  seen=yes
+  case "$local_sha" in *[!0]*) ;; *) continue ;; esac   # a deleted ref pushes no files
+  case "$remote_sha" in *[!0]*) ;; *) known=no; break ;; esac   # a new branch: no range to read
+  range=$(git diff --name-only "$remote_sha" "$local_sha" 2>/dev/null) || { known=no; break; }
+  files="$files
+$range"
+done
+
+if [ "$seen" = yes ] && [ "$known" = yes ]; then
+  CI_CHANGED="$files"
+  export CI_CHANGED
+else
+  unset CI_CHANGED
+fi
+exec bun run ci
