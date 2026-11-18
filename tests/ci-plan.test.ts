@@ -12,7 +12,7 @@ describe('which passes a push needs', () => {
     expect([p.browser, p.lag]).toEqual(['none', false]);
   });
   test('a unit test, a model, a chart script, a generated doc, the guide or the CI\'s own scripts run no browser test', () => {
-    for (const f of ['tests/solo.test.ts', 'tests/models/room-world.ts', 'scripts/charts/solo.ts', 'scripts/statecharts.ts', 'docs/state-machines.md', 'docs/dependency-map.md', 'AGENTS.md', '.githooks/pre-push', 'scripts/ci.ts', 'scripts/ci-plan.ts', '.claude/settings.json', '.claude/agents/writer.md', '.github/workflows/ci.yml', 'scripts/ci-remote.sh', 'scripts/publish-clean.ts', '.private/scrub-terms.tsv']) {
+    for (const f of ['tests/solo.test.ts', 'tests/models/room-world.ts', 'scripts/charts/solo.ts', 'scripts/statecharts.ts', 'docs/state-machines.md', 'docs/dependency-map.md', 'AGENTS.md', '.githooks/pre-push', 'scripts/ci.ts', 'scripts/ci-plan.ts', '.claude/settings.json', '.claude/agents/writer.md', '.github/workflows/ci.yml', 'scripts/ci-public.sh', 'scripts/publish-clean.ts', '.private/scrub-terms.tsv']) {
       const p = planOf([f, 'docs/agent-handoff/handoff.md']);
       expect([f, p.browser, p.lag]).toEqual([f, 'none', false]);
     }

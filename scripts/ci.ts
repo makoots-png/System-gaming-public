@@ -10,14 +10,14 @@ const E2E_PORT = '3218';
 // What this push needs (scripts/ci-plan.ts): the hook hands over the files the push changes in CI_CHANGED; run by
 // hand, `bun run ci` has none and runs everything.
 const planned = planOf(changedFrom(process.env.CI_CHANGED));
-// The browser tests may have run on the public CI mirror (scripts/ci-remote.sh, .github/workflows/ci.yml). The one who
-// pushes names the snapshot tree whose run was green in CI_BROWSER_REMOTE; when it is this commit's snapshot, the
+// The browser tests may have run on the public repository (scripts/ci-public.sh, .github/workflows/ci.yml). The one who
+// pushes names the tree whose run was green in CI_BROWSER_REMOTE; when it is this commit's tree, the
 // browser pass is not run again here. The typecheck, the unit tests and the lag test (which needs a quiet machine,
 // so it stays here) still run.
-const snapshot = Bun.spawnSync(['sh', 'scripts/ci-remote.sh', 'tree']).stdout.toString().trim();
+const snapshot = Bun.spawnSync(['sh', 'scripts/ci-public.sh', 'tree']).stdout.toString().trim();
 const remote = !!process.env.CI_BROWSER_REMOTE && process.env.CI_BROWSER_REMOTE === snapshot;
-if (process.env.CI_BROWSER_REMOTE && !remote) console.log(`\n== CI_BROWSER_REMOTE names ${process.env.CI_BROWSER_REMOTE}, and this commit's snapshot is ${snapshot}: the browser tests run here.`);
-const plan = remote && planned.browser !== 'none' ? { ...planned, browser: 'none' as const, why: `The browser tests passed on the CI mirror for this commit's snapshot (${snapshot.slice(0, 12)}).` } : planned;
+if (process.env.CI_BROWSER_REMOTE && !remote) console.log(`\n== CI_BROWSER_REMOTE names ${process.env.CI_BROWSER_REMOTE}, and this commit's tree is ${snapshot}: the browser tests run here.`);
+const plan = remote && planned.browser !== 'none' ? { ...planned, browser: 'none' as const, why: `The browser tests passed on the public repository for this commit's tree (${snapshot.slice(0, 12)}).` } : planned;
 if (plan.why) console.log(`\n== ${plan.why}`);
 const browserFiles = plan.browser === 'all' || plan.browser === 'none' ? [] : plan.browser;
 
