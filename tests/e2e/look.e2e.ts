@@ -589,3 +589,21 @@ for (const viewport of [SMALL_PHONE, PHONE]) {
     });
   });
 }
+
+test('on a 360 px phone the feat maker scrolls only up and down, and every control in it is at least 44 px tall', async ({ device }) => {
+  const page = (await device('gm', { viewport: SMALL_PHONE })).page;
+  await onboardGM(page);
+  await go(page, 'workshop');
+  await page.locator('#view-workshop [data-ws="feat"] [data-new]').tap();
+  const d = page.locator('.fm-overlay [role=dialog]');
+  await expect(d.getByRole('heading', { name: 'New feat' })).toBeVisible();
+  await d.locator('[data-tadd]').tap();
+  await d.locator('#fm-measure').selectOption('sum');
+  const audit = await d.evaluate(win => {
+    const short = [...win.querySelectorAll('button, input:not([type=checkbox]), select')]
+      .filter(el => (el as HTMLElement).offsetParent !== null && (el as HTMLElement).offsetHeight < 44).map(el => (el.getAttribute('aria-label') || el.textContent || el.id || el.tagName).trim().slice(0, 30));
+    const wide = [...win.querySelectorAll('*')].some(el => (el as HTMLElement).scrollWidth > (el as HTMLElement).clientWidth + 1 && getComputedStyle(el).overflowX !== 'visible' && getComputedStyle(el).overflowX !== 'hidden');
+    return { short, wide, page: document.documentElement.scrollWidth - innerWidth };
+  });
+  expect(audit).toEqual({ short: [], wide: false, page: 0 });
+});

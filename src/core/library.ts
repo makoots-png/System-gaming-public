@@ -3,6 +3,7 @@
 // map-maker.js) and the Workshop (workshop.js) change the library only through these, as `atLibrary` steps
 // (save-step.ts). Pure: the caller passes the id a new entry gets (`store.id`), and the entry as its kind's parser gave
 // it. A refusal is `{ ok: false, why }`; nothing is half changed. A pack merged into the library is `mergePack` (pack.ts).
+import type { FeatDef } from './hunter/feats.ts';
 import { LIMITS } from './save.ts';
 import type { Library, StatusDef } from './save.ts';
 import { refuse } from './save-step.ts';
@@ -68,6 +69,18 @@ export function removeStatus(lib: Library, key: string): Next {
   if (!Object.hasOwn(lib.statuses, key)) return refuse('missing');
   const { [key]: _gone, ...rest } = lib.statuses;
   return { ...lib, statuses: rest };
+}
+
+/** The feat `key` saved in the library (a built-in's key holds an edit of it, or its turning off), refused past the cap. */
+export function saveFeat(lib: Library, key: string, def: FeatDef): Next {
+  if (!Object.hasOwn(lib.feats, key) && Object.keys(lib.feats).length >= LIMITS.libraryFeats) return refuse('full');
+  return { ...lib, feats: { ...lib.feats, [key]: def } };
+}
+/** The feat `key` taken out of the library (a built-in's key: the built-in is back as it shipped). */
+export function removeFeat(lib: Library, key: string): Next {
+  if (!Object.hasOwn(lib.feats, key)) return refuse('missing');
+  const { [key]: _gone, ...rest } = lib.feats;
+  return { ...lib, feats: rest };
 }
 
 /**

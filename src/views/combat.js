@@ -10,7 +10,8 @@ import { pickables, pickedRef } from '../core/party.ts';
 import { RANKS, rules } from '../edge/rules.ts';
 import { stepTime } from '../core/day.ts';
 import { fightId, owed, reduce, reduceAll } from '../core/combat/fight.ts';
-import { fought, heldCommands, itemSpent } from '../core/combat/fight-save.ts';
+import { fightGateName, fought, heldCommands, itemSpent } from '../core/combat/fight-save.ts';
+import { remoteFacts } from '../core/combat/fight-facts.ts';
 import { attemptsLeft, UNTRIED } from '../core/combat/extraction.ts';
 import { castDice, needs } from '../core/combat/resolve.ts';
 import { aims, cardOf, channelView, order, readyIn, spotOf, statusGrant, stepAway, stepToward, timeOf, usesLeft } from '../core/combat/fight-view.ts';
@@ -118,9 +119,13 @@ export function register(app) {
     // `spent`. A use is one `act` sent alone; a batch is the GM's edits of rows (`held`), which spend no item
     const sp = cmds.length === 1 ? itemSpent(was, cmds[0]) : null, ev = sp && sp.kind === 'remote' ? S.event('spent', { to: [sp.remote], item: sp.item }) : null;
     const spent = !sp ? null : sp.kind === 'local' ? sp : ev ? { kind: /** @type {const} */ ('remote'), event: ev } : null;
-    const wrote = store.apply(`combat-${cmds.map(x => x.type).join('+')}`, s => fought(s, r, { links, room: S.room(), totals, stamp: { at: new Date().toISOString(), cap: c.rules.logCap }, also, spent, risen }, c.rules));
+    // the fight ended: what each player's hunter did in it goes to its phone as `noted`, in the same write (feature 1's notes 2.3)
+    const ended = r.fight && r.fight.phase === 'ended' && r.effects.some(fx => fx.type === 'ended');
+    const rankOf = key => { const x = remoteList().find(sh => sh.key === key); return x ? x.data.rank : null; };
+    const noted = ended ? remoteFacts(r.fight, rankOf, fightGateName(store.get())).map(n => S.event('noted', { to: [n.to], facts: n.facts })).filter(Boolean) : [];
+    const wrote = store.apply(`combat-${cmds.map(x => x.type).join('+')}`, s => fought(s, r, { links, room: S.room(), totals, stamp: { at: new Date().toISOString(), cap: c.rules.logCap }, also, spent, risen, noted }, c.rules));
     const effects = wrote.ok || refused(r.effects) ? r.effects : NOT_WRITTEN;
-    if (wrote.ok && (totals.length || ev || risen)) S.flush();
+    if (wrote.ok && (totals.length || ev || risen || noted.length)) S.flush();
     /** @template {Effect['type']} T @param {T} type @returns {Extract<Effect, { type: T }>[]} */
     const of = type => effects.filter(/** @returns {fx is Extract<Effect, { type: T }>} */ fx => fx.type === type);
     for (const fx of of('turnStarted')) app.emit('combat:turn', { hunterId: fx.hunterId });

@@ -25,6 +25,9 @@ import type { XpOf } from './gate.ts';
 import { clearGate, encounterEnded } from './world.ts';
 import { record } from '../hunter/chronicle.ts';
 import { rankIdx } from '../rules.ts';
+import type { Rank } from '../rules.ts';
+import type { Fact } from '../hunter/facts.ts';
+import type { Gate } from './gate.ts';
 import type { ClearPay } from './world.ts';
 
 /** An award over `n` payees: each gets `total` split evenly and rounded down when the rules split, else all of it. None for nobody. */
@@ -128,13 +131,14 @@ export function clearShares<I>(save: Pick<Save, 'gates'>, gateId: string, xpOf: 
  * Gate `gateId` cleared, in one step: the gate paid what it owed and logged (`clearGate`, world.ts), each local payee
  * given `rewards` (the view reads its share with `parseRewards`), each player's award posted. Refused as `clearGate` is.
  */
+/** The fact of gate `g` cleared with a hunter of rank `rank` among its payees, on world day `day` (a local payee's here, a player's in the room's `noted`). */
+export const gateFact = (g: Pick<Gate, 'name' | 'rank' | 'breakDay'>, rank: Rank, day: number): Fact =>
+  ({ kind: 'gate', name: g.name, rank: g.rank, above: rankIdx(g.rank) - rankIdx(rank), toBreak: Math.max(0, g.breakDay - day) });
 export function settleClear(save: Save, gateId: string, pay: ClearPay, locals: readonly { hid: string; rewards: Rewards }[], posts: Posts, day: Day): Settled | Refused<'missing' | 'unchanged'> {
   const cleared = clearGate(save, gateId, pay, { at: day.at, cap: day.R.logCap });
   if (isRefused(cleared)) return cleared;
   // the gate cleared is a fact of each local payee's chronicle (chronicle.ts), in the Clear's write
   const g = save.gates.find(x => x.id === gateId), paid = new Set(locals.map(l => l.hid));
-  const facts = !g ? cleared : { ...cleared, hunters: cleared.hunters.map(h => (!paid.has(h.id) ? h : record(h, {
-    kind: 'gate', name: g.name, rank: g.rank, above: rankIdx(g.rank) - rankIdx(h.rank), toBreak: Math.max(0, g.breakDay - save.world.day),
-  }))) };
+  const facts = !g ? cleared : { ...cleared, hunters: cleared.hunters.map(h => (!paid.has(h.id) ? h : record(h, gateFact(g, h.rank, save.world.day)))) };
   return payAll(facts, locals, posts, day);
 }

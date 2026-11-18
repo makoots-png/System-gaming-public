@@ -186,6 +186,14 @@ describe('events', () => {
     expect((await call('GET', `/api/rooms/${code}`)).body.events).toEqual([]);
   });
 
+  test('a player cannot send facts of its own hunter as the GM\'s noted, and the room is unchanged; the GM can', async () => {
+    const { code, gm } = await newRoom();
+    const noted = { eid: 'd-gm-e11', to: [`${PLAYER}:h1`], facts: [{ kind: 'gate', name: 'Goblin Den', rank: 'E', above: 0, toBreak: 3 }] };
+    expect(await call('POST', `/api/rooms/${code}/events`, { headers: token('p1'), body: { from: PLAYER, type: 'noted', payload: noted } })).toEqual({ status: 403, body: { error: 'gm only' } });
+    expect((await call('GET', `/api/rooms/${code}`)).body.events).toEqual([]);
+    expect((await call('POST', `/api/rooms/${code}/events`, { headers: gm, body: { from: 'gm', type: 'noted', payload: noted } })).status).toBe(200);
+  });
+
   test('a player cannot raise a shadow for their own hunter, and the room is unchanged; the GM can', async () => {
     const { code, gm } = await newRoom();
     const shadow = { eid: 'd-gm-e10', to: [`${PLAYER}:h1`], shadow: { rank: 'C', archetype: 'brute', grade: 'Knight', monster: null, name: 'Ice Bear' } };

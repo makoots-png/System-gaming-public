@@ -1094,3 +1094,55 @@ test('a GM makes a fire blast that leaves burning ground for 2 rounds; in a figh
   expect(rowIn(hitPlain, 'T').hp - rowIn(hit, 'T').hp).toBe(Math.round(4 * ((hit as any).now - (f as any).now) / 1000));
   expect(rowIn(hit, 'T').statuses.some(s => s.def.label === 'Burning ground' && s.until === null)).toBe(true);
 });
+
+test('a GM makes a feat for 2 Beasts defeated in a session, from the Workshop: the library holds what the form said, the list says its rule, and Edit opens it as saved', async ({ device }) => {
+  const page = (await device('gm')).page;
+  await onboardGM(page);
+  const d = page.locator('.fm-overlay [role=dialog]');
+  await go(page, 'workshop');
+  await workshop(page, 'feat').locator('[data-new]').tap();
+  await expect(d.getByRole('heading', { name: 'New feat' })).toBeVisible();
+
+  await test.step('the form: a name, a window, what happened, one test, the count, the window, shown from the start, 1 ability point', async () => {
+    await d.locator('#fm-name').fill('Beast Week');
+    await d.locator('#fm-window').fill('THE BEASTS NOTICED');
+    await d.locator('#fm-desc').fill('Two Beasts defeated in one session.');
+    await d.locator('#fm-kind').selectOption('kill');
+    await d.locator('[data-tadd]').tap();
+    await d.locator('[data-test] [data-tf]').selectOption('type');
+    await d.locator('[data-test] [data-tv]').fill('Beast');
+    await d.locator('#fm-reach').fill('2');
+    await d.locator('[data-chips="within"] [data-chip="session"]').tap();
+    await d.locator('[data-chips="show"] [data-chip="start"]').tap();
+    await d.locator('.rw-nums [data-n="points"]').fill('1');
+    await expect(d.locator('.mk-preview')).toContainText('Monsters defeated (Monster type is Beast): 2, in one session.');
+    await d.getByRole('button', { name: 'Save feat' }).tap();
+    await expect(d).toHaveCount(0);
+  });
+
+  await test.step('the library holds it as the parser reads it, and the Workshop lists it with its line', async () => {
+    const f = await page.evaluate(() => hunterApp.store.get().library.feats['beast-week']);
+    expect(f).toMatchObject({ name: 'Beast Week', window: 'THE BEASTS NOTICED', desc: 'Two Beasts defeated in one session.', show: { at: 'start' },
+      rule: { on: 'kill', where: [{ field: 'type', op: '=', value: 'Beast' }], measure: { of: 'facts' }, within: 'session', reach: 2, also: [] } });
+    expect(f.rewards.points).toBe(1);
+    await expect(workshop(page, 'feat').locator('.ws-list li', { hasText: 'Beast Week' })).toContainText('Two Beasts defeated in one session.');
+  });
+
+  await test.step('Edit opens the feat as it was saved', async () => {
+    await workshop(page, 'feat').locator('.ws-list li', { hasText: 'Beast Week' }).locator('.ws-row').tap();
+    await expect(d.getByRole('heading', { name: 'Edit Beast Week' })).toBeVisible();
+    await expect(d.locator('#fm-kind')).toHaveValue('kill');
+    await expect(d.locator('[data-test] [data-tv]')).toHaveValue('Beast');
+    await expect(d.locator('#fm-reach')).toHaveValue('2');
+    await d.locator('[data-cancel]').tap();
+  });
+
+  await test.step('a built-in feat turned off is listed off, and Reset brings it back', async () => {
+    const built = workshop(page, 'feat').locator('.ws-built');
+    await built.locator('summary').tap();
+    await built.locator('li', { hasText: 'Ratcatcher' }).locator('[data-act="more"]').tap();
+    await answerWindow(page, 'Ratcatcher', 'Turn off');
+    expect(await page.evaluate(() => hunterApp.store.get().library.feats.ratcatcher?.off)).toBe(true);
+    await expect(workshop(page, 'feat').locator('.ws-list li', { hasText: 'Ratcatcher' }).first()).toContainText('built-in, off');
+  });
+});

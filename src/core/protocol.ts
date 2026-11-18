@@ -17,6 +17,10 @@ import type { ShadowOrigin } from './hunter/shadows.ts';
 import { BUNDLE_NAME, newRewards, parseRewards, parseWords } from './rewards.ts';
 import type { SystemWords } from './rewards.ts';
 import { RULES, SOLO_BOUNDS } from './rules.ts';
+import { parseFact } from './hunter/facts.ts';
+import type { Fact } from './hunter/facts.ts';
+import { parseFeats } from './hunter/feats.ts';
+import type { FeatDef } from './hunter/feats.ts';
 import { oneOf } from './one-of.ts';
 import type { Hunter, Objective, Quest, QuestKind, QuestStatus, Rank, Rewards } from './save.ts';
 import { isJobName } from './registry/jobs.ts';
@@ -301,12 +305,20 @@ export type SoloRefused = (typeof SOLO_REFUSED)[number];
  * The GM's phone's answer to the won run `run` of gate `gate` (`name`): paid with `rewards` (the gate's Clear for that
  * hunter), or refused with why. Landed once, and only while that run waits on the player's phone (gates/solo-wait.ts).
  */
+/** The most facts one `noted` carries: a fight's fact, a kill a row, and its consumables (notes-1-feats.md 2.3). */
+export const NOTED_MAX = 1 + 60 + 20;
+/**
+ * Facts the GM's phone saw of the player's hunter of `to` (feature 1's notes 2.3): a fight's end (its row's facts,
+ * fight-facts.ts `rowFacts`), a gate's Clear it was paid in. Landed once by its id: recorded on the hunter, noticed in
+ * the same write. A fact that does not read (`parseFact`) is left out.
+ */
+export type NotedPayload = Base & { to: [SheetKey]; facts: Fact[] };
 export type SoloAnswerPayload = Base & { to: [SheetKey]; run: EventId; gate: GateId; name: string }
   & ({ verdict: 'paid'; rewards: Rewards } | { verdict: 'refused'; why: SoloRefused });
 type Payloads = {
   system: SystemPayload; award: AwardPayload; quest: QuestPayload; hp: HpPayload; vitals: VitalsPayload; spent: SpentPayload; status: StatusPayload; revive: RevivePayload;
   roll: RollPayload; questUpdate: QuestUpdatePayload; used: UsedPayload; step: StepPayload; cast: CastPayload; pass: PassPayload; chain: ChainPayload;
-  coinCall: CoinCallPayload; coinLand: CoinLandPayload; arm: ArmPayload; shadow: ShadowPayload; soloRun: SoloRunPayload; soloAnswer: SoloAnswerPayload;
+  coinCall: CoinCallPayload; coinLand: CoinLandPayload; arm: ArmPayload; shadow: ShadowPayload; soloRun: SoloRunPayload; soloAnswer: SoloAnswerPayload; noted: NotedPayload;
 };
 export type EventType = keyof Payloads;
 export type PayloadOf<K extends EventType> = Payloads[K];
@@ -401,6 +413,11 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
     ...base(o), by: sheetKey(own(o, 'by')), gate: need(parseGateId(own(o, 'gate'))), name: opt(own(o, 'name'), text(NAME_MAX), ''),
     outcome: choiceOf(RUN_OUTCOMES)(own(o, 'outcome')), rounds: num(0, CAP_ROUNDS + 1)(own(o, 'rounds')), life: choiceOf(LIFE_STATES)(own(o, 'life')),
   }) },
+  noted: { gmOnly: true, ownSheet: false, read: o => {
+    const to = toList(own(o, 'to')), raw = own(o, 'facts');
+    if (to.length !== 1 || !Array.isArray(raw) || raw.length > NOTED_MAX) return refuse();
+    return { ...base(o), to: [to[0]!] as [SheetKey], facts: raw.flatMap(f => parseFact(f) ?? []) };
+  } },
   soloAnswer: { gmOnly: true, ownSheet: false, read: o => {
     const to = toList(own(o, 'to'));
     const b = { ...base(o), to: to.length === 1 ? [to[0]!] as [SheetKey] : refuse(), run: need(parseEventId(own(o, 'run'))), gate: need(parseGateId(own(o, 'gate'))), name: opt(own(o, 'name'), text(WORLD_NAME_MAX), '') };
@@ -419,7 +436,7 @@ export const EVENTS: { readonly [K in EventType]: EventEntry<K> } = {
   system: entry('system'), award: entry('award'), quest: entry('quest'), hp: entry('hp'), vitals: entry('vitals'), spent: entry('spent'), status: entry('status'),
   revive: entry('revive'), roll: entry('roll'), questUpdate: entry('questUpdate'), used: entry('used'), step: entry('step'), cast: entry('cast'), pass: entry('pass'),
   chain: entry('chain'), coinCall: entry('coinCall'), coinLand: entry('coinLand'), arm: entry('arm'), shadow: entry('shadow'),
-  soloRun: entry('soloRun'), soloAnswer: entry('soloAnswer'),
+  soloRun: entry('soloRun'), soloAnswer: entry('soloAnswer'), noted: entry('noted'),
 };
 function entry<K extends EventType>(type: K): EventEntry<K> {
   const def: EventDef<K> = DEFS[type];
@@ -555,7 +572,15 @@ export const SOLO_DOC = { lines: 51, monsters: 400, statuses: 400 } as const;
 export const WORLD_GATES = 40, WORLD_NAME_MAX = 60;
 /** The world day, the GM's session count (`world.session`: the session a player's facts belong to) and the gates players see. */
 export type WorldDoc = { day: number; session: number; gates: WorldGate[] };
-type Docs = { fight: FightDoc; kicked: KickedDoc; codex: CodexDoc; rules: RoomRules; world: WorldDoc; solo: SoloDoc };
+/**
+ * The GM's feats a player's phone checks (feature 1's notes 3.2): the GM's own and the GM's edits of the built-ins,
+ * each by value as `parseFeat` reads it, under its key; `featsDoc` (hunter/feats.ts) adds whole entries while the doc's
+ * JSON stays within `DOC_MAX`. The switch is the `rules` doc's.
+ */
+export type FeatsDoc = { feats: Record<string, FeatDef> };
+/** The most feats the doc holds: the library's cap. */
+export const FEATS_DOC_MAX = 100;
+type Docs = { fight: FightDoc; kicked: KickedDoc; codex: CodexDoc; rules: RoomRules; world: WorldDoc; solo: SoloDoc; feats: FeatsDoc };
 export type DocName = keyof Docs;
 export type DocOf<K extends DocName> = Docs[K];
 
@@ -783,13 +808,14 @@ export const DOCS: { readonly [K in DocName]: (data: unknown) => Docs[K] | null 
   }),
   world: data => attempt(() => { const o = obj(data); return { day: int(1, 1e6)(own(o, 'day')), session: opt(own(o, 'session'), int(0, 1e6), 0), gates: listOf(own(o, 'gates'), WORLD_GATES, worldGate) }; }),
   solo: data => attempt(() => soloDocOf(data)),
+  feats: data => attempt(() => ({ feats: parseFeats(own(obj(data), 'feats'), FEATS_DOC_MAX) })),
 };
 /**
  * Each doc as it goes on the wire, which `DOCS` reads back: the fight's shorter shape (fight-doc.ts `fightWire`), the rest as
  * they are. The server stores and serves a doc in this shape, after `DOCS` read it.
  */
 export const WIRES: { readonly [K in DocName]: (doc: Docs[K]) => object } = {
-  fight: fightWire, kicked: d => d, codex: d => d, rules: d => d, world: d => d, solo: d => d,
+  fight: fightWire, kicked: d => d, codex: d => d, rules: d => d, world: d => d, solo: d => d, feats: d => d,
 };
 /** A room's docs as they go on the wire (`WIRES`), each with when and from whom. */
 export function wireDocs(docs: RoomDocs): Partial<Record<DocName, Stored<unknown>>> {

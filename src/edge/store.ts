@@ -4,6 +4,7 @@
 // whether storage holds it. What a save is, how one is repaired and what an old one becomes is src/core/save.ts.
 import { ACCENTS, TEXT_SCALES, bindSave, rules } from './rules.ts';
 import { featsFor } from '../core/hunter/feats.ts';
+import type { FeatDef } from '../core/hunter/feats.ts';
 import { BUILT_IN_FEATS } from '../core/registry/feats.ts';
 import { stepTime } from '../core/day.ts';
 import type { Change } from '../core/events.ts';
@@ -164,15 +165,17 @@ bindSave(() => state);
 
 /** Where the notice step learns a fact's session and whether a fight holds a hunter, as the save after a step answers. */
 type NoticeAt = Pick<NoticeCtx, 'session' | 'held'>;
+/** A player's room: its session and fight doc, and the GM's feats from the room's feats doc (laid over the built-ins). */
+type RoomNotice = NoticeAt & { readonly library: Readonly<Record<string, FeatDef>> };
 /** Alone or the GM: the save's own session count and its own fight (`fightHold`). */
 const savedNotice = (save: Save): NoticeAt => ({
   session: save.world.session,
   held: (s: Save, hid: HunterId) => fightHold(s.fight, { hid }, { seat: 'alone', doc: null, key: null }) !== null,
 });
 /** A player's room's answer (its session, its fight doc), or null for the save's own: bound by sync.ts (`bindNotice`). */
-let noticeOf: (save: Save) => NoticeAt | null = () => null;
+let noticeOf: (save: Save) => RoomNotice | null = () => null;
 /** sync.ts calls this once: the room's session and fight doc while this phone is a player in a room, else null. */
-export function bindNotice(of: (save: Save) => NoticeAt | null): void { noticeOf = of; }
+export function bindNotice(of: (save: Save) => RoomNotice | null): void { noticeOf = of; }
 
 /**
  * The text a backup of the current save holds: what storage holds while this tab may not write (a newer app's save,
@@ -282,10 +285,11 @@ export const store = {
     if (!mayChange(life)) return refuse(READ_ONLY);
     const next = step(state);
     if (isRefused(next)) return next;
-    // a player in a room checks the built-ins (the GM's own reach it by the room's feats doc, unit 4); alone or the GM, the library's too
+    // a player in a room checks the built-ins with the GM's feats from the room's feats doc over them; alone or the GM, this save's library
     const done = noticed(next, () => {
       const room = noticeOf(next), R = rules();
-      return { ...stepTime(next, new Date()), ...(room ?? savedNotice(next)), R, feats: featsFor(R, BUILT_IN_FEATS, room ? {} : next.library.feats) };
+      const at = room ? { session: room.session, held: room.held } : savedNotice(next);
+      return { ...stepTime(next, new Date()), ...at, R, feats: featsFor(R, BUILT_IN_FEATS, room ? room.library : next.library.feats) };
     });
     store.update(s => { writeInto(s, done); }, reason);
     return { ok: true };

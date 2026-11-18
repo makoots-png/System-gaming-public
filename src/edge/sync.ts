@@ -82,6 +82,7 @@ const SAME: { [K in PublishedDoc]: (d: DocOf<K>) => unknown } = {
   rules: d => d,
   world: d => ({ ...d, gates: [...d.gates].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)) }),
   solo: d => d,
+  feats: d => d,
 };
 const sameDoc = <K extends PublishedDoc>(name: K, a: DocOf<K>, b: DocOf<K>): boolean => {
   const same = SAME[name] as (d: DocOf<K>) => unknown;
@@ -686,7 +687,7 @@ export function register(app: App): void {
   /** Whether the GM's fight holds a hunter of this player's phone (its row in the room's fight doc), for the notice step. */
   const noticeHeld = (s: Save, hid: HunterId): boolean => fightHold(s.fight, { hid }, { seat: app.seat(), doc: doc('fight'), key: myKey(hid) }) !== null;
   // a player's facts belong to the room's session (its world doc) and wait while the GM's fight holds the hunter (noticed.ts)
-  bindNotice(() => (playerRoom() ? { session: doc('world')?.session ?? 0, held: noticeHeld } : null));
+  bindNotice(() => (playerRoom() ? { session: doc('world')?.session ?? 0, held: noticeHeld, library: doc('feats')?.feats ?? {} } : null));
   /** The release write: once the room's fight doc lets a hunter with waiting facts go, they are noticed (noticed.ts `released`). */
   const release = (): void => { if (store.get().hunters.some(h => h.chronicle.inbox.length)) store.apply('noticed', s => released(s, noticeHeld)); };
   /**

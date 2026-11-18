@@ -22,7 +22,7 @@ import type { RewardRules, Rewards } from '../rewards.ts';
 import { parseFeatKey } from '../ids.ts';
 import type { FeatKey } from '../ids.ts';
 import { NO_COUNT, TEST_OPS, parseCount } from './counts.ts';
-import type { FactCount, Counted, TestOp } from './counts.ts';
+import type { FactCount, Counted, CountMeasure, Test, TestOp, Within } from './counts.ts';
 import { TALLY_KEYS } from './chronicle.ts';
 import type { FeatState, Tally, TallyKey } from './chronicle.ts';
 import { FACT_FIELDS } from './facts.ts';
@@ -181,4 +181,42 @@ export function parseFeats(v: unknown, cap: number): Record<string, FeatDef> {
     if (d) out[k] = d;
   }
   return out;
+}
+
+/**
+ * The room's feats doc a GM's phone publishes (feature 1's notes 3.2): its library's feats by key, each added whole while
+ * the doc's JSON stays within `max` (protocol.ts `DOC_MAX`), and the keys left out, which the Workshop marks.
+ */
+export function featsDoc(library: Readonly<Record<string, FeatDef>>, max: number): { readonly doc: { feats: Record<string, FeatDef> }; readonly left: string[] } {
+  const feats: Record<string, FeatDef> = {}, left: string[] = [];
+  let size = JSON.stringify({ feats: {} }).length;
+  for (const k of Object.keys(library).sort()) {
+    const add = JSON.stringify(k).length + 1 + JSON.stringify(library[k]).length + 1;
+    if (size + add > max) { left.push(k); continue; }
+    feats[k] = library[k]!; size += add;
+  }
+  return { doc: { feats }, left };
+}
+
+/** A free key for a GM's feat named `name`: its name slugged (`[a-z0-9-]`, at most 40), numbered when `taken` holds it. */
+export function freeFeatKey(name: string, taken: (k: string) => boolean): FeatKey {
+  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 34) || 'feat';
+  for (let i = 1; ; i++) { const k = i === 1 ? base : `${base}-${i}`; if (!taken(k)) return k as FeatKey; }
+}
+
+/** Each window's words, for the maker's choice and a feat's rule line. */
+export const WITHIN_WORDS: { readonly [W in Within]: string } = { ever: 'Ever', row: 'In a row', session: 'In one session', day: 'In one day', rest: 'Between long rests' };
+/** What a measure counts, for the maker's choice. */
+export const MEASURE_WORDS: { readonly [M in CountMeasure['of']]: string } = { facts: 'Each time', sum: 'The total of', distinct: 'Different values of', max: 'The highest' };
+/** Each kind of fact a feat can count, in the maker's words. */
+export const FACT_KIND_WORDS = KIND_WORDS;
+const testWords = (kind: string, t: Test): string => `${specOf(kind, t.field)?.label ?? t.field} ${t.op === '=' ? 'is' : t.op === '>=' ? 'at least' : 'at most'} ${typeof t.value === 'boolean' ? (t.value ? 'yes' : 'no') : t.value}`;
+/**
+ * A feat's rule in plain words, for the maker's preview and a GM's feat with no description: what is counted, its tests,
+ * the number that earns it and its window. "Monsters defeated (Monster type is Beast): 100, ever."
+ */
+export function ruleLine(rule: FeatRule): string {
+  const what = rule.measure.of === 'facts' ? KIND_WORDS[rule.on] : `${MEASURE_WORDS[rule.measure.of]} ${(specOf(rule.on, rule.measure.field)?.label ?? rule.measure.field).toLowerCase()}`;
+  const tests = rule.where.length ? ` (${rule.where.map(t => testWords(rule.on, t)).join(', ')})` : '';
+  return `${what}${tests}: ${rule.reach.toLocaleString('en-US')}, ${WITHIN_WORDS[rule.within].toLowerCase()}.`;
 }

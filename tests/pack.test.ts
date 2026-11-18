@@ -1,4 +1,5 @@
 // A pack of the GM's custom content (src/core/pack.ts): made from a save, read from outside data, merged with Add or Replace.
+import { parseFeat } from '../src/core/hunter/feats.ts';
 import { describe, expect, test } from 'bun:test';
 import { PACK_CAP, mergePack, packCounts, packOf, parsePack } from '../src/core/pack.ts';
 import type { MergeTarget, Pack, PackRead } from '../src/core/pack.ts';
@@ -37,6 +38,8 @@ const HALL: BattleMap = parseBattleMap({
   id: 'mp9', name: 'Frost Hall', w: 6, h: 4, tiles: '#######....##.~o.#######', fog: true, starts: { party: [{ x: 1, y: 1 }], foe: [{ x: 4, y: 2 }] },
   zones: [{ id: 'z1', name: 'Ice', ground: { kind: 'tiles', tiles: [{ x: 2, y: 1 }] }, ops: [frostbite()] }],
 }, RULES)!;
+/** A GM's feat whose reward names the custom status Frostbite. */
+const FROST_WARD = parseFeat({ name: 'Frost Ward', window: 'COLD HANDS', desc: 'Ten wolves defeated.', show: { at: 'start' }, rule: { on: 'kill', where: [{ field: 'monster', op: '=', value: 'Wolf' }], reach: 10 }, rewards: { statuses: [{ key: 'frostbite', rounds: 2 }] } })!;
 const HUNT = { id: rbid('rb8'), name: 'Wolf hunt', rewards: { ...newRewards(), xp: 100, boons: [{ name: 'One free reroll', text: 'Reroll one die.' }] } };
 
 /** A GM's save with one custom status, item, skill, monster, reward bundle and map. */
@@ -49,6 +52,7 @@ function gmSave(): Save {
   s.library.rewards = [copy(HUNT)];
   s.monsters = [copy(WARDEN)];
   s.library.maps = [copy(HALL)];
+  s.library.feats = { 'frost-ward': copy(FROST_WARD) };
   return s;
 }
 const read = (v: unknown): Extract<PackRead, { ok: true }> => {
@@ -64,7 +68,7 @@ describe('a pack made and read back', () => {
   test('one of each kind arrives on an empty phone as it was made, under new ids', () => {
     const from = gmSave();
     const r = read(packOf(from, AT));
-    expect(packCounts(r.pack)).toEqual({ statuses: 1, items: 1, skills: 1, rewards: 1, monsters: 1, maps: 1 });
+    expect(packCounts(r.pack)).toEqual({ statuses: 1, items: 1, skills: 1, rewards: 1, monsters: 1, maps: 1, feats: 1 });
     const { save } = mergePack(target(newSave(dev('d2'))), r.pack, 'add');
     expect(save.library.statuses).toEqual(from.library.statuses);
     expect(noIds(save.library.items)).toEqual(noIds(from.library.items));
@@ -72,6 +76,7 @@ describe('a pack made and read back', () => {
     expect(noIds(save.library.rewards)).toEqual(noIds(from.library.rewards));
     expect(noIds(save.monsters)).toEqual(noIds(from.monsters));
     expect(noIds(save.library.maps)).toEqual(noIds(from.library.maps));
+    expect(save.library.feats).toEqual(from.library.feats);
     expect(save.library.items[0]!.id).toBe(iid('i101'));
   });
 
@@ -114,7 +119,7 @@ describe('a pack from outside data', () => {
 
   test('parts of the wrong type hold nothing', () => {
     const r = read({ kind: 'library', library: { statuses: [], items: 'x', skills: {}, rewards: 5 }, monsters: { a: 1 } });
-    expect(packCounts(r.pack)).toEqual({ statuses: 0, items: 0, skills: 0, rewards: 0, monsters: 0, maps: 0 });
+    expect(packCounts(r.pack)).toEqual({ statuses: 0, items: 0, skills: 0, rewards: 0, monsters: 0, maps: 0, feats: 0 });
   });
 
   test('entries the parsers refuse are counted unreadable, and a wrong field takes its default', () => {
@@ -129,12 +134,14 @@ describe('a pack from outside data', () => {
         skills: [{ type: 'active' }, { name: 'Jab', ability: 'punch' }],
         rewards: [{ rewards: {} }, { name: 'Bag', rewards: 'gold' }],
         maps: [{ w: 5 }, { name: 'Pit', w: 99, tiles: 'xyz', sight: -3 }],
+        feats: { 'Bad Key!': FROST_WARD, nameless: { ...FROST_WARD, name: '' }, ok: FROST_WARD },
       },
       monsters: [7, { name: 'Rat', tweak: { hp: 'lots' } }],
     });
     expect(r.counts).toEqual({
       statuses: { kept: 1, unreadable: 5, over: 0 }, items: { kept: 1, unreadable: 2, over: 0 }, skills: { kept: 1, unreadable: 1, over: 0 },
       rewards: { kept: 1, unreadable: 1, over: 0 }, monsters: { kept: 1, unreadable: 1, over: 0 }, maps: { kept: 1, unreadable: 1, over: 0 },
+      feats: { kept: 1, unreadable: 2, over: 0 },
     });
     expect(r.pack.maps[0]).toMatchObject({ name: 'Pit', w: RULES.fight.grid.w, sight: RULES.fight.sight, fog: false });
     expect(r.pack.statuses.ok!.ops).toEqual([{ op: 'heal', amount: { kind: 'number', value: 2 } }]);
@@ -291,5 +298,21 @@ describe('merging a pack', () => {
     mergePack(target(s), read(packOf(s, AT)).pack, 'add');
     mergePack(target(s), read(packOf(s, AT)).pack, 'replace');
     expect(s).toEqual(before);
+  });
+});
+
+describe('feats in a pack', () => {
+  test('one feat brings the status its reward names; Add of a feat whose key the library holds arrives as "Frost Ward 2", Replace overwrites it', () => {
+    const from = gmSave();
+    const one = read(packOf(from, AT, 'feats', 'frost-ward'));
+    expect(packCounts(one.pack)).toMatchObject({ feats: 1, statuses: 1 });
+    const added = mergePack(target(from), one.pack, 'add');
+    expect(Object.keys(added.save.library.feats).sort()).toEqual(['frost-ward', 'frost-ward-2']);
+    expect(added.save.library.feats['frost-ward-2']!.name).toBe('Frost Ward 2');
+    expect(added.report.feats).toEqual({ added: 1, renamed: 1, replaced: 0, full: 0 });
+    const changed = { ...one.pack, feats: { 'frost-ward': { ...FROST_WARD, desc: 'Twenty wolves.' } } };
+    const replaced = mergePack(target(from), changed, 'replace');
+    expect(replaced.save.library.feats).toEqual({ 'frost-ward': { ...FROST_WARD, desc: 'Twenty wolves.' } });
+    expect(mergePack({ ...target(from), library: replaced.save.library }, changed, 'replace').save.library.feats).toEqual(replaced.save.library.feats);
   });
 });

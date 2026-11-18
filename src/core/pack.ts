@@ -4,6 +4,9 @@
 // name). Pure: the code a pack travels as (compression, base64url) is src/edge/pack-code.ts.
 // A new kind of custom content gets its list in `Pack`, `PACK_KINDS` and `PACK_CAP`, its line in `packOf`, `parsePack`
 // and `mergePack`, and a case in tests/pack.test.ts.
+import { FEAT_BOUNDS, freeFeatKey, parseFeat } from './hunter/feats.ts';
+import type { FeatDef } from './hunter/feats.ts';
+import { parseFeatKey } from './ids.ts';
 import { freeStatusKey, isStatusKey } from './combat/effect-ops.ts';
 import type { LandOp, Op, StatusDef, StatusKey, UseOp } from './combat/effect-ops.ts';
 import type { Ability } from './combat/ability-types.ts';
@@ -25,7 +28,7 @@ import { LIMITS, SCHEMA } from './save.ts';
 import type { Item, Library, Monster, Save, Skill } from './save.ts';
 
 /** In the Workshop's order. */
-export const PACK_KINDS = ['statuses', 'items', 'skills', 'monsters', 'rewards', 'maps'] as const;
+export const PACK_KINDS = ['statuses', 'items', 'skills', 'monsters', 'rewards', 'maps', 'feats'] as const;
 export type PackKind = (typeof PACK_KINDS)[number];
 export type BundleTemplate = Omit<RewardBundle, 'id'>;
 export type MapTemplate = Omit<BattleMap, 'id'>;
@@ -33,11 +36,13 @@ export type MapTemplate = Omit<BattleMap, 'id'>;
 export type Pack = {
   statuses: Record<string, StatusDef>; items: ItemTemplate[]; skills: SkillTemplate[]; rewards: BundleTemplate[]; monsters: MonsterTemplate[];
   maps: MapTemplate[];
+  /** The GM's feats by key (hunter/feats.ts); a key travels, so a hunter keeps its progress on a feat two tables share. */
+  feats: Record<string, FeatDef>;
 };
 /** A pack as it is written to a file or a code. A part with nothing in it is left out. */
 export type PackDoc = {
   schema: typeof SCHEMA; kind: 'library'; savedAt: string;
-  library: { statuses?: Record<string, StatusDef>; items?: ItemTemplate[]; skills?: SkillTemplate[]; rewards?: BundleTemplate[]; maps?: MapTemplate[] };
+  library: { statuses?: Record<string, StatusDef>; items?: ItemTemplate[]; skills?: SkillTemplate[]; rewards?: BundleTemplate[]; maps?: MapTemplate[]; feats?: Record<string, FeatDef> };
   monsters?: MonsterTemplate[];
 };
 /**
@@ -46,17 +51,17 @@ export type PackDoc = {
  */
 export const PACK_CAP: Readonly<Record<PackKind, number>> = {
   statuses: LIMITS.libraryStatuses, items: LIMITS.libraryItems, skills: LIMITS.librarySkills, rewards: LIMITS.libraryRewards, monsters: 200,
-  maps: LIMITS.libraryMaps,
+  maps: LIMITS.libraryMaps, feats: LIMITS.libraryFeats,
 };
 
 type Rec = Record<string, unknown>;
 const isObj = (v: unknown): v is Rec => v !== null && typeof v === 'object' && !Array.isArray(v);
 const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
-const newPack = (): Pack => ({ statuses: {}, items: [], skills: [], rewards: [], monsters: [], maps: [] });
+const newPack = (): Pack => ({ statuses: {}, items: [], skills: [], rewards: [], monsters: [], maps: [], feats: {} });
 const each = <T>(f: (k: PackKind) => T): Record<PackKind, T> => Object.fromEntries(PACK_KINDS.map(k => [k, f(k)])) as Record<PackKind, T>;
 
 /** How many of a pack's entries are in it. */
-export const packCounts = (p: Pack): Record<PackKind, number> => each(k => (k === 'statuses' ? Object.keys(p.statuses).length : p[k].length));
+export const packCounts = (p: Pack): Record<PackKind, number> => each(k => (k === 'statuses' || k === 'feats' ? Object.keys(p[k]).length : p[k].length));
 
 // ── statuses named by an entry ──
 /** Every status key the ops of a status def apply or cure, nested defs included (their triggers, threshold and end too). */
@@ -100,7 +105,9 @@ export function packOf(save: Pick<Save, 'library' | 'monsters'>, savedAt: string
   const items = pick('items', L.items), skills = pick('skills', L.skills), rewards = pick('rewards', L.rewards), monsters = pick('monsters', save.monsters);
   const maps = pick('maps', L.maps);
   const statusKeys = new Set<string>(!wants('statuses') ? [] : id === null ? Object.keys(L.statuses) : Object.hasOwn(L.statuses, id) ? [id] : []);
+  const featKeys = !wants('feats') ? [] : id === null ? Object.keys(L.feats) : Object.hasOwn(L.feats, id) ? [id] : [];
   const named = new Set<string>();
+  for (const k of featKeys) rewardKeys(L.feats[k]!.rewards, named);
   items.forEach(i => itemKeys(i, named)); skills.forEach(k => skillKeys(k, named));
   rewards.forEach(b => rewardKeys(b.rewards, named)); monsters.forEach(m => monsterKeys(m, named)); maps.forEach(m => mapKeys(m, named));
   for (const k of statusKeys) { const d = L.statuses[k]; if (d) defKeys(d, named); }
@@ -119,6 +126,7 @@ export function packOf(save: Pick<Save, 'library' | 'monsters'>, savedAt: string
   if (skills.length) library.skills = skills.map(k => noId(k) as SkillTemplate);
   if (rewards.length) library.rewards = rewards.map(noId);
   if (maps.length) library.maps = maps.map(noId);
+  if (featKeys.length) library.feats = Object.fromEntries(featKeys.map(k => [k, copy(L.feats[k]!)]));
   const doc: PackDoc = { schema: SCHEMA, kind: 'library', savedAt, library };
   if (monsters.length) doc.monsters = monsters.map(noId);
   return doc;
@@ -165,6 +173,12 @@ export function parsePack(v: unknown): PackRead {
   pack.rewards = readList(lib.rewards, PACK_CAP.rewards, parseBundle, counts.rewards);
   pack.monsters = readList(v.monsters, PACK_CAP.monsters, parseMonster, counts.monsters);
   pack.maps = readList(lib.maps, PACK_CAP.maps, x => { const m = parseBattleMap(x, RULES); return m && noId(m); }, counts.maps);
+  for (const [key, raw] of Object.entries(isObj(lib.feats) ? lib.feats : {})) {
+    const c = counts.feats;
+    if (c.kept >= PACK_CAP.feats) { c.over++; continue; }
+    const def = parseFeatKey(key) ? parseFeat(raw) : null;
+    if (def) { pack.feats[key] = def; c.kept++; } else c.unreadable++;
+  }
   return { ok: true, pack, counts };
 }
 
@@ -270,6 +284,26 @@ function mergeNamed<T extends { id: string; name: string }>(have: readonly T[], 
 }
 
 /**
+ * The library's feats after a merge. Replace: a feat overwrites the library's under the same key (a built-in's key holds
+ * an edit of that built-in). Add: a feat whose key the library holds arrives as "Name 2" under a free key slugged from
+ * that name; a new key past the cap is counted full. Its reward names a status a merge renamed by its new key.
+ */
+function mergeFeats(have: Record<string, FeatDef>, incoming: Record<string, FeatDef>, map: ReadonlyMap<string, StatusKey>, mode: MergeMode, count: KindMerge): Record<string, FeatDef> {
+  const out: Record<string, FeatDef> = { ...have };
+  for (const [key, raw] of Object.entries(incoming)) {
+    const def = { ...raw, rewards: rekeyRewards(raw.rewards, map) };
+    const exists = Object.hasOwn(out, key);
+    if (mode === 'replace' && exists) { out[key] = def; count.replaced++; continue; }
+    if (Object.keys(out).length >= PACK_CAP.feats) { count.full++; continue; }
+    if (!exists) { out[key] = def; count.added++; continue; }
+    const names = new Set(Object.values(out).map(d => d.name));
+    const name = suffixed(def.name, FEAT_BOUNDS.name, n => names.has(n));
+    out[freeFeatKey(name, k => Object.hasOwn(out, k))] = { ...def, name }; count.added++; count.renamed++;
+  }
+  return out;
+}
+
+/**
  * `target`'s library and monsters with `pack` merged in, and what was done with each kind. Statuses go first, so an
  * item, skill, bundle or monster that names a pack status Add renamed names it under its new key; one that names a status
  * the pack does not hold is kept as it is (its op may carry its own def). New ids continue `target.seq`. The caps of
@@ -288,8 +322,7 @@ export function mergePack(target: MergeTarget, pack: Pack, mode: MergeMode): Mer
     skills: mergeNamed<Skill>(L.skills, p.skills.map(k => rekeySkill(k, map)), mode, PACK_CAP.skills, 60, id('s'), report.skills),
     rewards: mergeNamed<RewardBundle>(L.rewards, p.rewards.map(b => ({ ...b, rewards: rekeyRewards(b.rewards, map) })), mode, PACK_CAP.rewards, 60, id('rb'), report.rewards),
     maps: mergeNamed<BattleMap>(L.maps, p.maps.map(m => rekeyMap(m, map)), mode, PACK_CAP.maps, 40, () => mapId(id('mp')()), report.maps),
-    // feats travel in packs with unit 5 (notes-1-feats.md 5.3); a merge keeps the library's as they are
-    feats: L.feats,
+    feats: mergeFeats(L.feats, p.feats, map, mode, report.feats),
   };
   const monsters = mergeNamed<Monster>(copy(target.monsters), p.monsters.map(m => rekeyMonster(m, map)), mode, PACK_CAP.monsters, 60, id('m'), report.monsters);
   return { save: { library, monsters, seq }, report };

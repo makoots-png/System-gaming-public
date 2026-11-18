@@ -72,6 +72,8 @@ export type Beside = {
   readonly spent?: Spending | null;
   /** The `shadow` message for a player's hunter whose extraction this command records raised one (shadows.js), or none. */
   readonly risen?: RoomEvent | null;
+  /** The `noted` messages of the players' hunters in a fight this command ended (fight-facts.ts `remoteFacts`), or none. */
+  readonly noted?: readonly RoomEvent[];
 };
 
 /** One write-back of `fx` on this phone's save; a hunter or shadow no longer here, or a write its state refuses, is left. */
@@ -105,6 +107,7 @@ export function fought(save: Save, r: Result, b: Beside, R: Rules): Save | Refus
   if (room && sp?.kind === 'remote') s = atOutbox(box => post(box, room, { kind: 'event', event: sp.event }).box)(s);
   // a shadow that rose for a player's hunter reaches it only through the room: with no room the outcome is not kept either
   if (b.risen) { if (!room) return refuse('no-room'); const ev = b.risen; s = atOutbox(box => post(box, room, { kind: 'event', event: ev }).box)(s); }
+  if (room && b.noted?.length) { const n = b.noted; s = atOutbox(box => n.reduce((x, ev) => post(x, room, { kind: 'event', event: ev }).box, box))(s); }
   if (room && b.totals.length) s = atOutbox(box => b.totals.reduce((x, t) => post(x, room, { kind: 'event', event: t.event }, t.key).box, box))(s);
   const gate = b.links?.gate;
   if (gate) { const g = gateFightStarted(s, gate, b.stamp); if (!isRefused(g)) s = g; }
@@ -112,8 +115,10 @@ export function fought(save: Save, r: Result, b: Beside, R: Rules): Save | Refus
 }
 
 /** `save` with each local hunter row of the ended fight `f` given its facts (`rowFacts`): the gate it came from by name. */
+/** The name of the gate this phone's fight came from, '' for none (a fight fact's `gate`). */
+export const fightGateName = (save: Pick<Save, 'fightRefs' | 'gates'>): string => { const gid = save.fightRefs?.gate ?? null; return gid ? save.gates.find(g => g.id === gid)?.name ?? '' : ''; };
 function foughtFacts(save: Save, f: Ended): Save {
-  const gid = save.fightRefs?.gate ?? null, gate = gid ? save.gates.find(g => g.id === gid)?.name ?? '' : '';
+  const gate = fightGateName(save);
   let s = save;
   for (const row of f.rows) {
     const holder = row.holder;

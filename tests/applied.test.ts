@@ -227,6 +227,14 @@ describe('a reward the GM sends lands whole', () => {
     expect(p.said.at(-1), 'a plain award').toEqual({ title: 'REWARD RECEIVED', body: 'The System has delivered a reward.' });
   });
 
+  test('a fight\'s facts the GM\'s phone noted land whole, once: the second delivery of the same event records nothing', () => {
+    const p = phone(), facts = [{ kind: 'gate', name: 'Goblin Den', rank: 'E', above: 0, toBreak: 3 }, { kind: 'roll', natural: 20 }];
+    p.receive(1, 'noted', { to: ['d-player1:h1'], facts });
+    p.receive(1, 'noted', { to: ['d-player1:h1'], facts });
+    expect(p.hunter.chronicle.inbox).toEqual(facts);
+    expect(p.applied).toEqual([e(1)]);
+  });
+
   test('the same award delivered twice is given once', () => {
     const p = phone();
     p.receive(1, 'award', AWARD);

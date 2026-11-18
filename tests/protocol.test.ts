@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { DOCS, DOC_MAX, EVENTS, EVENT_TYPES, newEvent, onTurn, parseDocName, parseEvent, parseRoomState, parseSheet, SHEET_MAX, speaksFor, useRoute } from '../src/core/protocol.ts';
+import { DOCS, DOC_MAX, NOTED_MAX, EVENTS, EVENT_TYPES, newEvent, onTurn, parseDocName, parseEvent, parseRoomState, parseSheet, SHEET_MAX, speaksFor, useRoute } from '../src/core/protocol.ts';
 import type { EventType, SheetKey } from '../src/core/protocol.ts';
 import { newHunter } from '../src/core/save.ts';
 import { RULES } from '../src/core/rules.ts';
@@ -135,6 +135,10 @@ const VALID: Record<EventType, [Raw, Raw]> = {
     { eid: EID, to: [KEY], run: 'd-p1-run1', gate: 'g12', name: 'Goblin Den', verdict: 'paid', rewards: { xp: 50, gold: 120 } },
     { eid: EID, to: [KEY], run: 'd-p1-run1', gate: 'g12', name: 'Goblin Den', verdict: 'paid', rewards: { xp: 50, gold: 120, points: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] } },
   ],
+  noted: [
+    { eid: EID, to: [KEY], facts: [{ kind: 'gate', name: 'Goblin Den', rank: 'E', above: 0, toBreak: 3 }, { kind: 'junk' }] },
+    { eid: EID, to: [KEY], facts: [{ kind: 'gate', name: 'Goblin Den', rank: 'E', above: 0, toBreak: 3 }] },
+  ],
 };
 const valid = (type: EventType): Raw => copy(VALID[type][0]);
 /** A sheet as a player's phone pushes it (sync.ts `sendSheet`), and what the parser makes of it. */
@@ -145,12 +149,12 @@ const VALID_SHEET: [Raw, Raw] = [
 
 describe('every event type', () => {
   test('the table has an entry for each of the sixteen room messages', () => {
-    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'cast', 'chain', 'coinCall', 'coinLand', 'hp', 'pass', 'quest', 'questUpdate', 'revive', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'status', 'step', 'system', 'used', 'vitals']);
+    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'cast', 'chain', 'coinCall', 'coinLand', 'hp', 'noted', 'pass', 'quest', 'questUpdate', 'revive', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'status', 'step', 'system', 'used', 'vitals']);
   });
 
   test('only the GM may send what changes a hunter, speaks for the System or lands a coin; a player sends rolls, quest progress, uses, steps, casts, passes and coin calls', () => {
     const gmOnly = EVENT_TYPES.filter(t => EVENTS[t].gmOnly).sort();
-    expect(gmOnly).toEqual(['award', 'chain', 'coinLand', 'hp', 'quest', 'revive', 'shadow', 'soloAnswer', 'spent', 'status', 'system', 'vitals']);
+    expect(gmOnly).toEqual(['award', 'chain', 'coinLand', 'hp', 'noted', 'quest', 'revive', 'shadow', 'soloAnswer', 'spent', 'status', 'system', 'vitals']);
   });
 
   test('what a player sends speaks for one hunter: only that hunter\'s phone may send it', () => {
@@ -433,6 +437,12 @@ describe('a solo run and its answer', () => {
     expect(payload('soloAnswer', refused)).toEqual({ eid: EID, to: [KEY], run: 'd-p1-run1', gate: 'g12', name: 'Goblin Den', verdict: 'refused', why: 'taken' });
     expect(payload('soloAnswer', { ...refused, why: 'bored' })).toBeNull();
     expect(payload('soloAnswer', { ...valid('soloAnswer'), rewards: 'lots' })).toBeNull();
+  });
+  test('noted: facts for exactly one hunter, at most NOTED_MAX, each read by the fact parser and a fact that does not read left out', () => {
+    expect(payload('noted', { ...valid('noted'), to: [KEY, OTHER] })).toBeNull();
+    expect(payload('noted', { ...valid('noted'), facts: Array.from({ length: NOTED_MAX + 1 }, () => ({ kind: 'roll', natural: 1 })) })).toBeNull();
+    expect(payload('noted', { ...valid('noted'), facts: 'x' })).toBeNull();
+    expect(payload('noted', { ...valid('noted'), facts: [{ kind: 'kill', monster: 'Wolf' }] })!.facts).toEqual([]);
   });
 });
 
@@ -934,7 +944,7 @@ describe('the fight doc', () => {
 
 describe('the other room docs', () => {
   test('every doc the GM publishes has a parser, and no other name does', () => {
-    expect(Object.keys(DOCS).sort()).toEqual(['codex', 'fight', 'kicked', 'rules', 'solo', 'world']);
+    expect(Object.keys(DOCS).sort()).toEqual(['codex', 'feats', 'fight', 'kicked', 'rules', 'solo', 'world']);
     for (const name of ['nope', '__proto__', 'toString']) expect(parseDocName(name)).toBeNull();
   });
 

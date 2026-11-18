@@ -393,3 +393,6 @@ What a player sees: when a hunter does something the System counts (a fight won 
 - One switch turns every feat off for the whole table: `feats.on` in the rules. Its control on the GM screen comes with the screens; until then the rules editor in the GM view sets it. A player in your room follows your switch.
 - On a player's phone in a room the built-in feats count now; the feats you make reach the players' phones with the room's part, next.
 - A feat of the ideas list whose reward was a skill or item the game does not have yet (Final Notice, Spite) is not in the built-ins.
+- In a room, the feats you make reach your players' phones and count there. What your phone sees of a player's hunter (a fight it ended, a gate you cleared and paid it in) reaches that player's phone and counts too.
+- The Workshop has a Feats section: make a feat (what is counted, how many, in what window, when the player sees it, what it gives), change or turn off a built-in one, and share feats in a pack like the rest. A feat you make is not on the GM view's Make row, which has room for five buttons; it is in the Workshop.
+- A run of one of your gates that a player clears alone counts as a solo run on that player's phone, not as a gate cleared.

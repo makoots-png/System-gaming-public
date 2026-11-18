@@ -8,6 +8,7 @@ import type { Rank } from '../rules.ts';
 import type { Fact, FactOf, FightOutcome } from '../hunter/facts.ts';
 import type { Body } from './effect-ops.ts';
 import type { CombatantId } from './ability-types.ts';
+import type { SheetKey } from '../ids.ts';
 import type { Ended } from './fight-types.ts';
 import { tallyOf, turnKillsMax } from './row-tally.ts';
 import type { RowTally } from './row-tally.ts';
@@ -60,4 +61,18 @@ export function rowFacts(f: Ended, cid: CombatantId, rank: Rank, gate: string): 
     gate, names: namesOf(foes),
   };
   return [fight, ...kills];
+}
+
+/**
+ * The facts of each row of a player's hunter in fight `f` that ended (its holder is a sheet key of the room), for the
+ * room's `noted` message the GM's phone posts in the ending write: `rankOf` reads the hunter's rank from its pushed sheet
+ * (none when its sheet is not on this phone: E). `gate` as `rowFacts`.
+ */
+export function remoteFacts(f: Ended, rankOf: (key: SheetKey) => Rank | null, gate: string): { readonly to: SheetKey; readonly facts: Fact[] }[] {
+  return f.rows.flatMap(b => {
+    const h = b.holder;
+    if (b.kind !== 'hunter' || h?.kind !== 'remote') return [];
+    const facts = rowFacts(f, b.id, rankOf(h.remote) ?? 'E', gate);
+    return facts.length ? [{ to: h.remote, facts }] : [];
+  });
 }

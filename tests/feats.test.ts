@@ -9,7 +9,8 @@ import { record } from '../src/core/hunter/chronicle.ts';
 import type { Fact, FactStamp } from '../src/core/hunter/facts.ts';
 import { NO_COUNT, countStep, markOf, parseCount } from '../src/core/hunter/counts.ts';
 import type { FactCount, Counted } from '../src/core/hunter/counts.ts';
-import { FEAT_STATES, TABLE, featNews, featStep, featsFor, parseFeat, progressLine, startOf } from '../src/core/hunter/feats.ts';
+import { FEAT_STATES, TABLE, featNews, featStep, featsDoc, featsFor, parseFeat, progressLine, startOf } from '../src/core/hunter/feats.ts';
+import { DOCS, DOC_MAX } from '../src/core/protocol.ts';
 import type { FeatBook, FeatDef, FeatKey } from '../src/core/hunter/feats.ts';
 import { noticed } from '../src/core/hunter/noticed.ts';
 import type { NoticeCtx } from '../src/core/hunter/noticed.ts';
@@ -171,5 +172,20 @@ describe('the System notices, in the write of the fact', () => {
     expect(progressLine(b[1]![1], state(s, 'iron-routine')!)).toBe('Dailies: 0 of 1.');
     expect(featNews(me(s).chronicle.feats, [])).toEqual(['early-riser']);
     expect(featNews(me(s).chronicle.feats, ['early-riser'])).toEqual([]);
+  });
+});
+
+describe('the GM\'s feats on the players\' phones (the room\'s feats doc)', () => {
+  test('a library of 100 feats, each with a reward of 20 items, fills the doc within DOC_MAX and names the ones left out; the doc reads back whole', () => {
+    const items = Array.from({ length: 20 }, (_, i) => ({ name: `Potion ${i}`, rar: 'common', type: 'consumable', qty: 1, desc: 'x'.repeat(200) }));
+    const big: FeatDef = parseFeat({ ...BUILT_IN_FEATS[0]![1], rewards: { ...newRewards(), items } })!;
+    const lib = Object.fromEntries(Array.from({ length: 100 }, (_, i) => [`gm-${String(i).padStart(3, '0')}`, { ...big, name: `Feat ${i}` }]));
+    const { doc, left } = featsDoc(lib, DOC_MAX);
+    const size = JSON.stringify(doc).length;
+    console.log(`the feats doc: ${Object.keys(doc.feats).length} feats in ${size} characters, ${left.length} left out`);
+    expect(size).toBeLessThanOrEqual(DOC_MAX);
+    expect(Object.keys(doc.feats).length + left.length).toBe(100);
+    expect(left.length).toBeGreaterThan(0);
+    expect(DOCS.feats(JSON.parse(JSON.stringify(doc)))).toEqual(doc);
   });
 });

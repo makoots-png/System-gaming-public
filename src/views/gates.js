@@ -3,7 +3,7 @@
 import { GATE_STATUSES, GATE_TYPES, SPAWN_TYPES, can, countdown, gateXp as rosterXp, monsterId, newGate, parseGate, xpDue } from '../core/gates/gate.ts';
 import { RANKS } from '../core/save.ts';
 import { cryptoRandom } from '../edge/roll.ts';
-import { clearShares, settleClear, splitAward } from '../core/gates/pay.ts';
+import { clearShares, gateFact, settleClear, splitAward } from '../core/gates/pay.ts';
 import { newRewards, parseRewards } from '../core/rewards.ts';
 import { isRefused } from '../core/save-step.ts';
 import { oneOf } from '../core/one-of.ts';
@@ -127,7 +127,10 @@ export function register(app) {
     const S = api.sync;
     // the player's device assigns its own item ids
     const bare = list => list.map(i => { const c = { ...i }; delete c.id; return c; });
-    const posts = { room: S.room(), events: plan.shares.flatMap(x => (x.payee.kind === 'remote' ? [S.event('award', { to: [x.payee.key], rewards: { ...newRewards(), xp: x.xp, gold: x.gold, items: bare(x.items) } })] : [])).filter(Boolean) };
+    // each player paid also remembers the gate it cleared (pay.ts `gateFact`), in the room's `noted` (feature 1's notes 2.3)
+    const rankOf = key => (rem.find(r => r.key === key) || { data: { rank: 'E' } }).data.rank;
+    const posts = { room: S.room(), events: plan.shares.flatMap(x => (x.payee.kind === 'remote' ? [S.event('award', { to: [x.payee.key], rewards: { ...newRewards(), xp: x.xp, gold: x.gold, items: bare(x.items) } }),
+      S.event('noted', { to: [x.payee.key], facts: [gateFact(g, rankOf(x.payee.key), store.get().world.day)] })] : [])).filter(Boolean) };
     const locals = plan.shares.flatMap(x => (x.payee.kind === 'local' ? [{ hid: x.payee.hid, rewards: parseRewards({ xp: x.xp, gold: x.gold, items: x.items }) ?? newRewards() }] : []));
     const pay = { due: plan.due, xp: share.xp, gold: share.gold, items: items.map(i => i.name), payees: payees.map(p => p.name) };
     const done = { settled: null };

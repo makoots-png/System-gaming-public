@@ -13,6 +13,11 @@ import { exampleSkills, exampleStatuses } from '../core/registry/kit-examples.ts
 import { BUILT_IN_BUNDLES, MOMENT_WORDS } from '../core/registry/bundles.ts';
 import { rewardLines } from '../core/rewards.ts';
 import { bundleMaker } from './reward-editor.js';
+import { featMaker } from './feat-maker.js';
+import { BUILT_IN_FEATS } from '../core/registry/feats.ts';
+import { featsDoc, freeFeatKey, ruleLine } from '../core/hunter/feats.ts';
+import { DOC_MAX } from '../core/protocol.ts';
+import { removeFeat, saveFeat } from '../core/library.ts';
 
 const KINDS = [
   ['status', 'Statuses', 'A status, such as Poisoned or Slowed, has effects and goes on a hunter or a monster.', 'New status'],
@@ -21,9 +26,10 @@ const KINDS = [
   ['monster', 'Monsters', 'A monster of your own: its rank, archetype and kind, its abilities, starting statuses and loot, for the Bestiary and a fight.', 'New monster'],
   ['bundle', 'Bundles', 'A bundle is a reward you saved to give again: XP, gold, items, a title, skills, statuses and boons.', 'New bundle'],
   ['map', 'Maps', 'A battle map: walls, cover, rough ground and pits, the fields that stay on it, where each side starts and the fog. A gate may name one.', 'New map'],
+  ['feat', 'Feats', 'A feat is something a hunter does that the game counts and rewards by itself, such as 100 beasts defeated. Make your own, or change or turn off a built-in one.', 'New feat'],
 ];
 /** Each section's kind in a pack (src/core/pack.ts). */
-const PACK_KIND = { status: 'statuses', item: 'items', skill: 'skills', monster: 'monsters', bundle: 'rewards', map: 'maps' };
+const PACK_KIND = { status: 'statuses', item: 'items', skill: 'skills', monster: 'monsters', bundle: 'rewards', map: 'maps', feat: 'feats' };
 
 /** @param {import('./app.ts').App} app */
 export function register(app) {
@@ -32,6 +38,7 @@ export function register(app) {
   const A = () => app.api;
   const lib = () => store.get().library;
   const isBuiltIn = key => Object.hasOwn(BUILT_IN_STATUSES, key);
+  const isBuiltInFeat = key => BUILT_IN_FEATS.some(([k]) => k === key);
 
   ui.css('workshop', `
 .ws-sec{display:flex;flex-direction:column;gap:8px}
@@ -52,7 +59,7 @@ export function register(app) {
 `);
 
   // ── each kind's rows: [id, name, tag, meta, actions] ──
-  const ACTS = { edit: 'Edit', dup: 'Duplicate', del: 'Delete', reset: 'Reset', give: 'Give to…', award: 'Award…', share: 'Share' };
+  const ACTS = { edit: 'Edit', dup: 'Duplicate', del: 'Delete', reset: 'Reset', give: 'Give to…', award: 'Award…', share: 'Share', off: 'Turn off' };
   function rowsOf(kind) {
     const L = lib();
     if (kind === 'status') {
@@ -63,6 +70,11 @@ export function register(app) {
     if (kind === 'item') return L.items.map(it => [it.id, it.name, it.rar, [it.type, ...A().effects.describeItem(it)].filter(Boolean).join(' · '), ['edit', 'dup', 'del', 'share']]);
     if (kind === 'skill') return L.skills.map(k => [k.id, k.name, k.type, A().skills.lines(k).join(' · '), ['edit', 'dup', 'del', 'give', 'share']]);
     if (kind === 'map') return L.maps.map(m => [m.id, m.name, `${m.w} by ${m.h}`, [m.zones.length ? m.zones.map(z => z.name).join(', ') : '', m.fog ? `fog, sight ${m.sight}` : ''].filter(Boolean).join(' · '), ['edit', 'dup', 'del', 'share']]);
+    if (kind === 'feat') {
+      const left = featsDoc(L.feats, DOC_MAX).left;
+      return Object.entries(L.feats).map(([k, d]) => [k, d.name, isBuiltInFeat(k) ? (d.off ? 'built-in, off' : 'changed built-in') : left.includes(k) ? 'too large to send to players' : '',
+        d.off ? '' : d.desc || ruleLine(d.rule), ['edit', 'dup', isBuiltInFeat(k) ? 'reset' : 'del', 'share']]);
+    }
     if (kind === 'bundle') return A().bundles.list().map(b => [b.id, b.name, '', rewardLines(app.rules(), b.rewards).join(' · '), ['award', 'edit', 'dup', 'del', 'share']]);
     return store.get().monsters.map(m => {
       const s = monsterSheetOf(m, app.rules());
@@ -70,7 +82,7 @@ export function register(app) {
     });
   }
   /** What a row shows beside it: Give to… and Award… stay in sight; Duplicate, Share, Delete and Reset are behind "⋯". */
-  const INLINE = ['give', 'award'], MORE = ['dup', 'share', 'reset', 'del'];
+  const INLINE = ['give', 'award'], MORE = ['dup', 'share', 'off', 'reset', 'del'];
   const rowHtml = ([id, name, tag, meta, acts]) => {
     const inline = acts.filter(a => INLINE.includes(a)), more = MORE.filter(a => acts.includes(a));
     return `<li data-id="${esc(id)}" data-more="${more.join(' ')}"><button type="button" class="ws-row" data-act="edit" aria-label="Edit ${esc(name)}"><span><span class="nm">${esc(name)}</span>${tag ? `<span class="tag">${esc(tag)}</span>` : ''}</span>
@@ -128,10 +140,12 @@ export function register(app) {
   function sectionHtml([kind, title, empty, newLabel]) {
     const rows = rowsOf(kind);
     const built = kind === 'status' ? Object.keys(BUILT_IN_STATUSES).filter(k => !Object.hasOwn(lib().statuses, k)) : [];
+    const builtFeats = kind === 'feat' ? BUILT_IN_FEATS.filter(([k]) => !Object.hasOwn(lib().feats, k)) : [];
     return `<section class="win ws-sec" data-ws="${kind}" aria-label="${esc(title)}"><span class="cb"></span>
       <div class="ws-head"><h2>${esc(title)}</h2><button type="button" class="primary" data-new>${esc(newLabel)}</button></div>
       ${rows.length ? `<ul class="ws-list">${rows.map(rowHtml).join('')}</ul>` : `<p class="ws-empty">${esc(empty)}</p>`}
       ${built.length ? `<details class="ws-fold ws-built"><summary>Built-in statuses (${built.length})</summary><ul class="ws-list">${built.map(k => rowHtml([k, String(BUILT_IN_STATUSES[k].label), '', '', ['edit']])).join('')}</ul></details>` : ''}
+      ${builtFeats.length ? `<details class="ws-fold ws-built"><summary>Built-in feats (${builtFeats.length})</summary><ul class="ws-list">${builtFeats.map(([k, d]) => rowHtml([k, d.name, '', d.desc, ['edit', 'off']])).join('')}</ul></details>` : ''}
       ${examplesHtml(kind)}
       ${kind === 'monster' ? '<button type="button" class="ws-more" data-bestiary>Every monster in the Bestiary</button>' : ''}</section>`;
   }
@@ -155,6 +169,21 @@ export function register(app) {
           : await ui.confirm({ title: `Delete ${def.label || id}?`, body: 'Removes it from the pickers. Statuses already applied keep working.', danger: true, confirmLabel: 'Delete' });
         if (ok) store.apply('library-status-del', atLibrary(l => removeStatus(l, id)));
       }
+      return;
+    }
+    if (kind === 'feat') {
+      if (a === 'new' || a === 'edit') return void await featMaker(app, a === 'new' ? null : id);
+      const d = L.feats[id] || (BUILT_IN_FEATS.find(([k]) => k === id) || [])[1];
+      if (!d) return;
+      if (a === 'off') return void store.apply('library-feat-off', atLibrary(l => saveFeat(l, id, { ...d, off: true })));
+      if (a === 'dup') {
+        const name = copyName(d.name, Object.values(L.feats).map(x => x.name), 60), key = freeFeatKey(name, k => Object.hasOwn(L.feats, k) || isBuiltInFeat(k));
+        const done = store.apply('library-feat-dup', atLibrary(l => saveFeat(l, key, { ...d, name })));
+        if (!done.ok) ui.toast('Workshop', `The library holds ${LIMITS.libraryFeats} feats at most.`, { kind: 'warning' });
+        return;
+      }
+      if (a === 'reset' && await ui.confirm({ title: `Reset ${d.name}?`, body: 'Restores the built-in feat as it shipped. What hunters have counted toward it stays.', danger: true, confirmLabel: 'Reset' })) store.apply('library-feat-reset', atLibrary(l => removeFeat(l, id)));
+      if (a === 'del' && await ui.confirm({ title: `Delete ${d.name}?`, body: 'Nothing counts toward it any more. A hunter who earned it keeps it.', danger: true, confirmLabel: 'Delete' })) store.apply('library-feat-del', atLibrary(l => removeFeat(l, id)));
       return;
     }
     if (kind === 'item') {
