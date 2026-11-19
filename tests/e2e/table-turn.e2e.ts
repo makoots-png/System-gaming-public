@@ -223,8 +223,10 @@ test('the GM ends the fight while the GM\'s phone is offline: the player still g
     await expect(gm.locator('.sys-overlay.show', { hasText: 'Fight over' })).toContainText('Each hunter receives 40 XP.');
     await answerWindow(gm, 'Fight over', 'Award XP to party');
     await expect.poll(() => gm.evaluate(() => hunterApp.store.get().fight)).toBeNull();
-    const waiting = await gm.evaluate(() => (hunterApp.store.get().settings.sync.outbox ?? []).map((e: any) => [e.at, e.letter.event.type, e.letter.event.payload.rewards.xp]));
-    expect(waiting).toEqual([['queued', 'award', 40]]);
+    // beside the award waits the fight's facts for the player's hunter (`noted`, feats unit 4), posted in the same write
+    const waiting = await gm.evaluate(() => (hunterApp.store.get().settings.sync.outbox ?? []).map((e: any) => [e.at, e.letter.event.type, e.letter.event.payload.rewards?.xp ?? null]));
+    expect(waiting.filter(w => w[1] === 'award')).toEqual([['queued', 'award', 40]]);
+    expect(waiting.map(w => w[1]).sort()).toEqual(['award', 'noted']);
     expect(await total()).toBe(before);
   });
 

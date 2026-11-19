@@ -578,8 +578,8 @@ test('A GM\'s edit of Burning to a flat 1d4 is flat at every rank in the rules r
   const d = p.locator('.fg-overlay [role=dialog]');
   await go(p, 'workshop');
   await test.step('the GM edits the built-in Burning: one row of 1d4, by no rank', async () => {
-    await p.locator('#view-workshop .ws-built summary').tap();
-    await p.locator('#view-workshop .ws-built li', { hasText: 'Burning' }).locator('[data-act="edit"]').tap();
+    await p.locator('#view-workshop [data-ws="status"] .ws-built summary').tap();
+    await p.locator('#view-workshop [data-ws="status"] .ws-built li', { hasText: 'Burning' }).locator('[data-act="edit"]').tap();
     await expect(d.locator('[data-row="0"] [data-mode="rank"]')).toHaveAttribute('aria-pressed', 'true');
     await d.locator('[data-row="0"] [data-mode="flat"]').tap();
     await d.locator('[data-row="0"] [data-f="q"]').fill('1d4');

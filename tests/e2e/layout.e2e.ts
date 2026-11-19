@@ -140,8 +140,8 @@ test('at 1280 by 800 the GM\'s top nav is one row holding all thirteen views', a
 test('at 1280 the Workshop shows its entries as cards, two side by side', async ({ device }) => {
   const gm = await laptopGM(device);
   await go(gm, 'workshop');
-  await gm.locator('#view-workshop .ws-built summary').click();
-  const cards = gm.locator('#view-workshop .ws-built .ws-list > li');
+  await gm.locator('#view-workshop [data-ws="status"] .ws-built summary').click();
+  const cards = gm.locator('#view-workshop [data-ws="status"] .ws-built .ws-list > li');
   await expect(cards.nth(1)).toBeVisible();
   const [a, b] = [await cards.nth(0).boundingBox(), await cards.nth(1).boundingBox()];
   expect(a && b && Math.round(a.y) === Math.round(b.y) && b.x >= a.x + a.width).toBe(true);
