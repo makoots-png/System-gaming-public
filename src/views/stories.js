@@ -75,7 +75,9 @@ export function register(app) {
       return isRefused(m) ? m : { ...m, held: m.granted.map(({ hid, g }) => ({ who: { hid }, ...g.fight })) };
     });
     if (isRefused(out)) return out;
-    for (const { hid, g } of out.granted) A().hunter.granted(hid, { ...g, lines: g.window.lines }, { tag: g.window.tag, title: g.window.title, body: g.window.body, kind: 'quest' });
+    // a phone that holds several hunters says whose window each is, as a feat's window does (feats.js)
+    const many = S().hunters.length > 1, whose = (hid, body) => { const n = many ? S().hunters.find(h => h.id === hid)?.name ?? '' : ''; return n ? (body ? `${n}: ${body}` : n) : body; };
+    for (const { hid, g } of out.granted) A().hunter.granted(hid, { ...g, lines: g.window.lines }, { tag: g.window.tag, title: g.window.title, body: whose(hid, g.window.body), kind: 'quest' });
     return out;
   }
   /** What the GM is told after a move: who got the chapter, and who was skipped. */

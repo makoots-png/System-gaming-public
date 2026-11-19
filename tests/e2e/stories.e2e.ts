@@ -18,8 +18,18 @@ const pointsOf = (page: Page, id: string) => page.evaluate(i => hunterApp.store.
 /** How many chapter windows the System keeps in a hunter's record. */
 const chapterFacts = (page: Page, id: string) => page.evaluate(i => hunterApp.store.get().hunters.find((h: any) => h.id === i).chronicle.facts.filter((f: any) => f.kind === 'chapter').length as number, id);
 /** Each of `n` chapter windows titled `title`, one a hunter, answered in turn. */
-async function answerEach(page: Page, title: string | RegExp, n: number): Promise<void> {
-  for (let i = 0; i < n; i++) await answerWindow(page, title);
+async function answerEach(page: Page, title: string, n: number): Promise<void> {
+  // the windows share a title and follow each other at once, so each is answered by the hunter it names
+  const all: string[] = await page.evaluate(() => hunterApp.store.get().hunters.map((h: any) => h.name as string));
+  const seen = new Set<string>();
+  for (let i = 0; i < n; i++) {
+    const win = page.locator('.sys-overlay.show', { hasText: title });
+    await expect(win).toBeVisible();
+    const text = await win.innerText(), who = all.find(name => !seen.has(name) && text.includes(name));
+    expect(who, `window ${i + 1} of ${n} titled ${title} names a hunter not yet answered`).toBeTruthy();
+    seen.add(who!);
+    await answerWindow(page, who!);
+  }
 }
 
 /** The GM alone with the starter campaign, feats off, The wager in the library (for the table when `forTable`), and 5 points more on each hunter. */
