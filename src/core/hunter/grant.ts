@@ -173,7 +173,7 @@ export function grant(save: Save, hid: string, r: Rewards, build: BuildChange | 
     h = l.hunter; done = l.done; said = l.said;
   }
 
-  const lines = grantLines(R, { ...r, xp, gold, points, title: titleNew ? r.title : null, statuses: took }, buildLine);
+  const lines = grantLines(R, { ...r, xp, gold, points, title: titleNew ? r.title : null, statuses: took }, { build: buildLine, level: { from: h0.level, to: h.level } });
   const hunters = save.hunters.map((x, i) => (i === at ? h : x));
   const next = told({ ...save, seq: ids.seq(), hunters }, { at: o.at, cap: R.logCap }, ...said);
   return { save: next, lines, levelup, fight: { statuses: toFight, refill: refillLeft }, done };

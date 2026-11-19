@@ -410,3 +410,20 @@ What a player sees: when a hunter does something the System counts (a fight won 
 - A story runs on the GM device that turned it on; a second GM device in the room does not see it. Say "share stories between my devices" if you will run the GM side on a phone and a PC at once.
 - Two stories to copy ship: The wager and What was spared returns, from the ideas list, their words made plain. Say "none" or name others.
 - A line that shows you when a chapter may be ready (its quest done, sessions passed, a number on the record up) is built last. It never moves the story. Say "drop it" to leave it out.
+
+## Players deal with each other (the design, Nov 19): questions with the default taken
+
+- Should the GM approve every trade before it goes through? Default: no. You see every open offer, can stop any, and the session log records each one.
+- Can a Resurrection Crystal be traded or put in the stash? Default: yes.
+- Other players can see what is in a hunter's bag (not what it wears), so they can ask for an item in a trade. Say "hide bags" to let players only offer, never ask.
+- If a room closes while an offer is still open, the player can take the goods back after a warning that the other player may have them too. Say "never" to keep them put aside for you to sort out.
+- Should the table be told when a secret quest ends? Default: no.
+- Can you put fight loot straight into the party stash? Default: not yet.
+- A private word to the GM is hidden from the other players' phones. The room's server still stores it, and it is kept in your session log.
+
+## Stories, unit 2: the maker and one quest form (Nov 19)
+
+- The Workshop has a Stories section: New story, then a name and a window title is the shortest story (three taps). The wager and What was spared returns are under Stories to copy; Duplicate puts an editable copy in your stories.
+- The GM view's Issue quest is now the same form as the Quests view's: every objective you want, the whole reward (items, a title, statuses, boons, a bundle), and "Due in hours" for any kind of quest. The quest you issued before takes the same taps. The section is longer on a phone.
+- On the Quests view, the GM's new urgent quest takes its due time in hours only; the date and time field is left for an edit and for a player's own quest. Say "keep the date for the GM" to have it back.
+- A level taken away by an XP cost is now said in the reward window ("Loses 1 level: now level 2"), and the quest card and the log say a cost in words ("Loses 40 gold"), as the window does.

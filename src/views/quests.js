@@ -2,7 +2,7 @@
 import { dueAt as dueIn, nextReset } from '../edge/rules.ts';
 import { canDeleteQuest } from '../core/hunter/penalty.ts';
 import { canReissue } from '../core/hunter/job-chain.ts';
-import { mayChangeQuest, questKindsFor, reportsProgress, systemCounts } from '../core/hunter/quest-rights.ts';
+import { mayChangeQuest, reportsProgress, systemCounts } from '../core/hunter/quest-rights.ts';
 import { pickables, pickedRef } from '../core/party.ts';
 import { JOB_NAMES, isJobName } from '../core/registry/jobs.ts';
 import { newRewards, rewardLines as linesOf } from '../core/rewards.ts';
@@ -15,8 +15,8 @@ import { STREAK_BONUS_POINTS, chainStep, finishQuest } from '../core/hunter/gran
 import { sent } from '../core/award.ts';
 import { isRefused } from '../core/save-step.ts';
 import { postNews } from '../core/sync/connection.ts';
+import { KIND_LABEL, questFields, questFieldsCss } from './quest-fields.js';
 
-const KIND_LABEL = { daily: 'Daily', main: 'Main', side: 'Side', job: 'Job Change', urgent: 'Urgent', penalty: 'Penalty' };
 const TABS = [['active', 'Active'], ['daily', 'Daily'], ['done', 'Completed'], ['failed', 'Failed']];
 
 const STYLE = `
@@ -58,20 +58,11 @@ const STYLE = `
 .qa button{flex:1 1 auto}
 .qf{margin-top:12px;display:flex;flex-direction:column;gap:10px}
 .qf[hidden]{display:none}
-.qf-cols,.qf-col{display:contents}
 @media (min-width:1100px){
-  .qf-cols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 18px;align-items:start}
-  .qf-col{display:flex;flex-direction:column;gap:10px;min-width:0}
+  .qf .qfx{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 18px;align-items:start}
   .qf .dlg-actions button{min-width:120px}
 }
 @media (min-width:1500px){.qk,.qc-st,.qf legend,.qb h4,.pq .st{font-size:13px}}
-.qf .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
-.qf textarea{width:100%;resize:vertical;min-height:60px}
-.qf .objrow{display:flex;gap:6px;align-items:flex-end}
-.qf .objrow .grow{flex:1 1 0;min-width:0}
-.qf .objrow .grow input,.qf .objrow .sm input{width:100%;min-width:0}
-.qf .objrow .sm{min-width:0}
-.qf .objrow .sm{flex:0 0 72px}
 .qf fieldset{border:1px solid var(--line);padding:8px 10px;margin:0;min-width:0}
 .qf legend{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--cyan-dim);padding:0 4px}
 .qf .chk{display:inline-flex;align-items:center;gap:6px;margin-right:12px;min-height:40px}
@@ -90,11 +81,10 @@ const STYLE = `
 .pq li.failed{border-color:rgba(255,77,94,.4)}
 .pq .who{color:var(--cyan)}
 .pq .st{font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
-@media (pointer:coarse),(max-width:720px){.qf .chk{min-height:44px}.qf [data-oadd]{margin-top:8px}.qf .objrow+.objrow{margin-top:8px}}
+@media (pointer:coarse),(max-width:720px){.qf .chk{min-height:44px}}
 `;
 
 const iso = () => new Date().toISOString();
-const clampInt = (v, lo, hi) => Math.min(hi, Math.max(lo, Math.trunc(Number(v)) || 0));
 const pad = n => String(n).padStart(2, '0');
 const hms = ms => { const s = Math.max(0, Math.floor(ms / 1000)); return `${pad(Math.floor(s / 3600))}:${pad(Math.floor(s % 3600 / 60))}:${pad(s % 60)}`; };
 
@@ -136,6 +126,7 @@ export function register(app) {
           lines: [], rewards: job ? [`Job: ${job}`] : [] });
       }
     },
+    fields: (box, o) => questFields(app, box, o),
   };
 
   // ── Job Change chain (src/core/hunter/job-chain.ts) ──
@@ -302,6 +293,7 @@ export function register(app) {
 
   // ── view ──
   ui.css('quests', STYLE);
+  questFieldsCss(ui.css);
   let tab = 'active', editId = null;
   /** What each objective's bar showed last, by quest id and objective. */
   const barsWas = new Map();
@@ -355,21 +347,9 @@ export function register(app) {
     f.hidden = false;
     f.reset();
     f.querySelector('[data-ftitle]').textContent = q ? 'Edit quest' : 'New quest';
-    const kindSel = f.kind;
-    kindSel.innerHTML = questKindsFor(gm ? 'gm' : 'player', q || null)
-      .map(k => `<option value="${k}">${esc(KIND_LABEL[k])}</option>`).join('');
-    kindSel.value = q ? q.kind : 'side';
-    kindSel.closest('.field').hidden = !!q && q.kind === 'penalty'; // the System issued it as a Penalty Zone; it stays one
-    f.title.value = q ? q.title : ''; f.desc.value = q ? q.desc : '';
-    editor.set(q ? q.rewards : newRewards());
-    f.penaltyText.value = q ? q.penaltyText || '' : ''; f.dueHours.value = ''; autoTitle = false;
-    f.querySelector('[data-gmonly]').hidden = !gm;
-    f.dueHours.closest('.field').hidden = !!q;
+    questForm = questFields(app, f.querySelector('[data-qfields]'), { id: 'qf', use: q ? 'edit' : 'new', role: role(), initial: q });
+    autoTitle = false;
     f.querySelector('[data-preset]').hidden = !(gm && !q);
-    f.dueAt.value = q && q.dueAt ? toLocalInput(q.dueAt) : '';
-    const box = f.querySelector('[data-objs]'); box.innerHTML = '';
-    (q ? q.objectives : [{ label: '', target: 1, progress: 0 }]).forEach(o => addObjRow(box, o));
-    f.querySelector('[data-rewards]').hidden = !gm;
     const who = f.querySelector('[data-who]');
     who.hidden = !(gm && !q);
     if (gm && !q) {
@@ -379,43 +359,28 @@ export function register(app) {
         + store.get().hunters.map(h => chk(h.id, h.name, h.id === act && !rem.length, ' data-local')).join('')
         + rem.map(r => chk(r.key, `${r.name} (player)`, false)).join('');
     }
-    syncKind(f);
     f.querySelector('.qf-err').textContent = '';
-    f.title.focus();
+    questForm.focus();
     f.scrollIntoView({ block: 'nearest' });
   }
-  const toLocalInput = isoStr => { const d = new Date(isoStr); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
-  function syncKind(f) {
-    f.querySelector('[data-duef]').hidden = f.kind.value !== 'urgent';
-  }
   let autoTitle = false;
-  /** @type {import('../core/api.ts').RewardEditor | null} the quest form's reward editor (app.api.maker.rewards) */
-  let editor = null;
+  /** @type {import('../core/api.ts').QuestFields | null} the quest form's fields (quest-fields.js), drawn again each time it opens */
+  let questForm = null;
   const remotes = () => {
     return app.api.sync.remoteSheets().filter(r => r.data && typeof r.data === 'object')
       .map(r => ({ key: r.key, name: r.data.name }));
   };
-  function addObjRow(box, o = { label: '', target: 1, progress: 0 }) {
-    const r = ui.h(`<div class="objrow" data-progress="${esc(o.progress)}"><span class="grow">${ui.field('Objective', `<input type="text" name="olabel" maxlength="80" value="${esc(o.label)}" autocomplete="off">`)}</span>
-      <span class="sm">${ui.field('Target', `<input type="number" name="otarget" min="1" max="99999" value="${esc(o.target)}">`)}</span>
-      <button type="button" class="danger" data-orm aria-label="Remove objective">&times;</button></div>`);
-    box.appendChild(r);
-  }
   function submitForm(el, f) {
     const gm = app.isGM(), err = f.querySelector('.qf-err');
-    const title = f.title.value.trim();
-    if (!title) { err.textContent = 'Enter a title.'; f.title.focus(); return; }
-    const kind = f.kind.value;
-    const objectives = [...f.querySelectorAll('.objrow')].map(r => ({ label: r.querySelector('[name=olabel]').value.trim(), target: r.querySelector('[name=otarget]').value, progress: r.dataset.progress }));
+    const why = questForm.check();
+    if (why) { err.textContent = why; return; }
+    const v = questForm.value(), { kind, title, objectives } = v;
     const existing = editId && store.active().quests.find(x => x.id === editId);
-    const hrs = Number(f.dueHours.value);
-    const dueAt = kind === 'urgent' && f.dueAt.value ? new Date(f.dueAt.value).toISOString()
-      : (gm && !existing ? dueIn(hrs, new Date()) : null) ?? (kind === 'urgent' || !existing ? null : existing.dueAt);
-    if (gm && editor.blocked()) { err.textContent = 'Finish or remove the reward rows marked in red.'; return; }
-    const rewards = gm ? editor.value() : existing ? existing.rewards : newRewards();
-    if (kind === 'job' && gm && !rewards.job) { err.textContent = 'Choose a job for a job quest.'; editor.ensure('job'); return; }
-    const penaltyText = gm ? f.penaltyText.value.trim().slice(0, 300) : existing ? existing.penaltyText || '' : '';
-    const partial = { kind, title, desc: f.desc.value.trim(), objectives, rewards, dueAt, penaltyText };
+    // a date and time typed for an urgent quest, else hours from now (the GM's new quest), else an edit keeps its due time unless it is urgent now
+    const dueAt = v.dueAt ?? (v.dueHours !== null ? dueIn(v.dueHours, new Date()) : null) ?? (existing && kind !== 'urgent' ? existing.dueAt : null);
+    const rewards = gm ? v.rewards : existing ? existing.rewards : newRewards();
+    const penaltyText = gm ? v.penaltyText.slice(0, 300) : existing ? existing.penaltyText || '' : '';
+    const partial = { kind, title, desc: v.desc, objectives, rewards, dueAt, penaltyText };
     if (existing) {
       store.apply('quest-edit', atHunter(store.active().id, h => editQuest(h, existing.id, { kind, title, desc: partial.desc, objectives, rewards, dueAt, penaltyText }, role())));
     } else {
@@ -502,26 +467,17 @@ export function register(app) {
         <div class="pq" data-party hidden></div>
         <form class="qf" data-form hidden novalidate>
           <h3 class="lbl" data-ftitle>New quest</h3>
-          <div class="qf-cols"><div class="qf-col">
           <div data-preset hidden><button type="button" data-jobpreset>Job Change</button></div>
-          <div class="row">${ui.field('Kind', '<select name="kind"></select>')}${ui.field('Title', '<input type="text" name="title" maxlength="120" autocomplete="off">')}</div>
-          ${ui.field('Description', '<textarea name="desc" maxlength="500" rows="2"></textarea>')}
-          <fieldset><legend>Objectives</legend><div data-objs></div><button type="button" data-oadd>+ Add objective</button></fieldset>
-          <div data-duef hidden>${ui.field('Due (urgent quests fail after this)', '<input type="datetime-local" name="dueAt">')}</div>
-          <div data-gmonly hidden><div class="row">${ui.field('Due in hours (optional)', '<input type="number" name="dueHours" min="0" max="999" step="any" inputmode="decimal">')}</div>
-            ${ui.field('Penalty on failure', '<input type="text" name="penaltyText" maxlength="300" autocomplete="off">')}</div>
-          </div><div class="qf-col">
-          <div data-rewards><fieldset><legend>Rewards</legend><div data-rweditor></div></fieldset></div>
+          <div data-qfields></div>
           <fieldset data-who hidden><legend>Assign to</legend><div class="recips" data-whobox></div></fieldset>
-          </div></div>
           <div class="qf-err" role="alert"></div>
           <div class="dlg-actions"><button type="button" data-cancel>Cancel</button><button type="submit" class="primary">Save quest</button></div>
         </form></section>`;
       const f = el.querySelector('form[data-form]');
-      f.kind.addEventListener('change', () => syncKind(f));
-      editor = app.api.maker.rewards(f.querySelector('[data-rweditor]'), { id: 'qf', floor: true });
-      f.title.addEventListener('input', () => { autoTitle = false; });
-      f.addEventListener('input', e => { if (autoTitle && e.target.matches('[data-rw-job]')) f.title.value = `Job Change: ${e.target.value.trim()}`; });
+      f.addEventListener('input', e => {
+        if (e.target.matches('[name=title]')) autoTitle = false;
+        else if (autoTitle && e.target.matches('[data-rw-job]')) questForm.set({ title: `Job Change: ${e.target.value.trim()}` });
+      });
       f.addEventListener('change', e => { if (e.target.matches('[data-all]')) f.querySelectorAll('[name=to]').forEach(c => { c.checked = e.target.checked; }); });
       f.addEventListener('submit', e => { e.preventDefault(); submitForm(el, f); });
       f.addEventListener('keydown', e => { // D04: Enter in Title or an objective = Save quest; Ctrl/Cmd+Enter anywhere (incl. Description)
@@ -539,9 +495,7 @@ export function register(app) {
         if ('chain' in d) { if (app.isGM()) pickChain(); return; }
         if (d.rchain && app.isGM() && (d.kind === 'reissue' || d.kind === 'abandon')) return sendChain(d.rchain, d.job, d.kind);
         if ('cancel' in d) { editId = null; f.hidden = true; return; }
-        if ('jobpreset' in d) { f.kind.value = 'job'; syncKind(f); autoTitle = true; f.title.value = `Job Change: ${editor.value().job || ''}`; editor.ensure('job'); return; }
-        if ('oadd' in d) return addObjRow(f.querySelector('[data-objs]'));
-        if ('orm' in d) return b.closest('.objrow').remove();
+        if ('jobpreset' in d) { questForm.set({ kind: 'job', title: `Job Change: ${questForm.value().rewards.job || ''}` }); autoTitle = true; questForm.rewards.ensure('job'); return; }
         if (d.edit) { const q = find(d.edit); if (q && mayChange(q)) openForm(el, q); return; }
         if (d.done) { const q = find(d.done); if (q && await ui.confirm({ title: 'Complete quest?', body: q.title, confirmLabel: 'Complete' })) complete(h.id, d.done); return; }
         if (d.fail) { const q = find(d.fail); if (q && await ui.confirm({ title: 'Fail quest?', body: q.title, danger: true, confirmLabel: 'Fail quest' })) fail(h.id, d.fail); return; }

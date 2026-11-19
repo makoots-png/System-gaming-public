@@ -1,6 +1,6 @@
 // workshop.js: the Workshop, the GM's one screen for what the GM has made, a section per kind (statuses, items, skills,
-// monsters, rewards, maps), each listing the library's entries: a tap on an entry edits it, "⋯" holds Duplicate, Share and
-// Delete (Reset for a changed built-in), and a skill keeps Give to…, a reward bundle Award…, beside it. New and Edit open the kind's maker (forge.js, loot.js, skills.js, bestiary.js, map-maker.js, and for a bundle
+// monsters, rewards, maps, feats, stories), each listing the library's entries: a tap on an entry edits it, "⋯" holds Duplicate, Share and
+// Delete (Reset for a changed built-in), and a skill keeps Give to…, a reward bundle Award…, beside it. New and Edit open the kind's maker (forge.js, loot.js, skills.js, bestiary.js, map-maker.js, feat-maker.js, story-maker.js, and for a bundle
 // the reward editor in a maker shell), which saves through the kind's parser; Duplicate and Delete write the library here
 // (a bundle through app.api.bundles; its maker is `bundleMaker` in reward-editor.js, which the GM view's Make row opens too). Share shows one entry's code, and Share custom content at the top shares many
 // (app.api.share, io.js). The Bestiary keeps the full monster list.
@@ -18,6 +18,9 @@ import { BUILT_IN_FEATS } from '../core/registry/feats.ts';
 import { featsDoc, ruleLine } from '../core/hunter/feats.ts';
 import { DOC_MAX } from '../core/protocol.ts';
 import { duplicateFeat, featOff, featOn, removeFeat } from '../core/library.ts';
+import { storyMaker } from './story-maker.js';
+import { EXAMPLE_STORIES } from '../core/registry/stories.ts';
+import { storyMeta } from '../core/story/story.ts';
 
 const KINDS = [
   ['status', 'Statuses', 'A status, such as Poisoned or Slowed, has effects and goes on a hunter or a monster.', 'New status'],
@@ -27,9 +30,12 @@ const KINDS = [
   ['bundle', 'Bundles', 'A bundle is a reward you saved to give again: XP, gold, items, a title, skills, statuses and boons.', 'New bundle'],
   ['map', 'Maps', 'A battle map: walls, cover, rough ground and pits, the fields that stay on it, where each side starts and the fog. A gate may name one.', 'New map'],
   ['feat', 'Feats', 'A feat is something a hunter does that the game counts and rewards by itself, such as 100 beasts defeated. Make your own, or change or turn off a built-in one.', 'New feat'],
+  ['story', 'Stories', 'A story is a set of chapters that you open one at a time over several sessions. A chapter can show the players a window, give a reward and issue a quest. Nothing in a story happens until you open its chapter.', 'New story'],
 ];
+/** The fold of examples to copy under a section: its heading, by kind. */
+const EXAMPLES_LABEL = { status: 'Kit examples to copy', skill: 'Kit examples to copy', bundle: 'Awards for roleplay to copy', story: 'Stories to copy' };
 /** Each section's kind in a pack (src/core/pack.ts). */
-const PACK_KIND = { status: 'statuses', item: 'items', skill: 'skills', monster: 'monsters', bundle: 'rewards', map: 'maps', feat: 'feats' };
+const PACK_KIND = { status: 'statuses', item: 'items', skill: 'skills', monster: 'monsters', bundle: 'rewards', map: 'maps', feat: 'feats', story: 'stories' };
 
 /** @param {import('./app.ts').App} app */
 export function register(app) {
@@ -77,6 +83,7 @@ export function register(app) {
         d.off ? '' : d.desc || ruleLine(d.rule), ['edit', 'dup', isBuiltInFeat(k) ? 'reset' : 'del', d.off ? 'on' : 'off', 'share']]);
     }
     if (kind === 'bundle') return A().bundles.list().map(b => [b.id, b.name, '', rewardLines(app.rules(), b.rewards).join(' · '), ['award', 'edit', 'dup', 'del', 'share']]);
+    if (kind === 'story') return L.stories.map(st => [st.id, st.name, '', storyMeta(st), ['edit', 'dup', 'del', 'share']]);
     return store.get().monsters.map(m => {
       const s = monsterSheetOf(m, app.rules());
       return [m.id, m.name, `${m.rank}-rank ${m.kind} ${m.archetype}`, `HP ${ui.fmt(s.hpMax)} · Armor ${s.armor} · Resist ${s.resist} · Speed ${s.speed}${m.abilities.length ? ` · ${m.abilities.map(a => a.name).join(', ')}` : ''}`, ['edit', 'dup', 'del', 'share']];
@@ -98,16 +105,17 @@ export function register(app) {
     if (kind === 'skill') return exampleSkills(R).map((k, i) => [String(i), k.name, k.type, k.desc]);
     // the GM's awards for roleplay (registry/bundles.ts): given from a hunter's card as they are, copied here to change one
     if (kind === 'bundle') return BUILT_IN_BUNDLES.map(b => [b.key, b.name, MOMENT_WORDS[b.moment], [b.window.title, ...rewardLines(R, b.rewards)].join(' · ')]);
+    if (kind === 'story') return EXAMPLE_STORIES.map(e => [e.key, e.story.name, '', `${storyMeta(e.story)} · ${e.story.when}`]);
     return [];
   }
   function examplesHtml(kind) {
     const rows = examplesOf(kind);
     if (!rows.length) return '';
-    return `<details class="ws-fold ws-ex" data-examples><summary>${kind === 'bundle' ? 'Awards for roleplay to copy' : 'Kit examples to copy'} (${rows.length})</summary><ul class="ws-list">${rows.map(([id, name, tag, meta]) =>
+    return `<details class="ws-fold ws-ex" data-examples><summary>${EXAMPLES_LABEL[kind]} (${rows.length})</summary><ul class="ws-list">${rows.map(([id, name, tag, meta]) =>
       `<li data-id="${esc(id)}" data-example><div class="ws-row"><span><span class="nm">${esc(name)}</span><span class="tag">${esc(tag)}</span></span>${meta ? `<span class="meta">${esc(meta)}</span>` : ''}</div>
         <div class="ws-acts"><button type="button" data-act="example" aria-label="Duplicate ${esc(name)}">Duplicate</button></div></li>`).join('')}</ul></details>`;
   }
-  /** Copies an example into the library: a status under its own key when that is free, a skill or a bundle under its name ("… (copy)" when taken). */
+  /** Copies an example into the library: a status under its own key when that is free, a skill, a bundle or a story under its name ("… (copy)" when taken). */
   function copyExample(kind, id) {
     const R = app.rules(), L = lib();
     if (kind === 'status') {
@@ -122,6 +130,13 @@ export function register(app) {
       const name = namedLike(L.rewards, b.name, null) ? copyName(b.name, L.rewards.map(x => x.name), 60) : b.name;
       const done = A().bundles.save(name, b.rewards, null, b.window);
       ui.toast('Workshop', done.ok ? `${name} is in your bundles.` : `The library holds ${LIMITS.libraryRewards} bundles at most.`, { kind: done.ok ? 'info' : 'warning' });
+      return;
+    }
+    if (kind === 'story') {
+      const e = EXAMPLE_STORIES.find(x => x.key === id); if (!e) return;
+      const name = namedLike(L.stories, e.story.name, null) ? copyName(e.story.name, L.stories.map(x => x.name), 60) : e.story.name;
+      const done = store.apply('library-example-story', atLibrary(l => saveEntry(l, 'stories', { ...e.story, name, id: store.id('st') })));
+      ui.toast('Workshop', done.ok ? `${name} is in your stories.` : `You have ${LIMITS.libraryStories} stories, the most the Workshop holds.`, { kind: done.ok ? 'info' : 'warning' });
       return;
     }
     const k = exampleSkills(R)[Number(id)]; if (!k) return;
@@ -216,6 +231,15 @@ export function register(app) {
         return void A().bundles.save(copyName(b.name, L.rewards.map(x => x.name), 60), b.rewards, null, b.window || null);
       }
       if (a === 'del' && await ui.confirm({ title: 'Delete bundle?', body: `${b.name}. Rewards already given from it stay given.`, danger: true, confirmLabel: 'Delete' })) A().bundles.remove(b.id);
+      return;
+    }
+    if (kind === 'story') {
+      const st = L.stories.find(x => x.id === id);
+      if (a === 'new') return void await storyMaker(app, null);
+      if (!st) return;
+      if (a === 'edit') return void await storyMaker(app, st);
+      if (a === 'dup') return void dup('stories', st, 'st', 60, LIMITS.libraryStories);
+      if (a === 'del' && await ui.confirm({ title: `Delete ${st.name}?`, body: 'Chapters already opened stay with the hunters.', danger: true, confirmLabel: 'Delete' })) store.apply('library-story-del', atLibrary(l => removeEntry(l, 'stories', id)));
       return;
     }
     if (kind === 'map') {

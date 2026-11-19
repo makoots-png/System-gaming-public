@@ -627,3 +627,28 @@ test('on a 360 px phone the feat maker scrolls only up and down, and every contr
   });
   expect(audit).toEqual({ short: [], wide: false, page: 0 });
 });
+
+for (const viewport of [SMALL_PHONE, PHONE]) {
+  test(`at ${viewport.width} px the story maker with four chapters scrolls only up and down, and the open chapter's controls are at least 44 px tall`, async ({ device }) => {
+    const page = (await device('gm', { viewport })).page;
+    await onboardGM(page);
+    await go(page, 'workshop');
+    await page.locator('#view-workshop [data-ws="story"] [data-new]').tap();
+    const d = page.locator('.stm-overlay [role=dialog]');
+    await expect(d.getByRole('heading', { name: 'New story' })).toBeVisible();
+    await d.locator('#stm-name').fill('A story with a long name to fill the line');
+    for (let i = 0; i < 3; i++) await d.getByRole('button', { name: 'Add a chapter' }).tap();
+    await expect(d.locator('.stm-ch')).toHaveCount(4);
+    await d.locator('#stm-wtitle').fill('A WINDOW TITLE LONG ENOUGH TO WRAP AT THIS WIDTH');
+    await d.locator('#stm-hasq').check();
+    await expect(d.locator('[data-stm-q] [name=title]')).toBeVisible();
+    const audit = await d.evaluate(win => {
+      const short = [...win.querySelectorAll('button, input:not([type=checkbox]), select')]
+        .filter(el => (el as HTMLElement).offsetParent !== null && (el as HTMLElement).offsetHeight < 44).map(el => (el.getAttribute('aria-label') || el.textContent || el.id || el.tagName).trim().slice(0, 30));
+      // a text field holds a line longer than its box and scrolls inside it, as every field does: only the layout is checked
+      const wide = [...win.querySelectorAll('*:not(input):not(textarea)')].some(el => (el as HTMLElement).scrollWidth > (el as HTMLElement).clientWidth + 1 && getComputedStyle(el).overflowX !== 'visible' && getComputedStyle(el).overflowX !== 'hidden');
+      return { short, wide, page: document.documentElement.scrollWidth - innerWidth };
+    });
+    expect(audit).toEqual({ short: [], wide: false, page: 0 });
+  });
+}

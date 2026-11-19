@@ -20,6 +20,8 @@ import { parseOp } from '../../src/core/combat/fight-parse.ts';
 import { formulaOf as formulaNow, abilityOf, defaultTicks, recommended } from '../../src/core/registry/ability-kinds.ts';
 import { fightId, reduce } from '../../src/core/combat/fight.ts';
 import type { Command, Ctx, Fight, NewRow } from '../../src/core/combat/fight.ts';
+import { newRewards } from '../../src/core/rewards.ts';
+import { EXAMPLE_STORIES } from '../../src/core/registry/stories.ts';
 
 const combat = (page: Page) => page.locator('#view-combat');
 const statusMaker = (page: Page) => page.locator('.fg-overlay [role=dialog]');
@@ -1271,4 +1273,114 @@ test('a GM whose Save is refused reads why on screen, in the feat maker and in t
     await d.locator('[data-apply]').tap();
     await inView(d, 'Give the status a name.');
   });
+});
+
+const storyMakerWin = (page: Page) => page.locator('.stm-overlay [role=dialog]');
+const libraryStories = (page: Page) => page.evaluate(() => hunterApp.store.get().library.stories.map(({ id: _id, ...s }: any) => s));
+
+test('a GM makes a story of two chapters in the Workshop, the second with a quest, and edits the first', async ({ device }) => {
+  const page = (await device('gm')).page;
+  await onboardGM(page);
+  const d = storyMakerWin(page);
+  await go(page, 'workshop');
+  await workshop(page, 'story').locator('[data-new]').tap();
+  await expect(d.getByRole('heading', { name: 'New story' })).toBeVisible();
+
+  await test.step('the story and its first chapter: a name, when, for chosen hunters, the window, a note and 50 gold', async () => {
+    await d.locator('#stm-name').fill('The debt');
+    await d.locator('#stm-when').fill('A hunter is close to death and alone.');
+    await d.locator('[data-chips="for"] [data-chip="hunters"]').tap();
+    await d.locator('#stm-cname').fill('The offer');
+    await d.locator('#stm-wtitle').fill('The deep has noticed you');
+    await d.locator('#stm-wline').fill('A voice offers strength for a debt.');
+    await d.locator('#stm-note').fill('Ask whether the hunter takes the offer.');
+    await d.locator('[data-stm-rw] [data-n="gold"]').fill('50');
+  });
+
+  await test.step('a second chapter issues an urgent quest due 48 hours after it opens, with 100 XP; the first folds to its line', async () => {
+    await d.locator('[data-chadd]').tap();
+    await expect(d.locator('[data-chopen="0"]')).toHaveText('1. The offer · THE DEEP HAS NOTICED YOU');
+    await d.locator('#stm-wtitle').fill('The deep asks for a gate');
+    await d.locator('#stm-hasq').check();
+    const q = d.locator('[data-stm-q]');
+    await q.locator('[name=kind]').selectOption('urgent');
+    await q.locator('[name=title]').fill('Clear a gate for the Deep');
+    await q.locator('[name=olabel]').fill('Gate cleared');
+    await q.locator('[name=dueHours]').fill('48');
+    await q.locator('#stq-xp').fill('100');
+    await expect(d.locator('.mk-preview li')).toHaveText([
+      'Chapter 1, The offer: THE DEEP HAS NOTICED YOU. +50 gold.',
+      'Chapter 2: THE DEEP ASKS FOR A GATE. Quest: Clear a gate for the Deep.',
+    ]);
+    await d.getByRole('button', { name: 'Save story' }).tap();
+    await expect(d).toHaveCount(0);
+  });
+
+  await test.step('the library holds what the form said, and the Workshop lists it with its chapters and who it is for', async () => {
+    expect(await libraryStories(page)).toEqual([{
+      name: 'The debt', when: 'A hunter is close to death and alone.', for: 'hunters', chapters: [
+        { name: 'The offer', words: { title: 'THE DEEP HAS NOTICED YOU', line: 'A voice offers strength for a debt.' }, rewards: { ...newRewards(), gold: 50 }, quest: null, note: 'Ask whether the hunter takes the offer.' },
+        { name: '', words: { title: 'THE DEEP ASKS FOR A GATE', line: '' }, rewards: newRewards(), note: '',
+          quest: { kind: 'urgent', title: 'Clear a gate for the Deep', desc: '', objectives: [{ label: 'Gate cleared', target: 1, progress: 0 }], rewards: { ...newRewards(), xp: 100 }, dueHours: 48, penaltyText: '' } },
+      ],
+    }]);
+    await expect(workshop(page, 'story').locator('li[data-id]:not([data-example]) .meta')).toHaveText('2 chapters · for chosen hunters');
+  });
+
+  await test.step('Edit opens it as saved; a changed line in chapter 1 is saved, and chapter 2 keeps its quest', async () => {
+    await workshop(page, 'story').getByRole('button', { name: 'Edit The debt' }).tap();
+    await expect(d.getByRole('heading', { name: 'Edit The debt' })).toBeVisible();
+    await expect(d.locator('#stm-cname')).toHaveValue('The offer');
+    await expect(d.locator('[data-stm-rw] [data-n="gold"]')).toHaveValue('50');
+    await d.locator('#stm-wline').fill('A voice offers strength. It wants a debt.');
+    await d.locator('[data-chopen="1"]').tap();
+    await expect(d.locator('[data-stm-q] [name=title]')).toHaveValue('Clear a gate for the Deep');
+    await d.getByRole('button', { name: 'Save story' }).tap();
+    await expect(d).toHaveCount(0);
+    const [s] = await libraryStories(page);
+    expect([s.chapters[0].words.line, s.chapters[1].quest.title, s.chapters[1].quest.dueHours]).toEqual(['A voice offers strength. It wants a debt.', 'Clear a gate for the Deep', 48]);
+  });
+});
+
+test('the shortest story is a name and a window title: three taps from the Workshop', async ({ device }) => {
+  const page = (await device('gm')).page;
+  await onboardGM(page);
+  const d = storyMakerWin(page), t = tapCounter();
+  await go(page, 'workshop');
+
+  await test.step('Save says what is missing: the name, then the chapter\'s window title', async () => {
+    await workshop(page, 'story').locator('[data-new]').tap();
+    await d.getByRole('button', { name: 'Save story' }).tap();
+    await expect(d.locator('.mk-err')).toHaveText('Name the story.');
+    await d.locator('#stm-name').fill('What you owe');
+    await d.getByRole('button', { name: 'Save story' }).tap();
+    await expect(d.locator('.mk-err')).toHaveText('Give chapter 1 a window title.');
+    await d.locator('.mk-actions [data-cancel]').tap();
+    await expect(d).toHaveCount(0);
+  });
+
+  await test.step('New story, the name typed where the cursor is, Window title, Save story', async () => {
+    await t.tap(workshop(page, 'story').locator('[data-new]'));
+    await expect(d.locator('#stm-name')).toBeFocused();
+    await page.keyboard.type('What you owe');
+    await t.tap(d.locator('#stm-wtitle'));
+    await page.keyboard.type('What do you owe');
+    await t.tap(d.getByRole('button', { name: 'Save story' }));
+    await expect(d).toHaveCount(0);
+    expect(t.count).toBe(3);
+    expect(await libraryStories(page)).toEqual([{ name: 'What you owe', when: '', for: 'table', chapters: [{ name: '', words: { title: 'WHAT DO YOU OWE', line: '' }, rewards: newRewards(), quest: null, note: '' }] }]);
+  });
+});
+
+test('a GM copies The wager from the stories to copy and finds it whole in the library', async ({ device }) => {
+  const page = (await device('gm')).page;
+  await onboardGM(page);
+  await go(page, 'workshop');
+  const sec = workshop(page, 'story');
+  await sec.locator('[data-examples] summary').tap();
+  await expect(sec.locator('[data-examples] summary')).toHaveText('Stories to copy (2)');
+  await sec.getByRole('button', { name: 'Duplicate The wager' }).tap();
+  await expect(page.locator('#toasts .toast', { hasText: 'The wager is in your stories.' })).toBeVisible();
+  expect(await libraryStories(page)).toEqual([EXAMPLE_STORIES[0]!.story]);
+  await expect(sec.locator('li[data-id]:not([data-example]) .meta')).toHaveText('4 chapters · for chosen hunters');
 });

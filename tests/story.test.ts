@@ -1,10 +1,11 @@
 // A story as content (src/core/story/story.ts): its one reader, its bounds, its size against the room's body, its words.
 import { describe, expect, test } from 'bun:test';
-import { CHAPTERS_MAX, CHAPTER_MAX, chapterSize, chapterWindow, parseChapterQuest, parseStory, storyLines } from '../src/core/story/story.ts';
+import { CHAPTERS_MAX, CHAPTER_MAX, chapterSize, chapterWindow, parseChapterQuest, parseStory, storyLines, storyMeta } from '../src/core/story/story.ts';
 import type { Chapter, StoryTemplate } from '../src/core/story/story.ts';
 import { grantLines, newRewards } from '../src/core/rewards.ts';
 import { RULES } from '../src/core/rules.ts';
 import { statusKey } from '../src/core/combat/effect-ops.ts';
+import { EXAMPLE_STORIES } from '../src/core/registry/stories.ts';
 
 const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 const many = <T>(n: number, make: (i: number) => T): T[] => Array.from({ length: n }, (_, i) => make(i));
@@ -139,11 +140,49 @@ describe('a story in words', () => {
   test('the maker\'s preview: a line a chapter with its number, name, window title, reward and quest', () => {
     expect(storyLines(DEEP, RULES)).toEqual([
       'Chapter 1, The offer: THE DEEP HAS NOTICED YOU. Title: Owed to the Deep.',
-      'Chapter 2: THE DEEP ASKS FOR A GATE. -1 ability point. Status: Hasted (3 rounds). Quest: Clear a gate for the Deep.',
+      'Chapter 2: THE DEEP ASKS FOR A GATE. Loses 1 ability point. Status: Hasted (3 rounds). Quest: Clear a gate for the Deep.',
     ]);
+  });
+
+  test('the Workshop\'s line says how many chapters and who the story is for', () => {
+    expect([storyMeta(DEEP), storyMeta({ chapters: [OFFER], for: 'table' })]).toEqual(['2 chapters · for chosen hunters', '1 chapter · for the table']);
   });
 
   test('a title that ends in its own question or exclamation mark takes no full stop after it', () => {
     expect(storyLines({ chapters: [{ ...OFFER, name: '', words: { title: 'WHAT DO YOU OWE?', line: '' }, rewards: newRewards() }] }, RULES)).toEqual(['Chapter 1: WHAT DO YOU OWE?']);
+  });
+});
+
+describe('the stories to copy (src/core/registry/stories.ts)', () => {
+  test('there are two, each with a key of its own', () => {
+    expect(EXAMPLE_STORIES.map(e => e.key)).toEqual(['wager', 'spared']);
+  });
+
+  for (const { key, story } of EXAMPLE_STORIES) {
+    test(`${story.name} comes back whole through the one reader`, () => {
+      expect(parseStory(copy(story))).toEqual(story);
+    });
+
+    test(`${story.name}: every chapter can be sent to a player's phone`, () => {
+      for (const c of story.chapters) expect(chapterSize(c)).toBeLessThan(CHAPTER_MAX);
+    });
+
+    test(`${story.name}: no line has an em dash, an exclamation mark or a semicolon (${key})`, () => {
+      const lines = [story.name, story.when, ...story.chapters.flatMap(c => [c.name, c.words.title, c.words.line, c.note, ...(c.quest ? [c.quest.title, c.quest.desc, ...c.quest.objectives.map(o => o.label)] : []),
+        ...(c.rewards.title ? [c.rewards.title.name, c.rewards.title.desc] : []), ...c.rewards.boons.flatMap(b => [b.name, b.text])])];
+      for (const l of lines) expect(l).not.toMatch(/[—!;]/);
+    });
+  }
+
+  test('each runs on today\'s game: a cost, a branch as two chapters, a quest, a boon and a title', () => {
+    const [wager, spared] = EXAMPLE_STORIES.map(e => e.story);
+    expect(wager!.chapters.map(c => c.rewards.points)).toEqual([0, -1, 5, 0]);
+    expect(storyLines(spared!, RULES)).toEqual([
+      'Chapter 1, Let go: IT WILL REMEMBER YOUR FACE.',
+      'Chapter 2, Rumor: SOMETHING YOU SPARED HAS BEEN SEEN. Quest: Find it.',
+      'Chapter 3, The meeting: IT IS HERE.',
+      'Chapter 4, An ally: IT CHOSE YOUR SIDE. Boon: A Monster\'s Favor.',
+      'Chapter 5, A second mercy: YOU LET IT GO TWICE. Title: The Spared One\'s Shadow.',
+    ]);
   });
 });

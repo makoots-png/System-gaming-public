@@ -324,6 +324,20 @@ async function gmMakers(g: Phone) {
     await press(g, d.locator('[data-cancel]'));
     await d.waitFor({ state: 'detached' });
   });
+  await step(g, 2, 'stories and the story maker', async () => {
+    const stories = workshop('story'), d = page.locator('.stm-overlay [role=dialog]');
+    await go(g, 'workshop');
+    await press(g, stories.locator('[data-examples] summary'));
+    await press(g, stories.locator('[data-examples] [data-act="example"]').first());
+    await show(stories, 'start');
+    await shot(g, 'workshop-stories');
+    await press(g, stories.locator('li[data-id] .ws-row').first());
+    await press(g, d.locator('[data-chopen="1"]'));
+    await show(d.locator('[data-chopen="1"]'), 'start');
+    await shot(g, 'maker-story-chapter');
+    await press(g, d.locator('.mk-actions [data-cancel]'));
+    await d.waitFor({ state: 'detached' });
+  });
 }
 
 async function gmAward(g: Phone, p: Phone | null) {

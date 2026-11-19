@@ -158,14 +158,14 @@ describe('a title by name', () => {
 });
 
 describe('a reward in words', () => {
-  test('one line a part, signed amounts, a status by its label and how long it lasts', () => {
+  test('one line a part, a gain with a plus and a cost in words, a status by its label and how long it lasts', () => {
     expect(rewardLines(RULES, FULL)).toEqual([
-      '+250 XP', '+2 ability points', '-40 gold', 'Item: Health Potion ×2', 'Title: Gatebreaker', 'Job: Ranger', 'Skill: Slash',
+      '+250 XP', '+2 ability points', 'Loses 40 gold', 'Item: Health Potion ×2', 'Title: Gatebreaker', 'Job: Ranger', 'Skill: Slash',
       'Status: Hasted (3 rounds)', 'Status: Blessed', 'Boon: Free resurrection',
     ]);
   });
   test('the reward window says what was acquired, with a build change after the items', () => {
-    expect(grantLines(RULES, { ...FULL, xp: 1500 }, 'Path: Vanguard')).toEqual([
+    expect(grantLines(RULES, { ...FULL, xp: 1500 }, { build: 'Path: Vanguard' })).toEqual([
       '+1,500 XP', 'Loses 40 gold', '+2 ability points', 'Item acquired: Health Potion ×2', 'Path: Vanguard', 'Title acquired: Gatebreaker', 'Job: Ranger',
       'Skill acquired: Slash', 'Status: Hasted (3 rounds)', 'Status: Blessed', 'Boon: Free resurrection',
     ]);
@@ -284,14 +284,26 @@ describe('a cost a reward takes away (a story\'s chapter, stories ruling 2)', ()
     expect(g.lines).toEqual([]);
   });
 
-  test('XP taken below the level\'s start takes the level away, and no level-up is told', () => {
+  test('XP taken below the level\'s start takes the level away, the window says so after the XP, and no level-up is told', () => {
     // level 2 costs 200 XP (xpPerLevel 100 times the level): level 3 with 10 XP, less 50, is level 2 with 160
     const g = given(holding({ level: 3, xp: 10, gold: 0, points: 0 }), { ...newRewards(), xp: -50 });
-    expect([after(g).level, after(g).xp, g.levelup, g.lines]).toEqual([2, 160, null, ['Loses 50 XP']]);
+    expect([after(g).level, after(g).xp, g.levelup, g.lines]).toEqual([2, 160, null, ['Loses 50 XP', 'Loses 1 level: now level 2']]);
   });
 
-  test('the reward editor\'s preview says a cost in the same words', () => {
+  test('XP taken past two levels\' starts says both levels', () => {
+    // level 3 with 10 XP holds 100 + 200 + 10 = 310 XP since level 1; less 250 is 60, level 1 with 60
+    const g = given(holding({ level: 3, xp: 10, gold: 0, points: 0 }), { ...newRewards(), xp: -250 });
+    expect([after(g).level, after(g).xp, g.lines]).toEqual([1, 60, ['Loses 250 XP', 'Loses 2 levels: now level 1']]);
+  });
+
+  test('XP taken inside the level keeps the level, and the window has no level line', () => {
+    const g = given(holding({ level: 3, xp: 80, gold: 0, points: 0 }), { ...newRewards(), xp: -50 });
+    expect([after(g).level, after(g).xp, g.lines]).toEqual([3, 30, ['Loses 50 XP']]);
+  });
+
+  test('the reward editor\'s preview, the quest card and the log say a cost in the same words', () => {
     expect(grantLines(RULES, { ...cost, points: -2 })).toEqual(['Loses 50 XP', 'Loses 40 gold', 'Loses 2 ability points']);
+    expect(rewardLines(RULES, { ...cost, points: -2 })).toEqual(['Loses 50 XP', 'Loses 2 ability points', 'Loses 40 gold']);
   });
 });
 

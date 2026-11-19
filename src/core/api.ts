@@ -9,7 +9,7 @@ import type { End, Op, SheetStatus, Source, StackRule, StatusDef } from './comba
 import type { Trigger } from './combat/triggers.ts';
 import type { LootDrop } from './gates/spawn.ts';
 import type { BuildChange, DocName, DocOf, EventBody, EventId, EventType, QuestOffer, RoomCode, RoomEvent, UsedWhat } from './protocol.ts';
-import type { Hunter, Item, Monster, Objective, Rank, Rewards, Save, Skill, Slot } from './save.ts';
+import type { Hunter, Item, Monster, Objective, QuestKind, Rank, Rewards, Save, Skill, Slot } from './save.ts';
 import type { Stats } from './stats.ts';
 import type { Refused, Step } from './save-step.ts';
 import type { Granted, StepDone } from './hunter/grant.ts';
@@ -477,6 +477,31 @@ export type QuestsApi = {
   complete(hid: string, qid: string): Promise<boolean>;
   /** The windows of the Job Change steps a step on the save completed in the same write (grant.ts `stepsReached`). */
   stepsDone(hid: string, done: readonly StepDone[]): void;
+  /**
+   * The one quest form in `box` (src/views/quest-fields.js), for a quest issued now (`new`), a quest a hunter holds
+   * (`edit`, `initial`) or a chapter's quest written ahead (`chapter`), on the GM's or a player's phone (`role`). `id`
+   * names its reward editor's number fields.
+   */
+  fields(box: HTMLElement, o: { id: string; use: 'new' | 'edit' | 'chapter'; role: 'gm' | 'player'; initial?: unknown }): QuestFields;
+};
+/** A quest as the quest form holds it, the draft `questOf` and `parseChapterQuest` read. */
+export type QuestFormDraft = {
+  kind: QuestKind; title: string; desc: string; objectives: Objective[]; rewards: Rewards; penaltyText: string;
+  /** Hours from when it is issued, or from when its chapter opens (the GM's new quest, a chapter's); null for none. */
+  dueHours: number | null;
+  /** The date and time an urgent quest is due (an edit, a player's own quest); null for none. */
+  dueAt: string | null;
+};
+/** What the quest form holds. */
+export type QuestFields = {
+  value(): QuestFormDraft;
+  /** The first thing that stops a save, in words, with the cursor put there; '' when nothing does. */
+  check(): string;
+  /** Fills the fields `draft` names and leaves the rest. */
+  set(draft: Partial<QuestFormDraft>): void;
+  /** Its reward editor: the GM's form only. */
+  rewards: RewardEditor | null;
+  focus(): void;
 };
 
 /** A use as a hunter's phone reports it: what it was, its text and whom it is for. A use in a fight is a `cast`. */

@@ -10,7 +10,7 @@ import { isEmptyReward, newRewards, rewardLines } from '../core/rewards.ts';
 import { GIVE_HOLD_MS, SHELF_WORDS, readRecent, recentGives } from '../core/registry/bundles.ts';
 import { giveShelf } from './give-shelf.js';
 import { LOG_KINDS } from '../core/save.ts';
-import { GM_QUEST_KINDS } from '../core/hunter/quest-rights.ts';
+import { cleanObjectives } from '../core/hunter/quests.ts';
 import { pickables, sheetName } from '../core/party.ts';
 import { tapWords } from '../core/sync/taps.ts';
 import { resetRuleNumbers, resetTable, saveRuleNumbers, writeTable } from '../core/rules.ts';
@@ -202,7 +202,6 @@ export function register(app) {
     const isOpen = open[id] ?? openDefault;
     return `<section class="win gm-sec" data-sec="${id}"><span class="cb"></span><h2><button type="button" class="gm-tog" data-tog="${id}" aria-expanded="${isOpen}" aria-controls="gm-b-${id}"><span class="ar" aria-hidden="true">${isOpen ? '▾' : '▸'}</span>${esc(title)}</button>${hsum ? `<span class="gm-hsum" id="gm-hsum-${id}"></span>` : ''}</h2><div class="gm-body" id="gm-b-${id}" ${isOpen ? '' : 'hidden'}>${body}</div></section>`;
   };
-  const num_ = (id, label, ph = '0') => ui.field(label, `<input type="number" id="${id}" inputmode="numeric" step="1" placeholder="${ph}">`);
   const txt_ = (id, label, extra = '') => ui.field(label, `<input type="text" id="${id}" autocomplete="off" ${extra}>`);
   const sel_ = (id, label, opts, extra = '') => ui.field(label, `<select id="${id}" ${extra}>${opts}</select>`);
   const opt = (v, l = v) => `<option value="${esc(v)}">${esc(l)}</option>`;
@@ -367,6 +366,8 @@ export function register(app) {
   let editor = null;
   /** A reward the Award form opens with (a fight's loot, a bundle from the Workshop), filled in when the GM view is next drawn. */
   let pendingAward = null;
+  /** @type {import('../core/api.ts').QuestFields | null} Issue quest's fields: the one quest form (quest-fields.js) */
+  let questForm = null;
   app.api.award = { open(rewards, bundleId, drop) { pendingAward = { rewards, bundleId, drop: !!drop }; app.go('gm'); } };
   const awardSec = () => root.querySelector('.gm-sec[data-sec="award"]');
   function openPendingAward() {
@@ -473,17 +474,14 @@ export function register(app) {
 
   // ── issue quest ──
   function doIssue() {
-    const title = $('#gm-q-title').value.trim();
-    if (!title) return say('#gm-q-msg', 'Enter a quest title.', true);
+    const why = questForm.check();
+    if (why) return say('#gm-q-msg', why, true);
     const { local, remote } = picked();
     if (!local.length && !remote.length) return say('#gm-q-msg', 'Select at least one hunter (Award section).', true);
-    const kind = $('#gm-q-kind').value, hours = clamp(int($('#gm-q-due').value), 0, 24 * 30);
-    const label = $('#gm-q-obj').value.trim().slice(0, 100);
-    const partial = { kind, title: title.slice(0, 120), desc: $('#gm-q-desc').value.trim().slice(0, 500), from: /** @type {const} */ ('gm'),
-      objectives: label ? [{ label, target: clamp(int($('#gm-q-target').value) || 1, 1, 100000), progress: 0 }] : [],
-      rewards: { ...newRewards(), xp: int($('#gm-q-xp').value), gold: int($('#gm-q-gold').value), points: int($('#gm-q-pts').value) } };
-    const pen = $('#gm-q-pen').value.trim().slice(0, 300); if (pen) partial.penaltyText = pen;
-    const due = kind === 'urgent' ? dueIn(hours, new Date()) : null; if (due) partial.dueAt = due;
+    const v = questForm.value();
+    const partial = { kind: v.kind, title: v.title.slice(0, 120), desc: v.desc.slice(0, 500), from: /** @type {const} */ ('gm'),
+      objectives: cleanObjectives(v.objectives).map(o => ({ ...o, progress: 0 })), rewards: v.rewards, penaltyText: v.penaltyText.slice(0, 300),
+      dueAt: v.dueHours !== null ? dueIn(v.dueHours, new Date()) : null };
     let msg = '';
     if (local.length) { const ids = A().quests.issue(local, partial); msg = Array.isArray(ids) && ids.length ? `Issued to ${local.length} hunter${local.length === 1 ? '' : 's'}.` : 'The quest module did not accept the quest yet.'; }
     if (remote.length) {
@@ -552,8 +550,9 @@ export function register(app) {
     const out = $('#gm-t-out'); out.textContent = text; out.classList.remove('bad');
     $('#gm-t-use').hidden = !fill; $('#gm-t-use').onclick = () => {
       if (!fill) return;
-      $('#gm-q-title').value = fill.title; $('#gm-q-desc').value = fill.desc; $('#gm-q-xp').value = fill.xp || ''; $('#gm-q-kind').value = 'urgent'; $('#gm-q-due').value = $('#gm-q-due').value || '24';
-      open.quest = true; applyOpen(); say('#gm-q-msg', 'Filled from the roll table. Select hunters and issue it.'); $('#gm-q-title').scrollIntoView({ block: 'center' });
+      const was = questForm.value();
+      questForm.set({ kind: 'urgent', title: fill.title, desc: fill.desc, rewards: { ...was.rewards, xp: fill.xp || 0 }, dueHours: was.dueHours ?? 24 });
+      open.quest = true; applyOpen(); say('#gm-q-msg', 'Filled from the roll table. Select hunters and issue it.'); $('#gm-qf [name=title]').scrollIntoView({ block: 'center' });
     };
     addLog('system', `Roll: ${t.label}`, text);
   }
@@ -674,11 +673,7 @@ export function register(app) {
           <div class="gm-msg" id="gm-b-msg" role="status"></div>`, false, true),
         section('quest', 'Issue quest', `
           <p class="empty">Issues to the hunters selected in Award: <span id="gm-sel-sum-q"></span></p>
-          <div class="gm-grid">${txt_('gm-q-title', 'Quest title', 'maxlength="120"')}${sel_('gm-q-kind', 'Kind', GM_QUEST_KINDS.map(k => opt(k)).join(''))}
-            <div class="wide">${txt_('gm-q-desc', 'Description', 'maxlength="500"')}</div>
-            ${txt_('gm-q-obj', 'Objective (optional)', 'maxlength="100"')}${num_('gm-q-target', 'Objective target', '1')}
-            ${num_('gm-q-xp', 'XP reward')}${num_('gm-q-gold', 'Gold reward')}${num_('gm-q-pts', 'Point reward')}${num_('gm-q-due', 'Urgent: hours to complete', '24')}
-            <div class="wide">${txt_('gm-q-pen', 'Penalty on failure', 'maxlength="300" placeholder="e.g. Lose 50 gold"')}</div></div>
+          <div id="gm-qf"></div>
           <div class="gm-row"><button type="button" class="primary" id="gm-q-go">Issue quest</button></div>
           <div class="gm-msg" id="gm-q-msg" role="status"></div>`, false, true),
         section('gate', 'Gates and world day', `
@@ -735,6 +730,7 @@ export function register(app) {
 
       // static fills
       editor = A().maker.rewards($('#gm-rw'), { id: 'gm' });
+      questForm = A().quests.fields($('#gm-qf'), { id: 'gmq', use: 'new', role: 'gm' });
       $('#gm-r-text').value = rulesJson();
       renderPreview();
 

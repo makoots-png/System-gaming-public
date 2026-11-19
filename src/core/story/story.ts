@@ -150,3 +150,7 @@ export function storyLines(story: Pick<Story, 'chapters'>, R: RewardRules): stri
     ...rewardLines(R, c.rewards).map(sentence), ...(c.quest ? [sentence(`Quest: ${c.quest.title}`)] : []),
   ].join(' '));
 }
+
+/** A story's line in the Workshop: how many chapters, and who it is for. "4 chapters · for chosen hunters". */
+export const storyMeta = (story: Pick<Story, 'chapters' | 'for'>): string =>
+  `${story.chapters.length} chapter${story.chapters.length === 1 ? '' : 's'} · ${story.for === 'table' ? 'for the table' : 'for chosen hunters'}`;

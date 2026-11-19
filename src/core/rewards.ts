@@ -170,16 +170,21 @@ export function parseBundle(v: unknown): Omit<RewardBundle, 'id'> | null {
 export const isEmptyReward = (r: Rewards): boolean =>
   !r.xp && !r.points && !r.gold && !r.items.length && !r.title && !r.job && !r.skills.length && !r.statuses.length && !r.boons.length;
 
-const signed = (n: number): string => `${n < 0 ? '-' : '+'}${Math.abs(n).toLocaleString('en-US')}`;
+/**
+ * An amount of XP, gold or points in words, the one rule for how a reward says a gain and a cost, on the quest card, in
+ * the log and in the window: "+50 XP", "Loses 40 gold", "Loses 1 ability point".
+ */
+const amount = (n: number, what: string): string => `${n < 0 ? 'Loses ' : '+'}${Math.abs(n).toLocaleString('en-US')} ${what}`;
+const points = (n: number): string => `ability point${Math.abs(n) === 1 ? '' : 's'}`;
 const rounds = (n: number | null): string => (n ? ` (${n} round${n === 1 ? '' : 's'})` : '');
 /** A reward status's label: its own def's, else the rules' status of its key, else the key. */
 const labelOf = (R: RewardRules, s: RewardStatus): string => s.def?.label ?? R.conditions[s.key]?.label ?? s.key;
-/** A reward in words, one line a part: "+50 XP", "Item: Potion ×2", "Title: Wolf Slayer", "Status: Hasted (3 rounds)", "Boon: ...". */
+/** A reward in words, one line a part: "+50 XP", "Loses 40 gold", "Item: Potion ×2", "Title: Wolf Slayer", "Status: Hasted (3 rounds)", "Boon: ...". */
 export function rewardLines(R: RewardRules, r: Rewards): string[] {
   const out: string[] = [];
-  if (r.xp) out.push(`${signed(r.xp)} XP`);
-  if (r.points) out.push(`${signed(r.points)} ability point${Math.abs(r.points) === 1 ? '' : 's'}`);
-  if (r.gold) out.push(`${signed(r.gold)} gold`);
+  if (r.xp) out.push(amount(r.xp, 'XP'));
+  if (r.points) out.push(amount(r.points, points(r.points)));
+  if (r.gold) out.push(amount(r.gold, 'gold'));
   for (const i of r.items) out.push(`Item: ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`);
   if (r.title) out.push(`Title: ${r.title.name}`);
   if (r.job) out.push(`Job: ${r.job}`);
@@ -189,20 +194,25 @@ export function rewardLines(R: RewardRules, r: Rewards): string[] {
   return out;
 }
 
+/** What a grant did beside the reward's own parts: a build change's line, and the level before and after its XP. */
+export type GrantMore = { readonly build?: string; readonly level?: { readonly from: number; readonly to: number } };
+
 /**
  * The reward window's lines, as the player sees them when a reward arrives (`applyRewards` in src/views/hunter.js shows
  * them; the reward editor's preview draws them): "+100 XP", "+50 gold", "Loses 1 ability point", "Item acquired: Potion
- * ×2", "Title acquired: ...", "Skill acquired: ...", "Status: Hasted (3 rounds)", "Boon: ...". `build` is a build
- * change's line, shown after the items.
+ * ×2", "Title acquired: ...", "Skill acquired: ...", "Status: Hasted (3 rounds)", "Boon: ...". `more.build` is a build
+ * change's line, shown after the items. A level lost to an XP cost is said after the XP ("Loses 1 level: now level 2");
+ * a level gained has a window of its own (`levelup`).
  */
-export function grantLines(R: RewardRules, r: Rewards, build = ''): string[] {
+export function grantLines(R: RewardRules, r: Rewards, more: GrantMore = {}): string[] {
   const out: string[] = [];
-  const amount = (n: number, what: string): string => `${n < 0 ? 'Loses ' : '+'}${Math.abs(n).toLocaleString('en-US')} ${what}`;
   if (r.xp) out.push(amount(r.xp, 'XP'));
+  const lost = more.level ? more.level.from - more.level.to : 0;
+  if (more.level && lost > 0) out.push(`Loses ${lost} level${lost === 1 ? '' : 's'}: now level ${more.level.to}`);
   if (r.gold) out.push(amount(r.gold, 'gold'));
-  if (r.points) out.push(amount(r.points, `ability point${Math.abs(r.points) === 1 ? '' : 's'}`));
+  if (r.points) out.push(amount(r.points, points(r.points)));
   for (const i of r.items) out.push(`Item acquired: ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`);
-  if (build) out.push(build);
+  if (more.build) out.push(more.build);
   if (r.title) out.push(`Title acquired: ${r.title.name}`);
   if (r.job) out.push(`Job: ${r.job}`);
   for (const s of r.skills) out.push(`Skill acquired: ${s.name}`);
