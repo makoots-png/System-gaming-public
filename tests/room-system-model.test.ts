@@ -405,5 +405,8 @@ describe('the room under every interleaving explored', () => {
     }
     await dfs(LIVE);
     console.log(`room model: ${sequences} sequences of ${DEPTH} moves from a live room, ${Math.round(performance.now() - t0)} ms`);
-  }, 60_000);
+    // The walk is all computing and asserts no time: 16,386 sequences take 42 to 45 s alone on the lead's four-core box
+    // (Nov 19, the same before and after feats unit 4) and passed 60 s inside the whole run, where the walk going on
+    // after its timeout then failed tests of the files after it. The limit is only how long bun lets it compute.
+  }, 180_000);
 });
