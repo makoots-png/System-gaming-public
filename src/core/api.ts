@@ -41,7 +41,7 @@ import type { DiceRoll, LevelUp } from './events.ts';
 import type { Thing } from './detail.ts';
 import type { Coin, RollId, CoinSide } from './coin.ts';
 import type { Check, RollKind } from './roll.ts';
-import type { DeviceId, HunterId, HunterRef, MonsterId, RollEntryId, SheetKey } from './ids.ts';
+import type { DeviceId, HunterId, HunterRef, MonsterId, RollEntryId, SheetKey, StoryId } from './ids.ts';
 
 /** A System window's text (the options `ui.system` takes that a reward window passes on). */
 export type RewardWindow = { tag?: string; title?: string; kind?: string; body?: string | undefined; lines?: string[] | undefined };
@@ -704,6 +704,14 @@ export type MapApi = {
   mount(el: HTMLElement, source: MapSource): MapView;
 };
 
+/** The GM view's Stories section and its turn-on window (src/views/stories.js, notes-1-stories.md section 5). */
+export type StoriesApi = {
+  /** Draws the Stories section's body in `box` from the save; answers its head summary ("2 running", or ''). */
+  paint(box: HTMLElement): string;
+  /** Opens the turn-on window at story `id` (the Workshop's Turn on…), or at the list of stories when null. */
+  turnOn(id: StoryId | null): Promise<void>;
+};
+
 /** Every `app.api` name and the type of what its module registers. */
 export type AppApi = {
   award: AwardApi;
@@ -731,6 +739,7 @@ export type AppApi = {
   shadows: ShadowsApi;
   share: ShareApi;
   skills: SkillsApi;
+  stories: StoriesApi;
   sync: SyncApi;
   uses: UsesApi;
 };

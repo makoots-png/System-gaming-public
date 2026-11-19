@@ -132,7 +132,7 @@ export function progressLine(def: FeatDef, s: FeatState): string {
 const KIND_WORDS: { readonly [K in keyof typeof FACT_FIELDS]: string } = {
   fight: 'Fights', kill: 'Monsters defeated', solo: 'Solo runs', gate: 'Gates cleared', closed: 'Personal gates closed', quest: 'Quests', daily: 'Dailies',
   streakLost: 'Streaks lost', penaltyIssued: 'Penalties', penaltyLifted: 'Penalties lifted', life: 'Life events', level: 'Levels', rank: 'Ranks', title: 'Titles',
-  feat: 'Feats', given: 'Awards', roll: 'Rolls', coin: 'Coin calls', shop: 'Trades', rest: 'Rests', used: 'Consumables used', shadow: 'Shadows',
+  feat: 'Feats', given: 'Awards', chapter: 'Story chapters', roll: 'Rolls', coin: 'Coin calls', shop: 'Trades', rest: 'Rests', used: 'Consumables used', shadow: 'Shadows',
 };
 /** The window of a feat earned: its title, the line under it, the reward's lines. */
 export const featWindow = (def: FeatDef, R: RewardRules): { readonly title: string; readonly body: string; readonly lines: string[] } =>

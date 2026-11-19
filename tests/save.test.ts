@@ -699,6 +699,15 @@ describe('what a repair fixes', () => {
     expect(parseRaw({ schema: SCHEMA, hunters: [], library: {} }).library.stories).toEqual([]);
   });
 
+  test('the stories on the table: each read by parseStoryRun, an id each; every running one kept and the newest 12 ended', () => {
+    const run = (id: string, at: string, chapter = 0) => ({ id, story: 'st1', name: 'The wager', who: { at: 'hunters', refs: [{ kind: 'local', hunterId: 'h1' }, { kind: 'x' }] }, state: { at, chapter, endedAt: '2026-11-19T10:00:00.000Z', session: 2 }, opens: 2, opened: [{ chapter: 0, to: [], at: '', session: 1 }, { chapter: 'x' }] });
+    const kept = parseRaw({ schema: SCHEMA, hunters: [], storyRuns: [run('sr1', 'running', 1), { id: 'sr2', story: 'st1', state: { at: 'paused', chapter: 0 } }, 'junk'] }).storyRuns;
+    expect(kept).toEqual([{ id: 'sr1', story: 'st1', name: 'The wager', who: { at: 'hunters', refs: [{ kind: 'local', hunterId: 'h1' }] }, state: { at: 'running', chapter: 1 }, opens: 2, opened: [{ chapter: 0, to: [], at: '', session: 1 }] }]);
+    const ended = Array.from({ length: 14 }, (_, i) => run(`sr${i + 10}`, 'ended'));
+    expect(parseRaw({ schema: SCHEMA, hunters: [], storyRuns: [run('sr1', 'running'), ...ended] }).storyRuns.map(r => String(r.id))).toEqual(['sr1', ...ended.slice(2).map(r => r.id)]);
+    expect(parseRaw({ schema: SCHEMA, hunters: [], storyRuns: 'none' }).storyRuns).toEqual([]);
+  });
+
   test('a quest\'s rewards are read by parseRewards: a wrong field takes its default and a list keeps its bound', () => {
     const rewards = { xp: 'lots', gold: -40, skills: Array.from({ length: 12 }, (_, i) => ({ name: `S${i}` })), boons: [{ name: '' }, { name: 'Favor', text: 'One free question.' }] };
     const q = onlyHunter(parseRaw({ schema: SCHEMA, hunters: [{ id: 'h1', quests: [{ id: 'q1', rewards }] }] })).quests[0]!;

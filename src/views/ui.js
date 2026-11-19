@@ -131,7 +131,7 @@ export function news(/** @type {string} */ msg, kind = 'info') {
  * while its owner shows it. A window going away is `leaving`: no longer open, off the stack when its move ends.
  * The top open window that is not a sheet takes every key (`key`), so Escape and Tab reach that one window only.
  * @typedef {'queued' | 'open' | 'leaving'} WindowState
- * @typedef {'system' | 'maker' | 'onboard' | 'shelf' | 'sheet'} WindowKind
+ * @typedef {'system' | 'maker' | 'onboard' | 'shelf' | 'story' | 'sheet'} WindowKind
  * @typedef {{ kind: WindowKind; state: WindowState; root: HTMLElement | null; win: HTMLElement | null; key: ((e: KeyboardEvent) => void) | null; show: () => void }} Win
  */
 /** @type {Win[]} */

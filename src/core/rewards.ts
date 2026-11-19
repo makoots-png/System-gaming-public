@@ -166,6 +166,12 @@ export function parseBundle(v: unknown): Omit<RewardBundle, 'id'> | null {
   return name ? { name, rewards: parseRewards(v.rewards) ?? newRewards(), ...(window ? { window } : {}) } : null;
 }
 
+/**
+ * What a form that holds the reward editor says when the editor would drop a row (`blocked()`: a row without its item,
+ * skill or name, or rounds out of range): the Award form, the quest form, and the story maker before it closes a chapter.
+ */
+export const UNFINISHED_ROWS = 'Finish or remove the reward rows marked in red.';
+
 /** Whether a reward gives anything at all. */
 export const isEmptyReward = (r: Rewards): boolean =>
   !r.xp && !r.points && !r.gold && !r.items.length && !r.title && !r.job && !r.skills.length && !r.statuses.length && !r.boons.length;

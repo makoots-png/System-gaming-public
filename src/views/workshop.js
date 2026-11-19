@@ -1,6 +1,6 @@
 // workshop.js: the Workshop, the GM's one screen for what the GM has made, a section per kind (statuses, items, skills,
 // monsters, rewards, maps, feats, stories), each listing the library's entries: a tap on an entry edits it, "⋯" holds Duplicate, Share and
-// Delete (Reset for a changed built-in), and a skill keeps Give to…, a reward bundle Award…, beside it. New and Edit open the kind's maker (forge.js, loot.js, skills.js, bestiary.js, map-maker.js, feat-maker.js, story-maker.js, and for a bundle
+// Delete (Reset for a changed built-in), and a skill keeps Give to…, a reward bundle Award…, a story Turn on… (stories.js), beside it. New and Edit open the kind's maker (forge.js, loot.js, skills.js, bestiary.js, map-maker.js, feat-maker.js, story-maker.js, and for a bundle
 // the reward editor in a maker shell), which saves through the kind's parser; Duplicate and Delete write the library here
 // (a bundle through app.api.bundles; its maker is `bundleMaker` in reward-editor.js, which the GM view's Make row opens too). Share shows one entry's code, and Share custom content at the top shares many
 // (app.api.share, io.js). The Bestiary keeps the full monster list.
@@ -8,7 +8,7 @@ import { BUILT_IN_STATUSES } from '../core/registry/statuses.ts';
 import { monsterSheetOf } from '../core/registry/monsters.ts';
 import { LIMITS } from '../core/save.ts';
 import { atLibrary } from '../core/save-step.ts';
-import { copyName, duplicateEntry, namedLike, removeEntry, removeStatus, saveEntry, saveStatus } from '../core/library.ts';
+import { copyName, duplicateEntry, namedLike, removeEntry, removeStatus, removeStory, saveEntry, saveStatus } from '../core/library.ts';
 import { exampleSkills, exampleStatuses } from '../core/registry/kit-examples.ts';
 import { BUILT_IN_BUNDLES, MOMENT_WORDS } from '../core/registry/bundles.ts';
 import { rewardLines } from '../core/rewards.ts';
@@ -21,6 +21,7 @@ import { duplicateFeat, featOff, featOn, removeFeat } from '../core/library.ts';
 import { storyMaker } from './story-maker.js';
 import { EXAMPLE_STORIES } from '../core/registry/stories.ts';
 import { storyMeta } from '../core/story/story.ts';
+import { STORY_WORDS, isRunning } from '../core/story/run.ts';
 
 const KINDS = [
   ['status', 'Statuses', 'A status, such as Poisoned or Slowed, has effects and goes on a hunter or a monster.', 'New status'],
@@ -65,7 +66,7 @@ export function register(app) {
 `);
 
   // ── each kind's rows: [id, name, tag, meta, actions] ──
-  const ACTS = { edit: 'Edit', dup: 'Duplicate', del: 'Delete', reset: 'Reset', give: 'Give to…', award: 'Award…', share: 'Share', off: 'Turn off', on: 'Turn on' };
+  const ACTS = { edit: 'Edit', dup: 'Duplicate', del: 'Delete', reset: 'Reset', give: 'Give to…', award: 'Award…', turnOn: 'Turn on…', share: 'Share', off: 'Turn off', on: 'Turn on' };
   function rowsOf(kind) {
     const L = lib();
     if (kind === 'status') {
@@ -83,14 +84,14 @@ export function register(app) {
         d.off ? '' : d.desc || ruleLine(d.rule), ['edit', 'dup', isBuiltInFeat(k) ? 'reset' : 'del', d.off ? 'on' : 'off', 'share']]);
     }
     if (kind === 'bundle') return A().bundles.list().map(b => [b.id, b.name, '', rewardLines(app.rules(), b.rewards).join(' · '), ['award', 'edit', 'dup', 'del', 'share']]);
-    if (kind === 'story') return L.stories.map(st => [st.id, st.name, '', storyMeta(st), ['edit', 'dup', 'del', 'share']]);
+    if (kind === 'story') return L.stories.map(st => [st.id, st.name, isRunning(store.get().storyRuns, st.id) ? STORY_WORDS.running : '', storyMeta(st), ['turnOn', 'edit', 'dup', 'del', 'share']]);
     return store.get().monsters.map(m => {
       const s = monsterSheetOf(m, app.rules());
       return [m.id, m.name, `${m.rank}-rank ${m.kind} ${m.archetype}`, `HP ${ui.fmt(s.hpMax)} · Armor ${s.armor} · Resist ${s.resist} · Speed ${s.speed}${m.abilities.length ? ` · ${m.abilities.map(a => a.name).join(', ')}` : ''}`, ['edit', 'dup', 'del', 'share']];
     });
   }
-  /** What a row shows beside it: Give to… and Award… stay in sight; Duplicate, Share, Delete and Reset are behind "⋯". */
-  const INLINE = ['give', 'award'], MORE = ['dup', 'share', 'off', 'on', 'reset', 'del'];
+  /** What a row shows beside it: Give to…, Award… and Turn on… stay in sight; Duplicate, Share, Delete and Reset are behind "⋯". */
+  const INLINE = ['give', 'award', 'turnOn'], MORE = ['dup', 'share', 'off', 'on', 'reset', 'del'];
   const rowHtml = ([id, name, tag, meta, acts]) => {
     const inline = acts.filter(a => INLINE.includes(a)), more = MORE.filter(a => acts.includes(a));
     return `<li data-id="${esc(id)}" data-more="${more.join(' ')}"><button type="button" class="ws-row" data-act="edit" aria-label="Edit ${esc(name)}"><span><span class="nm">${esc(name)}</span>${tag ? `<span class="tag">${esc(tag)}</span>` : ''}</span>
@@ -237,9 +238,12 @@ export function register(app) {
       const st = L.stories.find(x => x.id === id);
       if (a === 'new') return void await storyMaker(app, null);
       if (!st) return;
+      if (a === 'turnOn') return void await A().stories.turnOn(st.id);
       if (a === 'edit') return void await storyMaker(app, st);
       if (a === 'dup') return void dup('stories', st, 'st', 60, LIMITS.libraryStories);
-      if (a === 'del' && await ui.confirm({ title: `Delete ${st.name}?`, body: 'Chapters already opened stay with the hunters.', danger: true, confirmLabel: 'Delete' })) store.apply('library-story-del', atLibrary(l => removeEntry(l, 'stories', id)));
+      // a story on the table is not deleted under the GM (library.ts `removeStory`): it is ended first, in the GM view
+      if (a === 'del' && isRunning(store.get().storyRuns, st.id)) return void ui.toast('Workshop', STORY_WORDS.deleteRunning(st.name), { kind: 'warning' });
+      if (a === 'del' && await ui.confirm({ title: `Delete ${st.name}?`, body: 'Chapters already opened stay with the hunters.', danger: true, confirmLabel: 'Delete' })) store.apply('library-story-del', s => removeStory(s, st.id));
       return;
     }
     if (kind === 'map') {

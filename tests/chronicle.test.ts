@@ -11,6 +11,7 @@ import { useItem } from '../src/core/hunter/use.ts';
 import { putItem } from '../src/core/hunter/inventory.ts';
 import { shadowRises } from '../src/core/hunter/shadows.ts';
 import { soloTick } from '../src/core/gates/solo.ts';
+import { chapterLanded } from '../src/core/story/story.ts';
 import { personalGateId } from '../src/core/gates/personal.ts';
 import { pushedSheet } from '../src/core/sync/push.ts';
 import { rolled } from '../src/core/session-log.ts';
@@ -159,6 +160,12 @@ describe('each fact is recorded by its one writer, in that thing\'s write', () =
     const s = saveOf(mira({ solo: { clock: { at: 'off' }, gates: [gate] } }));
     const t = ok(soloTick(s, { now: new Date(AT), R: { ...RULES, solo: { ...RULES.solo, personal: false } }, gm: false, seed: 1 }));
     expect(inbox(t.save.hunters[0]!)).toEqual([{ kind: 'closed', name: 'Goblin Warren', rank: 'E' }]);
+  });
+
+  test('a story\'s chapter the GM opened: its window\'s words, and nothing for the hunter it did not go to', () => {
+    const words = { title: 'THE DEEP IS PATIENT', line: 'Nothing is asked.' };
+    const g = ok(chapterLanded(saveOf(mira(), { ...newHunter(RULES), id: H2, name: 'Brakk' }), H1, { words, rewards: newRewards(), quest: null }, { at: AT, today: TODAY, R: RULES, vitals: 'sheet' }));
+    expect(g.save.hunters.map(inbox)).toEqual([[{ kind: 'chapter', title: 'THE DEEP IS PATIENT', line: 'Nothing is asked.' }], []]);
   });
 });
 

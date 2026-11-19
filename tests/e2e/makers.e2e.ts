@@ -20,7 +20,7 @@ import { parseOp } from '../../src/core/combat/fight-parse.ts';
 import { formulaOf as formulaNow, abilityOf, defaultTicks, recommended } from '../../src/core/registry/ability-kinds.ts';
 import { fightId, reduce } from '../../src/core/combat/fight.ts';
 import type { Command, Ctx, Fight, NewRow } from '../../src/core/combat/fight.ts';
-import { newRewards } from '../../src/core/rewards.ts';
+import { UNFINISHED_ROWS, newRewards } from '../../src/core/rewards.ts';
 import { EXAMPLE_STORIES } from '../../src/core/registry/stories.ts';
 
 const combat = (page: Page) => page.locator('#view-combat');
@@ -1383,4 +1383,71 @@ test('a GM copies The wager from the stories to copy and finds it whole in the l
   await expect(page.locator('#toasts .toast', { hasText: 'The wager is in your stories.' })).toBeVisible();
   expect(await libraryStories(page)).toEqual([EXAMPLE_STORIES[0]!.story]);
   await expect(sec.locator('li[data-id]:not([data-example]) .meta')).toHaveText('4 chapters · for chosen hunters');
+});
+
+test('Enter in a maker\'s field moves to the next field and never saves the form; Ctrl and Enter saves it', async ({ device }) => {
+  const page = (await device('gm')).page;
+  await onboardGM(page);
+  const d = storyMakerWin(page);
+  await go(page, 'workshop');
+  await workshop(page, 'story').locator('[data-new]').tap();
+
+  await test.step('Enter in the name moves to "When to turn it on"', async () => {
+    await d.locator('#stm-name').fill('The long debt');
+    await d.locator('#stm-name').press('Enter');
+    await expect(d.locator('#stm-when')).toBeFocused();
+  });
+
+  await test.step('Enter in a chapter quest\'s objective moves to its target, and the story stays unsaved with the maker open', async () => {
+    await d.locator('#stm-wtitle').fill('The deep asks');
+    await d.locator('#stm-hasq').check();
+    const q = d.locator('[data-stm-q]');
+    await q.locator('[name=title]').fill('Pay the deep');
+    await q.locator('[name=olabel]').fill('Gate cleared');
+    await q.locator('[name=olabel]').press('Enter');
+    await expect(q.locator('[name=otarget]')).toBeFocused();
+    await q.locator('[name=otarget]').press('Enter');
+    await expect(d).toBeVisible();
+    expect(await libraryStories(page)).toEqual([]);
+  });
+
+  await test.step('Ctrl and Enter saves the story', async () => {
+    await d.locator('#stm-wline').press('Control+Enter');
+    await expect(d).toHaveCount(0);
+    const [s] = await libraryStories(page);
+    expect([s.name, s.chapters[0].quest.title, s.chapters[0].quest.objectives]).toEqual(['The long debt', 'Pay the deep', [{ label: 'Gate cleared', target: 1, progress: 0 }]]);
+  });
+});
+
+test('a half-written reward row keeps its chapter open in the story maker, and the maker says so, until the row is finished', async ({ device }) => {
+  const page = (await device('gm')).page;
+  await onboardGM(page);
+  const d = storyMakerWin(page), rw = d.locator('[data-stm-rw]');
+  await go(page, 'workshop');
+  await workshop(page, 'story').locator('[data-new]').tap();
+  await d.locator('#stm-name').fill('A favor owed');
+  await d.locator('#stm-wtitle').fill('Someone owes you');
+
+  await test.step('a boon row without a name: Add a chapter leaves chapter 1 open and says why; ticking "Issues a quest" keeps the row', async () => {
+    await rw.locator('[data-add="boon"]').tap();
+    await d.locator('[data-chadd]').tap();
+    await expect(d.locator('.mk-err')).toHaveText(UNFINISHED_ROWS);
+    await expect(d.locator('[data-ch]')).toHaveCount(1);
+    await expect(d.locator('#stm-wtitle')).toHaveValue('Someone owes you');
+    await d.locator('#stm-hasq').check();
+    await expect(rw.locator('[data-kind="boon"]')).toHaveCount(1);
+    await d.locator('#stm-hasq').uncheck();
+  });
+
+  await test.step('named, the row goes with chapter 1 when chapter 2 opens, and Save keeps it', async () => {
+    await rw.locator('[data-kind="boon"] [data-f="name"]').fill('A favor');
+    await d.locator('[data-chadd]').tap();
+    await expect(d.locator('[data-ch]')).toHaveCount(2);
+    await expect(d.locator('.mk-err')).toHaveText('');
+    await d.locator('#stm-wtitle').fill('The favor comes due');
+    await d.getByRole('button', { name: 'Save story' }).tap();
+    await expect(d).toHaveCount(0);
+    const [s] = await libraryStories(page);
+    expect(s.chapters.map((c: any) => c.rewards.boons)).toEqual([[{ name: 'A favor', text: '' }], []]);
+  });
 });

@@ -1,17 +1,24 @@
 // story/story.ts: a story as content, the GM's arc of chapters (docs/agent-handoff/features/notes-1-stories.md, sections
 // 1 and 6). Pure. A chapter holds only what the game already gives in one step: a System window's words, a reward that
 // `grant` gives, a quest issued from the GM, and a note only the GM reads. `parseStory` is its one reader from outside
-// data, run by the save's repair (`library.stories`), by a pack and by the maker. Nothing here opens a chapter or moves a
-// story: only the GM's tap does that (the run on the table is notes section 2).
+// data, run by the save's repair (`library.stories`), by a pack and by the maker. `chapterLanded` gives one chapter to
+// one hunter, the step the GM's phone runs for its own hunters and a player's phone for its own. Nothing here decides
+// when a chapter opens or moves a story: only the GM's tap does that, through the run's machine (run.ts).
 // A new part of a chapter is the recipe "A part of a chapter" (notes section 9): a field of `Chapter`, its reader in
 // `parseChapter`, its words in `chapterWindow` and `storyLines`, and a case in tests/story.test.ts.
-import { cleanObjectives } from '../hunter/quests.ts';
+import { dueAt } from '../day.ts';
+import { grant, idsFrom } from '../hunter/grant.ts';
+import type { Day, Granted, VitalsAt } from '../hunter/grant.ts';
+import { record } from '../hunter/chronicle.ts';
+import { cleanObjectives, issueQuest, withTold } from '../hunter/quests.ts';
 import { GM_QUEST_KINDS } from '../hunter/quest-rights.ts';
 import { newRewards, parseRewards, parseWords, rewardLines } from '../rewards.ts';
 import type { RewardRules, Rewards, SystemWords } from '../rewards.ts';
-import type { StoryId } from '../ids.ts';
+import type { HunterId, StoryId } from '../ids.ts';
 import { oneOf } from '../one-of.ts';
-import type { Objective } from '../save.ts';
+import type { Objective, Save } from '../save.ts';
+import { isRefused } from '../save-step.ts';
+import type { Refused } from '../save-step.ts';
 
 /**
  * The bounds of a story. Names as a bundle's (60), the "when" line as a window's line (200), a note as a quest's penalty
@@ -137,6 +144,31 @@ export const chapterSize = (c: Pick<Chapter, 'words' | 'rewards' | 'quest'>): nu
  */
 export const chapterWindow = (words: SystemWords, lines: readonly string[], quest: Pick<ChapterQuest, 'title'> | null): { readonly tag: string; readonly title: string; readonly body: string; readonly lines: string[] } =>
   ({ tag: '! Story', title: words.title, body: words.line, lines: [...lines, ...(quest ? [`Quest: ${quest.title}`] : [])] });
+
+/** A chapter's window as a hunter sees it: `chapterWindow`'s answer. */
+export type ChapterWindow = ReturnType<typeof chapterWindow>;
+/** What a chapter did to one hunter: the grant of its reward (`grant`'s answer, the save after the whole chapter) and its window. */
+export type ChapterGiven = Granted & { readonly window: ChapterWindow };
+
+/**
+ * Chapter `c` given to hunter `hid` at `o.at`, in one step, the one step that gives a chapter on any phone: its reward
+ * by `grant` (the parts a fight holds handed back in `fight`, by `o.vitals`), its quest issued from the GM with its due
+ * time `dueHours` after the open (`dueAt`), and its `chapter` fact, of which this is the one writer. The window shows the
+ * grant's own lines, so it says what reached the sheet. A hunter that is not there is refused.
+ */
+export function chapterLanded(save: Save, hid: HunterId, c: Pick<Chapter, 'words' | 'rewards' | 'quest'>, o: Day & { vitals: VitalsAt }): ChapterGiven | Refused<'no-hunter'> {
+  const g = grant(save, hid, c.rewards, null, o);
+  if (isRefused(g)) return g;
+  let next = g.save;
+  if (c.quest) {
+    const q = c.quest, ids = idsFrom(next.seq), id = ids.next('q');
+    const draft = { kind: q.kind, title: q.title, desc: q.desc, objectives: q.objectives, rewards: q.rewards, penaltyText: q.penaltyText, dueAt: q.dueHours === null ? null : dueAt(q.dueHours, new Date(o.at)), from: 'gm' };
+    const issued = withTold({ ...next, seq: ids.seq() }, hid, { at: o.at, cap: o.R.logCap }, h => issueQuest(h, draft, id, o.at));
+    if (!isRefused(issued)) next = issued;
+  }
+  next = { ...next, hunters: next.hunters.map(h => (h.id === hid ? record(h, { kind: 'chapter', title: c.words.title, line: c.words.line }) : h)) };
+  return { ...g, save: next, window: chapterWindow(c.words, g.lines, c.quest) };
+}
 
 /** `s` as a sentence: a full stop after it unless it ends in one, a question mark or an exclamation mark. */
 const sentence = (s: string): string => (/[.!?]$/.test(s) ? s : `${s}.`);

@@ -76,6 +76,8 @@ export type Fact =
   | { readonly kind: 'feat'; readonly key: string; readonly name: string; readonly hidden: boolean }
   /** A bundle the GM gave by hand (award.ts `gmAward`, a player's `landAward`): its key and name. */
   | { readonly kind: 'given'; readonly key: string; readonly name: string }
+  /** A story's chapter the GM opened for this hunter (story/story.ts `chapterLanded`): its window's title and line. */
+  | { readonly kind: 'chapter'; readonly title: string; readonly line: string }
   /** A d20 check's natural 1 or 20 (session-log.ts `rolled`). */
   | { readonly kind: 'roll'; readonly natural: number }
   /** A coin this hunter called landed (coin.ts): whether the call was right. */
@@ -160,6 +162,7 @@ export const FACT_FIELDS: { readonly [K in FactKind]: FieldsOf<K> } = {
   title: { name: text('Title') },
   feat: { key: text('Feat key', 40), name: text('Feat'), hidden: flag('Hidden until earned') },
   given: { key: text('Bundle key', 80), name: text('Bundle') },
+  chapter: { title: text('Window title', 60), line: text('What the players read', 200) },
   roll: { natural: num('Natural', 1, 20) },
   coin: { won: flag('Called right') },
   shop: {
@@ -177,7 +180,7 @@ export const FACT_KINDS = Object.keys(FACT_FIELDS) as readonly FactKind[];
  */
 export const KEPT: { readonly [K in FactKind]: (f: FactOf<K>) => boolean } = {
   fight: () => true, kill: () => false, solo: () => true, gate: () => true, closed: () => true, quest: () => true, daily: () => true, streakLost: () => true, penaltyIssued: () => true, penaltyLifted: () => true,
-  life: f => f.news !== 'saved' && f.news !== 'failed', level: () => true, rank: () => true, title: () => true, feat: () => true, given: () => true,
+  life: f => f.news !== 'saved' && f.news !== 'failed', level: () => true, rank: () => true, title: () => true, feat: () => true, given: () => true, chapter: () => true,
   roll: () => false, coin: () => false, shop: () => false, rest: () => false, used: () => false, shadow: () => true,
 };
 /** Whether the chronicle keeps `f`. */

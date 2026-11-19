@@ -1464,6 +1464,28 @@ test('only chronicle.ts\'s record writes a hunter\'s inbox of facts, and only th
   expect(report(hits), 'record a fact with chronicle.ts `record`; the store\'s `noticed` takes it').toEqual([]);
 });
 
+test('only src/core/story/run.ts writes a story run', async () => {
+  // A story moves only when the GM taps (notes-1-stories.md 3.4): its run on the GM's save has one writer, the machine's
+  // `storyMove` in run.ts, so no notice step, quest, timer, room message or view can move it. save.ts holds the field's
+  // type, its default and its repair. Move a story with a tap in src/views/stories.js, through `storyMove`.
+  const owners = ['src/core/story/run.ts', 'src/core/save.ts'];
+  const write = /\bstoryRuns\s*(:|=(?!=))|\.storyRuns\.(push|splice|pop|shift|unshift|length\s*=)/;
+  expect(write.test('return { ...save, storyRuns: [...save.storyRuns, run] };'), 'the rule sees a run written by spread').toBe(true);
+  expect(write.test("const live = save.storyRuns.filter(r => r.state.at === 'running');"), 'and not one read').toBe(false);
+  const hits = (await sourceLines('src')).filter(line => !owners.includes(line.file) && !isComment(line.text) && write.test(line.text));
+  expect(report(hits), 'a run changes only through storyMove in src/core/story/run.ts, called from a tap in src/views/stories.js').toEqual([]);
+});
+
+test('a story moves only from src/views/stories.js', async () => {
+  // Every event of a story's machine is a tap of the GM's (notes-1-stories.md 3.4): its step is named only where it is
+  // written (run.ts) and where a tap calls it (stories.js), so the store, the room's appliers, the quests, the feats, the
+  // gates and the one timer cannot move a story, since none of them can reach its step.
+  const owners = ['src/core/story/run.ts', 'src/views/stories.js'];
+  const names = /\b(storyMove|runStep)\b/;
+  const hits = (await sourceLines('src')).filter(line => !owners.includes(line.file) && !isComment(line.text) && names.test(line.text));
+  expect(report(hits), 'a story moves only on the GM\'s tap: call storyMove from a button of src/views/stories.js').toEqual([]);
+});
+
 test('a doc comment sits over what it describes', async () => {
   // About fifteen doc comments in src/core sat over another doc comment, left behind when a declaration moved or a new one
   // was put between a comment and its own (notes-1-feats.md 17.10). An editor shows such a comment on nothing, and a reader

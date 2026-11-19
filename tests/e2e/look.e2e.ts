@@ -1,4 +1,5 @@
-import { test, expect, openApp, onboardGM, onboardPlayer, go, dismissAll, startGoblinDenFight, chooseList, PHONE, SMALL_PHONE } from './helpers.ts';
+import { test, expect, openApp, onboardGM, onboardPlayer, go, dismissAll, startGoblinDenFight, chooseList, answerWindow, PHONE, SMALL_PHONE } from './helpers.ts';
+import { EXAMPLE_STORIES } from '../../src/core/registry/stories.ts';
 import type { Locator } from '@playwright/test';
 
 test('on a phone, three toasts in a row show the last two above the bottom bar, and the bottom bar can still be tapped', async ({ device }) => {
@@ -650,5 +651,53 @@ for (const viewport of [SMALL_PHONE, PHONE]) {
       return { short, wide, page: document.documentElement.scrollWidth - innerWidth };
     });
     expect(audit).toEqual({ short: [], wide: false, page: 0 });
+  });
+}
+
+for (const viewport of [SMALL_PHONE, PHONE]) {
+  test(`at ${viewport.width} px the GM view's Stories, its turn-on window and its open window have 44 px controls, no sideways scroll, and the open window's actions on screen at the end of its list`, async ({ device }) => {
+    const page = (await device('gm', { viewport })).page;
+    await onboardGM(page);
+    await page.evaluate(story => hunterApp.store.update((d: any) => {
+      d.library.stories = [{ ...story, id: 'st1', name: 'A story with a name long enough to wrap at this width' }];
+      d.rulesOverrides = { ...d.rulesOverrides, feats: { on: false } };
+      for (let i = 0; i < 5; i++) d.hunters.push({ ...JSON.parse(JSON.stringify(d.hunters[0])), id: `h${800 + i}`, name: `Spare hunter number ${i + 1}` });
+    }, 'test-setup'), EXAMPLE_STORIES[1]!.story);
+    await go(page, 'gm');
+    const tog = page.locator('[data-tog="stories"]');
+    if ((await tog.getAttribute('aria-expanded')) !== 'true') await tog.tap();
+    const sec = page.locator('#gm-stories'), w = page.locator('.st-ov [role=dialog]');
+    /** Controls under 44 px tall, anything wider than its box that scrolls sideways, and the page's sideways overflow. */
+    const audit = (root: string) => page.evaluate(sel => {
+      const box = document.querySelector(sel)!;
+      const short = [...box.querySelectorAll('button, select')].filter(el => (el as HTMLElement).offsetParent !== null && (el as HTMLElement).offsetHeight < 44).map(el => (el.getAttribute('aria-label') || el.textContent || '').trim().slice(0, 30));
+      const wide = [...box.querySelectorAll('*')].some(el => (el as HTMLElement).scrollWidth > (el as HTMLElement).clientWidth + 1 && !['visible', 'hidden'].includes(getComputedStyle(el).overflowX));
+      return { short, wide, page: document.documentElement.scrollWidth - innerWidth };
+    }, root);
+
+    await test.step('the turn-on window, its list and then the story\'s step', async () => {
+      await sec.locator('[data-st-turnon]').tap();
+      await expect(w.getByRole('heading', { name: 'Turn on a story' })).toBeVisible();
+      expect(await audit('.st-ov [role=dialog]')).toEqual({ short: [], wide: false, page: 0 });
+      await w.locator('[data-st-story]').tap();
+      await w.locator('[data-st-who]').first().tap();
+      expect(await audit('.st-ov [role=dialog]')).toEqual({ short: [], wide: false, page: 0 });
+      await w.locator('[data-st-go]').tap();
+      await answerWindow(page, 'IT WILL REMEMBER YOUR FACE');
+    });
+
+    await test.step('the section with a running story', async () => {
+      await expect(sec.locator('.st-card')).toHaveCount(1);
+      expect(await audit('#gm-stories')).toEqual({ short: [], wide: false, page: 0 });
+    });
+
+    await test.step('the open window, scrolled to the end of its list, keeps Cancel and Open on screen', async () => {
+      await sec.locator('[data-st-open]').tap();
+      await expect(w.getByRole('heading', { name: 'Open chapter 2' })).toBeVisible();
+      expect(await audit('.st-ov [role=dialog]')).toEqual({ short: [], wide: false, page: 0 });
+      await w.locator('.st-mid').evaluate(el => { el.scrollTop = el.scrollHeight; });
+      for (const b of [w.locator('[data-st-cancel]'), w.locator('[data-st-go]')]) await expect(b).toBeInViewport({ ratio: 1 });
+      await expect(w.locator('[data-st-who]').last()).toBeInViewport();
+    });
   });
 }

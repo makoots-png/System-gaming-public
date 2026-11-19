@@ -8,7 +8,9 @@ import { FEAT_BOUNDS, freeFeatKey, sameFeat } from './hunter/feats.ts';
 import type { FeatDef, FeatKey } from './hunter/feats.ts';
 import { BUILT_IN_FEATS } from './registry/feats.ts';
 import { LIMITS } from './save.ts';
-import type { Library, StatusDef } from './save.ts';
+import type { Library, Save, StatusDef } from './save.ts';
+import { isRunning } from './story/run.ts';
+import type { StoryId } from './ids.ts';
 import { refuse } from './save-step.ts';
 import type { Refused } from './save-step.ts';
 
@@ -51,6 +53,16 @@ export function removeEntry(lib: Library, list: LibraryList, id: string): Next {
   const arr = lib[list] as readonly Entry<LibraryList>[];
   if (!arr.some(x => x.id === id)) return refuse('missing');
   return withList(lib, list, arr.filter(x => x.id !== id));
+}
+
+/**
+ * Story `id` taken out of the library, as a step on the whole save: refused while a run of it is running (`running`), so
+ * a story on the table is never deleted under the GM (the Workshop says to end it first). An ended run keeps its name.
+ */
+export function removeStory(save: Save, id: StoryId): Save | Refused<LibraryWhy | 'running'> {
+  if (isRunning(save.storyRuns, id)) return refuse('running');
+  const lib = removeEntry(save.library, 'stories', id);
+  return 'ok' in lib ? lib : { ...save, library: lib };
 }
 
 /** A copy of entry `id` of `list` under `newId` and `name`, at the end of the list; refused when the list is full. */

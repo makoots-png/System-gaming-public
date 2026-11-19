@@ -4,7 +4,7 @@ import { parseCombatantId, parseDeviceId, parseGmKey, parseRoomCode, parseSaveId
 import { parseDayKey } from '../../src/core/day.ts';
 import { monsterId, parseGateId } from '../../src/core/gates/gate.ts';
 import type { DayKey } from '../../src/core/day.ts';
-import type { BundleId, ChainId, CombatantId, DeviceId, GateId, GmKey, HunterId, ItemId, LoadoutId, LogId, MonsterId, QuestId, RollEntryId, RoomCode, ShadowId, SkillId, TitleId } from '../../src/core/ids.ts';
+import type { BundleId, ChainId, CombatantId, DeviceId, GateId, GmKey, HunterId, ItemId, LoadoutId, LogId, MonsterId, QuestId, RollEntryId, RoomCode, ShadowId, SkillId, StoryId, StoryRunId, TitleId } from '../../src/core/ids.ts';
 
 const must = <T>(v: T | null, s: string): T => { if (v === null) throw new Error(`not an id: ${s}`); return v; };
 export const dev = (s: string): DeviceId => must(parseDeviceId(s), s);
@@ -23,6 +23,8 @@ export const skid = (s: string): SkillId => must(parseSaveId<'s'>(s), s);
 export const loid = (s: string): LoadoutId => must(parseSaveId<'lo'>(s), s);
 export const rbid = (s: string): BundleId => must(parseSaveId<'rb'>(s), s);
 export const jcid = (s: string): ChainId => must(parseSaveId<'jc'>(s), s);
+export const stid = (s: string): StoryId => must(parseSaveId<'st'>(s), s);
+export const srid = (s: string): StoryRunId => must(parseSaveId<'sr'>(s), s);
 /** A monster as a gate, a codex entry or a fight's link names it (gate.ts's reader). */
 export const mid = (s: string): MonsterId => must(monsterId(s), s);
 /** A gate as a fight's link names it (gate.ts's reader). */

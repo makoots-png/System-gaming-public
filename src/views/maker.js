@@ -1,6 +1,6 @@
 // maker.js: the parts every maker dialog is built from, on app.api.maker. The shell (`open`) owns the dialog: it opens
 // on the window stack (ui.js, which traps Tab and hands it the keys), asks before Escape or a press beside it drops an
-// edited form, Enter saves, the fit to the visual viewport when the keyboard opens, the sticky Cancel and Save bar and the
+// edited form, Enter in a field moves to the next one (Ctrl or Cmd and Enter saves), the fit to the visual viewport when the keyboard opens, the sticky Cancel and Save bar and the
 // live preview. `chips` and `picked` are toggle chips; `bonus` and `readBonus` are the ten bonus fields; `effects` is the
 // effects editor, one row per op of the fight (src/core/combat/effect-ops.ts), an amount a formula read by `parseFormula`;
 // `rewards` is the reward editor (reward-editor.js). No game rule lives here: a maker builds its form from these parts and
@@ -27,6 +27,8 @@ import { rewardEditor, rewardEditorCss } from './reward-editor.js';
 import { abilityBlocks, kitPartsCss, statusBlocks, triggerList } from './kit-parts.js';
 
 const BONUS_LABEL = { ...PERK_LABELS, hpMax: 'Max HP', manaMax: 'Max mana' };
+/** A one-line field, where Enter moves to the next field (`nextField`; a field with a list of choices keeps its Enter); with a text box, the fields that take typing. */
+const LINE = 'input[type=text],input[type=number],input:not([type])', TYPED = `${LINE},textarea`;
 
 // ── chips ──
 /**
@@ -909,6 +911,16 @@ function openMaker(o) {
     bodyEl.addEventListener('input', touched); bodyEl.addEventListener('change', touched);
     bodyEl.addEventListener('click', e => { if (e.target.closest('button')) touched(e); });
     let asking = false;
+    /**
+     * Enter in a one-line field moves the cursor to the next field of the form that takes typing, as a phone keyboard's
+     * Next does, and does nothing at the last one. It never saves: a maker is long, its last field moves as chapters,
+     * rows and parts are drawn, and a stray Enter in a story's objective saved the whole story. Ctrl or Cmd and Enter saves.
+     */
+    function nextField(from) {
+      const fields = [...bodyEl.querySelectorAll(TYPED)].filter(f => !f.disabled && f.getClientRects().length > 0);
+      const to = fields[fields.indexOf(from) + 1];
+      if (to) to.focus();
+    }
     async function leave() {
       if (form === 'clean') return finish(null);
       if (asking) return;
@@ -920,7 +932,7 @@ function openMaker(o) {
     function onKey(e) {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); void leave(); return; }
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); return save(); }
-      if (e.key === 'Enter' && e.target && e.target.matches && e.target.matches('input[type=text],input[type=number]') && win.contains(e.target)) { e.preventDefault(); return save(); }
+      if (e.key === 'Enter' && !e.isComposing && e.target instanceof HTMLElement && e.target.matches(LINE) && !e.target.matches('[list]') && win.contains(e.target)) { e.preventDefault(); nextField(e.target); return; }
       if (e.key === 'Tab') trapTab(e, win);
     }
     // Keeps the dialog inside the visible area when the on-screen keyboard opens or closes, and the field being typed in

@@ -427,3 +427,14 @@ What a player sees: when a hunter does something the System counts (a fight won 
 - The GM view's Issue quest is now the same form as the Quests view's: every objective you want, the whole reward (items, a title, statuses, boons, a bundle), and "Due in hours" for any kind of quest. The quest you issued before takes the same taps. The section is longer on a phone.
 - On the Quests view, the GM's new urgent quest takes its due time in hours only; the date and time field is left for an edit and for a player's own quest. Say "keep the date for the GM" to have it back.
 - A level taken away by an XP cost is now said in the reward window ("Loses 1 level: now level 2"), and the quest card and the log say a cost in words ("Loses 40 gold"), as the window does.
+
+## Stories, unit 3: a story on the table, for a GM with hunters on one phone (Nov 19)
+
+- The GM view has a Stories section. Turn on a story, pick who it is for, and chapter 1 opens in the same tap. Say "turn on first, open later" to have a story wait at chapter 0 until you open it.
+- A story never moves by itself. A chapter's quest completed opens nothing, and no clock or count moves it. Only your tap does.
+- There is no step back: what a chapter gave stays given. You can open an earlier chapter again, which gives it again to whoever you tick.
+- Ending a story is held two seconds under Undo, with no confirm. A story opened again in those two seconds is not ended.
+- At most 12 stories run at once, and the Stories section keeps the last 12 ended ones. Say a number to change either.
+- When the story is at its last chapter, the card says "Chapter 5 is the last." and its button is End story, so a jump from chapter 1 to 5 is not read as every chapter done.
+- In a maker, Enter in a field moves to the next field and never saves. Ctrl or Cmd and Enter saves. Say "Enter saves" to have the old way back.
+- A story running in the GM view cannot be deleted in the Workshop. End it first.

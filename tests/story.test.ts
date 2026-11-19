@@ -1,11 +1,17 @@
 // A story as content (src/core/story/story.ts): its one reader, its bounds, its size against the room's body, its words.
 import { describe, expect, test } from 'bun:test';
-import { CHAPTERS_MAX, CHAPTER_MAX, chapterSize, chapterWindow, parseChapterQuest, parseStory, storyLines, storyMeta } from '../src/core/story/story.ts';
+import { CHAPTERS_MAX, CHAPTER_MAX, chapterLanded, chapterSize, chapterWindow, parseChapterQuest, parseStory, storyLines, storyMeta } from '../src/core/story/story.ts';
 import type { Chapter, StoryTemplate } from '../src/core/story/story.ts';
 import { grantLines, newRewards } from '../src/core/rewards.ts';
 import { RULES } from '../src/core/rules.ts';
 import { statusKey } from '../src/core/combat/effect-ops.ts';
 import { EXAMPLE_STORIES } from '../src/core/registry/stories.ts';
+import { freshSave, newHunter } from '../src/core/save.ts';
+import type { Hunter, ParseEnv, Save } from '../src/core/save.ts';
+import { isRefused } from '../src/core/save-step.ts';
+import type { Refused } from '../src/core/save-step.ts';
+import { dayKey } from '../src/core/day.ts';
+import { dev, hid } from './fixtures/ids.ts';
 
 const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 const many = <T>(n: number, make: (i: number) => T): T[] => Array.from({ length: n }, (_, i) => make(i));
@@ -184,5 +190,46 @@ describe('the stories to copy (src/core/registry/stories.ts)', () => {
       'Chapter 4, An ally: IT CHOSE YOUR SIDE. Boon: A Monster\'s Favor.',
       'Chapter 5, A second mercy: YOU LET IT GO TWICE. Title: The Spared One\'s Shadow.',
     ]);
+  });
+});
+
+describe('a chapter given to a hunter (chapterLanded)', () => {
+  const AT = '2026-11-19T10:00:00.000Z', DAY = { at: AT, today: dayKey(new Date(AT), 0), R: RULES };
+  const ENV: ParseEnv = { now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-gm') };
+  const H1 = hid('h1');
+  const ok = <T>(r: T | Refused): T => { if (isRefused(r)) throw new Error(`refused: ${r.why}`); return r as T; };
+  /** Brakk with 2 ability points to spend. */
+  const brakk = (): Hunter => ({ ...newHunter(RULES), id: H1, name: 'Brakk', bonusPoints: newHunter(RULES).bonusPoints + 2 });
+  const saveOf = (h: Hunter): Save => ({ ...freshSave(ENV, { onboarded: true }), hunters: [h] });
+
+  test('its reward, its quest from the GM due 48 hours after it opens, and its fact, in one step; the window says what reached the sheet and the quest', () => {
+    const before = saveOf(brakk()), g = ok(chapterLanded(before, H1, ASK, { ...DAY, vitals: 'sheet' }));
+    const h = g.save.hunters[0]!, h0 = before.hunters[0]!;
+    expect(h.bonusPoints).toBe(h0.bonusPoints - 1);
+    expect(h.conditions.map(c => [c.key, c.rounds])).toEqual([['hasted', 3]]);
+    const q = h.quests.find(x => x.title === 'Clear a gate for the Deep')!;
+    expect([q.kind, q.from, q.status, q.issuedAt, q.dueAt, q.desc, q.penaltyText, q.rewards.gold, q.objectives]).toEqual(
+      ['urgent', 'gm', 'active', AT, '2026-11-21T10:00:00.000Z', 'Any gate of your rank.', 'The Deep collects.', 100, [{ label: 'Gate cleared', target: 1, progress: 0 }]]);
+    expect(h.chronicle.inbox).toEqual([{ kind: 'chapter', title: 'THE DEEP ASKS FOR A GATE', line: '' }]);
+    expect(g.save.log[0]).toMatchObject({ kind: 'quest', title: 'Quest issued', text: 'Clear a gate for the Deep' });
+    expect(g.window).toEqual({ tag: '! Story', title: 'THE DEEP ASKS FOR A GATE', body: '', lines: ['Loses 1 ability point', 'Status: Hasted (3 rounds)', 'Quest: Clear a gate for the Deep'] });
+  });
+
+  test('a chapter of words alone records its fact and issues nothing; a quest without hours has no due time', () => {
+    const words = ok(chapterLanded(saveOf(brakk()), H1, { words: OFFER.words, rewards: newRewards(), quest: null }, { ...DAY, vitals: 'sheet' }));
+    expect([words.save.hunters[0]!.quests.length, words.lines, words.window.lines]).toEqual([saveOf(brakk()).hunters[0]!.quests.length, [], []]);
+    const noHours = ok(chapterLanded(saveOf(brakk()), H1, { ...ASK, quest: { ...ASK.quest!, dueHours: null } }, { ...DAY, vitals: 'sheet' }));
+    expect(noHours.save.hunters[0]!.quests.find(x => x.title === 'Clear a gate for the Deep')!.dueAt).toBeNull();
+  });
+
+  test('a hunter a fight holds gets its statuses handed back for its row, and the sheet keeps none of them', () => {
+    const g = ok(chapterLanded(saveOf(brakk()), H1, ASK, { ...DAY, vitals: 'fight' }));
+    expect(g.save.hunters[0]!.conditions).toEqual([]);
+    expect(g.fight.statuses.map(s => [s.key, s.rounds])).toEqual([['hasted', 3]]);
+    expect(g.window.lines, 'the window says only what reached the sheet; the row\'s statuses are told when the row takes them').toEqual(['Loses 1 ability point', 'Quest: Clear a gate for the Deep']);
+  });
+
+  test('a hunter that is not there is refused', () => {
+    expect(chapterLanded(saveOf(brakk()), hid('h9'), ASK, { ...DAY, vitals: 'sheet' })).toEqual({ ok: false, why: 'no-hunter' });
   });
 });

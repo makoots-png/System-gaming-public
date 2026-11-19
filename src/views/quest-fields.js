@@ -7,7 +7,7 @@
 // maker's "Issues a quest" box. No rule of the game is here.
 import { esc, field } from './ui.js';
 import { GM_QUEST_KINDS, questKindsFor } from '../core/hunter/quest-rights.ts';
-import { newRewards } from '../core/rewards.ts';
+import { UNFINISHED_ROWS, newRewards } from '../core/rewards.ts';
 
 /** Each quest kind's word, on the form's Kind and on a quest's card. */
 export const KIND_LABEL = { daily: 'Daily', main: 'Main', side: 'Side', job: 'Job Change', urgent: 'Urgent', penalty: 'Penalty' };
@@ -79,7 +79,7 @@ export function questFields(app, box, o) {
   /** The first thing that stops a save, in words, with the cursor put there; '' when nothing does. */
   function check() {
     if (!titleIn.value.trim()) { titleIn.focus(); return 'Enter a title.'; }
-    if (rewards && rewards.blocked()) return 'Finish or remove the reward rows marked in red.';
+    if (rewards && rewards.blocked()) return UNFINISHED_ROWS;
     if (rewards && kindSel.value === 'job' && !rewards.value().job) { rewards.ensure('job'); return 'Choose a job for a job quest.'; }
     return '';
   }

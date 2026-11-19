@@ -3,12 +3,12 @@
 // chapter open at a time under its line: its name, its window's title and line, the GM's note, its reward (the reward
 // editor) and, when "Issues a quest" is ticked, its quest (the one quest form, app.api.quests.fields). The chapters are
 // held as data; opening another chapter reads the open one into the list first, so the page has one chapter's editors
-// at a time. Save runs `parseStory` and writes what it gives back (`saveEntry`); the maker refuses first what the parser
+// at a time, and a chapter does not close while its reward editor would drop a row (`mayClose`). Save runs `parseStory` and writes what it gives back (`saveEntry`); the maker refuses first what the parser
 // would drop (a chapter without a window title, a quest without a title) and a chapter too large to send. No rule of the
 // game is here.
 import { esc, field } from './ui.js';
 import { CHAPTERS_MAX, CHAPTER_MAX, STORY_BOUNDS, chapterSize, parseStory, storyLines } from '../core/story/story.ts';
-import { WORDS_BOUNDS, newRewards } from '../core/rewards.ts';
+import { UNFINISHED_ROWS, WORDS_BOUNDS, newRewards } from '../core/rewards.ts';
 import { LIMITS } from '../core/save.ts';
 import { saveEntry } from '../core/library.ts';
 import { atLibrary } from '../core/save-step.ts';
@@ -95,6 +95,7 @@ export function storyMaker(app, story) {
           if (c.quest) quest = A.quests.fields($('[data-stm-q]'), { id: 'stq', use: 'chapter', role: 'gm', initial: c.quest });
         }
         $('[data-chadd]').disabled = chapters.length >= CHAPTERS_MAX;
+        shell.error('');
         if (focus) { const f = $(focus); if (f) f.focus(); }
         shell.changed();
       }
@@ -112,15 +113,36 @@ export function storyMaker(app, story) {
         return big >= 0 ? { why: `Chapter ${big + 1} is too large to send to players' phones. Give it fewer items.`, at: big } : null;
       }
 
+      /**
+       * Whether the open chapter may close (another chapter opened, its own line folded, a chapter added or moved): not
+       * while its reward editor or its quest's would drop a row (`blocked()`, the editor's own answer), which the maker
+       * says, so a half-written row is never lost without the GM being told. Remove drops the whole chapter on purpose.
+       */
+      function mayClose() {
+        const unfinished = !!(rewards && rewards.blocked()) || !!(quest && quest.rewards && quest.rewards.blocked());
+        if (unfinished) shell.error(UNFINISHED_ROWS);
+        return !unfinished;
+      }
+
       body.addEventListener('click', e => {
         const b = /** @type {Element} */ (e.target).closest('button'); if (!b || !body.contains(b) || b.closest('[data-stm-rw], [data-stm-q]')) return;
-        if (b.hasAttribute('data-chopen')) { const i = Number(b.dataset.chopen); keep(); open = open === i ? -1 : i; draw(open >= 0 ? '#stm-wtitle' : null); return; }
-        if (b.hasAttribute('data-chadd')) { if (chapters.length >= CHAPTERS_MAX) return; keep(); chapters.push(blankChapter()); open = chapters.length - 1; draw('#stm-wtitle'); return; }
+        if (b.hasAttribute('data-chrm') && chapters.length > 1) { chapters.splice(open, 1); open = -1; draw(); return; }
         const to = b.hasAttribute('data-chup') ? open - 1 : b.hasAttribute('data-chdown') ? open + 1 : null;
-        if (to !== null && to >= 0 && to < chapters.length) { keep(); [chapters[open], chapters[to]] = [chapters[to], chapters[open]]; open = to; draw(); return; }
-        if (b.hasAttribute('data-chrm') && chapters.length > 1) { chapters.splice(open, 1); open = -1; draw(); }
+        const moves = b.hasAttribute('data-chopen') || (b.hasAttribute('data-chadd') && chapters.length < CHAPTERS_MAX) || (to !== null && to >= 0 && to < chapters.length);
+        if (!moves || !mayClose()) return;
+        keep();
+        if (b.hasAttribute('data-chopen')) { const i = Number(b.dataset.chopen); open = open === i ? -1 : i; draw(open >= 0 ? '#stm-wtitle' : null); return; }
+        if (b.hasAttribute('data-chadd')) { chapters.push(blankChapter()); open = chapters.length - 1; draw('#stm-wtitle'); return; }
+        if (to !== null) { [chapters[open], chapters[to]] = [chapters[to], chapters[open]]; open = to; draw(); }
       });
-      body.addEventListener('change', e => { if (/** @type {Element} */ (e.target).id === 'stm-hasq') { keep(); draw(chapters[open].quest ? '[data-stm-q] [name=title]' : null); } });
+      // the box draws or takes away the quest form alone: the chapter's reward editor, and what it holds, stay as they are
+      body.addEventListener('change', e => {
+        const t = /** @type {Element} */ (e.target); if (t.id !== 'stm-hasq') return;
+        const box = $('[data-stm-q]');
+        if ($('#stm-hasq').checked) { quest = A.quests.fields(box, { id: 'stq', use: 'chapter', role: 'gm', initial: chapters[open].quest || blankQuest() }); const f = $('[data-stm-q] [name=title]'); if (f) f.focus(); }
+        else { quest = null; box.replaceChildren(); }
+        shell.changed();
+      });
       body.addEventListener('input', e => {
         const t = /** @type {Element} */ (e.target);
         if (open >= 0 && (t.id === 'stm-cname' || t.id === 'stm-wtitle')) { const l = $(`[data-chopen="${open}"]`); if (l) l.textContent = lineOf(current(), open); }

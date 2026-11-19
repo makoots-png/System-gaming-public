@@ -1957,3 +1957,46 @@ Where it lives:
 | Who calls it | The trade view (unit 4) for the taps; sync.ts (unit 2) for what the box heard, the fold of each page and a join's history, and the room gone; the store runs `lettersKept` after every step (unit 2) |
 | The test to copy | `tests/offer.test.ts` ("every cell of the three records", the walk of two players and the GM); the walk's events are in `tests/models/trade-events.ts` |
 | The recipe | AGENTS.md, "A room message"; notes-5-trade.md 1.6 and 12.1 |
+
+## A story on the table
+
+Every run reachable from no run, for a story of three chapters, under the 8 events of tests/models/story-events.ts, breadth first; a run is the same state at the same chapter whatever its count of opens. The walk found 7 states and 10 steps.
+
+### A story on the table, by the GM's taps
+
+```mermaid
+---
+title: A story on the table, by the GM's taps
+---
+stateDiagram-v2
+  state "No run" as s1
+  state "Running at chapter 1" as s2
+  state "Running at chapter 2" as s3
+  state "Ended at chapter 1" as s4
+  state "Running at chapter 3" as s5
+  state "Ended at chapter 2" as s6
+  state "Ended at chapter 3" as s7
+  [*] --> s1
+  s1 --> s2 : the GM turns it on (chapter 1 opens)
+  s2 --> s3 : the GM opens a chapter
+  s2 --> s4 : the GM ends it
+  s3 --> s5 : the GM opens a chapter
+  s3 --> s2 : the GM opens a chapter
+  s3 --> s6 : the GM ends it
+  s5 --> s2 : the GM opens a chapter
+  s5 --> s7 : the GM ends it
+```
+
+Every arrow is a tap of the GM's on the GM's phone; no clock, count, fact, quest's end or room message moves a run. An open goes to the next chapter, an earlier one or the same one again, for the hunters the GM ticks. A stale tap (a window drawn before the last open, an End held under Undo while the story was opened again) and an open for nobody are refused and stay in their state, so they are not drawn. Ended is final: turning the story on again makes a new run.
+
+7 chart states, 8 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `StoryRun`, `RunState`, `RunEvent` and `RUN_STATES` in `src/core/story/run.ts` |
+| What changes it | `runStep(run, event, story)` and its `TABLE`; `storyMove`, the one write of a move |
+| Who calls it | the taps of `src/views/stories.js` (the GM view's Stories section, its turn-on and open windows, End's held toast) |
+| The test to copy | `tests/run.test.ts`; the walk's events are in `tests/models/story-events.ts` |
+| The recipe | AGENTS.md, "A state or event of the ... machine" |

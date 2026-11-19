@@ -27,6 +27,8 @@ import { MAX_MAPS, parseBattleMap } from './registry/maps.ts';
 import type { BattleMap } from './registry/maps.ts';
 import { parseStory } from './story/story.ts';
 import type { Story } from './story/story.ts';
+import { keptRuns, parseStoryRun } from './story/run.ts';
+import type { StoryRun } from './story/run.ts';
 import type { Archetype } from './hunter/derive.ts';
 import { oneOf } from './one-of.ts';
 import { parseCoins } from './coin.ts';
@@ -87,7 +89,7 @@ export type { ItemTemplate, ItemType, Rarity, Slot };
 /** A skill, an item and a monster live in the registry that owns each (src/core/registry/). */
 export type { Item, Loot, Monster, Skill, StartStatus };
 export const SHADOW_GRADES = ['Normal', 'Elite', 'Knight', 'Elite Knight', 'Commander', 'Marshal'] as const;
-export const LOG_KINDS = ['system', 'award', 'quest', 'gate', 'combat', 'rank', 'use'] as const;
+export const LOG_KINDS = ['system', 'award', 'quest', 'gate', 'combat', 'rank', 'use', 'story'] as const;
 
 export type Mode = (typeof MODES)[number];
 export type QuestKind = (typeof QUEST_KINDS)[number];
@@ -233,6 +235,8 @@ export type Save = {
    * `calls`: on the GM's phone, the calls players sent. Nothing in either says how a coin's side was chosen.
    */
   coins: readonly Coin[]; calls: readonly Coin[];
+  /** The GM's stories on the table (story/run.ts), written only by that file's `storyMove`: running ones and the newest ended. */
+  storyRuns: StoryRun[];
 };
 /** A monster kind this campaign has defeated. `room`: copied from the GM's codex doc, with the numbers it carried in `info`. */
 export type CodexEntry = { name: string; rank: Rank; kills: number; firstAt: string; lastAt: string; monsterId: MonsterId | null; room?: true; info?: CodexInfo };
@@ -290,7 +294,7 @@ export const newRollEntry = (): RollEntry => ({
 /** An empty save, the example a stored one is filled from: no hunters. Read through the repair, every save holds one. */
 export const newSave = (deviceId: DeviceId): Save => ({
   schema: SCHEMA, savedAt: '', seq: 100, settings: newSettings(deviceId), rulesOverrides: {}, world: newWorld(), hunters: [], gates: [],
-  monsters: [], library: { items: [], statuses: {}, skills: [], rewards: [], maps: [], feats: {}, stories: [] }, shop: null, fight: null, dropped: null, log: [], rolls: [], codex: {}, codexSeen: [], coins: [], calls: [],
+  monsters: [], library: { items: [], statuses: {}, skills: [], rewards: [], maps: [], feats: {}, stories: [] }, shop: null, fight: null, dropped: null, log: [], rolls: [], codex: {}, codexSeen: [], coins: [], calls: [], storyRuns: [],
 });
 
 // ── parser ──
@@ -440,6 +444,9 @@ const maps = (run: Run, value: unknown): BattleMap[] =>
 /** The GM's stories, each read by `parseStory`; one without a name or a chapter is dropped, one without an id takes the default's. */
 const stories = (run: Run, value: unknown): Story[] =>
   (Array.isArray(value) ? value : []).filter(isObj).flatMap(raw => { const t = parseStory(raw); return t ? [refill<Story>(run, raw, t, 'st0', 'st')] : []; });
+/** The stories on the table, each read by `parseStoryRun` (one naming no story or no state is dropped), then `keptRuns`. */
+const storyRuns = (run: Run, value: unknown): StoryRun[] =>
+  keptRuns((Array.isArray(value) ? value : []).filter(isObj).flatMap(raw => { const t = parseStoryRun(raw); return t ? [refill<StoryRun>(run, raw, t, 'sr0', 'sr')] : []; }));
 /** Items without ids (the shop): each read by `parseItem`, one it refuses dropped. */
 const templates = (value: unknown): ItemTemplate[] => (Array.isArray(value) ? value : []).flatMap(raw => parseItem(raw) ?? []);
 /** A stored drop: its gold a whole number from 0, its items each read by `parseItem`; null when it holds nothing. */
@@ -622,6 +629,7 @@ function repair(s: Rec, env: ParseEnv, fight: FightRepair = 'read'): Save {
   save.library.maps = maps(run, save.library.maps.slice(0, LIMITS.libraryMaps));
   save.library.feats = parseFeats(save.library.feats, LIMITS.libraryFeats);
   save.library.stories = stories(run, save.library.stories.slice(0, LIMITS.libraryStories));
+  save.storyRuns = storyRuns(run, save.storyRuns);
   save.gates = gates(run, save.gates);
   save.shop = Array.isArray(save.shop) ? templates(save.shop) : null;
   save.dropped = droppedOf(save.dropped);

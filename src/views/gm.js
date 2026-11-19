@@ -6,7 +6,7 @@ import { chipDef } from '../core/hunter/chips.ts';
 import { gmSource } from '../core/effects.ts';
 import { cheatSheet } from './rulesref.js';
 import { bundleMaker } from './reward-editor.js';
-import { isEmptyReward, newRewards, rewardLines } from '../core/rewards.ts';
+import { UNFINISHED_ROWS, isEmptyReward, newRewards, rewardLines } from '../core/rewards.ts';
 import { GIVE_HOLD_MS, SHELF_WORDS, readRecent, recentGives } from '../core/registry/bundles.ts';
 import { giveShelf } from './give-shelf.js';
 import { LOG_KINDS } from '../core/save.ts';
@@ -24,6 +24,7 @@ import { pick } from '../edge/roll.ts';
 import * as motion from './motion.ts';
 import { compareTimes } from '../core/day.ts';
 import { postNews } from '../core/sync/connection.ts';
+import { running } from '../core/story/run.ts';
 
 /** The Make row at the top of the GM view: a kind the Workshop makes and its button. */
 const MAKE = [['status', 'Status'], ['item', 'Item'], ['skill', 'Skill'], ['monster', 'Monster'], ['bundle', 'Bundle']];
@@ -383,7 +384,7 @@ export function register(app) {
   function doAward() {
     const { local, remote } = picked();
     if (!local.length && !remote.length) return say('#gm-award-msg', 'Select at least one hunter.', true);
-    if (editor.blocked()) return say('#gm-award-msg', 'Finish or remove the reward rows marked in red.', true);
+    if (editor.blocked()) return say('#gm-award-msg', UNFINISHED_ROWS, true);
     const rw = editor.value();
     if (isEmptyReward(rw)) return say('#gm-award-msg', 'Add something to the reward: XP, gold, points or a row.', true);
     // the form holds the last fight's drop: its send deals with it in the same write (pay.ts `dropDealt`)
@@ -644,6 +645,8 @@ export function register(app) {
     id: 'gm', label: 'GM', icon: '♛', order: 90, gmOnly: true,
     mount(el) {
       root = el;
+      // the Stories section opens with the page while a story runs; after that it keeps the GM's choice, as each section does
+      if (!('stories' in open) && running(S().storyRuns).length) open.stories = true;
       const rankOpts = RANKS.map(r => opt(r, `${r}-rank`)).join('');
       el.innerHTML = `<nav class="gm-make" id="gm-make" aria-label="Make"><div class="gm-make-h"><span class="lbl">Make</span><button type="button" class="quiet" data-make="workshop">Workshop →</button></div>
           <div class="gm-make-row">${MAKE.map(([k, l]) => `<button type="button" data-make="${k}" aria-label="Make ${l.toLowerCase()}">${l}</button>`).join('')}</div></nav>
@@ -654,6 +657,7 @@ export function register(app) {
           <div class="gm-row"><button type="button" class="primary" id="gm-s-go">Start session</button></div>
           <div class="gm-msg" id="gm-s-msg" role="status"></div><div id="gm-cheat"></div>`),
         section('party', 'Party board', `<div class="gm-room" id="gm-room"></div><div class="gm-cards" id="gm-board" aria-live="polite"></div><div class="gm-msg" id="gm-board-msg" role="status"></div>`),
+        section('stories', 'Stories', '<div id="gm-stories"></div>', false, true),
         section('award', 'Award', `
           <div class="lbl">Hunters <span id="gm-sel-sum-a" class="gm-sum"></span></div>
           <div class="gm-targets"><label class="gm-chk"><input type="checkbox" id="gm-all"><span><strong>All</strong></span></label></div>
@@ -701,10 +705,10 @@ export function register(app) {
       ].join('');
 
       // D04: desktop columns. Sections move into column wrappers at >=1100 (2 cols) / >=1500 (3 cols); phone/tablet keep the original single stack
-      const ORDER = ['cheat', 'party', 'award', 'bcast', 'quest', 'gate', 'tables', 'rules', 'log'];
+      const ORDER = ['cheat', 'party', 'stories', 'award', 'bcast', 'quest', 'gate', 'tables', 'rules', 'log'];
       // A20: the Award form is a full-width row under the columns, its reward rows two to a line
-      const PLAN2 = [['party', 'quest'], ['cheat', 'bcast', 'gate', 'tables', 'rules', 'log']];
-      const PLAN3 = [['party'], ['quest', 'bcast'], ['cheat', 'gate', 'tables', 'rules', 'log']];
+      const PLAN2 = [['party', 'stories', 'quest'], ['cheat', 'bcast', 'gate', 'tables', 'rules', 'log']];
+      const PLAN3 = [['party', 'stories'], ['quest', 'bcast'], ['cheat', 'gate', 'tables', 'rules', 'log']];
       let planSig = '';
       const arrange = () => {
         const L = app.layout || { desktop: () => false, wide: () => false };
@@ -804,6 +808,7 @@ export function register(app) {
       if (pendingAward) openPendingAward();
       const csig = JSON.stringify(ov()), cs = $('#gm-cheat'); if (cs.dataset.sig !== csig) { cs.dataset.sig = csig; cs.innerHTML = cheatSheet(); }
       renderBoard(); renderTargets();
+      $('#gm-hsum-stories').textContent = A().stories.paint($('#gm-stories'));
       editor.refresh();
       $('#gm-day').textContent = `Day ${S().world.day}`;
       syncTableUi(); renderLog(); renderNotify(); renderUses();

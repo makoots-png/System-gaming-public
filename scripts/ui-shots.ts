@@ -338,6 +338,28 @@ async function gmMakers(g: Phone) {
     await press(g, d.locator('.mk-actions [data-cancel]'));
     await d.waitFor({ state: 'detached' });
   });
+  await step(g, 4, 'the GM view\'s stories: the turn-on window, a running story\'s card, the open window', async () => {
+    const sec = page.locator('#gm-stories'), w = page.locator('.st-ov [role=dialog]');
+    await go(g, 'gm');
+    const tog = page.locator('[data-tog="stories"]');
+    if ((await tog.getAttribute('aria-expanded')) !== 'true') await press(g, tog);
+    await show(sec, 'start');
+    await press(g, sec.locator('[data-st-turnon]'));
+    await shot(g, 'stories-turn-on');
+    await press(g, w.locator('[data-st-story]').first());
+    await press(g, w.locator('[data-st-who]').first());
+    await shot(g, 'stories-turn-on-story');
+    await press(g, w.locator('[data-st-go]'));
+    await w.waitFor({ state: 'detached' });
+    await closeWindows(g);
+    await waitToastGone(g);
+    await show(sec, 'start');
+    await shot(g, 'stories-card');
+    await press(g, sec.locator('[data-st-open]'));
+    await shot(g, 'stories-open');
+    await press(g, w.locator('[data-st-cancel]'));
+    await w.waitFor({ state: 'detached' });
+  });
 }
 
 async function gmAward(g: Phone, p: Phone | null) {
