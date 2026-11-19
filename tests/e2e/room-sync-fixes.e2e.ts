@@ -1,5 +1,5 @@
 import { writeFile } from 'node:fs/promises';
-import { test, expect, onboardGM, onboardPlayer, openApp, createRoom, dismissAll, go, activeHunter, chooseList, roomHeaders, type Page } from './helpers.ts';
+import { test, expect, onboardGM, onboardPlayer, openApp, createRoom, dismissAll, go, activeHunter, chooseList, gmRoomHeaders, roomHeaders, type Page } from './helpers.ts';
 
 const roomView = '#view-room';
 const removedWindow = (page: Page) => page.locator('.sys-overlay.show', { hasText: 'REMOVED FROM ROOM' });
@@ -460,7 +460,7 @@ test('a GM who leaves and rejoins the same room never sees the room as it was be
     await gm.locator(`${roomView} [data-leave]`).tap();
     await expect(gm.locator(`${roomView} [data-lobby]`)).toBeVisible();
     await player.evaluate(() => hunterApp.store.update((d: any) => { d.hunters.find((h: any) => h.name === 'Kai Test').name = 'Kai Renamed'; }, 'test-setup'));
-    const names = async () => (await (await gm.request.get(`/api/rooms/${code}?after=0`, { headers: await roomHeaders(gm) })).json()).sheets as Record<string, any>;
+    const names = async () => (await (await gm.request.get(`/api/rooms/${code}?after=0`, { headers: await gmRoomHeaders(gm, code) })).json()).sheets as Record<string, any>;
     await expect.poll(async () => Object.values(await names()).map(s => s.data.hunter.name)).toContain('Kai Renamed');
   });
 

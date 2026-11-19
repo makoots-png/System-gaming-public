@@ -86,7 +86,8 @@ export type Phone = {
 // ── the network ──
 /** `gm`: a request outside the machines (sync.ts `send`, a removal); `box`: an outbox entry's send (sync.ts `deliver`). */
 export type Lane = 'link' | 'push' | 'gm' | 'box';
-type Http = { method: string; path: string; body?: unknown; key?: string | null };
+/** `prove`: as sync.ts `fetchApi`, a read that says which phone asks (the poll and the head) carries the device token. */
+type Http = { method: string; path: string; body?: unknown; key?: string | null; prove?: boolean };
 type Answer = { status: number; data: unknown };
 type Reply = Answer | { none: 'net' | 'timeout' };
 export type Pending = {
@@ -103,6 +104,8 @@ export type World = {
   broken: string[];
   /** Per hunter sheet key, the phones whose sheet the server stored under it. */
   writers: Record<string, number[]>;
+  /** Each room's GM key as its create answered it (bookkeeping for the rules: `probe` reads the whole room with it). */
+  keys: Record<string, string>;
 };
 
 export const keyOf = (p: Phone): SheetKey => parseSheetKey(`${p.device}:h1`)!;
@@ -123,7 +126,7 @@ function newPhone(i: number, name: string, mode: 'gm' | 'player'): Phone {
 
 /** A new world: a GM phone and `players` player phones, each booted with no room, and the clock at `t0`. */
 export function newWorld(build: string, players: 1 | 2, t0: number): World {
-  const w: World = { build, clock: t0, phones: [], pending: [], n: 0, made: 0, told: {}, broken: [], writers: {} };
+  const w: World = { build, clock: t0, phones: [], pending: [], n: 0, made: 0, told: {}, broken: [], writers: {}, keys: {} };
   w.phones.push(newPhone(0, 'gm', 'gm'));
   for (let k = 1; k <= players; k++) w.phones.push(newPhone(k, `p${k}`, 'player'));
   for (const p of w.phones) startPage(w, p);
@@ -248,13 +251,14 @@ function linkRequest(w: World, p: Phone, gen: Gen, timeoutMs: number, call: Link
     case 'create': return on({ method: 'POST', path: '/rooms' }, null, a => {
       const code = isObj(a.data) ? (a.data.code as RoomCode) : null, key = isObj(a.data) && typeof a.data.gmKey === 'string' ? a.data.gmKey : '';
       if (a.status !== 200 || !code || !key) return go([failedServer]);
+      w.keys[code] = key;
       go([{ type: 'created', gen, code, key: key as GmKey }]);
     });
     case 'peek': return on({ method: 'GET', path: `/rooms/${call.code}?peek=1` }, call.code, a => {
       if (a.status !== 200) return go([failedServer]);
       go([{ type: 'peeked', gen, exists: isObj(a.data) && a.data.exists === true }]);
     });
-    case 'head': return on({ method: 'GET', path: `/rooms/${call.code}?after=0`, key: call.key }, call.code, a => {
+    case 'head': return on({ method: 'GET', path: `/rooms/${call.code}?after=0&d=${p.device}`, key: call.key, prove: true }, call.code, a => {
       if (a.status !== 200) return go([failedOf(a)]);
       const r = parseRoomState(a.data); if (!r) return go([failedServer]);
       if (r.more) throw new Error('runner: a head of more than one page is not modelled');
@@ -262,7 +266,7 @@ function linkRequest(w: World, p: Phone, gen: Gen, timeoutMs: number, call: Link
     });
     case 'poll': {
       const after = call.cursor;
-      return on({ method: 'GET', path: `/rooms/${call.code}?after=${after}&d=${p.device}`, key: call.key }, call.code, a => {
+      return on({ method: 'GET', path: `/rooms/${call.code}?after=${after}&d=${p.device}`, key: call.key, prove: true }, call.code, a => {
         if (a.status !== 200) return go([failedOf(a)]);
         const r = parseRoomState(a.data); if (!r) return go([failedServer]);
         const fight = r.docs.fight?.data ?? null;
@@ -530,7 +534,7 @@ const gmRoom = (p: Phone): { code: RoomCode; key: GmKey } | null => (p.link.at =
 const view = (p: Phone): Shown => (p.link.at === 'live' && p.shown.gen === p.link.gen ? p.shown : NOTHING_SHOWN);
 /** The GM's roster: sheet keys and what each sheet says (`remoteSheets` without tombstones). */
 export const roster = (p: Phone): Record<string, string> =>
-  gmRoom(p) ? Object.fromEntries(Object.entries(view(p).sheets).flatMap(([k, s]) => ('deleted' in s.data ? [] : [[k, JSON.stringify({ id: s.data.hunter.id, name: s.data.hunter.name })]]))) : {};
+  gmRoom(p) ? Object.fromEntries(Object.entries(view(p).sheets).flatMap(([k, s]) => ('hunter' in s.data ? [[k, JSON.stringify({ id: s.data.hunter.id, name: s.data.hunter.name })]] : []))) : {};
 const kickedDoc = (p: Phone): { keys: Record<string, string>; names: Record<string, string> } => {
   const d = view(p).docs.kicked?.data;
   return { keys: { ...(d?.keys ?? {}) }, names: { ...(d?.names ?? {}) } };
@@ -668,12 +672,12 @@ export function enabled(w: World): Move[] {
 }
 
 async function serve(w: World, r: Pending): Promise<Answer> {
-  const { method, path, body, key } = r.http;
+  const { method, path, body, key, prove } = r.http;
   const headers: Record<string, string> = { 'x-hunter-build': w.build };
   const p = w.phones[r.phone]!;
   if (body !== undefined) headers['content-type'] = 'application/json';
   if (key) headers['x-gm-key'] = key;
-  if (body !== undefined && !key) headers['x-device-token'] = p.token;
+  if ((body !== undefined || prove) && !key) headers['x-device-token'] = p.token;
   const res = await handler(new Request('http://test/api' + path, { method, headers, body: body === undefined ? null : JSON.stringify(body) }));
   let data: unknown = null;
   try { data = await res.json(); } catch { /* no body */ }
@@ -810,8 +814,8 @@ async function flush(w: World): Promise<void> {
   throw new Error('runner: the network never went quiet');
 }
 
-/** What the server holds for a room, read with a plain GET (it only renews the room's expiry). */
+/** What the server holds for a room, read whole with the room's GM key (it only renews the room's expiry). */
 export async function probe(w: World, code: RoomCode): Promise<RoomState | null> {
-  const res = await handler(new Request(`http://test/api/rooms/${code}?after=0`, { headers: { 'x-hunter-build': w.build } }));
+  const res = await handler(new Request(`http://test/api/rooms/${code}?after=0`, { headers: { 'x-hunter-build': w.build, 'x-gm-key': w.keys[code] ?? '' } }));
   return res.status === 200 ? parseRoomState(await res.json()) : null;
 }

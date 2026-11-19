@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { DOCS, DOC_MAX, NOTED_MAX, EVENTS, EVENT_TYPES, newEvent, onTurn, parseDocName, parseEvent, parseRoomState, parseSheet, SHEET_MAX, speaksFor, useRoute } from '../src/core/protocol.ts';
 import { endEvent, isSealed } from '../src/core/protocol.ts';
+import { FACE_LINES, hunterFace, parseServedSheet, servedTo, sheetFor } from '../src/core/protocol.ts';
+import type { RoomEvent, RoomViewer } from '../src/core/protocol.ts';
 import { GOODS_LINES, OFFER_MAX, goodsSize } from '../src/core/trade/goods.ts';
 import { ITEM_BOUNDS, LOOT_ITEMS, itemOf } from '../src/core/registry/items.ts';
 import { PERK_KEYS } from '../src/core/rules.ts';
@@ -20,7 +22,9 @@ import { MAX_ZONES } from '../src/core/combat/zones.ts';
 import { LOG_LINE_MAX, MAX_STATUSES } from '../src/core/combat/fight-types.ts';
 import type { Fight } from '../src/core/combat/fight-types.ts';
 import { tick } from '../src/core/combat/timeline.ts';
-import { parseFormula } from '../src/core/formula.ts';
+import { FORMULA_PARTS, parseFormula, partsOf } from '../src/core/formula.ts';
+import type { Formula } from '../src/core/formula.ts';
+import { parseOp, parseStatusDef } from '../src/core/combat/fight-parse.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { abilityId } from '../src/core/combat/ability-types.ts';
 import { NAME_MAX } from '../src/core/combat/fight-types.ts';
@@ -42,6 +46,52 @@ const VALID_SHEET: [Raw, Raw] = [
   { hunter: { ...copy(newHunter()), id: 'h1', name: 'Kai' } },
   { hunter: { ...copy(newHunter()), id: 'h1', name: 'Kai' } },
 ];
+
+describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
+  const KAI = 'd-kai:h1' as SheetKey, MIRA = 'd-mira:h3' as SheetKey;
+  const GM: RoomViewer = { kind: 'gm' }, ANYONE: RoomViewer = { kind: 'anyone' };
+  const phone = (device: string): RoomViewer => ({ kind: 'phone', device: device as never });
+  const event = (type: EventType, payload: Raw): RoomEvent => parseEvent(type, payload)!;
+  const offer = event('offer', { eid: 'd-kai-mo1', by: KAI, to: [MIRA], names: { by: 'Kai', to: 'Mira' }, gives: { gold: 5, items: [] }, asks: { gold: 0, items: [] } });
+  const stop = event('offerStop', { eid: 'd-kai-mo1-e', to: [KAI, MIRA], offer: 'd-kai-mo1' });
+  const award = event('award', { eid: 'd-gm-a1', to: [MIRA], rewards: { xp: 5 } });
+
+  test('a sealed message reaches the GM and the phones of the hunters it names; an unsealed one reaches every phone', () => {
+    for (const ev of [offer, stop]) {
+      expect([GM, phone('d-kai'), phone('d-mira'), phone('d-eldrin'), ANYONE].map(v => servedTo(ev, v))).toEqual([true, true, true, false, false]);
+    }
+    expect([GM, phone('d-kai'), phone('d-mira'), phone('d-eldrin'), ANYONE].map(v => servedTo(award, v))).toEqual([true, true, true, true, true]);
+  });
+
+  const items = Array.from({ length: FACE_LINES + 2 }, (_, i) => ({ ...itemOf(RULES, SHOP_ITEMS[0]!), id: `i${i + 1}` as never, name: `Thing ${i + 1}`, qty: i + 1 }));
+  const mira = { ...newHunter(), id: 'h3' as never, name: 'Mira', level: 4, job: 'Healer', items, equipped: { ...newHunter().equipped, weapon: 'i1' as never } };
+
+  test('a sheet goes whole to the GM and to its own phone, as a face to any other, and a tombstone stays a tombstone', () => {
+    const sheet = { hunter: mira }, face = hunterFace(mira, { bags: true });
+    expect([GM, phone('d-mira'), phone('d-kai'), ANYONE].map(v => sheetFor(MIRA, sheet, v, { bags: true }))).toEqual([sheet, sheet, face, face]);
+    expect(sheetFor(MIRA, { deleted: true }, ANYONE, { bags: true })).toEqual({ deleted: true });
+  });
+
+  test('a face holds the name, level, job and at most 40 unworn bag lines in bag order, or no bag lines when the caller leaves them out', () => {
+    const face = hunterFace(mira, { bags: true }).face;
+    expect([face.name, face.level, face.job]).toEqual(['Mira', 4, 'Healer']);
+    expect(face.bag).toHaveLength(FACE_LINES);
+    expect(face.bag![0]).toEqual({ id: 'i2', name: 'Thing 2', qty: 2, rar: items[1]!.rar });
+    expect(String(face.bag!.at(-1)!.id)).toBe(`i${FACE_LINES + 1}`);
+    expect(hunterFace(mira, { bags: false })).toEqual({ face: { name: 'Mira', level: 4, job: 'Healer', bag: null } });
+    expect(hunterFace({ ...mira, items: [] }, { bags: true }).face.bag).toEqual([]);
+  });
+
+  test('a phone reads a face of the poll answer: a line that does not read is dropped, more than 40 are cut, and a bag of null stays null', () => {
+    const line = { id: 'i9', name: 'Healing Potion', qty: 3, rar: 'common' };
+    const read = (bag: unknown) => parseServedSheet(MIRA, { face: { name: 'Mira', level: 4, job: null, bag } });
+    expect(read([line, { id: 'nope', name: 'x', qty: 1, rar: 'common' }, { ...line, rar: 'golden' }])).toEqual({ face: { name: 'Mira', level: 4, job: null, bag: [line] } });
+    expect((read(Array(FACE_LINES + 5).fill(line)) as { face: { bag: unknown[] } }).face.bag).toHaveLength(FACE_LINES);
+    expect(read(null)).toEqual({ face: { name: 'Mira', level: 4, job: null, bag: null } });
+    expect(parseServedSheet(MIRA, { face: { level: 4, job: null, bag: [] } })).toBeNull();
+    expect(parseSheet(MIRA, { face: { name: 'Mira', level: 4, job: null, bag: [] } })).toBeNull();
+  });
+});
 
 describe('every event type', () => {
   test('the table has an entry for each of the sixteen room messages', () => {
@@ -1148,5 +1198,42 @@ describe('an offer between two hunters, and its one end', () => {
     const n = fitting(noted);
     expect(payload('offer', offerOf(noted, n))).not.toBeNull();
     expect(payload('offer', offerOf(noted, n + 1))).toBeNull();
+  });
+  test('the largest formula, status and item the readers take, by part, against the caps (notes-5-trade.md 12.3)', () => {
+    const bytes = (v: unknown) => goodsSize(v);
+    const K = RULES.dice;
+    // the parts a formula may hold, each at its largest: a dice term with every single modifier, a binary node, a fn node
+    const die: Formula = { kind: 'dice', count: K.maxDice, sides: K.maxSides, mods: { explode: { op: '<', n: K.maxSides }, cut: { how: 'kh', n: K.maxDice }, success: { op: '<', n: K.maxSides } } };
+    const tree = (leaves: number): Formula => (leaves === 1 ? die : { kind: 'binary', op: '+', left: tree(Math.ceil(leaves / 2)), right: tree(Math.floor(leaves / 2)) });
+    const candidates: Formula[] = [
+      { kind: 'fn', fn: 'floor', arg: tree((FORMULA_PARTS) / 2) },
+      tree((FORMULA_PARTS + 1) / 2 | 0),
+      { kind: 'dice', count: K.maxDice, sides: 300, mods: { reroll: { on: Array.from({ length: FORMULA_PARTS - 1 }, (_, i) => ({ op: '<', n: i + 1 })), once: false } } },
+    ];
+    for (const f of candidates) expect(partsOf(f)).toBeLessThanOrEqual(FORMULA_PARTS);
+    const formula = candidates.reduce((a, b) => (bytes(a) >= bytes(b) ? a : b));
+    const leaf = { op: 'damage', type: 'physical', amount: Array.from({ length: 6 }, () => formula), when: 'turn' };
+    expect(parseOp(leaf, RULES), 'the largest op reads: six tiers of the largest formula').toEqual(leaf);
+    // a status def nests applyStatus defs three deep under it (fight-parse.ts `opOf`); each def holds 12 ops
+    const def = (ops: unknown[]) => ({ label: 'ࠀ'.repeat(60), desc: 'ࠀ'.repeat(500), color: '#abcdef', ops });
+    const wrap = (d: unknown) => ({ op: 'applyStatus', key: 'k'.repeat(80), def: d, duration: Array(6).fill(1e9), stacks: RULES.fight.kit.stackAdd });
+    const nest = (levels: number, inner: unknown) => { let d = def([inner]); for (let i = 0; i < levels; i++) d = def([wrap(d)]); return d; };
+    expect(parseStatusDef(nest(3, leaf), RULES), 'three applyStatus defs under a status read').not.toBeNull();
+    expect(parseStatusDef(nest(4, leaf), RULES), 'a fourth is refused').toBeNull();
+    // sizes by composition: a def of 12 ops, each the op below it; the JSON of a slot is replaced by the slot's own size
+    const slot = '"#"'.length, deepest = bytes(def(Array(12).fill(leaf)));
+    const above = (inner: number) => bytes(def(Array(12).fill(wrap('#')))) + 12 * (inner - slot);
+    const status = above(above(above(deepest)));
+    const shell = { name: 'ࠀ'.repeat(ITEM_BOUNDS.name), desc: 'ࠀ'.repeat(ITEM_BOUNDS.desc), effects: Array(12).fill(wrap('#')), worn: '#' };
+    const item = bytes(shell) + 12 * (above(above(deepest)) - slot) + (status - slot);
+    console.info([
+      `the largest formula the readers take (${FORMULA_PARTS} parts): ${bytes(formula)} bytes; six tiers of it in one op: ${bytes(leaf)}`,
+      `a status def of 12 such ops: ${deepest}; with applyStatus defs nested three deep under it, 12 ops each: ${status} bytes (at least: triggers, an end and a threshold nest too)`,
+      `an item with 12 such effects and such a worn status: ${item} bytes (at least)`,
+      `against the caps: SHEET_MAX ${SHEET_MAX}, DOC_MAX ${DOC_MAX}, OFFER_MAX ${OFFER_MAX}; lines of the largest item in an offer: 0; ops of six tiers in an offer: ${Math.floor(OFFER_MAX / bytes(leaf))}`,
+    ].join('\n'));
+    expect(bytes(leaf), 'one op of six tiers of the largest formula is over the offer cap alone').toBeGreaterThan(OFFER_MAX);
+    expect(status).toBeGreaterThan(SHEET_MAX);
+    expect(item).toBeGreaterThan(status);
   });
 });

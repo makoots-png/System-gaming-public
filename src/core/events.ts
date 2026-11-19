@@ -4,7 +4,7 @@
 
 import type { Body } from './combat/effect-ops.ts';
 import type { Ended } from './combat/fight-types.ts';
-import type { RoomCode, RoomDocs, RoomSheet, SheetKey, Stored, StoredEvent } from './protocol.ts';
+import type { RoomCode, RoomDocs, ServedSheet, SheetKey, Stored, StoredEvent } from './protocol.ts';
 import type { Quest } from './save.ts';
 import type { Connection } from './sync/connection.ts';
 import type { RollEntryId } from './ids.ts';
@@ -42,7 +42,7 @@ export type AppEvents = {
   /** sync.ts for each room event another phone sent. The GM's quest and table views show replies and rolls. */
   'sync:event': { event: StoredEvent };
   /** sync.ts when the room's hunter sheets change. Views that list the party redraw. */
-  'sync:sheets': { sheets: Record<SheetKey, Stored<RoomSheet>> };
+  'sync:sheets': { sheets: Record<SheetKey, Stored<ServedSheet>> };
   /** sync.ts when the room's shared documents change. Views that read a document (bestiary, gates, rules) redraw. */
   'sync:docs': { docs: RoomDocs };
   /**

@@ -1,6 +1,6 @@
 // formula.ts: an ability's damage, heal or shield formula, as data (docs/agent-handoff/rw/design.md section 3.4). A GM's
 // text is parsed once, at the boundary, into a `Formula` tree; `evaluate` trusts the tree. The parser refuses only what it
-// cannot read, never a formula for being strong. A name is a stat key or a `Sheet` key, read from the user, or from the
+// cannot read and a formula past `FORMULA_PARTS`, never a formula for being strong. A name is a stat key or a `Sheet` key, read from the user, or from the
 // target after `target.`; adding a field to `Sheet` (with its label in `SHEET_LABELS`) makes it a name here. The kits'
 // names (docs/agent-handoff/kits/design.md 1.5) read a snapshot of the fight a use takes at rule 6b (`KitScope`): a new
 // one is a member of `Formula`, its name in `NAMES` (or `KEYED`), its bound in `RULES.fight.kit` and its value in the
@@ -82,6 +82,24 @@ export type Dice = { readonly count: number; readonly sides: number; readonly mo
  */
 export const REROLL_MAX = 10;
 export const EXPLODE_MAX = 10;
+
+/**
+ * The most parts a formula holds: each node of its tree is a part, and so is each face a dice term rolls again on (the
+ * one list a node carries). Both readers keep it: `parseFormula` refuses past it, and the tree reader of outside data
+ * (fight-parse.ts `formulaOf`) stops at the first part past it. A part needs at least one character, so whatever the
+ * makers' longest formula field (200 characters) holds fits; the largest formula the app writes by rule is 89 parts.
+ * notes-5-trade.md 12.3 has the measurement.
+ */
+export const FORMULA_PARTS = 200;
+/** A formula's parts, as `FORMULA_PARTS` counts them. */
+export const partsOf = (f: Formula): number => {
+  switch (f.kind) {
+    case 'dice': return 1 + (f.mods?.reroll?.on.length ?? 0);
+    case 'negate': case 'fn': return 1 + partsOf(f.arg);
+    case 'binary': case 'min': case 'max': return 1 + partsOf(f.left) + partsOf(f.right);
+    default: return 1;
+  }
+};
 
 /** The dice limits a formula may name: the rules' `dice`. */
 export type FormulaRules = { readonly dice: { readonly maxDice: number; readonly maxSides: number } };
@@ -400,6 +418,8 @@ export function parseFormula(text: string, rules: FormulaRules): ParsedFormula {
     const rest = peek();
     if (rest && rest.text === ')') return { ok: false, error: `The ")" at character ${rest.at} has no "(" to close.` };
     if (rest) return { ok: false, error: `Cannot read "${rest.text}" at character ${rest.at}. Join it to what comes before with + - * / or ^.` };
+    const parts = partsOf(formula);
+    if (parts > FORMULA_PARTS) return { ok: false, error: `The formula has ${parts} parts, and a formula has at most ${FORMULA_PARTS}. Each number, die, name, sign and face rolled again is a part.` };
     return { ok: true, formula };
   } catch (e) {
     if (e instanceof Refusal) return { ok: false, error: e.error };

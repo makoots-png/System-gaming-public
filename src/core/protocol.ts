@@ -47,6 +47,9 @@ import type { OfferId } from './ids.ts';
 import { OFFER_MAX, goodsSize, noGoods, parseBagPick, parseGoods } from './trade/goods.ts';
 import type { BagPick, Goods } from './trade/goods.ts';
 import type { Seat } from './role.ts';
+import { ITEM_BOUNDS, RARITIES } from './registry/items.ts';
+import type { Rarity } from './registry/items.ts';
+import { MAX_LEVEL } from './hunter/progress.ts';
 
 // The ids (src/core/ids.ts) are made only by their parsers, so ids of different things do not mix.
 export { deviceOf, hunterIdOf, parseDeviceId, parseEventId, parseRoomCode, parseSheetKey };
@@ -369,7 +372,7 @@ type EventDef<K extends EventType> = {
   readonly gmOnly: boolean; readonly ownSheet: boolean; readonly read: (payload: Rec) => Payloads[K];
   /**
    * Whether a stored event of the type reaches only the GM and the phones of the hunters its `by` and `to` name; absent, never.
-   * Read by unit 3's `servedTo` (notes-5-trade.md 4.1); until it lands the server serves every event to every phone.
+   * The server's poll reads it through `servedTo` (notes-5-trade.md 4.1).
    */
   readonly sealed?: (payload: Payloads[K]) => boolean;
 };
@@ -929,6 +932,55 @@ export function parseSheet(key: SheetKey, data: unknown): RoomSheet | null {
   return h && h.id === hunterIdOf(key) ? { hunter: h } : null;
 }
 
+// ── what each phone gets of the room (notes-5-trade.md 4.1, rulings 1 and 4) ──
+/** The most bag lines a face carries. */
+export const FACE_LINES = 40;
+/** One unworn line of a hunter's bag as the other players see it: what an offer may ask for. */
+export type FaceLine = { id: ItemId; name: string; qty: number; rar: Rarity };
+/**
+ * A hunter as the other players in the room see it: who it is, and its unworn bag lines in bag order, or `null` when the
+ * table shows no bags (the caller of `hunterFace` decides; an empty bag is `[]`). It holds no quest, title or status.
+ */
+export type HunterFace = { face: { name: string; level: number; job: string | null; bag: FaceLine[] | null } };
+/** A sheet as a poll answers it: whole, a tombstone, or a face. The store holds only a `RoomSheet`. */
+export type ServedSheet = RoomSheet | HunterFace;
+/** Who asks for the room: the GM (its key), a phone proven by its device token (server.ts `proven`), or anyone who knows the code. */
+export type RoomViewer = { readonly kind: 'gm' } | { readonly kind: 'phone'; readonly device: DeviceId } | { readonly kind: 'anyone' };
+/** `h` as the other players see it; its bag lines only when `bags`. */
+export function hunterFace(h: Hunter, o: { readonly bags: boolean }): HunterFace {
+  const worn = new Set(Object.values(h.equipped));
+  const bag = o.bags ? h.items.filter(i => !worn.has(i.id)).slice(0, FACE_LINES).map(i => ({ id: i.id, name: i.name, qty: i.qty, rar: i.rar })) : null;
+  return { face: { name: h.name, level: h.level, job: h.job, bag } };
+}
+/** The sheet under `key` as `v` gets it: whole to the GM and to the phone the key belongs to, a face to anyone else. */
+export function sheetFor(key: SheetKey, sheet: RoomSheet, v: RoomViewer, o: { readonly bags: boolean }): ServedSheet {
+  if ('deleted' in sheet || v.kind === 'gm' || (v.kind === 'phone' && deviceOf(key) === v.device)) return sheet;
+  return hunterFace(sheet.hunter, o);
+}
+/** The hunters a stored event names: its `by` and every key of its `to`. */
+function named(ev: RoomEvent): readonly SheetKey[] {
+  const p = ev.payload;
+  return [...('by' in p ? [p.by] : []), ...('to' in p && p.to ? p.to : [])];
+}
+/** Whether `v` gets a stored event: the GM every one; a sealed one only the phones of the hunters it names; any other, everyone. */
+export function servedTo(ev: RoomEvent, v: RoomViewer): boolean {
+  if (v.kind === 'gm' || !isSealed(ev)) return true;
+  return v.kind === 'phone' && named(ev).some(k => deviceOf(k) === v.device);
+}
+const faceLine = (v: unknown): FaceLine => {
+  const o = obj(v);
+  return { id: need(parseSaveId<'i'>(own(o, 'id'))), name: text(ITEM_BOUNDS.name)(own(o, 'name')), qty: int(1, ITEM_BOUNDS.qty)(own(o, 'qty')), rar: choiceOf(RARITIES)(own(o, 'rar')) };
+};
+/** A sheet in a poll answer: a face (each bag line that reads, at most `FACE_LINES`), else what `parseSheet` reads. */
+export function parseServedSheet(key: SheetKey, data: unknown): ServedSheet | null {
+  const raw = isObj(data) ? own(data, 'face') : undefined;
+  if (raw === undefined) return parseSheet(key, data);
+  return attempt(() => {
+    const f = obj(raw), bag = own(f, 'bag');
+    return { face: { name: text(NAME_MAX)(own(f, 'name')), level: int(1, MAX_LEVEL)(own(f, 'level')), job: nullOr(text(NAME_MAX))(own(f, 'job')), bag: bag === null ? null : listOf(bag, FACE_LINES, faceLine) } };
+  });
+}
+
 // ── the poll answer ──
 /** A sheet or doc as the server keeps it: when it was written, by which phone. */
 export type Stored<T> = { at: string; from: DeviceId; data: T };
@@ -941,7 +993,7 @@ export type RoomDocs = { [K in DocName]?: Stored<Docs[K]> };
  */
 export type RoomState = {
   gm: boolean; now: string; presence?: Record<DeviceId, string>; events: StoredEvent[]; next: number; more: boolean;
-  sheets: Record<SheetKey, Stored<RoomSheet>>; docs: RoomDocs;
+  sheets: Record<SheetKey, Stored<ServedSheet>>; docs: RoomDocs;
 };
 
 function stored<T>(v: unknown, read: (data: unknown) => T | null): Stored<T> {
@@ -967,9 +1019,9 @@ function roomDocs(v: unknown): RoomDocs {
 export function parseRoomState(v: unknown): RoomState | null {
   return attempt(() => {
     const o = obj(v), presence = own(o, 'presence');
-    const sheets: Record<SheetKey, Stored<RoomSheet>> = {};
+    const sheets: Record<SheetKey, Stored<ServedSheet>> = {};
     for (const [k, x] of Object.entries(obj(own(o, 'sheets'))).slice(0, SHEET_LIST_MAX)) {
-      const key = parseSheetKey(k), sheet = key && attempt(() => stored(x, data => parseSheet(key, data)));
+      const key = parseSheetKey(k), sheet = key && attempt(() => stored(x, data => parseServedSheet(key, data)));
       if (key && sheet) sheets[key] = sheet;
     }
     const state: RoomState = {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
-import { average, diceOf, diceModsOf, evaluate, EXPLODE_MAX, mean, meets, naturalOf, parseFormula, printFormula, REROLL_MAX, rolled, rollOf, withEdge } from '../src/core/formula.ts';
+import { average, diceOf, diceModsOf, evaluate, EXPLODE_MAX, FORMULA_PARTS, mean, meets, naturalOf, parseFormula, partsOf, printFormula, REROLL_MAX, rolled, rollOf, withEdge } from '../src/core/formula.ts';
 import type { Dice, Env, Formula, KitScope, Rolled, Scope } from '../src/core/formula.ts';
 import { statusKey } from '../src/core/combat/effect-ops.ts';
 import { SHEET_LABELS, share } from '../src/core/hunter/derive.ts';
@@ -8,6 +8,10 @@ import type { Sheet, SheetNumber } from '../src/core/hunter/derive.ts';
 import { STAT_KEYS } from '../src/core/stats.ts';
 import type { Stats } from '../src/core/stats.ts';
 import { tiles } from '../src/core/combat/space.ts';
+import { parseOp, parseStatusDef } from '../src/core/combat/fight-parse.ts';
+import { KINDS, recommended } from '../src/core/registry/ability-kinds.ts';
+import type { AbilityKind } from '../src/core/combat/ability-types.ts';
+import { SCALER_NAMES, suggestScaler } from '../src/core/registry/scalers.ts';
 
 const LIMITS = { dice: { maxDice: 50, maxSides: 1000 } };
 
@@ -571,5 +575,56 @@ describe('random formulas from the grammar with random dice', () => {
       const tree = parse(text);
       expect([text, parse(printFormula(tree))]).toEqual([text, tree]);
     }
+  });
+});
+
+describe('a formula\'s size (notes-5-trade.md 12.3)', () => {
+  /** `-` written n - 1 times before a 1: n parts, each a node, the deepest shape a text can make. */
+  const negated = (n: number): Formula => (n === 1 ? { kind: 'number', value: 1 } : { kind: 'negate', arg: negated(n - 1) });
+  /** One d300 rolled again on its first `k` faces: 1 + k parts. */
+  const rerolled = (k: number): Formula => ({ kind: 'dice', count: 1, sides: 300, mods: { reroll: { on: Array.from({ length: k }, (_, i) => ({ op: '=', n: i + 1 })), once: false } } });
+  const shield = (amount: Formula) => ({ op: 'shield', amount });
+  const worn = (amount: Formula) => ({ label: 'Ward', desc: '', ops: [shield(amount)] });
+
+  test('every formula the maker writes by rule fits, the largest of them in under half the bound', () => {
+    const gap = { mine: 'str', theirs: 'vit', per: 0.123456, cap: 1.234567 } as const;
+    let largest = 0;
+    for (const kind of Object.keys(KINDS) as AbilityKind[]) {
+      const scaler = Object.fromEntries(SCALER_NAMES.map(n => [n, suggestScaler(kind, n, RULES)]));
+      for (const type of ['physical', 'magical', 'heal', 'shield'] as const) for (const scale of STAT_KEYS) for (const a of SCALER_NAMES) for (const b of SCALER_NAMES) {
+        const f = recommended(kind, { type, scale, gap, scalers: [scaler[a]!, scaler[b]!], pace: 'quick', channel: 'linear' }, RULES).formula;
+        largest = Math.max(largest, partsOf(f));
+      }
+    }
+    expect(largest * 2).toBeLessThanOrEqual(FORMULA_PARTS);
+  });
+
+  test('whatever the makers\' longest field (200 characters) holds is never refused for its size', () => {
+    const texts = ['-'.repeat(199) + '1', '1+'.repeat(99) + '1', `1d300${Array.from({ length: 65 }, (_, i) => `r${i + 1}`).join('')}`];
+    for (const t of texts) {
+      expect(t.length).toBeLessThanOrEqual(200);
+      expect(parseFormula(t, LIMITS).ok).toBe(true);
+    }
+    expect(partsOf(parse(texts[0]!))).toBe(200);
+  });
+
+  test('a formula the maker took is read back from a save as it was, however deep: an item keeps its effect', () => {
+    const deep = parse('1+'.repeat(60) + '1'), deepest = parse('-'.repeat(199) + '1');
+    for (const f of [deep, deepest]) {
+      expect(parseOp(shield(f), RULES)).toEqual(shield(f));
+      expect(parseStatusDef(worn(f), RULES)?.ops).toEqual([shield(f)]);
+    }
+  });
+
+  test('a tree of 200 parts from outside data is read, and one of 201 is refused by every reader, the parser too', () => {
+    for (const [ok, over] of [[negated(200), negated(201)], [rerolled(199), rerolled(200)]] as const) {
+      expect(partsOf(ok)).toBe(200);
+      expect(parseOp(shield(ok), RULES)).toEqual(shield(ok));
+      expect(parseStatusDef(worn(ok), RULES)).not.toBeNull();
+      expect(partsOf(over)).toBe(201);
+      expect(parseOp(shield(over), RULES)).toBeNull();
+      expect(parseStatusDef(worn(over), RULES)).toBeNull();
+    }
+    expect(refusal('-'.repeat(200) + '1')).toBe('The formula has 201 parts, and a formula has at most 200. Each number, die, name, sign and face rolled again is a part.');
   });
 });

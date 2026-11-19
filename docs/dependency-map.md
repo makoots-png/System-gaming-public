@@ -371,7 +371,7 @@ For one entry with line numbers and both directions, run `bun run deps -- <name>
 ### `src/core/hunter/progress.ts`
 
 - Imports: `src/core/hunter/derive.ts`, `src/core/role.ts`, `src/core/rules.ts`, `src/core/save-step.ts`, `src/core/stats.ts`
-- Imported by: `src/core/hunter/grant.ts`, `src/core/hunter/sheet.ts`, `src/core/save.ts`, `src/core/starter.ts`, `src/views/custom.js`, `src/views/hunter.js`, `src/views/onboard.js`
+- Imported by: `src/core/hunter/grant.ts`, `src/core/hunter/sheet.ts`, `src/core/protocol.ts`, `src/core/save.ts`, `src/core/starter.ts`, `src/views/custom.js`, `src/views/hunter.js`, `src/views/onboard.js`
 
 ### `src/core/hunter/quest-rights.ts`
 
@@ -447,7 +447,7 @@ For one entry with line numbers and both directions, run `bun run deps -- <name>
 
 ### `src/core/protocol.ts`
 
-- Imports: `src/core/coin.ts`, `src/core/combat/ability-types.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/fight-doc.ts`, `src/core/combat/fight-parse.ts`, `src/core/combat/fight-types.ts`, `src/core/combat/odds.ts`, `src/core/combat/play.ts`, `src/core/combat/space.ts`, `src/core/combat/timeline.ts`, `src/core/combat/zones.ts`, `src/core/gates/gate.ts`, `src/core/hunter/chips.ts`, `src/core/hunter/facts.ts`, `src/core/hunter/feats.ts`, `src/core/hunter/shadows.ts`, `src/core/hunter/vitals.ts`, `src/core/ids.ts`, `src/core/one-of.ts`, `src/core/registry/jobs.ts`, `src/core/registry/monsters.ts`, `src/core/rewards.ts`, `src/core/role.ts`, `src/core/rules.ts`, `src/core/save.ts`, `src/core/trade/goods.ts`
+- Imports: `src/core/coin.ts`, `src/core/combat/ability-types.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/fight-doc.ts`, `src/core/combat/fight-parse.ts`, `src/core/combat/fight-types.ts`, `src/core/combat/odds.ts`, `src/core/combat/play.ts`, `src/core/combat/space.ts`, `src/core/combat/timeline.ts`, `src/core/combat/zones.ts`, `src/core/gates/gate.ts`, `src/core/hunter/chips.ts`, `src/core/hunter/facts.ts`, `src/core/hunter/feats.ts`, `src/core/hunter/progress.ts`, `src/core/hunter/shadows.ts`, `src/core/hunter/vitals.ts`, `src/core/ids.ts`, `src/core/one-of.ts`, `src/core/registry/items.ts`, `src/core/registry/jobs.ts`, `src/core/registry/monsters.ts`, `src/core/rewards.ts`, `src/core/role.ts`, `src/core/rules.ts`, `src/core/save.ts`, `src/core/trade/goods.ts`
 - Imported by: `server.ts`, `src/core/api.ts`, `src/core/applied.ts`, `src/core/award.ts`, `src/core/bestiary.ts`, `src/core/combat/fight-save.ts`, `src/core/events.ts`, `src/core/gates/pay.ts`, `src/core/gates/solo.ts`, `src/core/gates/world.ts`, `src/core/hunter/build.ts`, `src/core/hunter/grant.ts`, `src/core/room-server.ts`, `src/core/save.ts`, `src/core/session-log.ts`, `src/core/sync/invite.ts`, `src/core/sync/link.ts`, `src/core/sync/outbox.ts`, `src/core/trade/offer.ts`, `src/core/use-told.ts`, `src/edge/room-events.ts`, `src/edge/rules.ts`, `src/edge/sync.ts`, `src/views/combat.js`, `src/views/feats.js`, `src/views/gates.js`, `src/views/uses.js`, `src/views/workshop.js`
 
 ### `src/core/qr.js`
@@ -477,7 +477,7 @@ For one entry with line numbers and both directions, run `bun run deps -- <name>
 ### `src/core/registry/items.ts`
 
 - Imports: `src/core/combat/effect-ops.ts`, `src/core/combat/fight-parse.ts`, `src/core/formula.ts`, `src/core/hunter/derive.ts`, `src/core/ids.ts`, `src/core/one-of.ts`, `src/core/rules.ts`
-- Imported by: `src/core/api.ts`, `src/core/gates/solo.ts`, `src/core/hunter/facts.ts`, `src/core/hunter/imported.ts`, `src/core/hunter/inventory.ts`, `src/core/hunter/sheet.ts`, `src/core/hunter/use.ts`, `src/core/pack.ts`, `src/core/registry/bundles.ts`, `src/core/registry/feats.ts`, `src/core/registry/monsters.ts`, `src/core/rewards.ts`, `src/core/save.ts`, `src/core/starter.ts`, `src/core/trade/goods.ts`, `src/views/bestiary.js`, `src/views/inventory.js`, `src/views/loot.js`, `src/views/maker.js`, `src/views/reward-editor.js`
+- Imported by: `src/core/api.ts`, `src/core/gates/solo.ts`, `src/core/hunter/facts.ts`, `src/core/hunter/imported.ts`, `src/core/hunter/inventory.ts`, `src/core/hunter/sheet.ts`, `src/core/hunter/use.ts`, `src/core/pack.ts`, `src/core/protocol.ts`, `src/core/registry/bundles.ts`, `src/core/registry/feats.ts`, `src/core/registry/monsters.ts`, `src/core/rewards.ts`, `src/core/save.ts`, `src/core/starter.ts`, `src/core/trade/goods.ts`, `src/views/bestiary.js`, `src/views/inventory.js`, `src/views/loot.js`, `src/views/maker.js`, `src/views/reward-editor.js`
 
 ### `src/core/registry/jobs.ts`
 
@@ -1409,7 +1409,7 @@ An event is a string name: `app.emit(name, payload)` calls every `app.on(name, f
 | `sync:event` | `{ event: StoredEvent }` | `src/edge/sync.ts` | `src/views/coin.js`, `src/views/combat.js`, `src/views/gates.js`, `src/views/quests.js`, `src/views/table.js`, `src/views/uses.js` |
 | `sync:outbox` | `{ id: string; at: 'sent'; seq: number \| null } \| { id: string; at: 'refused'; why: string }` | `src/edge/sync.ts` | `src/views/table.js` |
 | `sync:room` | `{ from: RoomCode \| null; to: RoomCode \| null }` | `src/edge/sync.ts` | `src/views/onboard.js`, `src/views/room.js` |
-| `sync:sheets` | `{ sheets: Record<SheetKey, Stored<RoomSheet>> }` | `src/edge/sync.ts` | `src/views/gm.js`, `src/views/quests.js`, `src/views/room.js` |
+| `sync:sheets` | `{ sheets: Record<SheetKey, Stored<ServedSheet>> }` | `src/edge/sync.ts` | `src/views/gm.js`, `src/views/quests.js`, `src/views/room.js` |
 | `sync:status` | `{ status: 'off' \| 'offline' \| 'connected'; room: RoomCode \| null; conn: Connection; serverBack: boolean }` | `src/edge/sync.ts` | `src/app.js`, `src/edge/room-pill.ts`, `src/views/gm.js`, `src/views/onboard.js`, `src/views/room.js` |
 | `view` | `{ id: string; from: string \| null }` | `src/app.js` | `src/views/dice.js`, `src/views/hunter.js`, `src/views/table.js` |
 

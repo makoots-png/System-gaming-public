@@ -1,16 +1,16 @@
 // fight-parse.ts: the one reader of a stored or received fight (docs/agent-handoff/rw/design.md section 5). Everything is
 // bounded, every choice goes through its list, a place must be a walkable tile of the fight's grid, and a formula tree is
-// read node by node. A row's stats, sheet and speed are not read: they are worked out again from its origin and statuses,
-// as the reducer keeps them. XP banked and summed may pass a row's bound, so it is read up to the largest safe whole
-// number. The reducer trusts what this answers. A new field of `Fight` or `Body` gets its line here
-// and its value in the round trip of tests/fight-model.test.ts.
+// read node by node, at most `FORMULA_PARTS` parts. A row's stats, sheet and speed are not read: they are worked out
+// again from its origin and statuses, as the reducer keeps them. XP banked and summed may pass a row's bound, so it is
+// read up to the largest safe whole number. The reducer trusts what this answers. A new field of `Fight` or `Body` gets
+// its line here and its value in the round trip of tests/fight-model.test.ts.
 import { RANKS } from '../rules.ts';
 import type { Rules } from '../rules.ts';
 import { oneOf } from '../one-of.ts';
 import { STAT_KEYS } from '../stats.ts';
 import { SHEET_LABELS } from '../hunter/derive.ts';
 import type { Archetype, Bonus, GearPiece, MonsterKind, SheetNumber, Tweak } from '../hunter/derive.ts';
-import { COUNT_NAMES, diceModsOf, FNS } from '../formula.ts';
+import { COUNT_NAMES, diceModsOf, FNS, FORMULA_PARTS } from '../formula.ts';
 import type { BinaryOp, Formula } from '../formula.ts';
 import { TERRAIN, TERRAINS, percent, place, tiles } from './space.ts';
 import type { Grid, Place, Shape } from './space.ts';
@@ -192,16 +192,22 @@ const aimOn = (v: unknown, grid: Grid): Place | CombatantId | null => {
 const OPS: readonly BinaryOp[] = ['+', '-', '*', '/', '^'];
 const SHEET_KEYS = Object.keys(SHEET_LABELS) as SheetNumber[];
 const WHOSE = ['user', 'target'] as const;
-function formulaOf(v: unknown, R: Rules, depth = 0): Formula | null {
-  if (!isObj(v) || depth > 40) return null;
-  const sub = (x: unknown): Formula | null => formulaOf(x, R, depth + 1);
+/** A formula from outside data, or null: every node reads, and it holds at most `FORMULA_PARTS` parts (formula.ts `partsOf`). */
+const formulaOf = (v: unknown, R: Rules): Formula | null => formulaPart(v, R, { left: FORMULA_PARTS });
+/** One node and what is under it, each part taken from `budget`; null at the first part past it, so no more is walked. */
+function formulaPart(v: unknown, R: Rules, budget: { left: number }): Formula | null {
+  if (!isObj(v) || --budget.left < 0) return null;
+  const sub = (x: unknown): Formula | null => formulaPart(x, R, budget);
   switch (v.kind) {
     case 'number': { const value = num(v.value, -BIG, BIG); return value === null ? null : { kind: 'number', value }; }
     case 'dice': {
       const count = whole(v.count, 1, R.dice.maxDice), sides = whole(v.sides, 2, R.dice.maxSides);
       if (count === null || sides === null) return null;
       const mods = diceModsOf(v.mods, count, sides);
-      return mods === null ? null : mods === undefined ? { kind: 'dice', count, sides } : { kind: 'dice', count, sides, mods };
+      if (mods === null) return null;
+      budget.left -= mods?.reroll?.on.length ?? 0;
+      if (budget.left < 0) return null;
+      return mods === undefined ? { kind: 'dice', count, sides } : { kind: 'dice', count, sides, mods };
     }
     case 'stat': { const whose = oneOf(v.whose, WHOSE, null), key = oneOf(v.key, STAT_KEYS, null); return whose && key ? { kind: 'stat', whose, key } : null; }
     case 'sheet': { const whose = oneOf(v.whose, WHOSE, null), key = oneOf(v.key, SHEET_KEYS, null); return whose && key ? { kind: 'sheet', whose, key } : null; }

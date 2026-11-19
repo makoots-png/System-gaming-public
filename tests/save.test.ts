@@ -155,6 +155,17 @@ describe('what the app opens with, from the text under each storage key', () => 
     expect(loaded.save.hunters[0]!.name).toBe('Stored Hunter');
   });
 
+  test('a library item whose effect holds a formula past its 200 parts opens without that effect, its name and other effects kept (notes-5-trade.md 12.3)', () => {
+    const negated = (n: number): object => (n === 1 ? { kind: 'number', value: 1 } : { kind: 'negate', arg: negated(n - 1) });
+    const kept = { op: 'shield', amount: { kind: 'number', value: 3 } };
+    const save = JSON.parse(current('Stored Hunter'));
+    save.library.items = [{ id: 'i20001', name: 'Odd Charm', effects: [{ op: 'shield', amount: negated(201) }, kept] }];
+    const loaded = loadSave({ ...NOTHING, v4: JSON.stringify(save) }, env());
+    expect(loaded.save.library.items).toHaveLength(1);
+    expect(loaded.save.library.items[0]).toMatchObject({ name: 'Odd Charm', effects: [kept] });
+    expect(loaded.save.hunters[0]!.name).toBe('Stored Hunter');
+  });
+
   for (const text of UNREADABLE) {
     test(`a current save that reads ${text.slice(0, 24)} gives a starter hunter, the unreadable warning and the old text to back up`, () => {
       const loaded = loadSave({ ...NOTHING, v4: text }, env());

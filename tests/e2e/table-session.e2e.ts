@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
-import { test, expect, PHONE, type Device, type DeviceOptions, SMALL_PHONE, onboardGM, onboardPlayer, createRoom, dismissAll, go, roomHeaders, fightRow, chooseList } from './helpers.ts';
+import { test, expect, PHONE, type Device, type DeviceOptions, SMALL_PHONE, onboardGM, onboardPlayer, createRoom, dismissAll, go, gmRoomHeaders, fightRow, chooseList } from './helpers.ts';
 
 const HUNTER = 'Kai Test', MONSTER = 'Cave Rat';
 
@@ -202,7 +202,7 @@ test('a GM\'s HP change to a player\'s hunter in a fight stays on the GM\'s card
   const gm = (await device('gm', { viewport: PHONE })).page, player = (await device('player', { viewport: SMALL_PHONE, blockServiceWorker: true })).page;
   let code = '', startHp = 0, release = () => {}, held = false;
   const sheetOnServer = async () => {
-    const room = await (await gm.request.get(`/api/rooms/${code}?after=0`, { headers: await roomHeaders(gm) })).json();
+    const room = await (await gm.request.get(`/api/rooms/${code}?after=0`, { headers: await gmRoomHeaders(gm, code) })).json();
     return Object.values(room.sheets as Record<string, any>).map(s => s.data.hunter)[0];
   };
   const gmSees = () => gm.evaluate(() => hunterApp.api.sync.remoteSheets()[0]?.data);

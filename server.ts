@@ -6,8 +6,8 @@
 
 import { CODE_CHARS, CODE_LEN } from './src/core/ids.ts';
 import { buildApp, type Built } from './scripts/build.ts';
-import { DOCS, DOC_MAX, SHEET_MAX, WIRES, wireDocs, EVENTS, ROOM_PAGE, ROOM_SHEETS, deviceOf, isEventType, parseDeviceId, parseDocName, parseEvent, parseRoomCode, parseSheet, parseSheetKey, speaksFor } from './src/core/protocol.ts';
-import type { DeviceId, DocName, DocOf, KickedDoc, RoomCode, RoomDocs, RoomEvent, RoomState, RoomSheet, SheetKey, Stored, StoredEvent } from './src/core/protocol.ts';
+import { DOCS, DOC_MAX, SHEET_MAX, WIRES, wireDocs, EVENTS, ROOM_PAGE, ROOM_SHEETS, deviceOf, isEventType, parseDeviceId, parseDocName, parseEvent, parseRoomCode, parseSheet, parseSheetKey, servedTo, sheetFor, speaksFor } from './src/core/protocol.ts';
+import type { DeviceId, DocName, DocOf, KickedDoc, RoomCode, RoomDocs, RoomEvent, RoomState, RoomSheet, ServedSheet, SheetKey, Stored, StoredEvent, RoomViewer } from './src/core/protocol.ts';
 import { DB_RETRY_MS, dbHealth, dbStep, keptOut, kickedAfter, liveSince, roomLive } from './src/core/room-server.ts';
 import type { Db, DbEvent } from './src/core/room-server.ts';
 
@@ -343,18 +343,25 @@ async function gmOk(req: Request, st: Store, code: RoomCode): Promise<boolean> {
   return d === 0;
 }
 /**
- * S07: whether this request may write for the phone `dev`: the GM's key, or `dev`'s device token. A phone is bound to
- * the hash of the first token it writes with, and every later write for it needs the same token. A write with no token
- * proves nothing and is refused: every phone of this build sends one.
+ * S07: whether this request proves it comes from the phone `dev`: its device token. A phone is bound to the hash of the
+ * first token it sends, on a poll or a write, and every later request for it needs the same token. A request with no
+ * token proves nothing: every phone of this build sends one, from its first poll on, so a phone that has not pushed yet
+ * (a new join, a rejoin after a removal released it) is already proven when a message sealed to its hunter arrives.
  */
-async function mayWriteFor(req: Request, st: Store, code: RoomCode, dev: DeviceId, gm: boolean): Promise<boolean> {
-  if (gm) return true;
+async function proven(req: Request, st: Store, code: RoomCode, dev: DeviceId): Promise<boolean> {
   const tok = req.headers.get('x-device-token') || '';
   if (tok.length < 16 || tok.length > 128) return false;
   const hash = await sha(tok);
   await st.bindOwner(code, dev, hash);
   return (await st.owner(code, dev)) === hash;
 }
+/** Whether this request may write for the phone `dev`: the GM's key, or `dev`'s device token (`proven`). */
+const mayWriteFor = async (req: Request, st: Store, code: RoomCode, dev: DeviceId, gm: boolean): Promise<boolean> => gm || proven(req, st, code, dev);
+/**
+ * What the faces of a poll carry: every table shows its bags until the trading switch lands with unit 4, which reads it
+ * here from the rules doc (notes-5-trade.md 10, ruling 4: a table with trading off sends faces without bag lines).
+ */
+const FACE_BAGS = { bags: true } as const;
 
 async function readJson(req: Request): Promise<Record<string, unknown> | Response> {
   const len = Number(req.headers.get('content-length') || 0);
@@ -403,12 +410,16 @@ async function api(req: Request, parts: string[], database: Database): Promise<R
     const after = Math.max(0, Math.floor(Number(query.get('after'))) || 0);
     const dev = parseDeviceId(query.get('d'));
     if (dev) st.see(code, dev, now);
+    // each phone gets what is for it (src/core/protocol.ts `servedTo`, `sheetFor`); the cursor passes what it did not get
+    const viewer: RoomViewer = gm ? { kind: 'gm' } : dev && (await proven(req, st, code, dev)) ? { kind: 'phone', device: dev } : { kind: 'anyone' };
     const [page, board] = await Promise.all([st.events(code, after), st.board(code)]);
+    const sheets: Record<SheetKey, Stored<ServedSheet>> = {};
+    for (const [key, s] of Object.entries(board.sheets) as [SheetKey, Stored<RoomSheet>][]) sheets[key] = { ...s, data: sheetFor(key, s.data, viewer, FACE_BAGS) };
     const answer: RoomState = {
       gm,
       now: iso(now), // S11: server clock for everyone (joinedAt / kick stamps); presence stays GM-only
       ...(gm ? { presence: Object.fromEntries([...st.presence(code)].map(([d, t]) => [d, iso(t)])) } : {}),
-      events: page.events, next: page.next, more: page.more, sheets: board.sheets, docs: board.docs,
+      events: page.events.filter(e => servedTo(e, viewer)), next: page.next, more: page.more, sheets, docs: board.docs,
     };
     // the docs go out in the shape `DOCS` reads (`WIRES`); the store keeps them as read
     return J({ ...answer, docs: wireDocs(board.docs) });

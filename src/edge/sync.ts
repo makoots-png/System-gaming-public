@@ -36,7 +36,7 @@ import { fightHold } from '../core/combat/fight-save.ts';
 import type { App } from '../views/app.ts';
 import type { AppApi, RemoteSheet, SyncApi } from '../core/api.ts';
 import { DOCS, DOC_MAX, REMOVED_MS, SHEET_MAX, newEvent, parseRoomCode, parseRoomState } from '../core/protocol.ts';
-import type { DeviceId, DocName, DocOf, EventBody, EventType, RoomCode, RoomDocs, RoomEvent, RoomState, SheetKey, Stored, RoomSheet } from '../core/protocol.ts';
+import type { DeviceId, DocName, DocOf, EventBody, EventType, RoomCode, RoomDocs, RoomEvent, RoomState, ServedSheet, SheetKey, Stored } from '../core/protocol.ts';
 import { deviceOf, hunterIdOf, parseSheetKey, sheetKeyOf } from '../core/ids.ts';
 import type { HunterId } from '../core/ids.ts';
 import { appliedOnce } from '../core/applied.ts';
@@ -126,7 +126,7 @@ type Attempt = {
   hunterId: string | null; name: string; made: HunterId | null; prevActive: HunterId; notice: LinkNotice | null;
 };
 /** The room data of one poll answer, for the link gen it was applied in. */
-type Shown = { gen: Gen | null; sheets: Record<SheetKey, Stored<RoomSheet>>; docs: RoomDocs; presence: Record<string, string>; presenceOk: boolean };
+type Shown = { gen: Gen | null; sheets: Record<SheetKey, Stored<ServedSheet>>; docs: RoomDocs; presence: Record<string, string>; presenceOk: boolean };
 const NOTHING_SHOWN: Shown = { gen: null, sheets: {}, docs: {}, presence: {}, presenceOk: false };
 /** A reply and the room data that came with it, for the `apply` effect. */
 type Data = { kind: 'poll'; r: RoomState; after: number } | { kind: 'head'; now: string } | null;
@@ -143,14 +143,17 @@ export function register(app: App): void {
   /**
    * One request to the API. Answers the status and body, or throws `NoAnswer` (no HTTP answer, the service worker's
    * offline answer, or `timeoutMs` passed). A room answer of 426 `upgrade` is handed to the link here, whoever asked.
+   * `prove`: a read that says which phone asks (the room's poll and head) carries the device token, so the server serves
+   * this phone's own sheets whole and the messages sealed to its hunters (protocol.ts `servedTo`). A write always carries
+   * it; the GM's key stands in for it.
    */
-  async function fetchApi(method: string, path: string, o: { body?: unknown; key?: string | null; signal?: AbortSignal; timeoutMs?: number } = {}): Promise<Answer> {
+  async function fetchApi(method: string, path: string, o: { body?: unknown; key?: string | null; prove?: boolean; signal?: AbortSignal; timeoutMs?: number } = {}): Promise<Answer> {
     const rooms = path.startsWith('/rooms');
     const hd: Record<string, string> = {};
     if (rooms) hd['X-Hunter-Build'] = BUILD;
     if (o.body !== undefined) hd['Content-Type'] = 'application/json';
     if (o.key) hd['X-GM-Key'] = o.key;
-    if (o.body !== undefined && !o.key) hd['X-Device-Token'] = sy().deviceToken; // made at load (save.ts), read only here
+    if ((o.body !== undefined || o.prove) && !o.key) hd['X-Device-Token'] = sy().deviceToken; // made at load (save.ts), read only here
     const ac = new AbortController(), timer = setTimeout(() => ac.abort(), o.timeoutMs ?? REQ_MS);
     const outer = o.signal, stop = () => ac.abort();
     outer?.addEventListener('abort', stop);
@@ -356,7 +359,7 @@ export function register(app: App): void {
           // the head of the room without its history; the first page says whether our sheet was removed lately
           let after = 0, first: RoomState | null = null;
           for (;;) {
-            const a = await fetchApi('GET', `/rooms/${call.code}?after=${after}`, { signal, timeoutMs, key: call.key });
+            const a = await fetchApi('GET', `/rooms/${call.code}?after=${after}&d=${encodeURIComponent(deviceId())}`, { signal, timeoutMs, key: call.key, prove: true });
             if (a.status !== 200) return one(failedOf(a, gen));
             const r = parseRoomState(a.data); if (!r) return one(failedServer);
             first ??= r;
@@ -366,7 +369,7 @@ export function register(app: App): void {
         }
         case 'poll': {
           const after = call.cursor;
-          const a = await fetchApi('GET', `/rooms/${call.code}?after=${after}&d=${encodeURIComponent(deviceId())}`, { signal, timeoutMs, key: call.key });
+          const a = await fetchApi('GET', `/rooms/${call.code}?after=${after}&d=${encodeURIComponent(deviceId())}`, { signal, timeoutMs, key: call.key, prove: true });
           if (a.status !== 200) return one(failedOf(a, gen));
           const r = parseRoomState(a.data); if (!r) return one(failedServer);
           const fight = r.docs.fight?.data ?? null;
@@ -696,7 +699,7 @@ export function register(app: App): void {
    */
   const remoteSheets = (): RemoteSheet[] => (!gmRoom() ? [] : Object.entries(view().sheets).flatMap(([text, s]) => {
     const key = parseSheetKey(text);
-    if (!key || 'deleted' in s.data) return [];
+    if (!key || !('hunter' in s.data)) return [];
     const deviceId = deviceOf(key);
     return [{ key, polledAt: view().presence[deviceId] || null, deviceId, hunterId: hunterIdOf(key), at: s.at, from: s.from, data: s.data.hunter }];
   }));

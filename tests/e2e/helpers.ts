@@ -105,6 +105,9 @@ export async function openApp(page: Page, path = '/'): Promise<void> {
 
 /** Headers for a room request a test sends itself (`page.request`). The server refuses a room request without the page's build id. */
 export const roomHeaders = async (page: Page): Promise<Record<string, string>> => ({ 'X-Hunter-Build': await page.evaluate(() => hunterApp.build as string) });
+/** `roomHeaders` with room `code`'s GM key from the GM phone `page`: a read of the room as its GM gets every sheet whole and every message (protocol.ts `servedTo`). */
+export const gmRoomHeaders = async (page: Page, code: string): Promise<Record<string, string>> =>
+  ({ ...(await roomHeaders(page)), 'X-GM-Key': await page.evaluate(c => hunterApp.store.get().settings.sync.gmKeys[c] as string, code) });
 
 /** Tap the first match if it is on screen. Answers whether it tapped. */
 export async function tapIfShown(page: Page, selector: string): Promise<boolean> {

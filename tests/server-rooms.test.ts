@@ -109,7 +109,7 @@ describe('room lifecycle', () => {
     const { code, gm } = await newRoom();
     await call('POST', `/api/rooms/${code}/events`, { headers: gm, body: { from: 'gm', type: 'system', payload: system('one') } });
     await call('PUT', `/api/rooms/${code}/sheets/${PLAYER}:h1`, { headers: token('p1'), body: sheetOf(PLAYER, 'Kai') });
-    const r = await call('GET', `/api/rooms/${code}?after=999999999`);
+    const r = await call('GET', `/api/rooms/${code}?after=999999999`, { headers: gm });
     expect(r.body.events).toEqual([]);
     expect(r.body.sheets[`${PLAYER}:h1`].data.hunter.name).toBe('Kai');
   });
@@ -307,7 +307,7 @@ describe('events', () => {
       post('gm', 'offerStop', { eid: end, to: [A, B], offer }, gm),
     ]);
     expect(answers.map(a => a.body)).toEqual([{ seq: 2 }, { seq: 2 }, { seq: 2 }]);
-    const all = await call('GET', `/api/rooms/${code}`);
+    const all = await call('GET', `/api/rooms/${code}`, { headers: gm });
     expect(all.body.events.filter((e: any) => e.payload.eid === end)).toHaveLength(1);
     expect(all.body.events.map((e: any) => e.seq)).toEqual([1, 2]);
   });
@@ -357,23 +357,110 @@ describe('events', () => {
   });
 });
 
+describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
+  const THIRD = 'd-player3', A = `${PLAYER}:h1`, B = `${OTHER}:h3`;
+  const sword = { id: 'i1', name: 'Iron Sword', rar: 'rare', type: 'weapon', slot: 'weapon', qty: 1 };
+  const potions = { id: 'i2', name: 'Healing Potion', rar: 'common', type: 'consumable', qty: 3 };
+  /** Mira, with a worn sword and three potions in her bag. */
+  const mira = { from: OTHER, data: { hunter: { id: 'h3', name: 'Mira', level: 4, job: 'Healer', items: [sword, potions], equipped: { weapon: 'i1' } } } };
+  const offer = (eid: string) => ({ eid, by: A, to: [B], names: { by: 'Kai', to: 'Mira' }, gives: { gold: 5, items: [] }, asks: { gold: 0, items: [] } });
+  /** A room with Kai's and Mira's sheets, a third player's, and an offer from Kai to Mira that Mira refused. */
+  async function tradeRoom() {
+    const { code, gm } = await newRoom();
+    for (const [dev, body] of [[PLAYER, sheetOf(PLAYER, 'Kai')], [OTHER, mira], [THIRD, sheetOf(THIRD, 'Eldrin')]] as const) {
+      expect((await call('PUT', `/api/rooms/${code}/sheets/${dev}:${dev === OTHER ? 'h3' : 'h1'}`, { headers: token(dev), body })).status).toBe(200);
+    }
+    const post = (from: string, type: string, payload: unknown, headers: Record<string, string> = token(from)) => call('POST', `/api/rooms/${code}/events`, { headers, body: { from, type, payload } });
+    expect((await post('gm', 'system', system('Welcome', 'd-gm-w1'), gm)).body).toEqual({ seq: 1 });
+    expect((await post(PLAYER, 'offer', offer('d-player1-mo1'))).body).toEqual({ seq: 2 });
+    expect((await post(OTHER, 'offerEnd', { eid: 'd-player1-mo1-e', by: B, to: [A], offer: 'd-player1-mo1', how: 'refuse', gives: { gold: 0, items: [] } })).body).toEqual({ seq: 3 });
+    const poll = (dev: string | null, headers: Record<string, string> = dev ? token(dev) : {}, after = 0) => call('GET', `/api/rooms/${code}?after=${after}${dev ? `&d=${dev}` : ''}`, { headers });
+    return { code, gm, post, poll };
+  }
+  const eids = (r: Reply): string[] => r.body.events.map((e: any) => e.payload.eid);
+
+  test('a player\'s poll carries its own sheet whole and the other players\' as faces: name, level, job and unworn bag lines', async () => {
+    const { poll } = await tradeRoom();
+    const sheets = (await poll(PLAYER)).body.sheets;
+    expect(sheets[A].data).toMatchObject({ hunter: { id: 'h1', name: 'Kai' } });
+    expect(sheets[B].data).toEqual({ face: { name: 'Mira', level: 4, job: 'Healer', bag: [{ id: 'i2', name: 'Healing Potion', qty: 3, rar: 'common' }] } });
+    expect(sheets[`${THIRD}:h1`].data).toEqual({ face: { name: 'Eldrin', level: 1, job: null, bag: [] } });
+  });
+
+  test('the GM\'s poll carries every sheet whole and every message, sealed ones too', async () => {
+    const { gm, poll } = await tradeRoom();
+    const r = await poll(null, gm);
+    expect(r.body.sheets[B].data.hunter).toMatchObject({ name: 'Mira', items: [{ id: 'i1' }, { id: 'i2' }] });
+    expect(eids(r)).toEqual(['d-gm-w1', 'd-player1-mo1', 'd-player1-mo1-e']);
+  });
+
+  test('a sealed message reaches the GM and its hunters\' phones and no other: an offer and its end reach Kai\'s and Mira\'s phones', async () => {
+    const { poll } = await tradeRoom();
+    for (const dev of [PLAYER, OTHER]) expect(eids(await poll(dev))).toEqual(['d-gm-w1', 'd-player1-mo1', 'd-player1-mo1-e']);
+  });
+
+  test('a third player\'s phone gets neither an offer between two others nor its end', async () => {
+    const { poll } = await tradeRoom();
+    expect(eids(await poll(THIRD))).toEqual(['d-gm-w1']);
+  });
+
+  test('a poll without a proven device gets faces and no sealed message, and so does one with another phone\'s token', async () => {
+    const { poll } = await tradeRoom();
+    for (const r of [await poll(null), await poll(OTHER, token('thief'))]) {
+      expect(eids(r)).toEqual(['d-gm-w1']);
+      expect(r.body.sheets[B].data).toHaveProperty('face');
+      expect(r.body.sheets[A].data).toHaveProperty('face');
+    }
+  });
+
+  test('the cursor passes a sealed message a phone did not get, so its next poll starts after it', async () => {
+    const { gm, post, poll } = await tradeRoom();
+    const first = await poll(THIRD);
+    expect(first.body).toMatchObject({ next: 3, more: false });
+    expect((await post('gm', 'system', system('Later', 'd-gm-w2'), gm)).body).toEqual({ seq: 4 });
+    const later = await poll(THIRD, token(THIRD), first.body.next);
+    expect(eids(later)).toEqual(['d-gm-w2']);
+    expect(later.body.next).toBe(4);
+  });
+
+  test('a phone that has pushed nothing yet gets the messages sealed to its hunter from its first poll, and its token holds the device from then on', async () => {
+    const { code, gm } = await newRoom();
+    const NEW = 'd-player4', D = `${NEW}:h1`;
+    await call('PUT', `/api/rooms/${code}/sheets/${A}`, { headers: token(PLAYER), body: sheetOf(PLAYER, 'Kai') });
+    const toNew = { ...offer('d-player1-mo2'), to: [D] };
+    expect((await call('POST', `/api/rooms/${code}/events`, { headers: token(PLAYER), body: { from: PLAYER, type: 'offer', payload: toNew } })).body).toEqual({ seq: 1 });
+    const mine = await call('GET', `/api/rooms/${code}?after=0&d=${NEW}`, { headers: token(NEW) });
+    expect(eids(mine)).toEqual(['d-player1-mo2']);
+    expect(eids(await call('GET', `/api/rooms/${code}?after=0&d=${NEW}`, { headers: token('thief') }))).toEqual([]);
+    expect(await call('PUT', `/api/rooms/${code}/sheets/${D}`, { headers: token('thief'), body: sheetOf(NEW, 'Mallory') })).toEqual({ status: 403, body: { error: 'not your sheet' } });
+    expect((await call('GET', `/api/rooms/${code}`, { headers: gm })).body.sheets[D]).toBeUndefined();
+  });
+
+  test('a face pushed as a sheet is refused, and the room is unchanged', async () => {
+    const { code, gm } = await newRoom();
+    const face = { from: PLAYER, data: { face: { name: 'Kai', level: 99, job: null, bag: [] } } };
+    expect(await call('PUT', `/api/rooms/${code}/sheets/${A}`, { headers: token(PLAYER), body: face })).toEqual({ status: 400, body: { error: 'bad sheet' } });
+    expect((await call('GET', `/api/rooms/${code}`, { headers: gm })).body.sheets).toEqual({});
+  });
+});
+
 describe('sheets', () => {
   const sheet = (name: string) => sheetOf(PLAYER, name, { level: 1 });
 
-  test('a player sheet shows up for everyone in the room', async () => {
-    const { code } = await newRoom();
+  test('a player sheet reaches the GM whole', async () => {
+    const { code, gm } = await newRoom();
     const put = await call('PUT', `/api/rooms/${code}/sheets/${PLAYER}:h1`, { headers: token('p1'), body: sheet('Kai') });
     expect(put).toEqual({ status: 200, body: { ok: true } });
-    const room = await call('GET', `/api/rooms/${code}`);
+    const room = await call('GET', `/api/rooms/${code}`, { headers: gm });
     expect(room.body.sheets[`${PLAYER}:h1`].data).toMatchObject({ hunter: { id: 'h1', name: 'Kai', level: 1 } });
   });
 
   test('another device cannot overwrite a sheet it does not own', async () => {
-    const { code } = await newRoom();
+    const { code, gm } = await newRoom();
     await call('PUT', `/api/rooms/${code}/sheets/${PLAYER}:h1`, { headers: token('p1'), body: sheet('Kai') });
     const steal = await call('PUT', `/api/rooms/${code}/sheets/${PLAYER}:h1`, { headers: token('thief'), body: sheet('Mallory') });
     expect(steal).toEqual({ status: 403, body: { error: 'not your sheet' } });
-    const room = await call('GET', `/api/rooms/${code}`);
+    const room = await call('GET', `/api/rooms/${code}`, { headers: gm });
     expect(room.body.sheets[`${PLAYER}:h1`].data.hunter.name).toBe('Kai');
   });
 
@@ -478,10 +565,10 @@ describe('sheets', () => {
   }
 
   test('the room keeps the repaired sheet: a huge name is cut and a __proto__ key is gone', async () => {
-    const { code } = await newRoom();
+    const { code, gm } = await newRoom();
     const body = `{"from":"${PLAYER}","data":{"hunter":{"__proto__":{"admin":true},"id":"h1","name":"${'x'.repeat(1000)}"}}}`;
     expect((await call('PUT', `/api/rooms/${code}/sheets/${PLAYER}:h1`, { headers: token('p1'), body })).status).toBe(200);
-    const data = (await call('GET', `/api/rooms/${code}`)).body.sheets[`${PLAYER}:h1`].data.hunter;
+    const data = (await call('GET', `/api/rooms/${code}`, { headers: gm })).body.sheets[`${PLAYER}:h1`].data.hunter;
     expect([data.name.length, data.admin, Object.hasOwn(data, '__proto__')]).toEqual([60, undefined, false]);
   });
 
