@@ -16,6 +16,7 @@ import { newRewards, parseRewards, parseWords, rewardLines } from '../rewards.ts
 import type { RewardRules, Rewards, SystemWords } from '../rewards.ts';
 import type { HunterId, StoryId } from '../ids.ts';
 import { oneOf } from '../one-of.ts';
+import type { QuestOffer } from '../protocol.ts';
 import type { Objective, Save } from '../save.ts';
 import { isRefused } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
@@ -145,24 +146,47 @@ export const chapterSize = (c: Pick<Chapter, 'words' | 'rewards' | 'quest'>): nu
 export const chapterWindow = (words: SystemWords, lines: readonly string[], quest: Pick<ChapterQuest, 'title'> | null): { readonly tag: string; readonly title: string; readonly body: string; readonly lines: string[] } =>
   ({ tag: '! Story', title: words.title, body: words.line, lines: [...lines, ...(quest ? [`Quest: ${quest.title}`] : [])] });
 
+/**
+ * A chapter window's line on a phone that holds `hunters`: with several, it names hunter `hid` first ("Brakk: The System
+ * bets..."), as a feat's window does, so windows of one chapter that follow each other can be told apart; with one, the
+ * line as written. The GM's phone (stories.js) and a player's (room-events.ts `landChapter`) both ask it.
+ */
+export function whoseLine(line: string, hunters: readonly { readonly id: string; readonly name: string }[], hid: string): string {
+  const name = hunters.length > 1 ? hunters.find(h => h.id === hid)?.name ?? '' : '';
+  return name ? (line ? `${name}: ${line}` : name) : line;
+}
+
 /** A chapter's window as a hunter sees it: `chapterWindow`'s answer. */
 export type ChapterWindow = ReturnType<typeof chapterWindow>;
 /** What a chapter did to one hunter: the grant of its reward (`grant`'s answer, the save after the whole chapter) and its window. */
 export type ChapterGiven = Granted & { readonly window: ChapterWindow };
 
 /**
- * Chapter `c` given to hunter `hid` at `o.at`, in one step, the one step that gives a chapter on any phone: its reward
- * by `grant` (the parts a fight holds handed back in `fight`, by `o.vitals`), its quest issued from the GM with its due
- * time `dueHours` after the open (`dueAt`), and its `chapter` fact, of which this is the one writer. The window shows the
- * grant's own lines, so it says what reached the sheet. A hunter that is not there is refused.
+ * What a hunter is given of a chapter, on any phone: its window's words, its reward, and its quest with the due time made
+ * when the chapter opened. The body of the room's `chapter` message (protocol.ts `ChapterPayload`).
  */
-export function chapterLanded(save: Save, hid: HunterId, c: Pick<Chapter, 'words' | 'rewards' | 'quest'>, o: Day & { vitals: VitalsAt }): ChapterGiven | Refused<'no-hunter'> {
+export type ChapterBody = { readonly words: SystemWords; readonly rewards: Rewards; readonly quest: QuestOffer | null };
+/** Chapter `c` as it is given when it opens at `at`: its quest due `dueHours` after `at` (`dueAt`), or with no due time. */
+export function chapterBody(c: Pick<Chapter, 'words' | 'rewards' | 'quest'>, at: string): ChapterBody {
+  const q = c.quest;
+  return {
+    words: c.words, rewards: c.rewards,
+    quest: q && { kind: q.kind, title: q.title, desc: q.desc, objectives: [...q.objectives], rewards: q.rewards, penaltyText: q.penaltyText, dueAt: q.dueHours === null ? null : dueAt(q.dueHours, new Date(at)) },
+  };
+}
+
+/**
+ * Chapter body `c` given to hunter `hid` at `o.at`, in one step, the one step that gives a chapter on any phone (the GM's
+ * for its own hunters, a player's from the `chapter` message): its reward by `grant` (the parts a fight holds handed back
+ * in `fight`, by `o.vitals`), its quest issued from the GM, and its `chapter` fact, of which this is the one writer. The
+ * window shows the grant's own lines, so it says what reached the sheet. A hunter that is not there is refused.
+ */
+export function chapterLanded(save: Save, hid: string, c: ChapterBody, o: Day & { vitals: VitalsAt }): ChapterGiven | Refused<'no-hunter'> {
   const g = grant(save, hid, c.rewards, null, o);
   if (isRefused(g)) return g;
   let next = g.save;
   if (c.quest) {
-    const q = c.quest, ids = idsFrom(next.seq), id = ids.next('q');
-    const draft = { kind: q.kind, title: q.title, desc: q.desc, objectives: q.objectives, rewards: q.rewards, penaltyText: q.penaltyText, dueAt: q.dueHours === null ? null : dueAt(q.dueHours, new Date(o.at)), from: 'gm' };
+    const ids = idsFrom(next.seq), id = ids.next('q'), draft = { ...c.quest, from: 'gm' };
     const issued = withTold({ ...next, seq: ids.seq() }, hid, { at: o.at, cap: o.R.logCap }, h => issueQuest(h, draft, id, o.at));
     if (!isRefused(issued)) next = issued;
   }

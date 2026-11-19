@@ -1,6 +1,6 @@
 // A story as content (src/core/story/story.ts): its one reader, its bounds, its size against the room's body, its words.
 import { describe, expect, test } from 'bun:test';
-import { CHAPTERS_MAX, CHAPTER_MAX, chapterLanded, chapterSize, chapterWindow, parseChapterQuest, parseStory, storyLines, storyMeta } from '../src/core/story/story.ts';
+import { CHAPTERS_MAX, CHAPTER_MAX, chapterBody, chapterLanded, chapterSize, chapterWindow, whoseLine, parseChapterQuest, parseStory, storyLines, storyMeta } from '../src/core/story/story.ts';
 import type { Chapter, StoryTemplate } from '../src/core/story/story.ts';
 import { grantLines, newRewards } from '../src/core/rewards.ts';
 import { RULES } from '../src/core/rules.ts';
@@ -159,6 +159,13 @@ describe('a story in words', () => {
   });
 });
 
+describe('whose window it is', () => {
+  test('on a phone of several hunters a chapter\'s line names its hunter first; on a phone of one it is as written', () => {
+    const two = [{ id: 'h1', name: 'Brakk' }, { id: 'h2', name: 'Mira' }];
+    expect([whoseLine('You lost a run.', two, 'h2'), whoseLine('', two, 'h1'), whoseLine('You lost a run.', [two[0]!], 'h1')]).toEqual(['Mira: You lost a run.', 'Brakk', 'You lost a run.']);
+  });
+});
+
 describe('the stories to copy (src/core/registry/stories.ts)', () => {
   test('there are two, each with a key of its own', () => {
     expect(EXAMPLE_STORIES.map(e => e.key)).toEqual(['wager', 'spared']);
@@ -203,7 +210,7 @@ describe('a chapter given to a hunter (chapterLanded)', () => {
   const saveOf = (h: Hunter): Save => ({ ...freshSave(ENV, { onboarded: true }), hunters: [h] });
 
   test('its reward, its quest from the GM due 48 hours after it opens, and its fact, in one step; the window says what reached the sheet and the quest', () => {
-    const before = saveOf(brakk()), g = ok(chapterLanded(before, H1, ASK, { ...DAY, vitals: 'sheet' }));
+    const before = saveOf(brakk()), g = ok(chapterLanded(before, H1, chapterBody(ASK, AT), { ...DAY, vitals: 'sheet' }));
     const h = g.save.hunters[0]!, h0 = before.hunters[0]!;
     expect(h.bonusPoints).toBe(h0.bonusPoints - 1);
     expect(h.conditions.map(c => [c.key, c.rounds])).toEqual([['hasted', 3]]);
@@ -218,18 +225,18 @@ describe('a chapter given to a hunter (chapterLanded)', () => {
   test('a chapter of words alone records its fact and issues nothing; a quest without hours has no due time', () => {
     const words = ok(chapterLanded(saveOf(brakk()), H1, { words: OFFER.words, rewards: newRewards(), quest: null }, { ...DAY, vitals: 'sheet' }));
     expect([words.save.hunters[0]!.quests.length, words.lines, words.window.lines]).toEqual([saveOf(brakk()).hunters[0]!.quests.length, [], []]);
-    const noHours = ok(chapterLanded(saveOf(brakk()), H1, { ...ASK, quest: { ...ASK.quest!, dueHours: null } }, { ...DAY, vitals: 'sheet' }));
+    const noHours = ok(chapterLanded(saveOf(brakk()), H1, chapterBody({ ...ASK, quest: { ...ASK.quest!, dueHours: null } }, AT), { ...DAY, vitals: 'sheet' }));
     expect(noHours.save.hunters[0]!.quests.find(x => x.title === 'Clear a gate for the Deep')!.dueAt).toBeNull();
   });
 
   test('a hunter a fight holds gets its statuses handed back for its row, and the sheet keeps none of them', () => {
-    const g = ok(chapterLanded(saveOf(brakk()), H1, ASK, { ...DAY, vitals: 'fight' }));
+    const g = ok(chapterLanded(saveOf(brakk()), H1, chapterBody(ASK, AT), { ...DAY, vitals: 'fight' }));
     expect(g.save.hunters[0]!.conditions).toEqual([]);
     expect(g.fight.statuses.map(s => [s.key, s.rounds])).toEqual([['hasted', 3]]);
     expect(g.window.lines, 'the window says only what reached the sheet; the row\'s statuses are told when the row takes them').toEqual(['Loses 1 ability point', 'Quest: Clear a gate for the Deep']);
   });
 
   test('a hunter that is not there is refused', () => {
-    expect(chapterLanded(saveOf(brakk()), hid('h9'), ASK, { ...DAY, vitals: 'sheet' })).toEqual({ ok: false, why: 'no-hunter' });
+    expect(chapterLanded(saveOf(brakk()), hid('h9'), chapterBody(ASK, AT), { ...DAY, vitals: 'sheet' })).toEqual({ ok: false, why: 'no-hunter' });
   });
 });

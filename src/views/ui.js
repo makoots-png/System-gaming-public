@@ -154,6 +154,28 @@ export function trapTab(/** @type {KeyboardEvent} */ e, /** @type {HTMLElement} 
   else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
 }
 
+/** A one-line field, where Enter moves to the next field (`formEnter`; a field with a list of choices keeps its Enter); with a text box, the fields that take typing. */
+const LINE = 'input[type=text],input[type=number],input:not([type])', TYPED = `${LINE},textarea`;
+/**
+ * What Enter does in a form of many fields, every maker and the Quests view's form: in a one-line field it moves the
+ * cursor to the next field of `form` that takes typing, as a phone keyboard's Next does, and does nothing at the last
+ * one. It never saves: such a form is long, its last field moves as rows and parts are drawn, and a stray Enter in an
+ * objective saved the whole form. Ctrl or Cmd and Enter runs `save` from anywhere. A key pressed while an input method
+ * composes is left alone. Answers whether it took the key.
+ * @param {KeyboardEvent} e @param {Element} form @param {() => void} save
+ */
+export function formEnter(e, form, save) {
+  if (e.key !== 'Enter' || e.isComposing) return false;
+  if (e.ctrlKey || e.metaKey) { e.preventDefault(); save(); return true; }
+  const t = e.target;
+  if (!(t instanceof HTMLElement) || !t.matches(LINE) || t.matches('[list]') || !form.contains(t)) return false;
+  e.preventDefault();
+  const fields = [...form.querySelectorAll(TYPED)].filter(f => !f.disabled && f.getClientRects().length > 0);
+  const to = fields[fields.findIndex(f => f === t) + 1];
+  if (to) to.focus();
+  return true;
+}
+
 /**
  * Opens a maker, the first-run window or the shelf of awards now, over whatever is up: `show` puts it on the page and answers its overlay and
  * window. Answers the entry, for `closeWindow`.
@@ -280,9 +302,6 @@ function show(/** @type {Win & { o: SystemWindow; resolve: (v: any) => void }} *
   w.key = (/** @type {any} */ e) => {
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(dismissValue); return; }
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && (o.form || o.size === 'form')) { // B3: Ctrl/Cmd+Enter = primary, even from a textarea
-      const p = bar.querySelector('button.primary'); if (p && !p.disabled) { e.preventDefault(); p.click(); return; }
-    }
-    if (e.key === 'Enter' && o.size === 'form' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.target !== input && e.target.matches && e.target.matches('input[type=text],input[type=number]') && !e.target.matches('[role=combobox],[list]') && win.contains(e.target)) {
       const p = bar.querySelector('button.primary'); if (p && !p.disabled) { e.preventDefault(); p.click(); return; }
     }
     if (e.key === 'Enter' && input && e.target === input) { e.preventDefault(); choose(actions.find(a => a.primary) || actions[0]); return; }

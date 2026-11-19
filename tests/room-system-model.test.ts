@@ -401,7 +401,7 @@ describe('the room under every interleaving explored', () => {
       // key, applied once by its id), so the random walks above play `gm shadow` and this run leaves it to `gm spent`; a
       // solo run is posted as a told use is (a player's message with no key), so the walks play `solo` and this run `use`
       // `gm noted` (a fight's facts) is posted that way too, so it is left to the random walks as `gm shadow` is
-      for (const m of enabled(w).filter(m => !/^gm (shadow|noted) /.test(m) && !/ solo$/.test(m))) await dfs([...prefix, m]);
+      for (const m of enabled(w).filter(m => !/^gm (shadow|noted|chapter) /.test(m) && !/ solo$/.test(m))) await dfs([...prefix, m]);
     }
     await dfs(LIVE);
     console.log(`room model: ${sequences} sequences of ${DEPTH} moves from a live room, ${Math.round(performance.now() - t0)} ms`);

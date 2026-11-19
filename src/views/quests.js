@@ -480,12 +480,10 @@ export function register(app) {
       });
       f.addEventListener('change', e => { if (e.target.matches('[data-all]')) f.querySelectorAll('[name=to]').forEach(c => { c.checked = e.target.checked; }); });
       f.addEventListener('submit', e => { e.preventDefault(); submitForm(el, f); });
-      f.addEventListener('keydown', e => { // D04: Enter in Title or an objective = Save quest; Ctrl/Cmd+Enter anywhere (incl. Description)
-        if (e.key !== 'Enter' || e.isComposing) return;
-        const t = e.target, ctrl = e.ctrlKey || e.metaKey;
-        // a field of the reward editor (a boon's name, the gold) is not the end of the form: Enter there does not save the quest
-        if (!ctrl && t.closest && t.closest('[data-rweditor]')) { e.preventDefault(); return; }
-        if (ctrl || (t.matches && (t.matches('[name=title]') || (t.matches('input[type=text],input[type=number]') && t.closest('[data-objs]'))))) { e.preventDefault(); f.requestSubmit(); }
+      f.addEventListener('keydown', e => {
+        if (ui.formEnter(e, f, () => f.requestSubmit())) return;
+        // a browser submits a form on Enter in its other inputs too (the due date, a box of Assign to); here Enter never saves
+        if (e.key === 'Enter' && e.target instanceof HTMLInputElement) e.preventDefault();
       });
       el.addEventListener('click', async e => {
         const b = e.target.closest('button'); if (!b || !el.contains(b)) return;

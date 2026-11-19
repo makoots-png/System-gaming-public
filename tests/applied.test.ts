@@ -363,6 +363,38 @@ describe('a shadow the GM\'s phone raised for a player\'s hunter (implicit audit
   });
 });
 
+describe('a chapter the GM opened lands whole, once (notes-1-stories.md 4.2)', () => {
+  const TITLE = 'THE DEEP ASKS FOR A GATE', LINE = 'Any gate of your rank.', DUE = '2026-11-16T12:00:00.000Z';
+  const CHAPTER = {
+    to: ['d-player1:h1'], words: { title: TITLE, line: LINE }, rewards: { gold: 30, statuses: [{ key: 'hasted', rounds: 3 }] },
+    quest: { kind: 'urgent', title: 'Clear a gate for the Deep', desc: '', objectives: [{ label: 'Gate cleared', target: 1, progress: 0 }], rewards: { gold: 100 }, dueAt: DUE, penaltyText: '' },
+  };
+  const deepQuest = (h: Hunter) => h.quests.find(q => q.title === 'Clear a gate for the Deep');
+
+  test('the reward, the quest from the GM due when the GM\'s phone said, and the chapter\'s fact, in one write; the chapter\'s own window; a second delivery writes nothing', () => {
+    const p = phone(), before = p.hunter;
+    p.receive(1, 'chapter', CHAPTER);
+    p.receive(1, 'chapter', CHAPTER);
+    const q = deepQuest(p.hunter)!;
+    expect([p.hunter.gold, p.hunter.conditions.map(c => c.key), p.hunter.quests.length, q.from, q.status, q.dueAt]).toEqual([before.gold + 30, ['hasted'], before.quests.length + 1, 'gm', 'active', DUE]);
+    expect(p.hunter.chronicle.inbox.filter(f => f.kind === 'chapter' || f.kind === 'given'), 'a chapter, never an award for roleplay').toEqual([{ kind: 'chapter', title: TITLE, line: LINE }]);
+    expect([p.said, p.shown, p.applied]).toEqual([[{ title: TITLE, body: LINE }], [['+30 gold', 'Status: Hasted (3 rounds)', 'Quest: Clear a gate for the Deep']], [e(1)]]);
+  });
+
+  test('a chapter of words alone shows its window and records its fact, and issues no quest', () => {
+    const p = phone(), quests = p.hunter.quests.length;
+    p.receive(1, 'chapter', { to: ['d-player1:h1'], words: { title: TITLE, line: LINE }, rewards: {}, quest: null });
+    expect([p.hunter.quests.length, p.said, p.shown]).toEqual([quests, [{ title: TITLE, body: LINE }], [[]]]);
+  });
+
+  test('while the GM\'s fight holds the hunter, the chapter\'s status is left for the fight and the rest lands', () => {
+    const p = phone({ fight: true }), before = p.hunter;
+    p.receive(1, 'chapter', CHAPTER);
+    expect([p.hunter.gold, p.hunter.conditions, deepQuest(p.hunter)?.from]).toEqual([before.gold + 30, [], 'gm']);
+    expect(p.shown[0]).not.toContain('Status: Hasted (3 rounds)');
+  });
+});
+
 describe('the GM\'s answer to a solo run lands whole, once a run (notes-2-solo.md section 5)', () => {
   const RUN = 'd-player1-run1' as EventId;
   const waiting = (): WaitingRun => ({ run: RUN, room: 'ABCD23' as never, hid: 'h1' as never, gate: 'g12' as never, name: 'Goblin Den', at: AT, state: 'taken' });

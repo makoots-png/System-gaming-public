@@ -3,8 +3,12 @@
 // tap moves a story (notes-1-stories.md 3.4, point 7).
 import { describe, expect, test } from 'bun:test';
 import { ENDED_KEPT, OPENED_MAX, RUNNING_MAX, keptRuns, nextChapter, parseStoryRun, runStep, storyMove, whoFor } from '../src/core/story/run.ts';
-import type { MoveCtx, RunEvent, StoryRun, Who } from '../src/core/story/run.ts';
-import type { Story } from '../src/core/story/story.ts';
+import type { MoveCtx, MoveRoom, RunEvent, StoryRun, Who } from '../src/core/story/run.ts';
+import { CHAPTER_MAX, chapterSize } from '../src/core/story/story.ts';
+import { statusKey } from '../src/core/combat/effect-ops.ts';
+import type { Chapter, Story } from '../src/core/story/story.ts';
+import { worstChapter } from './fixtures/worst-chapter.ts';
+import type { SheetKey } from '../src/core/protocol.ts';
 import { EXAMPLE_STORIES } from '../src/core/registry/stories.ts';
 import { removeStory } from '../src/core/library.ts';
 import { freshSave, newHunter, parseSaveValue } from '../src/core/save.ts';
@@ -35,11 +39,13 @@ import { applyRoomEvent } from '../src/edge/room-events.ts';
 import type { ApplyDeps } from '../src/edge/room-events.ts';
 import { EID, VALID } from './fixtures/payloads.ts';
 import { STORY_WALK, WALK_STORY } from './models/story-events.ts';
-import { day, dev, hid, qid, srid, stid } from './fixtures/ids.ts';
+import { day, dev, hid, qid, room, srid, stid } from './fixtures/ids.ts';
+
+const sk = (s: string): SheetKey => s as SheetKey;
 
 const AT = '2026-11-19T10:00:00.000Z', TODAY = dayKey(new Date(AT), 0), DAY = { at: AT, today: TODAY, R: RULES };
 const ENV: ParseEnv = { now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-gm') };
-const CTX: MoveCtx = { day: DAY, vitals: () => 'sheet' };
+const CTX: MoveCtx = { day: DAY, vitals: () => 'sheet', room: null };
 const ok = <T>(r: T | Refused): T => { if (isRefused(r)) throw new Error(`refused: ${r.why}`); return r as T; };
 /** The wager (registry/stories.ts) in the library: chapter 2 takes 1 ability point, chapter 3 gives 5 and a title. */
 const WAGER: Story = { ...EXAMPLE_STORIES[0]!.story, id: stid('st1') };
@@ -202,6 +208,50 @@ describe('a move is one write', () => {
     const ended = (n: number): StoryRun => ({ ...onFor(), id: srid(`sr${100 + n}`), state: { at: 'ended', chapter: 0, endedAt: AT, session: n } });
     const runs = [onFor(), ...Array.from({ length: ENDED_KEPT + 1 }, (_, n) => ended(n))];
     expect(keptRuns(runs).map(r => r.id)).toEqual([R1, ...runs.slice(2).map(r => r.id)]);
+  });
+});
+
+describe('a move in the GM\'s room (unit 4)', () => {
+  const KAI_KEY = sk('d-player1:h1'), LIN_KEY = sk('d-player2:h1');
+  const KAI_P: HunterRef = { kind: 'remote', remote: KAI_KEY }, LIN_P: HunterRef = { kind: 'remote', remote: LIN_KEY };
+  const ROOM: MoveRoom = { code: room('ABC234'), sheets: [{ key: KAI_KEY, data: { name: 'Kai' } }, { key: LIN_KEY, data: { name: 'Lin' } }], onRow: () => false, stamp: { device: 'd-gm', now: Date.parse(AT), rand: 0.25 } };
+  const IN_ROOM: MoveCtx = { ...CTX, room: ROOM };
+  /** The chapter messages in the outbox, in order. */
+  const posted = (s: Save) => (s.settings.sync.outbox ?? []).flatMap(x => (x.letter.kind === 'event' && x.letter.event.type === 'chapter' ? [x.letter.event.payload] : []));
+  /** The GM's save with the wager's chapter 1 swapped for `c`. */
+  const withFirst = (c: Chapter): Save => { const s = gm(); return { ...s, library: { ...s.library, stories: [{ ...WAGER, chapters: [c, ...WAGER.chapters.slice(1)] }] } }; };
+
+  test('a chapter opened for a player\'s hunter is posted once, in the move\'s write, with what the GM\'s own hunters get and the quest due from the open', () => {
+    const quest: Chapter['quest'] = { kind: 'side', title: 'Find it', desc: '', objectives: [{ label: 'Find the foe', target: 1, progress: 0 }], rewards: newRewards(), dueHours: 48, penaltyText: '' };
+    const c = { ...WAGER.chapters[0]!, quest }, e = turnOn({ at: 'hunters', refs: [KAI_P, MIRA] }, [KAI_P, MIRA]), m = ok(storyMove(withFirst(c), R1, e, IN_ROOM));
+    const [p, ...more] = posted(m.save);
+    expect([more, p!.to, p!.words, p!.rewards, p!.quest?.dueAt, m.posted]).toEqual([[], [KAI_KEY], c.words, c.rewards, '2026-11-21T10:00:00.000Z', [KAI_KEY]]);
+    expect(m.save.hunters[0]!.quests.find(q => q.title === 'Find it')!.dueAt, 'Mira\'s copy falls due at the same moment').toBe('2026-11-21T10:00:00.000Z');
+    expect(m.save.log[0]).toMatchObject({ kind: 'story', text: 'Turned on for Kai and Mira. Chapter 1 (The bet) opened for Kai and Mira.' });
+    expect(ok(storyMove(withFirst(c), R1, e, IN_ROOM)).save.settings.sync.outbox, 'the step read twice, as grantWrite reads it, posts the same message').toEqual(m.save.settings.sync.outbox);
+  });
+
+  test('with no room no player\'s hunter is at the table: one picked is skipped, and nothing is posted', () => {
+    const m = ok(storyMove(gm(), R1, turnOn({ at: 'hunters', refs: [KAI_P, BRAKK] }, [KAI_P, BRAKK]), CTX));
+    expect([m.skipped, m.posted, posted(m.save)]).toEqual([[KAI_P], [], []]);
+  });
+
+  test('a chapter past CHAPTER_MAX is refused for a player\'s hunter and writes nothing; for this phone\'s hunters alone it opens', () => {
+    const big = worstChapter(), over = { ...big, words: { ...big.words, line: `${big.words.line}a` } };
+    expect(chapterSize(over)).toBe(CHAPTER_MAX + 1);
+    const s = withFirst(over);
+    expect(storyMove(s, R1, turnOn({ at: 'table' }, [MIRA, KAI_P]), IN_ROOM)).toEqual({ ok: false, why: 'too-large' });
+    expect(ok(storyMove(s, R1, turnOn({ at: 'table' }, [MIRA]), IN_ROOM)).granted.map(g => g.hid)).toEqual(['h1']);
+    expect(ok(storyMove(withFirst(big), R1, turnOn({ at: 'table' }, [KAI_P]), IN_ROOM)).posted, 'the largest chapter the maker saves still goes').toEqual([KAI_KEY]);
+  });
+
+  test('a player\'s hunter on a row of this phone\'s fight gets the chapter without its statuses, which are handed to its row; the others get it whole', () => {
+    const c = { ...WAGER.chapters[0]!, rewards: { ...newRewards(), gold: 10, statuses: [{ key: statusKey('hasted'), rounds: 3 }] } };
+    const m = ok(storyMove(withFirst(c), R1, turnOn({ at: 'table' }, [KAI_P, LIN_P]), { ...CTX, room: { ...ROOM, onRow: k => k === KAI_KEY } }));
+    const [lin, kai] = posted(m.save);
+    expect([lin!.to, lin!.rewards.statuses.length, lin!.rewards.gold, kai!.to, kai!.rewards.statuses, kai!.rewards.gold]).toEqual([[LIN_KEY], 1, 10, [KAI_KEY], [], 10]);
+    expect(lin!.eid).not.toBe(kai!.eid);
+    expect(m.onRow).toEqual([{ key: KAI_KEY, statuses: c.rewards.statuses }]);
   });
 });
 

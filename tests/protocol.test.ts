@@ -29,6 +29,8 @@ import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { abilityId } from '../src/core/combat/ability-types.ts';
 import { NAME_MAX } from '../src/core/combat/fight-types.ts';
 import { BURN, BURNING, EID, END, KEY, OFFER, OTHER, POTION, SOURCE, VALID, WOLF } from './fixtures/payloads.ts';
+import { worstBody, worstChapter } from './fixtures/worst-chapter.ts';
+import { CHAPTER_MAX, chapterSize } from '../src/core/story/story.ts';
 
 type Raw = Record<string, any>;
 
@@ -95,12 +97,12 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
 
 describe('every event type', () => {
   test('the table has an entry for each of the sixteen room messages', () => {
-    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'cast', 'chain', 'coinCall', 'coinLand', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'revive', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'status', 'step', 'system', 'used', 'vitals']);
+    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'cast', 'chain', 'chapter', 'coinCall', 'coinLand', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'revive', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'status', 'step', 'system', 'used', 'vitals']);
   });
 
   test('only the GM may send what changes a hunter, speaks for the System or lands a coin; a player sends rolls, quest progress, uses, steps, casts, passes and coin calls', () => {
     const gmOnly = EVENT_TYPES.filter(t => EVENTS[t].gmOnly).sort();
-    expect(gmOnly).toEqual(['award', 'chain', 'coinLand', 'hp', 'noted', 'offerStop', 'quest', 'revive', 'shadow', 'soloAnswer', 'spent', 'status', 'system', 'vitals']);
+    expect(gmOnly).toEqual(['award', 'chain', 'chapter', 'coinLand', 'hp', 'noted', 'offerStop', 'quest', 'revive', 'shadow', 'soloAnswer', 'spent', 'status', 'system', 'vitals']);
   });
 
   test('what a player sends speaks for one hunter: only that hunter\'s phone may send it', () => {
@@ -317,6 +319,54 @@ describe('a quest', () => {
   test('the GM screen leaves out the penalty and the due time: they read as none', () => {
     const { penaltyText: _, dueAt: __, ...gmQuest } = valid('quest').quest;
     expect(payload('quest', { ...valid('quest'), quest: { ...gmQuest, from: 'gm' } })!.quest).toMatchObject({ penaltyText: '', dueAt: null });
+  });
+});
+
+describe('a story\'s chapter', () => {
+  const chapter = (fields: Raw) => payload('chapter', { ...valid('chapter'), ...fields });
+
+  test('a chapter needs a window title; the title is upper-cased and cut to 60 characters, the line to 200', () => {
+    expect(chapter({ words: { title: '  ', line: 'Nothing.' } })).toBeNull();
+    expect(chapter({ words: 'THE DEEP' })).toBeNull();
+    const { words: _, ...without } = valid('chapter');
+    expect(payload('chapter', without)).toBeNull();
+    expect(chapter({ words: { title: 'a'.repeat(100), line: 'b'.repeat(500) } })!.words).toEqual({ title: 'A'.repeat(60), line: 'b'.repeat(200) });
+  });
+
+  test('a chapter for no one, or without its reward, is refused; its to list keeps at most 24 sheet keys', () => {
+    const { to: _, ...noOne } = valid('chapter'), { rewards: __, ...noReward } = valid('chapter');
+    expect([payload('chapter', noOne), payload('chapter', noReward), chapter({ to: [] })]).toEqual([null, null, null]);
+    expect(chapter({ to: many(30, i => `d-p${i}:h1`) })!.to).toHaveLength(24);
+  });
+
+  test('a chapter of words alone has no quest; a quest without a title refuses the whole chapter, and a quest keeps at most 10 objectives', () => {
+    expect(chapter({ quest: null })!.quest).toBeNull();
+    const { quest: _, ...words } = valid('chapter');
+    expect(payload('chapter', words)!.quest).toBeNull();
+    expect(chapter({ quest: { ...valid('chapter').quest, title: '' } })).toBeNull();
+    expect(chapter({ quest: { ...valid('chapter').quest, objectives: many(50, i => ({ label: `o${i}`, target: 1 })) } })!.quest.objectives).toHaveLength(10);
+  });
+
+  test('a chapter names no story, run or chapter number: only what the GM wrote for players reaches their phones', () => {
+    expect(Object.keys(chapter({ story: 'The wager', run: 'sr1', chapter: 2, note: 'Ask the table.' })!).sort()).toEqual(['eid', 'quest', 'rewards', 'to', 'words']);
+  });
+
+  /**
+   * The measurement of notes-1-stories.md 4.2: the largest chapter a GM can save, `CHAPTER_MAX` bytes as the maker counts
+   * them, sent to the room's 24 hunters with the longest keys, against the server's 65,536-byte body. Each part printed.
+   */
+  test('the worst chapter by part: at CHAPTER_MAX with 24 keys, the request is under the server\'s body bound and the chapter reads back whole', () => {
+    const body = worstBody('2026-11-19T10:00:00.000Z'), ev = newEvent('chapter', body as never, { device: 'd'.repeat(40), now: Date.parse('2026-11-19T10:00:00.000Z'), rand: 0.5 })!;
+    expect(ev, 'the room reads the worst chapter').not.toBeNull();
+    const bytes = (v: unknown) => goodsSize(v), request = { from: 'd'.repeat(40), type: 'chapter', payload: ev.payload };
+    const parts = { words: bytes(body.words), rewards: bytes(body.rewards), quest: bytes(body.quest), to: bytes(body.to), eid: bytes(ev.payload.eid) };
+    console.info([
+      `the worst chapter: ${chapterSize(worstChapter())} bytes by chapterSize (CHAPTER_MAX ${CHAPTER_MAX}); in the message ${bytes({ words: body.words, rewards: body.rewards, quest: body.quest })} (the quest's due time in place of its hours)`,
+      `by part: words ${parts.words}, reward ${parts.rewards} (${body.rewards.items.length} items), quest ${parts.quest} (its reward ${bytes(body.quest!.rewards)}, ${body.quest!.rewards.items.length} items), to ${parts.to} (${body.to.length} keys of 40), the event id ${parts.eid}`,
+      `the request as the outbox sends it: ${bytes(request)} bytes, of the server's 65,536 (${65_536 - bytes(request)} to spare)`,
+    ].join('\n'));
+    expect(bytes(request)).toBeLessThanOrEqual(64 * 1024);
+    expect(ev.payload).toEqual({ ...body, eid: ev.payload.eid, words: body.words } as never);
   });
 });
 
@@ -1151,9 +1201,9 @@ describe('an offer between two hunters, and its one end', () => {
     for (const to of [[KEY], [KEY, KEY], [KEY, OTHER, 'd-x:h1'], [KEY, 'bad key']]) expect(payload('offerStop', { ...valid('offerStop'), to })).toBeNull();
   });
 
-  test('an offer, its end and the GM\'s stop are sealed to the GM and the two hunters (the lead\'s ruling 1); nothing else is', () => {
+  test('an offer, its end and the GM\'s stop are sealed to the GM and the two hunters (the lead\'s ruling 1), and a story\'s chapter to the GM and the hunters it is for; nothing else is', () => {
     const sealed = EVENT_TYPES.filter(t => isSealed(parseEvent(t, valid(t))!)).sort();
-    expect(sealed).toEqual(['offer', 'offerEnd', 'offerStop']);
+    expect(sealed).toEqual(['chapter', 'offer', 'offerEnd', 'offerStop']);
   });
 
   /**

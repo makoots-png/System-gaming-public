@@ -50,6 +50,7 @@ import type { Seat } from './role.ts';
 import { ITEM_BOUNDS, RARITIES } from './registry/items.ts';
 import type { Rarity } from './registry/items.ts';
 import { MAX_LEVEL } from './hunter/progress.ts';
+import type { ChapterBody } from './story/story.ts';
 
 // The ids (src/core/ids.ts) are made only by their parsers, so ids of different things do not mix.
 export { deviceOf, hunterIdOf, parseDeviceId, parseEventId, parseRoomCode, parseSheetKey };
@@ -337,11 +338,19 @@ export const END_HOWS = ['accept', 'refuse', 'withdraw'] as const;
 export type OfferEndPayload = Base & { by: SheetKey; to: [SheetKey]; offer: OfferId; how: (typeof END_HOWS)[number]; gives: Goods };
 /** The GM stops offer `offer` between the two hunters of `to`. Its id is the offer's end id, so it races an accept and a take back. Sealed. */
 export type OfferStopPayload = Base & { to: [SheetKey, SheetKey]; offer: OfferId };
+/**
+ * A chapter of a story the GM opened for the hunters of `to` (story/story.ts `chapterLanded`): its window's words, its
+ * reward and its quest, its due time made when it opened. No story name, run or chapter number: a player sees what the
+ * GM wrote for players. Landed once by its id. Its size is bounded where the chapter is made and at the open
+ * (`CHAPTER_MAX`, 48 KiB, so the body with 24 sheet keys stays under the server's 64 KiB). Sealed.
+ */
+export type ChapterPayload = Base & { to: SheetKey[] } & ChapterBody;
 type Payloads = {
   offer: OfferPayload; offerEnd: OfferEndPayload; offerStop: OfferStopPayload;
   system: SystemPayload; award: AwardPayload; quest: QuestPayload; hp: HpPayload; vitals: VitalsPayload; spent: SpentPayload; status: StatusPayload; revive: RevivePayload;
   roll: RollPayload; questUpdate: QuestUpdatePayload; used: UsedPayload; step: StepPayload; cast: CastPayload; pass: PassPayload; chain: ChainPayload;
   coinCall: CoinCallPayload; coinLand: CoinLandPayload; arm: ArmPayload; shadow: ShadowPayload; soloRun: SoloRunPayload; soloAnswer: SoloAnswerPayload; noted: NotedPayload;
+  chapter: ChapterPayload;
 };
 export type EventType = keyof Payloads;
 export type PayloadOf<K extends EventType> = Payloads[K];
@@ -484,6 +493,10 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
       ? { ...b, verdict: 'paid' as const, rewards: rewards(own(o, 'rewards')) }
       : { ...b, verdict: 'refused' as const, why: choiceOf(SOLO_REFUSED)(own(o, 'why')) };
   } },
+  chapter: { gmOnly: true, ownSheet: false, sealed: always, read: o => {
+    const q = own(o, 'quest');
+    return { ...base(o), to: toList(own(o, 'to')), words: need(parseWords(own(o, 'words'))), rewards: rewards(own(o, 'rewards')), quest: q === null || q === undefined ? null : questOffer(q) };
+  } },
 };
 
 type EventEntry<K extends EventType> = {
@@ -499,6 +512,7 @@ export const EVENTS: { readonly [K in EventType]: EventEntry<K> } = {
   revive: entry('revive'), roll: entry('roll'), questUpdate: entry('questUpdate'), used: entry('used'), step: entry('step'), cast: entry('cast'), pass: entry('pass'),
   chain: entry('chain'), coinCall: entry('coinCall'), coinLand: entry('coinLand'), arm: entry('arm'), shadow: entry('shadow'),
   soloRun: entry('soloRun'), soloAnswer: entry('soloAnswer'), noted: entry('noted'),
+  chapter: entry('chapter'),
 };
 function entry<K extends EventType>(type: K): EventEntry<K> {
   const def: EventDef<K> = DEFS[type];

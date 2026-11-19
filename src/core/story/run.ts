@@ -14,10 +14,16 @@ import type { Day, VitalsAt } from '../hunter/grant.ts';
 import type { Save } from '../save.ts';
 import { isRefused, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
-import { told } from '../session-log.ts';
 import type { Said } from '../session-log.ts';
-import { chapterLanded } from './story.ts';
-import type { Chapter, ChapterGiven, Story } from './story.ts';
+import { sent } from '../award.ts';
+import { pickables, sheetName } from '../party.ts';
+import type { Pickable } from '../party.ts';
+import { newEvent } from '../protocol.ts';
+import type { EventStamp, RoomCode, RoomEvent, SheetKey } from '../protocol.ts';
+import { newRewards } from '../rewards.ts';
+import type { Rewards } from '../rewards.ts';
+import { CHAPTER_MAX, chapterBody, chapterLanded, chapterSize } from './story.ts';
+import type { Chapter, ChapterBody, ChapterGiven, Story } from './story.ts';
 
 // ── what a run is ──
 /** Who a run is for: whoever is at the table when a chapter opens, or the hunters chosen. */
@@ -61,9 +67,9 @@ export type RunEvent =
  * Why a move was refused. `running`: that run is already on. `ended`: it has ended. `no-run`: there is no such run.
  * `moved`: it was opened since the window or the tap was drawn. `no-chapter`: the story has no such chapter now.
  * `nobody`: no hunter at the table to give it to. `no-story`: the story is no longer in the library. `full`: `RUNNING_MAX`
- * stories run already.
+ * stories run already. `too-large`: the chapter is past `CHAPTER_MAX` and a player's hunter would be sent it.
  */
-export type RunRefusal = 'running' | 'ended' | 'no-run' | 'moved' | 'no-chapter' | 'nobody' | 'no-story' | 'full';
+export type RunRefusal = 'running' | 'ended' | 'no-run' | 'moved' | 'no-chapter' | 'nobody' | 'no-story' | 'full' | 'too-large';
 /** What the app must do after a step: give chapter `chapter` to `to`. */
 export type RunFx = { readonly type: 'deliver'; readonly chapter: number; readonly to: readonly HunterRef[] } | null;
 type Stepped = { readonly run: StoryRun; readonly fx: RunFx };
@@ -146,50 +152,85 @@ export function keptRuns(runs: readonly StoryRun[]): StoryRun[] {
 }
 
 // ── the one write of a move ──
-/** What a move needs beside the save: the moment and rules (`Day`), and where each of this phone's hunters keeps its vitals now. */
-export type MoveCtx = { readonly day: Day; readonly vitals: (hid: HunterId) => VitalsAt };
-/** What a move did: the save after it, the run, each of this phone's hunters given the chapter, and the hunters skipped (not at the table). */
-export type StoryMoved = { readonly save: Save; readonly run: StoryRun; readonly granted: readonly { readonly hid: HunterId; readonly g: ChapterGiven }[]; readonly skipped: readonly HunterRef[] };
+/** A player's hunter as the GM's phone holds it: the room's sheet of it, by its key. */
+export type PlayerSheet = { readonly key: SheetKey; readonly data: { readonly name: string } };
+/**
+ * The room a move sends to: its code, the players' sheets the GM's phone holds (the players' hunters at the table),
+ * whether this phone's fight holds a player's hunter on a row, and the stamp of the message's id, made once by the tap.
+ */
+export type MoveRoom = { readonly code: RoomCode; readonly sheets: readonly PlayerSheet[]; readonly onRow: (key: SheetKey) => boolean; readonly stamp: EventStamp };
+/**
+ * What a move needs beside the save: the moment and rules (`Day`), where each of this phone's hunters keeps its vitals
+ * now, and the room (null: no room, so no player's hunter is at the table).
+ */
+export type MoveCtx = { readonly day: Day; readonly vitals: (hid: HunterId) => VitalsAt; readonly room: MoveRoom | null };
+/**
+ * What a move did: the save after it, the run, each of this phone's hunters given the chapter, the hunters skipped (not at
+ * the table), the players' hunters it was posted to, and for each of those whose row this phone's fight holds, the
+ * chapter's statuses for that row (its message carries the rest).
+ */
+export type StoryMoved = {
+  readonly save: Save; readonly run: StoryRun; readonly granted: readonly { readonly hid: HunterId; readonly g: ChapterGiven }[]; readonly skipped: readonly HunterRef[];
+  readonly posted: readonly SheetKey[]; readonly onRow: readonly { readonly key: SheetKey; readonly statuses: Rewards['statuses'] }[];
+};
 
-/** The hunters at the table: this phone's (a player's hunters join in unit 4). */
-export const atTable = (save: Pick<Save, 'hunters'>): HunterRef[] => save.hunters.map(h => ({ kind: 'local', hunterId: h.id }));
+/** The hunters at the table: this phone's, then the players' of the room's sheets the GM's phone holds. */
+export const atTable = (save: Pick<Save, 'hunters'>, sheets: readonly PlayerSheet[]): Pickable[] => pickables(save.hunters, sheets);
 
 /**
  * Run `runId` moved by `e`, as one step on the save: the run written (a new one added, `keptRuns` applied), the chapter
- * given to each hunter of `e.to` this phone holds (`chapterLanded`, with its vitals where a fight holds them), and one
- * line of the session log. All of it, or a refusal and nothing. A hunter of `e.to` not at the table is skipped and said;
- * when none is left, `nobody`. A turn-on past `RUNNING_MAX` running is `full`.
+ * given to each hunter of `e.to` this phone holds (`chapterLanded`, with its vitals where a fight holds them), its
+ * `chapter` message posted to the outbox for the players' hunters of `e.to` (two messages when this phone's fight holds
+ * some of them on a row: theirs without the statuses, which go on the rows), and one line of the session log. All of it,
+ * or a refusal and nothing. A hunter of `e.to` not at the table is skipped and said; when none is left, `nobody`. A
+ * chapter past `CHAPTER_MAX` opened for a player's hunter is `too-large`. A turn-on past `RUNNING_MAX` running is `full`.
  */
 export function storyMove(save: Save, runId: StoryRunId, e: RunEvent, ctx: MoveCtx): StoryMoved | Refused<RunRefusal> {
   const run = save.storyRuns.find(r => r.id === runId) ?? null;
   if (e.type === 'turnOn' && !run && running(save.storyRuns).length >= RUNNING_MAX) return refuse('full');
   const storyId = run ? run.story : e.type === 'turnOn' ? e.story : null;
   const story = save.library.stories.find(s => s.id === storyId) ?? null;
-  const here = atTable(save), present = (r: HunterRef) => here.some(x => sameRef(x, r));
+  const sheets = ctx.room ? ctx.room.sheets : [], here = atTable(save, sheets), present = (r: HunterRef) => here.some(x => sameRef(x.ref, r));
   const skipped = 'to' in e ? e.to.filter(r => !present(r)) : [];
   const ev: RunEvent = 'to' in e ? { ...e, to: e.to.filter(present) } : e;
   const stepped = runStep(run, ev, story);
   if (isRefused(stepped)) return stepped;
-  const r = stepped.run;
+  const r = stepped.run, fx = stepped.fx;
+  const chapter = fx && story ? story.chapters[fx.chapter] : undefined;
+  const players = fx ? fx.to.flatMap(x => (x.kind === 'remote' ? [x.remote] : [])) : [];
+  if (chapter && players.length && chapterSize(chapter) > CHAPTER_MAX) return refuse('too-large');
   let next: Save = { ...save, storyRuns: keptRuns(run ? save.storyRuns.map(x => (x.id === r.id ? r : x)) : [...save.storyRuns, r]) };
-  const granted: { hid: HunterId; g: ChapterGiven }[] = [];
-  const chapter = stepped.fx && story ? story.chapters[stepped.fx.chapter] : undefined;
-  if (stepped.fx && chapter) {
-    for (const ref of stepped.fx.to) {
+  const granted: { hid: HunterId; g: ChapterGiven }[] = [], events: RoomEvent[] = [];
+  let onRow: StoryMoved['onRow'] = [];
+  if (fx && chapter) {
+    const body = chapterBody(chapter, ctx.day.at);
+    for (const ref of fx.to) {
       if (ref.kind !== 'local') continue;
-      const g = chapterLanded(next, ref.hunterId, chapter, { ...ctx.day, vitals: ctx.vitals(ref.hunterId) });
+      const g = chapterLanded(next, ref.hunterId, body, { ...ctx.day, vitals: ctx.vitals(ref.hunterId) });
       if (isRefused(g)) continue;
       next = g.save; granted.push({ hid: ref.hunterId, g });
     }
+    const room = ctx.room;
+    if (room && players.length) {
+      const held = body.rewards.statuses.length ? players.filter(room.onRow) : [], free = players.filter(k => !held.includes(k));
+      const { statuses: _onRow, ...kept } = body.rewards, rest: ChapterBody = { ...body, rewards: { ...newRewards(), ...kept } };
+      const groups = [{ to: free, body }, { to: held, body: rest }].filter(g => g.to.length);
+      groups.forEach((g, i) => {
+        const made = newEvent('chapter', { to: g.to, ...g.body }, { ...room.stamp, now: room.stamp.now + i });
+        if (!made) throw new Error('the room would refuse a chapter the library holds');
+        events.push(made);
+      });
+      onRow = held.map(key => ({ key, statuses: body.rewards.statuses }));
+    }
   }
-  const names = (refs: readonly HunterRef[]) => refs.map(x => nameOf(save, x));
+  const names = (refs: readonly HunterRef[]) => refs.map(x => nameOf(save, sheets, x));
   const said = moveLine(r, ev, chapter ?? null, names);
-  return { save: told(next, { at: ctx.day.at, cap: ctx.day.R.logCap }, said), run: r, granted, skipped };
+  return { save: sent(next, { room: ctx.room ? ctx.room.code : null, events, said: [said] }, { at: ctx.day.at, cap: ctx.day.R.logCap }), run: r, granted, skipped, posted: players, onRow };
 }
 
-/** A hunter's name for the GM's words: this phone's by its id; a player's by its sheet key until unit 4 reads the room's sheets. */
-export const nameOf = (save: Pick<Save, 'hunters'>, ref: HunterRef): string =>
-  ref.kind === 'local' ? save.hunters.find(h => h.id === ref.hunterId)?.name ?? 'a hunter no longer here' : ref.remote;
+/** A hunter's name for the GM's words: this phone's by its id; a player's by its sheet in the room. */
+export const nameOf = (save: Pick<Save, 'hunters'>, sheets: readonly PlayerSheet[], ref: HunterRef): string =>
+  ref.kind === 'local' ? save.hunters.find(h => h.id === ref.hunterId)?.name ?? 'a hunter no longer here' : sheetName(sheets, ref.remote, "a player's hunter");
 
 // ── the boundary ──
 type Rec = Record<string, unknown>;
@@ -244,6 +285,7 @@ export const RUN_REFUSAL_WORDS: { readonly [K in RunRefusal]: (chapter: number) 
   nobody: () => 'Pick at least one hunter.',
   'no-story': () => 'This story is no longer in your Workshop. You can end it.',
   full: () => `${RUNNING_MAX} stories are running, the most at once. End one first.`,
+  'too-large': n => `Chapter ${n} is too large to send to players' phones. Open it for this phone's hunters only, or give it fewer items in the Workshop.`,
 };
 
 /** What a chapter gives, for the card's next line. */
@@ -295,6 +337,7 @@ export const STORY_WORDS = {
   opened: (i: number, names: readonly string[]) => `Opened chapter ${i + 1} for ${andList(names)}.`,
   turnedOn: (name: string, names: readonly string[]) => `Turned on ${name}. Opened chapter 1 for ${andList(names)}.`,
   skipped: (names: readonly string[]) => `Skipped ${andList(names)}: not at the table.`,
+  waits: (names: readonly string[]) => `${andList(names)} ${names.length === 1 ? 'gets' : 'get'} it when the room answers.`,
   running: 'running',
   openedMark: 'opened',
   notSaved: 'Not saved. Nothing was given.',

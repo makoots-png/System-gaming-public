@@ -6,13 +6,17 @@
 // run.ts) in one write through `hunter.grantWrite`, so a fight's parts go on the rows in the same write; this module is
 // the one place a story moves (the lint "a story moves only from src/views/stories.js"). Each window reads the save when
 // it opens and carries the count of opens it was drawn with, so a stale tap is refused and writes nothing. Every
-// sentence is core's (`STORY_WORDS`, `RUN_REFUSAL_WORDS`). In unit 3 the hunters are this phone's.
+// sentence is core's (`STORY_WORDS`, `RUN_REFUSAL_WORDS`). The hunters at the table are this phone's and, in the GM's
+// room, the players' (their sheets), to whom a move posts the chapter's message in the same write.
 import { closeWindow, css, esc, h, openWindow, trapTab } from './ui.js';
 import { enter } from './motion.ts';
 import { END_HOLD_MS, RUN_REFUSAL_WORDS, STORY_WORDS as W, atTable, givesLine, hadChapter, nameOf, nextChapter, openedLine, running, sameRef, storyMove, whoFor } from '../core/story/run.ts';
-import { chapterWindow, storyMeta } from '../core/story/story.ts';
+import { chapterWindow, storyMeta, whoseLine } from '../core/story/story.ts';
 import { grantLines, isEmptyReward } from '../core/rewards.ts';
 import { stepTime } from '../core/day.ts';
+import { gmSource } from '../core/effects.ts';
+import { postNews } from '../core/sync/connection.ts';
+import { cryptoRandom } from '../edge/roll.ts';
 import { isRefused } from '../core/save-step.ts';
 import { storyMaker } from './story-maker.js';
 
@@ -49,7 +53,7 @@ button.st-row{display:flex;flex-direction:column;align-items:stretch;gap:2px;wid
 .st-win .st-actions{flex:0 0 auto;margin:0 -14px;padding:10px 14px calc(10px + var(--sab));border-top:1px solid var(--line)}
 `);
 
-/** A hunter's id on a chip: this phone's hunter id, or a player's sheet key (unit 4). */
+/** A hunter's id on a chip: this phone's hunter id, or a player's sheet key. */
 const idOf = ref => (ref.kind === 'local' ? ref.hunterId : ref.remote);
 
 /** @param {import('./app.ts').App} app */
@@ -57,8 +61,10 @@ export function register(app) {
   const { store, ui } = app;
   const A = () => app.api, S = () => store.get();
   const storyOf = run => S().library.stories.find(s => s.id === run.story) || null;
-  const namesOf = refs => refs.map(r => nameOf(S(), r));
-  const forWho = run => W.forWho(run.who, run.who.at === 'hunters' ? namesOf(run.who.refs.filter(r => atTable(S()).some(x => sameRef(x, r)))) : []);
+  /** The players' sheets this phone holds as the room's GM (none outside a room), and the hunters at the table with them. */
+  const sheets = () => A().sync.remoteSheets(), here = () => atTable(S(), sheets()).map(p => p.ref);
+  const nameFor = r => nameOf(S(), sheets(), r), namesOf = refs => refs.map(nameFor);
+  const forWho = run => W.forWho(run.who, run.who.at === 'hunters' ? namesOf(run.who.refs.filter(r => here().some(x => sameRef(x, r)))) : []);
   const words = (why, n) => (RUN_REFUSAL_WORDS[why] ? RUN_REFUSAL_WORDS[why](n) : W.notSaved);
 
   /**
@@ -68,20 +74,28 @@ export function register(app) {
    * @param {import('../core/ids.ts').StoryRunId} runId @param {(at: string, session: number) => import('../core/story/run.ts').RunEvent} make
    */
   function move(runId, make) {
-    const day = { ...stepTime(S(), new Date()), R: app.rules() }, e = make(day.at, S().world.session);
-    const ctx = { day, vitals: hid => (A().hunter.fightOf({ hid }) ? 'fight' : 'sheet') };
+    const day = { ...stepTime(S(), new Date()), R: app.rules() }, e = make(day.at, S().world.session), code = A().sync.room(), players = sheets();
+    const onRow = key => { const at = A().hunter.fightOf({ key }); return !!at && at.at === 'row'; };
+    /** @type {import('../core/story/run.ts').MoveRoom | null} the stamp of the message's id is made once, so the step read twice posts the same message */
+    const room = app.seat() === 'gm' && code !== null ? { code, sheets: players, onRow, stamp: { device: S().settings.deviceId, now: Date.now(), rand: cryptoRandom() } } : null;
+    const ctx = { day, vitals: hid => (A().hunter.fightOf({ hid }) ? 'fight' : 'sheet'), room };
+    const rankOf = key => (players.find(x => x.key === key) || { data: { rank: 'E' } }).data.rank;
+    // a player's hunter on a row of this phone's fight: the chapter's statuses go on its row in the same write, as Award's do (gm.js `sendAward`)
+    const rowParts = m => m.onRow.map(({ key, statuses }) => ({ who: { key }, statuses: statuses.map(st => ({ key: st.key, rounds: st.rounds ?? null, source: gmSource(rankOf(key)), ...(st.def ? { def: st.def } : {}) })), refill: false }));
     const out = A().hunter.grantWrite(`story-${e.type}`, s => {
       const m = storyMove(s, runId, e, ctx);
-      return isRefused(m) ? m : { ...m, held: m.granted.map(({ hid, g }) => ({ who: { hid }, ...g.fight })) };
+      return isRefused(m) ? m : { ...m, held: [...m.granted.map(({ hid, g }) => ({ who: { hid }, ...g.fight })), ...rowParts(m)] };
     });
     if (isRefused(out)) return out;
-    // a phone that holds several hunters says whose window each is, as a feat's window does (feats.js)
-    const many = S().hunters.length > 1, whose = (hid, body) => { const n = many ? S().hunters.find(h => h.id === hid)?.name ?? '' : ''; return n ? (body ? `${n}: ${body}` : n) : body; };
-    for (const { hid, g } of out.granted) A().hunter.granted(hid, { ...g, lines: g.window.lines }, { tag: g.window.tag, title: g.window.title, body: whose(hid, g.window.body), kind: 'quest' });
+    if (out.posted.length) A().sync.flush();
+    for (const { hid, g } of out.granted) A().hunter.granted(hid, { ...g, lines: g.window.lines }, { tag: g.window.tag, title: g.window.title, body: whoseLine(g.window.body, S().hunters, hid), kind: 'quest' });
     return out;
   }
-  /** What the GM is told after a move: who got the chapter, and who was skipped. */
-  const told = (first, out) => ui.toast(W.tag, [first, out.skipped.length ? W.skipped(namesOf(out.skipped)) : ''].filter(Boolean).join(' '));
+  /** What the GM is told after a move: who got the chapter, who gets it when the room answers, and who was skipped. */
+  const told = (first, out) => {
+    const waits = out.posted.length && postNews({ ok: true }, A().sync.conn()) !== 'sent' ? W.waits(out.posted.map(key => nameFor({ kind: 'remote', remote: key }))) : '';
+    ui.toast(W.tag, [first, waits, out.skipped.length ? W.skipped(namesOf(out.skipped)) : ''].filter(Boolean).join(' '));
+  };
 
   // ── a window of the stack: its head, a middle that scrolls, the error line and Cancel and the action ──
   /**
@@ -125,18 +139,18 @@ export function register(app) {
       ${c.note ? `<div class="lbl">${esc(W.yourNote)}</div><p>${esc(c.note)}</p>` : ''}`;
   }
   /** The hunters' chips: each at the table, pressed when picked, marked when it has had the chapter; a chosen hunter away greyed. */
-  const chipsHtml = (refs, picked, has, away) => `<div class="st-chips" role="group" aria-label="${esc(W.who)}">${refs.map(r => `<button type="button" class="mk-chip" data-st-who="${esc(idOf(r))}" aria-pressed="${picked.has(idOf(r))}">${esc(nameOf(S(), r))}${has(r) ? ` · ${esc(W.hasIt)}` : ''}</button>`).join('')}${
-    away.map(r => `<button type="button" class="mk-chip" disabled>${esc(nameOf(S(), r))} · ${esc(W.notHere)}</button>`).join('')}</div>`;
+  const chipsHtml = (refs, picked, has, away) => `<div class="st-chips" role="group" aria-label="${esc(W.who)}">${refs.map(r => `<button type="button" class="mk-chip" data-st-who="${esc(idOf(r))}" aria-pressed="${picked.has(idOf(r))}">${esc(nameFor(r))}${has(r) ? ` · ${esc(W.hasIt)}` : ''}</button>`).join('')}${
+    away.map(r => `<button type="button" class="mk-chip" disabled>${esc(nameFor(r))} · ${esc(W.notHere)}</button>`).join('')}</div>`;
 
   // ── the open window ──
   /** Opens the window that opens a chapter of run `runId`, at the next chapter (the run's own when it is at the last). */
   function openChapter(runId) {
     const run = S().storyRuns.find(r => r.id === runId), story = run && storyOf(run);
     if (!run || !story) return;
-    const here = atTable(S()), seen = run.opens, next = nextChapter(run, story);
-    const away = run.who.at === 'hunters' ? run.who.refs.filter(r => !here.some(x => sameRef(x, r))) : [];
+    const table = here(), seen = run.opens, next = nextChapter(run, story);
+    const away = run.who.at === 'hunters' ? run.who.refs.filter(r => !table.some(x => sameRef(x, r))) : [];
     const st = { chapter: next ?? Math.min(run.state.chapter, story.chapters.length - 1), picked: new Set() };
-    const preset = () => { st.picked = new Set(whoFor(run, st.chapter, here).map(idOf)); };
+    const preset = () => { st.picked = new Set(whoFor(run, st.chapter, table).map(idOf)); };
     preset();
     const w = storyWindow(W.open(st.chapter), W.open(st.chapter), {
       click(b) {
@@ -145,9 +159,9 @@ export function register(app) {
       },
       change(t) { if (t instanceof HTMLSelectElement && t.matches('[data-st-chsel]')) { st.chapter = Number(t.value); preset(); draw(); } },
       act() {
-        const to = here.filter(r => st.picked.has(idOf(r)));
+        const to = table.filter(r => st.picked.has(idOf(r)));
         const out = move(runId, (at, session) => ({ type: 'open', chapter: st.chapter, seen, to, at, session }));
-        if (isRefused(out)) { const now = S().storyRuns.find(r => r.id === runId); w.err.textContent = words(out.why, out.why === 'no-chapter' || !now ? st.chapter + 1 : now.state.chapter + 1); return false; }
+        if (isRefused(out)) { const now = S().storyRuns.find(r => r.id === runId); w.err.textContent = words(out.why, out.why === 'no-chapter' || out.why === 'too-large' || !now ? st.chapter + 1 : now.state.chapter + 1); return false; }
         told(W.opened(st.chapter, namesOf(out.run.opened.at(-1).to)), out);
         return true;
       },
@@ -157,9 +171,9 @@ export function register(app) {
       const chs = story.chapters.length <= 8
         ? `<div class="st-chs seg" role="group" aria-label="${esc(W.chapter)}">${story.chapters.map((_, i) => `<button type="button" data-st-ch="${i}" aria-pressed="${i === st.chapter}"${had[i] ? ` class="st-had" aria-label="${i + 1}, ${esc(W.openedMark)}"` : ''}>${i + 1}</button>`).join('')}</div>`
         : `<div class="st-chs"><select data-st-chsel aria-label="${esc(W.chapter)}">${story.chapters.map((_, i) => `<option value="${i}"${i === st.chapter ? ' selected' : ''}>${i + 1}${had[i] ? ` (${esc(W.openedMark)})` : ''}</option>`).join('')}</select></div>`;
-      const again = here.filter(r => st.picked.has(idOf(r)) && hadChapter(run, st.chapter, r));
+      const again = table.filter(r => st.picked.has(idOf(r)) && hadChapter(run, st.chapter, r));
       w.mid.innerHTML = `${previewHtml(c)}<div class="lbl">${esc(W.chapter)}</div>${chs}
-        <div class="lbl">${esc(W.who)}</div>${chipsHtml(here, st.picked, r => hadChapter(run, st.chapter, r), away)}
+        <div class="lbl">${esc(W.who)}</div>${chipsHtml(table, st.picked, r => hadChapter(run, st.chapter, r), away)}
         ${again.length ? `<p>${esc(W.again(namesOf(again)))}</p>` : ''}`;
       w.title.textContent = W.open(st.chapter); w.go.textContent = W.open(st.chapter); w.err.textContent = '';
     }
@@ -169,9 +183,9 @@ export function register(app) {
   // ── the turn-on window ──
   /** Opens the turn-on window: the library's stories, or story `id`'s step at once. */
   function turnOnWindow(id) {
-    const lib = () => S().library.stories, here = atTable(S());
+    const lib = () => S().library.stories, table = here();
     const st = { story: id ? lib().find(s => s.id === id) || null : null, table: true, picked: new Set() };
-    const pick = s => { st.story = s; st.table = s.for === 'table'; st.picked = new Set(!st.table && here.length === 1 ? [idOf(here[0])] : []); };
+    const pick = s => { st.story = s; st.table = s.for === 'table'; st.picked = new Set(!st.table && table.length === 1 ? [idOf(table[0])] : []); };
     if (st.story) pick(st.story);
     const w = storyWindow(st.story ? W.turnOnStory(st.story.name) : W.turnOnTitle, W.turnOnGo, {
       click(b) {
@@ -181,7 +195,7 @@ export function register(app) {
       },
       act() {
         const s = st.story; if (!s) return false;
-        const to = st.table ? here : here.filter(r => st.picked.has(idOf(r))), runId = store.id('sr');
+        const to = st.table ? table : table.filter(r => st.picked.has(idOf(r))), runId = store.id('sr');
         /** @type {import('../core/story/run.ts').Who} */
         const who = st.table ? { at: 'table' } : { at: 'hunters', refs: to };
         const out = move(runId, (at, session) => ({ type: 'turnOn', id: runId, story: s.id, who, to, at, session }));
@@ -202,7 +216,7 @@ export function register(app) {
       w.title.textContent = W.turnOnStory(s.name);
       w.mid.innerHTML = `<div class="lbl">${esc(W.who)}</div>
         <div class="seg" role="group" aria-label="${esc(W.who)}"><button type="button" data-st-for="table" aria-pressed="${st.table}">${esc(W.table)}</button><button type="button" data-st-for="hunters" aria-pressed="${!st.table}">${esc(W.chosen)}</button></div>
-        ${chipsHtml(here, st.picked, () => false, [])}
+        ${chipsHtml(table, st.picked, () => false, [])}
         ${runs.length ? `<p>${esc(W.already(runs.map(forWho)))}</p>` : ''}
         ${previewHtml(s.chapters[0])}`;
     }

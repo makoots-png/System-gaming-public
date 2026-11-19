@@ -130,4 +130,11 @@ export const VALID: Record<EventType, [Raw, Raw]> = {
     { eid: EID, to: [KEY], facts: [{ kind: 'gate', name: 'Goblin Den', rank: 'E', above: 0, toBreak: 3 }, { kind: 'junk' }] },
     { eid: EID, to: [KEY], facts: [{ kind: 'gate', name: 'Goblin Den', rank: 'E', above: 0, toBreak: 3 }] },
   ],
+  chapter: [
+    { eid: EID, to: [KEY, OTHER], words: { title: 'the deep asks for a gate', line: 'Any gate of your rank.' }, rewards: { points: -1 },
+      quest: { kind: 'urgent', title: 'Clear a gate for the Deep', desc: '', objectives: [{ label: 'Gate cleared', target: 1, progress: 0 }], rewards: { gold: 100 }, dueAt: '2026-11-21T10:00:00.000Z', penaltyText: 'The Deep collects.' } },
+    { eid: EID, to: [KEY, OTHER], words: { title: 'THE DEEP ASKS FOR A GATE', line: 'Any gate of your rank.' }, rewards: { xp: 0, points: -1, gold: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] },
+      quest: { kind: 'urgent', title: 'Clear a gate for the Deep', desc: '', objectives: [{ label: 'Gate cleared', target: 1, progress: 0 }],
+        rewards: { xp: 0, points: 0, gold: 100, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, dueAt: '2026-11-21T10:00:00.000Z', penaltyText: 'The Deep collects.' } },
+  ],
 };

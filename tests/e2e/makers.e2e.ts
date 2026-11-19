@@ -1419,6 +1419,38 @@ test('Enter in a maker\'s field moves to the next field and never saves the form
   });
 });
 
+test('Enter in the Quests view\'s form moves to the next field as it does in a maker and never saves the quest; Ctrl and Enter saves it', async ({ device }) => {
+  const page = (await device('gm')).page;
+  await onboardGM(page);
+  await go(page, 'quests');
+  const form = page.locator('#view-quests form[data-form]'), cards = page.locator('#view-quests .qc', { hasText: 'Clear the den' });
+  await page.locator('#view-quests [data-new]').tap();
+
+  await test.step('Enter in the title moves to the description, and nothing is saved', async () => {
+    await form.locator('[name=title]').fill('Clear the den');
+    await form.locator('[name=title]').press('Enter');
+    await expect(form.locator('[name=desc]')).toBeFocused();
+    await expect(form).toBeVisible();
+    await expect(cards).toHaveCount(0);
+  });
+
+  await test.step('Enter in an objective moves to its target, and Enter in the penalty text leaves the form open', async () => {
+    await form.locator('[name=olabel]').fill('Wolves slain');
+    await form.locator('[name=olabel]').press('Enter');
+    await expect(form.locator('[name=otarget]')).toBeFocused();
+    await form.locator('[name=penaltyText]').fill('Lose 10 gold');
+    await form.locator('[name=penaltyText]').press('Enter');
+    await expect(form).toBeVisible();
+    await expect(cards).toHaveCount(0);
+  });
+
+  await test.step('Ctrl and Enter in the description saves the quest', async () => {
+    await form.locator('[name=desc]').press('Control+Enter');
+    await expect(form).toBeHidden();
+    await expect(cards).toContainText('Wolves slain');
+  });
+});
+
 test('a half-written reward row keeps its chapter open in the story maker, and the maker says so, until the row is finished', async ({ device }) => {
   const page = (await device('gm')).page;
   await onboardGM(page);

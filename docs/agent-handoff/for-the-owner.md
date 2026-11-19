@@ -438,3 +438,11 @@ What a player sees: when a hunter does something the System counts (a fight won 
 - When the story is at its last chapter, the card says "Chapter 5 is the last." and its button is End story, so a jump from chapter 1 to 5 is not read as every chapter done.
 - In a maker, Enter in a field moves to the next field and never saves. Ctrl or Cmd and Enter saves. Say "Enter saves" to have the old way back.
 - A story running in the GM view cannot be deleted in the Workshop. End it first.
+
+## Stories, unit 4: a story in the room (Nov 19)
+
+- In a room, the Stories windows offer the players' hunters beside yours. A chapter you open for a player's hunter shows on that player's phone as one window, with its reward on the sheet and its quest in their Quests, which they cannot delete.
+- Players see each chapter's window and keep it in their record. They never see the story's name, its other chapters or your notes, and a chapter opened for Brakk lands only on Brakk's phone.
+- A player who finishes a chapter's quest moves nothing. The story waits for your tap.
+- A player who joins late gets the chapters you open after that. To catch them up, open the chapter again: only the hunters who have not had it are ticked.
+- A chapter too large to send to players' phones (many big items) still opens for the hunters on your own phone. The story maker already stops you from saving one.

@@ -36,10 +36,14 @@ test('a GM opens a room from the Room view and sees the code, the QR and link fe
     await expect(gm.locator(V + '[data-qr] svg')).toBeVisible();
   });
 
-  await test.step('tapping the QR opens an enlarged copy that closes again', async () => {
+  await test.step('tapping the QR opens an enlarged copy that closes again, by Close or by Enter', async () => {
     await gm.locator(V + '[data-qr]').tap();
     await expect(gm.locator('.sys-overlay .rm-sys-qr svg')).toBeVisible();
     await gm.locator('.sys-overlay.show button').first().tap();
+    await expect(gm.locator('.sys-overlay.show')).toHaveCount(0);
+    await gm.locator(V + '[data-qr]').tap();
+    await expect(gm.locator('.sys-overlay .rm-sys-qr svg')).toBeVisible();
+    await gm.keyboard.press('Enter');
     await expect(gm.locator('.sys-overlay.show')).toHaveCount(0);
   });
 

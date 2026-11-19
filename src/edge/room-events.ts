@@ -20,6 +20,8 @@ import { hpChange } from '../core/hunter/vitals.ts';
 import { spendItem } from '../core/hunter/use.ts';
 import { shadowRises } from '../core/hunter/shadows.ts';
 import { record } from '../core/hunter/chronicle.ts';
+import { chapterLanded, whoseLine } from '../core/story/story.ts';
+import type { ChapterGiven } from '../core/story/story.ts';
 import { deviceOf, hunterIdOf } from '../core/protocol.ts';
 import { rewardLines } from '../core/rewards.ts';
 import type { EventId, EventType, PayloadOf, QuestOffer, RoomEvent, SheetKey } from '../core/protocol.ts';
@@ -157,7 +159,31 @@ const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS }
   // the facts the GM's phone saw of this phone's hunter (a fight's end, a Clear it was paid in): recorded in one write
   // with the event's id, where the store's notice step takes them (feature 1's notes 2.3); its feats tell their own windows
   noted: { once: true, land: (p, hids) => save => forEach(save, hids, (s, h) => ({ save: withHunter(s, record(h, ...p.facts)), tell: nothing })) },
+  chapter: { once: true, land: landChapter },
 };
+
+/**
+ * A chapter of a story the GM opened: each hunter of this phone it names given it by the one step that gives a chapter on
+ * any phone (story/story.ts `chapterLanded`: its reward, its quest from the GM, its fact), all in one write; then one
+ * window a hunter, the chapter's (`chapterWindow`, its line named by `whoseLine` on a phone of several hunters). What the reward hands to a fight is the GM's, as for an award
+ * (`landAward`): refused here with the toast that says so.
+ */
+function landChapter(p: PayloadOf<'chapter'>, hids: string[], app: ApplyDeps): Land {
+  return save => {
+    let s = save;
+    const given: [string, ChapterGiven, boolean][] = [];
+    for (const hid of hids) {
+      const at = app.hunter.fightOf({ hid });
+      const g = chapterLanded(s, hid, p, { at: app.now(), today: app.today(), R: app.rules(), vitals: at ? 'fight' : 'sheet' });
+      if (isRefused(g)) continue;
+      const off = at?.at === 'row' && (g.fight.statuses.length > 0 || g.fight.refill);
+      s = g.save;
+      given.push([hid, off ? { ...g, fight: { statuses: [], refill: false } } : g, off]);
+    }
+    const hunters = s.hunters;
+    return { save: s, tell: () => { for (const [hid, g, off] of given) { app.hunter.granted(hid, { ...g, lines: g.window.lines }, { tag: g.window.tag, title: g.window.title, body: whoseLine(g.window.body, hunters, hid), kind: 'quest' }); if (off) app.hunter.gmHolds(); } } };
+  };
+}
 
 /**
  * The GM's phone's answer to this phone's won run of a room's solo gate (gates/solo-wait.ts): the waiting run leaves the

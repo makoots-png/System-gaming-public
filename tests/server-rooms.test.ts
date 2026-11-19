@@ -5,6 +5,9 @@ import type { Store } from '../server.ts';
 import { DOC_MAX, SHEET_MAX, parseDeviceId, parseRoomCode, parseSheet, parseSheetKey } from '../src/core/protocol.ts';
 import type { RoomCode } from '../src/core/protocol.ts';
 import { ROOM_TTL_MS } from '../src/core/room-server.ts';
+import { newEvent } from '../src/core/protocol.ts';
+import { CHAPTER_MAX, chapterSize } from '../src/core/story/story.ts';
+import { worstBody, worstChapter } from './fixtures/worst-chapter.ts';
 
 type Reply = { status: number; body: Record<string, any> };
 
@@ -159,7 +162,7 @@ describe('events', () => {
     expect(later.body.events.map((e: any) => e.seq)).toEqual([2]);
   });
 
-  for (const type of ['system', 'award', 'quest', 'hp', 'vitals', 'spent', 'status', 'revive', 'chain', 'coinLand', 'shadow', 'soloAnswer']) {
+  for (const type of ['system', 'award', 'quest', 'hp', 'vitals', 'spent', 'status', 'revive', 'chain', 'coinLand', 'shadow', 'soloAnswer', 'chapter']) {
     test(`a player cannot send a ${type} event`, async () => {
       const { code } = await newRoom();
       const r = await call('POST', `/api/rooms/${code}/events`, { body: { from: PLAYER, type, payload: {} } });
@@ -200,6 +203,22 @@ describe('events', () => {
     expect(await call('POST', `/api/rooms/${code}/events`, { headers: token('p1'), body: { from: PLAYER, type: 'shadow', payload: shadow } })).toEqual({ status: 403, body: { error: 'gm only' } });
     expect((await call('GET', `/api/rooms/${code}`)).body.events).toEqual([]);
     expect((await call('POST', `/api/rooms/${code}/events`, { headers: gm, body: { from: 'gm', type: 'shadow', payload: shadow } })).status).toBe(200);
+  });
+
+  test('a player cannot open a story\'s chapter for their own hunter, and the room is unchanged', async () => {
+    const { code } = await newRoom();
+    const chapter = { eid: 'd-gm-e12', to: [`${PLAYER}:h1`], words: { title: 'THE DEEP ASKS', line: '' }, rewards: { points: 5 }, quest: null };
+    expect(await call('POST', `/api/rooms/${code}/events`, { headers: token('p1'), body: { from: PLAYER, type: 'chapter', payload: chapter } })).toEqual({ status: 403, body: { error: 'gm only' } });
+    expect((await call('GET', `/api/rooms/${code}`)).body.events).toEqual([]);
+  });
+
+  test('the largest chapter a GM can save, sent to the room\'s 24 hunters with the longest keys, is taken and reads back whole', async () => {
+    const { code, gm } = await newRoom();
+    const ev = newEvent('chapter', worstBody('2026-11-19T10:00:00.000Z') as never, { device: 'd-gm', now: Date.parse('2026-11-19T10:00:00.000Z'), rand: 0.5 })!;
+    expect(chapterSize(worstChapter())).toBe(CHAPTER_MAX);
+    expect((await call('POST', `/api/rooms/${code}/events`, { headers: gm, body: { from: 'd-gm', type: 'chapter', payload: ev.payload } })).status).toBe(200);
+    const [back] = (await call('GET', `/api/rooms/${code}`, { headers: gm })).body.events;
+    expect([back.type, back.payload]).toEqual(['chapter', ev.payload]);
   });
 
   test('a player cannot land the coin of their own call, and the room keeps only the call', async () => {

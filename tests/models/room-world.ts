@@ -619,6 +619,9 @@ const USED = { who: 'Mira', what: 'item', name: 'Flash Bomb', text: 'Blinds a fo
 const STATUS = { add: [{ key: 'marked', rounds: 3, def: { label: 'Marked', desc: '', ops: [] }, source: { id: null, tier: 0 } }], remove: [], reason: '' };
 /** The fight's totals for a player's hunter (combat.js carries out the fight's `sendRemote` effect as a `vitals` message). */
 const VITALS = { hp: 12, mana: 3, fatigue: 20, statuses: [] };
+/** A story's chapter as the GM's phone opens it for a player's hunter: a window, a point, and a quest from the GM. */
+const CHAPTER = { words: { title: 'THE DEEP HAS NOTICED YOU', line: '' }, rewards: { xp: 0, points: 1, gold: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] },
+  quest: { kind: 'side', title: 'Find it', desc: '', objectives: [], rewards: { xp: 0, points: 0, gold: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, dueAt: null, penaltyText: '' } };
 /** A shadow risen for a player's hunter (shadows.js on the GM's phone posts it with the fight's `extract`). */
 const RISEN = { rank: 'E', archetype: 'brute', grade: 'Normal', monster: null, name: 'Wolf' };
 
@@ -630,7 +633,7 @@ const RISEN = { rank: 'E', archetype: 'brute', grade: 'Normal', monster: null, n
 export type Move = string;
 const TAPS_GM = ['create', 'leave', 'rejoin', 'reload'] as const;
 const TAPS_PLAYER = ['join', 'leave', 'reload', 'edit', 'forbidden', 'use', 'cast', 'coin', 'arm', 'solo', 'offline', 'online'] as const;
-const GM_TO = ['award', 'status', 'chain', 'vitals', 'spent', 'shadow', 'noted', 'settle', 'kick', 'allow'] as const;
+const GM_TO = ['award', 'status', 'chain', 'vitals', 'spent', 'shadow', 'noted', 'chapter', 'settle', 'kick', 'allow'] as const;
 const NET = ['serve', 'answer', 'drop'] as const;
 const LANES: Lane[] = ['link', 'push', 'gm', 'box'];
 
@@ -654,7 +657,7 @@ export function enabled(w: World): Move[] {
     for (const t of TAPS_PLAYER) if ((t !== 'join' || invite(w)) && net(t) && inRoom(t) && free(t)) out.push(`${p.name} ${t}`);
     const k = keyOf(p);
     if (gmRoom(gm) && inAir(gm.save.calls).some(c => c.id.startsWith(`${p.device}:`))) out.push(`gm rule ${p.name}`);
-    if (roster(gm)[k] !== undefined) for (const a of ['award', 'status', 'chain', 'vitals', 'spent', 'shadow', 'noted', 'settle', 'kick'] as const) out.push(`gm ${a} ${p.name}`);
+    if (roster(gm)[k] !== undefined) for (const a of ['award', 'status', 'chain', 'vitals', 'spent', 'shadow', 'noted', 'chapter', 'settle', 'kick'] as const) out.push(`gm ${a} ${p.name}`);
     if (recentKicks(w, gm).includes(k)) out.push(`gm allow ${p.name}`);
   }
   for (const p of w.phones) {
@@ -724,7 +727,7 @@ export async function play(w: World, move: Move): Promise<boolean> {
     // a player arms its hunter's reaction (kits design 8.4.2): taken at any time, it changes nothing but its own row
     case 'arm': post(w, p, 'arm', { by: keyOf(p), ability: 'parry', on: null }); break;
     case 'rule': rule(w, p, phoneNamed(w, arg!)!); break;
-    case 'award': case 'status': case 'chain': case 'vitals': case 'spent': case 'shadow': case 'noted': case 'settle': case 'kick': case 'allow': {
+    case 'award': case 'status': case 'chain': case 'vitals': case 'spent': case 'shadow': case 'noted': case 'chapter': case 'settle': case 'kick': case 'allow': {
       const k = keyOf(phoneNamed(w, arg!)!);
       // a fight's end (pay.ts `settleEncounter`) puts the player's award in the GM's outbox
       if (verb === 'settle') { post(w, p, 'award', { to: [k], ...AWARD }); break; }
@@ -737,6 +740,9 @@ export async function play(w: World, move: Move): Promise<boolean> {
       // the GM's fight ended or a Clear paid the player's hunter: what it did goes in the outbox as `noted` in that write
       // (fight-save.ts `fought`, gates.js's Clear), with no key
       if (verb === 'noted') { post(w, p, 'noted', { to: [k], facts: [{ kind: 'gate', name: 'Goblin Den', rank: 'E', above: 0, toBreak: 3 }] }); break; }
+      // the GM opened a story's chapter for the player's hunter: its `chapter` goes in the outbox in the write of the open
+      // (story/run.ts `storyMove`), with no key
+      if (verb === 'chapter') { post(w, p, 'chapter', { to: [k], ...CHAPTER }); break; }
       if (verb === 'award') sendTo(w, p, 'award', k, { to: [k], ...AWARD });
       else if (verb === 'vitals') sendTo(w, p, 'vitals', k, { to: [k], ...VITALS });
       else if (verb === 'chain') sendTo(w, p, 'chain', k, { to: [k], job: 'Ranger', kind: 'issue' });
