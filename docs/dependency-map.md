@@ -419,7 +419,7 @@ For one entry with line numbers and both directions, run `bun run deps -- <name>
 
 ### `src/core/library.ts`
 
-- Imports: `src/core/hunter/feats.ts`, `src/core/save-step.ts`, `src/core/save.ts`
+- Imports: `src/core/hunter/feats.ts`, `src/core/registry/feats.ts`, `src/core/save-step.ts`, `src/core/save.ts`
 - Imported by: `src/views/feat-maker.js`, `src/views/forge.js`, `src/views/loot.js`, `src/views/map-maker.js`, `src/views/skills.js`, `src/views/workshop.js`
 
 ### `src/core/onboarding.ts`
@@ -472,7 +472,7 @@ For one entry with line numbers and both directions, run `bun run deps -- <name>
 ### `src/core/registry/feats.ts`
 
 - Imports: `src/core/hunter/counts.ts`, `src/core/hunter/facts.ts`, `src/core/hunter/feats.ts`, `src/core/ids.ts`, `src/core/registry/items.ts`, `src/core/rewards.ts`, `src/core/rules.ts`
-- Imported by: `src/edge/store.ts`, `src/views/feat-maker.js`, `src/views/feats.js`, `src/views/workshop.js`
+- Imported by: `src/core/library.ts`, `src/edge/store.ts`, `src/views/feat-maker.js`, `src/views/feats.js`, `src/views/workshop.js`
 
 ### `src/core/registry/items.ts`
 
