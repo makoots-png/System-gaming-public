@@ -65,6 +65,11 @@ type Applier<K extends EventType> =
   | { once: false; apply: (p: PayloadOf<K>, hids: string[], app: ApplyDeps) => void };
 /** Nothing to apply on a player's phone: the GM's views read these from the `sync:event` signal. */
 const GM_ONLY_READS = null;
+/**
+ * Not applied one by one: an offer and its end are read whole from each page, own echoes included, by the fold
+ * (core/trade/offer.ts `offersSeen`), guarded by each phone's record of the offer and never by the applied ring.
+ */
+const OFFER_FOLD_READS = null;
 
 const money = (n: number): string => (n < 0 ? '-' : '+') + Math.abs(n);
 const nothing = (): void => undefined;
@@ -83,6 +88,9 @@ function forEach(save: Save, hids: readonly string[], each: (save: Save, h: Hunt
 }
 
 const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS } = {
+  offer: OFFER_FOLD_READS,
+  offerEnd: OFFER_FOLD_READS,
+  offerStop: OFFER_FOLD_READS,
   system: { once: false, apply: (p, _hids, app) => { app.system({ tag: p.tag, title: p.title, body: p.body || undefined, kind: p.kind }); } },
   award: { once: true, land: landAward },
   quest: { once: true, land: (p, hids, app) => save => {

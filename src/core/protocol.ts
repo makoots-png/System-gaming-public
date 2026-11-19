@@ -42,6 +42,10 @@ import { deviceOf, hunterIdOf, parseDeviceId, parseEventId, parseRoomCode, parse
 import { COIN_TEXT_MAX, SIDES, faceOf, rollId } from './coin.ts';
 import type { CoinNatural, LandingBody, RollId, CoinSide } from './coin.ts';
 import type { DeviceId, EventId, ItemId, RoomCode, SheetKey } from './ids.ts';
+import { OFFER_ID_MAX, endIdOf, isEndId, parseOfferId } from './ids.ts';
+import type { OfferId } from './ids.ts';
+import { OFFER_MAX, goodsSize, noGoods, parseBagPick, parseGoods } from './trade/goods.ts';
+import type { BagPick, Goods } from './trade/goods.ts';
 import type { Seat } from './role.ts';
 
 // The ids (src/core/ids.ts) are made only by their parsers, so ids of different things do not mix.
@@ -315,7 +319,23 @@ export type NotedPayload = Base & { to: [SheetKey]; facts: Fact[] };
  */
 export type SoloAnswerPayload = Base & { to: [SheetKey]; run: EventId; gate: GateId; name: string }
   & ({ verdict: 'paid'; rewards: Rewards } | { verdict: 'refused'; why: SoloRefused });
+/**
+ * Hunter `by` offers hunter `to[0]` the goods `gives`, asking `asks` back (gold, and items of its bag by id). Its id is the
+ * offer's (`parseOfferId`); `names` are the two hunters' names as the giving phone showed them. The giver's goods wait aside
+ * on its phone until the offer's one end is read (trade/offer.ts). Sealed to the GM and the two hunters' phones.
+ */
+export type OfferPayload = Base & { by: SheetKey; to: [SheetKey]; names: { by: string; to: string }; gives: Goods; asks: BagPick };
+/** How one of an offer's two hunters ends it: the taker accepts or refuses, the giver takes it back. */
+export const END_HOWS = ['accept', 'refuse', 'withdraw'] as const;
+/**
+ * The end of offer `offer` by its hunter `by`, for the other one (`to`): an accept carries the asked goods by value, a
+ * refuse or a take back none. Its id is the offer's end id (`endIdOf`), so the room keeps one end of an offer. Sealed.
+ */
+export type OfferEndPayload = Base & { by: SheetKey; to: [SheetKey]; offer: OfferId; how: (typeof END_HOWS)[number]; gives: Goods };
+/** The GM stops offer `offer` between the two hunters of `to`. Its id is the offer's end id, so it races an accept and a take back. Sealed. */
+export type OfferStopPayload = Base & { to: [SheetKey, SheetKey]; offer: OfferId };
 type Payloads = {
+  offer: OfferPayload; offerEnd: OfferEndPayload; offerStop: OfferStopPayload;
   system: SystemPayload; award: AwardPayload; quest: QuestPayload; hp: HpPayload; vitals: VitalsPayload; spent: SpentPayload; status: StatusPayload; revive: RevivePayload;
   roll: RollPayload; questUpdate: QuestUpdatePayload; used: UsedPayload; step: StepPayload; cast: CastPayload; pass: PassPayload; chain: ChainPayload;
   coinCall: CoinCallPayload; coinLand: CoinLandPayload; arm: ArmPayload; shadow: ShadowPayload; soloRun: SoloRunPayload; soloAnswer: SoloAnswerPayload; noted: NotedPayload;
@@ -325,17 +345,53 @@ export type PayloadOf<K extends EventType> = Payloads[K];
 /** One room message. */
 export type RoomEvent = { [K in EventType]: { type: K; payload: Payloads[K] } }[EventType];
 
-const base = (o: Rec): Base => ({ eid: need(parseEventId(own(o, 'eid'))) });
+/** An event id that is not an offer's end id: only an offer's end carries one (ids.ts `isEndId`, notes-5-trade.md 12.1). */
+const plainEid = (v: unknown): EventId => { const e = need(parseEventId(v)); return isEndId(e) ? refuse() : e; };
+const base = (o: Rec): Base => ({ eid: plainEid(own(o, 'eid')) });
+/** An end's offer and id: the id must be the offer's end id, else the whole end is refused, so the room never stores a mismatched end. */
+function endBase(o: Rec): Base & { offer: OfferId } {
+  const offer = need(parseOfferId(own(o, 'offer'))), eid = need(parseEventId(own(o, 'eid')));
+  return eid === endIdOf(offer) ? { eid, offer } : refuse();
+}
+/** The one hunter an offer or its end is for, other than its `by`. */
+const otherOf = (o: Rec, by: SheetKey): [SheetKey] => { const to = toList(own(o, 'to')); return to.length === 1 && to[0] !== by ? [to[0]!] : refuse(); };
+/** A payload of an offer or an end within `OFFER_MAX` bytes. */
+const withinOffer = <T>(p: T): T => (goodsSize(p) > OFFER_MAX ? refuse() : p);
+/** Sealed to the GM and the hunters an event names (lead's ruling 1 of notes-5-trade.md 10). */
+const always = (): boolean => true;
 const reason = (o: Rec): string => opt(own(o, 'reason'), text(120), '');
 const hpDelta = (o: Rec, k: string): number => opt(own(o, k), int(-MAX_HP, MAX_HP), 0);
 /**
  * One event type: who may send it, and its payload's reader. `gmOnly`: only the room's GM key may send it. `ownSheet`: it
  * speaks for the hunter in its `by`, so the server takes it only from the phone that hunter belongs to.
  */
-type EventDef<K extends EventType> = { readonly gmOnly: boolean; readonly ownSheet: boolean; readonly read: (payload: Rec) => Payloads[K] };
+type EventDef<K extends EventType> = {
+  readonly gmOnly: boolean; readonly ownSheet: boolean; readonly read: (payload: Rec) => Payloads[K];
+  /**
+   * Whether a stored event of the type reaches only the GM and the phones of the hunters its `by` and `to` name; absent, never.
+   * Read by unit 3's `servedTo` (notes-5-trade.md 4.1); until it lands the server serves every event to every phone.
+   */
+  readonly sealed?: (payload: Payloads[K]) => boolean;
+};
 
 /** Every event type. A type missing here does not compile. */
 const DEFS: { readonly [K in EventType]: EventDef<K> } = {
+  offer: { gmOnly: false, ownSheet: true, sealed: always, read: o => {
+    const eid = need(parseEventId(own(o, 'eid'))), by = sheetKey(own(o, 'by')), names = obj(own(o, 'names')), gives = need(parseGoods(own(o, 'gives')));
+    if (parseOfferId(eid) === null || noGoods(gives)) return refuse();
+    return withinOffer({
+      eid, by, to: otherOf(o, by), names: { by: text(60)(own(names, 'by')), to: text(60)(own(names, 'to')) }, gives, asks: need(parseBagPick(own(o, 'asks'))),
+    });
+  } },
+  offerEnd: { gmOnly: false, ownSheet: true, sealed: always, read: o => {
+    const b = endBase(o), by = sheetKey(own(o, 'by')), how = choiceOf(END_HOWS)(own(o, 'how')), gives = need(parseGoods(own(o, 'gives')));
+    if (how !== 'accept' && !noGoods(gives)) return refuse();
+    return withinOffer({ ...b, by, to: otherOf(o, by), how, gives });
+  } },
+  offerStop: { gmOnly: true, ownSheet: false, sealed: always, read: o => {
+    const b = endBase(o), raw = own(o, 'to'), to = Array.isArray(raw) && raw.length === 2 ? raw.map(sheetKey) : refuse();
+    return to[0] === to[1] ? refuse() : { ...b, to: [to[0]!, to[1]!] };
+  } },
   system: { gmOnly: true, ownSheet: false, read: o => {
     const to = own(o, 'to');
     return { ...base(o), ...(to === undefined ? {} : { to: toList(to) }), tag: opt(own(o, 'tag'), text(40), '! Notification'),
@@ -427,12 +483,15 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
   } },
 };
 
-type EventEntry<K extends EventType> = { readonly gmOnly: boolean; readonly ownSheet: boolean; readonly parse: (payload: unknown) => Payloads[K] | null };
+type EventEntry<K extends EventType> = {
+  readonly gmOnly: boolean; readonly ownSheet: boolean; readonly parse: (payload: unknown) => Payloads[K] | null; readonly sealed: (payload: Payloads[K]) => boolean;
+};
 /**
  * Per event type: whether only the room's GM key may send it, whether only the phone of the hunter it speaks for may, and
  * its payload parser (unknown in, the payload or null out).
  */
 export const EVENTS: { readonly [K in EventType]: EventEntry<K> } = {
+  offer: entry('offer'), offerEnd: entry('offerEnd'), offerStop: entry('offerStop'),
   system: entry('system'), award: entry('award'), quest: entry('quest'), hp: entry('hp'), vitals: entry('vitals'), spent: entry('spent'), status: entry('status'),
   revive: entry('revive'), roll: entry('roll'), questUpdate: entry('questUpdate'), used: entry('used'), step: entry('step'), cast: entry('cast'), pass: entry('pass'),
   chain: entry('chain'), coinCall: entry('coinCall'), coinLand: entry('coinLand'), arm: entry('arm'), shadow: entry('shadow'),
@@ -440,10 +499,16 @@ export const EVENTS: { readonly [K in EventType]: EventEntry<K> } = {
 };
 function entry<K extends EventType>(type: K): EventEntry<K> {
   const def: EventDef<K> = DEFS[type];
-  return { gmOnly: def.gmOnly, ownSheet: def.ownSheet, parse: payload => attempt(() => def.read(obj(payload))) };
+  return { gmOnly: def.gmOnly, ownSheet: def.ownSheet, parse: payload => attempt(() => def.read(obj(payload))), sealed: def.sealed ?? (() => false) };
 }
 /** The hunter an event speaks for, when its type is `ownSheet`: the server takes it only from that hunter's phone. Else null. */
 export const speaksFor = (ev: RoomEvent): SheetKey | null => (EVENTS[ev.type].ownSheet && 'by' in ev.payload ? ev.payload.by : null);
+/** Whether a stored event is sealed: it reaches only the GM and the phones of the hunters it names (`EventDef.sealed`). */
+export function isSealed(ev: RoomEvent): boolean {
+  // EVENTS pairs each type with the seal of its own payload.
+  const sealed = EVENTS[ev.type].sealed as (p: RoomEvent['payload']) => boolean;
+  return sealed(ev.payload);
+}
 export const EVENT_TYPES = Object.keys(DEFS) as EventType[];
 export const isEventType = (v: unknown): v is EventType => typeof v === 'string' && Object.hasOwn(DEFS, v);
 
@@ -464,12 +529,20 @@ export type EventBody<K extends EventType> = Payloads[K] extends infer P ? (P ex
 export type EventStamp = { device: string; now: number; rand: number };
 /**
  * The one constructor of a room event: `body` with a new event id, read by the parser the server uses. Null when the
- * server would refuse it. The id is the phone, the time and a random part, so it does not repeat across phones or rooms.
+ * server would refuse it. The id is the phone, the time and a random part, so it does not repeat across phones or rooms;
+ * at most `OFFER_ID_MAX` characters, so an offer's end id fits, and ending in four random characters, never an end id.
+ * An offer's end is made by `endEvent`.
  */
 export function newEvent<K extends EventType>(type: K, body: EventBody<K>, stamp: EventStamp): RoomEvent | null {
   const tail = `-${Math.trunc(stamp.now).toString(36)}${Math.floor(stamp.rand * 36 ** 4).toString(36).padStart(4, '0')}`;
-  const eid = parseEventId(stamp.device.slice(0, 40 - tail.length) + tail);
+  const eid = parseEventId(stamp.device.slice(0, OFFER_ID_MAX - tail.length) + tail);
   return eid && parseEvent(type, { ...body, eid });
+}
+/** The one constructor of an offer's end: `body` under the offer's end id (`endIdOf`), read by the parser the server uses; null when it would refuse it. */
+export function endEvent(type: 'offerEnd', body: EventBody<'offerEnd'>): RoomEvent | null;
+export function endEvent(type: 'offerStop', body: EventBody<'offerStop'>): RoomEvent | null;
+export function endEvent(type: 'offerEnd' | 'offerStop', body: EventBody<'offerEnd'> | EventBody<'offerStop'>): RoomEvent | null {
+  return parseEvent(type, { ...body, eid: endIdOf(body.offer) });
 }
 
 /**

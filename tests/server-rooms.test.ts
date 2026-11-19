@@ -295,6 +295,35 @@ describe('events', () => {
     expect((await call('POST', `/api/rooms/${other.code}/events`, { headers: other.gm, body: { from: 'gm', type: 'system', payload: system('one', 'd-gm-a1') } })).body).toEqual({ seq: 1 });
   });
 
+  test('an offer ends once: a take back under the accept\'s id answers the accept\'s seq, and the room holds one end', async () => {
+    const { code, gm } = await newRoom();
+    const post = (from: string, type: string, payload: unknown, headers: Record<string, string> = token(from)) => call('POST', `/api/rooms/${code}/events`, { headers, body: { from, type, payload } });
+    const offer = 'd-player1-mo1', end = `${offer}-e`, A = `${PLAYER}:h1`, B = `${OTHER}:h3`;
+    const potion = { from: 'i2', item: { name: 'Healing Potion', qty: 1 } };
+    expect((await post(PLAYER, 'offer', { eid: offer, by: A, to: [B], names: { by: 'Brakk', to: 'Mira' }, gives: { gold: 0, items: [potion] }, asks: { gold: 20, items: [] } })).body).toEqual({ seq: 1 });
+    const answers = await Promise.all([
+      post(OTHER, 'offerEnd', { eid: end, by: B, to: [A], offer, how: 'accept', gives: { gold: 20, items: [] } }),
+      post(PLAYER, 'offerEnd', { eid: end, by: A, to: [B], offer, how: 'withdraw', gives: { gold: 0, items: [] } }),
+      post('gm', 'offerStop', { eid: end, to: [A, B], offer }, gm),
+    ]);
+    expect(answers.map(a => a.body)).toEqual([{ seq: 2 }, { seq: 2 }, { seq: 2 }]);
+    const all = await call('GET', `/api/rooms/${code}`);
+    expect(all.body.events.filter((e: any) => e.payload.eid === end)).toHaveLength(1);
+    expect(all.body.events.map((e: any) => e.seq)).toEqual([1, 2]);
+  });
+
+  test('only the giver\'s phone may post its offer, only a hunter\'s own phone its end, and only the GM key a stop', async () => {
+    const { code, gm } = await newRoom();
+    const post = (from: string, type: string, payload: unknown, headers: Record<string, string> = token(from)) => call('POST', `/api/rooms/${code}/events`, { headers, body: { from, type, payload } });
+    const offer = 'd-player1-mo2', A = `${PLAYER}:h1`, B = `${OTHER}:h3`;
+    const body = { eid: offer, by: A, to: [B], names: { by: 'Brakk', to: 'Mira' }, gives: { gold: 5, items: [] }, asks: { gold: 0, items: [] } };
+    expect(await post(OTHER, 'offer', body)).toEqual({ status: 403, body: { error: 'not your sheet' } });
+    expect(await post(OTHER, 'offerEnd', { eid: `${offer}-e`, by: A, to: [B], offer, how: 'withdraw', gives: { gold: 0, items: [] } })).toEqual({ status: 403, body: { error: 'not your sheet' } });
+    expect(await post(PLAYER, 'offerStop', { eid: `${offer}-e`, to: [A, B], offer })).toEqual({ status: 403, body: { error: 'gm only' } });
+    expect(await post(PLAYER, 'roll', { ...roll, eid: `${offer}-e` })).toEqual({ status: 400, body: { error: 'bad event', reason: 'payload' } });
+    expect((await post('gm', 'offerStop', { eid: `${offer}-e`, to: [A, B], offer }, gm)).status).toBe(200);
+  });
+
   test('events posted at the same moment each take their own seq, and one id posted many times at once is stored once', async () => {
     const { code, gm } = await newRoom();
     const post = (eid: string) => call('POST', `/api/rooms/${code}/events`, { headers: gm, body: { from: 'gm', type: 'system', payload: system('n', eid) } });

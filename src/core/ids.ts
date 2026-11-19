@@ -37,6 +37,19 @@ export const parseGmKey = (v: unknown): GmKey | null => (typeof v === 'string' &
 export const parseEventId = (v: unknown): EventId | null => (typeof v === 'string' && WORD_RE.test(v) ? (v as EventId) : null);
 export const parseSheetKey = (v: unknown): SheetKey | null =>
   (typeof v === 'string' && v.length <= 40 && SHEET_KEY_RE.test(v) ? (v as SheetKey) : null);
+/** An offer between two hunters of a room (trade/offer.ts): the id of its `offer` event. */
+export type OfferId = Id<'OfferId'>;
+/** What an offer's end id adds to the offer's id (`endIdOf`). Every other id the app reads refuses to end in it (`isEndId`). */
+export const END_SUFFIX = '-e';
+/** The longest offer id: an event id's 40 characters less the end's suffix, so the end's id is still an event id. */
+export const OFFER_ID_MAX = 40 - END_SUFFIX.length;
+/** Whether an event id is an offer's end id. No other message may carry one, or it would take the offer's one end (notes-5-trade.md 12.1). */
+export const isEndId = (v: string): boolean => v.endsWith(END_SUFFIX);
+/** An offer id: an event id of at most `OFFER_ID_MAX` characters that is not an end id; else null. */
+export const parseOfferId = (v: unknown): OfferId | null =>
+  (typeof v === 'string' && v.length <= OFFER_ID_MAX && WORD_RE.test(v) && !isEndId(v) ? (v as OfferId) : null);
+/** The one event id every end of offer `o` carries, so the room keeps one end of it (server.ts `addEvent` takes an id once). */
+export const endIdOf = (o: OfferId): EventId => `${o}${END_SUFFIX}` as EventId;
 /** A feat's key, as a status has one: a built-in's is reserved; the GM's own is made from its name and kept through renames (hunter/feats.ts). */
 export type FeatKey = Id<'FeatKey'>;
 const FEAT_KEY_RE = /^[a-z0-9-]{1,40}$/;

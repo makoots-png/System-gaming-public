@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { DOCS, DOC_MAX, NOTED_MAX, EVENTS, EVENT_TYPES, newEvent, onTurn, parseDocName, parseEvent, parseRoomState, parseSheet, SHEET_MAX, speaksFor, useRoute } from '../src/core/protocol.ts';
+import { endEvent, isSealed } from '../src/core/protocol.ts';
+import { GOODS_LINES, OFFER_MAX, goodsSize } from '../src/core/trade/goods.ts';
+import { ITEM_BOUNDS, LOOT_ITEMS, itemOf } from '../src/core/registry/items.ts';
+import { PERK_KEYS } from '../src/core/rules.ts';
 import type { EventType, SheetKey } from '../src/core/protocol.ts';
 import { newHunter } from '../src/core/save.ts';
 import { RULES } from '../src/core/rules.ts';
@@ -25,6 +29,8 @@ type Raw = Record<string, any>;
 
 const KEY = 'd-player1:h1', OTHER = 'd-player2:h4';
 const EID = 'd-gm1-mabc12xyz';
+/** An offer's id, and the one id every end of it carries. */
+const OFFER = 'd-player1-mabc12xyz', END = `${OFFER}-e`;
 const BIG = 'x'.repeat(10 * 1024 * 1024);
 const many = <T>(n: number, make: (i: number) => T): T[] => Array.from({ length: n }, (_, i) => make(i));
 const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v));
@@ -49,6 +55,18 @@ const BURN = { key: 'burning', def: BURNING, source: SOURCE, rounds: 3 };
  * with each optional field the sender left out at its default.
  */
 const VALID: Record<EventType, [Raw, Raw]> = {
+  offer: [
+    { eid: OFFER, by: KEY, to: [OTHER], names: { by: 'Brakk', to: 'Mira' }, gives: { gold: 0, items: [{ from: 'i3', item: POTION }] }, asks: { gold: 20, items: [{ id: 'i7', qty: 1, name: 'Iron Shield' }] } },
+    { eid: OFFER, by: KEY, to: [OTHER], names: { by: 'Brakk', to: 'Mira' }, gives: { gold: 0, items: [{ from: 'i3', item: POTION }] }, asks: { gold: 20, items: [{ id: 'i7', qty: 1, name: 'Iron Shield' }] } },
+  ],
+  offerEnd: [
+    { eid: END, by: KEY, to: [OTHER], offer: OFFER, how: 'withdraw', gives: { gold: 0, items: [] } },
+    { eid: END, by: KEY, to: [OTHER], offer: OFFER, how: 'withdraw', gives: { gold: 0, items: [] } },
+  ],
+  offerStop: [
+    { eid: END, to: [KEY, OTHER], offer: OFFER },
+    { eid: END, to: [KEY, OTHER], offer: OFFER },
+  ],
   system: [
     { eid: EID, tag: '! Notification', title: 'A gate opens', body: 'Gather at the station.', kind: 'warning' },
     { eid: EID, tag: '! Notification', title: 'A gate opens', body: 'Gather at the station.', kind: 'warning' },
@@ -149,17 +167,17 @@ const VALID_SHEET: [Raw, Raw] = [
 
 describe('every event type', () => {
   test('the table has an entry for each of the sixteen room messages', () => {
-    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'cast', 'chain', 'coinCall', 'coinLand', 'hp', 'noted', 'pass', 'quest', 'questUpdate', 'revive', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'status', 'step', 'system', 'used', 'vitals']);
+    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'cast', 'chain', 'coinCall', 'coinLand', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'revive', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'status', 'step', 'system', 'used', 'vitals']);
   });
 
   test('only the GM may send what changes a hunter, speaks for the System or lands a coin; a player sends rolls, quest progress, uses, steps, casts, passes and coin calls', () => {
     const gmOnly = EVENT_TYPES.filter(t => EVENTS[t].gmOnly).sort();
-    expect(gmOnly).toEqual(['award', 'chain', 'coinLand', 'hp', 'noted', 'quest', 'revive', 'shadow', 'soloAnswer', 'spent', 'status', 'system', 'vitals']);
+    expect(gmOnly).toEqual(['award', 'chain', 'coinLand', 'hp', 'noted', 'offerStop', 'quest', 'revive', 'shadow', 'soloAnswer', 'spent', 'status', 'system', 'vitals']);
   });
 
   test('what a player sends speaks for one hunter: only that hunter\'s phone may send it', () => {
-    expect(EVENT_TYPES.filter(t => EVENTS[t].ownSheet).sort()).toEqual(['arm', 'cast', 'coinCall', 'pass', 'questUpdate', 'roll', 'soloRun', 'step', 'used']);
-    for (const t of ['roll', 'questUpdate', 'used', 'step', 'cast', 'pass', 'coinCall', 'arm', 'soloRun'] as const) expect(speaksFor(parseEvent(t, valid(t))!)).toBe(KEY as SheetKey);
+    expect(EVENT_TYPES.filter(t => EVENTS[t].ownSheet).sort()).toEqual(['arm', 'cast', 'coinCall', 'offer', 'offerEnd', 'pass', 'questUpdate', 'roll', 'soloRun', 'step', 'used']);
+    for (const t of ['roll', 'questUpdate', 'used', 'step', 'cast', 'pass', 'coinCall', 'arm', 'soloRun', 'offer', 'offerEnd'] as const) expect(speaksFor(parseEvent(t, valid(t))!)).toBe(KEY as SheetKey);
     expect(speaksFor(parseEvent('award', valid('award'))!)).toBeNull();
   });
 
@@ -202,7 +220,7 @@ describe('a new event, as a phone sends one', () => {
   const stamp = { device: 'd-gm1', now: Date.parse('2026-11-12T12:00:00.000Z'), rand: 0.5 };
   const body = (type: EventType): Raw => { const { eid: _, ...rest } = VALID[type][1]; return rest; };
 
-  for (const type of Object.keys(VALID) as EventType[]) {
+  for (const type of (Object.keys(VALID) as EventType[]).filter(t => t !== 'offerEnd' && t !== 'offerStop')) {
     test(`a ${type} is what the server's parser reads it as, with an id made from the phone, the time and a random part`, () => {
       const ev = newEvent(type, body(type) as never, stamp)!;
       expect(ev.type).toBe(type);
@@ -221,10 +239,18 @@ describe('a new event, as a phone sends one', () => {
     expect(newEvent('hp', { ...body('hp'), eid: 'mine' } as never, stamp)!.payload.eid).not.toBe('mine' as never);
   });
 
-  test('a phone with the longest device id still makes an id the server accepts', () => {
+  test('a phone with the longest device id still makes an id the server accepts, with room for an offer\'s end', () => {
     const ev = newEvent('hp', body('hp') as never, { ...stamp, device: 'd'.repeat(40), rand: 0.999999 })!;
-    expect(ev.payload.eid.length).toBeLessThanOrEqual(40);
+    expect(ev.payload.eid.length).toBeLessThanOrEqual(38);
     expect(parseEvent('hp', ev.payload)).toEqual(ev);
+    const offer = newEvent('offer', body('offer') as never, { ...stamp, device: 'd'.repeat(40), rand: 0.999999 })!;
+    expect(parseEvent('offerStop', { eid: `${offer.payload.eid}-e`, to: [KEY, OTHER], offer: offer.payload.eid })).not.toBeNull();
+  });
+
+  test('an offer\'s end is made under the offer\'s end id; newEvent, which makes a new id, cannot make one', () => {
+    expect(endEvent('offerEnd', body('offerEnd') as never)!.payload.eid).toBe(END as never);
+    expect(endEvent('offerStop', body('offerStop') as never)!.payload.eid).toBe(END as never);
+    expect(newEvent('offerEnd', body('offerEnd') as never, stamp)).toBeNull();
   });
 
   test('a body the server would refuse makes no event', () => {
@@ -1145,5 +1171,104 @@ describe('an armed reaction (kits design 8.4.2)', () => {
   test('an ability id past 40 characters, an empty one or a number is refused, and so is a row that is not an id', () => {
     for (const ability of ['x'.repeat(41), '', 7]) expect(payload('arm', { eid: EID, by: KEY, ability })).toBeNull();
     expect(payload('arm', { eid: EID, by: KEY, ability: 'parry', on: 5 })).toBeNull();
+  });
+});
+
+describe('an offer between two hunters, and its one end', () => {
+  const offer = (p: Raw = {}): Raw => ({ ...valid('offer'), ...p });
+  const end = (p: Raw = {}): Raw => ({ ...valid('offerEnd'), ...p });
+  const ITEM_LINE = { from: 'i3', item: POTION };
+
+  test('an offer is for exactly one other hunter, and gives something', () => {
+    expect(payload('offer', offer({ to: [KEY] }))).toBeNull();
+    expect(payload('offer', offer({ to: [OTHER, 'd-x:h1'] }))).toBeNull();
+    expect(payload('offer', offer({ to: [] }))).toBeNull();
+    expect(payload('offer', offer({ gives: { gold: 0, items: [] } }))).toBeNull();
+    expect(payload('offer', offer({ gives: { gold: 5, items: [] }, asks: { gold: 0, items: [] } }))).not.toBeNull();
+  });
+
+  test('an offer\'s names are cut to 60 characters; its goods and asks are read strictly, a bad line refusing the offer', () => {
+    expect(payload('offer', offer({ names: { by: 'B'.repeat(80), to: 'Mira' } }))!.names.by).toBe('B'.repeat(60));
+    expect(payload('offer', offer({ gives: { gold: 0, items: [ITEM_LINE, { from: 'bad id', item: POTION }] } }))).toBeNull();
+    expect(payload('offer', offer({ asks: { gold: 0, items: [{ id: 'i7', qty: 0, name: 'Iron Shield' }] } }))).toBeNull();
+    expect(payload('offer', offer({ gives: { gold: 1.5, items: [] } }))).toBeNull();
+  });
+
+  test('an offer\'s id leaves room for its end: one longer than 38 characters, or ending as an end id, is refused', () => {
+    expect(payload('offer', offer({ eid: 'o'.repeat(38) }))).not.toBeNull();
+    expect(payload('offer', offer({ eid: 'o'.repeat(39) }))).toBeNull();
+    expect(payload('offer', offer({ eid: 'd-p1-abc-e' }))).toBeNull();
+  });
+
+  test('an end whose id is not its offer\'s end id is refused, so the room never stores a mismatched end', () => {
+    expect(payload('offerEnd', end({ eid: EID }))).toBeNull();
+    expect(payload('offerEnd', end({ eid: 'd-other-x-e' }))).toBeNull();
+    expect(payload('offerStop', { ...valid('offerStop'), eid: `${EID}-e` })).toBeNull();
+    expect(payload('offerEnd', end({ offer: END }))).toBeNull();
+  });
+
+  test('a message of any other type under an offer\'s end id is refused: it would take the offer\'s one end', () => {
+    for (const type of EVENT_TYPES.filter(t => t !== 'offerEnd' && t !== 'offerStop')) expect(payload(type, { ...valid(type), eid: END }), type).toBeNull();
+  });
+
+  test('an accept carries goods; a refuse or a take back carries none; an end is for the offer\'s other hunter', () => {
+    expect(payload('offerEnd', end({ how: 'accept', gives: { gold: 20, items: [ITEM_LINE] } }))!.gives.gold).toBe(20);
+    expect(payload('offerEnd', end({ how: 'refuse', gives: { gold: 20, items: [] } }))).toBeNull();
+    expect(payload('offerEnd', end({ how: 'withdraw', gives: { gold: 0, items: [ITEM_LINE] } }))).toBeNull();
+    expect(payload('offerEnd', end({ how: 'stop' }))).toBeNull();
+    expect(payload('offerEnd', end({ to: [KEY] }))).toBeNull();
+  });
+
+  test('a stop names exactly the offer\'s two hunters', () => {
+    for (const to of [[KEY], [KEY, KEY], [KEY, OTHER, 'd-x:h1'], [KEY, 'bad key']]) expect(payload('offerStop', { ...valid('offerStop'), to })).toBeNull();
+  });
+
+  test('an offer, its end and the GM\'s stop are sealed to the GM and the two hunters (the lead\'s ruling 1); nothing else is', () => {
+    const sealed = EVENT_TYPES.filter(t => isSealed(parseEvent(t, valid(t))!)).sort();
+    expect(sealed).toEqual(['offer', 'offerEnd', 'offerStop']);
+  });
+
+  /**
+   * The measurement of notes-5-trade.md 12.2: what one item can weigh on the wire, and how many lines of it an offer holds
+   * under OFFER_MAX. Each part printed. The reader's own bound decides; these numbers explain why it is bytes and not lines.
+   */
+  test('the worst offers by part against the byte cap: the reader takes one just under it and refuses one over it', () => {
+    const bytes = (v: unknown) => goodsSize(v);
+    const builtIn = [...SHOP_ITEMS, ...LOOT_ITEMS].map(d => parseItem(itemOf(RULES, d))!);
+    const largestBuiltIn = builtIn.reduce((a, b) => (bytes(a) >= bytes(b) ? a : b));
+    const wide = (n: number) => 'ࠀ'.repeat(n);
+    const note = { op: 'note', text: wide(200) };
+    const flatOps = (n: number) => Array.from({ length: n }, () => ({ op: 'damage', type: 'magical', amount: Array.from({ length: 6 }, () => ({ kind: 'dice', count: 99, sides: 999 })), when: 'turn' }));
+    const typed = (effects: unknown[], wornOps: unknown[]) => parseItem({
+      name: wide(ITEM_BOUNDS.name), rar: 'mythic', type: 'weapon', slot: 'weapon', qty: ITEM_BOUNDS.qty, dice: wide(ITEM_BOUNDS.dice), desc: wide(ITEM_BOUNDS.desc),
+      bonus: Object.fromEntries(PERK_KEYS.map(k => [k, -ITEM_BOUNDS.bonus])), value: ITEM_BOUNDS.value, weight: ITEM_BOUNDS.weight, armor: ITEM_BOUNDS.armor,
+      resist: ITEM_BOUNDS.resist, attack: 'strike', penFlat: ITEM_BOUNDS.penFlat, target: 'other', tell: true, effects,
+      worn: { label: wide(60), desc: wide(500), ops: wornOps },
+    })!;
+    const flat = typed(flatOps(ITEM_BOUNDS.effects), flatOps(12)), noted = typed(Array(ITEM_BOUNDS.effects).fill(note), Array(12).fill(note));
+    const nested = parseItem({ name: 'Nest', effects: [{ op: 'applyStatus', key: 'a', duration: null, def: { label: 'a', desc: wide(500), ops: Array(12).fill({ op: 'applyStatus', key: 'b', duration: null, def: { label: 'b', desc: wide(500), ops: Array(12).fill(note) } }) } }] })!;
+    const offerOf = (item: unknown, lines: number, eid = 'o'.repeat(38)) => ({
+      eid, by: 'd-'.padEnd(29, 'p') + ':h99999', to: ['d-'.padEnd(29, 'q') + ':h99999'], names: { by: wide(60), to: wide(60) },
+      gives: { gold: 1e9, items: Array.from({ length: lines }, (_, i) => ({ from: `i${900000 + i}`, item })) },
+      asks: { gold: 1e9, items: Array.from({ length: GOODS_LINES }, (_, i) => ({ id: `i${800000 + i}`, qty: ITEM_BOUNDS.qty, name: wide(60) })) },
+    });
+    const fitting = (item: unknown) => { let n = 0; while (n < GOODS_LINES && bytes(offerOf(item, n + 1)) <= OFFER_MAX) n++; return n; };
+    const wrapper = bytes({ from: 'd'.repeat(40), type: 'offerEnd', payload: {} }) - 2;
+    console.info([
+      `an offer's cap: ${OFFER_MAX} bytes of payload; the request's wrapper around it ${wrapper} bytes, under the server's 65,536`,
+      `the largest built-in item (${largestBuiltIn.name}): ${bytes(largestBuiltIn)} bytes; an offer of ${GOODS_LINES} of it with ${GOODS_LINES} full asks: ${bytes(offerOf(largestBuiltIn, GOODS_LINES))}`,
+      `the rest of the worst offer (ids, names, gold, ${GOODS_LINES} asks of 60 three-byte characters): ${bytes(offerOf(largestBuiltIn, 0))} bytes`,
+      `an item at its typed bounds in three-byte characters, 12 effects and 12 worn ops of six tiers of dice: ${bytes(flat)} bytes (name ${bytes(flat.name)}, desc ${bytes(flat.desc)}, effects ${bytes(flat.effects)}, worn ${bytes(flat.worn)}); ${fitting(flat)} lines fit`,
+      `the same with 12 notes of 200 three-byte characters each: ${bytes(noted)} bytes (effects ${bytes(noted.effects)}, worn ${bytes(noted.worn)}); ${fitting(noted)} lines fit`,
+      `one item using the parser's nesting (an applyStatus whose def holds 12 more, each with 12 notes): ${bytes(nested)} bytes; ${fitting(nested)} lines fit`,
+    ].join('\n'));
+    expect(bytes(offerOf(largestBuiltIn, GOODS_LINES)), `${GOODS_LINES} lines of the largest built-in item fit with room`).toBeLessThan(OFFER_MAX / 4);
+    expect(fitting(flat), 'four lines of a typed item with flat effects at every bound fit, as notes-5-trade.md 12.2 says').toBeGreaterThanOrEqual(4);
+    expect(fitting(nested), 'one nested item alone is over the cap: the bound is bytes, not lines').toBe(0);
+    expect(OFFER_MAX + wrapper).toBeLessThan(64 * 1024);
+    // the reader: the largest offer under the cap reads; one more line over it is refused
+    const n = fitting(noted);
+    expect(payload('offer', offerOf(noted, n))).not.toBeNull();
+    expect(payload('offer', offerOf(noted, n + 1))).toBeNull();
   });
 });

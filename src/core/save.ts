@@ -54,6 +54,8 @@ import type { Chronicle } from './hunter/chronicle.ts';
 import type { Solo } from './gates/personal.ts';
 import { parseRuns } from './gates/solo-wait.ts';
 import type { WaitingRun } from './gates/solo-wait.ts';
+import { parseOffers } from './trade/offer.ts';
+import type { OfferRecord } from './trade/offer.ts';
 import type { Penalty } from './hunter/penalty.ts';
 import { parseJobChain } from './hunter/job-chain.ts';
 import type { JobChain } from './hunter/job-chain.ts';
@@ -193,6 +195,8 @@ export type SyncSettings = {
   applied?: EventId[];
   /** A player's won runs of a room's solo gates until the GM's phone answers each (src/core/gates/solo-wait.ts). */
   runs?: WaitingRun[];
+  /** This phone's records of the room's offers: its hunters' (with their goods aside), offers to them, and on the GM's phone every one (src/core/trade/offer.ts). */
+  offers?: OfferRecord[];
 };
 export type Settings = {
   mode: Mode; activeHunterId: HunterId; dailyResetHour: number; onboarded: boolean; sound: boolean; deviceId: DeviceId;
@@ -576,6 +580,7 @@ function fixSync(sync: SyncSettings): void {
   if ('outbox' in sync) sync.outbox = parseOutbox(sync.outbox);
   if ('held' in sync) sync.held = parseHeld(sync.held);
   if ('runs' in sync) sync.runs = parseRuns(sync.runs);
+  if ('offers' in sync) sync.offers = parseOffers(sync.offers);
   if ('applied' in sync) {
     const ids: unknown = sync.applied;
     if (!Array.isArray(ids)) delete sync.applied;

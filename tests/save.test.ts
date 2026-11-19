@@ -706,6 +706,18 @@ describe('what a repair fixes', () => {
     expect(q.rewards.skills.map(s => s.name)).toEqual(['S0', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7']);
   });
 
+  test('the offers a phone keeps are read back whole; one that does not read is dropped, and a giver\'s is never dropped for a count', () => {
+    const offer = { id: 'd-p1-mabc12xyz', room: 'ABCDEF', at: '2026-11-12T12:00:00.000Z', by: 'd-p1:h1', to: 'd-p2:h3', names: { by: 'Brakk', to: 'Mira' },
+      gives: { gold: 5, items: [] }, asks: { gold: 0, items: [{ id: 'i4', qty: 1, name: 'Iron Shield' }] } };
+    const givers = Array.from({ length: 30 }, (_, i) => ({ side: 'giver', hid: 'h1', aside: { gold: 5, items: [] }, state: 'open', offer: { ...offer, id: `d-p1-m${i}` } }));
+    const kept = [...givers, { side: 'taker', hid: 'h1', state: 'accepting-tried', aside: { gold: 0, items: [] }, offer }, { side: 'gm', state: 'stopping-queued', offer }];
+    const junk = [{ side: 'giver', hid: 'h1', state: 'open', offer }, { side: 'taker', hid: 'h1', state: 'accepting-taken', offer: { ...offer, id: 'x-e' }, aside: { gold: 0, items: [] } },
+      { side: 'taker', hid: 'h1', state: 'nowhere', offer }, { side: 'gm', state: 'open', offer: { ...offer, gives: { gold: 0, items: [] } } }, 7];
+    const save = parseRaw({ schema: SCHEMA, hunters: [], settings: { sync: { offers: [...kept, ...junk] } } });
+    expect(save.settings.sync.offers).toEqual(kept as never);
+    expect(parseRaw({ schema: SCHEMA, hunters: [], settings: { sync: { offers: 'x' } } }).settings.sync.offers).toEqual([]);
+  });
+
   test('an optional field of the wrong kind is removed and a nullable one becomes null', () => {
     const save = parseRaw({ schema: SCHEMA,
       settings: { sync: { room: 7, gmKey: 5, gmKeys: { ABCDEF: 'key', GHJKLM: 9 }, lastRoom: 'ABCDEF', boundHunterId: 3, deviceToken: {}, joinedAt: 1,
