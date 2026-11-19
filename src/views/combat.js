@@ -230,9 +230,9 @@ export function register(app) {
     const g = gate ? store.get().gates.find(x => x.id === gate) : null, id = g && g.mapId;
     return (id && store.get().library.maps.find(x => x.id === id)) || openArena(rules());
   }
-  /** Every row's opening roll, and the first turn. */
   /** The side the GM marked surprised before the start (kits design 8.7.5): its first turns come a round later. */
   let surprised = null;
+  /** Every row's opening roll, and the first turn. */
   function start() {
     const f = fight(); if (!f || f.phase !== 'setup') return;
     send({ type: 'start', openings: rollOpenings(f.rows.map(r => r.id)), ...(surprised ? { surprised } : {}) });
@@ -253,8 +253,7 @@ export function register(app) {
   // ── the turn's actions ──
   /** The current row passes: a standard action's time, then the next turn. */
   function next() { const f = fight(); if (running(f)) send({ type: 'endTurn', by: f.currentId }); }
-  /** What aims and steps read of each row (fight-view.ts `Spot`), with its name for the picker. */
-  /** @param {Fight} f */
+  /** What aims and steps read of each row (fight-view.ts `Spot`), with its name for the picker. @param {Fight} f */
   const spots = f => f.rows.map(r => ({ ...spotOf(r), name: r.name }));
   /** The foes `row` may step toward or away from, nearest first, as its first foe ability aims (fight-view.ts `aims`). */
   function foesOf(f, row) {
@@ -691,8 +690,10 @@ export function register(app) {
   const buildWanted = f => !(f && f.phase !== 'setup' && f.rows.length && app.layout && app.layout.desktop());
   const FIGHT_VIEWS = /** @type {const} */ (['map', 'list']);
   const fightView = () => store.prefs().fightView;
-  /** The map's source (src/core/api.ts `MapSource`): this phone's fight, its current row's kit, and the commands `send` takes. */
-  /** @type {import('../core/api.ts').MapSource} */
+  /**
+   * The map's source (src/core/api.ts `MapSource`): this phone's fight, its current row's kit, and the commands `send` takes.
+   * @type {import('../core/api.ts').MapSource}
+   */
   const mapSource = {
     input: () => {
       const f = fight(); if (!f || f.phase === 'ended') return null;
@@ -1071,8 +1072,10 @@ export function register(app) {
     if (opts.some(([v]) => v === keep)) sel2.value = keep;
   }
 
-  /** The map's Width and Height in a fight under way, as the map maker's steppers (design 4.8): each tap sends `resize`. */
-  /** Width and Height, each a stepper kept whole on one row: the group wraps between steppers, never inside one. */
+  /**
+   * The map's Width and Height in a fight under way, as the map maker's steppers (design 4.8): each tap sends `resize`.
+   * Each stepper is kept whole on one row: the group wraps between steppers, never inside one.
+   */
   const sizeSteps = f => `<span class="cmb-size" role="group" aria-label="Map size">${['w', 'h'].map(k => `<span class="cmb-step"><span class="lbl">${k === 'w' ? 'Width' : 'Height'}</span>`
     + `<button type="button" class="icon-btn" data-resize="${k}" data-d="-1" aria-label="Fewer ${k === 'w' ? 'columns' : 'rows'}">−</button><b data-mapsize="${k}">${f.grid[k]}</b>`
     + `<button type="button" class="icon-btn" data-resize="${k}" data-d="1" aria-label="More ${k === 'w' ? 'columns' : 'rows'}">+</button></span>`).join('')}</span>`;

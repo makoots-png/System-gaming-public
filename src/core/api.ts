@@ -505,15 +505,15 @@ export type UsesApi = {
 };
 
 /**
- * A fallen monster a hunter may extract: its fight row's id and name, the body it had (rank, archetype, kind), its
- * bestiary entry if it has one, whether it is down and may be extracted, the attempts left on it (its row's
- * `extraction`, src/core/combat/extraction.ts), and the extracting hunter's row in the fight (`by`).
- */
-/**
  * What a shadow that rose writes beside the corpse's outcome: this phone's hunter takes it into its army (`step`,
  * core/hunter/shadows.ts `shadowRises`), or a player's hunter on another phone is sent the room's `shadow` message.
  */
 export type Rose = { readonly kind: 'local'; readonly step: Step<Save> } | { readonly kind: 'remote'; readonly event: RoomEvent };
+/**
+ * A fallen monster a hunter may extract: its fight row's id and name, the body it had (rank, archetype, kind), its
+ * bestiary entry if it has one, whether it is down and may be extracted, the attempts left on it (its row's
+ * `extraction`, src/core/combat/extraction.ts), and the extracting hunter's row in the fight (`by`).
+ */
 export type ExtractTarget = {
   id: string; by: string; name: string; rank: Rank; archetype: Archetype; kind: MonsterKind; monster: string | null;
   down: boolean; extractable: boolean; left: number;
@@ -633,7 +633,6 @@ export type CoinApi = {
   of(roll: string): Coin | null;
 };
 
-/** Every `app.api` name and the type of what its module registers. */
 /** The abilities a map's hotbar shows: the actor's list, when each is ready again, the fight's time, its cost cut, and the key its pins are kept under. */
 export type MapKit = {
   list: readonly Ability[]; readyAt: Readonly<Record<string, Tick>>; now: Tick; costCut: number; pinKey: string;
@@ -680,6 +679,7 @@ export type MapApi = {
   mount(el: HTMLElement, source: MapSource): MapView;
 };
 
+/** Every `app.api` name and the type of what its module registers. */
 export type AppApi = {
   award: AwardApi;
   coin: CoinApi;

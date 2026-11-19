@@ -35,7 +35,6 @@ type Fx = Effect[];
 
 /** Up: able to take a turn. A hunter at 0 HP is dying, not up. */
 export const isUp = (b: Body): boolean => b.hp > 0;
-/** On the map: a monster or shadow at 0 HP is gone from it; a hunter at 0 still lies there and can be healed. */
 /** The tiles the party sees now (space.ts `seenBy`), or null when the fight has no fog: the party then sees the whole map. */
 export function partyView(f: Pick<Fight, 'rows' | 'grid' | 'fog'>): Set<number> | null {
   return f.fog ? seenBy('party', f.rows.map(r => ({ place: r.place, side: r.side, up: isUp(r) })), f.grid, f.fog.sight) : null;

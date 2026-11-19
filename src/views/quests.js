@@ -177,10 +177,6 @@ export function register(app) {
 
   // ── player→GM progress (questUpdate, only for from:'gm' quests, only on a player device in a room) ──
   /**
-   * The quest as it is now goes to the outbox, keyed by the hunter and the quest: a newer progress takes the place of one
-   * still waiting there, so a run of taps is one message and the GM gets the last.
-   */
-  /**
    * The progress post of quest `q` of hunter `hid` at `status` (a quest the GM issued, on a player's phone in a room:
    * `reportsProgress`), under its key so a newer one replaces one waiting; null when there is none to send.
    * @returns {import('../core/award.ts').Keyed | null}
@@ -193,6 +189,10 @@ export function register(app) {
       objectives: q.objectives.map(o => ({ label: o.label, progress: o.progress, target: o.target })) });
     return event ? { key: `quest ${hid} ${q.id}`, event } : null;
   }
+  /**
+   * The quest as it is now goes to the outbox, keyed by the hunter and the quest: a newer progress takes the place of one
+   * still waiting there, so a run of taps is one message and the GM gets the last.
+   */
   function sendUpdate(hid, q, status) {
     const p = progressPost(hid, q, status); if (!p) return;
     app.api.sync.post(p.event, { key: p.key });

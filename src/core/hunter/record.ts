@@ -29,7 +29,6 @@ export function rename<H extends Named>(h: H, name: string): H | Refused<'blank'
   const n = cleanName(name);
   return n ? { ...h, name: n } : refuse('blank');
 }
-/** A new job; blank is refused (`blank`). A reward's job is cut to 60 characters. */
 /** The job set to `job`, or to none (null) for a blank: a GM clears a job by clearing the field. */
 export function setJob<H extends Named>(h: H, job: string | null): H {
   return { ...h, job: jobOf(job) };

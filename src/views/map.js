@@ -200,8 +200,7 @@ export function register(app) {
     const frame = $('[data-frame]'), world = $('[data-world]'), tokensBox = $('[data-tokens]'), areaBox = /** @type {any} */ (el.querySelector('[data-area]')), fx = $('[data-fx]');
     /** The pan and zoom: the world's offset in the frame in pixels, and its scale. */
     const view = { x: 0, y: 0, s: 1 };
-    /** What the map has chosen (map-view.ts `choose`): its one writer is `act`. */
-    /** @type {import('../core/combat/map-view.ts').Choice} */
+    /** What the map has chosen (map-view.ts `choose`): its one writer is `act`. @type {import('../core/combat/map-view.ts').Choice} */
     let choice = NO_CHOICE;
     /** @type {import('../core/combat/map-view.ts').MapScene | null} */
     let scene = null;
@@ -212,8 +211,10 @@ export function register(app) {
     let draws = 0;
     /** Where each token was and its HP, for its slide and the number that rises off it. */
     const was = new Map();
-    /** The zones the last scene drew, and the edge each growing field last gained, shown until it grows again (design 4.8). */
-    /** @type {readonly import("../core/combat/map-view.ts").MapZoneIn[]} */
+    /**
+     * The zones the last scene drew, and the edge each growing field last gained, shown until it grows again (design 4.8).
+     * @type {readonly import("../core/combat/map-view.ts").MapZoneIn[]}
+     */
     let zonesWas = [];
     const edges = new Map();
     /** The path drawn for each kind of area. */
@@ -563,7 +564,6 @@ export function register(app) {
       const sig = f.kind === 'aim' ? `aim:${f.ability.range}:${f.ability.aim}:${f.ability.shape.kind}` : f.kind;
       if (sig !== areaSig) { areaSig = sig; if (scene.shades.length) void motion.enter(/** @type {any} */ (svg), 'fade'); }
     }
-    /** Each monster's intent as a line to its target (and its area's outline when known), or its threat's suggestion, quieter. */
     /**
      * Each monster's intent as a line to its target (and its area's outline when known), or its threat's suggestion, quieter.
      * A line stops at the edge of the token it aims at, so lines from two sides end apart; lines that meet on one body are

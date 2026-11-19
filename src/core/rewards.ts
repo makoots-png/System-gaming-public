@@ -191,14 +191,16 @@ export function rewardLines(R: RewardRules, r: Rewards): string[] {
 
 /**
  * The reward window's lines, as the player sees them when a reward arrives (`applyRewards` in src/views/hunter.js shows
- * them; the reward editor's preview draws them): "+100 XP", "+50 gold", "Item acquired: Potion ×2", "Title acquired: ...",
- * "Skill acquired: ...", "Status: Hasted (3 rounds)", "Boon: ...". `build` is a build change's line, shown after the items.
+ * them; the reward editor's preview draws them): "+100 XP", "+50 gold", "Loses 1 ability point", "Item acquired: Potion
+ * ×2", "Title acquired: ...", "Skill acquired: ...", "Status: Hasted (3 rounds)", "Boon: ...". `build` is a build
+ * change's line, shown after the items.
  */
 export function grantLines(R: RewardRules, r: Rewards, build = ''): string[] {
-  const out: string[] = [], num = (n: number): string => `${n > 0 ? '+' : ''}${n.toLocaleString('en-US')}`;
-  if (r.xp) out.push(`${num(r.xp)} XP`);
-  if (r.gold) out.push(`${num(r.gold)} gold`);
-  if (r.points) out.push(`${num(r.points)} ability point${Math.abs(r.points) === 1 ? '' : 's'}`);
+  const out: string[] = [];
+  const amount = (n: number, what: string): string => `${n < 0 ? 'Loses ' : '+'}${Math.abs(n).toLocaleString('en-US')} ${what}`;
+  if (r.xp) out.push(amount(r.xp, 'XP'));
+  if (r.gold) out.push(amount(r.gold, 'gold'));
+  if (r.points) out.push(amount(r.points, `ability point${Math.abs(r.points) === 1 ? '' : 's'}`));
   for (const i of r.items) out.push(`Item acquired: ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`);
   if (build) out.push(build);
   if (r.title) out.push(`Title acquired: ${r.title.name}`);

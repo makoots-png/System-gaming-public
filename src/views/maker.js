@@ -981,7 +981,6 @@ function worthBar(box) {
   };
 }
 
-/** @param {import('./app.ts').App} app */
 /**
  * A pick from a long list (a status or a skill): a select marked `data-pick` with more options than a phone's list shows
  * (`PICK_LONG`, a 640 px screen at 44 px a row) gets a search field above it; what is typed hides the options it does not
@@ -1011,6 +1010,7 @@ function watchPicks() {
   new MutationObserver(list => { for (const m of list) m.addedNodes.forEach(lay); }).observe(document.body, { childList: true, subtree: true });
 }
 
+/** @param {import('./app.ts').App} app */
 export function register(app) {
   watchPicks();
   css('maker', `

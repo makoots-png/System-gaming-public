@@ -7,12 +7,12 @@
 import { esc, field } from './ui.js';
 import { FACT_FIELDS } from '../core/hunter/facts.ts';
 import { TESTS_MAX, WITHINS, measureFields, measuresFor, opsFor } from '../core/hunter/counts.ts';
-import { FACT_KIND_WORDS, FEAT_BOUNDS, MEASURE_WORDS, WITHIN_WORDS, afterChoices, freeFeatKey, parseFeat, ruleLine } from '../core/hunter/feats.ts';
+import { FACT_KIND_WORDS, FEAT_BOUNDS, MEASURE_WORDS, WITHIN_WORDS, afterChoices, parseFeat, ruleLine } from '../core/hunter/feats.ts';
 import { BUILT_IN_FEATS } from '../core/registry/feats.ts';
 import { RANKS } from '../core/rules.ts';
 import { grantLines } from '../core/rewards.ts';
 import { LIMITS } from '../core/save.ts';
-import { saveFeat } from '../core/library.ts';
+import { newFeatKey, saveFeat } from '../core/library.ts';
 import { atLibrary } from '../core/save-step.ts';
 
 const KINDS = Object.keys(FACT_FIELDS);
@@ -138,8 +138,7 @@ export function featMaker(app, key) {
         save() {
           const f = parseFeat(raw());
           if (!f) { shell.error(needs()); return undefined; }
-          const L = store.get().library;
-          const at = key || freeFeatKey(f.name, k => Object.hasOwn(L.feats, k) || BUILT_IN_FEATS.some(([b]) => b === k));
+          const at = key || newFeatKey(store.get().library, f.name);
           const done = store.apply('library-feat', atLibrary(l => saveFeat(l, at, f)));
           if (!done.ok) { shell.error(`The library holds ${LIMITS.libraryFeats} feats at most.`); return undefined; }
           return at;

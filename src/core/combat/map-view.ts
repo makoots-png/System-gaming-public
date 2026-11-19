@@ -724,12 +724,6 @@ export function choose(c: Choice, e: ChoiceEvent): Chose {
 // ── the hotbar ──
 
 /**
- * One ability in the hotbar: its cost after the user's cost cut, the rounds until it is ready (0: ready), whether it is
- * an item's and pinned, its uses left when it is limited (null when not; kits table 2.3), and for a reaction (kits design
- * 8.4) where it stands: `arm` (not armed), `armed`, or `spent` (it fired since its user's turn began); null for an
- * ability used on a turn. A reaction's tap arms or disarms it; it is never picked to aim.
- */
-/**
  * Whose pinned abilities a hotbar keeps (the prefs' `pins`, by this key): a hunter's by its hunter id on this phone or its
  * sheet key on a player's, any other row's by its kind and its monster's or shadow's own name (`Origin.name`), so the
  * rows of one pack share their pins and a row's letter or a rename of another row never moves them.
@@ -741,6 +735,12 @@ export function pinKeyOf(b: Pick<Body, 'kind' | 'holder' | 'origin' | 'name'>): 
 }
 /** A player's own hunter's pins on its phone: the key `pinKeyOf` gives the same hunter's row on this phone. */
 export const myPinKey = (hid: string): string => `hunter:${hid}`;
+/**
+ * One ability in the hotbar: its cost after the user's cost cut, the rounds until it is ready (0: ready), whether it is
+ * an item's and pinned, its uses left when it is limited (null when not; kits table 2.3), and for a reaction (kits design
+ * 8.4) where it stands: `arm` (not armed), `armed`, or `spent` (it fired since its user's turn began); null for an
+ * ability used on a turn. A reaction's tap arms or disarms it; it is never picked to aim.
+ */
 export type HotbarSlot = {
   readonly id: Ability['id']; readonly name: string; readonly fatigue: number; readonly mana: number;
   readonly wait: number; readonly item: boolean; readonly pinned: boolean;

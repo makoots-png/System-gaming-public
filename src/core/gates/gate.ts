@@ -139,12 +139,12 @@ const text = (v: unknown, n: number): string => (typeof v === 'string' ? v.slice
 /** Bounds for junk only. The spawner makes a handful of lines with counts under 10; the edit form allows `MONSTER_BOUNDS.copies` per line. */
 const MAX_LINES = 50, MAX_COUNT = 999;
 
+/** At most this many fighters are kept on a gate: a fight's party is far smaller. */
+const MAX_FOUGHT = 30;
 /**
  * The gate in `value`, bounded, or null when it is not one (not an object, or no id). Keys a gate does not have are
  * dropped. A cleared gate without a day takes the day it was created. Any other status drops a stored cleared day.
  */
-/** At most this many fighters are kept on a gate: a fight's party is far smaller. */
-const MAX_FOUGHT = 30;
 export function parseGate(value: unknown): Gate | null {
   if (!isObj(value)) return null;
   const gid = parseGateId(value.id); if (!gid) return null;

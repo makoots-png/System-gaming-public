@@ -212,3 +212,30 @@ test('adding the hunters of a campaign file also offers its custom content, and 
   expect(added(before, await content(other))).toEqual(ALL_FIVE);
   expect((await save(other)).hunters.length).toBeGreaterThan(hunters);
 });
+
+test('a GM with a feat of their own and a story shares everything: the list names Feats and Stories, and Add on a second phone brings both', async ({ device }) => {
+  const gm = await freshGM(device, 'gm-story');
+  await gm.evaluate(() => hunterApp.store.update((d: any) => {
+    d.library.feats['frost-ward'] = { name: 'Frost Ward', window: 'COLD HANDS', desc: 'Ten wolves defeated.', show: { at: 'start' }, rule: { on: 'kill', where: [], reach: 10 }, rewards: { xp: 50 } };
+    d.library.stories.push({ id: 'st900', name: 'The wager', chapters: [{ words: { title: 'The house offers a bet', line: 'Win a solo run of your rank.' }, rewards: { points: -1 } }] });
+  }, 'test-setup'));
+
+  const code = await test.step('Share custom content lists Feats (1) and Stories (1); Everything makes a code', async () => {
+    await go(gm, 'data');
+    await gm.locator('#view-data [data-share]').tap();
+    const list = win(gm, 'Share custom content');
+    for (const label of ['Feats (1)', 'Stories (1)']) await expect(list.locator('.sys-actions button', { hasText: label })).toHaveCount(1);
+    await answerWindow(gm, 'Share custom content');
+    await answerWindow(gm, 'Share as', 'Show a code');
+    return readCodeWindow(gm);
+  });
+
+  await test.step('the second phone sees a feat and a story in the code, and Add brings them', async () => {
+    const other = await freshGM(device, 'other-story');
+    await paste(other, code);
+    expect(await previewLines(other)).toEqual(expect.arrayContaining(['Feats: 1', 'Stories: 1']));
+    await answerWindow(other, 'Import custom content', 'Add');
+    const lib = await other.evaluate(() => { const l = hunterApp.store.get().library; return { feats: Object.keys(l.feats), stories: l.stories.map((s: any) => [s.name, s.chapters[0].words.title, s.chapters[0].rewards.points]) }; });
+    expect(lib).toEqual({ feats: ['frost-ward'], stories: [['The wager', 'THE HOUSE OFFERS A BET', -1]] });
+  });
+});

@@ -74,6 +74,10 @@ export type GateId = Id<'GateId'>;
 export type PersonalGateId = Id<'PersonalGateId'>;
 /** A battle map in the GM's library. */
 export type MapId = Id<'MapId'>;
+/** A story in the GM's library (story/story.ts). */
+export type StoryId = Id<'StoryId'>;
+/** A story on the table: one run of a library story, on the GM's save (notes-1-stories.md 1.4; its machine is unit 3's). */
+export type StoryRunId = Id<'StoryRunId'>;
 /**
  * A row of a fight: `c` and the save's seq for a hunter's or a monster's, its summoner's id and the time for a summon's
  * (fight.ts), so not a save id's form.
@@ -84,7 +88,7 @@ export const parseCombatantId = (v: unknown): CombatantId | null => (typeof v ==
 /** The id each prefix makes (save.ts's repair and the store's `id`). A prefix not listed makes a plain string. */
 export type SaveIds = {
   h: HunterId; q: QuestId; t: TitleId; sh: ShadowId; i: ItemId; l: LogId; r: RollEntryId; s: SkillId; lo: LoadoutId; bn: BoonId;
-  rb: BundleId; jc: ChainId; m: MonsterId; g: GateId; mp: MapId; pg: PersonalGateId;
+  rb: BundleId; jc: ChainId; m: MonsterId; g: GateId; mp: MapId; pg: PersonalGateId; st: StoryId; sr: StoryRunId;
 };
 export type IdOf<P extends string> = P extends keyof SaveIds ? SaveIds[P] : string;
 /** A save id's form: a prefix and a number (`h12`), or `seed:<word>` for a built-in's copy. */
@@ -100,10 +104,6 @@ export const titleKey = (v: unknown): string | null => (typeof v === 'string' &&
 /** A hunter this phone acts on: one of its own save's, or one on another phone, by its sheet key in the room. */
 export type HunterRef = { readonly kind: 'local'; readonly hunterId: HunterId } | { readonly kind: 'remote'; readonly remote: SheetKey };
 
-/**
- * The key of hunter `hid` of phone `device` in a room. This phone's ids (`d-` and six characters, `h` and a number, made
- * by the store) keep it inside the 40 characters `parseSheetKey` allows.
- */
 /** A stored hunter reference, or null when it is not one. */
 export function parseHunterRef(v: unknown): HunterRef | null {
   if (v === null || typeof v !== 'object') return null;
@@ -112,6 +112,10 @@ export function parseHunterRef(v: unknown): HunterRef | null {
   if (o.kind === 'remote') { const remote = parseSheetKey(o.remote); return remote ? { kind: 'remote', remote } : null; }
   return null;
 }
+/**
+ * The key of hunter `hid` of phone `device` in a room. This phone's ids (`d-` and six characters, `h` and a number, made
+ * by the store) keep it inside the 40 characters `parseSheetKey` allows.
+ */
 export const sheetKeyOf = (device: DeviceId, hid: HunterId): SheetKey => `${device}:${hid}` as SheetKey;
 /** The hunter id in a sheet key: the id that hunter has in its own phone's save. */
 export const hunterIdOf = (key: SheetKey): HunterId => key.slice(key.indexOf(':') + 1) as HunterId;

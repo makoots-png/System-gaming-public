@@ -29,7 +29,6 @@ const KIND_LABEL = { strike: 'Strike', shot: 'Shot', blast: 'Blast', curse: 'Cur
 const AIM_LABEL = { foe: 'On a foe', ally: 'On an ally', self: 'On the user', place: 'On a place' };
 const EFFECT_LABEL = { physical: 'Physical damage', magical: 'Magical damage', heal: 'Heals', shield: 'Shield' };
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
-/** An ability's id from its skill's name: its words joined by hyphens, never the id of a body's default attack. */
 
 /** @param {import('./app.ts').App} app */
 export function register(app) {

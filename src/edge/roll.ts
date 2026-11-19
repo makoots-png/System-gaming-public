@@ -16,7 +16,6 @@ import { sideOf } from '../core/coin.ts';
 import type { CoinSide } from '../core/coin.ts';
 import type { Random } from '../core/gates/spawn.ts';
 
-/** A number in [0, 1). */
 /** A number in [0, 1): src/core/gates/spawn.ts. */
 export type { Random };
 

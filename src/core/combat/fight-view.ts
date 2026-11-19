@@ -72,8 +72,7 @@ export type Card = {
   readonly summon: number | null;
 };
 
-/** The time a fight's numbers are read at: its `now`, or 0 in setup, where every status starts. */
-/** The fight's now: 0 while it is set up, which has no time yet. */
+/** The time a fight's numbers are read at: its `now`, or 0 in setup, which has no time yet and where every status starts. */
 export const timeOf = (f: Fight): Tick => f.phase === 'setup' ? tick(0) : f.now;
 
 /** The card of `row` in fight `f`. The reducer drops a shield at the first turn start after its end, so a row's shield is live. */
@@ -120,12 +119,12 @@ export function channelView(row: Body, R: Pick<Rules, 'fight'>): ChannelView | n
   return { ability: c.ability, name: a?.name ?? c.ability, charge: c.charge, max: a?.channel?.max ?? R.fight.channelMax, state: c.state, factor: Math.round(factor * 100) / 100 };
 }
 
+/** The most lines `abilityLines` gives: what it does, its shape, its range and how it is avoided. */
+export const ABILITY_LINES = 4;
 /**
  * The numbers of an ability in words, as a revealed intent shows them (design 4.5): what it does and its formula, its
  * shape, its range, and how it is avoided. At most four lines.
  */
-/** The most lines `abilityLines` gives: what it does, its shape, its range and how it is avoided. */
-export const ABILITY_LINES = 4;
 export function abilityLines(a: Ability, R: KindRules): string[] {
   const out: string[] = [];
   if (a.effect) {

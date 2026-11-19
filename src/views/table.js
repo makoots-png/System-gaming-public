@@ -446,10 +446,6 @@ export function register(app) {
     void sent(e, S.post(S.event('step', { by: S.myKey(h.id), place: { x: s.place.x, y: s.place.y }, at: e.now, dash: false })))
       .then(r => { if (!r.ok) ui.news('Not in the room: the step was not sent.', 'warn'); });
   }
-  /**
-   * Draws the HUD in place (src/views/patch.ts): its template once per layout, then only what changed. When time moves the
-   * rows of the order slide to their new places; "Your turn" arrives once with a pop, then is still.
-   */
   /** The bursts of the doc just drawn: a burst at the bearer's token (or its row), and the count on its chips pops. */
   function playBursts(el) {
     if (!pendingBursts.length) return;
@@ -462,6 +458,10 @@ export function register(app) {
       }
     });
   }
+  /**
+   * Draws the HUD in place (src/views/patch.ts): its template once per layout, then only what changed. When time moves the
+   * rows of the order slide to their new places; "Your turn" arrives once with a pop, then is still.
+   */
   function paintHud(el) {
     turnTitle();
     const e = encounter();

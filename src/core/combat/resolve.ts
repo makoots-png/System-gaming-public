@@ -472,11 +472,6 @@ const outcome = (target: CombatantId, avoid: Avoid, to: Place | null, type: Outc
   ({ target, avoid, to, crit: false, raw: 0, dealt: 0, absorbed: 0, type, statuses: [], threat: 0, stagger: 0, staggered: false, channelBroken: false, down: false });
 
 /**
- * One use of `a` by `user` aimed at `aim` at time `now`, by design 3.1 rules 2 to 19. `bodies` is every combatant of the
- * fight, the user among them; the result holds them all, changed where the use changed them. Rule 1 (whose turn it is)
- * and rule 20 (the log) are the reducer's.
- */
-/**
  * What the reactions a use set off ask of it (kits design 8.4, fight-react.ts): the share a guard takes off its damage to
  * each body (a strike only), the bodies it does nothing more to (a negate), and the lethal reaction of rule 13b, which
  * the fight fires on `rows` when a hit would take a body to 0 and answers whether one fired.
@@ -517,6 +512,11 @@ export function usable(a: Ability, user: Body, bodies: readonly Body[], aim: Aim
   const { hit, ring } = whoIsIn(a, r.paid, catchable(bodies, r.paid), r.at, grid);
   return hit.length + ring.length > 0;
 }
+/**
+ * One use of `a` by `user` aimed at `aim` at time `now`, by design 3.1 rules 2 to 19. `bodies` is every combatant of the
+ * fight, the user among them; the result holds them all, changed where the use changed them. Rule 1 (whose turn it is)
+ * and rule 20 (the log) are the reducer's.
+ */
 export function resolve(a: Ability, user: Body, bodies: readonly Body[], aim: Aim, grid: Grid, rolls: Rolls, now: Tick, R: ResolveRules, answers: Answers = {}): Resolved {
   const r = ready(a, user, bodies, aim, grid, now, R);
   return typeof r === 'string' ? { ok: false, reason: r } : landUse(a, user, r, bodies, aim, grid, rolls, now, R, answers);

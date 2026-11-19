@@ -1,10 +1,11 @@
-// library.ts: the GM's library of custom content (`save.library`): its statuses by key, and its items, skills and maps
-// as lists of named entries, each list at most its cap in LIMITS (save.ts). The makers (forge.js, loot.js, skills.js,
-// map-maker.js) and the Workshop (workshop.js) change the library only through these, as `atLibrary` steps
-// (save-step.ts). Pure: the caller passes the id a new entry gets (`store.id`), and the entry as its kind's parser gave
-// it. A refusal is `{ ok: false, why }`; nothing is half changed. A pack merged into the library is `mergePack` (pack.ts).
+// library.ts: the GM's library of custom content (`save.library`): its statuses and feats by key, and its items, skills,
+// maps and stories as lists of named entries, each list at most its cap in LIMITS (save.ts). The makers (forge.js,
+// loot.js, skills.js, map-maker.js) and the Workshop (workshop.js) change the library only through these, as
+// `atLibrary` steps (save-step.ts). Pure: the caller passes the id a new entry gets (`store.id`), and the entry as its
+// kind's parser gave it. A refusal is `{ ok: false, why }`; nothing is half changed. A pack merged into the library is
+// `mergePack` (pack.ts).
 import { FEAT_BOUNDS, freeFeatKey, sameFeat } from './hunter/feats.ts';
-import type { FeatDef } from './hunter/feats.ts';
+import type { FeatDef, FeatKey } from './hunter/feats.ts';
 import { BUILT_IN_FEATS } from './registry/feats.ts';
 import { LIMITS } from './save.ts';
 import type { Library, StatusDef } from './save.ts';
@@ -12,7 +13,7 @@ import { refuse } from './save-step.ts';
 import type { Refused } from './save-step.ts';
 
 /** The library's lists of named entries, and the cap of each. */
-export const LIBRARY_LISTS = { items: LIMITS.libraryItems, skills: LIMITS.librarySkills, maps: LIMITS.libraryMaps } as const;
+export const LIBRARY_LISTS = { items: LIMITS.libraryItems, skills: LIMITS.librarySkills, maps: LIMITS.libraryMaps, stories: LIMITS.libraryStories } as const;
 export type LibraryList = keyof typeof LIBRARY_LISTS;
 type Entry<L extends LibraryList> = Library[L][number];
 
@@ -75,13 +76,16 @@ export function removeStatus(lib: Library, key: string): Next {
 
 /** The built-in feat under `key` as it shipped, or null for a key that is not a built-in's. */
 const shippedFeat = (key: string): FeatDef | null => BUILT_IN_FEATS.find(([k]) => k === key)?.[1] ?? null;
+/** A key for a new feat named `name` that no feat of the library and no built-in holds (`freeFeatKey`). */
+export const newFeatKey = (lib: Library, name: string): FeatKey => freeFeatKey(name, k => Object.hasOwn(lib.feats, k) || shippedFeat(k) !== null);
 /** `def` turned on: without `off`. */
 const onOf = (def: FeatDef): Omit<FeatDef, 'off'> => { const { off: _off, ...on } = def; return on; };
 
 /**
  * The feat `key` saved in the library as `def` (a built-in's key holds an edit of it, or its turning off; any other key a
  * GM's own), refused past the cap. A built-in's entry that equals the feat as it shipped leaves the library, so the
- * library holds a built-in's key only while it differs, and the Workshop lists it with the built-ins again.
+ * library holds a built-in's key only while it differs, and the Workshop lists it with the built-ins again. The one
+ * writer of a library feat: the maker, the Workshop's steps and a pack's merge (`mergePack`) all go through it.
  */
 export function saveFeat(lib: Library, key: string, def: FeatDef): Next {
   const shipped = shippedFeat(key);
@@ -124,8 +128,7 @@ export function duplicateFeat(lib: Library, key: string): Next {
   if (!def) return refuse('missing');
   const names = [...Object.values(lib.feats), ...BUILT_IN_FEATS.map(([, d]) => d)].map(d => d.name);
   const name = copyName(def.name, names, FEAT_BOUNDS.name);
-  const at = freeFeatKey(name, k => Object.hasOwn(lib.feats, k) || shippedFeat(k) !== null);
-  return saveFeat(lib, at, { ...onOf(def), name });
+  return saveFeat(lib, newFeatKey(lib, name), { ...onOf(def), name });
 }
 
 /**

@@ -112,7 +112,10 @@ export function levelEdit(save: Save, hid: string, level: number, xp: number, da
 /** What one reward did to one hunter. */
 export type Granted = {
   save: Save;
-  /** The reward window's lines (`grantLines`): a title only when it is new, a status only when the sheet took it. */
+  /**
+   * The reward window's lines (`grantLines`): a title only when it is new, a status only when the sheet took it, and XP,
+   * gold and points as they moved (a cost larger than what the hunter holds says what was taken; one that took nothing has no line).
+   */
   lines: string[];
   levelup: LevelUp | null;
   /** The parts the sheet does not hold while a fight does: the statuses to put on the hunter's row, and the level-up's refill. */
@@ -133,6 +136,8 @@ export function grant(save: Save, hid: string, r: Rewards, build: BuildChange | 
   if (at < 0) return refuse('no-hunter');
   const { R } = o, ids = idsFrom(save.seq), h0 = save.hunters[at]!;
   let h = r.points ? grantPoints(h0, r.points, R) : h0;
+  // what reached the sheet, for the window's lines: a cost takes no more than the hunter holds
+  const points = h.bonusPoints - h0.bonusPoints;
   const titleNew = !!r.title && !holdsTitle(h, r.title, R.titles);
   if (r.title && titleNew) h = giveTitle(h, r.title, ids.next('t'), R.titles);
   if (r.job) { const j = setJob(h, r.job); if (!isRefused(j)) h = j; }
@@ -150,14 +155,16 @@ export function grant(save: Save, hid: string, r: Rewards, build: BuildChange | 
     if (!isRefused(next)) { h = next; took.push(s); }
   }
 
+  const goldBefore = h.gold;
   if (r.gold) h = addGold(h, r.gold);
+  const gold = h.gold - goldBefore;
   for (const it of r.items) h = putItem(h, it, stackOf(h, it)?.id ?? ids.next('i'));
   h = fitted(h, R);
 
-  let levelup: LevelUp | null = null, refillLeft = false, done: StepDone[] = [], said: Said[] = [];
+  let levelup: LevelUp | null = null, refillLeft = false, done: StepDone[] = [], said: Said[] = [], xp = 0;
   if (r.xp) {
     const from = h.level, change = gainXp(h, r.xp, R);
-    h = fitted(addXp(h, r.xp, R), R);
+    h = fitted(addXp(h, r.xp, R), R); xp = change.xp;
     let refilled = false;
     if (change.refill && o.vitals === 'sheet') { h = { ...h, ...refill(h, sheetOf(h, R)) }; refilled = true; }
     refillLeft = change.refill && o.vitals === 'fight';
@@ -166,7 +173,7 @@ export function grant(save: Save, hid: string, r: Rewards, build: BuildChange | 
     h = l.hunter; done = l.done; said = l.said;
   }
 
-  const lines = grantLines(R, { ...r, title: titleNew ? r.title : null, statuses: took }, buildLine);
+  const lines = grantLines(R, { ...r, xp, gold, points, title: titleNew ? r.title : null, statuses: took }, buildLine);
   const hunters = save.hunters.map((x, i) => (i === at ? h : x));
   const next = told({ ...save, seq: ids.seq(), hunters }, { at: o.at, cap: R.logCap }, ...said);
   return { save: next, lines, levelup, fight: { statuses: toFight, refill: refillLeft }, done };

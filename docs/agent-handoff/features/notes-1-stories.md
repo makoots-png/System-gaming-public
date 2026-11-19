@@ -559,3 +559,70 @@ Changes and additions, each to be built as written here:
 4. **Unit 2's one quest form** is taken, gm.js's Issue quest included. The quest cases of the browser tests pass unchanged, and the Issue quest section is looked at in a screenshot at 390 px before and after: it must not take more taps for the quest a GM issues today.
 5. **Words.** The examples' lines and every label of section 8 go through humanizer and unslop by the unit that adds them; the lead is the second reader before each push.
 6. **Each unit hands back to the lead** with its commits before the next starts. Unit 1's measurement (the repair's cost with the library at its cap) is written into these notes with its numbers before unit 2.
+
+## 12. The build
+
+### 12.1 Unit 1: a story as content
+
+What the design left open for this unit, and how it was decided (written before the unit's code):
+
+1. **Ruling 2 first.** A test of a cost in a reward is written and run before any story code: `parseRewards` keeps a negative XP, gold and points; `grant` takes them and never passes 0; the window's lines say what was lost. What it found is in 12.1.1.
+2. **The window says what reached the sheet.** `grant` already lists a title only when it is new and a status only when the sheet took it. A cost follows the same rule: the line says the amount actually taken (a hunter with 20 gold given -50 loses 20, and the line says 20), and a cost that takes nothing has no line. The words are "Loses 20 gold", "Loses 50 XP", "Loses 1 ability point", with no full stop, as the other lines of the window ("+100 XP") have none.
+3. **`removeStory` waits for unit 3.** Its only rule beyond `removeEntry` is "a story a running run names is not deleted", and runs (`save.stories`) arrive in unit 3. A step with no rule of its own is a wrapper with one caller and nothing to test, so unit 1 lists stories in `LIBRARY_LISTS` and they take `removeEntry` as items and maps do; unit 3 adds `removeStory(save, id)` with its guard, moves the Workshop's Delete onto it, and the library case "a story a running run names is not deleted" moves to unit 3 with it.
+4. **`parseStory` answers a story without its id** (`StoryTemplate`), as `parseBundle` does: the save's repair gives it its id (`refill` with the prefix `st`), a pack carries stories without ids, and the maker (unit 2) adds the id it reserved. A chapter's quest without a title is no quest (the chapter keeps its words and reward); a chapter without a window title is dropped; a story with no name or no chapter left is refused.
+5. **The bounds** (`STORY_BOUNDS`): a story's name 60 (as a bundle's), its "when" line 200 (as a window's line), a chapter's name 60, its note 300 (as a quest's penalty text), `CHAPTERS_MAX` 16 (section 8's error "A story has at most 16 chapters"), `LIMITS.libraryStories` 30 (section 8's "You have 30 stories"). A chapter quest's title 120, description 500 and penalty text 300 are the quest's own; at most 10 objectives, the room's `MAX_OBJECTIVES`, each read by `cleanObjectives` with its progress 0.
+6. **`dueHours` takes the quest form's bound, not 1 to 720.** The form's "Due in hours" takes any number above 0 up to 999 (`step="any"`), and unit 2 moves that form into the builder the story maker uses; a parser narrower than the form would cut what the GM typed. So: a number above 0, cut to 999, fractions kept; 0, a negative or no number is no due time (`null`), as `dueAt` in `day.ts` answers for those.
+7. **`chapterSize` measures the chapter as it is written**: the UTF-8 bytes of the JSON of its words, reward and quest (the parts a player's phone is sent; the name and the note stay on the GM's phone). The message of unit 4 carries the quest's `dueAt` (a 24-character time) where the chapter holds `dueHours` (at most 3 digits and a fraction): about 30 bytes more, inside the 16 KiB `CHAPTER_MAX` leaves. The count is a pure loop over code points, so core needs no `TextEncoder`.
+8. **A pack's stories** carry the library statuses their chapters' rewards and quests' rewards name, as a bundle's and a feat's do, and are renamed on Add and matched by name on Replace (`mergeNamed`), with the statuses a merge renamed rekeyed in every chapter.
+9. **One cycle of imports is new**: `save.ts` reads stories through `story.ts`, which reads objectives through `hunter/quests.ts`, which imports `save.ts`. Every use is inside a function, as with the cycles through `job-chain.ts` and `penalty.ts` today; the bun tests and the build run it.
+
+#### 12.1.1 Ruling 2: what the test found, and the fix
+
+The cases (`tests/rewards.test.ts`, "a cost a reward takes away") were written from the rule and run on the code as it was. One of six held: `parseRewards` kept -50 XP, -40 gold and -1 point. `grant` already stopped at 0 (`addGold` floors the gold, `grantPoints` takes at most the points free, `gainXp` stops at level 1 with 0 XP and takes a level away below a level's start), so the sheet was right. The window was not, in two ways:
+
+- It said a cost as a signed number, "-1 ability point", where the ruling asks for words.
+- It said what the reward asked, not what was taken: a hunter with 25 gold given -40 read "-40 gold", and a hunter with nothing to lose read three lines of losses that never happened.
+
+The fix, by the recipe "A reward field" for its words and its grant: `gainXp` answers the XP it moved (`XpChange.xp`, the amount less what level 1 or the top level kept back); `grant` hands `grantLines` the XP, gold and points that reached the sheet; `grantLines` says a loss as "Loses 20 gold", "Loses 50 XP", "Loses 1 ability point". The reward editor's number fields already took a minus (no `min`, except a quest's, which keeps its floor at 0). Its browser step, in `tests/e2e/reward-room.e2e.ts`: a GM alone types -50 gold and more points than the hunter holds; the preview says "Loses 50 gold"; the window says what was lost; the sheet shows 0 and 0. `rewardLines` (the quest card, the session log) keeps its signed "-40 gold", which reads as a quest's terms rather than news of a loss.
+
+#### 12.1.2 The measurement: the repair's cost with the library at its cap (ruling 6)
+
+Written before the runs. Every write repairs the whole live save (`store.update` and `store.apply` call `repairSave`), and the repair now reads every story through `parseStory`, each chapter's reward and its quest's reward through `parseRewards`. The result that changes a decision: the repair of a save holding 30 typical stories of 8 chapters each taking more than 2 ms longer a write than the same save with none, on this box; then `LIMITS.libraryStories` and `CHAPTERS_MAX` come down until it does not, and these notes say to what. What could fake it: the box's swings in speed and another helper's tests on the same 4 cores (so the two saves are timed in turn, twice, each 7 runs of 200 calls, and the load is written down); a story the parser refuses, which would cost nothing (so the script prints how many were kept and a chapter's size); and the first repair, which rebuilds each story where the later ones read it again (so 50 calls are thrown away before the timing, and each timed call repairs the live save again as a write does).
+
+The runs (`bench.ts` in the scratchpad: the save's own `repairSave` on the live save, as each write calls it, and `JSON.stringify` of it, as the write after the frame does; 7 runs of 200 calls after 50 thrown away, the two saves in turn, two rounds; load 1.40 to 1.53 on 4 shared cores; each chapter 993 bytes by `chapterSize`, all 30 stories kept):
+
+| | Round 1 median (range), µs | Round 2 median (range), µs |
+|---|---|---|
+| repair, no stories (save 4,014 characters) | 99.7 (56.5 to 154.2) | 59.2 (53.7 to 88.9) |
+| repair, 30 stories of 8 chapters (285,584 characters) | 352.6 (344.1 to 481.6) | 354.5 (335.1 to 379.5) |
+| repair, 30 stories of 16 chapters (563,984 characters) | 660.7 (602.9 to 761.0) | 637.3 (601.0 to 700.2) |
+| stringify, no stories | 26.4 | 23.6 |
+| stringify, 30 x 8 | 766.9 | 804.4 |
+| stringify, 30 x 16 | 1,584.4 | 1,682.1 |
+
+The repair grows by 0.25 to 0.30 ms a write with the library at its cap of typical stories, and by 0.56 to 0.58 ms with every story at `CHAPTERS_MAX`: under the 2 ms that would have cut the caps, so `LIMITS.libraryStories` stays 30 and `CHAPTERS_MAX` 16. Why not double: the cost is linear in chapters read (240 chapters, 0.27 ms; 480, 0.57 ms; about 1.2 µs a chapter, two `parseRewards` and a quest each), and the no-story repair's own spread (54 to 154 µs) is a third of the effect, so the effect is not noise. At the lag test's 4x a typical full library costs the tap's task about 1.2 ms.
+
+Two numbers outside the rule, for the lead. The write's `JSON.stringify` grows more than the repair (0.8 ms typical, 1.6 ms at 16 chapters), but it runs in a task after the frame (`schedule` in `store.ts`), so it does not hold the tap's frame. And the size: a full library of typical stories adds about 0.28 million characters to the save, and the store keeps the save and up to 8 backups (`backupCap`), so about 2.6 million characters in storage, 5.1 million with every story at 16 chapters, near what a browser's storage holds for a site. No GM is near that today, and the storage meter (`store.used()`) and the `failing` banner say so when it happens; whether the cap should answer to storage rather than to time is the lead's call (12.1.4).
+
+#### 12.1.3 What unit 1 built, and its tests
+
+- `src/core/story/story.ts` (new): `Story`, `Chapter`, `ChapterQuest`, `StoryTemplate`, `STORY_FOR`, `parseStory`, `parseChapterQuest`, `STORY_BOUNDS`, `CHAPTERS_MAX` 16, `CHAPTER_MAX` 49,152, `chapterSize`, `chapterWindow`, `storyLines`. `src/core/ids.ts`: `StoryId` (`st`) and `StoryRunId` (`sr`) in `SaveIds`, named `Id<'StoryId'>` and `Id<'StoryRunId'>` as every other id is (the design wrote `Id<'Story'>`).
+- `src/core/save.ts`: `library.stories`, `LIMITS.libraryStories` 30, the repair line (each story through `parseStory`, its id kept or made with `st`). `src/core/library.ts`: `LIBRARY_LISTS.stories`, so `saveEntry`, `duplicateEntry` and `removeEntry` take stories.
+- `src/core/pack.ts`: the `stories` kind beside the others, the feats' lines left as they were. `PACK_WORDS` (new, keyed by `PackKind`) holds each kind's words for the Share list and the import preview, which `src/views/io.js` had as its own list without feats: Share and the import preview threw for a library holding a feat. With the words keyed by the kind, the typecheck asks for a new kind's.
+- Ruling 2: `src/core/hunter/progress.ts` (`XpChange.xp`), `src/core/hunter/grant.ts` (the lines from what moved), `src/core/rewards.ts` (`grantLines` says "Loses").
+- Tests, each expected value from the rule: `tests/story.test.ts` (22 cases: a story read back whole and read twice, what is refused and what takes its default, each bound, `chapterSize` against the UTF-8 rule with é, 日 and an emoji, the name and note not counted, the window and the preview), `tests/rewards.test.ts` (6 cases of a cost), `tests/save.test.ts` (the repair of stored stories), `tests/library.test.ts` (3 cases: saved by id, the cap, a duplicate and its delete), `tests/pack.test.ts` (4 cases of stories in a pack, and the counts of every kind), `tests/e2e/reward-room.e2e.ts` (a cost typed with a minus in the Award form) and `tests/e2e/sharing.e2e.ts` (a feat and a story shared by code and added on a second phone; it failed on the old `io.js`, with the exception the console caught).
+- AGENTS.md: the row "A story as content", the reward row's costs, `PACK_WORDS` in the recipe "A kind of custom content". `docs/dependency-map.md` rewritten. No machine changed, so no chart.
+
+#### 12.1.4 For the lead
+
+- A level lost to an XP cost has no line of its own: the window says "Loses 50 XP" and the sheet shows the lower level. A level gained has its window (`levelup`); a level lost has none. Not changed here.
+- Storage, measured in 12.1.2: 30 typical stories put about 0.28 million characters in the save and in each of 8 backups. The cap held against the time rule; against storage it is a question for the lead.
+- `rewardLines` (the quest card, the Award log line) still writes a cost as "-40 gold". `grantLines` is the window's; the quest card states terms. Say if the card should read "Loses" too.
+
+#### 12.1.5 The principles read for this unit, and the choice each changed
+
+- `principle-sequence-verifiable-units`: ruling 2's cases ran on the old code first (five of six failed, 12.1.1), then the fix; each step is its own commit with its checks green.
+- `principle-test-behavior-not-implementation`: a cost's cases assert the sheet and the window's lines worked out from the rule (level 3 with 10 XP less 50 is level 2 with 160), not from a run; the sharing case was run against the old `io.js` and failed before it was kept.
+- `principle-type-system-discipline`: `PACK_WORDS` is keyed by `PackKind`, so a kind without words no longer compiles (the feats' missing words were that bug); `StoryId` and `StoryRunId` are ids of their own.
+- `principle-explain-the-number`: the decision and what could fake the number were written before the run (12.1.2); the limiter (about 1.2 µs a chapter read) and the spread are beside it.
+- `principle-laziness-protocol` and `principle-subtract-before-you-add`: no `removeStory` until it has a rule; io.js's own list of kind words deleted rather than given a line for stories.

@@ -455,8 +455,10 @@ export function parseEvent(type: unknown, payload: unknown): RoomEvent | null {
   return p === null ? null : ({ type, payload: p } as RoomEvent);
 }
 
-/** What a sender writes: the payload without its id, which `newEvent` makes. */
-/** Taken member by member, so a payload that is a union (`soloAnswer`'s verdicts) keeps each member's fields. */
+/**
+ * What a sender writes: the payload without its id, which `newEvent` makes. Taken member by member, so a payload that is
+ * a union (`soloAnswer`'s verdicts) keeps each member's fields.
+ */
 export type EventBody<K extends EventType> = Payloads[K] extends infer P ? (P extends unknown ? Omit<P, 'eid'> : never) : never;
 /** What makes an event id unique: the sending phone, the time in ms and a random number from 0 to 1. */
 export type EventStamp = { device: string; now: number; rand: number };
@@ -542,8 +544,8 @@ export const CODEX_DOC_ENTRIES = 200;
 /**
  * The GM's rules a player's phone plays by in the room (src/core/hunter/build.ts `withRoomRules`): the build switches,
  * and the personal gates' switch and hours (`RULES.solo`). Laid over the player's own rules, never written to its save.
+ * `feats.on`: the GM's switch for the feats the System notices (hunter/feats.ts); a doc without it reads as on.
  */
-/** `feats.on`: the GM's switch for the feats the System notices (hunter/feats.ts); a doc without it reads as on. */
 export type RoomRules = { build: { enabled: boolean; playerPick: boolean }; solo: { personal: boolean; hours: number }; feats: { on: boolean } };
 /** A gate as the room's world doc carries it: a cleared one with the day it was cleared (gate.ts `countdown` reads both); `solo` when the solo doc holds it. */
 export type WorldGate = ShownGate & { solo?: true };

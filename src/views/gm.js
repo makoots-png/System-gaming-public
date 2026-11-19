@@ -101,8 +101,7 @@ export function register(app) {
 
   const ov = () => (isObj(S().rulesOverrides) ? S().rulesOverrides : {});
   const ovPublic = () => { const o = { ...ov() }; delete o.gmTables; return o; };
-  /** The rules overrides after `fn`, a function of src/core/rules.ts from the overrides to the next. */
-  /** The rule overrides after `fn`, and `said` (a log line), in one write. */
+  /** The rule overrides after `fn` (a function of src/core/rules.ts from the overrides to the next), and `said` (a log line), in one write. */
   const setOv = (fn, said = []) => gmWrite('gm-rules', d => ({ ...d, rulesOverrides: fn(isObj(d.rulesOverrides) ? d.rulesOverrides : {}) }), [], said);
   /** A line of the session log the GM view says (src/core/session-log.ts `Said`). */
   const line = (kind, title, text, hunterId = null) => ({ kind, hunterId, title: String(title), text: String(text) });
@@ -308,8 +307,10 @@ export function register(app) {
   // ── remote hunters: HP and status for the player's phone, posted to the outbox (src/core/sync/outbox.ts) ──
   /** Posts a room message: the outbox keeps it in the save and sends it until the room takes it, once. Answers `sync.post`'s answer. */
   const roomPost = (type, body) => { const sy = A().sync; return sy.post(sy.event(type, body)); };
-  /** Whether a posted message goes now: this phone is connected to the room. Otherwise it waits in the outbox for the room's next answer. */
-  /** Whether a message just posted goes now or waits in the outbox (`postNews`): asked only after a post that was made. */
+  /**
+   * Whether a message just posted goes now (this phone is connected to the room) or waits in the outbox for the room's next
+   * answer (`postNews`): asked only after a post that was made.
+   */
   const goesNow = () => postNews({ ok: true }, A().sync.conn()) === 'sent';
   /** Why `sync.post` posted nothing (`noRoom`, `notEvent`), or null when it posted. */
   const whyNot = r => ('why' in r ? r.why : null);

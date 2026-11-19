@@ -31,15 +31,15 @@ export type TriggerEvent = BearerEvent | 'statusGained' | 'statusEnded' | 'used'
 /** How often a trigger fires: on every event, once in a round of fight time, or `n` times a fight (1 to `fightUses`). */
 export type Limit = { readonly kind: 'each' } | { readonly kind: 'round' } | { readonly kind: 'fight'; readonly n: number };
 /**
- * A trigger: an event, how often, where its ops land and the ops (at most `triggerOps`). `other` (the event's other body)
- * is allowed only on an event that has one; a hit, a crit or a kill may name a tag, so only one dealt by an ability with
- * that tag fires it; a status gained or ended names its key; an ability used names its tag.
- */
-/**
  * A condition on where (kits design 8.8): a trigger fires only while its bearer holds a status of `key`, or stands in a
  * zone of `zone`'s name (it holds that zone's hold).
  */
 export type Need = { readonly kind: 'holds'; readonly key: StatusKey } | { readonly kind: 'inside'; readonly zone: string };
+/**
+ * A trigger: an event, how often, where its ops land and the ops (at most `triggerOps`). `other` (the event's other body)
+ * is allowed only on an event that has one; a hit, a crit or a kill may name a tag, so only one dealt by an ability with
+ * that tag fires it; a status gained or ended names its key; an ability used names its tag.
+ */
 export type Trigger = { readonly limit: Limit; readonly ops: readonly LandOp[]; readonly need?: Need } & (
   | { readonly on: Party; readonly tag: Tag | null; readonly to: 'self' | 'other' | Reach }
   | { readonly on: Exclude<BearerEvent, Party>; readonly to: 'self' | Reach }

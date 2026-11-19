@@ -88,10 +88,6 @@ const sameDoc = <K extends PublishedDoc>(name: K, a: DocOf<K>, b: DocOf<K>): boo
   const same = SAME[name] as (d: DocOf<K>) => unknown;
   return JSON.stringify(same(a)) === JSON.stringify(same(b));
 };
-/**
- * The invite survives a reload of the tab (iOS drops background tabs) in this tab's memory (`store.device('invite',
- * 'tab')`), never in the save or a backup; a write storage refuses is the store's banner, as any device memory's.
- */
 
 /** A server answer: its status and its JSON body, or the request never got one. */
 type Answer = { status: number; data: unknown };
@@ -213,6 +209,10 @@ export function register(app: App): void {
   let srvSkew = 0;
   let lastOk = 0;
   let sheetText = '';
+  /**
+   * The invite survives a reload of the tab (iOS drops background tabs) in this tab's memory (`store.device('invite',
+   * 'tab')`), never in the save or a backup; a write storage refuses is the store's banner, as any device memory's.
+   */
   const inviteMemory = store.device('invite', 'tab');
   let invited: RoomCode | null = parseRoomCode(inviteMemory.read());
   const setInvite = (code: RoomCode | null): void => {
@@ -584,10 +584,10 @@ export function register(app: App): void {
 
   // ── the outbox: what this phone owes the room (src/core/sync/outbox.ts) ──
   const box = (): Outbox => sy().outbox ?? [];
-  /** The one writer of the save's outbox outside a bind. Answers whether the step was written. */
   /**
-   * `heard`: what the same write tells beside the box, before the box changes (a solo run whose message the room took,
-   * or whose room is gone, gates/solo-wait.ts): it reads the letter while it is still in the box.
+   * The one writer of the save's outbox outside a bind. Answers whether the step was written. `heard`: what the same
+   * write tells beside the box, before the box changes (a solo run whose message the room took, or whose room is gone,
+   * gates/solo-wait.ts): it reads the letter while it is still in the box.
    */
   const boxDo = (reason: string, f: (b: Outbox) => Outbox, heard: ((s: Save) => Save) | null = null): boolean =>
     store.apply(reason, s => atOutbox(f)(heard ? heard(s) : s)).ok;

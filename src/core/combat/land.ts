@@ -221,10 +221,6 @@ export function kitOf(user: Body, target: Body, R: OpRules): KitScope {
 }
 
 /**
- * One land op on `t` at its average from `source`'s tier, read with `user` as the user, every amount times `times`. A
- * refund is time back on the bearer's own turn, which the caller gives (triggers.ts); here it changes nothing.
- */
-/**
  * A move (kits design 8.5.1): up to `take` stacks (or all; a plain status whole) of a status leave the giver (`from`) for
  * the other of user and target, with the same def and source and the rest of their time from now, up to the receiver's
  * cap (the rest are lost); put on as `as` when named (onto the receiver's own status of that key when it holds one). The
@@ -249,6 +245,10 @@ export function moved(op: Extract<LandOp, { op: 'move' }>, user: Body, target: B
   return { ...out, gained: key, before, k };
 }
 
+/**
+ * One land op on `t` at its average from `source`'s tier, read with `user` as the user, every amount times `times`. A
+ * refund is time back on the bearer's own turn, which the caller gives (triggers.ts); here it changes nothing.
+ */
 function landOne(o: LandOp, user: Body, t: Body, source: Source, now: Tick, R: OpRules, times: number, from: Side | null, cross: boolean): { target: Body; dealt: number; cured: boolean; fired: LandFired | null } {
   const scope: Scope = { user: { stats: user.stats, sheet: user.sheet }, target: { stats: t.stats, sheet: t.sheet }, charge: 0, kit: kitOf(user, t, R) };
   const at = (f: Tiered<Formula>) => average(atTier(f, source.tier), scope) * times;

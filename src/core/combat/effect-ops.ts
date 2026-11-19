@@ -276,12 +276,12 @@ export function statusOn(def: StatusDef, fields: StatusFields, stacks = 1): Stat
   return { ...base, def, stacks: Math.max(1, Math.min(def.stack.cap, Math.trunc(stacks))) };
 }
 
+/** The longest monster type a row's origin keeps (a kill fact's `type`, facts.ts). */
+export const TYPE_MAX = 40;
 /**
  * What `derive` builds a body's sheet from: a hunter's build, or a monster's rank, archetype, kind and its seed's tweak (a
  * shadow keeps its monster's).
  */
-/** The longest monster type a row's origin keeps (a kill fact's `type`, facts.ts). */
-export const TYPE_MAX = 40;
 export type Origin =
   | { readonly kind: 'hunter'; readonly build: SheetBasis }
   /** `name`: the monster's own name, the kind a pack's rows share (a row's `name` adds its letter, "Goblin B"). */

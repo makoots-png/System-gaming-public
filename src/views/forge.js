@@ -26,7 +26,6 @@ const knownKey = (conds, name) => {
   const n = name.trim().toLowerCase();
   return Object.keys(conds).find(k => k === n || String(conds[k].label).toLowerCase() === n) || null;
 };
-/** The GM as the source of a status put on by hand: no combatant, at the picked rank's tier. */
 
 /** Saves `def` under `key` in the library; answers whether it was kept (refused when the library is full). */
 const saveToLibrary = (key, def) => store().apply('forge-status', atLibrary(l => saveStatus(l, key, def))).ok;

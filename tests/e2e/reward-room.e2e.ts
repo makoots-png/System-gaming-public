@@ -285,3 +285,38 @@ test('the GM gives an award for roleplay from a player\'s card in two taps: it i
     expect(facts).toEqual(['seed-straight-face']);
   });
 });
+
+test('a GM alone takes 50 gold and more points than the hunter holds: the preview says what the reward takes, the window says what was lost, and neither goes below 0', async ({ device }) => {
+  const gm = (await device('gm-cost')).page;
+  const ed = gm.locator('#gm-rw');
+  const shown = async () => { await go(gm, 'status'); return { gold: await activeHunter(gm).then((h: any) => h.gold), points: +(await gm.locator('#view-status [data-ap]').first().innerText()) }; };
+
+  const held = await test.step('a hunter who holds 20 gold and at least one ability point', async () => {
+    await onboardGM(gm);
+    await gm.evaluate(() => hunterApp.store.update((d: any) => { const h = d.hunters.find((x: any) => x.id === d.settings.activeHunterId); h.gold = 20; h.bonusPoints += 1; }, 'test-setup'));
+    const s = await shown();
+    expect(s.gold).toBe(20);
+    expect(s.points).toBeGreaterThan(0);
+    return s;
+  });
+
+  await test.step('the GM types the amounts with a minus, and the preview reads them as losses', async () => {
+    await go(gm, 'gm');
+    await unfold(gm, 'award');
+    await gm.fill('#gm-gold', '-50');
+    await gm.fill('#gm-pts', String(-(held.points + 2)));
+    await expect(ed.locator('.rw-preview li')).toHaveText(['Loses 50 gold', `Loses ${held.points + 2} ability points`]);
+  });
+
+  await test.step('Send award: the window says what the hunter lost, and the sheet shows 0 gold and 0 points', async () => {
+    const hid = await gm.evaluate(() => hunterApp.store.active().id);
+    const box = gm.locator(`input[data-sel="${hid}"]`);
+    if (!(await box.isChecked())) await box.tap();
+    await gm.locator('#gm-award-go').tap();
+    const win = gm.locator('.sys-overlay.show', { hasText: 'Loses 20 gold' });
+    await expect(win).toBeVisible();
+    await expect(win).toContainText(`Loses ${held.points} ability point${held.points === 1 ? '' : 's'}`);
+    await dismissAll(gm, 4);
+    expect(await shown()).toEqual({ gold: 0, points: 0 });
+  });
+});

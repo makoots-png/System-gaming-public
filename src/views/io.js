@@ -6,7 +6,7 @@ import { atHunter, atSettings } from '../core/save-step.ts';
 import { withResetHour, withSound } from '../core/settings.ts';
 import { rename } from '../core/hunter/record.ts';
 import { withImportedHunters } from '../core/hunter/imported.ts';
-import { PACK_CAP, PACK_KINDS, mergePack, packCounts, packOf, parsePack } from '../core/pack.ts';
+import { PACK_CAP, PACK_KINDS, PACK_WORDS, mergePack, packCounts, packOf, parsePack } from '../core/pack.ts';
 import { canCode, makeCode, readCode } from '../edge/pack-code.ts';
 import * as motion from './motion.ts';
 const MAX_IMPORT = 5 * 1024 * 1024; // refuse files over 5 MB
@@ -26,11 +26,9 @@ function download(name, text) {
 
 const kb = b => (b >= 1048576 ? (b / 1048576).toFixed(2) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB');
 
-const KIND_WORDS = { statuses: ['status', 'statuses', 'Statuses'], items: ['item', 'items', 'Items'], skills: ['skill', 'skills', 'Skills'],
-  monsters: ['monster', 'monsters', 'Monsters'], rewards: ['bundle', 'bundles', 'Bundles'], maps: ['map', 'maps', 'Maps'] };
 /** "1 status, 2 items and 1 monster" for the kinds that have any, or "nothing". */
 function summary(counts) {
-  const parts = PACK_KINDS.filter(k => counts[k]).map(k => `${counts[k]} ${KIND_WORDS[k][counts[k] === 1 ? 0 : 1]}`);
+  const parts = PACK_KINDS.filter(k => counts[k]).map(k => `${counts[k]} ${PACK_WORDS[k][counts[k] === 1 ? 0 : 1]}`);
   return parts.length ? parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : 'nothing';
 }
 const total = counts => PACK_KINDS.reduce((n, k) => n + counts[k], 0);
@@ -66,7 +64,7 @@ export function register(app) {
     if (!total) return void ui.toast('System', 'Nothing to share yet. Make a status, item, skill, monster or reward in the Workshop first.', { kind: 'warning' });
     /** @type {import('./ui.js').SystemAction[]} */
     const kinds = [{ label: 'Cancel', value: null, cancel: true }, { label: `Everything (${total})`, value: 'all', primary: true },
-      ...PACK_KINDS.filter(k => c[k]).map(k => ({ label: `${KIND_WORDS[k][2]} (${c[k]})`, value: k }))];
+      ...PACK_KINDS.filter(k => c[k]).map(k => ({ label: `${PACK_WORDS[k][2]} (${c[k]})`, value: k }))];
     const kind = await ui.system({ tag: '! Share', title: 'Share custom content', body: 'Choose what to share. A share holds no hunter and no room key.', layout: 'list', actions: kinds });
     if (!kind) return;
     const how = await ui.system({ tag: '! Share', title: 'Share as', body: 'A code is text to paste in a message. A file suits a lot of content.',
@@ -78,10 +76,6 @@ export function register(app) {
     ui.toast('System', `Saved a file with ${summary(docCounts(doc))}.`);
   }
   /**
-   * The preview of a pack read by `parsePack` (what it holds, what was refused and why), then Add or Replace: a backup,
-   * and one store update that merges it through `mergePack`. Answers whether it was merged.
-   */
-  /**
    * Whether to go on although storage was too full to back up the current save first (`store.backupNow` answered false,
    * or a replace answered `unkept`): the player is asked, as before deleting a hunter.
    */
@@ -92,11 +86,15 @@ export function register(app) {
     return r === 'unkept' && await goOnUnbacked(what) ? go(true) : r;
   }
 
+  /**
+   * The preview of a pack read by `parsePack` (what it holds, what was refused and why), then Add or Replace: a backup,
+   * and one store update that merges it through `mergePack`. Answers whether it was merged.
+   */
   async function importPack(r, o = {}) {
     const kept = packCounts(r.pack), n = total(kept);
-    const lines = PACK_KINDS.filter(k => kept[k]).map(k => `${KIND_WORDS[k][2]}: ${kept[k]}`);
+    const lines = PACK_KINDS.filter(k => kept[k]).map(k => `${PACK_WORDS[k][2]}: ${kept[k]}`);
     for (const k of PACK_KINDS) {
-      const { unreadable, over } = r.counts[k], w = c => KIND_WORDS[k][c === 1 ? 0 : 1];
+      const { unreadable, over } = r.counts[k], w = c => PACK_WORDS[k][c === 1 ? 0 : 1];
       if (unreadable) lines.push(`Refused: ${unreadable} ${w(unreadable)} that could not be read`);
       if (over) lines.push(`Refused: ${over} ${w(over)} past the ${PACK_CAP[k]} a share holds`);
     }
@@ -112,7 +110,7 @@ export function register(app) {
     const sum = f => PACK_KINDS.reduce((x, k) => x + report[k][f], 0);
     const added = sum('added'), replaced = sum('replaced');
     ui.toast('System', `Custom content imported: ${added} added${replaced ? `, ${replaced} replaced` : ''}.${backedUp ? ' Previous save kept in backups.' : ''}`);
-    const full = PACK_KINDS.filter(k => report[k].full).map(k => `${KIND_WORDS[k][2]}: ${report[k].full} left out, the library holds ${PACK_CAP[k]}`);
+    const full = PACK_KINDS.filter(k => report[k].full).map(k => `${PACK_WORDS[k][2]}: ${report[k].full} left out, the library holds ${PACK_CAP[k]}`);
     if (full.length) await ui.system({ tag: '! Warning', title: 'Some did not fit', body: 'Your library was full, so these were not imported. Delete some in the Workshop and import again.', lines: full, kind: 'warning' });
     return true;
   }

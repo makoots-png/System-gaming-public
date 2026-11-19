@@ -1081,3 +1081,61 @@ the pack was made.
 What the report counts: Replace over an entry the library held counts `replaced`, also when the entry then leaves
 because the pack held the shipped feat. A feat whose key is new to the library counts `added` only when the library
 then holds it. A shipped-equal built-in into a library that lacked its key changes nothing, so it counts nothing.
+
+**Point 3. Doc comments over the wrong declaration.** The lever first: "a doc comment sits over what it describes" in
+`tests/lint.test.ts` matches each `/** ... */` block followed, with only blank space between, by another such block, in
+`src/` and `server.ts`. Its first run listed 52 places, many more than the review's fifteen, because it also read
+`src/edge` and `src/views`. Two changes to the rule after that first run, both found by reading its list. The match
+first ran from one `/**` over several comments to a later `*/`, so a JSDoc cast such as `/** @type {const} */ (...)`
+before a doc comment counted. The block now stops at its first `*/`, and a case holds it. A block that holds a JSDoc
+`@typedef` declares a type and describes nothing under it, so a run of typedefs (combat.js) and a typedef over a
+function's `@param` (ui.js) are allowed. A case holds that too.
+
+How each place was fixed (no code line changed; `git diff -U0` shows only comment lines and the same lines moved):
+
+- Moved over its declaration (19): api.ts `ExtractTarget` and `AppApi`; effect-ops.ts `Origin`; fight-types.ts
+  `Shared`; fight-view.ts `abilityLines`; land.ts `landOne`; map-view.ts `HotbarSlot`; resolve.ts `resolve`;
+  triggers.ts `Trigger`; gate.ts `parseGate`; inventory.ts `putItem`; ids.ts `sheetKeyOf`; save.ts `LIMITS`; sync.ts
+  `inviteMemory`; combat.js `start`; io.js `importPack`; maker.js `register`; quests.js `sendUpdate`; table.js
+  `paintHud`.
+- Merged with the second block, both about one declaration (13): fight-types.ts `extract`; fight-view.ts `timeOf`;
+  protocol.ts `EventBody` and `RoomRules`; save.ts `Library`; sync.ts `boxDo`; combat.js `spots`, `mapSource`,
+  `sizeSteps`; gm.js `setOv`, `goesNow`; map.js `choice`, `zonesWas`.
+- Deleted, because its declaration is gone or has its own comment elsewhere (6): fight-turn.ts (the comment of
+  `alive`, which land.ts holds with its own); record.ts (the old `setJob` that refused a blank, before it took null);
+  roll.ts (a copy of the line under it); forge.js (`gmSource`, now in effects.ts with its own); skills.js (an ability
+  id made from a name, now `store.id('ab')`); map.js (the first line of `drawLines`'s comment, repeated in the next).
+
+**What was built.**
+
+1. `measureFields(kind, of)` and `measuresFor(kind)` in counts.ts; `parseCount` reads `measureFields`; the maker draws
+   the Count select from `measuresFor` and draws it again when What happened changes. Tests: `tests/feats.test.ts` ("a
+   kind with no number field takes each time and different values only"), `tests/e2e/makers.e2e.ts` (the feat case's
+   first step). Commit `2a1c4810`.
+2. `mergeFeats` carries a `Library` and calls `saveFeat`; `newFeatKey` in library.ts for the maker, `duplicateFeat` and
+   the merge. Test: `tests/pack.test.ts` ("a pack holding a built-in as it shipped leaves no entry"), which failed on the
+   old merge. Commit `a6fdbc66`.
+3. The lint and the 38 fixes above (19 moved, 13 merged, 6 deleted); the ten typedef blocks it allows are left as they
+   are.
+
+**Decision trail.**
+
+- The rule of which field a measure reads moved out of `parseCount` into `measureFields`, so the maker and the parser
+  cannot disagree again.
+- On a change of What happened, the Count choice is kept when the new kind takes it, and so is its field when the new
+  kind has it. Clearing it every time would lose a choice for nothing.
+- A pack carries `off` (reasons above).
+- A shipped-equal built-in into a library that lacked its key counts nothing in the import's report: nothing changed.
+- A typedef block is allowed by the lint. Without that, the six typedefs of combat.js would need one block, and the
+  block would still sit over `register`'s `@param`.
+- A first run of `bun test tests/feats.test.ts` started while the lead's CI ran (`pgrep` printed a pid in the same
+  command). It passed on code alone, but it broke the rule. The final browser run (75 passed) also started while a CI
+  run had begun: the wait loop found none, and `pgrep` printed a pid a moment later in the same command, which did not
+  stop on it. Both runs used their own ports (3340), and both passed.
+
+**Found outside the points (not fixed).**
+
+- Add of a pack feat under a built-in's key the library does not hold puts it in as an edit of that built-in, where a
+  status of a built-in's key arrives renamed ("Label 2"). Add says it keeps the GM's own; whether a built-in counts as
+  his own is the lead's call.
+- AGENTS.md's lint list should name the new rule "a doc comment sits over what it describes". AGENTS.md is the lead's.

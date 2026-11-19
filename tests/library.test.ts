@@ -11,6 +11,9 @@ import type { Refused } from '../src/core/save-step.ts';
 import { parseItem } from '../src/core/registry/items.ts';
 import { mapId, openArena } from '../src/core/registry/maps.ts';
 import { RULES } from '../src/core/rules.ts';
+import { parseStory } from '../src/core/story/story.ts';
+import type { Story } from '../src/core/story/story.ts';
+import type { StoryId } from '../src/core/ids.ts';
 import { dev } from './fixtures/ids.ts';
 
 const item = (id: string, name: string): Item => ({ ...parseItem({ name, type: 'misc' })!, id } as Item);
@@ -54,6 +57,29 @@ describe('a map saved by its id', () => {
     const renamed = ok(saveById(start, 'maps', { ...arena, name: 'Pit' }));
     expect(renamed.maps.map(m => m.name)).toEqual(['Pit']);
     expect(ok(saveById(start, 'maps', { ...arena, id: mapId('mp2') })).maps.map(m => m.id)).toEqual(['mp1', 'mp2']);
+  });
+});
+
+describe('a story in the library (the Workshop\'s Stories)', () => {
+  const story = (id: string, name: string): Story => ({ ...parseStory({ name, chapters: [{ words: { title: 'The deep has noticed you' } }] })!, id: id as StoryId });
+  const stories = (n: number) => ({ ...lib(), stories: Array.from({ length: n }, (_, i) => story(`st${i}`, `Story ${i}`)) });
+
+  test('saved by its id: a new one is added, an edit keeps its id, and a name another story holds is refused', () => {
+    const one = ok(saveEntry(lib(), 'stories', story('st1', 'The wager')));
+    const renamed = ok(saveEntry(one, 'stories', story('st1', 'The long wager')));
+    expect(renamed.stories.map(s => [s.id, s.name])).toEqual([['st1', 'The long wager']]);
+    expect(saveEntry(renamed, 'stories', story('st2', 'the LONG wager'))).toEqual({ ok: false, why: 'taken' });
+  });
+  test(`the library holds at most ${LIMITS.libraryStories} stories: one more, or a duplicate, is refused`, () => {
+    const full = stories(LIMITS.libraryStories);
+    expect(saveEntry(full, 'stories', story('st99', 'One more'))).toEqual({ ok: false, why: 'full' });
+    expect(duplicateEntry(full, 'stories', 'st0', { newId: 'st99', name: 'Story 0 (copy)' })).toEqual({ ok: false, why: 'full' });
+  });
+  test('a duplicate then its delete leaves the library as it was', () => {
+    const start = stories(2);
+    const dup = ok(duplicateEntry(start, 'stories', 'st1', { newId: 'st7', name: copyName('Story 1', start.stories.map(s => s.name), 60) }));
+    expect(dup.stories.map(s => [s.id, s.name, s.chapters.length])).toEqual([['st0', 'Story 0', 1], ['st1', 'Story 1', 1], ['st7', 'Story 1 (copy)', 1]]);
+    expect(ok(removeEntry(dup, 'stories', 'st7'))).toEqual(start);
   });
 });
 

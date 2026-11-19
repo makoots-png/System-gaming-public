@@ -1463,3 +1463,24 @@ test('only chronicle.ts\'s record writes a hunter\'s inbox of facts, and only th
   const hits = (await sourceLines('src')).filter(line => !owners.includes(line.file) && !isComment(line.text) && write.test(line.text));
   expect(report(hits), 'record a fact with chronicle.ts `record`; the store\'s `noticed` takes it').toEqual([]);
 });
+
+test('a doc comment sits over what it describes', async () => {
+  // About fifteen doc comments in src/core sat over another doc comment, left behind when a declaration moved or a new one
+  // was put between a comment and its own (notes-1-feats.md 17.10). An editor shows such a comment on nothing, and a reader
+  // takes it for the next declaration's. A doc comment is followed by its declaration, never by another doc comment. A
+  // JSDoc `@typedef` block is a declaration itself and describes nothing under it, so a run of them is fine.
+  const stacked = /\/\*\*(?:[^*]|\*(?!\/))*\*\/(?=\s*\/\*\*)/g;
+  expect('/** One. */\n\n/** Two. */\nconst two = 2;'.match(stacked), 'the rule sees a doc comment over another').toEqual(['/** One. */']);
+  expect('/** One. */\nconst one = 1;\n/** Two. */\nconst two = 2;'.match(stacked), 'and not two over their own').toBeNull();
+  expect('/** One. */\nconst one = /** @type {number} */ (1);\n/** Two. */\nconst two = 2;'.match(stacked), 'nor a cast before a doc comment that has its own').toBeNull();
+  const describes = (block: string) => !/@typedef\b/.test(block);
+  expect(['/** @typedef {number} N */', '/**\n * A count.\n * @typedef {number} N\n */', '/** One. */'].map(describes), 'a typedef block describes nothing under it').toEqual([false, false, true]);
+  const files = [...(await readdir(`${ROOT}/src`, { recursive: true })).map(n => `src/${n}`), 'server.ts'].filter(f => /\.(ts|js)$/.test(f)).sort();
+  const hits: Line[] = [];
+  for (const file of files) {
+    const text = await Bun.file(`${ROOT}/${file}`).text();
+    for (const m of text.matchAll(stacked)) if (describes(m[0])) hits.push({ file, line: text.slice(0, m.index).split('\n').length, text: m[0].split('\n')[0]! });
+  }
+  expect(files.length, 'the rule reads the app\'s files').toBeGreaterThan(50);
+  expect(report(hits), 'this doc comment describes nothing: the next thing under it is another doc comment. Read the declarations near it, move it to sit right over the one it describes, and change no code').toEqual([]);
+});

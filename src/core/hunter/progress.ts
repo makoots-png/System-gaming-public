@@ -56,8 +56,11 @@ const balance = (p: Progress, R: Rules): number => levelPoints(R, p.level) + p.b
 /** The points free to spend, as the sheet shows them: never below 0. */
 export const available = (p: Progress, R: Rules): number => Math.max(0, balance(p, R));
 
-/** What an XP change did: the progress after it, the levels it went from and to, the change in points free, and whether HP and mana refill. */
-export type XpChange = { progress: Progress; from: number; to: number; points: number; refill: boolean };
+/**
+ * What an XP change did: the progress after it, the levels it went from and to, the change in points free, whether HP and
+ * mana refill, and the XP it moved (`xp`: the amount asked, less what level 1 with 0 XP or the top level kept back).
+ */
+export type XpChange = { progress: Progress; from: number; to: number; points: number; refill: boolean; xp: number };
 
 /**
  * The progress after `amount` XP (below 0 takes XP back). Levels are gained while the XP covers the level's cost and
@@ -66,13 +69,14 @@ export type XpChange = { progress: Progress; from: number; to: number; points: n
  */
 export function gainXp(p: Progress, amount: number, R: Rules): XpChange {
   const from = p.level;
-  if (!Number.isFinite(amount)) return { progress: fieldsOf(p), from, to: from, points: 0, refill: false };
+  if (!Number.isFinite(amount)) return { progress: fieldsOf(p), from, to: from, points: 0, refill: false, xp: 0 };
   let level = p.level, xp = p.xp + Math.trunc(amount);
   while (level < MAX_LEVEL && xp >= xpToNext(R, level)) { xp -= xpToNext(R, level); level++; }
   while (xp < 0 && level > 1) { level--; xp += xpToNext(R, level); }
   xp = Math.max(0, Math.min(xp, xpToNext(R, level) - 1));
   const progress = { ...fieldsOf(p), level, xp, peakLevel: Math.max(p.peakLevel, level) };
-  return { progress, from, to: level, points: available(progress, R) - available(p, R), refill: R.levelUpRestore && level > p.peakLevel };
+  const moved = lifetimeXp(R, level, xp) - lifetimeXp(R, p.level, p.xp);
+  return { progress, from, to: level, points: available(progress, R) - available(p, R), refill: R.levelUpRestore && level > p.peakLevel, xp: moved };
 }
 
 /** The hunter after `amount` XP (`gainXp`): what an award or a quest writes. */

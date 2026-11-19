@@ -44,9 +44,9 @@ export const sellPrice = (i: Pick<Item, 'value' | 'rar' | 'revive'>, R: Pick<Rul
 const unwear = (equipped: Record<Slot, ItemId | null>, id: string): Record<Slot, ItemId | null> =>
   Object.fromEntries(Object.entries(equipped).map(([s, v]) => [s, v === id ? null : v])) as Record<Slot, ItemId | null>;
 
-/** An item (already read by `parseItem`) put in the bag: onto its stack, else as its own entry under `id`. */
 /** The save with the GM's shop list `shop` (a copy), or with none: the default shop of the rules is shown (`defaultShop`). */
 export const withShop = <S extends { shop: ItemTemplate[] | null }>(save: S, shop: readonly ItemTemplate[] | null): S => ({ ...save, shop: shop === null ? null : [...shop] });
+/** An item (already read by `parseItem`) put in the bag: onto its stack, else as its own entry under `id`. */
 export function putItem<H extends Carrying>(h: H, it: ItemTemplate, id: ItemId): H {
   const into = stackOf(h, it);
   if (into) return { ...h, items: h.items.map(x => (x === into ? { ...x, qty: x.qty + it.qty } : x)) };

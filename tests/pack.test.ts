@@ -1,5 +1,6 @@
 // A pack of the GM's custom content (src/core/pack.ts): made from a save, read from outside data, merged with Add or Replace.
 import { parseFeat } from '../src/core/hunter/feats.ts';
+import { BUILT_IN_FEATS } from '../src/core/registry/feats.ts';
 import { describe, expect, test } from 'bun:test';
 import { PACK_CAP, mergePack, packCounts, packOf, parsePack } from '../src/core/pack.ts';
 import type { MergeTarget, Pack, PackRead } from '../src/core/pack.ts';
@@ -20,6 +21,9 @@ import { RULES } from '../src/core/rules.ts';
 import { parseBattleMap } from '../src/core/registry/maps.ts';
 import type { BattleMap } from '../src/core/registry/maps.ts';
 import { dev, gmKey, iid, mid, rbid, room, skid } from './fixtures/ids.ts';
+import { parseStory } from '../src/core/story/story.ts';
+import type { Story } from '../src/core/story/story.ts';
+import type { StoryId } from '../src/core/ids.ts';
 
 const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 const AT = '2026-11-13T10:00:00.000Z';
@@ -40,9 +44,14 @@ const HALL: BattleMap = parseBattleMap({
 }, RULES)!;
 /** A GM's feat whose reward names the custom status Frostbite. */
 const FROST_WARD = parseFeat({ name: 'Frost Ward', window: 'COLD HANDS', desc: 'Ten wolves defeated.', show: { at: 'start' }, rule: { on: 'kill', where: [{ field: 'monster', op: '=', value: 'Wolf' }], reach: 10 }, rewards: { statuses: [{ key: 'frostbite', rounds: 2 }] } })!;
+/** A GM's story of two chapters: the first's reward puts Frostbite on, the second issues a quest whose reward puts it on too. */
+const WAGER: Story = { ...parseStory({ name: 'The wager', for: 'hunters', chapters: [
+  { name: 'The bet', words: { title: 'The house offers a bet', line: 'Win a solo run of your rank.' }, rewards: { points: -1, statuses: [{ key: 'frostbite', rounds: 2 }] } },
+  { words: { title: 'The house pays' }, quest: { title: 'Win again', objectives: [{ label: 'Solo run won', target: 1 }], rewards: { statuses: [{ key: 'frostbite', rounds: 1 }] } } },
+] })!, id: 'st4' as StoryId };
 const HUNT = { id: rbid('rb8'), name: 'Wolf hunt', rewards: { ...newRewards(), xp: 100, boons: [{ name: 'One free reroll', text: 'Reroll one die.' }] } };
 
-/** A GM's save with one custom status, item, skill, monster, reward bundle and map. */
+/** A GM's save with one custom status, item, skill, monster, reward bundle, map, feat and story. */
 function gmSave(): Save {
   const s = newSave(dev('d1'));
   s.seq = 10;
@@ -53,6 +62,7 @@ function gmSave(): Save {
   s.monsters = [copy(WARDEN)];
   s.library.maps = [copy(HALL)];
   s.library.feats = { 'frost-ward': copy(FROST_WARD) };
+  s.library.stories = [copy(WAGER)];
   return s;
 }
 const read = (v: unknown): Extract<PackRead, { ok: true }> => {
@@ -68,7 +78,7 @@ describe('a pack made and read back', () => {
   test('one of each kind arrives on an empty phone as it was made, under new ids', () => {
     const from = gmSave();
     const r = read(packOf(from, AT));
-    expect(packCounts(r.pack)).toEqual({ statuses: 1, items: 1, skills: 1, rewards: 1, monsters: 1, maps: 1, feats: 1 });
+    expect(packCounts(r.pack)).toEqual({ statuses: 1, items: 1, skills: 1, rewards: 1, monsters: 1, maps: 1, feats: 1, stories: 1 });
     const { save } = mergePack(target(newSave(dev('d2'))), r.pack, 'add');
     expect(save.library.statuses).toEqual(from.library.statuses);
     expect(noIds(save.library.items)).toEqual(noIds(from.library.items));
@@ -77,6 +87,7 @@ describe('a pack made and read back', () => {
     expect(noIds(save.monsters)).toEqual(noIds(from.monsters));
     expect(noIds(save.library.maps)).toEqual(noIds(from.library.maps));
     expect(save.library.feats).toEqual(from.library.feats);
+    expect(noIds(save.library.stories)).toEqual(noIds(from.library.stories));
     expect(save.library.items[0]!.id).toBe(iid('i101'));
   });
 
@@ -119,7 +130,7 @@ describe('a pack from outside data', () => {
 
   test('parts of the wrong type hold nothing', () => {
     const r = read({ kind: 'library', library: { statuses: [], items: 'x', skills: {}, rewards: 5 }, monsters: { a: 1 } });
-    expect(packCounts(r.pack)).toEqual({ statuses: 0, items: 0, skills: 0, rewards: 0, monsters: 0, maps: 0, feats: 0 });
+    expect(packCounts(r.pack)).toEqual({ statuses: 0, items: 0, skills: 0, rewards: 0, monsters: 0, maps: 0, feats: 0, stories: 0 });
   });
 
   test('entries the parsers refuse are counted unreadable, and a wrong field takes its default', () => {
@@ -135,14 +146,16 @@ describe('a pack from outside data', () => {
         rewards: [{ rewards: {} }, { name: 'Bag', rewards: 'gold' }],
         maps: [{ w: 5 }, { name: 'Pit', w: 99, tiles: 'xyz', sight: -3 }],
         feats: { 'Bad Key!': FROST_WARD, nameless: { ...FROST_WARD, name: '' }, ok: FROST_WARD },
+        stories: [{ name: 'No chapters', chapters: [] }, { name: '', chapters: WAGER.chapters }, { name: 'Odd', for: 'everyone', chapters: [{ words: { title: 'Hi' } }] }],
       },
       monsters: [7, { name: 'Rat', tweak: { hp: 'lots' } }],
     });
     expect(r.counts).toEqual({
       statuses: { kept: 1, unreadable: 5, over: 0 }, items: { kept: 1, unreadable: 2, over: 0 }, skills: { kept: 1, unreadable: 1, over: 0 },
       rewards: { kept: 1, unreadable: 1, over: 0 }, monsters: { kept: 1, unreadable: 1, over: 0 }, maps: { kept: 1, unreadable: 1, over: 0 },
-      feats: { kept: 1, unreadable: 2, over: 0 },
+      feats: { kept: 1, unreadable: 2, over: 0 }, stories: { kept: 1, unreadable: 2, over: 0 },
     });
+    expect(r.pack.stories[0]).toMatchObject({ name: 'Odd', for: 'table', chapters: [{ words: { title: 'HI', line: '' }, quest: null }] });
     expect(r.pack.maps[0]).toMatchObject({ name: 'Pit', w: RULES.fight.grid.w, sight: RULES.fight.sight, fog: false });
     expect(r.pack.statuses.ok!.ops).toEqual([{ op: 'heal', amount: { kind: 'number', value: 2 } }]);
     expect(r.pack.items[0]).toMatchObject({ name: 'Sword', qty: 9999, rar: 'common' });
@@ -314,5 +327,62 @@ describe('feats in a pack', () => {
     const replaced = mergePack(target(from), changed, 'replace');
     expect(replaced.save.library.feats).toEqual({ 'frost-ward': { ...FROST_WARD, desc: 'Twenty wolves.' } });
     expect(mergePack({ ...target(from), library: replaced.save.library }, changed, 'replace').save.library.feats).toEqual(replaced.save.library.feats);
+  });
+  test('a pack holding a built-in as it shipped leaves no entry, and Replace of a changed one brings it back as shipped; a built-in turned off arrives off', () => {
+    const from = gmSave(), shipped = BUILT_IN_FEATS.find(([k]) => k === 'ratcatcher')![1];
+    const holding = (feats: Record<string, unknown>) => read({ ...packOf(from, AT, 'feats'), library: { feats } }).pack;
+    const none = { added: 0, renamed: 0, replaced: 0, full: 0 };
+    for (const mode of ['add', 'replace'] as const) {
+      const m = mergePack(target(from), holding({ ratcatcher: shipped }), mode);
+      expect(m.save.library.feats).toEqual(from.library.feats);
+      expect(m.report.feats).toEqual(none);
+    }
+    const changed = { ...target(from), library: { ...from.library, feats: { ...from.library.feats, ratcatcher: { ...shipped, rule: { ...shipped.rule, reach: 40 } } } } };
+    const back = mergePack(changed, holding({ ratcatcher: shipped }), 'replace');
+    expect(back.save.library.feats).toEqual(from.library.feats);
+    expect(back.report.feats).toEqual({ ...none, replaced: 1 });
+    const off = mergePack(target(from), holding({ ratcatcher: { ...shipped, off: true } }), 'add');
+    expect(off.save.library.feats).toEqual({ ...from.library.feats, ratcatcher: { ...shipped, off: true } });
+    expect(off.report.feats).toEqual({ ...none, added: 1 });
+  });
+});
+
+describe('stories in a pack', () => {
+  test('one story travels whole with the statuses its chapters\' rewards and quests name, without its id', () => {
+    const doc = packOf(gmSave(), AT, 'stories', 'st4');
+    expect(Object.keys(doc.library).sort()).toEqual(['statuses', 'stories']);
+    expect(doc.library.statuses).toEqual({ frostbite: FROSTBITE });
+    expect(read(doc).pack.stories).toEqual(noIds([WAGER]));
+    expect(JSON.stringify(doc.library.stories)).not.toContain('st4');
+  });
+
+  test('Add of a story whose name the library holds arrives as "The wager 2" under a new id, its chapters naming the renamed status', () => {
+    const s = gmSave();
+    const { save, report } = mergePack(target(s), read(packOf(s, AT)).pack, 'add');
+    expect(save.library.stories.map(x => x.name)).toEqual(['The wager', 'The wager 2']);
+    expect(new Set(save.library.stories.map(x => x.id)).size).toBe(2);
+    const [kept, added] = save.library.stories;
+    expect(kept).toEqual(WAGER);
+    expect([added!.chapters[0]!.rewards.statuses[0]!.key, added!.chapters[1]!.quest!.rewards.statuses[0]!.key]).toEqual(['frostbite-2', 'frostbite-2']);
+    expect(added!.chapters[0]!.rewards.points).toBe(-1);
+    expect(report.stories).toEqual({ added: 1, renamed: 1, replaced: 0, full: 0 });
+  });
+
+  test('Replace overwrites the story of the same name and keeps its id; replaced twice changes nothing the second time', () => {
+    const s = gmSave(), pack = read(packOf(s, AT, 'stories')).pack;
+    const changed = { ...pack, stories: [{ ...pack.stories[0]!, when: 'When a hunter bets.' }] };
+    const once = mergePack(target(s), changed, 'replace');
+    expect(once.save.library.stories).toEqual([{ ...WAGER, when: 'When a hunter bets.' }]);
+    expect(once.report.stories).toEqual({ added: 0, renamed: 0, replaced: 1, full: 0 });
+    expect(mergePack(once.save, changed, 'replace').save).toEqual(once.save);
+  });
+
+  test(`a pack holds at most ${PACK_CAP.stories} stories, and a full library takes no more`, () => {
+    const r = read({ kind: 'library', library: { stories: Array.from({ length: 40 }, (_, i) => ({ name: `S${i}`, chapters: [{ words: { title: 'T' } }] })) } });
+    expect(r.counts.stories).toEqual({ kept: PACK_CAP.stories, unreadable: 0, over: 40 - PACK_CAP.stories });
+    const full = newSave(dev('d'));
+    full.library.stories = r.pack.stories.map((x, i) => ({ ...x, name: `Mine ${i}`, id: `st${i + 1}` as StoryId }));
+    const merged = mergePack(target(full), { ...r.pack, stories: r.pack.stories.slice(0, 2) }, 'add');
+    expect([merged.save.library.stories.length, merged.report.stories.full]).toEqual([PACK_CAP.stories, 2]);
   });
 });

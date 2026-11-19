@@ -25,6 +25,8 @@ import type { Item } from './registry/items.ts';
 import type { Loot, Monster, StartStatus } from './registry/monsters.ts';
 import { MAX_MAPS, parseBattleMap } from './registry/maps.ts';
 import type { BattleMap } from './registry/maps.ts';
+import { parseStory } from './story/story.ts';
+import type { Story } from './story/story.ts';
 import type { Archetype } from './hunter/derive.ts';
 import { oneOf } from './one-of.ts';
 import { parseCoins } from './coin.ts';
@@ -202,10 +204,11 @@ export type World = { day: number; lastDailyKey: DayKey | null; session: number 
  * The GM's own content. `statuses`: the GM's statuses by key. A built-in key holds an override of that built-in, any
  * other key a status of the GM's own. `rulesOf` merges them over the built-ins. `skills`: skills the GM gives to hunters
  * and monsters, each copied by value. `rewards`: named rewards the GM gives again (src/core/rewards.ts). `maps`: battle
- * maps a gate may name (src/core/registry/maps.ts).
+ * maps a gate may name (src/core/registry/maps.ts). `feats`: the GM's own feats and the GM's edits of the built-ins, by
+ * key (hunter/feats.ts, laid over the built-ins by `featsFor`). `stories`: the GM's stories, each a list of chapters the
+ * GM opens one at a time (story/story.ts).
  */
-/** `feats`: the GM's own feats and the GM's edits of the built-ins, by key (hunter/feats.ts, laid over the built-ins by `featsFor`). */
-export type Library = { items: Item[]; statuses: Record<string, StatusDef>; skills: Skill[]; rewards: RewardBundle[]; maps: BattleMap[]; feats: Record<string, FeatDef> };
+export type Library = { items: Item[]; statuses: Record<string, StatusDef>; skills: Skill[]; rewards: RewardBundle[]; maps: BattleMap[]; feats: Record<string, FeatDef>; stories: Story[] };
 export type Save = {
   schema: number; savedAt: string; seq: number; settings: Settings; rulesOverrides: Record<string, unknown>; world: World;
   hunters: Hunter[]; gates: Gate[]; monsters: Monster[]; library: Library;
@@ -236,11 +239,11 @@ export const CODEX_SEEN_MAX = 400;
 // ── defaults. Each factory is typed by its entity, so a field added to a type without a default does not compile. ──
 /** 4: the new combat rules (eight stats, mana, gear weight). A save of an older schema is not read. */
 export const SCHEMA = 4;
-/** Bounds for junk or hostile saves only. GM rules (loadoutCap, path tiers) never prune saved data. */
 /** A fight's drop: its gold and its items, as a monster's loot holds them (registry/monsters.ts `Loot`). */
 export type Dropped = { gold: number; items: ItemTemplate[] };
 
-export const LIMITS = { loadouts: 24, picks: 12, libraryItems: 200, libraryStatuses: 200, librarySkills: 200, libraryRewards: 200, libraryMaps: MAX_MAPS, libraryFeats: 100, boons: 50 } as const;
+/** Bounds for junk or hostile saves only. GM rules (loadoutCap, path tiers) never prune saved data. */
+export const LIMITS = { loadouts: 24, picks: 12, libraryItems: 200, libraryStatuses: 200, librarySkills: 200, libraryRewards: 200, libraryMaps: MAX_MAPS, libraryFeats: 100, libraryStories: 30, boons: 50 } as const;
 
 export const newStats = (R: Rules = BASE_RULES): Stats => ({ ...baseStats(R.fight) });
 export const newEquipped = (): Record<Slot, ItemId | null> => ({
@@ -283,7 +286,7 @@ export const newRollEntry = (): RollEntry => ({
 /** An empty save, the example a stored one is filled from: no hunters. Read through the repair, every save holds one. */
 export const newSave = (deviceId: DeviceId): Save => ({
   schema: SCHEMA, savedAt: '', seq: 100, settings: newSettings(deviceId), rulesOverrides: {}, world: newWorld(), hunters: [], gates: [],
-  monsters: [], library: { items: [], statuses: {}, skills: [], rewards: [], maps: [], feats: {} }, shop: null, fight: null, dropped: null, log: [], rolls: [], codex: {}, codexSeen: [], coins: [], calls: [],
+  monsters: [], library: { items: [], statuses: {}, skills: [], rewards: [], maps: [], feats: {}, stories: [] }, shop: null, fight: null, dropped: null, log: [], rolls: [], codex: {}, codexSeen: [], coins: [], calls: [],
 });
 
 // ── parser ──
@@ -430,6 +433,9 @@ const bundles = (run: Run, value: unknown): RewardBundle[] =>
 /** The GM's battle maps, each read by `parseBattleMap`; one without a name is dropped, one without an id takes the default's. */
 const maps = (run: Run, value: unknown): BattleMap[] =>
   (Array.isArray(value) ? value : []).filter(isObj).flatMap(raw => { const t = parseBattleMap(raw, run.R); return t ? [refill<BattleMap>(run, raw, t, 'mp0', 'mp')] : []; });
+/** The GM's stories, each read by `parseStory`; one without a name or a chapter is dropped, one without an id takes the default's. */
+const stories = (run: Run, value: unknown): Story[] =>
+  (Array.isArray(value) ? value : []).filter(isObj).flatMap(raw => { const t = parseStory(raw); return t ? [refill<Story>(run, raw, t, 'st0', 'st')] : []; });
 /** Items without ids (the shop): each read by `parseItem`, one it refuses dropped. */
 const templates = (value: unknown): ItemTemplate[] => (Array.isArray(value) ? value : []).flatMap(raw => parseItem(raw) ?? []);
 /** A stored drop: its gold a whole number from 0, its items each read by `parseItem`; null when it holds nothing. */
@@ -610,6 +616,7 @@ function repair(s: Rec, env: ParseEnv, fight: FightRepair = 'read'): Save {
   save.library.rewards = bundles(run, save.library.rewards.slice(0, LIMITS.libraryRewards));
   save.library.maps = maps(run, save.library.maps.slice(0, LIMITS.libraryMaps));
   save.library.feats = parseFeats(save.library.feats, LIMITS.libraryFeats);
+  save.library.stories = stories(run, save.library.stories.slice(0, LIMITS.libraryStories));
   save.gates = gates(run, save.gates);
   save.shop = Array.isArray(save.shop) ? templates(save.shop) : null;
   save.dropped = droppedOf(save.dropped);

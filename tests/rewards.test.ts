@@ -15,6 +15,7 @@ import { questIn } from './models/quest-events.ts';
 import { den } from './models/gate-events.ts';
 import type { Granted } from '../src/core/hunter/grant.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
+import { available, levelPoints, pendingTotal } from '../src/core/hunter/progress.ts';
 import { freshSave } from '../src/core/save.ts';
 import type { Hunter, Save } from '../src/core/save.ts';
 import { isRefused } from '../src/core/save-step.ts';
@@ -165,7 +166,7 @@ describe('a reward in words', () => {
   });
   test('the reward window says what was acquired, with a build change after the items', () => {
     expect(grantLines(RULES, { ...FULL, xp: 1500 }, 'Path: Vanguard')).toEqual([
-      '+1,500 XP', '-40 gold', '+2 ability points', 'Item acquired: Health Potion ×2', 'Path: Vanguard', 'Title acquired: Gatebreaker', 'Job: Ranger',
+      '+1,500 XP', 'Loses 40 gold', '+2 ability points', 'Item acquired: Health Potion ×2', 'Path: Vanguard', 'Title acquired: Gatebreaker', 'Job: Ranger',
       'Skill acquired: Slash', 'Status: Hasted (3 rounds)', 'Status: Blessed', 'Boon: Free resurrection',
     ]);
     expect(grantLines(RULES, { ...newRewards(), points: 1, statuses: [{ key: statusKey('hasted'), rounds: 1 }] })).toEqual(['+1 ability point', 'Status: Hasted (1 round)']);
@@ -241,6 +242,56 @@ describe('a reward given (src/core/hunter/grant.ts)', () => {
 
   test('a hunter that is not there is refused', () => {
     expect(grant(fresh(), 'h9', FULL, null, { at: AT, today: day(AT.slice(0, 10)), R: RULES, vitals: 'sheet' })).toEqual({ ok: false, why: 'no-hunter' });
+  });
+});
+
+describe('a cost a reward takes away (a story\'s chapter, stories ruling 2)', () => {
+  const AT = '2026-11-19T12:00:00.000Z';
+  const fresh = (): Save => freshSave({ now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-test') }, { onboarded: true });
+  const given = (save: Save, r: Rewards): Granted => {
+    const g = grant(save, 'h1', r, null, { at: AT, today: day(AT.slice(0, 10)), R: RULES, vitals: 'sheet' });
+    if (isRefused(g)) throw new Error(g.why);
+    return g;
+  };
+  /** The first hunter at `level` with `xp` inside it, `gold`, and `points` free to spend. */
+  const holding = (o: { level: number; xp: number; gold: number; points: number }): Save => {
+    const save = fresh(), h = save.hunters[0]!;
+    const bonusPoints = o.points - levelPoints(RULES, o.level) + h.spent + pendingTotal(h);
+    return { ...save, hunters: [{ ...h, level: o.level, peakLevel: o.level, xp: o.xp, gold: o.gold, bonusPoints }] };
+  };
+  const cost = { ...newRewards(), xp: -50, gold: -40, points: -1 };
+  const after = (g: Granted) => { const h = g.save.hunters[0]!; return { level: h.level, xp: h.xp, gold: h.gold, points: available(h, RULES) }; };
+
+  test('the one reader keeps a negative XP, gold and points', () => {
+    expect(parseRewards({ xp: -50, gold: -40, points: -1 })).toEqual(cost);
+  });
+
+  test('a hunter who holds enough loses each amount, and the window says so in words', () => {
+    const g = given(holding({ level: 1, xp: 80, gold: 100, points: 2 }), cost);
+    expect(after(g)).toEqual({ level: 1, xp: 30, gold: 60, points: 1 });
+    expect(g.lines).toEqual(['Loses 50 XP', 'Loses 40 gold', 'Loses 1 ability point']);
+  });
+
+  test('a cost larger than what the hunter holds stops at 0, and the window says what was taken', () => {
+    const g = given(holding({ level: 1, xp: 20, gold: 25, points: 1 }), { ...cost, points: -3 });
+    expect(after(g)).toEqual({ level: 1, xp: 0, gold: 0, points: 0 });
+    expect(g.lines).toEqual(['Loses 20 XP', 'Loses 25 gold', 'Loses 1 ability point']);
+  });
+
+  test('a hunter with nothing to lose loses nothing, and the window has no line for it', () => {
+    const g = given(holding({ level: 1, xp: 0, gold: 0, points: 0 }), cost);
+    expect(after(g)).toEqual({ level: 1, xp: 0, gold: 0, points: 0 });
+    expect(g.lines).toEqual([]);
+  });
+
+  test('XP taken below the level\'s start takes the level away, and no level-up is told', () => {
+    // level 2 costs 200 XP (xpPerLevel 100 times the level): level 3 with 10 XP, less 50, is level 2 with 160
+    const g = given(holding({ level: 3, xp: 10, gold: 0, points: 0 }), { ...newRewards(), xp: -50 });
+    expect([after(g).level, after(g).xp, g.levelup, g.lines]).toEqual([2, 160, null, ['Loses 50 XP']]);
+  });
+
+  test('the reward editor\'s preview says a cost in the same words', () => {
+    expect(grantLines(RULES, { ...cost, points: -2 })).toEqual(['Loses 50 XP', 'Loses 40 gold', 'Loses 2 ability points']);
   });
 });
 

@@ -7,7 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import { RULES, TIERS } from '../src/core/rules.ts';
 import { STAT_KEYS } from '../src/core/stats.ts';
 import {
-  RARITIES, SCHEMA, parseSheetHunter, SLOTS, exportedSave, fileKind, freshSave, keepGmKey, keepPhone, loadSave, newHunter, newMonster, newShadow, newSyncSettings, parseSave, parseSaveValue, repairSave,
+  RARITIES, SCHEMA, parseSheetHunter, SLOTS, exportedSave, fileKind, freshSave, keepGmKey, keepPhone, loadSave, newHunter, newMonster, newRewards, newShadow, newSyncSettings, parseSave, parseSaveValue, repairSave,
 } from '../src/core/save.ts';
 import type { Hunter, ParseEnv, Parsed, Save, StoredKeys } from '../src/core/save.ts';
 import type { EventId, RoomCode } from '../src/core/ids.ts';
@@ -679,6 +679,24 @@ describe('what a repair fixes', () => {
     const many = Array.from({ length: 60 }, (_, i) => ({ id: `mp${i + 1}`, name: `M${i}` }));
     expect(parseRaw({ schema: SCHEMA, hunters: [], library: { maps: many } }).library.maps).toHaveLength(50);
     expect(parseRaw({ schema: SCHEMA, hunters: [], library: {} }).library.maps).toEqual([]);
+  });
+
+  test('the GM\'s stories: each read by parseStory (a name and a chapter with a window title), an id each, at most 30', () => {
+    const chapter = { words: { title: 'The deep has noticed you', line: 'A voice offers strength.' }, rewards: { points: -1, fame: 3 }, secret: 1 };
+    const library = { stories: [
+      { id: 'st1', name: ' The deep ', for: 'hunters', chapters: [chapter, { name: 'No title' }] },
+      { id: 'st1', name: 'Same id', chapters: [chapter] }, { name: '', chapters: [chapter] }, { name: 'No chapters', chapters: [{ name: 'x' }] }, 'junk',
+    ] };
+    const kept = parseRaw({ schema: SCHEMA, hunters: [], library }).library.stories;
+    expect(kept.map(s => [s.name, s.for, s.chapters.length])).toEqual([['The deep', 'hunters', 1], ['Same id', 'table', 1]]);
+    expect(kept[0]!.chapters[0]).toEqual({ name: '', words: { title: 'THE DEEP HAS NOTICED YOU', line: 'A voice offers strength.' }, rewards: { ...newRewards(), points: -1 }, quest: null, note: '' });
+    const [first, second] = kept.map(s => String(s.id));
+    expect(first).toBe('st1');
+    expect(second).toMatch(/^st\d+$/);
+    expect(second).not.toBe('st1');
+    const many = Array.from({ length: 40 }, (_, i) => ({ id: `st${i + 1}`, name: `S${i}`, chapters: [chapter] }));
+    expect(parseRaw({ schema: SCHEMA, hunters: [], library: { stories: many } }).library.stories).toHaveLength(30);
+    expect(parseRaw({ schema: SCHEMA, hunters: [], library: {} }).library.stories).toEqual([]);
   });
 
   test('a quest\'s rewards are read by parseRewards: a wrong field takes its default and a list keeps its bound', () => {

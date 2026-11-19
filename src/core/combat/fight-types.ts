@@ -22,17 +22,17 @@ export const fightId = (s: string): FightId => s as FightId;
 export const PHASES = ['setup', 'running', 'ended'] as const;
 export type Phase = (typeof PHASES)[number];
 /**
- * What every fight has: its rows (one `Body` each, in the order they joined), its map, the zones on it (zones.ts), its
- * fog (null: the party sees the whole map), its log (newest first) and `banked`, the XP of foes the GM removed while
- * they were down.
- */
-/**
  * A line of the fight's log and the rows and zones it is about (`rows`, `zones`), named by the step that logs it: the party's doc keeps a
  * line only when none of them is hidden from the party (fight-doc.ts), whatever the words say.
  */
 export type LogLine = { readonly text: string; readonly rows: readonly CombatantId[]; readonly zones: readonly ZoneId[] };
 /** A log line about these rows and zones. */
 export const line = (text: string, rows: readonly CombatantId[] = [], zones: readonly ZoneId[] = []): LogLine => ({ text, rows, zones });
+/**
+ * What every fight has: its rows (one `Body` each, in the order they joined), its map, the zones on it (zones.ts), its
+ * fog (null: the party sees the whole map), its log (newest first) and `banked`, the XP of foes the GM removed while
+ * they were down.
+ */
 type Shared = {
   readonly id: FightId; readonly grid: Grid; readonly zones: readonly Zone[]; readonly fog: Fog | null; readonly rows: readonly Body[];
   readonly log: readonly LogLine[]; readonly banked: number;
@@ -162,9 +162,9 @@ export type Command =
   | { readonly type: 'arm'; readonly by: CombatantId; readonly ability: AbilityId | null; readonly on?: CombatantId }
   /**
    * An attempt to extract a shadow from fallen monster `id` came to `outcome` (extraction.ts): kept on its row. No time
-   * passes; it may come after the fight ended, while its rows are the summary's record.
+   * passes; it may come after the fight ended, while its rows are the summary's record. `by`: the hunter row of the fight
+   * that extracts (its hunter's job and rank are the view's to judge, `canExtract`, `extractDc`).
    */
-  /** `by`: the hunter row of the fight that extracts (its hunter's job and rank are the view's to judge, `canExtract`, `extractDc`). */
   | { readonly type: 'extract'; readonly id: CombatantId; readonly by: CombatantId; readonly outcome: ExtractionOutcome }
   /** The GM ends the fight now. */
   | { readonly type: 'end' }
