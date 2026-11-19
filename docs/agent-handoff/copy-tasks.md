@@ -54,6 +54,7 @@ Checked by two readers, never by the writer alone: the one who writes edits with
 | The item that brings a dead hunter back | Resurrection Crystal (with the GM's Revive, `WAYS_BACK`) | resurrection, revive item |
 | A fight's map | map; the default one is the open arena | battle map |
 | A GM's arc over several sessions | story (a chapter, open a chapter, Stories to copy) | arc, campaign, saga |
+| What the System remembers of a hunter | Chronicle (the Chronicle panel; one line of it is an entry) | record, history, log |
 
 Two words keep a second meaning on purpose. "Condition" in the ability form's Only when group means a requirement on a use ("Add a condition"), not a status. "Kit" names a weight class of gear in the rules reference's tables and the design docs, never a label a player taps.
 

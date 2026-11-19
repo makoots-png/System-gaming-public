@@ -311,8 +311,8 @@ function show(/** @type {Win & { o: SystemWindow; resolve: (v: any) => void }} *
   w.root = el; w.win = win;
   document.body.appendChild(el);
   enter(win); enter(el, 'fade');
-  (input || bar.querySelector('button.primary') || bar.querySelector('button') || win).focus();
-  if (input) input.select();
+  // a window taller than the screen opens at its title: the focus on its button must not scroll it to its end
+  if (input) { input.focus(); input.select(); } else (bar.querySelector('button.primary') || bar.querySelector('button') || win).focus({ preventScroll: true });
 }
 
 /** @type {(o?: { title?: string; body?: string; danger?: boolean; confirmLabel?: string }) => Promise<boolean>} */

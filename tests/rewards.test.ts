@@ -145,6 +145,22 @@ describe('the bounds', () => {
   });
 });
 
+describe('a title in another\'s place', () => {
+  const SQUARE = { name: 'Square', desc: 'Paid in full.', bonus: { vit: 2 }, replaces: 'Owed to the Deep' };
+  test('the name it takes the place of is read, trimmed and cut to a title\'s 60; a blank one, a wrong type and its own name are none', () => {
+    expect(read({ title: SQUARE }).title).toEqual(SQUARE);
+    expect(read({ title: { ...SQUARE, replaces: `  ${'x'.repeat(80)} ` } }).title!.replaces).toBe('x'.repeat(60));
+    for (const replaces of ['   ', 7, null, ['Owed to the Deep'], 'Square', ' Square ']) expect(read({ title: { ...SQUARE, replaces } }).title).toEqual({ name: 'Square', desc: 'Paid in full.', bonus: { vit: 2 } });
+    expect(newRewards().title, 'a reward starts with no title, so with nothing to replace').toBeNull();
+  });
+
+  test('the quest card and the reward window name both titles', () => {
+    const r = { ...newRewards(), title: SQUARE };
+    expect(rewardLines(RULES, r)).toEqual(['Title: Square (in place of Owed to the Deep)']);
+    expect(grantLines(RULES, r)).toEqual(['Title acquired: Square (in place of Owed to the Deep)']);
+  });
+});
+
 describe('a title by name', () => {
   test('a built-in title brings its description and bonus from the sender\'s rules', () => {
     const wolf = RULES.titles.find(t => t.name === 'Wolf Slayer')!;
@@ -210,6 +226,36 @@ describe('a reward given (src/core/hunter/grant.ts)', () => {
     const once = given(fresh(), { ...newRewards(), title: FULL.title }).save, twice = given(once, { ...newRewards(), title: FULL.title });
     expect(hunter(twice.save).titles.filter(t => t.name === 'Gatebreaker')).toHaveLength(1);
     expect(twice.lines).toEqual([]);
+  });
+
+  test('a title in place of the active one: the hunter keeps one title, still active, its bonus on the sheet, and the window says which it replaced', () => {
+    const debt = given(fresh(), { ...newRewards(), title: { name: 'Owed to the Deep', desc: '', bonus: { hpMax: -10 } } }).save;
+    const h0 = hunter(debt), held = h0.titles.find(t => t.name === 'Owed to the Deep')!;
+    const active = { ...debt, hunters: [{ ...h0, titleId: held.id }] };
+    const g = given(active, parseRewards({ title: { name: 'Square', desc: 'Paid in full.', bonus: { hpMax: 10 }, replaces: 'Owed to the Deep' } })!);
+    const h = hunter(g.save);
+    expect(h.titles.map(t => t.name)).toEqual([...h0.titles.filter(t => t !== held).map(t => t.name), 'Square']);
+    expect([h.titleId, h.titles.find(t => t.name === 'Square')!.id]).toEqual([held.id, held.id]);
+    expect(g.lines).toEqual(['Title acquired: Square (in place of Owed to the Deep)']);
+    const max = (s: Save) => hunterSheet(hunter(s), RULES).sheet.hpMax;
+    expect(max(g.save) - max(active), 'the active title went from 10 less max HP to 10 more').toBe(20);
+  });
+
+  test('a title that names one the hunter does not hold is given as new, and the window does not say "in place of"; held already, it gives nothing', () => {
+    const square = parseRewards({ title: { name: 'Square', desc: '', bonus: {}, replaces: 'Owed to the Deep' } })!;
+    const g = given(fresh(), square), before = hunter(fresh()).titles.length;
+    expect(hunter(g.save).titles).toHaveLength(before + 1);
+    expect(g.lines).toEqual(['Title acquired: Square']);
+    const twice = given(g.save, square);
+    expect([hunter(twice.save).titles, twice.lines]).toEqual([hunter(g.save).titles, []]);
+  });
+
+  test('a rule title the hunter renamed is replaced, and the window names it as the hunter holds it', () => {
+    const once = given(fresh(), { ...newRewards(), title: titleReward(RULES, 'Wolf Slayer')! }).save, h = hunter(once);
+    const renamed = { ...once, hunters: [{ ...h, titles: h.titles.map(t => (t.seedKey ? { ...t, name: 'Pack Breaker' } : t)) }] };
+    const g = given(renamed, parseRewards({ title: { name: 'Alpha', desc: '', bonus: {}, replaces: 'Wolf Slayer' } })!);
+    expect(hunter(g.save).titles.map(t => t.name)).toEqual(h.titles.map(t => (t.seedKey ? 'Alpha' : t.name)));
+    expect(g.lines).toEqual(['Title acquired: Alpha (in place of Pack Breaker)']);
   });
 
   test('a rule title the hunter holds under a name the GM gave it is not given again', () => {

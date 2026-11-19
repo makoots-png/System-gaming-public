@@ -15,8 +15,8 @@ import { gmSource } from '../effects.ts';
 import type { LevelUp } from '../events.ts';
 import type { BuildChange } from '../protocol.ts';
 import { grantLines } from '../rewards.ts';
-import type { RewardStatus, Rewards } from '../rewards.ts';
-import type { Rules } from '../rules.ts';
+import type { RewardStatus, RewardTitle, Rewards } from '../rewards.ts';
+import type { Rank, Rules } from '../rules.ts';
 import type { Hunter, Quest, Save } from '../save.ts';
 import { told } from '../session-log.ts';
 import type { Said } from '../session-log.ts';
@@ -33,7 +33,7 @@ import { addXp, atLevel, gainXp, grantPoints } from './progress.ts';
 import type { ChainEffect, ChainEvent } from './job-chain.ts';
 import { chained, completeQuest } from './quests.ts';
 import type { Completed, QuestWhy } from './quests.ts';
-import { giveBoons, giveTitle, holdsTitle, setJob } from './record.ts';
+import { giveBoons, giveTitle, holdsTitle, setJob, titleNamed } from './record.ts';
 import { fitted, hunterSheet } from './sheet.ts';
 import { giveSkill } from './skills-held.ts';
 import { can, changeFatigue, changeMana, hit, lifeNews, refill, rest, setFatigue, setMana, spendMana } from './vitals.ts';
@@ -113,7 +113,7 @@ export function levelEdit(save: Save, hid: string, level: number, xp: number, da
 export type Granted = {
   save: Save;
   /**
-   * The reward window's lines (`grantLines`): a title only when it is new, a status only when the sheet took it, and XP,
+   * The reward window's lines (`grantLines`): a title only when it is new ("in place of" only when it took a held title's place), a status only when the sheet took it, and XP,
    * gold and points as they moved (a cost larger than what the hunter holds says what was taken; one that took nothing has no line).
    */
   lines: string[];
@@ -125,6 +125,18 @@ export type Granted = {
 };
 
 const sheetOf = (h: Hunter, R: Rules) => hunterSheet(h, R).sheet;
+/** A reward's title as the window says it was given: in place of the title it took the place of (by the name the hunter held it under), else as a new one. */
+const titleGiven = (t: RewardTitle, replaced: string | undefined): RewardTitle => {
+  const { replaces: _named, ...rest } = t;
+  return replaced === undefined ? rest : { ...rest, replaces: replaced };
+};
+
+/**
+ * A reward's status as its hunter takes it, on the sheet or on a fight's row: from the GM, at the hunter's rank. The one
+ * place a reward's status gets its source: `grant` for a hunter of this phone, fight-save.ts `playerHeld` for a player's
+ * hunter on a row of this phone's fight.
+ */
+export const statusGiven = (s: RewardStatus, rank: Rank): StatusIn => ({ key: s.key, rounds: s.rounds, source: gmSource(rank), ...(s.def ? { def: s.def } : {}) });
 
 /**
  * Hunter `hid` given `r` (read by `parseRewards`) and a build change, at time `at`, as one answer. Order: points,
@@ -139,6 +151,8 @@ export function grant(save: Save, hid: string, r: Rewards, build: BuildChange | 
   // what reached the sheet, for the window's lines: a cost takes no more than the hunter holds
   const points = h.bonusPoints - h0.bonusPoints;
   const titleNew = !!r.title && !holdsTitle(h, r.title, R.titles);
+  // the title it took the place of, by the name the hunter held it under; none when it was given as new
+  const replaced = titleNew && r.title?.replaces ? titleNamed(h, r.title.replaces, R.titles) : undefined;
   if (r.title && titleNew) h = giveTitle(h, r.title, ids.next('t'), R.titles);
   if (r.job) { const j = setJob(h, r.job); if (!isRefused(j)) h = j; }
   let buildLine = '';
@@ -149,7 +163,7 @@ export function grant(save: Save, hid: string, r: Rewards, build: BuildChange | 
 
   const took: RewardStatus[] = [], toFight: StatusIn[] = [];
   for (const s of r.statuses) {
-    const put: StatusIn = { key: s.key, rounds: s.rounds, source: gmSource(h0.rank), ...(s.def ? { def: s.def } : {}) };
+    const put = statusGiven(s, h0.rank);
     if (o.vitals === 'fight') { toFight.push(put); continue; }
     const next = putStatus(h, put, R.conditions);
     if (!isRefused(next)) { h = next; took.push(s); }
@@ -173,7 +187,7 @@ export function grant(save: Save, hid: string, r: Rewards, build: BuildChange | 
     h = l.hunter; done = l.done; said = l.said;
   }
 
-  const lines = grantLines(R, { ...r, xp, gold, points, title: titleNew ? r.title : null, statuses: took }, { build: buildLine, level: { from: h0.level, to: h.level } });
+  const lines = grantLines(R, { ...r, xp, gold, points, title: r.title && titleNew ? titleGiven(r.title, replaced?.name) : null, statuses: took }, { build: buildLine, level: { from: h0.level, to: h.level } });
   const hunters = save.hunters.map((x, i) => (i === at ? h : x));
   const next = told({ ...save, seq: ids.seq(), hunters }, { at: o.at, cap: R.logCap }, ...said);
   return { save: next, lines, levelup, fight: { statuses: toFight, refill: refillLeft }, done };

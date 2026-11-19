@@ -633,8 +633,8 @@ const RISEN = { rank: 'E', archetype: 'brute', grade: 'Normal', monster: null, n
 export type Move = string;
 const TAPS_GM = ['create', 'leave', 'rejoin', 'reload'] as const;
 const TAPS_PLAYER = ['join', 'leave', 'reload', 'edit', 'forbidden', 'use', 'cast', 'coin', 'arm', 'solo', 'offline', 'online'] as const;
-const GM_TO = ['award', 'status', 'chain', 'vitals', 'spent', 'shadow', 'noted', 'chapter', 'settle', 'kick', 'allow'] as const;
-const NET = ['serve', 'answer', 'drop'] as const;
+/** What the GM does to a player whose sheet it sees (`gm award kai`); `gm allow` has its own condition in `enabled`. */
+const GM_TO = ['award', 'status', 'chain', 'vitals', 'spent', 'shadow', 'noted', 'chapter', 'settle', 'kick'] as const;
 const LANES: Lane[] = ['link', 'push', 'gm', 'box'];
 
 const live = (w: World, p: Phone): Pending[] => w.pending.filter(r => r.phone === p.i && !r.dead);
@@ -657,7 +657,7 @@ export function enabled(w: World): Move[] {
     for (const t of TAPS_PLAYER) if ((t !== 'join' || invite(w)) && net(t) && inRoom(t) && free(t)) out.push(`${p.name} ${t}`);
     const k = keyOf(p);
     if (gmRoom(gm) && inAir(gm.save.calls).some(c => c.id.startsWith(`${p.device}:`))) out.push(`gm rule ${p.name}`);
-    if (roster(gm)[k] !== undefined) for (const a of ['award', 'status', 'chain', 'vitals', 'spent', 'shadow', 'noted', 'chapter', 'settle', 'kick'] as const) out.push(`gm ${a} ${p.name}`);
+    if (roster(gm)[k] !== undefined) for (const a of GM_TO) out.push(`gm ${a} ${p.name}`);
     if (recentKicks(w, gm).includes(k)) out.push(`gm allow ${p.name}`);
   }
   for (const p of w.phones) {

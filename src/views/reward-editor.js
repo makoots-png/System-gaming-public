@@ -5,7 +5,7 @@
 // window's lines (`grantLines`). Its answer is what `parseRewards` reads, so it passes the parser unchanged.
 import { esc, field } from './ui.js';
 import { rewardJobs, rules } from '../edge/rules.ts';
-import { REWARD_BOUNDS, WORDS_BOUNDS, grantLines, isEmptyReward, newRewards, parseRewards, parseWords } from '../core/rewards.ts';
+import { REPLACES_WORDS, REWARD_BOUNDS, WORDS_BOUNDS, grantLines, isEmptyReward, newRewards, parseRewards, parseWords } from '../core/rewards.ts';
 import { LIMITS } from '../core/save.ts';
 import { ITEM_BOUNDS, parseItem } from '../core/registry/items.ts';
 import { SKILL_SEEDS, parseSkill, skillOf } from '../core/registry/skills.ts';
@@ -46,7 +46,7 @@ export function rewardEditor(app, box, o = {}) {
   // ── a row from a part of a reward, and back ──
   const rowsOf = rw => [
     ...rw.items.map(item => ({ kind: 'item', item })),
-    ...(rw.title ? [{ kind: 'title', pick: rw.title.key || '', name: rw.title.name, desc: rw.title.desc, bonus: { ...rw.title.bonus } }] : []),
+    ...(rw.title ? [{ kind: 'title', pick: rw.title.key || '', name: rw.title.name, desc: rw.title.desc, replaces: rw.title.replaces || '', bonus: { ...rw.title.bonus } }] : []),
     ...rw.skills.map(skill => ({ kind: 'skill', skill })),
     ...rw.statuses.map(s => ({ kind: 'status', key: s.key, rounds: s.rounds ? String(s.rounds) : '', def: s.def || null })),
     ...rw.boons.map(b => ({ kind: 'boon', name: b.name, text: b.text })),
@@ -54,7 +54,7 @@ export function rewardEditor(app, box, o = {}) {
   ];
   function blank(kind) {
     if (kind === 'item') return { kind, item: null };
-    if (kind === 'title') return { kind, pick: '', name: '', desc: '', bonus: {} };
+    if (kind === 'title') return { kind, pick: '', name: '', desc: '', replaces: '', bonus: {} };
     if (kind === 'skill') return { kind, skill: null };
     if (kind === 'status') { const k = statusKeys()[0] || ''; return { kind, key: k, rounds: '3', def: null }; }
     if (kind === 'boon') return { kind, name: '', text: '' };
@@ -68,7 +68,8 @@ export function rewardEditor(app, box, o = {}) {
     return {
       xp: floor(nums.xp), points: floor(nums.points), gold: floor(nums.gold),
       items: by('item').filter(r => r.item).map(r => r.item),
-      title: t && t.name.trim() ? { name: t.name.trim(), desc: t.desc, bonus: t.bonus, ...(t.pick ? { key: t.pick } : {}) } : null,
+      // a title in place of itself is that title (rewards.ts `title`)
+      title: t && t.name.trim() ? { name: t.name.trim(), desc: t.desc, bonus: t.bonus, ...(t.pick ? { key: t.pick } : {}), ...(t.replaces.trim() && t.replaces.trim() !== t.name.trim() ? { replaces: t.replaces.trim() } : {}) } : null,
       job: j && j.job.trim() ? j.job.trim() : null,
       skills: by('skill').filter(r => r.skill).map(r => r.skill),
       statuses: by('status').filter(r => r.key).map(r => {
@@ -118,6 +119,8 @@ export function rewardEditor(app, box, o = {}) {
       body = `<select data-f="tpick" aria-label="Title">${opt('', 'A new title', !r.pick)}${group('Built-in', rules().titles.map(t => opt(t.key, t.name, r.pick === t.key)))}</select>
         ${field('Title name', `<input type="text" maxlength="${REWARD_BOUNDS.title}" autocomplete="off" data-f="name" value="${esc(r.name)}">`)}
         ${field('Description', `<input type="text" maxlength="${REWARD_BOUNDS.titleDesc}" autocomplete="off" data-f="desc" value="${esc(r.desc)}">`)}
+        ${field(REPLACES_WORDS.label, `<input type="text" maxlength="${REWARD_BOUNDS.title}" autocomplete="off" data-f="replaces" value="${esc(r.replaces)}">`)}
+        <p class="rw-hint">${esc(REPLACES_WORDS.hint)}</p>
         <div class="lbl">Bonus while the title is active</div><div data-tbonus>${app.api.maker.bonus(r.bonus)}</div>`;
     } else if (r.kind === 'status') {
       const keys = statusKeys(); if (r.key && !keys.includes(r.key)) keys.push(r.key);
@@ -252,7 +255,7 @@ export function rewardEditor(app, box, o = {}) {
     const f = t.dataset.f;
     if (r.kind === 'item' && f === 'qty') r.item.qty = Math.max(1, Math.min(ITEM_BOUNDS.qty, int(t.value) || 1));
     else if (r.kind === 'title' && t.dataset.bonus) r.bonus = Object.fromEntries(Object.entries(app.api.maker.readBonus(rowEl)).map(([k, n]) => [k, Math.max(-REWARD_BOUNDS.bonus, Math.min(REWARD_BOUNDS.bonus, n))]));
-    else if (f === 'rounds' || f === 'name' || f === 'desc' || f === 'text' || f === 'job') r[f] = t.value;
+    else if (f === 'rounds' || f === 'name' || f === 'desc' || f === 'replaces' || f === 'text' || f === 'job') r[f] = t.value;
     if (r.kind === 'title' && (f === 'name' || f === 'desc' || t.dataset.bonus)) r.pick = '';
     mark(Number(rowEl.dataset.row)); paint();
   });

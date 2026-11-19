@@ -3,7 +3,7 @@
 // twice. The GM's phone below follows send() in src/views/combat.js step by step: the write, the outbox's send, the
 // news, the dice owed.
 import { describe, expect, test } from 'bun:test';
-import { fightHold, fought, heldCommands, itemSpent } from '../src/core/combat/fight-save.ts';
+import { fightHold, fought, heldCommands, itemSpent, playerHeld } from '../src/core/combat/fight-save.ts';
 import type { HeldParts } from '../src/core/combat/fight-save.ts';
 import { gmAward } from '../src/core/award.ts';
 import { gmSource } from '../src/core/effects.ts';
@@ -373,6 +373,27 @@ describe('an award to hunters this phone\'s fight holds is one write: the award,
       { cid: id('c2'), statuses: [{ key: 'bleeding', rounds: 2 }, { key: 'no-such-status', rounds: 2 }, { key: 'down', rounds: null }], refill: true },
     ], RULES);
     expect(cmds.map(c => c.type === 'status' ? `status ${c.add?.key}` : c.type)).toEqual(['status bleeding']);
+  });
+
+  const GONE = parseSheetKey('d-p9:h1')!;
+  const OWN = { ...RULES.conditions.bleeding!, label: 'Marked' };
+  const statuses: Rewards['statuses'] = [{ key: statusKey('bleeding'), rounds: 2 }, { key: statusKey('marked'), rounds: null, def: OWN }];
+
+  test('a reward\'s statuses for a player\'s hunter on a row come from the GM at that hunter\'s rank (A is the fifth rank, tier 4), at rank E when its sheet is not on this phone, with no refill', () => {
+    expect(playerHeld([{ key: KAI, data: { rank: 'A' } }], [KAI, GONE], statuses)).toEqual([
+      { who: { key: KAI }, statuses: [{ key: statusKey('bleeding'), rounds: 2, source: { id: null, tier: 4 } }, { key: statusKey('marked'), rounds: null, source: { id: null, tier: 4 }, def: OWN }], refill: false },
+      { who: { key: GONE }, statuses: [{ key: statusKey('bleeding'), rounds: 2, source: { id: null, tier: 0 } }, { key: statusKey('marked'), rounds: null, source: { id: null, tier: 0 }, def: OWN }], refill: false },
+    ]);
+  });
+
+  test('a player\'s row takes them at that tier: the commands carry the rank\'s tier and the reward\'s own def', () => {
+    const [part] = playerHeld([{ key: KAI, data: { rank: 'A' } }], [KAI], statuses);
+    const cmds = heldCommands(heldFight().save.fight, [{ cid: id('c2'), statuses: part!.statuses, refill: part!.refill }], RULES);
+    expect(cmds.map(c => (c.type === 'status' && c.add ? [c.add.key, c.add.tier, c.add.def.label] : c.type))).toEqual([['bleeding', 4, RULES.conditions.bleeding!.label], ['marked', 4, 'Marked']]);
+  });
+
+  test('a reward with no status hands a player\'s row nothing', () => {
+    expect(playerHeld([{ key: KAI, data: { rank: 'A' } }], [KAI], [])).toEqual([{ who: { key: KAI }, statuses: [], refill: false }]);
   });
 });
 

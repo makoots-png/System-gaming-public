@@ -2,7 +2,7 @@
 // in one table and forgotten in another fails, and so does a column that stops rising with rank.
 import { describe, expect, test } from 'bun:test';
 import { parseOverrides } from '../src/core/overrides.ts';
-import { canExtract, rewardJobs, PERK_KEYS, PERK_LABELS, RANKS, RULES, rulesOf, TIERS, resetRuleNumbers, resetTable, saveRuleNumbers, writeTable } from '../src/core/rules.ts';
+import { canExtract, rewardJobs, PERK_KEYS, PERK_LABELS, RANKS, RULES, rulesOf, TIERS, featsSwitched, resetRuleNumbers, resetTable, saveRuleNumbers, writeTable } from '../src/core/rules.ts';
 import { RANKS as SAVE_RANKS, RARITIES, SLOTS } from '../src/core/save.ts';
 import { JOB_NAMES } from '../src/core/registry/jobs.ts';
 import { STAT_KEYS } from '../src/core/stats.ts';
@@ -268,5 +268,14 @@ describe('the GM\'s edits of the overrides', () => {
     expect(saveRuleNumbers(ov, { logCap: 50 })).toEqual({ logCap: 50, gmTables: { loot: ['x'] } });
     expect(resetRuleNumbers(ov)).toEqual({ gmTables: { loot: ['x'] } });
     expect(resetRuleNumbers({ xpPerLevel: 1 })).toEqual({});
+  });
+  test('the GM\'s switch for feats turns them all off and on, and keeps every other override', () => {
+    const ov = { gmTables: { loot: ['x'] }, xpPerLevel: 120 };
+    const off = featsSwitched(ov, false);
+    expect(off).toEqual({ gmTables: { loot: ['x'] }, xpPerLevel: 120, feats: { on: false } });
+    expect(rulesOf(off).feats.on, 'the rules read the switch off').toBe(false);
+    expect(rulesOf(featsSwitched(off, true)).feats.on).toBe(true);
+    expect(RULES.feats.on, 'feats are on until the GM turns them off').toBe(true);
+    expect(parseOverrides(off).refused, 'the rules editor reads what the switch wrote').toEqual([]);
   });
 });

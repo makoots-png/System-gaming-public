@@ -214,7 +214,7 @@ describe('a move is one write', () => {
 describe('a move in the GM\'s room (unit 4)', () => {
   const KAI_KEY = sk('d-player1:h1'), LIN_KEY = sk('d-player2:h1');
   const KAI_P: HunterRef = { kind: 'remote', remote: KAI_KEY }, LIN_P: HunterRef = { kind: 'remote', remote: LIN_KEY };
-  const ROOM: MoveRoom = { code: room('ABC234'), sheets: [{ key: KAI_KEY, data: { name: 'Kai' } }, { key: LIN_KEY, data: { name: 'Lin' } }], onRow: () => false, stamp: { device: 'd-gm', now: Date.parse(AT), rand: 0.25 } };
+  const ROOM: MoveRoom = { code: room('ABC234'), sheets: [{ key: KAI_KEY, data: { name: 'Kai', rank: 'B' } }, { key: LIN_KEY, data: { name: 'Lin', rank: 'E' } }], onRow: () => false, stamp: { device: 'd-gm', now: Date.parse(AT), rand: 0.25 } };
   const IN_ROOM: MoveCtx = { ...CTX, room: ROOM };
   /** The chapter messages in the outbox, in order. */
   const posted = (s: Save) => (s.settings.sync.outbox ?? []).flatMap(x => (x.letter.kind === 'event' && x.letter.event.type === 'chapter' ? [x.letter.event.payload] : []));
@@ -251,7 +251,7 @@ describe('a move in the GM\'s room (unit 4)', () => {
     const [lin, kai] = posted(m.save);
     expect([lin!.to, lin!.rewards.statuses.length, lin!.rewards.gold, kai!.to, kai!.rewards.statuses, kai!.rewards.gold]).toEqual([[LIN_KEY], 1, 10, [KAI_KEY], [], 10]);
     expect(lin!.eid).not.toBe(kai!.eid);
-    expect(m.onRow).toEqual([{ key: KAI_KEY, statuses: c.rewards.statuses }]);
+    expect(m.onRow, 'Kai is rank B, the fourth rank, so the GM\'s source is tier 3').toEqual([{ who: { key: KAI_KEY }, statuses: [{ key: statusKey('hasted'), rounds: 3, source: { id: null, tier: 3 } }], refill: false }]);
   });
 });
 

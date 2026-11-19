@@ -4,6 +4,8 @@ import { RANKS, dueAt as dueIn, parseOverrides } from '../edge/rules.ts';
 import { can, vitalChipsOf } from '../core/hunter/vitals.ts';
 import { chipDef } from '../core/hunter/chips.ts';
 import { gmSource } from '../core/effects.ts';
+import { playerHeld } from '../core/combat/fight-save.ts';
+import { parseSheetKey } from '../core/ids.ts';
 import { cheatSheet } from './rulesref.js';
 import { bundleMaker } from './reward-editor.js';
 import { UNFINISHED_ROWS, isEmptyReward, newRewards, rewardLines } from '../core/rewards.ts';
@@ -13,7 +15,8 @@ import { LOG_KINDS } from '../core/save.ts';
 import { cleanObjectives } from '../core/hunter/quests.ts';
 import { pickables, sheetName } from '../core/party.ts';
 import { tapWords } from '../core/sync/taps.ts';
-import { resetRuleNumbers, resetTable, saveRuleNumbers, writeTable } from '../core/rules.ts';
+import { featsSwitched, resetRuleNumbers, resetTable, saveRuleNumbers, writeTable } from '../core/rules.ts';
+import { CHRONICLE_WORDS, FEATS_SWITCH_WORDS, boardLine } from '../core/hunter/chronicle-view.ts';
 import { gmAward, sent } from '../core/award.ts';
 import { dropDealt } from '../core/gates/pay.ts';
 import { SPAWN_TYPES } from '../core/gates/gate.ts';
@@ -148,6 +151,8 @@ export function register(app) {
 .gm-card.remote{border-style:dashed}
 .gm-card h3{margin:0 0 6px;font-size:16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;overflow-wrap:anywhere}
 .gm-card .tagline{font-size:12px;color:var(--muted);letter-spacing:.06em}
+.gm-chron{width:100%;min-height:var(--control-h);margin:8px 0 0;text-align:left;white-space:normal;overflow-wrap:anywhere}
+.gm-switch{margin:0 0 14px}.gm-switch .seg{margin:6px 0}.gm-switch .seg button{min-height:var(--control-h);min-width:72px}
 .gm-chips{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}
 .gm-chip{font-size:12px;padding:1px 7px;border:1px solid var(--line);color:var(--ice)}
 .gm-chip.pen{border-color:var(--red);color:#ff8a96}
@@ -234,6 +239,7 @@ export function register(app) {
       <div class="tagline">Lv ${esc(int(h.level) || 1)}${h.job ? ' · ' + esc(h.job) : ''}${path ? ` · <span data-gmpath>${esc(path)}</span>` : ''}${remote ? ' · remote' : ''}</div>
       ${bar('hp', 'HP', v.hp, v.hpMax)}${bar('mana', 'Mana', v.mana, v.manaMax)}${bar('ft', 'Fatigue', ft, v.fatigueMax)}
       <div class="gm-chips">${pen}${activeChip}${dailyChip}${streak}${cond}</div>
+      ${h.chronicle ? `<button type="button" class="gm-chron" data-gchron aria-label="${esc(CHRONICLE_WORDS.title)} of ${esc(h.name)}">${esc(boardLine(h.chronicle))}</button>` : ''}
       <div class="gm-hp" role="group" aria-label="Quick HP for ${esc(h.name)}">
         <button type="button" data-hp="-5" aria-label="Damage 5 to ${esc(h.name)}" title="Damage 5 to ${esc(h.name)}">−5</button><button type="button" data-hp="-1" aria-label="Damage 1 to ${esc(h.name)}" title="Damage 1 to ${esc(h.name)}">−1</button>
         <button type="button" data-hp="1" aria-label="Heal 1 to ${esc(h.name)}" title="Heal 1 to ${esc(h.name)}">+1</button><button type="button" data-hp="5" aria-label="Heal 5 to ${esc(h.name)}" title="Heal 5 to ${esc(h.name)}">+5</button>
@@ -395,7 +401,7 @@ export function register(app) {
    * from the Award form, the last fight's drop dealt with, `fromDrop`). `bundle`: the bundle it was given from by hand
    * (the GM's awards for roleplay), recorded in each hunter's chronicle and shown in its window's words. Says what it did
    * under `msg`; answers whether it wrote.
-   * @param {string[]} local @param {string[]} remote @param {import('../core/rewards.ts').Rewards} rw
+   * @param {string[]} local @param {import('../core/ids.ts').SheetKey[]} remote @param {import('../core/rewards.ts').Rewards} rw
    * @param {import('../core/protocol.ts').GivenBundle | null} bundle @param {string} msg @param {boolean} [fromDrop]
    */
   function sendAward(local, remote, rw, bundle, msg, fromDrop = false) {
@@ -412,8 +418,7 @@ export function register(app) {
     // (each local hunter's fight parts, a held player's statuses) on the rows: one write (src/core/award.ts, hunter.grantWrite)
     const locals = local.map(hid => ({ hid, vitals: /** @type {import('../core/hunter/grant.ts').VitalsAt} */ (A().hunter.fightOf({ hid }) ? 'fight' : 'sheet') }));
     const day = { ...stepTime(S(), new Date()), R: app.rules() }, events = awards.flatMap(a => (a.p.ev ? [a.p.ev] : [])), code = room();
-    const rankOf = k => (remotes().find(x => x.key === k) || { data: { rank: 'E' } }).data.rank;
-    const players = posted.filter(k => held.includes(k)).map(k => ({ who: { key: k }, statuses: rw.statuses.map(st => ({ key: st.key, rounds: st.rounds ?? null, source: gmSource(rankOf(k)), ...(st.def ? { def: st.def } : {}) })), refill: false }));
+    const players = playerHeld(remotes(), posted.filter(k => held.includes(k)), rw.statuses);
     const out = A().hunter.grantWrite(bundle ? 'gm-give' : 'gm-award', sv => {
       const a = gmAward(sv, locals, rw, { room: code, events, said }, day, bundle);
       return { ...a, save: fromDrop ? dropDealt(a.save) : a.save, held: [...a.granted.map(({ hid, g }) => ({ who: { hid }, ...g.fight })), ...players] };
@@ -439,12 +444,12 @@ export function register(app) {
    * @param {string} id
    */
   async function giveFrom(id) {
-    const remote = String(id).includes(':'), name = remote ? remoteName(id) : nameOf(id);
+    const key = parseSheetKey(id), remote = key !== null, name = remote ? remoteName(id) : nameOf(id);
     const own = A().bundles.list().map(b => ({ key: b.id, name: b.name, rewards: b.rewards, window: b.window || null }));
     const b = await giveShelf({ name, own, recent: readRecent(recentMemory.read()), R: app.rules() });
     if (!b) return;
     const give = () => {
-      if (sendAward(remote ? [] : [id], remote ? [id] : [], b.rewards, { key: b.key, name: b.name, window: b.window }, '#gm-board-msg')) recentMemory.write(recentGives(recentMemory.read(), b.key));
+      if (sendAward(key ? [] : [id], key ? [key] : [], b.rewards, { key: b.key, name: b.name, window: b.window }, '#gm-board-msg')) recentMemory.write(recentGives(recentMemory.read(), b.key));
     };
     ui.toast(SHELF_WORDS.toastTag, SHELF_WORDS.given(b.name, name), { hold: { ms: GIVE_HOLD_MS, act: give, undo: SHELF_WORDS.undo } });
   }
@@ -581,6 +586,11 @@ export function register(app) {
     const ta = $('#gm-r-text'); ta.dataset.dirty = ''; ta.value = rulesJson();
     say('#gm-r-msg', `Saved. ${r.diff} setting${r.diff === 1 ? '' : 's'} overridden.`);
   }
+  /** The GM's switch for every feat: one write of the override and its line in the session log; the rules doc carries it to the players. */
+  function switchFeats(on) {
+    if (app.rules().feats.on === on) return;
+    setOv(o => featsSwitched(o, on), [line('system', FEATS_SWITCH_WORDS.logTitle, FEATS_SWITCH_WORDS.logLine(on))]);
+  }
   async function resetRules() {
     if (!await ui.confirm({ title: 'Reset rules?', body: 'Every rule number goes back to its default. Your roll tables and everything in the Workshop stay.', danger: true, confirmLabel: 'Reset rules' })) return;
     // the GM's statuses live in the library, which a reset of the rule numbers keeps
@@ -695,6 +705,9 @@ export function register(app) {
             <div class="gm-row"><button type="button" id="gm-t-save">Save list</button><button type="button" id="gm-t-reset">Reset to seed</button></div>
             <div class="gm-msg" id="gm-t-msg" role="status"></div></div>`),
         section('rules', 'Rules editor', `
+          <div class="gm-switch"><span class="lbl" id="gm-feats-l">${esc(FEATS_SWITCH_WORDS.label)}</span>
+            <div class="seg" role="group" aria-labelledby="gm-feats-l"><button type="button" data-feats="on">${esc(FEATS_SWITCH_WORDS.on)}</button><button type="button" data-feats="off">${esc(FEATS_SWITCH_WORDS.off)}</button></div>
+            <p class="empty">${esc(FEATS_SWITCH_WORDS.hint)}</p></div>
           <p class="empty">JSON overrides merged over the default rules, e.g. {"pointsPerLevel":5}. Unknown rules and wrong types are blocked.</p>
           ${ui.field('Rules overrides (JSON)', '<textarea id="gm-r-text" rows="9" spellcheck="false" autocomplete="off"></textarea>')}
           <div class="gm-msg" id="gm-r-msg" role="status"></div>
@@ -771,6 +784,8 @@ export function register(app) {
         if (t.dataset.rstatus !== undefined) { addRemoteStatus(t.closest('[data-hid]').dataset.hid); return; }
         if (t.dataset.hbuild !== undefined) { const c = t.closest('[data-hid]'), r = c.classList.contains('remote') && remotes().find(x => x.key === c.dataset.hid); const h = r ? null : store.hunter(c.dataset.hid); if (r) A().build.gmMenu({ kind: 'remote', remote: r.key }, r.data); else if (h) A().build.gmMenu({ kind: 'local', hunterId: h.id }, null); return; }
         if (t.dataset.ggive !== undefined) { void giveFrom(t.closest('[data-hid]').dataset.hid); return; }
+        if (t.dataset.gchron !== undefined) { A().chronicle.open(t.closest('[data-hid]').dataset.hid); return; }
+        if (t.dataset.feats) { switchFeats(t.dataset.feats === 'on'); return; }
         if (t.dataset.grevive !== undefined && t.closest('.gm-card.remote')) { sendRevive(t.closest('[data-hid]').dataset.hid); return; }
         if (t.dataset.grevive !== undefined) { const hid = t.closest('[data-hid]').dataset.hid; if (A().hunter.life(hid, { type: 'revive' })) say('#gm-board-msg', `Revived ${(S().hunters.find(x => x.id === hid) || {}).name || 'hunter'} at 1 HP.`); return; }
         if (t.dataset.hp && t.closest('.gm-card.remote')) { sendHp(t.closest('[data-hid]').dataset.hid, int(t.dataset.hp)); return; }
@@ -812,6 +827,7 @@ export function register(app) {
       editor.refresh();
       $('#gm-day').textContent = `Day ${S().world.day}`;
       syncTableUi(); renderLog(); renderNotify(); renderUses();
+      root.querySelectorAll('[data-feats]').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.feats === 'on') === app.rules().feats.on)));
       const ta = $('#gm-r-text');
       if (document.activeElement !== ta && !ta.dataset.dirty && ta.value !== rulesJson()) { ta.value = rulesJson(); liveRules(); }
       else if (!ta.dataset.init) { ta.dataset.init = '1'; liveRules(); }

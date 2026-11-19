@@ -1,6 +1,6 @@
 import { jobOf } from '../src/core/save.ts';
 import { describe, expect, test } from 'bun:test';
-import { cleanName, dropBoon, giveBoons, giveTitle, holdsTitle, nameActiveTitle, reevaluate, removeTitle, rename, setJob, setRank, toggleTitle, writeTitle } from '../src/core/hunter/record.ts';
+import { cleanName, dropBoon, giveBoons, giveTitle, holdsTitle, nameActiveTitle, titleNamed, reevaluate, removeTitle, rename, setJob, setRank, toggleTitle, writeTitle } from '../src/core/hunter/record.ts';
 import { RULES, rankForLevel } from '../src/core/rules.ts';
 import { newHunter } from '../src/core/save.ts';
 import type { Hunter } from '../src/core/save.ts';
@@ -65,6 +65,36 @@ describe('titles', () => {
     const given = giveTitle(hunter(), { key: 'wolf-slayer' }, 't1', SEEDS);
     expect(ok(toggleTitle(ok(toggleTitle(given, 't1')), 't1'))).toEqual(given);
     expect(toggleTitle(given, 'nope')).toEqual({ ok: false, why: 'no-title' });
+  });
+
+  test('a title given in place of the active one keeps its id, its place in the list and stays active, with the new words and bonus', () => {
+    const debt = giveTitle(giveTitle(hunter(), { name: 'First', desc: '', bonus: {} }, 't1', SEEDS), { name: 'Owed to the Deep', desc: 'It is owed.', bonus: { vit: -1 } }, 't2', SEEDS);
+    const active = ok(toggleTitle(giveTitle(debt, { name: 'Last', desc: '', bonus: {} }, 't3', SEEDS), 't2'));
+    const h = giveTitle(active, { name: 'Square', desc: 'Paid in full.', bonus: { vit: 2 }, replaces: 'Owed to the Deep' }, 't9', SEEDS);
+    expect(h.titles).toEqual([
+      { id: 't1', name: 'First', desc: '', bonus: {} }, { id: 't2', name: 'Square', desc: 'Paid in full.', bonus: { vit: 2 } }, { id: 't3', name: 'Last', desc: '', bonus: {} },
+    ]);
+    expect(String(h.titleId)).toBe('t2');
+    expect(h.chronicle.inbox.at(-1), 'a title given in another\'s place is a title given').toEqual({ kind: 'title', name: 'Square' });
+  });
+
+  test('a title that names one the hunter does not hold is given beside the rest; one the hunter already holds gives nothing', () => {
+    const own = giveTitle(hunter(), { name: 'Own', desc: '', bonus: {} }, 't1', SEEDS);
+    const beside = giveTitle(own, { name: 'Square', desc: '', bonus: {}, replaces: 'Owed to the Deep' }, 't2', SEEDS);
+    expect(beside.titles.map(t => [t.id, t.name])).toEqual([['t1', 'Own'], ['t2', 'Square']]);
+    const again = giveTitle(beside, { name: 'Square', desc: 'other words', bonus: { str: 9 }, replaces: 'Own' }, 't3', SEEDS);
+    expect(again, 'Square is held, so Own stays and nothing is recorded').toEqual(beside);
+  });
+
+  test('a rule title is replaced by its key, under whatever name the hunter gave it; a rule title given in another\'s place records its key', () => {
+    const wolf = giveTitle(hunter(), { key: 'wolf-slayer' }, 't1', SEEDS), renamed = { ...wolf, titles: wolf.titles.map(t => ({ ...t, name: 'Pack Breaker' })) };
+    expect(String(titleNamed(renamed, 'Wolf Slayer', SEEDS)?.id)).toBe('t1');
+    expect(String(titleNamed(renamed, 'Pack Breaker', SEEDS)?.id), 'the name it shows finds it too').toBe('t1');
+    expect(titleNamed(renamed, 'Unheld', SEEDS)).toBeUndefined();
+    const grown = giveTitle(renamed, { name: 'Alpha', desc: '', bonus: {}, replaces: 'Wolf Slayer' }, 't2', SEEDS);
+    expect(grown.titles, 'a title of the GM\'s own keeps no rule key').toEqual([{ id: 't1', name: 'Alpha', desc: '', bonus: {} }]);
+    const back = giveTitle(grown, { name: 'Wolf Slayer', desc: 'Felled the pack leader.', bonus: { str: 1 }, key: 'wolf-slayer', replaces: 'Alpha' }, 't3', SEEDS);
+    expect(back.titles).toEqual([{ id: 't1', name: 'Wolf Slayer', desc: 'Felled the pack leader.', bonus: { str: 1 }, seedKey: 'wolf-slayer' }]);
   });
 
   test('the GM\'s form writes a new title or edits one in place; the identity box names the active title or makes one', () => {

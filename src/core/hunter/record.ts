@@ -45,9 +45,9 @@ export function reevaluate<H extends Named & Chronicled>(h: H, R: Rules): H | Re
 // ── titles ──
 /**
  * What a title is given from: a rule title by its key (`{ key }`), a title written out (a reward's; with the key of the
- * rule title it copies, when it does), or a bare name.
+ * rule title it copies, when it does, and the name of a title it takes the place of, `replaces`), or a bare name.
  */
-export type TitleSpec = string | { key: string } | { name: string; desc?: string; bonus?: Title['bonus']; key?: string };
+export type TitleSpec = string | { key: string } | { name: string; desc?: string; bonus?: Title['bonus']; key?: string; replaces?: string };
 /** A title of the rules (`R.titles`): its key is what a hunter's title records (`Title.seedKey`), never its name. */
 export type SeedTitle = { key: string; name: string; desc?: string; bonus?: Title['bonus'] };
 /** The rule title a spec names by its key, or null. */
@@ -63,8 +63,19 @@ export const holdsTitle = (h: Titled, spec: TitleSpec, seeds: readonly SeedTitle
   return seed ? h.titles.some(t => t.seedKey === seed.key) : h.titles.some(t => !t.seedKey && t.name === specName(spec));
 };
 /**
+ * The title a hunter holds under `name`, for a title given in its place: the rule title of that name by the key its
+ * title recorded (so a renamed one is still found), else a title of that name. Undefined when the hunter holds neither.
+ */
+export const titleNamed = (h: Titled, name: string, seeds: readonly SeedTitle[]): Title | undefined => {
+  const seed = seeds.find(s => s.name === name);
+  return (seed && h.titles.find(t => t.seedKey === seed.key)) ?? h.titles.find(t => t.name === name);
+};
+/**
  * Gives a title under `id`; one already held is kept as it is. A rule title records its key; by its key alone it takes the
- * rule's words and bonus. A title given is a fact of the chronicle.
+ * rule's words and bonus. A title that names another (`replaces`, found by `titleNamed`) takes its place: that title
+ * becomes this one where it stands, its id kept, so an active title stays active under its new name and bonus, and `id`
+ * is not used; when the hunter does not hold the named title, this one is given as new. A title given, as new or in
+ * another's place, is a fact of the chronicle.
  */
 export function giveTitle<H extends Titled & Chronicled>(h: H, spec: TitleSpec, id: string, seeds: readonly SeedTitle[]): H {
   const seed = seedOf(spec, seeds), written = typeof spec === 'object' && 'name' in spec ? spec : null;
@@ -72,7 +83,9 @@ export function giveTitle<H extends Titled & Chronicled>(h: H, spec: TitleSpec, 
   if (!name || holdsTitle(h, spec, seeds)) return h;
   // a reward's title keeps the words it was sent with; a rule title by its key alone takes the rule's
   const src: { desc?: string; bonus?: Title['bonus'] } = written ?? seed ?? {};
-  return record({ ...h, titles: [...h.titles, { id, name, desc: String(src.desc ?? '').slice(0, 500), bonus: { ...(src.bonus ?? {}) }, ...(seed ? { seedKey: seed.key } : {}) }] }, { kind: 'title', name });
+  const old = written?.replaces ? titleNamed(h, written.replaces, seeds) : undefined;
+  const made = (at: string) => ({ id: at, name, desc: String(src.desc ?? '').slice(0, 500), bonus: { ...(src.bonus ?? {}) }, ...(seed ? { seedKey: seed.key } : {}) });
+  return record({ ...h, titles: old ? h.titles.map(t => (t === old ? made(old.id) : t)) : [...h.titles, made(id)] }, { kind: 'title', name });
 }
 /** Set active, or unset when it is the active one. A title the hunter does not hold is refused (`no-title`). */
 export function toggleTitle<H extends Titled>(h: H, id: string): H | Refused<'no-title'> {

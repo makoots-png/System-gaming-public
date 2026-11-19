@@ -642,6 +642,39 @@ async function gmRest(g: Phone, p: Phone | null) {
     await shot(g, 'share-code');
     await answer(g, 'Share code', 'Close');
   });
+  await step(g, 4, 'the Chronicle and the feats switch', async () => {
+    await page.evaluate(() => {
+      const s = hunterApp.store, at = (i: number) => new Date(Date.parse('2026-11-01T10:00:00.000Z') + i * 3_600_000).toISOString();
+      const fight = { kind: 'fight', outcome: 'won', rounds: 6, up: true, downs: 0, low: 12, endPct: 12, exactOne: false, struck: 4, hits: 5, crits: 1, critRun: 1, avoided: 0, dealt: 60, taken: 40, healed: 0, raised: 0, hexes: 0,
+        kills: 2, bosses: 0, turnKills: 1, items: 0, allies: 1, alliesDown: 0, sideUp: 2, foes: 3, foeTop: 0, bossTop: null, gate: 'Goblin Den', names: '3 Goblins, Hobgoblin' };
+      const kinds = [fight, { kind: 'level', level: 4 }, { kind: 'chapter', title: 'THE DEEP IS PATIENT', line: 'Nothing is asked.' }, { kind: 'quest', end: 'done', qkind: 'side', from: 'gm', title: 'Find the foe you spared' }];
+      const facts = Array.from({ length: 40 }, (_, i) => ({ ...kinds[i % 4], at: at(i), day: '2026-11-01', session: i < 4 ? 0 : 1 + Math.floor(i / 12) }));
+      const earned = [['payback', 'Payback'], ['three-in-a-breath', 'Three in a Breath'], ['uphill', 'Uphill'], ['threads-end', 'Thread\'s End']];
+      s.device('feat-told:' + s.active().id).write(earned.map(([k]) => k));
+      s.update(() => {
+        const h = s.active();
+        h.chronicle = { inbox: [], facts, tally: { ...h.chronicle.tally, won: 12, kills: 1048, gates: 5, fell: 3, feats: 4 },
+          feats: { ...Object.fromEntries(earned.map(([k, name], i) => [k, { at: 'earned', on: at(i * 8), name }])), ratcatcher: { at: 'shown', n: 25 }, 'red-ledger': { at: 'shown', n: 9 } } };
+      }, 'ui-shots');
+    });
+    const panel = page.locator('#view-status [data-panel="chronicle"]');
+    await go(g, 'status');
+    await show(panel, 'start');
+    await shot(g, 'chronicle-short');
+    await press(g, panel.locator('[data-chr-all]'));
+    await show(panel, 'start');
+    await shot(g, 'chronicle-all');
+    await press(g, panel.locator('[data-chr-all]'));
+    await go(g, 'gm');
+    if ((await page.locator('[data-tog="party"]').getAttribute('aria-expanded')) !== 'true') await press(g, page.locator('[data-tog="party"]'));
+    await press(g, page.locator('#gm-board [data-gchron]'));
+    await page.locator('.sys-overlay.show .chr-win').waitFor();
+    await shot(g, 'chronicle-gm-window');
+    await closeWindows(g);
+    if ((await page.locator('[data-tog="rules"]').getAttribute('aria-expanded')) !== 'true') await press(g, page.locator('[data-tog="rules"]'));
+    await show(page.locator('.gm-switch'), 'start');
+    await shot(g, 'gm-feats-switch');
+  });
   await step(g, 1, 'rules reference', async () => { await go(g, 'rules'); await shot(g, 'rules-reference'); });
   await step(g, 1, 'shadows', async () => { await go(g, 'shadows'); await shot(g, 'shadows'); });
   await step(g, 1, 'dice', async () => { await go(g, 'dice'); await shot(g, 'dice'); });

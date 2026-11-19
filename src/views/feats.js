@@ -3,9 +3,8 @@
 // told (`featNews`) opens a System window in the feat's words with its reward's lines, and is marked told in device
 // memory when answered (`feat-told:<hid>`), so a reload while it waits shows it again. Writes nothing to the save. It
 // publishes the GM's feats as the room's feats doc (`featsDoc`); a player's phone reads them from it.
-import { featNews, featWindow, featsDoc, featsFor } from '../core/hunter/feats.ts';
+import { featNews, featWindow, featsDoc } from '../core/hunter/feats.ts';
 import { DOC_MAX } from '../core/protocol.ts';
-import { BUILT_IN_FEATS } from '../core/registry/feats.ts';
 
 /** @param {import('./app.ts').App} app */
 export function register(app) {
@@ -17,7 +16,7 @@ export function register(app) {
   const toldOf = memory => { const raw = memory.read(); return Array.isArray(raw) ? raw.filter(x => typeof x === 'string') : []; };
   /** Each feat earned and not told gets its window, oldest first; a feat its book no longer holds is told by its name. */
   function tell() {
-    const s = store.get(), book = featsFor(app.rules(), BUILT_IN_FEATS, app.seat() === 'player' ? app.api.sync.doc('feats')?.feats ?? {} : s.library.feats), many = s.hunters.length > 1;
+    const s = store.get(), book = app.api.chronicle.book(), many = s.hunters.length > 1;
     for (const h of s.hunters) {
       const memory = toldMemory(h.id);
       for (const key of featNews(h.chronicle.feats, toldOf(memory))) {

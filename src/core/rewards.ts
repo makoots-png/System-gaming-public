@@ -20,8 +20,10 @@ import type { BundleId } from './ids.ts';
 /**
  * A title as a reward carries it: its bonus travels with it, so a title the receiving phone does not know still counts.
  * `key`: the rule title it copies (src/core/rules.ts `titles`), when it does, so one held under another name is not given twice.
+ * `replaces`: the name of a title the hunter may hold that this one takes the place of (record.ts `giveTitle`: that title
+ * becomes this one, its id and whether it is active kept); a hunter who does not hold it gets this title as a new one.
  */
-export type RewardTitle = { name: string; desc: string; bonus: Record<string, number>; key?: string };
+export type RewardTitle = { name: string; desc: string; bonus: Record<string, number>; key?: string; replaces?: string };
 /**
  * A status a reward puts on the hunter. `rounds: null` lasts until removed. `def` for a status the receiver may not know;
  * without it the receiver's rules name the key.
@@ -73,8 +75,9 @@ function title(v: unknown): RewardTitle | null {
   if (!name) return null;
   const raw = isObj(v.bonus) ? v.bonus : {}, bonus: Record<string, number> = {};
   for (const k of PERK_KEYS) { const n = whole(Object.hasOwn(raw, k) ? raw[k] : 0, -B.bonus, B.bonus, 0); if (n) bonus[k] = n; }
-  const key = titleKey(v.key);
-  return { name, desc: typeof v.desc === 'string' ? v.desc.slice(0, B.titleDesc) : '', bonus, ...(key ? { key } : {}) };
+  const key = titleKey(v.key), replaces = line(v.replaces, B.title);
+  // a title in place of itself is that title
+  return { name, desc: typeof v.desc === 'string' ? v.desc.slice(0, B.titleDesc) : '', bonus, ...(key ? { key } : {}), ...(replaces && replaces !== name ? { replaces } : {}) };
 }
 /**
  * A status a reward gives: a key a status may have that is not a chip drawn from a hunter's state. Its def is read by
@@ -183,16 +186,23 @@ export const isEmptyReward = (r: Rewards): boolean =>
 const amount = (n: number, what: string): string => `${n < 0 ? 'Loses ' : '+'}${Math.abs(n).toLocaleString('en-US')} ${what}`;
 const points = (n: number): string => `ability point${Math.abs(n) === 1 ? '' : 's'}`;
 const rounds = (n: number | null): string => (n ? ` (${n} round${n === 1 ? '' : 's'})` : '');
+/** A reward's title in words: its name, and the title it takes the place of when it names one ("Square (in place of Owed to the Deep)"). */
+const titleWords = (t: RewardTitle): string => (t.replaces ? `${t.name} (in place of ${t.replaces})` : t.name);
+/** The reward editor's words for a title given in another's place. */
+export const REPLACES_WORDS = {
+  label: 'In place of',
+  hint: 'The hunter\'s title of this name becomes this one. If the hunter does not hold it, or this is empty, they get a new title.',
+} as const;
 /** A reward status's label: its own def's, else the rules' status of its key, else the key. */
 const labelOf = (R: RewardRules, s: RewardStatus): string => s.def?.label ?? R.conditions[s.key]?.label ?? s.key;
-/** A reward in words, one line a part: "+50 XP", "Loses 40 gold", "Item: Potion ×2", "Title: Wolf Slayer", "Status: Hasted (3 rounds)", "Boon: ...". */
+/** A reward in words, one line a part: "+50 XP", "Loses 40 gold", "Item: Potion ×2", "Title: Wolf Slayer", "Title: Square (in place of Owed to the Deep)", "Status: Hasted (3 rounds)", "Boon: ...". */
 export function rewardLines(R: RewardRules, r: Rewards): string[] {
   const out: string[] = [];
   if (r.xp) out.push(amount(r.xp, 'XP'));
   if (r.points) out.push(amount(r.points, points(r.points)));
   if (r.gold) out.push(amount(r.gold, 'gold'));
   for (const i of r.items) out.push(`Item: ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`);
-  if (r.title) out.push(`Title: ${r.title.name}`);
+  if (r.title) out.push(`Title: ${titleWords(r.title)}`);
   if (r.job) out.push(`Job: ${r.job}`);
   for (const s of r.skills) out.push(`Skill: ${s.name}`);
   for (const s of r.statuses) out.push(`Status: ${labelOf(R, s)}${rounds(s.rounds)}`);
@@ -219,7 +229,7 @@ export function grantLines(R: RewardRules, r: Rewards, more: GrantMore = {}): st
   if (r.points) out.push(amount(r.points, points(r.points)));
   for (const i of r.items) out.push(`Item acquired: ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`);
   if (more.build) out.push(more.build);
-  if (r.title) out.push(`Title acquired: ${r.title.name}`);
+  if (r.title) out.push(`Title acquired: ${titleWords(r.title)}`);
   if (r.job) out.push(`Job: ${r.job}`);
   for (const s of r.skills) out.push(`Skill acquired: ${s.name}`);
   for (const s of r.statuses) out.push(`Status: ${labelOf(R, s)}${rounds(s.rounds)}`);

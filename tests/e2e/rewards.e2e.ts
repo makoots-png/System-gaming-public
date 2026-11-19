@@ -160,3 +160,47 @@ test('a GM takes a boon back from a hunter on this phone: the Boons block goes, 
   expect((await activeHunter(gm)).boons).toEqual([]);
   expect(await gm.evaluate(() => hunterApp.store.get().log.filter((l: any) => l.kind === 'use').length)).toBe(0);
 });
+
+test('the GM awards the title Square in place of Owed to the Deep: the hunter keeps one title, still active, now named Square, and the reward window names both', async ({ device }) => {
+  const gm = (await device('gm')).page;
+  await onboardGM(gm);
+  const held = await gm.evaluate(() => {
+    const s = hunterApp.store, id = s.id('t') as string;
+    s.update(() => { const h = s.active(); h.titles.push({ id, name: 'Owed to the Deep', desc: 'It is owed.', bonus: { hpMax: -10 } }); h.titleId = id; }, 'test-setup');
+    return { id, name: s.active().name as string, titles: s.active().titles.length as number };
+  });
+  const hpMax = (await activeHunter(gm)).derived.hpMax;
+  await go(gm, 'gm');
+  const toggle = gm.locator('[data-tog="award"]');
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.tap();
+  const ed = gm.locator('#gm-rw'), row = ed.locator('[data-kind="title"]');
+
+  await test.step('the title row has In place of, and the preview names both titles', async () => {
+    await ed.locator('[data-add="title"]').tap();
+    await row.locator('[data-f="name"]').fill('Square');
+    await expect(row.locator('label.field', { hasText: 'In place of' })).toBeVisible();
+    await expect(row).toContainText('The hunter\'s title of this name becomes this one. If the hunter does not hold it, or this is empty, they get a new title.');
+    await row.locator('[data-f="replaces"]').fill('Owed to the Deep');
+    await row.locator('[data-bonus="hpMax"]').fill('10');
+    await expect(ed.locator('.rw-preview')).toContainText('Title acquired: Square (in place of Owed to the Deep)');
+  });
+
+  await test.step('the award is sent to the hunter, whose window says which title it replaced', async () => {
+    await gm.locator('#gm-targets label', { hasText: held.name }).locator('input').check();
+    await gm.locator('#gm-award-go').tap();
+    await expect(gm.locator('.sys-overlay.show', { hasText: 'Title acquired: Square (in place of Owed to the Deep)' })).toBeVisible();
+    await dismissAll(gm, 4);
+  });
+
+  await test.step('the hunter holds Square under the old title\'s id, still active, and its bonus is on the sheet', async () => {
+    const h = await activeHunter(gm);
+    expect(h.titles).toHaveLength(held.titles);
+    expect(h.titles.find((t: { id: string }) => t.id === held.id)).toMatchObject({ name: 'Square', bonus: { hpMax: 10 } });
+    expect(h.titleId).toBe(held.id);
+    expect(h.derived.hpMax, 'from 10 less max HP to 10 more').toBe(hpMax + 20);
+    await go(gm, 'status');
+    const list = gm.locator('[data-panel="titles"] [data-tlist]');
+    await expect(list.locator('li', { hasText: 'Square' }).locator('[data-tset]')).toHaveText('Unset');
+    await expect(list.locator('li', { hasText: 'Owed to the Deep' })).toHaveCount(0);
+  });
+});

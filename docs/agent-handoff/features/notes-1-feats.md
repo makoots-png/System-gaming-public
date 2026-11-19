@@ -1139,3 +1139,169 @@ How each place was fixed (no code line changed; `git diff -U0` shows only commen
   status of a built-in's key arrives renamed ("Label 2"). Add says it keeps the GM's own; whether a built-in counts as
   his own is the lead's call.
 - AGENTS.md's lint list should name the new rule "a doc comment sits over what it describes". AGENTS.md is the lead's.
+
+### 17.12 Unit 7: the screens (the design, written before the code)
+
+Goal (the owner): the System notices what a hunter does and rewards it without the GM's hand, and a player can read what the System remembers. The problem: the chronicle, the feats a hunter earned and the ones it is working toward are in the save and on no screen, and the GM's switch for all feats can be set only by typing JSON into the rules editor. The smallest change: one core module that turns a chronicle into plain data and sentences (`chronicle-view.ts`), one view module that draws it in two places (`chronicle.js`: the panel on the sheet, the GM's read-only window), one line on the GM's board card, and one switch in the GM view.
+
+#### The data shape, first
+
+```ts
+// src/core/hunter/chronicle-view.ts: a chronicle as a screen reads it. Pure, sentences only, nothing written.
+export type ChronicleView = {
+  readonly numbers: readonly { readonly label: string; readonly n: number }[];        // the lifetime numbers
+  readonly earned: readonly { readonly key: string; readonly name: string; readonly hidden: boolean;
+    readonly desc: string; readonly when: string; readonly gave: readonly string[] }[]; // newest first
+  readonly shown: readonly { readonly key: string; readonly name: string; readonly desc: string; readonly progress: string }[]; // closest first
+  readonly facts: readonly { readonly when: string; readonly line: string }[];          // newest first
+  readonly featsOff: boolean;
+};
+export function chronicleView(c: Chronicle, book: FeatBook, R: RewardRules & Pick<Rules, 'feats'>): ChronicleView;
+export const FACT_LINES: { readonly [K in FactKind]: (f: FactOf<K>) => string };       // the typecheck asks for a line a kind
+export const factLine: (f: Fact) => string;
+export const boardLine: (c: Chronicle) => string;                                      // the GM board's feats line
+```
+
+The view draws a `ChronicleView` and decides nothing. The same value is built for a hunter of this phone (the whole chronicle) and for a player's pushed sheet (its cut: the tally, at most 40 earned feats, the last 8 facts, no counts of feats in progress), so the GM's window needs no code of its own. A feat's line under "In progress" is `progressLine`, as it is. An earned feat's date is `progressLine` too ("Earned 2026-11-19."), so a date is written one way.
+
+#### Where the Chronicle lives at 390 px (three placements weighed)
+
+| | (a) A panel on the sheet, after Titles, with a jump chip | (b) Its own view in the More menu | (c) A window opened from a button in the Status Window panel |
+|---|---|---|---|
+| Taps from the sheet | 1 (the chip), or a scroll | 2 (More, Chronicle) | 1 |
+| Found without being told | The chip row is on screen at all times; the panel is passed on every scroll down the sheet | Only by opening More | A sixth control in a panel that already holds Look, Edit, the bars and their buttons |
+| Cost to the rest of the sheet | It pushes Party, Skills, Gear and Bag down by its height | None | None |
+| Reads as | Part of the hunter, beside its titles, which feats give | A separate place | A report |
+
+Chosen (a), as section 10.1 has it, with its height bounded: the panel opens short and one button shows the rest. A feat's title sits in Titles right above the feat that gave it. (b) hides it, and the More menu is the GM's tools on a player's phone. (c) adds a control to the most crowded panel for something read between fights. The cost of (a) is the height, so what it shows first is fixed below, and the chips jump past it.
+
+The chip "Chronicle" sits after Titles in the chip row (Stats, Build, Skills, Titles, Chronicle, Gear, Bag). The row already scrolls sideways at 360 and 390 px and fades at the edge that has more.
+
+#### What a player with 40 kept facts sees first
+
+The panel, short (at most 3 + 3 + 5 rows, whatever the chronicle holds):
+
+1. The lifetime numbers, five cells in one grid: Fights won, Monsters defeated, Gates cleared, Times down, Feats. Always shown, zeros included, so a new hunter sees what is counted.
+2. "Feats": the 3 newest earned feats. Each row is its name (and the tag "Hidden" when it was hidden until earned), its description, then "Earned 2026-11-19." and what it gave, the reward's lines joined by a middle dot.
+3. "In progress": the 3 shown feats closest to done (by count over what it needs, then the book's order). Each row is its name, its description and its progress line ("Monsters defeated: 37 of 100.").
+4. Under the feats: "Some feats stay hidden until earned."
+5. "What happened": the 5 newest kept facts, newest first. Each is when ("Session 4", or the day "2026-11-19" for a fact noticed before any session was started) and one sentence.
+6. One button: "Show all" when any list holds more than it shows, with the counts in its label ("Show all: 7 feats, 12 in progress, 40 entries"). Tapped, the panel shows every row and the button reads "Show less". The choice is kept for the tab (`store.device('chronicle-all', 'tab')`), so a redraw does not close it.
+
+Weighed for the first sight: (a) everything, 40 rows and every feat, which is about 3,000 px above Skills; (b) a closed panel with a count and one Open button, which shows nothing until tapped; (c) the short lists with one button. Chosen (c): the newest things are what a player comes for after a fight, and one tap gives the rest.
+
+Hidden feats that are not earned are not listed and not counted, as 10.1 rules. With the GM's switch off, the "In progress" list is replaced by one line, and earned feats stay.
+
+#### The GM
+
+- **The board card** gains one full-width button under its chips: "Chronicle: 7 feats, newest Thread's End" (`boardLine`). A tap opens that hunter's Chronicle in a System window (tag "Chronicle", title the hunter's name), read-only, every row shown, drawn by the same function as the panel. For a player's hunter it reads the pushed sheet's cut and says so in one line. Weighed: the line as text plus a ninth button in the card's button row (the row is already two lines at 390 px); the line alone as a link-sized target (under 44 px); one button that carries the line. Chosen the one button.
+- **The switch** (three placements weighed):
+
+| | (a) GM view, at the top of Rules editor | (b) The Workshop's Feats section | (c) GM view, under the Party board |
+|---|---|---|---|
+| Taps from the GM view | 2 (open the section, Off), 1 when it is open | 3 (More, Workshop, Off) | 1 |
+| Why there | It is a rule of the table, with the other rule overrides; the JSON under it shows the same value | Where feats are made and turned off one by one | Where the feats line is |
+| Cost | The section is low on the page | Two controls named "off" in one section: one feat, and all of them | A control used a few times a campaign on the screen the GM runs every session from |
+
+Chosen (a). Turning every feat off is a rule of the table that a GM sets a few times in a campaign, so it does not earn a place on the board. The Workshop's Feats says so when they are off and where to turn them on, since a GM who makes a feat there and sees nothing earned will look there first. The switch is a `.seg` of On and Off (one of two), as the personal gates' switch in the Gates view. It writes `rulesOverrides.feats.on` through one core step (`featsSwitched` in rules.ts, beside the other steps on the overrides) with a line in the session log, and the rules doc carries it to the players as today.
+
+Not built in this unit: the GM's news toast "Mira earned Thread's End." (10.2). The first sight of a room with feats already earned would toast each of them, so it needs its own rule of what counts as seen, and the task's list for this unit does not name it. The board's line shows the newest feat meanwhile.
+
+#### Taps
+
+| To | From | Taps |
+|---|---|---|
+| Read the Chronicle (a player) | the sheet | 1 (the chip Chronicle) |
+| See every entry | the panel | 1 (Show all) |
+| Read a hunter's Chronicle (the GM) | the GM view, Party board open | 1 (the card's Chronicle button), 1 more to close |
+| Turn all feats off | the GM view | 2 (Rules editor, Off) |
+
+#### Every word
+
+Each line below is plain and literal (`copy-tasks.md`, Plain first), edited with humanizer and unslop. A feat's name, its window title and a story window's title are names and stay as written.
+
+| Where | Words |
+|---|---|
+| The panel and the chip | "Chronicle" |
+| The numbers | "Fights won", "Monsters defeated", "Gates cleared", "Times down", "Feats" |
+| Sub-headings | "Feats", "In progress", "What happened" |
+| A feat's tag | "Hidden" |
+| No feat earned | "No feats earned yet." |
+| Under the feats | "Some feats stay hidden until earned." |
+| Feats off | "Feats are turned off. Nothing counts toward a feat until they are on again." |
+| No fact kept | "Nothing yet. The System writes what this hunter does here." |
+| The button | "Show all: 7 feats, 12 in progress, 40 entries" (only the lists that hold more than they show are named), "Show less" |
+| When | "Session 4"; a day as "2026-11-19" |
+| The GM's board | "Chronicle: 7 feats, newest Thread's End", "Chronicle: 1 feat, Thread's End", "Chronicle: no feats yet" |
+| The GM's window | tag "Chronicle"; title: the hunter's name; for a player's hunter "From the player's phone: its lifetime numbers, its 40 newest feats and its last 8 entries."; button "Close" |
+| The switch | "The System notices feats" with "On" and "Off"; under it "While this is off, no hunter at this table earns a feat and nothing counts toward one. Earned feats stay." |
+| The session log (kind `system`) | title "Feats", "Feats turned off for the table." / "Feats turned on for the table." |
+| The Workshop's Feats, while off | "Feats are turned off for the table. Turn them on in the GM view, under Rules editor." |
+
+`factLine`, one sentence a kind of fact, each with its numbers:
+
+| Kind | Sentence |
+|---|---|
+| fight | "Won a fight in Goblin Den against 3 Goblins in 6 rounds, at 12% HP." / "Lost a fight against Hobgoblin in 4 rounds, down at the end." / "The GM ended a fight against 2 Wolves after 3 rounds, at 80% HP." (the gate and the foes left out when the fact has none) |
+| kill | "Defeated Goblin Chief, a rank D boss, at 40% HP." (a normal one: "a rank E monster") |
+| solo | "Won a solo run in Ash Hollow (rank E) in 5 rounds, at 30% HP." / "Lost a solo run in Ash Hollow (rank E) in 5 rounds and was down at its end." (stable: "down and stable"; dead: "and died") / "Retreated from a solo run in Ash Hollow (rank E) after 30 rounds, at 30% HP." |
+| gate | "Cleared Goblin Den, a rank D gate, 2 days before its break." / "Cleared Ash Hollow, a rank E gate." |
+| closed | "The personal gate Ash Hollow (rank E) closed when its time ran out." |
+| quest | "Completed the side quest Find it." / "Failed the urgent quest Hold the door." (daily, main, side, Job Change, urgent, penalty) |
+| daily | "Finished the day's daily quests, 7 days in a row." (1: "1 day in a row") |
+| streakLost | "Lost a daily streak of 7 days." |
+| penaltyIssued | "Got the daily penalty for 2 missed days." |
+| penaltyLifted | "The daily penalty ended after 2 days." |
+| life | "Went down in a fight." / "Got back up in a fight." / "Revived by the GM." / "Revived with an item." / "Got back up with a rest." / "Became stable after 2 failed death saves." / "Died on a death save, after 2 failed death saves." / "Passed a death save, with 1 failed before it." / "Failed a death save, with 1 failed before it." (how: in a fight, on a death save, by the GM, with an item, with a rest, by a change made by hand) |
+| level | "Reached level 5." |
+| rank | "Became rank C." |
+| title | "Got the title Still Standing." |
+| feat | "Earned the feat Thread's End." / "Earned the hidden feat Thread's End." |
+| given | "The GM gave the award Held the Mask." |
+| chapter | "A story window: THE DEEP IS PATIENT. Nothing is asked." (the title, then the line; notes-1-stories section 8) |
+| roll | "Rolled a natural 20 on a check." |
+| coin | "Called the coin right." / "Called the coin wrong." |
+| shop | "Bought Health Potion for 40 gold, with 110 gold left." / "Sold Iron Sword for 60 gold, with 170 gold left." |
+| rest | "Took a long rest." / "Took a short rest." |
+| used | "Used Health Potion." |
+| shadow | "The shadow Wolf joined the army." |
+
+A fight's line does not say how many foes the hunter defeated: the sentence already holds the gate, the foes, the rounds and the HP, and the lifetime number counts them. Six kinds are counted and not kept (kill, roll, coin, shop, rest, used), so the panel never shows their lines today; they have lines so that a new kind cannot ship without one and a later screen (a recap, the Table feed) can read any fact.
+
+#### Tests
+
+- `tests/chronicle-view.test.ts`: a line for every kind in `FACT_FIELDS` (a sample fact a kind, each read back by `parseFact`, so a new kind without a sample fails, and the compiler asks for its line), every sentence in the table above from a fact written by hand, no line with an em dash, a semicolon or an exclamation mark; the view of a chronicle of 40 facts and 7 feats (newest first, the numbers from the tally, the earned feat's reward lines, the closest in progress first, a hidden feat not earned left out, a feat earned and since deleted read by its name); the pushed cut gives the same view with 8 facts and no "In progress"; feats off; the board's line for 0, 1 and 7 feats.
+- `tests/rules.test.ts` or `tests/overrides.test.ts`: `featsSwitched` off then on, the other overrides kept.
+- `tests/e2e/feats.e2e.ts`: a player who earns a feat reads it in the Chronicle with its line and what it gave, and the fact under What happened; the GM turns feats off in the GM view and a hunter's next daily earns nothing.
+- `tests/e2e/feats-room.e2e.ts`: the GM opens a player's Chronicle from the board and reads the feat the player earned.
+- `tests/e2e/look.e2e.ts` at 360 and 390 px: the panel of a hunter with 40 facts shows 5 and the button, scrolls only up and down, its button is 44 px; the GM's window fits the screen. `scripts/ui-shots.ts`: the panel short, the panel whole, the GM's window, the switch.
+
+### 17.13 Unit 7: what was built, and what was decided while building
+
+Built, against 17.12:
+
+- `src/core/hunter/chronicle-view.ts`: `FACT_LINES` and `factLine` (one sentence a kind, 23 kinds), `factWhen`, `chronicleView` with `ChronicleView`, `NUMBERS`, `FIRST`, `CHRONICLE_WORDS`, `boardLine`, `FEATS_SWITCH_WORDS`. `src/core/rules.ts`: `featsSwitched`, the switch's one step on the overrides.
+- `src/views/chronicle.js` (in `MODULES`): the Chronicle panel on the sheet (order 21, after Titles), `app.api.chronicle.open(id)` for the GM's read-only window, and `app.api.chronicle.book()`, the one answer in the views to which feats apply on this phone (feats.js had its own copy of that line and now calls it).
+- `hunter.js`: the chip Chronicle after Titles. `gm.js`: the card's button with `boardLine`, the switch at the top of Rules editor (`switchFeats`, through `setOv` with its line in the session log). `workshop.js`: the line in Feats while feats are off.
+- `scripts/ui-shots.ts`: the step "the Chronicle and the feats switch" (four shots: the panel short, the panel whole, the GM's window, the switch).
+
+Decided while building, none of it in 17.12:
+
+1. **A pushed chronicle lists no feat in progress.** `chronicleView` takes where the chronicle came from (`sheet` or `push`). The pushed cut carries no count, so reading it as the hunter's own would show "0 of 50" for every feat on the GM's phone. My first test asserted that 0 and was wrong against the design; the function and the test were corrected together.
+2. **A System window taller than the screen opened at its end.** The first screenshot of the GM's window showed its last entries and the Close button, with the title scrolled away. The cause is in `show` (ui.js): the focus on the primary button scrolls the window to it. It now takes the focus with `preventScroll`, so every tall System window opens at its title (a reward window with many lines had the same fault). A window with a typed field still scrolls to the field. ui.js is not in section 12's file list for unit 7; the fault is in the shell, so that is where it is fixed. look.e2e.ts holds it (the window's `scrollTop` is 0 and its title is on screen).
+3. **`factLine` of a fight leaves the hunter's own count of foes defeated out**, as 17.12 says. Its helper is named `against` because the lint that keeps `fought(` to the fight's one writer matches by name.
+4. **The earned feat's three lines**: the description, "Earned 2026-11-19.", then what it gave joined by a middle dot. Joined on one line the date's full stop sat before a dot.
+5. **The switch does nothing on a tap of the side it is on**, so a second tap writes no second log line.
+6. **The words of the pushed note** are made from `PUSHED_FEATS` and `PUSHED_FACTS`, so the sentence cannot go stale when a bound moves.
+
+Tests: `tests/chronicle-view.test.ts` (16 cases: a line for every kind in `FACT_FIELDS` with a sample the reader takes, each form of the fight, solo and life lines, the plain-punctuation check, the view of 40 facts, earned and in progress, a deleted feat, feats off, the pushed cut, the button's label, the board's line); `tests/rules.test.ts` (the switch off and on, the other overrides kept, the rules editor reads what it wrote); `tests/e2e/feats.e2e.ts` (the player's Chronicle after SEVEN DAYS; the GM turns feats off in two taps, the seventh daily earns nothing, the Workshop and the Chronicle say so, On brings them back); `tests/e2e/feats-room.e2e.ts` (the GM's board reads "Chronicle: 1 feat, First Clear" and one tap opens the player's Chronicle with the feat and the gate, no control in it); `tests/e2e/look.e2e.ts` at 360 and 390 px (the panel short and whole, the card's button 44 px, the GM's window at its title, nothing outside the screen).
+
+Looked at in screenshots at 360 and 390 px (throwaway shots, deleted): the panel short is about 1,480 px tall at 360 px with three earned feats, three in progress and five entries; the five numbers sit three and two; a long fight line wraps inside its row; the button's label wraps to two lines at 360 px. The GM's card: the button is one or two lines over the HP buttons. The switch: On and Off are each half the row.
+
+Taps, counted in the browser cases: the Chronicle from the sheet, 1 (the chip); every entry, 1 more; a hunter's Chronicle from the GM view with the Party board open, 1, and 1 to close; all feats off from the GM view, 2 (Rules editor, Off).
+
+Words added, for the second read (all in `chronicle-view.ts`): every row of 17.12's two tables as written there, with these changes made while building: none to the sentences; the pushed note reads its two numbers from the bounds.
+
+Not built: the GM's news toast and Table feed line (10.2), for the reason in 17.12. A recap of a session from its facts. A date in the player's own zone for an earned feat (`progressLine` cuts the ISO time, which is UTC, so a feat earned late in the evening west of Greenwich reads as the next day).
+
+Principles read in full this session, and the choice each changed: `principle-model-the-domain` (one `ChronicleView` drawn twice instead of a panel and a window that each read the chronicle; a table of lines keyed by kind that the compiler holds against `Fact`); `principle-boundary-discipline` (the view decides nothing: the first-rows counts, the order and every word are core's); `principle-fix-root-causes` (the tall window fixed in the shell's focus, not by scrolling my window back up); `principle-test-behavior-not-implementation` (each sentence expected from a fact written by hand; the browser cases read the screen); `principle-experience-first` (the panel opens short; the switch stays off the board); `principle-subtract-before-you-add` (feats.js's copy of the book line deleted; no news toast without its rule); `principle-prove-it-works` (each screen looked at, each tap count taken from a browser case); `unslop` and `humanizer` for every sentence.

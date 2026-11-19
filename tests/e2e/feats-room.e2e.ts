@@ -53,4 +53,26 @@ test('the GM\'s own feat reaches a player\'s phone, and the gate the GM clears f
     expect(h.chronicle.feats['first-clear'].at).toBe('earned');
     expect(h.chronicle.facts.filter((f: any) => f.kind === 'gate').map((f: any) => f.name)).toEqual(['Goblin Den']);
   });
+
+  await test.step('the GM\'s board names the player\'s feat, and one tap opens the player\'s Chronicle, read-only', async () => {
+    await dismissAll(gm, 4);
+    await go(gm, 'gm');
+    const tog = gm.locator('[data-tog="party"]');
+    if ((await tog.getAttribute('aria-expanded')) !== 'true') await tog.tap();
+    const line = gm.locator('#gm-board .gm-card.remote', { hasText: 'Mira Test' }).locator('[data-gchron]');
+    await expect(line).toHaveText('Chronicle: 1 feat, First Clear', { timeout: 30_000 });
+    await line.tap();
+    const win = gm.locator('.sys-overlay.show', { has: gm.locator('.chr-win') });
+    await expect(win.locator('.sys-title')).toHaveText('Mira Test');
+    await expect(win).toContainText('From the player\'s phone: its lifetime numbers, its 40 newest feats and its last 8 entries.');
+    const feat = win.locator('[data-chr-earned="first-clear"]');
+    await expect(feat).toContainText('First Clear');
+    await expect(feat).toContainText('Hidden');
+    await expect(feat).toContainText('+1 ability point');
+    await expect(win.locator('.chr-facts li', { hasText: 'Cleared Goblin Den, a rank' })).toHaveCount(1);
+    await expect(win.locator('.chr-facts li', { hasText: 'Earned the hidden feat First Clear.' })).toHaveCount(1);
+    await expect(win.locator('[data-chr-shown], [data-chr-all], input, select, textarea')).toHaveCount(0);
+    await win.locator('.sys-actions button', { hasText: 'Close' }).tap();
+    await expect(win).toHaveCount(0);
+  });
 });

@@ -16,6 +16,7 @@ import { bundleMaker } from './reward-editor.js';
 import { featMaker } from './feat-maker.js';
 import { BUILT_IN_FEATS } from '../core/registry/feats.ts';
 import { featsDoc, ruleLine } from '../core/hunter/feats.ts';
+import { FEATS_SWITCH_WORDS } from '../core/hunter/chronicle-view.ts';
 import { DOC_MAX } from '../core/protocol.ts';
 import { duplicateFeat, featOff, featOn, removeFeat } from '../core/library.ts';
 import { storyMaker } from './story-maker.js';
@@ -160,6 +161,7 @@ export function register(app) {
     const builtFeats = kind === 'feat' ? BUILT_IN_FEATS.filter(([k]) => !Object.hasOwn(lib().feats, k)) : [];
     return `<section class="win ws-sec" data-ws="${kind}" aria-label="${esc(title)}"><span class="cb"></span>
       <div class="ws-head"><h2>${esc(title)}</h2><button type="button" class="primary" data-new>${esc(newLabel)}</button></div>
+      ${kind === 'feat' && !app.rules().feats.on ? `<p class="ws-empty" data-ws-featsoff>${esc(FEATS_SWITCH_WORDS.workshopOff)}</p>` : ''}
       ${rows.length ? `<ul class="ws-list">${rows.map(rowHtml).join('')}</ul>` : `<p class="ws-empty">${esc(empty)}</p>`}
       ${built.length ? `<details class="ws-fold ws-built"><summary>Built-in statuses (${built.length})</summary><ul class="ws-list">${built.map(k => rowHtml([k, String(BUILT_IN_STATUSES[k].label), '', '', ['edit']])).join('')}</ul></details>` : ''}
       ${builtFeats.length ? `<details class="ws-fold ws-built"><summary>Built-in feats (${builtFeats.length})</summary><ul class="ws-list">${builtFeats.map(([k, d]) => rowHtml([k, d.name, '', d.desc, ['edit', 'off']])).join('')}</ul></details>` : ''}

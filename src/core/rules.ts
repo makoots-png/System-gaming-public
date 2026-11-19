@@ -449,6 +449,8 @@ const recOf = (v: unknown): Overrides => (v !== null && typeof v === 'object' &&
 export function saveRuleNumbers(ov: Overrides, parsed: Overrides): Overrides {
   return 'gmTables' in ov ? { ...parsed, gmTables: ov.gmTables } : { ...parsed };
 }
+/** The GM's switch for every feat (`feats.on`) set to `on`, the other overrides kept: the GM view's control beside the rules editor. */
+export const featsSwitched = (ov: Overrides, on: boolean): Overrides => ({ ...ov, feats: { ...recOf(ov.feats), on } });
 /** Every rule number back to its default; the GM's roll tables are kept. */
 export const resetRuleNumbers = (ov: Overrides): Overrides => ('gmTables' in ov ? { gmTables: ov.gmTables } : {});
 /**

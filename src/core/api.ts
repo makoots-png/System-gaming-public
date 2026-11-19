@@ -4,6 +4,7 @@
 // checks what a type cannot: every member declared here is registered by its module, and every one is used. Types are
 // what the module answers: a shape a view builds and reads alone stays `unknown` or a record rather than a guess.
 
+import type { FeatBook } from './hunter/feats.ts';
 import type { LifeEvent } from './hunter/vitals.ts';
 import type { End, Op, SheetStatus, Source, StackRule, StatusDef } from './combat/effect-ops.ts';
 import type { Trigger } from './combat/triggers.ts';
@@ -712,6 +713,14 @@ export type StoriesApi = {
   turnOn(id: StoryId | null): Promise<void>;
 };
 
+/** What the System remembers of a hunter, on screen (src/views/chronicle.js, feature 1's notes 17.12). */
+export type ChronicleApi = {
+  /** The feats that apply on this phone: a player in a room reads the GM's from the room's feats doc, any other phone its own library. */
+  book(): FeatBook;
+  /** Opens a hunter's Chronicle in a read-only window: `id` is a hunter of this phone, or a player's sheet key (its pushed cut). */
+  open(id: string): void;
+};
+
 /** Every `app.api` name and the type of what its module registers. */
 export type AppApi = {
   award: AwardApi;
@@ -719,6 +728,7 @@ export type AppApi = {
   bestiary: BestiaryApi;
   build: BuildApi;
   bundles: BundlesApi;
+  chronicle: ChronicleApi;
   combat: CombatApi;
   detail: DetailApi;
   dice: DiceApi;

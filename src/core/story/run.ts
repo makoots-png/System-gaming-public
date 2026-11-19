@@ -21,7 +21,9 @@ import type { Pickable } from '../party.ts';
 import { newEvent } from '../protocol.ts';
 import type { EventStamp, RoomCode, RoomEvent, SheetKey } from '../protocol.ts';
 import { newRewards } from '../rewards.ts';
-import type { Rewards } from '../rewards.ts';
+import { playerHeld } from '../combat/fight-save.ts';
+import type { HeldFor } from '../combat/fight-save.ts';
+import type { Rank } from '../rules.ts';
 import { CHAPTER_MAX, chapterBody, chapterLanded, chapterSize } from './story.ts';
 import type { Chapter, ChapterBody, ChapterGiven, Story } from './story.ts';
 
@@ -152,8 +154,8 @@ export function keptRuns(runs: readonly StoryRun[]): StoryRun[] {
 }
 
 // ── the one write of a move ──
-/** A player's hunter as the GM's phone holds it: the room's sheet of it, by its key. */
-export type PlayerSheet = { readonly key: SheetKey; readonly data: { readonly name: string } };
+/** A player's hunter as the GM's phone holds it: the room's sheet of it, by its key (its name, and its rank for a status put on its row). */
+export type PlayerSheet = { readonly key: SheetKey; readonly data: { readonly name: string; readonly rank: Rank } };
 /**
  * The room a move sends to: its code, the players' sheets the GM's phone holds (the players' hunters at the table),
  * whether this phone's fight holds a player's hunter on a row, and the stamp of the message's id, made once by the tap.
@@ -166,12 +168,12 @@ export type MoveRoom = { readonly code: RoomCode; readonly sheets: readonly Play
 export type MoveCtx = { readonly day: Day; readonly vitals: (hid: HunterId) => VitalsAt; readonly room: MoveRoom | null };
 /**
  * What a move did: the save after it, the run, each of this phone's hunters given the chapter, the hunters skipped (not at
- * the table), the players' hunters it was posted to, and for each of those whose row this phone's fight holds, the
- * chapter's statuses for that row (its message carries the rest).
+ * the table), the players' hunters it was posted to, and for each of those whose row this phone's fight holds, what the
+ * chapter hands to that row (fight-save.ts `playerHeld`: its statuses; its message carries the rest).
  */
 export type StoryMoved = {
   readonly save: Save; readonly run: StoryRun; readonly granted: readonly { readonly hid: HunterId; readonly g: ChapterGiven }[]; readonly skipped: readonly HunterRef[];
-  readonly posted: readonly SheetKey[]; readonly onRow: readonly { readonly key: SheetKey; readonly statuses: Rewards['statuses'] }[];
+  readonly posted: readonly SheetKey[]; readonly onRow: readonly HeldFor[];
 };
 
 /** The hunters at the table: this phone's, then the players' of the room's sheets the GM's phone holds. */
@@ -220,7 +222,7 @@ export function storyMove(save: Save, runId: StoryRunId, e: RunEvent, ctx: MoveC
         if (!made) throw new Error('the room would refuse a chapter the library holds');
         events.push(made);
       });
-      onRow = held.map(key => ({ key, statuses: body.rewards.statuses }));
+      onRow = playerHeld(room.sheets, held, body.rewards.statuses);
     }
   }
   const names = (refs: readonly HunterRef[]) => refs.map(x => nameOf(save, sheets, x));

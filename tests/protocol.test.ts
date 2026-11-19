@@ -96,7 +96,7 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
 });
 
 describe('every event type', () => {
-  test('the table has an entry for each of the sixteen room messages', () => {
+  test('the table has an entry for each room message, and for nothing else', () => {
     expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'cast', 'chain', 'chapter', 'coinCall', 'coinLand', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'revive', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'status', 'step', 'system', 'used', 'vitals']);
   });
 

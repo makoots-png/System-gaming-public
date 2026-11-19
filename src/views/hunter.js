@@ -19,6 +19,7 @@ import { FELL_WORDS, LIFE_TAG, SAVES_TO_END, WAYS_BACK, can, changeFatigue, chan
 import { chipDef, chipsOf, isStateChip } from '../core/hunter/chips.ts';
 import { oneOf } from '../core/one-of.ts';
 import { gmSource } from '../core/effects.ts';
+import { CHRONICLE_WORDS } from '../core/hunter/chronicle-view.ts';
 import { BUNDLE_NAME, newRewards, parseRewards, parseWords } from '../core/rewards.ts';
 import { LIMITS } from '../core/save.ts';
 import * as motion from './motion.ts';
@@ -338,7 +339,7 @@ export function register(app) {
 
   // ── view + shared helpers ──
   // B8: sticky jump chips (anchors by data-panel + scroll-margin; no layout change)
-  const CHIPS = [['Stats', 'attributes'], ['Build', 'build'], ['Skills', 'skills'], ['Titles', 'titles'], ['Gear', 'equipment'], ['Bag', 'inventory']];
+  const CHIPS = [['Stats', 'attributes'], ['Build', 'build'], ['Skills', 'skills'], ['Titles', 'titles'], [CHRONICLE_WORDS.title, 'chronicle'], ['Gear', 'equipment'], ['Bag', 'inventory']];
   if (!document.getElementById('u17-style')) {
     const st = document.createElement('style'); st.id = 'u17-style';
     st.textContent = `#view-status>.view-main{display:contents}[data-panel]{scroll-margin-top:58px}

@@ -701,3 +701,67 @@ for (const viewport of [SMALL_PHONE, PHONE]) {
     });
   });
 }
+
+for (const viewport of [SMALL_PHONE, PHONE]) {
+  test(`at ${viewport.width} px the Chronicle of a hunter with 40 entries shows the 5 newest and one 44 px button for the rest, and scrolls only up and down, on the sheet and in the GM's window`, async ({ device }) => {
+    const gm = (await device('gm', { viewport })).page;
+    await onboardGM(gm);
+    await gm.evaluate(() => {
+      const s = hunterApp.store, at = (i: number) => new Date(Date.parse('2026-11-01T10:00:00.000Z') + i * 3_600_000).toISOString();
+      const fight = { kind: 'fight', outcome: 'won', rounds: 6, up: true, downs: 0, low: 12, endPct: 12, exactOne: false, struck: 4, hits: 5, crits: 1, critRun: 1, avoided: 0, dealt: 60, taken: 40, healed: 0, raised: 0, hexes: 0,
+        kills: 2, bosses: 0, turnKills: 1, items: 0, allies: 1, alliesDown: 0, sideUp: 2, foes: 3, foeTop: 0, bossTop: null, gate: 'The Drowned Cathedral of Saint Averno', names: '3 Goblins, Hobgoblin, Goblin Shaman, 2 Dire Wolves' };
+      const facts = Array.from({ length: 40 }, (_, i) => ({ ...(i % 2 ? fight : { kind: 'level', level: i + 2 }), at: at(i), day: '2026-11-01', session: i < 4 ? 0 : 3 }));
+      const told = ['threads-end', 'uphill', 'three-in-a-breath', 'payback'];
+      s.device('feat-told:' + s.active().id).write(told);
+      s.update(() => {
+        const h = s.active();
+        h.chronicle = { inbox: [], facts, tally: { ...h.chronicle.tally, won: 12, kills: 1048, gates: 5, fell: 3, feats: 4 },
+          feats: { ...Object.fromEntries(told.map((k, i) => [k, { at: 'earned', on: at(i), name: k === 'threads-end' ? 'Thread\'s End' : k }])), ratcatcher: { at: 'shown', n: 25 } } };
+      }, 'test-setup');
+    });
+    const audit = (root: import('./helpers.ts').Page | any) => root.evaluate((el: HTMLElement) => ({
+      out: [...el.querySelectorAll('li, dd, dt, p, button')].filter(c => { const r = c.getBoundingClientRect(); return r.width > 0 && (r.left < 0 || r.right > innerWidth + 0.5); }).length,
+      page: document.documentElement.scrollWidth - innerWidth,
+    }));
+
+    await test.step('the sheet\'s panel, short and then whole', async () => {
+      await go(gm, 'status');
+      const chip = gm.locator('#view-status [data-jump="chronicle"]');
+      await expect(chip).toHaveText('Chronicle');
+      await chip.tap();
+      const panel = gm.locator('#view-status [data-panel="chronicle"]');
+      await expect(panel.locator('.chr-nums div')).toHaveCount(5);
+      await expect(panel.locator('[data-chr-earned]')).toHaveCount(3);
+      await expect(panel.locator('[data-chr-shown]')).toHaveCount(3);
+      await expect(panel.locator('.chr-facts li')).toHaveCount(5);
+      await expect(panel.locator('.chr-facts li').first()).toContainText('Won a fight in The Drowned Cathedral of Saint Averno against 3 Goblins, Hobgoblin, Goblin Shaman, 2 Dire Wolves in 6 rounds, at 12% HP.');
+      const all = panel.locator('[data-chr-all]');
+      await expect(all).toHaveText(/^Show all: 4 feats, \d+ in progress, 40 entries$/);
+      expect((await all.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+      expect(await audit(panel)).toEqual({ out: 0, page: 0 });
+      await all.tap();
+      await expect(panel.locator('.chr-facts li')).toHaveCount(40);
+      await expect(panel.locator('[data-chr-earned]')).toHaveCount(4);
+      await expect(all).toHaveText('Show less');
+      expect(await audit(panel)).toEqual({ out: 0, page: 0 });
+    });
+
+    await test.step('the GM\'s board button and the window it opens, which starts at its title', async () => {
+      await go(gm, 'gm');
+      const tog = gm.locator('[data-tog="party"]');
+      if ((await tog.getAttribute('aria-expanded')) !== 'true') await tog.tap();
+      const line = gm.locator('#gm-board .gm-card [data-gchron]').first();
+      await expect(line).toHaveText('Chronicle: 4 feats, newest payback');
+      const box = (await line.boundingBox())!;
+      expect(box.height).toBeGreaterThanOrEqual(44);
+      expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+      await line.tap();
+      const win = gm.locator('.sys-overlay.show .sys-window', { has: gm.locator('.chr-win') });
+      await expect(win.locator('.chr-facts li')).toHaveCount(40);
+      expect(await win.evaluate(el => el.scrollTop), 'a window taller than the screen opens at its title').toBe(0);
+      await expect(win.locator('.sys-title')).toBeInViewport();
+      expect(await audit(win)).toEqual({ out: 0, page: 0 });
+      expect(await win.locator('.chr-win').evaluate(el => el.scrollWidth - el.clientWidth), 'the Chronicle is no wider than its window').toBeLessThanOrEqual(1);
+    });
+  });
+}

@@ -446,3 +446,18 @@ What a player sees: when a hunter does something the System counts (a fight won 
 - A player who finishes a chapter's quest moves nothing. The story waits for your tap.
 - A player who joins late gets the chapters you open after that. To catch them up, open the chapter again: only the hunters who have not had it are ticked.
 - A chapter too large to send to players' phones (many big items) still opens for the hunters on your own phone. The story maker already stops you from saving one.
+
+## Stories, unit 5: a title in another's place (Nov 19)
+
+- A reward's title row has "In place of". Write the name of a title the hunter holds and that title becomes the new one: one title on the sheet, still active if it was, with the new name and bonus. It works in a story's chapter, an award, a bundle, a quest's reward and a feat.
+- A hunter who does not hold the named title gets the new one as a new title. Say "give nothing then" to have it the other way.
+- A title given in another's place counts as a title given in the hunter's record.
+
+## Feats, unit 7: the screens (Nov 19)
+
+- A hunter's sheet has a Chronicle panel after Titles: five lifetime numbers, the feats earned, the feats in progress and what happened, newest first. It opens short (3 feats, 3 in progress, 5 entries) with one button for the rest. Say "show everything" to have it open whole.
+- Each entry is one plain sentence with its numbers, such as "Won a fight in Goblin Den against 3 Goblins in 6 rounds, at 12% HP."
+- Hidden feats that are not earned are not listed and not counted. One line says some feats stay hidden.
+- On the GM's board each card has a Chronicle button that says how many feats the hunter has and the newest. It opens that hunter's Chronicle to read. For a player's hunter it shows what the phone sent: the numbers, the 40 newest feats and the last 8 entries.
+- "The System notices feats" is an On and Off switch at the top of Rules editor in the GM view. Off stops every feat for the table and keeps the earned ones. Say "put it on the Party board" or "put it in the Workshop" to move it.
+- Not built: a toast on the GM's phone when a player earns a feat. The board's button shows the newest feat meanwhile.

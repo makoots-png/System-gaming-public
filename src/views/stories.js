@@ -14,7 +14,6 @@ import { END_HOLD_MS, RUN_REFUSAL_WORDS, STORY_WORDS as W, atTable, givesLine, h
 import { chapterWindow, storyMeta, whoseLine } from '../core/story/story.ts';
 import { grantLines, isEmptyReward } from '../core/rewards.ts';
 import { stepTime } from '../core/day.ts';
-import { gmSource } from '../core/effects.ts';
 import { postNews } from '../core/sync/connection.ts';
 import { cryptoRandom } from '../edge/roll.ts';
 import { isRefused } from '../core/save-step.ts';
@@ -79,12 +78,10 @@ export function register(app) {
     /** @type {import('../core/story/run.ts').MoveRoom | null} the stamp of the message's id is made once, so the step read twice posts the same message */
     const room = app.seat() === 'gm' && code !== null ? { code, sheets: players, onRow, stamp: { device: S().settings.deviceId, now: Date.now(), rand: cryptoRandom() } } : null;
     const ctx = { day, vitals: hid => (A().hunter.fightOf({ hid }) ? 'fight' : 'sheet'), room };
-    const rankOf = key => (players.find(x => x.key === key) || { data: { rank: 'E' } }).data.rank;
-    // a player's hunter on a row of this phone's fight: the chapter's statuses go on its row in the same write, as Award's do (gm.js `sendAward`)
-    const rowParts = m => m.onRow.map(({ key, statuses }) => ({ who: { key }, statuses: statuses.map(st => ({ key: st.key, rounds: st.rounds ?? null, source: gmSource(rankOf(key)), ...(st.def ? { def: st.def } : {}) })), refill: false }));
+    // a player's hunter on a row of this phone's fight: the chapter's statuses go on its row in the same write (`m.onRow`, fight-save.ts `playerHeld`)
     const out = A().hunter.grantWrite(`story-${e.type}`, s => {
       const m = storyMove(s, runId, e, ctx);
-      return isRefused(m) ? m : { ...m, held: [...m.granted.map(({ hid, g }) => ({ who: { hid }, ...g.fight })), ...rowParts(m)] };
+      return isRefused(m) ? m : { ...m, held: [...m.granted.map(({ hid, g }) => ({ who: { hid }, ...g.fight })), ...m.onRow] };
     });
     if (isRefused(out)) return out;
     if (out.posted.length) A().sync.flush();

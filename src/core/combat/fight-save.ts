@@ -14,14 +14,15 @@
 // the fight does (grant.ts `Granted.fight`) on the hunter's row in the grant's own write: `heldCommands` are the fight's
 // commands for those parts, reduced as one (fight.ts `reduceAll`) and written by `fought` with the grant's step as its
 // `also` (combat.js `held`, hunter.js `grantWrite`). The reward is paid with its statuses on the rows, or not at all.
-import { rowFacts } from './fight-facts.ts';
+import { rankSeen, rowFacts } from './fight-facts.ts';
 import { record } from '../hunter/chronicle.ts';
 import type { Save } from '../save.ts';
-import type { Rules } from '../rules.ts';
+import type { Rank, Rules } from '../rules.ts';
 import type { Command, Effect, Ended, Fight, Result } from './fight-types.ts';
 import { statusKey } from './effect-ops.ts';
 import type { StatusDef } from './effect-ops.ts';
 import { grantLines, newRewards } from '../rewards.ts';
+import type { Rewards } from '../rewards.ts';
 import { statusGrant } from './fight-view.ts';
 import type { StatusIn } from '../hunter/conditions.ts';
 import { isStateChip } from '../hunter/chips.ts';
@@ -30,7 +31,7 @@ import type { RoomCode, RoomEvent } from '../protocol.ts';
 import type { Stamp } from '../session-log.ts';
 import { atHunter, isRefused, refuse } from '../save-step.ts';
 import type { Refused, Step } from '../save-step.ts';
-import { sheetEdit } from '../hunter/grant.ts';
+import { sheetEdit, statusGiven } from '../hunter/grant.ts';
 import { setShadowHp } from '../hunter/shadows.ts';
 import { gateFightStarted } from '../gates/world.ts';
 import { atOutbox, post } from '../sync/outbox.ts';
@@ -154,6 +155,16 @@ export function heldCommands(f: Fight | null, parts: readonly HeldParts[], R: Ru
 // ── who a fight holds (implicit audit 3, CU1) ──
 /** Whom a question is about: a hunter of this phone, or a player's hunter by its sheet key. */
 export type Held = { readonly hid: string } | { readonly key: string };
+/** What a grant hands to a fight for one hunter (hunter.js `grantWrite` puts it on the hunter's row when this phone's fight holds it). */
+export type HeldFor = { readonly who: Held; readonly statuses: readonly StatusIn[]; readonly refill: boolean };
+/**
+ * What a reward hands to the rows of the players' hunters `keys` that this phone's fight holds: its statuses, each from
+ * the GM at that hunter's rank (grant.ts `statusGiven`, the rank from its sheet in `sheets`, `rankSeen` when the sheet is
+ * not on this phone), and no refill. A hunter of this phone gets its parts from `grant` (`Granted.fight`); a player's
+ * hunter is granted on its own phone, so the GM's phone makes the row's part here and the message carries the rest.
+ */
+export const playerHeld = (sheets: readonly { readonly key: SheetKey; readonly data: { readonly rank: Rank } }[], keys: readonly SheetKey[], statuses: Rewards['statuses']): HeldFor[] =>
+  keys.map(key => ({ who: { key }, statuses: statuses.map(s => statusGiven(s, rankSeen(sheets.find(x => x.key === key)?.data.rank ?? null))), refill: false }));
 /** What a player's phone reads of the GM's fight: the room's fight doc, as `DOCS.fight` parsed it. */
 export type TableDoc = { readonly ended: boolean; readonly active?: boolean; readonly rows?: readonly { readonly key?: string | null }[] };
 /**
