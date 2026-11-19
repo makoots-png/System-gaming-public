@@ -21,8 +21,10 @@
 //   at worst, so 3; a use is the fight's redraw (the store's update, the card and order in place, the map's tokens and the
 //   number rising) and keeps the fight's own limit of 6. After the final unit's step 0 (docs/agent-handoff/final/notes-final.md)
 //   twenty runs gave a median of 50 ms and a worst of 83.4 ms (five frames).
-// - the odds (src/core/combat/odds.ts, docs/agent-handoff/features/notes-6-odds.md): the engine plays a few commands a
-//   frame, `ODDS_FRAME_MS` (6 ms) of them, so the screen must keep the plain limit of 3 frames while 100 fights play.
+// - the odds (src/core/combat/odds.ts, docs/agent-handoff/audit/notes-lag-steal.md): the engine plays on a worker thread
+//   (`playAway`, src/edge/odds-run.ts) and the page draws the newest count once a frame (odds-box.js), so the screen must
+//   keep the plain limit of 3 frames while 100 fights play. The CPU throttle does not reach the worker, so this measures
+//   the page's drawing of the count, not the engine.
 // FEEL_CPU=1 runs the same test unthrottled and FEEL_MOTION=reduce with every move cut, for the measurements in the notes.
 import type { Page } from '@playwright/test';
 import { test, expect, onboardGM, onboardPlayer, go, startGoblinDenFight, createRoom, dismissAll, PHONE, chooseList } from './helpers.ts';

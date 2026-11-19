@@ -4,6 +4,10 @@ A phone-first tabletop RPG companion. A GM phone and player phones share a room.
 
 This file is the index of the guide. It is loaded into every session, so it stays at most 150 lines. The long parts are in `docs/guide/`, one file for each area.
 
+## Who owns this
+
+the owner (Nov 19): "You own the repo, same as the other one. They're yours and will be maintained by you for a long time." Both repositories, `the-owner/systemgaming` (private, the working one) and `the-owner/System-gaming-public` (the public clean copy, where the browser tests run), are owned and managed by Claude sessions from now on. Change whatever they need as you see fit. Two things stay his: only the clean copy that `scripts/ci-public.sh` makes ever goes to the public repository, and the skills in `.claude/skills/` are not edited. His standing rules are in `docs/agent-handoff/START-HERE.md`.
+
 ## Set up once
 
 ```

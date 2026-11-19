@@ -482,6 +482,72 @@ for (const viewport of [SMALL_PHONE, PHONE]) {
   });
 }
 
+test('a player who closes a status chip\'s or a sheet number\'s detail opens it again with the next tap', async ({ device }) => {
+  const p = (await device('detail-again', { viewport: PHONE })).page;
+  await onboardPlayer(p, 'Mira Test');
+  await dismissAll(p);
+  await p.evaluate(() => {
+    const h = hunterApp.store.active();
+    hunterApp.api.hunter.addCondition(h.id, { key: 'poisoned', def: hunterApp.rules().conditions.poisoned, rounds: 3, source: { id: null, tier: 0 } });
+  });
+  await go(p, 'status');
+  const thrice = async (control: Locator, detail: Locator) => {
+    await control.tap();
+    await expect(detail).toBeVisible();
+    await control.tap();
+    await expect(control).toHaveAttribute('aria-expanded', 'false');
+    await expect(detail).toHaveCount(0);
+    await control.tap();
+    await expect(control).toHaveAttribute('aria-expanded', 'true');
+    await expect(detail).toBeVisible();
+  };
+  await test.step('Poisoned\'s chip opens, closes and opens again', () =>
+    thrice(p.locator('#view-status [data-chips] [data-chip="poisoned"] [data-dt-key]'), p.locator('#view-status [data-chips] .dt')));
+  await test.step('Armor opens, closes and opens again', () =>
+    thrice(p.locator('#view-status [data-dv-k="armor"]'), p.locator('#view-status [data-dv] .dt')));
+});
+
+test('a GM who closes a monster ability\'s detail on its card opens it again with the next tap', async ({ device }) => {
+  const gm = (await device('gm', { viewport: PHONE })).page;
+  await onboardGM(gm);
+  await chooseList(gm);
+  await startGoblinDenFight(gm);
+  const ability = gm.locator('#view-combat .cmb-x.abil .cmb-ai').first(), detail = gm.locator('#view-combat .cmb-x.abil .dt');
+  await ability.tap();
+  await expect(detail).toBeVisible();
+  await ability.tap();
+  await expect(detail).toHaveCount(0);
+  await ability.tap();
+  await expect(ability).toHaveAttribute('aria-expanded', 'true');
+  await expect(detail).toBeVisible();
+});
+
+test('a GM who closes a hotbar ability\'s detail on the map opens it again with the next press and hold', async ({ device }) => {
+  const gm = (await device('gm', { viewport: PHONE })).page;
+  await onboardGM(gm);
+  await go(gm, 'combat');
+  const combat = gm.locator('#view-combat');
+  await combat.locator('[data-hsel]').selectOption({ label: 'Brakk Ironhide' });
+  await combat.locator('[data-addh]').tap();
+  await combat.locator('[data-qline]').fill('Cave Rat x1, E, brute');
+  await combat.locator('[data-qadd]').tap();
+  await combat.locator('[data-start]').tap();
+  const map = combat.locator('[data-mapbox]');
+  const slot = map.locator('[data-hot] [data-ab]').first(), detail = map.locator('[data-mapdt] .dt');
+  const hold = async () => {
+    const box = (await slot.boundingBox())!;
+    await gm.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await gm.mouse.down();
+    await expect(detail).toBeVisible();
+    await gm.mouse.up();
+  };
+  await hold();
+  await detail.tap();
+  await expect(detail).toHaveCount(0);
+  await hold();
+  await expect(detail).toContainText(await slot.locator('span').first().innerText());
+});
+
 test('shadows take no room until someone holds one: the GM\'s Add to the fight form has no shadow block with none summoned and shows it once one is, and a player sees the Shadows tab only with a job that extracts or a shadow of their own', async ({ device }) => {
   const gm = (await device('gm', { viewport: PHONE })).page;
   await onboardGM(gm);

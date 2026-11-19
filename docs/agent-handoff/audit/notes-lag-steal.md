@@ -120,3 +120,72 @@ What would move it, not tried: `store.apply` repairs the whole save after every 
 | odds (3) | 17, 17, 33, 33, 33, 33 | 33 (2) | 52 |
 
 Failed cases per run: 0, 0, 2, 1, 2, 0 (baseline 3, 1, 2, 1, 1, 1). The odds no longer fail (4 of 6 at baseline). The fight turn, the maker's tap, the map use and once the player watching still cross their bounds; the fight turn's spread is as wide as at baseline.
+
+# The save's repair on every write (lag-store)
+
+19 November 2026, branch `lag-store` from 6ae095b, a box booted at 19:40 UTC (4 CPUs). Every run under `flock /tmp/box.lock`, `E2E_CHROMIUM=/opt/google/chrome/chrome`, nothing else running.
+
+## Baseline at 6ae095b, 6 runs (19:42 to 19:48)
+
+| Case (bound in frames) | worst frame per run (ms) | worst tap per run (ms) |
+|---|---|---|
+| fight turn (6) | 67, 50, 33, 67, 50, 33 | 63, 49, 47, 63, 57, 46 |
+| watching the GM (3) | 17 in all | none |
+| maker opening (5) | 33, 67, 33, 33, 33, 17 | 58, 99, 55, 61, 68, 54 |
+| sheet scroll (3) | 17 in all | 17 at most |
+| map pan and pinch (3) | 17 in all | 24 at most |
+| map ability picked (3) | 33, 17, 17, 17, 17, 17 | 55, 42, 46, 42, 43, 46 |
+| map use (6) | 67, 50, 100, 67, 50, 50 | 50, 46, 70, 48, 48, 49 |
+| odds (3) | 17 in all | 35 at most |
+
+Failed cases per run: 0, 0, 0, 0, 0, 0. On this boot the test did not reproduce the failures the brief names. The margins are thin: the map use reached its bound (100 ms, 6 frames) once and the maker's tap was 99.2 ms against 100.
+
+## The repair's share of a write, measured first
+
+A probe (removed) timed each part of `store.apply` and `store.update` with `performance.now()` inside the lag test's fight turn and map use at 4x, 3 runs, 7 writes. Per write, in ms:
+
+| part | combat-act (5 writes) | combat-endTurn (3 writes) |
+|---|---|---|
+| the step (`fought`) | 1.5 to 2.7 | 0.2 to 0.7 |
+| the notice step | 0 to 0.8 | 0 |
+| `writeInto` | 0.1 to 1.1 | 0.2 to 1.1 |
+| `repairSave` (`'kept'`) | 3.0 to 7.2 | 3.1 to 4.8 |
+| the store's life (`carry`) | 0 to 0.2 | 0 to 0.5 |
+| `emit` (subscribers; the redraw itself waits for the frame) | 0.2 to 2.7 | 0.8 to 1.5 |
+
+`writeInto` is not the cost: a step shares what it does not change, and the walk stops at a shared object. The repair is about half of a write and about a tenth of the tap's click task (30 to 51 ms in the earlier trace), and none of the redraw frame that follows it. The maker opening writes nothing (no write in its window), so the repair cannot be part of its tap.
+
+## Hypothesis 1 (reverted): a step's answer is written without the repair
+
+Commit 2589d78: `apply` writes the step's answer and the notice step's, then stores and announces it; `update` (a test's setup, the console) still repairs. Repair stays at the boundaries that read outside data: load, import, restore, another tab's write, reset, a room message's reader, a player's sheet. `tests/trusted-steps.test.ts` walks a campaign through 13 core steps as the store runs them and checks `repairChanges` (save.ts) is empty after each. The walk found one step that leaned on the repair: `logLine` did not bound a line's title and text, so a line of 600 characters was cut only by the repair. The commit bounds it in `logLine`.
+
+6 runs (20:10 to 20:16):
+
+| Case (bound) | baseline worst frame (ms) | without the repair | baseline worst tap (ms) | without the repair |
+|---|---|---|---|---|
+| fight turn (6) | 67, 50, 33, 67, 50, 33 | 50, 33, 67, 50, 50, 50 | 63, 49, 47, 63, 57, 46 | 39, 43, 51, 56, 58, 50 |
+| map use (6) | 67, 50, 100, 67, 50, 50 | 83, 67, 50, 83, 50, 50 | 50, 46, 70, 48, 48, 49 | 50, 43, 45, 52, 42, 39 |
+| maker opening (5) | 33, 67, 33, 33, 33, 17 | 33 in all | 58, 99, 55, 61, 68, 54 | 58, 61, 50, 55, 56, 57 |
+
+Failed cases per run: 0 in all six, as at baseline. The fight turn's tap median moved from 53.2 to 50.7 ms and the map use's from 48.7 to 43.6 ms, both inside the range of the other side (rank-sum U of 13 and 9 of 36 pairs; two-sided 0.05 needs 5 or less). The worst frames did not move. The 3 to 7 ms a write saves is real but smaller than a 60 Hz frame and than the spread, so by the brief's rule it is reverted (4908ac4). Its commit keeps it whole with its test, if it is wanted for the boundary's sake rather than the lag's.
+
+What limits each case now (from the trace in the second pass, not taken again): the fight turn's worst frame is the redraw after the command, its script mostly `slideTo`'s read of the rows forcing layout, then paint; the map use is the same redraw with the tokens; the maker's tap is the window's first style and layout forced by `focus()`. Hypothesis 2 (the command's write and its redraw in separate frames) was not tried: the brief gives it only if hypothesis 1 is not enough, and the test held 6 of 6 at baseline on this boot.
+
+## Final: 6 runs at 073ac6e (the app as at 6ae095b), 20:25 to 20:42
+
+| Case (bound) | worst frame per run (ms) | worst tap per run (ms) |
+|---|---|---|
+| fight turn (6) | 50, 83, 67, 67, 50, 50 | 50, 58, 53, 56, 70, 58 |
+| watching the GM (3) | 83, 33, 17, 33, 17, 33 | none |
+| maker opening (5) | 33, 50, 33, 33, 33, 50 | 64, 77, 64, 62, 57, 81 |
+| sheet scroll (3) | 17 in all | 18 at most |
+| map pan and pinch (3) | 17 in all | 22 at most |
+| map ability picked (3) | 17, 50, 17, 33, 33, 33 | 52, 73, 46, 64, 49, 54 |
+| map use (6) | 100, 67, 67, 67, 67, 67 | 55, 58, 55, 52, 47, 54 |
+| odds (3) | 17 in all | 45 at most |
+
+Failed cases per run: 1, 0, 0, 0, 0, 0. The failure was the player watching the GM's turn: one gap of 83.3 ms among 411 frames, with no long task on the player's page (none over 50 ms). It is not a write's repair (the brief's three cases did not fail) and neither hypothesis reaches it. The second pass saw the same 83 ms once in that case. The lock was waited on by another helper's run during these six, and a gap of 7 minutes fell between runs 3 and 4 (the box paused or the lock was held); each run itself took 41 to 42 s.
+
+Over the 18 runs today with the repair on every write (12) or off it (6): 1 failed case, in the watching case. The fight turn reached 83 ms once (bound 100), the map use 100 ms twice (at its bound), the maker's tap 99.2 ms once (bound 100); in the three probed runs of the fight, maker and map cases the maker's tap was 100.3 ms once, a failure, in a case that writes nothing.
+
+Checks at c6d3070: `bun run test` 4237 pass, 3 skip, 0 fail; `save.e2e.ts` 19 passed, `room-sync.e2e.ts` 2 passed, `combat-turns.e2e.ts` 19 passed, one worker each.

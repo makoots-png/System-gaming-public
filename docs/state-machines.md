@@ -2040,3 +2040,44 @@ Where it lives:
 | Who calls it | the taps of `src/views/stories.js` (the GM view's Stories section, its turn-on and open windows, End's held toast) |
 | The test to copy | `tests/run.test.ts`; the walk's events are in `tests/models/story-events.ts` |
 | The recipe | docs/guide/hunters.md, "A state or event of the ... machine" |
+
+## A list's open detail
+
+Every state reachable from a closed list of two things, under the 5 events of tests/models/detail-open-events.ts, breadth first. The walk found 3 states and 10 steps.
+
+### One list's open detail
+
+```mermaid
+---
+title: One list's open detail
+---
+stateDiagram-v2
+  state "All closed" as s1
+  state "Thing a open" as s2
+  state "Thing b open" as s3
+  [*] --> s1
+  s1 --> s2 : a tap on thing a (on the map, a hold)
+  s1 --> s3 : a tap on thing b (on the map, a hold)
+  s2 --> s1 : a tap on thing a (on the map, a hold)
+  s2 --> s3 : a tap on thing b (on the map, a hold)
+  s2 --> s1 : closed (a tap on the map's detail, an ability picked)
+  s2 --> s1 : thing a dropped (a hold that was not one, or gone from the screen)
+  s3 --> s2 : a tap on thing a (on the map, a hold)
+  s3 --> s1 : a tap on thing b (on the map, a hold)
+  s3 --> s1 : closed (a tap on the map's detail, an ability picked)
+  s3 --> s1 : thing b dropped (a hold that was not one, or gone from the screen)
+```
+
+A list is the things one view draws together (the sheet's status chips, the GM card's abilities, the map's hotbar and zones), two of them here. Each move is drawn by the view's redraw, a close as an open; an event that changes nothing (a close on a closed list, a drop of a thing not open) is no move and draws nothing. Every list is closed when the app opens.
+
+3 chart states, 10 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `DetailOpen`, `DetailEvent`, `DETAIL_OPEN_STATES` and `DETAIL_EVENTS` in `src/core/detail-open.ts` |
+| What changes it | `detailStep(open, event)` and its `TABLE`, through `move` in `src/views/detail.js`, which keeps each list's value and redraws |
+| Who calls it | a tap on a control `wire` sees (every view that draws a detail), and `src/views/map.js` (a hold on the hotbar, a zone tapped, its detail tapped, an ability picked, a thing gone) |
+| The test to copy | `tests/detail-open.test.ts`; the walk's events are in `tests/models/detail-open-events.ts`; on screen, `tests/e2e/look.e2e.ts` ("opens it again") |
+| The recipe | docs/guide/makers.md, "More info on a thing" |

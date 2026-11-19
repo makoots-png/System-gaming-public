@@ -26,6 +26,7 @@ import { penalty } from './charts/penalty.ts';
 import { quest } from './charts/quest.ts';
 import { shadow } from './charts/shadow.ts';
 import { extraction } from './charts/extraction.ts';
+import { detailOpen } from './charts/detail-open.ts';
 import { stacks } from './charts/stacks.ts';
 import { trips } from './charts/trips.ts';
 import { delayed } from './charts/delayed.ts';
@@ -71,7 +72,7 @@ export type Machine<S, E> = {
 /** Lets the list below hold machines of different state types. A function declaration, so the chart files can call it while this file is still loading them. */
 export function machine<S, E>(m: Machine<S, E>): Machine<unknown, unknown> { return m as unknown as Machine<unknown, unknown>; }
 
-export const MACHINES: readonly Machine<unknown, unknown>[] = [fight, channel, stacks, trips, delayed, zone, summon, uses, reaction, edge, shove, stealth, ward, extras, gate, link, life, penalty, jobChain, coin, onboarding, gestureChart, choiceChart, shadow, extraction, quest, db, upgrade, outbox, publish, store, odds, soloClock, soloWait, feat, offerRoom, offerGiver, offerTaker, offerWatch, story];
+export const MACHINES: readonly Machine<unknown, unknown>[] = [fight, channel, stacks, trips, delayed, zone, summon, uses, reaction, edge, shove, stealth, ward, extras, gate, link, life, penalty, jobChain, coin, onboarding, gestureChart, choiceChart, shadow, extraction, quest, db, upgrade, outbox, publish, store, odds, soloClock, soloWait, feat, offerRoom, offerGiver, offerTaker, offerWatch, story, detailOpen];
 
 // ── walking ──
 /** Breadth first from `starts`: every state `moves` reaches, one per key. `maxDepth` bounds a machine with no end of states. */

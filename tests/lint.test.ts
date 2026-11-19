@@ -979,7 +979,7 @@ test('a view keeps no machine in flags: its closure state is counted per file, a
   // a view keeps the one value it feeds and the UI values no rule reads. A `let` at the top of a module, of `register` or
   // of a component's `mount` (four spaces in or less) is counted, and each file's count is what it holds.
   const named: Record<string, { count: number; why: string }> = {
-    'src/views/map.js': { count: 16, why: 'the two machines\' values (choice, g), the scene and what the last frame drew (fitted, areaSig, along, draws, zonesWas, far, seen, sized, overWas), the frame\'s place under a finger, the hold timer, the paint brush, the open detail, the news line\'s timer' },
+    'src/views/map.js': { count: 15, why: 'the two machines\' values (choice, g), the scene and what the last frame drew (fitted, areaSig, along, draws, zonesWas, far, seen, sized, overWas), the frame\'s place under a finger, the hold timer, the paint brush, the news line\'s timer; the open detail is detail.js\'s' },
     'src/views/maker.js': { count: 15, why: 'the makers\' window stack and form (body, me, form, asking, previewEl), the formula field (ticks, type, gapOn, text, kind), an effect row\'s amount and value, the field\'s end editor (zendFx), the ability form\'s kind' },
     'src/views/combat.js': { count: 9, why: 'the GM\'s fight screen: the side marked surprised, the doc\'s last refusal and burst, what is open over the map (over), the root and the map\'s handle, and locals of three functions (aim twice, actions); the odds\' run is odds-box.js\'s' },
     'src/views/gm.js': { count: 8, why: 'the root, the Award editor\'s and Issue quest\'s handles, the reward the Award form opens with (pendingAward), and locals of a tool\'s form (n, msg, text, parsed)' },
@@ -1245,7 +1245,7 @@ test('every Map, Set, list or object a view keeps for the page is named here wit
     'coin.js fresh': 'the coins that landed while this page was open and whose result card is not closed: ' + what.shown,
     'combat.js picks': 'the target each row\'s move control and use picker start on, by row id: ' + what.shown,
     'combat.js amounts': 'the HP amount typed on a row\'s card before Damage or Heal is tapped, by row id: ' + what.shown,
-    'detail.js open': 'the open detail of each list, list name to key: ' + what.shown,
+    'detail.js open': 'the open detail of each list, list name to its state of src/core/detail-open.ts, the one place it is kept: ' + what.shown,
     'dice.js shown': 'the faces of the latest 20 rolls with their fates, by roll id (the log keeps the faces): ' + what.drawn,
     'gates.js asking': 'the gate news windows asked for and not answered yet, by room, kind and gate (told when answered): ' + what.shown,
     'feats.js asking': 'the feat windows asked for and not answered yet, by hunter and key (told when answered): ' + what.shown,

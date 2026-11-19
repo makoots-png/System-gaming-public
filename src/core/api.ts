@@ -41,6 +41,7 @@ import type { Terrain } from './combat/space.ts';
 import type { ZoneId } from './combat/zones.ts';
 import type { DiceRoll, LevelUp } from './events.ts';
 import type { Thing } from './detail.ts';
+import type { DetailEvent } from './detail-open.ts';
 import type { Coin, RollId, CoinSide } from './coin.ts';
 import type { Check, RollKind } from './roll.ts';
 import type { DeviceId, HunterId, HunterRef, MonsterId, RollEntryId, SheetKey, StoryId } from './ids.ts';
@@ -185,9 +186,10 @@ export type DetailApi = {
   control(list: string, key: string): string;
   panel(list: string, key: string, thing: Thing | null | (() => Thing | null), titled?: boolean): string;
   wire(root: HTMLElement, redraw: () => void): void;
-  show(list: string, key: string, redraw: () => void): void;
-  close(list: string): void;
-  isOpen(list: string, key: string): boolean;
+  /** Moves `list`'s open detail by `e` (src/core/detail-open.ts) and draws the change with `redraw`, a close as an open. */
+  move(list: string, e: DetailEvent, redraw: () => void): void;
+  /** The key whose detail is open in `list`, or null. */
+  openIn(list: string): string | null;
 };
 
 export type DiceApi = {

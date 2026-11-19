@@ -296,7 +296,7 @@ export function register(app) {
       for (const fx of r.fx) {
         switch (fx.kind) {
           case 'card': src.card(fx.id); break;
-          case 'zone': showDetail(`zone:${fx.id}`); break;
+          case 'zone': D().move('map', { kind: 'toggle', key: `zone:${fx.id}` }, drawDetail); break;
           case 'refuse': toast('Out of reach.'); break;
           case 'offTurn': src.offTurn(); break;
           case 'move': src.move(fx.to, fx.dash); break;
@@ -385,8 +385,8 @@ export function register(app) {
           case 'putBack': { const t = tokEl(fx.tok); if (t) { t.classList.remove('lifted'); t.style.transform = t.dataset.at || ''; } break; }
           case 'tap': tapAt(fx.target); break;
           case 'press': run(fx.control); break;
-          case 'detail': showDetail(`ab:${fx.control.slice(fx.control.indexOf(':') + 1)}`); break;
-          case 'undetail': if (mapDt === `ab:${fx.control.slice(fx.control.indexOf(':') + 1)}`) closeDetail(); break;
+          case 'detail': D().move('map', { kind: 'toggle', key: `ab:${fx.control.slice(fx.control.indexOf(':') + 1)}` }, drawDetail); break;
+          case 'undetail': D().move('map', { kind: 'drop', key: `ab:${fx.control.slice(fx.control.indexOf(':') + 1)}` }, drawDetail); break;
           case 'drop': if (src.place) src.place(fx.tok, fx.to); break;
           case 'paint': if (brush && src.paint) src.paint(/** @type {any} */ (fx.tiles), brush.zone ? { zone: brush.zone } : { terrain: brush.terrain }); break;
           default: break;
@@ -449,13 +449,13 @@ export function register(app) {
         case 'pass': if (scene) act({ kind: 'pass', scene }); redrawSoon(); return;
         case 'pin': pin(arg); return;
         case 'ab': pick(arg); return;
-        case 'dt': closeDetail(); return;
+        case 'dt': D().move('map', { kind: 'close' }, drawDetail); return;
         default: return;
       }
     }
     /** An ability from the hotbar: its reach and targets show (a self ability is aimed at once); a second tap puts it down. */
     function pick(id) {
-      if (mapDt) closeDetail();
+      D().move('map', { kind: 'close' }, drawDetail);
       const k = src.kit(), a = k && k.list.find(x => x.id === id);
       if (scene && a && act({ kind: 'pick', scene, ability: a })) draw();
     }
@@ -468,8 +468,6 @@ export function register(app) {
     }
 
     // ── more info: a zone tapped, or an ability held on the hotbar, opens its detail under the map (app.api.detail) ──
-    /** The detail this map asked for: `ab:<ability id>` or `zone:<zone id>`; one at a time. */
-    let mapDt = null;
     /** @returns {import('../core/detail.ts').Thing | null} */
     function thingOf(key) {
       const [kind, id] = [key.slice(0, key.indexOf(':')), key.slice(key.indexOf(':') + 1)];
@@ -477,16 +475,11 @@ export function register(app) {
       const z = scene && scene.zones.find(x => x.id === id);
       return z ? { kind: 'zone', name: z.name, tone: z.tone, left: z.left, ops: z.ops ?? null, tier: z.tier ?? 0 } : null;
     }
+    /** The map's open detail (the list `map` of app.api.detail: `ab:<ability id>` or `zone:<zone id>`) under the map. */
     function drawDetail() {
-      const box = $('[data-mapdt]'), html = mapDt ? D().panel('map', mapDt, () => thingOf(mapDt), true) : '';
+      const key = D().openIn('map'), box = $('[data-mapdt]'), html = key ? D().panel('map', key, () => thingOf(key), true) : '';
       if (box.dataset.sig !== html) { box.dataset.sig = html; box.innerHTML = html; }
     }
-    /** Opens the detail of `key`, or closes it when it is the one open. */
-    function showDetail(key) {
-      if (mapDt === key && D().isOpen('map', key)) { closeDetail(); return; }
-      mapDt = key; D().show('map', key, drawDetail);
-    }
-    function closeDetail() { D().close('map'); mapDt = null; $('[data-mapdt]').dataset.sig = ''; }
 
     // ── drawing ──
     const tokTemplate = () => ui.h(`<button type="button" class="mp-tok" data-attr="class:cls aria-label:label data-tok:id data-x:x data-y:y"><span class="mp-disc"><span class="mp-shield" data-attr="style:shield hidden:noShield"></span><span class="mp-ring" data-attr="style:ring"></span><span class="mp-stag" data-attr="style:stag hidden:noStag"></span><span class="mp-lbl" data-text="lbl"></span><i class="mp-dot" data-attr="hidden:noDot"></i><span class="mp-taunt" data-attr="hidden:noTaunt" aria-hidden="true">!</span><span class="slot" data-part="pips"></span><span class="mp-sum" data-attr="hidden:noSum" data-text="sum" aria-hidden="true"></span></span><span data-attr="class:nameCls hidden:noName" data-text="name"></span><span data-attr="class:markCls hidden:noMark" data-text="mark"></span></button>`);
@@ -756,7 +749,8 @@ export function register(app) {
       if (world.dataset.tone !== tone) world.dataset.tone = tone;
       const gt = $('[data-grid]'); gt.setAttribute('aria-pressed', String(store.prefs().mapGrid));
       drawTerrain(); drawZones(); drawFog(); drawArea(f); drawLines(); drawTokens(f); drawOrder(); drawNow(); drawConfirm(f); drawHotbar(); drawPaint(); drawSending(waiting);
-      if (mapDt && !thingOf(mapDt)) closeDetail(); else drawDetail();
+      const dt = D().openIn('map');
+      if (dt && !thingOf(dt)) D().move('map', { kind: 'drop', key: dt }, drawDetail); else drawDetail();
       const key = `${scene.w}x${scene.h}`;
       const over = src.over ? src.over() : '';
       if (fitted !== key && scene.tokens.length && frame.clientWidth) { fitted = key; overWas = over; sizeFrame(); fit(); }
