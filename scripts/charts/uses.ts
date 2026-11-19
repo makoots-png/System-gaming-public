@@ -37,6 +37,6 @@ export const uses = machine<S, UsesEvent>({
     ['What changes it', '`usesStep(uses, event, gate)` and its `TABLE`; `usesOf` reads a row, `counted` counts a use'],
     ['Who calls it', 'rule 3b (`gated`) in `src/core/combat/resolve.ts`; `act` and `adjust` in `src/core/combat/fight.ts`; `writeBack` in `src/core/combat/fight-turn.ts`; a long rest in `src/core/hunter/vitals.ts`'],
     ['The test to copy', '`tests/fight.test.ts` ("a limited use"); the walk\'s events are in `tests/models/uses-events.ts`'],
-    ['The recipe', 'AGENTS.md, "A price or a gate kind"'],
+    ['The recipe', 'docs/guide/combat.md, "A price or a gate kind"'],
   ],
 });

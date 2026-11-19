@@ -56,7 +56,9 @@ export type RowItem = SheetItem & {
   readonly worn?: StatusDef;
 };
 /** The fields of a schema 4 hunter a row reads, on this phone or from a parsed remote sheet. */
-export type RowHunter = Omit<SheetHunter, 'skills' | 'items' | 'conditions'> & {
+export type RowHunter = Omit<SheetHunter, 'skills' | 'items' | 'conditions' | 'titles'> & {
+  /** Each title's bonus, and its worn status (on the row while it is the active title). */
+  readonly titles: readonly { readonly id: string; readonly bonus: SheetHunter['titles'][number]['bonus']; readonly worn?: StatusDef }[];
   readonly id: string;
   readonly name: string;
   readonly life: Life;
@@ -126,7 +128,8 @@ export function hunterAbilities(h: Pick<RowHunter, 'items' | 'equipped' | 'skill
 
 /**
  * The worn statuses of a hunter (kits design 1.3.2): each passive skill's, at the hunter's rank with the row as its
- * source, then each worn item's (in a slot), at the item's rarity, in the slots' order. Each lasts until removed, under a
+ * source, then the active title's (feature 1's notes 17.14), the same way, then each worn item's (in a slot), at the
+ * item's rarity, in the slots' order. Each lasts until removed, under a
  * key made from its label that no condition and no other worn status holds, and is never written back (`worn`).
  */
 function wornStatuses(h: RowHunter, id: CombatantId, taken: readonly string[], now: Tick, R: RowRules): Status[] {
@@ -137,6 +140,8 @@ function wornStatuses(h: RowHunter, id: CombatantId, taken: readonly string[], n
     out.push(statusOn(def, { key, source, until: null, since: now, settledAt: now, worn: true }));
   };
   for (const s of h.skills) if (s.type === 'passive' && s.worn) put(s.worn, { id, tier: rankIdx(h.rank) });
+  const title = h.titles.find(t => t.id === h.titleId);
+  if (title && title.worn) put(title.worn, { id, tier: rankIdx(h.rank) });
   const worn = new Set(Object.values(h.equipped));
   for (const i of h.items) if (i.worn && worn.has(i.id)) put(i.worn, itemSource({ rar: i.rar ?? 'common' }));
   return out;

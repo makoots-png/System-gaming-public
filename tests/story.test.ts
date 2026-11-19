@@ -24,7 +24,7 @@ const OFFER: Chapter = {
 const ASK: Chapter = {
   name: '', words: { title: 'THE DEEP ASKS FOR A GATE', line: '' }, rewards: { ...newRewards(), points: -1, statuses: [{ key: statusKey('hasted'), rounds: 3 }] },
   quest: { kind: 'urgent', title: 'Clear a gate for the Deep', desc: 'Any gate of your rank.', objectives: [{ label: 'Gate cleared', target: 1, progress: 0 }],
-    rewards: { ...newRewards(), gold: 100 }, dueHours: 48, penaltyText: 'The Deep collects.' },
+    rewards: { ...newRewards(), gold: 100 }, onFail: newRewards(), dueHours: 48, penaltyText: 'The Deep collects.' },
   note: '',
 };
 /** A story that uses every field, as a GM would write one. */

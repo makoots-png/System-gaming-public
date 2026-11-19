@@ -43,7 +43,7 @@ export const reaction = machine<ReactState, ReactEvent>({
     ['What changes it', '`reactStep(state, event)` and its `TABLE`; `fireReaction`, `turnReaction` and `restored` carry it out'],
     ['Who calls it', '`act` and `arm` in `src/core/combat/fight.ts` (rules 7c and 19c), `resolve` in `resolve.ts` (rule 13b, `Answers.lethal`), `startTurn` and `consequences` in `fight-turn.ts`'],
     ['The test to copy', '`tests/fight.test.ts` ("a reaction"); the walk\'s events are in `tests/models/wave2-events.ts`'],
-    ['The recipe', 'AGENTS.md, "A reaction moment"'],
+    ['The recipe', 'docs/guide/combat.md, "A reaction moment"'],
   ],
 });
 
@@ -65,7 +65,7 @@ export const edge = machine<EdgeHold, EdgeEvent>({
     ['What changes it', '`edgeStep` and its `EDGE_TABLE`; `edgeOn` and `boostsOn` read a die\'s edge'],
     ['Who calls it', 'rule 7b (`keptFace`, `spendEdges`) in `src/core/combat/resolve.ts`; `needs` asks the second d20 and the held dice'],
     ['The test to copy', '`tests/resolve.test.ts` ("advantage and held dice")'],
-    ['The recipe', 'AGENTS.md, "A status op"'],
+    ['The recipe', 'docs/guide/combat.md, "A status op"'],
   ],
 });
 
@@ -95,7 +95,7 @@ export const shove = machine<Shoved, ShoveEvent>({
     ['What changes it', '`shoveStep` and its `SHOVE_TABLE`, stepped by `shovePath`'],
     ['Who calls it', 'rule 18c (`pushed`) in `src/core/combat/resolve.ts`; `after` passes the bodies it moved to `zoneSync` (`forced`)'],
     ['The test to copy', '`tests/space.test.ts` ("a push or a pull"), `tests/fight.test.ts` ("forced movement")'],
-    ['The recipe', 'AGENTS.md, "A status op"'],
+    ['The recipe', 'docs/guide/combat.md, "A status op"'],
   ],
 });
 
@@ -127,7 +127,7 @@ export const stealth = machine<Stealth, StealthEvent>({
     ['What changes it', '`stealthStep` and its `STEALTH_TABLE`'],
     ['Who calls it', '`act` in `src/core/combat/fight.ts` (the hide\'s `seen`, acting on a foe), `revealed` in `fight-turn.ts`, `catchable` in `resolve.ts`, `inView` in `fight-doc.ts`'],
     ['The test to copy', '`tests/fight.test.ts` ("wards and stealth"), `tests/fight-doc.test.ts` ("a hidden foe")'],
-    ['The recipe', 'AGENTS.md, "A status op"'],
+    ['The recipe', 'docs/guide/combat.md, "A status op"'],
   ],
 });
 
@@ -149,7 +149,7 @@ export const ward = machine<WardState, WardEvent>({
     ['What changes it', '`wardStep` and its `WARD_TABLE`; `admitted` and `markWards`'],
     ['Who calls it', 'rule 18 in `src/core/combat/resolve.ts` and `landOne` in `land.ts` (a status lands), `wardedDamage` (rules 13 and 14), `uncovered` in `fight-turn.ts`'],
     ['The test to copy', '`tests/fight.test.ts` ("wards and stealth")'],
-    ['The recipe', 'AGENTS.md, "A status op"'],
+    ['The recipe', 'docs/guide/combat.md, "A status op"'],
   ],
 });
 
@@ -179,6 +179,6 @@ export const extras = machine<Extras, ExtrasEvent>({
     ['What changes it', '`extraStep` and `hasteStep` and their tables; `extraNow` and `hastened` move the turn'],
     ['Who calls it', '`resolve` in `src/core/combat/resolve.ts` (`extraTaken`, `userTime`, the `hasten` op), `startTurn` in `fight-turn.ts`'],
     ['The test to copy', '`tests/timeline.test.ts` ("turn economy"), `tests/fight.test.ts` ("turn economy")'],
-    ['The recipe', 'AGENTS.md, "A status op"'],
+    ['The recipe', 'docs/guide/combat.md, "A status op"'],
   ],
 });

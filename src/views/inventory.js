@@ -163,7 +163,7 @@ export function register(app) {
 
   // Equipment panel
   app.registerPanel({
-    view: 'status', id: 'equipment', order: 45, title: 'Gear',
+    view: 'status', id: 'equipment', order: 45, title: 'Gear', jump: 'Gear',
     mount(el) {
       el.innerHTML = '<div class="inv-slots" data-slots></div><p class="empty" data-eqsum></p>';
       el.addEventListener('click', e => {
@@ -186,7 +186,7 @@ export function register(app) {
   // Inventory panel (Items | Shop)
   let tab = 'items';
   app.registerPanel({
-    view: 'status', id: 'inventory', order: 50, title: 'Bag',
+    view: 'status', id: 'inventory', order: 50, title: 'Bag', jump: 'Bag',
     mount(el) {
       el.innerHTML = `
         <div class="inv-gold"><span class="lbl">Gold</span><span class="g" data-gold>0</span><button type="button" class="gm-only" data-gold-adj hidden>Adjust gold</button></div>

@@ -294,7 +294,7 @@ export function register(app) {
   const onSkills = (hid, why, step) => store.apply(why, atHunter(hid, both(step, h => fitted(h, app.rules()))));
 
   app.registerPanel({
-    view: 'status', id: 'skills', order: 40, title: 'Skills',
+    view: 'status', id: 'skills', order: 40, title: 'Skills', jump: 'Skills',
     mount(el) {
       el.innerHTML = `<ul class="plain" data-list></ul>
         <div class="sk-bar"><button type="button" class="primary" data-new>Add skill</button><button type="button" data-seeds>Add from list</button></div>`;

@@ -363,5 +363,8 @@ describe('the reworked fight under random play', () => {
       'none>setup', 'setup>running', 'running>ended', 'ended>none', 'spread', ...KIT_LINES.map(([k]) => k)]) {
       expect(tally.get(seen) ?? 0, `random play reaches ${seen}`).toBeGreaterThan(0);
     }
-  }, 120_000);
+  // A compute budget, not a wait: the test asserts no time. Measured Nov 19 on the lead's 4-core box after its restart:
+  // 107 s alone at a88b73b0 and at 59c13117, 111 s at 37e0d68f (so the day's code did not slow it), and past 120 s inside
+  // the whole unit run, which refused a push of notes. A faster box runs it in about half that.
+  }, 300_000);
 });

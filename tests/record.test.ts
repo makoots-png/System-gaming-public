@@ -39,6 +39,20 @@ describe('name, job and rank', () => {
   });
 });
 
+describe('a title\'s worn status (feature 1\'s notes 17.14)', () => {
+  const STEADY = { label: 'Steady', desc: '', ops: [] };
+  const IRON = { label: 'Iron', desc: '', ops: [] };
+  test('a written title keeps its worn status; given in another\'s place it takes the new one\'s; the GM\'s edit keeps it', () => {
+    const h = giveTitle(hunter(), { name: 'Iron Nerve', desc: '', worn: STEADY }, 't1', SEEDS);
+    expect(h.titles[0]!.worn).toEqual(STEADY);
+    const grown = giveTitle({ ...h, titleId: 't1' }, { name: 'Iron Will', worn: IRON, replaces: 'Iron Nerve' }, 't2', SEEDS);
+    expect(grown.titles.map(t => [t.id, t.name, t.worn])).toEqual([['t1', 'Iron Will', IRON]]);
+    expect(grown.titleId).toBe('t1');
+    expect(giveTitle(h, { name: 'Plain', replaces: 'Iron Nerve' }, 't3', SEEDS).titles[0]!.worn, 'a title with none in another\'s place leaves none').toBeUndefined();
+    expect(ok(writeTitle(h, 't1', { name: 'Renamed', desc: '', bonus: {} })).titles[0]!.worn).toEqual(STEADY);
+  });
+});
+
 describe('titles', () => {
   test('a rule title by its key takes its words, bonus and key; one already held is not given twice, even renamed', () => {
     const h = giveTitle(hunter(), { key: 'wolf-slayer' }, 't1', SEEDS);

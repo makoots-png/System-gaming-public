@@ -43,6 +43,6 @@ export const trips = machine<S, TripEvent>({
     ['What changes it', '`tripStep(trip, event, limit)` and its `TABLE`'],
     ['Who calls it', '`fire` in `src/core/combat/triggers.ts`, called by the reducer after a use, a move and a turn\'s end (`fight.ts`) and at a turn\'s start (`fight-turn.ts`)'],
     ['The test to copy', '`tests/triggers.test.ts`; the walk\'s events are in `tests/models/trip-events.ts`'],
-    ['The recipe', 'AGENTS.md, "A trigger event"'],
+    ['The recipe', 'docs/guide/combat.md, "A trigger event"'],
   ],
 });

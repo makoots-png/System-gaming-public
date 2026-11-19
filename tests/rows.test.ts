@@ -138,6 +138,12 @@ describe('what a hunter wears into a fight (kits design 1.3.2)', () => {
     const h = hunter({ conditions: [condition('thorns', STEALTH, null)], items: [ring], equipped: { weapon: null, ring1: 'i1' } });
     expect(hunterRow(h, id('c1'), RULES).statuses.map(s => s.key)).toEqual([statusKey('thorns'), statusKey('thorns-2')]);
   });
+  test('the active title\'s worn status is on its hunter\'s row at the hunter\'s rank; another title\'s is not', () => {
+    const titles = [{ id: 't1', bonus: {}, worn: PAIN_IS_POWER }, { id: 't2', bonus: {}, worn: THORNS }];
+    const r = hunterRow(hunter({ rank: 'C', titles, titleId: 't1' }), id('c1'), RULES);
+    expect(r.statuses).toEqual([{ key: statusKey('pain-is-power'), def: PAIN_IS_POWER, source: { id: id('c1'), tier: 2 }, until: null, since: tick(0), settledAt: tick(0), worn: true }]);
+    expect(hunterRow(hunter({ titles, titleId: null }), id('c1'), RULES).statuses, 'no active title, no worn status').toEqual([]);
+  });
   test('a worn status never goes back to the sheet when the fight writes its statuses back', () => {
     const r = hunterRow(hunter({ skills: [{ type: 'passive', bonus: {}, worn: PAIN_IS_POWER }], conditions: [condition('stealth', STEALTH, null)] }), id('c1'), RULES);
     expect(r.statuses.filter(onSheet).map(s => s.key)).toEqual([statusKey('stealth')]);

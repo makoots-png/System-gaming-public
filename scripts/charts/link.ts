@@ -119,6 +119,6 @@ export const link = machine<World, Move>({
     ['What changes them', '`reduce(link, event)` in `link.ts`; `reduce(push, event)` in `push.ts`, which hears the link through its `push` effects'],
     ['Who calls them', '`src/edge/sync.ts`, which holds the one current link and push and carries out their effects. `connection(link, push)` in `src/core/sync/connection.ts` says what the pill shows'],
     ['The test to copy', '`tests/link.test.ts` and `tests/push.test.ts`; every reachable state is checked in `tests/sync-model.test.ts`, whose world and replies are in `tests/models/sync-world.ts`'],
-    ['The recipe', 'AGENTS.md, "To add a link state or a reply"'],
+    ['The recipe', 'docs/guide/room-sync.md, "To add a link state or a reply"'],
   ],
 });

@@ -41,7 +41,7 @@ Where it lives:
 | What changes it | `reduce(fight, cmd, ctx)` and its `TABLE` in `src/core/combat/fight.ts`; turns in `src/core/combat/fight-turn.ts` |
 | Who calls it | `send()` in `src/views/combat.js` on the GM's phone, which stores what it answers |
 | The test to copy | `tests/fight.test.ts`; random play in `tests/fight-model.test.ts` and `tests/models/fight-play.ts` |
-| The recipe | AGENTS.md, "A combat command" |
+| The recipe | docs/guide/combat.md, "A combat command" |
 
 ## A channel
 
@@ -128,7 +128,7 @@ Where it lives:
 | What changes it | `stackStep(stack, event, ctx)` and its `TABLE` |
 | Who calls it | `applyStatus`, `cureStatus` and `settle` in `src/core/combat/effect-ops.ts`; a use's threshold in `src/core/combat/resolve.ts` (rule 18a) |
 | The test to copy | `tests/effect-ops.test.ts` ("the stack machine, cell by cell"); the walk's events are in `tests/models/stack-events.ts` |
-| The recipe | AGENTS.md, "A stacking status" |
+| The recipe | docs/guide/combat.md, "A stacking status" |
 
 ## A trigger's limit
 
@@ -173,7 +173,7 @@ Where it lives:
 | What changes it | `tripStep(trip, event, limit)` and its `TABLE` |
 | Who calls it | `fire` in `src/core/combat/triggers.ts`, called by the reducer after a use, a move and a turn's end (`fight.ts`) and at a turn's start (`fight-turn.ts`) |
 | The test to copy | `tests/triggers.test.ts`; the walk's events are in `tests/models/trip-events.ts` |
-| The recipe | AGENTS.md, "A trigger event" |
+| The recipe | docs/guide/combat.md, "A trigger event" |
 
 ## A delayed effect
 
@@ -228,7 +228,7 @@ Where it lives:
 | What changes it | `endStep(delayed, event, end)` and its `TABLE` |
 | Who calls it | the settle in `src/core/combat/fight-turn.ts` (`settleRow`), a cure in `src/core/combat/resolve.ts` (rule 18) and `src/core/combat/land.ts` (`cureLands`, `landEnd`) |
 | The test to copy | `tests/fight.test.ts` ("a delayed effect"); the walk's events are in `tests/models/delayed-events.ts` |
-| The recipe | AGENTS.md, "A stacking status, its threshold and its end" |
+| The recipe | docs/guide/combat.md, "A stacking status, its threshold and its end" |
 
 ## A zone with an upkeep and an end
 
@@ -270,7 +270,7 @@ Where it lives:
 | What changes it | `zoneStep(life, event)` and its `ZONE_TABLE`; `placeZone` (the cap), `payUpkeep` (the upkeep), `pricedZones` (a price) |
 | Who calls it | `act` and `release` in `src/core/combat/fight.ts`; `grounded`, `zoneEnds` and `startTurn` in `src/core/combat/fight-turn.ts` |
 | The test to copy | `tests/fight.test.ts` ("a zone on the ground: the kits' upkeep"); the walk's events are in `tests/models/zone-events.ts` |
-| The recipe | AGENTS.md, "A zone op" and "A way a zone can lie" |
+| The recipe | docs/guide/combat.md, "A zone op" and "A way a zone can lie" |
 
 ## A timed summon
 
@@ -305,7 +305,7 @@ Where it lives:
 | What changes it | `summonStep(state, event)` and its `TABLE`; `dismissed`, `timeUp` and `crowded` read it |
 | Who calls it | `summoned` (rule 18d) in `src/core/combat/fight.ts`; `consequences`, `sentAway` and `startTurn` in `src/core/combat/fight-turn.ts`; the row is `summonRow` in `src/core/combat/rows.ts` |
 | The test to copy | `tests/fight.test.ts` ("a timed summon"), `tests/rows.test.ts` ("a summon"); the walk's events are in `tests/models/summon-events.ts` |
-| The recipe | AGENTS.md, "A summon" |
+| The recipe | docs/guide/combat.md, "A summon" |
 
 ## A limited use
 
@@ -356,7 +356,7 @@ Where it lives:
 | What changes it | `usesStep(uses, event, gate)` and its `TABLE`; `usesOf` reads a row, `counted` counts a use |
 | Who calls it | rule 3b (`gated`) in `src/core/combat/resolve.ts`; `act` and `adjust` in `src/core/combat/fight.ts`; `writeBack` in `src/core/combat/fight-turn.ts`; a long rest in `src/core/hunter/vitals.ts` |
 | The test to copy | `tests/fight.test.ts` ("a limited use"); the walk's events are in `tests/models/uses-events.ts` |
-| The recipe | AGENTS.md, "A price or a gate kind" |
+| The recipe | docs/guide/combat.md, "A price or a gate kind" |
 
 ## A reaction
 
@@ -397,7 +397,7 @@ Where it lives:
 | What changes it | `reactStep(state, event)` and its `TABLE`; `fireReaction`, `turnReaction` and `restored` carry it out |
 | Who calls it | `act` and `arm` in `src/core/combat/fight.ts` (rules 7c and 19c), `resolve` in `resolve.ts` (rule 13b, `Answers.lethal`), `startTurn` and `consequences` in `fight-turn.ts` |
 | The test to copy | `tests/fight.test.ts` ("a reaction"); the walk's events are in `tests/models/wave2-events.ts` |
-| The recipe | AGENTS.md, "A reaction moment" |
+| The recipe | docs/guide/combat.md, "A reaction moment" |
 
 ## An edge or a held die
 
@@ -434,7 +434,7 @@ Where it lives:
 | What changes it | `edgeStep` and its `EDGE_TABLE`; `edgeOn` and `boostsOn` read a die's edge |
 | Who calls it | rule 7b (`keptFace`, `spendEdges`) in `src/core/combat/resolve.ts`; `needs` asks the second d20 and the held dice |
 | The test to copy | `tests/resolve.test.ts` ("advantage and held dice") |
-| The recipe | AGENTS.md, "A status op" |
+| The recipe | docs/guide/combat.md, "A status op" |
 
 ## A push or a pull
 
@@ -476,7 +476,7 @@ Where it lives:
 | What changes it | `shoveStep` and its `SHOVE_TABLE`, stepped by `shovePath` |
 | Who calls it | rule 18c (`pushed`) in `src/core/combat/resolve.ts`; `after` passes the bodies it moved to `zoneSync` (`forced`) |
 | The test to copy | `tests/space.test.ts` ("a push or a pull"), `tests/fight.test.ts` ("forced movement") |
-| The recipe | AGENTS.md, "A status op" |
+| The recipe | docs/guide/combat.md, "A status op" |
 
 ## Stealth
 
@@ -514,7 +514,7 @@ Where it lives:
 | What changes it | `stealthStep` and its `STEALTH_TABLE` |
 | Who calls it | `act` in `src/core/combat/fight.ts` (the hide's `seen`, acting on a foe), `revealed` in `fight-turn.ts`, `catchable` in `resolve.ts`, `inView` in `fight-doc.ts` |
 | The test to copy | `tests/fight.test.ts` ("wards and stealth"), `tests/fight-doc.test.ts` ("a hidden foe") |
-| The recipe | AGENTS.md, "A status op" |
+| The recipe | docs/guide/combat.md, "A status op" |
 
 ## A ward
 
@@ -548,7 +548,7 @@ Where it lives:
 | What changes it | `wardStep` and its `WARD_TABLE`; `admitted` and `markWards` |
 | Who calls it | rule 18 in `src/core/combat/resolve.ts` and `landOne` in `land.ts` (a status lands), `wardedDamage` (rules 13 and 14), `uncovered` in `fight-turn.ts` |
 | The test to copy | `tests/fight.test.ts` ("wards and stealth") |
-| The recipe | AGENTS.md, "A status op" |
+| The recipe | docs/guide/combat.md, "A status op" |
 
 ## A body's turn extras
 
@@ -592,7 +592,7 @@ Where it lives:
 | What changes it | `extraStep` and `hasteStep` and their tables; `extraNow` and `hastened` move the turn |
 | Who calls it | `resolve` in `src/core/combat/resolve.ts` (`extraTaken`, `userTime`, the `hasten` op), `startTurn` in `fight-turn.ts` |
 | The test to copy | `tests/timeline.test.ts` ("turn economy"), `tests/fight.test.ts` ("turn economy") |
-| The recipe | AGENTS.md, "A status op" |
+| The recipe | docs/guide/combat.md, "A status op" |
 
 ## A gate
 
@@ -636,7 +636,7 @@ Where it lives:
 | What changes it | `transition(gate, event)` and its `TABLE`; `can(gate, eventType)` for a button |
 | Who calls it | `step()` in `src/views/gates.js`, and `endEncounter` in `src/views/combat.js` |
 | The test to copy | `tests/gate.test.ts`; the walk's events are in `tests/models/gate-events.ts` |
-| The recipe | AGENTS.md, "To add a gate status or event" |
+| The recipe | docs/guide/gates-solo.md, "To add a gate status or event" |
 
 ## The room link and the sheet push
 
@@ -744,7 +744,7 @@ Where it lives:
 | What changes them | `reduce(link, event)` in `link.ts`; `reduce(push, event)` in `push.ts`, which hears the link through its `push` effects |
 | Who calls them | `src/edge/sync.ts`, which holds the one current link and push and carries out their effects. `connection(link, push)` in `src/core/sync/connection.ts` says what the pill shows |
 | The test to copy | `tests/link.test.ts` and `tests/push.test.ts`; every reachable state is checked in `tests/sync-model.test.ts`, whose world and replies are in `tests/models/sync-world.ts` |
-| The recipe | AGENTS.md, "To add a link state or a reply" |
+| The recipe | docs/guide/room-sync.md, "To add a link state or a reply" |
 
 ## A hunter's life
 
@@ -787,7 +787,7 @@ Where it lives:
 | What changes it | `lifeAfter(life, event, hpMax)` and its `TABLE`; `hit`, `rest` and `refill` for a hunter's vitals; `can(life, eventType)` for a button |
 | Who calls it | `lifeEvent` and `api.life` in `src/views/hunter.js` (the sheet; the GM board's Revive in `src/views/gm.js` calls `api.life`), `useItem` in `src/core/hunter/use.ts` (a Resurrection Crystal, through `sheetEdit`), and the fight's HP effects in `src/views/combat.js` |
 | The test to copy | `tests/vitals.test.ts`; the walk's events are in `tests/models/life-events.ts` |
-| The recipe | AGENTS.md, "To add a field to a hunter" (a new life state or event) |
+| The recipe | docs/guide/hunters.md, "To add a field to a hunter" (a new life state or event) |
 
 ## A missed daily's penalty
 
@@ -826,7 +826,7 @@ Where it lives:
 | What changes it | `penaltyAfter(penalty, event, quests)` (`dailyMissed`, `questCompleted`, `questDeleted`); `canDeleteQuest` for the Delete button |
 | Who calls it | `penaltyEvent` in `src/views/quests.js` (the daily rollover, Complete and Delete) |
 | The test to copy | `tests/penalty.test.ts`; the walk's moves are in `tests/models/penalty-events.ts` |
-| The recipe | AGENTS.md, "To add a field to a hunter" (a penalty field) |
+| The recipe | docs/guide/hunters.md, "To add a field to a hunter" (a penalty field) |
 
 ## A Job Change chain
 
@@ -873,7 +873,7 @@ Where it lives:
 | What changes it | `chainAfter(chain, event)` and its `TABLE`; `canReissue(chain)` for the failed card's buttons |
 | Who calls it | `chainStep` and `chainEvent` in `src/views/quests.js` (issue, Complete, Fail, Delete, Reissue, Abandon, and the `level` event `src/views/hunter.js` sends) |
 | The test to copy | `tests/job-chain.test.ts`; the walk's moves are in `tests/models/job-chain-events.ts` |
-| The recipe | AGENTS.md, "To add a job" |
+| The recipe | docs/guide/hunters.md, "To add a job" |
 
 ## A coin call
 
@@ -906,7 +906,7 @@ Where it lives:
 | What changes it | `transition(coin, event)` and its `TABLE`; `stepCoin` for a phone's list |
 | Who calls it | `src/views/coin.js` (the player's call and coin, the GM's window) and the `coinLand` applier in `src/edge/room-events.ts` |
 | The test to copy | `tests/coin.test.ts`; the walk's events are in `tests/models/coin-events.ts` |
-| The recipe | AGENTS.md, "A state or event of the ... machine" |
+| The recipe | docs/guide/hunters.md, "A state or event of the ... machine" |
 
 ## First-run setup
 
@@ -961,7 +961,7 @@ Where it lives:
 | What changes it | `onboardStep(at, event)`; `firstStep` for where it opens |
 | Who calls it | `go` in `src/views/onboard.js`, started by the app's `ready` event |
 | The test to copy | `tests/onboarding.test.ts`; the walk's events are in `tests/models/onboarding-events.ts` |
-| The recipe | AGENTS.md, "A state or event of the ... machine" |
+| The recipe | docs/guide/hunters.md, "A state or event of the ... machine" |
 
 ## A gesture on the map
 
@@ -1035,7 +1035,7 @@ Where it lives:
 | What changes it | `gesture(g, event)`; `zoomAbout` for the wheel |
 | Who calls it | `feed` in `src/views/map.js`, from the frame's pointer events; a `tap` goes on to the map's choice (`choose`) |
 | The test to copy | `tests/gesture.test.ts` (its last case walks random pointer sequences); the chart's events are in `tests/models/gesture-events.ts` |
-| The recipe | AGENTS.md, "A machine of the map" |
+| The recipe | docs/guide/combat.md, "A machine of the map" |
 
 ## What the map has chosen
 
@@ -1091,7 +1091,7 @@ Where it lives:
 | What changes it | `choose(choice, event)` |
 | Who calls it | `act` in `src/views/map.js`: a tap from the gesture, the hotbar's buttons, Move, Use, Cancel, and `seen` and `drawn` in each draw |
 | The test to copy | `tests/map-view.test.ts`, "what the map has chosen"; the chart's events are in `tests/models/choice-events.ts` |
-| The recipe | AGENTS.md, "A machine of the map" |
+| The recipe | docs/guide/combat.md, "A machine of the map" |
 
 ## A shadow
 
@@ -1126,7 +1126,7 @@ Where it lives:
 | What changes it | `stepShadow(hunter, id, event)` and its `TABLE`; `can` for the panel's buttons |
 | Who calls it | `src/views/shadows.js` (Summon, Dismiss, Release) |
 | The test to copy | `tests/shadows.test.ts`; the walk's events are in `tests/models/shadow-events.ts` |
-| The recipe | AGENTS.md, "A state or event of the ... machine" |
+| The recipe | docs/guide/hunters.md, "A state or event of the ... machine" |
 
 ## A fallen monster's extraction
 
@@ -1169,7 +1169,7 @@ Where it lives:
 | What changes it | `extractionStep(extraction, outcome, max)` and its `TABLE`, through the fight's `extract` (`src/core/combat/fight.ts`) |
 | Who calls it | `app.api.combat.extracted` (`src/views/combat.js`), from the extraction roll in `src/views/shadows.js` |
 | The test to copy | `tests/fight.test.ts` ("a fallen monster's extraction"); the walk's outcomes are in `tests/models/extraction-events.ts` |
-| The recipe | AGENTS.md, "A combat command" |
+| The recipe | docs/guide/combat.md, "A combat command" |
 
 ## A quest
 
@@ -1212,7 +1212,7 @@ Where it lives:
 | What changes it | `questStep(quest, event, at)` and its `TABLE`; the steps `completeQuest`, `failQuest`, `reopenQuest`, `rollover` |
 | Who calls it | `src/views/quests.js` through `store.apply` |
 | The test to copy | `tests/quests.test.ts`; the walk's events are in `tests/models/quest-events.ts` |
-| The recipe | AGENTS.md, "A state or event of the ... machine" |
+| The recipe | docs/guide/hunters.md, "A state or event of the ... machine" |
 
 ## The room server's database
 
@@ -1246,7 +1246,7 @@ Where it lives:
 | What changes it | `dbStep(db, event)` and its `TABLE`; `dbHealth` for what /api/health answers |
 | Who calls it | `database(url)` in `server.ts`, which opens Postgres and tries again while it is down |
 | The test to copy | `tests/room-server.test.ts`; the walk's events are in `tests/models/db-events.ts`; a down Postgres end to end in `tests/server-rooms.test.ts` and `tests/server-start.test.ts` |
-| The recipe | AGENTS.md, "A state or event of the ... machine" |
+| The recipe | docs/guide/hunters.md, "A state or event of the ... machine" |
 
 ## The app update
 
@@ -1288,7 +1288,7 @@ Where it lives:
 | What changes it | `updateStep(update, event)` and its `TABLE`; `decideUpgrade` is the refusal's decision |
 | Who calls it | `src/edge/upgrade.ts` (`upgradeRefused`, called by `src/edge/sync.ts` on a 426), the one writer; `src/edge/room-pill.ts` reads it; `src/sw.js` posts the count |
 | The test to copy | `tests/upgrade.test.ts`, `tests/sw.test.ts`; the walk's events are in `tests/models/upgrade-events.ts` |
-| The recipe | AGENTS.md, "A state or event of the ... machine" |
+| The recipe | docs/guide/hunters.md, "A state or event of the ... machine" |
 
 ## A message to the room
 
@@ -1330,7 +1330,7 @@ Where it lives:
 | What changes it | `entryStep` and its `TABLE`; the box's `post`, `step`, `next`, `reloaded`, `roomGone`, `rebound` |
 | Who calls it | `postLetter`, `flush` and `deliver` in `src/edge/sync.ts` (`app.api.sync.post`, `forget`), after each good poll; the room's answer through `callOf` and `sentEvent` |
 | The test to copy | `tests/outbox.test.ts`; the walk's events are in `tests/models/outbox-events.ts`; two and three phones in `tests/room-system-model.test.ts` |
-| The recipe | AGENTS.md, "A room message" |
+| The recipe | docs/guide/room-sync.md, "A room message" |
 
 ## The store
 
@@ -1391,7 +1391,7 @@ Where it lives:
 | What changes it | `storeStep(life, event)` and its `TABLE`; `opened` is the load's |
 | Who calls it | `src/edge/store.ts` (`carry`, `run`): its writes, the frame's timer, the page hidden or left, the `storage` event, a replace; `noticesOf` is what the banners say, `mayChange` what `store.apply` refuses |
 | The test to copy | `tests/store-life.test.ts`, `tests/e2e/save.e2e.ts`; the walk's events are in `tests/models/store-events.ts` |
-| The recipe | AGENTS.md, "A state or event of the ... machine" |
+| The recipe | docs/guide/hunters.md, "A state or event of the ... machine" |
 
 ## The odds of a fight
 
@@ -1430,7 +1430,7 @@ Where it lives:
 | What changes it | `oddsStep` and its `TABLE`; a play of one fight is `playBegin` and `playStep` (src/core/combat/play.ts), every row on `sensible` (policy.ts) |
 | Who calls it | `app.api.odds` (`paint`, `ask`) in `src/views/odds-box.js`, mounted by `src/views/combat.js` and `src/views/gates.js`; the seed is `oddsSeed` (src/edge/roll.ts); a solo run is one more play, asked by `enterAlone` in gates.js |
 | The test to copy | `tests/odds.test.ts`; the walk's events are in `tests/models/odds-events.ts` |
-| The recipe | AGENTS.md, "A policy's new choice" |
+| The recipe | docs/guide/combat.md, "A policy's new choice" |
 
 ## A hunter's personal gates
 
@@ -1487,7 +1487,7 @@ Where it lives:
 | What changes it | `soloTick` in `src/core/gates/solo.ts`, and `soloRan` for a cleared gate; `soloWake` is its term of the one timer (`nextWake`) |
 | Who calls it | `tick` in `src/views/gates.js`, run by the one timer in `src/views/quests.js` (`checkDaily`, on the app's ready and at each wake) |
 | The test to copy | `tests/solo.test.ts`; the walk's events are in `tests/models/solo-events.ts` |
-| The recipe | AGENTS.md, "A rule of the day's time" and "A field of a saved thing" |
+| The recipe | docs/guide/hunters.md, "A rule of the day's time"; docs/guide/save-store.md, "A field of a saved thing" |
 
 ## A solo run waiting for the GM
 
@@ -1527,7 +1527,7 @@ Where it lives:
 | What changes it | `waitStep` and its `TABLE`; `runPosted`, `runTaken`, `runsGone`, `runAnswered`, `runDismissed` |
 | Who calls it | `soloRan` (gates/solo.ts) writes it; `boxDo` in `src/edge/sync.ts` hears the room take it or the room gone; `landSoloAnswer` in `src/edge/room-events.ts` answers it; `src/views/gates.js` puts a lost one away |
 | The test to copy | `tests/solo-wait.test.ts`; the walk's events are in `tests/models/solo-events.ts`; two players in `tests/room-system-model.test.ts` |
-| The recipe | AGENTS.md, "A room message" |
+| The recipe | docs/guide/room-sync.md, "A room message" |
 
 ## A feat on a hunter
 
@@ -1653,7 +1653,7 @@ Where it lives:
 | What changes it | `featStep(state, event, def, now)` and its `TABLE`; a count moves by `countStep` (`src/core/hunter/counts.ts`) |
 | Who calls it | `noticed` in `src/core/hunter/noticed.ts`, at the end of every `store.apply` |
 | The test to copy | `tests/feats.test.ts`; the walk's events are in `tests/models/feat-events.ts` |
-| The recipe | AGENTS.md, "A built-in feat" |
+| The recipe | docs/guide/feats-stories.md, "A built-in feat" |
 
 ## An offer in the room
 
@@ -1694,7 +1694,7 @@ Where it lives:
 | What changes it | The room's rule that an event id is taken once (`addEvent` in `server.ts`); `outcomeOf` reads the end |
 | Who calls it | The taps of `src/core/trade/offer.ts` post the letters; the fold `offersSeen` reads the end on every phone (sync.ts, unit 2) |
 | The test to copy | `tests/offer.test.ts` ("how an offer came out"), `tests/server-rooms.test.ts` ("an offer ends once") |
-| The recipe | AGENTS.md, "A room message"; notes-5-trade.md 1.5 |
+| The recipe | docs/guide/room-sync.md, "A room message"; notes-5-trade.md 1.5 |
 
 ## The giver's side of an offer
 
@@ -1787,7 +1787,7 @@ Where it lives:
 | What changes it | `recordStep` and its `GIVER`; the taps `offerPosted`, `offerAnswered`, `offerTakenBack`, `offerStopped`; `offersHeard`, `lettersKept`, `offersGone`, `offersSeen` |
 | Who calls it | The trade view (unit 4) for the taps; sync.ts (unit 2) for what the box heard, the fold of each page and a join's history, and the room gone; the store runs `lettersKept` after every step (unit 2) |
 | The test to copy | `tests/offer.test.ts` ("every cell of the three records", the walk of two players and the GM); the walk's events are in `tests/models/trade-events.ts` |
-| The recipe | AGENTS.md, "A room message"; notes-5-trade.md 1.6 and 12.1 |
+| The recipe | docs/guide/room-sync.md, "A room message"; notes-5-trade.md 1.6 and 12.1 |
 
 ## The taker's side of an offer
 
@@ -1888,7 +1888,7 @@ Where it lives:
 | What changes it | `recordStep` and its `TAKER`; the taps `offerPosted`, `offerAnswered`, `offerTakenBack`, `offerStopped`; `offersHeard`, `lettersKept`, `offersGone`, `offersSeen` |
 | Who calls it | The trade view (unit 4) for the taps; sync.ts (unit 2) for what the box heard, the fold of each page and a join's history, and the room gone; the store runs `lettersKept` after every step (unit 2) |
 | The test to copy | `tests/offer.test.ts` ("every cell of the three records", the walk of two players and the GM); the walk's events are in `tests/models/trade-events.ts` |
-| The recipe | AGENTS.md, "A room message"; notes-5-trade.md 1.6 and 12.1 |
+| The recipe | docs/guide/room-sync.md, "A room message"; notes-5-trade.md 1.6 and 12.1 |
 
 ## The GM's record of an offer
 
@@ -1956,7 +1956,7 @@ Where it lives:
 | What changes it | `recordStep` and its `WATCH`; the taps `offerPosted`, `offerAnswered`, `offerTakenBack`, `offerStopped`; `offersHeard`, `lettersKept`, `offersGone`, `offersSeen` |
 | Who calls it | The trade view (unit 4) for the taps; sync.ts (unit 2) for what the box heard, the fold of each page and a join's history, and the room gone; the store runs `lettersKept` after every step (unit 2) |
 | The test to copy | `tests/offer.test.ts` ("every cell of the three records", the walk of two players and the GM); the walk's events are in `tests/models/trade-events.ts` |
-| The recipe | AGENTS.md, "A room message"; notes-5-trade.md 1.6 and 12.1 |
+| The recipe | docs/guide/room-sync.md, "A room message"; notes-5-trade.md 1.6 and 12.1 |
 
 ## A story on the table
 
@@ -1999,4 +1999,4 @@ Where it lives:
 | What changes it | `runStep(run, event, story)` and its `TABLE`; `storyMove`, the one write of a move |
 | Who calls it | the taps of `src/views/stories.js` (the GM view's Stories section, its turn-on and open windows, End's held toast) |
 | The test to copy | `tests/run.test.ts`; the walk's events are in `tests/models/story-events.ts` |
-| The recipe | AGENTS.md, "A state or event of the ... machine" |
+| The recipe | docs/guide/hunters.md, "A state or event of the ... machine" |

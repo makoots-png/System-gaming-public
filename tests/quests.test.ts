@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import {
   TABLE, chained, cleanObjectives, completeQuest, deleteQuest, editQuest, failQuest, issueQuest, nextWake, overdue, pastDue, questOf, questStep,
-  reopenQuest, rollover, rolloverDue, setProgress, tracked, withTold,
+  questOffer, reopenQuest, rollover, rolloverDue, setProgress, tracked, withTold,
 } from '../src/core/hunter/quests.ts';
 import type { QuestEvent } from '../src/core/hunter/quests.ts';
 import { freshSave, newHunter, newRewards, repairSave } from '../src/core/save.ts';
-import type { Hunter, Quest, QuestStatus, Save } from '../src/core/save.ts';
+import type { Hunter, Objective, Quest, QuestStatus, Save } from '../src/core/save.ts';
 import { RULES } from '../src/core/rules.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import type { Refused } from '../src/core/save-step.ts';
@@ -16,8 +16,13 @@ const NO_GATES = { personal: false, gm: false };
 import { day, dev, hid, jcid, qid } from './fixtures/ids.ts';
 import type { QuestId } from '../src/core/ids.ts';
 import type { DayKey } from '../src/core/day.ts';
-import { STREAK_BONUS_POINTS, chainStep, finishQuest } from '../src/core/hunter/grant.ts';
-import { GM_QUEST_KINDS, PLAYER_QUEST_KINDS, questKindsFor } from '../src/core/hunter/quest-rights.ts';
+import { STREAK_BONUS_POINTS, chainStep, finishQuest, questFailed, rolledOver } from '../src/core/hunter/grant.ts';
+import { GM_QUEST_KINDS, PLAYER_QUEST_KINDS, questKindsFor, systemCompletes } from '../src/core/hunter/quest-rights.ts';
+import { noticed } from '../src/core/hunter/noticed.ts';
+import type { NoticeCtx } from '../src/core/hunter/noticed.ts';
+import { record } from '../src/core/hunter/chronicle.ts';
+import type { Fact } from '../src/core/hunter/facts.ts';
+import { parseRoomCode } from '../src/core/ids.ts';
 import { QUEST_KINDS } from '../src/core/save.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
 
@@ -80,7 +85,7 @@ describe('an urgent quest\'s time', () => {
   });
   test('an edit that gives a due time that is no time leaves the quest with none', () => {
     const q = due('active'), h = hunterWith(q);
-    const edit = (dueAt: string | null) => ok(editQuest(h, q.id, { kind: q.kind, title: q.title, desc: q.desc, objectives: q.objectives, rewards: q.rewards, dueAt, penaltyText: q.penaltyText }, 'gm')).quests[0]!.dueAt;
+    const edit = (dueAt: string | null) => ok(editQuest(h, q.id, { kind: q.kind, title: q.title, desc: q.desc, objectives: q.objectives, rewards: q.rewards, onFail: q.onFail, dueAt, penaltyText: q.penaltyText }, 'gm')).quests[0]!.dueAt;
     expect(edit('tomorrow-ish')).toBeNull();
     expect(edit('2026-11-15T10:00:00+02:00')).toBe('2026-11-15T08:00:00.000Z');
   });
@@ -151,16 +156,16 @@ describe('progress and edits', () => {
     expect(setProgress(hunterWith(questIn('done')), 'q800', 0, 2)).toEqual({ ok: false, why: 'not-now' });
   });
   test('an edit writes the fields and keeps the status; edited back it is the quest it was', () => {
-    const q = questIn('failed'), h = hunterWith(q), back = { kind: q.kind, title: q.title, desc: q.desc, objectives: q.objectives, rewards: q.rewards, dueAt: q.dueAt, penaltyText: q.penaltyText };
+    const q = questIn('failed'), h = hunterWith(q), back = { kind: q.kind, title: q.title, desc: q.desc, objectives: q.objectives, rewards: q.rewards, onFail: q.onFail, dueAt: q.dueAt, penaltyText: q.penaltyText };
     const edited = ok(editQuest(h, 'q800', { ...back, title: 'New', objectives: [{ label: 'Orcs', target: 2 }] }, 'gm'));
     expect(edited.quests[0]).toMatchObject({ title: 'New', status: 'failed', objectives: [{ label: 'Orcs', target: 2, progress: 0 }] });
     expect(ok(editQuest(edited, 'q800', back, 'gm'))).toEqual(h);
   });
   test('a player\'s edit or own quest gives no reward and no penalty; the GM\'s does', () => {
     const q = questIn('active'), h = hunterWith(q), rich = { ...newRewards(), gold: 500 };
-    const mine = ok(editQuest(h, 'q800', { kind: q.kind, title: 'Mine', desc: '', objectives: q.objectives, rewards: rich, dueAt: null, penaltyText: 'Run' }, 'player'));
-    expect(mine.quests[0]).toMatchObject({ title: 'Mine', rewards: q.rewards, penaltyText: q.penaltyText });
-    expect(ok(editQuest(h, 'q800', { kind: q.kind, title: 'GM', desc: '', objectives: q.objectives, rewards: rich, dueAt: null, penaltyText: 'Run' }, 'gm')).quests[0]!.rewards.gold).toBe(500);
+    const mine = ok(editQuest(h, 'q800', { kind: q.kind, title: 'Mine', desc: '', objectives: q.objectives, rewards: rich, onFail: rich, dueAt: null, penaltyText: 'Run' }, 'player'));
+    expect(mine.quests[0]).toMatchObject({ title: 'Mine', rewards: q.rewards, onFail: q.onFail, penaltyText: q.penaltyText });
+    expect(ok(editQuest(h, 'q800', { kind: q.kind, title: 'GM', desc: '', objectives: q.objectives, rewards: rich, onFail: rich, dueAt: null, penaltyText: 'Run' }, 'gm')).quests[0]!.rewards.gold).toBe(500);
     expect(questOf({ from: 'self', rewards: rich, penaltyText: 'Run' }, qid('q1'), AT)).toMatchObject({ rewards: newRewards(), penaltyText: '' });
     expect(questOf({ from: 'gm', rewards: rich }, qid('q1'), AT).rewards.gold).toBe(500);
   });
@@ -241,7 +246,7 @@ describe('the daily rollover', () => {
     expect(rolloverDue(s, day('2026-11-14'), Date.parse(AT))).toBe(true);
     const r = rollover(s, { today: day('2026-11-14'), at: AT, nowMs: Date.parse(AT), gm: false });
     expect(r.save.hunters[0]!.quests[0]!.status).toBe('failed');
-    expect(r.told.failed).toEqual([{ hid: 'h1', name: h.name, title: 'Clear the den' }]);
+    expect(r.told.failed).toEqual([{ hid: 'h1', qid: urgent.id, name: h.name, title: 'Clear the den' }]);
     expect(rolloverDue(r.save, day('2026-11-14'), Date.parse(AT))).toBe(false);
   });
 });
@@ -334,5 +339,77 @@ describe('the kinds a quest form offers (quest-rights.ts questKindsFor)', () => 
   });
   test('every kind a form offers is a kind a quest may be', () => {
     for (const k of [...GM_QUEST_KINDS, ...PLAYER_QUEST_KINDS]) expect(QUEST_KINDS).toContain(k);
+  });
+});
+
+describe('a quest that counts by itself, and what failing costs (feature 1\'s notes 17.14)', () => {
+  const ENV = { now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-me') };
+  const beasts = (target: number, within: 'ever' | 'session' | 'row' = 'ever'): Objective => ({ label: 'Beasts defeated', target, progress: 0,
+    count: { rule: { on: 'kill' as const, where: [{ field: 'type', op: '=' as const, value: 'Beast' }], measure: { of: 'facts' as const }, within }, mark: '' } });
+  const kill = (type: string) => ({ kind: 'kill' as const, monster: 'Wolf', rank: 'E' as const, type, mkind: 'normal' as const, above: 0, hpPct: 50, payback: false, where: 'fight' as const });
+  const counted = (o: Partial<Quest> = {}): Quest => ({ ...questIn('active'), id: qid('q7'), kind: 'side', title: 'Ten Beasts', from: 'gm', objectives: [beasts(3)], rewards: { ...newRewards(), gold: 40 }, ...o }) as Quest;
+  const saveWith = (q: Quest): Save => ({ ...freshSave(ENV, { onboarded: true }), hunters: [{ ...hunterWith(q), gold: 100 }] });
+  const ctx = (o: Partial<NoticeCtx> = {}): NoticeCtx => ({ at: AT, today: day('2026-11-14'), session: 2, held: () => false, R: RULES, feats: [], ...o });
+  const write = (s: Save, facts: readonly Fact[], c = ctx()): Save => noticed({ ...s, hunters: s.hunters.map(h => record(h, ...facts)) }, () => c);
+  const quest = (s: Save) => s.hunters[0]!.quests.find(q => q.id === 'q7')!;
+
+  test('three Beasts defeated complete it in the write of the third, with its reward and its quest fact; a Goblin moves nothing', () => {
+    let s = write(saveWith(counted()), [kill('Beast'), kill('Humanoid')]);
+    expect(quest(s).objectives[0]!.progress).toBe(1);
+    expect(quest(s).status).toBe('active');
+    s = write(s, [kill('Beast'), kill('Beast')]);
+    expect(quest(s).status).toBe('done');
+    expect(quest(s).objectives[0]!.progress).toBe(3);
+    expect(s.hunters[0]!.gold, 'its reward, given by finishQuest').toBe(140);
+    expect(s.hunters[0]!.chronicle.facts.filter(f => f.kind === 'quest').map(f => (f as { end: string }).end)).toEqual(['done']);
+    expect(s.hunters[0]!.chronicle.inbox).toEqual([]);
+  });
+  test('a count within a session starts again in a new session; a full objective is not counted again', () => {
+    let s = write(saveWith(counted({ objectives: [beasts(3, 'session'), { label: 'Report back', target: 1, progress: 0 }] })), [kill('Beast'), kill('Beast')], ctx({ session: 2 }));
+    expect(quest(s).objectives[0]!.progress).toBe(2);
+    s = write(s, [kill('Beast')], ctx({ session: 3 }));
+    expect(quest(s).objectives[0]!.progress, 'a new session counts from 1').toBe(1);
+    s = write(s, [kill('Beast'), kill('Beast'), kill('Beast')], ctx({ session: 3 }));
+    expect(quest(s).objectives[0]!.progress).toBe(3);
+    expect(quest(s).status, 'the objective moved by taps is not full').toBe('active');
+    expect(write(s, [kill('Beast')], ctx({ session: 4 })).hunters[0]!.quests[0]!.objectives[0]!.progress, 'a full objective stays full').toBe(3);
+  });
+  test('a counted objective refuses a tap; a quest with none is never completed by the System', () => {
+    expect(setProgress(hunterWith(counted()), 'q7', 0, 2)).toEqual({ ok: false, why: 'not-now' });
+    const byHand = counted({ objectives: [{ label: 'Beasts', target: 1, progress: 1 }] });
+    expect(systemCompletes(byHand)).toBe(false);
+    expect(quest(write(saveWith(byHand), [kill('Beast')])).status).toBe('active');
+  });
+  test('a GM\'s counted quest on a player\'s phone in a room posts its end once, in the write that completes it', () => {
+    const room = parseRoomCode('ABC234')!;
+    const s = write(saveWith(counted({ objectives: [beasts(1)] })), [kill('Beast')], ctx({ room }));
+    const box = s.settings.sync.outbox ?? [];
+    expect(box).toHaveLength(1);
+    const e = box[0]!.letter as { kind: 'event'; event: { type: string; payload: { status: string; questId: string } } };
+    expect(e.event.type).toBe('questUpdate');
+    expect(e.event.payload).toMatchObject({ status: 'done', questId: 'q7' });
+    expect(write(saveWith(counted({ objectives: [beasts(1)] })), [kill('Beast')]).settings.sync.outbox ?? [], 'alone or the GM: nothing posted').toEqual([]);
+  });
+  test('a failed quest pays its cost in the failing write; the rollover pays an overdue quest\'s cost the same way', () => {
+    const cost = { ...newRewards(), gold: -30 };
+    const day0 = { at: AT, today: day('2026-11-14'), R: RULES, vitals: 'sheet' as const };
+    const f = ok(questFailed(saveWith(counted({ onFail: cost })), 'h1', 'q7', day0));
+    expect(quest(f.save).status).toBe('failed');
+    expect(f.save.hunters[0]!.gold).toBe(70);
+    expect(f.granted.lines).toEqual(['Loses 30 gold']);
+    const urgent = counted({ kind: 'urgent', dueAt: '2026-11-14T09:00:00.000Z', onFail: cost });
+    const r = rolledOver(saveWith(urgent), { ...day0, nowMs: Date.parse(AT), gm: false, vitals: () => 'sheet' });
+    expect(quest(r.save).status).toBe('failed');
+    expect(r.save.hunters[0]!.gold).toBe(70);
+    expect(r.costs.map(c => c.hid)).toEqual(['h1']);
+  });
+  test('the count and the cost survive the save\'s repair and the room\'s quest message; a count that does not read leaves a row moved by taps', () => {
+    const q = counted({ onFail: { ...newRewards(), xp: -20 } });
+    const back = repairSave({ ...saveWith(q) }, ENV).hunters[0]!.quests[0]!;
+    expect(back.objectives[0]!.count).toEqual(q.objectives[0]!.count!);
+    expect(back.onFail.xp).toBe(-20);
+    const offer = questOffer({ ...q, objectives: [...q.objectives, { label: 'Junk', target: 2, count: { rule: { on: 'kill', where: [{ field: 'nope', op: '=', value: 1 }] } } }] }, null);
+    expect(offer.objectives.map(o => !!o.count)).toEqual([true, false]);
+    expect(offer.onFail.xp).toBe(-20);
   });
 });

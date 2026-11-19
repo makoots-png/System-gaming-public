@@ -289,7 +289,8 @@ export const store = {
     const done = noticed(next, () => {
       const room = noticeOf(next), R = rules();
       const at = room ? { session: room.session, held: room.held } : savedNotice(next);
-      return { ...stepTime(next, new Date()), ...at, R, feats: featsFor(R, BUILT_IN_FEATS, room ? room.library : next.library.feats) };
+      // a player in a room reports the end of a quest the GM issued; the room is the one the save's link fields name
+      return { ...stepTime(next, new Date()), ...at, R, feats: featsFor(R, BUILT_IN_FEATS, room ? room.library : next.library.feats), room: room ? next.settings.sync.room : null };
     });
     store.update(s => { writeInto(s, done); }, reason);
     return { ok: true };

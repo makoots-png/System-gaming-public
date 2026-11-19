@@ -60,6 +60,6 @@ export const gestureChart = machine<Gesture, GestureEvent>({
     ['What changes it', '`gesture(g, event)`; `zoomAbout` for the wheel'],
     ['Who calls it', '`feed` in `src/views/map.js`, from the frame\'s pointer events; a `tap` goes on to the map\'s choice (`choose`)'],
     ['The test to copy', '`tests/gesture.test.ts` (its last case walks random pointer sequences); the chart\'s events are in `tests/models/gesture-events.ts`'],
-    ['The recipe', 'AGENTS.md, "A machine of the map"'],
+    ['The recipe', 'docs/guide/combat.md, "A machine of the map"'],
   ],
 });

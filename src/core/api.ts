@@ -488,6 +488,8 @@ export type QuestsApi = {
 /** A quest as the quest form holds it, the draft `questOf` and `parseChapterQuest` read. */
 export type QuestFormDraft = {
   kind: QuestKind; title: string; desc: string; objectives: Objective[]; rewards: Rewards; penaltyText: string;
+  /** What failing costs (the GM's form; a player's is empty). */
+  onFail: Rewards;
   /** Hours from when it is issued, or from when its chapter opens (the GM's new quest, a chapter's); null for none. */
   dueHours: number | null;
   /** The date and time an urgent quest is due (an edit, a player's own quest); null for none. */

@@ -19,7 +19,6 @@ import { FELL_WORDS, LIFE_TAG, SAVES_TO_END, WAYS_BACK, can, changeFatigue, chan
 import { chipDef, chipsOf, isStateChip } from '../core/hunter/chips.ts';
 import { oneOf } from '../core/one-of.ts';
 import { gmSource } from '../core/effects.ts';
-import { CHRONICLE_WORDS } from '../core/hunter/chronicle-view.ts';
 import { BUNDLE_NAME, newRewards, parseRewards, parseWords } from '../core/rewards.ts';
 import { LIMITS } from '../core/save.ts';
 import * as motion from './motion.ts';
@@ -338,8 +337,8 @@ export function register(app) {
   };
 
   // ── view + shared helpers ──
-  // B8: sticky jump chips (anchors by data-panel + scroll-margin; no layout change)
-  const CHIPS = [['Stats', 'attributes'], ['Build', 'build'], ['Skills', 'skills'], ['Titles', 'titles'], [CHRONICLE_WORDS.title, 'chronicle'], ['Gear', 'equipment'], ['Bag', 'inventory']];
+  // B8: sticky jump chips (anchors by data-panel + scroll-margin; no layout change), one for each panel that names its
+  // chip (`jump`), in the panels' own order (app.jumps), so the row and the sheet cannot disagree
   if (!document.getElementById('u17-style')) {
     const st = document.createElement('style'); st.id = 'u17-style';
     st.textContent = `#view-status>.view-main{display:contents}[data-panel]{scroll-margin-top:58px}
@@ -354,7 +353,7 @@ export function register(app) {
   }
   app.registerView({ id: 'status', label: 'Status', icon: '◈', order: 10,
     mount(el) {
-      el.insertAdjacentHTML('afterbegin', `<nav class="jump-chips" aria-label="Jump to section">${CHIPS.map(([l, id]) => `<button type="button" data-jump="${id}">${l}</button>`).join('')}</nav>`);
+      el.insertAdjacentHTML('afterbegin', `<nav class="jump-chips" aria-label="Jump to section">${app.jumps('status').map(j => `<button type="button" data-jump="${ui.esc(j.id)}">${ui.esc(j.label)}</button>`).join('')}</nav>`);
       // A15: the row fades at the edge it can still scroll toward, so a player sees there is more than "Stats … Ge…".
       const nav = el.querySelector('.jump-chips');
       const fades = () => {
@@ -588,7 +587,7 @@ export function register(app) {
       </div></div>`; };
 
   app.registerPanel({
-    view: 'status', id: 'attributes', order: 12, title: 'Attributes',
+    view: 'status', id: 'attributes', order: 12, title: 'Attributes', jump: 'Stats',
     mount(el) {
       el.innerHTML = `<div class="stats">${STAT_KEYS.map(statCell).join('')}</div>
         <div class="ap-row">
@@ -682,7 +681,7 @@ export function register(app) {
   // ═══ Panel: Titles ═══
   let editingTitle = null, lastHid = null; // null | 'new' | title id
   app.registerPanel({
-    view: 'status', id: 'titles', order: 20, title: 'Titles',
+    view: 'status', id: 'titles', order: 20, title: 'Titles', jump: 'Titles',
     mount(el) {
       el.innerHTML = `<ul class="plain" data-tlist></ul>
         <div data-boonwrap hidden><div class="lbl dv-sub">Boons</div><ul class="plain" data-boons aria-label="Boons"></ul></div>

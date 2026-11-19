@@ -12,7 +12,7 @@ import { UNFINISHED_ROWS, isEmptyReward, newRewards, rewardLines } from '../core
 import { GIVE_HOLD_MS, SHELF_WORDS, readRecent, recentGives } from '../core/registry/bundles.ts';
 import { giveShelf } from './give-shelf.js';
 import { LOG_KINDS } from '../core/save.ts';
-import { cleanObjectives } from '../core/hunter/quests.ts';
+import { questOffer } from '../core/hunter/quests.ts';
 import { pickables, sheetName } from '../core/party.ts';
 import { tapWords } from '../core/sync/taps.ts';
 import { featsSwitched, resetRuleNumbers, resetTable, saveRuleNumbers, writeTable } from '../core/rules.ts';
@@ -485,13 +485,12 @@ export function register(app) {
     const { local, remote } = picked();
     if (!local.length && !remote.length) return say('#gm-q-msg', 'Select at least one hunter (Award section).', true);
     const v = questForm.value();
-    const partial = { kind: v.kind, title: v.title.slice(0, 120), desc: v.desc.slice(0, 500), from: /** @type {const} */ ('gm'),
-      objectives: cleanObjectives(v.objectives).map(o => ({ ...o, progress: 0 })), rewards: v.rewards, penaltyText: v.penaltyText.slice(0, 300),
-      dueAt: v.dueHours !== null ? dueIn(v.dueHours, new Date()) : null };
+    // the offer the room carries and the draft a hunter here is issued are the same quest (quests.ts `questOffer`)
+    const quest = questOffer(v, v.dueHours !== null ? dueIn(v.dueHours, new Date()) : null), partial = { ...quest, from: /** @type {const} */ ('gm') };
     let msg = '';
     if (local.length) { const ids = A().quests.issue(local, partial); msg = Array.isArray(ids) && ids.length ? `Issued to ${local.length} hunter${local.length === 1 ? '' : 's'}.` : 'The quest module did not accept the quest yet.'; }
     if (remote.length) {
-      const r = roomPost('quest', { to: remote, quest: partial });
+      const r = roomPost('quest', { to: remote, quest });
       msg += !r.ok ? (whyNot(r) === 'noRoom' ? ' Remote hunters need a room.' : ' The room would not take this quest.') : goesNow() ? ` Sent to ${remote.length} remote.` : ` ${remote.length} remote get${remote.length === 1 ? 's' : ''} it when the room answers.`;
     }
     say('#gm-q-msg', msg.trim());

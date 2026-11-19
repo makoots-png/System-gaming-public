@@ -6,6 +6,8 @@
 import { parseCounted } from './counts.ts';
 import type { Counted } from './counts.ts';
 import { parseFeatKey } from '../ids.ts';
+import { dayKey, parseDayKey, timeOf } from '../day.ts';
+import type { DayKey } from '../day.ts';
 import { parseFact, parseKept } from './facts.ts';
 import type { Fact, Kept } from './facts.ts';
 
@@ -73,10 +75,11 @@ export type Chronicle = {
   readonly feats: Readonly<Record<string, FeatState>>;
 };
 /**
- * A hunter's place on one feat (feats.ts, its machine `featStep`): hidden or shown with its count, or earned, with when
- * and the feat's name as it was then (a feat deleted since still reads).
+ * Where a hunter is on a feat: hidden or shown with its count, or earned: the write's time (`on`, for the order), the
+ * day that time fell on at this phone's reset hour (`day`, src/core/day.ts `dayKey`, the day its `feat` fact is stamped
+ * with), and the feat's name as it was, so a deleted feat still reads.
  */
-export type FeatState = ({ readonly at: 'hidden' | 'shown' } & Counted) | { readonly at: 'earned'; readonly on: string; readonly name: string };
+export type FeatState = ({ readonly at: 'hidden' | 'shown' } & Counted) | { readonly at: 'earned'; readonly on: string; readonly day: DayKey; readonly name: string };
 /** The most feats a chronicle holds a place on, a bound for junk: the built-ins and a full library. */
 export const FEAT_STATES_MAX = 400;
 /** The earned feats the sheet push carries, the newest (notes-1-feats.md 1.6). */
@@ -140,7 +143,11 @@ export function parseChronicle(v: unknown): Chronicle {
 /** A feat state from outside data, or null: earned with its time and name, or hidden or shown with its count. */
 function featState(v: unknown): FeatState | null {
   if (!isObj(v)) return null;
-  if (v.at === 'earned') return typeof v.on === 'string' && typeof v.name === 'string' ? { at: 'earned', on: v.on.slice(0, 40), name: v.name.slice(0, 60) } : null;
+  if (v.at === 'earned') {
+    // a state from before the day was kept takes the local calendar day of its time, once (old saves: the hunter survives)
+    const on = timeOf(v.on), day = parseDayKey(v.day) ?? (on ? dayKey(new Date(on), 0) : null);
+    return on && day && typeof v.name === 'string' ? { at: 'earned', on, day, name: v.name.slice(0, 60) } : null;
+  }
   return v.at === 'hidden' || v.at === 'shown' ? { at: v.at, ...parseCounted(v) } : null;
 }
 /** The feat states of a chronicle: each under a key that reads as a feat's, at most `FEAT_STATES_MAX`. */

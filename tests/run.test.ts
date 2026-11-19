@@ -222,7 +222,7 @@ describe('a move in the GM\'s room (unit 4)', () => {
   const withFirst = (c: Chapter): Save => { const s = gm(); return { ...s, library: { ...s.library, stories: [{ ...WAGER, chapters: [c, ...WAGER.chapters.slice(1)] }] } }; };
 
   test('a chapter opened for a player\'s hunter is posted once, in the move\'s write, with what the GM\'s own hunters get and the quest due from the open', () => {
-    const quest: Chapter['quest'] = { kind: 'side', title: 'Find it', desc: '', objectives: [{ label: 'Find the foe', target: 1, progress: 0 }], rewards: newRewards(), dueHours: 48, penaltyText: '' };
+    const quest: Chapter['quest'] = { kind: 'side', title: 'Find it', desc: '', objectives: [{ label: 'Find the foe', target: 1, progress: 0 }], rewards: newRewards(), onFail: newRewards(), dueHours: 48, penaltyText: '' };
     const c = { ...WAGER.chapters[0]!, quest }, e = turnOn({ at: 'hunters', refs: [KAI_P, MIRA] }, [KAI_P, MIRA]), m = ok(storyMove(withFirst(c), R1, e, IN_ROOM));
     const [p, ...more] = posted(m.save);
     expect([more, p!.to, p!.words, p!.rewards, p!.quest?.dueAt, m.posted]).toEqual([[], [KAI_KEY], c.words, c.rewards, '2026-11-21T10:00:00.000Z', [KAI_KEY]]);
@@ -284,7 +284,7 @@ describe('only the GM\'s tap moves a story', () => {
     expect(n.hunters[0]!.gold, 'the feat was earned').toBe(base.hunters[0]!.gold + 5);
     same(n);
 
-    const quest = { id: qid('q50'), kind: 'urgent' as const, title: 'Hold the bridge', desc: '', objectives: [], rewards: newRewards(), status: 'active' as const, issuedAt: AT, doneAt: null, dueAt: '2026-11-19T09:00:00.000Z', from: 'gm' as const, penaltyText: '' };
+    const quest = { id: qid('q50'), kind: 'urgent' as const, title: 'Hold the bridge', desc: '', objectives: [], rewards: newRewards(), status: 'active' as const, issuedAt: AT, doneAt: null, dueAt: '2026-11-19T09:00:00.000Z', from: 'gm' as const, penaltyText: '', onFail: newRewards() };
     const withQuest = { ...base, hunters: base.hunters.map(h => (h.id === 'h2' ? { ...h, quests: [...h.quests, quest] } : h)) };
     same(ok(finishQuest(withQuest, 'h2', 'q50', { ...DAY, vitals: 'sheet' })).save);
     const failed = rollover(withQuest, { today: TODAY, at: AT, nowMs: Date.parse(AT), gm: true });

@@ -1,4 +1,4 @@
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, answerWindow, type Page } from './helpers.ts';
+import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, answerWindow, startGoblinDenFight, chooseList, fightRow, type Page } from './helpers.ts';
 
 /** A GM and a player in one room, the player's card on the GM's party board. Answers both pages and the player's sheet key. */
 async function room(device: (label: string) => Promise<{ page: Page }>): Promise<{ gm: Page; player: Page; key: string }> {
@@ -202,5 +202,49 @@ test('the GM awards the title Square in place of Owed to the Deep: the hunter ke
     const list = gm.locator('[data-panel="titles"] [data-tlist]');
     await expect(list.locator('li', { hasText: 'Square' }).locator('[data-tset]')).toHaveText('Unset');
     await expect(list.locator('li', { hasText: 'Owed to the Deep' })).toHaveCount(0);
+  });
+});
+
+test('the GM awards the title Steady Hand worn in fights as Hasted: once it is the active title, the hunter starts a fight Hasted', async ({ device }) => {
+  const gm = (await device('gm')).page;
+  await onboardGM(gm);
+  await gm.evaluate(() => hunterApp.store.update((d: any) => { d.rulesOverrides.feats = { on: false }; d.rulesOverrides.solo = { personal: false }; }, 'test-setup'));
+  const name = (await activeHunter(gm)).name as string;
+  await go(gm, 'gm');
+  const toggle = gm.locator('[data-tog="award"]');
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.tap();
+  const ed = gm.locator('#gm-rw'), row = ed.locator('[data-kind="title"]');
+
+  await test.step('the title row has Worn in fights, and the preview names the status', async () => {
+    await ed.locator('[data-add="title"]').tap();
+    await row.locator('[data-f="name"]').fill('Steady Hand');
+    await expect(row.locator('label.field', { hasText: 'Worn in fights' })).toBeVisible();
+    await expect(row).toContainText('While this is the hunter\'s active title, the status is on the hunter in every fight.');
+    await row.locator('[data-f="tworn"]').selectOption('hasted');
+    await expect(ed.locator('.rw-preview')).toContainText('Title acquired: Steady Hand, worn in fights: Hasted');
+  });
+
+  await test.step('the award is sent, and the hunter\'s window names the worn status', async () => {
+    await gm.locator('#gm-targets label', { hasText: name }).locator('input').check();
+    await gm.locator('#gm-award-go').tap();
+    await expect(gm.locator('.sys-overlay.show', { hasText: 'Title acquired: Steady Hand, worn in fights: Hasted' })).toBeVisible();
+    await dismissAll(gm, 4);
+  });
+
+  await test.step('the hunter sets Steady Hand active on the sheet', async () => {
+    await go(gm, 'status');
+    const li = gm.locator('[data-panel="titles"] [data-tlist] li', { hasText: 'Steady Hand' });
+    await li.locator('[data-tset]').tap();
+    await expect(li.locator('[data-tset]')).toHaveText('Unset');
+  });
+
+  await test.step('in the Goblin Den fight the hunter\'s row is Hasted, a worn status, and the other hunters\' rows are not', async () => {
+    await chooseList(gm);
+    await startGoblinDenFight(gm, [name]);
+    const hasted = (r: any) => r.statuses.filter((s: any) => s.def.label === 'Hasted').map((s: any) => ({ worn: s.worn === true, until: s.until }));
+    expect(hasted(await fightRow(gm, name))).toEqual([{ worn: true, until: null }]);
+    const others = await gm.evaluate(n => hunterApp.store.get().fight.rows.filter((r: any) => r.kind === 'hunter' && r.name !== n).map((r: any) => r.statuses.filter((s: any) => s.def.label === 'Hasted').length), name);
+    expect(others.length).toBeGreaterThan(0);
+    expect(others.every((n: number) => n === 0)).toBe(true);
   });
 });

@@ -4,6 +4,7 @@
 // Ids and times are arguments: the store reserves an id (`store.id('t')`), the view reads the clock.
 import { RANKS, jobOf } from '../save.ts';
 import type { Boon, Rank, Title } from '../save.ts';
+import type { StatusDef } from '../combat/effect-ops.ts';
 import { oneOf } from '../one-of.ts';
 import { titleKey } from '../ids.ts';
 import { rankForLevel, rankIdx } from '../rules.ts';
@@ -47,7 +48,7 @@ export function reevaluate<H extends Named & Chronicled>(h: H, R: Rules): H | Re
  * What a title is given from: a rule title by its key (`{ key }`), a title written out (a reward's; with the key of the
  * rule title it copies, when it does, and the name of a title it takes the place of, `replaces`), or a bare name.
  */
-export type TitleSpec = string | { key: string } | { name: string; desc?: string; bonus?: Title['bonus']; key?: string; replaces?: string };
+export type TitleSpec = string | { key: string } | { name: string; desc?: string; bonus?: Title['bonus']; key?: string; replaces?: string; worn?: StatusDef };
 /** A title of the rules (`R.titles`): its key is what a hunter's title records (`Title.seedKey`), never its name. */
 export type SeedTitle = { key: string; name: string; desc?: string; bonus?: Title['bonus'] };
 /** The rule title a spec names by its key, or null. */
@@ -84,7 +85,8 @@ export function giveTitle<H extends Titled & Chronicled>(h: H, spec: TitleSpec, 
   // a reward's title keeps the words it was sent with; a rule title by its key alone takes the rule's
   const src: { desc?: string; bonus?: Title['bonus'] } = written ?? seed ?? {};
   const old = written?.replaces ? titleNamed(h, written.replaces, seeds) : undefined;
-  const made = (at: string) => ({ id: at, name, desc: String(src.desc ?? '').slice(0, 500), bonus: { ...(src.bonus ?? {}) }, ...(seed ? { seedKey: seed.key } : {}) });
+  // a written title's worn status goes with it, also in another's place (the old one's goes with the old title)
+  const made = (at: string) => ({ id: at, name, desc: String(src.desc ?? '').slice(0, 500), bonus: { ...(src.bonus ?? {}) }, ...(seed ? { seedKey: seed.key } : {}), ...(written?.worn ? { worn: written.worn } : {}) });
   return record({ ...h, titles: old ? h.titles.map(t => (t === old ? made(old.id) : t)) : [...h.titles, made(id)] }, { kind: 'title', name });
 }
 /** Set active, or unset when it is the active one. A title the hunter does not hold is refused (`no-title`). */

@@ -87,11 +87,12 @@ describe('the Penalty Zone quest', () => {
     for (const e of [done('q5'), deleted('q5'), deleted('q5', 'player')]) expect(step(null, e)).toEqual({ penalty: null, effects: [] });
   });
 
-  test('is the one the System issues: survive 4 hours, from the System, no reward', () => {
+  test('is the one the System issues: survive 4 hours, from the System, no reward and no cost', () => {
     expect(penaltyQuest(qid('q9'), TUE)).toEqual({
       id: 'q9', kind: 'penalty', title: 'Penalty Zone: Survive for 4 hours', desc: 'You failed the Daily Quest. Survive the Penalty Zone. The GM decides how it plays.',
       objectives: [{ label: 'Hours survived', target: 4, progress: 0 }], rewards: { xp: 0, points: 0, gold: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] },
       status: 'active', issuedAt: TUE, doneAt: null, dueAt: null, from: 'system', penaltyText: '',
+      onFail: { xp: 0, points: 0, gold: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] },
     });
   });
 });

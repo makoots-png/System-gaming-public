@@ -779,3 +779,97 @@ test('Start session counts on from the campaign\'s last session after its log ha
   expect(after.world).toMatchObject({ day: 8, session: 42 });
   expect(after.log).toEqual([['Session 42 began', 'A backup was saved. World day 8.'], ['World day', 'Day advanced by 1 to 8.']]);
 });
+
+test('a GM makes a quest the System counts: two short rests complete it with its window, and a quest that fails costs what If it fails says', async ({ device }) => {
+  const page = (await device('gm')).page;
+  await onboardGM(page);
+  await dismissAll(page, 6);
+  await page.evaluate(() => hunterApp.store.update((d: any) => { d.rulesOverrides.feats = { on: false }; d.rulesOverrides.solo = { personal: false }; }, 'test-setup'));
+  const form = page.locator('#view-quests form[data-form]');
+  const card = (title: string) => page.locator('#view-quests .qc', { hasText: title });
+
+  await test.step('the GM writes "Catch your breath": two short rests, counted by the System', async () => {
+    await go(page, 'quests');
+    await page.locator('#view-quests [data-new]').tap();
+    await form.locator('[name=title]').fill('Catch your breath');
+    await form.locator('[name=olabel]').fill('Short rests');
+    await form.locator('[name=otarget]').fill('2');
+    await form.locator('[data-ocb]').selectOption('system');
+    await form.locator('[data-ocount] [data-ck]').selectOption('rest');
+    await form.locator('[data-ocount] [data-tadd]').tap();
+    await form.locator('[data-ocount] [data-test] [data-tv]').selectOption('false');
+    await form.locator('button[type=submit]').tap();
+    await expect(card('Catch your breath').locator('[data-counted]')).toHaveText('Counted by the System');
+    await expect(card('Catch your breath').locator('[data-done]'), 'the System completes it, so no tap does').toHaveCount(0);
+  });
+
+  await test.step('two short rests on the sheet complete it, and its window opens once', async () => {
+    await go(page, 'status');
+    await page.locator('#view-status [data-rest="short"]').tap();
+    const q = () => page.evaluate(() => hunterApp.store.active().quests.find((x: any) => x.title === 'Catch your breath'));
+    await expect.poll(async () => (await q()).objectives[0].progress).toBe(1);
+    await page.locator('#view-status [data-rest="short"]').tap();
+    await answerWindow(page, 'QUEST COMPLETE');
+    const done = await q();
+    expect(done.status).toBe('done');
+    expect(await page.evaluate(id => hunterApp.store.device('quest-told:' + hunterApp.store.active().id).read(), done.id), 'the window is remembered as told').toContain(done.id);
+    await page.reload();
+    await expect(page.locator('#view-status [data-rest="short"]')).toBeVisible();
+  });
+
+  await test.step('a hunter with 80 gold, on a quest that costs 50 gold if it fails, has 30 when the GM taps Fail', async () => {
+    await page.evaluate(() => hunterApp.store.update(() => { hunterApp.store.active().gold = 80; }, 'test-setup'));
+    await go(page, 'quests');
+    await page.locator('#view-quests [data-new]').tap();
+    await form.locator('[name=title]').fill('Hold the line');
+    await form.locator('[name=olabel]').fill('Hold');
+    await form.locator('#qf-fail-gold').fill('-50');
+    await form.locator('button[type=submit]').tap();
+    await expect(card('Hold the line').locator('[data-onfail]')).toContainText('Loses 50 gold');
+    await card('Hold the line').locator('[data-fail]').tap();
+    await answerWindow(page, 'Fail quest?', 'Fail quest');
+    const win = page.locator('.sys-overlay.show', { hasText: 'QUEST FAILED' });
+    await expect(win).toContainText('Hold the line');
+    await expect(win).toContainText('Loses 50 gold');
+    await expect(page.locator('.sys-overlay', { hasText: 'QUEST COMPLETE' }), 'the completed quest\'s window, told before the reload, was not queued again by it').toHaveCount(0);
+    expect(await page.evaluate(() => hunterApp.store.active().gold)).toBe(30);
+    expect((await page.evaluate(() => hunterApp.store.active().quests.find((x: any) => x.title === 'Hold the line'))).status).toBe('failed');
+  });
+});
+
+test('from the GM view with Issue quest open, "Defeat 10 Beasts in one session, or lose 50 gold" takes 10 taps besides the typing', async ({ device }) => {
+  const page = (await device('gm')).page;
+  await onboardGM(page);
+  await page.evaluate(() => hunterApp.store.update((d: any) => { d.rulesOverrides.feats = { on: false }; d.rulesOverrides.solo = { personal: false }; }, 'test-setup'));
+  const name = (await activeHunter(page)).name as string;
+  await go(page, 'gm');
+  const quest = page.locator('[data-tog="quest"]'), award = page.locator('[data-tog="award"]');
+  await expect(quest, 'Issue quest starts closed').toHaveAttribute('aria-expanded', 'false');
+  await expect(award, 'the Award section, where the hunters are picked, starts closed').toHaveAttribute('aria-expanded', 'false');
+  await quest.tap();
+  const form = page.locator('#gm-qf'), count = form.locator('[data-ocount]');
+  let taps = 0;
+  const tap = async (l: import('@playwright/test').Locator) => { taps += 1; await l.tap(); };
+  /** A select is two taps on a phone: one opens it, one picks. */
+  const pick = async (l: import('@playwright/test').Locator, value: string) => { taps += 2; await l.selectOption(value); };
+
+  await form.locator('[name=title]').fill('Beast hunt');
+  await form.locator('[name=olabel]').fill('Defeat Beasts');
+  await form.locator('[name=otarget]').fill('10');
+  await pick(form.locator('[data-ocb]'), 'system');
+  await tap(count.locator('[data-tadd]'));
+  await pick(count.locator('[data-test] [data-tf]'), 'type');
+  await count.locator('[data-test] [data-tv]').fill('Beast');
+  await pick(count.locator('[data-cw]'), 'session');
+  await form.locator('#gmq-fail-gold').fill('-50');
+  await tap(award);
+  await tap(page.locator('#gm-targets label', { hasText: name }));
+  await tap(page.locator('#gm-q-go'));
+  await expect(page.locator('#gm-q-msg')).toHaveText('Issued to 1 hunter.');
+
+  const q = (await activeHunter(page)).quests.find((x: any) => x.title === 'Beast hunt');
+  expect(q.objectives).toEqual([{ label: 'Defeat Beasts', target: 10, progress: 0,
+    count: { rule: { on: 'kill', where: [{ field: 'type', op: '=', value: 'Beast' }], measure: { of: 'facts' }, within: 'session' }, mark: '' } }]);
+  expect(q.onFail).toMatchObject({ gold: -50 });
+  expect(taps, 'Counted by 2, Add a condition 1, its field 2, Within 2, the Award section 1, the hunter 1, Issue quest 1').toBe(10);
+});

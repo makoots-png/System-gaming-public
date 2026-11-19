@@ -40,7 +40,7 @@ export const soloClock = machine<ClockWorld, ClockEvent>({
     ['What changes it', '`soloTick` in `src/core/gates/solo.ts`, and `soloRan` for a cleared gate; `soloWake` is its term of the one timer (`nextWake`)'],
     ['Who calls it', '`tick` in `src/views/gates.js`, run by the one timer in `src/views/quests.js` (`checkDaily`, on the app\'s ready and at each wake)'],
     ['The test to copy', '`tests/solo.test.ts`; the walk\'s events are in `tests/models/solo-events.ts`'],
-    ['The recipe', 'AGENTS.md, "A rule of the day\'s time" and "A field of a saved thing"'],
+    ['The recipe', 'docs/guide/hunters.md, "A rule of the day\'s time"; docs/guide/save-store.md, "A field of a saved thing"'],
   ],
 });
 
@@ -82,6 +82,6 @@ export const soloWait = machine<WaitWorld, WaitModelEvent>({
     ['What changes it', '`waitStep` and its `TABLE`; `runPosted`, `runTaken`, `runsGone`, `runAnswered`, `runDismissed`'],
     ['Who calls it', '`soloRan` (gates/solo.ts) writes it; `boxDo` in `src/edge/sync.ts` hears the room take it or the room gone; `landSoloAnswer` in `src/edge/room-events.ts` answers it; `src/views/gates.js` puts a lost one away'],
     ['The test to copy', '`tests/solo-wait.test.ts`; the walk\'s events are in `tests/models/solo-events.ts`; two players in `tests/room-system-model.test.ts`'],
-    ['The recipe', 'AGENTS.md, "A room message"'],
+    ['The recipe', 'docs/guide/room-sync.md, "A room message"'],
   ],
 });

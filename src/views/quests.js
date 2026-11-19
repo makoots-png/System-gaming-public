@@ -2,20 +2,20 @@
 import { dueAt as dueIn, nextReset } from '../edge/rules.ts';
 import { canDeleteQuest } from '../core/hunter/penalty.ts';
 import { canReissue } from '../core/hunter/job-chain.ts';
-import { mayChangeQuest, reportsProgress, systemCounts } from '../core/hunter/quest-rights.ts';
+import { mayChangeQuest, reportsProgress, systemCompletes, systemCounts } from '../core/hunter/quest-rights.ts';
 import { pickables, pickedRef } from '../core/party.ts';
 import { JOB_NAMES, isJobName } from '../core/registry/jobs.ts';
 import { newRewards, rewardLines as linesOf } from '../core/rewards.ts';
 import { atHunter } from '../core/save-step.ts';
 import { objectivesSum, questUpdateSaid, told } from '../core/session-log.ts';
-import { chained, cleanObjectives, completeQuest, deleteQuest as questDeleted, editQuest, failQuest, issueQuest, nextWake, overdue, reopenQuest, rollover, rolloverDue, setProgress as progressSet, tracked as penalizable, withTold } from '../core/hunter/quests.ts';
+import { chained, completeQuest, deleteQuest as questDeleted, editQuest, issueQuest, nextWake, overdue, questNews, questOffer, reopenQuest, rolloverDue, setProgress as progressSet, tracked as penalizable, withTold } from '../core/hunter/quests.ts';
 import { fillTo } from './motion.ts';
 import { compareTimes, stepTime } from '../core/day.ts';
-import { STREAK_BONUS_POINTS, chainStep, finishQuest } from '../core/hunter/grant.ts';
+import { STREAK_BONUS_POINTS, chainStep, finishQuest, questFailed, rolledOver } from '../core/hunter/grant.ts';
 import { sent } from '../core/award.ts';
 import { isRefused } from '../core/save-step.ts';
 import { postNews } from '../core/sync/connection.ts';
-import { KIND_LABEL, questFields, questFieldsCss } from './quest-fields.js';
+import { COUNTED_WORDS, FAIL_WORDS, KIND_LABEL, questFields, questFieldsCss } from './quest-fields.js';
 
 const TABS = [['active', 'Active'], ['daily', 'Daily'], ['done', 'Completed'], ['failed', 'Failed']];
 
@@ -247,13 +247,45 @@ export function register(app) {
     return true;
   }
 
+  /**
+   * Hunter `hid` fails quest `qid`: the quest failed, its chain told and what failing costs given, with what this phone's
+   * fight holds of the cost on the hunter's row, in one write (grant.ts `questFailed`, hunter.js `grantWrite`); then the
+   * GM's progress post and the cost's window when it gave anything.
+   */
   function fail(hid, qid) {
     const h = store.hunter(hid), q = h && h.quests.find(x => x.id === qid);
     if (!q || q.status !== 'active') return false;
-    if (!questApply('quest-fail', hid, x => failQuest(x, qid, iso()))) return false;
+    const day = { ...stepTime(store.get(), new Date()), R: app.rules(), vitals: /** @type {import('../core/hunter/grant.ts').VitalsAt} */ (app.api.hunter.fightOf({ hid }) ? 'fight' : 'sheet') };
+    const out = app.api.hunter.grantWrite('quest-fail', s => {
+      const r = questFailed(s, hid, qid, day);
+      return isRefused(r) ? r : { ...r, held: [{ who: { hid }, ...r.granted.fight }] };
+    });
+    if (isRefused(out)) return false;
     sendUpdate(h.id, q, 'failed');
+    if (out.granted.lines.length) ui.system({ tag: '! Quest', kind: 'warning', title: 'QUEST FAILED', body: q.title, rewards: out.granted.lines });
+    app.api.hunter.granted(hid, out.granted, { popup: false });
     return true;
   }
+
+  // ── a quest the System completed (feature 1's notes 17.14): its window once, told in device memory ──
+  /** The quests asked of the player and not answered yet, by hunter and quest, so a second change does not queue a second window. */
+  const telling = new Set();
+  const toldMemory = hid => store.device('quest-told:' + hid);
+  const toldOf = hid => { const raw = toldMemory(hid).read(); return Array.isArray(raw) ? raw.filter(x => typeof x === 'string') : []; };
+  function tellDone() {
+    const s = store.get(), many = s.hunters.length > 1;
+    for (const h of s.hunters) for (const q of questNews(h, toldOf(h.id))) {
+      const id = `${h.id}|${q.id}`;
+      if (telling.has(id)) continue;
+      telling.add(id);
+      app.emit('quest:done', { hunterId: h.id, quest: q });
+      void ui.system({ tag: '! Quest', kind: 'quest', title: q.kind === 'urgent' ? 'URGENT QUEST COMPLETE' : 'QUEST COMPLETE', body: `${many ? `${h.name}: ` : ''}${q.title}`, rewards: rewardLines(q.rewards) })
+        .then(() => { telling.delete(id); toldMemory(h.id).write([...toldOf(h.id), q.id].slice(-200)); });
+    }
+  }
+  // after the task that wrote, as a feat's window is (feats.js)
+  store.subscribe(() => queueMicrotask(tellDone));
+  app.on('ready', tellDone);
 
   // ── daily engine (§D) ──
   // a GM device holds NPCs and pre-made sheets nobody trains with: no penalty until that hunter has completed a daily once
@@ -274,11 +306,12 @@ export function register(app) {
     app.api.gates.tick();
     const now = new Date(), key = stepTime(store.get(), now).today, nowMs = now.getTime();
     if (!rolloverDue(store.get(), key, nowMs)) { arm(); return; }
-    let penalties = [], failedUrgent = [];
-    store.apply('daily-check', s => {
-      const r = rollover(s, { today: key, at: now.toISOString(), nowMs, gm: app.isGM() });
-      penalties = r.told.penalties; failedUrgent = r.told.failed;
-      return told(r.save, stamp(), ...r.said);
+    let penalties = [], failedUrgent = [], costs = [];
+    // the rollover and what each overdue quest costs, with what this phone's fight holds of a cost on its row, in one write (grant.ts `rolledOver`)
+    app.api.hunter.grantWrite('daily-check', s => {
+      const r = rolledOver(s, { today: key, at: now.toISOString(), nowMs, gm: app.isGM(), R: app.rules(), vitals: hid => (app.api.hunter.fightOf({ hid }) ? 'fight' : 'sheet') });
+      penalties = r.told.penalties; failedUrgent = r.told.failed; costs = r.costs;
+      return { save: told(r.save, stamp(), ...r.said), held: r.costs.map(c => ({ who: { hid: c.hid }, ...c.granted.fight })) };
     });
     const many = store.get().hunters.length > 1;
     for (const p of penalties) {
@@ -287,7 +320,8 @@ export function register(app) {
         lines: [...(p.days > 1 ? [`Days missed: ${p.days}`] : []), 'Streak reset to 0', 'Penalized: -2 to all checks until the Penalty Zone is cleared'] });
     }
     for (const f of failedUrgent) {
-      ui.system({ tag: '! Quest', kind: 'warning', title: 'QUEST FAILED', body: `${many ? `${f.name}: ` : ''}${f.title}: the time limit has expired.` });
+      const cost = costs.find(c => c.hid === f.hid && c.granted.lines.length);
+      ui.system({ tag: '! Quest', kind: 'warning', title: 'QUEST FAILED', body: `${many ? `${f.name}: ` : ''}${f.title}: the time limit has expired.`, ...(cost ? { rewards: cost.granted.lines } : {}) });
     }
   }
 
@@ -299,15 +333,15 @@ export function register(app) {
   const barsWas = new Map();
 
   const objHtml = (q, i, o, counted) => {
-    const f = Math.min(1, o.progress / o.target), live = q.status === 'active' && !counted;
-    return `<div class="qo${o.progress >= o.target ? ' full' : ''}"><span class="qo-l">${esc(o.label)}</span>
+    const f = Math.min(1, o.progress / o.target), live = q.status === 'active' && !counted && !o.count;
+    return `<div class="qo${o.progress >= o.target ? ' full' : ''}"><span class="qo-l">${esc(o.label)}${o.count ? ` <span class="qo-by" data-counted>${esc(COUNTED_WORDS.card)}</span>` : ''}</span>
       <span class="qo-c">${live ? `<button type="button" data-od="${esc(q.id)}" data-i="${i}" aria-label="Decrease ${esc(o.label)}">&minus;</button>
         <button type="button" class="qo-v" data-os="${esc(q.id)}" data-i="${i}" aria-label="Set progress for ${esc(o.label)}">${esc(o.progress)}/${esc(o.target)}</button>
         <button type="button" data-oi="${esc(q.id)}" data-i="${i}" aria-label="Increase ${esc(o.label)}">+</button>` : `<span class="qo-v">${esc(o.progress)}/${esc(o.target)}</span>`}</span>
       <div class="qo-bar" role="progressbar" aria-label="${esc(o.label)} progress" aria-valuemin="0" aria-valuemax="${esc(o.target)}" aria-valuenow="${esc(o.progress)}" data-qbar="${esc(q.id)}:${i}" data-f="${f}"><i style="--f:${f}"></i></div></div>`;
   };
   const cardHtml = (q, gm, h) => {
-    const rw = rewardLines(q.rewards), live = q.status === 'active';
+    const rw = rewardLines(q.rewards), cost = rewardLines(q.onFail), live = q.status === 'active';
     const due = q.dueAt ? `<div class="qdue${overdue(q, Date.now()) ? ' over' : ''}">Due ${esc(new Date(q.dueAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }))}</div>` : '';
     const st = q.status === 'done' ? 'Done' : q.status === 'failed' ? 'Failed' : '';
     const id = esc(q.id), blocks = q.from === 'gm', lock = !mayChange(q), counted = systemCounts(q, h.jobChain);
@@ -317,13 +351,15 @@ export function register(app) {
       ${blocks ? `${q.desc ? `<div class="qb"><h4>Goal</h4><p>${esc(q.desc)}</p></div>` : ''}
         ${q.objectives.length ? `<div class="qb"><h4>Objectives</h4>${q.objectives.map((o, i) => objHtml(q, i, o, counted)).join('')}</div>` : ''}
         ${due}${rw.length ? `<div class="qb"><h4>Reward</h4><div class="qr" aria-label="Rewards">${rw.map(r => `<span>${esc(r)}</span>`).join('')}</div></div>` : ''}
+        ${cost.length ? `<div class="qb pen" data-onfail><h4>${esc(FAIL_WORDS.legend)}</h4><div class="qr">${cost.map(r => `<span>${esc(r)}</span>`).join('')}</div></div>` : ''}
         ${q.penaltyText ? `<div class="qb pen"><h4>Penalty</h4><p>${esc(q.penaltyText)}</p></div>` : ''}` : `
       ${q.desc ? `<p class="qc-desc">${esc(q.desc)}</p>` : ''}
       ${q.objectives.map((o, i) => objHtml(q, i, o, counted)).join('')}
       ${due}${rw.length ? `<div class="qr" aria-label="Rewards">${rw.map(r => `<span>${esc(r)}</span>`).join('')}</div>` : ''}
+      ${cost.length ? `<div class="qb pen" data-onfail><h4>${esc(FAIL_WORDS.legend)}</h4><div class="qr">${cost.map(r => `<span>${esc(r)}</span>`).join('')}</div></div>` : ''}
       ${q.penaltyText ? `<div class="qb pen"><h4>Penalty</h4><p>${esc(q.penaltyText)}</p></div>` : ''}`}
       <div class="qa">
-        ${live ? `<button type="button" class="primary" data-done="${id}">Complete</button><button type="button" data-fail="${id}">Fail</button>` : ''}
+        ${live ? `${systemCompletes(q) ? '' : `<button type="button" class="primary" data-done="${id}">Complete</button>`}<button type="button" data-fail="${id}">Fail</button>` : ''}
         ${q.status === 'failed' && !q.chainId ? `<button type="button" data-reopen="${id}">Reopen</button>` : ''}
         ${lock ? '' : `<button type="button" data-edit="${id}">Edit</button>`}
         ${gm ? `<button type="button" data-issue="${id}">Issue to…</button>` : ''}
@@ -380,9 +416,10 @@ export function register(app) {
     const dueAt = v.dueAt ?? (v.dueHours !== null ? dueIn(v.dueHours, new Date()) : null) ?? (existing && kind !== 'urgent' ? existing.dueAt : null);
     const rewards = gm ? v.rewards : existing ? existing.rewards : newRewards();
     const penaltyText = gm ? v.penaltyText.slice(0, 300) : existing ? existing.penaltyText || '' : '';
-    const partial = { kind, title, desc: v.desc, objectives, rewards, dueAt, penaltyText };
+    const onFail = gm ? v.onFail : existing ? existing.onFail : newRewards();
+    const partial = { kind, title, desc: v.desc, objectives, rewards, onFail, dueAt, penaltyText };
     if (existing) {
-      store.apply('quest-edit', atHunter(store.active().id, h => editQuest(h, existing.id, { kind, title, desc: partial.desc, objectives, rewards, dueAt, penaltyText }, role())));
+      store.apply('quest-edit', atHunter(store.active().id, h => editQuest(h, existing.id, { kind, title, desc: partial.desc, objectives, rewards, onFail, dueAt, penaltyText }, role())));
     } else {
       const picks = gm ? [...f.querySelectorAll('[name=to]:checked')] : [];
       const to = gm ? picks.filter(c => c.hasAttribute('data-local')).map(c => c.value) : [store.active().id];
@@ -390,8 +427,7 @@ export function register(app) {
       if (!to.length && !keys.length) { err.textContent = 'Pick at least one hunter.'; return; }
       if (to.length) api.issue(to, { ...partial, from: gm ? 'gm' : 'self' });
       if (keys.length) {
-        const quest = { kind, title: title.slice(0, 120), desc: partial.desc.slice(0, 500), objectives: cleanObjectives(objectives).map(o => ({ ...o, progress: 0 })), rewards, dueAt, penaltyText };
-        const S = app.api.sync, r = S.post(S.event('quest', { to: keys, quest })), news = postNews(r, S.conn()), n = `${keys.length} player${keys.length === 1 ? '' : 's'}`;
+        const S = app.api.sync, r = S.post(S.event('quest', { to: keys, quest: questOffer(partial, dueAt) })), news = postNews(r, S.conn()), n = `${keys.length} player${keys.length === 1 ? '' : 's'}`;
         ui.toast('! Quest', news === 'sent' ? `Quest sent to ${n}.` : news === 'waits' ? `The quest goes to ${n} when the room answers.`
           : news === 'noRoom' ? 'Not in a room. Quest not sent.' : 'The room would not take this quest.', { kind: news === 'sent' || news === 'waits' ? 'info' : 'warn' });
       }

@@ -58,6 +58,6 @@ export const store = machine<StoreLife, StoreEvent>({
     ['What changes it', '`storeStep(life, event)` and its `TABLE`; `opened` is the load\'s'],
     ['Who calls it', '`src/edge/store.ts` (`carry`, `run`): its writes, the frame\'s timer, the page hidden or left, the `storage` event, a replace; `noticesOf` is what the banners say, `mayChange` what `store.apply` refuses'],
     ['The test to copy', '`tests/store-life.test.ts`, `tests/e2e/save.e2e.ts`; the walk\'s events are in `tests/models/store-events.ts`'],
-    ['The recipe', 'AGENTS.md, "A state or event of the ... machine"'],
+    ['The recipe', 'docs/guide/hunters.md, "A state or event of the ... machine"'],
   ],
 });

@@ -3,6 +3,8 @@
 // Pure: the caller passes the clock and the device id maker in `ParseEnv`.
 // A change to the shape of a save is made here and in tests/save.test.ts.
 import { parseFeats } from './hunter/feats.ts';
+import { parseObjectiveCount } from './hunter/counts.ts';
+import type { ObjectiveCount } from './hunter/counts.ts';
 import type { FeatDef } from './hunter/feats.ts';
 import { STATUS_KEY_RE } from './combat/effect-ops.ts';
 import type { SheetStatus, StatusDef } from './combat/effect-ops.ts';
@@ -105,7 +107,11 @@ export type LogKind = (typeof LOG_KINDS)[number];
 export type Condition = SheetStatus;
 export type { StatusDef };
 
-export type Objective = { label: string; target: number; progress: number };
+/**
+ * A quest's objective. `count`: the System moves it by the hunter's facts on the phone that holds the hunter (counts.ts
+ * `objectiveStep`, in the notice step): its progress is the count, capped at its target, and no tap moves it. Absent: a tap moves it.
+ */
+export type Objective = { label: string; target: number; progress: number; count?: ObjectiveCount };
 /** What a reward may hold and its one reader: src/core/rewards.ts. */
 export { newRewards };
 export type { RewardBundle, Rewards };
@@ -117,13 +123,19 @@ export type Quest = QuestState & {
   issuedAt: string; dueAt: string | null; from: QuestSource; penaltyText: string;
   /** On a Job Change step's quest: the id of the chain that issued it (src/core/hunter/job-chain.ts). A back-reference only. */
   chainId?: ChainId;
+  /** What failing costs: given by `grant` in the write that fails it (grant.ts `questFailed`). Empty gives nothing. */
+  onFail: Rewards;
 };
 export type Loadout = { id: LoadoutId; name: string; slots: Partial<Record<Slot, ItemId>> };
 /**
  * A title a hunter holds. `bonus`: while it is the active one, the eight stats, `hpMax` and `manaMax` (`PERK_KEYS`).
  * `seedKey`: the key of the rule title it was given from (src/core/hunter/record.ts `giveTitle`), kept through a rename.
  */
-export type Title = { id: TitleId; name: string; desc: string; bonus: Perk; seedKey?: string };
+export type Title = {
+  id: TitleId; name: string; desc: string; bonus: Perk; seedKey?: string;
+  /** While it is the active title, this status is on its hunter's row in every fight, at the hunter's rank (rows.ts `wornStatuses`). */
+  worn?: StatusDef;
+};
 /** A text reward the GM honours at the table, held until the player redeems it. `at`: when it was given. */
 export type Boon = { id: BoonId; name: string; text: string; at: string };
 /**
@@ -268,7 +280,7 @@ export const newSettings = (deviceId: DeviceId): Settings => ({
 export const newWorld = (): World => ({ day: 1, lastDailyKey: null, session: 0 });
 export const newQuest = (): Quest => ({
   id: saveId('q', 0), kind: 'side', title: '', desc: '', objectives: [], rewards: newRewards(), status: 'active', issuedAt: '', doneAt: null,
-  dueAt: null, from: 'self', penaltyText: '',
+  dueAt: null, from: 'self', penaltyText: '', onFail: newRewards(),
 });
 export const newLoadout = (): Loadout => ({ id: saveId('lo', 0), name: '', slots: {} });
 export const newTitle = (): Title => ({ id: saveId('t', 0), name: '', desc: '', bonus: {} });
@@ -520,7 +532,10 @@ function fixHunter(run: Run, h: Hunter): void {
   h.pending = pending;
   if (locked) h.spent = Math.max(0, h.spent - pendingTotal(h));
   h.conditions = conditions(R, h.conditions);
-  h.titles = list(run, h.titles, 't', newTitle, t => { t.name = t.name.slice(0, 60); fixBonus(t.bonus); if (t.seedKey !== undefined && !titleKey(t.seedKey)) delete t.seedKey; });
+  h.titles = list(run, h.titles, 't', newTitle, t => {
+    t.name = t.name.slice(0, 60); fixBonus(t.bonus); if (t.seedKey !== undefined && !titleKey(t.seedKey)) delete t.seedKey;
+    if (t.worn !== undefined) { const worn = parseStatusDef(t.worn, BASE_RULES); if (worn) t.worn = worn; else delete t.worn; }
+  });
   if (h.titleId !== null && !h.titles.some(t => t.id === h.titleId)) h.titleId = null;
   optional(h, 'seed', v => v === true);
   // A boon without a name is dropped; past the cap the oldest go (a new boon is added last).
@@ -530,8 +545,11 @@ function fixHunter(run: Run, h: Hunter): void {
   h.quests = list(run, h.quests, 'q', newQuest, q => {
     q.penaltyText = q.penaltyText.slice(0, 300); q.title = q.title.slice(0, 120);
     q.kind = oneOf(q.kind, QUEST_KINDS, 'side'); q.from = oneOf(q.from, QUEST_SOURCES, 'self');
-    q.objectives = q.objectives.filter(isObj).map(o => ({ ...o, label: str(o.label, '', 120), target: num(o.target, 1), progress: num(o.progress, 0) }));
-    q.rewards = parseRewards(q.rewards) ?? newRewards();
+    q.objectives = q.objectives.filter(isObj).map(o => {
+      const count = o.count === undefined ? null : parseObjectiveCount(o.count), { count: _, ...rest } = o;
+      return { ...rest, label: str(o.label, '', 120), target: num(o.target, 1), progress: num(o.progress, 0), ...(count ? { count } : {}) };
+    });
+    q.rewards = parseRewards(q.rewards) ?? newRewards(); q.onFail = parseRewards(q.onFail) ?? newRewards();
     Object.assign(q, questState(oneOf(q.status, QUEST_STATUSES, 'active'), strOrNull(q.doneAt) ?? q.issuedAt)); q.dueAt = timeOf(q.dueAt);
     optional(q, 'chainId', isStr);
   });

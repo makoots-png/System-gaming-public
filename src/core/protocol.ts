@@ -21,6 +21,7 @@ import { parseFact } from './hunter/facts.ts';
 import type { Fact } from './hunter/facts.ts';
 import { parseFeats } from './hunter/feats.ts';
 import type { FeatDef } from './hunter/feats.ts';
+import { parseObjectiveCount } from './hunter/counts.ts';
 import { oneOf } from './one-of.ts';
 import type { Hunter, Objective, Quest, QuestKind, QuestStatus, Rank, Rewards } from './save.ts';
 import { isJobName } from './registry/jobs.ts';
@@ -140,7 +141,7 @@ const side = choiceOf(SIDES);
 /** A build change the GM sends: clear the path and perks, set a path, or pick the perk of the next open tier. */
 export type BuildChange = 'respec' | { path: string } | { tier: number; pick: 0 | 1 };
 /** A quest the GM issues to another phone. That phone gives it an id and the times it keeps. */
-export type QuestOffer = Pick<Quest, 'kind' | 'title' | 'desc' | 'objectives' | 'dueAt' | 'penaltyText'> & { rewards: Rewards };
+export type QuestOffer = Pick<Quest, 'kind' | 'title' | 'desc' | 'objectives' | 'dueAt' | 'penaltyText'> & { rewards: Rewards; onFail: Rewards };
 export const SYSTEM_KINDS = ['info', 'quest', 'warning', 'penalty', 'levelup', 'arise'] as const;
 export type SystemKind = (typeof SYSTEM_KINDS)[number];
 /** What a player used: an item, a skill or a boon. */
@@ -194,14 +195,15 @@ function buildChange(v: unknown): BuildChange {
   return { path: typeof path === 'string' && WORD_RE.test(path) ? path : refuse() };
 }
 function objective(v: unknown): Objective {
-  const o = obj(v), target = opt(own(o, 'target'), int(1, 99999), 1);
-  return { label: filled(100)(own(o, 'label')), target, progress: Math.min(target, opt(own(o, 'progress'), int(0, 99999), 0)) };
+  const o = obj(v), target = opt(own(o, 'target'), int(1, 99999), 1), count = parseObjectiveCount(own(o, 'count'));
+  return { label: filled(100)(own(o, 'label')), target, progress: Math.min(target, opt(own(o, 'progress'), int(0, 99999), 0)), ...(count ? { count } : {}) };
 }
 function questOffer(v: unknown): QuestOffer {
   const o = obj(v);
   return {
     kind: choiceOf(QUEST_KINDS)(own(o, 'kind')), title: filled(120)(own(o, 'title')), desc: opt(own(o, 'desc'), text(500), ''),
     objectives: opt(own(o, 'objectives'), v => listOf(v, MAX_OBJECTIVES, objective), []), rewards: opt(own(o, 'rewards'), rewards, newRewards()),
+    onFail: opt(own(o, 'onFail'), rewards, newRewards()),
     dueAt: opt(own(o, 'dueAt'), nullOr(time), null), penaltyText: opt(own(o, 'penaltyText'), text(300), ''),
   };
 }

@@ -414,13 +414,29 @@ async function gmAward(g: Phone, p: Phone | null) {
 
 async function gmQuests(g: Phone, p: Phone | null) {
   const page = g.page;
-  await step(g, 2, 'quest form', async () => {
+  await step(g, 4, 'quest form', async () => {
     await go(g, 'quests');
     await shot(g, 'quests-gm');
     await press(g, page.locator('#view-quests [data-new]'));
     await page.locator('#view-quests form [name=title]').fill('Clear the sewer');
     await show(page.locator('#view-quests form'), 'start');
     await shot(g, 'quest-form');
+    const form = page.locator('#view-quests form');
+    await form.locator('[name=olabel]').fill('Defeat Beasts');
+    await form.locator('[name=otarget]').fill('10');
+    await form.locator('[data-ocb]').selectOption('system');
+    await press(g, form.locator('[data-ocount] [data-tadd]'));
+    await form.locator('[data-ocount] [data-test] [data-tf]').selectOption('type');
+    await form.locator('[data-ocount] [data-test] [data-tv]').fill('Beast');
+    await form.locator('[data-ocount] [data-cw]').selectOption('session');
+    await show(form.locator('.objrow-w'), 'start');
+    await shot(g, 'quest-form-counted');
+    await press(g, form.locator('[data-rweditor] [data-add="title"]'));
+    await form.locator('[data-rweditor] [data-kind="title"] [data-f="name"]').fill('Beastbane');
+    await form.locator('[data-rweditor] [data-f="tworn"]').selectOption('hasted');
+    await form.locator('[data-failrw] [data-n="gold"]').fill('-50');
+    await show(form.locator('[data-failrw]'), 'end');
+    await shot(g, 'quest-form-fails');
     await pressIfShown(g, '#view-quests form [data-cancel], #view-quests form button[type=button]:has-text("Cancel")');
   });
   await step(g, 0, 'job change issue', async () => {
@@ -654,7 +670,7 @@ async function gmRest(g: Phone, p: Phone | null) {
       s.update(() => {
         const h = s.active();
         h.chronicle = { inbox: [], facts, tally: { ...h.chronicle.tally, won: 12, kills: 1048, gates: 5, fell: 3, feats: 4 },
-          feats: { ...Object.fromEntries(earned.map(([k, name], i) => [k, { at: 'earned', on: at(i * 8), name }])), ratcatcher: { at: 'shown', n: 25 }, 'red-ledger': { at: 'shown', n: 9 } } };
+          feats: { ...Object.fromEntries(earned.map(([k, name], i) => [k, { at: 'earned', on: at(i * 8), day: at(i * 8).slice(0, 10), name }])), ratcatcher: { at: 'shown', n: 25 }, 'red-ledger': { at: 'shown', n: 9 } } };
       }, 'ui-shots');
     });
     const panel = page.locator('#view-status [data-panel="chronicle"]');

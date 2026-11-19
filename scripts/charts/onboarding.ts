@@ -35,6 +35,6 @@ export const onboarding = machine<OnboardStep, OnboardEvent>({
     ['What changes it', '`onboardStep(at, event)`; `firstStep` for where it opens'],
     ['Who calls it', '`go` in `src/views/onboard.js`, started by the app\'s `ready` event'],
     ['The test to copy', '`tests/onboarding.test.ts`; the walk\'s events are in `tests/models/onboarding-events.ts`'],
-    ['The recipe', 'AGENTS.md, "A state or event of the ... machine"'],
+    ['The recipe', 'docs/guide/hunters.md, "A state or event of the ... machine"'],
   ],
 });

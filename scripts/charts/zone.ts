@@ -43,6 +43,6 @@ export const zone = machine<ZoneLife, ZoneEvent>({
     ['What changes it', '`zoneStep(life, event)` and its `ZONE_TABLE`; `placeZone` (the cap), `payUpkeep` (the upkeep), `pricedZones` (a price)'],
     ['Who calls it', '`act` and `release` in `src/core/combat/fight.ts`; `grounded`, `zoneEnds` and `startTurn` in `src/core/combat/fight-turn.ts`'],
     ['The test to copy', '`tests/fight.test.ts` ("a zone on the ground: the kits\' upkeep"); the walk\'s events are in `tests/models/zone-events.ts`'],
-    ['The recipe', 'AGENTS.md, "A zone op" and "A way a zone can lie"'],
+    ['The recipe', 'docs/guide/combat.md, "A zone op" and "A way a zone can lie"'],
   ],
 });

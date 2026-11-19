@@ -47,6 +47,6 @@ export const outbox = machine<S, EntryEvent>({
     ['What changes it', '`entryStep` and its `TABLE`; the box\'s `post`, `step`, `next`, `reloaded`, `roomGone`, `rebound`'],
     ['Who calls it', '`postLetter`, `flush` and `deliver` in `src/edge/sync.ts` (`app.api.sync.post`, `forget`), after each good poll; the room\'s answer through `callOf` and `sentEvent`'],
     ['The test to copy', '`tests/outbox.test.ts`; the walk\'s events are in `tests/models/outbox-events.ts`; two and three phones in `tests/room-system-model.test.ts`'],
-    ['The recipe', 'AGENTS.md, "A room message"'],
+    ['The recipe', 'docs/guide/room-sync.md, "A room message"'],
   ],
 });

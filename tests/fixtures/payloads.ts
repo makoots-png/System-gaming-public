@@ -50,9 +50,11 @@ export const VALID: Record<EventType, [Raw, Raw]> = {
   ],
   quest: [
     { eid: EID, to: [KEY, OTHER], quest: { kind: 'main', title: 'Clear the den', desc: 'Goblins.', objectives: [{ label: 'Goblins', target: 3, progress: 0 }],
-      rewards: { xp: 100, points: 0, gold: 5, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, dueAt: '2026-11-13T12:00:00.000Z', penaltyText: 'Lose a day.' } },
+      rewards: { xp: 100, points: 0, gold: 5, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, dueAt: '2026-11-13T12:00:00.000Z', penaltyText: 'Lose a day.',
+      onFail: { xp: 0, points: 0, gold: -10, items: [], title: null, job: null, skills: [], statuses: [], boons: [] } } },
     { eid: EID, to: [KEY, OTHER], quest: { kind: 'main', title: 'Clear the den', desc: 'Goblins.', objectives: [{ label: 'Goblins', target: 3, progress: 0 }],
-      rewards: { xp: 100, points: 0, gold: 5, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, dueAt: '2026-11-13T12:00:00.000Z', penaltyText: 'Lose a day.' } },
+      rewards: { xp: 100, points: 0, gold: 5, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, dueAt: '2026-11-13T12:00:00.000Z', penaltyText: 'Lose a day.',
+      onFail: { xp: 0, points: 0, gold: -10, items: [], title: null, job: null, skills: [], statuses: [], boons: [] } } },
   ],
   hp: [
     { eid: EID, to: [KEY], hp: -7, reason: 'GM' },
@@ -135,6 +137,7 @@ export const VALID: Record<EventType, [Raw, Raw]> = {
       quest: { kind: 'urgent', title: 'Clear a gate for the Deep', desc: '', objectives: [{ label: 'Gate cleared', target: 1, progress: 0 }], rewards: { gold: 100 }, dueAt: '2026-11-21T10:00:00.000Z', penaltyText: 'The Deep collects.' } },
     { eid: EID, to: [KEY, OTHER], words: { title: 'THE DEEP ASKS FOR A GATE', line: 'Any gate of your rank.' }, rewards: { xp: 0, points: -1, gold: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] },
       quest: { kind: 'urgent', title: 'Clear a gate for the Deep', desc: '', objectives: [{ label: 'Gate cleared', target: 1, progress: 0 }],
-        rewards: { xp: 0, points: 0, gold: 100, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, dueAt: '2026-11-21T10:00:00.000Z', penaltyText: 'The Deep collects.' } },
+        rewards: { xp: 0, points: 0, gold: 100, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, dueAt: '2026-11-21T10:00:00.000Z', penaltyText: 'The Deep collects.',
+        onFail: { xp: 0, points: 0, gold: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] } } },
   ],
 };

@@ -40,6 +40,6 @@ export const quest = machine<Quest, QuestEvent>({
     ['What changes it', '`questStep(quest, event, at)` and its `TABLE`; the steps `completeQuest`, `failQuest`, `reopenQuest`, `rollover`'],
     ['Who calls it', '`src/views/quests.js` through `store.apply`'],
     ['The test to copy', '`tests/quests.test.ts`; the walk\'s events are in `tests/models/quest-events.ts`'],
-    ['The recipe', 'AGENTS.md, "A state or event of the ... machine"'],
+    ['The recipe', 'docs/guide/hunters.md, "A state or event of the ... machine"'],
   ],
 });

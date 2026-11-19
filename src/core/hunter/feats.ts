@@ -20,6 +20,7 @@ import type { Rules } from '../rules.ts';
 import { grantLines, newRewards, parseRewards } from '../rewards.ts';
 import type { RewardRules, Rewards } from '../rewards.ts';
 import { parseFeatKey } from '../ids.ts';
+import type { DayKey } from '../day.ts';
 import type { FeatKey } from '../ids.ts';
 import { NO_COUNT, TEST_OPS, parseCount } from './counts.ts';
 import type { FactCount, Counted, CountMeasure, Test, TestOp, Within } from './counts.ts';
@@ -62,10 +63,12 @@ export type FeatEvent =
   /** The feat it waits on to be shown was earned. */
   | { readonly type: 'unlocked' };
 export type FeatFx = 'earned' | 'shown' | null;
-type Ctx = { readonly def: FeatDef; readonly now: string };
+/** The write's moment: its time and the day it fell on (`FactStamp`'s two fields). */
+export type FeatNow = { readonly at: string; readonly day: DayKey };
+type Ctx = { readonly def: FeatDef; readonly now: FeatNow };
 type Cell<E extends FeatEvent['type']> = ((s: FeatState & { at: 'hidden' | 'shown' }, e: Extract<FeatEvent, { type: E }>, c: Ctx) => { state: FeatState; fx: FeatFx }) | null;
 const earnedOr = (s: { at: 'hidden' | 'shown' }, e: Extract<FeatEvent, { type: 'counted' }>, c: Ctx): { state: FeatState; fx: FeatFx } => {
-  if (e.count.n >= c.def.rule.reach && e.also) return { state: { at: 'earned', on: c.now, name: c.def.name }, fx: 'earned' };
+  if (e.count.n >= c.def.rule.reach && e.also) return { state: { at: 'earned', on: c.now.at, day: c.now.day, name: c.def.name }, fx: 'earned' };
   const show = c.def.show, now = s.at === 'hidden' && show.at === 'count' && e.count.n >= show.n;
   return { state: { at: now ? 'shown' : s.at, ...e.count }, fx: now ? 'shown' : null };
 };
@@ -86,7 +89,7 @@ export const TABLE: { readonly [S in (typeof FEAT_STATES)[number]]: { readonly [
 /** A feat's place on a hunter that has none yet: shown from the start, or hidden. */
 export const startOf = (def: FeatDef): FeatState => ({ at: def.show.at === 'start' ? 'shown' : 'hidden', ...NO_COUNT });
 /** A feat's place after `e`, and what to tell; an earned feat answers null (nothing moves it). */
-export function featStep(s: FeatState, e: FeatEvent, def: FeatDef, now: string): { state: FeatState; fx: FeatFx } | null {
+export function featStep(s: FeatState, e: FeatEvent, def: FeatDef, now: FeatNow): { state: FeatState; fx: FeatFx } | null {
   if (s.at === 'earned') return null;
   const cell = TABLE[s.at][e.type] as Cell<FeatEvent['type']>;
   return cell ? cell(s, e as never, { def, now }) : null;
@@ -122,9 +125,11 @@ export function afterChoices(builtIns: FeatBook, library: Readonly<Record<string
 
 // ── the words ──
 const specOf = (kind: string, name: string): FieldSpec | null => (FACT_FIELDS as unknown as Record<string, Record<string, FieldSpec>>)[kind]?.[name] ?? null;
+/** "Earned 2026-11-19.": an earned feat's day, the day of the write that earned it on the phone that holds the hunter. */
+export const earnedLine = (s: { readonly day: DayKey }): string => `Earned ${s.day}.`;
 /** "Monsters defeated: 37 of 100.": a shown feat's progress, from its count's own words. */
 export function progressLine(def: FeatDef, s: FeatState): string {
-  if (s.at === 'earned') return `Earned ${s.on.slice(0, 10)}.`;
+  if (s.at === 'earned') return earnedLine(s);
   const m = def.rule.measure, label = m.of === 'facts' ? `${KIND_WORDS[def.rule.on] ?? 'Counted'}` : `${specOf(def.rule.on, m.field)?.label ?? m.field}`;
   return `${label}: ${s.n.toLocaleString('en-US')} of ${def.rule.reach.toLocaleString('en-US')}.`;
 }

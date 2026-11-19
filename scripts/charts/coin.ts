@@ -34,6 +34,6 @@ export const coin = machine<Coin, CoinEvent>({
     ['What changes it', '`transition(coin, event)` and its `TABLE`; `stepCoin` for a phone\'s list'],
     ['Who calls it', '`src/views/coin.js` (the player\'s call and coin, the GM\'s window) and the `coinLand` applier in `src/edge/room-events.ts`'],
     ['The test to copy', '`tests/coin.test.ts`; the walk\'s events are in `tests/models/coin-events.ts`'],
-    ['The recipe', 'AGENTS.md, "A state or event of the ... machine"'],
+    ['The recipe', 'docs/guide/hunters.md, "A state or event of the ... machine"'],
   ],
 });

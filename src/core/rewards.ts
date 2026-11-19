@@ -23,7 +23,11 @@ import type { BundleId } from './ids.ts';
  * `replaces`: the name of a title the hunter may hold that this one takes the place of (record.ts `giveTitle`: that title
  * becomes this one, its id and whether it is active kept); a hunter who does not hold it gets this title as a new one.
  */
-export type RewardTitle = { name: string; desc: string; bonus: Record<string, number>; key?: string; replaces?: string };
+export type RewardTitle = {
+  name: string; desc: string; bonus: Record<string, number>; key?: string; replaces?: string;
+  /** While it is the hunter's active title, this status is on the hunter's row in every fight (save.ts `Title.worn`). */
+  worn?: StatusDef;
+};
 /**
  * A status a reward puts on the hunter. `rounds: null` lasts until removed. `def` for a status the receiver may not know;
  * without it the receiver's rules name the key.
@@ -75,9 +79,9 @@ function title(v: unknown): RewardTitle | null {
   if (!name) return null;
   const raw = isObj(v.bonus) ? v.bonus : {}, bonus: Record<string, number> = {};
   for (const k of PERK_KEYS) { const n = whole(Object.hasOwn(raw, k) ? raw[k] : 0, -B.bonus, B.bonus, 0); if (n) bonus[k] = n; }
-  const key = titleKey(v.key), replaces = line(v.replaces, B.title);
+  const key = titleKey(v.key), replaces = line(v.replaces, B.title), worn = v.worn === undefined ? null : parseStatusDef(v.worn, RULES);
   // a title in place of itself is that title
-  return { name, desc: typeof v.desc === 'string' ? v.desc.slice(0, B.titleDesc) : '', bonus, ...(key ? { key } : {}), ...(replaces && replaces !== name ? { replaces } : {}) };
+  return { name, desc: typeof v.desc === 'string' ? v.desc.slice(0, B.titleDesc) : '', bonus, ...(key ? { key } : {}), ...(replaces && replaces !== name ? { replaces } : {}), ...(worn ? { worn } : {}) };
 }
 /**
  * A status a reward gives: a key a status may have that is not a chip drawn from a hunter's state. Its def is read by
@@ -189,7 +193,13 @@ const amount = (n: number, what: string): string => `${n < 0 ? 'Loses ' : '+'}${
 const points = (n: number): string => `ability point${Math.abs(n) === 1 ? '' : 's'}`;
 const rounds = (n: number | null): string => (n ? ` (${n} round${n === 1 ? '' : 's'})` : '');
 /** A reward's title in words: its name, and the title it takes the place of when it names one ("Square (in place of Owed to the Deep)"). */
-const titleWords = (t: RewardTitle): string => (t.replaces ? `${t.name} (in place of ${t.replaces})` : t.name);
+const titleWords = (t: RewardTitle): string => `${t.replaces ? `${t.name} (in place of ${t.replaces})` : t.name}${t.worn ? `, ${WORN_WORDS.line(t.worn.label)}` : ''}`;
+/** The reward editor's words for a title's worn status, and the reward line's. */
+export const WORN_WORDS = {
+  label: 'Worn in fights', none: 'None',
+  hint: 'While this is the hunter\'s active title, the status is on the hunter in every fight.',
+  line: (status: string): string => `worn in fights: ${status}`,
+} as const;
 /** The reward editor's words for a title given in another's place. */
 export const REPLACES_WORDS = {
   label: 'In place of',

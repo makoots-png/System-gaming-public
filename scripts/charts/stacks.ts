@@ -41,6 +41,6 @@ export const stacks = machine<Stack, StackEvent>({
     ['What changes it', '`stackStep(stack, event, ctx)` and its `TABLE`'],
     ['Who calls it', '`applyStatus`, `cureStatus` and `settle` in `src/core/combat/effect-ops.ts`; a use\'s threshold in `src/core/combat/resolve.ts` (rule 18a)'],
     ['The test to copy', '`tests/effect-ops.test.ts` ("the stack machine, cell by cell"); the walk\'s events are in `tests/models/stack-events.ts`'],
-    ['The recipe', 'AGENTS.md, "A stacking status"'],
+    ['The recipe', 'docs/guide/combat.md, "A stacking status"'],
   ],
 });

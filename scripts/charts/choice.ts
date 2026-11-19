@@ -43,6 +43,6 @@ export const choiceChart = machine<Choice, Walked>({
     ['What changes it', '`choose(choice, event)`'],
     ['Who calls it', '`act` in `src/views/map.js`: a tap from the gesture, the hotbar\'s buttons, Move, Use, Cancel, and `seen` and `drawn` in each draw'],
     ['The test to copy', '`tests/map-view.test.ts`, "what the map has chosen"; the chart\'s events are in `tests/models/choice-events.ts`'],
-    ['The recipe', 'AGENTS.md, "A machine of the map"'],
+    ['The recipe', 'docs/guide/combat.md, "A machine of the map"'],
   ],
 });

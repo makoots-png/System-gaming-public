@@ -54,6 +54,18 @@ test('the GM\'s own feat reaches a player\'s phone, and the gate the GM clears f
     expect(h.chronicle.facts.filter((f: any) => f.kind === 'gate').map((f: any) => f.name)).toEqual(['Goblin Den']);
   });
 
+  await test.step('the GM\'s phone tells the player\'s feat once, in the Table feed, and not again after a reload', async () => {
+    await go(gm, 'combat');
+    const feed = gm.locator('[data-panel="table-feed"]');
+    await expect(feed.locator('[data-feed^="feat:"]')).toHaveText(['Mira Test earned the feat First Clear.'], { timeout: 30_000 });
+    expect(await gm.evaluate(() => JSON.parse(localStorage.getItem('hunter-system-feats-seen') || '{}')), 'the sheet was seen with no feat before the Clear').toEqual({ [await player.evaluate(() => hunterApp.api.sync.myKey(hunterApp.store.active().id))]: ['first-clear'] });
+    await gm.reload();
+    await expect.poll(() => gm.evaluate(() => hunterApp.api.sync.remoteSheets().length), { timeout: 30_000 }).toBe(1);
+    await go(gm, 'combat');
+    await expect(gm.locator('[data-panel="table-feed"] [data-feed^="feat:"]')).toHaveCount(1);
+    await expect(gm.locator('.toast', { hasText: 'earned the feat' })).toHaveCount(0);
+  });
+
   await test.step('the GM\'s board names the player\'s feat, and one tap opens the player\'s Chronicle, read-only', async () => {
     await dismissAll(gm, 4);
     await go(gm, 'gm');

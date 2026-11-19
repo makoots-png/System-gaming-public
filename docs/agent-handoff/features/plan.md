@@ -75,3 +75,5 @@ So:
 - **Going live.** Each feature goes live as it lands: no more waiting for all four.
 - **Borrowed names.** The shipped names from the game's inspiration stay.
 - **Ranks as colours.** The ranks are to be shown as a colour code; he asked for advice on their names. Not built until he picks.
+- **The design frameworks review's six questions** (the owner, Nov 19, typed in the previous lead's session and relayed to the lead: "Yes defaults"). The defaults stand as his rulings: no top level; each rank takes more fights a level than the one before; the daily keeps giving a point every day with no limit; Necromancer stays on the starting jobs; the app does not lay out a gate as rooms; the app does not itself make a red gate pay more or forbid leaving.
+- **Stories.** (the owner, Nov 19, relayed the same way) "We will need to rewrite the stories anyways, so let's hold off of that." No story work until he says.

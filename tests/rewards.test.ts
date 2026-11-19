@@ -161,6 +161,16 @@ describe('a title in another\'s place', () => {
   });
 });
 
+describe('a title\'s worn status in a reward', () => {
+  const STEADY = { label: 'Steady', desc: 'Holds the line.', ops: [] };
+  test('the reader keeps a worn status a title carries and drops one that does not read; the lines name it', () => {
+    const r = parseRewards({ title: { name: 'Iron Nerve', desc: '', bonus: { dis: 1 }, worn: STEADY } })!;
+    expect(r.title!.worn).toMatchObject({ label: 'Steady' });
+    expect(parseRewards({ title: { name: 'Iron Nerve', worn: 'junk' } })!.title).toEqual({ name: 'Iron Nerve', desc: '', bonus: {} });
+    expect(rewardLines(RULES, r)).toContain('Title: Iron Nerve, worn in fights: Steady');
+  });
+});
+
 describe('a title by name', () => {
   test('a built-in title brings its description and bonus from the sender\'s rules', () => {
     const wolf = RULES.titles.find(t => t.name === 'Wolf Slayer')!;

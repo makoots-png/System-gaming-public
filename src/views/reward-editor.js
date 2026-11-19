@@ -5,7 +5,7 @@
 // window's lines (`grantLines`). Its answer is what `parseRewards` reads, so it passes the parser unchanged.
 import { esc, field } from './ui.js';
 import { rewardJobs, rules } from '../edge/rules.ts';
-import { REPLACES_WORDS, REWARD_BOUNDS, WORDS_BOUNDS, grantLines, isEmptyReward, newRewards, parseRewards, parseWords } from '../core/rewards.ts';
+import { REPLACES_WORDS, REWARD_BOUNDS, WORN_WORDS, WORDS_BOUNDS, grantLines, isEmptyReward, newRewards, parseRewards, parseWords } from '../core/rewards.ts';
 import { LIMITS } from '../core/save.ts';
 import { ITEM_BOUNDS, parseItem } from '../core/registry/items.ts';
 import { SKILL_SEEDS, parseSkill, skillOf } from '../core/registry/skills.ts';
@@ -39,6 +39,8 @@ export function rewardEditor(app, box, o = {}) {
   const tplItems = () => app.api.inventory.itemTemplates();
   const libSkills = () => store.get().library.skills;
   const statusKeys = () => Object.keys(rules().conditions).filter(k => !isStateChip(k));
+  /** The status key whose def a title's worn status is, by its words and ops; '' when none is. */
+  const wornKey = def => statusKeys().find(k => JSON.stringify(rules().conditions[k]) === JSON.stringify(def)) || '';
   const bundleList = () => app.api.bundles.list();
   const opt = (v, l, on = false) => `<option value="${esc(v)}"${on ? ' selected' : ''}>${esc(l)}</option>`;
   const group = (label, list) => (list.length ? `<optgroup label="${esc(label)}">${list.join('')}</optgroup>` : '');
@@ -46,7 +48,7 @@ export function rewardEditor(app, box, o = {}) {
   // ── a row from a part of a reward, and back ──
   const rowsOf = rw => [
     ...rw.items.map(item => ({ kind: 'item', item })),
-    ...(rw.title ? [{ kind: 'title', pick: rw.title.key || '', name: rw.title.name, desc: rw.title.desc, replaces: rw.title.replaces || '', bonus: { ...rw.title.bonus } }] : []),
+    ...(rw.title ? [{ kind: 'title', pick: rw.title.key || '', name: rw.title.name, desc: rw.title.desc, replaces: rw.title.replaces || '', bonus: { ...rw.title.bonus }, worn: rw.title.worn || null }] : []),
     ...rw.skills.map(skill => ({ kind: 'skill', skill })),
     ...rw.statuses.map(s => ({ kind: 'status', key: s.key, rounds: s.rounds ? String(s.rounds) : '', def: s.def || null })),
     ...rw.boons.map(b => ({ kind: 'boon', name: b.name, text: b.text })),
@@ -54,7 +56,7 @@ export function rewardEditor(app, box, o = {}) {
   ];
   function blank(kind) {
     if (kind === 'item') return { kind, item: null };
-    if (kind === 'title') return { kind, pick: '', name: '', desc: '', replaces: '', bonus: {} };
+    if (kind === 'title') return { kind, pick: '', name: '', desc: '', replaces: '', bonus: {}, worn: null };
     if (kind === 'skill') return { kind, skill: null };
     if (kind === 'status') { const k = statusKeys()[0] || ''; return { kind, key: k, rounds: '3', def: null }; }
     if (kind === 'boon') return { kind, name: '', text: '' };
@@ -69,7 +71,7 @@ export function rewardEditor(app, box, o = {}) {
       xp: floor(nums.xp), points: floor(nums.points), gold: floor(nums.gold),
       items: by('item').filter(r => r.item).map(r => r.item),
       // a title in place of itself is that title (rewards.ts `title`)
-      title: t && t.name.trim() ? { name: t.name.trim(), desc: t.desc, bonus: t.bonus, ...(t.pick ? { key: t.pick } : {}), ...(t.replaces.trim() && t.replaces.trim() !== t.name.trim() ? { replaces: t.replaces.trim() } : {}) } : null,
+      title: t && t.name.trim() ? { name: t.name.trim(), desc: t.desc, bonus: t.bonus, ...(t.pick ? { key: t.pick } : {}), ...(t.replaces.trim() && t.replaces.trim() !== t.name.trim() ? { replaces: t.replaces.trim() } : {}), ...(t.worn ? { worn: t.worn } : {}) } : null,
       job: j && j.job.trim() ? j.job.trim() : null,
       skills: by('skill').filter(r => r.skill).map(r => r.skill),
       statuses: by('status').filter(r => r.key).map(r => {
@@ -121,7 +123,9 @@ export function rewardEditor(app, box, o = {}) {
         ${field('Description', `<input type="text" maxlength="${REWARD_BOUNDS.titleDesc}" autocomplete="off" data-f="desc" value="${esc(r.desc)}">`)}
         ${field(REPLACES_WORDS.label, `<input type="text" maxlength="${REWARD_BOUNDS.title}" autocomplete="off" data-f="replaces" value="${esc(r.replaces)}">`)}
         <p class="rw-hint">${esc(REPLACES_WORDS.hint)}</p>
-        <div class="lbl">Bonus while the title is active</div><div data-tbonus>${app.api.maker.bonus(r.bonus)}</div>`;
+        <div class="lbl">Bonus while the title is active</div><div data-tbonus>${app.api.maker.bonus(r.bonus)}</div>
+        ${field(WORN_WORDS.label, `<select data-f="tworn">${opt('', WORN_WORDS.none, !r.worn)}${r.worn && !wornKey(r.worn) ? opt('=', r.worn.label, true) : ''}${statusKeys().map(k => opt(k, rules().conditions[k].label || k, !!r.worn && wornKey(r.worn) === k)).join('')}</select>`)}
+        <p class="rw-hint">${esc(WORN_WORDS.hint)}</p>`;
     } else if (r.kind === 'status') {
       const keys = statusKeys(); if (r.key && !keys.includes(r.key)) keys.push(r.key);
       const label = k => String((rules().conditions[k] && rules().conditions[k].label) || (r.def && r.key === k && r.def.label) || k);
@@ -244,6 +248,8 @@ export function rewardEditor(app, box, o = {}) {
       render(); raise(); return;
     }
     if (t.dataset.f === 'key') { r.key = t.value; r.def = null; }
+    // a title's worn status is its def by value, as a reward's status travels (`=` keeps the one it came with)
+    if (t.dataset.f === 'tworn' && t.value !== '=') r.worn = t.value ? { ...rules().conditions[t.value] } : null;
     if (t.dataset.f === 'tell') { if (t.checked) r.item.tell = true; else delete r.item.tell; }
     mark(i); paint();
   });

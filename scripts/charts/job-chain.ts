@@ -61,6 +61,6 @@ export const jobChain = machine<ChainHunter, ChainEvent>({
     ['What changes it', '`chainAfter(chain, event)` and its `TABLE`; `canReissue(chain)` for the failed card\'s buttons'],
     ['Who calls it', '`chainStep` and `chainEvent` in `src/views/quests.js` (issue, Complete, Fail, Delete, Reissue, Abandon, and the `level` event `src/views/hunter.js` sends)'],
     ['The test to copy', '`tests/job-chain.test.ts`; the walk\'s moves are in `tests/models/job-chain-events.ts`'],
-    ['The recipe', 'AGENTS.md, "To add a job"'],
+    ['The recipe', 'docs/guide/hunters.md, "To add a job"'],
   ],
 });

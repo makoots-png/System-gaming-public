@@ -40,6 +40,6 @@ export const odds = machine<OddsRun, OddsEvent>({
     ['What changes it', '`oddsStep` and its `TABLE`; a play of one fight is `playBegin` and `playStep` (src/core/combat/play.ts), every row on `sensible` (policy.ts)'],
     ['Who calls it', '`app.api.odds` (`paint`, `ask`) in `src/views/odds-box.js`, mounted by `src/views/combat.js` and `src/views/gates.js`; the seed is `oddsSeed` (src/edge/roll.ts); a solo run is one more play, asked by `enterAlone` in gates.js'],
     ['The test to copy', '`tests/odds.test.ts`; the walk\'s events are in `tests/models/odds-events.ts`'],
-    ['The recipe', 'AGENTS.md, "A policy\'s new choice"'],
+    ['The recipe', 'docs/guide/combat.md, "A policy\'s new choice"'],
   ],
 });

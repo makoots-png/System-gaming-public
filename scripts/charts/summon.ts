@@ -33,6 +33,6 @@ export const summon = machine<SummonState, SummonEvent>({
     ['What changes it', '`summonStep(state, event)` and its `TABLE`; `dismissed`, `timeUp` and `crowded` read it'],
     ['Who calls it', '`summoned` (rule 18d) in `src/core/combat/fight.ts`; `consequences`, `sentAway` and `startTurn` in `src/core/combat/fight-turn.ts`; the row is `summonRow` in `src/core/combat/rows.ts`'],
     ['The test to copy', '`tests/fight.test.ts` ("a timed summon"), `tests/rows.test.ts` ("a summon"); the walk\'s events are in `tests/models/summon-events.ts`'],
-    ['The recipe', 'AGENTS.md, "A summon"'],
+    ['The recipe', 'docs/guide/combat.md, "A summon"'],
   ],
 });

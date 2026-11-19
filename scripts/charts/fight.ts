@@ -57,6 +57,6 @@ export const fight = machine<State, Command>({
     ['What changes it', '`reduce(fight, cmd, ctx)` and its `TABLE` in `src/core/combat/fight.ts`; turns in `src/core/combat/fight-turn.ts`'],
     ['Who calls it', '`send()` in `src/views/combat.js` on the GM\'s phone, which stores what it answers'],
     ['The test to copy', '`tests/fight.test.ts`; random play in `tests/fight-model.test.ts` and `tests/models/fight-play.ts`'],
-    ['The recipe', 'AGENTS.md, "A combat command"'],
+    ['The recipe', 'docs/guide/combat.md, "A combat command"'],
   ],
 });

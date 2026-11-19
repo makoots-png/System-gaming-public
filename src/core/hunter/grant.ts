@@ -31,8 +31,8 @@ import type { StatusIn } from './conditions.ts';
 import { addGold, putItem, stackOf } from './inventory.ts';
 import { addXp, atLevel, gainXp, grantPoints } from './progress.ts';
 import type { ChainEffect, ChainEvent } from './job-chain.ts';
-import { chained, completeQuest } from './quests.ts';
-import type { Completed, QuestWhy } from './quests.ts';
+import { chained, completeQuest, failQuest, rollover } from './quests.ts';
+import type { Completed, QuestWhy, Rollover } from './quests.ts';
 import { giveBoons, giveTitle, holdsTitle, setJob, titleNamed } from './record.ts';
 import { fitted, hunterSheet } from './sheet.ts';
 import { giveSkill } from './skills-held.ts';
@@ -248,6 +248,47 @@ export function finishQuest(save: Save, hid: string, qid: string, o: Day & { vit
   const after = recover === 'sheet' ? { ...g.save, hunters: g.save.hunters.map(x => (x.id === hid ? { ...x, ...refill(x, sheetOf(x, R)) } : x)) } : g.save;
   const job: string | null = chain.find(fx => fx.type === 'grantJob')?.job ?? (quest.kind === 'job' ? rewards.job : null);
   return { save: after, quest, completed: c, granted: { ...g, save: after }, job, recover, done: [...r.done, ...g.done] };
+}
+
+/** What failing a quest did: the next save, the quest as it was, its cost as given (`grant`), and the chain's effects. */
+export type QuestFailed = { save: Save; quest: Quest; granted: Granted; effects: ChainEffect[] };
+/**
+ * Hunter `hid`'s active quest `qid` failed, in one step (feature 1's notes 17.14): the quest failed with its fact and its
+ * chain told (`failQuest`), its log lines, and what failing costs (`Quest.onFail`) given by `grant`. Refused as
+ * `failQuest` refuses, and when the hunter is not there (`no-hunter`).
+ */
+export function questFailed(save: Save, hid: string, qid: string, o: Day & { vitals: VitalsAt }): QuestFailed | Refused<'no-hunter' | QuestWhy> {
+  const h = save.hunters.find(x => x.id === hid);
+  if (!h) return refuse('no-hunter');
+  const quest = h.quests.find(q => q.id === qid);
+  if (!quest) return refuse('missing');
+  const f = failQuest(h, qid, o.at);
+  if (isRefused(f)) return f;
+  const done = told({ ...save, hunters: save.hunters.map(x => (x.id === hid ? f.hunter : x)) }, { at: o.at, cap: o.R.logCap }, ...f.said);
+  const g = grant(done, hid, quest.onFail, null, o);
+  if (isRefused(g)) return g;
+  return { save: g.save, quest, granted: g, effects: f.effects };
+}
+/** What the daily rollover did (`rollover`), and each overdue quest's cost as given, by hunter. */
+export type RolledOver = { save: Save; said: Said[]; told: Rollover; costs: { hid: string; granted: Granted }[] };
+/**
+ * The daily rollover (`rollover`, quests.ts) with what each quest it failed for being past due costs, given by `grant` in
+ * the same step: the one place an overdue quest's cost is paid, as `questFailed` is for a tapped Fail. `vitals` says
+ * where each hunter's vitals are now.
+ */
+export function rolledOver(save: Save, o: Day & { nowMs: number; gm: boolean; vitals: (hid: string) => VitalsAt }): RolledOver {
+  const r = rollover(save, { today: o.today, at: o.at, nowMs: o.nowMs, gm: o.gm });
+  let s = r.save;
+  const costs: RolledOver['costs'] = [];
+  for (const f of r.told.failed) {
+    const q = s.hunters.find(h => h.id === f.hid)?.quests.find(x => x.id === f.qid);
+    if (!q) continue;
+    const g = grant(s, f.hid, q.onFail, null, { ...o, vitals: o.vitals(f.hid) });
+    if (isRefused(g)) continue;
+    s = g.save;
+    costs.push({ hid: f.hid, granted: g });
+  }
+  return { save: s, said: r.said, told: r.told, costs };
 }
 
 /** A change the GM or the fight makes to a hunter's HP, mana, fatigue, life or statuses on its sheet. */

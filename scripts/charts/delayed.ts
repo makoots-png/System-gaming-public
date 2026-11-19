@@ -41,6 +41,6 @@ export const delayed = machine<S, DelayedEvent>({
     ['What changes it', '`endStep(delayed, event, end)` and its `TABLE`'],
     ['Who calls it', 'the settle in `src/core/combat/fight-turn.ts` (`settleRow`), a cure in `src/core/combat/resolve.ts` (rule 18) and `src/core/combat/land.ts` (`cureLands`, `landEnd`)'],
     ['The test to copy', '`tests/fight.test.ts` ("a delayed effect"); the walk\'s events are in `tests/models/delayed-events.ts`'],
-    ['The recipe', 'AGENTS.md, "A stacking status, its threshold and its end"'],
+    ['The recipe', 'docs/guide/combat.md, "A stacking status, its threshold and its end"'],
   ],
 });

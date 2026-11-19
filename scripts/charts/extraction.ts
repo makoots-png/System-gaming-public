@@ -36,6 +36,6 @@ export const extraction = machine<Extraction, ExtractionOutcome>({
     ['What changes it', '`extractionStep(extraction, outcome, max)` and its `TABLE`, through the fight\'s `extract` (`src/core/combat/fight.ts`)'],
     ['Who calls it', '`app.api.combat.extracted` (`src/views/combat.js`), from the extraction roll in `src/views/shadows.js`'],
     ['The test to copy', '`tests/fight.test.ts` ("a fallen monster\'s extraction"); the walk\'s outcomes are in `tests/models/extraction-events.ts`'],
-    ['The recipe', 'AGENTS.md, "A combat command"'],
+    ['The recipe', 'docs/guide/combat.md, "A combat command"'],
   ],
 });

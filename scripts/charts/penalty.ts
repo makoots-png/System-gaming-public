@@ -60,6 +60,6 @@ export const penalty = machine<PenaltyHunter, PenaltyMove>({
     ['What changes it', '`penaltyAfter(penalty, event, quests)` (`dailyMissed`, `questCompleted`, `questDeleted`); `canDeleteQuest` for the Delete button'],
     ['Who calls it', '`penaltyEvent` in `src/views/quests.js` (the daily rollover, Complete and Delete)'],
     ['The test to copy', '`tests/penalty.test.ts`; the walk\'s moves are in `tests/models/penalty-events.ts`'],
-    ['The recipe', 'AGENTS.md, "To add a field to a hunter" (a penalty field)'],
+    ['The recipe', 'docs/guide/hunters.md, "To add a field to a hunter" (a penalty field)'],
   ],
 });

@@ -46,6 +46,6 @@ export const life = machine<Hunter, LifeEvent>({
     ['What changes it', '`lifeAfter(life, event, hpMax)` and its `TABLE`; `hit`, `rest` and `refill` for a hunter\'s vitals; `can(life, eventType)` for a button'],
     ['Who calls it', '`lifeEvent` and `api.life` in `src/views/hunter.js` (the sheet; the GM board\'s Revive in `src/views/gm.js` calls `api.life`), `useItem` in `src/core/hunter/use.ts` (a Resurrection Crystal, through `sheetEdit`), and the fight\'s HP effects in `src/views/combat.js`'],
     ['The test to copy', '`tests/vitals.test.ts`; the walk\'s events are in `tests/models/life-events.ts`'],
-    ['The recipe', 'AGENTS.md, "To add a field to a hunter" (a new life state or event)'],
+    ['The recipe', 'docs/guide/hunters.md, "To add a field to a hunter" (a new life state or event)'],
   ],
 });

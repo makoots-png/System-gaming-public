@@ -12,9 +12,10 @@
 //   (a write that records nothing leaves either state as it is while held, and empties `waiting` once free)
 // On a player's phone the GM's fight holds a hunter through the room's fight doc, which is not in the save: sync.ts runs
 // one write when that doc lets a hunter with a waiting inbox go (`released`).
-import type { Hunter, Save } from '../save.ts';
+import type { Hunter, Quest, Save } from '../save.ts';
 import type { DayKey } from '../day.ts';
-import type { HunterId } from '../ids.ts';
+import { sheetKeyOf } from '../ids.ts';
+import type { HunterId, RoomCode } from '../ids.ts';
 import type { Rules } from '../rules.ts';
 import { isRefused, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
@@ -22,11 +23,14 @@ import { CHRONICLE_MAX, tallyAfter } from './chronicle.ts';
 import type { Chronicle, FeatState } from './chronicle.ts';
 import { kept } from './facts.ts';
 import type { Fact, FactStamp, Kept } from './facts.ts';
-import { countStep, markOf } from './counts.ts';
+import { countStep, markOf, objectiveStep } from './counts.ts';
 import type { Counted } from './counts.ts';
 import { featStep, startOf, stateHolds } from './feats.ts';
 import type { FeatBook, FeatDef } from './feats.ts';
-import { grant } from './grant.ts';
+import { finishQuest, grant } from './grant.ts';
+import { reportsProgress, systemCompletes } from './quest-rights.ts';
+import { newEvent } from '../protocol.ts';
+import { sent } from '../award.ts';
 import { record } from './chronicle.ts';
 
 /**
@@ -37,6 +41,8 @@ import { record } from './chronicle.ts';
 export type NoticeCtx = {
   readonly at: string; readonly today: DayKey; readonly session: number; readonly held: (save: Save, hid: HunterId) => boolean;
   readonly R: Rules; readonly feats: FeatBook;
+  /** The room this phone is a player in, where a quest the GM issued reports its end; null alone or on the GM's phone. */
+  readonly room?: RoomCode | null;
 };
 /** A feat a write earned, for the window the view shows (and the level-up its reward may have given). */
 export type Earned = { readonly hid: HunterId; readonly key: string };
@@ -73,26 +79,78 @@ function noticeHunter(save: Save, hid: HunterId, c: NoticeCtx, stamp: FactStamp)
       const moved = countStep(from, f, def.rule, markOf(def.rule.within, stamp, ch.tally.longRests));
       if (moved === null || moved === from) continue;
       const ev = moved === 'broke' ? { type: 'broke' as const, count: { ...from, n: 0 } } : { type: 'counted' as const, count: moved, also: def.rule.also.every(t => stateHolds(t, { ...h, chronicle: ch })) };
-      const st = featStep(was, ev, def, c.at);
+      const st = featStep(was, ev, def, stamp);
       if (!st) continue;
       feats ??= { ...ch.feats };
       feats[key] = st.state;
       if (st.fx === 'earned') earned.push([key, def]);
     }
     put({ ...h, chronicle: feats ? { ...ch, feats } : ch });
+    s = countQuests(s, hid, f, stamp, c);
     for (const [key, def] of earned) {
       // the feats shown once this one is earned
       const now = hunter();
       let feats = now.chronicle.feats;
       for (const [k, d] of c.feats) {
         if (d.show.at !== 'feat' || d.show.key !== key) continue;
-        const st = featStep(feats[k] ?? startOf(d), { type: 'unlocked' }, d, c.at);
+        const st = featStep(feats[k] ?? startOf(d), { type: 'unlocked' }, d, stamp);
         if (st) feats = { ...feats, [k]: st.state };
       }
       put(record({ ...now, chronicle: { ...now.chronicle, feats } }, { kind: 'feat', key, name: def.name, hidden: def.show.at === 'never' }));
       const g = grant(s, hid, def.rewards, null, { at: c.at, today: c.today, R: c.R, vitals: 'sheet' });
       if (!isRefused(g)) s = g.save;
     }
+  }
+  return s;
+}
+
+/** A fraction made from a quest's id, so the same quest's end is the same room event however often it is posted. */
+function idShare(id: string): number {
+  let x = 2166136261;
+  for (let i = 0; i < id.length; i++) x = Math.imul(x ^ id.charCodeAt(i), 16777619) >>> 0;
+  return x / 2 ** 32;
+}
+/** The end of quest `q` of hunter `hid` posted to the GM in this write (`questUpdate`), as quests.js posts a tapped one, under the same key. */
+function reported(save: Save, hid: HunterId, q: Quest, c: NoticeCtx & { room: RoomCode }): Save {
+  const h = save.hunters.find(x => x.id === hid), device = save.settings.deviceId;
+  if (!h) return save;
+  const event = newEvent('questUpdate', {
+    by: sheetKeyOf(device, hid), name: h.name, questId: q.id, title: q.title, kind: q.kind, status: 'done',
+    objectives: q.objectives.map(o => ({ label: o.label, progress: o.target, target: o.target })),
+  }, { device, now: Date.parse(c.at), rand: idShare(q.id) });
+  return event ? sent(save, { room: c.room, events: [{ key: `quest ${hid} ${q.id}`, event }], said: [] }, { at: c.at, cap: c.R.logCap }) : save;
+}
+/**
+ * Fact `f` counted by hunter `hid`'s active quests (feature 1's notes 17.14): each counted objective not yet full moves
+ * (`objectiveStep`), and a quest the System completes (`systemCompletes`) whose objectives are all full is completed
+ * through `finishQuest` in this write, its end reported when the GM issued it and this phone is a player in a room.
+ */
+function countQuests(save: Save, hid: HunterId, f: Fact, stamp: FactStamp, c: NoticeCtx): Save {
+  const h = save.hunters.find(x => x.id === hid);
+  if (!h || !h.quests.some(q => q.status === 'active' && systemCompletes(q))) return save;
+  let moved = false;
+  const quests = h.quests.map(q => {
+    if (q.status !== 'active') return q;
+    let changed = false;
+    const objectives = q.objectives.map(o => {
+      if (!o.count) return o;
+      const r = objectiveStep({ target: o.target, progress: o.progress, count: o.count }, f, markOf(o.count.rule.within, stamp, h.chronicle.tally.longRests));
+      if (!r) return o;
+      changed = true;
+      return { ...o, progress: r.progress, count: r.count };
+    });
+    if (!changed) return q;
+    moved = true;
+    return { ...q, objectives };
+  });
+  if (!moved) return save;
+  let s: Save = { ...save, hunters: save.hunters.map(x => (x.id === hid ? { ...x, quests } : x)) };
+  for (const q of quests) {
+    if (q.status !== 'active' || !systemCompletes(q) || !q.objectives.every(o => o.progress >= o.target)) continue;
+    const done = finishQuest(s, hid, q.id, { at: c.at, today: c.today, R: c.R, vitals: 'sheet' });
+    if (isRefused(done)) continue;
+    s = done.save;
+    if (c.room && reportsProgress(q, 'player')) s = reported(s, hid, q, { ...c, room: c.room });
   }
   return s;
 }

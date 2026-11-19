@@ -45,7 +45,7 @@ export type StoryFor = (typeof STORY_FOR)[number];
  */
 export type ChapterQuest = {
   readonly kind: (typeof GM_QUEST_KINDS)[number]; readonly title: string; readonly desc: string; readonly objectives: readonly Objective[];
-  readonly rewards: Rewards; readonly dueHours: number | null; readonly penaltyText: string;
+  readonly rewards: Rewards; readonly onFail: Rewards; readonly dueHours: number | null; readonly penaltyText: string;
 };
 export type Chapter = {
   /** Only the GM reads it ("The offer"); blank reads as "Chapter 2". */
@@ -99,7 +99,7 @@ export function parseChapterQuest(v: unknown): ChapterQuest | null {
   return {
     kind: oneOf(v.kind, GM_QUEST_KINDS, 'side'), title, desc: text(v.desc, B.questDesc),
     objectives: cleanObjectives(v.objectives).slice(0, B.objectives).map(o => ({ ...o, progress: 0 })),
-    rewards: parseRewards(v.rewards) ?? newRewards(), dueHours: hours(v.dueHours), penaltyText: text(v.penaltyText, B.penaltyText),
+    rewards: parseRewards(v.rewards) ?? newRewards(), onFail: parseRewards(v.onFail) ?? newRewards(), dueHours: hours(v.dueHours), penaltyText: text(v.penaltyText, B.penaltyText),
   };
 }
 
@@ -171,7 +171,7 @@ export function chapterBody(c: Pick<Chapter, 'words' | 'rewards' | 'quest'>, at:
   const q = c.quest;
   return {
     words: c.words, rewards: c.rewards,
-    quest: q && { kind: q.kind, title: q.title, desc: q.desc, objectives: [...q.objectives], rewards: q.rewards, penaltyText: q.penaltyText, dueAt: q.dueHours === null ? null : dueAt(q.dueHours, new Date(at)) },
+    quest: q && { kind: q.kind, title: q.title, desc: q.desc, objectives: [...q.objectives], rewards: q.rewards, onFail: q.onFail, penaltyText: q.penaltyText, dueAt: q.dueHours === null ? null : dueAt(q.dueHours, new Date(at)) },
   };
 }
 

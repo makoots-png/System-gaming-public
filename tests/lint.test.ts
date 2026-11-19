@@ -102,7 +102,7 @@ test('only the combat dispatcher writes the fight, in one step with what the com
   expect(writes.some(re => re.test('      d.fight = r.fight;')), 'the rule sees the old dispatcher').toBe(true);
   const lines = [...await sourceLines('src/views'), ...await sourceLines('src/edge')];
   const hits = lines.filter(line => !isComment(line.text) && writes.some(re => re.test(line.text)));
-  expect(report(hits), 'a fight changes only through send() in src/views/combat.js. Add a command to src/core/combat/fight.ts (see AGENTS.md) and send it.').toEqual([]);
+  expect(report(hits), 'a fight changes only through send() in src/views/combat.js. Add a command to src/core/combat/fight.ts (see docs/guide/combat.md) and send it.').toEqual([]);
   const steps = (await sourceLines('src')).filter(line => !isComment(line.text) && /\bfought\(/.test(line.text) && !/^export function fought\(/.test(line.text));
   expect(steps.map(line => `${line.file}: ${/store\.apply\(/.test(line.text) ? 'in store.apply' : 'outside store.apply'}`), 'send() in combat.js writes the fight with fight-save.ts `fought`, in one store.apply').toEqual(['src/views/combat.js: in store.apply']);
 });
@@ -120,7 +120,7 @@ test('only src/core/gates/gate.ts changes a gate\'s status, cleared day or XP pa
   const ui = (line: Line) => /^src\/(views|edge)\//.test(line.file) && readsGates.has(line.file);
   const hits = src.filter(line => gateOnly.test(line.text) || (ui(line) && status.test(line.text)));
   expect([...readsGates].filter(file => file.startsWith('src/views/')).length, 'the views that read gates are found').toBeGreaterThan(1);
-  expect(report(hits), 'a gate changes only through transition() in src/core/gates/gate.ts. Add an event to its table (see AGENTS.md) and send it.').toEqual([]);
+  expect(report(hits), 'a gate changes only through transition() in src/core/gates/gate.ts. Add an event to its table (see docs/guide/gates-solo.md) and send it.').toEqual([]);
 });
 
 test('a view sends a room event made by the constructor, never a type name and a payload of its own', async () => {
@@ -656,7 +656,7 @@ test('a view writes the save only through store.apply, with a step from core', a
     const n = [...line.text.matchAll(write)].length;
     if (n) counts[line.file] = (counts[line.file] ?? 0) + n;
   }
-  expect(counts, 'write the save with store.apply(reason, step), the step a pure function in the core module that owns that state (AGENTS.md). A converted view leaves its list.').toEqual({ ...helperA, ...helperB });
+  expect(counts, 'write the save with store.apply(reason, step), the step a pure function in the core module that owns that state (docs/guide/makers.md). A converted view leaves its list.').toEqual({ ...helperA, ...helperB });
   // Implicit audit 3, I3: the pattern saw assignments and `store.update`, not a step written in place as a spread
   // (`store.apply('shop-edit', s => ({ ...s, shop: null }))`), a rule with no name or test (the class row 13 closed).
   const inline = /store\.apply\([^,]+,\s*\(?\w+\)?\s*=>\s*\(\{\s*\.\.\./;
@@ -697,7 +697,7 @@ test('a view draws without changing anything: its render, update, draw and paint
     for (const w of writesIn(text)) hits.push(`src/views/${name}:${w.at}: ${w.text.trim().slice(0, 120)}`);
   }
   expect(bodies, 'the drawing functions of the views are found').toBeGreaterThan(20);
-  expect(hits, 'draw from the state as it is; change it in a tap, an event handler, or the module that owns it (AGENTS.md "Where things live")').toEqual([]);
+  expect(hits, 'draw from the state as it is; change it in a tap, an event handler, or the module that owns it (docs/guide, "Where things live")').toEqual([]);
 });
 
 test('a view or the edge cuts nothing by a size of its own: a size is a named bound of core', async () => {
@@ -1077,7 +1077,7 @@ test('every let a view keeps for the page is named here with what it holds, and 
   // gesture's pressed and moved (audit kind 1, notes-implicit-U8.md). A `let` at a view module's top or in its
   // `register` lives as long as the page: each is named below with what it holds, so a new one is a choice someone
   // read. A state with more than two values, or two flags that change together, is a union or a machine in core
-  // (a `TABLE`, AGENTS.md), never two lets.
+  // (a `TABLE`, docs/guide/machines.md), never two lets.
   const what = {
     handle: 'a handle on what the view drew or the browser gave, not a state of the game',
     drawn: 'what was drawn last, so only a change is drawn again',
@@ -1165,6 +1165,7 @@ test('every Map, Set, list or object a view keeps for the page is named here wit
     'dice.js shown': 'the faces of the latest 20 rolls with their fates, by roll id (the log keeps the faces): ' + what.drawn,
     'gates.js asking': 'the gate news windows asked for and not answered yet, by room, kind and gate (told when answered): ' + what.shown,
     'feats.js asking': 'the feat windows asked for and not answered yet, by hunter and key (told when answered): ' + what.shown,
+    'quests.js telling': 'the windows of quests the System completed, asked for and not answered yet, by hunter and quest (told when answered): ' + what.shown,
     'gm.js sel': 'the hunters ticked in the Award form: ' + what.shown,
     'motion.ts running': 'the animation running on each element: ' + what.handle,
     'motion.ts marks': 'where each element was drawn before a layout change, for the move animation: ' + what.drawn,
@@ -1505,4 +1506,16 @@ test('a doc comment sits over what it describes', async () => {
   }
   expect(files.length, 'the rule reads the app\'s files').toBeGreaterThan(50);
   expect(report(hits), 'this doc comment describes nothing: the next thing under it is another doc comment. Read the declarations near it, move it to sit right over the one it describes, and change no code').toEqual([]);
+});
+
+test('AGENTS.md is an index of at most 150 lines that names every file of docs/guide/ and only files that exist', async () => {
+  const text = await Bun.file(`${ROOT}/AGENTS.md`).text();
+  const lines = text.replace(/\n$/, '').split('\n').length;
+  const named = [...new Set([...text.matchAll(/docs\/guide\/[a-z-]+\.md/g)].map(m => m[0]))];
+  const files = (await readdir(`${ROOT}/docs/guide`)).filter(name => name.endsWith('.md')).map(name => `docs/guide/${name}`);
+  const missing = named.filter(path => !files.includes(path));
+  const unnamed = files.filter(path => !named.includes(path));
+  expect(lines, 'AGENTS.md is loaded into every session. Move the long part into the docs/guide file of its area and leave one line for it in "Where to look".').toBeLessThanOrEqual(150);
+  expect(missing, 'AGENTS.md names a guide file that does not exist. Fix the path or add the file.').toEqual([]);
+  expect(unnamed, 'a guide file is not named in AGENTS.md "Where to look". Add one line that names it and says what is in it.').toEqual([]);
 });

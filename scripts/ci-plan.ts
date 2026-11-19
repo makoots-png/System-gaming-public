@@ -23,6 +23,10 @@ const isUnitOnly = (f: string): boolean =>
   /^tests\/[^/]+\.test\.ts$/.test(f) || f.startsWith('tests/models/') || f.startsWith('scripts/charts/')
   || ['scripts/statecharts.ts', 'scripts/deps.ts', 'scripts/ci.ts', 'scripts/ci-plan.ts', 'docs/state-machines.md', 'docs/dependency-map.md', 'AGENTS.md', 'README.md'].includes(f)
   || f.startsWith('.githooks/')
+  // the guide's area files: read by coding agents and by the lint that checks AGENTS.md names them, never served or read by a browser test
+  || f.startsWith('docs/guide/')
+  // an audit's findings: read by people and coding agents, never served or read by a test
+  || f.startsWith('docs/audit/')
   // the CI mirror's workflow and the script that sends it a snapshot: neither is served nor read by a test
   || f.startsWith('.github/') || f === 'scripts/ci-public.sh'
   // what makes the public copy, and the private words it takes out: neither is served nor read by a test

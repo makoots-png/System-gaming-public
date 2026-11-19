@@ -7,7 +7,7 @@
 import { soloWake } from '../gates/personal.ts';
 import { chainAfter } from './job-chain.ts';
 import type { ChainEffect, ChainEvent } from './job-chain.ts';
-import { systemCounts } from './quest-rights.ts';
+import { systemCompletes, systemCounts } from './quest-rights.ts';
 import { missedDays, penaltyAfter, penaltyQuest } from './penalty.ts';
 import type { PenaltyEffect, PenaltyEvent } from './penalty.ts';
 import type { Role } from '../role.ts';
@@ -26,6 +26,8 @@ import { saveId } from '../ids.ts';
 import type { QuestId } from '../ids.ts';
 import { record } from './chronicle.ts';
 import type { Fact } from './facts.ts';
+import { parseObjectiveCount } from './counts.ts';
+import type { QuestOffer } from '../protocol.ts';
 
 /** A quest's end as a fact of its hunter's chronicle. */
 const questFact = (q: Quest, end: 'done' | 'failed'): Fact => ({ kind: 'quest', end, qkind: q.kind, from: q.from, title: q.title });
@@ -57,20 +59,23 @@ export function questStep(q: Quest, event: QuestEvent, at: string): Quest | Refu
 
 // ── what a quest holds, from a form or a message ──
 const clampInt = (v: unknown, lo: number, hi: number): number => Math.min(hi, Math.max(lo, Math.trunc(Number(v)) || 0));
-/** A form's objectives: a label (cut to 80) and a target of 1 to 99999, the progress at most the target; one with no label is dropped. */
+/**
+ * A form's objectives: a label (cut to 80) and a target of 1 to 99999, the progress at most the target, and the count
+ * the System moves it by (`parseObjectiveCount`; one that does not read leaves it moved by taps); one with no label is dropped.
+ */
 export function cleanObjectives(list: unknown): Objective[] {
   return (Array.isArray(list) ? list : []).map((o): Objective => {
     const r = (o && typeof o === 'object' ? o : {}) as Record<string, unknown>;
-    const target = clampInt(r.target, 1, 99999) || 1;
-    return { label: String(r.label || '').slice(0, 80), target, progress: Math.min(target, clampInt(r.progress, 0, 99999)) };
+    const target = clampInt(r.target, 1, 99999) || 1, count = parseObjectiveCount(r.count);
+    return { label: String(r.label || '').slice(0, 80), target, progress: Math.min(target, clampInt(r.progress, 0, 99999)), ...(count ? { count } : {}) };
   }).filter(o => o.label);
 }
 /** What the quest form or the Issue to... button gives: any field may be missing or wrong. */
-export type QuestDraft = { kind?: unknown; title?: unknown; desc?: unknown; objectives?: unknown; rewards?: unknown; dueAt?: unknown; penaltyText?: unknown; from?: unknown };
+export type QuestDraft = { kind?: unknown; title?: unknown; desc?: unknown; objectives?: unknown; rewards?: unknown; onFail?: unknown; dueAt?: unknown; penaltyText?: unknown; from?: unknown };
 /**
  * The quest a draft makes, active from `at`, with id `id`. A kind it does not know is a side quest, a source it does not
  * know is the GM's; a due time is kept only for an urgent quest or one from the GM, and only when it reads as a time.
- * A player's own quest (`self`) carries no reward and no penalty: only the GM gives those.
+ * A player's own quest (`self`) carries no reward, no cost and no penalty: only the GM gives those.
  */
 export function questOf(d: QuestDraft, id: QuestId, at: string): Quest {
   const kind: QuestKind = oneOf(d.kind, QUEST_KINDS, 'side'), from: QuestSource = oneOf(d.from, QUEST_SOURCES, 'gm');
@@ -79,7 +84,16 @@ export function questOf(d: QuestDraft, id: QuestId, at: string): Quest {
     id, kind, title: String(d.title || 'Quest').slice(0, 120), desc: String(d.desc || '').slice(0, 500), objectives: cleanObjectives(d.objectives),
     rewards: from === 'self' ? newRewards() : parseRewards(d.rewards) ?? newRewards(), ...questState('active', at), issuedAt: at, dueAt: due,
     penaltyText: from === 'self' ? '' : String(d.penaltyText || '').slice(0, 300), from,
+    onFail: from === 'self' ? newRewards() : parseRewards(d.onFail) ?? newRewards(),
   };
+}
+/**
+ * The quest the room's `quest` message carries to players, from a form's draft and its due time: the objectives from no
+ * progress, each with its count. The one place a view builds the offer (the Quests view's form and the GM view's Issue quest).
+ */
+export function questOffer(d: QuestDraft, dueAt: string | null): QuestOffer {
+  const q = questOf({ ...d, from: 'gm', dueAt }, saveId('q', 0), '');
+  return { kind: q.kind, title: q.title, desc: q.desc, objectives: q.objectives.map(o => ({ ...o, progress: 0 })), rewards: q.rewards, onFail: q.onFail, dueAt: q.dueAt, penaltyText: q.penaltyText };
 }
 
 // ── the chain and the penalty, applied ──
@@ -135,10 +149,10 @@ export function issueQuest(h: Hunter, d: QuestDraft, id: QuestId, at: string): T
 }
 
 /** What the edit form writes over a quest. Its status, times, id and source stay. */
-export type QuestEdit = { kind: QuestKind; title: string; desc: string; objectives: unknown; rewards: Rewards; dueAt: string | null; penaltyText: string };
+export type QuestEdit = { kind: QuestKind; title: string; desc: string; objectives: unknown; rewards: Rewards; onFail: Rewards; dueAt: string | null; penaltyText: string };
 /**
  * Quest `qid` edited by `role`. The objectives are cleaned as a new quest's; a failed quest stays failed until reopened.
- * A player's edit keeps the quest's reward and penalty: only the GM gives those.
+ * A player's edit keeps the quest's reward, cost and penalty: only the GM gives those.
  */
 export function editQuest(h: Hunter, qid: string, e: QuestEdit, role: Role): Hunter | Refused<QuestWhy> {
   const at = atQuest(h, qid);
@@ -146,15 +160,15 @@ export function editQuest(h: Hunter, qid: string, e: QuestEdit, role: Role): Hun
   const q = h.quests[at]!, gm = role === 'gm';
   return withQuest(h, {
     ...q, kind: e.kind, title: e.title.slice(0, 120), desc: e.desc.slice(0, 500), objectives: cleanObjectives(e.objectives),
-    rewards: gm ? e.rewards : q.rewards, dueAt: timeOf(e.dueAt), penaltyText: gm ? e.penaltyText.slice(0, 300) : q.penaltyText,
+    rewards: gm ? e.rewards : q.rewards, onFail: gm ? e.onFail : q.onFail, dueAt: timeOf(e.dueAt), penaltyText: gm ? e.penaltyText.slice(0, 300) : q.penaltyText,
   });
 }
 
-/** Objective `i` of active quest `qid` set to `value` (0 to its target); a level step the System counts is refused. */
+/** Objective `i` of active quest `qid` set to `value` (0 to its target); a level step or a counted objective the System moves is refused. */
 export function setProgress(h: Hunter, qid: string, i: number, value: number): Hunter | Refused<QuestWhy> {
   const q = h.quests[atQuest(h, qid)], o = q && q.objectives[i];
   if (!q || !o) return refuse('missing');
-  if (q.status !== 'active' || systemCounts(q, h.jobChain)) return refuse('not-now');
+  if (q.status !== 'active' || systemCounts(q, h.jobChain) || o.count) return refuse('not-now');
   return withQuest(h, { ...q, objectives: q.objectives.map((x, k) => (k === i ? { ...x, progress: clampInt(value, 0, x.target) } : x)) });
 }
 
@@ -236,7 +250,7 @@ export const overdue = (q: Quest, nowMs: number): boolean => q.status === 'activ
 /** Whether a missed daily penalizes `h`: always on a player's phone; on the GM's (NPCs, pregens) once it has completed a daily. */
 export const tracked = (h: Pick<Hunter, 'daily'>, gm: boolean): boolean => !gm || !!h.daily.lastCompleteKey;
 /** A hunter the rollover penalized, and an urgent quest it failed for being past due. */
-export type Rollover = { penalties: { hid: string; name: string; days: number }[]; failed: { hid: string; name: string; title: string }[] };
+export type Rollover = { penalties: { hid: string; name: string; days: number }[]; failed: { hid: string; qid: string; name: string; title: string }[] };
 /**
  * The daily rollover on day `today` at time `at` (`nowMs` its time in ms): each hunter not yet checked today has its
  * dailies reset; days with a daily left undone since its last check reset the streak and raise the penalty (only for a
@@ -268,7 +282,7 @@ export function rollover<S extends Pick<Save, 'hunters' | 'world' | 'seq'>>(save
       const r = failQuest(h, q.id, o.at);
       if ('ok' in r) continue;
       h = r.hunter;
-      told.failed.push({ hid: h.id, name: h.name, title: q.title });
+      told.failed.push({ hid: h.id, qid: q.id, name: h.name, title: q.title });
       said.push({ kind: 'quest', hunterId: h.id, title: 'Quest failed', text: `${q.title} (past due)` }, ...r.said.slice(1));
     }
     return h;
@@ -296,3 +310,11 @@ export function nextWake(save: Pick<Save, 'hunters' | 'world'>, now: Date, hour:
 }
 
 export { QUEST_STATUSES };
+
+/**
+ * The quests of `h` the System completed (feature 1's notes 17.14: done, with a counted objective) that are not in
+ * `told`, oldest first: the Quests view shows each one's window once and keeps what it told in device memory.
+ */
+export function questNews(h: Pick<Hunter, 'quests'>, told: readonly string[]): Quest[] {
+  return h.quests.filter(q => q.status === 'done' && systemCompletes(q) && !told.includes(q.id));
+}

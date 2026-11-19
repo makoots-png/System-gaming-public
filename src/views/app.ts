@@ -19,6 +19,8 @@ export type ViewDef = {
 /** A panel under a view's main part. */
 export type PanelDef = {
   id: string; view: string; title?: string; order?: number; gmOnly?: boolean; when?: () => boolean;
+  /** The label of this panel's chip in its view's row of jumps (`App.jumps`); absent, the panel has none. */
+  jump?: string;
   mount?(el: HTMLElement): void; update?(el: HTMLElement): void;
 };
 /** What a view or a panel gets for each field it leaves out: listed at order 50, for everyone, always shown. */
@@ -40,6 +42,8 @@ export type App = Bus & {
   api: AppApi;
   registerView(v: ViewDef): void;
   registerPanel(p: PanelDef): void;
+  /** The chips of view `view`'s row of jumps: each panel shown there that has a `jump`, in the order the view draws its panels. */
+  jumps(view: string): { label: string; id: string }[];
   /** Goes to a view: a tap on a tab, a link, a flow that ends on another screen. Never a redraw: a tab tapped before its `hashchange` would be undone. */
   go(id: string): void;
   /** Draws the shown view, its panels and the header again in the next frame, for a change outside the save (a room doc, a view's own memory). */

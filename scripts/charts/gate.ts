@@ -43,6 +43,6 @@ export const gate = machine<Gate, GateEvent>({
     ['What changes it', '`transition(gate, event)` and its `TABLE`; `can(gate, eventType)` for a button'],
     ['Who calls it', '`step()` in `src/views/gates.js`, and `endEncounter` in `src/views/combat.js`'],
     ['The test to copy', '`tests/gate.test.ts`; the walk\'s events are in `tests/models/gate-events.ts`'],
-    ['The recipe', 'AGENTS.md, "To add a gate status or event"'],
+    ['The recipe', 'docs/guide/gates-solo.md, "To add a gate status or event"'],
   ],
 });

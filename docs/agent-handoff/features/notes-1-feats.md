@@ -1305,3 +1305,131 @@ Words added, for the second read (all in `chronicle-view.ts`): every row of 17.1
 Not built: the GM's news toast and Table feed line (10.2), for the reason in 17.12. A recap of a session from its facts. A date in the player's own zone for an earned feat (`progressLine` cuts the ISO time, which is UTC, so a feat earned late in the evening west of Greenwich reads as the next day).
 
 Principles read in full this session, and the choice each changed: `principle-model-the-domain` (one `ChronicleView` drawn twice instead of a panel and a window that each read the chronicle; a table of lines keyed by kind that the compiler holds against `Fact`); `principle-boundary-discipline` (the view decides nothing: the first-rows counts, the order and every word are core's); `principle-fix-root-causes` (the tall window fixed in the shell's focus, not by scrolling my window back up); `principle-test-behavior-not-implementation` (each sentence expected from a fact written by hand; the browser cases read the screen); `principle-experience-first` (the panel opens short; the switch stays off the board); `principle-subtract-before-you-add` (feats.js's copy of the book line deleted; no news toast without its rule); `principle-prove-it-works` (each screen looked at, each tap count taken from a browser case); `unslop` and `humanizer` for every sentence.
+
+### 17.14 Unit 8: counting quests and titles with worn statuses (the design, written before the code)
+
+Goal (the owner): the System notices what a hunter does and rewards it without the GM's hand. For this unit: a quest the GM issues counts its objectives by itself ("defeat 10 Beasts this session") and completes itself, a quest can cost something when it fails, and a title can put a status on its hunter in every fight. The problem: today a quest's objectives move only by a tap, its failure costs only words (`penaltyText`, honoured by hand), and a title gives only stat points. The smallest change, under the rulings of 17: one optional field on an objective (its count, the same `FactCount` a feat counts with), one reward on a quest (`onFail`), one optional status on a title (`worn`), each moved or given by a step that exists (`countStep`, `finishQuest`, `grant`, `wornStatuses`). Not built, by the rulings: nothing issues a quest (no feat's quest, no System quest); the Job Change level step keeps its own count (section 6's last point is not taken, so `systemCounts` keeps its chain branch).
+
+#### The data shape, first
+
+```ts
+// counts.ts: an objective the System counts. Its number is the objective's own `progress` (one number, not two).
+export type ObjectiveCount = { readonly rule: FactCount; readonly mark: string; readonly vals?: readonly string[] };
+// save.ts
+export type Objective = { label: string; target: number; progress: number; /** absent: moved by a tap */ count?: ObjectiveCount };
+export type Quest = QuestState & { ...; /** given by `grant` in the write that fails it; empty gives nothing */ onFail: Rewards };
+export type Title = { ...; /** on its hunter's row in every fight while it is the active title */ worn?: StatusDef };
+// rewards.ts
+export type RewardTitle = { ...; worn?: StatusDef };        // read by parseStatusDef, as a reward's status def is
+// protocol.ts and quests.ts: QuestOffer and QuestDraft gain onFail; an objective's count is read by parseCount
+// story.ts: ChapterQuest gains onFail (a chapter's quest is the same quest form's)
+```
+
+A counted objective against a `FactCount`. A feat is a `FactCount` plus a `reach`; a counted objective is a `FactCount` whose reach is the objective's `target`. Where a feat keeps `Counted` (n, mark, vals) in the chronicle, the objective keeps the mark and the values in its `count` and the number in `progress`, capped at the target. Its count starts at the quest's issue: progress 0, mark '' (so a session, day or rest window opens at the first fact, as `countStep` already does for a new mark). An objective at its target is not counted again, so "in a row" broken after it is full does not empty a quest waiting on another objective. The rule is read by `parseCount` wherever outside data enters (the save's repair, the room's `quest` message, a chapter's quest, a pack), so a test of a field its kind lacks refuses the count and the objective is read as one moved by a tap.
+
+Three places for the count, weighed:
+
+| | (a) On the objective (chosen) | (b) A list of counts on the quest, by objective index | (c) A feat tied to the quest |
+|---|---|---|---|
+| A reader sees | The objective and how it moves, together | An index that a removed objective shifts | Two things for one objective, in two places of the save |
+| Moves by | `countStep`, the feats' step | The same, plus the index | The feat machine, then something copies its count to the objective: a second writer |
+
+#### Where it is counted
+
+In the notice step (`noticed`, noticed.ts), on the phone that holds the hunter, in the write of the fact, after the fact meets the feats: each active quest's counted objectives that are not full take `countStep` with the fact and their mark (`markOf`), and `progress` becomes the count capped at the target. When a quest's objectives are all full and one of them is counted, the same step completes it through `finishQuest` (the one completion: its reward, the streak, the penalty, the chain, the quest fact, which enters the inbox, so the loop counts it like any fact). A quest whose objectives are all moved by taps is never completed by the System. A fight that holds the hunter holds its facts (4.2), so nothing completes mid-fight; the release write counts them.
+
+A quest with a counted objective is completed by the System alone: its card shows no Complete button and its counted rows have no minus and plus (one rule in core, `systemCompletes(q)` beside `systemCounts`; `setProgress` refuses a counted objective). Fail stays. The GM who wants it done by hand edits the objective back to "By hand".
+
+The player's window: a quest the System completed is told by its own window, "QUEST COMPLETE" with its reward's lines, once, from the save and device memory (`quest-told:<hid>`, as a feat's window is told), so a reload before the window shows it again. Weighed: a window from the store's change (lost on a reload between the write and the window), or no window (the reward is given with no word).
+
+The report to the GM: a quest the GM issued, on a player's phone in a room, reports its end as a tapped one does (`reportsProgress`): the notice step posts its `questUpdate` into the outbox in the same write, under the key quests.js uses (`quest <hid> <qid>`), so a waiting progress post is replaced. The notice step's context learns the room (`NoticeCtx.room`: the code while this phone is a player in a room, from the save's room field when `bindNotice` answers a room; else null; store.ts, so sync.ts is not changed). The event's id is made from the phone's id, the write's time and the quest's id, so the same end posted twice is the same event, taken once by the room. Weighed: no report (the GM sees the end only on the pushed sheet and the Table feed says nothing), or a post from quests.js after the write (lost on a reload between them).
+
+#### What "If it fails" may cost, and by which step it is paid
+
+Any reward (`onFail: Rewards`): negative XP, gold or points, a status (Gate Sickness), a title (a drawback or a joke title), even an item. It is written in the reward editor as every reward is, under "If it fails". It is paid by `grant`, the one giving step, inside the one failing step `questFailed(save, hid, qid, day)` (grant.ts, beside `finishQuest`): `failQuest` (its fact, its chain told), then `grant(onFail)`, then the log lines, in one write. Callers: the Quests view's Fail (through `hunter.grantWrite`, so a fight's held parts go on the row in the same write) and the daily rollover's failure of an overdue quest (`rolledOver`, grant.ts: `rollover`, then each failed quest's cost through the same `grant`, the held parts handed to `grantWrite` as for Fail). `rollover` itself stays in quests.ts, which may not import grant.ts (grant.ts imports it). `penaltyText` stays: words for what the GM honours by hand. A player's own quest has no cost, as it has no reward (`questOf`).
+
+Three ways weighed:
+
+| | (a) A `Rewards`, paid by `grant` (chosen) | (b) A cost type of its own (XP, gold, points, statuses) | (c) Words only, as today |
+|---|---|---|---|
+| Form | The reward editor, a second one | A new editor | One text field |
+| Takes away | Negative numbers, as a chapter's cost does (notes-1-stories ruling 2) | The same | The GM, by hand |
+| New code | One field, one step | A type, a reader, an editor, its lines | None, and no "If it fails" |
+
+#### A title's worn status
+
+`Title.worn?: StatusDef`: given with the title (`giveTitle` copies `RewardTitle.worn`, and a title given in another's place takes the new one's), kept by the GM's title edit, read at the save's repair by `parseStatusDef`. It reaches the hunter's row the way a passive skill's and a worn item's do: `wornStatuses` (rows.ts) puts the active title's `worn` on the row when the row is made (`hunterRow`), at the hunter's rank tier with the row as its source (as a passive skill's), marked `worn`, never written back (`onSheet`). The fight stays the one writer of a row's statuses: a title made active while a fight holds the hunter wears its status from the next fight.
+
+Three ways weighed:
+
+| | (a) `wornStatuses` reads the active title (chosen) | (b) Giving the title puts a condition on the sheet | (c) Toggling the title sends the fight a status command |
+|---|---|---|---|
+| Writers of the row's statuses | The fight alone, at the row's making | The sheet's conditions, outside fights too: it would last after the title is set aside | A second writer while a fight runs |
+| Like | A passive skill, a worn item | A reward's status | Nothing today |
+
+The reward editor's title row gains "Worn in fights": a select of the statuses this phone knows ("None" first), the def taken by value as a reward's status is, so it travels in a pack, a bundle, a chapter and the room's award. The reward's lines name it: "Title: Iron Nerve (+1 DIS), worn in fights: Steady".
+
+#### The GM's taps at 390 px, a counted quest in the one quest form
+
+The quest form (`questFields`) is the one form for the Quests view, the GM view's Issue quest and a chapter's quest. Each objective row gains "Counted by": a select of "You, by hand" and the kinds of fact (`FACT_KIND_WORDS`); a kind picked draws, under the row, the count's controls the feat maker uses, moved into one module both call (`count-fields.js`: Only when and Add a condition, Count and Of, Within as a select), its target the row's own Target. Under Rewards, "If it fails": a second reward editor.
+
+"Defeat 10 Beasts this session, or lose 50 gold", from the GM view with Issue quest open, typing not counted, a select two taps (open, pick): Counted by (2), Add a condition (1), its field Type (2), Within (2), If it fails' Gold chip (1), the hunter (1), Issue (1): 10 taps, with the title, the objective, Beast, 10 and -50 typed. A quest moved by taps is as before: the select stays "You, by hand", no tap added.
+
+#### Words (each plain, through humanizer and unslop, for the second read)
+
+"Counted by", "You, by hand"; "Counted by the System" on a counted row of a card; "If it fails" (the form's heading and the card's); "Worn in fights", "None"; the reward line "worn in fights: Steady"; the window "QUEST COMPLETE" with the quest's title and its reward's lines (as a tapped completion's).
+
+#### Tests
+
+- `tests/quests.test.ts`: a counted quest of 10 Beasts completes itself through `finishQuest` in the write of the tenth kill fact (reward given, quest fact, chain and streak as a tapped one); a fact of another kind or a failed test does not move it; a session window starts again; a full objective is not counted again; a tap is refused on a counted row; a quest with no counted objective is never completed by the System; a failed quest pays its cost in the failing write (`questFailed`), and the rollover's overdue failure pays it too; a GM's counted quest on a player's phone posts its end once.
+- `tests/rows.test.ts`: the active title's worn status is on its hunter's row, another title's is not.
+- `tests/rewards.test.ts`, `tests/record.test.ts`: the title's worn read, its line, given and given in another's place.
+- `tests/protocol.test.ts`: the quest message carries the count and the cost; a count that does not read leaves a row moved by taps.
+- Browser: `tests/e2e/rewards.e2e.ts` (a title with Worn in fights given, and the status on the hunter's row in a fight); `tests/e2e/gates-quests-dailies.e2e.ts` (the GM issues a counted quest in the form; the hunter's facts complete it with its window; Fail of another pays its cost).
+
+### 17.15 What unit 7 left (Nov 19)
+
+Goal (the owner): the System notices what a hunter does and rewards it without the GM's hand, with everything explicit. The problem: unit 7 left an earned feat's date cut from its UTC time, a row of jump chips in another order than the sheet, a test rule that AGENTS.md did not say, and the GM's news of a feat a player earned. The smallest change: each fixed where it starts, with a test where it has behaviour.
+
+1. **An earned feat's day.** Cause: the earned state held only the write's ISO time (`on`), and `progressLine` cut its first ten characters, which is the UTC date. So a feat earned at 19:30 in Los Angeles read as the next day. The write already knows its day: `noticed` stamps every fact with `stepTime`'s `today` (`dayKey` at the reset hour, src/core/day.ts, the one rule for the day a moment falls on). The earned state now keeps that day beside its time (`FeatState.day`; `featStep` takes the write's moment `{ at, day }`), and `earnedLine` (feats.ts) is the one line, read by `progressLine` and by the Chronicle for a deleted feat. An earned state stored before the day was kept takes its time's local calendar day once, at the load (`featState` in chronicle.ts). Test: feats.test.ts "the day a feat was earned" (Los Angeles at 19:30 reads 2026-11-19, and the `feat` fact has the same day; an old state's day at the load).
+2. **The jump chips.** Cause: the chip row was a hand-written list beside the panels' own `order`, so the two could disagree, and did (Skills before Titles in the row, after Titles and the Chronicle on the sheet). A panel now names its chip (`PanelDef.jump`), and `app.jumps(view)` answers the chips of a view in the order the view draws its panels. Test: look.e2e.ts, a step in the Poisoned, Penalized case: the chips are in the sheet's order, and the sheet draws the same sections in that order.
+3. **AGENTS.md, Tests.** One sentence: a test that marks feats earned in its setup gets their "! Feat" windows unless it first writes the keys into `feat-told:<hid>` (`hunterApp.store.device(...)`), as look.e2e.ts's Chronicle case does.
+4. **The GM's news of a feat a player earned (10.2).** Written before its code.
+
+What the GM's phone has seen and has not. It sees a player's hunter only as the sheet that phone pushes: its earned feats are in the pushed chronicle (at most `PUSHED_FEATS`, the newest), each with its key and name. It does not see the moment a feat is earned; it sees a sheet that now shows one more. So "news" is a feat a sheet shows earned that this phone has not seen on that sheet before.
+
+Three ways weighed:
+
+| | (a) Seen keys, with a first sight | (b) A time line | (c) A room message at the earn |
+|---|---|---|---|
+| What it keeps | Device memory `feats-seen`: by sheet key, the feats this phone has seen earned on it. A sheet it has no entry for is a first sight: its feats are marked seen and none is told | The time this phone first saw each sheet; news is an earned feat whose `on` is later | Nothing: the player's phone posts `featEarned`; the GM's phone logs it once by its event id, as a use |
+| A room with feats already earned | Nothing told: the first sight marks them seen | Nothing, if the clocks agree | Nothing (the messages were never sent) |
+| A feat earned while the GM's phone was shut | Told when it opens and sees the sheet | Told | Told when the message arrives |
+| What it costs | One pure step and one memory | Compares two phones' clocks: `on` is the player's | A new message beside a sheet that already carries the feat; posted from feats.js after the write (the notice step posts nothing), so a reload between them loses it, or the store's notice step learns of the room; and protocol.ts is another helper's file today |
+
+Chosen (a). The phone's own memory, compared with what the sheet shows, decides with no clock and no new message. A memory that does not read is a first sight of every sheet, so damage tells nothing rather than everything. A sheet no longer in the room is forgotten: if it comes back it is a first sight again, so a returning player's feats earned while away are not told (the board's line still shows the newest). The cost is bounded: 24 sheets (`ROOM_SHEETS`) of at most 40 keys.
+
+Where and what: `featsSeen(memory, sheets)` in chronicle-view.ts answers the news and the next memory; table.js runs it on each `sync:sheets` on the GM's phone in its room, since it already holds the GM's news of the table (rolls, uses, quest updates). Each news is a toast (tag "! Feat") and a Table feed line, "Mira earned the feat Thread's End." (`featNewsLine`), the feed row keyed by sheet and feat so it is written once. The feed's empty line names feats too. Nothing is written to the save; a toast is news that needs no answer. Tests: chronicle-view.test.ts "the GM's news of a feat a player earned" (a first sight tells nothing; a new feat told once; a sheet that left is forgotten); feats-room.e2e.ts, a step: the feed holds the line once, and after a reload neither a second line nor a toast.
+
+Words for the second read: "Mira earned the feat Thread's End."; "Player rolls, uses, quest updates and feats appear here."; AGENTS.md's sentence of point 3.
+
+### 17.16 Unit 8: what was built, and what differs from 17.14
+
+Built as 17.14 designs it: an objective's count (`Objective.count`, `ObjectiveCount`, `objectiveStep` in counts.ts), moved in the notice step on the phone that holds the hunter (`countQuests` in noticed.ts) and completed there through `finishQuest` when every objective is full; no Complete on such a quest and no minus or plus on a counted row (`systemCompletes`); a GM's quest on a player's phone posts its end in the same write (`NoticeCtx.room`); the "QUEST COMPLETE" window told once by device memory (`quest-told:<hid>`, `questNews`). A failure's cost is `Quest.onFail`, given by `grant` in the one failing write (`questFailed` for Fail, `rolledOver` for an overdue quest at the daily rollover). A title's worn status is `Title.worn` and `RewardTitle.worn`, on the row by `wornStatuses` while the title is active.
+
+What differs from 17.14, and why:
+
+1. **"Counted by" is two choices, not one.** 17.14 drew one select of "You, by hand" and the kinds of fact. The form has "Counted by" (You, by hand; The System), then the count's own "What happened" select, from `count-fields.js`, the module the feat maker also uses. One select of kinds would have been a second list of the same kinds beside the shared one. A kill count costs the same taps, since kills are the default kind; a count of another kind costs two more.
+2. **The taps.** 17.14 promised 10 taps for "Defeat 10 Beasts in one session, or lose 50 gold" and counted a Gold chip under If it fails. There is no Gold chip: XP, Gold and Points are number fields the reward editor always shows, so the -50 is typed. It missed one tap: the hunters are picked in the GM view's Award section, which starts closed. Measured in `tests/e2e/gates-quests-dailies.e2e.ts` ("takes 10 taps besides the typing"), with Issue quest open as 17.14 counts it: Counted by 2, Add a condition 1, its field 2, Within 2, the Award section 1, the hunter 1, Issue quest 1. That is 10, a select counted as two taps (open, pick).
+3. **The failure's window.** 17.14 named no window for Fail. Fail now shows "QUEST FAILED" with the quest's title and the cost's lines when the cost took anything, and the rollover's "QUEST FAILED" window lists the cost too. A cost that takes nothing (a hunter with no gold, on a quest that costs gold) gives no lines, so Fail shows no window, as before this unit. The owner may want a window there that says nothing was taken.
+4. **"Penalty on failure" stays beside "If it fails".** 17.14 keeps `penaltyText` as words the GM honours by hand. The form now has two fields about failure, one of words and one the System pays.
+5. **If it fails has no Bundle row.** The screenshot at 390 px showed the cost editor with the reward editor's "Choose a bundle" and "Save as bundle…". A bundle is an award the GM gives; a cost picked from one, or saved as one and later offered on the Give shelf, mixes the two. The cost editor is drawn with `bundles: false` (quest-fields.js), and the look case checks the row is absent.
+6. **Worn in fights.** The select lists the statuses this phone knows and matches a title's def to one by value. A def that matches none (a title given on another phone, a status since edited) is shown by its label and kept as it came.
+
+The browser case of the WIP commit (09bc51b), and its finding. Its Fail step waited for "QUEST FAILED" with "Loses 50 gold" and timed out. The trace shows the hunter's gold read as 0 just before the Fail tap. The starter campaign's hunters start with no gold, so the cost took nothing (`grant`: a cost takes no more than the hunter holds), the grant's lines were empty, and `fail` in quests.js shows the window only when they are not. The app did what the rule says; the test's setup assumed gold. The fix is in the setup: the hunter holds 80 gold, and the step reads 30 after Fail. The same case's "told once" check looked for no window right after a reload, which proves nothing (the window could come a moment later). It now reads the told memory before the reload, and after it checks that no "QUEST COMPLETE" window was queued ahead of the Fail window. A queued window opens before later ones, so the Fail confirm could not have been answered had one been queued.
+
+Tests added in this step: the worn title in `tests/e2e/rewards.e2e.ts` (the title row's Worn in fights, the reward's line, the title set active, Hasted on that hunter's row in the Goblin Den fight and on no other hunter's), the quest form at 360 and 390 px in `tests/e2e/look.e2e.ts` (an objective counted by the System, a title worn in fights, If it fails: no control under 44 px, nothing scrolls sideways, nothing past the screen's edge), the tap count above, and two shots in `scripts/ui-shots.ts` (`quest-form-counted`, `quest-form-fails`).
+
+Not proven in a browser: a GM's counted quest completing on a player's phone in a room and its end reaching the GM (unit tests only: `tests/quests.test.ts`), and the rollover's cost of an overdue quest (unit test only).
+
+Checks run on this step (Nov 19): `bun run test` whole after the merge, 4199 pass, 3 skip, 0 fail across 109 files. The three browser files touched, each whole with one worker: `gates-quests-dailies.e2e.ts` 26 passed, `rewards.e2e.ts` 7 passed, `look.e2e.ts` 38 passed. `scripts/ui-shots.ts`: the quest form's two new shots at 390 and 1280 px, looked at by eye (the Bundle row of point 5 was found there). The first full run of the script had one failed step, unrelated to quests (gm-390, the map's Fight tools: a tap timed out); its rerun had none, 175 shots, and the If it fails shot shows no Bundle row.

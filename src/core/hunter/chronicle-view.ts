@@ -9,9 +9,9 @@ import type { Rules } from '../rules.ts';
 import { grantLines } from '../rewards.ts';
 import type { RewardRules } from '../rewards.ts';
 import { PUSHED_FACTS, PUSHED_FEATS } from './chronicle.ts';
-import type { Chronicle, TallyKey } from './chronicle.ts';
+import type { Chronicle, FeatState, TallyKey } from './chronicle.ts';
 import type { Fact, FactKind, FactOf, Kept } from './facts.ts';
-import { progressLine, startOf } from './feats.ts';
+import { earnedLine, progressLine, startOf } from './feats.ts';
 import type { FeatBook } from './feats.ts';
 import type { LifeHow } from './facts.ts';
 import type { LifeState } from './vitals.ts';
@@ -113,7 +113,7 @@ export function chronicleView(c: Chronicle, book: FeatBook, R: RewardRules & Pic
     .map(({ key, st }) => {
       const def = defOf(key);
       const hidden = def ? def.show.at === 'never' : c.facts.some(f => f.kind === 'feat' && f.key === key && f.hidden);
-      return { key, name: st.name, hidden, desc: def?.desc ?? '', when: def ? progressLine(def, st) : `Earned ${st.on.slice(0, 10)}.`, gave: def ? grantLines(R, def.rewards) : [] };
+      return { key, name: st.name, hidden, desc: def?.desc ?? '', when: earnedLine(st), gave: def ? grantLines(R, def.rewards) : [] };
     });
   const shown = (from === 'push' ? [] : book).flatMap(([key, def], at) => {
     const st = c.feats[key] ?? startOf(def);
@@ -161,3 +161,32 @@ export const FEATS_SWITCH_WORDS = {
   logTitle: 'Feats', logLine: (on: boolean): string => `Feats turned ${on ? 'on' : 'off'} for the table.`,
   workshopOff: 'Feats are turned off for the table. Turn them on in the GM view, under Rules editor.',
 } as const;
+
+// ── the GM's news of a feat a player earned (feature 1's notes 10.2, 17.15) ──
+/** What a GM's phone has seen of the players' sheets: by sheet key, the keys of the feats each showed earned. Device memory (`feats-seen`), never in the save. */
+export type FeatsSeen = Readonly<Record<string, readonly string[]>>;
+/** A player's sheet as the news reads it: its key, its hunter's name, and its feats as its phone pushed them. */
+export type SheetFeats = { readonly key: string; readonly name: string; readonly feats: Readonly<Record<string, FeatState>> };
+/** One feat to tell the GM: the sheet, the feat's key and the line. */
+export type FeatNews = { readonly key: string; readonly feat: string; readonly line: string };
+/** "Mira earned the feat Thread's End.": the GM's toast and Table feed line. */
+export const featNewsLine = (hunter: string, feat: string): string => `${hunter} earned the feat ${feat}.`;
+const seenOf = (v: unknown): FeatsSeen => (v && typeof v === 'object' && !Array.isArray(v)
+  ? Object.fromEntries(Object.entries(v).filter(([, l]) => Array.isArray(l)).map(([k, l]) => [k, (l as unknown[]).filter((x): x is string => typeof x === 'string')]))
+  : {});
+/**
+ * The feats the players' sheets show earned that this phone has not seen, as news, and what it has seen after them.
+ * A sheet the memory does not hold is seen for the first time: its earned feats are marked seen and none is told, so a
+ * room with feats already earned is not told every one at once, and a memory that does not read is a first sight of
+ * every sheet. A sheet no longer in the room is forgotten. `seen` is the memory as stored, read here.
+ */
+export function featsSeen(seen: unknown, sheets: readonly SheetFeats[]): { readonly told: readonly FeatNews[]; readonly seen: FeatsSeen } {
+  const was = seenOf(seen), told: FeatNews[] = [], next: Record<string, readonly string[]> = {};
+  for (const s of sheets) {
+    const earned = Object.entries(s.feats).flatMap(([k, st]) => (st.at === 'earned' ? [[k, st.name] as const] : []));
+    const before = was[s.key];
+    if (before) for (const [k, name] of earned) if (!before.includes(k)) told.push({ key: s.key, feat: k, line: featNewsLine(s.name, name) });
+    next[s.key] = earned.map(([k]) => k);
+  }
+  return { told, seen: next };
+}

@@ -35,6 +35,6 @@ export const shadow = machine<Hunter, ShadowEvent>({
     ['What changes it', '`stepShadow(hunter, id, event)` and its `TABLE`; `can` for the panel\'s buttons'],
     ['Who calls it', '`src/views/shadows.js` (Summon, Dismiss, Release)'],
     ['The test to copy', '`tests/shadows.test.ts`; the walk\'s events are in `tests/models/shadow-events.ts`'],
-    ['The recipe', 'AGENTS.md, "A state or event of the ... machine"'],
+    ['The recipe', 'docs/guide/hunters.md, "A state or event of the ... machine"'],
   ],
 });

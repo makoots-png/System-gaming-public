@@ -45,7 +45,7 @@ export const offerRoom = machine<RoomWorld, RoomEvent>({
     ['What changes it', 'The room\'s rule that an event id is taken once (`addEvent` in `server.ts`); `outcomeOf` reads the end'],
     ['Who calls it', 'The taps of `src/core/trade/offer.ts` post the letters; the fold `offersSeen` reads the end on every phone (sync.ts, unit 2)'],
     ['The test to copy', '`tests/offer.test.ts` ("how an offer came out"), `tests/server-rooms.test.ts` ("an offer ends once")'],
-    ['The recipe', 'AGENTS.md, "A room message"; notes-5-trade.md 1.5'],
+    ['The recipe', 'docs/guide/room-sync.md, "A room message"; notes-5-trade.md 1.5'],
   ],
 });
 
@@ -107,7 +107,7 @@ const whereOf = (side: string, table: string): (readonly [string, string])[] => 
   ['What changes it', `\`recordStep\` and its \`${table}\`; the taps \`offerPosted\`, \`offerAnswered\`, \`offerTakenBack\`, \`offerStopped\`; \`offersHeard\`, \`lettersKept\`, \`offersGone\`, \`offersSeen\``],
   ['Who calls it', 'The trade view (unit 4) for the taps; sync.ts (unit 2) for what the box heard, the fold of each page and a join\'s history, and the room gone; the store runs `lettersKept` after every step (unit 2)'],
   ['The test to copy', '`tests/offer.test.ts` ("every cell of the three records", the walk of two players and the GM); the walk\'s events are in `tests/models/trade-events.ts`'],
-  ['The recipe', 'AGENTS.md, "A room message"; notes-5-trade.md 1.6 and 12.1'],
+  ['The recipe', 'docs/guide/room-sync.md, "A room message"; notes-5-trade.md 1.6 and 12.1'],
 ];
 const recordNote = 'Its goods wait aside in the record from the tap\'s write until its phone reads the offer\'s one end: settled drops them and gains the other side\'s, every other close gives them back, in the write that ends the record, so a second read finds nothing to move. What the box heard of its current letter is stored in the row (never sent, sent once, taken): only a letter never sent is provably not in the room, so only it gives the goods back when let go.';
 

@@ -54,7 +54,7 @@ export const EXAMPLE_STORIES: readonly ExampleStory[] = [
         }),
         chapter({
           name: 'Rumor', words: { title: 'SOMETHING YOU SPARED HAS BEEN SEEN', line: '' },
-          quest: { kind: 'side', title: 'Find it', desc: '', objectives: [{ label: 'Find the foe you spared', target: 1, progress: 0 }], rewards: newRewards(), dueHours: null, penaltyText: '' },
+          quest: { kind: 'side', title: 'Find it', desc: '', objectives: [{ label: 'Find the foe you spared', target: 1, progress: 0 }], rewards: newRewards(), onFail: newRewards(), dueHours: null, penaltyText: '' },
           note: 'Put roughly where it was seen in this window\'s line.',
         }),
         chapter({

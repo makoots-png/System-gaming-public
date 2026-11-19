@@ -36,6 +36,6 @@ export const story = machine<S, RunEvent>({
     ['What changes it', '`runStep(run, event, story)` and its `TABLE`; `storyMove`, the one write of a move'],
     ['Who calls it', 'the taps of `src/views/stories.js` (the GM view\'s Stories section, its turn-on and open windows, End\'s held toast)'],
     ['The test to copy', '`tests/run.test.ts`; the walk\'s events are in `tests/models/story-events.ts`'],
-    ['The recipe', 'AGENTS.md, "A state or event of the ... machine"'],
+    ['The recipe', 'docs/guide/hunters.md, "A state or event of the ... machine"'],
   ],
 });

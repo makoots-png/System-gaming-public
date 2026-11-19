@@ -319,6 +319,15 @@ describe('a quest', () => {
     expect(quest({ dueAt: null })!.quest.dueAt).toBeNull();
   });
 
+  test('an objective\'s count and the quest\'s cost travel; a count that does not read leaves the objective moved by taps', () => {
+    const rule = { on: 'kill', where: [{ field: 'type', op: '=', value: 'Beast' }], measure: { of: 'facts' }, within: 'session' };
+    const q = quest({ objectives: [{ label: 'Beasts', target: 10, progress: 0, count: { rule, mark: '' } }, { label: 'Junk', target: 1, count: { rule: { ...rule, on: 'nope' } } }] })!.quest;
+    expect(q.objectives).toEqual([{ label: 'Beasts', target: 10, progress: 0, count: { rule, mark: '' } }, { label: 'Junk', target: 1, progress: 0 }]);
+    expect(q.onFail.gold).toBe(-10);
+    expect(quest({ onFail: 'junk' }), 'a cost that does not read refuses the quest, as a reward that does not read does').toBeNull();
+    expect(quest({ rewards: 'junk' })).toBeNull();
+  });
+
   test('the GM screen leaves out the penalty and the due time: they read as none', () => {
     const { penaltyText: _, dueAt: __, ...gmQuest } = valid('quest').quest;
     expect(payload('quest', { ...valid('quest'), quest: { ...gmQuest, from: 'gm' } })!.quest).toMatchObject({ penaltyText: '', dueAt: null });

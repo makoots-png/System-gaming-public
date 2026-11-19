@@ -1,0 +1,28 @@
+# Guide: tests and CI
+
+## Where things live
+
+Each file below starts with a header that says what it owns and who may change it; read that before the code.
+
+| Question | The one place | Test to copy |
+|---|---|---|
+| How a screen looks at each size | `scripts/ui-shots.ts --serve <port> --out <dir>` starts its own server and shoots every screen (GM at 1280 and 390, a player at 360) into the folder; `tests/e2e/look.e2e.ts` checks what a size must show; the sweep in `tests/e2e/phone.e2e.ts` walks every view at 360 by 640 and 390 by 844, in and out of a fight, for sideways scroll, 44 px targets, 12 px text and a maker's focused field | `tests/e2e/look.e2e.ts`, `tests/e2e/phone.e2e.ts` |
+| The words a screen shows: the voice, one name for each thing (fight, status, bag, gear, field, bundle, the room button at the top), how a new sentence is checked | `docs/agent-handoff/copy-tasks.md`; a placeholder marked `TODO(copy)` fails the lint "no placeholder words are left marked"; a sentence goes in core, never in the view | `tests/lint.test.ts` |
+| The app on real phone profiles: an iPhone and an Android phone with touch, a laptop GM, hidden and offline, a reload mid-fight, landscape | `tests/e2e/phone.e2e.ts` (`device(label, { userAgent: ANDROID_UA })` in `helpers.ts`) | `tests/e2e/phone.e2e.ts` |
+
+Each content table has a test that checks every entry, so new content needs no new test: run `bun run test`. After a change to imports, `app.api`, events, views or panels, run `bun run deps -- --write`; after one to a machine, `bun run charts`. A new module with a `register(app)` is imported and listed in `MODULES` in `src/app.js`. Only what the build produced is served: a new static file goes in `public/`.
+
+## CI is local
+
+`bun run ci` (`scripts/ci.ts`) runs the typecheck, `bun test` and every Playwright test against its own server on port 3218, the lag test (`tests/e2e/feel.e2e.ts`) last in a pass of its own with one worker, because it times frames and must have the machine to itself. The pre-push hook runs it and blocks a push that fails or has uncommitted files. A push runs only the passes it can change: the hook hands the CI the files the push changes, and `planOf` in `scripts/ci-plan.ts` decides (`tests/ci-plan.test.ts`). The typecheck and the unit tests always run. A push of only the lead's notes (`docs/agent-handoff/`), unit tests and their models, chart scripts, the generated docs, this guide or the CI's own scripts runs no browser test; a push that changes browser test files and not the app runs those files alone (the lag test only if it is one of them); anything a browser test can see (`src/`, `public/`, `server.ts`, the build, `tests/e2e/helpers.ts`, `tests/fixtures/`, the config, the package), a new branch or a file the plan does not know runs everything. A new kind of file that no browser test can see gets a line in `isUnitOnly` with its reason. `bun run ci` by hand runs everything. The browser tests can run on GitHub's machines instead: `sh scripts/ci-public.sh` sends a clean copy of HEAD (`scripts/publish-clean.ts`) to the public repository, whose workflow (`.github/workflows/ci.yml`) runs them in six parts; a push with `CI_BROWSER_REMOTE=<the tree id it printed>`, once that run is green, skips the browser pass here and keeps the rest. "CI green" means `bun run ci` passed on the commit being pushed, its browser pass here or green on the public repository for the same tree. A step that failed across a pause of the box is rerun once; a failure without a pause never is.
+
+## Tests
+
+- `tests/*.test.ts`: bun tests of pure logic and the server handler in process. Copy `tests/server-rooms.test.ts`.
+- `tests/e2e/*.e2e.ts`: Playwright on phone viewports. Copy `tests/e2e/room-sync.e2e.ts` and import from `tests/e2e/helpers.ts`; `device()` fails a test on any console error.
+- Test names say what a player or GM sees. Drive the action under test through the UI; use the store only for setup and reading.
+- `device()` opens every phone of a test in a zone where the test's start is noon (`noonZone` in `helpers.ts`), so no test meets the day's reset by the hour it runs; a test about the day's clock names its zone with `timezoneId`.
+- No retries and no fixed waits to hide a race. Wait for a window by its title before tapping past it; `E2E_POPUP_DELAY=100` opens every window 100 ms late to find a test that does not.
+- A hunter alone gets a personal gate on open, and its "A GATE HAS APPEARED" window stands over the page. `onboardPlayer` answers it; a test seeded from a save whose subject is not the gate sets `rulesOverrides.solo = { personal: false }` in its setup.
+- A won fight, a cleared gate, a solo run or a daily can earn a feat, and its window ("! Feat", as "NO PARTY WAS NEEDED" after a player's first gate cleared alone) queues after the thing's own window and stands in front of the next one a test waits for. A test whose subject is not the feat turns feats off in its setup: `rulesOverrides.feats = { on: false }` (in a room, on the GM's phone, and wait for the player's `hunterApp.rules().feats.on` to be false), as `tests/e2e/solo.e2e.ts` does. A test that marks feats earned in its setup (a chronicle written with `hunterApp.store`) gets their "! Feat" windows too, one a feat, unless it first writes the feats it marks into the phone's memory of feats told: `hunterApp.store.device('feat-told:' + hid).write(keys)`, as the Chronicle case of `tests/e2e/look.e2e.ts` does.
+- `page.route` does not see a request a service worker makes. A test that holds or fails `/api` with it opens its device with `blockServiceWorker: true`.

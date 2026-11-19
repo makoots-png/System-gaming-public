@@ -93,6 +93,13 @@ test('on a 360 px phone a Poisoned, Penalized hunter sees both condition chips o
   await test.step('the jump row fades at the right, where it still scrolls', async () => {
     await expect(player.locator('#view-status .jump-chips')).toHaveClass(/fade-r/);
   });
+
+  await test.step('the jump chips are in the order of the sections they lead to, Skills after Titles and Chronicle', async () => {
+    const chips = await player.locator('#view-status [data-jump]').evaluateAll(bs => bs.map(b => (b as HTMLElement).dataset.jump!));
+    expect(chips).toEqual(['attributes', 'build', 'titles', 'chronicle', 'skills', 'equipment', 'inventory']);
+    const onPage = await player.locator('#view-status [data-panel]').evaluateAll(ps => ps.map(p => (p as HTMLElement).dataset.panel!));
+    expect(onPage.filter(id => chips.includes(id)), 'the sheet draws the same sections in the same order').toEqual(chips);
+  });
 });
 
 test('on a 360 px phone a dead hunter\'s sheet shows Dead and the way back on the first screen, in words that wrap within the width', async ({ device }) => {
@@ -716,7 +723,7 @@ for (const viewport of [SMALL_PHONE, PHONE]) {
       s.update(() => {
         const h = s.active();
         h.chronicle = { inbox: [], facts, tally: { ...h.chronicle.tally, won: 12, kills: 1048, gates: 5, fell: 3, feats: 4 },
-          feats: { ...Object.fromEntries(told.map((k, i) => [k, { at: 'earned', on: at(i), name: k === 'threads-end' ? 'Thread\'s End' : k }])), ratcatcher: { at: 'shown', n: 25 } } };
+          feats: { ...Object.fromEntries(told.map((k, i) => [k, { at: 'earned', on: at(i), day: at(i).slice(0, 10), name: k === 'threads-end' ? 'Thread\'s End' : k }])), ratcatcher: { at: 'shown', n: 25 } } };
       }, 'test-setup');
     });
     const audit = (root: import('./helpers.ts').Page | any) => root.evaluate((el: HTMLElement) => ({
@@ -763,5 +770,32 @@ for (const viewport of [SMALL_PHONE, PHONE]) {
       expect(await audit(win)).toEqual({ out: 0, page: 0 });
       expect(await win.locator('.chr-win').evaluate(el => el.scrollWidth - el.clientWidth), 'the Chronicle is no wider than its window').toBeLessThanOrEqual(1);
     });
+  });
+}
+
+for (const viewport of [SMALL_PHONE, PHONE]) {
+  test(`at ${viewport.width} px the GM's quest form with an objective counted by the System, a title worn in fights and If it fails scrolls only up and down, and every control in it is at least 44 px tall`, async ({ device }) => {
+    const page = (await device('gm', { viewport })).page;
+    await onboardGM(page);
+    await go(page, 'quests');
+    await page.locator('#view-quests [data-new]').tap();
+    const form = page.locator('#view-quests form[data-form]');
+    await form.locator('[data-ocb]').selectOption('system');
+    const count = form.locator('[data-ocount]');
+    await count.locator('[data-tadd]').tap();
+    await count.locator('[data-cm]').selectOption('max');
+    await expect(count.locator('[data-mf]')).toBeVisible();
+    await form.locator('[data-rweditor] [data-add="title"]').tap();
+    await expect(form.locator('[data-rweditor] [data-f="tworn"]')).toBeVisible();
+    await expect(form.locator('[data-failrw] .rw-nums')).toBeVisible();
+    await expect(form.locator('[data-failrw] [data-rw-bundle]'), 'a cost is not picked from or saved as an award bundle').toHaveCount(0);
+    const audit = await form.evaluate(box => {
+      const short = [...box.querySelectorAll('button, input:not([type=checkbox]), select')]
+        .filter(el => (el as HTMLElement).offsetParent !== null && (el as HTMLElement).offsetHeight < 44).map(el => (el.getAttribute('aria-label') || el.textContent || el.id || el.tagName).trim().slice(0, 30));
+      const wide = [...box.querySelectorAll('*:not(input):not(textarea)')].some(el => (el as HTMLElement).scrollWidth > (el as HTMLElement).clientWidth + 1 && getComputedStyle(el).overflowX !== 'visible' && getComputedStyle(el).overflowX !== 'hidden');
+      const out = [...box.querySelectorAll('button, input, select, label, p')].filter(el => { const r = el.getBoundingClientRect(); return r.width > 0 && (r.left < 0 || r.right > innerWidth + 0.5); }).map(el => (el.getAttribute('aria-label') || el.textContent || el.tagName).trim().slice(0, 30));
+      return { short, wide, out, page: document.documentElement.scrollWidth - innerWidth };
+    });
+    expect(audit).toEqual({ short: [], wide: false, out: [], page: 0 });
   });
 }

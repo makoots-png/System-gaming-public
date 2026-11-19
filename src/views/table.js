@@ -9,6 +9,7 @@ import { LIFE_TAG, can } from '../core/hunter/vitals.ts';
 import { aims, docSpots, readyIn, stepAway, stepToward } from '../core/combat/fight-view.ts';
 import { docBodies, docGround, myPinKey } from '../core/combat/map-view.ts';
 import { parseTold, toldAfter } from '../core/combat/table-news.ts';
+import { featsSeen } from '../core/hunter/chronicle-view.ts';
 import { hunterAbilities } from '../core/combat/rows.ts';
 import { roundOf } from '../core/combat/timeline.ts';
 import { itemOfAbility } from '../core/registry/abilities.ts';
@@ -584,13 +585,30 @@ export function register(app) {
     feed = feed.slice(0, FEED_MAX); feedMemory.write(feed); markSeen(); paintFeed();
   });
 
+  // a feat a player's hunter earned, told once when its pushed sheet first shows it (src/core/hunter/chronicle-view.ts
+  // `featsSeen`): what this phone has seen of each sheet is device memory, and a sheet seen for the first time tells nothing
+  const seenMemory = store.device('feats-seen');
+  app.on('sync:sheets', () => {
+    if (!inRoomGM()) return;
+    const sheets = app.api.sync.remoteSheets().map(r => ({ key: r.key, name: r.data.name, feats: r.data.chronicle.feats }));
+    const was = seenMemory.read(), r = featsSeen(was, sheets);
+    if (JSON.stringify(r.seen) !== JSON.stringify(was)) seenMemory.write(r.seen);
+    if (!r.told.length) return;
+    for (const n of r.told) {
+      ui.toast('! Feat', n.line);
+      const id = `feat:${n.key}:${n.feat}`;
+      if (!feed.some(f => f.id === id)) feed.unshift({ id, type: 'feat', text: n.line });
+    }
+    feed = feed.slice(0, FEED_MAX); feedMemory.write(feed); markSeen(); paintFeed();
+  });
+
   const WHAT = { item: 'Item', skill: 'Skill', boon: 'Boon' };
   /** A use at a glance: who and what on the first line, then a boon's text. */
   const usedHtml = f => {
     const out = f.what === 'boon' ? f.text || '' : '';
     return `<b>${esc(f.name)}</b> used ${esc(WHAT[f.what] || 'Item')}: <b>${esc(f.thing)}</b>${f.target === 'other' ? ' <span class="tb-on">on a target</span>' : ''}${out ? `<span class="tb-out">${esc(out)}</span>` : ''}`;
   };
-  const feedLine = f => f.type === 'roll'
+  const feedLine = f => f.type === 'feat' ? f.text : f.type === 'roll'
     ? `${f.name} · ${f.label ? `${f.label} ` : ''}${f.expr} = ${f.total}${f.crit ? ' (CRIT)' : f.fumble ? ' (FUMBLE)' : ''}`
     : `${f.name} · Quest "${f.title}" ${f.status}${f.obj.length ? ` (${f.obj.join(', ')})` : ''}`;
   // A2: under 1100 px the feed is one line with a count of rows the GM has not seen; a tap opens it. It sticks to the
@@ -613,7 +631,7 @@ export function register(app) {
     const list = feedEl.querySelector('[data-tb-list]');
     const sig = JSON.stringify(feed.map(f => f.id));
     if (sig === feedSig) return; feedSig = sig;
-    if (!feed.length) { list.innerHTML = '<p class="empty">Player rolls, uses and quest updates appear here.</p>'; return; }
+    if (!feed.length) { list.innerHTML = '<p class="empty">Player rolls, uses, quest updates and feats appear here.</p>'; return; }
     list.innerHTML = `<ul class="tb-feed" aria-label="Table feed">${feed.map(f =>
       `<li class="${f.type === 'questUpdate' || f.type === 'used' ? 'q' : f.crit ? 'crit' : ''}" data-feed="${esc(f.id)}"><span class="tb-txt">${f.type === 'used' ? usedHtml(f) : esc(feedLine(f))}</span></li>`).join('')}</ul>`;
   }

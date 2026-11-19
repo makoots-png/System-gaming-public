@@ -57,7 +57,7 @@ export function register(app) {
   }
 
   app.registerPanel({
-    view: 'status', id: 'chronicle', order: 21, title: W.title,
+    view: 'status', id: 'chronicle', order: 21, title: W.title, jump: W.title,
     mount(el) {
       el.addEventListener('click', e => {
         const b = e.target.closest('[data-chr-all]'); if (!b) return;

@@ -38,3 +38,8 @@ export function systemCounts(q: Pick<Quest, 'id' | 'chainId'>, chain: JobChain |
   if (!q.chainId || !chain || chain.id !== q.chainId || chain.questId !== q.id) return false;
   return BUILT_IN_JOBS[chain.job].steps[(chain.step - 1) as 0 | 1 | 2].goal === 'level';
 }
+/**
+ * Whether the System completes this quest: one of its objectives is counted (feature 1's notes 17.14). It completes in
+ * the write whose fact fills its last objective, and no tap completes it.
+ */
+export const systemCompletes = (q: Pick<Quest, 'objectives'>): boolean => q.objectives.some(o => !!o.count);

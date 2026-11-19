@@ -2,7 +2,7 @@
 //
 // A view changes the save only with `store.apply(reason, step)` (src/edge/store.ts). A step is a pure function: it is
 // given the save and answers the next save, or a refusal (`{ ok: false, why }`) that leaves the save as it was. The
-// rule lives in the function a step calls, in the core module that owns that state (AGENTS.md, "Where things live").
+// rule lives in the function a step calls, in the core module that owns that state (docs/guide/makers.md, "A view's write to the save").
 // The store then writes the answer into the live save with `writeInto`, repairs it, stores it and announces it.
 //
 // `writeInto` keeps every object that an id still names: a hunter, an item or a quest the view holds stays the live

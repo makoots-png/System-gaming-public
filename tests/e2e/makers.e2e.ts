@@ -1394,7 +1394,7 @@ test('a GM makes a story of two chapters in the Workshop, the second with a ques
       name: 'The debt', when: 'A hunter is close to death and alone.', for: 'hunters', chapters: [
         { name: 'The offer', words: { title: 'THE DEEP HAS NOTICED YOU', line: 'A voice offers strength for a debt.' }, rewards: { ...newRewards(), gold: 50 }, quest: null, note: 'Ask whether the hunter takes the offer.' },
         { name: '', words: { title: 'THE DEEP ASKS FOR A GATE', line: '' }, rewards: newRewards(), note: '',
-          quest: { kind: 'urgent', title: 'Clear a gate for the Deep', desc: '', objectives: [{ label: 'Gate cleared', target: 1, progress: 0 }], rewards: { ...newRewards(), xp: 100 }, dueHours: 48, penaltyText: '' } },
+          quest: { kind: 'urgent', title: 'Clear a gate for the Deep', desc: '', objectives: [{ label: 'Gate cleared', target: 1, progress: 0 }], rewards: { ...newRewards(), xp: 100 }, onFail: newRewards(), dueHours: 48, penaltyText: '' } },
       ],
     }]);
     await expect(workshop(page, 'story').locator('li[data-id]:not([data-example]) .meta')).toHaveText('2 chapters · for chosen hunters');

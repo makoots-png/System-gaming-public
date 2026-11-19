@@ -1,11 +1,11 @@
 // Feats (src/core/hunter/feats.ts), their counts (counts.ts), the built-ins (registry/feats.ts) and the notice step that
 // earns them (noticed.ts): each expected value written from the rule.
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { RULES, rulesOf } from '../src/core/rules.ts';
 import { freshSave, newHunter } from '../src/core/save.ts';
 import type { Hunter, ParseEnv, Save } from '../src/core/save.ts';
-import { dayKey } from '../src/core/day.ts';
-import { record } from '../src/core/hunter/chronicle.ts';
+import { dayKey, parseDayKey } from '../src/core/day.ts';
+import { parseChronicle, record } from '../src/core/hunter/chronicle.ts';
 import { FACT_KINDS } from '../src/core/hunter/facts.ts';
 import type { Fact, FactStamp } from '../src/core/hunter/facts.ts';
 import { NO_COUNT, countStep, markOf, measureFields, measuresFor, parseCount } from '../src/core/hunter/counts.ts';
@@ -22,7 +22,7 @@ import { newRewards } from '../src/core/rewards.ts';
 import { FEAT_WALK } from './models/feat-events.ts';
 import { dev, hid } from './fixtures/ids.ts';
 
-const AT = '2026-11-18T10:00:00.000Z', TODAY = dayKey(new Date(AT), 0);
+const AT = '2026-11-18T10:00:00.000Z', TODAY = dayKey(new Date(AT), 0), NOW = { at: AT, day: TODAY };
 const ENV: ParseEnv = { now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-me') };
 const H1 = hid('h1');
 const mira = (h: Partial<Hunter> = {}): Hunter => ({ ...newHunter(RULES), id: H1, name: 'Mira', ...h });
@@ -95,12 +95,12 @@ describe('a feat on a hunter, cell by cell', () => {
   });
   test('earned at its reach when its state tests hold; shown at its count; a broken row back to 0; shown when the feat it waits on is earned', () => {
     const hidden = startOf(def({ at: 'never' }));
-    expect(featStep(hidden, FEAT_WALK[1]!, def({ at: 'never' }), AT)).toEqual({ state: { at: 'earned', on: AT, name: 'F' }, fx: 'earned' });
-    expect(featStep(hidden, FEAT_WALK[2]!, def({ at: 'never' }), AT)).toEqual({ state: { at: 'hidden', n: 2, mark: '' }, fx: null });
-    expect(featStep(hidden, FEAT_WALK[0]!, def({ at: 'count', n: 1 }), AT)).toEqual({ state: { at: 'shown', n: 1, mark: '' }, fx: 'shown' });
-    expect(featStep({ at: 'shown', n: 1, mark: '' }, FEAT_WALK[3]!, def({ at: 'start' }), AT)?.state).toEqual({ at: 'shown', n: 0, mark: '' });
-    expect(featStep(hidden, FEAT_WALK[4]!, def({ at: 'feat', key: 'x' as FeatKey }), AT)?.fx).toBe('shown');
-    expect(featStep({ at: 'earned', on: AT, name: 'F' }, FEAT_WALK[1]!, def({ at: 'start' }), AT)).toBeNull();
+    expect(featStep(hidden, FEAT_WALK[1]!, def({ at: 'never' }), NOW)).toEqual({ state: { at: 'earned', on: AT, day: TODAY, name: 'F' }, fx: 'earned' });
+    expect(featStep(hidden, FEAT_WALK[2]!, def({ at: 'never' }), NOW)).toEqual({ state: { at: 'hidden', n: 2, mark: '' }, fx: null });
+    expect(featStep(hidden, FEAT_WALK[0]!, def({ at: 'count', n: 1 }), NOW)).toEqual({ state: { at: 'shown', n: 1, mark: '' }, fx: 'shown' });
+    expect(featStep({ at: 'shown', n: 1, mark: '' }, FEAT_WALK[3]!, def({ at: 'start' }), NOW)?.state).toEqual({ at: 'shown', n: 0, mark: '' });
+    expect(featStep(hidden, FEAT_WALK[4]!, def({ at: 'feat', key: 'x' as FeatKey }), NOW)?.fx).toBe('shown');
+    expect(featStep({ at: 'earned', on: AT, day: TODAY, name: 'F' }, FEAT_WALK[1]!, def({ at: 'start' }), NOW)).toBeNull();
   });
 });
 
@@ -146,10 +146,26 @@ describe('the feats a feat may be shown after (the maker\'s After another feat)'
   });
 });
 
+describe('the day a feat was earned', () => {
+  const zone = process.env.TZ;
+  afterEach(() => { process.env.TZ = zone; });
+  test('a feat earned at 19:30 in Los Angeles reads as earned that day there, not on the next day of its UTC time', () => {
+    process.env.TZ = 'America/Los_Angeles';
+    const at = '2026-11-20T03:30:00.000Z', s = write(saveOf(mira()), [fight({ endPct: 4 })], ctx(book('threads-end'), { at, today: dayKey(new Date(at), 0) }));
+    expect(progressLine(book('threads-end')[0]![1], state(s, 'threads-end')!)).toBe('Earned 2026-11-19.');
+    expect(me(s).chronicle.facts.find(f => f.kind === 'feat')?.day).toBe(parseDayKey('2026-11-19')!);
+  });
+  test('an earned feat kept before its day was stored takes the local day of its time, once, at the load', () => {
+    process.env.TZ = 'America/Los_Angeles';
+    const c = parseChronicle({ feats: { 'threads-end': { at: 'earned', on: '2026-11-20T03:30:00.000Z', name: 'Thread\'s End' } } });
+    expect(c.feats['threads-end']).toEqual({ at: 'earned', on: '2026-11-20T03:30:00.000Z', day: '2026-11-19', name: 'Thread\'s End' });
+  });
+});
+
 describe('the System notices, in the write of the fact', () => {
   test('Thread\'s End: a won fight ended at 4% of max HP, never down, earns it and its title in the same write, with a feat fact kept', () => {
     const s = write(saveOf(mira()), [fight({ endPct: 4 })], ctx(book('threads-end')));
-    expect(state(s, 'threads-end')).toEqual({ at: 'earned', on: AT, name: 'Thread\'s End' });
+    expect(state(s, 'threads-end')).toEqual({ at: 'earned', on: AT, day: TODAY, name: 'Thread\'s End' });
     expect(me(s).titles.map(t => t.name)).toContain('Still Standing');
     expect(me(s).chronicle.facts.map(f => f.kind)).toEqual(['fight', 'feat', 'title']);
     expect(me(s).chronicle.tally.feats).toBe(1);

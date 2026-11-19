@@ -44,6 +44,6 @@ export const upgrade = machine<Update, UpdateEvent>({
     ['What changes it', '`updateStep(update, event)` and its `TABLE`; `decideUpgrade` is the refusal\'s decision'],
     ['Who calls it', '`src/edge/upgrade.ts` (`upgradeRefused`, called by `src/edge/sync.ts` on a 426), the one writer; `src/edge/room-pill.ts` reads it; `src/sw.js` posts the count'],
     ['The test to copy', '`tests/upgrade.test.ts`, `tests/sw.test.ts`; the walk\'s events are in `tests/models/upgrade-events.ts`'],
-    ['The recipe', 'AGENTS.md, "A state or event of the ... machine"'],
+    ['The recipe', 'docs/guide/hunters.md, "A state or event of the ... machine"'],
   ],
 });

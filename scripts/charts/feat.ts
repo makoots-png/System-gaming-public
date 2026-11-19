@@ -3,13 +3,14 @@
 import { FEAT_STATES, featStep, startOf } from '../../src/core/hunter/feats.ts';
 import type { FeatDef, FeatEvent, FeatState, Show } from '../../src/core/hunter/feats.ts';
 import { newRewards } from '../../src/core/rewards.ts';
+import { parseDayKey } from '../../src/core/day.ts';
 import { FEAT_WALK } from '../../tests/models/feat-events.ts';
 import { bfs, machine } from '../statecharts.ts';
 
 const SHOWS: readonly Show[] = [{ at: 'start' }, { at: 'count', n: 1 }, { at: 'feat', key: 'early-riser' as never }, { at: 'never' }];
 const defOf = (show: Show): FeatDef => ({ name: 'A feat', window: 'A FEAT', desc: '', show, rule: { on: 'kill', where: [], measure: { of: 'facts' }, within: 'row', reach: 2, also: [] }, rewards: newRewards() });
 type S = { readonly show: Show; readonly f: FeatState };
-const NOW = '2026-11-18T10:00:00.000Z';
+const NOW = { at: '2026-11-18T10:00:00.000Z', day: parseDayKey('2026-11-18')! };
 const SHOW_WORDS = (s: Show): string => (s.at === 'start' ? 'Shown from the start' : s.at === 'count' ? 'Shown at a count of 1' : s.at === 'feat' ? 'Shown after another feat' : 'Hidden until earned');
 
 function step(e: FeatEvent): string {
@@ -38,6 +39,6 @@ export const feat = machine<S, FeatEvent>({
     ['What changes it', '`featStep(state, event, def, now)` and its `TABLE`; a count moves by `countStep` (`src/core/hunter/counts.ts`)'],
     ['Who calls it', '`noticed` in `src/core/hunter/noticed.ts`, at the end of every `store.apply`'],
     ['The test to copy', '`tests/feats.test.ts`; the walk\'s events are in `tests/models/feat-events.ts`'],
-    ['The recipe', 'AGENTS.md, "A built-in feat"'],
+    ['The recipe', 'docs/guide/feats-stories.md, "A built-in feat"'],
   ],
 });

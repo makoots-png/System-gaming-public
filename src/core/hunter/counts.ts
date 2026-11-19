@@ -137,3 +137,30 @@ export function parseCounted(v: unknown): Counted {
   const vals = Array.isArray(v.vals) ? v.vals.filter((x): x is string => typeof x === 'string').slice(-VALS_MAX).map(x => x.slice(0, 80)) : null;
   return vals && vals.length ? { n, mark, vals } : { n, mark };
 }
+
+// ── a quest's objective the System counts (feature 1's notes 17.14) ──
+/**
+ * An objective the System counts: its count (the `FactCount` a feat counts with) and where it stands in its window (its
+ * mark, a distinct count's values). Its number is the objective's own `progress`, capped at the objective's target.
+ */
+export type ObjectiveCount = { readonly rule: FactCount; readonly mark: string; readonly vals?: readonly string[] };
+/** An objective's count from outside data, or null: a rule `parseCount` refuses leaves the objective moved by taps. */
+export function parseObjectiveCount(v: unknown): ObjectiveCount | null {
+  if (!isObj(v)) return null;
+  const rule = parseCount(v.rule);
+  if (!rule) return null;
+  const c = parseCounted(v);
+  return { rule, mark: c.mark, ...(c.vals ? { vals: c.vals } : {}) };
+}
+/**
+ * Counted objective `o` after fact `f` in the window of `mark` (`markOf`): its progress and count, or null when the fact
+ * does not move it. A full objective is not counted again, so a row broken after it was full does not empty it.
+ */
+export function objectiveStep(o: { readonly target: number; readonly progress: number; readonly count: ObjectiveCount }, f: Fact, mark: string): { progress: number; count: ObjectiveCount } | null {
+  if (o.progress >= o.target) return null;
+  const from: Counted = { n: o.progress, mark: o.count.mark, ...(o.count.vals ? { vals: o.count.vals } : {}) };
+  const r = countStep(from, f, o.count.rule, mark);
+  if (r === null || r === from) return null;
+  const to = r === 'broke' ? { n: 0, mark: from.mark } : r;
+  return { progress: Math.min(o.target, to.n), count: { rule: o.count.rule, mark: to.mark, ...(to.vals ? { vals: to.vals } : {}) } };
+}

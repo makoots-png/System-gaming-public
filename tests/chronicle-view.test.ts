@@ -3,12 +3,12 @@
 // fact above it.
 import { describe, expect, test } from 'bun:test';
 import { RULES, rulesOf } from '../src/core/rules.ts';
-import { dayKey } from '../src/core/day.ts';
+import { dayKey, parseDayKey } from '../src/core/day.ts';
 import { newChronicle, pushedChronicle } from '../src/core/hunter/chronicle.ts';
 import type { Chronicle, FeatState } from '../src/core/hunter/chronicle.ts';
 import { FACT_FIELDS, FACT_KINDS, parseFact } from '../src/core/hunter/facts.ts';
 import type { Fact, FactKind, FactOf, Kept } from '../src/core/hunter/facts.ts';
-import { CHRONICLE_WORDS, FACT_LINES, FEATS_SWITCH_WORDS, FIRST, boardLine, chronicleView, factLine, factWhen } from '../src/core/hunter/chronicle-view.ts';
+import { CHRONICLE_WORDS, FACT_LINES, FEATS_SWITCH_WORDS, FIRST, boardLine, chronicleView, factLine, factWhen, featsSeen } from '../src/core/hunter/chronicle-view.ts';
 import { featsFor } from '../src/core/hunter/feats.ts';
 import type { FeatBook } from '../src/core/hunter/feats.ts';
 import { BUILT_IN_FEATS } from '../src/core/registry/feats.ts';
@@ -119,7 +119,7 @@ describe('the Chronicle panel as data', () => {
   const DAY = dayKey(new Date('2026-11-19T12:00:00.000Z'), 0);
   const at = (i: number): string => new Date(Date.parse('2026-11-01T10:00:00.000Z') + i * 3_600_000).toISOString();
   const keptAt = (f: Fact, i: number, session = 3): Kept => ({ ...f, at: at(i), day: DAY, session });
-  const earned = (i: number, name: string): FeatState => ({ at: 'earned', on: at(i), name });
+  const earned = (i: number, name: string): FeatState => ({ at: 'earned', on: at(i), day: parseDayKey('2026-11-01')!, name });
   const shown = (n: number): FeatState => ({ at: 'shown', n, seen: [] } as unknown as FeatState);
   const BOOK: FeatBook = featsFor(RULES, BUILT_IN_FEATS, {});
   const def = (key: string) => BOOK.find(([k]) => k === key)![1];
@@ -203,5 +203,27 @@ describe('the Chronicle panel as data', () => {
     expect(boardLine(mira({ feats: { uphill: earned(1, 'Uphill'), ratcatcher: shown(25) } }))).toBe('Chronicle: 1 feat, Uphill');
     const seven = Object.fromEntries(Array.from({ length: 7 }, (_, i) => [`f${i}`, earned(i, i === 6 ? 'Thread\'s End' : `Feat ${i}`)]));
     expect(boardLine(mira({ feats: seven }))).toBe('Chronicle: 7 feats, newest Thread\'s End');
+  });
+});
+
+describe('the GM\'s news of a feat a player earned', () => {
+  const won = (name: string): FeatState => ({ at: 'earned', on: '2026-11-19T10:00:00.000Z', day: parseDayKey('2026-11-19')!, name });
+  const mira = (feats: Record<string, FeatState>) => ({ key: 'dev-a:h1', name: 'Mira', feats });
+  test('a sheet seen for the first time tells nothing, however many feats it shows earned', () => {
+    const r = featsSeen({}, [mira({ 'threads-end': won('Thread\'s End'), uphill: won('Uphill'), ratcatcher: { at: 'shown', n: 3, mark: '' } })]);
+    expect(r.told).toEqual([]);
+    expect(r.seen).toEqual({ 'dev-a:h1': ['threads-end', 'uphill'] });
+    expect(featsSeen('not a memory', [mira({ uphill: won('Uphill') })]).told, 'a memory that does not read is a first sight').toEqual([]);
+  });
+  test('a feat the sheet shows earned after it was seen is told once, by the hunter\'s name and the feat\'s', () => {
+    const first = featsSeen({}, [mira({ uphill: won('Uphill') })]);
+    const next = featsSeen(first.seen, [mira({ uphill: won('Uphill'), 'threads-end': won('Thread\'s End') })]);
+    expect(next.told).toEqual([{ key: 'dev-a:h1', feat: 'threads-end', line: 'Mira earned the feat Thread\'s End.' }]);
+    expect(featsSeen(next.seen, [mira({ uphill: won('Uphill'), 'threads-end': won('Thread\'s End') })]).told).toEqual([]);
+  });
+  test('a sheet that left the room is forgotten, and seen for the first time again when it comes back', () => {
+    const first = featsSeen({}, [mira({ uphill: won('Uphill') })]);
+    expect(featsSeen(first.seen, []).seen).toEqual({});
+    expect(featsSeen(featsSeen(first.seen, []).seen, [mira({ uphill: won('Uphill'), x: won('X') })]).told).toEqual([]);
   });
 });

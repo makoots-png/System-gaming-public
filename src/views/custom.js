@@ -330,7 +330,7 @@ export function register(app) {
     if (ok === true) BD.auto(hid);
   }
   app.registerPanel({
-    view: 'status', id: 'build', order: 13, title: 'Build',
+    view: 'status', id: 'build', order: 13, title: 'Build', jump: 'Build',
     mount(el) {
       el.innerHTML = '<div data-bd></div><div class="bd-acts" data-bdgm></div>';
       el.addEventListener('click', e => {

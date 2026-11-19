@@ -62,6 +62,7 @@ export const app = {
   ...newBus((name, e) => reported('handler:' + name, e)), // on(name, fn) and emit(name, payload), typed by src/core/events.ts
   registerView(v) { views.set(v.id, { ...VIEW_DEFAULTS, ...v }); chromeDirty(); },
   registerPanel(p) { panels.push({ ...PANEL_DEFAULTS, ...p }); },
+  jumps: id => viewPanels(id).filter(p => p.jump).map(p => ({ label: p.jump, id: p.id })),
   go(id) {
     const want = '#/' + id;
     if (location.hash === want) route(); else location.hash = want;

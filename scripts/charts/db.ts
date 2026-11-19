@@ -35,6 +35,6 @@ export const db = machine<Db<AnyStore>, DbEvent<AnyStore>>({
     ['What changes it', '`dbStep(db, event)` and its `TABLE`; `dbHealth` for what /api/health answers'],
     ['Who calls it', '`database(url)` in `server.ts`, which opens Postgres and tries again while it is down'],
     ['The test to copy', '`tests/room-server.test.ts`; the walk\'s events are in `tests/models/db-events.ts`; a down Postgres end to end in `tests/server-rooms.test.ts` and `tests/server-start.test.ts`'],
-    ['The recipe', 'AGENTS.md, "A state or event of the ... machine"'],
+    ['The recipe', 'docs/guide/hunters.md, "A state or event of the ... machine"'],
   ],
 });
