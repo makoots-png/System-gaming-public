@@ -311,6 +311,19 @@ async function gmMakers(g: Phone) {
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await shot(g, 'workshop-filled-bottom');
   });
+  await step(g, 2, 'feats and the feat maker', async () => {
+    const feats = workshop('feat'), d = page.locator('.fm-overlay [role=dialog]');
+    await go(g, 'workshop');
+    await press(g, feats.locator('.ws-built summary'));
+    await show(feats, 'start');
+    await shot(g, 'workshop-feats');
+    await press(g, feats.locator('.ws-built li[data-id="iron-routine"] .ws-row'));
+    await press(g, d.locator('[data-tadd]'));
+    await show(d.locator('[data-test]').last());
+    await shot(g, 'maker-feat-edit');
+    await press(g, d.locator('[data-cancel]'));
+    await d.waitFor({ state: 'detached' });
+  });
 }
 
 async function gmAward(g: Phone, p: Phone | null) {

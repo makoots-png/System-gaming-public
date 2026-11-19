@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { copyName, duplicateEntry, removeEntry, removeStatus, saveById, saveEntry, saveStatus } from '../src/core/library.ts';
+import { copyName, duplicateEntry, duplicateFeat, featOff, featOn, removeEntry, removeFeat, removeStatus, saveById, saveEntry, saveFeat, saveStatus } from '../src/core/library.ts';
+import { BUILT_IN_FEATS } from '../src/core/registry/feats.ts';
+import { FEAT_BOUNDS, parseFeat } from '../src/core/hunter/feats.ts';
+import { parseFeatKey } from '../src/core/ids.ts';
+import type { FeatDef } from '../src/core/hunter/feats.ts';
 import { LIMITS, newSave } from '../src/core/save.ts';
 import type { Item, Library, StatusDef } from '../src/core/save.ts';
 import { isRefused } from '../src/core/save-step.ts';
@@ -91,5 +95,48 @@ describe('the Workshop: duplicate and delete', () => {
     expect(copyName('Rope', ['Rope'], 60)).toBe('Rope (copy)');
     expect(copyName('Rope', ['Rope', 'rope (COPY)', 'Rope (copy 2)'], 60)).toBe('Rope (copy 3)');
     expect(copyName('Abcdefghij', [], 12)).toBe('Abcde (copy)');
+  });
+});
+
+describe('a feat turned off and on (the Workshop\'s Turn off and Turn on)', () => {
+  const shipped = (key: string): FeatDef => BUILT_IN_FEATS.find(([k]) => k === key)![1];
+  const rat = shipped('ratcatcher');
+  const changed: FeatDef = { ...rat, name: 'Rat King', rule: { ...rat.rule, reach: 20 } };
+  const own: FeatDef = { ...rat, name: 'Beast Week', window: 'THE BEASTS NOTICED' };
+  const withFeats = (feats: Record<string, FeatDef>): Library => ({ ...lib(), feats });
+  test('Turn off then Turn on leaves the library as it was: an unchanged built-in, a changed one and a GM\'s own', () => {
+    for (const [start, key] of [[withFeats({}), 'ratcatcher'], [withFeats({ ratcatcher: changed }), 'ratcatcher'], [withFeats({ 'beast-week': own }), 'beast-week']] as const) {
+      const off = ok(featOff(start, key));
+      expect(off.feats[key], key).toEqual({ ...(start.feats[key] ?? rat), off: true });
+      expect(ok(featOn(off, key)), key).toEqual(start);
+    }
+  });
+  test('an unchanged built-in turned on again leaves the library, so it is listed with the built-ins again', () => {
+    const on = ok(featOn(ok(featOff(withFeats({}), 'ratcatcher')), 'ratcatcher'));
+    expect(Object.hasOwn(on.feats, 'ratcatcher')).toBe(false);
+  });
+  test('a feat already off is not turned off again, one on is not turned on, and a key no feat has is refused', () => {
+    const off = ok(featOff(withFeats({}), 'ratcatcher'));
+    expect(featOff(off, 'ratcatcher')).toEqual({ ok: false, why: 'unchanged' });
+    expect(featOn(withFeats({ ratcatcher: changed }), 'ratcatcher')).toEqual({ ok: false, why: 'unchanged' });
+    expect(featOn(withFeats({}), 'ratcatcher')).toEqual({ ok: false, why: 'missing' });
+    expect(featOff(withFeats({}), 'no-such-feat')).toEqual({ ok: false, why: 'missing' });
+  });
+  test('a built-in saved as it shipped leaves no entry: an Edit that changes nothing marks nothing changed', () => {
+    const parsed = parseFeat(JSON.parse(JSON.stringify(rat)))!;
+    expect(ok(saveFeat(withFeats({ ratcatcher: changed }), 'ratcatcher', parsed)).feats).toEqual({});
+    expect(ok(saveFeat(withFeats({}), 'ratcatcher', parsed)).feats).toEqual({});
+    expect(ok(removeFeat(ok(saveFeat(withFeats({}), 'ratcatcher', changed)), 'ratcatcher')).feats).toEqual({});
+  });
+  test('Duplicate of a turned-off built-in is the GM\'s own feat, on, under a key of its own, its name within the bound', () => {
+    const off = ok(featOff(withFeats({}), 'ratcatcher'));
+    const dup = ok(duplicateFeat(off, 'ratcatcher'));
+    const [key, copy] = Object.entries(dup.feats).find(([k]) => k !== 'ratcatcher')!;
+    expect(copy).toEqual({ ...rat, name: 'Ratcatcher (copy)' });
+    expect(parseFeatKey(key) as string | null).toBe(key);
+    expect(BUILT_IN_FEATS.some(([k]) => k === key)).toBe(false);
+    const long = withFeats({ 'long-one': { ...own, name: 'L'.repeat(FEAT_BOUNDS.name) } });
+    const named = Object.values(ok(duplicateFeat(long, 'long-one')).feats).map(d => d.name);
+    expect(named).toContain(`${'L'.repeat(FEAT_BOUNDS.name - ' (copy)'.length)} (copy)`);
   });
 });

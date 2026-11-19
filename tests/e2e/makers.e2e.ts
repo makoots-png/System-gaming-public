@@ -1137,12 +1137,118 @@ test('a GM makes a feat for 2 Beasts defeated in a session, from the Workshop: t
     await d.locator('[data-cancel]').tap();
   });
 
-  await test.step('a built-in feat turned off is listed off, and Reset brings it back', async () => {
-    const built = workshop(page, 'feat').locator('.ws-built');
+  await test.step('a built-in feat turned off is listed off, an Edit keeps it off, its Duplicate is on, and Turn on lists it with the built-ins again', async () => {
+    const built = workshop(page, 'feat').locator('.ws-built'), shipped = built.locator('li[data-id="ratcatcher"]');
+    const mine = workshop(page, 'feat').locator(':scope > .ws-list > li[data-id="ratcatcher"]');
+    /** "⋯" on the row `li`, then `label` in its window, the window titled by the feat's name. */
+    const more = async (li: typeof mine, label: string) => {
+      await li.locator('[data-act="more"]').tap();
+      const win = page.locator('.sys-overlay.show', { has: page.locator('h2.sys-title', { hasText: /^Ratcatcher$/ }) });
+      await win.locator('.sys-actions button', { hasText: label }).tap();
+      await expect(win).toHaveCount(0);
+    };
     await built.locator('summary').tap();
-    await built.locator('li', { hasText: 'Ratcatcher' }).locator('[data-act="more"]').tap();
-    await answerWindow(page, 'Ratcatcher', 'Turn off');
+    await more(shipped, 'Turn off');
+    await expect(mine).toContainText('built-in, off');
     expect(await page.evaluate(() => hunterApp.store.get().library.feats.ratcatcher?.off)).toBe(true);
-    await expect(workshop(page, 'feat').locator('.ws-list li', { hasText: 'Ratcatcher' }).first()).toContainText('built-in, off');
+    await mine.locator('.ws-row').tap();
+    await expect(d.getByRole('heading', { name: 'Edit Ratcatcher' })).toBeVisible();
+    await d.locator('#fm-reach').fill('40');
+    await d.getByRole('button', { name: 'Save feat' }).tap();
+    await expect(d).toHaveCount(0);
+    expect(await page.evaluate(() => { const f = hunterApp.store.get().library.feats.ratcatcher; return [f?.off, f?.rule.reach]; })).toEqual([true, 40]);
+    await more(mine, 'Duplicate');
+    await expect(workshop(page, 'feat').locator('.ws-list li', { hasText: 'Ratcatcher (copy)' })).toBeVisible();
+    expect(await page.evaluate(() => Object.values(hunterApp.store.get().library.feats as Record<string, any>).filter(f => f.name === 'Ratcatcher (copy)').map(f => [f.off ?? null, f.rule.reach]))).toEqual([[null, 40]]);
+    await more(mine, 'Turn on');
+    await expect(mine).not.toContainText('off');
+    await expect(mine).toContainText('changed built-in');
+    await more(mine, 'Reset');
+    await answerWindow(page, 'Reset Ratcatcher?', 'Reset');
+    await expect(mine).toHaveCount(0);
+    await more(shipped, 'Turn off');
+    await more(mine, 'Turn on');
+    await expect(mine).toHaveCount(0);
+    await expect(shipped).toBeVisible();
+    expect(await page.evaluate(() => Object.hasOwn(hunterApp.store.get().library.feats, 'ratcatcher'))).toBe(false);
+  });
+});
+
+test('a GM who opens a feat and saves it unchanged keeps when it is shown: from the start, after a count, after another feat, hidden, and after a feat the list no longer holds', async ({ device }) => {
+  const page = (await device('gm')).page;
+  await onboardGM(page);
+  const own = { name: 'Second Wind', window: 'SECOND WIND', desc: 'Shown after a feat that was deleted.', show: { at: 'feat', key: 'gone-feat' },
+    rule: { on: 'roll', where: [], measure: { of: 'facts' }, within: 'ever', reach: 2, also: [] }, rewards: { xp: 10 } };
+  await page.evaluate(f => hunterApp.store.update((d: any) => { d.library.feats = { 'second-wind': f }; }, 'test-setup'), own);
+  const parsed = await page.evaluate(() => hunterApp.store.get().library.feats['second-wind']);
+  const d = page.locator('.fm-overlay [role=dialog]');
+  await go(page, 'workshop');
+  const built = workshop(page, 'feat').locator('.ws-built');
+  await built.locator('summary').tap();
+  /** Opens the feat on `row`, checks the show choice pressed, and answers its Save. */
+  const editAndSave = async (row: Locator, name: string, at: string) => {
+    await row.locator('.ws-row').tap();
+    await expect(d.getByRole('heading', { name: `Edit ${name}` })).toBeVisible();
+    await expect(d.locator(`[data-chips="show"] [data-chip="${at}"]`)).toHaveAttribute('aria-pressed', 'true');
+    return async () => { await d.getByRole('button', { name: 'Save feat' }).tap(); await expect(d).toHaveCount(0); };
+  };
+  for (const [key, name, at] of [['uphill', 'Uphill', 'start'], ['four-figures', 'Four Figures', 'count'], ['iron-routine', 'Iron Routine', 'feat'], ['threads-end', 'Thread\'s End', 'never']] as const) {
+    await test.step(`${name}, shown ${at}: Edit then Save leaves the library without an entry for it, so it is as it shipped`, async () => {
+      const save = await editAndSave(built.locator(`li[data-id="${key}"]`), name, at);
+      if (at === 'feat') await expect(d.locator('#fm-after option:checked')).toHaveText('Early Riser');
+      if (at === 'count') await expect(d.locator('#fm-shown')).toHaveValue('100');
+      await save();
+      expect(await page.evaluate(k => Object.hasOwn(hunterApp.store.get().library.feats, k), key)).toBe(false);
+    });
+  }
+  await test.step('the GM\'s own feat, shown after a feat no longer in the list: the key stays chosen, named by its key, and Save keeps it', async () => {
+    const save = await editAndSave(workshop(page, 'feat').locator(':scope > .ws-list > li[data-id="second-wind"]'), 'Second Wind', 'feat');
+    await expect(d.locator('#fm-after option:checked')).toHaveText('gone-feat');
+    await expect(d.locator('#fm-after option', { hasText: 'Second Wind' })).toHaveCount(0);
+    await save();
+    expect(await page.evaluate(() => hunterApp.store.get().library.feats['second-wind'])).toEqual(parsed);
+  });
+  await test.step('a new feat shown after Early Riser is saved with that key', async () => {
+    await workshop(page, 'feat').locator('[data-new]').tap();
+    await d.locator('#fm-name').fill('After Dawn');
+    await d.locator('[data-chips="show"] [data-chip="feat"]').tap();
+    await d.locator('#fm-after').selectOption({ label: 'Early Riser' });
+    await d.getByRole('button', { name: 'Save feat' }).tap();
+    await expect(d).toHaveCount(0);
+    expect(await page.evaluate(() => hunterApp.store.get().library.feats['after-dawn']?.show)).toEqual({ at: 'feat', key: 'early-riser' });
+  });
+});
+
+test('a GM whose Save is refused reads why on screen, in the feat maker and in the status maker, wherever the form is scrolled', async ({ device }) => {
+  const page = (await device('gm')).page;
+  await onboardGM(page);
+  await go(page, 'workshop');
+  /** The message of the window `win` reads `text` and is wholly on screen, not clipped by the scrolled form. */
+  const inView = async (win: Locator, text: string) => {
+    const err = win.locator('[data-err]').last();
+    await expect(err).toHaveText(text);
+    await expect(err).toBeInViewport({ ratio: 1 });
+  };
+  await test.step('the feat maker: a condition left without a value', async () => {
+    const d = page.locator('.fm-overlay [role=dialog]');
+    await workshop(page, 'feat').locator('[data-new]').tap();
+    await d.locator('#fm-name').fill('Beast Week');
+    await d.locator('[data-tadd]').tap();
+    await d.getByRole('button', { name: 'Save feat' }).tap();
+    await inView(d, 'Give each condition under Only when a value.');
+    await expect(d.locator('.mk-preview')).toContainText('Give each condition under Only when a value.');
+    await d.locator('#fm-name').fill('');
+    await d.locator('.mk-scroll').evaluate(el => el.scrollTo(0, el.scrollHeight));
+    await d.getByRole('button', { name: 'Save feat' }).tap();
+    await inView(d, 'Give the feat a name.');
+    expect(await page.evaluate(() => Object.keys(hunterApp.store.get().library.feats))).toEqual([]);
+    await d.locator('[data-cancel]').last().tap();
+  });
+  await test.step('the status maker: a status with no name', async () => {
+    const d = page.locator('.mk-overlay [role=dialog]');
+    await workshop(page, 'status').locator('[data-new]').tap();
+    await d.locator('.mk-scroll').evaluate(el => el.scrollTo(0, el.scrollHeight));
+    await d.locator('[data-apply]').tap();
+    await inView(d, 'Give the status a name.');
   });
 });

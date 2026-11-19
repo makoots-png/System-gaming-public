@@ -85,7 +85,7 @@ const ENTRIES: readonly (readonly [string, FeatDef])[] = [
     title('Marathoner', 'Cleared three gates alone without a long rest.', { vit: 2, hpMax: 10 }))],
   // F37
   ['in-and-out', feat('In and Out', 'THE GATE BARELY OPENED', 'A gate of your rank or higher cleared alone in three rounds or fewer.', HIDDEN,
-    facts('solo', [WON, atMost('rounds', 3), atLeast('above', 0)]), 1, title('In and Out', 'Cleared a gate alone in three rounds.', { agi: 2 }))],
+    facts('solo', [WON, atMost('rounds', 3), atLeast('above', 0)]), 1, title('In and Out', 'Cleared a gate of your rank or higher alone in three rounds or fewer.', { agi: 2 }))],
   // F38
   ['by-a-thread', feat('By a Thread', 'YOU WALKED OUT. BARELY', 'A gate cleared alone with 5% of max HP or less left.', HIDDEN,
     facts('solo', [WON, is('life', 'up'), atMost('endPct', 5)]), 1, { ...newRewards(), points: 1, items: [item('Greater Health Potion')] })],

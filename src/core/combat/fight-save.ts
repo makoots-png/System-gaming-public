@@ -114,9 +114,9 @@ export function fought(save: Save, r: Result, b: Beside, R: Rules): Save | Refus
   return b.also ? b.also(s) : s;
 }
 
-/** `save` with each local hunter row of the ended fight `f` given its facts (`rowFacts`): the gate it came from by name. */
 /** The name of the gate this phone's fight came from, '' for none (a fight fact's `gate`). */
 export const fightGateName = (save: Pick<Save, 'fightRefs' | 'gates'>): string => { const gid = save.fightRefs?.gate ?? null; return gid ? save.gates.find(g => g.id === gid)?.name ?? '' : ''; };
+/** `save` with each local hunter row of the ended fight `f` given its facts (`rowFacts`): the gate it came from by name. */
 function foughtFacts(save: Save, f: Ended): Save {
   const gate = fightGateName(save);
   let s = save;

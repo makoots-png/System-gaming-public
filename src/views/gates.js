@@ -128,7 +128,7 @@ export function register(app) {
     // the player's device assigns its own item ids
     const bare = list => list.map(i => { const c = { ...i }; delete c.id; return c; });
     // each player paid also remembers the gate it cleared (pay.ts `gateFact`), in the room's `noted` (feature 1's notes 2.3)
-    const rankOf = key => (rem.find(r => r.key === key) || { data: { rank: 'E' } }).data.rank;
+    const rankOf = key => { const r = rem.find(x => x.key === key); return r ? r.data.rank : null; };
     const posts = { room: S.room(), events: plan.shares.flatMap(x => (x.payee.kind === 'remote' ? [S.event('award', { to: [x.payee.key], rewards: { ...newRewards(), xp: x.xp, gold: x.gold, items: bare(x.items) } }),
       S.event('noted', { to: [x.payee.key], facts: [gateFact(g, rankOf(x.payee.key), store.get().world.day)] })] : [])).filter(Boolean) };
     const locals = plan.shares.flatMap(x => (x.payee.kind === 'local' ? [{ hid: x.payee.hid, rewards: parseRewards({ xp: x.xp, gold: x.gold, items: x.items }) ?? newRewards() }] : []));

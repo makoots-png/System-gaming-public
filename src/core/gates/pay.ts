@@ -8,6 +8,7 @@
 // clear are one answer, written by one `store.apply` or not at all. A settled fight is gone from the save, so a second
 // settle of it is refused (`no-fight`).
 import { reduce } from '../combat/fight.ts';
+import { rankSeen } from '../combat/fight-facts.ts';
 import type { Ctx, Ended, Fight } from '../combat/fight-types.ts';
 import type { CombatantId } from '../combat/ability-types.ts';
 import { grant } from '../hunter/grant.ts';
@@ -128,12 +129,15 @@ export function clearShares<I>(save: Pick<Save, 'gates'>, gateId: string, xpOf: 
   return { due, shares: payees.map(p => ({ payee: p, xp: splitAward(due, n, by), gold: splitAward(gold, n, by), items: first && idOf(first) === idOf(p) ? items : [] })) };
 }
 /**
+ * The fact of gate `g` cleared with a hunter of rank `rank` among its payees, on world day `day` (a local payee's here, a
+ * player's in the room's `noted`, null when its sheet is not on the GM's phone: fight-facts.ts `rankSeen`).
+ */
+export const gateFact = (g: Pick<Gate, 'name' | 'rank' | 'breakDay'>, rank: Rank | null, day: number): Fact =>
+  ({ kind: 'gate', name: g.name, rank: g.rank, above: rankIdx(g.rank) - rankIdx(rankSeen(rank)), toBreak: Math.max(0, g.breakDay - day) });
+/**
  * Gate `gateId` cleared, in one step: the gate paid what it owed and logged (`clearGate`, world.ts), each local payee
  * given `rewards` (the view reads its share with `parseRewards`), each player's award posted. Refused as `clearGate` is.
  */
-/** The fact of gate `g` cleared with a hunter of rank `rank` among its payees, on world day `day` (a local payee's here, a player's in the room's `noted`). */
-export const gateFact = (g: Pick<Gate, 'name' | 'rank' | 'breakDay'>, rank: Rank, day: number): Fact =>
-  ({ kind: 'gate', name: g.name, rank: g.rank, above: rankIdx(g.rank) - rankIdx(rank), toBreak: Math.max(0, g.breakDay - day) });
 export function settleClear(save: Save, gateId: string, pay: ClearPay, locals: readonly { hid: string; rewards: Rewards }[], posts: Posts, day: Day): Settled | Refused<'missing' | 'unchanged'> {
   const cleared = clearGate(save, gateId, pay, { at: day.at, cap: day.R.logCap });
   if (isRefused(cleared)) return cleared;

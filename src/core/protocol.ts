@@ -301,10 +301,6 @@ export type SoloRunPayload = Base & { by: SheetKey; gate: GateId; name: string; 
 /** Why the GM's phone did not pay a won run: the gate was cleared first (another hunter's run or the GM), closed, or is gone. */
 export const SOLO_REFUSED = ['taken', 'closed', 'gone'] as const;
 export type SoloRefused = (typeof SOLO_REFUSED)[number];
-/**
- * The GM's phone's answer to the won run `run` of gate `gate` (`name`): paid with `rewards` (the gate's Clear for that
- * hunter), or refused with why. Landed once, and only while that run waits on the player's phone (gates/solo-wait.ts).
- */
 /** The most facts one `noted` carries: a fight's fact, a kill a row, and its consumables (notes-1-feats.md 2.3). */
 export const NOTED_MAX = 1 + 60 + 20;
 /**
@@ -313,6 +309,10 @@ export const NOTED_MAX = 1 + 60 + 20;
  * the same write. A fact that does not read (`parseFact`) is left out.
  */
 export type NotedPayload = Base & { to: [SheetKey]; facts: Fact[] };
+/**
+ * The GM's phone's answer to the won run `run` of gate `gate` (`name`): paid with `rewards` (the gate's Clear for that
+ * hunter), or refused with why. Landed once, and only while that run waits on the player's phone (gates/solo-wait.ts).
+ */
 export type SoloAnswerPayload = Base & { to: [SheetKey]; run: EventId; gate: GateId; name: string }
   & ({ verdict: 'paid'; rewards: Rewards } | { verdict: 'refused'; why: SoloRefused });
 type Payloads = {

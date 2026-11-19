@@ -3,7 +3,7 @@
 // each foe it took down. Pure. Read by `fought` (fight-save.ts), which records them on a hunter of this phone in the
 // write that ended the fight; a player's hunter's travel as the room's `noted` (unit 4). A solo run's kills are
 // `killFacts` too, read by `soloRan` (solo.ts) from the run's end.
-import { rankIdx } from '../rules.ts';
+import { RANKS, rankIdx } from '../rules.ts';
 import type { Rank } from '../rules.ts';
 import type { Fact, FactOf, FightOutcome } from '../hunter/facts.ts';
 import type { Body } from './effect-ops.ts';
@@ -64,15 +64,21 @@ export function rowFacts(f: Ended, cid: CombatantId, rank: Rank, gate: string): 
 }
 
 /**
+ * The rank a fact of a player's hunter is measured against when the GM's phone has its pushed sheet (`rank`) or not
+ * (null: the lowest rank). The one place that decides it, for a fight's `noted` and a gate's Clear.
+ */
+export const rankSeen = (rank: Rank | null): Rank => rank ?? RANKS[0];
+
+/**
  * The facts of each row of a player's hunter in fight `f` that ended (its holder is a sheet key of the room), for the
- * room's `noted` message the GM's phone posts in the ending write: `rankOf` reads the hunter's rank from its pushed sheet
- * (none when its sheet is not on this phone: E). `gate` as `rowFacts`.
+ * room's `noted` message the GM's phone posts in the ending write: `rankOf` reads the hunter's rank from its pushed sheet,
+ * null when the sheet is not on this phone (`rankSeen`). `gate` as `rowFacts`.
  */
 export function remoteFacts(f: Ended, rankOf: (key: SheetKey) => Rank | null, gate: string): { readonly to: SheetKey; readonly facts: Fact[] }[] {
   return f.rows.flatMap(b => {
     const h = b.holder;
     if (b.kind !== 'hunter' || h?.kind !== 'remote') return [];
-    const facts = rowFacts(f, b.id, rankOf(h.remote) ?? 'E', gate);
+    const facts = rowFacts(f, b.id, rankSeen(rankOf(h.remote)), gate);
     return facts.length ? [{ to: h.remote, facts }] : [];
   });
 }

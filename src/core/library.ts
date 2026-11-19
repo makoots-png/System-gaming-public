@@ -3,7 +3,9 @@
 // map-maker.js) and the Workshop (workshop.js) change the library only through these, as `atLibrary` steps
 // (save-step.ts). Pure: the caller passes the id a new entry gets (`store.id`), and the entry as its kind's parser gave
 // it. A refusal is `{ ok: false, why }`; nothing is half changed. A pack merged into the library is `mergePack` (pack.ts).
+import { FEAT_BOUNDS, freeFeatKey, sameFeat } from './hunter/feats.ts';
 import type { FeatDef } from './hunter/feats.ts';
+import { BUILT_IN_FEATS } from './registry/feats.ts';
 import { LIMITS } from './save.ts';
 import type { Library, StatusDef } from './save.ts';
 import { refuse } from './save-step.ts';
@@ -71,8 +73,19 @@ export function removeStatus(lib: Library, key: string): Next {
   return { ...lib, statuses: rest };
 }
 
-/** The feat `key` saved in the library (a built-in's key holds an edit of it, or its turning off), refused past the cap. */
+/** The built-in feat under `key` as it shipped, or null for a key that is not a built-in's. */
+const shippedFeat = (key: string): FeatDef | null => BUILT_IN_FEATS.find(([k]) => k === key)?.[1] ?? null;
+/** `def` turned on: without `off`. */
+const onOf = (def: FeatDef): Omit<FeatDef, 'off'> => { const { off: _off, ...on } = def; return on; };
+
+/**
+ * The feat `key` saved in the library as `def` (a built-in's key holds an edit of it, or its turning off; any other key a
+ * GM's own), refused past the cap. A built-in's entry that equals the feat as it shipped leaves the library, so the
+ * library holds a built-in's key only while it differs, and the Workshop lists it with the built-ins again.
+ */
 export function saveFeat(lib: Library, key: string, def: FeatDef): Next {
+  const shipped = shippedFeat(key);
+  if (shipped && sameFeat(def, shipped)) { const { [key]: _same, ...rest } = lib.feats; return { ...lib, feats: rest }; }
   if (!Object.hasOwn(lib.feats, key) && Object.keys(lib.feats).length >= LIMITS.libraryFeats) return refuse('full');
   return { ...lib, feats: { ...lib.feats, [key]: def } };
 }
@@ -81,6 +94,38 @@ export function removeFeat(lib: Library, key: string): Next {
   if (!Object.hasOwn(lib.feats, key)) return refuse('missing');
   const { [key]: _gone, ...rest } = lib.feats;
   return { ...lib, feats: rest };
+}
+/**
+ * Feat `key` turned off, a built-in (changed or not) or the GM's own: nothing counts toward it on any phone, and its
+ * edits stay. Refused for a key no feat has (`missing`) and for a feat already off (`unchanged`).
+ */
+export function featOff(lib: Library, key: string): Next | Refused<'unchanged'> {
+  const def = lib.feats[key] ?? shippedFeat(key);
+  if (!def) return refuse('missing');
+  if (def.off) return refuse('unchanged');
+  return saveFeat(lib, key, { ...def, off: true });
+}
+/**
+ * Feat `key` turned on again, its edits kept; a built-in that is then as it shipped leaves the library (`saveFeat`).
+ * Refused for a key the library lacks (`missing`) and for a feat that is on (`unchanged`). `featOff` undone exactly.
+ */
+export function featOn(lib: Library, key: string): Next | Refused<'unchanged'> {
+  const def = lib.feats[key];
+  if (!def) return refuse('missing');
+  if (!def.off) return refuse('unchanged');
+  return saveFeat(lib, key, onOf(def));
+}
+/**
+ * A copy of feat `key` (the library's, or a built-in as it shipped) as a GM's own feat, on whether or not the feat it
+ * copies is off: "(copy)" after its name within `FEAT_BOUNDS.name`, under a key no feat holds. Refused past the cap.
+ */
+export function duplicateFeat(lib: Library, key: string): Next {
+  const def = lib.feats[key] ?? shippedFeat(key);
+  if (!def) return refuse('missing');
+  const names = [...Object.values(lib.feats), ...BUILT_IN_FEATS.map(([, d]) => d)].map(d => d.name);
+  const name = copyName(def.name, names, FEAT_BOUNDS.name);
+  const at = freeFeatKey(name, k => Object.hasOwn(lib.feats, k) || shippedFeat(k) !== null);
+  return saveFeat(lib, at, { ...onOf(def), name });
 }
 
 /**

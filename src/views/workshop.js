@@ -15,9 +15,9 @@ import { rewardLines } from '../core/rewards.ts';
 import { bundleMaker } from './reward-editor.js';
 import { featMaker } from './feat-maker.js';
 import { BUILT_IN_FEATS } from '../core/registry/feats.ts';
-import { featsDoc, freeFeatKey, ruleLine } from '../core/hunter/feats.ts';
+import { featsDoc, ruleLine } from '../core/hunter/feats.ts';
 import { DOC_MAX } from '../core/protocol.ts';
-import { removeFeat, saveFeat } from '../core/library.ts';
+import { duplicateFeat, featOff, featOn, removeFeat } from '../core/library.ts';
 
 const KINDS = [
   ['status', 'Statuses', 'A status, such as Poisoned or Slowed, has effects and goes on a hunter or a monster.', 'New status'],
@@ -59,7 +59,7 @@ export function register(app) {
 `);
 
   // ── each kind's rows: [id, name, tag, meta, actions] ──
-  const ACTS = { edit: 'Edit', dup: 'Duplicate', del: 'Delete', reset: 'Reset', give: 'Give to…', award: 'Award…', share: 'Share', off: 'Turn off' };
+  const ACTS = { edit: 'Edit', dup: 'Duplicate', del: 'Delete', reset: 'Reset', give: 'Give to…', award: 'Award…', share: 'Share', off: 'Turn off', on: 'Turn on' };
   function rowsOf(kind) {
     const L = lib();
     if (kind === 'status') {
@@ -72,8 +72,9 @@ export function register(app) {
     if (kind === 'map') return L.maps.map(m => [m.id, m.name, `${m.w} by ${m.h}`, [m.zones.length ? m.zones.map(z => z.name).join(', ') : '', m.fog ? `fog, sight ${m.sight}` : ''].filter(Boolean).join(' · '), ['edit', 'dup', 'del', 'share']]);
     if (kind === 'feat') {
       const left = featsDoc(L.feats, DOC_MAX).left;
-      return Object.entries(L.feats).map(([k, d]) => [k, d.name, isBuiltInFeat(k) ? (d.off ? 'built-in, off' : 'changed built-in') : left.includes(k) ? 'too large to send to players' : '',
-        d.off ? '' : d.desc || ruleLine(d.rule), ['edit', 'dup', isBuiltInFeat(k) ? 'reset' : 'del', 'share']]);
+      return Object.entries(L.feats).map(([k, d]) => [k, d.name,
+        [isBuiltInFeat(k) ? (d.off ? 'built-in' : 'changed built-in') : '', d.off ? 'off' : '', left.includes(k) ? 'too large to send to players' : ''].filter(Boolean).join(', '),
+        d.off ? '' : d.desc || ruleLine(d.rule), ['edit', 'dup', isBuiltInFeat(k) ? 'reset' : 'del', d.off ? 'on' : 'off', 'share']]);
     }
     if (kind === 'bundle') return A().bundles.list().map(b => [b.id, b.name, '', rewardLines(app.rules(), b.rewards).join(' · '), ['award', 'edit', 'dup', 'del', 'share']]);
     return store.get().monsters.map(m => {
@@ -82,7 +83,7 @@ export function register(app) {
     });
   }
   /** What a row shows beside it: Give to… and Award… stay in sight; Duplicate, Share, Delete and Reset are behind "⋯". */
-  const INLINE = ['give', 'award'], MORE = ['dup', 'share', 'off', 'reset', 'del'];
+  const INLINE = ['give', 'award'], MORE = ['dup', 'share', 'off', 'on', 'reset', 'del'];
   const rowHtml = ([id, name, tag, meta, acts]) => {
     const inline = acts.filter(a => INLINE.includes(a)), more = MORE.filter(a => acts.includes(a));
     return `<li data-id="${esc(id)}" data-more="${more.join(' ')}"><button type="button" class="ws-row" data-act="edit" aria-label="Edit ${esc(name)}"><span><span class="nm">${esc(name)}</span>${tag ? `<span class="tag">${esc(tag)}</span>` : ''}</span>
@@ -175,11 +176,10 @@ export function register(app) {
       if (a === 'new' || a === 'edit') return void await featMaker(app, a === 'new' ? null : id);
       const d = L.feats[id] || (BUILT_IN_FEATS.find(([k]) => k === id) || [])[1];
       if (!d) return;
-      if (a === 'off') return void store.apply('library-feat-off', atLibrary(l => saveFeat(l, id, { ...d, off: true })));
-      if (a === 'dup') {
-        const name = copyName(d.name, Object.values(L.feats).map(x => x.name), 60), key = freeFeatKey(name, k => Object.hasOwn(L.feats, k) || isBuiltInFeat(k));
-        const done = store.apply('library-feat-dup', atLibrary(l => saveFeat(l, key, { ...d, name })));
-        if (!done.ok) ui.toast('Workshop', `The library holds ${LIMITS.libraryFeats} feats at most.`, { kind: 'warning' });
+      if (a === 'off' || a === 'on' || a === 'dup') {
+        const step = a === 'off' ? featOff : a === 'on' ? featOn : duplicateFeat;
+        const done = store.apply(`library-feat-${a}`, atLibrary(l => step(l, id)));
+        if ('why' in done && done.why === 'full') ui.toast('Workshop', `The library holds ${LIMITS.libraryFeats} feats at most.`, { kind: 'warning' });
         return;
       }
       if (a === 'reset' && await ui.confirm({ title: `Reset ${d.name}?`, body: 'Restores the built-in feat as it shipped. What hunters have counted toward it stays.', danger: true, confirmLabel: 'Reset' })) store.apply('library-feat-reset', atLibrary(l => removeFeat(l, id)));

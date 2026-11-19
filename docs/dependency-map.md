@@ -86,7 +86,7 @@ For one entry with line numbers and both directions, run `bun run deps -- <name>
 ### `src/core/combat/fight-facts.ts`
 
 - Imports: `src/core/combat/ability-types.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/fight-types.ts`, `src/core/combat/row-tally.ts`, `src/core/hunter/facts.ts`, `src/core/ids.ts`, `src/core/rules.ts`
-- Imported by: `src/core/combat/fight-save.ts`, `src/core/combat/odds.ts`, `src/core/gates/solo.ts`, `src/views/combat.js`
+- Imported by: `src/core/combat/fight-save.ts`, `src/core/combat/odds.ts`, `src/core/gates/pay.ts`, `src/core/gates/solo.ts`, `src/views/combat.js`
 
 ### `src/core/combat/fight-parse.ts`
 
@@ -260,7 +260,7 @@ For one entry with line numbers and both directions, run `bun run deps -- <name>
 
 ### `src/core/gates/pay.ts`
 
-- Imports: `src/core/combat/ability-types.ts`, `src/core/combat/fight-types.ts`, `src/core/combat/fight.ts`, `src/core/gates/gate.ts`, `src/core/gates/world.ts`, `src/core/hunter/chronicle.ts`, `src/core/hunter/facts.ts`, `src/core/hunter/grant.ts`, `src/core/protocol.ts`, `src/core/rewards.ts`, `src/core/rules.ts`, `src/core/save-step.ts`, `src/core/save.ts`, `src/core/sync/outbox.ts`
+- Imports: `src/core/combat/ability-types.ts`, `src/core/combat/fight-facts.ts`, `src/core/combat/fight-types.ts`, `src/core/combat/fight.ts`, `src/core/gates/gate.ts`, `src/core/gates/world.ts`, `src/core/hunter/chronicle.ts`, `src/core/hunter/facts.ts`, `src/core/hunter/grant.ts`, `src/core/protocol.ts`, `src/core/rewards.ts`, `src/core/rules.ts`, `src/core/save-step.ts`, `src/core/save.ts`, `src/core/sync/outbox.ts`
 - Imported by: `src/core/gates/solo.ts`, `src/views/combat.js`, `src/views/gates.js`, `src/views/gm.js`
 
 ### `src/core/gates/personal.ts`

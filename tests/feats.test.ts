@@ -9,7 +9,9 @@ import { record } from '../src/core/hunter/chronicle.ts';
 import type { Fact, FactStamp } from '../src/core/hunter/facts.ts';
 import { NO_COUNT, countStep, markOf, parseCount } from '../src/core/hunter/counts.ts';
 import type { FactCount, Counted } from '../src/core/hunter/counts.ts';
-import { FEAT_STATES, TABLE, featNews, featStep, featsDoc, featsFor, parseFeat, progressLine, startOf } from '../src/core/hunter/feats.ts';
+import { FEAT_STATES, TABLE, afterChoices, featNews, featStep, featsDoc, featsFor, freeFeatKey, parseFeat, progressLine, startOf } from '../src/core/hunter/feats.ts';
+import { parseFeatKey } from '../src/core/ids.ts';
+import { seededSource } from '../src/core/draws.ts';
 import { DOCS, DOC_MAX } from '../src/core/protocol.ts';
 import type { FeatBook, FeatDef, FeatKey } from '../src/core/hunter/feats.ts';
 import { noticed } from '../src/core/hunter/noticed.ts';
@@ -95,6 +97,11 @@ describe('the built-in feats', () => {
       for (const t of [d.name, d.window, d.desc]) expect(t, `${k}: no exclamation mark, em dash or semicolon`).not.toMatch(/[!—;]/);
     }
   });
+  test('In and Out\'s title says its rule: a gate of the hunter\'s rank or higher, cleared alone in three rounds or fewer', () => {
+    const d = BUILT_IN_FEATS.find(([k]) => k === 'in-and-out')![1];
+    expect(d.rule.where).toEqual([{ field: 'outcome', op: '=', value: 'won' }, { field: 'rounds', op: '<=', value: 3 }, { field: 'above', op: '>=', value: 0 }]);
+    expect(d.rewards.title?.desc).toBe('Cleared a gate of your rank or higher alone in three rounds or fewer.');
+  });
   test('a GM\'s switch turns them all off; an edit takes a built-in\'s place; a turned-off one is left out; the GM\'s own come after, by key', () => {
     const off = rulesOf({ feats: { on: false } });
     expect(featsFor(off, BUILT_IN_FEATS, {})).toEqual([]);
@@ -103,6 +110,23 @@ describe('the built-in feats', () => {
     expect(b[0]).toEqual([BUILT_IN_FEATS[0]![0], edited]);
     expect(b.some(([k]) => k === BUILT_IN_FEATS[2]![0])).toBe(false);
     expect(b[b.length - 1]).toEqual(['zz-mine', own]);
+  });
+});
+
+describe('the feats a feat may be shown after (the maker\'s After another feat)', () => {
+  test('the built-ins as the library changed them, then the GM\'s own; not the feat itself, not one turned off; a key no feat holds kept and named by its key', () => {
+    const [k0, d0] = BUILT_IN_FEATS[0]!, [k1, d1] = BUILT_IN_FEATS[1]!, [k2] = BUILT_IN_FEATS[2]!;
+    const library = { [k0]: { ...d0, name: 'Renamed' }, [k1]: { ...d1, off: true as const }, 'zz-mine': { ...d0, name: 'Mine' }, 'zz-off': { ...d0, name: 'Paused', off: true as const } };
+    const list = afterChoices(BUILT_IN_FEATS, library, k2, null);
+    expect(list[0]).toEqual([k0, 'Renamed']);
+    expect(list.map(([k]) => k)).not.toContain(k1);
+    expect(list.map(([k]) => k)).not.toContain(k2);
+    expect(list.map(([k]) => k)).not.toContain('zz-off');
+    expect(list[list.length - 1]).toEqual(['zz-mine', 'Mine']);
+    expect(list).toHaveLength(BUILT_IN_FEATS.length - 2 + 1);
+    expect(afterChoices(BUILT_IN_FEATS, library, k2, 'gone-feat' as FeatKey).at(-1)).toEqual(['gone-feat', 'gone-feat']);
+    expect(afterChoices(BUILT_IN_FEATS, library, k2, k1).at(-1)).toEqual([k1, k1]);
+    expect(afterChoices(BUILT_IN_FEATS, library, k2, k0)).toEqual(list);
   });
 });
 
@@ -187,5 +211,30 @@ describe('the GM\'s feats on the players\' phones (the room\'s feats doc)', () =
     expect(Object.keys(doc.feats).length + left.length).toBe(100);
     expect(left.length).toBeGreaterThan(0);
     expect(DOCS.feats(JSON.parse(JSON.stringify(doc)))).toEqual(doc);
+  });
+});
+
+describe('a GM\'s new feat gets a key of its own', () => {
+  const ALPHABET = ['a', 'Z', '7', ' ', '-', '_', '.', '\'', 'é', 'ß', 'İ', 'Ω', '日', '\u0301', '\u{1F525}', '\t', '/', '%'];
+  test('for names of any characters and length, with taken keys, the key reads as a feat\'s key and is not taken', () => {
+    const { random } = seededSource(7);
+    const pick = (n: number) => Math.floor(random() * n);
+    for (let i = 0; i < 2000; i++) {
+      const name = Array.from({ length: pick(90) }, () => ALPHABET[pick(ALPHABET.length)]).join('');
+      const first = freeFeatKey(name, () => false);
+      const taken = new Set([first, ...Array.from({ length: pick(12) }, (_, n) => `${first}-${n + 2}`)]);
+      const k = freeFeatKey(name, x => taken.has(x));
+      expect(parseFeatKey(first), JSON.stringify(name)).toBe(first);
+      expect(parseFeatKey(k), JSON.stringify(name)).toBe(k);
+      expect(taken.has(k), JSON.stringify(name)).toBe(false);
+    }
+  });
+  test('a long name whose first hundred thousand numbered keys are taken still gets a key within 40 characters', () => {
+    const name = 'An Extremely Long Feat Name For A Table That Makes Many';
+    const first = freeFeatKey(name, () => false);
+    const taken = new Set([first, ...Array.from({ length: 100_000 }, (_, n) => `${first}-${n + 2}`)]);
+    const k = freeFeatKey(name, x => taken.has(x));
+    expect(parseFeatKey(k)).toBe(k);
+    expect(taken.has(k)).toBe(false);
   });
 });

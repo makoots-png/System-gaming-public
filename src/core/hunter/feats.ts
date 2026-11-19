@@ -44,7 +44,7 @@ export type FeatDef = {
   readonly show: Show;
   readonly rule: FeatRule;
   readonly rewards: Rewards;
-  /** A built-in the GM turned off: nothing counts toward it. Absent is on. */
+  /** A feat the GM turned off, a built-in or the GM's own (library.ts `featOff`): nothing counts toward it. Absent is on. */
   readonly off?: true;
 };
 /** The feats that apply on a phone, in the order they are checked: the built-ins in their order, then the library's by key. */
@@ -110,6 +110,16 @@ export function featsFor(R: Pick<Rules, 'feats'>, builtIns: FeatBook, library: R
   return all.filter(([, d]) => !d.off);
 }
 
+/**
+ * The feats a feat may be shown after, for the maker's choice, as [key, name]: each feat that applies (the built-ins as
+ * the library lays them, then the GM's own; the GM's switch aside), not the feat itself (`self`) and not one turned off.
+ * The key already chosen (`chosen`) stays in it, named by its key, when the list lacks it, so an edit keeps it.
+ */
+export function afterChoices(builtIns: FeatBook, library: Readonly<Record<string, FeatDef>>, self: string | null, chosen: FeatKey | null): (readonly [FeatKey, string])[] {
+  const all = featsFor({ feats: { on: true } }, builtIns, library).filter(([k]) => k !== self).map(([k, d]) => [k, d.name] as const);
+  return chosen && !all.some(([k]) => k === chosen) ? [...all, [chosen, chosen] as const] : all;
+}
+
 // ── the words ──
 const specOf = (kind: string, name: string): FieldSpec | null => (FACT_FIELDS as unknown as Record<string, Record<string, FieldSpec>>)[kind]?.[name] ?? null;
 /** "Monsters defeated: 37 of 100.": a shown feat's progress, from its count's own words. */
@@ -171,6 +181,8 @@ export function parseFeat(v: unknown): FeatDef | null {
     show: showOf(v.show), rule: { ...count, reach, also }, rewards, ...(v.off === true ? { off: true as const } : {}),
   };
 }
+/** Whether two feats say the same thing, whatever the order of their keys: each as the parser reads it. */
+export const sameFeat = (a: FeatDef, b: FeatDef): boolean => JSON.stringify(parseFeat(a)) === JSON.stringify(parseFeat(b));
 /** A library's feats from outside data: each under a key that reads as a feat's, each read by `parseFeat`, at most `cap`. */
 export function parseFeats(v: unknown, cap: number): Record<string, FeatDef> {
   if (!isObj(v)) return {};
@@ -198,10 +210,16 @@ export function featsDoc(library: Readonly<Record<string, FeatDef>>, max: number
   return { doc: { feats }, left };
 }
 
-/** A free key for a GM's feat named `name`: its name slugged (`[a-z0-9-]`, at most 40), numbered when `taken` holds it. */
+/**
+ * A free key for a GM's feat named `name`: its name slugged (`[a-z0-9-]`), numbered when `taken` holds it, the slug cut
+ * so the number fits in the 40 characters `parseFeatKey` reads.
+ */
 export function freeFeatKey(name: string, taken: (k: string) => boolean): FeatKey {
-  const base = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 34) || 'feat';
-  for (let i = 1; ; i++) { const k = i === 1 ? base : `${base}-${i}`; if (!taken(k)) return k as FeatKey; }
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'feat';
+  for (let i = 1; ; i++) {
+    const tail = i === 1 ? '' : `-${i}`, k = parseFeatKey(`${slug.slice(0, 40 - tail.length).replace(/-+$/, '')}${tail}`);
+    if (k && !taken(k)) return k;
+  }
 }
 
 /** Each window's words, for the maker's choice and a feat's rule line. */

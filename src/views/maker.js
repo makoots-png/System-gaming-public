@@ -862,8 +862,8 @@ function openMaker(o) {
           <div class="n-tag">${esc(o.tag)}</div>
           <h2 class="n-big sys-title mk-title" id="${uid}-t">${esc(o.title)}</h2>
           <div class="mk-body"></div>
-          <div class="sys-err mk-err" role="alert" data-err></div>
         </div>
+        <div class="sys-err mk-err" role="alert" data-err></div>
         <div class="sys-actions mk-actions"><button type="button" data-cancel>Cancel</button><button type="button" class="primary" data-apply>${esc(o.save || 'Save')}</button></div>
       </div></div>`);
     const win = el.firstElementChild, bodyEl = win.querySelector('.mk-body'), err = win.querySelector('[data-err]'), ok = win.querySelector('[data-apply]'), scroller = win.querySelector('.mk-scroll');
@@ -1018,6 +1018,7 @@ export function register(app) {
 .mk-win{padding:20px 22px 0;text-align:left;display:flex;flex-direction:column;max-height:calc(100% - 8px);overflow:hidden;box-sizing:border-box}
 .mk-scroll{overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;min-height:0;flex:1;display:flex;flex-direction:column;gap:8px;padding-bottom:8px;-webkit-overflow-scrolling:touch}
 .mk-scroll>*,.mk-body>*{flex-shrink:0}
+.mk-err{flex-shrink:0;margin:0;padding-top:8px}.mk-err:empty{min-height:0;padding:0} /* the shell's message, above Cancel and Save at any scroll (openMaker) */
 .mk-win [data-later]{display:none!important} /* a part of the form drawn a frame after the window (openMaker) */
 .mk-body{display:flex;flex-direction:column;gap:8px}
 .mk-win .n-tag{margin-bottom:0}

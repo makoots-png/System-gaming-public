@@ -590,6 +590,26 @@ for (const viewport of [SMALL_PHONE, PHONE]) {
   });
 }
 
+for (const viewport of [SMALL_PHONE, PHONE]) {
+  test(`at ${viewport.width} px a feat's four conditions sit under Only when, each two rows of 44 px controls, with no sideways scroll`, async ({ device }) => {
+    const page = (await device('gm', { viewport })).page;
+    await onboardGM(page);
+    await go(page, 'workshop');
+    await page.locator('#view-workshop [data-ws="feat"] [data-new]').tap();
+    const d = page.locator('.fm-overlay [role=dialog]');
+    await expect(d.getByRole('heading', { name: 'New feat' })).toBeVisible();
+    for (let i = 0; i < 4; i++) await d.getByRole('button', { name: 'Add a condition' }).tap();
+    await expect(d.getByRole('group', { name: 'Only when' }).locator('[data-test]')).toHaveCount(4);
+    const rows = await d.locator('[data-test]').evaluateAll(els => els.map(el => {
+      const r = el.getBoundingClientRect(), controls = [...el.querySelectorAll('select, input, button')].map(c => c.getBoundingClientRect());
+      return { height: Math.round(r.height), lines: new Set(controls.map(c => Math.round(c.top))).size, short: controls.filter(c => c.height < 44).length, wide: el.scrollWidth > el.clientWidth + 1 };
+    }));
+    for (const row of rows) expect(row).toEqual({ height: expect.any(Number), lines: 2, short: 0, wide: false });
+    for (const row of rows) expect(row.height, 'a condition takes about half the 330 px it took').toBeLessThanOrEqual(120);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
+  });
+}
+
 test('on a 360 px phone the feat maker scrolls only up and down, and every control in it is at least 44 px tall', async ({ device }) => {
   const page = (await device('gm', { viewport: SMALL_PHONE })).page;
   await onboardGM(page);

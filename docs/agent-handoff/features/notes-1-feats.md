@@ -905,3 +905,123 @@ The maker, the Workshop and packs, against 5.3:
 - Tests: `tests/pack.test.ts` ("feats in a pack", and feats in the round trip and the unreadable counts), `tests/e2e/makers.e2e.ts` ("a GM makes a feat for 2 Beasts defeated in a session, from the Workshop", including a built-in turned off), `tests/e2e/look.e2e.ts` ("on a 360 px phone the feat maker scrolls only up and down").
 
 Words added in these units: the Workshop's Feats line ("A feat is something a hunter does that the game counts and rewards by itself, such as 100 beasts defeated. Make your own, or change or turn off a built-in one."), the maker's labels, `ruleLine`, `WITHIN_WORDS`, `MEASURE_WORDS`, the confirms of Reset and Delete, and the mark "too large to send to players". Each describes, so each is plain; reread once as a second reader before the commit.
+
+### 17.10 The lead's review (Nov 19): nine points on units 4 and 5
+
+Goal (the owner): the System notices what a hunter does and rewards it without the GM's hand, and the GM makes his own
+feats in a maker that is architecturally sound, clean and easy to use on a phone. The problem: units 4 and 5 shipped a
+maker that loses a feat's show rule on an edit, a half-built off switch, a test row four controls tall, a refused Save
+that says nothing on screen, and five smaller slips. The smallest change: fix each at its cause in the module that owns
+it, with a test that fails without the fix. Nothing new beyond what a point names. The brief is
+`brief-1-feats-review.md`. Principles read in full this session: fix-root-causes, model-the-domain,
+test-behavior-not-implementation, laziness-protocol, experience-first.
+
+**Point 1. A feat shown after another feat.** Data shape first: `Show` stays as it is, four arms
+(`start`, `count` with `n`, `feat` with `key`, `never`). The form must answer exactly one of them. Variants:
+
+| | (a) A fourth choice and a list of feats by name | (b) A text field for the key | (c) Keep three choices, carry `feat` unseen |
+|---|---|---|---|
+| What the GM does | Taps "After another feat", picks the feat by its name | Types a key such as `early-riser` | Nothing; the rule survives only while the GM leaves the choice alone |
+| Who decides which feats may be chosen | Core, `afterChoices` in hunter/feats.ts (the built-ins as the library lays them, then the GM's own; not itself, not one turned off; a key the list lacks kept and named by its key) | Nobody: any key reads | Nobody |
+| Cost | One select, one core function with its test | A GM never sees a key; a typo hides the feat for good | A hidden state the form does not show, which is what broke |
+
+Chosen (a). The rule of which feats may be chosen is a rule of the game, so it is core's and has a bun test; the view
+draws what it answers. The browser test edits and saves one feat of each arm and reads the library back unchanged.
+
+**Point 2. Turning a feat off and on.** Data shape: `FeatDef.off?: true` stays where it is (any feat, not only a
+built-in: see below). Two named steps in library.ts, `featOff(lib, key)` and `featOn(lib, key)`, and one rule they share
+with `saveFeat`: the library holds a built-in's key only while its entry differs from the shipped feat. Variants for what
+Turn on leaves when the entry then equals the shipped built-in:
+
+| | (a) The entry leaves the library | (b) The entry stays, without `off` | (c) A separate list of keys turned off (`library.featsOff`) |
+|---|---|---|---|
+| Round trip off then on | Exact for an unchanged built-in, a changed one and a GM's own | An unchanged built-in comes back as an entry equal to the shipped one | Exact |
+| What the Workshop says after | Listed under Built-in feats again, as before Turn off | "changed built-in" for a feat nobody changed | As before |
+| Cost | The shipped-feat comparison in one place (`saveFeat`), so an Edit and Save that changes nothing also leaves no entry | None, and a mark that lies | A new save field, its repair, the room doc and the pack, for what one optional flag already says |
+
+Chosen (a). The same comparison makes an Edit with no change leave the library as it was, so the "changed built-in" mark
+is true wherever it shows. The comparison is through `parseFeat` (its answer is one key order), so it is
+`sameFeat` in hunter/feats.ts, beside the parser.
+
+A GM's own feat can be turned off too. `featsFor` already leaves out any feat that is `off`, the parser already reads it
+on any feat, and a GM who wants to pause a feat of his own for a few sessions should not have to delete it and remake it.
+So the type's comment changes from "a built-in" to "a feat", and nothing refuses it. The maker keeps `off` as it found
+it. Duplicate moves into library.ts as `duplicateFeat(lib, key)`: a copy named by `copyName` within `FEAT_BOUNDS.name`
+(point 9's literal 60 goes with it), under `freeFeatKey`, never `off`.
+
+**Point 3. A test row.** No data changes. Variants:
+
+| | (a) Two rows in a grid: the field and Remove (an icon button), then the comparison and the value | (b) A sentence per test with an Edit button that opens its controls | (c) All four controls on one row |
+|---|---|---|---|
+| Height at 390 px | Two 44 px rows and their gaps, about 110 px | 44 px closed, more taps to change one | 44 px |
+| Readable at 360 px | Yes: the field's label has the row's width, the comparison and the value share the second | Yes | No: about 70 px a control cuts every field's label |
+
+Chosen (a). The group gets the label "Only when" and the button reads "Add a condition", so a row reads as a sentence:
+Monster type, is, Beast.
+
+**Point 4. A refused Save.** The shell's `[data-err]` is the last child of `.mk-scroll`, under the whole form and the
+reward editor, so a GM who taps Save near the top of a long form does not see it. Every maker has this (the status
+maker's "Give the status a name." focuses the name field at the top and writes the message at the bottom). Variants:
+
+| | (a) The message sits in the window's fixed part, just above Cancel and Save | (b) The message stays at the end and is scrolled into view | (c) Each maker marks the wrong field |
+|---|---|---|---|
+| Seen after the tap | Always, at every scroll position, in every maker | Yes, but the form jumps away from the field to fix | Only where the maker knows which field |
+| Cost | Move one element in `openMaker` and collapse it while empty | A scroll on every error | A change in each of the seven makers, and the cap message still needs a place |
+
+Chosen (a): fixed where it starts, in `openMaker`, so all seven makers are fixed by one change.
+
+**Point 5.** The words name the form's labels: "Give the feat a name." and "Give each condition under Only when a value."
+(the only test value the parser refuses from this form is an empty one: a number out of its range is cut to it).
+
+**What was built, point by point.**
+
+1. `afterChoices` (hunter/feats.ts) and the fourth chip with its select `#fm-after`. Tests: `tests/feats.test.ts` ("the
+   feats a feat may be shown after"), `tests/e2e/makers.e2e.ts` ("a GM who opens a feat and saves it unchanged keeps when
+   it is shown": Uphill, Four Figures, Iron Routine, Thread's End, a GM's own feat shown after a deleted key, a new feat
+   shown after Early Riser).
+2. `featOff`, `featOn`, `duplicateFeat` in library.ts; `saveFeat` drops a built-in's entry equal to the shipped one
+   (`sameFeat`, hunter/feats.ts). The Workshop offers Turn off or Turn on on every library feat and Turn off on a shipped
+   built-in; a GM's own feat off is tagged "off". Tests: `tests/library.test.ts` ("a feat turned off and on"),
+   `tests/e2e/makers.e2e.ts` (the Ratcatcher step: off, Edit keeps off, Duplicate is on, Turn on, Reset, off and on
+   again back under Built-in feats).
+3. `.fm-tests`, `.fm-test` (a grid of two 44 px rows) and `.fm-row` in feat-maker.js's own CSS, the group labelled
+   "Only when", the button "Add a condition", Remove an `.icon-btn`. Test: `tests/e2e/look.e2e.ts` ("a feat's four
+   conditions sit under Only when", at 360 and 390 px).
+4. `openMaker` (maker.js) puts `[data-err]` between `.mk-scroll` and `.mk-actions`, collapsed while empty. maker.js is
+   not in the brief's file list, but the point names the shell as the cause, and it is not one of the files the brief
+   forbids. Test: `tests/e2e/makers.e2e.ts` ("a GM whose Save is refused reads why on screen").
+5. `needs()` in feat-maker.js, used by the preview and Save.
+6. The three comments moved. No test: a comment has no behavior. The same slip is in about fifteen more places in
+   `src/core` (below).
+7. `rankSeen` (fight-facts.ts); `gateFact` takes `Rank | null`; gates.js passes what it has. Test: `tests/pay.test.ts`.
+8. `freeFeatKey` answers through `parseFeatKey` and cuts the slug to leave room for its number. Test:
+   `tests/feats.test.ts` (2,000 seeded names of mixed characters and lengths with taken keys, and a long name with
+   100,000 numbered keys taken, which failed before).
+9. In and Out's title line; `duplicateFeat` cuts at `FEAT_BOUNDS.name`; the ui-shots step "feats and the feat maker".
+
+**Decision trail.**
+
+- Turn on of a built-in that is then as shipped: the entry leaves (exact round trip, a true "changed" mark).
+- A GM's own feat may be turned off (one meaning of `off` for every feat; `featsFor` already honoured it).
+- `sameFeat` compares through the parser rather than a deep equal: the parser's answer has one key order, and both
+  sides are parsed feats, so the comparison needs no second rule of equality.
+- `featOff` and `featOn` refuse a no-op as `unchanged` rather than answering the library as it was, so a double tap
+  writes nothing and the refusal is named.
+- The ui-shots step is the last of the GM's makers, so the shots before it keep their numbers.
+
+**Found outside the points (not fixed).**
+
+- `src/core`: about fifteen more doc comments sit over the wrong declaration, the slip of point 6 (for example
+  `record.ts` `setJob`, `inventory.ts` `withShop`, `fight-turn.ts` `partyView`, `fight-view.ts` `timeOf` and
+  `ABILITY_LINES`, `effect-ops.ts` `TYPE_MAX`, `ids.ts` `parseHunterRef`, `gate.ts` `MAX_FOUGHT`, `save.ts` `Dropped`).
+  A lint "a top-level doc comment is followed by its declaration, never by another doc comment" in `tests/lint.test.ts`
+  would keep it out. The lead's sweep owns it.
+- The feat maker offers "The total of" and "The highest" for a kind of fact with no number field (`closed`, `quest`,
+  `rank`, `title`, `feat`, `given`, `coin`, `rest`, `used`, `shadow`); the field select is then empty and the parser
+  refuses the feat with a message about conditions. The maker's unit owns it (offer only the measures the kind's fields
+  allow, from core).
+- `pack.ts` `mergeFeats`: a pack carries `off` as it is, and Replace of a built-in with the shipped feat leaves an entry
+  the Workshop marks "changed built-in"; going through `saveFeat` would apply the same rule. Unit 5's pack owner.
+- `ideas-feats-titles-rewards.md` T43 still says "Cleared a gate alone in three rounds." (an ideas file, left as written).
+- AGENTS.md's feat row names "a built-in's Turn off and Reset" and `saveFeat`, `removeFeat`; it should name `featOff`,
+  `featOn`, `duplicateFeat`, `afterChoices` and `rankSeen`. AGENTS.md is the lead's.

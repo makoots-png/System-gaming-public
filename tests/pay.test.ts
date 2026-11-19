@@ -1,6 +1,7 @@
 // What a fight's end and a gate's Clear pay (src/core/gates/pay.ts): each one step, all of it or nothing.
 import { describe, expect, test } from 'bun:test';
-import { clearShares, dropDealt, encounterAwards, planEncounter, settleClear, settleEncounter, splitAward } from '../src/core/gates/pay.ts';
+import { clearShares, dropDealt, encounterAwards, gateFact, planEncounter, settleClear, settleEncounter, splitAward } from '../src/core/gates/pay.ts';
+import { remoteFacts } from '../src/core/combat/fight-facts.ts';
 import { loadSave } from '../src/core/save.ts';
 import type { Payee } from '../src/core/gates/pay.ts';
 import { reduce, fightId } from '../src/core/combat/fight.ts';
@@ -132,5 +133,17 @@ describe('a gate\'s Clear', () => {
     expect(events(out.save)).toEqual([[ROOM, [KAI], 75]]);
     const g = s.gates[0]!;
     expect(out.save.hunters[0]!.chronicle.inbox[0], 'the gate cleared is a fact of the payee\'s chronicle').toEqual({ kind: 'gate', name: g.name, rank: g.rank, above: 0, toBreak: Math.max(0, g.breakDay - s.world.day) });
+  });
+});
+
+describe('a player\'s hunter whose sheet is not on the GM\'s phone', () => {
+  test('its gate cleared and its fight are measured against the lowest rank, E, as a hunter of rank E would be', () => {
+    const g = { ...den('detected'), rank: 'C' as const };
+    expect(gateFact(g, null, 2)).toEqual(gateFact(g, 'E', 2));
+    expect(gateFact(g, null, 2)).toMatchObject({ kind: 'gate', rank: 'C', above: 2 });
+    expect(gateFact(g, 'C', 2)).toMatchObject({ above: 0 });
+    const f = inDen().fight as Ended;
+    expect(remoteFacts(f, () => null, 'Den')).toEqual(remoteFacts(f, () => 'E', 'Den'));
+    expect(remoteFacts(f, () => null, 'Den').map(n => n.to)).toEqual([KAI]);
   });
 });
