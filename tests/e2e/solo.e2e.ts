@@ -87,7 +87,7 @@ async function roomWithSoloDen(device: (label: string, o?: object) => Promise<{ 
     await expect(worldCard(p.page, 'Goblin Den')).toBeVisible({ timeout: 30_000 });
     phones.push(p);
   }
-  return { gm, den, players: phones };
+  return { gm, den, code, players: phones };
 }
 /** The player's run of the room's Goblin Den: Enter alone, and the run's window, which says the reward waits for the GM. */
 async function runDen(page: Page): Promise<void> {
@@ -140,12 +140,23 @@ test('with the GM\'s phone offline, the run waits for it and is paid once when i
 });
 
 test('two players clear one gate: the first is paid, the second is told it was taken and keeps its cost', async ({ device }) => {
-  const { players: [kai, rei] } = await roomWithSoloDen(device, ['Kai', 'Rei']);
+  const { code, players: [kai, rei] } = await roomWithSoloDen(device, ['Kai', 'Rei']);
   const reiXp = lifetime(hunterOf(await save(rei!.page)));
+  // setup: Rei's phone hears nothing more of the room until its own run is played, so the den it enters is the one it
+  // saw before Kai cleared it. Without this the test raced Rei's next poll: on a slow machine the cleared gate arrived
+  // first and the card had no Enter alone (the public CI, Nov 19).
+  let hear!: () => void;
+  const quiet = new Promise<void>(r => { hear = r; });
+  await rei!.page.route(u => u.pathname === `/api/rooms/${code}`, async route => {
+    if (route.request().method() === 'GET') await quiet;
+    // the page may have gone by the time a held poll is let through
+    await route.continue().catch(() => {});
+  });
   await runDen(kai!.page);
   const paid = kai!.page.locator('.sys-overlay.show', { hasText: 'paid your solo run' });
   await expect(paid).toBeVisible({ timeout: 30_000 });
   await runDen(rei!.page);
+  hear();
   const taken = rei!.page.locator('.sys-overlay.show', { hasText: 'GATE TAKEN' });
   await expect(taken).toBeVisible({ timeout: 30_000 });
   await expect(taken).toContainText('Another hunter cleared this gate first. Your run\'s cost stays.');
