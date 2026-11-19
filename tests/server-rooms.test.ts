@@ -4,7 +4,7 @@ import { MEM_EVENTS, database, handler, memoryStore, openDatabase, postgresStore
 import { parseEvent } from '../src/core/protocol.ts';
 import type { StoredEvent } from '../src/core/protocol.ts';
 import type { Store } from '../server.ts';
-import { DOC_MAX, SHEET_MAX, parseDeviceId, parseRoomCode, parseSheet, parseSheetKey } from '../src/core/protocol.ts';
+import { DOC_MAX, ROOM_SHEETS, SHEET_MAX, parseDeviceId, parseRoomCode, parseSheet, parseSheetKey } from '../src/core/protocol.ts';
 import type { RoomCode } from '../src/core/protocol.ts';
 import { ROOM_TTL_MS } from '../src/core/room-server.ts';
 import { newEvent } from '../src/core/protocol.ts';
@@ -620,7 +620,7 @@ describe('a room\'s expiry and the sweep', () => {
     const st = await freshStore(), code = someCode(), t0 = Date.now(), sheet = parseSheet(KAI_KEY, sheetOf(PLAYER, 'Kai').data)!;
     try {
       expect(await st.create(code, 'hash', t0)).toBe(true);
-      await st.putSheet(code, KAI_KEY, KAI_PHONE, sheet, t0);
+      expect(await st.pushSheet(code, KAI_KEY, KAI_PHONE, sheet, t0)).toBe('stored');
       expect(await st.sweep(t0 + ROOM_TTL_MS)).not.toContain(code);
       expect(await st.exists(code, t0 + ROOM_TTL_MS)).toBe(true);
       expect(await st.exists(code, t0 + ROOM_TTL_MS + 1)).toBe(false);
@@ -743,6 +743,96 @@ describe('a removal is one record, the room\'s', () => {
       await st.close();
       if (again !== st) await again.close();
     }
+  });
+});
+
+describe('requests at the same moment (audit BUG-sync-6, AW-sync-2)', () => {
+  const MIRA = 'd-player3';
+  const keyOf = (dev: string) => `${dev}:h1`;
+  /**
+   * A room on a store whose every answer takes a turn of the event loop, as a database's does, so two requests sent
+   * together run their store calls in turn about. `asked` names each call the server made of the store.
+   */
+  async function slowRoom() {
+    const st = await freshStore(), asked: string[] = [];
+    const slow = new Proxy(st, {
+      get(target, name, receiver) {
+        const v: unknown = Reflect.get(target, name, receiver);
+        if (typeof v !== 'function' || name === 'see' || name === 'presence') return v;
+        return async (...args: unknown[]) => { asked.push(String(name)); await new Promise(r => setTimeout(r, 0)); return v.apply(target, args); };
+      },
+    });
+    const server = serverOf(openDatabase(slow));
+    const made = await call('POST', '/api/rooms', { server }), code: string = made.body.code, gm = { 'x-gm-key': made.body.gmKey as string };
+    return {
+      asked,
+      close: () => st.close(),
+      push: (dev: string, name: string) => call('PUT', `/api/rooms/${code}/sheets/${keyOf(dev)}`, { server, headers: token(dev), body: sheetOf(dev, name) }),
+      remove: (dev: string) => call('DELETE', `/api/rooms/${code}/sheets/${keyOf(dev)}`, { server, headers: gm }),
+      allowBack: (dev: string) => call('DELETE', `/api/rooms/${code}/kicks/${keyOf(dev)}`, { server, headers: gm }),
+      poll: () => call('GET', `/api/rooms/${code}?after=0`, { server, headers: gm }),
+    };
+  }
+
+  test('two hunters the GM removes at the same moment are both removed: the room\'s record names both and neither pushes straight back', async () => {
+    const room = await slowRoom();
+    try {
+      expect((await room.push(PLAYER, 'Kai')).status).toBe(200);
+      expect((await room.push(OTHER, 'Bo')).status).toBe(200);
+      const answers = await Promise.all([room.remove(PLAYER), room.remove(OTHER)]);
+      expect(answers.map(a => a.status)).toEqual([200, 200]);
+      const polled = await room.poll();
+      expect(polled.body.sheets).toEqual({});
+      expect(polled.body.docs.kicked.data.names).toEqual({ [keyOf(PLAYER)]: 'Kai', [keyOf(OTHER)]: 'Bo' });
+      expect(await room.push(PLAYER, 'Kai')).toEqual({ status: 403, body: { error: 'removed' } });
+      expect(await room.push(OTHER, 'Bo')).toEqual({ status: 403, body: { error: 'removed' } });
+    } finally { await room.close(); }
+  });
+
+  test('an Allow back and another removal at the same moment both hold: the allowed hunter pushes again, the removed one does not', async () => {
+    const room = await slowRoom();
+    try {
+      expect((await room.push(PLAYER, 'Kai')).status).toBe(200);
+      expect((await room.push(OTHER, 'Bo')).status).toBe(200);
+      expect((await room.remove(PLAYER)).status).toBe(200);
+      const answers = await Promise.all([room.allowBack(PLAYER), room.remove(OTHER)]);
+      expect(answers.map(a => a.status)).toEqual([200, 200]);
+      expect(Object.keys((await room.poll()).body.docs.kicked.data.keys)).toEqual([keyOf(OTHER)]);
+      expect((await room.push(PLAYER, 'Kai')).status).toBe(200);
+      expect(await room.push(OTHER, 'Bo')).toEqual({ status: 403, body: { error: 'removed' } });
+    } finally { await room.close(); }
+  });
+
+  test('a push that arrives with the GM\'s removal of the same hunter never leaves the sheet in the room', async () => {
+    const room = await slowRoom();
+    try {
+      expect((await room.push(PLAYER, 'Kai')).status).toBe(200);
+      await Promise.all([room.push(PLAYER, 'Kai'), room.remove(PLAYER)]);
+      expect((await room.poll()).body.sheets).toEqual({});
+    } finally { await room.close(); }
+  });
+
+  test(`two hunters joining a room of ${ROOM_SHEETS - 1} at the same moment: one is taken, the other is told the room is full`, async () => {
+    const room = await slowRoom();
+    try {
+      for (let i = 0; i < ROOM_SHEETS - 1; i++) expect((await room.push(`d-full${i}`, 'H' + i)).status).toBe(200);
+      const answers = await Promise.all([room.push(PLAYER, 'Kai'), room.push(MIRA, 'Mira')]);
+      expect(answers.map(a => a.status).sort()).toEqual([200, 413]);
+      expect(Object.keys((await room.poll()).body.sheets)).toHaveLength(ROOM_SHEETS);
+    } finally { await room.close(); }
+  });
+
+  test('a player\'s sheet push, the GM\'s removal and Allow back ask the store for no room board: only a poll reads the room whole', async () => {
+    const room = await slowRoom();
+    try {
+      room.asked.length = 0;
+      expect((await room.push(PLAYER, 'Kai')).status).toBe(200);
+      expect((await room.remove(PLAYER)).status).toBe(200);
+      expect((await room.allowBack(PLAYER)).status).toBe(200);
+      expect(room.asked).not.toContain('board');
+      expect((await room.poll()).status).toBe(200);
+      expect(room.asked).toContain('board');
+    } finally { await room.close(); }
   });
 });
 

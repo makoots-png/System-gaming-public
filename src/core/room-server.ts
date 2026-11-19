@@ -6,7 +6,7 @@
 // says so; server.ts opens it again every `DB_RETRY_MS` until it answers. Rooms are never kept in memory under
 // DATABASE_URL: a restart would lose them all, and a phone would be told its room no longer exists.
 import type { KickedDoc, SheetKey } from './protocol.ts';
-import { REMOVED_MS } from './protocol.ts';
+import { REMOVED_MS, ROOM_SHEETS } from './protocol.ts';
 
 // ── a room's life ──
 /** A room lives while someone used it (a poll, a write, a join) within this time: 30 days, a long break between sessions. */
@@ -43,6 +43,27 @@ export function keptOut(kicked: KickedDoc | null, key: SheetKey, now: number): b
   const at = kicked ? Date.parse(kicked.keys[key] ?? '') : NaN;
   return Number.isFinite(at) && now - at < REPUSH_MS;
 }
+
+// ── a room's sheets and removals: one change at a time ──
+// A push and a removal each read the room (the `_kicked` doc, how many sheets it holds) and then write it. Two at once
+// that read before either wrote would lose one's change, so a store makes each of the two changes below whole, with no
+// other change of the same room between its read and its write (Postgres: under the room's row lock, as `addEvent`).
+/** What a store did with a pushed sheet: kept it, or refused it because its hunter was removed lately or the room is full. */
+export type Pushed = 'stored' | 'removed' | 'full';
+/**
+ * What becomes of a sheet pushed under `key` at `now`, in a room whose `_kicked` doc is `kicked` and which holds
+ * `sheets` sheets, one of them under `key` when `held`. A sheet the room holds is always replaced: only a new one counts
+ * against `ROOM_SHEETS`.
+ */
+export function pushed(kicked: KickedDoc | null, key: SheetKey, held: boolean, sheets: number, now: number): Pushed {
+  if (keptOut(kicked, key, now)) return 'removed';
+  return !held && sheets >= ROOM_SHEETS ? 'full' : 'stored';
+}
+/**
+ * The GM's two changes of who is kept out: `remove` takes the hunter's sheet out of the room, frees its phone's binding
+ * and records the removal; `allow` lifts the record so the hunter may rejoin at once.
+ */
+export type RemovalChange = 'remove' | 'allow';
 
 // ── the database's life ──
 export const DB_STATES = ['opening', 'ready', 'down'] as const;

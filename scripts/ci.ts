@@ -7,6 +7,15 @@ type Step = { name: string; cmd: string[]; retry: string[]; env?: Record<string,
 // The browser step starts its own server on this port so it never tests a dev server someone left running on 3217.
 const E2E_PORT = '3218';
 
+// The unit tests run their files in four worker processes, the count of this box's cores. Measured Nov 19 on the
+// 4-core box under /tmp/box.lock, three whole runs each, 4,237 passes every time, in seconds:
+//   one process  369, 357, 326
+//   2 workers    208, 194, 195
+//   4 workers    146, 133, 126
+// Four is the fastest and no test failed under it. More would not help: the run cannot end before its longest file,
+// tests/fight-model.test.ts, about 100 s alone. `bun run test` (package.json) carries the same count.
+const UNIT = ['bun', 'test', '--parallel=4'];
+
 // What this push needs (scripts/ci-plan.ts): the hook hands over the files the push changes in CI_CHANGED; run by
 // hand, `bun run ci` has none and runs everything.
 const planned = planOf(changedFrom(process.env.CI_CHANGED));
@@ -24,7 +33,7 @@ const browserFiles = plan.browser === 'all' || plan.browser === 'none' ? [] : pl
 const ALL_STEPS: (Step & { run: boolean })[] = [
   { run: true, name: 'typecheck', cmd: ['bunx', 'tsc', '--noEmit'], retry: ['bunx', 'tsc', '--noEmit'] },
   { run: true, name: 'typecheck of the views', cmd: ['bunx', 'tsc', '-p', 'tsconfig.views.json', '--noEmit'], retry: ['bunx', 'tsc', '-p', 'tsconfig.views.json', '--noEmit'] },
-  { run: true, name: 'unit tests and lint checks', cmd: ['bun', 'test'], retry: ['bun', 'test'] },
+  { run: plan.unit, name: 'unit tests and lint checks', cmd: UNIT, retry: UNIT },
   { run: plan.browser === 'all' || browserFiles.length > 0, name: plan.browser === 'all' ? 'browser tests' : 'the browser test files this push changes',
     cmd: ['bunx', 'playwright', 'test', ...browserFiles], retry: ['bunx', 'playwright', 'test', ...browserFiles, '--last-failed'], env: { CI: '1', E2E_PORT, E2E_FEEL: 'skip' } },
   // The lag test alone, one worker: it times frames, and a second worker's load would be what it measured.

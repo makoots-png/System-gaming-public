@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { DB_EVENTS, DB_STATES, ROOM_TTL_MS, dbHealth, dbStep, dbTransition, keptOut, kickedAfter, roomLive } from '../src/core/room-server.ts';
+import { DB_EVENTS, DB_STATES, ROOM_TTL_MS, dbHealth, dbStep, dbTransition, keptOut, kickedAfter, pushed, roomLive } from '../src/core/room-server.ts';
 import type { Db } from '../src/core/room-server.ts';
 import type { SheetKey } from '../src/core/protocol.ts';
-import { REMOVED_MS } from '../src/core/protocol.ts';
+import { REMOVED_MS, ROOM_SHEETS } from '../src/core/protocol.ts';
 
 const DAY = 24 * 3600 * 1000, KEY = 'd-player1:h1' as SheetKey;
 
@@ -29,6 +29,27 @@ describe('a removal', () => {
   test('a hunter the doc does not name, or a room with no removal doc, is never kept out', () => {
     expect(keptOut(kicked, 'd-player2:h1' as SheetKey, at)).toBe(false);
     expect(keptOut(null, KEY, at)).toBe(false);
+  });
+});
+
+describe('a pushed sheet', () => {
+  const at = Date.parse('2026-11-14T10:00:00.000Z');
+  const kicked = { keys: { [KEY]: new Date(at).toISOString() }, names: {} };
+
+  test('a room of 23 takes a new hunter; a room of 24 refuses one as full', () => {
+    expect(ROOM_SHEETS).toBe(24);
+    expect(pushed(null, KEY, false, 23, at)).toBe('stored');
+    expect(pushed(null, KEY, false, 24, at)).toBe('full');
+  });
+
+  test('a full room still takes the sheet of a hunter it holds: the push replaces it', () => {
+    expect(pushed(null, KEY, true, 24, at)).toBe('stored');
+  });
+
+  test('a hunter removed within 20 seconds is refused as removed, full room or not, and taken after', () => {
+    expect(pushed(kicked, KEY, false, 0, at + 19_999)).toBe('removed');
+    expect(pushed(kicked, KEY, false, 24, at)).toBe('removed');
+    expect(pushed(kicked, KEY, false, 0, at + 20_000)).toBe('stored');
   });
 });
 

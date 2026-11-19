@@ -27,7 +27,7 @@ On a machine that ships its own Chromium (a cloud box), skip the Playwright inst
 | Run the app | `bun start` (port 3000). The server bundles the app once at start, so restart it after a change |
 | Build for a static host | `bun run build` (writes `dist/`) |
 | Typecheck | `bun run typecheck` |
-| Typecheck, unit tests and lint checks | `bun run test` |
+| Typecheck, unit tests (four workers) and lint checks | `bun run test` |
 | One browser test file | `bunx playwright test tests/e2e/<file> --workers=1 --output=/tmp/pw-<name>` (starts its own server on 3217; set `E2E_PORT` when two runs overlap) |
 | Everything a push must pass | `bun run ci` |
 | The room API against Postgres, the store the deploy uses | `DATABASE_URL=postgres://... bun test tests/server-rooms.test.ts tests/server-handshake.test.ts` (an empty database; without the variable the same tests use the memory store) |

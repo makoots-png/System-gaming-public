@@ -327,28 +327,33 @@ const ROWS: readonly Row[] = [
  */
 const OPEN: Readonly<Record<string, string>> = {};
 
-// ── the table, printed, then one test per row ──
-const t0 = performance.now();
-const measured = ROWS.map(r => ({ row: r, m: r.measure() }));
+// ── one test per row: the row is measured inside its test, so a bun timeout or the per-test times name the row ──
 const inside = (r: Row, m: Measure): boolean => m.value >= r.low && m.value <= r.high;
 const edge = (r: Row, m: Measure): string => inside(r, m) && Math.min(m.value - r.low, r.high - m.value) < m.se ? ' near' : '';
-console.log(`fight simulation: ${ROWS.length} rows in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
-for (const { row, m } of measured) {
-  const bound = `${fmt(row.low)} to ${fmt(row.high)}`;
-  console.log(`  ${inside(row, m) ? 'in ' : 'OUT'}${edge(row, m)}  ${row.name}: ${fmt(m.value)} (se ${fmt(m.se)}, ${row.runs} runs), bound ${bound}, lever ${row.lever}${m.note ? `; ${m.note}` : ''}`);
-}
+/**
+ * A compute budget for one row, not a wait: no test asserts a time. Rows that share a `setup` share its fights (`cache`),
+ * so the first row of a setup pays for them and the rest read them back. Measured Nov 19 on the 4-core box, run alone:
+ * the 74 rows take 100.6 s together (the file was 95 s of module load before the measuring moved here), the slowest row
+ * 4.0 s, the median about 1.3 s. Inside the whole unit run the slowest row took 5.4 s in one process and 4.2 s with four
+ * workers (scripts/ci.ts), three runs each. The budget is 30 s, over five times the slowest, so only a row that stops
+ * ending reaches it, and it names that row.
+ */
+const BUDGET_MS = 30_000;
 
 describe('the reworked fight holds the bounds of design section 6', () => {
   test('every open row names a row of the table', () => {
     expect(Object.keys(OPEN).filter(name => !ROWS.some(r => r.name === name))).toEqual([]);
   });
-  for (const { row, m } of measured) {
+  for (const row of ROWS) {
     const open = OPEN[row.name];
     if (open) { test.todo(`${row.name} (${open})`); continue; }
     test(row.name, () => {
+      const m = row.measure();
+      const bound = `${fmt(row.low)} to ${fmt(row.high)}`;
+      console.log(`  ${inside(row, m) ? 'in ' : 'OUT'}${edge(row, m)}  ${row.name}: ${fmt(m.value)} (se ${fmt(m.se)}, ${row.runs} runs), bound ${bound}, lever ${row.lever}${m.note ? `; ${m.note}` : ''}`);
       expect(m.value).toBeGreaterThanOrEqual(row.low);
       expect(m.value).toBeLessThanOrEqual(row.high);
-    });
+    }, BUDGET_MS);
   }
 });
 

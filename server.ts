@@ -6,10 +6,10 @@
 
 import { CODE_CHARS, CODE_LEN } from './src/core/ids.ts';
 import { buildApp, type Built } from './scripts/build.ts';
-import { DOCS, DOC_MAX, SHEET_MAX, WIRES, wireDocs, EVENTS, ROOM_PAGE, ROOM_SHEETS, deviceOf, isEventType, parseDeviceId, parseDocName, parseEvent, parseRoomCode, parseSheet, parseSheetKey, servedTo, sheetFor, speaksFor } from './src/core/protocol.ts';
+import { DOCS, DOC_MAX, SHEET_MAX, WIRES, wireDocs, EVENTS, ROOM_PAGE, deviceOf, isEventType, parseDeviceId, parseDocName, parseEvent, parseRoomCode, parseSheet, parseSheetKey, servedTo, sheetFor, speaksFor } from './src/core/protocol.ts';
 import type { DeviceId, DocName, EventId, DocOf, KickedDoc, RoomCode, RoomDocs, RoomEvent, RoomState, RoomSheet, ServedSheet, SheetKey, Stored, StoredEvent, RoomViewer } from './src/core/protocol.ts';
-import { DB_RETRY_MS, dbHealth, dbStep, keptOut, kickedAfter, liveSince, roomLive } from './src/core/room-server.ts';
-import type { Db, DbEvent } from './src/core/room-server.ts';
+import { DB_RETRY_MS, dbHealth, dbStep, kickedAfter, liveSince, pushed, roomLive } from './src/core/room-server.ts';
+import type { Db, DbEvent, Pushed, RemovalChange } from './src/core/room-server.ts';
 
 const NO_CACHE = /\.(html|js|css)$/;
 const BASE_HEADERS = { 'Server-Timing': 'hunter-api', 'X-Content-Type-Options': 'nosniff' };
@@ -38,6 +38,8 @@ const codeOf = (e: unknown): string => {
 };
 
 // ── the store ──
+/** Who the `_kicked` doc is from: the server writes it, no phone. */
+const SERVER_DEVICE = 'server' as DeviceId;
 const MAX_BODY = 64 * 1024, MEM_ROOMS = 2000, PRESENCE_MAX = 200;
 /**
  * The most events a room keeps in the memory store, only to bound the process's memory: past it the room refuses a new
@@ -75,10 +77,21 @@ export interface Store {
    */
   addEvent(code: RoomCode, from: DeviceId, event: RoomEvent, now: number): Promise<number | null>;
   events(code: RoomCode, after: number): Promise<Page>;
+  /** The room whole, every sheet and doc parsed, for a poll. No change of the room reads it: each is one call below. */
   board(code: RoomCode): Promise<Board>;
-  putSheet(code: RoomCode, key: SheetKey, from: DeviceId, sheet: RoomSheet, now: number): Promise<void>;
-  putDoc<K extends DocName>(code: RoomCode, name: K, from: DeviceId, doc: DocOf<K>, now: number): Promise<void>;
-  deleteSheet(code: RoomCode, key: SheetKey): Promise<void>;
+  /**
+   * Keeps the pushed sheet unless `pushed` (src/core/room-server.ts) refuses it: its hunter was removed lately, or the
+   * room is full. One change of the room: no removal and no other push comes between its read and its write.
+   */
+  pushSheet(code: RoomCode, key: SheetKey, from: DeviceId, sheet: RoomSheet, now: number): Promise<Pushed>;
+  /**
+   * The GM removes `key`'s hunter (its sheet out of the room, its phone's binding freed, the removal in the `_kicked`
+   * doc under the name the board showed) or allows it back (the removal lifted). Answers the doc after. One change of
+   * the room, as `pushSheet`: the `_kicked` doc has no other writer, so no removal is lost to another.
+   */
+  setRemoval(code: RoomCode, key: SheetKey, change: RemovalChange, now: number): Promise<KickedDoc>;
+  /** Any doc but `kicked`, which only `setRemoval` writes. */
+  putDoc<K extends Exclude<DocName, 'kicked'>>(code: RoomCode, name: K, from: DeviceId, doc: DocOf<K>, now: number): Promise<void>;
   /** The sha256 of the device token that owns `dev`'s sheets in this room (S07). */
   owner(code: RoomCode, dev: DeviceId): Promise<string | null>;
   /** The first writer wins: a device already bound keeps its owner. */
@@ -113,6 +126,9 @@ function withDoc<K extends DocName>(docs: RoomDocs, name: K, doc: Stored<DocOf<K
   const typed: { [P in K]?: Stored<DocOf<P>> } = docs;
   typed[name] = doc;
 }
+
+/** The name a removal keeps for a sheet: its hunter's, or none for a tombstone or no sheet. */
+const nameOn = (sheet: RoomSheet | null): string => (sheet && 'hunter' in sheet ? sheet.hunter.name : '');
 
 /** A room in memory. `events[i]` has seq i + 1, since the store forgets none; `ids` answers an event id's seq. */
 type MemRoom = { touched: number; events: StoredEvent[]; ids: Map<EventId, number>; board: Board; keyHash: string; owners: Map<DeviceId, string> };
@@ -159,9 +175,22 @@ export function memoryStore(): Store {
       return { events, next: events.length ? events[events.length - 1]!.seq : after, more: events.length >= ROOM_PAGE };
     },
     async board(code) { const b = room(code).board; return { sheets: { ...b.sheets }, docs: { ...b.docs } }; },
-    async putSheet(code, key, from, sheet, now) { room(code).board.sheets[key] = { at: iso(now), from, data: sheet }; },
+    // each of the two is one synchronous step, so no other request runs inside it
+    async pushSheet(code, key, from, sheet, now) {
+      const { sheets, docs } = room(code).board;
+      const answer = pushed(docs.kicked?.data ?? null, key, key in sheets, Object.keys(sheets).length, now);
+      if (answer === 'stored') sheets[key] = { at: iso(now), from, data: sheet };
+      return answer;
+    },
+    async setRemoval(code, key, change, now) {
+      const r = room(code), { sheets, docs } = r.board;
+      const name = change === 'remove' ? nameOn(sheets[key]?.data ?? null) : null;
+      if (change === 'remove') { delete sheets[key]; r.owners.delete(deviceOf(key)); }
+      const doc = kickedAfter(docs.kicked?.data ?? null, key, name, now);
+      docs.kicked = { at: iso(now), from: SERVER_DEVICE, data: doc };
+      return doc;
+    },
     async putDoc(code, name, from, doc, now) { withDoc(room(code).board.docs, name, { at: iso(now), from, data: doc }); },
-    async deleteSheet(code, key) { delete room(code).board.sheets[key]; },
     async owner(code, dev) { return room(code).owners.get(dev) ?? null; },
     async bindOwner(code, dev, hash) { const o = room(code).owners; if (!o.has(dev)) o.set(dev, hash); },
     async releaseOwner(code, dev) { room(code).owners.delete(dev); },
@@ -204,10 +233,19 @@ export async function postgresStore(url: string): Promise<Store> {
   }
   const text = (v: unknown): string | null => (typeof v === 'string' ? v : null);
   // A value is bound as itself: Bun sends an object as JSON, and a string as a JSON string.
-  const put = async (code: RoomCode, hid: string, from: DeviceId, data: object, now: number): Promise<void> => {
-    await db`INSERT INTO sheets (room, hid, at, from_id, data) VALUES (${code}, ${hid}, ${now}, ${from}, ${data}::jsonb)
+  const put = async (q: BunSqlTx, code: RoomCode, hid: string, from: DeviceId, data: object, now: number): Promise<void> => {
+    await q`INSERT INTO sheets (room, hid, at, from_id, data) VALUES (${code}, ${hid}, ${now}, ${from}, ${data}::jsonb)
       ON CONFLICT (room, hid) DO UPDATE SET at = EXCLUDED.at, from_id = EXCLUDED.from_id, data = EXCLUDED.data`;
   };
+  /**
+   * `change` as one change of the room: its row is locked until the transaction ends, so a second one of the same room
+   * waits and reads what the first wrote. `kicked` is the room's `_kicked` doc as the change finds it.
+   */
+  const inRoom = <T>(code: RoomCode, change: (tx: BunSqlTx, kicked: KickedDoc | null) => Promise<T>): Promise<T> => db.begin(async tx => {
+    if (!(await tx`SELECT code FROM rooms WHERE code = ${code} FOR UPDATE`).length) throw new Error(`no room ${code}`);
+    const [row] = await tx`SELECT data FROM sheets WHERE room = ${code} AND hid = '_kicked'`;
+    return change(tx, row ? DOCS.kicked(row.data) : null);
+  });
   return {
     kind: 'postgres',
     async check() { await db`SELECT 1`; },
@@ -265,9 +303,29 @@ export async function postgresStore(url: string): Promise<Store> {
       }
       return board;
     },
-    async putSheet(code, key, from, sheet, now) { await put(code, key, from, sheet, now); },
-    async putDoc(code, name, from, doc, now) { await put(code, '_' + name, from, WIRES[name](doc), now); },
-    async deleteSheet(code, key) { await db`DELETE FROM sheets WHERE room = ${code} AND hid = ${key}`; },
+    async pushSheet(code, key, from, sheet, now) {
+      return inRoom(code, async (tx, kicked) => {
+        // a doc's row is under '_' and its name; every other row of the room is a sheet
+        const [n] = await tx`SELECT COUNT(*) AS sheets, COUNT(*) FILTER (WHERE hid = ${key}) AS held FROM sheets WHERE room = ${code} AND left(hid, 1) <> '_'`;
+        const answer = pushed(kicked, key, Number(n?.held) > 0, Number(n?.sheets), now);
+        if (answer === 'stored') await put(tx, code, key, from, sheet, now);
+        return answer;
+      });
+    },
+    async setRemoval(code, key, change, now) {
+      return inRoom(code, async (tx, kicked) => {
+        let name: string | null = null;
+        if (change === 'remove') {
+          const [row] = await tx`DELETE FROM sheets WHERE room = ${code} AND hid = ${key} RETURNING data`;
+          name = nameOn(row ? parseSheet(key, row.data) : null);
+          await tx`DELETE FROM sheet_owners WHERE room = ${code} AND device = ${deviceOf(key)}`;
+        }
+        const doc = kickedAfter(kicked, key, name, now);
+        await put(tx, code, '_kicked', SERVER_DEVICE, WIRES.kicked(doc), now);
+        return doc;
+      });
+    },
+    async putDoc(code, name, from, doc, now) { await put(db, code, '_' + name, from, WIRES[name](doc), now); },
     async owner(code, dev) { return text((await db`SELECT token_hash FROM sheet_owners WHERE room = ${code} AND device = ${dev}`)[0]?.token_hash); },
     async bindOwner(code, dev, hash) { await db`INSERT INTO sheet_owners (room, device, token_hash) VALUES (${code}, ${dev}, ${hash}) ON CONFLICT (room, device) DO NOTHING`; },
     async releaseOwner(code, dev) { await db`DELETE FROM sheet_owners WHERE room = ${code} AND device = ${dev}`; },
@@ -323,7 +381,6 @@ export function database(url: string | undefined, open: (url: string) => Promise
 // ── API ──
 const J = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...BASE_HEADERS, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' } });
 const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
-const SERVER_DEVICE = 'server' as DeviceId;
 const newKey = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), b => CODE_CHARS[b % CODE_CHARS.length]).join('');
 const sha = async (t: string) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t))), b => b.toString(16).padStart(2, '0')).join('');
 /** Every code has a digit, so a code in a message never reads like a word ("thanks"): src/core/sync/invite.ts relies on it. */
@@ -334,16 +391,6 @@ function newCode(): RoomCode {
   }
 }
 
-/**
- * The `_kicked` doc: who the GM removed lately, the one record of a removal. Only the server writes it, in the same
- * request that removes the sheet or lifts the removal, so a removal the server made is always one the player's next
- * poll reads. A re-push within `REPUSH_MS` of it is refused by reading it (`keptOut`). `name` null lifts the removal.
- */
-async function setRemoved(st: Store, code: RoomCode, key: SheetKey, name: string | null, now: number): Promise<KickedDoc> {
-  const doc = kickedAfter((await st.board(code)).docs.kicked?.data ?? null, key, name, now);
-  await st.putDoc(code, 'kicked', SERVER_DEVICE, doc, now);
-  return doc;
-}
 /** True when the request carries the room's GM key (a constant-time compare of hashes). */
 async function gmOk(req: Request, st: Store, code: RoomCode): Promise<boolean> {
   const want = await st.keyHash(code); if (!want) return false;
@@ -454,7 +501,7 @@ async function api(req: Request, parts: string[], database: Database): Promise<R
     if (!gm) return J({ error: 'gm only' }, 403);
     const key = parseSheetKey(parts[3]);
     if (!key) return J({ error: 'bad hunter id' }, 400);
-    return J({ ok: true, kicked: await setRemoved(st, code, key, null, now) });
+    return J({ ok: true, kicked: await st.setRemoval(code, key, 'allow', now) });
   }
   if (parts[2] === 'release' && parts.length === 3) { // S07: the GM frees a device's hunter binding so another device can claim it
     if (m !== 'POST') return J({ error: 'method' }, 405);
@@ -467,18 +514,13 @@ async function api(req: Request, parts: string[], database: Database): Promise<R
   if (parts[2] === 'sheets' && parts.length === 4) {
     if (m !== 'PUT' && m !== 'DELETE') return J({ error: 'method' }, 405);
     // a row is a hunter sheet under its sheet key, or a room doc under '_' and the doc's name
-    const hid = parts[3] ?? '', isDoc = hid.startsWith('_'), key = isDoc ? null : parseSheetKey(hid);
+    const hid = parts[3] ?? '', isDoc = hid.startsWith('_'), key = isDoc ? null : parseSheetKey(hid), docName = isDoc ? parseDocName(hid.slice(1)) : null;
     if (!isDoc && !key) return J({ error: 'bad hunter id' }, 400);
     if (m === 'DELETE') { // R01: the GM removes a player's hunter from the room (their device keeps its own copy)
       if (!key || !gm) return J({ error: 'gm only' }, 403);
-      const row = (await st.board(code)).sheets[key], name = row && 'hunter' in row.data ? row.data.hunter.name : '';
-      await st.deleteSheet(code, key);
-      await st.releaseOwner(code, deviceOf(key)); // S07: removal frees the binding
-      return J({ ok: true, kicked: await setRemoved(st, code, key, name, now) });
+      return J({ ok: true, kicked: await st.setRemoval(code, key, 'remove', now) }); // S07: the removal frees the phone's binding too
     }
-    if (hid === '_kicked') return J({ error: 'server doc' }, 403); // only the removal routes write it
-    const board = key ? await st.board(code) : null;
-    if (key && keptOut(board!.docs.kicked?.data ?? null, key, now)) return J({ error: 'removed' }, 403); // so the player's phone reads the removal and stops
+    if (docName === 'kicked') return J({ error: 'server doc' }, 403); // only the removal routes write it (`setRemoval`)
     if (isDoc && !gm) return J({ error: 'gm only' }, 403);
     const b = await readJson(req); if (b instanceof Response) return b;
     const bad = J({ error: isDoc ? 'bad doc' : 'bad sheet' }, 400), from = parseDeviceId(b.from);
@@ -488,17 +530,18 @@ async function api(req: Request, parts: string[], database: Database): Promise<R
       const sheet = parseSheet(key, b.data);
       if (!sheet) return bad;
       if (!(await mayWriteFor(req, st, code, deviceOf(key), gm))) return J({ error: 'not your sheet' }, 403);
-      if (!(key in board!.sheets) && Object.keys(board!.sheets).length >= ROOM_SHEETS) return J({ error: 'room full' }, 413);
-      await st.putSheet(code, key, from, sheet, now);
-      return J({ ok: true });
+      switch (await st.pushSheet(code, key, from, sheet, now)) {
+        case 'stored': return J({ ok: true });
+        case 'removed': return J({ error: 'removed' }, 403); // so the player's phone reads the removal and stops
+        case 'full': return J({ error: 'room full' }, 413);
+      }
     }
-    const name = parseDocName(hid.slice(1));
-    return name ? putDoc(st, code, name, from, b.data, now) : bad;
+    return docName ? putDoc(st, code, docName, from, b.data, now) : bad;
   }
   return J({ error: 'not found' }, 404);
 }
 /** Only a parsed doc is stored. One generic step, so the parser and the store agree on the doc's type. */
-async function putDoc<K extends DocName>(st: Store, code: RoomCode, name: K, from: DeviceId, data: unknown, now: number): Promise<Response> {
+async function putDoc<K extends Exclude<DocName, 'kicked'>>(st: Store, code: RoomCode, name: K, from: DeviceId, data: unknown, now: number): Promise<Response> {
   const doc = DOCS[name](data);
   if (!doc) return J({ error: 'bad doc' }, 400);
   await st.putDoc(code, name, from, doc, now);

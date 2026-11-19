@@ -484,5 +484,7 @@ describe('the room under every interleaving explored', () => {
     // The walk is all computing and asserts no time: 16,386 sequences take 42 to 45 s alone on the lead's four-core box
     // (Nov 19, the same before and after feats unit 4) and passed 60 s inside the whole run, where the walk going on
     // after its timeout then failed tests of the files after it. The limit is only how long bun lets it compute.
+    // Inside the whole run with four workers (scripts/ci.ts), three runs on Nov 19: 54, 48 and 50 s. The budget is 180 s,
+    // over twice the slowest.
   }, 180_000);
 });

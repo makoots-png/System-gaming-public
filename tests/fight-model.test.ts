@@ -366,5 +366,7 @@ describe('the reworked fight under random play', () => {
   // A compute budget, not a wait: the test asserts no time. Measured Nov 19 on the lead's 4-core box after its restart:
   // 107 s alone at a88b73b0 and at 59c13117, 111 s at 37e0d68f (so the day's code did not slow it), and past 120 s inside
   // the whole unit run, which refused a push of notes. A faster box runs it in about half that.
+  // Inside the whole run with four workers (scripts/ci.ts), three runs on Nov 19: 103, 98 and 102 s. The budget is 300 s,
+  // over twice the slowest.
   }, 300_000);
 });
