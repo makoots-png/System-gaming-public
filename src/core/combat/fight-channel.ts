@@ -1,5 +1,6 @@
 // fight-channel.ts: a channel's machine (docs/agent-handoff/rw/design.md section 4.1) as one table. The reducer in
-// fight.ts is its only caller and the only writer of a row's channel; resolve.ts reports a hit that breaks one. A new
+// fight.ts begins, grows, releases and drops a channel (with fight-turn.ts), and `broken` in land.ts is its one break
+// (rule 17), whatever lands it: a use's hit or op, a trigger's, a reaction's, a shove. A new
 // event is a member of `ChannelEvent` and its cell in every row of `TABLE` (the typecheck asks), with a test in
 // tests/fight.test.ts and its arrow in scripts/charts/channel.ts.
 import type { Place } from './space.ts';

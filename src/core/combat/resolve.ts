@@ -581,7 +581,7 @@ export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body
     const lands = end.avoid === 'caught';
     const landed = lands ? landOps(a, u, t, dice, now, R) : { target: t, keys: [], breaks: false, threat: 0, fired: [], detonated: [] };
     if (channelBreaks(t, hpDamage, landed.breaks, now)) { channelBroken = true; }
-    t = channelBroken ? broken(landed.target) : landed.target;
+    t = channelBroken ? broken(landed.target, R) : landed.target;
     rows.set(t.id, t);
     if (lands) for (const op of a.ops) if (op.op === 'move') {
       const m = moved(op, rows.get(user.id)!, rows.get(t.id)!, null, now, R);
@@ -599,7 +599,7 @@ export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body
     for (const d of landed.detonated) { const e = landEnd(rows, t.id, d, now, R); bursts.push({ bearer: t.id, key: d.key, label: d.def.label, landed: [{ target: t.id, dealt: e.dealt }] }); }
   }
   if (rollsReaction(a)) spendEdges(a, rows.get(user.id)!, [...hit, ...ring].map(b => rows.get(b.id)!), rows, now, R);
-  const shoved = [...swapped(a, user.id, outcomes, rows, grid), ...pushed(a, user.id, at, outcomes, rows, grid, R)];
+  const shoved = [...swapped(a, user.id, outcomes, rows, grid, R), ...pushed(a, user.id, at, outcomes, rows, grid, R)];
   rows.set(user.id, userTime(a, rows.get(user.id)!, now, rolls.refund, R));
   return { ok: true, outcomes, bodies: bodies.map(b => rows.get(b.id)!), bursts, shoved };
 }
@@ -617,16 +617,16 @@ const rooted = (b: Body): boolean => b.sheet.stride <= 0;
  * A swap (kits design 8.3.5): the user and the body it aimed at exchange places when each may stand on the other's;
  * against a foe only when the use caught it (a dodge or a resist is no swap). Neither moves if either is rooted.
  */
-function swapped(a: Ability, userId: CombatantId, outcomes: readonly Outcome[], rows: Map<CombatantId, Body>, grid: Grid): CombatantId[] {
+function swapped(a: Ability, userId: CombatantId, outcomes: readonly Outcome[], rows: Map<CombatantId, Body>, grid: Grid, R: ResolveRules): CombatantId[] {
   if (a.move?.kind !== 'swap') return [];
   const o = outcomes.find(x => x.target !== userId && x.avoid === 'caught'), u = rows.get(userId), t = o && rows.get(o.target);
   if (!u || !t || rooted(u) || rooted(t) || !TERRAIN[terrain(grid, u.place.x, u.place.y)].walk || !TERRAIN[terrain(grid, t.place.x, t.place.y)].walk) return [];
   rows.set(u.id, { ...u, place: t.place });
-  rows.set(t.id, moveBreaks({ ...t, place: u.place }));
+  rows.set(t.id, moveBreaks({ ...t, place: u.place }, R));
   return [t.id];
 }
 /** A body moved by another breaks its channel, as one that moves itself drops it (kits design 8.3.4). */
-const moveBreaks = (b: Body): Body => (b.channel?.state === 'holding' ? broken(b) : b);
+const moveBreaks = (b: Body, R: ResolveRules): Body => (b.channel?.state === 'holding' ? broken(b, R) : b);
 /**
  * Rule 18c (kits design 8.3, table 8.9.3): each shove of the ability moves each target it caught, `tiles` times the
  * target's control factor (rounded down; 0 for a rooted body), along `shovePath` from its anchor: the user or the aim.
@@ -644,7 +644,7 @@ function pushed(a: Ability, userId: CombatantId, at: Place, outcomes: readonly O
       const others = [...rows.values()].filter(b => b.id !== t.id && alive(b)).map(b => b.place);
       const path = shovePath(anchor, t.place, op.dir, k, grid, others);
       if (!path.length) continue;
-      rows.set(t.id, moveBreaks({ ...t, place: path[path.length - 1]! }));
+      rows.set(t.id, moveBreaks({ ...t, place: path[path.length - 1]! }, R));
       if (!moved.includes(t.id)) moved.push(t.id);
     }
   }

@@ -287,9 +287,10 @@ export function register(app) {
   const cards = () => { const list = store.active().skills; return list.length ? list.map(card).join('') : '<li class="empty">No skills acquired.</li>'; };
   const acquired = (k, names) => ui.system({ tag: '! Notification', title: 'Skill acquired', kind: 'info', body: k.name,
     lines: [`${k.type === 'active' ? 'Active' : 'Passive'} skill · ${k.label || 'Lv.' + k.level}`, ...(names ? [`Given to: ${names.join(', ')}`] : [])] });
+  /** What the player reads when a skill of `k`'s name is held already (skills-held.ts `held`). */
+  const heldWords = k => ({ held: `You already have a skill called ${k.name}. Edit that one, or give this one another name.` });
   /** Adds a copy of `k` to the active hunter. */
-  const held = k => ui.toast('Skills', `You already have a skill called ${k.name}. Edit that one, or give this one another name.`, { kind: 'warning' });
-  const learn = k => { const id = store.id('s'); if (onSkills(store.active().id, 'skill-add', h => addSkill(h, k, id)).ok) acquired(k); else held(k); };
+  const learn = k => { const id = store.id('s'); if (ui.wrote('Skills', onSkills(store.active().id, 'skill-add', h => addSkill(h, k, id)), heldWords(k))) acquired(k); };
   /** A change to the skills of hunter `hid`: a passive's bonus is on the sheet, so its maxima are fitted after it. */
   const onSkills = (hid, why, step) => store.apply(why, atHunter(hid, both(step, h => fitted(h, app.rules()))));
 
@@ -320,17 +321,17 @@ export function register(app) {
         else if (b.dataset.use) use(hid, b.dataset.use);
         else if (b.dataset.lvup) {
           const s = find(b.dataset.lvup);
-          if (s && onSkills(hid, 'skill-lv', h => levelUpSkill(h, s.id)).ok) {
+          if (s && ui.wrote('Skills', onSkills(hid, 'skill-lv', h => levelUpSkill(h, s.id)))) {
             ui.toast('System', `${s.name} reached Lv.${s.level}${s.level >= SKILL_MAX_LEVEL ? ' (MAX)' : ''}.`);
           }
         } else if (b.dataset.edit) {
           const s = find(b.dataset.edit); if (!s) return;
           const k = await make({ initial: s, library: false });
-          if (k && !onSkills(hid, 'skill-edit', h => editSkill(h, s.id, k)).ok) held(k);
+          if (k) ui.wrote('Skills', onSkills(hid, 'skill-edit', h => editSkill(h, s.id, k)), heldWords(k));
         } else if (b.dataset.del) {
           const s = find(b.dataset.del);
           if (s && await ui.confirm({ title: 'Remove skill?', body: s.name, danger: true, confirmLabel: 'Remove' })) {
-            onSkills(hid, 'skill-del', h => forgetSkill(h, s.id));
+            ui.wrote('Skills', onSkills(hid, 'skill-del', h => forgetSkill(h, s.id)));
           }
         }
       });

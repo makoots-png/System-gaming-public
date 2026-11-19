@@ -94,19 +94,19 @@ export function register(app) {
     addItem(hid, item) {
       const h = store.hunter(hid), it = parseItem(item); if (!h || !it) return null;
       const into = stackOf(h, it), id = into ? into.id : store.id('i');
-      if (!onBag(hid, 'item-add', x => putItem(x, it, id)).ok) return null;
+      if (!ui.wrote('System', onBag(hid, 'item-add', x => putItem(x, it, id)))) return null;
       const added = store.hunter(hid).items.find(i => i.id === id);
       return added ? { ...added } : null;
     },
-    addGold(hid, n) { onBag(hid, 'gold', x => addGold(x, n)); },
+    addGold(hid, n) { ui.wrote('System', onBag(hid, 'gold', x => addGold(x, n))); },
     rollLoot: (rank, { boss = false } = {}) => rollLoot(rules(), rank, boss, lootPool(rules()), cryptoRandom),
     equip(hid, itemId) {
       const h = store.hunter(hid), it = h?.items.find(i => i.id === itemId);
       if (!it || !it.slot || fighting(hid)) return false;
       const splitId = it.qty > 1 ? store.id('i') : it.id;
-      return onBag(hid, 'equip', x => equip(x, itemId, splitId)).ok;
+      return ui.wrote('System', onBag(hid, 'equip', x => equip(x, itemId, splitId)));
     },
-    unequip(hid, slot) { if (!fighting(hid)) onBag(hid, 'unequip', x => unequip(x, slot)); },
+    unequip(hid, slot) { if (!fighting(hid)) ui.wrote('System', onBag(hid, 'unequip', x => unequip(x, slot))); },
     use(hid, itemId) {
       const h = store.hunter(hid), it = h ? usable(h, itemId) : null;
       if (!it) return false;
@@ -130,7 +130,7 @@ export function register(app) {
       const h = store.hunter(hid), it = h?.items.find(i => i.id === itemId);
       if (!it) return 0;
       const got = sellTotal(it, n, rules());
-      return onBag(hid, 'sell', x => sell(x, itemId, n, rules())).ok ? got : 0;
+      return ui.wrote('System', onBag(hid, 'sell', x => sell(x, itemId, n, rules()))) ? got : 0;
     },
   };
 
@@ -216,8 +216,8 @@ export function register(app) {
         const editId = item ? item.id || item.name : null;
         const it = await app.api.loot.item({ initial: item || undefined, library: false });
         if (!it) return;
-        if (target === 'shop') shopEdit(shown => writeShopItem(shown, editId, it));
-        else if (editId) onBag(store.active().id, 'item-edit', x => editItem(x, editId, it));
+        if (target === 'shop') ui.wrote('System', shopEdit(shown => writeShopItem(shown, editId, it)));
+        else if (editId) ui.wrote('System', onBag(store.active().id, 'item-edit', x => editItem(x, editId, it)));
         else api.addItem(store.active().id, it);
       };
 
@@ -256,21 +256,20 @@ export function register(app) {
           if (got) ui.toast('System', `Sold ${it.name} for ${fmt(got)} gold.`);
         } else if (d.del) {
           const it = h.items.find(x => x.id === d.del);
-          if (it && await ui.confirm({ title: 'Remove item?', body: it.name, danger: true, confirmLabel: 'Remove' })) onBag(h.id, 'item-del', x => removeItem(x, it.id));
+          if (it && await ui.confirm({ title: 'Remove item?', body: it.name, danger: true, confirmLabel: 'Remove' })) ui.wrote('System', onBag(h.id, 'item-del', x => removeItem(x, it.id)));
         } else if (d.editItem) { const it = h.items.find(x => x.id === d.editItem); if (it) openForm('inv', it); }
         else if (d.buy !== undefined) {
           const tpl = shopList()[Number(d.buy)]; if (!tpl) return;
-          const bought = api.buy(id, tpl), why = isRefused(bought) ? oneOf(bought.why, BUY_REFUSALS, null) : null;
-          if (!isRefused(bought)) ui.toast('System', `Purchased ${tpl.name}.`);
-          else if (why) ui.toast('System', BUY_WORDS[why](tpl.name), { kind: 'warning' });
+          const words = Object.fromEntries(BUY_REFUSALS.map(w => [w, BUY_WORDS[w](tpl.name)]));
+          if (ui.wrote('System', api.buy(id, tpl), words)) ui.toast('System', `Purchased ${tpl.name}.`);
         } else if (d.shopEdit !== undefined) { const tpl = shopList()[Number(d.shopEdit)]; if (tpl) openForm('shop', tpl); }
         else if (d.shopDel !== undefined) {
           const tpl = shopList()[Number(d.shopDel)];
-          if (tpl && await ui.confirm({ title: 'Remove from shop?', body: tpl.name, danger: true, confirmLabel: 'Remove' })) shopEdit(shown => removeShopItem(shown, Number(d.shopDel)));
+          if (tpl && await ui.confirm({ title: 'Remove from shop?', body: tpl.name, danger: true, confirmLabel: 'Remove' })) ui.wrote('System', shopEdit(shown => removeShopItem(shown, Number(d.shopDel))));
         } else if (b.hasAttribute('data-shop-add')) openForm('shop', null);
         else if (b.hasAttribute('data-additem')) openForm('inv', null);
         else if (b.hasAttribute('data-shop-reset')) {
-          if (await ui.confirm({ title: 'Reset shop?', body: 'Restore the default shop list.', danger: true, confirmLabel: 'Reset' })) store.apply('shop-edit', s => withShop(s, null));
+          if (await ui.confirm({ title: 'Reset shop?', body: 'Restore the default shop list.', danger: true, confirmLabel: 'Reset' })) ui.wrote('System', store.apply('shop-edit', s => withShop(s, null)));
         }
       });
     },

@@ -96,8 +96,7 @@ export function register(app) {
       const v = await ui.system({ tag: '! Hunter', title: 'Emblem and color', kind: 'info', html: pickerHtml(),
         actions: [{ label: 'Cancel', value: false, cancel: true }, { label: 'Save', value: true, primary: true }] });
       if (v !== true || !store.hunter(hid)) return false;
-      store.apply('identity', atHunter(hid, x => withBadge(x, pick.e, pick.c)));
-      return true;
+      return ui.wrote('! Hunter', store.apply('identity', atHunter(hid, x => withBadge(x, pick.e, pick.c))));
     },
   };
 
@@ -148,7 +147,8 @@ export function register(app) {
       });
       el.addEventListener('change', e => {
         const t = e.target; if (!t.dataset || !t.dataset.pf) return;
-        if (t.dataset.pf === 'sound') store.apply('settings', atSettings(st => withSound(st, t.checked))); // settings.sound keeps its name and home (save state)
+        // settings.sound keeps its name and home (save state); a refused write puts the box back as the save holds it
+        if (t.dataset.pf === 'sound') { if (!ui.wrote('Settings', store.apply('settings', atSettings(st => withSound(st, t.checked))))) t.checked = !t.checked; }
         else { setPref({ haptics: t.checked }); if (t.checked) buzz(30); }
       });
       app.on('prefs', () => { if (el.isConnected) deviceUpdate(el); });
@@ -190,7 +190,7 @@ export function register(app) {
         ui.toast('Loadout', 'Gear cannot change during a fight.', { kind: 'warning' });
         return { skipped, kept: [...rules().slots] };
       }
-      store.apply('loadout-swap', s => { const r = swapLoadout(s, hid, id, rules(), false); if ('save' in r) { skipped.push(...r.skipped); return r.save; } return r; });
+      if (!ui.wrote('Loadout', store.apply('loadout-swap', s => { const r = swapLoadout(s, hid, id, rules(), false); if ('save' in r) { skipped.push(...r.skipped); return r.save; } return r; }))) return null;
       const msg = [`${l.name} equipped.`];
       if (skipped.length) msg.push(`No longer in the bag: ${skipped.join(', ')}.`);
       ui.toast('Loadout', msg.join(' '), { kind: skipped.length ? 'warning' : 'info' });
@@ -289,9 +289,9 @@ export function register(app) {
       } else if (isObj(v)) BD.pick(who.hunterId, Number(v.tier), v.pick === 1 ? 1 : 0); else if (v === 'respec') BD.respec(who.hunterId); else BD.setPath(who.hunterId, v, true);
     },
     setRule(patch) { // GM: enabled / playerPick; published in the room's 'rules' doc, which players' rules follow
-      store.apply('gm-rules', s => buildRuleSet(s, patch));
+      ui.wrote('GM', store.apply('gm-rules', s => buildRuleSet(s, patch)));
     },
-    resetRules() { store.apply('gm-rules', buildRulesReset); },
+    resetRules() { ui.wrote('GM', store.apply('gm-rules', buildRulesReset)); },
   };
   // the room's rules doc follows the GM's switches however they changed (app.api.sync.publish): the build's and the
   // personal gates' (build.ts `roomRulesOf`); a player's phone in the room plays by it through rules()

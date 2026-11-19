@@ -111,13 +111,15 @@ export function register(app) {
   const line = (kind, title, text, hunterId = null) => ({ kind, hunterId, title: String(title), text: String(text) });
   /**
    * `change` (a step on the save, or none), the room events posted and the lines said, in one write (src/core/award.ts
-   * `sent`): a GM action is written whole or not at all. The outbox sends what it posted after the write. Answers whether it wrote.
+   * `sent`): a GM action is written whole or not at all. The outbox sends what it posted after the write. Answers whether
+   * it wrote; a refused write is told (ui.js `wrote`).
    */
   function gmWrite(why, change, events, said) {
     const S = A().sync, code = events.length ? S.room() : null;
     const w = store.apply(why, s => { const x = change ? change(s) : s; return isRefused(x) ? x : sent(x, { room: code, events, said }, { at: new Date().toISOString(), cap: app.rules().logCap }); });
-    if (w.ok && code) S.flush();
-    return w.ok;
+    if (!ui.wrote('GM', w)) return false;
+    if (code) S.flush();
+    return true;
   }
   const addLog = (kind, title, text, hunterId = null) => gmWrite('gm-log', null, [], [line(kind, title, text, hunterId)]);
   /** A room event of `type` this phone may post: the event, or why not (no room; a body the room would refuse). */
@@ -468,12 +470,16 @@ export function register(app) {
     if (!b.title) return say('#gm-b-msg', 'Enter a title.', true);
     const only = $('#gm-b-to-sel').checked, { local, remote } = picked();
     if (only && !remote.length && !local.length) return say('#gm-b-msg', 'Select hunters in Award first, or choose Everyone.', true);
-    ui.system({ tag: b.tag, title: b.title, body: b.body || undefined, kind: b.kind });
-    // the log line and the post are one write: the line never says Broadcast for a post that was not made, nor the reverse
-    const said = [line('system', `Broadcast: ${b.title}`, b.body)];
-    if (only && !remote.length) { addLog('system', `Broadcast: ${b.title}`, b.body); say('#gm-b-msg', `Shown here for the ${local.length === 1 ? 'hunter' : `${local.length} hunters`} picked on this phone.`); return; }
+    // the log line and the post are one write: the line never says Broadcast for a post that was not made, nor the
+    // reverse; the window here shows only what was written
+    const said = [line('system', `Broadcast: ${b.title}`, b.body)], shown = () => ui.system({ tag: b.tag, title: b.title, body: b.body || undefined, kind: b.kind });
+    if (only && !remote.length) {
+      if (!addLog('system', `Broadcast: ${b.title}`, b.body)) return;
+      shown(); say('#gm-b-msg', `Shown here for the ${local.length === 1 ? 'hunter' : `${local.length} hunters`} picked on this phone.`); return;
+    }
     const p = postable('system', { ...b, ...(only ? { to: remote } : {}) }), whom = only ? `${remote.length} selected hunter${remote.length === 1 ? '' : 's'}` : `room ${room()}`;
     if (!gmWrite('gm-broadcast', null, p.ev ? [p.ev] : [], said)) return;
+    shown();
     if (!p.ev) say('#gm-b-msg', p.why === 'noRoom' ? 'Shown here. To reach players\' phones, create a room with the room button at the top.' : 'Shown here. The room would not take this broadcast.', p.why !== 'noRoom');
     else say('#gm-b-msg', goesNow() ? (only ? `Sent to ${whom}.` : `Shown here and sent to ${whom}.`) : `Shown here. Sent to ${whom} when the room answers.`);
   }
@@ -507,6 +513,7 @@ export function register(app) {
   function doSpawn() {
     const rank = $('#gm-g-rank').value, type = $('#gm-g-type').value, name = $('#gm-g-name').value.trim();
     const g = A().gates.spawn({ rank: rank || undefined, type: type || undefined, name: name || undefined });
+    if (!g) return;
     say('#gm-g-msg', `Gate spawned: ${g.rank}-rank ${g.type} "${g.name}", breaks on day ${g.breakDay}.`);
   }
   /** The world day moved by `n` (gates.js `advanceDay` writes its line); the day shown is redrawn by the change. */
@@ -523,12 +530,10 @@ export function register(app) {
     if (t.id === 'encounter') return (tabs.encounter && Array.isArray(tabs.encounter[rank]) ? tabs.encounter[rank] : SEED.encounter[rank] || []).slice();
     return (Array.isArray(tabs[t.id]) ? tabs[t.id] : SEED[t.id] || []).slice();
   }
-  function saveList(t, lines) {
-    setOv(o => writeTable(o, t.id, rank_(), lines));
-  }
-  function resetList(t) {
-    setOv(o => resetTable(o, t.id, rank_()));
-  }
+  /** The GM's roll table `t` written with `lines`: whether it was written. */
+  const saveList = (t, lines) => setOv(o => writeTable(o, t.id, rank_(), lines));
+  /** The GM's roll table `t` back to its seed: whether it was written. */
+  const resetList = t => setOv(o => resetTable(o, t.id, rank_()));
   const lines = s => s.split('\n').map(x => x.trim()).filter(Boolean).slice(0, 200).map(x => x.slice(0, 300));
   function syncTableUi(force = false) {
     const t = tbl(), ta = $('#gm-t-list');
@@ -756,7 +761,7 @@ export function register(app) {
         if (!a) return say('#gm-board-msg', A().hunter.amountMsg(inp.value), true);
         const n = heal || a.heal ? a.n : -a.n; inp.value = '';
         if (card.classList.contains('remote')) sendHp(hid, n);
-        else { if (n < 0) A().hunter.damage(hid, -n); else A().hunter.heal(hid, n); say('#gm-board-msg', `${n < 0 ? 'Damaged' : 'Healed'} ${(S().hunters.find(x => x.id === hid) || {}).name || 'hunter'} by ${a.n}.`); }
+        else if (n < 0 ? A().hunter.damage(hid, -n) : A().hunter.heal(hid, n)) say('#gm-board-msg', `${n < 0 ? 'Damaged' : 'Healed'} ${(S().hunters.find(x => x.id === hid) || {}).name || 'hunter'} by ${a.n}.`);
         if (keepFocus) { const c2 = [...$('#gm-board').querySelectorAll('[data-hid]')].find(c => c.dataset.hid === hid), i2 = c2 && c2.querySelector('[data-gmamt]'); if (i2) i2.focus(); }
       }
       el.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches && e.target.matches('[data-gmamt]')) { e.preventDefault(); if (A().hunter.amountFromKey(e, e.target.value)) typedHp(e.target.closest('[data-hid]'), e.shiftKey, true); } });
@@ -792,8 +797,8 @@ export function register(app) {
         const act = { 'gm-notify': askNotify, 'gm-uses-go': openUses, 'gm-award-go': doAward, 'gm-b-go': doBroadcast, 'gm-q-go': doIssue, 'gm-g-go': doSpawn, 'gm-s-go': startSession, 'gm-t-go': doRoll,
           'gm-d1': () => advance(1), 'gm-r-val': liveRules, 'gm-r-save': saveRules, 'gm-r-reset': resetRules,
           'gm-dn': async () => { const n = await ui.promptNum({ title: 'Advance world day', label: 'Days', value: 1, min: 1, max: 365 }); if (n) advance(n); },
-          'gm-t-save': () => { const l = lines($('#gm-t-list').value); if (!l.length) return say('#gm-t-msg', 'A table needs at least one line. Use Reset to restore the seed.', true); saveList(tbl(), l); $('#gm-t-list').dataset.dirty = ''; say('#gm-t-msg', `Saved ${l.length} entries.`); },
-          'gm-t-reset': () => { resetList(tbl()); syncTableUi(true); say('#gm-t-msg', 'Reset to the seed list.'); } }[t.id];
+          'gm-t-save': () => { const l = lines($('#gm-t-list').value); if (!l.length) return say('#gm-t-msg', 'A table needs at least one line. Use Reset to restore the seed.', true); if (!saveList(tbl(), l)) return; $('#gm-t-list').dataset.dirty = ''; say('#gm-t-msg', `Saved ${l.length} entries.`); },
+          'gm-t-reset': () => { if (!resetList(tbl())) return; syncTableUi(true); say('#gm-t-msg', 'Reset to the seed list.'); } }[t.id];
         if (act) act();
       });
       el.addEventListener('change', e => {

@@ -226,6 +226,22 @@ export const docSpots = <T extends Omit<Spot, 'place'> & { readonly place: { rea
 /** On the map: land.ts `alive` over a spot. A monster or shadow that is down is gone; a hunter that is down lies there. */
 export const onMap = (s: Spot): boolean => !s.down || s.kind === 'hunter';
 
+/**
+ * The rows a reaction before a turn of row `by` may wait for (kits design 8.4): every other row, the other side's rows
+ * still up first, each part in the order given. The first is the one an arm that names no row waits for, so the GM's
+ * card and a player's phone offer the same rows and wait on the same one.
+ */
+export function waitChoices<S extends Pick<Spot, 'id' | 'side' | 'down'>>(rows: readonly S[], by: CombatantId): S[] {
+  const me = rows.find(x => x.id === by), others = rows.filter(x => x.id !== by);
+  const foes = others.filter(x => !!me && x.side !== me.side && !x.down);
+  return [...foes, ...others.filter(x => !foes.includes(x))];
+}
+/** The words of the choice of the row a reaction before a turn waits for: its label, and the window a player picks it in. */
+export const WAIT_WORDS = {
+  label: 'Before the turn of',
+  body: (reaction: string): string => `${reaction} fires just before the turn of the one you pick.`,
+} as const;
+
 /** What aiming the ability at one candidate gives: its 5-10-5 distance, and whether rules 5 and 6 of resolve.ts let it be hit. */
 export type AimAt<T extends Spot> = { readonly target: T; readonly dist: Tiles; readonly inRange: boolean; readonly inShape: boolean };
 /** What `aims` reads of an ability. */

@@ -6,7 +6,7 @@
 // (src/views/map.js, its scene from `docBodies` and `mapScene` of map-view.ts over the doc), which sends the same `step`
 // and `cast`.
 import { LIFE_TAG, can } from '../core/hunter/vitals.ts';
-import { aims, docSpots, readyIn, stepAway, stepToward } from '../core/combat/fight-view.ts';
+import { WAIT_WORDS, aims, docSpots, readyIn, stepAway, stepToward, waitChoices } from '../core/combat/fight-view.ts';
 import { docBodies, docGround, myPinKey } from '../core/combat/map-view.ts';
 import { parseTold, toldAfter } from '../core/combat/table-news.ts';
 import { featsSeen } from '../core/hunter/chronicle-view.ts';
@@ -337,12 +337,28 @@ export function register(app) {
     if (!me || !a) return null;
     return (e.armed || []).includes(me.id) ? { ability: a, spent: false } : (e.spent || []).includes(me.id) ? { ability: a, spent: true } : null;
   }
-  /** Arms `ability` for this hunter's row, or disarms with null: the room's `arm` at any time (`ownSheet`). */
-  function armTo(e, h, ability) {
-    if (!e || e.ended !== false) return;
-    const S = sync(), a = ability && hunterAbilities(h, app.rules()).find(x => x.id === ability);
-    const ok = S.post(S.event('arm', { by: S.myKey(h.id), ability, on: null })).ok;
+  /**
+   * Arms `ability` for this hunter's row, or disarms with null: the room's `arm` at any time (`ownSheet`). A reaction
+   * before a turn waits for a row the player picks from the rows the GM's card offers (fight-view.ts `waitChoices`).
+   */
+  async function armTo(e, h, ability) {
+    const me = e && e.ended === false ? meRow(e) : null; if (!me) return;
+    const S = sync(), a = ability && hunterAbilities(h, app.rules()).find(x => x.id === ability), turn = !!a && !!a.react && a.react.when === 'turn';
+    const on = turn ? await waitOn(e, me, a) : null;
+    if (turn && !on) return;
+    const ok = S.post(S.event('arm', { by: S.myKey(h.id), ability, on })).ok;
     ui.news(!ok ? 'Not in the room: the reaction was not armed.' : a ? `${a.name} is armed.` : 'Reaction disarmed.', ok ? 'good' : 'warn');
+  }
+  /**
+   * The row a reaction `a` of row `me` waits for before its turn, picked in a window of `waitChoices` (fight-view.ts);
+   * null on Cancel, with no other row, or once the fight is over.
+   */
+  async function waitOn(e, me, a) {
+    const rows = waitChoices(/** @type {import('../core/combat/fight-doc.ts').FightDocRow[]} */ (rowsOf(e)), me.id); if (!rows.length) return null;
+    const on = await ui.system({ tag: '! Combat', title: WAIT_WORDS.label, kind: 'info', body: WAIT_WORDS.body(a.name), layout: 'list',
+      actions: [...rows.map((x, i) => ({ label: x.name, value: x.id, primary: i === 0 })), { label: 'Cancel', value: null, cancel: true }] });
+    const now = encounter();
+    return on && now && now.ended === false ? on : null;
   }
   const ownerName = (e, r) => { const o = rowsOf(e).find(x => x.id === r.owner); return o ? o.name : 'someone'; };
   /** Ends this hunter's turn: a `pass` at the doc's `now`, which the GM's phone takes only on that turn (`onTurn`). */

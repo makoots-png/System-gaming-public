@@ -13,6 +13,7 @@ export const field = (label, inputHtml) => `<label class="field"><span class="lb
 import { dismiss, enter } from './motion.ts';
 import { store } from '../edge/store.ts';
 import { reported } from '../edge/report.ts';
+import { READ_ONLY } from '../core/store-life.ts';
 export { reduced } from './motion.ts';
 
 // ── chime: generated WebAudio, only after a user gesture, only when settings.sound is on ──
@@ -106,6 +107,20 @@ export function toast(tag, msg, opts = {}) {
   for (const old of shown(box).slice(0, -2)) { clearTimeout(old._t); ended(old); }
   t._t = setTimeout(() => ended(t), hold ? hold.ms : TOAST_MS);
   return t;
+}
+/**
+ * Whether a write to the save was taken: `w` is `store.apply`'s answer. A refused write is told in a toast under `tag`:
+ * a read-only tab's refusal as NOT_SAVED (the banner says why), a step's own refusal by its words in `words`, which
+ * the core module that refused it gives. A step's refusal with no words means the screen offered a change its rule
+ * refuses: a bug, reported.
+ * @param {string} tag @param {import('../core/save-step.ts').Applied} w @param {Readonly<Record<string, string>>} [words]
+ */
+export function wrote(tag, w, words = {}) {
+  if (!('why' in w)) return true;
+  if (w.why === READ_ONLY) toast(tag, NOT_SAVED, { kind: 'warning' });
+  else if (Object.prototype.hasOwnProperty.call(words, w.why)) toast(tag, words[w.why], { kind: 'warning' });
+  else reported(`write:${tag}`, new Error(`the screen offered a change its rule refuses: ${w.why}`));
+  return false;
 }
 
 // ── the fight's news: one line over the map while a map shows a fight, else a toast ──
@@ -307,7 +322,9 @@ function show(/** @type {Win & { o: SystemWindow; resolve: (v: any) => void }} *
     if (e.key === 'Enter' && input && e.target === input) { e.preventDefault(); choose(actions.find(a => a.primary) || actions[0]); return; }
     if (e.key === 'Tab') trapTab(e, win);
   };
-  el.addEventListener('mousedown', e => { if (e.target === el) done(dismissValue); });
+  // a press of its own beside the window dismisses it: `pointerdown`, never the mouse events a phone makes after a tap,
+  // which land on this backdrop when the tap's lift opened the window (a battle map control acts at the lift)
+  el.addEventListener('pointerdown', e => { if (e.target === el) done(dismissValue); });
   w.root = el; w.win = win;
   document.body.appendChild(el);
   enter(win); enter(el, 'fade');

@@ -18,7 +18,7 @@ import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { fightId, reduce } from '../src/core/combat/fight.ts';
 import type { Command, Ctx, Fight, NewRow, Opening, Running } from '../src/core/combat/fight.ts';
 import type { Rolls } from '../src/core/combat/resolve.ts';
-import { aims, cardOf, docSpots, order, readyIn, spotOf, statusGrant, stepAway, stepToward } from '../src/core/combat/fight-view.ts';
+import { aims, cardOf, docSpots, order, readyIn, spotOf, statusGrant, stepAway, stepToward, waitChoices } from '../src/core/combat/fight-view.ts';
 
 const ctx: Ctx = { rules: RULES, life: () => null };
 const id = combatantId;
@@ -258,6 +258,32 @@ describe('the move control: a step toward or away from a picked body', () => {
     const r = reduce(fight, { type: 'move', by: a.id, to: step.place }, ctx);
     expect(r.effects.filter(e => e.type === 'refused')).toEqual([]);
     expect([body(r.fight!, 'A').place, body(r.fight!, 'A').at]).toEqual([step.place, tick(500)]);
+  });
+});
+
+describe('waitChoices: the rows a reaction before a turn may wait for', () => {
+  // Audit BUG-views-2: a player's phone armed a reaction before a turn with no row, and the fight refuses that one
+  // (`noTarget`, fight.ts `arm`). Kits design 8.4: such a reaction names the row whose turn it fires before. The GM's card
+  // and a player's phone offer the same rows; an arm that names none waits for the first.
+  const waiting = (name: string, side: Side, down = false) => ({ id: id(name), name, side, down });
+  const rows = [waiting('Kai', 'party'), waiting('Mira', 'party'), waiting('Wolf', 'foe', true), waiting('Ogre', 'foe'), waiting('Imp', 'foe')];
+
+  test('every other row is offered, the other side\'s rows still up first, each part in the order given', () => {
+    expect(waitChoices(rows, id('Kai')).map(r => r.name)).toEqual(['Ogre', 'Imp', 'Mira', 'Wolf']);
+    expect(waitChoices(rows, id('Ogre')).map(r => r.name)).toEqual(['Kai', 'Mira', 'Wolf', 'Imp']);
+  });
+
+  test('with no other side up, the first other row is the one it waits for; alone, there is none', () => {
+    const won = [waiting('Kai', 'party'), waiting('Mira', 'party'), waiting('Wolf', 'foe', true)];
+    expect(waitChoices(won, id('Kai')).map(r => r.name)).toEqual(['Mira', 'Wolf']);
+    expect(waitChoices([waiting('Kai', 'party')], id('Kai'))).toEqual([]);
+  });
+
+  test('a player\'s phone reads the room doc\'s rows and the GM\'s phone the fight\'s, and both wait on the same row', () => {
+    const fight = play(add(row('Kai', 'party'), row('Ogre', 'foe', { hp: 0 }), row('Imp', 'foe')));
+    const doc = [spot('Kai', 'party', 0, 0), spot('Ogre', 'foe', 3, 0, { down: true }), spot('Imp', 'foe', 4, 0)];
+    expect(waitChoices(fight.rows.map(spotOf), id('Kai')).map(s => s.id)).toEqual([id('Imp'), id('Ogre')]);
+    expect(waitChoices(doc, id('Kai')).map(s => s.id)).toEqual([id('Imp'), id('Ogre')]);
   });
 });
 

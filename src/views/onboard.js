@@ -7,6 +7,7 @@ import { atSettings, both } from '../core/save-step.ts';
 import { firstStep, onboardStep } from '../core/onboarding.ts';
 import { ownSeed } from '../core/starter.ts';
 import { onboarded } from '../core/settings.ts';
+import { READ_ONLY } from '../core/store-life.ts';
 import { chooseMode } from '../core/role.ts';
 import { ABOUT, LOADED, ROOM_IS, TIPS, createdLine, nextSteps } from '../core/first-run.ts';
 import { available } from '../core/hunter/progress.ts';
@@ -82,13 +83,14 @@ export function register(app) {
   let at = null;
   /**
    * Sends `event` to the setup machine. `write` is what the choice changes; on the transition that leaves setup it is
-   * written with the onboarded mark in one `store.apply`, so a reload sees both or neither. Answers the write's answer.
+   * written with the onboarded mark in one `store.apply`, so a reload sees both or neither. Answers the write's answer;
+   * a refused write is told (ui.js `wrote`) and the window stays where it was.
    */
   function go(event, write = null) {
     const t = at === null ? null : onboardStep(at, event);
     if (!t) return { ok: false, why: 'stale' };
     const change = t.marks ? (write ? both(write, atSettings(onboarded)) : atSettings(onboarded)) : write;
-    if (change) { const r = store.apply(`onboard-${event}`, change); if (!r.ok) return r; }
+    if (change) { const r = store.apply(`onboard-${event}`, change); if (!ui.wrote('System', r)) return r; }
     at = t.to;
     DRAW[at](event);
     return { ok: true };
@@ -178,7 +180,7 @@ export function register(app) {
       const r = await sy.check(code); if (!w.isConnected) return; // backed out while the check ran
       if (!r.ok) return fail(why('net'));
       if (!r.exists) return fail(why('notfound', code));
-      if (!go('joined', owned(name)).ok) return;
+      if (!go('joined', owned(name)).ok) return fail('');
       await joinBehind(code);
     };
     joinBtn.addEventListener('click', run);
@@ -240,7 +242,9 @@ export function register(app) {
       <button type="button" class="ob-skip" data-skip>Skip</button>`, skip);
     const q = s => w.querySelector(s);
     q('[data-starter]').addEventListener('click', () => {
-      if (!go('starter', starterStep(store, app)).ok) q('[data-msg]').textContent = 'Could not load the starter pack. Choose Blank instead.';
+      // a read-only tab's refusal is told by go; any other is the starter pack's own
+      const g = go('starter', starterStep(store, app));
+      if ('why' in g && g.why !== READ_ONLY) q('[data-msg]').textContent = 'Could not load the starter pack. Choose Blank instead.';
     });
     q('[data-blank]').addEventListener('click', () => { go('blank', both(owned('Hunter'), atSettings(st => chooseMode(st, 'gm')))); });
     q('[data-back]').addEventListener('click', () => go('back'));

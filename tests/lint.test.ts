@@ -753,26 +753,110 @@ test('whether a formula follows the rule is its effect\'s arm, never its text co
   expect(report(hits), 'read the effect\'s `by`: typing makes it the GM\'s, Reset gives it back to the rule').toEqual([]);
 });
 
-test('a maker\'s save reads the answer of its store.apply: a refused write is never answered as saved', async () => {
-  // Implicit audit 3, M1: the map maker and the monster maker ignored `store.apply`'s answer and answered the map or id as
-  // saved, so on a read-only tab (another tab took over) the maker closed and the GM was told "saved" for a write that
-  // did not happen. A save function (`save()`, `saveMonster`, `saveToLibrary`, ...) reads `.ok` or the refusal.
-  const saves = (src: string): { line: number; text: string }[] => {
-    const out: { line: number; text: string }[] = [];
-    for (const m of src.matchAll(/(?:function\s+save\w*\s*\([^)]*\)|(?<![.\w])save\w*\s*\([^)]*\))\s*\{/g)) {
-      let depth = 1, i = m.index + m[0].length;
-      for (; i < src.length && depth > 0; i++) { if (src[i] === '{') depth++; else if (src[i] === '}') depth--; }
-      const body = src.slice(m.index, i), first = src.slice(0, m.index).split('\n').length;
-      body.split('\n').forEach((text, k) => { if (/(?:^|[;{]\s*)store\.apply\(/.test(text.trim()) && !/(=|return|!|\.ok|if\s*\()\s*store\.apply\(/.test(text)) out.push({ line: first + k, text: text.trim() }); });
+/** What a function that writes the save answers: `store.apply`'s `Applied` (an object, so a refusal reads as true) or whether it wrote. */
+type WriteAnswer = 'applied' | 'wrote';
+/** The index after the `)` that closes the call whose `(` is at `open`. A string or a template is skipped whole. */
+function callEnd(src: string, open: number): number {
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    const c = src[i]!;
+    if (c === '"' || c === "'" || c === '`') { for (i++; i < src.length && src[i] !== c; i++) if (src[i] === '\\') i++; continue; }
+    if (c === '(') depth++;
+    else if (c === ')' && --depth === 0) return i + 1;
+  }
+  return src.length;
+}
+/** What holds the call at `at`: a function of a name (its answer goes to the calls of that name), an api member (to another module), or an unnamed function (to no one). */
+function holderOf(text: string, at: number): { kind: 'named'; name: string } | { kind: 'member' | 'unnamed' } {
+  let depth = 0;
+  for (let i = at - 1; i >= 0; i--) {
+    if (text[i] === '}') depth++;
+    else if (text[i] === '{' && depth > 0) depth--;
+    else if (text[i] === '{') {
+      const head = text.slice(Math.max(0, i - 300), i).trimEnd();
+      const fn = head.match(/function\s+([\w$]+)\s*\([^()]*\)$/) ?? head.match(/(?:const|let|,)\s*([\w$]+)\s*=\s*(?:async\s+)?(?:\([^()]*\)|[\w$]+)\s*=>$/);
+      if (fn) return { kind: 'named', name: fn[1]! };
+      if (/(?:^|[\s,{])(?!(?:if|for|while|switch|catch|function)\b)[\w$]+\s*\([^()]*\)$/.test(head) || /[\w$]+\s*:\s*(?:async\s+)?(?:\([^()]*\)|[\w$]+)\s*=>$/.test(head)) return { kind: 'member' };
+      if (/=>$|function\s*\([^()]*\)$/.test(head)) return { kind: 'unnamed' };
     }
-    return out;
+  }
+  return { kind: 'unnamed' };
+}
+/**
+ * The writes of `src` whose answer nothing reads. A writer is `store.apply`, a function `named` gives with what it
+ * answers, or a function of a name whose body answers a writer's call (`const f = (...) => store.apply(...)`, or
+ * `return` of one): it answers what that call answers, or whether it wrote when it reads `.ok`, and its own calls are
+ * checked the same way. An answer is read when the call is followed by `.ok` or `.why`, assigned to a name, handed to a
+ * function, the body of an unnamed arrow (a callback: the function it is handed to reads it), or answered by an api
+ * member (its module's caller reads it); a call that stands as a statement, follows `void` or `return` in an unnamed
+ * function drops it, and an `Applied` tested as true or false (`!`, `if (`, `&&`, `?`) reads a refusal as done.
+ */
+function unreadWrites(src: string, named: Record<string, WriteAnswer>): { line: number; call: string; why: string }[] {
+  const text = src.split('\n').map(l => isComment(l) ? ' '.repeat(l.length) : l.replace(/(^|\s)\/\/[^'"`]*$/, '$1')).join('\n');
+  const writers = new Map<string, WriteAnswer>([['store\\.apply', 'applied'], ['store\\(\\)\\.apply', 'applied'], ...Object.entries(named)]);
+  const calls = () => [...writers].flatMap(([name, answer]) => [...text.matchAll(new RegExp(String.raw`(?<![\w$])${name}\(`, 'g'))]
+    .map(m => {
+      const at = m.index, end = callEnd(text, at + m[0].length - 1);
+      return { at, answer, call: text.slice(at, end), before: text.slice(Math.max(0, at - 200), at).trimEnd(), after: text.slice(end, end + 12) };
+    }).filter(c => !/\bfunction$/.test(c.before)));
+  const arrow = /(?:const|let|,)\s*([\w$]+)\s*=\s*(?:async\s+)?(?:\([^()]*\)|[\w$]+)\s*=>$/, member = /[\w$]+\s*:\s*(?:async\s+)?(?:\([^()]*\)|[\w$]+)\s*=>$/;
+  /** The name a call's answer is passed up to, with what it then answers; null when it is not passed up by name. */
+  const passed = (c: ReturnType<typeof calls>[number]): [string, WriteAnswer] | null => {
+    const answer: WriteAnswer = /^\s*\.ok\b/.test(c.after) ? 'wrote' : c.answer;
+    const a = c.before.match(arrow); if (a) return [a[1]!, answer];
+    if (!/\breturn$/.test(c.before)) return null;
+    const h = holderOf(text, c.at);
+    return h.kind === 'named' ? [h.name, answer] : null;
   };
-  const old = "  function saveMonster(m, asNew) {\n    const id = 1;\n    store.apply('monster-save', s => monsterSaved(s, { ...parseMonster(m), id }));\n    return id;\n  }";
-  expect(saves(old).map(h => h.line), 'the rule sees the old monster save').toEqual([3]);
-  const found = (await sourceTexts('src/views')).reduce((n, { text }) => n + [...text.matchAll(/(?:function\s+save\w*\s*\([^)]*\)|(?<![.\w])save\w*\s*\([^)]*\))\s*\{/g)].length, 0);
-  expect(found, 'the save functions of the views are found').toBeGreaterThan(5);
-  const hits = (await sourceTexts('src/views')).flatMap(({ file, text }) => saves(text).map(h => `${file}:${h.line}: ${h.text.slice(0, 100)}`));
-  expect(hits, 'read the answer: `if (!store.apply(...).ok)` shows the refusal (ui.js `NOT_SAVED`) and answers nothing saved').toEqual([]);
+  for (let size = -1; size !== writers.size;) {
+    size = writers.size;
+    for (const c of calls()) { const p = passed(c); if (p && !writers.has(p[0])) writers.set(p[0], p[1]); }
+  }
+  const out: { line: number; call: string; why: string }[] = [];
+  for (const c of calls()) {
+    if (/^\s*\.(ok|why)\b/.test(c.after) || passed(c) || member.test(c.before)) continue;
+    if (/(?<![=!<>])=$/.test(c.before) || /[(,]$/.test(c.before)) continue;
+    if (/\breturn$/.test(c.before) && holderOf(text, c.at).kind === 'member') continue;
+    const dropped = c.before === '' || /(?:[;{})]|\belse|\bvoid|\breturn)$/.test(c.before);
+    const truth = c.answer === 'applied' && /(?:!|&&|\|\||\?|:)$/.test(c.before);
+    if (dropped || truth) out.push({ line: text.slice(0, c.at).split('\n').length, call: c.call.replace(/\s+/g, ' '), why: dropped ? 'its answer is dropped' : 'a refusal is an object, so it reads as done' });
+  }
+  return out.sort((a, b) => a.line - b.line);
+}
+
+test('a view reads the answer of every write to the save: a refused write never goes on as done', async () => {
+  // Audit 2026-11-19, AW-views-1 and the class "views ignore a refusal from store.apply" (BUG-views-5, -6, -7, -10, -19,
+  // -20, -21): `store.apply` refuses in a read-only tab (another tab took over, a newer app's save) and a step refuses
+  // what its rule does not allow, and a view that dropped the answer went on as if it wrote. A refused quest fail was
+  // still reported to the GM (quests.js tested the refusal object as true), a refused coin ruling was still sent to the
+  // room and asked again, a refused import read a report it never got. Implicit audit 3, M1 was the same class in the
+  // makers. Read the answer: stop what follows the write, and tell the player by the refusal's kind (`ui.wrote`
+  // tells a read-only tab's refusal; a step's own refusal has its words in the core module that refused it).
+  const named: Record<string, WriteAnswer> = { gmWrite: 'wrote', grantWrite: 'applied', questApply: 'applied' };
+  const old = [
+    "  function fail(hid, qid) {\n    if (!questApply('quest-fail', hid, x => failQuest(x, qid))) return false;\n    sendUpdate(hid, q, 'failed');\n  }\n  function questApply(reason, hid, f) {\n    const r = store.apply(reason, s => s);\n    return r.ok ? out : r;\n  }",
+    "    store.apply('coin-rule', s => callRuled(s, id, ruling, body.side, stamp()));\n    sendLanding(body);",
+    "  const onBag = (hid, why, step) => store.apply(why, atHunter(hid, step));\n  if (await ui.confirm(x)) onBag(h.id, 'item-del', x => removeItem(x, it.id));",
+    "  const addLog = (kind, title) => gmWrite('gm-log', null, [], [line(kind, title)]);\n  addLog('system', 'Broadcast');",
+  ];
+  expect(old.map(src => unreadWrites(src, named).map(h => h.line)), 'the rule sees the old quest fail, coin ruling, bag removal and log line').toEqual([[2], [1], [2], [2]]);
+  const kept = [
+    "  if (!store.apply('x', s => s).ok) return;\n  const w = store.apply('y', s => s);\n  return store.apply('z', s => s).ok ? id : null;",
+    "  const onHunter = (hid, why, step) => store.apply(why, atHunter(hid, step));\n  const toSheet = (hid, why, write) => onHunter(hid, why, write).ok;\n  if (!toSheet(hid, 'hp', w)) return;",
+    "  if (!gmWrite('gm-hp', null, [ev], said)) return;\n  function gmWrite(why, change) { const w = store.apply(why, change); return w.ok; }",
+  ];
+  expect(kept.map(src => unreadWrites(src, named)), 'and lets a read answer pass').toEqual([[], [], []]);
+  // A write whose refusal needs nothing: the list names each with why. A key is the file and the call's start.
+  const ignored: Record<string, string> = {
+    "src/views/gates.js: store.apply('solo-tick', s => { const r = soloTi": 'the System\'s clock on its timer: its one refusal is `unchanged` (soloTick: nothing fell due), a read-only tab never ticks (store.readOnly above it), and the news told after it reads the save as it is',
+    'src/views/gm.js: addLog(\'system\', `Roll: ${t.label}`, text)': 'the roll table\'s line in the session log: gmWrite tells a refused write, the roll is shown either way, and nothing follows it',
+    "src/views/gm.js: setOv(o => featsSwitched(o, on), [line('system',": 'the GM\'s switch for every feat: gmWrite tells a refused write, nothing follows it, and the switch is drawn from the rules',
+  };
+  const files = [...await sourceTexts('src/views'), { file: 'src/app.js', text: await Bun.file(`${ROOT}/src/app.js`).text() }];
+  expect(Object.keys(named).filter(name => !files.some(f => new RegExp(String.raw`function ${name}\(`).test(f.text))), 'each named writer is a function of a view').toEqual([]);
+  const hits = files.flatMap(({ file, text }) => unreadWrites(text, named).map(h => ({ key: `${file}: ${h.call.slice(0, 48)}`, at: `${file}:${h.line}: ${h.call.slice(0, 100)} (${h.why})` })));
+  expect(hits.filter(h => !(h.key in ignored)).map(h => h.at), 'read the answer of the write: stop what follows a refusal and tell the player by its kind (ui.wrote, src/views/ui.js), or name the call here with why its refusal needs nothing').toEqual([]);
+  expect(Object.keys(ignored).filter(key => !hits.some(h => h.key === key)), 'an ignored write that is gone leaves the list').toEqual([]);
 });
 
 test('a view reads another module\'s api without a guard: a registered name is always there', async () => {

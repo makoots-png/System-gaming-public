@@ -124,27 +124,27 @@ export function register(app) {
       const def = exampleStatuses(R)[id]; if (!def) return;
       const key = Object.hasOwn(L.statuses, id) || isBuiltIn(id) ? A().effects.slug(def.label, { ...R.conditions, ...L.statuses }) : id;
       const done = store.apply('library-example-status', atLibrary(l => saveStatus(l, key, def)));
-      ui.toast('Workshop', done.ok ? `${def.label} is in your statuses.` : `The library holds ${LIMITS.libraryStatuses} statuses at most.`, { kind: done.ok ? 'info' : 'warning' });
+      if (ui.wrote('Workshop', done, { full: `The library holds ${LIMITS.libraryStatuses} statuses at most.` })) ui.toast('Workshop', `${def.label} is in your statuses.`);
       return;
     }
     if (kind === 'bundle') {
       const b = BUILT_IN_BUNDLES.find(x => x.key === id); if (!b) return;
       const name = namedLike(L.rewards, b.name, null) ? copyName(b.name, L.rewards.map(x => x.name), 60) : b.name;
       const done = A().bundles.save(name, b.rewards, null, b.window);
-      ui.toast('Workshop', done.ok ? `${name} is in your bundles.` : `The library holds ${LIMITS.libraryRewards} bundles at most.`, { kind: done.ok ? 'info' : 'warning' });
+      if (ui.wrote('Workshop', done, { full: `The library holds ${LIMITS.libraryRewards} bundles at most.` })) ui.toast('Workshop', `${name} is in your bundles.`);
       return;
     }
     if (kind === 'story') {
       const e = EXAMPLE_STORIES.find(x => x.key === id); if (!e) return;
       const name = namedLike(L.stories, e.story.name, null) ? copyName(e.story.name, L.stories.map(x => x.name), 60) : e.story.name;
       const done = store.apply('library-example-story', atLibrary(l => saveEntry(l, 'stories', { ...e.story, name, id: store.id('st') })));
-      ui.toast('Workshop', done.ok ? `${name} is in your stories.` : `You have ${LIMITS.libraryStories} stories, the most the Workshop holds.`, { kind: done.ok ? 'info' : 'warning' });
+      if (ui.wrote('Workshop', done, { full: `You have ${LIMITS.libraryStories} stories, the most the Workshop holds.` })) ui.toast('Workshop', `${name} is in your stories.`);
       return;
     }
     const k = exampleSkills(R)[Number(id)]; if (!k) return;
     const name = namedLike(L.skills, k.name, null) ? copyName(k.name, L.skills.map(x => x.name), 60) : k.name;
     const done = store.apply('library-example-skill', atLibrary(l => saveEntry(l, 'skills', /** @type {any} */ ({ ...k, name, id: store.id('s') }))));
-    ui.toast('Workshop', done.ok ? `${name} is in your skills.` : `The library holds ${LIMITS.librarySkills} skills at most.`, { kind: done.ok ? 'info' : 'warning' });
+    if (ui.wrote('Workshop', done, { full: `The library holds ${LIMITS.librarySkills} skills at most.` })) ui.toast('Workshop', `${name} is in your skills.`);
   }
 
   /** The "⋯" window of a row: its other actions, Delete and Reset as danger (each still asks before it acts). */
@@ -180,13 +180,13 @@ export function register(app) {
       if (a === 'dup' && def) {
         if (Object.keys(L.statuses).length >= LIMITS.libraryStatuses) return void ui.toast('Workshop', `The library holds ${LIMITS.libraryStatuses} statuses at most.`, { kind: 'warning' });
         const label = copyName(def.label || id, Object.values({ ...app.rules().conditions, ...L.statuses }).map(d => d.label), 40), key = A().effects.slug(label, { ...app.rules().conditions, ...L.statuses });
-        return void store.apply('library-status-dup', atLibrary(l => saveStatus(l, key, { ...def, label })));
+        return void ui.wrote('Workshop', store.apply('library-status-dup', atLibrary(l => saveStatus(l, key, { ...def, label }))), { full: `The library holds ${LIMITS.libraryStatuses} statuses at most.` });
       }
       if ((a === 'del' || a === 'reset') && def) {
         const ok = a === 'reset'
           ? await ui.confirm({ title: `Reset ${def.label || id}?`, body: `Restores the built-in ${BUILT_IN_STATUSES[id].label}. Statuses already applied keep the version they have.`, danger: true, confirmLabel: 'Reset' })
           : await ui.confirm({ title: `Delete ${def.label || id}?`, body: 'Removes it from the pickers. Statuses already applied keep working.', danger: true, confirmLabel: 'Delete' });
-        if (ok) store.apply('library-status-del', atLibrary(l => removeStatus(l, id)));
+        if (ok) ui.wrote('Workshop', store.apply('library-status-del', atLibrary(l => removeStatus(l, id))));
       }
       return;
     }
@@ -196,12 +196,11 @@ export function register(app) {
       if (!d) return;
       if (a === 'off' || a === 'on' || a === 'dup') {
         const step = a === 'off' ? featOff : a === 'on' ? featOn : duplicateFeat;
-        const done = store.apply(`library-feat-${a}`, atLibrary(l => step(l, id)));
-        if ('why' in done && done.why === 'full') ui.toast('Workshop', `The library holds ${LIMITS.libraryFeats} feats at most.`, { kind: 'warning' });
+        ui.wrote('Workshop', store.apply(`library-feat-${a}`, atLibrary(l => step(l, id))), { full: `The library holds ${LIMITS.libraryFeats} feats at most.` });
         return;
       }
-      if (a === 'reset' && await ui.confirm({ title: `Reset ${d.name}?`, body: 'Restores the built-in feat as it shipped. What hunters have counted toward it stays.', danger: true, confirmLabel: 'Reset' })) store.apply('library-feat-reset', atLibrary(l => removeFeat(l, id)));
-      if (a === 'del' && await ui.confirm({ title: `Delete ${d.name}?`, body: 'Nothing counts toward it any more. A hunter who earned it keeps it.', danger: true, confirmLabel: 'Delete' })) store.apply('library-feat-del', atLibrary(l => removeFeat(l, id)));
+      if (a === 'reset' && await ui.confirm({ title: `Reset ${d.name}?`, body: 'Restores the built-in feat as it shipped. What hunters have counted toward it stays.', danger: true, confirmLabel: 'Reset' })) ui.wrote('Workshop', store.apply('library-feat-reset', atLibrary(l => removeFeat(l, id))));
+      if (a === 'del' && await ui.confirm({ title: `Delete ${d.name}?`, body: 'Nothing counts toward it any more. A hunter who earned it keeps it.', danger: true, confirmLabel: 'Delete' })) ui.wrote('Workshop', store.apply('library-feat-del', atLibrary(l => removeFeat(l, id))));
       return;
     }
     if (kind === 'item') {
@@ -210,7 +209,7 @@ export function register(app) {
       if (!it) return;
       if (a === 'edit') return void await A().loot.item({ initial: it });
       if (a === 'dup') return void dup('items', it, 'i', 60, LIMITS.libraryItems);
-      if (a === 'del' && await ui.confirm({ title: 'Delete from library?', body: it.name, danger: true, confirmLabel: 'Delete' })) store.apply('library-del', atLibrary(l => removeEntry(l, 'items', id)));
+      if (a === 'del' && await ui.confirm({ title: 'Delete from library?', body: it.name, danger: true, confirmLabel: 'Delete' })) ui.wrote('Workshop', store.apply('library-del', atLibrary(l => removeEntry(l, 'items', id))));
       return;
     }
     if (kind === 'skill') {
@@ -220,7 +219,7 @@ export function register(app) {
       if (a === 'edit') return void await A().skills.make({ initial: k });
       if (a === 'give') return void await A().skills.give(k);
       if (a === 'dup') return void dup('skills', k, 's', 60, LIMITS.librarySkills);
-      if (a === 'del' && await ui.confirm({ title: 'Delete from library?', body: `${k.name}. Hunters and monsters who have it keep it.`, danger: true, confirmLabel: 'Delete' })) store.apply('library-skill-del', atLibrary(l => removeEntry(l, 'skills', id)));
+      if (a === 'del' && await ui.confirm({ title: 'Delete from library?', body: `${k.name}. Hunters and monsters who have it keep it.`, danger: true, confirmLabel: 'Delete' })) ui.wrote('Workshop', store.apply('library-skill-del', atLibrary(l => removeEntry(l, 'skills', id))));
       return;
     }
     if (kind === 'bundle') {
@@ -231,7 +230,7 @@ export function register(app) {
       if (a === 'edit') return void await bundleMaker(app, b);
       if (a === 'dup') {
         if (L.rewards.length >= LIMITS.libraryRewards) return void ui.toast('Workshop', `The library holds ${LIMITS.libraryRewards} bundles at most.`, { kind: 'warning' });
-        return void A().bundles.save(copyName(b.name, L.rewards.map(x => x.name), 60), b.rewards, null, b.window || null);
+        return void ui.wrote('Workshop', A().bundles.save(copyName(b.name, L.rewards.map(x => x.name), 60), b.rewards, null, b.window || null), { full: `The library holds ${LIMITS.libraryRewards} bundles at most.` });
       }
       if (a === 'del' && await ui.confirm({ title: 'Delete bundle?', body: `${b.name}. Rewards already given from it stay given.`, danger: true, confirmLabel: 'Delete' })) A().bundles.remove(b.id);
       return;
@@ -245,7 +244,7 @@ export function register(app) {
       if (a === 'dup') return void dup('stories', st, 'st', 60, LIMITS.libraryStories);
       // a story on the table is not deleted under the GM (library.ts `removeStory`): it is ended first, in the GM view
       if (a === 'del' && isRunning(store.get().storyRuns, st.id)) return void ui.toast('Workshop', STORY_WORDS.deleteRunning(st.name), { kind: 'warning' });
-      if (a === 'del' && await ui.confirm({ title: `Delete ${st.name}?`, body: 'Chapters already opened stay with the hunters.', danger: true, confirmLabel: 'Delete' })) store.apply('library-story-del', s => removeStory(s, st.id));
+      if (a === 'del' && await ui.confirm({ title: `Delete ${st.name}?`, body: 'Chapters already opened stay with the hunters.', danger: true, confirmLabel: 'Delete' })) ui.wrote('Workshop', store.apply('library-story-del', s => removeStory(s, st.id)));
       return;
     }
     if (kind === 'map') {
@@ -267,8 +266,7 @@ export function register(app) {
   /** A copy of a library entry under a new id and "(copy)" after its name; nothing at the cap, with a toast that says so. */
   function dup(list, x, prefix, n, cap) {
     const newId = store.id(prefix);
-    const done = store.apply(`library-${list}-dup`, atLibrary(l => duplicateEntry(l, list, x.id, { newId, name: copyName(x.name, l[list].map(e => e.name), n) })));
-    if ('why' in done && done.why === 'full') ui.toast('Workshop', `The library holds ${cap} of these at most.`, { kind: 'warning' });
+    ui.wrote('Workshop', store.apply(`library-${list}-dup`, atLibrary(l => duplicateEntry(l, list, x.id, { newId, name: copyName(x.name, l[list].map(e => e.name), n) }))), { full: `The library holds ${cap} of these at most.` });
   }
 
   app.registerView({

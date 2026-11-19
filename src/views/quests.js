@@ -107,7 +107,7 @@ export function register(app) {
   const api = app.api.quests = {
     issue(hids, partial = {}) {
       const at = iso(), to = (hids || []).filter(hid => store.hunter(hid)).map(hid => ({ hid, id: store.id('q') }));
-      if (to.length) store.apply('quest-issue', s => to.reduce((x, { hid, id }) => { const n = withTold(x, hid, stamp(), h => issueQuest(h, partial, id, at)); return 'ok' in n ? x : n; }, s));
+      if (!to.length || !ui.wrote('! Quest', store.apply('quest-issue', s => to.reduce((x, { hid, id }) => { const n = withTold(x, hid, stamp(), h => issueQuest(h, partial, id, at)); return 'ok' in n ? x : n; }, s)))) return [];
       return to.map(x => x.id);
     },
     /** Starts a Job Change chain (a job in src/core/registry/jobs.ts). Answers step 1's quest id, or null when refused. */
@@ -197,7 +197,7 @@ export function register(app) {
     // a quest's end is written once per event id (the applied ring, as a told use is), so a repeated post or a restored
     // backup does not log it twice; a progress tick keeps to the poll cursor, so it does not crowd the ring
     if (st === 'done' || st === 'failed') { if (!app.api.sync.once(p.eid, write)) return; }
-    else store.apply('quest-update', s => told(s, stamp(), line));
+    else if (!store.apply('quest-update', s => told(s, stamp(), line)).ok) return; // a read-only tab's banner says why
     ui.toast('! Quest', msg, { kind: st === 'failed' ? 'warn' : 'info' });
   });
 
@@ -231,7 +231,8 @@ export function register(app) {
       const fight = { ...r.granted.fight, refill: r.granted.fight.refill || r.recover === 'fight' };
       return { ...r, granted: { ...r.granted, fight }, save: sent(r.save, { room: code, events: post ? [post] : [], said: [] }, { at: day.at, cap: day.R.logCap }), held: [{ who: { hid }, ...fight }] };
     });
-    if (isRefused(out)) { if (out.why === 'belowLevel') ui.toast('! Quest', `Reach Level ${q.objectives[0] ? q.objectives[0].target : ''} first.`, { kind: 'warn' }); return false; }
+    // the fight's own refusal of a part it holds is told by the fight (combat.js `command`)
+    if (isRefused(out)) { if (out.why !== 'fight') ui.wrote('! Quest', out, { belowLevel: `Reach Level ${q.objectives[0] ? q.objectives[0].target : ''} first.` }); return false; }
     if (post) app.api.sync.flush();
     app.emit('quest:done', { hunterId: hid, quest: q });
     const { completed: c, granted: g, job, recover } = out;
@@ -260,7 +261,8 @@ export function register(app) {
       const r = questFailed(s, hid, qid, day);
       return isRefused(r) ? r : { ...r, held: [{ who: { hid }, ...r.granted.fight }] };
     });
-    if (isRefused(out)) return false;
+    // the fight's own refusal of a part it holds is told by the fight (combat.js `command`)
+    if (isRefused(out)) { if (out.why !== 'fight') ui.wrote('! Quest', out); return false; }
     sendUpdate(h.id, q, 'failed');
     if (out.granted.lines.length) ui.system({ tag: '! Quest', kind: 'warning', title: 'QUEST FAILED', body: q.title, rewards: out.granted.lines });
     app.api.hunter.granted(hid, out.granted, { popup: false });
@@ -419,13 +421,14 @@ export function register(app) {
     const onFail = gm ? v.onFail : existing ? existing.onFail : newRewards();
     const partial = { kind, title, desc: v.desc, objectives, rewards, onFail, dueAt, penaltyText };
     if (existing) {
-      store.apply('quest-edit', atHunter(store.active().id, h => editQuest(h, existing.id, { kind, title, desc: partial.desc, objectives, rewards, onFail, dueAt, penaltyText }, role())));
+      // a refused edit keeps the form open with what was typed
+      if (!ui.wrote('! Quest', store.apply('quest-edit', atHunter(store.active().id, h => editQuest(h, existing.id, { kind, title, desc: partial.desc, objectives, rewards, onFail, dueAt, penaltyText }, role()))))) return;
     } else {
       const picks = gm ? [...f.querySelectorAll('[name=to]:checked')] : [];
       const to = gm ? picks.filter(c => c.hasAttribute('data-local')).map(c => c.value) : [store.active().id];
       const keys = picks.filter(c => !c.hasAttribute('data-local')).map(c => c.value);
       if (!to.length && !keys.length) { err.textContent = 'Pick at least one hunter.'; return; }
-      if (to.length) api.issue(to, { ...partial, from: gm ? 'gm' : 'self' });
+      if (to.length && !api.issue(to, { ...partial, from: gm ? 'gm' : 'self' }).length) return;
       if (keys.length) {
         const S = app.api.sync, r = S.post(S.event('quest', { to: keys, quest: questOffer(partial, dueAt) })), news = postNews(r, S.conn()), n = `${keys.length} player${keys.length === 1 ? '' : 's'}`;
         ui.toast('! Quest', news === 'sent' ? `Quest sent to ${n}.` : news === 'waits' ? `The quest goes to ${n} when the room answers.`

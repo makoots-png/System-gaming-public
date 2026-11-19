@@ -39,7 +39,7 @@ export type Odds = { readonly of: number; readonly rows: readonly OddsRow[]; rea
 
 /** The fights a run plays: a share over 100 runs has a standard error of at most 5 points (notes-6-odds.md). */
 export const ODDS_RUNS = 100;
-/** The work a phone does for the odds in one frame, in ms: under half of a 60 Hz frame (16.7 ms), so the screen keeps its frames. */
+/** The work a solo run's play (gates.js) does in one frame, in ms: under half of a 60 Hz frame (16.7 ms). The odds box plays on a worker (src/edge/odds-run.ts). */
 export const ODDS_FRAME_MS = 6;
 const LIMITS: Limits = { capRounds: CAP_ROUNDS, endAtRounds: null };
 

@@ -1,9 +1,10 @@
 // odds-box.js: the one control that plays a fight out for its odds (src/core/combat/odds.ts) and draws the answer: the
-// GM's fight screen (combat.js) and a player's solo gates (gates.js) mount it. Each box has a key; the engine plays a few
-// commands a frame for `ODDS_FRAME_MS` (read from the clock here, as core has none) with its real count, then one line
-// that is the "More info" control of its detail. A fight that changes marks the answer stale and drops a run under way.
+// GM's fight screen (combat.js) and a player's solo gates (gates.js) mount it. Each box has a key; the engine plays on a
+// worker thread (src/edge/odds-run.ts) while the box draws its count, then one line that is the "More info" control of
+// its detail. A fight that changes marks the answer stale and drops a run under way.
 // It writes nothing: the run of each box is page memory, never the save. Every sentence is core's (`ODDS_WORDS`).
-import { IDLE, ODDS_FRAME_MS, ODDS_RUNS, ODDS_WORDS, oddsHint, oddsKey, oddsLine, oddsStep, progressOf, readOdds } from '../core/combat/odds.ts';
+import { IDLE, ODDS_RUNS, ODDS_WORDS, oddsHint, oddsKey, oddsLine, oddsStep, progressOf, readOdds } from '../core/combat/odds.ts';
+import { playAway } from '../edge/odds-run.ts';
 import { oddsSeed } from '../edge/roll.ts';
 import { rules } from '../edge/rules.ts';
 import * as motion from './motion.ts';
@@ -20,13 +21,13 @@ export function register(app) {
 .odds-run [data-oddsprog]{flex:1;min-width:0}
 `);
   /**
-   * Each box on screen by its key: the engine's run asked there (odds.ts: idle, running with its count, done, stale), the
-   * fight it is drawn for now, who its words speak to (odds.ts `OddsVoice`), its element, and who waits for its answer
-   * (`ask`). Page memory, never the save.
-   * @type {Map<string, { run: import('../core/combat/odds.ts').OddsRun, fight: import('../core/combat/fight-types.ts').Setup | import('../core/combat/fight-types.ts').Running | null, voice: import('../core/combat/odds.ts').OddsVoice, el: HTMLElement | null, waiting: ((r: import('../core/combat/odds.ts').OddsRead | null) => void)[] }>}
+   * Each box on screen by its key: the engine's run asked there (odds.ts: idle, running, done, stale), the worker playing
+   * it and the count it last sent, the fight it is drawn for now, who its words speak to (odds.ts `OddsVoice`), its
+   * element, and who waits for its answer (`ask`). Page memory, never the save.
+   * @type {Map<string, { run: import('../core/combat/odds.ts').OddsRun, away: { stop(): void } | null, count: import('../edge/odds-run.ts').OddsCount | null, fight: import('../core/combat/fight-types.ts').Setup | import('../core/combat/fight-types.ts').Running | null, voice: import('../core/combat/odds.ts').OddsVoice, el: HTMLElement | null, waiting: ((r: import('../core/combat/odds.ts').OddsRead | null) => void)[] }>}
    */
   const boxes = new Map();
-  const boxOf = key => { let b = boxes.get(key); if (!b) { b = { run: IDLE, fight: null, voice: 'party', el: null, waiting: [] }; boxes.set(key, b); } return b; };
+  const boxOf = key => { let b = boxes.get(key); if (!b) { b = { run: IDLE, away: null, count: null, fight: null, voice: 'party', el: null, waiting: [] }; boxes.set(key, b); } return b; };
   /** Who waits for box `key`'s answer hears it once the run is done, or null when it stopped or the fight changed. */
   function answer(key) {
     const b = boxes.get(key); if (!b || b.run.state === 'running' || !b.waiting.length) return;
@@ -35,14 +36,10 @@ export function register(app) {
     for (const w of waiting) w(read);
   }
 
-  /** A few commands of the engine this frame, `ODDS_FRAME_MS` of it, until it answers; then the next frame. */
-  function frame(key) {
-    const b = boxes.get(key);
-    if (!b || b.run.state !== 'running') return;
-    const until = performance.now() + ODDS_FRAME_MS;
-    while (b.run.state === 'running' && performance.now() < until) b.run = oddsStep(b.run, { type: 'step', commands: 1 }, rules());
-    draw(key);
-    if (b.run.state === 'running') requestAnimationFrame(() => frame(key)); else answer(key);
+  /** The worker of box `b` ended: a run that stopped or changed since is no longer its. */
+  function halt(b) {
+    if (b.away) b.away.stop();
+    b.away = null; b.count = null;
   }
   /** The box: the control, the count while it plays, or the line with its detail (and the mark when the fight changed). */
   function draw(key) {
@@ -50,7 +47,7 @@ export function register(app) {
     if (!box) return;
     box.hidden = !b.fight;
     if (box.hidden) return;
-    const run = b.run, p = progressOf(run, rules()), D = app.api.detail;
+    const run = b.run, p = run.state === 'running' ? b.count ?? progressOf(run, rules()) : null, D = app.api.detail;
     if (p) {
       if (box.dataset.state !== 'running') { box.dataset.state = 'running'; box.innerHTML = `<div class="odds-run"><div data-oddsprog></div><button type="button" class="quiet" data-fk="odds-stop" data-odds-stop>${esc(ODDS_WORDS.stop)}</button></div>`; }
       motion.progress(box.querySelector('[data-oddsprog]'), p.done / p.of, ODDS_WORDS.running(p.done, p.of));
@@ -66,14 +63,31 @@ export function register(app) {
   function play(key) {
     const box = boxOf(key);
     if (!box.fight) return;
-    box.run = oddsStep(box.run, { type: 'ask', fight: box.fight, seed: oddsSeed(), of: ODDS_RUNS }, rules());
+    const R = rules(), seed = oddsSeed();
+    halt(box);
+    box.run = oddsStep(box.run, { type: 'ask', fight: box.fight, seed, of: ODDS_RUNS }, R);
+    const away = playAway({ fight: box.fight, seed, of: ODDS_RUNS, R }, count => { box.count = count; }, run => {
+      if (box.away !== away) return;
+      box.away = null; box.count = null;
+      box.run = run ?? IDLE;
+      draw(key);
+      answer(key);
+    });
+    box.away = away;
     draw(key);
-    requestAnimationFrame(() => frame(key));
+    // the count is drawn once a frame at most, the newest the worker sent: a slow phone hears several between two frames
+    const frame = shown => {
+      if (box.away !== away) return;
+      const count = box.count;
+      if (count !== shown) draw(key);
+      requestAnimationFrame(() => frame(count));
+    };
+    requestAnimationFrame(() => frame(null));
   }
   /** Ask (play it out) or Stop, pressed in a box. */
   function pressed(key, b) {
     if (b.hasAttribute('data-odds-ask')) play(key);
-    else if (b.hasAttribute('data-odds-stop')) { const box = boxOf(key); box.run = oddsStep(box.run, { type: 'cancel' }, rules()); draw(key); answer(key); }
+    else if (b.hasAttribute('data-odds-stop')) { const box = boxOf(key); halt(box); box.run = oddsStep(box.run, { type: 'cancel' }, rules()); draw(key); answer(key); }
   }
 
   /** @type {import('../core/api.ts').OddsApi} */
@@ -89,6 +103,7 @@ export function register(app) {
       b.fight = fight;
       // an answer for a fight that has changed since is marked stale, a run under way for one is dropped
       if (b.run.state !== 'idle') b.run = oddsStep(b.run, { type: 'changed', from: fight ? oddsKey(fight) : '' }, rules());
+      if (b.run.state !== 'running') halt(b);
       draw(key);
       answer(key);
     },

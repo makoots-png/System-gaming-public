@@ -77,8 +77,8 @@ Where it lives:
 | What | Where |
 |---|---|
 | The union | `Channel` in `src/core/combat/effect-ops.ts`, `ChannelEvent` in `src/core/combat/fight-channel.ts` |
-| What changes it | `channelStep(channel, event)` and its `TABLE` in `src/core/combat/fight-channel.ts`, called only by the fight's reducer |
-| Who calls it | `src/core/combat/fight.ts` and `fight-turn.ts` |
+| What changes it | `channelStep(channel, event)` and its `TABLE` in `src/core/combat/fight-channel.ts`, called by the fight's reducer and, for every break, by `broken` in `src/core/combat/land.ts` |
+| Who calls it | `src/core/combat/fight.ts`, `fight-turn.ts` and `land.ts` |
 | The test to copy | `tests/fight.test.ts`, "a channel (4.1)" |
 | The recipe | A new event is a member of `ChannelEvent` and its cell in every row of `TABLE` |
 

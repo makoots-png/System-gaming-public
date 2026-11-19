@@ -227,12 +227,13 @@ $('hunter-sel').addEventListener('change', async e => {
   const sel = e.target;
   if (sel.value === '__new') {
     const name = await ui.promptText({ title: 'New hunter', label: 'Hunter name', value: '' });
-    if (name) { const h = store.newHunter(name); store.apply('new-hunter', d => addHunter(d, h)); }
-    else sel.value = store.active().id;
+    const h = name ? store.newHunter(name) : null;
+    // a hunter not added leaves the select on the active one
+    if (!h || !ui.wrote('System', store.apply('new-hunter', d => addHunter(d, h)))) sel.value = store.active().id;
     return;
   }
   if (app.api.sync?.switchTo) { if (!(await app.api.sync.switchTo(sel.value))) sel.value = store.active().id; return; } // S03
-  store.apply('switch-hunter', d => setActive(d, sel.value));
+  if (!ui.wrote('System', store.apply('switch-hunter', d => setActive(d, sel.value)))) sel.value = store.active().id;
 });
 
 const ROLE_IN_ROOM = { gm: 'You are the GM of this room.', player: 'You are a player in this room. The GM is the phone that opened it.' };
@@ -243,7 +244,7 @@ $('mode-pill').addEventListener('click', async () => {
   const toGM = role() !== 'gm';
   const ok = await ui.confirm({ title: toGM ? 'Switch to GM mode?' : 'Switch to Player mode?',
     body: toGM ? 'GM mode unlocks XP grants, free stat edits and GM tools on this device.' : 'Player mode hides GM tools and direct XP grants.', confirmLabel: toGM ? 'Enter GM mode' : 'Enter Player mode' });
-  if (ok) store.apply('mode', atSettings(x => chooseMode(x, toGM ? 'gm' : 'player'))); // alone, the phone chooses
+  if (ok) ui.wrote('System', store.apply('mode', atSettings(x => chooseMode(x, toGM ? 'gm' : 'player')))); // alone, the phone chooses
 });
 
 document.querySelector('.skip-link').addEventListener('click', e => { e.preventDefault(); $('main').focus(); }); // a '#main' hash would trip the router

@@ -19,6 +19,7 @@ import type { Body, LandOp, Op, OpRules, Reach, Source, Status, StatusKey, Thres
 import type { Side } from './space.ts';
 import { ARMED, endStep } from './delayed.ts';
 import { stackStep } from './stacks.ts';
+import { channelStep } from './fight-channel.ts';
 
 export const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 /** On the map: a monster or shadow at 0 HP is gone from it; a hunter at 0 still lies there. */
@@ -50,7 +51,13 @@ export function threatened(target: Body, from: CombatantId, amount: number): Bod
   return { ...target, threat: { ...target.threat, [from]: (target.threat[from] ?? 0) + amount } };
 }
 
-export const broken = (target: Body): Body => target.channel ? { ...target, channel: { ...target.channel, state: 'broken' } } : target;
+/**
+ * Rule 17 (design 4.1): a holding channel breaks and waits to go off at once at `breakShare` of its charge. The channel's
+ * `interrupt`, so every break, whatever made it (a use's hit or op, a trigger's, a threshold's, an end's, a reaction's or
+ * a shove), is halved by the one table; a channel that is not holding stays as it is.
+ */
+export const broken = (target: Body, R: Pick<OpRules, 'fight'>): Body =>
+  target.channel ? { ...target, channel: channelStep(target.channel, { type: 'interrupt', share: R.fight.breakShare }) } : target;
 
 /** A body's statuses still running at `now`. */
 export const live = (b: Body, now: Tick): Status[] => b.statuses.filter(s => s.until === null || s.until > now);
@@ -262,7 +269,7 @@ function landOne(o: LandOp, user: Body, t: Body, source: Source, now: Tick, R: O
     case 'heal': { const n = Math.max(0, Math.round(at(o.amount) * healShare(t, R))); return { target: healed(t, n), dealt: 0, ...none }; }
     case 'applyStatus': {
       const p = landStatus(t, o, user, source, from, cross, now, R);
-      return { target: p.breaks && channelBreaks(p.target, 0, true, now) ? broken(p.target) : p.target, dealt: 0, cured: false, fired: p.fired };
+      return { target: p.breaks && channelBreaks(p.target, 0, true, now) ? broken(p.target, R) : p.target, dealt: 0, cured: false, fired: p.fired };
     }
     case 'cureStatus': {
       const list = cureStatus(t.statuses, o.key, o.stacks);
@@ -273,7 +280,7 @@ function landOne(o: LandOp, user: Body, t: Body, source: Source, now: Tick, R: O
     case 'shield': return { target: { ...t, shield: shielded(t.shield, { amount: Math.max(0, Math.round(average(o.amount, scope) * times)), until: tick(now + R.fight.shieldLife * R.fight.round) }, now) }, dealt: 0, ...none };
     case 'mana': return { target: { ...t, mana: clamp(t.mana + Math.round(at(o.amount)), 0, t.sheet.manaMax) }, dealt: 0, ...none };
     case 'fatigue': return { target: { ...t, fatigue: clamp(t.fatigue + Math.round(at(o.amount)), 0, t.sheet.fatigueMax) }, dealt: 0, ...none };
-    case 'channel': return { target: o.mode === 'break' && t.channel?.state === 'holding' ? broken(t) : t, dealt: 0, ...none };
+    case 'channel': return { target: o.mode === 'break' && t.channel?.state === 'holding' ? broken(t, R) : t, dealt: 0, ...none };
     case 'note': case 'refund': return { target: t, dealt: 0, ...none };
     case 'dispel': return { target: withStatuses(t, dispelled(t.statuses, o.which), now, R), dealt: 0, ...none };
     case 'hasten': return { target: hasteOn(user, t, o.share, now, R), dealt: 0, ...none };

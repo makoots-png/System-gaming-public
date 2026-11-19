@@ -1,4 +1,5 @@
-// Builds the browser app: one bundle from src/app.js, the service worker from src/sw.js, and public/ copied as is.
+// Builds the browser app: one bundle from src/app.js, the odds' worker from src/odds-worker.ts, the service worker from
+// src/sw.js, and public/ copied as is.
 // The server builds in memory at start and serves the result. `bun run build` writes the same files to dist/ for a
 // static host (no rooms there).
 
@@ -70,6 +71,8 @@ export async function buildApp(): Promise<Built> {
 
   for (const path of statics) add(path.slice('public'.length), await bytesOf(path));
   for (const [path, body] of await bundle('src/app.js', 'esm', { __BUILD__: JSON.stringify(build) })) add(path, body);
+  // The odds engine's worker thread (src/edge/odds-run.ts starts it), cached with the shell so the odds play offline.
+  for (const [path, body] of await bundle('src/odds-worker.ts', 'iife', {})) add(path, body);
 
   // The worker precaches everything a page load needs. Source maps are for debugging only.
   const shell = ['./', ...[...files.keys()].filter(path => !path.endsWith('.map')).map(path => path.slice(1))];

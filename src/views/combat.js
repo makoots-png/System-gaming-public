@@ -14,7 +14,7 @@ import { fightGateName, fought, heldCommands, itemSpent } from '../core/combat/f
 import { remoteFacts } from '../core/combat/fight-facts.ts';
 import { attemptsLeft, UNTRIED } from '../core/combat/extraction.ts';
 import { castDice, needs } from '../core/combat/resolve.ts';
-import { aims, cardOf, channelView, order, readyIn, spotOf, statusGrant, stepAway, stepToward, timeOf, usesLeft } from '../core/combat/fight-view.ts';
+import { WAIT_WORDS, aims, cardOf, channelView, order, readyIn, spotOf, statusGrant, stepAway, stepToward, timeOf, usesLeft, waitChoices } from '../core/combat/fight-view.ts';
 import { fightBodies, fightGround, pinKeyOf } from '../core/combat/map-view.ts';
 import { hunterRow, monsterRows, remoteRow, shadowRow } from '../core/combat/rows.ts';
 import { TABLE_REFUSALS, fightDoc, fightWire } from '../core/combat/fight-doc.ts';
@@ -31,6 +31,7 @@ import { onTurn } from '../core/protocol.ts';
 import { parseSheetKey } from '../core/ids.ts';
 import { dropDealt, encounterAwards, planEncounter, pays, settleEncounter } from '../core/gates/pay.ts';
 import { isRefused } from '../core/save-step.ts';
+import { READ_ONLY } from '../core/store-life.ts';
 import { LIFE_TAG, REVIVE_HP, can as lifeCan } from '../core/hunter/vitals.ts';
 import { ARCHETYPE_LIST, MONSTER_BOUNDS, MONSTER_KINDS, copiesOf, lootOf, monsterXp, statBlock } from '../core/registry/monsters.ts';
 import { itemAbilityId, itemOfAbility } from '../core/registry/abilities.ts';
@@ -124,14 +125,15 @@ export function register(app) {
     const rankOf = key => { const x = remoteList().find(sh => sh.key === key); return x ? x.data.rank : null; };
     const noted = ended ? remoteFacts(r.fight, rankOf, fightGateName(store.get())).map(n => S.event('noted', { to: [n.to], facts: n.facts })).filter(Boolean) : [];
     const wrote = store.apply(`combat-${cmds.map(x => x.type).join('+')}`, s => fought(s, r, { links, room: S.room(), totals, stamp: { at: new Date().toISOString(), cap: c.rules.logCap }, also, spent, risen, noted }, c.rules));
-    const effects = wrote.ok || refused(r.effects) ? r.effects : NOT_WRITTEN;
+    // a write the store refused is told by its kind: a read-only tab's as the store's words, any other as not now
+    const effects = wrote.ok || refused(r.effects) ? r.effects : NOT_WRITTEN, unsaved = 'why' in wrote && wrote.why === READ_ONLY && !refused(r.effects);
     if (wrote.ok && (totals.length || ev || risen || noted.length)) S.flush();
     /** @template {Effect['type']} T @param {T} type @returns {Extract<Effect, { type: T }>[]} */
     const of = type => effects.filter(/** @returns {fx is Extract<Effect, { type: T }>} */ fx => fx.type === type);
     for (const fx of of('turnStarted')) app.emit('combat:turn', { hunterId: fx.hunterId });
     for (const fx of of('defeated')) { const b = rowOf(fight(), fx.id); if (b) app.emit('combat:defeated', { body: b }); }
     for (const fx of of('staggered')) { const b = rowOf(fight(), fx.id); if (b) toast(`${b.name} is staggered and loses the next turn.`, 'warning'); }
-    for (const fx of of('refused')) toast(REFUSAL_WORDS[fx.reason], 'warning');
+    for (const fx of of('refused')) toast(unsaved ? ui.NOT_SAVED : REFUSAL_WORDS[fx.reason], 'warning');
     if (of('burst').length) lastBurst = { n: (lastBurst ? lastBurst.n : 0) + 1, ids: of('burst').map(x => x.id) };
     showEffects(effects, hpWas, readyWas);
     if (of('ended').length && !cmds.some(x => x.type === 'end')) toast('The fight is over. End fight shows the summary.');
@@ -239,14 +241,15 @@ export function register(app) {
     surprised = null;
   }
   /**
-   * Row `r` arms reaction `ability`, or disarms with null (the fight's `arm`). A reaction before a turn names a row: `on`,
-   * else the one it waits for now, else the first of the other side still up, else any other row.
+   * Row `r` arms reaction `ability`, or disarms with null (the fight's `arm`): the GM's card and a player's room `arm`
+   * alike. A reaction before a turn names a row: `on`, else the one it waits for now, else the first of `waitChoices`
+   * (fight-view.ts), which a player's phone offers first too.
    */
   function armRow(r, ability, on = null) {
     const a = ability && r.abilities.find(x => x.id === ability), f = fight();
     if (!a || !a.react || a.react.when !== 'turn' || !f) return send({ type: 'arm', by: r.id, ability });
-    const others = f.rows.filter(x => x.id !== r.id), named = on || (r.armed && r.armed.ability === a.id ? r.armed.on : null)
-      || (others.find(x => x.side !== r.side && x.hp > 0) || others[0] || { id: null }).id;
+    const first = waitChoices(spots(f), r.id)[0];
+    const named = on || (r.armed && r.armed.ability === a.id ? r.armed.on : null) || (first ? first.id : null);
     if (named) send({ type: 'arm', by: r.id, ability, on: named });
   }
 
@@ -352,7 +355,7 @@ export function register(app) {
     if (!event || event.type !== 'arm' || !inRoomAsGM()) return;
     const f = fight(), p = /** @type {import('../core/protocol.ts').ArmPayload} */ (event.payload);
     const r = f && f.phase !== 'ended' ? f.rows.find(x => remoteKeyOf(x) === p.by) : null;
-    if (r) send({ type: 'arm', by: r.id, ability: p.ability, ...(p.on ? { on: p.on } : {}) });
+    if (r) armRow(r, p.ability, p.on ?? null);
   });
   app.on('sync:event', ({ event }) => {
     if (!event || (event.type !== 'step' && event.type !== 'cast' && event.type !== 'pass') || !inRoomAsGM()) return;
@@ -382,7 +385,7 @@ export function register(app) {
     const H = A().hunter, a = H.parseAmount(text);
     if (!a) { say(H.amountMsg(text)); toast(H.amountMsg(text), 'warning'); return; }
     const heal = forceHeal || a.heal, f0 = fight(), before = f0 ? cardOf(f0, r, rules()).hp : 0;
-    adjust(r, { hp: heal ? a.n : -a.n });
+    if (!adjust(r, { hp: heal ? a.n : -a.n })) return;
     const f = fight(), x = rowOf(f, r.id), after = x ? cardOf(f, x, rules()).hp : before;
     amounts.delete(r.id); if (inp) { inp.value = ''; inp.focus(); }
     say(`${r.name} ${heal ? 'healed' : 'took'} ${Math.abs(after - before)} (asked ${a.n}). HP ${after}.`);
@@ -439,8 +442,8 @@ export function register(app) {
     const done = planEncounter(ended, links.gate, store.get(), !!R.xpSplit, xpOf), S = A().sync;
     const posts = { room: S.room(), events: encounterAwards(done, v).map(b => S.event('award', b)).filter(Boolean) };
     const out = { settled: null };
-    store.apply('combat-ended', sv => { const r = settleEncounter(sv, done, v, posts, dayNow(), loot); if (isRefused(r)) return r; out.settled = r; return r.save; });
-    const settled = out.settled; if (!settled) return;
+    if (!ui.wrote('! Fight', store.apply('combat-ended', sv => { const r = settleEncounter(sv, done, v, posts, dayNow(), loot); if (isRefused(r)) return r; out.settled = r; return r.save; }))) return;
+    const settled = out.settled;
     S.flush();
     sel = null;
     // the rewards window is queued before combat:end, so a gate's "Encounter over" question comes after it
@@ -465,7 +468,7 @@ export function register(app) {
     const give = await ui.system({ tag: '! Fight', title: 'Loot dropped', kind: 'quest', body: 'Award loot opens the Award form with it. Set aside gives it to nobody.', lines: [lootText(d)],
       actions: [{ label: 'Later', value: null, cancel: true }, { label: 'Set aside', value: 'aside' }, { label: 'Award loot…', value: 'award', primary: true }] });
     if (give === 'award') A().award.open({ ...newRewards(), gold: d.gold, items: d.items }, undefined, true);
-    else if (give === 'aside') store.apply('drop-aside', dropDealt);
+    else if (give === 'aside') ui.wrote('! Fight', store.apply('drop-aside', dropDealt));
   }
   /** What a fight dropped, in one line: "50 gold, Frost Shard ×2"; '' for nothing. */
   const lootText = l => [l.gold ? `${ui.fmt(l.gold)} gold` : '', ...l.items.map(i => `${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`)].filter(Boolean).join(', ');
@@ -510,7 +513,8 @@ export function register(app) {
     if (!pick) return false;
     const have = haveKeys(fight()).ids;
     const hs = store.get().hunters.filter(h => pick.hids.includes(h.id) && !have.has(h.id)).map(hunterJoin);
-    add([...(cs || []), ...hs], o.gateId || null);
+    const joins = [...(cs || []), ...hs];
+    if (joins.length && !add(joins, o.gateId || null)) return false;
     if (pick.roll) start();
     app.go('combat');
     return true;
@@ -843,9 +847,9 @@ export function register(app) {
     const out = [];
     const reacts = r.abilities.filter(a => a.react);
     if (!ro && reacts.length && !k.down) {
-      const on = r.armed ? r.armed.ability : '', armedA = reacts.find(a => a.id === on), others = f.rows.filter(x => x.id !== r.id);
+      const on = r.armed ? r.armed.ability : '', armedA = reacts.find(a => a.id === on), others = waitChoices(spots(f), r.id);
       const before = armedA && armedA.react.when === 'turn' && r.armed.on
-        ? `<label class="field row-full"><span class="lbl">Before the turn of</span><select data-fk="garm-on" data-garm-on>${others.map(x => `<option value="${esc(x.id)}"${x.id === r.armed.on ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>` : '';
+        ? `<label class="field row-full"><span class="lbl">${esc(WAIT_WORDS.label)}</span><select data-fk="garm-on" data-garm-on>${others.map(x => `<option value="${esc(x.id)}"${x.id === r.armed.on ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>` : '';
       out.push(`<div class="cmb-x react"><span>Reaction</span><div class="seg" role="group" aria-label="Reaction of ${esc(r.name)}">${[{ id: '', name: 'None' }, ...reacts].map(a => `<button type="button" data-fk="garm-${esc(a.id)}" data-garm="${esc(a.id)}" aria-pressed="${on === a.id}">${esc(a.name)}</button>`).join('')}</div>${r.armed ? `<b>${r.armed.spent ? 'Spent' : 'Ready'}</b>` : ''}${before}</div>`);
     }
     if (r.kind === 'summon') { const o = r.owner && rowOf(f, r.owner), left = k.summon; out.push(`<div class="cmb-x summon">Summoned by <b>${esc(o ? o.name : 'someone')}</b>${left !== null ? ` · ${left} round${left === 1 ? '' : 's'} left` : ''}</div>`); }
@@ -995,7 +999,7 @@ export function register(app) {
         const have = haveKeys(f);
         const rl = remoteList(), R = rules();
         const hs = store.get().hunters.filter(h => !have.ids.has(h.id) && !(rl.length && untouched(h, R))).map(hunterJoin), rs = rl.filter(x => !have.rem.has(x.key)).map(remoteJoin);
-        if (hs.length + rs.length) { add([...hs, ...rs]); toast(`${hs.length + rs.length} hunter${hs.length + rs.length === 1 ? '' : 's'} added.`); }
+        if (hs.length + rs.length && add([...hs, ...rs])) { toast(`${hs.length + rs.length} hunter${hs.length + rs.length === 1 ? '' : 's'} added.`); }
         return;
       }
       if (b.hasAttribute('data-addm')) {

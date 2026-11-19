@@ -106,13 +106,14 @@ export function register(app) {
 
   /** A bestiary monster's codex entry (bestiary.ts `recordOf`). */
   const recFor = m => recordOf(codexOf(), m, id => !!get(id));
+  /** Merges monster `srcId` into `dstId` (bestiary.ts `mergeMonsters`): whether it was written. */
   function mergeInto(srcId, dstId) {
-    const src = get(srcId), dst = get(dstId); if (!src || !dst || src.id === dst.id) return;
+    const src = get(srcId), dst = get(dstId); if (!src || !dst || src.id === dst.id) return false;
     const cx = codexOf(), sk = recordKeyOf(cx, src), dk = recordKeyOf(cx, dst);
-    store.apply('codex-merge', s => mergeMonsters(s, { srcId: src.id, srcKey: sk, dst: { id: dst.id, name: dst.name, rank: dst.rank }, dstKey: dk }));
+    return ui.wrote('! Bestiary', store.apply('codex-merge', s => mergeMonsters(s, { srcId: src.id, srcKey: sk, dst: { id: dst.id, name: dst.name, rank: dst.rank }, dstKey: dk })));
   }
   /** @type {import('../core/api.ts').BestiaryApi['remove']} */
-  const remove = id => { store.apply('monster-del', s => removeMonster(s, id)); };
+  const remove = id => ui.wrote('! Bestiary', store.apply('monster-del', s => removeMonster(s, id)));
   app.api.bestiary = { list, get, statBlock, toCombatant, save: (m, asNew = true) => saveMonster(m, asNew), make: m => make(m || { ...statBlock('E'), id: null }), remove };
 
   // ── view ──
@@ -431,8 +432,9 @@ export function register(app) {
       el.addEventListener('submit', e => {
         if (e.target.matches('[data-mform]')) {
           e.preventDefault(); const dst = get(e.target.elements.dst.value), src = get(e.target.dataset.src);
-          mergeInto(e.target.dataset.src, e.target.elements.dst.value); $q('[data-editor]').innerHTML = '';
-          if (dst && src) ui.toast('! Bestiary', `${src.name} merged into ${dst.name}.`);
+          if (!mergeInto(e.target.dataset.src, e.target.elements.dst.value)) return;
+          $q('[data-editor]').innerHTML = '';
+          ui.toast('! Bestiary', `${src.name} merged into ${dst.name}.`);
           lastHtml = ''; render(el); return;
         }
       });

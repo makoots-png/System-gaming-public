@@ -75,14 +75,13 @@ export function register(app) {
       if (!h || !isCoinRoll({ kind: o.kind, expr: o.expr, natural: o.natural, inFight: inFight(h.id) })) return false;
       const id = newRollId(deviceId(), o.roll); if (!id) return false;
       const face = o.natural === 1 ? 1 : 20;
-      store.apply('coin', s => coinRolled(s, { id, hunter: { kind: 'local', hunterId: h.id }, who: h.name.slice(0, 60), what: (o.label || o.expr).slice(0, 60), face, at: 'uncalled' }));
-      return true;
+      return ui.wrote('! Coin', store.apply('coin', s => coinRolled(s, { id, hunter: { kind: 'local', hunterId: h.id }, who: h.name.slice(0, 60), what: (o.label || o.expr).slice(0, 60), face, at: 'uncalled' })));
     },
     landed(roll, side) {
       const c = coinOf(store.get().coins, roll); if (!c || c.at !== 'called') return;
       // before the update: the card draws on its `change`
       fresh.add(roll);
-      store.apply('coin', s => coinLanded(s, roll, side, stamp()));
+      if (!ui.wrote('! Coin', store.apply('coin', s => coinLanded(s, roll, side, stamp())))) fresh.delete(roll);
     },
     of: roll => { const id = newRollId(deviceId(), roll); return id ? coinOf(store.get().coins, id) : null; },
   };
@@ -92,7 +91,7 @@ export function register(app) {
     const c = coinOf(store.get().coins, id); if (!c || c.at !== 'uncalled') return;
     const who = decider(app.seat()), landOn = who === 'flip' ? flip() : null;
     if (landOn) fresh.add(id);
-    store.apply('coin', s => coinCalled(s, id, side, landOn, stamp()));
+    if (!ui.wrote('! Coin', store.apply('coin', s => coinCalled(s, id, side, landOn, stamp())))) { fresh.delete(id); return; }
     if (landOn) return;
     const now = coinOf(store.get().coins, id); if (now && now.at === 'called') sendCall(now);
   }
@@ -151,14 +150,18 @@ export function register(app) {
       body: 'Was the call right? The player sees only where the coin lands.',
       lines: [`Rolled for: ${c.what || 'a check'}`, `Natural ${c.face}`, `Called: ${SIDE_WORDS[c.call]}`],
       actions: [{ label: 'Right', value: 'right' }, { label: 'Wrong', value: 'wrong' }, { label: 'Let the coin decide', value: 'coin' }] })
-      .then(v => { asking = null; if (v === 'right' || v === 'wrong' || v === 'coin') rule(c.id, v); askNext(); });
+      .then(v => { asking = null; if ((v === 'right' || v === 'wrong' || v === 'coin') && !rule(c.id, v)) return; askNext(); });
   }
-  /** The GM's answer: the landing and the session log's ruling in one update, then the landing (only the side) is sent. */
+  /**
+   * The GM's answer: the landing and the session log's ruling in one update, then the landing (only the side) is sent.
+   * Answers whether it was written: a refused ruling sends nothing, and its call is asked again only after the save changes.
+   */
   function rule(id, ruling) {
-    const c = coinOf(store.get().calls, id); if (!c || c.at !== 'called') return;
+    const c = coinOf(store.get().calls, id); if (!c || c.at !== 'called') return false;
     const body = landingOf(c, ruling, flip());
-    store.apply('coin-rule', s => callRuled(s, id, ruling, body.side, stamp()));
+    if (!ui.wrote('! Coin call', store.apply('coin-rule', s => callRuled(s, id, ruling, body.side, stamp())))) return false;
     sendLanding(body);
+    return true;
   }
   app.on('sync:event', ({ event: ev }) => {
     if (!app.isGM() || ev.type !== 'coinCall') return;
@@ -166,7 +169,8 @@ export function register(app) {
     // a call already answered: its landing may have been lost, so the same side goes again
     if (held && held.at === 'landed') { sendLanding({ roll: held.id, side: held.side }); return; }
     if (held) return;
-    store.apply('coin-call', s => callTaken(s, { id: p.roll, hunter: { kind: 'remote', remote: p.by }, who: p.who, what: p.what, face: p.face, call: p.call }));
+    // a call this tab cannot keep is not asked or notified: a read-only tab's banner says why
+    if (!store.apply('coin-call', s => callTaken(s, { id: p.roll, hunter: { kind: 'remote', remote: p.by }, who: p.who, what: p.what, face: p.face, call: p.call })).ok) return;
     void notifyHidden(`${p.who || 'A hunter'} called ${SIDE_WORDS[p.call]}`, `Natural ${p.face} for ${p.what}.`, p.eid);
     askNext();
   });

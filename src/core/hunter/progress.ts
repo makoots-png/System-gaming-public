@@ -158,6 +158,13 @@ export function lower<H extends Allocating>(h: H, stat: StatKey, role: Role): H 
   return h.stats[stat] > STAT_MIN ? setStat(h, stat, h.stats[stat] - 1) : refuse('at-min');
 }
 
+/** What a player reads when + or − on a stat is refused (`raise`, `lower`). */
+export const ALLOCATION_WORDS: { readonly [W in 'no-points' | 'confirmed' | 'at-min']: string } = {
+  'no-points': 'No points to spend.',
+  confirmed: 'Confirmed points stay. − takes back only a point you have not confirmed.',
+  'at-min': `A stat goes no lower than ${STAT_MIN}.`,
+};
+
 /** Confirm: every pending point goes into its stat and into `spent`. The points free do not change. */
 export function confirm<H extends Allocating>(h: H): H {
   const stats = allocated(h);

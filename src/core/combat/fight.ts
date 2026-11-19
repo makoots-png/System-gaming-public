@@ -17,7 +17,7 @@ import { applyStatus, atTier, modified, removeStatus, statusOn, statusShield, wi
 import type { Body, Status, StatusKey } from './effect-ops.ts';
 import { landUse, leftZone, needs, placeOf, ready, resolve } from './resolve.ts';
 import { alive } from './land.ts';
-import type { Answers } from './resolve.ts';
+import type { Answers, Resolved } from './resolve.ts';
 import { fireReaction, reactorsFor, reactState, reactStep, withReact } from './fight-react.ts';
 import { holds, stealthStep } from './standing.ts';
 import { counted, usesGates } from './uses.ts';
@@ -200,51 +200,73 @@ const act: Step<'running', 'act'> = (f, cmd, ctx) => {
   // Rule 4's zone price (kits design 1.4.3): the user must hold a zone of each price's name
   const at = placeOf(cmd.aim, rows)!, zonePrices = (a.prices ?? []).flatMap(p => (p.kind === 'zone' ? [p] : []));
   if (zonePrices.some(p => !pricedZones(f.zones, u.id, p, at, rows, f.grid, f.now, R).length)) return refused(f, 'zone');
-  // a channel's begin is a use's rules 2 to 5 (`ready`): it pays what a use pays, once; its release lands what was paid
+  const taken = zonePrices.flatMap(p => pricedZones(f.zones, u.id, p, at, rows, f.grid, f.now, R));
+  // table 8.9.4: a hide while a foe that is up sees the tile leaves its user seen, refused; a channel's at its begin, since its release is never refused
+  if (hides(a) && stealthStep('seen', { type: 'hide', seen: seenByFoes(f, u, R) }) === 'seen') return refused(f, 'seen');
+  // a channel's begin is a use's rules 2 to 5 (`ready`): it pays what a use pays, once, its zone price too; its release lands what was paid
   if (a.channel) {
     const ok = ready(a, u, rows, cmd.aim, f.grid, f.now, R);
     if (typeof ok === 'string') return refused(f, ok);
     const c = acted({ ...counted(ok.paid, a, R), channel: channelStep(null, { type: 'begin', ability: a.id, aim: cmd.aim, spent: ok.spent }) }, f.now, a.cost.time, R.fight);
-    return after(f, withRow(f, c), u.id, line(`${u.name} begins to channel ${a.name}.`, [u.id]), ctx, []);
+    const begun = logged({ ...withRow(f, c), zones: f.zones.filter(z => !taken.includes(z)) }, line(`${u.name} begins to channel ${a.name}.`, [u.id]), R);
+    return after(f, zoneEnds(begun, landingOf(taken, f.now, R), rows, ctx), u.id, null, ctx, []);
   }
-  // table 8.9.4: a hide while a foe that is up sees the tile leaves its user seen, refused
-  if (hides(a) && stealthStep('seen', { type: 'hide', seen: seenByFoes(f, u, R) }) === 'seen') return refused(f, 'seen');
   // rule 7c (kits design 8.4): before the use lands, the reactions it sets off fire on the bodies they protect
   const before = beforeReactions(a, u, rows, cmd.aim, f, R);
-  if (before === null) return refused(f, 'needsRoll');
   const resolved = resolve(a, u, before.rows, cmd.aim, f.grid, cmd.rolls, f.now, R, before.answers);
   if (resolved.ok === false) return refused(f, resolved.reason);
-  const reacted = [...before.said, ...before.lethal];
+  // table 2.3: a use that resolved is one more spent of an ability limited a fight or a rest
+  const r = { ...resolved, bodies: resolved.bodies.map(b => b.id === u.id ? counted(b, a, R) : b) };
+  const forced = cmd.force && cmd.by !== f.currentId ? ' (GM)' : '';
+  return landed(f, { a, u, rows, at, r, before, taken, head: `${u.name} uses ${a.name}${forced}`, by: u.id }, ctx);
+};
+
+/** The zones a zone price took whose end lands: those a round old or more (table 2.6). */
+const landingOf = (taken: readonly Zone[], now: Tick, R: Rules): Zone[] => taken.filter(z => zoneStep({ at: 'laid' }, { type: 'price', old: oldEnough(z, now, R) }).lands);
+
+/**
+ * A use that landed, as `act` and a channel's `release` hand it on: the ability, its user and the rows as the use found
+ * them, the tile it aimed at, what `landUse` answered (with what the command does to its user: a use counted, a channel
+ * gone off), the reactions rule 7c fired, the zones its price takes now, the start of its log line, and who acted (none
+ * for a broken channel going off out of its user's turn, which is no turn's action).
+ */
+type Landed = {
+  readonly a: Ability; readonly u: Body; readonly rows: readonly Body[]; readonly at: Place;
+  readonly r: Extract<Resolved, { readonly ok: true }>; readonly before: Before; readonly taken: readonly Zone[];
+  readonly head: string; readonly by: string;
+};
+/**
+ * What follows a use that landed, the one path of `act` and `release`, so a rule added here holds for both: acting on a
+ * foe or a place ends its user's ward and hide (kits design 8.1, 8.7.3); one log line naming each target's outcome
+ * (rule 20); the zones its price took end and its own goes down (rule 18b); a summon (18d); a zone act (kits 8.5.4),
+ * whose bodies, as a shove's, pay no entry (8.3.4, 8.5.5); the tally; its triggers (19b); the `after` reactions (19c);
+ * then the next turn.
+ */
+function landed(f: Running, use: Landed, ctx: Ctx): Result {
+  const R = ctx.rules, { a, u, rows, at, before, taken } = use;
   // acting on a foe or a place ends the user's untargetable and hidden statuses, after the use (kits design 8.1, 8.7)
   const ends = (a.aim === 'foe' || a.aim === 'place') && !hides(a);
-  const r = ends ? { ...resolved, bodies: resolved.bodies.map(b => b.id === u.id ? uncovered(b, f.now, R) : b) } : resolved;
-  // Rule 17 marks a broken channel; the channel's table halves its charge, from the channel as it was before the hit.
-  // table 2.3: a use that resolved is one more spent of an ability limited a fight or a rest
-  const bodies = r.bodies.map(b => b.id === u.id ? counted(b, a, R) : b).map(b => {
-    const was = rows.find(x => x.id === b.id)?.channel ?? null;
-    return b.channel?.state === 'broken' && was?.state === 'holding' ? { ...b, channel: channelStep(was, { type: 'interrupt', share: R.fight.breakShare }) } : b;
-  });
+  const r = ends ? { ...use.r, bodies: use.r.bodies.map(b => b.id === u.id ? uncovered(b, f.now, R) : b) } : use.r;
   const said = [
-    ...reacted,
+    ...before.said, ...before.lethal,
     ...r.outcomes.map(o => `${rowOf(f, o.target)?.name ?? o.target} ${o.avoid === 'out' ? 'avoids it' : `${o.avoid}${o.crit ? ', crit' : ''}${o.dealt ? ` ${o.dealt}` : ''}`}`),
     ...r.bursts.map(b => `${rowOf(f, b.bearer)?.name ?? b.bearer}'s ${b.label} goes off${b.landed.some(l => l.dealt) ? ` (${b.landed.map(l => `${rowOf(f, l.target)?.name ?? l.target} ${l.dealt}`).join(', ')})` : ''}`),
   ];
-  const forced = cmd.force && cmd.by !== f.currentId ? ' (GM)' : '';
   // the zones its price ends land their ends when old enough (table 2.6), then its own zone goes down (rule 18b, the cap per owner)
-  const taken = zonePrices.flatMap(p => pricedZones(f.zones, u.id, p, at, rows, f.grid, f.now, R));
-  const left = leftZone(a, u, at, f.grid, f.now, f.zones.filter(z => !taken.includes(z)), R);
-  const placed = left ? placeZone(f.zones.filter(z => !taken.includes(z)), left, R) : { zones: f.zones.filter(z => !taken.includes(z)), evicted: [] };
-  const useLine = `${u.name} uses ${a.name}${forced}${said.length ? `: ${said.join(', ')}` : ''}${left ? `; ${left.name} covers the ground` : ''}${placed.evicted.length ? `; ${placed.evicted.map(z => z.name).join(', ')} gives way` : ''}.`;
-  const landing = taken.filter(z => zoneStep({ at: 'laid' }, { type: 'price', old: oldEnough(z, f.now, R) }).lands);
-  const used0 = summoned(zoneEnds(logged({ ...f, rows: bodies, zones: placed.zones }, line(useLine, [u.id, ...before.about, ...r.outcomes.map(o => o.target), ...r.bursts.flatMap(b => [b.bearer, ...b.landed.map(l => l.target)])], [...(left ? [left.id] : []), ...placed.evicted.map(z => z.id)]), R), landing, rows, ctx), a, u.id, ctx);
+  const rest = f.zones.filter(z => !taken.includes(z));
+  const left = leftZone(a, u, at, f.grid, f.now, rest, R);
+  const placed = left ? placeZone(rest, left, R) : { zones: rest, evicted: [] };
+  const useLine = `${use.head}${said.length ? `: ${said.join(', ')}` : ''}${left ? `; ${left.name} covers the ground` : ''}${placed.evicted.length ? `; ${placed.evicted.map(z => z.name).join(', ')} gives way` : ''}.`;
+  const about = [u.id, ...before.about, ...r.outcomes.map(o => o.target), ...r.bursts.flatMap(b => [b.bearer, ...b.landed.map(l => l.target)])];
+  const used0 = summoned(zoneEnds(logged({ ...f, rows: r.bodies, zones: placed.zones }, line(useLine, about, [...(left ? [left.id] : []), ...placed.evicted.map(z => z.id)]), R), landingOf(taken, f.now, R), rows, ctx), a, u.id, ctx);
   // a zone act (kits design 8.5.4): a zone moved or widened onto a body pays it no entry, as a forced move pays none (8.5.5)
   const z = a.zoneAct ? zoneActed(used0.zones, u.id, a.zoneAct, at, used0.rows, used0.grid, used0.now, R) : null;
   const used = z?.acted ? logged({ ...used0, zones: z.zones }, line(`${z.acted.name} ${a.zoneAct!.act === 'shift' ? 'moves' : 'widens'}.`, [], [z.acted.id]), R) : used0;
   const pushedIn = new Set<string>(z?.acted ? used.rows.map(b => b.id) : r.shoved);
   const scored = { ...used, rows: tallied(used.rows, { type: 'used', by: u.id, ability: a, outcomes: r.outcomes, before: rows }) };
   const fired = triggered(scored, eventsOf(a, u.id, r.outcomes, rows, scored.rows), ctx);
-  return after(f, afterReactions(fired, u.id, r.outcomes, R, before.count), u.id, null, ctx, [{ type: 'used', by: u.id, ability: a.id, line: useLine }, ...critsOf(r.outcomes), ...burstsOf(r.bursts)], pushedIn);
-};
+  return after(f, afterReactions(fired, u.id, r.outcomes, R, before.count), use.by, null, ctx, [{ type: 'used', by: u.id, ability: a.id, line: useLine }, ...critsOf(r.outcomes), ...burstsOf(r.bursts)], pushedIn);
+}
 
 /**
  * Rule 18d (kits design 1.9): an ability that summons calls a row to its user's side, at the first free tile nearest the
@@ -268,14 +290,15 @@ function summoned(f: Running, a: Ability, by: CombatantId, ctx: Ctx): Running {
   return logged({ ...g, rows: [...g.rows, row] }, line(`${u.name} calls ${row.name}.`, [u.id, row.id]), R);
 }
 
+/** The reactions rule 7c fired: the rows they changed, what they ask of the use, their words, whom they were about, and the count a use's `reactionsPerUse` reads. */
+type Before = { rows: Body[]; answers: Answers; said: string[]; lethal: string[]; about: CombatantId[]; count: { n: number } };
 /**
  * Rule 7c (kits design 8.4.1): each body a foe's use of `a` may catch, in the order the use takes them, sets off the
  * armed `before` reactions that protect it (its own, or an ally's within reach), at most `reactionsPerUse` in all; each
  * lands on the body it protects and gives the use its guard or negate. The lethal reaction of rule 13b is fired by
- * `resolve` through `answers.lethal`, within the same count. Null when the use's aim is no row nor tile.
+ * `resolve` through `answers.lethal`, within the same count.
  */
-function beforeReactions(a: Ability, u: Body, rows: readonly Body[], aim: Aim, f: Running, R: Rules):
-  { rows: Body[]; answers: Answers; said: string[]; lethal: string[]; about: CombatantId[]; count: { n: number } } | null {
+function beforeReactions(a: Ability, u: Body, rows: readonly Body[], aim: Aim, f: Running, R: Rules): Before {
   const said: string[] = [], lethal: string[] = [], about: CombatantId[] = [], count = { n: 0 };
   if (!(a.aim === 'foe' || a.aim === 'place')) return { rows: [...rows], answers: {}, said, lethal, about, count };
   const map = new Map(rows.map(b => [b.id, b] as const)), guard: Record<CombatantId, number> = {}, negate = new Set<CombatantId>();
@@ -362,8 +385,8 @@ const burstsOf = (bursts: readonly { readonly bearer: CombatantId }[]): Fx => [.
 /**
  * A channel goes off: a holding one on its user's turn, costing the ability's time; a broken one at once, costing no
  * time. It lands what its begin paid (`landUse`), where it was aimed however far that is now; nothing is asked again
- * but its dice. One that can land nothing (its aim gone, a blink with nowhere to stand) goes off at nothing and ends, so
- * a broken one is never owed for good.
+ * but its dice. What follows is a use's (`landed`), the same as `act`'s. One that can land nothing (its aim gone, a
+ * blink with nowhere to stand) goes off at nothing and ends, so a broken one is never owed for good.
  */
 const release: Step<'running', 'release'> = (f, cmd, ctx) => {
   const R = ctx.rules, u = rowOf(f, cmd.by);
@@ -374,18 +397,20 @@ const release: Step<'running', 'release'> = (f, cmd, ctx) => {
   if (c.state === 'holding' && cmd.by !== f.currentId) return refused(f, 'notYourTurn');
   const a = u.abilities.find(x => x.id === c.ability);
   if (!a) return refused(f, 'unknownAbility');
-  const turn = cmd.by === f.currentId, aimAt = placeOf(c.aim, f.rows);
-  const r = aimAt ? landUse(a, u, { at: aimAt, paid: u, spent: c.spent }, f.rows, c.aim, f.grid, cmd.rolls, f.now, R) : { ok: false as const, reason: 'noTarget' as const };
-  if (r.ok === false && r.reason === 'needsRoll') return refused(f, r.reason);
-  if (r.ok === false) {
+  const turn = cmd.by === f.currentId;
+  const nothing = (): Result => {
     const done = { ...(turn ? acted(u, f.now, a.cost.time, R.fight) : u), channel: channelStep(c, { type: 'release' }) };
     return after(f, logged(withRow(f, done), line(`${u.name}'s ${a.name} is released and hits nothing.`, [u.id]), R), turn ? u.id : '', null, ctx, []);
-  }
-  const rows = r.bodies.map(b => b.id !== u.id ? b : { ...b, channel: channelStep(c, { type: 'release' }), ...(turn ? {} : { at: u.at }) });
-  const at = placeOf(c.aim, f.rows), zone = at && leftZone(a, u, at, f.grid, f.now, f.zones, R);
-  const went = logged({ ...f, rows, zones: zone ? placeZone(f.zones, zone, R).zones : f.zones }, line(`${u.name}'s ${a.name} is released at charge ${c.charge}.`, [u.id]), R);
-  const scored = { ...went, rows: tallied(went.rows, { type: 'used', by: u.id, ability: a, outcomes: r.outcomes, before: f.rows }) };
-  return after(f, triggered(scored, eventsOf(a, u.id, r.outcomes, f.rows, scored.rows), ctx), turn ? u.id : '', null, ctx, [...critsOf(r.outcomes), ...burstsOf(r.bursts)]);
+  };
+  const at = placeOf(c.aim, f.rows);
+  if (!at) return nothing();
+  // rule 7c: the reactions fire as the use lands, which for a channel is now
+  const before = beforeReactions(a, u, f.rows, c.aim, f, R);
+  const r = landUse(a, u, { at, paid: u, spent: c.spent }, before.rows, c.aim, f.grid, cmd.rolls, f.now, R, before.answers);
+  if (r.ok === false) return r.reason === 'needsRoll' ? refused(f, r.reason) : nothing();
+  // it goes off; out of its user's turn (a broken one) it costs no time
+  const fired = (b: Body): Body => b.id !== u.id ? b : { ...b, channel: channelStep(c, { type: 'release' }), ...(turn ? {} : { at: u.at }) };
+  return landed(f, { a, u, rows: f.rows, at, r: { ...r, bodies: r.bodies.map(fired) }, before, taken: [], head: `${u.name}'s ${a.name} is released at charge ${c.charge}`, by: turn ? u.id : '' }, ctx);
 };
 
 /**

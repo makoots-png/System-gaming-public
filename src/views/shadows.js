@@ -37,7 +37,7 @@ export function register(app) {
   async function arise(h, made) {
     const name = await ui.system({ tag: '! ARISE', title: 'ARISE', kind: 'arise', body: `${made.name} rises as your shadow. Name it.`,
       form: { label: 'Shadow name', type: 'text', value: made.name, maxlength: 60 }, actions: [{ label: 'Arise', primary: true }] });
-    if (typeof name === 'string' && name.trim() && name.trim() !== made.name) onArmy(h.id, 'shadow-name', x => renameShadow(x, made.id, name));
+    if (typeof name === 'string' && name.trim() && name.trim() !== made.name) ui.wrote('ARISE', onArmy(h.id, 'shadow-name', x => renameShadow(x, made.id, name)));
     const s = store.hunter(h.id)?.shadows.find(x => x.id === made.id) ?? made;
     ui.toast('ARISE', `${s.name} joins your army.`, { kind: 'levelup' });
     return s;
@@ -83,13 +83,13 @@ export function register(app) {
     if (!h || !b) return null;
     if (h.shadows.length >= cap(h)) { ui.toast('System', `Army is full (${h.shadows.length} / ${cap(h)}).`, { kind: 'warning' }); return null; }
     const id = store.id('sh');
-    if (!store.apply('shadow-add', joined(h.id, originOf({ name: b.name, rank: b.rank, archetype: b.archetype, kind: b.kind, monster: b.id }), id)).ok) return null;
+    if (!ui.wrote('System', store.apply('shadow-add', joined(h.id, originOf({ name: b.name, rank: b.rank, archetype: b.archetype, kind: b.kind, monster: b.id }), id)))) return null;
     return arise(h, store.hunter(h.id).shadows.find(s => s.id === id));
   }
 
   function summon(hid, sid) {
     const h = store.hunter(hid), s = h && h.shadows.find(x => x.id === sid); if (!s) return false;
-    if (can(h, sid, 'dismiss')) return onArmy(hid, 'shadow-unsummon', x => stepShadow(x, sid, 'dismiss')).ok;
+    if (can(h, sid, 'dismiss')) return ui.wrote('System', onArmy(hid, 'shadow-unsummon', x => stepShadow(x, sid, 'dismiss')));
     if (!can(h, sid, 'summon')) return false;
     // the mana (where it lives: the fight's row or the sheet) and the summon are one write, so a summon refused costs nothing
     const cost = summonCost(s);
@@ -141,16 +141,16 @@ export function register(app) {
         const card = b.closest('[data-sid]'), act = b.dataset.act; if (!card || !act) return;
         const s = h.shadows.find(x => x.id === card.dataset.sid); if (!s) return;
         if (act === 'summon') return void summon(h.id, s.id);
-        if (act === 'heal') return void onArmy(h.id, 'shadow-heal', x => healShadow(x, s.id, rules()));
-        if (act === 'rename') { const n = await ui.promptText({ title: 'Rename shadow', label: 'Name', value: s.name }); if (n) onArmy(h.id, 'shadow-rename', x => renameShadow(x, s.id, n)); return; }
+        if (act === 'heal') return void ui.wrote('System', onArmy(h.id, 'shadow-heal', x => healShadow(x, s.id, rules())));
+        if (act === 'rename') { const n = await ui.promptText({ title: 'Rename shadow', label: 'Name', value: s.name }); if (n) ui.wrote('System', onArmy(h.id, 'shadow-rename', x => renameShadow(x, s.id, n))); return; }
         if (act === 'release' && await ui.confirm({ title: 'Release shadow?', body: `${s.name} leaves your army. This cannot be undone.`, danger: true, confirmLabel: 'Release' })) {
-          onArmy(h.id, 'shadow-release', x => stepShadow(x, s.id, 'release'));
+          ui.wrote('System', onArmy(h.id, 'shadow-release', x => stepShadow(x, s.id, 'release')));
         }
       });
       el.addEventListener('change', e => {
         if (!e.target.matches('[data-notes]')) return;
         const s = store.active().shadows.find(x => x.id === e.target.closest('[data-sid]').dataset.sid);
-        if (s) onArmy(store.active().id, 'shadow-notes', x => noteShadow(x, s.id, e.target.value));
+        if (s) ui.wrote('System', onArmy(store.active().id, 'shadow-notes', x => noteShadow(x, s.id, e.target.value)));
       });
       this.update(el);
     },

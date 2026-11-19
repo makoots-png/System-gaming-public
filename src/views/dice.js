@@ -103,9 +103,11 @@ export function register(app) {
     if (!o.silent) {
       res.id = store.id('r');
       shown.set(res.id, res.faces); if (shown.size > 20) shown.delete(shown.keys().next().value);
-      store.apply('roll', rolled({ id: res.id, at: new Date().toISOString(), hid: who ? who.id : null, who: who ? who.name : 'GM', kind, label: o.label || '', expr: clean, rolls, total, natural, crit: res.crit, fumble: res.fumble, adv: res.adv, dis: res.dis, check }, rules()));
-      app.emit('roll', { roll: res });
-      res.coin = !!who && app.api.coin.rolled({ hid: who.id, roll: res.id, kind, expr: clean, natural, label: o.label || clean });
+      // a roll the log refused is still shown; it is not posted and calls no coin, both of which read the logged roll
+      if (ui.wrote('! Dice', store.apply('roll', rolled({ id: res.id, at: new Date().toISOString(), hid: who ? who.id : null, who: who ? who.name : 'GM', kind, label: o.label || '', expr: clean, rolls, total, natural, crit: res.crit, fumble: res.fumble, adv: res.adv, dis: res.dis, check }, rules())))) {
+        app.emit('roll', { roll: res });
+        res.coin = !!who && app.api.coin.rolled({ hid: who.id, roll: res.id, kind, expr: clean, natural, label: o.label || clean });
+      }
     }
     return res;
   }
@@ -240,7 +242,7 @@ export function register(app) {
       viewInst = controls(el.querySelector('[data-roller]'), { quickChecks: true });
       el.querySelector('[data-clear]').addEventListener('click', async () => {
         if (!store.get().rolls.length) return;
-        if (await ui.confirm({ title: 'Clear roll log?', body: 'All logged rolls will be removed.', danger: true, confirmLabel: 'Clear log' })) store.apply('clear-rolls', clearRolls);
+        if (await ui.confirm({ title: 'Clear roll log?', body: 'All logged rolls will be removed.', danger: true, confirmLabel: 'Clear log' })) ui.wrote('! Dice', store.apply('clear-rolls', clearRolls));
       });
     },
     update(el) {

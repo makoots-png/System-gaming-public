@@ -41,8 +41,7 @@ export function register(app) {
   /** @type {import('../core/api.ts').GatesApi['spawn']} */
   function spawn(o = {}) {
     const { gate, monsters } = roll(o);
-    store.apply('gate-spawn', s => spawnGate(s, gate, monsters, stamp()));
-    return gate;
+    return ui.wrote('! Gate', store.apply('gate-spawn', s => spawnGate(s, gate, monsters, stamp()))) ? gate : null;
   }
   /** @type {import('../core/api.ts').GatesApi['roll']} */
   function roll({ rank, type, name } = {}) {
@@ -98,7 +97,7 @@ export function register(app) {
   }
 
   function enter(id) {
-    store.apply('gate-enter', s => enterGate(s, id, stamp()));
+    ui.wrote('! Gate', store.apply('gate-enter', s => enterGate(s, id, stamp())));
   }
 
   // ── rewards: the gate's XP and what it still owes (src/core/gates/gate.ts). Its Clear pays what it owes. ──
@@ -134,8 +133,8 @@ export function register(app) {
     const locals = plan.shares.flatMap(x => (x.payee.kind === 'local' ? [{ hid: x.payee.hid, rewards: parseRewards({ xp: x.xp, gold: x.gold, items: x.items }) ?? newRewards() }] : []));
     const pay = { due: plan.due, xp: share.xp, gold: share.gold, items: items.map(i => i.name), payees: payees.map(p => p.name) };
     const done = { settled: null };
-    store.apply('gate-clear', s => { const r = settleClear(s, id, pay, locals, posts, dayNow()); if (isRefused(r)) return r; done.settled = r; return r.save; });
-    const settled = done.settled; if (!settled) return false;
+    if (!ui.wrote('! Gate', store.apply('gate-clear', s => { const r = settleClear(s, id, pay, locals, posts, dayNow()); if (isRefused(r)) return r; done.settled = r; return r.save; }))) return false;
+    const settled = done.settled;
     S.flush();
     const all = plan.shares.length > 1, rewards = [`${ui.fmt(share.xp)} XP${all ? ' each' : ''}`];
     if (share.gold) rewards.push(`${ui.fmt(share.gold)} gold${all ? ' each' : ''}`);
@@ -164,14 +163,15 @@ export function register(app) {
     if (merged.code !== code) merged = { code, at: '' };
     const raw = docs && docs.world, w = raw && raw.data;
     if (w && raw.from !== store.get().settings.deviceId && compareTimes(raw.at, merged.at) > 0) {
-      merged = { code, at: raw.at };
       const remoteDay = w.day, local = new Map(store.get().gates.map(g => [g.id, g])), clean = w.gates;
       const same = (a, b) => a.name === b.name && a.rank === b.rank && a.type === b.type && a.status === b.status && a.breakDay === b.breakDay;
       const changes = clean.some(g => !local.has(g.id) || !same(local.get(g.id), g));
+      // a world this tab could not write is merged again with the next doc: a read-only tab's banner says why
       if (changes || remoteDay > day()) {
-        store.apply('gate-import', s => mergeDoc(s, { day: remoteDay, gates: clean }, (g, today) => parseGate({ ...g, createdDay: today })));
+        if (!store.apply('gate-import', s => mergeDoc(s, { day: remoteDay, gates: clean }, (g, today) => parseGate({ ...g, createdDay: today }))).ok) return;
         refreshView();
       }
+      merged = { code, at: raw.at };
     }
   }
   app.on('sync:docs', ({ docs }) => { if (app.seat() === 'player') onWorld(); else mergeWorld(docs); });
@@ -557,28 +557,29 @@ export function register(app) {
         const solo = e.target.closest('[data-solo-enter],[data-solo-dismiss]');
         if (solo) {
           const card = solo.closest('[data-solo]'), [kind, id] = card.dataset.solo.split(':'), h = store.active();
-          if (solo.hasAttribute('data-solo-dismiss')) { store.apply('solo-dismiss', s => runDismissed(s, solo.dataset.soloDismiss)); render(); return; }
+          if (solo.hasAttribute('data-solo-dismiss')) { if (ui.wrote('! Gate', store.apply('solo-dismiss', s => runDismissed(s, solo.dataset.soloDismiss)))) render(); return; }
           if (h) await enterAlone(kind === 'personal' ? { kind: 'personal', id } : { kind: 'world', id }, h.id, card);
           return;
         }
         const b = e.target.closest('[data-act]'); if (!b) return;
         const act = b.dataset.act, card = b.closest('.gate'), id = card && card.dataset.id;
         if (!app.isGM()) return;
-        if (act === 'solo-on' || act === 'solo-off') { store.apply('gm-rules', s => soloRuleSet(s, { personal: act === 'solo-on' })); return; }
+        if (act === 'solo-on' || act === 'solo-off') { ui.wrote('Gates', store.apply('gm-rules', s => soloRuleSet(s, { personal: act === 'solo-on' }))); return; }
         if (act === 'day') advanceDay(Number(b.dataset.n));
         else if (act === 'day-n') { const n = await ui.promptNum({ title: 'Advance world day', label: 'Days (negative goes back)', value: 5, min: -30, max: 365 }); if (n) advanceDay(n); }
         else if (act === 'enter') enter(id);
         else if (act === 'encounter') startEncounter(id);
         else if (act === 'clear' || act === 'edit') { openPanel.set(id, act); refresh(id); cards.get(id)?.querySelector('.gt-panel input,.gt-panel select')?.focus(); }
         else if (act === 'cancel-panel') { openPanel.delete(id); refresh(id); }
-        else if (act === 'close') { if (await ui.confirm({ title: 'Close this gate?', body: 'A closed gate can no longer break.', confirmLabel: 'Close gate' })) store.apply('gate-close', s => closeGate(s, id, stamp())); }
-        else if (act === 'delete') { if (await ui.confirm({ title: 'Delete this gate?', body: 'This cannot be undone.', danger: true, confirmLabel: 'Delete' })) store.apply('gate-delete', s => deleteGate(s, id)); }
+        else if (act === 'close') { if (await ui.confirm({ title: 'Close this gate?', body: 'A closed gate can no longer break.', confirmLabel: 'Close gate' })) ui.wrote('! Gate', store.apply('gate-close', s => closeGate(s, id, stamp()))); }
+        else if (act === 'delete') { if (await ui.confirm({ title: 'Delete this gate?', body: 'This cannot be undone.', danger: true, confirmLabel: 'Delete' })) ui.wrote('! Gate', store.apply('gate-delete', s => deleteGate(s, id))); }
         else if (act === 'add-row') { const f = b.closest('form'); f.querySelector('[data-rows]').appendChild(ui.h(f.querySelector('[data-row-tpl]').innerHTML)); }
         else if (act === 'rm-row') b.closest('[data-mrow]').remove();
       });
 
       el.addEventListener('change', e => {
-        if (e.target.matches('[data-solohours]') && app.isGM()) { store.apply('gm-rules', s => soloRuleSet(s, { hours: Number(e.target.value) })); return; }
+        // a refused change draws the select back from the rules (render)
+        if (e.target.matches('[data-solohours]') && app.isGM()) { if (!ui.wrote('Gates', store.apply('gm-rules', s => soloRuleSet(s, { hours: Number(e.target.value) })))) render(); return; }
         const f = e.target.closest('form[data-form=clear]'), x = f && f.querySelector('[data-clearxp]'), g = f && gate(f.closest('.gate').dataset.id);
         if (x && g) x.textContent = ui.fmt(perHunter(g, f.querySelectorAll('input[name=hid]:checked').length));
       });
@@ -588,6 +589,7 @@ export function register(app) {
         if (!app.isGM()) return;
         if (f.classList.contains('gt-spawn')) {
           const g = spawn({ rank: oneOf(f.rank.value, RANKS, undefined), type: oneOf(f.type.value, SPAWN_TYPES, undefined) });
+          if (!g) return;
           ui.toast('Gates', `${g.rank}-rank ${g.type} gate detected: ${g.name}`);
           return;
         }
@@ -595,14 +597,16 @@ export function register(app) {
         if (kind === 'clear') {
           const hids = [...f.querySelectorAll('input[name=hid]:checked')].map(i => i.value);
           if (!hids.length && !(await ui.confirm({ title: 'Clear with no rewards?', body: 'No hunters are selected, so nobody is paid.', confirmLabel: 'Clear anyway' }))) return;
+          // the panel closes before the write, so the redraw the write makes draws no Clear on a cleared gate; a refused Clear opens it again
           openPanel.delete(id);
-          await clearGate(id, hids, f.to.value);
+          if (!(await clearGate(id, hids, f.to.value))) { openPanel.set(id, 'clear'); return; }
         } else if (kind === 'edit') {
           const rows = [...f.querySelectorAll('[data-mrow]')].map(r => ({ monsterId: monsterId(r.querySelector('[name=mid]').value), count: copiesOf(r.querySelector('[name=cnt]').value) })).filter(r => r.monsterId);
           openPanel.delete(id);
           const g = gate(id);
-          if (g) store.apply('gate-edit', s => editGate(s, id, { name: f.name.value, rank: oneOf(f.rank.value, RANKS, g.rank), type: oneOf(f.type.value, GATE_TYPES, g.type),
-            breakDay: Number(f.breakDay.value), monsters: rows, bossId: monsterId(f.boss.value), notes: f.notes.value, mapId: f.map.value || null, status: oneOf(f.status.value, GATE_STATUSES, g.status), solo: f.solo ? f.solo.checked : g.solo }));
+          // a refused edit keeps the panel open with what was typed: nothing redraws it
+          if (g && !ui.wrote('! Gate', store.apply('gate-edit', s => editGate(s, id, { name: f.name.value, rank: oneOf(f.rank.value, RANKS, g.rank), type: oneOf(f.type.value, GATE_TYPES, g.type),
+            breakDay: Number(f.breakDay.value), monsters: rows, bossId: monsterId(f.boss.value), notes: f.notes.value, mapId: f.map.value || null, status: oneOf(f.status.value, GATE_STATUSES, g.status), solo: f.solo ? f.solo.checked : g.solo })))) { openPanel.set(id, 'edit'); return; }
         }
         refresh(id);
       });

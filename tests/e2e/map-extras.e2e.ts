@@ -3,7 +3,7 @@
 // taking a hit first, and a channel's charge, its Release and its break. Values come from the rules (src/core/rules.ts
 // RULES.fight) and the GM's own fight.
 import type { Page } from '@playwright/test';
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, fightRow, chooseList, setupDoc } from './helpers.ts';
+import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, fightRow, chooseList, setupDoc, answerWindow } from './helpers.ts';
 
 const HUNTER = 'Kai Extra', BRAKK = 'Brakk Ironhide', RAT = 'Cave Rat', BOSS = 'Cerberus';
 const combat = (page: Page) => page.locator('#view-combat');
@@ -191,25 +191,26 @@ const turnOf = (gm: Page, id: string) => gm.evaluate(b => hunterApp.store.update
 
 /**
  * The kits' fight: Brakk holds Mark (his strike, putting one Pain on its target), the player's hunter holds Parry (a
- * reaction before a strike lands on it, on its sheet and its row), and it is Brakk's turn.
+ * reaction before a strike lands on it, on its sheet and its row), and it is Brakk's turn. `reaction` gives the hunter
+ * another reaction in Parry's place.
  */
-async function kitsFight(device: (label: string) => Promise<{ page: Page }>) {
+async function kitsFight(device: (label: string) => Promise<{ page: Page }>, reaction = { id: 'parry', name: 'Parry', when: 'before' }) {
   const f = await extrasFight(device, 'kits');
-  const parry = await f.gm.evaluate(([kai, brakk, pain]) => {
+  const parry = await f.gm.evaluate(([kai, brakk, pain, re]) => {
     let out: any = null;
     hunterApp.store.update((d: any) => {
       const rows = d.fight.rows, k = rows.find((r: any) => r.id === kai), b = rows.find((r: any) => r.id === brakk);
       b.abilities = [...b.abilities, { ...b.abilities[0], id: 'mark', name: 'Mark', ops: [{ op: 'applyStatus', key: 'pain', def: pain, duration: null }] }];
-      out = { ...k.abilities[0], id: 'parry', name: 'Parry', aim: 'self', effect: null, ops: [{ op: 'guard', share: 0.3 }], react: { when: 'before', reach: 0 } };
+      out = { ...k.abilities[0], id: re.id, name: re.name, aim: 'self', effect: null, ops: [{ op: 'guard', share: 0.3 }], react: { when: re.when, reach: 0 } };
       k.abilities = [...k.abilities, out];
     }, 'test-setup');
     return out;
-  }, [f.ids.kai, f.ids.brakk, PAIN] as const);
+  }, [f.ids.kai, f.ids.brakk, PAIN, reaction] as const);
   await f.player.evaluate(a => hunterApp.store.update((d: any) => {
     const h = d.hunters.find((x: any) => x.name === 'Kai Extra');
-    h.skills.push({ id: 's-parry', name: 'Parry', type: 'active', level: 1, label: null, desc: '', ability: a });
+    h.skills.push({ id: `s-${a.id}`, name: a.name, type: 'active', level: 1, label: null, desc: '', ability: a });
   }, 'test-setup'), parry);
-  await expect(map(f.player).locator('[data-hot] [data-arm="parry"]')).toBeVisible();
+  await expect(map(f.player).locator(`[data-hot] [data-arm="${reaction.id}"]`)).toBeVisible();
   return f;
 }
 /** The GM uses Brakk's Mark on the rat from the map. */
@@ -283,6 +284,23 @@ test('a player arms Parry on the hotbar, a strike on them sets it off, and the s
     await expect(slot).toHaveText(/Spent$/);
     await expect(token(player, ids.kai)).toHaveAttribute('aria-label', /reacted/);
   });
+});
+
+test('a player arms a reaction before a turn on the hotbar, picks whose turn it waits for, and the GM\'s fight holds it', async ({ device }) => {
+  // Audit BUG-views-2: the player's phone sent the arm with no row to wait for, and the fight refused it (`noTarget`)
+  const { gm, player, ids } = await kitsFight(device, { id: 'ambush', name: 'Ambush', when: 'turn' });
+  const slot = map(player).locator('[data-hot] [data-arm="ambush"]');
+  await slot.tap();
+  const win = player.locator('.sys-overlay.show', { hasText: 'Before the turn of' });
+  await expect(win).toContainText('Ambush fires just before the turn of the one you pick.');
+  await test.step('the window offers the rows the GM\'s card offers, the other side\'s first', async () => {
+    await expect(win.locator('.sys-actions button.primary')).toHaveCount(1);
+    await expect(win.locator('.sys-actions button', { hasText: BRAKK })).toHaveCount(1);
+    await expect(win.locator('.sys-actions button', { hasText: HUNTER })).toHaveCount(0);
+  });
+  await answerWindow(player, 'Before the turn of', RAT);
+  await expect.poll(() => fightRow(gm, HUNTER).then(r => r.armed && { ability: r.armed.ability, on: r.armed.on })).toEqual({ ability: 'ambush', on: ids.rat });
+  await expect(slot).toHaveText(/Armed$/);
 });
 
 test('a player holds an ability on the hotbar to read what it does, and it is not picked', async ({ device }) => {

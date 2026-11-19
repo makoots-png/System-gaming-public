@@ -196,6 +196,6 @@ export function register(app) {
     list: () => list(),
     get: id => list().find(m => m.id === id) || null,
     make,
-    remove: id => { store.apply('library-map-del', atLibrary(l => removeEntry(l, 'maps', id))); },
+    remove: id => ui.wrote('Workshop', store.apply('library-map-del', atLibrary(l => removeEntry(l, 'maps', id)))),
   };
 }

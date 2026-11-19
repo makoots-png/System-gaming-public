@@ -106,7 +106,7 @@ export function register(app) {
     const backedUp = store.backupNow('pre-import');
     if (!backedUp && !(await goOnUnbacked('Import'))) return false;
     let report = null;
-    store.apply('import-library', s => { const m = mergePack(s, r.pack, mode); report = m.report; return { ...s, library: m.save.library, monsters: m.save.monsters, seq: m.save.seq }; });
+    if (!ui.wrote('System', store.apply('import-library', s => { const m = mergePack(s, r.pack, mode); report = m.report; return { ...s, library: m.save.library, monsters: m.save.monsters, seq: m.save.seq }; }))) return false;
     const sum = f => PACK_KINDS.reduce((x, k) => x + report[k][f], 0);
     const added = sum('added'), replaced = sum('replaced');
     ui.toast('System', `Custom content imported: ${added} added${replaced ? `, ${replaced} replaced` : ''}.${backedUp ? ' Previous save kept in backups.' : ''}`);
@@ -281,9 +281,10 @@ export function register(app) {
       el.addEventListener('change', e => {
         const k = e.target.dataset && e.target.dataset.set; if (!k) return;
         const t = e.target;
-        if (k === 'resetHour') store.apply('settings', atSettings(st => withResetHour(st, t.value)));
-        else if (k === 'sound') store.apply('settings', atSettings(st => withSound(st, t.checked)));
-        else if (k === 'hunterName') store.apply('settings', atHunter(store.active().id, h => rename(h, t.value)));
+        const step = k === 'resetHour' ? atSettings(st => withResetHour(st, t.value)) : k === 'sound' ? atSettings(st => withSound(st, t.checked))
+          : k === 'hunterName' ? atHunter(store.active().id, h => rename(h, t.value)) : null;
+        // a refused setting is told, and the fields are drawn again from the save
+        if (step && !ui.wrote('Settings', store.apply('settings', step))) fill(el);
       });
       refresh = () => fill(el);
       fill(el);

@@ -360,17 +360,19 @@ export function fillTo(bar: Element, fraction: number, o: { trail?: boolean; fro
   const fill = bar.querySelector<HTMLElement>(':scope > i');
   if (!fill) return DONE;
   const was = o.from !== undefined ? clamp01(o.from) : fillsOf.get(bar);
+  let trail = bar.querySelector<HTMLElement>(':scope > .m-trail');
+  // where a moving fill and trail are, read before the bar changes: after a write the read restyles it in this task
+  const fillAt = now(fill), trailAt = trail && now(trail);
   fillsOf.set(bar, f);
   fill.style.setProperty('--f', String(f));
-  let trail = bar.querySelector<HTMLElement>(':scope > .m-trail');
   if (reduced()) { trail?.style.setProperty('--f', String(f)); return DONE; }
   if (o.trail !== false && was !== undefined && f < was) {
     if (!trail) { trail = document.createElement('b'); trail.className = 'm-trail'; bar.insertBefore(trail, fill); }
     trail.style.setProperty('--f', String(f));
   } else if (trail) trail.style.setProperty('--f', String(f));
   if (was === undefined || was === f) return DONE;
-  const moves = [play(fill, [{ transform: `scaleX(${was})` }, { transform: `scaleX(${f})` }], f < was ? 'base' : 'slow', 'arrive')];
-  if (trail && f < was) moves.push(play(trail, [{ transform: `scaleX(${was})` }, { transform: `scaleX(${was})`, offset: .35 }, { transform: `scaleX(${f})` }], 'slow', 'leave', { scale: 1.6 }));
+  const moves = [play(fill, [{ transform: `scaleX(${was})` }, { transform: `scaleX(${f})` }], f < was ? 'base' : 'slow', 'arrive', { from: fillAt })];
+  if (trail && f < was) moves.push(play(trail, [{ transform: `scaleX(${was})` }, { transform: `scaleX(${was})`, offset: .35 }, { transform: `scaleX(${f})` }], 'slow', 'leave', { scale: 1.6, from: trailAt }));
   return Promise.all(moves).then(() => undefined);
 }
 
@@ -390,13 +392,14 @@ export function progress(el: HTMLElement, fraction: number | null, words = ''): 
       ? '<span class="m-wait" aria-hidden="true"></span><span class="m-prog-words"></span>'
       : `<span class="bar m-prog-bar">${fillMarkup(0)}</span><span class="m-prog-pct m-num"></span><span class="m-prog-words"></span>`;
   }
+  // the bar first: it reads where its fill is moving, a style pass of its own once the words below have changed
+  if (fraction !== null) void fillTo(el.querySelector('.m-prog-bar') as Element, fraction, { trail: false });
   (el.querySelector('.m-prog-words') as HTMLElement).textContent = words;
   if (fraction === null) { el.setAttribute('role', 'status'); el.removeAttribute('aria-valuenow'); return; }
   const p = percent(fraction);
   el.setAttribute('role', 'progressbar');
   el.setAttribute('aria-valuemin', '0'); el.setAttribute('aria-valuemax', '100'); el.setAttribute('aria-valuenow', String(p));
   (el.querySelector('.m-prog-pct') as HTMLElement).textContent = `${p}%`;
-  void fillTo(el.querySelector('.m-prog-bar') as Element, fraction, { trail: false });
 }
 
 // ── bursts: particles on earned moments only. A kind is a row; `life` is in units of --t-slow ──

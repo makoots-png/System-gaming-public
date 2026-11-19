@@ -12,7 +12,7 @@ import type { Stats } from '../src/core/stats.ts';
 import { kitGear } from '../src/core/hunter/derive.ts';
 import { parseFormula } from '../src/core/formula.ts';
 import { dist, place, tiles } from '../src/core/combat/space.ts';
-import type { Side, Terrain } from '../src/core/combat/space.ts';
+import type { Place, Side, Terrain } from '../src/core/combat/space.ts';
 import { MAX_ZONES, zoneId, zoneStep, zoneTiles } from '../src/core/combat/zones.ts';
 import { ZONE_WALK } from './models/zone-events.ts';
 import { summonStep } from '../src/core/combat/summons.ts';
@@ -345,6 +345,128 @@ describe('a channel (4.1)', () => {
     expect([body(lin.fight, 'A').channel?.charge, body(exp.fight, 'A').channel?.charge]).toEqual([2, 2]);
     expect(body(lin.fight, 'M').threat![id('A')]).toBeCloseTo(100 * (1 + RULES.fight.channelLin * 2), 9);
     expect(body(exp.fight, 'M').threat![id('A')]).toBeCloseTo(100 * RULES.fight.channelExp ** 2, 9);
+  });
+});
+
+// A channel's begin is rules 2 to 5 of its use and its release the rest (design 4.1, guide "What a use or a reaction must
+// pass and pay"), so a release lands as a use through `act` lands. Audit BUG-rules-3; the steps are
+// docs/agent-handoff/audit/notes-channel-release.md.
+describe('a channel\'s release lands as a use does (design 4.1)', () => {
+  const ROUND = RULES.fight.round;
+  const channel = { growth: 'linear', max: 5 } as const;
+  const free = { fatigue: 0, mana: 0, time: HIT.cost.time, cooldown: tick(0) };
+  /** `a` as a channel of no cost but its time. */
+  const channeled = (a: Ability, name: string): Ability => ({ ...a, id: abilityId(name), name, channel, cost: free });
+  const use = (by: string, a: Ability, aim: string | Place): Command => ({ type: 'act', by: id(by), ability: a.id, aim: typeof aim === 'string' ? id(aim) : aim, rolls: rolls() });
+  const release = (by: string, r: Rolls = rolls()): Command => ({ type: 'release', by: id(by), rolls: r });
+  const ten = { kind: 'number' as const, value: 10 };
+
+  test('a release whose op breaks a foe\'s channel leaves it at half its charge, as every break does (rule 17)', () => {
+    const SNAP = channeled(ability('curse', 'snap', null, { ...FAR, effect: null, delivery: { kind: 'sure' }, ops: [{ op: 'channel', mode: 'break' }] }), 'snap');
+    const WIND = channeled(HIT, 'wind');
+    const r = play(add(row('A', 'party', { abilities: [SNAP] }), row('M', 'foe', { abilities: [WIND] })), start(['A', 20], ['M', 1]),
+      use('A', SNAP, 'M'), use('M', WIND, 'A'), pass('A'), pass('M'), pass('A'), pass('M'));
+    const held = body(r.fight, 'M').channel!.charge;
+    expect([held, running(r).currentId]).toEqual([2, id('A')]);
+    const out = reduce(r.fight, release('A', rolls({ M: 10 })), ctx);
+    expect(body(out.fight, 'M').channel).toMatchObject({ state: 'broken', charge: Math.floor(held * RULES.fight.breakShare) });
+  });
+
+  test('a trigger that breaks a channel after a use leaves it at half its charge too', () => {
+    const WIND = channeled(HIT, 'wind'), TAP = ability('strike', 'tap', '1', FAR);
+    const snaps: Status = { key: statusKey('brittle'), source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0),
+      def: { label: 'Brittle', desc: '', ops: [], triggers: [{ on: 'struck', tag: null, to: 'self', limit: { kind: 'each' }, ops: [{ op: 'channel', mode: 'break' }] }] } };
+    const r = play(add(row('A', 'party', { abilities: [TAP] }), row('M', 'foe', { abilities: [WIND], statuses: [snaps] })), start(['M', 20], ['A', 1]),
+      use('M', WIND, 'A'), pass('A'), pass('M'), pass('A'), pass('M'));
+    const held = body(r.fight, 'M').channel!.charge;
+    expect([held, running(r).currentId]).toEqual([2, id('A')]);
+    // TAP's 1 is under M's hold, so only the trigger breaks it
+    const out = reduce(r.fight, hit('A', 'M', TAP), ctx);
+    expect(body(out.fight, 'M').channel).toMatchObject({ state: 'broken', charge: Math.floor(held * RULES.fight.breakShare) });
+  });
+
+  test('a zone price is paid at the begin: the zone ends then, its end lands once, and the release takes no zone again (rule 4, kits 1.4.3)', () => {
+    const keep = ability('support', 'keep', null, { aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null,
+      zone: { name: 'Boundary', duration: null, ops: [], endsWithOwner: false, around: tiles(1), grow: null, end: [{ op: 'damage', type: 'physical', amount: ten, when: 'use' }] } });
+    const POP = channeled({ ...HIT, prices: [{ kind: 'zone', name: 'Boundary', take: 'one' }] }, 'pop');
+    const lay: Command = { type: 'act', by: id('A'), ability: keep.id, aim: id('A'), rolls: rolls() };
+    // two zones, laid at 0 and a round later; the price takes the oldest, a round old at the begin
+    const laid = [add(row('A', 'party', { abilities: [keep, POP] }), row('M', 'foe')), start(['A', 20], ['M', 10]), lay, pass('M'), lay, pass('M')] as const;
+    const began = play(...laid, use('A', POP, 'M'));
+    const a = body(began.fight, 'A'), endHit = afterDefence(10, 'physical', a.sheet, a.sheet, RULES);
+    expect([running(began).zones.length, a.sheet.hpMax - a.hp]).toEqual([1, endHit]);
+    const again = play(...laid, use('A', POP, 'M'), pass('M'), release('A', rolls({ M: 10 })));
+    expect([running(again).zones.length, body(again.fight, 'A').sheet.hpMax - body(again.fight, 'A').hp]).toEqual([1, endHit]);
+  });
+
+  test('a channeled hide is refused at its begin while a foe that is up sees the user (kits 8.7.2)', () => {
+    const CLOAK = channeled(ability('support', 'cloak', null, { aim: 'self', effect: null, shape: { kind: 'self' },
+      ops: [{ op: 'applyStatus', key: statusKey('cloak'), def: { label: 'Cloak', desc: '', ops: [{ op: 'hidden' }] }, duration: tick(3 * ROUND) }] }), 'cloak');
+    refuses(play(...duel({ abilities: [CLOAK] })).fight, use('A', CLOAK, 'A'), 'seen');
+  });
+
+  test('a release sets off the reactions a use sets off: a negate before it lands, a ward before a killing hit, a riposte after (rules 7c, 13b, 19c)', () => {
+    const quick = abilityOf('shot', { id: abilityId('q'), name: 'q' }, RULES).cost.time;
+    const reaction = (name: string, when: 'before' | 'lethal' | 'after', o: Partial<Ability>): Ability =>
+      ability('strike', name, null, { ...FAR, effect: null, cost: { ...HIT.cost, fatigue: 0, time: quick }, react: { when, reach: tiles(0) }, ...o });
+    const NEGATE = reaction('shinsuu', 'before', { ops: [{ op: 'negate' }] });
+    const STAND = reaction('stand', 'lethal', { ops: [{ op: 'applyStatus', key: statusKey('stone'), def: { label: 'Stone', desc: '', ops: [{ op: 'invulnerable' }] }, duration: tick(1000) }] });
+    const RIPOSTE = reaction('riposte', 'after', { effect: { type: 'physical', by: 'hand', formula: f('10') } });
+    const WIND = channeled(HIT, 'wind'), CRUSH = channeled(BIG, 'crush');
+    const released = (wind: Ability, react: Ability) => play(add(row('A', 'party', { abilities: [HIT, react] }), row('M', 'foe', { abilities: [wind] })),
+      start(['M', 20], ['A', 10]), use('M', wind, 'A'), { type: 'arm', by: id('A'), ability: react.id }, pass('A'), release('M', rolls({ A: 10 })));
+    const negated = released(WIND, NEGATE), warded = released(CRUSH, STAND), answered = released(WIND, RIPOSTE);
+    expect(body(negated.fight, 'A').hp).toBe(body(negated.fight, 'A').sheet.hpMax);
+    expect(body(warded.fight, 'A').hp).toBe(1);
+    const m = body(answered.fight, 'M');
+    expect(m.sheet.hpMax - m.hp).toBe(afterDefence(10, 'physical', body(answered.fight, 'A').sheet, m.sheet, RULES));
+  });
+
+  test('a release on a foe ends its user\'s hide, as a use from hiding does (kits 8.7.3)', () => {
+    const HIDE = ability('support', 'hide', null, { aim: 'self', effect: null, shape: { kind: 'self' },
+      ops: [{ op: 'applyStatus', key: statusKey('hide'), def: { label: 'hide', desc: '', ops: [{ op: 'hidden' }] }, duration: tick(3 * ROUND) }] });
+    const BOOM = channeled(ability('blast', 'boom', '5', { range: tiles(20) }), 'boom');
+    const wall: Command = { type: 'paint', tiles: Array.from({ length: 20 }, (_, x) => place(x, 6)), terrain: 'wall' };
+    const r = play(add(row('A', 'party', { abilities: [HIDE, BOOM] }), row('M', 'foe')), wall, start(['A', 20], ['M', 10]),
+      { type: 'act', by: id('A'), ability: HIDE.id, aim: id('A'), rolls: rolls() }, pass('M'), use('A', BOOM, place(0, 10)), pass('M'),
+      release('A', { ...rolls({ M: 10 }, { M: [] }), second: { [id('M')]: 3 } }));
+    expect(body(r.fight, 'A').statuses.map(s => s.key)).not.toContain('hide');
+  });
+
+  test('a released summon calls its row (rule 18d)', () => {
+    const CALL = channeled(ability('support', 'call', null, { aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null, summon: { name: 'Sprite', archetype: 'skirmisher', rounds: 2, statuses: [] } }), 'call');
+    const r = play(...duel({ abilities: [CALL] }), use('A', CALL, 'A'), pass('M'), release('A'));
+    expect(r.fight!.rows.filter(x => x.kind === 'summon').map(x => [x.name, x.owner])).toEqual([['Sprite', id('A')]]);
+  });
+
+  test('a released zone act moves the zone (kits 8.5.4)', () => {
+    const LAY = ability('blast', 'lay', null, { range: tiles(20), effect: null, foesOnly: true, cost: { ...HIT.cost, mana: 0 },
+      zone: { name: 'Mire', duration: null, ops: [], endsWithOwner: false, around: null, grow: null } });
+    const SHIFT = channeled(ability('blast', 'shift', null, { range: tiles(20), effect: null, foesOnly: true, zoneAct: { act: 'shift', name: null, by: 6 } }), 'shift');
+    const r = play(add(row('A', 'party', { abilities: [LAY, SHIFT], place: place(5, 2) }), row('M', 'foe', { place: place(5, 12) })), start(['A', 20], ['M', 10]),
+      use('A', LAY, place(5, 4)), pass('M'), use('A', SHIFT, place(5, 12)), pass('M'), release('A', rolls({ M: 10 }, { M: [] })));
+    const z = running(r).zones[0]!;
+    expect(z.ground.kind === 'around' ? z.ground.anchor : null).toEqual({ kind: 'place', at: place(5, 10) });
+  });
+
+  test('a body a released push moves into a zone takes its hold and pays no on-entry part (kits 8.3.4)', () => {
+    const P3 = channeled(ability('strike', 'push', '1', { ...FAR, ops: [{ op: 'shove', dir: 'away', from: 'user', tiles: 3 }] }), 'push');
+    const spikes: Command = { type: 'zoneAdd', zone: { id: zoneId('z1'), name: 'Spikes', tiles: [place(5, 7)], spares: null, tier: 0, duration: null, ops: [{ op: 'damage', type: 'physical', amount: f('20'), when: 'use' }] } };
+    const pushed = (...ground: Command[]) => play(add(row('A', 'party', { abilities: [P3], place: place(5, 2) }), row('M', 'foe', { place: place(5, 4) })), ...ground,
+      start(['A', 20], ['M', 10]), use('A', P3, 'M'), pass('M'), release('A', rolls({ M: 10 })));
+    const m = body(pushed(spikes).fight, 'M');
+    expect([m.place, m.statuses.some(x => x.zone === 'z1')]).toEqual([place(5, 7), true]);
+    expect(m.hp).toBe(body(pushed().fight, 'M').hp);
+  });
+
+  test('a release logs one line naming each target and its number, and tells the GM that line (rule 20)', () => {
+    const WIND = channeled(HIT, 'wind');
+    const r = play(...duel({ abilities: [WIND] }), use('A', WIND, 'M'), pass('M'));
+    const out = reduce(r.fight, release('A', rolls({ M: 10 })), ctx);
+    const dealt = body(r.fight, 'M').hp - body(out.fight, 'M').hp;
+    const said = running(out).log.find(l => l.text.includes('is released'))!;
+    expect([said.text.endsWith(`M caught ${dealt}.`), said.rows]).toEqual([true, [id('A'), id('M')]]);
+    expect(out.effects.find(e => e.type === 'used')).toEqual({ type: 'used', by: id('A'), ability: WIND.id, line: said.text.replace(/^R\d+: /, '') });
   });
 });
 

@@ -7,8 +7,9 @@ import { SHEET_LABELS } from '../core/hunter/derive.ts';
 import { fightHold, heldLines } from '../core/combat/fight-save.ts';
 import { combatantId, hunterId } from '../core/combat/ability-types.ts';
 import { checksOf, fitted, hunterSheet, setAdjust, setMaximum } from '../core/hunter/sheet.ts';
-import { allocated, available, confirm, hasPending, lower, plusPoint, raise, setPoints, setStat } from '../core/hunter/progress.ts';
+import { ALLOCATION_WORDS, allocated, available, confirm, hasPending, lower, plusPoint, raise, setPoints, setStat } from '../core/hunter/progress.ts';
 import { atHunter, atLibrary, both, isRefused, orKeep, refuse } from '../core/save-step.ts';
+import { READ_ONLY } from '../core/store-life.ts';
 import { dropBoon, giveTitle, nameActiveTitle, reevaluate as reevaluated, removeTitle, rename, setJob, setRank, toggleTitle, writeTitle, cleanName } from '../core/hunter/record.ts';
 import { grant, levelEdit, sheetEdit } from '../core/hunter/grant.ts';
 import { setGold } from '../core/hunter/inventory.ts';
@@ -177,7 +178,7 @@ export function register(app) {
   async function reevaluate(hid) {
     const h = store.hunter(hid); if (!h || !canReeval(h)) return false;
     const from = h.rank, to = eligibleRank(h);
-    store.apply('rank', both(atHunter(hid, x => reevaluated(x, rules())), logStep('rank', hid, `Rank re-evaluation: ${from} → ${to}`, `${h.name} was re-evaluated from ${from}-rank to ${to}-rank.`)));
+    if (!ui.wrote('! Hunter', store.apply('rank', both(atHunter(hid, x => reevaluated(x, rules())), logStep('rank', hid, `Rank re-evaluation: ${from} → ${to}`, `${h.name} was re-evaluated from ${from}-rank to ${to}-rank.`))))) return false;
     await ui.system({ tag: '! Notification', title: `RANK RE-EVALUATION: ${from} → ${to}`, kind: 'levelup',
       body: `The System has re-assessed ${h.name}. You are now a ${to}-rank Hunter.`, lines: [`Rank bonus +${rules().rankBonus[to]}`] });
     return true;
@@ -255,12 +256,13 @@ export function register(app) {
       if (typed == null) return false;
       if (typed.replace(/\s+/g, ' ').trim().toLowerCase() !== String(h.name).replace(/\s+/g, ' ').trim().toLowerCase()) { ui.toast('Warning', 'The name did not match. Nothing was deleted.', { kind: 'warning' }); return false; }
       if (!store.backupNow('pre-delete-hunter') && !(await ui.confirm({ title: 'No backup saved', body: `Storage is full, so no backup of ${h.name} could be kept. Delete anyway?`, danger: true, confirmLabel: 'Delete' }))) return false;
+      // the last hunter goes only with the one that takes its place: Cancel on its name deletes nothing
       const last = store.get().hunters.length <= 1;
-      app.api.sync.forget(h.id); // the tombstone waits in the outbox until the room takes it
-      let fresh = null;
-      if (last) fresh = await ui.promptText({ title: 'Create a new hunter', label: 'New hunter name', value: 'Hunter', maxlength: 60 });
+      const fresh = last ? await ui.promptText({ title: 'Create a new hunter', label: 'New hunter name', value: 'Hunter', maxlength: 60 }) : null;
+      if (last && fresh == null) return false;
       const replacement = last ? store.newHunter(cleanName(fresh) || 'Hunter') : null;
-      store.apply('delete-hunter', s => removeHunter(s, h.id, replacement));
+      if (!ui.wrote('System', store.apply('delete-hunter', s => removeHunter(s, h.id, replacement)))) return false;
+      app.api.sync.forget(h.id); // the tombstone waits in the outbox until the room takes it
       ui.toast('System', `${h.name} was deleted. A backup was saved (Data → Backups).`, { kind: 'info' });
       return true;
     },
@@ -331,9 +333,9 @@ export function register(app) {
     save(name, rewards, id = null, window = null) {
       const rw = parseRewards(rewards); if (!rw) return { ok: false, why: 'blank' };
       const bid = id || store.id('rb'), r = store.apply('bundle-save', atLibrary(l => saveBundle(l, bid, name, rw, LIMITS.libraryRewards, window ? parseWords(window) : null)));
-      return 'why' in r ? { ok: false, why: r.why === 'taken' || r.why === 'full' ? r.why : 'blank' } : { ok: true, id: bid };
+      return 'why' in r ? { ok: false, why: r.why === 'taken' || r.why === 'full' || r.why === READ_ONLY ? r.why : 'blank' } : { ok: true, id: bid };
     },
-    remove(id) { return store.apply('bundle-remove', atLibrary(l => removeBundle(l, id))).ok; },
+    remove(id) { return ui.wrote('Workshop', store.apply('bundle-remove', atLibrary(l => removeBundle(l, id)))); },
   };
 
   // ── view + shared helpers ──
@@ -429,9 +431,10 @@ export function register(app) {
         const f = e.target.dataset.f; if (!f) return;
         const v = e.target.value.replace(/\s+/g, ' ').trim().slice(0, 60);
         const hid = store.active().id;
-        if (f === 'title') { const tid = store.id('t'); onHunter(hid, 'identity', both(h => nameActiveTitle(h, v, tid), fit)); }
-        else if (f === 'name') onHunter(hid, 'identity', h => rename(h, v));
-        else if (f === 'job') onHunter(hid, 'identity', h => setJob(h, v));
+        // a refused change is told, and the redraw below puts the field back as the save holds it
+        if (f === 'title') { const tid = store.id('t'); ui.wrote('! Hunter', onHunter(hid, 'identity', both(h => nameActiveTitle(h, v, tid), fit))); }
+        else if (f === 'name') ui.wrote('! Hunter', onHunter(hid, 'identity', h => rename(h, v)));
+        else if (f === 'job') ui.wrote('! Hunter', onHunter(hid, 'identity', h => setJob(h, v)));
         update(el);
       });
       el.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.dataset.f) e.target.blur(); });
@@ -479,7 +482,7 @@ export function register(app) {
           const key = d.edit, m = maxima(h), cur = key === 'hp' ? m.hpMax : m.manaMax;
           const n = await ui.promptNum({ title: key === 'hp' ? 'Edit max HP' : 'Edit max mana', label: key === 'hp' ? 'Maximum HP' : 'Maximum mana', value: cur, min: key === 'hp' ? 1 : 0, max: 9999 });
           if (n === null) return;
-          onHunter(h.id, 'max-edit', x => setMaximum(x, key === 'hp' ? 'hpMax' : 'manaMax', n, rules()));
+          ui.wrote('! Hunter', onHunter(h.id, 'max-edit', x => setMaximum(x, key === 'hp' ? 'hpMax' : 'manaMax', n, rules())));
           return;
         }
         if ('condAdd' in d) {
@@ -608,10 +611,11 @@ export function register(app) {
         if (d.st) {
           // The rule of + and −, and what each role may do, is src/core/hunter/progress.ts (raise, lower).
           const k = oneOf(d.st, STAT_KEYS, 'str'), move = Number(d.dir) > 0 ? x => raise(x, k, role, rules()) : x => lower(x, k, role);
-          return store.apply('stat', atHunter(h.id, both(move, x => fitted(x, rules()))));
+          ui.wrote('! Hunter', store.apply('stat', atHunter(h.id, both(move, x => fitted(x, rules())))), ALLOCATION_WORDS);
+          return;
         }
-        if ('confirm' in d) return store.apply('confirm-alloc', atHunter(h.id, confirm));
-        if ('grant' in d && role === 'gm') store.apply('grant', atHunter(h.id, x => plusPoint(x, rules())));
+        if ('confirm' in d) { ui.wrote('! Hunter', store.apply('confirm-alloc', atHunter(h.id, confirm))); return; }
+        if ('grant' in d && role === 'gm') ui.wrote('! Hunter', store.apply('grant', atHunter(h.id, x => plusPoint(x, rules()))));
       });
     },
     update(el) {
@@ -675,7 +679,7 @@ export function register(app) {
   async function removeBoon(hid, id) {
     const b = store.hunter(hid)?.boons.find(x => x.id === id); if (!b) return;
     if (!await ui.confirm({ title: 'Remove boon?', body: `${b.name}. It is taken back, not redeemed: nobody is told.`, danger: true, confirmLabel: 'Remove' })) return;
-    onHunter(hid, 'boon-remove', h => dropBoon(h, id));
+    ui.wrote('! Hunter', onHunter(hid, 'boon-remove', h => dropBoon(h, id)));
   }
 
   // ═══ Panel: Titles ═══
@@ -704,11 +708,12 @@ export function register(app) {
       el.addEventListener('click', async e => {
         const b = e.target.closest('button'); if (!b) return;
         const d = b.dataset, h = store.active(), gm = app.isGM();
-        if (d.tset !== undefined) return onHunter(h.id, 'title-active', both(x => toggleTitle(x, d.tset), fit));
+        if (d.tset !== undefined) { ui.wrote('! Hunter', onHunter(h.id, 'title-active', both(x => toggleTitle(x, d.tset), fit))); return; }
         if (d.grantTitle) {
           const seed = seedTitle(d.grantTitle); if (!seed || (seed.gmOnly && !gm)) return;
-          const tid = store.id('t'); onHunter(h.id, 'title-grant', x => giveTitle(x, { key: seed.key }, tid, rules().titles));
-          ui.toast('System', `Title acquired: ${seed.name}`); return;
+          const tid = store.id('t');
+          if (ui.wrote('! Hunter', onHunter(h.id, 'title-grant', x => giveTitle(x, { key: seed.key }, tid, rules().titles)))) ui.toast('System', `Title acquired: ${seed.name}`);
+          return;
         }
         if (d.redeem) return redeem(h.id, d.redeem);
         if (d.boondel && gm) return removeBoon(h.id, d.boondel);
@@ -718,8 +723,7 @@ export function register(app) {
         if (d.tdel && gm) {
           const t = h.titles.find(x => x.id === d.tdel);
           if (t && await ui.confirm({ title: 'Delete title?', body: t.name, danger: true, confirmLabel: 'Delete' })) {
-            onHunter(h.id, 'title-del', both(x => removeTitle(x, t.id), fit));
-            if (editingTitle === t.id) { form.hidden = true; editingTitle = null; }
+            if (ui.wrote('! Hunter', onHunter(h.id, 'title-del', both(x => removeTitle(x, t.id), fit))) && editingTitle === t.id) { form.hidden = true; editingTitle = null; }
           }
         }
       });
@@ -728,7 +732,8 @@ export function register(app) {
         const h = store.active(), name = form.tname.value.replace(/\s+/g, ' ').trim().slice(0, 60); if (!name) return;
         const bonus = app.api.maker.readBonus(form);
         const tid = editingTitle === 'new' ? store.id('t') : editingTitle;
-        if (editingTitle === 'new' || h.titles.some(t => t.id === tid)) onHunter(h.id, 'title-edit', both(x => writeTitle(x, tid, { name, desc: form.tdesc.value, bonus }), fit));
+        // a refused title keeps the form open with what was typed
+        if ((editingTitle === 'new' || h.titles.some(t => t.id === tid)) && !ui.wrote('! Hunter', onHunter(h.id, 'title-edit', both(x => writeTitle(x, tid, { name, desc: form.tdesc.value, bonus }), fit)))) return;
         form.hidden = true; editingTitle = null;
       });
     },
@@ -765,14 +770,14 @@ export function register(app) {
         const d = b.dataset, hs = store.get().hunters;
         if ('padd' in d) {
           const name = await ui.promptText({ title: 'New hunter', label: 'Hunter name', value: '' });
-          if (name) { const made = store.newHunter(name); store.apply('new-hunter', s => addHunter(s, made)); }
+          if (name) { const made = store.newHunter(name); ui.wrote('System', store.apply('new-hunter', s => addHunter(s, made))); }
           return;
         }
         const h = d.pset || d.pren || d.pdel ? store.hunter(d.pset || d.pren || d.pdel) : null; if (!h) return;
         if (d.pset) return app.api.sync.switchTo(h.id); // S03
         if (d.pren) {
           const name = await ui.promptText({ title: 'Rename hunter', label: 'Hunter name', value: h.name });
-          if (name) onHunter(h.id, 'rename', x => rename(x, name));
+          if (name) ui.wrote('! Hunter', onHunter(h.id, 'rename', x => rename(x, name)));
           return;
         }
         if (d.pdel) { await api.deleteHunter(h.id); return; }
@@ -808,20 +813,22 @@ export function register(app) {
       </div><p class="dv-note">Direct edits. Stat edits are confirmed immediately (no refunds).</p>`;
       el.addEventListener('change', e => {
         const i = e.target, h = store.active(); let v = Math.trunc(Number(i.value));
-        if (i.dataset.rawrank) return onHunter(h.id, 'gm-edit', x => setRank(x, i.value));
+        // a refused edit is told, and the fields are drawn again from the save
+        const written = w => { if (!ui.wrote('! Hunter', w)) rawRefresh(el); };
+        if (i.dataset.rawrank) return written(onHunter(h.id, 'gm-edit', x => setRank(x, i.value)));
         if (!Number.isFinite(v)) return rawRefresh(el);
-        if (i.dataset.rawstat) return store.apply('gm-edit', atHunter(h.id, both(x => setStat(x, oneOf(i.dataset.rawstat, STAT_KEYS, 'str'), v), x => fitted(x, rules()))));
+        if (i.dataset.rawstat) return written(store.apply('gm-edit', atHunter(h.id, both(x => setStat(x, oneOf(i.dataset.rawstat, STAT_KEYS, 'str'), v), x => fitted(x, rules())))));
         const k = i.dataset.raw, R = rules();
         if (k === 'level' || k === 'xp') {
           // the Job Change level step moves with the level, and is completed when reached, in the same write
           let done = [];
           const day = dayNow();
-          store.apply('gm-edit', s => { const x = levelEdit(s, h.id, k === 'level' ? v : h.level, k === 'xp' ? v : h.xp, day); if (isRefused(x)) return x; done = x.done; return x.save; });
+          written(store.apply('gm-edit', s => { const x = levelEdit(s, h.id, k === 'level' ? v : h.level, k === 'xp' ? v : h.xp, day); if (isRefused(x)) return x; done = x.done; return x.save; }));
           if (done.length) app.api.quests.stepsDone(h.id, done);
           return;
         }
         const edit = k === 'points' ? x => setPoints(x, v, R) : k === 'gold' ? x => setGold(x, v) : k === 'hpAdj' || k === 'manaAdj' ? x => setAdjust(x, k, v, R) : null;
-        if (edit) onHunter(h.id, 'gm-edit', both(edit, fit));
+        if (edit) written(onHunter(h.id, 'gm-edit', both(edit, fit)));
       });
     },
     update: rawRefresh,

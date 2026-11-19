@@ -13,6 +13,7 @@ import type { BuildChange, DocName, DocOf, EventBody, EventId, EventType, QuestO
 import type { Hunter, Item, Monster, Objective, QuestKind, Rank, Rewards, Save, Skill, Slot } from './save.ts';
 import type { Stats } from './stats.ts';
 import type { Applied, Refused, Step } from './save-step.ts';
+import type { READ_ONLY } from './store-life.ts';
 import type { Granted, StepDone } from './hunter/grant.ts';
 import type { StatusIn } from './hunter/conditions.ts';
 import type { HeldParts } from './combat/fight-save.ts';
@@ -74,8 +75,8 @@ export type BestiaryApi = {
   save(m: Partial<Monster>, asNew?: boolean): string;
   /** Opens the monster maker on `m` (null: a new monster; a seed is saved as a copy); answers the id it saved, or null. */
   make(m: Monster | null): Promise<string | null>;
-  /** Deletes one of the GM's monsters; its codex record stays, without a link to it. */
-  remove(id: string): void;
+  /** Deletes one of the GM's monsters; its codex record stays, without a link to it. Answers whether it was deleted. */
+  remove(id: string): boolean;
 };
 
 export type BuildApi = {
@@ -107,9 +108,10 @@ export type BundlesApi = {
   list(): RewardBundle[];
   /**
    * Saves `rewards` as `name`, by id: the bundle `id` (an edit or a rename), else a new one. Answers its id, or why not:
-   * a blank name, a full library, or a name another bundle holds (`taken`, which the maker asks about).
+   * a blank name, a full library, a name another bundle holds (`taken`, which the maker asks about), or a tab that may
+   * not change the save (`read-only`).
    */
-  save(name: string, rewards: Rewards, id?: string | null, window?: SystemWords | null): { ok: true; id: string } | { ok: false; why: 'blank' | 'full' | 'taken' };
+  save(name: string, rewards: Rewards, id?: string | null, window?: SystemWords | null): { ok: true; id: string } | { ok: false; why: 'blank' | 'full' | 'taken' | typeof READ_ONLY };
   remove(id: string): boolean;
 };
 
@@ -227,8 +229,8 @@ export type ForgeApi = {
 };
 
 export type GatesApi = {
-  /** A new gate in the save; a rank or type left out is drawn from the rules' spawn weights. */
-  spawn(o?: { rank?: Rank; type?: GateType; name?: string }): Gate;
+  /** A new gate in the save; a rank or type left out is drawn from the rules' spawn weights. Null when the write was refused (told in a toast). */
+  spawn(o?: { rank?: Rank; type?: GateType; name?: string }): Gate | null;
   /** A gate rolled as `spawn` rolls it, with the monsters made for it, not yet in the save (a step writes it: `spawnGate`). */
   roll(o?: { rank?: Rank; type?: GateType; name?: string }): { gate: Gate; monsters: Monster[] };
   /**
@@ -363,7 +365,8 @@ export type MapsApi = {
   get(id: string): BattleMap | null;
   /** Opens the map maker for `m` (null: a new map); answers the map as saved, or null on Cancel. */
   make(m: BattleMap | null): Promise<BattleMap | null>;
-  remove(id: string): void;
+  /** Deletes a saved map; answers whether it was deleted. */
+  remove(id: string): boolean;
 };
 
 export type LootApi = {
@@ -470,7 +473,7 @@ export type MakerEffects = {
 export type OnboardApi = { quickstart(): void };
 
 export type QuestsApi = {
-  /** Gives each hunter a copy of the quest; answers the new quest ids. */
+  /** Gives each hunter a copy of the quest; answers the new quest ids, none when the write was refused (told in a toast). */
   issue(hids: string[], partial: Partial<Omit<QuestOffer, 'rewards' | 'objectives'>> & {
     objectives?: (Omit<Objective, 'progress'> & { progress?: number })[]; rewards?: Partial<Rewards> | QuestOffer['rewards']; from?: 'gm' | 'system' | 'self';
   }): string[];
