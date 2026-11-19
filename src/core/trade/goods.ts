@@ -7,6 +7,7 @@
 // Goods are read strictly (`parseGoods`): a line that does not read refuses the whole goods, never drops out of them,
 // because a dropped line would be something the giver put aside and the taker never got.
 import { ITEM_BOUNDS, parseItem } from '../registry/items.ts';
+import { bytesOf } from '../size.ts';
 import type { Item, ItemTemplate } from '../registry/items.ts';
 import { addGold, putItem, takeItems } from '../hunter/inventory.ts';
 import { isRefused, refuse } from '../save-step.ts';
@@ -27,18 +28,20 @@ export type BagPick = { readonly gold: number; readonly items: readonly PickLine
 
 export const NO_GOODS: Goods = { gold: 0, items: [] };
 export const NO_PICK: BagPick = { gold: 0, items: [] };
-/** At most this many item lines in one offer's goods or asks: a reader's bound for junk; the bytes (`OFFER_MAX`) decide what fits. */
+/** At most this many item lines in one offer's goods or asks. Eight items at an item's size (size.ts `THING_MAX.item`) fit `OFFER_MAX`. */
 export const GOODS_LINES = 8;
 /** The most gold one offer gives or asks: the reward's bound (`REWARD_BOUNDS`). */
 export const GOODS_GOLD_MAX = 1e9;
 /**
- * The longest offer or end, in bytes of its payload's JSON in UTF-8 (`goodsSize`): 48 KiB, leaving 16 KiB of the server's
- * 64 KiB body for the request's wrapper. The effect parser does not bound an item's size (a formula nests 40 deep, a status
- * def three levels), so this is the only bound that holds; the measurement is in notes-5-trade.md 12.2.
+ * The longest offer or end, in bytes of its payload's JSON in UTF-8 (`goodsSize`): 59 KiB. It follows from an item's
+ * size: `GOODS_LINES` items at `THING_MAX.item` (7,168 each, 27 more for a line's wrapper) with the worst rest of an
+ * offer (ids, names and 8 asks of 60 three-byte characters: 2,344) are 59,903 bytes, measured by tests/protocol.test.ts,
+ * rounded up to a KiB. With the request's wrapper (80) that is under the server's 64 KiB body. So an offer of 8 items the
+ * readers take is never refused for its size (notes-5-trade.md 12.9).
  */
-export const OFFER_MAX = 49_152;
-/** The size of a value on the wire: its JSON's bytes in UTF-8. */
-export const goodsSize = (v: unknown): number => new TextEncoder().encode(JSON.stringify(v)).length;
+export const OFFER_MAX = 60_416;
+/** The size of a value on the wire: its JSON's bytes in UTF-8 (size.ts `bytesOf`). */
+export const goodsSize = bytesOf;
 /** Whether goods hold nothing. */
 export const noGoods = (g: Goods): boolean => g.gold === 0 && g.items.length === 0;
 

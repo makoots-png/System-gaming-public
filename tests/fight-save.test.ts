@@ -66,7 +66,7 @@ type Part = (typeof PARTS)[number];
 function write(p: Phone, cmd: Command, links: Beside['links'] = null): Result {
   const r = reduce(p.save.fight, cmd, ctxOf(p.save));
   const totals = r.effects.flatMap(fx => fx.type === 'sendRemote'
-    ? [{ key: `vitals ${fx.remote}`, event: newEvent('vitals', { to: [parseSheetKey(fx.remote)!], hp: fx.hp, mana: fx.mana, fatigue: fx.fatigue, statuses: [...fx.statuses], reason: 'Fight' }, { device: 'd-gm', now: 1, rand: ++p.events / 1000 })! }] : []);
+    ? [newEvent('vitals', { to: [parseSheetKey(fx.remote)!], hp: fx.hp, mana: fx.mana, fatigue: fx.fatigue, statuses: [...fx.statuses], reason: 'Fight' }, { device: 'd-gm', now: 1, rand: ++p.events / 1000 })!] : []);
   const next = fought(p.save, r, { links, room: ROOM, totals, stamp: STAMP }, RULES);
   if (!isRefused(next)) p.save = next;
   return r;
@@ -315,7 +315,7 @@ describe('an award to hunters this phone\'s fight holds is one write: the award,
     ];
     const r = reduceAll(p.save.fight, heldCommands(p.save.fight, parts, RULES), ctxOf(p.save));
     const totals = r.effects.flatMap(fx => fx.type === 'sendRemote'
-      ? [{ key: `vitals ${fx.remote}`, event: newEvent('vitals', { to: [parseSheetKey(fx.remote)!], hp: fx.hp, mana: fx.mana, fatigue: fx.fatigue, statuses: [...fx.statuses], reason: 'Fight' }, { device: 'd-gm', now: 1, rand: ++p.events / 1000 })! }] : []);
+      ? [newEvent('vitals', { to: [parseSheetKey(fx.remote)!], hp: fx.hp, mana: fx.mana, fatigue: fx.fatigue, statuses: [...fx.statuses], reason: 'Fight' }, { device: 'd-gm', now: 1, rand: ++p.events / 1000 })!] : []);
     const next = fought(p.save, r, { links: null, room: ROOM, totals, stamp: STAMP, also: sv => gmAward(sv, locals, REWARD, sends, DAY).save }, RULES);
     if (!isRefused(next)) p.save = next;
     if (crash !== 'write') flush(p);

@@ -16,6 +16,8 @@ import { DOCS, REMOVED_MS, newEvent, onTurn, parseDeviceId, parseRoomState, pars
 import type { DeviceId, EventId, EventType, RoomCode, RoomDocs, RoomEvent, RoomState, SheetKey } from '../../src/core/protocol.ts';
 import { recordApplied } from '../../src/core/applied.ts';
 import { ringDrop, ringGone, ringKeep } from '../../src/core/sync/bind.ts';
+import { seenFrom, seenKept, seenWithout } from '../../src/core/sync/seen.ts';
+import type { RoomPlaces } from '../../src/core/sync/seen.ts';
 import { hunterIdOf, sheetKeyOf } from '../../src/core/ids.ts';
 import { parseDayKey } from '../../src/core/day.ts';
 import { freshSave } from '../../src/core/save.ts';
@@ -53,6 +55,8 @@ export type PhoneSave = {
   outbox: Outbox; posted: { room: RoomCode; eid: EventId }[];
   /** A player's won solo runs waiting for the GM's answer (src/core/gates/solo-wait.ts); the GM's one solo gate, open or cleared. */
   runs: readonly WaitingRun[]; soloGate: 'open' | 'cleared';
+  /** Where this phone stopped reading each room it went out of (src/core/sync/seen.ts), written by `save` as `linkSaved` writes it. */
+  seen: RoomPlaces;
 };
 type Shown = { gen: Gen | null; sheets: RoomState['sheets']; docs: RoomDocs };
 const NOTHING_SHOWN: Shown = { gen: null, sheets: {}, docs: {} };
@@ -76,6 +80,8 @@ export type Phone = {
   ruledOn: Record<string, { at: number; page: number }>;
   /** Bookkeeping for the rules: the room the save holds and the cursor it was entered with. */
   stretch: { room: RoomCode; from: number; at: number } | null;
+  /** Bookkeeping for the rules: for each room, the cursor this phone first went live in it with. Every message to it after that lands once. */
+  first: Record<string, number>;
   // in memory: dropped by a reload
   page: number; link: Link; push: Push; attempt: Gen | null; sheetText: string; shown: Shown; srvSkew: number;
   timers: { poll?: number; push?: number }; queue: QItem[]; running: boolean; notices: string[];
@@ -117,8 +123,8 @@ export const isGm = (p: Phone): boolean => roleOf({ mode: p.save.mode, sync: { g
 function newPhone(i: number, name: string, mode: 'gm' | 'player'): Phone {
   return {
     i, name, device: parseDeviceId(`d-${name}`)!, token: `${name}-token`.padEnd(16, 'x'),
-    save: { mode, room: null, cursor: 0, last: null, gmKey: null, gmKeys: {}, applied: [], joinedAt: '', serverOk: true, sheet: 1, fightNow: FIGHT_START, coins: [], calls: [], rolled: 0, outbox: [], posted: [], runs: [], soloGate: 'open' },
-    ledger: {}, told: {}, acted: {}, paid: {}, ruled: {}, ruledOn: {}, stretch: null,
+    save: { mode, room: null, cursor: 0, last: null, gmKey: null, gmKeys: {}, applied: [], joinedAt: '', serverOk: true, sheet: 1, fightNow: FIGHT_START, coins: [], calls: [], rolled: 0, outbox: [], posted: [], runs: [], soloGate: 'open', seen: {} },
+    ledger: {}, told: {}, acted: {}, paid: {}, ruled: {}, ruledOn: {}, stretch: null, first: {},
     page: 0, link: { at: 'off', gen: 0 as Gen }, push: PUSH_OFF, attempt: null, sheetText: '', shown: NOTHING_SHOWN, srvSkew: 0,
     timers: {}, queue: [], running: false, notices: [], offline: false,
   };
@@ -169,16 +175,19 @@ function drain(w: World, p: Phone): void {
 
 /** `runLink`. */
 function runLink(w: World, p: Phone, fx: LinkEffect[], before: Link, data: Data): void {
+  // sync.ts `runLink`: a poll page's cursor waits for the page's `apply`, which writes it with what the page lands
+  const page = data?.kind === 'poll' && fx.some(x => x.type === 'apply');
+  let cursor: SaveFields | null = null;
   for (const x of fx) {
     switch (x.type) {
       case 'request': linkRequest(w, p, x.gen, x.timeoutMs, x.call); break;
       case 'abort': for (const r of w.pending) if (r.phone === p.i && r.page === p.page && r.lane !== 'gm' && r.gen === x.gen) r.dead = true; break;
       case 'setTimer': p.timers[x.name] = w.clock + x.ms; break;
       case 'clearTimer': delete p.timers[x.name]; break;
-      case 'save': save(w, p, x.fields, before); break;
+      case 'save': if (page) cursor = x.fields; else save(w, p, x.fields, before); break;
       case 'notify': { p.notices.push(x.id); const code = 'code' in before ? before.code : null; if (x.id === 'gone' && code) write(w, p, s => { s.runs = onRuns(s, x2 => runsGone(x2, code)); s.outbox = roomGone(s.outbox, code); }); break; }
       case 'status': break;
-      case 'apply': apply(w, p, data); break;
+      case 'apply': apply(w, p, data, cursor, before); cursor = null; break;
       case 'push': { const r = pushReduce(freeze(p.push), freeze(x.event)); p.push = r.state; runPush(w, p, r.effects); break; }
     }
   }
@@ -206,6 +215,13 @@ function write(w: World, p: Phone, fn: (s: PhoneSave) => void): void {
 function save(w: World, p: Phone, fields: SaveFields, before: Link): void {
   const room0 = p.save.room;
   write(w, p, s => {
+    // bind.ts `linkSaved`: the room's cursor is kept in the write that takes the phone out of it; the place goes when the
+    // phone is in the room again, and when the room is gone
+    const at = new Date(w.clock + p.srvSkew).toISOString(); // sync.ts `srvNow`
+    const gone = fields.last?.why === 'gone' ? fields.last.code : fields.ring && 'gone' in fields.ring ? fields.ring.gone : null;
+    if (fields.room !== undefined && s.room && fields.room !== s.room) s.seen = seenKept(s.seen, s.room, s.cursor, at);
+    if (fields.room) s.seen = seenWithout(s.seen, fields.room);
+    if (gone) s.seen = seenWithout(s.seen, gone);
     if (fields.room !== undefined) s.room = fields.room;
     if (fields.cursor !== undefined) s.cursor = fields.cursor;
     if (fields.last !== undefined) s.last = fields.last ? { code: fields.last.code, why: fields.last.why } : null;
@@ -219,6 +235,7 @@ function save(w: World, p: Phone, fields: SaveFields, before: Link): void {
     s.gmKeys = { ...(r.gmKeys ?? {}) }; s.gmKey = r.gmKey ?? null;
   });
   if (p.save.room !== room0) p.stretch = p.save.room ? { room: p.save.room, from: p.save.cursor, at: w.clock } : null;
+  if (p.save.room !== room0 && p.save.room) p.first[p.save.room] ??= p.save.cursor;
 }
 
 /** `settleAttempt`, reduced to what the machines see: a Create or Join tap is in progress until the link leaves its gen. */
@@ -292,7 +309,7 @@ function removedSinceJoin(w: World, p: Phone, r: RoomState): boolean {
 }
 
 /** `apply`: the room data of the reply just given. A player applies each event through the real appliers and ring. */
-function apply(w: World, p: Phone, data: Data): void {
+function apply(w: World, p: Phone, data: Data, cursor: SaveFields | null, before: Link): void {
   if (!data) return;
   const player = p.link.at === 'live' && p.link.key === null;
   if (data.kind === 'head') {
@@ -303,11 +320,14 @@ function apply(w: World, p: Phone, data: Data): void {
   const { r, after } = data;
   skewFrom(w, p, r.now);
   p.shown = { gen: p.link.gen, sheets: r.sheets, docs: r.docs };
+  // sync.ts `landPage`: the page's lands and its cursor are one write. No move falls between the statements of one
+  // `apply`, so a reload here finds both or neither, as a phone's one write does.
   for (const ev of r.events.filter(e => e.seq > after).sort((a, b) => a.seq - b.seq)) {
     if (ev.from === p.device) continue;
     if (player) applyOne(w, p, ev);
     else if (isGm(p)) { tellOne(w, p, ev); castOne(w, p, ev); callOne(w, p, ev); soloOne(w, p, ev); }
   }
+  if (cursor) save(w, p, cursor, before);
   heard(w, p);
   flushOut(w, p);
 }
@@ -610,6 +630,9 @@ function reload(w: World, p: Phone): void {
   if (p.offline) linkDo(w, p, { type: 'offline' });
   startPage(w, p);
 }
+/** sync.ts `joining`: a join of `code`, reading on from where this phone stopped when it last went out of that room. */
+const joining = (w: World, p: Phone, code: RoomCode): Extract<LinkEvent, { type: 'join' }> =>
+  ({ type: 'join', code, key: p.save.gmKeys[code] ?? null, from: seenFrom(p.save.seen, code, w.clock + p.srvSkew) });
 /** The room code a player can type: the room the GM's phone is in, read off the GM's screen. */
 const invite = (w: World): RoomCode | null => (w.phones[0]!.link.at === 'live' ? (w.phones[0]!.link as { code: RoomCode }).code : null);
 
@@ -710,8 +733,8 @@ export async function play(w: World, move: Move): Promise<boolean> {
   const p = phoneNamed(w, who)!;
   switch (verb) {
     case 'create': begin(w, p, { type: 'create' }); break;
-    case 'rejoin': { const code = p.save.room ?? p.save.last?.code; if (code) begin(w, p, { type: 'join', code, key: p.save.gmKeys[code] ?? null }); break; }
-    case 'join': { const code = invite(w)!; begin(w, p, { type: 'join', code, key: p.save.gmKeys[code] ?? null }); break; }
+    case 'rejoin': { const code = p.save.room ?? p.save.last?.code; if (code) begin(w, p, joining(w, p, code)); break; }
+    case 'join': { const code = invite(w)!; begin(w, p, joining(w, p, code)); break; }
     case 'leave': linkDo(w, p, { type: 'leave' }); break;
     case 'reload': reload(w, p); break;
     case 'edit': bump(w, p); break;

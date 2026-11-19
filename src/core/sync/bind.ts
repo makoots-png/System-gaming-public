@@ -8,6 +8,7 @@
 // table test (tests/bind.test.ts).
 import { setActive } from '../party.ts';
 import type { GmKey, HunterId, RoomCode } from '../ids.ts';
+import { seenKept, seenWithout } from './seen.ts';
 import type { Save, SyncSettings } from '../save.ts';
 import { isRefused } from '../save-step.ts';
 import { rebound } from './outbox.ts';
@@ -49,10 +50,16 @@ export const serverSeen = (s: SyncSettings): SyncSettings => (s.serverOk ? s : {
 
 /**
  * The save after the link's `save` effect: each room field it names, `serverOk` once it names a room, and its ring
- * change. `refused` is the key the link held when the room refused one (sync.ts reads it from the link before).
+ * change. `refused` is the key the link held when the room refused one (sync.ts reads it from the link before). In the
+ * write that takes the phone out of a room (to none, or to another), the room's cursor is kept in `seen` at the server's
+ * time `at`; the place goes when the phone is in that room again, and when the room is gone.
  */
-export function linkSaved(save: Save, f: SaveFields, refused: GmKey | null): Save {
+export function linkSaved(save: Save, f: SaveFields, refused: GmKey | null, at: string): Save {
   let s: SyncSettings = { ...save.settings.sync };
+  const was = s.room, gone = f.last?.why === 'gone' ? f.last.code : f.ring && 'gone' in f.ring ? f.ring.gone : null;
+  if (f.room !== undefined && was && f.room !== was) s.seen = seenKept(s.seen, was, s.cursor, at);
+  if (f.room) s.seen = seenWithout(s.seen, f.room);
+  if (gone) s.seen = seenWithout(s.seen, gone);
   if (f.room !== undefined) s.room = f.room;
   if (f.cursor !== undefined) s.cursor = f.cursor;
   if (f.last !== undefined) s.lastRoom = f.last ? { code: f.last.code, why: f.last.why } : null;

@@ -11,6 +11,7 @@ import { REVIVE_TEXT, effectsOf } from '../core/effects.ts';
 import { describeStatus } from '../core/combat/effect-ops.ts';
 import { wornWorth } from '../core/registry/worth.ts';
 import { ATTACKS, ITEM_BOUNDS, KIT_SHARE, RARITIES, SAMPLE_WEARER, parseItem, piece, priceOf, weightOf, wornSpeed } from '../core/registry/items.ts';
+import { tooLarge } from '../core/size.ts';
 
 const TYPE_LABEL = { weapon: 'Weapon', armor: 'Armor', accessory: 'Accessory', consumable: 'Consumable', material: 'Material', key: 'Key', misc: 'Misc' };
 const AUTO_SLOT = { weapon: 'weapon', armor: 'chest', accessory: 'ring1' };
@@ -184,6 +185,8 @@ export function register(app) {
           save() {
             const form = formItem();
             if (!form.name) { shell.error('Give the item a name.'); $('#lf-name').focus(); return undefined; }
+            const big = (form.worn ? tooLarge('status', form.worn) : null) || tooLarge('item', form);
+            if (big) { shell.error(big); return undefined; }
             const out = parseItem(form);
             if (canon(out) !== canon(form)) console.error('The item maker wrote an item its parser reads differently', form, out);
             const why = library && $('#lf-save').checked ? saveToLibrary(out, initial && initial.id) : null;

@@ -11,6 +11,7 @@ import { STAT_KEYS } from '../stats.ts';
 import { SHEET_LABELS } from '../hunter/derive.ts';
 import type { Archetype, Bonus, GearPiece, MonsterKind, SheetNumber, Tweak } from '../hunter/derive.ts';
 import { COUNT_NAMES, diceModsOf, FNS, FORMULA_PARTS } from '../formula.ts';
+import { withinSize } from '../size.ts';
 import type { BinaryOp, Formula } from '../formula.ts';
 import { TERRAIN, TERRAINS, percent, place, tiles } from './space.ts';
 import type { Grid, Place, Shape } from './space.ts';
@@ -426,14 +427,17 @@ function stackRuleOf(v: unknown, R: Rules, depth: number): StackRule | null {
  * A status def from outside data (the GM's library in a save, a pack, a reward, a room message), or null when it is not
  * one: a label of at most 60 characters, a description of at most 500, at most 12 ops that each read, a colour `#rrggbb`
  * or none, and a stack rule (`stackRuleOf`) or none. An `applyStatus` op's own def is read three levels deep at most.
+ * A def past a status's size (size.ts `THING_MAX.status`) is refused whole.
  */
-export const parseStatusDef = (v: unknown, R: Rules): StatusDef | null => defOf(v, R, 0);
+export const parseStatusDef = (v: unknown, R: Rules): StatusDef | null => { const def = defOf(v, R, 0); return def && withinSize('status', def) ? def : null; };
+/** Whether `v` reads as a status def and is refused only for its size: what holds it (an item, a skill) is then refused whole. */
+export const statusTooLarge = (v: unknown, R: Rules): boolean => { const def = defOf(v, R, 0); return def !== null && !withinSize('status', def); };
 /** One op from outside data (an item's effects in a save, a pack, a form), read as a status's op is. */
 export const parseOp = (v: unknown, R: Rules): Op | null => opOf(v, R, 0);
 /** A status's key, def and source, which a fight's status and a sheet's share. */
 function keyDefSource(v: unknown, R: Rules): Pick<Status, 'key' | 'def' | 'source'> | null {
   if (!isObj(v) || !isObj(v.source)) return null;
-  const key = idText(v.key), def = defOf(v.def, R, 0), srcId = v.source.id === null ? null : idText(v.source.id), tier = whole(v.source.tier, 0, 5);
+  const key = idText(v.key), def = parseStatusDef(v.def, R), srcId = v.source.id === null ? null : idText(v.source.id), tier = whole(v.source.tier, 0, 5);
   if (!key || !def || (v.source.id !== null && srcId === null) || tier === null) return null;
   return { key: statusKey(key), def, source: { id: srcId === null ? null : combatantId(srcId), tier } };
 }
@@ -614,12 +618,16 @@ function summonOf(v: unknown, R: Rules): Summon | null {
  * An ability from outside data (a skill or a monster in a save, a pack, a form), read as a fight row's is, except that
  * it is never a bag item's use: an `item` it claims is dropped, so no skill or monster spends an item (implicit audit 2, N16).
  */
-export function parseAbility(v: unknown, R: Rules): Ability | null {
+function abilityRead(v: unknown, R: Rules): Ability | null {
   const a = abilityOf(v, R);
   if (!a || a.item === undefined) return a;
   const { item: _item, ...own } = a;
   return own;
 }
+/** `abilityRead`, with an ability past its size (size.ts `THING_MAX.ability`) refused whole. */
+export function parseAbility(v: unknown, R: Rules): Ability | null { const a = abilityRead(v, R); return a && withinSize('ability', a) ? a : null; }
+/** Whether `v` reads as an ability and is refused only for its size: a skill that is this ability is then refused whole. */
+export const abilityTooLarge = (v: unknown, R: Rules): boolean => { const a = abilityRead(v, R); return a !== null && !withinSize('ability', a); };
 
 // ── a row ──
 const ARCHETYPE_LIST: readonly Archetype[] = ['brute', 'skirmisher', 'caster'];

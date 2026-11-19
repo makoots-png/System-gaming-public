@@ -34,7 +34,7 @@ export const saved = (fx: LinkEffect[]) => Object.assign({}, ...fx.flatMap(x => 
 
 const fresh = () => run(boot({ server: true, room: null, last: null })).reply({ type: 'healthOk' });
 /** A player live in room A, its first poll answered. */
-export const playerInA = () => fresh().tap({ type: 'join', code: ROOM_A, key: null }).reply({ type: 'peeked', exists: true })
+export const playerInA = () => fresh().tap({ type: 'join', code: ROOM_A, key: null, from: null }).reply({ type: 'peeked', exists: true })
   .reply({ type: 'headed', cursor: 40, gm: false, kicked: false }).reply({ type: 'polled', cursor: 40, more: false, pace: 'table', fightAt: null });
 const gmInA = () => fresh().tap({ type: 'create' }).reply({ type: 'created', code: ROOM_A, key: KEY_A })
   .reply({ type: 'polled', cursor: 0, more: false, pace: 'table', fightAt: null });
@@ -91,7 +91,7 @@ describe('opening a room as GM', () => {
   });
 
   test('a GM reopens a room with its key and is live as GM', () => {
-    const r = fresh().tap({ type: 'join', code: ROOM_A, key: KEY_A });
+    const r = fresh().tap({ type: 'join', code: ROOM_A, key: KEY_A, from: null });
     expect(r.state).toMatchObject({ at: 'joining', step: 'peek' });
     expect(calls(r.fx)).toEqual([{ req: 'peek', code: ROOM_A }]);
     r.reply({ type: 'peeked', exists: true });
@@ -102,7 +102,7 @@ describe('opening a room as GM', () => {
   });
 
   test('a key the room refuses is told as a refused key, drops that key and does not join as a player', () => {
-    const r = fresh().tap({ type: 'join', code: ROOM_A, key: KEY_A }).reply({ type: 'peeked', exists: true })
+    const r = fresh().tap({ type: 'join', code: ROOM_A, key: KEY_A, from: null }).reply({ type: 'peeked', exists: true })
       .reply({ type: 'headed', cursor: 77, gm: false, kicked: false });
     expect(r.state).toMatchObject({ at: 'idle', server: 'ok' });
     expect(notices(r.fx)).toEqual(['keyRefused']);
@@ -112,8 +112,27 @@ describe('opening a room as GM', () => {
 });
 
 describe('joining as a player', () => {
+  test('a join back into a room the phone was in reads on from where it stopped, so what came meanwhile is polled next; a room it was never in starts at its end', () => {
+    const back = fresh().tap({ type: 'join', code: ROOM_A, key: null, from: 12 }).reply({ type: 'peeked', exists: true }).reply({ type: 'headed', cursor: 40, gm: false, kicked: false });
+    expect(back.state).toMatchObject({ at: 'live', code: ROOM_A, cursor: 12 });
+    expect(saved(back.fx)).toMatchObject({ room: ROOM_A, cursor: 12 });
+    expect(calls(back.fx)).toEqual([{ req: 'poll', code: ROOM_A, cursor: 12, key: null }]);
+    const first = fresh().tap({ type: 'join', code: ROOM_A, key: null, from: null }).reply({ type: 'peeked', exists: true }).reply({ type: 'headed', cursor: 40, gm: false, kicked: false });
+    expect(first.state).toMatchObject({ at: 'live', cursor: 40 });
+  });
+
+  test('a place past the room\'s end is another room\'s: the join starts at the end', () => {
+    const r = fresh().tap({ type: 'join', code: ROOM_A, key: null, from: 90 }).reply({ type: 'peeked', exists: true }).reply({ type: 'headed', cursor: 40, gm: false, kicked: false });
+    expect(r.state).toMatchObject({ at: 'live', cursor: 40 });
+  });
+
+  test('a GM who reopens a room reads on from where its phone stopped, so players\' messages sent meanwhile are polled', () => {
+    const r = fresh().tap({ type: 'join', code: ROOM_A, key: KEY_A, from: 12 }).reply({ type: 'peeked', exists: true }).reply({ type: 'headed', cursor: 40, gm: true, kicked: false });
+    expect(calls(r.fx)).toEqual([{ req: 'poll', code: ROOM_A, cursor: 12, key: KEY_A }]);
+  });
+
   test('Join shows joining, then the player is live at the head of the room and the sheet push starts', () => {
-    const r = fresh().tap({ type: 'join', code: ROOM_A, key: null });
+    const r = fresh().tap({ type: 'join', code: ROOM_A, key: null, from: null });
     expect(r.state.at).toBe('joining');
     r.reply({ type: 'peeked', exists: true });
     expect(calls(r.fx)).toEqual([{ req: 'head', code: ROOM_A, key: null }]);
@@ -125,24 +144,24 @@ describe('joining as a player', () => {
   });
 
   test('a second Join while one is out is ignored', () => {
-    const r = fresh().tap({ type: 'join', code: ROOM_A, key: null });
+    const r = fresh().tap({ type: 'join', code: ROOM_A, key: null, from: null });
     const before = r.state;
-    r.tap({ type: 'join', code: ROOM_B, key: null });
+    r.tap({ type: 'join', code: ROOM_B, key: null, from: null });
     expect(r.state).toBe(before);
   });
 
   test('a room that is gone says so, and marks the last room gone when it was that room', () => {
-    const r = playerInA().tap({ type: 'leave' }).tap({ type: 'join', code: ROOM_A, key: null }).reply({ type: 'peeked', exists: false });
+    const r = playerInA().tap({ type: 'leave' }).tap({ type: 'join', code: ROOM_A, key: null, from: null }).reply({ type: 'peeked', exists: false });
     expect(r.state).toMatchObject({ at: 'idle', last: { code: ROOM_A, why: 'gone' } });
     expect(notices(r.fx)).toEqual(['notFound']);
   });
 
   test('a GM reopening a room the server no longer has loses that room\'s key, so it is not offered again', () => {
-    const r = gmInA().tap({ type: 'leave' }).tap({ type: 'join', code: ROOM_A, key: KEY_A }).reply({ type: 'peeked', exists: false });
+    const r = gmInA().tap({ type: 'leave' }).tap({ type: 'join', code: ROOM_A, key: KEY_A, from: null }).reply({ type: 'peeked', exists: false });
     expect(r.state).toMatchObject({ at: 'idle', last: { code: ROOM_A, why: 'gone' } });
     expect(notices(r.fx)).toEqual(['notFound']);
     expect(saved(r.fx)).toMatchObject({ last: { code: ROOM_A, why: 'gone' }, ring: { gone: ROOM_A } });
-    const head = gmInA().tap({ type: 'leave' }).tap({ type: 'join', code: ROOM_B, key: KEY_A }).reply({ type: 'peeked', exists: true }).reply({ type: 'gone' });
+    const head = gmInA().tap({ type: 'leave' }).tap({ type: 'join', code: ROOM_B, key: KEY_A, from: null }).reply({ type: 'peeked', exists: true }).reply({ type: 'gone' });
     expect(saved(head.fx)).toEqual({ ring: { gone: ROOM_B } });
   });
 });
@@ -227,14 +246,14 @@ describe('removed by the GM', () => {
   });
 
   test('Rejoin before the GM allows it back is told not yet, and the player stays out', () => {
-    const r = playerInA().reply({ type: 'removed' }).tap({ type: 'join', code: ROOM_A, key: null }).reply({ type: 'peeked', exists: true })
+    const r = playerInA().reply({ type: 'removed' }).tap({ type: 'join', code: ROOM_A, key: null, from: null }).reply({ type: 'peeked', exists: true })
       .reply({ type: 'headed', cursor: 50, gm: false, kicked: true });
     expect(r.state).toMatchObject({ at: 'idle', last: { code: ROOM_A, why: 'removed' } });
     expect(notices(r.fx)).toEqual(['notAllowedBack']);
   });
 
   test('Rejoin after Allow back puts the player live in the room again', () => {
-    const r = playerInA().reply({ type: 'removed' }).tap({ type: 'join', code: ROOM_A, key: null }).reply({ type: 'peeked', exists: true })
+    const r = playerInA().reply({ type: 'removed' }).tap({ type: 'join', code: ROOM_A, key: null, from: null }).reply({ type: 'peeked', exists: true })
       .reply({ type: 'headed', cursor: 50, gm: false, kicked: false });
     expect(r.state).toMatchObject({ at: 'live', code: ROOM_A, cursor: 50, last: null });
   });
@@ -330,7 +349,7 @@ describe('the campaign is replaced (import, restore, reset)', () => {
   });
 
   test('a join in progress ends, the tap is told the campaign was replaced (not that the server is unreachable), and the link follows the file', () => {
-    const r = fresh().tap({ type: 'join', code: ROOM_B, key: null });
+    const r = fresh().tap({ type: 'join', code: ROOM_B, key: null, from: null });
     const old = r.state.gen;
     r.tap({ type: 'replaced', room: { code: ROOM_A, key: KEY_A, cursor: 0 }, last: null });
     expect(r.state).toMatchObject({ at: 'live', code: ROOM_A, key: KEY_A });
@@ -364,7 +383,7 @@ describe('another build answered', () => {
     expect(r.fx).toContainEqual({ type: 'clearTimer', name: 'poll' });
     expect(news(r.fx)).toEqual(['linkLost']);
     const before = r.state;
-    for (const e of [{ type: 'join', code: ROOM_B, key: null }, { type: 'create' }, { type: 'retry' }, { type: 'online' }] as LinkEvent[]) {
+    for (const e of [{ type: 'join', code: ROOM_B, key: null, from: null }, { type: 'create' }, { type: 'retry' }, { type: 'online' }] as LinkEvent[]) {
       r.tap(e);
       expect(r.state).toBe(before);
     }
@@ -381,7 +400,7 @@ describe('late replies', () => {
   test('a poll answer from before a Leave and a rejoin of the same room changes nothing', () => {
     const r = playerInA().tap({ type: 'timerFired', name: 'poll' });
     const old = r.state.gen;
-    r.tap({ type: 'leave' }).tap({ type: 'join', code: ROOM_A, key: null }).reply({ type: 'peeked', exists: true })
+    r.tap({ type: 'leave' }).tap({ type: 'join', code: ROOM_A, key: null, from: null }).reply({ type: 'peeked', exists: true })
       .reply({ type: 'headed', cursor: 90, gm: false, kicked: false });
     const before = r.state;
     r.late({ type: 'polled', cursor: 41, more: false, pace: 'table', fightAt: null }, old).late({ type: 'gone' }, old).late({ type: 'removed' }, old);

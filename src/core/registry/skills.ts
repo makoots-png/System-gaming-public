@@ -6,7 +6,7 @@
 // here; save.ts re-exports it.
 import type { Ability } from '../combat/ability-types.ts';
 import type { StatusDef } from '../combat/effect-ops.ts';
-import { parseAbility, parseStatusDef } from '../combat/fight-parse.ts';
+import { abilityTooLarge, parseAbility, parseStatusDef, statusTooLarge } from '../combat/fight-parse.ts';
 import { PERK_KEYS, RULES } from '../rules.ts';
 import type { PerkKey } from '../rules.ts';
 import { oneOf } from '../one-of.ts';
@@ -79,7 +79,8 @@ const whole = (v: unknown, lo: number, hi: number, d: number): number => (typeof
  * wrong type or value takes the default a new skill has; a number is cut to a whole one inside `SKILL_BOUNDS`. An active
  * skill's ability is read by the fight's ability reader with the shipped rules' limits (as a reward is), and is null when
  * that refuses it. A passive one's bonus keeps the ten bonus keys (the eight stats, `hpMax`, `manaMax`) that are not 0,
- * and its `worn` status is read by the status reader (one it refuses is none). Every other key is dropped.
+ * and its `worn` status is read by the status reader (one it refuses is none). Every other key is dropped. A skill whose
+ * ability or worn status is past its size (size.ts `THING_MAX`) is refused whole: null.
  */
 export function parseSkill(v: unknown): SkillTemplate | null {
   if (!isObj(v)) return null;
@@ -90,6 +91,8 @@ export function parseSkill(v: unknown): SkillTemplate | null {
     name, level: whole(v.level, 1, B.level, 1), label: typeof v.label === 'string' ? v.label.trim().slice(0, B.label) || null : null,
     desc: typeof v.desc === 'string' ? v.desc.slice(0, B.desc) : '',
   };
+  // refused whole for its size: a skill without the ability or the worn status it was made with is another skill
+  if (abilityTooLarge(v.ability, RULES) || statusTooLarge(v.worn, RULES)) return null;
   if (oneOf(v.type, SKILL_TYPES, 'active') === 'active') return { ...base, type: 'active', ability: parseAbility(v.ability, RULES) };
   const bonus: SkillBonus = {};
   const rawBonus = isObj(v.bonus) ? v.bonus : {};

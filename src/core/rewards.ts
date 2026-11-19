@@ -5,7 +5,7 @@
 import { titleKey } from './ids.ts';
 import { isStatusKey } from './combat/effect-ops.ts';
 import type { StatusDef, StatusKey } from './combat/effect-ops.ts';
-import { parseStatusDef } from './combat/fight-parse.ts';
+import { parseStatusDef, statusTooLarge } from './combat/fight-parse.ts';
 import { isStateChip } from './hunter/chips.ts';
 import { parseItem } from './registry/items.ts';
 import type { ItemTemplate } from './registry/items.ts';
@@ -87,6 +87,8 @@ function status(v: unknown): RewardStatus | null {
   if (!isObj(v) || !isStatusKey(v.key) || isStateChip(v.key)) return null;
   const out: RewardStatus = { key: v.key, rounds: v.rounds === null || v.rounds === undefined ? null : whole(v.rounds, 1, REWARD_BOUNDS.rounds, 1) };
   const def = parseStatusDef(v.def, RULES);
+  // refused whole for its def's size: the key without the def it came with would name another status, or none
+  if (!def && statusTooLarge(v.def, RULES)) return null;
   if (def) out.def = def;
   return out;
 }

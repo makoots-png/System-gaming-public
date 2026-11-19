@@ -86,9 +86,9 @@ export const EXPLODE_MAX = 10;
 /**
  * The most parts a formula holds: each node of its tree is a part, and so is each face a dice term rolls again on (the
  * one list a node carries). Both readers keep it: `parseFormula` refuses past it, and the tree reader of outside data
- * (fight-parse.ts `formulaOf`) stops at the first part past it. A part needs at least one character, so whatever the
- * makers' longest formula field (200 characters) holds fits; the largest formula the app writes by rule is 89 parts.
- * notes-5-trade.md 12.3 has the measurement.
+ * (fight-parse.ts `formulaOf`) stops at the first part past it. It is the one bound of a formula's size: a maker's formula
+ * field takes text of any length and the parser decides, so a field always holds what the app wrote in it (a rule formula
+ * prints to 403 characters). The largest formula the app writes by rule is 89 parts. notes-5-trade.md 12.3 and 12.7.
  */
 export const FORMULA_PARTS = 200;
 /** A formula's parts, as `FORMULA_PARTS` counts them. */
@@ -296,6 +296,26 @@ export function diceModsOf(v: unknown, count: number, sides: number): DiceMods |
 
 class Refusal { constructor(readonly error: string) {} }
 
+/** The refusal of a formula past `FORMULA_PARTS`, before the read (its tokens) and after it (the faces rolled again too). */
+const TOO_MANY_PARTS = `The formula has more than ${FORMULA_PARTS} parts, and a formula has at most ${FORMULA_PARTS}. Each number, die, name, sign and face rolled again is a part.`;
+/**
+ * Why a text is too big to read, before it is read, or null. Each token but a bracket and a comma becomes one part of the
+ * tree, so more than `FORMULA_PARTS` of them is a formula past the bound; and the brackets of a formula of that many parts
+ * nest at most that deep, one for each part on the way down (what `printFormula` writes). So whatever a field holds, the
+ * reader below walks at most `FORMULA_PARTS` levels of each, and a long text pasted into a field is refused, not walked.
+ * The parts of rolling a face again are counted after the read (`partsOf`).
+ */
+function tooBig(tokens: readonly Token[]): string | null {
+  let parts = 0, depth = 0;
+  for (const t of tokens) {
+    if (t.t === 'sym' && (t.text === '(' || t.text === ')' || t.text === ',')) {
+      depth += t.text === '(' ? 1 : t.text === ')' ? -1 : 0;
+      if (depth > FORMULA_PARTS) return `The brackets at character ${t.at} are ${depth} deep. A formula has at most ${FORMULA_PARTS} parts, so it needs at most ${FORMULA_PARTS} brackets inside each other.`;
+    } else if (++parts > FORMULA_PARTS) return TOO_MANY_PARTS;
+  }
+  return null;
+}
+
 /**
  * A GM's formula read into a tree, or what could not be read. Grammar (design 3.4):
  *
@@ -314,6 +334,8 @@ export function parseFormula(text: string, rules: FormulaRules): ParsedFormula {
   const tokens = tokenize(text);
   if (typeof tokens === 'string') return { ok: false, error: tokens };
   if (!tokens.length) return { ok: false, error: 'The formula is empty. Write a number, dice such as 1d8, or a name such as phys.' };
+  const big = tooBig(tokens);
+  if (big) return { ok: false, error: big };
   let k = 0;
   const peek = (): Token | undefined => tokens[k];
   const isSym = (s: string): boolean => { const p = peek(); return p !== undefined && p.t === 'sym' && p.text === s; };
@@ -418,8 +440,7 @@ export function parseFormula(text: string, rules: FormulaRules): ParsedFormula {
     const rest = peek();
     if (rest && rest.text === ')') return { ok: false, error: `The ")" at character ${rest.at} has no "(" to close.` };
     if (rest) return { ok: false, error: `Cannot read "${rest.text}" at character ${rest.at}. Join it to what comes before with + - * / or ^.` };
-    const parts = partsOf(formula);
-    if (parts > FORMULA_PARTS) return { ok: false, error: `The formula has ${parts} parts, and a formula has at most ${FORMULA_PARTS}. Each number, die, name, sign and face rolled again is a part.` };
+    if (partsOf(formula) > FORMULA_PARTS) return { ok: false, error: TOO_MANY_PARTS };
     return { ok: true, formula };
   } catch (e) {
     if (e instanceof Refusal) return { ok: false, error: e.error };

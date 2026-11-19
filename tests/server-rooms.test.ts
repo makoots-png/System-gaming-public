@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { buildApp } from '../scripts/build.ts';
-import { database, handler, memoryStore, openDatabase, postgresStore, serverOf } from '../server.ts';
+import { MEM_EVENTS, database, handler, memoryStore, openDatabase, postgresStore, serverOf } from '../server.ts';
+import { parseEvent } from '../src/core/protocol.ts';
+import type { StoredEvent } from '../src/core/protocol.ts';
 import type { Store } from '../server.ts';
 import { DOC_MAX, SHEET_MAX, parseDeviceId, parseRoomCode, parseSheet, parseSheetKey } from '../src/core/protocol.ts';
 import type { RoomCode } from '../src/core/protocol.ts';
@@ -649,6 +651,42 @@ describe('a room\'s expiry and the sweep', () => {
       Date.now = () => t0;
       expect(await call('GET', `/api/rooms/${code}?peek=1`)).toEqual({ status: 200, body: { exists: false } });
     } finally { Date.now = realNow; }
+  });
+});
+
+describe('a room keeps every message it took (notes-5-trade.md 13, ruling 3)', () => {
+  const GM_PHONE = parseDeviceId('d-gm')!;
+  const told = (n: number) => parseEvent('system', { eid: `d-gm-s${n}`, title: `Message ${n}` })!;
+  /** Every event of the room, read page by page from the start as a phone's cursor reads it. */
+  async function all(st: Store, code: RoomCode): Promise<StoredEvent[]> {
+    const out: StoredEvent[] = [];
+    for (let after = 0; ;) { const p = await st.events(code, after); out.push(...p.events); if (!p.more) return out; after = p.next; }
+  }
+
+  test('a phone that reads from the start after 2,000 more messages still reads the first, and a resend of it is not stored again', async () => {
+    const st = await freshStore(), code = someCode(), t0 = Date.now(), first = parseEvent('award', award(10, 'd-gm-first'))!;
+    try {
+      await st.create(code, 'hash', t0);
+      expect(await st.addEvent(code, GM_PHONE, first, t0)).toBe(1);
+      for (let n = 1; n <= 2000; n++) await st.addEvent(code, GM_PHONE, told(n), t0);
+      expect(String((await st.events(code, 0)).events[0]?.payload.eid), 'the award is the first message a phone reads from the start').toBe('d-gm-first');
+      expect(await st.addEvent(code, GM_PHONE, first, t0), 'the outbox sends the award again: the room answers its seq').toBe(1);
+      const events = await all(st, code);
+      expect([events.length, events.filter(e => e.payload.eid === 'd-gm-first').length]).toEqual([2001, 1]);
+    } finally { await st.close(); }
+  });
+
+  test('a memory room past its bound refuses a new message as full and forgets none; a resend of a message it holds still answers', async () => {
+    const st = memoryStore(), server = serverOf(openDatabase(st));
+    const made = await call('POST', '/api/rooms', { server }), code = parseRoomCode(made.body.code)!, gm = { 'x-gm-key': made.body.gmKey };
+    try {
+      for (let n = 1; n <= MEM_EVENTS; n++) await st.addEvent(code, GM_PHONE, told(n), Date.now());
+      const post = (payload: unknown) => call('POST', `/api/rooms/${code}/events`, { server, headers: gm, body: { from: 'd-gm', type: 'system', payload } });
+      expect(await post({ eid: 'd-gm-late', title: 'One too many' })).toEqual({ status: 413, body: { error: 'room full' } });
+      expect(await post({ eid: 'd-gm-s1', title: 'Message 1' }), 'a message the room holds is that message again').toEqual({ status: 200, body: { seq: 1 } });
+      const events = await all(st, code);
+      expect([events.length, events[0]?.payload.eid, events.at(-1)?.seq]).toEqual([MEM_EVENTS, 'd-gm-s1', MEM_EVENTS]);
+    } finally { await st.close(); }
   });
 });
 

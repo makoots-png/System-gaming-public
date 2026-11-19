@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { GOODS_GOLD_MAX, GOODS_LINES, NO_GOODS, OFFER_MAX, fits, goodsSize, goodsWords, handOver, parseBagPick, parseGoods, received, refusalWords, setAside } from '../src/core/trade/goods.ts';
 import type { BagPick, Goods } from '../src/core/trade/goods.ts';
 import { equip, putItem } from '../src/core/hunter/inventory.ts';
-import { STARTER_GEAR, itemOf } from '../src/core/registry/items.ts';
+import { STARTER_GEAR, itemOf, parseItem } from '../src/core/registry/items.ts';
+import { THING_MAX } from '../src/core/size.ts';
 import { RULES } from '../src/core/rules.ts';
 import { freshSave, newHunter } from '../src/core/save.ts';
 import type { Hunter, Save } from '../src/core/save.ts';
@@ -67,14 +68,14 @@ describe('setting goods aside and receiving them', () => {
     expect(setAside({ ...brakk(), gold: 2e9 }, pick(GOODS_GOLD_MAX + 1))).toEqual({ ok: false, why: 'too-large' });
   });
 
-  test('goods past the offer\'s byte cap are refused as too large', () => {
-    // a line of 12 notes of 200 three-byte characters (7,200 bytes of text, about 7.5 kB with its item): eight such lines are over 49,152 bytes, six are not
-    const note = { op: 'note' as const, text: '\u0800'.repeat(200) };
+  test('eight items at an item\'s size are put aside for one offer: nothing the readers take is refused for its size', () => {
+    const note = (n: number) => ({ op: 'note', text: 'x'.repeat(n) });
+    const tome = (i: number) => Array.from({ length: 501 }, (_, n) => parseItem({ name: `Tome ${i}`, desc: 'ࠀ'.repeat(n) + 'x'.repeat(500 - n), effects: Array(12).fill(note(200)), worn: { label: 'w', desc: 'x'.repeat(500), ops: Array(12).fill(note(200)) } })).findLast(it => it !== null)!;
     let h: Hunter = { ...newHunter(RULES), id: hid('h1') };
-    for (let i = 1; i <= 8; i++) h = putItem(h, { ...potion, name: `Tome ${i}`, effects: Array(12).fill(note) }, iid(`i${i}`));
+    for (let i = 1; i <= GOODS_LINES; i++) h = putItem(h, tome(i), iid(`i${i}`));
+    expect(goodsSize(h.items[0]), 'each within two bytes of the size').toBeGreaterThan(THING_MAX.item - 3);
     const lines = h.items.map((it): [string, number, string] => [it.id, 1, it.name]);
-    expect(setAside(h, pick(0, ...lines))).toEqual({ ok: false, why: 'too-large' });
-    expect(ok(setAside(h, pick(0, ...lines.slice(0, 6)))).goods.items).toHaveLength(6);
+    expect(ok(setAside(h, pick(0, ...lines))).goods.items).toHaveLength(GOODS_LINES);
   });
 });
 
@@ -120,8 +121,9 @@ describe('goods on the wire', () => {
     expect(goodsSize({ gold: 20, items: [] })).toBe('{"gold":20,"items":[]}'.length);
   });
 
-  test('the cap leaves 16 KiB of the server\'s 64 KiB body for the request around the payload', () => {
-    expect(OFFER_MAX).toBe(64 * 1024 - 16 * 1024);
+  test('the cap is a whole number of KiB that leaves the request around the payload at least 4 KiB of the server\'s 64 KiB body', () => {
+    expect(OFFER_MAX % 1024).toBe(0);
+    expect(64 * 1024 - OFFER_MAX).toBeGreaterThanOrEqual(4 * 1024);
   });
 
   const goods: Goods = { gold: 20, items: [{ from: iid('i1'), item: { ...potion, qty: 2 } }] };

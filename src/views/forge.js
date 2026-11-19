@@ -10,6 +10,7 @@ import { LIMITS } from '../core/save.ts';
 import { atLibrary } from '../core/save-step.ts';
 import { saveStatus } from '../core/library.ts';
 import { defWorth } from '../core/registry/worth.ts';
+import { tooLarge } from '../core/size.ts';
 
 const SWATCHES = [['#4dd8ff', 'Cyan'], ['#ff4d5e', 'Red'], ['#ffc94d', 'Gold'], ['#a064ff', 'Purple'], ['#4dffa0', 'Green']];
 
@@ -110,6 +111,8 @@ function openForge(opts) {
           if (!form.label) { shell.error('Give the status a name.'); name.focus(); return undefined; }
           const known = editKey || form.ops.length || form.stack || form.triggers || form.end ? null : knownKey(A.rules().conditions, form.label); // a typed name with no mechanics is that status
           if (known) return existing(known);
+          const big = tooLarge('status', form);
+          if (big) { shell.error(big); return undefined; }
           const def = E.sanitizeDef(form);
           if (!def || canon(def) !== canon(form)) console.error('The Status dialog wrote a status its parser reads differently', form, def);
           if (!def) { shell.error('This status cannot be saved.'); return undefined; }

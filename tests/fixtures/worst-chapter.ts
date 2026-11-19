@@ -10,8 +10,13 @@ import { REWARD_BOUNDS, WORDS_BOUNDS } from '../../src/core/rewards.ts';
 
 /** `n` characters of three bytes each in UTF-8. */
 export const wide = (n: number): string => 'ࠀ'.repeat(n);
-/** An item at its text bounds with 12 notes of 200 three-byte characters: what makes a reward heavy. */
-const FAT = parseItem({ name: wide(ITEM_BOUNDS.name), desc: wide(ITEM_BOUNDS.desc), effects: Array(ITEM_BOUNDS.effects).fill({ op: 'note', text: wide(200) }) })!;
+/**
+ * The heaviest item the reader takes, what makes a reward heavy: its texts at their bounds in three-byte characters and
+ * as many notes of 200 such characters as its size in bytes allows (size.ts `THING_MAX.item`; one more and `parseItem`
+ * refuses it whole).
+ */
+const fat = (notes: number) => parseItem({ name: wide(ITEM_BOUNDS.name), desc: wide(ITEM_BOUNDS.desc), effects: Array(notes).fill({ op: 'note', text: wide(200) }) });
+const FAT = Array.from({ length: ITEM_BOUNDS.effects + 1 }, (_, i) => fat(ITEM_BOUNDS.effects - i)).find(it => it !== null)!;
 /** A plain item with a description of 500 one-byte characters, for the bytes the heavy ones leave. */
 const PLAIN = parseItem({ name: 'Pad', desc: 'a'.repeat(ITEM_BOUNDS.desc) })!;
 

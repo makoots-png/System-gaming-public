@@ -13,6 +13,8 @@ import { monsterId, newGate, parseGate, parseGateId } from './gates/gate.ts';
 import type { Gate, GateMonster, GateStatus, GateType } from './gates/gate.ts';
 import { parseApplied, parseHeld } from './applied.ts';
 import { parseOutbox } from './sync/outbox.ts';
+import { parseSeen } from './sync/seen.ts';
+import type { RoomPlaces } from './sync/seen.ts';
 import type { Outbox } from './sync/outbox.ts';
 import type { RoomEvent } from './protocol.ts';
 import { ITEM_TYPES, LOOT_ITEMS, RARITIES, SHOP_ITEMS, SLOTS, itemOf, parseItem } from './registry/items.ts';
@@ -199,6 +201,8 @@ export type SyncSettings = {
   runs?: WaitingRun[];
   /** This phone's records of the room's offers: its hunters' (with their goods aside), offers to them, and on the GM's phone every one (src/core/trade/offer.ts). */
   offers?: OfferRecord[];
+  /** Where this phone stopped reading each room it went out of, so a join back reads on from there (src/core/sync/seen.ts). */
+  seen?: RoomPlaces;
 };
 export type Settings = {
   mode: Mode; activeHunterId: HunterId; dailyResetHour: number; onboarded: boolean; sound: boolean; deviceId: DeviceId;
@@ -569,7 +573,7 @@ function fixHunter(run: Run, h: Hunter): void {
   fixVitals(h, R);
 }
 
-function fixSync(sync: SyncSettings): void {
+function fixSync(sync: SyncSettings, now: number): void {
   sync.room = parseRoomCode(sync.room);
   optional(sync, 'gmKey', v => v === null || parseGmKey(v) !== null);
   if ('gmKeys' in sync) {
@@ -588,6 +592,7 @@ function fixSync(sync: SyncSettings): void {
   if ('held' in sync) sync.held = parseHeld(sync.held);
   if ('runs' in sync) sync.runs = parseRuns(sync.runs);
   if ('offers' in sync) sync.offers = parseOffers(sync.offers);
+  if ('seen' in sync) sync.seen = parseSeen(sync.seen, now);
   if ('applied' in sync) {
     const ids: unknown = sync.applied;
     if (!Array.isArray(ids)) delete sync.applied;
@@ -616,7 +621,7 @@ function repair(s: Rec, env: ParseEnv, fight: FightRepair = 'read'): Save {
   st.mode = oneOf(st.mode, MODES, 'player');
   st.dailyResetHour = int(st.dailyResetHour, 0, 0, 23);
   st.deviceId = parseDeviceId(st.deviceId) ?? env.newDeviceId();
-  fixSync(st.sync);
+  fixSync(st.sync, env.now.getTime());
   if (st.sync.deviceToken.length < DEVICE_TOKEN_MIN) st.sync.deviceToken = env.newDeviceToken();
   save.world.lastDailyKey = parseDayKey(save.world.lastDailyKey) ?? dayKey(env.now, st.dailyResetHour);
   save.world.day = int(save.world.day, 1, 1); save.world.session = int(save.world.session, 0, 0);

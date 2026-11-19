@@ -55,3 +55,62 @@ test('a GM and a player in one room see each other\'s changes', async ({ device 
     await expect(kaiCard).toHaveCount(1);
   });
 });
+
+test('a player who left the room and came back gets the award the GM sent meanwhile, once, told in one window', async ({ device }) => {
+  const gm = (await device('gm')).page, player = (await device('player')).page;
+  await onboardGM(gm);
+  const code = await createRoom(gm);
+  await onboardPlayer(player, 'Kai Test', code);
+  await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBe(code);
+  await dismissAll(player, 4);
+  await go(gm, 'gm');
+  await expect(gm.locator('#gm-board .gm-card.remote', { hasText: 'Kai Test' })).toHaveCount(1);
+  const before = await activeHunter(player);
+
+  await test.step('the player leaves the room', async () => {
+    await go(player, 'room');
+    await player.locator('#view-room [data-leave]').tap();
+    await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBeNull();
+  });
+
+  await test.step('the GM awards Kai 30 XP and 12 gold, and the room takes it', async () => {
+    const toggle = gm.locator('[data-tog="award"]');
+    if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.tap();
+    await gm.locator('#gm-targets label', { hasText: 'Kai Test' }).locator('input').check();
+    await gm.fill('#gm-xp', '30');
+    await gm.fill('#gm-gold', '12');
+    await gm.locator('#gm-award-go').tap();
+    await expect.poll(() => gm.evaluate(() => hunterApp.api.sync.detail().waiting)).toBe(0);
+    expect((await activeHunter(player)).gold, 'nothing reaches a phone out of the room').toBe(before.gold);
+  });
+
+  await test.step('the player joins again with one tap and is given the award, told in the window of what was sent meanwhile', async () => {
+    await player.locator('#view-room [data-rejoinlast]').tap();
+    await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBe(code);
+    await expect.poll(async () => (await activeHunter(player)).xp).toBe(before.xp + 30);
+    expect((await activeHunter(player)).gold).toBe(before.gold + 12);
+    const away = player.locator('.sys-overlay.show', { hasText: 'WHILE YOU WERE AWAY' });
+    await expect(away).toContainText('These were sent while this phone was out of the room.');
+    await expect(away).toContainText('Reward: REWARD RECEIVED. +30 XP. +12 gold');
+    await expect(player.locator('.sys-overlay.show', { hasText: 'The System has delivered a reward.' }), 'no window of its own beside it').toHaveCount(0);
+    await dismissAll(player, 4);
+  });
+
+  await test.step('a reload, and leaving and joining once more, give it no second time', async () => {
+    await player.reload({ waitUntil: 'networkidle' });
+    await player.waitForFunction(() => window.hunterApp && document.querySelectorAll('#nav-top a').length > 0);
+    await expect.poll(() => player.evaluate(() => hunterApp.api.sync.conn())).toBe('live');
+    await go(player, 'room');
+    await player.locator('#view-room [data-leave]').tap();
+    await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBeNull();
+    await player.locator('#view-room [data-rejoinlast]').tap();
+    await expect.poll(() => player.evaluate(() => hunterApp.api.sync.conn())).toBe('live');
+    // the GM's damage lands after the rejoin's page: once it shows, every earlier message has been read
+    const hpBefore = (await activeHunter(player)).hp;
+    await gm.locator('#gm-board .gm-card.remote', { hasText: 'Kai Test' }).locator('[data-hp="-5"]').tap();
+    await expect.poll(async () => (await activeHunter(player)).hp).toBe(hpBefore - 5);
+    const after = await activeHunter(player);
+    expect({ xp: after.xp, gold: after.gold }).toEqual({ xp: before.xp + 30, gold: before.gold + 12 });
+    await expect(player.locator('.sys-overlay.show', { hasText: 'WHILE YOU WERE AWAY' })).toHaveCount(0);
+  });
+});

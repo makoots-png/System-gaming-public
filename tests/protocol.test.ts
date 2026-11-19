@@ -24,7 +24,10 @@ import type { Fight } from '../src/core/combat/fight-types.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 import { FORMULA_PARTS, parseFormula, partsOf } from '../src/core/formula.ts';
 import type { Formula } from '../src/core/formula.ts';
-import { parseOp, parseStatusDef } from '../src/core/combat/fight-parse.ts';
+import { parseAbility, parseOp, parseStatusDef } from '../src/core/combat/fight-parse.ts';
+import { THING_MAX } from '../src/core/size.ts';
+import { pushedSheet } from '../src/core/sync/push.ts';
+import { REWARD_BOUNDS } from '../src/core/rewards.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { abilityId } from '../src/core/combat/ability-types.ts';
 import { NAME_MAX } from '../src/core/combat/fight-types.ts';
@@ -1207,83 +1210,71 @@ describe('an offer between two hunters, and its one end', () => {
   });
 
   /**
-   * The measurement of notes-5-trade.md 12.2: what one item can weigh on the wire, and how many lines of it an offer holds
-   * under OFFER_MAX. Each part printed. The reader's own bound decides; these numbers explain why it is bytes and not lines.
+   * The measurement of notes-5-trade.md 12.9: an item has a size (size.ts `THING_MAX.item`), so an offer's cap follows from
+   * it: eight items at the size, with the worst rest of an offer, fit `OFFER_MAX`, and that fits the server's body.
    */
-  test('the worst offers by part against the byte cap: the reader takes one just under it and refuses one over it', () => {
+  test('the worst offer by part: eight items at an item\'s size, with full names and eight full asks, fit the offer\'s cap, and the reader takes it', () => {
     const bytes = (v: unknown) => goodsSize(v);
-    const builtIn = [...SHOP_ITEMS, ...LOOT_ITEMS].map(d => parseItem(itemOf(RULES, d))!);
-    const largestBuiltIn = builtIn.reduce((a, b) => (bytes(a) >= bytes(b) ? a : b));
     const wide = (n: number) => 'ࠀ'.repeat(n);
-    const note = { op: 'note', text: wide(200) };
-    const flatOps = (n: number) => Array.from({ length: n }, () => ({ op: 'damage', type: 'magical', amount: Array.from({ length: 6 }, () => ({ kind: 'dice', count: 99, sides: 999 })), when: 'turn' }));
-    const typed = (effects: unknown[], wornOps: unknown[]) => parseItem({
-      name: wide(ITEM_BOUNDS.name), rar: 'mythic', type: 'weapon', slot: 'weapon', qty: ITEM_BOUNDS.qty, dice: wide(ITEM_BOUNDS.dice), desc: wide(ITEM_BOUNDS.desc),
-      bonus: Object.fromEntries(PERK_KEYS.map(k => [k, -ITEM_BOUNDS.bonus])), value: ITEM_BOUNDS.value, weight: ITEM_BOUNDS.weight, armor: ITEM_BOUNDS.armor,
-      resist: ITEM_BOUNDS.resist, attack: 'strike', penFlat: ITEM_BOUNDS.penFlat, target: 'other', tell: true, effects,
-      worn: { label: wide(60), desc: wide(500), ops: wornOps },
-    })!;
-    const flat = typed(flatOps(ITEM_BOUNDS.effects), flatOps(12)), noted = typed(Array(ITEM_BOUNDS.effects).fill(note), Array(12).fill(note));
-    const nested = parseItem({ name: 'Nest', effects: [{ op: 'applyStatus', key: 'a', duration: null, def: { label: 'a', desc: wide(500), ops: Array(12).fill({ op: 'applyStatus', key: 'b', duration: null, def: { label: 'b', desc: wide(500), ops: Array(12).fill(note) } }) } }] })!;
-    const offerOf = (item: unknown, lines: number, eid = 'o'.repeat(38)) => ({
-      eid, by: 'd-'.padEnd(29, 'p') + ':h99999', to: ['d-'.padEnd(29, 'q') + ':h99999'], names: { by: wide(60), to: wide(60) },
+    const note = (n: number) => ({ op: 'note', text: 'x'.repeat(n) });
+    /** An item of exactly `THING_MAX.item` bytes: full three-byte texts, notes as effects and as worn ops, the last note cut to fit. */
+    const atCap = Array.from({ length: 201 }, (_, pad) => parseItem({ name: wide(ITEM_BOUNDS.name), desc: wide(ITEM_BOUNDS.desc), rar: 'mythic', effects: [...Array(11).fill(note(200)), note(pad)], worn: { label: 'w', desc: 'x'.repeat(500), ops: Array(10).fill(note(200)) } }))
+      .find(it => it !== null && bytes(it) === THING_MAX.item)!;
+    expect(bytes(atCap), 'an item of exactly the cap reads').toBe(THING_MAX.item);
+    const offerOf = (item: unknown, lines: number) => ({
+      eid: 'o'.repeat(38), by: 'd-'.padEnd(29, 'p') + ':h99999', to: ['d-'.padEnd(29, 'q') + ':h99999'], names: { by: wide(60), to: wide(60) },
       gives: { gold: 1e9, items: Array.from({ length: lines }, (_, i) => ({ from: `i${900000 + i}`, item })) },
       asks: { gold: 1e9, items: Array.from({ length: GOODS_LINES }, (_, i) => ({ id: `i${800000 + i}`, qty: ITEM_BOUNDS.qty, name: wide(60) })) },
     });
-    const fitting = (item: unknown) => { let n = 0; while (n < GOODS_LINES && bytes(offerOf(item, n + 1)) <= OFFER_MAX) n++; return n; };
-    const wrapper = bytes({ from: 'd'.repeat(40), type: 'offerEnd', payload: {} }) - 2;
+    const wrapper = bytes({ from: 'd'.repeat(40), type: 'offerEnd', payload: {} }) - 2, worst = bytes(offerOf(atCap, GOODS_LINES)), rest = bytes(offerOf(atCap, 0));
     console.info([
-      `an offer's cap: ${OFFER_MAX} bytes of payload; the request's wrapper around it ${wrapper} bytes, under the server's 65,536`,
-      `the largest built-in item (${largestBuiltIn.name}): ${bytes(largestBuiltIn)} bytes; an offer of ${GOODS_LINES} of it with ${GOODS_LINES} full asks: ${bytes(offerOf(largestBuiltIn, GOODS_LINES))}`,
-      `the rest of the worst offer (ids, names, gold, ${GOODS_LINES} asks of 60 three-byte characters): ${bytes(offerOf(largestBuiltIn, 0))} bytes`,
-      `an item at its typed bounds in three-byte characters, 12 effects and 12 worn ops of six tiers of dice: ${bytes(flat)} bytes (name ${bytes(flat.name)}, desc ${bytes(flat.desc)}, effects ${bytes(flat.effects)}, worn ${bytes(flat.worn)}); ${fitting(flat)} lines fit`,
-      `the same with 12 notes of 200 three-byte characters each: ${bytes(noted)} bytes (effects ${bytes(noted.effects)}, worn ${bytes(noted.worn)}); ${fitting(noted)} lines fit`,
-      `one item using the parser's nesting (an applyStatus whose def holds 12 more, each with 12 notes): ${bytes(nested)} bytes; ${fitting(nested)} lines fit`,
+      `an item's size: ${THING_MAX.item} bytes; a line's wrapper around it: ${(worst - rest) / GOODS_LINES - THING_MAX.item}`,
+      `the rest of the worst offer (ids, names, gold, ${GOODS_LINES} asks of 60 three-byte characters): ${rest} bytes`,
+      `the worst offer, ${GOODS_LINES} items at the size: ${worst} bytes, under OFFER_MAX ${OFFER_MAX}; with the request's wrapper (${wrapper}): ${OFFER_MAX + wrapper}, under the server's 65,536`,
     ].join('\n'));
-    expect(bytes(offerOf(largestBuiltIn, GOODS_LINES)), `${GOODS_LINES} lines of the largest built-in item fit with room`).toBeLessThan(OFFER_MAX / 4);
-    expect(fitting(flat), 'four lines of a typed item with flat effects at every bound fit, as notes-5-trade.md 12.2 says').toBeGreaterThanOrEqual(4);
-    expect(fitting(nested), 'one nested item alone is over the cap: the bound is bytes, not lines').toBe(0);
+    expect(worst).toBeLessThanOrEqual(OFFER_MAX);
+    expect(OFFER_MAX - worst, 'the cap is the worst offer rounded up to a KiB').toBeLessThan(1024);
     expect(OFFER_MAX + wrapper).toBeLessThan(64 * 1024);
-    // the reader: the largest offer under the cap reads; one more line over it is refused
-    const n = fitting(noted);
-    expect(payload('offer', offerOf(noted, n))).not.toBeNull();
-    expect(payload('offer', offerOf(noted, n + 1))).toBeNull();
+    expect(payload('offer', offerOf(atCap, GOODS_LINES)), 'the reader takes the worst offer').not.toBeNull();
+    expect(payload('offer', offerOf({ ...atCap, worn: { ...atCap.worn!, ops: [...atCap.worn!.ops, note(200)] } }, 1)), 'a line whose item is over an item\'s size refuses the offer').toBeNull();
   });
-  test('the largest formula, status and item the readers take, by part, against the caps (notes-5-trade.md 12.3)', () => {
+
+  test('the largest status, ability and item the readers take, against what the app ships and what carries them (notes-5-trade.md 12.9)', () => {
     const bytes = (v: unknown) => goodsSize(v);
     const K = RULES.dice;
-    // the parts a formula may hold, each at its largest: a dice term with every single modifier, a binary node, a fn node
+    // 12.4's largest formula: 100 dice terms at their largest under 99 additions and a floor, 200 parts
     const die: Formula = { kind: 'dice', count: K.maxDice, sides: K.maxSides, mods: { explode: { op: '<', n: K.maxSides }, cut: { how: 'kh', n: K.maxDice }, success: { op: '<', n: K.maxSides } } };
     const tree = (leaves: number): Formula => (leaves === 1 ? die : { kind: 'binary', op: '+', left: tree(Math.ceil(leaves / 2)), right: tree(Math.floor(leaves / 2)) });
-    const candidates: Formula[] = [
-      { kind: 'fn', fn: 'floor', arg: tree((FORMULA_PARTS) / 2) },
-      tree((FORMULA_PARTS + 1) / 2 | 0),
-      { kind: 'dice', count: K.maxDice, sides: 300, mods: { reroll: { on: Array.from({ length: FORMULA_PARTS - 1 }, (_, i) => ({ op: '<', n: i + 1 })), once: false } } },
-    ];
-    for (const f of candidates) expect(partsOf(f)).toBeLessThanOrEqual(FORMULA_PARTS);
-    const formula = candidates.reduce((a, b) => (bytes(a) >= bytes(b) ? a : b));
+    const formula: Formula = { kind: 'fn', fn: 'floor', arg: tree(FORMULA_PARTS / 2) };
+    expect(partsOf(formula)).toBeLessThanOrEqual(FORMULA_PARTS);
     const leaf = { op: 'damage', type: 'physical', amount: Array.from({ length: 6 }, () => formula), when: 'turn' };
-    expect(parseOp(leaf, RULES), 'the largest op reads: six tiers of the largest formula').toEqual(leaf);
-    // a status def nests applyStatus defs three deep under it (fight-parse.ts `opOf`); each def holds 12 ops
-    const def = (ops: unknown[]) => ({ label: 'ࠀ'.repeat(60), desc: 'ࠀ'.repeat(500), color: '#abcdef', ops });
-    const wrap = (d: unknown) => ({ op: 'applyStatus', key: 'k'.repeat(80), def: d, duration: Array(6).fill(1e9), stacks: RULES.fight.kit.stackAdd });
-    const nest = (levels: number, inner: unknown) => { let d = def([inner]); for (let i = 0; i < levels; i++) d = def([wrap(d)]); return d; };
-    expect(parseStatusDef(nest(3, leaf), RULES), 'three applyStatus defs under a status read').not.toBeNull();
-    expect(parseStatusDef(nest(4, leaf), RULES), 'a fourth is refused').toBeNull();
-    // sizes by composition: a def of 12 ops, each the op below it; the JSON of a slot is replaced by the slot's own size
-    const slot = '"#"'.length, deepest = bytes(def(Array(12).fill(leaf)));
-    const above = (inner: number) => bytes(def(Array(12).fill(wrap('#')))) + 12 * (inner - slot);
-    const status = above(above(above(deepest)));
-    const shell = { name: 'ࠀ'.repeat(ITEM_BOUNDS.name), desc: 'ࠀ'.repeat(ITEM_BOUNDS.desc), effects: Array(12).fill(wrap('#')), worn: '#' };
-    const item = bytes(shell) + 12 * (above(above(deepest)) - slot) + (status - slot);
+    expect(parseOp(leaf, RULES), 'one op reads alone, whatever its size: what holds it is sized').toEqual(leaf);
+    const def = (ops: unknown[]) => ({ label: 'Big', desc: '', ops });
+    expect(parseStatusDef(def([leaf]), RULES), 'a status of that one op is over a status\'s size: refused whole').toBeNull();
+    expect(parseItem({ name: 'Big', effects: [leaf] }), 'and an item with it as an effect').toBeNull();
+    expect(parseItem({ name: 'Big', worn: def([leaf]) }), 'an item whose worn status is too large is refused whole, never kept without it').toBeNull();
+    expect(parseAbility({ ...abilityOf('strike', { id: abilityId('big'), name: 'Big' }, RULES), ops: [{ op: 'applyStatus', key: 'big', def: def([leaf]), duration: null }] }, RULES), 'an ability that applies it').toBeNull();
+    // what the caps then bound, by arithmetic from the counts each holder reads
+    const sheetRest = JSON.stringify({ hunter: pushedSheet(newHunter(RULES)) }).length;
     console.info([
-      `the largest formula the readers take (${FORMULA_PARTS} parts): ${bytes(formula)} bytes; six tiers of it in one op: ${bytes(leaf)}`,
-      `a status def of 12 such ops: ${deepest}; with applyStatus defs nested three deep under it, 12 ops each: ${status} bytes (at least: triggers, an end and a threshold nest too)`,
-      `an item with 12 such effects and such a worn status: ${item} bytes (at least)`,
-      `against the caps: SHEET_MAX ${SHEET_MAX}, DOC_MAX ${DOC_MAX}, OFFER_MAX ${OFFER_MAX}; lines of the largest item in an offer: 0; ops of six tiers in an offer: ${Math.floor(OFFER_MAX / bytes(leaf))}`,
+      `the sizes: a status ${THING_MAX.status}, an item ${THING_MAX.item}, an ability ${THING_MAX.ability} bytes (before: one op of six tiers of the largest formula alone was ${bytes(leaf)})`,
+      `a new hunter's pushed sheet: ${sheetRest} characters of SHEET_MAX ${SHEET_MAX}; items at the size it then holds: ${Math.floor((SHEET_MAX - sheetRest) / (THING_MAX.item + 20))}`,
+      `a reward at its counts (${REWARD_BOUNDS.items} items, ${REWARD_BOUNDS.statuses} statuses, ${REWARD_BOUNDS.skills} skills): at most about ${REWARD_BOUNDS.items * THING_MAX.item + REWARD_BOUNDS.statuses * THING_MAX.status + REWARD_BOUNDS.skills * THING_MAX.ability} bytes, over the server's 65,536 body: an award that large is refused by the room (413) and the GM is told`,
+      `the fight doc's table of defs holds DOC_DEFS_MAX ${DOC_DEFS_MAX} characters: one status at the size (${THING_MAX.status}) fits it`,
     ].join('\n'));
-    expect(bytes(leaf), 'one op of six tiers of the largest formula is over the offer cap alone').toBeGreaterThan(OFFER_MAX);
-    expect(status).toBeGreaterThan(SHEET_MAX);
-    expect(item).toBeGreaterThan(status);
+    expect(THING_MAX.status + 1024, 'an item holds one status at its size and a KiB of its own').toBeLessThanOrEqual(THING_MAX.item);
+    expect(THING_MAX.status).toBeLessThanOrEqual(DOC_DEFS_MAX);
+  });
+
+  test('a hunter\'s sheet holds four items at an item\'s size and reads back whole; a fifth is over what the room takes', () => {
+    const note = (n: number) => ({ op: 'note', text: 'x'.repeat(n) });
+    const big = (i: number) => ({ ...Array.from({ length: 501 }, (_, n) => parseItem({ name: `Tome ${i}`, desc: 'ࠀ'.repeat(n) + 'x'.repeat(500 - n), effects: Array(12).fill(note(200)), worn: { label: 'w', desc: 'x'.repeat(500), ops: Array(12).fill(note(200)) } })).findLast(it => it !== null)!, id: `i${i}` });
+    const withItems = (n: number) => ({ hunter: { ...pushedSheet(newHunter(RULES)), id: 'h1', items: Array.from({ length: n }, (_, i) => big(i + 1)) } });
+    const four = withItems(4), five = withItems(5);
+    expect(goodsSize(four.hunter.items[0])).toBeGreaterThan(THING_MAX.item - 3);
+    expect(JSON.stringify(four).length).toBeLessThanOrEqual(SHEET_MAX);
+    expect(JSON.stringify(five).length).toBeGreaterThan(SHEET_MAX);
+    const read = parseSheet(sk(KEY), copy(four));
+    expect(read && 'hunter' in read ? read.hunter.items : null, 'the four items read back as they were').toEqual(four.hunter.items as never);
   });
 });

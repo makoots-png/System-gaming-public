@@ -5,7 +5,8 @@
 // lives here; save.ts re-exports it.
 import { FULL_HEAL } from '../combat/effect-ops.ts';
 import type { Op, StatusDef } from '../combat/effect-ops.ts';
-import { parseOp, parseStatusDef } from '../combat/fight-parse.ts';
+import { parseOp, parseStatusDef, statusTooLarge } from '../combat/fight-parse.ts';
+import { withinSize } from '../size.ts';
 import type { Formula } from '../formula.ts';
 import { kitGear, pointsAt, sheetOf, split } from '../hunter/derive.ts';
 import type { DeriveRules, GearPiece, Kit } from '../hunter/derive.ts';
@@ -222,7 +223,8 @@ const text = (v: unknown, n: number): string => (typeof v === 'string' ? v.slice
  * keeps the ten bonus keys (the eight stats, `hpMax`, `manaMax`) that are not 0. Each effect is read by the fight's op
  * reader with the shipped rules' dice limits (as a reward is), one it refuses dropped, at most 12. `attack` is kept when it
  * is strike or shot, `penFlat` when it is above 0, `target` only when it is `other`, `tell` only when it is true, `revive`
- * only when it is true on a consumable, and `worn` when the status reader takes it. Every other key is dropped.
+ * only when it is true on a consumable, and `worn` when the status reader takes it. Every other key is dropped. An item
+ * past its size (size.ts `THING_MAX.item`), or whose worn status is past a status's, is refused whole: null.
  */
 export function parseItem(v: unknown): ItemTemplate | null {
   if (!isObj(v)) return null;
@@ -252,5 +254,7 @@ export function parseItem(v: unknown): ItemTemplate | null {
   if (v.revive === true && out.type === 'consumable') out.revive = true;
   const worn = v.worn === undefined ? null : parseStatusDef(v.worn, RULES);
   if (worn) out.worn = worn;
+  // refused whole for its size, never cut: an item without the worn status or the effect it was made with is another item
+  if ((!worn && statusTooLarge(v.worn, RULES)) || !withinSize('item', out)) return null;
   return out;
 }

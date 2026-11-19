@@ -27,6 +27,7 @@ import { statusGrant } from './fight-view.ts';
 import type { StatusIn } from '../hunter/conditions.ts';
 import { isStateChip } from '../hunter/chips.ts';
 import type { Seat } from '../role.ts';
+import { standsFor } from '../protocol.ts';
 import type { RoomCode, RoomEvent } from '../protocol.ts';
 import type { Stamp } from '../session-log.ts';
 import { atHunter, isRefused, refuse } from '../save-step.ts';
@@ -43,8 +44,11 @@ import type { CombatantId } from './ability-types.ts';
 
 /** What a command links the fight to when it is taken: the gate it was started from, each new monster row's bestiary entry. */
 export type Links = { readonly gate?: GateId | null; readonly monsters?: Readonly<Record<CombatantId, MonsterId>> };
-/** A player's totals as the room event the view made for them, posted under `key` so only the latest waits. */
-export type Totals = { readonly key: string; readonly event: RoomEvent };
+/**
+ * A player's totals as the room event the view made for them, posted under what it stands for (protocol.ts `standsFor`)
+ * so only the latest waits.
+ */
+export type Totals = RoomEvent;
 /** Whose bag an item used in the fight leaves: a hunter of this phone, or a player's hunter by its room key. */
 export type ItemSpent = { readonly item: ItemId } & ({ readonly kind: 'local'; readonly hunterId: HunterId } | { readonly kind: 'remote'; readonly remote: SheetKey });
 /** An item the command uses up, as `fought` writes it: taken from this phone's hunter, or the `spent` the view made for the player. */
@@ -109,7 +113,7 @@ export function fought(save: Save, r: Result, b: Beside, R: Rules): Save | Refus
   // a shadow that rose for a player's hunter reaches it only through the room: with no room the outcome is not kept either
   if (b.risen) { if (!room) return refuse('no-room'); const ev = b.risen; s = atOutbox(box => post(box, room, { kind: 'event', event: ev }).box)(s); }
   if (room && b.noted?.length) { const n = b.noted; s = atOutbox(box => n.reduce((x, ev) => post(x, room, { kind: 'event', event: ev }).box, box))(s); }
-  if (room && b.totals.length) s = atOutbox(box => b.totals.reduce((x, t) => post(x, room, { kind: 'event', event: t.event }, t.key).box, box))(s);
+  if (room && b.totals.length) s = atOutbox(box => b.totals.reduce((x, t) => post(x, room, { kind: 'event', event: t }, standsFor(t)).box, box))(s);
   const gate = b.links?.gate;
   if (gate) { const g = gateFightStarted(s, gate, b.stamp); if (!isRefused(g)) s = g; }
   return b.also ? b.also(s) : s;

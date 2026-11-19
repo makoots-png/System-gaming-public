@@ -155,7 +155,7 @@ export function statusBlocks(box, def, M, name) {
         <div data-th-f>
           <div class="lbl">At</div>${M.chips(c('at'), AT_LABEL, th && th.at.kind === 'formula' ? 'formula' : 'count', { label: 'At' })}
           <div data-at="count">${numIn('data-k="thN" min="1" aria-label="At this many stacks"', 'Stacks', th && th.at.kind === 'count' ? th.at.n : st ? st.cap : 5)}</div>
-          <label class="field" data-at="formula"><span class="lbl">Stacks, a formula over the bearer</span><input type="text" maxlength="200" autocomplete="off" spellcheck="false" data-k="thF" aria-label="Stacks formula" placeholder="vit" value="${esc(th && th.at.kind === 'formula' ? printFormula(th.at.formula) : 'vit')}"></label>
+          <label class="field" data-at="formula"><span class="lbl">Stacks, a formula over the bearer</span><input type="text" autocomplete="off" spellcheck="false" data-k="thF" aria-label="Stacks formula" placeholder="vit" value="${esc(th && th.at.kind === 'formula' ? printFormula(th.at.formula) : 'vit')}"></label>
           <div class="lbl">Lands on</div>${M.chips(c('th-to'), REACH_LABEL, th && th.to.kind === 'area' ? 'area' : 'bearer', { label: 'Lands on' })}
           ${area('th', th && th.to)}
           <div class="lbl">What lands</div><div data-th-fx></div>

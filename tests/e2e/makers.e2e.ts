@@ -901,6 +901,53 @@ test('a formula the GM typed stays when the ability\'s kind changes, marked edit
   await expect(d.locator('[data-edited]')).toBeHidden();
 });
 
+test('a formula field holds whatever the maker writes in it: the GM types on at the end of the longest formula the rule builds, and a status\'s damage takes more than 60 characters', async ({ device }) => {
+  const page = (await device('gm')).page;
+  await onboardGM(page);
+
+  await test.step('the rule builds a formula of more than 200 characters, and the GM types on at its end', async () => {
+    const d = skillMaker(page), field = d.locator('[data-formula]');
+    await go(page, 'gm');
+    await page.locator('#gm-make [data-make="skill"]').tap();
+    await d.locator('#skm-name').fill('Long Cut');
+    await d.locator('[data-group="ticks"] > summary').tap();
+    await d.locator('[data-tick="scale"]').selectOption('agi');
+    await d.locator('[data-tick="gap"]').check();
+    await d.locator('[data-add-scaler]').tap();
+    await d.locator('[data-add-scaler]').tap();
+    await d.locator('[data-sc="0"] [data-sc-f="name"]').selectOption('underdog');
+    await d.locator('[data-sc="1"] [data-sc-f="name"]').selectOption('underdog');
+    await expect.poll(async () => (await field.inputValue()).length, 'the rule\'s formula is longer than the 200 characters the field once took').toBeGreaterThan(200);
+    const rule = await field.inputValue();
+    await field.focus();
+    await field.press('End');
+    await field.pressSequentially(' + 1');
+    await expect(field).toHaveValue(`${rule} + 1`);
+    await expect(d.locator('[data-edited]')).toBeVisible();
+    await expect(d.locator('[data-formula-err]')).toHaveText('');
+    await d.locator('[data-apply]').tap();
+    await expect(d).toHaveCount(0);
+    const cut = await librarySkill(page, 'Long Cut');
+    expect(formulaNow(cut.ability, RULES)).toEqual(formulaOf(`${rule} + 1`));
+  });
+
+  await test.step('a status\'s damage typed past 60 characters is kept whole', async () => {
+    const d = statusMaker(page), amount = '0.05 * hpMax + 0.05 * target.hpMax + 0.02 * manaMax + 0.01 * target.manaMax';
+    expect(amount.length).toBeGreaterThan(60);
+    await go(page, 'workshop');
+    await workshop(page, 'status').locator('[data-new]').tap();
+    await d.locator('[data-name]').fill('Wither');
+    await d.locator('[data-add]').tap();
+    await d.locator('[data-row="0"] [data-f="q"]').pressSequentially(amount);
+    await expect(d.locator('[data-row="0"] [data-f="q"]')).toHaveValue(amount);
+    await expect(d.locator('[data-row="0"] [data-err]')).toHaveText('');
+    await d.locator('[data-apply]').tap();
+    await expect(d).toHaveCount(0);
+    const ops = await page.evaluate(() => hunterApp.store.get().library.statuses.wither.ops);
+    expect(ops).toEqual([{ op: 'damage', type: 'physical', amount: formulaOf(amount) }]);
+  });
+});
+
 test('a GM makes a status that slows by 30% and roots; on a monster in a fight its speed falls to 0.7 of what it was and it cannot move', async ({ device }) => {
   const page = (await device('gm')).page;
   await onboardGM(page);
@@ -1272,6 +1319,32 @@ test('a GM whose Save is refused reads why on screen, in the feat maker and in t
     await d.locator('.mk-scroll').evaluate(el => el.scrollTo(0, el.scrollHeight));
     await d.locator('[data-apply]').tap();
     await inView(d, 'Give the status a name.');
+  });
+});
+
+test('a status too large to keep is refused whole when the GM saves it: the maker says its size and the most a status holds, and the library does not get it', async ({ device }) => {
+  const page = (await device('gm')).page;
+  await onboardGM(page);
+  const d = statusMaker(page);
+  await go(page, 'workshop');
+  await workshop(page, 'status').locator('[data-new]').tap();
+  await d.locator('[data-name]').fill('Litany');
+  // 12 notes of 200 three-byte characters are 7,400 bytes of JSON, over a status's 5,120 (src/core/size.ts)
+  for (let i = 0; i < 12; i++) {
+    await d.locator('[data-add]').tap();
+    await d.locator(`[data-row="${i}"] [data-f="kind"]`).selectOption('note');
+    await d.locator(`[data-row="${i}"] [data-f="text"]`).fill('\u0800'.repeat(200));
+  }
+  await d.locator('[data-apply]').tap();
+  await expect(d.locator('[data-err]').last()).toHaveText(/^This status is too large to save\. It takes [\d,]+ bytes, and a status holds at most 5,120\. Remove an effect, or one of the things that happen when it stacks, triggers or ends\.$/);
+  await expect(d).toBeVisible();
+  expect(await page.evaluate(() => Object.keys(hunterApp.store.get().library.statuses))).not.toContain('litany');
+
+  await test.step('with five of the notes removed it fits and is saved', async () => {
+    for (let i = 11; i >= 7; i--) await d.locator(`[data-row="${i}"] [data-rm]`).tap();
+    await d.locator('[data-apply]').tap();
+    await expect(d).toHaveCount(0);
+    expect(await page.evaluate(() => hunterApp.store.get().library.statuses.litany.ops.length)).toBe(7);
   });
 });
 

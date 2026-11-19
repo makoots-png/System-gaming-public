@@ -1221,6 +1221,303 @@ nothing inside reads the viewer again); `principle-fix-root-causes` (an unbound 
 where the binding is made, not by a retry of the history later); `principle-subtract-before-you-add` (`sync.faces()`
 left to the unit that reads it).
 
+### 12.7 Ruling 3: three faults, each at its cause
+
+Read for this step besides the design's list: `principle-fix-root-causes`, `principle-test-behavior-not-implementation`,
+`tests/lint.test.ts`, `src/edge/room-events.ts` (`applyAll`), `src/core/applied.ts`, `src/core/formula.ts` (the parser),
+the makers' formula fields (`maker.js`, `kit-parts.js`), `server.ts` (`memoryStore`, the event route).
+
+**(a) A held `vitals` that a newer one replaced.** Where it starts: the GM's phone already knows that a fight's totals for
+one hunter stand for one thing (combat.js posted each under the outbox key `vitals <sheet key>`, so only the latest
+waits), but a player's phone did not: `hold` kept every message that threw, and `applyAll` tried the held ones before each
+page, so an older total that threw once landed after a newer one had and put the old numbers back. One rule now says
+what a message stands for, in the message's own definition: `EventDef.standsFor` (protocol.ts), set on `vitals`
+(`vitals <sheet key>`), read by `standsFor(ev)`. Both sides read it: `fought` (fight-save.ts) posts a player's totals
+under it, so combat.js no longer writes the key, and a player's phone lets a held message go once a newer one of its key
+comes (`replaced` in applied.ts): `applyAll` drops a held one that the page stands in for before it tries anything, an
+event of the page drops one held earlier in the same page, and `hold` keeps one per key. Totals for two hunters are two
+keys. Tests (`tests/applied.test.ts`, "totals that threw on this phone and are held"): an older total held, a newer
+one lands, and once the phone could apply the older one the hunter keeps the newer numbers and only the newer id is
+recorded; a newer total that throws too takes the older one's place; two hunters' totals are two things. The first two
+fail on the code before the fix (shown by making `replaced` a no-op: 2 fail).
+
+**(b) The formula field that cannot hold a rule formula.** Where it starts: the field had a length of its own
+(`maxlength="200"` on the ability's formula and the Stacks formula, `maxlength="60"` on every op's amount), a second
+bound beside the parser's `FORMULA_PARTS`, and smaller than what the app writes into it: a rule formula prints to 403
+characters, a status from a pack can carry an amount of any of its 200 parts. A browser keeps a value longer than
+`maxlength` but takes no key that adds to it, so the GM could only delete. Decided: the fields have no length of their
+own; the parser is the one judge, by `FORMULA_PARTS`. The length had one other job, read in the code and not written
+anywhere: it kept the parser's recursion short. Without it a pasted text could be any length, and the parser walks one
+level a bracket and one a sign, and `partsOf` one a node of a left-deep chain (`1+1+...`). So the parser now counts
+before it reads (`tooBig`): each token but a bracket and a comma is one part of the tree, so more than 200 such tokens
+is refused with the parts' words ("The formula has more than 200 parts, ..."), and brackets more than 200 deep are
+refused with their own ("The brackets at character 201 are 201 deep. A formula has at most 200 parts, so it needs at most
+200 brackets inside each other."). That second rule follows from the first: what `printFormula` writes of a tree of 200
+parts nests at most 200 brackets, one for each node on the way down, so it refuses nothing the app prints. The two
+refusals of too many parts (before the read, and after it with the faces rolled again counted) are one sentence now
+(`TOO_MANY_PARTS`): the old one gave the count ("201 parts"), which the count before the read cannot give exactly. The
+Dice view's typed roll keeps its 200 characters: nothing the app wrote is ever put in it. Tests: `tests/formula.test.ts`,
+"whatever the app prints of a formula the readers take reads back the same, however long its text" (a chain 99 brackets
+deep, 100 `target.stacks(...)` of a 40-character key printed to 5,797 characters, and the 403-character quick linear
+rule formula, the largest the rule writes: each reads back to the same tree), and "a text pasted into a formula field that no formula needs is refused
+with its words, never walked" (a million brackets, a million pluses). The second fails on the code before the fix with
+"Maximum call stack size exceeded". `tests/e2e/makers.e2e.ts`, "a formula field holds whatever the maker writes in it":
+the skill maker builds the rule formula of a strike scaled by Agility with a gap and two scalers (more than 200
+characters), the GM types " + 1" at its end through the keyboard, and the library holds it; a status's damage of 77
+characters typed key by key is kept whole.
+
+**(c) The memory store's gap past 2,000 events.** What a phone met there, read in the code and shown by the test below
+on the old store: the memory store (no `DATABASE_URL`) kept a room's last 2,000 events and spliced off the older ones.
+
+1. A phone whose cursor was older than the oldest kept event read the oldest kept page as if it followed on, with no word
+   of a gap: every message that fell off was never landed (an award, a quest, a solo answer, whose waiting run then
+   stays "taken"), and on the GM's phone every claim that fell off was never answered. A phone meets this after a
+   reload, an app closed or a phone offline while 2,000 events came: a long fight at a table of four writes several
+   events a use (a cast, the totals of each row it hit, a spent item), so a few hours is enough.
+2. The store found a repeated event id only among the kept 2,000 (`r.events.find`). An outbox resend whose first copy
+   had fallen off was stored again under a new seq, and a phone whose applied ring (200 ids) no longer held the id
+   landed it twice. So the gap did not only lose messages; it could double one.
+3. The same breaks unit 1's proof of a trade: the rule "an offer has one end" is "the room takes one event id once",
+   and past the gap a second end is stored and a giver who never read the first takes the goods back while the taker has
+   them.
+
+Whether unit 0 makes it worse: no. Today a rejoin starts at the room's end and skips everything; with unit 0 it resumes
+at its cursor and meets the same gap a reload meets today, so it loses at most what fell off instead of everything. But
+unit 0's rule ("every message lands exactly once from a phone's first join") is false on a store that forgets, so the
+gap is fixed before unit 0. Where it starts: the memory store broke the store's contract, which Postgres keeps (every
+event of a live room, an id taken once for the room's life). Fixed there: the memory store forgets no event (`events[i]`
+has seq i + 1, read by index; `ids` answers a repeated id), and past `MEM_EVENTS` it stores no more: `addEvent` answers
+null and the route answers 413 `room full`. A sender's outbox reads a 413 as refused and tells the player ("The room did
+not take an award (room full)."); nothing is lost without a word. `MEM_EVENTS` is 20,000, ten times the old window, and a
+guess, not a measurement: it bounds only the process's memory, and the deploy's Postgres has no such bound. Tests
+(`tests/server-rooms.test.ts`, "a room keeps every message it took"): an award, then 2,000 messages, and a phone reading
+from the start reads the award first and a resend of it answers seq 1 (both stores); a memory room at `MEM_EVENTS`
+refuses one more with `room full`, still answers a resend of its first message with seq 1, and holds all 20,000. Both
+fail on the old store (2 fail).
+
+Principles: `principle-fix-root-causes` (each fix is where the fault started: a message's meaning in its definition, the
+field's second bound removed and the parser made the one judge, the store's contract), `principle-test-behavior-not-implementation`
+(each test drives what a phone, a GM or a store's caller sees, and each was shown to fail on the old code),
+`principle-subtract-before-you-add` (combat.js and two tests no longer write the totals' key; the fields lose a bound).
+
+### 12.8 Ruling 2: a byte cap where an item, a status and an ability are read (the plan, before the run)
+
+Goal: one item, one status or one ability from outside data has a largest size, so what carries it (an offer, a sheet,
+a doc) can be sized from it. Problem (12.4): the bounds of fields multiply to gigabytes. Smallest change: a size in
+bytes, checked once where each of the three is read, with the words a maker shows.
+
+**Where a def from outside data is read** (read in the code): a status def at `parseStatusDef` (the library, a pack, a
+reward's status, a skill's and an item's worn status, the fight doc's and the solo doc's tables) and at `keyDefSource`
+(a sheet's condition, the `status` and `vitals` messages, a fight's row); an op's own def under an item's effects
+(`parseOp` in `parseItem`) and under an ability's ops (`parseAbility`: a skill, a monster's abilities, a fight's row).
+So three things are capped: a status def (both readers), an item whole, an ability whole. A monster holds no def of
+its own (its statuses are keys); a reward, a feat's reward and a chapter hold items, status defs and skills, each read
+by one of the three capped readers, so each is bounded by its counts times the caps and needs no fourth number.
+
+**The unit**: bytes of the thing's JSON in UTF-8 as its reader gives it back (`bytesOf`, the offer's `goodsSize`), since
+the server's body bound is bytes. `SHEET_MAX` and `DOC_MAX` count characters, never more than the bytes.
+
+**The decision, written before the measurement runs** (nothing in it varies: one run is the measurement):
+
+- `ITEM_MAX` is the largest whole KiB such that `GOODS_LINES` (8) items at the cap, with the worst rest of an offer
+  (2,344 bytes, 12.2) and the request's wrapper (80), fit the server's 64 KiB body. By arithmetic that is 7 KiB (7,168):
+  8 x (7,168 + 27 for a line's wrapper) + 2,344 + 80 = 59,984. The number that would change it: the largest item the
+  app ships. If it is over a quarter of the cap (1,792), the cap stays and `GOODS_LINES` comes down instead, to what
+  fits at four times that item.
+- `STATUS_MAX` is 4 KiB (4,096), so an item or a skill can hold one status at the cap and still have 3 KiB of its own.
+  The number that would change it: the largest status def the app ships (built-in statuses, the kit examples, the
+  bundles). Over a quarter of the cap (1,024), `STATUS_MAX` becomes four times it, rounded up to a KiB, and `ITEM_MAX`
+  must then still exceed it by 1 KiB or the plan is wrong and is rewritten.
+- `ABILITY_MAX` is the item's cap (7,168): an ability and an item are peers, each up to 12 ops and one status of its
+  own. The number that would change it: the largest ability the app ships (the built-in abilities, every built-in
+  monster's, the kit examples'). Over a quarter of the cap, it becomes four times it, rounded up to a KiB.
+- What is expected to be refused: an item a GM fills to every typed bound (12.2's row: 10,840 bytes with three-byte
+  text, 12 effects by rank and a worn status of 12 ops by rank) is over the cap. The maker says so with the two numbers.
+- `OFFER_MAX` then follows: the worst offer of 8 items at the cap, measured by the test, rounded up to a KiB.
+- `SHEET_MAX` (32,768 characters): the test measures a new hunter's pushed sheet and says how many items at the cap it
+  then holds. Expected: 4. At the edge today the push is refused before it is sent (`sendSheet` counts the sheet against
+  `SHEET_MAX`, the push machine's `refused: too-large`) and the pill says the sheet is too big; the hunter stays whole on
+  its own phone. That stays: a bag has no cap of its own in this step.
+
+A thing over its cap is refused whole: the reader answers null (an item, a status, an ability; a skill whose ability or
+worn status is over is refused as a skill, since it is that ability). A maker checks the form with the same rule before
+it saves and shows the words (`tooLarge`).
+
+### 12.9 Ruling 2: the measurement, what was built, the numbers
+
+The measurement (one run; nothing in it varies), printed by `tests/size.test.ts` and `tests/protocol.test.ts`:
+
+| What | Bytes | Against the plan's quarter |
+|---|---|---|
+| The largest item the app ships (The Punchline, a bundle's item with a worn status) | 502 | under 1,792: `ITEM_MAX` stays 7,168 and `GOODS_LINES` 8 |
+| The largest status def the app ships (Resonance, a kit example) | 1,035 | over 1,024, so by the plan's rule the cap is four times it up to a KiB: 5,120, not 4,096 |
+| The largest ability the app ships (Fester, a kit example) | 1,804 | over 1,792, so by the plan's rule: 8,192, not 7,168 |
+
+So the sizes are **an item 7,168 bytes, a status 5,120, an ability 8,192** (`THING_MAX` in `src/core/size.ts`). The plan's
+check holds: an item holds one status at its size and 2 KiB of its own. Two of the three numbers moved from the plan's
+first guess because the shipped kit examples were 11 and 12 bytes over the quarter; the rule was followed as written.
+
+What follows from them:
+
+| What | Number | How |
+|---|---|---|
+| The worst offer: 8 items at the size, names and 8 asks of 60 three-byte characters | 59,903 bytes (items 8 x 7,168, a line's wrapper 27, the rest 2,344) | built by the test from an item of exactly 7,168 bytes |
+| `OFFER_MAX` | 60,416 (59 KiB; it was 49,152) | the worst offer up to a KiB; with the request's wrapper (80) 60,496, under the server's 65,536 |
+| Lines of the worst item an offer holds | 8 (it was 0 for a nested item, 2 to 4 for a typed one) | an offer of items the readers take is never refused for its size; `too-large` stays for more than 8 lines or too much gold |
+| `SHEET_MAX` (32,768 characters) | a new hunter's pushed sheet is 1,262 characters; it then holds 4 items at the size, and a fifth is over | the test builds both and reads the four back whole |
+| The fight doc's table of defs (`DOC_DEFS_MAX`, 6,000 characters) | one status at the size fits it | asserted; the worst-case fight doc and solo doc tests pass unchanged (their rows and defs were built-in ones) |
+| A reward at its counts (20 items, 8 statuses, 8 skills) | at most about 249,856 bytes | finite now; still over one request's body: see "found" below |
+
+At the sheet's edge nothing changed: a sheet past `SHEET_MAX` is refused before it is sent (`sendSheet`, the push's
+`refused: too-large`), the pill says so, and the hunter is whole on its own phone. A bag has no cap of its own.
+
+Built: `src/core/size.ts` (`bytesOf`, `THING_MAX`, `withinSize`, `tooLarge`); `parseStatusDef` and the reader of a
+sheet's condition (`keyDefSource`) refuse a def past a status's size; `parseAbility` an ability past its; `parseItem` an
+item past its, or whose worn status is past a status's. Refused whole means null, never the thing without the part that
+made it large: an item is not kept without its worn status, a skill is not kept without its ability (`parseSkill`
+answers null; before, an ability that did not read left a skill with none), a reward's status is not kept as a key
+without its def. A part that does not read for another reason is still left out as before. The makers check the form
+with `tooLarge` before they save and show its words: the item maker (the worn status first, then the item), the status
+maker, the skill maker (its ability, or a passive's worn status). `goodsSize` is `bytesOf`.
+
+Decided here, not in the ruling:
+
+1. Three caps, not one a holder. A monster, a reward, a feat's reward and a chapter hold no def of their own: each
+   holds items, status defs and abilities read by the three capped readers, so each is bounded by its counts times the
+   caps. A fourth and fifth number would be a second bound on the same bytes.
+2. A monster's ability past the size is left out of the monster, as one that does not read is today; the monster is
+   kept. A skill is refused whole because a skill is its ability; a monster is not one of its eleven.
+3. The size is of the thing as its reader gives it back, not of the raw input (which may carry keys the reader drops).
+
+The new words, for the lead's second read (each through `humanizer` and `unslop`; numbers exact, the way out last):
+
+- "This item is too large to save. It takes 9,120 bytes, and an item holds at most 7,168. Remove an effect, or make its worn status smaller."
+- "This status is too large to save. It takes 7,440 bytes, and a status holds at most 5,120. Remove an effect, or one of the things that happen when it stacks, triggers or ends."
+- "This skill's ability is too large to save. It takes 9,011 bytes, and an ability holds at most 8,192. Remove an effect."
+
+"Bytes" is the literal unit and the only exact one; the lead may prefer another word for a GM.
+
+Tests: `tests/size.test.ts` (a status under the size reads and the same with more ops is refused at each of its three
+readers; an item refused whole, by its own size and by its worn status's; an ability and its skill; the words; everything
+shipped at most a quarter of its size, found by walking every built-in registry; a save whose library holds an item over
+the size opens without it and keeps the rest). `tests/protocol.test.ts`: the worst offer by part, the largest things
+against what carries them, the sheet of four items. `tests/goods.test.ts`: eight items at the size are put aside for one
+offer. `tests/e2e/makers.e2e.ts`: a status of 12 notes of 200 three-byte characters is refused with the words, and saved
+once five are removed. With `withinSize` made always true, 6 of these fail.
+
+Found, not fixed (for the lead):
+
+- **A save that already holds a thing over a size loses it at load, without a word.** No maker could write a status
+  over 5,120 bytes without 12 long notes or by-rank ops in most rows, and nothing shipped is near, but an item a GM
+  filled to every bound (10,840 bytes, 12.2) is dropped from a library or a bag when the save is next read. The hunter
+  survives; the item does not. If that is not acceptable, the way is a one-time note at load that names what was left
+  out, as a damaged fight is told (`fightLost`).
+- **A reward can still be larger than one request.** 20 items at the size are 143 KB. The room answers 413 and the GM is
+  told the room did not take the award; a quest holding such a reward sits in a save. A cap on a whole reward (under
+  the body, or under `CHAPTER_MAX`, which the stories branch has) would close it.
+- **The makers' form and its reader can differ by a few bytes** (the form is measured before the reader runs). A form
+  that passes `tooLarge` and whose read-back is over would be refused by the reader with "This status cannot be saved."
+  in the status maker and saved as nothing in the item maker. Not seen; the reader only drops keys.
+
+Principles: `principle-explain-the-number` (the decision and the number that would change it were committed before the
+run, and two caps moved by the rule), `principle-boundary-discipline` (the size is checked where each thing is read, once),
+`principle-type-system-discipline` (one table of sizes keyed by kind, so a fourth kind is one entry and its words).
+
+### 12.10 Unit 0: what a phone missed while it was out of the room (what was built, and what was decided)
+
+Built as section 11 designs it and ruling 1 of section 13 approves.
+
+- `src/core/sync/seen.ts` (new): `RoomPlaces` (11.4 named it `Seen`, which trade/offer.ts already exports), `SEEN_MAX` (100), `seenKept`, `seenWithout`, `seenFrom` (null past a room's
+  30 days), `parseSeen`. `settings.sync.seen` in save.ts with its repair line. Its own module, not bind.ts as 11.8 had
+  it: save.ts reads it at load, and bind.ts imports party.ts, which imports the save.
+- `linkSaved` (bind.ts) takes the server's time and, in the write that takes the phone out of a room (to none or to
+  another), keeps that room's cursor; the place goes when the phone is in the room again and when the room is gone (a
+  poll's `gone`, a join that finds it gone, a GM's ring `gone`).
+- link.ts: `join` and `Joining` carry `from`; `headed` goes live at it when it is not past the room's end, else at the
+  end. No state was added, so the link's chart is unchanged (`bun run charts` wrote the same file).
+- room-events.ts: `landAll(save, held, events, app, appOf)` folds a page over a save (each land with its id through
+  `appliedOnce`, the held events first, a throw held) and answers the save, the held list and the tells; it replaces
+  `applyAll`, which wrote an event at a time. `applyRoomEvent` stays for one event (the model and the tests use it).
+  `awayDeps(app, lines)` is the app a message tells through when it was sent while the phone was out.
+- sync.ts: `joining(code, key)` reads the place for all three joins (Join, the GM's reopen, Rejoin after a removal);
+  `runLink` hands a poll page's `save` to its `apply`; `landPage` writes the cursor, the page's lands and the held list
+  in one `store.apply('sync-page')`, then runs the tells and opens the one window. No new `let` (the lint's list is
+  unchanged).
+- tests/models/room-world.ts copies each: `seen` in `PhoneSave`, `save`'s lines of `linkSaved`, `joining`, the page's
+  cursor written with its lands, and `first` (bookkeeping: the cursor a phone first went live in a room with).
+
+Decided here, not in the design:
+
+1. **A message is "sent while away" when the room took it before this phone's join** (`ev.at` before the save's
+   `joinedAt`, both the server's time). 11.6 had the link know that it was catching up (pages at or before the head's
+   end). The message's own time needs no link state, and it survives a reload in the middle of a catch-up: the pages
+   read after the reload are still told as away. A "Play as" rebind also moves `joinedAt`, so a message that reaches
+   the room in the seconds before a rebind is told in the away window; it was for the hunter the phone no longer plays.
+2. **One window a page, not one a catch-up.** A page is at most 200 events, so an absence of fewer than 200 room
+   events is one window. A longer one is a window for each page that held something for this phone. Gathering lines
+   across pages would keep them in memory between writes, and a reload between two pages would lose the lines of
+   lands already written. Nothing is lost this way.
+3. **What a tell does besides telling still happens**: a grant's level-up window and its Job Change steps, a coin's
+   landing, the toast that the GM's fight holds the hunter. Only the message's own window or toast becomes a line.
+4. **The tells run after the page's write**, in the room's order. Before, each ran after its own event's write; a
+   System window (which writes nothing) now also waits for the page.
+5. **The model's rule covers seven kinds** (award, status, chain, vitals, spent, shadow, noted), from the phone's first
+   join in the room, and the GM's rules (a told use logged once, a coin call held) from the GM's first. It held on
+   the first run, on 2,000 random walks and the 16,386 sequences of three moves.
+6. **The GM's phone resumes too**, as 11.1's last row asks: its `sync:event` handlers hear what players sent while it
+   was out. It has no away window: each handler tells in its own way (a feed line, a log line).
+
+The words, for the lead's second read:
+
+- The window: tag "! System", title "WHILE YOU WERE AWAY", body "These were sent while this phone was out of the room."
+- A line a message: an award "Reward: REWARD RECEIVED. +30 XP. +12 gold" (a bundle's own title in its place); a quest
+  "Quest: The Den. GOAL: Clear it."; a System message "Notification: A storm is coming. Take cover."; an HP change as
+  its toast reads, "+10 fatigue · A long march"; a status "Burning: 3d8 magical damage a round · 3 rounds". Each is the
+  window's tag without its "!", its title, then its body and lines joined with full stops. The upper-case titles are
+  the System's voice inside a line of a body, which Plain first keeps to tags and titles: the lead may want "Reward:
+  +30 XP, +12 gold" with no title.
+
+Tests: `tests/bind.test.ts` (each way out keeps the cursor with the time; a page's cursor keeps none; back in the room
+the place goes; a gone room keeps none; 30 days to the millisecond; the cap and the reader), `tests/link.test.ts` (a
+join back goes live at its place and polls from it; a place past the end starts at the end; the GM's reopen),
+`tests/save.test.ts` (the repair), `tests/applied.test.ts` ("a page of the room lands as one change": every message on
+the answered save before anything is told; a page landed again gives nothing twice; away messages as lines with the
+hunter given each), `tests/room-system-model.test.ts` (the rule from the first join, and four scenarios by name: the
+award sent while Mira was out, a status across a removal and Allow back, a solo run claimed while the GM's phone was
+away, a reload in the middle of a catch-up), `tests/e2e/room-sync.e2e.ts` ("a player who left the room and came back
+gets the award the GM sent meanwhile, once, told in one window": through the Room view's Leave and one-tap Rejoin, then
+a reload and a second leave and join give nothing twice). With `headed` going live at the room's end again, 4 model
+tests (three scenarios and the exhaustive walk) and 2 link tests fail.
+
+What unit 2 must know:
+
+- A returning phone reads its offers' ends on its catch-up pages. There is no join history fold to build (1.9's second
+  bullet is gone).
+- `landPage` is where the fold goes: call `offersSeen` over the page whole (own echoes included: `apply` skips them
+  before `landPage`, so pass the unfiltered `r.events` beside `fresh`) inside the `sync-page` step, after `linkWritten`
+  and beside `landAll`, so the cursor, the lands and the fold are one write. Its news are tells: push them on the
+  page's tells, or as away lines when the event's `at` is before `joinedAt`.
+- The GM's phone runs no appliers; its page write is the cursor alone today. The GM's watch records go in the same step.
+- `standsFor` (12.7) is the place to say that an end stands for its offer, should a held end ever need replacing.
+- The memory store keeps every event now (12.7), so "an offer has one end" holds on it as on Postgres.
+
+Found outside the unit (not fixed):
+
+- **The head still pages the room's whole history** to find its end (sync.ts `case 'head'`), though a join with a
+  place needs only the end to compare with. A room of 20,000 events is 100 requests at a join. The server could
+  answer the end alone (`?head=1`); not in this unit.
+- **`room-sync.e2e.ts`'s first test waits 8 seconds and 1.5 seconds on fixed timers** ("a reload on the player applies
+  nothing twice"), against the rule "wait on what the player sees". The new case waits on a later message instead.
+- **`seen` is cleared by nothing when a save is replaced** (an import, a restore): the places are the old save's, and a
+  restored save's own are kept. An import of another phone's save carries that phone's places; they only move where a
+  join starts, and a place past a room's end starts at the end.
+
+Principles: `principle-make-operations-idempotent` (a page is one write, so "read again" is the only other outcome of a
+reload, and the ids on the save make a second read land nothing), `principle-fix-root-causes` (the join's start was the
+fault, so the fix is where a join starts and nothing about how a message lands), `principle-subtract-before-you-add`
+(no link state for the catch-up; `applyAll` replaced, not kept beside `landAll`), `principle-test-behavior-not-implementation`
+(the model's rule is what a player has after any interleaving; each new test was shown to fail on the old join).
+
 ## 13. The lead's rulings after units 1 and 3 (Nov 19)
 
 1. **Unit 0's design (section 11) is approved**: the save keeps the cursor a phone had when it left a room (`seen[code]`, 30 days), a join goes live at that cursor through the normal appliers, a page's lands and its cursor are one write, and the model's rule is that every message lands exactly once from a phone's first join. It replaces unit 2's separate fold of a join's history: unit 2 is built on it. A room never visited still starts at its end. The messages a phone caught up on are told in one window; its words are the lead's to read before the push.

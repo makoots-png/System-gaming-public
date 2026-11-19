@@ -89,8 +89,11 @@ export type Live = { at: 'live'; gen: Gen; code: RoomCode; key: GmKey | null; cu
 /** Where a failed create or join returns to. */
 export type Back = LinkOff | Idle | Live;
 export type Creating = { at: 'creating'; gen: Gen; back: Back };
-/** `peek` asks whether the room exists, `head` reads where its events end (and checks the key or the removal). */
-export type Joining = { at: 'joining'; gen: Gen; code: RoomCode; key: GmKey | null; step: 'peek' | 'head'; back: Back };
+/**
+ * `peek` asks whether the room exists, `head` reads where its events end (and checks the key or the removal). `from`: the
+ * cursor this phone had when it last went out of the room (the save's `seen`), or null for a room it was never in.
+ */
+export type Joining = { at: 'joining'; gen: Gen; code: RoomCode; key: GmKey | null; from: number | null; step: 'peek' | 'head'; back: Back };
 /** Another build's server answered. Never left: the edge reloads, and `stuck` says the reload did not help. */
 export type Upgrading = { at: 'upgrading'; gen: Gen; stuck: boolean };
 export type Link = LinkOff | Idle | Creating | Joining | Live | Upgrading;
@@ -101,8 +104,11 @@ export type FailKind = 'net' | 'timeout' | 'server';
 export type LinkEvent =
   // taps
   | { type: 'create' }
-  /** `key` is the GM key this phone holds for the room, or null to join as a player. */
-  | { type: 'join'; code: RoomCode; key: GmKey | null }
+  /**
+   * `key` is the GM key this phone holds for the room, or null to join as a player. `from`: where this phone stopped
+   * reading the room when it last went out of it (the save's `seen[code]`), or null when it keeps none.
+   */
+  | { type: 'join'; code: RoomCode; key: GmKey | null; from: number | null }
   | { type: 'leave' }
   /** Forget the last room. */
   | { type: 'forget' }
@@ -273,7 +279,7 @@ function begin(link: Back, event: Extract<LinkEvent, { type: 'create' | 'join' }
   const gen = nextGen(link.gen);
   if (event.type === 'create') return { state: { at: 'creating', gen, back: link }, effects: [...exit(link), request(gen, { req: 'create' })] };
   return {
-    state: { at: 'joining', gen, code: event.code, key: event.key, step: 'peek', back: link },
+    state: { at: 'joining', gen, code: event.code, key: event.key, from: event.from, step: 'peek', back: link },
     effects: [...exit(link), request(gen, { req: 'peek', code: event.code })],
   };
 }
@@ -320,7 +326,10 @@ function joining(link: Joining, event: LinkEvent): Step {
       }
       if (link.key === null && event.kicked) return leaving(link, resume(link.back, gen), notify('notAllowedBack', link.code));
       const keep: LinkEffect[] = link.key === null ? [] : [{ type: 'save', fields: { ring: { keep: link.code, key: link.key } } }];
-      return leaving(link, live(gen, link.code, link.key, event.cursor, lastAfter(link.back, link.code), 'ok'), ...keep, { type: 'apply' });
+      // back in a room it was in before, the phone reads on from where it stopped, so what came meanwhile lands as any page
+      // does; a room it was never in, or a cursor past the room's end (another room under the code), starts at the end
+      const cursor = link.from !== null && link.from <= event.cursor ? link.from : event.cursor;
+      return leaving(link, live(gen, link.code, link.key, cursor, lastAfter(link.back, link.code), 'ok'), ...keep, { type: 'apply' });
     }
     case 'failed': return failed(link, gen, event.kind);
     default: return same(link);

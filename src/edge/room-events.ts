@@ -12,7 +12,7 @@ import { chainStep, grant, idsFrom, sheetEdit } from '../core/hunter/grant.ts';
 import type { Granted, SheetEdit, StepDone } from '../core/hunter/grant.ts';
 import { chained, issueQuest, withTold } from '../core/hunter/quests.ts';
 import { told } from '../core/session-log.ts';
-import { hold, unhold } from '../core/applied.ts';
+import { appliedOnce, hold, replaced, unhold } from '../core/applied.ts';
 import { runAnswered } from '../core/gates/solo-wait.ts';
 import { REFUSED_WORDS } from '../core/gates/solo.ts';
 import type { ChainEvent } from '../core/hunter/job-chain.ts';
@@ -332,43 +332,88 @@ export function targets(to: readonly SheetKey[] | undefined, device: string, min
   return to.filter(k => deviceOf(k) === device).map(hunterIdOf).filter(id => mine.includes(id));
 }
 
+/** What an event does on this phone: a change to write with its id (`land`), something to do with no write of its own here (`act`), or nothing. */
+type Doing = { kind: 'land'; land: Land } | { kind: 'act'; act: () => void } | null;
+function doingOf(ev: RoomEvent, save: Save, app: ApplyDeps): Doing {
+  const applier = APPLIERS[ev.type] as Applier<EventType> | null;
+  if (!applier) return null;
+  const to = 'to' in ev.payload ? ev.payload.to : undefined;
+  const hids = targets(to, save.settings.deviceId, save.hunters.map(h => h.id));
+  if (!hids.length) return null;
+  // APPLIERS pairs each type with the applier of its own payload.
+  const payload = ev.payload as PayloadOf<EventType>;
+  return 'apply' in applier ? { kind: 'act', act: () => applier.apply(payload, hids, app) } : { kind: 'land', land: applier.land(payload, hids, app) };
+}
+
 /**
  * Applies a parsed event on a player's phone, for this phone's hunters it names. An event that changes a hunter is
  * written with its id in one write the first time only, and its player is told only when it was written.
  */
 export function applyRoomEvent(ev: RoomEvent, app: ApplyDeps): void {
-  const applier = APPLIERS[ev.type] as Applier<EventType> | null;
-  if (!applier) return;
-  const s = app.store.get(), to = 'to' in ev.payload ? ev.payload.to : undefined;
-  const hids = targets(to, s.settings.deviceId, s.hunters.map(h => h.id));
-  if (!hids.length) return;
-  // APPLIERS pairs each type with the applier of its own payload.
-  const payload = ev.payload as PayloadOf<EventType>;
-  if ('apply' in applier) { applier.apply(payload, hids, app); return; }
-  const land = applier.land(payload, hids, app);
+  const doing = doingOf(ev, app.store.get(), app);
+  if (!doing) return;
+  if (doing.kind === 'act') { doing.act(); return; }
+  const land = doing.land;
   let tell: (() => void) | null = null;
   const wrote = app.once(ev.payload.eid, save => { const r = land(save); if (isRefused(r)) return r; tell = r.tell; return r.save; });
   if (wrote && tell) (tell as () => void)();
 }
 
+/** What a page of the room did to a save: the save, the events now held, the ones held for the first time, and what to tell once the save is written, in the room's order. */
+export type PageLanded = { save: Save; held: RoomEvent[]; fresh: RoomEvent[]; tells: (() => void)[] };
 /**
- * A good poll's events on a player's phone, after the ones held from earlier polls (src/core/applied.ts `hold`): each
- * applied in turn, and one whose applier throws is held, so the cursor may move past it and it is tried again after the
- * next good poll. Answers the events held now and the ones held for the first time (the phone says so). A throw is
- * warned each time it happens.
+ * A page of the room's events on a player's phone, as one change to `save`: the events held from earlier pages
+ * (src/core/applied.ts `hold`) and then the page's, each landed with its id (`appliedOnce`) on the save the one before
+ * left, so sync.ts writes the whole page and its cursor in one write: a reload finds all of a page's lands with its
+ * cursor, or none and the page is read again. An event whose applier throws is held, so the cursor may move past it, and
+ * it is tried again with the next page; a throw is warned each time. A held event that a newer one stands in for
+ * (`replaced`: a later total for the same hunter) leaves untried, so it never lands after the newer one. Nothing is
+ * told here: `tells` run after the write. `appOf` gives each event of the page the app it tells through (`awayDeps` for
+ * one sent while this phone was out of the room); a held event tells through `app`.
  */
-export function applyAll(held: readonly RoomEvent[], events: readonly RoomEvent[], app: ApplyDeps): { held: RoomEvent[]; fresh: RoomEvent[] } {
-  let now = [...held];
-  const fresh: RoomEvent[] = [];
-  for (const ev of [...held, ...events]) {
-    const again = held.includes(ev);
+export function landAll(save: Save, held: readonly RoomEvent[], events: readonly RoomEvent[], app: ApplyDeps, appOf: (ev: RoomEvent) => ApplyDeps = () => app): PageLanded {
+  const tried = events.reduce(replaced, [...held]);
+  const out: PageLanded = { save, held: [...tried], fresh: [], tells: [] };
+  for (const ev of [...tried, ...events]) {
+    const again = tried.includes(ev);
+    if (!again) out.held = replaced(out.held, ev);
     try {
-      applyRoomEvent(ev, app);
-      if (again) now = unhold(now, ev.payload.eid);
+      const doing = doingOf(ev, out.save, again ? app : appOf(ev));
+      if (doing?.kind === 'act') out.tells.push(doing.act);
+      if (doing?.kind === 'land') {
+        let tell: (() => void) | null = null;
+        const land = doing.land, next = appliedOnce(ev.payload.eid, s => { const r = land(s); if (isRefused(r)) return r; tell = r.tell; return r.save; })(out.save);
+        if (!isRefused(next)) { out.save = next; if (tell) out.tells.push(tell); }
+      }
+      if (again) out.held = unhold(out.held, ev.payload.eid);
     } catch (e) {
-      console.warn(`[sync] the ${ev.type} event ${ev.payload.eid} could not be applied${again ? ' again' : ''}; it is kept and tried after the next poll:`, e instanceof Error ? e.message : e);
-      if (!again) { now = hold(now, ev); fresh.push(ev); }
+      console.warn(`[sync] the ${ev.type} event ${ev.payload.eid} could not be applied${again ? ' again' : ''}; it is kept and tried with the next page:`, e instanceof Error ? e.message : e);
+      if (!again) { out.held = hold(out.held, ev); out.fresh.push(ev); }
     }
   }
-  return { held: now, fresh };
+  return out;
+}
+
+/** The first word of a window's tag, as a line names it: "! Quest" is "Quest". */
+const tagWord = (tag: string): string => tag.replace(/^!\s*/, '');
+/**
+ * The app a message tells through when it was sent while this phone was out of the room: each window and toast becomes
+ * one line of `lines`, which sync.ts shows in one window after the page is written, in place of a window a message.
+ * Whatever a tell does besides telling stays: a grant's level-up and Job Change steps (`granted` without its own
+ * window), a coin's landing, the toast that the GM's fight holds a hunter.
+ */
+export function awayDeps(app: ApplyDeps, lines: string[]): ApplyDeps {
+  return {
+    store: app.store, once: app.once, rules: app.rules, now: app.now, today: app.today, stepsDone: app.stepsDone, coinLanded: app.coinLanded,
+    toast: (_tag, text) => { lines.push(text); },
+    system: w => { lines.push([`${tagWord(w.tag)}: ${w.title}`, w.body, ...(w.lines ?? []), ...(w.rewards ?? [])].filter(Boolean).join('. ')); },
+    hunter: {
+      fightOf: target => app.hunter.fightOf(target), gmHolds: () => app.hunter.gmHolds(),
+      granted: (hid, g, opts) => {
+        const r = app.hunter.granted(hid, g, { ...opts, popup: false });
+        lines.push([`${tagWord(opts?.tag ?? '! Reward')}: ${opts?.title ?? 'REWARDS ACQUIRED'}`, ...r.lines].join('. '));
+        return r;
+      },
+    },
+  };
 }

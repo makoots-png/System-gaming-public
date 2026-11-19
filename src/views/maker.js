@@ -353,7 +353,7 @@ function effects(box, o) {
     const modes = (formula && !one) || number || r.kind === 'applyStatus' ? [['flat', 'Same at every rank'], ['rank', item ? 'By rarity' : 'By rank']] : [];
     const input = (attrs, label, value) => (number
       ? `<input type="number" inputmode="${decimal ? 'decimal' : 'numeric'}" step="${decimal ? 'any' : '1'}" ${attrs} aria-label="${esc(label)}" value="${esc(value)}">`
-      : `<input type="text" maxlength="60" autocomplete="off" spellcheck="false" ${attrs} aria-label="${esc(label)}" value="${esc(value)}">`);
+      : `<input type="text" autocomplete="off" spellcheck="false" ${attrs} aria-label="${esc(label)}" value="${esc(value)}">`);
     const placeholder = number ? (NUMBERS[r.kind].rounds ? 'Rounds, e.g. 0.5' : '−20') : '2d6 + 1';
     const K = rules().fight.kit, stacksIn = r.kind === 'applyStatus' || r.kind === 'cureStatus'
       ? (stacking(r) || r.addStacks ? smallNum('addStacks', r.kind === 'applyStatus' ? 'Stacks it adds' : 'Stacks it takes', r.addStacks, { aria: `Stacks of effect ${i + 1}`, placeholder: r.kind === 'applyStatus' ? '1' : 'All' }) : '') : '';
@@ -551,7 +551,7 @@ function formulaField(box, o) {
     <div class="lbl">What it does</div>
     ${chips('ftype', EFFECT_TYPES.map(([v, l]) => [v, l]), type, { label: 'What it does' })}
     <div data-f-has><label class="field"><span class="lbl">Formula <span class="mk-edited" data-edited hidden>edited</span></span>
-      <span class="mk-formula-row"><input type="text" data-formula maxlength="200" autocomplete="off" spellcheck="false" aria-label="Formula" value="${esc(text)}">
+      <span class="mk-formula-row"><input type="text" data-formula autocomplete="off" spellcheck="false" aria-label="Formula" value="${esc(text)}">
       <button type="button" class="quiet" data-reset hidden>Reset</button></span></label>
     <p class="mk-fx-err" data-formula-err role="alert"></p>
     <p class="mk-avg" data-formula-avg></p>

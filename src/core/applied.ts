@@ -4,7 +4,7 @@
 // docs/agent-handoff/p3/notes-protocol.md for why.
 import { parseEventId } from './ids.ts';
 import type { EventId } from './ids.ts';
-import { parseEvent } from './protocol.ts';
+import { parseEvent, standsFor } from './protocol.ts';
 import type { RoomEvent } from './protocol.ts';
 import type { Save } from './save.ts';
 import { isRefused, refuse } from './save-step.ts';
@@ -44,9 +44,18 @@ export function parseApplied(v: unknown): EventId[] {
  * poll, before that poll's own events, until it applies (or refuses) and leaves. At most `HELD_MAX`, oldest let go.
  */
 export const HELD_MAX = 20;
-/** `held` with `ev` kept, once, as the newest. */
+/**
+ * `held` without what `ev` takes the place of: the held messages that stand for what it stands for (protocol.ts
+ * `standsFor`, a fight's totals for one hunter). The room gives events in its order, so every held one is older than `ev`,
+ * and an older total that landed after a newer one would put old numbers back.
+ */
+export function replaced(held: readonly RoomEvent[], ev: RoomEvent): RoomEvent[] {
+  const key = standsFor(ev);
+  return key === null ? [...held] : held.filter(e => standsFor(e) !== key);
+}
+/** `held` with `ev` kept, once, as the newest, in the place of any it replaces. */
 export const hold = (held: readonly RoomEvent[] | undefined, ev: RoomEvent): RoomEvent[] =>
-  [...(held ?? []).filter(e => e.payload.eid !== ev.payload.eid), ev].slice(-HELD_MAX);
+  [...replaced(held ?? [], ev).filter(e => e.payload.eid !== ev.payload.eid), ev].slice(-HELD_MAX);
 /** `held` without the event `eid`: it applied, or refused, on a later try. */
 export const unhold = (held: readonly RoomEvent[] | undefined, eid: EventId): RoomEvent[] => (held ?? []).filter(e => e.payload.eid !== eid);
 /** The held events a save holds, each read again by the room's own parser. */

@@ -51,7 +51,7 @@ beforeEach(() => { current++; });
 const still = (mine: number): void => { if (current !== mine) throw new Error('this walk was timed out; it stops here'); };
 
 // ── the rules ──
-const EVENT_KINDS = new Set(['award', 'status', 'chain', 'vitals']);
+const EVENT_KINDS = new Set(['award', 'status', 'chain', 'vitals', 'spent', 'shadow', 'noted']);
 /** Checked after every move. */
 function safety(w: World): string | null {
   if (w.broken.length) return w.broken[0]!;
@@ -125,24 +125,28 @@ async function converged(w: World): Promise<string | null> {
       if (n !== (refused ? 0 : 1)) return `${p.name}'s message ${m.eid} is in room ${code} ${n} times${refused ? ', though the room refused it' : ''}`;
     }
     if (p.i === 0 || p.link.key !== null || !p.stretch || p.stretch.room !== p.link.code) continue;
-    const key = keyOf(p);
+    // every message to this phone's hunter since the phone first joined the room lands once, whether or not the phone was
+    // in the room when it was sent (notes-5-trade.md 11.7): a join back reads on from where the phone stopped
+    const key = keyOf(p), from = p.first[p.link.code] ?? p.stretch.from;
     for (const ev of room.events) {
-      if (!EVENT_KINDS.has(ev.type) || ev.seq <= p.stretch.from || !('to' in ev.payload) || !ev.payload.to?.includes(key)) continue;
-      if (p.ledger[ev.payload.eid] !== 1) return `${ev.type} ${ev.payload.eid} (seq ${ev.seq}) took effect ${p.ledger[ev.payload.eid] ?? 0} times on ${p.name}, which is still in the room`;
+      if (!EVENT_KINDS.has(ev.type) || ev.seq <= from || !('to' in ev.payload) || !ev.payload.to?.includes(key)) continue;
+      if (p.ledger[ev.payload.eid] !== 1) return `${ev.type} ${ev.payload.eid} (seq ${ev.seq}) took effect ${p.ledger[ev.payload.eid] ?? 0} times on ${p.name}, which first joined the room at ${from}`;
     }
     for (const ev of room.events) {
-      if (ev.type !== 'coinLand' || ev.seq <= p.stretch.from || !ev.payload.roll.startsWith(`${p.device}:`)) continue;
+      if (ev.type !== 'coinLand' || ev.seq <= from || !ev.payload.roll.startsWith(`${p.device}:`)) continue;
       const c = coinOf(p.save.coins, ev.payload.roll);
       if (c?.at !== 'landed') return `the landing of ${ev.payload.roll} (seq ${ev.seq}) is in the room, but ${p.name}'s coin is ${c?.at ?? 'gone'}`;
     }
   }
   if (gmCode && gm.stretch && gm.stretch.room === gmCode) {
+    // the GM's phone, too, reads on from where it stopped: a player's message sent while it was out of the room is heard
+    const from = gm.first[gmCode] ?? gm.stretch.from;
     for (const ev of (await probe(w, gmCode))?.events ?? []) {
-      if (ev.type !== 'used' || !ev.payload.tell || ev.seq <= gm.stretch.from) continue;
+      if (ev.type !== 'used' || !ev.payload.tell || ev.seq <= from) continue;
       if (gm.told[ev.payload.eid] !== 1) return `the told use ${ev.payload.eid} (seq ${ev.seq}) is in the GM's session log ${gm.told[ev.payload.eid] ?? 0} times`;
     }
     for (const ev of (await probe(w, gmCode))?.events ?? []) {
-      if (ev.type !== 'coinCall' || ev.seq <= gm.stretch.from) continue;
+      if (ev.type !== 'coinCall' || ev.seq <= from) continue;
       if (!coinOf(gm.save.calls, ev.payload.roll)) return `the call ${ev.payload.roll} (seq ${ev.seq}) is in the room, but the GM's phone does not hold it`;
     }
   }
@@ -363,6 +367,78 @@ describe('a solo run of the room\'s gate (gates/solo.ts, solo-wait.ts)', () => {
       expect(safety(w)).toBeNull();
       expect([p1.paid, p2.paid]).toEqual([{ [p1.save.posted[0]!.eid]: 1 }, {}]);
       expect([p1.save.runs, p2.save.runs, gm.save.soloGate]).toEqual([[], [], 'cleared']);
+    } finally { done(w); }
+  });
+});
+
+describe('what a phone missed while it was out of the room (notes-5-trade.md 11.7)', () => {
+  /** A world with the GM and one player live in the GM's room, at rest. */
+  async function liveWorld(): Promise<World> {
+    const w = fresh(1);
+    await play(w, 'gm create'); await quiet(w, 2);
+    await play(w, 'p1 join'); await quiet(w, 3);
+    return w;
+  }
+  const landed = (w: World): number[] => Object.values(w.phones[1]!.ledger);
+
+  test('an award sent while Mira\'s phone was out of the room lands once when she joins again', async () => {
+    const w = await liveWorld(), p1 = w.phones[1]!;
+    try {
+      await play(w, 'p1 leave');
+      expect(p1.link.at).toBe('idle');
+      expect(await play(w, 'gm award p1'), 'the GM\'s board still shows her hunter').toBe(true);
+      await play(w, 'gm serve box'); await play(w, 'gm answer box');
+      expect(landed(w), 'nothing lands on a phone out of the room').toEqual([]);
+      await play(w, 'p1 join');
+      await quiet(w, QUIET_ROUNDS);
+      expect(p1.link.at).toBe('live');
+      expect(landed(w)).toEqual([1]);
+      expect(safety(w) ?? (await converged(w))).toBeNull();
+    } finally { done(w); }
+  });
+
+  test('a player removed and allowed back gets the status the GM sent in between, once', async () => {
+    const w = await liveWorld(), p1 = w.phones[1]!;
+    try {
+      await play(w, 'gm status p1'); await play(w, 'gm kick p1');
+      await quiet(w, 2);
+      expect(p1.link.at, 'the removal took her phone out').toBe('idle');
+      const before = landed(w).length;
+      await play(w, 'gm allow p1');
+      await quiet(w, QUIET_ROUNDS);
+      expect(p1.link.at).toBe('live');
+      expect(landed(w).every(n => n === 1) && landed(w).length >= Math.max(1, before)).toBe(true);
+      expect(safety(w) ?? (await converged(w))).toBeNull();
+    } finally { done(w); }
+  });
+
+  test('a solo run claimed while the GM\'s phone was away is answered when the GM opens the room again', async () => {
+    const w = await liveWorld(), [gm, p1] = w.phones as [World['phones'][0], World['phones'][0]];
+    try {
+      await play(w, 'gm leave');
+      await play(w, 'p1 solo'); await play(w, 'p1 serve box'); await play(w, 'p1 answer box');
+      expect(p1.save.runs.map(r => r.state), 'the room took the run; nobody answered it').toEqual(['taken']);
+      await play(w, 'gm rejoin');
+      await quiet(w, QUIET_ROUNDS);
+      expect([gm.link.at, Object.values(p1.paid), p1.save.runs]).toEqual(['live', [1], []]);
+      expect(safety(w) ?? (await converged(w))).toBeNull();
+    } finally { done(w); }
+  });
+
+  test('a reload in the middle of a catch-up lands nothing twice', async () => {
+    const w = await liveWorld(), p1 = w.phones[1]!;
+    try {
+      await play(w, 'p1 leave');
+      for (const m of ['gm award p1', 'gm serve box', 'gm answer box', 'gm chain p1', 'gm serve box', 'gm answer box']) await play(w, m);
+      await play(w, 'p1 join');
+      // the join's code check and head answer, the first page of the catch-up is served, and the page reloads before its answer
+      for (const m of ['p1 serve link', 'p1 answer link', 'p1 serve link', 'p1 answer link', 'p1 serve link', 'p1 reload']) expect(await play(w, m), m).toBe(true);
+      await quiet(w, QUIET_ROUNDS);
+      expect(landed(w)).toEqual([1, 1]);
+      await play(w, 'p1 reload');
+      await quiet(w, QUIET_ROUNDS);
+      expect(landed(w), 'and a reload after it').toEqual([1, 1]);
+      expect(safety(w) ?? (await converged(w))).toBeNull();
     } finally { done(w); }
   });
 });

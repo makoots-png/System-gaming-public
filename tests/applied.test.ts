@@ -10,7 +10,7 @@ import type { SheetStatus, Source } from '../src/core/combat/effect-ops.ts';
 import { combatantId } from '../src/core/combat/ability-types.ts';
 import { BUILT_IN_STATUSES } from '../src/core/registry/statuses.ts';
 import { RULES } from '../src/core/rules.ts';
-import { applyAll, applyRoomEvent } from '../src/edge/room-events.ts';
+import { applyRoomEvent, awayDeps, landAll } from '../src/edge/room-events.ts';
 import type { ApplyDeps } from '../src/edge/room-events.ts';
 import { day, dev } from './fixtures/ids.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
@@ -88,7 +88,8 @@ function phone(o: { conditions?: SheetStatus[]; fight?: boolean; level?: number;
     toast: (_tag, text) => { toasts.push(text); }, system: w => { windows.push(w); },
     hunter: {
       fightOf: () => (o.fight ? { at: 'gm' } : null),
-      granted: (_hid, g, opts) => { shown.push(g.lines); said.push({ title: opts?.title, body: opts?.body }); return { lines: g.lines, levelup: g.levelup, popup: null }; },
+      // hunter.js `granted`: its window is not opened when the caller asks for none (`popup: false`); the lines are answered either way
+      granted: (_hid, g, opts) => { if (opts?.popup !== false) { shown.push(g.lines); said.push({ title: opts?.title, body: opts?.body }); } return { lines: g.lines, levelup: g.levelup, popup: null }; },
       gmHolds: () => { toasts.push(HELD); return false; },
     },
     stepsDone: (_hid, done) => { completed.push(...done.map(d => d.quest.title)); },
@@ -100,7 +101,15 @@ function phone(o: { conditions?: SheetStatus[]; fight?: boolean; level?: number;
     applyRoomEvent(ev, deps);
   };
   const status = (eid: number, grant: Raw): void => receive(eid, 'status', { to: ['d-player1:h1'], add: [grant], reason: '' });
+  /** A poll page as sync.ts lands it (`landPage`): the held events and the page's in one write, then what it tells. */
+  const page = (held: readonly RoomEvent[], events: readonly RoomEvent[], appOf?: (ev: RoomEvent) => ApplyDeps, app: ApplyDeps = deps): { held: RoomEvent[]; fresh: RoomEvent[] } => {
+    const out = landAll(save, held, events, app, appOf);
+    save = out.save;
+    for (const tell of out.tells) tell();
+    return { held: out.held, fresh: out.fresh };
+  };
   return {
+    page,
     get hunter(): Hunter { return save.hunters[0]!; },
     get applied(): readonly EventId[] { return save.settings.sync.applied ?? []; },
     get runs(): readonly WaitingRun[] { return save.settings.sync.runs ?? []; },
@@ -185,6 +194,38 @@ describe('what the GM\'s fight sends a player\'s phone', () => {
     expect(p.toasts).toEqual(['-4 mana']);
   });
 
+  describe('totals that threw on this phone and are held (notes-5-trade.md 13, ruling 3)', () => {
+    const totals = (n: number, hp: number) => parseEvent('vitals', { eid: e(n), ...VITALS, hp, statuses: [] })!;
+    /** The phone's app as it is while this phone cannot apply a total: its rules break, so the total's applier throws. */
+    const broken = (p: ReturnType<typeof phone>): ApplyDeps => ({ ...p.deps, rules: () => { throw new Error('this phone cannot apply it yet'); } });
+    const quietly = <T>(f: () => T): T => { const warn = console.warn; console.warn = () => {}; try { return f(); } finally { console.warn = warn; } };
+
+    test('an older total held on this phone is let go once a newer one for the hunter lands, so the hunter keeps the newer numbers', () => {
+      const p = phone(), bad = broken(p);
+      const first = quietly(() => p.page([], [totals(1, 12)], () => bad));
+      expect(first.held.map(x => x.payload.eid), 'the first total threw and is held').toEqual([e(1)]);
+      // the older total still cannot be applied when the newer one comes, and the newer one can
+      const second = quietly(() => p.page(first.held, [totals(2, 30)], () => p.deps, bad));
+      expect([p.hunter.life, second.held], 'the newer total landed, and the held older one is gone').toEqual([{ at: 'up', hp: 30 }, []]);
+      p.page(second.held, []);
+      expect([p.hunter.life, p.applied], 'once the phone could apply the older one, the hunter still has the newer total').toEqual([{ at: 'up', hp: 30 }, [e(2)]]);
+    });
+
+    test('a newer total that throws too takes the held older one\'s place, and lands alone with the next page', () => {
+      const p = phone(), bad = broken(p);
+      const first = quietly(() => p.page([], [totals(1, 12)], () => bad));
+      const second = quietly(() => p.page(first.held, [totals(2, 30)], () => bad, bad));
+      expect(second.held.map(x => x.payload.eid)).toEqual([e(2)]);
+      p.page(second.held, []);
+      expect([p.hunter.life, p.applied]).toEqual([{ at: 'up', hp: 30 }, [e(2)]]);
+    });
+
+    test('totals for two hunters are two things: a newer total for one leaves the other\'s held total to land', () => {
+      const other = parseEvent('vitals', { eid: e(1), ...VITALS, to: ['d-player1:h2'], hp: 9, statuses: [] })!;
+      expect(hold(hold([], other), totals(2, 30)).map(x => x.payload.eid)).toEqual([e(1), e(2)]);
+    });
+  });
+
   test('another player\'s step or cast changes nothing on this phone', () => {
     const p = phone(), before = p.hunter;
     p.receive(1, 'step', { by: 'd-player2:h4', place: { x: 1, y: 1 }, at: 0 });
@@ -262,16 +303,16 @@ describe('a reward the GM sends lands whole', () => {
     p.useRules(new Proxy(RULES, { get: (t, k) => { if (k === 'titles') throw new Error('the rules broke'); return Reflect.get(t, k); } }));
     console.warn = () => {};
     let polled: { held: RoomEvent[]; fresh: RoomEvent[] };
-    try { polled = applyAll([], [award, hp], p.deps); } finally { console.warn = warn; }
+    try { polled = p.page([], [award, hp]); } finally { console.warn = warn; }
     expect(polled.held.map(x => x.payload.eid)).toEqual([e(1)]);
     expect(polled.fresh.map(x => x.payload.eid)).toEqual([e(1)]);
     expect(p.applied).toEqual([e(2)]);
     expect(parts(p.hunter).gold).toBe(before.gold);
     p.useRules(RULES);
-    const next = applyAll(polled.held, [], p.deps);
+    const next = p.page(polled.held, []);
     expect(next).toEqual({ held: [], fresh: [] });
     expect([parts(p.hunter).gold, parts(p.hunter).bonus, p.applied]).toEqual([before.gold + 30, before.bonus + 2, [e(2), e(1)]]);
-    expect(applyAll([award], [], p.deps)).toEqual({ held: [], fresh: [] });
+    expect(p.page([award], [])).toEqual({ held: [], fresh: [] });
     expect(parts(p.hunter).gold).toBe(before.gold + 30);
   });
 
@@ -289,6 +330,38 @@ describe('a reward the GM sends lands whole', () => {
     p.receive(1, 'award', AWARD);
     expect(parts(p.hunter)).toMatchObject({ gold: before.gold + 30, statuses: before.statuses });
     expect(p.shown[0]).not.toContain('Status: Hasted (3 rounds)');
+  });
+});
+
+describe('a page of the room lands as one change (notes-5-trade.md 11.5)', () => {
+  const award = (n: number, gold: number) => parseEvent('award', { eid: e(n), to: ['d-player1:h1'], rewards: { gold } })!;
+  const told = parseEvent('system', { eid: e(9), title: 'A storm is coming', body: 'Take cover.' })!;
+
+  test('every message of the page is on the save landAll answers, with its id, before anything is told; the tells then run in the room\'s order', () => {
+    const p = phone(), save = p.deps.store.get(), gold = p.hunter.gold;
+    const out = landAll(save, [], [award(1, 10), told, award(2, 5)], p.deps);
+    expect([out.save.hunters[0]!.gold, out.save.settings.sync.applied, out.held, out.fresh]).toEqual([gold + 15, [e(1), e(2)], [], []]);
+    expect([save.hunters[0]!.gold, p.windows, p.shown], 'the save it was given is as it was, and nothing was told').toEqual([gold, [], []]);
+    for (const tell of out.tells) tell();
+    expect([p.shown, p.windows.map(w => w.title)]).toEqual([[['+10 gold'], ['+5 gold']], ['A storm is coming']]);
+  });
+
+  test('a page landed again on the save it left gives nothing twice: its ids are on that save', () => {
+    const p = phone(), gold = p.hunter.gold, page = [award(1, 10), award(2, 5)];
+    p.page([], page);
+    p.page([], page);
+    expect([p.hunter.gold, p.applied, p.shown.length]).toEqual([gold + 15, [e(1), e(2)], 2]);
+  });
+
+  test('messages sent while this phone was out of the room are told as lines of one window, not a window each; the hunter is given each as live', () => {
+    const p = phone(), gold = p.hunter.gold, lines: string[] = [], away = awayDeps(p.deps, lines);
+    const quest = parseEvent('quest', { eid: e(3), to: ['d-player1:h1'], quest: { kind: 'side', title: 'The Den', desc: 'Clear it.' } })!;
+    const hp = parseEvent('hp', { eid: e(4), to: ['d-player1:h1'], hp: 0, mana: 0, fatigue: 10, reason: 'A long march' })!;
+    p.page([], [award(1, 10), told, quest, hp, award(2, 5)], ev => (ev.payload.eid === e(2) ? p.deps : away));
+    expect(lines).toEqual(['Reward: REWARD RECEIVED. +10 gold', 'Notification: A storm is coming. Take cover.', 'Quest: The Den. GOAL: Clear it.', '+10 fatigue · A long march']);
+    expect([p.windows, p.toasts], 'none of them opened a window or a toast of its own').toEqual([[], []]);
+    expect(p.said, 'the award sent after the phone was back opens its own window, as live').toEqual([{ title: 'REWARD RECEIVED', body: 'The System has delivered a reward.' }]);
+    expect([p.hunter.gold, p.hunter.quests.some(q => q.title === 'The Den'), p.applied]).toEqual([gold + 15, true, [e(1), e(3), e(4), e(2)]]);
   });
 });
 

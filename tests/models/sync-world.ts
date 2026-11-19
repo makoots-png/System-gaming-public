@@ -55,7 +55,7 @@ export const L = (e: LinkEvent): Ev => ({ to: 'link', e });
 export const P = (e: PushEvent): Ev => ({ to: 'push', e });
 export const g = (n: number): Gen => n as Gen;
 export const TAPS: Ev[] = [
-  L({ type: 'create' }), L({ type: 'join', code: A, key: null }), L({ type: 'join', code: A, key: KEY }), L({ type: 'join', code: B, key: null }),
+  L({ type: 'create' }), L({ type: 'join', code: A, key: null, from: null }), L({ type: 'join', code: A, key: KEY, from: null }), L({ type: 'join', code: B, key: null, from: null }),
   L({ type: 'leave' }), L({ type: 'forget' }), L({ type: 'retry' }), L({ type: 'online' }), L({ type: 'offline' }), L({ type: 'visible' }),
   L({ type: 'upgrade', stuck: false }), L({ type: 'upgrade', stuck: true }), P({ type: 'changed' }), P({ type: 'rebound' }),
   // a player's own fight move reached the room, sent from the fight doc 'f1'

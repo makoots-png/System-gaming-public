@@ -384,6 +384,12 @@ type EventDef<K extends EventType> = {
    * The server's poll reads it through `servedTo` (notes-5-trade.md 4.1).
    */
   readonly sealed?: (payload: Payloads[K]) => boolean;
+  /**
+   * What a message of the type stands for, when a newer one takes an older one's place: a fight's totals for one hunter.
+   * Absent, each message stands for itself. The GM's outbox keeps one waiting per key (combat.js), and a player's phone
+   * lets a held one go once a newer one of its key has come (applied.ts `replaced`).
+   */
+  readonly standsFor?: (payload: Payloads[K]) => string;
 };
 
 /** Every event type. A type missing here does not compile. */
@@ -415,7 +421,7 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
   } },
   quest: { gmOnly: true, ownSheet: false, read: o => ({ ...base(o), to: toList(own(o, 'to')), quest: questOffer(own(o, 'quest')) }) },
   hp: { gmOnly: true, ownSheet: false, read: o => ({ ...base(o), to: toList(own(o, 'to')), hp: hpDelta(o, 'hp'), mana: hpDelta(o, 'mana'), fatigue: hpDelta(o, 'fatigue'), reason: reason(o) }) },
-  vitals: { gmOnly: true, ownSheet: false, read: o => {
+  vitals: { gmOnly: true, ownSheet: false, standsFor: p => `vitals ${p.to[0]}`, read: o => {
     const to = toList(own(o, 'to')), total = (k: string): number => int(0, MAX_TOTAL)(own(o, k));
     return {
       ...base(o), to: to.length === 1 ? [to[0]!] : refuse(), hp: total('hp'), mana: total('mana'), fatigue: total('fatigue'),
@@ -501,6 +507,7 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
 
 type EventEntry<K extends EventType> = {
   readonly gmOnly: boolean; readonly ownSheet: boolean; readonly parse: (payload: unknown) => Payloads[K] | null; readonly sealed: (payload: Payloads[K]) => boolean;
+  readonly standsFor: ((payload: Payloads[K]) => string) | null;
 };
 /**
  * Per event type: whether only the room's GM key may send it, whether only the phone of the hunter it speaks for may, and
@@ -516,7 +523,13 @@ export const EVENTS: { readonly [K in EventType]: EventEntry<K> } = {
 };
 function entry<K extends EventType>(type: K): EventEntry<K> {
   const def: EventDef<K> = DEFS[type];
-  return { gmOnly: def.gmOnly, ownSheet: def.ownSheet, parse: payload => attempt(() => def.read(obj(payload))), sealed: def.sealed ?? (() => false) };
+  return { gmOnly: def.gmOnly, ownSheet: def.ownSheet, parse: payload => attempt(() => def.read(obj(payload))), sealed: def.sealed ?? (() => false), standsFor: def.standsFor ?? null };
+}
+/** What a message stands for, when a newer one of the same takes its place (`EventDef.standsFor`); null when it stands for itself. */
+export function standsFor(ev: RoomEvent): string | null {
+  // EVENTS pairs each type with the key of its own payload.
+  const key = EVENTS[ev.type].standsFor as ((p: RoomEvent['payload']) => string) | null;
+  return key ? key(ev.payload) : null;
 }
 /** The hunter an event speaks for, when its type is `ownSheet`: the server takes it only from that hunter's phone. Else null. */
 export const speaksFor = (ev: RoomEvent): SheetKey | null => (EVENTS[ev.type].ownSheet && 'by' in ev.payload ? ev.payload.by : null);

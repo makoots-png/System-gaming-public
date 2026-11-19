@@ -18,16 +18,18 @@
 // and these containers, each named where it is made: `queue` (events raised while effects run), `inflight` (open
 // requests by gen), `timers` (one per name), `peeked` (the Room view's 30 s code check cache), `publishers`,
 // `publishTimers` and `tooBig` (the GM's room docs).
-// The save fields `room`, `cursor`, `lastRoom` and `gmKey` are written only by the link's `save` effect, here; the
-// save's `outbox` only here, with a step of src/core/sync/outbox.ts (`boxDo`, and `rebound` at a bind).
+// The save fields `room`, `cursor`, `lastRoom`, `gmKey` and `seen` (where this phone stopped reading a room it went out
+// of, src/core/sync/seen.ts) are written only by the link's `save` effect, here; a poll page's cursor is written in the
+// same write as what the page's events land on a player's phone (`apply`), so a reload never finds one without the other.
+// The save's `outbox` only here, with a step of src/core/sync/outbox.ts (`boxDo`, and `rebound` at a bind).
 import { addHunter, removeHunter, setActive } from '../core/party.ts';
 import { both } from '../core/save-step.ts';
 import { stepTime } from '../core/day.ts';
 import { BUILD } from './build.ts';
 import { reported } from './report.ts';
 import { bindRoom } from './rules.ts';
-import { applyAll } from './room-events.ts';
-import type { ApplyDeps } from './room-events.ts';
+import { awayDeps, landAll } from './room-events.ts';
+import type { ApplyDeps, PageLanded } from './room-events.ts';
 import { STUCK_TEXT, upgradeRefused } from './upgrade.ts';
 import type { store as Store } from './store.ts';
 import { bindNotice } from './store.ts';
@@ -40,9 +42,10 @@ import type { DeviceId, DocName, DocOf, EventBody, EventType, RoomCode, RoomDocs
 import { deviceOf, hunterIdOf, parseSheetKey, sheetKeyOf } from '../core/ids.ts';
 import type { HunterId } from '../core/ids.ts';
 import { appliedOnce } from '../core/applied.ts';
+import { seenFrom } from '../core/sync/seen.ts';
 import { boot, hiddenWait, paceOf, reduce as linkReduce } from '../core/sync/link.ts';
 import { notifying } from './notify.ts';
-import type { BootInput, FailKind, Gen, GmKey, Last, Link, LinkCall, LinkEffect, LinkEvent, LinkNotice } from '../core/sync/link.ts';
+import type { BootInput, FailKind, Gen, GmKey, Last, Link, LinkCall, LinkEffect, LinkEvent, LinkNotice, SaveFields } from '../core/sync/link.ts';
 import { PUSH_OFF, pushedSheet, reduce as pushReduce } from '../core/sync/push.ts';
 import type { Push, PushEffect, PushEvent, RefusedWhy } from '../core/sync/push.ts';
 import { connection } from '../core/sync/connection.ts';
@@ -55,6 +58,8 @@ import { atOutbox, callOf, next as nextOut, post as postIn, rebound, reloaded, r
 import type { Call, Entry, EntryEvent, Letter, Outbox } from '../core/sync/outbox.ts';
 import type { Hunter, LastRoom, Save, SyncSettings } from '../core/save.ts';
 
+/** The body of the one window that tells a player what the room held for its hunters while its phone was out of the room. */
+const AWAY_BODY = 'These were sent while this phone was out of the room.';
 /** A request outside the machines (an event, a doc, a GM action, a tombstone, the code check) is given up after this. */
 const REQ_MS = 20000;
 /** The Room view's code check reuses an answer this long, so typing and retyping a code asks the server once. */
@@ -268,13 +273,16 @@ export function register(app: App): void {
 
   // ── carrying out the link's effects ──
   function runLink(fx: LinkEffect[], before: Link, data: Data): void {
+    // a poll page's cursor waits for the page's `apply`, which writes it with what the page lands, in one write
+    const page = data?.kind === 'poll' && fx.some(x => x.type === 'apply');
+    let cursor: SaveFields | null = null;
     for (const x of fx) {
       switch (x.type) {
         case 'request': linkRequest(x.gen, x.timeoutMs, x.call); break;
         case 'abort': abortGen(x.gen); break;
         case 'setTimer': setTimer(x.name, x.ms); break;
         case 'clearTimer': clearTimer(x.name); break;
-        case 'save': save(x.fields, before); break;
+        case 'save': if (page) cursor = x.fields; else save(x.fields, before); break;
         case 'notify': notice(x.id, x.code); break;
         case 'status': {
           emitStatus(x.serverBack);
@@ -282,7 +290,7 @@ export function register(app: App): void {
           if (from !== to) app.emit('sync:room', { from, to });
           break;
         }
-        case 'apply': apply(data); break;
+        case 'apply': apply(data, cursor, before); cursor = null; break;
         // the push hears the link at once, before anything else happens
         case 'push': { const r = pushReduce(push, x.event); push = r.state; runPush(r.effects); break; }
       }
@@ -396,10 +404,11 @@ export function register(app: App): void {
   }
 
   /** The only writer of the room fields of the save: the link's `save` effect as one step (src/core/sync/bind.ts `linkSaved`). */
-  function save(fields: Extract<LinkEffect, { type: 'save' }>['fields'], before: Link): void {
-    // the key the room refused is the one the link held: a key typed by hand that is wrong leaves a good stored one alone
-    store.apply('sync-link', s => linkSaved(s, fields, 'key' in before ? before.key : null));
+  function save(fields: SaveFields, before: Link): void {
+    store.apply('sync-link', s => linkWritten(s, fields, before));
   }
+  /** The link's `save` effect as a step. The key the room refused is the one the link held: a key typed by hand that is wrong leaves a good stored one alone. */
+  const linkWritten = (s: Save, fields: SaveFields, before: Link): Save => linkSaved(s, fields, 'key' in before ? before.key : null, srvNow());
 
   /** A toast or a window. A notice that answers a tap goes to the tap's promise, and the view that made it shows it. */
   function notice(id: LinkNotice, code: RoomCode | null): void {
@@ -415,8 +424,11 @@ export function register(app: App): void {
     }
   }
 
-  /** The room data of the reply just given. Only the link's `apply` effect calls this, so only a current reply is applied. */
-  function apply(data: Data): void {
+  /**
+   * The room data of the reply just given. Only the link's `apply` effect calls this, so only a current reply is applied.
+   * `cursor`: the link's `save` of this step (a poll page's cursor), written here with what the page lands.
+   */
+  function apply(data: Data, cursor: SaveFields | null, before: Link): void {
     if (!data) return;
     if (data.kind === 'head') { skewFrom(data.now); if (link.at === 'live' && link.key === null) bindJoin(); return; }
     const { r, after } = data;
@@ -424,13 +436,18 @@ export function register(app: App): void {
     const presenceOk = !!(r.gm && r.presence);
     shown = { gen: link.gen, sheets: r.sheets, docs: r.docs, presence: presenceOk ? r.presence ?? {} : {}, presenceOk };
     const player = link.at === 'live' && link.key === null, dev = deviceId();
-    const fresh: RoomEvent[] = [];
+    // a message the room took before this phone's join came while the phone was out of the room: it is told in one window
+    const joined = player ? Date.parse(sy().joinedAt || '') : NaN;
+    const fresh: RoomEvent[] = [], away = new Set<RoomEvent>();
     for (const ev of r.events.filter(e => e.seq > after).sort((a, b) => a.seq - b.seq)) {
       if (ev.from === dev) continue; // our own sends echo back; never apply or re-announce them
       app.emit('sync:event', { event: ev });
-      fresh.push({ type: ev.type, payload: ev.payload } as RoomEvent);
+      const e = { type: ev.type, payload: ev.payload } as RoomEvent;
+      fresh.push(e);
+      if (Date.parse(ev.at) < joined) away.add(e);
     }
-    if (player) { applyHeld(fresh); release(); }
+    landPage(player ? fresh : null, away, cursor, before);
+    if (player) release();
     heard();
     app.emit('sync:sheets', { sheets: shown.sheets });
     app.emit('sync:docs', { docs: shown.docs });
@@ -438,13 +455,24 @@ export function register(app: App): void {
     flush();
   }
   /**
-   * A player applies the events held from earlier polls, then this poll's (room-events.ts `applyAll`). The cursor moves
-   * past all of them; one that threw is kept in the save (`settings.sync.held`) and tried again after the next poll.
+   * One write for a poll page: its cursor, and on a player's phone what its events land (room-events.ts `landAll`: the
+   * events held from earlier pages, then this page's) and the events held now (`settings.sync.held`). Then the player is
+   * told, in the room's order; the messages of `away` (sent while this phone was out of the room) as lines of one window.
    */
-  function applyHeld(events: RoomEvent[]): void {
-    const before = sy().held ?? [], out = applyAll(before, events, deps);
-    if (out.held.length !== before.length || out.held.some((e, i) => e !== before[i])) store.apply('sync-held', d => ({ ...d, settings: { ...d.settings, sync: { ...d.settings.sync, held: out.held } } }));
-    if (out.fresh.length) ui.toast('Sync', 'A message from the GM could not be applied on this phone. It is kept and tried again.', { kind: 'warn' });
+  function landPage(events: RoomEvent[] | null, away: ReadonlySet<RoomEvent>, cursor: SaveFields | null, before: Link): void {
+    if (!cursor && !(events && (events.length || sy().held?.length))) return; // nothing to write
+    const lines: string[] = [], awayApp = awayDeps(deps, lines), did: { page: PageLanded | null } = { page: null };
+    const wrote = store.apply('sync-page', s => {
+      const at = cursor ? linkWritten(s, cursor, before) : s;
+      if (!events) return at;
+      const page = did.page = landAll(at, at.settings.sync.held ?? [], events, deps, ev => (away.has(ev) ? awayApp : deps));
+      return { ...page.save, settings: { ...page.save.settings, sync: { ...page.save.settings.sync, held: page.held } } };
+    });
+    const page = did.page;
+    if (!wrote.ok || !page) return;
+    for (const tell of page.tells) tell();
+    if (lines.length) void ui.system({ tag: '! System', title: 'WHILE YOU WERE AWAY', kind: 'info', body: AWAY_BODY, lines });
+    if (page.fresh.length) ui.toast('Sync', 'A message from the GM could not be applied on this phone. It is kept and tried again.', { kind: 'warn' });
   }
   const skewFrom = (now: string): void => { const t = Date.parse(now); if (Number.isFinite(t)) srvSkew = t - Date.now(); };
   /** What the appliers in room-events.ts use of the app; read when an event arrives, after every module has registered. */
@@ -552,19 +580,21 @@ export function register(app: App): void {
     a.reject(err ? err() : tapError('net'));
   }
   const keyFor = (code: RoomCode): GmKey | null => (sy().gmKeys || {})[code] ?? null;
+  /** A join of `code`, reading on from where this phone stopped when it last went out of that room (seen.ts `seenFrom`). */
+  const joining = (code: RoomCode, key: GmKey | null): Extract<LinkEvent, { type: 'join' }> => ({ type: 'join', code, key, from: seenFrom(sy().seen, code, Date.now() + srvSkew) });
   async function create(): Promise<string> { return begin({ type: 'create' }); }
   /** Join the room in `text` (a code, a link, a message). With the room's GM key in the ring, reopen it as GM. */
   async function joinRoom(text: unknown, o: { hunterId?: string; name?: string } = {}): Promise<string> {
     const code = parseInvite(text); if (!code) throw tapError('badcode');
     const key = keyFor(code);
-    const role = await begin({ type: 'join', code, key }, key ? {} : { hunterId: o.hunterId ?? null, name: String(o.name ?? '').trim() });
+    const role = await begin(joining(code, key), key ? {} : { hunterId: o.hunterId ?? null, name: String(o.name ?? '').trim() });
     setInvite(null);
     return role;
   }
   /** Rejoin room `code` as its GM: with `key` typed by hand, or else the key this phone keeps for it (`keyFor`). */
   async function rejoinGM(code: string, key?: string): Promise<void> {
     const c = parseRoomCode(code), k = c ? (key ?? keyFor(c)) : null; if (!c || !k) throw tapError('badcode');
-    await begin({ type: 'join', code: c, key: k as GmKey });
+    await begin(joining(c, k as GmKey));
   }
 
   // ── removed by the GM ──
@@ -575,7 +605,7 @@ export function register(app: App): void {
       actions: [{ label: 'OK', value: false, cancel: true }, { label: 'Rejoin when the GM allows', value: true, primary: true }] }).then(async v => {
       if (!v) return;
       try {
-        await begin({ type: 'join', code, key: null }, { hunterId: h?.id ?? null });
+        await begin(joining(code, null), { hunterId: h?.id ?? null });
         ui.toast('System', `Rejoined room ${code}.`, { kind: 'info' });
       } catch (e) {
         if (!(e instanceof TapError)) reported('sync', e);

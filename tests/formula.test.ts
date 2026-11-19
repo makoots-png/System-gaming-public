@@ -599,13 +599,33 @@ describe('a formula\'s size (notes-5-trade.md 12.3)', () => {
     expect(largest * 2).toBeLessThanOrEqual(FORMULA_PARTS);
   });
 
-  test('whatever the makers\' longest field (200 characters) holds is never refused for its size', () => {
+  test('the texts of 200 parts a maker writes are never refused for their size', () => {
     const texts = ['-'.repeat(199) + '1', '1+'.repeat(99) + '1', `1d300${Array.from({ length: 65 }, (_, i) => `r${i + 1}`).join('')}`];
-    for (const t of texts) {
-      expect(t.length).toBeLessThanOrEqual(200);
-      expect(parseFormula(t, LIMITS).ok).toBe(true);
-    }
+    for (const t of texts) expect(parseFormula(t, LIMITS).ok).toBe(true);
     expect(partsOf(parse(texts[0]!))).toBe(200);
+  });
+
+  test('whatever the app prints of a formula the readers take reads back the same, however long its text (notes-5-trade.md 13, ruling 3)', () => {
+    // 1 - (1 - (1 - ...)): 100 numbers under 99 subtractions, each right one in brackets, 99 deep: 199 parts
+    const nested = (n: number): Formula => (n === 1 ? { kind: 'number', value: 1 } : { kind: 'binary', op: '-', left: { kind: 'number', value: 1 }, right: nested(n - 1) });
+    const key = statusKey('a'.repeat(40));
+    const stacks = (n: number): Formula => (n === 1 ? { kind: 'stacks', whose: 'target', key } : { kind: 'binary', op: '+', left: stacks(n - 1), right: { kind: 'stacks', whose: 'target', key } });
+    const gap = { mine: 'agi', theirs: 'vit', per: 0.123456, cap: 1.234567 } as const, under = suggestScaler('strike', 'underdog', RULES);
+    const rule = recommended('strike', { type: 'physical', scale: 'agi', gap, scalers: [under, under], pace: 'quick', channel: 'linear' }, RULES).formula;
+    for (const f of [nested(100), stacks(100), rule]) {
+      const text = printFormula(f);
+      expect(partsOf(f)).toBeLessThanOrEqual(FORMULA_PARTS);
+      expect(parseFormula(text, LIMITS), `${text.length} characters`).toEqual({ ok: true, formula: f });
+    }
+    expect(printFormula(stacks(100)).length, 'longer than any field the makers had').toBeGreaterThan(5000);
+    expect(printFormula(rule).length).toBeGreaterThan(200);
+  });
+
+  test('a text pasted into a formula field that no formula needs is refused with its words, never walked', () => {
+    const deep = '('.repeat(500_000) + '1' + ')'.repeat(500_000), long = '1+'.repeat(500_000) + '1';
+    expect(refusal(deep)).toBe('The brackets at character 201 are 201 deep. A formula has at most 200 parts, so it needs at most 200 brackets inside each other.');
+    expect(refusal(long)).toBe('The formula has more than 200 parts, and a formula has at most 200. Each number, die, name, sign and face rolled again is a part.');
+    expect(parseFormula('('.repeat(200) + '1' + ')'.repeat(200), LIMITS), 'brackets 200 deep around one part still read').toEqual({ ok: true, formula: { kind: 'number', value: 1 } });
   });
 
   test('a formula the maker took is read back from a save as it was, however deep: an item keeps its effect', () => {
@@ -625,6 +645,6 @@ describe('a formula\'s size (notes-5-trade.md 12.3)', () => {
       expect(parseOp(shield(over), RULES)).toBeNull();
       expect(parseStatusDef(worn(over), RULES)).toBeNull();
     }
-    expect(refusal('-'.repeat(200) + '1')).toBe('The formula has 201 parts, and a formula has at most 200. Each number, die, name, sign and face rolled again is a part.');
+    expect(refusal('-'.repeat(200) + '1')).toBe('The formula has more than 200 parts, and a formula has at most 200. Each number, die, name, sign and face rolled again is a part.');
   });
 });

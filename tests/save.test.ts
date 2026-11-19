@@ -1061,6 +1061,14 @@ describe('the ids a save keeps are read at load (audit row 87)', () => {
   });
 });
 
+describe('where this phone stopped reading a room is read at load (notes-5-trade.md 11)', () => {
+  test('a place younger than a room\'s 30 days is kept; an older one, and one that is not a code with a seq and a time, is dropped', () => {
+    const day = 24 * 3600 * 1000, ago = (days: number) => new Date(NOW.getTime() - days * day).toISOString();
+    const s = parseRaw({ schema: SCHEMA, hunters: [], settings: { sync: { seen: { ABCDE2: { seq: 41, at: ago(29) }, BCDEF3: { seq: 7, at: ago(31) }, nope: { seq: 1, at: ago(1) }, CDEFG4: { seq: 'x', at: ago(1) } } } } });
+    expect(s.settings.sync.seen).toEqual({ ABCDE2: { seq: 41, at: ago(29) } } as never);
+  });
+});
+
 describe('a roll in the roll log keeps who rolled it, what for, and a check\'s result (audit rows 23, 24, 79)', () => {
   test('a stored roll keeps its hunter id, kind and check', () => {
     const s = parseRaw({ schema: SCHEMA, hunters: [], rolls: [{ id: 'r1', hid: 'h4', who: 'Ana', kind: 'check', check: { dc: 15, success: true } }] });

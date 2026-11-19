@@ -7,7 +7,7 @@
 import { CODE_CHARS, CODE_LEN } from './src/core/ids.ts';
 import { buildApp, type Built } from './scripts/build.ts';
 import { DOCS, DOC_MAX, SHEET_MAX, WIRES, wireDocs, EVENTS, ROOM_PAGE, ROOM_SHEETS, deviceOf, isEventType, parseDeviceId, parseDocName, parseEvent, parseRoomCode, parseSheet, parseSheetKey, servedTo, sheetFor, speaksFor } from './src/core/protocol.ts';
-import type { DeviceId, DocName, DocOf, KickedDoc, RoomCode, RoomDocs, RoomEvent, RoomState, RoomSheet, ServedSheet, SheetKey, Stored, StoredEvent, RoomViewer } from './src/core/protocol.ts';
+import type { DeviceId, DocName, EventId, DocOf, KickedDoc, RoomCode, RoomDocs, RoomEvent, RoomState, RoomSheet, ServedSheet, SheetKey, Stored, StoredEvent, RoomViewer } from './src/core/protocol.ts';
 import { DB_RETRY_MS, dbHealth, dbStep, keptOut, kickedAfter, liveSince, roomLive } from './src/core/room-server.ts';
 import type { Db, DbEvent } from './src/core/room-server.ts';
 
@@ -38,7 +38,13 @@ const codeOf = (e: unknown): string => {
 };
 
 // ── the store ──
-const MAX_BODY = 64 * 1024, MEM_ROOMS = 2000, MEM_EVENTS = 2000, PRESENCE_MAX = 200;
+const MAX_BODY = 64 * 1024, MEM_ROOMS = 2000, PRESENCE_MAX = 200;
+/**
+ * The most events a room keeps in the memory store, only to bound the process's memory: past it the room refuses a new
+ * event (`room full`) and forgets none, so every phone reads every message it was sent and an event id is taken once for
+ * the room's life, as in Postgres, which has no such bound. A guess at many long sessions (notes-5-trade.md 12.7).
+ */
+export const MEM_EVENTS = 20_000;
 /** A page of a room's events after a cursor: where to ask from next, and whether the page was full. */
 type Page = { events: StoredEvent[]; next: number; more: boolean };
 /** What a room holds besides its events: the hunter sheets by key and the room docs by name. */
@@ -64,9 +70,10 @@ export interface Store {
   exists(code: RoomCode, now: number): Promise<boolean>;
   /**
    * Stores the event as the room's next and answers its seq. An event id the room already holds is that event again (a
-   * phone's outbox sends again what got no answer): it answers the stored event's seq and stores nothing.
+   * phone's outbox sends again what got no answer): it answers the stored event's seq and stores nothing. A store keeps
+   * every event of a live room; null: the room is full and stores no more (the memory store past `MEM_EVENTS`).
    */
-  addEvent(code: RoomCode, from: DeviceId, event: RoomEvent, now: number): Promise<number>;
+  addEvent(code: RoomCode, from: DeviceId, event: RoomEvent, now: number): Promise<number | null>;
   events(code: RoomCode, after: number): Promise<Page>;
   board(code: RoomCode): Promise<Board>;
   putSheet(code: RoomCode, key: SheetKey, from: DeviceId, sheet: RoomSheet, now: number): Promise<void>;
@@ -107,7 +114,8 @@ function withDoc<K extends DocName>(docs: RoomDocs, name: K, doc: Stored<DocOf<K
   typed[name] = doc;
 }
 
-type MemRoom = { touched: number; seq: number; events: StoredEvent[]; board: Board; keyHash: string; owners: Map<DeviceId, string> };
+/** A room in memory. `events[i]` has seq i + 1, since the store forgets none; `ids` answers an event id's seq. */
+type MemRoom = { touched: number; events: StoredEvent[]; ids: Map<EventId, number>; board: Board; keyHash: string; owners: Map<DeviceId, string> };
 export function memoryStore(): Store {
   const rooms = new Map<RoomCode, MemRoom>(), book = presenceBook();
   /** A room a route already touched in this request. */
@@ -131,22 +139,23 @@ export function memoryStore(): Store {
     },
     async create(code, keyHash, now) {
       if (rooms.size >= MEM_ROOMS || rooms.has(code)) return false;
-      rooms.set(code, { touched: now, seq: 0, events: [], board: { sheets: {}, docs: {} }, keyHash, owners: new Map() });
+      rooms.set(code, { touched: now, events: [], ids: new Map(), board: { sheets: {}, docs: {} }, keyHash, owners: new Map() });
       return true;
     },
     async keyHash(code) { return rooms.get(code)?.keyHash ?? null; },
     async touch(code, now) { const r = live(code, now); if (r) r.touched = now; return !!r; },
     async exists(code, now) { return !!live(code, now); },
     async addEvent(code, from, event, now) {
-      const r = room(code), held = r.events.find(e => e.payload.eid === event.payload.eid);
-      if (held) return held.seq;
-      const seq = ++r.seq;
+      const r = room(code), held = r.ids.get(event.payload.eid);
+      if (held !== undefined) return held;
+      if (r.events.length >= MEM_EVENTS) return null;
+      const seq = r.events.length + 1;
       r.events.push({ ...event, seq, at: iso(now), from });
-      if (r.events.length > MEM_EVENTS) r.events.splice(0, r.events.length - MEM_EVENTS);
+      r.ids.set(event.payload.eid, seq);
       return seq;
     },
     async events(code, after) {
-      const events = room(code).events.filter(e => e.seq > after).slice(0, ROOM_PAGE);
+      const events = room(code).events.slice(after, after + ROOM_PAGE);
       return { events, next: events.length ? events[events.length - 1]!.seq : after, more: events.length >= ROOM_PAGE };
     },
     async board(code) { const b = room(code).board; return { sheets: { ...b.sheets }, docs: { ...b.docs } }; },
@@ -437,7 +446,8 @@ async function api(req: Request, parts: string[], database: Database): Promise<R
     // an event that speaks for one hunter (`ownSheet` in DEFS, src/core/protocol.ts): only that hunter's phone may post it
     const by = speaksFor(event);
     if (by && deviceOf(by) !== from) return J({ error: 'not your sheet' }, 403);
-    return J({ seq: await st.addEvent(code, from, event, now) });
+    const seq = await st.addEvent(code, from, event, now);
+    return seq === null ? J({ error: 'room full' }, 413) : J({ seq });
   }
   if (parts[2] === 'kicks' && parts.length === 4) { // S11: the GM lifts a removal so the player can rejoin at once
     if (m !== 'DELETE') return J({ error: 'method' }, 405);

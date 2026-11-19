@@ -22,6 +22,7 @@ import { saveEntry } from '../core/library.ts';
 import { fitted } from '../core/hunter/sheet.ts';
 import { atHunter, atLibrary, both } from '../core/save-step.ts';
 import { reportWords } from '../core/sync/connection.ts';
+import { tooLarge } from '../core/size.ts';
 
 const BONUS_LABEL = { ...PERK_LABELS, hpMax: 'Max HP', manaMax: 'Max mana' };
 const KINDS = /** @type {const} */ (['strike', 'shot', 'blast', 'curse', 'support']);
@@ -202,6 +203,8 @@ export function register(app) {
             if (form.type === 'active' && form.ability && form.ability.react && !form.ability.ops.every(reactionMayHold)) {
               shell.error('A reaction cannot push, pull or give an extra action. Take that effect off, or untick A reaction.'); return undefined;
             }
+            const big = form.type === 'active' ? (form.ability ? tooLarge('ability', form.ability) : null) : form.worn ? tooLarge('status', form.worn) : null;
+            if (big) { shell.error(big); return undefined; }
             const out = parseSkill(form);
             if (!out || canon(out) !== canon(form)) console.error('The skill maker wrote a skill its parser reads differently', form, out);
             const why = out && library && $('#skm-save').checked ? saveToLibrary(out, initial && initial.id) : null;

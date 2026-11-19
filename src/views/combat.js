@@ -113,8 +113,8 @@ export function register(app) {
     // what the motion compares with: the fight's rows are written into in place (save-step.ts `writeInto`)
     const hpWas = new Map(was ? was.rows.map(r => [r.id, r.hp]) : []), readyWas = new Set(was ? was.rows.filter(r => r.armed && !r.armed.spent).map(r => r.id) : []);
     const r = reduceAll(was, cmds, c), reason = String((r.fight && r.fight.log[0] && r.fight.log[0].text) || 'Fight').slice(0, 120);
-    // the fight's totals for a hunter on another phone: one `vitals` message under its key, so while the phone is away only the latest waits
-    const totals = r.effects.flatMap(fx => (fx.type === 'sendRemote' ? [{ key: `vitals ${fx.remote}`, event: S.event('vitals', { to: [fx.remote], hp: fx.hp, mana: fx.mana, fatigue: fx.fatigue, statuses: fx.statuses.map(s => ({ ...s })), reason }) }] : [])).filter(t => t.event);
+    // the fight's totals for a hunter on another phone: one `vitals` message, kept in the outbox under what it stands for (fight-save.ts `fought`), so while the phone is away only the latest waits
+    const totals = r.effects.flatMap(fx => (fx.type === 'sendRemote' ? [S.event('vitals', { to: [fx.remote], hp: fx.hp, mana: fx.mana, fatigue: fx.fatigue, statuses: fx.statuses.map(s => ({ ...s })), reason })] : [])).flatMap(ev => (ev ? [ev] : []));
     // an item's use leaves the bag in the same write (fight-save.ts `itemSpent`): this phone's hunter's, or the player's by
     // `spent`. A use is one `act` sent alone; a batch is the GM's edits of rows (`held`), which spend no item
     const sp = cmds.length === 1 ? itemSpent(was, cmds[0]) : null, ev = sp && sp.kind === 'remote' ? S.event('spent', { to: [sp.remote], item: sp.item }) : null;

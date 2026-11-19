@@ -22,13 +22,13 @@ function play(start: Link, ...events: Step[]): { state: Link; fx: LinkEffect[] }
   return { state, fx };
 }
 const ready = (): Link => play(boot({ server: true, room: null, last: null }).state, { type: 'healthOk' }).state;
-const inRoom = (code: RoomCode): Link => play(ready(), { type: 'join', code, key: null }, { type: 'peeked', exists: true },
+const inRoom = (code: RoomCode): Link => play(ready(), { type: 'join', code, key: null, from: null }, { type: 'peeked', exists: true },
   { type: 'headed', cursor: 5, gm: false, kicked: false }, { type: 'polled', cursor: 5, more: false, pace: 'table', fightAt: null }).state;
 const backs = (fx: LinkEffect[]): boolean[] => fx.flatMap(x => (x.type === 'status' ? [x.serverBack] : []));
 
 describe('deferred sync findings', () => {
   test('finding 2: a join whose peek the server answers with an error leaves the pill ready, not offline', () => {
-    const r = play(ready(), { type: 'join', code: A, key: null }, { type: 'failed', kind: 'server' });
+    const r = play(ready(), { type: 'join', code: A, key: null, from: null }, { type: 'failed', kind: 'server' });
     expect(r.state).toMatchObject({ at: 'idle', server: 'ok' });
     expect(r.fx).toContainEqual({ type: 'notify', id: 'serverError', code: A });
   });
@@ -41,7 +41,7 @@ describe('deferred sync findings', () => {
   });
 
   test('finding 4: a refused GM key ends the join as a refused key, never as a player join', () => {
-    const r = play(ready(), { type: 'join', code: A, key: 'old-key' as GmKey }, { type: 'peeked', exists: true },
+    const r = play(ready(), { type: 'join', code: A, key: 'old-key' as GmKey, from: null }, { type: 'peeked', exists: true },
       { type: 'headed', cursor: 9, gm: false, kicked: false });
     expect(r.state.at).toBe('idle');
     expect(r.fx).toContainEqual({ type: 'notify', id: 'keyRefused', code: A });
@@ -49,7 +49,7 @@ describe('deferred sync findings', () => {
   });
 
   test('finding 5: a join that cannot reach the server out of a room shows the same as a failed health check, until the next good one', () => {
-    const viaJoin = play(ready(), { type: 'join', code: A, key: null }, { type: 'failed', kind: 'net' }).state;
+    const viaJoin = play(ready(), { type: 'join', code: A, key: null, from: null }, { type: 'failed', kind: 'net' }).state;
     const viaHealth = play(ready(), { type: 'timerFired', name: 'poll' }, { type: 'failed', kind: 'net' }).state;
     expect({ ...viaJoin, gen: 0 }).toEqual({ ...viaHealth, gen: 0 });
     expect(play(viaJoin, { type: 'timerFired', name: 'poll' }, { type: 'healthOk' }).state).toMatchObject({ at: 'idle', server: 'ok' });
@@ -59,7 +59,7 @@ describe('deferred sync findings', () => {
     const limits = new Map<string, number>();
     const note = (fx: LinkEffect[]) => { for (const x of fx) if (x.type === 'request') limits.set(x.call.req, x.timeoutMs); };
     note(boot({ server: true, room: null, last: null }).effects);
-    note(play(ready(), { type: 'join', code: A, key: null }).fx);
+    note(play(ready(), { type: 'join', code: A, key: null, from: null }).fx);
     note(play(inRoom(A), { type: 'timerFired', name: 'poll' }).fx);
     expect(limits.get('health')).toBeLessThan(limits.get('poll')!);
     expect(limits.get('peek')).toBeLessThan(limits.get('poll')!);
@@ -80,7 +80,7 @@ describe('deferred sync findings', () => {
   });
 
   test('finding 8: joining room B from room A remembers A as the last room', () => {
-    const r = play(inRoom(A), { type: 'join', code: B, key: null }, { type: 'peeked', exists: true }, { type: 'headed', cursor: 1, gm: false, kicked: false });
+    const r = play(inRoom(A), { type: 'join', code: B, key: null, from: null }, { type: 'peeked', exists: true }, { type: 'headed', cursor: 1, gm: false, kicked: false });
     expect(r.state).toMatchObject({ at: 'live', code: B, last: { code: A, why: 'left' } });
     expect(r.fx).toContainEqual({ type: 'save', fields: { room: B, cursor: 1, last: { code: A, why: 'left' } } });
   });
@@ -96,8 +96,8 @@ describe('deferred sync findings', () => {
       boot({ server: false, room: null, last: null }).state,
       ready(),
       play(ready(), { type: 'create' }).state,
-      play(ready(), { type: 'join', code: A, key: null }).state,
-      play(ready(), { type: 'join', code: A, key: null }, { type: 'peeked', exists: true }).state,
+      play(ready(), { type: 'join', code: A, key: null, from: null }).state,
+      play(ready(), { type: 'join', code: A, key: null, from: null }, { type: 'peeked', exists: true }).state,
       boot({ server: true, room: { code: A, key: null, cursor: 0 }, last: null }).state,
       inRoom(A),
       play(inRoom(A), { type: 'offline' }).state,
