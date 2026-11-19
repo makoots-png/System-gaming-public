@@ -1090,7 +1090,7 @@ describe('a zone on the ground: the kits\' upkeep, cap per owner and end (kits d
     expect([body(paid.fight, 'A').fatigue, running(paid).zones.length]).toEqual([RULES.fight.abilityKinds.support.fatigue + 10, 1]);
     const broke = play(...duel({ abilities: [keep] }), lay(keep), { type: 'adjust', id: id('A'), fatigue: 999 }, pass('M'));
     expect([running(broke).zones, body(broke.fight, 'A').hp]).toEqual([[], self(broke.fight).hpMax]);
-    expect(running(broke).log.some(l => l.text.includes('Boundary lapses'))).toBe(true);
+    expect(running(broke).log.some(l => l.text.includes('Boundary ends: '))).toBe(true);
   });
 
   test('a fourth zone of one owner evicts its oldest, with no end', () => {

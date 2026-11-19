@@ -117,15 +117,15 @@ export function register(app) {
         table(['Stat', 'Short', 'What it gives'], STAT_KEYS.map(k => [esc(STAT_LABELS[k]), esc(STAT_SHORT[k]), esc(STAT_USE[k])])),
       ] },
       { id: 'curves', title: 'How a stat turns into numbers', body: [ul([
-        `<b>Effective points</b> = ${F.statBase} × (score / ${F.statBase}) ^ ${F.effExp}. Doubling a stat gives ${fmtX(Math.pow(2, F.effExp))} times, not twice, so spreading points pays as well as stacking them.`,
+        `<b>Effective points</b> = ${F.statBase} × (score / ${F.statBase}) ^ ${F.effExp}. Doubling a stat gives ${fmtX(Math.pow(2, F.effExp))} times the effective points, not twice as many, so points spread over several stats are worth about as much as points put in one.`,
         `Physical, magical and support power are ${F.powerK} × the effective points of Strength, Power and Presence, with no cap: damage grows with rank.`,
         `<b>A capped number</b> (carry, speed, max HP's share, armor and resist from stats, crits, tenacity and the rest) grows with the effective points above ${F.statBase} and reaches half its cap at ${F.half} of them. It never reaches the cap.`,
-        `Max HP = ${F.hpBase} × (1 + (level − 1) / ${F.growthDiv}) × (1 + Vitality's capped share, up to ${F.hpVitCap * 100}%), plus bonuses. Level carries most of it, so a fight is a similar number of hits at every rank.`,
+        `Max HP = ${F.hpBase} × (1 + (level − 1) / ${F.growthDiv}) × (1 + Vitality's capped share, up to ${F.hpVitCap * 100}%), plus bonuses. Most of it comes from level, so a fight takes about the same number of hits at every rank.`,
         `Max mana = ${F.manaBase} + Power's capped share (up to ${F.manaCap}). Fatigue capacity = ${F.fatigueBase} + Vitality's capped share (up to ${F.fatigueCap}).`,
         'Bonuses come from the active title, worn items, the build path and passive skills. The Status view shows every number of your sheet.']),
       ] },
       { id: 'armor', title: 'Armor and Resist', body: [ul([
-        `Physical damage meets <b>Armor</b>, magical damage meets <b>Resist</b>. Damage dealt = damage × ${F.armorK} / (${F.armorK} + defense): ${kit.heavy.armor} armor takes ${Math.round(100 - 100 * F.armorK / (F.armorK + kit.heavy.armor))}% off, and no amount makes a body immune.`,
+        `<b>Armor</b> reduces physical damage and <b>Resist</b> reduces magical damage. Damage dealt = damage × ${F.armorK} / (${F.armorK} + defense): ${kit.heavy.armor} armor takes ${Math.round(100 - 100 * F.armorK / (F.armorK + kit.heavy.armor))}% off, and no amount makes a body immune.`,
         `Before that, ${Math.round(F.armorFlat * 100)}% of the defense comes off every hit as a flat amount, so a weak hit loses more than a strong one.`,
         'Penetration (from Control, and some weapons) ignores a share of the target\'s defense.',
         `Gear gives most of it. A full set of gear: light weighs ${kit.light.weight} (armor ${kit.light.armor}, resist ${kit.light.resist}), medium ${kit.medium.weight} (${kit.medium.armor}, ${kit.medium.resist}), heavy ${kit.heavy.weight} (${kit.heavy.armor}, ${kit.heavy.resist}). Weight over half your carry slows you, up to ${Math.round(F.loadSlow * 100)}% at full carry.`]),
@@ -191,7 +191,7 @@ export function register(app) {
       { id: 'gates', title: 'Gates', body: [
         table(['Type', 'Notes'], [['Normal', 'A standard dungeon. You may leave at any time.'],
           ['Red', `No exit until the boss dies. DCs inside +${R.gateSpawn.redDcBonus}. Time inside runs ×10.`], ['Double', 'A hidden second dungeon; the GM reveals it.'],
-          ['Break', 'A gate not cleared by its break day: monsters pour out into the world.']]),
+          ['Break', 'A gate not cleared by its break day: its monsters come out into the world.']]),
         p(`Break day = day created + break days by rank (${RANKS.filter(r => rt[r]).map(r => `${esc(r)} ${rt[r].breakDays}`).join(', ')}). The world day advances only with the GM’s Advance day button.`),
         ...soloLines(R).map(l => p(esc(l))),
       ] },
@@ -208,7 +208,7 @@ export function register(app) {
           `<b>Random gate:</b> rank odds ${RANKS.map(r => `${esc(r)} ${pct(R.gateSpawn.rank, r)}%`).join(', ')}; type ${Object.keys(R.gateSpawn.type).map(k => `${esc(k)} ${pct(R.gateSpawn.type, k)}%`).join(', ')}.`,
           'Roll with the Dice tab or the d20 button; every roll is logged with who rolled it.',
           'Tap the PLAYER pill in the header to switch to GM mode for XP grants, free stat edits, gate and fight tools. In a room the GM is the phone that opened it.',
-          'Overrides to any number on this page live in the GM screen’s Rules editor and show here immediately.']),
+          'The GM can change any number on this page in the GM screen’s Rules editor, and the change shows here at once.']),
       ] },
     ];
   }

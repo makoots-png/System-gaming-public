@@ -215,7 +215,7 @@ describe('an ability in sentences (the ability maker\'s preview)', () => {
   });
 
   test('a curse is resisted by Discipline, a support is not avoided, and a channel says how it grows and breaks', () => {
-    expect(describeAbility(of('curse'), RULES)[1]).toBe('Resisted by Discipline: nothing travels, so the target\'s Will meets the user\'s Aim.');
+    expect(describeAbility(of('curse'), RULES)[1]).toBe('Resisted by Discipline: it does not travel, so the target cannot dodge it. The target\'s Will is compared with the user\'s Accuracy.');
     expect(describeAbility(of('support'), RULES)[1]).toBe('An ally does not avoid it.');
     expect(describeAbility({ ...of('shot'), delivery: { kind: 'sure' } }, RULES)[1]).toBe('Cannot be avoided.');
     // channelExp 1.45, channelMax 5, breakShare 0.5 (RULES.fight)

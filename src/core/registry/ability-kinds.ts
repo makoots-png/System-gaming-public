@@ -115,7 +115,7 @@ export const gapOf = (type: AbilityEffect['type']): Gap => ({ mine: POWER[type].
 export function checkGap(g: Gap): string | null {
   if (g.mine === g.theirs) return 'Pick two different stats for the gap.';
   if (!(Number.isFinite(g.per) && g.per > 0)) return 'The bonus a point of gap must be above 0%.';
-  if (!(Number.isFinite(g.cap) && g.cap > 0)) return 'A gap needs a cap above 0%: without one it is nothing between equals and a one-shot against a mismatch.';
+  if (!(Number.isFinite(g.cap) && g.cap > 0)) return 'A gap needs a cap above 0%. Without one it adds nothing between equal stats and can kill in one hit when the stats are far apart.';
   return null;
 }
 
@@ -210,7 +210,7 @@ export function describeAbility(a: Pick<Ability, 'kind' | 'cost' | 'aim' | 'rang
   const d = a.delivery;
   if (a.aim === 'ally' || a.aim === 'self') out.push('An ally does not avoid it.');
   else if (d.kind === 'sure') out.push('Cannot be avoided.');
-  else if (d.kind === 'direct') out.push('Resisted by Discipline: nothing travels, so the target\'s Will meets the user\'s Aim.');
+  else if (d.kind === 'direct') out.push('Resisted by Discipline: it does not travel, so the target cannot dodge it. The target\'s Will is compared with the user\'s Accuracy.');
   else out.push(`Can be dodged: it lands ${roundsWord(d.windup, R)} after it is used${d.speed === 'instant' ? '' : `, then flies ${d.speed} tiles a round`}, and the target moves as far as its speed allows in that time.`);
   if (a.channel) {
     const F = R.fight;

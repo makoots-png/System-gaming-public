@@ -24,7 +24,7 @@ const REACH_LABEL = [['bearer', 'The bearer'], ['area', 'An area']];
 const THEN_LABEL = [['spend', 'Spent'], ['keep', 'Kept']];
 const ON_LABEL = [['all', 'Everyone'], ['allies', 'Allies'], ['foes', 'Foes']];
 const LIMIT_LABEL = [['each', 'Every time'], ['round', 'Once a round'], ['fight', 'A number a fight']];
-const CLEANSE_LABEL = [['cancel', 'Saves you'], ['land', 'Sets it off']];
+const CLEANSE_LABEL = [['cancel', 'Cancels it'], ['land', 'Makes it happen now']];
 const TAG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /** @type {readonly string[]} */
 const PARTY = PARTY_EVENTS;
@@ -168,7 +168,7 @@ export function statusBlocks(box, def, M, name) {
     <details class="mk-group" data-group="end"><summary data-sum="end"></summary><div class="mk-group-body">
       <label class="mk-check"><input type="checkbox" data-k="end"${def && def.end ? ' checked' : ''}><span>Something lands when it ends</span></label>
       <div data-end-f><div data-end-fx></div>
-        <div class="lbl">A cleanse</div>${M.chips(c('cleanse'), CLEANSE_LABEL, def && def.end ? def.end.cleanse : 'cancel', { label: 'A cleanse' })}
+        <div class="lbl">A cure</div>${M.chips(c('cleanse'), CLEANSE_LABEL, def && def.end ? def.end.cleanse : 'cancel', { label: 'A cure' })}
         <p class="mk-fx-err" data-end-err role="alert"></p></div>
     </div></details>`;
   const $ = s => box.querySelector(s), on = k => $(`[data-k="${k}"]`).checked;
@@ -237,7 +237,7 @@ export function statusBlocks(box, def, M, name) {
     $('[data-sum="stacks"]').textContent = !s ? 'Stacks: no'
       : `Stacks to ${s.cap}${s.leave.kind === 'round' ? ', one leaves a round' : s.leave.kind === 'event' ? `, all leave when its bearer ${EVENT_LABEL[s.leave.event]}` : ''}${s.threshold ? `; at ${s.threshold.at.kind === 'count' ? s.threshold.at.n : printFormula(s.threshold.at.formula)}: ${s.threshold.then === 'spend' ? 'spent' : 'kept'}` : ''}`;
     $('[data-sum="when"]').textContent = nt ? `When: ${nt} trigger${nt === 1 ? '' : 's'}` : 'When something happens: nothing';
-    $('[data-sum="end"]').textContent = fields.end ? `When it ends: ${fields.end.ops.length} effect${fields.end.ops.length === 1 ? '' : 's'}, a cleanse ${fields.end.cleanse === 'cancel' ? 'saves you' : 'sets it off'}` : 'When it ends: nothing';
+    $('[data-sum="end"]').textContent = fields.end ? `When it ends: ${fields.end.ops.length} effect${fields.end.ops.length === 1 ? '' : 's'}, a cure ${fields.end.cleanse === 'cancel' ? 'cancels it' : 'makes it happen at once'}` : 'When it ends: nothing';
   }
 
   box.addEventListener('click', e => {
@@ -341,7 +341,7 @@ export function abilityBlocks(box, a, M) {
       <label class="mk-check"><input type="checkbox" data-f="react"${st.react ? ' checked' : ''}><span>A reaction: armed ahead, it fires by itself</span></label>
       <div data-react-f>${seg('when', -1, 'When it fires', REACT_LABEL, st.when)}${numF('reach', -1, `Also guards allies within (tiles, 0 to ${R.fight.fieldRadiusMax})`, st.reach)}</div></div></details>
     <details class="mk-group" data-group="summon"><summary data-sum="summon"></summary><div class="mk-group-body">
-      <label class="mk-check"><input type="checkbox" data-f="summon"${st.summon ? ' checked' : ''}><span>Calls a body to its user's side</span></label>
+      <label class="mk-check"><input type="checkbox" data-f="summon"${st.summon ? ' checked' : ''}><span>Summons a body that fights for its user</span></label>
       <div data-summon-f>${textF('sName', -1, 'Its name', st.sName, { max: 40 })}${seg('arch', -1, 'Its body', ARCH_LABEL, st.arch)}${numF('sRounds', -1, `Rounds (1 to ${K.summonRounds})`, st.sRounds)}
         <div class="lbl">It starts with</div><div class="mk-fxs" data-list="sstat">${sstats.map(sstatHtml).join('')}</div>
         <button type="button" class="mk-add" data-add="sstat"${sstats.length >= SUMMON_STATUSES ? ' disabled' : ''}>Add a status it starts with</button></div></div></details>

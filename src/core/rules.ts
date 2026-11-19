@@ -35,7 +35,7 @@ export const RULES = deepFreeze({
   rest: { short: { hpPct: 25, mpPct: 50, fatigue: 25 }, long: { hpPct: 100, mpPct: 100, fatigue: 100 } },
   penaltyCheck: 2,
   dailyTemplate: {
-    title: 'Strength Training', desc: 'Complete the daily training before the cycle resets.', recover: true,
+    title: 'Strength Training', desc: 'Finish the daily training before the day resets.', recover: true,
     objectives: [
       { label: 'Push-ups', target: 100, progress: 0 }, { label: 'Sit-ups', target: 100, progress: 0 },
       { label: 'Squats', target: 100, progress: 0 }, { label: 'Running (km)', target: 10, progress: 0 },
@@ -46,11 +46,11 @@ export const RULES = deepFreeze({
   extractJobs: ['Necromancer', 'Shadow Monarch'],
   // each rule title has a key a granted title records (`Title.seedKey`), so a rename keeps it and a GM title of the same name is another
   titles: [
-    { key: 'wolf-slayer', name: 'Wolf Slayer', desc: 'Slew a pack leader of wolves.', bonus: { str: 2 } },
-    { key: 'overcame-adversity', name: 'One Who Overcame Adversity', desc: 'Survived what should have killed you.', bonus: { hpMax: 20 } },
-    { key: 'demon-hunter', name: 'Demon Hunter', desc: 'Struck down a demon of the lower gate.', bonus: { pre: 2 } },
+    { key: 'wolf-slayer', name: 'Wolf Slayer', desc: 'Killed the leader of a wolf pack.', bonus: { str: 2 } },
+    { key: 'overcame-adversity', name: 'One Who Overcame Adversity', desc: 'Survived a fight you were expected to lose.', bonus: { hpMax: 20 } },
+    { key: 'demon-hunter', name: 'Demon Hunter', desc: 'Defeated a demon in a low-rank gate.', bonus: { pre: 2 } },
     { key: 'hunts-alone', name: 'The One Who Hunts Alone', desc: 'Cleared a gate without a party.', bonus: { agi: 2 } },
-    { key: 'king-of-shadows', name: 'King of Shadows', desc: 'Sovereign of the shadow army.', bonus: { pow: 5 }, gmOnly: true },
+    { key: 'king-of-shadows', name: 'King of Shadows', desc: 'Leads a shadow army.', bonus: { pow: 5 }, gmOnly: true },
   ],
   conditions: BUILT_IN_STATUSES, // the built-in statuses: src/core/registry/statuses.ts
   rarities: {

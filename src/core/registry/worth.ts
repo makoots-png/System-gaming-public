@@ -356,6 +356,6 @@ export function worthLine(w: Worth): string {
   const line = `Worth ${two(w.worth)} of a standard action (budget ${two(w.budget)}${w.by ? `, as ${w.by} holds` : ''})${without}`;
   const against = w.against ? ` Its scalers make it ${two(w.against.packs)} of its plain use against packs, ${two(w.against.boss)} against a boss.` : '';
   if (!w.over) return `${line}.${against}`;
-  return `${line}. Stronger than its pace allows by ${Math.round((w.worth / w.budget - 1) * 100)}%: a kit this strong can flip a matchup by itself.${against}`;
+  return `${line}. Stronger than its pace allows by ${Math.round((w.worth / w.budget - 1) * 100)}%.${against}`;
 }
 const listed = (xs: readonly string[]): string => xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`;

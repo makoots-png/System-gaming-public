@@ -32,7 +32,7 @@ const rounds = (n: number, R: Rules) => tick(n * R.fight.round);
 export function exampleStatuses(R: Rules): Record<string, StatusDef> {
   const K = R.fight.kit.examples;
   const resonance: StackDef = {
-    label: 'Resonance', desc: 'Blood that answers its caller. Three stacks burst, harder the lower the bearer\'s HP.', ops: [],
+    label: 'Resonance', desc: 'At 3 stacks, all are spent and the bearer takes magical damage. The lower the bearer\'s HP, the more damage.', ops: [],
     stack: { cap: 3, leave: { kind: 'never' }, keep: 'fight', threshold: {
       at: { kind: 'count', n: 3 }, to: { kind: 'bearer' }, then: 'spend',
       // the burst with the suggested execute (design 8.0): from half HP, up to +100%, the base cut to 0.8
@@ -40,18 +40,18 @@ export function exampleStatuses(R: Rules): Record<string, StatusDef> {
     } },
   };
   const signature: StackDef = {
-    label: 'Signature', desc: 'The mark of the visionary. Two marks detonate on the bearer and its friends close by.', ops: [],
+    label: 'Signature', desc: 'At 2 stacks, both are spent, and the bearer and its allies within 2 tiles take magical damage.', ops: [],
     stack: { cap: 2, leave: { kind: 'never' }, keep: 'fight', threshold: {
       at: { kind: 'count', n: 2 }, to: { kind: 'area', radius: tiles(2), on: 'allies' }, then: 'spend',
       ops: [{ op: 'damage', type: 'magical', when: 'use', amount: formula(`${K.mark.burst} * (2d6 + mag)`, R) }],
     } },
   };
-  const pain: StackDef = { label: 'Pain', desc: 'Each hit dealt adds one; Violence spends them all.', ops: [], stack: { cap: 10, leave: { kind: 'never' }, keep: 'fight', threshold: null } };
+  const pain: StackDef = { label: 'Pain', desc: 'Each hit you deal adds a stack. Violence spends all of them.', ops: [], stack: { cap: 10, leave: { kind: 'never' }, keep: 'fight', threshold: null } };
   return {
     resonance, signature, pain,
-    'crimson-pact': { label: 'Crimson Pact', desc: 'A pact sealed in your own blood. Hemoplague answers only while it holds.', ops: [] },
+    'crimson-pact': { label: 'Crimson Pact', desc: 'While you have it, you can use Hemoplague.', ops: [] },
     hemoplague: {
-      label: 'Hemoplague', desc: 'Blood that turns on its host when the time comes.', ops: [],
+      label: 'Hemoplague', desc: 'When it ends, the bearer takes magical damage. Removing it early cancels the damage.', ops: [],
       end: { ops: [{ op: 'damage', type: 'magical', when: 'use', amount: formula(`${K.hemo.end} * (1d8 + mag)`, R) }], cleanse: 'cancel' },
     },
   };
@@ -65,27 +65,27 @@ export function exampleSkills(R: Rules): SkillTemplate[] {
   const active = (name: string, desc: string, ability: Ability): SkillTemplate => ({ name, level: 1, label: null, desc, type: 'active', ability });
   const execute = suggestedScaler('strike', 'execute', R);
   return [
-    active('Bloodletting', 'A curse that leaves a Resonance on the one it reaches.',
+    active('Bloodletting', 'A curse that deals magical damage and adds a Resonance stack to the target.',
       make('curse', 'Bloodletting', { effect: { type: 'magical', by: 'hand', formula: formula(`${K.blood.share} * (2d6 + mag)`, R) }, ops: [apply('resonance', 2)] }, R)),
-    active('Fester', 'Hurts by the Resonance its target holds, and adds one more.',
+    active('Fester', 'A curse that deals more damage for each Resonance stack on the target, then adds one more stack.',
       make('curse', 'Fester', { effect: { type: 'magical', by: 'hand', formula: formula('0.6 * (2d6 + mag) * (1 + 0.15 * target.stacks(resonance))', R) }, ops: [apply('resonance', 2)] }, R)),
-    active('Crimson Pact', 'Pay half your max HP to seal the pact for 3 rounds.',
+    active('Crimson Pact', 'Costs half your max HP. You get Crimson Pact for 3 rounds.',
       { ...make('support', 'Crimson Pact', { aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null, ops: [apply('crimson-pact', 3)] }, R),
         prices: [{ kind: 'hp', amount: { kind: 'share', share: R.fight.kit.hpShare } }] }),
-    active('Hemoplague', 'Only under the Pact: a curse whose blood bursts 3 rounds later.',
+    active('Hemoplague', 'Usable only while you have Crimson Pact. A curse that puts Hemoplague on the target, which deals its damage 3 rounds later.',
       { ...make('curse', 'Hemoplague', { effect: null, ops: [apply('hemoplague', 3)] }, R), gates: [{ kind: 'holds', key: statusKey('crimson-pact'), on: 'self', atLeast: 1 }] }),
-    active('Executioner\'s Cut', 'Costs 5% of your max HP; cuts deeper the lower the target\'s HP.',
+    active('Executioner\'s Cut', 'Costs 5% of your max HP. The lower the target\'s HP, the more damage it deals.',
       { ...make('strike', 'Executioner\'s Cut', { ticks: { scalers: [execute] } }, R), prices: [{ kind: 'hp', amount: { kind: 'share', share: 0.05 } }] }),
-    active('Disaster Stroke', 'A curse that leaves the Signature; the second detonates.',
+    active('Disaster Stroke', 'A curse that adds a Signature stack to the target. The second stack makes Signature deal its damage.',
       make('curse', 'Disaster Stroke', { effect: { type: 'magical', by: 'hand', formula: formula(`${K.mark.share} * (2d6 + mag)`, R) }, ops: [apply('signature', 2)] }, R)),
-    active('Violence', 'Spends every Pain: 6% more damage for each.',
+    active('Violence', 'A strike that spends all your Pain stacks and deals 6% more damage for each one.',
       { ...make('strike', 'Violence', { effect: { type: 'physical', by: 'hand', formula: formula(`(1d8 + phys) * (1 + ${K.pain.perStack} * spent)`, R) } }, R),
         prices: [{ kind: 'stacks', key: statusKey('pain'), from: 'self', take: { kind: 'all' } }] }),
     { name: 'Pain is Power', level: 1, label: null, desc: 'Each hit you deal adds a Pain.', type: 'passive', bonus: {},
       worn: { label: 'Pain is Power', desc: '', ops: [], triggers: [{ on: 'hitDealt', tag: null, to: 'self', limit: { kind: 'each' }, ops: [apply('pain', null)] }] } },
-    active('Parry', 'A reaction: before a strike lands on you, take part of it off. Its time comes off your next turn.',
+    active('Parry', 'A reaction. Before a strike hits you, you take less of its damage. The time it costs comes off your next turn.',
       { ...make('strike', 'Parry', { effect: null, ops: [{ op: 'guard', share: R.fight.kit.parry }] }, R), cost: { ...make('shot', 'q', {}, R).cost, fatigue: 0 }, react: { when: 'before', reach: tiles(0) } }),
-    active('Call Sprite', 'A skirmisher at your side for a few rounds, once a fight.',
+    active('Call Sprite', 'Once a fight, summon a Sprite, a skirmisher that fights on your side for a few rounds.',
       { ...make('support', 'Call Sprite', { aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null }, R), gates: [{ kind: 'uses', per: 'fight', n: 1 }],
         summon: { name: 'Sprite', archetype: 'skirmisher', rounds: R.fight.kit.summonRounds, statuses: [] } }),
   ];

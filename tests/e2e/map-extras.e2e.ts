@@ -161,7 +161,7 @@ test('the player\'s hunter channels: its pips grow on both phones at its turn, t
   const hp = (await fightRow(gm, `${RAT}`)).hp;
   await lowestDice(gm); await lowestDice(player);
   await release.tap();
-  await expect.poll(() => gm.evaluate(() => hunterApp.store.get().fight.log.some((l: { text: string }) => l.text.includes('goes off at charge 2')))).toBe(true);
+  await expect.poll(() => gm.evaluate(() => hunterApp.store.get().fight.log.some((l: { text: string }) => l.text.includes('is released at charge 2')))).toBe(true);
   await expect.poll(() => fightRow(gm, RAT).then(r => r.hp)).toBeLessThan(hp);
   for (const p of [gm, player]) await expect(token(p, ids.kai).locator('.mp-pips')).toHaveCount(0);
 });
@@ -176,7 +176,7 @@ test('a hit breaks the player\'s channel: its pips shatter on both phones and it
   await map(gm).locator('[data-go]').tap();
   // design 4.1: a broken channel goes off at once at floor(charge * breakShare)
   const half = Math.floor(4 * R.breakShare);
-  await expect.poll(() => gm.evaluate(n => hunterApp.store.get().fight.log.some((l: { text: string }) => l.text.includes(`goes off at charge ${n}`)), half)).toBe(true);
+  await expect.poll(() => gm.evaluate(n => hunterApp.store.get().fight.log.some((l: { text: string }) => l.text.includes(`is released at charge ${n}`)), half)).toBe(true);
   for (const p of [gm, player]) await expect(token(p, ids.kai).locator('.mp-pips')).toHaveCount(0);
 });
 

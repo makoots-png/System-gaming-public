@@ -313,7 +313,7 @@ test('a goblin\'s corpse that crumbled on a natural 1 stays crumbled after the G
     await page.evaluate(() => { Math.random = () => 0; });
     await card.locator('[data-extract]').tap();
     await answerWindow(page, 'Shadow Extraction', 'Extract');
-    await expect(page.locator('.sys-overlay.show', { hasText: 'crumbles to dust' })).toBeVisible();
+    await expect(page.locator('.sys-overlay.show', { hasText: 'corpse is destroyed' })).toBeVisible();
     await answerWindow(page, 'Extraction failed');
     await expect(card.locator('[data-extract]')).toHaveCount(0);
   });

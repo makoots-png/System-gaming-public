@@ -116,7 +116,7 @@ const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS }
   revive: { once: true, land: (_p, hids, app) => save => forEach(save, hids, (s, h) => {
     const next = sheetEdit(h, { type: 'life', event: { type: 'revive' } }, app.rules());
     return isRefused(next) ? { save: s, tell: nothing }
-      : { save: withHunter(s, next), tell: () => app.toast('! System', 'The GM has revived you. You stand at 1 HP.', { kind: 'good' }) };
+      : { save: withHunter(s, next), tell: () => app.toast('! System', 'The GM has revived you. You are up at 1 HP.', { kind: 'good' }) };
   }) },
   // the chain machine refuses what does not apply (a second chain, a reissue of a chain that has not failed): nothing happens
   chain: { once: true, land: landChain },

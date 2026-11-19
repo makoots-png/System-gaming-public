@@ -368,7 +368,7 @@ describe('a stacking status (kits design 1.1, table 2.1)', () => {
         { on: 'turnStart', to: { kind: 'area', radius: tiles(2), on: 'foes' }, limit: { kind: 'fight', n: 2 }, ops: [{ op: 'refund', pct: 50 }] }] };
     expect(describeStatus(hemo, 0, RULES)).toEqual([
       'When its bearer deals a hit: Marked on the other, every time.', 'When its bearer starts its turn: 50% of an action\'s time back on foes within 2 tiles, 2 times a fight.',
-      'When it ends: Deals 1d8 + mag magical damage. A cleanse saves you.',
+      'When it ends: Deals 1d8 + mag magical damage. A cure cancels it.',
     ]);
   });
 });

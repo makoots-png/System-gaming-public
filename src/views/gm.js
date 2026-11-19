@@ -69,7 +69,7 @@ const SYS_KINDS = ['info', 'quest', 'warning', 'penalty', 'levelup', 'arise'];
 const PRESETS = [
   ['Emergency Quest', '! Emergency Quest', 'warning', 'EMERGENCY QUEST', 'An emergency quest has been issued. Failure to respond carries a penalty.'],
   ['Skill Acquired', '! Notification', 'info', 'SKILL ACQUIRED', 'You have acquired a new skill.'],
-  ['Gate Break Warning', '! Warning', 'warning', 'GATE BREAK WARNING', 'A gate has not been cleared in time. Monsters will pour out into the world.'],
+  ['Gate Break Warning', '! Warning', 'warning', 'GATE BREAK WARNING', 'A gate has not been cleared in time. Its monsters will come out into the world.'],
   ['Penalty Zone', '! Penalty', 'penalty', 'PENALTY ZONE', 'You have failed the daily quest. Survive for 4 hours to clear the penalty.'],
   ['Level Restriction Lifted', '! Notification', 'levelup', 'LEVEL RESTRICTION LIFTED', 'The level restriction has been lifted.'],
 ];

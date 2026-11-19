@@ -35,7 +35,7 @@ export function register(app) {
    * it): a name typed there renames it.
    */
   async function arise(h, made) {
-    const name = await ui.system({ tag: '! ARISE', title: 'ARISE', kind: 'arise', body: `${made.name} rises from the dark. Name your shadow.`,
+    const name = await ui.system({ tag: '! ARISE', title: 'ARISE', kind: 'arise', body: `${made.name} rises as your shadow. Name it.`,
       form: { label: 'Shadow name', type: 'text', value: made.name, maxlength: 60 }, actions: [{ label: 'Arise', primary: true }] });
     if (typeof name === 'string' && name.trim() && name.trim() !== made.name) onArmy(h.id, 'shadow-name', x => renameShadow(x, made.id, name));
     const s = store.hunter(h.id)?.shadows.find(x => x.id === made.id) ?? made;
@@ -69,11 +69,11 @@ export function register(app) {
     if (origin && who.kind === 'local') return arise(h, store.hunter(h.id).shadows.find(s => s.id === id));
     if (origin) { ui.toast('ARISE', `${origin.name} rises for ${h.name}. It joins their army on their phone.`, { kind: 'levelup' }); return origin; }
     if (outcome === 'crumbled') {
-      await ui.system({ tag: '! Extraction', title: 'Extraction failed', kind: 'warning', body: `Natural 1. ${m.name}'s corpse crumbles to dust.`, lines: [`Rolled ${r.total} vs DC ${dc}`] });
+      await ui.system({ tag: '! Extraction', title: 'Extraction failed', kind: 'warning', body: `Natural 1. ${m.name}'s corpse is destroyed and cannot be extracted.`, lines: [`Rolled ${r.total} vs DC ${dc}`] });
       return null;
     }
     const still = left - 1;
-    await ui.system({ tag: '! Extraction', title: 'Extraction failed', kind: 'warning', body: still > 0 ? `The shadow slips away. ${still} attempt${still === 1 ? '' : 's'} left.` : 'The shadow dissolves. No attempts left.', lines: [`Rolled ${r.total} vs DC ${dc}`] });
+    await ui.system({ tag: '! Extraction', title: 'Extraction failed', kind: 'warning', body: still > 0 ? `${still} attempt${still === 1 ? '' : 's'} left.` : 'No attempts left.', lines: [`Rolled ${r.total} vs DC ${dc}`] });
     return null;
   }
 
@@ -143,7 +143,7 @@ export function register(app) {
         if (act === 'summon') return void summon(h.id, s.id);
         if (act === 'heal') return void onArmy(h.id, 'shadow-heal', x => healShadow(x, s.id, rules()));
         if (act === 'rename') { const n = await ui.promptText({ title: 'Rename shadow', label: 'Name', value: s.name }); if (n) onArmy(h.id, 'shadow-rename', x => renameShadow(x, s.id, n)); return; }
-        if (act === 'release' && await ui.confirm({ title: 'Release shadow?', body: `${s.name} will return to the dark. This cannot be undone.`, danger: true, confirmLabel: 'Release' })) {
+        if (act === 'release' && await ui.confirm({ title: 'Release shadow?', body: `${s.name} leaves your army. This cannot be undone.`, danger: true, confirmLabel: 'Release' })) {
           onArmy(h.id, 'shadow-release', x => stepShadow(x, s.id, 'release'));
         }
       });

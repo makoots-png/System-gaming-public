@@ -176,7 +176,7 @@ describe('the example kits sit inside the tolerance, and a GM\'s overreach is wa
 
   test('the worth line says the worth and the budget, and past the tolerance by how much', () => {
     expect(worthLine({ worth: 1.04, budget: 1, over: false, unweighed: [] })).toBe('Worth 1.04 of a standard action (budget 1.00).');
-    expect(worthLine({ worth: 1.12, budget: 1, over: true, unweighed: [] })).toBe('Worth 1.12 of a standard action (budget 1.00). Stronger than its pace allows by 12%: a kit this strong can flip a matchup by itself.');
+    expect(worthLine({ worth: 1.12, budget: 1, over: true, unweighed: [] })).toBe('Worth 1.12 of a standard action (budget 1.00). Stronger than its pace allows by 12%.');
   });
 });
 

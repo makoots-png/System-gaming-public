@@ -255,7 +255,7 @@ const act: Step<'running', 'act'> = (f, cmd, ctx) => {
 function summoned(f: Running, a: Ability, by: CombatantId, ctx: Ctx): Running {
   const R = ctx.rules, u = rowOf(f, by);
   if (!a.summon || !u || !isUp(u)) return f;
-  const g = sentAway(f, crowded(f.rows, u.id, R), 'fades: a newer one came', ctx);
+  const g = sentAway(f, crowded(f.rows, u.id, R), 'leaves: a newer summon took its place', ctx);
   if (g.rows.length >= MAX_ROWS) return g;
   const d = Math.max(g.grid.w, g.grid.h), spots: Place[] = [];
   for (let y = 0; y < g.grid.h; y++) for (let x = 0; x < g.grid.w; x++) if (Math.max(Math.abs(x - u.place.x), Math.abs(y - u.place.y)) <= d) spots.push(place(x, y));
@@ -379,11 +379,11 @@ const release: Step<'running', 'release'> = (f, cmd, ctx) => {
   if (r.ok === false && r.reason === 'needsRoll') return refused(f, r.reason);
   if (r.ok === false) {
     const done = { ...(turn ? acted(u, f.now, a.cost.time, R.fight) : u), channel: channelStep(c, { type: 'release' }) };
-    return after(f, logged(withRow(f, done), line(`${u.name}'s ${a.name} goes off at nothing.`, [u.id]), R), turn ? u.id : '', null, ctx, []);
+    return after(f, logged(withRow(f, done), line(`${u.name}'s ${a.name} is released and hits nothing.`, [u.id]), R), turn ? u.id : '', null, ctx, []);
   }
   const rows = r.bodies.map(b => b.id !== u.id ? b : { ...b, channel: channelStep(c, { type: 'release' }), ...(turn ? {} : { at: u.at }) });
   const at = placeOf(c.aim, f.rows), zone = at && leftZone(a, u, at, f.grid, f.now, f.zones, R);
-  const went = logged({ ...f, rows, zones: zone ? placeZone(f.zones, zone, R).zones : f.zones }, line(`${u.name}'s ${a.name} goes off at charge ${c.charge}.`, [u.id]), R);
+  const went = logged({ ...f, rows, zones: zone ? placeZone(f.zones, zone, R).zones : f.zones }, line(`${u.name}'s ${a.name} is released at charge ${c.charge}.`, [u.id]), R);
   const scored = { ...went, rows: tallied(went.rows, { type: 'used', by: u.id, ability: a, outcomes: r.outcomes, before: f.rows }) };
   return after(f, triggered(scored, eventsOf(a, u.id, r.outcomes, f.rows, scored.rows), ctx), turn ? u.id : '', null, ctx, [...critsOf(r.outcomes), ...burstsOf(r.bursts)]);
 };
@@ -613,7 +613,7 @@ function extract<F extends Fight>(f: F, cmd: Extract<Command, { type: 'extract' 
   if (isUp(u)) return refused(f, 'notNow');
   const e = extractionStep(u.extraction ?? UNTRIED, cmd.outcome, max);
   if (!e) return refused(f, 'noAttempts');
-  const said = cmd.outcome === 'risen' ? `${u.name} rises as a shadow.` : cmd.outcome === 'crumbled' ? `${u.name}'s corpse crumbles to dust.`
+  const said = cmd.outcome === 'risen' ? `${u.name} rises as a shadow.` : cmd.outcome === 'crumbled' ? `${u.name}'s corpse is destroyed.`
     : `The extraction of ${u.name} fails (${attemptsLeft(e, max)} left).`;
   return done(logged(withRow(f, { ...u, extraction: e }), line(said, [u.id, by.id]), ctx.rules), []);
 }

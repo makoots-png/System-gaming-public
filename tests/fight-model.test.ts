@@ -320,7 +320,7 @@ describe('what random play found', () => {
 
 /** What each kits block logs, so random play shows it reached each (kits design 3.2). */
 const KIT_LINES: readonly (readonly [string, RegExp])[] = [
-  ['trigger', /^R\d+: Then: /], ['extraction', /: The extraction of .+ fails|rises as a shadow|corpse crumbles to dust/], ['threshold', /Resonance goes off/], ['delayed end', /Hemoplague lands/], ['zone upkeep lapse or end', /Boundary (lapses|ends)/],
+  ['trigger', /^R\d+: Then: /], ['extraction', /: The extraction of .+ fails|rises as a shadow|corpse is destroyed/], ['threshold', /Resonance goes off/], ['delayed end', /Hemoplague lands/], ['zone upkeep lapse or end', /Boundary ends/],
   ['summon', /calls Sprite/], ['summon leaves', /Sprite (leaves|fades)/], ['zone price', /uses shatter/], ['stack price', /uses violence/], ['hp price', /uses pact/],
 ];
 

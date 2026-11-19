@@ -206,4 +206,4 @@ export function toldGate(told: GateTold, n: GateNews): GateTold {
  * (lead-look-2-solo.md, finding 4). `gm`: the GM's tools show (the spawn form is above).
  */
 export const worldEmptyWords = (gm: boolean, soloShown: boolean): string =>
-  soloShown ? (gm ? 'No world gates. Spawn one above.' : 'No world gates.') : gm ? 'No active gates. Spawn one above.' : 'No gates detected. The world is quiet.';
+  soloShown ? (gm ? 'No world gates. Spawn one above.' : 'No world gates.') : gm ? 'No active gates. Spawn one above.' : 'No gates detected.';

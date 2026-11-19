@@ -110,8 +110,8 @@ test('a GM makes Hemoplague\'s mark in the status maker: 3 rounds of nothing, th
   await g.locator('[data-k="end"]').check();
   await g.locator('[data-end-fx] [data-quick] [data-q="damage"]').tap();
   await g.locator('[data-end-fx] [data-row="0"] [data-f="q"]').fill('4d6');
-  await expect(g.locator('[data-sum="end"]')).toHaveText('When it ends: 1 effect, a cleanse saves you');
-  await expect(d.locator('.mk-preview')).toContainText('When it ends: Deals 4d6 magical damage. A cleanse saves you.');
+  await expect(g.locator('[data-sum="end"]')).toHaveText('When it ends: 1 effect, a cure cancels it');
+  await expect(d.locator('.mk-preview')).toContainText('When it ends: Deals 4d6 magical damage. A cure cancels it.');
   await d.getByRole('button', { name: 'Save status' }).tap();
   await expect(d).toHaveCount(0);
   const [, def] = await libraryStatus(page, 'Hemoplague');

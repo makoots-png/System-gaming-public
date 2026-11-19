@@ -217,7 +217,7 @@ export function register(app) {
           <button type="button" class="primary" data-export>Export campaign</button>
           <button type="button" data-export-hunter>Export active hunter</button>
         </div>
-        <label class="io-check"><input type="checkbox" data-export-key><span>Include GM key (anyone with this file can run your room)</span></label>
+        <label class="io-check"><input type="checkbox" data-export-key><span>Include GM key (anyone with this file can be GM of your room)</span></label>
         <div class="data-actions">${ui.field('Import (.json)', '<input type="file" accept="application/json,.json" data-import>')}</div>
         <div class="io-prog" data-io-prog hidden></div>
         <p class="io-help">Importing shows a preview first and keeps your current save in the backups. A hunter file can be added to your party instead of replacing it.</p>

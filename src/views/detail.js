@@ -45,7 +45,7 @@ export function register(app) {
     if (!t) return '';
     const d = detailOf(t, app.rules());
     const lines = d.lines.length ? `<ul>${d.lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>` : '';
-    const about = d.about || (lines ? '' : 'Nothing more to it.');
+    const about = d.about || (lines ? '' : 'No more detail.');
     return `<div class="dt" id="${idOf(list, key)}" data-dt-panel="${esc(list)}" role="region" aria-label="${esc(d.title)}">${titled ? `<b>${esc(d.title)}</b>` : ''}${about ? `<p>${esc(about)}</p>` : ''}${lines}</div>`;
   }
 

@@ -19,30 +19,30 @@ const FOUR_N = each(-8, -12, -16, -20, -24, -32);
 const DAMAGE_N = each(-2, -5, -8, -15, -22, -32);
 
 const STATUSES = {
-  bleeding: { label: 'Bleeding', desc: 'Loses HP every round until treated.', ops: [
+  bleeding: { label: 'Bleeding', desc: 'Takes physical damage every round.', ops: [
     { op: 'damage', type: 'physical', when: 'turn', amount: each(dice(1, 4), dice(1, 6), dice(2, 6), dice(2, 8), dice(3, 8), dice(4, 8)) },
   ] },
-  burning: { label: 'Burning', desc: 'Takes fire damage every round until put out.', ops: [
+  burning: { label: 'Burning', desc: 'Takes magical damage every round.', ops: [
     { op: 'damage', type: 'magical', when: 'turn', amount: each(dice(1, 6), dice(2, 6), dice(3, 8), dice(4, 10), dice(5, 12), dice(7, 12)) },
   ] },
-  poisoned: { label: 'Poisoned', desc: 'Aims worse and takes poison damage every round.', ops: [
+  poisoned: { label: 'Poisoned', desc: 'Takes magical damage every round and has lower Control, so its Accuracy drops.', ops: [
     { op: 'damage', type: 'magical', when: 'turn', amount: each(dice(1, 4), dice(1, 4), dice(1, 6), dice(1, 8), dice(1, 10), dice(1, 12)) },
     { op: 'stat', key: 'ctl', amount: FOUR_N },
   ] },
   paralyzed: { label: 'Paralyzed', desc: 'Cannot move or act.', ops: [{ op: 'hold' }, { op: 'root' }] },
   stunned: { label: 'Stunned', desc: 'Cannot act.', ops: [{ op: 'hold' }] },
-  frightened: { label: 'Frightened', desc: 'Will falters while the source is in sight.', ops: [{ op: 'stat', key: 'dis', amount: FOUR_N }] },
-  blinded: { label: 'Blinded', desc: 'Cannot see; attacks go wide.', ops: [{ op: 'stat', key: 'ctl', amount: each(-16, -24, -32, -40, -48, -64) }] },
+  frightened: { label: 'Frightened', desc: 'Has lower Discipline, so its Will drops.', ops: [{ op: 'stat', key: 'dis', amount: FOUR_N }] },
+  blinded: { label: 'Blinded', desc: 'Has much lower Control, so its Accuracy drops.', ops: [{ op: 'stat', key: 'ctl', amount: each(-16, -24, -32, -40, -48, -64) }] },
   slowed: { label: 'Slowed', desc: 'Moves and acts more slowly.', ops: [{ op: 'speed', pct: each(-20, -25, -30, -35, -40, -50) }] },
   hasted: { label: 'Hasted', desc: 'Moves and acts faster, and sometimes gets part of an action back.', ops: [
     { op: 'speed', pct: each(20, 25, 30, 35, 40, 50) },
     { op: 'refund', pct: 50, chance: 25 },
   ] },
   invisible: { label: 'Invisible', desc: 'Unseen.', ops: [] },
-  prone: { label: 'Prone', desc: 'On the ground; slow to dodge.', ops: [{ op: 'stat', key: 'agi', amount: FOUR_N }] },
-  restrained: { label: 'Restrained', desc: 'Cannot move; attacks go wide.', ops: [{ op: 'root' }, { op: 'stat', key: 'ctl', amount: FOUR_N }] },
+  prone: { label: 'Prone', desc: 'Has lower Agility, so its Reaction drops.', ops: [{ op: 'stat', key: 'agi', amount: FOUR_N }] },
+  restrained: { label: 'Restrained', desc: 'Cannot move, and has lower Control, so its Accuracy drops.', ops: [{ op: 'root' }, { op: 'stat', key: 'ctl', amount: FOUR_N }] },
   stealth: { label: 'Stealth', desc: 'Hidden from view.', ops: [] },
-  bloodlust: { label: 'Bloodlust', desc: 'Cowed by a superior presence: Will falters and blows land softer.', ops: [
+  bloodlust: { label: 'Bloodlust', desc: 'Has lower Discipline, Strength and Power, so its Will drops and its hits do less damage.', ops: [
     { op: 'stat', key: 'dis', amount: FOUR_N },
     { op: 'stat', key: 'str', amount: DAMAGE_N },
     { op: 'stat', key: 'pow', amount: DAMAGE_N },
@@ -54,7 +54,7 @@ const STATUSES = {
   ] },
   // A monster's sickness that passes on (design 4.8): Poisoned's damage a round without its aim penalty, and a spread of
   // 1, so a body next to the bearer resists it or catches it once a round of holding it, and never twice in a fight.
-  plague: { label: 'Plague', desc: 'Sick and wasting; it passes to anyone next to the bearer who fails to resist it, once a fight.', ops: [
+  plague: { label: 'Plague', desc: 'Takes magical damage every round. Anyone next to the bearer who fails to resist it gets it too, at most once a fight.', ops: [
     { op: 'damage', type: 'magical', when: 'turn', amount: each(dice(1, 4), dice(1, 4), dice(1, 6), dice(1, 8), dice(1, 10), dice(1, 12)) },
     { op: 'spread', range: 1 },
   ] },

@@ -39,25 +39,25 @@ export type SkillDef =
 // Restated by docs/agent-handoff/rw/m2-plan.md section 3.5: a passive's old bonus maps by the stat map (an old AC of N is
 // Vitality 2N); an active's MP cost, dice and cooldown are its ability's now.
 export const SKILL_SEEDS: readonly SkillDef[] = [
-  { name: 'Sprint', type: 'active', desc: 'Burst of speed: you are Hasted for a round.' },
-  { name: 'Bloodlust', type: 'passive', desc: 'Bloodthirst sharpens your strikes.', bonus: { str: 1 } },
-  { name: 'Dagger Rush', type: 'active', desc: 'Two lightning-fast dagger strikes.' },
-  { name: 'Stealth', type: 'active', desc: 'Vanish from sight. Advantage on Stealth checks until you attack.' },
-  { name: 'Mutilation', type: 'active', desc: 'A vicious strike that tears flesh.' },
-  { name: "Ruler's Authority", type: 'active', desc: 'Telekinetic force: move or crush objects and enemies within 30 ft.' },
+  { name: 'Sprint', type: 'active', desc: 'You are Hasted for a round.' },
+  { name: 'Bloodlust', type: 'passive', desc: 'Adds 1 Strength.', bonus: { str: 1 } },
+  { name: 'Dagger Rush', type: 'active', desc: 'A quick dagger strike that rolls 2d4.' },
+  { name: 'Stealth', type: 'active', desc: 'You hide. You have advantage on Stealth checks until you attack.' },
+  { name: 'Mutilation', type: 'active', desc: 'A strike that rolls 2d6.' },
+  { name: "Ruler's Authority", type: 'active', desc: 'Move or crush objects and foes within 30 ft with your mind.' },
   { name: 'Shadow Exchange', type: 'active', desc: 'Swap places with one of your shadows.' },
-  { name: 'Arise', type: 'active', desc: 'Command the dead to rise as your shadow soldier.' },
-  { name: 'Mending Aura', type: 'active', desc: 'A soft light around you mends you and every ally near you for three rounds, and moves with you.' },
+  { name: 'Arise', type: 'active', desc: 'Raise a defeated monster as one of your shadows.' },
+  { name: 'Mending Aura', type: 'active', desc: 'For three rounds, you and every ally near you heal each round. The area moves with you.' },
 ];
 
 /** The skills the starter campaign's three hunters begin with (src/views/starter.js), two each. */
 export const STARTER_SKILLS = {
-  shieldWall: { name: 'Shield Wall', type: 'active', desc: 'Brace behind your shield and cover an ally within 30 ft.' },
-  ironSkin: { name: 'Iron Skin', type: 'passive', desc: 'Your hide toughens against blows. +2 Vitality.', bonus: { vit: 2 } },
-  markedShot: { name: 'Marked Shot', type: 'active', desc: 'A careful shot at a marked target.' },
-  trailsense: { name: 'Trailsense', type: 'passive', desc: 'You notice what others miss. Gates are never a surprise to you.', bonus: {} },
-  arcBolt: { name: 'Arc Bolt', type: 'active', desc: 'Hurl a bolt of blue mana at a target in sight.' },
-  manaSense: { name: 'Mana Sense', type: 'passive', desc: 'Feel the flow of mana around you, including hidden gates.', bonus: {} },
+  shieldWall: { name: 'Shield Wall', type: 'active', desc: 'Put a shield on one ally within 30 ft.' },
+  ironSkin: { name: 'Iron Skin', type: 'passive', desc: 'Adds 2 Vitality.', bonus: { vit: 2 } },
+  markedShot: { name: 'Marked Shot', type: 'active', desc: 'A shot that rolls 1d6.' },
+  trailsense: { name: 'Trailsense', type: 'passive', desc: 'You notice tracks and signs others miss, and a gate never surprises you.', bonus: {} },
+  arcBolt: { name: 'Arc Bolt', type: 'active', desc: 'Fire a bolt of mana at one foe in range.' },
+  manaSense: { name: 'Mana Sense', type: 'passive', desc: 'You can sense mana near you, which lets you find hidden gates.', bonus: {} },
 } as const satisfies Record<string, SkillDef>;
 
 /** A built-in skill as a hunter holds it (no id yet): level 1, no label, an active one with its ability under `R`. */

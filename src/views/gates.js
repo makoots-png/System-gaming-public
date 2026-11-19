@@ -74,7 +74,7 @@ export function register(app) {
     (async () => {
       for (const g of broke) {
         const pick = await ui.system({ tag: '! Warning', kind: 'warning', title: 'Dungeon Break',
-          body: `${g.rank}-rank gate has broken: ${g.name}`, lines: ['Monsters are pouring out of the gate.'],
+          body: `${g.rank}-rank gate has broken: ${g.name}`, lines: ['Its monsters are coming out of the gate.'],
           actions: [{ label: 'Later', value: null, cancel: true }, ...(app.isGM() ? [{ label: 'Start fight', value: 'start', primary: true }] : [{ label: 'Understood', value: null, primary: true }])] });
         if (pick === 'start') startEncounter(g.id);
       }
@@ -197,7 +197,7 @@ export function register(app) {
       asking.add(key);
       const shown = n.kind === 'appeared'
         ? ui.system({ tag: '! Gate', kind: 'warning', title: 'A GATE HAS APPEARED', body: g.name, lines: [`Rank: ${g.rank}`, `Type: ${g.type} gate`, `Breaks on day ${g.breakDay}`], actions: ok })
-        : ui.system({ tag: '! Warning', kind: 'warning', title: 'GATE BREAK', body: `${g.rank}-rank gate has broken: ${g.name}`, lines: ['Monsters are pouring out of the gate.'], actions: ok });
+        : ui.system({ tag: '! Warning', kind: 'warning', title: 'GATE BREAK', body: `${g.rank}-rank gate has broken: ${g.name}`, lines: ['Its monsters are coming out of the gate.'], actions: ok });
       void shown.then(() => { asking.delete(key); memory.write(toldGate(parseGateTold(memory.read()) ?? r.told, n)); });
     }
     refreshView();
@@ -402,7 +402,7 @@ export function register(app) {
           <div class="gt-head">${ui.rankBadge(g.rank)}<span class="gt-name">${esc(g.name)}</span>
             <span class="gt-chip ty-${esc(g.type)}">${esc(g.type)} gate</span><span class="gt-chip st-${esc(g.status)}">${esc(STATUS_LABEL[g.status] || g.status)}</span></div>
           ${g.type === 'red' ? `<div class="gt-red-banner" role="note">No exit until the boss falls · DCs +${esc(cfg.redDcBonus)}</div>` : ''}
-          ${g.type === 'double' && gm ? '<div class="gt-notes">Double gate: a hidden second dungeon lies within (GM reveal).</div>' : ''}
+          ${g.type === 'double' && gm ? '<div class="gt-notes">Double gate: it holds a hidden second dungeon, which the GM reveals.</div>' : ''}
           <div class="gt-timer ${timerCls(g)}">${esc(timer(g))}</div>
           <ul class="gt-mons" aria-label="Monsters">${mons || '<li class="empty">No regular monsters.</li>'}
             ${g.bossId ? `<li class="boss"><span>★ Boss</span><span>${esc(boss ? boss.name : 'Unknown boss')}</span>${boss ? `<span class="mx">${ui.fmt(monsterXp(boss, app.rules()))} XP · HP ${ui.fmt(monsterSheetOf(boss, app.rules()).hpMax)}</span>` : ''}</li>` : ''}</ul>
@@ -471,7 +471,7 @@ export function register(app) {
         return `<article class="gate t-${esc(g.type)} s-${esc(g.status)}" data-id="${esc(g.id)}" aria-label="${esc(g.rank)}-rank ${esc(g.type)} gate ${esc(g.name)}">
           <div class="gt-head">${ui.rankBadge(g.rank)}<span class="gt-name">${esc(g.name)}</span>
             <span class="gt-chip ty-${esc(g.type)}">${esc(g.type)} gate</span><span class="gt-chip st-${esc(g.status)}">${esc(STATUS_LABEL[g.status] || g.status)}</span></div>
-          ${g.type === 'red' ? '<div class="gt-red-banner" role="note">Red gate: no exit until the boss falls</div>' : ''}
+          ${g.type === 'red' ? '<div class="gt-red-banner" role="note">Red gate: no exit until the boss is defeated</div>' : ''}
           <div class="gt-timer ${cls}">${esc(t)}</div></article>`;
       }
       function renderShared(w, soloShown) {

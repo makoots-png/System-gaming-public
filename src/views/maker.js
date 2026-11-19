@@ -565,7 +565,7 @@ function formulaField(box, o) {
         <label class="field"><span class="lbl">Cap %</span><input type="number" inputmode="decimal" step="any" data-gap="cap" aria-label="Cap, percent" value="${pct(gap.cap)}"></label>
       </div>
       <p class="mk-fx-err" data-gap-err role="alert"></p>
-      <div class="lbl">More damage by HP (execute and its kin)</div>
+      <div class="lbl">More damage by HP (execute and similar)</div>
       <div class="mk-fxs" data-scalers></div>
       <button type="button" class="mk-add" data-add-scaler>Add a scaler</button>
     </div></details>

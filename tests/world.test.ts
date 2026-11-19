@@ -211,6 +211,6 @@ describe('a player\'s gate news (implicit audit 2, N7)', () => {
 describe('the world list with no gate (lead-look-2-solo.md, finding 4)', () => {
   test('under a solo section it says the world has none, never that the world is quiet; alone it says what it said', () => {
     expect([worldEmptyWords(false, true), worldEmptyWords(true, true)]).toEqual(['No world gates.', 'No world gates. Spawn one above.']);
-    expect([worldEmptyWords(false, false), worldEmptyWords(true, false)]).toEqual(['No gates detected. The world is quiet.', 'No active gates. Spawn one above.']);
+    expect([worldEmptyWords(false, false), worldEmptyWords(true, false)]).toEqual(['No gates detected.', 'No active gates. Spawn one above.']);
   });
 });

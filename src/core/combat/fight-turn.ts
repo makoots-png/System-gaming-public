@@ -333,7 +333,7 @@ export function grounded(f: Running, ctx: Ctx, fx: Fx, forced?: ReadonlySet<stri
     && zoneStep({ at: 'laid' }, { type: 'time', old: oldEnough(z, z.until, ctx.rules) }).lands);
   let g: Running = zoneEnds({ ...f, rows: s.rows, zones: s.zones }, timed, f.rows, ctx);
   for (const z of f.zones) if (!s.zones.some(x => x.id === z.id)) g = logged(g, line(`${z.name} is gone.`, [], [z.id]), ctx.rules);
-  for (const z of s.zones) if (!f.zones.some(x => x.id === z.id)) g = logged(g, line(`${z.name} spreads around ${rowOf(g, anchorOf(z) ?? '')?.name ?? 'it'}.`, [...(anchorOf(z) === null ? [] : [anchorOf(z)!])], [z.id]), ctx.rules);
+  for (const z of s.zones) if (!f.zones.some(x => x.id === z.id)) g = logged(g, line(`${z.name} is now around ${rowOf(g, anchorOf(z) ?? '')?.name ?? 'it'}.`, [...(anchorOf(z) === null ? [] : [anchorOf(z)!])], [z.id]), ctx.rules);
   for (const e of s.entries) g = owe(g, rowOf(g, e.id)!, [e.due], fx, ctx.rules);
   return g;
 }
@@ -398,7 +398,7 @@ export function startTurn(f: Running, ctx: Ctx, fx: Fx): Running | Ended {
     if (g.zones.some(z => z.upkeep && z.owner === who.id)) {
       const pay = payUpkeep(rowOf(g, who.id)!, g.zones, g.now, R), pre = g.rows;
       g = { ...withRow(g, pay.owner), zones: pay.zones };
-      for (const z of pay.lapsed) g = logged(g, line(`${z.name} lapses: ${who.name} cannot keep it.`, [who.id], [z.id]), R);
+      for (const z of pay.lapsed) g = logged(g, line(`${z.name} ends: ${who.name} cannot pay its upkeep.`, [who.id], [z.id]), R);
       g = consequences(pre, g, ctx, fx);
     }
     // the settle's events (kits design 1.3.5, the settle's S3): statuses that ended by time, then the turn's start

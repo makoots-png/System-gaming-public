@@ -709,7 +709,7 @@ function opLine(o: Op, tier: number | null, R: DescribeRules): string {
     case 'spread': return `Spreads each round to anyone within ${o.range} tile${o.range === 1 ? '' : 's'} who fails to resist it, once a fight`;
     case 'sheet': { const n = num(o.amount, signed); return `${SHEET_OP_TEXT[o.key]} ${n.text}${rank(n)}`; }
     case 'share': { const p = num(o.pct, n => `${signed(n)}%`); return `${SHARE_TEXT[o.on]} ${p.text}${rank(p)}`; }
-    case 'untargetable': return 'Foes cannot aim at it or catch it, for a round, once a fight. Acting on a foe ends it';
+    case 'untargetable': return 'Foes cannot aim at it or hit it with an area, for a round, once a fight. Acting on a foe ends it';
     case 'invulnerable': return 'Damage does not take it under 1 HP, for a round, once a fight';
     case 'safeguard': return 'A harmful status from a foe does nothing, for a round';
     case 'edge': {
@@ -721,7 +721,7 @@ function opLine(o: Op, tier: number | null, R: DescribeRules): string {
       const die = o.die.kind === 'die' ? `a d${o.die.sides}` : `${o.die.n}`;
       return o.side === 'attack' ? `Its next use against a foe: each target's die is lowered by ${die}` : `The next use against it: its die is raised by ${die}`;
     }
-    case 'hidden': return 'Hidden: foes cannot aim at it or catch it; acting, a foe beside it or a hurt reveals it';
+    case 'hidden': return 'Hidden: foes cannot aim at it or hit it with an area. It is revealed when it acts, when a foe is beside it, or when it is hurt';
     case 'alert': return 'Never surprised';
     case 'shove': return `${o.dir === 'away' ? 'Pushes' : 'Pulls'} each target ${o.tiles} tile${o.tiles === 1 ? '' : 's'} ${o.dir === 'away' ? 'away from' : 'toward'} ${o.from === 'user' ? 'you' : 'the center'}`;
     case 'move': {
@@ -770,9 +770,9 @@ function triggerLine(t: Trigger, tier: number | null, R: DescribeRules): string 
   const need = !t.need ? '' : t.need.kind === 'holds' ? ` Only while it holds ${R.conditions[t.need.key]?.label ?? t.need.key}.` : ` Only inside ${t.need.zone}.`;
   return `When its bearer ${what}: ${t.ops.map(o => landLine(o, tier, R)).join('; ')}${where}, ${often}.${need}`;
 }
-/** A delayed effect in words (kits design 5.1): "When it ends: Deals 1d8 + mag magical damage. A cleanse saves you." */
+/** A delayed effect in words (kits design 5.1): "When it ends: Deals 1d8 + mag magical damage. A cure cancels it." */
 const endLine = (e: End, tier: number | null, R: DescribeRules): string =>
-  `When it ends: ${e.ops.map(o => landLine(o, tier, R)).join('; ')}. ${e.cleanse === 'cancel' ? 'A cleanse saves you.' : 'A cleanse sets it off.'}`;
+  `When it ends: ${e.ops.map(o => landLine(o, tier, R)).join('; ')}. ${e.cleanse === 'cancel' ? 'A cure cancels it.' : 'A cure makes it happen at once.'}`;
 /** What a status does apart from its triggers and end: its ops, and a stacking one's count and threshold. */
 function describeStack(def: StatusDef, tier: number | null, R: DescribeRules): string[] {
   if (!isStacking(def)) return opLines(def.ops, tier, R);
