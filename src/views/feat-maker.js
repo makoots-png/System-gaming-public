@@ -1,12 +1,12 @@
 // feat-maker.js: the GM's feat maker (feature 1's notes 5.3), opened from the Workshop's Feats. One form through
 // `app.api.maker.open`: the name, the window's title, what the player reads, what is counted (a kind of fact, up to four
 // tests of its fields, what to count of them), the number that earns it, its window, when it is shown, and its reward
-// (the reward editor). Every choice is offered from core's tables (`FACT_FIELDS`, `opsFor`, `WITHINS`, `FEAT_BOUNDS`),
-// so a field a kind lacks cannot be picked; Save runs `parseFeat` and writes what it gives back (`saveFeat`). No rule of
-// the game is here.
+// (the reward editor). Every choice is offered from core's tables (`FACT_FIELDS`, `opsFor`, `measuresFor`, `WITHINS`,
+// `FEAT_BOUNDS`), so a field or a measure a kind lacks cannot be picked; Save runs `parseFeat` and writes what it gives
+// back (`saveFeat`). No rule of the game is here.
 import { esc, field } from './ui.js';
 import { FACT_FIELDS } from '../core/hunter/facts.ts';
-import { MEASURES, TESTS_MAX, WITHINS, opsFor } from '../core/hunter/counts.ts';
+import { TESTS_MAX, WITHINS, measureFields, measuresFor, opsFor } from '../core/hunter/counts.ts';
 import { FACT_KIND_WORDS, FEAT_BOUNDS, MEASURE_WORDS, WITHIN_WORDS, afterChoices, freeFeatKey, parseFeat, ruleLine } from '../core/hunter/feats.ts';
 import { BUILT_IN_FEATS } from '../core/registry/feats.ts';
 import { RANKS } from '../core/rules.ts';
@@ -46,6 +46,15 @@ function testHtml(kind, t) {
     <select data-to aria-label="Comparison">${ops.map(o => `<option value="${esc(o)}"${o === op ? ' selected' : ''}>${esc(OP_WORDS[o])}</option>`).join('')}</select>
     ${valueHtml(spec, t ? t.value : '')}</div>`;
 }
+/** The Count choices of kind `kind` (`measuresFor`), `of` chosen when the kind takes it, else Each time. */
+function measureOptions(kind, of) {
+  const ms = measuresFor(kind), sel = ms.includes(of) ? of : 'facts';
+  return ms.map(m => `<option value="${m}"${m === sel ? ' selected' : ''}>${esc(MEASURE_WORDS[m])}</option>`).join('');
+}
+/** The field select of measure `m` on kind `kind` (`measureFields`), `sel` chosen when it is one of them. */
+function measureField(kind, m, sel) {
+  return `<select id="fm-mfield" aria-label="Of">${measureFields(kind, m).map(f => `<option value="${esc(f)}"${f === sel ? ' selected' : ''}>${esc(FACT_FIELDS[kind][f].label)}</option>`).join('')}</select>`;
+}
 /** A test row's value as its field's spec reads it. */
 function readValue(spec, raw) {
   if (spec.t === 'num') return raw === '' ? null : Number(raw);
@@ -77,7 +86,7 @@ export function featMaker(app, key) {
         <div class="lbl" id="fm-tests-l">Only when</div>
         <div class="fm-tests" data-tests role="group" aria-labelledby="fm-tests-l">${rule.where.map(t => testHtml(rule.on, t)).join('')}</div>
         <button type="button" data-tadd>Add a condition</button>
-        <div class="fm-row">${field('Count', `<select id="fm-measure">${MEASURES.map(m => `<option value="${m}"${m === rule.measure.of ? ' selected' : ''}>${esc(MEASURE_WORDS[m])}</option>`).join('')}</select>`)}
+        <div class="fm-row">${field('Count', `<select id="fm-measure">${measureOptions(rule.on, rule.measure.of)}</select>`)}
           <span data-mfield>${rule.measure.of === 'facts' ? '' : measureField(rule.on, rule.measure.of, /** @type {any} */ (rule.measure).field)}</span></div>
         ${field('Earned at', `<input type="number" id="fm-reach" inputmode="numeric" min="1" max="${FEAT_BOUNDS.reach}" value="${esc(rule.reach)}">`)}
         <div class="lbl">Within</div>${A.maker.chips('within', WITHINS.map(w => [w, WITHIN_WORDS[w]]), rule.within, { label: 'Within' })}
@@ -86,17 +95,15 @@ export function featMaker(app, key) {
         <div data-show="feat"${show.at === 'feat' ? '' : ' hidden'}>${field('Shown once this feat is earned', `<select id="fm-after">${afterChoices(BUILT_IN_FEATS, lib.feats, key, after)
           .map(([k, n]) => `<option value="${esc(k)}"${k === after ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select>`)}</div>
         <div class="lbl">Reward</div><div data-fm-rw data-later></div>`;
-      /** The field a sum, a highest or a count of different values reads: a number's for the first two, any for the last. */
-      function measureField(kind, m, sel) {
-        const nums = fieldsOf(kind).filter(([, s]) => m === 'distinct' || s.t === 'num');
-        return `<select id="fm-mfield" aria-label="Of">${nums.map(([f, s]) => `<option value="${esc(f)}"${f === sel ? ' selected' : ''}>${esc(s.label)}</option>`).join('')}</select>`;
-      }
       const ed = A.maker.rewards(body.querySelector('[data-fm-rw]'), { initial: d ? d.rewards : undefined, bundles: false });
       const kind = () => body.querySelector('#fm-kind').value;
-      const redrawMeasure = () => { const m = body.querySelector('#fm-measure').value; body.querySelector('[data-mfield]').innerHTML = m === 'facts' ? '' : measureField(kind(), m, null); };
+      const redrawMeasure = () => {
+        const m = body.querySelector('#fm-measure').value, was = body.querySelector('#fm-mfield');
+        body.querySelector('[data-mfield]').innerHTML = m === 'facts' ? '' : measureField(kind(), m, was ? was.value : null);
+      };
       body.addEventListener('change', e => {
         const t = e.target;
-        if (t.id === 'fm-kind') { body.querySelector('[data-tests]').innerHTML = ''; redrawMeasure(); }
+        if (t.id === 'fm-kind') { const ms = body.querySelector('#fm-measure'); body.querySelector('[data-tests]').innerHTML = ''; ms.innerHTML = measureOptions(kind(), ms.value); redrawMeasure(); }
         else if (t.id === 'fm-measure') redrawMeasure();
         else if (t.matches('[data-tf]')) { const row = t.closest('[data-test]'); row.outerHTML = testHtml(kind(), { field: t.value }); }
         shell.changed();

@@ -70,3 +70,29 @@ the skills `statechart`, `principle-model-the-domain`, `principle-foundational-t
 
 Reply with: the notes' commit, the design in ten lines, the tap counts, the choices you think are contested, and the
 questions for the owner with your defaults.
+
+## The build (added Nov 19, after the lead approved the design)
+
+The design is `notes-1-stories.md`; its section 11 holds the lead's rulings, which win where they differ from the
+sections before. Build one unit at a time, in the order of section 11, and hand back to the lead after each.
+
+- The stories helper works in its own worktree, `/home/user/sg-stories`, on the local branch `stories` (another helper
+  works in the main tree). Commit there, one commit a step with its tests, never push, no attribution lines. The lead
+  merges the branch into the working branch after each unit; when the lead says the tree moved, merge
+  `claude/nifty-keller-3nvune` into `stories` before the next unit.
+- Read first what the design phase read (the list at the top of this brief), then the notes in full.
+- Before a unit's code, add to the notes ("12. The build", a subsection a unit) anything the design left open for that
+  unit and how you decided it; after it, what was built, the tests, and the measurement where the unit has one.
+- Words: every label, hint and line through `humanizer` and `unslop`; the lead is the second reader.
+- Checks before each hand-back: `bun run typecheck`; the whole `bun run test`; `bun run deps -- --write` and `bun run
+  charts` when imports, the api, events, views or a machine changed (commit what they write); the browser files the
+  unit touches or adds, and for a unit that changes a shared form or view, the files that drive it:
+  `E2E_CHROMIUM=/opt/google/chrome/chrome E2E_PORT=3350 E2E_FEEL=skip bunx playwright test <files> --workers=2 --trace
+  off --output=/tmp/pw-stories 2>&1 | grep -E "failed|passed|✘"`. Not the whole browser suite: the lead runs it on the
+  public repository before the push. Never port 3218, 3233 or 3340. If `pgrep -f "[s]cripts/ci.ts"` prints a pid, wait
+  until it does not before any test run. A test that fails once is a finding: name its cause from its trace.
+- A new screen: look at it yourself in a screenshot at 360 and 390 px (a throwaway test under `tests/e2e/`, images
+  under `/tmp`, deleted before the commit), and add its step to `scripts/ui-shots.ts` and its case to
+  `tests/e2e/look.e2e.ts`.
+- Reply after each unit with: its commits, what you decided that the design had not, the checks' last lines with their
+  counts, the taps you counted on any new screen, and what you found outside the unit (not fixed).

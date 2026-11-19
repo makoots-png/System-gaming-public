@@ -6,8 +6,9 @@ import { freshSave, newHunter } from '../src/core/save.ts';
 import type { Hunter, ParseEnv, Save } from '../src/core/save.ts';
 import { dayKey } from '../src/core/day.ts';
 import { record } from '../src/core/hunter/chronicle.ts';
+import { FACT_KINDS } from '../src/core/hunter/facts.ts';
 import type { Fact, FactStamp } from '../src/core/hunter/facts.ts';
-import { NO_COUNT, countStep, markOf, parseCount } from '../src/core/hunter/counts.ts';
+import { NO_COUNT, countStep, markOf, measureFields, measuresFor, parseCount } from '../src/core/hunter/counts.ts';
 import type { FactCount, Counted } from '../src/core/hunter/counts.ts';
 import { FEAT_STATES, TABLE, afterChoices, featNews, featStep, featsDoc, featsFor, freeFeatKey, parseFeat, progressLine, startOf } from '../src/core/hunter/feats.ts';
 import { parseFeatKey } from '../src/core/ids.ts';
@@ -69,6 +70,21 @@ describe('a count and its window (table 5.6)', () => {
     expect(parseCount({ on: 'kill', where: [{ field: 'rank', op: '>=', value: 'Z' }] })).toBeNull();
     expect(parseCount({ on: 'nope', where: [] })).toBeNull();
     expect(parseCount({ on: 'kill', measure: { of: 'sum', field: 'type' } })).toBeNull();
+  });
+  test('a kind with no number field takes each time and different values only; every measure a kind takes reads back with each field it offers', () => {
+    const noNumber = ['closed', 'quest', 'rank', 'title', 'feat', 'given', 'coin', 'rest', 'used', 'shadow'];
+    for (const kind of FACT_KINDS) {
+      expect([kind, measuresFor(kind)]).toEqual([kind, noNumber.includes(kind) ? ['facts', 'distinct'] : ['facts', 'sum', 'distinct', 'max']]);
+      for (const of of measuresFor(kind)) {
+        if (of === 'facts') continue;
+        const fields = measureFields(kind, of);
+        expect(fields.length).toBeGreaterThan(0);
+        for (const field of fields) expect(parseCount({ on: kind, measure: { of, field } })?.measure).toEqual({ of, field });
+      }
+    }
+    expect(measureFields('quest', 'distinct')).toEqual(['end', 'qkind', 'from', 'title']);
+    expect(measureFields('gate', 'sum')).toEqual(['above', 'toBreak']);
+    expect(parseCount({ on: 'quest', measure: { of: 'sum', field: 'title' } })).toBeNull();
   });
 });
 

@@ -396,3 +396,17 @@ What a player sees: when a hunter does something the System counts (a fight won 
 - In a room, the feats you make reach your players' phones and count there. What your phone sees of a player's hunter (a fight it ended, a gate you cleared and paid it in) reaches that player's phone and counts too.
 - The Workshop has a Feats section: make a feat (what is counted, how many, in what window, when the player sees it, what it gives), change or turn off a built-in one, and share feats in a pack like the rest. A feat you make is not on the GM view's Make row, which has room for five buttons; it is in the Workshop.
 - A run of one of your gates that a player clears alone counts as a solo run on that player's phone, not as a gate cleared.
+
+## Feats, after the lead's review (Nov 19)
+
+- You can turn off any feat, your own or a built-in, and turn it on again; its edits stay. Say "only built-ins turn off" to have your own feats deleted instead.
+- A built-in feat you change back to exactly what shipped is listed with the built-ins again, with no "changed" mark.
+
+## Stories (the design, Nov 19): questions with the default taken
+
+- Should players see a story's name and how far it has got? Default: no. They see each chapter's window when you open it.
+- Turning a story on opens its first chapter in the same tap. Say "turn on first, open later" to change it.
+- There is no step back. You can open an earlier chapter again, which gives it again to whoever you pick.
+- A story runs on the GM device that turned it on; a second GM device in the room does not see it. Say "share stories between my devices" if you will run the GM side on a phone and a PC at once.
+- Two stories to copy ship: The wager and What was spared returns, from the ideas list, their words made plain. Say "none" or name others.
+- A line that shows you when a chapter may be ready (its quest done, sessions passed, a number on the record up) is built last. It never moves the story. Say "drop it" to leave it out.

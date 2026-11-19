@@ -1025,3 +1025,59 @@ Chosen (a): fixed where it starts, in `openMaker`, so all seven makers are fixed
 - `ideas-feats-titles-rewards.md` T43 still says "Cleared a gate alone in three rounds." (an ideas file, left as written).
 - AGENTS.md's feat row names "a built-in's Turn off and Reset" and `saveFeat`, `removeFeat`; it should name `featOff`,
   `featOn`, `duplicateFeat`, `afterChoices` and `rankSeen`. AGENTS.md is the lead's.
+
+### 17.11 Three leftovers (Nov 19)
+
+Goal (the owner): the GM makes his own feats in a maker that is architecturally sound, clean and easy to use, with
+everything explicit. The problem: the review's helper found three faults it was not asked to fix. The maker offers a
+measure the kind of fact cannot take; a pack's merge writes feats by its own rule and not the library's; about fifteen
+doc comments in `src/core` describe nothing. The smallest change: fix each at its cause, with a test that fails without
+it. The brief is `brief-1-feats-leftovers.md`. Principles read in full this session: fix-root-causes, model-the-domain,
+test-behavior-not-implementation, build-the-lever, laziness-protocol, and unslop for this prose.
+
+**Point 1. Which measures a kind of fact can take.** The cause: the maker offers all of `MEASURES` for every kind, and
+the rule of which field a measure reads lives twice, once in `parseCount` (a sum and a highest read a number field,
+different values any field) and once in the maker's `measureField`. The maker never asks whether the kind has such a
+field. Ten kinds have no number field (`closed`, `quest`, `rank`, `title`, `feat`, `given`, `coin`, `rest`, `used`,
+`shadow`). For them the field select is empty and the parser refuses with a message about conditions. Data shape:
+`CountMeasure['of']` stays as it is. Variants:
+
+| | (a) One function in counts.ts, `measureFields(kind, of)`, and `measuresFor(kind)` built on it | (b) A table by measure of the field sorts it reads, read by the maker and the parser each in its own way | (c) The maker hides a measure whose field list it computed empty |
+|---|---|---|---|
+| Where the rule is | Once, in counts.ts; `parseCount` asks `measureFields` too | Once as data, but two readers each turn it into "which fields" | In the view, a second time |
+| What the GM sees | Only the measures the kind takes; the field select never empty | The same | The same |
+| Cost | Two small functions and the parser's check replaced by one call | A table plus the same two functions | No core test can hold it |
+
+Chosen (a). The rule of which field a measure reads is the game's, so it is core's, beside `opsFor` and `MEASURES`, and
+the parser and the maker read the same answer. `measuresFor(kind)` is `facts` and every other measure that has at least
+one field. When the GM changes "What happened", the Count select is drawn again from `measuresFor` and keeps the chosen
+measure if the new kind takes it, else falls back to Each time. The field select keeps its field when the new kind has
+it under that measure. Tests: a bun case over every kind of `FACT_FIELDS` with the expected measures written from the
+field table's sorts, and a browser step that picks The total of for a fight, switches to a quest and finds only Each time
+and Different values of, with Save working.
+
+**Point 2. A pack's merge of feats.** The cause: `mergeFeats` in pack.ts writes `out[key] = def` itself, so it does not
+apply the library's rule that a built-in's entry equal to the shipped feat leaves the library (`saveFeat`). A pack that
+holds a built-in as shipped leaves an entry the Workshop marks "changed built-in". The same merge picks a free key for a
+renamed feat without asking whether a built-in holds it, which the maker and `duplicateFeat` both ask. Variants:
+
+| | (a) The merge calls `saveFeat` on a library it carries, one feat at a time | (b) A shared helper on the feats record that both `saveFeat` and the merge call | (c) The merge keeps writing and drops shipped-equal entries in a pass at the end |
+|---|---|---|---|
+| Where the rule is | `saveFeat` only | The helper, with `saveFeat` a wrapper over it | Twice, the merge's pass a copy of `saveFeat`'s check |
+| Cap | `saveFeat`'s refusal is the count's `full` (the same `LIMITS.libraryFeats`) | The same | Its own check, which counts a shipped-equal feat against the cap |
+| Cost | The merge carries a `Library` where it carried a record | A new function for one extra caller | The same fault class left in place |
+
+Chosen (a). The library's step is the one writer of a library feat, and the merge is one more caller of it. The free key
+of a renamed feat comes from one library function, `newFeatKey(lib, name)`, which `duplicateFeat`, the merge and the
+maker share, so a pack's feat can never land on a built-in's key.
+
+Does a pack carry `off`? Variants: (a) carried as it is; (b) dropped at the merge; (c) dropped for a share of one feat
+and carried for a share of the whole library. Chosen (a). A GM who shares a table's set-up has turned some built-ins
+off on purpose, and the other table should get the same set-up. `off` has one meaning on every feat, the parser reads it
+and `featsFor` honours it, and the Workshop marks an off feat, so the GM who imports it sees it and can turn it on. (b)
+would make an off built-in arrive on, which is not the set-up that was shared. (c) makes a feat's meaning depend on how
+the pack was made.
+
+What the report counts: Replace over an entry the library held counts `replaced`, also when the entry then leaves
+because the pack held the shipped feat. A feat whose key is new to the library counts `added` only when the library
+then holds it. A shipped-equal built-in into a library that lacked its key changes nothing, so it counts nothing.

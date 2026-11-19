@@ -1103,6 +1103,26 @@ test('a GM makes a feat for 2 Beasts defeated in a session, from the Workshop: t
   await workshop(page, 'feat').locator('[data-new]').tap();
   await expect(d.getByRole('heading', { name: 'New feat' })).toBeVisible();
 
+  await test.step('Count offers only what the kind of fact can count, and keeps a choice the new kind can take', async () => {
+    const count = d.locator('#fm-measure'), of = d.locator('#fm-mfield');
+    await d.locator('#fm-name').fill('Beast Week');
+    await d.locator('#fm-kind').selectOption('fight');
+    await count.selectOption({ label: 'The total of' });
+    await of.selectOption({ label: 'HP healed on allies' });
+    await d.locator('#fm-kind').selectOption('quest');
+    await expect(count.locator('option')).toHaveText(['Each time', 'Different values of']);
+    await expect(count).toHaveValue('facts');
+    await expect(of).toHaveCount(0);
+    await count.selectOption({ label: 'Different values of' });
+    await expect(of.locator('option')).toHaveText(['End', 'Kind', 'From', 'Title']);
+    await of.selectOption({ label: 'Title' });
+    await expect(d.locator('.mk-preview')).toContainText('Different values of title: 1, ever.');
+    await d.locator('#fm-kind').selectOption('fight');
+    await expect(count.locator('option')).toHaveText(['Each time', 'The total of', 'Different values of', 'The highest']);
+    await expect(count).toHaveValue('distinct');
+    await count.selectOption('facts');
+  });
+
   await test.step('the form: a name, a window, what happened, one test, the count, the window, shown from the start, 1 ability point', async () => {
     await d.locator('#fm-name').fill('Beast Week');
     await d.locator('#fm-window').fill('THE BEASTS NOTICED');

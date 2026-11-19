@@ -96,6 +96,12 @@ function valueOf(spec: FieldSpec, v: unknown): number | string | boolean | undef
 }
 /** The ops a field's spec may be compared with: an order for a number or a rank, equality for the rest. */
 export const opsFor = (spec: FieldSpec): readonly TestOp[] => (spec.t === 'num' || spec.t === 'rank' ? TEST_OPS : ['=']);
+/** The fields of kind `kind` that measure `of` may read: a number field for a sum or a highest, any field for different values. */
+export function measureFields(kind: FactKind, of: Exclude<CountMeasure['of'], 'facts'>): readonly string[] {
+  return (Object.entries(FACT_FIELDS[kind]) as [string, FieldSpec][]).filter(([, s]) => of === 'distinct' || s.t === 'num').map(([f]) => f);
+}
+/** The measures a count of kind `kind` may take: each time, and every other measure that has a field of the kind to read. */
+export const measuresFor = (kind: FactKind): readonly CountMeasure['of'][] => MEASURES.filter(m => m === 'facts' || measureFields(kind, m).length > 0);
 /**
  * A count from outside data, or null. A test of a field its kind lacks, an op its field cannot take or a value that does
  * not read refuses the count, and so does an unknown kind; a window that does not read is `ever`; a measure that names
@@ -117,8 +123,7 @@ export function parseCount(v: unknown): FactCount | null {
   const m = isObj(v.measure) ? v.measure : { of: 'facts' };
   let measure: CountMeasure = { of: 'facts' };
   if (m.of === 'sum' || m.of === 'max' || m.of === 'distinct') {
-    const spec = typeof m.field === 'string' ? specOf(on, m.field) : null;
-    if (!spec || (m.of !== 'distinct' && spec.t !== 'num') || typeof m.field !== 'string') return null;
+    if (typeof m.field !== 'string' || !measureFields(on, m.of).includes(m.field)) return null;
     measure = { of: m.of, field: m.field };
   } else if (m.of !== 'facts') return null;
   const within = WITHINS.find(w => w === v.within) ?? 'ever';
