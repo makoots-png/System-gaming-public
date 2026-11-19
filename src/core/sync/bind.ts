@@ -29,6 +29,15 @@ export function ringKeep(g: Ring, code: RoomCode, key: GmKey): Record<string, Gm
   return Object.fromEntries(codes.slice(Math.max(0, codes.length - KEYS_MAX)).map(c => [c, next[c]!]));
 }
 /**
+ * This phone's ring with the keys of a save swapped in (an import, a restore): the ring is merged, never replaced. The
+ * phone's own key wins for a room both hold, and the phone's keys are the newest, so past `KEYS_MAX` the swapped-in
+ * save's go first.
+ */
+export function ringMerged(mine: Ring, theirs: Ring): Record<string, GmKey> {
+  const all = [...Object.entries(theirs).filter(([code]) => !(code in mine)), ...Object.entries(mine)];
+  return Object.fromEntries(all.slice(Math.max(0, all.length - KEYS_MAX)));
+}
+/**
  * The sync settings after the room refused key `refused` for `code`: the ring's key goes only when it is the one refused
  * (a wrong key typed by hand leaves a good stored one alone; `null`: the stored one was tried), and the room's key too.
  */

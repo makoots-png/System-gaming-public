@@ -7,6 +7,7 @@ import { statBonus } from './hunter/sheet.ts';
 import { VERDICT_WORDS, verdict } from './coin.ts';
 import { CAP_ROUNDS } from './combat/play.ts';
 import { ODDS_RUNS } from './combat/odds.ts';
+import { shopOpen } from './hunter/inventory.ts';
 import { FUMBLE_FAILURES, REVIVE_HP, SAVES_TO_END, SAVE_FUMBLE, SAVE_SUCCESS, SAVE_UP, SAVE_UP_HP, WAYS_BACK } from './hunter/vitals.ts';
 
 const sign = (n: number): string => (n >= 0 ? '+' : '') + n;
@@ -53,9 +54,13 @@ export function pointsLine(): string {
   return 'Spend points with + on a stat. − takes back a point you have not confirmed. Confirm locks the points in; until then they wait, also after you leave the Status view. The GM can edit any stat, and that edit is confirmed at once.';
 }
 
-/** What happens at 0 HP, from the life machine's own numbers (vitals.ts), and the ways back from dead (`WAYS_BACK`). */
+/**
+ * What happens at 0 HP, from the life machine's own numbers (vitals.ts), the ways back from dead (`WAYS_BACK`), and the
+ * shop's door for the dead (inventory.ts `shopOpen`): the sentence is there only while the rule closes it.
+ */
 export function downLine(): string {
-  return `At 0 HP a hunter is down and makes death saves: a d20, ${SAVE_SUCCESS} or higher succeeds. ${SAVES_TO_END} successes make the hunter stable (still down, no more saves) and ${SAVES_TO_END} failures are fatal. A ${SAVE_UP} gets up at ${SAVE_UP_HP} HP, and a ${SAVE_FUMBLE} counts as ${FUMBLE_FAILURES} failures. The GM can stabilize a hunter. Healing and rest do not raise the dead: ${WAYS_BACK} from the bag does, at ${REVIVE_HP} HP, outside a fight.`;
+  const shop = shopOpen({ life: { at: 'dead' } }) ? '' : ' The shop is closed to a dead hunter, who can neither buy nor sell. The GM or another hunter can still give a dead hunter a Resurrection Crystal.';
+  return `At 0 HP a hunter is down and makes death saves: a d20, ${SAVE_SUCCESS} or higher succeeds. ${SAVES_TO_END} successes make the hunter stable (still down, no more saves) and ${SAVES_TO_END} failures are fatal. A ${SAVE_UP} gets up at ${SAVE_UP_HP} HP, and a ${SAVE_FUMBLE} counts as ${FUMBLE_FAILURES} failures. The GM can stabilize a hunter. Healing and rest do not raise the dead: ${WAYS_BACK} from the bag does, at ${REVIVE_HP} HP, outside a fight.${shop}`;
 }
 
 /**

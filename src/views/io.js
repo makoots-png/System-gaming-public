@@ -1,7 +1,7 @@
 // io.js (U12): Data view. Settings, export/import with preview (the file read as the store reads a save), the backups ring
 // (the day's backup is the store's, at load), danger zone, storage meter,
 // and sharing the GM's custom content as a pack (src/core/pack.ts), in a code (src/edge/pack-code.ts) or a file (app.api.share).
-import { SCHEMA, exportedSave, keepGmKey } from '../core/save.ts';
+import { SCHEMA, exportedSave } from '../core/save.ts';
 import { atHunter, atSettings } from '../core/save-step.ts';
 import { withResetHour, withSound } from '../core/settings.ts';
 import { rename } from '../core/hunter/record.ts';
@@ -188,8 +188,7 @@ export function register(app) {
       ? 'This file holds a single hunter. Add them to your party, or replace the whole campaign. Your current save is backed up first.'
       : 'Replace your campaign with this file, or add its hunters to your party. Your current save is backed up first.', lines, actions });
     if (choice === 'replace') {
-      const next = keepGmKey(got, store.get().settings.sync);
-      if (await replaceAsking(anyway => store.importSave(next, anyway), 'Replace') === 'replaced') ui.toast('System', 'Import complete. Previous save kept in backups.');
+      if (await replaceAsking(anyway => store.importSave(got, anyway), 'Replace') === 'replaced') ui.toast('System', 'Import complete. Previous save kept in backups.');
     } else if (choice === 'add') {
       if (!store.backupNow('pre-import') && !(await goOnUnbacked('Add'))) return;
       if (!store.apply('import-hunter', sv => withImportedHunters(sv, got.hunters)).ok) return ui.toast('System', 'No hunter was added: this tab cannot change the save.', { kind: 'warning' });

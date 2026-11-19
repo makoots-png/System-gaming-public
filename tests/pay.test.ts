@@ -134,6 +134,16 @@ describe('a gate\'s Clear', () => {
     const g = s.gates[0]!;
     expect(out.save.hunters[0]!.chronicle.inbox[0], 'the gate cleared is a fact of the payee\'s chronicle').toEqual({ kind: 'gate', name: g.name, rank: g.rank, above: 0, toBreak: Math.max(0, g.breakDay - s.world.day) });
   });
+
+  test('a gate cleared once is not cleared again: a second Clear (a stale panel, a second tap) is refused and pays nobody', () => {
+    const s = { ...inDen(), fight: null }, h = s.hunters[0]!;
+    const pay = { due: 150, xp: 75, gold: 20, items: [], payees: ['Mira', 'Kai'] };
+    const clear = (from: Save) => settleClear(from, 'g-den', pay, [{ hid: h.id, rewards: { ...newRewards(), xp: 75, gold: 20 } }], { room: ROOM, events: [award(75)] }, DAY);
+    const once = ok(clear(s)).save;
+    expect(clear(once)).toEqual({ ok: false, why: 'unchanged' });
+    // a gate the GM closed cannot be cleared either (gate.ts: Clear applies to detected, raiding and broken gates)
+    expect(clear({ ...s, gates: [den('closed', 0)] })).toEqual({ ok: false, why: 'unchanged' });
+  });
 });
 
 describe('a player\'s hunter whose sheet is not on the GM\'s phone', () => {

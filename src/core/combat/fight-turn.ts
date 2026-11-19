@@ -28,6 +28,7 @@ import { restUsed } from './uses.ts';
 import { ARMED, endStep } from './delayed.ts';
 import type { Raised } from './triggers.ts';
 import { dist, sees, seenBy } from './space.ts';
+import type { Side } from './space.ts';
 import { line, LOG_CAP, LOG_LINE_MAX, MAX_PENDING, MAX_SPREAD, MAX_STATUSES, spreadKey } from './fight-types.ts';
 import type { Ctx, Effect, Ended, Fight, LogLine, Running, Spread, Summary } from './fight-types.ts';
 
@@ -116,11 +117,12 @@ export function triggered<F extends Running>(f: F, events: readonly Raised[], ct
 export const holdsSide = (b: Body): boolean => isUp(b) && !isSummon(b);
 /** A side with nobody up ends the fight. A summon does not count. */
 export function overIf(f: Running, fx: Fx, R: Rules): Ended | null {
-  const sides = ['party', 'foe'] as const;
-  const standing = sides.filter(side => f.rows.some(r => r.side === side && holdsSide(r)));
-  if (standing.length === 2) return null;
-  return ended(f, standing[0] ?? null, fx, R);
+  const up = standing(f);
+  if (up.length === 2) return null;
+  return ended(f, up[0] ?? null, fx, R);
 }
+/** The sides with a body up that keeps its side in the fight (`holdsSide`). */
+const standing = (f: Running): Side[] => (['party', 'foe'] as const).filter(side => f.rows.some(r => r.side === side && holdsSide(r)));
 
 /** The fight ended at its `now`, with the side still up. Its XP is the banked XP and that of every foe down. */
 export function ended(f: Fight, winner: Summary['winner'], fx: Fx, R: Rules): Ended {
@@ -386,6 +388,9 @@ export function startTurn(f: Running, ctx: Ctx, fx: Fx): Running | Ended {
     // Taken before time moves, so a status that ends for anyone reaches its sheet.
     const before = g.rows, time = advance(g, tick(Math.max(g.now, first.at)), R);
     g = grounded(time.fight, ctx, fx);
+    // a zone's end lands as time moves (`grounded`) and may down the last body of a side, or of both: what it did is
+    // written, and the next pass ends the fight before anyone's turn begins
+    if (standing(g).length < 2) { g = consequences(before, g, ctx, fx); continue; }
     const who = next(g.rows.filter(isUp))!;
     // the settle's S0 (kits table 2.4): a summon whose time is up leaves before it acts
     if (timeUp(who, g.now)) { g = sentAway(g, [who], 'leaves: its time is up', ctx); continue; }

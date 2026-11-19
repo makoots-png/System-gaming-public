@@ -7,6 +7,11 @@
 // has a price (`sellPrice`). So
 // buy then sell gives back the item and leaves the hunter `price - sellPrice` gold poorer; tests/inventory.test.ts
 // asserts that difference. An item that revives is not bought back (`sellable`).
+//
+// The shop is closed to a dead hunter (`shopOpen`): it buys nothing and sells nothing. The owner, Nov 19: "When a
+// player/party dies, they should only be able to be revived by the gm or through resurrection crystals. They can not buy
+// it in death", then "Whole shop should be closed in death." A crystal still reaches a dead hunter from the GM (an award)
+// or from another hunter (goods.ts `handOver`, offer.ts), and the dead hunter may use it (use.ts `useItem`).
 import { valueOf } from '../registry/items.ts';
 import type { Item, ItemTemplate, Slot } from '../registry/items.ts';
 import type { Rules } from '../rules.ts';
@@ -15,6 +20,8 @@ import type { Refused } from '../save-step.ts';
 import type { ItemId } from '../ids.ts';
 import { record } from './chronicle.ts';
 import type { Chronicle } from './chronicle.ts';
+import { WAYS_BACK } from './vitals.ts';
+import type { Life } from './vitals.ts';
 
 type Carrying = { items: Item[]; equipped: Record<Slot, ItemId | null>; gold: number };
 
@@ -95,17 +102,35 @@ export function unequip<H extends Carrying>(h: H, slot: string): H | Refused<'no
   return slot in h.equipped ? { ...h, equipped: { ...h.equipped, [slot]: null } } : refuse('no-slot');
 }
 
-/** A purchase or a sale is a fact of the chronicle (chronicle.ts), recorded with it. */
-type Trading = Carrying & { readonly chronicle: Chronicle };
-/** An item bought at its price (`valueOf`): refused when the gold is short (`poor`). */
-export function buy<H extends Trading>(h: H, it: ItemTemplate, id: ItemId, R: Pick<Rules, 'baseValue' | 'rarities'>): H | Refused<'poor'> {
+/** Whether the shop trades with a hunter in this life: with anyone but the dead. Down, dying or stable, it still trades. */
+export const shopOpen = (h: { readonly life: Pick<Life, 'at'> }): boolean => h.life.at !== 'dead';
+/** What the shop says to a dead hunter, in place of its Buy and Sell buttons and when a purchase or a sale is refused. */
+export const SHOP_CLOSED = `The shop is closed while you are dead. You cannot buy or sell. ${WAYS_BACK} brings you back. The GM or another hunter can give you a Resurrection Crystal.`;
+/** Why a purchase may be refused. */
+export const BUY_REFUSALS = ['poor', 'dead'] as const;
+export type BuyRefusal = (typeof BUY_REFUSALS)[number];
+/** The words of a purchase refused, for the item named `name`. */
+export const BUY_WORDS: { readonly [W in BuyRefusal]: (name: string) => string } = {
+  poor: name => `Not enough gold for ${name}.`,
+  dead: () => SHOP_CLOSED,
+};
+
+/** A purchase or a sale is a fact of the chronicle (chronicle.ts), recorded with it. The shop reads the life (`shopOpen`). */
+type Trading = Carrying & { readonly chronicle: Chronicle; readonly life: Life };
+/** An item bought at its price (`valueOf`): refused for a dead hunter (`dead`), and when the gold is short (`poor`). */
+export function buy<H extends Trading>(h: H, it: ItemTemplate, id: ItemId, R: Pick<Rules, 'baseValue' | 'rarities'>): H | Refused<BuyRefusal> {
+  if (!shopOpen(h)) return refuse('dead');
   const price = valueOf(it, R);
   if (h.gold < price) return refuse('poor');
   const gold = h.gold - price;
   return record(putItem({ ...h, gold }, it, id), { kind: 'shop', act: 'buy', item: it.name, rar: it.rar, price, goldAfter: gold });
 }
-/** `n` of an item sold (at most what is held), each for `sellPrice`. One not held is refused (`no-item`), one not bought back (`unsellable`). */
-export function sell<H extends Trading>(h: H, itemId: string, n: number, R: Pick<Rules, 'baseValue' | 'rarities'>): H | Refused<'no-item' | 'unsellable'> {
+/**
+ * `n` of an item sold (at most what is held), each for `sellPrice`. Refused for a dead hunter (`dead`), for one not held
+ * (`no-item`) and for one not bought back (`unsellable`).
+ */
+export function sell<H extends Trading>(h: H, itemId: string, n: number, R: Pick<Rules, 'baseValue' | 'rarities'>): H | Refused<'dead' | 'no-item' | 'unsellable'> {
+  if (!shopOpen(h)) return refuse('dead');
   const it = h.items.find(i => i.id === itemId);
   if (!it) return refuse('no-item');
   if (!sellable(it)) return refuse('unsellable');

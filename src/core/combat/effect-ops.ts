@@ -232,8 +232,17 @@ export const OP_KINDS = Object.keys(OP_KIND_SET) as readonly OpKind[];
  */
 export type UseOp = Extract<Op, { readonly op: 'applyStatus' | 'cureStatus' | 'delay' | 'threat' | 'shield' | 'channel' | 'note' | 'mana' | 'fatigue'
   | 'shove' | 'move' | 'hasten' | 'extra' | 'guard' | 'negate' | 'dispel' }>;
-/** The use ops of wave 2 (kits design 8.3 to 8.6): what the parser reads into an ability's or a trigger's ops beside today's. */
-export const USE_OPS_2 = ['shove', 'move', 'hasten', 'extra', 'guard', 'negate', 'dispel'] as const;
+/** Every use op, once: the typecheck asks for a new member of `UseOp` here, so no reader of the list can miss one. */
+const USE_OP_SET: { readonly [K in UseOp['op']]: true } = {
+  applyStatus: true, cureStatus: true, delay: true, threat: true, shield: true, channel: true, note: true, mana: true, fatigue: true,
+  shove: true, move: true, hasten: true, extra: true, guard: true, negate: true, dispel: true,
+};
+/**
+ * Whether op `o` is one an ability carries to each target it lands on; the rest act only from inside a status. The one
+ * test of a use op: the parser reads an ability's and a trigger's ops by it (fight-parse.ts), and a consumable carries
+ * into a fight the ops it passes (abilities.ts `itemAbility`).
+ */
+export const isUseOp = (o: Op): o is UseOp => Object.hasOwn(USE_OP_SET, o.op);
 
 /** Who applied a status: its id (null for the GM or an item) and its tier, snapshotted when the status went on. */
 export type Source = { readonly id: CombatantId | null; readonly tier: number };

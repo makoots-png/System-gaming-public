@@ -2,7 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import { GOODS_GOLD_MAX, GOODS_LINES, NO_GOODS, OFFER_MAX, fits, goodsSize, goodsWords, handOver, parseBagPick, parseGoods, received, refusalWords, setAside } from '../src/core/trade/goods.ts';
 import type { BagPick, Goods } from '../src/core/trade/goods.ts';
 import { equip, putItem } from '../src/core/hunter/inventory.ts';
-import { STARTER_GEAR, itemOf, parseItem } from '../src/core/registry/items.ts';
+import { SHOP_ITEMS, STARTER_GEAR, itemOf, parseItem } from '../src/core/registry/items.ts';
+import { useItem } from '../src/core/hunter/use.ts';
+import { REVIVE_HP } from '../src/core/hunter/vitals.ts';
 import { THING_MAX } from '../src/core/size.ts';
 import { RULES } from '../src/core/rules.ts';
 import { freshSave, newHunter } from '../src/core/save.ts';
@@ -110,6 +112,14 @@ describe('a hand over between two hunters of one phone', () => {
     expect(handOver(save(), hid('h1'), hid('h9'), pick(1), { held: false }, counter(0))).toEqual({ ok: false, why: 'no-hunter' });
     expect(handOver(save(), hid('h1'), hid('h2'), pick(1), { held: true }, counter(0))).toEqual({ ok: false, why: 'fight' });
     expect(handOver(save(), hid('h1'), hid('h2'), pick(999), { held: false }, counter(0))).toMatchObject({ ok: false, why: 'poor' });
+  });
+  test('Brakk gives dead Eldrin a Resurrection Crystal, and Eldrin uses it to come back (the owner, Nov 19: another player may give one in death)', () => {
+    const crystal = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Resurrection Crystal')!);
+    const s0 = save(), withCrystal: Save = { ...s0, hunters: [putItem(s0.hunters[0]!, crystal, iid('i3')), { ...s0.hunters[1]!, life: { at: 'dead' } }] };
+    const s = ok(handOver(withCrystal, hid('h1'), hid('h2'), pick(0, ['i3', 1, 'Resurrection Crystal']), { held: false }, counter(60)));
+    const eldrin = s.hunters[1]!;
+    expect(eldrin.items.map(i => [i.id, i.name, i.qty])).toEqual([['i61', 'Resurrection Crystal', 1]]);
+    expect(ok(useItem(eldrin, 'i61', [], RULES)).hunter.life).toEqual({ at: 'up', hp: REVIVE_HP });
   });
 });
 

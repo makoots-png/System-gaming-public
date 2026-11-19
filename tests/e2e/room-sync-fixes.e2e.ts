@@ -480,6 +480,45 @@ test('a GM who leaves and rejoins the same room never sees the room as it was be
   });
 });
 
+test('two world days advanced while the room is slow to take the first: the GM\'s phone puts the world once at a time, and the room ends on the last day', async ({ device }) => {
+  const { gm, code } = await gmWithRoom(device, { blockServiceWorker: true });
+  const worldDay = async (): Promise<number | null> => (await (await gm.request.get(`/api/rooms/${code}?after=0`, { headers: await roomHeaders(gm) })).json()).docs?.world?.data?.day ?? null;
+  await expect.poll(worldDay).toBe(1);
+  let out = 0, most = 0, held = true, release!: () => void;
+  const slow = new Promise<void>(r => { release = r; });
+  await gm.route(`**/api/rooms/${code}/sheets/_world`, async route => {
+    if (route.request().method() !== 'PUT') return route.continue();
+    out++; most = Math.max(most, out);
+    if (held) { held = false; await slow; }
+    const response = await route.fetch();
+    out--;
+    await route.fulfill({ response });
+  });
+  const polled = () => gm.waitForRequest(r => r.method() === 'GET' && r.url().includes(`/api/rooms/${code}?after=`));
+
+  await test.step('the GM advances the day, and the room is slow to take the world doc of day 2', async () => {
+    await go(gm, 'gm');
+    await gm.locator('[data-tog="gate"]').tap();
+    await gm.locator('#gm-d1').tap();
+    await expect(gm.locator('#gm-day')).toHaveText('Day 2');
+    await expect.poll(() => out).toBe(1);
+  });
+
+  await test.step('the GM advances it again while that put is out: no second put of the world goes out beside it', async () => {
+    await gm.locator('#gm-d1').tap();
+    await expect(gm.locator('#gm-day')).toHaveText('Day 3');
+    await polled();
+    await polled();
+    expect(most).toBe(1);
+  });
+
+  await test.step('once the room answers the first, the room holds day 3', async () => {
+    release();
+    await expect.poll(worldDay).toBe(3);
+    expect(most).toBe(1);
+  });
+});
+
 test('replacing the campaign with a file from another room moves the phone to that room without a reload', async ({ device }, testInfo) => {
   const { code: roomA } = await gmWithRoom(device);
   const player = await playerInRoom(device, roomA);

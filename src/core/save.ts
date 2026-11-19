@@ -16,6 +16,7 @@ import type { Gate, GateMonster, GateStatus, GateType } from './gates/gate.ts';
 import { parseApplied, parseHeld } from './applied.ts';
 import { parseOutbox } from './sync/outbox.ts';
 import { parseSeen } from './sync/seen.ts';
+import { ringMerged } from './sync/bind.ts';
 import type { RoomPlaces } from './sync/seen.ts';
 import type { Outbox } from './sync/outbox.ts';
 import type { RoomEvent } from './protocol.ts';
@@ -216,6 +217,21 @@ export type SyncSettings = {
   /** Where this phone stopped reading each room it went out of, so a join back reads on from there (src/core/sync/seen.ts). */
   seen?: RoomPlaces;
 };
+/**
+ * Whose each field of the sync settings is (docs/agent-handoff/audit/notes-sync-3.md). `campaign`: the room the campaign
+ * plays in, its place there and the hunter it sends, which a file carries and a save swapped in brings. `phone`: this
+ * phone's identity to the room and its dealings with rooms under it (the room knows a hunter as this device and the
+ * hunter's id), never in a file and kept across every swap. `key`: a GM key, this phone's credential, in a file only
+ * when asked and merged into the ring on a swap (`keepPhone`). A new field does not typecheck until it has an owner.
+ */
+export const SYNC_OWNER: { readonly [K in keyof SyncSettings]-?: 'campaign' | 'phone' | 'key' } = {
+  room: 'campaign', cursor: 'campaign', lastRoom: 'campaign', boundHunterId: 'campaign',
+  gmKey: 'key', gmKeys: 'key',
+  deviceToken: 'phone', serverOk: 'phone', joinedAt: 'phone', outbox: 'phone', held: 'phone', applied: 'phone', runs: 'phone', offers: 'phone', seen: 'phone',
+};
+/** The fields of `sync` that `owner` owns, as they are. */
+const ownedBy = (sync: SyncSettings, owner: (typeof SYNC_OWNER)[keyof SyncSettings]): Partial<SyncSettings> =>
+  Object.fromEntries(Object.entries(sync).filter(([k]) => SYNC_OWNER[k as keyof SyncSettings] === owner));
 export type Settings = {
   mode: Mode; activeHunterId: HunterId; dailyResetHour: number; onboarded: boolean; sound: boolean; deviceId: DeviceId;
   sync: SyncSettings;
@@ -725,31 +741,30 @@ export function parseSaveValue(value: unknown, env: ParseEnv): Parsed {
 export const fileKind = (save: Save): 'hunter' | 'campaign' => ((save as Save & { kind?: unknown }).kind === 'hunter' ? 'hunter' : 'campaign');
 
 /**
- * A campaign as a file that leaves this phone (the Data view's Export): the save without this phone's identity, its
- * device id and its secret for the sheets it writes, and without its GM keys unless `withKeys`. Whoever opens the file is
- * a phone of their own to the room (implicit audit 3, IO1: the file carried the token, so its reader could write this
- * phone's sheets).
+ * A campaign as a file that leaves this phone (the Data view's Export): the save without this phone's identity (its
+ * device id) and without any sync field that is the phone's (`SYNC_OWNER`), and without its GM keys unless `withKeys`.
+ * Whoever opens the file is a phone of its own to the room (implicit audit 3, IO1: the file carried the token, so its
+ * reader could write this phone's sheets; audit BUG-sync-3: it carried this phone's outbox, offers and the rest).
  */
 export function exportedSave(save: Save, withKeys: boolean): object {
-  const { deviceId: _device, ...settings } = save.settings, { deviceToken: _token, gmKey, gmKeys, ...sync } = save.settings.sync;
-  return { ...save, settings: { ...settings, sync: { ...sync, ...(withKeys ? { gmKey: gmKey ?? null, gmKeys: gmKeys ?? {} } : {}) } } };
+  const { deviceId: _device, ...settings } = save.settings, sync = save.settings.sync;
+  return { ...save, settings: { ...settings, sync: { ...ownedBy(sync, 'campaign'), ...(withKeys ? ownedBy(sync, 'key') : {}) } } };
 }
+/** The GM keys a save holds: its ring and the key of its room. */
+const keysOf = (sync: SyncSettings): Record<string, GmKey> => ({ ...sync.gmKeys, ...(sync.room && sync.gmKey ? { [sync.room]: sync.gmKey } : {}) });
 /**
- * A save swapped in on this phone (an import, a restore, a reset) with this phone's identity: its device id and its
- * token stay this phone's whatever the save held, so a friend's campaign never makes two phones one device to the room.
+ * A save swapped in on this phone (an import, a restore, a reset) with what is this phone's kept (`SYNC_OWNER`): its
+ * device id and every sync field of the phone stay this phone's whatever the save held, so a friend's campaign never
+ * makes two phones one device to the room, nor brings their letters, offers or runs. The campaign's fields are the
+ * save's. The keys are merged (`ringMerged`): the room's key is the one this phone holds for the campaign's room, else
+ * the save's, so a file exported without its key takes no GM power this phone has.
  */
-export const keepPhone = (save: Save, mine: Pick<Save, 'settings'>): Save =>
-  ({ ...save, settings: { ...save.settings, deviceId: mine.settings.deviceId, sync: { ...save.settings.sync, deviceToken: mine.settings.sync.deviceToken } } });
-
-/**
- * An imported save with this phone's GM key for its room, when the file has none for it: a file exported without the
- * key ("Include GM key" off) must not take this phone's GM powers for the room it is running.
- */
-export function keepGmKey(save: Save, mine: SyncSettings): Save {
-  const theirs = save.settings.sync;
-  if (theirs.gmKey || !mine.gmKey || !theirs.room || theirs.room !== mine.room) return save;
-  const sync: SyncSettings = { ...theirs, gmKey: mine.gmKey, ...(mine.gmKeys ? { gmKeys: { ...mine.gmKeys } } : {}) };
-  return { ...save, settings: { ...save.settings, sync } };
+export function keepPhone(save: Save, mine: Pick<Save, 'settings'>): Save {
+  const theirs = save.settings.sync, own = mine.settings.sync, ownKeys = keysOf(own), theirKeys = keysOf(theirs);
+  const gmKey = theirs.room ? ownKeys[theirs.room] ?? theirKeys[theirs.room] ?? null : null;
+  // every field of SyncSettings is in one of the two parts (SYNC_OWNER), and the keys are written after them
+  const sync = { ...ownedBy(theirs, 'campaign'), ...ownedBy(own, 'phone'), gmKey, gmKeys: ringMerged(ownKeys, theirKeys) } as SyncSettings;
+  return { ...save, settings: { ...save.settings, deviceId: mine.settings.deviceId, sync } };
 }
 
 /** The text under each storage key, newest first. `null` means the key holds nothing. */

@@ -67,6 +67,11 @@ const idOf = (v: unknown): unknown => (isRec(v) ? v.id : undefined);
  * or for an array element one with the same `id`) is written into rather than replaced, so references to it stay live.
  * A key `next` does not have is deleted. `next` may share objects with `target` (a step copies only what it changes):
  * a part that is the same object is left alone.
+ *
+ * An array element is the same thing as an old one only when it is that object or has its `id`. An element without an
+ * id that is not kept is new: its place in the list says nothing, since a step that puts an element before it moves
+ * every one after, and writing it into the old element at its place would change an element `next` still holds there
+ * or a part a changed copy of it shares (audit BUG-sync-1).
  */
 export function writeInto<T extends object>(target: T, next: T): void {
   writeAny(target as Rec | unknown[], next as Rec | unknown[]);
@@ -77,10 +82,9 @@ function writeAny(target: Rec | unknown[], next: Rec | unknown[]): void {
     const byId = new Map<unknown, unknown>();
     for (const old of target) if (idOf(old) !== undefined) byId.set(idOf(old), old);
     const live = new Set<unknown>(target);
-    const out = next.map((n, i) => {
+    const out = next.map(n => {
       if (live.has(n)) return n; // kept or moved within the list: written into nothing, so a reorder corrupts no element
-      const old = idOf(n) !== undefined ? byId.get(idOf(n)) : target[i];
-      return mergeValue(old, n);
+      return mergeValue(idOf(n) !== undefined ? byId.get(idOf(n)) : undefined, n);
     });
     target.length = 0;
     target.push(...out);

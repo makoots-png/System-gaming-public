@@ -7,10 +7,11 @@ import { describe, expect, test } from 'bun:test';
 import { RULES, TIERS } from '../src/core/rules.ts';
 import { STAT_KEYS } from '../src/core/stats.ts';
 import {
-  RARITIES, SCHEMA, parseSheetHunter, SLOTS, exportedSave, fileKind, freshSave, keepGmKey, keepPhone, loadSave, newHunter, newMonster, newRewards, newShadow, newSyncSettings, parseSave, parseSaveValue, repairSave,
+  RARITIES, SCHEMA, parseSheetHunter, SLOTS, exportedSave, fileKind, freshSave, keepPhone, loadSave, newHunter, newMonster, newRewards, newShadow, newSyncSettings, parseSave, parseSaveValue, repairSave,
 } from '../src/core/save.ts';
-import type { Hunter, ParseEnv, Parsed, Save, StoredKeys } from '../src/core/save.ts';
-import type { EventId, RoomCode } from '../src/core/ids.ts';
+import type { Hunter, ParseEnv, Parsed, Save, StoredKeys, SyncSettings } from '../src/core/save.ts';
+import { KEYS_MAX } from '../src/core/sync/bind.ts';
+import type { EventId, GmKey, RoomCode } from '../src/core/ids.ts';
 import { newGate } from '../src/core/gates/gate.ts';
 import { available } from '../src/core/hunter/progress.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
@@ -909,22 +910,6 @@ describe('fields the types do not know', () => {
 
 describe('a save file brought in from the Data view', () => {
   const file = (sync: Raw, extra: Raw = {}): Save => parseRaw({ schema: SCHEMA, hunters: [{ id: 'h1', name: 'Imported' }], settings: { sync }, ...extra });
-  const mine = { ...newSyncSettings(), room: room('ABCDEF'), gmKey: gmKey('k'.repeat(32)), gmKeys: { ABCDEF: gmKey('k'.repeat(32)), GHJKLM: gmKey('g'.repeat(32)) } };
-
-  test('a file exported without the GM key keeps this phone\'s key for the room both are in', () => {
-    const kept = keepGmKey(file({ room: 'ABCDEF' }), mine).settings.sync;
-    expect([kept.gmKey, kept.gmKeys]).toEqual([mine.gmKey, mine.gmKeys]);
-  });
-
-  test('a file of another room, with no room, or with a key of its own is imported as it is', () => {
-    for (const sync of [{ room: 'GHJKLM' }, { room: null }, { room: 'ABCDEF', gmKey: 'f'.repeat(32) }]) {
-      const f = file(sync);
-      expect(keepGmKey(f, mine)).toBe(f);
-    }
-    const f = file({ room: 'ABCDEF' });
-    expect(keepGmKey(f, { ...mine, gmKey: null })).toBe(f);
-  });
-
   test('a file of one hunter is told from a campaign by its kind', () => {
     expect(fileKind(file({}, { kind: 'hunter' }))).toBe('hunter');
     expect(fileKind(file({}))).toBe('campaign');
@@ -1116,6 +1101,64 @@ describe('this phone\'s identity stays on this phone (IO1)', () => {
     const read = parseSave(JSON.stringify(exportedSave(keyed, false)), { now: new Date(0), newDeviceToken: () => 'fresh-token-0123456789abcdefghijk', newDeviceId: () => dev('d-fresh') });
     if (read.kind !== 'save') throw new Error(`read as ${read.kind}`);
     expect(keepPhone(read.save, theirs).settings.deviceId).toBe(dev('d-theirs'));
+  });
+});
+
+describe('the phone\'s sync fields and the campaign\'s (audit BUG-sync-3)', () => {
+  const kA = gmKey('a'.repeat(32)), kB = gmKey('b'.repeat(32)), kC = gmKey('c'.repeat(32)), kX = gmKey('x'.repeat(32));
+  /** Every field of the sync settings, each holding a value marked with whose save it came from. */
+  const syncOf = (tag: string, at: RoomCode, keys: Record<string, GmKey>): SyncSettings => ({
+    room: at, cursor: tag === 'mine' ? 40 : 7, serverOk: tag === 'mine', deviceToken: `${tag}-token-0123456789abcdefghij`,
+    gmKey: keys[at] ?? null, gmKeys: keys, lastRoom: { code: at, why: 'left' }, boundHunterId: hid(tag === 'mine' ? 'h1' : 'h2'),
+    joinedAt: `${tag}-joined`, outbox: [`${tag}-letter`] as never, held: [`${tag}-held`] as never, applied: [`${tag}-applied`] as never,
+    runs: [`${tag}-run`] as never, offers: [`${tag}-offer`] as never, seen: { [`${tag}`]: { seq: 1, at: 'then' } } as never,
+  });
+  const saveOf = (tag: string, sync: SyncSettings): Save => {
+    const s = freshSave({ now: NOW, newDeviceToken: () => sync.deviceToken, newDeviceId: () => dev(`d-${tag}`) }, { onboarded: true });
+    return { ...s, settings: { ...s.settings, sync } };
+  };
+  const mine = saveOf('mine', syncOf('mine', room('AAAAAA'), { AAAAAA: kA, BBBBBB: kB }));
+  const theirs = saveOf('theirs', syncOf('theirs', room('CCCCCC'), { CCCCCC: kC, AAAAAA: kX }));
+  const phoneFields = (tag: string) => ({
+    serverOk: tag === 'mine', deviceToken: `${tag}-token-0123456789abcdefghij`, joinedAt: `${tag}-joined`, outbox: [`${tag}-letter`], held: [`${tag}-held`],
+    applied: [`${tag}-applied`], runs: [`${tag}-run`], offers: [`${tag}-offer`], seen: { [tag]: { seq: 1, at: 'then' } },
+  });
+
+  test('a campaign file holds its room, its place there and its bound hunter, and nothing of this phone\'s dealings with rooms', () => {
+    const file = JSON.parse(JSON.stringify(exportedSave(mine, false)));
+    expect(file.settings.sync).toEqual({ room: 'AAAAAA', cursor: 40, lastRoom: { code: 'AAAAAA', why: 'left' }, boundHunterId: 'h1' });
+    const keyed = JSON.parse(JSON.stringify(exportedSave(mine, true)));
+    expect(keyed.settings.sync).toEqual({ room: 'AAAAAA', cursor: 40, lastRoom: { code: 'AAAAAA', why: 'left' }, boundHunterId: 'h1', gmKey: kA, gmKeys: { AAAAAA: kA, BBBBBB: kB } });
+  });
+
+  test('a save swapped in keeps every one of this phone\'s sync fields and takes the campaign\'s room, place and bound hunter', () => {
+    const { gmKey: _key, gmKeys: _ring, ...sync } = keepPhone(theirs, mine).settings.sync;
+    expect(sync).toEqual({ room: room('CCCCCC'), cursor: 7, lastRoom: { code: room('CCCCCC'), why: 'left' }, boundHunterId: hid('h2'), ...phoneFields('mine') } as never);
+  });
+
+  test('a file of another room adds its GM keys to this phone\'s ring: the phone keeps its own key for a room both hold', () => {
+    const sync = keepPhone(theirs, mine).settings.sync;
+    expect(sync.gmKeys).toEqual({ AAAAAA: kA, BBBBBB: kB, CCCCCC: kC });
+    expect(sync.gmKey).toBe(kC);
+  });
+
+  test('a file of another room exported without keys leaves this phone\'s ring whole, and the phone is GM of a room it holds the key of', () => {
+    const plain = (code: string): Save => JSON.parse(JSON.stringify(exportedSave(saveOf('theirs', syncOf('theirs', room(code), {})), false)));
+    const other = keepPhone(plain('CCCCCC'), mine).settings.sync;
+    expect([other.gmKeys, other.gmKey]).toEqual([{ AAAAAA: kA, BBBBBB: kB }, null]);
+    const held = keepPhone(plain('BBBBBB'), mine).settings.sync;
+    expect([held.gmKeys, held.gmKey]).toEqual([{ AAAAAA: kA, BBBBBB: kB }, kB]);
+    const same = keepPhone(plain('AAAAAA'), mine).settings.sync;
+    expect([same.gmKeys, same.gmKey]).toEqual([{ AAAAAA: kA, BBBBBB: kB }, kA]);
+  });
+
+  test('a ring at its cap keeps every key of this phone\'s own when a file brings more', () => {
+    const codes = ['AAAAAB', 'AAAAAC', 'AAAAAD', 'AAAAAE', 'AAAAAF', 'AAAAAG', 'AAAAAH', 'AAAAAJ', 'AAAAAK', 'AAAAAL'];
+    expect(codes.length).toBe(KEYS_MAX);
+    const full = Object.fromEntries(codes.map(c => [c, kA]));
+    const sync = keepPhone(theirs, saveOf('mine', syncOf('mine', room('AAAAAB'), full))).settings.sync;
+    expect(sync.gmKeys).toEqual(full);
+    expect(sync.gmKey).toBe(kC);
   });
 });
 

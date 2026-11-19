@@ -6,7 +6,7 @@
 import { can, shownOf, transition } from './gate.ts';
 import type { ShownGate } from './gate.ts';
 import type { Gate, GateEvent, GateMonster, GateStatus, GateType, MonsterId } from './gate.ts';
-import { refuse } from '../save-step.ts';
+import { isRefused, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
 import { told } from '../session-log.ts';
 import { WORLD_GATES, WORLD_NAME_MAX } from '../protocol.ts';
@@ -118,13 +118,17 @@ export function editGate<S extends WorldParts>(save: S, id: string, edit: GateEd
 
 /** What a Clear pays, as gates.js worked it out: the XP and gold each payee gets, the items, the payees' names. */
 export type ClearPay = { due: number; xp: number; gold: number; items: string[]; payees: string[] };
-/** Gate `id` cleared on today's world day; when anyone is paid, the XP it still owed counts as paid. */
+/**
+ * Gate `id` cleared on today's world day; when anyone is paid, the XP it still owed counts as paid. A gate the Clear does
+ * not apply to (cleared already, or closed: gate.ts `TABLE`) is refused (`unchanged`), so a second Clear pays nobody.
+ */
 export function clearGate<S extends WorldParts>(save: S, id: string, pay: ClearPay, stamp: Stamp): Next<S> {
   const g = save.gates.find(x => x.id === id);
   if (!g) return refuse('missing');
   const cleared = onGate(save, id, { type: 'clear', day: save.world.day }, stamp, null);
-  let next = 'ok' in cleared ? save : cleared;
-  if (pay.payees.length) { const paid = onGate(next, id, { type: 'paid', xp: pay.due }, stamp, null); if (!('ok' in paid)) next = paid; }
+  if (isRefused(cleared)) return cleared;
+  const next = pay.payees.length && pay.due > 0 ? onGate(cleared, id, { type: 'paid', xp: pay.due }, stamp, null) : cleared;
+  if (isRefused(next)) return next;
   return told(next, stamp, gateLine('GATE CLEARED', `${g.rank}-rank gate "${g.name}" cleared. ${pay.payees.join(', ') || 'No one'} rewarded: +${pay.xp} XP, ${pay.gold} gold${pay.items.length ? `, ${pay.items.join(', ')}` : ''}.`));
 }
 

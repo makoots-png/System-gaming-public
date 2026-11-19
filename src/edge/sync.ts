@@ -1,6 +1,7 @@
 // sync.ts: the campaign-room edge. With no server (static host, file://) everything stays local and silent.
-// The link to the room and the sheet push are two pure machines (src/core/sync/link.ts, push.ts). This file holds the
-// current state of each, feeds them events (taps, timers, the page, server replies) and carries out their effects. Every
+// The link to the room and the sheet push are two pure machines (src/core/sync/link.ts, push.ts), and each room doc the
+// GM's phone publishes is one of a third (publish.ts). This file holds the current state of each, feeds them events
+// (taps, timers, the page, server replies) and carries out their effects. Every
 // `app.api.sync` answer is a selector over the two states (src/core/sync/connection.ts). What this phone owes the room
 // (room events and tombstones) is the outbox in the save (src/core/sync/outbox.ts), sent from here after each good poll.
 // The pill and the Data panel are beside it (room-pill.ts).
@@ -17,7 +18,7 @@
 //   running         effects are being carried out (events raised meanwhile wait in `queue`)
 // and these containers, each named where it is made: `queue` (events raised while effects run), `inflight` (open
 // requests by gen), `timers` (one per name), `peeked` (the Room view's 30 s code check cache), `publishers`,
-// `publishTimers` and `tooBig` (the GM's room docs).
+// `publishing` (each room doc's publish machine on the GM's phone, src/core/sync/publish.ts).
 // The save fields `room`, `cursor`, `lastRoom`, `gmKey` and `seen` (where this phone stopped reading a room it went out
 // of, src/core/sync/seen.ts) are written only by the link's `save` effect, here; a poll page's cursor is written in the
 // same write as what the page's events land on a player's phone (`apply`), so a reload never finds one without the other.
@@ -48,6 +49,8 @@ import { notifying } from './notify.ts';
 import type { BootInput, FailKind, Gen, GmKey, Last, Link, LinkCall, LinkEffect, LinkEvent, LinkNotice, SaveFields } from '../core/sync/link.ts';
 import { PUSH_OFF, pushedSheet, reduce as pushReduce } from '../core/sync/push.ts';
 import type { Push, PushEffect, PushEvent, RefusedWhy } from '../core/sync/push.ts';
+import { PUBLISH_IDLE, publishStep, publishWait } from '../core/sync/publish.ts';
+import type { Publish, PublishEvent, PutAnswer } from '../core/sync/publish.ts';
 import { connection } from '../core/sync/connection.ts';
 import type { Connection } from '../core/sync/connection.ts';
 import { parseInvite } from '../core/sync/invite.ts';
@@ -68,11 +71,6 @@ const PEEK_REUSE_MS = 30000;
 const KICK_MS = REMOVED_MS;
 /** A device on the GM's roster that polled within this is online, else away. */
 const ONLINE_MS = 15000;
-/**
- * A GM's room docs follow a burst of changes this long after it ends. The fight doc follows sooner: a player's phone
- * waits on it to see its own move (link.ts `CHASE_MS`), and a fight's changes come one tap at a time.
- */
-const PUBLISH_MS = 800, PUBLISH_FIGHT_MS = 200;
 /** A player's own moves in the GM's fight (protocol.ts `onTurn`), after which the link chases the answer. */
 const FIGHT_MOVES: ReadonlySet<string> = new Set(['step', 'cast', 'pass']);
 /** The docs a GM phone writes (the server writes `kicked`). */
@@ -762,24 +760,38 @@ export function register(app: App): void {
    * the next change or poll, and nothing is put before this stretch of the link has read the room's docs.
    */
   const publishers = new Map<PublishedDoc, () => unknown>();
-  /** One debounce per doc, so a burst of changes puts once. */
-  const publishTimers = new Map<PublishedDoc, ReturnType<typeof setTimeout>>();
-  /** A doc the room refused as too big even without its log, and the stretch of the link it was refused in: the pill says so. */
-  const tooBig = new Map<PublishedDoc, Gen>();
+  /** Each doc's publish machine (src/core/sync/publish.ts): at most one put of a doc out at a time. A doc not in it is idle. */
+  const publishing = new Map<PublishedDoc, Publish>();
+  /** One event of doc `name`'s publish machine; its effects carried out here. */
+  function publishDo(name: PublishedDoc, event: PublishEvent): void {
+    const { state, effects } = publishStep(publishing.get(name) ?? PUBLISH_IDLE, event);
+    publishing.set(name, state);
+    for (const fx of effects) {
+      switch (fx.type) {
+        case 'setTimer': setTimeout(() => publishDo(name, { type: 'due' }), publishWait(name)); break; // the machine is `waiting` until it fires
+        case 'put': {
+          const gen = link.gen;
+          // a doc whose build throws is a bug: logged once, and the machine hears a failed put, so the doc is put again at the next change
+          publishNow(name).then(put => publishDo(name, { type: 'answered', gen, put }), e => { reported('sync:publish', e); publishDo(name, { type: 'answered', gen, put: 'failed' }); });
+          break;
+        }
+        case 'status': emitStatus(); break;
+      }
+    }
+  }
   function republish(): void {
     if (!gmRoom()) return;
-    for (const name of publishers.keys()) {
-      if (!publishTimers.has(name)) publishTimers.set(name, setTimeout(() => { publishTimers.delete(name); void publishNow(name); }, name === 'fight' ? PUBLISH_FIGHT_MS : PUBLISH_MS));
-    }
+    for (const name of publishers.keys()) publishDo(name, { type: 'changed' });
   }
   /** The doc without what a player can do without, for a second put after the room refused the first as too big: the fight's log. */
   const shorter = (data: unknown): unknown => (isObj(data) && Array.isArray(data.log) && data.log.length ? { ...data, log: [] } : null);
-  async function publishNow<K extends PublishedDoc>(name: K): Promise<void> {
-    if (!gmRoom() || shown.gen !== link.gen) return;
+  /** The put of doc `name` its machine asked for: built now, and put only when it differs from the room's. */
+  async function publishNow<K extends PublishedDoc>(name: K): Promise<PutAnswer> {
+    if (!gmRoom() || shown.gen !== link.gen) return 'unsent';
     const data = publishers.get(name)!(), want = data === null ? null : (DOCS[name](data) as DocOf<K> | null);
-    if (!want) return;
+    if (!want) return 'unsent';
     const have = view().docs[name]?.data as DocOf<K> | undefined;
-    if (have && sameDoc(name, want, have)) return;
+    if (have && sameDoc(name, want, have)) return 'unsent';
     const gen = link.gen;
     let put = await putDoc(name, data);
     const short = put === 'tooBig' ? shorter(data) : null;
@@ -789,9 +801,7 @@ export function register(app: App): void {
     }
     // a fight that began or ended, or a turn that came to a player or left one, sets how often this phone polls
     if (put === 'stored' && name === 'fight' && link.gen === gen) linkDo({ type: 'paced', pace: paceOf(want as DocOf<'fight'>, true, deviceId()) });
-    const was = tooBig.get(name) === gen;
-    if (put === 'tooBig') tooBig.set(name, gen); else if (put === 'stored') tooBig.delete(name);
-    if (was !== (tooBig.get(name) === gen)) emitStatus();
+    return put;
   }
   /** The GM removes a player's hunter. The player's phone is told on its next poll; its hunter stays on that phone. */
   async function kickSheet(key: string): Promise<Call> {
@@ -855,7 +865,7 @@ export function register(app: App): void {
   }
 
   // ── what the pill and the views show ──
-  const conn = (): Connection => connection(link, push, link.at === 'live' && [...tooBig.values()].includes(link.gen), stalled(box(), room()));
+  const conn = (): Connection => connection(link, push, link.at === 'live' && [...publishing.values()].some(p => p.tooBig === link.gen), stalled(box(), room()));
   /** Coarser than `conn`: is there a server here at all, and is it answering. */
   const status = (): 'off' | 'offline' | 'connected' => {
     const c = conn();

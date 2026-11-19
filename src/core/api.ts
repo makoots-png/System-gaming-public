@@ -12,7 +12,7 @@ import type { LootDrop } from './gates/spawn.ts';
 import type { BuildChange, DocName, DocOf, EventBody, EventId, EventType, QuestOffer, RoomCode, RoomEvent, UsedWhat } from './protocol.ts';
 import type { Hunter, Item, Monster, Objective, QuestKind, Rank, Rewards, Save, Skill, Slot } from './save.ts';
 import type { Stats } from './stats.ts';
-import type { Refused, Step } from './save-step.ts';
+import type { Applied, Refused, Step } from './save-step.ts';
 import type { Granted, StepDone } from './hunter/grant.ts';
 import type { StatusIn } from './hunter/conditions.ts';
 import type { HeldParts } from './combat/fight-save.ts';
@@ -340,7 +340,8 @@ export type InventoryApi = {
   equip(hid: string, itemId: string): boolean;
   unequip(hid: string, slot: Slot): void;
   use(hid: string, itemId: string): unknown;
-  buy(hid: string, tpl: ItemTemplate): boolean;
+  /** The purchase written, or why not: the step's refusal (inventory.ts `buy`: `poor`, `dead`), `no-hunter`, `no-item` for a template that does not read, or the store's. */
+  buy(hid: string, tpl: ItemTemplate): Applied;
   /** Answers the gold the sale paid, 0 when nothing was sold. */
   sell(hid: string, itemId: string, n?: number): number;
 };

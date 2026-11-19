@@ -159,8 +159,8 @@ test('every module of src/edge names the state it keeps for the page: each let a
     'store.ts state': 'the save', 'store.ts life': 'the store\'s life machine\'s state (src/core/store-life.ts)',
     'sync.ts FIGHT_MOVES': 'a constant: the room messages that are a player\'s own moves in the GM\'s fight',
     'sync.ts inflight': 'the open requests of each gen, so the link\'s `abort` drops them', 'sync.ts timers': 'the poll\'s and the push\'s one timer each, set by their machines\' effects',
-    'sync.ts publishers': 'what builds each doc the GM\'s phone publishes', 'sync.ts publishTimers': 'the timer of each doc waiting to be published',
-    'sync.ts tooBig': 'a doc the room refused as too big, with the gen it was refused in, for the pill', 'sync.ts peeked': 'the Room view\'s code checks, reused for 30 s',
+    'sync.ts publishers': 'what builds each doc the GM\'s phone publishes',
+    'sync.ts publishing': 'each room doc\'s publish machine\'s state (src/core/sync/publish.ts)', 'sync.ts peeked': 'the Room view\'s code checks, reused for 30 s',
     'upgrade.ts watchers': 'what is told of the update machine\'s state (the pill)',
     'store.ts subs': 'the store\'s subscribers', 'store.ts noticeOf': 'the notice step\'s session and fight hold, bound by sync.ts (`bindNotice`)', 'report.ts seen': 'each error already reported, by place and message, so each is logged once',
   };

@@ -139,14 +139,23 @@ test('a campaign exported from the Data panel and imported on another phone brin
     expect([file.settings.deviceId, file.settings.sync.deviceToken, file.settings.sync.gmKey]).toEqual([undefined, undefined, undefined]);
   });
 
+  await test.step('the file carries only the campaign\'s room fields, none of the first phone\'s dealings with rooms', async () => {
+    const file = JSON.parse(await readFile(exported, 'utf8'));
+    expect(Object.keys(file.settings.sync).filter(k => !['room', 'cursor', 'lastRoom', 'boundHunterId'].includes(k))).toEqual([]);
+  });
+
   await test.step('a fresh second phone imports that file and has the same hunters', async () => {
     await onboardPlayer(second, 'Second Phone');
     await dismissAll(second, 4);
     const identity = () => second.evaluate(() => { const s = hunterApp.store.get().settings; return [s.deviceId, s.sync.deviceToken]; });
-    const mine = await identity();
+    const ownRooms = () => second.evaluate(() => { const s = hunterApp.store.get().settings.sync; return [s.gmKeys, s.applied]; });
+    await second.evaluate(() => hunterApp.store.update((s: any) => { s.settings.sync.gmKeys = { ABCDEF: 'k'.repeat(32) }; s.settings.sync.applied = ['e-landed-here']; }));
+    const mine = await identity(), rooms = await ownRooms();
+    expect(rooms).toEqual([{ ABCDEF: 'k'.repeat(32) }, ['e-landed-here']]);
     await importThroughDataPanel(second, exported);
     await expectHuntersMatch(second, hunters);
     expect(await identity(), 'the second phone is still itself to the room').toEqual(mine);
+    expect(await ownRooms(), 'the second phone keeps its GM keys and what landed on it').toEqual(rooms);
     const active = hunters.find((h: any) => h.id === fixture.settings.activeHunterId);
     await expectSheetShows(second, { ...active, items: active.items.map((i: any) => [i.name, i.qty]), skills: active.skills.map((k: any) => k.name) });
   });

@@ -531,6 +531,9 @@ export function register(app) {
         // a panel asked for from another view (the fight's end): open, its card drawn again with it
         const ask = mounted.asked; mounted.asked = null;
         if (ask && gates.some(g => g.id === ask.id)) { openPanel.set(ask.id, ask.mode); cards.delete(ask.id); }
+        // a Clear panel stays open only while its gate can still be cleared (gate.ts `can`): a gate a player's run, another
+        // GM phone or this phone's own Clear has cleared or closed draws its card again, without the panel
+        for (const g of gates) if (openPanel.get(g.id) === 'clear' && !can(g, 'clear')) openPanel.delete(g.id);
         const act = gates.filter(active), fin = gates.filter(g => !active(g));
         const fill = (box, list, emptyMsg) => {
           const els = list.map(g => {

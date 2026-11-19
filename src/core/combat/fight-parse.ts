@@ -21,7 +21,7 @@ import { abilityId, combatantId, hunterId, REACT_WHEN, tag } from './ability-typ
 import { parseSaveId, parseSheetKey } from '../ids.ts';
 import type { Ability, AbilityEffect, AbilityId, CombatantId, Delivery, AbilityGate, Gap, Price, RuleTicks, Summon, Tag } from './ability-types.ts';
 import { bounded } from '../registry/scalers.ts';
-import { amountOp, AURA_ON, isStacking, isStatusKey, LAND_USE_OPS, reactionMayHold, modified, shadowId, SHARE_ON, SHEET_OP_KEYS, statusKey, statusOn, TYPE_MAX, USE_OPS_2 } from './effect-ops.ts';
+import { amountOp, AURA_ON, isStacking, isStatusKey, LAND_USE_OPS, reactionMayHold, modified, shadowId, SHARE_ON, SHEET_OP_KEYS, statusKey, statusOn, TYPE_MAX, isUseOp } from './effect-ops.ts';
 import type {
   Body, Channel, Due, End, Holder, Intent, LandOp, Op, Origin, Reach, SheetStatus, StackRule, Status, StatusDef, StatusKey, Threshold, Tiered, UseOp,
 } from './effect-ops.ts';
@@ -314,8 +314,7 @@ function wave2Op(v: Rec, R: Rules): Op | null {
     default: return null;
   }
 }
-const USE_OPS = ['applyStatus', 'cureStatus', 'delay', 'threat', 'shield', 'channel', 'note', 'mana', 'fatigue', ...USE_OPS_2] as const;
-const useOpOf = (v: unknown, R: Rules): UseOp | null => { const o = opOf(v, R, 0); return o && oneOf(o.op, USE_OPS, null) ? o as UseOp : null; };
+const useOpOf = (v: unknown, R: Rules): UseOp | null => { const o = opOf(v, R, 0); return o && isUseOp(o) ? o : null; };
 const COLOR_RE = /^#[0-9a-f]{6}$/i;
 function defOf(v: unknown, R: Rules, depth: number): StatusDef | null {
   if (!isObj(v)) return null;

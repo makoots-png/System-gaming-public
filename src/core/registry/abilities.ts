@@ -13,7 +13,7 @@ import { paceCost, tick } from '../combat/timeline.ts';
 import type { Pace } from '../combat/timeline.ts';
 import { abilityId } from '../combat/ability-types.ts';
 import type { Ability, AbilityEffect, AbilityId, AbilityKind, DamageType } from '../combat/ability-types.ts';
-import { atTier, statusKey } from '../combat/effect-ops.ts';
+import { atTier, isUseOp, statusKey } from '../combat/effect-ops.ts';
 import type { Op, StatusDef, UseOp } from '../combat/effect-ops.ts';
 import { itemSource } from '../effects.ts';
 import type { Archetype } from '../hunter/derive.ts';
@@ -196,9 +196,6 @@ export type ThrownItem = { readonly id: ItemId; readonly name: string; readonly 
 export const itemAbilityId = (itemId: string): AbilityId => abilityId(`item-${itemId}`.slice(0, 40));
 /** The bag item an ability is the use of, else null (`Ability.item`). */
 export const itemOfAbility = (a: Pick<Ability, 'item'>): ItemId | null => a.item ?? null;
-/** The ops an ability carries to each target it lands on (`UseOp`); the rest are a status's own. */
-const USE_OPS: readonly string[] = ['applyStatus', 'cureStatus', 'delay', 'threat', 'shield', 'channel', 'note', 'mana', 'fatigue'] satisfies UseOp['op'][];
-const isUseOp = (o: Op): o is UseOp => USE_OPS.includes(o.op);
 
 /**
  * A consumable as the ability its user takes into a fight (m2-plan 4.4, W6). In a fight the row holds its user's HP,

@@ -59,6 +59,25 @@ describe('writeInto makes the live save equal the answer', () => {
     expect(live.rows[0]).toBe(z!);
     expect(y).toEqual({ label: 'y', n: 2 });
   });
+  test('an element without an id put before a kept one leaves the kept one whole', () => {
+    const live = { s: [{ key: 'burn', def: { ops: [{ kind: 'damage', n: 1 }] } }] };
+    const burn = live.s[0]!;
+    writeInto(live, { s: [{ key: 'slow', def: { ops: [{ kind: 'speed', n: -2 }] } }, burn] });
+    expect(live.s).toEqual([
+      { key: 'slow', def: { ops: [{ kind: 'speed', n: -2 }] } },
+      { key: 'burn', def: { ops: [{ kind: 'damage', n: 1 }] } },
+    ]);
+    expect(live.s[1]).toBe(burn);
+  });
+  test('an element without an id put before a changed copy of one leaves the parts the copy shares whole', () => {
+    const live = { s: [{ key: 'burn', rounds: 2, def: { ops: [{ kind: 'damage', n: 1 }] } }] };
+    const burn = live.s[0]!;
+    writeInto(live, { s: [{ key: 'slow', rounds: 1, def: { ops: [{ kind: 'speed', n: -2 }] } }, { ...burn, rounds: 1 }] });
+    expect(live.s).toEqual([
+      { key: 'slow', rounds: 1, def: { ops: [{ kind: 'speed', n: -2 }] } },
+      { key: 'burn', rounds: 1, def: { ops: [{ kind: 'damage', n: 1 }] } },
+    ]);
+  });
   test('an element is matched by its id wherever it moved', () => {
     const live = { list: [{ id: 'a', n: 1 }, { id: 'b', n: 2 }] };
     const b = live.list[1]!;

@@ -13,6 +13,10 @@ import type { BagPick, Goods } from '../src/core/trade/goods.ts';
 import { freshSave, newHunter } from '../src/core/save.ts';
 import type { Hunter, Save } from '../src/core/save.ts';
 import { RULES } from '../src/core/rules.ts';
+import { SHOP_ITEMS, itemOf } from '../src/core/registry/items.ts';
+import { putItem } from '../src/core/hunter/inventory.ts';
+import { useItem } from '../src/core/hunter/use.ts';
+import { REVIVE_HP } from '../src/core/hunter/vitals.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import type { Refused } from '../src/core/save-step.ts';
 import { next as nextLetter, post, reloaded, roomGone, step as boxStep } from '../src/core/sync/outbox.ts';
@@ -258,6 +262,20 @@ describe('two phones settle through the room', () => {
     expect(seenA.news).toEqual([{ kind: 'toast', text: 'Mira accepted. You gave 1 Token 1 and got 20 gold.' }]);
     expect(seenB.news).toEqual([{ kind: 'toast', text: 'You got 1 Token 1 from Brakk and gave 20 gold.' }]);
     expect([offersOf(seenA.save), offersOf(seenB.save)]).toEqual([[], []]);
+  });
+
+  test('dead Mira accepts Brakk\'s Resurrection Crystal: it lands in her bag, and she uses it to come back (the owner, Nov 19)', () => {
+    const r = newRoom(), crystal = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Resurrection Crystal')!);
+    const giver = brakk(), withCrystal: Save = { ...giver, hunters: [putItem(giver.hunters[0]!, crystal, iid('i9'))] };
+    const taker = mira(), dead: Save = { ...taker, hunters: [{ ...taker.hunters[0]!, life: { at: 'dead' } }] };
+    let { save: a, id } = offered(withCrystal, { gold: 0, items: [{ id: iid('i9'), qty: 1, name: 'Resurrection Crystal' }] });
+    a = deliver(a, r, A);
+    let b = read(dead, r).save;
+    b = deliver(ok(offerAnswered(b, id, 'accept', OPEN)), r, B);
+    const seenB = read(b, r).save, mine = seenB.hunters[0]!, got = mine.items.find(i => i.name === 'Resurrection Crystal')!;
+    expect([mine.life, got.qty], 'she is still dead, and holds the crystal').toEqual([{ at: 'dead' }, 1]);
+    expect(read(a, r).save.hunters[0]!.items.some(i => i.name === 'Resurrection Crystal'), 'it left Brakk\'s bag').toBe(false);
+    expect(ok(useItem(mine, got.id, [], RULES)).hunter.life).toEqual({ at: 'up', hp: REVIVE_HP });
   });
 
   test('an offer and its end in one page create nothing on the taker\'s phone', () => {

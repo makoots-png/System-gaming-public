@@ -1332,6 +1332,46 @@ Where it lives:
 | The test to copy | `tests/outbox.test.ts`; the walk's events are in `tests/models/outbox-events.ts`; two and three phones in `tests/room-system-model.test.ts` |
 | The recipe | docs/guide/room-sync.md, "A room message" |
 
+## A room doc the GM publishes
+
+Every state reachable from nothing due, under the 6 events of tests/models/publish-events.ts, breadth first. The walk found 4 states and 24 steps.
+
+### One room doc on the GM's phone: the fight, the world, the rules, the codex, the solo gates, the feats
+
+```mermaid
+---
+title: One room doc on the GM's phone: the fight, the world, the rules, the codex, the solo gates, the feats
+---
+stateDiagram-v2
+  state "Nothing to put" as s1
+  state "Changed: waiting for the burst of changes to end" as s2
+  state "One put on its way to the room" as s3
+  state "One put on its way, and the doc changed since" as s4
+  [*] --> s1
+  s1 --> s2 : the save, a poll or the link changes
+  s2 --> s3 : the timer fires, the doc is built and put if the room holds another
+  s3 --> s4 : a change while the put is out
+  s3 --> s1 : the room takes it
+  s3 --> s1 : the room refuses it as too big
+  s3 --> s1 : no answer, or another refusal
+  s3 --> s1 : nothing to put, the room holds it already
+  s4 --> s2 : the put is answered, build it again
+```
+
+One machine per doc. The doc itself is not in the machine: when a put is due the GM's phone builds it and puts it only when the room holds another, so a failed put is tried again at the next change or poll. A doc the room refused as too big is marked with the stretch of the link it was refused in, and the pill says so; the chart leaves the mark out.
+
+4 chart states, 8 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `Publish`, `PublishEvent`, `PublishEffect`, `PUBLISH_STATES`, `PUBLISH_EVENTS` and `PUTS` in `src/core/sync/publish.ts` |
+| What changes it | `publishStep` and its `TABLE` |
+| Who calls it | `publishDo` in `src/edge/sync.ts`: `republish` raises `changed` for each doc, the timer `due`, `publishNow` `answered` |
+| The test to copy | `tests/publish.test.ts`; the walk's events are in `tests/models/publish-events.ts` |
+| The recipe | docs/guide/machines.md and docs/guide/room-sync.md, "A state or event of the ... machine" |
+
 ## The store
 
 Every state reachable from the four lives a load opens in (no storage, a newer app's save, this app's, a text storage was too full to back up) under the 11 events of tests/models/store-events.ts, breadth first. The walk found 12 states and 132 steps.

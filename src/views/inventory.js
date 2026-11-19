@@ -5,10 +5,10 @@ import { oneOf } from '../core/one-of.ts';
 import { itemOps, itemSource } from '../core/effects.ts';
 import { builtInItems, defaultShop, lootPool, parseItem, valueOf, weightOf } from '../core/registry/items.ts';
 import { itemAbilityId } from '../core/registry/abilities.ts';
-import { addGold, buy, editItem, equip, putItem, removeItem, removeShopItem, sell, sellable, sellPrice as sellPriceOf, sellTotal, stackOf, unequip, withShop, writeShopItem } from '../core/hunter/inventory.ts';
+import { BUY_REFUSALS, BUY_WORDS, SHOP_CLOSED, addGold, buy, editItem, equip, putItem, removeItem, removeShopItem, sell, sellable, sellPrice as sellPriceOf, sellTotal, shopOpen, stackOf, unequip, withShop, writeShopItem } from '../core/hunter/inventory.ts';
 import { fitted } from '../core/hunter/sheet.ts';
 import { USE_WORDS, spendItem, usable, useDice, useItem } from '../core/hunter/use.ts';
-import { atHunter, both, isRefused } from '../core/save-step.ts';
+import { atHunter, both, isRefused, refuse } from '../core/save-step.ts';
 import { cryptoRandom, rollSettle } from '../edge/roll.ts';
 import { rollLoot } from '../core/gates/spawn.ts';
 import { postNews, reportWords } from '../core/sync/connection.ts';
@@ -120,10 +120,11 @@ export function register(app) {
     },
     buy(hid, tpl) {
       const h = store.hunter(hid), c = parseItem(tpl);
-      if (!h || !c) return false;
+      if (!h) return refuse('no-hunter');
+      if (!c) return refuse('no-item');
       const into = stackOf(h, c);
       const id = into ? into.id : store.id('i');
-      return onBag(hid, 'buy', x => buy(x, c, id, rules())).ok;
+      return onBag(hid, 'buy', x => buy(x, c, id, rules()));
     },
     sell(hid, itemId, n = 1) {
       const h = store.hunter(hid), it = h?.items.find(i => i.id === itemId);
@@ -205,6 +206,7 @@ export function register(app) {
         </div>
         <div data-pane="shop" hidden>
           <div class="inv-bar"><button type="button" class="gm-only" data-shop-add hidden>Add shop item</button><button type="button" class="gm-only" data-shop-reset hidden>Reset shop</button></div>
+          <p class="empty" role="note" data-shop-closed hidden></p>
           <ul class="plain" data-shoplist></ul>
         </div>
         <div class="inv-bar"><button type="button" data-additem>New item…</button></div>`;
@@ -258,8 +260,9 @@ export function register(app) {
         } else if (d.editItem) { const it = h.items.find(x => x.id === d.editItem); if (it) openForm('inv', it); }
         else if (d.buy !== undefined) {
           const tpl = shopList()[Number(d.buy)]; if (!tpl) return;
-          if (!api.buy(id, tpl)) ui.toast('System', `Not enough gold for ${tpl.name}.`, { kind: 'warning' });
-          else ui.toast('System', `Purchased ${tpl.name}.`);
+          const bought = api.buy(id, tpl), why = isRefused(bought) ? oneOf(bought.why, BUY_REFUSALS, null) : null;
+          if (!isRefused(bought)) ui.toast('System', `Purchased ${tpl.name}.`);
+          else if (why) ui.toast('System', BUY_WORDS[why](tpl.name), { kind: 'warning' });
         } else if (d.shopEdit !== undefined) { const tpl = shopList()[Number(d.shopEdit)]; if (tpl) openForm('shop', tpl); }
         else if (d.shopDel !== undefined) {
           const tpl = shopList()[Number(d.shopDel)];
@@ -274,7 +277,7 @@ export function register(app) {
     update(el) { renderInvBody(el); },
   });
   function renderInvBody(el) {
-      const h = store.active(), gm = app.isGM();
+      const h = store.active(), gm = app.isGM(), open = shopOpen(h);
       el.querySelector('[data-gold]').textContent = fmt(h.gold);
       el.querySelectorAll('.gm-only').forEach(b => { b.hidden = !gm || (b.hasAttribute('data-shop-add') || b.hasAttribute('data-shop-reset') ? tab !== 'shop' : false); });
       const equippedIds = new Set(Object.values(h.equipped).filter(Boolean));
@@ -289,16 +292,19 @@ export function register(app) {
               ${i.type === 'consumable' ? `<button type="button" data-use="${esc(i.id)}" aria-label="Use ${esc(i.name)}">Use</button>` : ''}
               ${i.slot ? (eq ? `<button type="button" data-unequip-item="${esc(i.id)}" aria-label="Unequip ${esc(i.name)}">Unequip</button>` : `<button type="button" data-equip="${esc(i.id)}" aria-label="Equip ${esc(i.name)}">Equip</button>`) : ''}
               <button type="button" data-edit-item="${esc(i.id)}" aria-label="Edit ${esc(i.name)}">Edit</button>
-              ${sellable(i) ? `<button type="button" data-sell="${esc(i.id)}" aria-label="Sell ${esc(i.name)}">Sell ${fmt(sellPrice(i))}g</button>` : ''}
+              ${sellable(i) && open ? `<button type="button" data-sell="${esc(i.id)}" aria-label="Sell ${esc(i.name)}">Sell ${fmt(sellPrice(i))}g</button>` : ''}
               <button type="button" class="icon-btn danger" data-del="${esc(i.id)}" aria-label="Remove item ${esc(i.name)}">&times;</button>
             </div></li>`;
         }).join('') : `<li class="empty">${h.items.length ? 'No items of that type.' : 'Inventory is empty.'}</li>`;
       } else {
+        const closed = el.querySelector('[data-shop-closed]');
+        closed.hidden = open;
+        closed.textContent = open ? '' : SHOP_CLOSED;
         el.querySelector('[data-shoplist]').innerHTML = shopList().map((t, n) => {
           const price = valueOf(t, rules()), poor = h.gold < price;
           return `<li class="inv-card" data-shopitem="${esc(t.name)}"><div class="top">${nameBtn('inv-shop', String(n), t)}${chip(t.rar)}<span class="inv-qty">${fmt(price)} g</span></div>
             ${itemDetail('inv-shop', String(n), t)}${metaLine(t) ? `<div class="meta">${metaLine(t)}</div>` : ''}
-            <div class="acts"><button type="button" data-buy="${n}" aria-label="Buy ${esc(t.name)} for ${esc(price)} gold"${poor ? ' aria-disabled="true"' : ''}>Buy</button>
+            <div class="acts">${open ? `<button type="button" data-buy="${n}" aria-label="Buy ${esc(t.name)} for ${esc(price)} gold"${poor ? ' aria-disabled="true"' : ''}>Buy</button>` : ''}
               ${gm ? `<button type="button" data-shop-edit="${n}" aria-label="Edit shop item ${esc(t.name)}">Edit</button><button type="button" class="icon-btn danger" data-shop-del="${n}" aria-label="Remove ${esc(t.name)} from shop">&times;</button>` : ''}</div></li>`;
         }).join('') || '<li class="empty">The shop is empty.</li>';
       }

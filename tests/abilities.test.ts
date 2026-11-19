@@ -14,7 +14,7 @@ import { combatantId } from '../src/core/combat/ability-types.ts';
 import type { Ability } from '../src/core/combat/ability-types.ts';
 import { atTier, modified, statusKey } from '../src/core/combat/effect-ops.ts';
 import { seedMonsters } from '../src/core/registry/monsters.ts';
-import type { Body, Origin, StatusDef } from '../src/core/combat/effect-ops.ts';
+import type { Body, Origin, Status, StatusDef, UseOp } from '../src/core/combat/effect-ops.ts';
 import { diceFor, resolve } from '../src/core/combat/resolve.ts';
 import { formulaOf, abilityOf, kindDefaults } from '../src/core/registry/ability-kinds.ts';
 import { TIER_BUDGET } from '../src/core/registry/paths.ts';
@@ -308,6 +308,26 @@ describe('a consumable used in a fight', () => {
     expect(drink('Stamina Tonic', me).fatigue).toBe(15);
     expect(drink('Stamina Tonic', hunterBody(10, 0, 5)).fatigue).toBe(0);
     expect(drink('Elixir of Life', me).hp).toBe(me.sheet.hpMax);
+  });
+
+  test('a consumable whose effects are only the kits\' newer use ops is still usable in a fight, and carries each of them', () => {
+    // the use ops of kits design 8.3 to 8.6, each written as the item maker saves it; none is a hit or a heal
+    const newer: UseOp[] = [
+      { op: 'shove', dir: 'away', from: 'user', tiles: 2 }, { op: 'move', key: 'harmful', take: 1, from: 'user', as: null },
+      { op: 'hasten', share: 0.5 }, { op: 'extra' }, { op: 'guard', share: 0.5 }, { op: 'negate' }, { op: 'dispel', which: 'all' },
+    ];
+    for (const target of ['self', 'other'] as const) for (const op of newer) {
+      const a = itemAbility({ id: iid('i3'), name: 'Odd Draught', rar: 'common', target, effects: [op] }, RULES);
+      expect([target, op.op, a?.ops], 'the item is an ability holding its op').toEqual([target, op.op, [op]]);
+    }
+  });
+
+  test('drunk in a fight, a draught that only dispels cures every harmful status of its drinker', () => {
+    const burn: Status = { key: statusKey('burn'), def: { label: 'Burn', desc: '', ops: [{ op: 'damage', type: 'magical', amount: num(5), when: 'turn' }] }, source: { id: null, tier: 0 }, until: null, since: NOW, settledAt: NOW };
+    const me = { ...hunterBody(30, 0, 0), statuses: [burn] };
+    const a = itemAbility({ id: iid('p3'), name: 'Cleansing Draught', rar: 'common', effects: [{ op: 'dispel', which: 'all' }] }, R)!;
+    const r = resolve(a, me, [me], me.id, openGrid(20, 14), { dice: { [me.id]: [] }, react: {} }, NOW, R);
+    expect(r.ok && r.bodies[0]!.statuses).toEqual([]);
   });
 
   test('a potion with dice asks a player\'s phone for them, and the row gains what they rolled', () => {

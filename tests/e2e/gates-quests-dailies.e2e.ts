@@ -155,6 +155,24 @@ test('clearing a gate that never had an encounter pays the gate XP the panel pro
   expect(Object.values(gained(start, after))).toEqual(Object.values(start).map(() => gate.xp));
 });
 
+test('a Clear panel open on a gate that is cleared elsewhere closes, and nothing can pay the gate a second time', async ({ device }) => {
+  const page = (await device('gm')).page;
+  await onboardGM(page);
+  const gate = await gateByName(page, 'Goblin Den'), start = await lifetimeXp(page);
+  await gateCard(page, gate.id).locator('[data-act=clear]').tap();
+  const form = await openClearPanel(page, gate.id);
+  // the gate cleared and paid from outside this card, as a player's solo run taken on this phone or another GM phone's world would leave it
+  await page.evaluate(id => hunterApp.store.update((d: any) => {
+    const g = d.gates.find((x: any) => x.id === id);
+    g.status = 'cleared'; g.clearedDay = d.world.day; g.xpPaid = 999;
+  }, 'test-setup'), gate.id);
+  await expect(form).toHaveCount(0);
+  await expect(gateCard(page, gate.id).locator('[data-act=clear]')).toHaveCount(0);
+  await expect(gateCard(page, gate.id).locator('.gt-chip.st-cleared')).toHaveCount(1);
+  const g = await page.evaluate(id => hunterApp.store.get().gates.find((x: any) => x.id === id), gate.id);
+  expect([g.status, g.xpPaid, gained(start, await lifetimeXp(page))]).toEqual(['cleared', 999, Object.fromEntries(Object.keys(start).map(k => [k, 0]))]);
+});
+
 test('a gate cleared after End fight without XP still pays the gate XP', async ({ device }) => {
   const page = (await device('gm')).page;
   await onboardGM(page);

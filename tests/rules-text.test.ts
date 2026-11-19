@@ -12,7 +12,7 @@ import type { Allocating } from '../src/core/hunter/progress.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import { FUMBLE_FAILURES, REVIVE_HP, SAVES_TO_END, SAVE_FUMBLE, SAVE_SUCCESS, SAVE_UP, SAVE_UP_HP, WAYS_BACK, lifeAfter } from '../src/core/hunter/vitals.ts';
 import { useItem } from '../src/core/hunter/use.ts';
-import { putItem } from '../src/core/hunter/inventory.ts';
+import { buy, putItem, sell } from '../src/core/hunter/inventory.ts';
 import { SHOP_ITEMS, itemOf } from '../src/core/registry/items.ts';
 import { newHunter } from '../src/core/save.ts';
 import { isRefused as refused } from '../src/core/save-step.ts';
@@ -126,6 +126,15 @@ describe('the down line', () => {
     expect(WAYS_BACK).toContain(crystal.name);
     const h = { ...putItem(newHunter(RULES), crystal, 'i1' as never), life: { at: 'dead' as const } }, u = useItem(h, 'i1', [], RULES);
     expect(refused(u) ? u : u.hunter.life).toEqual({ at: 'up', hp: REVIVE_HP });
+  });
+
+  test('the shop is closed to the dead, as the line says: a dead hunter\'s purchase and sale are refused, a stable one\'s are not', () => {
+    expect(line).toContain('The shop is closed to a dead hunter, who can neither buy nor sell. The GM or another hunter can still give a dead hunter a Resurrection Crystal.');
+    const potion = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Health Potion')!);
+    const rich = { ...putItem(newHunter(RULES), potion, 'i1' as never), gold: 1000 };
+    expect(buy({ ...rich, life: { at: 'dead' } }, potion, 'i2' as never, RULES)).toEqual({ ok: false, why: 'dead' });
+    expect(sell({ ...rich, life: { at: 'dead' } }, 'i1', 1, RULES)).toEqual({ ok: false, why: 'dead' });
+    expect(refused(buy({ ...rich, life: { at: 'stable' } }, potion, 'i2' as never, RULES))).toBe(false);
   });
 
   test('healing does not raise the dead', () => {

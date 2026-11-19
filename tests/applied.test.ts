@@ -15,6 +15,9 @@ import type { ApplyDeps } from '../src/edge/room-events.ts';
 import { day, dev } from './fixtures/ids.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
 import type { WaitingRun } from '../src/core/gates/solo-wait.ts';
+import { REVIVE_HP } from '../src/core/hunter/vitals.ts';
+import type { Life } from '../src/core/hunter/vitals.ts';
+import { useItem } from '../src/core/hunter/use.ts';
 
 const e = (n: number): EventId => `d-gm1-e${n}` as EventId;
 const ids = (from: number, to: number): EventId[] => Array.from({ length: to - from + 1 }, (_, i) => e(from + i));
@@ -75,9 +78,9 @@ const HELD = 'held by the GM\'s fight';
  * `once` as sync.ts runs it (`store.apply` of `appliedOnce`: the step is worked out first, then written whole, so a step
  * that throws writes nothing). `fight`: the GM's fight holds the hunter's vitals (`fightOf` answers `gm`).
  */
-function phone(o: { conditions?: SheetStatus[]; fight?: boolean; level?: number; runs?: WaitingRun[] } = {}) {
+function phone(o: { conditions?: SheetStatus[]; fight?: boolean; level?: number; runs?: WaitingRun[]; life?: Life } = {}) {
   const fresh = freshSave({ now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-player1') }, { onboarded: true });
-  let save: Save = { ...fresh, hunters: fresh.hunters.map(h => ({ ...h, ...setLevel(h, o.level ?? 1, 0, RULES).progress, conditions: [...(o.conditions ?? [])] })) };
+  let save: Save = { ...fresh, hunters: fresh.hunters.map(h => ({ ...h, ...setLevel(h, o.level ?? 1, 0, RULES).progress, conditions: [...(o.conditions ?? [])], life: o.life ?? h.life })) };
   if (o.runs) save = { ...save, settings: { ...save.settings, sync: { ...save.settings.sync, runs: o.runs } } };
   let rules: Rules = RULES;
   const windows: { title: string; lines?: string[] }[] = [], toasts: string[] = [], shown: string[][] = [], completed: string[] = [], said: { title: string | undefined; body: string | undefined }[] = [];
@@ -256,6 +259,15 @@ describe('a reward the GM sends lands whole', () => {
     });
     expect(p.applied).toEqual([e(1)]);
     expect(p.shown).toEqual([['+40 XP', '+30 gold', '+2 ability points', 'Item acquired: Moon Shard ×2', 'Title acquired: Gatebreaker', 'Status: Hasted (3 rounds)', 'Boon: A favour']]);
+  });
+
+  test('a Resurrection Crystal the GM gives a dead hunter lands in its bag, and the hunter uses it to come back (the owner, Nov 19)', () => {
+    const p = phone({ life: { at: 'dead' } });
+    p.receive(1, 'award', { to: ['d-player1:h1'], rewards: { items: [{ name: 'Resurrection Crystal', rar: 'mythic', type: 'consumable', effects: [], revive: true, tell: true, value: 100000, qty: 1 }] } });
+    const got = p.hunter.items.find(i => i.name === 'Resurrection Crystal');
+    expect([p.hunter.life, got?.revive, p.applied]).toEqual([{ at: 'dead' }, true, [e(1)]]);
+    const used = useItem(p.hunter, got!.id, [], RULES);
+    expect(isRefused(used) ? used : used.hunter.life).toEqual({ at: 'up', hp: REVIVE_HP });
   });
 
   test('a bundle the GM gave by hand opens in its own words and is a fact of the hunter\'s chronicle, once', () => {

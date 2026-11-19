@@ -1,6 +1,6 @@
 // The Resurrection Crystal (src/core/registry/items.ts, src/core/hunter/use.ts; docs/agent-handoff/features/notes-2b-crystal.md):
 // a dead hunter's way back that the screen names, used from the bag; sold in the shop at its price and never bought
-// back; given by the GM in any reward. Driven through the UI; the store sets up and reads.
+// back; given by the GM in any reward; the shop closed to the dead. Driven through the UI; the store sets up and reads.
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, type Page } from './helpers.ts';
 
 /**
@@ -62,6 +62,26 @@ test('the shop sells the Resurrection Crystal for 100,000 gold, and a hunter wit
   await expect(page.locator('#toasts .toast').last()).toContainText('Purchased Resurrection Crystal.');
   const h = await activeHunter(page);
   expect([h.gold, crystals(h)]).toEqual([0, 1]);
+});
+
+test('a dead hunter opens the shop and reads that it is closed, with the ways back: no Buy, and no Sell in the bag', async ({ device }) => {
+  const { page } = await device('dead-shop');
+  await onboardPlayer(page, 'Mira');
+  await dismissAll(page);
+  await holding(page, { at: 'dead' }, 0, 100000);
+  await page.evaluate(() => hunterApp.store.update((d: any) => {
+    const h = d.hunters.find((x: any) => x.id === d.settings.activeHunterId) ?? d.hunters[0];
+    h.items.push({ ...hunterApp.api.inventory.itemTemplates().find((i: any) => i.name === 'Health Potion'), id: hunterApp.store.id('i'), qty: 1 });
+  }, 'test-setup'));
+  await go(page, 'status');
+  await expect(page.locator('#view-status [data-item]').filter({ hasText: 'Health Potion' }), 'a potion, which a living hunter can sell').toBeVisible();
+  await expect(page.locator('#view-status [data-sell]')).toHaveCount(0);
+  await page.locator('#view-status [data-tab="shop"]').tap();
+  await expect(page.locator('#view-status [data-shop-closed]')).toHaveText('The shop is closed while you are dead. You cannot buy or sell. The GM\'s Revive or a Resurrection Crystal brings you back. The GM or another hunter can give you a Resurrection Crystal.');
+  await expect(page.locator('#view-status [data-shopitem="Resurrection Crystal"]'), 'the list still shows what the shop sells').toBeVisible();
+  await expect(page.locator('#view-status [data-buy]')).toHaveCount(0);
+  const h = await activeHunter(page);
+  expect([h.gold, crystals(h)]).toEqual([100000, 0]);
 });
 
 test('a GM gives a player a title with a Resurrection Crystal in one award, and the player\'s phone holds both', async ({ device }) => {

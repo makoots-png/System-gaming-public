@@ -1127,6 +1127,25 @@ describe('a zone on the ground: the kits\' upkeep, cap per owner and end (kits d
     const r = play(...duel(), { type: 'zoneAdd', zone: harmony }, pass('A'));
     expect(body(r.fight, 'M').statuses.find(s => s.key === 'pain')?.stacks).toBe(1);
   });
+
+  test('a zone\'s end that downs every body at a turn\'s start ends the fight with no side standing, and no one takes that turn', () => {
+    // A stands on (0, 2) and M on (0, 10), the sides' lines; the zone holds both, ends at 1500 and lands 999 on each
+    const doom: ZoneDraft = { id: zoneId('doom'), name: 'Doom', tiles: [place(0, 2), place(0, 10)], spares: null, tier: 0, duration: tick(1500), ops: [], end: [{ ...hit10, amount: f('999') }] };
+    let fight: Fight | null = play(...duel(), { type: 'zoneAdd', zone: doom }).fight;
+    let last: readonly Effect[] = [];
+    for (let n = 0; n < 6 && fight?.phase === 'running'; n++) {
+      const r = reduce(fight, pass(fight.currentId), ctx);
+      last = r.effects;
+      fight = r.fight;
+    }
+    expect(fight?.phase).toBe('ended');
+    expect(last.at(-1)).toMatchObject({ type: 'ended', summary: { winner: null } });
+    expect(new Set((fight as Extract<Fight, { phase: 'ended' }>).summary.down)).toEqual(new Set([id('A'), id('M')]));
+    const fell = last.findIndex(e => e.type === 'defeated');
+    expect(fell, 'the zone\'s end downed M in the pass that ended the fight').toBeGreaterThan(-1);
+    expect(last.some(e => e.type === 'vitals' && e.hunterId === hunterId('h-A') && e.hp === 0), 'A\'s fall reaches its sheet').toBe(true);
+    expect(last.slice(fell).some(e => e.type === 'turnStarted'), 'no turn began after the zone downed both').toBe(false);
+  });
 });
 
 describe('a timed summon (kits design 1.9, table 2.4)', () => {

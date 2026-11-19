@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { addGold, buy, editItem, equip, putItem, removeItem, sell, sellPrice, sellable, setGold, takeItems, unequip, withShop, writeShopItem, removeShopItem } from '../src/core/hunter/inventory.ts';
+import { BUY_WORDS, SHOP_CLOSED, addGold, buy, editItem, equip, putItem, removeItem, sell, sellPrice, sellable, setGold, shopOpen, takeItems, unequip, withShop, writeShopItem, removeShopItem } from '../src/core/hunter/inventory.ts';
 import { SHOP_ITEMS, STARTER_GEAR, itemOf, priceOf } from '../src/core/registry/items.ts';
 import type { ItemTemplate } from '../src/core/registry/items.ts';
 import { RULES } from '../src/core/rules.ts';
@@ -8,6 +8,7 @@ import type { Hunter } from '../src/core/save.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import type { Refused } from '../src/core/save-step.ts';
 import { iid } from './fixtures/ids.ts';
+import { WAYS_BACK } from '../src/core/hunter/vitals.ts';
 
 const ok = <T extends object>(v: T): Exclude<T, Refused> => { if (isRefused(v)) throw new Error(`refused: ${v.why}`); return v as Exclude<T, Refused>; };
 const shield = itemOf(RULES, STARTER_GEAR.towerShield);
@@ -151,5 +152,32 @@ describe('a Resurrection Crystal is not bought back (notes-2b-crystal.md section
     const { revive: _r, ...plain } = crystal;
     expect(putItem(h, plain, iid('i2')).items.map(i => i.id)).toEqual(['i1', 'i2']);
     expect(putItem(h, crystal, iid('i3')).items.map(i => [i.id, i.qty])).toEqual([['i1', 2]]);
+  });
+});
+
+describe('the shop is closed to the dead (the owner, Nov 19: "Whole shop should be closed in death")', () => {
+  const crystal = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Resurrection Crystal')!);
+  const rich = (life: Hunter['life']): Hunter => ({ ...putItem(hunter(200000), potion, iid('i1')), life });
+
+  test('a dead hunter buys nothing, a Resurrection Crystal included, and sells nothing; the hunter is left as it was', () => {
+    const dead = rich({ at: 'dead' });
+    expect(buy(dead, crystal, iid('i2'), RULES)).toEqual({ ok: false, why: 'dead' });
+    expect(buy(dead, potion, iid('i2'), RULES)).toEqual({ ok: false, why: 'dead' });
+    expect(sell(dead, 'i1', 1, RULES)).toEqual({ ok: false, why: 'dead' });
+    expect(shopOpen(dead)).toBe(false);
+  });
+
+  test('a hunter who is down, dying or stable, still buys and sells', () => {
+    for (const life of [{ at: 'dying', successes: 0, failures: 0 }, { at: 'stable' }] as const) {
+      expect(shopOpen({ life })).toBe(true);
+      expect(ok(buy(rich(life), potion, iid('i2'), RULES)).items.find(i => i.id === 'i1')!.qty).toBe(2);
+      expect(ok(sell(rich(life), 'i1', 1, RULES)).items).toEqual([]);
+    }
+  });
+
+  test('a refused purchase says why: short of gold names the item; dead names the ways back and who can give a crystal', () => {
+    expect(BUY_WORDS.poor('Health Potion')).toBe('Not enough gold for Health Potion.');
+    expect(BUY_WORDS.dead('Health Potion')).toBe(SHOP_CLOSED);
+    expect(SHOP_CLOSED).toBe(`The shop is closed while you are dead. You cannot buy or sell. ${WAYS_BACK} brings you back. The GM or another hunter can give you a Resurrection Crystal.`);
   });
 });
