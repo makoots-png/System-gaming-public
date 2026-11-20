@@ -150,7 +150,7 @@ const SPEC = {
   },
   penaltyCheck: whole(2, 0, 20, 'taken off every check while Penalized: 20 is the whole d20'),
   dailyTemplate: {
-    title: 'Strength Training', desc: 'Finish the daily training before the day resets.', recover: true,
+    title: 'Strength Training', desc: 'Finish the daily training before the day resets.',
     objectives: [
       { label: 'Push-ups', target: 100, progress: 0 }, { label: 'Sit-ups', target: 100, progress: 0 },
       { label: 'Squats', target: 100, progress: 0 }, { label: 'Running (km)', target: 10, progress: 0 },

@@ -215,8 +215,8 @@ export function register(app) {
 
   // ── completion ──
   /**
-   * Hunter `hid` completes quest `qid`: the quest done, the chain's steps, the reward, the streak's bonus and the day's
-   * recovery, with the GM's progress post and what this phone's fight holds of it, in one write (src/core/hunter/grant.ts
+   * Hunter `hid` completes quest `qid`: the quest done, the chain's steps, the reward, the streak's bonus,
+   * with the GM's progress post and what this phone's fight holds of it, in one write (src/core/hunter/grant.ts
    * `finishQuest`, hunter.js `grantWrite`). Then what the write answered is shown: the window lists what the reward gave
    * (`hunter.granted`); the Job Change steps it completed open their windows.
    */
@@ -225,20 +225,20 @@ export function register(app) {
     if (!q || q.status !== 'active') return false;
     const day = { ...stepTime(store.get(), new Date()), R: app.rules(), vitals: /** @type {import('../core/hunter/grant.ts').VitalsAt} */ (app.api.hunter.fightOf({ hid }) ? 'fight' : 'sheet') };
     const post = progressPost(hid, { ...q, status: 'done', objectives: q.objectives.map(o => ({ ...o, progress: o.target })) }, 'done'), code = app.api.sync.room();
-    // one write: the quest, its reward and the GM's post, with what this phone's fight holds (the reward's statuses, a
-    // level-up's refill or the day's recovery) on the hunter's row (hunter.grantWrite)
+    // one write: the quest, its reward and the GM's post, with what this phone's fight holds (the reward's statuses or a
+    // level-up's refill) on the hunter's row (hunter.grantWrite)
     const out = app.api.hunter.grantWrite('quest-done', s => {
       const r = finishQuest(s, hid, qid, day);
       if (isRefused(r)) return r;
-      const fight = { ...r.granted.fight, refill: r.granted.fight.refill || r.recover === 'fight' };
+      const fight = r.granted.fight;
       return { ...r, granted: { ...r.granted, fight }, save: sent(r.save, { room: code, events: post ? [post] : [], said: [] }, { at: day.at, cap: day.R.logCap }), held: [{ who: { hid }, ...fight }] };
     });
     // the fight's own refusal of a part it holds is told by the fight (combat.js `command`)
     if (isRefused(out)) { if (out.why !== 'fight') ui.wrote('! Quest', out, { belowLevel: `Reach Level ${q.objectives[0] ? q.objectives[0].target : ''} first.` }); return false; }
     if (post) app.api.sync.flush();
     app.emit('quest:done', { hunterId: hid, quest: q });
-    const { completed: c, granted: g, job, recover } = out;
-    const lines = [...g.lines, ...(job && !g.lines.includes(`Job: ${job}`) ? [`Job: ${job}`] : []), ...(recover ? ['HP and mana fully restored'] : [])];
+    const { completed: c, granted: g, job } = out;
+    const lines = [...g.lines, ...(job && !g.lines.includes(`Job: ${job}`) ? [`Job: ${job}`] : [])];
     const popup = c.allDaily ? { title: 'DAILY QUEST COMPLETE', body: q.title }
       : job ? { title: 'JOB CHANGE COMPLETE', body: `You are now a ${job}.` }
       : c.lifted ? { title: 'PENALTY ZONE CLEARED', body: 'The penalty has been lifted.' }

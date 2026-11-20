@@ -216,18 +216,17 @@ export function chainStep(save: Save, hid: string, make: (next: <P extends strin
 export const STREAK_BONUS_POINTS = 1;
 /**
  * What completing a quest did: the next save, the quest as it was, the completion's facts (`completeQuest`), the reward
- * as given (`grant`), the job the completion gave (a chain's last step, or a Job quest's reward), whether HP and mana
- * were restored for the day's dailies (`sheet`), are the fight's to restore (`fight`) or not (null), and the Job Change
+ * as given (`grant`), the job the completion gave (a chain's last step, or a Job quest's reward), and the Job Change
  * steps the chain completed with it.
  */
 export type Finished = {
-  save: Save; quest: Quest; completed: Completed; granted: Granted; job: string | null; recover: VitalsAt | null; done: StepDone[];
+  save: Save; quest: Quest; completed: Completed; granted: Granted; job: string | null; done: StepDone[];
 };
 /**
  * Hunter `hid`'s active quest `qid` completed, in one step (implicit audit 3, Q1): the quest done, the penalty and the
  * streak (`completeQuest`), the Job Change steps the chain asked to complete (`stepsReached`), the quest's reward given
- * (`grant`) with the streak's bonus points, and, when the day's last daily is done and the rules' daily template
- * recovers, HP and mana restored (on the sheet, or left to the fight that holds them); every log line with it. A step
+ * (`grant`) with the streak's bonus points; every log line with it. Finishing the day's dailies restores no HP or mana
+ * (the owner, 19 Nov: dailies do not recover you). A step
  * quest of a chain gives no job of its own: the chain grants the job. Refused as `completeQuest` refuses, and when the
  * hunter is not there (`no-hunter`).
  */
@@ -244,10 +243,8 @@ export function finishQuest(save: Save, hid: string, qid: string, o: Day & { vit
   const rewards: Rewards = { ...quest.rewards, job: quest.chainId ? null : quest.rewards.job, points: quest.rewards.points + (c.bonus ? STREAK_BONUS_POINTS : 0) };
   const g = grant(done, hid, rewards, null, o);
   if (isRefused(g)) return g;
-  const recover = c.allDaily && R.dailyTemplate.recover !== false ? o.vitals : null;
-  const after = recover === 'sheet' ? { ...g.save, hunters: g.save.hunters.map(x => (x.id === hid ? { ...x, ...refill(x, sheetOf(x, R)) } : x)) } : g.save;
   const job: string | null = chain.find(fx => fx.type === 'grantJob')?.job ?? (quest.kind === 'job' ? rewards.job : null);
-  return { save: after, quest, completed: c, granted: { ...g, save: after }, job, recover, done: [...r.done, ...g.done] };
+  return { save: g.save, quest, completed: c, granted: g, job, done: [...r.done, ...g.done] };
 }
 
 /** What failing a quest did: the next save, the quest as it was, its cost as given (`grant`), and the chain's effects. */

@@ -202,7 +202,7 @@ describe('vitals: mana, fatigue, rests and the refill', () => {
     expect(rest(v({ life: STABLE }), 'long', M, R).life).toEqual(up(20));
     expect(rest(v({ life: DEAD }), 'long', M, R).life).toEqual(DEAD);
   });
-  test('the level-up and daily refill fills HP and mana, but does not raise the dead', () => {
+  test('the level-up refill fills HP and mana, but does not raise the dead', () => {
     expect(refill(v({ life: up(3), mana: 1 }), M)).toMatchObject({ life: up(20), mana: 10 });
     expect(refill(v({ life: STABLE, mana: 1 }), M)).toMatchObject({ life: up(20), mana: 10 });
     expect(refill(v({ life: DEAD, mana: 1 }), M)).toMatchObject({ life: DEAD, mana: 10 });

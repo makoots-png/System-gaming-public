@@ -155,7 +155,7 @@ export function register(app) {
       { id: 'daily', title: 'Daily quests and penalty', body: [
         p(`The daily cycle resets at ${esc(String(resetHour).padStart(2, '0'))}:00 local time. Default daily: <b>${esc(R.dailyTemplate.title)}</b>.`),
         ul(R.dailyTemplate.objectives.map(o => `${esc(o.label)}: ${esc(o.target)}`)),
-        p(`Rewards: ${esc(R.dailyTemplate.rewards.xp)} XP, ${esc(R.dailyTemplate.rewards.points)} point${R.dailyTemplate.rewards.points === 1 ? '' : 's'}${R.dailyTemplate.recover ? ', full recovery' : ''}. Completing all dailies raises your streak by 1.`),
+        p(`Rewards: ${esc(R.dailyTemplate.rewards.xp)} XP, ${esc(R.dailyTemplate.rewards.points)} point${R.dailyTemplate.rewards.points === 1 ? '' : 's'}. Completing all dailies raises your streak by 1.`),
         ul(['If the cycle changes with dailies unfinished, the System issues <b>one</b> penalty (even after several missed days) and the streak resets to 0.',
           `The Penalty Zone quest ("Survive for 4 hours") must be completed to clear the penalty. While penalized: −${R.penaltyCheck} to all checks.`]),
       ] },

@@ -280,12 +280,15 @@ describe('a quest finished in one step (grant.ts finishQuest)', () => {
     expect(['+50 XP', '+10 gold'].every(l => r.granted.lines.includes(l)), r.granted.lines.join(' | ')).toBe(true);
   });
 
-  test('the day\'s last daily restores HP and mana on the sheet; in a fight that is the fight\'s to do', () => {
-    const s = saveWith([daily('d1', 'done'), daily('d2')], 10), max = hunterSheet(s.hunters[0]!, RULES).sheet;
-    const r = ok(finishQuest(s, 'h1', 'd2', DAY)), h = r.save.hunters[0]!;
-    expect([r.recover, h.life, h.mana]).toEqual(['sheet', { at: 'up', hp: max.hpMax }, max.manaMax]);
-    const f = ok(finishQuest(s, 'h1', 'd2', { ...DAY, vitals: 'fight' }));
-    expect([f.recover, f.save.hunters[0]!.life]).toEqual(['fight', s.hunters[0]!.life]);
+  test('the day\'s last daily pays its reward and refills nobody: HP, mana and a dying hunter\'s life stay as they were', () => {
+    const s = saveWith([daily('d1', 'done'), daily('d2')], 10), before = s.hunters[0]!;
+    for (const vitals of ['sheet', 'fight'] as const) {
+      const r = ok(finishQuest(s, 'h1', 'd2', { ...DAY, vitals })), h = r.save.hunters[0]!;
+      expect(r.completed.allDaily).toBe(true);
+      expect([h.life, h.mana]).toEqual([before.life, before.mana]);
+    }
+    const dying = { ...s, hunters: [{ ...before, life: { at: 'dying' as const, successes: 0 as const, failures: 1 as const } }] };
+    expect(ok(finishQuest(dying, 'h1', 'd2', DAY)).save.hunters[0]!.life).toEqual(dying.hunters[0]!.life);
   });
 
   test(`the streak's bonus gives ${STREAK_BONUS_POINTS} point beside the quest's own`, () => {

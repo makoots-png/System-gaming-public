@@ -178,7 +178,7 @@ export function fatigueNews(before: Pick<Vitals, 'fatigue' | 'collapsed'>, after
  */
 export const refilled = (v: Pick<Vitals, 'life' | 'mana'>, m: Pick<Maxima, 'hpMax' | 'manaMax'>): Pick<Vitals, 'life' | 'mana'> =>
   ({ life: lifeAfter(v.life, { type: 'heal', amount: m.hpMax }, m.hpMax), mana: Math.max(0, m.manaMax) });
-/** HP and mana filled (`refilled`), as on reaching a new level or finishing the day's dailies. The dead stay dead. */
+/** HP and mana filled (`refilled`), as on reaching a new level. The dead stay dead. */
 export const refill = (v: Vitals, m: Maxima): Vitals => ({ ...fieldsOf(v), ...refilled(v, m) });
 
 /**
