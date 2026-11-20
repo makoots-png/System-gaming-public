@@ -24,7 +24,7 @@ const planned = planOf(changedFrom(process.env.CI_CHANGED));
 // CI_BROWSER_REMOTE; a pass whose variable is this commit's tree is not run again here (trustRemote, scripts/ci-plan.ts).
 // The tree compared is the one of the commit the push carries (CI_PUSHED, set by .githooks/pre-push), not of the checkout.
 // Two variables because each names the jobs it vouches for, and a run whose browser parts are green and whose unit job is
-// not (or the other way) must not let the hook trust both. The typecheck and the lag test (which needs a quiet machine)
+// not (or the other way) must not let the hook trust both. The typecheck and the lag test (whose bounds are this box's)
 // always run here.
 const snapshot = testedTree(process.env.CI_PUSHED, ref => Bun.spawnSync(['git', 'rev-parse', `${ref}^{tree}`]).stdout.toString().trim());
 const named = (name: string): boolean => {
@@ -42,7 +42,9 @@ const ALL_STEPS: (Step & { run: boolean })[] = [
   { run: plan.unit, name: 'unit tests and lint checks', cmd: UNIT, retry: UNIT },
   { run: plan.browser === 'all' || browserFiles.length > 0, name: plan.browser === 'all' ? 'browser tests' : 'the browser test files this push changes',
     cmd: ['bunx', 'playwright', 'test', ...browserFiles], retry: ['bunx', 'playwright', 'test', ...browserFiles, '--last-failed'], env: { CI: '1', E2E_PORT, E2E_FEEL: 'skip' } },
-  // The lag test alone, one worker: it times frames, and a second worker's load would be what it measured.
+  // The lag test alone, one worker. Its bounds are this box's, so it runs here whatever ran on the public repository. Beside
+  // four busy loops neither of its checks moved (docs/agent-handoff/audit/notes-lag-measure.md, part 3); beside a second
+  // browser worker it is not measured, so it does not share the machine with the browser pass.
   { run: plan.lag, name: 'the lag test, alone', cmd: ['bunx', 'playwright', 'test', 'tests/e2e/feel.e2e.ts', '--workers=1'], retry: ['bunx', 'playwright', 'test', 'tests/e2e/feel.e2e.ts', '--workers=1'], env: { CI: '1', E2E_PORT } },
 ];
 const STEPS: Step[] = ALL_STEPS.filter(s => s.run);
