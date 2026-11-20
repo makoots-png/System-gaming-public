@@ -447,3 +447,6 @@ His words, answering section 8: "There should be variation in strength within ti
 5. **World gate gold is shared** among the hunters of a Clear, not paid whole to each. The gate's pay may rise to make up for it. A smaller party must earn more each than a larger one: taking the risk with fewer hunters is rewarded, and brute force with many is paid less.
 
 Sections 2 to 8 were revised to these on Nov 20.
+
+6. **The six built-in items stronger than any grade of their tier are kept as they are** (the owner, Nov 20, answering section 8: "Keep them."). They are not moved up a tier and lose nothing; each is priced as its tier's plus, and the budget test of unit 3 names them as the allowed exceptions, by id, with this ruling as the reason.
+7. **A gate's XP is split as its gold is** (the owner, same answer: "XP should be split as well."). Section 4's rule for gold (a pot shared among the hunters of a Clear, a small party earning more each, a crowd paid less) applies to XP too. The unit that builds the shared gold builds the XP split with it and says what it does to the pace of ranks (section 4.4), raising a gate's XP as the gold is raised so the party the gate is made for levels as today.
