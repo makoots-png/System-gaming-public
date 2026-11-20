@@ -338,7 +338,7 @@ test('a player\'s −5 on their own sheet during the GM\'s fight is turned down 
 
 test('a potion a player drinks on their turn heals their row on both phones, and the healed HP stays after the next doc arrives', async ({ device }) => {
   // A Health Potion "Restores 30 HP" (src/core/registry/items.ts); it goes to its user.
-  const potion = { name: 'Health Potion', rar: 'common', type: 'consumable', qty: 2, slot: null, bonus: {}, effects: [{ op: 'heal', amount: { kind: 'number', value: 30 }, when: 'use' }], value: 50, desc: 'Restores 30 HP.' };
+  const potion = { name: 'Health Potion', rar: 'common', type: 'consumable', qty: 2, slot: null, bonus: {}, effects: [{ op: 'heal', amount: { kind: 'number', value: 30 }, when: 'use' }], desc: 'Restores 30 HP.' };
   const { gm, player } = await room(device, [potion]);
   await fight(gm, player, { x: 2, y: 10 });
   const kai = await fightRow(gm, HUNTER), hurt = kai.sheet.hpMax - 35, healed = hurt + 30;

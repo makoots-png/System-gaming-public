@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { BUY_WORDS, SHOP_CLOSED, addGold, buy, editItem, equip, putItem, removeItem, sell, sellPrice, sellable, setGold, shopOpen, takeItems, unequip, withShop, writeShopItem, removeShopItem } from '../src/core/hunter/inventory.ts';
 import { SHOP_ITEMS, STARTER_GEAR, itemOf, priceOf } from '../src/core/registry/items.ts';
 import type { ItemTemplate } from '../src/core/registry/items.ts';
-import { RULES } from '../src/core/rules.ts';
+import { RANKS, RULES } from '../src/core/rules.ts';
+import type { Rules } from '../src/core/rules.ts';
 import { newHunter } from '../src/core/save.ts';
 import type { Hunter } from '../src/core/save.ts';
 import { isRefused } from '../src/core/save-step.ts';
@@ -15,6 +16,8 @@ const shield = itemOf(RULES, STARTER_GEAR.towerShield);
 const potion = itemOf(RULES, STARTER_GEAR.manaPotion);
 const ring = (name: string): ItemTemplate => ({ ...shield, name, type: 'accessory', slot: 'ring1', weight: 0, armor: 0, resist: 0, bonus: { str: 1 } });
 const hunter = (gold = 100): Hunter => ({ ...newHunter(RULES), gold });
+/** What the Association pays for one of a thing priced `price`: `saleShare` of it, rounded down, at least 1 (economy design 3). */
+const sale = (price: number, R: Pick<Rules, 'saleShare'> = RULES): number => (price > 0 ? Math.max(1, Math.floor(price * R.saleShare)) : 0);
 
 describe('the bag', () => {
   const differing: [string, Partial<ItemTemplate>][] = [['description', { desc: 'a second telling' }], ['attack', { attack: 'shot' }], ['flat penetration', { penFlat: 3 }]];
@@ -89,30 +92,31 @@ describe('gold, buying and selling', () => {
     expect(setGold(hunter(), -3).gold).toBe(0);
   });
 
-  test('selling pays half the price, rounded down, at least 1 gold; a free item sells for nothing', () => {
-    // Value 25: 12. Value 1: 1 (not 0). No value: the rule's price (priceOf, the one a shop asks), halved.
-    expect(sellPrice({ value: 25, rar: 'common' }, RULES)).toBe(12);
-    expect(sellPrice({ value: 1, rar: 'common' }, RULES)).toBe(1);
-    expect(sellPrice({ rar: 'common' }, RULES)).toBe(Math.floor(priceOf(RULES, 'common') / 2));
-    expect(sellPrice({ value: 0, rar: 'common' }, RULES)).toBe(0);
+  test('selling pays saleShare of the price, a quarter, rounded down, at least 1 gold; a free item sells for nothing', () => {
+    expect(sellPrice({ value: 25, rar: 'common', type: 'misc' }, RULES), 'a quarter of 25').toBe(6);
+    expect(sellPrice({ value: 1, rar: 'common', type: 'misc' }, RULES)).toBe(1);
+    expect(sellPrice({ rar: 'common', type: 'misc' }, RULES), 'no value: the rule\'s price, the one a shop asks').toBe(sale(priceOf(RULES, 'common')));
+    expect(sellPrice({ value: 0, rar: 'common', type: 'misc' }, RULES)).toBe(0);
+    expect(sellPrice({ value: 25, rar: 'common', type: 'misc' }, { ...RULES, saleShare: 0.5 }), 'a GM\'s share of a half').toBe(12);
   });
 
   test('an item without a price of its own is bought and sold at the price rule as it is now', () => {
-    const dear = { ...RULES, baseValue: RULES.baseValue * 3 }, h = hunter(1e6), { value: _typed, ...byRule } = shield;
+    const dear: Rules = { ...RULES, loot: Object.fromEntries(RANKS.map(r => [r, { ...RULES.loot[r], gold: RULES.loot[r].gold.map(g => g * 3) }])) as Rules['loot'] };
+    const h = hunter(1e6), { value: _typed, ...byRule } = shield;
     const bought = ok(buy(h, byRule, iid('i1'), dear));
-    expect(h.gold - bought.gold).toBe(priceOf(dear, shield.rar));
-    expect(ok(sell(bought, 'i1', 1, dear)).gold - bought.gold).toBe(Math.floor(priceOf(dear, shield.rar) / 2));
+    expect(h.gold - bought.gold).toBe(3 * priceOf(RULES, shield.rar));
+    expect(ok(sell(bought, 'i1', 1, dear)).gold - bought.gold).toBe(sale(3 * priceOf(RULES, shield.rar)));
   });
 
   test('round trip: buy then sell gives back the item and costs the price less what it sells for', () => {
     const h = hunter(500), it = { ...shield, value: 25 };
     const back = ok(sell(ok(buy(h, it, iid('i1'), RULES)), 'i1', 1, RULES));
     expect({ ...back, gold: 0, chronicle: h.chronicle }).toEqual({ ...h, gold: 0 });
-    expect(h.gold - back.gold).toBe(25 - 12);
-    // the System remembers both: the purchase at its price, and the sale at half of it
+    expect(h.gold - back.gold).toBe(25 - sale(25));
+    // the System remembers both: the purchase at its price, and the sale at its share of it
     expect(back.chronicle.inbox).toEqual([
       { kind: 'shop', act: 'buy', item: it.name, rar: it.rar, price: 25, goldAfter: 475 },
-      { kind: 'shop', act: 'sell', item: it.name, rar: it.rar, price: 12, goldAfter: 487 },
+      { kind: 'shop', act: 'sell', item: it.name, rar: it.rar, price: sale(25), goldAfter: 475 + sale(25) },
     ]);
   });
 
@@ -121,7 +125,7 @@ describe('gold, buying and selling', () => {
     const three = { ...hunter(0), items: [{ ...potion, id: iid('i1'), qty: 3, value: 10 }] };
     const sold = ok(sell(three, 'i1', 9, RULES));
     expect(sold.items).toEqual([]);
-    expect(sold.gold).toBe(15);
+    expect(sold.gold).toBe(3 * sale(10));
   });
 });
 
@@ -146,13 +150,13 @@ test('the GM\'s shop list is set as one step, a copy of the list given, and set 
 describe('a Resurrection Crystal is not bought back (notes-2b-crystal.md section 3)', () => {
   const crystal = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Resurrection Crystal')!);
 
-  test('a sale is refused and changes nothing; its sell price is 0; any other item still sells for half', () => {
+  test('a sale is refused and changes nothing; its sell price is 0; any other item still sells for its share', () => {
     const h = putItem(hunter(0), crystal, iid('i1'));
     expect(sellable(crystal)).toBe(false);
     expect(sell(h, 'i1', 1, RULES)).toEqual({ ok: false, why: 'unsellable' });
     expect(sellPrice(crystal, RULES)).toBe(0);
     const { revive: _r, ...plain } = crystal;
-    expect(sellPrice(plain, RULES), 'the same price without the revive sells for half').toBe(50000);
+    expect(sellPrice(plain, RULES), 'the same price without the revive sells for its share').toBe(sale(100000));
   });
 
   test('bought, it costs its price and joins the bag; a copy that does not revive is its own stack', () => {

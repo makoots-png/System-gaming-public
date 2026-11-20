@@ -1,196 +1,204 @@
 # History: from Day Zero to Year 20
 
-The world is Earth. The bible lays a few invented places over it (the city of Carrow, the lost city of Port Sarn) so
-that no table has to destroy a real one; a GM who wants the gates over their own town changes the names and nothing
-else.
+The world is Earth. Two places are invented, the city of Carrow and the lost city of Port Sarn, so that no table
+has to destroy a real city. A GM who wants the gates over their own town can rename both.
 
 ## 1. The calendar
 
-Years are counted from the Opening. Day Zero is the first day of Year 0. **Now is Year 20.** A child born on Day Zero
-is finishing school; nobody under twenty-five remembers a sky without sirens. Set Day Zero twenty years before your
-table's present and the technology is ours, bent.
+People count years from the day the gates opened. That day is Day Zero, the first day of Year 0. The present is
+Year 20. Set Day Zero twenty years before your table's present, and everyday technology matches ours except where
+this file says otherwise.
 
-Three dates carry everything else:
+Two dates matter most:
 
-- **Day Zero, Year 0:** the gates open.
-- **Year 3:** the Carrow Accord. The world agrees how to live with them.
-- **Year 17: the Speaking.** The System, silent for seventeen years, begins to talk to hunters: levels, quests, the
-  Daily, personal doors, titles. A hunter's rank, fixed until then, can rise. This is three years ago, and the world
-  has not caught up with it.
+- **Day Zero, Year 0.** The gates open.
+- **Year 3.** States sign the Carrow Accord, which sets the law on gates and hunters.
+
+Every human has had a System window since Day Zero. A hunter's level is capped at the top of the rank they awaken
+with, and every law, contract and guild in this file assumes that. `power.md`, section 5, covers the exception.
 
 ## 2. Day Zero and the Long Week
 
-At 03:14 UTC a little over four thousand doors of standing light opened across the inhabited world, most of them
-small, in car parks and stairwells and fields. Nothing came out. People filmed them. Soldiers taped them off. A few
-people walked in, and most of those did not walk out.
+At 03:14 UTC on Day Zero about four thousand gates opened across the inhabited world. Most were small. They stood
+in car parks, stairwells and fields. At the same minute every person on Earth saw a window that read "Resident. Level 0. Cap: 0." Nothing came out
+of the gates. Soldiers taped them off. A few people walked in, and
+most of those people did not come back.
 
-Nobody knew the doors were on a clock. The clock is the one every hunter now learns in school, and it is the game's:
+Nobody knew that a gate left alone breaks after a fixed number of days and releases its monsters. The number of
+days depends on the gate's rank, and it is the game's `breakDays`:
 
-| Day | What broke | What it was like |
+| Day | Gates that broke | What happened |
 |---|---|---|
-| 2 | The one S gate, in the harbour district of **Port Sarn** | A city of two million was gone by nightfall. Nothing that came out of it has ever been killed; it went back in on its own, nine days later. The gate is still there. |
-| 3 | The A gates, about a hundred | Each took a district or a town. Armies met them with everything they had and learned that above a certain size of monster, a shell is weather. |
-| 4 | The B gates | The first night the word "break" was used on air. |
-| 5 | The C gates | Governments stopped saying "contained". |
-| 6 | The D gates, over a thousand | Rifles work on these. That was learned on day 6, by the people still holding rifles. |
-| 7 | The E gates, nearly two thousand, everywhere | The small ones, in every country at once: things the size of dogs in school corridors. More people died on the seventh day than on the second, because it happened in four thousand places. |
+| 2 | The one S gate, in the harbour district of Port Sarn | The monsters destroyed Port Sarn, a city of two million, in one day. No weapon killed any of them. They went back into the gate nine days later. The gate is still open. |
+| 3 | About a hundred A gates | Each destroyed a town or a city district. Artillery and air strikes did not stop them. |
+| 4 | The B gates | News broadcasts used the word "break" for the first time. |
+| 5 | The C gates | Governments stopped saying the gates were contained. |
+| 6 | Over a thousand D gates | Rifles kill D-rank monsters. Soldiers found this out on day 6. |
+| 7 | Nearly two thousand E gates, in every country | E-rank monsters are about the size of dogs. More people died on day 7 than on day 2, because the breaks happened in two thousand places at once. |
 
-That is the **Long Week**. Its shape is why no one alive trusts a quiet gate: the worst door has the shortest fuse.
+These seven days are called the Long Week. The highest-ranked gate broke first, so people learned that the most
+dangerous gate gives the least warning.
 
-During the Long Week the first people **kindled**: a three-day fever, and then a body that could do what bodies
-cannot. They were not chosen for courage; a dental nurse in Carrow kindled in a queue for water. By day 7 a few
-thousand of them were fighting in the streets beside soldiers, and by the end of the month it was plain that they
-were the only thing that worked against anything above D.
+The first people awakened during the Long Week. Each had a fever for three days and afterwards was far stronger and
+faster than any other person. By day 7 a few thousand awakened people were fighting monsters beside soldiers. Within
+a month it was clear that only they could kill a monster above D rank.
 
-## 3. The Break Years, Year 0 to Year 3: what broke
+## 3. The Break Years, Year 0 to Year 3
 
-New gates kept opening, a few thousand a month worldwide, and for three years nobody could clear them fast enough.
+A few thousand new gates opened worldwide every month. For three years states could not clear them fast enough.
 
-- **About one person in twenty died**, a third of them in breaks, the rest in what breaks do to a harvest, a port
-  and a hospital.
-- **Armies** broke first as an idea. Infantry can hold an E or D break. Artillery can slow a C. Nothing a state owns
-  stops a B or above except people who kindled, and in Year 0 no state owned those.
-- **Money** broke second. Hunters came out of cleared gates holding gold coins that appeared in a space only they
-  could reach, and found they could spend them in a Shop only they could see. By Year 1 a potion that closed a wound
-  in a breath was worth more than any currency, and it could be bought only with gold.
-- **Borders** hardened, then thinned. Every state closed its exits to the kindled. Open country between cities
-  emptied: a gate nobody finds for a week breaks, so land nobody watches became land nobody farms.
-- **The countryside moved to town.** A city can find a gate in an hour. A village cannot. In three years the world's
-  people packed into perhaps a fifth of the towns they had lived in, and the roads between became convoy routes.
-- **Faith** split. For some the gates were judgment; for others the Shop was proof that someone was keeping accounts.
-  Both are still with us (`factions.md`, cults).
+- **Deaths.** About one person in twenty died. A third died in breaks. The rest died of hunger and untreated
+  illness after breaks closed ports, farms and hospitals.
+- **Armies.** Infantry can stop an E or D break. Artillery can slow a C break. Only hunters can stop a B break or
+  higher, and in Year 0 no army had hunters.
+- **Money.** Hunters left cleared gates with gold coins and found they could spend them in a Shop that only they
+  could see. By Year 1 a Shop potion that closed a wound in seconds was worth more than any banknote, and the Shop
+  took only gold.
+- **Borders.** Every state stopped its hunters from leaving.
+- **The countryside.** A gate that nobody finds for a week breaks. A city finds a gate within an hour, and a
+  village may not find one for days. Within three years most rural people had moved to about a fifth of the towns
+  that existed before. Roads between cities became convoy routes.
+- **Religion.** Some people decided the gates were a judgment. Others decided that the Shop proved someone was
+  keeping accounts. Both beliefs have organised followers today (`factions.md`, section 5).
 
-What did not break: power stations, mostly; the net, mostly; the habit of going to work. People kept the lights on
-through all of it, and are prouder of that than of anything the hunters did.
+Power stations and the internet kept working through most of the Break Years, and most people kept going to work.
 
-## 4. The Charter Years, Year 3 to Year 8: what was rebuilt
+## 4. Year 3 to Year 8: the rules are written
 
-**The Carrow Accord (Year 3).** Signed in Carrow because it was the largest port still open on its coast. Ninety
-states agreed five things, and they are still the law almost everywhere:
+**The Carrow Accord, Year 3.** Ninety states signed it in Carrow, the largest port on its coast that was still
+open. It has five rules, and almost every country still follows them:
 
-1. Every gate is **read** within a day of being found, and given a letter, E to S, by the height of its mana.
-2. Every kindled person is **registered** within 72 hours and read the same way. The letter is public.
-3. A gate belongs to the state it opens in. The state may **sell the right** to clear and strip it.
-4. A registered hunter may be **called up** to a break, anywhere in their country, and may not refuse.
-5. No state sends hunters against another state's people. (Kept for eight years.)
+1. The state reads every gate within a day of finding it and gives it a rank from E to S, by the amount of mana in
+   it.
+2. Every awakened person registers within 72 hours and is read the same way. The rank is public.
+3. A gate belongs to the state where it opens. The state may sell the right to clear it and take what is inside.
+4. The state may order any registered hunter to a break anywhere in the country. The hunter may not refuse.
+5. No state sends hunters to fight another state's people. States kept this rule for eight years.
 
-**The Bureaus.** Each state built a Gate Bureau to do the reading, the registering and the selling. They are the
-most powerful civil service in history and are staffed by people on 1,100 gold a month.
+**The Bureaus.** Each state set up a Gate Bureau to read gates, register hunters and sell gate rights. A Bureau
+clerk earns 1,100 gold a month and decides which party gets which gate.
 
-**The guilds.** The first charters were written in Year 2 by parties that had fought together through the Break
-Years and wanted three things: first claim on gates, a share of what was cut out of them, and someone to pay their
-widows. A guild is still those three things with a tower on top.
+**The guilds.** Parties that had fought together in the Break Years wrote the first guild charters in Year 2. They
+wanted the first claim on gates, a share of the crystal cut out of them, and payments to the families of members
+who died. Guilds still do those three things.
 
-**Crystal power (Year 4).** The stone in a gate's walls burns clean and hot. Helix Manaworks lit Carrow from a
-reactor the size of a bus garage in Year 4, and within four years every surviving city ran on crystal. This is what
-made gates an industry and not only a disaster: a cleared gate is a mine with a closing date.
+**Crystal power, Year 4.** The crystal in a gate's walls burns clean and very hot. Helix Manaworks powered Carrow
+from one crystal reactor in Year 4. By Year 8 every surviving city ran on crystal. From then on a cleared gate was
+worth money to whoever cut the crystal out before the gate closed.
 
-**Gold (Years 1 to 8).** Described in `economy.md`. By Year 8 nobody priced bread in anything else.
+**Gold.** By Year 8 shops in every country priced goods in gold (`economy.md`, section 2).
 
-**The Twice-Born (Year 9).** Resurrection Crystals had been in the Shop from the start at a price nobody could
-reach. In Year 9 a guild raised a dead A-rank on live television. The crowd outside the hospital that night was the
-first meeting of what became the Once-Born League, and its first question has never been answered: why only them?
+**The first public raising, Year 9.** The Shop had sold Resurrection Crystals since Year 0, at a price almost
+nobody could pay. In Year 9 a guild raised a dead A-rank hunter on live television. That night a crowd gathered
+outside the hospital and asked why a crystal works only on hunters. Nobody has answered. The crowd's organisers
+founded the Once-Born League.
 
-## 5. The Settled Years, Year 8 to Year 20
+## 5. Year 8 to Year 20
 
-- **Year 11: the Strait War and the Abstention.** Two states fought for nine days over a strait and the gates along
-  it, and for the first time sent hunters against soldiers. On the ninth day the S-ranks of both sides met on a
-  tanker in the strait, alone, and came back with one sentence: no S-rank will fight in a war between states, and
-  any who does will be hunted by the rest. It has held. It is not a law, and nobody signed it.
-- **Year 14: the Hollowing.** An S gate opened in the hills above a city on another continent and the state's two
-  S-ranks were abroad. It broke on its second day. The world relearned Port Sarn, and every city since has paid an
-  S-rank to live in it or lived in fear of not having one.
-- **Year 17: the Speaking.** On one morning every hunter on Earth saw the same window: *The System greets you,
-  Hunter. Your Level is…* Until then a hunter was what the Reading said, for life. Since then a hunter has a level
-  that rises with what they kill, a quest every day that punishes those who skip it, three personal doors a day that
-  nobody else can enter, and a Chronicle that names their feats. Ranks became rungs. See `power.md`.
-- **Year 18: the Seat Scandal.** The whole XP of a gate goes to every hunter inside it. Within a year of the
-  Speaking a Carrow guild was found selling seats in B gates to the children of ministers, who walked in at level 1
-  and out at level 11. Seat-selling was banned in a week. It is the largest black market on Earth.
-- **Year 19: the first Risen.** A woman read as D at seventeen crossed level 70 at twenty-eight. Twenty-three
-  months, most of it alone. She was the first S-rank the Bureau did not find but watched happen. There are a few
-  dozen Risen now.
-- **The Tide (ongoing).** The count of new gates has risen about three percent a year since Year 5. Nobody knows
-  why. At that rate there are twice as many gates in Year 43 as in Year 20, and the arithmetic of who clears them is
-  the quiet subject of every budget meeting in the world.
+- **Year 11, the Strait War.** Two states fought for nine days over a strait and the gates on its coast. Both sent
+  hunters against soldiers, which broke the Accord's fifth rule. On the ninth day the S-ranks of both sides met on
+  a tanker in the strait. They agreed that no S-rank would fight in a war between states and that the others would
+  kill any S-rank who did. This agreement is called the Abstention. It was never written down, and S-ranks have
+  kept it.
+- **Year 14, the Hollowing.** An S gate opened above a city on another continent while that state's two S-ranks
+  were abroad. The gate broke on its second day and the city was lost. Since then every large city has paid an
+  S-rank to live in it or has tried to.
+- **Year 19, Sabine Okoro's second reading.** Sabine Okoro was read as D rank at seventeen. At twenty-eight she
+  asked for a new reading and read as S. The Bureau recorded it as a re-awakening, which is a second awakening that
+  raises a hunter's rank once. Fewer than thirty are on record worldwide, and none before hers rose more than one
+  rank.
+- **The Tide.** The number of new gates has grown about three percent a year since Year 5. Nobody knows the cause.
+  At that rate the number doubles by Year 43.
 
-## 6. The world now
+## 6. The world in Year 20
 
-Take **Carrow**: six million people on a river mouth, the city the Accord was signed in. Use it as written or lay
-its parts over your own town.
+The examples are from Carrow, a port city of six million on a river mouth.
 
-**A city.** Three colours on every map. **Green**: a ranked party at any door within ten minutes; the Crown and
-Ledger Row. **Amber**: within forty; most of the city. **Red**: best effort; Scarside, along the two-kilometre scar
-a B break cut in Year 1 and nobody rebuilt. Sirens on every fourth lamp post: one long note for a gate found, a
-rising one for a break. A board at every tram stop lists the open gates in the district with their letter and their
-days left. People read it the way they once read the weather. Twelve thousand hunters live here; about one in fifteen makes a living from world gates.
+**A city.** Every map shows three zones. In a Green zone a ranked party reaches any address within ten minutes. The
+Crown and Ledger Row are Green. In an Amber zone the party arrives within forty minutes. Most of Carrow is Amber.
+In a Red zone the Bureau promises no time. Scarside is Red. It lies along the Scar, two kilometres of ruins left by
+a B break in Year 1.
 
-**A border.** Goods cross by convoy and coast. People cross with papers. Hunters cross with an exit permit from
-their own Bureau, which is seldom given above C: a state counts its B-ranks the way it once counted tanks. An S-rank
-crosses when they like; who would stop them?
+Every fourth lamp post has a siren. A steady tone means a gate has been found, and a rising tone means a break.
+Every tram stop has a board that lists the district's open gates, with each gate's rank and the days left before it
+breaks. Carrow has twelve thousand hunters. About one in thirty earns a living from world gates. Most of the rest are E and D ranks who hold other jobs.
 
-**A job.** New trades: reclaimer (cuts crystal and carcass out of a cleared gate, for a quarter of what it sells
-for, split among the crew), runner (buys from the Shop for people who cannot), reader (measures gates and people),
-spotter (walks a beat looking for doors), cordon soldier, crystal cutter, contract lawyer, claims assessor. Old
-trades bent: a builder prices by response time, a farmer works inside a fence with a D-rank on the gate, a teacher
-runs a break drill every month.
+**A border.** Goods cross by convoy or by sea. A hunter needs an exit permit from their own Bureau to leave the
+country, and the Bureau rarely gives one to a hunter above C rank. No state has ever stopped an S-rank at a border.
 
-**A school.** Break drill monthly, from age four. At fourteen, the Reading: a day out of class, a hand on a stone,
-almost always nothing. The children who kindle (it can come at any age, but most often between fourteen and thirty)
-vanish from the register within the week, to an academy on a guild's sponsorship. The class photograph keeps the
-gap. Since the Speaking, schools teach "the roads" in civics, and every teenager can tell you how many push-ups are
-in a Daily.
+**A job.** The gates created these jobs:
 
-**A hospital.** A trauma ward has a potion fridge and a ledger for it. Bleeding deaths are rare now. Cancer wards
-are full of families arguing about an Elixir. There is a second, smaller hospital next door for hunters, where
-potions work at full strength and where, in a locked room, a guild's clerk signs for a crystal. The two buildings
-share a car park. Ask any nurse what that car park is like at night.
+- A reclaimer cuts crystal and carcasses out of a cleared gate. The crew shares a quarter of the sale price.
+- A runner buys from the Shop for people who cannot open it.
+- An assessor reads gates and people.
+- A spotter walks a district and looks for new gates.
+- A cordon soldier guards a gate or a break.
 
-**An army.** Two forces. The **cordon** is unawakened soldiers who ring a gate or a break, move people out, and
-hold E and D monsters with rifles. The **Hunter Corps** is a few hundred ranked regulars and the legal right to call
-up every registered hunter in the country. Neither has fought another state since the Strait War.
+Older jobs changed too. A builder sets prices by the block's response time. A farmer works inside a fence with a
+D-rank guard at the gate. A teacher runs a break drill every month.
 
-**A family.** A kindled child is a windfall and a bereavement in one week: the signing bonus pays the mortgage, and
-the child now works in a place their parents cannot enter. Hunters marry hunters more each year, because a B-rank
-who marries an unawakened person will, on the Bureau's own figures, outlive them by seventy years. Wills name
-"living heirs at the time of final death". There is a word, *lantern*, for the person who waits at a gate's mouth
-for someone inside.
+**A school.** Children practise the break drill from age four. At fourteen every child is read at a Bureau hall,
+and almost none have awakened. A person can awaken at any age, most often between fourteen and thirty. A child who awakens usually leaves school within a week for a hunter academy that a guild pays for.
+
+**A hospital.** A trauma ward stocks Health Potions, and few patients now die of blood loss. Cancer wards are full,
+and many families there are deciding whether they can afford an Elixir of Life. Hunters use a separate hospital,
+where potions work at full strength and where guild clerks sign for Resurrection Crystals. In Carrow the two
+hospitals share a car park, and the Once-Born League holds a vigil there most nights.
+
+**An army.** A state has two forces. The cordon is unawakened infantry. It surrounds a gate or a break, moves
+civilians out, and kills E and D monsters with rifles. The Hunter Corps is a few hundred ranked soldiers. It also
+has the legal right to call up every registered hunter in the country. Neither force has fought another state
+since the Strait War.
+
+**A family.** When a child awakens, the guild's signing bonus can pay off the family's mortgage, and the child
+starts work in gates that the parents cannot enter. A B-rank ages one year in every two and a half, so a B-rank who
+marries an unawakened person outlives them by about seventy years. More hunters marry other hunters each year for
+that reason. A hunter's will takes effect an hour after death, when a crystal can no longer raise them.
 
 ## 7. What ordinary people need and fear
 
-**Need:** a short response time, more than a big flat. Break cover, or the bank takes the house. A runner they
-trust. A go-bag by the door. One hunter in the wider family, the way families once wanted one doctor.
+An unawakened household needs these things:
 
-**Fear, in the order they say it:**
+- A home with a short response time.
+- Break cover, because a bank will not lend without it.
+- A runner it trusts.
+- A go-bag for each person.
 
-1. **The unfound gate.** A door in a cellar or a drain that nobody reports for a week. Spotters are paid by the
-   state; neighbours do the real work. Reporting one pays a finder's fee of a tenth of a Clear. Hiding one is prison.
-2. **The ripe gate.** A guild holding a gate to its last day for a fatter harvest, three streets from a school.
-3. **The S gate with nobody home.** Port Sarn and the Hollowing.
-4. **Hunters.** A C-rank can kill a room of people before they stand up, and a court must then find a way to hold
-   someone who can walk through a wall. Most hunters are careful. Everyone knows a story about one who was not.
-5. **Being priced out of Green.** Rents follow response times. Every new tower in the Crown moves the Amber line.
-6. **Since the Speaking: the flood.** Any hunter can now climb. In a few years there will be thousands of S-ranks
-   where there were hundreds, each one outside any law that depends on force. Nobody voted for that.
+Most families also want one hunter among their relatives, for the income and for access to the Shop.
 
-**And what they hope:** that their child kindles. That their child does not.
+People fear these things, roughly in this order:
+
+1. **An unfound gate.** A gate in a cellar or a drain that nobody reports breaks after a week or less. The state
+   pays spotters, and neighbours find most gates. The Bureau pays a finder's fee of a tenth of the gate's Clear. A
+   person who hides a gate goes to prison.
+2. **A gate held too long.** A rights holder earns more by waiting until the last day (`economy.md`, section 8).
+   The gate may be three streets from a school.
+3. **An S gate when no S-rank is in the city.** Port Sarn and the Hollowing are the examples everyone knows.
+4. **Hunters.** A C-rank can kill everyone in a room in seconds, and no ordinary prison holds a B-rank. Most
+   hunters are careful. Every district has had a case of one who was not.
+5. **Rising rent in Green zones.** Rents follow response times, so families on a median wage are moving out to
+   Amber.
+6. **S-ranks.** No court or army can force an S-rank to do anything. Each city depends on the goodwill of the few it has.
+
+Many parents hope a child will awaken, for the income. Many of the same parents fear it, because hunters die
+young.
 
 ## 8. Timeline
 
-| Year | What |
+| Year | Event |
 |---|---|
-| 0 | Day Zero. The Long Week. Port Sarn lost on day 2. The first Kindled. |
-| 0 to 3 | The Break Years. One in twenty dead. The move to the cities. |
-| 1 | Gold and the Shop understood. The B break that cut the Scar through Carrow. |
-| 2 | First guild charters (Ironwake, Carrow). |
-| 3 | The Carrow Accord: the Reading, the register, gate rights, the call-up. |
-| 4 | Helix lights Carrow from crystal. |
-| 5 | The Tide first measured: three percent more gates each year. |
-| 8 | Gold is the world's money in practice. |
-| 9 | The first public raising. The Once-Born League founded. |
-| 11 | The Strait War, nine days. The Abstention. |
-| 14 | The Hollowing. Cities begin paying S-ranks to stay. |
-| 17 | The Speaking: levels, the Daily, personal doors, titles. The Ledger Act. |
-| 18 | The Seat Scandal. The Rank Floor law. |
-| 19 | The first Risen S-rank. |
-| 20 | Now. Liners who started at the Speaking are due at S from about Year 23. |
+| 0 | Day Zero. The Long Week. Port Sarn is destroyed on day 2. The first people awaken. |
+| 0 to 3 | The Break Years. One person in twenty dies. Most rural people move to cities. |
+| 1 | Hunters learn to use gold and the Shop. A B break in Carrow leaves the Scar. |
+| 2 | The first guild charters. Ironwake is founded in Carrow. |
+| 3 | The Carrow Accord. |
+| 4 | Helix powers Carrow from crystal. |
+| 5 | The Tide is first measured. |
+| 8 | Every country prices goods in gold. |
+| 9 | The first public raising. The Once-Born League is founded. |
+| 11 | The Strait War lasts nine days. S-ranks agree the Abstention. |
+| 14 | The Hollowing. Cities begin to pay S-ranks to live in them. |
+| 17 | The Ledger Act makes gold the legal unit of account in Carrow's country. |
+
+| 19 | Sabine Okoro, read as D in Year 8, is read again as S. |
+| 20 | The present. |

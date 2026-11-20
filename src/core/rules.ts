@@ -42,6 +42,8 @@ const real = (value: number, least: number, most: number, why: string): RuleNumb
 const of = (value: number, domain: Domain): RuleNumber => new RuleNumber(value, domain);
 /** A rule list of numbers, each in `domain`. */
 const each = (value: readonly number[], domain: Domain): RuleNumbers => new RuleNumbers(value, domain);
+/** A rarity of RULES.rarities: its color and the rank whose Clear prices it (`clearOf`). */
+const rarity = (color: string, rank: Rank): { readonly color: string; readonly rank: Rank } => ({ color, rank });
 
 /** RULES as declared, with each number's domain: the values with each rule number its plain value. */
 type Values<T> = T extends RuleNumber ? number : T extends RuleNumbers ? number[]
@@ -76,7 +78,6 @@ const DC = wholeIn(1, 100, 'a d20 check\'s DC: the S rank\'s hardest is 55, and 
 const MONSTER_XP = wholeIn(0, 1_000_000, 'XP a monster gives: a million is about the next level of a level 9999 hunter');
 const BREAK_DAYS = wholeIn(1, 365, 'days a gate stays open: under a day it breaks as it opens, a year is the longest a table plans');
 const PERCENT = wholeIn(0, 100, 'a percent of the bar a rest gives back or takes off');
-const PRICE_FACTOR = realIn(0.01, 10_000, 'a factor on an item\'s price: above 0 so a price is a price, 10000 is 50 times the mythic\'s');
 const GOLD = wholeIn(0, 1_000_000_000, 'gold: a billion is the bound of every gold a reward or a monster\'s loot reads');
 const WEIGHT = wholeIn(0, 1000, 'a chance weight against the others of its table: 0 never draws it, 1000 is 1000 times the smallest');
 const SUMMON_MANA = wholeIn(0, 1000, 'mana a summon costs: past every body\'s mana it cannot be paid, which a GM may want');
@@ -112,7 +113,6 @@ export const OBJECTIVE_TARGET = realIn(0.1, 100_000, 'a daily target: above 0 so
 /** A rule number whose rule is an open map: each entry of the map has this domain. `*` stands for any one key. */
 const OPEN_DOMAINS: ReadonlyArray<{ readonly re: RegExp; readonly domain: Domain }> = [
   { re: /^paths\.[^.]+\.alloc\.[^.]+$/, domain: PATH_ALLOC },
-  { re: /^rarities\.[^.]+\.mult$/, domain: PRICE_FACTOR },
   { re: /^gateSpawn\.regulars\.[^.]+$/, domain: PACK },
 ];
 
@@ -174,12 +174,12 @@ const SPEC = {
     { key: 'king-of-shadows', name: 'King of Shadows', desc: 'Leads a shadow army.', bonus: { pow: 5 }, gmOnly: true },
   ],
   conditions: BUILT_IN_STATUSES, // the built-in statuses: src/core/registry/statuses.ts
-  // each rarity's price factor in PRICE_FACTOR, a GM's new rarity's too (OPEN_DOMAINS)
+  // Each rarity's color and the rank whose Clear prices it (`clearOf`; economy design 2.2): a price is computed from the
+  // loot table, never stored, so a GM's edit of a rank's loot gold moves the price of its rarity.
   rarities: {
-    common: { color: '#9fb6c9', mult: of(1, PRICE_FACTOR) }, uncommon: { color: '#59e6a8', mult: of(2, PRICE_FACTOR) }, rare: { color: '#4dd8ff', mult: of(5, PRICE_FACTOR) },
-    epic: { color: '#c79bff', mult: of(15, PRICE_FACTOR) }, legendary: { color: '#ffc94d', mult: of(50, PRICE_FACTOR) }, mythic: { color: '#ff6b3d', mult: of(200, PRICE_FACTOR) },
+    common: rarity('#9fb6c9', 'E'), uncommon: rarity('#59e6a8', 'D'), rare: rarity('#4dd8ff', 'C'),
+    epic: rarity('#c79bff', 'B'), legendary: rarity('#ffc94d', 'A'), mythic: rarity('#ff6b3d', 'S'),
   },
-  baseValue: whole(10, 0, 1_000_000, 'a common item\'s price in gold: 0 makes every item free'),
   slots: ['weapon', 'offhand', 'head', 'chest', 'hands', 'legs', 'feet', 'neck', 'ring1', 'ring2'],
   // gold: a range low to high (overrides.ts reads its order)
   loot: {
@@ -189,6 +189,19 @@ const SPEC = {
     B: { gold: each([2000, 8000], GOLD), weights: { uncommon: of(30, WEIGHT), rare: of(45, WEIGHT), epic: of(22, WEIGHT), legendary: of(3, WEIGHT) } },
     A: { gold: each([8000, 30000], GOLD), weights: { rare: of(40, WEIGHT), epic: of(45, WEIGHT), legendary: of(14, WEIGHT), mythic: of(1, WEIGHT) } },
     S: { gold: each([30000, 120000], GOLD), weights: { epic: of(50, WEIGHT), legendary: of(42, WEIGHT), mythic: of(8, WEIGHT) } },
+  },
+  // The economy (docs/agent-handoff/features/economy/design.md, each number's reason in its section). A price is a count
+  // of Clears (`clearOf`); a world gate's gold and XP are a pot shared by the hunters paid.
+  gradeStep: real(1.5, 1, 1.8, 'a grade\'s factor on its tier\'s price: 1 prices a plus as a minus, past 1.8 a plus costs more than the next tier\'s minus (1.8 squared is under 3.25, the smallest step of the shipped ladder)'), // design 2.1: three grades make a tier, a factor of 3.25 to 4, so one grade is about its cube root
+  saleShare: of(0.25, SHARE), // design 3: the Association buys an item back at a quarter of its price (the owner: "A quarter.")
+  usedUpShare: of(0.5, SHARE), // design 2.2: a consumable is one use, so a Clear buys two of its rank
+  reviveClears: whole(10, 1, 1000, 'Clears of its rank a Resurrection Crystal costs: under 1 it costs less than a middle item of its rank, 1000 is out of any table\'s reach'), // design 5: a full set of its rank's middle gear
+  reviveLevelShare: of(1 / 30, SHARE), // design 4.4, ruling 9: a raising takes this share of the level, rounded up, never below level 1 ("maybe 3.33% of your total level")
+  gateParty: whole(4, 1, 12, 'the hunters a world gate is made for: at least one, past 12 no table seats them'), // design 4.1: the session model's party; its gold and XP are a pot of this many shares
+  // design 2.3: the points an item may spend beyond its slot's free numbers
+  itemBudget: {
+    share: real(0.5, 0, 2, 'the share of a hunter\'s points its gear may hold, over the slots: 0 leaves an item no budget, 2 is twice the hunter\'s own'), // half of what a hunter of the tier's rank holds at its first level, over the 10 slots
+    weaponStep: real(1, 0, 10, 'mean damage a weapon\'s free die gains a tier: 0 keeps every tier at the reference die, 10 is past any die\'s step'), // the free die rises by 1 mean damage a tier from 1d8
   },
   shadow: {
     maxAttempts: whole(3, 1, 20, 'tries at one corpse: 0 would offer an Extract that cannot be tried'),
@@ -227,6 +240,7 @@ const SPEC = {
     stays: whole(24, 1, SOLO_BOUNDS.hours, 'hours a gate stays open: under one it closes as it opens, a week is the longest'),
     ranks: { below: of(25, SHARE_OF_SPAWNS), same: of(60, SHARE_OF_SPAWNS), above: of(15, SHARE_OF_SPAWNS) },
     pack: each([1, 2], wholeIn(1, SOLO_BOUNDS.pack, 'monsters in a personal gate: a lone hunter against more than 12 is no run')),
+    lootShare: of(0.25, SHARE), // economy design 4.2: a cleared personal gate pays a quarter of one hunter's share of a world gate (the owner: "A quarter.")
   },
   // feats (hunter/feats.ts): `on` is the GM's one switch for every feat the System notices; the room's `rules` doc carries it to the players
   feats: { on: true },
@@ -510,7 +524,7 @@ const SPEC = {
 export const RULES = deepFreeze(valuesOf(SPEC));
 /** Each rule number's domain by its dotted path (a list of numbers under the list's path). */
 const DOMAINS: ReadonlyMap<string, Domain> = domainsOf(SPEC, '', new Map());
-/** The domain of the rule number at dotted `path` (`fight.round`, a list's `rankTable.E.dc`, an open map's `rarities.relic.mult`), or null when no rule number is there. */
+/** The domain of the rule number at dotted `path` (`fight.round`, a list's `rankTable.E.dc`, an open map's `gateSpawn.regulars.D`), or null when no rule number is there. */
 export const domainOf = (path: string): Domain | null => DOMAINS.get(path) ?? OPEN_DOMAINS.find(o => o.re.test(path))?.domain ?? null;
 
 /** The shipped rules, with every number and string widened: a GM override can change any of them. */
@@ -554,6 +568,11 @@ export const withStatuses = (R: Rules, statuses: Readonly<Record<string, StatusD
 // ── helpers. Each takes the rules as its first argument; src/edge/rules.ts binds them to the current rules for views. ──
 /** XP from `level` to the next: `xpPerLevel` times the level. `level` is a level (hunter/level.ts), so no bound is kept here. */
 export const xpToNext = (R: Rules, level: number): number => R.xpPerLevel * level;
+/**
+ * One Clear of `rank`: the middle of its loot gold, what one hunter takes from clearing a world gate of that rank in the
+ * party it is made for. The anchor of every price (economy design 0): an item costs a count of Clears.
+ */
+export const clearOf = (R: Pick<Rules, 'loot'>, rank: Rank): number => (R.loot[rank].gold[0]! + R.loot[rank].gold[1]!) / 2;
 /**
  * Every job a reward may name: the rules' `jobs`, then each of the `extractJobs` they do not hold (a Shadow Monarch is
  * reached, never picked at the start).

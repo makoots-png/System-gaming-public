@@ -3,7 +3,8 @@
 // an optional field still loads. The other cases (unknown rules, a value of the wrong type) are in tests/rules.test.ts.
 import { describe, expect, test } from 'bun:test';
 import { parseOverrides, readerOf } from '../src/core/overrides.ts';
-import { RULES, rulesOf } from '../src/core/rules.ts';
+import { RULES, clearOf, rulesOf } from '../src/core/rules.ts';
+import { priceOf } from '../src/core/registry/items.ts';
 
 /** Each path of RULES whose shipped value cannot read an override: a list, a null, or a map the GM may add to. */
 function unreadable(v: unknown, path: string, out: string[]): string[] {
@@ -72,11 +73,13 @@ describe('an override of a list rule', () => {
     expect(refused).toEqual([{ path: 'rankTable.E.dc', reason: 'length' }, { path: 'rankTable.D.dc.2', reason: 'number' }, { path: 'loot.E.gold', reason: 'length' }]);
   });
 
-  test('a new rarity needs its color and its price factor; a shipped one may change either alone', () => {
-    const { overrides, refused } = parseOverrides({ rarities: { common: { mult: 2 }, relic: { color: '#000000', mult: 500 }, cursed: { color: '#330000' }, broken: { mult: -1, color: '#111111' } } });
-    expect(overrides).toEqual({ rarities: { common: { mult: 2 }, relic: { color: '#000000', mult: 500 } } });
-    expect(refused.map(r => [r.path, r.reason])).toEqual([['rarities.cursed', 'entry'], ['rarities.broken.mult', 'range']]);
-    expect(rulesOf(overrides).rarities.common).toEqual({ color: RULES.rarities.common.color, mult: 2 });
+  test('a new rarity needs its color and its rank; a shipped one may change either alone; a price factor is no rule', () => {
+    const { overrides, refused } = parseOverrides({ rarities: { common: { color: '#ffffff' }, rare: { rank: 'B' }, epic: { mult: 2 }, relic: { color: '#000000', rank: 'S' }, cursed: { color: '#330000' }, broken: { color: '#111111', rank: 'Z' } } });
+    expect(overrides).toEqual({ rarities: { common: { color: '#ffffff' }, rare: { rank: 'B' }, epic: {}, relic: { color: '#000000', rank: 'S' } } });
+    expect(refused.map(r => [r.path, r.reason])).toEqual([['rarities.epic.mult', 'unknown'], ['rarities.cursed', 'entry'], ['rarities.broken.rank', 'entry']]);
+    const R = rulesOf(overrides);
+    expect(R.rarities.rare).toEqual({ color: RULES.rarities.rare.color, rank: 'B' });
+    expect(priceOf(R, 'rare')).toBe(clearOf(R, 'B'));
   });
 
   // A number of the System's clock that would break it (0 hours spawns without end) is refused at the boundary, by its path.

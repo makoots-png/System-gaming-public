@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { armorCutPct, checkExample, dailyPointsLine, downLine, naturalLines, pointsLine, saleRows, soloLines, statBonusLine } from '../src/core/rules-text.ts';
+import { armorCutPct, checkExample, dailyPointsLine, downLine, naturalLines, pointsLine, saleLine, saleRows, soloLines, statBonusLine } from '../src/core/rules-text.ts';
 import { afterDefence } from '../src/core/combat/land.ts';
 import { sellPrice } from '../src/core/hunter/inventory.ts';
 import { CAP_ROUNDS } from '../src/core/combat/play.ts';
@@ -15,7 +15,7 @@ import { isRefused } from '../src/core/save-step.ts';
 import { FUMBLE_FAILURES, REVIVE_HP, SAVES_TO_END, SAVE_FUMBLE, SAVE_SUCCESS, SAVE_UP, SAVE_UP_HP, WAYS_BACK, lifeAfter } from '../src/core/hunter/vitals.ts';
 import { useItem } from '../src/core/hunter/use.ts';
 import { buy, putItem, sell } from '../src/core/hunter/inventory.ts';
-import { SHOP_ITEMS, itemOf } from '../src/core/registry/items.ts';
+import { RARITIES, SHOP_ITEMS, itemOf, parseItem, priceOf, valueOf } from '../src/core/registry/items.ts';
 import { newHunter } from '../src/core/save.ts';
 import { isRefused as refused } from '../src/core/save-step.ts';
 import type { Life } from '../src/core/hunter/vitals.ts';
@@ -170,11 +170,23 @@ describe('the solo run\'s lines', () => {
 });
 
 describe('the Rules page states what the game pays', () => {
-  test('each tier of the sale table is what the Bag pays for an unpriced item of that tier', () => {
+  test('the sale table has a row for each rarity an item can carry: its shop price and what the Bag pays for an unpriced item of it', () => {
+    expect(saleRows(RULES).map(r => r.rar)).toEqual([...RARITIES]);
     for (const row of saleRows(RULES)) {
-      expect(row.sell).toBe(sellPrice({ rar: row.rar }, RULES));
+      const it = parseItem({ name: 'Relic', rar: row.rar })!;
+      expect([row.rar, row.price, row.sell]).toEqual([row.rar, valueOf(it, RULES), sellPrice(it, RULES)]);
     }
-    expect(saleRows(RULES).find(r => r.rar === 'common')!.sell).toBe(50);
+    expect(saleRows(RULES).find(r => r.rar === 'common')!.sell, 'a quarter of one E Clear, 100').toBe(25);
+  });
+  test('the sale line names the rank that prices each rarity and the shares a consumable costs and a sale pays, and follows a GM\'s change', () => {
+    const line = saleLine(RULES);
+    expect(line).toContain('common E, uncommon D, rare C, epic B, legendary A, mythic S');
+    expect(line).toContain('a consumable costs 50% of that');
+    expect(line).toContain('buys an item back at 25% of its price');
+    expect(saleLine({ ...RULES, saleShare: 0.4, usedUpShare: 0.3 })).toContain('costs 30% of that');
+    expect(saleLine({ ...RULES, saleShare: 0.4, usedUpShare: 0.3 })).toContain('back at 40% of its price');
+    const potion = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Greater Health Potion')!);
+    expect(valueOf(potion, RULES), 'what the line says of a consumable is what the shop asks').toBe(Math.round(priceOf(RULES, 'uncommon') * 0.5));
   });
   test('the daily line gives the points the daily quest template pays, and follows a changed template', () => {
     const R = { ...RULES, dailyTemplate: { ...RULES.dailyTemplate, rewards: { ...RULES.dailyTemplate.rewards, points: 4 } } };

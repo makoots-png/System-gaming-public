@@ -1,6 +1,6 @@
 // measure.ts: the numbers of design.md, from the shipped rules and the built-in items: today's income, the price ladder
-// with grades, each built-in item's spend and grade, the world gate's shared gold, income after the change, the tiered
-// crystal, and sessions to afford. Run: bun docs/agent-handoff/features/economy/measure.ts
+// with grades, each built-in item's spend and grade, the world gate's shared gold and XP, income after the change, the
+// tiered crystal, sessions to afford, and the pace of ranks by party size. Run: bun docs/agent-handoff/features/economy/measure.ts
 import { RANKS, RULES } from '../../../../src/core/rules.ts';
 import type { Rank } from '../../../../src/core/rules.ts';
 import { LOOT_ITEMS, RARITIES, SAMPLE_WEARER, SHOP_ITEMS, STARTER_GEAR } from '../../../../src/core/registry/items.ts';
@@ -11,7 +11,7 @@ import { referenceBody } from '../../../../src/core/registry/worth.ts';
 // The design's numbers, which the build units put in RULES (design.md section 7.1).
 const DESIGN = {
   common: 0, // set below: the middle of loot.E.gold
-  gradeStep: 1.5, saleShare: 0.25, usedUpShare: 0.5, soloLootShare: 0.25, goldParty: 4, reviveClears: 10,
+  gradeStep: 1.5, saleShare: 0.25, usedUpShare: 0.5, soloLootShare: 0.25, gateParty: 4, reviveClears: 10, reviveLevelShare: 1 / 30,
   itemShare: 0.5, weaponStep: 1, refDie: '1d8',
 } as const;
 
@@ -62,28 +62,26 @@ function gradeOf(d: ItemDef): Verdict {
   const [, e1, e2, hi] = span(rankOf(d.rar)), p = spend(d).pts;
   return { grade: CLAIMED[d.name] ?? (p < e1 ? -1 : p < e2 ? 0 : 1), over: p > hi };
 }
-/** The design's fix of each built-in past its tier's top (section 2.5): a tier up, or numbers cut. */
-const FIXES: readonly ItemDef[] = [
-  { name: 'Mage Circlet', rar: 'epic', type: 'armor', slot: 'head', kit: 'light', bonus: { pow: 2, manaMax: 2 }, desc: '' },
-  { name: "Baruka's Mana Ring", rar: 'epic', type: 'accessory', slot: 'ring2', bonus: { manaMax: 3 }, desc: '' },
-  { name: 'Orb of Avarice', rar: 'legendary', type: 'accessory', slot: 'neck', bonus: { pow: 4, manaMax: 2 }, desc: '' },
-  { name: "Kamish's Wrath", rar: 'legendary', type: 'weapon', slot: 'weapon', dice: '2d8', attack: 'strike', bonus: { str: 4, agi: 2 }, desc: '' },
-  { name: "Monarch's Scepter", rar: 'mythic', type: 'weapon', slot: 'weapon', dice: '2d8', attack: 'strike', bonus: { pow: 6, manaMax: 4 }, desc: '' },
-  { name: 'Armor of the Absolute Being', rar: 'mythic', type: 'armor', slot: 'chest', kit: 'heavy', bonus: { vit: 5, hpMax: 15 }, desc: '' },
-];
 
 // ── prices ──
 type Econ = { name: string; price: (d: ItemDef) => number; sale: number; soloShare: number; goldEach: (r: Rank, n: number) => number };
+// Today's prices, before economy unit 1 took them out of RULES and items.ts: a base value of 10 × a rarity's factor ×
+// 10, and the hand prices the built-in items carried.
+const TODAY_MULT: Readonly<Record<Rarity, number>> = { common: 1, uncommon: 2, rare: 5, epic: 15, legendary: 50, mythic: 200 };
+const TODAY_HAND: Readonly<Record<string, number>> = {
+  'Health Potion': 50, 'Greater Health Potion': 300, 'Mana Potion': 50, 'Elixir of Life': 2000, 'Stamina Tonic': 30, 'Iron Dagger': 100,
+  "Hunter's Leather": 150, 'Steel Longsword': 400, 'Knight Killer': 5000, 'Ring of Vitality': 20000, 'Resurrection Crystal': 100000, 'Mana Crystal Shard': 40,
+};
 const TODAY: Econ = {
   name: 'today', sale: 0.5, soloShare: 1, goldEach: r => goldMean(r),
-  price: d => d.value ?? RULES.baseValue * 10 * RULES.rarities[d.rar].mult,
+  price: d => TODAY_HAND[d.name] ?? 10 * 10 * TODAY_MULT[d.rar],
 };
 const gradeFactor = (g: number): number => DESIGN.gradeStep ** g;
 /** A design price: the Clear of the rarity's rank, times the grade's factor, times `usedUpShare` for a consumable. */
 const designPrice = (rar: Rarity, g: number, consumable: boolean): number => r0(clear(rar) * gradeFactor(g) * (consumable ? DESIGN.usedUpShare : 1));
-/** A world gate's gold for each of `n` hunters: the pot is `goldParty` rolls, cut by party / n past the party. */
-const potOf = (r: Rank, n: number): number => goldMean(r) * DESIGN.goldParty * Math.min(1, DESIGN.goldParty / n);
-const goldEach = (r: Rank, n: number): number => Math.floor(potOf(r, n) / n);
+/** What each of `n` hunters takes of a world gate's `amount` (a gold roll or its XP): the pot is `gateParty` times it, cut by party / n past the party. */
+const shareEach = (amount: number, n: number): number => Math.floor(amount * DESIGN.gateParty * Math.min(1, DESIGN.gateParty / n) / n);
+const goldEach = (r: Rank, n: number): number => shareEach(goldMean(r), n);
 const DESIGN_ECON: Econ = {
   name: 'design', sale: DESIGN.saleShare, soloShare: DESIGN.soloLootShare, goldEach,
   price: d => designPrice(d.rar, gearOf(d) ? gradeOf(d).grade : 0, d.type === 'consumable'),
@@ -136,8 +134,8 @@ for (const d of [...ALL, ...Object.values(STARTER_GEAR)].filter(gearOf)) {
   const s = spend(d), v = gradeOf(d);
   console.log(`${d.name} | ${d.rar} | ${f1(s.pts)} | ${['-', 'mid', '+'][v.grade + 1]} | ${v.over ? 'OVER' : ''} | ${s.unweighed.join(', ')} | ${TODAY.price(d)} -> ${DESIGN_ECON.price(d)}`);
 }
-console.log('\n[2.5] the fixes: name | rarity | spend | grade | over | design price');
-for (const d of FIXES) { const v = gradeOf(d); console.log(`${d.name} | ${d.rar} | ${f1(spend(d).pts)} | ${['-', 'mid', '+'][v.grade + 1]} | ${v.over ? 'OVER' : ''} | ${DESIGN_ECON.price(d)}`); }
+console.log('\n[2.5] kept past the tier\'s top (ruling 6), priced as the tier\'s plus: name | rarity | spend | price');
+for (const d of ALL.filter(d => gearOf(d) && gradeOf(d).over)) console.log(`${d.name} | ${d.rar} | ${f1(spend(d).pts)} | ${DESIGN_ECON.price(d)}`);
 console.log('\n[2.2] shop', SHOP_ITEMS.map(d => `${d.name}: ${TODAY.price(d)} -> ${d.type === 'consumable' && d.revive ? 'by its rank' : DESIGN_ECON.price(d)}`).join('; '));
 
 console.log('\n[3] an E pick sold, against E\'s gold each at a party of 4: today half', r0(itemMean('E', TODAY) * 0.5), 'design quarter', r0(itemMean('E', DESIGN_ECON) * DESIGN.saleShare), 'of', goldMean('E'));
@@ -155,13 +153,30 @@ for (const [i, r] of RANKS.entries()) {
   console.log(`${r} | ${f1(own / s.table)} | ${i < 5 ? f1(next / s.table) : '-'} | ${f1(own / s.table)} | ${f1(crystal / s.table)} | ${respec} = ${f1(respec / s.table)} | ${f1(s.daily / s.table)}`);
 }
 
-// XP a session and the sessions a hunter spends at a rank (each payee gets the whole XP, xpSplit false). A world gate
-// holds the rank's mean pack of normals (E 1 to 3, else 2 to 6) and a boss worth `fight.kinds.boss.xp` normals.
+// XP a session and the sessions a hunter spends at a rank. A world gate holds the rank's mean pack of normals (E 1 to 3,
+// else 2 to 6) and a boss worth `fight.kinds.boss.xp` normals; its XP is shared as its gold is (ruling 7), so each of
+// the party of 4 takes it whole, as each payee does today (xpSplit false). A personal run's XP stays whole to its hunter.
 console.log('\n[4.2] rank | world gate XP | personal run XP | XP to cross | table sessions | daily sessions');
 const xpOf = (r: Rank): number => RULES.rankTable[r].xp, lv = RULES.rankLevels, PACK = (r: Rank): number => (r === 'E' ? 2 : 4);
+const worldXp = (r: Rank): number => (PACK(r) + RULES.fight.kinds.boss.xp) * xpOf(r);
+const runXp = (r: Rank): number => CLEAR_SHARE * 1.5 * mix(r).reduce((s, [k, n]) => s + n * xpOf(k), 0);
+const crossXp = (i: number): number => { const r = RANKS[i]!, next = RANKS[i + 1]; return next ? Array.from({ length: lv[next] - lv[r] }, (_, j) => RULES.xpPerLevel * (lv[r] + j)).reduce((a, b) => a + b, 0) : 0; };
+/** Sessions at rank `r` for a hunter whose world gate is cleared by `n` hunters: `runs` personal runs and `dailies` dailies a session. */
+const sessionsAt = (i: number, n: number, runs: number, dailies: number): number => crossXp(i) / (shareEach(worldXp(RANKS[i]!), n) + runs * runXp(RANKS[i]!) + dailies * RULES.dailyTemplate.rewards.xp);
 for (const [i, r] of RANKS.entries()) {
-  const world = (PACK(r) + RULES.fight.kinds.boss.xp) * xpOf(r), run = CLEAR_SHARE * 1.5 * mix(r).reduce((s, [k, n]) => s + n * xpOf(k), 0), daily = RULES.dailyTemplate.rewards.xp;
-  const next = RANKS[i + 1], cross = next ? Array.from({ length: lv[next] - lv[r] }, (_, j) => RULES.xpPerLevel * (lv[r] + j)).reduce((a, b) => a + b, 0) : 0;
-  const tbl = world + RUNS.table * run + daily, dly = world + RUNS.daily * run + 7 * daily;
-  console.log(`${r} | ${world} | ${r0(run)} | ${cross} | ${cross ? f1(cross / tbl) : '-'} | ${cross ? f1(cross / dly) : '-'}`);
+  const cross = crossXp(i);
+  console.log(`${r} | ${worldXp(r)} | ${r0(runXp(r))} | ${cross} | ${cross ? f1(sessionsAt(i, PARTY, RUNS.table, 1)) : '-'} | ${cross ? f1(sessionsAt(i, PARTY, RUNS.daily, 7)) : '-'}`);
+}
+
+console.log('\n[4.4] table sessions at a rank when the world gate is cleared by 1 | 2 | 3 | 4 | 5 | 6 hunters (XP shared as gold)');
+for (const [i, r] of RANKS.entries()) if (crossXp(i)) console.log(`${r} | ${[1, 2, 3, 4, 5, 6].map(n => f1(sessionsAt(i, n, RUNS.table, 1))).join(' | ')}`);
+
+// A raising at level L takes ceil(L × reviveLevelShare) levels, never below level 1 (ruling 9). Its cost in table
+// sessions of XP at the party of 4: the XP of the lost levels over the XP a table session pays at the level's rank.
+console.log('\n[4.4] a raising: level | rank | levels lost | XP lost | table sessions of XP | share of the XP earned');
+const lifetime = (L: number): number => RULES.xpPerLevel * L * (L - 1) / 2;
+const rankAt = (L: number): number => RANKS.reduce((at, r, i) => (L >= lv[r] ? i : at), 0);
+for (const L of [5, 10, 20, 30, 35, 50, 60]) {
+  const i = rankAt(L), lost = Math.min(L - 1, Math.ceil(L * DESIGN.reviveLevelShare)), xp = lifetime(L) - lifetime(L - lost), perSession = crossXp(i) / sessionsAt(i, PARTY, RUNS.table, 1);
+  console.log(`${L} | ${RANKS[i]} | ${lost} | ${xp} | ${f1(xp / perSession)} | ${(100 * xp / lifetime(L)).toFixed(1)}%`);
 }

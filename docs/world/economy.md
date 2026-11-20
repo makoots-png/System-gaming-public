@@ -1,26 +1,28 @@
 # The economy
 
-Every table between `<!-- prices:... -->` marks is printed by `bun docs/world/prices.ts --write`. The script reads the
-shipped `RULES` (the loot gold, the break days, the XP) and the economy design's ruled numbers (a sale at a quarter,
-grades at 1.5, a crystal at ten Clears, shared gate gold), and holds the world's own assumptions in one object,
-`WORLD`, each with its reason. Change the anchor there, rerun, and every price moves with it. The prose says why.
+`bun docs/world/prices.ts --write` prints every table between `<!-- prices:... -->` marks. The script reads three
+things. The first is the shipped `RULES`: the loot gold, the break days and the XP. The second is the economy
+design's ruled numbers: a sale at a quarter, grades at 1.5, a crystal at ten Clears, shared gate gold. The third is
+the object `WORLD` in the script, which holds this world's assumptions with a reason beside each. To move the
+anchor, change `WORLD`, rerun the script, and reread the sentences that quote a number.
 
-Prices are in gold. Small change is the bit: 100 bits to a gold, struck by states in nickel because the System mints
-nothing smaller than a coin.
+Prices are in gold. One gold is 100 bits. States strike bits in nickel, because the System pays out only whole
+coins.
 
 ## 1. The anchor: what one gold is
 
-The game's anchor is one Clear: what one hunter of a party of four takes from a world gate of a rank. An E Clear is
-100 gold. The world needs one more fact to tie that to a life, and it is this:
+The game's anchor is one Clear, the gold one hunter of a party of four takes from a world gate of a rank. An E Clear
+is 100 gold. The world adds one assumption to tie that to a wage:
 
-**An unskilled labourer's day is 0.3 of an E Clear: 30 gold. So one gold is a plain hot meal from a street stall.**
+**An unskilled labourer earns 0.3 of an E Clear a day, which is 30 gold. A plain hot meal from a street stall costs
+one gold.**
 
-Why 0.3. An E-rank is the weakest person who can walk into a gate and the easiest to replace. If a Clear paid a
-month's wage, every E-rank would be rich and no guild could make them queue. If it paid a day's wage, nobody would
-risk a gate. At three labourer-days for one afternoon that may kill you, an E-rank who gets one gate a month earns
-less than the dockhand next door, and one who gets three and opens doors most days earns about what a teacher does.
-That is the life the lore gives an E-rank: armed, licensed, and poor. Everything else follows from the game's own
-ladder, which multiplies a Clear by about 3.5 a rank.
+The reason for 0.3 is the E-rank's place in the world. An E-rank is the weakest hunter and the easiest to replace.
+If a Clear paid a month's wage, every E-rank would be rich and no guild could make them queue for a seat. If it paid
+one day's wage, nobody would enter a gate. At three labourer-days a gate, an E-rank who gets one gate a month earns
+less than a dock worker. An E-rank with a guild contract, four gates a month and a personal gate most days earns a little under the
+median wage. The higher ranks follow from the game's ladder, where each rank's Clear is about 3.5 times the one
+below.
 
 <!-- prices:anchor -->
 | What | Gold | How it is derived |
@@ -33,48 +35,53 @@ ladder, which multiplies a Clear by about 3.5 a rank.
 | The median year | 12,000 | twelve months |
 <!-- /prices:anchor -->
 
-A feel for it, for a GM pricing on the fly: **1 gold a meal, 30 a labourer's day, 1,000 the median month, 100 an
-E Clear, 120,000 an ordinary family flat.** A reader who wants a real-world handle can read a gold as four or five
-US dollars of the 2020s.
+Five numbers are enough to price most things at the table: a meal is 1 gold, a labourer's day is 30, the median
+month is 1,000, an E Clear is 100, and an ordinary family flat is 120,000. One gold buys about what four or five US
+dollars bought in the 2020s.
 
-## 2. Where gold comes from: the System is the central bank
+## 2. Where gold comes from
 
-Gold is not a metaphor. When a gate is cleared the System puts gold in each hunter's Inventory, and a hunter can draw
-it out as coin: 8 grams, cool to the touch, every one the same, and every hunter's window names a false one at a
-glance. Nobody else can mint it, so nobody can inflate it. By Year 8 every state had pegged or abandoned its own
-money; the Ledger Act of Year 17 made gold the unit of account in Carrow's country, and national notes survive as
-receipts for it.
+When a party clears a gate, the System puts gold in each hunter's Inventory. A hunter can take it out as coins. Each
+coin weighs 8 grams and is identical to every other, and a hunter's window shows at once whether a coin is real. No
+state or forger can make one, so nobody can add to the supply except by clearing gates.
 
-That makes the world's money supply exactly a game economy's, and the people in it know it:
+By Year 8 every state had pegged its currency to gold or stopped issuing it. In Carrow's country the Ledger Act of
+Year 17 made gold the legal unit of account. National banknotes still circulate as receipts for gold held in a bank.
 
-| | What it is in the world | What it is in the game |
+The world's money supply therefore works like a game economy's:
+
+| | In the world | In the game |
 |---|---|---|
-| Faucets | Clears of world gates; personal doors; nothing else | `loot[rank].gold`, shared; a personal gate's quarter |
-| Sinks | The Shop (every potion drunk, every item bought, every crystal used is gold gone from the world); the Shop's quarter buy-back; the System's fee to reshape a build | the shop, the three-quarter spread, used consumables, respecs |
-| Transfers (no gold made or lost) | wages, rent, tax, the levy, guild shares, bribes, trades | trades between hunters |
+| Sources of gold | Clears of world gates and of personal gates | `loot[rank].gold`, shared; a personal gate's quarter |
+| Where gold is destroyed | The Shop. A potion drunk, an item bought and a crystal used each remove gold. So does the Shop's buy-back at a quarter | the shop, the three-quarter spread, used consumables, respecs |
+| Transfers, which make and destroy no gold | wages, rent, tax, the levy, guild shares, bribes, trades | trades between hunters |
 
-Two consequences a GM can use. First, **hunters are the mint**: an unawakened economy of billions runs on coin that
-only a few million people can bring into the world, which is the root of both the awe and the resentment. Second,
-**the Shop is the only drain**: finance ministries watch potion sales the way they once watched interest rates, and a
-year in which hunters hoard gold instead of spending it at the Shop is a year of rising prices for bread.
+Two results matter at the table:
 
-## 3. The Shop's band: a ceiling and a quarter floor
+- A few million hunters create all the money that eight billion people use. The unawakened depend on hunters for
+  it and resent them for it.
+- The Shop is the only place gold leaves the world. Finance ministries track potion sales as they once tracked
+  interest rates. When hunters save gold and do not spend it at the Shop, the supply grows and the price of bread
+  rises within the year.
 
-The Shop sells to any hunter, at one price, without limit, and buys anything back at a quarter. So:
+## 3. The Shop sets a ceiling and a floor
 
-- Nothing the Shop stocks can sell above the Shop's price for long. It is a ceiling.
-- Nothing can sell below a quarter of it. It is a floor.
-- Everything hunters trade among themselves lives in between, and that gap is where every fence, stallholder,
-  runner and pawnbroker in the world makes a living. A fence pays 40%, a used stall sells at 70%, and only the
-  desperate sell to the Shop.
-- The unawakened cannot open the Shop. They buy through **runners**, licensed E-ranks who buy to order at a 20%
-  markup. A hospital's potion budget is a runner's whole career.
-- What the Shop never stocks (a named drop, a graded plus of a high tier, anything a maker made) has no ceiling.
-  Those go to auction at Ledger Row, and that is where prices stop making sense.
+The Shop sells to any hunter at one fixed price with no limit on stock, and it buys any item back at a quarter of
+that price. Four things follow.
+
+- An item the Shop stocks cannot sell for more than the Shop's price, because a buyer can go to the Shop.
+- No item sells for less than a quarter of the Shop's price, because the seller can go to the Shop.
+- Hunters trade with each other between those two prices. A fence pays 40% of the Shop's price. A used-gear stall
+  sells at 70%. A hunter sells to the Shop only when they need gold the same hour.
+- The unawakened cannot open the Shop. They buy through runners, who are licensed E-ranks that buy to order and add
+  20%. A runner with one hospital's potion contract needs no other customer.
+
+The Shop does not stock named drops, the plus grade of the high tiers, or items a maker made. Those have no
+ceiling. They sell at auction on Ledger Row, often for several times the price of their tier.
 
 ## 4. Everyday prices
 
-Each is a count of labourer-days in the script, so it scales with the anchor.
+The script stores each price as a number of labourer-days, so the prices move with the anchor.
 
 <!-- prices:everyday -->
 **Food and drink**
@@ -88,7 +95,7 @@ Each is a count of labourer-days in the script, so it scales with the anchor.
 | A week of groceries, one adult | 23 | 0.75 | a quarter of an unskilled week |
 | Dinner for two, a Saltmarket restaurant | 15 | 0.50 |  |
 | Dinner for two in the Crown | 90 | 3 |  |
-| A plate of gate meat (D-rank boar, licensed) | 18 | 0.60 | the carcass trade: a luxury that is also a trophy |
+| A plate of monster meat (D-rank boar, from a licensed butcher) | 18 | 0.60 | reclaimers sell carcasses to butchers |
 
 **Home**
 
@@ -100,7 +107,7 @@ Each is a count of labourer-days in the script, so it scales with the anchor.
 | A phone | 360 | 12 |  |
 | Work boots | 30 | 1 |  |
 | A good suit or dress | 150 | 5 |  |
-| A go-bag, packed to Bureau list | 60 | 2 | every household in an Amber zone keeps one a person |
+| A go-bag, packed to the Bureau's list | 60 | 2 | a household in an Amber zone keeps one for each person |
 
 **Getting around**
 
@@ -109,9 +116,9 @@ Each is a count of labourer-days in the script, so it scales with the anchor.
 | A tram or bus ride | 0.3 | 0.01 |  |
 | A month's pass | 15 | 0.50 |  |
 | A taxi across town | 6 | 0.20 |  |
-| Rail to the next city, armoured line | 30 | 1 | rail runs convoyed between cities |
+| Rail to the next city | 30 | 1 | trains between cities run armoured and escorted |
 | A flight inside the country | 120 | 4 |  |
-| A flight abroad | 600 | 20 | few routes, each escorted |
+| A flight abroad | 600 | 20 | few routes, each with a hunter escort |
 | A bicycle | 60 | 2 |  |
 | A used car | 2,400 | 80 |  |
 | A new car, stone cell | 9,000 | 300 | about ten median months |
@@ -133,9 +140,9 @@ Each is a count of labourer-days in the script, so it scales with the anchor.
 |---|---|---|---|
 | A year at a private school | 3,000 | 100 |  |
 | A year at university | 3,900 | 130 |  |
-| A year at a hunter academy (unsponsored) | 9,000 | 300 | nine median months: most are sponsored by a guild |
+| A year at a hunter academy (unsponsored) | 9,000 | 300 | nine median months; a guild sponsors most students |
 | A lawyer, an hour | 39 | 1.3 |  |
-| A contract lawyer who reads guild paper, an hour | 120 | 4 |  |
+| A lawyer who specialises in guild contracts, an hour | 120 | 4 |  |
 | A wedding, Saltmarket | 3,900 | 130 |  |
 
 **Wages (a month unless said)**
@@ -151,29 +158,31 @@ Each is a count of labourer-days in the script, so it scales with the anchor.
 | A doctor | 3,900 | 130 |  |
 | A crystal cutter at Helix | 1,700 | 55 |  |
 | A guild analyst | 2,600 | 85 |  |
-| A reclaimer (carcass crew), a day in a gate | 75 | 2.5 | hazard pay when on a wage, not a lay |
+| A reclaimer (carcass crew), a day in a gate | 75 | 2.5 | when paid a wage; most crews take a quarter of the harvest |
 <!-- /prices:everyday -->
 
-What changed against the world we know: power is cheap (crystal reactors), anything that crosses open country is
-dear (convoys, escorts, insurance), air travel is a luxury again, and a go-bag is a household item like a kettle.
+Compared with the world before the gates, electricity costs less, because crystal reactors make it. Anything that
+crosses open country costs more, because it travels in a guarded convoy and is insured against breaks. Few people
+can afford to fly. Every household in an Amber zone keeps a packed go-bag for each person.
 
 ## 5. Housing by district
 
-Safety is what land is priced on. The Bureau publishes a response time for every block: the minutes until a ranked
-party stands at a break there. Green is under ten minutes, Amber under forty, Red is "best effort". A family flat's
-rent is set in the script by district; a room is 40% of it; a price is 200 months' rent.
+The Bureau publishes a response time for every block, which is the number of minutes before a ranked party reaches
+a break there. Green means under ten minutes. Amber means under forty. Red means the Bureau promises no time. Rent
+follows the response time more closely than it follows floor area. The script sets a family flat's rent by district.
+One room rents for 40% of that. A flat sells for 200 months' rent.
 
 <!-- prices:housing -->
 | District | What it is | One room, a month | Family flat, a month | Family flat, to buy | Median years of wage to buy |
 |---|---|---|---|---|---|
-| The Crown | Green core, under the Ninth Hour's tower: a response in four minutes | 960 | 2,400 | 480,000 | 40.0 |
-| Ledger Row | Green, the guild quarter: more hunters a street than anywhere | 660 | 1,700 | 330,000 | 27.5 |
-| Saltmarket | Amber ring: the ordinary city | 240 | 600 | 120,000 | 10.0 |
-| Northfield | Amber suburb: houses, a long tram, a cordon post | 200 | 510 | 100,000 | 8.5 |
-| Tidewall | Amber port: loud, working, half its sirens tested monthly | 180 | 450 | 90,000 | 7.5 |
-| Scarside | Red fringe along the Scar: uninsurable, never empty | 72 | 180 | 36,000 | 3.0 |
+| The Crown | Green. The city centre. Response time four minutes | 960 | 2,400 | 480,000 | 40.0 |
+| Ledger Row | Green. The guild halls and the Bureau are here | 660 | 1,700 | 330,000 | 27.5 |
+| Saltmarket | Amber. Where most of the city lives | 240 | 600 | 120,000 | 10.0 |
+| Northfield | Amber. A suburb of houses, forty minutes by tram | 200 | 510 | 100,000 | 8.5 |
+| Tidewall | Amber. The port and its warehouses | 180 | 450 | 90,000 | 7.5 |
+| Scarside | Red. Beside the Scar. No insurer sells break cover here | 72 | 180 | 36,000 | 3.0 |
 
-Above the table: a guild tower floor in Ledger Row rents for 39,000 a month; an S-rank's estate in the Crown last sold for 30,000,000.
+A floor of a guild tower in Ledger Row rents for 39,000 a month. The last S-rank's estate sold in the Crown went for 30,000,000.
 <!-- /prices:housing -->
 
 <!-- prices:break-cover -->
@@ -187,13 +196,14 @@ Above the table: a guild tower floor in Ledger Row rents for 39,000 a month; an 
 | Scarside | refused | none sold |
 <!-- /prices:break-cover -->
 
-A mortgage needs break cover, and Paragon Mutual sells none in Red. So Scarside is bought in coin, by people who have
-some and cannot say where from, and rented by people with nowhere else. An ordinary couple on two median wages buys
-in Saltmarket over twenty-five years, as their parents did, and drills the children on the stairs.
+A bank requires break cover before it lends, and Paragon Mutual sells no break cover in Red. Buyers in Scarside
+therefore pay the whole price in coin, and most Scarside flats are rented. A couple on two median wages buys a
+Saltmarket flat on a twenty-five-year mortgage.
 
 ## 6. Medicine and potions
 
-A consumable costs half an item of its tier (the design's `usedUpShare`): one Clear buys two potions of its rank.
+A consumable costs half the price of an item of its tier (the design's `usedUpShare`), so one Clear buys two
+potions of its rank.
 
 <!-- prices:potions -->
 | Tier (rank) | Built-in | Shop price | Sells to the Shop | A runner's price to the unawakened | Labourer-days |
@@ -206,20 +216,21 @@ A consumable costs half an item of its tier (the design's `usedUpShare`): one Cl
 | mythic (S) | (none built in) | 37,500 | 9,375 | 45,000 | 1,300 |
 <!-- /prices:potions -->
 
-A Health Potion closes a hunter's wound in a breath. On a body with no mana it works **thin**: about a tenth as
-well, and more than one a week brings potion sickness (fever, then organ strain). So potions did not end hospitals.
-They ended deaths from bleeding: every ambulance carries two, at 60 gold each through a runner, two days of a
-labourer's wage, and the fight over who pays for them is the whole of health politics. An Elixir of Life, thin, will
-pull an unawakened patient back from most traumas and a few cancers. At 3,000 gold through a runner it is three
-median months, which is to say: within reach of a family that sells the car, and the reason families sell the car.
+A Health Potion closes a hunter's wound within seconds. On an unawakened person it works at about a tenth of that
+strength, and a second potion in the same week causes fever and then organ damage. Hospitals therefore still exist.
+Deaths from blood loss have become rare, because every ambulance carries two Health Potions. A runner charges 60
+gold for each, which is two days of a labourer's wage, and who pays for them is the main dispute in health policy.
 
-The game stocks no consumable above epic and none at rare. The world prices the missing tiers by the same rule (the
-table), and a GM who makes an A-rank potion can price it from the row.
+An Elixir of Life saves an unawakened patient from most injuries and from some cancers. Through a runner it costs
+3,000 gold, or three median months. Many families sell a car to buy one.
+
+The game has no consumable above epic and none at rare. The table prices the missing tiers by the same rule, so a
+GM who makes an A-rank potion can take its price from the legendary row.
 
 ## 7. Gear by rarity and grade
 
-The design's ladder: a middle item of a tier costs one Clear of that tier's rank; a minus is two thirds, a plus one
-and a half; the Shop buys at a quarter.
+The table follows the design. A middle item of a tier costs one Clear of that tier's rank, a minus costs two
+thirds of that, a plus costs one and a half times it, and the Shop buys at a quarter.
 
 <!-- prices:gear -->
 | Tier (rank) | Minus | Middle | Plus | The Shop buys at | A fence pays | Used, at a stall | A set of ten, middle | Median months for the set |
@@ -232,28 +243,35 @@ and a half; the Shop buys at a quarter.
 | mythic (S) | 50,000 | 75,000 | 112,500 | 18,750 | 30,000 | 52,500 | 750,000 | 750.0 |
 <!-- /prices:gear -->
 
-Read the last column as the wall between the classes. A labourer could save for a common sword. No wage earner alive
-could kit an A-rank: the set is sixteen years of the median wage. Gear above rare is bought with gate gold or with a
-guild's credit, and a guild's credit comes with a lien (see `careers.md`).
+The last column shows who can afford gear from a wage. A labourer can save for a common sword in a week. A full
+legendary set costs sixteen years of the median wage, so no wage earner can equip an A-rank. Hunters buy gear above
+rare with gate gold or on a guild's credit, and the guild keeps a lien on gear bought on credit (`careers.md`,
+section 4).
 
-## 8. Gates: the door fee, rights, the levy, the harvest
+## 8. Gates: the entry fee, rights, the levy, the harvest
 
-A gate pays twice. The System pays the hunters who clear it in gold and drops: that is the game's Clear, and it is
-the hunters' own. The gate's body pays whoever holds its **rights**: the mana crystal in its walls and the carcasses
-on its floor, cut out by a crew of reclaimers between the Clear and the day the gate would have broken, when a
-cleared gate closes for good (the Ebb).
+A gate produces two kinds of income. The System pays the hunters who clear it in gold and drops. That is the game's
+Clear, and it belongs to the hunters. The gate also holds mana crystal in its walls and monster carcasses on its
+floor. That is the harvest, and it belongs to whoever holds the gate's **rights**. A crew of reclaimers cuts the
+harvest out after the Clear. They must finish before the day the gate would have broken, because a cleared gate
+closes on that day.
 
-- **A public gate.** The Bureau holds the rights. A licensed party pays a door fee a head (a tenth of the gate's
-  Clear), keeps its gold and drops, and walks away. The Bureau's own crews take the harvest. This is the game as it
-  plays today: no harvest is paid to the party, and none should be.
-- **A gate at auction.** The Bureau sells the rights of about half of all gates within hours of the Reading. The
-  holder pays the bid, sends its own hunters (no door fee), hires a crew for a quarter lay, pays the state a fifth of
-  the harvest, and keeps the rest. Bids settle near 60% of the expected net, because some raids fail.
-- **Ripening.** The crystal in a gate thickens as its break day nears: a harvest on the last day is worth half again
-  what it is on the first. Every holder is paid to wait. Every neighbour is paid to hope they do not.
+There are two kinds of gate.
+
+- **A public gate.** The Bureau holds the rights. A licensed party pays an entry fee for each hunter, equal to a tenth
+  of the gate's Clear. The party keeps its gold and drops. The Bureau's own crews take the harvest. The game plays
+  this way today: a Clear pays the party no harvest.
+- **An auctioned gate.** The Bureau sells the rights to about half of all gates within hours of reading them. The
+  holder pays the bid and sends its own hunters, who pay no entry fee. The holder pays a crew a quarter of the
+  harvest and pays the state a fifth. The rest is the holder's. Winning bids average 60% of that expected net,
+  because some raids fail and the holder still owes the bid.
+
+The crystal in a gate grows as the break day approaches. A harvest cut on the last day sells for one and a half
+times a harvest cut on the first day. Holders therefore profit by waiting, and the people who live near the gate
+carry the risk of the wait.
 
 <!-- prices:gates -->
-| Gate | Breaks on day | Gold pot (party of 4) | One Clear | Door fee a head | Harvest | Crew's quarter | State levy | Holder nets | Rights at auction | Harvest if ripe (last day) |
+| Gate | Breaks on day | Gold pot (party of 4) | One Clear | Entry fee for each hunter | Harvest | Crew's share | State levy | Holder nets | Rights at auction | Harvest if ripe (last day) |
 |---|---|---|---|---|---|---|---|---|---|---|
 | E | 7 | 400 | 100 | 10 | 600 | 150 | 120 | 330 | 200 | 900 |
 | D | 6 | 1,300 | 325 | 33 | 1,950 | 488 | 390 | 1,073 | 640 | 2,925 |
@@ -263,7 +281,7 @@ cleared gate closes for good (the Ebb).
 | S | 2 | 300,000 | 75,000 | 7,500 | 450,000 | 112,500 | 90,000 | 247,500 | 150,000 | 675,000 |
 <!-- /prices:gates -->
 
-The supply, in Carrow (6 million people, 12,000 hunters, 600 world gates a month):
+Carrow has 6 million people, 12,000 hunters and 600 world gates a month:
 
 <!-- prices:gate-count -->
 | Rank | Hunters in Carrow | World gates a month | Seats a month (parties of 4) | Seats a hunter of the rank a month |
@@ -276,14 +294,14 @@ The supply, in Carrow (6 million people, 12,000 hunters, 600 world gates a month
 | S | 1.2 | 0.03 | 0.12 | 0.10 |
 <!-- /prices:gate-count -->
 
-A seat in a world gate of your own rank comes round about once in five months if seats were shared evenly. They are
-not. Guilds hold most of them, and that single fact is why guilds exist, why an unsigned hunter lives on personal
-doors, and why a party that somehow gets a gate a week is the talk of the district.
+If seats were shared equally, a hunter would get a seat in a gate of their own rank about once in five months.
+Guilds hold most of the seats. An unsigned hunter therefore gets about one gate a month and earns mainly from personal gates, and a party that gets a world gate every week draws
+attention from guilds and from the Bureau.
 
 ## 9. Mana crystal and who buys it
 
-Crystal is the other thing gates make, and unlike gold it is burned. A boss's core assays at about one Clear of its
-gate's rank; the rest of a harvest is wall crystal and carcass.
+Gold stays in circulation, but crystal is burned for power. A boss's core is worth about one Clear of its gate's
+rank at assay. The rest of a harvest is wall crystal and carcass.
 
 <!-- prices:crystal-trade -->
 | Crystal of a gate | Assay value of one boss core | Helix pays | The Bureau exchange pays | A fence pays | The Shop pays | Households it powers for a month |
@@ -296,13 +314,13 @@ gate's rank; the rest of a harvest is wall crystal and carcass.
 | S | 75,000 | 67,500 | 63,750 | 52,500 | 18,750 | 3,800 |
 <!-- /prices:crystal-trade -->
 
-Helix Manaworks buys nine tenths of the city's crystal and burns it in the reactors that light the city. The Bureau's
-exchange on Ledger Row pays a little less, at once, with no forms. A fence pays less again and asks nothing. The Shop
-pays a quarter, which is how everyone learned that the System does not want crystal back.
+Helix Manaworks buys nine tenths of Carrow's crystal and burns it in the reactors that power the city. The Bureau's
+exchange on Ledger Row pays a little less, pays at once, and asks for no paperwork. A fence pays less than the
+exchange and asks no questions. The Shop pays a quarter, so nobody sells crystal to the Shop.
 
 ## 10. Mercenaries
 
-A mercenary's day is half a Clear of their own rank, whatever the work.
+A mercenary charges half a Clear of their own rank for a day, whatever the work.
 
 <!-- prices:mercs -->
 | Mercenary's rank | A day (guard, escort, standby) | A gate of their rank (fee, plus an equal share) | A gate, flat (no share, drops to the hirer) | A red gate, flat | A month's retainer | A healer, a day |
@@ -315,10 +333,15 @@ A mercenary's day is half a Clear of their own rank, whatever the work.
 | S | 37,500 | 37,500 | 150,000 | 300,000 | 450,000 | 56,250 |
 <!-- /prices:mercs -->
 
-Three ways to hire: by the day (a guard, an escort, standing by at a gate's mouth in case it breaks); for a gate with
-a share (the fee up front, then an equal share of the gold, and they roll for drops with the party); or flat (two
-days' fee and a Clear, and every drop is the hirer's). A red gate doubles the flat price, because a red gate cannot
-be left until it is cleared. A healer costs half again, in every city on Earth, and is booked.
+A hirer can pay in three ways.
+
+1. By the day, for guard work, escort work, or standing by at a gate in case it breaks.
+2. For a gate with a share. The hirer pays one day's fee before the gate. The mercenary then takes an equal share of
+   the gold and rolls for drops with the party.
+3. For a gate at a flat price of two days' fee plus one Clear. The hirer keeps every drop.
+
+A red gate costs twice the flat price, because a party cannot leave a red gate until the boss is dead. A healer
+costs one and a half times the rate in every city, and healers are usually booked weeks ahead.
 
 ## 11. Guild pay
 
@@ -333,15 +356,20 @@ be left until it is cleared. A healer costs half again, in every city on Earth, 
 | S | 112,500 | 25% | 750,000 | 1,500,000 | 1,500,000 | 56,250 |
 <!-- /prices:guild-pay -->
 
-How to read it. A guild pays a **retainer** every month whether or not it finds the hunter a gate (one and a half
-Clears of the hunter's rank). It takes a **house share** of the System gold from its own gates (a quarter: the
-hunter declares the Clear, the guild's clerk is in the room). The hunter keeps every drop. The guild keeps the
-harvest. A **signing bonus** is ten Clears from C up, which is exactly the price of a Resurrection Crystal of the
-rank, and is usually paid as one, held by the guild. E and D sign for two Clears and a locker. The **death benefit**
-is twenty Clears to a named person, paid only when the hunter stays dead. A **transfer fee** is what one guild pays
-another to buy out a contract.
+The columns mean the following.
 
-By role (the multiple is on the retainer only):
+- **Retainer.** The guild pays one and a half Clears of the hunter's rank every month, whether or not it finds the
+  hunter a gate.
+- **House share.** The guild takes a quarter of the System gold from its own gates. The hunter declares the gold to
+  the guild's clerk at the gate. The hunter keeps every drop, and the guild keeps the harvest.
+- **Signing bonus.** From C upward the bonus is ten Clears, which is also the price of a Resurrection Crystal of
+  the rank. Most guilds pay it as a crystal that the guild holds for the hunter. An E-rank or a D-rank signs for
+  two Clears.
+- **Death benefit.** The guild pays twenty Clears to a person the hunter names, and only if the hunter is not
+  raised.
+- **Transfer fee.** Another guild pays this to buy out the contract.
+
+The role multiplies the retainer only:
 
 <!-- prices:guild-roles -->
 | Role | Retainer, times the line hunter's | E | D | C | B | A | S |
@@ -357,8 +385,8 @@ By role (the multiple is on the retainer only):
 <!-- prices:guild-staff -->
 | Staff | Gold |
 |---|---|
-| Gate porter (unawakened), a gate: 0.3 of the gate's Clear | see the line |
-| Reclaimer on a lay: the crew splits a quarter of the harvest | see the line |
+| Gate porter (unawakened), for one gate: 0.3 of the gate's Clear | as described |
+| Reclaimer on a share: the crew splits a quarter of the harvest | as described |
 | Guild clerk, a month | 1,100 |
 | Analyst, a month | 2,600 |
 | Scout (a retired C-rank), a month | 4,500 |
@@ -366,38 +394,38 @@ By role (the multiple is on the retainer only):
 | Press officer, a month | 3,300 |
 <!-- /prices:guild-staff -->
 
-A guild's books on one gate, four line hunters, a three-gate month:
+The next table is a guild's income and costs on one gate, with four line hunters who each get four gates a month:
 
 <!-- prices:guild-books -->
-| Gate | Harvest net | House share | Rights paid | Retainers (4 hunters, a third of a month) | Left for the house |
+| Gate | Harvest net | House share | Rights paid | Retainers (4 hunters, a quarter of a month) | Left for the house |
 |---|---|---|---|---|---|
-| E | 330 | 100 | 198 | 200 | 32 |
-| D | 1,073 | 325 | 644 | 650 | 104 |
-| C | 4,125 | 1,250 | 2,475 | 2,500 | 400 |
-| B | 16,500 | 5,000 | 9,900 | 10,000 | 1,600 |
-| A | 62,700 | 19,000 | 37,620 | 38,000 | 6,080 |
-| S | 247,500 | 75,000 | 148,500 | 150,000 | 24,000 |
+| E | 330 | 100 | 198 | 150 | 82 |
+| D | 1,073 | 325 | 644 | 488 | 267 |
+| C | 4,125 | 1,250 | 2,475 | 1,875 | 1,025 |
+| B | 16,500 | 5,000 | 9,900 | 7,500 | 4,100 |
+| A | 62,700 | 19,000 | 37,620 | 28,500 | 15,580 |
+| S | 247,500 | 75,000 | 148,500 | 112,500 | 61,500 |
 <!-- /prices:guild-books -->
 
-The margin is thin: about a third of a Clear a gate, before the tower, the lawyers and the crystals in the vault. A
-guild lives on volume, on ripe harvests, and on never paying a death benefit. All three push it the same way: more
-gates, held longer, with the crystal cover kept current.
+A guild keeps about four fifths of a Clear from each gate. Out of that it pays for its hall, its lawyers and the
+crystals in its vault. A guild earns more by taking more gates, by holding each gate longer for a larger harvest,
+and by raising its dead so that it pays no death benefit.
 
 ## 12. Bribes, fines, insurance
 
-Law prices everything in Clears, so a fine hurts the same at every rank.
+The law sets fines in Clears, so a fine costs a hunter of any rank the same share of their income.
 
 <!-- prices:law -->
 | What | Clears | Of which rank | E | D | C | B | A | S |
 |---|---|---|---|---|---|---|---|---|
 | Bribe: a clerk moves your party up a gate's queue | 0.5 | the gate's | 50 | 160 | 630 | 2,500 | 9,500 | 38,000 |
 | Bribe: an assessor "rounds down" a gate's rank | 4 | the gate's true | 400 | 1,300 | 5,000 | 20,000 | 76,000 | 300,000 |
-| Bribe: a Reading is filed a rank low (to dodge the Corps) | 5 | the hunter's | 500 | 1,600 | 6,300 | 25,000 | 95,000 | 380,000 |
+| Bribe: an assessor files a reading one rank low (to avoid the call-up) | 5 | the hunter's true | 500 | 1,600 | 6,300 | 25,000 | 95,000 | 380,000 |
 | A forged licence | 3 | the licence's | 300 | 980 | 3,800 | 15,000 | 57,000 | 230,000 |
-| A black-market seat in a gate (XP only, no gold, no drops) | 2 | the gate's | 200 | 650 | 2,500 | 10,000 | 38,000 | 150,000 |
+| An unlicensed seat in a gate, bought from the Stair | 0.5 | the gate's | 50 | 160 | 630 | 2,500 | 9,500 | 38,000 |
 | Smuggling a hunter over a border | 10 | the hunter's | 1,000 | 3,300 | 13,000 | 50,000 | 190,000 | 750,000 |
 | Fine: entering a gate without licence or fee | 2 | the gate's | 200 | 650 | 2,500 | 10,000 | 38,000 | 150,000 |
-| Fine: selling a seat | 10 | the gate's | 1,000 | 3,300 | 13,000 | 50,000 | 190,000 | 750,000 |
+| Fine: selling an unlicensed seat | 10 | the gate's | 1,000 | 3,300 | 13,000 | 50,000 | 190,000 | 750,000 |
 | Fine: a gate declared late (found, not reported in a day) | 5 | the gate's | 500 | 1,600 | 6,300 | 25,000 | 95,000 | 380,000 |
 | Fine: a hunter unregistered past the 72 hours | 3 | the hunter's | 300 | 980 | 3,800 | 15,000 | 57,000 | 230,000 |
 | Fine: under-declared gold | 0.3 | three times the levy dodged, on each Clear of the hunter's | 30 | 98 | 380 | 1,500 | 5,700 | 23,000 |
@@ -405,127 +433,134 @@ Law prices everything in Clears, so a fine hurts the same at every rank.
 <!-- /prices:law -->
 
 <!-- prices:insurance -->
-| Rank | Crystal cover, a year | With the door rider | A crystal on credit: interest a month |
-|---|---|---|---|
-| E | 50 | 150 | 30 |
-| D | 163 | 488 | 98 |
-| C | 625 | 1,875 | 375 |
-| B | 2,500 | 7,500 | 1,500 |
-| A | 9,500 | 28,500 | 5,700 |
-| S | 37,500 | 112,500 | 22,500 |
+| Rank | Crystal cover, a year | A crystal on credit: interest a month |
+|---|---|---|
+| E | 50 | 30 |
+| D | 163 | 98 |
+| C | 625 | 375 |
+| B | 2,500 | 1,500 |
+| A | 9,500 | 5,700 |
+| S | 37,500 | 22,500 |
 <!-- /prices:insurance -->
 
-Crystal cover is a policy that buys and delivers a crystal of your rank if you die inside the three dawns (see
-`power.md`): a twentieth of the crystal's price a year. It does not cover a personal door, because nobody can carry
-your body out of one. The **door rider** triples the premium and pays for the crystal you carried in yourself.
+Crystal cover is an insurance policy. A crystal raises a hunter only within an hour of the death, so the party
+must carry the crystal into the gate. The policy repays the price of one crystal a year that was used on the
+hunter. The premium is a twentieth of the crystal's price a year. The policy excludes a death in a personal gate and a death in a world gate entered alone.
 
 ## 13. Resurrection Crystals
 
-Ten Clears of the rank it raises (the design's ruling). The Shop sells them to any hunter.
+A crystal costs ten Clears of the rank it raises, as the design rules. The Shop sells crystals to any hunter.
 
 <!-- prices:crystals -->
-| Crystal | Shop price | Median months of wage | A clinic's raising (crystal and rite) | On the Stair, no questions | Months of a guild liner's net income | Months of a freelancer's |
+| Crystal | Shop price | Median months of wage | A clinic's price to raise a hunter | From the Stair, with no record | Months of a guild liner's net income | Months of a freelancer's |
 |---|---|---|---|---|---|---|
-| E | 1,000 | 1.0 | 1,100 | 1,500 | 1.3 | 2.0 |
-| D | 3,250 | 3.3 | 3,575 | 4,875 | 1.6 | 2.5 |
-| C | 12,500 | 12.5 | 13,750 | 18,750 | 1.8 | 2.7 |
-| B | 50,000 | 50.0 | 55,000 | 75,000 | 1.9 | 2.9 |
-| A | 190,000 | 190.0 | 209,000 | 285,000 | 2.4 | 4.4 |
-| S | 750,000 | 750.0 | 825,000 | 1,125,000 | 3.7 | 12.6 |
+| E | 1,000 | 1.0 | 1,100 | 1,500 | 1.1 | 1.8 |
+| D | 3,250 | 3.3 | 3,575 | 4,875 | 1.3 | 2.2 |
+| C | 12,500 | 12.5 | 13,750 | 18,750 | 1.5 | 2.4 |
+| B | 50,000 | 50.0 | 55,000 | 75,000 | 1.5 | 2.6 |
+| A | 190,000 | 190.0 | 209,000 | 285,000 | 1.9 | 3.7 |
+| S | 750,000 | 750.0 | 825,000 | 1,125,000 | 2.6 | 8.3 |
 <!-- /prices:crystals -->
 
-This table is the most important one in the world. An E crystal costs one median month. It raises any dead hunter of
-rank E. It raises no unawakened person at any price: the System keeps no record of them to restore. So:
+An E crystal costs one median month's wage and raises a dead hunter of rank E. It must be used within an hour of
+the death. An unused crystal keeps for any length of time. No crystal raises an unawakened person. The usual
+explanation is that the System holds a record of each hunter and holds none of anyone else. These prices have four
+effects on the world.
 
-- A hunter with cover does not die of an ordinary death in a gate. A hunter without it does. Among hunters, death is
-  a bill, and the poor cannot pay it.
-- A guild that raises you owns the debt. Ten Clears at three percent a month is the commonest chain in the trade.
-- A state's vault of A and S crystals is a strategic reserve, counted by its rivals.
-- The unawakened, who are 499 in every 500 people, bury their dead and watch hunters come back. Every politics in
-  the world is downstream of that.
+- A guild party carries a crystal, so a guild hunter survives most deaths in a gate. An unsigned party usually
+  carries none, because an E crystal costs ten E Clears. Poor hunters therefore die for good more often.
+- A guild that raises a hunter charges the hunter for the crystal. The usual terms are ten Clears at three percent
+  a month, and many hunters never repay it.
+- Each state keeps a stock of A and S crystals, and other states estimate its size as they estimate its army.
+- The unawakened are 499 of every 500 people. Their dead stay dead while hunters are raised. This difference is
+  the largest political grievance in every country.
 
-## 14. Income against prices: the life each rank lives
+## 14. Income against prices
 
-Four ways of working, a month of each, from the design's measured shares. Out of the gross come the state's tenth of
-System gold, one potion of the rank a world gate, door fees for the unsigned, and crystal cover.
+The tables show a month of income for four ways of working, using the design's measured shares. The costs taken
+from the gross are the state's tenth of System gold, one potion of the hunter's rank for every two world gates,
+entry fees for unsigned hunters, and crystal cover. Every hunter has personal gates, and the tables include them.
 
 <!-- prices:incomes -->
-**Door-shy freelancer** (a world gate a season, a door a week, a day job)
+**Occasional freelancer** (one world gate every four months, one personal gate a week, and a day job)
 
-| Rank | Gross a month | Levy, potions, fees, cover | Net a month | Times the median wage | Months of net for a set of own-rank gear | Years of net for a Saltmarket flat |
+| Rank | Gross a month | Levy, potions, entry fees, crystal cover | Net a month | Times the median wage | Months of net for a set of own-rank gear | Years of net for a Saltmarket flat |
 |---|---|---|---|---|---|---|
-| E | 135 | 29 | 106 | 0.1 | 9.5 | 94.6 |
-| D | 366 | 93 | 273 | 0.3 | 11.9 | 36.6 |
-| C | 1,299 | 357 | 942 | 0.9 | 13.3 | 10.6 |
-| B | 4,959 | 1,417 | 3,542 | 3.5 | 14.1 | 2.8 |
-| A | 13,999 | 4,956 | 9,042 | 9.0 | 21.0 | 1.1 |
-| S | 30,397 | 17,279 | 13,118 | 13.1 | 57.2 | 0.8 |
+| E | 135 | 23 | 112 | 0.1 | 8.9 | 89.3 |
+| D | 366 | 72 | 294 | 0.3 | 11.1 | 34.0 |
+| C | 1,299 | 279 | 1,021 | 1.0 | 12.2 | 9.8 |
+| B | 4,959 | 1,105 | 3,854 | 3.9 | 13.0 | 2.6 |
+| A | 13,999 | 3,769 | 10,230 | 10.2 | 18.6 | 1.0 |
+| S | 30,397 | 12,592 | 17,805 | 17.8 | 42.1 | 0.6 |
 
-**Freelancer** (a public gate every other month, a door most days)
+**Freelancer** (one public gate a month and five personal gates a week)
 
-| Rank | Gross a month | Levy, potions, fees, cover | Net a month | Times the median wage | Months of net for a set of own-rank gear | Years of net for a Saltmarket flat |
+| Rank | Gross a month | Levy, potions, entry fees, crystal cover | Net a month | Times the median wage | Months of net for a set of own-rank gear | Years of net for a Saltmarket flat |
 |---|---|---|---|---|---|---|
-| E | 582 | 76 | 506 | 0.5 | 2.0 | 19.8 |
-| D | 1,551 | 238 | 1,313 | 1.3 | 2.5 | 7.6 |
-| C | 5,497 | 919 | 4,579 | 4.6 | 2.7 | 2.2 |
-| B | 20,850 | 3,627 | 17,223 | 17.2 | 2.9 | 0.6 |
-| A | 55,194 | 11,641 | 43,553 | 43.6 | 4.4 | 0.2 |
-| S | 94,048 | 34,521 | 59,527 | 59.5 | 12.6 | 0.2 |
+| E | 643 | 86 | 557 | 0.6 | 1.8 | 18.0 |
+| D | 1,737 | 270 | 1,467 | 1.5 | 2.2 | 6.8 |
+| C | 6,163 | 1,044 | 5,119 | 5.1 | 2.4 | 2.0 |
+| B | 23,479 | 4,127 | 19,352 | 19.4 | 2.6 | 0.5 |
+| A | 65,061 | 13,541 | 51,520 | 51.5 | 3.7 | 0.2 |
+| S | 132,672 | 42,021 | 90,651 | 90.7 | 8.3 | 0.1 |
 
-**Guild liner** (three guild gates a month, a door most days)
+**Guild liner** (four guild gates a month and five personal gates a week)
 
-| Rank | Gross a month | Levy, potions, fees, cover | Net a month | Times the median wage | Months of net for a set of own-rank gear | Years of net for a Saltmarket flat |
+| Rank | Gross a month | Levy, potions, entry fees, crystal cover | Net a month | Times the median wage | Months of net for a set of own-rank gear | Years of net for a Saltmarket flat |
 |---|---|---|---|---|---|---|
-| E | 964 | 221 | 743 | 0.7 | 1.3 | 13.5 |
-| D | 2,725 | 709 | 2,016 | 2.0 | 1.6 | 5.0 |
-| C | 9,762 | 2,731 | 7,031 | 7.0 | 1.8 | 1.4 |
-| B | 37,743 | 10,877 | 26,866 | 26.9 | 1.9 | 0.4 |
-| A | 118,779 | 39,191 | 79,588 | 79.6 | 2.4 | 0.1 |
-| S | 343,420 | 143,271 | 200,149 | 200.1 | 3.7 | 0.0 |
+| E | 1,062 | 181 | 881 | 0.9 | 1.1 | 11.4 |
+| D | 3,016 | 579 | 2,436 | 2.4 | 1.3 | 4.1 |
+| C | 10,781 | 2,231 | 8,550 | 8.5 | 1.5 | 1.2 |
+| B | 41,750 | 8,877 | 32,873 | 32.9 | 1.5 | 0.3 |
+| A | 133,763 | 31,591 | 102,172 | 102.2 | 1.9 | 0.1 |
+| S | 401,919 | 113,271 | 288,649 | 288.6 | 2.6 | 0.0 |
 
-**Climber (a table's party)** (a gate a week at rank, three doors: the design's table player)
+**A table's party** (one own-rank gate a week and three personal gates a week, the design's table player)
 
-| Rank | Gross a month | Levy, potions, fees, cover | Net a month | Times the median wage | Months of net for a set of own-rank gear | Years of net for a Saltmarket flat |
+| Rank | Gross a month | Levy, potions, entry fees, crystal cover | Net a month | Times the median wage | Months of net for a set of own-rank gear | Years of net for a Saltmarket flat |
 |---|---|---|---|---|---|---|
-| E | 845 | 329 | 515 | 0.5 | 1.9 | 19.4 |
-| D | 2,430 | 1,065 | 1,365 | 1.4 | 2.4 | 7.3 |
-| C | 8,662 | 4,098 | 4,564 | 4.6 | 2.7 | 2.2 |
-| B | 33,696 | 16,364 | 17,331 | 17.3 | 2.9 | 0.6 |
-| A | 112,644 | 60,900 | 51,744 | 51.7 | 3.7 | 0.2 |
-| S | 367,742 | 233,538 | 134,205 | 134.2 | 5.6 | 0.1 |
+| E | 845 | 221 | 623 | 0.6 | 1.6 | 16.0 |
+| D | 2,430 | 713 | 1,717 | 1.7 | 1.9 | 5.8 |
+| C | 8,662 | 2,745 | 5,917 | 5.9 | 2.1 | 1.7 |
+| B | 33,696 | 10,952 | 22,744 | 22.7 | 2.2 | 0.4 |
+| A | 112,644 | 40,333 | 72,312 | 72.3 | 2.6 | 0.1 |
+| S | 367,742 | 152,350 | 215,392 | 215.4 | 3.5 | 0.0 |
 <!-- /prices:incomes -->
 
-What the numbers say, rank by rank, for a signed liner:
+The next table describes the life a signed liner can afford. A capped liner keeps this rank for life.
 
-| Rank | Net against the median wage | The life |
+| Rank | Net income, times the median wage | What that buys |
 |---|---|---|
-| E | 0.7 | A room in Tidewall or a shared flat in Saltmarket. A second job, or a partner with one. Common gear bought used. Crystal cover is 50 gold a year and a third of E-ranks let it lapse. |
-| D | 2 | A flat in Saltmarket on a ten-year mortgage. A car. The first rank where hunting is a living and not a hope. |
-| C | 7 | A surgeon's income. A flat in Ledger Row, parents moved out of Amber, children in a private school. Rare gear costs under two months' net. Recognised in the street in their own district. |
-| B | 27 | Rich. The Crown, staff, an agent. A full epic set in two months. A transfer fee of 100,000 on their head, so their guild watches who they dine with. |
-| A | 80 | Half a year's net buys a family flat in the Crown. Known nationally. Sponsorship (see `fame.md`) can match the hunting income. The state knows where they sleep. |
-| S | 200 and up | Not an income, a balance sheet: 2.4 million a year from the work alone, more from the name. Paid by a city to live in it. An S crystal is under four months of it. |
+| E | 0.9 | One room in Tidewall, or a share of a flat in Saltmarket. About half of that income comes from personal gates. They buy common gear used. |
+| D | 2.4 | A flat in Saltmarket on a ten-year mortgage, and a car. D is the lowest rank at which hunting alone supports a household. |
+| C | 8.5 | More than a surgeon earns. A flat in Ledger Row and private school for the children. A full rare set costs six weeks' net. |
+| B | 33 | A flat in the Crown, household staff and an agent. The model transfer fee for a B-rank is 100,000 gold, so the guild pays attention to which other guilds the hunter talks to. |
+| A | 100 | Five months' net buys a family flat in the Crown. Sponsorship (`fame.md`, section 5) often pays as much as hunting. The state tracks where each A-rank lives. |
+| S | 290 | 3.5 million gold a year from hunting, and usually more from sponsorship and a city's residency payment. An S crystal costs under three months' net. |
 
-And for the unsigned, the same ladder two rungs down: a freelancer at C lives like a liner at D. A door-shy E-rank
-earns 106 gold a month from the System and is, in every way that matters, a labourer with a licence. The climber's
-row is the table's party: it grosses nearly what a liner does and keeps far less, because a gate a week at rank
-drinks a potion a week. Climbing is expensive. It is also the only row that changes rank within the year.
+An unsigned hunter with one public gate a month and five personal gates a week nets about two thirds of a liner's
+income up to B rank. At E that is 557 gold a month, which is less than a labourer earns.
+
+The fourth table is a table's party: one own-rank gate a week and three personal gates. The party nets less than
+a liner, because it buys more potions and has no retainer.
 
 ## 15. Where the world disagrees with the game (for the lead)
 
-The game's numbers are the owner's to change. This is where the world, built to make sense around them, strains.
+The game's numbers are the owner's to change. Each row is a place where the world needed something the game's numbers
+do not give, or where the numbers have a result that the world had to explain.
 
 | # | The game today, or the ruled design | What the world needs or implies | A way to close it |
 |---|---|---|---|
-| 1 | `xpSplit` false: each hunter in a gate takes the whole XP, whatever the crowd and whatever their level | A seat in a gate is the most valuable thing in the world: a level 1 hunter leaves one B gate at level 11. The world treats seat-selling as its largest crime (`factions.md`, the Stair). It works as fiction, but gold now punishes a crowd and XP rewards one | Split XP past `goldParty` as gold is split, or pay a hunter two ranks under a gate a share of its XP. Design question 2 already asks |
-| 2 | Levelling is fast: 95 own-rank gates, or 69 table sessions, from E to S; a liner with 1.5 gates a month gets there in about six years | A world twenty years old would be full of S-ranks. The bible's answer is a piece of canon, not a number: **levels began three years ago** (the Speaking, Year 17); before it a hunter's rank was fixed. It needs the owner's yes | Keep the canon, or slow the top steps (A to S is 7 gates) |
-| 3 | The daily gives 1 stat point (and 25 XP) a day | 365 points a year from push-ups against 219 from all seventy levels: in the world a patient C-rank out-stats a climbing S within two years. The bible speaks only of the Daily's XP | If "points" are stat points, a lower rate or a cap by level |
-| 4 | A Resurrection Crystal has no time limit, and a dead hunter uses it | The world says three dawns and "only the awakened". The game enforces neither, and should not need to; but an E crystal at one median month makes death cheap for anyone insured, which the world leans into | None needed. A GM's option "crystals fail after N days" if a table wants death to bite |
-| 5 | No consumable above epic, none at rare | A and S hunters stop buying potions, so the Shop stops being a sink at the top. The world prices rare 625, legendary 9,500, mythic 37,500 by `usedUpShare` | Four built-in potions at the missing tiers |
-| 6 | Mana Crystal Shard: shipped 40 (sells for 20); design 100, selling at a quarter (25) | In the world crystal is the one drop nobody keeps, and it sells at 85 to 90% of assay. A quarter fits worn gear, not a raw material | A `materialShare` (0.85) beside `saleShare`, for items of type material |
-| 7 | A gate pays gold and two picks; its carcass and crystal pay nobody | The world's guilds live on the harvest: 1.5 times the gold pot, of which a rights holder nets 55% | Nothing in rules. A GM who lets a party buy a gate's rights (the table in section 8) pays the holder's net as a quest reward |
-| 8 | No fee, tax or upkeep | The world has a door fee (10% of a Clear), a levy (10% of System gold) and a house share (25%) | Optional rule numbers a GM can switch on; off by default, as now |
-| 9 | `gateSpawn.rank.S` is 1 in 100 | In the world an S gate is 1 in 20,000: Carrow sees one in three years | Nothing: a table rolls the gates worth a session, not the city's |
-| 10 | Shipped prices: `baseValue` 10 with a literal 10, rarity factors 1 to 200, a sale at half, a crystal at a flat 100,000 | This bible prices by the ruled design (a Clear a tier, a quarter, ten Clears). Until the design's unit 1 ships, the app's prices above common are lower than these tables | Ships with the economy units |
-| 11 | Built-in item, title and job names (Kasaka's Venom Fang, Baruka's Mana Ring, Kamish's Wrath, Shadow Monarch, King of Shadows) | They come from a published series. The world bible uses none of them and names nothing after another work | the owner's call, and it matters most for the public repository |
-| 12 | A world gate cleared alone pays four Clears | The world agrees, and the Bureau hates it: "soloing" is legal, lucrative, and the leading cause of a hunter staying dead | None |
+| 1 | Ruled since: a gate's XP is split as its gold is | The world no longer needs a trade in seats for XP. The Stair now sells unlicensed seats for gold | Closed by the owner's ruling |
+| 2 | Levelling is fast. E to S takes 95 own-rank gates in a party of four, or 69 table sessions | the owner's ruling: every hunter levels up to the cap of their rank, and a trial gate removes the cap. The game has no cap and no trial gate | A level cap by rank that a GM can lift for a hunter, if the owner wants the app to hold NPC hunters or new characters to it |
+| 3 | The daily gives 1 stat point and 25 XP a day | A year of dailies gives 365 points. Seventy levels give 219. The bible mentions only the daily's XP | the owner suggests raising the stat points from levels. The lead decides |
+| 4 | Ruled since: a dead hunter can be raised within an hour of the death, a crystal never expires, and the app does not enforce the hour | The bible uses the hour. A party must carry its crystal into the gate | Closed by the owner's ruling |
+| 5 | The game has no consumable above epic and none at rare | A-ranks and S-ranks have no potion to buy, so the Shop removes little of their gold. The world prices rare at 625, legendary at 9,500 and mythic at 37,500 by `usedUpShare` | Add four built-in potions at the missing tiers |
+| 6 | Mana Crystal Shard ships at 40 and sells for 20. The design prices it at 100, selling for 25 | In the world a hunter sells crystal for 85 to 90% of its assay value. A quarter suits used gear and does not suit a raw material | Add a `materialShare` of 0.85 beside `saleShare`, for items of type material |
+| 7 | A gate pays gold and two item picks. Its crystal and carcasses pay nobody | The world's guilds earn most of their margin from the harvest, which is 1.5 times the gold pot. A rights holder nets 55% of it | No rule change. A GM who lets a party buy a gate's rights (section 8) can pay the holder's net as a quest reward |
+| 8 | The game has no fee, tax or upkeep | The world has an entry fee of 10% of a Clear, a levy of 10% of System gold and a house share of 25% | Optional rule numbers that a GM can turn on, off by default |
+| 9 | `gateSpawn.rank.S` is 1 in 100 | In the world 1 gate in 20,000 is an S gate, and Carrow gets one about every three years | No change. A table rolls for the gates worth a session |
+| 10 | Shipped prices: `baseValue` 10 times a literal 10, rarity factors 1 to 200, a sale at half, a crystal at a flat 100,000 | The bible uses the ruled design: one Clear for a tier's middle item, a sale at a quarter, a crystal at ten Clears. Until the design's unit 1 ships, the app's prices above common are lower than the bible's | Ships with the economy units |
+| 11 | Some built-in item, title and job names come from Solo Leveling | the owner's ruling: the names stay, and the setting is Solo Leveling's world | Closed by the owner's ruling |
+| 12 | A world gate cleared alone pays four Clears | The world agrees. Guild contracts forbid it and insurers exclude it | No change |
+| 13 | A raising costs only the crystal | the owner wants death to cost a lot. The story adds a cost that is not gold (`story.md`, section 3) | Optional rule: a raising also costs the hunter one level. The owner decides |

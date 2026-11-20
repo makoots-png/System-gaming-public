@@ -10,6 +10,7 @@ import type { ParseEnv } from '../src/core/save.ts';
 import { addXp } from '../src/core/hunter/progress.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
 import { parseFormula } from '../src/core/formula.ts';
+import { RARITIES, priceOf } from '../src/core/registry/items.ts';
 import { dev } from './fixtures/ids.ts';
 import { ruleNumbers } from './fixtures/rule-numbers.ts';
 
@@ -72,6 +73,12 @@ test('a number just past either end of its domain, or a fraction where it is who
       expect([n.path, read(rulesOf(overrides), n.path)]).toEqual([n.path, value]);
     }
   }
+});
+
+test('a GM\'s base value or a rarity\'s price factor is no rule: a price is its rank\'s Clear, so such an override is refused as unknown and changes no price', () => {
+  const { overrides, refused } = parseOverrides({ baseValue: 50, rarities: { rare: { mult: 30 } } });
+  expect(refused.map(r => [r.path, r.reason])).toEqual([['baseValue', 'unknown'], ['rarities.rare.mult', 'unknown']]);
+  expect(RARITIES.map(r => priceOf(rulesOf(overrides), r))).toEqual(RARITIES.map(r => priceOf(RULES, r)));
 });
 
 test('the Rules editor\'s words for a number out of its domain name its bounds and why they are there', () => {

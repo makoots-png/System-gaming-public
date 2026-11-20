@@ -25,6 +25,10 @@ Read sections 0, 2.2, 2.5, 4, 7 and 10, and revise 2.5, 4 and 7 (and one line of
    edit of `loot.C.gold` moves the rare price. `rarities.*.mult` and `baseValue` as stored results go, or you say
    in the doc exactly why one stays. Rewrite 7.1's rows, their tests and unit 1's and unit 8's rows to match.
 
+4. **Rulings 8, 9 and 10** (section 10): no time limit on a crystal in the app; a raising costs levels by a rule
+   `reviveLevelShare`, which 7.1 gains and unit 4's row builds (settle there what becomes of the lost levels'
+   points, and say it); no level cap.
+
 Rerun `bun docs/agent-handoff/features/economy/measure.ts` if a number of the doc moves. Change no ruling.
 
 ## Step B: unit 1, as section 7.3's row 1 reads after step A

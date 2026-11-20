@@ -8,8 +8,8 @@ import { VERDICT_WORDS, verdict } from './coin.ts';
 import { CAP_ROUNDS } from './combat/play.ts';
 import { ODDS_RUNS } from './combat/odds.ts';
 import { sellPrice, shopOpen } from './hunter/inventory.ts';
-import { priceOf } from './registry/items.ts';
-import type { Rarity } from './registry/items.ts';
+import { RARITIES, priceOf } from './registry/items.ts';
+import type { PriceRules, Rarity } from './registry/items.ts';
 import { FUMBLE_FAILURES, REVIVE_HP, SAVES_TO_END, SAVE_FUMBLE, SAVE_SUCCESS, SAVE_UP, SAVE_UP_HP, WAYS_BACK } from './hunter/vitals.ts';
 
 const sign = (n: number): string => (n >= 0 ? '+' : '') + n;
@@ -80,17 +80,19 @@ export function soloLines(R: Pick<Rules, 'solo'>): readonly string[] {
   ];
 }
 
-/** One tier of the sale table: its multiplier, the price an unpriced item of it has (`priceOf`) and what the Bag pays for it (`sellPrice`). */
-export interface SaleRow { readonly rar: Rarity; readonly mult: number; readonly price: number; readonly sell: number }
+/** One tier of the sale table: the price an unpriced item of it has (`priceOf`) and what the Bag pays for it (`sellPrice`). */
+export interface SaleRow { readonly rar: Rarity; readonly price: number; readonly sell: number }
 
-/** The sale table of the Loot section, each figure from the function the game pays with. */
-export function saleRows(R: Pick<Rules, 'baseValue' | 'rarities'>): readonly SaleRow[] {
-  return (Object.keys(R.rarities) as Rarity[]).map(rar => ({ rar, mult: R.rarities[rar].mult, price: priceOf(R, rar), sell: sellPrice({ rar }, R) }));
+/** The sale table of the Loot section: a row for each rarity an item can carry, each figure from the function the game pays with. */
+export function saleRows(R: PriceRules & Pick<Rules, 'saleShare'>): readonly SaleRow[] {
+  return RARITIES.map(rar => ({ rar, price: priceOf(R, rar), sell: sellPrice({ rar, type: 'misc' }, R) }));
 }
 
-/** How an item that sets no price is priced and sold. */
-export function saleLine(R: Pick<Rules, 'baseValue' | 'rarities'>): string {
-  return `An item that sets no price costs base ${R.baseValue} gold × its tier's multiplier × 10 in the shop, and the Association buys it back at half that, rounded down.`;
+const pct = (share: number): string => `${Math.round(share * 1000) / 10}%`;
+/** How an item that sets no price is priced and sold: the rank that prices each rarity, and the shares of `usedUpShare` and `saleShare`. */
+export function saleLine(R: Pick<Rules, 'rarities' | 'usedUpShare' | 'saleShare'>): string {
+  const ranks = RARITIES.map(rar => `${rar} ${R.rarities[rar].rank}`).join(', ');
+  return `An item that sets no price costs one Clear of its tier's rank, the middle of that rank's gate-clear gold in the table below (${ranks}); a consumable costs ${pct(R.usedUpShare)} of that, rounded. The Association buys an item back at ${pct(R.saleShare)} of its price, rounded down, at least 1 gold.`;
 }
 
 /** What completing every daily gives: the daily quest's own points (the template a new hunter's daily is made from), and the streak's. */

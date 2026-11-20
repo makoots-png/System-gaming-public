@@ -1,7 +1,8 @@
 # Economy: design
 
 Status: design only, no code changed. Written 2026-11-20 on branch `economy` from `2c5f7a86`; sections 2 to 8 revised the
-same day to the owner's rulings (section 10). Every number below is printed by
+same day to the owner's rulings 1 to 5 (section 10), then sections 2.2, 2.5, 4, 7, 8 and 9 to rulings 6 to 10 and to
+finding E-1 of `docs/audit/2026-11-20-fable-review.md` (a rarity's price is computed from the loot table, not stored). Every number below is printed by
 `bun docs/agent-handoff/features/economy/measure.ts`, which reads the shipped `RULES` and the built-in items, so a change
 of a rule moves the tables when the script is rerun. Each table names the block of the script's output it comes from.
 
@@ -114,9 +115,10 @@ Every plus is under the next minus: 150 < 217, 488 < 833, 1,875 < 3,333, 7,500 <
 
 ### 2.2 The ladder
 
-**Rule: a middle item of a rarity costs one Clear of that rarity's rank.** So `baseValue` is E's Clear, 100 (the
-literal `× 10` goes), and each `rarities.*.mult` is its rank's Clear over E's: 1, 3.25, 12.5, 50, 190, 750 (today 1, 2,
-5, 15, 50, 200).
+**Rule: a middle item of a rarity costs one Clear of that rarity's rank.** The price is computed, never stored: each
+rarity names its rank (`rarities.*.rank`, a rule), and its price is that rank's Clear, the middle of `loot[rank].gold`:
+E 100, D 325, C 1,250, B 5,000, A 19,000, S 75,000. Today it is `baseValue` 10 × `rarities.*.mult` (1, 2, 5, 15, 50,
+200) × a literal 10; all three go (review E-1), so a GM's edit of `loot.C.gold` moves the rare price with the Clear.
 
 Why one Clear: a hunter has 10 slots (`RULES.slots`), so a full set of its own rank's middle gear is 10 Clears. A table
 player earns in a rank (sessions at the rank from section 4.4, times income a session) about E 39, D 34, C 27, B 13, A 7
@@ -215,23 +217,30 @@ weigh.
 
 What it says: most built-in gear is plain (its slot's free numbers and a point or two), so it is its tier's minus and
 costs two thirds of a Clear. Six items are past any grade of their tier, by mana (2 points each) and by dice and HP.
-The fix, each re-measured (block `[2.5] the fixes`):
 
-| Item | Today | Fix | Spend | Grade, price |
+**Ruled: the six are kept as they are** (ruling 6). None moves a tier and none loses a number. Each is priced as its
+tier's plus, the dearest price its tier has (block `[2.5] kept`; the tier's top spend from block `[2.4]`):
+
+| Item | Rarity | Spend | Its tier's top | Price, as the tier's plus |
 |---|---|---|---|---|
-| Mage Circlet | rare, +2 Power +2 max mana | epic, same numbers | 6.0 | Epic+, 7,500 |
-| Baruka's Mana Ring | rare, +3 max mana | epic, same numbers | 6.0 | Epic+, 7,500 |
-| Orb of Avarice | +4 Power +6 max mana | +4 Power +2 max mana | 8.0 | Legendary, 19,000 |
-| Kamish's Wrath | 3d8, +4 Strength +2 Agility | 2d8, same bonus | 7.5 | Legendary, 19,000 |
-| Monarch's Scepter | 4d8, +6 Power +10 max mana | 2d8, +6 Power +4 max mana | 12.4 | Mythic+, 112,500 |
-| Armor of the Absolute Being | +5 Vitality +100 max HP | +5 Vitality +15 max HP | 11.0 | Mythic, 75,000 |
+| Mage Circlet | rare | 6.0 | 4.4 | 1,875 |
+| Baruka's Mana Ring | rare | 6.0 | 4.4 | 1,875 |
+| Kamish's Wrath | legendary | 21.3 | 9.3 | 28,500 |
+| Orb of Avarice | legendary | 16.0 | 9.3 | 28,500 |
+| Monarch's Scepter | mythic | 53.4 | 12.9 | 112,500 |
+| Armor of the Absolute Being | mythic | 45.0 | 12.9 | 112,500 |
 
-The two rares move up because their numbers fit a tier that exists; the four others are past even S's top, so their
-numbers come down. This changes fights for whoever holds them, which is question 1.
+Unit 3's budget test ("no built-in item spends past its grade's top") names these six as its allowed exceptions, one by
+one by name (a built-in item's only key), with ruling 6 as the reason, so a seventh item past its top still fails it.
+Their grade is plus, written on each in `items.ts`, and the budget is not stretched to fit them: a GM's item past its
+tier's top is still shown as past it by the item maker's spend line. They stay the strongest things a hunter can find
+at their rarity, at the dearest price that rarity has.
 
-The shop, today → design: Iron Dagger 100 → 67, Hunter's Leather 150 → 67, Steel Longsword 400 → 67, Knight Killer
-5,000 → 1,875, Ring of Vitality 20,000 → 3,333. The first design moved three of these up a rarity to keep their hand
-prices; the budget says they are plain for their tier, so they keep their rarity and take the minus price.
+The shop after unit 1 (no grades yet, every item its tier's middle): Iron Dagger 100 → 100, Hunter's Leather 150 → 100,
+Steel Longsword 400 → 100, Knight Killer 5,000 → 1,250, Ring of Vitality 20,000 → 5,000. After units 2 and 3 (block
+`[2.2]`): 67, 67, 67, 1,875 (Knight Killer's claimed plus), 3,333. The first design moved three of these up a rarity to
+keep their hand prices; the budget says they are plain for their tier, so they keep their rarity and take the minus
+price.
 
 ## 3. The sale ratio
 
@@ -244,14 +253,14 @@ pays (4.2). Buy then sell loses three quarters, so the shop is not a bank. The c
 
 ## 4. Income after the change
 
-### 4.1 World gate gold is shared, and a crowd is paid less
+### 4.1 World gate gold and XP are shared, and a crowd is paid less
 
-**Formula.** A world gate is made for a party of `goldParty` hunters, 4 (the session model's party). Its pot is
-`goldParty` gold rolls of its rank's table, and past that party it shrinks by party / n. Each of n hunters takes an equal
-share, rounded down:
+**Formula.** A world gate is made for a party of `gateParty` hunters, 4 (the session model's party). What it pays, its
+gold roll and its XP alike (ruling 7), is a pot of `gateParty` times the amount, and past that party the pot shrinks by
+party / n. Each of n hunters takes an equal share, rounded down:
 
-- pot(n) = roll × goldParty × min(1, goldParty / n)
-- each(n) = floor(pot(n) / n): roll × 4 / n up to 4 hunters, roll × 16 / n² past 4
+- pot(n) = amount × gateParty × min(1, gateParty / n)
+- each(n) = floor(pot(n) / n): amount × 4 / n up to 4 hunters, amount × 16 / n² past 4
 
 Up to the party the total holds and fewer hunters split it; past it the total falls too. Block `[4.1]`, mean gold:
 
@@ -276,8 +285,19 @@ pot past 4 would pay a crowd the same in total (not "paid less"); a steeper cut 
 **A solo run of a world gate** (a GM's gate opened to solo runs) is n = 1: four Clears, the most each. That is the
 risk the owner asks to reward: one hunter against a pack and a boss made for four.
 
-**XP stays as it is** (`xpSplit`, false: each payee the whole XP): the pace of ranks (4.4) is set on it, and the
-ruling names gold. Whether XP should follow the gold is question 2.
+**XP is shared the same way** (ruling 7: "XP should be split as well"). The amount is the XP the gate pays: what each
+fight linked to the gate pays of it (`fightAward`) and the rest at its Clear (`xpDue`), each shared among the hunters
+paid by the formula above. How the gate's XP is raised: the factor `gateParty` in the pot is the raise, as it is for
+gold. A gate's XP keeps its numbers and its meaning (`rankTable.*.xp` a normal monster, `fight.kinds.boss.xp` a boss,
+what one hunter of the party takes), so each of the party of 4 takes exactly the XP each payee takes today and levels as
+today (section 4.4). Block `[4.2]`, a world gate's XP each at the party of 4: E 125, D 525, C 1,750, B 5,600, A 17,500,
+S 56,000; at 2 hunters each takes twice that, alone four times, in a crowd of 6 sixteen thirty-sixths.
+
+What it reaches and what it does not. A fight linked to no gate is the GM's own scene, sized by the GM for the hunters
+in front of them: it pays each hunter the whole XP of what went down, as today's default. A personal gate's XP stays
+whole to its one hunter (its pack is already sized for one, section 4.2). `xpSplit` goes: the split is no longer a
+switch but the rule of a world gate, and "split evenly" (floor(XP / n), which paid a party of 4 a quarter of today) is
+not a pace anyone asked for. Unit 6 deletes it with its readers.
 
 **Item drops stay two picks to one taker.** A thing cannot be shared, and each hunter's chance of a drop is already
 2 / n, so a small party already takes more items each.
@@ -292,7 +312,8 @@ takes whole: 1.5 / 7 = 0.21 (E's pack is 1 to 3: 1.5 / 5 = 0.30). A quarter sits
 
 ### 4.3 Income a session, one hunter, gold (block `[1.3 / 4.2] design`)
 
-The party of 4 of the session model, the built-in items priced by their grades of section 2.5 (before its fixes).
+The party of 4 of the session model, the built-in items priced by their grades of section 2.5 (the six past their
+tier's top at its plus, ruling 6).
 
 | Rank | Clear gold each | Clear items, a hunter's share | A run's gold | A run's item | Table player | Daily player | Daily / table |
 |---|---|---|---|---|---|---|---|
@@ -309,16 +330,47 @@ and its item share doubles, so a table player's 194 becomes about 318); a party 
 ### 4.4 Quests and the pace of ranks
 
 The daily stays at 0 gold (one flat number: a lot at E, nothing at S). A GM's quest pays what the GM types; the Rules
-page's guidance is one Clear of the party's rank. Sessions at a rank by XP (block `[4.2]`, whole XP to each): table player
-E 20, D 19, C 17, B 8, A 5; daily player E 6, D 7, C 6, B 3, A 2.
+page's guidance is one Clear of the party's rank. Sessions at a rank by XP (block `[4.2]`, the party of 4, whose share
+of the world gate's XP is today's whole XP): table player E 20, D 19, C 17, B 8, A 5; daily player E 6, D 7, C 6, B 3,
+A 2. The split leaves these as they are.
+
+What the split does to the pace is a function of the party. Block `[4.4]`, table sessions at a rank when the world gate
+is cleared by 1 / 2 / 3 / 4 / 5 / 6 hunters (personal runs and the daily as in the session model, whole):
+
+| Rank | 1 | 2 | 3 | 4 | 5 | 6 |
+|---|---|---|---|---|---|---|
+| E | 7.5 | 12.9 | 17.0 | **20.2** | 25.3 | 29.4 |
+| D | 6.2 | 11.4 | 15.7 | **19.3** | 25.9 | 31.7 |
+| C | 5.3 | 9.7 | 13.5 | **16.7** | 22.6 | 27.9 |
+| B | 2.6 | 4.7 | 6.6 | **8.2** | 11.1 | 13.8 |
+| A | 1.6 | 3.0 | 4.2 | **5.4** | 7.5 | 9.5 |
+
+A pair ranks up in 56% to 64% of the party's sessions, a crowd of 6 needs 1.5 to 1.8 times as many: the risk of a
+small party is paid in pace as it is in gold. A lone hunter's world gate is a GM's choice (a gate opened to solo runs,
+section 4.1), so the 1 column is a bound, not a pace.
+
+**A raising costs levels** (ruling 9, `reviveLevelShare` 1/30): at level L a raising takes ceil(L / 30) levels, never
+below level 1, so level 1 loses none, levels 2 to 30 one, 31 to 60 two. Block `[4.4] a raising`, its cost in table
+sessions of XP at the party of 4 (the XP of the lost levels over the XP a table session pays at the rank):
+
+| Level (rank) | 5 (E) | 10 (D) | 20 (C) | 30 (C) | 35 (B) | 50 (A) | 60 (A) |
+|---|---|---|---|---|---|---|---|
+| Levels lost | 1 | 1 | 1 | 1 | 2 | 2 | 2 |
+| Table sessions of XP | 1.8 | 1.2 | 0.8 | 1.2 | 0.9 | 0.4 | 0.5 |
+
+More levels the higher a hunter is, as the owner asked; in sessions it costs less at A, where a session pays the most XP.
+What becomes of the lost levels' points: they go with the levels (ruling 9's default). The points a hunter holds are
+not a counter but what its levels give (`progress.ts` `balance`), so the lower level holds fewer. Stats already
+confirmed stay where they are; the points free fall by the lost levels' points, and when that goes below 0 the next
+levels gained pay it back before any point is free again. The peak level stays, so regaining a lost level refills
+nothing.
 
 ## 5. The Resurrection Crystal, tiered
 
 **Ruled: a crystal has a rank, revives only a hunter of its rank or lower, and its price follows its rank.**
 
-**The shape: the crystal's rank is its rarity's rank.** The item keeps `revive?: true`; a new table
-`RANK_OF_RARITY` (common E … mythic S, in `registry/items.ts`, the mapping the price ladder already uses) names the rank it
-revives up to. Weighed against a field `revive?: Rank`: that field could say "a common crystal that revives S", a state
+**The shape: the crystal's rank is its rarity's rank.** The item keeps `revive?: true`; its rarity's rank
+(`rarities.*.rank`, common E … mythic S, the rule the price ladder reads, section 7.1) names the rank it revives up to. Weighed against a field `revive?: Rank`: that field could say "a common crystal that revives S", a state
 with two prices (its rarity's and its rank's); reading the rank from the rarity makes it unrepresentable and needs no new
 field, no parser change and no migration. Today's held crystals are mythic, so they become S crystals and still revive
 anyone. A crystal has no grade.
@@ -340,7 +392,7 @@ stocks one of each rank (six rows named "Resurrection Crystal (E)" to "(S)"). It
 and a GM gives one in any reward, as today.
 
 **The use checks the rank.** `revives(item, rank)` in `hunter/use.ts`: true when the item revives and the hunter's rank is
-at or below `RANK_OF_RARITY[item.rar]`. `useItem` refuses a crystal too low with `too-low`, before any write, nothing
+at or below its rarity's rank (`R.rarities[item.rar].rank`). `useItem` refuses a crystal too low with `too-low`, before any write, nothing
 spent. Its words (`USE_WORDS`, copy-tasks.md: why, and the way out): "Resurrection Crystal (C) brings back a hunter of
 rank C or lower. Mina is rank B. You still have it. A B-rank crystal or higher, or the GM's Revive, brings Mina back."
 
@@ -368,59 +420,75 @@ above epic, so at A and S potions stop being a sink: content for later. Block `[
 
 ## 7. What changes in code
 
-### 7.1 Numbers in RULES
+### 7.1 Rules in RULES
 
-Each is a rule with its domain beside it, so the domain lint ("every rule number has its domain beside it") and
+Each number is a rule with its domain beside it, so the domain lint ("every rule number has its domain beside it") and
 `tests/rule-domains.test.ts` hold that it has one; no balance number is a literal in code. The test named holds its
 meaning, the expected value worked out from the rule, not from running the code.
 
 | Rule | Today | Design | Domain | Test that holds it |
 |---|---|---|---|---|
-| `baseValue` | 10 (× a literal 10) | 100, no factor | whole 0 to 1e6 | `tests/items.test.ts`: an unpriced middle common costs `baseValue`, the middle of `loot.E.gold` |
-| `rarities.*.mult` | 1, 2, 5, 15, 50, 200 | 1, 3.25, 12.5, 50, 190, 750 | `PRICE_FACTOR` (text: "10000 is about 13 times the mythic's") | `tests/items.test.ts`: each rarity's middle price is the middle of its rank's `loot` gold |
-| `gradeStep` | none | 1.5 | real 1 to 1.8 | `tests/items.test.ts`: a grade multiplies the price by `gradeStep`^grade; every tier's plus is under the next tier's minus |
+| `rarities.*.rank` | none (a rarity's rank is its place in a list, in `measure.ts` only) | common E, uncommon D, rare C, epic B, legendary A, mythic S | a `Rank`: not a number, its type is its domain | `tests/items.test.ts`: each rarity's unpriced price is the middle of `loot[rank].gold` of its rank; an edit of `loot.C.gold` moves the rare price and no other |
+| `baseValue` | 10 (× a literal 10) | goes: the common price is E's Clear, computed | | the row above |
+| `rarities.*.mult` | 1, 2, 5, 15, 50, 200 | goes: each price is its rank's Clear, computed | | the row above |
+| `gradeStep` | none | 1.5 | real 1 to 1.8 (1.8² is under 3.25, the shipped ladder's smallest step, so a plus stays under the next tier's minus) | `tests/items.test.ts`: a grade multiplies the price by `gradeStep`^grade; every tier's plus is under the next tier's minus |
 | `saleShare` | a literal `/ 2` | 0.25 | `SHARE` | `tests/inventory.test.ts`: a sale pays `floor(price × saleShare)`, at least 1; buy then sell leaves `price − sellPrice` |
-| `usedUpShare` | none | 0.5 | `SHARE` | `tests/items.test.ts`: an unpriced consumable costs `usedUpShare` of its rarity's price |
+| `usedUpShare` | none | 0.5 | `SHARE` | `tests/items.test.ts`: an unpriced consumable costs `usedUpShare` of its rank's Clear, rounded |
 | `itemBudget.share` | none | 0.5 | real 0 to 2 | `tests/item-budget.test.ts`: the middle budget is share × `pointsAt` / slots; the spans tile |
 | `itemBudget.weaponStep` | none | 1 | real 0 to 10 | `tests/item-budget.test.ts`: a plain weapon with the free die of its tier spends 0 |
 | `solo.lootShare` | none | 0.25 | `SHARE` | `tests/spawn.test.ts`: a personal gate's gold is `lootShare` of the roll; its pick is drawn with that chance (seeded) |
-| `goldParty` | none (each payee whole) | 4 | whole 1 to 12 | `tests/pay.test.ts`: each of n payees takes floor(roll × party × min(1, party / n) / n); a party of `goldParty` takes one roll each, one hunter `goldParty` rolls, the total past the party falls |
-| `reviveClears` | none (`value: 100000`) | 10 | whole 1 to 1000 | `tests/items.test.ts`: an unpriced reviving item costs `reviveClears` × its rarity's price |
-| `xpSplit`, `loot.*`, `dailyTemplate.rewards.gold`, `build.respecGold` | | unchanged | | |
+| `gateParty` | none (each payee whole) | 4 | whole 1 to 12 | `tests/pay.test.ts`: each of n payees takes floor(amount × party × min(1, party / n) / n) of a world gate's gold roll and of its XP; a party of `gateParty` takes the amount each, one hunter `gateParty` times it, the total past the party falls; a fight with no gate pays each the whole XP |
+| `reviveClears` | none (`value: 100000`) | 10 | whole 1 to 1000 | `tests/items.test.ts`: an unpriced reviving item costs `reviveClears` × its rank's Clear |
+| `reviveLevelShare` | none | 1/30 | `SHARE` | `tests/use.test.ts`: a raising at level L leaves level max(1, L − ceil(L × share)): 1 stays 1, 30 goes to 29, 31 to 29; a crystal and the GM's Revive alike; the points free fall by the lost levels' points |
+| `xpSplit` | false (each payee the whole XP) | goes in unit 6, with its readers: a world gate's XP is shared by `gateParty` (section 4.1) | | the `gateParty` row |
+| `loot.*`, `dailyTemplate.rewards.gold`, `build.respecGold` | | unchanged | | |
 
-New, not numbers: `GRADES` and `Grade`, `RANK_OF_RARITY` (`registry/items.ts`); `itemSpend` and `gradeBand`
-(`registry/item-budget.ts`, beside `worth.ts`); `revives` and the refusal `too-low` (`hunter/use.ts`). Two more tests:
-`tests/item-budget.test.ts` "no built-in item spends past its grade's top, and none claims a grade above its spend
-without a block the budget cannot weigh", and `tests/use.test.ts` "a crystal revives a dead hunter of its rank or lower
-and refuses a higher one, spending nothing".
+**The price, computed.** `clearOf(R, rank)` in `rules.ts`, the middle of `loot[rank].gold`, is the one reader of the
+anchor. `priceOf` reads it through the rarity's rank and rounds once to whole gold: round(Clear × `gradeStep`^grade, ×
+`usedUpShare` for a consumable, × `reviveClears` for an item that revives). No stored result stays: `baseValue` was the
+common price and `mult` each rarity's ratio to it, and both are now the loot table read through the rank, so keeping
+either would be the second home E-1 names. A rarity's rank sits in its `rarities` entry beside its color, since it is a
+fact of the rarity; the GM's reader of a rarity (`overrides.ts` `rarity`) reads `rank` as one of `RANKS` (`oneOf`) where
+it read `mult`, and a GM's new rarity needs a color and a rank where it needed a color and a factor. The Rules page's
+sale table lists the six rarities of `RARITIES`, the ones an item can carry.
+
+New, not rules: `clearOf` (`rules.ts`); `GRADES` and `Grade` (`registry/items.ts`); `itemSpend` and `gradeBand`
+(`registry/item-budget.ts`, beside `worth.ts`); `revives` and the refusal `too-low` (`hunter/use.ts`), which read a
+crystal's rank from `rarities.*.rank` (no table of their own). Two more tests: `tests/item-budget.test.ts` "no built-in
+item spends past its grade's top, and none claims a grade above its spend without a block the budget cannot weigh",
+whose allowed exceptions are the six items of ruling 6 by name, and `tests/use.test.ts` "a crystal revives a dead hunter
+of its rank or lower and refuses a higher one, spending nothing".
 
 ### 7.2 What a GM can edit
 
-Every number in 7.1 is GM-editable in the Rules editor, which reads any rule with a domain (`parseOverrides`). Today
-such an edit reaches only the GM's phone (finding 8); unit 8 carries the economy numbers in the room's `rules` doc so one
-edit reaches every phone. A grade and a hand price stay per item in the item maker.
+Every number in 7.1, and each rarity's rank, is GM-editable in the Rules editor (`parseOverrides`). Today such an edit
+reaches only the GM's phone (finding 8); unit 8 carries the economy rules in the room's `rules` doc so one edit reaches
+every phone. A grade and a hand price stay per item in the item maker.
 
 ### 7.3 Units
 
-Each is one commit that ends in `bun run test` green. Unit 1 puts every number in `RULES`, so the later units only read
-them and the file the domain lint watches is touched once. After it, three lanes share no file and can run side by
-side; inside a lane the units are in order.
+Each is one commit that ends in `bun run test` green. Unit 1 puts every rule in `RULES`, so the later units only read
+them and the file the domain lint watches gains nothing after it (unit 6 only deletes `xpSplit`). After it, three lanes
+can run side by side; inside a lane the units are in order.
 
 | # | Lane | Unit | Files | Proof |
 |---|---|---|---|---|
-| 1 | first | The rules and the ladder: every rule of 7.1 with its domain; `priceOf` with no `× 10`, `sellPrice` by `saleShare`, consumables by `usedUpShare`; the built-in items lose their hand values; `saleLine` | `src/core/rules.ts`, `src/core/registry/items.ts`, `src/core/hunter/inventory.ts`, `src/core/rules-text.ts`, `tests/items.test.ts`, `tests/inventory.test.ts`, `tests/rules-text.test.ts`, e2e cases that read a shop price (grep the old prices) | the ladder and sale tests; the Rules page's sale table |
-| 2 | items | The grade: `GRADES`, `grade?` on `Item` and `ItemDef`, `itemOf`, `parseItem`, `DISTINGUISHES`; `priceOf` reads it; the item maker's grade chips and its price placeholder; the label "Epic+" in the item's detail line (`describeItem`) | `src/core/registry/items.ts`, `src/core/hunter/inventory.ts`, `src/views/loot.js`, `src/core/effects.ts`, `tests/items.test.ts`, `tests/inventory.test.ts` | a graded price; an Epic+ and an Epic are two stacks |
-| 3 | items | The budget: `itemSpend`, `gradeBand`; the item maker's spend line; the built-ins' grades of 2.5 and its six fixes | `src/core/registry/item-budget.ts` (new), `src/core/registry/items.ts`, `src/views/loot.js`, `tests/item-budget.test.ts` (new) | the built-ins test; the maker's line on a weighed and an unweighed item |
-| 4 | items | The tiered crystal: `RANK_OF_RARITY`, `revives`, `too-low` and its words; a reviving item's price by `reviveClears`; six shop crystals; `tooLowLine` | `src/core/registry/items.ts`, `src/core/hunter/use.ts`, `tests/use.test.ts`, `tests/items.test.ts`, `tests/e2e/crystal.e2e.ts` | the use test at each side of the rank; the e2e buy of a C crystal at 12,500 |
+| 1 | first | The rules and the ladder: every rule of 7.1 with its domain, `rarities.*.rank` among them; `clearOf`; `priceOf` from the Clear of the rarity's rank, with no `baseValue`, `mult` or `× 10`; an unpriced consumable by `usedUpShare`; `sellPrice` by `saleShare`; the built-in items lose their hand values but the crystal's (unit 4 prices it); the GM's reader of a rarity reads `rank` in place of `mult`; `saleRows` over `RARITIES`, `saleLine` | `src/core/rules.ts`, `src/core/registry/items.ts`, `src/core/hunter/inventory.ts`, `src/core/rules-text.ts`, `src/core/overrides.ts`, `tests/items.test.ts`, `tests/inventory.test.ts`, `tests/rules-text.test.ts`, `tests/rule-domains.test.ts`, `tests/overrides.test.ts`, `tests/rules.test.ts`, `measure.ts` (its "today" kept as constants), e2e cases that read a shop price (grep the old prices) | the ladder and sale tests; an edit of `loot.C.gold` moves the rare price; the Rules page's sale table |
+| 2 | items | The grade: `GRADES`, `grade?` on `Item` and `ItemDef`, `itemOf`, `parseItem`, `DISTINGUISHES`; `priceOf` reads it; the item maker's grade chips and its price placeholder (which then prices a consumable by `usedUpShare` too); the label "Epic+" in the item's detail line (`describeItem`) | `src/core/registry/items.ts`, `src/core/hunter/inventory.ts`, `src/views/loot.js`, `src/core/effects.ts`, `tests/items.test.ts`, `tests/inventory.test.ts` | a graded price; an Epic+ and an Epic are two stacks |
+| 3 | items | The budget: `itemSpend`, `gradeBand`; the item maker's spend line; the built-ins' grades of 2.5, the six past their tier's top at plus and named in the test as its allowed exceptions (ruling 6) | `src/core/registry/item-budget.ts` (new), `src/core/registry/items.ts`, `src/views/loot.js`, `tests/item-budget.test.ts` (new) | the built-ins test, which fails on a seventh item past its top; the maker's line on a weighed and an unweighed item |
+| 4 | items | The tiered crystal and the cost of a raising: `revives` (a crystal's rank is its rarity's `rank`), `too-low` and its words; a reviving item's price by `reviveClears`; six shop crystals; `tooLowLine`; the level loss by `reviveLevelShare` in the life's `revive` of `sheetEdit`, where the crystal and the GM's Revive both pass, with its words where the raising is told and in `downLine` | `src/core/registry/items.ts`, `src/core/hunter/use.ts`, `src/core/hunter/grant.ts`, `src/core/rules-text.ts` (`downLine` only), `tests/use.test.ts`, `tests/items.test.ts`, `tests/rules-text.test.ts`, `tests/e2e/crystal.e2e.ts` | the use test at each side of the rank; a raising at level 31 leaves level 29 by a crystal and by the GM; the e2e buy of a C crystal at 12,500 |
 | 5 | gates | Personal gates' share: `rollLoot` takes a share (gold times it, its pick drawn with that chance); a personal run passes `solo.lootShare`; `soloLines` says it | `src/core/gates/spawn.ts`, `src/views/inventory.js` (`rollLoot`), `src/views/gates.js` (`lootOf`), `src/core/rules-text.ts`, `tests/spawn.test.ts`, `tests/rules-text.test.ts` | the share test; a world gate's roll unchanged |
-| 6 | gates | Shared world gold: `goldEach(roll, n, party)` in `pay.ts`; `clearShares` splits gold by it whatever `xpSplit` says; a world gate's solo run pays n = 1; the Clear panel's note says gold each for the hunters ticked; the Rules page's line | `src/core/gates/pay.ts`, `src/core/gates/solo.ts`, `src/views/gates.js`, `src/views/rulesref.js`, `src/core/rules-text.ts`, `tests/pay.test.ts`, `tests/solo.test.ts` | the split test at 1, 4 and 6 payees; a solo run's four rolls |
-| 7 | after 1 to 6 | `measure.ts` reads `RULES` and `itemSpend` in place of its `DESIGN` constant and its own copy of the spend | `docs/agent-handoff/features/economy/measure.ts` | its tables unchanged |
-| 8 | room | The room carries the economy: `RoomRules` gains `baseValue`, `rarities`, `gradeStep`, `saleShare`, `usedUpShare`, `reviveClears`, `solo.lootShare`, `goldParty` and `loot`, laid over a player's rules | `src/core/protocol.ts`, `src/core/hunter/build.ts`, `tests/protocol.test.ts`, `tests/build.test.ts` | a player's shop price follows the GM's edit |
+| 6 | gates | Shared world gold and XP: `shareEach(amount, n, party)` in `pay.ts` in place of `splitAward`; `clearShares` shares the gold roll and the XP due by it, `planEncounter` the XP of a fight linked to a gate (a fight with no gate pays each the whole); `xpSplit` deleted with its readers; a world gate's solo run is n = 1; the Clear panel's note says gold and XP each for the hunters ticked; the Rules page's lines | `src/core/gates/pay.ts`, `src/core/gates/solo.ts`, `src/core/rules.ts` (the deletion only), `src/views/gates.js`, `src/views/combat.js`, `src/views/rulesref.js`, `src/core/rules-text.ts`, `tests/pay.test.ts`, `tests/solo.test.ts`, `tests/rules.test.ts`, `tests/rule-domains.test.ts`, `tests/e2e/gates-quests-dailies.e2e.ts` | the split test at 1, 4 and 6 payees, gold and XP; a solo run's four rolls and four times the XP |
+| 7 | after 1 to 6 | `measure.ts` reads `RULES`, `clearOf` and `itemSpend` in place of its `DESIGN` constant, its own copy of the spend and its rank by a rarity's place | `docs/agent-handoff/features/economy/measure.ts` | its tables unchanged |
+| 8 | room | The room carries the economy: `RoomRules` gains `rarities` (each with its rank), `gradeStep`, `saleShare`, `usedUpShare`, `reviveClears`, `reviveLevelShare`, `solo.lootShare`, `gateParty` and `loot`, laid over a player's rules | `src/core/protocol.ts`, `src/core/hunter/build.ts`, `tests/protocol.test.ts`, `tests/build.test.ts` | a player's shop price follows the GM's edit of `loot.C.gold` |
 
-Lanes: items (2, 3, 4), gates (5, 6) and room (8) share no file after unit 1. Unit 3's six fixes wait on question 1;
-unit 6 is settled by the rulings; question 2 changes only unit 6's XP line if answered "split".
+Lanes: items (2, 3, 4), gates (5, 6) and room (8) share one file after unit 1, `src/core/rules-text.ts`, where unit 4
+changes only `downLine` and units 5 and 6 only `soloLines` and the gate's lines, so a merge of it is by function. The
+rulings settle every unit; none waits on a question.
 
 ## 8. Questions for the owner
+
+Both were answered on Nov 20: keep the six (ruling 6) and split XP as gold (ruling 7). The questions as they were asked:
 
 1. **Six built-in items are stronger than any grade of their tier** (section 2.5: Mage Circlet and Baruka's Mana Ring
    move up to epic; Kamish's Wrath, Orb of Avarice, Monarch's Scepter and Armor of the Absolute Being lose dice, mana or
@@ -430,10 +498,11 @@ unit 6 is settled by the rulings; question 2 changes only unit 6's XP line if an
 
 ## 9. Rerunning the numbers
 
-`measure.ts` prints every table above; the design's numbers live in its `DESIGN`, `CLAIMED` and `FIXES` until the
+`measure.ts` prints every table above; the design's numbers live in its `DESIGN` and `CLAIMED` until the
 units put them in `RULES` and `items.ts` (unit 7). What would move them: a measured personal clear share far from 0.5 at D, B, A or S (only E and C were
-measured); a GM's world sessions holding more than one gate; `loot.*.gold` changed, which moves every price with it; a
-change to the body's curves (`RULES.fight.stat`), which moves the conversions of section 2.3 and every item's spend.
+measured); a GM's world sessions holding more than one gate; `loot.*.gold` changed, which moves every price with it (in
+the game too, from unit 1); a change to the body's curves (`RULES.fight.stat`), which moves the conversions of section
+2.3 and every item's spend.
 
 ## 10. The owner's rulings (Nov 20, typed in the lead's session). They win over the sections before them.
 
@@ -451,3 +520,5 @@ Sections 2 to 8 were revised to these on Nov 20.
 6. **The six built-in items stronger than any grade of their tier are kept as they are** (the owner, Nov 20, answering section 8: "Keep them."). They are not moved up a tier and lose nothing; each is priced as its tier's plus, and the budget test of unit 3 names them as the allowed exceptions, by id, with this ruling as the reason.
 7. **A gate's XP is split as its gold is** (the owner, same answer: "XP should be split as well."). Section 4's rule for gold (a pot shared among the hunters of a Clear, a small party earning more each, a crowd paid less) applies to XP too. The unit that builds the shared gold builds the XP split with it and says what it does to the pace of ranks (section 4.4), raising a gate's XP as the gold is raised so the party the gate is made for levels as today.
 8. **A dead hunter can be resurrected within an hour of dying; a crystal itself never expires** (the owner, Nov 20, answering the world bible's question on a crystal's time limit: "Oh for a player to be resurrected? An hour. But the crystals themselves don't expire."). **The hour is lore only** (the owner, same day, relayed by the previous lead's session: "Ehh I mean just canonically. I'll administer that myself as the gm."): the app enforces no time limit on a crystal and none is built.
+9. **A raising costs levels** (the owner, Nov 20, typed in the lead's session, on the world bible's row 13, death should cost a lot: "Sure, losing levels is good. Probably more the higher you are, maybe 3.33% of your total level."). A hunter raised from death loses a share of their level: a rule `reviveLevelShare` (1/30, domain `SHARE`), the loss being the level times the share rounded up, so at least one level, and a level never under 1. The lead's defaults, his to change: it applies to every raising (a crystal and the GM's Revive alike), and the points of the lost levels go with them. Unit 1 puts the rule in `RULES`; unit 4 builds the loss with the tiered crystal and its words on the screen.
+10. **No level cap for the players' hunters** (the owner, same message: "No level cap for my players. They'll rank up."). The world's cap by rank is lore for other hunters; the app holds no cap and builds no trial gate.

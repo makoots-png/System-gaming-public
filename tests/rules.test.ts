@@ -56,8 +56,8 @@ test('the built-in titles add to the stat the old one mapped to', () => {
     .toEqual([{ str: 2 }, { pre: 2 }, { agi: 2 }, { pow: 5 }]);
 });
 
-test('a rarer item is worth more: the multipliers rise from common to mythic', () => {
-  expect(rising(RARITIES.map(r => RULES.rarities[r].mult))).toBe(true);
+test('a rarer item is worth more: each rarity is priced by a higher rank than the one before it', () => {
+  expect(rising(RARITIES.map(r => RANKS.indexOf(RULES.rarities[r].rank)))).toBe(true);
 });
 
 test('loot names only rarities that exist, and a higher rank drops more gold', () => {
@@ -118,7 +118,7 @@ test('with no statuses of the GM\'s the built-ins are the conditions, and rule n
 });
 
 test('a valid override survives parseOverrides as written, nested ones included', () => {
-  const ov = { xpPerLevel: 200, fatigue: { penaltyAt: 40 }, xpSplit: true, jobs: ['Fighter', 'Bard'], rarities: { common: { color: '#ffffff', mult: 2 }, relic: { color: '#000000', mult: 500 } } };
+  const ov = { xpPerLevel: 200, fatigue: { penaltyAt: 40 }, xpSplit: true, jobs: ['Fighter', 'Bard'], rarities: { common: { color: '#ffffff' } } };
   expect(parseOverrides(ov)).toEqual({ overrides: ov, refused: [] });
 });
 

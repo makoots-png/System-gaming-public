@@ -10,7 +10,7 @@ import { withinSize } from '../size.ts';
 import type { Formula } from '../formula.ts';
 import { kitGear, pointsAt, sheetOf, split } from '../hunter/derive.ts';
 import type { DeriveRules, GearPiece, Kit } from '../hunter/derive.ts';
-import { PERK_KEYS, RULES } from '../rules.ts';
+import { PERK_KEYS, RULES, clearOf } from '../rules.ts';
 import type { PerkKey, Rules } from '../rules.ts';
 import { oneOf } from '../one-of.ts';
 import type { ItemId } from '../ids.ts';
@@ -60,7 +60,7 @@ export type Item = {
 export const KIT_SHARE = { chest: 35, legs: 20, offhand: 15, head: 10, hands: 10, feet: 10 } as const;
 export type ArmorSlot = keyof typeof KIT_SHARE;
 
-/** Every item has these. Without `value` its price is the rule's (`priceOf`); with it, the price was set by hand. */
+/** Every item has these. Without `value` its price is the rule's (`valueOf`); with it, the price was set by hand. */
 type Common = { name: string; rar: Rarity; desc: string; value?: number };
 /**
  * A built-in item. Its `type` decides what it must hold: a weapon has dice and how it attacks; armour has a slot and the
@@ -81,21 +81,21 @@ const heal = (hp: number): Op => ({ op: 'heal', amount: num(hp), when: 'use' });
 const mana = (n: number): Op => ({ op: 'mana', amount: num(n), when: 'use' });
 const rest = (fatigue: number): Op => ({ op: 'fatigue', amount: num(-fatigue), when: 'use' });
 
-/** The shop's stock until the GM edits the shop. Prices here are set by hand. */
+/** The shop's stock until the GM edits the shop. Each is priced by the rule (`valueOf`) except the crystal, priced by hand. */
 export const SHOP_ITEMS: readonly ItemDef[] = [
-  { name: 'Health Potion', rar: 'common', type: 'consumable', effects: [heal(30)], value: 50, desc: 'Restores 30 HP.' },
-  { name: 'Greater Health Potion', rar: 'uncommon', type: 'consumable', effects: [heal(150)], value: 300, desc: 'Restores 150 HP.' },
-  { name: 'Mana Potion', rar: 'common', type: 'consumable', effects: [mana(4)], value: 50, desc: 'Restores 4 mana.' },
-  { name: 'Elixir of Life', rar: 'epic', type: 'consumable', effects: [{ op: 'heal', amount: FULL_HEAL, when: 'use' }], value: 2000, desc: 'Fully restores HP.' },
-  { name: 'Stamina Tonic', rar: 'common', type: 'consumable', effects: [rest(25)], value: 30, desc: 'Removes 25 fatigue.' },
-  { name: 'Iron Dagger', rar: 'common', type: 'weapon', slot: 'weapon', dice: '1d4', attack: 'strike', value: 100, desc: 'A plain iron dagger.' },
-  { name: "Hunter's Leather", rar: 'common', type: 'armor', slot: 'chest', kit: 'light', value: 150, desc: 'Light leather armor for the chest.' },
-  { name: 'Steel Longsword', rar: 'common', type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', value: 400, desc: 'A plain steel sword.' },
+  { name: 'Health Potion', rar: 'common', type: 'consumable', effects: [heal(30)], desc: 'Restores 30 HP.' },
+  { name: 'Greater Health Potion', rar: 'uncommon', type: 'consumable', effects: [heal(150)], desc: 'Restores 150 HP.' },
+  { name: 'Mana Potion', rar: 'common', type: 'consumable', effects: [mana(4)], desc: 'Restores 4 mana.' },
+  { name: 'Elixir of Life', rar: 'epic', type: 'consumable', effects: [{ op: 'heal', amount: FULL_HEAL, when: 'use' }], desc: 'Fully restores HP.' },
+  { name: 'Stamina Tonic', rar: 'common', type: 'consumable', effects: [rest(25)], desc: 'Removes 25 fatigue.' },
+  { name: 'Iron Dagger', rar: 'common', type: 'weapon', slot: 'weapon', dice: '1d4', attack: 'strike', desc: 'A plain iron dagger.' },
+  { name: "Hunter's Leather", rar: 'common', type: 'armor', slot: 'chest', kit: 'light', desc: 'Light leather armor for the chest.' },
+  { name: 'Steel Longsword', rar: 'common', type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', desc: 'A plain steel sword.' },
   // "Cruel to armored foes": 5 points of armor ignored on every hit.
-  { name: 'Knight Killer', rar: 'rare', type: 'weapon', slot: 'weapon', dice: '1d10', attack: 'strike', bonus: { str: 2 }, penFlat: 5, value: 5000, desc: 'A dagger whose hits ignore 5 points of armor.' },
-  { name: 'Ring of Vitality', rar: 'epic', type: 'accessory', slot: 'ring1', bonus: { vit: 5 }, value: 20000, desc: 'A ring that adds 5 Vitality.' },
-  // 100,000: five times the dearest item here, 42 days of every personal gate's gold at C, 164 at D, out of reach at E
-  // (notes-2b-crystal.md section 3). The GM tells the table how common they are; its use is told to the GM.
+  { name: 'Knight Killer', rar: 'rare', type: 'weapon', slot: 'weapon', dice: '1d10', attack: 'strike', bonus: { str: 2 }, penFlat: 5, desc: 'A dagger whose hits ignore 5 points of armor.' },
+  { name: 'Ring of Vitality', rar: 'epic', type: 'accessory', slot: 'ring1', bonus: { vit: 5 }, desc: 'A ring that adds 5 Vitality.' },
+  // 100,000 by hand (notes-2b-crystal.md section 3) until the tiered crystal prices each by its rank, `reviveClears`
+  // Clears of it (economy design section 5, unit 4). The GM tells the table how common they are; its use is told to the GM.
   { name: 'Resurrection Crystal', rar: 'mythic', type: 'consumable', effects: [], revive: true, tell: true, value: 100000, desc: 'A dead hunter who uses it comes back to life.' },
 ];
 
@@ -105,7 +105,7 @@ export const SHOP_ITEMS: readonly ItemDef[] = [
 export const LOOT_ITEMS: readonly ItemDef[] = [
   { name: 'Goblin Shortbow', rar: 'common', type: 'weapon', slot: 'weapon', dice: '1d6', attack: 'shot', desc: 'Dropped by a gate goblin.' },
   { name: 'Padded Cap', rar: 'common', type: 'armor', slot: 'head', kit: 'light', desc: 'A light cloth cap.' },
-  { name: 'Mana Crystal Shard', rar: 'common', type: 'material', value: 40, desc: 'A piece of mana crystal. Sell it for gold.' },
+  { name: 'Mana Crystal Shard', rar: 'common', type: 'material', desc: 'A piece of mana crystal. Sell it for gold.' },
   { name: 'Worn Hunter Boots', rar: 'common', type: 'armor', slot: 'feet', kit: 'light', bonus: { agi: 1 }, desc: 'Light boots that add 1 Agility.' },
   { name: 'Orc Warrior\'s Cleaver', rar: 'uncommon', type: 'weapon', slot: 'weapon', dice: '1d10', attack: 'strike', bonus: { str: 1 }, desc: 'A heavy cleaver that adds 1 Strength.' },
   { name: 'Reinforced Hunter Vest', rar: 'uncommon', type: 'armor', slot: 'chest', kit: 'medium', desc: 'A leather vest with metal plates. Medium armor for the chest.' },
@@ -141,15 +141,23 @@ export const STARTER_GEAR = {
 /** An item as a hunter would hold it, before it has an id. */
 export type ItemTemplate = Omit<Item, 'id'>;
 
+/** The rules a price reads: the loot table (the Clear, `clearOf`), each rarity's rank, and the share a consumable costs. */
+export type PriceRules = Pick<Rules, 'loot' | 'rarities' | 'usedUpShare'>;
 /**
- * An item's price: the one it was given, else the rule's (`priceOf`). Implicit audit 3, L1: the rule's price was stored
+ * An item's price: the one it was given, else the rule's: `priceOf` its rarity, and for a consumable `usedUpShare` of
+ * that Clear, rounded once (economy design 2.2: one use is worth half). Implicit audit 3, L1: the rule's price was stored
  * as a number when an item was made, so a change of the price rule reached no item already made or held.
  */
-export const valueOf = (i: Pick<Item, 'rar'> & Partial<Pick<Item, 'value'>>, R: Pick<Rules, 'baseValue' | 'rarities'>): number => i.value ?? priceOf(R, i.rar);
+export const valueOf = (i: Pick<Item, 'rar' | 'type'> & Partial<Pick<Item, 'value'>>, R: PriceRules): number =>
+  i.value ?? (i.type === 'consumable' ? Math.round(clearOf(R, R.rarities[i.rar].rank) * R.usedUpShare) : priceOf(R, i.rar));
 /** An item's weight: the one it was given, else the rule's (a weapon's by its dice, `weaponWeight`; anything else 0). */
 export const weightOf = (i: { readonly weight?: number; readonly type?: string; readonly dice?: string }): number => i.weight ?? (i.type === 'weapon' ? weaponWeight(i.dice ?? '') : 0);
-/** An item's price when it does not set one: the rule's base value times its rarity's multiplier, times 10. */
-export const priceOf = (R: Pick<Rules, 'baseValue' | 'rarities'>, rar: Rarity): number => R.baseValue * (R.rarities[rar]?.mult || 1) * 10;
+/**
+ * The price of an item of rarity `rar` that sets none and is not used up: one Clear of the rarity's rank (`clearOf`, the
+ * middle of that rank's loot gold), rounded to whole gold. Economy design 2.2 and review E-1: computed from the loot
+ * table each read, so a GM's edit of a rank's gold moves the price of its rarity.
+ */
+export const priceOf = (R: Pick<Rules, 'loot' | 'rarities'>, rar: Rarity): number => Math.round(clearOf(R, R.rarities[rar].rank));
 
 /**
  * The built-in shop as items at the rules' prices now, and every built-in item the same way: built at each read, so a

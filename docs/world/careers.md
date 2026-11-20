@@ -1,177 +1,192 @@
 # Scouting and careers
 
-How a new hunter is found, tested, signed, paid, insured, traded and retired. Every gold figure is from
-`economy.md`; a Clear is one hunter's share of a world gate of the rank named (E 100, D 325, C 1,250, B 5,000,
-A 19,000, S 75,000).
+This file covers how a new hunter is found, tested, signed, paid, insured, traded and retired. Every gold figure
+comes from `economy.md`. A Clear is one hunter's share of a world gate of the rank named: E 100, D 325, C 1,250,
+B 5,000, A 19,000, S 75,000.
 
-## 1. Found
+A hunter's level is capped at the top of the rank they awaken with, and the whole trade prices hunters on that
+fact. Section 10 covers what happens to a hunter who passes their cap.
 
-**The fever.** Kindling takes three days and is hard to hide: clinics must report a fever with blue wrists, and
-most households know the signs. The Bureau sends a nurse and a card with a date on it.
+## 1. How a new hunter is found
 
-**The 72 hours.** From the fever breaking, the new hunter has three days to stand in a Bureau hall. In Carrow that
-is the Halfway House on Ledger Row. The fine for lateness is three Clears of whatever the stone then says.
+**The fever.** Awakening starts with a three-day fever and blue veins at the wrists. Clinics must report these
+symptoms. The Bureau sends a nurse, who leaves a card with a registration deadline.
 
-**The Reading.** A hand on a block of raw crystal the size of a suitcase; an assessor watching the hunter, not the
-stone. Since the Speaking the hunter also reads out their own level, and the law requires the truth. The letter is
-entered in the Register and is public by evening. Nine in ten new hunters read E. The hall has a public gallery,
-and the gallery is where scouting begins.
+**The 72 hours.** The new hunter must report to a Bureau hall within three days of the fever ending. In Carrow the
+hall is the Halfway House on Ledger Row. A late hunter pays a fine of three Clears of the rank they are then given.
 
-**Who is in the gallery.** Guild scouts (retired C-ranks on 4,500 a month, each with a quota); a Corps recruiter;
-an insurer's agent with a first policy; someone from the Ledger with a leaflet about the Daily; and at the back, a
-person from the Stair who will make no approach today and will know the hunter's debts by Friday.
+**The reading.** The hunter puts a hand on a block of raw crystal, and an assessor reads the hunter's mana from it. The hunter also states the rank and cap that their window shows, and
+lying about them is a crime. The Bureau enters the rank in the Register and publishes it the same evening. Two new hunters in five read as
+E. One in ten thousand reads as S.
 
-**Other ways in.** Break survivors are canvassed for a year (they kindle eight times as often). Academies take
-unkindled children of fourteen on the chance, at 9,000 a year, which is a tax on hope. And since the Speaking,
-scouts watch the Register's re-reads for anyone who has risen a letter in under a year: a climber.
+**Who watches.** The hall has a public gallery. The people in it on a normal day are:
 
-## 2. Tested
+- guild scouts, who are usually retired C-ranks on 4,500 gold a month with a quota of signings;
+- a recruiter from the Hunter Corps;
+- an insurance agent who sells first policies;
+- a member of the Ledger with a leaflet;
+- someone from the Stair, who makes no approach that day and finds out the hunter's debts within the week.
 
-A letter says how much mana; it does not say whether a person will stand still when a thing with too many legs
-runs at them.
+When a hunter reads B or higher, the scouts make offers in the hall before the hunter reaches the door.
 
-- **The Open Door** is the Bureau's quarterly showcase for the unsigned. Each candidate is given a seat in a public
-  E gate with three veterans, who go in with them, since nobody can watch from outside. The veterans write a card:
-  held the line or did not; listened or did not; what job the window named; whether they would take this person in
-  again. Guilds pay 50 gold a card.
-- **A chaperone run** is a guild's private version: a seat on one of its own low gates under a raid leader who has
-  been told to let things go a little wrong.
-- **The door question.** Every scout now asks how many personal doors the candidate has opened, and reads the
-  answer two ways. Many, at their rank: nerve, and a climber, and trouble. None: a liner, steady, and likely to
-  be an E-rank in ten years.
-- **What scouts want, in order:** a healer; anyone whose window says Tanker and who did not flinch; a deed title;
-  a level rising faster than the Daily alone explains; youth (a contract's value is the years in it, and hunters
-  have more years than they used to).
+**Other ways to find hunters.** Guilds canvass break survivors for a year, because survivors awaken eight times as
+often as other people. Academies charge 9,000 gold a year to train fourteen-year-olds who have not awakened and may
+never do so. Guilds also pay clinic staff for news of a hunter's second fever, which may mean a re-awakening.
 
-## 3. Signed
+## 2. How a new hunter is tested
 
-The standard contract in Carrow, as the Guild Council's model has it. Honest guilds use it nearly as written.
+A rank measures mana. It does not show whether a hunter holds position when a monster charges.
+
+- **The Open Door** is the Bureau's quarterly trial for unsigned hunters. Each candidate gets a seat in a public
+  E gate with three experienced hunters. The three go in with the candidate, because nobody can observe from
+  outside. Afterwards they write a report card. It records whether the candidate held position, whether they
+  followed instructions, what job suits them, and whether the three would take the candidate again. A guild pays
+  50 gold for a card.
+- **A chaperone run** is a guild's private trial. The candidate joins one of the guild's low-rank gates under a
+  raid leader who has been told to let a problem develop and watch how the candidate reacts.
+
+Scouts look for these, in order of value: rank, a healer, a tanker who held position, and youth. Hunters above E
+live longer than other people, so a young hunter's contract covers more working years.
+
+## 3. The standard contract
+
+Carrow's Guild Council publishes a model contract. Most guilds use it with few changes.
 
 | Clause | The model contract | In gold, for a C-rank |
 |---|---|---|
-| Term | Three years at E and D, five from C | five years |
-| Retainer | One and a half Clears of the hunter's rank a month, gates or no gates | 1,875 a month |
-| Seats | "Reasonable endeavours" to seat the hunter; no number promised | (a good guild: three a month) |
-| House share | A quarter of the System gold from guild gates. Drops are the hunter's | 312 of each 1,250 |
-| Harvest | The guild's, whole | |
-| Signing | Ten Clears from C (two at E and D), usually paid as a crystal the guild holds for the hunter | 12,500, or one C crystal |
-| Crystal cover | The guild keeps cover current and will raise the hunter if the body is brought out within three dawns | premium 625 a year, paid by the guild |
-| Death benefit | Twenty Clears to a named person if the hunter stays dead | 25,000 |
-| Injury | The retainer runs three months | |
-| Role pay | Raid leader and healer half again on the retainer; tanker a fifth; bench half | healer: 2,812 a month |
-| Exclusivity | No gates outside the guild's without leave. No solo runs of world gates | |
+| Term | Three years at E and D, five years from C | five years |
+| Retainer | One and a half Clears of the hunter's rank a month, whether or not the hunter gets a gate | 1,875 a month |
+| Seats | The guild will make "reasonable endeavours" to seat the hunter. It promises no number | A well-run guild gives four a month |
+| House share | The guild takes a quarter of the System gold from guild gates. The hunter keeps all drops | 312 of each 1,250 |
+| Harvest | The guild keeps all of it | |
+| Signing bonus | Ten Clears from C, two Clears at E and D. The guild usually pays it as a crystal that it holds for the hunter | 12,500, or one C crystal |
+| Crystal cover | The guild sends a crystal of the party's highest rank into each gate with the raid leader | The guild pays the premium of 625 a year for each hunter |
+| Death benefit | Twenty Clears to a named person if the hunter is not raised | 25,000 |
+| Injury | The retainer continues for three months | |
+| Role pay | A raid leader or healer gets one and a half times the retainer, a tanker 1.2 times, a reserve half | A healer gets 2,812 a month |
+| Exclusivity | The hunter enters no gate outside the guild's without permission and never clears a world gate alone | |
 | Buyout | Another guild may buy the contract for twenty Clears | 25,000 |
-| Pension | Half the retainer for life after ten years' service | 937 a month |
+| Pension | Half the retainer for life after ten years of service | 937 a month |
 
-## 4. The traps
+## 4. Eight contract traps
 
-What a contract lawyer (120 gold an hour, and worth it once) looks for. Each is real, common, and legal.
+A lawyer who specialises in guild contracts charges 120 gold an hour. Each clause below is legal and common.
 
-1. **The rank lock.** "Rank" means the rank on the day of signing, for the whole term. Written before the Speaking,
-   when rank could not change; kept since, because it is now the most profitable sentence in the trade. A climber
-   signed at E who is clearing B gates in year two is paid an E retainer (150 a month) and owes a quarter of B gold.
-   Their buyout is still twenty E Clears, 2,000 gold, which is why they are poached, and why guilds add:
-2. **The escalator, one way.** The buyout rises with every re-read; the retainer does not.
-3. **Crystal debt.** The signing crystal is "held for the hunter". If it is used, the hunter owes its price, ten
-   Clears, at three percent a month. If the guild raises a hunter with a crystal above their signing rank (see the
-   rank lock), they owe the larger one. A hunter raised twice is, in practice, owned.
-4. **The door clause.** The hunter will open a stated number of personal doors a week "for development", and remit
-   the house share on them. Crystal cover does not reach behind a door. The guild gets levels and gold; the hunter
-   gets the risk. Outlawed in two countries. Standard at Aurelian.
-5. **Gear liens.** Anything bought on guild credit is the guild's until paid, at Shop price, though the hunter
-   could sell it for a quarter. A hunter who leaves hands back the kit and keeps the debt.
-6. **Title rights.** The guild owns the use of the hunter's name, face and titles for the term and two years
-   after. Sponsorship is paid to the guild, which passes on a share "at its discretion".
-7. **The quiet clause.** No account of any guild gate may be given to a teller or a paper. It is how a second line
-   stays second.
-8. **Seat forfeit.** Decline a seat and the retainer stops for the month. Read with the door clause.
-9. **The benefit of doubt.** The death benefit is paid when the hunter "stays dead through no act of the guild's".
-   A guild that fails to bring a body out has not acted.
+1. **The rank lock.** The contract defines "rank" as the rank on the day of signing, for the whole term. Guilds
+   wrote it for re-awakenings. A hunter who signed at E and later reads as C is still paid an E retainer of 150
+   gold a month and still gives the guild a quarter of the gold from C gates.
+2. **The one-way escalator.** The buyout price rises with any new reading. The retainer does not.
+3. **Crystal debt.** The guild holds the signing crystal. If the raid leader uses a crystal to raise the hunter,
+   the hunter owes its price of ten Clears at three percent a month. A hunter who has been raised twice rarely
+   clears the debt.
+4. **The reading clause.** The guild may order a new reading of the hunter at any time and receives the result
+   before the hunter does.
+5. **Gear liens.** Gear bought on guild credit belongs to the guild until the hunter has paid the full Shop
+   price. A hunter who leaves returns the gear and still owes the balance.
+6. **Image rights.** The guild owns the commercial use of the hunter's name, face and epithet for the term and for
+   two years after it. Sponsors pay the guild, and the guild decides how much to pass on.
+7. **The silence clause.** The hunter may not describe any guild gate to a teller, a notary or a newspaper.
+   Aurelian uses this clause to hide which team clears its gates.
+8. **Raising in place of the death benefit.** The guild pays the death benefit only if the hunter is not raised.
+   The raid leader alone decides whether to use the crystal, and the family cannot refuse. Raising costs the guild
+   nothing, because the hunter then owes the crystal's price under clause 3.
 
-A GM's rule of thumb: an offer made to the party in the first three sessions has traps 1, 3 and 6 in it, and the
-scout making it is a pleasant person who signed the same paper once.
+An offer that a guild makes to the party in the first three sessions should include clauses 1, 3 and 4. Those
+three do the most harm to a hunter who grows.
 
-## 5. Paid
+## 5. Pay
 
-The tables are in `economy.md` sections 11 and 14. The short of it, a month, after the levy, potions and cover:
+`economy.md`, sections 11 and 14, has the full tables. This table shows net income a month, after the levy,
+potions and crystal cover:
 
-| Rank | Unsigned, a door most days | Signed liner | Against the median wage (1,000) |
+| Rank | Unsigned, one public gate a month | Signed liner, four guild gates a month | The liner's net as a multiple of the median wage of 1,000 |
 |---|---|---|---|
-| E | 506 | 743 | half; three quarters |
-| D | 1,313 | 2,016 | a little over; twice |
-| C | 4,579 | 7,031 | four and a half; seven |
-| B | 17,223 | 26,866 | seventeen; twenty-seven |
-| A | 43,553 | 79,588 | forty-four; eighty |
-| S | 59,527 | 200,149 | sixty; two hundred |
+| E | 557 | 881 | 0.9 |
+| D | 1,467 | 2,436 | 2.4 |
+| C | 5,119 | 8,550 | 8.5 |
+| B | 19,352 | 32,873 | 33 |
+| A | 51,520 | 102,172 | 100 |
+| S | 90,651 | 288,649 | 290 |
 
-The gap between the columns is the price of a seat. An unsigned S-rank's column is small only because the table
-gives them no S gates; in life an unsigned S-rank names their terms.
+Both columns include five personal gates a week. An unsigned hunter earns most of their income from personal
+gates, where nobody can help them and no policy pays.
 
-**Bonuses** a good guild pays beyond the model: a Clear of the gate's rank to each hunter for a gate above the
-party's rank; a Clear for a first deed title (it is worth more than that to the press office); a tenth of the
-harvest's uplift to the raid leader when a gate is cleared in its first two days (some guilds pay for speed, most
-for ripeness; ask which before signing).
+Some guilds pay bonuses beyond the model contract:
 
-## 6. Insured
+- One Clear of the gate's rank to each hunter for a gate above the party's rank.
+- A tenth of the extra harvest value to the raid leader. Some guilds pay this for clearing in the first two days.
+  More guilds pay it for clearing on the last day, when the harvest is largest. A hunter should ask which before
+  signing.
 
-- **Crystal cover** (Paragon Mutual, or the guild's own book): a twentieth of the crystal's price a year. Pays for
-  one raising a year.
-- **The three dawns.** A crystal takes only if it touches the body before the third sunrise after death. A hunter
-  carrying their own is raised where they fell, at once: the surest cover, and it means carrying ten Clears into
-  every gate.
-- **What voids it:** a personal door (unless the door rider is bought, at three times the premium); a gate above
-  the Rank Floor; a solo run of a world gate; an unlicensed gate; a body not recovered; and, in most policies,
-  "death at the hands of another hunter", which is the clause the Fallen rely on.
-- **Break cover** for a hunter's home costs what anyone's does. Hunters are not cheaper to insure. They are
-  dearer: they attract trouble and their kitchens have doors in them.
-- **Party bonds.** An unsigned party can post a bond with the Bureau (two Clears a head of the gate's rank,
-  returned on the Clear) to be seated ahead of the unbonded. Forfeit if they walk out.
+## 6. Insurance
 
-## 7. Traded
+- **The one-hour limit.** A crystal raises a dead hunter only within an hour of the death. A crystal that has not
+  been used keeps for any length of time. A crystal outside the gate is therefore useless to a hunter who dies
+  inside, and a party must carry one.
+- **Crystal cover.** Paragon Mutual and some guilds sell it. The premium is a twentieth of the crystal's price a
+  year. The policy pays for one crystal a year that was used on the hunter. A guild party's raid leader carries
+  the crystal. An unsigned party usually has none, because an E crystal costs ten times an E Clear.
+- **Exclusions.** A policy does not pay for a death in a personal gate, in a world gate entered alone, or in an
+  unlicensed gate. Most
+  policies also exclude a death caused by another hunter.
+- **Party bonds.** An unsigned party can deposit two Clears of the gate's rank for each hunter with the Bureau.
+  The Bureau then seats that party ahead of parties with no bond and returns the deposit after the Clear. The
+  party loses the deposit if it leaves the gate uncleared.
 
-- **A buyout** is one guild paying another the transfer fee: twenty Clears on the model contract, far more for
-  anyone good (Ines Carvalho's is written at 600,000). The hunter must consent, and their signing debt moves with
-  them.
-- **A loan** sends a hunter to another guild for a gate or a season for a fee (a mercenary's rate, `economy.md`
-  section 10) which the lending guild keeps. The hunter gets the gate's gold and a look at how other people live.
-- **The window.** By custom, buyouts are agreed in the first week of each quarter, after the Register's re-reads
-  are posted. The *Tide-Table* covers it as sport.
-- **Since the Speaking, the trade is in futures.** A guild is buying the hunter that a level 12 with nerve will be
-  in two years. Prices for the young have tripled. Prices for a Fixed B-rank of fifty have halved.
-- **Walking.** A hunter who simply leaves owes the remaining retainers as damages and is blacklisted from the
-  Council's guilds. Redline hires them. So does the Corps, which pays the debt for five years' service.
+## 7. Transfers
 
-## 8. Retired
+- **A buyout.** One guild pays another the transfer fee. The model contract sets it at twenty Clears, and guilds
+  write much higher fees for good hunters. Ines Carvalho's is 600,000 gold. The hunter must agree, and any crystal
+  debt moves to the new guild.
+- **A loan.** A guild sends a hunter to another guild for one gate or a season. The borrowing guild pays a fee at
+  mercenary rates (`economy.md`, section 10), and the lending guild keeps it. The hunter keeps the gate's gold.
+- **Timing.** By custom guilds agree buyouts in the first week of each quarter. The *Tide-Table* reports them.
+- **Prices.** A fixed rank makes a hunter easy to price. Fees depend on rank, job, age and record, and they change
+  little from year to year.
+- **Leaving without a buyout.** The hunter owes the remaining retainers as damages, and the Council's guilds will
+  not hire them. Redline will. The Hunter Corps also will, and it pays the debt in exchange for five years of
+  service.
 
-- **The pension** is half the retainer after ten years, for life, which actuaries priced for people who died at
-  eighty. A C-rank will draw it for seventy years. Every guild's pension fund is quietly insolvent, and the model
-  contract's next revision is expected to cap it. Hunters who are nine years in have noticed.
-- **What retirees do:** assessor, scout, academy instructor, crew boss for a reclaiming gang, teller, witness,
-  cordon officer, bodyguard. A retired D-rank bodyguard earns 163 a day, five labourers' wages, and is the
-  commonest sight in the Crown.
-- **What the System does to a retiree:** nothing different. The Daily comes every morning. The doors open every
-  eight hours. A hunter who stops answering is Penalized every day for the rest of a long life. This is the real
-  retirement problem and no pension addresses it. It is also the Patient's best recruiting argument: you are going
-  to be doing push-ups at ninety anyway.
-- **Final death.** A raised hunter's will is not executed. A guild's death benefit is paid on the fourth dawn.
-  There are law firms that do nothing else.
+## 8. Retirement
+
+- **Pensions.** The model pension is half the retainer for life after ten years of service. Actuaries priced it
+  for people who die at about eighty. A C-rank may draw it for seventy years, so every guild's pension fund has
+  less money than it has promised. The Council is expected to cap pensions in its next revision of the model
+  contract.
+- **Work after hunting.** Retired hunters work as assessors, scouts, academy instructors, reclaimer crew bosses,
+  tellers, cordon officers and bodyguards. A retired D-rank bodyguard earns 163 gold a day, which is more than
+  five labourers' wages.
+- **Death.** A will takes effect an hour after the death, when no crystal can raise the hunter. A guild pays the
+  death benefit the next day.
 
 ## 9. A career, year by year
 
-A signed liner who kindled at twenty, read E, in a decent guild, and lived. One and a half gates a month one rank
-below, the Daily, a door now and then (the pace of `power.md` section 3).
+The table follows a hunter who awakened at twenty as a D-rank, signed with a well-run guild, and survived. The rank never changes, and the level stops at 19.
 
-| Age | Year of career | Rank | Net a month | What is happening |
-|---|---|---|---|---|
-| 20 | 0 | E | 743 | The Reading. A locker, a used common set (700 gold), a shared flat. Crystal cover is the first bill. |
-| 20 | 0.4 | D | 2,016 | Four months in. A flat in Saltmarket. Parents stop asking when it ends. |
-| 21 | 1.5 | C | 7,031 | The contract's five-year term begins here, if the lawyer was good. First deed title, perhaps. A scar. |
-| 23 | 3.7 | B | 26,866 | The Crown. An agent. The guild's seat board matters more than the retainer. Has been raised once. |
-| 25 | 5.3 | A | 79,588 | A national name. Exit permit refused. Sponsorship equals the hunting. Ages one year in three. |
-| 26 | 6.4 | S | 200,149 | One of the flood. Outside the Abstention. Sixty years of prime ahead, and two hundred of life. |
+| Age | Years since awakening | Net a month | Typical circumstances |
+|---|---|---|---|
+| 20 | 0 | 2,436 | Signs for three years and a bonus of 650 gold. Buys a used uncommon set for about 2,300 gold on guild credit. |
+| 21 | 1 | 2,436 | Reaches level 19, the D cap. The XP bar stops. The daily quest continues. |
+| 23 | 3 | 2,436 | Renews. Has cleared about a hundred and fifty D gates. Rents a flat in Saltmarket. |
+| 30 | 10 | 2,436, with a pension of 244 earned | Leads a party, on one and a half times the retainer. Has been raised once and has paid off the crystal. |
+| 45 | 25 | about 1,500 | Has the body of someone 38. Takes fewer gates and trains recruits. |
+| 60 | 40 | 244 pension, and a bodyguard's wage | Has the body of someone 49. Retires from gates. May live to a hundred. |
 
-Before the Speaking the same hunter, read E at twenty, would be an E-rank at twenty-six on 743 a month, and at
-forty, and at sixty. That is the life most hunters in Carrow signed up for, and the contract most of them are
-still under. The table above is the reason every one of them is rereading it.
+An E-rank's table is shorter. Most E-ranks leave their guild within five years, keep the licence, and answer
+call-ups.
 
-For a **climber**, compress the first column to seventeen months and strike out "and lived" for most of them.
+## 10. A hunter who grows
+
+No scout, contract or insurer expects a hunter to pass their cap. A hunter who does meets these reactions,
+roughly in this order (`power.md`, section 5, lists what people believe is happening):
+
+- **The guild invokes the rank lock** and keeps paying for the old rank.
+- **A rival guild offers a buyout** at the old rank's price, which is cheap, and a new contract at the new rank.
+- **A scout sells the news.** A report of a hunter who has risen twice is worth more to a guildmaster than a
+  B-rank's signing bonus.
+- **The guild orders a reading** under clause 4, and the Bureau's watch desk opens a file.
+- **Offers and threats arrive together.** Section 5 of `power.md` lists them. The largest offers come from people
+  who also have the means to kill the hunter if the offer is refused.
+
+A party that wants to grow without attention can stay unsigned, take public gates, avoid a new reading, and sell
+drops through a fence. Each of those choices costs gold, and `economy.md` has the prices.

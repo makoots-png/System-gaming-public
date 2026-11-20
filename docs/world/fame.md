@@ -2,130 +2,124 @@
 
 ## 1. Nobody can film a gate
 
-Nothing with a circuit works past a gate's threshold: no camera, no radio, no watch. A party goes in, and the world
-outside sees a door of light and, some hours later, either people or monsters coming out of it. Everything that
-happens inside is known only by what the survivors say.
+No electronic device works inside a gate. Cameras, radios and watches stop at the threshold. People outside see the
+party walk in and, some hours later, see either the party or the monsters come out. Everything known about a raid
+comes from what the survivors say.
 
-This one fact shapes fame more than any other:
+This has two effects on fame:
 
-- **What can be filmed is the mouth and the break.** The walk in, the walk out, and any fight that spills into the
-  street. So the public's hunters are the ones who are good at entrances, or who were on the right street on a bad
-  day.
-- **What happens inside is a story**, and stories have authors. Guilds employ press officers at 3,300 gold a month
-  to write them. A party of four can come out with four accounts, and the one with the agent wins.
-- **Since the Speaking, there is one thing nobody can author: the Chronicle.**
+- Cameras can record only the entrance, the exit and a break in the street. The hunters the public knows are the
+  ones who look good walking in, or who fought a break on camera.
+- A guild's press officer, on 3,300 gold a month, writes the account of each raid. When the four members of a
+  party give different accounts, the press usually prints the one that has a press officer behind it.
 
-## 2. Titles: the only credential nobody can fake
+## 2. What counts as proof
 
-When the System grants a title, every hunter who looks at the holder sees it in their window, under the name and
-the letter. It cannot be hidden, lent or forged. An unawakened person cannot see it at all, which has made
-**witnesses** a trade: a notary who is an E-rank, paid 30 gold to look at a hunter and sign what they see.
+A hunter's record rests on three things, and each can be bought.
 
-How titles are read:
+- **The Bureau's clear record.** The Bureau lists the licensed party for each gate and whether the gate was
+  cleared. It does not record who did what inside.
+- **Sworn accounts.** Each member of a party can swear an account before a notary for 30 gold. Guild contracts
+  usually forbid it (`careers.md`, section 4).
+- **Epithets.** The press and other hunters give a hunter a name for a known deed, such as "Last Out" for Ines
+  Carvalho. A guild's press office can also invent one.
 
-- **Kill titles** (for a named kind of monster, or its leader) are common and respected like a campaign ribbon.
-- **Deed titles** (for surviving what should have killed you, for clearing a gate alone, for being last out) are
-  the ones scouts look for. Each says something about nerve that no Reading can.
-- **Dark titles** exist. The System notes feats; it does not judge them. A hunter whose window shows a title for
-  killing other hunters cannot take it off. Three guildmasters are known to wear one and one minister is rumoured
-  to.
-- **GM-only titles** in the game's terms (a grant, not a feat) are, in the world, titles nobody can explain. There
-  are perhaps forty on Earth. Each holder is watched.
-
-Etiquette: titles are read out before the name at any formal introduction ("Last Out, Wolf-Ender, Ines Carvalho of
-Ironwake"). Asking an untitled hunter for theirs is the standard insult.
+The System's titles cannot be bought. A hunter can show a title to another hunter, window to window, and cannot
+show one they do not hold (`power.md`, section 7). A Resident cannot see a title, so the public relies on the three
+records above and hunters rely on titles.
 
 ## 3. Rankings
 
-| List | Who keeps it | What it counts | Who cares |
+| List | Who keeps it | What it counts | Who uses it |
 |---|---|---|---|
-| **The Register** | The Bureau | The letter. Since the Speaking, re-read on request or every two years; level itself is private, seen only in one's own window | Law, contracts, insurance, the call-up |
-| **The Hundred** | Vantage, yearly | "Standing": declared Clears weighted by rank, breaks answered, titles, and a panel's vote that Vantage will not publish | Sponsors, states, every hunter who says they do not read it |
-| **The Forty** | Each large city's press; Carrow's is the *Tide-Table* | Local standing, with a public vote worth a fifth | Guild recruiters, landlords, parents |
-| **The Board** | Each guild, inside | Seats earned, gates led, harvest value brought home | Who gets the next seat. The only list that changes a hunter's income |
-| **The Climb** | A fan site since Year 18, now a Vantage property | Fastest known rises since the Speaking, from Register re-reads | The young. Bookmakers. The Bureau's watch desk |
+| The Register | The Bureau | Rank, read once at awakening. The Bureau re-reads a hunter only after a reported second fever or on a court's order | Courts, contracts, insurers, the call-up |
+| The Hundred | Vantage, once a year | Declared Clears weighted by rank, breaks answered, and a panel vote that Vantage does not publish | Sponsors and states. Most hunters read it |
+| The Forty | A city's press. Carrow's paper is the *Tide-Table* | The same measures for one city, with a public vote worth a fifth | Guild recruiters and landlords |
+| A guild's board | The guild, for members only | Seats earned, gates led and harvest value | The guild, to decide who gets the next seat. This is the only list that changes a hunter's income |
 
-The Hundred is argued over as sport is. It is wrong in a consistent way: it overcounts hunters whose work can be
-seen and undercounts healers, deep-runners and anyone who works behind personal doors.
+The Hundred overrates hunters whose work happens in public. It underrates healers and hunters who work red gates
+and double gates. Rank is fixed, so the lists change mainly when a hunter dies or retires. A hunter who climbs a
+list quickly without a guild behind them is news, and Vantage will investigate how.
 
 ## 4. Media
 
-- **Gate-side.** A posted A gate draws a crowd behind the cordon and four camera crews. The walk-in is a ritual:
-  the party's order, who carries what, who stops for the children at the rope. Guilds choreograph it.
-- **Break footage** is the only real combat anyone outside the trade has seen. It is replayed for years. One
-  ninety-second clip from the Tidewall break of Year 12 made Amara Nkemelu the most recognised face in Carrow.
-- **Tellers.** Hunters, usually retired, who narrate a raid afterwards from the party's accounts, with maps. The
-  good ones have audiences in the millions and are careful, because a teller caught embroidering is finished.
-- **Doorwatch**, the Bureau's app, lists every posted gate with its letter and days left. Its comment threads are
-  the true public square: who took the rights, how long they are holding it, whose child goes to the school beside
-  it.
-- **The Daily** is content. Thousands of hunters film their morning quest. The Patient's dawn sessions in Carrow's
-  Founders' Park draw commuters who do the squats with them.
+- **At the gate.** A posted A gate draws a crowd behind the cordon and several camera crews. Guilds plan the order
+  in which the party walks in and who stops to greet the crowd.
+- **Break footage.** A break is the only real combat that people outside the trade have seen, and stations replay
+  it for years. A ninety-second clip from the Tidewall break of Year 12 made Amara Nkemelu the best-known person in
+  Carrow.
+- **Tellers.** A teller is a hunter, usually retired, who narrates a raid afterwards from the party's accounts,
+  with maps. The best tellers have millions of listeners. A teller who is caught inventing details loses the
+  audience.
+- **Doorwatch.** The Bureau's app lists every posted gate with its rank and days left. Residents use its comment
+  threads to ask who holds a gate's rights and why it has not been cleared.
 
 ## 5. Sponsorship
 
-A sponsor pays for a face, a name and a clean story. Typical yearly deals, in gold:
+A sponsor pays for a hunter's face and name. Typical deals, in gold a year:
 
 | Hunter | Deal | Who pays |
 |---|---|---|
-| A D-rank with one deed title, liked in their district | 1,000 to 4,000 | A gym, a noodle chain, a tram advertisement |
-| A C-rank on a city's Forty | 10,000 to 40,000 | Local brands, a bank, a gear stall's "as worn by" |
+| A D-rank who is liked in their district | 1,000 to 4,000 | A gym, a noodle chain, a tram advertisement |
+| A C-rank on a city's Forty | 10,000 to 40,000 | Local brands, a bank, a gear stall |
 | A B-rank raid leader | 100,000 to 400,000 | National brands, Paragon Mutual, a carmaker |
-| An A-rank in the Hundred's long list | 1 to 5 million | Everyone. Often more than the hunting pays (about 950,000 a year net for a guild A-rank) |
-| An S-rank | 10 million and up, or nothing | States, Helix, their own guild. Many of the Fixed take none and own the company |
-| A city's **residency** for an S-rank | 2 to 6 million a year, a house, and a say in the Bureau's budget | The city. Carrow pays 4 million |
+| An A-rank near the Hundred | 1 to 5 million | Most large companies. A guild A-rank nets about 1.2 million a year from hunting, so sponsorship often pays more |
+| An S-rank | 10 million or more | States, Helix, the hunter's own guild. Many S-ranks take no sponsor because they own the company |
+| An S-rank's residency | 2 to 6 million a year, a house, and a vote on the Bureau's budget | The city. Carrow pays 4 million |
 
-The traps are in `careers.md`: a standard guild contract takes the **title rights**, and with them the sponsorship.
+A standard guild contract gives the guild the right to the hunter's sponsorship income (`careers.md`, section 4).
 
-## 6. Powerful against famous
+## 6. Power and fame are different
 
-Power is level, a build that works, gear, and for a few a roster of shadows. Fame is being seen, a title people can
-say, a story that holds, and a sponsor's reach. They overlap less than outsiders think.
+A hunter's power comes from rank, skill and gear. A hunter's fame comes from being filmed, from an epithet people
+remember, from a guild's press office and from sponsors. Many hunters have one without the other.
 
-| Kind | Power | Fame | Who they are |
+| Kind of hunter | Power | Fame | Description |
 |---|---|---|---|
-| **The pillar** | High | High | A city's S-rank, a great guild's leader. Cannot buy a coffee unobserved. Usually tired. |
-| **The deep-runner** | High | None | Works red gates, doubles and doors. No footage exists. Known to forty people, all of whom would follow them anywhere. The Hundred has never listed one. |
-| **The face** | Middling | High | Good at the walk-in, managed, sponsored. Often carried by a team that is not in the photographs. Some are honest about it and loved for it. |
-| **The break star** | Any | Sudden | Was on the right street once. Has one clip. Is now expected to be that person every day. |
-| **The healer** | Decisive | Low | Decides who lives. Paid half again. Named last in every account and first in every contract negotiation. |
-| **The climber** | Rising | Rising, and unwelcome | Three years ago nobody; next year, perhaps, S. Has no manager and no patience. Vantage loves them. Guilds and the Bureau do not. |
+| A city's S-rank or a large guild's leader | High | High | Recognised everywhere and on call every day. |
+| A specialist in red gates and double gates | High | None | No footage of their work exists. The Hundred has never listed one. |
+| A guild's public face | Medium | High | Sponsored and managed. Often a second team that is never photographed clears their gates. |
+| A hunter filmed at one break | Any | Sudden | Has one famous clip and is expected to repeat it. |
+| A healer | Decides who survives | Low | Paid one and a half times the retainer and seldom named in accounts. |
+| An uncapped hunter | Rising | A risk | Each rise in power draws attention that the hunter may not want (`power.md`, section 5). |
 
-What makes a hunter **powerful**: gates, at rank, in a small party, for years; or the Daily without a miss; or a
-door a day and the luck to survive it. What makes a hunter **famous**: a break in daylight; a deed title with a
-good name; a guild that needs a face; dying and coming back on a Tuesday when nothing else was on. A GM should give
-the party one of each and let them find out which is worth more.
+For a capped hunter, power is set at awakening and fame is earned afterwards. A hunter becomes famous by
+fighting a break in daylight, by a deed that earns an epithet, or by joining a guild that needs a public face.
 
 ## 7. Celebrities
 
+Each entry ends with a hook for the GM.
+
 **In Carrow**
 
-- **Amara Nkemelu, "Tidebreaker"**, S-rank Mage, 47 and looks 32, one of the Fixed. Held the sea wall alone for
-  forty minutes in Year 12. Leads the Ninth Hour. The city pays her four million a year to live in the Crown, and
-  Paragon Mutual's rates for all of Carrow assume she is home. *Hook:* she has not taken a holiday in eight years
-  and has begun asking her lawyers what would happen if she simply left.
-- **Dax Verrault**, A-rank Assassin, 31, the face of Aurelian. Eleven titles, a fragrance, a foundation. *Hook:*
-  two of his titles appeared in the same week he was photographed at a gala. Titles do not lie, so who was inside?
-- **Ines Carvalho, "Last Out"**, B-rank Tanker, raid captain of Ironwake. Earned her title carrying two of her
-  party out of a red gate. Never smiles for cameras; the city adores her for it. *Hook:* she is three levels from A
-  and her guildmaster has stopped giving her seats.
-- **Mikkel Strand, "the Spotter"**, E-rank, 54, a runner by trade. Has reported forty-one unfound gates in Scarside
-  on foot. Has a mural. *Hook:* he finds them too fast. Either he can sense a door before it opens, which nobody
-  can, or someone tells him.
-- **Old Wen**, a teller, once a C-rank Ranger. Her accounts of the Break Years are school texts. *Hook:* she is
-  writing the true account of the gate Tobias Reinholt sealed in Year 7, and has been offered a great deal of money
-  to stop.
+- **Amara Nkemelu**, called Tidebreaker. S-rank Mage, aged 47 with the body of someone 32. In Year 12 she held the
+  sea wall alone for forty minutes. She leads the Ninth Hour. Carrow pays her four million a year to live in the
+  Crown, and Paragon Mutual sets every premium in the city on the assumption that she is there. *Hook:* she has
+  had no holiday in eight years and has asked her lawyers what happens if she leaves.
+- **Dax Verrault.** A-rank Assassin, 31, the public face of Aurelian. The Bureau's record credits him with more A
+  gates than any hunter in the city. *Hook:* the record credits him with two clears in a week when he was
+  photographed at a gala abroad.
+- **Ines Carvalho**, called Last Out. B-rank Tanker and raid captain of Ironwake. She earned the name by carrying
+  two of her party out of a red gate. *Hook:* half of Ironwake's captains want her as the next guildmaster, and
+  the present one has stopped giving her seats.
+- **Mikkel Strand**, called the Spotter. E-rank, 54, a runner. He has reported forty-one unfound gates in Scarside.
+  *Hook:* he finds gates within minutes of their opening. Nobody is known to sense a gate before it opens, so
+  either he can or someone tells him.
+- **Old Wen.** A teller and a retired C-rank Ranger. Schools teach her accounts of the Break Years. *Hook:* she is
+  writing an account of the gate that Tobias Reinholt sealed in Year 7, and someone has offered her money to stop.
 
 **In the world**
 
-- **Sabine Okoro, the First Risen.** Read D at seventeen, crossed level 70 at twenty-eight, twenty-three months
-  after the Speaking, most of it alone. No guild, no sponsor, no fixed city. Does her Daily in public parks and
-  leaves before the crowd forms. *Hook:* she is looking for something, gate by gate, and it brings her to Carrow.
-- **Tomas Reyes-Lindahl**, S-rank Tanker, 71 and looks 56. Went out to the tanker in the Strait in Year 11. The
-  nearest thing the Abstention has to a keeper. *Hook:* the Risen never agreed to it, and he has started visiting
-  them one by one.
-- **Wen Castellanos, "Grandmother"**, the oldest S-rank alive, ninety-one. Kindled at seventy-one in the Long Week and has aged five years since. Has outlived two husbands, a son, and
-  the state she was born in. *Hook:* every cell-age clinic wants her, and she has just named a price.
-- **Bell Aoyagi**, B-rank Healer, the most-watched hunter on Earth. Films from gate mouths; has performed over four
-  hundred raisings on camera, each with the family's leave. *Hook:* the Once-Born League has asked her to try a
-  crystal on an unawakened child, live. She has not said no.
+- **Sabine Okoro.** Read as D at seventeen and as S at twenty-eight. The Bureau recorded a re-awakening, and no
+  other recorded re-awakening rose more than one rank. She has no guild, no sponsor and no home city. *Hook, for
+  the GM only:* she passed a trial gate and has no cap. She is searching gates for other hunters like her,
+  and the search brings her to Carrow.
+- **Tomas Reyes-Lindahl.** S-rank Tanker, aged 71 with the body of someone 56. He was on the tanker in Year 11 when
+  the Abstention was agreed, and other S-ranks treat him as its spokesman. *Hook:* he believes a hunter who can
+  grow would end the Abstention, and he has begun to investigate Okoro.
+- **Wen Castellanos**, called Grandmother. The oldest S-rank alive, at ninety-one. She awakened at seventy-one in
+  the Long Week and has aged five years since. *Hook:* every clinic that studies ageing wants to examine her, and
+  she has now named a price.
+- **Bell Aoyagi.** B-rank Healer and the most-watched hunter in the world. She films at gates and has raised over
+  four hundred hunters on camera, each with the family's consent. *Hook:* the Once-Born League has asked her to try
+  a crystal on an unawakened child on camera, and she has not refused.

@@ -91,15 +91,15 @@ const lowToHigh: Reader = (v, path, no) => {
 };
 /** A value whose rule is null until set: null, or what `entry` reads. */
 const nullable = (entry: Entry): Reader => (v, path, no) => (v === null ? null : entry(v) ?? no(path, 'entry'));
-/** A rarity: its color and its price factor; a new one needs both, an override of a shipped one either. */
-const rarity = (v: unknown, shipped: boolean): { color?: string; mult?: unknown } | null => {
-  if (!isObj(v) || Object.keys(v).some(k => k !== 'color' && k !== 'mult')) return null;
+/** A rarity: its color and the rank whose Clear prices it; a new one needs both, an override of a shipped one either. */
+const rarity = (v: unknown, shipped: boolean): { color?: string; rank?: unknown } | null => {
+  if (!isObj(v)) return null;
   if ((v.color !== undefined || !shipped) && typeof v.color !== 'string') return null;
-  if (v.mult === undefined && !shipped) return null;
-  const { color, mult } = v;
-  return { ...(typeof color === 'string' ? { color } : {}), ...(mult !== undefined ? { mult } : {}) };
+  if (v.rank === undefined && !shipped) return null;
+  const { color, rank } = v;
+  return { ...(typeof color === 'string' ? { color } : {}), ...(rank !== undefined ? { rank } : {}) };
 };
-/** The rarities: a map the GM may add entries to, each read as a rarity, its price factor in its domain. */
+/** The rarities: a map the GM may add entries to, each read as a rarity, its rank one of `RANKS`. */
 const rarities: Reader = (v, path, no) => {
   if (!isObj(v)) return no(path, 'object');
   const out: Rec = {};
@@ -107,9 +107,10 @@ const rarities: Reader = (v, path, no) => {
     if (k === '__proto__') { no(`${path}.${k}`, 'unknown'); continue; }
     const kept = rarity(x, Object.hasOwn(RULES.rarities, k));
     if (!kept) { no(`${path}.${k}`, 'entry'); continue; }
-    if (kept.mult === undefined) { out[k] = kept; continue; }
-    const mult = numberAt(kept.mult, `${path}.${k}.mult`, no);
-    if (mult !== undefined) out[k] = { ...kept, mult };
+    if (isObj(x)) for (const f of Object.keys(x)) if (f !== 'color' && f !== 'rank') no(`${path}.${k}.${f}`, 'unknown');
+    if (kept.rank === undefined) { out[k] = kept; continue; }
+    const rank = RANKS.find(r => r === kept.rank);
+    if (rank) out[k] = { ...kept, rank }; else no(`${path}.${k}.rank`, 'entry');
   }
   return out;
 };

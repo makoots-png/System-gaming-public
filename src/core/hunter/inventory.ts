@@ -3,17 +3,16 @@
 // function here, in `store.apply` (src/core/save-step.ts); a change to what is worn changes the sheet, so chain
 // `fitted` (sheet.ts) after it. Ids are arguments: the store reserves one (`store.id('i')`).
 //
-// Selling pays less than buying: an item sells for half its price (`valueOf`), rounded down, and at least 1 gold when it
-// has a price (`sellPrice`). So
-// buy then sell gives back the item and leaves the hunter `price - sellPrice` gold poorer; tests/inventory.test.ts
-// asserts that difference. An item that revives is not bought back (`sellable`).
+// Selling pays less than buying: an item sells for `saleShare` of its price (`valueOf`), a quarter (economy design 3),
+// rounded down, and at least 1 gold when it has a price (`sellPrice`). So buy then sell gives back the item and leaves
+// the hunter `price - sellPrice` gold poorer; tests/inventory.test.ts asserts that difference. An item that revives is not bought back (`sellable`).
 //
 // The shop is closed to a dead hunter (`shopOpen`): it buys nothing and sells nothing. The owner, Nov 19: "When a
 // player/party dies, they should only be able to be revived by the gm or through resurrection crystals. They can not buy
 // it in death", then "Whole shop should be closed in death." A crystal still reaches a dead hunter from the GM (an award)
 // or from another hunter (goods.ts `handOver`, offer.ts), and the dead hunter may use it (use.ts `useItem`).
 import { valueOf } from '../registry/items.ts';
-import type { Item, ItemTemplate, Slot } from '../registry/items.ts';
+import type { Item, ItemTemplate, PriceRules, Slot } from '../registry/items.ts';
 import type { Rules } from '../rules.ts';
 import { refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
@@ -24,6 +23,8 @@ import { WAYS_BACK } from './vitals.ts';
 import type { Life } from './vitals.ts';
 
 type Carrying = { items: Item[]; equipped: Record<Slot, ItemId | null>; gold: number };
+/** The rules a sale reads: an item's price (`PriceRules`) and the share of it the Association pays. */
+type SaleRules = PriceRules & Pick<Rules, 'saleShare'>;
 
 /**
  * Whether a field of an item tells two things apart: true, they are different things and never one stack; false, it is
@@ -45,17 +46,17 @@ export const stackOf = (h: Carrying, it: ItemTemplate): Item | null =>
 
 /**
  * Whether the Association buys an item back: not one that revives (the Resurrection Crystal). The GM decides how many
- * exist, and a sale would turn a crystal the GM gave into half its price in gold the GM never gave (notes-2b-crystal.md 3).
+ * exist, and a sale would turn a crystal the GM gave into gold the GM never gave (notes-2b-crystal.md 3).
  */
 export const sellable = (i: Pick<Item, 'revive'>): boolean => !i.revive;
 /**
- * What one of an item sells for: half its price (`valueOf`: its own, else the rule's), rounded down, at least 1; a free
- * item, or one not bought back (`sellable`), sells for nothing. (Before, an item priced 0 sold for half of base value
- * times multiplier, a second price rule.)
+ * What one of an item sells for: `saleShare` of its price (`valueOf`: its own, else the rule's), rounded down, at least
+ * 1; a free item, or one not bought back (`sellable`), sells for nothing. (Before, a literal half, and an item priced 0
+ * sold for half of base value times multiplier, a second price rule.)
  */
-export const sellPrice = (i: Pick<Item, 'rar'> & Partial<Pick<Item, 'value' | 'revive'>>, R: Pick<Rules, 'baseValue' | 'rarities'>): number => {
+export const sellPrice = (i: Pick<Item, 'rar' | 'type'> & Partial<Pick<Item, 'value' | 'revive'>>, R: SaleRules): number => {
   const price = sellable(i) ? valueOf(i, R) : 0;
-  return price > 0 ? Math.max(1, Math.floor(price / 2)) : 0;
+  return price > 0 ? Math.max(1, Math.floor(price * R.saleShare)) : 0;
 };
 
 /** Every slot that held `id` emptied. */
@@ -129,7 +130,7 @@ export const BUY_WORDS: { readonly [W in BuyRefusal]: (name: string) => string }
 /** A purchase or a sale is a fact of the chronicle (chronicle.ts), recorded with it. The shop reads the life (`shopOpen`). */
 type Trading = Carrying & { readonly chronicle: Chronicle; readonly life: Life };
 /** An item bought at its price (`valueOf`): refused for a dead hunter (`dead`), and when the gold is short (`poor`). */
-export function buy<H extends Trading>(h: H, it: ItemTemplate, id: ItemId, R: Pick<Rules, 'baseValue' | 'rarities'>): H | Refused<BuyRefusal> {
+export function buy<H extends Trading>(h: H, it: ItemTemplate, id: ItemId, R: PriceRules): H | Refused<BuyRefusal> {
   if (!shopOpen(h)) return refuse('dead');
   const price = valueOf(it, R);
   if (h.gold < price) return refuse('poor');
@@ -140,7 +141,7 @@ export function buy<H extends Trading>(h: H, it: ItemTemplate, id: ItemId, R: Pi
  * `n` of an item sold (at most what is held), each for `sellPrice`. Refused for a dead hunter (`dead`), for one not held
  * (`no-item`) and for one not bought back (`unsellable`).
  */
-export function sell<H extends Trading>(h: H, itemId: string, n: number, R: Pick<Rules, 'baseValue' | 'rarities'>): H | Refused<'dead' | 'no-item' | 'unsellable'> {
+export function sell<H extends Trading>(h: H, itemId: string, n: number, R: SaleRules): H | Refused<'dead' | 'no-item' | 'unsellable'> {
   if (!shopOpen(h)) return refuse('dead');
   const it = h.items.find(i => i.id === itemId);
   if (!it) return refuse('no-item');
@@ -152,7 +153,7 @@ export function sell<H extends Trading>(h: H, itemId: string, n: number, R: Pick
   return record({ ...out, gold }, { kind: 'shop', act: 'sell', item: it.name, rar: it.rar, price, goldAfter: gold });
 }
 /** What `sell` pays for `n` of an item. */
-export const sellTotal = (it: Item, n: number, R: Pick<Rules, 'baseValue' | 'rarities'>): number => sellPrice(it, R) * Math.min(Math.max(1, Math.trunc(n) || 1), it.qty);
+export const sellTotal = (it: Item, n: number, R: SaleRules): number => sellPrice(it, R) * Math.min(Math.max(1, Math.trunc(n) || 1), it.qty);
 
 // ── the GM's shop: `save.shop`, null for the built-in list ──
 /** The shop list after the item maker saved `it`: in place of the item named `name`, else added at the end. */

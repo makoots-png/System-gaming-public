@@ -240,7 +240,7 @@ test('the loot of a monster defeated in a fight opens in the Award form when the
   const page = (await device('gm')).page;
   await onboardGM(page);
   await chooseList(page);
-  const potion = { name: 'Health Potion', rar: 'common', type: 'consumable', qty: 2, slot: null, bonus: {}, effects: [{ op: 'heal', amount: { kind: 'number', value: 30 }, when: 'use' }], value: 50, desc: 'Restores 30 HP.' };
+  const potion = { name: 'Health Potion', rar: 'common', type: 'consumable', qty: 2, slot: null, bonus: {}, effects: [{ op: 'heal', amount: { kind: 'number', value: 30 }, when: 'use' }], desc: 'Restores 30 HP.' };
   await page.evaluate(p => hunterApp.store.update((d: any) => {
     d.monsters.push({ id: 'm900', name: 'Hoard Rat', rank: 'E', type: '', archetype: 'brute', kind: 'normal', tweak: {}, abilities: [], notes: [], xp: 40, extractable: false, desc: '', statuses: [], loot: { gold: 75, items: [p] } });
   }, 'test-setup'), potion);
