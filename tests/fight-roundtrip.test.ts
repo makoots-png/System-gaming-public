@@ -14,8 +14,9 @@ import type { Origin } from '../src/core/combat/effect-ops.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { fightId, reduce } from '../src/core/combat/fight.ts';
 import type { Command, Ctx, Effect, Fight, NewRow } from '../src/core/combat/fight.ts';
+import { rowHp } from '../src/core/combat/row-hp.ts';
 
-const ctx: Ctx = { rules: RULES, life: () => null };
+const ctx: Ctx = { rules: RULES };
 const id = combatantId;
 const formula = (text: string) => { const p = parseFormula(text, RULES); if (!p.ok) throw new Error(p.error); return p.formula; };
 const base = abilityOf('strike', { id: abilityId('hit'), name: 'hit' }, RULES);
@@ -24,7 +25,7 @@ const origin: Origin = { kind: 'hunter', build: { stats: { ...baseStats(RULES.fi
 function row(name: string, side: Side): NewRow {
   const kind = side === 'party' ? 'hunter' : 'monster';
   return {
-    id: id(name), name, side, kind, origin, tier: 0, place: null, hp: modified(origin, [], RULES).sheet.hpMax, mana: 10, fatigue: 0, shield: null, stagger: null,
+    id: id(name), name, side, kind, origin, tier: 0, place: null, life: { at: 'up', hp: modified(origin, [], RULES).sheet.hpMax }, mana: 10, fatigue: 0, shield: null, stagger: null,
     channel: null, threat: kind === 'monster' ? {} : null, statuses: [], readyAt: {}, abilities: [HIT], intent: null,
     holder: kind === 'hunter' ? { kind: 'local', hunterId: hunterId(`h-${name}`) } : null, xp: 0,
   };
@@ -59,9 +60,9 @@ describe('a hunter added to a fight and removed', () => {
   test('a hunter hit then removed: its sheet heard the hit as it landed, so leaving owes it nothing', () => {
     const f0 = play(null, add([row('A', 'party'), row('M', 'foe')]), { type: 'start', openings: [{ id: id('M'), d20: 20, tie: 0 }, { id: id('A'), d20: 1, tie: 0 }] }).fight!;
     const hit = play(f0, { type: 'act', by: id('M'), ability: HIT.id, aim: id('A'), rolls: { dice: {}, react: { A: 10 } } as never });
-    const hp = hit.fight!.rows.find(r => r.id === id('A'))!.hp;
-    expect(hp).toBeLessThan(f0.rows.find(r => r.id === id('A'))!.hp);
-    expect(hit.effects.filter(e => e.type === 'vitals').map(e => (e as Extract<Effect, { type: 'vitals' }>).hp)).toContain(hp);
+    const hp = rowHp(hit.fight!.rows.find(r => r.id === id('A'))!);
+    expect(hp).toBeLessThan(rowHp(f0.rows.find(r => r.id === id('A'))!));
+    expect(hit.effects.filter(e => e.type === 'vitals').map(e => (e as Extract<Effect, { type: 'vitals' }>).life)).toContainEqual({ at: 'up', hp });
     const gone = play(hit.fight, { type: 'remove', id: id('A') });
     expect(gone.effects.filter(e => e.type === 'vitals')).toEqual([]);
   });

@@ -10,12 +10,13 @@ import { tallyOf } from './row-tally.ts';
 import type { Rules } from '../rules.ts';
 import type { CombatantId } from './ability-types.ts';
 import type { Fight, Running, Setup } from './fight-types.ts';
-import { isUp, sheetTotals } from './fight-turn.ts';
+import { sheetTotals } from './fight-turn.ts';
 import type { SheetTotals } from './fight-turn.ts';
 import { CAP_ROUNDS, lifeOfSaves, playBegin, playOver, playSaves, playStep } from './play.ts';
 import type { Limits, Play, UsedUp } from './play.ts';
-import type { LifeState } from '../hunter/vitals.ts';
+import type { Life, LifeState } from '../hunter/vitals.ts';
 import { sensible } from './policy.ts';
+import { isUp } from './row-hp.ts';
 
 /** How one played fight ended for the party: it won, it lost (the fight ended without its win), or the cap (a stalemate). */
 export const RUN_OUTCOMES = ['won', 'lost', 'stalled'] as const;
@@ -25,7 +26,12 @@ export type RunOutcome = (typeof RUN_OUTCOMES)[number];
  * faces it rolled in order (none when up, or when left down beside a standing ally of a won fight, `playSaves`), and
  * the life those faces lead to from a fall (`lifeOfSaves`; up when it never fell or stands again).
  */
-export type RowEnd = SheetTotals & { readonly down: boolean; readonly saves: readonly number[]; readonly life: LifeState; /** The monsters it took down (a solo run's kill facts, solo.ts). */ readonly kills: readonly KillSeen[] };
+export type RowEnd = SheetTotals & {
+  readonly down: boolean; readonly saves: readonly number[]; readonly life: LifeState;
+  /** A hunter row's life as the fight left it, before the death saves after it (what a solo run writes back); null for a shadow. */
+  readonly lifeLeft: Life | null;
+  /** The monsters it took down (a solo run's kill facts, solo.ts). */ readonly kills: readonly KillSeen[];
+};
 /** One played fight: its outcome, its rounds, the commands it took, each party row's end by id, and the items used up. */
 export type RunEnd = {
   readonly outcome: RunOutcome; readonly rounds: number; readonly commands: number; readonly party: Readonly<Record<CombatantId, RowEnd>>; readonly spent: readonly UsedUp[];
@@ -62,7 +68,7 @@ export function endOf(p: Play & { readonly fight: { readonly phase: 'ended' } },
     const r = f.rows.find(x => x.id === id);
     if (!r) continue;
     const faces = saves[id] ?? [], life: LifeState = isUp(r) ? 'up' : lifeOfSaves(faces, r.sheet.hpMax);
-    party[id] = { ...sheetTotals(r, f.now, R), down: p.down.includes(id) || !isUp(r), saves: faces, life, kills: killsSeen(tallyOf(r), f.rows) };
+    party[id] = { ...sheetTotals(r, f.now, R), down: p.down.includes(id) || !isUp(r), saves: faces, life, lifeLeft: r.kind === 'hunter' ? r.life : null, kills: killsSeen(tallyOf(r), f.rows) };
   }
   return { outcome, rounds: f.summary.rounds, commands: p.steps, party, spent: p.spent };
 }

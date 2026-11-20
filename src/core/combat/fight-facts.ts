@@ -6,6 +6,7 @@
 import { RANKS, rankIdx } from '../rules.ts';
 import type { Rank } from '../rules.ts';
 import type { Fact, FactOf, FightOutcome } from '../hunter/facts.ts';
+import { isUp, rowHp } from './row-hp.ts';
 import type { Body } from './effect-ops.ts';
 import type { CombatantId } from './ability-types.ts';
 import type { SheetKey } from '../ids.ts';
@@ -15,7 +16,7 @@ import type { RowTally } from './row-tally.ts';
 
 /** The longest list of foes' names a fight fact keeps (facts.ts `names`). */
 const NAMES_MAX = 80;
-const pct = (b: Body): number => (b.sheet.hpMax > 0 ? Math.max(0, Math.min(100, Math.round((b.hp / b.sheet.hpMax) * 100))) : 0);
+const pct = (b: Body): number => (b.sheet.hpMax > 0 ? Math.max(0, Math.min(100, Math.round((rowHp(b) / b.sheet.hpMax) * 100))) : 0);
 
 /** A foe a row took down, as its kill fact will name it before it knows whose rank to measure against or where it fell. */
 export type KillSeen = Omit<FactOf<'kill'>, 'kind' | 'above' | 'where'>;
@@ -53,10 +54,10 @@ export function rowFacts(f: Ended, cid: CombatantId, rank: Rank, gate: string): 
   const above = (rk: Rank): number => rankIdx(rk) - rankIdx(rank), bosses = monsters.filter(o => o.monsterKind === 'boss');
   const kills = killFacts(killsSeen(t, f.rows), rank, 'fight');
   const fight: Fact = {
-    kind: 'fight', outcome, rounds: Math.max(1, Math.round(f.summary.rounds)), up: me.hp > 0, downs: t.downs, low: t.low, endPct: pct(me), exactOne: t.exactOne,
+    kind: 'fight', outcome, rounds: Math.max(1, Math.round(f.summary.rounds)), up: isUp(me), downs: t.downs, low: t.low, endPct: pct(me), exactOne: t.exactOne,
     struck: t.struck, hits: t.hits, crits: t.crits, critRun: t.critRunMax, avoided: t.avoided, dealt: t.dealt, taken: t.taken, healed: t.healed,
     raised: t.raised, hexes: t.hexes, kills: t.kills.length, bosses: kills.filter(k => k.kind === 'kill' && k.mkind === 'boss').length, turnKills: turnKillsMax(t),
-    items: t.items, allies: allies.length, alliesDown: allies.filter(b => b.hp <= 0).length, sideUp: side.filter(b => b.hp > 0).length, foes: foes.length,
+    items: t.items, allies: allies.length, alliesDown: allies.filter(b => !isUp(b)).length, sideUp: side.filter(isUp).length, foes: foes.length,
     foeTop: monsters.length ? Math.max(...monsters.map(o => above(o.rank))) : 0, bossTop: bosses.length ? Math.max(...bosses.map(o => above(o.rank))) : null,
     gate, names: namesOf(foes),
   };

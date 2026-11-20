@@ -16,7 +16,7 @@ function step(cmd: Command, from: State, to: State): string | null {
     case 'start': return 'the GM starts it, everyone rolls an opening';
     case 'end': return from?.phase === 'running' ? 'the GM ends it' : 'the GM ends it before it starts';
     case 'clear': return 'the GM closes it';
-    case 'act': case 'move': case 'endTurn': case 'release': case 'settle': case 'remove': case 'adjust': case 'refill': case 'status': case 'paint': case 'zoneAdd': case 'zoneRemove': case 'resize': case 'arm': case 'extract':
+    case 'act': case 'move': case 'endTurn': case 'release': case 'settle': case 'remove': case 'adjust': case 'refill': case 'life': case 'status': case 'paint': case 'zoneAdd': case 'zoneRemove': case 'resize': case 'arm': case 'extract':
       if (to?.phase === 'ended') return 'a side has nobody standing';
       throw new Error(`${cmd.type} moved the fight from ${stateOf(from)} to ${stateOf(to)} with no label`);
     default: throw new Error(`${cmd.type} moved the fight from ${stateOf(from)} to ${stateOf(to)} with no label`);

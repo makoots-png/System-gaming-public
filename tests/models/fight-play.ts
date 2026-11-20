@@ -23,11 +23,13 @@ import { abilityOf } from '../../src/core/registry/ability-kinds.ts';
 import { needs } from '../../src/core/combat/resolve.ts';
 import type { Aim, Rolls } from '../../src/core/combat/resolve.ts';
 import { fightId, pendingKey } from '../../src/core/combat/fight.ts';
-import type { Command, Ctx, Fight, NewRow, Opening } from '../../src/core/combat/fight.ts';
+import type { Command, Ctx, Fight, NewRow, Opening, RowLifeEvent } from '../../src/core/combat/fight.ts';
 import { zoneId } from '../../src/core/combat/zones.ts';
 import { EXTRACTION_OUTCOMES } from '../../src/core/combat/extraction.ts';
 import type { Zone } from '../../src/core/combat/zones.ts';
 import { TERRAINS } from '../../src/core/combat/space.ts';
+import { isUp, rowHp } from '../../src/core/combat/row-hp.ts';
+import { lifeAt } from '../fixtures/life.ts';
 const sheetKey = (s: string) => parseSheetKey(s) ?? (() => { throw new Error(`not a sheet key: ${s}`); })();
 
 // ── a seeded generator (mulberry32) ──
@@ -45,7 +47,7 @@ export function rng(seed: number): Rng {
   return { next, int, pick: list => { const x = list[int(0, list.length - 1)]; if (x === undefined) throw new Error('pick from an empty list'); return x; }, chance: p => next() < p };
 }
 
-export const ctx: Ctx = { rules: RULES, life: () => null };
+export const ctx: Ctx = { rules: RULES };
 
 // ── the map: the default 20 by 14 with a short wall between the lines ──
 const WALLS = new Set(['6,5', '7,5', '8,5', '12,7', '12,8']);
@@ -161,10 +163,10 @@ const build = (main: StatKey, second: StatKey, kit: Kit): Origin => ({
   kind: 'hunter', build: { stats: { ...baseStats(RULES.fight), [main]: 30, [second]: 20 }, level: 5, gear: kitGear(kit, RULES), perks: {} },
 });
 const mon = (rank: 'C' | 'D', archetype: Archetype, monsterKind: MonsterKind, tweak: Tweak = NO_TWEAK): Origin => ({ kind: 'monster', name: 'Monster', rank, archetype, monsterKind, tweak });
-function row(id: string, name: string, side: NewRow['side'], kind: NewRow['kind'], origin: Origin, abilities: Ability[], o: Partial<NewRow> = {}): NewRow {
+function row(id: string, name: string, side: NewRow['side'], kind: NewRow['kind'], origin: Origin, abilities: Ability[], o: Partial<Omit<NewRow, 'kind' | 'life'>> = {}): NewRow {
   const sheet = modified(origin, [], RULES).sheet;
   return {
-    id: combatantId(id), name, side, kind, origin, tier: 1, place: null, hp: sheet.hpMax, mana: sheet.manaMax, fatigue: 0, shield: null,
+    id: combatantId(id), name, side, ...lifeAt(kind, sheet.hpMax), origin, tier: 1, place: null, mana: sheet.manaMax, fatigue: 0, shield: null,
     stagger: null, channel: null, threat: kind === 'monster' ? {} : null, statuses: [], readyAt: {}, abilities, intent: null,
     holder: null, xp: 0, ...o,
   };
@@ -224,6 +226,16 @@ const gmAdjust = (g: Rng, id: CombatantId): Command => ({
   ...(g.chance(0.1) ? { used: { ability: g.pick([HEMOPLAGUE.id, SPRITE.id, STRIKE.id]), spent: g.int(0, 2) } } : {}),
 });
 
+/**
+ * The fight's `life` command (row-life.ts): the GM's Revive or Stabilize, or a death save of a d20, mostly on a row that
+ * is down so most land; on any other row the fight refuses it.
+ */
+function gmLife(g: Rng, fight: Fight, anyId: () => CombatantId): Command {
+  const event = g.pick<RowLifeEvent>([{ type: 'revive' }, { type: 'stabilize' }, { type: 'deathSave', roll: g.int(1, 20) }]);
+  const down = fight.rows.filter(r => !isUp(r));
+  return { type: 'life', id: down.length && g.chance(0.8) ? g.pick(down).id : anyId(), event };
+}
+
 // ── the GM's ground: paint and zones ──
 const ZONE_OPS: readonly (readonly Op[])[] = [
   [{ op: 'damage', type: 'magical', amount: f('3') }], [{ op: 'damage', type: 'physical', amount: f('1d6'), when: 'use' }],
@@ -270,12 +282,12 @@ export function randomCommand(g: Rng, fight: Fight | null, fresh: () => string):
   // when none fell, which is refused). Its outcome follows the log's length, so a seed whose ended fights hold no fallen
   // monster draws as it did. Aimed at any row, random play reached one extraction in 2,500 seeds, and lost it to drift
   if (fight.phase === 'ended') {
-    const fallen = fight.rows.filter(r => r.kind === 'monster' && r.hp <= 0).map(r => r.id);
+    const fallen = fight.rows.filter(r => r.kind === 'monster' && !isUp(r)).map(r => r.id);
     const corpse = (): CombatantId => (fallen.length ? g.pick(fallen) : anyId());
     return g.chance(0.8) ? { type: 'clear' } : g.pick<Command>([{ type: 'end' }, { type: 'extract', id: corpse(), by: fight.rows.find(r => r.kind === 'hunter')?.id ?? combatantId('c-ghost'), outcome: EXTRACTION_OUTCOMES[fight.log.length % EXTRACTION_OUTCOMES.length]! }]);
   }
   if (fight.phase === 'setup') {
-    const kind = g.pick(['start', 'start', 'start', 'add', 'remove', 'place', 'intent', 'reveal', 'end', 'act', 'adjust', 'refill', 'status', 'ground'] as const);
+    const kind = g.pick(['start', 'start', 'start', 'add', 'remove', 'place', 'intent', 'reveal', 'end', 'act', 'adjust', 'refill', 'life', 'status', 'ground'] as const);
     switch (kind) {
       case 'start': return { type: 'start', openings: openingsOf(g, g.chance(0.9) ? fight.rows : fight.rows.slice(1)) };
       case 'add': return { type: 'add', fightId: fightId(fresh()), rows: [monster()], openings: [] };
@@ -287,6 +299,7 @@ export function randomCommand(g: Rng, fight: Fight | null, fresh: () => string):
       case 'act': return { type: 'act', by: anyId(), ability: abilityId('strike'), aim: anyId(), rolls: { dice: {}, react: {} } };
       case 'adjust': return gmAdjust(g, anyId());
       case 'refill': return { type: 'refill', id: anyId() };
+      case 'life': return gmLife(g, fight, anyId);
       case 'status': return gmStatus(g, anyId());
       case 'ground': return ground(g, fight, () => fight.rows.length ? g.pick(fight.rows).place : anyPlace(g));
     }
@@ -296,12 +309,12 @@ export function randomCommand(g: Rng, fight: Fight | null, fresh: () => string):
   const user = fight.rows.find(r => r.id === by) ?? cur;
   const kind = g.pick([
     'act', 'act', 'act', 'act', 'act', 'act', 'move', 'move', 'pass', 'pass', 'release', 'settle', 'settle', 'intent', 'reveal', 'place', 'add',
-    'remove', 'end', 'force', 'adjust', 'refill', 'status', 'ground', 'ground', 'arm',
+    'remove', 'end', 'force', 'adjust', 'refill', 'life', 'status', 'ground', 'ground', 'arm',
   ] as const);
   switch (kind) {
     case 'act': case 'force': {
       const a = user.abilities.length && !g.chance(0.03) ? g.pick(user.abilities) : STRIKE;
-      const foes = fight.rows.filter(r => r.side !== user.side && r.hp > 0), allies = fight.rows.filter(r => r.side === user.side && r.hp > 0);
+      const foes = fight.rows.filter(r => r.side !== user.side && rowHp(r) > 0), allies = fight.rows.filter(r => r.side === user.side && rowHp(r) > 0);
       const aim: Aim = a.aim === 'place' ? (foes.length && g.chance(0.8) ? near(g, g.pick(foes).place, 1) : anyPlace(g))
         : a.aim === 'ally' ? (allies.length ? g.pick(allies).id : anyId())
           : a.aim === 'self' ? user.id : foes.length && g.chance(0.85) ? g.pick(foes).id : anyId();
@@ -310,7 +323,7 @@ export function randomCommand(g: Rng, fight: Fight | null, fresh: () => string):
     case 'move': return g.chance(0.3) ? { type: 'move', by, to: near(g, user.place, 6), dash: true } : { type: 'move', by, to: near(g, user.place, g.chance(0.8) ? 3 : 5) };
     case 'pass': return { type: 'endTurn', by };
     case 'release': {
-      const c = fight.rows.find(r => r.channel && r.channel.state !== 'fired' && r.hp > 0) ?? user;
+      const c = fight.rows.find(r => r.channel && r.channel.state !== 'fired' && rowHp(r) > 0) ?? user;
       const a = c.abilities.find(x => x.id === c.channel?.ability);
       return { type: 'release', by: c.id, rolls: a && c.channel ? rollsFor(g, fight, c.id, a, c.channel.aim) : { dice: {}, react: {} } };
     }
@@ -332,6 +345,7 @@ export function randomCommand(g: Rng, fight: Fight | null, fresh: () => string):
     case 'end': return g.chance(0.5) ? { type: 'end' } : { type: 'clear' };
     case 'adjust': return gmAdjust(g, anyId());
     case 'refill': return { type: 'refill', id: anyId() };
+    case 'life': return gmLife(g, fight, anyId);
     case 'status': return gmStatus(g, g.chance(0.3) ? cur.id : anyId());
     case 'ground': return ground(g, fight, () => g.pick(fight.rows).place);
     // the GM's arm, or a player's through the room (kits design 8.4.2): one of the row's reactions, another ability, or none

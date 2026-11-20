@@ -29,6 +29,8 @@ Asked how a hunter who dies alone comes back: "So GM determines resurrection. Th
 
 So: no System resurrection for a price in XP, and none for free. The way back is the GM's Revive, as today, or a Resurrection Crystal, an item. The shop sells it at a price a hunter saves a long time for, and the GM gives one in any reward (a quest's, an award's, a title's bundle, a gate's loot). The GM decides how common they are.
 
+**Changed on Nov 20** (the owner, in the lead's session: "What neon said, add awards/achievnemrnts whatever for both \"First one's on the house\""): a hunter's first revive is free and one more comes on debt, each with a feat, before the GM's Revive or a Resurrection Crystal. "None for free" above no longer holds. The ladder's terms were set in neon's session and are in `handoff.md` section 4 once the owner gives them.
+
 ## Stories (the owner, Nov 18, typed in the lead's session)
 
 "Ok something big is the story modes have to be active table by me. They should [move] entirely at the GM pace and I should be able to make my own stories. This should be perfect. Architecturally sound, clean and easy to use."

@@ -13,6 +13,8 @@ import { delayed, hastened, hasteStep, interval, paceCost, stunned, tick } from 
 import type { Tick } from './timeline.ts';
 import type { CombatantId, DamageType } from './ability-types.ts';
 import type { Sheet } from '../hunter/derive.ts';
+import { isUp, rowHp } from './row-hp.ts';
+import { rowLifeAfter } from './row-life.ts';
 import { applyStatus, controlFactor, cureStatus, dispelled, lasting, removeStatus, shielded, stackOf, statusOn, statusShield, withStatuses } from './effect-ops.ts';
 import { atTier, countOn, stacked } from './op-amount.ts';
 import { admitted, damageShare, harmful, healShare, markWards, wardedDamage } from './standing.ts';
@@ -24,7 +26,7 @@ import { channelStep } from './fight-channel.ts';
 
 export const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 /** On the map: a monster or shadow at 0 HP is gone from it; a hunter at 0 still lies there. */
-export const alive = (b: Body): boolean => b.hp > 0 || b.kind === 'hunter';
+export const alive = (b: Body): boolean => isUp(b) || b.kind === 'hunter';
 
 // Rule 12: penetration percent, then flat; then the flat part of what is left comes off the hit, then the percentage; at least 1.
 /** Rule 12 for a hit of `raw` of `type` from a user with this sheet on a target with this one (the maker's preview reads it too). */
@@ -42,9 +44,10 @@ export function throughShield(target: Body, dealt: number, now: Tick): { target:
   return { target: { ...target, shield: s.amount - absorbed > 0 ? { ...s, amount: s.amount - absorbed } : null }, absorbed };
 }
 
-// Rule 14: HP stays in 0 to max. At 0 the target is down; a hunter's dying is the reducer's, through Vitals.
-export const hurt = (target: Body, damage: number): Body => ({ ...target, hp: Math.max(0, target.hp - damage) });
-export const healed = (target: Body, amount: number): Body => ({ ...target, hp: Math.min(target.sheet.hpMax, target.hp + amount) });
+// Rule 14: HP stays in 0 to max, through the row's life (row-life.ts): at 0 a hunter is dying and a foe dead, and a heal
+// never lifts a dead row.
+export const hurt = (target: Body, damage: number): Body => rowLifeAfter(target, { type: 'damage', amount: damage });
+export const healed = (target: Body, amount: number): Body => rowLifeAfter(target, { type: 'heal', amount });
 
 // Rule 15: a monster's threat table.
 export function threatened(target: Body, from: CombatantId, amount: number): Body {
@@ -141,7 +144,7 @@ export function reached(rows: ReadonlyMap<CombatantId, Body>, bearer: Body, reac
   const near = [...rows.values()].filter(b => alive(b) && sides(b) && dist(b.place, bearer.place) <= reach.radius);
   if (reach.kind === 'area') return near;
   // the one with the most HP (kits design 8.5.3), the bearer aside; a tie goes to the first in the fight's order
-  const most = near.filter(b => b.id !== bearer.id && b.hp > 0).sort((p, q) => q.hp - p.hp)[0];
+  const most = near.filter(b => b.id !== bearer.id && isUp(b)).sort((p, q) => rowHp(q) - rowHp(p))[0];
   return most ? [most] : [];
 }
 
@@ -167,7 +170,7 @@ export function landOps(rows: Map<CombatantId, Body>, ops: readonly LandOp[], hi
   for (const id of targets) {
     let t = rows.get(id);
     if (!t || !alive(t)) continue;
-    const before = t.hp;
+    const before = rowHp(t);
     let dealt = 0;
     const gained: StatusKey[] = [], cured: StatusKey[] = [];
     for (const op of ops) {
@@ -192,7 +195,7 @@ export function landOps(rows: Map<CombatantId, Body>, ops: readonly LandOp[], hi
       }
     }
     rows.set(t.id, t);
-    landed.push({ target: t.id, dealt, down: before > 0 && t.hp === 0, gained, cured });
+    landed.push({ target: t.id, dealt, down: before > 0 && rowHp(t) === 0, gained, cured });
   }
   for (const [id, keys] of Object.entries(taken) as [CombatantId, StatusKey[]][]) landed.push({ target: id, dealt: 0, down: false, gained: keys, cured: [] });
   return { landed, fired };
@@ -230,7 +233,7 @@ export function landThreshold(rows: Map<CombatantId, Body>, f: LandFired, now: T
 export function kitOf(user: Body, target: Body, R: OpRules): KitScope {
   const K = R.fight.kit;
   const stacks = (b: Body) => Object.fromEntries(b.statuses.map(s => [s.key, Math.min(K.stackCap, countOn(s))])) as Record<StatusKey, number>;
-  const missing = (b: Body): number => (b.sheet.hpMax > 0 ? Math.max(0, Math.min(1, 1 - b.hp / b.sheet.hpMax)) : 0);
+  const missing = (b: Body): number => (b.sheet.hpMax > 0 ? Math.max(0, Math.min(1, 1 - rowHp(b) / b.sheet.hpMax)) : 0);
   return { stacks: { user: stacks(user), target: stacks(target) }, field: {}, missing: { user: missing(user), target: missing(target) }, held: {}, hits: 0, kills: Math.min(K.kills, tallyOf(user).kills.length), spent: 0 };
 }
 

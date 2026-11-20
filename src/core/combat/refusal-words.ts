@@ -19,6 +19,7 @@ export const REFUSAL_WORDS: { readonly [R in Refusal]: string } = {
   notMonster: 'Only a monster can do that.', nothingDue: 'Nothing is due.', noIntent: 'No move was planned.',
   notExtractor: 'Only a hunter in the fight whose job may extract can try.',
   notHunter: 'Only a hunter\'s row can be refilled.',
+  lifeCannot: 'Not in this state: Revive is for the dead, Stabilize and death saves for the dying.',
 };
 
 /** What a player reads when the GM's phone turned down their tap (table.js). */

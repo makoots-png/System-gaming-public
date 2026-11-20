@@ -10,8 +10,8 @@ import type { Life, LifeState } from '../hunter/vitals.ts';
 import type { CombatantId } from './ability-types.ts';
 import type { ItemId } from '../ids.ts';
 import { itemOfAbility } from '../registry/abilities.ts';
+import { isUp, rowHp } from './row-hp.ts';
 import type { Body } from './effect-ops.ts';
-import { isUp } from './fight-turn.ts';
 import { owed, reduce } from './fight.ts';
 import type { Command, Ctx, Effect, Ended, Fight, Refusal, Running, Setup } from './fight-types.ts';
 import { needs } from './resolve.ts';
@@ -45,7 +45,7 @@ export type Played = {
   readonly play: Play; readonly before: Running; readonly me: Body | null; readonly choice: TurnChoice | null; readonly rolls: Rolls | null; readonly effects: readonly Effect[];
 };
 
-const ctxOf = (R: Rules): Ctx => ({ rules: R, life: () => null });
+const ctxOf = (R: Rules): Ctx => ({ rules: R });
 
 /** `cmd` reduced, or a throw naming it: the policy chose what the rules refuse. */
 function sent(f: Fight, cmd: Command, R: Rules): { fight: Fight; effects: readonly Effect[] } {
@@ -77,7 +77,7 @@ function paid(f: Running | Ended, R: Rules, random: Random): { fight: Running | 
   return { fight: at, effects };
 }
 const downOf = (f: Fight, was: readonly CombatantId[]): readonly CombatantId[] => {
-  const more = f.rows.filter(r => r.kind === 'hunter' && r.hp === 0 && !was.includes(r.id)).map(r => r.id);
+  const more = f.rows.filter(r => r.kind === 'hunter' && rowHp(r) === 0 && !was.includes(r.id)).map(r => r.id);
   return more.length ? [...was, ...more] : was;
 };
 

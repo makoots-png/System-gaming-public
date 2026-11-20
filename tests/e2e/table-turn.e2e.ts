@@ -33,13 +33,18 @@ async function room(device: (label: string, o?: DeviceOptions) => Promise<{ page
 }
 
 /**
- * The GM's fight with the player's hunter and one rat, started from the Combat view. Then (setup only) the player's row
- * stands at (2, 2) and the rat at `ratAt`, and the turn is the player's.
+ * The GM's fight with the player's hunter and one rat, started from the Combat view; with `ally`, the GM's own hunter
+ * fights beside the player's, so the party still stands when the player's hunter falls, and `others` names other
+ * players' hunters in the room who join too. Then (setup only) the player's
+ * row stands at (2, 2) and the rat at `ratAt`, and the turn is the player's.
  */
-async function fight(gm: Page, player: Page, ratAt: { x: number; y: number }) {
+async function fight(gm: Page, player: Page, ratAt: { x: number; y: number }, o: { ally?: boolean; others?: string[] } = {}) {
   await go(gm, 'combat');
-  await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (remote)` });
-  await combat(gm).locator('[data-addh]').tap();
+  const names = [`${HUNTER} (remote)`, ...(o.others ?? []).map(n => `${n} (remote)`), ...(o.ally ? [await gm.evaluate(() => hunterApp.store.active().name as string)] : [])];
+  for (const label of names) {
+    await combat(gm).locator('[data-hsel]').selectOption({ label });
+    await combat(gm).locator('[data-addh]').tap();
+  }
   await combat(gm).locator('[data-qline]').fill(`${MONSTER}, E, brute`);
   await combat(gm).locator('[data-qadd]').tap();
   await combat(gm).locator('[data-start]').tap();
@@ -60,7 +65,7 @@ test('a player\'s Strike sent on their turn changes the goblin\'s band on both p
   await fight(gm, player, { x: 2, y: 3 });
   // Healthy is above 75% of max HP (fight-doc.ts BANDS): one HP above three quarters, so any hit makes it Wounded.
   const rat = await fightRow(gm, MONSTER);
-  await gm.evaluate(([n, hp]) => hunterApp.store.update((d: any) => { d.fight.rows.find((r: any) => r.name === n).hp = hp; }, 'test-setup'), [MONSTER, Math.floor(rat.sheet.hpMax * 0.75) + 1] as const);
+  await gm.evaluate(([n, hp]) => hunterApp.store.update((d: any) => { d.fight.rows.find((r: any) => r.name === n).life = { at: 'up', hp }; }, 'test-setup'), [MONSTER, Math.floor(rat.sheet.hpMax * 0.75) + 1] as const);
   await expect(hudRow(player, MONSTER).locator('.tb-band')).toHaveAttribute('data-band', 'healthy');
   await lowestDice(gm); await lowestDice(player);
   const sent: any[] = [];
@@ -115,11 +120,40 @@ test('a GM\'s −5 on a fighting player\'s card on the party board takes 5 from 
   expect((await fightRow(gm, HUNTER)).hp).toBe(kai.hp - 5);
 });
 
+test('a player\'s death saves in the GM\'s fight move the GM\'s row, and the player\'s sheet follows the row to Dead', async ({ device }) => {
+  const { gm, player } = await room(device);
+  await fight(gm, player, { x: 2, y: 10 }, { ally: true });
+  const sheetLife = () => player.evaluate(() => hunterApp.store.active().life);
+  const rowLife = async () => (await fightRow(gm, HUNTER)).life;
+  await gm.evaluate(n => { const r = hunterApp.store.get().fight.rows.find((x: any) => x.name === n); hunterApp.api.combat.adjust(r.id, { hp: -9999 }); }, HUNTER);
+  await expect.poll(sheetLife, { timeout: 15_000 }).toEqual({ at: 'dying', successes: 0, failures: 0 });
+  await go(player, 'status');
+  const death = player.locator('#view-status [data-death]');
+  // Math.random answers 0.2, so each d20 is 1 + floor(0.2 x 20) = 5: a failure (2 to 9). Three failures are death.
+  await player.evaluate(() => { Math.random = () => 0.2; });
+
+  for (const failures of [1, 2]) {
+    await test.step(`the player rolls a failed death save on their sheet: the GM's row counts ${failures}, and the sheet hears it from the row`, async () => {
+      await death.locator('[data-dsave]').tap();
+      await expect.poll(rowLife, { timeout: 15_000 }).toEqual({ at: 'dying', successes: 0, failures });
+      await expect.poll(sheetLife, { timeout: 15_000 }).toEqual({ at: 'dying', successes: 0, failures });
+    });
+  }
+
+  await test.step('a third failure leaves the GM\'s row dead, and the player\'s sheet reads Dead', async () => {
+    await death.locator('[data-dsave]').tap();
+    await expect.poll(rowLife, { timeout: 15_000 }).toEqual({ at: 'dead' });
+    await expect.poll(sheetLife, { timeout: 15_000 }).toEqual({ at: 'dead' });
+    await expect(death.locator('[data-life]')).toHaveText('Dead');
+    await expect.poll(() => gm.evaluate(n => (hunterApp.api.sync.remoteSheets() as any[]).find(r => r.data.name === n)?.data.life.at, HUNTER), { timeout: 15_000 }).toBe('dead');
+  });
+});
+
 test('a player\'s hunter who died in the GM\'s fight and whom the GM revives from the fight\'s card stands at 1 HP on the player\'s own phone', async ({ device }) => {
   const { gm, player } = await room(device);
   await fight(gm, player, { x: 2, y: 10 });
   await player.evaluate(() => hunterApp.store.update(() => { hunterApp.store.active().life = { at: 'dead' }; }, 'test-setup'));
-  await gm.evaluate(n => hunterApp.store.update((d: any) => { d.fight.rows.find((r: any) => r.name === n).hp = 0; }, 'test-setup'), HUNTER);
+  await gm.evaluate(n => hunterApp.store.update((d: any) => { d.fight.rows.find((r: any) => r.name === n).life = { at: 'dead' }; }, 'test-setup'), HUNTER);
   await expect.poll(() => gm.evaluate(n => (hunterApp.api.sync.remoteSheets() as any[]).find(r => r.data.name === n)?.data.life.at, HUNTER)).toBe('dead');
   await go(player, 'status');
   const death = player.locator('#view-status [data-death]');
@@ -127,7 +161,7 @@ test('a player\'s hunter who died in the GM\'s fight and whom the GM revives fro
 
   await test.step('the GM picks the player\'s row and taps Revive on its card', async () => {
     await combat(gm).locator('.cmb-row', { hasText: HUNTER }).locator('.cmb-pick').tap();
-    const revive = combat(gm).locator('.cmb-card [data-defeat]');
+    const revive = combat(gm).locator('.cmb-card [data-revive]');
     await expect(revive).toHaveText('Revive');
     await revive.tap();
     await expect.poll(async () => (await fightRow(gm, HUNTER)).hp).toBe(1);
@@ -144,7 +178,7 @@ test('a player\'s hunter who died in the GM\'s fight and whom the GM revives fro
   const { gm, player } = await room(device);
   await fight(gm, player, { x: 2, y: 10 });
   await player.evaluate(() => hunterApp.store.update(() => { hunterApp.store.active().life = { at: 'dead' }; }, 'test-setup'));
-  await gm.evaluate(n => hunterApp.store.update((d: any) => { d.fight.rows.find((r: any) => r.name === n).hp = 0; }, 'test-setup'), HUNTER);
+  await gm.evaluate(n => hunterApp.store.update((d: any) => { d.fight.rows.find((r: any) => r.name === n).life = { at: 'dead' }; }, 'test-setup'), HUNTER);
   await go(player, 'status');
   const death = player.locator('#view-status [data-death]');
   await expect(death.locator('[data-life]')).toHaveText('Dead');
@@ -161,6 +195,117 @@ test('a player\'s hunter who died in the GM\'s fight and whom the GM revives fro
     await expect(player.locator('#view-status [data-bar="hp"] [data-cur]')).toHaveText('1');
     expect(await player.evaluate(() => hunterApp.store.active().life)).toEqual({ at: 'up', hp: 1 });
   });
+});
+
+/** The death save button on the status view of `page`, after every d20 it rolls is set to `face` (hunter.js reads Math.random). */
+async function savesOf(page: Page, face: number) {
+  await page.evaluate(n => { Math.random = () => (n - 1) / 20; }, face);
+  await go(page, 'status');
+  return page.locator('#view-status [data-death] [data-dsave]');
+}
+
+test('a player\'s phone shows another player\'s hunter Dying when it falls in the GM\'s fight, then Dead when its saves fail', async ({ device }) => {
+  const OTHER = 'Mira Test';
+  const { gm, player } = await room(device);
+  const other = (await device('other-player')).page;
+  await onboardPlayer(other, OTHER, await gm.evaluate(() => hunterApp.api.sync.room() as string));
+  await dismissAll(other, 4);
+  await go(gm, 'gm');
+  await expect(gm.locator('#gm-board .gm-card.remote', { hasText: OTHER })).toHaveCount(1);
+  await fight(gm, player, { x: 2, y: 10 }, { others: [OTHER] });
+  const face = hudRow(player, OTHER).locator('.lw');
+
+  await test.step('the GM marks the other hunter defeated: this player\'s phone reads it Dying, never Down', async () => {
+    await combat(gm).locator('.cmb-row', { hasText: OTHER }).locator('.cmb-pick').tap();
+    await combat(gm).locator('.cmb-card [data-defeat]').tap();
+    await expect(face).toHaveText('Dying', { timeout: 15_000 });
+    await expect(hudRow(player, OTHER)).not.toContainText('Down');
+  });
+
+  await test.step('its player rolls two death saves of 1: this player\'s phone reads it Dead', async () => {
+    const save = await savesOf(other, 1);
+    await save.tap();
+    await expect.poll(async () => (await fightRow(gm, OTHER)).life, { timeout: 15_000 }).toEqual({ at: 'dying', successes: 0, failures: 2 });
+    await expect(save).toBeEnabled({ timeout: 15_000 });
+    await save.tap();
+    await expect(face).toHaveText('Dead', { timeout: 15_000 });
+    await expect(hudRow(player, OTHER)).toHaveClass(/\bdead\b/);
+  });
+});
+
+test('the GM\'s card offers Stabilize on a dying player\'s hunter and Revive on a dead one, and neither while it stands', async ({ device }) => {
+  const { gm, player } = await room(device);
+  await fight(gm, player, { x: 2, y: 10 }, { ally: true });
+  await combat(gm).locator('.cmb-row', { hasText: HUNTER }).locator('.cmb-pick').tap();
+  const card = combat(gm).locator('.cmb-card');
+
+  await test.step('standing, the card offers Mark defeated and no Stabilize or Revive', async () => {
+    await expect(card.locator('[data-defeat]')).toHaveText('Mark defeated');
+    await expect(card.locator('[data-stabilize], [data-revive]')).toHaveCount(0);
+  });
+
+  await test.step('dying, the card reads Dying and offers Stabilize, not Revive', async () => {
+    await card.locator('[data-defeat]').tap();
+    await expect(card.locator('.cmb-tag.lw')).toHaveText('Dying');
+    await expect(card.locator('[data-stabilize]')).toHaveText('Stabilize');
+    await expect(card.locator('[data-revive], [data-defeat]')).toHaveCount(0);
+  });
+
+  await test.step('dead after the player\'s saves, the card reads Dead and offers Revive, not Stabilize', async () => {
+    const save = await savesOf(player, 1);
+    await expect(save).toBeEnabled({ timeout: 15_000 });
+    await save.tap();
+    await expect.poll(async () => (await fightRow(gm, HUNTER)).life, { timeout: 15_000 }).toEqual({ at: 'dying', successes: 0, failures: 2 });
+    await expect(save).toBeEnabled({ timeout: 15_000 });
+    await save.tap();
+    await expect(card.locator('.cmb-tag.lw')).toHaveText('Dead', { timeout: 15_000 });
+    await expect(card.locator('[data-revive]')).toHaveText('Revive');
+    await expect(card.locator('[data-stabilize], [data-defeat]')).toHaveCount(0);
+  });
+
+  await test.step('revived, the card stands again with Mark defeated', async () => {
+    await card.locator('[data-revive]').tap();
+    await expect(card.locator('[data-defeat]')).toHaveText('Mark defeated');
+    await expect(card.locator('.cmb-tag.lw')).toHaveCount(0);
+  });
+});
+
+test('the GM\'s Stabilize on a dying player\'s hunter reads Stable on the GM\'s card and on the player\'s own phone, and leaves no life button', async ({ device }) => {
+  const { gm, player } = await room(device);
+  await fight(gm, player, { x: 2, y: 10 }, { ally: true });
+  await combat(gm).locator('.cmb-row', { hasText: HUNTER }).locator('.cmb-pick').tap();
+  const card = combat(gm).locator('.cmb-card');
+  await card.locator('[data-defeat]').tap();
+  await expect(combat(player).locator('.tb-death .lw')).toHaveText('Dying', { timeout: 15_000 });
+  await card.locator('[data-stabilize]').tap();
+  await expect(card.locator('.cmb-tag.lw')).toHaveText('Stable');
+  await expect(card.locator('[data-stabilize], [data-revive], [data-defeat]')).toHaveCount(0);
+  await expect(combat(player).locator('.tb-death .lw')).toHaveText('Stable', { timeout: 15_000 });
+  await expect(combat(player).locator('[data-tbdsave]')).toHaveCount(0);
+});
+
+// Fails today, so it is fixme: the GM's phone builds the row from the sheet it last read (up at 45), and the join's
+// write-back then stands the player's dying sheet up. Which way to fix it (the join waits for a fresh read of the sheet,
+// or the row takes a sheet pushed before the join) is a design call: notes-dead-row.md section 10, leftover 1.
+test.fixme('a player who fell while the GM\'s phone was away stays down when the GM adds them to the fight: the row joins with the fall (notes-dead-row.md section 10, leftover 1)', async ({ device }) => {
+  const { gm, player } = await room(device, [], { blockServiceWorker: true, allowConsole: [/ERR_INTERNET_DISCONNECTED|net::ERR|Failed to fetch/] });
+  const dying = { at: 'dying', successes: 0, failures: 0 };
+  await gm.context().setOffline(true);
+  await expect.poll(() => gm.evaluate(() => hunterApp.api.sync.status())).toBe('offline');
+  await go(player, 'status');
+  await player.locator('#view-status [data-hpamt]').fill('999');
+  await player.locator('#view-status [data-hpdmg]').tap();
+  await expect.poll(() => player.evaluate(() => hunterApp.store.active().life)).toEqual(dying);
+  await go(gm, 'combat');
+  for (const label of [`${HUNTER} (remote)`, await gm.evaluate(() => hunterApp.store.active().name as string)]) {
+    await combat(gm).locator('[data-hsel]').selectOption({ label });
+    await combat(gm).locator('[data-addh]').tap();
+  }
+  await gm.context().setOffline(false);
+  await expect.poll(() => gm.evaluate(() => (hunterApp.store.get().settings.sync.outbox ?? []).length), { timeout: 20_000 }).toBe(0);
+  await expect.poll(() => player.evaluate(n => (hunterApp.api.sync.doc('fight') as any)?.rows?.some((r: any) => r.name === n) ?? false, HUNTER), { timeout: 20_000 }).toBe(true);
+  await expect.poll(async () => (await fightRow(gm, HUNTER)).life, { timeout: 20_000 }).toEqual(dying);
+  await expect.poll(() => player.evaluate(() => hunterApp.store.active().life), { timeout: 20_000 }).toEqual(dying);
 });
 
 test('a player\'s −5 on their own sheet during the GM\'s fight is turned down with a word, and their HP stays the fight\'s', async ({ device }) => {
@@ -262,7 +407,7 @@ test('the GM ends the fight while the GM\'s phone is offline: the player still g
   await fight(gm, player, { x: 2, y: 3 });
   const total = () => player.evaluate(() => { const h = hunterApp.store.active(); return h.xp + 100 * (h.level - 1) * h.level / 2; });
   const before = await total();
-  await gm.evaluate(n => hunterApp.store.update((d: any) => { const rat = d.fight.rows.find((r: any) => r.name === n); rat.hp = 0; rat.xp = 40; }, 'test-setup'), MONSTER);
+  await gm.evaluate(n => hunterApp.store.update((d: any) => { const rat = d.fight.rows.find((r: any) => r.name === n); rat.life = { at: 'dead' }; rat.xp = 40; }, 'test-setup'), MONSTER);
 
   await test.step('offline, the GM ends the encounter and awards the XP: the fight is gone and the player\'s award waits in the GM\'s outbox', async () => {
     await gm.context().setOffline(true);
@@ -293,7 +438,7 @@ test('the GM\'s phone offline awards the party\'s XP and reads that the player g
   // setOffline reaches the app's requests only past no service worker
   const { gm, player } = await room(device, [], { blockServiceWorker: true, allowConsole: [/ERR_INTERNET_DISCONNECTED|net::ERR|Failed to fetch/] });
   await fight(gm, player, { x: 2, y: 3 });
-  await gm.evaluate(n => hunterApp.store.update((d: any) => { const rat = d.fight.rows.find((r: any) => r.name === n); rat.hp = 0; rat.xp = 40; }, 'test-setup'), MONSTER);
+  await gm.evaluate(n => hunterApp.store.update((d: any) => { const rat = d.fight.rows.find((r: any) => r.name === n); rat.life = { at: 'dead' }; rat.xp = 40; }, 'test-setup'), MONSTER);
   await gm.context().setOffline(true);
   await expect.poll(() => gm.evaluate(() => hunterApp.api.sync.status())).toBe('offline');
   await combat(gm).locator('[data-end]').first().tap();

@@ -13,6 +13,7 @@ import type { Play } from '../src/core/combat/play.ts';
 import { sensible } from '../src/core/combat/policy.ts';
 import { hunter, monster } from './models/fight-sim.ts';
 import { GRID, ROSTER, ctx, randomCommand, rng } from './models/fight-play.ts';
+import { atHp } from './fixtures/life.ts';
 
 const setupOf = (rows: readonly NewRow[], grid = undefined as typeof GRID | undefined): Setup => {
   const r = reduce(null, { type: 'add', fightId: fightId('f-odds'), rows, openings: [], ...(grid ? { grid } : {}) }, ctx);
@@ -113,7 +114,7 @@ describe('who dies after a played fight (lead-look-6-odds.md, finding 1)', () =>
   // A table stabilizes a downed hunter when the party won and an ally stands; alone, or when the fight is lost, nobody
   // can, and the death saves run to their end (notes-2-solo.md 1.1).
   test('a won fight leaves a downed hunter down and not dead while another hunter stands', () => {
-    const f = setupOf(plain([hunter('bruiser', 'S', 'a').row, { ...hunter('tank', 'E', 'b').row, hp: 0 }, monster('E', 'brute', 'normal', 'm').row]));
+    const f = setupOf(plain([hunter('bruiser', 'S', 'a').row, atHp(hunter('tank', 'E', 'b').row, 0), monster('E', 'brute', 'normal', 'm').row]));
     const odds = oddsOf(f, 11, 40), b = 'b' as never;
     expect(odds.ends.filter(e => e.outcome === 'won').length).toBeGreaterThanOrEqual(38);
     for (const e of odds.ends.filter(x => x.outcome === 'won')) expect([e.party[b]!.down, e.party[b]!.saves, e.party[b]!.life]).toEqual([true, [], 'dying']);

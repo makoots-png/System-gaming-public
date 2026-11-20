@@ -219,12 +219,12 @@ test('on a slow phone the GM plays a turn: a monster\'s use on Brakk and Next, e
   await motion(page);
 
   const feel = await measure(page, async () => {
-    const hpBefore = await page.evaluate(() => hunterApp.store.get().fight.rows.find((r: any) => r.name === 'Brakk Ironhide').hp);
+    const hpBefore = await page.evaluate(() => hunterApp.store.get().fight.rows.find((r: any) => r.name === 'Brakk Ironhide').life.hp);
     await card.locator('[data-ab]').first().tap();
     const picker = page.locator('.sys-overlay.show', { hasText: /Use .+ on…/ });
     await expect(picker).toBeVisible();
     await picker.locator('.sys-actions button', { hasText: 'Brakk Ironhide' }).tap();
-    await expect.poll(() => page.evaluate(() => hunterApp.store.get().fight.rows.find((r: any) => r.name === 'Brakk Ironhide').hp)).toBeLessThan(hpBefore);
+    await expect.poll(() => page.evaluate(() => hunterApp.store.get().fight.rows.find((r: any) => r.name === 'Brakk Ironhide').life.hp)).toBeLessThan(hpBefore);
     const was = await combat.locator('.cmb-row.cur .cmb-nm').innerText();
     await combat.locator('[data-next]').evaluate(el => el.scrollIntoView({ block: 'center' }));
     await combat.locator('[data-next]').tap();
@@ -374,12 +374,12 @@ test('on a slow phone the GM fights from the map with twenty tokens, a boss with
   });
   judge('an ability picked on the map', pick, 'mapPick');
 
-  const hp = await page.evaluate(id => hunterApp.store.get().fight.rows.find((r: any) => r.id === id).hp, ids.rat);
+  const hp = await page.evaluate(id => hunterApp.store.get().fight.rows.find((r: any) => r.id === id).life.hp, ids.rat);
   const rat = map.locator(`[data-tok="${ids.rat}"]`);
   const use = await measure(page, async () => {
     await rat.tap();
     await map.locator('[data-go]').tap();
-    await expect.poll(() => page.evaluate(id => hunterApp.store.get().fight.rows.find((r: any) => r.id === id).hp, ids.rat)).toBeLessThan(hp);
+    await expect.poll(() => page.evaluate(id => hunterApp.store.get().fight.rows.find((r: any) => r.id === id).life.hp, ids.rat)).toBeLessThan(hp);
   });
   judge('a use from the map', use, 'mapUse');
 });

@@ -9,9 +9,9 @@ import type { Rules } from '../rules.ts';
 import { average } from '../formula.ts';
 import { formulaOf } from '../registry/ability-kinds.ts';
 import type { Ability } from './ability-types.ts';
+import { isUp, rowHp } from './row-hp.ts';
 import type { Body } from './effect-ops.ts';
 import type { Running } from './fight-types.ts';
-import { isUp } from './fight-turn.ts';
 import { concealed } from './standing.ts';
 import { dist } from './space.ts';
 import type { Place } from './space.ts';
@@ -34,7 +34,7 @@ const HURT = 0.5;
 
 const byId = (a: Body, b: Body): number => (a.id < b.id ? -1 : 1);
 const nearest = (me: Body, list: readonly Body[]): Body | undefined =>
-  [...list].sort((a, b) => dist(me.place, a.place) - dist(me.place, b.place) || a.hp - b.hp || byId(a, b))[0];
+  [...list].sort((a, b) => dist(me.place, a.place) - dist(me.place, b.place) || rowHp(a) - rowHp(b) || byId(a, b))[0];
 const foesOf = (f: Running, me: Body): Body[] => f.rows.filter(r => r.side !== me.side && isUp(r) && !concealed(r, me.side));
 const alliesOf = (f: Running, me: Body): Body[] => f.rows.filter(r => r.side === me.side && isUp(r));
 
@@ -102,8 +102,8 @@ function monsterChoice(f: Running, me: Body, uses: readonly Ability[], foes: rea
  * else steps toward the nearest foe.
  */
 function partyChoice(f: Running, me: Body, uses: readonly Ability[], foes: readonly Body[], R: Rules): TurnChoice {
-  const hurt = alliesOf(f, me).filter(b => b.hp < HURT * b.sheet.hpMax && !(b.shield && b.shield.until > f.now))
-    .sort((a, b) => a.hp / a.sheet.hpMax - b.hp / b.sheet.hpMax || byId(a, b));
+  const hurt = alliesOf(f, me).filter(b => rowHp(b) < HURT * b.sheet.hpMax && !(b.shield && b.shield.until > f.now))
+    .sort((a, b) => rowHp(a) / a.sheet.hpMax - rowHp(b) / b.sheet.hpMax || byId(a, b));
   for (const b of hurt) for (const a of uses) {
     if (!mends(a) || (a.aim === 'self' && b.id !== me.id) || a.aim === 'foe') continue;
     const aim = aimAt(a, me, b);

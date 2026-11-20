@@ -19,8 +19,10 @@ import { fightId, reduce } from '../src/core/combat/fight.ts';
 import type { Command, Ctx, Fight, NewRow, Opening, Running } from '../src/core/combat/fight.ts';
 import type { Rolls } from '../src/core/combat/resolve.ts';
 import { aims, cardOf, docSpots, order, readyIn, spotOf, statusGrant, stepAway, stepToward, waitChoices } from '../src/core/combat/fight-view.ts';
+import { lifeAt } from './fixtures/life.ts';
+import type { RowPatch } from './fixtures/life.ts';
 
-const ctx: Ctx = { rules: RULES, life: () => null };
+const ctx: Ctx = { rules: RULES };
 const id = combatantId;
 const f = (text: string) => { const p = parseFormula(text, RULES); if (!p.ok) throw new Error(p.error); return p.formula; };
 const ability = (kind: AbilityKind, name: string = kind, o: Partial<Ability> = {}): Ability => ({ ...abilityOf(kind, { id: abilityId(name), name }, RULES), ...o });
@@ -34,12 +36,13 @@ const haste = (pct: number): Status =>
 const hunterOrigin: Origin = { kind: 'hunter', build: { stats: baseStats(RULES.fight), level: 1, gear: kitGear('light', RULES), perks: {} } };
 
 /** A body of base stats in a light kit: speed 100, move 6, stride 3, armor 10. */
-function row(name: string, side: Side, o: Partial<NewRow> = {}): NewRow {
-  const hpMax = modified(hunterOrigin, o.statuses ?? [], RULES).sheet.hpMax, kind = o.kind ?? (side === 'party' ? 'hunter' : 'monster');
+function row(name: string, side: Side, o: RowPatch<NewRow> = {}): NewRow {
+  const { kind: k, hp, ...rest } = o;
+  const hpMax = modified(hunterOrigin, o.statuses ?? [], RULES).sheet.hpMax, kind = k ?? (side === 'party' ? 'hunter' : 'monster');
   return {
-    id: id(name), name, side, kind, origin: hunterOrigin, tier: 0, place: null, hp: hpMax, mana: 10, fatigue: 0, shield: null, stagger: null,
+    id: id(name), name, side, ...lifeAt(kind, hp ?? hpMax), origin: hunterOrigin, tier: 0, place: null, mana: 10, fatigue: 0, shield: null, stagger: null,
     channel: null, threat: kind === 'monster' ? {} : null, statuses: [], readyAt: {}, abilities: [HIT, STRIKE], intent: null,
-    holder: kind === 'hunter' ? { kind: 'local', hunterId: hunterId(`h-${name}`) } : null, xp: 0, ...o,
+    holder: kind === 'hunter' ? { kind: 'local', hunterId: hunterId(`h-${name}`) } : null, xp: 0, ...rest,
   };
 }
 
@@ -174,7 +177,7 @@ describe('aims: whom an ability can aim at', () => {
 
   test('a player\'s phone aims over the room doc\'s rows as the GM\'s phone does over the fight\'s', () => {
     const spots = [spot('A', 'party', 5, 5), spot('Near', 'foe', 6, 6), spot('Far', 'foe', 8, 9)];
-    const wire = spots.map(s => ({ ...s, place: { x: s.place.x, y: s.place.y }, band: 'healthy' }));
+    const wire = spots.map(({ down: _, ...s }) => ({ ...s, place: { x: s.place.x, y: s.place.y }, band: 'healthy', life: { at: 'up' as const } }));
     const fromDoc = aims(docSpots(wire), id('A'), STRIKE, GRID);
     expect(fromDoc.map(a => [a.target.name, a.target.band, a.dist, a.inRange])).toEqual(aims(spots, id('A'), STRIKE, GRID).map(a => [a.target.name, 'healthy', a.dist, a.inRange]));
   });

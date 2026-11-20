@@ -6,7 +6,7 @@ How to read a chart. A box is what the GM or a player can see. An arrow is what 
 
 ## A fight
 
-The 2,500 random fights of tests/fight-model.test.ts, each of 10 to 49 commands from no fight. The walk found 38118 states and 73570 steps.
+The 2,500 random fights of tests/fight-model.test.ts, each of 10 to 49 commands from no fight. The walk found 36692 states and 73570 steps.
 
 ### A fight, from building it to its summary
 
@@ -22,11 +22,11 @@ stateDiagram-v2
   [*] --> s1
   s1 --> s2 : the GM adds combatants
   s2 --> s3 : the GM starts it, everyone rolls an opening
+  s3 --> s1 : the GM closes it
   s2 --> s4 : the GM ends it before it starts
   s4 --> s1 : the GM closes it
-  s3 --> s4 : the GM ends it
-  s3 --> s1 : the GM closes it
   s3 --> s4 : a side has nobody standing
+  s3 --> s4 : the GM ends it
 ```
 
 The chart shows the phase of the fight on the GM's screen. Everything inside a running fight stays in Fighting: turns and time, uses, walks, channels, statuses settling, staggers, shields, threat, intents, combatants who join or leave, the GM's hand edits and Status window. A fight ends by itself when one side has nobody up, after a use, a status, a channel going off, a hand edit or the last of a side leaving; the summary stays on screen until the GM closes it. A command the fight refuses changes nothing.
@@ -785,9 +785,42 @@ Where it lives:
 |---|---|
 | The union | `Life`, `LifeEvent` and `LIFE_STATES` in `src/core/hunter/vitals.ts` |
 | What changes it | `lifeAfter(life, event, hpMax)` and its `TABLE`; `hit`, `rest` and `refill` for a hunter's vitals; `can(life, eventType)` for a button |
-| Who calls it | `lifeEvent` and `api.life` in `src/views/hunter.js` (the sheet; the GM board's Revive in `src/views/gm.js` calls `api.life`), `useItem` in `src/core/hunter/use.ts` (a Resurrection Crystal, through `sheetEdit`), and the fight's HP effects in `src/views/combat.js` |
+| Who calls it | `lifeEvent` and `api.life` in `src/views/hunter.js` (the sheet; the GM board's Revive in `src/views/gm.js` calls `api.life`), `useItem` in `src/core/hunter/use.ts` (a Resurrection Crystal, through `sheetEdit`), and in a fight `rowLifeAfter` in `src/core/combat/row-life.ts`, the one writer of a hunter row's life, which the `vitals` write-back carries to the sheet |
 | The test to copy | `tests/vitals.test.ts`; the walk's events are in `tests/models/life-events.ts` |
 | The recipe | docs/guide/hunters.md, "To add a field to a hunter" (a new life state or event) |
+
+## A foe's life in a fight
+
+Every life reachable from a foe up at 20 of 20 HP under the 12 events of the hunter's life walk (tests/models/life-events.ts), breadth first. The walk found 34 states and 408 steps.
+
+### A monster, shadow or summon in a fight, from up to defeated and back
+
+```mermaid
+---
+title: A monster, shadow or summon in a fight, from up to defeated and back
+---
+stateDiagram-v2
+  state "Up" as s1
+  state "Defeated" as s2
+  [*] --> s1
+  s1 --> s2 : damage takes HP to 0
+  s1 --> s2 : HP set to 0
+  s2 --> s1 : the GM taps Revive, up at 1 HP
+```
+
+The chart shows what a combat card says of a row that is not a hunter. Damage that leaves HP above 0, a heal and a lower maximum stay in Up. At 0 HP the row is defeated and gone from the map: no heal, no GM's hand edit and no regeneration lifts it, only the GM's Revive. A foe is never dying: death saves and Stabilize are a hunter's (see "A hunter's life").
+
+2 chart states, 3 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `FoeLife` and `FOE_LIFE_STATES` in `src/core/combat/row-life.ts`; a row holds it by its kind (`BodyLife` in `src/core/combat/effect-ops.ts`) |
+| What changes it | `foeLifeAfter(life, event, hpMax)` and its `FOE_TABLE`; `rowLifeAfter(row, event)`, the one writer of a row's life, picks this table or the hunter's by the row's kind |
+| Who calls it | every HP change of the fight through `rowLifeAfter` (`hurt` and `healed` in `land.ts`, `payDue` in `fight-turn.ts`, an HP price in `charge.ts`, `withStatuses` in `effect-ops.ts`, `adjust` and the `life` command in `fight.ts`) |
+| The test to copy | `tests/fight.test.ts`, "a row's life" |
+| The recipe | docs/guide/combat.md, "Where a fight row's life changes" |
 
 ## A missed daily's penalty
 

@@ -18,6 +18,7 @@ import { fightId, reduce } from '../../src/core/combat/fight.ts';
 import type { Command, Ctx, Fight, NewRow } from '../../src/core/combat/fight.ts';
 import { fightDoc } from '../../src/core/combat/fight-doc.ts';
 import { exampleSkills } from '../../src/core/registry/kit-examples.ts';
+import { rowHp } from '../../src/core/combat/row-hp.ts';
 
 const statusMaker = (page: Page) => page.locator('.fg-overlay [role=dialog]');
 const workshop = (page: Page, kind: string) => page.locator(`#view-workshop [data-ws="${kind}"]`);
@@ -128,11 +129,11 @@ const brute: Origin = { kind: 'monster', name: 'Monster', rank: 'C', archetype: 
 function newRow(name: string, side: 'party' | 'foe', origin: Origin, x: number, abilities: Ability[] = []): NewRow {
   const { sheet } = modified(origin, [], RULES);
   return {
-    id: combatantId(name), name, side, kind: side === 'party' ? 'hunter' : 'monster', origin, tier: 2, place: place(x, 6), hp: sheet.hpMax, mana: sheet.manaMax, fatigue: 0,
+    id: combatantId(name), name, side, kind: side === 'party' ? 'hunter' : 'monster', origin, tier: 2, place: place(x, 6), life: { at: 'up', hp: sheet.hpMax }, mana: sheet.manaMax, fatigue: 0,
     shield: null, stagger: null, channel: null, threat: side === 'foe' ? {} : null, statuses: [], readyAt: {}, abilities, intent: null, holder: null, xp: 0,
   };
 }
-const ctx: Ctx = { rules: RULES, life: () => null };
+const ctx: Ctx = { rules: RULES };
 const step = (f: Fight | null, cmd: Command): Fight => {
   const r = reduce(f, cmd, ctx), no = r.effects.find(e => e.type === 'refused');
   if (no) throw new Error(`${cmd.type} refused: ${JSON.stringify(no)}`);
@@ -259,7 +260,7 @@ test('a GM builds Glas\'s kit in the makers (Fester by the target\'s Resonance, 
     const max = rowIn(f, 'A').sheet.hpMax;
     expect(() => use(f, hemo, 'M')).toThrow(/gated/);
     f = use(f, pact, 'A');
-    expect(rowIn(f, 'A').hp).toBe(max - Math.ceil(max / 2));
+    expect(rowHp(rowIn(f, 'A'))).toBe(max - Math.ceil(max / 2));
     f = use(toA(f), hemo, 'M');
     expect(rowIn(f, 'M').statuses.map(s => s.key)).toContain(statusKey('hemoplague'));
     const vit = rowIn(f, 'M').stats.vit, need = Math.max(1, Math.min(10, vit));
@@ -283,12 +284,12 @@ test('a GM builds Glas\'s kit in the makers (Fester by the target\'s Resonance, 
     f = step(f, { type: 'start', openings: [{ id: combatantId('A'), d20: 20, tie: 0 }, { id: combatantId('M'), d20: 1, tie: 0 }] });
     f = use(toA(use(f, pact, 'A')), hemo, 'M');
     const until = rowIn(f, 'M').statuses.find(s => s.key === 'hemoplague')!.until!;
-    const before = rowIn(f, 'M').hp;
+    const before = rowHp(rowIn(f, 'M'));
     let guard = 0;
     while ((f as any).now < until && guard++ < 40) f = step(f, { type: 'endTurn', by: (f as any).currentId });
     for (let i = 0; i < 4 && rowIn(f, 'M').statuses.some(s => s.key === 'hemoplague'); i++) f = step(f, { type: 'endTurn', by: (f as any).currentId });
     expect(rowIn(f, 'M').statuses.some(s => s.key === 'hemoplague')).toBe(false);
-    expect(rowIn(f, 'M').hp).toBeLessThan(before);
+    expect(rowHp(rowIn(f, 'M'))).toBeLessThan(before);
   });
 });
 

@@ -33,7 +33,7 @@ Checked by two readers, never by the writer alone: the one who writes edits with
 |---|---|---|
 | A battle, from Start fight to its end | fight (Start fight, End fight, Fight over, Fight log) | encounter. The tab keeps its name, Combat |
 | A monster taken out of a fight | defeated | down |
-| A hunter at 0 HP | down | defeated |
+| A hunter at 0 HP | Dying while the death saves run, Stable once stabilized, Dead after three failures (the owner's ruling, Nov 20: every phone, never Down); `lifeWord` in `src/core/combat/row-life.ts` | down, defeated |
 | The pool spent on abilities | mana | MP |
 | The shared session between phones | room | campaign room |
 | The header's room control | the room button at the top | the room button in the header, the pill |
@@ -63,6 +63,7 @@ Two words keep a second meaning on purpose. "Condition" in the ability form's On
 - The room pill's words are `PILL_ROOM` and `render` in `src/edge/room-pill.ts`. The Room view's state words and connection lines are `STATE` in `src/views/room.js`. A new link state gets a line in both.
 - What the site is, what a room is, each role's way to one, the next steps after setup and the ? guide's tips are `src/core/first-run.ts` (`ABOUT`, `ROOM_IS`, `ROOM_PATH`, `nextSteps`, `TIPS`, `createdLine`, `LOADED`). The Welcome window, Hunter created, Campaign ready, the ? guide and the Room view read them; say a room's idea there once, not again in a view. `tests/first-run.test.ts` checks that `ABOUT`, `ROOM_IS` and `ROOM_PATH` are one sentence each and that no line of the file has an em dash, an exclamation mark or a semicolon.
 - A failed Create or Join says `tapWords` (`src/core/sync/taps.ts`).
+- A life that is not up says `lifeWord` (`src/core/combat/row-life.ts`): Dying, Stable, Dead for a hunter, Defeated for a monster, shadow or summon. The sheet's death panel and chip, the GM's card, order and board, a player's own card and the party's faces, and a token's label read it there.
 - A refused fight command says `REFUSAL_WORDS` to the GM and `TABLE_REFUSAL_WORDS` to a player (`src/core/combat/refusal-words.ts`).
 - A reward reads `rewardLines` on the quest card and `grantLines` in the reward window (`src/core/rewards.ts`).
 - A status reads `describeStatus` and `opLine` (`src/core/combat/effect-ops.ts`); an ability reads `describeAbility` (`src/core/registry/ability-kinds.ts`).
@@ -77,3 +78,11 @@ the owner, Nov 19: "I hate the ai-isms in the text", naming "it's not X, it's Y"
 2. Check it against the voice and the glossary above. Every name in it is the glossary's word.
 3. Before you change a label, search `tests/` and `scripts/ui-shots.ts` for it. A test that looks for the old words changes to the new words in the same commit, and nothing else in it changes.
 4. A word you are unsure of goes to `docs/agent-handoff/for-the-owner.md` with what he would say to change it. It never ships as a marked placeholder.
+
+## Open copy issues
+
+From the dead-row unit 3 (notes-dead-row.md section 10), for the copy pass:
+
+- The life still says "down" in sentences: `FELL_WORDS` ("HP has reached 0. You are down.", vitals.ts), the fight log line "Mira Test is down." (the fight's log), `CHIP_REFUSAL` ("Down and Dead follow HP and death saves.", chips.ts), the status registry's `down` chip label "Down" and its description (registry/statuses.ts, shown where the chip's card is opened), and `refusal-words.ts` `lifeCannot` ("Stabilize and death saves for the dying"). The chip's label on a hunter already reads Dying or Stable.
+- A monster at 0 HP now reads Defeated in the GM's order and on a player's list and token card, where it said Down; its card already said Defeated. The players' list hides a defeated monster's band word (Down) for the same reason.
+- The GM board's toast after Stabilize is "Stabilized Mira Test." (gm.js); after Revive it is "Revived Mira Test in the fight." Two shapes for one kind of line.

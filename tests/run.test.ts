@@ -298,7 +298,7 @@ describe('only the GM\'s tap moves a story', () => {
     same(ok(advanceDay(base, 2, { at: AT, cap: RULES.logCap })).save);
 
     let s = base;
-    const run = (cmd: Command) => { const r = reduce(s.fight, cmd, { rules: RULES, life: h => s.hunters.find(x => x.id === h)?.life ?? null }); s = ok(fought(s, r, { links: null, room: null, totals: [], stamp: { at: AT, cap: RULES.logCap } }, RULES)); };
+    const run = (cmd: Command) => { const r = reduce(s.fight, cmd, { rules: RULES }); s = ok(fought(s, r, { links: null, room: null, totals: [], stamp: { at: AT, cap: RULES.logCap } }, RULES)); };
     const c1 = combatantId('c1'), c2 = combatantId('c2');
     run({ type: 'add', fightId: fightId('f1'), rows: [hunterRow(base.hunters[1]!, c1, RULES), { ...hunterRow({ ...newHunter(RULES), id: 'x', name: 'Goblin' }, c2, RULES), side: 'foe' as const, holder: null, name: 'Goblin', xp: 60 }], openings: [] });
     run({ type: 'start', openings: [{ id: c1, d20: 20, tie: 0 }, { id: c2, d20: 5, tie: 0 }] });

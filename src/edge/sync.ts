@@ -75,8 +75,11 @@ const PEEK_REUSE_MS = 30000;
 const KICK_MS = REMOVED_MS;
 /** A device on the GM's roster that polled within this is online, else away. */
 const ONLINE_MS = 15000;
-/** A player's own moves in the GM's fight (protocol.ts `onTurn`), after which the link chases the answer. */
-const FIGHT_MOVES: ReadonlySet<string> = new Set(['step', 'cast', 'pass']);
+/**
+ * A player's own moves in the GM's fight (protocol.ts `onTurn`) and its death saves there, after which the link chases
+ * the answer: the fight doc the GM's phone writes after taking it.
+ */
+const FIGHT_MOVES: ReadonlySet<string> = new Set(['step', 'cast', 'pass', 'deathSave']);
 /** The docs a GM phone writes (the server writes `kicked`). */
 type PublishedDoc = Exclude<DocName, 'kicked'>;
 /**
@@ -678,7 +681,7 @@ export function register(app: SyncHost): void {
   /** A message as the player reads it when the room refuses it. */
   const WHAT_SENT: Partial<Record<RoomEvent['type'], string>> = {
     used: 'a use you told the GM of', roll: 'a roll', questUpdate: 'a quest\'s progress', coinCall: 'a coin call', coinLand: 'a coin\'s landing',
-    step: 'a step', cast: 'a use in the fight', pass: 'the end of a turn', arm: 'a reaction', award: 'an award', quest: 'a quest', chain: 'a Job Change',
+    step: 'a step', cast: 'a use in the fight', pass: 'the end of a turn', deathSave: 'a death save', arm: 'a reaction', award: 'an award', quest: 'a quest', chain: 'a Job Change',
     soloRun: 'a solo run', soloAnswer: 'the answer to a solo run',
   };
   /** A hunter deleted on this phone leaves the GM's board: its sheet is replaced by a tombstone, through the outbox. */

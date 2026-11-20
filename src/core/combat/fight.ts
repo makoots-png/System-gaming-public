@@ -13,6 +13,7 @@ import { defaultPlace, dist, GRID_SIDE, openGrid, pathCost, place, sees, straigh
 import type { Place } from './space.ts';
 import { acted, cost, interval, opening, paceCost, tick, walkCost } from './timeline.ts';
 import type { Tick } from './timeline.ts';
+import { isUp, rowHp } from './row-hp.ts';
 import { applyStatus, modified, removeStatus, statusOn, statusShield, withStatuses } from './effect-ops.ts';
 import { atTier } from './op-amount.ts';
 import type { Body, Status, StatusKey } from './effect-ops.ts';
@@ -27,8 +28,9 @@ import { combatantId } from './ability-types.ts';
 import type { Ability, CombatantId, Outcome } from './ability-types.ts';
 import { channelCan, channelStep } from './fight-channel.ts';
 import { eventsOf, raised } from './triggers.ts';
-import { consequences, D20, ended, held, holdsSide, isUp, logged, marked, overIf, partyView, payDue, rowLife, rowOf, sentAway, spreadTo, startTurn, triggered, uncovered, withRow, writeBack, zoneEnds } from './fight-turn.ts';
-import { hpOf, refilled } from '../hunter/vitals.ts';
+import { consequences, D20, ended, held, holdsSide, logged, marked, overIf, partyView, payDue, rowOf, sentAway, spreadTo, startTurn, triggered, uncovered, withRow, writeBack, joinedBack, zoneEnds } from './fight-turn.ts';
+import { hpChange, lifeNews, SAVES_TO_END } from '../hunter/vitals.ts';
+import { refilledRow, rowLifeAfter, rowLifeTakes } from './row-life.ts';
 import { summonRow } from './rows.ts';
 import { crowded } from './summons.ts';
 import { line, MAX_ROWS, MAX_STATUSES, pendingKey } from './fight-types.ts';
@@ -101,17 +103,23 @@ function add<F extends Setup | Running>(f: F, cmd: Extract<Command, { type: 'add
   }
   return logged(g, line(`${cmd.rows.map(r => r.name).join(', ')} ${cmd.rows.length === 1 ? 'joins' : 'join'}.`, [...cmd.rows.map(r => r.id)]), R);
 }
+/** The write-back of each row that joined `g` (`joinedBack`): a player's hunter's phone hears its row from the join. */
+function joinFx(g: Setup | Running, cmd: Extract<Command, { type: 'add' }>, ctx: Ctx): Fx {
+  const fx: Fx = [], now = g.phase === 'running' ? g.now : tick(0);
+  for (const nr of cmd.rows) { const row = rowOf(g, nr.id); if (row) joinedBack(row, now, ctx, fx); }
+  return fx;
+}
 const addTo = <F extends Setup | Running>(f: F, cmd: Extract<Command, { type: 'add' }>, ctx: Ctx): Result => {
   const r = add(f, cmd, ctx);
   if ('effects' in r) return r;
   // a row that joins on a zone stands in it from now
-  return r.phase === 'running' ? after(f as Running, r as Running, '', null, ctx, []) : done(r, []);
+  return r.phase === 'running' ? after(f as Running, r as Running, '', null, ctx, joinFx(r, cmd, ctx)) : done(r, joinFx(r, cmd, ctx));
 };
 const create: Step<'none', 'add'> = (_f, cmd, ctx) => {
   const grid = cmd.grid ?? openGrid(ctx.rules.fight.grid.w, ctx.rules.fight.grid.h);
   const setup: Setup = { phase: 'setup', id: cmd.fightId, grid, zones: cmd.zones ?? [], fog: cmd.fog ?? null, rows: [], log: [], banked: 0, had: {} };
   const r = add(setup, cmd, ctx);
-  return 'effects' in r ? { fight: null, effects: r.effects } : done(r, []);
+  return 'effects' in r ? { fight: null, effects: r.effects } : done(r, joinFx(r, cmd, ctx));
 };
 
 function removeFrom<F extends Setup | Running>(f: F, id: string, R: Rules): F | null {
@@ -459,8 +467,9 @@ function gmChange<F extends Setup | Running>(f: F, row: Body, said: LogLine, ctx
 
 const signed = (n: number): string => n < 0 ? `${n}` : `+${n}`;
 /**
- * The GM's hand edit: each amount added and kept within 0 and its maximum. Nothing to change is refused, and so is a
- * price (`pay`) of more mana than the row holds.
+ * The GM's hand edit: HP through the row's life (row-life.ts: damage or a heal by the sign, so a dead row stays dead and
+ * a defeated monster comes back only by Revive), mana and fatigue each added and kept within 0 and its maximum. Nothing
+ * to change is refused, and so is a price (`pay`) of more mana than the row holds.
  */
 function adjust<F extends Setup | Running>(f: F, cmd: Extract<Command, { type: 'adjust' }>, ctx: Ctx): Result {
   const u = rowOf(f, cmd.id);
@@ -471,25 +480,56 @@ function adjust<F extends Setup | Running>(f: F, cmd: Extract<Command, { type: '
   if (cmd.used && !limited) return refused(f, 'unknownAbility');
   const spent = limited ? Math.max(0, Math.min(ctx.rules.fight.kit.fightUses, Math.round(cmd.used!.spent))) : 0;
   const used = limited && spent !== (u.used?.[limited.id] ?? 0) ? { used: { ...u.used, [limited.id]: spent } } : {};
-  const row = { ...u, hp: to(u.hp, cmd.hp, u.sheet.hpMax), mana: to(u.mana, cmd.mana, u.sheet.manaMax), fatigue: to(u.fatigue, cmd.fatigue, u.sheet.fatigueMax), ...used };
-  const said = ([['HP', u.hp, row.hp], ['mana', u.mana, row.mana], ['fatigue', u.fatigue, row.fatigue]] as const).filter(([, a, b]) => a !== b).map(([k, a, b]) => `${k} ${signed(b - a)}`);
+  const lived = cmd.hp ? rowLifeAfter(u, hpChange(cmd.hp)) : u;
+  const row = { ...lived, mana: to(u.mana, cmd.mana, u.sheet.manaMax), fatigue: to(u.fatigue, cmd.fatigue, u.sheet.fatigueMax), ...used };
+  const said = ([['HP', rowHp(u), rowHp(row)], ['mana', u.mana, row.mana], ['fatigue', u.fatigue, row.fatigue]] as const).filter(([, a, b]) => a !== b).map(([k, a, b]) => `${k} ${signed(b - a)}`);
   if (limited && 'used' in used) said.push(`${limited.name} uses spent ${spent}`);
   if (!said.length) return refused(f, 'noChange');
   return gmChange(f, row, line(`${u.name}: ${said.join(', ')} (GM).`, [u.id]), ctx);
 }
 
 /**
- * A level-up's refill of a hunter's row: the sheet's refill (vitals.ts `refilled`) from the hunter's life (`rowLife`), at
- * the maxima the row has now. A dead hunter's row stays at 0 HP, as its sheet does. A row already full changes nothing,
- * and is not refused, so the grant that asks for it is paid.
+ * A level-up's refill of a hunter's row: the sheet's refill (row-life.ts `refilledRow`) from the row's life, at the
+ * maxima the row has now. A dead hunter's row stays at 0 HP, as its sheet does. A row already full changes nothing, and
+ * is not refused, so the grant that asks for it is paid.
  */
 function refill<F extends Setup | Running>(f: F, cmd: Extract<Command, { type: 'refill' }>, ctx: Ctx): Result {
   const u = rowOf(f, cmd.id);
   if (!u) return refused(f, 'unknown');
   if (u.kind !== 'hunter') return refused(f, 'notHunter');
-  const v = refilled({ life: rowLife(u, ctx), mana: u.mana }, u.sheet), row = { ...u, hp: hpOf(v.life, u.sheet.hpMax), mana: v.mana };
-  if (row.hp === u.hp && row.mana === u.mana) return done(f, []);
-  return gmChange(f, row, line(`${u.name} is refilled: HP ${signed(row.hp - u.hp)}, mana ${signed(row.mana - u.mana)} (level up).`, [u.id]), ctx);
+  const row = refilledRow(u);
+  if (rowHp(row) === rowHp(u) && row.mana === u.mana) return done(f, []);
+  return gmChange(f, row, line(`${u.name} is refilled: HP ${signed(rowHp(row) - rowHp(u))}, mana ${signed(row.mana - u.mana)} (level up).`, [u.id]), ctx);
+}
+
+/** The words a log line gives what a `life` command did: the life's news (vitals.ts `lifeNews`), the GM's own taps marked. */
+function lifeSaid(name: string, before: Body, after: Body, cmd: Extract<Command, { type: 'life' }>): string {
+  const news = after.kind === 'hunter' && before.kind === 'hunter' ? lifeNews(before.life, after.life) : null;
+  if (cmd.event.type === 'revive') return `${name} is revived (GM).`;
+  if (cmd.event.type === 'stabilize') return `${name} is stabilized (GM).`;
+  switch (news?.kind) {
+    case 'raised': return `${name} rolls a ${cmd.event.roll} on a death save and gets up.`;
+    case 'stable': return `${name} makes a third death save and is stable.`;
+    case 'died': return `${name} fails a third death save and dies.`;
+    case 'saved': return `${name} makes a death save (${news.successes} of ${SAVES_TO_END}).`;
+    case 'failed': return `${name} fails a death save (${news.failures} of ${SAVES_TO_END}).`;
+    default: return `${name} rolls a death save.`;
+  }
+}
+/**
+ * The `life` command: row `id`'s life takes a Revive, a Stabilize or a death save through its kind's table (row-life.ts).
+ * One its life does not take is refused (`lifeCannot`): Revive is the dead's, Stabilize and a death save a dying
+ * hunter's; a death save whose roll is no face of a d20 is refused (`needsRoll`). No time passes; what follows is any
+ * change's (`gmChange`): a row stood up rejoins the turns, and a hunter's sheet hears its new life.
+ */
+function life<F extends Setup | Running>(f: F, cmd: Extract<Command, { type: 'life' }>, ctx: Ctx): Result {
+  const u = rowOf(f, cmd.id);
+  if (!u) return refused(f, 'unknown');
+  if (!rowLifeTakes(u, cmd.event.type)) return refused(f, 'lifeCannot');
+  if (cmd.event.type === 'deathSave' && !(Number.isInteger(cmd.event.roll) && cmd.event.roll >= 1 && cmd.event.roll <= D20.sides)) return refused(f, 'needsRoll');
+  const row = rowLifeAfter(u, cmd.event);
+  if (row === u) return refused(f, 'noChange');
+  return gmChange(f, row, line(lifeSaid(u.name, u, row, cmd), [u.id]), ctx);
 }
 
 /** The GM's Status window: a status taken off, then one put on with the GM as its source. Nothing to change is refused. */
@@ -620,21 +660,21 @@ function extract<F extends Fight>(f: F, cmd: Extract<Command, { type: 'extract' 
 const TABLE: { readonly [S in FightState]: Row<S> } = {
   none: {
     add: create, remove: null, start: null, act: null, move: null, endTurn: null, release: null, setIntent: null, reveal: null, place: null, adjust: null, refill: null,
-    status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract: null, end: null, clear: null,
+    life: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract: null, end: null, clear: null,
   },
   setup: {
-    add: addTo, remove: removeInSetup, start, act: null, move: null, endTurn: null, release: null, setIntent, reveal, place: placeRow, adjust, refill, status,
+    add: addTo, remove: removeInSetup, start, act: null, move: null, endTurn: null, release: null, setIntent, reveal, place: placeRow, adjust, refill, life, status,
     settle: null, paint, zoneAdd, zoneRemove, resize, arm, extract, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
   },
   running: {
-    add: addTo, remove: removeRunning, start: null, act, move, endTurn, release, setIntent, reveal, place: placeRow, adjust, refill, status, settle: settleDue,
+    add: addTo, remove: removeRunning, start: null, act, move, endTurn, release, setIntent, reveal, place: placeRow, adjust, refill, life, status, settle: settleDue,
     paint, zoneAdd, zoneRemove, resize, arm, extract, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
   },
   // The rows of an ended fight are the summary's record: the GM edits the hunters' sheets from here on, and may still
   // extract a shadow from a fallen monster.
   ended: {
     add: null, remove: null, start: null, act: null, move: null, endTurn: null, release: null, setIntent: null, reveal: null, place: null, adjust: null, refill: null,
-    status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract, end: null, clear: () => done(null, []),
+    life: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract, end: null, clear: () => done(null, []),
   },
 };
 

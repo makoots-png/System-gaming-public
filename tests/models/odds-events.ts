@@ -8,7 +8,7 @@ import { IDLE, oddsKey } from '../../src/core/combat/odds.ts';
 import type { OddsEvent, OddsRun } from '../../src/core/combat/odds.ts';
 import { hunter, monster } from './fight-sim.ts';
 
-const added = reduce(null, { type: 'add', fightId: fightId('f-chart'), rows: [hunter('tank', 'C').row, monster('E', 'brute', 'normal', 'm').row], openings: [] }, { rules: RULES, life: () => null }).fight;
+const added = reduce(null, { type: 'add', fightId: fightId('f-chart'), rows: [hunter('tank', 'C').row, monster('E', 'brute', 'normal', 'm').row], openings: [] }, { rules: RULES }).fight;
 /** A tank against one E-rank brute, in setup. */
 export const FIGHT = added as Setup;
 export const START: OddsRun = IDLE;

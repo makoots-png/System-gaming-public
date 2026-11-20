@@ -99,7 +99,7 @@ describe('each fact is recorded by its one writer, in that thing\'s write', () =
 
   test('a fight\'s totals that take a hunter to 0 HP are a fall from the fight', () => {
     const h = mira();
-    expect(inbox(ok(sheetEdit(h, { type: 'totals', hp: 0, mana: h.mana, fatigue: 0, statuses: [] }, RULES)))).toEqual([{ kind: 'life', news: 'fell', how: 'fight', failures: 0 }]);
+    expect(inbox(ok(sheetEdit(h, { type: 'totals', life: { at: 'dying', successes: 0, failures: 0 }, mana: h.mana, fatigue: 0, statuses: [] }, RULES)))).toEqual([{ kind: 'life', news: 'fell', how: 'fight', failures: 0 }]);
   });
 
   test('a rest, short or long; a long rest that brings a stable hunter up is also that life\'s fact', () => {

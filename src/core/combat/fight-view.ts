@@ -15,9 +15,10 @@ import { printFormula } from '../formula.ts';
 import { formulaOf } from '../registry/ability-kinds.ts';
 import type { KindRules } from '../registry/ability-kinds.ts';
 import type { Ability, AbilityId, CombatantId } from './ability-types.ts';
+import { isUp, rowHp } from './row-hp.ts';
+import type { LifeState } from '../hunter/vitals.ts';
 import { sheetStatuses, statusKey } from './effect-ops.ts';
 import type { Body, Channel, CombatantKind, OpRules, SheetStatus, StatusDef } from './effect-ops.ts';
-import { isUp } from './fight-turn.ts';
 import { usesOf } from './uses.ts';
 import type { Fight, StatusGrant } from './fight-types.ts';
 
@@ -80,7 +81,7 @@ export function cardOf(f: Fight, row: Body, R: OpRules & KindRules): Card {
   return {
     turn: f.phase === 'running' && f.currentId === row.id,
     speed: row.speed, armor: row.sheet.armor, resist: row.sheet.resist, stride: row.sheet.stride,
-    hp: row.hp, hpMax: row.sheet.hpMax, mana: row.mana, manaMax: row.sheet.manaMax, fatigue: row.fatigue, fatigueMax: row.sheet.fatigueMax,
+    hp: rowHp(row), hpMax: row.sheet.hpMax, mana: row.mana, manaMax: row.sheet.manaMax, fatigue: row.fatigue, fatigueMax: row.sheet.fatigueMax,
     shield: row.shield?.amount ?? null,
     shieldLeft: row.shield ? roundsLeft(row.shield.until, timeOf(f), R) : null,
     stagger: row.stagger && {
@@ -220,9 +221,9 @@ export const statusGrant = (key: string, def: StatusDef, rounds: number | null, 
 /** A row as aims and steps read it: the GM's from `spotOf`, a player's from the room doc. */
 export type Spot = { readonly id: CombatantId; readonly side: Side; readonly kind: CombatantKind; readonly place: Place; readonly down: boolean };
 export const spotOf = (b: Body): Spot => ({ id: b.id, side: b.side, kind: b.kind, place: b.place, down: !isUp(b) });
-/** The room fight doc's rows as spots (a doc's tile is plain numbers on the wire), each keeping its other fields. */
-export const docSpots = <T extends Omit<Spot, 'place'> & { readonly place: { readonly x: number; readonly y: number } }>(rows: readonly T[]): (T & Spot)[] =>
-  rows.map(r => ({ ...r, place: place(r.place.x, r.place.y) }));
+/** The room fight doc's rows as spots (a doc's tile is plain numbers on the wire, and down is its life's), each keeping its other fields. */
+export const docSpots = <T extends Omit<Spot, 'place' | 'down'> & { readonly place: { readonly x: number; readonly y: number }; readonly life: { readonly at: LifeState } }>(rows: readonly T[]): (T & Spot)[] =>
+  rows.map(r => ({ ...r, place: place(r.place.x, r.place.y), down: !isUp(r) }));
 /** On the map: land.ts `alive` over a spot. A monster or shadow that is down is gone; a hunter that is down lies there. */
 export const onMap = (s: Spot): boolean => !s.down || s.kind === 'hunter';
 

@@ -16,6 +16,9 @@ import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { afterDefence, castDice, needs, resolve } from '../src/core/combat/resolve.ts';
 import type { Aim, Resolved, Rolls } from '../src/core/combat/resolve.ts';
 import { rng } from './models/fight-play.ts';
+import { rowHp } from '../src/core/combat/row-hp.ts';
+import { atHp, lifeAt } from './fixtures/life.ts';
+import type { RowPatch } from './fixtures/life.ts';
 
 const GRID = openGrid(20, 14);
 const NOW = tick(5000);
@@ -32,12 +35,12 @@ const hunterOrigin = (build: string): Origin => {
 };
 const monsterOrigin = (archetype: Archetype, monsterKind: MonsterKind = 'normal'): Origin => ({ kind: 'monster', name: 'Monster', rank: 'C', archetype, monsterKind, tweak: NO_TWEAK });
 
-function body(id: string, origin: Origin, at: Place, side: Side, o: Partial<Body> = {}, sheet: Partial<Sheet> = {}): Body {
-  const m = modified(origin, [], RULES), s = { ...m.sheet, ...sheet };
+function body(id: string, origin: Origin, at: Place, side: Side, o: RowPatch<Body> = {}, sheet: Partial<Sheet> = {}): Body {
+  const m = modified(origin, [], RULES), s = { ...m.sheet, ...sheet }, { kind, hp, ...rest } = o;
   return {
-    id: combatantId(id), side, kind: origin.kind === 'hunter' ? 'hunter' : 'monster', origin, tier: 2, stats: m.stats, sheet: s, place: at,
-    hp: s.hpMax, mana: s.manaMax, fatigue: 0, shield: null, stagger: null, channel: null, threat: origin.kind === 'monster' ? {} : null,
-    statuses: [], readyAt: {}, abilities: [], intent: null, holder: null, xp: 0, name: 'Body', at: NOW, speed: s.speed, tie: 0, ...o,
+    id: combatantId(id), side, ...lifeAt(kind ?? (origin.kind === 'hunter' ? 'hunter' : 'monster'), hp ?? s.hpMax), origin, tier: 2, stats: m.stats, sheet: s, place: at,
+    mana: s.manaMax, fatigue: 0, shield: null, stagger: null, channel: null, threat: origin.kind === 'monster' ? {} : null,
+    statuses: [], readyAt: {}, abilities: [], intent: null, holder: null, xp: 0, name: 'Body', at: NOW, speed: s.speed, tie: 0, ...rest,
   };
 }
 const ability = (kind: AbilityKind, o: Partial<Ability> = {}, text?: string): Ability => {
@@ -60,7 +63,7 @@ describe('the worked examples of design 3.5', () => {
     const bruiser = body('u', hunterOrigin('bruiser'), place(5, 5), 'party'), skirm = body('t', monsterOrigin('skirmisher'), place(6, 5), 'foe');
     const r = run(ability('strike'), bruiser, [bruiser, skirm], skirm.id, rolls({ t: [6] }, { t: 9 }));
     const [o] = r.outcomes;
-    expect([o!.avoid, o!.crit, o!.dealt, skirm.hp, find(r.bodies, 't').hp]).toEqual(['caught', false, 29, 48, 19]);
+    expect([o!.avoid, o!.crit, o!.dealt, rowHp(skirm), rowHp(find(r.bodies, 't'))]).toEqual(['caught', false, 29, 48, 19]);
     expect(o!.raw).toBeCloseTo(32.16, 2);
     expect([find(r.bodies, 'u').at, find(r.bodies, 'u').fatigue]).toEqual([NOW + 1000, 8]);
     const best = run(ability('strike'), bruiser, [bruiser, skirm], skirm.id, rolls({ t: [6] }, { t: 20 }));
@@ -103,7 +106,7 @@ describe('each rule of design 3.1', () => {
     const all = [held, foe, taunter];
     expect(resolve(strike, held, all, foe.id, GRID, rolls({ t: [4] }, { t: 10 }), NOW, RULES)).toEqual({ ok: false, reason: 'taunted' });
     expect(resolve(strike, held, all, taunter.id, GRID, rolls({ s: [4] }, { s: 10 }), NOW, RULES).ok).toBe(true);
-    const down = all.map(b => b.id === 's' ? { ...b, hp: 0 } : b);
+    const down = all.map(b => b.id === 's' ? atHp(b, 0) : b);
     expect(resolve(strike, held, down, foe.id, GRID, rolls({ t: [4] }, { t: 10 }), NOW, RULES).ok).toBe(true);
   });
 
@@ -198,7 +201,7 @@ describe('each rule of design 3.1', () => {
   test('rule 13: the shield absorbs first, and a second shield does not add: the larger holds', () => {
     const shielded = { ...foe, shield: { amount: 10, until: tick(NOW + 1000) } };
     const r = hitFoe(ability('strike', {}, '20'), user, { ...shielded, sheet: { ...foe.sheet, armor: 0 } });
-    expect([r.outcomes[0]!.absorbed, find(r.bodies, 't').hp, find(r.bodies, 't').shield]).toEqual([10, foe.hp - 10, null]);
+    expect([r.outcomes[0]!.absorbed, rowHp(find(r.bodies, 't')), find(r.bodies, 't').shield]).toEqual([10, rowHp(foe) - 10, null]);
     const support = body('u', hunterOrigin('support'), place(5, 5), 'party');
     const ally = body('a', hunterOrigin('tank'), place(6, 5), 'party', { shield: { amount: 50, until: tick(NOW + 500) } });
     const after = run(ability('support'), support, [support, ally], ally.id, rolls({ a: [] }));
@@ -207,7 +210,7 @@ describe('each rule of design 3.1', () => {
 
   test('rule 14: HP stops at 0 and the target is down', () => {
     const r = hitFoe(ability('strike', {}, '500'));
-    expect([find(r.bodies, 't').hp, r.outcomes[0]!.down]).toEqual([0, true]);
+    expect([rowHp(find(r.bodies, 't')), r.outcomes[0]!.down]).toEqual([0, true]);
   });
 
   test('rule 15: only a monster keeps threat, the damage times the user\'s threat multiplier', () => {
@@ -310,7 +313,7 @@ describe('properties over seeded uses', () => {
       const s = scene(seed), copy = structuredClone(s.bodies);
       const res = resolve(s.a, s.user, s.bodies, s.aim, GRID, s.rl, NOW, RULES);
       expect(s.bodies).toEqual(copy);
-      if (res.ok) for (const b of res.bodies) { expect(b.hp).toBeGreaterThanOrEqual(0); expect(b.hp).toBeLessThanOrEqual(b.sheet.hpMax); }
+      if (res.ok) for (const b of res.bodies) { expect(rowHp(b)).toBeGreaterThanOrEqual(0); expect(rowHp(b)).toBeLessThanOrEqual(b.sheet.hpMax); }
     }
   });
 
@@ -363,8 +366,8 @@ describe('the kits\' rules of a use (kits design 1.4 and 1.5: rules 3b, 4, 6b, 1
     const pact = sure('0', { prices: [{ kind: 'hp', amount: { kind: 'share', share: 0.1 } }] });
     const shielded = { ...user, shield: { amount: 50, until: tick(NOW + 5000) } };
     const r = ok(use(pact, shielded, foe));
-    expect([find(r.bodies, 'u').hp, find(r.bodies, 'u').shield?.amount]).toEqual([user.hp - Math.ceil(0.1 * user.sheet.hpMax), 50]);
-    expect(use(pact, { ...user, hp: Math.ceil(0.1 * user.sheet.hpMax) }, foe)).toEqual({ ok: false, reason: 'hp' });
+    expect([rowHp(find(r.bodies, 'u')), find(r.bodies, 'u').shield?.amount]).toEqual([rowHp(user) - Math.ceil(0.1 * user.sheet.hpMax), 50]);
+    expect(use(pact, atHp(user, Math.ceil(0.1 * user.sheet.hpMax)), foe)).toEqual({ ok: false, reason: 'hp' });
   });
 
   test('rule 4 and 6b: a price in the user\'s stacks takes them before the formula reads, and `spent` says what it took', () => {
@@ -381,11 +384,11 @@ describe('the kits\' rules of a use (kits design 1.4 and 1.5: rules 3b, 4, 6b, 1
   test('rule 6b: every target of an area reads the same snapshot, its own lost share, the field and the bodies hit', () => {
     const blast = ability('blast', { delivery: { kind: 'sure' }, foesOnly: true }, '100 * target.missing + field(pain) + hits');
     const a = holding({ ...body('a', monsterOrigin('brute'), place(10, 5), 'foe') }, pain, 'pain', 2), b = { ...body('b', monsterOrigin('brute'), place(11, 5), 'foe') };
-    const hurtB = { ...b, hp: Math.round(b.sheet.hpMax / 2) };
+    const hurtB = atHp(b, Math.round(b.sheet.hpMax / 2));
     const r = ok(resolve(blast, user, [user, a, hurtB], place(10, 5), GRID, rolls({ a: [], b: [] }), NOW, RULES));
     const raw = (id: string) => r.outcomes.find(o => o.target === id)!.raw;
     expect(raw('a')).toBeCloseTo(0 + 2 + 2, 10);
-    expect(raw('b')).toBeCloseTo(100 * (1 - hurtB.hp / hurtB.sheet.hpMax) + 2 + 2, 10);
+    expect(raw('b')).toBeCloseTo(100 * (1 - rowHp(hurtB) / hurtB.sheet.hpMax) + 2 + 2, 10);
   });
 
   test('rule 10a: a price in each target\'s stacks takes what each holds, up to n, and each target\'s `spent` is its own', () => {
@@ -408,11 +411,11 @@ describe('the kits\' rules of a use (kits design 1.4 and 1.5: rules 3b, 4, 6b, 1
     const bloodletting = (d: StackDef) => sure('0', { effect: null, ops: [{ op: 'applyStatus', key: statusKey('resonance'), def: d, duration: null, stacks: 1 }] });
     const burst = afterDefence(11, 'physical', user.sheet, foe.sheet, RULES);
     const spent = ok(use(bloodletting(resonance('spend')), user, holding(foe, resonance('spend'), 'resonance', 2)));
-    expect([find(spent.bodies, 't').hp, find(spent.bodies, 't').statuses, spent.bursts]).toEqual([foe.hp - burst, [], [{ bearer: 't', key: 'resonance', label: 'Resonance', landed: [{ target: 't', dealt: burst }] }]]);
+    expect([rowHp(find(spent.bodies, 't')), find(spent.bodies, 't').statuses, spent.bursts]).toEqual([rowHp(foe) - burst, [], [{ bearer: 't', key: 'resonance', label: 'Resonance', landed: [{ target: 't', dealt: burst }] }]]);
     const below = ok(use(bloodletting(resonance('spend')), user, holding(foe, resonance('spend'), 'resonance', 1)));
-    expect([find(below.bodies, 't').hp, find(below.bodies, 't').statuses[0]!.stacks]).toEqual([foe.hp, 2]);
+    expect([rowHp(find(below.bodies, 't')), find(below.bodies, 't').statuses[0]!.stacks]).toEqual([rowHp(foe), 2]);
     const kept = ok(use(bloodletting(resonance('keep')), user, holding(foe, resonance('keep'), 'resonance', 3)));
-    expect([find(kept.bodies, 't').hp, find(kept.bodies, 't').statuses[0]!.stacks]).toEqual([foe.hp, 4]);
+    expect([rowHp(find(kept.bodies, 't')), find(kept.bodies, 't').statuses[0]!.stacks]).toEqual([rowHp(foe), 4]);
   });
 
   test('rule 18a: a threshold reaching an area lands on every body of the side it names within its radius of the bearer', () => {
@@ -422,7 +425,7 @@ describe('the kits\' rules of a use (kits design 1.4 and 1.5: rules 3b, 4, 6b, 1
     const stroke = sure('0', { effect: null, ops: [{ op: 'applyStatus', key: statusKey('mark'), def: mark, duration: null, stacks: 1 }] });
     const r = ok(use(stroke, user, holding(foe, mark, 'mark', 1), [near, far]));
     expect(r.bursts[0]!.landed.map(l => l.target).sort()).toEqual(['n', 't']);
-    expect([find(r.bodies, 'f').hp, find(r.bodies, 'u').hp]).toEqual([far.hp, user.hp]);
+    expect([rowHp(find(r.bodies, 'f')), rowHp(find(r.bodies, 'u'))]).toEqual([rowHp(far), rowHp(user)]);
   });
 });
 

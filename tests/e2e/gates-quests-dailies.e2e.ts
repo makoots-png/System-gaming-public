@@ -32,7 +32,7 @@ async function startGate(page: Page, id: string): Promise<void> {
 }
 
 const defeatAllMonsters = (page: Page) => page.evaluate(() => hunterApp.store.update((d: any) => {
-  for (const r of d.fight.rows) if (r.side === 'foe') r.hp = 0;
+  for (const r of d.fight.rows) if (r.side === 'foe') r.life = { at: 'dead' };
 }, 'test-setup'));
 
 async function endEncounter(page: Page): Promise<void> {

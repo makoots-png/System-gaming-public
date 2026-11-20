@@ -3,7 +3,7 @@
 // the boundary parser fight-parse.ts. The row of a fight is `Body` (effect-ops.ts).
 import type { Rules } from '../rules.ts';
 import type { Dice } from '../formula.ts';
-import type { Life } from '../hunter/vitals.ts';
+import type { Life, LifeEvent } from '../hunter/vitals.ts';
 import type { Grid, Place, Side, Terrain, Tiles } from './space.ts';
 import type { Tick } from './timeline.ts';
 import type { AbilityId, CombatantId, HunterId } from './ability-types.ts';
@@ -82,13 +82,20 @@ export const pendingKey = (p: DueTurn): StatusKey => 'due' in p ? p.due.key : p.
  */
 export type Summary = { readonly rounds: number; readonly winner: Side | null; readonly down: readonly CombatantId[]; readonly xp: number };
 
+/** `Omit` on each member of a union, so a row's kind keeps the life that goes with it (effect-ops.ts `BodyLife`). */
+type OmitEach<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 /** A row as the edge hands it in: the fight works out its stats, sheet and speed, and gives a place to one without. */
-export type NewRow = Omit<Body, 'at' | 'tie' | 'speed' | 'stats' | 'sheet' | 'place'> & { readonly place: Place | null };
+export type NewRow = OmitEach<Body, 'at' | 'tie' | 'speed' | 'stats' | 'sheet' | 'place'> & { readonly place: Place | null };
 /** The opening roll of one row: its d20 (the fight adds its Instinct bonus) and the d1000 that breaks ties. */
 export type Opening = { readonly id: CombatantId; readonly d20: number; readonly tie: number };
 
-/** What the reducer may know besides the fight: the rules, and the life of a hunter on this phone (for `vitals`). */
-export type Ctx = { readonly rules: Rules; readonly life: (id: HunterId) => Life | null };
+/** What the reducer may know besides the fight: the rules. A row's life is the row's own (row-life.ts). */
+export type Ctx = { readonly rules: Rules };
+/**
+ * The events of a row's life that are not HP (the life machine's, vitals.ts), which the `life` command carries: the GM's
+ * Revive of the dead, the GM's Stabilize of a dying hunter, a dying hunter's death save with the d20 rolled.
+ */
+export type RowLifeEvent = Extract<LifeEvent, { readonly type: 'revive' | 'stabilize' | 'deathSave' }>;
 
 // ── commands ──
 export type Command =
@@ -144,6 +151,12 @@ export type Command =
    */
   | { readonly type: 'refill'; readonly id: CombatantId }
   /**
+   * Row `id`'s life takes `event` (row-life.ts `rowLifeAfter`): Revive stands a dead row up at the revive HP (a hunter or
+   * a foe), Stabilize and a death save are a dying hunter's. Refused (`lifeCannot`) when its life does not take the event.
+   * No time passes; a row stood up rejoins the turns.
+   */
+  | { readonly type: 'life'; readonly id: CombatantId; readonly event: RowLifeEvent }
+  /**
    * The GM's Status window on `id`: `remove` takes a status off, then `add` puts one on from the GM at `tier`, lasting
    * `duration` (null until removed). No time passes; a hold put on the current row ends its turn, as a use would.
    */
@@ -196,7 +209,9 @@ export type Refusal = UseRefusal
   /** An extraction named by a row that is not a hunter of the fight. */
   | 'notExtractor'
   /** A refill of a row no hunter holds: a level-up is a hunter's. */
-  | 'notHunter';
+  | 'notHunter'
+  /** A `life` command its row's life does not take: Revive of a row not dead, a death save of a hunter not dying. */
+  | 'lifeCannot';
 // `extra` (a second extra action in a round, kits design 8.6.1) is a use's refusal, in `UseRefusal`.
 
 export type Effect =
@@ -205,18 +220,18 @@ export type Effect =
   /** A per-round op of `key` on `id` paid for `share` of a round. With dice the edge rolls them and sends `settle`; with none it is paid already. */
   | { readonly type: 'rollSettle'; readonly id: CombatantId; readonly key: StatusKey; readonly dice: readonly Dice[]; readonly share: number }
   /**
-   * The one write-back of a hunter on this phone: its HP, life, mana, fatigue and statuses as the fight holds them, as
-   * totals so a repeat changes nothing.
+   * The one write-back of a hunter on this phone: its life (its HP with it), mana, fatigue and statuses as the fight holds
+   * them, as totals so a repeat changes nothing.
    */
   | {
-    readonly type: 'vitals'; readonly hunterId: HunterId; readonly hp: number; readonly life: Life; readonly mana: number; readonly fatigue: number;
+    readonly type: 'vitals'; readonly hunterId: HunterId; readonly life: Life; readonly mana: number; readonly fatigue: number;
     readonly statuses: readonly SheetStatus[];
     /** The uses spent of its abilities limited a long rest (`Vitals.used`, kits table 2.3); absent when it has none. */
     readonly used?: Readonly<Record<AbilityId, number>>;
   }
-  /** The same numbers for a hunter on another phone. */
+  /** The same for a hunter on another phone: the room's `vitals` message (protocol.ts), whose life the player's sheet takes. */
   | {
-    readonly type: 'sendRemote'; readonly remote: SheetKey; readonly hp: number; readonly mana: number; readonly fatigue: number;
+    readonly type: 'sendRemote'; readonly remote: SheetKey; readonly life: Life; readonly mana: number; readonly fatigue: number;
     readonly statuses: readonly SheetStatus[];
   }
   /** The write-back of a shadow of a hunter on this phone: its HP as a total. */

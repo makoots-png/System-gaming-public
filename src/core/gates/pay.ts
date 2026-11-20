@@ -105,7 +105,7 @@ export function settleEncounter(save: Save, plan: EncounterPlan, choice: 'award'
   const ended = { ...logged, gates: logged.gates.map(g => (g.id === plan.gateId ? { ...g, fought } : g)) };
   const locals = paid ? plan.payees.flatMap(p => (p.kind === 'local' ? [{ hid: p.hid, rewards: { ...newRewards(), xp: plan.each } }] : [])) : [];
   const out = payAll(ended, locals, paid ? posts : { room: null, events: [] }, day);
-  const ctx: Ctx = { rules: day.R, life: id => out.save.hunters.find(h => h.id === id)?.life ?? null };
+  const ctx: Ctx = { rules: day.R };
   // what the fight dropped is kept on the save until the GM gives it or sets it aside, so a reload keeps the offer
   const cleared = { ...out.save, fight: reduce(out.save.fight, { type: 'clear' }, ctx).fight, dropped: drop.gold || drop.items.length ? drop : null };
   delete cleared.fightRefs;

@@ -7,6 +7,7 @@ import {
 } from '../core/registry/monsters.ts';
 import { ARCHETYPE_ATTACKS, ATTACK_ID } from '../core/registry/abilities.ts';
 import { oneOf } from '../core/one-of.ts';
+import { isUp } from '../core/combat/row-hp.ts';
 import { monsterRows } from '../core/combat/rows.ts';
 import { combatantId } from '../core/combat/ability-types.ts';
 import { SKILL_SEEDS, parseSkill, skillOf } from '../core/registry/skills.ts';
@@ -83,7 +84,7 @@ export function register(app) {
     else ui.toast('! Codex', `+1 ${entry.name} (kills: ${codexOf()[key].kills})`, { kind: 'info' });
   }
   app.on('combat:defeated', ({ body }) => recordDefeat(body));
-  app.on('combat:end', ({ fight }) => { for (const b of (fight && fight.rows) || []) if (b.hp <= 0) recordDefeat(b); });
+  app.on('combat:end', ({ fight }) => { for (const b of (fight && fight.rows) || []) if (!isUp(b)) recordDefeat(b); });
 
   // the room's codex doc: the GM's phone keeps it (app.api.sync.publish), players read it
   /** What the codex doc shows of entry `key`: the body of the monster it names, or of the bestiary's monster of that name and rank. */

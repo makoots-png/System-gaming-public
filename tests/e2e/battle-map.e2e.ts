@@ -334,14 +334,14 @@ test('right after a pan with a finger, a tap on Use sends the use once', async (
 test('Cancel puts an aimed ability down and spends nothing', async ({ device }) => {
   const { gm, player } = await room(device);
   await fight(gm, player, [{ x: 2, y: 3 }]);
-  const before = await gm.evaluate(() => { const f = hunterApp.store.get().fight; return JSON.stringify([f.now, f.rows.map((r: any) => [r.hp, r.fatigue, r.mana, r.at])]); });
+  const before = await gm.evaluate(() => { const f = hunterApp.store.get().fight; return JSON.stringify([f.now, f.rows.map((r: any) => [r.life, r.fatigue, r.mana, r.at])]); });
   await map(player).locator('[data-hot] .mp-hb').first().tap();
   await tapTile(player, 2, 3);
   await expect(map(player).locator('[data-go]')).toBeEnabled();
   await map(player).locator('[data-cancel]').tap();
   await expect(map(player).locator('[data-confirm]')).toBeHidden();
   await expect(map(player).locator('[data-shade="reach"]')).toHaveCount(0);
-  expect(await gm.evaluate(() => { const f = hunterApp.store.get().fight; return JSON.stringify([f.now, f.rows.map((r: any) => [r.hp, r.fatigue, r.mana, r.at])]); })).toBe(before);
+  expect(await gm.evaluate(() => { const f = hunterApp.store.get().fight; return JSON.stringify([f.now, f.rows.map((r: any) => [r.life, r.fatigue, r.mana, r.at])]); })).toBe(before);
 });
 
 test('a GM\'s fight opens on the map, and while it runs the screen is the fight: Add to the fight and the log wait behind Fight tools', async ({ device }) => {
@@ -509,7 +509,7 @@ test('a player uses a Health Potion from the More drawer on the map: one leaves 
   await expect.poll(() => gm.evaluate(name => (hunterApp.api.sync.remoteSheets().find((r: any) => r.data && r.data.name === name)?.data.items ?? [])
     .some((i: any) => i.name === 'Health Potion'), HUNTER)).toBe(true);
   await fight(gm, player, [{ x: 10, y: 10 }]);
-  await gm.evaluate(name => hunterApp.store.update((d: any) => { const r = d.fight.rows.find((x: any) => x.name === name); r.hp = r.hp - 25; }, 'test-setup'), HUNTER);
+  await gm.evaluate(name => hunterApp.store.update((d: any) => { const r = d.fight.rows.find((x: any) => x.name === name); r.life = { at: 'up', hp: r.life.hp - 25 }; }, 'test-setup'), HUNTER);
   const hp = (await fightRow(gm, HUNTER)).hp;
   const potions = () => player.evaluate(() => hunterApp.store.active().items.find((i: any) => i.name === 'Health Potion')?.qty ?? 0);
   const had = await potions();

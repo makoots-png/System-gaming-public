@@ -31,6 +31,9 @@ export const appliedOnce = (eid: EventId, write: Step<Save>): Step<Save> => save
   return { ...base, settings: { ...base.settings, sync: { ...base.settings.sync, applied: ring } } };
 };
 
+/** Whether this phone applied event `eid` already: its id is in the save's ring. */
+export const wasApplied = (save: Save, eid: EventId): boolean => save.settings.sync.applied?.includes(eid) ?? false;
+
 /** The ring a save holds: its event ids in order, the newest 200. An entry that is not an event id is dropped. */
 export function parseApplied(v: unknown): EventId[] {
   if (!Array.isArray(v)) return [];

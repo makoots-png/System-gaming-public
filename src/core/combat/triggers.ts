@@ -7,6 +7,7 @@
 
 import type { StatusKey, LandOp } from './effect-ops.ts';
 import type { Body, OpRules, Reach } from './effect-ops.ts';
+import { isUp } from './row-hp.ts';
 import { removeStatus, stackOf, withStatuses } from './effect-ops.ts';
 import { isStacking } from './op-amount.ts';
 import { stackStep } from './stacks.ts';
@@ -176,7 +177,7 @@ export function fire(bodies: readonly Body[], events: readonly Raised[], now: Ti
     for (const e of queue) {
       const b = rows.get(e.bearer);
       // a bearer fires only while up, but on its own going down (kits design 8.5.3)
-      if (!b || (b.hp <= 0 && e.event !== 'down')) continue;
+      if (!b || (!isUp(b) && e.event !== 'down')) continue;
       for (const s of b.statuses) {
         if (s.until !== null && s.until <= now) continue;
         (s.def.triggers ?? []).forEach((t, i) => {

@@ -6,14 +6,15 @@
 import { tallied } from './row-tally.ts';
 import { diceOf } from '../formula.ts';
 import type { Dice, Scope } from '../formula.ts';
-import { lifeAfter } from '../hunter/vitals.ts';
-import type { Life } from '../hunter/vitals.ts';
 import type { Rules } from '../rules.ts';
 import { acted, next, paceCost, roundOf, roundsOf, tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
+import { isUp, rowHp } from './row-hp.ts';
+import { rowLifeAfter, sameLife } from './row-life.ts';
 import { applyStatus, dueAmount, onSheet, perRound, settle, sheetStatuses, statusOn, withStatuses } from './effect-ops.ts';
 import { atTier } from './op-amount.ts';
-import type { Body, Due, SheetStatus, Status, StatusKey } from './effect-ops.ts';
+import type { Body, Due, HunterRow, SheetStatus, Status, StatusKey } from './effect-ops.ts';
+import type { SheetKey } from '../ids.ts';
 import type { AbilityId, CombatantId } from './ability-types.ts';
 import { resists } from './resolve.ts';
 import { channelStep } from './fight-channel.ts';
@@ -35,8 +36,6 @@ import type { Ctx, Effect, Ended, Fight, LogLine, Running, Spread, Summary } fro
 
 type Fx = Effect[];
 
-/** Up: able to take a turn. A hunter at 0 HP is dying, not up. */
-export const isUp = (b: Body): boolean => b.hp > 0;
 /** The tiles the party sees now (space.ts `seenBy`), or null when the fight has no fog: the party then sees the whole map. */
 export function partyView(f: Pick<Fight, 'rows' | 'grid' | 'fog'>): Set<number> | null {
   return f.fog ? seenBy('party', f.rows.map(r => ({ place: r.place, side: r.side, up: isUp(r) })), f.grid, f.fog.sight) : null;
@@ -61,9 +60,9 @@ export function payDue(b: Body, due: Due, dice: readonly number[], now: Tick, R:
     case 'damage': {
       // rule 11c reads the bearer's damage taken share at the settle (kits design 8.1)
       const hit = Math.max(0, Math.round(n * damageShare(null, b, R))), s = throughShield(b, hit, now);
-      return { ...s.target, hp: Math.max(0, b.hp - wardedDamage(s.target, hit - s.absorbed)) };
+      return rowLifeAfter(s.target, { type: 'damage', amount: wardedDamage(s.target, hit - s.absorbed) });
     }
-    case 'heal': return { ...b, hp: Math.min(b.sheet.hpMax, b.hp + Math.max(0, Math.round(n * healShare(b, R)))) };
+    case 'heal': return rowLifeAfter(b, { type: 'heal', amount: Math.max(0, Math.round(n * healShare(b, R))) });
     case 'mana': return { ...b, mana: Math.max(0, Math.min(b.sheet.manaMax, b.mana + n)) };
     case 'fatigue': return { ...b, fatigue: Math.max(0, Math.min(b.sheet.fatigueMax, b.fatigue + n)) };
     // A shield op is not per-round: `settle` never makes it due.
@@ -176,7 +175,7 @@ function revealed(before: readonly Body[], f: Running, ctx: Ctx): Running {
   let g = f;
   for (const a of f.rows) {
     if (!holds(a, 'hidden')) continue;
-    const b = before.find(x => x.id === a.id), hurt = b !== undefined && a.hp < b.hp;
+    const b = before.find(x => x.id === a.id), hurt = b !== undefined && rowHp(a) < rowHp(b);
     const near = f.rows.some(o => o.side !== a.side && isUp(o) && dist(o.place, a.place) <= ctx.rules.fight.kit.hideReveal);
     const to = hurt ? stealthStep('hidden', { type: 'hurt' }) : near ? stealthStep('hidden', { type: 'foeNear' }) : 'hidden';
     if (to === 'revealed') g = logged(withRow(g, unhidden(a, g.now, ctx.rules)), line(`${a.name} is seen.`, [a.id]), ctx.rules);
@@ -196,28 +195,38 @@ const sameStatuses = (x: readonly Status[], y: readonly Status[]): boolean => x.
 });
 
 /**
- * The write-back of a row whose sheet holder must hear of a change from `b` to `a` at `now`: a hunter's HP, mana, fatigue
- * and statuses as `vitals` (this phone) or `sendRemote` (another phone), a shadow's HP as `shadowHp`. Totals, so a
- * repeat changes nothing. A row no sheet holds, or with nothing changed, writes nothing. A stacking status whose count is
- * the fight's (kits table 2.1, `keep: 'fight'`) is not the sheet's: it stays in the fight and ends with it.
+ * The write-back of a row whose sheet holder must hear of a change from `b` to `a` at `now`: a hunter's life, mana,
+ * fatigue and statuses as `vitals` (this phone) or `sendRemote` (another phone); the row's life is the sheet's while the
+ * fight holds it, wherever the sheet is. A shadow's HP as `shadowHp`. Totals, so a repeat changes nothing. A row no sheet
+ * holds, or with nothing changed, writes nothing. A stacking status whose count is the fight's (kits table 2.1, `keep:
+ * 'fight'`) is not the sheet's: it stays in the fight and ends with it.
  */
 export function writeBack(b: Body, a: Body, now: Tick, ctx: Ctx, fx: Fx): void {
   const h = a.holder;
   if (!h) return;
-  if (h.kind === 'shadow') { if (a.hp !== b.hp) fx.push({ type: 'shadowHp', hunterId: h.hunterId, shadowId: h.shadowId, hp: a.hp }); return; }
-  if (a.hp === b.hp && a.mana === b.mana && a.fatigue === b.fatigue && sameStatuses(a.statuses, b.statuses) && a.used === b.used) return;
+  if (h.kind === 'shadow') { if (rowHp(a) !== rowHp(b)) fx.push({ type: 'shadowHp', hunterId: h.hunterId, shadowId: h.shadowId, hp: rowHp(a) }); return; }
+  // a hunter's sheet, here or on another phone, is held only by a hunter's row (rows.ts `partyRow`)
+  if (a.kind !== 'hunter') return;
+  if (sameLife(a.life, b.life) && a.mana === b.mana && a.fatigue === b.fatigue && sameStatuses(a.statuses, b.statuses) && a.used === b.used) return;
+  if (h.kind === 'remote') { fx.push(remoteBack(a, h.remote, now, ctx.rules)); return; }
   const t = sheetTotals(a, now, ctx.rules);
-  if (h.kind === 'remote') { fx.push({ type: 'sendRemote', remote: h.remote, hp: t.hp, mana: t.mana, fatigue: t.fatigue, statuses: t.statuses }); return; }
-  const life = lifeAfter(rowLife(b, ctx), { type: 'setHp', hp: a.hp }, a.sheet.hpMax);
-  fx.push({ type: 'vitals', hunterId: h.hunterId, hp: t.hp, life, mana: t.mana, fatigue: t.fatigue, statuses: t.statuses, ...(Object.keys(t.used).length ? { used: t.used } : {}) });
+  fx.push({ type: 'vitals', hunterId: h.hunterId, life: a.life, mana: t.mana, fatigue: t.fatigue, statuses: t.statuses, ...(Object.keys(t.used).length ? { used: t.used } : {}) });
 }
 
 /**
- * The life of the hunter row `b` holds: its sheet's when the hunter is on this phone (`ctx.life`), else as the row's HP
- * reads (up above 0, dying at 0). What the fight asks the life machine from: a write-back, a refill.
+ * What a hunter's row on another phone tells that phone as it joins (the fight's `add`): its life, mana, fatigue and
+ * statuses as `sendRemote`, whatever they are. The row is built from the sheet the GM's phone last read, which can be a
+ * poll behind the player's own (a fall to 0 HP just before the join), and from the join the row is the one writer of
+ * them: the sheet hears the row at once, not at the row's first change, so the two never disagree in between.
  */
-export const rowLife = (b: Body, ctx: Ctx): Life =>
-  (b.holder?.kind === 'local' ? ctx.life(b.holder.hunterId) : null) ?? (b.hp > 0 ? { at: 'up', hp: b.hp } : { at: 'dying', successes: 0, failures: 0 });
+export function joinedBack(a: Body, now: Tick, ctx: Ctx, fx: Fx): void {
+  if (a.holder?.kind === 'remote' && a.kind === 'hunter') fx.push(remoteBack(a, a.holder.remote, now, ctx.rules));
+}
+/** The `sendRemote` of hunter row `a` for the phone of `remote` at `now`: the row's own life, and its other totals. */
+function remoteBack(a: HunterRow, remote: SheetKey, now: Tick, R: Rules): Effect {
+  const t = sheetTotals(a, now, R);
+  return { type: 'sendRemote', remote, life: a.life, mana: t.mana, fatigue: t.fatigue, statuses: t.statuses };
+}
 
 /** What a hunter's row leaves on its sheet at `now`: HP, mana, fatigue, the statuses a sheet keeps (`onSheet`), the uses spent this rest. */
 export type SheetTotals = {
@@ -225,7 +234,7 @@ export type SheetTotals = {
 };
 /** The one answer to what a row writes back to its sheet: the fight's write-back and a played fight's end (odds.ts) both read it. */
 export const sheetTotals = (a: Body, now: Tick, R: Rules): SheetTotals =>
-  ({ hp: a.hp, mana: a.mana, fatigue: a.fatigue, statuses: sheetStatuses(a.statuses.filter(onSheet), now, R), used: restUsed(a) });
+  ({ hp: rowHp(a), mana: a.mana, fatigue: a.fatigue, statuses: sheetStatuses(a.statuses.filter(onSheet), now, R), used: restUsed(a) });
 
 /**
  * Pays what is due on `row`: each due op at once when its formula has no dice, and otherwise it waits in `pending` for

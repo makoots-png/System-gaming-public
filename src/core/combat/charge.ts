@@ -7,6 +7,8 @@
 import type { Place } from './space.ts';
 import type { Tick } from './timeline.ts';
 import type { Ability, AbilityGate, Price } from './ability-types.ts';
+import { rowHp } from './row-hp.ts';
+import { rowLifeAfter } from './row-life.ts';
 import { removeStatus, stackOf, withStatuses } from './effect-ops.ts';
 import type { Body, OpRules, StatusKey } from './effect-ops.ts';
 import { countOn, stacked } from './op-amount.ts';
@@ -53,8 +55,8 @@ export function payPrices(a: Ability, user: Body, now: Tick, R: OpRules): { user
   for (const p of a.prices ?? []) {
     if (p.kind === 'hp') {
       const hp = hpPrice(p, u.sheet.hpMax);
-      if (u.hp <= hp) return 'hp';
-      u = { ...u, hp: u.hp - hp };
+      if (rowHp(u) <= hp) return 'hp';
+      u = rowLifeAfter(u, { type: 'damage', amount: hp });
     } else if (p.kind === 'stacks' && p.from === 'self') {
       const held = stacksOn(u, p.key, now), take = p.take.kind === 'all' ? held : p.take.n;
       if (held < Math.max(1, take)) return 'stacks';

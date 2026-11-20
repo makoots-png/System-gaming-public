@@ -5,7 +5,9 @@
 // `now` as `at`, so the GM's phone takes a tap only on that turn. By the device's choice the HUD shows the battle map
 // (src/views/map.js, its scene from `docBodies` and `mapScene` of map-view.ts over the doc), which sends the same `step`
 // and `cast`.
-import { LIFE_TAG, can } from '../core/hunter/vitals.ts';
+import { can } from '../core/hunter/vitals.ts';
+import { lifeWord } from '../core/combat/row-life.ts';
+import { isUp } from '../core/combat/row-hp.ts';
 import { WAIT_WORDS, aims, docSpots, readyIn, stepAway, stepToward, waitChoices } from '../core/combat/fight-view.ts';
 import { docBodies, docGround, myPinKey } from '../core/combat/map-view.ts';
 import { parseTold, toldAfter } from '../core/combat/table-news.ts';
@@ -52,7 +54,8 @@ export function register(app) {
     .tb-rows{list-style:none;margin:0 0 10px;padding:0;display:grid;gap:6px}
     .tb-row{border:1px solid var(--line);background:rgba(10,26,46,.55);padding:8px 10px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 8px;align-items:center}
     .tb-row.cur{border-color:var(--cyan);box-shadow:0 0 10px rgba(77,216,255,.35) inset;background:rgba(20,52,88,.7)}
-    .tb-row.dead{opacity:.5}
+    .tb-row.down{opacity:.7}.tb-row.dead{opacity:.5}
+    .tb-name .lw{margin-left:6px}
     .tb-name{overflow-wrap:anywhere;font-weight:600;min-width:0}
     .tb-you{font-family:var(--font-mono);font-size:12px;color:var(--gold);border:1px solid var(--gold);padding:0 6px;margin-left:6px}
     .tb-turn{font-size:12px;color:var(--cyan);letter-spacing:.15em}
@@ -76,8 +79,8 @@ export function register(app) {
     .tb-kact{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:4px}.tb-khint{font-size:13px;color:var(--muted)}
     @media (hover:none){.tb-khint{display:none}}
     .tb-banner{margin:0;font-size:14px;color:var(--cyan);letter-spacing:.04em}
-    .tb-death{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border:1px solid var(--red);background:rgba(255,77,94,.08);padding:8px 10px;margin-bottom:8px}
-    .tb-death b{color:#ff8a96;letter-spacing:.12em;text-transform:uppercase;font-size:13px}
+    .tb-death{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border:1px solid var(--life);padding:8px 10px;margin-bottom:8px}
+    .tb-death .lw{font-size:13px}
     .tb-death button{min-height:var(--control-h)}
     .tb-mine{font-family:var(--font-display);font-weight:700;font-size:calc(22px*var(--ts));letter-spacing:.18em;color:var(--ground);background:var(--cyan);padding:8px 12px;margin:0 0 8px;text-align:center}
     .tb-banner.mine{font-family:var(--font-display);font-weight:700;font-size:calc(20px*var(--ts));letter-spacing:.14em;color:var(--ground);background:var(--cyan);padding:8px 12px;text-align:center}
@@ -124,6 +127,13 @@ export function register(app) {
   const share = (v, max) => Math.min(1, Math.max(0, v / Math.max(1, max)));
 
   const canSave = h => !!h && can(h.life, 'deathSave');
+  /** The HUD's life line for hunter `h` while it is not up: its row's word (row-life.ts `lifeWord`), and Roll death save while it is dying. */
+  function deathHtml(e, h) {
+    const me = e && !e.ended ? meRow(e) : null, at = me ? me.life : h.life, word = lifeWord({ kind: 'hunter', life: at });
+    if (!word) return '';
+    const save = canSave(h) && can(at, 'deathSave') ? '<button type="button" class="primary" data-tbdsave>Roll death save</button>' : '';
+    return `<div class="tb-death" data-life-at="${at.at}"><b class="lw" data-life-at="${at.at}">${esc(word)}</b>${save}</div>`;
+  }
   const statusDef = c => app.api.effects.statusDef(c);
   const D = () => app.api.detail;
   /**
@@ -153,14 +163,15 @@ export function register(app) {
       <span class="tb-band" data-attr="data-band:band"><span class="bar bar-hp" role="img" data-attr="aria-label:bandLabel" data-fill="w">${motion.fillMarkup(0)}</span><span data-text="hpText"></span></span>
       <span class="slot" data-part="conds"></span></li>`;
   function rowDesc(e, r) {
-    const mine = isMine(r), cur = r.id === e.currentId, dead = r.down || r.band === 'down', band = r.band;
-    const exact = r.kind !== 'monster'; // players see a hunter's or shadow's HP, and only a monster's band
+    const mine = isMine(r), cur = r.id === e.currentId, band = r.band, word = lifeWord(r);
+    const exact = r.kind !== 'monster'; // players see a hunter's or shadow's HP, and only a monster's band; a defeated one says so instead
+    const shown = exact ? `${r.hp}/${r.hpMax}` : word ? '' : BAND_LABEL[band];
     const conds = r.statuses.slice(0, 8).map(c => `${c.label}${c.stacks ? ` ${c.stacks}` : ''}`);
     const summon = r.kind === 'summon' ? ` (${esc(ownerName(e, r))}'s${r.left !== null ? `, ${r.left} round${r.left === 1 ? '' : 's'}` : ''})` : '';
     return {
-      cls: `tb-row${cur ? ' cur' : ''}${dead ? ' dead' : ''}`, current: cur ? 'true' : false,
-      name: `${esc(r.name)}${summon}${mine ? '<span class="tb-you">YOU</span>' : ''}`, turn: cur ? '▶ TURN' : '',
-      band, bandLabel: BAND_LABEL[band], w: exact ? share(r.hp, r.hpMax) : BANDS[band] / 100, hpText: exact ? `${r.hp}/${r.hpMax}` : BAND_LABEL[band],
+      cls: `tb-row${cur ? ' cur' : ''}${word ? ` down ${r.life.at}` : ''}`, current: cur ? 'true' : false,
+      name: `${esc(r.name)}${summon}${mine ? '<span class="tb-you">YOU</span>' : ''}${word ? `<span class="lw" data-life-at="${r.life.at}">${esc(word)}</span>` : ''}`, turn: cur ? '▶ TURN' : '',
+      band, bandLabel: word ?? BAND_LABEL[band], w: exact ? share(r.hp, r.hpMax) : BANDS[band] / 100, hpText: shown,
       conds: `${conds.length ? `<span class="tb-conds">${conds.map(esc).join(' · ')}</span>` : ''}${extrasHtml(e, r)}`,
     };
   }
@@ -197,8 +208,9 @@ export function register(app) {
         hp: `${d.hp} / ${d.hpMax}`, hpLabel: `HP ${d.hp} of ${d.hpMax}`, hpF: share(d.hp, d.hpMax),
         mana: `${d.mana} / ${d.manaMax}`, manaLabel: `Mana ${d.mana} of ${d.manaMax}`, manaF: share(d.mana, d.manaMax),
         chips: myChips(e, h),
-        // A27: at 0 HP the one thing the HUD asks for is the death save.
-        death: canSave(h) ? `<div class="tb-death"><b>${esc(LIFE_TAG[h.life.at])}</b><button type="button" class="primary" data-tbdsave>Roll death save</button></div>` : '',
+        // A27: at 0 HP the one thing the HUD asks for is the death save. The word is the row's life in the GM's fight (the
+        // sheet hears it a message later); the save is offered while both the row and the sheet are dying, as both must take it.
+        death: deathHtml(e, h),
       });
     }
     const acts = h ? actsHtml(e, h) : '';
@@ -354,7 +366,7 @@ export function register(app) {
    * null on Cancel, with no other row, or once the fight is over.
    */
   async function waitOn(e, me, a) {
-    const rows = waitChoices(/** @type {import('../core/combat/fight-doc.ts').FightDocRow[]} */ (rowsOf(e)), me.id); if (!rows.length) return null;
+    const rows = waitChoices(docSpots(/** @type {import('../core/combat/fight-doc.ts').FightDocRow[]} */ (rowsOf(e))), me.id); if (!rows.length) return null;
     const on = await ui.system({ tag: '! Combat', title: WAIT_WORDS.label, kind: 'info', body: WAIT_WORDS.body(a.name), layout: 'list',
       actions: [...rows.map((x, i) => ({ label: x.name, value: x.id, primary: i === 0 })), { label: 'Cancel', value: null, cancel: true }] });
     const now = encounter();
@@ -383,7 +395,7 @@ export function register(app) {
     input: () => {
       const e = encounter(); if (!e || e.ended !== false) return null;
       const me = meRow(e), ground = docGround(e);
-      return { fight: e.id, bodies: docBodies(e.rows, isMine, ground.grid, e.spent ?? []), grid: ground.grid, zones: ground.zones, sight: ground.sight, currentId: e.currentId, actor: me && canAct(e) && !me.down ? me.id : null };
+      return { fight: e.id, bodies: docBodies(e.rows, isMine, ground.grid, e.spent ?? []), grid: ground.grid, zones: ground.zones, sight: ground.sight, currentId: e.currentId, actor: me && canAct(e) && isUp(me) ? me.id : null };
     },
     order: () => {
       const e = encounter(); if (!e || e.ended !== false) return [];
@@ -426,9 +438,10 @@ export function register(app) {
   function drawSheet(box, e) {
     const r = cardId && !e.ended ? e.rows.find(x => x.id === cardId) : null;
     if (!r) { if (!box.hidden) { box.hidden = true; box.innerHTML = ''; box.dataset.sig = ''; } return; }
-    const hp = r.kind === 'monster' ? BAND_LABEL[r.band] : `HP ${r.hp} / ${r.hpMax}`;
+    const word = lifeWord(r), hp = r.kind === 'monster' ? (word ? '' : BAND_LABEL[r.band]) : `HP ${r.hp} / ${r.hpMax}`;
+    const line = [hp && esc(hp), word && `<span class="lw" data-life-at="${r.life.at}">${esc(word)}</span>`, r.id === e.currentId && 'Their turn'].filter(Boolean).join(' · ');
     const html = `<h3>${esc(r.name)}${isMine(r) ? '<span class="tb-you">YOU</span>' : ''}<button type="button" class="quiet" data-tbsheetx>Close</button></h3>
-      <div>${esc(hp)}${r.down ? ' · Down' : ''}${r.id === e.currentId ? ' · Their turn' : ''}</div>${extrasHtml(e, r)}
+      <div>${line}</div>${extrasHtml(e, r)}
       ${r.statuses.length ? chipRow('tok-chips', r.id, r.statuses, `${r.name}'s statuses`) : '<div class="tb-conds">No statuses.</div>'}`;
     if (box.dataset.sig !== html) { box.dataset.sig = html; box.innerHTML = html; countStacks(box); }
     box.hidden = false;

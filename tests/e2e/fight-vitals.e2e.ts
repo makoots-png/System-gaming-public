@@ -82,7 +82,7 @@ test('a dead hunter in the fight whom the GM revives from the sheet stands at 1 
   const name = await gmFight(page);
   await page.evaluate(n => hunterApp.store.update((d: any) => {
     const h = d.hunters.find((x: any) => x.name === n); h.life = { at: 'dead' };
-    d.fight.rows.find((r: any) => r.name === n).hp = 0;
+    d.fight.rows.find((r: any) => r.name === n).life = { at: 'dead' };
   }, 'test-setup'), name);
 
   await test.step('the GM taps Revive on the sheet, and the fight\'s row stands at 1 HP', async () => {

@@ -36,6 +36,7 @@ import { CAP_ROUNDS, lifeOfSaves, playBegin, playOver, playSaves, playStep } fro
 import type { Limits, Play } from '../../src/core/combat/play.ts';
 import type { Policy as TurnPolicy, TurnChoice } from '../../src/core/combat/policy.ts';
 import { rng } from './fight-play.ts';
+import { rowHp } from '../../src/core/combat/row-hp.ts';
 
 export { rng };
 export type SimRank = 'E' | 'C' | 'S';
@@ -192,12 +193,12 @@ export type Policy = (f: Running, me: Body, plan: Plan, R: Rules) => Choice;
  */
 export type Plan = { readonly channel: 'none' | 'safe' | 'aimed' };
 
-const up = (b: Body): boolean => b.hp > 0;
+const up = (b: Body): boolean => rowHp(b) > 0;
 const foesOf = (f: Running, me: Body): Body[] => f.rows.filter(r => r.side !== me.side && up(r));
 const alliesOf = (f: Running, me: Body): Body[] => f.rows.filter(r => r.side === me.side && r.id !== me.id && up(r));
 const nearest = (me: Body, list: readonly Body[]): Body | undefined =>
-  [...list].sort((a, b) => dist(me.place, a.place) - dist(me.place, b.place) || a.hp - b.hp || (a.id < b.id ? -1 : 1))[0];
-const weakest = (list: readonly Body[]): Body | undefined => [...list].sort((a, b) => a.hp - b.hp || (a.id < b.id ? -1 : 1))[0];
+  [...list].sort((a, b) => dist(me.place, a.place) - dist(me.place, b.place) || rowHp(a) - rowHp(b) || (a.id < b.id ? -1 : 1))[0];
+const weakest = (list: readonly Body[]): Body | undefined => [...list].sort((a, b) => rowHp(a) - rowHp(b) || (a.id < b.id ? -1 : 1))[0];
 const own = (me: Body, name: string): Ability => {
   const a = me.abilities.find(x => x.id === name);
   if (!a) throw new Error(`${me.name} has no ${name}`);
@@ -267,7 +268,7 @@ const speedPolicy: Policy = (f, me) => {
 const tankPolicy: Policy = (f, me, _plan, R) => {
   const taunt = own(me, 'taunt'), strike = own(me, ATTACK_ID);
   const pull = foesOf(f, me).filter(m => m.threat && suggested(f, m)?.id !== me.id && usable(f, me, taunt, m.place))
-    .sort((a, b) => b.hp - a.hp || (a.id < b.id ? -1 : 1))[0];
+    .sort((a, b) => rowHp(b) - rowHp(a) || (a.id < b.id ? -1 : 1))[0];
   if (pull) return { type: 'act', ability: taunt, aim: pull.id };
   const target = taunter(f, me) ?? nearest(me, foesOf(f, me))!;
   return usable(f, me, strike, target.place) ? { type: 'act', ability: strike, aim: target.id } : charge(f, me, strike, target, R) ?? toward(f, me, target);
@@ -296,7 +297,7 @@ const castWith = (boltId: string): Policy => (f, me, plan, R) => {
   }
   const foes = foesOf(f, me);
   const focus = own(me, 'focus'), blast = own(me, 'blast'), bolt = own(me, boltId);
-  const big = [...foes].sort((a, b) => b.hp - a.hp)[0]!;
+  const big = [...foes].sort((a, b) => rowHp(b) - rowHp(a))[0]!;
   if (plan.channel !== 'none' && !me.channel && usable(f, me, focus, big.place)) {
     const onMe = suggested(f, big)?.id === me.id;
     if (onMe === (plan.channel === 'aimed')) return { type: 'act', ability: focus, aim: big.id };
@@ -305,15 +306,15 @@ const castWith = (boltId: string): Policy => (f, me, plan, R) => {
   const forced = taunter(f, me);
   const blasts = (forced ? [forced] : foes).filter(t => usable(f, me, blast, t.place) && !hitsAlly(f, me, blast, t.place))
     .map(t => ({ t, n: inShape(blast.shape, me.place, t.place, f.grid, foes).hit.length }))
-    .sort((a, b) => b.n - a.n || a.t.hp - b.t.hp);
+    .sort((a, b) => b.n - a.n || rowHp(a.t) - rowHp(b.t));
   if (blasts[0]) return { type: 'act', ability: blast, aim: blasts[0].t.place };
   return attackOr(f, me, bolt, forced ?? nearest(me, foes)!);
 };
 /** Support: shields the most hurt ally under 70% with no shield; otherwise bolts the nearest foe. */
 const supportPolicy: Policy = (f, me) => {
   const shield = own(me, 'shield-wall');
-  const hurt = [me, ...alliesOf(f, me)].filter(a => a.hp < 0.7 * a.sheet.hpMax && !(a.shield && a.shield.until > f.now) && usable(f, me, shield, a.place))
-    .sort((a, b) => a.hp / a.sheet.hpMax - b.hp / b.sheet.hpMax)[0];
+  const hurt = [me, ...alliesOf(f, me)].filter(a => rowHp(a) < 0.7 * a.sheet.hpMax && !(a.shield && a.shield.until > f.now) && usable(f, me, shield, a.place))
+    .sort((a, b) => rowHp(a) / a.sheet.hpMax - rowHp(b) / b.sheet.hpMax)[0];
   if (hurt) return { type: 'act', ability: shield, aim: hurt.id };
   return attackOr(f, me, own(me, 'bolt'), taunter(f, me) ?? nearest(me, foesOf(f, me))!);
 };
@@ -387,7 +388,7 @@ export type SimRow = { readonly row: NewRow; readonly policy: Policy };
 function newRow(id: string, name: string, side: NewRow['side'], kind: NewRow['kind'], origin: Origin, tier: number, uses: Ability[], R: Rules): NewRow {
   const sheet = modified(origin, [], R).sheet;
   return {
-    id: combatantId(id), name, side, kind, origin, tier, place: null, hp: sheet.hpMax, mana: sheet.manaMax, fatigue: 0, shield: null,
+    id: combatantId(id), name, side, kind, origin, tier, place: null, life: { at: 'up', hp: sheet.hpMax }, mana: sheet.manaMax, fatigue: 0, shield: null,
     stagger: null, channel: null, threat: kind === 'monster' ? {} : null, statuses: [], readyAt: {}, abilities: uses, intent: null, holder: null, xp: 0,
   };
 }
@@ -460,7 +461,7 @@ export type Setup = {
  * the player or the fight.
  */
 export function playFight(setup: Setup, seed: number): FightRecord {
-  const R = setup.rules ?? RULES, ctx: Ctx = { rules: R, life: () => null };
+  const R = setup.rules ?? RULES, ctx: Ctx = { rules: R };
   const plan: Plan = setup.plan ?? { channel: 'none' };
   const limits: Limits = { capRounds: setup.capRounds ?? CAP_ROUNDS, endAtRounds: setup.endAtRounds ?? null };
   const policies = new Map(setup.rows.map(s => [s.row.id as string, s.policy]));
@@ -541,7 +542,7 @@ export function playFight(setup: Setup, seed: number): FightRecord {
   channels.dropped = channels.begun - channels.completed - channels.broken;
   return {
     winner: f.summary.winner, rounds: f.summary.rounds, capped: ended.capped, down: [...ended.down], dead: [...dead], staggers, channels, tally,
-    end: Object.fromEntries(f.rows.map(r => [r.id, { hp: r.hp, fatigue: r.fatigue, mana: r.mana }])),
+    end: Object.fromEntries(f.rows.map(r => [r.id, { hp: rowHp(r), fatigue: r.fatigue, mana: r.mana }])),
   };
 }
 

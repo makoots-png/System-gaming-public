@@ -5,7 +5,7 @@ import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
 import { newHunter } from '../src/core/save.ts';
 import { sheetEdit } from '../src/core/hunter/grant.ts';
-import { rest } from '../src/core/hunter/vitals.ts';
+import { REVIVE_HP, rest } from '../src/core/hunter/vitals.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import { baseStats } from '../src/core/stats.ts';
 import type { Stats } from '../src/core/stats.ts';
@@ -27,7 +27,7 @@ import { parseSheetKey } from '../src/core/ids.ts';
 import type { Ability, AbilityKind, CombatantId } from '../src/core/combat/ability-types.ts';
 import { modified, shadowId, statusKey } from '../src/core/combat/effect-ops.ts';
 import type { Body, Op, Origin, StackDef, Status, StatusDef, UseOp } from '../src/core/combat/effect-ops.ts';
-import { afterDefence } from '../src/core/combat/land.ts';
+import { afterDefence, landOps } from '../src/core/combat/land.ts';
 import { ARMED, endStep } from '../src/core/combat/delayed.ts';
 import { ENDS, WALK_EVENTS } from './models/delayed-events.ts';
 import { parseAbility, parseFight } from '../src/core/combat/fight-parse.ts';
@@ -35,12 +35,15 @@ import { attemptsLeft, extractionStep, UNTRIED } from '../src/core/combat/extrac
 import { EXTRACTION_WALK } from './models/extraction-events.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { fightId, owed, reduce } from '../src/core/combat/fight.ts';
-import type { Command, Ctx, Effect, Fight, NewRow, Opening, Result, Running, StatusGrant, ZoneDraft } from '../src/core/combat/fight.ts';
+import type { Command, Ctx, Effect, Fight, NewRow, Opening, Result, RowLifeEvent, Running, StatusGrant, ZoneDraft } from '../src/core/combat/fight.ts';
 import { needs } from '../src/core/combat/resolve.ts';
 import type { Rolls } from '../src/core/combat/resolve.ts';
+import { rowHp } from '../src/core/combat/row-hp.ts';
+import { lifeAt } from './fixtures/life.ts';
+import type { RowPatch } from './fixtures/life.ts';
 const sheetKey = (s: string) => parseSheetKey(s) ?? (() => { throw new Error(`not a sheet key: ${s}`); })();
 
-const ctx: Ctx = { rules: RULES, life: () => null };
+const ctx: Ctx = { rules: RULES };
 const f = (text: string) => { const p = parseFormula(text, RULES); if (!p.ok) throw new Error(p.error); return p.formula; };
 const id = combatantId;
 const ability = (kind: AbilityKind, name: string, text: string | null, o: Partial<Ability> = {}): Ability => {
@@ -56,13 +59,14 @@ const st = (key: string, until: number | null, ...ops: Op[]): Status =>
 const hunterOrigin = (o: Partial<Stats> = {}): Origin => ({ kind: 'hunter', build: { stats: { ...baseStats(RULES.fight), ...o }, level: 1, gear: kitGear('light', RULES), perks: {} } });
 
 /** A body of base stats in a light kit: speed 100, move 6, stride 3, armor 10. A status may change its speed. */
-function row(name: string, side: Side, o: Partial<NewRow> = {}): NewRow {
+function row(name: string, side: Side, o: RowPatch<NewRow> = {}): NewRow {
+  const { kind: k, hp, ...rest } = o;
   const origin = o.origin ?? hunterOrigin(), hpMax = modified(origin, o.statuses ?? [], RULES).sheet.hpMax;
-  const kind = o.kind ?? (side === 'party' ? 'hunter' : 'monster');
+  const kind = k ?? (side === 'party' ? 'hunter' : 'monster');
   return {
-    id: id(name), name, side, kind, origin, tier: 0, place: null, hp: hpMax, mana: 10, fatigue: 0, shield: null, stagger: null, channel: null,
+    id: id(name), name, side, ...lifeAt(kind, hp ?? hpMax), origin, tier: 0, place: null, mana: 10, fatigue: 0, shield: null, stagger: null, channel: null,
     threat: kind === 'monster' ? {} : null, statuses: [], readyAt: {}, abilities: [HIT, BIG], intent: null,
-    holder: kind === 'hunter' ? { kind: 'local', hunterId: hunterId(`h-${name}`) } : null, xp: 0, ...o,
+    holder: kind === 'hunter' ? { kind: 'local', hunterId: hunterId(`h-${name}`) } : null, xp: 0, ...rest,
   };
 }
 const haste = (pct: number): Status => st(`speed${pct}`, null, { op: 'speed', pct });
@@ -171,7 +175,7 @@ describe('act: one use, then the next turn', () => {
   test('a hit deals its formula through armor (rule 12), costs its fatigue, and the user waits a standard interval', () => {
     const r = play(...duel(), hit('A', 'M'));
     const m = body(r.fight, 'M');
-    expect(m.sheet.hpMax - m.hp).toBe(Math.round(10 * 100 / (100 + 10)));
+    expect(m.sheet.hpMax - rowHp(m)).toBe(Math.round(10 * 100 / (100 + 10)));
     expect([body(r.fight, 'A').at, body(r.fight, 'A').fatigue]).toEqual([tick(1000), 8]);
     expect(turns(r.effects)).toEqual(['A@0', 'M@500']);
   });
@@ -186,13 +190,14 @@ describe('act: one use, then the next turn', () => {
   test('a hunter on this phone hit by a monster gets one vitals write-back with its HP and life', () => {
     const r = play(...duel(), pass('A'), hit('M', 'A'));
     const a = body(r.fight, 'A');
-    expect(r.effects.filter(e => e.type === 'vitals')).toEqual([{ type: 'vitals', hunterId: hunterId('h-A'), hp: a.hp, life: { at: 'up', hp: a.hp }, mana: 10, fatigue: 0, statuses: [] }]);
-    expect(a.sheet.hpMax - a.hp).toBe(9);
+    expect(r.effects.filter(e => e.type === 'vitals')).toEqual([{ type: 'vitals', hunterId: hunterId('h-A'), life: { at: 'up', hp: rowHp(a) }, mana: 10, fatigue: 0, statuses: [] }]);
+    expect(a.sheet.hpMax - rowHp(a)).toBe(9);
   });
 
   test('a hunter on another phone is told its totals instead', () => {
-    const r = play(...duel({ holder: { kind: 'remote', remote: sheetKey('dev-mira:h1') } }), pass('A'), hit('M', 'A'));
-    expect(r.effects.filter(e => e.type === 'sendRemote').length).toBe(1);
+    const r = play(...duel({ holder: { kind: 'remote', remote: sheetKey('dev-mira:h1') } }), pass('A'), hit('M', 'A')), a = body(r.fight, 'A');
+    expect(r.effects.filter(e => e.type === 'vitals')).toEqual([]);
+    expect(r.effects.flatMap(e => (e.type === 'sendRemote' ? [e.life] : [])), 'as it joins, then after the hit').toEqual([{ at: 'up', hp: a.sheet.hpMax }, { at: 'up', hp: rowHp(a) }]);
   });
 
   test('a monster brought to 0 is defeated, and the fight ends when its side has nobody up, with its XP', () => {
@@ -281,7 +286,7 @@ describe('a channel (4.1)', () => {
     const fired = reduce(r.fight, { type: 'release', by: id('A'), rolls: rolls({ M: 10 }) }, ctx);
     const m = body(fired.fight, 'M');
     expect(body(fired.fight, 'A').channel?.state).toBe('fired');
-    expect(m.sheet.hpMax - m.hp).toBe(Math.max(1, Math.round((10 * 3 - RULES.fight.armorFlat * m.sheet.resist) * 100 / (100 + m.sheet.resist))));
+    expect(m.sheet.hpMax - rowHp(m)).toBe(Math.max(1, Math.round((10 * 3 - RULES.fight.armorFlat * m.sheet.resist) * 100 / (100 + m.sheet.resist))));
   });
 
   test('a hit of at least its hold (0.15 of max HP on a base body) breaks it to half its charge, rounded down', () => {
@@ -299,7 +304,7 @@ describe('a channel (4.1)', () => {
     const before = body(r.fight, 'M');
     const out = reduce(r.fight, { type: 'release', by: id('A'), rolls: rolls({ M: 10 }) }, ctx);
     expect([body(out.fight, 'A').at, body(out.fight, 'A').channel?.state, running(out).currentId]).toEqual([tick(2000), 'fired', id('M')]);
-    expect(before.hp - body(out.fight, 'M').hp).toBe(Math.round((10 * (1 + 0) - RULES.fight.armorFlat * before.sheet.resist) * 100 / (100 + before.sheet.resist)));
+    expect(rowHp(before) - rowHp(body(out.fight, 'M'))).toBe(Math.round((10 * (1 + 0) - RULES.fight.armorFlat * before.sheet.resist) * 100 / (100 + before.sheet.resist)));
   });
 
   test('acting or walking while holding ends it unspent; a full channel cannot be held another turn', () => {
@@ -318,10 +323,10 @@ describe('a channel (4.1)', () => {
     const PRICED = { ...CHARGE, id: abilityId('priced'), prices: [{ kind: 'hp', amount: { kind: 'flat', n: 5 } }], gates: [{ kind: 'uses', per: 'fight', n: 1 }] } as Ability;
     const r = play(add(caster({ abilities: [HIT, PRICED] }), row('M', 'foe')), start(['A', 20], ['M', 1]), { type: 'act', by: id('A'), ability: PRICED.id, aim: id('M'), rolls: rolls() }, pass('M'));
     const a = body(r.fight, 'A');
-    expect(a.sheet.hpMax - a.hp).toBe(5);
+    expect(a.sheet.hpMax - rowHp(a)).toBe(5);
     const out = reduce(r.fight, { type: 'release', by: id('A'), rolls: rolls({ M: 10 }) }, ctx);
     expect(out.effects.find(e => e.type === 'refused')).toBeUndefined();
-    expect([body(out.fight, 'A').channel?.state, body(out.fight, 'A').sheet.hpMax - body(out.fight, 'A').hp]).toEqual(['fired', 5]);
+    expect([body(out.fight, 'A').channel?.state, body(out.fight, 'A').sheet.hpMax - rowHp(body(out.fight, 'A'))]).toEqual(['fired', 5]);
   });
 
   test('a broken channel whose aim is gone goes off at nothing and is owed no more', () => {
@@ -395,9 +400,9 @@ describe('a channel\'s release lands as a use does (design 4.1)', () => {
     const laid = [add(row('A', 'party', { abilities: [keep, POP] }), row('M', 'foe')), start(['A', 20], ['M', 10]), lay, pass('M'), lay, pass('M')] as const;
     const began = play(...laid, use('A', POP, 'M'));
     const a = body(began.fight, 'A'), endHit = afterDefence(10, 'physical', a.sheet, a.sheet, RULES);
-    expect([running(began).zones.length, a.sheet.hpMax - a.hp]).toEqual([1, endHit]);
+    expect([running(began).zones.length, a.sheet.hpMax - rowHp(a)]).toEqual([1, endHit]);
     const again = play(...laid, use('A', POP, 'M'), pass('M'), release('A', rolls({ M: 10 })));
-    expect([running(again).zones.length, body(again.fight, 'A').sheet.hpMax - body(again.fight, 'A').hp]).toEqual([1, endHit]);
+    expect([running(again).zones.length, body(again.fight, 'A').sheet.hpMax - rowHp(body(again.fight, 'A'))]).toEqual([1, endHit]);
   });
 
   test('a channeled hide is refused at its begin while a foe that is up sees the user (kits 8.7.2)', () => {
@@ -417,10 +422,10 @@ describe('a channel\'s release lands as a use does (design 4.1)', () => {
     const released = (wind: Ability, react: Ability) => play(add(row('A', 'party', { abilities: [HIT, react] }), row('M', 'foe', { abilities: [wind] })),
       start(['M', 20], ['A', 10]), use('M', wind, 'A'), { type: 'arm', by: id('A'), ability: react.id }, pass('A'), release('M', rolls({ A: 10 })));
     const negated = released(WIND, NEGATE), warded = released(CRUSH, STAND), answered = released(WIND, RIPOSTE);
-    expect(body(negated.fight, 'A').hp).toBe(body(negated.fight, 'A').sheet.hpMax);
-    expect(body(warded.fight, 'A').hp).toBe(1);
+    expect(rowHp(body(negated.fight, 'A'))).toBe(body(negated.fight, 'A').sheet.hpMax);
+    expect(rowHp(body(warded.fight, 'A'))).toBe(1);
     const m = body(answered.fight, 'M');
-    expect(m.sheet.hpMax - m.hp).toBe(afterDefence(10, 'physical', body(answered.fight, 'A').sheet, m.sheet, RULES));
+    expect(m.sheet.hpMax - rowHp(m)).toBe(afterDefence(10, 'physical', body(answered.fight, 'A').sheet, m.sheet, RULES));
   });
 
   test('a release on a foe ends its user\'s hide, as a use from hiding does (kits 8.7.3)', () => {
@@ -457,14 +462,14 @@ describe('a channel\'s release lands as a use does (design 4.1)', () => {
       start(['A', 20], ['M', 10]), use('A', P3, 'M'), pass('M'), release('A', rolls({ M: 10 })));
     const m = body(pushed(spikes).fight, 'M');
     expect([m.place, m.statuses.some(x => x.zone === 'z1')]).toEqual([place(5, 7), true]);
-    expect(m.hp).toBe(body(pushed().fight, 'M').hp);
+    expect(rowHp(m)).toBe(rowHp(body(pushed().fight, 'M')));
   });
 
   test('a release logs one line naming each target and its number, and tells the GM that line (rule 20)', () => {
     const WIND = channeled(HIT, 'wind');
     const r = play(...duel({ abilities: [WIND] }), use('A', WIND, 'M'), pass('M'));
     const out = reduce(r.fight, release('A', rolls({ M: 10 })), ctx);
-    const dealt = body(r.fight, 'M').hp - body(out.fight, 'M').hp;
+    const dealt = rowHp(body(r.fight, 'M')) - rowHp(body(out.fight, 'M'));
     const said = running(out).log.find(l => l.text.includes('is released'))!;
     expect([said.text.endsWith(`M caught ${dealt}.`), said.rows]).toEqual([true, [id('A'), id('M')]]);
     expect(out.effects.find(e => e.type === 'used')).toEqual({ type: 'used', by: id('A'), ability: WIND.id, line: said.text.replace(/^R\d+: /, '') });
@@ -557,11 +562,11 @@ describe('the GM\'s moves', () => {
       { type: 'rollSettle', id: id('M'), key: statusKey('sear'), dice: [], share: 0.5 },
     ]);
     const m = body(r.fight, 'M');
-    expect(m.sheet.hpMax - m.hp).toBe(5);
+    expect(m.sheet.hpMax - rowHp(m)).toBe(5);
     refuses(r.fight, { type: 'settle', id: id('M'), key: statusKey('burn'), dice: [] }, 'needsRoll');
     refuses(r.fight, { type: 'settle', id: id('M'), key: statusKey('sear'), dice: [] }, 'nothingDue');
     const paid = reduce(r.fight, { type: 'settle', id: id('M'), key: statusKey('burn'), dice: [6] }, ctx);
-    expect(m.hp - body(paid.fight, 'M').hp).toBe(3);
+    expect(rowHp(m) - rowHp(body(paid.fight, 'M'))).toBe(3);
     expect(running(paid).pending).toEqual([]);
   });
 
@@ -594,7 +599,7 @@ const trio = (m: Partial<NewRow> = {}, n: Partial<NewRow> = {}) => [add(row('A',
 describe('refill: a level-up\'s refill of a hunter\'s row, which takes no time', () => {
   test('a hunter\'s row comes back to its maximum HP and mana, and the log says so', () => {
     const r = play(...duel(), adjust('A', { hp: -5, mana: -3 }), { type: 'refill', id: id('A') });
-    expect([body(r.fight, 'A').hp, body(r.fight, 'A').mana]).toEqual([HP, RULES.fight.manaBase]);
+    expect([rowHp(body(r.fight, 'A')), body(r.fight, 'A').mana]).toEqual([HP, RULES.fight.manaBase]);
     expect(running(r).log[0]!.text).toBe('R1: A is refilled: HP +5, mana +3 (level up).');
   });
 
@@ -611,7 +616,7 @@ describe('refill: a level-up\'s refill of a hunter\'s row, which takes no time',
 describe('adjust: the GM\'s hand edit, which takes no time', () => {
   test('the GM takes 5 HP off a monster: its HP falls by 5, whose turn it is and every wait stay, and the log says so', () => {
     const r = play(...duel(), adjust('M', { hp: -5 }));
-    expect(body(r.fight, 'M').hp).toBe(HP - 5);
+    expect(rowHp(body(r.fight, 'M'))).toBe(HP - 5);
     expect([running(r).currentId, body(r.fight, 'A').at, body(r.fight, 'M').at]).toEqual([id('A'), tick(0), tick(500)]);
     expect(running(r).log[0]!.text).toBe('R1: M: HP -5 (GM).');
   });
@@ -619,7 +624,7 @@ describe('adjust: the GM\'s hand edit, which takes no time', () => {
   test('a hunter on this phone hears its new totals once, each kept within 0 and its maximum', () => {
     const r = play(...duel(), adjust('A', { hp: 50, mana: -99, fatigue: 999 }));
     expect(r.effects.filter(e => e.type === 'vitals')).toEqual([
-      { type: 'vitals', hunterId: hunterId('h-A'), hp: HP, life: { at: 'up', hp: HP }, mana: 0, fatigue: FATIGUE_MAX, statuses: [] },
+      { type: 'vitals', hunterId: hunterId('h-A'), life: { at: 'up', hp: HP }, mana: 0, fatigue: FATIGUE_MAX, statuses: [] },
     ]);
   });
 
@@ -647,14 +652,113 @@ describe('adjust: the GM\'s hand edit, which takes no time', () => {
 
   test('the GM bringing the current hunter to 0 leaves it dying and starts the next turn', () => {
     const r = play(add(row('A', 'party'), row('B', 'party'), row('M', 'foe')), start(['A', 20], ['B', 10], ['M', 1]), adjust('A', { hp: -999 }));
-    expect(r.effects.find(e => e.type === 'vitals')).toMatchObject({ hunterId: hunterId('h-A'), hp: 0, life: { at: 'dying', successes: 0, failures: 0 } });
+    expect(r.effects.find(e => e.type === 'vitals')).toMatchObject({ hunterId: hunterId('h-A'), life: { at: 'dying', successes: 0, failures: 0 } });
     expect([running(r).currentId, running(r).now]).toEqual([id('B'), tick(500)]);
   });
 
-  test('a monster the GM brings back from 0 after another body took its tile is refused, so no two bodies share a tile', () => {
+  test('a monster the GM revives after another body took its tile is refused, so no two bodies share a tile', () => {
     const r = play(...trio(), adjust('M', { hp: -999 }), { type: 'place', id: id('N'), to: place(0, 10) });
     expect(body(r.fight, 'M').place).toEqual(place(0, 10));
-    refuses(r.fight, adjust('M', { hp: 10 }), 'taken');
+    refuses(r.fight, { type: 'life', id: id('M'), event: { type: 'revive' } }, 'taken');
+  });
+});
+
+describe('a row\'s life: every change of a row\'s HP goes through its life (row-life.ts), so only Revive lifts the dead', () => {
+  const MEND = { ...ability('support', 'mend', null, FAR), effect: { type: 'heal', by: 'hand', formula: f('20') } } as Ability;
+  const life = (at: string, event: RowLifeEvent): Command => ({ type: 'life', id: id(at), event });
+  const save = (at: string, roll: number): Command => life(at, { type: 'deathSave', roll });
+  const lifeOf = (r: { fight: Fight | null }, name: string): Body['life'] => body(r.fight, name).life;
+  const DYING = { at: 'dying', successes: 0, failures: 0 } as const, DEAD = { at: 'dead' } as const;
+  /** Hunters A and B against M, and the GM's hand takes A to 0: A is dying (its turn goes to B). */
+  const fallen = (): Command[] => [add(row('A', 'party'), row('B', 'party', { abilities: [HIT, MEND] }), row('M', 'foe')), start(['A', 20], ['B', 15], ['M', 10]), adjust('A', { hp: -999 })];
+  /** The same, and A fails three death saves (a 2 is one failure each): dead. */
+  const dead = (): Command[] => [...fallen(), save('A', 2), save('A', 2), save('A', 2)];
+  const mended = (at: string): Command => ({ type: 'act', by: id('B'), ability: MEND.id, aim: id(at), rolls: rolls(), force: true });
+  const spring = (at: Place): Command => ({ type: 'zoneAdd', zone: { id: zoneId('spring'), name: 'Spring', tiles: [at], spares: null, tier: 0, duration: null, ops: [{ op: 'heal', amount: f('10'), when: 'use' }] } });
+
+  test('three failed death saves leave a fallen hunter\'s row dead, and its sheet hears each one with the life itself', () => {
+    const r = play(...dead());
+    expect(lifeOf(r, 'A')).toEqual(DEAD);
+    const told = r.effects.flatMap(e => (e.type === 'vitals' && e.hunterId === hunterId('h-A') ? [e.life] : []));
+    expect(told).toEqual([DYING, { ...DYING, failures: 1 }, { ...DYING, failures: 2 }, DEAD]);
+    expect(running(r).log[0]!.text).toBe('R1: A fails a third death save and dies.');
+  });
+
+  test('the GM\'s hand heal stands a fallen hunter\'s row up, and of a dead one it is refused: nothing to change', () => {
+    expect(lifeOf(play(...fallen(), adjust('A', { hp: 10 })), 'A')).toEqual({ at: 'up', hp: 10 });
+    refuses(play(...dead()).fight, adjust('A', { hp: 10 }), 'noChange');
+  });
+
+  test('an ally\'s heal stands a fallen hunter\'s row up and leaves a dead one dead', () => {
+    expect(lifeOf(play(...fallen(), mended('A')), 'A').at).toBe('up');
+    expect(lifeOf(play(...dead(), mended('A')), 'A')).toEqual(DEAD);
+  });
+
+  test('a paid heal (a healing ground\'s entry) stands a fallen hunter\'s row up and leaves a dead one dead', () => {
+    const at = body(play(...fallen()).fight, 'A').place;
+    expect(lifeOf(play(...fallen(), spring(at)), 'A')).toEqual({ at: 'up', hp: 10 });
+    expect(lifeOf(play(...dead(), spring(at)), 'A')).toEqual(DEAD);
+  });
+
+  test('a heal land op (a trigger\'s, a threshold\'s, a zone end\'s) stands a fallen hunter\'s row up and leaves a dead one dead', () => {
+    const healOf = (b: Body): Body['life'] => {
+      const rows = new Map([[b.id, b]]);
+      landOps(rows, [{ op: 'heal', amount: f('10'), when: 'use' }], null, [b.id], { id: null, tier: 0 }, tick(0), RULES);
+      return rows.get(b.id)!.life;
+    };
+    expect(healOf(body(play(...fallen()).fight, 'A'))).toEqual({ at: 'up', hp: 10 });
+    expect(healOf(body(play(...dead()).fight, 'A'))).toEqual(DEAD);
+  });
+
+  test('a level-up\'s refill stands a fallen hunter\'s row up at its maximum and leaves a dead one dead', () => {
+    expect(lifeOf(play(...fallen(), { type: 'refill', id: id('A') }), 'A')).toEqual({ at: 'up', hp: HP });
+    expect(lifeOf(play(...dead(), { type: 'refill', id: id('A') }), 'A')).toEqual(DEAD);
+  });
+
+  test('the GM\'s Revive stands a dead hunter\'s row up at 1 HP: it takes turns again and its sheet hears it', () => {
+    const before = play(...dead()), r = play(...dead(), life('A', { type: 'revive' }));
+    expect(lifeOf(r, 'A')).toEqual({ at: 'up', hp: REVIVE_HP });
+    expect(body(r.fight, 'A').at).toBeGreaterThanOrEqual(running(before).now);
+    expect(r.effects.at(-1)).toMatchObject({ type: 'vitals', hunterId: hunterId('h-A'), life: { at: 'up', hp: REVIVE_HP } });
+    expect(running(r).log[0]!.text).toBe('R1: A is revived (GM).');
+  });
+
+  test('a player\'s hunter\'s row sends its phone the life itself: the fall, each death save, the death and the GM\'s Revive', () => {
+    const key = sheetKey('dev-a:h1');
+    const r = play(add(row('A', 'party', { holder: { kind: 'remote', remote: key } }), row('B', 'party'), row('M', 'foe')), start(['A', 20], ['B', 15], ['M', 10]), adjust('A', { hp: -999 }),
+      save('A', 2), save('A', 2), save('A', 2), life('A', { type: 'revive' }));
+    const told = r.effects.flatMap(e => (e.type === 'sendRemote' && e.remote === key ? [e.life] : []));
+    expect(told).toEqual([{ at: 'up', hp: HP }, DYING, { ...DYING, failures: 1 }, { ...DYING, failures: 2 }, DEAD, { at: 'up', hp: REVIVE_HP }]);
+  });
+
+  test('a player\'s hunter joining the fight tells its phone the row\'s life at once, even unchanged: the row is the one writer from the join', () => {
+    const key = sheetKey('dev-a:h1'), a = row('A', 'party', { holder: { kind: 'remote', remote: key }, hp: 0 });
+    expect(play(add(a, row('M', 'foe'))).effects.filter(e => e.type === 'sendRemote'), 'into a fight in setup').toEqual([{ type: 'sendRemote', remote: key, life: DYING, mana: 10, fatigue: 0, statuses: [] }]);
+    const late = play(add(row('B', 'party'), row('M', 'foe')), start(['B', 20], ['M', 10]), join([a], openings(['A', 10])));
+    expect(late.effects.flatMap(e => (e.type === 'sendRemote' ? [e.life] : [])), 'into a running fight').toEqual([DYING]);
+  });
+
+  test('a defeated monster comes back only by the GM\'s Revive, at 1 HP: a hand heal of it is refused', () => {
+    const r = play(...trio(), adjust('M', { hp: -999 }));
+    expect(lifeOf(r, 'M')).toEqual(DEAD);
+    refuses(r.fight, adjust('M', { hp: 10 }), 'noChange');
+    expect(lifeOf(play(...trio(), adjust('M', { hp: -999 }), life('M', { type: 'revive' })), 'M')).toEqual({ at: 'up', hp: REVIVE_HP });
+  });
+
+  test('Revive of a row that is not dead is refused, and so is a death save or Stabilize of a row not dying, and a death save that is no d20 face', () => {
+    const r = play(...trio());
+    refuses(r.fight, life('A', { type: 'revive' }), 'lifeCannot');
+    refuses(r.fight, life('M', { type: 'revive' }), 'lifeCannot');
+    refuses(r.fight, save('A', 15), 'lifeCannot');
+    refuses(play(...fallen()).fight, life('A', { type: 'revive' }), 'lifeCannot');
+    refuses(play(...dead()).fight, life('A', { type: 'stabilize' }), 'lifeCannot');
+    const down = play(...trio(), adjust('M', { hp: -999 }));
+    refuses(down.fight, life('M', { type: 'stabilize' }), 'lifeCannot');
+    refuses(down.fight, save('M', 15), 'lifeCannot');
+    refuses(play(...fallen()).fight, save('A', 21), 'needsRoll');
+    refuses(r.fight, life('ghost', { type: 'revive' }), 'unknown');
+    refuses(null, life('A', { type: 'revive' }), 'notNow');
+    refuses(play(...dead(), { type: 'end' }).fight, life('A', { type: 'revive' }), 'notNow');
   });
 });
 
@@ -666,7 +770,7 @@ describe('status: the GM\'s Status window, which takes no time', () => {
     expect(body(r.fight, 'A').shield).toEqual({ amount: 21, until: tick(2000) });
     // HIT is 10 before armor, 9 after the light kit's 10 (rule 12): the shield takes all 9
     const after = play(...duel(), putOn('A', grant('ward', WARD, 2000)), pass('A'), hit('M', 'A'));
-    expect([body(after.fight, 'A').hp, body(after.fight, 'A').shield?.amount]).toEqual([HP, 12]);
+    expect([rowHp(body(after.fight, 'A')), body(after.fight, 'A').shield?.amount]).toEqual([HP, 12]);
   });
 
   test('a slow of 2 rounds goes on from the GM at its tier, ends 2000 ticks from now, and halves the speed so the wait left doubles', () => {
@@ -680,7 +784,7 @@ describe('status: the GM\'s Status window, which takes no time', () => {
     const r = play(...duel(), putOn('A', grant('stunned', STUN, 3000)));
     expect([running(r).currentId, running(r).now, body(r.fight, 'A').at]).toEqual([id('M'), tick(500), tick(1000)]);
     expect(r.effects.filter(e => e.type === 'vitals')).toEqual([{
-      type: 'vitals', hunterId: hunterId('h-A'), hp: HP, life: { at: 'up', hp: HP }, mana: 10, fatigue: 0,
+      type: 'vitals', hunterId: hunterId('h-A'), life: { at: 'up', hp: HP }, mana: 10, fatigue: 0,
       statuses: [{ key: statusKey('stunned'), def: STUN, source: { id: null, tier: 0 }, rounds: 3 }],
     }]);
   });
@@ -696,8 +800,8 @@ describe('status: the GM\'s Status window, which takes no time', () => {
   test('in setup the GM\'s status and hand edit stand from the start, and the sheet hears of both', () => {
     const r = play(add(row('A', 'party'), row('M', 'foe')), putOn('A', grant('marked', MARK, 2000)), adjust('A', { hp: -3 }));
     expect(r.fight?.phase).toBe('setup');
-    expect(r.effects.filter(e => e.type === 'vitals').map(e => e.type === 'vitals' && [e.hp, e.statuses.map(x => [x.key, x.rounds])])).toEqual([
-      [HP, [['marked', 2]]], [HP - 3, [['marked', 2]]],
+    expect(r.effects.filter(e => e.type === 'vitals').map(e => e.type === 'vitals' && [e.life, e.statuses.map(x => [x.key, x.rounds])])).toEqual([
+      [{ at: 'up', hp: HP }, [['marked', 2]]], [{ at: 'up', hp: HP - 3 }, [['marked', 2]]],
     ]);
   });
 
@@ -713,7 +817,7 @@ describe('status: the GM\'s Status window, which takes no time', () => {
     const r = play(...duel({ statuses: [st('marked', 1000)] }), pass('A'), pass('M'));
     expect(running(r).now).toBe(tick(1000));
     expect(r.effects.filter(e => e.type === 'vitals')).toEqual([
-      { type: 'vitals', hunterId: hunterId('h-A'), hp: HP, life: { at: 'up', hp: HP }, mana: 10, fatigue: 0, statuses: [] },
+      { type: 'vitals', hunterId: hunterId('h-A'), life: { at: 'up', hp: HP }, mana: 10, fatigue: 0, statuses: [] },
     ]);
   });
 
@@ -811,8 +915,8 @@ describe('the ground: the GM paints terrain and puts zones down (4.7, 5.3)', () 
     const back = parseFight(JSON.parse(JSON.stringify(r.fight)), lower);
     expect(back).not.toBeNull();
     const a = back!.rows.find(x => x.id === 'A')!;
-    expect([a.hp, a.mana]).toEqual([a.sheet.hpMax, Math.min(body(r.fight, 'A').mana, a.sheet.manaMax)]);
-    expect(a.sheet.hpMax).toBeLessThan(body(r.fight, 'A').hp);
+    expect([rowHp(a), a.mana]).toEqual([a.sheet.hpMax, Math.min(body(r.fight, 'A').mana, a.sheet.manaMax)]);
+    expect(a.sheet.hpMax).toBeLessThan(rowHp(body(r.fight, 'A')));
   });
 
   test('a fight with walls and zones round-trips through parseFight', () => {
@@ -838,13 +942,13 @@ describe('a zone on the ground (4.7)', () => {
     const a = body(r.fight, 'A'), start = body(play(...duel()).fight, 'A');
     // A's turn starts again a round after it passed: 10 a round for (now - t0) ticks, a round being 1000
     expect(running(r).currentId).toBe(id('A'));
-    expect(start.hp - a.hp).toBe(Math.round(10 * (running(r).now - t0) / RULES.fight.round));
+    expect(rowHp(start) - rowHp(a)).toBe(Math.round(10 * (running(r).now - t0) / RULES.fight.round));
     expect(a.statuses.some(s => s.def.label === 'Fire' && s.until === null)).toBe(true);
   });
 
   test('what a fire pays over a span does not depend on how the span is split into turns', () => {
     const rate = 7, one = inFire(1, zone('Fire', [[0, 2]], [burn(rate)])), three = inFire(3, zone('Fire', [[0, 2]], [burn(rate)]));
-    const paid = (x: typeof one) => body(play(...duel()).fight, 'A').hp - body(x.r.fight, 'A').hp;
+    const paid = (x: typeof one) => rowHp(body(play(...duel()).fight, 'A')) - rowHp(body(x.r.fight, 'A'));
     expect(paid(one)).toBe(Math.round(rate * (running(one.r).now - one.t0) / RULES.fight.round));
     expect(paid(three)).toBe(Math.round(rate * (running(three.r).now - three.t0) / RULES.fight.round));
   });
@@ -861,10 +965,10 @@ describe('a zone on the ground (4.7)', () => {
       return f;
     };
     const step = (x: number): Command => ({ type: 'move', by: id('A'), to: place(x, 2) });
-    const hp0 = body(play(...duel()).fight, 'A').hp;
-    expect(hp0 - body(asA(step(1)), 'A').hp).toBe(5);
-    expect(hp0 - body(asA(step(1), pass('A'), pass('A')), 'A').hp).toBe(5);
-    expect(hp0 - body(asA(step(1), step(2), step(1)), 'A').hp).toBe(10);
+    const hp0 = rowHp(body(play(...duel()).fight, 'A'));
+    expect(hp0 - rowHp(body(asA(step(1)), 'A'))).toBe(5);
+    expect(hp0 - rowHp(body(asA(step(1), pass('A'), pass('A')), 'A'))).toBe(5);
+    expect(hp0 - rowHp(body(asA(step(1), step(2), step(1)), 'A'))).toBe(10);
   });
 
   test('two slowing zones on one tile apply the stronger slow, not both, and a slow holds only while the body stands inside', () => {
@@ -884,7 +988,7 @@ describe('a zone on the ground (4.7)', () => {
     const { r, t0 } = inFire(2, zone('Fire', [[0, 2]], [burn(10)], { duration: tick(500) }));
     expect(running(r).zones).toEqual([]);
     expect(running(r).log.some(l => l.text.includes('Fire is gone.'))).toBe(true);
-    expect(body(play(...duel()).fight, 'A').hp - body(r.fight, 'A').hp).toBe(Math.round(10 * 500 / RULES.fight.round));
+    expect(rowHp(body(play(...duel()).fight, 'A')) - rowHp(body(r.fight, 'A'))).toBe(Math.round(10 * 500 / RULES.fight.round));
     expect(body(r.fight, 'A').statuses.filter(s => s.zone !== undefined)).toEqual([]);
     void t0;
   });
@@ -965,12 +1069,12 @@ describe('a zone on the ground (4.7)', () => {
     const spikes: Op = { op: 'damage', type: 'physical', amount: N(5), when: 'use' };
     const a = auraOf([spikes], 1, { foesOnly: true });
     const r = play(...trio(a, [0, 5], [2, 2]), cast(a));
-    const hp0 = body(r.fight, 'M').hp;
+    const hp0 = rowHp(body(r.fight, 'M'));
     const came = onA(r.fight, step(1, 2));
-    expect(hp0 - body(came, 'M').hp).toBe(5);
+    expect(hp0 - rowHp(body(came, 'M'))).toBe(5);
     expect(inAura(came, 'A')).toBe(false);
     const stayed = onA(came, step(1, 3), { type: 'endTurn', by: id('A') });
-    expect(hp0 - body(stayed, 'M').hp).toBe(5);
+    expect(hp0 - rowHp(body(stayed, 'M'))).toBe(5);
   });
 
   test('an aura ends when its user goes down, and closes the hold of who stood in it', () => {
@@ -1152,7 +1256,7 @@ describe('a delayed effect (kits design 1.6, table 2.2)', () => {
     ops: [{ op: 'applyStatus', key: statusKey('hemo'), def, duration: tick(1000), ...(stacks > 1 ? { stacks } : {}) }] });
   const cleanse = ability('curse', 'cleanse', null, { ...FAR, effect: null, delivery: { kind: 'sure' }, ops: [{ op: 'cureStatus', key: statusKey('hemo') }] });
   const sheets = (fight: Fight | null) => ({ a: body(fight, 'A').sheet, m: body(fight, 'M').sheet });
-  const lost = (fight: Fight | null, name: string) => { const b = body(fight, name); return b.sheet.hpMax - b.hp; };
+  const lost = (fight: Fight | null, name: string) => { const b = body(fight, name); return b.sheet.hpMax - rowHp(b); };
   const use = (a: Ability, at = 'M'): Command => ({ type: 'act', by: id('A'), ability: a.id, aim: id(at), rolls: rolls() });
 
   test('the machine, cell by cell: armed lands when due, a cure cancels or sets it off, a price, a fall and the fight\'s end land nothing', () => {
@@ -1229,7 +1333,7 @@ describe('a zone on the ground: the kits\' upkeep, cap per owner and end (kits d
     // laid at 0; A's next turn at 1000 pays a round of 10 fatigue on top of the support's own 6
     expect([body(paid.fight, 'A').fatigue, running(paid).zones.length]).toEqual([RULES.fight.abilityKinds.support.fatigue + 10, 1]);
     const broke = play(...duel({ abilities: [keep] }), lay(keep), { type: 'adjust', id: id('A'), fatigue: 999 }, pass('M'));
-    expect([running(broke).zones, body(broke.fight, 'A').hp]).toEqual([[], self(broke.fight).hpMax]);
+    expect([running(broke).zones, rowHp(body(broke.fight, 'A'))]).toEqual([[], self(broke.fight).hpMax]);
     expect(running(broke).log.some(l => l.text.includes('Boundary ends: '))).toBe(true);
   });
 
@@ -1238,16 +1342,16 @@ describe('a zone on the ground: the kits\' upkeep, cap per owner and end (kits d
     const r = play(...duel({ abilities: [keep] }), lay(keep), lay(keep), lay(keep), lay(keep));
     const z = running(r).zones;
     expect(z.length).toBe(RULES.fight.kit.zonesPerOwner);
-    expect(body(r.fight, 'A').hp).toBe(self(r.fight).hpMax);
+    expect(rowHp(body(r.fight, 'A'))).toBe(self(r.fight).hpMax);
     expect(running(r).log.some(l => l.text.includes('Boundary gives way'))).toBe(true);
   });
 
   test('its end lands on who stands in it when its time passes a round or more after it was laid; younger, nothing lands', () => {
     const late = boundary({ duration: tick(1500), end: [hit10] }), soon = boundary({ duration: tick(500), end: [hit10] });
     const r = play(...duel({ abilities: [late] }), lay(late), pass('M'), pass('A'));
-    expect(self(r.fight).hpMax - body(r.fight, 'A').hp).toBe(afterDefence(10, 'physical', self(r.fight), self(r.fight), RULES));
+    expect(self(r.fight).hpMax - rowHp(body(r.fight, 'A'))).toBe(afterDefence(10, 'physical', self(r.fight), self(r.fight), RULES));
     const y = play(...duel({ abilities: [soon] }), lay(soon), pass('M'), pass('A'));
-    expect(self(y.fight).hpMax - body(y.fight, 'A').hp).toBe(0);
+    expect(self(y.fight).hpMax - rowHp(body(y.fight, 'A'))).toBe(0);
   });
 
   test('a zone price ends the user\'s zone of that name and lands its end once it is a round old; with none it is refused', () => {
@@ -1255,7 +1359,7 @@ describe('a zone on the ground: the kits\' upkeep, cap per owner and end (kits d
     const pop = ability('support', 'pop', null, { aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null, prices: [{ kind: 'zone', name: 'Boundary', take: 'one' }] });
     refuses(play(...duel({ abilities: [keep, pop] })).fight, lay(pop), 'zone');
     const r = play(...duel({ abilities: [keep, pop] }), lay(keep), pass('M'), lay(pop));
-    expect([running(r).zones, self(r.fight).hpMax - body(r.fight, 'A').hp]).toEqual([[], afterDefence(10, 'physical', self(r.fight), self(r.fight), RULES)]);
+    expect([running(r).zones, self(r.fight).hpMax - rowHp(body(r.fight, 'A'))]).toEqual([[], afterDefence(10, 'physical', self(r.fight), self(r.fight), RULES)]);
   });
 
   test('a zone\'s triggers ride on its hold: a body that starts its turn inside sets them off', () => {
@@ -1283,7 +1387,7 @@ describe('a zone on the ground: the kits\' upkeep, cap per owner and end (kits d
     expect(new Set((fight as Extract<Fight, { phase: 'ended' }>).summary.down)).toEqual(new Set([id('A'), id('M')]));
     const fell = last.findIndex(e => e.type === 'defeated');
     expect(fell, 'the zone\'s end downed M in the pass that ended the fight').toBeGreaterThan(-1);
-    expect(last.some(e => e.type === 'vitals' && e.hunterId === hunterId('h-A') && e.hp === 0), 'A\'s fall reaches its sheet').toBe(true);
+    expect(last.some(e => e.type === 'vitals' && e.hunterId === hunterId('h-A') && e.life.at === 'dying'), 'A\'s fall reaches its sheet').toBe(true);
     expect(last.slice(fell).some(e => e.type === 'turnStarted'), 'no turn began after the zone downed both').toBe(false);
   });
 });
@@ -1395,14 +1499,14 @@ describe('a limited use (kits design 1.4, table 2.3)', () => {
     const v = r.effects.filter(e => e.type === 'vitals').at(-1);
     if (v?.type !== 'vitals') throw new Error('no vitals effect');
     const before = { ...newHunter(RULES), used: {} };
-    const after = sheetEdit(before, { type: 'totals', hp: v.hp, mana: v.mana, fatigue: v.fatigue, statuses: v.statuses, used: v.used ?? {} }, RULES);
+    const after = sheetEdit(before, { type: 'totals', life: v.life, mana: v.mana, fatigue: v.fatigue, statuses: v.statuses, used: v.used ?? {} }, RULES);
     if (isRefused(after)) throw new Error(after.why);
     expect(after.used).toEqual({ [daily.id]: 1 });
     refuses(play(...duel({ abilities: [daily], used: after.used })).fight, hit('A', 'M', daily), 'noUses');
     const rested = rest(after, 'long', { hpMax: 100, manaMax: 100, fatigueMax: 100 }, RULES);
     expect(rested.used).toEqual({});
     expect(play(...duel({ abilities: [daily], used: rested.used }), hit('A', 'M', daily)).effects.some(e => e.type === 'refused')).toBe(false);
-    const kept = sheetEdit(after, { type: 'totals', hp: v.hp, mana: v.mana, fatigue: v.fatigue, statuses: v.statuses }, RULES);
+    const kept = sheetEdit(after, { type: 'totals', life: v.life, mana: v.mana, fatigue: v.fatigue, statuses: v.statuses }, RULES);
     expect(!isRefused(kept) && kept.used).toEqual({ [daily.id]: 1 });
   });
 });
@@ -1433,7 +1537,7 @@ describe('wards and stealth (kits design 8.1 and 8.7, tables 8.9.4 and 8.9.5)', 
 
   test('an invulnerable body is not taken under 1 HP; its shield still takes the hit first', () => {
     const r = play(...duel({ abilities: [HIT, STONE] }), use('A', STONE), hit('M', 'A', BIG));
-    expect(body(r.fight, 'A').hp).toBe(1);
+    expect(rowHp(body(r.fight, 'A'))).toBe(1);
   });
 
   test('a safeguard stops a harmful status from a foe, never a friend\'s', () => {
@@ -1505,7 +1609,7 @@ describe('forced movement: a shove, a blink, a swap (kits design 8.3, table 8.9.
     const m = body(r.fight, 'M');
     expect(m.place).toEqual(place(5, 7));
     expect(m.statuses.some(x => x.zone === 'z1')).toBe(true);
-    expect(m.hp).toBe(body(play(placed([5, 2], [5, 4]), start(['A', 20], ['M', 10]), hit('A', 'M', P3)).fight, 'M').hp);
+    expect(rowHp(m)).toBe(rowHp(body(play(placed([5, 2], [5, 4]), start(['A', 20], ['M', 10]), hit('A', 'M', P3)).fight, 'M')));
   });
 
   test('a crowd packs: of a push, the farthest moves first', () => {
@@ -1535,7 +1639,7 @@ describe('forced movement: a shove, a blink, a swap (kits design 8.3, table 8.9.
     expect(needs(LEAP, body(g, 'A'), g.rows, place(5, 8), g.grid, g.now, RULES).dice).toEqual({});
     expect(needs(BURST, body(g, 'A'), g.rows, place(5, 8), g.grid, g.now, RULES).react).toEqual([id('A')]);
     const r = reduce(g,{ type: 'act', by: id('A'), ability: LEAP.id, aim: place(5, 8), rolls: rolls() }, ctx);
-    expect([body(r.fight, 'A').place, body(r.fight, 'M').armed?.spent, body(r.fight, 'M').hp]).toEqual([place(5, 8), false, body(g, 'M').hp]);
+    expect([body(r.fight, 'A').place, body(r.fight, 'M').armed?.spent, rowHp(body(r.fight, 'M'))]).toEqual([place(5, 8), false, rowHp(body(g, 'M'))]);
   });
 
   test('a swap exchanges the places of its user and an ally', () => {
@@ -1563,7 +1667,7 @@ describe('a zone act: shift and grow (kits design 8.5.4)', () => {
     expect(z.ground.kind === 'around' && z0.ground.kind === 'around' ? [z0.ground.anchor, z.ground.anchor] : null).toEqual([{ kind: 'place', at: place(5, 4) }, { kind: 'place', at: place(5, 10) }]);
     const m = body(r.fight, 'M');
     expect(m.statuses.some(x => x.zone === z.id)).toBe(true);
-    expect(m.hp).toBe(body(laid.fight, 'M').hp);
+    expect(rowHp(m)).toBe(rowHp(body(laid.fight, 'M')));
   });
 
   test('a grow widens an around zone by 2, to the most a field may be', () => {
@@ -1623,8 +1727,8 @@ describe('a reaction (kits design 8.4, table 8.9.1)', () => {
     const parried = play(...foeFirst([HIT, PARRY]), armed('A', PARRY), hit('M', 'A'));
     const a0 = body(plain.fight, 'A'), a1 = body(parried.fight, 'A');
     const sheet = a0.sheet;
-    expect(a0.sheet.hpMax - a0.hp).toBe(afterDefence(10, 'physical', sheet, sheet, RULES));
-    expect(a1.sheet.hpMax - a1.hp).toBe(afterDefence(10 * (1 - K.parry), 'physical', sheet, sheet, RULES));
+    expect(a0.sheet.hpMax - rowHp(a0)).toBe(afterDefence(10, 'physical', sheet, sheet, RULES));
+    expect(a1.sheet.hpMax - rowHp(a1)).toBe(afterDefence(10 * (1 - K.parry), 'physical', sheet, sheet, RULES));
     expect(a1.at - a0.at).toBe(Math.round(RULES.fight.round * RULES.fight.cost.quick / a1.speed));
     expect(a1.armed?.spent).toBe(true);
   });
@@ -1633,7 +1737,7 @@ describe('a reaction (kits design 8.4, table 8.9.1)', () => {
     const twice = play(...foeFirst([HIT, PARRY]), armed('A', PARRY), hit('M', 'A', HIT), { ...hit('M', 'A', HIT), force: true } as Command);
     const a = body(twice.fight, 'A');
     const one = afterDefence(10 * (1 - K.parry), 'physical', a.sheet, a.sheet, RULES), full = afterDefence(10, 'physical', a.sheet, a.sheet, RULES);
-    expect(a.sheet.hpMax - a.hp).toBe(one + full);
+    expect(a.sheet.hpMax - rowHp(a)).toBe(one + full);
     // its quick action's time pushed A's turn past M's next one: A is spent through M's turn, and armed again at its own
     let g = play(...foeFirst([HIT, PARRY]), armed('A', PARRY), hit('M', 'A')).fight!;
     expect([running({ fight: g }).currentId, body(g, 'A').armed?.spent]).toEqual(['M', true]);
@@ -1647,7 +1751,7 @@ describe('a reaction (kits design 8.4, table 8.9.1)', () => {
     expect(body(unfired.fight, 'A').armed?.spent).toBe(false);
     const bloodParry = reaction('bparry', 'before', { ops: [{ op: 'guard', share: K.parry }], prices: [{ kind: 'hp', amount: { kind: 'flat', n: 3 } }] });
     const plain = play(...foeFirst([HIT, PARRY]), armed('A', PARRY), hit('M', 'A')), paid = play(...foeFirst([HIT, bloodParry]), armed('A', bloodParry), hit('M', 'A'));
-    expect([body(paid.fight, 'A').armed?.spent, body(plain.fight, 'A').hp - body(paid.fight, 'A').hp]).toEqual([true, 3]);
+    expect([body(paid.fight, 'A').armed?.spent, rowHp(body(plain.fight, 'A')) - rowHp(body(paid.fight, 'A'))]).toEqual([true, 3]);
   });
 
   test('a reaction holds only what lands from it (a trigger\'s ops, a guard, a negate): one that would push or give an extra action is refused when read', () => {
@@ -1660,20 +1764,20 @@ describe('a reaction (kits design 8.4, table 8.9.1)', () => {
 
   test('a negate leaves the strike nothing more to do; its user has paid', () => {
     const r = play(...foeFirst([HIT, NEGATE]), armed('A', NEGATE), hit('M', 'A'));
-    expect(body(r.fight, 'A').hp).toBe(body(r.fight, 'A').sheet.hpMax);
+    expect(rowHp(body(r.fight, 'A'))).toBe(body(r.fight, 'A').sheet.hpMax);
     expect(body(r.fight, 'M').fatigue).toBe(HIT.cost.fatigue);
   });
 
   test('a lethal reaction lands before the killing hit: a ward of stone keeps its reactor at 1', () => {
     const r = play(...foeFirst([HIT, STAND]), armed('A', STAND), hit('M', 'A', BIG));
-    expect(body(r.fight, 'A').hp).toBe(1);
-    expect(body(play(...foeFirst([HIT, STAND]), hit('M', 'A', BIG)).fight, 'A').hp).toBe(0);
+    expect(rowHp(body(r.fight, 'A'))).toBe(1);
+    expect(rowHp(body(play(...foeFirst([HIT, STAND]), hit('M', 'A', BIG)).fight, 'A'))).toBe(0);
   });
 
   test('an after reaction answers a landed hit at the attacker, a dodge sets none off', () => {
     const r = play(...foeFirst([HIT, RIPOSTE]), armed('A', RIPOSTE), hit('M', 'A'));
     const m = body(r.fight, 'M');
-    expect(m.sheet.hpMax - m.hp).toBe(afterDefence(10, 'physical', body(r.fight, 'A').sheet, m.sheet, RULES));
+    expect(m.sheet.hpMax - rowHp(m)).toBe(afterDefence(10, 'physical', body(r.fight, 'A').sheet, m.sheet, RULES));
   });
 
   test('a turn reaction moves its reactor\'s turn before the named body\'s, and adds no turn', () => {
@@ -1699,7 +1803,7 @@ describe('a reaction (kits design 8.4, table 8.9.1)', () => {
     expect(needs(HIT, body(g, 'M'), g.rows, id('A'), g.grid, g.now, RULES).second).toEqual([id('A')]);
     const r = reduce(g, { type: 'act', by: id('M'), ability: HIT.id, aim: id('A'), rolls: { dice: { [id('A')]: [] }, react: { [id('A')]: 1 }, second: { [id('A')]: 20 } } }, ctx);
     expect(r.effects.filter(e => e.type === 'refused' || e.type === 'crit')).toEqual([]);
-    expect(body(r.fight, 'A').hp).toBe(body(play(...foeFirst([HIT]), hit('M', 'A', HIT, 20)).fight, 'A').hp);
+    expect(rowHp(body(r.fight, 'A'))).toBe(rowHp(body(play(...foeFirst([HIT]), hit('M', 'A', HIT, 20)).fight, 'A')));
   });
 
   test('a use sets off at most 4 reactions', () => {

@@ -23,6 +23,9 @@ import { landOps } from '../src/core/combat/land.ts';
 import type { Stack, StackCtx } from '../src/core/combat/stacks.ts';
 import { WALK_EVENTS as STACK_WALK } from './models/stack-events.ts';
 import { rng } from './models/fight-play.ts';
+import { rowHp } from '../src/core/combat/row-hp.ts';
+import { atHp, lifeAt } from './fixtures/life.ts';
+import type { RowPatch } from './fixtures/life.ts';
 
 const f = (text: string): Formula => { const p = parseFormula(text, RULES); if (!p.ok) throw new Error(p.error); return p.formula; };
 const def = (...ops: Op[]): StatusDef => ({ label: 'Test', desc: '', ops });
@@ -30,12 +33,12 @@ const status = (key: string, d: StatusDef, until: number | null, o: Partial<Stat
   statusOn(d, { key: statusKey(key), source: { id: null, tier: 0 }, until: until === null ? null : tick(until), since: tick(0), settledAt: tick(0), ...o });
 const stats = (o: Partial<Stats> = {}): Stats => ({ ...baseStats(RULES.fight), ...o });
 const hunterOf = (s: Stats = stats()): Origin => ({ kind: 'hunter', build: { stats: s, level: 1, gear: kitGear('light', RULES), perks: {} } });
-function body(origin: Origin = hunterOf(), o: Partial<Body> = {}): Body {
-  const { stats: st, sheet } = modified(origin, [], RULES);
+function body(origin: Origin = hunterOf(), o: RowPatch<Body> = {}): Body {
+  const { stats: st, sheet } = modified(origin, [], RULES), { kind, hp, ...rest } = o;
   return {
-    id: combatantId('b'), side: 'party', kind: origin.kind === 'hunter' ? 'hunter' : 'monster', origin, tier: 0, stats: st, sheet,
-    place: place(0, 0), hp: sheet.hpMax, mana: sheet.manaMax, fatigue: 0, shield: null, stagger: null, channel: null, threat: null,
-    statuses: [], readyAt: {}, abilities: [], intent: null, holder: null, xp: 0, name: 'Body', at: tick(1000), speed: sheet.speed, tie: 0, ...o,
+    id: combatantId('b'), side: 'party', ...lifeAt(kind ?? (origin.kind === 'hunter' ? 'hunter' : 'monster'), hp ?? sheet.hpMax), origin, tier: 0, stats: st, sheet,
+    place: place(0, 0), mana: sheet.manaMax, fatigue: 0, shield: null, stagger: null, channel: null, threat: null,
+    statuses: [], readyAt: {}, abilities: [], intent: null, holder: null, xp: 0, name: 'Body', at: tick(1000), speed: sheet.speed, tie: 0, ...rest,
   };
 }
 const near = (actual: readonly number[], expected: readonly number[], digits: number): void => {
@@ -106,8 +109,8 @@ describe('speed changes', () => {
     const weak = [status('weak', def({ op: 'stat', key: 'vit', amount: -30 }), 3000)];
     const after = withStatuses(full, weak, tick(500), RULES);
     expect(after.sheet.hpMax).toBeLessThan(full.sheet.hpMax);
-    expect(after.hp).toBe(after.sheet.hpMax);
-    expect(withStatuses({ ...full, hp: 5 }, weak, tick(500), RULES).hp).toBe(5);
+    expect(rowHp(after)).toBe(after.sheet.hpMax);
+    expect(rowHp(withStatuses(atHp(full, 5), weak, tick(500), RULES))).toBe(5);
   });
 });
 
@@ -479,21 +482,21 @@ describe('wave 2\'s sheet and share ops (kits design 8.1)', () => {
   test('a per-round damage reads its bearer\'s damage taken share at the settle: 10 a round on a body taking +50% is 15', () => {
     const b = body(hunterOf(), { statuses: [status('brittle', def({ op: 'share', on: 'taken', pct: 50 }), null)] });
     const due = { key: statusKey('burn'), op: { op: 'damage', type: 'magical', amount: f('10'), when: 'turn' } as const, tier: 0, before: 0, share: 1, stacks: 1 };
-    expect(b.hp - payDue(b, due, [], tick(0), RULES).hp).toBe(15);
+    expect(rowHp(b) - rowHp(payDue(b, due, [], tick(0), RULES))).toBe(15);
   });
 
   test('a heal of the target\'s max HP reads "Heals fully" and fills any body; a heal that only reaches a big number is that number', () => {
     expect(opLines([{ op: 'heal', amount: FULL_HEAL, when: 'use' }, { op: 'heal', amount: f('99999'), when: 'use' }], 0, RULES)).toEqual(['Heals fully', 'Heals 99999 HP']);
     const b = body(hunterOf(), { hp: 1 }), rows = new Map([[b.id, b]]);
     landOps(rows, [{ op: 'heal', amount: FULL_HEAL, when: 'use' }], null, [b.id], { id: null, tier: 0 }, tick(0), RULES);
-    expect(rows.get(b.id)!.hp).toBe(b.sheet.hpMax);
+    expect(rowHp(rows.get(b.id)!)).toBe(b.sheet.hpMax);
   });
 
   test('a burn meets a shield as a hit does (rule 13): a live shield takes it first, one past its end takes nothing', () => {
     const due = { key: statusKey('burn'), op: { op: 'damage', type: 'magical', amount: f('10'), when: 'turn' } as const, tier: 0, before: 0, share: 1, stacks: 1 };
     const shielded = body(hunterOf(), { shield: { amount: 4, until: tick(50) } });
     const live = payDue(shielded, due, [], tick(40), RULES), past = payDue(shielded, due, [], tick(60), RULES);
-    expect([shielded.hp - live.hp, live.shield]).toEqual([6, null]);
-    expect(shielded.hp - past.hp).toBe(10);
+    expect([rowHp(shielded) - rowHp(live), live.shield]).toEqual([6, null]);
+    expect(rowHp(shielded) - rowHp(past)).toBe(10);
   });
 });

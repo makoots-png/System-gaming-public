@@ -30,6 +30,7 @@ import { parseFormula, printFormula } from '../src/core/formula.ts';
 import { parseAbility, parseFight } from '../src/core/combat/fight-parse.ts';
 import { cid, day, dev, gmKey, hid, iid, qid, rbid, room, shid, tid } from './fixtures/ids.ts';
 import { dayKey } from '../src/core/day.ts';
+import { rowHp } from '../src/core/combat/row-hp.ts';
 
 type Raw = Record<string, any>;
 
@@ -59,7 +60,7 @@ const onlyHunter = (save: Save): Hunter => {
 const BASE_STATS = Object.fromEntries(STAT_KEYS.map(k => [k, RULES.fight.statBase]));
 
 /** A running fight as the fight's reducer stores it: a new hunter against a goblin, the hunter's turn first. */
-const ctx: Ctx = { rules: RULES, life: () => null };
+const ctx: Ctx = { rules: RULES };
 function runningFight(): Fight {
   const goblin = seedMonsters(RULES).find(m => m.name === 'Goblin')!;
   const h = newHunter();
@@ -961,7 +962,7 @@ describe('the Hunter type', () => {
     const h: SheetHunter & RowHunter = newHunter();
     const shadow: RowShadow = { ...newShadow(), id: 'sh1' };
     const monster: RowMonster = newMonster();
-    expect(hunterRow(h, combatantId('c1'), RULES).hp).toBe(RULES.fight.hpBase);
+    expect(rowHp(hunterRow(h, combatantId('c1'), RULES))).toBe(RULES.fight.hpBase);
     expect(shadowRow(shadow, 'h1', combatantId('c2'), RULES).kind).toBe('shadow');
     expect(monsterRows(monster, [combatantId('c3')], RULES)).toHaveLength(1);
   });

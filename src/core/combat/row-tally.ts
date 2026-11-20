@@ -5,6 +5,7 @@
 // taken down at any depth of a use or a trigger (`fire` in triggers.ts). A hunter row keeps the whole tally; any other
 // row keeps only its kills, which the formula's `kills` reads, so a fight of sixty monsters stays small in the save.
 // Stored sparse: a field that never moved is absent, and `tallyOf` reads absent as zero.
+import { isUp, rowHp } from './row-hp.ts';
 import type { Body } from './effect-ops.ts';
 import type { Ability, CombatantId, Outcome } from './ability-types.ts';
 import type { Raised } from './triggers.ts';
@@ -56,7 +57,7 @@ export type TallyEvent =
   /** Events raised at any depth: a `kill` takes its foe down for its bearer. */
   | { readonly type: 'raised'; readonly events: readonly Raised[] };
 
-const pct = (b: Body): number => (b.sheet.hpMax > 0 ? Math.max(0, Math.round((b.hp / b.sheet.hpMax) * 100)) : 0);
+const pct = (b: Body): number => (b.sheet.hpMax > 0 ? Math.max(0, Math.round((rowHp(b) / b.sheet.hpMax) * 100)) : 0);
 /** Keeps only the fields that differ from none: the stored tally is sparse. */
 function sparse(t: RowTally): Partial<RowTally> | undefined {
   const out: Record<string, unknown> = {};
@@ -108,7 +109,7 @@ export function tallied(rows: readonly Body[], e: TallyEvent): Body[] {
         if (hit) bump(o.target, t => ({ ...t, struck: t.struck + 1 }));
         if (o.avoid === 'out' || o.avoid === 'resisted') bump(o.target, t => ({ ...t, avoided: t.avoided + 1 }));
         if (o.type === 'heal' && !foe && o.target !== e.by && o.dealt > 0) {
-          const up = !!was && was.hp <= 0 && target.hp > 0;
+          const up = !!was && !isUp(was) && isUp(target);
           bump(e.by, t => ({ ...t, healed: t.healed + o.dealt, raised: t.raised + (up ? 1 : 0) }));
         }
         if (foe && o.statuses.length) bump(e.by, t => ({ ...t, hexes: t.hexes + o.statuses.length }));
@@ -120,8 +121,8 @@ export function tallied(rows: readonly Body[], e: TallyEvent): Body[] {
         const a = map.get(b.id);
         if (!a) continue;
         bump(a.id, t => {
-          const lost = Math.max(0, b.hp - a.hp), fell = b.hp > 0 && a.hp <= 0, up = a.hp > 0;
-          const low = up ? Math.min(t.low, pct(a)) : t.low, one = t.exactOne || (up && a.hp === 1);
+          const lost = Math.max(0, rowHp(b) - rowHp(a)), fell = isUp(b) && !isUp(a), up = isUp(a);
+          const low = up ? Math.min(t.low, pct(a)) : t.low, one = t.exactOne || (up && rowHp(a) === 1);
           return lost || fell || low !== t.low || one !== t.exactOne ? { ...t, taken: t.taken + lost, downs: t.downs + (fell ? 1 : 0), low, exactOne: one } : t;
         });
       }

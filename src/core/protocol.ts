@@ -11,8 +11,8 @@ import type { MonsterTemplate } from './registry/monsters.ts';
 import { RUN_OUTCOMES } from './combat/odds.ts';
 import type { RunOutcome } from './combat/odds.ts';
 import { CAP_ROUNDS } from './combat/play.ts';
-import { LIFE_STATES } from './hunter/vitals.ts';
-import type { LifeState } from './hunter/vitals.ts';
+import { LIFE_STATES, SAVE_UP, parseLife } from './hunter/vitals.ts';
+import type { Life, LifeState } from './hunter/vitals.ts';
 import type { ShadowOrigin } from './hunter/shadows.ts';
 import { BUNDLE_NAME, newRewards, parseRewards, parseWords } from './rewards.ts';
 import type { SystemWords } from './rewards.ts';
@@ -34,6 +34,7 @@ import { parseSheetStatus, parseStatusDef } from './combat/fight-parse.ts';
 import { LOG_LINE_MAX, MAX_STATUSES, NAME_MAX, fightId } from './combat/fight-types.ts';
 import type { Fight } from './combat/fight-types.ts';
 import { tick } from './combat/timeline.ts';
+import { FOE_LIFE_STATES } from './combat/row-life.ts';
 import type { Tick } from './combat/timeline.ts';
 import { BANDS, DOC_AHEAD, DOC_DEFS_MAX, DOC_INTENT_LINES, DOC_LOG, DOC_READY, DOC_ROWS, DOC_STATUSES, DOC_TILES_MAX, DOC_ZONE_RUNS, INTENT_LINE_MAX, TABLE_REFUSALS, UNSEEN, fightWire, unpackBits } from './combat/fight-doc.ts';
 import type { Band, DocBurst, DocChannel, DocGrid, DocIntent, DocPlace, DocTaunt, DocRefusal, DocStatus, DocZone, FightDoc, FightDocRow } from './combat/fight-doc.ts';
@@ -97,6 +98,8 @@ const text = (n: number) => (v: unknown): string => (typeof v === 'string' ? v.s
 const filled = (n: number) => (v: unknown): string => { const s = text(n)(v); return s.trim() ? s : refuse(); };
 const int = (lo: number, hi: number) => (v: unknown): number =>
   (typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, Math.trunc(v))) : refuse());
+/** A face of the d20 a death save rolls: a whole number from 1 to 20. Refused, never clamped: a 0 read as 1 would count two failures. */
+const d20Face = (v: unknown): number => (typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= SAVE_UP ? v : refuse());
 const bool = (v: unknown): boolean => (typeof v === 'boolean' ? v : refuse());
 /** A reader of one of `list`: anything else refuses the event. */
 const choiceOf = <T extends string>(list: readonly T[]) => (v: unknown): T => oneOf(v, list, null) ?? refuse();
@@ -225,9 +228,11 @@ export type QuestPayload = Base & { to: SheetKey[]; quest: QuestOffer };
 export type HpPayload = Base & { to: SheetKey[]; hp: number; mana: number; fatigue: number; reason: string };
 /**
  * The fight's write-back of a hunter on another phone (the `sendRemote` effect of src/core/combat/fight-types.ts): its
- * HP, mana, fatigue and statuses as the fight holds them. Totals, so a repeat changes nothing. For one hunter.
+ * life (its HP with it), mana, fatigue and statuses as the fight's row holds them. The row is the one writer of that
+ * life while the fight holds the hunter, so the player's sheet takes it as it is (grant.ts `totals`): a death save, a
+ * death and the GM's Revive all reach the sheet here. Totals, so a repeat changes nothing. For one hunter.
  */
-export type VitalsPayload = Base & { to: [SheetKey]; hp: number; mana: number; fatigue: number; statuses: SheetStatus[]; reason: string };
+export type VitalsPayload = Base & { to: [SheetKey]; life: Life; mana: number; fatigue: number; statuses: SheetStatus[]; reason: string };
 /**
  * The GM's fight took a use of item `item` by the player's hunter of `to` (src/core/combat/fight-save.ts `itemSpent`):
  * one leaves that hunter's bag now. Sent once per use the fight took, never for one it refused, so a refused cast keeps
@@ -242,7 +247,11 @@ export type SpentPayload = Base & { to: [SheetKey]; item: ItemId };
  */
 export type ShadowPayload = Base & { to: [SheetKey]; shadow: ShadowOrigin };
 export type StatusPayload = Base & { to: SheetKey[]; add: SheetStatus[]; remove: StatusKey[]; reason: string };
-/** The GM raises these dead hunters at 1 HP: the vitals `revive` event (src/core/hunter/vitals.ts) on the player's phone. */
+/**
+ * The GM raises these dead hunters at 1 HP: the vitals `revive` event (src/core/hunter/vitals.ts) on the player's phone.
+ * Only for a hunter no fight holds: a row of the GM's fight is revived by the fight's `life` command, and its phone hears
+ * the new life in `vitals`.
+ */
 export type RevivePayload = Base & { to: SheetKey[] };
 /**
  * A player's roll, shown in the GM's Table feed: the hunter who rolled it (`by`), its words and its numbers. An item or
@@ -275,6 +284,13 @@ export type StepPayload = Base & { by: SheetKey; place: DocPlace; at: Tick; dash
  * for a step.
  */
 export type CastPayload = Base & { by: SheetKey; ability: AbilityId; aim: CombatantId | DocPlace; at: Tick; dice: number[] };
+/**
+ * A player's death save in the GM's fight: the hunter of `by`, dying, rolled `roll` on the d20 on its own phone. The GM's
+ * phone takes it once by its id as the fight's `life` command (a `deathSave` with that roll) on that hunter's row, and
+ * the player's sheet changes only when the row's new life comes back in `vitals`. Not bound to a turn: the row's life
+ * refuses a save unless it is dying.
+ */
+export type DeathSavePayload = Base & { by: SheetKey; roll: number };
 /**
  * A player's pass in the GM's fight: the hunter of `by` ends its turn, at the cost of the fight's `endTurn`. `at` as for
  * a step, so a replay or a stale tap ends no later turn.
@@ -350,7 +366,7 @@ export type ChapterPayload = Base & { to: SheetKey[] } & ChapterBody;
 type Payloads = {
   offer: OfferPayload; offerEnd: OfferEndPayload; offerStop: OfferStopPayload;
   system: SystemPayload; award: AwardPayload; quest: QuestPayload; hp: HpPayload; vitals: VitalsPayload; spent: SpentPayload; status: StatusPayload; revive: RevivePayload;
-  roll: RollPayload; questUpdate: QuestUpdatePayload; used: UsedPayload; step: StepPayload; cast: CastPayload; pass: PassPayload; chain: ChainPayload;
+  roll: RollPayload; questUpdate: QuestUpdatePayload; used: UsedPayload; step: StepPayload; cast: CastPayload; pass: PassPayload; deathSave: DeathSavePayload; chain: ChainPayload;
   coinCall: CoinCallPayload; coinLand: CoinLandPayload; arm: ArmPayload; shadow: ShadowPayload; soloRun: SoloRunPayload; soloAnswer: SoloAnswerPayload; noted: NotedPayload;
   chapter: ChapterPayload;
 };
@@ -426,7 +442,7 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
   vitals: { gmOnly: true, ownSheet: false, standsFor: p => `vitals ${p.to[0]}`, read: o => {
     const to = toList(own(o, 'to')), total = (k: string): number => int(0, MAX_TOTAL)(own(o, k));
     return {
-      ...base(o), to: to.length === 1 ? [to[0]!] : refuse(), hp: total('hp'), mana: total('mana'), fatigue: total('fatigue'),
+      ...base(o), to: to.length === 1 ? [to[0]!] : refuse(), life: need(parseLife(own(o, 'life'), MAX_TOTAL)), mana: total('mana'), fatigue: total('fatigue'),
       statuses: listOf(own(o, 'statuses'), MAX_STATUSES, sheetStatus), reason: reason(o),
     };
   } },
@@ -468,6 +484,7 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
     };
   } },
   pass: { gmOnly: false, ownSheet: true, read: o => ({ ...base(o), by: sheetKey(own(o, 'by')), at: time0(own(o, 'at')) }) },
+  deathSave: { gmOnly: false, ownSheet: true, read: o => ({ ...base(o), by: sheetKey(own(o, 'by')), roll: d20Face(own(o, 'roll')) }) },
   arm: { gmOnly: false, ownSheet: true, read: o => {
     const ability = own(o, 'ability'), on = own(o, 'on');
     const id = (v: unknown, max: number) => typeof v === 'string' && v.length > 0 && v.length <= max ? v : refuse();
@@ -518,7 +535,7 @@ type EventEntry<K extends EventType> = {
 export const EVENTS: { readonly [K in EventType]: EventEntry<K> } = {
   offer: entry('offer'), offerEnd: entry('offerEnd'), offerStop: entry('offerStop'),
   system: entry('system'), award: entry('award'), quest: entry('quest'), hp: entry('hp'), vitals: entry('vitals'), spent: entry('spent'), status: entry('status'),
-  revive: entry('revive'), roll: entry('roll'), questUpdate: entry('questUpdate'), used: entry('used'), step: entry('step'), cast: entry('cast'), pass: entry('pass'),
+  revive: entry('revive'), roll: entry('roll'), questUpdate: entry('questUpdate'), used: entry('used'), step: entry('step'), cast: entry('cast'), pass: entry('pass'), deathSave: entry('deathSave'),
   chain: entry('chain'), coinCall: entry('coinCall'), coinLand: entry('coinLand'), arm: entry('arm'), shadow: entry('shadow'),
   soloRun: entry('soloRun'), soloAnswer: entry('soloAnswer'), noted: entry('noted'),
   chapter: entry('chapter'),
@@ -626,7 +643,9 @@ export type { Band, DocRefusal, FightDoc, FightDocRow, TableRefusal } from './co
  * and that a hunter's row is no longer. The shorter shape left room for what the doc once could not hold: each armed or
  * spent row's reaction by row (`reacts`, 24 entries of a 40-character row id and a 40-character ability id, 1,211): 45,768
  * and 53,627 (measured by the test), 60,179 with the eighth, 1,821 to spare, so a player's phone keeps no copy of what it
- * armed (implicit audit 3, T1).
+ * armed (implicit audit 3, T1). A row's life went on the wire in place of its down flag (`d`, the state's index, absent
+ * while up): a row that is not up is 3 characters shorter (`"d":1` for `"d":true`), one that is up the same, so the worst
+ * case, every monster up, is unchanged at 45,818 and 53,627 (measured by the test).
  */
 export const DOC_MAX = 62000;
 /**
@@ -717,6 +736,15 @@ function docStatus(v: unknown, defs: Record<string, StatusDef>): DocStatus {
 }
 /** A band on the wire, its index in `BANDS`. */
 const bandAt = (v: unknown): Band => (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < BANDS.length ? BANDS[v]! : refuse());
+/**
+ * A row's life on the wire (`d`): its state's index in `LIFE_STATES`, absent while up, one of `states`, the row's kind's
+ * table (a hunter's every state, any other row's up or dead). Anything else is refused, so a dying monster never reads.
+ */
+function wireLife<S extends LifeState>(v: unknown, states: readonly S[]): { readonly at: S } {
+  if (v === undefined) return { at: oneOf('up', states, null) ?? refuse() };
+  const at = typeof v === 'number' && Number.isInteger(v) && v > 0 ? oneOf(LIFE_STATES[v], states, null) : null;
+  return at === null ? refuse() : { at };
+}
 /** A place on the wire, `[x, y]`. */
 function wirePlace(v: unknown): DocPlace {
   if (!Array.isArray(v) || v.length !== 2) return refuse();
@@ -757,18 +785,21 @@ function fightRow(v: unknown, defs: Record<string, StatusDef>): FightDocRow {
     key: opt(own(o, 'k'), sheetKey, null), place: wirePlace(own(o, 'p')), at: time0(own(o, 'a')), speed: n('v'),
     band: bandAt(own(o, 'b')), statuses: opt(own(o, 'st'), x => listOf(x, DOC_STATUSES, s => docStatus(s, defs)), []),
     shield: opt(own(o, 'sh'), num(0, MAX_TOTAL), null), shieldLeft: opt(own(o, 'sl'), num(0, MAX_TOTAL), null), channel: opt(own(o, 'c'), docChannel, null),
-    taunt: opt(own(o, 't'), docTaunt, null), down: opt(own(o, 'd'), bool, false),
+    taunt: opt(own(o, 't'), docTaunt, null),
   };
   const kind = choiceOf(['monster', 'hunter', 'shadow', 'summon'] as const)(own(o, 'q'));
   if (kind === 'monster') {
+    const life = wireLife(own(o, 'd'), FOE_LIFE_STATES);
     const st = own(o, 'g'), stagger = st === undefined ? null : {
       fill: int(0, MAX_TOTAL)(own(obj(st), 'f')), max: int(0, MAX_TOTAL)(own(obj(st), 'm')), staggered: opt(own(obj(st), 's'), num(0, MAX_TOTAL), null),
     };
-    return { ...row, kind, intent: opt(own(o, 'in'), docIntent, null), stagger, suggest: opt(own(o, 'u'), rowId, null) };
+    return { ...row, kind, life, intent: opt(own(o, 'in'), docIntent, null), stagger, suggest: opt(own(o, 'u'), rowId, null) };
   }
   const hpMax = int(1, MAX_TOTAL)(own(o, 'hm'));
   const body = { hp: int(0, hpMax)(own(o, 'h')), hpMax, stride: int(0, MAX_TILE + 1)(own(o, 'r')), move: int(0, MAX_TILE + 1)(own(o, 'm')) };
-  return kind === 'summon' ? { ...row, kind, ...body, owner: rowId(own(o, 'o')), left: opt(own(o, 'l'), num(0, MAX_TOTAL), null) } : { ...row, kind, ...body };
+  if (kind === 'hunter') return { ...row, kind, ...body, life: wireLife(own(o, 'd'), LIFE_STATES) };
+  const life = wireLife(own(o, 'd'), FOE_LIFE_STATES);
+  return kind === 'summon' ? { ...row, kind, ...body, life, owner: rowId(own(o, 'o')), left: opt(own(o, 'l'), num(0, MAX_TOTAL), null) } : { ...row, kind, ...body, life };
 }
 /** The characters a doc's tile text may hold: each terrain's, and the unseen tile's. */
 const TILE_CHARS = new Set([...TERRAINS.map(t => TERRAIN[t].char), UNSEEN]);

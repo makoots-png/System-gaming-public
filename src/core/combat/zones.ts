@@ -7,6 +7,7 @@
 // auras a status gives off; the reducer calls it after every change of a place, a zone or the time. Burning ground, a fog
 // that slows, lava and an aura are zones; terrain (space.ts) is what a tile is, a zone what the ground does.
 import type { Tick } from './timeline.ts';
+import { isUp } from './row-hp.ts';
 import { amountOp, perRound, statusKey, statusOn, withStatuses } from './effect-ops.ts';
 import type { AuraOn, Body, Due, LandOp, Op, OpRules, Status, StatusKey } from './effect-ops.ts';
 import type { Trigger } from './triggers.ts';
@@ -93,7 +94,7 @@ export const ZONE_NAME_MAX = 40;
 
 // ── where a zone lies ──
 /** What `zoneTiles` reads of a row: where it is, and whether it is on the map. */
-type Spot = Pick<Body, 'id' | 'place' | 'hp' | 'kind'>;
+type Spot = Pick<Body, 'id' | 'place' | 'life' | 'kind'>;
 /** The tiles within `radius` of `centre` that `centre` sees: a blast's rule (space.ts `tilesOf`), so a wall stops a field. */
 export const areaTiles = (centre: Place, radius: number, grid: Grid): Place[] =>
   [...tilesOf({ kind: 'radius', radius: tiles(radius), ring: null }, centre, centre, grid).hit];
@@ -101,7 +102,7 @@ export const areaTiles = (centre: Place, radius: number, grid: Grid): Place[] =>
 export function anchorPlace(g: Extract<Ground, { kind: 'around' }>, rows: readonly Spot[]): Place | null {
   if (g.anchor.kind === 'place') return g.anchor.at;
   const id = g.anchor.id, b = rows.find(r => r.id === id);
-  return b && (b.hp > 0 || b.kind === 'hunter') ? b.place : null;
+  return b && (isUp(b) || b.kind === 'hunter') ? b.place : null;
 }
 /**
  * A zone's tiles at `now`: its list, or the area of its radius at `now` around its anchor (none when its anchor body is
@@ -170,7 +171,7 @@ export const auraOps = (ops: readonly Op[]): Op[] => ops.filter(o => o.op !== 'a
 function withAuras(rows: readonly Body[], zones: readonly Zone[], now: Tick, R: OpRules): Zone[] {
   const out = [...zones];
   for (const b of rows) {
-    if (b.hp <= 0) continue;
+    if (!isUp(b)) continue;
     for (const s of b.statuses) {
       const op = s.zone === undefined && liveAt(s, now) ? s.def.ops.find(o => o.op === 'aura') : undefined;
       if (op?.op !== 'aura') continue;
@@ -195,7 +196,7 @@ function withAuras(rows: readonly Body[], zones: readonly Zone[], now: Tick, R: 
  * body up, and still bearing its status when a status gives it off.
  */
 function stays(z: Zone, rows: readonly Body[], now: Tick): boolean {
-  const up = (id: CombatantId | null): Body | undefined => rows.find(r => r.id === id && r.hp > 0);
+  const up = (id: CombatantId | null): Body | undefined => rows.find(r => r.id === id && isUp(r));
   if ((z.until !== null && z.until <= now) || (z.endsWithOwner && !up(z.owner))) return false;
   if (z.ground.kind !== 'around' || z.ground.anchor.kind !== 'body') return true;
   const a = z.ground.anchor, b = up(a.id);
@@ -221,7 +222,7 @@ export function zoneSync(rows: readonly Body[], zones: readonly Zone[], grid: Gr
   const endOf = (id: ZoneId): Tick => { const z = all.find(x => x.id === id); return z?.until !== null && z?.until !== undefined && z.until < now ? z.until : now; };
   const entries: { id: CombatantId; due: Due }[] = [];
   const out = rows.map(b => {
-    if (b.hp <= 0 && b.kind !== 'hunter') return b;
+    if (!isUp(b) && b.kind !== 'hunter') return b;
     let changed = false;
     const list: Status[] = [];
     for (const s of b.statuses) {

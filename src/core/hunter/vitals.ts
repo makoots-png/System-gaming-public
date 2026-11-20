@@ -1,5 +1,5 @@
 // vitals.ts: a hunter's life (HP, dying, stable, dead), mana, fatigue and collapse. Pure.
-// One field, `life`, holds what HP, the Down chip and the death saves used to hold in three places. Its one
+// One field, `life`, holds what HP, the dying chip and the death saves used to hold in three places. Its one
 // table of events is `lifeAfter`. A view changes these fields only by assigning what a function here answers
 // (`Object.assign(h, hit(h, { type: 'damage', amount: 5 }, maxima))`). The save repair reads a stored hunter in
 // src/core/save.ts. The maxima are not stored: the caller reads them from the hunter's sheet and passes them in.
@@ -136,6 +136,11 @@ const whole = (n: number): number => (Number.isFinite(n) ? Math.trunc(n) : 0);
 
 /** The vitals after a life event. */
 export const hit = (v: Vitals, event: LifeEvent, m: Maxima): Vitals => ({ ...fieldsOf(v), life: lifeAfter(v.life, event, m.hpMax) });
+/**
+ * The vitals with `life` in place of their own, its HP within the maximum: the fight's write-back, whose row holds the
+ * hunter's life while the fight does (src/core/combat/row-life.ts moves it by this file's table).
+ */
+export const withLife = (v: Vitals, life: Life, m: Maxima): Vitals => ({ ...fieldsOf(v), life: lifeAfter(life, { type: 'maxChanged' }, m.hpMax) });
 /** Mana as the sheet shows it: at most the maximum. */
 export const manaOf = (v: Pick<Vitals, 'mana'>, m: Pick<Maxima, 'manaMax'>): number => clamp(v.mana, 0, Math.max(0, m.manaMax));
 /** Mana plus `delta`, within 0 and the maximum. */
@@ -205,8 +210,6 @@ export function vitalChipsOf(v: Pick<Vitals, 'life' | 'collapsed'>): VitalChip[]
   if (v.collapsed) out.push('exhausted');
   return out;
 }
-/** The tag a combat card or GM card shows for a hunter who is down. */
-export const LIFE_TAG: Readonly<Record<LifeState, string>> = { up: '', dying: 'Down', stable: 'Down, stable', dead: 'Dead' };
 /**
  * The ways back from dead, as every place that tells a dead hunter names them (the sheet, the death save's toast, a solo
  * run, the Dead chip, the Rules page): one name each, the GM's button and the item.

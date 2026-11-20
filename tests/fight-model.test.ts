@@ -14,7 +14,9 @@ import { usesGates } from '../src/core/combat/uses.ts';
 import { fire, raised } from '../src/core/combat/triggers.ts';
 import type { Raised, Trigger } from '../src/core/combat/triggers.ts';
 import { MAX_ZONES, standsIn, zoneTiles } from '../src/core/combat/zones.ts';
-import { held, isUp, partyView } from '../src/core/combat/fight-turn.ts';
+import { held, partyView } from '../src/core/combat/fight-turn.ts';
+import { isUp, rowHp } from '../src/core/combat/row-hp.ts';
+import { hpOf } from '../src/core/hunter/vitals.ts';
 import { alive } from '../src/core/combat/land.ts';
 import { concealed } from '../src/core/combat/standing.ts';
 import { parseFight } from '../src/core/combat/fight-parse.ts';
@@ -54,7 +56,7 @@ const sheetKeysOf = (list: readonly Status[]): string => keysOf(list.filter(onSh
 
 /** A row's sheet must have heard of every change of its HP, mana, fatigue and statuses (a shadow's sheet, of its HP). */
 function toldWrong(after: Fight, effects: readonly Effect[], mem: Memory): string | null {
-  for (const r of after.rows) if (r.holder && !mem.told.has(r.id)) mem.told.set(r.id, { hp: r.hp, mana: r.mana, fatigue: r.fatigue, keys: sheetKeysOf(r.statuses) });
+  for (const r of after.rows) if (r.holder && !mem.told.has(r.id)) mem.told.set(r.id, { hp: rowHp(r), mana: r.mana, fatigue: r.fatigue, keys: sheetKeysOf(r.statuses) });
   for (const e of effects) {
     const r = after.rows.find(x => x.holder && (
       e.type === 'vitals' ? x.holder.kind === 'local' && x.holder.hunterId === e.hunterId
@@ -63,12 +65,12 @@ function toldWrong(after: Fight, effects: readonly Effect[], mem: Memory): strin
     if (!r) continue;
     const was = mem.told.get(r.id)!;
     mem.told.set(r.id, e.type === 'shadowHp' ? { ...was, hp: e.hp } : e.type === 'vitals' || e.type === 'sendRemote'
-      ? { hp: e.hp, mana: e.mana, fatigue: e.fatigue, keys: keysOf(e.statuses) } : was);
+      ? { hp: hpOf(e.life, Infinity), mana: e.mana, fatigue: e.fatigue, keys: keysOf(e.statuses) } : was);
   }
   for (const r of after.rows) {
     if (!r.holder) continue;
     const t = mem.told.get(r.id)!;
-    const now: Told = r.holder.kind === 'shadow' ? { ...t, hp: r.hp } : { hp: r.hp, mana: r.mana, fatigue: r.fatigue, keys: sheetKeysOf(r.statuses) };
+    const now: Told = r.holder.kind === 'shadow' ? { ...t, hp: rowHp(r) } : { hp: rowHp(r), mana: r.mana, fatigue: r.fatigue, keys: sheetKeysOf(r.statuses) };
     if (json(now) !== json(t)) return `${r.id}'s sheet was last told ${json(t)} but the row holds ${json(now)}`;
   }
   return null;
@@ -78,7 +80,7 @@ function toldWrong(after: Fight, effects: readonly Effect[], mem: Memory): strin
 function check(before: Fight | null, cmd: Command, after: Fight | null, effects: readonly Effect[], mem: Memory): string | null {
   if (effects.length && effects.every(e => e.type === 'refused') && after !== before && json(after) !== json(before)) return 'a refused command changed the fight';
   const by = 'by' in cmd ? before?.rows.find(r => r.id === cmd.by) : undefined;
-  if (by && by.kind !== 'hunter' && by.hp === 0 && ['act', 'move', 'endTurn', 'release'].includes(cmd.type) && !effects.some(e => e.type === 'refused')) {
+  if (by && by.kind !== 'hunter' && !isUp(by) && ['act', 'move', 'endTurn', 'release'].includes(cmd.type) && !effects.some(e => e.type === 'refused')) {
     return `${by.id}, down, took ${cmd.type}`;
   }
   if (!after) return null;
@@ -90,7 +92,7 @@ function check(before: Fight | null, cmd: Command, after: Fight | null, effects:
   const tiles = new Set<string>();
   for (const r of after.rows) {
     const s = r.sheet;
-    if (r.hp < 0 || r.hp > s.hpMax) return `${r.id} has HP ${r.hp} of ${s.hpMax}`;
+    if (rowHp(r) < 0 || rowHp(r) > s.hpMax) return `${r.id} has HP ${rowHp(r)} of ${s.hpMax}`;
     if (r.mana < 0 || r.mana > s.manaMax) return `${r.id} has mana ${r.mana} of ${s.manaMax}`;
     if (r.fatigue < 0 || r.fatigue > s.fatigueMax) return `${r.id} has fatigue ${r.fatigue} of ${s.fatigueMax}`;
     const { x, y } = r.place;
@@ -117,7 +119,7 @@ function check(before: Fight | null, cmd: Command, after: Fight | null, effects:
   if (after.phase === 'running') {
     const gone = after.zones.find(z => z.until !== null && z.until <= after.now);
     if (gone) return `${gone.id} ended at ${gone.until} and is still on the ground at ${after.now}`;
-    for (const r of after.rows.filter(x => x.hp > 0 || x.kind === 'hunter')) for (const z of after.zones) {
+    for (const r of after.rows.filter(x => rowHp(x) > 0 || x.kind === 'hunter')) for (const z of after.zones) {
       const open = r.statuses.filter(s => s.zone === z.id && s.until === null).length, inside = standsIn(z, zoneTiles(z, after.rows, after.grid, after.now, RULES), r) ? 1 : 0;
       if (open !== inside) return `${r.id} holds ${open} open holds on ${z.id} and ${inside ? 'stands' : 'does not stand'} in it`;
     }
@@ -205,7 +207,7 @@ function kitsWrong(before: Fight | null, cmd: Command, after: Fight, effects: re
   }
   if (cmd.type === 'act' && before && !effects.some(e => e.type === 'refused')) {
     const u = before.rows.find(r => r.id === cmd.by), a = u?.abilities.find(x => x.id === cmd.ability);
-    for (const p of a?.prices ?? []) if (p.kind === 'hp' && u && u.hp <= hpPrice(p, u.sheet.hpMax)) return `${u.id} paid an HP price of ${hpPrice(p, u.sheet.hpMax)} at ${u.hp} HP`;
+    for (const p of a?.prices ?? []) if (p.kind === 'hp' && u && rowHp(u) <= hpPrice(p, u.sheet.hpMax)) return `${u.id} paid an HP price of ${hpPrice(p, u.sheet.hpMax)} at ${rowHp(u)} HP`;
   }
   return null;
 }
@@ -315,8 +317,8 @@ describe('what random play found', () => {
     expect(r.problem).toBeNull();
     const ogre = r.fight!.rows.find(x => x.id === 'c-ogre')!, fresh = ROSTER.find(x => x.id === 'c-ogre')!;
     expect(ogre.statuses.map(x => x.key)).toContain('weakened');
-    expect(ogre.hp).toBe(ogre.sheet.hpMax);
-    expect(ogre.hp).toBeLessThan(fresh.hp);
+    expect(rowHp(ogre)).toBe(ogre.sheet.hpMax);
+    expect(rowHp(ogre)).toBeLessThan(rowHp(fresh));
   });
 
   // Seed 89: Sela began a channel aimed at a tile past the map's edge; the fight then could not be read back, so it could
@@ -365,7 +367,7 @@ describe('every trigger chain stops (kits design 1.3.7, 3.1)', () => {
       const events: Raised[] = Array.from({ length: g.int(1, 6) }, () => { const a = g.pick(bodies), b = g.pick(bodies); return raised(a.id, g.pick(['struck', 'hitDealt', 'kill'] as const), b.id); });
       const r = fire(bodies, events, 0 as never, RULES);
       if (r.fires > RULES.fight.kit.fires || r.deepest > RULES.fight.kit.depth) problems.push(`seed ${seed}: ${r.fires} fired, deepest ${r.deepest}`);
-      for (const b of r.bodies) if (b.hp < 0 || b.hp > b.sheet.hpMax || b.statuses.some(s => stacked(s) && s.stacks > s.def.stack.cap)) problems.push(`seed ${seed}: ${b.id} out of bounds`);
+      for (const b of r.bodies) if (rowHp(b) < 0 || rowHp(b) > b.sheet.hpMax || b.statuses.some(s => stacked(s) && s.stacks > s.def.stack.cap)) problems.push(`seed ${seed}: ${b.id} out of bounds`);
     }
     expect(problems).toEqual([]);
   });

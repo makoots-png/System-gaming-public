@@ -36,7 +36,7 @@ import type { Completed, QuestWhy, Rollover } from './quests.ts';
 import { giveBoons, giveTitle, holdsTitle, setJob, titleNamed } from './record.ts';
 import { fitted, hunterSheet } from './sheet.ts';
 import { giveSkill } from './skills-held.ts';
-import { can, changeFatigue, changeMana, hit, lifeNews, refill, rest, setFatigue, setMana, spendMana } from './vitals.ts';
+import { can, changeFatigue, changeMana, hit, lifeNews, refill, rest, setFatigue, setMana, spendMana, withLife } from './vitals.ts';
 import type { Life, LifeEvent } from './vitals.ts';
 import { record } from './chronicle.ts';
 import type { LifeHow } from './facts.ts';
@@ -300,19 +300,27 @@ export type SheetEdit =
   | { type: 'spend'; mana: number }
   | { type: 'fatigue'; delta: number }
   /**
-   * The fight's totals for the hunter: HP, mana, fatigue and the statuses as its row holds them, and with `used` the uses
-   * spent of its abilities limited a long rest (the row holds all of them, so they replace the sheet's). Without `used`
-   * (the room's `vitals` message carries none yet) the sheet keeps its own.
+   * The fight's totals for the hunter: its mana, fatigue and the statuses as its row holds them, and with `used` the uses
+   * spent of its abilities limited a long rest (the row holds all of them, so they replace the sheet's; without it the
+   * sheet keeps its own). With them the row's `life` (its HP with it), the one writer's while the fight holds the hunter:
+   * this phone's fight's write-back, or the room's `vitals` message for a player's hunter in the GM's fight.
    */
-  | { type: 'totals'; hp: number; mana: number; fatigue: number; statuses: readonly SheetStatus[]; used?: Readonly<Record<AbilityId, number>> }
+  | { type: 'totals'; life: Life; mana: number; fatigue: number; statuses: readonly SheetStatus[]; used?: Readonly<Record<AbilityId, number>> }
   | { type: 'put'; status: StatusIn }
   | { type: 'drop'; key: string }
   /** A short or long rest (vitals.ts `rest`). */
   | { type: 'rest'; kind: 'short' | 'long' };
 
-/** How an edit changes a life, for its fact (facts.ts `LifeHow`). */
-const howOf = (e: SheetEdit): LifeHow =>
-  e.type === 'totals' ? 'fight' : e.type === 'rest' ? 'rest'
+/**
+ * How a fight's totals changed a life (the fight's own `life` command writes it there): dead to up only a revive can do,
+ * the GM's; a change while dying that does not stand the hunter up (a save made or failed, a death) only a death save.
+ * Anything else is the fight's.
+ */
+const fightHow = (before: Life, after: Life): LifeHow =>
+  before.at === 'dead' ? 'gm' : before.at === 'dying' && (after.at === 'dying' || after.at === 'dead') ? 'save' : 'fight';
+/** How edit `e` changed a life from `before` to `after`, for its fact (facts.ts `LifeHow`). */
+const howOf = (e: SheetEdit, before: Life, after: Life): LifeHow =>
+  e.type === 'totals' ? fightHow(before, after) : e.type === 'rest' ? 'rest'
   : e.type === 'life' && e.event.type === 'deathSave' ? 'save' : e.type === 'life' && e.event.type === 'revive' ? e.by ?? 'gm' : 'hand';
 /** The death saves failed before a change, while dying; 0 otherwise. */
 const failuresOf = (life: Life): number => (life.at === 'dying' ? life.failures : 0);
@@ -328,7 +336,7 @@ export function sheetEdit(h: Hunter, e: SheetEdit, R: Rules): Hunter | Refused<'
   if (isRefused(next)) return next;
   // what the change did to the life, and a rest, are facts (chronicle.ts), recorded in the edit's own write
   const news = lifeNews(h.life, next.life);
-  const withLife = news ? record(next, { kind: 'life', news: news.kind, how: howOf(e), failures: failuresOf(h.life) }) : next;
+  const withLife = news ? record(next, { kind: 'life', news: news.kind, how: howOf(e, h.life, next.life), failures: failuresOf(h.life) }) : next;
   return e.type === 'rest' ? record(withLife, { kind: 'rest', long: e.kind === 'long' }) : withLife;
 }
 function edited(h: Hunter, e: SheetEdit, R: Rules): Hunter | Refused<'cannot' | 'mana' | 'state-chip' | 'no-def' | 'unchanged'> {
@@ -338,7 +346,7 @@ function edited(h: Hunter, e: SheetEdit, R: Rules): Hunter | Refused<'cannot' | 
     case 'mana': return { ...h, ...changeMana(h, e.delta, m) };
     case 'spend': { const v = spendMana(h, e.mana, m); return isRefused(v) ? v : { ...h, ...v }; }
     case 'fatigue': return { ...h, ...changeFatigue(h, e.delta, m, R) };
-    case 'totals': return { ...h, ...setFatigue(setMana(hit(h, { type: 'setHp', hp: e.hp }, m), e.mana, m), e.fatigue, m, R), conditions: e.statuses.map(s => ({ ...s })), ...(e.used ? { used: { ...e.used } } : {}) };
+    case 'totals': return { ...h, ...setFatigue(setMana(withLife(h, e.life, m), e.mana, m), e.fatigue, m, R), conditions: e.statuses.map(s => ({ ...s })), ...(e.used ? { used: { ...e.used } } : {}) };
     case 'put': return putStatus(h, e.status, R.conditions);
     case 'drop': return dropStatus(h, e.key);
     case 'rest': return { ...h, ...rest(h, e.kind, m, R) };

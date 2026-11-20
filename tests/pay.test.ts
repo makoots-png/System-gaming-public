@@ -33,7 +33,7 @@ const ok = <T>(r: T | Refused): T => { if (isRefused(r)) throw new Error(`refuse
  */
 function inDen(xpPaid = 0): Save {
   const s = freshSave({ now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-gm') }, { onboarded: true }), h = s.hunters[0]!;
-  const ctx = { rules: RULES, life: () => h.life };
+  const ctx = { rules: RULES };
   const rows = [hunterRow(h, combatantId('c1'), RULES), remoteRow({ ...newHunter(RULES), id: 'h1', name: 'Kai' }, KAI, combatantId('c2'), RULES),
     { ...hunterRow({ ...newHunter(RULES), id: 'x', name: 'Goblin' }, combatantId('c3'), RULES), side: 'foe' as const, holder: null, name: 'Goblin', xp: 60 }];
   const added = reduce(null, { type: 'add', fightId: fightId('f-den'), rows, openings: [] }, ctx).fight;

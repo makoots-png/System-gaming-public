@@ -23,8 +23,11 @@ import type { Limit, Trigger, Trip } from '../src/core/combat/triggers.ts';
 import { fightId, reduce } from '../src/core/combat/fight.ts';
 import type { Command, Ctx, Fight, NewRow } from '../src/core/combat/fight.ts';
 import { LIMITS, WALK_EVENTS } from './models/trip-events.ts';
+import { rowHp } from '../src/core/combat/row-hp.ts';
+import { lifeAt } from './fixtures/life.ts';
+import type { RowPatch } from './fixtures/life.ts';
 
-const ctx: Ctx = { rules: RULES, life: () => null };
+const ctx: Ctx = { rules: RULES };
 const f = (text: string) => { const p = parseFormula(text, RULES); if (!p.ok) throw new Error(p.error); return p.formula; };
 const id = combatantId;
 const origin: Origin = { kind: 'hunter', build: { stats: baseStats(RULES.fight), level: 1, gear: kitGear('light', RULES), perks: {} } };
@@ -40,11 +43,12 @@ const PAIN: StackDef = { label: 'Pain', desc: '', ops: [], stack: { cap: 20, lea
 const addPain = (n = 1): LandOp => ({ op: 'applyStatus', key: statusKey('pain'), def: PAIN, duration: null, stacks: n });
 const worn = (label: string, ...triggers: Trigger[]): StatusDef => ({ label, desc: '', ops: [], triggers });
 const on = (key: string, def: StatusDef): Status => ({ key: statusKey(key), def, source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0) } as Status);
-function row(name: string, side: Side, statuses: Status[] = [], o: Partial<NewRow> = {}): NewRow {
-  const hpMax = modified(origin, statuses, RULES).sheet.hpMax;
+function row(name: string, side: Side, statuses: Status[] = [], o: RowPatch<NewRow> = {}): NewRow {
+  const { kind, hp, ...rest } = o;
+  const hpMax = modified(rest.origin ?? origin, statuses, RULES).sheet.hpMax;
   return {
-    id: id(name), name, side, kind: side === 'party' ? 'hunter' : 'monster', origin, tier: 0, place: null, hp: hpMax, mana: 10, fatigue: 0, shield: null, stagger: null,
-    channel: null, threat: side === 'foe' ? {} : null, statuses, readyAt: {}, abilities: [HIT, SWORD, BIG], intent: null, holder: null, xp: 0, ...o,
+    id: id(name), name, side, ...lifeAt(kind ?? (side === 'party' ? 'hunter' : 'monster'), hp ?? hpMax), origin, tier: 0, place: null, mana: 10, fatigue: 0, shield: null, stagger: null,
+    channel: null, threat: side === 'foe' ? {} : null, statuses, readyAt: {}, abilities: [HIT, SWORD, BIG], intent: null, holder: null, xp: 0, ...rest,
   };
 }
 function play(...commands: Command[]): Fight {
@@ -126,14 +130,14 @@ describe('firing (rule 19b)', () => {
     const start = duel(row('A', 'party', [], { abilities: [curse] }), row('M', 'foe', [on('ret', retribution)]));
     const fight = play(...start, use('A', 'M', curse, 20));
     const a = body(fight, 'A');
-    expect(a.sheet.hpMax - a.hp).toBe(through(7));
+    expect(a.sheet.hpMax - rowHp(a)).toBe(through(7));
   });
   test('a chain stops at depth 2: struck hits back, that hit\'s struck hits back, and the next is not fired', () => {
     const thorns = worn('Thorns', { on: 'struck', tag: null, to: 'other', limit: { kind: 'each' }, ops: [{ op: 'damage', type: 'physical', amount: f('10'), when: 'use' }] });
     const fight = play(...duel(row('A', 'party', [on('th', thorns)]), row('M', 'foe', [on('th', thorns)])), use('A', 'M'));
     const a = body(fight, 'A'), m = body(fight, 'M');
     // A's hit (depth 0), M's thorns on A (depth 1), A's thorns on M (depth 2); M's thorns would be depth 3
-    expect([a.sheet.hpMax - a.hp, m.sheet.hpMax - m.hp]).toEqual([through(10), 2 * through(10)]);
+    expect([a.sheet.hpMax - rowHp(a), m.sheet.hpMax - rowHp(m)]).toEqual([through(10), 2 * through(10)]);
   });
   test('at most 16 triggers fire in one command, whatever the depth', () => {
     const four = worn('Four', ...Array.from({ length: 4 }, (): Trigger => ({ on: 'hitDealt', tag: null, to: 'self', limit: { kind: 'each' }, ops: [addPain()] })));
@@ -158,7 +162,7 @@ describe('firing (rule 19b)', () => {
     const reap = ability('reap', '10 * kills');
     const fight = play(...duel(row('A', 'party', [], { abilities: [BIG, reap] }), row('M', 'foe'), row('N', 'foe')), use('A', 'M', BIG), use('A', 'N', reap));
     const n = body(fight, 'N');
-    expect(n.sheet.hpMax - n.hp).toBe(through(10));
+    expect(n.sheet.hpMax - rowHp(n)).toBe(through(10));
   });
   test('a turn\'s start fires its bearer\'s triggers, and stacks that leave on a move go when it moves', () => {
     const storage: StackDef = { label: 'Storage', desc: '', ops: [], stack: { cap: 5, leave: { kind: 'event', event: 'moved' }, keep: 'fight', threshold: null } };
@@ -218,7 +222,7 @@ describe('moving counts, a bearer going down, and a condition on where (kits des
     const cycle: StackDef = { ...CORRUPTION, triggers: [{ on: 'down', to: { kind: 'most', of: 'hp', radius: tiles(20), on: 'allies' }, limit: { kind: 'each' },
       ops: [{ op: 'move', key: 'event', take: 'all', from: 'user', as: null }] }] };
     const fight = play(...duel(row('A', 'party'), row('M', 'foe', [stacked('corruption', cycle, 3)]), row('N', 'foe', [], { hp: 5 }), row('O', 'foe')), use('A', 'M', BIG));
-    expect(body(fight, 'M').hp).toBe(0);
+    expect(rowHp(body(fight, 'M'))).toBe(0);
     expect([stacksOf(body(fight, 'O'), 'corruption'), stacksOf(body(fight, 'N'), 'corruption')]).toEqual([3, 0]);
   });
 
@@ -236,7 +240,7 @@ describe('moving counts, a bearer going down, and a condition on where (kits des
     expect(reduce(outside, use('A', 'M', supernova), ctx).effects).toEqual([{ type: 'refused', reason: 'gated' }]);
     const wrath: Command = { type: 'zoneAdd', zone: { id: 'z1' as never, name: 'Wrath', tiles: [place(0, 2)], spares: null, tier: 0, duration: null, ops: [] } };
     const inside = play(...duel(row('A', 'party', [], { abilities: [supernova] }), row('M', 'foe')), wrath, use('A', 'M', supernova));
-    expect(body(inside, 'M').hp).toBeLessThan(body(outside, 'M').hp);
+    expect(rowHp(body(inside, 'M'))).toBeLessThan(rowHp(body(outside, 'M')));
   });
 });
 

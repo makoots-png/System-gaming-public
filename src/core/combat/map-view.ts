@@ -20,6 +20,8 @@ import { band, tilesOfRuns, UNSEEN } from './fight-doc.ts';
 import type { Band, FightDoc, FightDocRow } from './fight-doc.ts';
 import { partyView } from './fight-turn.ts';
 import { holds } from './standing.ts';
+import { isUp } from './row-hp.ts';
+import { lifeWord } from './row-life.ts';
 import { anchorOf, zoneTiles, zoneTone } from './zones.ts';
 import type { ZoneId, ZoneTone } from './zones.ts';
 import { aims, cardOf, onMap, readyIn, spotOf } from './fight-view.ts';
@@ -51,6 +53,8 @@ export type MapBody = Spot & {
   readonly summon: { readonly owner: CombatantId; readonly left: number | null } | null;
   /** Hidden by its own stealth (kits design 8.7): on the GM's map a foe so hidden is drawn dimmed, as one out of sight. */
   readonly stealth: boolean;
+  /** The word for its life while it is not up (row-life.ts `lifeWord`: Dying, Stable, Dead, Defeated), else null. */
+  readonly word: string | null;
 };
 /**
  * What a token draws of design 4: its shield as a share of its max HP (1 when the viewer sees only a band), its stagger
@@ -101,7 +105,7 @@ export function fightBodies(f: Fight, R: OpRules & Pick<Rules, 'dice'>, mine: (b
       },
       aim: to ? { kind: i ? 'intent' : 'suggest', to, area, revealed: i ? i.revealed : false, words: i && i.revealed ? { name: i.name, what: i.lines[0] ?? null } : null } : null,
       summon: b.kind === 'summon' ? { owner: b.owner ?? b.id, left: k.summon } : null,
-      stealth: holds(b, 'hidden'),
+      stealth: holds(b, 'hidden'), word: lifeWord(b),
     };
   });
 }
@@ -125,7 +129,7 @@ export function docBodies(rows: readonly FightDocRow[], mine: (r: FightDocRow) =
       channel: r.channel && { charge: r.channel.charge, max: r.channel.max, state: r.channel.state }, taunted: r.taunt !== null,
       reacted: spent.includes(r.id),
     };
-    const base = { id: r.id, side: r.side, kind: r.kind, place: from, down: r.down, name: r.name, statuses: r.statuses.length > 0, mine: mine(r), extras, summon: r.kind === 'summon' ? { owner: r.owner, left: r.left } : null, stealth: false };
+    const base = { id: r.id, side: r.side, kind: r.kind, place: from, down: !isUp(r), word: lifeWord(r), name: r.name, statuses: r.statuses.length > 0, mine: mine(r), extras, summon: r.kind === 'summon' ? { owner: r.owner, left: r.left } : null, stealth: false };
     if (r.kind === 'monster') {
       const i = r.intent, to = i ? at(i.target) : r.suggest ? at(r.suggest) : null, v = i?.reveal ?? null;
       const shape: Shape | null = v && v.radius !== null ? { kind: 'radius', radius: tiles(v.radius), ring: v.outer === null ? null : { outer: tiles(v.outer), share: percent(50) } } : null;
@@ -158,6 +162,8 @@ export type MapToken = {
   readonly id: CombatantId; readonly place: Place; readonly side: MapBody['side']; readonly kind: MapBody['kind'];
   readonly name: string; readonly label: string; readonly plate: Plate | null; readonly ring: Ring; readonly bars: Bars | null;
   readonly current: boolean; readonly down: boolean; readonly statuses: boolean; readonly mine: boolean;
+  /** `MapBody.word`: what its label says of its life while it is not up. */
+  readonly word: string | null;
   readonly extras: Extras;
   /** On the GM's map: a foe the party cannot see (out of sight, or hidden by its stealth), drawn dimmed. A player's map never holds one. */
   readonly hidden: boolean;
@@ -488,7 +494,7 @@ export function mapScene(input: MapInput, sel: Selection, R: MapRules): MapScene
   const plates = platesOf(shown, grid, aimedAt ? [aimedAt] : []);
   const tokens: MapToken[] = shown.map(b => ({
     id: b.id, place: b.place, side: b.side, kind: b.kind, name: b.name, label: labelOf(b.name), plate: plates.get(b.id) ?? null, ring: b.ring, bars: b.bars,
-    current: b.id === input.currentId, down: b.down, statuses: b.statuses, mine: b.mine, extras: b.extras,
+    current: b.id === input.currentId, down: b.down, word: b.word, statuses: b.statuses, mine: b.mine, extras: b.extras,
     hidden: (b.side === 'foe' && b.stealth) || (!!sight && b.side === 'foe' && !sight.lit.has(idx(b.place))),
     summon: b.summon && { owner: bodies.find(x => x.id === b.summon!.owner)?.name ?? '', left: b.summon.left },
   }));

@@ -23,6 +23,7 @@ import { NO_CHOICE, PINS, choose, docBodies, docGround, fightBodies, frameOf, ho
 import { iid } from './fixtures/ids.ts';
 import type { Choice, ChoiceEvent, ChoiceFx, HotbarKit, MapBody, MapScene, Selection } from '../src/core/combat/map-view.ts';
 import { rng } from './models/fight-play.ts';
+import { lifeAt } from './fixtures/life.ts';
 
 const id = combatantId;
 const ability = (kind: AbilityKind, name: string = kind, o: Partial<Ability> = {}): Ability => ({ ...abilityOf(kind, { id: abilityId(name), name }, RULES), ...o });
@@ -51,7 +52,7 @@ function body(name: string, side: Side, x: number, y: number, o: { stride?: numb
   return {
     id: id(name), side, kind: o.kind ?? (side === 'party' ? 'hunter' : 'monster'), place: place(x, y), down: o.down ?? false, name,
     ring: { share: 1, band: null }, statuses: false, mine: o.mine ?? false, stride: tiles(o.stride ?? 0), dash: tiles(o.dash ?? 0), bars: null,
-    extras: { shield: null, stagger: null, channel: null, taunted: false, reacted: false }, aim: null, summon: null, stealth: false,
+    extras: { shield: null, stagger: null, channel: null, taunted: false, reacted: false }, aim: null, summon: null, stealth: false, word: null,
   };
 }
 const scene = (d: Drawn, sel: Selection = { kind: 'none' }, actor: string | null = '@'): MapScene =>
@@ -341,10 +342,10 @@ describe('tokens', () => {
   test('from the room doc a hunter\'s ring is exact and a monster\'s is its band; a monster down leaves the map and a hunter down lies there', () => {
     const base = { key: null, at: tick(0), speed: 100, statuses: [], shield: null, shieldLeft: null, channel: null, taunt: null } as const;
     const rows = [
-      { ...base, id: id('k'), name: 'Kai', side: 'party', place: { x: 0, y: 0 }, band: 'wounded', down: false, kind: 'hunter', hp: 15, hpMax: 20, stride: 3, move: 6 },
-      { ...base, id: id('m'), name: 'Rat', side: 'foe', place: { x: 1, y: 0 }, band: 'bloodied', down: false, kind: 'monster', intent: null, stagger: null, suggest: null },
-      { ...base, id: id('dead'), name: 'Rat B', side: 'foe', place: { x: 2, y: 0 }, band: 'down', down: true, kind: 'monster', intent: null, stagger: null, suggest: null },
-      { ...base, id: id('fell'), name: 'Mira', side: 'party', place: { x: 3, y: 0 }, band: 'down', down: true, kind: 'hunter', hp: 0, hpMax: 20, stride: 3, move: 6 },
+      { ...base, id: id('k'), name: 'Kai', side: 'party', place: { x: 0, y: 0 }, band: 'wounded', life: { at: 'up' }, kind: 'hunter', hp: 15, hpMax: 20, stride: 3, move: 6 },
+      { ...base, id: id('m'), name: 'Rat', side: 'foe', place: { x: 1, y: 0 }, band: 'bloodied', life: { at: 'up' }, kind: 'monster', intent: null, stagger: null, suggest: null },
+      { ...base, id: id('dead'), name: 'Rat B', side: 'foe', place: { x: 2, y: 0 }, band: 'down', life: { at: 'dead' }, kind: 'monster', intent: null, stagger: null, suggest: null },
+      { ...base, id: id('fell'), name: 'Mira', side: 'party', place: { x: 3, y: 0 }, band: 'down', life: { at: 'dying' }, kind: 'hunter', hp: 0, hpMax: 20, stride: 3, move: 6 },
     ] satisfies FightDocRow[];
     const s = mapScene({ bodies: docBodies(rows, r => r.id === 'k', openGrid(4, 1)), grid: openGrid(4, 1), currentId: id('m'), actor: null }, { kind: 'none' }, RULES);
     expect(s.tokens.map(t => [t.id, t.ring.band ?? t.ring.share, t.current, t.down, t.mine])).toEqual([
@@ -358,11 +359,11 @@ describe('tokens', () => {
     const origin: Origin = { kind: 'hunter', build: { stats: baseStats(RULES.fight), level: 1, gear: kitGear('light', RULES), perks: {} } };
     const hpMax = modified(origin, [], RULES).sheet.hpMax;
     const row = (name: string, side: Side, hp: number): NewRow => ({
-      id: id(name), name, side, kind: side === 'party' ? 'hunter' : 'monster', origin, tier: 0, place: null, hp, mana: 0, fatigue: 0, shield: null, stagger: null,
+      id: id(name), name, side, ...lifeAt(side === 'party' ? 'hunter' : 'monster', hp), origin, tier: 0, place: null, mana: 0, fatigue: 0, shield: null, stagger: null,
       channel: null, threat: side === 'foe' ? {} : null, statuses: [], readyAt: {}, abilities: [STRIKE], intent: null,
       holder: side === 'party' ? { kind: 'local', hunterId: hunterId(name) } : null, xp: 0,
     });
-    const f = reduce(null, { type: 'add', fightId: fightId('f'), rows: [row('A', 'party', hpMax / 2), row('M', 'foe', hpMax / 2)], openings: [] }, { rules: RULES, life: () => null }).fight as Fight;
+    const f = reduce(null, { type: 'add', fightId: fightId('f'), rows: [row('A', 'party', hpMax / 2), row('M', 'foe', hpMax / 2)], openings: [] }, { rules: RULES }).fight as Fight;
     const [a, m] = fightBodies(f, RULES, b => b.id === 'A');
     expect([a!.ring, a!.mine, a!.stride, a!.dash]).toEqual([{ share: 0.5, band: null }, true, Math.ceil(RULES.fight.moveBase * RULES.fight.strideShare), RULES.fight.moveBase]);
     expect(m!.ring.band).toBe('bloodied');
@@ -424,7 +425,7 @@ describe('a summon and a hidden foe on the map', () => {
 });
 
 describe('lines from a monster: its intent, or the target its threat suggests', () => {
-  const base = { key: null, at: tick(0), speed: 100, statuses: [], shield: null, shieldLeft: null, channel: null, taunt: null, down: false, band: 'healthy' } as const;
+  const base = { key: null, at: tick(0), speed: 100, statuses: [], shield: null, shieldLeft: null, channel: null, taunt: null, band: 'healthy', life: { at: 'up' } } as const;
   const kai = { ...base, id: id('k'), name: 'Kai', side: 'party', place: { x: 1, y: 1 }, kind: 'hunter', hp: 20, hpMax: 20, stride: 3, move: 6 } as const;
   const boss = (o: Partial<Extract<FightDocRow, { kind: 'monster' }>>): FightDocRow => ({ ...base, id: id('b'), name: 'Boss', side: 'foe', place: { x: 5, y: 1 }, kind: 'monster', intent: null, stagger: null, suggest: null, ...o });
   const lines = (b: FightDocRow) => mapScene({ bodies: docBodies([kai, b], () => false, openGrid(9, 5)), grid: openGrid(9, 5), currentId: null, actor: null }, { kind: 'none' }, RULES).lines;

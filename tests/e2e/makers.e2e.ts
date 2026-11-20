@@ -22,6 +22,7 @@ import { fightId, reduce } from '../../src/core/combat/fight.ts';
 import type { Command, Ctx, Fight, NewRow } from '../../src/core/combat/fight.ts';
 import { UNFINISHED_ROWS, newRewards } from '../../src/core/rewards.ts';
 import { EXAMPLE_STORIES } from '../../src/core/registry/stories.ts';
+import { rowHp } from '../../src/core/combat/row-hp.ts';
 
 const combat = (page: Page) => page.locator('#view-combat');
 const statusMaker = (page: Page) => page.locator('.fg-overlay [role=dialog]');
@@ -808,11 +809,11 @@ const cHunter = (main: StatKey, second: StatKey, kit: Kit): Origin =>
 function newRow(name: string, side: 'party' | 'foe', origin: Origin, at: Place, abilities: Ability[] = []): NewRow {
   const { sheet } = modified(origin, [], RULES);
   return {
-    id: combatantId(name), name, side, kind: side === 'party' ? 'hunter' : 'monster', origin, tier: 2, place: at, hp: sheet.hpMax, mana: sheet.manaMax, fatigue: 0,
+    id: combatantId(name), name, side, kind: side === 'party' ? 'hunter' : 'monster', origin, tier: 2, place: at, life: { at: 'up', hp: sheet.hpMax }, mana: sheet.manaMax, fatigue: 0,
     shield: null, stagger: null, channel: null, threat: side === 'foe' ? {} : null, statuses: [], readyAt: {}, abilities, intent: null, holder: null, xp: 0,
   };
 }
-const ctx: Ctx = { rules: RULES, life: () => null };
+const ctx: Ctx = { rules: RULES };
 /** Plays commands from no fight; a refusal fails the test. */
 function play(...commands: Command[]): Fight {
   let fight: Fight | null = null;
@@ -1005,8 +1006,8 @@ test('a GM makes a blast with a ring and a 1 round wind-up; in a fight a fast ta
     { type: 'start', openings: [{ id: combatantId('A'), d20: 20, tie: 0 }, { id: combatantId('F'), d20: 1, tie: 0 }, { id: combatantId('S'), d20: 1, tie: 0 }] });
   const dice = Object.fromEntries(['F', 'S'].map(id => [id, diceOf(formulaNow(nova, RULES)!).map(x => x.count * x.sides)]));
   const hit = then(f, { type: 'act', by: combatantId('A'), ability: nova.id, aim: place(9, 6), rolls: { dice, react: { F: 20, S: 1 } } as never });
-  expect(rowIn(hit, 'F').hp).toBe(rowIn(f, 'F').hp);
-  expect(rowIn(hit, 'S').hp).toBeLessThan(rowIn(f, 'S').hp);
+  expect(rowHp(rowIn(hit, 'F'))).toBe(rowHp(rowIn(f, 'F')));
+  expect(rowHp(rowIn(hit, 'S'))).toBeLessThan(rowHp(rowIn(f, 'S')));
 });
 
 test('a GM makes a channeled ability that grows exponentially; in a fight its charge grows one each of its user\'s turns', async ({ device }) => {
@@ -1060,7 +1061,7 @@ test('a GM makes a status with a shield of 20; on a hunter in a fight it takes a
   const a = newRow('A', 'party', cHunter('vit', 'str', 'heavy'), place(2, 6)), m = newRow('M', 'foe', cHunter('str', 'vit', 'medium'), place(4, 6), [hit]);
   const f = play(...duel(a, m), { type: 'status', id: combatantId('A'), add: { key: statusKey(key), def: ward, duration: tick(2000), tier: 0 } }, pass('A'),
     { type: 'act', by: combatantId('M'), ability: hit.id, aim: combatantId('A'), rolls: { dice: {}, react: { A: 10 } } as never });
-  expect(rowIn(f, 'A').hp).toBe(a.hp);
+  expect(rowHp(rowIn(f, 'A'))).toBe(rowHp(a));
   expect(rowIn(f, 'A').shield!.amount).toBeLessThan(20);
 });
 
@@ -1140,7 +1141,7 @@ test('a GM makes a fire blast that leaves burning ground for 2 rounds; in a figh
     { type: 'status', id: combatantId('T'), add: { key: statusKey('rooted'), def: { label: 'Rooted', desc: '', ops: [{ op: 'root' }] }, duration: null, tier: 0 } });
   const hitPlain = then(g, { type: 'act', by: combatantId('A'), ability: plain.id, aim: place(9, 6), rolls: { dice, react: { T: 1 } } as never });
   expect((hit as any).currentId).toBe('T');
-  expect(rowIn(hitPlain, 'T').hp - rowIn(hit, 'T').hp).toBe(Math.round(4 * ((hit as any).now - (f as any).now) / 1000));
+  expect(rowHp(rowIn(hitPlain, 'T')) - rowHp(rowIn(hit, 'T'))).toBe(Math.round(4 * ((hit as any).now - (f as any).now) / 1000));
   expect(rowIn(hit, 'T').statuses.some(s => s.def.label === 'Burning ground' && s.until === null)).toBe(true);
 });
 

@@ -11,6 +11,7 @@
 import { interval, tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
 import type { Ability, CombatantId, ReactWhen } from './ability-types.ts';
+import { isUp } from './row-hp.ts';
 import { landsAlone } from './effect-ops.ts';
 import type { Body, LandOp } from './effect-ops.ts';
 import { alive, held, landOps } from './land.ts';
@@ -73,7 +74,7 @@ export const armedAbility = (b: Body): Ability | null => {
  */
 function chargedReaction(rows: ReadonlyMap<CombatantId, Body>, r: Body, aim: CombatantId, now: Tick, R: ResolveRules): Body | null {
   const a = armedAbility(r), at = rows.get(aim)?.place;
-  if (!a || !at || reactState(r) !== 'armed' || r.hp <= 0 || held(r, now)) return null;
+  if (!a || !at || reactState(r) !== 'armed' || !isUp(r) || held(r, now)) return null;
   const c = charged(a, r, [...rows.values()], at, now, R);
   return typeof c === 'string' ? null : c.user;
 }

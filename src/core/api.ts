@@ -5,7 +5,6 @@
 // what the module answers: a shape a view builds and reads alone stays `unknown` or a record rather than a guess.
 
 import type { FeatBook } from './hunter/feats.ts';
-import type { LifeEvent } from './hunter/vitals.ts';
 import type { End, Op, SheetStatus, Source, StackRule, StatusDef } from './combat/effect-ops.ts';
 import type { Trigger } from './combat/triggers.ts';
 import type { LootDrop } from './gates/spawn.ts';
@@ -29,7 +28,7 @@ import type { Worth } from './registry/worth.ts';
 import type { StatBlock } from './registry/monsters.ts';
 import type { Gate, GateType } from './gates/gate.ts';
 import type { WorldWhy } from './gates/world.ts';
-import type { FightId, NewRow, Running, Setup } from './combat/fight-types.ts';
+import type { FightId, NewRow, RowLifeEvent, Running, Setup } from './combat/fight-types.ts';
 import type { OddsRead, OddsVoice } from './combat/odds.ts';
 import type { ExtractionOutcome } from './combat/extraction.ts';
 import type { MapInput } from './combat/map-view.ts';
@@ -129,11 +128,16 @@ export type CombatApi = {
    */
   spend(cid: string, mana: number, also: Step<Save> | null): boolean;
   /**
-   * The GM's Revive of down row `cid` (its card's, the GM board's): raised to the life table's revive HP (vitals.ts
-   * `REVIVE_HP`) by the fight's `adjust`, with the revive of the hunter's life where it is kept in the same write (this
-   * phone's sheet, or a player's `revive` posted with its log line). False when the row is up or the write was refused.
+   * The GM's Revive of row `cid` (its card's, the GM board's): the fight's `life` command, which stands only the dead up
+   * at the life table's revive HP (vitals.ts `REVIVE_HP`). The fight holds every row's life, so a player's hunter's
+   * phone hears it in the room's `vitals`. False when the row's life refused it or the write was refused.
    */
   revive(cid: string): boolean;
+  /**
+   * A life event on row `cid` that is not HP (the fight's `life` command, row-life.ts): the GM's Revive or Stabilize, or a
+   * death save with its d20. False when there is no such row or its life does not take the event.
+   */
+  life(cid: string, event: RowLifeEvent): boolean;
   /**
    * What a grant hands to this phone's fight (grant.ts `Granted.fight`) put on the rows it names (fight-save.ts
    * `heldCommands`: a status each, a refill), with `also` (the grant's own step) in the same write: all of it, or nothing
@@ -299,8 +303,12 @@ export type HunterApi = {
    */
   damage(hid: string, n: number): boolean;
   heal(hid: string, n: number): boolean;
-  /** A life event through the vitals model: false when it does not apply in the hunter's state. */
-  life(hid: string, event: LifeEvent): boolean;
+  /**
+   * A life event beside HP (Revive, Stabilize, a death save): on the sheet through the life machine, or, while this
+   * phone's fight holds the hunter, the fight's `life` command on its row (the row holds the life). False when it does not
+   * apply in the hunter's state.
+   */
+  life(hid: string, event: RowLifeEvent): boolean;
   /** Rolls one death save for this hunter (the d20 goes to the dice log) and says what it did. False when it cannot be rolled. */
   deathSave(hid: string): boolean;
   /**

@@ -51,7 +51,7 @@ test('on a 390 px phone the GM sees whose turn it is at the top of the fight, th
     await expect(currentRow(gm)).toBeInViewport({ ratio: 1 });
   });
 
-  await test.step('a tap on a goblin in the order brings its card into view; at 0 HP its row says Down', async () => {
+  await test.step('a tap on a goblin in the order brings its card into view; at 0 HP its row says Defeated', async () => {
     const gob = combat(gm).locator('.cmb-row', { hasText: 'Goblin' }).first();
     const name = (await gob.locator('.cmb-nm').innerText()).replace(/^▶\s*/, '').trim();
     await gob.locator('.cmb-pick').tap();
@@ -61,7 +61,7 @@ test('on a 390 px phone the GM sees whose turn it is at the top of the fight, th
     await card.locator('[data-amt]').fill('999');
     await card.locator('[data-dmg]').tap();
     const down = combat(gm).locator('.cmb-row', { hasText: name });
-    await expect(down.locator('.cmb-dn')).toHaveText('Down');
+    await expect(down.locator('.cmb-dn')).toHaveText('Defeated');
     await expect(down.locator('.cmb-dn')).toBeVisible();
     await expect(combat(gm).locator('.cmb-row .cmb-dn')).toHaveCount(1);
   });
@@ -86,7 +86,7 @@ test('on a 390 px phone in a room, the empty Table feed is one line that covers 
     const hit = await defeat.evaluate((el: any) => { const r = el.getBoundingClientRect(); return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)); });
     expect(hit).toBe(true);
     await defeat.tap();
-    await expect(defeat).toHaveText('Revive');
+    await expect(combat(gm).locator('.cmb-card [data-revive]')).toHaveText('Revive');
   });
 
   await test.step('a player\'s roll arrives: the line says 1 new and is on screen; a tap opens the row', async () => {

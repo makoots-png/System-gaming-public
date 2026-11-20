@@ -5,7 +5,7 @@
 // no sideways scroll, no tap target under 44 px, no text under 12 px, and each maker's lowest field clear of the bars
 // when it has the focus.
 import type { Page } from '@playwright/test';
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, openApp, ANDROID_UA, LANDSCAPE, ROOM_CODE, setupDoc } from './helpers.ts';
+import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, openApp, ANDROID_UA, LANDSCAPE, ROOM_CODE, setupDoc, fightRow } from './helpers.ts';
 
 const combat = (page: Page) => page.locator('#view-combat');
 const map = (page: Page) => combat(page).locator('[data-mapbox]');
@@ -53,7 +53,7 @@ async function tapTile(page: Page, x: number, y: number): Promise<void> {
   const p = await tileAt(page, x, y);
   await page.touchscreen.tap(p.x, p.y);
 }
-const rowOf = (gm: Page, name: string) => gm.evaluate(n => JSON.parse(JSON.stringify(hunterApp.store.get().fight.rows.find((r: any) => r.name === n))), name);
+const rowOf = fightRow;
 const turnOn = (page: Page) => map(page).locator('.mp-order li.now');
 
 test('a GM on a laptop opens a room; an iPhone joins by the invite link and an Android phone by typing the code, and both hunters are on the GM\'s party board', async ({ device }) => {

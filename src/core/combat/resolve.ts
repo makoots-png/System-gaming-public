@@ -16,6 +16,7 @@ import type { Grid, Place, Side } from './space.ts';
 import { acted, delayed, extraNow, extraStep, interval, refunded, stunned, tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
 import type { Ability, Avoid, CombatantId, Outcome } from './ability-types.ts';
+import { isUp, rowHp } from './row-hp.ts';
 import { controlFactor, cureStatus, dispelled, removeStatus, shielded, withStatuses } from './effect-ops.ts';
 import { atTier, countOn, stacked } from './op-amount.ts';
 import { boostsOn, concealed, critFacesAgainst, damageShare, edgeOn, edgeStep, healShare, rangeWith, wardedDamage } from './standing.ts';
@@ -99,7 +100,7 @@ export function taunted(a: Ability, user: Body, bodies: readonly Body[], at: Pla
   for (const s of live(user, now)) {
     if (!s.def.ops.some(o => o.op === 'taunt') || s.source.id === null) continue;
     const src = bodies.find(b => b.id === s.source.id);
-    if (!src || src.hp <= 0 || dist(user.place, src.place) > a.range) continue;
+    if (!src || !isUp(src) || dist(user.place, src.place) > a.range) continue;
     const cover = tilesOf(a.shape, user.place, at, grid);
     if (![...cover.hit, ...cover.ring].some(p => samePlace(p, src.place))) return true;
   }
@@ -158,12 +159,12 @@ const crit = (a: Ability, user: Body, target: Body, avoid: Avoid, d20: number | 
 // an area reads the same field and a use's own chain does not change its numbers. Each within its rule's bound.
 export type Snapshot = { readonly bodies: ReadonlyMap<CombatantId, { readonly stacks: Readonly<Record<StatusKey, number>>; readonly missing: number }>; readonly user: CombatantId; readonly field: Readonly<Record<StatusKey, number>>; readonly held: Readonly<Record<StatusKey, number>>; readonly hits: number; readonly kills: number; readonly spent: number };
 export function snapshot(user: Body, bodies: readonly Body[], hits: number, spent: number, now: Tick, R: ResolveRules): Snapshot {
-  const K = R.fight.kit, up = bodies.filter(b => b.hp > 0);
+  const K = R.fight.kit, up = bodies.filter(isUp);
   const stacksOf = (b: Body) => Object.fromEntries(live(b, now).map(s => [s.key, Math.min(K.stackCap, countOn(s))])) as Record<StatusKey, number>;
   const field: Record<StatusKey, number> = {};
   for (const b of up) for (const s of live(b, now)) field[s.key] = Math.min(K.fieldStacks, (field[s.key] ?? 0) + countOn(s));
   const held = Object.fromEntries(live(user, now).map(s => [s.key, Math.min(K.held, Math.max(0, (now - s.since) / R.fight.round))])) as Record<StatusKey, number>;
-  const all = new Map(bodies.map(b => [b.id, { stacks: stacksOf(b), missing: b.sheet.hpMax > 0 ? Math.max(0, Math.min(1, 1 - b.hp / b.sheet.hpMax)) : 0 }] as const));
+  const all = new Map(bodies.map(b => [b.id, { stacks: stacksOf(b), missing: b.sheet.hpMax > 0 ? Math.max(0, Math.min(1, 1 - rowHp(b) / b.sheet.hpMax)) : 0 }] as const));
   return { bodies: all, user: user.id, field, held, hits: Math.min(K.hits, hits), kills: Math.min(K.kills, tallyOf(user).kills.length), spent };
 }
 /** The snapshot as one target's formula reads it: its own stacks and lost share, and the stacks this use's prices took from it and from the user. */
@@ -526,12 +527,12 @@ export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body
     const guard = a.kind === 'strike' ? answers.guard?.[t.id] ?? 0 : 0;
     const dealt = defended(guard ? raw * (1 - guard) : raw, a, u, t, R);
     let absorbed = 0, hpDamage = 0, threat = 0, fill = 0, stag = false;
-    const before = t.hp;
+    const before = rowHp(t);
     if (type === 'physical' || type === 'magical') {
       const shield = throughShield(t, dealt, now);
       t = shield.target; absorbed = shield.absorbed; hpDamage = wardedDamage(t, dealt - absorbed);
       // rule 13b: a hit about to take a body to 0 sets off an armed lethal reaction, which lands before the hit does
-      if (answers.lethal && t.hp > 0 && hpDamage >= t.hp) {
+      if (answers.lethal && isUp(t) && hpDamage >= rowHp(t)) {
         rows.set(t.id, t);
         if (answers.lethal(t.id, rows)) { t = rows.get(t.id)!; const again = throughShield(t, hpDamage, now); t = again.target; absorbed += again.absorbed; hpDamage = wardedDamage(t, hpDamage - again.absorbed); }
       }
@@ -555,7 +556,7 @@ export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body
     }
     outcomes.push({
       target: t.id, avoid: end.avoid, to: end.to, crit: isCrit, raw, dealt, absorbed, type, statuses: landed.keys,
-      threat: threat + landed.threat, stagger: fill, staggered: stag, channelBroken, down: before > 0 && t.hp === 0,
+      threat: threat + landed.threat, stagger: fill, staggered: stag, channelBroken, down: before > 0 && rowHp(t) === 0,
     });
     for (const f of landed.fired) bursts.push(landThreshold(rows, f, now, R));
     // a cure that sets a delayed effect off lands its end at once (kits table 2.2)
@@ -600,7 +601,7 @@ function pushed(a: Ability, userId: CombatantId, at: Place, outcomes: readonly O
   for (const op of a.ops) {
     if (op.op !== 'shove') continue;
     const anchor = op.from === 'user' ? rows.get(userId)!.place : at;
-    const caught = outcomes.filter(o => o.avoid === 'caught' && o.target !== userId).map(o => rows.get(o.target)!).filter(b => b && b.hp > 0)
+    const caught = outcomes.filter(o => o.avoid === 'caught' && o.target !== userId).map(o => rows.get(o.target)!).filter(b => b && isUp(b))
       .sort((p, q) => (op.dir === 'away' ? dist(anchor, q.place) - dist(anchor, p.place) : dist(anchor, p.place) - dist(anchor, q.place)) || p.place.y - q.place.y || p.place.x - q.place.x);
     for (const c of caught) {
       const t = rows.get(c.id)!, k = rooted(t) ? 0 : Math.floor(op.tiles * controlFactor(t, R));

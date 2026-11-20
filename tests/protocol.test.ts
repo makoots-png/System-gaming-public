@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { DOCS, DOC_MAX, NOTED_MAX, EVENTS, EVENT_TYPES, newEvent, onTurn, parseDocName, parseEvent, parseRoomState, parseSheet, SHEET_MAX, speaksFor, useRoute } from '../src/core/protocol.ts';
+import { DOCS, DOC_MAX, NOTED_MAX, EVENTS, EVENT_TYPES, newEvent, onTurn, parseDocName, parseEvent, parseRoomState, parseSheet, SHEET_MAX, speaksFor, standsFor, useRoute } from '../src/core/protocol.ts';
 import { endEvent, isSealed } from '../src/core/protocol.ts';
 import { FACE_LINES, hunterFace, parseServedSheet, servedTo, sheetFor } from '../src/core/protocol.ts';
 import type { RoomEvent, RoomViewer } from '../src/core/protocol.ts';
@@ -100,7 +100,7 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
 
 describe('every event type', () => {
   test('the table has an entry for each room message, and for nothing else', () => {
-    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'cast', 'chain', 'chapter', 'coinCall', 'coinLand', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'revive', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'status', 'step', 'system', 'used', 'vitals']);
+    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'cast', 'chain', 'chapter', 'coinCall', 'coinLand', 'deathSave', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'revive', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'status', 'step', 'system', 'used', 'vitals']);
   });
 
   test('only the GM may send what changes a hunter, speaks for the System or lands a coin; a player sends rolls, quest progress, uses, steps, casts, passes and coin calls', () => {
@@ -109,8 +109,8 @@ describe('every event type', () => {
   });
 
   test('what a player sends speaks for one hunter: only that hunter\'s phone may send it', () => {
-    expect(EVENT_TYPES.filter(t => EVENTS[t].ownSheet).sort()).toEqual(['arm', 'cast', 'coinCall', 'offer', 'offerEnd', 'pass', 'questUpdate', 'roll', 'soloRun', 'step', 'used']);
-    for (const t of ['roll', 'questUpdate', 'used', 'step', 'cast', 'pass', 'coinCall', 'arm', 'soloRun', 'offer', 'offerEnd'] as const) expect(speaksFor(parseEvent(t, valid(t))!)).toBe(KEY as SheetKey);
+    expect(EVENT_TYPES.filter(t => EVENTS[t].ownSheet).sort()).toEqual(['arm', 'cast', 'coinCall', 'deathSave', 'offer', 'offerEnd', 'pass', 'questUpdate', 'roll', 'soloRun', 'step', 'used']);
+    for (const t of ['roll', 'questUpdate', 'used', 'step', 'cast', 'pass', 'deathSave', 'coinCall', 'arm', 'soloRun', 'offer', 'offerEnd'] as const) expect(speaksFor(parseEvent(t, valid(t))!)).toBe(KEY as SheetKey);
     expect(speaksFor(parseEvent('award', valid('award'))!)).toBeNull();
   });
 
@@ -400,16 +400,41 @@ describe('an HP change', () => {
 describe('the fight\'s totals for a hunter', () => {
   const vitals = (fields: Raw) => payload('vitals', { ...valid('vitals'), ...fields });
 
-  test('HP, mana and fatigue are whole totals from 0 to a billion, clamped', () => {
-    expect(vitals({ hp: -5, mana: 1e12, fatigue: 7.9 })).toMatchObject({ hp: 0, mana: 1e9, fatigue: 7 });
+  test('mana and fatigue are whole totals from 0 to a billion, clamped', () => {
+    expect(vitals({ mana: 1e12, fatigue: 7.9 })).toMatchObject({ mana: 1e9, fatigue: 7 });
+  });
+
+  test('the row\'s life is carried whole in each of its states: up with its HP, dying with its saves, stable, dead', () => {
+    for (const life of [{ at: 'up', hp: 20 }, { at: 'dying', successes: 2, failures: 1 }, { at: 'stable' }, { at: 'dead' }]) expect(vitals({ life })!.life).toEqual(life);
+  });
+
+  test('a life is read as a save reads one: up HP from 1 to a billion, saves from 0 to 2, clamped, and nothing else kept', () => {
+    expect(vitals({ life: { at: 'up', hp: 2e9 } })!.life).toEqual({ at: 'up', hp: 1e9 });
+    expect(vitals({ life: { at: 'dying', successes: 5, failures: -1 } })!.life).toEqual({ at: 'dying', successes: 2, failures: 0 });
+    expect(vitals({ life: { at: 'dead', hp: 30 } })!.life).toEqual({ at: 'dead' });
+  });
+
+  test('a life that is not one of the four, or an up life with no HP, is refused: a life is never guessed', () => {
+    for (const life of [{ at: 'down' }, { at: 'up' }, { at: 'up', hp: '20' }, 'dead', 0, null]) expect(vitals({ life })).toBeNull();
   });
 
   test('a total left out, or not a number, is refused: a total is never guessed', () => {
-    for (const k of ['hp', 'mana', 'fatigue', 'statuses']) {
+    for (const k of ['life', 'mana', 'fatigue', 'statuses']) {
       const { [k]: _, ...without } = valid('vitals');
       expect(payload('vitals', without)).toBeNull();
     }
-    expect(vitals({ hp: '20' })).toBeNull();
+    expect(vitals({ mana: '20' })).toBeNull();
+  });
+
+  test('the HP of the old totals is no life: a message with HP and no life is refused', () => {
+    const { life: _, ...without } = valid('vitals');
+    expect(payload('vitals', { ...without, hp: 20 })).toBeNull();
+  });
+
+  test('a later total for the same hunter stands for an earlier one, its life with it; another hunter\'s does not', () => {
+    const at = (to: string, life: Raw) => parseEvent('vitals', { ...valid('vitals'), to: [to], life })!;
+    expect(standsFor(at(KEY, { at: 'dead' }))).toBe(standsFor(at(KEY, { at: 'up', hp: 1 })));
+    expect(standsFor(at(KEY, { at: 'dead' }))).not.toBe(standsFor(at(OTHER, { at: 'dead' })));
   });
 
   test('is for exactly one hunter', () => {
@@ -704,6 +729,32 @@ describe('a pass', () => {
   });
 });
 
+describe('a player\'s death save in the GM\'s fight', () => {
+  const save = (fields: Raw) => payload('deathSave', { ...valid('deathSave'), ...fields });
+
+  test('names the hunter and the d20 it rolled, and nothing else', () => {
+    expect(Object.keys(save({ at: 2500, life: { at: 'dead' } })!).sort()).toEqual(['by', 'eid', 'roll']);
+  });
+
+  test('each face of the d20 is a roll', () => {
+    for (let roll = 1; roll <= 20; roll++) expect(save({ roll })!.roll).toBe(roll);
+  });
+
+  test('a roll off the d20 is refused, never clamped: a 0 read as 1 would count two failures, a 21 read as 20 would stand the hunter up', () => {
+    for (const roll of [0, 21, -1, 9.5, '9', null, undefined]) expect(save({ roll })).toBeNull();
+  });
+
+  test('speaks for its hunter: only that hunter\'s phone may send it', () => {
+    expect(EVENTS.deathSave.ownSheet).toBe(true);
+    expect(EVENTS.deathSave.gmOnly).toBe(false);
+    expect(speaksFor(parseEvent('deathSave', valid('deathSave'))!)).toBe(KEY as SheetKey);
+  });
+
+  test('each death save stands for itself: a second one does not take the first one\'s place in the outbox', () => {
+    expect(standsFor(parseEvent('deathSave', valid('deathSave'))!)).toBeNull();
+  });
+});
+
 describe('a player\'s step or cast on the GM\'s phone', () => {
   /** A running fight at `now`, the turn of row c1, held by the hunter of `KEY` on another phone; row c2 is a monster. */
   const fight = (o: { now?: number; currentId?: string; phase?: string; holder?: Raw | null } = {}): Fight => ({
@@ -742,11 +793,11 @@ describe('the fight doc', () => {
   const st = (key: string, label = key) => ({ key, label, left: 2.5, tier: 0 });
   const KAI_ROW = {
     id: 'c1', name: 'Kai', side: 'party', key: KEY, place: { x: 2, y: 3 }, at: 1500, speed: 100, band: 'wounded', statuses: [st('burning', 'Burning')],
-    shield: 12, shieldLeft: 1.5, channel: null, taunt: null, down: false, kind: 'hunter', hp: 20, hpMax: 30, stride: 3, move: 6,
+    shield: 12, shieldLeft: 1.5, channel: null, taunt: null, life: { at: 'up' }, kind: 'hunter', hp: 20, hpMax: 30, stride: 3, move: 6,
   };
   const GOBLIN_ROW = {
     id: 'c2', name: 'Goblin', side: 'foe', key: null, place: { x: 2, y: 11 }, at: 1800, speed: 110, band: 'bloodied', statuses: [], shield: null, shieldLeft: null,
-    channel: { ability: 'hex-bolt', name: 'Hex Bolt', charge: 2, max: 5, state: 'holding', factor: 2.1 }, taunt: { by: 'c1', left: 1.2 }, down: false,
+    channel: { ability: 'hex-bolt', name: 'Hex Bolt', charge: 2, max: 5, state: 'holding', factor: 2.1 }, taunt: { by: 'c1', left: 1.2 }, life: { at: 'up' },
     kind: 'monster', intent: { name: 'Shortbow', target: 'c1', reveal: null }, stagger: { fill: 3, max: 40, staggered: null }, suggest: 'c1',
   };
   /** A running fight as fightDoc (src/core/combat/fight-doc.ts) makes it; `parse` puts it on the wire (`fightWire`) and reads it back. */
@@ -793,6 +844,14 @@ describe('the fight doc', () => {
   test('a row with a band, side or kind the table does not have, or a place off the biggest grid, is dropped', () => {
     const bad = [{ ...GOBLIN_ROW, band: 'fine' }, { ...GOBLIN_ROW, side: 'neutral' }, { ...GOBLIN_ROW, kind: 'boss' }, { ...GOBLIN_ROW, place: { x: 64, y: 0 } }];
     expect(rowsOf([...bad, KAI_ROW])).toEqual([KAI_ROW]);
+  });
+
+  test('a row\'s life comes through by its kind\'s table: a hunter dying, stable or dead, a monster dead; a dying monster or a state off the table drops the row', () => {
+    const lives = [{ ...KAI_ROW, life: { at: 'dying' } }, { ...KAI_ROW, id: 'c3', life: { at: 'stable' } }, { ...KAI_ROW, id: 'c4', life: { at: 'dead' } }, { ...GOBLIN_ROW, life: { at: 'dead' } }];
+    expect(rowsOf(lives)).toEqual(lives);
+    const wire = fightWire({ ...copy(LIVE), rows: [KAI_ROW, GOBLIN_ROW] } as never) as Raw;
+    const off = [{ ...wire.rows[1], d: 1 }, { ...wire.rows[0], d: 4 }, { ...wire.rows[0], d: 0 }, { ...wire.rows[0], d: 'dead' }, { ...wire.rows[0], d: true }];
+    expect((DOCS.fight({ ...wire, rows: [...off, wire.rows[0]] }) as Raw).rows).toEqual([KAI_ROW]);
   });
 
   test('a monster\'s intent names a row or a tile, and none is null; stagger is whole numbers', () => {
@@ -950,9 +1009,9 @@ describe('the fight doc', () => {
       expect(JSON.stringify(wire).length).toBeLessThanOrEqual(DOC_MAX * 8 / 9);
     }
     const row = worstDoc(false).rows[0]!, wireRow = (r: Raw) => JSON.stringify((fightWire({ ...worstDoc(false), rows: [r] } as never) as Raw).rows[0]).length;
-    const hunter = { ...row, kind: 'hunter', key: KEY, intent: undefined, stagger: undefined, suggest: undefined, hp: 99999, hpMax: 99999, stride: 64, move: 64 };
+    const hunter = { ...row, kind: 'hunter', key: KEY, life: { at: 'stable' }, intent: undefined, stagger: undefined, suggest: undefined, hp: 99999, hpMax: 99999, stride: 64, move: 64 };
     expect(wireRow(hunter), 'a worst-case hunter row is no longer than the worst-case monster row').toBeLessThanOrEqual(wireRow(row));
-    const summon = { ...hunter, kind: 'summon', key: null, owner: 'm-31', left: 12345.6 };
+    const summon = { ...hunter, kind: 'summon', key: null, life: { at: 'dead' }, owner: 'm-31', left: 12345.6 };
     expect(wireRow(summon), 'a worst-case summon row is no longer than the worst-case monster row').toBeLessThanOrEqual(wireRow(row));
   });
 

@@ -16,7 +16,8 @@ import { setGold } from '../core/hunter/inventory.ts';
 import { addHunter, removeHunter } from '../core/party.ts';
 import { logLine, logged } from '../core/session-log.ts';
 import { removeBundle, saveBundle } from '../core/rewards.ts';
-import { FELL_WORDS, LIFE_TAG, SAVES_TO_END, WAYS_BACK, can, changeFatigue, changeMana, fatigueNews, hpOf, lifeNews, manaOf, setFatigue, setMana } from '../core/hunter/vitals.ts';
+import { FELL_WORDS, SAVES_TO_END, WAYS_BACK, can, changeFatigue, changeMana, fatigueNews, hpOf, lifeNews, manaOf, setFatigue, setMana } from '../core/hunter/vitals.ts';
+import { lifeWord } from '../core/combat/row-life.ts';
 import { chipDef, chipsOf, isStateChip } from '../core/hunter/chips.ts';
 import { oneOf } from '../core/one-of.ts';
 import { gmSource } from '../core/effects.ts';
@@ -216,19 +217,6 @@ export function register(app) {
   /** A hand edit of HP, mana or fatigue: the fight's `adjust` on the row, refused in the GM's fight, else `onSheet(h)`. */
   const handEdit = (hid, delta, onSheet, why) => vitalsEdit(hid, why, orKeep(onSheet), cid => app.api.combat.adjust(cid, delta));
   /**
-   * A life event in this phone's fight. The row has no life (the fight reads the sheet's through `ctx.life`), so the event
-   * goes on the sheet; HP it raises from 0 (Revive, a natural 20) goes to the row, which stands at 0 while the hunter is
-   * down, in the same write: the fight's `adjust` with the sheet's step as its `also`.
-   */
-  function lifeInFight(hid, cid, step, why) {
-    const h = store.hunter(hid); if (!h) return false;
-    const next = step(h);
-    if (isRefused(next)) return false;
-    const now = next.life;
-    if (lifeNews(h.life, now)?.kind === 'raised' && now.at === 'up') return app.api.combat.adjust(cid, { hp: now.hp }, atHunter(hid, step));
-    return toSheet(hid, why, step);
-  }
-  /**
    * `write`, a change of hunter `hid`'s HP or life, and what it did to the life, worked out from the life read before and
    * read again after (src/core/hunter/vitals.ts `lifeNews`): null when it wrote nothing, `news` null when the state stayed.
    */
@@ -307,8 +295,16 @@ export function register(app) {
     gmHolds,
     damage(hid, n) { return handEdit(hid, { hp: -Math.abs(int(n)) }, h => lifeEvent(h, { type: 'damage', amount: Math.abs(int(n)) }), 'damage'); },
     heal(hid, n) { return handEdit(hid, { hp: Math.abs(int(n)) }, h => lifeEvent(h, { type: 'heal', amount: Math.abs(int(n)) }), 'heal'); },
-    /** A life event (src/core/hunter/vitals.ts): the sheet's and GM board's death save, Stabilize and Revive. False when it does not apply. */
-    life(hid, event) { return vitalsEdit(hid, `life-${event.type}`, h => lifeEvent(h, event), (cid, _sheet, step) => lifeInFight(hid, cid, step, `life-${event.type}`), sheet => sheet()); },
+    /**
+     * A life event (src/core/hunter/vitals.ts): the sheet's and GM board's death save, Stabilize and Revive. In this phone's
+     * fight the row holds the life: the event is the fight's `life` command, and the sheet hears the row's new life in the
+     * same write. In the GM's fight the GM's row holds it: a death save goes there as the room's `deathSave`, and the sheet
+     * hears the row's new life in the room's `vitals`; any other event is the GM's. False when it does not apply or was not posted.
+     */
+    life(hid, event) {
+      return vitalsEdit(hid, `life-${event.type}`, h => lifeEvent(h, event), cid => app.api.combat.life(cid, event),
+        () => (event.type === 'deathSave' ? saveToTable(hid, event.roll) : gmHolds()));
+    },
     deathSave(hid) { const h = store.hunter(hid); return !!h && deathSave(h); },
     /** HP and mana to their maxima: in a fight the row's (`combat.refill`), refused in the GM's fight. */
     fightOf,
@@ -413,7 +409,7 @@ export function register(app) {
           <p class="hp-amt-msg" id="hp-amt-msg" data-hpmsg role="status" aria-live="polite"></p>
         </div>
         <div class="death" data-death hidden>
-          <b data-life>Down</b><span class="pips" data-pips></span>
+          <b data-life></b><span class="pips" data-pips></span>
           <button type="button" class="primary" data-dsave>Roll death save</button>
           <button type="button" data-stabilize hidden>Stabilize</button>
           <button type="button" class="primary" data-revive hidden>Revive</button>
@@ -508,10 +504,27 @@ export function register(app) {
   }
 
   let shownHunter = null, shownLevel = null; // the hunter and level the sheet showed last: a change of hunter is drawn at once, a change of level is a level-up
-  /** One death save: the d20, the life event and what it did. Answers whether it was rolled (the sheet, the HUD, a GM's card). */
+  /**
+   * The death save `roll` of hunter `hid` posted to the GM's fight (protocol.ts `deathSave`), from this phone, the
+   * hunter's own: whether the outbox took it.
+   */
+  function saveToTable(hid, roll) {
+    const S = app.api.sync, posted = S.post(S.event('deathSave', { by: S.myKey(hunterId(hid)), roll }));
+    return posted.ok;
+  }
+  /**
+   * One death save: the d20, the life event and what it did. Answers whether it was rolled (the sheet, the HUD, a GM's
+   * card). In the GM's fight the roll goes to the GM's row, and what it did is told when the row's life comes back (room-events.ts `vitals`).
+   */
   function deathSave(h) {
     if (!can(h.life, 'deathSave')) return false;
     const r = app.api.dice.roll('1d20', { label: 'Death save', hid: h.id }), nat = r.natural ?? r.total;
+    const at = fightOf({ hid: h.id });
+    if (at && at.at === 'gm') {
+      if (!api.life(h.id, { type: 'deathSave', roll: nat })) return false;
+      ui.toast('Death save', `You rolled ${nat}. It counts when the GM's fight takes it.`, { kind: 'info' });
+      return true;
+    }
     const w = lifeWrite(h.id, () => api.life(h.id, { type: 'deathSave', roll: nat })), news = w && w.news;
     if (!news) return false;
     // the words follow what the life table did with the roll (vitals.ts `lifeNews`), never a copy of its numbers
@@ -554,9 +567,10 @@ export function register(app) {
     q('[data-death]').hidden = !down;
     if (down) {
       const s = life.at === 'dying' ? life.successes : life.at === 'stable' ? SAVES_TO_END : 0, f = life.at === 'dying' ? life.failures : life.at === 'dead' ? SAVES_TO_END : 0;
-      q('[data-life]').textContent = LIFE_TAG[life.at];
+      const word = lifeWord({ kind: 'hunter', life });
+      q('[data-life]').textContent = word;
       q('[data-pips]').textContent = `${'●'.repeat(s)}${'○'.repeat(SAVES_TO_END - s)}  /  ${'✕'.repeat(f)}${'·'.repeat(SAVES_TO_END - f)}`;
-      q('[data-pips]').setAttribute('aria-label', life.at === 'dying' ? `Death saves: ${s} successes, ${f} failures` : LIFE_TAG[life.at]);
+      q('[data-pips]').setAttribute('aria-label', life.at === 'dying' ? `Death saves: ${s} successes, ${f} failures` : word);
       q('[data-dsave]').disabled = !can(life, 'deathSave');
       q('[data-stabilize]').hidden = !gm || !can(life, 'stabilize');
       q('[data-revive]').hidden = !gm || !can(life, 'revive');

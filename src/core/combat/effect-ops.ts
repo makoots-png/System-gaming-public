@@ -22,6 +22,9 @@ import type { BearerEvent, Trigger, Trip } from './triggers.ts';
 import { stackStep } from './stacks.ts';
 import { SHEET_OP_KEYS, atTier, countOn, isStacking, isTiers, stacked } from './op-amount.ts';
 import { harmful, withSheetOps } from './standing.ts';
+import { rowLifeAfter } from './row-life.ts';
+import type { FoeLife } from './row-life.ts';
+import type { Life } from '../hunter/vitals.ts';
 import type { Stack } from './stacks.ts';
 import type { HunterRef, Id, ShadowId } from '../ids.ts';
 
@@ -328,22 +331,28 @@ export type Holder = HunterRef | { readonly kind: 'shadow'; readonly hunterId: H
 export type Intent = { readonly ability: AbilityId; readonly aim: Place | CombatantId; readonly revealed: boolean };
 
 /**
+ * Which life a row holds goes with its kind (docs/agent-handoff/audit/notes-dead-row.md section 2): a hunter's row holds
+ * the hunter's `Life` (vitals.ts: up, dying, stable, dead), any other row a `FoeLife` (row-life.ts: up or dead), so a
+ * dying monster cannot be written. A row's HP is its life's (row-hp.ts `rowHp`); only row-life.ts changes it.
+ */
+export type BodyLife =
+  | { readonly kind: 'hunter'; readonly life: Life }
+  | { readonly kind: Exclude<CombatantKind, 'hunter'>; readonly life: FoeLife };
+/**
  * A combatant in a fight as one use of an ability reads and changes it: the row of the reducer (design 4 and 5.4). `stats`
  * and `sheet` are what `modified` makes of `origin` and `statuses`; `speed` (from `Clock`) is the sheet's speed. `threat`
  * is null on a body that keeps no threat table (anything but a monster). `readyAt` is when each used ability is ready again.
  */
-export type Body = Clock & {
+export type Body = Clock & BodyLife & {
   readonly id: CombatantId;
   readonly name: string;
   readonly side: Side;
-  readonly kind: CombatantKind;
   readonly origin: Origin;
   /** The rank index (E 0 to S 5) the statuses this body applies are read at. */
   readonly tier: number;
   readonly stats: Stats;
   readonly sheet: Sheet;
   readonly place: Place;
-  readonly hp: number;
   readonly mana: number;
   readonly fatigue: number;
   readonly shield: Shield | null;
@@ -390,6 +399,8 @@ export type Body = Clock & {
   /** A fallen monster's shadow extraction (extraction.ts): the attempts made on it, or gone. Absent before the first. */
   readonly extraction?: Extraction;
 };
+/** A hunter's row: its life is the life machine's. */
+export type HunterRow = Extract<Body, { readonly kind: 'hunter' }>;
 
 /** The rule numbers this file reads. */
 export type OpRules = DeriveRules;
@@ -601,15 +612,15 @@ export function modified(origin: Origin, statuses: readonly Status[], R: OpRules
 
 /**
  * A body with new statuses at `now`: its stats and sheet worked out again, a new speed rescaling the wait left (design
- * 1.2), and its HP, mana and fatigue kept within the new maxima, as a hunter's sheet keeps HP under a lowered max. A
+ * 1.2), and its HP (through its life's `maxChanged`, row-life.ts), mana and fatigue kept within the new maxima, as a hunter's sheet keeps HP under a lowered max. A
  * body whose turn time is already past (one that is down) has no wait left to rescale.
  */
 export function withStatuses<T extends Body>(body: T, statuses: readonly Status[], now: Tick, R: OpRules): T {
   const { stats, sheet } = modified(body.origin, statuses, R);
-  return {
+  return rowLifeAfter({
     ...(body.at < now ? { ...body, speed: sheet.speed } : withSpeed(body, now, sheet.speed)), statuses, stats, sheet,
-    hp: Math.min(body.hp, sheet.hpMax), mana: Math.min(body.mana, sheet.manaMax), fatigue: Math.min(body.fatigue, sheet.fatigueMax),
-  };
+    mana: Math.min(body.mana, sheet.manaMax), fatigue: Math.min(body.fatigue, sheet.fatigueMax),
+  }, { type: 'maxChanged' });
 }
 
 // ── shields (design 4.4) ──

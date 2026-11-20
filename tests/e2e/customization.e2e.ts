@@ -18,9 +18,9 @@ async function startLocalFight(p: Page, holds = true): Promise<void> {
   await p.evaluate(holds => hunterApp.store.update((d: any) => {
     const h = d.hunters.find((x: any) => x.id === d.settings.activeHunterId) ?? d.hunters[0];
     const blank = { tier: 0, tie: 0, xp: 0, mana: 0, fatigue: 0, statuses: [], abilities: [], readyAt: {}, threat: {}, shield: null, stagger: null, channel: null, intent: null };
-    const goblin = { ...blank, id: 'c900', name: 'Goblin', side: 'foe', kind: 'monster', at: 0, place: { x: 0, y: 0 }, holder: null, hp: 7,
+    const goblin = { ...blank, id: 'c900', name: 'Goblin', side: 'foe', kind: 'monster', at: 0, place: { x: 0, y: 0 }, holder: null, life: { at: 'up', hp: 7 },
       origin: { kind: 'monster', name: 'Monster', rank: 'E', archetype: 'skirmisher', monsterKind: 'normal', tweak: { hp: 1, stats: {} } } };
-    const hunter = { ...blank, id: 'c901', name: h.name, side: 'party', kind: 'hunter', at: 1, place: { x: 1, y: 0 }, holder: { kind: 'local', hunterId: h.id }, hp: 10,
+    const hunter = { ...blank, id: 'c901', name: h.name, side: 'party', kind: 'hunter', at: 1, place: { x: 1, y: 0 }, holder: { kind: 'local', hunterId: h.id }, life: { at: 'up', hp: 10 },
       origin: { kind: 'hunter', build: { stats: h.stats, level: h.level, gear: [], perks: {} } } };
     d.fight = { id: 'f900', phase: 'running', grid: { w: 16, h: 16, tiles: null }, log: [], banked: 0, now: 0, currentId: 'c900', pending: [], rows: holds ? [goblin, hunter] : [goblin] };
   }, 'test-setup'), holds);

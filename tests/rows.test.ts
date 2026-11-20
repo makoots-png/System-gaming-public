@@ -27,6 +27,7 @@ import { codexKey } from '../src/core/bestiary.ts';
 import type { RowHunter, RowMonster, RowShadow } from '../src/core/combat/rows.ts';
 import { sameRankHit as simHit } from './models/fight-sim.ts';
 import { iid } from './fixtures/ids.ts';
+import { rowHp } from '../src/core/combat/row-hp.ts';
 const sheetKey = (s: string) => parseSheetKey(s) ?? (() => { throw new Error(`not a sheet key: ${s}`); })();
 
 const F = RULES.fight;
@@ -56,16 +57,16 @@ describe('a hunter on this phone', () => {
   test('joins on the party side with its HP, mana and fatigue as its sheet holds them, written back to it', () => {
     const h = hunter({ rank: 'C', fatigue: 7 });
     const r = hunterRow(h, id('c1'), RULES);
-    expect([r.id, r.name, r.side, r.kind, r.tier, r.hp, r.mana, r.fatigue, r.xp, r.place]).toEqual([id('c1'), 'Brakk', 'party', 'hunter', 2, 30, 5, 7, 0, null]);
+    expect([r.id, r.name, r.side, r.kind, r.tier, rowHp(r), r.mana, r.fatigue, r.xp, r.place]).toEqual([id('c1'), 'Brakk', 'party', 'hunter', 2, 30, 5, 7, 0, null]);
     expect(r.holder).toEqual({ kind: 'local', hunterId: hunterId('h1') });
     expect(r.origin).toEqual({ kind: 'hunter', build: buildOf(h, RULES) });
     expect([r.threat, r.stagger, r.shield, r.channel, r.intent, r.readyAt]).toEqual([null, null, null, null, null, {}]);
   });
 
   test('a dying hunter joins at 0 HP, and HP, mana and fatigue above the maxima join at the maxima', () => {
-    expect(hunterRow(hunter({ life: { at: 'dying', successes: 1, failures: 0 } }), id('c1'), RULES).hp).toBe(0);
+    expect(rowHp(hunterRow(hunter({ life: { at: 'dying', successes: 1, failures: 0 } }), id('c1'), RULES))).toBe(0);
     const r = hunterRow(hunter({ life: { at: 'up', hp: 999 }, mana: 999, fatigue: 999, hpAdj: 5 }), id('c1'), RULES);
-    expect([r.hp, r.mana, r.fatigue]).toEqual([F.hpBase + 5, F.manaBase, F.fatigueBase]);
+    expect([rowHp(r), r.mana, r.fatigue]).toEqual([F.hpBase + 5, F.manaBase, F.fatigueBase]);
   });
 
   test('attacks with its worn weapon, then each active skill in order; a passive and a skill with no ability add nothing', () => {
@@ -114,7 +115,7 @@ describe('a hunter on this phone', () => {
       { key: statusKey('stealth'), def: STEALTH, source: { id: null, tier: 1 }, until: null, since: now, settledAt: now },
     ]);
     const plain = hunterRow({ ...hunter(), id: 'h2' }, id('c2'), RULES);
-    const f = reduce(null, { type: 'add', fightId: fightId('f'), rows: [r, plain], openings: [] }, { rules: RULES, life: () => null }).fight!;
+    const f = reduce(null, { type: 'add', fightId: fightId('f'), rows: [r, plain], openings: [] }, { rules: RULES }).fight!;
     // Slowed at the source's tier 1 is -25%: 100 * 0.75.
     expect(f.rows.map(x => x.speed)).toEqual([F.speedBase * 0.75, F.speedBase]);
   });
@@ -163,7 +164,7 @@ describe('a monster', () => {
     const sheet = monsterSheet('E', 'skirmisher', 'normal', RULES);
     expect(rows.map(r => r.name)).toEqual(['Goblin A', 'Goblin B', 'Goblin C']);
     for (const r of rows) {
-      expect([r.side, r.kind, r.tier, r.hp, r.mana, r.fatigue, r.xp, r.threat, r.holder, r.stagger]).toEqual(['foe', 'monster', 0, sheet.hpMax, sheet.manaMax, 0, 10, {}, null, null]);
+      expect([r.side, r.kind, r.tier, rowHp(r), r.mana, r.fatigue, r.xp, r.threat, r.holder, r.stagger]).toEqual(['foe', 'monster', 0, sheet.hpMax, sheet.manaMax, 0, 10, {}, null, null]);
     }
     expect(monsterRows(monster(), [id('m1')], R).map(r => r.name)).toEqual(['Goblin']);
   });
@@ -172,8 +173,8 @@ describe('a monster', () => {
     const tweak = { hp: 0.7, stats: { ins: 8 } };
     const [r] = monsterRows(monster({ archetype: 'caster', tweak }), [id('m1')], R);
     expect(r!.origin).toEqual({ kind: 'monster', name: 'Goblin', rank: 'E', archetype: 'caster', monsterKind: 'normal', tweak });
-    expect(r!.hp).toBe(monsterSheet('E', 'caster', 'normal', RULES, [], tweak).hpMax);
-    expect(r!.hp).toBeLessThan(monsterSheet('E', 'caster', 'normal', RULES).hpMax);
+    expect(rowHp(r!)).toBe(monsterSheet('E', 'caster', 'normal', RULES, [], tweak).hpMax);
+    expect(rowHp(r!)).toBeLessThan(monsterSheet('E', 'caster', 'normal', RULES).hpMax);
   });
 
   test('attacks with its archetype\'s attack first, then its own; its own of the same id is left out', () => {
@@ -220,14 +221,14 @@ describe('a shadow', () => {
     const KIND: Record<ShadowGrade, MonsterKind> = { Normal: 'normal', Elite: 'elite', Knight: 'elite', 'Elite Knight': 'elite', Commander: 'boss', Marshal: 'boss' };
     for (const grade of SHADOW_GRADES) {
       const r = shadowRow(shadow({ grade, hp: 1e9 }), 'h1', id('x1'), RULES);
-      expect([grade, r.hp]).toEqual([grade, monsterSheet('C', 'brute', KIND[grade], RULES).hpMax]);
+      expect([grade, rowHp(r)]).toEqual([grade, monsterSheet('C', 'brute', KIND[grade], RULES).hpMax]);
       expect([grade, shadowSheet(shadow({ grade }), RULES).hpMax]).toEqual([grade, monsterSheet('C', 'brute', KIND[grade], RULES).hpMax]);
     }
   });
 
   test('joins on the party side with its HP as its hunter keeps it and its archetype\'s attack, written back to its hunter', () => {
     const r = shadowRow(shadow({ archetype: 'caster' }), 'h1', id('x1'), RULES);
-    expect([r.side, r.kind, r.name, r.tier, r.hp, r.xp, r.threat, r.stagger, r.statuses]).toEqual(['party', 'shadow', 'Igris', 2, 12, 0, null, null, []]);
+    expect([r.side, r.kind, r.name, r.tier, rowHp(r), r.xp, r.threat, r.stagger, r.statuses]).toEqual(['party', 'shadow', 'Igris', 2, 12, 0, null, null, []]);
     expect(r.holder).toEqual({ kind: 'shadow', hunterId: hunterId('h1'), shadowId: shadowId('s1') });
     expect(r.abilities).toEqual([ARCHETYPE_ATTACKS.caster(RULES)]);
   });
@@ -241,7 +242,7 @@ test('a name past 60 characters is cut, and a pack keeps its letter', () => {
 });
 
 test('every kind of row joins one fight, which starts and stores and reads back as it was', () => {
-  const ctx: Ctx = { rules: RULES, life: () => null };
+  const ctx: Ctx = { rules: RULES };
   const rows = [
     hunterRow(hunter({ conditions: [condition('slowed', SLOWED, 2)] }), id('c1'), RULES),
     remoteRow(hunter({ id: 'h2', name: 'Mira' }), sheetKey('dev-2:h2'), id('c2'), RULES),
@@ -272,7 +273,7 @@ describe('a summon (kits design 1.9)', () => {
   test('is a normal monster\'s body of its archetype at its user\'s rank, with the archetype\'s attack, on its user\'s side', () => {
     expect([row.kind, row.side, row.tier, row.origin]).toEqual(['summon', 'party', 2, { kind: 'monster', name: 'Sprite', rank: 'C', archetype: 'skirmisher', monsterKind: 'normal', tweak: { hp: 1, stats: {} } }]);
     expect(row.abilities.map(a => a.id)).toEqual([ARCHETYPE_ATTACKS.skirmisher(RULES).id]);
-    expect([row.hp, row.xp, row.holder, row.threat, row.stagger]).toEqual([monsterSheet('C', 'skirmisher', 'normal', RULES, [{ op: 'speed', pct: -30 }]).hpMax, 0, null, null, null]);
+    expect([rowHp(row), row.xp, row.holder, row.threat, row.stagger]).toEqual([monsterSheet('C', 'skirmisher', 'normal', RULES, [{ op: 'speed', pct: -30 }]).hpMax, 0, null, null, null]);
   });
 
   test('is owned by its user and leaves after its rounds, at most `summonRounds`; its statuses the rules know come with it from now', () => {

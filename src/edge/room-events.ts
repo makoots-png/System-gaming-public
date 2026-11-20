@@ -16,7 +16,8 @@ import { appliedOnce, hold, replaced, unhold } from '../core/applied.ts';
 import { runAnswered } from '../core/gates/solo-wait.ts';
 import { REFUSED_WORDS } from '../core/gates/solo.ts';
 import type { ChainEvent } from '../core/hunter/job-chain.ts';
-import { hpChange } from '../core/hunter/vitals.ts';
+import { SAVES_TO_END, WAYS_BACK, hpChange, lifeNews } from '../core/hunter/vitals.ts';
+import type { Life } from '../core/hunter/vitals.ts';
 import { spendItem } from '../core/hunter/use.ts';
 import { shadowRises } from '../core/hunter/shadows.ts';
 import { record } from '../core/hunter/chronicle.ts';
@@ -105,13 +106,13 @@ const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS }
   } },
   hp: { once: true, land: landHp },
   vitals: { once: true, land: (p, hids, app) => save => forEach(save, hids, (s, h) => {
-    // the fight's own totals: written on the sheet wherever the fight is, so a repeat changes nothing
-    const next = sheetEdit(h, { type: 'totals', hp: p.hp, mana: p.mana, fatigue: p.fatigue, statuses: p.statuses }, app.rules());
+    // the fight's own totals, its row's life among them: written on the sheet wherever the fight is, so a repeat changes nothing
+    const next = sheetEdit(h, { type: 'totals', life: p.life, mana: p.mana, fatigue: p.fatigue, statuses: p.statuses }, app.rules());
     if (isRefused(next)) return { save: s, tell: nothing };
     const had = new Set(h.conditions.map(c => c.key));
     return { save: withHunter(s, next), tell: () => {
       for (const st of p.statuses) if (!had.has(st.key)) statusToast(app, st);
-      fallen(app, h, next, p.reason);
+      fightLifeTold(app, h.life, next.life, p.reason);
     } };
   }) },
   // the GM's fight took this hunter's use of an item: one leaves the bag (src/core/hunter/use.ts `spendItem`); an item
@@ -122,8 +123,11 @@ const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS }
     return { save: withHunter(s, next), tell: () => app.toast('! System', `${it.name} used.`, { kind: 'info' }) };
   }) },
   status: { once: true, land: landStatus },
-  // only a dead hunter is revived (the vitals table); the rest of the list is left as it is
+  // a hunter no fight holds: only a dead one is revived (the vitals table), the rest of the list is left as it is. A
+  // hunter a fight holds is not written here: its row holds the life, the GM's fight revives it with its `life` command
+  // and this phone hears it in `vitals`, so a revive sent before the hunter joined a fight lands on nothing
   revive: { once: true, land: (_p, hids, app) => save => forEach(save, hids, (s, h) => {
+    if (app.hunter.fightOf({ hid: h.id })) return { save: s, tell: nothing };
     const next = sheetEdit(h, { type: 'life', event: { type: 'revive' } }, app.rules());
     return isRefused(next) ? { save: s, tell: nothing }
       : { save: withHunter(s, next), tell: () => app.toast('! System', 'The GM has revived you. You are up at 1 HP.', { kind: 'good' }) };
@@ -138,6 +142,8 @@ const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS }
   step: GM_ONLY_READS,
   cast: GM_ONLY_READS,
   pass: GM_ONLY_READS,
+  // the GM's fight takes it as its `life` command (combat.js); this phone's sheet hears the row's new life in `vitals`
+  deathSave: GM_ONLY_READS,
   // a player's armed reaction (kits design 8.4.2): the GM's fight takes it as its `arm`; a player's phone does nothing
   arm: GM_ONLY_READS,
   // the GM's phone keeps the call and asks the GM (src/views/coin.js)
@@ -235,7 +241,26 @@ function landAward(p: PayloadOf<'award'>, hids: string[], app: ApplyDeps): Land 
 
 /** A4: falling is a toast too; the sheet's death panel and the Down chip are where the player acts on it. */
 function fallen(app: ApplyDeps, before: Hunter, after: Hunter, reason: string): void {
-  if (before.life.at === 'up' && after.life.at !== 'up') app.toast('! Warning', `You are down. ${reason || 'Your HP has reached 0.'} Roll a death save on your sheet.`, { kind: 'warn' });
+  if (before.life.at === 'up' && after.life.at !== 'up') fellTold(app, reason);
+}
+const fellTold = (app: ApplyDeps, reason: string): void => app.toast('! Warning', `You are down. ${reason || 'Your HP has reached 0.'} Roll a death save on your sheet.`, { kind: 'warn' });
+/**
+ * What the GM's fight did to this phone's hunter's life, told from the lives before and after the `vitals` write
+ * (vitals.ts `lifeNews`), so the words follow what the row's life did: a fall, each death save the fight took, stable,
+ * dead, or up again (a revive of the dead, else a heal or a natural 20).
+ */
+function fightLifeTold(app: ApplyDeps, before: Life, after: Life, reason: string): void {
+  const news = lifeNews(before, after);
+  if (!news) return;
+  const hp = after.at === 'up' ? after.hp : 0;
+  switch (news.kind) {
+    case 'fell': fellTold(app, reason); return;
+    case 'saved': app.toast('Death save', `Success: ${news.successes} of ${SAVES_TO_END}.`, { kind: 'info' }); return;
+    case 'failed': app.toast('Death save', `Failed: ${news.failures} of ${SAVES_TO_END}.`, { kind: 'warn' }); return;
+    case 'stable': app.toast('Death save', `${SAVES_TO_END} successes: you are stable.`, { kind: 'info' }); return;
+    case 'died': app.toast('! Warning', `You are dead. ${WAYS_BACK} brings you back.`, { kind: 'warn' }); return;
+    case 'raised': app.toast('! System', before.at === 'dead' ? `You are revived. You are up at ${hp} HP.` : `You are up again at ${hp} HP.`, { kind: 'good' }); return;
+  }
 }
 
 /**

@@ -20,7 +20,7 @@ import { NO_TALLY, tallied, tallyOf, turnKillsMax } from '../src/core/combat/row
 import { killFacts, killsSeen, rowFacts } from '../src/core/combat/fight-facts.ts';
 import { parseFact } from '../src/core/hunter/facts.ts';
 
-const ctx: Ctx = { rules: RULES, life: () => null };
+const ctx: Ctx = { rules: RULES };
 const f = (text: string) => { const p = parseFormula(text, RULES); if (!p.ok) throw new Error(p.error); return p.formula; };
 const id = combatantId;
 const HUNTER: Origin = { kind: 'hunter', build: { stats: baseStats(RULES.fight), level: 1, gear: kitGear('light', RULES), perks: {} } };
@@ -32,7 +32,7 @@ const HIT = ability('hit', '10'), BIG = ability('big', '9999');
 function row(name: string, side: Side, origin: Origin = side === 'party' ? HUNTER : WOLF): NewRow {
   const hpMax = modified(origin, [], RULES).sheet.hpMax;
   return {
-    id: id(name), name, side, kind: side === 'party' ? 'hunter' : 'monster', origin, tier: 0, place: null, hp: hpMax, mana: 10, fatigue: 0, shield: null, stagger: null,
+    id: id(name), name, side, kind: side === 'party' ? 'hunter' : 'monster', origin, tier: 0, place: null, life: { at: 'up', hp: hpMax }, mana: 10, fatigue: 0, shield: null, stagger: null,
     channel: null, threat: side === 'foe' ? {} : null, statuses: [], readyAt: {}, abilities: [HIT, BIG], intent: null, holder: null, xp: 0,
   };
 }

@@ -176,8 +176,8 @@ test('the chips a hunter\'s state draws have a label and no ops, and none of the
 });
 
 test('a hunter at 0 HP wears the chip the death panel names: Dying while the saves run, Stable once stabilized, Dead after three failures', () => {
-  expect(chipDef('down', { at: 'dying', successes: 1, failures: 1 }).label).toBe('Down');
-  expect(chipDef('down', { at: 'stable' }).label).toBe('Down, stable');
+  expect(chipDef('down', { at: 'dying', successes: 1, failures: 1 }).label).toBe('Dying');
+  expect(chipDef('down', { at: 'stable' }).label).toBe('Stable');
   expect(chipDef('dead', { at: 'dead' }).label).toBe('Dead');
   // the description is the one the registry holds, so the chip's card still explains the death saves
   expect(chipDef('down', { at: 'stable' }).desc).toBe(STATE_CHIP_DEFS.down.desc);

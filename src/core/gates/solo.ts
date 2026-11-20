@@ -245,7 +245,7 @@ export function soloFight(h: Hunter, t: SoloTarget, R0: Rules): SoloFight | null
   const rows: NewRow[] = [hunterRow(h, me, R)];
   h.shadows.filter(s => s.summoned).forEach((s, i) => { const id = combatantId(`solo-s${i}`); shadows[id] = s.id; rows.push(shadowRow(s, h.id, id, R)); });
   t.monsters.forEach((m, i) => rows.push(...monsterRows(m.monster, Array.from({ length: m.count }, (_, k) => combatantId(`solo-m${i}-${k}`)), R)));
-  const r = reduce(null, { type: 'add', fightId: fightId('solo'), rows, openings: [] }, { rules: R, life: id => (id === h.id ? h.life : null) });
+  const r = reduce(null, { type: 'add', fightId: fightId('solo'), rows, openings: [] }, { rules: R });
   return r.fight?.phase === 'setup' ? { fight: r.fight, hunter: me, shadows, R } : null;
 }
 
@@ -255,16 +255,16 @@ export type SoloRun = { readonly end: RunEnd; readonly hunter: CombatantId; read
 export type SoloLoot = { readonly gold: number; readonly items: readonly ItemTemplate[] };
 
 /**
- * Hunter `h` as the run left it, through the writer each part has: the row's totals (`sheetEdit`: HP through the life
- * machine's `setHp`, mana, fatigue with its collapse, the statuses a sheet keeps, the uses spent this rest), each death
+ * Hunter `h` as the run left it, through the writer each part has: the row's totals (`sheetEdit`: the row's life,
+ * mana, fatigue with its collapse, the statuses a sheet keeps, the uses spent this rest), each death
  * save face through the life machine (`deathSave`), each item it used up (`spendItem`), each shadow's HP (`setShadowHp`).
  */
 export function ranOn(h: Hunter, run: SoloRun, R: Rules): Hunter {
   const row = run.end.party[run.hunter];
-  if (!row) return h;
+  if (!row?.lifeLeft) return h;
   // a part its writer refuses (an item no longer held) leaves the hunter as it was
   const kept = (was: Hunter, next: Hunter | Refused): Hunter => (isRefused(next) ? was : next);
-  let x = kept(h, sheetEdit(h, { type: 'totals', hp: row.hp, mana: row.mana, fatigue: row.fatigue, statuses: row.statuses, used: row.used }, R));
+  let x = kept(h, sheetEdit(h, { type: 'totals', life: row.lifeLeft, mana: row.mana, fatigue: row.fatigue, statuses: row.statuses, used: row.used }, R));
   for (const roll of row.saves) x = kept(x, sheetEdit(x, { type: 'life', event: { type: 'deathSave', roll } }, R));
   for (const sp of run.end.spent) if (sp.by === run.hunter) x = kept(x, spendItem(x, sp.item, R));
   for (const [cid, sid] of Object.entries(run.shadows)) { const e = run.end.party[cid as CombatantId]; if (e) x = kept(x, setShadowHp(x, sid, e.hp)); }

@@ -14,7 +14,7 @@ import { ARCHETYPES, kitGear, NO_TWEAK, pointsAt, split } from '../hunter/derive
 import type { Archetype, Bonus, SheetBasis, MonsterKind, Sheet } from '../hunter/derive.ts';
 import { buildOf } from '../hunter/sheet.ts';
 import type { SheetHunter, SheetItem, SheetRules } from '../hunter/sheet.ts';
-import { hpOf } from '../hunter/vitals.ts';
+import { lifeAfter } from '../hunter/vitals.ts';
 import type { Life } from '../hunter/vitals.ts';
 import { TIER_BUDGET } from '../registry/paths.ts';
 import { ARCHETYPE_ATTACKS, itemAbility, weaponAttack } from '../registry/abilities.ts';
@@ -150,8 +150,8 @@ function wornStatuses(h: RowHunter, id: CombatantId, taken: readonly string[], n
 /**
  * A hunter's row: its build from `buildOf`, its conditions as statuses from its joining (tick 0; the fight's `add` moves
  * them to the fight's now) for the rounds each has left, then its
- * worn statuses, its HP from its life and its mana and fatigue as the sheet holds them, each within the maximum its
- * statuses leave.
+ * worn statuses, its life as the sheet holds it (a dead hunter joins dead), and its mana and fatigue as the sheet holds
+ * them, each within the maximum its statuses leave.
  */
 function partyRow(h: RowHunter, id: CombatantId, holder: Holder, R: RowRules): NewRow {
   const now = JOINS, origin: Origin = { kind: 'hunter', build: buildOf(h, R) };
@@ -162,7 +162,7 @@ function partyRow(h: RowHunter, id: CombatantId, holder: Holder, R: RowRules): N
   const used = Object.fromEntries(abilities.filter(a => usesGates(a).some(g => g.per === 'rest') && (h.used?.[a.id] ?? 0) > 0).map(a => [a.id, h.used![a.id]!]));
   return {
     id, name: cut(h.name), side: 'party', kind: 'hunter', origin, tier: rankIdx(h.rank), place: null,
-    hp: hpOf(h.life, sheet.hpMax), mana: clamp(h.mana, 0, sheet.manaMax), fatigue: clamp(h.fatigue, 0, sheet.fatigueMax),
+    life: lifeAfter(h.life, { type: 'maxChanged' }, sheet.hpMax), mana: clamp(h.mana, 0, sheet.manaMax), fatigue: clamp(h.fatigue, 0, sheet.fatigueMax),
     shield: null, stagger: null, channel: null, threat: null, statuses, readyAt: {}, abilities, intent: null, holder, xp: 0,
     ...(Object.keys(used).length ? { used } : {}),
   };
@@ -195,7 +195,7 @@ export function sameRankHit(rank: Rank, R: RowRules): number {
   const standing = (id: string, side: Body['side'], kind: Body['kind'], origin: Origin, at: Place): Body => {
     const { stats, sheet } = modified(origin, [], R);
     return {
-      id: combatantId(id), name: id, side, kind, origin, tier: rankIdx(rank), stats, sheet, place: at, hp: sheet.hpMax, mana: sheet.manaMax,
+      id: combatantId(id), name: id, side, kind, origin, tier: rankIdx(rank), stats, sheet, place: at, life: { at: 'up', hp: sheet.hpMax }, mana: sheet.manaMax,
       fatigue: 0, shield: null, stagger: null, channel: null, threat: kind === 'monster' ? {} : null, statuses: [], readyAt: {}, abilities: [strike],
       intent: null, holder: null, xp: 0, at: tick(0), speed: sheet.speed, tie: 0,
     };
@@ -234,7 +234,7 @@ export function monsterRows(m: RowMonster, ids: readonly CombatantId[], R: RowRu
     const { sheet } = modified(origin, statuses, R);
     return {
       id, name: m.name.slice(0, NAME_MAX - suffix.length) + suffix, side: 'foe', kind: 'monster', origin, tier, place: null,
-      hp: sheet.hpMax, mana: sheet.manaMax, fatigue: 0, shield: null, stagger, channel: null, threat: {}, statuses, readyAt: {}, abilities,
+      life: { at: 'up', hp: sheet.hpMax }, mana: sheet.manaMax, fatigue: 0, shield: null, stagger, channel: null, threat: {}, statuses, readyAt: {}, abilities,
       intent: null, holder: null, xp: monsterXp(m, R),
     };
   });
@@ -250,7 +250,7 @@ export const shadowSheet = (s: Pick<RowShadow, 'name' | 'rank' | 'archetype' | '
 
 /**
  * A shadow of hunter `owner` on this phone: the body of the monster it was, at its rank and archetype with its grade's
- * kind, the archetype's attack, its HP as its hunter keeps it, written back with `shadowHp`. It holds no statuses and,
+ * kind, the archetype's attack, its HP as its hunter keeps it (dead at 0), written back with `shadowHp`. It holds no statuses and,
  * being on the party's side, no threat table and no stagger bar.
  */
 export function shadowRow(s: RowShadow, owner: string, id: CombatantId, R: RowRules): NewRow {
@@ -258,7 +258,7 @@ export function shadowRow(s: RowShadow, owner: string, id: CombatantId, R: RowRu
   const { sheet } = modified(origin, [], R);
   return {
     id, name: cut(s.name), side: 'party', kind: 'shadow', origin, tier: rankIdx(s.rank), place: null,
-    hp: clamp(s.hp, 0, sheet.hpMax), mana: sheet.manaMax, fatigue: 0, shield: null, stagger: null, channel: null, threat: null, statuses: [],
+    life: s.hp >= 1 ? { at: 'up', hp: clamp(s.hp, 1, sheet.hpMax) } : { at: 'dead' }, mana: sheet.manaMax, fatigue: 0, shield: null, stagger: null, channel: null, threat: null, statuses: [],
     readyAt: {}, abilities: distinct([ARCHETYPE_ATTACKS[s.archetype](R)]), intent: null, holder: { kind: 'shadow', hunterId: hunterId(owner), shadowId: shadowId(s.id) }, xp: 0,
   };
 }
@@ -282,7 +282,7 @@ export function summonRow(user: Pick<Body, 'id' | 'side' | 'tier'>, s: Summon, i
   }).slice(0, MAX_STATUSES);
   const { sheet } = modified(origin, statuses, R);
   return {
-    id, name: cut(s.name), side: user.side, kind: 'summon', origin, tier: user.tier, place: null, hp: sheet.hpMax, mana: sheet.manaMax, fatigue: 0,
+    id, name: cut(s.name), side: user.side, kind: 'summon', origin, tier: user.tier, place: null, life: { at: 'up', hp: sheet.hpMax }, mana: sheet.manaMax, fatigue: 0,
     shield: null, stagger: null, channel: null, threat: user.side === 'foe' ? {} : null, statuses, readyAt: {}, abilities: distinct([ARCHETYPE_ATTACKS[s.archetype](R)]),
     intent: null, holder: null, xp: 0, owner: user.id, until: tick(now + Math.round(rounds * R.fight.round)),
   };

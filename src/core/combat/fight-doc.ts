@@ -15,8 +15,12 @@ import { anchorOf, zoneTiles, zoneTone } from './zones.ts';
 import type { ZoneId, ZoneTone } from './zones.ts';
 import type { AbilityId, CombatantId, HunterId } from './ability-types.ts';
 import { stacked } from './op-amount.ts';
+import { isUp, rowHp } from './row-hp.ts';
 import type { Body, StatusDef, StatusKey } from './effect-ops.ts';
-import { isUp, partyView } from './fight-turn.ts';
+import type { FoeLifeState } from './row-life.ts';
+import { LIFE_STATES } from '../hunter/vitals.ts';
+import type { LifeState } from '../hunter/vitals.ts';
+import { partyView } from './fight-turn.ts';
 import { alive } from './land.ts';
 import { holds } from './standing.ts';
 import { cardOf, channelView, intentOf, tauntOf, usesLeft } from './fight-view.ts';
@@ -105,28 +109,32 @@ type DocRowBase = {
   readonly shieldLeft: number | null;
   readonly channel: DocChannel | null;
   readonly taunt: DocTaunt | null;
-  readonly down: boolean;
 };
+/** A body's HP, its maximum, its stride and `move`: what players see of a hunter, a shadow and a summon. */
+type DocBody = { readonly hp: number; readonly hpMax: number; readonly stride: number; readonly move: number };
 /**
  * One combatant on the players' table. Players see a hunter's or shadow's HP, and only a monster's band. A hunter's or
  * shadow's `stride` is the tiles one move may walk as its fight sheet holds it now (a slow or a root included), which a
  * player's phone needs for its Toward and Away and its movement area on the map; `move` is its sheet's `move` in whole
- * tiles, as far as a dash runs (design 4.6), for the map's lighter dash area.
+ * tiles, as far as a dash runs (design 4.6), for the map's lighter dash area. `life` is the row's life's state by its
+ * kind's table (row-life.ts `LifeAt`): a hunter's dying, stable or dead, any other row's dead; every phone reads its word
+ * from row-life.ts `lifeWord` and whether it is up from row-hp.ts `isUp`.
  */
 export type FightDocRow = DocRowBase & (
   | {
-    readonly kind: 'monster'; readonly intent: DocIntent | null;
+    readonly kind: 'monster'; readonly life: { readonly at: FoeLifeState }; readonly intent: DocIntent | null;
     /** The bar, and while a break holds the monster back the rounds it costs (fight-view.ts `Card`). */
     readonly stagger: { readonly fill: number; readonly max: number; readonly staggered: number | null } | null;
     /** The target its threat table suggests (fight-view.ts `threatOf`); the table itself stays on the GM's phone. */
     readonly suggest: CombatantId | null;
   }
-  | { readonly kind: 'hunter' | 'shadow'; readonly hp: number; readonly hpMax: number; readonly stride: number; readonly move: number }
+  | (DocBody & { readonly kind: 'hunter'; readonly life: { readonly at: LifeState } })
+  | (DocBody & { readonly kind: 'shadow'; readonly life: { readonly at: FoeLifeState } })
   /**
    * A summon (kits design 1.9) as a shadow is shown, with the row that owns it (that hunter's phone commands it) and the
    * rounds it has left, one decimal (null for one that stays).
    */
-  | { readonly kind: 'summon'; readonly hp: number; readonly hpMax: number; readonly stride: number; readonly move: number; readonly owner: CombatantId; readonly left: number | null }
+  | (DocBody & { readonly kind: 'summon'; readonly life: { readonly at: FoeLifeState }; readonly owner: CombatantId; readonly left: number | null })
 );
 /**
  * Why the GM's phone turned down a player's `cast` or `step`: the refusals a player's tap can meet. Each has its words on
@@ -343,24 +351,26 @@ function docRow(f: Fight, b: Body, now: Tick, R: Rules, o: DocContext): FightDoc
   const live = b.statuses.filter(s => s.until === null || s.until > now), k = cardOf(f, b, R), c = channelView(b, R);
   const base: DocRowBase = {
     id: b.id, name: b.name, side: b.side, key: keyOf(b, o), place: { x: b.place.x, y: b.place.y }, at: b.at, speed: b.speed,
-    band: band(b.hp, b.sheet.hpMax),
+    band: band(rowHp(b), b.sheet.hpMax),
     // a zone's hold shows as a status here (it is why a body slows or burns), though its sheet never keeps it
     statuses: live.slice(0, DOC_STATUSES).map(s => ({
       key: s.key, label: s.def.label, left: s.until === null ? null : Math.max(0, roundsOf(s.until - now, R, 'up')), ...(stacked(s) ? { stacks: s.stacks } : {}),
       tier: s.source.tier, def: s.def,
     })),
     shield: b.shield && b.shield.until > now ? b.shield.amount : null, shieldLeft: b.shield && b.shield.until > now ? k.shieldLeft : null,
-    channel: c && { ability: c.ability, name: c.name, charge: c.charge, max: c.max, state: c.state, factor: c.factor }, taunt: tauntOf(b, now, R), down: !isUp(b),
+    channel: c && { ability: c.ability, name: c.name, charge: c.charge, max: c.max, state: c.state, factor: c.factor }, taunt: tauntOf(b, now, R),
   };
-  const body = { hp: b.hp, hpMax: b.sheet.hpMax, stride: b.sheet.stride, move: Math.floor(b.sheet.move) };
-  if (b.kind === 'summon') return { ...base, kind: 'summon', ...body, owner: b.owner ?? b.id, left: b.until === undefined ? null : Math.max(0, roundsOf(b.until - now, R, 'up')) };
-  if (b.kind !== 'monster') return { ...base, kind: b.kind, ...body };
+  const body: DocBody = { hp: rowHp(b), hpMax: b.sheet.hpMax, stride: b.sheet.stride, move: Math.floor(b.sheet.move) };
+  if (b.kind === 'hunter') return { ...base, ...body, kind: 'hunter', life: { at: b.life.at } };
+  const life = { at: b.life.at };
+  if (b.kind === 'summon') return { ...base, ...body, kind: 'summon', life, owner: b.owner ?? b.id, left: b.until === undefined ? null : Math.max(0, roundsOf(b.until - now, R, 'up')) };
+  if (b.kind === 'shadow') return { ...base, ...body, kind: 'shadow', life };
   const i = intentOf(b, R);
   const intent = i && {
     name: i.name, target: aimOf(i.target),
     reveal: i.revealed ? { lines: i.lines.map(l => l.slice(0, INTENT_LINE_MAX)).slice(0, DOC_INTENT_LINES), radius: i.area?.radius ?? null, outer: i.area?.outer ?? null } : null,
   };
-  return { ...base, kind: 'monster', intent, stagger: k.stagger, suggest: k.threat?.suggest ?? null };
+  return { ...base, kind: 'monster', life, intent, stagger: k.stagger, suggest: k.threat?.suggest ?? null };
 }
 
 const aimOf = (aim: Place | CombatantId): CombatantId | DocPlace => typeof aim === 'string' ? aim : { x: aim.x, y: aim.y };
@@ -413,8 +423,9 @@ function statusWire(s: DocStatus, defs: Record<string, StatusDef>): Record<strin
 }
 /**
  * A row on the wire. Its names: i id, n name, s side, k sheet key, p place, a at, v speed, b band, st statuses, sh shield,
- * sl shield's rounds, c channel, t taunt, d down, q kind; a monster's in intent, g stagger, u suggested target; a body's
- * h HP, hm max HP, r stride, m move; a summon's o owner, l rounds left.
+ * sl shield's rounds, c channel, t taunt, d life (its state's index in `LIFE_STATES`, absent while up: 1 dying, 2 stable,
+ * 3 dead), q kind; a monster's in intent, g stagger, u suggested target; a body's h HP, hm max HP, r stride, m move; a
+ * summon's o owner, l rounds left.
  */
 function rowWire(r: FightDocRow, defs: Record<string, StatusDef>): Record<string, unknown> {
   const c = r.channel, t = r.taunt;
@@ -422,7 +433,7 @@ function rowWire(r: FightDocRow, defs: Record<string, StatusDef>): Record<string
     i: r.id, n: r.name, s: r.side, ...unlessNull('k', r.key), p: [r.place.x, r.place.y], a: r.at, v: r.speed, b: BANDS.indexOf(r.band),
     ...(r.statuses.length ? { st: r.statuses.map(s => statusWire(s, defs)) } : {}), ...unlessNull('sh', r.shield), ...unlessNull('sl', r.shieldLeft),
     ...(c ? { c: { a: c.ability, n: c.name, c: c.charge, m: c.max, s: c.state, f: c.factor } } : {}),
-    ...(t ? { t: { b: t.by, ...unlessNull('l', t.left) } } : {}), ...(r.down ? { d: true } : {}), q: r.kind,
+    ...(t ? { t: { b: t.by, ...unlessNull('l', t.left) } } : {}), ...(r.life.at !== 'up' ? { d: LIFE_STATES.indexOf(r.life.at) } : {}), q: r.kind,
   };
   if (r.kind === 'monster') {
     const i = r.intent, g = r.stagger, v = i?.reveal ?? null;

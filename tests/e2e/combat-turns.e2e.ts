@@ -108,7 +108,7 @@ test('End shows the summary with each defeated goblin\'s XP and the total, and A
   const xp = () => page.evaluate(() => hunterApp.store.get().hunters.map((h: any) => h.xp + 100 * (h.level - 1) * h.level / 2) as number[]);
   const before = await xp();
   const monsters: { name: string; xp: number }[] = await page.evaluate(() => hunterApp.store.get().fight.rows.filter((r: any) => r.side === 'foe').map((r: any) => ({ name: r.name, xp: r.xp })));
-  await page.evaluate(() => hunterApp.store.update((d: any) => { for (const r of d.fight.rows) if (r.side === 'foe') r.hp = 0; }, 'test-setup'));
+  await page.evaluate(() => hunterApp.store.update((d: any) => { for (const r of d.fight.rows) if (r.side === 'foe') r.life = { at: 'dead' }; }, 'test-setup'));
 
   await tapCombat(page, '[data-end]');
   const win = page.locator('.sys-overlay.show', { hasText: 'Fight over' });
@@ -124,7 +124,7 @@ test('End shows the summary with each defeated goblin\'s XP and the total, and A
 test('the Fight over window says how many rounds the fight took once', async ({ device }) => {
   const page = (await device('gm')).page;
   await gmFight(page);
-  await page.evaluate(() => hunterApp.store.update((d: any) => { for (const r of d.fight.rows) if (r.side === 'foe') r.hp = 0; }, 'test-setup'));
+  await page.evaluate(() => hunterApp.store.update((d: any) => { for (const r of d.fight.rows) if (r.side === 'foe') r.life = { at: 'dead' }; }, 'test-setup'));
   await tapCombat(page, '[data-end]');
   const win = page.locator('.sys-overlay.show', { hasText: 'Fight over' });
   await expect(win).toContainText(/defeated in [\d.]+ rounds?\./);
@@ -381,7 +381,7 @@ test('a removed defeated monster keeps its XP and a removed live one gives none'
 
   await tapCombat(page, `[data-pick="${dead.id}"]`);
   await tapCombat(page, '[data-defeat]');
-  await expect(combat(page).locator(`[data-pick="${dead.id}"] .cmb-dn`)).toHaveText('Down');
+  await expect(combat(page).locator(`[data-pick="${dead.id}"] .cmb-dn`)).toHaveText('Defeated');
   await tapCombat(page, '[data-remove]');
   await confirmRemove(page);
   await tapCombat(page, `[data-pick="${live.id}"]`);

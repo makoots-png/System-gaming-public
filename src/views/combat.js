@@ -9,6 +9,7 @@
 import { pickables, pickedRef } from '../core/party.ts';
 import { RANKS, rules } from '../edge/rules.ts';
 import { stepTime } from '../core/day.ts';
+import { isUp, rowHp } from '../core/combat/row-hp.ts';
 import { fightId, owed, reduce, reduceAll } from '../core/combat/fight.ts';
 import { fightGateName, fought, heldCommands, itemSpent } from '../core/combat/fight-save.ts';
 import { remoteFacts } from '../core/combat/fight-facts.ts';
@@ -30,10 +31,10 @@ import { weighable } from '../core/combat/odds.ts';
 import { onTurn } from '../core/protocol.ts';
 import { parseSheetKey } from '../core/ids.ts';
 import { dropDealt, encounterAwards, planEncounter, pays, settleEncounter } from '../core/gates/pay.ts';
-import { isRefused } from '../core/save-step.ts';
-import { sent } from '../core/award.ts';
+import { isRefused, refuse } from '../core/save-step.ts';
+import { appliedOnce, wasApplied } from '../core/applied.ts';
+import { lifeWord, rowLifeTakes } from '../core/combat/row-life.ts';
 import { READ_ONLY } from '../core/store-life.ts';
-import { LIFE_TAG, REVIVE_HP, can as lifeCan } from '../core/hunter/vitals.ts';
 import { ARCHETYPE_LIST, MONSTER_BOUNDS, MONSTER_KINDS, copiesOf, lootOf, monsterXp, statBlock } from '../core/registry/monsters.ts';
 import { itemAbilityId, itemOfAbility } from '../core/registry/abilities.ts';
 import { newRewards } from '../core/rewards.ts';
@@ -79,7 +80,7 @@ export function register(app) {
   const refs = () => store.get().fightRefs || { gate: null, monsters: {} };
   const newId = () => combatantId(store.id('c'));
   const toast = (msg, kind = 'info') => ui.news(msg, kind);
-  const ctx = () => ({ rules: rules(), life: id => { const h = store.hunter(id); return h ? h.life : null; } });
+  const ctx = () => ({ rules: rules() });
   /** The target each row's move control and use picker start on, by row id. */
   const picks = new Map();
 
@@ -113,10 +114,10 @@ export function register(app) {
   function command(cmds, links = null, also = null, risen = null) {
     const c = ctx(), was = fight(), S = A().sync;
     // what the motion compares with: the fight's rows are written into in place (save-step.ts `writeInto`)
-    const hpWas = new Map(was ? was.rows.map(r => [r.id, r.hp]) : []), readyWas = new Set(was ? was.rows.filter(r => r.armed && !r.armed.spent).map(r => r.id) : []);
+    const hpWas = new Map(was ? was.rows.map(r => [r.id, rowHp(r)]) : []), readyWas = new Set(was ? was.rows.filter(r => r.armed && !r.armed.spent).map(r => r.id) : []);
     const r = reduceAll(was, cmds, c), reason = String((r.fight && r.fight.log[0] && r.fight.log[0].text) || 'Fight').slice(0, 120);
-    // the fight's totals for a hunter on another phone: one `vitals` message, kept in the outbox under what it stands for (fight-save.ts `fought`), so while the phone is away only the latest waits
-    const totals = r.effects.flatMap(fx => (fx.type === 'sendRemote' ? [S.event('vitals', { to: [fx.remote], hp: fx.hp, mana: fx.mana, fatigue: fx.fatigue, statuses: fx.statuses.map(s => ({ ...s })), reason })] : [])).flatMap(ev => (ev ? [ev] : []));
+    // the fight's totals for a hunter on another phone, its row's life among them: one `vitals` message, kept in the outbox under what it stands for (fight-save.ts `fought`), so while the phone is away only the latest waits
+    const totals = r.effects.flatMap(fx => (fx.type === 'sendRemote' ? [S.event('vitals', { to: [fx.remote], life: { ...fx.life }, mana: fx.mana, fatigue: fx.fatigue, statuses: fx.statuses.map(s => ({ ...s })), reason })] : [])).flatMap(ev => (ev ? [ev] : []));
     // an item's use leaves the bag in the same write (fight-save.ts `itemSpent`): this phone's hunter's, or the player's by
     // `spent`. A use is one `act` sent alone; a batch is the GM's edits of rows (`held`), which spend no item
     const sp = cmds.length === 1 ? itemSpent(was, cmds[0]) : null, ev = sp && sp.kind === 'remote' ? S.event('spent', { to: [sp.remote], item: sp.item }) : null;
@@ -183,7 +184,7 @@ export function register(app) {
         if (shaken && (fx.type === 'crit' || kind === 'stagger')) motion.shake(shaken);
       }
       const f = fight();
-      for (const r of f ? f.rows : []) if (r.kind === 'hunter' && hpWas.get(r.id) > 0 && r.hp <= 0) for (const el of [at(r.id), card(r.id), tok(r.id)]) if (el) motion.shake(el.querySelector(':scope > .mp-disc') || el);
+      for (const r of f ? f.rows : []) if (r.kind === 'hunter' && hpWas.get(r.id) > 0 && !isUp(r)) for (const el of [at(r.id), card(r.id), tok(r.id)]) if (el) motion.shake(el.querySelector(':scope > .mp-disc') || el);
       // an armed reaction that fired (its row's armed turned spent): on the map its token plays it (map.js); elsewhere the card or the row
       for (const r of f ? f.rows : []) {
         if (!(r.armed && r.armed.spent && readyWas.has(r.id)) || seen(tok(r.id))) continue;
@@ -358,6 +359,17 @@ export function register(app) {
     const r = f && f.phase !== 'ended' ? f.rows.find(x => remoteKeyOf(x) === p.by) : null;
     if (r) armRow(r, p.ability, p.on ?? null);
   });
+  // a player's death save (the room's `deathSave`, from that hunter's phone only) is the fight's `life` command on that
+  // hunter's row, at any time while its life takes it. Not bound to a turn, so it is taken once by its id: the id is
+  // recorded in the command's own write (applied.ts `appliedOnce`), or alone when the row's life does not take a save
+  app.on('sync:event', ({ event }) => {
+    if (!event || event.type !== 'deathSave' || !inRoomAsGM()) return;
+    const f = fight(), p = event.payload, S = A().sync;
+    const r = f && f.phase !== 'ended' ? f.rows.find(x => remoteKeyOf(x) === p.by) : null;
+    if (!r || wasApplied(store.get(), p.eid)) return;
+    if (!rowLifeTakes(r, 'deathSave')) { S.once(p.eid, () => refuse('lifeCannot')); return; }
+    send({ type: 'life', id: r.id, event: { type: 'deathSave', roll: p.roll } }, null, appliedOnce(p.eid, s => s));
+  });
   app.on('sync:event', ({ event }) => {
     if (!event || (event.type !== 'step' && event.type !== 'cast' && event.type !== 'pass') || !inRoomAsGM()) return;
     const f = fight(), p0 = /** @type {import('../core/protocol.ts').StepPayload | import('../core/protocol.ts').CastPayload | import('../core/protocol.ts').PassPayload} */ (event.payload);
@@ -380,23 +392,16 @@ export function register(app) {
   // ── hand edits ──
   /** @param {Body} r @param {{ hp?: number; mana?: number; fatigue?: number }} d */
   const adjust = (r, d) => !refused(send({ type: 'adjust', id: r.id, ...d }));
+  /** The fight's `life` command on row `cid` (row-life.ts): Revive, Stabilize or a death save. False when it was refused. */
+  const lifeOf = (cid, event) => { const r = rowOf(fight(), cid); return !!r && !refused(send({ type: 'life', id: r.id, event })); };
   /**
-   * Revive of a down row (its card's, and the GM board's for a player's hunter this fight holds), raised to the life
-   * table's revive HP. A hunter's life is kept on its own sheet, so the revive goes there in the same write as the
-   * raise: this phone's hunter's through hunter.life when its life can revive (dead), a player's always as the room's
-   * `revive` with its log line, which the player's sheet takes only while dead (room-events.ts). False when the row is
-   * up or nothing was written.
-   * @param {Fight} f @param {Body} r
+   * Revive of a row (its card's, and the GM board's for a player's hunter this fight holds): the fight's `life` command,
+   * which stands only the dead up, at the life table's revive HP. The fight holds every row's life, a player's hunter's
+   * too, so the sheet hears it from the write-back: in the same write for this phone's hunter (`vitals`), through the
+   * room's `vitals` message for a player's. False when the row's life refused it or nothing was written.
+   * @param {Body} r
    */
-  function revive(f, r) {
-    if (!cardOf(f, r, rules()).down) return false;
-    const h = localHunter(r), key = remoteKeyOf(r);
-    if (h && lifeCan(h.life, 'revive')) return A().hunter.life(h.id, { type: 'revive' });
-    if (!key) return adjust(r, { hp: REVIVE_HP });
-    const S = A().sync, ev = S.event('revive', { to: [key] }); if (!ev) return false;
-    const said = [{ kind: /** @type {const} */ ('system'), hunterId: null, title: 'Revive', text: holderHunter(r)?.name || r.name }];
-    return !refused(send({ type: 'adjust', id: r.id, hp: REVIVE_HP }, null, s => sent(s, { room: S.room(), events: [ev], said }, { at: new Date().toISOString(), cap: rules().logCap })));
-  }
+  const revive = r => lifeOf(r.id, { type: 'revive' });
   // shared numeric HP entry: '7' damages, '+4' heals; forceHeal = the Heal button. inp = the field to keep focused (Enter path)
   function applyAmount(r, text, forceHeal, inp) {
     if (!r) return;
@@ -555,7 +560,8 @@ export function register(app) {
     // a grant's parts this fight holds (grant.ts `Granted.fight`) on their rows, written with the grant's step: all or none
     held: (parts, also) => !refused(sendAll(heldCommands(parts, rules()), null, also)),
     adjust: (cid, d, also = null) => { const r = rowOf(fight(), cid); if (!r) return false; return !refused(send({ type: 'adjust', id: r.id, ...(d.hp ? { hp: int(d.hp) } : {}), ...(d.mana ? { mana: int(d.mana) } : {}), ...(d.fatigue ? { fatigue: int(d.fatigue) } : {}) }, null, also)); },
-    revive: cid => { const f = fight(), r = rowOf(f, cid); return !!r && revive(f, r); },
+    revive: cid => { const r = rowOf(fight(), cid); return !!r && revive(r); },
+    life: lifeOf,
     spend: (cid, mana, also) => { const r = rowOf(fight(), cid); return !!r && !refused(send({ type: 'adjust', id: r.id, mana: -Math.abs(int(mana)), pay: true }, null, also)); },
     // an extraction's outcome on the corpse's row (the fight's `extract`), and a risen shadow's join in the same write
     extracted: (cid, by, outcome, rose) => !refused(send({ type: 'extract', id: combatantId(cid), by: combatantId(by), outcome }, null,
@@ -582,12 +588,12 @@ export function register(app) {
 @media (min-width:900px){.cmb-main{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);align-items:start}.cmb-main > .cmb-list{order:1}}
 .cmb-card{border:1px solid var(--line-bright);background:rgba(10,26,46,.7);padding:12px;display:flex;flex-direction:column;gap:10px;min-width:0}
 .cmb-card.turn{box-shadow:0 0 14px rgba(77,216,255,.35)}
-.cmb-death{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border:1px solid var(--red);background:rgba(255,77,94,.08);padding:8px 10px}
-.cmb-death b{color:#ff8a96;letter-spacing:.12em;text-transform:uppercase;font-size:13px}
+.cmb-death{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border:1px solid var(--warm);background:rgba(255,138,92,.08);padding:8px 10px}
+.cmb-death b{color:var(--warm);letter-spacing:.12em;text-transform:uppercase;font-size:13px}
 .cmb-death button{min-height:var(--control-h)}
 .cmb-card h3{margin:0;font-family:var(--font-display);font-size:19px;color:var(--ice);overflow-wrap:anywhere;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .cmb-tag{font-size:12px;letter-spacing:.12em;text-transform:uppercase;border:1px solid var(--line);padding:1px 7px;color:var(--cyan-dim);white-space:nowrap}
-.cmb-tag.now{color:var(--cyan);border-color:var(--cyan)}.cmb-tag.dead{color:var(--red);border-color:rgba(255,77,94,.6)}
+.cmb-tag.now{color:var(--cyan);border-color:var(--cyan)}.cmb-tag.lw{color:var(--life);border-color:var(--life)}
 .cmb-line{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end}
 .cmb-line .field{flex:1 1 90px;min-width:0}
 .cmb-line .field.sm{flex:0 0 80px}.cmb-line .field.sm .lbl{white-space:nowrap}
@@ -602,13 +608,13 @@ export function register(app) {
 .cmb-row button.cmb-pick{width:100%;display:flex;align-items:center;gap:8px;text-align:left;padding:4px 10px;min-width:0;font-weight:500}
 .cmb-row.sel button.cmb-pick{border-color:var(--cyan);box-shadow:0 0 8px rgba(77,216,255,.3)}
 .cmb-row.cur button.cmb-pick{border-left:4px solid var(--cyan)}
-.cmb-row.dead :is(.cmb-init,.cmb-nm,.cmb-cs,.cmb-mini){opacity:.5}.cmb-row.dead .cmb-nm{text-decoration:line-through}
+.cmb-row.down :is(.cmb-init,.cmb-nm,.cmb-cs,.cmb-mini){opacity:.6}.cmb-row.dead :is(.cmb-init,.cmb-nm,.cmb-cs,.cmb-mini){opacity:.45}.cmb-row.dead .cmb-nm{text-decoration:line-through}
 .cmb-init{font-family:var(--font-mono);font-weight:700;color:var(--cyan);flex:0 0 28px;text-align:right}
 .cmb-nm{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cmb-mini{flex:0 0 76px;display:flex;flex-direction:column;gap:2px;font-family:var(--font-mono);font-size:12px;text-align:right}
 .cmb-mini .bar{height:6px}
 .cmb-cs{font-size:12px;color:var(--purple);flex:0 0 auto;max-width:34%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.cmb-dn{flex:0 0 auto;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--red);border:1px solid var(--red);padding:0 5px}
+.cmb-dn{flex:0 0 auto;padding:0 5px}
 @media (max-width:899px){
   .cmb-list{gap:4px}
   .cmb-row.cur button.cmb-pick{background:rgba(77,216,255,.14)}
@@ -793,22 +799,34 @@ export function register(app) {
       <div class="slot" data-part="actions"></div>
       <div class="lbl">Statuses</div><div class="cmb-conds" data-part="conds"></div><ul class="cmb-fx" data-part="fx" data-attr="hidden:noFx"></ul>
       <div class="cmb-line"><button type="button" data-fk="cforge" data-cforge title="Add status (S)" aria-keyshortcuts="s">+ Status</button></div>
-      <div class="cmb-line"><button type="button" data-fk="defeat" data-defeat data-text="defeat"></button>
+      <div class="cmb-line"><span class="slot" data-part="lifeAct"></span>
         <span class="slot" data-part="extract"></span>
         <button type="button" class="danger" data-fk="remove" data-remove data-attr="aria-label:removeLabel">Remove</button></div>`}
     </div>`;
 
+  /**
+   * The card's one control for `r`'s life, as its life's table takes it (row-life.ts `rowLifeTakes`): Mark defeated while
+   * it is up, Stabilize while it is dying, Revive once it is dead, none while stable. A button the fight would refuse is
+   * not drawn (notes-dead-row.md section 7, ruling 3).
+   * @param {Body} r
+   */
+  function lifeActHtml(r) {
+    if (isUp(r)) return '<button type="button" data-fk="defeat" data-defeat>Mark defeated</button>';
+    if (rowLifeTakes(r, 'stabilize')) return '<button type="button" class="primary" data-fk="stabilize" data-stabilize>Stabilize</button>';
+    if (rowLifeTakes(r, 'revive')) return '<button type="button" class="primary" data-fk="revive" data-revive>Revive</button>';
+    return '';
+  }
   /**
    * What `r`'s card shows (`cardTemplate`): every number of fight-view.ts `cardOf` by its name (a new one needs only its
    * node in the template), the bars' shares, and the words and controls from this phone's state.
    */
   function cardDesc(f, r, ro) {
     const R = rules(), k = cardOf(f, r, R), now = k.turn, h = localHunter(r), remote = isRemote(r);
-    const life = h && LIFE_TAG[h.life.at];
-    // a hunter on another phone at 0 HP is down (its life is the player's sheet's); a monster or shadow at 0 is defeated
-    const tag = life ? `<span class="cmb-tag dead">${esc(life)}</span>` : k.down ? `<span class="cmb-tag dead">${r.kind === 'hunter' ? 'Down' : 'Defeated'}</span>` : '';
-    // A27, on the new turn rule: a hunter at 0 HP has no turn (fight-turn.ts `isUp`), so a dying hunter's card leads with the death save.
-    const dsave = h && lifeCan(h.life, 'deathSave');
+    // the row holds the life of every body, a player's hunter's too: its word is the row's (row-life.ts `lifeWord`)
+    const word = lifeWord(r);
+    const tag = word ? `<span class="cmb-tag lw" data-life-at="${r.life.at}">${esc(word)}</span>` : '';
+    // A27, on the new turn rule: a hunter at 0 HP has no turn (row-hp.ts `isUp`), so this phone's dying hunter's card leads with the death save.
+    const dsave = h && rowLifeTakes(r, 'deathSave');
     const base = {
       ...Object.fromEntries(Object.entries(k).filter(([, v]) => v === null || typeof v !== 'object')),
       key: r.id, cls: `cmb-card${now ? ' turn' : ''}`,
@@ -817,7 +835,7 @@ export function register(app) {
       staggerF: k.stagger ? share(k.stagger.fill, k.stagger.max) : null, staggerFill: k.stagger ? k.stagger.fill : 0, staggerMax: k.stagger ? k.stagger.max : 0,
       staggered: k.stagger ? k.stagger.staggered : null, shieldF: k.shield !== null ? share(k.shield, k.hpMax) : null,
       xtra: extrasHtml(f, r, k, ro),
-      death: dsave ? `<div class="cmb-death"><b>${esc(LIFE_TAG[h.life.at])}</b><button type="button" class="primary" data-fk="dsave" data-dsave="${esc(h.id)}">Roll death save</button></div>` : '',
+      death: dsave ? `<div class="cmb-death"><b>${esc(word)}</b><button type="button" class="primary" data-fk="dsave" data-dsave="${esc(h.id)}">Roll death save</button></div>` : '',
       hpF: share(k.hp, k.hpMax), manaF: k.manaMax > 0 ? share(k.mana, k.manaMax) : null, fatigueF: k.fatigueMax > 0 ? share(k.fatigue, k.fatigueMax) : null,
     };
     if (ro) return { ...base, condText: k.statuses.map(s => s.def.label).join(', ') || 'None' };
@@ -849,7 +867,7 @@ export function register(app) {
       conds: k.statuses.map(s => `<span class="chip${s.stacks ? ' stk' : ''}" data-chip="${esc(s.key)}"><button type="button" class="c-info" data-fk="ci-${esc(s.key)}"${A().detail.control('gm-card', `${r.id}|${s.key}`)}>${esc(s.def.label)}${s.stacks ? ` <b class="c-n" data-stacks="${s.stacks}" data-sk="${esc(`${r.id}:${s.key}`)}">${s.stacks}</b>` : ''}${s.def.end && s.rounds != null ? ` · in ${s.rounds} round${s.rounds === 1 ? '' : 's'}` : roundsText(s)}</button><button type="button" data-fk="rc-${esc(s.key)}" data-rc="${esc(s.key)}" aria-label="Remove ${esc(s.def.label)}">✕</button></span>`
         + A().detail.panel('gm-card', `${r.id}|${s.key}`, () => ({ kind: 'status', label: s.def.label, def: s.def, tier: s.source.tier, ...(s.stacks ? { stacks: s.stacks } : {}), left: s.rounds }))).join('') || '<span class="empty">No statuses.</span>',
       fx: glance.map(([l, L]) => `<li><b>${esc(l)}</b>: ${esc(L.join('; '))}</li>`).join(''), noFx: !glance.length,
-      defeat: k.down ? 'Revive' : 'Mark defeated',
+      lifeAct: lifeActHtml(r),
       extract: extractors.map(x => `<button type="button" data-fk="extract-${esc(x.row.id)}" data-extract="${esc(x.row.id)}">${extractors.length > 1 ? `Extract (${esc(x.h.name)})` : 'Extract'}</button>`).join(''),
       removeLabel: `Remove ${r.name} from the fight`,
     };
@@ -909,17 +927,16 @@ export function register(app) {
   const rowTemplate = id => `<li data-attr="class:cls"><button type="button" class="cmb-pick" data-fk="pick-${esc(id)}" data-pick="${esc(id)}" data-attr="aria-label:label">
       <span class="cmb-init" data-text="init"></span><span class="slot" data-part="lead"></span><span class="cmb-mini"><span data-text="hp"></span><span class="bar bar-hp" data-fill="f">${motion.fillMarkup(0)}</span></span></button></li>`;
   function rowDesc(f, r, i, fc) {
-    const k = cardOf(f, r, rules()), now = k.turn, h = localHunter(r);
+    const k = cardOf(f, r, rules()), now = k.turn, word = lifeWord(r);
     const cs = k.statuses.map(s => s.def.label).join(', ');
-    const life = h && LIFE_TAG[h.life.at];
     // the hunter the row holds, this phone's or a player's sheet as the room's parser read it (N8: no guard of its own); a
     // player's row whose sheet left the room draws no badge
     const who = r.kind === 'hunter' ? holderHunter(r) : null, badge = who ? A().identity.badge(who, 'sm') : '';
     return {
-      cls: `cmb-row${now ? ' cur' : ''}${fc && r.id === fc.id ? ' sel' : ''}${k.down ? ' dead' : ''}`,
-      label: `Select ${r.name}${now ? ', current turn' : ''}${k.down ? ', defeated' : ''}`,
+      cls: `cmb-row${now ? ' cur' : ''}${fc && r.id === fc.id ? ' sel' : ''}${k.down ? ` down ${r.life.at}` : ''}`,
+      label: `Select ${r.name}${now ? ', current turn' : ''}${word ? `, ${word}` : ''}`,
       init: running(f) && !k.down ? String(i + 1) : '',
-      lead: `<span class="cmb-nm">${now ? '▶ ' : ''}${badge}${esc(r.name)}${isRemote(r) ? ' <small>(remote)</small>' : ''}${life ? ` <small>${esc(life)}</small>` : ''}</span>${cs ? `<span class="cmb-cs">${esc(cs)}</span>` : ''}${k.down ? '<span class="cmb-dn">Down</span>' : ''}`,
+      lead: `<span class="cmb-nm">${now ? '▶ ' : ''}${badge}${esc(r.name)}${isRemote(r) ? ' <small>(remote)</small>' : ''}</span>${cs ? `<span class="cmb-cs">${esc(cs)}</span>` : ''}${word ? `<span class="cmb-dn lw" data-life-at="${r.life.at}">${esc(word)}</span>` : ''}`,
       hp: `${k.hp}/${k.hpMax}`, f: share(k.hp, k.hpMax),
     };
   }
@@ -1039,7 +1056,9 @@ export function register(app) {
       if (b.dataset.mana) { const n = int((A().hunter.parseAmount(amt()) || { n: 1 }).n, 1) || 1; adjust(r, { mana: int(b.dataset.mana) * Math.abs(n) }); return; }
       if (b.dataset.rc) { send({ type: 'status', id: r.id, remove: /** @type {any} */ (b.dataset.rc) }); return; }
       if (b.hasAttribute('data-cforge')) return addStatus(r);
-      if (b.hasAttribute('data-defeat')) { const k = cardOf(f, r, rules()); if (k.down) revive(f, r); else adjust(r, { hp: -k.hpMax }); return; }
+      if (b.hasAttribute('data-defeat')) { adjust(r, { hp: -cardOf(f, r, rules()).hpMax }); return; }
+      if (b.hasAttribute('data-stabilize')) { lifeOf(r.id, { type: 'stabilize' }); return; }
+      if (b.hasAttribute('data-revive')) { revive(r); return; }
       if (b.hasAttribute('data-remove')) { if (await ui.confirm({ title: 'Remove combatant?', body: r.name, danger: true, confirmLabel: 'Remove' })) removeRow(r); return; }
       if (b.dataset.ab) return useAbility(r, b.dataset.ab, b);
       if (b.hasAttribute('data-intent-set')) return setIntent(r);

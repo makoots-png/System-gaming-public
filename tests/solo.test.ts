@@ -29,6 +29,8 @@ import { seedId } from '../src/core/ids.ts';
 import type { GateId, HunterId, MonsterId } from '../src/core/ids.ts';
 import { den } from './models/gate-events.ts';
 import { dev, hid, iid } from './fixtures/ids.ts';
+import { lifeAt } from './fixtures/life.ts';
+import type { Life } from '../src/core/hunter/vitals.ts';
 
 const AT = '2026-11-18T10:00:00.000Z', NOW = Date.parse(AT), HOUR = 3600e3;
 const ENV: ParseEnv = { now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-me') };
@@ -49,9 +51,10 @@ const ctx = (c: Partial<ReadyCtx> = {}): ReadyCtx => ({ R: RULES, seat: 'alone',
 const day = { at: AT, today: dayKey(new Date(AT), 0), R: RULES };
 const PERSONAL: SoloGate = { kind: 'personal', id: personalGateId(1) }, WORLD: SoloGate = { kind: 'world', id: 'g-den' as GateId };
 
-/** A run's end written by hand: Mira's row as `row` says, the outcome and the rounds. */
+/** A run's end written by hand: Mira's row as `row` says, the outcome and the rounds. Its life as the fight left it is its HP's (`lifeAt`). */
 function endOf(outcome: RunEnd['outcome'], row: Partial<RowEnd>, spent: RunEnd['spent'] = []): RunEnd {
-  return { outcome, rounds: 4, commands: 30, spent, party: { [ME]: { hp: 7, mana: 3, fatigue: 22, statuses: [], used: {}, down: false, saves: [], life: 'up', kills: [], ...row } } };
+  const hp = row.hp ?? 7, { life: lifeLeft } = lifeAt('hunter', hp);
+  return { outcome, rounds: 4, commands: 30, spent, party: { [ME]: { hp, mana: 3, fatigue: 22, statuses: [], used: {}, down: false, saves: [], life: 'up', lifeLeft: lifeLeft as Life, kills: [], ...row } } };
 }
 const runOf = (s: Save, end: RunEnd): SoloRun => ({ end, hunter: ME, shadows: {}, from: soloKey(s.hunters[0]!) });
 const NO_LOOT = { gold: 0, items: [] };
@@ -436,7 +439,7 @@ describe('the words of a solo run name the way back and speak to one hunter', ()
   });
 
   test('the card\'s odds line and the confirm read one hunter\'s chance from the same numbers', () => {
-    const end = (outcome: RunEnd['outcome'], life: RowEnd['life']): RunEnd => ({ outcome, rounds: 3, commands: 9, spent: [], party: { [ME]: { hp: 0, mana: 0, fatigue: 0, statuses: [], used: {}, down: life !== 'up', saves: [], life, kills: [] } } });
+    const end = (outcome: RunEnd['outcome'], life: RowEnd['life']): RunEnd => ({ outcome, rounds: 3, commands: 9, spent: [], party: { [ME]: { hp: 0, mana: 0, fatigue: 0, statuses: [], used: {}, down: life !== 'up', saves: [], life, lifeLeft: null, kills: [] } } });
     const r = readOdds({ of: 4, rows: [{ id: ME, name: 'Mira', hpMax: 40, manaMax: 10, fatigueMax: 100 }], ends: [end('won', 'up'), end('lost', 'dead'), end('lost', 'dead'), end('lost', 'stable')] });
     const line = oddsLine(r, 'alone'), confirm = soloConfirmLines(r);
     expect(line.startsWith(confirm[0]!)).toBe(true);

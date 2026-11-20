@@ -6,6 +6,7 @@
 // scripts/charts/summon.ts.
 
 import type { Tick } from './timeline.ts';
+import { isUp } from './row-hp.ts';
 import type { Body, OpRules } from './effect-ops.ts';
 import type { CombatantId } from './ability-types.ts';
 
@@ -35,8 +36,8 @@ export function summonStep(s: SummonState, event: SummonEvent): SummonState {
 export const isSummon = (b: Pick<Body, 'kind'>): boolean => b.kind === 'summon';
 /** The summons on `rows` whose owner is gone or down, or whose HP is 0: each leaves now (table 2.4). */
 export function dismissed(rows: readonly Body[]): Body[] {
-  const up = (id: CombatantId | undefined): boolean => rows.some(r => r.id === id && r.hp > 0);
-  return rows.filter(r => isSummon(r) && summonStep('present', r.hp <= 0 ? { type: 'down' } : up(r.owner) ? { type: 'turn', late: false } : { type: 'ownerGone' }) === 'gone');
+  const up = (id: CombatantId | undefined): boolean => rows.some(r => r.id === id && isUp(r));
+  return rows.filter(r => isSummon(r) && summonStep('present', !isUp(r) ? { type: 'down' } : up(r.owner) ? { type: 'turn', late: false } : { type: 'ownerGone' }) === 'gone');
 }
 /** Whether a summon whose turn starts at `now` leaves before it acts: its time is up (table 2.4). */
 export const timeUp = (b: Body, now: Tick): boolean => isSummon(b) && summonStep('present', { type: 'turn', late: b.until !== undefined && now >= b.until }) === 'gone';

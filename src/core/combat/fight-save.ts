@@ -84,7 +84,7 @@ export type Beside = {
 /** One write-back of `fx` on this phone's save; a hunter or shadow no longer here, or a write its state refuses, is left. */
 function wroteBack(save: Save, fx: Effect, R: Rules): Save {
   const next = fx.type === 'vitals'
-    ? atHunter(fx.hunterId, h => sheetEdit(h, { type: 'totals', hp: fx.hp, mana: fx.mana, fatigue: fx.fatigue, statuses: fx.statuses, used: fx.used ?? {} }, R))(save)
+    ? atHunter(fx.hunterId, h => sheetEdit(h, { type: 'totals', life: fx.life, mana: fx.mana, fatigue: fx.fatigue, statuses: fx.statuses, used: fx.used ?? {} }, R))(save)
     : fx.type === 'shadowHp' ? atHunter(fx.hunterId, h => setShadowHp(h, fx.shadowId, fx.hp))(save) : save;
   return isRefused(next) ? save : next;
 }

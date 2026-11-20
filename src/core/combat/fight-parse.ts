@@ -21,10 +21,12 @@ import { abilityId, combatantId, hunterId, REACT_WHEN, tag } from './ability-typ
 import { parseSaveId, parseSheetKey } from '../ids.ts';
 import type { Ability, AbilityEffect, AbilityId, CombatantId, Delivery, AbilityGate, Gap, Price, RuleTicks, Summon, Tag } from './ability-types.ts';
 import { bounded } from '../registry/scalers.ts';
+import { isUp } from './row-hp.ts';
 import { amountOp, AURA_ON, isStatusKey, LAND_USE_OPS, reactionMayHold, modified, shadowId, SHARE_ON, statusKey, statusOn, TYPE_MAX, isUseOp } from './effect-ops.ts';
 import { isStacking, SHEET_OP_KEYS } from './op-amount.ts';
+import { parseLife } from '../hunter/vitals.ts';
 import type {
-  Body, Channel, Due, End, Holder, Intent, LandOp, Op, Origin, Reach, SheetStatus, StackRule, Status, StatusDef, StatusKey, Threshold, Tiered, UseOp,
+  Body, BodyLife, Channel, CombatantKind, Due, End, Holder, Intent, LandOp, Op, Origin, Reach, SheetStatus, StackRule, Status, StatusDef, StatusKey, Threshold, Tiered, UseOp,
 } from './effect-ops.ts';
 import { BEARER_EVENTS, PARTY_EVENTS } from './triggers.ts';
 import type { Limit, Need, Trigger, Trip } from './triggers.ts';
@@ -685,6 +687,18 @@ function idRecord<K extends string, T>(v: unknown, max: number, read: (x: unknow
 const SIDES = ['party', 'foe'] as const;
 const BODY_KINDS = ['hunter', 'monster', 'shadow', 'summon'] as const;
 const CHANNEL_STATES = ['holding', 'broken', 'fired'] as const;
+/**
+ * A row's life by its kind (effect-ops.ts `BodyLife`): a hunter's as a sheet stores it (vitals.ts `parseLife`), anything
+ * else's up at 1 to its maximum HP, or dead. Null when it reads as neither: a fight stored before rows held their life
+ * (an `hp` number) reads as no fight, and its hunters keep their sheets.
+ */
+function bodyLifeOf(kind: CombatantKind, v: unknown, hpMax: number): BodyLife | null {
+  if (kind === 'hunter') { const life = parseLife(v, Math.max(1, hpMax)); return life && { kind, life }; }
+  if (!isObj(v)) return null;
+  if (v.at === 'dead') return { kind, life: { at: 'dead' } };
+  const hp = v.at === 'up' ? whole(v.hp, 1, BIG) : null;
+  return hp === null ? null : { kind, life: { at: 'up', hp: Math.min(hp, Math.max(1, hpMax)) } };
+}
 function rowOf(v: unknown, grid: Grid, R: Rules): Body | null {
   if (!isObj(v)) return null;
   const id = idText(v.id), name = text(v.name, NAME_MAX), side = oneOf(v.side, SIDES, null), kind = oneOf(v.kind, BODY_KINDS, null);
@@ -697,7 +711,7 @@ function rowOf(v: unknown, grid: Grid, R: Rules): Body | null {
   // a maximum worked out from today's rules may be lower than when the row was stored (a GM lowered a rule): the row
   // keeps at most its maximum, as a stack keeps at most its cap, and the fight still reads
   const upTo = (x: unknown, max: number): number | null => { const n = num(x, 0, BIG); return n === null ? null : Math.min(n, max); };
-  const hp = upTo(v.hp, sheet.hpMax), mana = upTo(v.mana, sheet.manaMax), fatigue = upTo(v.fatigue, sheet.fatigueMax);
+  const lived = bodyLifeOf(kind, v.life, sheet.hpMax), mana = upTo(v.mana, sheet.manaMax), fatigue = upTo(v.fatigue, sheet.fatigueMax);
   const readyAt = idRecord<AbilityId, Tick>(v.readyAt, MAX_ABILITIES, tickOf, abilityId);
   const threat = v.threat === null ? null : idRecord<CombatantId, number>(v.threat, MAX_ROWS, x => num(x, 0, BIG), combatantId);
   let shield: Body['shield'] = null, stagger: Body['stagger'] = null, channel: Channel | null = null, intent: Intent | null = null;
@@ -737,11 +751,11 @@ function rowOf(v: unknown, grid: Grid, R: Rules): Body | null {
     ? { ability: abilityId(arAbility), on: arOn === null ? null : combatantId(arOn), spent: arSpent } : null;
   const extraction = v.extraction === undefined ? undefined : extractionOf(v.extraction);
   if (warded === null || extras === null || hastened === null || armed === null || extraction === null) return null;
-  if (hp === null || mana === null || fatigue === null || !readyAt || (v.threat !== null && !threat) || trips === null) return null;
+  if (lived === null || mana === null || fatigue === null || !readyAt || (v.threat !== null && !threat) || trips === null) return null;
   // a body on the map stands where a body may; a monster or shadow at 0 is gone from it, and a wall may since cover its tile
-  if ((hp > 0 || kind === 'hunter') && !placeOn(where, grid)) return null;
+  if ((lived.life.at === 'up' || kind === 'hunter') && !placeOn(where, grid)) return null;
   return {
-    id: combatantId(id), name, side, kind, origin, tier, stats, sheet, place: where, hp, mana, fatigue, shield, stagger, channel, threat,
+    id: combatantId(id), name, side, ...lived, origin, tier, stats, sheet, place: where, mana, fatigue, shield, stagger, channel, threat,
     statuses, readyAt, abilities, intent, holder, xp, at, speed: sheet.speed, tie, ...(trips ? { trips } : {}), ...(tally ? { tally } : {}),
     ...(owner === undefined ? {} : { owner: combatantId(owner) }), ...(until === undefined ? {} : { until }), ...(used === undefined ? {} : { used }),
     ...(warded === undefined ? {} : { warded }), ...(extras === undefined ? {} : { extras }), ...(hastened ? { hastened } : {}), ...(armed ? { armed } : {}),
@@ -811,7 +825,7 @@ export function parseFight(raw: unknown, R: Rules): Fight | null {
   if (!id || !phase || !grid || !log || banked === null) return null;
   const rows = all(raw.rows, MAX_ROWS, x => rowOf(x, grid, R));
   if (!rows || new Set(rows.map(r => r.id)).size !== rows.length) return null;
-  const tiles = rows.filter(r => r.hp > 0 || r.kind === 'hunter').map(r => `${r.place.x},${r.place.y}`);
+  const tiles = rows.filter(r => isUp(r) || r.kind === 'hunter').map(r => `${r.place.x},${r.place.y}`);
   if (new Set(tiles).size !== tiles.length) return null;
   const zones = raw.zones === undefined ? [] : all(raw.zones, MAX_ZONES, x => parseZone(x, grid, R)), fog = raw.fog === undefined ? null : fogOn(raw.fog, grid);
   if (!zones || fog === undefined || new Set(zones.map(z => z.id)).size !== zones.length) return null;

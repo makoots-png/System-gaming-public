@@ -50,6 +50,7 @@ import { diceOf } from '../src/core/formula.ts';
 import type { Place } from '../src/core/combat/space.ts';
 import { BUILDS, KIT_BUILDS, MONSTER_ABILITY, PLAIN_OF, SIM_RANKS, blastsAllowed, hunter, monster, playDungeon, playFight, rng, turnsPolicy, wave2 } from './models/fight-sim.ts';
 import type { Archetype, FightRecord, KitBuild, Plan, SimRow } from './models/fight-sim.ts';
+import { rowHp } from '../src/core/combat/row-hp.ts';
 
 // ── the setups ──
 const foe = (s: SimRow): SimRow => ({ ...s, row: { ...s.row, side: 'foe' } });
@@ -144,7 +145,7 @@ function bestUse(rank: Rank, uses: number, builds: readonly Archetype[] = PLAIN_
       if (ability.channel || ability.prices || !ability.effect || (ability.effect.type !== 'physical' && ability.effect.type !== 'magical')) continue;
       const gap = ability.range <= 1 ? 1 : 4;
       const rows = [{ ...user.row, place: place(5, 5) }, { ...tank.row, place: place(5, 5 + gap) }];
-      const ctx = { rules: RULES, life: () => null };
+      const ctx = { rules: RULES };
       let f: Fight | null = reduce(null, { type: 'add', fightId: fightId('use'), rows, openings: [] }, ctx).fight;
       f = reduce(f, { type: 'start', openings: [{ id: rows[0]!.id, d20: 20, tie: 2 }, { id: rows[1]!.id, d20: 1, tie: 1 }] }, ctx).fight;
       const g = rng(rank.charCodeAt(0) * 1000 + ability.id.length);
@@ -156,7 +157,7 @@ function bestUse(rank: Rank, uses: number, builds: readonly Archetype[] = PLAIN_
         const r = reduce(running, { type: 'act', by: running.rows[0]!.id, ability: ability.id, aim, rolls: { dice: { [running.rows[1]!.id]: dice }, react: { [running.rows[1]!.id]: g.int(1, 20) } }, force: true }, ctx);
         if (r.effects.some(e => e.type === 'refused')) throw new Error(`${a} ${ability.id} refused at ${rank}`);
         const after = r.fight!.rows.find(x => x.id === running.rows[1]!.id)!;
-        lost.push((running.rows[1]!.hp - after.hp) / running.rows[1]!.sheet.hpMax);
+        lost.push((rowHp(running.rows[1]!) - rowHp(after)) / running.rows[1]!.sheet.hpMax);
       }
       results.push({ label: `${a} ${ability.id}`, m: avg(lost) });
     }

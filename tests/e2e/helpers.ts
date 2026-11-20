@@ -248,9 +248,10 @@ export async function chooseList(...pages: Page[]): Promise<void> {
   for (const p of pages) await p.evaluate(() => hunterApp.store.setPrefs({ fightView: 'list' }));
 }
 
-/** The fight's row named `name`, as the save holds it. */
+/** The fight's row named `name`, as the save holds it, with `hp`: its HP as `rowHp` reads it from its life (up has its HP, any other state 0). */
 export const fightRow = (page: Page, name: string): Promise<any> =>
-  page.evaluate(n => JSON.parse(JSON.stringify(hunterApp.store.get().fight.rows.find((r: any) => r.name === n) ?? null)), name);
+  page.evaluate(n => JSON.parse(JSON.stringify(hunterApp.store.get().fight.rows.find((r: any) => r.name === n) ?? null)), name)
+    .then(r => r && { ...r, hp: r.life.at === 'up' ? r.life.hp : 0 });
 
 /** Under 1100 px the GM's Table feed in Combat is one line: open it so its rows show. */
 export async function openFeed(page: Page): Promise<void> {

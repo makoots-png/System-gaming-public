@@ -7,6 +7,7 @@
 import type { Sheet } from '../hunter/derive.ts';
 import type { Rules } from '../rules.ts';
 import { atTier, countOn, SHEET_OP_KEYS } from './op-amount.ts';
+import { rowHp } from './row-hp.ts';
 import type { Body, ShareOn, SheetOpKey, Status, StatusDef, StatusKey } from './effect-ops.ts';
 import type { Ability, CombatantId } from './ability-types.ts';
 
@@ -111,8 +112,8 @@ export const markWards = (warded: Body['warded'], def: Pick<StatusDef, 'ops'>): 
   return add.length ? [...(warded ?? []), ...add] : warded;
 };
 /** HP damage on `t` after an invulnerable ward: never under 1 while it holds (a shield absorbed first). */
-export const wardedDamage = (t: Pick<Body, 'statuses' | 'hp'>, damage: number): number =>
-  holds(t, 'invulnerable') && t.hp >= 1 ? Math.min(damage, t.hp - 1) : damage;
+export const wardedDamage = (t: Pick<Body, 'statuses' | 'life'>, damage: number): number =>
+  holds(t, 'invulnerable') && rowHp(t) >= 1 ? Math.min(damage, rowHp(t) - 1) : damage;
 
 // ── the machines of wave 2 that live on a status (kits design 8.9: tables 8.9.2, 8.9.4 and 8.9.5) ──
 /** An edge or a held die on its bearer (table 8.9.2): absent, or held at `n` (its stacks, 1 for a plain status). */

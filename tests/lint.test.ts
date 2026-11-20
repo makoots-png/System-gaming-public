@@ -251,7 +251,7 @@ test('only src/core/hunter/vitals.ts changes a hunter\'s HP, mana, fatigue, life
   // `down` is a plain word elsewhere (a body, a pointer, a database), so it counts only as a key or a chip's argument.
   const chip = /['"]exhausted['"]|(?:addC|key|chip|Chip)\W[^'"\n]*['"]down['"]/;
   const owners = ['src/core/hunter/vitals.ts', 'src/core/hunter/hunter.ts'];
-  // chips.ts draws the chips: it is the one place that may name one (the chip at 0 HP reads Down or Down, stable there).
+  // chips.ts draws the chips: it is the one place that may name one (the chip at 0 HP reads the life's word there).
   const chipNamers = [...owners, 'src/core/hunter/chips.ts', 'src/core/registry/statuses.ts'];
   const writes = (line: Line) => [...line.text.matchAll(field)].length > 0;
   const old: Line = { file: 'src/views/hunter.js', line: 0, text: "if (h.hp <= 0) { if (addC(h, 'down')) h.deathSaves ||= { s: 0, f: 0, stable: false }; } else h.hp = 1;" };
@@ -473,12 +473,13 @@ test('the map view imports no rule module but the scene\'s: it draws src/core/co
   expect(imports('src/views/map.js', text), 'ask the scene (map-view.ts) for it: a new thing the map draws is a field of MapScene').toEqual([]);
 });
 
-test('only the fight changes a combatant\'s place, HP, shield, stagger, channel, threat or statuses', async () => {
+test('only the fight changes a combatant\'s place, shield, stagger, channel, threat or statuses', async () => {
   // The old fight kept a hunter's fight state in two homes (the row and the sheet) and combat.js patched a row in place
   // (`c.hp = ...`), so the GM's screen, the save and the room disagreed. A row now changes only in the fight's modules,
   // by a command the GM's send() in combat.js gives the reducer; core elsewhere makes new rows (rows.ts) but changes none.
+  // A row's HP is its life's, which has a rule of its own below ("a row's life changes only in row-life.ts").
   const owners = /^src\/core\/combat\/(fight[\w-]*|resolve|charge|effect-ops|land|triggers)\.ts$/;
-  const fields = 'place|hp|shield|stagger|channel|threat|statuses';
+  const fields = 'place|shield|stagger|channel|threat|statuses';
   const assign = new RegExp(String.raw`(\w+)\.(${fields})(\s*([-+*/]?=(?![=>])|\+\+|--|\|\|=|\?\?=)|(\.\w+)*\.(push|splice|sort|unshift|pop|shift|reverse)\()`, 'g');
   const copy = new RegExp(String.raw`\{\s*\.\.\.[^,{}]+,[^{}]*\b(${fields})\s*:`);
   // Not a combatant: a shadow a hunter's repair fixes (`x`, src/core/hunter/hunter.ts; shadows.js's `s`, permitted after it stopped writing one, is gone), the GM's status library (`library.statuses`, and its copies in library.ts), a room
@@ -489,13 +490,37 @@ test('only the fight changes a combatant\'s place, HP, shield, stagger, channel,
   const writes = (line: Line) => [...line.text.matchAll(assign)].some(m => m[1] !== 'library' && !(notRows[line.file] ?? []).includes(m[1]!))
     || (!notCopies.includes(line.file) && copy.test(line.text));
   const old: Line[] = [
-    { file: 'src/views/combat.js', line: 0, text: 'c.hp = Math.max(0, c.hp - dmg);' },
     { file: 'src/views/combat.js', line: 0, text: 'c.statuses.push({ key, rounds });' },
     { file: 'src/views/table.js', line: 0, text: 'rows = rows.map(r => r.id === id ? { ...r, place: to } : r);' },
   ];
   for (const line of old) expect(writes(line), `the rule sees ${line.text}`).toBe(true);
   const hits = (await sourceLines('src')).filter(line => !owners.test(line.file) && !isComment(line.text) && writes(line));
   expect(report(hits), 'a combatant changes only in src/core/combat/fight.ts and the rule modules it calls (resolve.ts, charge.ts, effect-ops.ts, fight-turn.ts, fight-channel.ts, and the kits\' land.ts and triggers.ts). Send a command (adjust, status, move, act) through send() in combat.js.').toEqual([]);
+});
+
+test('a row\'s life changes only in row-life.ts', async () => {
+  // A hunter's life in a fight had two homes, the row's HP and the sheet's life, and each rule that changed HP ran its own
+  // clamp, so a heal raised a dead hunter's row while its sheet stayed dead (docs/agent-handoff/audit/notes-dead-row.md).
+  // A row now holds its life (`Body.life`), and `rowLifeAfter` in src/core/combat/row-life.ts is its one writer, through
+  // the hunter's life machine or the foe table. rows.ts and fight-parse.ts make whole new rows, which this rule does not
+  // see. A hunter's own life on its sheet (src/core/hunter) is the life machine's, written by vitals.ts.
+  const mayWrite = ['src/core/combat/row-life.ts'];
+  // Not a row: a played row's end (`RowEnd`), whose `life` is the state its death saves left.
+  const notRows: Record<string, string> = { 'src/core/combat/odds.ts': 'saves: faces, life,' };
+  // Not a row either: the fight doc's row (fight-doc.ts `docRow` makes it from a row, protocol.ts `fightRow` reads it off
+  // the wire), whose `life` is a copy of the row's life's state for the players' table to read, never written back.
+  const docRows = ['src/core/combat/fight-doc.ts', 'src/core/protocol.ts'];
+  const assign = /[\w$)\]!]\.life\s*(?:[-+*/]?=(?![=>])|\?\?=|\|\|=)/;
+  const copy = /\{\s*\.\.\.[^,{}]+,[^{}]*(?<![.\w$])life\s*[:,}]/;
+  const writes = (text: string) => assign.test(text) || copy.test(text);
+  for (const text of ['const row = { ...u, hp: 3, life: { at: \'up\', hp: 10 } };', 'r.life = { at: \'dead\' };', 'd.fight.rows[0]!.life = up;', 'return { ...b, mana, life };']) {
+    expect(writes(text), `the rule sees ${text}`).toBe(true);
+  }
+  expect(writes('const told = { ...was, at: r.life.at };'), 'a read of a life is no write').toBe(false);
+  const all = (await sourceLines('src')).filter(line => !line.file.startsWith('src/core/hunter/') && !isComment(line.text) && writes(line.text));
+  const permitted = (line: Line) => mayWrite.includes(line.file) || docRows.includes(line.file) || (notRows[line.file] !== undefined && line.text.includes(notRows[line.file]!));
+  expect([...mayWrite, ...docRows, ...Object.keys(notRows)].filter(f => !all.some(l => l.file === f && permitted(l))), 'a permit that permits nothing leaves the list').toEqual([]);
+  expect(report(all.filter(line => !permitted(line))), 'a row\'s life changes only through rowLifeAfter (src/core/combat/row-life.ts), so no heal, hit or edit goes around the life machine. Call it with the life event, or send the fight\'s `life` or `adjust` command.').toEqual([]);
 });
 
 test('nothing imports a module deleted with the old fight', async () => {

@@ -310,10 +310,10 @@ test('a GM makes an aura skill; the player\'s hunter casts it, walks, and the al
   const ally = 'ally-mira';
   await gm.evaluate(([id, k]) => hunterApp.store.update((d: any) => {
     const me = d.fight.rows.find((r: any) => r.id === k);
-    d.fight.rows.push({ ...me, id, name: 'Mira Ally', holder: null, place: { x: 6, y: 5 }, hp: 10, at: d.fight.now + 5000, statuses: [] });
+    d.fight.rows.push({ ...me, id, name: 'Mira Ally', holder: null, place: { x: 6, y: 5 }, life: { at: 'up', hp: 10 }, at: d.fight.now + 5000, statuses: [] });
   }, 'test-setup'), [ally, kai] as const);
   const allyHp = async (p: Page) => p === gm
-    ? gm.evaluate(id => hunterApp.store.get().fight.rows.find((r: any) => r.id === id).hp as number, ally)
+    ? gm.evaluate(id => hunterApp.store.get().fight.rows.find((r: any) => r.id === id).life.hp as number, ally)
     : player.evaluate(id => (hunterApp.api.sync.doc('fight') as any).rows.find((r: any) => r.id === id)?.hp as number, ally);
   await expect.poll(() => allyHp(player)).toBe(10);
   await test.step('the player casts it on themselves: the light lies around Kai and Mira, 4 tiles off, is outside it', async () => {

@@ -29,6 +29,7 @@ import { parseAbility, parseFight } from '../src/core/combat/fight-parse.ts';
 import { fightId, reduce } from '../src/core/combat/fight.ts';
 import { hunterRow } from '../src/core/combat/rows.ts';
 import { newHunter } from '../src/core/save.ts';
+import { rowHp } from '../src/core/combat/row-hp.ts';
 
 // Hasted and Stealth as plan section 3.1 restates them; W1a puts them in RULES.conditions.
 const CONDITIONS: SkillRules['conditions'] = {
@@ -108,7 +109,7 @@ describe('the single-hit bound of design section 6', () => {
     const m = modified(origin, [], R);
     return {
       id: combatantId(id), name: id, side, kind: origin.kind === 'hunter' ? 'hunter' : 'monster', origin, tier: tier(rank), stats: m.stats, sheet: m.sheet,
-      place: at, hp: m.sheet.hpMax, mana: m.sheet.manaMax, fatigue: 0, shield: null, stagger: null, channel: null, threat: origin.kind === 'monster' ? {} : null,
+      place: at, life: { at: 'up', hp: m.sheet.hpMax }, mana: m.sheet.manaMax, fatigue: 0, shield: null, stagger: null, channel: null, threat: origin.kind === 'monster' ? {} : null,
       statuses: [], readyAt: {}, abilities: [], intent: null, holder: null, at: NOW, speed: m.sheet.speed, tie: 0, xp: 0,
     };
   };
@@ -258,7 +259,7 @@ describe('a consumable used in a fight', () => {
     const origin: Origin = { kind: 'hunter', build: { stats: baseStats(R.fight), level: 1, gear: [], perks: {} } }, m = modified(origin, [], R);
     return {
       id: combatantId('me'), name: 'Me', side: 'party', kind: 'hunter', origin, tier: 0, stats: m.stats, sheet: m.sheet, place: place(5, 5),
-      hp, mana, fatigue, shield: null, stagger: null, channel: null, threat: null, statuses: [], readyAt: {}, abilities: [], intent: null, holder: null,
+      life: hp >= 1 ? { at: 'up', hp } : { at: 'dying', successes: 0, failures: 0 }, mana, fatigue, shield: null, stagger: null, channel: null, threat: null, statuses: [], readyAt: {}, abilities: [], intent: null, holder: null,
       at: NOW, speed: m.sheet.speed, tie: 0, xp: 0,
     };
   };
@@ -283,7 +284,7 @@ describe('a consumable used in a fight', () => {
     const potion = itemAbility({ id: iid('i7'), name: 'Health Potion', rar: 'common', effects: [{ op: 'heal', amount: num(30), when: 'use' }] }, RULES)!;
     const claimed = JSON.parse(JSON.stringify(potion));
     expect(parseAbility(claimed, RULES)!.item).toBeUndefined();
-    const f = parseFight(JSON.parse(JSON.stringify(reduce(null, { type: 'add', fightId: fightId('f1'), rows: [{ ...hunterRow({ ...newHunter(RULES), id: 'h1', name: 'Kai' }, combatantId('c1'), RULES), abilities: [potion] }], openings: [] }, { rules: RULES, life: () => null }).fight)), RULES);
+    const f = parseFight(JSON.parse(JSON.stringify(reduce(null, { type: 'add', fightId: fightId('f1'), rows: [{ ...hunterRow({ ...newHunter(RULES), id: 'h1', name: 'Kai' }, combatantId('c1'), RULES), abilities: [potion] }], openings: [] }, { rules: RULES }).fight)), RULES);
     expect(f!.rows[0]!.abilities[0]!.item).toBe(iid('i7'));
   });
 
@@ -304,11 +305,11 @@ describe('a consumable used in a fight', () => {
   test('drunk in a fight, the shop\'s potions do what their text says to the drinker\'s row', () => {
     const me = hunterBody(10, 0, 40);
     // "Restores 30 HP", "Restores 4 mana", "Removes 25 fatigue" (items.ts), each within the row's maximum
-    expect(drink('Health Potion', me).hp).toBe(40);
+    expect(rowHp(drink('Health Potion', me))).toBe(40);
     expect(drink('Mana Potion', me).mana).toBe(Math.min(4, me.sheet.manaMax));
     expect(drink('Stamina Tonic', me).fatigue).toBe(15);
     expect(drink('Stamina Tonic', hunterBody(10, 0, 5)).fatigue).toBe(0);
-    expect(drink('Elixir of Life', me).hp).toBe(me.sheet.hpMax);
+    expect(rowHp(drink('Elixir of Life', me))).toBe(me.sheet.hpMax);
   });
 
   test('a consumable whose effects are only the kits\' newer use ops is still usable in a fight, and carries each of them', () => {
