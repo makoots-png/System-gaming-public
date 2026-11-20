@@ -68,3 +68,32 @@ export function planOf(files: readonly string[] | null): CiPlan {
 
 /** The changed files as the hook hands them over (one path a line in `CI_CHANGED`), or null when it handed none. */
 export const changedFrom = (text: string | undefined): readonly string[] | null => (text === undefined ? null : text.split('\n').map(l => l.trim()).filter(Boolean));
+
+/** Which passes the public repository ran green for this commit's tree: each is true only when the variable that names it holds this tree's id. */
+export type Trusted = { readonly browser: boolean; readonly unit: boolean };
+
+/**
+ * The plan after the passes that ran on the public repository are taken as run (`CI_BROWSER_REMOTE`, `CI_UNIT_REMOTE`).
+ * Only a pass the plan would run is taken, and the sentence says which and for what tree, so the log shows what ran
+ * here and what ran there. The typecheck and the lag test are never taken: they run here whatever is trusted.
+ */
+export function trustRemote(plan: CiPlan, trusted: Trusted, tree: string): CiPlan {
+  const browser = trusted.browser && plan.browser !== 'none';
+  const unit = trusted.unit && plan.unit;
+  if (!browser && !unit) return plan;
+  const where = `on the public repository for this commit's tree (${tree.slice(0, 12)})`;
+  const said = [unit && 'The unit tests', browser && 'the browser tests'].filter(Boolean).join(' and ').replace(/^t/, 'T');
+  const why = `${said} passed ${where}.`;
+  return { ...plan, unit: unit ? false : plan.unit, browser: browser ? 'none' : plan.browser, why: plan.why ? `${plan.why} ${why}` : why };
+}
+
+/**
+ * The tree whose green run may be trusted: the tree of the commit a push carries (the hook names it in CI_PUSHED),
+ * not of the checkout the hook runs in, so a push by id is right from any checkout. Run by hand there is no push and
+ * the checkout's HEAD is the commit. A push of several different commits (the hook says 'many') trusts no tree.
+ * `treeOf` maps a commit id or ref to its tree id.
+ */
+export function testedTree(pushed: string | undefined, treeOf: (ref: string) => string): string {
+  if (pushed === 'many') return '';
+  return treeOf(pushed || 'HEAD');
+}

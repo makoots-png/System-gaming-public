@@ -1,4 +1,4 @@
-# The browser tests, run on GitHub's machines to save the lead's box half an hour a push.
+# The unit tests and the browser tests, run on GitHub's machines so a push waits there and not on the lead's box.
 # Only the public copy of the game runs this (scripts/publish-clean.ts makes that copy); the private repository does not.
 name: ci
 on:
@@ -9,8 +9,48 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  # No unit job: the hook always runs the typecheck and the unit tests on the lead's box, and the exhaustive room model
-  # (tests/room-system-model.test.ts) does not finish inside its 60 s on a runner's two cores.
+  # The unit tests, one job at four workers, as `bun run test` runs them. A runner of a public repository has four cores
+  # like the lead's box, where the whole pass takes about 130 s, so it is shorter than a browser part (about 6 minutes)
+  # and is not split by `bun test --shard`. Its longest file, tests/fight-model.test.ts (about 100 s alone), could not
+  # be shortened by a shard anyway. The room API tests here use the memory store; the next job runs them on Postgres.
+  unit:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile
+      - run: bun test --parallel=4
+  # The room API against Postgres, the store the deploy uses (AGENTS.md, "Run, test, check"): the same two files with
+  # DATABASE_URL set, in one process so they do not share the database at the same time.
+  unit-postgres:
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile
+      - run: bun test tests/server-rooms.test.ts tests/server-handshake.test.ts
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
   browser:
     if: github.event.repository.private == false
     runs-on: ubuntu-latest

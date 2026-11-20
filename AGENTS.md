@@ -29,7 +29,7 @@ On a machine that ships its own Chromium (a cloud box), skip the Playwright inst
 | Typecheck | `bun run typecheck` |
 | Typecheck, unit tests (four workers) and lint checks | `bun run test` |
 | One browser test file | `bunx playwright test tests/e2e/<file> --workers=1 --output=/tmp/pw-<name>` (starts its own server on 3217; set `E2E_PORT` when two runs overlap) |
-| Everything a push must pass | `bun run ci` |
+| Everything a push must pass | `bun run ci`. The unit and browser passes may instead be taken from a green run on the public repository: `CI_UNIT_REMOTE=<tree> CI_BROWSER_REMOTE=<tree> git push` (steps in `docs/guide/tests-ci.md`) |
 | The room API against Postgres, the store the deploy uses | `DATABASE_URL=postgres://... bun test tests/server-rooms.test.ts tests/server-handshake.test.ts` (an empty database; without the variable the same tests use the memory store) |
 | Redraw the state charts | `bun run charts` (writes `docs/state-machines.md`) |
 
@@ -64,6 +64,19 @@ Read only the guide file for the area a change touches. Each has "Where things l
 - `docs/guide/tests-ci.md`: test conventions, the local CI and the push hook, screen looks, copy and words.
 - `docs/guide/machines.md`: the list of every state machine and how its chart is drawn.
 - `docs/audit/2026-11-19-neon-audit.md`: architecture, implicit state-machine and bug audit of `a11b6a5d` (154 findings, ordered by importance).
+
+## Rules and what enforces them
+
+When a mistake is made, apply `.claude/skills/correct/SKILL.md` (the owner's standing rule) and add its row here. A rule with nothing in the right column is a repeat waiting to happen.
+
+| Rule | What enforces it |
+|---|---|
+| A helper's launch names its model (a lead runs on Fable; a helper must not inherit it) | `.claude/hooks/agent-model.py`, a hook that refuses an `Agent` call with no `model` and says which to name |
+| A session reads the handoff only from a checkout that is up to date | `.claude/hooks/session-start.sh`, which fetches the branch as a session starts and says how far behind it is |
+| The server's Postgres path is tested, not only the memory store | the public repository's unit job with a Postgres beside it (`.github/workflows/ci.yml`, being added: `docs/agent-handoff/audit/brief-ci-remote.md`) |
+| A lead hands over when it is due (40 turns, or a compaction) | `.claude/hooks/handoff-due.py`: from 40 turns every turn is told the hand-off is due; from 80 a launch of a new helper is refused until the next lead; after a compaction the first turn is told to hand over |
+| A push's tested tree is the pushed commit's, not the checkout's | `testedTree` in `scripts/ci-plan.ts`, fed `CI_PUSHED` by `.githooks/pre-push`; its cases in `tests/ci-plan.test.ts` |
+| Every other rule of the code | its test in `tests/lint.test.ts`, named for the rule |
 
 ## Rules
 

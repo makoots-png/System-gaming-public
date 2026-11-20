@@ -1,6 +1,6 @@
 // Local CI. `bun run ci` runs everything a push must pass, and .githooks/pre-push runs it before each push.
 
-import { changedFrom, planOf } from './ci-plan.ts';
+import { changedFrom, planOf, testedTree, trustRemote } from './ci-plan.ts';
 
 type Step = { name: string; cmd: string[]; retry: string[]; env?: Record<string, string> };
 
@@ -19,14 +19,20 @@ const UNIT = ['bun', 'test', '--parallel=4'];
 // What this push needs (scripts/ci-plan.ts): the hook hands over the files the push changes in CI_CHANGED; run by
 // hand, `bun run ci` has none and runs everything.
 const planned = planOf(changedFrom(process.env.CI_CHANGED));
-// The browser tests may have run on the public repository (scripts/ci-public.sh, .github/workflows/ci.yml). The one who
-// pushes names the tree whose run was green in CI_BROWSER_REMOTE; when it is this commit's tree, the
-// browser pass is not run again here. The typecheck, the unit tests and the lag test (which needs a quiet machine,
-// so it stays here) still run.
-const snapshot = Bun.spawnSync(['sh', 'scripts/ci-public.sh', 'tree']).stdout.toString().trim();
-const remote = !!process.env.CI_BROWSER_REMOTE && process.env.CI_BROWSER_REMOTE === snapshot;
-if (process.env.CI_BROWSER_REMOTE && !remote) console.log(`\n== CI_BROWSER_REMOTE names ${process.env.CI_BROWSER_REMOTE}, and this commit's tree is ${snapshot}: the browser tests run here.`);
-const plan = remote && planned.browser !== 'none' ? { ...planned, browser: 'none' as const, why: `The browser tests passed on the public repository for this commit's tree (${snapshot.slice(0, 12)}).` } : planned;
+// The unit tests and the browser tests may have run on the public repository (scripts/ci-public.sh,
+// .github/workflows/ci.yml). The one who pushes names the tree whose run was green in CI_UNIT_REMOTE and
+// CI_BROWSER_REMOTE; a pass whose variable is this commit's tree is not run again here (trustRemote, scripts/ci-plan.ts).
+// The tree compared is the one of the commit the push carries (CI_PUSHED, set by .githooks/pre-push), not of the checkout.
+// Two variables because each names the jobs it vouches for, and a run whose browser parts are green and whose unit job is
+// not (or the other way) must not let the hook trust both. The typecheck and the lag test (which needs a quiet machine)
+// always run here.
+const snapshot = testedTree(process.env.CI_PUSHED, ref => Bun.spawnSync(['git', 'rev-parse', `${ref}^{tree}`]).stdout.toString().trim());
+const named = (name: string): boolean => {
+  const given = process.env[name];
+  if (given && given !== snapshot) console.log(`\n== ${name} names ${given}, and this commit's tree is ${snapshot}: that pass runs here.`);
+  return !!given && given === snapshot;
+};
+const plan = trustRemote(planned, { browser: named('CI_BROWSER_REMOTE'), unit: named('CI_UNIT_REMOTE') }, snapshot);
 if (plan.why) console.log(`\n== ${plan.why}`);
 const browserFiles = plan.browser === 'all' || plan.browser === 'none' ? [] : plan.browser;
 

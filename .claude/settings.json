@@ -4,5 +4,27 @@
   },
   "permissions": {
     "allow": ["mcp__claude-code-remote__add_repo"]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/agent-model.py\"" },
+          { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/handoff-due.py\"" }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/handoff-due.py\"" }] }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "sh \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh\"" },
+          { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/handoff-due.py\"" }
+        ]
+      }
+    ]
   }
 }

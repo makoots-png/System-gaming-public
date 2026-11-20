@@ -11,10 +11,12 @@ fi
 known=yes
 seen=no
 files=""
+pushed=""
 while read -r _local_ref local_sha _remote_ref remote_sha; do
   [ -n "$local_sha" ] || continue   # an empty line is not a ref
   seen=yes
   case "$local_sha" in *[!0]*) ;; *) continue ;; esac   # a deleted ref pushes no files
+  if [ -z "$pushed" ] || [ "$pushed" = "$local_sha" ]; then pushed="$local_sha"; else pushed=many; fi
   case "$remote_sha" in *[!0]*) ;; *) known=no; break ;; esac   # a new branch: no range to read
   range=$(git diff --name-only "$remote_sha" "$local_sha" 2>/dev/null) || { known=no; break; }
   files="$files
@@ -27,4 +29,6 @@ if [ "$seen" = yes ] && [ "$known" = yes ]; then
 else
   unset CI_CHANGED
 fi
+# The tree a green run on the public repository is compared with is the pushed commit's, not the checkout's.
+if [ -n "$pushed" ]; then CI_PUSHED="$pushed"; export CI_PUSHED; else unset CI_PUSHED; fi
 exec bun run ci

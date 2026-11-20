@@ -877,14 +877,14 @@ pgOnly('Postgres rows (with DATABASE_URL)', () => {
   });
 
   test('a row an older build wrote as a string of JSON is read again after a start', async () => {
-    const { code } = await newRoom();
+    const { code, gm } = await newRoom();
     const sql = new Bun.SQL(PG!), sheet = JSON.stringify(sheetOf(PLAYER, 'Kai').data);
     try {
       await sql`INSERT INTO sheets (room, hid, at, from_id, data) VALUES (${code}, ${PLAYER + ':h1'}, ${Date.now()}, ${PLAYER}, ${sheet}::jsonb)`;
       expect((await sql`SELECT jsonb_typeof(data) AS t FROM sheets WHERE room = ${code}`).map(r => r.t)).toEqual(['string']);
     } finally { await sql.close(); }
     const started = await postgresStore(PG!);
-    try { expect((await call('GET', `/api/rooms/${code}`, { server: serverOf(openDatabase(started)) })).body.sheets[`${PLAYER}:h1`].data.hunter.name).toBe('Kai'); }
+    try { expect((await call('GET', `/api/rooms/${code}`, { headers: gm, server: serverOf(openDatabase(started)) })).body.sheets[`${PLAYER}:h1`].data).toMatchObject(sheetOf(PLAYER, 'Kai').data); }
     finally { await started.close(); }
   });
 
