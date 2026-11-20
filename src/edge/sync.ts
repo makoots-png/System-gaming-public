@@ -8,7 +8,8 @@
 //
 // State this file owns, all inside `register`. The lint rule in tests/lint.test.ts allows these `let`s and no other:
 //   link, push      the two machines
-//   attempt         the Create or Join tap in progress, so its promise can answer the view that made it
+//   attempt         the Create or Join tap machine (src/core/sync/attempt.ts): the tap in progress, so its promise
+//                   answers the view that made it, and who a player's join is for
 //   shown           the room data of the last applied poll, tagged with the link gen it belongs to
 //   srvSkew         server clock minus this clock, from the last answer that carried the server's time
 //   lastOk          when the server last answered (the Room view's "Last sync")
@@ -23,8 +24,7 @@
 // of, src/core/sync/seen.ts) are written only by the link's `save` effect, here; a poll page's cursor is written in the
 // same write as what the page's events land on a player's phone (`apply`), so a reload never finds one without the other.
 // The save's `outbox` only here, with a step of src/core/sync/outbox.ts (`boxDo`, and `rebound` at a bind).
-import { addHunter, removeHunter, setActive } from '../core/party.ts';
-import { both } from '../core/save-step.ts';
+import { addHunter, setActive } from '../core/party.ts';
 import { stepTime } from '../core/day.ts';
 import { BUILD } from './build.ts';
 import { reported } from './report.ts';
@@ -57,6 +57,8 @@ import { connection } from '../core/sync/connection.ts';
 import type { Connection } from '../core/sync/connection.ts';
 import { parseInvite } from '../core/sync/invite.ts';
 import type { TapKind } from '../core/sync/taps.ts';
+import { NOBODY, NO_ATTEMPT, attemptStep, joinBinds } from '../core/sync/attempt.ts';
+import type { Attempt, AttemptEvent, JoinBinds, JoinFor, RoomTap } from '../core/sync/attempt.ts';
 import { atSync, boundTo, linkSaved, ringGone, serverSeen } from '../core/sync/bind.ts';
 import { runTaken, runsGone } from '../core/gates/solo-wait.ts';
 import { atOutbox, callOf, next as nextOut, post as postIn, rebound, reloaded, roomGone, sentEvent, stalled, step as outStep, waiting } from '../core/sync/outbox.ts';
@@ -118,18 +120,8 @@ const tapError = (kind: TapKind): TapError => new TapError(kind);
  */
 const tapped = <A extends unknown[], T>(f: (...a: A) => Promise<T>) => (...a: A): Promise<T> =>
   f(...a).catch((e: unknown) => { if (e instanceof TapError) throw e; reported('sync', e); throw tapError('net'); });
-const TAP_ERRORS: Partial<Record<LinkNotice, () => TapError>> = {
-  notFound: () => tapError('notfound'),
-  keyRefused: () => tapError('keyRefused'),
-  notAllowedBack: () => tapError('removed'),
-  replaced: () => tapError('replaced'),
-};
-
-/** The Create or Join tap in progress. `hunterId`, `name`: who a player joins as; `made`: the hunter the join made from `name`. */
-type Attempt = {
-  kind: 'create' | 'join'; gen: Gen; promise: Promise<string>; resolve(v: string): void; reject(e: TapError): void;
-  hunterId: string | null; name: string; made: HunterId | null; prevActive: HunterId; notice: LinkNotice | null;
-};
+/** How the tap machine answers a tap's promise. */
+type Reply = { resolve(v: string): void; reject(e: TapError): void };
 /** The room data of one poll answer, for the link gen it was applied in. */
 type Shown = { gen: Gen | null; sheets: Record<SheetKey, Stored<ServedSheet>>; docs: RoomDocs; presence: Record<string, string>; presenceOk: boolean };
 const NOTHING_SHOWN: Shown = { gen: null, sheets: {}, docs: {}, presence: {}, presenceOk: false };
@@ -232,7 +224,7 @@ export function register(app: SyncHost): void {
   const started = boot({ server: web && (tagged || sy().serverOk), room: storedRoom(), last: storedLast(sy().lastRoom) });
   let link: Link = started.state;
   let push: Push = PUSH_OFF;
-  let attempt: Attempt | null = null;
+  let attempt: Attempt<Reply> = NO_ATTEMPT;
   let shown: Shown = NOTHING_SHOWN;
   let srvSkew = 0;
   let lastOk = 0;
@@ -279,8 +271,8 @@ export function register(app: SyncHost): void {
           const before = link, r = linkReduce(link, next.e);
           link = r.state;
           runLink(r.effects, before, next.data);
-          const tapped = attempt !== null;
-          settleAttempt();
+          const tapped = attempt.at !== 'none';
+          attemptDo({ type: 'linked', took: next.e, link, notices: r.effects.flatMap(x => (x.type === 'notify' ? [x.id] : [])) });
           spendInvite(tapped);
         } else {
           const r = pushReduce(push, next.e);
@@ -391,7 +383,8 @@ export function register(app: SyncHost): void {
             if (a.status !== 200) return one(failedOf(a, gen));
             const r = parseRoomState(a.data); if (!r) return one(failedServer);
             first ??= r;
-            if (!r.more) return { events: [{ type: 'headed', gen, cursor: r.next, gm: r.gm, kicked: kickedAt(first, myKey(joiningHunter())) !== null }], data: { kind: 'head', now: r.now } };
+            const binds = joinsFor();
+            if (!r.more) return { events: [{ type: 'headed', gen, cursor: r.next, gm: r.gm, kicked: 'hunter' in binds && kickedAt(first, myKey(binds.hunter)) !== null }], data: { kind: 'head', now: r.now } };
             after = r.next;
           }
         }
@@ -430,17 +423,15 @@ export function register(app: SyncHost): void {
   /** The link's `save` effect as a step. The key the room refused is the one the link held: a key typed by hand that is wrong leaves a good stored one alone. */
   const linkWritten = (s: Save, fields: SaveFields, before: Link): Save => linkSaved(s, fields, 'key' in before ? before.key : null, srvNow());
 
-  /** A toast or a window. A notice that answers a tap goes to the tap's promise, and the view that made it shows it. */
+  /** A toast or a window. A notice that ends a tap is the tap machine's to answer (`attemptDo`), and the view that made it shows it. */
   function notice(id: LinkNotice, code: RoomCode | null): void {
     switch (id) {
       case 'gone': if (code) { peeked.delete(code); boxDo('outbox-gone', b => roomGone(b, code), s => runsGone(s, code)); } ui.toast('Sync', 'This room no longer exists, so this phone left it.', { kind: 'warn' }); return;
       case 'keyLost': ui.toast('System', `The GM key for room ${code ?? ''} no longer works, so this phone left the room.`, { kind: 'warn' }); return;
       case 'removed': if (code) showRemoved(code, bound()); return;
       case 'upgradeStuck': store.notify({ id: 'upgrade', text: STUCK_TEXT }); return;
-      case 'notFound': if (code) peeked.delete(code); if (attempt) attempt.notice = id; return;
-      case 'keyRefused': case 'notAllowedBack': case 'unreachable': case 'serverError': case 'replaced':
-        if (attempt) attempt.notice = id;
-        return;
+      case 'notFound': if (code) peeked.delete(code); return;
+      case 'keyRefused': case 'notAllowedBack': case 'unreachable': case 'serverError': case 'replaced': return;
     }
   }
 
@@ -562,43 +553,34 @@ export function register(app: SyncHost): void {
    * delete the first left (party.ts `removeHunter`), and a save read in a room binds its active one (save.ts).
    */
   function bound(): Hunter | null { const id = sy().boundHunterId; return id ? store.hunter(id) : null; }
-  /** The hunter a join is for: the one it made from a typed name, the one picked, or the active one. */
-  const joiningHunter = (): HunterId => attempt?.made ?? (attempt?.hunterId ? store.hunter(attempt.hunterId)?.id : undefined) ?? store.get().settings.activeHunterId;
-  /** A player joined: that hunter is active and bound, from the server's now (an older removal no longer applies). */
+  /** What a join binds (attempt.ts `joinBinds`): the hunter picked, a new one of the typed name, or the active one. */
+  const joinsFor = (): JoinBinds => joinBinds(attempt, id => store.hunter(id)?.id ?? null, store.get().settings.activeHunterId);
+  /**
+   * A player joined: that hunter is active and bound, from the server's now (an older removal no longer applies). A new
+   * hunter of a typed name is made in the same write, so a join that failed made none.
+   */
   function bindJoin(): void {
-    const hid = joiningHunter();
-    store.apply('sync-join', s => boundTo(s, hid, srvNow()));
+    const binds = joinsFor();
+    if ('make' in binds) { const h = store.newHunter(binds.make.slice(0, 60)); store.apply('sync-join', s => boundTo(addHunter(s, h), h.id, srvNow())); }
+    else store.apply('sync-join', s => boundTo(s, binds.hunter, srvNow()));
     sheetText = '';
   }
 
-  // ── the Create or Join tap in progress ──
-  /** Start a create or a join. A second tap while one is out gets the same promise. */
-  function begin(e: Extract<LinkEvent, { type: 'create' | 'join' }>, who: { hunterId?: string | null; name?: string } = {}): Promise<string> {
-    if (attempt) return attempt.promise;
-    linkDo(e);
-    if (link.at !== 'creating' && link.at !== 'joining') return Promise.reject(tapError(link.at === 'upgrading' || link.at === 'off' ? 'net' : 'busy'));
-    let resolve!: (v: string) => void, reject!: (e: TapError) => void;
-    const promise = new Promise<string>((y, n) => { resolve = y; reject = n; });
-    attempt = { kind: e.type, gen: link.gen, promise, resolve, reject, hunterId: who.hunterId ?? null, name: who.name ?? '', made: null, prevActive: store.get().settings.activeHunterId, notice: null };
-    return promise;
-  }
-  /** After each link step: make the named hunter once the room is known to exist, and answer the tap when it ends. */
-  function settleAttempt(): void {
-    const a = attempt; if (!a) return;
-    if ((link.at === 'creating' || link.at === 'joining') && link.gen === a.gen) {
-      if (link.at === 'joining' && link.step === 'head' && link.key === null && a.name && !a.made) {
-        const name = a.name;
-        const h = store.newHunter(name.slice(0, 60));
-        if (store.apply('join-new-hunter', d => addHunter(d, h)).ok) a.made = h.id;
+  // ── the Create or Join tap (src/core/sync/attempt.ts) ──
+  /** The only mover of `attempt`: one step of the tap machine, then its effects. */
+  function attemptDo(e: AttemptEvent<Reply>): void {
+    const r = attemptStep(attempt, e);
+    attempt = r.state;
+    for (const x of r.effects) {
+      switch (x.type) {
+        case 'link': linkDo(x.tap); break;
+        case 'answer': { const a = x.answer; if ('kind' in a) x.reply.reject(tapError(a.kind)); else x.reply.resolve(a.value); break; }
       }
-      return;
     }
-    attempt = null;
-    if (link.at === 'live' && !a.notice) { a.resolve(a.kind === 'create' ? link.code : link.key ? 'gm' : 'player'); return; }
-    if (a.made && a.notice !== 'replaced') { const made = a.made; store.apply('join-new-hunter-undo', both(d => removeHunter(d, made, null), d => setActive(d, a.prevActive))); }
-    const err = a.notice ? TAP_ERRORS[a.notice] : undefined;
-    a.reject(err ? err() : tapError('net'));
   }
+  /** Start a create or a join. A tap while one is out is answered at once as `busy` (attempt.ts). */
+  const begin = (tap: RoomTap, who: JoinFor = NOBODY): Promise<string> =>
+    new Promise<string>((resolve, reject) => attemptDo({ type: 'tap', tap, who, reply: { resolve, reject } }));
   const keyFor = (code: RoomCode): GmKey | null => (sy().gmKeys || {})[code] ?? null;
   /** A join of `code`, reading on from where this phone stopped when it last went out of that room (seen.ts `seenFrom`). */
   const joining = (code: RoomCode, key: GmKey | null): Extract<LinkEvent, { type: 'join' }> => ({ type: 'join', code, key, from: seenFrom(sy().seen, code, Date.now() + srvSkew) });
@@ -607,7 +589,7 @@ export function register(app: SyncHost): void {
   async function joinRoom(text: unknown, o: { hunterId?: string; name?: string } = {}): Promise<string> {
     const code = parseInvite(text); if (!code) throw tapError('badcode');
     const key = keyFor(code);
-    const role = await begin(joining(code, key), key ? {} : { hunterId: o.hunterId ?? null, name: String(o.name ?? '').trim() });
+    const role = await begin(joining(code, key), key ? NOBODY : { hunterId: o.hunterId ?? null, name: String(o.name ?? '').trim() });
     setInvite(null);
     return role;
   }
@@ -625,7 +607,7 @@ export function register(app: SyncHost): void {
       actions: [{ label: 'OK', value: false, cancel: true }, { label: 'Rejoin when the GM allows', value: true, primary: true }] }).then(async v => {
       if (!v) return;
       try {
-        await begin(joining(code, null), { hunterId: h?.id ?? null });
+        await begin(joining(code, null), { hunterId: h?.id ?? null, name: '' });
         ui.toast('System', `Rejoined room ${code}.`, { kind: 'info' });
       } catch (e) {
         if (!(e instanceof TapError)) reported('sync', e);

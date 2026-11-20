@@ -14,6 +14,7 @@ import { dismiss, enter } from './motion.ts';
 import { store } from '../edge/store.ts';
 import { reported } from '../edge/report.ts';
 import { READ_ONLY } from '../core/store-life.ts';
+import { NO_WINDOWS, keyWindow, openSystem, windowId, windowStep } from '../core/windows.ts';
 export { reduced } from './motion.ts';
 
 // ── chime: generated WebAudio, only after a user gesture, only when settings.sound is on ──
@@ -60,25 +61,31 @@ function toastBox() {
   if (!box) { box = h('<div class="toast-box" id="toasts" role="status" aria-live="polite"></div>'); document.body.appendChild(box); }
   return box;
 }
-/** The toasts on screen, not the ones on their way out. @param {HTMLElement} box @returns {any[]} */
-const shown = box => [...box.children].filter(t => !t.classList.contains('m-leaving'));
 /**
  * A toast that ends with what it says: `act` runs as it ends, never if its Undo is tapped. It ends after `ms`, or sooner
  * when a third toast pushes it off or the page is hidden or left (`heldNow`), so a give held back is never lost. The
- * write it holds is the one the action makes at once without it (gm.js's Give…): only later.
+ * write it holds is the one the action makes at once without it (gm.js's Give…): only later. A held toast takes no
+ * `key`: it holds its one write, so it never adds up with another.
  * @typedef {{ ms: number; act: () => void; undo: string }} Hold
  */
-/** A toast ends: its held write, if it holds one, runs as it goes. @param {any} t */
-function ended(t) {
-  const act = t._act; t._act = null;
-  dismiss(t);
-  if (act) act();
+/**
+ * Each toast on screen by its element, oldest first, until it goes: the timer that ends it and, for a held toast, the
+ * write it makes as it ends (`act`, null for a plain toast). A toast leaves as it ends, as its Undo or × is tapped, or as
+ * a third toast pushes it off, so its write runs at most once and no timer outlives it.
+ * @type {Map<HTMLElement, { timer: ReturnType<typeof setTimeout>; act: (() => void) | null }>}
+ */
+const toasts = new Map();
+/** Takes toast `t` off the screen and out of `toasts`: answers what it kept, or null when it had already gone. @param {HTMLElement} t */
+function off(t) {
+  const kept = toasts.get(t); if (!kept) return null;
+  toasts.delete(t); clearTimeout(kept.timer);
+  void dismiss(t);
+  return kept;
 }
+/** A toast ends: its held write, if it holds one, runs as it goes. @param {HTMLElement} t */
+function ended(t) { const kept = off(t); if (kept && kept.act) kept.act(); }
 /** The page is hidden or left: every held toast ends now, its write made. */
-function heldNow() {
-  const box = document.getElementById('toasts');
-  if (box) for (const t of shown(box)) if (t._act) { clearTimeout(t._t); ended(t); }
-}
+function heldNow() { for (const [t, kept] of toasts) if (kept.act) ended(t); }
 document.addEventListener('visibilitychange', () => { if (document.hidden) heldNow(); });
 addEventListener('pagehide', heldNow);
 /**
@@ -86,26 +93,25 @@ addEventListener('pagehide', heldNow);
  * @param {{ kind?: string; key?: string; amount?: number; fmt?: (n: number) => string; hold?: Hold }} [opts]
  */
 export function toast(tag, msg, opts = {}) {
-  const box = toastBox(); const kind = opts.kind || 'info';
-  if (opts.key) { // e.g. {key:'xp', amount:10, fmt:n=>`+${n} XP acquired.`}
-    const prev = shown(box).find(t => t.dataset.key === opts.key);
+  const box = toastBox(); const kind = opts.kind || 'info', hold = opts.hold, key = hold ? undefined : opts.key;
+  if (key) { // e.g. {key:'xp', amount:10, fmt:n=>`+${n} XP acquired.`}
+    const prev = [...toasts.keys()].find(t => t.dataset.key === key);
     if (prev && opts.amount !== undefined) {
       const total = Number(prev.dataset.amount) + opts.amount; prev.dataset.amount = String(total);
       prev.querySelector('.t-msg').textContent = opts.fmt ? opts.fmt(total) : msg;
-      clearTimeout(prev._t); prev._t = setTimeout(() => dismiss(prev), TOAST_MS); return prev;
+      const kept = toasts.get(prev); clearTimeout(kept.timer); kept.timer = setTimeout(() => ended(prev), TOAST_MS); return prev;
     }
   }
-  const hold = opts.hold;
   const end = hold ? `<button type="button" class="t-undo">${esc(hold.undo)}</button>` : '<button type="button" class="t-x" aria-label="Dismiss notification">&times;</button>';
   const t = h(`<div class="toast toast-${esc(kind)}"><span class="t-tag">${esc(tag)}</span><span class="t-msg">${esc(opts.amount !== undefined && opts.fmt ? opts.fmt(opts.amount) : msg)}</span>${end}</div>`);
-  if (opts.key) { t.dataset.key = opts.key; t.dataset.amount = String(opts.amount ?? 0); }
-  if (hold) { t._act = hold.act; t.dataset.held = ''; }
+  if (key) { t.dataset.key = key; t.dataset.amount = String(opts.amount ?? 0); }
+  if (hold) t.dataset.held = '';
   // Undo drops the held write; the × of a plain toast only takes it away
-  t.querySelector('.t-x, .t-undo').addEventListener('click', () => { clearTimeout(t._t); t._act = null; dismiss(t); });
+  t.querySelector('.t-x, .t-undo').addEventListener('click', () => { off(t); });
   box.appendChild(t);
   enter(t, 'toast');
-  for (const old of shown(box).slice(0, -2)) { clearTimeout(old._t); ended(old); }
-  t._t = setTimeout(() => ended(t), hold ? hold.ms : TOAST_MS);
+  toasts.set(t, { timer: setTimeout(() => ended(t), hold ? hold.ms : TOAST_MS), act: hold ? hold.act : null });
+  for (const old of [...toasts.keys()].slice(0, -2)) ended(old);
   return t;
 }
 /**
@@ -138,26 +144,22 @@ export function news(/** @type {string} */ msg, kind = 'info') {
   toast('! Combat', msg, { kind });
 }
 
-// ── the window stack ──
+// ── the windows: one machine (src/core/windows.ts), drawn here ──
 /**
- * Every window on screen or waiting for its turn, oldest first. A System window (`system`) opens one at a time: the
- * next waits `queued` until the one up has gone. A maker (`maker`), the first-run window (`onboard`) and the GM's shelf
- * of awards (`shelf`, give-shelf.js) open at once, over whatever is up. A sheet over the page (`sheet`: the dice roller, the Fight tools over a map) is on the stack
- * while its owner shows it. A window going away is `leaving`: no longer open, off the stack when its move ends.
- * The top open window that is not a sheet takes every key (`key`), so Escape and Tab reach that one window only.
- * @typedef {'queued' | 'open' | 'leaving'} WindowState
- * @typedef {'system' | 'maker' | 'onboard' | 'shelf' | 'story' | 'sheet'} WindowKind
- * @typedef {{ kind: WindowKind; state: WindowState; root: HTMLElement | null; win: HTMLElement | null; key: ((e: KeyboardEvent) => void) | null; show: () => void }} Win
+ * A window's parts on the page: its overlay (`root`), the part that moves (`win`) and what it does with a key (`key`). A System window has its words (`o`), its answer (`resolve`) and its
+ * Confirm all button (`all`) too. `openWindow` answers one, for `closeWindow`.
+ * @typedef {import('../core/windows.ts').WindowKind} WindowKind
+ * @typedef {{ id: import('../core/windows.ts').WindowId; kind: WindowKind; root: HTMLElement | null; win: HTMLElement | null; key: ((e: KeyboardEvent) => void) | null }} Win
+ * @typedef {Win & { o: SystemWindow; resolve: (v: any) => void; all: HTMLElement | null }} SystemWin
  */
-/** @type {Win[]} */
-const stack = [];
-/** A sheet counts while it is drawn: a sheet in a view that is not shown has no box. */
-const isOpen = (/** @type {Win} */ w) => w.state === 'open' && (w.kind !== 'sheet' || !!w.root && w.root.getClientRects().length > 0);
-/** Is a window or a sheet over the page: the one answer for the app's keys, the fight's news and anything else that asks. */
-export const windowOpen = () => stack.some(isOpen);
-document.addEventListener('keydown', e => {
-  for (let i = stack.length - 1; i >= 0; i--) { const w = stack[i]; if (w.kind !== 'sheet' && w.state === 'open') { if (w.key) w.key(e); return; } }
-}, true);
+/** The windows on screen, waiting and going (src/core/windows.ts), moved only by `move`. */
+let windows = NO_WINDOWS;
+/** The count of windows made, for their ids. */
+let made = 0;
+/** Each window's parts by its id, from when it is made until the machine says to forget it. @type {Map<import('../core/windows.ts').WindowId, Win>} */
+const parts = new Map();
+/** A window's id and parts, kept in `parts`. @param {WindowKind} kind @returns {Win} */
+function newWin(kind) { const w = { id: windowId(++made), kind, root: null, win: null, key: null }; parts.set(w.id, w); return w; }
 
 const FOCUSABLE = 'button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[href],[tabindex]:not([tabindex="-1"])';
 /** Keeps Tab inside `win`: past the last field to the first, before the first to the last. */
@@ -191,52 +193,71 @@ export function formEnter(e, form, save) {
   return true;
 }
 
-/**
- * Opens a maker, the first-run window or the shelf of awards now, over whatever is up: `show` puts it on the page and answers its overlay and
- * window. Answers the entry, for `closeWindow`.
- * @param {WindowKind} kind @param {() => { root: HTMLElement; win: HTMLElement | null }} show @param {(e: KeyboardEvent) => void} key
- */
-export function openWindow(kind, show, key) {
-  /** @type {Win} */
-  const w = { kind, state: 'open', root: null, win: null, key, show: () => {} };
-  stack.push(w);
-  const at = show(); w.root = at.root; w.win = at.win;
-  return w;
+// Test lever, 0 in the app: every window opens this many ms late. tests/e2e/helpers.ts sets it from E2E_POPUP_DELAY, so a
+// test that taps on before the window it expects is on screen fails every time instead of now and then.
+const LATE = Number(globalThis.__e2ePopupDelay) || 0;
+
+/** Moves the windows by `e` and carries out what the machine says: the one place they move. @param {import('../core/windows.ts').WindowEvent} e */
+function move(e) {
+  const r = windowStep(windows, e);
+  windows = r.windows;
+  for (const fx of r.fx) {
+    if (fx.kind === 'draw') show(/** @type {SystemWin} */ (parts.get(fx.id)));
+    else if (fx.kind === 'dismiss') { const w = parts.get(fx.id); void dismiss(w.root, w.win).then(() => move({ kind: 'gone', id: fx.id })); }
+    else if (fx.kind === 'next') setTimeout(() => move({ kind: 'next' }), LATE);
+    else parts.delete(fx.id);
+  }
+  draw();
 }
-/** A window goes: `leaving` while it fades, then off the stack. After a System window, the next one waiting opens a task later. */
-export function closeWindow(/** @type {Win} */ w) {
-  if (w.state !== 'open') return;
-  w.state = 'leaving';
-  const gone = () => { const i = stack.indexOf(w); if (i >= 0) stack.splice(i, 1); };
-  if (w.root) void dismiss(w.root, w.win).then(gone); else gone();
-  if (w.kind === 'system') setTimeout(openNext, LATE);
-}
-/** A sheet over the page is on the stack while `on` (its owner says so each time it draws it). @param {HTMLElement} el @param {boolean} on */
-export function sheet(el, on) {
-  const i = stack.findIndex(w => w.kind === 'sheet' && w.root === el);
-  if (on && i < 0) stack.push({ kind: 'sheet', state: 'open', root: el, win: null, key: null, show: () => {} });
-  else if (!on && i >= 0) stack.splice(i, 1);
+/** Draws what the windows say beyond each one's own moves: the open System window's Confirm all, shown when two or more waiting windows take its one answer too. */
+function draw() {
+  const id = openSystem(windows), top = id === null ? null : /** @type {SystemWin} */ (parts.get(id));
+  if (!top || !top.all) return;
+  const n = confirmable().length;
+  top.all.hidden = n < 2; top.all.textContent = `Confirm all (${n})`;
 }
 
-// ── System windows: queued on the stack, focus-trapped, Escape and the backdrop dismiss, focus restored ──
-let refreshCur = null;
+/** A sheet counts while it is drawn: a sheet in a view that is not shown has no box. */
+const drawn = (/** @type {Win} */ w) => w.kind !== 'sheet' || !!w.root && w.root.getClientRects().length > 0;
+/** Is a window or a sheet over the page: the one answer for the app's keys, the fight's news and anything else that asks. */
+export const windowOpen = () => windows.shown.some(s => s.at === 'open' && drawn(parts.get(s.id)));
+document.addEventListener('keydown', e => {
+  const id = keyWindow(windows), w = id === null ? null : parts.get(id);
+  if (w && w.key) w.key(e);
+}, true);
+
+/**
+ * Opens a maker, the first-run window, the shelf of awards or a story's window now, over whatever is up: `show` puts it
+ * on the page and answers its overlay and window. Answers its parts, for `closeWindow`.
+ * @param {Exclude<WindowKind, 'system' | 'sheet'>} kind @param {() => { root: HTMLElement; win: HTMLElement | null }} show @param {(e: KeyboardEvent) => void} key
+ */
+export function openWindow(kind, show, key) {
+  const at = show(), w = newWin(kind);
+  w.root = at.root; w.win = at.win; w.key = key;
+  move({ kind: 'open', id: w.id, of: kind });
+  return w;
+}
+/** A window goes: it leaves while it fades, then is off. After a System window or the first-run window, the next one waiting opens a task later. */
+export function closeWindow(/** @type {Win} */ w) { move({ kind: 'close', id: w.id }); }
+/** A sheet over the page counts while `on` (its owner says so each time it draws it). @param {HTMLElement} el @param {boolean} on */
+export function sheet(el, on) {
+  const w = [...parts.values()].find(p => p.kind === 'sheet' && p.root === el);
+  if (on && !w) { const s = newWin('sheet'); s.root = el; move({ kind: 'open', id: s.id, of: 'sheet' }); }
+  else if (!on && w) move({ kind: 'close', id: w.id });
+}
+
+// ── System windows: one at a time, focus-trapped, Escape and the backdrop dismiss, focus restored ──
 // default (non-cancel) value of a window that may be bulk-confirmed; undefined = never auto-resolve (forms, multi-action dialogs)
 const autoValue = o => {
   if (o.form) return undefined;
   const a = o.actions && o.actions.length ? o.actions : [{ value: true }];
   return a.length === 1 ? { v: a[0].value } : undefined;
 };
-
-// Test lever, 0 in the app: every window opens this many ms late. tests/e2e/helpers.ts sets it from E2E_POPUP_DELAY, so a
-// test that taps on before the window it expects is on screen fails every time instead of now and then.
-const LATE = Number(globalThis.__e2ePopupDelay) || 0;
-/** The System windows waiting, oldest first. */
-const waiting = () => stack.filter(w => w.kind === 'system' && w.state === 'queued');
-/** Opens the oldest System window waiting, unless one is up. */
-function openNext() {
-  if (stack.some(w => w.kind === 'system' && w.state === 'open')) return;
-  const w = waiting()[0]; if (!w) return;
-  w.state = 'open'; w.show();
+/** The waiting System windows that the open one's Confirm all answers with it: none when the open one has no one answer. @returns {SystemWin[]} */
+function confirmable() {
+  const id = openSystem(windows), top = id === null ? null : /** @type {SystemWin} */ (parts.get(id));
+  if (!top || autoValue(top.o) === undefined) return [];
+  return /** @type {SystemWin[]} */ (windows.queued.map(q => parts.get(q))).filter(q => autoValue(q.o) !== undefined);
 }
 
 /**
@@ -248,16 +269,14 @@ function openNext() {
 /** A System window; answers the `value` of the action tapped (a form answers what was typed). @param {SystemWindow} [o] @returns {Promise<any>} */
 export function system(o = {}) {
   return new Promise(resolve => {
-    /** @type {Win & { o: SystemWindow; resolve: (v: any) => void }} */
-    const w = { kind: 'system', state: 'queued', root: null, win: null, key: null, show: () => show(w), o, resolve };
-    const up = stack.some(x => x.kind === 'system' && x.state === 'open');
-    stack.push(w);
-    if (up) { if (refreshCur) refreshCur(); } else if (LATE) setTimeout(openNext, LATE); else openNext();
+    const w = /** @type {SystemWin} */ (Object.assign(newWin('system'), { o, resolve, all: null }));
+    move({ kind: 'ask', id: w.id });
+    if (LATE) setTimeout(() => move({ kind: 'next' }), LATE); else move({ kind: 'next' });
   });
 }
 
-/** Draws a System window that has just turned `open`. */
-function show(/** @type {Win & { o: SystemWindow; resolve: (v: any) => void }} */ w) {
+/** Draws a System window whose turn has come. */
+function show(/** @type {SystemWin} */ w) {
   const { o, resolve } = w;
   const kind = o.kind || 'info';
   const trigger = document.activeElement;
@@ -286,7 +305,7 @@ function show(/** @type {Win & { o: SystemWindow; resolve: (v: any) => void }} *
   chime(kind);
   const cancelAct = actions.find(a => a.cancel);
   const dismissValue = o.form ? null : cancelAct ? cancelAct.value : null;
-  const done = value => { refreshCur = null; closeWindow(w); if (trigger && trigger.isConnected && trigger.focus) trigger.focus(); resolve(value); };
+  const done = value => { closeWindow(w); if (trigger && trigger.isConnected && trigger.focus) trigger.focus(); resolve(value); };
   const choose = a => {
     if (o.form && a.primary !== false && !a.cancel) {
       let v = input.value.trim();
@@ -304,16 +323,15 @@ function show(/** @type {Win & { o: SystemWindow; resolve: (v: any) => void }} *
     const b = h(`<button type="button" class="${a.primary ? 'primary ' : ''}${a.danger ? 'danger ' : ''}">${esc(a.label)}</button>`);
     b.addEventListener('click', () => choose(a)); bar.appendChild(b);
   });
-  const mine = autoValue(o) !== undefined;
-  const all = h('<button type="button" class="confirm-all" hidden></button>');
-  if (mine) bar.appendChild(all);
-  const resolvable = () => /** @type {any[]} */ (waiting()).filter(q => autoValue(q.o) !== undefined);
-  refreshCur = () => { const n = resolvable().length; all.hidden = !(mine && n >= 2); all.textContent = `Confirm all (${n})`; };
-  all.addEventListener('click', () => {
-    const rest = resolvable(); rest.forEach(q => stack.splice(stack.indexOf(q), 1));
-    done(autoValue(o).v); rest.forEach(q => q.resolve(autoValue(q.o).v));
-  });
-  refreshCur();
+  if (autoValue(o) !== undefined) {
+    w.all = h('<button type="button" class="confirm-all" hidden></button>');
+    bar.appendChild(w.all);
+    w.all.addEventListener('click', () => {
+      const rest = confirmable();
+      for (const q of rest) move({ kind: 'answered', id: q.id });
+      done(autoValue(o).v); rest.forEach(q => q.resolve(autoValue(q.o).v));
+    });
+  }
   w.key = (/** @type {any} */ e) => {
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(dismissValue); return; }
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && (o.form || o.size === 'form')) { // B3: Ctrl/Cmd+Enter = primary, even from a textarea

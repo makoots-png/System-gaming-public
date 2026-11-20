@@ -1372,6 +1372,61 @@ Where it lives:
 | The test to copy | `tests/publish.test.ts`; the walk's events are in `tests/models/publish-events.ts` |
 | The recipe | docs/guide/machines.md and docs/guide/room-sync.md, "A state or event of the ... machine" |
 
+## A Create or Join tap
+
+Every state reachable from no tap out, under the 20 events of tests/models/attempt-events.ts (a create never ends with a join's notice), breadth first, a state's tap and who it is for making a state (not which promise it answers). The walk found 9 states and 59 steps.
+
+### One tap at a time, from Create or Join until the view that tapped is answered
+
+```mermaid
+---
+title: One tap at a time, from Create or Join until the view that tapped is answered
+---
+stateDiagram-v2
+  state "No tap out" as s1
+  state "Handed to the link" as s2
+  state "Creating a room" as s3
+  state "Joining a room" as s4 {
+    state "As the GM" as s5
+    state "As a hunter of the party" as s6
+    state "As a new hunter, made once in the room" as s7
+  }
+  [*] --> s1
+  s1 --> s2 : Create tapped
+  s1 --> s2 : Join tapped
+  s2 --> s3 : the link takes it
+  s2 --> s1 : the link does not take it, fails as busy
+  s2 --> s4 : the link takes it
+  s2 --> s1 : no server, or an update, fails as net
+  s3 --> s1 : out with no word, fails as net
+  s3 --> s1 : in the room, answers the code, gm or player
+  s3 --> s1 : no answer, fails as net
+  s3 --> s1 : the server fails, fails as net
+  s3 --> s1 : the campaign is replaced, fails, with no words
+  s4 --> s1 : out with no word, fails as net
+  s4 --> s1 : in the room, answers the code, gm or player
+  s4 --> s1 : no such room, fails
+  s4 --> s1 : the key is refused, fails
+  s4 --> s1 : not allowed back, fails as removed
+  s4 --> s1 : no answer, fails as net
+  s4 --> s1 : the server fails, fails as net
+  s4 --> s1 : the campaign is replaced, fails, with no words
+```
+
+The link does the room's side (its requests, its stretch, where a failed tap returns); this machine answers the tap. A tap while one is out starts nothing and is answered at once as busy, which the view words "Another create or join is under way". A join for a typed name makes its hunter only once the phone is in the room, in the write that binds it, so a join that fails made nothing. Page memory: a reload starts with no tap out.
+
+6 chart states, 19 arrows. Hidden: Each event that changes nothing: a tap while one is out (answered busy, the state unchanged), and a link step that stays in the stretch. (0 steps.)
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `Attempt`, `AttemptEvent`, `AttemptEffect`, `JoinsAs`, `ATTEMPT_STATES` and `ATTEMPT_EVENTS` in `src/core/sync/attempt.ts` |
+| What changes it | `attemptStep` and its table |
+| Who calls it | `attemptDo` in `src/edge/sync.ts`, the only mover of `attempt`: `begin` raises `tap`, `drain` raises `linked` after each link step, `bindJoin` and the head read who a join is for through `joinBinds` |
+| The test to copy | `tests/attempt.test.ts`; the walk's events are in `tests/models/attempt-events.ts`; on screen, `tests/e2e/room-sync-fixes.e2e.ts` ("a GM who taps New room while Open as GM is on its way", "a player whose join as a new hunter fails") |
+| The recipe | docs/guide/machines.md and docs/guide/room-sync.md, the Create or Join tap rows |
+
 ## The store
 
 Every state reachable from the four lives a load opens in (no storage, a newer app's save, this app's, a text storage was too full to back up) under the 11 events of tests/models/store-events.ts, breadth first. The walk found 12 states and 132 steps.
@@ -2172,3 +2227,83 @@ Where it lives:
 | What changes it | `mapMount(mount, event)` and its `TABLE`, through `live` in `src/views/map.js`, its one writer |
 | Who calls it | `draw` in `src/views/map.js` (a draw begins, a draw is on the page, the frame's size read when the map asks), the window's resize, and `destroy`, which `src/views/combat.js` and `src/views/table.js` call when they take the map's box off the page |
 | The test to copy | `tests/map-mount.test.ts`; the walk's events are in `tests/models/map-mount-events.ts`; on screen, `tests/e2e/battle-map.e2e.ts` ("zoomed the map out in one fight") |
+
+## The windows
+
+Every state reachable from no window, under the 12 events of tests/models/window-events.ts over two System windows and the first-run window, breadth first. The walk found 67 states and 189 steps.
+
+### The System windows and the first-run window
+
+```mermaid
+---
+title: The System windows and the first-run window
+---
+stateDiagram-v2
+  state "The System windows and the first-run window" as all {
+    state "System windows" as r1 {
+      state "None" as s1
+      state "One waiting" as s2
+      state "2 waiting" as s3
+      state "One open" as s4
+      state "One waiting behind the first-run window" as s5
+      state "One open, one waiting" as s6
+      state "2 waiting behind the first-run window" as s7
+      state "One leaving" as s8
+      state "One leaving, one waiting" as s9
+      state "One leaving, one waiting behind the first-run window" as s10
+      state "One open, one leaving" as s11
+      state "2 leaving" as s12
+      [*] --> s1
+      s1 --> s2 : a System window is asked for
+      s2 --> s3 : a System window is asked for
+      s2 --> s4 : its turn, the oldest waiting opens on top
+      s2 --> s5 : setup or the quick start guide opens on top
+      s1 --> s5 : a System window is asked for
+      s3 --> s6 : its turn, the oldest waiting opens on top
+      s3 --> s7 : setup or the quick start guide opens on top
+      s4 --> s6 : a System window is asked for
+      s4 --> s8 : the open System window is answered
+      s5 --> s7 : a System window is asked for
+      s5 --> s2 : setup or the guide closes
+      s6 --> s9 : the open System window is answered
+      s6 --> s4 : Confirm all of the open one answers it
+      s7 --> s3 : setup or the guide closes
+      s8 --> s9 : a System window is asked for
+      s8 --> s1 : its move out ends
+      s6 --> s10 : the open System window is answered
+      s9 --> s11 : its turn, the oldest waiting opens on top
+      s9 --> s10 : setup or the quick start guide opens on top
+      s9 --> s2 : its move out ends
+      s8 --> s10 : a System window is asked for
+      s10 --> s9 : setup or the guide closes
+      s10 --> s5 : its move out ends
+      s11 --> s12 : the open System window is answered
+      s11 --> s4 : its move out ends
+      s12 --> s8 : its move out ends
+    }
+    --
+    state "The first-run window" as r2 {
+      state "Not up" as s13
+      state "Open, on top (takes the keys)" as s14
+      state "Leaving" as s15
+      [*] --> s13
+      s13 --> s14 : setup or the quick start guide opens on top
+      s14 --> s15 : setup or the guide closes
+      s15 --> s13 : its move out ends
+    }
+  }
+```
+
+A System window (a notice, a confirm, a prompt) opens one at a time and not over the first-run window, which takes the whole screen (its quick start guide too): asked while either is open, it waits, and the oldest waiting opens a task after the one before it closes. A maker, the shelf of awards and a story's window open at once over whatever is up and hold no System window; a sheet over the page (the dice roller, the Fight tools) counts while it is drawn and goes at once. Every window that opens goes on top, so the order of the windows is the order on screen, and the top open window that is not a sheet takes the keys. Confirm all on the open System window answers it and the waiting ones that have one answer.
+
+15 chart states, 29 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `Windows`, `WindowEvent`, `WindowFx`, `WINDOW_STATES` and `WINDOW_EVENTS` in `src/core/windows.ts` |
+| What changes it | `windowStep(windows, event)` and its `TABLE`, through `move` in `src/views/ui.js`, its one writer, which carries out each effect |
+| Who calls it | `system` (and `confirm`, `promptNum`, `promptText`), `openWindow` and `closeWindow` (`maker.js`, `onboard.js`, `give-shelf.js`, `stories.js`), `sheet` (`dice.js`, `combat.js`), all in `src/views/ui.js` |
+| The test to copy | `tests/windows.test.ts`; the walk's events are in `tests/models/window-events.ts`; on screen, `tests/e2e/windows.e2e.ts` |
+| The recipe | docs/guide/makers.md, "A window on screen" |

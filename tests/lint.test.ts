@@ -148,7 +148,7 @@ test('every module of src/edge names the state it keeps for the page: each let a
   // rules.ts passed every lint (implicit audit 2, N15). Every file of src/edge is read now.
   const named: Record<string, string> = {
     'sync.ts link': 'the link machine\'s state (src/core/sync/link.ts)', 'sync.ts push': 'the push machine\'s state (src/core/sync/push.ts)',
-    'sync.ts attempt': 'the Create or Join tap in progress', 'sync.ts shown': 'what the room showed at the last poll',
+    'sync.ts attempt': 'the Create or Join tap machine\'s state (src/core/sync/attempt.ts)', 'sync.ts shown': 'what the room showed at the last poll',
     'sync.ts srvSkew': 'the server clock\'s distance from this one', 'sync.ts lastOk': 'when a request last came back',
     'sync.ts sheetText': 'the bound sheet as the push last sent it', 'sync.ts invited': 'the invite this tab holds',
     'sync.ts running': 'whether the outbox\'s flush is running',
@@ -175,6 +175,17 @@ test('every module of src/edge names the state it keeps for the page: each let a
   }
   expect(found.filter(k => !(k in named)), 'new link or push state goes in src/core/sync/link.ts or push.ts; edge state of its own is named here with what it holds (and at the top of its file)').toEqual([]);
   expect(Object.keys(named).filter(k => !found.includes(k)), 'a state that is gone leaves the list').toEqual([]);
+});
+
+test('a Create or Join tap moves only through attemptDo in src/edge/sync.ts, with a step of src/core/sync/attempt.ts', async () => {
+  // The tap was an object of nullable fields that begin, settleAttempt and notice each wrote, and a second tap got the
+  // first tap's promise (audit SM-sync-2). Its one state is now moved by one function, with what attemptStep answers.
+  const writes = /\battempt\s*(=(?![=>])|\.\w+\s*=(?!=))/;
+  expect(writes.test('if (attempt) attempt.notice = id;') && writes.test('attempt = null;'), 'the rule sees the old writes').toBe(true);
+  const lines = (await sourceLines('src/edge')).filter(line => !isComment(line.text) && writes.test(line.text));
+  const hits = lines.filter(line => !(line.file === 'src/edge/sync.ts' && /^\s*attempt = r\.state;$/.test(line.text)));
+  expect(lines.length - hits.length, 'the one write, in attemptDo, is found').toBe(1);
+  expect(report(hits), 'raise an event of src/core/sync/attempt.ts through attemptDo, and add its cell to the table there (docs/guide/room-sync.md).').toEqual([]);
 });
 
 test('only src/edge/sync.ts writes the room, cursor, last room and GM key of the save', async () => {
@@ -951,7 +962,7 @@ test('a view waits on a timer only where this list names it with its reason', as
   // machine's setTimer effect) or for the moment a rule in core names (`nextWake`). Each file's count is what it holds.
   const named: Record<string, { count: number; why: string }> = {
     'src/views/quests.js': { count: 2, why: 'the rollover\'s one timer (nextWake); the countdown drawn each second' },
-    'src/views/ui.js': { count: 4, why: 'a toast\'s life (two); a window opened late under E2E_POPUP_DELAY; the next queued window opened a task after one closes (`LATE`, 0 outside tests), so the closed one\'s leave runs first' },
+    'src/views/ui.js': { count: 4, why: 'a toast\'s life, new and added up (two, kept in `toasts`); a System window opened late under E2E_POPUP_DELAY; the next waiting window opened a task after one closes (the `next` effect of src/core/windows.ts; `LATE`, 0 outside tests), so the closed one\'s leave runs first' },
     'src/views/room.js': { count: 3, why: 'a copied button\'s label put back; "Last sync" aged each second; a typed code checked after a pause' },
     'src/views/onboard.js': { count: 1, why: 'a typed code checked after a pause' },
     'src/views/map.js': { count: 2, why: 'the gesture\'s hold timer, whose end is the `hold` event (a GM\'s token lifted, a hotbar slot\'s detail; U9, row 48); the news line\'s life' },
@@ -974,6 +985,34 @@ test('a view waits on a timer only where this list names it with its reason', as
   expect(off, 'wait on the event the timer stands for, or name the timer here with its reason; a timer that is gone lowers its count').toEqual([]);
 });
 
+test('a view hangs state on an element only where this list names it with its reason', async () => {
+  // Audit SM-views-1: a toast kept its timer and its held write as `t._t` and `t._act` on its element, where no list
+  // named them, and each way a toast went (its time, Undo, a third toast, the page hidden) cleared them by hand. A view
+  // keeps such state in a named Map (ui.js `toasts`) or a machine of core; a property hung on an element is named here
+  // with what it holds, and each file's count is what it holds.
+  const named: Record<string, { count: number; why: string }> = {
+    'src/views/chronicle.js': { count: 1, why: 'the markup a box drew last (`_h`), so only a change is drawn' },
+    'src/views/custom.js': { count: 1, why: 'the markup a box drew last (`_h`), so only a change is drawn' },
+    'src/views/hunter.js': { count: 2, why: 'the markup a box and a select drew last (`_h`), so only a change is drawn' },
+    'src/views/gates.js': { count: 1, why: 'what a gate card was drawn from (`_sig`), so only a changed card is drawn again' },
+    'src/views/room.js': { count: 1, why: 'a copied button\'s timer that puts its label back (`_t`)' },
+    'src/views/io.js': { count: 1, why: 'a button\'s timer that puts its label back (`_t`)' },
+    'src/views/onboard.js': { count: 1, why: 'where the focus goes back as the quick start guide closes (`_trigger`)' },
+  };
+  const hung = /\b[\w$]+\._[\w$]+\s*=(?!=)/g;
+  const old: Line = { file: 'src/views/ui.js', line: 0, text: "  if (hold) { t._act = hold.act; t.dataset.held = ''; }" };
+  expect(old.text.match(hung)?.length, 'the rule sees the old held write on the toast').toBe(1);
+  const counts = new Map<string, number>();
+  for (const line of await sourceLines('src/views')) {
+    if (isComment(line.text)) continue;
+    const n = line.text.match(hung)?.length ?? 0;
+    if (n) counts.set(line.file, (counts.get(line.file) ?? 0) + n);
+  }
+  const off = [...new Set([...counts.keys(), ...Object.keys(named)])].filter(file => (counts.get(file) ?? 0) !== (named[file]?.count ?? 0))
+    .map(file => `${file}: ${counts.get(file) ?? 0} properties on elements, ${named[file]?.count ?? 0} named`);
+  expect(off, 'keep the state in a named Map of the view or a machine of core, or name the property here with its reason; one that is gone lowers its count').toEqual([]);
+});
+
 test('a view keeps no machine in flags: its closure state is counted per file, and two booleans in one let fail', async () => {
   // Implicit audit kind 1 (rows 47, 48): the battle map's gestures were `g.kind`, `quiet`, `pts` and a timer, and its choice
   // `sel`, `picked`, `before` and `drawer`, each a `let` in the map's closure, so the states they made together were
@@ -988,7 +1027,7 @@ test('a view keeps no machine in flags: its closure state is counted per file, a
     'src/views/quests.js': { count: 7, why: 'the rollover\'s timer (wake), the tab and the quest form on screen, whether the title is the one the form made (autoTitle), the view\'s handle, and locals of two functions (out, penalties)' },
     'src/views/table.js': { count: 7, why: 'a player\'s fight HUD: the turn held from a posted move (hold), the tab\'s title, the open card, the doc drawn last, the bursts to draw, the GM\'s Table feed and its handle' },
     'src/views/dice.js': { count: 4, why: 'the last typed rolls, the DC drawn last, the view\'s handle, whether the tray is open' },
-    'src/views/ui.js': { count: 4, why: 'the audio context, a toast\'s element and box, the redraw of the window on top' },
+    'src/views/ui.js': { count: 5, why: 'the audio context, a style element and the toast box (locals of two functions), the windows (src/core/windows.ts, moved only by `move`), the count of windows made, for their ids' },
     'src/views/reward-editor.js': { count: 4, why: 'the reward editor\'s rows, the numbers typed and the line it says, and a draw\'s locals (body, head)' },
     'src/views/hunter.js': { count: 3, why: 'the hunter and level the sheet drew last, the title being edited and the hunter it was for, and a function\'s local (grantWrite\'s out)' },
     'src/views/io.js': { count: 3, why: 'the Data view\'s redraw (refresh), set by its mount, and locals of two functions (report, raw)' },
@@ -1206,7 +1245,8 @@ test('every let a view keeps for the page is named here with what it holds, and 
     'table.js pendingBursts': 'the bearers whose stacks went off in the doc just taken, drawn once the HUD shows it',
     'table.js feed': 'the GM\'s Table feed, kept in this tab with store.device',
     'table.js feedEl': what.handle, 'table.js feedSig': what.drawn, 'table.js feedOpen': what.shown,
-    'ui.js actx': what.handle, 'ui.js refreshCur': 'the redraw of the System window on top',
+    'ui.js actx': what.handle, 'ui.js windows': 'the windows on screen, waiting and going: the one value of src/core/windows.ts, moved only by `move`',
+    'ui.js made': 'the count of windows made, for their ids',
   };
   type Let = { key: string; at: string; flags: number };
   const found: Let[] = [];
@@ -1264,7 +1304,8 @@ test('every Map, Set, list or object a view keeps for the page is named here wit
     'quests.js barsWas': 'what each objective\'s bar showed last, by quest id and objective: ' + what.drawn,
     'room.js WAITING': 'a constant: the link states the line pulses for',
     'ui.js newsLines': 'the maps\' news lines that take the fight\'s news while they show a fight: ' + what.handle,
-    'ui.js stack': 'the open windows, top last (the one window stack): ' + what.handle,
+    'ui.js parts': 'each window\'s parts on the page by its id (its overlay, its key handler; a System window\'s words, answer and Confirm all), kept until src/core/windows.ts says to forget it: ' + what.handle,
+    'ui.js toasts': 'each toast on screen by its element, until it goes: its timer and the write a held toast makes as it ends, so the write runs once and no timer outlives it: ' + what.handle,
   };
   // Implicit audit 3, X1: page state kept in a const object with fields (room.js's `S`: two server checks, a pick, open
   // rows and a timer) escaped both page-state lints, so an object literal with fields is a container too.

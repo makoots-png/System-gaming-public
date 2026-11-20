@@ -35,6 +35,8 @@ import { handler } from '../../server.ts';
 import { runPosted, runTaken, runsGone, waitingGates } from '../../src/core/gates/solo-wait.ts';
 import type { WaitingRun } from '../../src/core/gates/solo-wait.ts';
 import { ALL_REPLIES, freeze } from './sync-world.ts';
+import { NOBODY, NO_ATTEMPT, attemptStep } from '../../src/core/sync/attempt.ts';
+import type { Attempt, AttemptEvent, RoomTap } from '../../src/core/sync/attempt.ts';
 import {  } from '../fixtures/ids.ts';
 
 /** As in src/edge/sync.ts: a removal in the `_kicked` doc younger than this keeps the player out. */
@@ -83,7 +85,7 @@ export type Phone = {
   /** Bookkeeping for the rules: for each room, the cursor this phone first went live in it with. Every message to it after that lands once. */
   first: Record<string, number>;
   // in memory: dropped by a reload
-  page: number; link: Link; push: Push; attempt: Gen | null; sheetText: string; shown: Shown; srvSkew: number;
+  page: number; link: Link; push: Push; attempt: Attempt<null>; sheetText: string; shown: Shown; srvSkew: number;
   timers: { poll?: number; push?: number }; queue: QItem[]; running: boolean; notices: string[];
   /** The device has no network: nothing it sends reaches the server, and the link hears `offline` (a device state, kept across a reload). */
   offline: boolean;
@@ -125,7 +127,7 @@ function newPhone(i: number, name: string, mode: 'gm' | 'player'): Phone {
     i, name, device: parseDeviceId(`d-${name}`)!, token: `${name}-token`.padEnd(16, 'x'),
     save: { mode, room: null, cursor: 0, last: null, gmKey: null, gmKeys: {}, applied: [], joinedAt: '', serverOk: true, sheet: 1, fightNow: FIGHT_START, coins: [], calls: [], rolled: 0, outbox: [], posted: [], runs: [], soloGate: 'open', seen: {} },
     ledger: {}, told: {}, acted: {}, paid: {}, ruled: {}, ruledOn: {}, stretch: null, first: {},
-    page: 0, link: { at: 'off', gen: 0 as Gen }, push: PUSH_OFF, attempt: null, sheetText: '', shown: NOTHING_SHOWN, srvSkew: 0,
+    page: 0, link: { at: 'off', gen: 0 as Gen }, push: PUSH_OFF, attempt: NO_ATTEMPT, sheetText: '', shown: NOTHING_SHOWN, srvSkew: 0,
     timers: {}, queue: [], running: false, notices: [], offline: false,
   };
 }
@@ -163,7 +165,7 @@ function drain(w: World, p: Phone): void {
         const before = p.link, r = linkReduce(freeze(p.link), freeze(next.e));
         p.link = r.state;
         runLink(w, p, r.effects, before, next.data);
-        settleAttempt(p);
+        attemptDo(w, p, { type: 'linked', took: next.e, link: p.link, notices: r.effects.flatMap(x => (x.type === 'notify' ? [x.id] : [])) });
       } else {
         const r = pushReduce(freeze(p.push), freeze(next.e));
         p.push = r.state;
@@ -238,11 +240,16 @@ function save(w: World, p: Phone, fields: SaveFields, before: Link): void {
   if (p.save.room !== room0 && p.save.room) p.first[p.save.room] ??= p.save.cursor;
 }
 
-/** `settleAttempt`, reduced to what the machines see: a Create or Join tap is in progress until the link leaves its gen. */
-function settleAttempt(p: Phone): void {
-  if (p.attempt === null) return;
-  if ((p.link.at === 'creating' || p.link.at === 'joining') && p.link.gen === p.attempt) return;
-  p.attempt = null;
+/** `attemptDo`: the real tap machine (src/core/sync/attempt.ts). The world's taps have no view to answer. */
+function attemptDo(w: World, p: Phone, e: AttemptEvent<null>): void {
+  const r = attemptStep(p.attempt, e);
+  p.attempt = r.state;
+  for (const x of r.effects) {
+    switch (x.type) {
+      case 'link': linkDo(w, p, x.tap); break;
+      case 'answer': break;
+    }
+  }
 }
 
 function request(w: World, p: Phone, lane: Lane, gen: Gen | null, room: RoomCode | null, what: string, timeoutMs: number, http: Http, reply: (r: Reply) => void): void {
@@ -617,16 +624,14 @@ function showKicked(w: World, p: Phone, r: Reply, gen: Gen): void {
 }
 
 // ── taps ──
-/** `begin`: a second Create or Join tap while one is out does nothing. */
-function begin(w: World, p: Phone, e: Extract<LinkEvent, { type: 'create' | 'join' }>): void {
-  if (p.attempt !== null) return;
-  linkDo(w, p, e);
-  if (p.link.at === 'creating' || p.link.at === 'joining') p.attempt = p.link.gen;
+/** `begin`: a Create or Join tap; one while another is out is answered `busy` and starts nothing. */
+function begin(w: World, p: Phone, tap: RoomTap): void {
+  attemptDo(w, p, { type: 'tap', tap, who: NOBODY, reply: null });
 }
 /** A reload: the save stays, everything in memory goes, and the requests of the old page are heard by nobody. */
 function reload(w: World, p: Phone): void {
   for (const r of w.pending) if (r.phone === p.i) r.dead = true;
-  Object.assign(p, { page: p.page + 1, push: PUSH_OFF, attempt: null, sheetText: '', shown: NOTHING_SHOWN, srvSkew: 0, timers: {}, queue: [], running: false });
+  Object.assign(p, { page: p.page + 1, push: PUSH_OFF, attempt: NO_ATTEMPT, sheetText: '', shown: NOTHING_SHOWN, srvSkew: 0, timers: {}, queue: [], running: false });
   if (p.offline) linkDo(w, p, { type: 'offline' });
   startPage(w, p);
 }

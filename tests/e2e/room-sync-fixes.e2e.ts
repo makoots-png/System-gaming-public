@@ -1,5 +1,5 @@
 import { writeFile } from 'node:fs/promises';
-import { test, expect, onboardGM, onboardPlayer, openApp, createRoom, dismissAll, go, activeHunter, chooseList, gmRoomHeaders, roomHeaders, type Page } from './helpers.ts';
+import { test, expect, onboardGM, onboardPlayer, openApp, createRoom, dismissAll, answerWindow, go, activeHunter, chooseList, gmRoomHeaders, roomHeaders, type Page } from './helpers.ts';
 
 const roomView = '#view-room';
 const removedWindow = (page: Page) => page.locator('.sys-overlay.show', { hasText: 'REMOVED FROM ROOM' });
@@ -244,6 +244,74 @@ test('a GM key the server refuses ends the join with a message and does not join
     await expect(player.locator(`${roomView} [data-tools]`)).toBeHidden();
     await go(gm, 'gm');
     await expect(kaiCard(gm)).toHaveCount(1);
+  });
+});
+
+test('a GM who taps New room while Open as GM is on its way is told another is under way, and only the first room opens', async ({ device }) => {
+  const { gm, code } = await gmWithRoom(device, { blockServiceWorker: true });
+  await go(gm, 'room');
+  await gm.locator(`${roomView} [data-leave]`).tap();
+  await expect(gm.locator(`${roomView} [data-lobby]`)).toBeVisible();
+  let posts = 0;
+  gm.on('request', r => { if (r.method() === 'POST' && /\/api\/rooms$/.test(r.url())) posts++; });
+  let release = (): void => {};
+  const held = new Promise<void>(r => { release = r; });
+  const peek = (u: URL) => u.pathname === `/api/rooms/${code}` && u.searchParams.has('peek');
+  await gm.route(peek, async route => { await held; await route.continue(); });
+
+  await test.step('the GM taps Open as GM, and while it waits on the server taps New room', async () => {
+    await go(gm, 'gm');
+    await gm.locator(`#gm-room [data-gmrejoin="${code}"]`).tap();
+    await expect.poll(() => gm.evaluate(() => hunterApp.api.sync.conn())).toBe('joining');
+    await gm.locator('#gm-room [data-gmcreate]').tap();
+    await expect(gm.locator('#gm-board-msg')).toHaveText('Another create or join is under way. Try again in a moment.');
+  });
+
+  await test.step('when the server answers, the GM is in the first room and no new room was asked for', async () => {
+    release();
+    await expect.poll(() => gm.evaluate(() => hunterApp.api.sync.conn())).toBe('live');
+    await gm.unroute(peek);
+    expect(await gm.evaluate(() => hunterApp.api.sync.room())).toBe(code);
+    await expect(gm.locator('#gm-room [data-gmroomcode]')).toHaveText(code);
+    expect(posts).toBe(0);
+  });
+});
+
+test('a player whose join as a new hunter fails is left with no trace of that hunter, and the next join makes it and plays as it', async ({ device }) => {
+  const { gm, code } = await gmWithRoom(device);
+  const player = (await device('player', { blockServiceWorker: true, allowConsole: [/status of 502/] })).page;
+  await onboardPlayer(player, 'Kai Test');
+  await player.evaluate(() => hunterApp.store.update((d: any) => { d.hunters.push(hunterApp.store.newHunter('Mia Test')); }, 'test-setup'));
+  await answerWindow(player, 'A GATE HAS APPEARED');
+  const party = () => player.evaluate(() => hunterApp.store.get().hunters.map((h: any) => h.name as string));
+  const kai = await activeHunter(player);
+  const head = (u: URL) => u.pathname === `/api/rooms/${code}` && !u.searchParams.has('peek');
+
+  await test.step('the head of the room fails after the room was found: the join says so, and no hunter Rin Test was made', async () => {
+    await player.route(head, route => (route.request().method() === 'GET' ? route.fulfill({ status: 502, contentType: 'text/plain', body: 'bad gateway' }) : route.continue()));
+    await go(player, 'room');
+    await player.locator(`${roomView} input[data-code]`).fill(code);
+    await expect(player.locator(`${roomView} [data-check]`)).toContainText('Room found');
+    await player.locator(`${roomView} select[data-hunter]`).selectOption('__new');
+    await player.locator(`${roomView} [data-newname]`).fill('Rin Test');
+    await player.locator(`${roomView} [data-join]`).tap();
+    await expect(player.locator(`${roomView} [data-err]`)).toContainText('Could not reach the server');
+    expect(await player.evaluate(() => hunterApp.api.sync.room())).toBeNull();
+    expect(await party()).toEqual(['Kai Test', 'Mia Test']);
+    expect((await activeHunter(player)).id).toBe(kai.id);
+    await expect(player.locator('.sys-overlay.show', { hasText: 'Rin Test' }), 'no window speaks of a hunter the phone does not have').toHaveCount(0);
+  });
+
+  await test.step('once the server answers, the same join makes Rin Test, plays as it, and the GM sees it', async () => {
+    await player.unroute(head);
+    await player.locator(`${roomView} [data-join]`).tap();
+    await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBe(code);
+    expect(await party()).toEqual(['Kai Test', 'Mia Test', 'Rin Test']);
+    const rin = await activeHunter(player);
+    expect(rin.name).toBe('Rin Test');
+    expect(await player.evaluate(() => hunterApp.store.get().settings.sync.boundHunterId)).toBe(rin.id);
+    await go(gm, 'gm');
+    await expect(gm.locator('#gm-board .gm-card.remote', { hasText: 'Rin Test' })).toHaveCount(1);
   });
 });
 
