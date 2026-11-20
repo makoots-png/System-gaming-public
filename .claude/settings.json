@@ -3,26 +3,56 @@
     "CLAUDE_CODE_EXPERIMENTAL_CODE_MODE": "1"
   },
   "permissions": {
-    "allow": ["mcp__claude-code-remote__add_repo"]
+    "allow": [
+      "mcp__claude-code-remote__add_repo"
+    ]
   },
   "hooks": {
     "PreToolUse": [
       {
         "matcher": "Agent|Task",
         "hooks": [
-          { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/agent-model.py\"" },
-          { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/handoff-due.py\"" }
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/agent-model.py\""
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/handoff-due.py\""
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__claude-code-remote__create_session",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/lead-model.py\""
+          }
         ]
       }
     ],
     "UserPromptSubmit": [
-      { "hooks": [{ "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/handoff-due.py\"" }] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/handoff-due.py\""
+          }
+        ]
+      }
     ],
     "SessionStart": [
       {
         "hooks": [
-          { "type": "command", "command": "sh \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh\"" },
-          { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/handoff-due.py\"" }
+          {
+            "type": "command",
+            "command": "sh \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh\""
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/handoff-due.py\""
+          }
         ]
       }
     ]

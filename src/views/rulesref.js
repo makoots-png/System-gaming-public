@@ -197,8 +197,8 @@ export function register(app) {
         ...soloLines(R).map(l => p(esc(l))),
       ] },
       { id: 'loot', title: 'Loot and rarity', body: [
-        table(['Tier', 'Multiplier', 'Price', 'Sells for'], saleRows(R).map(r => [`<span style="color:${esc(R.rarities[r.rar].color)}">${esc(r.rar)}</span>`, `×${esc(r.mult)}`, `${fmt(r.price)} gold`, `${fmt(r.sell)} gold`])),
-        p(`${esc(saleLine(R))} Equipment slots: ${R.slots.map(esc).join(', ')}.`),
+        table(['Tier', 'Price', 'Sells for'], saleRows(R).map(r => [`<span style="color:${esc(R.rarities[r.rar].color)}">${esc(r.rar)}</span>`, fmt(r.price), fmt(r.sell)])),
+        p(`Prices are in gold. ${esc(saleLine(R))} Equipment slots: ${R.slots.map(esc).join(', ')}.`),
         p('Gate-clear loot: gold plus one weighted item roll; the boss adds one more roll.'),
         table(['Rank', 'Gold', 'Item odds'], lootRows),
       ] },

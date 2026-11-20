@@ -79,6 +79,7 @@ When a mistake is made, apply `.claude/skills/correct/SKILL.md` (the owner's sta
 | A push's tested tree is the pushed commit's, not the checkout's | `testedTree` in `scripts/ci-plan.ts`, fed `CI_PUSHED` by `.githooks/pre-push`; its cases in `tests/ci-plan.test.ts` |
 | A push trusts a public run only when it finished and every job the workflow defines succeeded (Nov 20: a typed `CI_BROWSER_REMOTE` let red run 44760395495 through) | `judgeRun` and `jobsOfWorkflow` in `scripts/ci-plan.ts`, which `scripts/ci.ts` feeds from GitHub's API (no variable can vouch); the real red and green runs as cases in `tests/ci-plan.test.ts` |
 | No AI attribution lines in a commit (the owner's rule; a harness may ask for them, and the Nov 20 lead added one) | `.githooks/commit-msg`, which refuses a message with `Co-Authored-By:` or `Claude-Session:` and says to remove it |
+| A lead session starts on Fable 5.2 (the owner, Nov 20; one was started on Opus) | `.claude/hooks/lead-model.py`, a hook that refuses a `create_session` whose model is not `claude-fable-5-2` |
 | Every other rule of the code | its test in `tests/lint.test.ts`, named for the rule |
 
 ## Rules

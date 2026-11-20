@@ -2,7 +2,7 @@
 
 The lead keeps this file current.
 
-**The lead starts the next session itself when it can** (the owner, Nov 12). In a cloud session the `create_session` tool of the `claude-code-remote` server does it: pass the block below as `prompt`, `source_url` `https://github.com/the-owner/systemgaming`, `source_revision` and `outcome_branch` both the working branch START-HERE.md names (so the new session pushes to it), and a title such as "Hunter System lead, features after launch". Do it only after `handoff.md` is rewritten and the push has landed. Then tell the owner the new session exists and stop working in the old one, so two leads never write the same branch. If the tool is missing or refuses, give the owner the block to paste.
+**The lead starts the next session itself when it can** (the owner, Nov 12). In a cloud session the `create_session` tool of the `claude-code-remote` server does it: pass the block below as `prompt`, `source_url` `https://github.com/the-owner/systemgaming`, `source_revision` and `outcome_branch` both the working branch START-HERE.md names (so the new session pushes to it), and a title such as "Hunter System lead, features after launch". Do it only after `handoff.md` is rewritten and the push has landed. Then tell the owner the new session exists and stop working in the old one, so two leads never write the same branch. If the tool is missing or refuses, give the owner the block to paste. Always pass `model: "claude-fable-5-2"` (the owner, Nov 20: "the lead should ALWAYS start on fable 5.2"; a hook refuses any other).
 
 ```
 You are the lead for the Hunter System in the repo the-owner/systemgaming, taking over from an earlier lead session. I am the owner. Keep this session small: usage is what I am watching.
