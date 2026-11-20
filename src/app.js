@@ -6,7 +6,7 @@ import { reported } from './edge/report.ts';
 import { RULES, rules } from './edge/rules.ts';
 import { chooseMode, roleOf, seatOf } from './core/role.ts';
 import { atSettings } from './core/save-step.ts';
-import { addHunter, setActive } from './core/party.ts';
+import { addHunter } from './core/party.ts';
 import { PANEL_DEFAULTS, VIEW_DEFAULTS } from './views/app.ts';
 import * as ui from './views/ui.js';
 import * as motion from './views/motion.ts';
@@ -232,8 +232,8 @@ $('hunter-sel').addEventListener('change', async e => {
     if (!h || !ui.wrote('System', store.apply('new-hunter', d => addHunter(d, h)))) sel.value = store.active().id;
     return;
   }
-  if (app.api.sync?.switchTo) { if (!(await app.api.sync.switchTo(sel.value))) sel.value = store.active().id; return; } // S03
-  if (!ui.wrote('System', store.apply('switch-hunter', d => setActive(d, sel.value)))) sel.value = store.active().id;
+  // a hunter not switched to (a refusal sync.switchTo told, or a Cancel in a room) leaves the select on the active one
+  if (!(await app.api.sync.switchTo(sel.value))) sel.value = store.active().id;
 });
 
 const ROLE_IN_ROOM = { gm: 'You are the GM of this room.', player: 'You are a player in this room. The GM is the phone that opened it.' };

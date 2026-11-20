@@ -135,7 +135,8 @@ type SyncWindow = {
 };
 /**
  * What this file uses of the app object src/app.js hands to `register`: the bus, the store, the rules, every module's
- * `app.api`, the seat, the way to a view, the build id it sets, and the toast and the System window of src/views/ui.js.
+ * `app.api`, the seat, the way to a view, the build id it sets, and the toast, the System window and `wrote` (a refused
+ * write told by its kind) of src/views/ui.js.
  * The `App` of src/views/app.ts has all of it, and app.js's call of `register` is checked against this type
  * (tsconfig.views.json). The edge names what it uses so it imports nothing from the views.
  */
@@ -146,7 +147,7 @@ export type SyncHost = Bus & {
   seat(): Seat;
   go(id: string): void;
   build?: string;
-  ui: { toast(tag: string, text: string, opts?: { kind: string }): void; system(w: SyncWindow): Promise<unknown> };
+  ui: { toast(tag: string, text: string, opts?: { kind: string }): void; system(w: SyncWindow): Promise<unknown>; wrote(tag: string, w: ReturnType<typeof Store.apply>): boolean };
 };
 
 export function register(app: SyncHost): void {
@@ -682,22 +683,25 @@ export function register(app: SyncHost): void {
   };
   /** A hunter deleted on this phone leaves the GM's board: its sheet is replaced by a tombstone, through the outbox. */
   const forget = (hid: HunterId): void => { if (playerRoom()) postLetter({ kind: 'tomb', hid }, null); };
-  /** Change the active hunter. In a room as a player, ask whether the new hunter takes the room slot (the old card leaves the GM's board). */
+  /**
+   * Change the active hunter. In a room as a player, ask whether the new hunter takes the room slot (the old card leaves
+   * the GM's board). Answers whether the hunter changed; a refused write is told (ui.js `wrote`) and changes nothing.
+   */
   async function switchTo(hid: string): Promise<boolean> {
     const to = store.hunter(hid); if (!to) return false;
-    const act = (): void => { store.apply('switch-hunter', s => setActive(s, to.id)); };
+    const act = (): boolean => ui.wrote('System', store.apply('switch-hunter', s => setActive(s, to.id)));
     const code = playerRoom(), b = bound();
-    if (!code || !b || b.id === hid) { act(); return true; }
+    if (!code || !b || b.id === hid) return act();
     const v = await ui.system({ tag: '! System', title: `PLAY AS ${String(to.name).toUpperCase()}?`, kind: 'quest',
       body: `Play as ${to.name} in room ${code}? ${b.name} leaves the GM's board.`,
       actions: [{ label: 'Cancel', value: false, cancel: true }, { label: `Only view ${to.name}`, value: 'view' }, { label: `Play as ${to.name}`, value: 'bind', primary: true }] });
     if (v === 'bind') {
-      if (!store.apply('sync-rebind', s => boundTo(s, to.id, srvNow())).ok) return false;
+      if (!ui.wrote('System', store.apply('sync-rebind', s => boundTo(s, to.id, srvNow())))) return false;
       pushDo({ type: 'rebound' });
       forget(b.id);
       return true;
     }
-    if (v === 'view') { act(); ui.toast('System', `${b.name} stays synced to room ${code}.`, { kind: 'info' }); return true; } // the sheet still sends the bound hunter
+    if (v === 'view') { if (!act()) return false; ui.toast('System', `${b.name} stays synced to room ${code}.`, { kind: 'info' }); return true; } // the sheet still sends the bound hunter
     return false;
   }
 

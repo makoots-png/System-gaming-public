@@ -312,8 +312,8 @@ export function register(app) {
     const body = toRoom ? soloRunBody(ready.h, runOf, ready.target, sync().myKey(hid), R) : null, event = body ? sync().event('soloRun', body) : null;
     const done = { ran: null };
     const w = store.apply('solo-run', s => { const r = soloRan(s, hid, gate, runOf, loot, { day: dayNow(), ready: readyCtx(hid), room: toRoom ? { code: room(), event } : null }); if (isRefused(r)) return r; done.ran = r; return r.save; });
+    if (!ui.wrote('! Gate', w, SOLO_REFUSAL_WORDS)) return;
     const ran = done.ran;
-    if (!w.ok || !ran) { if (!w.ok && 'why' in w && SOLO_REFUSAL_WORDS[w.why]) ui.toast('! Gate', SOLO_REFUSAL_WORDS[w.why], { kind: 'warn' }); return; }
     if (toRoom) sync().flush();
     runMoved({ type: 'wrote' });
     const h = store.hunter(hid), m = h ? api.hunter.sheet(h).sheet : { hpMax: 0, manaMax: 0, fatigueMax: 0 };
@@ -598,8 +598,8 @@ export function register(app) {
         const act = b.dataset.act, card = b.closest('.gate'), id = card && card.dataset.id;
         if (!app.isGM()) return;
         if (act === 'solo-on' || act === 'solo-off') { ui.wrote('Gates', store.apply('gm-rules', s => soloRuleSet(s, { personal: act === 'solo-on' }))); return; }
-        if (act === 'day') advanceDay(Number(b.dataset.n));
-        else if (act === 'day-n') { const n = await ui.promptNum({ title: 'Advance world day', label: 'Days (negative goes back)', value: 5, min: -30, max: 365 }); if (n) advanceDay(n); }
+        if (act === 'day') ui.wrote('Gates', advanceDay(Number(b.dataset.n)));
+        else if (act === 'day-n') { const n = await ui.promptNum({ title: 'Advance world day', label: 'Days (negative goes back)', value: 5, min: -30, max: 365 }); if (n) ui.wrote('Gates', advanceDay(n)); }
         else if (act === 'enter') enter(id);
         else if (act === 'encounter') startEncounter(id);
         else if (act === 'clear' || act === 'edit') { openPanel.set(id, act); refresh(id); cards.get(id)?.querySelector('.gt-panel input,.gt-panel select')?.focus(); }

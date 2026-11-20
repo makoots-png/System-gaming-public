@@ -18,6 +18,8 @@ import { postNews } from '../core/sync/connection.ts';
 import { COUNTED_WORDS, FAIL_WORDS, KIND_LABEL, questFields, questFieldsCss } from './quest-fields.js';
 
 const TABS = [['active', 'Active'], ['daily', 'Daily'], ['done', 'Completed'], ['failed', 'Failed']];
+/** What Reopen says of a failed quest it may not reopen as it is (quests.ts `reopenQuest`). */
+const REOPEN_WORDS = { pastDue: 'Set a new due time first.' };
 
 const STYLE = `
 .q-top{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:10px}
@@ -442,7 +444,7 @@ export function register(app) {
     const h = store.hunter(hid), q = h && h.quests.find(x => x.id === qid), o = q && q.objectives[i];
     if (!o || q.status !== 'active' || systemCounts(q, h.jobChain)) return;
     const was = q.objectives.every(x => x.progress >= x.target);
-    if (!store.apply('quest-progress', atHunter(hid, x => progressSet(x, qid, i, value))).ok) return;
+    if (!ui.wrote('! Quest', store.apply('quest-progress', atHunter(hid, x => progressSet(x, qid, i, value))))) return;
     // the quest as the write left it, read again: never the object read before the write
     const now = store.hunter(hid)?.quests.find(x => x.id === qid); if (!now) return;
     sendUpdate(hid, now, now.status);
@@ -538,7 +540,8 @@ export function register(app) {
         if (d.fail) { const q = find(d.fail); if (q && await ui.confirm({ title: 'Fail quest?', body: q.title, danger: true, confirmLabel: 'Fail quest' })) fail(h.id, d.fail); return; }
         if (d.reopen) {
           const r = store.apply('quest-reopen', atHunter(h.id, x => reopenQuest(x, d.reopen, iso())));
-          if ('why' in r && r.why === 'pastDue') { ui.toast('! Quest', 'Set a new due time first.'); openForm(el, find(d.reopen)); }
+          // a quest past its due time reopens with a new one: the form opens for it
+          if (!ui.wrote('! Quest', r, REOPEN_WORDS) && 'why' in r && r.why === 'pastDue') openForm(el, find(d.reopen));
           return;
         }
         if (d.issue) return issueTo(d.issue);
