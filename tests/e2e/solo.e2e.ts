@@ -220,9 +220,12 @@ test('while a run plays the card shows only its round and moves, and a reload in
   const cdp = await page.context().newCDPSession(page);
   await cdp.send('Emulation.setCPUThrottlingRate', { rate: 20 });
   // The run plays a few moves a frame. The page is held after the run's first frame (no further frame is given), as a
-  // phone closed in the middle of it: otherwise the run could end, and write, before this test looks or reloads.
-  await card.locator('[data-solorun]').evaluate(el => {
-    new MutationObserver(() => { if (!(el as HTMLElement).hidden) window.requestAnimationFrame = () => 0; }).observe(el, { attributes: true, attributeFilter: ['hidden'] });
+  // phone closed in the middle of it: otherwise the run could end, and write, before this test looks or reloads. The
+  // panel is watched, not the card: a change of the run's phase draws the panel again, and a card drawn before is off
+  // the page by then.
+  await page.locator('#gt-solo').evaluate(box => {
+    const held = () => { if (box.querySelector('[data-solorun]:not([hidden])')) window.requestAnimationFrame = () => 0; };
+    new MutationObserver(held).observe(box, { subtree: true, childList: true, attributes: true, attributeFilter: ['hidden'] });
   });
   await ask.locator('.sys-actions button', { hasText: 'Enter alone' }).tap();
   const playing = card.locator('[data-solorun]');
