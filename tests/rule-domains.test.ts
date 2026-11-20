@@ -86,5 +86,5 @@ test('the Rules editor\'s words for a number out of its domain name its bounds a
   expect(words({ fight: { round: 0 } })).toEqual(['fight.round: must be a whole number from 100 to 10000. Ticks in a round: under 100 the rounding of speed shows, 0 divides by 0.']);
   expect(words({ fight: { kit: { scalerStep: 0 } } })).toEqual(['fight.kit.scalerStep: must be a number from 0.01 to 0.5. The search step of a suggested scale: 0 searches without end.']);
   expect(words({ rankTable: { E: { dc: [10, 13, 160] } } })).toEqual(['rankTable.E.dc.2: must be a whole number from 1 to 100. A d20 check\'s DC: the S rank\'s hardest is 55, and past 100 no bonus reaches it.']);
-  expect(words({ solo: { pack: [3, 2] }, luck: 1, xpSplit: 'yes' })).toEqual(['solo.pack: must go from low to high.', 'Unknown rule: luck', 'xpSplit: must be true or false.']);
+  expect(words({ solo: { pack: [3, 2] }, luck: 1, levelUpRestore: 'yes' })).toEqual(['solo.pack: must go from low to high.', 'Unknown rule: luck', 'levelUpRestore: must be true or false.']);
 });

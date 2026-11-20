@@ -1,5 +1,18 @@
 import { test, expect, openApp, onboardGM, onboardPlayer, createRoom, dismissAll, answerWindow, go, activeHunter, gateByName, ROOM_CODE, chooseList, type DeviceOptions } from './helpers.ts';
 import type { Page } from '@playwright/test';
+import { RULES } from '../../src/core/rules.ts';
+
+/**
+ * Each of `n` hunters' share of what a world gate pays, by the rule (design 4.1): a pot of `gateParty` times the
+ * amount, shrunk by party / n past the party, split evenly and rounded down.
+ */
+const share = (amount: number, n: number, party = RULES.gateParty): number =>
+  n <= 0 ? 0 : Math.floor(n <= party ? amount * party / n : amount * party * party / (n * n));
+/** What each of `n` hunters takes of an E-rank Clear's gold roll (the Goblin Den's rank), as the Clear panel words it. */
+const goldEachE = (n: number): string => {
+  const [low = 0, high = 0] = RULES.loot.E.gold;
+  return `${share(low, n).toLocaleString('en-US')} to ${share(high, n).toLocaleString('en-US')}`;
+};
 
 const lifetimeXp = (page: Page): Promise<Record<string, number>> => page.evaluate(() => Object.fromEntries(hunterApp.store.get().hunters.map((h: any) => {
   let total = h.xp;
@@ -101,11 +114,12 @@ async function passMinutePast(page: Page, when: string): Promise<void> {
   await page.waitForTimeout(300);
 }
 
-test('a gate cleared after End fight with XP pays the gate XP once and the panel number matches', async ({ device }) => {
+test('a gate cleared after End fight with XP pays each hunter its share of the gate XP once and the panel number matches', async ({ device }) => {
   const page = (await device('gm')).page;
   await onboardGM(page);
-  const gate = await gateByName(page, 'Goblin Den'), start = await lifetimeXp(page);
+  const gate = await gateByName(page, 'Goblin Den'), start = await lifetimeXp(page), n = Object.keys(start).length;
   await startGate(page, gate.id);
+  const fought = await fightXp(page);
   await defeatAllMonsters(page);
   await endEncounter(page);
   await sys(page, 'Award XP to party');
@@ -113,15 +127,16 @@ test('a gate cleared after End fight with XP pays the gate XP once and the panel
   const form = await openClearPanel(page, gate.id);
   const says = await promisedXp(form), beforeClear = await lifetimeXp(page);
   const after = await submitClear(page, form);
-  expect(Object.values(gained(start, after)), 'XP each hunter got in total').toEqual(Object.values(start).map(() => gate.xp));
+  expect(Object.values(gained(start, after)), 'XP each hunter got in total').toEqual(Object.values(start).map(() => share(fought, n) + share(Math.max(0, gate.xp - fought), n)));
   expect(Object.values(gained(beforeClear, after)), 'XP each hunter got at Clear').toEqual(Object.values(start).map(() => says));
 });
 
-test('a gate cleared from its card after End fight with XP and a reload pays the gate XP once', async ({ device }) => {
+test('a gate cleared from its card after End fight with XP and a reload pays each hunter its share of the gate XP once', async ({ device }) => {
   const page = (await device('gm')).page;
   await onboardGM(page);
-  const gate = await gateByName(page, 'Goblin Den'), start = await lifetimeXp(page);
+  const gate = await gateByName(page, 'Goblin Den'), start = await lifetimeXp(page), n = Object.keys(start).length;
   await startGate(page, gate.id);
+  const fought = await fightXp(page);
   await defeatAllMonsters(page);
   await endEncounter(page);
   await sys(page, 'Award XP to party');
@@ -134,25 +149,25 @@ test('a gate cleared from its card after End fight with XP and a reload pays the
   const form = await openClearPanel(page, gate.id);
   const says = await promisedXp(form), beforeClear = await lifetimeXp(page);
   const after = await submitClear(page, form);
-  expect(Object.values(gained(start, after)), 'XP each hunter got in total').toEqual(Object.values(start).map(() => gate.xp));
+  expect(Object.values(gained(start, after)), 'XP each hunter got in total').toEqual(Object.values(start).map(() => share(fought, n) + share(Math.max(0, gate.xp - fought), n)));
   expect(Object.values(gained(beforeClear, after)), 'XP each hunter got at Clear').toEqual(Object.values(start).map(() => says));
 });
 
-test('clearing a gate that never had an encounter pays the gate XP the panel promises', async ({ device }) => {
+test('clearing a gate that never had an encounter pays each hunter the share of the gate XP the panel promises', async ({ device }) => {
   const page = (await device('gm')).page;
   await onboardGM(page);
-  const gate = await gateByName(page, 'Goblin Den'), start = await lifetimeXp(page);
+  const gate = await gateByName(page, 'Goblin Den'), start = await lifetimeXp(page), n = Object.keys(start).length;
   await go(page, 'gates');
   await gateCard(page, gate.id).locator('[data-act=clear]').tap();
   const form = await openClearPanel(page, gate.id);
   const says = await promisedXp(form);
-  // with no hunter picked the panel promises what the split pays nobody: 0 (pay.ts `splitAward`)
+  // with no hunter picked the panel promises what the shares pay nobody: 0 (pay.ts `shareEach`)
   for (const box of await form.locator('input[name=hid]').all()) if (await box.isChecked()) await box.tap();
   await expect(form.locator('[data-clearxp]')).toHaveText('0');
   for (const box of await form.locator('input[name=hid]').all()) if (!(await box.isChecked())) await box.tap();
   const after = await submitClear(page, form);
-  expect(says).toBe(gate.xp);
-  expect(Object.values(gained(start, after))).toEqual(Object.values(start).map(() => gate.xp));
+  expect(says).toBe(share(gate.xp, n));
+  expect(Object.values(gained(start, after))).toEqual(Object.values(start).map(() => share(gate.xp, n)));
 });
 
 test('a Clear panel open on a gate that is cleared elsewhere closes, and nothing can pay the gate a second time', async ({ device }) => {
@@ -173,10 +188,10 @@ test('a Clear panel open on a gate that is cleared elsewhere closes, and nothing
   expect([g.status, g.xpPaid, gained(start, await lifetimeXp(page))]).toEqual(['cleared', 999, Object.fromEntries(Object.keys(start).map(k => [k, 0]))]);
 });
 
-test('a gate cleared after End fight without XP still pays the gate XP', async ({ device }) => {
+test('a gate cleared after End fight without XP still pays each hunter its share of the gate XP', async ({ device }) => {
   const page = (await device('gm')).page;
   await onboardGM(page);
-  const gate = await gateByName(page, 'Goblin Den'), start = await lifetimeXp(page);
+  const gate = await gateByName(page, 'Goblin Den'), start = await lifetimeXp(page), n = Object.keys(start).length;
   await startGate(page, gate.id);
   await defeatAllMonsters(page);
   await endEncounter(page);
@@ -185,11 +200,11 @@ test('a gate cleared after End fight without XP still pays the gate XP', async (
   const form = await openClearPanel(page, gate.id);
   const says = await promisedXp(form);
   const after = await submitClear(page, form);
-  expect(says).toBe(gate.xp);
-  expect(Object.values(gained(start, after))).toEqual(Object.values(start).map(() => gate.xp));
+  expect(says).toBe(share(gate.xp, n));
+  expect(Object.values(gained(start, after))).toEqual(Object.values(start).map(() => share(gate.xp, n)));
 });
 
-test('clearing a gate lists the room player, pre-ticked, and pays them the gate XP once', async ({ device }) => {
+test('clearing a gate lists the room player, pre-ticked, and the party of 4 takes the gate XP each, the player once', async ({ device }) => {
   const gm = (await device('gm')).page, player = (await device('player')).page;
   await onboardGM(gm);
   const code = await createRoom(gm);
@@ -213,6 +228,7 @@ test('clearing a gate lists the room player, pre-ticked, and pays them the gate 
   const boxes = await form.locator('input[name=hid]').evaluateAll(all => all.map((b: any) => b.checked));
   expect(boxes.length, 'hunters listed in Award to').toBe(4);
   expect(boxes.every(Boolean), 'every hunter ticked').toBe(true);
+  expect(share(gate.xp, boxes.length), 'a party of the gate\'s size takes the gate XP each').toBe(gate.xp);
   const after = await submitClear(gm, form);
 
   await expect.poll(async () => kaiTotal(await activeHunter(player)) - kaiTotal(kaiBefore)).toBe(gate.xp);
@@ -223,27 +239,42 @@ test('clearing a gate lists the room player, pre-ticked, and pays them the gate 
   expect(Object.values(gained(start, after)), 'XP the local hunters got').toEqual(Object.values(start).map(() => gate.xp));
 });
 
-test('with XP split on, the clear panel shows the shared XP and each hunter gets exactly that', async ({ device }) => {
+test('the clear panel says the XP and gold each for the hunters ticked, more each as fewer are ticked, fits the phone, and pays exactly that', async ({ device }) => {
   const page = (await device('gm')).page;
   await onboardGM(page);
   const gate = await gateByName(page, 'Goblin Den');
-  await page.evaluate(() => hunterApp.store.update((d: any) => { d.rulesOverrides = { xpSplit: true }; }, 'test-setup'));
   const start = await lifetimeXp(page);
+  expect(Object.keys(start).length, 'three hunters on the GM\'s phone').toBe(3);
+  const goldBefore: number[] = await page.evaluate(() => hunterApp.store.get().hunters.map((h: any) => h.gold));
   await go(page, 'gates');
   await gateCard(page, gate.id).locator('[data-act=clear]').tap();
   const form = await openClearPanel(page, gate.id);
-  const three = await promisedXp(form);
-  const boxes = form.locator('input[name=hid]');
+  const gold = form.locator('[data-cleargold]'), boxes = form.locator('input[name=hid]');
+  await expect.poll(() => promisedXp(form)).toBe(share(gate.xp, 3));
+  await expect(gold).toHaveText(goldEachE(3));
+  await test.step('the note fits a 390 px wide phone: nothing runs past the panel or the screen', async () => {
+    const note = form.locator('.gt-notes');
+    await note.scrollIntoViewIfNeeded();
+    const fit = await note.evaluate((el: any) => ({ over: el.scrollWidth - el.clientWidth, right: el.getBoundingClientRect().right, wide: window.innerWidth }));
+    expect(fit.wide).toBe(390);
+    expect(fit.over, 'the note overflows its box').toBeLessThanOrEqual(0);
+    expect(fit.right, 'the note runs past the screen').toBeLessThanOrEqual(fit.wide);
+  });
   await boxes.nth(2).tap();
-  await expect.poll(() => promisedXp(form)).toBe(Math.floor(gate.xp / 2));
+  await expect.poll(() => promisedXp(form)).toBe(share(gate.xp, 2));
+  await expect(gold).toHaveText(goldEachE(2));
   await boxes.nth(2).tap();
-  await expect.poll(() => promisedXp(form)).toBe(three);
+  await expect.poll(() => promisedXp(form)).toBe(share(gate.xp, 3));
   const after = await submitClear(page, form);
-  expect(three).toBe(Math.floor(gate.xp / 3));
-  expect(Object.values(gained(start, after))).toEqual(Object.values(start).map(() => Math.floor(gate.xp / 3)));
+  expect(Object.values(gained(start, after))).toEqual(Object.values(start).map(() => share(gate.xp, 3)));
+  const goldGot = (await page.evaluate(() => hunterApp.store.get().hunters.map((h: any) => h.gold)) as number[]).map((g, i) => g - goldBefore[i]!);
+  const [low = 0, high = 0] = RULES.loot.E.gold;
+  expect(new Set(goldGot).size, 'each hunter takes the same share of the roll').toBe(1);
+  expect(goldGot[0]!).toBeGreaterThanOrEqual(share(low, 3));
+  expect(goldGot[0]!).toBeLessThanOrEqual(share(high, 3));
 });
 
-/** The XP of every monster in the running fight: what Award XP gives each hunter when the split is off. */
+/** The XP of every monster in the running fight: what Award XP shares among its hunters as the gate's pot. */
 const fightXp = (page: Page): Promise<number> => page.evaluate(() => hunterApp.store.get().fight.rows
   .filter((r: any) => r.side === 'foe').reduce((sum: number, r: any) => sum + r.xp, 0));
 
@@ -267,7 +298,7 @@ async function endFightExpectingAward(page: Page): Promise<void> {
   await expect(page.locator('.sys-overlay.show .sys-actions button', { hasText: 'Award XP to party' })).toBeVisible();
 }
 
-test('a gate cleared with no hunters selected still lets its running fight award the monster XP', async ({ device }) => {
+test('a gate cleared with no hunters selected still lets its running fight award each hunter its share of the monster XP', async ({ device }) => {
   const page = (await device('gm')).page;
   await onboardGM(page);
   const gate = await gateByName(page, 'Goblin Den');
@@ -286,11 +317,12 @@ test('a gate cleared with no hunters selected still lets its running fight award
     expect(await lifetimeXp(page), 'the clear paid nobody').toEqual(start);
   });
 
-  await test.step('the fight ends and pays every hunter in it the XP of its monsters', async () => {
+  await test.step('the fight ends and pays every hunter in it its share of the XP of its monsters', async () => {
     await endFightExpectingAward(page);
     await sys(page, 'Award XP to party');
     await dismissAll(page);
-    expect(Object.values(gained(start, await lifetimeXp(page)))).toEqual(Object.values(start).map(() => xp));
+    const n = Object.keys(start).length;
+    expect(Object.values(gained(start, await lifetimeXp(page)))).toEqual(Object.values(start).map(() => share(xp, n)));
   });
 });
 
@@ -312,7 +344,7 @@ test('a gate set back to detected and cleared again in the edit form shows the d
   await expect(gateCard(page, gate.id).locator('.gt-timer')).toHaveText(`Cleared on day ${first + 2}`);
 });
 
-test('a gate set to cleared in the edit form, which pays nobody, still lets its running fight award the monster XP', async ({ device }) => {
+test('a gate set to cleared in the edit form, which pays nobody, still lets its running fight award each hunter its share of the monster XP', async ({ device }) => {
   const page = (await device('gm')).page;
   await onboardGM(page);
   const gate = await gateByName(page, 'Goblin Den');
@@ -323,7 +355,8 @@ test('a gate set to cleared in the edit form, which pays nobody, still lets its 
   await endFightExpectingAward(page);
   await sys(page, 'Award XP to party');
   await dismissAll(page);
-  expect(Object.values(gained(start, await lifetimeXp(page)))).toEqual(Object.values(start).map(() => xp));
+  const n = Object.keys(start).length;
+  expect(Object.values(gained(start, await lifetimeXp(page)))).toEqual(Object.values(start).map(() => share(xp, n)));
 });
 
 test('a Lv 10 hunter works the Job Change chain from the Quests tab and becomes a Necromancer', async ({ device }) => {

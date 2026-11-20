@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { armorCutPct, checkExample, dailyPointsLine, downLine, naturalLines, pointsLine, saleLine, saleRows, soloLines, statBonusLine } from '../src/core/rules-text.ts';
+import { armorCutPct, checkExample, dailyPointsLine, downLine, gatePayLines, naturalLines, pointsLine, saleLine, saleRows, soloLines, statBonusLine } from '../src/core/rules-text.ts';
 import { afterDefence } from '../src/core/combat/land.ts';
 import { sellPrice } from '../src/core/hunter/inventory.ts';
 import { CAP_ROUNDS } from '../src/core/combat/play.ts';
@@ -202,4 +202,26 @@ test('the armor cut the Rules page states is what afterDefence takes off a hit w
   const R = { ...RULES, fight: { ...RULES.fight, armorFlat: 0 as typeof RULES.fight.armorFlat } };
   const armor = 40, hit = 10_000;
   expect(armorCutPct(R, armor)).toBe(100 - Math.round(100 * afterDefence(hit, 'physical', { pen: 0 as never, penFlat: 0 }, { armor, resist: 0 }, R) / hit));
+});
+
+describe('the world gate\'s lines', () => {
+  test('say the gate is made for a party of 4 whose gold and XP are one pot, and each share of 100 from 1 to 6 hunters', () => {
+    const [pot, shares] = gatePayLines(RULES);
+    expect(pot).toBe('A world gate is made for a party of 4. What it pays, its gold roll and its XP alike, is a pot of 4 shares split evenly among the hunters it pays, rounded down: the fewer hunters, the more each, and past 4 hunters the pot itself shrinks.');
+    expect(shares).toBe('Each hunter\'s share of 100: 400 alone, 200 of 2, 133 of 3, 100 of 4, 64 of 5, 44 of 6.');
+  });
+
+  test('say a fight started from a gate pays its XP the same way and a fight from no gate pays each the whole, and a solo run is a party of one', () => {
+    expect(gatePayLines(RULES).slice(2)).toEqual([
+      'A fight started from a gate pays its XP the same way, out of the gate\'s XP; its Clear pays the rest. A fight started from no gate pays each hunter the whole XP of what went down.',
+      'A solo run of a world gate is a party of one: 4 times the gold roll and 4 times the XP.',
+    ]);
+  });
+
+  test('follow a GM\'s change of the party', () => {
+    const R = { ...RULES, gateParty: 2 };
+    expect(gatePayLines(R)[0]).toContain('made for a party of 2');
+    expect(gatePayLines(R)[1]).toBe('Each hunter\'s share of 100: 200 alone, 100 of 2, 44 of 3, 25 of 4.');
+    expect(gatePayLines(R)[3]).toContain('2 times the gold roll and 2 times the XP');
+  });
 });

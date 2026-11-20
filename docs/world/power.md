@@ -37,7 +37,7 @@ A new hunter gets these things at once:
 - A body that carries mana. It is stronger and faster than before, tires more slowly, and is harder to kill.
 - An Inventory, which is a storage space that only the hunter can reach.
 - Access to the Shop, which sells for gold.
-- A level, quests, a daily quest and personal gates (section 4).
+- A level, quests and a daily quest (section 3).
 
 ## 3. What awakening costs
 
@@ -48,15 +48,18 @@ A new hunter gets these things at once:
 - **Work and law.** No sports league accepts a hunter. A court treats a hunter's assault as armed assault. Many
   employers will not hire a D-rank or higher for work with the public.
 - **The daily quest.** The System sets every hunter one quest a day. The standard quest is a hundred push-ups, a
-  hundred sit-ups, a hundred squats and a ten-kilometre run. A hunter who finishes it gains XP. A hunter who
-  misses it is Penalized for a day and takes a penalty on every check. A hunter cannot turn it off. A hunter at
-  their cap gains nothing from it and is still Penalized for missing it.
-- **Personal gates.** A personal gate opens beside the hunter every eight hours and stays for a day. The hunter
-  does not have to enter it.
+  hundred sit-ups, a hundred squats and a ten-kilometre run. A hunter who finishes it gains XP. Completing the daily
+  quest never heals HP, restores mana, or clears fatigue (the owner's ruling). A hunter who misses it is Penalized and
+  takes a penalty on every check until they finish the Penalty Zone quest (`machines.md`, `The daily quest`). A
+  hunter cannot turn it off. A hunter at their cap gains nothing from it and is still Penalized for missing it.
+
 - **The cap.** Two hunters in five awaken as E-ranks and will never pass level 9.
 - **Family.** A hunter above E rank ages more slowly than their Resident relatives (section 6).
 
 ## 4. Rank, level and the cap
+
+`machines.md` charts the states a person passes through, from Resident to uncapped.
+
 
 The window shows a level and a line that reads "Cap:" with a number. The rank a hunter awakens with sets the cap.
 A hunter gains XP from kills and quests and rises to the cap. At the cap the XP bar stops.
@@ -89,28 +92,39 @@ rank matters, and only until the cap.
 E to S takes 241,500 XP. By the daily quest alone that is 26.5 years.
 <!-- /prices:roads -->
 
-**Personal gates.** The System opens three personal gates a day for each hunter. Six in ten are of the hunter's
-rank, a quarter are one rank below, and the rest are one rank above. Each holds one or two monsters and no boss.
-It pays a quarter of one hunter's share of a world gate of its rank. A hunter loses about half of the personal
-gates of their own rank. Most hunters who lose get out alive. Nobody else can enter a personal gate, so a hunter
-who dies in one is raised only if they carried their own crystal.
+**Personal gates.** A personal gate is a gate that only one hunter can enter. The System does not open them on a
+schedule. One opens when a hunter uses a gate key, and the System opens one for a hunter on rare occasions for
+reasons it does not give. In the game the GM decides when. A personal gate stays for a day. It holds one or two
+monsters and no boss, and it pays a quarter of one hunter's share of a world gate of its rank. Nobody else can
+enter, so a hunter who dies in one is raised only if they carried their own crystal. Most hunters never see one.
+A gate key drops from about one Clear in two hundred and sells for about 1 to 2 Clears of its rank (`items.md`,
+section 2).
 
 **Re-awakening.** Fewer than thirty hunters on record have risen past their cap. Each reported a second fever and
 then read one rank higher. The Bureau calls this a re-awakening and cannot explain it.
 
 ## 5. The trial gate and the party
 
+In the app the players' hunters have no level cap. The cap and the trial gate are lore that the GM runs
+(`story.md`, section 4).
+
+
 This section is for the GM.
 
-A cap can be removed. The System sometimes opens a personal gate of an unusual colour for a hunter who is at their
-cap. Hunters call no name for it, because almost nobody has seen one. This file calls it a trial gate. A hunter
-who passes it has a window that reads "Cap: none". `story.md`, act 2, describes the trial.
+A cap can be removed or raised. The System sometimes opens a personal gate of an unusual colour for a hunter who is
+at their cap. Hunters have no name for it, because almost nobody has seen one. This file calls it a trial gate.
+Passing any trial gate triggers a brief second fever as the body's mana ceiling breaks,
+which is why clinics and guild scouts watch for second fevers.
 
-The players' hunters pass a trial gate early in the campaign. From then on they can rise through every rank.
+The Hosts run two kinds of trial:
 
-**Who else has passed one.** The recorded re-awakenings were trial gates, and each of those hunters stopped
-again at the next cap or hid what happened. A very few hunters are fully uncapped and hide it. Two are named in
-this folder: Sabine Okoro (`fame.md`, section 7) and Marek Osei of the Stair (`factions.md`, section 6).
+- **A step trial** raises the hunter's cap by one rank. The fewer than thirty recorded re-awakenings were step trials
+  (such as Pavel Dunmore of the Lantern Company, `factions.md`, section 2).
+- **An open trial** removes the cap completely so the window reads "Cap: none". The players' party passes an open
+  trial early in the campaign (`story.md`, act 2) and can then rise through every rank.
+
+**Who else has passed an open trial.** A very few hunters are fully uncapped and hide it. Two are named in this
+folder: Sabine Okoro (`fame.md`, section 7) and Marek Osei of the Stair (`factions.md`, section 6).
 
 **What the world sees.** Nobody can see another person's window. Other people see only the result: a hunter
 registered as E who fights like a D a few months later.
@@ -192,6 +206,10 @@ of what a hunter did inside a gate, where cameras do not work (`fame.md`, sectio
 
 ## 8. Gates and crystals
 
+`machines.md` charts the states of a world gate, a break, a personal gate and a death. This section gives the rules
+behind them.
+
+
 - **World gates.** A world gate opens at a fixed place, and any licensed party can enter it. The Bureau reads its
   rank, posts it, and then licenses a party or sells the rights. The inside is a different place each time, such as
   a cave system, a flooded temple or a fortress. It holds a pack of monsters and a boss. The gate is cleared when
@@ -206,16 +224,19 @@ of what a hunter did inside a gate, where cameras do not work (`fame.md`, sectio
 - **Double gates.** About one gate in twenty has a second area beyond the boss's room. The second area can have a
   different rank, and the Bureau's reading does not show it. Guilds have a standing rule: when a cleared gate has
   another door, the party votes before anyone opens it.
-- **Personal gates.** Section 4 describes them. The Bureau cannot read, sell or tax a personal gate. It contains
+- **Personal gates.** Section 4 describes them. They are rare. The Bureau cannot read, sell or tax one. It contains
   no crystal to harvest. A cleared one pays gold and, one time in four, an item.
 - **A world gate cleared alone.** One hunter takes the whole pot, which is four Clears, and four shares of the XP.
   This is legal. Guild contracts forbid it.
 - **Gates that never close.** The S gate in Port Sarn has stayed open for twenty years. A few other gates have
   also stayed open, and nobody knows why. One is a B gate in a flooded car park in the Scar (`seeds.md`).
-- **Resurrection Crystals.** A crystal raises a dead hunter of its rank or lower. It must be used within an hour
-  of the death. An unused crystal keeps for any length of time. It does nothing for a Resident. The app does not
-  enforce the hour, and the GM applies it. A raising also costs the hunter something that is not gold
-  (`story.md`, section 3).
+- **Death and Resurrection Crystals.** Death follows the owner's revive ladder (`machines.md`, `Revive standing` and
+  `A death`): a hunter's first revive within an hour is free of gold cost; the second is one revive on debt (ten
+  Clears); after that, no System revive is offered. From the third death on, only a GM grant or a Resurrection
+  Crystal of the hunter's rank or higher, bought before the death and used within an hour, brings the hunter back.
+  Gold held after death does not help, because a dead hunter cannot open the Shop. An unused crystal keeps for any
+  length of time. None of this works for a Resident. The app does not enforce the hour, and the GM applies it. Every
+  raising also costs the hunter collateral that is not gold (`story.md`, section 3).
 
 ## 9. What people think the System is
 
@@ -230,5 +251,8 @@ Every hunter knows these things from experience:
 - It speaks in plain words, in the person's first language, with no sign of emotion.
 - It pays more for risk. A smaller party gets more gold and more XP for each hunter.
 - It has never said why anyone is capped.
+- Hunters who have returned from death often develop small blank spots in their memory, failing to recognise a
+  childhood song, a recipe, or a familiar photograph. Doctors call it first-return amnesia and blame oxygen loss
+ .
 
 `story.md` has the truth, the order in which the party learns it, and the clues to plant.

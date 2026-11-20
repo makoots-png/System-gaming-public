@@ -454,12 +454,12 @@ export function register(app) {
     const over = f.phase === 'ended', shown = over ? f : reduce(f, { type: 'end' }, ctx()).fight;
     if (!shown || shown.phase !== 'ended') return;
     const R = rules(), links = refs();
-    const plan = planEncounter(shown, links.gate, store.get(), !!R.xpSplit, xpOf), nPart = plan.payees.length;
+    const plan = planEncounter(shown, links.gate, store.get(), R.gateParty, xpOf), nPart = plan.payees.length;
     const lines = plan.dead.length || shown.banked ? plan.dead.map(r => `${r.name}: ${ui.fmt(r.xp)} XP`) : ['No monsters were defeated.'];
     if (shown.banked) lines.push(`Monsters removed from the fight: ${ui.fmt(shown.banked)} XP`);
     lines.push(`Total XP: ${ui.fmt(plan.xp)}`);
     if (plan.covered) lines.push('The gate\'s XP is already paid.');
-    else if (nPart) lines.push(`Each hunter receives ${ui.fmt(plan.each)} XP${R.xpSplit ? ' (split evenly)' : ''}.`);
+    else if (nPart) lines.push(`Each hunter receives ${ui.fmt(plan.each)} XP${plan.shared ? `, a share of the gate's XP for ${nPart} hunter${nPart === 1 ? '' : 's'}` : ''}.`);
     // what the defeated monsters drop (their bestiary entry's loot): listed here, given by the GM through the Award form
     const loot = lootOf(plan.dead.flatMap(r => { const m = links.monsters[r.id] ? A().bestiary.get(links.monsters[r.id]) : null; return m ? [m.loot] : []; }));
     const lootLine = lootText(loot);
@@ -474,7 +474,7 @@ export function register(app) {
     if (fight() && fight().phase !== 'ended') send({ type: 'end' });
     const ended = fight(); if (!ended || ended.phase !== 'ended' || ended.id !== plan.fightId) return;
     // the plan again from the fight as it ended (the end the GM confirmed), then one step
-    const done = planEncounter(ended, links.gate, store.get(), !!R.xpSplit, xpOf), S = A().sync;
+    const done = planEncounter(ended, links.gate, store.get(), R.gateParty, xpOf), S = A().sync;
     const posts = { room: S.room(), events: encounterAwards(done, v).map(b => S.event('award', b)).filter(Boolean) };
     const out = { settled: null };
     if (!ui.wrote('! Fight', store.apply('combat-ended', sv => { const r = settleEncounter(sv, done, v, posts, dayNow(), loot); if (isRefused(r)) return r; out.settled = r; return r.save; }))) return;

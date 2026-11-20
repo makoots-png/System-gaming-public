@@ -8,7 +8,7 @@ large city has factions like them.
 
 | Prize | Why it is scarce | Who competes for it |
 |---|---|---|
-| Seats in gates | Carrow has 600 world gates a month with four seats each, and 12,000 hunters. A seat pays gold and drops | Guilds, each guild's own hunters, the Bureau |
+| Seats in gates | Carrow has 3,000 world gates a month with four seats each, and 12,000 hunters. A seat pays gold and drops | Guilds, each guild's own hunters, the Bureau |
 | Gate rights | The Bureau auctions half of all gates. A guild's margin comes from the harvest | Guilds, Helix, illegal crews |
 | Hunters | One person in five hundred awakens, and each is capped at their rank. A guild can hire strength and cannot train it past the cap | Guilds, the Hunter Corps, foreign states, the Stair |
 | Healers | One hunter in eight | Every faction that sends a party into a gate |
@@ -22,7 +22,7 @@ large city has factions like them.
 ### Ironwake
 
 Ironwake is the oldest guild in Carrow. A party that defended the river bridges in the Break Years founded it in
-Year 2. It has four hundred hunters and a hall on Ledger Row. An agreement older than the auction law gives it
+Year 2. It has five hundred hunters and a hall on Ledger Row. An agreement older than the auction law gives it
 first refusal on a fifth of the city's auctioned gates.
 
 - **Wants:** to remain the largest guild. This year it wants to keep its B and A gates. In the long term it wants an S-rank of its own. It has never had one.
@@ -43,7 +43,7 @@ first refusal on a fifth of the city's auctioned gates.
 
 ### The Lantern Company
 
-The Lantern Company is a cooperative. Its nine hundred hunters, almost all E to C, own it in equal shares and vote
+The Lantern Company is a cooperative. Its thousand hunters, almost all E to C, own it in equal shares and vote
 on which gate rights to bid for. It clears the E and D gates that other guilds do not want, in large numbers. Its
 members voted to put a healer in every party.
 
@@ -57,8 +57,9 @@ members voted to put a healer in every party.
   - **Sun-hee Marlowe.** Steward, C-rank Healer, 39. *Hook:* this month she overbid on six D gates to keep them
     from Ironwake, and four of them break on the same day. She needs a party she trusts and cannot hire one
     openly.
-  - **Pavel Dunmore.** A founding member, an E-rank at fifty-eight. *Hook:* he had a second fever last month and has not reported it. He now fights like a D-rank, and a guild
-    scout has noticed.
+  - **Pavel Dunmore.** A founding member, an E-rank at fifty-eight. *Hook:* he passed a step trial and had a second
+    fever last month (`power.md`, section 5) and has not reported it. His cap rose to D, he now fights like a D-rank,
+    and a guild scout has noticed.
 - **Recruits:** any licensed hunter whom two members vouch for. It pays no signing bonus. A new member gets a
   share.
 - **A party meets it:** as sub-contractors on a gate the Company cannot cover, or in the queue at the Bureau hall.
@@ -124,18 +125,25 @@ belong. Their hall is beside the old cemetery in Saltmarket.
 ### Redline
 
 Redline is a mercenary company. It has a hundred and twenty hunters on day rates, a dispatcher and a bar. It
-specialises in red gates and in work that guild contracts forbid.
+specialises in red gates, work that guild contracts forbid, and "third-life escorts": matching veterans who have
+spent their free and debt revives with parties that carry a pre-bought crystal, in exchange for first claim on any
+named drop (proposed, needs the owner).
 
-- **Wants:** payment in coin on the day of the job.
+- **Wants:** payment in coin on the day of the job, and a cut of every named drop its third-life contracts pull out.
 - **Competes over:** urgent work, such as a break, a sealed gate, or a guild that is one healer short at dawn.
-- **Inside:** no lasting disagreement. A member who objects leaves.
+- **Inside:** older mercenaries treat Redline as a guild-free refuge and honour the third-life bargain. Dispatcher
+  Kofi Stein has begun taking quiet payments from the Stair to steer indebted third-lifers into high-risk red gates
+  where pre-bought crystals disappear (proposed, needs the owner).
 - **Figures:**
   - **Kofi Stein.** Dispatcher, B-rank Ranger, with one hand. *Hook:* for a fee he guarantees a hunter a seat in a
-    gate of their rank within a month. He does not say where the seats come from.
+    gate of their rank within a month. He does not say where the seats come from, or why three of his third-life
+    clients died without their pooled crystal last quarter.
   - **Dr Lale Demir.** A-rank Healer with no guild contract. *Hook:* she is the only healer in Carrow who works for
     unsigned parties. Every guild has tried to hire her, and one guild now plans to force her.
-- **Recruits:** hunters whom guilds dismissed, deserters from the Corps, and hunters whom no guild will seat.
-- **A party meets it:** the first time the party needs a fifth member. `economy.md`, section 10, has the prices.
+- **Recruits:** hunters whom guilds dismissed, deserters from the Corps, third-life veterans without a guild vault,
+  and hunters whom no guild will seat.
+- **A party meets it:** the first time the party needs a fifth member, or when a veteran hires them as a crystal
+  escort. `economy.md`, section 10, has the prices.
 
 ## 3. The state
 
@@ -221,12 +229,24 @@ Paragon insures hunters with crystal cover, homes with break cover, and also gui
 
 ### Vantage
 
-Vantage publishes the Hundred. It employs four tellers and holds a betting licence.
+Vantage publishes the Hundred. It employs four tellers and holds a betting licence on raid clears and Doorwatch
+countdowns.
 
-- **Wants:** a new story every week.
-- **Figure:** **Coco Marchetti.** Editor of the Hundred. *Hook:* she plans a front-page story on a member of the party whose results do not match their rank, which
-  will draw the Bureau's attention. She will hold the story in exchange for a better one.
-- **A party meets it:** the morning after the party's first notable success.
+- **Wants:** a new story every week, and a monopoly on raid-survival betting.
+- **Competes over:** exclusive raid accounts, against guild press officers, and betting liquidity, against illegal
+  books in the Stair.
+- **Inside:** the editorial desk wants to expose Aurelian's shadow team; the betting desk makes its highest margin on
+  Aurelian's rigged odds and blocks the story.
+- **Figures:**
+  - **Coco Marchetti.** Editor of the Hundred. *Hook:* she plans a front-page story on a member of the party whose
+    results do not match their rank, which will draw the Bureau's attention. She will hold the story in exchange for a
+    better one.
+  - **Soren Kalt.** Head oddsmaker, unawakened. *Hook, for the GM only:* an anonymous account has won forty-one
+    straight bets on who walks out of sealed gates, paying in uncirculated System coins (proposed, needs the owner).
+    The account belongs to a viewer ("The Bettor", `story.md`, section 7). Kalt thinks a Bureau clerk is rigging raids
+    and will pay the party to find the leak.
+- **A party meets it:** the morning after the party's first notable success, or when Kalt hires them to trace a
+  punters' streak that no human could predict.
 
 ## 5. Cults
 
@@ -297,8 +317,10 @@ working a second shift, and she knows.
 ### The Fallen
 
 The Fallen are hunters who kill other hunters inside gates. Nothing records a killing there, and the body is lost
-when the gate closes. Some rob their victims, and some are paid. *Hook:* a party finds a dead hunter inside a gate that the Bureau listed as
-unentered.
+when the gate closes. The most feared Fallen are "crystal-strippers": hired crews who track veterans carrying a
+pre-bought Resurrection Crystal (which never expires and can always be traded), steal the crystal first, and kill the
+owner so they stay dead (proposed, needs the owner). *Hook:* a party finds a dead third-life hunter inside a gate that
+the Bureau listed as unentered, with an empty crystal case strapped to their belt.
 
 ## 7. The unawakened
 
@@ -313,9 +335,9 @@ The League campaigns for the rights of unawakened people. It was founded outside
 - **Inside:** most members want change by law. A smaller group has noticed that people awaken more often near a
   break and is discussing how to use that.
 - **Figures:**
-  - **Councillor Teodora Baskin.** The League's leader in Carrow. *Hook:* her son awakened last week and is in her
-    attic. The 72 hours have passed. The fine is 300 gold, and she has not paid it because registering him would
-    become public.
+  - **Councillor Teodora Baskin.** The League's leader in Carrow. *Hook:* her seventeen-year-old son awakened last
+    week and is in her attic. His window says B-rank. The 72 hours have passed, the late fine is 15,000 gold, and
+    registering a B-rank son would break her coalition overnight.
   - **Dr Imre Solis.** A clinician who studies ageing. *Hook:* he has found a way to make a crystal begin to work
     on an unawakened body. A hunter must die beside the patient. He has not published it.
 - **Recruits:** at funerals.
@@ -324,7 +346,7 @@ The League campaigns for the rights of unawakened people. It was founded outside
 
 ### Reclaimers' Local 7
 
-Local 7 is the union of the crews that cut crystal and carcasses out of gates. It has eleven thousand members.
+Local 7 is the union of the crews that cut crystal and carcasses out of gates. It has about 8,700 members in Carrow.
 They enter gates with no powers, for a quarter of the harvest, and die at four times the rate of miners.
 
 - **Wants:** to keep the quarter share, to have a hunter on guard at every worksite, and to stop holders from

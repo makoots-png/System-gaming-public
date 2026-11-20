@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { BUY_WORDS, SHOP_CLOSED, addGold, buy, editItem, equip, putItem, removeItem, sell, sellPrice, sellable, setGold, shopOpen, takeItems, unequip, withShop, writeShopItem, removeShopItem } from '../src/core/hunter/inventory.ts';
-import { SHOP_ITEMS, STARTER_GEAR, itemOf, priceOf } from '../src/core/registry/items.ts';
+import { SHOP_ITEMS, STARTER_GEAR, itemOf, parseItem, priceOf } from '../src/core/registry/items.ts';
 import type { ItemTemplate } from '../src/core/registry/items.ts';
 import { RANKS, RULES } from '../src/core/rules.ts';
 import type { Rules } from '../src/core/rules.ts';
@@ -20,7 +20,7 @@ const hunter = (gold = 100): Hunter => ({ ...newHunter(RULES), gold });
 const sale = (price: number, R: Pick<Rules, 'saleShare'> = RULES): number => (price > 0 ? Math.max(1, Math.floor(price * R.saleShare)) : 0);
 
 describe('the bag', () => {
-  const differing: [string, Partial<ItemTemplate>][] = [['description', { desc: 'a second telling' }], ['attack', { attack: 'shot' }], ['flat penetration', { penFlat: 3 }]];
+  const differing: [string, Partial<ItemTemplate>][] = [['description', { desc: 'a second telling' }], ['attack', { attack: 'shot' }], ['flat penetration', { penFlat: 3 }], ['grade', { grade: 1 }]];
   for (const [what, change] of differing) {
     test(`two slotless things that differ only in their ${what} stay two stacks`, () => {
       const h = putItem(putItem(hunter(), potion, iid('i1')), { ...potion, ...change }, iid('i2'));
@@ -34,6 +34,12 @@ describe('the bag', () => {
     expect(h.items).toEqual([{ ...potion, id: 'i1', qty: 2 }]);
     const g = putItem(putItem(hunter(), shield, iid('i1')), shield, iid('i2'));
     expect(g.items.map(i => i.id)).toEqual(['i1', 'i2']);
+  });
+
+  test('an Epic+ and an Epic of one name are two stacks, two Epic+ are one, and an Epic read with no grade joins the Epic', () => {
+    const idol = parseItem({ name: 'Idol', rar: 'epic', type: 'material' })!, plus = parseItem({ name: 'Idol', rar: 'epic', type: 'material', grade: 1 })!;
+    const h = [plus, idol, plus, parseItem({ name: 'Idol', rar: 'epic', type: 'material', grade: 0 })!].reduce((x, it, n) => putItem(x, it, iid(`i${n + 1}`)), hunter());
+    expect(h.items.map(i => [i.id, i.grade ?? 0, i.qty])).toEqual([['i1', 1, 2], ['i2', 0, 2]]);
   });
 
   test('round trip: an item put in the bag and removed leaves the hunter as it was', () => {
@@ -98,6 +104,15 @@ describe('gold, buying and selling', () => {
     expect(sellPrice({ rar: 'common', type: 'misc' }, RULES), 'no value: the rule\'s price, the one a shop asks').toBe(sale(priceOf(RULES, 'common')));
     expect(sellPrice({ value: 0, rar: 'common', type: 'misc' }, RULES)).toBe(0);
     expect(sellPrice({ value: 25, rar: 'common', type: 'misc' }, { ...RULES, saleShare: 0.5 }), 'a GM\'s share of a half').toBe(12);
+  });
+
+  test('an Epic+ without a price of its own is bought at 7,500 and sold for 1,875, an Epic− at 3,333 and for 833 (block [2.1])', () => {
+    const idol = (grade: number) => parseItem({ name: 'Idol', rar: 'epic', type: 'material', grade })!;
+    for (const [grade, price] of [[1, 7500], [-1, 3333]] as const) {
+      const h = hunter(1e5), bought = ok(buy(h, idol(grade), iid('i1'), RULES));
+      expect([grade, h.gold - bought.gold, sellPrice(idol(grade), RULES)]).toEqual([grade, price, sale(price)]);
+    }
+    expect([sale(7500), sale(3333)]).toEqual([1875, 833]);
   });
 
   test('an item without a price of its own is bought and sold at the price rule as it is now', () => {

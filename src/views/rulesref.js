@@ -3,7 +3,7 @@
 import { RANKS, RULES, rules } from '../edge/rules.ts';
 import { xpToNext as xpToNextOf } from '../core/rules.ts';
 import { STAT_KEYS, STAT_LABELS, STAT_SHORT } from '../core/stats.ts';
-import { armorCutPct, checkExample, downLine, naturalLines, pointsLine, saleLine, saleRows, dailyPointsLine, soloLines, statBonusLine } from '../core/rules-text.ts';
+import { armorCutPct, checkExample, downLine, gatePayLines, naturalLines, pointsLine, saleLine, saleRows, dailyPointsLine, soloLines, statBonusLine } from '../core/rules-text.ts';
 import { describeStatus } from '../core/combat/effect-ops.ts';
 
 const STAT_USE = {
@@ -146,7 +146,7 @@ export function register(app) {
       { id: 'ranktable', title: 'Rank table', body: [
         p('DCs, a normal monster\'s XP and the days a gate stays open, by rank.'),
         table(['Rank', 'DC E/S/H', 'XP', 'Break days'], RANKS.filter(r => rt[r]).map(r => [esc(r), rt[r].dc.join('/'), fmt(rt[r].xp), rt[r].breakDays])),
-        ul([R.xpSplit ? 'Defeated-monster XP is split evenly among participating hunters.' : 'Each participating hunter receives the full XP of each defeated monster.']),
+        ul(['A defeated monster\'s XP goes to the hunters who fought it: whole to each in a fight started from no gate, shared as the gate\'s pot in a fight started from a gate (see Gates).']),
       ] },
       { id: 'monsters', title: 'Monsters', body: [
         p(`A monster is a hunter of its rank's first level with its points split 2 to 1 by its archetype: a brute Strength and Vitality in medium gear, a skirmisher Agility and Strength in light gear, a caster Power and Control in light gear. Its kind multiplies its max HP and power.`),
@@ -194,18 +194,19 @@ export function register(app) {
           ['Red', `No exit until the boss dies. DCs inside +${R.gateSpawn.redDcBonus}. Time inside runs ×10.`], ['Double', 'A hidden second dungeon; the GM reveals it.'],
           ['Break', 'A gate not cleared by its break day: its monsters come out into the world.']]),
         p(`Break day = day created + break days by rank (${RANKS.filter(r => rt[r]).map(r => `${esc(r)} ${rt[r].breakDays}`).join(', ')}). The world day advances only with the GM’s Advance day button.`),
+        ...gatePayLines(R).map(l => p(esc(l))),
         ...soloLines(R).map(l => p(esc(l))),
       ] },
       { id: 'loot', title: 'Loot and rarity', body: [
         table(['Tier', 'Price', 'Sells for'], saleRows(R).map(r => [`<span style="color:${esc(R.rarities[r.rar].color)}">${esc(r.rar)}</span>`, fmt(r.price), fmt(r.sell)])),
         p(`Prices are in gold. ${esc(saleLine(R))} Equipment slots: ${R.slots.map(esc).join(', ')}.`),
-        p('Gate-clear loot: gold plus one weighted item roll; the boss adds one more roll.'),
+        p(`Gate-clear loot: gold plus one weighted item roll; the boss adds one more roll. The gold is rolled once a Clear and shared as the Gates section says, so each hunter of a party of ${esc(R.gateParty)} takes the roll.`),
         table(['Rank', 'Gold', 'Item odds'], lootRows),
       ] },
       { id: 'gm', title: 'GM cheat-sheet', body: [
         ul([`<b>Setting a DC:</b> use the rank table. Easy ${rt.E.dc[0]}, Standard ${rt.E.dc[1]}, Hard ${rt.E.dc[2]} at E-rank; scale up by the party’s rank.`,
           '<b>Monster stats on the fly:</b> the Bestiary\'s Generate makes one from a rank, an archetype and a kind; the monster maker shows its HP, armor, resist and speed.',
-          `<b>Awarding XP:</b> use the monster XP column per defeated monster${R.xpSplit ? ' (split evenly)' : ' (each hunter gets the full amount)'}. A hunter levels at ${esc(R.xpPerLevel)} × level.`,
+          `<b>Awarding XP:</b> use the monster XP column per defeated monster. A fight started from no gate gives each hunter the full amount; a fight started from a gate, and its Clear, share the gate's XP as its pot (see Gates). A hunter levels at ${esc(R.xpPerLevel)} × level.`,
           `<b>Random gate:</b> rank odds ${RANKS.map(r => `${esc(r)} ${pct(R.gateSpawn.rank, r)}%`).join(', ')}; type ${Object.keys(R.gateSpawn.type).map(k => `${esc(k)} ${pct(R.gateSpawn.type, k)}%`).join(', ')}.`,
           'Roll with the Dice tab or the d20 button; every roll is logged with who rolled it.',
           'Tap the PLAYER pill in the header to switch to GM mode for XP grants, free stat edits, gate and fight tools. In a room the GM is the phone that opened it.',

@@ -7,9 +7,9 @@ import type { Op } from '../src/core/combat/effect-ops.ts';
 import { parseFormula } from '../src/core/formula.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 import { BUILT_IN_STATUSES } from '../src/core/registry/statuses.ts';
-import { describeItem, effectsOf, gmSource, itemOps, itemSource } from '../src/core/effects.ts';
-import { ITEM_TYPES, KIT_SHARE, LOOT_ITEMS, RARITIES, SHOP_ITEMS, STARTER_GEAR, itemOf, parseItem, piece, priceOf, wornSpeed, defaultShop, builtInItems, lootPool, valueOf, weightOf, weaponWeight } from '../src/core/registry/items.ts';
-import type { ItemDef, ItemTemplate, Rarity } from '../src/core/registry/items.ts';
+import { describeItem, effectsOf, gmSource, gradeLabel, itemOps, itemSource } from '../src/core/effects.ts';
+import { GRADES, ITEM_TYPES, KIT_SHARE, LOOT_ITEMS, RARITIES, SHOP_ITEMS, STARTER_GEAR, itemOf, parseItem, piece, priceOf, wornSpeed, defaultShop, builtInItems, lootPool, valueOf, weightOf, weaponWeight } from '../src/core/registry/items.ts';
+import type { Grade, ItemDef, ItemTemplate, Rarity } from '../src/core/registry/items.ts';
 import { parseStatusDef } from '../src/core/combat/fight-parse.ts';
 
 const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v));
@@ -85,14 +85,19 @@ for (const [list, defs] of LISTS) {
         expect(parseItem(copy(item))).toEqual(item);
       });
 
-      test('its price is the one it sets by hand, or the rule\'s: one Clear of its rarity\'s rank, a consumable usedUpShare of it, rounded', () => {
+      test('its price is the one it sets by hand, or the rule\'s: one Clear of its rarity\'s rank times gradeStep to its grade, a consumable usedUpShare of it, rounded', () => {
         if (def.value !== undefined) {
           expect(Number.isInteger(def.value) && def.value > 0).toBe(true);
           expect(item.value).toBe(def.value);
         } else {
           expect(item.value, 'priced by the rule as it is read, not stored').toBeUndefined();
-          expect(valueOf(item, RULES)).toBe(Math.round(clear(RULES, RANK_OF[def.rar]) * (def.type === 'consumable' ? RULES.usedUpShare : 1)));
+          expect(valueOf(item, RULES)).toBe(Math.round(clear(RULES, RANK_OF[def.rar]) * RULES.gradeStep ** (def.grade ?? 0) * (def.type === 'consumable' ? RULES.usedUpShare : 1)));
         }
+      });
+
+      test('it carries its grade, a minus or a plus, and a middle one carries none', () => {
+        if (def.grade) expect(item.grade).toBe(def.grade);
+        else expect(item).not.toHaveProperty('grade');
       });
     });
   }
@@ -128,6 +133,70 @@ group('the price ladder (economy design 2.2, review E-1)', () => {
   test('every rarity\'s price is above the one below it', () => {
     const prices = RARITIES.map(r => priceOf(RULES, r));
     expect(prices.every((p, i) => i === 0 || p > prices[i - 1]!)).toBe(true);
+  });
+});
+
+group('the grade: a minus, a middle and a plus inside a tier (economy design 2.1, ruling 1)', () => {
+  const thing = (rar: Rarity, grade?: unknown, type = 'misc') => parseItem({ name: 'Idol', rar, type, ...(grade === undefined ? {} : { grade }) })!;
+
+  test('there are three grades, minus, middle and plus, and the middle is 0', () => {
+    expect([...GRADES]).toEqual([-1, 0, 1]);
+  });
+
+  test('a grade multiplies the price by gradeStep to the grade: an Epic− 3,333, an Epic 5,000, an Epic+ 7,500 (block [2.1])', () => {
+    for (const rar of RARITIES) for (const g of GRADES) {
+      const want = Math.round(clear(RULES, RANK_OF[rar]) * RULES.gradeStep ** g);
+      expect([rar, g, priceOf(RULES, rar, g), valueOf(thing(rar, g), RULES)]).toEqual([rar, g, want, want]);
+    }
+    expect(GRADES.map(g => valueOf(thing('epic', g), RULES))).toEqual([3333, 5000, 7500]);
+  });
+
+  test('every tier\'s plus costs less than the next tier\'s minus: 150 < 217, 488 < 833, 1,875 < 3,333, 7,500 < 12,667, 28,500 < 50,000', () => {
+    const pairs = RARITIES.slice(1).map((next, i) => [priceOf(RULES, RARITIES[i]!, 1), priceOf(RULES, next, -1)]);
+    expect(pairs).toEqual([[150, 217], [488, 833], [1875, 3333], [7500, 12667], [28500, 50000]]);
+  });
+
+  test('a graded consumable costs usedUpShare of its graded Clear, rounded once: an Uncommon− potion 108, not 109', () => {
+    // 325 / 1.5 × 0.5 is 108.33; rounding the graded price first (217) and then halving it would give 108.5, so 109
+    expect(valueOf(thing('uncommon', -1, 'consumable'), RULES)).toBe(Math.round(clear(RULES, 'D') / RULES.gradeStep * RULES.usedUpShare));
+    expect(valueOf(thing('uncommon', -1, 'consumable'), RULES)).toBe(108);
+    expect(valueOf(thing('common', 1, 'consumable'), RULES)).toBe(75);
+  });
+
+  test('a GM\'s gradeStep moves a graded price and leaves the middle where it was', () => {
+    const R: Rules = { ...RULES, gradeStep: 1.2 };
+    expect(GRADES.map(g => valueOf(thing('epic', g), R))).toEqual([Math.round(5000 / 1.2), 5000, 6000]);
+  });
+
+  test('a price typed by hand wins over the grade', () => {
+    expect(valueOf(parseItem({ name: 'Idol', rar: 'epic', grade: 1, value: 40 })!, RULES)).toBe(40);
+  });
+
+  test('an item with no grade is the middle: priced as one, and read with no grade field', () => {
+    expect(thing('epic')).not.toHaveProperty('grade');
+    expect(valueOf(thing('epic'), RULES)).toBe(priceOf(RULES, 'epic', 0));
+    expect(priceOf(RULES, 'epic')).toBe(priceOf(RULES, 'epic', 0));
+  });
+
+  test('parseItem keeps a grade only when it is 1 or -1; 0 and anything else are the middle, left out', () => {
+    expect([1, -1].map(g => thing('rare', g).grade)).toEqual([1, -1]);
+    for (const g of [0, 2, -2, 0.5, '1', '+', null, true]) expect([g, thing('rare', g)]).toEqual([g, thing('rare')]);
+  });
+
+  test('a built-in item with a grade becomes an item of that grade; one set to the middle carries none', () => {
+    const sword = SHOP_ITEMS.find(d => d.name === 'Steel Longsword')!;
+    const plus = itemOf(RULES, { ...sword, grade: 1 });
+    expect(plus.grade).toBe(1);
+    expect(valueOf(plus, RULES)).toBe(Math.round(clear(RULES, 'E') * RULES.gradeStep));
+    expect(parseItem(copy(plus))).toEqual(plus);
+    expect(itemOf(RULES, { ...sword, grade: 0 as Grade })).not.toHaveProperty('grade');
+  });
+
+  test('a graded item\'s card begins with its label, Epic+ or Epic−; a middle item\'s card has no label', () => {
+    expect(GRADES.map(g => gradeLabel('epic', g))).toEqual(['Epic−', 'Epic', 'Epic+']);
+    expect(describeItem(RULES, { rar: 'epic', grade: 1 })).toEqual(['Epic+']);
+    expect(describeItem(RULES, { rar: 'common', grade: -1, effects: [{ op: 'heal', amount: number(30), when: 'use' }] })[0]).toBe('Common−');
+    expect(describeItem(RULES, { rar: 'epic' })).toEqual([]);
   });
 });
 

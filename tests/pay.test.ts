@@ -1,6 +1,6 @@
 // What a fight's end and a gate's Clear pay (src/core/gates/pay.ts): each one step, all of it or nothing.
 import { describe, expect, test } from 'bun:test';
-import { clearShares, dropDealt, encounterAwards, gateFact, planEncounter, settleClear, settleEncounter, splitAward } from '../src/core/gates/pay.ts';
+import { clearGoldEach, clearShares, dropDealt, encounterAwards, gateFact, planEncounter, settleClear, settleEncounter, shareEach } from '../src/core/gates/pay.ts';
 import { remoteFacts } from '../src/core/combat/fight-facts.ts';
 import { loadSave } from '../src/core/save.ts';
 import type { Payee } from '../src/core/gates/pay.ts';
@@ -10,7 +10,7 @@ import { combatantId } from '../src/core/combat/ability-types.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 import { hunterRow, remoteRow } from '../src/core/combat/rows.ts';
 import { freshSave, newHunter } from '../src/core/save.ts';
-import type { Save } from '../src/core/save.ts';
+import type { Hunter, Save } from '../src/core/save.ts';
 import { newEvent, parseSheetKey } from '../src/core/protocol.ts';
 import type { RoomCode, RoomEvent } from '../src/core/protocol.ts';
 import { isRefused } from '../src/core/save-step.ts';
@@ -25,6 +25,8 @@ const ROOM = 'ABCD23' as RoomCode, KAI = parseSheetKey('d-p1:h1')!;
 const NONE = { gold: 0, items: [] }, HOARD = { gold: 75, items: [] };
 /** The Goblin Den's roster: three goblins of 25 XP and a hobgoblin of 75. */
 const xpOf = (id: string): number => (id === 'm-goblin' ? 25 : id === 'm-hob' ? 75 : 0);
+/** All the XP a hunter has gained: its levels' XP (`xpPerLevel` × level for each) and what it holds toward the next. */
+const lifetimeXp = (h: Hunter): number => h.xp + Array.from({ length: h.level - 1 }, (_, i) => RULES.xpPerLevel * (i + 1)).reduce((a, b) => a + b, 0);
 const ok = <T>(r: T | Refused): T => { if (isRefused(r)) throw new Error(`refused: ${r.why}`); return r as T; };
 
 /**
@@ -48,60 +50,87 @@ const award = (xp: number, to = KAI): RoomEvent => newEvent('award', { to: [to],
 const KAI_PAID = { code: ROOM, stamp: { device: 'd-gm', now: 2, rand: 0.5 }, players: [{ key: KAI, rank: null, pays: award(75) }] };
 const events = (s: Save) => (s.settings.sync.outbox ?? []).map(e => (e.letter.kind === 'event' && e.letter.event.type === 'award' ? [e.room, e.letter.event.payload.to, e.letter.event.payload.rewards.xp] : e.letter));
 
-describe('one award over the payees', () => {
-  test('split evenly and rounded down when the rules split, all of it to each when not, nothing for nobody', () => {
-    expect([splitAward(60, 2, true), splitAward(61, 2, true), splitAward(60, 2, false), splitAward(60, 0, true), splitAward(7, 1, true)]).toEqual([30, 30, 60, 0, 7]);
+/** The party a world gate is made for (`RULES.gateParty`, design 4.1): the expected values below are worked out for 4. */
+const PARTY = RULES.gateParty;
+/** `n` hunters on this phone, for a Clear's payees. */
+const many = (n: number): Payee[] => Array.from({ length: n }, (_, i): Payee => ({ kind: 'local', hid: `h${i}`, name: `Hunter ${i}` }));
+
+describe('a world gate\'s pot over the payees', () => {
+  test('the gate is made for a party of 4', () => {
+    expect(PARTY).toBe(4);
+  });
+
+  test('each of n takes floor(amount × party × min(1, party / n) / n): 400, 200, 133, 100, 64, 44 of 100 for 1 to 6, nothing for nobody', () => {
+    expect([0, 1, 2, 3, 4, 5, 6].map(n => shareEach(100, n, PARTY))).toEqual([0, 400, 200, 133, 100, 64, 44]);
+  });
+
+  test('a party of the gate\'s size takes the amount each, one hunter the party times it, and past the party the total falls', () => {
+    expect(shareEach(325, PARTY, PARTY)).toBe(325);
+    expect(shareEach(325, 1, PARTY)).toBe(325 * PARTY);
+    const total = (n: number) => n * shareEach(1300, n, PARTY);
+    expect([1, 2, 3, 4].map(total)).toEqual([5200, 5200, 5199, 5200]);
+    expect([5, 6].map(total)).toEqual([4160, 3462]);
+  });
+
+  test('the party is the rule\'s: a gate made for 2 pays one hunter twice the amount and a third hunter shrinks the pot', () => {
+    expect([1, 2, 3].map(n => shareEach(90, n, 2))).toEqual([180, 90, 40]);
   });
 });
 
 describe('the end of a fight', () => {
-  test('the plan: the gate still owes XP, so the fight pays its 60, 30 to each of the two hunters, this phone\'s first', () => {
-    const s = inDen(), plan = planEncounter(s.fight as Ended, 'g-den', s, true, xpOf);
-    expect([plan.xp, plan.award, plan.covered, plan.each]).toEqual([60, 60, false, 30]);
+  test('the plan: the gate still owes XP, so the fight pays its 60 as the gate\'s pot, 120 to each of the two hunters, this phone\'s first', () => {
+    const s = inDen(), plan = planEncounter(s.fight as Ended, 'g-den', s, PARTY, xpOf);
+    expect([plan.xp, plan.award, plan.covered, plan.shared, plan.each]).toEqual([60, 60, false, true, 120]);
     expect(plan.payees).toEqual([{ kind: 'local', hid: s.hunters[0]!.id, name: s.hunters[0]!.name }, { kind: 'remote', key: KAI, name: 'Kai' }]);
     expect(plan.dead.map(d => [d.name, d.xp])).toEqual([['Goblin', 60]]);
-    expect(encounterAwards(plan, 'award')).toEqual([{ to: [KAI], rewards: { ...newRewards(), xp: 30 } }]);
+    expect(encounterAwards(plan, 'award')).toEqual([{ to: [KAI], rewards: { ...newRewards(), xp: 120 } }]);
     expect(encounterAwards(plan, 'skip')).toEqual([]);
   });
 
+  test('a fight started from no gate is the GM\'s own scene: each hunter takes the whole 60 XP of what went down', () => {
+    const s = { ...inDen(), fightRefs: undefined }, plan = planEncounter(s.fight as Ended, null, s, PARTY, xpOf);
+    expect([plan.award, plan.shared, plan.each]).toEqual([60, false, 60]);
+    expect(encounterAwards(plan, 'award')).toEqual([{ to: [KAI], rewards: { ...newRewards(), xp: 60 } }]);
+  });
+
   test('a gate that paid all its 150 XP already pays nothing more from the fight', () => {
-    const s = inDen(150), plan = planEncounter(s.fight as Ended, 'g-den', s, true, xpOf);
+    const s = inDen(150), plan = planEncounter(s.fight as Ended, 'g-den', s, PARTY, xpOf);
     expect([plan.award, plan.covered, plan.each]).toEqual([0, true, 0]);
   });
 
-  test('Award XP in one step: the gate paid 60, this phone\'s hunter +30 XP, Kai\'s award in the outbox, the log line, the fight gone', () => {
-    const s = inDen(), plan = planEncounter(s.fight as Ended, 'g-den', s, true, xpOf), h = s.hunters[0]!;
-    const out = ok(settleEncounter(s, plan, 'award', { room: ROOM, events: [award(30)] }, DAY, NONE));
-    expect(out.save.gates[0]!.xpPaid).toBe(60);
+  test('Award XP in one step: the gate paid 60, this phone\'s hunter +120 XP, Kai\'s award in the outbox, the log line, the fight gone', () => {
+    const s = inDen(), plan = planEncounter(s.fight as Ended, 'g-den', s, PARTY, xpOf), h = s.hunters[0]!;
+    const out = ok(settleEncounter(s, plan, 'award', { room: ROOM, events: [award(120)] }, DAY, NONE));
+    expect(out.save.gates[0]!.xpPaid, 'the gate\'s XP counts what went down, not what was paid out of it').toBe(60);
     expect(out.save.gates[0]!.fought).toEqual([h.id, KAI]);
-    expect(out.save.hunters[0]!.xp).toBe(h.xp + 30);
+    expect(lifetimeXp(out.save.hunters[0]!)).toBe(lifetimeXp(h) + 120);
     expect(out.granted.map(g => g.hid)).toEqual([h.id]);
-    expect(events(out.save)).toEqual([[ROOM, [KAI], 30]]);
+    expect(events(out.save)).toEqual([[ROOM, [KAI], 120]]);
     expect(out.save.fight).toBeNull();
     expect(out.save.fightRefs).toBeUndefined();
-    expect(out.save.log.map(l => l.text)).toContain('1 defeated, 60 XP awarded (30 each).');
+    expect(out.save.log.map(l => l.text)).toContain('1 defeated, 60 XP. Awarded 120 XP each.');
   });
 
   test('a fight settled is gone, so settling it again (a second tap, a stale window, a reload) is refused and changes nothing', () => {
-    const s = inDen(), plan = planEncounter(s.fight as Ended, 'g-den', s, true, xpOf);
+    const s = inDen(), plan = planEncounter(s.fight as Ended, 'g-den', s, PARTY, xpOf);
     const once = ok(settleEncounter(s, plan, 'award', { room: ROOM, events: [award(30)] }, DAY, NONE)).save;
     expect(settleEncounter(once, plan, 'award', { room: ROOM, events: [award(30)] }, DAY, NONE)).toEqual({ ok: false, why: 'no-fight' });
   });
 
   test('a fight still on is not settled: the view ends it first, so a reload between the end and the settle loses nothing', () => {
     const s = inDen(), running = { ...s, fight: { ...(s.fight as Ended), phase: 'running' } } as unknown as Save;
-    expect(settleEncounter(running, planEncounter(s.fight as Ended, 'g-den', s, true, xpOf), 'award', { room: ROOM, events: [] }, DAY, NONE)).toEqual({ ok: false, why: 'no-fight' });
+    expect(settleEncounter(running, planEncounter(s.fight as Ended, 'g-den', s, PARTY, xpOf), 'award', { room: ROOM, events: [] }, DAY, NONE)).toEqual({ ok: false, why: 'no-fight' });
   });
 
   test('End without XP: nothing paid, nothing posted, the log says so, the fight gone', () => {
-    const s = inDen(), plan = planEncounter(s.fight as Ended, 'g-den', s, true, xpOf), h = s.hunters[0]!;
+    const s = inDen(), plan = planEncounter(s.fight as Ended, 'g-den', s, PARTY, xpOf), h = s.hunters[0]!;
     const out = ok(settleEncounter(s, plan, 'skip', { room: ROOM, events: [award(30)] }, DAY, NONE)).save;
     expect([out.gates[0]!.xpPaid, out.hunters[0]!.xp, events(out), out.fight]).toEqual([0, h.xp, [], null]);
     expect(out.log[0]!.text).toBe('1 defeated, 60 XP.');
   });
 
   test('what the fight dropped stays on the save after the settle, read back after a reload, until the GM gives it or sets it aside', () => {
-    const s = inDen(), plan = planEncounter(s.fight as Ended, 'g-den', s, true, xpOf);
+    const s = inDen(), plan = planEncounter(s.fight as Ended, 'g-den', s, PARTY, xpOf);
     const out = ok(settleEncounter(s, plan, 'skip', { room: ROOM, events: [] }, DAY, HOARD)).save;
     expect(out.dropped).toEqual(HOARD);
     const env = { now: new Date(AT), newDeviceId: () => 'd-x' as never, newDeviceToken: () => 't' };
@@ -111,7 +140,7 @@ describe('the end of a fight', () => {
   });
 
   test('the step leaves the save it was given as it was', () => {
-    const s = inDen(), copy = JSON.stringify(s), plan = planEncounter(s.fight as Ended, 'g-den', s, true, xpOf);
+    const s = inDen(), copy = JSON.stringify(s), plan = planEncounter(s.fight as Ended, 'g-den', s, PARTY, xpOf);
     settleEncounter(s, plan, 'award', { room: ROOM, events: [award(30)] }, DAY, NONE);
     expect(JSON.stringify(s)).toBe(copy);
   });
@@ -119,12 +148,27 @@ describe('the end of a fight', () => {
 
 describe('a gate\'s Clear', () => {
   const payees = (s: Save): Payee[] => [{ kind: 'local', hid: s.hunters[0]!.id, name: 'Mira' }, { kind: 'remote', key: KAI, name: 'Kai' }];
-  test('the shares: the 150 XP due and 40 gold split over two, the items to the one picked', () => {
-    const s = inDen(), sh = clearShares(s, 'g-den', xpOf, 40, ['Fang'], payees(s), KAI, true)!;
+  test('the shares: the 150 XP due and 40 gold the pot of two, 300 XP and 80 gold each, the items to the one picked', () => {
+    const s = inDen(), sh = clearShares(s, 'g-den', xpOf, 40, ['Fang'], payees(s), KAI, PARTY)!;
     expect(sh.due).toBe(150);
-    expect(sh.shares.map(x => [x.payee.name, x.xp, x.gold, x.items])).toEqual([['Mira', 75, 20, []], ['Kai', 75, 20, ['Fang']]]);
-    expect(clearShares(s, 'g-den', xpOf, 40, ['Fang'], payees(s).slice(0, 1), null, true)!.shares.map(x => [x.xp, x.gold, x.items])).toEqual([[150, 40, ['Fang']]]);
-    expect(clearShares(s, 'nope', xpOf, 0, [], [], null, true)).toBeNull();
+    expect(sh.shares.map(x => [x.payee.name, x.xp, x.gold, x.items])).toEqual([['Mira', 300, 80, []], ['Kai', 300, 80, ['Fang']]]);
+    expect(clearShares(s, 'nope', xpOf, 0, [], [], null, PARTY)).toBeNull();
+  });
+
+  test('the 150 XP due and 100 gold rolled, at 1, 4 and 6 hunters: 600 and 400 alone, 150 and 100 each at the party, 66 and 44 each in a crowd', () => {
+    const s = inDen(), at = (n: number) => clearShares(s, 'g-den', xpOf, 100, ['Fang'], many(n), null, PARTY)!;
+    expect(at(1).shares.map(x => [x.xp, x.gold, x.items])).toEqual([[600, 400, ['Fang']]]);
+    expect(at(4).shares.map(x => [x.xp, x.gold])).toEqual(many(4).map(() => [150, 100]));
+    expect(at(6).shares.map(x => [x.xp, x.gold])).toEqual(many(6).map(() => [66, 44]));
+    expect([1, 4, 6].map(n => at(n).due), 'the gate owes its 150 XP whoever it pays').toEqual([150, 150, 150]);
+  });
+
+  test('the Clear panel\'s gold each: the rank\'s lowest and highest roll shared among the hunters ticked', () => {
+    const [low = NaN, high = NaN] = RULES.loot.D.gold;
+    expect(clearGoldEach(RULES, 'D', 2)).toEqual({ low: low * 2, high: high * 2 });
+    expect(clearGoldEach(RULES, 'D', PARTY)).toEqual({ low, high });
+    expect(clearGoldEach(RULES, 'D', 6)).toEqual({ low: Math.floor(low * 16 / 36), high: Math.floor(high * 16 / 36) });
+    expect(clearGoldEach(RULES, 'D', 0)).toEqual({ low: 0, high: 0 });
   });
 
   test('cleared in one step: the gate paid what it owed and cleared, this phone\'s hunter given its share, Kai\'s award posted, each with the gate as a fact', () => {

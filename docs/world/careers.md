@@ -21,7 +21,7 @@ E. One in ten thousand reads as S.
 
 **Who watches.** The hall has a public gallery. The people in it on a normal day are:
 
-- guild scouts, who are usually retired C-ranks on 4,500 gold a month with a quota of signings;
+- guild scouts, who are usually retired C-ranks on 1,200 gold a month with a quota of signings;
 - a recruiter from the Hunter Corps;
 - an insurance agent who sells first policies;
 - a member of the Ledger with a leaflet;
@@ -30,7 +30,7 @@ E. One in ten thousand reads as S.
 When a hunter reads B or higher, the scouts make offers in the hall before the hunter reaches the door.
 
 **Other ways to find hunters.** Guilds canvass break survivors for a year, because survivors awaken eight times as
-often as other people. Academies charge 9,000 gold a year to train fourteen-year-olds who have not awakened and may
+often as other people. Academies charge 3,600 gold a year to train fourteen-year-olds who have not awakened and may
 never do so. Guilds also pay clinic staff for news of a hunter's second fever, which may mean a re-awakening.
 
 ## 2. How a new hunter is tested
@@ -50,46 +50,52 @@ live longer than other people, so a young hunter's contract covers more working 
 
 ## 3. The standard contract
 
+`machines.md` charts the states of a contract, a gear lien, a crystal debt, revive standing, a registration, a party
+bond, and a crystal cover policy.
+
+
 Carrow's Guild Council publishes a model contract. Most guilds use it with few changes.
 
 | Clause | The model contract | In gold, for a C-rank |
 |---|---|---|
 | Term | Three years at E and D, five years from C | five years |
 | Retainer | One and a half Clears of the hunter's rank a month, whether or not the hunter gets a gate | 1,875 a month |
-| Seats | The guild will make "reasonable endeavours" to seat the hunter. It promises no number | A well-run guild gives four a month |
-| House share | The guild takes a quarter of the System gold from guild gates. The hunter keeps all drops | 312 of each 1,250 |
+| Seats | The guild will make "reasonable endeavours" to seat the hunter. It promises no number. Declining an assigned seat stops that month's retainer | A well-run guild gives four a month |
+| House share | The guild takes a quarter of the System gold from guild gates. The hunter keeps all drops | 313 of each 1,250 |
 | Harvest | The guild keeps all of it | |
-| Signing bonus | Ten Clears from C, two Clears at E and D. The guild usually pays it as a crystal that it holds for the hunter | 12,500, or one C crystal |
-| Crystal cover | The guild sends a crystal of the party's highest rank into each gate with the raid leader | The guild pays the premium of 625 a year for each hunter |
+| Signing bonus | Ten Clears from C, two Clears at E and D. The guild usually pays it as a pre-bought crystal held in the vault for after the hunter's free and debt revives | 12,500, or one C crystal |
+| Crystal cover | The guild sends a pre-bought crystal of the party's highest rank into each gate with the raid leader for veterans past their debt revive | The guild pays the premium of 660 a year for each covered hunter |
 | Death benefit | Twenty Clears to a named person if the hunter is not raised | 25,000 |
-| Injury | The retainer continues for three months | |
-| Role pay | A raid leader or healer gets one and a half times the retainer, a tanker 1.2 times, a reserve half | A healer gets 2,812 a month |
+| Injury | The retainer continues for three months, then stops until the hunter returns to duty | |
+| Role pay | A raid leader or healer gets one and a half times the retainer, a tanker 1.2 times, a reserve half | A healer gets 2,813 a month |
 | Exclusivity | The hunter enters no gate outside the guild's without permission and never clears a world gate alone | |
 | Buyout | Another guild may buy the contract for twenty Clears | 25,000 |
-| Pension | Half the retainer for life after ten years of service | 937 a month |
+| Pension | Half the retainer for life after ten years of service | 938 a month |
 
 ## 4. Eight contract traps
 
-A lawyer who specialises in guild contracts charges 120 gold an hour. Each clause below is legal and common.
+A lawyer who specialises in guild contracts charges 48 gold an hour. Each clause below is legal and common.
 
 1. **The rank lock.** The contract defines "rank" as the rank on the day of signing, for the whole term. Guilds
    wrote it for re-awakenings. A hunter who signed at E and later reads as C is still paid an E retainer of 150
    gold a month and still gives the guild a quarter of the gold from C gates.
 2. **The one-way escalator.** The buyout price rises with any new reading. The retainer does not.
-3. **Crystal debt.** The guild holds the signing crystal. If the raid leader uses a crystal to raise the hunter,
-   the hunter owes its price of ten Clears at three percent a month. A hunter who has been raised twice rarely
-   clears the debt.
+3. **Crystal debt.** A hunter's first revive is free, and their second is one revive on debt for ten Clears. Guilds
+   offer to pay off that System debt for the hunter at three percent a month, and for veterans past their debt revive
+   the guild advances a pre-bought crystal on the same terms before entering a gate. A veteran who burns a pre-bought
+   crystal on top of a refinanced debt revive rarely clears the balance.
 4. **The reading clause.** The guild may order a new reading of the hunter at any time and receives the result
    before the hunter does.
 5. **Gear liens.** Gear bought on guild credit belongs to the guild until the hunter has paid the full Shop
-   price. A hunter who leaves returns the gear and still owes the balance.
+   price (`machines.md`, `A guild gear lien`). A hunter who leaves returns the gear and still owes the balance.
 6. **Image rights.** The guild owns the commercial use of the hunter's name, face and epithet for the term and for
    two years after it. Sponsors pay the guild, and the guild decides how much to pass on.
 7. **The silence clause.** The hunter may not describe any guild gate to a teller, a notary or a newspaper.
    Aurelian uses this clause to hide which team clears its gates.
 8. **Raising in place of the death benefit.** The guild pays the death benefit only if the hunter is not raised.
-   The raid leader alone decides whether to use the crystal, and the family cannot refuse. Raising costs the guild
-   nothing, because the hunter then owes the crystal's price under clause 3.
+   For a veteran past their debt revive, the raid leader alone decides whether to spend a pre-bought crystal, and the
+   family cannot refuse. Raising costs the guild less than the twenty-Clear death benefit, because the hunter then
+   owes the crystal's price under clause 3.
 
 An offer that a guild makes to the party in the first three sessions should include clauses 1, 3 and 4. Those
 three do the most harm to a hunter who grows.
@@ -99,17 +105,17 @@ three do the most harm to a hunter who grows.
 `economy.md`, sections 11 and 14, has the full tables. This table shows net income a month, after the levy,
 potions and crystal cover:
 
-| Rank | Unsigned, one public gate a month | Signed liner, four guild gates a month | The liner's net as a multiple of the median wage of 1,000 |
+| Rank | Unsigned, one public gate a month | Signed liner, four guild gates a month | The liner's net as a multiple of the median wage of 400 |
 |---|---|---|---|
-| E | 557 | 881 | 0.9 |
-| D | 1,467 | 2,436 | 2.4 |
-| C | 5,119 | 8,550 | 8.5 |
-| B | 19,352 | 32,873 | 33 |
-| A | 51,520 | 102,172 | 100 |
-| S | 90,651 | 288,649 | 290 |
+| E | 79 | 418 | 1 |
+| D | 228 | 1,246 | 3 |
+| C | 776 | 4,394 | 11 |
+| B | 3,037 | 17,308 | 43 |
+| A | 11,298 | 64,800 | 160 |
+| S | 43,949 | 253,196 | 630 |
 
-Both columns include five personal gates a week. An unsigned hunter earns most of their income from personal
-gates, where nobody can help them and no policy pays.
+An unsigned E-rank or D-rank cannot live on one gate a month. Most hold other jobs or work a profession (`items.md`,
+section 4).
 
 Some guilds pay bonuses beyond the model contract:
 
@@ -120,12 +126,14 @@ Some guilds pay bonuses beyond the model contract:
 
 ## 6. Insurance
 
-- **The one-hour limit.** A crystal raises a dead hunter only within an hour of the death. A crystal that has not
-  been used keeps for any length of time. A crystal outside the gate is therefore useless to a hunter who dies
-  inside, and a party must carry one.
-- **Crystal cover.** Paragon Mutual and some guilds sell it. The premium is a twentieth of the crystal's price a
-  year. The policy pays for one crystal a year that was used on the hunter. A guild party's raid leader carries
-  the crystal. An unsigned party usually has none, because an E crystal costs ten times an E Clear.
+- **The revive ladder and the one-hour limit.** A hunter's first revive is free within an hour and the second is one
+  revive on debt (ten Clears). After that, only a GM grant or a pre-bought Resurrection Crystal used within an hour
+  of death brings the hunter back; gold held after death does not help. An unused crystal keeps for any length of
+  time. A crystal outside the gate is useless to a veteran who dies inside, so a party must carry one.
+- **Crystal cover.** Paragon Mutual and some guilds sell it. The premium is 5.3% of the crystal's price a year. The
+  policy pays for one pre-bought crystal a year used on the hunter. A guild party's raid leader carries the crystal
+  for veterans past their debt revive. An unsigned veteran party seldom has one, because an E crystal costs ten times
+  an E Clear.
 - **Exclusions.** A policy does not pay for a death in a personal gate, in a world gate entered alone, or in an
   unlicensed gate. Most
   policies also exclude a death caused by another hunter.
@@ -155,7 +163,7 @@ Some guilds pay bonuses beyond the model contract:
   contract.
 - **Work after hunting.** Retired hunters work as assessors, scouts, academy instructors, reclaimer crew bosses,
   tellers, cordon officers and bodyguards. A retired D-rank bodyguard earns 163 gold a day, which is more than
-  five labourers' wages.
+  thirteen labourers' wages.
 - **Death.** A will takes effect an hour after the death, when no crystal can raise the hunter. A guild pays the
   death benefit the next day.
 
@@ -165,12 +173,12 @@ The table follows a hunter who awakened at twenty as a D-rank, signed with a wel
 
 | Age | Years since awakening | Net a month | Typical circumstances |
 |---|---|---|---|
-| 20 | 0 | 2,436 | Signs for three years and a bonus of 650 gold. Buys a used uncommon set for about 2,300 gold on guild credit. |
-| 21 | 1 | 2,436 | Reaches level 19, the D cap. The XP bar stops. The daily quest continues. |
-| 23 | 3 | 2,436 | Renews. Has cleared about a hundred and fifty D gates. Rents a flat in Saltmarket. |
-| 30 | 10 | 2,436, with a pension of 244 earned | Leads a party, on one and a half times the retainer. Has been raised once and has paid off the crystal. |
-| 45 | 25 | about 1,500 | Has the body of someone 38. Takes fewer gates and trains recruits. |
-| 60 | 40 | 244 pension, and a bodyguard's wage | Has the body of someone 49. Retires from gates. May live to a hundred. |
+| 20 | 0 | 1,246 | Signs for three years and a bonus of 650 gold. Buys a used uncommon set for about 2,300 gold on guild credit. |
+| 22 | 2 | 1,246 | Reaches level 19, the D cap. The XP bar stops. The daily quest continues. |
+| 23 | 3 | 1,246 | Renews. Has cleared about a hundred and fifty D gates. Buys a flat in Saltmarket. |
+| 30 | 10 | 1,246, with a pension of 244 earned | Leads a party, on one and a half times the retainer. Has used their free revive and single debt revive, and paid off the ten-Clear debt. |
+| 45 | 25 | about 900 | At level 19 (`g = 1.75`) has the body of someone 34. Takes fewer gates, trains recruits, and works as a Journeyman alchemist. |
+| 60 | 40 | 244 pension, and a bodyguard's wage | Has the body of someone 43. Retires from gates. May live to about 125. |
 
 An E-rank's table is shorter. Most E-ranks leave their guild within five years, keep the licence, and answer
 call-ups.

@@ -137,7 +137,6 @@ const SPEC = {
     A: { dc: each([35, 40, 45], DC), xp: of(2500, MONSTER_XP), breakDays: of(3, BREAK_DAYS) },
     S: { dc: each([45, 50, 55], DC), xp: of(8000, MONSTER_XP), breakDays: of(2, BREAK_DAYS) },
   },
-  xpSplit: false,
   fatigue: {
     penaltyAt: whole(50, 0, 1000, 'fatigue from which checks pay the penalty: past the largest bar (150) never'),
     penalty: whole(2, 0, 20, 'taken off every check when tired: 20 is the whole d20'),

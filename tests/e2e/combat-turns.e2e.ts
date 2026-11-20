@@ -1,4 +1,6 @@
 import type { Page } from '@playwright/test';
+import { shareEach } from '../../src/core/gates/pay.ts';
+import { RULES } from '../../src/core/rules.ts';
 import { test, expect, onboardGM, go, startGoblinDenFight, answerWindow, openApp, fightRow, PHONE, SMALL_PHONE, LANDSCAPE, chooseList } from './helpers.ts';
 
 const combat = (page: Page) => page.locator('#view-combat');
@@ -115,9 +117,11 @@ test('End shows the summary with each defeated goblin\'s XP and the total, and A
   await expect(win).toBeVisible();
   for (const m of monsters) await expect(win).toContainText(`${m.name}: ${m.xp.toLocaleString('en-US')} XP`);
   await expect(win).toContainText(`Total XP: ${gate.xp.toLocaleString('en-US')}`);
-  await expect(win).toContainText(`Each hunter receives ${gate.xp.toLocaleString('en-US')} XP.`);
+  // A fight from a gate shares the gate's XP among its hunters (`shareEach`, the rule `gateParty`).
+  const each = shareEach(gate.xp, before.length, RULES.gateParty);
+  await expect(win).toContainText(`Each hunter receives ${each.toLocaleString('en-US')} XP, a share of the gate's XP for ${before.length} hunter${before.length === 1 ? '' : 's'}.`);
   await chooseInWindow(page, 'Award XP to party');
-  await expect.poll(async () => (await xp()).map((n, i) => n - before[i]!)).toEqual(before.map(() => gate.xp));
+  await expect.poll(async () => (await xp()).map((n, i) => n - before[i]!)).toEqual(before.map(() => each));
   await expect(combat(page).locator('.cmb-head')).toContainText('No fight');
 });
 
@@ -396,7 +400,10 @@ test('a removed defeated monster keeps its XP and a removed live one gives none'
   const panel = page.locator(`#view-gates .gate[data-id="${gate.id}"] .gt-panel[data-form=clear]`);
   const promise = panel.locator('[data-clearxp]').first();
   await expect(promise).toBeVisible();
-  await expect.poll(async () => Number(((await promise.innerText()).match(/\d[\d,]*/) ?? ['NaN'])[0].replace(/,/g, ''))).toBe(gate.xp - dead.xp);
+  // The XP still due is shared among the hunters ticked in the panel.
+  const ticked = await panel.locator('input[type=checkbox]:checked').count();
+  expect(ticked).toBeGreaterThan(0);
+  await expect.poll(async () => Number(((await promise.innerText()).match(/\d[\d,]*/) ?? ['NaN'])[0].replace(/,/g, ''))).toBe(shareEach(gate.xp - dead.xp, ticked, RULES.gateParty));
 });
 
 for (const [size, viewport] of Object.entries({ phone: PHONE, 'small phone': SMALL_PHONE, 'landscape phone': LANDSCAPE })) {

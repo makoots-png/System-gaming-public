@@ -10,6 +10,7 @@ import { ODDS_RUNS } from './combat/odds.ts';
 import { sellPrice, shopOpen } from './hunter/inventory.ts';
 import { RARITIES, priceOf } from './registry/items.ts';
 import type { PriceRules, Rarity } from './registry/items.ts';
+import { shareEach } from './gates/pay.ts';
 import { FUMBLE_FAILURES, REVIVE_HP, SAVES_TO_END, SAVE_FUMBLE, SAVE_SUCCESS, SAVE_UP, SAVE_UP_HP, WAYS_BACK } from './hunter/vitals.ts';
 
 const sign = (n: number): string => (n >= 0 ? '+' : '') + n;
@@ -102,3 +103,18 @@ export function dailyPointsLine(R: Pick<Rules, 'dailyTemplate' | 'streakBonusEve
 
 /** The percent of a hit's size a body of `armor` takes off, before the flat part: what `afterDefence` (combat/land.ts) does with `armorK`. */
 export const armorCutPct = (R: Pick<Rules, 'fight'>, armor: number): number => Math.round(100 - 100 * R.fight.armorK / (R.fight.armorK + armor));
+
+/**
+ * How a world gate pays (gates/pay.ts `shareEach`, design 4.1): its gold roll and its XP one pot of `gateParty` shares
+ * among the hunters it pays; each one's share of 100 from 1 hunter to two past the party; a fight from a gate shared the
+ * same way and one from no gate whole to each; a solo run of a world gate a party of one.
+ */
+export function gatePayLines(R: Pick<Rules, 'gateParty'>): readonly string[] {
+  const P = R.gateParty, n = Array.from({ length: P + 2 }, (_, i) => i + 1);
+  return [
+    `A world gate is made for a party of ${P}. What it pays, its gold roll and its XP alike, is a pot of ${P} shares split evenly among the hunters it pays, rounded down: the fewer hunters, the more each, and past ${P} hunters the pot itself shrinks.`,
+    `Each hunter's share of 100: ${n.map(k => `${shareEach(100, k, P)} ${k === 1 ? 'alone' : `of ${k}`}`).join(', ')}.`,
+    'A fight started from a gate pays its XP the same way, out of the gate\'s XP; its Clear pays the rest. A fight started from no gate pays each hunter the whole XP of what went down.',
+    `A solo run of a world gate is a party of one: ${P} times the gold roll and ${P} times the XP.`,
+  ];
+}

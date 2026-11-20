@@ -325,6 +325,65 @@ test('in the item maker a consumable shows no slot, no gear numbers and no bonus
   await expect(d.locator('.mk-preview')).toContainText('Weight 1');
 });
 
+test('on a 390 px phone the item maker\'s grade row, Legendary− to Legendary+, fits the screen with no sideways scroll', async ({ device }) => {
+  const page = (await device('gm', { viewport: { width: 390, height: 844 } })).page;
+  await onboardGM(page);
+  const d = itemMaker(page), grades = d.locator('[data-chips="grade"]');
+  await go(page, 'gm');
+  await page.locator('#gm-make [data-make="item"]').tap();
+  await d.locator('#lf-rar').selectOption('legendary');
+  await grades.locator('[data-chip="1"]').tap();
+  await expect(grades.locator('[data-chip]')).toHaveText(['Legendary−', 'Legendary', 'Legendary+']);
+  await grades.scrollIntoViewIfNeeded();
+  const fit = await grades.evaluate(el => ({
+    scroll: el.scrollWidth, client: el.clientWidth, page: document.documentElement.scrollWidth - innerWidth,
+    inside: [...el.querySelectorAll('[data-chip]')].every(c => { const r = c.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth; }),
+  }));
+  expect(fit.scroll).toBeLessThanOrEqual(fit.client);
+  expect(fit.inside, 'every chip inside the screen').toBe(true);
+  expect(fit.page, 'the page does not scroll sideways').toBeLessThanOrEqual(0);
+  await page.screenshot({ path: '/tmp/pw-economy-2-grade-390.png' });
+});
+
+test('a GM grades an epic item Epic+: the price by the rule is gradeStep times the Clear, a consumable usedUpShare of it, and Edit shows Epic+', async ({ device }) => {
+  const page = (await device('gm')).page;
+  await onboardGM(page);
+  const d = itemMaker(page), grades = d.locator('[data-chips="grade"]'), value = d.locator('#lf-value');
+  /** One Clear of the B rank, which prices an epic item: the middle of its loot gold. */
+  const clearB = (RULES.loot.B.gold[0]! + RULES.loot.B.gold[1]!) / 2;
+  await go(page, 'gm');
+  await page.locator('#gm-make [data-make="item"]').tap();
+
+  await test.step('an epic item starts at the middle, priced one Clear', async () => {
+    await d.locator('#lf-name').fill('Storm Idol');
+    await d.locator('#lf-rar').selectOption('epic');
+    await expect(grades.locator('[data-chip]')).toHaveText(['Epic−', 'Epic', 'Epic+']);
+    await expect(grades.locator('[data-chip="0"]')).toHaveAttribute('aria-pressed', 'true');
+    await expect(value).toHaveAttribute('placeholder', `By the rule: ${Math.round(clearB)}`);
+  });
+
+  await test.step('Epic+ costs gradeStep times the Clear, and as a consumable usedUpShare of that', async () => {
+    await grades.locator('[data-chip="1"]').tap();
+    await expect(value).toHaveAttribute('placeholder', `By the rule: ${Math.round(clearB * RULES.gradeStep)}`);
+    await expect(d.locator('.mk-preview')).toContainText('Epic+');
+    await d.locator('[data-chips="type"] [data-chip="consumable"]').tap();
+    await expect(value).toHaveAttribute('placeholder', `By the rule: ${Math.round(clearB * RULES.gradeStep * RULES.usedUpShare)}`);
+    await d.locator('[data-chips="type"] [data-chip="material"]').tap();
+    await d.locator('[data-apply]').tap();
+    await expect(d).toHaveCount(0);
+  });
+
+  const saved = await libraryItem(page, 'Storm Idol');
+  await test.step('the library holds it as a plus with no price of its own, and Edit shows Epic+ pressed', async () => {
+    expect(saved).toMatchObject({ rar: 'epic', type: 'material', grade: 1 });
+    expect(saved.value).toBeUndefined();
+    await go(page, 'workshop');
+    await workshop(page, 'item').locator(`li[data-id="${saved.id}"] [data-act="edit"]`).tap();
+    await expect(grades.locator('[data-chip="1"]')).toHaveAttribute('aria-pressed', 'true');
+    await expect(value).toHaveAttribute('placeholder', `By the rule: ${Math.round(clearB * RULES.gradeStep)}`);
+  });
+});
+
 test('an effect whose amount the formula reader refuses ("abc") shows its error on its row and Save stays off until it is fixed', async ({ device }) => {
   const page = (await device('gm')).page;
   await onboardGM(page);

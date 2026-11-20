@@ -19,10 +19,10 @@ with, and every law, contract and guild in this file assumes that. `power.md`, s
 
 ## 2. Day Zero and the Long Week
 
-At 03:14 UTC on Day Zero about four thousand gates opened across the inhabited world. Most were small. They stood
-in car parks, stairwells and fields. At the same minute every person on Earth saw a window that read "Resident. Level 0. Cap: 0." Nothing came out
-of the gates. Soldiers taped them off. A few people walked in, and
-most of those people did not come back.
+At 03:14 UTC on Day Zero a first wave of about four thousand gates opened simultaneously across the inhabited world.
+Most were small. They stood in car parks, stairwells and fields. At the same minute every person on Earth saw a
+window that read "Resident. Level 0. Cap: 0." Nothing came out of the gates. Soldiers taped them off. A few people
+walked in, and most of those people did not come back.
 
 Nobody knew that a gate left alone breaks after a fixed number of days and releases its monsters. The number of
 days depends on the gate's rank, and it is the game's `breakDays`:
@@ -45,7 +45,9 @@ a month it was clear that only they could kill a monster above D rank.
 
 ## 3. The Break Years, Year 0 to Year 3
 
-A few thousand new gates opened worldwide every month. For three years states could not clear them fast enough.
+The first wave on Day Zero was only the start. Over the next three years the rate climbed steeply into hundreds of
+thousands of new gates worldwide every month (reaching roughly a thousand a month in a port of Carrow's size by Year
+5, and 1,500 a month by Year 20 with the 3% Tide). For three years states could not clear them fast enough.
 
 - **Deaths.** About one person in twenty died. A third died in breaks. The rest died of hunger and untreated
   illness after breaks closed ports, farms and hospitals.
@@ -76,7 +78,7 @@ open. It has five rules, and almost every country still follows them:
 5. No state sends hunters to fight another state's people. States kept this rule for eight years.
 
 **The Bureaus.** Each state set up a Gate Bureau to read gates, register hunters and sell gate rights. A Bureau
-clerk earns 1,100 gold a month and decides which party gets which gate.
+clerk earns 460 gold a month and decides which party gets which gate.
 
 **The guilds.** Parties that had fought together in the Break Years wrote the first guild charters in Year 2. They
 wanted the first claim on gates, a share of the crystal cut out of them, and payments to the families of members
@@ -121,7 +123,8 @@ a B break in Year 1.
 
 Every fourth lamp post has a siren. A steady tone means a gate has been found, and a rising tone means a break.
 Every tram stop has a board that lists the district's open gates, with each gate's rank and the days left before it
-breaks. Carrow has twelve thousand hunters. About one in thirty earns a living from world gates. Most of the rest are E and D ranks who hold other jobs.
+breaks. Carrow has twelve thousand hunters. About half have a regular seat in world gates. The rest get one gate
+in four months and live on other jobs, crafting professions, or running for the Shop.
 
 **A border.** Goods cross by convoy or by sea. A hunter needs an exit permit from their own Bureau to leave the
 country, and the Bureau rarely gives one to a hunter above C rank. No state has ever stopped an S-rank at a border.
@@ -141,9 +144,9 @@ D-rank guard at the gate. A teacher runs a break drill every month.
 and almost none have awakened. A person can awaken at any age, most often between fourteen and thirty. A child who awakens usually leaves school within a week for a hunter academy that a guild pays for.
 
 **A hospital.** A trauma ward stocks Health Potions, and few patients now die of blood loss. Cancer wards are full,
-and many families there are deciding whether they can afford an Elixir of Life. Hunters use a separate hospital,
-where potions work at full strength and where guild clerks sign for Resurrection Crystals. In Carrow the two
-hospitals share a car park, and the Once-Born League holds a vigil there most nights.
+because an Elixir of Life cures only some cancers and a Resident can take one a week. Hunters use a separate hospital,
+where potions work at full strength and where guild clerks handle debt revives and pre-bought Resurrection Crystals.
+In Carrow the two hospitals share a car park, and the Once-Born League holds a vigil there most nights.
 
 **An army.** A state has two forces. The cordon is unawakened infantry. It surrounds a gate or a break, moves
 civilians out, and kills E and D monsters with rifles. The Hunter Corps is a few hundred ranked soldiers. It also
@@ -199,6 +202,5 @@ young.
 | 11 | The Strait War lasts nine days. S-ranks agree the Abstention. |
 | 14 | The Hollowing. Cities begin to pay S-ranks to live in them. |
 | 17 | The Ledger Act makes gold the legal unit of account in Carrow's country. |
-
 | 19 | Sabine Okoro, read as D in Year 8, is read again as S. |
 | 20 | The present. |

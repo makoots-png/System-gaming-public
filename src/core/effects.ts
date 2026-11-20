@@ -9,11 +9,12 @@ import type { FormulaBody, Dice } from './formula.ts';
 import { TIERS, rankIdx } from './rules.ts';
 import { REVIVE_HP } from './hunter/vitals.ts';
 import type { Rank } from './rules.ts';
+import type { Grade } from './registry/items.ts';
 
 export { FULL_HEAL, healsFully };
 
 /** What this file reads of an item. */
-export type ItemEffects = { readonly rar: string; readonly effects?: readonly Op[]; readonly revive?: true };
+export type ItemEffects = { readonly rar: string; readonly grade?: Grade; readonly effects?: readonly Op[]; readonly revive?: true };
 /** What an item that revives says it does (src/core/hunter/use.ts `useItem`). */
 export const REVIVE_TEXT = `Brings its dead user back at ${REVIVE_HP} HP, outside a fight.`;
 
@@ -35,9 +36,17 @@ export const itemSource = (item: Pick<ItemEffects, 'rar'>): Source => ({ id: nul
 /** A status the GM or the player puts on a hunter by hand: no combatant, at the hunter's rank's tier (E 0 to S 5). */
 export const gmSource = (rank: Rank): Source => ({ id: null, tier: rankIdx(rank) });
 
-/** What an item's card says it does: that it revives, then its ops (all of them, or `ops`), each number at the item's rarity tier. */
+/** The sign a grade adds to its rarity's word: Epic−, Epic, Epic+ (economy design 2.1). */
+const GRADE_SIGN: Readonly<Record<Grade, string>> = { [-1]: '−', 0: '', 1: '+' };
+/** An item's tier and grade in words, its rarity's word with the grade's sign: `gradeLabel('epic', 1)` is Epic+. */
+export const gradeLabel = (rar: string, grade: Grade): string => `${rar[0]!.toUpperCase()}${rar.slice(1)}${GRADE_SIGN[grade]}`;
+
+/**
+ * What an item's card says it does: its grade's label when it is a minus or a plus (a middle item's rarity says it all),
+ * that it revives, then its ops (all of them, or `ops`), each number at the item's rarity tier.
+ */
 export function describeItem(R: DescribeRules, item: ItemEffects, ops: readonly Op[] = effectsOf(item)): string[] {
-  return [...(item.revive ? [REVIVE_TEXT] : []), ...opLines(ops, itemSource(item).tier, R)];
+  return [...(item.grade ? [gradeLabel(item.rar, item.grade)] : []), ...(item.revive ? [REVIVE_TEXT] : []), ...opLines(ops, itemSource(item).tier, R)];
 }
 
 /** An op with an amount: what a use outside a fight rolls and applies to a hunter. */

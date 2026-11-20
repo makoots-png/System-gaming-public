@@ -3,7 +3,7 @@
 import { GATE_STATUSES, GATE_TYPES, SPAWN_TYPES, can, countdown, gateXp as rosterXp, monsterId, newGate, parseGate, xpDue } from '../core/gates/gate.ts';
 import { RANKS } from '../core/save.ts';
 import { cryptoRandom } from '../edge/roll.ts';
-import { clearShares, settleClear, splitAward } from '../core/gates/pay.ts';
+import { clearGoldEach, clearShares, settleClear, shareEach } from '../core/gates/pay.ts';
 import { newRewards, parseRewards } from '../core/rewards.ts';
 import { isRefused } from '../core/save-step.ts';
 import { oneOf } from '../core/one-of.ts';
@@ -113,7 +113,7 @@ export function register(app) {
   const fighterIds = f => new Set(f.rows.flatMap(r => (r.holder && r.holder.kind === 'local' ? [r.holder.hunterId] : r.holder && r.holder.kind === 'remote' ? [r.holder.remote] : [])));
   /**
    * Gate `id` cleared and its payees paid, in one step (src/core/gates/pay.ts `settleClear`): the gate's XP still due and
-   * the rolled gold split by `clearShares`, the items to `toId`, each hunter here given its share, each player's award put
+   * the rolled gold shared as the gate's pot by `clearShares`, the items to `toId`, each hunter here given its share, each player's award put
    * in the outbox. Then the one window. `hids`: local hunter ids and/or remote keys; each is paid once.
    */
   async function clearGate(id, hids, toId) {
@@ -124,7 +124,7 @@ export function register(app) {
     const payees = [...hunters.map(h => ({ kind: 'local', hid: h.id, name: h.name })), ...rem.map(r => ({ kind: 'remote', key: r.key, name: r.data.name }))];
     const dropped = api.inventory.rollLoot(g.rank, { boss: true }) || [];
     const gold = dropped.reduce((n, e) => n + (e.kind === 'gold' ? e.gold : 0), 0), items = dropped.flatMap(e => (e.kind === 'item' ? [e.item] : []));
-    const plan = clearShares(store.get(), id, xpOf, gold, items, payees, toId ?? null, !!app.rules().xpSplit); if (!plan) return false;
+    const plan = clearShares(store.get(), id, xpOf, gold, items, payees, toId ?? null, app.rules().gateParty); if (!plan) return false;
     const share = plan.shares[0] || { xp: plan.due, gold, items: [] }, taker = plan.shares.find(x => x.items.length);
     const S = api.sync;
     // the player's device assigns its own item ids
@@ -463,15 +463,16 @@ export function register(app) {
         if (s.fight && s.fightRefs && s.fightRefs.gate === g.id) return fighterIds(s.fight);
         return g.fought.length ? new Set(g.fought) : new Set([store.active().id]);
       };
-      // the split that pays (pay.ts `splitAward`, read by `clearShares`): no hunter picked gets nothing
-      const perHunter = (g, n) => splitAward(dueXp(g), n, !!app.rules().xpSplit);
+      // the shares that pay (pay.ts `shareEach`, read by `clearShares`): no hunter picked gets nothing
+      const xpEach = (g, n) => ui.fmt(shareEach(dueXp(g), n, app.rules().gateParty));
+      const goldEach = (g, n) => { const e = clearGoldEach(app.rules(), g.rank, n); return e.low === e.high ? ui.fmt(e.low) : `${ui.fmt(e.low)} to ${ui.fmt(e.high)}`; };
       function clearPanel(g) {
         const on = fighters(g), list = payees(), n = list.filter(h => on.has(h.id)).length;
         return `<form class="gt-panel" data-form="clear" aria-label="Clear gate">
           <div class="lbl">Award to</div>
           <div class="grid2">${list.map(h => `<label class="gt-chk"><input type="checkbox" name="hid" value="${esc(h.id)}"${on.has(h.id) ? ' checked' : ''}><span>${esc(h.name)}</span></label>`).join('')}</div>
           ${ui.field('Loot item goes to', `<select name="to"><option value="">First selected hunter</option>${hunterOpts('')}</select>`)}
-          <div class="gt-notes">Each selected hunter gets <span data-clearxp>${ui.fmt(perHunter(g, n))}</span> XP${app.rules().xpSplit ? ' (split evenly)' : ''}${g.xpPaid > 0 ? `. Its fights already paid ${ui.fmt(g.xpPaid)} XP of the gate's XP` : ''}. Loot is rolled for a ${esc(g.rank)}-rank gate with a boss.</div>
+          <div class="gt-notes">Each selected hunter gets <span data-clearxp>${xpEach(g, n)}</span> XP and <span data-cleargold>${goldEach(g, n)}</span> gold. The gate's XP and gold are shared: the fewer hunters, the more each${g.xpPaid > 0 ? `. Its fights already paid ${ui.fmt(g.xpPaid)} XP of the gate's XP` : ''}. Loot is rolled for a ${esc(g.rank)}-rank gate with a boss.</div>
           <div class="gt-acts"><button type="button" data-act="cancel-panel">Cancel</button><button type="submit" class="primary">Confirm clear</button></div></form>`;
       }
       function editPanel(g) {
@@ -619,8 +620,8 @@ export function register(app) {
       el.addEventListener('change', e => {
         // a refused change draws the select back from the rules (render)
         if (e.target.matches('[data-solohours]') && app.isGM()) { if (!ui.wrote('Gates', store.apply('gm-rules', s => soloRuleSet(s, { hours: Number(e.target.value) })))) render(); return; }
-        const f = e.target.closest('form[data-form=clear]'), x = f && f.querySelector('[data-clearxp]'), g = f && gate(f.closest('.gate').dataset.id);
-        if (x && g) x.textContent = ui.fmt(perHunter(g, f.querySelectorAll('input[name=hid]:checked').length));
+        const f = e.target.closest('form[data-form=clear]'), x = f && f.querySelector('[data-clearxp]'), gd = f && f.querySelector('[data-cleargold]'), g = f && gate(f.closest('.gate').dataset.id);
+        if (x && gd && g) { const n = f.querySelectorAll('input[name=hid]:checked').length; x.textContent = xpEach(g, n); gd.textContent = goldEach(g, n); }
       });
       el.addEventListener('submit', async e => {
         e.preventDefault();

@@ -25,6 +25,13 @@ export type Rarity = (typeof RARITIES)[number];
 export type ItemType = (typeof ITEM_TYPES)[number];
 export type Slot = (typeof SLOTS)[number];
 export type Attack = (typeof ATTACKS)[number];
+/**
+ * Where an item sits inside its tier (economy design 2.1, the owner's ruling 1): minus -1, middle 0, plus 1, shown as
+ * Epic−, Epic, Epic+ (`gradeLabel` in effects.ts). A number because the price reads it as an exponent of `gradeStep`;
+ * three values because three were named and priced, so the price and the maker's chips are total over them.
+ */
+export const GRADES = [-1, 0, 1] as const;
+export type Grade = (typeof GRADES)[number];
 
 /** What an item adds while worn: points on a stat, max HP or max mana. */
 export type ItemBonus = Partial<Record<PerkKey, number>>;
@@ -38,6 +45,8 @@ export type Item = {
   id: ItemId; name: string; rar: Rarity; type: ItemType; slot: Slot | null; qty: number; dice: string; bonus: ItemBonus;
   /** Its price in gold as the GM typed it; absent, the rule's (`valueOf`), so a change of the price rule reaches it. */
   value?: number;
+  /** Its place inside its tier, minus or plus; absent, the middle, so an item made before grades reads as one. Never 0. */
+  grade?: Grade;
   /** Its weight as typed; absent, the rule's (`weightOf`: a weapon's by its dice), so a change of the dice reaches it. */
   weight?: number;
   desc: string; armor: number; resist: number;
@@ -60,8 +69,8 @@ export type Item = {
 export const KIT_SHARE = { chest: 35, legs: 20, offhand: 15, head: 10, hands: 10, feet: 10 } as const;
 export type ArmorSlot = keyof typeof KIT_SHARE;
 
-/** Every item has these. Without `value` its price is the rule's (`valueOf`); with it, the price was set by hand. */
-type Common = { name: string; rar: Rarity; desc: string; value?: number };
+/** Every item has these. Without `value` its price is the rule's (`valueOf`); with it, the price was set by hand. Without `grade`, the middle. */
+type Common = { name: string; rar: Rarity; desc: string; value?: number; grade?: Grade };
 /**
  * A built-in item. Its `type` decides what it must hold: a weapon has dice and how it attacks; armour has a slot and the
  * kit it is a piece of (`piece` works out its weight, armor and resist); an accessory a ring or neck slot and a bonus; a
@@ -141,23 +150,29 @@ export const STARTER_GEAR = {
 /** An item as a hunter would hold it, before it has an id. */
 export type ItemTemplate = Omit<Item, 'id'>;
 
-/** The rules a price reads: the loot table (the Clear, `clearOf`), each rarity's rank, and the share a consumable costs. */
-export type PriceRules = Pick<Rules, 'loot' | 'rarities' | 'usedUpShare'>;
+/** The rules a price reads: the loot table (the Clear, `clearOf`), each rarity's rank, a grade's factor, and the share a consumable costs. */
+export type PriceRules = Pick<Rules, 'loot' | 'rarities' | 'gradeStep' | 'usedUpShare'>;
+/** What a price reads of an item: its rarity, its type (a consumable is used up), its grade, and a price typed by hand. */
+export type Priced = Pick<Item, 'rar' | 'type'> & Partial<Pick<Item, 'value' | 'grade'>>;
+/** One Clear of the rarity's rank (`clearOf`) times `gradeStep` to the grade, before rounding. */
+const graded = (R: Pick<Rules, 'loot' | 'rarities' | 'gradeStep'>, rar: Rarity, grade: Grade): number => clearOf(R, R.rarities[rar].rank) * R.gradeStep ** grade;
 /**
- * An item's price: the one it was given, else the rule's: `priceOf` its rarity, and for a consumable `usedUpShare` of
- * that Clear, rounded once (economy design 2.2: one use is worth half). Implicit audit 3, L1: the rule's price was stored
- * as a number when an item was made, so a change of the price rule reached no item already made or held.
+ * An item's price: the one it was given, else the rule's: one Clear of its rarity's rank times `gradeStep` to its grade
+ * (`priceOf`), and for a consumable `usedUpShare` of that, rounded once (economy design 2.2: one use is worth half).
+ * Implicit audit 3, L1: the rule's price was stored as a number when an item was made, so a change of the price rule
+ * reached no item already made or held.
  */
-export const valueOf = (i: Pick<Item, 'rar' | 'type'> & Partial<Pick<Item, 'value'>>, R: PriceRules): number =>
-  i.value ?? (i.type === 'consumable' ? Math.round(clearOf(R, R.rarities[i.rar].rank) * R.usedUpShare) : priceOf(R, i.rar));
+export const valueOf = (i: Priced, R: PriceRules): number =>
+  i.value ?? Math.round(graded(R, i.rar, i.grade ?? 0) * (i.type === 'consumable' ? R.usedUpShare : 1));
 /** An item's weight: the one it was given, else the rule's (a weapon's by its dice, `weaponWeight`; anything else 0). */
 export const weightOf = (i: { readonly weight?: number; readonly type?: string; readonly dice?: string }): number => i.weight ?? (i.type === 'weapon' ? weaponWeight(i.dice ?? '') : 0);
 /**
- * The price of an item of rarity `rar` that sets none and is not used up: one Clear of the rarity's rank (`clearOf`, the
- * middle of that rank's loot gold), rounded to whole gold. Economy design 2.2 and review E-1: computed from the loot
- * table each read, so a GM's edit of a rank's gold moves the price of its rarity.
+ * The price of an item of rarity `rar` and grade `grade` (the middle when left out) that sets none and is not used up:
+ * one Clear of the rarity's rank (`clearOf`, the middle of that rank's loot gold) times `gradeStep` to the grade, rounded
+ * to whole gold. Economy design 2.1, 2.2 and review E-1: computed from the loot table each read, so a GM's edit of a
+ * rank's gold moves the price of its rarity, and an edit of `gradeStep` the price of every minus and plus.
  */
-export const priceOf = (R: Pick<Rules, 'loot' | 'rarities'>, rar: Rarity): number => Math.round(clearOf(R, R.rarities[rar].rank));
+export const priceOf = (R: Pick<Rules, 'loot' | 'rarities' | 'gradeStep'>, rar: Rarity, grade: Grade = 0): number => Math.round(graded(R, rar, grade));
 
 /**
  * The built-in shop as items at the rules' prices now, and every built-in item the same way: built at each read, so a
@@ -202,9 +217,12 @@ export function weaponWeight(dice: string): number {
   return Number(m[1]) >= 2 ? 4 : Number(m[2]) <= 6 ? 1 : 2;
 }
 
-/** A built-in item as an item a hunter can hold (no id yet): a price only when it sets one (else the rule's, `valueOf`). */
+/**
+ * A built-in item as an item a hunter can hold (no id yet): a price only when it sets one (else the rule's, `valueOf`),
+ * a grade only when it is a minus or a plus (the middle is none, as `parseItem` reads it).
+ */
 export function itemOf(R: Rules, def: ItemDef): ItemTemplate {
-  const base = { name: def.name, rar: def.rar, type: def.type, desc: def.desc, qty: 1, ...(def.value ? { value: def.value } : {}), dice: '', weight: 0, armor: 0, resist: 0 };
+  const base = { name: def.name, rar: def.rar, type: def.type, desc: def.desc, qty: 1, ...(def.value ? { value: def.value } : {}), ...(def.grade ? { grade: def.grade } : {}), dice: '', weight: 0, armor: 0, resist: 0 };
   switch (def.type) {
     case 'weapon':
       const { weight: _byDice, ...unweighed } = base; // a weapon's weight is its dice's (`weightOf`)
@@ -229,8 +247,9 @@ const text = (v: unknown, n: number): string => (typeof v === 'string' ? v.slice
  * An item read from outside data, without its id, or null when it is not an object or has no name. Each field of the
  * wrong type or value takes the default a new item has; a number is cut to a whole one inside `ITEM_BOUNDS`. The bonus
  * keeps the ten bonus keys (the eight stats, `hpMax`, `manaMax`) that are not 0. Each effect is read by the fight's op
- * reader with the shipped rules' dice limits (as a reward is), one it refuses dropped, at most 12. `attack` is kept when it
- * is strike or shot, `penFlat` when it is above 0, `target` only when it is `other`, `tell` only when it is true, `revive`
+ * reader with the shipped rules' dice limits (as a reward is), one it refuses dropped, at most 12. `grade` is kept when it
+ * is 1 or -1 (anything else is the middle, left out, so one item is never two stacks by a 0), `attack` when it is
+ * strike or shot, `penFlat` when it is above 0, `target` only when it is `other`, `tell` only when it is true, `revive`
  * only when it is true on a consumable, and `worn` when the status reader takes it. Every other key is dropped. An item
  * past its size (size.ts `THING_MAX.item`), or whose worn status is past a status's, is refused whole: null.
  */
@@ -251,6 +270,7 @@ export function parseItem(v: unknown): ItemTemplate | null {
   const finite = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
   if (finite(v.value)) out.value = whole(v.value, 0, B.value, 0);
   if (finite(v.weight)) out.weight = whole(v.weight, 0, B.weight, 0);
+  if (v.grade === 1 || v.grade === -1) out.grade = v.grade;
   const attack = oneOf(v.attack, ATTACKS, null);
   if (attack) out.attack = attack;
   const penFlat = whole(v.penFlat, 0, B.penFlat, 0);

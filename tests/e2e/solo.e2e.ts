@@ -2,6 +2,8 @@
 // its odds first, and one play of the engine is what happened, written in one write. Alone with a personal gate, and
 // in a room with a world gate the GM opened to solo runs: the GM's phone online, offline, two players on one gate, and a
 // hunter who dies alone and is revived.
+import { shareEach } from '../../src/core/gates/pay.ts';
+import { RULES } from '../../src/core/rules.ts';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, save, type Page } from './helpers.ts';
 
 /** The hunter on `page` made strong enough to clear any E or D gate alone: every stat at 60, its HP full. */
@@ -113,7 +115,7 @@ test('in a room, the GM opens a gate to solo runs; a player clears it alone and 
   await paid.locator('.sys-actions button').first().tap();
   await expect.poll(async () => (await gm.page.evaluate(id => hunterApp.store.get().gates.find((x: any) => x.id === id).status, den))).toBe('cleared');
   const gained = lifetime(hunterOf(await save(kai!.page))) - xp0, paidXp = await gm.page.evaluate(id => hunterApp.store.get().gates.find((x: any) => x.id === id).xpPaid, den);
-  expect(gained, 'the gate\'s XP still due, once').toBe(paidXp - due.xpPaid);
+  expect(gained, 'one hunter\'s share of the gate\'s XP still due, once').toBe(shareEach(paidXp - due.xpPaid, 1, RULES.gateParty));
   expect((await save(kai!.page)).settings.sync.runs ?? []).toEqual([]);
   expect((await save(gm.page)).log.some((l: any) => l.title === 'Solo run' && l.text.startsWith('Kai cleared "Goblin Den"'))).toBe(true);
 });

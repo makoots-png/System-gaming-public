@@ -10,7 +10,7 @@ This has two effects on fame:
 
 - Cameras can record only the entrance, the exit and a break in the street. The hunters the public knows are the
   ones who look good walking in, or who fought a break on camera.
-- A guild's press officer, on 3,300 gold a month, writes the account of each raid. When the four members of a
+- A guild's press officer, on 1,300 gold a month, writes the account of each raid. When the four members of a
   party give different accounts, the press usually prints the one that has a press officer behind it.
 
 ## 2. What counts as proof
@@ -19,7 +19,7 @@ A hunter's record rests on three things, and each can be bought.
 
 - **The Bureau's clear record.** The Bureau lists the licensed party for each gate and whether the gate was
   cleared. It does not record who did what inside.
-- **Sworn accounts.** Each member of a party can swear an account before a notary for 30 gold. Guild contracts
+- **Sworn accounts.** Each member of a party can swear an account before a notary for 12 gold. Guild contracts
   usually forbid it (`careers.md`, section 4).
 - **Epithets.** The press and other hunters give a hunter a name for a known deed, such as "Last Out" for Ines
   Carvalho. A guild's press office can also invent one.
@@ -63,7 +63,7 @@ A sponsor pays for a hunter's face and name. Typical deals, in gold a year:
 | A D-rank who is liked in their district | 1,000 to 4,000 | A gym, a noodle chain, a tram advertisement |
 | A C-rank on a city's Forty | 10,000 to 40,000 | Local brands, a bank, a gear stall |
 | A B-rank raid leader | 100,000 to 400,000 | National brands, Paragon Mutual, a carmaker |
-| An A-rank near the Hundred | 1 to 5 million | Most large companies. A guild A-rank nets about 1.2 million a year from hunting, so sponsorship often pays more |
+| An A-rank near the Hundred | 1 to 5 million | Most large companies. A guild A-rank nets about 780,000 a year from hunting, so sponsorship often pays more |
 | An S-rank | 10 million or more | States, Helix, the hunter's own guild. Many S-ranks take no sponsor because they own the company |
 | An S-rank's residency | 2 to 6 million a year, a house, and a vote on the Bureau's budget | The city. Carrow pays 4 million |
 
@@ -112,8 +112,8 @@ Each entry ends with a hook for the GM.
 
 - **Sabine Okoro.** Read as D at seventeen and as S at twenty-eight. The Bureau recorded a re-awakening, and no
   other recorded re-awakening rose more than one rank. She has no guild, no sponsor and no home city. *Hook, for
-  the GM only:* she passed a trial gate and has no cap. She is searching gates for other hunters like her,
-  and the search brings her to Carrow.
+  the GM only:* she passed a trial gate and has no cap. She is searching gates for other hunters like her, and the search brings her to Carrow. `story.md` gives her
+  part in the ending.
 - **Tomas Reyes-Lindahl.** S-rank Tanker, aged 71 with the body of someone 56. He was on the tanker in Year 11 when
   the Abstention was agreed, and other S-ranks treat him as its spokesman. *Hook:* he believes a hunter who can
   grow would end the Abstention, and he has begun to investigate Okoro.

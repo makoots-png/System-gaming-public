@@ -1,16 +1,18 @@
 // loot.js (G06): the item maker, which saves to the GM's item library (the Workshop lists it). Publishes app.api.loot = { item }.
 // The maker is one form with everything an item has, built from maker.js, and answers what parseItem gives back for it.
 // The worn block (slot, weight, armor and resist, the bonus while worn) shows for a weapon, armor or accessory; a weapon
-// also has its dice and how it attacks. What an item does when used is its effect rows, ops of the fight.
+// also has its dice and how it attacks. What an item does when used is its effect rows, ops of the fight. Its grade
+// (minus, middle, plus) is a row of chips named for the rarity picked, Epic−, Epic, Epic+; a blank Value shows the price
+// the rule gives the rarity, grade and type (`valueOf`).
 import { PERK_LABELS, TIERS, rules } from '../edge/rules.ts';
 import { ITEM_TYPES } from '../core/save.ts';
 import { atLibrary } from '../core/save-step.ts';
 import { saveEntry, savedWords } from '../core/library.ts';
 import { oneOf } from '../core/one-of.ts';
-import { REVIVE_TEXT, effectsOf } from '../core/effects.ts';
+import { REVIVE_TEXT, effectsOf, gradeLabel } from '../core/effects.ts';
 import { describeStatus } from '../core/combat/effect-ops.ts';
 import { wornWorth } from '../core/registry/worth.ts';
-import { ATTACKS, ITEM_BOUNDS, KIT_SHARE, RARITIES, SAMPLE_WEARER, parseItem, piece, priceOf, weightOf, wornSpeed } from '../core/registry/items.ts';
+import { ATTACKS, GRADES, ITEM_BOUNDS, KIT_SHARE, RARITIES, SAMPLE_WEARER, parseItem, piece, valueOf, weightOf, wornSpeed } from '../core/registry/items.ts';
 import { tooLarge } from '../core/size.ts';
 
 const TYPE_LABEL = { weapon: 'Weapon', armor: 'Armor', accessory: 'Accessory', consumable: 'Consumable', material: 'Material', key: 'Key', misc: 'Misc' };
@@ -70,7 +72,8 @@ export function register(app) {
           <div class="lf-grid">
             ${ui.field('Rarity', `<select id="lf-rar">${TIERS.map(t => `<option value="${t}"${was && t === was.rar ? ' selected' : ''}>${cap(t)}</option>`).join('')}</select>`)}
             ${ui.field('Qty', `<input type="number" id="lf-qty" inputmode="numeric" min="1" max="${ITEM_BOUNDS.qty}" value="${esc(was ? was.qty : 1)}">`)}
-            ${ui.field('Value (gold)', `<input type="number" id="lf-value" inputmode="numeric" min="0" value="${esc(was && was.value !== undefined ? was.value : '')}">`)}
+            <div class="wide">${ui.field('Value (gold)', `<input type="number" id="lf-value" inputmode="numeric" min="0" value="${esc(was && was.value !== undefined ? was.value : '')}">`)}</div>
+            <div class="wide"><div class="lbl">Grade</div>${M.chips('grade', GRADES.map(g => [String(g), gradeLabel(was ? was.rar : 'common', g)]), String(was && was.grade ? was.grade : 0), { label: 'Grade' })}</div>
             <div class="wide">${ui.field('Description', `<textarea id="lf-desc" maxlength="500">${esc(was ? was.desc : '')}</textarea>`)}</div>
           </div>
           <div class="lf-worn" data-weapon>
@@ -102,6 +105,8 @@ export function register(app) {
           </div></div>`;
         const $ = s => el.querySelector(s), slotSel = $('#lf-slot');
         const gearInput = k => /** @type {HTMLInputElement} */ ($(`[data-gear="${k}"]`));
+        const rarity = () => oneOf($('#lf-rar').value, RARITIES, 'common');
+        const grade = () => oneOf(Number(M.picked(el, 'grade')), GRADES, 0);
         slotSel.value = was && was.slot ? was.slot : '';
         const fx = M.effects($('[data-fx]'), { ops: was ? was.effects || [] : [], kind: 'item', newStatus: () => app.api.forge.status({ mode: 'library' }) });
         // the worth line of the status the item wears in a fight (worth.ts `wornWorth`, a kit with no ability)
@@ -124,12 +129,13 @@ export function register(app) {
           const weight = worn ? typed(gearInput('weight'), B.weight) : same ? was.weight : undefined;
           const value = typed($('#lf-value'), B.value);
           const out = {
-            name: $('#lf-name').value.trim().slice(0, B.name), rar: oneOf($('#lf-rar').value, TIERS, 'common'), type, slot: worn ? slotSel.value || null : same ? was.slot : null,
+            name: $('#lf-name').value.trim().slice(0, B.name), rar: rarity(), type, slot: worn ? slotSel.value || null : same ? was.slot : null,
             qty: int($('#lf-qty').value, 1, B.qty) || 1, dice: weapon ? $('#lf-dice').value.trim().slice(0, B.dice) : '',
             bonus: worn ? M.readBonus(el) : same ? { ...was.bonus } : {}, desc: $('#lf-desc').value.slice(0, B.desc),
             armor: gear('armor'), resist: gear('resist'),
           };
           if (value !== undefined) out.value = value;
+          if (grade()) out.grade = grade();
           if (weight !== undefined) out.weight = weight;
           if (weapon) { out.attack = oneOf(M.picked(el, 'attack'), ATTACKS, 'strike'); const pen = int($('#lf-pen').value, 0, B.penFlat); if (pen) out.penFlat = pen; }
           const effects = fx.ops(); if (effects.length) out.effects = effects;
@@ -151,7 +157,8 @@ export function register(app) {
           if (gm) $('[data-revive-w]').hidden = type !== 'consumable';
           if (!slotDirty) slotSel.value = AUTO_SLOT[type] || '';
           $('[data-kit-w]').hidden = !Object.hasOwn(KIT_SHARE, slotSel.value);
-          $('#lf-value').placeholder = `By the rule: ${priceOf(rules(), oneOf($('#lf-rar').value, RARITIES, 'common'))}`;
+          for (const b of el.querySelectorAll('[data-chips="grade"] [data-chip]')) b.textContent = gradeLabel(rarity(), oneOf(Number(b.dataset.chip), GRADES, 0));
+          $('#lf-value').placeholder = `By the rule: ${valueOf({ rar: rarity(), type, grade: grade() }, rules())}`;
           gearInput('weight').placeholder = `By the rule: ${weightOf({ type, dice: $('#lf-dice').value.trim() })}`;
           // "Affects" only means something for an item that does something when used
           $('[data-target-w]').hidden = !effectsOf(formItem()).length;
@@ -160,9 +167,10 @@ export function register(app) {
         for (const ev of ['input', 'change']) slotSel.addEventListener(ev, () => { slotDirty = true; });
         el.addEventListener('click', e => {
           if (e.target.closest('[data-chips="type"]')) { type = oneOf(M.picked(el, 'type'), ITEM_TYPES, type); sync(); }
+          if (e.target.closest('[data-chips="grade"]')) sync();
           const kit = e.target.closest('[data-kit]');
           if (kit && Object.hasOwn(KIT_SHARE, slotSel.value)) {
-            const p = piece(oneOf(kit.dataset.kit, KITS.map(([k]) => k), 'light'), slotSel.value, oneOf($('#lf-rar').value, RARITIES, 'common'), rules());
+            const p = piece(oneOf(kit.dataset.kit, KITS.map(([k]) => k), 'light'), slotSel.value, rarity(), rules());
             for (const [k] of GEAR) gearInput(k).value = String(p[k]);
             shell.changed();
           }

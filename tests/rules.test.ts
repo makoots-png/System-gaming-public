@@ -118,8 +118,12 @@ test('with no statuses of the GM\'s the built-ins are the conditions, and rule n
 });
 
 test('a valid override survives parseOverrides as written, nested ones included', () => {
-  const ov = { xpPerLevel: 200, fatigue: { penaltyAt: 40 }, xpSplit: true, jobs: ['Fighter', 'Bard'], rarities: { common: { color: '#ffffff' } } };
+  const ov = { xpPerLevel: 200, fatigue: { penaltyAt: 40 }, levelUpRestore: false, jobs: ['Fighter', 'Bard'], rarities: { common: { color: '#ffffff' } } };
   expect(parseOverrides(ov)).toEqual({ overrides: ov, refused: [] });
+});
+
+test('XP split is no rule now (a world gate\'s XP is shared by its party): a GM\'s old override of it is refused as unknown', () => {
+  expect(parseOverrides({ xpSplit: true, xpPerLevel: 200 })).toEqual({ overrides: { xpPerLevel: 200 }, refused: [{ path: 'xpSplit', reason: 'unknown' }] });
 });
 
 test('an unknown rule is refused and left out, and the rest is kept', () => {
@@ -130,11 +134,11 @@ test('an unknown rule is refused and left out, and the rest is kept', () => {
 });
 
 test('a value of another type than its rule is refused: a number, a list, an object, true or false, text', () => {
-  const { overrides, refused } = parseOverrides({ xpPerLevel: '200', jobs: 'Fighter', fatigue: 4, xpSplit: 'yes', dailyTemplate: { title: 5 }, logCap: Infinity });
+  const { overrides, refused } = parseOverrides({ xpPerLevel: '200', jobs: 'Fighter', fatigue: 4, levelUpRestore: 'yes', dailyTemplate: { title: 5 }, logCap: Infinity });
   expect(overrides).toEqual({ dailyTemplate: {} });
   expect(refused).toEqual([
     { path: 'xpPerLevel', reason: 'number' }, { path: 'jobs', reason: 'list' }, { path: 'fatigue', reason: 'object' },
-    { path: 'xpSplit', reason: 'boolean' }, { path: 'dailyTemplate.title', reason: 'text' }, { path: 'logCap', reason: 'number' },
+    { path: 'levelUpRestore', reason: 'boolean' }, { path: 'dailyTemplate.title', reason: 'text' }, { path: 'logCap', reason: 'number' },
   ]);
 });
 

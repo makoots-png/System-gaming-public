@@ -3,8 +3,8 @@
 // A run is one play of the odds engine (odds.ts, play.ts) of one hunter, as its row joins a fight, against a gate's
 // monsters, with a seed the edge drew: no fight is shown and none is stored. What the play left on the hunter's row is
 // written to its sheet through the writers each part already has (`sheetEdit`'s totals, the life machine's death saves,
-// `spendItem`, `setShadowHp`), and the gate is paid as a Clear pays (`settleClear`, `grant`, `gateXp`, `xpDue`), in one
-// step for `store.apply` (`soloRan`): all of it or none. The outcome is the engine's `RunOutcome`: `won` the gate is
+// `spendItem`, `setShadowHp`), and the gate is paid as a Clear pays (`settleClear`, `grant`, `gateXp`, `xpDue`), a world
+// gate's as a Clear for a party of one (pay.ts `shareEach`), in one step for `store.apply` (`soloRan`): all of it or none. The outcome is the engine's `RunOutcome`: `won` the gate is
 // cleared, `lost` the hunter fell, `stalled` a retreat at the time cap.
 //
 // A personal gate is the System's, on its hunter (`Hunter.solo`): a clock (off, or on with the next spawn's time) and
@@ -49,7 +49,7 @@ import type { GateMonster } from './gate.ts';
 import { rollGate, soloRank } from './spawn.ts';
 import type { SpawnMonster } from './spawn.ts';
 import { enteredAlone, worldOrder } from './world.ts';
-import { gateFact, settleClear } from './pay.ts';
+import { gateFact, settleClear, shareEach } from './pay.ts';
 import type { Seat } from '../role.ts';
 import { WORLD_NAME_MAX } from '../protocol.ts';
 import type { EventBody, EventId, EventStamp, RoomCode, RoomEvent, SheetKey, SoloDoc, SoloRefused, SoloRunPayload, WorldDoc } from '../protocol.ts';
@@ -321,23 +321,25 @@ export function soloRan(save: Save, hid: string, gate: SoloGate, run: SoloRun, l
   ...(gate.kind === 'personal' && outcome === 'won' ? [gateFact(target, h.rank, null)] : []));
   let s: Save = told({ ...save, hunters: save.hunters.map(x => (x.id === h.id ? after : x)) }, stamp,
     runLine(h.name, target, outcome, run.end.rounds, after.life.at, h.id));
-  const rewards = (xp: number) => ({ ...newRewards(), xp, gold: loot.gold, items: [...loot.items] });
+  const rewards = (xp: number, gold: number) => ({ ...newRewards(), xp, gold, items: [...loot.items] });
   let granted: Granted | null = null, xp = 0;
   if (gate.kind === 'personal') {
     if (outcome === 'won') {
       const g = h.solo.gates.find(x => x.id === gate.id)!, seeds = seedMonsters(R);
       xp = gateXp({ monsters: [...g.monsters], bossId: null }, id => { const m = seeds.find(x => x.id === id); return m ? monsterXp(m, R) : 0; });
       s = { ...s, hunters: s.hunters.map(x => (x.id === h.id ? { ...x, solo: { ...x.solo, gates: x.solo.gates.filter(y => y.id !== gate.id) } } : x)) };
-      const g2 = grant(s, h.id, rewards(xp), null, { ...c.day, vitals: 'sheet' });
+      const g2 = grant(s, h.id, rewards(xp, loot.gold), null, { ...c.day, vitals: 'sheet' });
       if (isRefused(g2)) return g2;
       s = g2.save; granted = g2;
     }
   } else if (soloRoute(c.ready.seat) === 'here') {
     if (outcome === 'won') {
+      // the gate's Clear for a party of one: its whole pot of XP due and gold rolled (pay.ts `shareEach`, n = 1)
       const g = save.gates.find(x => x.id === gate.id)!, all = [...seedMonsters(R), ...save.monsters];
-      xp = xpDue(g, id => { const m = all.find(x => x.id === id); return m ? monsterXp(m, R) : 0; });
-      const pay = { due: xp, xp, gold: loot.gold, items: loot.items.map(i => i.name), payees: [h.name] };
-      const settled = settleClear(s, gate.id, pay, [{ hid: h.id, rewards: rewards(xp) }], null, c.day);
+      const due = xpDue(g, id => { const m = all.find(x => x.id === id); return m ? monsterXp(m, R) : 0; }), gold = shareEach(loot.gold, 1, R.gateParty);
+      xp = shareEach(due, 1, R.gateParty);
+      const pay = { due, xp, gold, items: loot.items.map(i => i.name), payees: [h.name] };
+      const settled = settleClear(s, gate.id, pay, [{ hid: h.id, rewards: rewards(xp, gold) }], null, c.day);
       if (isRefused(settled)) return settled;
       s = settled.save; granted = settled.granted[0]?.g ?? null;
     } else {
@@ -408,22 +410,26 @@ export function soloTargets(world: WorldDoc | null, doc: SoloDoc | null): SoloTa
   });
 }
 
-/** What the GM's phone does with a player's run: pay a won run whose gate it can still clear, refuse one it cannot, or note a lost or stalled one. */
-export type SoloPlan = { readonly kind: 'paid'; readonly xp: number } | { readonly kind: 'refused'; readonly why: SoloRefused } | { readonly kind: 'report' };
+/**
+ * What the GM's phone does with a player's run: pay a won run whose gate it can still clear, refuse one it cannot, or
+ * note a lost or stalled one. A paid run is the gate's Clear for a party of one: `due` the XP the gate owes, `xp` the
+ * hunter's share of it, and `party` the rule (`gateParty`) its gold roll is shared by when it is rolled (`shareEach`).
+ */
+export type SoloPlan = { readonly kind: 'paid'; readonly due: number; readonly xp: number; readonly party: number } | { readonly kind: 'refused'; readonly why: SoloRefused } | { readonly kind: 'report' };
 /** The plan for run `p` on the GM's save as it stands: the one rule, asked again inside the write (`soloTaken`). */
 export function soloPlan(save: Pick<Save, 'gates' | 'monsters'>, p: SoloRunPayload, R: Rules): SoloPlan {
   if (p.outcome !== 'won') return { kind: 'report' };
   const g = save.gates.find(x => x.id === p.gate);
   if (!g) return { kind: 'refused', why: 'gone' };
   if (!can(g, 'clear')) return { kind: 'refused', why: g.status === 'cleared' ? 'taken' : 'closed' };
-  const all = [...seedMonsters(R), ...save.monsters];
-  return { kind: 'paid', xp: xpDue(g, id => { const m = all.find(x => x.id === id); return m ? monsterXp(m, R) : 0; }) };
+  const all = [...seedMonsters(R), ...save.monsters], due = xpDue(g, id => { const m = all.find(x => x.id === id); return m ? monsterXp(m, R) : 0; });
+  return { kind: 'paid', due, xp: shareEach(due, 1, R.gateParty), party: R.gateParty };
 }
 /** The `soloAnswer` body for run `p` under `plan` with the loot rolled: null for a report, which needs none. */
 export function soloAnswerBody(save: Pick<Save, 'gates'>, run: EventId, p: SoloRunPayload, plan: SoloPlan, loot: SoloLoot): EventBody<'soloAnswer'> | null {
   const name = save.gates.find(x => x.id === p.gate)?.name.slice(0, WORLD_NAME_MAX) ?? '';
   const base = { to: [p.by] as [SheetKey], run, gate: p.gate, name };
-  if (plan.kind === 'paid') return { ...base, verdict: 'paid', rewards: { ...newRewards(), xp: plan.xp, gold: loot.gold, items: [...loot.items] } };
+  if (plan.kind === 'paid') return { ...base, verdict: 'paid', rewards: { ...newRewards(), xp: plan.xp, gold: shareEach(loot.gold, 1, plan.party), items: [...loot.items] } };
   return plan.kind === 'refused' ? { ...base, verdict: 'refused', why: plan.why } : null;
 }
 
@@ -446,7 +452,7 @@ export function soloTaken(save: Save, p: SoloRunPayload, plan: SoloPlan, answer:
   if (!c.room || !answer) return refuse('no-room');
   const room = c.room;
   if (plan.kind === 'refused') return atOutbox(b => post(b, room.code, { kind: 'event', event: answer }).box)(s);
-  const pay = { due: plan.xp, xp: plan.xp, gold: loot.gold, items: loot.items.map(i => i.name), payees: [p.name || 'A hunter'] };
+  const pay = { due: plan.due, xp: plan.xp, gold: shareEach(loot.gold, 1, plan.party), items: loot.items.map(i => i.name), payees: [p.name || 'A hunter'] };
   const settled = settleClear(s, p.gate, pay, [], { ...room, players: [{ key: p.by, rank: c.rank, pays: answer }] }, c.day);
   return isRefused(settled) ? settled : settled.save;
 }

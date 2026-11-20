@@ -26,13 +26,23 @@ import type { XpOf } from './gate.ts';
 import { clearGate, encounterEnded } from './world.ts';
 import { record } from '../hunter/chronicle.ts';
 import { rankIdx } from '../rules.ts';
-import type { Rank } from '../rules.ts';
+import type { Rank, Rules } from '../rules.ts';
 import type { Fact } from '../hunter/facts.ts';
 import type { Gate } from './gate.ts';
 import type { ClearPay } from './world.ts';
 
-/** An award over `n` payees: each gets `total` split evenly and rounded down when the rules split, else all of it. None for nobody. */
-export const splitAward = (total: number, n: number, split: boolean): number => (n <= 0 ? 0 : split ? Math.floor(total / n) : total);
+/**
+ * Each payee's share of what a world gate pays (its gold roll, its XP) among `n` payees, the gate made for `party`
+ * hunters (`RULES.gateParty`, design 4.1): a pot of `party` times `amount`, shrunk by party / n past the party, split
+ * evenly and rounded down. So the party takes `amount` each, fewer take more, and a crowd takes less in total. None for nobody.
+ */
+export const shareEach = (amount: number, n: number, party: number): number =>
+  n <= 0 ? 0 : Math.floor(n <= party ? amount * party / n : amount * party * party / (n * n));
+/** What each of `n` payees takes of a Clear's gold roll at rank `rank`: the share of the rank's lowest and highest roll. */
+export function clearGoldEach(R: Pick<Rules, 'loot' | 'gateParty'>, rank: Rank, n: number): { readonly low: number; readonly high: number } {
+  const [lo = 0, hi = lo] = (R.loot[rank] ?? R.loot.E).gold;
+  return { low: shareEach(lo, n, R.gateParty), high: shareEach(hi, n, R.gateParty) };
+}
 
 /** Who a share goes to: a hunter on this phone, or a player's hunter in the room (its sheet key). */
 export type Payee = { readonly kind: 'local'; readonly hid: string; readonly name: string } | { readonly kind: 'remote'; readonly key: SheetKey; readonly name: string };
@@ -42,8 +52,12 @@ export type Payee = { readonly kind: 'local'; readonly hid: string; readonly nam
 export type EncounterPlan = {
   readonly fightId: Ended['id'];
   readonly gateId: string | null;
-  /** The fight's XP, what it pays (nothing once its gate paid all), whether the gate covered it, and each payee's share. */
-  readonly xp: number; readonly award: number; readonly covered: boolean; readonly each: number;
+  /**
+   * The fight's XP, what it pays of its gate's XP (nothing once its gate paid all), whether the gate covered it, whether
+   * the award is a world gate's pot shared among the payees (`shareEach`) or paid whole to each (a fight from no gate),
+   * and each payee's share.
+   */
+  readonly xp: number; readonly award: number; readonly covered: boolean; readonly shared: boolean; readonly each: number;
   readonly payees: readonly Payee[];
   /** The foes that went down, with their XP. */
   readonly dead: readonly { readonly id: CombatantId; readonly name: string; readonly xp: number }[];
@@ -51,16 +65,19 @@ export type EncounterPlan = {
 };
 /**
  * The plan of fight `f` once it is over (`f` as it is, or as `end` would leave it): the gate it came from, its award by
- * `fightAward` (gate.ts), the payees (its local hunters still on this phone, then its players' hunters) and the share.
+ * `fightAward` (gate.ts), the payees (its local hunters still on this phone, then its players' hunters) and the share:
+ * of a fight from a gate, its award shared as the gate's pot among the payees, the gate made for `party`; of a fight
+ * from no gate (the GM's own scene, sized for the hunters at the table), the whole award to each.
  */
-export function planEncounter(f: Ended, gateId: string | null, save: Pick<Save, 'gates' | 'hunters'>, split: boolean, xpOf: XpOf): EncounterPlan {
+export function planEncounter(f: Ended, gateId: string | null, save: Pick<Save, 'gates' | 'hunters'>, party: number, xpOf: XpOf): EncounterPlan {
   const gate = (gateId && save.gates.find(g => g.id === gateId)) || null;
   const locals = [...new Set(f.rows.flatMap(r => (r.holder?.kind === 'local' ? [r.holder.hunterId as string] : [])))]
     .flatMap((hid): Payee[] => { const h = save.hunters.find(x => x.id === hid); return h ? [{ kind: 'local', hid, name: h.name }] : []; });
   const remotes = f.rows.flatMap((r): Payee[] => { const key = r.holder?.kind === 'remote' ? parseSheetKey(r.holder.remote) : null; return key ? [{ kind: 'remote', key, name: r.name }] : []; });
-  const payees = [...locals, ...remotes], award = fightAward(gate, f.summary.xp, xpOf);
+  const payees = [...locals, ...remotes], award = fightAward(gate, f.summary.xp, xpOf), n = payees.length;
   return {
-    fightId: f.id, gateId, xp: f.summary.xp, award, covered: award < f.summary.xp, each: splitAward(award, payees.length, split), payees,
+    fightId: f.id, gateId, xp: f.summary.xp, award, covered: award < f.summary.xp, shared: gate !== null,
+    each: gate ? shareEach(award, n, party) : n > 0 ? award : 0, payees,
     dead: f.rows.filter(r => r.side === 'foe' && f.summary.down.includes(r.id)).map(r => ({ id: r.id, name: r.name, xp: r.xp })), rounds: f.summary.rounds,
   };
 }
@@ -98,7 +115,7 @@ export function settleEncounter(save: Save, plan: EncounterPlan, choice: 'award'
   const f: Fight | null = save.fight ?? null;
   if (!f || f.id !== plan.fightId || f.phase !== 'ended') return refuse('no-fight');
   const paid = pays(plan, choice);
-  const text = `${plan.dead.length} defeated, ${plan.xp} XP${choice === 'award' ? ` awarded (${plan.each} each)` : ''}.`;
+  const text = `${plan.dead.length} defeated, ${plan.xp} XP.${choice === 'award' ? ` Awarded ${plan.each} XP each.` : ''}`;
   const logged = encounterEnded(save, { gateId: plan.gateId, paid: paid ? plan.award : 0, text }, { at: day.at, cap: day.R.logCap });
   // who fought it stays on the gate, so its Clear offers them first after a reload too
   const fought = plan.payees.map(p => (p.kind === 'local' ? p.hid : p.key));
@@ -116,17 +133,18 @@ export function settleEncounter(save: Save, plan: EncounterPlan, choice: 'award'
 export const dropDealt = (save: Save): Save => (save.dropped === null ? save : { ...save, dropped: null });
 
 // ── a gate's Clear ──
-/** What one payee of a Clear gets: the split XP and gold, and the gate's items to the one taker. */
+/** What one payee of a Clear gets: its share of the XP and the gold, and the gate's items to the one taker. */
 export type ClearShare<I> = { readonly payee: Payee; readonly xp: number; readonly gold: number; readonly items: readonly I[] };
 /**
- * The shares of a Clear: the gate's XP still due and the rolled gold split over the payees when the rules split and there
- * is more than one, the items to `takerOf` (the payee picked, else the first).
+ * The shares of a Clear: the gate's XP still due (`due`, what the gate owes and then counts as paid) and the rolled gold,
+ * each the gate's pot shared among the payees (`shareEach`, the gate made for `party`); the items to the payee picked
+ * (`taker`), else the first.
  */
-export function clearShares<I>(save: Pick<Save, 'gates'>, gateId: string, xpOf: XpOf, gold: number, items: readonly I[], payees: readonly Payee[], taker: string | null, split: boolean): { due: number; shares: ClearShare<I>[] } | null {
+export function clearShares<I>(save: Pick<Save, 'gates'>, gateId: string, xpOf: XpOf, gold: number, items: readonly I[], payees: readonly Payee[], taker: string | null, party: number): { due: number; shares: ClearShare<I>[] } | null {
   const gate = save.gates.find(g => g.id === gateId); if (!gate) return null;
-  const due = xpDue(gate, xpOf), n = payees.length, by = split && n > 1;
+  const due = xpDue(gate, xpOf), n = payees.length;
   const idOf = (p: Payee) => (p.kind === 'local' ? p.hid : p.key), first = payees.find(p => idOf(p) === taker) ?? payees[0] ?? null;
-  return { due, shares: payees.map(p => ({ payee: p, xp: splitAward(due, n, by), gold: splitAward(gold, n, by), items: first && idOf(first) === idOf(p) ? items : [] })) };
+  return { due, shares: payees.map(p => ({ payee: p, xp: shareEach(due, n, party), gold: shareEach(gold, n, party), items: first && idOf(first) === idOf(p) ? items : [] })) };
 }
 /**
  * The fact of gate `g` cleared by a hunter of rank `rank`, `toBreak` days before it would have broken (null for a

@@ -12,7 +12,7 @@
 // it in death", then "Whole shop should be closed in death." A crystal still reaches a dead hunter from the GM (an award)
 // or from another hunter (goods.ts `handOver`, offer.ts), and the dead hunter may use it (use.ts `useItem`).
 import { valueOf } from '../registry/items.ts';
-import type { Item, ItemTemplate, PriceRules, Slot } from '../registry/items.ts';
+import type { Item, ItemTemplate, PriceRules, Priced, Slot } from '../registry/items.ts';
 import type { Rules } from '../rules.ts';
 import { refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
@@ -33,7 +33,7 @@ type SaleRules = PriceRules & Pick<Rules, 'saleShare'>;
  */
 const DISTINGUISHES: Record<keyof Item, boolean> = {
   id: false, qty: false, slot: false,
-  name: true, rar: true, type: true, dice: true, bonus: true, value: true, weight: true, desc: true, armor: true, resist: true,
+  name: true, rar: true, grade: true, type: true, dice: true, bonus: true, value: true, weight: true, desc: true, armor: true, resist: true,
   attack: true, penFlat: true, effects: true, target: true, tell: true, worn: true, revive: true,
 };
 const DISTINGUISHING = (Object.keys(DISTINGUISHES) as (keyof Item)[]).filter(k => DISTINGUISHES[k]);
@@ -54,7 +54,7 @@ export const sellable = (i: Pick<Item, 'revive'>): boolean => !i.revive;
  * 1; a free item, or one not bought back (`sellable`), sells for nothing. (Before, a literal half, and an item priced 0
  * sold for half of base value times multiplier, a second price rule.)
  */
-export const sellPrice = (i: Pick<Item, 'rar' | 'type'> & Partial<Pick<Item, 'value' | 'revive'>>, R: SaleRules): number => {
+export const sellPrice = (i: Priced & Partial<Pick<Item, 'revive'>>, R: SaleRules): number => {
   const price = sellable(i) ? valueOf(i, R) : 0;
   return price > 0 ? Math.max(1, Math.floor(price * R.saleShare)) : 0;
 };
