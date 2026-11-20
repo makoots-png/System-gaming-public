@@ -36,6 +36,7 @@ import { EXTRACTION_WALK } from './models/extraction-events.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { fightId, owed, reduce } from '../src/core/combat/fight.ts';
 import type { Command, Ctx, Effect, Fight, NewRow, Opening, Result, Running, StatusGrant, ZoneDraft } from '../src/core/combat/fight.ts';
+import { needs } from '../src/core/combat/resolve.ts';
 import type { Rolls } from '../src/core/combat/resolve.ts';
 const sheetKey = (s: string) => parseSheetKey(s) ?? (() => { throw new Error(`not a sheet key: ${s}`); })();
 
@@ -589,6 +590,23 @@ const putOn = (at: string, g: StatusGrant): Command => ({ type: 'status', id: id
 const takeOff = (at: string, key: string): Command => ({ type: 'status', id: id(at), remove: statusKey(key) });
 const SLOW = def('Slowed', { op: 'speed', pct: -50 }), STUN = def('Stunned', { op: 'hold' }), MARK = def('Marked');
 const trio = (m: Partial<NewRow> = {}, n: Partial<NewRow> = {}) => [add(row('A', 'party'), row('M', 'foe', m), row('N', 'foe', n)), start(['A', 20], ['M', 10], ['N', 1])] as const;
+
+describe('refill: a level-up\'s refill of a hunter\'s row, which takes no time', () => {
+  test('a hunter\'s row comes back to its maximum HP and mana, and the log says so', () => {
+    const r = play(...duel(), adjust('A', { hp: -5, mana: -3 }), { type: 'refill', id: id('A') });
+    expect([body(r.fight, 'A').hp, body(r.fight, 'A').mana]).toEqual([HP, RULES.fight.manaBase]);
+    expect(running(r).log[0]!.text).toBe('R1: A is refilled: HP +5, mana +3 (level up).');
+  });
+
+  test('a monster\'s row, an unknown row, no fight and an ended fight are refused; a full row changes nothing and is not refused', () => {
+    const r = play(...duel());
+    refuses(r.fight, { type: 'refill', id: id('M') }, 'notHunter');
+    refuses(r.fight, { type: 'refill', id: id('ghost') }, 'unknown');
+    refuses(play(...duel(), { type: 'end' }).fight, { type: 'refill', id: id('A') }, 'notNow');
+    refuses(null, { type: 'refill', id: id('A') }, 'notNow');
+    expect(reduce(r.fight, { type: 'refill', id: id('A') }, ctx)).toEqual({ fight: r.fight, effects: [] });
+  });
+});
 
 describe('adjust: the GM\'s hand edit, which takes no time', () => {
   test('the GM takes 5 HP off a monster: its HP falls by 5, whose turn it is and every wait stay, and the log says so', () => {
@@ -1508,6 +1526,18 @@ describe('forced movement: a shove, a blink, a swap (kits design 8.3, table 8.9.
     refuses(rooted, { type: 'act', by: id('A'), ability: blink.id, aim: place(5, 6), rolls: rolls() }, 'rooted');
   });
 
+  test('a blink\'s use reaches from the tile it lands on: its dice are of the bodies it reaches there, and a foe it only passed sets off no reaction', () => {
+    const LEAP = ability('strike', 'leap', '5', { aim: 'place', range: tiles(12), shape: { kind: 'line', width: tiles(0), pierce: false }, move: { kind: 'blink' } });
+    const BURST = ability('blast', 'burst', '5', { range: tiles(12), shape: { kind: 'radius', radius: tiles(1), ring: null }, move: { kind: 'blink' } });
+    const PARRY = ability('strike', 'parry', null, { ...FAR, effect: null, cost: { ...HIT.cost, fatigue: 0 }, react: { when: 'before', reach: tiles(0) }, ops: [{ op: 'guard', share: 0.3 }] });
+    const g = running(play(add(row('A', 'party', { abilities: [LEAP, BURST], place: place(5, 2) }), row('M', 'foe', { abilities: [HIT, PARRY], place: place(5, 5) })),
+      start(['A', 20], ['M', 10]), { type: 'arm', by: id('M'), ability: PARRY.id }));
+    expect(needs(LEAP, body(g, 'A'), g.rows, place(5, 8), g.grid, g.now, RULES).dice).toEqual({});
+    expect(needs(BURST, body(g, 'A'), g.rows, place(5, 8), g.grid, g.now, RULES).react).toEqual([id('A')]);
+    const r = reduce(g,{ type: 'act', by: id('A'), ability: LEAP.id, aim: place(5, 8), rolls: rolls() }, ctx);
+    expect([body(r.fight, 'A').place, body(r.fight, 'M').armed?.spent, body(r.fight, 'M').hp]).toEqual([place(5, 8), false, body(g, 'M').hp]);
+  });
+
   test('a swap exchanges the places of its user and an ally', () => {
     const swap = ability('support', 'swap', null, { aim: 'ally', effect: null, range: tiles(12), move: { kind: 'swap' } });
     const r = play(add(row('A', 'party', { abilities: [swap], place: place(1, 2) }), row('B', 'party', { place: place(6, 2) }), row('M', 'foe')), start(['A', 20], ['B', 10], ['M', 5]),
@@ -1660,6 +1690,16 @@ describe('a reaction (kits design 8.4, table 8.9.1)', () => {
     const r = play(add(row('A', 'party', { abilities: [HIT, PARRY] }), row('B', 'party'), row('M', 'foe')), start(['M', 20], ['A', 10], ['B', 5]), armed('A', PARRY),
       { ...hit('M', 'A', BIG) });
     expect(body(r.fight, 'A').armed).toBeUndefined();
+  });
+
+  test('a before reaction that gives its reactor the defender\'s edge is rolled for: the dice the use asks for land it, and the better die is kept', () => {
+    const braced = { label: 'Braced', desc: '', ops: [{ op: 'edge', side: 'defend', keep: 'better', tag: null, spend: true }] } as const;
+    const BRACE = reaction('brace', 'before', { ops: [{ op: 'applyStatus', key: statusKey('braced'), def: braced, duration: tick(1000) }] });
+    const g = running(play(...foeFirst([HIT, BRACE]), armed('A', BRACE)));
+    expect(needs(HIT, body(g, 'M'), g.rows, id('A'), g.grid, g.now, RULES).second).toEqual([id('A')]);
+    const r = reduce(g, { type: 'act', by: id('M'), ability: HIT.id, aim: id('A'), rolls: { dice: { [id('A')]: [] }, react: { [id('A')]: 1 }, second: { [id('A')]: 20 } } }, ctx);
+    expect(r.effects.filter(e => e.type === 'refused' || e.type === 'crit')).toEqual([]);
+    expect(body(r.fight, 'A').hp).toBe(body(play(...foeFirst([HIT]), hit('M', 'A', HIT, 20)).fight, 'A').hp);
   });
 
   test('a use sets off at most 4 reactions', () => {

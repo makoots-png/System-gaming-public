@@ -144,15 +144,14 @@ export function rowStatuses(list: readonly StatusIn[], R: { readonly conditions:
 export const heldLines = (list: readonly StatusIn[], R: Rules): string[] =>
   grantLines(R, { ...newRewards(), statuses: rowStatuses(list, R).map(s => ({ key: statusKey(s.key), rounds: s.rounds ?? null, def: s.def })) });
 /**
- * The fight's commands that put `parts` on their rows of `f`: a `status` for each status the row takes (`rowStatuses`)
- * from the GM at the status's source tier, then a refill as an `adjust` up to the row's maxima when it is below them.
+ * The fight's commands that put `parts` on their rows: a `status` for each status the row takes (`rowStatuses`) from the
+ * GM at the status's source tier, then a level-up's `refill`, which the reducer works out on the row as those statuses
+ * left it and from the hunter's life (fight.ts `refill`), never from the row as it was before them.
  */
-export function heldCommands(f: Fight | null, parts: readonly HeldParts[], R: Rules): Command[] {
+export function heldCommands(parts: readonly HeldParts[], R: Rules): Command[] {
   return parts.flatMap(p => {
-    const row = f?.rows.find(r => r.id === p.cid);
     const statuses = rowStatuses(p.statuses, R).map((s): Command => ({ type: 'status', id: p.cid, add: statusGrant(s.key, s.def, s.rounds ?? null, s.source?.tier ?? 0, R) }));
-    const low = row && (row.hp < row.sheet.hpMax || row.mana < row.sheet.manaMax);
-    return p.refill && row && low ? [...statuses, { type: 'adjust', id: p.cid, hp: row.sheet.hpMax - row.hp, mana: row.sheet.manaMax - row.mana }] : statuses;
+    return p.refill ? [...statuses, { type: 'refill', id: p.cid }] : statuses;
   });
 }
 

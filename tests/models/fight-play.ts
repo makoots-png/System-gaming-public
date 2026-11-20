@@ -265,13 +265,16 @@ export function randomCommand(g: Rng, fight: Fight | null, fresh: () => string):
     const id = fresh();
     return row(id, `Wolf ${id}`, 'foe', 'monster', mon('D', 'skirmisher', 'normal'), [BITE], { xp: 50, ...(g.chance(0.3) ? { place: anyPlace(g) } : {}) });
   };
-  // after the end, an extraction attempt on any row (a fallen monster's is taken): its outcome follows the log's length, so
-  // the draws are those of the turn ended fights refused before, and every seed plays as it did
+  // after the end, an extraction attempt on a fallen monster, as the GM's Extract button sits only on its card (any row
+  // when none fell, which is refused). Its outcome follows the log's length, so a seed whose ended fights hold no fallen
+  // monster draws as it did. Aimed at any row, random play reached one extraction in 2,500 seeds, and lost it to drift
   if (fight.phase === 'ended') {
-    return g.chance(0.8) ? { type: 'clear' } : g.pick<Command>([{ type: 'end' }, { type: 'extract', id: anyId(), by: fight.rows.find(r => r.kind === 'hunter')?.id ?? combatantId('c-ghost'), outcome: EXTRACTION_OUTCOMES[fight.log.length % EXTRACTION_OUTCOMES.length]! }]);
+    const fallen = fight.rows.filter(r => r.kind === 'monster' && r.hp <= 0).map(r => r.id);
+    const corpse = (): CombatantId => (fallen.length ? g.pick(fallen) : anyId());
+    return g.chance(0.8) ? { type: 'clear' } : g.pick<Command>([{ type: 'end' }, { type: 'extract', id: corpse(), by: fight.rows.find(r => r.kind === 'hunter')?.id ?? combatantId('c-ghost'), outcome: EXTRACTION_OUTCOMES[fight.log.length % EXTRACTION_OUTCOMES.length]! }]);
   }
   if (fight.phase === 'setup') {
-    const kind = g.pick(['start', 'start', 'start', 'add', 'remove', 'place', 'intent', 'reveal', 'end', 'act', 'adjust', 'status', 'ground'] as const);
+    const kind = g.pick(['start', 'start', 'start', 'add', 'remove', 'place', 'intent', 'reveal', 'end', 'act', 'adjust', 'refill', 'status', 'ground'] as const);
     switch (kind) {
       case 'start': return { type: 'start', openings: openingsOf(g, g.chance(0.9) ? fight.rows : fight.rows.slice(1)) };
       case 'add': return { type: 'add', fightId: fightId(fresh()), rows: [monster()], openings: [] };
@@ -282,6 +285,7 @@ export function randomCommand(g: Rng, fight: Fight | null, fresh: () => string):
       case 'end': return { type: 'end' };
       case 'act': return { type: 'act', by: anyId(), ability: abilityId('strike'), aim: anyId(), rolls: { dice: {}, react: {} } };
       case 'adjust': return gmAdjust(g, anyId());
+      case 'refill': return { type: 'refill', id: anyId() };
       case 'status': return gmStatus(g, anyId());
       case 'ground': return ground(g, fight, () => fight.rows.length ? g.pick(fight.rows).place : anyPlace(g));
     }
@@ -291,7 +295,7 @@ export function randomCommand(g: Rng, fight: Fight | null, fresh: () => string):
   const user = fight.rows.find(r => r.id === by) ?? cur;
   const kind = g.pick([
     'act', 'act', 'act', 'act', 'act', 'act', 'move', 'move', 'pass', 'pass', 'release', 'settle', 'settle', 'intent', 'reveal', 'place', 'add',
-    'remove', 'end', 'force', 'adjust', 'status', 'ground', 'ground', 'arm',
+    'remove', 'end', 'force', 'adjust', 'refill', 'status', 'ground', 'ground', 'arm',
   ] as const);
   switch (kind) {
     case 'act': case 'force': {
@@ -326,6 +330,7 @@ export function randomCommand(g: Rng, fight: Fight | null, fresh: () => string):
     case 'remove': return { type: 'remove', id: anyId() };
     case 'end': return g.chance(0.5) ? { type: 'end' } : { type: 'clear' };
     case 'adjust': return gmAdjust(g, anyId());
+    case 'refill': return { type: 'refill', id: anyId() };
     case 'status': return gmStatus(g, g.chance(0.3) ? cur.id : anyId());
     case 'ground': return ground(g, fight, () => g.pick(fight.rows).place);
     // the GM's arm, or a player's through the room (kits design 8.4.2): one of the row's reactions, another ability, or none

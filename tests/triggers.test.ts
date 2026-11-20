@@ -204,6 +204,16 @@ describe('moving counts, a bearer going down, and a condition on where (kits des
     expect([stacksOf(body(fight, 'A'), 'momentum'), body(fight, 'M').statuses.length]).toEqual([5, 0]);
   });
 
+  test('a trigger that takes stacks from the one its bearer hit gives them to its bearer: the bearer\'s threshold goes off and the bearer gains the status, not the one that lost it', () => {
+    const MARK: StackDef = { ...CORRUPTION, label: 'Mark', stack: { ...CORRUPTION.stack, threshold: { at: { kind: 'count', n: 3 }, to: { kind: 'bearer' }, ops: [addPain(1)], then: 'spend' } } };
+    const gained = (n: number): Trigger => ({ on: 'statusGained', key: statusKey('mark'), to: 'self', limit: { kind: 'each' }, ops: [addPain(n)] });
+    const leech = worn('Leech', { on: 'hitDealt', tag: null, to: 'other', limit: { kind: 'each' }, ops: [{ op: 'move', key: statusKey('mark'), take: 2, from: 'target', as: null }] }, gained(5));
+    const fight = play(...duel(row('A', 'party', [on('leech', leech), stacked('mark', MARK, 1)]), row('M', 'foe', [on('watch', worn('Watch', gained(7))), stacked('mark', MARK, 2)])), use('A', 'M'));
+    // A holds 1 and takes 2: 3 crosses its threshold, which spends them and puts 1 Pain on A; A gained Mark, so its own trigger puts 5 more
+    expect([stacksOf(body(fight, 'A'), 'mark'), stacksOf(body(fight, 'A'), 'pain')]).toEqual([0, 6]);
+    expect([stacksOf(body(fight, 'M'), 'mark'), stacksOf(body(fight, 'M'), 'pain')]).toEqual([0, 0]);
+  });
+
   test('The Cycle Continues: when its bearer goes down, all its Corruption moves to its ally with the most HP within reach', () => {
     const cycle: StackDef = { ...CORRUPTION, triggers: [{ on: 'down', to: { kind: 'most', of: 'hp', radius: tiles(20), on: 'allies' }, limit: { kind: 'each' },
       ops: [{ op: 'move', key: 'event', take: 'all', from: 'user', as: null }] }] };

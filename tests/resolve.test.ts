@@ -552,6 +552,14 @@ describe('advantage and held dice: rule 7b, the kept face (kits design 8.2, tabl
     expect(avoid(u2, t2, rolls({ t: [] }, { t: 1 }))).toBe('resisted');
   });
 
+  test('a price that takes the user\'s edge leaves the target\'s alone: the second d20 is asked for, and the use lands with the dice asked', () => {
+    const [u, t] = pair([edge('focus', 'attack', 'better')], [edge('guard', 'defend', 'better')]);
+    const spending = { ...curse, prices: [{ kind: 'stacks', from: 'self', key: statusKey('focus'), take: { kind: 'n', n: 1 } }] } as Ability;
+    const n = needs(spending, u, [u, t], t.id, GRID, NOW, RULES);
+    expect(n.second).toEqual([t.id]);
+    expect(run(spending, u, [u, t], t.id, with2(2, 18)).outcomes[0]!.avoid).toBe('resisted');
+  });
+
   test('a use with an edge waits for its second d20, as for any roll it needs', () => {
     const [u, t] = pair([edge('focus', 'attack', 'better')]);
     expect(resolve(curse, u, [u, t], t.id, GRID, rolls({ t: [] }, { t: 18 }), NOW, RULES)).toEqual({ ok: false, reason: 'needsRoll' });

@@ -138,6 +138,12 @@ export type Command =
     readonly pay?: boolean;
   }
   /**
+   * A level-up's refill of hunter row `id` (a grant to its hunter, fight-save.ts `heldCommands`): the sheet's refill
+   * (vitals.ts `refilled`) on the row as it stands when the command is reduced, so its maxima are those the statuses
+   * before it in the batch left. No time passes. A row already full changes nothing and is not refused.
+   */
+  | { readonly type: 'refill'; readonly id: CombatantId }
+  /**
    * The GM's Status window on `id`: `remove` takes a status off, then `add` puts one on from the GM at `tier`, lasting
    * `duration` (null until removed). No time passes; a hold put on the current row ends its turn, as a use would.
    */
@@ -188,7 +194,9 @@ export type Refusal = UseRefusal
   /** A corpse with no extraction attempt left, or one that rose or crumbled already. */
   | 'noAttempts'
   /** An extraction named by a row that is not a hunter of the fight. */
-  | 'notExtractor';
+  | 'notExtractor'
+  /** A refill of a row no hunter holds: a level-up is a hunter's. */
+  | 'notHunter';
 // `extra` (a second extra action in a round, kits design 8.6.1) is a use's refusal, in `UseRefusal`.
 
 export type Effect =

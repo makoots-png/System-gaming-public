@@ -207,10 +207,16 @@ export function writeBack(b: Body, a: Body, now: Tick, ctx: Ctx, fx: Fx): void {
   if (a.hp === b.hp && a.mana === b.mana && a.fatigue === b.fatigue && sameStatuses(a.statuses, b.statuses) && a.used === b.used) return;
   const t = sheetTotals(a, now, ctx.rules);
   if (h.kind === 'remote') { fx.push({ type: 'sendRemote', remote: h.remote, hp: t.hp, mana: t.mana, fatigue: t.fatigue, statuses: t.statuses }); return; }
-  const was: Life = ctx.life(h.hunterId) ?? (b.hp > 0 ? { at: 'up', hp: b.hp } : { at: 'dying', successes: 0, failures: 0 });
-  const life = lifeAfter(was, { type: 'setHp', hp: a.hp }, a.sheet.hpMax);
+  const life = lifeAfter(rowLife(b, ctx), { type: 'setHp', hp: a.hp }, a.sheet.hpMax);
   fx.push({ type: 'vitals', hunterId: h.hunterId, hp: t.hp, life, mana: t.mana, fatigue: t.fatigue, statuses: t.statuses, ...(Object.keys(t.used).length ? { used: t.used } : {}) });
 }
+
+/**
+ * The life of the hunter row `b` holds: its sheet's when the hunter is on this phone (`ctx.life`), else as the row's HP
+ * reads (up above 0, dying at 0). What the fight asks the life machine from: a write-back, a refill.
+ */
+export const rowLife = (b: Body, ctx: Ctx): Life =>
+  (b.holder?.kind === 'local' ? ctx.life(b.holder.hunterId) : null) ?? (b.hp > 0 ? { at: 'up', hp: b.hp } : { at: 'dying', successes: 0, failures: 0 });
 
 /** What a hunter's row leaves on its sheet at `now`: HP, mana, fatigue, the statuses a sheet keeps (`onSheet`), the uses spent this rest. */
 export type SheetTotals = {

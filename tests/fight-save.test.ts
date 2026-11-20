@@ -26,9 +26,11 @@ import { freshSave, loadSave, newHunter } from '../src/core/save.ts';
 import type { ParseEnv, Save } from '../src/core/save.ts';
 import { newEvent, parseSheetKey } from '../src/core/protocol.ts';
 import type { RoomCode } from '../src/core/protocol.ts';
-import { isRefused } from '../src/core/save-step.ts';
+import { atHunter, isRefused } from '../src/core/save-step.ts';
 import type { Refused } from '../src/core/save-step.ts';
 import { RULES } from '../src/core/rules.ts';
+import { sheetEdit } from '../src/core/hunter/grant.ts';
+import { SAVE_FUMBLE, SAVES_TO_END } from '../src/core/hunter/vitals.ts';
 import { den } from './models/gate-events.ts';
 import { cid, day, dev, gid, iid, mid, shid } from './fixtures/ids.ts';
 
@@ -303,25 +305,31 @@ describe('an award to hunters this phone\'s fight holds is one write: the award,
    * it is (what each grant hands to the fight), then the rows' commands and the award written as one command batch by
    * `fought`, then the outbox sent. `crash` stops it after a part, as a reload there would.
    */
-  function award(p: Phone, crash: 'write' | null = null): Save | Refused {
+  function award(p: Phone, crash: 'write' | null = null, reward: Rewards = REWARD): Save | Refused {
     const hid = p.save.hunters[0]!.id, locals = [{ hid, vitals: 'fight' as const }];
-    const kaiAward = newEvent('award', { to: [KAI], rewards: { ...REWARD, statuses: [] } }, { device: 'd-gm', now: 1, rand: ++p.events / 1000 })!;
+    const kaiAward = newEvent('award', { to: [KAI], rewards: { ...reward, statuses: [] } }, { device: 'd-gm', now: 1, rand: ++p.events / 1000 })!;
     const sends = { room: ROOM, events: [kaiAward], said: [{ kind: 'award' as const, title: 'GM award', text: '+1000 XP, Bleeding → Hunter, Kai', hunterId: hid }] };
-    const plan = gmAward(p.save, locals, REWARD, sends, DAY);
+    const plan = gmAward(p.save, locals, reward, sends, DAY);
     const mine = plan.granted[0]!.g.fight;
     const parts: HeldParts[] = [
       { cid: id('c1'), statuses: mine.statuses, refill: mine.refill },
-      { cid: id('c2'), statuses: REWARD.statuses.map(st => ({ key: st.key, rounds: st.rounds, source: gmSource('E') })), refill: false },
+      { cid: id('c2'), statuses: reward.statuses.map(st => ({ key: st.key, rounds: st.rounds, source: gmSource('E') })), refill: false },
     ];
-    const r = reduceAll(p.save.fight, heldCommands(p.save.fight, parts, RULES), ctxOf(p.save));
+    const r = reduceAll(p.save.fight, heldCommands(parts, RULES), ctxOf(p.save));
     const totals = r.effects.flatMap(fx => fx.type === 'sendRemote'
       ? [newEvent('vitals', { to: [parseSheetKey(fx.remote)!], hp: fx.hp, mana: fx.mana, fatigue: fx.fatigue, statuses: [...fx.statuses], reason: 'Fight' }, { device: 'd-gm', now: 1, rand: ++p.events / 1000 })!] : []);
-    const next = fought(p.save, r, { links: null, room: ROOM, totals, stamp: STAMP, also: sv => gmAward(sv, locals, REWARD, sends, DAY).save }, RULES);
+    const next = fought(p.save, r, { links: null, room: ROOM, totals, stamp: STAMP, also: sv => gmAward(sv, locals, reward, sends, DAY).save }, RULES);
     if (!isRefused(next)) p.save = next;
     if (crash !== 'write') flush(p);
     return next;
   }
   const row = (s: Save, c: string) => (s.fight as Running).rows.find(r => r.id === id(c))!;
+  /** This phone's hunter, down, fails three death saves on its sheet, as hunter.js `deathSave` writes them while the fight holds it. */
+  const dies = (p: Phone): void => {
+    const hid = p.save.hunters[0]!.id;
+    for (let i = 0; i < SAVES_TO_END; i++) p.save = ok(atHunter(hid, h => sheetEdit(h, { type: 'life', event: { type: 'deathSave', roll: SAVE_FUMBLE + 1 } }, RULES))(p.save));
+    expect(p.save.hunters[0]!.life, 'three failed death saves').toEqual({ at: 'dead' });
+  };
   const bleeds = (s: Save, c: string) => row(s, c).statuses.some(x => x.key === 'bleeding');
   const awardLines = (s: Save) => s.log.filter(l => l.title === 'GM award').length;
   const posted = (s: Save, type: string) => (s.settings.sync.outbox ?? []).flatMap(e => (e.letter.kind === 'event' && e.letter.event.type === type ? [e.letter.event] : []));
@@ -351,6 +359,51 @@ describe('an award to hunters this phone\'s fight holds is one write: the award,
     });
   }
 
+  test('a level-up\'s refill fills the row to the maxima the reward\'s own statuses gave it', () => {
+    const hardy = { label: 'Hardy', desc: '', ops: [{ op: 'stat', key: 'vit', amount: 20 }] } as const;
+    const p = heldFight(), before = row(p.save, 'c1').sheet;
+    ok(award(p, null, { ...REWARD, statuses: [{ key: statusKey('hardy'), rounds: 3, def: hardy }] }));
+    const c1 = row(p.save, 'c1');
+    expect(c1.sheet.hpMax, 'Hardy raised the row\'s maximum HP').toBeGreaterThan(before.hpMax);
+    expect([c1.hp, c1.mana]).toEqual([c1.sheet.hpMax, c1.sheet.manaMax]);
+  });
+
+  test('a level-up\'s refill is the sheet\'s refill: a dead hunter\'s row stays at 0 HP, as its sheet does, and its mana is filled', () => {
+    const p = heldFight();
+    write(p, { type: 'adjust', id: id('c1'), hp: -9999, mana: -5 });
+    dies(p);
+    ok(award(p));
+    const c1 = row(p.save, 'c1');
+    expect([c1.hp, c1.mana, p.save.hunters[0]!.life]).toEqual([0, c1.sheet.manaMax, { at: 'dead' }]);
+  });
+
+  // The same cause outside the refill: every other raise of a hunter's row's HP (the GM's hand edit, a heal, a regen) skips
+  // the life machine too. Its fix must let a revive through (combat.js `revive` is an `adjust` whose sheet step comes after).
+  test.todo('the GM\'s hand heal of a dead hunter\'s row leaves it at 0 HP, as the dead sheet refuses the heal', () => {
+    const p = heldFight();
+    write(p, { type: 'adjust', id: id('c1'), hp: -9999 });
+    dies(p);
+    write(p, { type: 'adjust', id: id('c1'), hp: 10 });
+    expect([row(p.save, 'c1').hp, p.save.hunters[0]!.life]).toEqual([0, { at: 'dead' }]);
+  });
+
+  test('a level-up\'s refill stands a dying hunter\'s row up at full HP, as a heal raises a dying sheet', () => {
+    const p = heldFight();
+    write(p, { type: 'adjust', id: id('c1'), hp: -9999 });
+    expect(p.save.hunters[0]!.life.at).toBe('dying');
+    ok(award(p));
+    const c1 = row(p.save, 'c1');
+    expect([c1.hp, p.save.hunters[0]!.life]).toEqual([c1.sheet.hpMax, { at: 'up', hp: c1.sheet.hpMax }]);
+  });
+
+  test('a level-up\'s refill of a row already at its maxima changes nothing and refuses nothing: the award is paid', () => {
+    const p = heldFight();
+    write(p, { type: 'adjust', id: id('c1'), hp: 9999 });
+    ok(award(p));
+    expect(found(p.save)).toEqual(ALL);
+    expect(row(p.save, 'c1').hp).toBe(row(p.save, 'c1').sheet.hpMax);
+  });
+
   test('a reload before the write finds none of it', () => {
     const p = heldFight();
     reload(p);
@@ -367,10 +420,9 @@ describe('an award to hunters this phone\'s fight holds is one write: the award,
     expect(found(p.save)).toEqual(NONE);
   });
 
-  test('the commands put only what a row can hold: a status with no def anywhere, or a state chip, is left out; a full row gets no refill', () => {
-    const p = heldFight(), f = p.save.fight;
-    const cmds = heldCommands(f, [
-      { cid: id('c2'), statuses: [{ key: 'bleeding', rounds: 2 }, { key: 'no-such-status', rounds: 2 }, { key: 'down', rounds: null }], refill: true },
+  test('the commands put only what a row can hold: a status with no def anywhere, or a state chip, is left out', () => {
+    const cmds = heldCommands([
+      { cid: id('c2'), statuses: [{ key: 'bleeding', rounds: 2 }, { key: 'no-such-status', rounds: 2 }, { key: 'down', rounds: null }], refill: false },
     ], RULES);
     expect(cmds.map(c => c.type === 'status' ? `status ${c.add?.key}` : c.type)).toEqual(['status bleeding']);
   });
@@ -388,7 +440,7 @@ describe('an award to hunters this phone\'s fight holds is one write: the award,
 
   test('a player\'s row takes them at that tier: the commands carry the rank\'s tier and the reward\'s own def', () => {
     const [part] = playerHeld([{ key: KAI, data: { rank: 'A' } }], [KAI], statuses);
-    const cmds = heldCommands(heldFight().save.fight, [{ cid: id('c2'), statuses: part!.statuses, refill: part!.refill }], RULES);
+    const cmds = heldCommands([{ cid: id('c2'), statuses: part!.statuses, refill: part!.refill }], RULES);
     expect(cmds.map(c => (c.type === 'status' && c.add ? [c.add.key, c.add.tier, c.add.def.label] : c.type))).toEqual([['bleeding', 4, RULES.conditions.bleeding!.label], ['marked', 4, 'Marked']]);
   });
 

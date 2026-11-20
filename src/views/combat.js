@@ -535,7 +535,7 @@ export function register(app) {
         ...(c.add ? { add: statusGrant(c.add.key, /** @type {any} */ (c.add.def), c.add.rounds ?? null, c.add.tier, rules()) } : {}) }));
     },
     // a grant's parts this fight holds (grant.ts `Granted.fight`) on their rows, written with the grant's step: all or none
-    held: (parts, also) => !refused(sendAll(heldCommands(fight(), parts, rules()), null, also)),
+    held: (parts, also) => !refused(sendAll(heldCommands(parts, rules()), null, also)),
     adjust: (cid, d, also = null) => { const r = rowOf(fight(), cid); if (!r) return false; return !refused(send({ type: 'adjust', id: r.id, ...(d.hp ? { hp: int(d.hp) } : {}), ...(d.mana ? { mana: int(d.mana) } : {}), ...(d.fatigue ? { fatigue: int(d.fatigue) } : {}) }, null, also)); },
     revive: (cid, also) => { const f = fight(), r = rowOf(f, cid); return !!r && cardOf(f, r, rules()).down && !refused(send({ type: 'adjust', id: r.id, hp: REVIVE_HP }, null, also)); },
     spend: (cid, mana, also) => { const r = rowOf(fight(), cid); return !!r && !refused(send({ type: 'adjust', id: r.id, mana: -Math.abs(int(mana)), pay: true }, null, also)); },

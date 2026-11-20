@@ -15,9 +15,9 @@ import { acted, cost, interval, opening, paceCost, tick, walkCost } from './time
 import type { Tick } from './timeline.ts';
 import { applyStatus, atTier, modified, removeStatus, statusOn, statusShield, withStatuses } from './effect-ops.ts';
 import type { Body, Status, StatusKey } from './effect-ops.ts';
-import { landUse, leftZone, needs, placeOf, ready, resolve } from './resolve.ts';
+import { landUse, leftZone, placeOf, ready, resolve } from './resolve.ts';
 import { alive } from './land.ts';
-import type { Answers, Resolved } from './resolve.ts';
+import type { Resolved } from './resolve.ts';
 import { fireReaction, reactorsFor, reactState, reactStep, withReact } from './fight-react.ts';
 import { holds, stealthStep } from './standing.ts';
 import { counted, usesGates } from './uses.ts';
@@ -26,7 +26,8 @@ import { combatantId } from './ability-types.ts';
 import type { Ability, CombatantId, Outcome } from './ability-types.ts';
 import { channelCan, channelStep } from './fight-channel.ts';
 import { eventsOf, raised } from './triggers.ts';
-import { consequences, D20, ended, held, holdsSide, isUp, logged, marked, overIf, partyView, payDue, rowOf, sentAway, spreadTo, startTurn, triggered, uncovered, withRow, writeBack, zoneEnds } from './fight-turn.ts';
+import { consequences, D20, ended, held, holdsSide, isUp, logged, marked, overIf, partyView, payDue, rowLife, rowOf, sentAway, spreadTo, startTurn, triggered, uncovered, withRow, writeBack, zoneEnds } from './fight-turn.ts';
+import { hpOf, refilled } from '../hunter/vitals.ts';
 import { summonRow } from './rows.ts';
 import { crowded } from './summons.ts';
 import { line, MAX_ROWS, MAX_STATUSES, pendingKey } from './fight-types.ts';
@@ -211,14 +212,12 @@ const act: Step<'running', 'act'> = (f, cmd, ctx) => {
     const begun = logged({ ...withRow(f, c), zones: f.zones.filter(z => !taken.includes(z)) }, line(`${u.name} begins to channel ${a.name}.`, [u.id]), R);
     return after(f, zoneEnds(begun, landingOf(taken, f.now, R), rows, ctx), u.id, null, ctx, []);
   }
-  // rule 7c (kits design 8.4): before the use lands, the reactions it sets off fire on the bodies they protect
-  const before = beforeReactions(a, u, rows, cmd.aim, f, R);
-  const resolved = resolve(a, u, before.rows, cmd.aim, f.grid, cmd.rolls, f.now, R, before.answers);
+  const resolved = resolve(a, u, rows, cmd.aim, f.grid, cmd.rolls, f.now, R);
   if (resolved.ok === false) return refused(f, resolved.reason);
   // table 2.3: a use that resolved is one more spent of an ability limited a fight or a rest
   const r = { ...resolved, bodies: resolved.bodies.map(b => b.id === u.id ? counted(b, a, R) : b) };
   const forced = cmd.force && cmd.by !== f.currentId ? ' (GM)' : '';
-  return landed(f, { a, u, rows, at, r, before, taken, head: `${u.name} uses ${a.name}${forced}`, by: u.id }, ctx);
+  return landed(f, { a, u, rows, at, r, taken, head: `${u.name} uses ${a.name}${forced}`, by: u.id }, ctx);
 };
 
 /** The zones a zone price took whose end lands: those a round old or more (table 2.6). */
@@ -227,12 +226,12 @@ const landingOf = (taken: readonly Zone[], now: Tick, R: Rules): Zone[] => taken
 /**
  * A use that landed, as `act` and a channel's `release` hand it on: the ability, its user and the rows as the use found
  * them, the tile it aimed at, what `landUse` answered (with what the command does to its user: a use counted, a channel
- * gone off), the reactions rule 7c fired, the zones its price takes now, the start of its log line, and who acted (none
+ * gone off; and the reactions it set off), the zones its price takes now, the start of its log line, and who acted (none
  * for a broken channel going off out of its user's turn, which is no turn's action).
  */
 type Landed = {
   readonly a: Ability; readonly u: Body; readonly rows: readonly Body[]; readonly at: Place;
-  readonly r: Extract<Resolved, { readonly ok: true }>; readonly before: Before; readonly taken: readonly Zone[];
+  readonly r: Extract<Resolved, { readonly ok: true }>; readonly taken: readonly Zone[];
   readonly head: string; readonly by: string;
 };
 /**
@@ -243,12 +242,12 @@ type Landed = {
  * then the next turn.
  */
 function landed(f: Running, use: Landed, ctx: Ctx): Result {
-  const R = ctx.rules, { a, u, rows, at, before, taken } = use;
+  const R = ctx.rules, { a, u, rows, at, taken } = use, reacted = use.r.reacted;
   // acting on a foe or a place ends the user's untargetable and hidden statuses, after the use (kits design 8.1, 8.7)
   const ends = (a.aim === 'foe' || a.aim === 'place') && !hides(a);
   const r = ends ? { ...use.r, bodies: use.r.bodies.map(b => b.id === u.id ? uncovered(b, f.now, R) : b) } : use.r;
   const said = [
-    ...before.said, ...before.lethal,
+    ...reacted.said, ...reacted.lethal,
     ...r.outcomes.map(o => `${rowOf(f, o.target)?.name ?? o.target} ${o.avoid === 'out' ? 'avoids it' : `${o.avoid}${o.crit ? ', crit' : ''}${o.dealt ? ` ${o.dealt}` : ''}`}`),
     ...r.bursts.map(b => `${rowOf(f, b.bearer)?.name ?? b.bearer}'s ${b.label} goes off${b.landed.some(l => l.dealt) ? ` (${b.landed.map(l => `${rowOf(f, l.target)?.name ?? l.target} ${l.dealt}`).join(', ')})` : ''}`),
   ];
@@ -257,7 +256,7 @@ function landed(f: Running, use: Landed, ctx: Ctx): Result {
   const left = leftZone(a, u, at, f.grid, f.now, rest, R);
   const placed = left ? placeZone(rest, left, R) : { zones: rest, evicted: [] };
   const useLine = `${use.head}${said.length ? `: ${said.join(', ')}` : ''}${left ? `; ${left.name} covers the ground` : ''}${placed.evicted.length ? `; ${placed.evicted.map(z => z.name).join(', ')} gives way` : ''}.`;
-  const about = [u.id, ...before.about, ...r.outcomes.map(o => o.target), ...r.bursts.flatMap(b => [b.bearer, ...b.landed.map(l => l.target)])];
+  const about = [u.id, ...reacted.about, ...r.outcomes.map(o => o.target), ...r.bursts.flatMap(b => [b.bearer, ...b.landed.map(l => l.target)])];
   const used0 = summoned(zoneEnds(logged({ ...f, rows: r.bodies, zones: placed.zones }, line(useLine, about, [...(left ? [left.id] : []), ...placed.evicted.map(z => z.id)]), R), landingOf(taken, f.now, R), rows, ctx), a, u.id, ctx);
   // a zone act (kits design 8.5.4): a zone moved or widened onto a body pays it no entry, as a forced move pays none (8.5.5)
   const z = a.zoneAct ? zoneActed(used0.zones, u.id, a.zoneAct, at, used0.rows, used0.grid, used0.now, R) : null;
@@ -265,7 +264,7 @@ function landed(f: Running, use: Landed, ctx: Ctx): Result {
   const pushedIn = new Set<string>(z?.acted ? used.rows.map(b => b.id) : r.shoved);
   const scored = { ...used, rows: tallied(used.rows, { type: 'used', by: u.id, ability: a, outcomes: r.outcomes, before: rows }) };
   const fired = triggered(scored, eventsOf(a, u.id, r.outcomes, rows, scored.rows), ctx);
-  return after(f, afterReactions(fired, u.id, r.outcomes, R, before.count), use.by, null, ctx, [{ type: 'used', by: u.id, ability: a.id, line: useLine }, ...critsOf(r.outcomes), ...burstsOf(r.bursts)], pushedIn);
+  return after(f, afterReactions(fired, u.id, r.outcomes, R, reacted.count), use.by, null, ctx, [{ type: 'used', by: u.id, ability: a.id, line: useLine }, ...critsOf(r.outcomes), ...burstsOf(r.bursts)], pushedIn);
 }
 
 /**
@@ -290,45 +289,6 @@ function summoned(f: Running, a: Ability, by: CombatantId, ctx: Ctx): Running {
   return logged({ ...g, rows: [...g.rows, row] }, line(`${u.name} calls ${row.name}.`, [u.id, row.id]), R);
 }
 
-/** The reactions rule 7c fired: the rows they changed, what they ask of the use, their words, whom they were about, and the count a use's `reactionsPerUse` reads. */
-type Before = { rows: Body[]; answers: Answers; said: string[]; lethal: string[]; about: CombatantId[]; count: { n: number } };
-/**
- * Rule 7c (kits design 8.4.1): each body a foe's use of `a` may catch, in the order the use takes them, sets off the
- * armed `before` reactions that protect it (its own, or an ally's within reach), at most `reactionsPerUse` in all; each
- * lands on the body it protects and gives the use its guard or negate. The lethal reaction of rule 13b is fired by
- * `resolve` through `answers.lethal`, within the same count.
- */
-function beforeReactions(a: Ability, u: Body, rows: readonly Body[], aim: Aim, f: Running, R: Rules): Before {
-  const said: string[] = [], lethal: string[] = [], about: CombatantId[] = [], count = { n: 0 };
-  if (!(a.aim === 'foe' || a.aim === 'place')) return { rows: [...rows], answers: {}, said, lethal, about, count };
-  const map = new Map(rows.map(b => [b.id, b] as const)), guard: Record<CombatantId, number> = {}, negate = new Set<CombatantId>();
-  const inside = Object.keys(needs(a, u, rows, aim, f.grid, f.now, R).dice) as CombatantId[];
-  for (const id of inside) {
-    const t = map.get(id);
-    if (!t || t.side === u.side) continue;
-    for (const r of reactorsFor(map, t, 'before', t.id, f.now, R)) {
-      if (count.n >= R.fight.kit.reactionsPerUse) break;
-      const fired = fireReaction(map, r.id, t.id, f.now, R);
-      if (!fired) continue;
-      count.n++;
-      said.push(fired.said);
-      about.push(...fired.about);
-      if (fired.guard) guard[t.id] = Math.max(guard[t.id] ?? 0, fired.guard);
-      if (fired.negate) negate.add(t.id);
-    }
-  }
-  const lethalOf = (id: CombatantId, live: Map<CombatantId, Body>): boolean => {
-    const t = live.get(id);
-    if (!t || t.side === u.side || count.n >= R.fight.kit.reactionsPerUse) return false;
-    const r = reactorsFor(live, t, 'lethal', id, f.now, R)[0], fired = r && fireReaction(live, r.id, id, f.now, R);
-    if (!fired) return false;
-    count.n++;
-    lethal.push(fired.said);
-    about.push(...fired.about);
-    return true;
-  };
-  return { rows: rows.map(b => map.get(b.id)!), answers: { guard, negate, lethal: lethalOf }, said, lethal, about, count };
-}
 /**
  * Rule 19c (kits design 8.4.1): after a foe's use and its triggers, each body it landed on (caught or in its ring) sets
  * off the armed `after` reactions that protect it, aimed at the user, within the use's `reactionsPerUse`.
@@ -404,13 +364,11 @@ const release: Step<'running', 'release'> = (f, cmd, ctx) => {
   };
   const at = placeOf(c.aim, f.rows);
   if (!at) return nothing();
-  // rule 7c: the reactions fire as the use lands, which for a channel is now
-  const before = beforeReactions(a, u, f.rows, c.aim, f, R);
-  const r = landUse(a, u, { at, paid: u, spent: c.spent }, before.rows, c.aim, f.grid, cmd.rolls, f.now, R, before.answers);
+  const r = landUse(a, u, { at, paid: u, spent: c.spent }, f.rows, c.aim, f.grid, cmd.rolls, f.now, R);
   if (r.ok === false) return r.reason === 'needsRoll' ? refused(f, r.reason) : nothing();
   // it goes off; out of its user's turn (a broken one) it costs no time
   const fired = (b: Body): Body => b.id !== u.id ? b : { ...b, channel: channelStep(c, { type: 'release' }), ...(turn ? {} : { at: u.at }) };
-  return landed(f, { a, u, rows: f.rows, at, r: { ...r, bodies: r.bodies.map(fired) }, before, taken: [], head: `${u.name}'s ${a.name} is released at charge ${c.charge}`, by: turn ? u.id : '' }, ctx);
+  return landed(f, { a, u, rows: f.rows, at, r: { ...r, bodies: r.bodies.map(fired) }, taken: [], head: `${u.name}'s ${a.name} is released at charge ${c.charge}`, by: turn ? u.id : '' }, ctx);
 };
 
 /**
@@ -517,6 +475,20 @@ function adjust<F extends Setup | Running>(f: F, cmd: Extract<Command, { type: '
   if (limited && 'used' in used) said.push(`${limited.name} uses spent ${spent}`);
   if (!said.length) return refused(f, 'noChange');
   return gmChange(f, row, line(`${u.name}: ${said.join(', ')} (GM).`, [u.id]), ctx);
+}
+
+/**
+ * A level-up's refill of a hunter's row: the sheet's refill (vitals.ts `refilled`) from the hunter's life (`rowLife`), at
+ * the maxima the row has now. A dead hunter's row stays at 0 HP, as its sheet does. A row already full changes nothing,
+ * and is not refused, so the grant that asks for it is paid.
+ */
+function refill<F extends Setup | Running>(f: F, cmd: Extract<Command, { type: 'refill' }>, ctx: Ctx): Result {
+  const u = rowOf(f, cmd.id);
+  if (!u) return refused(f, 'unknown');
+  if (u.kind !== 'hunter') return refused(f, 'notHunter');
+  const v = refilled({ life: rowLife(u, ctx), mana: u.mana }, u.sheet), row = { ...u, hp: hpOf(v.life, u.sheet.hpMax), mana: v.mana };
+  if (row.hp === u.hp && row.mana === u.mana) return done(f, []);
+  return gmChange(f, row, line(`${u.name} is refilled: HP ${signed(row.hp - u.hp)}, mana ${signed(row.mana - u.mana)} (level up).`, [u.id]), ctx);
 }
 
 /** The GM's Status window: a status taken off, then one put on with the GM as its source. Nothing to change is refused. */
@@ -646,21 +618,21 @@ function extract<F extends Fight>(f: F, cmd: Extract<Command, { type: 'extract' 
 // ── the table ──
 const TABLE: { readonly [S in FightState]: Row<S> } = {
   none: {
-    add: create, remove: null, start: null, act: null, move: null, endTurn: null, release: null, setIntent: null, reveal: null, place: null, adjust: null,
+    add: create, remove: null, start: null, act: null, move: null, endTurn: null, release: null, setIntent: null, reveal: null, place: null, adjust: null, refill: null,
     status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract: null, end: null, clear: null,
   },
   setup: {
-    add: addTo, remove: removeInSetup, start, act: null, move: null, endTurn: null, release: null, setIntent, reveal, place: placeRow, adjust, status,
+    add: addTo, remove: removeInSetup, start, act: null, move: null, endTurn: null, release: null, setIntent, reveal, place: placeRow, adjust, refill, status,
     settle: null, paint, zoneAdd, zoneRemove, resize, arm, extract, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
   },
   running: {
-    add: addTo, remove: removeRunning, start: null, act, move, endTurn, release, setIntent, reveal, place: placeRow, adjust, status, settle: settleDue,
+    add: addTo, remove: removeRunning, start: null, act, move, endTurn, release, setIntent, reveal, place: placeRow, adjust, refill, status, settle: settleDue,
     paint, zoneAdd, zoneRemove, resize, arm, extract, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
   },
   // The rows of an ended fight are the summary's record: the GM edits the hunters' sheets from here on, and may still
   // extract a shadow from a fallen monster.
   ended: {
-    add: null, remove: null, start: null, act: null, move: null, endTurn: null, release: null, setIntent: null, reveal: null, place: null, adjust: null,
+    add: null, remove: null, start: null, act: null, move: null, endTurn: null, release: null, setIntent: null, reveal: null, place: null, adjust: null, refill: null,
     status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract, end: null, clear: () => done(null, []),
   },
 };

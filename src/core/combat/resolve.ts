@@ -18,13 +18,15 @@ import type { Ability, Avoid, CombatantId, AbilityGate, Outcome, Price } from '.
 import { atTier, controlFactor, countOn, cureStatus, dispelled, removeStatus, shielded, stackOf, stacked, withStatuses } from './effect-ops.ts';
 import { boostsOn, concealed, critFacesAgainst, damageShare, edgeOn, edgeStep, healShare, rangeWith, wardedDamage } from './standing.ts';
 import type { Body, OpRules, Status, StatusKey, UseOp } from './effect-ops.ts';
-import { afterDefence, alive, broken, channelBreaks, clamp, crossed, cureLands, hasteOn, healed, hurt, landEnd, landThreshold, live, moved, opsOf, landStatus, threatened, throughShield } from './land.ts';
+import { afterDefence, alive, broken, channelBreaks, clamp, cureLands, hasteOn, healed, hurt, landEnd, landMove, landThreshold, live, opsOf, landStatus, threatened, throughShield } from './land.ts';
 import { insideZone } from './triggers.ts';
 import type { Burst, LandFired } from './land.ts';
 import { stackStep } from './stacks.ts';
 import { usesOf } from './uses.ts';
 import { freeZoneId, MAX_ZONES } from './zones.ts';
 import type { Ground, Zone } from './zones.ts';
+import { beforeReactions } from './fight-react.ts';
+import type { Reacted } from './fight-react.ts';
 
 /** Where a use is aimed: a tile, or a combatant. */
 export type Aim = Place | CombatantId;
@@ -72,10 +74,13 @@ export type UseRefusal = 'taunted' | 'cooldown' | 'gated' | 'noUses' | 'mana' | 
 /** A threshold that a use's status set off (rule 18a): on whom, which status, and what its ops did to each body they reached. */
 export type { Burst } from './land.ts';
 export { afterDefence } from './land.ts';
-/** `shoved`: the bodies a push, a pull or a swap moved (kits design 8.3), whose entry into a zone pays nothing. */
+/**
+ * `shoved`: the bodies a push, a pull or a swap moved (kits design 8.3), whose entry into a zone pays nothing; `reacted`:
+ * the reactions the use set off (rules 7c and 13b).
+ */
 export type Resolved =
   | { readonly ok: false; readonly reason: UseRefusal }
-  | { readonly ok: true; readonly outcomes: readonly Outcome[]; readonly bodies: readonly Body[]; readonly bursts: readonly Burst[]; readonly shoved: readonly CombatantId[] };
+  | { readonly ok: true; readonly outcomes: readonly Outcome[]; readonly bodies: readonly Body[]; readonly bursts: readonly Burst[]; readonly shoved: readonly CombatantId[]; readonly reacted: Reacted };
 export type ResolveRules = OpRules & Pick<Rules, 'dice'>;
 
 const samePlace = (a: Place, b: Place): boolean => a.x === b.x && a.y === b.y;
@@ -412,10 +417,24 @@ const extraTaken = (a: Ability, user: Body, now: Tick, R: ResolveRules): boolean
 const refundLands = (chance: number, d20: number | undefined): boolean => chance >= 100 || (d20 !== undefined && d20 * 100 / 20 <= chance);
 const refundRolls = (user: Body, now: Tick): boolean => opsOf(user, now).some(({ op }) => op.op === 'refund' && op.chance < 100);
 
-/** The dice and reaction rolls the edge must roll for this use: for each body in the shape, its dice and its d20. */
-export function needs(a: Ability, user: Body, bodies: readonly Body[], aim: Aim, grid: Grid, now: Tick, R: KindRules): Needs {
+/**
+ * The dice and reaction rolls the edge must roll for this use of `a` by `user`, as the fight stands (`bodies`): those of
+ * the field it lands on (`field`), for each body in its shape there its dice and its d20. A channel's are its release's,
+ * which lands what its begin paid; any other use pays as it lands (`ready`). A use the rules refuse asks for none.
+ */
+export function needs(a: Ability, user: Body, bodies: readonly Body[], aim: Aim, grid: Grid, now: Tick, R: ResolveRules): Needs {
+  const ok = a.channel ? channelReady(user, bodies, aim) : ready(a, user, bodies, aim, grid, now, R);
+  const f = ok === null || typeof ok === 'string' ? null : field(a, user, ok.paid, bodies, ok.at, grid, now, R);
+  return f === null || typeof f === 'string' ? { dice: {}, react: [], refund: false } : asked(a, f, now, R);
+}
+/** A channel's release as `needs` asks it: the tile it was aimed at, its user as it stands, which paid at the begin. */
+const channelReady = (user: Body, bodies: readonly Body[], aim: Aim): Ready | null => {
   const at = placeOf(aim, bodies);
-  const inside = at === null ? [] : (({ hit, ring }) => [...hit, ...ring])(whoIsIn(a, user, catchable(bodies, user), at, grid));
+  return at === null ? null : { at, paid: user, spent: 0 };
+};
+/** The dice a use asks of the field it lands on: each body in its shape there its dice and, read from where its user stands, its d20, second d20 and held dice. */
+function asked(a: Ability, f: Field, now: Tick, R: KindRules): Needs {
+  const inside = [...f.hit, ...f.ring], user = f.from;
   const dice = diceFor(a, user.tier, R), reacting = rollsReaction(a) ? inside : [];
   const second = reacting.filter(t => edgeOn(a, user, t).cut !== null).map(t => t.id);
   const boost: { id: CombatantId; sides: number }[] = [];
@@ -426,6 +445,26 @@ export function needs(a: Ability, user: Body, bodies: readonly Body[], aim: Aim,
     refund: refundRolls(user, now),
     ...(second.length ? { second } : {}), ...(boost.length ? { boost } : {}),
   };
+}
+
+/**
+ * The field a use lands on, after rules 5b, 6 and 7c: its paid user where it stands (on the tile a blink aims at), the
+ * bodies with the user among them and the changes its `before` reactions made, the bodies in its shape from there, and
+ * what those reactions ask of the use. `needs` asks its dice of this field and `landUse` lands on it, so the dice asked
+ * are the dice read.
+ */
+type Field = { readonly from: Body; readonly bodies: readonly Body[]; readonly hit: readonly Body[]; readonly ring: readonly Body[]; readonly answers: Answers; readonly reacted: Reacted };
+function field(a: Ability, user: Body, paid: Body, bodies: readonly Body[], at: Place, grid: Grid, now: Tick, R: ResolveRules): Field | 'rooted' | 'blocked' {
+  // Rule 5b (kits design 8.3.5): a blink stands its user on the tile it aims at before rule 6, so the use hits from there
+  const blink = a.move?.kind === 'blink' ? blinked(user, paid, bodies, at, grid) : null;
+  if (typeof blink === 'string') return blink;
+  const stand = blink ?? paid, stood = bodies.map(b => b.id === user.id ? stand : b);
+  // rule 7c (kits design 8.4): before the use lands, the reactions of the bodies its shape catches fire on the bodies they protect
+  const shape = whoIsIn(a, stand, catchable(stood, stand), at, grid);
+  const before = beforeReactions(a, stand, [...shape.hit, ...shape.ring], stood, now, R);
+  const from = before.rows.find(b => b.id === user.id)!;
+  const { hit, ring } = whoIsIn(a, from, catchable(before.rows, from), at, grid);
+  return { from, bodies: before.rows, hit, ring, answers: before.answers, reacted: before.reacted };
 }
 
 // Rule 7b (kits design 8.2): the kept face. A die with an edge is two d20s kept higher or lower, read through the dice
@@ -517,32 +556,29 @@ export function usable(a: Ability, user: Body, bodies: readonly Body[], aim: Aim
  * fight, the user among them; the result holds them all, changed where the use changed them. Rule 1 (whose turn it is)
  * and rule 20 (the log) are the reducer's.
  */
-export function resolve(a: Ability, user: Body, bodies: readonly Body[], aim: Aim, grid: Grid, rolls: Rolls, now: Tick, R: ResolveRules, answers: Answers = {}): Resolved {
+export function resolve(a: Ability, user: Body, bodies: readonly Body[], aim: Aim, grid: Grid, rolls: Rolls, now: Tick, R: ResolveRules): Resolved {
   const r = ready(a, user, bodies, aim, grid, now, R);
-  return typeof r === 'string' ? { ok: false, reason: r } : landUse(a, user, r, bodies, aim, grid, rolls, now, R, answers);
+  return typeof r === 'string' ? { ok: false, reason: r } : landUse(a, user, r, bodies, aim, grid, rolls, now, R);
 }
 /**
  * Rules 5b to 19: a use that `ready` let through lands. A channel's release lands this way with what its begin paid, so
  * nothing is asked or paid twice; it can still be refused for a missing roll, a blink with nowhere to stand, or no body
  * in its shape for an ally ability or an aimed body.
  */
-export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body[], aim: Aim, grid: Grid, rolls: Rolls, now: Tick, R: ResolveRules, answers: Answers = {}): Resolved {
-  const { at, paid } = ok;
-  // Rule 5b (kits design 8.3.5): a blink stands its user on the tile it aims at before rule 6, so the use hits from there
-  const blink = a.move?.kind === 'blink' ? blinked(user, paid, bodies, at, grid) : null;
-  if (typeof blink === 'string') return { ok: false, reason: blink };
-  const from = blink ?? paid;
-  const { hit, ring } = whoIsIn(a, from, catchable(bodies, from), at, grid);
+export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body[], aim: Aim, grid: Grid, rolls: Rolls, now: Tick, R: ResolveRules): Resolved {
+  const { at } = ok;
+  const f = field(a, user, ok.paid, bodies, at, grid, now, R);
+  if (typeof f === 'string') return { ok: false, reason: f };
+  const { from, hit, ring, answers } = f;
   if ((a.aim === 'ally' || typeof aim === 'string') && hit.length + ring.length === 0) return { ok: false, reason: 'noTarget' };
-  const need = needs(a, user, bodies, aim, grid, now, R), count = diceFor(a, user.tier, R).length;
+  const need = asked(a, f, now, R), count = diceFor(a, user.tier, R).length;
   const missing = need.react.some(id => rolls.react[id] === undefined)
     || Object.keys(need.dice).some(id => (rolls.dice[id as CombatantId]?.length ?? 0) < count)
     || (need.refund && rolls.refund === undefined)
     || (need.second ?? []).some(id => rolls.second?.[id] === undefined) || (need.boost ?? []).some(b => rolls.boost?.[b.id] === undefined);
   if (missing) return { ok: false, reason: 'needsRoll' };
 
-  const rows = new Map(bodies.map(b => [b.id, b] as const));
-  rows.set(user.id, from);
+  const rows = new Map(f.bodies.map(b => [b.id, b] as const));
   const snap = snapshot(from, [...rows.values()], hit.length + ring.length, ok.spent, now, R);
   const outcomes: Outcome[] = [], bursts: Burst[] = [];
   for (const first of [...hit, ...ring]) {
@@ -584,10 +620,8 @@ export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body
     t = channelBroken ? broken(landed.target, R) : landed.target;
     rows.set(t.id, t);
     if (lands) for (const op of a.ops) if (op.op === 'move') {
-      const m = moved(op, rows.get(user.id)!, rows.get(t.id)!, null, now, R);
-      if (!m) continue;
-      rows.set(user.id, m.user); rows.set(m.target.id, m.target);
-      if (m.gained) { const holder = op.from === 'user' ? m.target : m.user, c = crossed(holder, m.gained, m.before, m.k, now, R); rows.set(holder.id, c.target); if (c.fired) landed.fired.push(c.fired); }
+      const m = landMove(rows, op, user.id, t.id, null, true, now, R);
+      if (m?.fired) landed.fired.push(m.fired);
       t = rows.get(t.id)!;
     }
     outcomes.push({
@@ -601,7 +635,7 @@ export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body
   if (rollsReaction(a)) spendEdges(a, rows.get(user.id)!, [...hit, ...ring].map(b => rows.get(b.id)!), rows, now, R);
   const shoved = [...swapped(a, user.id, outcomes, rows, grid, R), ...pushed(a, user.id, at, outcomes, rows, grid, R)];
   rows.set(user.id, userTime(a, rows.get(user.id)!, now, rolls.refund, R));
-  return { ok: true, outcomes, bodies: bodies.map(b => rows.get(b.id)!), bursts, shoved };
+  return { ok: true, outcomes, bodies: bodies.map(b => rows.get(b.id)!), bursts, shoved, reacted: f.reacted };
 }
 
 /** Rule 5b: the user on the tile a blink aims at, or why not: rooted, or a tile it does not see, may not stand on, or is taken. */

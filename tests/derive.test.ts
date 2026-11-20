@@ -271,6 +271,11 @@ describe('statuses and perks on a sheet', () => {
     expect(perked.phys).toBe(sheetOf({ ...build('tank', 'C'), stats: stats({ vit: 63, str: 83 }) }, RULES).phys);
   });
 
+  test('however far perks and the GM\'s adjustment lower them, a body keeps 1 max HP, 1 fatigue capacity and no less than 0 max mana', () => {
+    const low = sheetOf({ ...build('tank', 'E'), perks: { hpMax: -5000, fatigueMax: -5000, manaMax: -5000 } }, RULES);
+    expect([low.hpMax, low.fatigueMax, low.manaMax]).toEqual([1, 1, 0]);
+  });
+
   test('a perk on carry is read before the load, so it lifts the speed of a heavy kit', () => {
     const plain = sheetOf(build('tank', 'E'), RULES), strong = sheetOf({ ...build('tank', 'E'), perks: { carry: 40 } }, RULES);
     expect([plain.speed, strong.speed]).toEqual([65, 70]);

@@ -137,7 +137,10 @@ const HUNTER: Factors = { hp: 1, power: 1 };
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
 // Design 2.2, in the order the numbers read each other: weight and carry give the load, the load and Agility the speed,
-// the speed the move. Crit faces, crit size, the opening bonus and the cost cut never fall below their base.
+// the speed the move. Crit faces, crit size, the opening bonus and the cost cut never fall below their base. However far
+// perks lower them (an item's, a title's, the GM's `hpAdj` and `manaAdj`), max HP and fatigue capacity stay at 1 or
+// more and max mana at 0 or more: a body with no HP to hold could not be up (vitals.ts), one with no capacity would be
+// collapsed at rest.
 function derive(stats: Stats, level: number, gear: readonly GearPiece[], perks: Bonus, mods: readonly StatusMod[], f: Factors, R: DeriveRules): Sheet {
   const F = R.fight;
   const b = (k: StatKey | SheetNumber): number => perks[k] ?? 0;
@@ -159,9 +162,9 @@ function derive(stats: Stats, level: number, gear: readonly GearPiece[], perks: 
   const speed = Math.round(clamp(((F.speedBase + c('agi', F.speedCap)) * load + b('speed')) * (1 + speedPct / 100), F.speedMin, F.speedMax));
   const move = F.moveBase * speed / 100 + b('move');
   return {
-    hpMax: Math.round(f.hp * (1 + (level - 1) / F.growthDiv) * F.hpBase * (1 + c('vit', F.hpVitCap)) + b('hpMax')),
-    manaMax: Math.round(F.manaBase + c('pow', F.manaCap) + b('manaMax')),
-    fatigueMax: Math.round(F.fatigueBase + c('vit', F.fatigueCap) + b('fatigueMax')),
+    hpMax: Math.max(1, Math.round(f.hp * (1 + (level - 1) / F.growthDiv) * F.hpBase * (1 + c('vit', F.hpVitCap)) + b('hpMax'))),
+    manaMax: Math.max(0, Math.round(F.manaBase + c('pow', F.manaCap) + b('manaMax'))),
+    fatigueMax: Math.max(1, Math.round(F.fatigueBase + c('vit', F.fatigueCap) + b('fatigueMax'))),
     carry: Math.round(carry),
     weight,
     speed,

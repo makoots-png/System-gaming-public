@@ -167,8 +167,14 @@ export function fatigueNews(before: Pick<Vitals, 'fatigue' | 'collapsed'>, after
   return fatiguePast(after.fatigue, m, R.fatigue.disAt) && !fatiguePast(before.fatigue, m, R.fatigue.disAt) ? 'high' : null;
 }
 
-/** HP and mana filled, as on reaching a new level or finishing the day's dailies. The dead stay dead. */
-export const refill = (v: Vitals, m: Maxima): Vitals => ({ ...hit(v, { type: 'heal', amount: m.hpMax }, m), mana: Math.max(0, m.manaMax) });
+/**
+ * The life and mana a refill leaves: HP healed to the maximum through the life machine (the dead stay dead, the down
+ * stand up), mana full. The one meaning of a refill, for a sheet (`refill`) and for a fight's row (fight.ts `refill`).
+ */
+export const refilled = (v: Pick<Vitals, 'life' | 'mana'>, m: Pick<Maxima, 'hpMax' | 'manaMax'>): Pick<Vitals, 'life' | 'mana'> =>
+  ({ life: lifeAfter(v.life, { type: 'heal', amount: m.hpMax }, m.hpMax), mana: Math.max(0, m.manaMax) });
+/** HP and mana filled (`refilled`), as on reaching a new level or finishing the day's dailies. The dead stay dead. */
+export const refill = (v: Vitals, m: Maxima): Vitals => ({ ...fieldsOf(v), ...refilled(v, m) });
 
 /**
  * A short or long rest: the rules' share of max HP and mana back, and the rules' share of the fatigue capacity off.

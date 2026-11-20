@@ -155,11 +155,14 @@ export type Landed = { readonly target: CombatantId; readonly dealt: number; rea
  * whose hit a damage op is for defence (rule 12) and whose sheet the formula reads as the user: the status's source for
  * a threshold or an end, the bearer for a trigger (design 1.3.9); null reads the target itself. `times` multiplies every
  * amount (an end lands times its stacks, design 1.6). With `cross` a status put on checks its threshold (rule 18a) and
- * the ones it sets off come back in `fired`, for the caller to land once; without it a status only adds its stacks.
+ * the ones it sets off come back in `fired`, for the caller to land once; without it a status only adds its stacks. A
+ * move that takes from a target gives to the hitter, which then has an entry of its own in `landed`, after the targets'.
  */
 export function landOps(rows: Map<CombatantId, Body>, ops: readonly LandOp[], hitter: Body | null, targets: readonly CombatantId[], source: Source, now: Tick, R: OpRules,
   o: { readonly times?: number; readonly cross?: boolean; readonly event?: StatusKey } = {}): { landed: Landed[]; fired: LandFired[] } {
   const landed: Landed[] = [], fired: LandFired[] = [];
+  // what a move from a target gave the body that took it (the hitter), told after the targets
+  const taken: Record<CombatantId, StatusKey[]> = {};
   for (const id of targets) {
     let t = rows.get(id);
     if (!t || !alive(t)) continue;
@@ -169,10 +172,12 @@ export function landOps(rows: Map<CombatantId, Body>, ops: readonly LandOp[], hi
     for (const op of ops) {
       const user = hitter ? rows.get(hitter.id) ?? hitter : t;
       if (op.op === 'move') {
-        // a move changes two bodies: the giver and the receiver (kits design 8.5)
+        // a move changes two bodies, and the one that receives is the one that gained (kits design 8.5.2)
         rows.set(t.id, t);
-        const m = moved(op, user, t, o.event ?? null, now, R);
-        if (m) { rows.set(m.user.id, m.user); rows.set(m.target.id, m.target); t = m.target; if (m.gained) gained.push(m.gained); if (o.cross && m.gained) { const c = crossed(t, m.gained, m.before, m.k, now, R); t = c.target; if (c.fired) fired.push(c.fired); } }
+        const m = landMove(rows, op, user.id, t.id, o.event ?? null, o.cross ?? false, now, R);
+        t = rows.get(t.id)!;
+        if (m?.fired) fired.push(m.fired);
+        if (m) (m.holder === t.id ? gained : (taken[m.holder] ??= [])).push(m.key);
         continue;
       }
       const r = landOne(op, user, t, source, now, R, o.times ?? 1, source.id === null ? null : rows.get(source.id)?.side ?? null, o.cross ?? false);
@@ -188,6 +193,7 @@ export function landOps(rows: Map<CombatantId, Body>, ops: readonly LandOp[], hi
     rows.set(t.id, t);
     landed.push({ target: t.id, dealt, down: before > 0 && t.hp === 0, gained, cured });
   }
+  for (const [id, keys] of Object.entries(taken) as [CombatantId, StatusKey[]][]) landed.push({ target: id, dealt: 0, down: false, gained: keys, cured: [] });
   return { landed, fired };
 }
 
@@ -234,8 +240,8 @@ export function kitOf(user: Body, target: Body, R: OpRules): KitScope {
  * key is the status named, the giver's first harmful one, or the one that raised the trigger (`event`). A safeguard on
  * the receiver refuses a harmful one, which stays. Null when nothing moves.
  */
-export function moved(op: Extract<LandOp, { op: 'move' }>, user: Body, target: Body, event: StatusKey | null, now: Tick, R: OpRules):
-  { user: Body; target: Body; gained: StatusKey | null; before: ReturnType<typeof stackOf>; k: number } | null {
+function moved(op: Extract<LandOp, { op: 'move' }>, user: Body, target: Body, event: StatusKey | null, now: Tick, R: OpRules):
+  { user: Body; target: Body; gained: StatusKey; before: ReturnType<typeof stackOf>; k: number } | null {
   if (user.id === target.id) return null;
   const giver = op.from === 'user' ? user : target, taker = op.from === 'user' ? target : user;
   const s = op.key === 'harmful' ? giver.statuses.find(x => x.zone === undefined && harmful(x.def)) : giver.statuses.find(x => x.zone === undefined && x.key === (op.key === 'event' ? event : op.key));
@@ -250,6 +256,23 @@ export function moved(op: Extract<LandOp, { op: 'move' }>, user: Body, target: B
   const g = withStatuses(giver, left, now, R), t = withStatuses(taker, applyStatus(taker.statuses, put), now, R);
   const out = op.from === 'user' ? { user: g, target: t } : { user: t, target: g };
   return { ...out, gained: key, before, k };
+}
+
+/**
+ * A move between `user` and `target` as `rows` holds them, written to `rows`: the one path of a use's move (resolve.ts)
+ * and a land op's. The body that receives is the one that gained the status, whichever of the two it is, and with
+ * `cross` its threshold checks for the crossing (rule 18a). Answers who gained which status and the threshold it set
+ * off, or null when nothing moved.
+ */
+export function landMove(rows: Map<CombatantId, Body>, op: Extract<LandOp, { op: 'move' }>, user: CombatantId, target: CombatantId, event: StatusKey | null, cross: boolean, now: Tick, R: OpRules):
+  { holder: CombatantId; key: StatusKey; fired: LandFired | null } | null {
+  const u = rows.get(user), t = rows.get(target), m = u && t ? moved(op, u, t, event, now, R) : null;
+  if (!m) return null;
+  rows.set(m.user.id, m.user); rows.set(m.target.id, m.target);
+  const holder = op.from === 'user' ? m.target : m.user;
+  const c = cross ? crossed(holder, m.gained, m.before, m.k, now, R) : { target: holder, fired: null };
+  rows.set(holder.id, c.target);
+  return { holder: holder.id, key: m.gained, fired: c.fired };
 }
 
 /**

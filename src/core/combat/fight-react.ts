@@ -5,9 +5,9 @@
 // machine is `reactStep` and its `TABLE`; a row holds one armed reaction at most (`Body.armed`). A reaction lands like a
 // trigger, at its formulas' averages (land.ts), and its time comes off its reactor's next turn: an action taken early,
 // never a free one. A new moment is a member of `ReactWhen` (ability-types.ts), its rule where it fires, and its cells
-// here; a case in tests/fight.test.ts ("a reaction").
+// here; a case in tests/fight.test.ts ("a reaction"). Rule 7c's reactions are `beforeReactions`, which resolve.ts fires as
+// a use meets its field, so the dice a use asks for (`needs`) are those of the field its reactions left.
 
-import type { Rules } from '../rules.ts';
 import { interval, tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
 import type { Ability, CombatantId, ReactWhen } from './ability-types.ts';
@@ -15,6 +15,7 @@ import { landsAlone } from './effect-ops.ts';
 import type { Body, LandOp } from './effect-ops.ts';
 import { alive, held, landOps } from './land.ts';
 import { charged } from './resolve.ts';
+import type { Answers, ResolveRules } from './resolve.ts';
 import { formulaOf } from '../registry/ability-kinds.ts';
 import { dist } from './space.ts';
 import { counted } from './uses.ts';
@@ -70,21 +71,21 @@ export const armedAbility = (b: Body): Ability | null => {
  * then a use's rules 3 to 4 (resolve.ts `charged`: off its cooldown, its gates holding at the aim, a use left, its cost
  * and its kit prices paid). Null when it may not fire.
  */
-function chargedReaction(rows: ReadonlyMap<CombatantId, Body>, r: Body, aim: CombatantId, now: Tick, R: Rules): Body | null {
+function chargedReaction(rows: ReadonlyMap<CombatantId, Body>, r: Body, aim: CombatantId, now: Tick, R: ResolveRules): Body | null {
   const a = armedAbility(r), at = rows.get(aim)?.place;
   if (!a || !at || reactState(r) !== 'armed' || r.hp <= 0 || held(r, now)) return null;
   const c = charged(a, r, [...rows.values()], at, now, R);
   return typeof c === 'string' ? null : c.user;
 }
 /** Whether `r` may fire its reaction at `aim` now. */
-export const mayFire = (rows: ReadonlyMap<CombatantId, Body>, r: Body, aim: CombatantId, now: Tick, R: Rules): boolean => chargedReaction(rows, r, aim, now, R) !== null;
+export const mayFire = (rows: ReadonlyMap<CombatantId, Body>, r: Body, aim: CombatantId, now: Tick, R: ResolveRules): boolean => chargedReaction(rows, r, aim, now, R) !== null;
 /** Whether `r`'s reaction answers a foe's use on `t` at `when`: its own row, or an ally within its reach. */
 export const protects = (r: Body, t: Body, when: ReactWhen): boolean => {
   const a = armedAbility(r);
   return a !== null && a.react!.when === when && r.side === t.side && (r.id === t.id || (alive(t) && dist(r.place, t.place) <= a.react!.reach));
 };
 /** The reactors of a side that answer a use on `t` at `when` and may fire at `aim` (`t` itself, or the attacker for an `after` reaction), in the fight's order. */
-export const reactorsFor = (rows: ReadonlyMap<CombatantId, Body>, t: Body, when: ReactWhen, aim: CombatantId, now: Tick, R: Rules): Body[] =>
+export const reactorsFor = (rows: ReadonlyMap<CombatantId, Body>, t: Body, when: ReactWhen, aim: CombatantId, now: Tick, R: ResolveRules): Body[] =>
   [...rows.values()].filter(r => protects(r, t, when) && mayFire(rows, r, aim, now, R));
 
 /** What a fired reaction gave the use it answers: the share a guard takes off it and whether it negates it, with the log's words. */
@@ -96,7 +97,7 @@ export type ReactionFired = { readonly guard: number; readonly negate: boolean; 
  * when it may no longer fire (an earlier reaction of the same use changed what it asks). Its effect and its ops land on `aim` at their averages from its reactor at its tier, as a
  * trigger's do; a `guard` and a `negate` are given back for the use it answers. Changes `rows`.
  */
-export function fireReaction(rows: Map<CombatantId, Body>, reactor: CombatantId, aim: CombatantId, now: Tick, R: Rules): ReactionFired | null {
+export function fireReaction(rows: Map<CombatantId, Body>, reactor: CombatantId, aim: CombatantId, now: Tick, R: ResolveRules): ReactionFired | null {
   const r = rows.get(reactor), paid = r && chargedReaction(rows, r, aim, now, R), a = r && armedAbility(r);
   if (!paid || !a) return null;
   let b: Body = paid;
@@ -115,11 +116,54 @@ export function fireReaction(rows: Map<CombatantId, Body>, reactor: CombatantId,
 }
 
 /**
+ * The reactions one use set off: the words of rule 7c's and of rule 13b's lethal ones, whom they were about, and the
+ * count `reactionsPerUse` reads, which rule 19c's `after` reactions go on from (fight.ts). The lethal ones are added as
+ * the use lands.
+ */
+export type Reacted = { readonly said: string[]; readonly lethal: string[]; readonly about: CombatantId[]; readonly count: { n: number } };
+/**
+ * Rule 7c (kits design 8.4.1): each body a foe's use of `a` by `user` catches (`caught`, in the order the use takes them)
+ * sets off the armed `before` reactions that protect it (its own, or an ally's within reach), at most `reactionsPerUse`
+ * in all; each lands on the body it protects and gives the use its guard or negate. The lethal reaction of rule 13b fires
+ * through `answers.lethal` as the use lands, within the same count. Answers the rows the reactions left.
+ */
+export function beforeReactions(a: Ability, user: Body, caught: readonly Body[], rows: readonly Body[], now: Tick, R: ResolveRules): { rows: Body[]; answers: Answers; reacted: Reacted } {
+  const reacted: Reacted = { said: [], lethal: [], about: [], count: { n: 0 } }, count = reacted.count;
+  if (!(a.aim === 'foe' || a.aim === 'place')) return { rows: [...rows], answers: {}, reacted };
+  const map = new Map(rows.map(b => [b.id, b] as const)), guard: Record<CombatantId, number> = {}, negate = new Set<CombatantId>();
+  for (const { id } of caught) {
+    const t = map.get(id);
+    if (!t || t.side === user.side) continue;
+    for (const r of reactorsFor(map, t, 'before', t.id, now, R)) {
+      if (count.n >= R.fight.kit.reactionsPerUse) break;
+      const fired = fireReaction(map, r.id, t.id, now, R);
+      if (!fired) continue;
+      count.n++;
+      reacted.said.push(fired.said);
+      reacted.about.push(...fired.about);
+      if (fired.guard) guard[t.id] = Math.max(guard[t.id] ?? 0, fired.guard);
+      if (fired.negate) negate.add(t.id);
+    }
+  }
+  const lethal = (id: CombatantId, live: Map<CombatantId, Body>): boolean => {
+    const t = live.get(id);
+    if (!t || t.side === user.side || count.n >= R.fight.kit.reactionsPerUse) return false;
+    const r = reactorsFor(live, t, 'lethal', id, now, R)[0], fired = r && fireReaction(live, r.id, id, now, R);
+    if (!fired) return false;
+    count.n++;
+    reacted.lethal.push(fired.said);
+    reacted.about.push(...fired.about);
+    return true;
+  };
+  return { rows: rows.map(b => map.get(b.id)!), answers: { guard, negate, lethal }, reacted };
+}
+
+/**
  * The `turn` reactions armed on the body whose turn comes next (kits design 8.6.3): the first that may fire moves its
  * reactor's turn to just before that body's, never before `now + 1`. It adds no turn: it moves one earlier. Spent until
  * the named body's turn starts, so it cannot answer the same turn twice. Null when none fires.
  */
-export function turnReaction(rows: Map<CombatantId, Body>, next: Body, now: Tick, R: Rules): ReactionFired | null {
+export function turnReaction(rows: Map<CombatantId, Body>, next: Body, now: Tick, R: ResolveRules): ReactionFired | null {
   const r = [...rows.values()].find(x => x.id !== next.id && x.armed?.on === next.id && armedAbility(x)?.react?.when === 'turn' && mayFire(rows, x, x.id, now, R));
   if (!r) return null;
   const at = Math.max(now + 1, next.at - 1);

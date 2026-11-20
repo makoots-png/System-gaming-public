@@ -7,7 +7,7 @@ import { RULES } from '../src/core/rules.ts';
 import { TERRAIN } from '../src/core/combat/space.ts';
 import { modified, onSheet, perRound, stacked } from '../src/core/combat/effect-ops.ts';
 import type { Status } from '../src/core/combat/effect-ops.ts';
-import { hpPrice } from '../src/core/combat/resolve.ts';
+import { hpPrice, needs } from '../src/core/combat/resolve.ts';
 import { usesGates } from '../src/core/combat/uses.ts';
 import { fire, raised } from '../src/core/combat/triggers.ts';
 import type { Raised, Trigger } from '../src/core/combat/triggers.ts';
@@ -20,6 +20,7 @@ import { MAX_SPREAD, reduce } from '../src/core/combat/fight.ts';
 import type { Command, Effect, Fight } from '../src/core/combat/fight.ts';
 import { place } from '../src/core/combat/space.ts';
 import { abilityId, combatantId } from '../src/core/combat/ability-types.ts';
+import type { CombatantId } from '../src/core/combat/ability-types.ts';
 import type { Rolls } from '../src/core/combat/resolve.ts';
 import { fightId } from '../src/core/combat/fight.ts';
 import { GRID, ROSTER, SEEDS, ctx, lengthOf, randomCommand, rng } from './models/fight-play.ts';
@@ -144,6 +145,8 @@ function check(before: Fight | null, cmd: Command, after: Fight | null, effects:
   if (kits) return kits;
   const wave2 = wave2Wrong(before, cmd, after, effects, mem);
   if (wave2) return wave2;
+  const asked = askedWrong(before, cmd, effects);
+  if (asked) return asked;
   if (after.phase === 'running') {
     for (const side of ['party', 'foe'] as const) if (!after.rows.some(r => r.side === side && isUp(r) && r.kind !== 'summon')) return `the ${side} side has only summons up, or none, and the fight runs on`;
     const cur = after.rows.find(r => r.id === after.currentId);
@@ -236,6 +239,21 @@ function wave2Wrong(before: Fight | null, cmd: Command, after: Fight, effects: r
     }
   }
   return null;
+}
+
+/**
+ * A use or a channel's release that brings every die `needs` (resolve.ts) asked of the fight before it is never refused
+ * for a roll: the dice asked are the dice the use reads (audit BUG-rules-2 and BUG-rules-4).
+ */
+function askedWrong(before: Fight | null, cmd: Command, effects: readonly Effect[]): string | null {
+  if (before?.phase !== 'running' || (cmd.type !== 'act' && cmd.type !== 'release') || !effects.some(e => e.type === 'refused' && e.reason === 'needsRoll')) return null;
+  const u = before.rows.find(r => r.id === cmd.by), c = u?.channel;
+  const a = u?.abilities.find(x => x.id === (cmd.type === 'act' ? cmd.ability : c?.ability)), aim = cmd.type === 'act' ? cmd.aim : c?.aim;
+  if (!u || !a || aim === undefined) return null;
+  const n = needs(a, u, before.rows, aim, before.grid, before.now, RULES), r = cmd.rolls;
+  const brought = n.react.every(id => r.react[id] !== undefined) && Object.entries(n.dice).every(([id, ds]) => (r.dice[id as CombatantId]?.length ?? 0) >= ds.length)
+    && (!n.refund || r.refund !== undefined) && (n.second ?? []).every(id => r.second?.[id] !== undefined) && (n.boost ?? []).every(b => r.boost?.[b.id] !== undefined);
+  return brought ? `${cmd.by}'s ${cmd.type} brought every die needs asked for and was refused for a roll` : null;
 }
 
 type Failure = { seed: number; at: number; problem: string; commands: Command[] };
