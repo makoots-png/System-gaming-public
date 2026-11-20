@@ -5,6 +5,8 @@ import type { Dice, Formula, Scope } from '../src/core/formula.ts';
 import type { Random } from '../src/edge/roll.ts';
 import type { Needs } from '../src/core/combat/resolve.ts';
 import { combatantId } from '../src/core/combat/ability-types.ts';
+import { heldDieId } from '../src/core/combat/standing.ts';
+import { statusKey } from '../src/core/combat/effect-ops.ts';
 
 // A small seeded generator (mulberry32); no test reads real randomness.
 const seeded = (seed: number): Random => () => {
@@ -186,13 +188,14 @@ describe('a dice term with Roll20\'s modifiers', () => {
 });
 
 describe('the dice of rule 7b (kits design 8.2)', () => {
-  test('a second d20 for each die with an edge and each held die by its bearer, rolled from the same random source', () => {
+  test('a second d20 for each die with an edge and each held die by its id, rolled from the same random source', () => {
     let i = 0;
     const seq = [0.05, 0.5, 0.95, 0.3, 0.7];
-    const r = rollNeeds({ dice: {}, react: [combatantId('t')], refund: false, second: [combatantId('t')], boost: [{ id: combatantId('u'), sides: 6 }] }, () => seq[i++ % seq.length]!);
+    const bless = heldDieId(combatantId('u'), statusKey('bless'), 0), focus = heldDieId(combatantId('u'), statusKey('focus'), 0);
+    const r = rollNeeds({ dice: {}, react: [combatantId('t')], refund: false, second: [combatantId('t')], boost: [{ id: bless, sides: 6 }, { id: focus, sides: 8 }] }, () => seq[i++ % seq.length]!);
     expect(r.react).toEqual({ t: 2 });
     expect(r.second).toEqual({ t: 11 });
-    expect(r.boost).toEqual({ u: 6 });
+    expect(r.boost).toEqual({ [bless]: 6, [focus]: 3 });
     expect('second' in rollNeeds({ dice: {}, react: [], refund: false })).toBe(false);
   });
 });

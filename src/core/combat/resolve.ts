@@ -20,6 +20,7 @@ import { isUp, rowHp } from './row-hp.ts';
 import { controlFactor, cureStatus, dispelled, removeStatus, shielded, withStatuses } from './effect-ops.ts';
 import { atTier, countOn, stacked } from './op-amount.ts';
 import { boostsOn, concealed, critFacesAgainst, damageShare, edgeOn, edgeStep, healShare, rangeWith, wardedDamage } from './standing.ts';
+import type { HeldDieId } from './standing.ts';
 import type { Body, OpRules, Status, StatusKey, UseOp } from './effect-ops.ts';
 import { afterDefence, alive, broken, channelBreaks, clamp, cureLands, hasteOn, healed, hurt, landEnd, landMove, landThreshold, live, opsOf, landStatus, threatened, throughShield } from './land.ts';
 import type { Burst, LandFired } from './land.ts';
@@ -42,17 +43,17 @@ export type Rolls = {
   readonly refund?: number;
   /** The second d20 of a target whose die has an edge (rule 7b, kits design 8.2); absent when no die has one. */
   readonly second?: Readonly<Record<CombatantId, number>>;
-  /** Each held die's roll, by its bearer (rule 7b); absent when none is a die. */
-  readonly boost?: Readonly<Record<CombatantId, number>>;
+  /** Each held die's roll, by its id (rule 7b: `heldDieId`, its bearer, status and op); absent when none is a die. */
+  readonly boost?: Readonly<Record<HeldDieId, number>>;
 };
 /**
  * What the edge must roll before it sends a use: each target's dice and reaction d20, the user's refund d20, a second
- * d20 for each target whose die has an edge (`second`), and each held die by its bearer (`boost`); the last two absent
- * when there are none.
+ * d20 for each target whose die has an edge (`second`), and each held die to roll by its id (`boost`: one a die, however
+ * many one body holds; a user's reaches every target and is rolled once a use); the last two absent when there are none.
  */
 export type Needs = {
   readonly dice: Readonly<Record<CombatantId, readonly Dice[]>>; readonly react: readonly CombatantId[]; readonly refund: boolean;
-  readonly second?: readonly CombatantId[]; readonly boost?: readonly { readonly id: CombatantId; readonly sides: number }[];
+  readonly second?: readonly CombatantId[]; readonly boost?: readonly { readonly id: HeldDieId; readonly sides: number }[];
 };
 /**
  * The dice of a player's cast (the room's `cast`: one roll of the use's dice on the player's phone) by target: they land
@@ -367,8 +368,8 @@ function asked(a: Ability, f: Field, now: Tick, R: KindRules): Needs {
   const inside = [...f.hit, ...f.ring], user = f.from;
   const dice = diceFor(a, user.tier, R), reacting = rollsReaction(a) ? inside : [];
   const second = reacting.filter(t => edgeOn(a, user, t).cut !== null).map(t => t.id);
-  const boost: { id: CombatantId; sides: number }[] = [];
-  for (const t of reacting) for (const b of boostsOn(user, t)) if (b.die.kind === 'die' && !boost.some(x => x.id === b.id)) boost.push({ id: b.id, sides: b.die.sides });
+  const boost: { id: HeldDieId; sides: number }[] = [];
+  for (const t of reacting) for (const b of boostsOn(user, t)) if (b.die.kind === 'die' && !boost.some(x => x.id === b.held)) boost.push({ id: b.held, sides: b.die.sides });
   return {
     dice: Object.fromEntries(inside.map(b => [b.id, dice])),
     react: reacting.map(b => b.id),
@@ -408,7 +409,7 @@ function keptFace(a: Ability, user: Body, target: Body, rolls: Rolls): number | 
   const read = rollOf(term as Dice, term === ONE_D20 ? [d20] : [d20, second!]);
   let face = 'total' in read ? read.total : d20;
   for (const b of boostsOn(user, target)) {
-    const n = b.die.kind === 'face' ? b.die.n : rolls.boost?.[b.id] ?? 0;
+    const n = b.die.kind === 'face' ? b.die.n : rolls.boost?.[b.held] ?? 0;
     face += b.side === 'attack' ? -n : n;
   }
   return Math.max(1, Math.min(D20_FACES, face));

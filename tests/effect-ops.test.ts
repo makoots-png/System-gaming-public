@@ -310,6 +310,16 @@ describe('a stacking status (kits design 1.1, table 2.1)', () => {
     expect([gone.statuses.length, gone.spent.length, gone.expired.length]).toEqual([0, 1, 0]);
   });
 
+  test('a status whose time runs out at a settle ends there, at the count it settled at, however its stacks leave', () => {
+    const R1 = RULES.fight.round;
+    for (const leave of [{ kind: 'never' }, { kind: 'round' }, { kind: 'event', event: 'struck' }] as const) {
+      for (const stacks of [1, 3]) for (const rounds of [1, 2, 4]) {
+        const s = settle([of(stacking({ leave }), stacks, { until: tick(rounds * R1) })], tick(rounds * R1), RULES);
+        expect([s.statuses.length, s.spent.length, s.expired.map(x => x.stacks)]).toEqual([0, 0, [stacks]]);
+      }
+    }
+  });
+
   test('stacks that never leave stay through any settle until the status\'s time runs out', () => {
     expect(count(settle([of(stacking({}), 4)], tick(10 * RULES.fight.round), RULES).statuses)).toBe(4);
   });

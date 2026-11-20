@@ -1285,6 +1285,17 @@ describe('a delayed effect (kits design 1.6, table 2.2)', () => {
     expect(lost(r.fight, 'M')).toBe(afterDefence(30, 'physical', a, m, RULES));
   });
 
+  test('one whose stacks leave each round still lands when its time and its last round end on the same turn, at the count it held (the owner, Nov 20)', () => {
+    const fading = (stacks: number) => curse(hemo('cancel', { cap: 5, leave: { kind: 'round' }, keep: 'fight', threshold: null }), stacks);
+    for (const [stacks, dealt] of [[1, 10], [3, 30]] as const) {
+      const ab = fading(stacks), r = play(...duel({ abilities: [ab] }), use(ab), pass('M'), pass('A'));
+      const { a, m } = sheets(r.fight);
+      expect([lost(r.fight, 'M'), body(r.fight, 'M').statuses]).toEqual([afterDefence(dealt, 'physical', a, m, RULES), []]);
+      expect(r.fight!.log.some(l => l.text.includes('M: Hemoplague lands'))).toBe(true);
+      expect(r.fight!.log.some(l => l.text.includes('wears off'))).toBe(false);
+    }
+  });
+
   test('a cure saves its bearer by default, and sets off at once one whose cleanse lands', () => {
     const saved = play(...duel({ abilities: [curse(hemo('cancel')), cleanse] }), use(curse(hemo('cancel'))), pass('M'), use(cleanse), pass('M'), pass('A'));
     expect([lost(saved.fight, 'M'), body(saved.fight, 'M').statuses]).toEqual([0, []]);

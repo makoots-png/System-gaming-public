@@ -17,6 +17,7 @@ import { afterDefence, castDice, needs, resolve } from '../src/core/combat/resol
 import type { Aim, Resolved, Rolls } from '../src/core/combat/resolve.ts';
 import { rng } from './models/fight-play.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
+import { heldDieId } from '../src/core/combat/standing.ts';
 import { atHp, lifeAt } from './fixtures/life.ts';
 import type { RowPatch } from './fixtures/life.ts';
 
@@ -546,13 +547,23 @@ describe('advantage and held dice: rule 7b, the kept face (kits design 8.2, tabl
 
   test('a held die moves the face: the attacker\'s d6 rolled 5 takes 15 to 10, the defender\'s fixed 20 lifts any face to 20; each spends', () => {
     const [u, t] = pair([boost('luck', 'attack', { kind: 'die', sides: 6 })]);
-    expect(needs(curse, u, [u, t], t.id, GRID, NOW, RULES).boost).toEqual([{ id: u.id, sides: 6 }]);
-    const r = run(curse, u, [u, t], t.id, { ...rolls({ t: [] }, { t: 15 }), boost: { u: 5 } as NonNullable<Rolls['boost']> });
+    expect(needs(curse, u, [u, t], t.id, GRID, NOW, RULES).boost).toEqual([{ id: heldDieId(u.id, statusKey('luck'), 0), sides: 6 }]);
+    const r = run(curse, u, [u, t], t.id, { ...rolls({ t: [] }, { t: 15 }), boost: { [heldDieId(u.id, statusKey('luck'), 0)]: 5 } });
     expect(r.outcomes[0]!.avoid).toBe('caught');
     expect(find(r.bodies, 'u').statuses).toEqual([]);
     const [u2, t2] = pair([], [boost('myth', 'defend', { kind: 'face', n: 20 })]);
     expect(needs(curse, u2, [u2, t2], t2.id, GRID, NOW, RULES).boost).toBeUndefined();
     expect(avoid(u2, t2, rolls({ t: [] }, { t: 1 }))).toBe('resisted');
+  });
+
+  test('several held dice on one body each roll and stack (the owner, Nov 20): a d4 rolled 3 and a d8 rolled 7 take 20 to 10; both spend', () => {
+    const [u, t] = pair([boost('bless', 'attack', { kind: 'die', sides: 4 }), boost('focus', 'attack', { kind: 'die', sides: 8 })]);
+    const asked = needs(curse, u, [u, t], t.id, GRID, NOW, RULES).boost ?? [];
+    expect(asked.map(b => b.sides).sort((x, y) => x - y)).toEqual([4, 8]);
+    const held = Object.fromEntries(asked.map(b => [b.id, b.sides === 4 ? 3 : 7])) as NonNullable<Rolls['boost']>;
+    const r = run(curse, u, [u, t], t.id, { ...rolls({ t: [] }, { t: 20 }), boost: held });
+    expect(r.outcomes[0]!.avoid).toBe('caught');
+    expect(find(r.bodies, 'u').statuses).toEqual([]);
   });
 
   test('a price that takes the user\'s edge leaves the target\'s alone: the second d20 is asked for, and the use lands with the dice asked', () => {

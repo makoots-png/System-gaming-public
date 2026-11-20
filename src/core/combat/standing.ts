@@ -10,6 +10,7 @@ import { atTier, countOn, SHEET_OP_KEYS } from './op-amount.ts';
 import { rowHp } from './row-hp.ts';
 import type { Body, ShareOn, SheetOpKey, Status, StatusDef, StatusKey } from './effect-ops.ts';
 import type { Ability, CombatantId } from './ability-types.ts';
+import type { Id } from '../ids.ts';
 
 /** The rule numbers this file reads. */
 export type StandingRules = Pick<Rules, 'fight'>;
@@ -187,10 +188,22 @@ export function edgeOn(a: Pick<Ability, 'tags'>, user: Pick<Body, 'id' | 'status
   reach(target, 'defend');
   return { cut: ways.size === 1 ? [...ways][0]! : null, spent };
 }
+/**
+ * One held die (kits design 8.2): the `boost` op at index `op` of the status `key` on the body `bearer`. A body holds one
+ * status a key, so it names one die however many a body holds: a use asks for each by it (`Needs.boost`) and reads each
+ * roll by it (`Rolls.boost`), so several held dice on one body each roll and stack (the owner, Nov 20).
+ */
+export type HeldDieId = Id<'HeldDieId'>;
+export const heldDieId = (bearer: CombatantId, key: StatusKey, op: number): HeldDieId => `${bearer}/${key}/${op}` as HeldDieId;
+/** A held die that reaches a die: its id, its bearer and status, the side it moves and its die to roll or fixed face. */
+export type HeldDie = {
+  readonly held: HeldDieId; readonly id: CombatantId; readonly key: StatusKey; readonly side: 'attack' | 'defend';
+  readonly die: { readonly kind: 'die'; readonly sides: number } | { readonly kind: 'face'; readonly n: number };
+};
 /** The held dice that reach a die: the user's attack boosts and the target's defend boosts, each a die to roll or a fixed face. */
-export function boostsOn(user: Pick<Body, 'id' | 'statuses'>, target: Pick<Body, 'id' | 'statuses'>): { readonly id: CombatantId; readonly key: StatusKey; readonly side: 'attack' | 'defend'; readonly die: { readonly kind: 'die'; readonly sides: number } | { readonly kind: 'face'; readonly n: number } }[] {
-  const of = (b: Pick<Body, 'id' | 'statuses'>, side: 'attack' | 'defend') =>
-    b.statuses.flatMap(s => s.def.ops.flatMap(o => o.op === 'boost' && o.side === side ? [{ id: b.id, key: s.key, side, die: o.die }] : []));
+export function boostsOn(user: Pick<Body, 'id' | 'statuses'>, target: Pick<Body, 'id' | 'statuses'>): HeldDie[] {
+  const of = (b: Pick<Body, 'id' | 'statuses'>, side: 'attack' | 'defend'): HeldDie[] =>
+    b.statuses.flatMap(s => s.def.ops.flatMap((o, i) => o.op === 'boost' && o.side === side ? [{ held: heldDieId(b.id, s.key, i), id: b.id, key: s.key, side, die: o.die }] : []));
   return [...of(user, 'attack'), ...of(target, 'defend')];
 }
 

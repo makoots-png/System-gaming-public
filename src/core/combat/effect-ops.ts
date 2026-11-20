@@ -532,9 +532,12 @@ export const perRound = (o: Op): o is Due['op'] =>
 /**
  * What the bearer's turn start at `now` does to its statuses. Each per-round op is due for the time from its status's
  * `settledAt` to `now`, or to its end if that came first, at the count the status holds as it settles (kits design 1.1
- * rule 7); `settledAt` moves there. A stacking status whose stacks leave a round then loses one for each whole round
- * held since `since` that this span completed (as a spread counts its rounds); one that loses its last is `spent`, gone
- * but not ended. A status whose end is at or before `now` then leaves, so it always settles in full first.
+ * rule 7); `settledAt` moves there. Then one of two things happens to it, its time first. A status whose end is at or
+ * before `now` is `expired`: it ends at the count it settled at, and its end lands (the owner, Nov 20: when its time and
+ * the round that takes its last stack fall on one turn, it goes off rather than fading). Any other stacking status whose
+ * stacks leave a round loses one for each whole round held since `since` that this span completed (as a spread counts
+ * its rounds); one that loses its last is `spent`, gone but not ended. Both are the stack machine's steps (stacks.ts:
+ * `timeEnds` goes `ended`, a `round` that takes the last goes `spent`).
  */
 export function settle(statuses: readonly Status[], now: Tick, R: OpRules): { statuses: Status[]; due: Due[]; expired: Status[]; spent: Status[] } {
   const kept: Status[] = [], expired: Status[] = [], spent: Status[] = [], due: Due[] = [];
@@ -544,15 +547,14 @@ export function settle(statuses: readonly Status[], now: Tick, R: OpRules): { st
     const before = (s.settledAt - s.since) / R.fight.round;
     const count = stacked(s) ? s.stacks : 1;
     if (span > 0) for (const op of s.def.ops) if (perRound(op)) due.push({ key: s.key, op, tier: s.source.tier, before, share: span / R.fight.round, stacks: count });
-    const settledAt = tick(Math.max(s.settledAt, end));
-    let next: Status = { ...s, settledAt };
-    if (stacked(s)) {
-      const rounds = Math.floor((settledAt - s.since) / R.fight.round) - Math.floor((s.settledAt - s.since) / R.fight.round);
-      const after = stackStep(stackOf(s), { type: 'round', rounds }, { rule: s.def.stack, at: null }).stack;
-      if (after.at === 'absent') { spent.push(next); continue; }
-      next = { ...s, settledAt, stacks: after.n };
-    }
-    (s.until !== null && now >= s.until ? expired : kept).push(next);
+    const settledAt = tick(Math.max(s.settledAt, end)), next: Status = { ...s, settledAt };
+    const timeEnds = s.until !== null && now >= s.until;
+    if (!stacked(s)) { (timeEnds ? expired : kept).push(next); continue; }
+    const rounds = Math.floor((settledAt - s.since) / R.fight.round) - Math.floor((s.settledAt - s.since) / R.fight.round);
+    const step = stackStep(stackOf(s), timeEnds ? { type: 'timeEnds' } : { type: 'round', rounds }, { rule: s.def.stack, at: null });
+    if (step.gone === 'ended') expired.push(next);
+    else if (step.stack.at === 'held') kept.push({ ...s, settledAt, stacks: step.stack.n });
+    else spent.push(next);
   }
   return { statuses: kept, due, expired, spent };
 }

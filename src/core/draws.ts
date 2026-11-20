@@ -35,7 +35,7 @@ export function drawNeeds(needs: Needs, random: Random): Rolls {
   const react: Record<CombatantId, number> = {};
   for (const id of needs.react) react[id] = faceOf(20, random);
   const base: Rolls = needs.refund ? { dice, react, refund: faceOf(20, random) } : { dice, react };
-  // rule 7b (kits design 8.2): a second d20 for a die with an edge, and each held die by its bearer
+  // rule 7b (kits design 8.2): a second d20 for a die with an edge, and each held die by its id (`heldDieId`: bearer, status and op)
   const second = needs.second?.length ? Object.fromEntries(needs.second.map(id => [id, faceOf(20, random)])) : null;
   const boost = needs.boost?.length ? Object.fromEntries(needs.boost.map(b => [b.id, faceOf(b.sides, random)])) : null;
   return { ...base, ...(second ? { second } : {}), ...(boost ? { boost } : {}) };
