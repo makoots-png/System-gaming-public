@@ -5,7 +5,7 @@ import type { Page } from '@playwright/test';
 import { RULES } from '../../src/core/rules.ts';
 import { abilityId } from '../../src/core/combat/ability-types.ts';
 import { abilityOf } from '../../src/core/registry/ability-kinds.ts';
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, fightRow } from './helpers.ts';
+import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, fightRow, answerWindow, chooseList, startGoblinDenFight } from './helpers.ts';
 
 const HUNTER = 'Kai Map', MONSTER = 'Cave Rat', BRAKK = 'Brakk Ironhide';
 /** Every die rolls its lowest face: a reaction d20 of 1 is caught and a crit, so a use lands. */
@@ -365,6 +365,95 @@ test('a GM\'s fight opens on the map, and while it runs the screen is the fight:
   await go(player, 'combat');
   await expect(combat(player).locator('[data-fview="map"]')).toHaveAttribute('aria-pressed', 'true');
   await expect(map(player).locator('[data-frame]')).toBeVisible();
+});
+
+test('a player who zoomed the map out in one fight finds the next fight on the same ground opened at the zoom a fight opens at', async ({ device }) => {
+  const { gm, player } = await room(device);
+  const { kai } = await fight(gm, player, [{ x: 6, y: 6 }]);
+  const world = map(player).locator('[data-world]');
+  const transform = () => world.evaluate(w => (w as HTMLElement).style.transform);
+
+  await test.step('the player zooms out over their own token, which stays in sight', async () => {
+    const framed = await transform(), b = (await token(player, kai).boundingBox())!;
+    await player.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    for (let i = 0; i < 3; i++) await player.mouse.wheel(0, 100);
+    await expect.poll(transform).not.toBe(framed);
+  });
+
+  const next = await test.step('the GM clears the fight and starts another on the same ground, Kai first again at (2, 2)', async () => {
+    await combat(gm).locator('[data-tools-open]').tap();
+    await combat(gm).getByRole('dialog', { name: 'Fight tools' }).locator('[data-clear]').tap();
+    await answerWindow(gm, 'Clear the fight?', 'Clear');
+    await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (remote)` });
+    await combat(gm).locator('[data-addh]').tap();
+    await combat(gm).locator('[data-qline]').fill(`${MONSTER} x1, E, brute`);
+    await combat(gm).locator('[data-qadd]').tap();
+    await combat(gm).locator('[data-start]').tap();
+    const id = await gm.evaluate(name => {
+      let out = '';
+      hunterApp.store.update((d: any) => {
+        const f = d.fight, k = f.rows.find((r: any) => r.name === name), rat = f.rows.find((r: any) => r.kind === 'monster');
+        k.place = { x: 2, y: 2 }; k.at = f.now; k.tie = 0; rat.place = { x: 9, y: 7 }; rat.at = f.now + 1; rat.tie = 0;
+        f.currentId = k.id; out = k.id;
+      }, 'test-setup');
+      return out;
+    }, HUNTER);
+    await expect(combat(player).locator('.tb-mine')).toContainText('YOUR TURN');
+    await expect.poll(() => placeOf(player, id)).toEqual([2, 2]);
+    return id;
+  });
+
+  await test.step('the player\'s map opens the new fight as a map opens a fight: a token is at least 44 px', async () => {
+    await expect(token(player, next)).toBeVisible();
+    const t = (await token(player, next).boundingBox())!;
+    expect(Math.min(t.width, t.height), 'a token is at least 44 px').toBeGreaterThanOrEqual(44);
+  });
+});
+
+test('a player who switches the fight between list and map three times leaves no map behind listening to the window', async ({ device }) => {
+  const { gm, player } = await room(device);
+  await fight(gm, player, [{ x: 6, y: 6 }]);
+  const cdp = await player.context().newCDPSession(player);
+  const resizers = async () => {
+    const { result } = await cdp.send('Runtime.evaluate', { expression: 'window' });
+    const { listeners } = await cdp.send('DOMDebugger.getEventListeners', { objectId: result.objectId! });
+    return listeners.filter(l => l.type === 'resize').length;
+  };
+  const first = await resizers();
+  for (let i = 0; i < 3; i++) {
+    await combat(player).locator('[data-fview="list"]').tap();
+    await expect(map(player)).toHaveCount(0);
+    await combat(player).locator('[data-fview="map"]').tap();
+    await expect(map(player).locator('[data-frame]')).toBeVisible();
+  }
+  expect(await resizers()).toBe(first);
+});
+
+type TraceEvent = { name: string; ph: string; ts: number; dur?: number; pid: number; tid: number; args?: { name?: string; data?: { type?: string }; beginData?: { stackTrace?: { functionName: string; url: string; lineNumber: number; columnNumber: number }[] } } };
+test('the GM\'s tap on a hotbar slot of a settled, framed map draws its reach with no layout of the page inside the tap', async ({ device }) => {
+  // A layout read inside the tap lays the page out there, and the frame lays it out again after the redraw's writes: the
+  // lag test's stutter on a pick (tests/e2e/feel.e2e.ts, "an ability picked on the map"). Settled: a move still running
+  // when a new one starts on the same element is read from its computed style (motion.ts), which is motion's, not the map's.
+  const page = (await device('gm')).page;
+  await onboardGM(page);
+  await chooseList(page);
+  await startGoblinDenFight(page);
+  await combat(page).locator('[data-fview="map"]').tap();
+  await expect(map(page).locator('.mp-tok.now')).toHaveCount(1);
+  await map(page).locator('[data-frame]').dblclick({ position: { x: 4, y: 4 } });
+  await expect.poll(() => page.evaluate(() => document.getAnimations().filter(a => a.playState === 'running' && (a.effect?.getTiming().iterations ?? 1) !== Infinity).length)).toBe(0);
+  const browser = page.context().browser()!;
+  await browser.startTracing(page, { categories: ['devtools.timeline', 'disabled-by-default-devtools.timeline', 'disabled-by-default-devtools.timeline.stack'] });
+  await map(page).locator('[data-hot] .mp-hb').first().tap();
+  await expect(map(page).locator('[data-shade="reach"]').first()).toBeAttached();
+  const ev: TraceEvent[] = JSON.parse(String(await browser.stopTracing())).traceEvents;
+  const main = ev.find(e => e.ph === 'M' && e.name === 'thread_name' && e.args?.name === 'CrRendererMain')!;
+  const mine = ev.filter(e => e.pid === main.pid && e.tid === main.tid && e.ph === 'X' && e.dur);
+  const taps = mine.filter(e => e.name === 'EventDispatch' && /^(pointer|touch|mouse)(down|up|start|end)$|^click$/.test(e.args?.data?.type ?? ''));
+  expect(taps.length, 'the tap\'s events are in the trace').toBeGreaterThan(0);
+  const where = (e: TraceEvent) => (e.args?.beginData?.stackTrace ?? []).slice(0, 3).map(s => `${s.functionName || '(anon)'}@${s.url.split('/').pop()}:${s.lineNumber}:${s.columnNumber}`).join(' < ');
+  const laid = taps.flatMap(t => mine.filter(e => (e.name === 'Layout' || e.name === 'UpdateLayoutTree') && e.ts >= t.ts && e.ts + e.dur! <= t.ts + t.dur!).map(e => `${e.name} in ${t.args?.data?.type}, read at ${where(e)}`));
+  expect(laid, 'each layout inside the tap and the read that forced it (dist/app.js after bun run build)').toEqual([]);
 });
 
 /** Every die rolls its highest face: a reaction d20 of 20 uses all the time a slow ability gives to move. */

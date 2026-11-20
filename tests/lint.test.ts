@@ -440,10 +440,12 @@ test('a view computes no fight number: from the modules that work one out it imp
 test('the map view imports no rule module but the scene\'s: it draws src/core/combat/map-view.ts and converts tiles to pixels', async () => {
   // the owner's map is a second view of the same fight: if map.js worked out a reach, a path or a legality itself, the map
   // and the list could disagree. What the map shows comes from the scene (map-view.ts); what a tap or a gesture does from
-  // the map's two machines (`choose` in map-view.ts, gesture.ts); `place` makes a tile from a tap.
+  // the map's machines (`choose` in map-view.ts, gesture.ts), and when it frames from its life on the page
+  // (map-mount.ts); `place` makes a tile from a tap.
   const allowed: Record<string, readonly string[]> = {
     'src/core/combat/map-view.ts': ['hotbar', 'mapScene', 'NO_CHOICE', 'choose'],
     'src/core/combat/gesture.ts': ['IDLE', 'MAX_ZOOM', 'gesture', 'zoomAbout'],
+    'src/core/combat/map-mount.ts': ['BLANK', 'mapMount'],
     'src/core/combat/space.ts': ['place'],
   };
   const imports = (file: string, text: string): string[] => [...text.matchAll(/\bimport\s*(?:\{([^}]*)\}|\*\s*as\s+\w+)\s*from\s*['"]([^'"]+)['"]/g)].flatMap(m => {
@@ -979,7 +981,7 @@ test('a view keeps no machine in flags: its closure state is counted per file, a
   // a view keeps the one value it feeds and the UI values no rule reads. A `let` at the top of a module, of `register` or
   // of a component's `mount` (four spaces in or less) is counted, and each file's count is what it holds.
   const named: Record<string, { count: number; why: string }> = {
-    'src/views/map.js': { count: 15, why: 'the two machines\' values (choice, g), the scene and what the last frame drew (fitted, areaSig, along, draws, zonesWas, far, seen, sized, overWas), the frame\'s place under a finger, the hold timer, the paint brush, the news line\'s timer; the open detail is detail.js\'s' },
+    'src/views/map.js': { count: 15, why: 'the three machines\' values (choice, g, life: map-mount.ts holds what was framed and the words over the frame), the scene and what the last frame drew (areaSig, along, draws, zonesWas, far, seen), the resize waiting for a frame (sized), the frame\'s place under a finger, the hold timer, the paint brush, the news line\'s timer; the open detail is detail.js\'s' },
     'src/views/maker.js': { count: 15, why: 'the makers\' window stack and form (body, me, form, asking, previewEl), the formula field (ticks, type, gapOn, text, kind), an effect row\'s amount and value, the field\'s end editor (zendFx), the ability form\'s kind' },
     'src/views/combat.js': { count: 9, why: 'the GM\'s fight screen: the side marked surprised, the doc\'s last refusal and burst, what is open over the map (over), the root and the map\'s handle, and locals of three functions (aim twice, actions); the odds\' run is odds-box.js\'s' },
     'src/views/gm.js': { count: 8, why: 'the root, the Award editor\'s and Issue quest\'s handles, the reward the Award form opens with (pendingAward), and locals of a tool\'s form (n, msg, text, parsed)' },
@@ -1175,7 +1177,7 @@ test('every let a view keeps for the page is named here with what it holds, and 
     'combat.js lastBurst': 'the last threshold burst for the fight doc, its count inside it (`n`), so a repeat is drawn again',
     'combat.js root': what.handle, 'combat.js sel': what.shown, 'combat.js over': 'what is open over the map: nothing, a row\'s card or the Fight tools; one union, so two cannot be open at once', 'combat.js build': 'whether the Build encounter panel is on the screen or in the Fight tools sheet',
     'combat.js lastOrder': what.drawn, 'combat.js shownLog': what.drawn,
- 'combat.js mapView': what.handle, 'combat.js mapBox': what.handle,
+ 'combat.js mapView': what.handle,
     'custom.js hpSeen': 'the HP last felt, so a buzz follows only a change',
     'dice.js recent': 'the last typed rolls, kept with store.device',
     'dice.js viewInst': what.handle, 'dice.js sheetInst': what.handle, 'dice.js isOpen': what.shown,
@@ -1628,4 +1630,16 @@ test('no test opens a file under docs/agent-handoff/', async () => {
   const reads = code.filter(line => line.file !== 'tests/lint.test.ts' && ((names(line.text) && opens(line.text)) || wholeDocs(line.text)));
   expect(report(outside), 'this file names docs/agent-handoff/ outside a comment. If it opens nothing there, add it to NAMES_IT with why; if it reads a note, see the comment above').toEqual([]);
   expect(report(reads), 'a test or a script reads the notes, so a push of notes could change a test: see the comment above').toEqual([]);
+});
+
+test('a view that mounts the battle map destroys it when it takes the map\'s box off the page', async () => {
+  // A map mounted in a box listens to the window's resize, the hotbar's observer and the news line, and nothing tells it
+  // that the box left the page: a player's switch between list and map left a map behind each time, still listening
+  // (audit BUG-views-8). The screen that mounts it keeps the map it mounted and calls its `destroy` (map-mount.ts `gone`)
+  // where it replaces the box's markup.
+  const lines = (await sourceLines('src/views')).filter(line => !isComment(line.text));
+  const mounting = [...new Set(lines.filter(line => /\bmap\.mount\(/.test(line.text)).map(line => line.file))];
+  expect(mounting.length, 'the map is mounted somewhere').toBeGreaterThan(0);
+  const keeping = new Set(lines.filter(line => /\.destroy\(\)/.test(line.text)).map(line => line.file));
+  expect(mounting.filter(file => !keeping.has(file)), 'call the map view\'s destroy() before replacing its box').toEqual([]);
 });

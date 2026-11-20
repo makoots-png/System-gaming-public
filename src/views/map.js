@@ -1,13 +1,16 @@
 // map.js: the battle map, one component for the GM's fight screen (combat.js) and a player's HUD (table.js). Publishes
 // app.api.map. It draws the `MapScene` of src/core/combat/map-view.ts and sends nothing itself: what is reachable, what
 // an ability covers, who is in it and what a tap does all come from core, and each command goes back to the phone's own
-// fight screen through its `MapSource` (src/core/api.ts). Two machines of core hold what the map is doing: the gesture
-// (src/core/combat/gesture.ts: a tap, a pan, a pinch, the GM's drag and paint) and the choice (`choose` in map-view.ts:
-// select, pick, aim, confirm). This file feeds them the page's events as data and carries out what they answer. Its own
+// fight screen through its `MapSource` (src/core/api.ts). Three machines of core hold what the map is doing: its life on
+// the page (src/core/combat/map-mount.ts: blank, opening a fight, framed, gone), the gesture (src/core/combat/gesture.ts:
+// a tap, a pan, a pinch, the GM's drag and paint) and the choice (`choose` in map-view.ts: select, pick, aim, confirm).
+// This file feeds them the page's events as data and carries out what they answer. The screen that mounts a map calls
+// its `destroy` when it takes the map's box off the page. Its own
 // arithmetic is tiles to pixels and back. Tokens are buttons in one transformed layer, the shaded tiles a layer under
 // them; both update in place (src/views/patch.ts) and every move is one of src/views/motion.ts.
 import { NO_CHOICE, choose, hotbar, mapScene } from '../core/combat/map-view.ts';
 import { IDLE, MAX_ZOOM, gesture, zoomAbout } from '../core/combat/gesture.ts';
+import { BLANK, mapMount } from '../core/combat/map-mount.ts';
 import { place } from '../core/combat/space.ts';
 import * as motion from './motion.ts';
 import { bind, keyed } from './patch.ts';
@@ -204,7 +207,10 @@ export function register(app) {
     let choice = NO_CHOICE;
     /** @type {import('../core/combat/map-view.ts').MapScene | null} */
     let scene = null;
-    let fitted = '', areaSig = '';
+    /** The map's life on the page (map-mount.ts `mapMount`): its one writer is `live`. @type {import('../core/combat/map-mount.ts').MapMount} */
+    let life = BLANK;
+    /** The kind of area the last draw shaded, so a new one breathes in. */
+    let areaSig = '';
     /** The way a token goes in this draw, when the answer to this phone's move came (the choice's `along`). */
     let along = null;
     /** How many times the map has drawn: a tap's own redraw is skipped when the screen's redraw came first. */
@@ -275,18 +281,41 @@ export function register(app) {
       const below = Math.max(all.bottom - r.bottom, 112);
       frame.style.height = `${Math.max(FRAME_MIN, Math.floor(floor - (r.top + scrollY) - below - 8))}px`;
     }
-    /**
-     * What the source says stands over the frame (`MapSource.over`), as it was when the frame's height was last worked
-     * out. A player's "YOUR TURN" line comes and goes with the turn, and a height worked out without it would push the
-     * hotbar under the bottom bar: when the word changes the height is worked out again in that draw, and the map is
-     * framed again if the height changed.
-     */
-    let overWas = '';
+    /** The frame waiting for the next frame to be worked out again after the window's resize: its request, or 0. */
     let sized = 0;
-    addEventListener('resize', () => {
-      if (sized || !el.isConnected || el.hidden) return;
-      sized = requestAnimationFrame(() => { sized = 0; sizeFrame(); fit(); });
-    });
+    const onResize = () => { if (!sized) sized = requestAnimationFrame(() => { sized = 0; live({ kind: 'resized', shown: frame.clientWidth > 0 }); }); };
+    addEventListener('resize', onResize);
+    /**
+     * Gives the map's life the event `e` (map-mount.ts) and carries out what it answers. What the source says stands over
+     * the frame (`MapSource.over`) is kept with the framed state: a player's "YOUR TURN" line comes and goes with the
+     * turn, and a height worked out without it would push the hotbar under the bottom bar, so new words work the height
+     * out again (`reheight`).
+     */
+    function live(e) {
+      const r = mapMount(life, e);
+      life = r.mount;
+      for (const fx of r.fx) {
+        switch (fx.kind) {
+          case 'forget':
+            clearTimeout(holdTimer); holdTimer = 0; g = IDLE; frame.classList.remove('panning');
+            choice = NO_CHOICE; brush = null; along = null; areaSig = '';
+            was.clear(); zonesWas = []; edges.clear();
+            D().move('map', { kind: 'close' }, drawDetail);
+            break;
+          // the frame's size, read only when the map asks (a draw's own read would lay the page out in the redraw)
+          case 'measure': live({ kind: 'sized', shown: frame.clientWidth > 0, over: e.over }); break;
+          case 'frame': sizeFrame(); fit(); break;
+          case 'reheight': { const h = frame.style.height; sizeFrame(); if (frame.style.height !== h) fit(); break; }
+          // at the frame's size as last framed: reading it here would lay the page out in the middle of the redraw
+          case 'refit': fit(seen.fw, seen.fh); break;
+          case 'stop':
+            removeEventListener('resize', onResize); cancelAnimationFrame(sized); sized = 0;
+            cutSeen.disconnect(); off(); clearTimeout(holdTimer); holdTimer = 0; clearTimeout(newsTimer); newsTimer = 0;
+            break;
+          default: break;
+        }
+      }
+    }
 
     // ── the choice: core's `choose` says what an event does, this carries it out ──
     /** Gives the choice event `e` to the choice and carries out what it answers; true when the choice changed. */
@@ -733,8 +762,10 @@ export function register(app) {
       if (bar.dataset.sig !== html) { bar.dataset.sig = html; bar.innerHTML = html; }
     }
     function draw() {
+      if (life.at === 'gone') return;
       draws++;
       const input = src.input();
+      live({ kind: 'show', fight: input ? input.fight : null });
       el.hidden = !input;
       if (!input) { scene = null; return; }
       // a new turn, a kit without the aimed ability, or the answer to a sent move (the token then goes along its way)
@@ -751,33 +782,24 @@ export function register(app) {
       drawTerrain(); drawZones(); drawFog(); drawArea(f); drawLines(); drawTokens(f); drawOrder(); drawNow(); drawConfirm(f); drawHotbar(); drawPaint(); drawSending(waiting);
       const dt = D().openIn('map');
       if (dt && !thingOf(dt)) D().move('map', { kind: 'drop', key: dt }, drawDetail); else drawDetail();
-      const key = `${scene.w}x${scene.h}`;
-      const over = src.over ? src.over() : '';
-      if (fitted !== key && scene.tokens.length && frame.clientWidth) { fitted = key; overWas = over; sizeFrame(); fit(); }
-      else if (fitted === key && over !== overWas && frame.clientWidth) {
-        overWas = over;
-        const was = frame.style.height;
-        sizeFrame();
-        if (frame.style.height !== was) fit();
-      }
-      // a turn comes to a body out of sight: the map frames again, so the one acting is on screen
-      // (at the frame's size as last framed: reading it here would lay the page out in the middle of the redraw)
-      else if (turned && scene.actor && seen.fw && scene.anchor && !inSight(scene.anchor)) fit(seen.fw, seen.fh);
+      // a turn that comes to a body out of sight frames the map again, so the one acting is on screen
+      const lost = turned && !!scene.actor && seen.fw > 0 && !!scene.anchor && !inSight(scene.anchor);
+      live({ kind: 'drawn', tokens: scene.tokens.length > 0, over: src.over ? src.over() : '', lost });
     }
     /**
      * The fight's news while this map shows a fight (the screen's view shown, a turn running): the latest in one line over
      * the map, under Paint and Grid, for as long as a toast stays. The fight's log keeps every use.
      */
     const newsBox = $('[data-news]');
+    /** The timer that hides the news line after a toast's time, or 0. */
     let newsTimer = 0;
     const off = ui.newsLine((msg, kind) => {
-      if (!el.isConnected) { off(); return false; }
       if (el.hidden || !scene || !scene.tokens.some(t => t.current) || !el.closest('.view:not([hidden])')) return false;
       newsBox.textContent = msg; newsBox.className = `mp-news ${kind}`; newsBox.hidden = false;
       void motion.enter(newsBox, 'fade');
       clearTimeout(newsTimer); newsTimer = setTimeout(() => { void motion.hide(newsBox); }, ui.TOAST_MS);
       return true;
     });
-    return { draw, fit };
+    return { draw, fit, destroy: () => live({ kind: 'gone' }) };
   }
 }

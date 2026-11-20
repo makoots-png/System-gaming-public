@@ -343,10 +343,7 @@ export function register(app) {
     const name = remoteName(key), p = postable('revive', { to: [key] }), cid = fightRowOf(key);
     if (!p.ev) return say('#gm-board-msg', notPosted(p, `Not sent to ${name}`), true);
     const said = [line('system', 'Revive', name)];
-    const ok = cid !== null ? A().combat.revive(cid, s => sent(s, { room: room(), events: [p.ev], said }, { at: new Date().toISOString(), cap: app.rules().logCap }))
-      : gmWrite('gm-revive', null, [p.ev], said);
-    if (!ok) return;
-    if (cid !== null) A().sync.flush();
+    if (!(cid !== null ? A().combat.revive(cid) : gmWrite('gm-revive', null, [p.ev], said))) return;
     say('#gm-board-msg', goesNow() ? `Sent Revive to ${name}.` : `${name} is revived when the room answers.`);
   }
   /** One status put on (`add`) or taken off (`remove`) a player's hunter: on its row in this phone's fight, else posted. */

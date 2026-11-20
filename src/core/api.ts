@@ -29,7 +29,7 @@ import type { Worth } from './registry/worth.ts';
 import type { StatBlock } from './registry/monsters.ts';
 import type { Gate, GateType } from './gates/gate.ts';
 import type { WorldWhy } from './gates/world.ts';
-import type { NewRow, Running, Setup } from './combat/fight-types.ts';
+import type { FightId, NewRow, Running, Setup } from './combat/fight-types.ts';
 import type { OddsRead, OddsVoice } from './combat/odds.ts';
 import type { ExtractionOutcome } from './combat/extraction.ts';
 import type { MapInput } from './combat/map-view.ts';
@@ -129,11 +129,11 @@ export type CombatApi = {
    */
   spend(cid: string, mana: number, also: Step<Save> | null): boolean;
   /**
-   * The GM's Revive of a down hunter's row `cid`: raised to the life table's revive HP (vitals.ts `REVIVE_HP`) by the
-   * fight's `adjust`, with `also` (the player's `revive` posted, its log line) in the same write. False when the row is up
-   * or the write was refused.
+   * The GM's Revive of down row `cid` (its card's, the GM board's): raised to the life table's revive HP (vitals.ts
+   * `REVIVE_HP`) by the fight's `adjust`, with the revive of the hunter's life where it is kept in the same write (this
+   * phone's sheet, or a player's `revive` posted with its log line). False when the row is up or the write was refused.
    */
-  revive(cid: string, also: Step<Save> | null): boolean;
+  revive(cid: string): boolean;
   /**
    * What a grant hands to this phone's fight (grant.ts `Granted.fight`) put on the rows it names (fight-save.ts
    * `heldCommands`: a status each, a refill), with `also` (the grant's own step) in the same write: all of it, or nothing
@@ -682,7 +682,8 @@ export type MapKit = {
  * `offTurn` answers a tap on the hotbar while it is not this phone's turn. `card` opens a token's card.
  */
 export type MapSource = {
-  input(): MapInput | null;
+  /** The fight to draw, its id with its scene's input (a new id is a new fight, framed afresh), or null when there is none. */
+  input(): (MapInput & { readonly fight: FightId }) | null;
   order(): { id: CombatantId; name: string }[];
   kit(): MapKit | null;
   move(to: Place, dash: boolean): void;
@@ -706,8 +707,11 @@ export type MapSource = {
   /** The actor's row arms one of its reactions, or disarms with null (kits design 8.4.2): at any time, not only its turn. */
   arm(ability: AbilityId | null): void;
 };
-/** A map drawn in an element: `draw` after each change, `fit` to frame the whole fight. */
-export type MapView = { draw(): void; fit(): void };
+/**
+ * A map drawn in an element: `draw` after each change, `fit` to frame the whole fight, `destroy` when the screen takes the
+ * element off the page (the map stops listening: src/core/combat/map-mount.ts `gone`).
+ */
+export type MapView = { draw(): void; fit(): void; destroy(): void };
 export type MapApi = {
   /** Draws a battle map in `el` from `source` (src/core/combat/map-view.ts makes its scene). */
   mount(el: HTMLElement, source: MapSource): MapView;

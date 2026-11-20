@@ -369,8 +369,10 @@ export function register(app) {
       .then(r => { if (!r.ok) ui.news('Not in the room: your turn was not ended.', 'warn'); });
   }
   // ── the map (src/views/map.js) over the room's fight doc ──
-  /** The token whose card is open over the map, and the map drawn in the HUD. */
+  /** The token whose card is open over the map, and the map drawn in the HUD (null while the HUD shows no map). */
   let cardId = null, mapView = null;
+  /** The HUD's map leaves the page with the HUD's layout: it stops listening (map.js `destroy`). */
+  const unmountMap = () => { if (mapView) { mapView.destroy(); mapView = null; } };
   /** @type {import('../core/api.ts').MapSource} */
   const mapSource = {
     over: () => {
@@ -381,7 +383,7 @@ export function register(app) {
     input: () => {
       const e = encounter(); if (!e || e.ended !== false) return null;
       const me = meRow(e), ground = docGround(e);
-      return { bodies: docBodies(e.rows, isMine, ground.grid, e.spent ?? []), grid: ground.grid, zones: ground.zones, sight: ground.sight, currentId: e.currentId, actor: me && canAct(e) && !me.down ? me.id : null };
+      return { fight: e.id, bodies: docBodies(e.rows, isMine, ground.grid, e.spent ?? []), grid: ground.grid, zones: ground.zones, sight: ground.sight, currentId: e.currentId, actor: me && canAct(e) && !me.down ? me.id : null };
     },
     order: () => {
       const e = encounter(); if (!e || e.ended !== false) return [];
@@ -482,10 +484,10 @@ export function register(app) {
   function paintHud(el) {
     turnTitle();
     const e = encounter();
-    if (!e) { if (el.dataset.mode) { el.dataset.mode = ''; el.innerHTML = ''; } hud.on = false; return; }
+    if (!e) { if (el.dataset.mode) { el.dataset.mode = ''; unmountMap(); el.innerHTML = ''; } hud.on = false; return; }
     const h = meHunter(e), onMap = store.prefs().fightView === 'map', kit = !onMap && !!h && kitOn(), mode = onMap ? 'map' : kit ? 'kit' : 'plain';
     if (el.dataset.mode !== mode) {
-      el.dataset.mode = mode; el.innerHTML = onMap ? mapTemplate() : hudTemplate(kit); hud.order = '';
+      el.dataset.mode = mode; unmountMap(); el.innerHTML = onMap ? mapTemplate() : hudTemplate(kit); hud.order = '';
       if (hud.msg && !onMap) el.querySelector('[data-tbmsg]').textContent = hud.msg;
       mapView = onMap ? app.api.map.mount(el.querySelector('[data-mapbox]'), mapSource) : null;
     }

@@ -193,6 +193,49 @@ test('a wall the GM paints mid-fight appears on the player\'s phone', async ({ d
   await expect(walls(player)).toHaveCount(2);
 });
 
+test('a GM whose Save as a new map is refused keeps the map maker open with the walls painted, and Save map then saves the edit to the same map', async ({ device }) => {
+  const gm = (await device('gm')).page;
+  await onboardGM(gm);
+  await gm.evaluate(() => hunterApp.store.update((d: any) => { d.library.maps.push({ id: 'mp901', name: 'Old Hall', w: 20, h: 14, tiles: '.'.repeat(280), fog: false, sight: 8, starts: { party: [], foe: [] }, zones: [] }); }, 'test-setup'));
+  await go(gm, 'workshop');
+  await gm.locator('#view-workshop [data-ws="map"] li', { hasText: 'Old Hall' }).locator('[data-act="edit"]').tap();
+  await maker(gm).locator('[data-brush="wall"]').tap();
+  await cell(gm, 4, 4).tap();
+  await expect(cell(gm, 4, 4)).toHaveClass(/wall/);
+
+  await test.step('with the name cleared, Save as a new map says to name it, and the maker stays open with the wall', async () => {
+    await maker(gm).locator('[data-name]').fill('');
+    await maker(gm).locator('[data-asnew]').tap();
+    await expect(maker(gm).locator('[data-err]')).toHaveText('Name the map.');
+    await expect(cell(gm, 4, 4)).toHaveClass(/wall/);
+    expect(await gm.evaluate(() => hunterApp.store.get().library.maps.map((m: any) => m.id))).toEqual(['mp901']);
+  });
+
+  await test.step('named again, Save map saves the wall to the map being edited, and no new map appears', async () => {
+    await maker(gm).locator('[data-name]').fill('Old Hall');
+    await maker(gm).locator('[data-apply]').tap();
+    await expect(maker(gm)).toHaveCount(0);
+    const maps = await gm.evaluate(() => hunterApp.store.get().library.maps);
+    expect(maps.map((m: any) => [m.id, m.tiles[4 * 20 + 4]])).toEqual([['mp901', '#']]);
+  });
+});
+
+test('a GM\'s Save as a new map adds the painted copy under the new name, and the map edited keeps its floor', async ({ device }) => {
+  const gm = (await device('gm')).page;
+  await onboardGM(gm);
+  await gm.evaluate(() => hunterApp.store.update((d: any) => { d.library.maps.push({ id: 'mp901', name: 'Old Hall', w: 20, h: 14, tiles: '.'.repeat(280), fog: false, sight: 8, starts: { party: [], foe: [] }, zones: [] }); }, 'test-setup'));
+  await go(gm, 'workshop');
+  await gm.locator('#view-workshop [data-ws="map"] li', { hasText: 'Old Hall' }).locator('[data-act="edit"]').tap();
+  await maker(gm).locator('[data-brush="wall"]').tap();
+  await cell(gm, 4, 4).tap();
+  await maker(gm).locator('[data-name]').fill('New Hall');
+  await maker(gm).locator('[data-asnew]').tap();
+  await expect(maker(gm)).toHaveCount(0);
+  const maps = await gm.evaluate(() => hunterApp.store.get().library.maps);
+  expect(maps.map((m: any) => [m.name, m.tiles[4 * 20 + 4]])).toEqual([['Old Hall', '.'], ['New Hall', '#']]);
+  expect(maps[1].id).not.toBe('mp901');
+});
+
 test('a map shared from the Workshop arrives on another phone with its walls and its fire', async ({ device }) => {
   const gm = (await device('gm')).page;
   await onboardGM(gm);

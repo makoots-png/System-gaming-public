@@ -115,6 +115,54 @@ test('a GM\'s −5 on a fighting player\'s card on the party board takes 5 from 
   expect((await fightRow(gm, HUNTER)).hp).toBe(kai.hp - 5);
 });
 
+test('a player\'s hunter who died in the GM\'s fight and whom the GM revives from the fight\'s card stands at 1 HP on the player\'s own phone', async ({ device }) => {
+  const { gm, player } = await room(device);
+  await fight(gm, player, { x: 2, y: 10 });
+  await player.evaluate(() => hunterApp.store.update(() => { hunterApp.store.active().life = { at: 'dead' }; }, 'test-setup'));
+  await gm.evaluate(n => hunterApp.store.update((d: any) => { d.fight.rows.find((r: any) => r.name === n).hp = 0; }, 'test-setup'), HUNTER);
+  await expect.poll(() => gm.evaluate(n => (hunterApp.api.sync.remoteSheets() as any[]).find(r => r.data.name === n)?.data.life.at, HUNTER)).toBe('dead');
+  await go(player, 'status');
+  const death = player.locator('#view-status [data-death]');
+  await expect(death.locator('[data-life]')).toHaveText('Dead');
+
+  await test.step('the GM picks the player\'s row and taps Revive on its card', async () => {
+    await combat(gm).locator('.cmb-row', { hasText: HUNTER }).locator('.cmb-pick').tap();
+    const revive = combat(gm).locator('.cmb-card [data-defeat]');
+    await expect(revive).toHaveText('Revive');
+    await revive.tap();
+    await expect.poll(async () => (await fightRow(gm, HUNTER)).hp).toBe(1);
+  });
+
+  await test.step('the player\'s sheet is up at 1 HP, and the death panel is gone', async () => {
+    await expect(death).toBeHidden({ timeout: 15_000 });
+    await expect(player.locator('#view-status [data-bar="hp"] [data-cur]')).toHaveText('1');
+    expect(await player.evaluate(() => hunterApp.store.active().life)).toEqual({ at: 'up', hp: 1 });
+  });
+});
+
+test('a player\'s hunter who died in the GM\'s fight and whom the GM revives from the party board stands at 1 HP on both phones', async ({ device }) => {
+  const { gm, player } = await room(device);
+  await fight(gm, player, { x: 2, y: 10 });
+  await player.evaluate(() => hunterApp.store.update(() => { hunterApp.store.active().life = { at: 'dead' }; }, 'test-setup'));
+  await gm.evaluate(n => hunterApp.store.update((d: any) => { d.fight.rows.find((r: any) => r.name === n).hp = 0; }, 'test-setup'), HUNTER);
+  await go(player, 'status');
+  const death = player.locator('#view-status [data-death]');
+  await expect(death.locator('[data-life]')).toHaveText('Dead');
+
+  await test.step('the GM taps Revive on the player\'s card on the party board', async () => {
+    await go(gm, 'gm');
+    const card = gm.locator('#gm-board .gm-card.remote', { hasText: HUNTER });
+    await card.locator('[data-grevive]').tap();
+    await expect.poll(async () => (await fightRow(gm, HUNTER)).hp).toBe(1);
+  });
+
+  await test.step('the player\'s sheet is up at 1 HP, and the death panel is gone', async () => {
+    await expect(death).toBeHidden();
+    await expect(player.locator('#view-status [data-bar="hp"] [data-cur]')).toHaveText('1');
+    expect(await player.evaluate(() => hunterApp.store.active().life)).toEqual({ at: 'up', hp: 1 });
+  });
+});
+
 test('a player\'s −5 on their own sheet during the GM\'s fight is turned down with a word, and their HP stays the fight\'s', async ({ device }) => {
   const { gm, player } = await room(device);
   await fight(gm, player, { x: 2, y: 10 });

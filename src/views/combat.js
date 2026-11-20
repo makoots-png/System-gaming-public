@@ -31,6 +31,7 @@ import { onTurn } from '../core/protocol.ts';
 import { parseSheetKey } from '../core/ids.ts';
 import { dropDealt, encounterAwards, planEncounter, pays, settleEncounter } from '../core/gates/pay.ts';
 import { isRefused } from '../core/save-step.ts';
+import { sent } from '../core/award.ts';
 import { READ_ONLY } from '../core/store-life.ts';
 import { LIFE_TAG, REVIVE_HP, can as lifeCan } from '../core/hunter/vitals.ts';
 import { ARCHETYPE_LIST, MONSTER_BOUNDS, MONSTER_KINDS, copiesOf, lootOf, monsterXp, statBlock } from '../core/registry/monsters.ts';
@@ -379,6 +380,23 @@ export function register(app) {
   // ── hand edits ──
   /** @param {Body} r @param {{ hp?: number; mana?: number; fatigue?: number }} d */
   const adjust = (r, d) => !refused(send({ type: 'adjust', id: r.id, ...d }));
+  /**
+   * Revive of a down row (its card's, and the GM board's for a player's hunter this fight holds), raised to the life
+   * table's revive HP. A hunter's life is kept on its own sheet, so the revive goes there in the same write as the
+   * raise: this phone's hunter's through hunter.life when its life can revive (dead), a player's always as the room's
+   * `revive` with its log line, which the player's sheet takes only while dead (room-events.ts). False when the row is
+   * up or nothing was written.
+   * @param {Fight} f @param {Body} r
+   */
+  function revive(f, r) {
+    if (!cardOf(f, r, rules()).down) return false;
+    const h = localHunter(r), key = remoteKeyOf(r);
+    if (h && lifeCan(h.life, 'revive')) return A().hunter.life(h.id, { type: 'revive' });
+    if (!key) return adjust(r, { hp: REVIVE_HP });
+    const S = A().sync, ev = S.event('revive', { to: [key] }); if (!ev) return false;
+    const said = [{ kind: /** @type {const} */ ('system'), hunterId: null, title: 'Revive', text: holderHunter(r)?.name || r.name }];
+    return !refused(send({ type: 'adjust', id: r.id, hp: REVIVE_HP }, null, s => sent(s, { room: S.room(), events: [ev], said }, { at: new Date().toISOString(), cap: rules().logCap })));
+  }
   // shared numeric HP entry: '7' damages, '+4' heals; forceHeal = the Heal button. inp = the field to keep focused (Enter path)
   function applyAmount(r, text, forceHeal, inp) {
     if (!r) return;
@@ -537,7 +555,7 @@ export function register(app) {
     // a grant's parts this fight holds (grant.ts `Granted.fight`) on their rows, written with the grant's step: all or none
     held: (parts, also) => !refused(sendAll(heldCommands(parts, rules()), null, also)),
     adjust: (cid, d, also = null) => { const r = rowOf(fight(), cid); if (!r) return false; return !refused(send({ type: 'adjust', id: r.id, ...(d.hp ? { hp: int(d.hp) } : {}), ...(d.mana ? { mana: int(d.mana) } : {}), ...(d.fatigue ? { fatigue: int(d.fatigue) } : {}) }, null, also)); },
-    revive: (cid, also) => { const f = fight(), r = rowOf(f, cid); return !!r && cardOf(f, r, rules()).down && !refused(send({ type: 'adjust', id: r.id, hp: REVIVE_HP }, null, also)); },
+    revive: cid => { const f = fight(), r = rowOf(f, cid); return !!r && revive(f, r); },
     spend: (cid, mana, also) => { const r = rowOf(fight(), cid); return !!r && !refused(send({ type: 'adjust', id: r.id, mana: -Math.abs(int(mana)), pay: true }, null, also)); },
     // an extraction's outcome on the corpse's row (the fight's `extract`), and a risen shadow's join in the same write
     extracted: (cid, by, outcome, rose) => !refused(send({ type: 'extract', id: combatantId(cid), by: combatantId(by), outcome }, null,
@@ -678,8 +696,8 @@ export function register(app) {
   let root = null, sel = null, lastOrder = '', shownLog = null;
   /** Under 900 px the map hides the list and the card (the CSS's breakpoint for `.cmb-main.map`). */
   const NARROW = matchMedia('(max-width:899px)');
-  /** The map drawn in this screen. */
-  let mapView = null, mapBox = null;
+  /** The map drawn in this screen's fight box, or null while the box shows no fight (it is destroyed with the box). */
+  let mapView = null;
   /**
    * What is open over the GM's map (audit row 44): nothing, the focused row's card (a phone's sheet), or the Fight tools
    * of fight `of` (Add to the fight, the log, End and Clear), which show while that fight runs in Map view. One writer,
@@ -702,7 +720,7 @@ export function register(app) {
     input: () => {
       const f = fight(); if (!f || f.phase === 'ended') return null;
       const R = rules(), c = cur(), actor = c && !isRemote(c) && !cardOf(f, c, R).down ? c.id : null;
-      return { bodies: fightBodies(f, R, () => false), grid: f.grid, currentId: running(f) ? f.currentId : null, actor, ...fightGround(f, R) };
+      return { fight: f.id, bodies: fightBodies(f, R, () => false), grid: f.grid, currentId: running(f) ? f.currentId : null, actor, ...fightGround(f, R) };
     },
     order: () => { const f = fight(); return running(f) ? order(f, 6, rules()).map(t => ({ id: t.row.id, name: t.row.name })) : []; },
     kit: () => {
@@ -1021,7 +1039,7 @@ export function register(app) {
       if (b.dataset.mana) { const n = int((A().hunter.parseAmount(amt()) || { n: 1 }).n, 1) || 1; adjust(r, { mana: int(b.dataset.mana) * Math.abs(n) }); return; }
       if (b.dataset.rc) { send({ type: 'status', id: r.id, remove: /** @type {any} */ (b.dataset.rc) }); return; }
       if (b.hasAttribute('data-cforge')) return addStatus(r);
-      if (b.hasAttribute('data-defeat')) { const k = cardOf(f, r, rules()), h = localHunter(r); if (k.down && h && lifeCan(h.life, 'revive')) A().hunter.life(h.id, { type: 'revive' }); else adjust(r, { hp: k.down ? REVIVE_HP : -k.hpMax }); return; }
+      if (b.hasAttribute('data-defeat')) { const k = cardOf(f, r, rules()); if (k.down) revive(f, r); else adjust(r, { hp: -k.hpMax }); return; }
       if (b.hasAttribute('data-remove')) { if (await ui.confirm({ title: 'Remove combatant?', body: r.name, danger: true, confirmLabel: 'Remove' })) removeRow(r); return; }
       if (b.dataset.ab) return useAbility(r, b.dataset.ab, b);
       if (b.hasAttribute('data-intent-set')) return setIntent(r);
@@ -1167,6 +1185,7 @@ export function register(app) {
     const main = $q('[data-main]'), mode = idle ? 'idle' : f && n ? 'fight' : 'empty';
     if (main.dataset.mode !== mode) {
       main.dataset.mode = mode;
+      if (mapView) { mapView.destroy(); mapView = null; }
       main.innerHTML = mode === 'fight' ? '<div class="cmb-main"><div data-mapbox></div><ul class="cmb-list" aria-label="Turn order"></ul><div data-cardbox><button type="button" class="quiet cmb-sheetx" data-sheetclose>Close</button></div></div>'
         : mode === 'empty' ? '<p class="empty">Add party hunters, monsters or shadows to begin.</p>' : '';
     }
@@ -1178,7 +1197,7 @@ export function register(app) {
       cardBox.classList.toggle('sheet', onMap && over.at === 'card');
       box.hidden = !onMap;
       if (onMap) {
-        if (mapBox !== box) { mapBox = box; mapView = A().map.mount(box, mapSource); }
+        if (!mapView) mapView = A().map.mount(box, mapSource);
         mapView.draw();
       }
       // on a phone the map hides the list, and the card until a token's is opened: what is hidden is not drawn

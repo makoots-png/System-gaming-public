@@ -2120,3 +2120,55 @@ Where it lives:
 | Who calls it | a tap on a control `wire` sees (every view that draws a detail), and `src/views/map.js` (a hold on the hotbar, a zone tapped, its detail tapped, an ability picked, a thing gone) |
 | The test to copy | `tests/detail-open.test.ts`; the walk's events are in `tests/models/detail-open-events.ts`; on screen, `tests/e2e/look.e2e.ts` ("opens it again") |
 | The recipe | docs/guide/makers.md, "More info on a thing" |
+
+## The battle map on the page
+
+Every state reachable from a map just mounted, under the 13 events of tests/models/map-mount-events.ts over two fights, breadth first. The walk found 8 states and 33 steps.
+
+### A battle map from its mount in a screen's box to its removal
+
+```mermaid
+---
+title: A battle map from its mount in a screen's box to its removal
+---
+stateDiagram-v2
+  state "Blank: no fight to show (hidden)" as s1
+  state "Opening fight f1, not framed yet" as s2
+  state "Opening fight f2, not framed yet" as s3
+  state "Gone: off the page, listening to nothing" as s4
+  state "Fight f1 framed" as s5
+  state "Fight f2 framed" as s6
+  [*] --> s1
+  s1 --> s2 : a draw shows fight f1
+  s1 --> s3 : a draw shows fight f2
+  s1 --> s4 : the screen takes it off the page (stop)
+  s2 --> s3 : a draw shows fight f2 (forget)
+  s2 --> s1 : the source shows no fight (forget)
+  s2 --> s5 : the frame read with a size (frame)
+  s2 --> s4 : the screen takes it off the page (stop)
+  s3 --> s2 : a draw shows fight f1 (forget)
+  s3 --> s1 : the source shows no fight (forget)
+  s3 --> s6 : the frame read with a size (frame)
+  s3 --> s4 : the screen takes it off the page (stop)
+  s5 --> s3 : a draw shows fight f2 (forget)
+  s5 --> s1 : the source shows no fight (forget)
+  s5 --> s2 : the window resized while the frame was hidden
+  s5 --> s4 : the screen takes it off the page (stop)
+  s6 --> s2 : a draw shows fight f1 (forget)
+  s6 --> s1 : the source shows no fight (forget)
+  s6 --> s3 : the window resized while the frame was hidden
+  s6 --> s4 : the screen takes it off the page (stop)
+```
+
+One map is mounted in the GM's fight screen or a player's HUD and outlives the fights it shows. A fight is its id, so the next fight on the same ground forgets what the last left (the gesture and its hold timer, the choice, the brush, the tokens' and zones' last draw, the open detail) and is framed afresh. A draw moves nothing itself: where the frame's size decides a move (a fight opening, new words over a framed one) it asks for it (measure), and the view reads it once and answers. An effect that leaves the fight framed draws no arrow: new words over the frame work its height out again (reheight), a resize of a shown map frames it again, and a draw whose turn came to a body out of sight frames it again at the frame's last size.
+
+6 chart states, 19 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `MapMount`, `MapMountEvent`, `MapMountFx`, `MAP_MOUNT_STATES` and `MAP_MOUNT_EVENTS` in `src/core/combat/map-mount.ts` |
+| What changes it | `mapMount(mount, event)` and its `TABLE`, through `live` in `src/views/map.js`, its one writer |
+| Who calls it | `draw` in `src/views/map.js` (a draw begins, a draw is on the page, the frame's size read when the map asks), the window's resize, and `destroy`, which `src/views/combat.js` and `src/views/table.js` call when they take the map's box off the page |
+| The test to copy | `tests/map-mount.test.ts`; the walk's events are in `tests/models/map-mount-events.ts`; on screen, `tests/e2e/battle-map.e2e.ts` ("zoomed the map out in one fight") |
