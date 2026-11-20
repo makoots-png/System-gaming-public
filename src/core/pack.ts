@@ -1,17 +1,20 @@
 // pack.ts: a pack, the GM's custom content as it leaves one phone and arrives on another. `packOf` makes one from a
 // save (everything, one kind or one entry, with the statuses its entries name), `parsePack` reads one from outside
 // data through each kind's parser, and `mergePack` merges one into a save with Add (keep both) or Replace (same key or
-// name). Pure: the code a pack travels as (compression, base64url) is src/edge/pack-code.ts.
-// A new kind of custom content gets its list in `Pack`, `PACK_KINDS`, `PACK_WORDS` and `PACK_CAP`, its line in `packOf`,
-// `parsePack` and `mergePack`, and a case in tests/pack.test.ts.
+// name). Where an entry names a status is each kind's walk in `STATUS_REFS` (status-refs.ts): `packOf` lists the
+// statuses with it and `mergePack` renames them with it. Pure: the code a pack travels as (compression, base64url) is
+// src/edge/pack-code.ts.
+// A new kind of custom content gets its list in `Pack`, `PACK_KINDS`, `PACK_WORDS` and `PACK_CAP`, its walk in
+// `STATUS_REFS`, its line in `packOf`, `parsePack` and `mergePack`, and a case in tests/pack.test.ts.
 import { FEAT_BOUNDS, parseFeat } from './hunter/feats.ts';
 import type { FeatDef } from './hunter/feats.ts';
 import { newFeatKey, saveFeat } from './library.ts';
 import { isRefused } from './save-step.ts';
 import { parseFeatKey } from './ids.ts';
 import { freeStatusKey, isStatusKey } from './combat/effect-ops.ts';
-import type { LandOp, Op, StatusDef, StatusKey, UseOp } from './combat/effect-ops.ts';
-import type { Ability } from './combat/ability-types.ts';
+import type { StatusDef, StatusKey } from './combat/effect-ops.ts';
+import { battleMap, bundle, feat, item, monster, namedIn, rekeyed, skill, statusDef, story } from './status-refs.ts';
+import type { Walk } from './status-refs.ts';
 import { parseStatusDef } from './combat/fight-parse.ts';
 import { isStateChip } from './hunter/chips.ts';
 import { parseItem } from './registry/items.ts';
@@ -24,7 +27,7 @@ import { BUILT_IN_STATUSES } from './registry/statuses.ts';
 import { mapId, parseBattleMap } from './registry/maps.ts';
 import type { BattleMap } from './registry/maps.ts';
 import { parseBundle } from './rewards.ts';
-import type { RewardBundle, Rewards } from './rewards.ts';
+import type { RewardBundle } from './rewards.ts';
 import { RULES } from './rules.ts';
 import { LIMITS, SCHEMA } from './save.ts';
 import type { Item, Library, Monster, Save, Skill } from './save.ts';
@@ -79,33 +82,12 @@ const each = <T>(f: (k: PackKind) => T): Record<PackKind, T> => Object.fromEntri
 export const packCounts = (p: Pack): Record<PackKind, number> => each(k => (k === 'statuses' || k === 'feats' ? Object.keys(p[k]).length : p[k].length));
 
 // ── statuses named by an entry ──
-/** Every status key the ops of a status def apply or cure, nested defs included (their triggers, threshold and end too). */
-function opKeys(ops: readonly Op[], out: Set<string>): void {
-  for (const o of ops) {
-    if (o.op === 'applyStatus') { out.add(o.key); defKeys(o.def, out); }
-    else if (o.op === 'cureStatus') out.add(o.key);
-  }
-}
-/** Every status key a def's ops, triggers, threshold and end apply or cure (kits design 1.0: each lands ops). */
-function defKeys(d: StatusDef, out: Set<string>): void {
-  opKeys(d.ops, out);
-  for (const t of d.triggers ?? []) opKeys(t.ops as readonly Op[], out);
-  if (d.stack?.threshold) opKeys(d.stack.threshold.ops as readonly Op[], out);
-  if (d.end) opKeys(d.end.ops as readonly Op[], out);
-}
-const itemKeys = (it: Pick<Item, 'effects' | 'worn'>, out: Set<string>): void => { opKeys(it.effects ?? [], out); if (it.worn) defKeys(it.worn, out); };
-const abilityKeys = (a: Ability | null, out: Set<string>): void => { if (a) opKeys(a.ops, out); };
-const skillKeys = (k: SkillTemplate, out: Set<string>): void => { if (k.type === 'active') abilityKeys(k.ability, out); else if (k.worn) defKeys(k.worn, out); };
-function rewardKeys(r: Rewards, out: Set<string>): void {
-  r.items.forEach(i => itemKeys(i, out)); r.skills.forEach(k => skillKeys(k, out));
-  for (const s of r.statuses) { out.add(s.key); if (s.def) opKeys(s.def.ops, out); }
-}
-const mapKeys = (m: MapTemplate, out: Set<string>): void => m.zones.forEach(z => opKeys(z.ops, out));
-const storyKeys = (s: StoryTemplate, out: Set<string>): void => s.chapters.forEach(c => { rewardKeys(c.rewards, out); if (c.quest) rewardKeys(c.quest.rewards, out); });
-function monsterKeys(m: MonsterTemplate, out: Set<string>): void {
-  m.abilities.forEach(a => abilityKeys(a, out)); m.loot.items.forEach(i => itemKeys(i, out));
-  for (const s of m.statuses) out.add(s.key);
-}
+/** One entry of a kind, as a pack carries it. */
+type PackEntry<K extends PackKind> = Pack[K] extends readonly (infer E)[] ? E : Pack[K] extends Record<string, infer V> ? V : never;
+/** Where each kind's entry names statuses: its walk (status-refs.ts), read to list them and to rename them. */
+const STATUS_REFS: { readonly [K in PackKind]: Walk<PackEntry<K>> } = {
+  statuses: statusDef, items: item, skills: skill, rewards: bundle, monsters: monster, maps: battleMap, feats: feat, stories: story,
+};
 
 // ── making a pack ──
 const noId = <T extends { id: string }>({ id: _id, ...rest }: T): Omit<T, 'id'> => copy(rest);
@@ -122,19 +104,19 @@ export function packOf(save: Pick<Save, 'library' | 'monsters'>, savedAt: string
   const maps = pick('maps', L.maps), stories = pick('stories', L.stories);
   const statusKeys = new Set<string>(!wants('statuses') ? [] : id === null ? Object.keys(L.statuses) : Object.hasOwn(L.statuses, id) ? [id] : []);
   const featKeys = !wants('feats') ? [] : id === null ? Object.keys(L.feats) : Object.hasOwn(L.feats, id) ? [id] : [];
-  const named = new Set<string>();
-  for (const k of featKeys) rewardKeys(L.feats[k]!.rewards, named);
-  items.forEach(i => itemKeys(i, named)); skills.forEach(k => skillKeys(k, named));
-  rewards.forEach(b => rewardKeys(b.rewards, named)); monsters.forEach(m => monsterKeys(m, named)); maps.forEach(m => mapKeys(m, named));
-  stories.forEach(s => storyKeys(s, named));
-  for (const k of statusKeys) { const d = L.statuses[k]; if (d) defKeys(d, named); }
+  const named = new Set<StatusKey>(), R = STATUS_REFS;
+  for (const k of featKeys) namedIn(R.feats, L.feats[k]!, named);
+  items.forEach(i => namedIn(R.items, i, named)); skills.forEach(k => namedIn(R.skills, k, named));
+  rewards.forEach(b => namedIn(R.rewards, b, named)); monsters.forEach(m => namedIn(R.monsters, m, named)); maps.forEach(m => namedIn(R.maps, m, named));
+  stories.forEach(s => namedIn(R.stories, s, named));
+  for (const k of statusKeys) namedIn(R.statuses, L.statuses[k]!, named);
   // a status named by a status that joins: follow until nothing new joins
   const queue = [...named];
   while (queue.length) {
     const k = queue.pop()!;
     if (statusKeys.has(k) || !Object.hasOwn(L.statuses, k)) continue;
     statusKeys.add(k);
-    const more = new Set<string>(); defKeys(L.statuses[k]!, more); queue.push(...more);
+    const more = new Set<StatusKey>(); namedIn(R.statuses, L.statuses[k]!, more); queue.push(...more);
   }
   const library: PackDoc['library'] = {};
   if (statusKeys.size) library.statuses = Object.fromEntries(Object.keys(L.statuses).filter(k => statusKeys.has(k)).map(k => [k, copy(L.statuses[k]!)]));
@@ -216,48 +198,6 @@ function suffixed(name: string, max: number, taken: (n: string) => boolean): str
   }
 }
 
-/** The ops with each status key `map` holds replaced, nested defs included. */
-function rekeyOps(ops: readonly Op[], map: ReadonlyMap<string, StatusKey>): Op[] {
-  return ops.map(o => {
-    if (o.op === 'cureStatus') return { ...o, key: map.get(o.key) ?? o.key };
-    if (o.op !== 'applyStatus') return o;
-    return { ...o, key: map.get(o.key) ?? o.key, def: rekeyDef(o.def, map) };
-  });
-}
-/** A def with each status key `map` holds replaced in its ops, its triggers', its threshold's and its end's. */
-function rekeyDef(d: StatusDef, map: ReadonlyMap<string, StatusKey>): StatusDef {
-  const land = <T extends { readonly ops: readonly LandOp[] }>(x: T): T => ({ ...x, ops: rekeyOps(x.ops as readonly Op[], map) as LandOp[] });
-  const out: StatusDef = { ...d, ops: rekeyOps(d.ops, map) };
-  return {
-    ...out,
-    ...(d.triggers ? { triggers: d.triggers.map(land) } : {}),
-    ...(d.end ? { end: land(d.end) } : {}),
-    ...(d.stack ? { stack: { ...d.stack, threshold: d.stack.threshold ? land(d.stack.threshold) : null } } : {}),
-  } as StatusDef;
-}
-/** An ability with each status key `map` holds replaced. `rekeyOps` keeps each op's kind, so its ops are still use ops. */
-const rekeyAbility = (a: Ability, map: ReadonlyMap<string, StatusKey>): Ability => ({ ...a, ops: rekeyOps(a.ops, map) as UseOp[] });
-const rekeyItem = <T extends Pick<Item, 'effects' | 'worn'>>(x: T, map: ReadonlyMap<string, StatusKey>): T =>
-  ({ ...x, ...(x.effects ? { effects: rekeyOps(x.effects, map) } : {}), ...(x.worn ? { worn: rekeyDef(x.worn, map) } : {}) });
-const rekeySkill = <T extends SkillTemplate>(k: T, map: ReadonlyMap<string, StatusKey>): T =>
-  (k.type === 'active' && k.ability ? { ...k, ability: rekeyAbility(k.ability, map) } : k.type === 'passive' && k.worn ? { ...k, worn: rekeyDef(k.worn, map) } : k);
-function rekeyRewards(r: Rewards, map: ReadonlyMap<string, StatusKey>): Rewards {
-  return {
-    ...r, items: r.items.map(i => rekeyItem(i, map)), skills: r.skills.map(k => rekeySkill(k, map)),
-    statuses: r.statuses.map(s => ({ ...s, key: map.get(s.key) ?? s.key, ...(s.def ? { def: rekeyDef(s.def, map) } : {}) })),
-  };
-}
-const rekeyStory = (s: StoryTemplate, map: ReadonlyMap<string, StatusKey>): StoryTemplate => ({
-  ...s, chapters: s.chapters.map(c => ({ ...c, rewards: rekeyRewards(c.rewards, map), quest: c.quest && { ...c.quest, rewards: rekeyRewards(c.quest.rewards, map) } })),
-});
-const rekeyMap = (m: MapTemplate, map: ReadonlyMap<string, StatusKey>): MapTemplate => ({ ...m, zones: m.zones.map(z => ({ ...z, ops: rekeyOps(z.ops, map) })) });
-function rekeyMonster(m: MonsterTemplate, map: ReadonlyMap<string, StatusKey>): MonsterTemplate {
-  return {
-    ...m, abilities: m.abilities.map(a => rekeyAbility(a, map)), statuses: m.statuses.map(s => ({ ...s, key: map.get(s.key) ?? s.key })),
-    loot: { ...m.loot, items: m.loot.items.map(i => rekeyItem(i, map)) },
-  };
-}
-
 /**
  * The library statuses after a merge, and the new key of each pack status Add renamed. Add: a status whose key is in
  * the library or is a built-in's, or whose label a library or built-in status has, arrives as "Label 2" under a key
@@ -282,7 +222,7 @@ function mergeStatuses(have: Record<string, StatusDef>, incoming: Record<string,
     taken.add(nkey); labels.add(label.toLowerCase()); map.set(key, nkey);
     out[nkey] = { ...def, label }; count.added++; count.renamed++; placed.push(nkey);
   }
-  for (const k of placed) out[k] = rekeyDef(out[k]!, map);
+  for (const k of placed) out[k] = rekeyed(STATUS_REFS.statuses, out[k]!, map);
   return { statuses: out, map };
 }
 
@@ -318,7 +258,7 @@ function mergeFeats(have: Library, incoming: Record<string, FeatDef>, map: Reado
     const exists = Object.hasOwn(lib.feats, key), renamed = exists && mode === 'add';
     const name = renamed ? suffixed(raw.name, FEAT_BOUNDS.name, n => Object.values(lib.feats).some(d => d.name === n)) : raw.name;
     const at = renamed ? newFeatKey(lib, name) : key;
-    const next = saveFeat(lib, at, { ...raw, name, rewards: rekeyRewards(raw.rewards, map) });
+    const next = saveFeat(lib, at, { ...rekeyed(STATUS_REFS.feats, raw, map), name });
     if (isRefused(next)) { count.full++; continue; }
     if (exists && !renamed) count.replaced++;
     else if (Object.hasOwn(next.feats, at)) { count.added++; if (renamed) count.renamed++; }
@@ -340,15 +280,16 @@ export function mergePack(target: MergeTarget, pack: Pack, mode: MergeMode): Mer
   const id = (prefix: string) => () => `${prefix}${++seq}`;
   const p = copy(pack), L = copy(target.library);
   const { statuses, map } = mergeStatuses(L.statuses, p.statuses, mode, report.statuses);
+  const R = STATUS_REFS;
   const library: Library = {
     statuses,
-    items: mergeNamed<Item>(L.items, p.items.map(i => rekeyItem(i, map)), mode, PACK_CAP.items, 60, id('i'), report.items),
-    skills: mergeNamed<Skill>(L.skills, p.skills.map(k => rekeySkill(k, map)), mode, PACK_CAP.skills, 60, id('s'), report.skills),
-    rewards: mergeNamed<RewardBundle>(L.rewards, p.rewards.map(b => ({ ...b, rewards: rekeyRewards(b.rewards, map) })), mode, PACK_CAP.rewards, 60, id('rb'), report.rewards),
-    maps: mergeNamed<BattleMap>(L.maps, p.maps.map(m => rekeyMap(m, map)), mode, PACK_CAP.maps, 40, () => mapId(id('mp')()), report.maps),
+    items: mergeNamed<Item>(L.items, p.items.map(i => rekeyed(R.items, i, map)), mode, PACK_CAP.items, 60, id('i'), report.items),
+    skills: mergeNamed<Skill>(L.skills, p.skills.map(k => rekeyed(R.skills, k, map)), mode, PACK_CAP.skills, 60, id('s'), report.skills),
+    rewards: mergeNamed<RewardBundle>(L.rewards, p.rewards.map(b => rekeyed(R.rewards, b, map)), mode, PACK_CAP.rewards, 60, id('rb'), report.rewards),
+    maps: mergeNamed<BattleMap>(L.maps, p.maps.map(m => rekeyed(R.maps, m, map)), mode, PACK_CAP.maps, 40, () => mapId(id('mp')()), report.maps),
     feats: mergeFeats(L, p.feats, map, mode, report.feats),
-    stories: mergeNamed<Story>(L.stories, p.stories.map(s => rekeyStory(s, map)), mode, PACK_CAP.stories, STORY_BOUNDS.name, id('st'), report.stories),
+    stories: mergeNamed<Story>(L.stories, p.stories.map(s => rekeyed(R.stories, s, map)), mode, PACK_CAP.stories, STORY_BOUNDS.name, id('st'), report.stories),
   };
-  const monsters = mergeNamed<Monster>(copy(target.monsters), p.monsters.map(m => rekeyMonster(m, map)), mode, PACK_CAP.monsters, 60, id('m'), report.monsters);
+  const monsters = mergeNamed<Monster>(copy(target.monsters), p.monsters.map(m => rekeyed(R.monsters, m, map)), mode, PACK_CAP.monsters, 60, id('m'), report.monsters);
   return { save: { library, monsters, seq }, report };
 }

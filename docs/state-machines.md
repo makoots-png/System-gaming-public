@@ -1569,6 +1569,45 @@ Where it lives:
 | The test to copy | `tests/solo-wait.test.ts`; the walk's events are in `tests/models/solo-events.ts`; two players in `tests/room-system-model.test.ts` |
 | The recipe | docs/guide/room-sync.md, "A room message" |
 
+## A solo run on this phone
+
+Every state reachable from no run, under the 6 events of tests/models/solo-run-events.ts over a personal and a world gate, breadth first, a run's gate and phase making a state (not its round). The walk found 7 states and 14 steps.
+
+### One run at a time, from the tap to its window
+
+```mermaid
+---
+title: One run at a time, from the tap to its window
+---
+stateDiagram-v2
+  state "No run: Enter alone may be tapped" as s1
+  state "Asking: the odds, then the question" as s2
+  state "Playing: its round and moves on its card" as s3
+  state "Written: its window open" as s4
+  [*] --> s1
+  s1 --> s2 : Enter alone tapped on the personal gate
+  s1 --> s2 : Enter alone tapped on the world gate
+  s2 --> s3 : the question answered Enter alone, the hunter still ready
+  s2 --> s1 : refused, no odds, or Not now
+  s3 --> s4 : the run ended and its one write was taken
+  s3 --> s1 : no end, or the write refused
+  s4 --> s1 : its window closed
+```
+
+A run plays the hunter as it stands and stores nothing until its one write, so a phone has at most one in flight: every Enter alone is disabled until it is over, and a tap meanwhile changes nothing. The panel draws the run from this value, so a redraw in the middle of a run (the minute's clock, a room poll) draws its card again with its round and moves. Each new round or move count is a step within Playing, not drawn. Page memory: a reload starts with no run, and nothing of a run before its write was stored.
+
+4 chart states, 7 arrows. Hidden: A new round or move count within Playing, and each event that changes nothing (a tap while a run is in flight among them). (0 steps.)
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `RunPhase`, `RunPhaseEvent`, `RUN_PHASES` and `RUN_PHASE_EVENTS` in `src/core/gates/solo-run.ts` |
+| What changes it | `runPhaseStep(run, event)` and its `TABLE`, through `runMoved` in `src/views/gates.js`, which keeps the one value and redraws |
+| Who calls it | `enterAlone` and `runAlone` in `src/views/gates.js`; the solo panel reads it through `mayEnter` and `playingOn` |
+| The test to copy | `tests/solo-run.test.ts`; the walk's events are in `tests/models/solo-run-events.ts`; on screen, `tests/e2e/solo.e2e.ts` ("Enter alone cannot be tapped again", "a redraw of the solo panel") |
+| The recipe | docs/guide/gates-solo.md, the solo run rows |
+
 ## A feat on a hunter
 
 Every state reachable from each feat's start, for a feat earned at a count of 2 under each of its 4 rules of when it is shown, under the 5 events of tests/models/feat-events.ts, breadth first. The walk found 23 states and 95 steps.

@@ -14,6 +14,7 @@ import { compareTimes, stepTime } from '../core/day.ts';
 import { OUTCOME_WORDS, SOLO_REFUSAL_WORDS, SOLO_WORDS, closesIn, personalNews, runCostLines, soloAnswerBody, soloConfirmLines, soloDoc, soloFight, soloKey, soloPlan, soloRan, soloReady, soloRoute, soloRuleSet, soloRunBody, soloTaken, soloTargets, soloTick, takenLine } from '../core/gates/solo.ts';
 import { byClosing } from '../core/gates/personal.ts';
 import { runDismissed, shownOf, waitWords, waitingGates } from '../core/gates/solo-wait.ts';
+import { NO_RUN, mayEnter, playingOn, runPhaseStep } from '../core/gates/solo-run.ts';
 import { IDLE, ODDS_FRAME_MS, oddsStep, progressOf } from '../core/combat/odds.ts';
 import { oddsSeed } from '../edge/roll.ts';
 import * as motion from './motion.ts';
@@ -203,10 +204,11 @@ export function register(app) {
     refreshView();
   }
   /**
-   * The mounted Gates view's redraw (set by its `mount`, null before) and a panel another view asked it to open
-   * (`asked`, read and put down by the next draw, so the view opens it whether it was mounted already or not).
+   * The mounted Gates view's redraw and its paint of the solo run in flight (both set by its `mount`, null before), and a
+   * panel another view asked it to open (`asked`, read and put down by the next draw, so the view opens it whether it
+   * was mounted already or not).
    */
-  const mounted = { render: null, asked: null };
+  const mounted = { render: null, paintRun: null, asked: null };
   const refreshView = () => { if (mounted.render) mounted.render(); };
 
   // ── solo runs (src/core/gates/solo.ts, personal.ts, solo-wait.ts; notes-2-solo.md) ──
@@ -250,12 +252,34 @@ export function register(app) {
     return { gold: dropped.reduce((n, e) => n + (e.kind === 'gold' ? e.gold : 0), 0), items: dropped.flatMap(e => (e.kind === 'item' ? [e.item] : [])) };
   };
 
+  let runPhase = NO_RUN; // this phone's solo run (core gates/solo-run.ts), moved only by `runMoved`; the solo panel draws from it
   /**
-   * Hunter `hid` enters `gate` alone: the odds read first (played out if they are not), the one question with their
-   * numbers, then one play of the engine with its count on the card, then the one write (`soloRan`) and its window.
-   * Nothing is stored before the write, and nothing on screen during the play tells how it goes.
+   * The run after `e` (gates/solo-run.ts `runPhaseStep`), drawn: a change of phase redraws the view, so every Enter alone
+   * and the run's card follow it; a new round or move count paints the run's card. False when `e` changed nothing.
    */
-  async function enterAlone(gate, hid, card) {
+  function runMoved(e) {
+    const next = runPhaseStep(runPhase, e);
+    if (next === runPhase) return false;
+    const phase = next.at !== runPhase.at;
+    runPhase = next;
+    if (phase) refreshView(); else if (mounted.paintRun) mounted.paintRun();
+    return true;
+  }
+
+  /**
+   * Hunter `hid` enters `gate` alone, unless a run is in flight on this phone (then the tap changes nothing). The run's
+   * phase is `runPhase` from the tap until its window closes, whichever way it ends (`done`).
+   */
+  async function enterAlone(gate, hid) {
+    if (!runMoved({ type: 'enter', gate, hid })) return;
+    try { await runAlone(gate, hid); } finally { runMoved({ type: 'done' }); }
+  }
+  /**
+   * The run itself: the odds read first (played out if they are not), the one question with their numbers, then one play
+   * of the engine with its count on the card, then the one write (`soloRan`) and its window. Nothing is stored before the
+   * write, and nothing on screen during the play tells how it goes.
+   */
+  async function runAlone(gate, hid) {
     const first = soloReady(store.get(), hid, gate, readyCtx(hid));
     if (isRefused(first)) { ui.toast('! Gate', SOLO_REFUSAL_WORDS[first.why], { kind: 'warn' }); return; }
     const read = await api.odds.ask(oddsKeyOf(gate, hid));
@@ -266,8 +290,8 @@ export function register(app) {
     const ready = soloReady(store.get(), hid, gate, readyCtx(hid));
     if (isRefused(ready)) { ui.toast('! Gate', SOLO_REFUSAL_WORDS[ready.why], { kind: 'warn' }); return; }
     const made = soloFight(ready.h, ready.target, app.rules()); if (!made) return;
-    const from = soloKey(ready.h), progressEl = card && card.querySelector('[data-solorun]');
-    if (progressEl) progressEl.hidden = false;
+    const from = soloKey(ready.h);
+    runMoved({ type: 'go' });
     // one play: the odds' machine asked for one fight, a few commands a frame, with the round and the moves as its count
     const end = await new Promise(resolve => {
       let run = oddsStep(IDLE, { type: 'ask', fight: made.fight, seed: oddsSeed(), of: 1 }, made.R);
@@ -275,12 +299,11 @@ export function register(app) {
         const until = performance.now() + ODDS_FRAME_MS;
         while (run.state === 'running' && performance.now() < until) run = oddsStep(run, { type: 'step', commands: 1 }, made.R);
         const p = progressOf(run, made.R);
-        if (p && progressEl) motion.progress(progressEl, null, SOLO_WORDS.running(p.round, p.commands));
+        if (p) runMoved({ type: 'played', round: p.round, moves: p.commands });
         if (run.state === 'running') requestAnimationFrame(frame); else resolve(run.state === 'done' ? run.odds.ends[0] : null);
       };
       requestAnimationFrame(frame);
     });
-    if (progressEl) progressEl.hidden = true;
     if (!end) return;
     const runOf = { end, hunter: made.hunter, shadows: made.shadows, from }, R = app.rules();
     const toRoom = gate.kind === 'world' && soloRoute(app.seat()) === 'room';
@@ -292,7 +315,7 @@ export function register(app) {
     const ran = done.ran;
     if (!w.ok || !ran) { if (!w.ok && 'why' in w && SOLO_REFUSAL_WORDS[w.why]) ui.toast('! Gate', SOLO_REFUSAL_WORDS[w.why], { kind: 'warn' }); return; }
     if (toRoom) sync().flush();
-    refreshView();
+    runMoved({ type: 'wrote' });
     const h = store.hunter(hid), m = h ? api.hunter.sheet(h).sheet : { hpMax: 0, manaMax: 0, fatigueMax: 0 };
     const sy = store.get().settings.sync, waiting = event && (sy.runs || []).find(x => x.run === event.payload.eid);
     await ui.system({ tag: '! Gate', kind: ran.outcome === 'won' ? 'quest' : 'warning', title: OUTCOME_WORDS[ran.outcome].title,
@@ -492,12 +515,12 @@ export function register(app) {
         const mons = target ? target.monsters.map(m => `<li><span class="cnt">×${esc(m.count)}</span><span>${esc(m.monster.name)}</span></li>`).join('') : '';
         const line = waiting ? waitWords(waiting, sy.outbox || []) : isRefused(ready) ? SOLO_REFUSAL_WORDS[ready.why] : '';
         const acts = lost ? `<button type="button" data-solo-dismiss="${esc(waiting.run)}">${esc(SOLO_WORDS.dismiss)}</button>`
-          : target ? `<button type="button" class="primary" data-solo-enter>${esc(SOLO_WORDS.enter)}</button>` : '';
+          : target ? `<button type="button" class="primary" data-solo-enter${mayEnter(runPhase) ? '' : ' disabled'}>${esc(SOLO_WORDS.enter)}</button>` : '';
         return { key: oddsKeyOf(gate, h.id), fight: made ? made.fight : null, html: `<article class="gate solo" data-solo="${esc(gate.kind)}:${esc(gate.id)}" aria-label="${esc(rank)}-rank solo gate ${esc(name)}">
           <div class="gt-head">${ui.rankBadge(rank)}<span class="gt-name">${esc(name)}</span><span class="gt-chip st-detected">${esc(gate.kind === 'personal' ? 'Personal' : 'Solo')}</span></div>
           ${sub ? `<div class="gt-timer">${esc(sub)}</div>` : ''}
           ${mons ? `<ul class="gt-mons" aria-label="Monsters">${mons}</ul>` : ''}
-          <div data-odds hidden></div><div data-solorun hidden></div>
+          <div data-odds hidden></div><div data-solorun${playingOn(runPhase, gate, h.id) ? '' : ' hidden'}></div>
           ${line ? `<div class="gt-notes" role="status">${esc(line)}</div>` : ''}
           ${acts ? `<div class="gt-acts">${acts}</div>` : ''}</article>` };
       }
@@ -514,7 +537,16 @@ export function register(app) {
         if (box.dataset.sig !== html) { box.dataset.sig = html; box.innerHTML = html; }
         const all = [...personal, ...world], boxes = box.querySelectorAll('[data-odds]');
         all.forEach((c, i) => { if (boxes[i]) api.odds.paint(/** @type {HTMLElement} */ (boxes[i]), c.key, c.fight, 'alone'); });
+        paintRun();
         return !box.hidden;
+      }
+      /** The run in flight (`runPhase`) painted on its card as the panel holds it now: its round and moves. */
+      function paintRun() {
+        const h = store.active(), box = q('#gt-solo'), run = runPhase;
+        if (!h || !box || run.at !== 'playing') return;
+        const at = playingOn(run, run.gate, h.id), card = at && [...box.querySelectorAll('[data-solo]')].find(c => c.dataset.solo === `${run.gate.kind}:${run.gate.id}`);
+        const el = card && card.querySelector('[data-solorun]');
+        if (el) motion.progress(el, null, SOLO_WORDS.running(at.round, at.moves));
       }
       function render() {
         const gm = app.isGM();
@@ -552,13 +584,14 @@ export function register(app) {
       }
       const refresh = id => { const g = gate(id); if (!g) return; const n = build(g); cards.set(id, n); reopen(n, id); render(); };
       mounted.render = render;
+      mounted.paintRun = paintRun;
 
       el.addEventListener('click', async e => {
         const solo = e.target.closest('[data-solo-enter],[data-solo-dismiss]');
         if (solo) {
           const card = solo.closest('[data-solo]'), [kind, id] = card.dataset.solo.split(':'), h = store.active();
           if (solo.hasAttribute('data-solo-dismiss')) { if (ui.wrote('! Gate', store.apply('solo-dismiss', s => runDismissed(s, solo.dataset.soloDismiss)))) render(); return; }
-          if (h) await enterAlone(kind === 'personal' ? { kind: 'personal', id } : { kind: 'world', id }, h.id, card);
+          if (h) await enterAlone(kind === 'personal' ? { kind: 'personal', id } : { kind: 'world', id }, h.id);
           return;
         }
         const b = e.target.closest('[data-act]'); if (!b) return;

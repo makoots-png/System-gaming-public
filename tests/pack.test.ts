@@ -2,8 +2,8 @@
 import { parseFeat } from '../src/core/hunter/feats.ts';
 import { BUILT_IN_FEATS } from '../src/core/registry/feats.ts';
 import { describe, expect, test } from 'bun:test';
-import { PACK_CAP, mergePack, packCounts, packOf, parsePack } from '../src/core/pack.ts';
-import type { MergeTarget, Pack, PackRead } from '../src/core/pack.ts';
+import { PACK_CAP, PACK_WORDS, mergePack, packCounts, packOf, parsePack } from '../src/core/pack.ts';
+import type { MergeTarget, Pack, PackKind, PackRead } from '../src/core/pack.ts';
 import { SCHEMA, newSave } from '../src/core/save.ts';
 import type { Save } from '../src/core/save.ts';
 import { parseItem } from '../src/core/registry/items.ts';
@@ -13,6 +13,7 @@ import type { Monster } from '../src/core/registry/monsters.ts';
 import type { Skill } from '../src/core/registry/skills.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { abilityId } from '../src/core/combat/ability-types.ts';
+import type { Ability } from '../src/core/combat/ability-types.ts';
 import { newRewards } from '../src/core/rewards.ts';
 import { statusKey } from '../src/core/combat/effect-ops.ts';
 import type { StatusDef } from '../src/core/combat/effect-ops.ts';
@@ -312,6 +313,87 @@ describe('merging a pack', () => {
     mergePack(target(s), read(packOf(s, AT)).pack, 'replace');
     expect(s).toEqual(before);
   });
+});
+
+describe('a status named anywhere in a shared thing travels with it', () => {
+  const ROT: StatusDef = { label: 'Rot', desc: 'Flesh decays.', ops: [{ op: 'damage', type: 'physical', amount: { kind: 'number', value: 1 } }], stack: { cap: 5, leave: { kind: 'never' }, keep: 'fight', threshold: null } };
+  /** The other phone's own status under the same key, so Add must rename the pack's Rot to "Rot 2" under `rot-2`. */
+  const RUST: StatusDef = { label: 'Rust', desc: 'Metal flakes.', ops: [] };
+  const rot = statusKey('rot');
+  const apply = { op: 'applyStatus', key: rot, def: ROT, duration: null } as const;
+  const heal = { op: 'heal', amount: { kind: 'number', value: 1 } } as const;
+  const each = { kind: 'each' } as const;
+  const one = (n: number) => ({ kind: 'number', value: n }) as const;
+  const active = (extra: Partial<Ability>): Skill => ({ id: skid('s1'), name: 'Rotting Touch', type: 'active', level: 1, label: null, desc: '',
+    ability: { ...abilityOf('strike', { id: abilityId('rotting-touch'), name: 'Rotting Touch' }, RULES), ...extra } });
+  const passive = (def: Omit<StatusDef, 'label' | 'desc'>): Skill => ({ id: skid('s1'), name: 'Hunger', type: 'passive', level: 1, label: null, desc: '', bonus: {},
+    worn: { label: 'Hunger', desc: '', ...def } as StatusDef });
+  const zone = { name: 'Mire', duration: null, ops: [], endsWithOwner: false, around: null, grow: null };
+  const bundle = (def: Omit<StatusDef, 'label' | 'desc'>) => ({ id: rbid('rb1'), name: 'Spoils', rewards: { ...newRewards(), statuses: [{ key: statusKey('marked'), rounds: 2, def: { label: 'Marked', desc: '', ...def } as StatusDef }] } });
+  const hall = (z: object): BattleMap => parseBattleMap({ id: 'mp1', name: 'Bog', w: 4, h: 4, zones: [{ id: 'z1', name: 'Bog', ground: { kind: 'tiles', tiles: [{ x: 1, y: 1 }] }, ops: [], ...z }] }, RULES)!;
+  type Case = { where: string; kind: PackKind; name: string; put: (s: Save) => void };
+  const CASES: Case[] = [
+    { where: 'the ops of the zone an ability leaves', kind: 'skills', name: 'Rotting Touch', put: s => { s.library.skills = [active({ zone: { ...zone, ops: [apply] } })]; } },
+    { where: 'a trigger of the zone an ability leaves', kind: 'skills', name: 'Rotting Touch', put: s => { s.library.skills = [active({ zone: { ...zone, triggers: [{ on: 'turnStart', to: 'self', limit: each, ops: [apply] }] } })]; } },
+    { where: 'the end of the zone an ability leaves', kind: 'skills', name: 'Rotting Touch', put: s => { s.library.skills = [active({ zone: { ...zone, end: [apply] } })]; } },
+    { where: 'an ability\'s price in stacks', kind: 'skills', name: 'Rotting Touch', put: s => { s.library.skills = [active({ prices: [{ kind: 'stacks', key: rot, from: 'self', take: { kind: 'n', n: 1 } }] })]; } },
+    { where: 'an ability\'s condition that a status is held', kind: 'skills', name: 'Rotting Touch', put: s => { s.library.skills = [active({ gates: [{ kind: 'holds', key: rot, on: 'self', atLeast: 1 }] })]; } },
+    { where: 'the starting statuses of an ability\'s summon', kind: 'skills', name: 'Rotting Touch', put: s => { s.library.skills = [active({ summon: { name: 'Ghoul', archetype: 'brute', rounds: 2, statuses: [{ key: rot, rounds: 2 }] } })]; } },
+    { where: 'the status a move op takes', kind: 'skills', name: 'Rotting Touch', put: s => { s.library.skills = [active({ ops: [{ op: 'move', key: rot, take: 'all', from: 'target', as: null }] })]; } },
+    { where: 'the status a move op turns its stacks into', kind: 'skills', name: 'Rotting Touch', put: s => { s.library.skills = [active({ ops: [{ op: 'move', key: 'harmful', take: 'all', from: 'target', as: rot }] })]; } },
+    { where: 'an ability\'s hand formula', kind: 'skills', name: 'Rotting Touch', put: s => { s.library.skills = [active({ effect: { type: 'physical', by: 'hand', formula: { kind: 'stacks', whose: 'target', key: rot } } })]; } },
+    { where: 'the formula of an ability\'s op', kind: 'skills', name: 'Rotting Touch', put: s => { s.library.skills = [active({ ops: [{ op: 'shield', amount: { kind: 'field', key: rot } }] })]; } },
+    { where: 'one tier of a worn status\'s op formula', kind: 'skills', name: 'Hunger', put: s => { s.library.skills = [passive({ ops: [{ op: 'damage', type: 'magical', amount: [one(1), one(2), one(3), one(4), one(5), { kind: 'held', key: rot }] }] })]; } },
+    { where: 'a worn status\'s trigger on a status gained', kind: 'skills', name: 'Hunger', put: s => { s.library.skills = [passive({ ops: [], triggers: [{ on: 'statusGained', key: rot, to: 'self', limit: each, ops: [heal] }] })]; } },
+    { where: 'a worn status\'s trigger that needs a status held', kind: 'skills', name: 'Hunger', put: s => { s.library.skills = [passive({ ops: [], triggers: [{ on: 'turnStart', to: 'self', limit: each, need: { kind: 'holds', key: rot }, ops: [heal] }] })]; } },
+    { where: 'a worn status\'s threshold formula', kind: 'skills', name: 'Hunger', put: s => {
+      s.library.skills = [passive({ ops: [], stack: { cap: 5, leave: { kind: 'never' }, keep: 'fight', threshold: { at: { kind: 'formula', formula: { kind: 'stacks', whose: 'user', key: rot } }, to: { kind: 'bearer' }, ops: [heal], then: 'spend' } } })];
+    } },
+    { where: 'the formula of an item\'s use', kind: 'items', name: 'Rot Salve', put: s => { s.library.items = [{ ...parseItem({ name: 'Rot Salve', type: 'consumable' })!, id: iid('i1'), effects: [{ op: 'heal', amount: { kind: 'stacks', whose: 'user', key: rot } }] }]; } },
+    { where: 'a library status\'s trigger on a status ended', kind: 'statuses', name: 'hunger', put: s => { s.library.statuses.hunger = { label: 'Hunger', desc: '', ops: [], triggers: [{ on: 'statusEnded', key: rot, to: 'self', limit: each, ops: [heal] }] }; } },
+    { where: 'a trigger of a reward status\'s def', kind: 'rewards', name: 'Spoils', put: s => { s.library.rewards = [bundle({ ops: [], triggers: [{ on: 'struck', tag: null, to: 'self', limit: each, ops: [apply] }] })]; } },
+    { where: 'the threshold of a reward status\'s def', kind: 'rewards', name: 'Spoils', put: s => {
+      s.library.rewards = [bundle({ ops: [], stack: { cap: 3, leave: { kind: 'never' }, keep: 'fight', threshold: { at: { kind: 'count', n: 3 }, to: { kind: 'bearer' }, ops: [apply], then: 'spend' } } })];
+    } },
+    { where: 'the end of a reward status\'s def', kind: 'rewards', name: 'Spoils', put: s => { s.library.rewards = [bundle({ ops: [], end: { ops: [apply], cleanse: 'cancel' } })]; } },
+    { where: 'the worn status of a reward\'s title', kind: 'rewards', name: 'Spoils', put: s => {
+      s.library.rewards = [{ id: rbid('rb1'), name: 'Spoils', rewards: { ...newRewards(), title: { name: 'Plague Bearer', desc: '', bonus: {}, worn: { label: 'Plague', desc: '', ops: [], triggers: [{ on: 'hitDealt', tag: null, to: 'other', limit: each, ops: [apply] }] } } } }];
+    } },
+    { where: 'a monster ability\'s condition', kind: 'monsters', name: 'Ghoul', put: s => {
+      s.monsters = [{ ...parseMonster({ name: 'Ghoul', rank: 'C' })!, id: mid('m1'), abilities: [{ ...LANCE_ABILITY, ops: [], gates: [{ kind: 'holds', key: rot, on: 'target', atLeast: 2 }] }] }];
+    } },
+    { where: 'a trigger of a map\'s zone', kind: 'maps', name: 'Bog', put: s => { s.library.maps = [hall({ triggers: [{ on: 'turnStart', to: 'self', limit: each, ops: [apply] }] })]; } },
+    { where: 'the end of a map\'s zone', kind: 'maps', name: 'Bog', put: s => { s.library.maps = [hall({ end: [apply] })]; } },
+    { where: 'what a story\'s quest takes when it fails', kind: 'stories', name: 'The debt', put: s => {
+      s.library.stories = [{ ...parseStory({ name: 'The debt', for: 'hunters', chapters: [{ words: { title: 'Pay up' }, quest: { title: 'Pay', objectives: [{ label: 'Paid', target: 1 }], onFail: { statuses: [{ key: 'rot', rounds: 3 }] } } }] })!, id: 'st1' as StoryId }];
+    } },
+  ];
+  /** The thing of `kind` called `name` (a status or a feat by its key). */
+  const thing = (s: Pick<Save, 'library' | 'monsters'>, kind: PackKind, name: string): unknown => {
+    if (kind === 'statuses' || kind === 'feats') return s.library[kind][name];
+    const list: readonly { name: string }[] = kind === 'monsters' ? s.monsters : s.library[kind];
+    return list.find(x => x.name === name);
+  };
+  /** How many times `key` is written as a whole value in `v`: each place it names that status. */
+  const named = (v: unknown, key: string): number => JSON.stringify(v).split(`"${key}"`).length - 1;
+
+  for (const c of CASES) {
+    test(`a status named in ${c.where} travels with the shared ${PACK_WORDS[c.kind][0]}, named under its new key when Add renames it`, () => {
+      const from = newSave(dev('d1'));
+      from.seq = 10;
+      from.library.statuses = { rot: copy(ROT) };
+      c.put(from);
+      const sent = thing(from, c.kind, c.name);
+      expect(named(sent, 'rot')).toBeGreaterThan(0);
+      const there = newSave(dev('d2'));
+      there.library.statuses = { rot: copy(RUST) };
+      const { save } = mergePack(target(there), read(packOf(from, AT, c.kind, c.kind === 'statuses' ? c.name : (thing(from, c.kind, c.name) as { id: string }).id)).pack, 'add');
+      expect(save.library.statuses.rot).toEqual(RUST);
+      expect(save.library.statuses['rot-2']).toEqual({ ...ROT, label: 'Rot 2' });
+      const got = thing(save, c.kind, c.name);
+      expect({ rot: named(got, 'rot'), 'rot-2': named(got, 'rot-2') }).toEqual({ rot: 0, 'rot-2': named(sent, 'rot') });
+    });
+  }
 });
 
 describe('feats in a pack', () => {

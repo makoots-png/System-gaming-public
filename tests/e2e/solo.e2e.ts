@@ -234,6 +234,76 @@ test('while a run plays the card shows only its round and moves, and a reload in
   expect(await kept(), 'the reload left the hunter, its gate and the log as they were').toBe(before);
 });
 
+/**
+ * A run of the first personal gate, held in flight: a hunter that hardly hurts and is hardly hurt against two goblins
+ * (a long fight), Enter alone and its question answered, and the page given no frame once the card shows the run's
+ * round and moves, as a slow phone between two frames. `release` gives the held frames back, so the run plays on to its end.
+ */
+async function heldRun(page: Page): Promise<{ release: () => Promise<void> }> {
+  await page.evaluate(() => hunterApp.store.update((d: any) => {
+    const h = d.hunters[0];
+    for (const k of Object.keys(h.stats)) h.stats[k] = 1;
+    h.stats.vit = 99; h.life = { at: 'up', hp: 99999 };
+    h.solo.gates[0].monsters = [{ monsterId: 'seed:goblin', count: 2 }];
+  }, 'test-setup'));
+  await go(page, 'gates');
+  await soloCard(page).locator('[data-solo-enter]').tap();
+  const ask = page.locator('.sys-overlay.show', { hasText: 'ENTER ALONE?' });
+  await expect(ask).toBeVisible({ timeout: 120_000 });
+  await page.evaluate(() => {
+    const w = window as any, box = document.querySelector('#gt-solo')!;
+    w.heldFrames = []; w.givenFrame = window.requestAnimationFrame.bind(window);
+    const playing = () => [...box.querySelectorAll<HTMLElement>('[data-solorun]')].some(el => !el.hidden && /^Round \d+/.test(el.textContent ?? ''));
+    new MutationObserver((_, me) => {
+      if (!playing()) return;
+      me.disconnect();
+      window.requestAnimationFrame = cb => { w.heldFrames.push(cb); return 0; };
+    }).observe(box, { subtree: true, childList: true, characterData: true, attributes: true });
+  });
+  await ask.locator('.sys-actions button', { hasText: 'Enter alone' }).tap();
+  await expect(soloCard(page).locator('[data-solorun]')).toHaveText(/^Round \d+, \d+ moves? played$/);
+  return {
+    release: () => page.evaluate(() => {
+      const w = window as any;
+      window.requestAnimationFrame = w.givenFrame;
+      for (const cb of w.heldFrames.splice(0)) w.givenFrame(cb);
+    }),
+  };
+}
+
+test('while a run plays, Enter alone cannot be tapped again, and the run ends in its one write', async ({ device }) => {
+  const { page } = await device('twice');
+  await onboardPlayer(page, 'Mira');
+  await dismissAll(page);
+  const { release } = await heldRun(page);
+  await expect(soloCard(page).locator('[data-solo-enter]'), 'a second run of the same hunter cannot start while one plays').toBeDisabled();
+  await release();
+  await expect(page.locator('.sys-overlay.show', { hasText: /GATE CLEARED|RUN FAILED|RETREAT/ })).toBeVisible({ timeout: 120_000 });
+  await dismissAll(page);
+  expect((await save(page)).log.filter((l: any) => l.title === 'Solo run'), 'one run, one write').toHaveLength(1);
+});
+
+test('a redraw of the solo panel while a run plays keeps its round and moves on the card until it ends', async ({ device }) => {
+  const { page } = await device('redraw');
+  await onboardPlayer(page, 'Mira');
+  await dismissAll(page);
+  const { release } = await heldRun(page);
+  // the minute's clock (`gates.tick`) redraws the panel at once, as it does each minute with the gate's time left
+  await page.evaluate(() => {
+    hunterApp.store.update((d: any) => { d.hunters[0].solo.gates[0].closesAt = new Date(Date.now() + 30 * 60e3).toISOString(); }, 'test-setup');
+    hunterApp.api.gates.tick();
+  });
+  const card = soloCard(page);
+  await expect(card, 'the panel drew the gate again with its new time').toContainText(/Closes in 30 minutes/);
+  await expect(card.locator('[data-solorun]')).toBeVisible();
+  await expect(card.locator('[data-solorun]')).toHaveText(/^Round \d+, \d+ moves? played$/);
+  await expect(card.locator('[data-solo-enter]')).toBeDisabled();
+  await release();
+  await expect(page.locator('.sys-overlay.show', { hasText: /GATE CLEARED|RUN FAILED|RETREAT/ })).toBeVisible({ timeout: 120_000 });
+  await dismissAll(page);
+  expect((await save(page)).log.filter((l: any) => l.title === 'Solo run'), 'one run, one write').toHaveLength(1);
+});
+
 test('the GM turns personal gates off for the room: a player\'s gates stop, and the player\'s own switch is left as it was', async ({ device }) => {
   const { gm, players: [kai] } = await roomWithSoloDen(device, ['Kai']);
   await expect(kai!.page.locator('#view-gates .gate.solo[data-solo^="personal:"]')).toHaveCount(1);
