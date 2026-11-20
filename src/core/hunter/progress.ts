@@ -19,13 +19,14 @@ import type { Refused } from '../save-step.ts';
 import { STAT_KEYS } from '../stats.ts';
 import type { StatKey } from '../stats.ts';
 import { pointsAt } from './derive.ts';
+import { MAX_LEVEL, MIN_LEVEL, levelOf } from './level.ts';
 
 /** Points put on a stat and not yet confirmed, by stat. A stat with none is absent; a present one is 1 or more. */
 export type Pending = Partial<Record<StatKey, number>>;
 
 /** What a hunter stores of its progress. The points free are not stored: `available` derives them. */
 export type Progress = {
-  /** 1 to MAX_LEVEL. */
+  /** A level (level.ts): MIN_LEVEL to MAX_LEVEL. */
   level: number;
   /** XP inside the level: 0 up to the level's cost, `xpToNext(level)`. */
   xp: number;
@@ -39,10 +40,7 @@ export type Progress = {
   pending: Pending;
 };
 
-/** Bound for junk only. 1e9 XP, the largest award a room accepts, takes a level 1 hunter to level 4472 at 100 XP per level. */
-export const MAX_LEVEL = 9999;
-
-export const newProgress = (): Progress => ({ level: 1, xp: 0, peakLevel: 1, bonusPoints: 0, spent: 0, pending: {} });
+export const newProgress = (): Progress => ({ level: MIN_LEVEL, xp: 0, peakLevel: MIN_LEVEL, bonusPoints: 0, spent: 0, pending: {} });
 
 /** Only the progress fields: a hunter passed in keeps its other fields out of the answer. */
 const fieldsOf = (p: Progress): Progress => ({ level: p.level, xp: p.xp, peakLevel: p.peakLevel, bonusPoints: p.bonusPoints, spent: p.spent, pending: p.pending });
@@ -72,7 +70,7 @@ export function gainXp(p: Progress, amount: number, R: Rules): XpChange {
   if (!Number.isFinite(amount)) return { progress: fieldsOf(p), from, to: from, points: 0, refill: false, xp: 0 };
   let level = p.level, xp = p.xp + Math.trunc(amount);
   while (level < MAX_LEVEL && xp >= xpToNext(R, level)) { xp -= xpToNext(R, level); level++; }
-  while (xp < 0 && level > 1) { level--; xp += xpToNext(R, level); }
+  while (xp < 0 && level > MIN_LEVEL) { level--; xp += xpToNext(R, level); }
   xp = Math.max(0, Math.min(xp, xpToNext(R, level) - 1));
   const progress = { ...fieldsOf(p), level, xp, peakLevel: Math.max(p.peakLevel, level) };
   const moved = lifetimeXp(R, level, xp) - lifetimeXp(R, p.level, p.xp);
@@ -87,10 +85,10 @@ const lifetimeXp = (R: Rules, level: number, xp: number): number => R.xpPerLevel
 
 /**
  * The GM's edit of the level and the XP inside it: the XP change that leads there, so the points and the peak follow
- * as they would from an award. The level is kept within 1 to MAX_LEVEL and the XP inside the level.
+ * as they would from an award. The level is the nearest level (`levelOf`), the XP inside the level.
  */
 export function setLevel(p: Progress, level: number, xp: number, R: Rules): XpChange {
-  const to = Math.min(MAX_LEVEL, Math.max(1, Math.trunc(level) || 1));
+  const to = levelOf(level);
   const within = Math.min(xpToNext(R, to) - 1, Math.max(0, Math.trunc(xp) || 0));
   return gainXp(p, lifetimeXp(R, to, within) - lifetimeXp(R, p.level, p.xp), R);
 }

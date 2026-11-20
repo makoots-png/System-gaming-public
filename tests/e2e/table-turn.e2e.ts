@@ -270,6 +270,23 @@ test('the GM\'s card offers Stabilize on a dying player\'s hunter and Revive on 
   });
 });
 
+// A tap posts the roll and the death save one after the other, often in one millisecond on a quick phone. Their ids
+// must still differ: under one id the outbox and the room would refuse the save (outbox.ts `post`, server.ts
+// `addEvent`). The player's clock is held still across the tap to make the one millisecond certain; the page's
+// Math.random is fixed for the d20, as in the test above. Each id a page makes is stamped after its last (sync.ts `event`).
+test('a player\'s death save made in the same millisecond as its roll reaches the GM\'s fight', async ({ device }) => {
+  const { gm, player } = await room(device);
+  await fight(gm, player, { x: 2, y: 10 }, { ally: true });
+  await combat(gm).locator('.cmb-row', { hasText: HUNTER }).locator('.cmb-pick').tap();
+  await combat(gm).locator('.cmb-card [data-defeat]').tap();
+  const save = await savesOf(player, 1);
+  await expect(save).toBeEnabled({ timeout: 15_000 });
+  await player.evaluate(() => { const real = Date.now, t = real(); Date.now = () => t; (window as any).__clock = real; });
+  await save.tap();
+  await player.evaluate(() => { Date.now = (window as any).__clock; });
+  await expect.poll(async () => (await fightRow(gm, HUNTER)).life, { timeout: 15_000 }).toEqual({ at: 'dying', successes: 0, failures: 2 });
+});
+
 test('the GM\'s Stabilize on a dying player\'s hunter reads Stable on the GM\'s card and on the player\'s own phone, and leaves no life button', async ({ device }) => {
   const { gm, player } = await room(device);
   await fight(gm, player, { x: 2, y: 10 }, { ally: true });

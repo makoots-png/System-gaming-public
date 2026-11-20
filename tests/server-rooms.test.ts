@@ -316,6 +316,17 @@ describe('events', () => {
     expect((await call('POST', `/api/rooms/${other.code}/events`, { headers: other.gm, body: { from: 'gm', type: 'system', payload: system('one', 'd-gm-a1') } })).body).toEqual({ seq: 1 });
   });
 
+  test('another message under an id the room holds is refused (409 id taken) and not stored; the first, sent again, still answers its seq', async () => {
+    const { code, gm } = await newRoom();
+    const post = (payload: unknown, type = 'system') => call('POST', `/api/rooms/${code}/events`, { headers: gm, body: { from: 'gm', type, payload } });
+    expect((await post(system('one', 'd-gm-a1'))).body).toEqual({ seq: 1 });
+    expect(await post(system('another', 'd-gm-a1')), 'the same type with another body').toEqual({ status: 409, body: { error: 'id taken' } });
+    expect(await post(award(5, 'd-gm-a1'), 'award'), 'another type').toEqual({ status: 409, body: { error: 'id taken' } });
+    expect((await post(system('one', 'd-gm-a1'))).body).toEqual({ seq: 1 });
+    const all = await call('GET', `/api/rooms/${code}`);
+    expect(all.body.events.map((e: any) => [e.seq, e.type, e.payload.title])).toEqual([[1, 'system', 'one']]);
+  });
+
   test('an offer ends once: a take back under the accept\'s id answers the accept\'s seq, and the room holds one end', async () => {
     const { code, gm } = await newRoom();
     const post = (from: string, type: string, payload: unknown, headers: Record<string, string> = token(from)) => call('POST', `/api/rooms/${code}/events`, { headers, body: { from, type, payload } });

@@ -51,7 +51,7 @@ import type { BagPick, Goods } from './trade/goods.ts';
 import type { Seat } from './role.ts';
 import { ITEM_BOUNDS, RARITIES } from './registry/items.ts';
 import type { Rarity } from './registry/items.ts';
-import { MAX_LEVEL } from './hunter/progress.ts';
+import { parseLevel } from './hunter/level.ts';
 import type { ChapterBody } from './story/story.ts';
 
 // The ids (src/core/ids.ts) are made only by their parsers, so ids of different things do not mix.
@@ -587,6 +587,23 @@ export function newEvent<K extends EventType>(type: K, body: EventBody<K>, stamp
   const eid = parseEventId(stamp.device.slice(0, OFFER_ID_MAX - tail.length) + tail);
   return eid && parseEvent(type, { ...body, eid });
 }
+/**
+ * The time of a page's next event id: its clock's now, or one millisecond after the page's last when the clock has not
+ * passed it. So every id one page makes differs by its time alone, however close together the posts and whatever
+ * `Math.random` answers (a test fixes it for its dice; one tap posts a roll and a death save in one millisecond).
+ */
+export const stampTime = (last: number, now: number): number => Math.max(Math.trunc(now), last + 1);
+/** `v` as JSON with each object's keys sorted, so two readings of one message compare equal whatever order a store keeps. */
+const canonical = (v: unknown): string => JSON.stringify(v, (_k, x: unknown) =>
+  (x !== null && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : x));
+/**
+ * Whether `ev`, posted under an id the room or a phone's outbox already holds for `held`, is that message again: the
+ * same type and payload (a send whose answer was lost), or any end of an offer, whose first end is its one end
+ * (trade/offer.ts). Anything else under a held id is a different message: the outbox and the room refuse it, never
+ * answer it as taken.
+ */
+export const sentAgain = (held: RoomEvent, ev: RoomEvent): boolean =>
+  isEndId(ev.payload.eid) || (held.type === ev.type && canonical(held.payload) === canonical(ev.payload));
 /** The one constructor of an offer's end: `body` under the offer's end id (`endIdOf`), read by the parser the server uses; null when it would refuse it. */
 export function endEvent(type: 'offerEnd', body: EventBody<'offerEnd'>): RoomEvent | null;
 export function endEvent(type: 'offerStop', body: EventBody<'offerStop'>): RoomEvent | null;
@@ -1037,7 +1054,7 @@ export function parseServedSheet(key: SheetKey, data: unknown): ServedSheet | nu
   if (raw === undefined) return parseSheet(key, data);
   return attempt(() => {
     const f = obj(raw), bag = own(f, 'bag');
-    return { face: { name: text(NAME_MAX)(own(f, 'name')), level: int(1, MAX_LEVEL)(own(f, 'level')), job: nullOr(text(NAME_MAX))(own(f, 'job')), bag: bag === null ? null : listOf(bag, FACE_LINES, faceLine) } };
+    return { face: { name: text(NAME_MAX)(own(f, 'name')), level: need(parseLevel(own(f, 'level'))), job: nullOr(text(NAME_MAX))(own(f, 'job')), bag: bag === null ? null : listOf(bag, FACE_LINES, faceLine) } };
   });
 }
 

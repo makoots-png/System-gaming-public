@@ -18,10 +18,18 @@ export const refuse = <W extends string>(why: W): Refused<W> => ({ ok: false, wh
 export const isRefused = (v: unknown): v is Refused =>
   v !== null && typeof v === 'object' && (v as { ok?: unknown }).ok === false && typeof (v as { why?: unknown }).why === 'string';
 
+/**
+ * The why of a refusal its writer told the player already: the fight's news for a command the fight or the store refused,
+ * the toast that the GM's fight holds a hunter. An api member whose own path tells a refusal answers it, so its caller
+ * reads every answer the same way; `ui.wrote` (src/views/ui.js) says nothing more of it.
+ */
+export const TOLD = 'told';
 /** A pure change of a value: the next value or a refusal. */
 export type Step<T> = (value: T) => T | Refused;
 /** What `store.apply` answers: done, or the step's refusal. */
 export type Applied = { readonly ok: true } | Refused;
+/** What a write answers when it was done: `store.apply`'s, and an api member's that wrote another way (the fight's command). */
+export const WROTE: Applied = { ok: true };
 
 /** A step on the save that changes one hunter by its id. A hunter that is not there is refused (`no-hunter`). */
 export const atHunter = (hid: string, f: Step<Hunter>): Step<Save> => save => {

@@ -5,7 +5,7 @@
 // src/edge/roll.ts; the GM's phone does the rest (combat.js). Publishes app.api.uses.
 import { logLine, logged } from '../core/session-log.ts';
 import { toldStep } from '../core/use-told.ts';
-import { atHunter, both } from '../core/save-step.ts';
+import { atHunter, both, isRefused, refuse } from '../core/save-step.ts';
 import { notifyHidden } from '../edge/notify.ts';
 import { rollDice } from '../edge/roll.ts';
 import { aims, docSpots } from '../core/combat/fight-view.ts';
@@ -52,17 +52,18 @@ export function register(app) {
   /** @type {import('../core/api.ts').UsesApi} */
   app.api.uses = {
     told(hid, why, change, u) {
-      const h = store.hunter(hid); if (!h) return { ok: false, sent: false };
+      const h = store.hunter(hid); if (!h) return refuse('no-hunter');
       const t = u ? toldOf(h, u) : NOBODY;
       if (!change && t.kind === 'none') return { ok: true, sent: false };
-      if (!store.apply(why, both(change ? atHunter(hid, change) : s => s, toldStep(t, app.rules()))).ok) return { ok: false, sent: false };
+      const w = store.apply(why, both(change ? atHunter(hid, change) : s => s, toldStep(t, app.rules())));
+      if (isRefused(w)) return w;
       if (t.kind !== 'post') return { ok: true, sent: false };
       const sy = app.api.sync;
       sy.flush();
       if (sy.status() !== 'connected') ui.toast('Sync', `The GM is told about ${u.name} when the room answers.`, { kind: 'info' });
       return { ok: true, sent: true };
     },
-    async report(hid, u) { return app.api.uses.told(hid, 'use-report', null, u).sent; },
+    async report(hid, u) { return app.api.uses.told(hid, 'use-report', null, u); },
     onTable: hid => !!tableOf(hid),
     async cast(hid, abilityId, given) {
       const h = store.hunter(hid), t = tableOf(hid); if (!h || !t) return null;

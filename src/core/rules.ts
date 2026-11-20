@@ -6,6 +6,7 @@ import { BUILT_IN_STATUSES } from './registry/statuses.ts';
 import { BUILT_IN_PATHS } from './registry/paths.ts';
 import { STAT_KEYS, STAT_SHORT } from './stats.ts';
 import { GRID_SIDE } from './combat/space.ts';
+import { MAX_LEVEL, MIN_LEVEL } from './hunter/level.ts';
 import type { StatKey } from './stats.ts';
 import type { StatusDef } from './combat/effect-ops.ts';
 import type { Rewards } from './rewards.ts';
@@ -69,7 +70,7 @@ function domainsOf(spec: unknown, path: string, out: Map<string, Domain>): Map<s
 export const SOLO_BOUNDS = { hours: 168, held: 10, pack: 12 } as const;
 
 // Domains several rules share: one for each kind of number a table repeats by rank, kit, monster kind or ability kind.
-const LEVEL = wholeIn(1, 9999, 'a level a hunter can reach: 1 to progress.ts MAX_LEVEL');
+const LEVEL = wholeIn(MIN_LEVEL, MAX_LEVEL, 'a level a hunter can hold (hunter/level.ts)');
 const CHECK_BONUS = wholeIn(0, 30, 'a bonus on a d20 check: past 30 the die decides no DC');
 const DC = wholeIn(1, 100, 'a d20 check\'s DC: the S rank\'s hardest is 55, and past 100 no bonus reaches it');
 const MONSTER_XP = wholeIn(0, 1_000_000, 'XP a monster gives: a million is about the next level of a level 9999 hunter');
@@ -121,7 +122,6 @@ const DAILY_REWARD_PARTS: Omit<Rewards, 'xp' | 'points' | 'gold'> = { items: [],
 const SPEC = {
   xpPerLevel: whole(100, 1, 1_000_000, 'XP to the next level is this times the level: 0 levels a hunter to the cap on 1 XP'),
   pointsPerLevel: whole(3, 0, 20, 'stat points a level gives: 20 is a main stat\'s worth of a rank every level'),
-  dailyRewardPoints: whole(1, 0, 20, 'points a daily gives: 20 is a level\'s worth and more every day'),
   streakBonusEvery: whole(7, 1, 365, 'days of a streak between its bonuses: a streak of 0 days divides by 0'),
   levelUpRestore: true,
   rankLevels: { E: of(1, LEVEL), D: of(10, LEVEL), C: of(20, LEVEL), B: of(35, LEVEL), A: of(50, LEVEL), S: of(70, LEVEL) },
@@ -552,7 +552,8 @@ export const withStatuses = (R: Rules, statuses: Readonly<Record<string, StatusD
   Object.keys(statuses).length ? { ...R, conditions: { ...R.conditions, ...statuses } } : R;
 
 // ── helpers. Each takes the rules as its first argument; src/edge/rules.ts binds them to the current rules for views. ──
-export const xpToNext = (R: Rules, level: number): number => R.xpPerLevel * Math.max(1, level);
+/** XP from `level` to the next: `xpPerLevel` times the level. `level` is a level (hunter/level.ts), so no bound is kept here. */
+export const xpToNext = (R: Rules, level: number): number => R.xpPerLevel * level;
 /**
  * Every job a reward may name: the rules' `jobs`, then each of the `extractJobs` they do not hold (a Shadow Monarch is
  * reached, never picked at the start).

@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  ENTRY_EVENTS, OUTBOX_MAX, REFUSED_KEEP, callOf, entryTransition, next, parseOutbox, post, rebound, reloaded, roomGone, sentEvent, step, waiting,
+  ENTRY_EVENTS, IdTaken, OUTBOX_MAX, REFUSED_KEEP, callOf, entryTransition, next, parseOutbox, post, rebound, reloaded, roomGone, sentEvent, step, waiting,
 } from '../src/core/sync/outbox.ts';
 import type { Entry, EntryEventType, KeptState, Letter, Outbox } from '../src/core/sync/outbox.ts';
-import { newEvent } from '../src/core/protocol.ts';
+import { newEvent, parseEvent } from '../src/core/protocol.ts';
 import type { RoomCode, RoomEvent } from '../src/core/protocol.ts';
 import { hid } from './fixtures/ids.ts';
 
@@ -73,6 +73,16 @@ describe('the outbox', () => {
   test('posting the same message twice keeps one entry', () => {
     const l = used(), box = posted([], A, l);
     expect(post(box, A, l)).toEqual({ box, dropped: [] });
+  });
+
+  test('another message under an id the box holds is not posted: the post throws IdTaken, naming the id and both messages, and the box stays', () => {
+    const l = used(), box = posted([], A, l);
+    if (l.kind !== 'event') throw new Error('an event');
+    const roll = parseEvent('roll', { eid: l.event.payload.eid, by: 'd-p1:h1', name: 'Kai', label: 'Death save', expr: '1d20', total: 1, rolls: [1] });
+    if (!roll) throw new Error('not an event');
+    expect(() => post(box, A, { kind: 'event', event: roll })).toThrow(new IdTaken(l.event.payload.eid, l, { kind: 'event', event: roll }).message);
+    expect(() => post(box, A, { kind: 'event', event: roll })).toThrow(/a used message under id .* this roll message was not posted/);
+    expect(box).toEqual(posted([], A, l));
   });
 
   test('messages go one at a time per room, oldest first; another room\'s wait for that room', () => {

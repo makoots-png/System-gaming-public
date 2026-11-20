@@ -33,6 +33,11 @@ export const CHAIN_EVENT_TYPES = ['issued', 'levelChanged', 'stepCompleted', 'st
 
 /** Why an event was refused: a chain is already running, a level step completed below its level, a player acting for the GM. */
 export type ChainRefusal = 'running' | 'belowLevel' | 'gmOnly';
+/** What a refused chain event says (`ui.wrote`'s words). A player's phone never offers the GM's events, so `gmOnly` has none. */
+export const CHAIN_WORDS: Readonly<Partial<Record<ChainRefusal, string>>> = {
+  running: 'This hunter already has a Job Change quest running.',
+  belowLevel: 'This step completes at a higher level.',
+};
 /**
  * `issueQuest`: add `quest` to the hunter's quests. `progress`: set a level step's objective. `completeQuest`: complete
  * that quest as a player would (its completion comes back as `stepCompleted`). `grantJob`: the hunter is now `job`.

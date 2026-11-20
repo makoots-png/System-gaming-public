@@ -68,7 +68,7 @@ const answer = <R>(reply: R, a: TapAnswer): Out<R> => ({ state: NO_ATTEMPT, effe
 const busy = <R>(s: Attempt<R>, e: Extract<AttemptEvent<R>, { type: 'tap' }>): Out<R> =>
   ({ state: s, effects: [{ type: 'answer', reply: e.reply, answer: { ok: false, kind: 'busy' } }] });
 
-/** The link took the tap, or did not: a create or a join under way, or the tap fails (`busy` while the link holds another, `net` with no server or an update coming). */
+/** The link took the tap, or did not: a create or a join under way, a join of the place the phone is live in (answers its role), or the tap fails (`busy` while the link holds another, `net` with no server or an update coming). */
 function taken<R>(s: Extract<Attempt<R>, { at: 'handed' }>, link: Link): Out<R> {
   const { tap, who, reply } = s;
   if (tap.type === 'create' && link.at === 'creating') return { state: { at: 'creating', gen: link.gen, reply }, effects: [] };
@@ -76,6 +76,7 @@ function taken<R>(s: Extract<Attempt<R>, { at: 'handed' }>, link: Link): Out<R> 
     const joins: JoinsAs = tap.key !== null ? { as: 'gm' } : who.name ? { as: 'named', name: who.name } : { as: 'picked', hunterId: who.hunterId };
     return { state: { at: 'joining', gen: link.gen, joins, reply }, effects: [] };
   }
+  if (tap.type === 'join' && link.at === 'live' && link.code === tap.code && link.key === tap.key) return answer(reply, { ok: true, value: link.key !== null ? 'gm' : 'player' });
   return answer(reply, { ok: false, kind: link.at === 'upgrading' || link.at === 'off' ? 'net' : 'busy' });
 }
 

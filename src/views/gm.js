@@ -337,7 +337,7 @@ export function register(app) {
   const heldRow = who => { const at = A().hunter.fightOf(who), f = S().fight; return at && at.at === 'row' && f ? f.rows.find(r => r.id === at.cid) || null : null; };
   function sendHp(key, n) {
     const name = remoteName(key), cid = fightRowOf(key);
-    if (cid !== null) { if (A().combat.adjust(cid, { hp: n })) say('#gm-board-msg', `${n < 0 ? 'Damaged' : 'Healed'} ${name} by ${Math.abs(n)} in the fight.`); return; }
+    if (cid !== null) { if (ui.wrote('GM', A().combat.adjust(cid, { hp: n }))) say('#gm-board-msg', `${n < 0 ? 'Damaged' : 'Healed'} ${name} by ${Math.abs(n)} in the fight.`); return; }
     const p = postable('hp', { to: [key], hp: n, reason: 'GM' }), hp = `${n < 0 ? '−' : '+'}${Math.abs(n)} HP`;
     if (!p.ev) return say('#gm-board-msg', notPosted(p, `Not sent to ${name}`), true);
     if (!gmWrite('gm-hp', null, [p.ev], [line('system', `${n < 0 ? 'Damage' : 'Heal'} ${Math.abs(n)}`, name)])) return;
@@ -349,7 +349,7 @@ export function register(app) {
    */
   function sendRevive(key) {
     const name = remoteName(key), cid = fightRowOf(key);
-    if (cid !== null) { if (A().combat.revive(cid)) say('#gm-board-msg', `Revived ${name} in the fight.`); return; }
+    if (cid !== null) { if (ui.wrote('GM', A().combat.revive(cid))) say('#gm-board-msg', `Revived ${name} in the fight.`); return; }
     const p = postable('revive', { to: [key] });
     if (!p.ev) return say('#gm-board-msg', notPosted(p, `Not sent to ${name}`), true);
     if (!gmWrite('gm-revive', null, [p.ev], [line('system', 'Revive', name)])) return;
@@ -359,7 +359,7 @@ export function register(app) {
   function sendStatus(key, change, verb) { // verb(name) → confirmation line
     const name = remoteName(key), cid = fightRowOf(key), a = change.add;
     if (cid !== null) {
-      if (A().combat.status(cid, a ? { add: { key: a.key, def: a.def, rounds: a.rounds, tier: a.source.tier } } : { remove: change.remove })) say('#gm-board-msg', verb(name));
+      if (ui.wrote('GM', A().combat.status(cid, a ? { add: { key: a.key, def: a.def, rounds: a.rounds, tier: a.source.tier } } : { remove: change.remove }))) say('#gm-board-msg', verb(name));
       return;
     }
     const r = roomPost('status', { to: [key], ...(a ? { add: [a] } : { remove: [change.remove] }) });
@@ -764,7 +764,7 @@ export function register(app) {
         if (!a) return say('#gm-board-msg', A().hunter.amountMsg(inp.value), true);
         const n = heal || a.heal ? a.n : -a.n; inp.value = '';
         if (card.classList.contains('remote')) sendHp(hid, n);
-        else if (n < 0 ? A().hunter.damage(hid, -n) : A().hunter.heal(hid, n)) say('#gm-board-msg', `${n < 0 ? 'Damaged' : 'Healed'} ${(S().hunters.find(x => x.id === hid) || {}).name || 'hunter'} by ${a.n}.`);
+        else if (ui.wrote('GM', n < 0 ? A().hunter.damage(hid, -n) : A().hunter.heal(hid, n))) say('#gm-board-msg', `${n < 0 ? 'Damaged' : 'Healed'} ${(S().hunters.find(x => x.id === hid) || {}).name || 'hunter'} by ${a.n}.`);
         if (keepFocus) { const c2 = [...$('#gm-board').querySelectorAll('[data-hid]')].find(c => c.dataset.hid === hid), i2 = c2 && c2.querySelector('[data-gmamt]'); if (i2) i2.focus(); }
       }
       el.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches && e.target.matches('[data-gmamt]')) { e.preventDefault(); if (A().hunter.amountFromKey(e, e.target.value)) typedHp(e.target.closest('[data-hid]'), e.shiftKey, true); } });
@@ -797,12 +797,12 @@ export function register(app) {
         if (t.dataset.gstabilize !== undefined) {
           const c = t.closest('[data-hid]'), key = c.dataset.hid, remote = c.classList.contains('remote'), cid = remote ? fightRowOf(key) : null;
           const name = remote ? remoteName(key) : (S().hunters.find(x => x.id === key) || {}).name || 'hunter';
-          if (remote ? cid !== null && A().combat.life(cid, { type: 'stabilize' }) : A().hunter.life(key, { type: 'stabilize' })) say('#gm-board-msg', `Stabilized ${name}.`);
+          if (remote ? cid !== null && ui.wrote('GM', A().combat.life(cid, { type: 'stabilize' })) : ui.wrote('GM', A().hunter.life(key, { type: 'stabilize' }))) say('#gm-board-msg', `Stabilized ${name}.`);
           return;
         }
-        if (t.dataset.grevive !== undefined) { const hid = t.closest('[data-hid]').dataset.hid; if (A().hunter.life(hid, { type: 'revive' })) say('#gm-board-msg', `Revived ${(S().hunters.find(x => x.id === hid) || {}).name || 'hunter'} at 1 HP.`); return; }
+        if (t.dataset.grevive !== undefined) { const hid = t.closest('[data-hid]').dataset.hid; if (ui.wrote('GM', A().hunter.life(hid, { type: 'revive' }))) say('#gm-board-msg', `Revived ${(S().hunters.find(x => x.id === hid) || {}).name || 'hunter'} at 1 HP.`); return; }
         if (t.dataset.hp && t.closest('.gm-card.remote')) { sendHp(t.closest('[data-hid]').dataset.hid, int(t.dataset.hp)); return; }
-        if (t.dataset.hp) { const hid = t.closest('[data-hid]').dataset.hid, n = int(t.dataset.hp); if (n < 0) A().hunter.damage(hid, -n); else A().hunter.heal(hid, n); return; }
+        if (t.dataset.hp) { const hid = t.closest('[data-hid]').dataset.hid, n = int(t.dataset.hp); ui.wrote('GM', n < 0 ? A().hunter.damage(hid, -n) : A().hunter.heal(hid, n)); return; }
         const act = { 'gm-notify': askNotify, 'gm-uses-go': openUses, 'gm-award-go': doAward, 'gm-b-go': doBroadcast, 'gm-q-go': doIssue, 'gm-g-go': doSpawn, 'gm-s-go': startSession, 'gm-t-go': doRoll,
           'gm-d1': () => advance(1), 'gm-r-val': liveRules, 'gm-r-save': saveRules, 'gm-r-reset': resetRules,
           'gm-dn': async () => { const n = await ui.promptNum({ title: 'Advance world day', label: 'Days', value: 1, min: 1, max: 365 }); if (n) advance(n); },

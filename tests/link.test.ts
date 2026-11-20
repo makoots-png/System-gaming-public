@@ -150,6 +150,21 @@ describe('joining as a player', () => {
     expect(r.state).toBe(before);
   });
 
+  test('a player who rejoins their room as its GM opens it as GM', () => {
+    const r = playerInA().tap({ type: 'join', code: ROOM_A, key: KEY_A, from: null });
+    expect(r.state).toMatchObject({ at: 'joining', step: 'peek' });
+    expect(calls(r.fx)).toHaveLength(1);
+  });
+
+  test('a join of the room the phone is in, as the same role, changes nothing', () => {
+    const player = playerInA(), before = player.state;
+    player.tap({ type: 'join', code: ROOM_A, key: null, from: null });
+    expect(player.state).toBe(before);
+    const gm = gmInA(), gmBefore = gm.state;
+    gm.tap({ type: 'join', code: ROOM_A, key: KEY_A, from: null });
+    expect(gm.state).toBe(gmBefore);
+  });
+
   test('a room that is gone says so, and marks the last room gone when it was that room', () => {
     const r = playerInA().tap({ type: 'leave' }).tap({ type: 'join', code: ROOM_A, key: null, from: null }).reply({ type: 'peeked', exists: false });
     expect(r.state).toMatchObject({ at: 'idle', last: { code: ROOM_A, why: 'gone' } });

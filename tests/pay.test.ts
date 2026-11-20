@@ -44,6 +44,8 @@ function inDen(xpPaid = 0): Save {
 }
 const award = (xp: number, to = KAI): RoomEvent => newEvent('award', { to: [to], rewards: { ...newRewards(), xp } }, { device: 'd-gm', now: 1, rand: 0.25 })!;
 /** The outbox's messages: each award's type, whom it is for and its XP. */
+/** The room of a Clear that paid Kai, whose sheet is not on this phone, an award of 75 XP. */
+const KAI_PAID = { code: ROOM, stamp: { device: 'd-gm', now: 2, rand: 0.5 }, players: [{ key: KAI, rank: null, pays: award(75) }] };
 const events = (s: Save) => (s.settings.sync.outbox ?? []).map(e => (e.letter.kind === 'event' && e.letter.event.type === 'award' ? [e.room, e.letter.event.payload.to, e.letter.event.payload.rewards.xp] : e.letter));
 
 describe('one award over the payees', () => {
@@ -125,20 +127,22 @@ describe('a gate\'s Clear', () => {
     expect(clearShares(s, 'nope', xpOf, 0, [], [], null, true)).toBeNull();
   });
 
-  test('cleared in one step: the gate paid what it owed and cleared, this phone\'s hunter given its share, Kai\'s award posted', () => {
+  test('cleared in one step: the gate paid what it owed and cleared, this phone\'s hunter given its share, Kai\'s award posted, each with the gate as a fact', () => {
     const s = { ...inDen(), fight: null }, h = s.hunters[0]!;
     const out = ok(settleClear(s, 'g-den', { due: 150, xp: 75, gold: 20, items: [], payees: ['Mira', 'Kai'] },
-      [{ hid: h.id, rewards: { ...newRewards(), xp: 75, gold: 20 } }], { room: ROOM, events: [award(75)] }, DAY));
+      [{ hid: h.id, rewards: { ...newRewards(), xp: 75, gold: 20 } }], KAI_PAID, DAY));
     expect([out.save.gates[0]!.status, out.save.gates[0]!.xpPaid, out.save.hunters[0]!.xp, out.save.hunters[0]!.gold]).toEqual(['cleared', 150, h.xp + 75, h.gold + 20]);
-    expect(events(out.save)).toEqual([[ROOM, [KAI], 75]]);
-    const g = s.gates[0]!;
-    expect(out.save.hunters[0]!.chronicle.inbox[0], 'the gate cleared is a fact of the payee\'s chronicle').toEqual({ kind: 'gate', name: g.name, rank: g.rank, above: 0, toBreak: Math.max(0, g.breakDay - s.world.day) });
+    const g = s.gates[0]!, fact = { kind: 'gate', name: g.name, rank: g.rank, above: 0, toBreak: Math.max(0, g.breakDay - s.world.day) };
+    expect(events(out.save)[0]).toEqual([ROOM, [KAI], 75]);
+    expect(out.save.hunters[0]!.chronicle.inbox[0], 'the gate cleared is a fact of the payee\'s chronicle').toEqual(fact);
+    const noted = (out.save.settings.sync.outbox ?? []).flatMap(e => (e.letter.kind === 'event' && e.letter.event.type === 'noted' ? [e.letter.event.payload] : []));
+    expect(noted.map(n => [n.to, n.facts]), 'and of Kai\'s, told after its award').toEqual([[[KAI], [fact]]]);
   });
 
   test('a gate cleared once is not cleared again: a second Clear (a stale panel, a second tap) is refused and pays nobody', () => {
     const s = { ...inDen(), fight: null }, h = s.hunters[0]!;
     const pay = { due: 150, xp: 75, gold: 20, items: [], payees: ['Mira', 'Kai'] };
-    const clear = (from: Save) => settleClear(from, 'g-den', pay, [{ hid: h.id, rewards: { ...newRewards(), xp: 75, gold: 20 } }], { room: ROOM, events: [award(75)] }, DAY);
+    const clear = (from: Save) => settleClear(from, 'g-den', pay, [{ hid: h.id, rewards: { ...newRewards(), xp: 75, gold: 20 } }], KAI_PAID, DAY);
     const once = ok(clear(s)).save;
     expect(clear(once)).toEqual({ ok: false, why: 'unchanged' });
     // a gate the GM closed cannot be cleared either (gate.ts: Clear applies to detected, raiding and broken gates)

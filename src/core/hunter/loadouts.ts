@@ -14,6 +14,8 @@ import type { LoadoutId } from '../ids.ts';
 /** How long a set's name may be. */
 export const LOADOUT_NAME_MAX = 24;
 export type LoadoutWhy = 'full' | 'missing' | 'no-name' | 'in-fight';
+/** What a refused change of a set says (`ui.wrote`'s words). `missing`, `no-name` and `in-fight` are refusals the panel never offers to these four. */
+export const LOADOUT_WORDS: Readonly<Partial<Record<LoadoutWhy, string>>> = { full: 'Every loadout slot is taken. Delete a set first.' };
 
 /** How many sets a hunter may save now: the rules' cap (0 or more), never above the save's limit. A lowered cap deletes none. */
 export function loadoutCap(R: Rules): number {

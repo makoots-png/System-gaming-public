@@ -15,8 +15,8 @@ import { grant } from '../hunter/grant.ts';
 import type { Day, Granted } from '../hunter/grant.ts';
 import { newRewards } from '../rewards.ts';
 import type { Rewards } from '../rewards.ts';
-import { parseSheetKey } from '../protocol.ts';
-import type { EventBody, RoomCode, RoomEvent, SheetKey } from '../protocol.ts';
+import { newEvent, parseSheetKey } from '../protocol.ts';
+import type { EventBody, EventStamp, RoomCode, RoomEvent, SheetKey } from '../protocol.ts';
 import type { Dropped, Save } from '../save.ts';
 import { isRefused, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
@@ -129,20 +129,36 @@ export function clearShares<I>(save: Pick<Save, 'gates'>, gateId: string, xpOf: 
   return { due, shares: payees.map(p => ({ payee: p, xp: splitAward(due, n, by), gold: splitAward(gold, n, by), items: first && idOf(first) === idOf(p) ? items : [] })) };
 }
 /**
- * The fact of gate `g` cleared with a hunter of rank `rank` among its payees, on world day `day` (a local payee's here, a
- * player's in the room's `noted`, null when its sheet is not on the GM's phone: fight-facts.ts `rankSeen`).
+ * The fact of gate `g` cleared by a hunter of rank `rank`, `toBreak` days before it would have broken (null for a
+ * personal gate, which closes and never breaks). `rank` is null for a player's hunter whose sheet is not on the GM's
+ * phone (fight-facts.ts `rankSeen`). The one constructor of a `gate` fact, whatever cleared the gate.
  */
-export const gateFact = (g: Pick<Gate, 'name' | 'rank' | 'breakDay'>, rank: Rank | null, day: number): Fact =>
-  ({ kind: 'gate', name: g.name, rank: g.rank, above: rankIdx(g.rank) - rankIdx(rankSeen(rank)), toBreak: Math.max(0, g.breakDay - day) });
+export const gateFact = (g: Pick<Gate, 'name' | 'rank'>, rank: Rank | null, toBreak: number | null): Fact =>
+  ({ kind: 'gate', name: g.name, rank: g.rank, above: rankIdx(g.rank) - rankIdx(rankSeen(rank)), toBreak });
 /**
- * Gate `gateId` cleared, in one step: the gate paid what it owed and logged (`clearGate`, world.ts), each local payee
- * given `rewards` (the view reads its share with `parseRewards`), each player's award posted. Refused as `clearGate` is.
+ * A player's hunter a Clear paid: its sheet key, its rank as this phone sees it (null: no pushed sheet), and the message
+ * that pays it (an `award` from the Clear panel, the `soloAnswer` of its run).
  */
-export function settleClear(save: Save, gateId: string, pay: ClearPay, locals: readonly { hid: string; rewards: Rewards }[], posts: Posts, day: Day): Settled | Refused<'missing' | 'unchanged'> {
+export type ClearPlayer = { readonly key: SheetKey; readonly rank: Rank | null; readonly pays: RoomEvent };
+/** The room a Clear posts in: its code, the stamp its `noted` messages are made with, and the players' hunters it paid. */
+export type ClearRoom = { readonly code: RoomCode; readonly stamp: EventStamp; readonly players: readonly ClearPlayer[] };
+/**
+ * Gate `gateId` cleared, in one step, whatever cleared it (the GM's Clear, a solo run on this phone or a player's in the
+ * room): the gate paid what it owed and logged (`clearGate`, world.ts), each local payee given `rewards` (the view reads
+ * its share with `parseRewards`) and its `gate` fact; each player's hunter in `room` its message that pays it, and its
+ * `gate` fact in a `noted` after it. A caller cannot pay a hunter without its fact. Refused as `clearGate` is.
+ */
+export function settleClear(save: Save, gateId: string, pay: ClearPay, locals: readonly { hid: string; rewards: Rewards }[], room: ClearRoom | null, day: Day): Settled | Refused<'missing' | 'unchanged'> {
+  const g = save.gates.find(x => x.id === gateId);
+  if (!g) return refuse('missing');
   const cleared = clearGate(save, gateId, pay, { at: day.at, cap: day.R.logCap });
   if (isRefused(cleared)) return cleared;
-  // the gate cleared is a fact of each local payee's chronicle (chronicle.ts), in the Clear's write
-  const g = save.gates.find(x => x.id === gateId), paid = new Set(locals.map(l => l.hid));
-  const facts = !g ? cleared : { ...cleared, hunters: cleared.hunters.map(h => (!paid.has(h.id) ? h : record(h, gateFact(g, h.rank, save.world.day)))) };
-  return payAll(facts, locals, posts, day);
+  const fact = (rank: Rank | null) => gateFact(g, rank, Math.max(0, g.breakDay - save.world.day)), paid = new Set(locals.map(l => l.hid));
+  const facts = { ...cleared, hunters: cleared.hunters.map(h => (paid.has(h.id) ? record(h, fact(h.rank)) : h)) };
+  const events = !room ? [] : room.players.flatMap((p, i) => {
+    const noted = newEvent('noted', { to: [p.key], facts: [fact(p.rank)] }, { ...room.stamp, now: room.stamp.now + i });
+    if (!noted) throw new Error('the room would refuse the fact of a gate the save holds');
+    return [p.pays, noted];
+  });
+  return payAll(facts, locals, { room: room ? room.code : null, events }, day);
 }

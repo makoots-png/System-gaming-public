@@ -17,6 +17,15 @@ const ring = (name: string): ItemTemplate => ({ ...shield, name, type: 'accessor
 const hunter = (gold = 100): Hunter => ({ ...newHunter(RULES), gold });
 
 describe('the bag', () => {
+  const differing: [string, Partial<ItemTemplate>][] = [['description', { desc: 'a second telling' }], ['attack', { attack: 'shot' }], ['flat penetration', { penFlat: 3 }]];
+  for (const [what, change] of differing) {
+    test(`two slotless things that differ only in their ${what} stay two stacks`, () => {
+      const h = putItem(putItem(hunter(), potion, iid('i1')), { ...potion, ...change }, iid('i2'));
+      expect(h.items.map(i => i.id)).toEqual(['i1', 'i2']);
+      expect(h.items[1]).toMatchObject(change);
+    });
+  }
+
   test('a thing without a slot joins its stack; gear makes its own entry', () => {
     const h = putItem(putItem(hunter(), potion, iid('i1')), potion, iid('i2'));
     expect(h.items).toEqual([{ ...potion, id: 'i1', qty: 2 }]);

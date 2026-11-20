@@ -1,8 +1,10 @@
 // fight-turn.ts: how a fight's time moves and what follows from a change to its rows (docs/agent-handoff/rw/design.md
 // sections 1.3, 4.2, 4.4 and 4.7). `startTurn` is the one function that begins a turn; `consequences` is the one place that
-// turns a change of a row into effects (a defeat, a move, a channel, a stagger, and through `writeBack` a sheet's HP,
-// mana, fatigue and statuses); `grounded` keeps the zones' holds (zones.ts); `overIf` ends a fight whose side has nobody
-// up; `spreadsOf`, `spreadTo` and `marked` pass a spreading status on (design 4.8). Called only by the reducer in fight.ts.
+// turns a change of a row into effects (a defeat, a move, a channel, a stagger); `sheetBacks` is the one place that turns
+// a command's change of the rows into what their sheets hear (HP, mana, fatigue, statuses, uses), read once by `reduce`
+// from the fight the command found and the one it left; `grounded` keeps the zones' holds (zones.ts); `overIf` ends a
+// fight whose side has nobody up; `spreadsOf`, `spreadTo` and `marked` pass a spreading status on (design 4.8). Called
+// only by the reducer in fight.ts.
 import { tallied } from './row-tally.ts';
 import { diceOf } from '../formula.ts';
 import type { Dice, Scope } from '../formula.ts';
@@ -154,7 +156,6 @@ export function consequences(before: readonly Body[], after: Running, ctx: Ctx, 
     }
     if (!isUp(b) && isUp(a)) a = { ...a, at: tick(Math.max(a.at, f.now)) };
     if (a.place.x !== b.place.x || a.place.y !== b.place.y) fx.push({ type: 'moved', id: a.id, to: a.place });
-    writeBack(b, a, f.now, ctx, fx);
     if (a.channel?.state !== b.channel?.state || a.channel?.charge !== b.channel?.charge) {
       fx.push({ type: 'channel', id: a.id, state: a.channel?.state ?? null, charge: a.channel?.charge ?? 0 });
     }
@@ -195,13 +196,29 @@ const sameStatuses = (x: readonly Status[], y: readonly Status[]): boolean => x.
 });
 
 /**
+ * What the sheets of the rows of `after` hear of one command that left it from `before` (`reduce` calls it for every
+ * command that changed the fight, so no path of a command changes a row its sheet does not hear of): a row that was
+ * there, its change (`writeBack`); a row that joined, its totals at once (`joinedBack`). A row that left writes nothing.
+ * Read at `after`'s now (0 in setup), so each status's time left is the fight's as the command leaves it.
+ */
+export function sheetBacks(before: Fight | null, after: Fight, ctx: Ctx): Effect[] {
+  const fx: Fx = [], now = after.phase === 'setup' ? tick(0) : after.now;
+  for (const a of after.rows) {
+    const b = before?.rows.find(r => r.id === a.id);
+    if (b) writeBack(b, a, now, ctx, fx);
+    else joinedBack(a, now, ctx, fx);
+  }
+  return fx;
+}
+
+/**
  * The write-back of a row whose sheet holder must hear of a change from `b` to `a` at `now`: a hunter's life, mana,
  * fatigue and statuses as `vitals` (this phone) or `sendRemote` (another phone); the row's life is the sheet's while the
  * fight holds it, wherever the sheet is. A shadow's HP as `shadowHp`. Totals, so a repeat changes nothing. A row no sheet
  * holds, or with nothing changed, writes nothing. A stacking status whose count is the fight's (kits table 2.1, `keep:
  * 'fight'`) is not the sheet's: it stays in the fight and ends with it.
  */
-export function writeBack(b: Body, a: Body, now: Tick, ctx: Ctx, fx: Fx): void {
+function writeBack(b: Body, a: Body, now: Tick, ctx: Ctx, fx: Fx): void {
   const h = a.holder;
   if (!h) return;
   if (h.kind === 'shadow') { if (rowHp(a) !== rowHp(b)) fx.push({ type: 'shadowHp', hunterId: h.hunterId, shadowId: h.shadowId, hp: rowHp(a) }); return; }
@@ -219,7 +236,7 @@ export function writeBack(b: Body, a: Body, now: Tick, ctx: Ctx, fx: Fx): void {
  * poll behind the player's own (a fall to 0 HP just before the join), and from the join the row is the one writer of
  * them: the sheet hears the row at once, not at the row's first change, so the two never disagree in between.
  */
-export function joinedBack(a: Body, now: Tick, ctx: Ctx, fx: Fx): void {
+function joinedBack(a: Body, now: Tick, ctx: Ctx, fx: Fx): void {
   if (a.holder?.kind === 'remote' && a.kind === 'hunter') fx.push(remoteBack(a, a.holder.remote, now, ctx.rules));
 }
 /** The `sendRemote` of hunter row `a` for the phone of `remote` at `now`: the row's own life, and its other totals. */
@@ -400,7 +417,7 @@ export function startTurn(f: Running, ctx: Ctx, fx: Fx): Running | Ended {
     const first = next(g.rows.filter(isUp))!;
     // a `turn` reaction armed on the body whose turn comes next moves its reactor's turn before it (kits design 8.6.3)
     const map = new Map(g.rows.map(b => [b.id, b] as const)), jumped = turnReaction(map, first, g.now, R);
-    if (jumped) { g = logged({ ...g, rows: g.rows.map(b => map.get(b.id)!) }, line(`${jumped.said}.`, [...jumped.about]), R); continue; }
+    if (jumped) { g = consequences(g.rows, logged({ ...g, rows: g.rows.map(b => map.get(b.id)!) }, line(`${jumped.said}.`, [...jumped.about]), R), ctx, fx); continue; }
     // Taken before time moves, so a status that ends for anyone reaches its sheet.
     const before = g.rows, time = advance(g, tick(Math.max(g.now, first.at)), R);
     g = grounded(time.fight, ctx, fx);

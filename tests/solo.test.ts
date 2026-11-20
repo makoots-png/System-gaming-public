@@ -316,6 +316,8 @@ describe('a hunter\'s personal gates read from a save', () => {
 
 describe('a world gate open to solo runs, in a room', () => {
   const KEY = 'd-me:h1' as never, ROOM = 'ABCD23' as never;
+  /** The GM's phone in room ROOM, with no pushed sheet of the run's hunter. */
+  const TAKEN = { day, room: { code: ROOM, stamp: { device: 'd-gm', now: NOW, rand: 0.75 } }, rank: null };
   const gmSave = (gates = [worldGate]): Save => ({ ...alone(), gates });
   const docs = (s: Save) => {
     const built = soloDoc(s, RULES, DOC_MAX);
@@ -353,7 +355,7 @@ describe('a world gate open to solo runs, in a room', () => {
   test('the GM\'s phone pays the first won run of a gate as its Clear, and answers the second as taken; its cost stays the player\'s', () => {
     const s = gmSave(), plan = soloPlan(s, paidRun, RULES);
     expect(plan).toEqual({ kind: 'paid', xp: 50 });
-    const first = ok(soloTaken(s, paidRun, plan, answerOf(s, plan), { gold: 30, items: [] }, { day, room: ROOM }));
+    const first = ok(soloTaken(s, paidRun, plan, answerOf(s, plan), { gold: 30, items: [] }, TAKEN));
     expect(first.gates[0]).toMatchObject({ status: 'cleared', xpPaid: 50 });
     const answer = first.settings.sync.outbox![0]!.letter;
     expect(answer.kind === 'event' && answer.event.payload).toMatchObject({ to: [KEY], run: paidRun.eid, verdict: 'paid', rewards: { xp: 50, gold: 30 } });
@@ -361,7 +363,7 @@ describe('a world gate open to solo runs, in a room', () => {
     const second = { ...paidRun, eid: 'd-other-run2' as never, by: 'd-other:h5' as never }, plan2 = soloPlan(first, second, RULES);
     expect(plan2).toEqual({ kind: 'refused', why: 'taken' });
     const body2 = soloAnswerBody(first, second.eid, second, plan2, NO_LOOT)!;
-    const after = ok(soloTaken(first, second, plan2, newEvent('soloAnswer', body2, { device: 'd-gm', now: NOW + 1, rand: 0.5 }), NO_LOOT, { day, room: ROOM }));
+    const after = ok(soloTaken(first, second, plan2, newEvent('soloAnswer', body2, { device: 'd-gm', now: NOW + 1, rand: 0.5 }), NO_LOOT, TAKEN));
     const refused = after.settings.sync.outbox!.at(-1)!.letter;
     expect(refused.kind === 'event' && refused.event.payload).toMatchObject({ verdict: 'refused', why: 'taken', to: ['d-other:h5'] });
     expect(after.gates[0]!.xpPaid, 'paid once').toBe(50);
@@ -392,10 +394,10 @@ describe('a world gate open to solo runs, in a room', () => {
 
   test('a lost run enters a detected gate and needs no answer; a plan that no longer holds writes nothing', () => {
     const s = gmSave(), lost = { ...paidRun, outcome: 'lost' as const, life: 'dead' as const };
-    const r = ok(soloTaken(s, lost, soloPlan(s, lost, RULES), null, NO_LOOT, { day, room: ROOM }));
+    const r = ok(soloTaken(s, lost, soloPlan(s, lost, RULES), null, NO_LOOT, TAKEN));
     expect([r.gates[0]!.status, r.settings.sync.outbox ?? []]).toEqual(['raiding', []]);
     expect(r.log[0]!.text).toBe('Mira fell in "Goblin Den" (E-rank) alone in 4 rounds and died.');
-    expect(soloTaken(s, paidRun, { kind: 'paid', xp: 999 }, answerOf(s, { kind: 'paid', xp: 999 }), NO_LOOT, { day, room: ROOM })).toEqual({ ok: false, why: 'changed' });
+    expect(soloTaken(s, paidRun, { kind: 'paid', xp: 999 }, answerOf(s, { kind: 'paid', xp: 999 }), NO_LOOT, TAKEN)).toEqual({ ok: false, why: 'changed' });
     expect(soloPlan({ ...s, gates: [{ ...worldGate, status: 'closed' }] }, paidRun, RULES)).toEqual({ kind: 'refused', why: 'closed' });
     expect(soloPlan({ ...s, gates: [] }, paidRun, RULES)).toEqual({ kind: 'refused', why: 'gone' });
   });

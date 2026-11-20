@@ -49,10 +49,10 @@ import type { GateMonster } from './gate.ts';
 import { rollGate, soloRank } from './spawn.ts';
 import type { SpawnMonster } from './spawn.ts';
 import { enteredAlone, worldOrder } from './world.ts';
-import { settleClear } from './pay.ts';
+import { gateFact, settleClear } from './pay.ts';
 import type { Seat } from '../role.ts';
 import { WORLD_NAME_MAX } from '../protocol.ts';
-import type { EventBody, EventId, RoomCode, RoomEvent, SheetKey, SoloDoc, SoloRefused, SoloRunPayload, WorldDoc } from '../protocol.ts';
+import type { EventBody, EventId, EventStamp, RoomCode, RoomEvent, SheetKey, SoloDoc, SoloRefused, SoloRunPayload, WorldDoc } from '../protocol.ts';
 import { atOutbox, post } from '../sync/outbox.ts';
 import { runPosted } from './solo-wait.ts';
 import { soloTracked } from './personal.ts';
@@ -312,12 +312,13 @@ export function soloRan(save: Save, hid: string, gate: SoloGate, run: SoloRun, l
   if (soloKey(h) !== run.from) return refuse('changed');
   const outcome = run.end.outcome, stamp: Stamp = { at: c.day.at, cap: R.logCap };
   const ran = ranOn(h, run, R), max = hunterSheet(ran, R).sheet.hpMax, above = rankIdx(target.rank) - rankIdx(h.rank);
-  // the run's end is a fact of the chronicle (chronicle.ts), and a personal gate cleared a gate's
+  // the run's end is a fact of the chronicle (chronicle.ts), and a personal gate cleared a gate's (a world gate's is its
+  // Clear's, settleClear in pay.ts)
   const after = record(ran, {
     kind: 'solo', outcome, name: target.name, rank: target.rank, above, rounds: Math.round(run.end.rounds),
     endPct: max > 0 ? Math.round(100 * hpOf(ran.life, max) / max) : 0, life: ran.life.at, personal: gate.kind === 'personal',
   }, ...killFacts(run.end.party[run.hunter]?.kills ?? [], h.rank, 'solo'),
-  ...(gate.kind === 'personal' && outcome === 'won' ? [{ kind: 'gate', name: target.name, rank: target.rank, above, toBreak: null } as const] : []));
+  ...(gate.kind === 'personal' && outcome === 'won' ? [gateFact(target, h.rank, null)] : []));
   let s: Save = told({ ...save, hunters: save.hunters.map(x => (x.id === h.id ? after : x)) }, stamp,
     runLine(h.name, target, outcome, run.end.rounds, after.life.at, h.id));
   const rewards = (xp: number) => ({ ...newRewards(), xp, gold: loot.gold, items: [...loot.items] });
@@ -336,7 +337,7 @@ export function soloRan(save: Save, hid: string, gate: SoloGate, run: SoloRun, l
       const g = save.gates.find(x => x.id === gate.id)!, all = [...seedMonsters(R), ...save.monsters];
       xp = xpDue(g, id => { const m = all.find(x => x.id === id); return m ? monsterXp(m, R) : 0; });
       const pay = { due: xp, xp, gold: loot.gold, items: loot.items.map(i => i.name), payees: [h.name] };
-      const settled = settleClear(s, gate.id, pay, [{ hid: h.id, rewards: rewards(xp) }], { room: null, events: [] }, c.day);
+      const settled = settleClear(s, gate.id, pay, [{ hid: h.id, rewards: rewards(xp) }], null, c.day);
       if (isRefused(settled)) return settled;
       s = settled.save; granted = settled.granted[0]?.g ?? null;
     } else {
@@ -427,21 +428,26 @@ export function soloAnswerBody(save: Pick<Save, 'gates'>, run: EventId, p: SoloR
 }
 
 /**
- * A player's run `p` taken on the GM's phone, in one write (once by its event id, sync.ts `once`): the run's line; a
- * won run whose gate can still be cleared is that gate's Clear for that one hunter (`settleClear`, its answer posted
- * with the reward); one it cannot clear is answered refused; a lost or stalled run enters a detected gate. Refused
- * (`changed`) when the plan the answer was made from no longer holds, and (`no-room`) with no room to answer in.
+ * What `soloTaken` reads besides the save: the moment; the room it answers in, with the stamp of the messages it makes;
+ * the rank of the run's hunter as the GM's phone sees it (its pushed sheet), null when it has none.
  */
-export function soloTaken(save: Save, p: SoloRunPayload, plan: SoloPlan, answer: RoomEvent | null, loot: SoloLoot, c: { readonly day: Day; readonly room: RoomCode | null }): Save | Refused<'changed' | 'no-room' | 'missing' | 'unchanged'> {
+export type TakenCtx = { readonly day: Day; readonly room: { readonly code: RoomCode; readonly stamp: EventStamp } | null; readonly rank: Rank | null };
+/**
+ * A player's run `p` taken on the GM's phone, in one write (once by its event id, sync.ts `once`): the run's line; a
+ * won run whose gate can still be cleared is that gate's Clear for that one hunter (`settleClear`: its answer posted
+ * with the reward, then its gate fact); one it cannot clear is answered refused; a lost or stalled run enters a detected
+ * gate. Refused (`changed`) when the plan the answer was made from no longer holds, and (`no-room`) with no room to answer in.
+ */
+export function soloTaken(save: Save, p: SoloRunPayload, plan: SoloPlan, answer: RoomEvent | null, loot: SoloLoot, c: TakenCtx): Save | Refused<'changed' | 'no-room' | 'missing' | 'unchanged'> {
   const R = c.day.R, now = soloPlan(save, p, R), stamp: Stamp = { at: c.day.at, cap: R.logCap };
   if (JSON.stringify(now) !== JSON.stringify(plan)) return refuse('changed');
   const s = told(save, stamp, takenLine(save, p, plan));
   if (plan.kind === 'report') { const e = enteredAlone(s, p.gate, stamp); return isRefused(e) ? s : e; }
   if (!c.room || !answer) return refuse('no-room');
   const room = c.room;
-  if (plan.kind === 'refused') return atOutbox(b => post(b, room, { kind: 'event', event: answer }).box)(s);
+  if (plan.kind === 'refused') return atOutbox(b => post(b, room.code, { kind: 'event', event: answer }).box)(s);
   const pay = { due: plan.xp, xp: plan.xp, gold: loot.gold, items: loot.items.map(i => i.name), payees: [p.name || 'A hunter'] };
-  const settled = settleClear(s, p.gate, pay, [], { room, events: [answer] }, c.day);
+  const settled = settleClear(s, p.gate, pay, [], { ...room, players: [{ key: p.by, rank: c.rank, pays: answer }] }, c.day);
   return isRefused(settled) ? settled : settled.save;
 }
 /** The GM's log line (and toast) of a player's run: the run's line, and why a won run was not paid. */

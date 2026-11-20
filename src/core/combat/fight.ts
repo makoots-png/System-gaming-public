@@ -28,7 +28,7 @@ import { combatantId } from './ability-types.ts';
 import type { Ability, CombatantId, Outcome } from './ability-types.ts';
 import { channelCan, channelStep } from './fight-channel.ts';
 import { eventsOf, raised } from './triggers.ts';
-import { consequences, D20, ended, held, holdsSide, logged, marked, overIf, partyView, payDue, rowOf, sentAway, spreadTo, startTurn, triggered, uncovered, withRow, writeBack, joinedBack, zoneEnds } from './fight-turn.ts';
+import { consequences, D20, ended, held, holdsSide, logged, marked, overIf, partyView, payDue, rowOf, sentAway, sheetBacks, spreadTo, startTurn, triggered, uncovered, withRow, zoneEnds } from './fight-turn.ts';
 import { hpChange, lifeNews, SAVES_TO_END } from '../hunter/vitals.ts';
 import { refilledRow, rowLifeAfter, rowLifeTakes } from './row-life.ts';
 import { summonRow } from './rows.ts';
@@ -103,23 +103,17 @@ function add<F extends Setup | Running>(f: F, cmd: Extract<Command, { type: 'add
   }
   return logged(g, line(`${cmd.rows.map(r => r.name).join(', ')} ${cmd.rows.length === 1 ? 'joins' : 'join'}.`, [...cmd.rows.map(r => r.id)]), R);
 }
-/** The write-back of each row that joined `g` (`joinedBack`): a player's hunter's phone hears its row from the join. */
-function joinFx(g: Setup | Running, cmd: Extract<Command, { type: 'add' }>, ctx: Ctx): Fx {
-  const fx: Fx = [], now = g.phase === 'running' ? g.now : tick(0);
-  for (const nr of cmd.rows) { const row = rowOf(g, nr.id); if (row) joinedBack(row, now, ctx, fx); }
-  return fx;
-}
 const addTo = <F extends Setup | Running>(f: F, cmd: Extract<Command, { type: 'add' }>, ctx: Ctx): Result => {
   const r = add(f, cmd, ctx);
   if ('effects' in r) return r;
   // a row that joins on a zone stands in it from now
-  return r.phase === 'running' ? after(f as Running, r as Running, '', null, ctx, joinFx(r, cmd, ctx)) : done(r, joinFx(r, cmd, ctx));
+  return r.phase === 'running' ? after(f as Running, r as Running, '', null, ctx, []) : done(r, []);
 };
 const create: Step<'none', 'add'> = (_f, cmd, ctx) => {
   const grid = cmd.grid ?? openGrid(ctx.rules.fight.grid.w, ctx.rules.fight.grid.h);
   const setup: Setup = { phase: 'setup', id: cmd.fightId, grid, zones: cmd.zones ?? [], fog: cmd.fog ?? null, rows: [], log: [], banked: 0, had: {} };
   const r = add(setup, cmd, ctx);
-  return 'effects' in r ? { fight: null, effects: r.effects } : done(r, joinFx(r, cmd, ctx));
+  return 'effects' in r ? { fight: null, effects: r.effects } : done(r, []);
 };
 
 function removeFrom<F extends Setup | Running>(f: F, id: string, R: Rules): F | null {
@@ -452,17 +446,15 @@ function placeRow<F extends Setup | Running>(f: F, cmd: Extract<Command, { type:
 }
 
 /**
- * A GM's change to one row that takes no time: in setup the sheet hears of it; while running it follows as any change
- * does (a row down, the fight over, the current row's turn lost when it is down or held).
+ * A GM's change to one row that takes no time: while running it follows as any change does (a row down, the fight over,
+ * the current row's turn lost when it is down or held). The sheet hears of it as of any command's (`reduce`).
  */
 function gmChange<F extends Setup | Running>(f: F, row: Body, said: LogLine, ctx: Ctx): Result {
   const was = rowOf(f, row.id)!, g = withRow(f, row);
   // A monster or shadow brought back from 0 returns to the map on its own tile, which another body may hold by now.
   if (!alive(was) && alive(row) && !freeAt(f, row.place, row.id)) return refused(f, 'taken');
   if (g.phase === 'running') return after(f as Running, g as Running, '', said, ctx, []);
-  const fx: Fx = [];
-  writeBack(was, row, tick(0), ctx, fx);
-  return done(logged(g, said, ctx.rules), fx);
+  return done(logged(g, said, ctx.rules), []);
 }
 
 const signed = (n: number): string => n < 0 ? `${n}` : `+${n}`;
@@ -711,13 +703,19 @@ function explored(f: Fight): Fight {
   return more ? { ...f, fog: { ...f.fog, seen: seen.join('') } } : f;
 }
 
-/** Every change to a fight goes through here. A command that does not apply in the fight's state is refused. */
+/**
+ * Every change to a fight goes through here. A command that does not apply in the fight's state is refused. What the
+ * sheets of its rows hear (`sheetBacks`) is read here, once, from the fight the command found and the one it left, so
+ * no step and no path inside one can change a row without its sheet hearing it.
+ */
 export function reduce(f: Fight | null, cmd: Command, ctx: Ctx): Result {
   // The table's type pairs each state with its fight and each key with the step for that command.
   const step = TABLE[stateOf(f)][cmd.type] as Step<FightState, CommandType> | null;
   if (!step) return refused(f, 'notNow');
   const r = step(f as never, cmd as never, ctx);
-  return r.fight && r.fight !== f ? { ...r, fight: marked(explored(r.fight)) } : r;
+  if (!r.fight || r.fight === f) return r;
+  const g = marked(explored(r.fight));
+  return { fight: g, effects: [...sheetBacks(f, g, ctx), ...r.effects] };
 }
 
 /**

@@ -396,7 +396,8 @@ function inRoom(link: Live, event: LinkEvent): Step {
         { type: 'save', fields: { ring: { drop: link.code } } }, notify('keyLost', link.code));
     case 'leave': return leaving(link, toIdle(gen, serverOf(link), { code: link.code, why: 'left' }));
     case 'create': return begin(link, event);
-    case 'join': return event.code === link.code ? same(link) : begin(link, event);
+    // a phone's place in a room is its code and its role (the key): the same place is no join, any other begins one
+    case 'join': return event.code === link.code && event.key === link.key ? same(link) : begin(link, event);
     default: return same(link);
   }
 }

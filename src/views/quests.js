@@ -1,7 +1,7 @@
 // quests.js (U03): quest kinds, objectives, daily reset engine, penalty zone, job change, urgent auto-fail.
 import { dueAt as dueIn, nextReset } from '../edge/rules.ts';
 import { canDeleteQuest } from '../core/hunter/penalty.ts';
-import { canReissue } from '../core/hunter/job-chain.ts';
+import { CHAIN_WORDS, canReissue } from '../core/hunter/job-chain.ts';
 import { mayChangeQuest, reportsProgress, systemCompletes, systemCounts } from '../core/hunter/quest-rights.ts';
 import { pickables, pickedRef } from '../core/party.ts';
 import { JOB_NAMES, isJobName } from '../core/registry/jobs.ts';
@@ -13,7 +13,7 @@ import { fillTo } from './motion.ts';
 import { compareTimes, stepTime } from '../core/day.ts';
 import { STREAK_BONUS_POINTS, chainStep, finishQuest, questFailed, rolledOver } from '../core/hunter/grant.ts';
 import { sent } from '../core/award.ts';
-import { isRefused } from '../core/save-step.ts';
+import { isRefused, refuse } from '../core/save-step.ts';
 import { postNews } from '../core/sync/connection.ts';
 import { COUNTED_WORDS, FAIL_WORDS, KIND_LABEL, questFields, questFieldsCss } from './quest-fields.js';
 
@@ -112,12 +112,13 @@ export function register(app) {
       if (!to.length || !ui.wrote('! Quest', store.apply('quest-issue', s => to.reduce((x, { hid, id }) => { const n = withTold(x, hid, stamp(), h => issueQuest(h, partial, id, at)); return 'ok' in n ? x : n; }, s)))) return [];
       return to.map(x => x.id);
     },
-    /** Starts a Job Change chain (a job in src/core/registry/jobs.ts). Answers step 1's quest id, or null when refused. */
+    /** Starts a Job Change chain (a job in src/core/registry/jobs.ts). Answers step 1's quest id, or the refusal whole. */
     issueJobChain(hid, job) {
-      const h = store.hunter(hid); if (!h || !isJobName(job)) return null;
+      const h = store.hunter(hid); if (!h) return refuse('no-hunter');
+      if (!isJobName(job)) return refuse('no-job');
       let questId = null;
-      const fx = chainEvent(hid, next => { const id = next('jc'); questId = next('q'); return { type: 'issued', id, job, questId, level: h.level, at: iso() }; });
-      return fx.includes('refused') ? null : questId;
+      const w = chainEvent(hid, next => { const id = next('jc'); questId = next('q'); return { type: 'issued', id, job, questId, level: h.level, at: iso() }; });
+      return isRefused(w) ? w : { ok: /** @type {const} */ (true), questId };
     },
     complete: (hid, qid) => complete(hid, qid),
     /** The windows of Job Change steps a step completed in its own write (src/core/hunter/grant.ts `stepsReached`). */
@@ -134,15 +135,17 @@ export function register(app) {
   // ── Job Change chain (src/core/hunter/job-chain.ts) ──
   /**
    * A chain event (made with the save's next ids) and the step quests it completes (a level step already reached), in
-   * one write (src/core/hunter/grant.ts `chainStep`); then those steps' windows. Answers the types of its effects, or
-   * `['refused']` when the chain refused it.
+   * one write (src/core/hunter/grant.ts `chainStep`); then those steps' windows. Answers the write's Applied whole, for
+   * the caller's `ui.wrote` with `CHAIN_WORDS`.
    * @param {string} hid @param {(next: <P extends string>(prefix: P) => import('../core/ids.ts').IdOf<P>) => import('../core/hunter/job-chain.ts').ChainEvent} make
    */
   function chainEvent(hid, make) {
     const day = { ...stepTime(store.get(), new Date()), R: app.rules() }, out = chainStep(store.get(), hid, make, day);
-    if (isRefused(out) || !store.apply('job-chain', s => { const r = chainStep(s, hid, make, day); return isRefused(r) ? r : r.save; }).ok) return ['refused'];
+    if (isRefused(out)) return out;
+    const w = store.apply('job-chain', s => { const r = chainStep(s, hid, make, day); return isRefused(r) ? r : r.save; });
+    if (isRefused(w)) return w;
     api.stepsDone(hid, out.done);
-    return out.effects.map(fx => fx.type);
+    return w;
   }
 
   /** The GM issues a Job Change chain to a hunter on this phone, or to a player's (the `chain` message: the chain runs on that phone). */
@@ -157,8 +160,7 @@ export function register(app) {
     if (!job) return;
     const ref = pickedRef(pickables(hs, rem.map(r => ({ key: r.key, data: { name: r.name } }))), hid);
     if (ref && ref.kind === 'remote') return sendChain(ref.remote, job, 'issue');
-    if (api.issueJobChain(hid, job)) ui.toast('! Quest', `Job Change quest issued (${job}).`);
-    else ui.toast('! Quest', `${store.hunter(hid).name} already has a Job Change quest running.`, { kind: 'warn' });
+    if (ui.wrote('! Quest', api.issueJobChain(hid, job), CHAIN_WORDS)) ui.toast('! Quest', `Job Change quest issued (${job}).`);
   }
   /** The `chain` message to a player's hunter. Their phone's chain machine decides; the GM sees the result in the party quests. */
   async function sendChain(key, job, kind) {
@@ -233,8 +235,8 @@ export function register(app) {
       const fight = r.granted.fight;
       return { ...r, granted: { ...r.granted, fight }, save: sent(r.save, { room: code, events: post ? [post] : [], said: [] }, { at: day.at, cap: day.R.logCap }), held: [{ who: { hid }, ...fight }] };
     });
-    // the fight's own refusal of a part it holds is told by the fight (combat.js `command`)
-    if (isRefused(out)) { if (out.why !== 'fight') ui.wrote('! Quest', out, { belowLevel: `Reach Level ${q.objectives[0] ? q.objectives[0].target : ''} first.` }); return false; }
+    // the fight's own refusal of a part it holds was told by the fight (combat.js `command`), and answers `TOLD`
+    if (isRefused(out)) { ui.wrote('! Quest', out, { belowLevel: `Reach Level ${q.objectives[0] ? q.objectives[0].target : ''} first.` }); return false; }
     if (post) app.api.sync.flush();
     app.emit('quest:done', { hunterId: hid, quest: q });
     const { completed: c, granted: g, job } = out;
@@ -263,8 +265,7 @@ export function register(app) {
       const r = questFailed(s, hid, qid, day);
       return isRefused(r) ? r : { ...r, held: [{ who: { hid }, ...r.granted.fight }] };
     });
-    // the fight's own refusal of a part it holds is told by the fight (combat.js `command`)
-    if (isRefused(out)) { if (out.why !== 'fight') ui.wrote('! Quest', out); return false; }
+    if (isRefused(out)) { ui.wrote('! Quest', out); return false; }
     sendUpdate(h.id, q, 'failed');
     if (out.granted.lines.length) ui.system({ tag: '! Quest', kind: 'warning', title: 'QUEST FAILED', body: q.title, rewards: out.granted.lines });
     app.api.hunter.granted(hid, out.granted, { popup: false });
@@ -547,12 +548,12 @@ export function register(app) {
         if (d.issue) return issueTo(d.issue);
         if ('reissue' in d) {
           const c = h.jobChain;
-          if (c && !chainEvent(h.id, next => ({ type: 'reissued', by: role(), questId: next('q'), level: h.level, at: iso() })).includes('refused')) ui.toast('! Quest', `Job Change quest reissued (${c.job}).`);
+          if (c && ui.wrote('! Quest', chainEvent(h.id, next => ({ type: 'reissued', by: role(), questId: next('q'), level: h.level, at: iso() })), CHAIN_WORDS)) ui.toast('! Quest', `Job Change quest reissued (${c.job}).`);
           return;
         }
         if ('abandon' in d) {
           const c = h.jobChain;
-          if (c && await ui.confirm({ title: 'Abandon the Job Change?', body: `${h.name} will not become a ${c.job}.`, danger: true, confirmLabel: 'Abandon' })) chainEvent(h.id, () => ({ type: 'abandoned', by: role() }));
+          if (c && await ui.confirm({ title: 'Abandon the Job Change?', body: `${h.name} will not become a ${c.job}.`, danger: true, confirmLabel: 'Abandon' })) ui.wrote('! Quest', chainEvent(h.id, () => ({ type: 'abandoned', by: role() })), CHAIN_WORDS);
           return;
         }
         if (d.del) {

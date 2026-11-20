@@ -15,7 +15,7 @@ import { freshSave, newHunter, parseSaveValue } from '../src/core/save.ts';
 import type { Hunter, ParseEnv, Save } from '../src/core/save.ts';
 import { RULES } from '../src/core/rules.ts';
 import { newRewards } from '../src/core/rewards.ts';
-import { isRefused } from '../src/core/save-step.ts';
+import { TOLD, isRefused, refuse } from '../src/core/save-step.ts';
 import type { Refused } from '../src/core/save-step.ts';
 import { dayKey } from '../src/core/day.ts';
 import { seedId } from '../src/core/ids.ts';
@@ -313,7 +313,7 @@ describe('only the GM\'s tap moves a story', () => {
       once: (eid, step) => { const next = appliedOnce(eid, step)(phone); if (isRefused(next)) return false; phone = next; return true; },
       rules: () => RULES, now: () => AT, today: () => TODAY,
       toast: () => {}, system: () => {},
-      hunter: { fightOf: () => null, granted: (_hid, g) => ({ lines: g.lines, levelup: g.levelup, popup: null }), gmHolds: () => false },
+      hunter: { fightOf: () => null, granted: (_hid, g) => ({ lines: g.lines, levelup: g.levelup, popup: null }), gmHolds: () => refuse(TOLD) },
       stepsDone: () => {}, coinLanded: () => {},
     };
     for (const [i, type] of EVENT_TYPES.entries()) {

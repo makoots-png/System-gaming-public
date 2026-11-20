@@ -11,8 +11,7 @@ import type { LootDrop } from './gates/spawn.ts';
 import type { BuildChange, DocName, DocOf, EventBody, EventId, EventType, QuestOffer, RoomCode, RoomEvent, UsedWhat } from './protocol.ts';
 import type { Hunter, Item, Monster, Objective, QuestKind, Rank, Rewards, Save, Skill, Slot } from './save.ts';
 import type { Stats } from './stats.ts';
-import type { Applied, Refused, Step } from './save-step.ts';
-import type { READ_ONLY } from './store-life.ts';
+import type { Applied, Refused, Step, TOLD } from './save-step.ts';
 import type { Granted, StepDone } from './hunter/grant.ts';
 import type { StatusIn } from './hunter/conditions.ts';
 import type { HeldParts } from './combat/fight-save.ts';
@@ -71,8 +70,8 @@ export type BestiaryApi = {
   statBlock(rank: Rank, o?: { id?: string; name?: string; type?: string; archetype?: Archetype; kind?: MonsterKind; boss?: boolean; elite?: boolean }): StatBlock;
   /** `n` fighters made from a bestiary entry, for `combat.add`. */
   toCombatant(monster: Monster | string, n?: number): JoinRow[];
-  /** Saves a monster to the GM's bestiary; answers its id. */
-  save(m: Partial<Monster>, asNew?: boolean): string;
+  /** Saves a monster to the GM's bestiary; answers its id, or the store's refusal whole for the caller's `ui.wrote`. */
+  save(m: Partial<Monster>, asNew?: boolean): { ok: true; id: string } | Refused;
   /** Opens the monster maker on `m` (null: a new monster; a seed is saved as a copy); answers the id it saved, or null. */
   make(m: Monster | null): Promise<string | null>;
   /** Deletes one of the GM's monsters; its codex record stays, without a link to it. Answers whether it was deleted. */
@@ -80,13 +79,14 @@ export type BestiaryApi = {
 };
 
 export type BuildApi = {
-  setPath(hid: string, id: string, force?: boolean): boolean;
-  pick(hid: string, tier: number, choice: 0 | 1): boolean;
-  /** Clears the path. A player pays gold; refused in a fight or when short. */
-  respec(hid: string): boolean;
+  /** Each change of a build answers the write's Applied whole (build.ts refuses it), for the caller's `ui.wrote`. */
+  setPath(hid: string, id: string, force?: boolean): Applied;
+  pick(hid: string, tier: number, choice: 0 | 1): Applied;
+  /** Clears the path. A player pays gold; refused in a fight or when short (`respecWhy`). */
+  respec(hid: string): Applied;
   label(h: Hunter): string;
-  /** Spends the free points by the path's plan; answers the points added per stat, or null. */
-  auto(hid: string): Partial<Stats> | null;
+  /** Spends the free points by the path's plan (progress.ts `raiseMany`). */
+  auto(hid: string): Applied;
   /** The GM's build menu for a hunter of this phone, or a player's (`sheet`: the sheet it pushed; a change goes as an award). */
   gmMenu(who: HunterRef, sheet: Hunter | null): Promise<void>;
   setRule(patch: Record<string, unknown>): void;
@@ -107,11 +107,11 @@ export type AwardApi = {
 export type BundlesApi = {
   list(): RewardBundle[];
   /**
-   * Saves `rewards` as `name`, by id: the bundle `id` (an edit or a rename), else a new one. Answers its id, or why not:
-   * a blank name, a full library, a name another bundle holds (`taken`, which the maker asks about), or a tab that may
-   * not change the save (`read-only`).
+   * Saves `rewards` as `name`, by id: the bundle `id` (an edit or a rename), else a new one. Answers its id, or the
+   * refusal whole for the caller's `ui.wrote` with library.ts `savedWords('bundle', name)`: a blank name or reward, a
+   * full library, a name another bundle holds (`taken`), or the store's.
    */
-  save(name: string, rewards: Rewards, id?: string | null, window?: SystemWords | null): { ok: true; id: string } | { ok: false; why: 'blank' | 'full' | 'taken' | typeof READ_ONLY };
+  save(name: string, rewards: Rewards, id?: string | null, window?: SystemWords | null): { ok: true; id: string } | Refused;
   remove(id: string): boolean;
 };
 
@@ -119,38 +119,39 @@ export type CombatApi = {
   /**
    * The GM's hand edit of a row of the running fight (the fight's `adjust` command): signed amounts of HP, mana and
    * fatigue, each kept within 0 and its maximum, with `also` (a step of another module: a life event on the sheet) in the
-   * same write. False when there is no such row or the fight or `also` refused it.
+   * same write. A refusal of the fight's or `also`'s is told in the fight's news and answered `TOLD` (save-step.ts); each
+   * member here answers so, for its caller's `ui.wrote`.
    */
-  adjust(cid: string, delta: { hp?: number; mana?: number; fatigue?: number }, also?: Step<Save> | null): boolean;
+  adjust(cid: string, delta: { hp?: number; mana?: number; fatigue?: number }, also?: Step<Save> | null): Applied;
   /**
    * Row `cid` pays `mana` for something outside the fight (a shadow summoned): the fight's `adjust` as a price, refused
-   * when the row holds less, with `also` (a step of another module) in the same write. False when it was not written.
+   * when the row holds less, with `also` (a step of another module) in the same write. Answers as `adjust`.
    */
-  spend(cid: string, mana: number, also: Step<Save> | null): boolean;
+  spend(cid: string, mana: number, also: Step<Save> | null): Applied;
   /**
    * The GM's Revive of row `cid` (its card's, the GM board's): the fight's `life` command, which stands only the dead up
    * at the life table's revive HP (vitals.ts `REVIVE_HP`). The fight holds every row's life, so a player's hunter's
-   * phone hears it in the room's `vitals`. False when the row's life refused it or the write was refused.
+   * phone hears it in the room's `vitals`. Answers as `adjust`.
    */
-  revive(cid: string): boolean;
+  revive(cid: string): Applied;
   /**
    * A life event on row `cid` that is not HP (the fight's `life` command, row-life.ts): the GM's Revive or Stabilize, or a
-   * death save with its d20. False when there is no such row or its life does not take the event.
+   * death save with its d20. Answers as `adjust`.
    */
-  life(cid: string, event: RowLifeEvent): boolean;
+  life(cid: string, event: RowLifeEvent): Applied;
   /**
    * What a grant hands to this phone's fight (grant.ts `Granted.fight`) put on the rows it names (fight-save.ts
    * `heldCommands`: a status each, a refill), with `also` (the grant's own step) in the same write: all of it, or nothing
-   * when the fight refuses a part or `also` is refused. False when nothing was written.
+   * when the fight refuses a part or `also` is refused. Answers as `adjust`.
    */
-  held(parts: readonly HeldParts[], also: Step<Save>): boolean;
-  /** The GM's Status window on a row (the fight's `status` command): a status taken off, one put on. False when refused. */
-  status(cid: string, change: { add?: { key: string; def: StatusDef; rounds: number | null; tier: number }; remove?: string }): boolean;
+  held(parts: readonly HeldParts[], also: Step<Save>): Applied;
+  /** The GM's Status window on a row (the fight's `status` command): a status taken off, one put on. Answers as `adjust`. */
+  status(cid: string, change: { add?: { key: string; def: StatusDef; rounds: number | null; tier: number }; remove?: string }): Applied;
   /**
    * An extraction attempt by hunter row `by` on fallen monster `cid` came to `outcome`: the fight's `extract` keeps it on
-   * the row, and a shadow that rose (`rose`) is written with it, or nothing is. False when refused.
+   * the row, and a shadow that rose (`rose`) is written with it, or nothing is. Answers as `adjust`.
    */
-  extracted(cid: string, by: string, outcome: ExtractionOutcome, rose: Rose | null): boolean;
+  extracted(cid: string, by: string, outcome: ExtractionOutcome, rose: Rose | null): Applied;
   /** Rows join the fight (a new one in setup when there is none; while it runs each rolls its opening). Answers how many joined. */
   add(list: JoinRow[]): number;
   isActive(): boolean;
@@ -207,10 +208,10 @@ export type DiceApi = {
 export type EffectsApi = {
   /**
    * Applies ops to a hunter outside a fight, each amount at `source`'s tier with the dice rolled in src/edge/roll.ts;
-   * answers the lines to show. A damage op is not taken by the hunter: its line says what it deals. A status applied comes
-   * from `source`.
+   * answers the lines to show, or the refusal whole for the caller's `ui.wrote` (`nothing` changed: use.ts `USE_WORDS`).
+   * A damage op is not taken by the hunter: its line says what it deals. A status applied comes from `source`.
    */
-  applyOps(hid: string, ops: readonly Op[], o: { label: string; source: Source }): string[];
+  applyOps(hid: string, ops: readonly Op[], o: { label: string; source: Source }): { ok: true; lines: string[] } | Refused;
   /** A status def from outside data, as `parseStatusDef` reads it with the current rules, or null. */
   sanitizeDef(def: unknown): StatusDef | null;
   /** The def of a status: the one it carries, else the rules' for its key, else a bare label. */
@@ -294,23 +295,25 @@ export type HunterApi = {
    * refusal. `granted` then shows each grant.
    */
   grantWrite<T extends GrantWritten>(why: string, step: (s: Save) => T | Refused): T | Refused;
-  /** The toast that a change of HP, mana, fatigue or statuses was refused because the GM's fight holds them. Answers false. */
-  gmHolds(): boolean;
+  /** The toast that a change of HP, mana, fatigue or statuses was refused because the GM's fight holds them. Answers the refusal it told. */
+  gmHolds(): Refused<typeof TOLD>;
   /**
    * A hand edit of a hunter's HP, mana or fatigue. While the hunter has a row in this phone's fight, it goes to the row as
    * the fight's `adjust` (the row holds them, and its next `vitals` would write over the sheet); while it has one in the
-   * GM's fight on a player's phone, it is refused with a toast (no message carries it). False when nothing changed.
+   * GM's fight on a player's phone, it is refused with a toast (no message carries it). Each vitals member here answers
+   * the write's `Applied` for its caller's `ui.wrote`: the store's (a refusal by its kind, a read-only tab's among them),
+   * or `TOLD` where the fight's news or the GM's hold told the refusal already.
    */
-  damage(hid: string, n: number): boolean;
-  heal(hid: string, n: number): boolean;
+  damage(hid: string, n: number): Applied;
+  heal(hid: string, n: number): Applied;
   /**
-   * A life event beside HP (Revive, Stabilize, a death save): on the sheet through the life machine, or, while this
-   * phone's fight holds the hunter, the fight's `life` command on its row (the row holds the life). False when it does not
-   * apply in the hunter's state.
+   * A life event beside HP (Revive, Stabilize, a death save): on the sheet through the life machine (refused `cannot`
+   * when it does not apply in the hunter's state), or, while this phone's fight holds the hunter, the fight's `life`
+   * command on its row (the row holds the life). In the GM's fight a death save is posted to the GM's row: the outbox's answer.
    */
-  life(hid: string, event: RowLifeEvent): boolean;
-  /** Rolls one death save for this hunter (the d20 goes to the dice log) and says what it did. False when it cannot be rolled. */
-  deathSave(hid: string): boolean;
+  life(hid: string, event: RowLifeEvent): Applied;
+  /** Rolls one death save for this hunter (the d20 goes to the dice log) and says what it did. Refused `cannot` when it cannot be rolled. */
+  deathSave(hid: string): Applied;
   /**
    * The one answer to "where do this hunter's HP, mana, fatigue, life and statuses live now": a row of this phone's fight
    * (`cid`), the GM's fight on a player's phone (`gm`, where a change is refused), or the sheet (null). Every writer asks it.
@@ -318,19 +321,19 @@ export type HunterApi = {
   fightOf(who: { hid: string } | { key: string }): { at: 'row'; cid: string } | { at: 'gm' } | null;
   /**
    * Takes `n` mana as a price, where the mana lives (`fightOf`: the fight's row, or the sheet), and `also` (a step on the
-   * hunter, such as a shadow summoned) in the same write. False, with nothing taken, when the mana there is less or
-   * `also` refuses, and on a player's phone in the GM's fight.
+   * hunter, such as a shadow summoned) in the same write. Refused, with nothing taken, when the mana there is less
+   * (`mana` on the sheet; the fight's news on a row) or `also` refuses, and on a player's phone in the GM's fight.
    */
-  spendMana(hid: string, n: number, also?: Step<Hunter> | null): boolean;
-  /** False, with a toast, while the hunter is in a fight: the fight's row holds its HP, mana and fatigue. */
-  rest(kind: 'short' | 'long', hid?: string): boolean;
+  spendMana(hid: string, n: number, also?: Step<Hunter> | null): Applied;
+  /** Refused with a toast (`TOLD`) while the hunter is in a fight: the fight's row holds its HP, mana and fatigue. */
+  rest(kind: 'short' | 'long', hid?: string): Applied;
   /**
    * Adds a status: one instance per key, the stronger source and the longer duration stay. In a fight it goes to the
    * row as `damage` does (the fight's `status` command), or is refused on a player's phone.
    */
-  addCondition(hid: string, status: SheetStatus): boolean;
+  addCondition(hid: string, status: SheetStatus): Applied;
   /** As `addCondition`. */
-  removeCondition(hid: string, key: string): boolean;
+  removeCondition(hid: string, key: string): Applied;
 };
 
 export type IdentityApi = {
@@ -360,11 +363,14 @@ export type InventoryApi = {
 
 export type LoadoutsApi = {
   inFight(hid: string): boolean;
-  /** Saves the equipped gear as a loadout; answers its id, or null when the hunter has no room for one. */
-  save(hid: string, name: string): string | null;
-  overwrite(hid: string, id: string): boolean;
-  rename(hid: string, id: string, name: string): boolean;
-  remove(hid: string, id: string): boolean;
+  /**
+   * Saves the equipped gear as a loadout (loadouts.ts `saveLoadout`, refused `full` at the cap). Each change of a set
+   * answers the write's Applied whole, for the caller's `ui.wrote` with `LOADOUT_WORDS`.
+   */
+  save(hid: string, name: string): Applied;
+  overwrite(hid: string, id: string): Applied;
+  rename(hid: string, id: string, name: string): Applied;
+  remove(hid: string, id: string): Applied;
   /** Equips a loadout; answers the gear it equipped and what it could not, or null when there is no such loadout. */
   swap(hid: string, id: string): { skipped: string[]; kept: string[] } | null;
 };
@@ -487,8 +493,8 @@ export type QuestsApi = {
   issue(hids: string[], partial: Partial<Omit<QuestOffer, 'rewards' | 'objectives'>> & {
     objectives?: (Omit<Objective, 'progress'> & { progress?: number })[]; rewards?: Partial<Rewards> | QuestOffer['rewards']; from?: 'gm' | 'system' | 'self';
   }): string[];
-  /** Starts a Job Change chain; answers step 1's quest id, or null when refused. */
-  issueJobChain(hid: string, job: string): string | null;
+  /** Starts a Job Change chain; answers step 1's quest id, or the refusal whole for the caller's `ui.wrote` (`CHAIN_WORDS`). */
+  issueJobChain(hid: string, job: string): { ok: true; questId: string } | Refused;
   complete(hid: string, qid: string): Promise<boolean>;
   /** The windows of the Job Change steps a step on the save completed in the same write (grant.ts `stepsReached`). */
   stepsDone(hid: string, done: readonly StepDone[]): void;
@@ -527,15 +533,15 @@ export type UsesApi = {
   /**
    * A use by a hunter of this phone reaches the GM: a player's phone in a room posts `used` (a told use, or one on
    * another) to the outbox, which sends it when the room answers; any other phone writes a told use to its own session
-   * log. Answers whether a `used` was posted.
+   * log. Answers as `told`.
    */
-  report(hid: string, use: UseReport): Promise<boolean>;
+  report(hid: string, use: UseReport): Promise<{ ok: true; sent: boolean } | Refused>;
   /**
    * A use by hunter `hid` and its report in one write (src/core/use-told.ts): `change`, a step on the hunter (null: the
    * hunter is not changed), and `use` told as `report` tells it (null: told to nobody). Nothing is written when the
-   * hunter is gone or `change` refuses. Answers whether it was written and whether a `used` was posted.
+   * hunter is gone or `change` refuses. Answers whether a `used` was posted, or the refusal whole for the caller's `ui.wrote`.
    */
-  told(hid: string, why: string, change: Step<Hunter> | null, use: UseReport | null): { ok: boolean; sent: boolean };
+  told(hid: string, why: string, change: Step<Hunter> | null, use: UseReport | null): { ok: true; sent: boolean } | Refused;
   /** Whether hunter `hid` has a row in the room's running fight on this player's phone (a use there is a `cast`). */
   onTable(hid: string): boolean;
   /**

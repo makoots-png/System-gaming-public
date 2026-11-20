@@ -69,31 +69,133 @@ export function planOf(files: readonly string[] | null): CiPlan {
 /** The changed files as the hook hands them over (one path a line in `CI_CHANGED`), or null when it handed none. */
 export const changedFrom = (text: string | undefined): readonly string[] | null => (text === undefined ? null : text.split('\n').map(l => l.trim()).filter(Boolean));
 
-/** Which passes the public repository ran green for this commit's tree: each is true only when the variable that names it holds this tree's id. */
-export type Trusted = { readonly browser: boolean; readonly unit: boolean };
+/**
+ * The verdict on the public repository's run for a tree (.github/workflows/ci.yml runs there, on the clean copy
+ * scripts/ci-public.sh sends). Trusted only when the run has finished, ended `success`, and every job the workflow
+ * defines is in it and succeeded. Otherwise the sentence says why in plain words, and the passes run here.
+ */
+export type RemoteVerdict = { readonly trusted: true; readonly run: number } | { readonly trusted: false; readonly why: string };
+
+/** A run of the public repository's Actions, the fields the verdict reads (`runsFrom` parses GitHub's answer). */
+export type PublicRun = { readonly id: number; readonly message: string; readonly workflow: string; readonly status: string; readonly conclusion: string | null };
+/** One job of a run (`jobsFrom` parses GitHub's answer). */
+export type PublicJob = { readonly name: string; readonly status: string; readonly conclusion: string | null };
+
+const record = (v: unknown, what: string): Record<string, unknown> => {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) throw new Error(`${what} is not an object`);
+  return v as Record<string, unknown>;
+};
+const list = (v: unknown, what: string): unknown[] => {
+  if (!Array.isArray(v)) throw new Error(`${what} is not a list`);
+  return v;
+};
+const text = (v: unknown, what: string): string => {
+  if (typeof v !== 'string') throw new Error(`${what} is not a string`);
+  return v;
+};
+const conclusionOf = (v: unknown, what: string): string | null => (v === null ? null : text(v, what));
+
+/** GitHub's answer to `GET /repos/<owner>/<name>/actions/runs` as runs. Throws, naming the field, on any other shape. */
+export function runsFrom(json: unknown): PublicRun[] {
+  return list(record(json, 'the runs answer').workflow_runs, 'workflow_runs').map((r, i) => {
+    const run = record(r, `run ${i}`);
+    if (typeof run.id !== 'number') throw new Error(`run ${i}'s id is not a number`);
+    return {
+      id: run.id,
+      message: text(record(run.head_commit, `run ${run.id}'s head_commit`).message, `run ${run.id}'s message`),
+      workflow: text(run.path, `run ${run.id}'s path`),
+      status: text(run.status, `run ${run.id}'s status`),
+      conclusion: conclusionOf(run.conclusion, `run ${run.id}'s conclusion`),
+    };
+  });
+}
+
+/** GitHub's answer to `GET .../actions/runs/<id>/jobs` (the latest attempt's jobs) as jobs. Throws on any other shape. */
+export function jobsFrom(json: unknown): PublicJob[] {
+  return list(record(json, 'the jobs answer').jobs, 'jobs').map((j, i) => {
+    const job = record(j, `job ${i}`);
+    const name = text(job.name, `job ${i}'s name`);
+    return { name, status: text(job.status, `job ${name}'s status`), conclusion: conclusionOf(job.conclusion, `job ${name}'s conclusion`) };
+  });
+}
 
 /**
- * The plan after the passes that ran on the public repository are taken as run (`CI_BROWSER_REMOTE`, `CI_UNIT_REMOTE`).
- * Only a pass the plan would run is taken, and the sentence says which and for what tree, so the log shows what ran
- * here and what ran there. The typecheck and the lag test are never taken: they run here whatever is trusted.
+ * The names GitHub gives the jobs of a workflow file: each job's key, and for a job with a one-key matrix written as
+ * a list on one line (`shard: [1, 2, 3]`) one job a value, `browser (1)`. Null for any form this does not read (a job's
+ * own `name:`, a matrix of several keys or written over several lines): the hook then trusts no run, rather than guess.
  */
-export function trustRemote(plan: CiPlan, trusted: Trusted, tree: string): CiPlan {
-  const browser = trusted.browser && plan.browser !== 'none';
-  const unit = trusted.unit && plan.unit;
-  if (!browser && !unit) return plan;
-  const where = `on the public repository for this commit's tree (${tree.slice(0, 12)})`;
-  const said = [unit && 'The unit tests', browser && 'the browser tests'].filter(Boolean).join(' and ').replace(/^t/, 'T');
-  const why = `${said} passed ${where}.`;
-  return { ...plan, unit: unit ? false : plan.unit, browser: browser ? 'none' : plan.browser, why: plan.why ? `${plan.why} ${why}` : why };
+export function jobsOfWorkflow(yaml: string): string[] | null {
+  const lines = yaml.split('\n').filter(l => l.trim() !== '' && !l.trim().startsWith('#'));
+  const at = lines.indexOf('jobs:');
+  if (at < 0) return null;
+  const body: string[] = [];
+  for (const l of lines.slice(at + 1)) {
+    if (!l.startsWith(' ')) break;
+    body.push(l);
+  }
+  const names: string[] = [];
+  for (let i = 0; i < body.length; i++) {
+    const key = /^ {2}([\w-]+):\s*$/.exec(body[i]!);
+    if (!key) continue;
+    let end = i + 1;
+    while (end < body.length && body[end]!.startsWith('   ')) end++;
+    const job = body.slice(i + 1, end);
+    if (job.some(l => /^ {4}name:/.test(l))) return null;
+    const m = job.findIndex(l => /^ {6}matrix:\s*$/.test(l));
+    if (m < 0) { names.push(key[1]!); continue; }
+    const dims: string[] = [];
+    for (let k = m + 1; k < job.length && job[k]!.startsWith('        '); k++) dims.push(job[k]!);
+    const one = dims.length === 1 ? /^ {8}[\w-]+:\s*\[([^\]]*)\]\s*$/.exec(dims[0]!) : null;
+    if (!one) return null;
+    for (const v of one[1]!.split(',')) names.push(`${key[1]} (${v.trim()})`);
+  }
+  return names.length > 0 ? names : null;
+}
+
+/** The newest run of `workflow` whose commit is the copy of `tree` (its message's first line is `Copy of <tree>`), or null. */
+export function runOfTree(runs: readonly PublicRun[], tree: string, workflow: string): PublicRun | null {
+  const mine = runs.filter(r => r.workflow === workflow && r.message.split('\n')[0]!.trim() === `Copy of ${tree}`);
+  return mine.reduce<PublicRun | null>((newest, r) => (newest === null || r.id > newest.id ? r : newest), null);
+}
+
+/** Whether `run` stands for this push: finished, ended `success`, and each job of `expected` in it, with every job succeeded. */
+export function judgeRun(run: PublicRun, jobs: readonly PublicJob[], expected: readonly string[]): RemoteVerdict {
+  const named = `Public run ${run.id}`;
+  if (run.status !== 'completed') return { trusted: false, why: `${named} has not finished (${run.status}).` };
+  const failed = jobs.filter(j => j.status !== 'completed' || j.conclusion !== 'success');
+  if (failed.length > 0) return { trusted: false, why: `${named} did not pass: ${failed.map(j => `${j.name} ${j.conclusion ?? j.status}`).join(', ')}.` };
+  const missing = expected.filter(e => !jobs.some(j => j.name === e));
+  if (missing.length > 0) return { trusted: false, why: `${named} lacks jobs the workflow defines: ${missing.join(', ')}.` };
+  if (run.conclusion !== 'success') return { trusted: false, why: `${named} ended ${run.conclusion ?? 'with no conclusion'}.` };
+  return { trusted: true, run: run.id };
+}
+
+/**
+ * The plan after the verdict on the public run for this tree. A trusted run takes the unit and browser passes the plan
+ * would run as run, and the sentence names the run and the tree; an untrusted one adds its reason and runs them here.
+ * Only a pass the plan would run is taken or explained. The typecheck and the lag test (whose bounds are this box's)
+ * always run here.
+ */
+export function trustRemote(plan: CiPlan, verdict: RemoteVerdict, tree: string): CiPlan {
+  const takes = plan.unit || plan.browser !== 'none';
+  if (!takes) return plan;
+  const said = [plan.unit && 'The unit tests', plan.browser !== 'none' && 'the browser tests'].filter(Boolean).join(' and ').replace(/^t/, 'T');
+  const why = verdict.trusted
+    ? `${said} passed on the public repository for this commit's tree (${tree.slice(0, 12)}), run ${verdict.run}.`
+    : `${verdict.why} ${said} run here.`;
+  const after = verdict.trusted ? { unit: false, browser: 'none' as const } : {};
+  return { ...plan, ...after, why: plan.why ? `${plan.why} ${why}` : why };
 }
 
 /**
  * The tree whose green run may be trusted: the tree of the commit a push carries (the hook names it in CI_PUSHED),
  * not of the checkout the hook runs in, so a push by id is right from any checkout. Run by hand there is no push and
- * the checkout's HEAD is the commit. A push of several different commits (the hook says 'many') trusts no tree.
+ * the checkout's HEAD is the commit, but only when the checkout holds nothing uncommitted (`dirty`): a public run of
+ * HEAD's tree did not test those changes. A push of several different commits (the hook says 'many') trusts no tree.
  * `treeOf` maps a commit id or ref to its tree id.
  */
-export function testedTree(pushed: string | undefined, treeOf: (ref: string) => string): string {
+export function testedTree(pushed: string | undefined, treeOf: (ref: string) => string, dirty: boolean): string {
   if (pushed === 'many') return '';
+  if (!pushed && dirty) return '';
   return treeOf(pushed || 'HEAD');
 }

@@ -6,7 +6,7 @@
 
 import { CODE_CHARS, CODE_LEN } from './src/core/ids.ts';
 import { buildApp, type Built } from './scripts/build.ts';
-import { DOCS, DOC_MAX, SHEET_MAX, WIRES, wireDocs, EVENTS, ROOM_PAGE, deviceOf, isEventType, parseDeviceId, parseDocName, parseEvent, parseRoomCode, parseSheet, parseSheetKey, servedTo, sheetFor, speaksFor } from './src/core/protocol.ts';
+import { DOCS, DOC_MAX, SHEET_MAX, WIRES, wireDocs, EVENTS, ROOM_PAGE, deviceOf, isEventType, parseDeviceId, parseDocName, parseEvent, parseRoomCode, parseSheet, parseSheetKey, sentAgain, servedTo, sheetFor, speaksFor } from './src/core/protocol.ts';
 import type { DeviceId, DocName, EventId, DocOf, KickedDoc, RoomCode, RoomDocs, RoomEvent, RoomState, RoomSheet, ServedSheet, SheetKey, Stored, StoredEvent, RoomViewer } from './src/core/protocol.ts';
 import { DB_RETRY_MS, dbHealth, dbStep, kickedAfter, liveSince, pushed, roomLive } from './src/core/room-server.ts';
 import type { Db, DbEvent, Pushed, RemovalChange } from './src/core/room-server.ts';
@@ -71,11 +71,13 @@ export interface Store {
   /** As touch, but leaves the room's last use where it was. */
   exists(code: RoomCode, now: number): Promise<boolean>;
   /**
-   * Stores the event as the room's next and answers its seq. An event id the room already holds is that event again (a
-   * phone's outbox sends again what got no answer): it answers the stored event's seq and stores nothing. A store keeps
-   * every event of a live room; null: the room is full and stores no more (the memory store past `MEM_EVENTS`).
+   * Stores the event as the room's next and answers its seq. The same event again under an id the room holds (a
+   * phone's outbox sends again what got no answer, or an offer's later end: `sentAgain` in src/core/protocol.ts)
+   * answers the stored event's seq and stores nothing; a different event under that id answers `idTaken` and stores
+   * nothing. A store keeps every event of a live room; null: the room is full and stores no more (the memory store past
+   * `MEM_EVENTS`).
    */
-  addEvent(code: RoomCode, from: DeviceId, event: RoomEvent, now: number): Promise<number | null>;
+  addEvent(code: RoomCode, from: DeviceId, event: RoomEvent, now: number): Promise<number | 'idTaken' | null>;
   events(code: RoomCode, after: number): Promise<Page>;
   /** The room whole, every sheet and doc parsed, for a poll. No change of the room reads it: each is one call below. */
   board(code: RoomCode): Promise<Board>;
@@ -163,7 +165,7 @@ export function memoryStore(): Store {
     async exists(code, now) { return !!live(code, now); },
     async addEvent(code, from, event, now) {
       const r = room(code), held = r.ids.get(event.payload.eid);
-      if (held !== undefined) return held;
+      if (held !== undefined) { const was = r.events[held - 1]; return was && sentAgain(was, event) ? held : 'idTaken'; }
       if (r.events.length >= MEM_EVENTS) return null;
       const seq = r.events.length + 1;
       r.events.push({ ...event, seq, at: iso(now), from });
@@ -264,14 +266,15 @@ export async function postgresStore(url: string): Promise<Store> {
     async keyHash(code) { return text((await db`SELECT gm_key_hash FROM rooms WHERE code = ${code}`)[0]?.gm_key_hash); },
     async touch(code, now) { return (await db`UPDATE rooms SET touched = ${now} WHERE code = ${code} AND touched >= ${liveSince(now)} RETURNING code`).length > 0; },
     async exists(code, now) { return (await db`SELECT code FROM rooms WHERE code = ${code} AND touched >= ${liveSince(now)}`).length > 0; },
-    async addEvent(code, from, { type, payload }, now) {
+    async addEvent(code, from, event, now) {
+      const { type, payload } = event;
       // the room's row is locked until the event is in: two writers take seqs one after the other, and an id sent twice
       // finds its first copy
-      return db.begin(async tx => {
+      return db.begin(async (tx): Promise<number | 'idTaken'> => {
         const [r] = await tx`SELECT seq FROM rooms WHERE code = ${code} FOR UPDATE`;
         if (!r) throw new Error(`no room ${code}`);
-        const [held] = await tx`SELECT seq FROM events WHERE room = ${code} AND eid = ${payload.eid}`;
-        if (held) return Number(held.seq);
+        const [held] = await tx`SELECT seq, type, payload FROM events WHERE room = ${code} AND eid = ${payload.eid}`;
+        if (held) { const was = parseEvent(held.type, held.payload); return was && sentAgain(was, event) ? Number(held.seq) : 'idTaken'; }
         const seq = Number(r.seq) + 1;
         await tx`UPDATE rooms SET seq = ${seq} WHERE code = ${code}`;
         await tx`INSERT INTO events (room, seq, at, from_id, type, payload, eid) VALUES (${code}, ${seq}, ${now}, ${from}, ${type}, ${payload}::jsonb, ${payload.eid})`;
@@ -494,7 +497,8 @@ async function api(req: Request, parts: string[], database: Database): Promise<R
     const by = speaksFor(event);
     if (by && deviceOf(by) !== from) return J({ error: 'not your sheet' }, 403);
     const seq = await st.addEvent(code, from, event, now);
-    return seq === null ? J({ error: 'room full' }, 413) : J({ seq });
+    // a different message under an id the room holds is refused, never answered as taken: its sender made the id twice
+    return seq === null ? J({ error: 'room full' }, 413) : seq === 'idTaken' ? J({ error: 'id taken' }, 409) : J({ seq });
   }
   if (parts[2] === 'kicks' && parts.length === 4) { // S11: the GM lifts a removal so the player can rejoin at once
     if (m !== 'DELETE') return J({ error: 'method' }, 405);

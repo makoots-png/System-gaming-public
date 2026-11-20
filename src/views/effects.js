@@ -6,7 +6,7 @@ import { describeStatus, freeStatusKey } from '../core/combat/effect-ops.ts';
 import { parseStatusDef } from '../core/combat/fight-parse.ts';
 import { describeItem } from '../core/effects.ts';
 import { useDice, useOn } from '../core/hunter/use.ts';
-import { atHunter, isRefused } from '../core/save-step.ts';
+import { TOLD, atHunter, isRefused, refuse } from '../core/save-step.ts';
 
 /** @param {import('./app.ts').App} app */
 export function register(app) {
@@ -19,18 +19,19 @@ export function register(app) {
   }
   /**
    * `ops` on hunter `hid`'s sheet, outside a fight, in one write (src/core/hunter/use.ts `useOn`): the dice rolled here
-   * first. Answers the lines of what changed; none when nothing did, or when a fight holds the hunter's HP, mana and
-   * fatigue (`hunter.fightOf`), where a use is the fight's.
+   * first. Answers the lines of what changed, or the refusal whole for the caller's `ui.wrote`: `nothing` (use.ts
+   * `USE_WORDS`), the store's, or `TOLD` when a fight holds the hunter's HP, mana and fatigue (`hunter.fightOf`), where a
+   * use is the fight's.
    * @type {import('../core/api.ts').EffectsApi['applyOps']}
    */
   function applyOps(hid, ops, o) {
     const { store } = A, h = store.hunter(hid), R = rules();
-    if (!h) return [];
-    if (A.api.hunter.fightOf({ hid })) { A.ui.toast('System', `${o.label}: use it in the fight.`, { kind: 'warning' }); return []; }
+    if (!h) return refuse('no-hunter');
+    if (A.api.hunter.fightOf({ hid })) { A.ui.toast('System', `${o.label}: use it in the fight.`, { kind: 'warning' }); return refuse(TOLD); }
     const rolls = useDice(ops, o.source.tier).map(d => rollSettle(d)), u = useOn(h, ops, o.source, rolls, R);
-    if (isRefused(u)) return [];
+    if (isRefused(u)) return u;
     const w = store.apply('use', atHunter(hid, x => { const y = useOn(x, ops, o.source, rolls, R); return isRefused(y) ? y : y.hunter; }));
-    return w.ok ? [...u.lines] : [];
+    return isRefused(w) ? w : { ok: /** @type {const} */ (true), lines: [...u.lines] };
   }
 
   app.api.effects = {

@@ -8,6 +8,7 @@ import { SHADOW_GRADES } from '../src/core/save.ts';
 import type { ShadowGrade } from '../src/core/save.ts';
 import type { Stats } from '../src/core/stats.ts';
 import { buildOf } from '../src/core/hunter/sheet.ts';
+import { MAX_LEVEL } from '../src/core/hunter/level.ts';
 import { monsterSheet } from '../src/core/hunter/derive.ts';
 import type { MonsterKind } from '../src/core/hunter/derive.ts';
 import { tick } from '../src/core/combat/timeline.ts';
@@ -263,6 +264,17 @@ test('every kind of row joins one fight, which starts and stores and reads back 
   expect(f!.phase).toBe('running');
   expect(f!.rows.map(r => r.name)).toEqual(['Brakk', 'Mira', 'Igris', 'Goblin A', 'Goblin B', 'Kasaka']);
   expect(parseFight(JSON.parse(JSON.stringify(f)), RULES)).toEqual(f);
+});
+
+test('a running fight holding a hunter of any level a hunter can hold reads back as it was: the game has no top level (BUG-rules-18)', () => {
+  const ctx: Ctx = { rules: RULES };
+  for (const level of [201, MAX_LEVEL]) {
+    const rows = [hunterRow(hunter({ level }), id('c1'), RULES), ...monsterRows(monster(), [id('m1')], R)];
+    const added = reduce(null, { type: 'add', fightId: fightId('f'), rows, openings: [] }, ctx).fight;
+    const f = reduce(added, { type: 'start', openings: rows.map((r, i) => ({ id: r.id, d20: 10, tie: i })) }, ctx).fight;
+    expect(f!.phase, `level ${level}`).toBe('running');
+    expect(parseFight(JSON.parse(JSON.stringify(f)), RULES), `level ${level}`).toEqual(f);
+  }
 });
 
 describe('a summon (kits design 1.9)', () => {

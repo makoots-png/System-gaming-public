@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { MAX_LEVEL, STAT_MIN, addXp, allocated, atLevel, available, confirm, gainXp, grantPoints, hasPending, levelPoints, lower, newProgress, pendingTotal, raise, raiseMany, setLevel, setPoints, setStat, startingStats } from '../src/core/hunter/progress.ts';
+import { STAT_MIN, addXp, allocated, atLevel, available, confirm, gainXp, grantPoints, hasPending, levelPoints, lower, newProgress, pendingTotal, raise, raiseMany, setLevel, setPoints, setStat, startingStats } from '../src/core/hunter/progress.ts';
+import { MAX_LEVEL } from '../src/core/hunter/level.ts';
 import type { Allocating, Progress } from '../src/core/hunter/progress.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import type { Refused } from '../src/core/save-step.ts';

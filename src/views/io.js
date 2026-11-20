@@ -191,7 +191,7 @@ export function register(app) {
       if (await replaceAsking(anyway => store.importSave(got, anyway), 'Replace') === 'replaced') ui.toast('System', 'Import complete. Previous save kept in backups.');
     } else if (choice === 'add') {
       if (!store.backupNow('pre-import') && !(await goOnUnbacked('Add'))) return;
-      if (!store.apply('import-hunter', sv => withImportedHunters(sv, got.hunters)).ok) return ui.toast('System', 'No hunter was added: this tab cannot change the save.', { kind: 'warning' });
+      if (!ui.wrote('System', store.apply('import-hunter', sv => withImportedHunters(sv, got.hunters)))) return;
       ui.toast('System', `${names.length} hunter${names.length === 1 ? '' : 's'} added to the party.`);
       if (extraCount) await importPack(extra, { title: 'Bring its custom content too?', body: 'The file also holds custom content.', skip: 'Skip' });
     }

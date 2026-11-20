@@ -4,10 +4,9 @@
 # tests and the browser tests in six parts, about six minutes. Only what is committed is sent.
 #   sh scripts/ci-public.sh        sends the copy as one more commit on the public main; prints the tree id of HEAD
 #   sh scripts/ci-public.sh tree   only prints that id
-# When that commit's run is green (the repository's Actions page, or
-#   curl -s https://api.github.com/repos/<owner>/<name>/actions/runs?per_page=1 ), push here with
-#   CI_BROWSER_REMOTE=<the id> git push ...
-# and the hook skips the browser pass (scripts/ci.ts); the typecheck, the unit tests and the lag test still run here.
+# Start that commit's run by hand. When it has ended, push here as usual: the hook finds the run of the pushed tree
+# itself and takes its unit and browser passes only when the run completed and every job of the workflow succeeded
+# (scripts/ci.ts, `judgeRun` in scripts/ci-plan.ts); the typecheck and the lag test still run here.
 # The public commit's message names the tree, so a run can be matched to what it tested.
 # CI_PUBLIC_DIR is a clone of the public repository this session may push to (default ../system-gaming-public).
 set -e

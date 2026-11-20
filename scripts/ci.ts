@@ -1,6 +1,6 @@
 // Local CI. `bun run ci` runs everything a push must pass, and .githooks/pre-push runs it before each push.
 
-import { changedFrom, planOf, testedTree, trustRemote } from './ci-plan.ts';
+import { changedFrom, jobsFrom, jobsOfWorkflow, judgeRun, planOf, runOfTree, runsFrom, testedTree, trustRemote, type RemoteVerdict } from './ci-plan.ts';
 
 type Step = { name: string; cmd: string[]; retry: string[]; env?: Record<string, string> };
 
@@ -19,20 +19,42 @@ const UNIT = ['bun', 'test', '--parallel=4'];
 // What this push needs (scripts/ci-plan.ts): the hook hands over the files the push changes in CI_CHANGED; run by
 // hand, `bun run ci` has none and runs everything.
 const planned = planOf(changedFrom(process.env.CI_CHANGED));
-// The unit tests and the browser tests may have run on the public repository (scripts/ci-public.sh,
-// .github/workflows/ci.yml). The one who pushes names the tree whose run was green in CI_UNIT_REMOTE and
-// CI_BROWSER_REMOTE; a pass whose variable is this commit's tree is not run again here (trustRemote, scripts/ci-plan.ts).
-// The tree compared is the one of the commit the push carries (CI_PUSHED, set by .githooks/pre-push), not of the checkout.
-// Two variables because each names the jobs it vouches for, and a run whose browser parts are green and whose unit job is
-// not (or the other way) must not let the hook trust both. The typecheck and the lag test (whose bounds are this box's)
-// always run here.
-const snapshot = testedTree(process.env.CI_PUSHED, ref => Bun.spawnSync(['git', 'rev-parse', `${ref}^{tree}`]).stdout.toString().trim());
-const named = (name: string): boolean => {
-  const given = process.env[name];
-  if (given && given !== snapshot) console.log(`\n== ${name} names ${given}, and this commit's tree is ${snapshot}: that pass runs here.`);
-  return !!given && given === snapshot;
-};
-const plan = trustRemote(planned, { browser: named('CI_BROWSER_REMOTE'), unit: named('CI_UNIT_REMOTE') }, snapshot);
+// The unit tests and the browser tests may have run on the public repository (scripts/ci-public.sh sends it the clean
+// copy of a commit, and .github/workflows/ci.yml runs there). The hook looks up the newest run for the tree of the commit
+// the push carries (CI_PUSHED, set by .githooks/pre-push; run by hand, HEAD's) and takes those passes as run only when
+// that run finished and every job the workflow defines succeeded (judgeRun, scripts/ci-plan.ts). No variable can say a
+// run passed: a red, cancelled or unfinished run, no run, or no network, and the passes run here, with the reason in
+// the log. The typecheck and the lag test (whose bounds are this box's) always run here.
+const PUBLIC_RUNS = 'https://api.github.com/repos/the-owner/System-gaming-public/actions/runs';
+const WORKFLOW = '.github/workflows/ci.yml';
+const git = (...args: string[]): string => Bun.spawnSync(['git', ...args]).stdout.toString().trim();
+const dirty = git('status', '--porcelain') !== '';
+const snapshot = testedTree(process.env.CI_PUSHED, ref => git('rev-parse', `${ref}^{tree}`), dirty);
+for (const old of ['CI_BROWSER_REMOTE', 'CI_UNIT_REMOTE']) {
+  if (process.env[old]) console.log(`\n== ${old} is no longer read: the hook looks up the public run for this tree itself.`);
+}
+
+async function getJson(url: string): Promise<unknown> {
+  const res = await fetch(url, { headers: { accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(20_000) });
+  if (!res.ok) throw new Error(`${url} answered ${res.status}`);
+  return res.json();
+}
+
+async function publicVerdict(tree: string): Promise<RemoteVerdict> {
+  if (!tree) return { trusted: false, why: 'No one committed tree stands for this run (a push of several commits, or uncommitted changes here), so no public run is looked up.' };
+  const expected = jobsOfWorkflow(git('show', `${tree}:${WORKFLOW}`));
+  if (!expected) return { trusted: false, why: `The job names of ${WORKFLOW} could not be read (jobsOfWorkflow, scripts/ci-plan.ts), so no public run is trusted.` };
+  try {
+    const run = runOfTree(runsFrom(await getJson(`${PUBLIC_RUNS}?per_page=100`)), tree, WORKFLOW);
+    if (!run) return { trusted: false, why: `The public repository has no run for this commit's tree (${tree.slice(0, 12)}).` };
+    return judgeRun(run, jobsFrom(await getJson(`${PUBLIC_RUNS}/${run.id}/jobs?per_page=100`)), expected);
+  } catch (e) {
+    return { trusted: false, why: `The public repository's runs could not be read (${e instanceof Error ? e.message : String(e)}).` };
+  }
+}
+
+const needsRemote = planned.unit || planned.browser !== 'none';
+const plan = needsRemote ? trustRemote(planned, await publicVerdict(snapshot), snapshot) : planned;
 if (plan.why) console.log(`\n== ${plan.why}`);
 const browserFiles = plan.browser === 'all' || plan.browser === 'none' ? [] : plan.browser;
 

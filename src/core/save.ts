@@ -65,7 +65,7 @@ import type { Rules } from './rules.ts';
 import { LIMITS, NO_DEVICE, SEQ_MAX, VITAL_MAX, claimId, fill, idNumber, int, isNum, isObj, isStr, items, list, num, numOrNull, optional, refill, skills, str } from './repair.ts';
 import type { ParseEnv, Rec, RepairRun } from './repair.ts';
 import {
-  QUEST_KINDS, QUEST_SOURCES, QUEST_STATUSES, SHADOW_GRADES, fixHunter, hunterExample, jobOf, newBoon, newEquipped, newHunter, newLoadout,
+  QUEST_KINDS, QUEST_SOURCES, QUEST_STATUSES, SHADOW_GRADES, fixHunter, fixRefs, hunterExample, jobOf, newBoon, newEquipped, newHunter, newLoadout,
   newQuest, newShadow, newStats, newTitle, parseSheetHunter, questState,
 } from './hunter/hunter.ts';
 import type {
@@ -362,7 +362,7 @@ function repair(s: Rec, env: ParseEnv, fight: FightRepair = 'read'): Save {
   // An override the rules do not have, or of the wrong type, is dropped here, so it never reaches `rulesOf`.
   save.rulesOverrides = parseOverrides(save.rulesOverrides).overrides;
   const R = rulesOf(save.rulesOverrides, save.library.statuses);
-  const run: RepairRun = { R, env, ids: new Set(), bad: [] };
+  const run: RepairRun = { R, env, ids: new Set(), bad: [], owner: null };
   const st = save.settings;
   st.mode = oneOf(st.mode, MODES, 'player');
   st.dailyResetHour = int(st.dailyResetHour, 0, 0, 23);
@@ -407,13 +407,26 @@ function repair(s: Rec, env: ParseEnv, fight: FightRepair = 'read'): Save {
     r.check = r.kind === 'check' ? parseCheck(r.check) : null;
   }).slice(0, R.rollCap);
 
-  // seq is at least the number every id ends in. Then each missing or repeated id gets the next one.
+  // seq is at least the number every id ends in. Then each missing or repeated id gets the next one, and only then does
+  // each hunter's repair point its references at what it holds (`fixRefs`), reading them against the ids as stored.
   let seq = int(save.seq, 100, 0, SEQ_MAX);
   for (const id of run.ids) seq = Math.max(seq, idNumber(id));
   save.seq = seq;
-  for (const [o, prefix] of run.bad) o.id = prefix + (++save.seq);
-  // A save holds a hunter: one read with none gets the starter here, so every view has an active one to read.
-  if (!save.hunters.length) { const starter = starterHunter(save, env); fixHunter(run, starter); save.hunters.push(starter); }
+  const storedAs = new Map<Hunter, Map<string, string>>();
+  for (const [o, prefix, owner] of run.bad) {
+    const was = o.id;
+    o.id = prefix + (++save.seq);
+    if (owner) storedAs.set(owner, (storedAs.get(owner) ?? new Map<string, string>()).set(o.id, was));
+  }
+  const nowIso = env.now.toISOString();
+  for (const h of save.hunters) fixRefs(h, storedAs.get(h) ?? new Map(), nowIso);
+  // A save holds a hunter: one read with none gets the starter here, so every view has an active one to read. It is made
+  // after the rename, its ids from `seq` (its title's is the rule title's `t1`).
+  if (!save.hunters.length) {
+    const starter = starterHunter(save, env);
+    fixHunter(run, starter); fixRefs(starter, new Map(), nowIso);
+    save.hunters.push(starter);
+  }
 
   if (!save.hunters.some(h => h.id === st.activeHunterId)) st.activeHunterId = save.hunters[0]!.id;
   // the hunter a player's phone sends its room (sync.ts `bound`) is one of the save's; a save in a room has one

@@ -1,8 +1,9 @@
 // rulesref.js (U06): searchable Rules reference, rendered live from rules() so GM overrides show immediately. It explains
 // the eight stats, their curves, Armor and Resist and the turn order by speed from the numbers of `RULES.fight`.
 import { RANKS, RULES, rules } from '../edge/rules.ts';
+import { xpToNext as xpToNextOf } from '../core/rules.ts';
 import { STAT_KEYS, STAT_LABELS, STAT_SHORT } from '../core/stats.ts';
-import { checkExample, downLine, naturalLines, pointsLine, soloLines, statBonusLine } from '../core/rules-text.ts';
+import { armorCutPct, checkExample, downLine, naturalLines, pointsLine, saleLine, saleRows, dailyPointsLine, soloLines, statBonusLine } from '../core/rules-text.ts';
 import { describeStatus } from '../core/combat/effect-ops.ts';
 
 const STAT_USE = {
@@ -89,7 +90,7 @@ export function register(app) {
   const dcNames = ['Easy', 'Standard', 'Hard'];
 
   function sections() {
-    const R = current(), F = R.fight, kit = F.kits, xpToNext = l => R.xpPerLevel * Math.max(1, l), rt = R.rankTable, rb = R.rankBonus, rl = R.rankLevels;
+    const R = current(), F = R.fight, kit = F.kits, xpToNext = l => xpToNextOf(R, l), rt = R.rankTable, rb = R.rankBonus, rl = R.rankLevels;
     const resetHour = store.get().settings.dailyResetHour;
     const ex = checkExample(R), exMod = ex.stat, exRb = ex.rankBonus, exDc = ex.dc, need = ex.need;
     const rankEnd = i => (i < RANKS.length - 1 ? `${rl[RANKS[i + 1]] - 1}` : '+');
@@ -125,7 +126,7 @@ export function register(app) {
         'Bonuses come from the active title, worn items, the build path and passive skills. The Status view shows every number of your sheet.']),
       ] },
       { id: 'armor', title: 'Armor and Resist', body: [ul([
-        `<b>Armor</b> reduces physical damage and <b>Resist</b> reduces magical damage. Damage dealt = damage × ${F.armorK} / (${F.armorK} + defense): ${kit.heavy.armor} armor takes ${Math.round(100 - 100 * F.armorK / (F.armorK + kit.heavy.armor))}% off, and no amount makes a body immune.`,
+        `<b>Armor</b> reduces physical damage and <b>Resist</b> reduces magical damage. Damage dealt = damage × ${F.armorK} / (${F.armorK} + defense): ${kit.heavy.armor} armor takes ${armorCutPct(R, kit.heavy.armor)}% off, and no amount makes a body immune.`,
         `Before that, ${Math.round(F.armorFlat * 100)}% of the defense comes off every hit as a flat amount, so a weak hit loses more than a strong one.`,
         'Penetration (from Control, and some weapons) ignores a share of the target\'s defense.',
         `Gear gives most of it. A full set of gear: light weighs ${kit.light.weight} (armor ${kit.light.armor}, resist ${kit.light.resist}), medium ${kit.medium.weight} (${kit.medium.armor}, ${kit.medium.resist}), heavy ${kit.heavy.weight} (${kit.heavy.armor}, ${kit.heavy.resist}). Weight over half your carry slows you, up to ${Math.round(F.loadSlow * 100)}% at full carry.`]),
@@ -133,7 +134,7 @@ export function register(app) {
       { id: 'leveling', title: 'Leveling and points', body: [
         p(`XP needed to advance: <b>${esc(R.xpPerLevel)} × current level</b>. XP shows as progress within the current level.`),
         ul([`Level 1 → 2: ${fmt(xpToNext(1))} XP`, `Level 2 → 3: ${fmt(xpToNext(2))} XP`, `Level 9 → 10: ${fmt(xpToNext(9))} XP`, `Level 19 → 20: ${fmt(xpToNext(19))} XP`]),
-        ul([`Each level above 1 holds <b>${R.pointsPerLevel}</b> ability points. Completing every daily in a cycle grants +${R.dailyRewardPoints}, and every ${R.streakBonusEvery}-day streak grants +1 more.`,
+        ul([`Each level above 1 holds <b>${R.pointsPerLevel}</b> ability points. ${dailyPointsLine(R)}`,
           'Losing a level takes its points back. Points already spent stay in your stats, so no new points come until your levels catch up.',
           esc(pointsLine()),
           R.levelUpRestore ? 'Reaching a level for the first time fully restores HP and mana. Regaining a lost level does not.' : 'Leveling up does not restore HP and mana.']),
@@ -196,8 +197,8 @@ export function register(app) {
         ...soloLines(R).map(l => p(esc(l))),
       ] },
       { id: 'loot', title: 'Loot and rarity', body: [
-        table(['Tier', 'Sell value'], Object.entries(R.rarities).map(([k, v]) => [`<span style="color:${esc(v.color)}">${esc(k)}</span>`, `×${esc(v.mult)} (${fmt(R.baseValue * v.mult)} gold)`])),
-        p(`Sell value = base ${esc(R.baseValue)} gold × tier multiplier. Equipment slots: ${R.slots.map(esc).join(', ')}.`),
+        table(['Tier', 'Multiplier', 'Price', 'Sells for'], saleRows(R).map(r => [`<span style="color:${esc(R.rarities[r.rar].color)}">${esc(r.rar)}</span>`, `×${esc(r.mult)}`, `${fmt(r.price)} gold`, `${fmt(r.sell)} gold`])),
+        p(`${esc(saleLine(R))} Equipment slots: ${R.slots.map(esc).join(', ')}.`),
         p('Gate-clear loot: gold plus one weighted item roll; the boss adds one more roll.'),
         table(['Rank', 'Gold', 'Item odds'], lootRows),
       ] },

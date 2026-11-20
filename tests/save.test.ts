@@ -450,6 +450,45 @@ describe('a damaged or hostile save', () => {
     expect(save.seq).toBe(304);
   });
 
+  test('two hunters that share an item id each keep their weapon equipped, through two repairs', () => {
+    const sword = { id: 'i50', name: 'Sword', slot: 'weapon' };
+    const save = parseRaw({ schema: SCHEMA, hunters: [
+      { id: 'h1', name: 'First', items: [sword], equipped: { weapon: 'i50' } },
+      { id: 'h2', name: 'Second', items: [sword], equipped: { weapon: 'i50' } },
+    ] });
+    const weapons = (): [string | null, string][] => save.hunters.map(h => [h.equipped.weapon, h.items[0]!.id]);
+    const [first, second] = weapons();
+    expect(first).toEqual(['i50', 'i50']);
+    expect(second![1]).not.toBe('i50');
+    expect(second![0]).toBe(second![1]);
+    repairSave(save, env());
+    expect(weapons()).toEqual([first!, second!]);
+  });
+
+  test('a second repair changes nothing, whatever ids the hunters of a save share or garble', () => {
+    let seed = 7;
+    const rand = (): number => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+    const pick = <T>(xs: readonly T[]): T => xs[Math.floor(rand() * xs.length)]!;
+    const some = <T>(make: () => T): T[] => Array.from({ length: Math.floor(rand() * 3) }, make);
+    const ITEMS = ['i1', 'i2', 'not an id', undefined], TITLES = ['t1', 't2', 'title'], QUESTS = ['q1', 'q2', 'quest'];
+    const hunter = (): Raw => ({
+      id: pick(['h1', 'h2']), items: some(() => ({ id: pick(ITEMS), name: 'Blade', slot: pick(['weapon', 'offhand']) })),
+      equipped: { weapon: pick(ITEMS), offhand: pick(ITEMS) },
+      titles: some(() => ({ id: pick(TITLES), name: 'Brave' })), titleId: pick(TITLES),
+      quests: some(() => ({ id: pick(QUESTS), kind: pick(['penalty', 'job']), status: pick(['active', 'failed']) })),
+      penalty: { days: 1, questId: pick(QUESTS) },
+      jobChain: { id: 'jc1', job: 'Mage', step: 1, status: 'active', questId: pick(QUESTS) },
+      loadouts: some(() => ({ id: pick(['lo1', 'lo2']), name: 'Set', slots: { weapon: pick(ITEMS), offhand: pick(ITEMS) } })),
+    });
+    for (let n = 0; n < 300; n++) {
+      const stored = { schema: SCHEMA, hunters: Array.from({ length: 1 + Math.floor(rand() * 3) }, hunter) };
+      const save = parseRaw(stored);
+      const once = copy(save);
+      repairSave(save, env());
+      expect(save, `the stored save was ${JSON.stringify(stored)}`).toEqual(once);
+    }
+  });
+
   test('an id ending in a number too large to count from is replaced, so new ids never repeat', () => {
     const save = parseRaw({ schema: SCHEMA, seq: 1e300, hunters: [{ id: 'h99999999999999999999999', name: 'Big' }, { name: 'Next' }, { name: 'Last' }] });
     const ids = save.hunters.map(h => h.id);

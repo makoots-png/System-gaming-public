@@ -1,8 +1,10 @@
 // hunter.ts: what a hunter is. Its type and the types of what it holds (quests, titles, boons, shadows, loadouts), its
-// default (`newHunter`), and its repair (`fixHunter`, run by the save's repair in save.ts and by `parseSheetHunter` for
-// a sheet another phone sent). Pure. save.ts loads the room's parts (the outbox, the story runs, the offers), and those
-// load protocol.ts, which reads a sheet with `parseSheetHunter`: so this file imports nothing that reads a save, and
-// a module save.ts loads takes the hunter from here (tests/deps.test.ts refuses a cycle of value imports).
+// default (`newHunter`), and its repair in two steps: `fixHunter` reads the shapes and claims the ids, then `fixRefs`
+// checks what points at those ids, once every id is final. The save's repair in save.ts runs both, with the rename of
+// repeated ids between them; `parseSheetHunter` runs both for a sheet another phone sent. Pure. save.ts loads the
+// room's parts (the outbox, the story runs, the offers), and those load protocol.ts, which reads a sheet with
+// `parseSheetHunter`: so this file imports nothing that reads a save, and a module save.ts loads takes the hunter from
+// here (tests/deps.test.ts refuses a cycle of value imports).
 // A change to the shape of a hunter is made here and in tests/save.test.ts.
 
 import { parseObjectiveCount } from './counts.ts';
@@ -22,7 +24,8 @@ import { EMBLEMS, HUNTER_COLORS, PERK_KEYS, RANKS, RULES as BASE_RULES, pathOf }
 import type { Perk, Rank, Rules } from '../rules.ts';
 import { REWARD_BOUNDS, newRewards, parseRewards } from '../rewards.ts';
 import type { Rewards } from '../rewards.ts';
-import { MAX_LEVEL, newProgress, pendingTotal } from './progress.ts';
+import { newProgress, pendingTotal } from './progress.ts';
+import { levelOf } from './level.ts';
 import type { Pending, Progress } from './progress.ts';
 import { newVitals, parseLife, parseUsed } from './vitals.ts';
 import type { Vitals } from './vitals.ts';
@@ -170,12 +173,17 @@ function fixVitals(h: Hunter, R: Rules): void {
 
 /** The default a stored hunter is filled from. */
 export const hunterExample = (R: Rules): Hunter => newHunter(R);
-export function fixHunter(run: RepairRun, h: Hunter): void {
+/**
+ * Reads a hunter's fields and lists to their shapes and claims the ids of what it holds, as `run.owner` this hunter. It
+ * checks no reference: an id it claims may still be replaced by the save's repair, so `fixRefs` runs after that.
+ */
+export function fixHunter(saveRun: RepairRun, h: Hunter): void {
+  const run: RepairRun = { ...saveRun, owner: h };
   const { R } = run;
   h.name = h.name.slice(0, 60) || 'Hunter'; h.job = jobOf(h.job);
   h.rank = oneOf(h.rank, RANKS, 'E');
-  h.level = int(h.level, 1, 1, MAX_LEVEL); h.xp = Math.max(0, h.xp); h.gold = Math.max(0, h.gold);
-  h.peakLevel = int(h.peakLevel, h.level, h.level, MAX_LEVEL);
+  h.level = levelOf(h.level); h.xp = Math.max(0, h.xp); h.gold = Math.max(0, h.gold);
+  h.peakLevel = Math.max(h.level, levelOf(h.peakLevel));
   h.bonusPoints = int(h.bonusPoints, 0, -POINTS_MAX, POINTS_MAX); h.spent = int(h.spent, 0, 0, POINTS_MAX);
   h.hpAdj = int(h.hpAdj, 0, -VITAL_MAX, VITAL_MAX); h.manaAdj = int(h.manaAdj, 0, -VITAL_MAX, VITAL_MAX);
   // A missing stat takes the rules' base. A pending count is a whole number of 1 or more, else none is pending.
@@ -200,7 +208,6 @@ export function fixHunter(run: RepairRun, h: Hunter): void {
     t.name = t.name.slice(0, 60); fixBonus(t.bonus); if (t.seedKey !== undefined && !titleKey(t.seedKey)) delete t.seedKey;
     if (t.worn !== undefined) { const worn = parseStatusDef(t.worn, BASE_RULES); if (worn) t.worn = worn; else delete t.worn; }
   });
-  if (h.titleId !== null && !h.titles.some(t => t.id === h.titleId)) h.titleId = null;
   optional(h, 'seed', v => v === true);
   // A boon without a name is dropped; past the cap the oldest go (a new boon is added last).
   h.boons = list(run, h.boons, 'bn', newBoon, b => {
@@ -217,12 +224,8 @@ export function fixHunter(run: RepairRun, h: Hunter): void {
     Object.assign(q, questState(oneOf(q.status, QUEST_STATUSES, 'active'), strOrNull(q.doneAt) ?? q.issuedAt)); q.dueAt = timeOf(q.dueAt);
     optional(q, 'chainId', isStr);
   });
-  // A save from before the chain had its own field kept it on the quests as `step` and `chainJob`: read once, then dropped.
-  h.jobChain = parseJobChain(h.jobChain, h.quests);
-  for (const q of h.quests) { delete (q as Rec).step; delete (q as Rec).chainJob; }
   h.skills = skills(run, h.skills);
   h.items = items(run, h.items);
-  for (const slot of SLOTS) if (!h.items.some(i => i.id === h.equipped[slot])) h.equipped[slot] = null;
   h.shadows = list(run, h.shadows, 'sh', newShadow, x => {
     x.name = x.name.slice(0, 60); x.rank = oneOf(x.rank, RANKS, 'E'); x.grade = oneOf(x.grade, SHADOW_GRADES, 'Normal');
     x.archetype = oneOf(x.archetype, ARCHETYPE_LIST, 'brute'); x.hp = int(x.hp, 1, 0, VITAL_MAX); x.monster = strOrNull(x.monster);
@@ -230,29 +233,49 @@ export function fixHunter(run: RepairRun, h: Hunter): void {
   const d = h.daily;
   d.lastCompleteKey = parseDayKey(d.lastCompleteKey); d.lastCheckedKey = parseDayKey(d.lastCheckedKey);
   d.streak = Math.max(0, d.streak);
-  h.penalty = parsePenalty(h.penalty, h.quests, run.env.now.toISOString());
   h.solo = parseSolo(h.solo);
   h.chronicle = parseChronicle(h.chronicle);
-  // Looks: an unknown emblem or color means "automatic". A loadout slot keeps only a real item, each item once (the
-  // fit is checked at swap time). The build path must exist. A lowered loadoutCap or fewer tiers keep the data.
+  // Looks: an unknown emblem or color means "automatic". The build path must exist. A lowered loadoutCap or fewer
+  // tiers keep the data. A loadout's slots are references: `fixRefs` reads them.
   if (!Object.hasOwn(EMBLEMS, h.emblem)) h.emblem = '';
   if (!HUNTER_COLORS.includes(h.color)) h.color = '';
-  h.loadouts = list(run, h.loadouts, 'lo', newLoadout, l => {
-    l.name = l.name.replace(/\s+/g, ' ').trim().slice(0, 24) || 'Set';
-    const slots: Loadout['slots'] = {}; const used = new Set<string>();
-    for (const slot of SLOTS) {
-      const item = h.items.find(i => i.id === l.slots[slot]);
-      if (item && !used.has(item.id)) { slots[slot] = item.id; used.add(item.id); }
-    }
-    l.slots = slots;
-  }).slice(0, LIMITS.loadouts);
+  h.loadouts = list(run, h.loadouts, 'lo', newLoadout, l => { l.name = l.name.replace(/\s+/g, ' ').trim().slice(0, 24) || 'Set'; }).slice(0, LIMITS.loadouts);
   const b = h.build;
   if (run.sheet ? !isStr(b.path) : !pathOf(R, b.path)) b.path = null;
   if (run.sheet && b.path !== null) b.path = b.path.slice(0, 40);
   const cut = b.picks.findIndex(x => x !== 0 && x !== 1);
   if (cut >= 0) b.picks.length = cut;
   b.picks.length = Math.min(b.picks.length, b.path ? LIMITS.picks : 0);
+  // The sheet reads the gear and the title by the ids as stored, which name the objects `fixRefs` points them at.
   fixVitals(h, R);
+}
+
+/**
+ * Points a hunter's references at what it holds, once the save's repair has given every object its final id: the
+ * active title, the gear, each loadout's slots (each item once; the fit is checked at swap time), and the quest of the
+ * penalty and of the Job Change chain. A stored reference meant the first object of its list stored under that id, so
+ * it is read against the ids as stored: `storedAs` holds, for each object of this hunter's that took a new id, its new
+ * id and the id it was stored under. A reference that names nothing is cleared (the title, the gear), or read by the
+ * parser without a quest (the penalty is dropped, the chain failed). `now`: the start of a penalty stored without one.
+ */
+export function fixRefs(h: Hunter, storedAs: ReadonlyMap<string, string>, now: string): void {
+  const named = <T extends { id: string }>(list: readonly T[], ref: unknown): T | undefined =>
+    isStr(ref) ? list.find(o => (storedAs.get(o.id) ?? o.id) === ref) : undefined;
+  h.titleId = named(h.titles, h.titleId)?.id ?? null;
+  for (const slot of SLOTS) h.equipped[slot] = named(h.items, h.equipped[slot])?.id ?? null;
+  for (const l of h.loadouts) {
+    const slots: Loadout['slots'] = {};
+    for (const slot of SLOTS) {
+      const item = named(h.items, l.slots[slot]);
+      if (item && !Object.values(slots).includes(item.id)) slots[slot] = item.id;
+    }
+    l.slots = slots;
+  }
+  const withQuest = (v: unknown): unknown => (isObj(v) ? { ...v, questId: named(h.quests, v.questId)?.id ?? v.questId } : v);
+  h.penalty = parsePenalty(withQuest(h.penalty), h.quests, now);
+  // A save from before the chain had its own field kept it on the quests as `step` and `chainJob`: read once, then dropped.
+  h.jobChain = parseJobChain(withQuest(h.jobChain), h.quests);
+  for (const q of h.quests) { delete (q as Rec).step; delete (q as Rec).chainJob; }
 }
 
 /**
@@ -264,9 +287,11 @@ export function fixHunter(run: RepairRun, h: Hunter): void {
  */
 export function parseSheetHunter(value: unknown): Hunter | null {
   if (!isObj(value)) return null;
-  const run: RepairRun = { R: BASE_RULES, env: { now: new Date(0), newDeviceId: () => NO_DEVICE, newDeviceToken: () => '' }, ids: new Set(), bad: [], sheet: true };
+  const now = new Date(0);
+  const run: RepairRun = { R: BASE_RULES, env: { now, newDeviceId: () => NO_DEVICE, newDeviceToken: () => '' }, ids: new Set(), bad: [], owner: null, sheet: true };
   const h = fill(value, hunterExample(BASE_RULES));
   if (!SAVE_ID_RE.test(h.id)) return null;
   fixHunter(run, h);
+  fixRefs(h, new Map(), now.toISOString());
   return h;
 }

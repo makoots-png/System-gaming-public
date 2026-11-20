@@ -3,11 +3,10 @@
 // gold and points in one row, then a row per part (an item, a title, a skill, a status, a boon, a job) added by its chip,
 // a Bundle row that loads a saved bundle and saves the editor as one (app.api.bundles), and a live preview of the reward
 // window's lines (`grantLines`). Its answer is what `parseRewards` reads, so it passes the parser unchanged.
-import { NOT_SAVED, esc, field } from './ui.js';
-import { READ_ONLY } from '../core/store-life.ts';
+import { esc, field } from './ui.js';
 import { rewardJobs, rules } from '../edge/rules.ts';
 import { REPLACES_WORDS, REWARD_BOUNDS, WORN_WORDS, WORDS_BOUNDS, grantLines, isEmptyReward, newRewards, parseRewards, parseWords } from '../core/rewards.ts';
-import { LIMITS } from '../core/save.ts';
+import { savedWords } from '../core/library.ts';
 import { ITEM_BOUNDS, parseItem } from '../core/registry/items.ts';
 import { SKILL_SEEDS, parseSkill, skillOf } from '../core/registry/skills.ts';
 import { isStateChip } from '../core/hunter/chips.ts';
@@ -217,7 +216,7 @@ export function rewardEditor(app, box, o = {}) {
     const same = app.api.bundles.list().find(b => b.name.toLowerCase() === name.trim().toLowerCase());
     if (same && !await ui.confirm({ title: 'Replace bundle?', body: `A bundle named "${same.name}" is saved. Replace it with this reward?`, confirmLabel: 'Replace' })) return;
     const r = app.api.bundles.save(name, rw, same ? same.id : null);
-    if ('why' in r) return tell(r.why === 'full' ? `The bundle was not saved: the library holds ${LIMITS.libraryRewards} bundles at most.` : r.why === READ_ONLY ? NOT_SAVED : 'The bundle was not saved.', true);
+    if (!ui.wrote('Workshop', r, savedWords('bundle', name.trim()))) return;
     render(); const s = box.querySelector('[data-rw-bundle]'); if (s) s.value = r.id;
     tell(`Saved bundle "${name.trim().slice(0, 60)}".`);
   }
@@ -346,7 +345,7 @@ export function bundleMaker(app, b) {
           if (isEmptyReward(rw) && !words) { shell.error('Add something to the reward, or a window title.'); return undefined; }
           // by its id: a rename is one write, and a name another reward holds is refused, never overwritten
           const saved = A.bundles.save(name, rw, b ? b.id : null, words);
-          if ('why' in saved) { shell.error(saved.why === 'taken' ? `Another bundle is named "${name}". Choose another name.` : saved.why === 'full' ? `The library holds ${LIMITS.libraryRewards} bundles at most.` : saved.why === READ_ONLY ? NOT_SAVED : 'Name the bundle.'); return undefined; }
+          if (!app.ui.wrote('Workshop', saved, savedWords('bundle', name))) return undefined;
           return saved.id;
         },
       };

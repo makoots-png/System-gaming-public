@@ -14,6 +14,7 @@ import { dismiss, enter } from './motion.ts';
 import { store } from '../edge/store.ts';
 import { reported } from '../edge/report.ts';
 import { READ_ONLY } from '../core/store-life.ts';
+import { TOLD } from '../core/save-step.ts';
 import { NO_WINDOWS, keyWindow, openSystem, windowId, windowStep } from '../core/windows.ts';
 export { reduced } from './motion.ts';
 
@@ -114,17 +115,25 @@ export function toast(tag, msg, opts = {}) {
   for (const old of [...toasts.keys()].slice(0, -2)) ended(old);
   return t;
 }
+/** The tag of the fight's news (`news`): a refused write told under it is said in the fight's news, as the fight's own refusals are. */
+export const FIGHT_TAG = '! Combat';
 /**
- * Whether a write to the save was taken: `w` is `store.apply`'s answer. A refused write is told in a toast under `tag`:
+ * Whether a write to the save was taken: `w` is `store.apply`'s answer. A refused write is told in a toast under `tag`
+ * (in the fight's news under `FIGHT_TAG`):
  * a read-only tab's refusal as NOT_SAVED (the banner says why), a step's own refusal by its words in `words`, which
- * the core module that refused it gives. A step's refusal with no words means the screen offered a change its rule
- * refuses: a bug, reported.
- * @param {string} tag @param {import('../core/save-step.ts').Applied} w @param {Readonly<Record<string, string>>} [words]
+ * the core module that refused it gives. A refusal its writer told already (`TOLD`: the fight's news) says nothing more.
+ * A step's refusal with no words means the screen offered a change its rule refuses: a bug, reported.
+ * An answer that carries more than `ok` (an id, the lines of a use) is read after it, as written.
+ * @template {import('../core/save-step.ts').Applied} T
+ * @param {string} tag @param {T} w @param {Readonly<Record<string, string>>} [words]
+ * @returns {w is Exclude<T, import('../core/save-step.ts').Refused>}
  */
 export function wrote(tag, w, words = {}) {
   if (!('why' in w)) return true;
-  if (w.why === READ_ONLY) toast(tag, NOT_SAVED, { kind: 'warning' });
-  else if (Object.prototype.hasOwnProperty.call(words, w.why)) toast(tag, words[w.why], { kind: 'warning' });
+  if (w.why === TOLD) return false;
+  const say = msg => (tag === FIGHT_TAG ? news(msg, 'warning') : toast(tag, msg, { kind: 'warning' }));
+  if (w.why === READ_ONLY) say(NOT_SAVED);
+  else if (Object.prototype.hasOwnProperty.call(words, w.why)) say(words[w.why]);
   else reported(`write:${tag}`, new Error(`the screen offered a change its rule refuses: ${w.why}`));
   return false;
 }
@@ -141,7 +150,7 @@ export function newsLine(/** @type {NewsLine} */ line) { newsLines.add(line); re
  */
 export function news(/** @type {string} */ msg, kind = 'info') {
   if (!windowOpen()) for (const line of newsLines) if (line(msg, kind)) return;
-  toast('! Combat', msg, { kind });
+  toast(FIGHT_TAG, msg, { kind });
 }
 
 // ── the windows: one machine (src/core/windows.ts), drawn here ──

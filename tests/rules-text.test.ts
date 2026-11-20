@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { checkExample, downLine, naturalLines, pointsLine, soloLines, statBonusLine } from '../src/core/rules-text.ts';
+import { armorCutPct, checkExample, dailyPointsLine, downLine, naturalLines, pointsLine, saleRows, soloLines, statBonusLine } from '../src/core/rules-text.ts';
+import { afterDefence } from '../src/core/combat/land.ts';
+import { sellPrice } from '../src/core/hunter/inventory.ts';
 import { CAP_ROUNDS } from '../src/core/combat/play.ts';
 import { ODDS_RUNS } from '../src/core/combat/odds.ts';
 import { checkBonus } from '../src/core/hunter/sheet.ts';
@@ -165,4 +167,27 @@ describe('the solo run\'s lines', () => {
     expect(soloLines(R)[1]).toContain('every 4 hours, at most 6 at once');
     expect(soloLines({ ...RULES, solo: { ...RULES.solo, personal: false } })[1]).toBe('Personal gates are off.');
   });
+});
+
+describe('the Rules page states what the game pays', () => {
+  test('each tier of the sale table is what the Bag pays for an unpriced item of that tier', () => {
+    for (const row of saleRows(RULES)) {
+      expect(row.sell).toBe(sellPrice({ rar: row.rar }, RULES));
+    }
+    expect(saleRows(RULES).find(r => r.rar === 'common')!.sell).toBe(50);
+  });
+  test('the daily line gives the points the daily quest template pays, and follows a changed template', () => {
+    const R = { ...RULES, dailyTemplate: { ...RULES.dailyTemplate, rewards: { ...RULES.dailyTemplate.rewards, points: 4 } } };
+    expect(dailyPointsLine(R)).toContain('+4');
+    expect(dailyPointsLine(RULES)).toContain(`+${RULES.dailyTemplate.rewards.points}`);
+  });
+  test('the rules hold no dailyRewardPoints, which nothing in the game paid', () => {
+    expect('dailyRewardPoints' in RULES).toBe(false);
+  });
+});
+
+test('the armor cut the Rules page states is what afterDefence takes off a hit when no flat part is taken first', () => {
+  const R = { ...RULES, fight: { ...RULES.fight, armorFlat: 0 as typeof RULES.fight.armorFlat } };
+  const armor = 40, hit = 10_000;
+  expect(armorCutPct(R, armor)).toBe(100 - Math.round(100 * afterDefence(hit, 'physical', { pen: 0 as never, penFlat: 0 }, { armor, resist: 0 }, R) / hit));
 });

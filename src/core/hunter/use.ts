@@ -100,6 +100,10 @@ export const USE_WORDS: { readonly [W in ItemUseRefusal]: (name: string) => stri
   'not-dead': name => `${name} only brings back a dead hunter. You still have it.`,
   fight: name => `Use ${name} after the fight.`,
 };
+/** `USE_WORDS` said of `name`: the words of a refused use for `ui.wrote`. */
+export const useWords = (name: string): Readonly<Record<ItemUseRefusal, string>> => ({
+  'no-item': USE_WORDS['no-item'](name), nothing: USE_WORDS.nothing(name), 'not-dead': USE_WORDS['not-dead'](name), fight: USE_WORDS.fight(name),
+});
 /** The line of a use that brought its dead user back (the life machine's `revive`). */
 export const REVIVED_LINE = `Up at ${REVIVE_HP} HP`;
 

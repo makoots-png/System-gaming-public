@@ -65,7 +65,7 @@ export function register(app) {
     const event = origin && who.kind === 'remote' ? A().sync.event('shadow', { to: [who.remote], shadow: origin }) : null;
     if (origin && who.kind === 'remote' && !event) return null;
     const rose = !origin ? null : who.kind === 'local' ? { kind: /** @type {const} */ ('local'), step: joined(h.id, origin, id) } : { kind: /** @type {const} */ ('remote'), event };
-    if (!A().combat.extracted(c.id, c.by, outcome, rose)) return null;
+    if (!ui.wrote('! Extraction', A().combat.extracted(c.id, c.by, outcome, rose))) return null;
     if (origin && who.kind === 'local') return arise(h, store.hunter(h.id).shadows.find(s => s.id === id));
     if (origin) { ui.toast('ARISE', `${origin.name} rises for ${h.name}. It joins their army on their phone.`, { kind: 'levelup' }); return origin; }
     if (outcome === 'crumbled') {
@@ -93,9 +93,7 @@ export function register(app) {
     if (!can(h, sid, 'summon')) return false;
     // the mana (where it lives: the fight's row or the sheet) and the summon are one write, so a summon refused costs nothing
     const cost = summonCost(s);
-    if (A().hunter.spendMana(hid, cost, x => stepShadow(x, sid, 'summon'))) return true;
-    ui.toast('System', `Not enough mana to summon ${s.name} (${cost} mana).`, { kind: 'warning' });
-    return false;
+    return ui.wrote('System', A().hunter.spendMana(hid, cost, x => stepShadow(x, sid, 'summon')), { mana: `Not enough mana to summon ${s.name} (${cost} mana).` });
   }
 
   A().shadows = { canExtract, extract };

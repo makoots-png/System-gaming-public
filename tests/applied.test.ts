@@ -7,7 +7,7 @@ import type { Outbox } from '../src/core/sync/outbox.ts';
 import { freshSave } from '../src/core/save.ts';
 import { setLevel } from '../src/core/hunter/progress.ts';
 import type { Hunter, Rules, Save } from '../src/core/save.ts';
-import { isRefused } from '../src/core/save-step.ts';
+import { TOLD, isRefused, refuse } from '../src/core/save-step.ts';
 import type { SheetStatus, Source } from '../src/core/combat/effect-ops.ts';
 import { combatantId } from '../src/core/combat/ability-types.ts';
 import { BUILT_IN_STATUSES } from '../src/core/registry/statuses.ts';
@@ -20,6 +20,10 @@ import type { WaitingRun } from '../src/core/gates/solo-wait.ts';
 import { REVIVE_HP } from '../src/core/hunter/vitals.ts';
 import type { Life } from '../src/core/hunter/vitals.ts';
 import { useItem } from '../src/core/hunter/use.ts';
+import { soloAnswerBody, soloPlan, soloTaken } from '../src/core/gates/solo.ts';
+import type { SoloRunPayload } from '../src/core/protocol.ts';
+import { noticed } from '../src/core/hunter/noticed.ts';
+import { den } from './models/gate-events.ts';
 
 const e = (n: number): EventId => `d-gm1-e${n}` as EventId;
 const ids = (from: number, to: number): EventId[] => Array.from({ length: to - from + 1 }, (_, i) => e(from + i));
@@ -95,7 +99,7 @@ function phone(o: { conditions?: SheetStatus[]; fight?: boolean; level?: number;
       fightOf: () => (o.fight ? { at: 'gm' } : null),
       // hunter.js `granted`: its window is not opened when the caller asks for none (`popup: false`); the lines are answered either way
       granted: (_hid, g, opts) => { if (opts?.popup !== false) { shown.push(g.lines); said.push({ title: opts?.title, body: opts?.body }); } return { lines: g.lines, levelup: g.levelup, popup: null }; },
-      gmHolds: () => { toasts.push(HELD); return false; },
+      gmHolds: () => { toasts.push(HELD); return refuse(TOLD); },
     },
     stepsDone: (_hid, done) => { completed.push(...done.map(d => d.quest.title)); },
     coinLanded: () => {},
@@ -589,5 +593,24 @@ describe('the GM\'s answer to a solo run lands whole, once a run (notes-2-solo.m
     const q = phone();
     q.receive(1, 'soloAnswer', PAID);
     expect([q.hunter.xp, q.shown, q.windows]).toEqual([xp, [], []]);
+  });
+
+  // A won run the GM's phone pays is that gate's Clear for the player's hunter (gates/solo.ts `soloTaken`), so it counts
+  // toward the gates a hunter cleared as the GM's Clear does: the fact is `{ kind: 'gate' }`, its rank the gate's, its
+  // `above` against the lowest rank (the GM's phone has no pushed sheet of the hunter), `toBreak` the days to day 5.
+  test('a run the GM\'s phone paid counts as a gate cleared on the player\'s phone, as the GM\'s Clear does', () => {
+    const room = 'ABCD23' as never, fresh = freshSave({ now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-gm1') }, { onboarded: true });
+    const gm: Save = { ...fresh, gates: [{ ...den('detected'), solo: true }] };
+    const run: SoloRunPayload = { eid: RUN, by: 'd-player1:h1' as never, gate: 'g-den' as never, name: 'Mira', outcome: 'won', rounds: 4, life: 'up' };
+    const plan = soloPlan(gm, run, RULES), loot = { gold: 0, items: [] }, body = soloAnswerBody(gm, RUN, run, plan, loot)!;
+    const at = { at: AT, today: day(AT.slice(0, 10)), R: RULES };
+    const taken = soloTaken(gm, run, plan, parseEvent('soloAnswer', { ...body, eid: e(1) }), loot, { day: at, room: { code: room, stamp: { device: 'd-gm1', now: Date.parse(AT), rand: 0.5 } }, rank: null });
+    if (isRefused(taken)) throw new Error(`refused: ${taken.why}`);
+    const posted = (taken.settings.sync.outbox ?? []).flatMap(x => (x.letter.kind === 'event' ? [x.letter.event] : []));
+    const p = phone({ runs: [{ ...waiting(), gate: 'g-den' as never }] });
+    p.page([], posted);
+    const after = noticed(p.deps.store.get(), () => ({ ...at, session: 1, held: () => false, feats: [] }));
+    expect(after.hunters[0]!.chronicle.facts.filter(f => f.kind === 'gate')).toMatchObject([{ kind: 'gate', name: 'Goblin Den', rank: 'E', above: 0, toBreak: 4 }]);
+    expect(after.hunters[0]!.chronicle.tally.gates).toBe(1);
   });
 });

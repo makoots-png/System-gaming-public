@@ -25,6 +25,7 @@ import { isUp } from './row-hp.ts';
 import { amountOp, AURA_ON, isStatusKey, LAND_USE_OPS, reactionMayHold, modified, shadowId, SHARE_ON, statusKey, statusOn, TYPE_MAX, isUseOp } from './effect-ops.ts';
 import { isStacking, SHEET_OP_KEYS } from './op-amount.ts';
 import { parseLife } from '../hunter/vitals.ts';
+import { parseLevel } from '../hunter/level.ts';
 import type {
   Body, BodyLife, Channel, CombatantKind, Due, End, Holder, Intent, LandOp, Op, Origin, Reach, SheetStatus, StackRule, Status, StatusDef, StatusKey, Threshold, Tiered, UseOp,
 } from './effect-ops.ts';
@@ -653,7 +654,7 @@ function originOf(v: unknown, R: Rules): Origin | null {
   const b = v.build, statsIn = b.stats as Rec, perksIn = b.perks as Rec;
   const stats = Object.fromEntries(STAT_KEYS.map(k => [k, num(statsIn[k], 0, 10000)]));
   if (Object.values(stats).some(x => x === null)) return null;
-  const level = whole(b.level, 1, 200);
+  const level = parseLevel(b.level);
   const gear = all(b.gear, 12, (g): GearPiece | null => {
     if (!isObj(g)) return null;
     const weight = num(g.weight, 0, 1000), armor = num(g.armor, 0, 10000), resist = num(g.resist, 0, 10000);

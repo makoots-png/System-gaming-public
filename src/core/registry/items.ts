@@ -145,7 +145,7 @@ export type ItemTemplate = Omit<Item, 'id'>;
  * An item's price: the one it was given, else the rule's (`priceOf`). Implicit audit 3, L1: the rule's price was stored
  * as a number when an item was made, so a change of the price rule reached no item already made or held.
  */
-export const valueOf = (i: Pick<Item, 'value' | 'rar'>, R: Pick<Rules, 'baseValue' | 'rarities'>): number => i.value ?? priceOf(R, i.rar);
+export const valueOf = (i: Pick<Item, 'rar'> & Partial<Pick<Item, 'value'>>, R: Pick<Rules, 'baseValue' | 'rarities'>): number => i.value ?? priceOf(R, i.rar);
 /** An item's weight: the one it was given, else the rule's (a weapon's by its dice, `weaponWeight`; anything else 0). */
 export const weightOf = (i: { readonly weight?: number; readonly type?: string; readonly dice?: string }): number => i.weight ?? (i.type === 'weapon' ? weaponWeight(i.dice ?? '') : 0);
 /** An item's price when it does not set one: the rule's base value times its rarity's multiplier, times 10. */

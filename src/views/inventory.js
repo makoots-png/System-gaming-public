@@ -7,7 +7,7 @@ import { builtInItems, defaultShop, lootPool, parseItem, valueOf, weightOf } fro
 import { itemAbilityId } from '../core/registry/abilities.ts';
 import { BUY_REFUSALS, BUY_WORDS, SHOP_CLOSED, addGold, buy, editItem, equip, putItem, removeItem, removeShopItem, sell, sellable, sellPrice as sellPriceOf, sellTotal, shopOpen, stackOf, unequip, withShop, writeShopItem } from '../core/hunter/inventory.ts';
 import { fitted } from '../core/hunter/sheet.ts';
-import { USE_WORDS, spendItem, usable, useDice, useItem } from '../core/hunter/use.ts';
+import { USE_WORDS, spendItem, usable, useDice, useItem, useWords } from '../core/hunter/use.ts';
 import { atHunter, both, isRefused, refuse } from '../core/save-step.ts';
 import { cryptoRandom, rollSettle } from '../edge/roll.ts';
 import { rollLoot } from '../core/gates/spawn.ts';
@@ -69,8 +69,9 @@ export function register(app) {
   function useOnOther(h, it, ops) {
     const said = app.api.effects.describeItem(it, ops).join(', '), R = rules();
     const w = app.api.uses.told(h.id, 'item-use', x => spendItem(x, it.id, R), { what: 'item', name: it.name, text: [it.desc, said].filter(Boolean).join(' · '), target: 'other', tell: !!it.tell });
-    if (w.ok) ui.toast('System', `${it.name} used.${said ? ` On the target: ${said}.` : ''}${w.sent ? ` ${reportWords(app.api.sync.conn())}` : ''}`);
-    return w.ok;
+    if (!ui.wrote('System', w, useWords(it.name))) return false;
+    ui.toast('System', `${it.name} used.${said ? ` On the target: ${said}.` : ''}${w.sent ? ` ${reportWords(app.api.sync.conn())}` : ''}`);
+    return true;
   }
   /** A player's item used in the GM's fight: the `cast` is posted, and the item stays in the bag until the GM's fight takes it. */
   async function throwOnTable(h, it) {
@@ -84,8 +85,9 @@ export function register(app) {
     const said = u.lines.join(', ');
     const w = app.api.uses.told(h.id, 'item-use', x => { const y = useItem(x, it.id, rolls, R); return isRefused(y) ? y : y.hunter; },
       it.tell ? { what: 'item', name: it.name, text: [it.desc, said].filter(Boolean).join(' · '), target: 'self', tell: true } : null);
-    if (w.ok) ui.toast('System', `${it.name} used: ${said}.`);
-    return w.ok;
+    if (!ui.wrote('System', w, useWords(it.name))) return false;
+    ui.toast('System', `${it.name} used: ${said}.`);
+    return true;
   }
 
   const api = app.api.inventory = {

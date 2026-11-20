@@ -406,7 +406,7 @@ describe('a Resurrection Crystal given in a reward, with no code of its own (not
 
   test('a gate\'s Clear, with the crystal as the item the GM put in its share', () => {
     const s = { ...fresh(), gates: [den('raiding')] };
-    const out = settleClear(s, 'g-den', { due: 0, xp: 0, gold: 0, items: ['Resurrection Crystal'], payees: ['Hunter'] }, [{ hid: 'h1', rewards: parseRewards(copy(WITH))! }], { room: null, events: [] }, DAY);
+    const out = settleClear(s, 'g-den', { due: 0, xp: 0, gold: 0, items: ['Resurrection Crystal'], payees: ['Hunter'] }, [{ hid: 'h1', rewards: parseRewards(copy(WITH))! }], null, DAY);
     if (isRefused(out)) throw new Error(out.why);
     expect(out.save.gates[0]!.status).toBe('cleared');
     raised(out.save);

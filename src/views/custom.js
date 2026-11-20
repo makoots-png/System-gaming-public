@@ -5,10 +5,10 @@ import { EMBLEMS, HUNTER_COLORS, ACCENTS, TEXT_SCALES, RANKS, PERK_KEYS, PERK_LA
 import * as ui from './ui.js';
 import { oneOf } from '../core/one-of.ts';
 import { available, raiseMany } from '../core/hunter/progress.ts';
-import { atHunter, atSettings } from '../core/save-step.ts';
+import { atHunter, atSettings, refuse } from '../core/save-step.ts';
 import { withSound } from '../core/settings.ts';
 import { withBadge } from '../core/hunter/identity.ts';
-import { fits, loadoutCap, overwriteLoadout, removeLoadout, renameLoadout, saveLoadout, swapLoadout } from '../core/hunter/loadouts.ts';
+import { LOADOUT_WORDS, fits, loadoutCap, overwriteLoadout, removeLoadout, renameLoadout, saveLoadout, swapLoadout } from '../core/hunter/loadouts.ts';
 import { choosePath as pathChosen, mayPick, perkText, pickPerk, respec as respecHunter, respecBlock as respecWhy, respecCost as respecGold, buildRuleSet, buildRulesReset, roomRulesOf } from '../core/hunter/build.ts';
 import { autoSpend } from '../core/hunter/sheet.ts';
 import { newRewards } from '../core/rewards.ts';
@@ -174,13 +174,10 @@ export function register(app) {
   const inFight = hid => A().hunter.fightOf({ hid }) !== null;
   const LO = A().loadouts = {
     inFight,
-    save(hid, name) {
-      const id = store.id('lo');
-      return store.apply('loadout-save', atHunter(hid, h => saveLoadout(h, id, String(name || ''), rules()))).ok ? id : null;
-    },
-    overwrite: (hid, id) => store.apply('loadout-save', atHunter(hid, h => overwriteLoadout(h, id, rules()))).ok,
-    rename: (hid, id, name) => store.apply('loadout-rename', atHunter(hid, h => renameLoadout(h, id, String(name || '')))).ok,
-    remove: (hid, id) => store.apply('loadout-del', atHunter(hid, h => removeLoadout(h, id))).ok,
+    save: (hid, name) => store.apply('loadout-save', atHunter(hid, h => saveLoadout(h, store.id('lo'), String(name || ''), rules()))),
+    overwrite: (hid, id) => store.apply('loadout-save', atHunter(hid, h => overwriteLoadout(h, id, rules()))),
+    rename: (hid, id, name) => store.apply('loadout-rename', atHunter(hid, h => renameLoadout(h, id, String(name || '')))),
+    remove: (hid, id) => store.apply('loadout-del', atHunter(hid, h => removeLoadout(h, id))),
     // one action. Listed slot + item exists + fits -> equipped; slot absent from the set -> emptied; item gone/unfit -> slot left as is and reported.
     // Refused in a fight: the fight's row holds the sheet it started with (m2-plan section 4.4, W4); `kept` lists every slot then.
     swap(hid, id) {
@@ -207,9 +204,9 @@ export function register(app) {
       actions: [{ label: 'Equip', value: 'swap', primary: true }, { label: 'Rename', value: 'ren' }, { label: 'Overwrite with current gear', value: 'ow' },
         { label: 'Delete', value: 'del', danger: true }, { label: 'Close', value: null, cancel: true }] });
     if (v === 'swap') LO.swap(hid, id);
-    else if (v === 'ren') { const n = await ui.promptText({ title: 'Rename loadout', label: 'Name', value: l.name, maxlength: 24 }); if (n) LO.rename(hid, id, n); }
-    else if (v === 'ow') { if (await ui.confirm({ title: `Overwrite ${l.name}?`, body: 'It will hold the gear you have on now.', confirmLabel: 'Overwrite' })) LO.overwrite(hid, id); }
-    else if (v === 'del') { if (await ui.confirm({ title: `Delete ${l.name}?`, danger: true, confirmLabel: 'Delete' })) LO.remove(hid, id); }
+    else if (v === 'ren') { const n = await ui.promptText({ title: 'Rename loadout', label: 'Name', value: l.name, maxlength: 24 }); if (n) ui.wrote('Loadout', LO.rename(hid, id, n), LOADOUT_WORDS); }
+    else if (v === 'ow') { if (await ui.confirm({ title: `Overwrite ${l.name}?`, body: 'It will hold the gear you have on now.', confirmLabel: 'Overwrite' })) ui.wrote('Loadout', LO.overwrite(hid, id), LOADOUT_WORDS); }
+    else if (v === 'del') { if (await ui.confirm({ title: `Delete ${l.name}?`, danger: true, confirmLabel: 'Delete' })) ui.wrote('Loadout', LO.remove(hid, id), LOADOUT_WORDS); }
   }
   app.registerPanel({
     view: 'status', id: 'loadouts', order: 46, title: 'Loadouts',
@@ -222,7 +219,7 @@ export function register(app) {
         if (b.dataset.lomore) return manageLoadout(hid, b.dataset.lomore);
         if ('losave' in b.dataset) {
           const n = await ui.promptText({ title: 'Save loadout', label: 'Name', value: `Set ${store.active().loadouts.length + 1}`, maxlength: 24 });
-          if (n) LO.save(hid, n);
+          if (n) ui.wrote('Loadout', LO.save(hid, n), LOADOUT_WORDS);
         }
       });
     },
@@ -251,13 +248,15 @@ export function register(app) {
     short: h => `Respec costs ${ui.fmt(respecCost(h))} gold. You have ${ui.fmt(h.gold)}.`,
   };
   const respecBlock = h => { const why = respecWhy(h, rules(), inFight(h.id)); return why ? RESPEC_WHY[why](h) : ''; };
+  /** What a refused respec of hunter `h` says (`ui.wrote`'s words): `RESPEC_WHY` for `h` as it is. */
+  const respecWords = h => Object.fromEntries(Object.entries(RESPEC_WHY).map(([why, say]) => [why, say(h)]));
   // auto-place unspent ability points by the path's alloc weights (autoSpend); points stay undoable until confirmed
   const allocPlan = h => { const p = pathOf(rules(), h.build.path); return p ? autoSpend(h, p, rules()) : {}; };
   const BD = A().build = {
-    setPath: (hid, id, force = false) => store.apply('build', atHunter(hid, h => pathChosen(h, id, rules(), force))).ok,
-    pick: (hid, tier, choice) => store.apply('build', atHunter(hid, h => pickPerk(h, tier, choice, rules(), role()))).ok,
-    // GM mode: free. Player: pays respecCost in the same step; refused (false) in a fight or when short of gold.
-    respec: hid => store.apply('build', atHunter(hid, h => respecHunter(h, rules(), role(), inFight(hid)))).ok,
+    setPath: (hid, id, force = false) => store.apply('build', atHunter(hid, h => pathChosen(h, id, rules(), force))),
+    pick: (hid, tier, choice) => store.apply('build', atHunter(hid, h => pickPerk(h, tier, choice, rules(), role()))),
+    // GM mode: free. Player: pays respecCost in the same step; refused in a fight or when short of gold.
+    respec: hid => store.apply('build', atHunter(hid, h => respecHunter(h, rules(), role(), inFight(hid)))),
     // GM board line: path name + active perks from a sheet (a player's sheet is read by the room's parser; caller escapes)
     label(h) {
       const b = h.build, p = pathOf(rules(), b.path); if (!p) return '';
@@ -266,8 +265,8 @@ export function register(app) {
       return `${p.name} ${n}/${p.tiers.length}`;
     },
     auto(hid) {
-      const h = store.hunter(hid); if (!h) return null; const plan = allocPlan(h);
-      return store.apply('stat', atHunter(hid, x => raiseMany(x, plan, rules()))).ok ? plan : null;
+      const h = store.hunter(hid); if (!h) return refuse('no-hunter'); const plan = allocPlan(h);
+      return store.apply('stat', atHunter(hid, x => raiseMany(x, plan, rules())));
     },
     // GM board: local hunter -> applied here; remote sheet -> award event (old players ignore the unknown key)
     async gmMenu(who, sheet) {
@@ -286,7 +285,10 @@ export function register(app) {
         const build = isObj(v) ? { tier: Number(v.tier), pick: v.pick === 1 ? 1 : 0 } : v === 'respec' ? 'respec' : { path: String(v) };
         const ok = A().sync.post(A().sync.event('award', { to: [who.remote], rewards: { ...newRewards(), build } })).ok;
         ui.toast('GM', ok ? 'Build change sent.' : 'Not in a room: nothing was sent.', { kind: ok ? 'info' : 'warning' });
-      } else if (isObj(v)) BD.pick(who.hunterId, Number(v.tier), v.pick === 1 ? 1 : 0); else if (v === 'respec') BD.respec(who.hunterId); else BD.setPath(who.hunterId, v, true);
+      } else {
+        const h = store.hunter(who.hunterId);
+        ui.wrote('Build', isObj(v) ? BD.pick(who.hunterId, Number(v.tier), v.pick === 1 ? 1 : 0) : v === 'respec' ? BD.respec(who.hunterId) : BD.setPath(who.hunterId, v, true), h ? respecWords(h) : {});
+      }
     },
     setRule(patch) { // GM: enabled / playerPick; published in the room's 'rules' doc, which players' rules follow
       ui.wrote('GM', store.apply('gm-rules', s => buildRuleSet(s, patch)));
@@ -307,27 +309,27 @@ export function register(app) {
     const rows = (p.tiers || []).map((t, i) => `<li><span>Rank ${RANKS[i] || '?'}</span><span>${esc(perkText(perkOf(p, i, 0)))} <i>or</i> ${esc(perkText(perkOf(p, i, 1)))}</span></li>`).join('');
     const ok = await ui.system({ tag: '! Path', title: p.name || id, kind: 'info', body: 'You take one perk at each rank. The path stays until a respec, which costs gold.', html: `<ul class="bd-pv">${rows}</ul>`,
       actions: [{ label: 'Cancel', value: false, cancel: true }, { label: 'Choose path', value: true, primary: true }] });
-    if (ok === true) BD.setPath(hid, id);
+    if (ok === true) ui.wrote('Build', BD.setPath(hid, id));
   }
   async function confirmPick(hid, tier, choice) {
     const h = store.hunter(hid), p = pathOf(rules(), h.build.path), b = perkOf(p, tier, choice);
     const ok = await ui.system({ tag: '! Perk', title: perkText(b), kind: 'levelup', html: `<ul class="bd-pv">${deltaRows(h, b)}</ul>`, body: 'This choice stays until a respec.',
       actions: [{ label: 'Cancel', value: false, cancel: true }, { label: 'Take perk', value: true, primary: true }] });
-    if (ok === true) BD.pick(hid, tier, choice);
+    if (ok === true) ui.wrote('Build', BD.pick(hid, tier, choice));
   }
   async function buyRespec(hid) {
     const h = store.hunter(hid); if (!h) return;
     const why = respecBlock(h); if (why) return ui.toast('Build', why, { kind: 'warning' });
     const cost = respecCost(h);
     if (await ui.confirm({ title: `Respec for ${ui.fmt(cost)} gold?`, body: `You have ${ui.fmt(h.gold)} gold. Path and perks are cleared. Ability points are not refunded.`, danger: true, confirmLabel: `Pay ${ui.fmt(cost)} gold` })) {
-      if (!BD.respec(hid)) ui.toast('Build', respecBlock(store.hunter(hid) || h) || 'The respec did not happen.', { kind: 'warning' });
+      ui.wrote('Build', BD.respec(hid), respecWords(store.hunter(hid) || h));
     }
   }
   async function confirmAuto(hid) {
     const h = store.hunter(hid), plan = allocPlan(h); if (!Object.keys(plan).length) return;
     const ok = await ui.system({ tag: '! Points', title: 'Auto-place points', kind: 'info', html: `<ul class="bd-pv">${deltaRows(h, plan)}</ul>`, body: 'You can still undo with − until you confirm.',
       actions: [{ label: 'Cancel', value: false, cancel: true }, { label: 'Place points', value: true, primary: true }] });
-    if (ok === true) BD.auto(hid);
+    if (ok === true) ui.wrote('Points', BD.auto(hid));
   }
   app.registerPanel({
     view: 'status', id: 'build', order: 13, title: 'Build', jump: 'Build',
@@ -341,7 +343,7 @@ export function register(app) {
         if ('bdbuy' in d) return buyRespec(hid);
         if (!app.isGM()) return;
         if ('bdset' in d) return BD.gmMenu({ kind: 'local', hunterId: hid }, null);
-        if ('bdrespec' in d) return ui.confirm({ title: 'Respec this hunter?', body: 'Path and perks are cleared. Ability points are not refunded.', danger: true, confirmLabel: 'Respec' }).then(ok => ok && BD.respec(hid));
+        if ('bdrespec' in d) return ui.confirm({ title: 'Respec this hunter?', body: 'Path and perks are cleared. Ability points are not refunded.', danger: true, confirmLabel: 'Respec' }).then(ok => ok && ui.wrote('Build', BD.respec(hid)));
         if ('bdtoggle' in d) return BD.setRule({ enabled: !on() });
         if ('bdpp' in d) return BD.setRule({ playerPick: B().playerPick === false });
         if ('bdreset' in d) return BD.resetRules();

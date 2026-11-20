@@ -4,14 +4,13 @@
 // (the reward editor). Every choice is offered from core's tables (`FACT_FIELDS`, `opsFor`, `measuresFor`, `WITHINS`,
 // `FEAT_BOUNDS`), so a field or a measure a kind lacks cannot be picked; Save runs `parseFeat` and writes what it gives
 // back (`saveFeat`). No rule of the game is here.
-import { esc, field } from './ui.js';
+import { esc, field, wrote } from './ui.js';
 import { COUNT_CSS, countFields } from './count-fields.js';
 import { WITHINS } from '../core/hunter/counts.ts';
 import { FEAT_BOUNDS, WITHIN_WORDS, afterChoices, parseFeat, ruleLine } from '../core/hunter/feats.ts';
 import { BUILT_IN_FEATS } from '../core/registry/feats.ts';
 import { grantLines } from '../core/rewards.ts';
-import { LIMITS } from '../core/save.ts';
-import { newFeatKey, saveFeat } from '../core/library.ts';
+import { newFeatKey, saveFeat, savedWords } from '../core/library.ts';
 import { atLibrary } from '../core/save-step.ts';
 
 const SHOWS = [['start', 'From the start'], ['count', 'After a count'], ['feat', 'After another feat'], ['never', 'Hidden until earned']];
@@ -70,8 +69,7 @@ export function featMaker(app, key) {
           const f = parseFeat(raw());
           if (!f) { shell.error(needs()); return undefined; }
           const at = key || newFeatKey(store.get().library, f.name);
-          const done = store.apply('library-feat', atLibrary(l => saveFeat(l, at, f)));
-          if (!done.ok) { shell.error(`The library holds ${LIMITS.libraryFeats} feats at most.`); return undefined; }
+          if (!wrote('Workshop', store.apply('library-feat', atLibrary(l => saveFeat(l, at, f))), savedWords('feat', f.name))) return undefined;
           return at;
         },
       };

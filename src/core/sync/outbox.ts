@@ -6,11 +6,12 @@
 // posted, and leaves the box only when the room took it (`sent`) or nothing will ever take it (`dropped`). A send that
 // got no answer, or a 5xx, puts it back in the queue; a reload does the same to one that was on its way. The room takes
 // an event id once (server.ts `addEvent`) and a tombstone is a sheet put, so sending one again after a lost answer is
-// never a second message.
+// never a second message. A different message under an id already used is refused, by the box and by the room alike
+// (`sentAgain` in src/core/protocol.ts): never answered as taken, so a lost message is never silent.
 //
 // One entry's life is a machine (docs/state-machines.md, "A message to the room"): `queued`, `sending`, then `sent`,
 // `refused` (the room answered 4xx: kept, with the reason, until the box is full of them) or `dropped`.
-import { parseEvent, parseRoomCode } from '../protocol.ts';
+import { parseEvent, parseRoomCode, sentAgain } from '../protocol.ts';
 import type { RoomCode, RoomEvent } from '../protocol.ts';
 import type { Save } from '../save.ts';
 import { parseSaveId } from '../ids.ts';
@@ -81,13 +82,29 @@ export const idOf = (l: Letter): string => (l.kind === 'event' ? l.event.payload
 /** What a post did: the next box, and any message it pushed out to make room (the view says so). */
 export type Posted = { readonly box: Outbox; readonly dropped: readonly Entry[] };
 /**
- * `letter` for `room`, queued as the newest. An id already in the box changes nothing (a post repeated). With `key`, a
- * queued entry of that room and key leaves for it: it stands for the same thing, newer. Over `OUTBOX_MAX`, the oldest
- * refusal goes first, then the oldest queued message, which is answered in `dropped`.
+ * Thrown by `post` for a different letter under an id the box holds. Each page makes its ids later than its last
+ * (`stampTime` in src/core/protocol.ts), so this is a bug of whatever made the id, never a state to handle: the write
+ * that posts is refused whole, and the error names the id and both messages.
+ */
+export class IdTaken extends Error {
+  constructor(readonly id: string, held: Letter, posted: Letter) {
+    super(`the outbox holds a ${what(held)} under id ${id}, so this ${what(posted)} was not posted: the id was made twice`);
+    this.name = 'IdTaken';
+  }
+}
+const what = (l: Letter): string => (l.kind === 'event' ? `${l.event.type} message` : 'tombstone');
+/** Whether `b`, under the id of `a`, is the same letter again (`sentAgain` in src/core/protocol.ts for an event). */
+const sameLetter = (a: Letter, b: Letter): boolean =>
+  a.kind === 'event' && b.kind === 'event' ? sentAgain(a.event, b.event) : a.kind === b.kind;
+/**
+ * `letter` for `room`, queued as the newest. The same letter again changes nothing (a post repeated); a different one
+ * under an id the box holds throws `IdTaken`, as the room refuses it (server.ts `addEvent`). With `key`, a queued entry
+ * of that room and key leaves for it: it stands for the same thing, newer. Over `OUTBOX_MAX`, the oldest refusal goes
+ * first, then the oldest queued message, which is answered in `dropped`.
  */
 export function post(box: Outbox, room: RoomCode, letter: Letter, key: string | null = null, max = OUTBOX_MAX): Posted {
-  const id = idOf(letter);
-  if (box.some(e => e.id === id)) return { box, dropped: [] };
+  const id = idOf(letter), held = box.find(e => e.id === id);
+  if (held) { if (sameLetter(held.letter, letter)) return { box, dropped: [] }; throw new IdTaken(id, held.letter, letter); }
   let next: Entry[] = [...box.filter(e => !(key !== null && e.key === key && e.room === room && e.at === 'queued')), { id, room, letter, key, at: 'queued' }];
   const dropped: Entry[] = [];
   while (next.length > max) {

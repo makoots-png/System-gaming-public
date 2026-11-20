@@ -18,9 +18,10 @@ import { gmSource } from '../core/effects.ts';
 import { PERK_KEYS, PERK_LABELS, rules } from '../edge/rules.ts';
 import { newRewards } from '../core/rewards.ts';
 import { SKILL_MAX_LEVEL, editSkill, forgetSkill, addSkill, levelUpSkill } from '../core/hunter/skills-held.ts';
-import { saveEntry } from '../core/library.ts';
+import { saveEntry, savedWords } from '../core/library.ts';
 import { fitted } from '../core/hunter/sheet.ts';
 import { atHunter, atLibrary, both } from '../core/save-step.ts';
+import { useWords } from '../core/hunter/use.ts';
 import { reportWords } from '../core/sync/connection.ts';
 import { tooLarge } from '../core/size.ts';
 
@@ -52,11 +53,12 @@ export function register(app) {
     if (a && app.api.loadouts.inFight(hid)) { ui.toast('System', `Use ${s.name} from ${h.name}'s card in the fight.`, { kind: 'info' }); return false; }
     if (a && a.aim !== 'self') {
       void app.api.uses.report(hid, { what: 'skill', name: s.name, text: s.desc, target: 'other', tell: false })
-        .then(sent => ui.toast('System', `${s.name} activated.${sent ? ` ${reportWords(app.api.sync.conn())}` : ''}`, { kind: 'info' }));
+        .then(w => { if (ui.wrote('System', w)) ui.toast('System', `${s.name} activated.${w.sent ? ` ${reportWords(app.api.sync.conn())}` : ''}`, { kind: 'info' }); });
       return true;
     }
-    const lines = a ? app.api.effects.applyOps(hid, a.ops, { label: s.name, source: gmSource(h.rank) }) : [];
-    ui.toast('System', `${s.name} activated.${lines.length ? ` ${lines.join(', ')}.` : ''}`, { kind: 'info' });
+    const w = a ? app.api.effects.applyOps(hid, a.ops, { label: s.name, source: gmSource(h.rank) }) : { ok: /** @type {const} */ (true), lines: [] };
+    if (!ui.wrote('System', w, useWords(s.name))) return false;
+    ui.toast('System', `${s.name} activated.${w.lines.length ? ` ${w.lines.join(', ')}.` : ''}`, { kind: 'info' });
     return true;
   };
 
@@ -207,8 +209,7 @@ export function register(app) {
             if (big) { shell.error(big); return undefined; }
             const out = parseSkill(form);
             if (!out || canon(out) !== canon(form)) console.error('The skill maker wrote a skill its parser reads differently', form, out);
-            const why = out && library && $('#skm-save').checked ? saveToLibrary(out, initial && initial.id) : null;
-            if (why) { shell.error(why === 'taken' ? `The library has a skill named "${out.name}". Rename this one, or edit that one in the Workshop.` : 'The library is full. Delete a skill in the Workshop first.'); return undefined; }
+            if (out && library && $('#skm-save').checked && !ui.wrote('Workshop', saveToLibrary(out, initial && initial.id), savedWords('skill', out.name))) return undefined;
             const to = give ? /** @type {string[]} */ (M.picked(el, 'give')) : [];
             if (out && to.length) void giveTo(out, to).then(names => { if (names.length) acquired(out, names); });
             return out || undefined;
@@ -217,11 +218,8 @@ export function register(app) {
       },
     });
   }
-  /** Saves `k` to the library by its id (library.ts `saveEntry`); answers null when saved, else why not (full, or a name another skill holds). */
-  function saveToLibrary(k, editId) {
-    const r = store.apply('library-skill', atLibrary(l => saveEntry(l, 'skills', { ...k, id: editId || store.id('s') })));
-    return 'why' in r ? r.why : null;
-  }
+  /** Saves `k` to the library by its id (library.ts `saveEntry`); answers the write's Applied whole (full, or a name another skill holds). */
+  const saveToLibrary = (k, editId) => store.apply('library-skill', atLibrary(l => saveEntry(l, 'skills', { ...k, id: editId || store.id('s') })));
 
   // ── giving a skill: a hunter of this phone gets a copy at once, a player's sheet in the room an award of that skill alone ──
   /**

@@ -23,6 +23,26 @@ type Entry<L extends LibraryList> = Library[L][number];
 export type LibraryWhy = 'full' | 'missing';
 type Next = Library | Refused<LibraryWhy>;
 
+/** What the library keeps, as a maker names it: one, many, and how many the library holds. */
+const KEPT = {
+  item: { one: 'item', many: 'items', cap: LIMITS.libraryItems },
+  skill: { one: 'skill', many: 'skills', cap: LIMITS.librarySkills },
+  map: { one: 'map', many: 'maps', cap: LIMITS.libraryMaps },
+  story: { one: 'story', many: 'stories', cap: LIMITS.libraryStories },
+  status: { one: 'status', many: 'statuses', cap: LIMITS.libraryStatuses },
+  feat: { one: 'feat', many: 'feats', cap: LIMITS.libraryFeats },
+  bundle: { one: 'bundle', many: 'bundles', cap: LIMITS.libraryRewards },
+} as const;
+/**
+ * What a maker says when the library refuses to save its `kind` named `name` (`ui.wrote`'s words): the list is at its
+ * cap (`full`), another entry holds the name (`taken`, from `saveEntry` and rewards.ts `saveBundle`), or no name (`blank`).
+ */
+export const savedWords = (kind: keyof typeof KEPT, name: string): Readonly<Record<'full' | 'taken' | 'blank', string>> => ({
+  full: `The library holds ${KEPT[kind].cap} ${KEPT[kind].many} at most. Delete one in the Workshop first.`,
+  taken: `The library has a ${KEPT[kind].one} named "${name}". Rename this one, or edit that one in the Workshop.`,
+  blank: `Name the ${KEPT[kind].one}.`,
+});
+
 const withList = <L extends LibraryList>(lib: Library, list: L, next: readonly Entry<L>[]): Library => ({ ...lib, [list]: next });
 
 /** The entry of `entries` whose name is `name` in any case, other than the one of id `exceptId`; null when there is none. */

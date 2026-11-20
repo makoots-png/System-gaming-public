@@ -3,9 +3,9 @@
 // The worn block (slot, weight, armor and resist, the bonus while worn) shows for a weapon, armor or accessory; a weapon
 // also has its dice and how it attacks. What an item does when used is its effect rows, ops of the fight.
 import { PERK_LABELS, TIERS, rules } from '../edge/rules.ts';
-import { ITEM_TYPES, LIMITS } from '../core/save.ts';
+import { ITEM_TYPES } from '../core/save.ts';
 import { atLibrary } from '../core/save-step.ts';
-import { saveEntry } from '../core/library.ts';
+import { saveEntry, savedWords } from '../core/library.ts';
 import { oneOf } from '../core/one-of.ts';
 import { REVIVE_TEXT, effectsOf } from '../core/effects.ts';
 import { describeStatus } from '../core/combat/effect-ops.ts';
@@ -189,8 +189,7 @@ export function register(app) {
             if (big) { shell.error(big); return undefined; }
             const out = parseItem(form);
             if (canon(out) !== canon(form)) console.error('The item maker wrote an item its parser reads differently', form, out);
-            const why = library && $('#lf-save').checked ? saveToLibrary(out, initial && initial.id) : null;
-            if (why) { shell.error(why === 'taken' ? `The library has an item named "${out.name}". Rename this one, or edit that one in the Workshop.` : `The library holds ${LIMITS.libraryItems} items at most. Delete one in the Workshop first.`); return undefined; }
+            if (library && $('#lf-save').checked && !ui.wrote('Workshop', saveToLibrary(out, initial && initial.id), savedWords('item', out.name))) return undefined;
             return out;
           },
         };
@@ -200,13 +199,10 @@ export function register(app) {
 
   // ── library ──
   /**
-   * Saves `it` to the library by its id (library.ts `saveEntry`: an edit keeps its entry); answers null when saved, else
-   * why not: the library is full, or another item has that name (the maker says so; it never replaces it).
+   * Saves `it` to the library by its id (library.ts `saveEntry`: an edit keeps its entry); answers the write's Applied
+   * whole: refused when the library is full, or another item has that name (the maker says so; it never replaces it).
    */
-  function saveToLibrary(it, editId) {
-    const r = store.apply('library-save', atLibrary(l => saveEntry(l, 'items', { ...it, id: editId || store.id('i') })));
-    return 'why' in r ? r.why : null;
-  }
+  const saveToLibrary = (it, editId) => store.apply('library-save', atLibrary(l => saveEntry(l, 'items', { ...it, id: editId || store.id('i') })));
 
   app.api.loot = { item };
 

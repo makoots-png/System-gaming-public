@@ -1,6 +1,6 @@
 // bestiary.js (U07): the bestiary screen, the codex and the enemy maker. Seeds, a monster's body from its rank, archetype
 // and kind, and the one monster parser: src/core/registry/monsters.ts; custom and edited monsters live in state.monsters.
-import { NOT_SAVED } from './ui.js';
+import { isRefused } from '../core/save-step.ts';
 import { RANKS, rankIdx } from '../edge/rules.ts';
 import {
   ARCHETYPE_LIST, MONSTER_BOUNDS, MONSTER_KINDS, copiesOf, monsterSheetOf, parseMonster, seedMonsters, statBlock as statBlockOf, xpOf, monsterXp,
@@ -47,10 +47,11 @@ export function register(app) {
 
   
   // ── persistence of custom monsters ──
-  /** Saves monster `m` (a new one under a new id); answers its id, or null when the store refused the write (nothing saved). */
+  /** Saves monster `m` (a new one under a new id); answers its id, or the store's refusal whole for the caller's `ui.wrote`. */
   function saveMonster(m, asNew) {
     const id = !asNew && custom().some(x => x.id === m.id) ? m.id : store.id('m');
-    return store.apply('monster-save', s => monsterSaved(s, { ...parseMonster(m), id })).ok ? id : null;
+    const w = store.apply('monster-save', s => monsterSaved(s, { ...parseMonster(m), id }));
+    return isRefused(w) ? w : { ok: /** @type {const} */ (true), id };
   }
 
   // ── codex (B01): monsters are added as they are fought and beaten ──
@@ -336,9 +337,9 @@ export function register(app) {
             if (!form.name) { shell.error('Give the monster a name.'); $('#enm-name').focus(); return undefined; }
             const out = parseMonster(form);
             if (canon(out) !== canon(form)) console.error('The monster maker wrote a monster its parser reads differently', form, out);
-            const id = saveMonster({ ...out, id: own ? m.id : null }, !own);
-            if (id === null) { shell.error(NOT_SAVED); return undefined; }
-            return id;
+            const w = saveMonster({ ...out, id: own ? m.id : null }, !own);
+            if (!ui.wrote('! Bestiary', w)) return undefined;
+            return w.id;
           },
         };
       },
@@ -381,11 +382,11 @@ export function register(app) {
       gen.querySelector('form').addEventListener('submit', e => {
         e.preventDefault(); const fm = e.target;
         const m = statBlock(oneOf(fm.rank.value, RANKS, 'E'), { archetype: oneOf(fm.archetype.value, ARCHETYPE_LIST, 'brute'), kind: oneOf(fm.kind.value, MONSTER_KINDS, 'normal'), name: fm.name.value.trim() || undefined, type: 'Generated' });
-        const id = saveMonster(m, true), i = infoOf(m); if (id === null) { ui.toast('! Bestiary', NOT_SAVED, { kind: 'warning' }); return; }
+        const w = saveMonster(m, true), i = infoOf(m); if (!ui.wrote('! Bestiary', w)) return;
         f.rank = ''; f.type = ''; f.q = '';
         $q('[data-q]').value = ''; $q('[data-rank]').value = ''; $q('[data-type]').value = '';
         ui.toast('! Bestiary', `${m.name} generated: HP ${ui.fmt(i.hpMax)}, Armor ${i.armor}, Resist ${i.resist}, Speed ${i.speed}.`);
-        shown(id);
+        shown(w.id);
       });
       /** A monster just saved: drawn, brought into view and lit once (motion.ts `flash`). */
       const shown = id => {
@@ -411,9 +412,9 @@ export function register(app) {
           const m = get(b.dataset.edit); if (m) edited(m);
         } else if (b.dataset.dup) {
           const m = get(b.dataset.dup); if (!m) return;
-          const id = saveMonster({ ...m, name: `${m.name} (copy)`.slice(0, 60) }, true);
-          if (id === null) { ui.toast('! Bestiary', NOT_SAVED, { kind: 'warning' }); return; }
-          shown(id);
+          const w = saveMonster({ ...m, name: `${m.name} (copy)`.slice(0, 60) }, true);
+          if (!ui.wrote('! Bestiary', w)) return;
+          shown(w.id);
           ui.toast('! Bestiary', `Duplicated ${m.name}.`);
         } else if (b.dataset.merge) {
           const m = get(b.dataset.merge); if (!m) return;

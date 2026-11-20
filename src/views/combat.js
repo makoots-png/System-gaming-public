@@ -31,10 +31,9 @@ import { weighable } from '../core/combat/odds.ts';
 import { onTurn } from '../core/protocol.ts';
 import { parseSheetKey } from '../core/ids.ts';
 import { dropDealt, encounterAwards, planEncounter, pays, settleEncounter } from '../core/gates/pay.ts';
-import { isRefused, refuse } from '../core/save-step.ts';
+import { TOLD, WROTE, isRefused, refuse } from '../core/save-step.ts';
 import { appliedOnce, wasApplied } from '../core/applied.ts';
 import { lifeWord, rowLifeTakes } from '../core/combat/row-life.ts';
-import { READ_ONLY } from '../core/store-life.ts';
 import { ARCHETYPE_LIST, MONSTER_BOUNDS, MONSTER_KINDS, copiesOf, lootOf, monsterXp, statBlock } from '../core/registry/monsters.ts';
 import { itemAbilityId, itemOfAbility } from '../core/registry/abilities.ts';
 import { newRewards } from '../core/rewards.ts';
@@ -85,8 +84,13 @@ export function register(app) {
   const picks = new Map();
 
   // ── the one writer of the fight ──
-  /** A tab that may not change the save (src/core/store-life.ts) changes no fight either. */
+  /** What a command the store refused did: nothing (its refusal was told by its kind, `ui.wrote`). */
   const NOT_WRITTEN = /** @type {readonly Effect[]} */ ([{ type: 'refused', reason: 'notNow' }]);
+  /**
+   * What a refused fight write says beside a read-only tab's (`ui.wrote`): an item this phone's hunter no longer holds,
+   * or a shadow risen for a player's hunter with no room to reach it (fight-save.ts `fought`). Any other kind is a bug.
+   */
+  const WRITE_WORDS = { 'no-item': REFUSAL_WORDS.notNow, 'no-room': REFUSAL_WORDS.notNow };
   /**
    * Sends one command to the reducer and writes what it answers in one `store.apply` (src/core/combat/fight-save.ts
    * `fought`): the fight, `links` (its gate, marked as fought with it, and the bestiary entry of new monster rows), each
@@ -126,22 +130,30 @@ export function register(app) {
     const ended = r.fight && r.fight.phase === 'ended' && r.effects.some(fx => fx.type === 'ended');
     const rankOf = key => { const x = remoteList().find(sh => sh.key === key); return x ? x.data.rank : null; };
     const noted = ended ? remoteFacts(r.fight, rankOf, fightGateName(store.get())).map(n => S.event('noted', { to: [n.to], facts: n.facts })).filter(Boolean) : [];
-    const wrote = store.apply(`combat-${cmds.map(x => x.type).join('+')}`, s => fought(s, r, { links, room: S.room(), totals, stamp: { at: new Date().toISOString(), cap: c.rules.logCap }, also, spent, risen, noted }, c.rules));
-    // a write the store refused is told by its kind: a read-only tab's as the store's words, any other as not now
-    const effects = wrote.ok || refused(r.effects) ? r.effects : NOT_WRITTEN, unsaved = 'why' in wrote && wrote.why === READ_ONLY && !refused(r.effects);
-    if (wrote.ok && (totals.length || ev || risen || noted.length)) S.flush();
+    // a command the fight refused writes nothing, and its reason is told below; a write the store refused is told by its kind
+    const asked = !refused(r.effects), wrote = asked && ui.wrote(ui.FIGHT_TAG, store.apply(`combat-${cmds.map(x => x.type).join('+')}`, s => fought(s, r, { links, room: S.room(), totals, stamp: { at: new Date().toISOString(), cap: c.rules.logCap }, also, spent, risen, noted }, c.rules)), WRITE_WORDS);
+    const effects = !asked || wrote ? r.effects : NOT_WRITTEN;
+    if (wrote && (totals.length || ev || risen || noted.length)) S.flush();
     /** @template {Effect['type']} T @param {T} type @returns {Extract<Effect, { type: T }>[]} */
     const of = type => effects.filter(/** @returns {fx is Extract<Effect, { type: T }>} */ fx => fx.type === type);
     for (const fx of of('turnStarted')) app.emit('combat:turn', { hunterId: fx.hunterId });
     for (const fx of of('defeated')) { const b = rowOf(fight(), fx.id); if (b) app.emit('combat:defeated', { body: b }); }
     for (const fx of of('staggered')) { const b = rowOf(fight(), fx.id); if (b) toast(`${b.name} is staggered and loses the next turn.`, 'warning'); }
-    for (const fx of of('refused')) toast(unsaved ? ui.NOT_SAVED : REFUSAL_WORDS[fx.reason], 'warning');
+    for (const fx of asked ? [] : of('refused')) toast(REFUSAL_WORDS[fx.reason], 'warning');
     if (of('burst').length) lastBurst = { n: (lastBurst ? lastBurst.n : 0) + 1, ids: of('burst').map(x => x.id) };
     showEffects(effects, hpWas, readyWas);
     if (of('ended').length && !cmds.some(x => x.type === 'end')) toast('The fight is over. End fight shows the summary.');
     return effects;
   }
   const refused = fx => fx.some(x => x.type === 'refused');
+  /**
+   * What a member of `app.api.combat` answers for the effects of what it sent: written, or refused with the refusal told
+   * already in the fight's news (`command`), so its caller's `ui.wrote` says nothing more.
+   * @returns {import('../core/save-step.ts').Applied}
+   */
+  const answered = fx => (refused(fx) ? refuse(TOLD) : WROTE);
+  /** A member's answer for a row the fight does not hold: the screen asked for a row that is not there, a bug `ui.wrote` reports. */
+  const NO_ROW = refuse('no-row');
   /**
    * The dice the fight waits for (fight.ts `owed`), the first each time: a per-round op's or a sickness's dice (`settle`),
    * a broken channel going off at once at half its charge (design 4.1). The dice are this phone's, as for any use. Each
@@ -393,12 +405,12 @@ export function register(app) {
   /** @param {Body} r @param {{ hp?: number; mana?: number; fatigue?: number }} d */
   const adjust = (r, d) => !refused(send({ type: 'adjust', id: r.id, ...d }));
   /** The fight's `life` command on row `cid` (row-life.ts): Revive, Stabilize or a death save. False when it was refused. */
-  const lifeOf = (cid, event) => { const r = rowOf(fight(), cid); return !!r && !refused(send({ type: 'life', id: r.id, event })); };
+  const lifeOf = (cid, event) => { const r = rowOf(fight(), cid); return r ? answered(send({ type: 'life', id: r.id, event })) : NO_ROW; };
   /**
    * Revive of a row (its card's, and the GM board's for a player's hunter this fight holds): the fight's `life` command,
    * which stands only the dead up, at the life table's revive HP. The fight holds every row's life, a player's hunter's
    * too, so the sheet hears it from the write-back: in the same write for this phone's hunter (`vitals`), through the
-   * room's `vitals` message for a player's. False when the row's life refused it or nothing was written.
+   * room's `vitals` message for a player's. Answers as `lifeOf`.
    * @param {Body} r
    */
   const revive = r => lifeOf(r.id, { type: 'revive' });
@@ -553,18 +565,18 @@ export function register(app) {
 
   A().combat = {
     status: (cid, c) => {
-      const r = rowOf(fight(), cid); if (!r) return false;
-      return !refused(send({ type: 'status', id: r.id, ...(c.remove ? { remove: /** @type {any} */ (c.remove) } : {}),
+      const r = rowOf(fight(), cid); if (!r) return NO_ROW;
+      return answered(send({ type: 'status', id: r.id, ...(c.remove ? { remove: /** @type {any} */ (c.remove) } : {}),
         ...(c.add ? { add: statusGrant(c.add.key, /** @type {any} */ (c.add.def), c.add.rounds ?? null, c.add.tier, rules()) } : {}) }));
     },
     // a grant's parts this fight holds (grant.ts `Granted.fight`) on their rows, written with the grant's step: all or none
-    held: (parts, also) => !refused(sendAll(heldCommands(parts, rules()), null, also)),
-    adjust: (cid, d, also = null) => { const r = rowOf(fight(), cid); if (!r) return false; return !refused(send({ type: 'adjust', id: r.id, ...(d.hp ? { hp: int(d.hp) } : {}), ...(d.mana ? { mana: int(d.mana) } : {}), ...(d.fatigue ? { fatigue: int(d.fatigue) } : {}) }, null, also)); },
-    revive: cid => { const r = rowOf(fight(), cid); return !!r && revive(r); },
+    held: (parts, also) => answered(sendAll(heldCommands(parts, rules()), null, also)),
+    adjust: (cid, d, also = null) => { const r = rowOf(fight(), cid); if (!r) return NO_ROW; return answered(send({ type: 'adjust', id: r.id, ...(d.hp ? { hp: int(d.hp) } : {}), ...(d.mana ? { mana: int(d.mana) } : {}), ...(d.fatigue ? { fatigue: int(d.fatigue) } : {}) }, null, also)); },
+    revive: cid => { const r = rowOf(fight(), cid); return r ? revive(r) : NO_ROW; },
     life: lifeOf,
-    spend: (cid, mana, also) => { const r = rowOf(fight(), cid); return !!r && !refused(send({ type: 'adjust', id: r.id, mana: -Math.abs(int(mana)), pay: true }, null, also)); },
+    spend: (cid, mana, also) => { const r = rowOf(fight(), cid); return r ? answered(send({ type: 'adjust', id: r.id, mana: -Math.abs(int(mana)), pay: true }, null, also)) : NO_ROW; },
     // an extraction's outcome on the corpse's row (the fight's `extract`), and a risen shadow's join in the same write
-    extracted: (cid, by, outcome, rose) => !refused(send({ type: 'extract', id: combatantId(cid), by: combatantId(by), outcome }, null,
+    extracted: (cid, by, outcome, rose) => answered(send({ type: 'extract', id: combatantId(cid), by: combatantId(by), outcome }, null,
       rose && rose.kind === 'local' ? rose.step : null, rose && rose.kind === 'remote' ? rose.event : null)),
     add: list => add(list), isActive: () => running(fight()),
     startFlow, showParty, okToReplace: async () => !otherGMLive() || confirmReplace(),
@@ -1051,7 +1063,7 @@ export function register(app) {
         const inp = b.closest('.cmb-line') && b.closest('.cmb-line').querySelector('[data-amt]');
         applyAmount(r, inp ? inp.value : amt(), b.hasAttribute('data-heal'), null); return;
       }
-      if (b.dataset.dsave) { A().hunter.deathSave(b.dataset.dsave); return; }
+      if (b.dataset.dsave) { ui.wrote('Death save', A().hunter.deathSave(b.dataset.dsave)); return; }
       if (b.dataset.q) { adjust(r, { hp: int(b.dataset.q) }); return; }
       if (b.dataset.mana) { const n = int((A().hunter.parseAmount(amt()) || { n: 1 }).n, 1) || 1; adjust(r, { mana: int(b.dataset.mana) * Math.abs(n) }); return; }
       if (b.dataset.rc) { send({ type: 'status', id: r.id, remove: /** @type {any} */ (b.dataset.rc) }); return; }

@@ -87,7 +87,7 @@ test('a monster the GM made with a starting status shows it on its card when the
   const page = (await device('gm')).page;
   await onboardGM(page);
   await chooseList(page);
-  const id = await page.evaluate(() => hunterApp.api.bestiary.save({ name: 'Hasted Hound', rank: 'D', archetype: 'skirmisher', kind: 'normal', statuses: [{ key: 'hasted', rounds: null }] }, true));
+  const id = await page.evaluate(() => hunterApp.api.bestiary.save({ name: 'Hasted Hound', rank: 'D', archetype: 'skirmisher', kind: 'normal', statuses: [{ key: 'hasted', rounds: null }] }, true).id);
   await go(page, 'combat');
   await combat(page).locator('[data-msel]').selectOption(id);
   await tapCombat(page, '[data-addm]');

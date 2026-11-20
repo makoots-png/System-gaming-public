@@ -30,7 +30,7 @@ import { dropStatus, putStatus } from './conditions.ts';
 import type { StatusIn } from './conditions.ts';
 import { addGold, putItem, stackOf } from './inventory.ts';
 import { addXp, atLevel, gainXp, grantPoints } from './progress.ts';
-import type { ChainEffect, ChainEvent } from './job-chain.ts';
+import type { ChainEffect, ChainEvent, ChainRefusal } from './job-chain.ts';
 import { chained, completeQuest, failQuest, rollover } from './quests.ts';
 import type { Completed, QuestWhy, Rollover } from './quests.ts';
 import { giveBoons, giveTitle, holdsTitle, setJob, titleNamed } from './record.ts';
@@ -199,13 +199,16 @@ export type Chained = { save: Save; effects: ChainEffect[]; done: StepDone[] };
 /**
  * Hunter `hid`'s Job Change chain told the event `make` builds with the save's next ids, the step quests it asks to
  * complete completed (`stepsReached`, a level step its level already reaches), and its log lines, in one step. Refused
- * when the hunter is not there (`no-hunter`), or when the chain refuses the event or it changes nothing (`refused`).
+ * when the hunter is not there (`no-hunter`), by the chain's own reason when it refuses the event (`CHAIN_WORDS` says
+ * it), or when the event changes nothing (`unchanged`).
  */
-export function chainStep(save: Save, hid: string, make: (next: <P extends string>(prefix: P) => IdOf<P>) => ChainEvent, day: Day): Chained | Refused<'no-hunter' | 'refused'> {
+export function chainStep(save: Save, hid: string, make: (next: <P extends string>(prefix: P) => IdOf<P>) => ChainEvent, day: Day): Chained | Refused<'no-hunter' | 'unchanged' | ChainRefusal> {
   const at = save.hunters.findIndex(h => h.id === hid);
   if (at < 0) return refuse('no-hunter');
   const ids = idsFrom(save.seq), t = chained(save.hunters[at]!, make(ids.next));
-  if (!t.effects.length || t.effects.some(fx => fx.type === 'refused')) return refuse('refused');
+  const no = t.effects.find(fx => fx.type === 'refused');
+  if (no) return refuse(no.reason);
+  if (!t.effects.length) return refuse('unchanged');
   const r = stepsReached(t.hunter, t.effects, day, ids.next);
   const next = told({ ...save, seq: ids.seq(), hunters: save.hunters.map((x, i) => (i === at ? r.hunter : x)) }, { at: day.at, cap: day.R.logCap }, ...t.said, ...r.said);
   return { save: next, effects: t.effects, done: r.done };

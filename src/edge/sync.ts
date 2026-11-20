@@ -17,6 +17,8 @@
 //   invited         the room of the invite link this tab was opened with, until it is joined, dropped, or spent by
 //                   the link being live in its room (`spendInvite`)
 //   running         effects are being carried out (events raised meanwhile wait in `queue`)
+//   stamped         the time in the id of the last event this page made (`stampTime` in src/core/protocol.ts), so the
+//                   next id is later and two ids of this page never meet
 // and these containers, each named where it is made: `queue` (events raised while effects run), `inflight` (open
 // requests by gen), `timers` (one per name), `peeked` (the Room view's 30 s code check cache), `publishers`,
 // `publishing` (each room doc's publish machine on the GM's phone, src/core/sync/publish.ts).
@@ -40,7 +42,7 @@ import type { Bus } from './bus.ts';
 import type { Rules } from '../core/rules.ts';
 import type { Seat } from '../core/role.ts';
 import type { AppApi, RemoteSheet, SyncApi } from '../core/api.ts';
-import { DOCS, DOC_MAX, REMOVED_MS, SHEET_MAX, newEvent, parseRoomCode, parseRoomState } from '../core/protocol.ts';
+import { DOCS, DOC_MAX, REMOVED_MS, SHEET_MAX, newEvent, parseRoomCode, parseRoomState, stampTime } from '../core/protocol.ts';
 import type { DeviceId, DocName, DocOf, EventBody, EventType, RoomCode, RoomDocs, RoomEvent, RoomState, ServedSheet, SheetKey, Stored } from '../core/protocol.ts';
 import { deviceOf, hunterIdOf, parseSheetKey, sheetKeyOf } from '../core/ids.ts';
 import type { HunterId } from '../core/ids.ts';
@@ -744,8 +746,15 @@ export function register(app: SyncHost): void {
   }));
 
   // ── what a GM sends: events, docs, removals ──
-  /** A room event with its id (newEvent in src/core/protocol.ts), for `post`. */
-  const event = <K extends EventType>(type: K, body: EventBody<K>): RoomEvent | null => newEvent(type, body, { device: deviceId(), now: Date.now(), rand: Math.random() });
+  let stamped = 0;
+  /**
+   * A room event with its id (newEvent in src/core/protocol.ts), for `post`. The id's time is later than that of the
+   * last id this page made (`stamped`), so two of this page's ids differ whatever the clock and `Math.random` answer.
+   */
+  const event = <K extends EventType>(type: K, body: EventBody<K>): RoomEvent | null => {
+    stamped = stampTime(stamped, Date.now());
+    return newEvent(type, body, { device: deviceId(), now: stamped, rand: Math.random() });
+  };
   /**
    * Puts a room doc. The GM's phone then shows the doc as `DOCS` reads it, as every other phone will. `tooBig`: longer
    * than `DOC_MAX`, counted here before it is sent or by the server's 413.

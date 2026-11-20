@@ -2,13 +2,12 @@
 // statuses live in the save's `library.statuses`: a built-in key there is an override, any other key a status of the GM's
 // own. The Workshop (workshop.js) lists them.
 // Exposes app.api.forge.status(opts): `{ mode: 'apply', ... }` in a fight, `{ mode: 'library', ... }` in the Workshop.
-import { css, esc } from './ui.js';
+import { css, esc, wrote } from './ui.js';
 import { RANKS } from '../core/rules.ts';
 import { oneOf } from '../core/one-of.ts';
 import { gmSource } from '../core/effects.ts';
-import { LIMITS } from '../core/save.ts';
 import { atLibrary } from '../core/save-step.ts';
-import { saveStatus } from '../core/library.ts';
+import { saveStatus, savedWords } from '../core/library.ts';
 import { defWorth } from '../core/registry/worth.ts';
 import { tooLarge } from '../core/size.ts';
 
@@ -28,8 +27,8 @@ const knownKey = (conds, name) => {
   return Object.keys(conds).find(k => k === n || String(conds[k].label).toLowerCase() === n) || null;
 };
 
-/** Saves `def` under `key` in the library; answers whether it was kept (refused when the library is full). */
-const saveToLibrary = (key, def) => store().apply('forge-status', atLibrary(l => saveStatus(l, key, def))).ok;
+/** Saves `def` under `key` in the library; answers the write's Applied whole (refused `full` at the cap). */
+const saveToLibrary = (key, def) => store().apply('forge-status', atLibrary(l => saveStatus(l, key, def)));
 
 // ── the dialog ──
 // Two modes. `apply` (a combat card, a party card): Rounds and Strength on top, then the existing statuses, where one tap
@@ -118,7 +117,7 @@ function openForge(opts) {
           if (!def) { shell.error('This status cannot be saved.'); return undefined; }
           const save = apply ? q('[data-save]').checked : true;
           const newKey = editKey || E.slug(form.label, library());
-          if (save && !saveToLibrary(newKey, def)) { shell.error(`The library holds ${LIMITS.libraryStatuses} statuses at most. Delete one in the Workshop first.`); return undefined; }
+          if (save && !wrote('Workshop', saveToLibrary(newKey, def), savedWords('status', def.label))) return undefined;
           return withSource({ key: newKey, rounds: apply ? roundsVal() : null, def });
         },
       };

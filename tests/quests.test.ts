@@ -324,7 +324,7 @@ describe('a Job Change chain event and the steps it completes, in one step (gran
 
   test('a second chain is refused and writes nothing; a hunter not here is refused', () => {
     const one = ok(chainStep(saveAt(1), 'h1', next => ({ type: 'issued', id: next('jc'), job: 'Assassin', questId: next('q'), level: 1, at: AT }), DAY)).save;
-    expect(chainStep(one, 'h1', next => ({ type: 'issued', id: next('jc'), job: 'Mage', questId: next('q'), level: 1, at: AT }), DAY)).toEqual({ ok: false, why: 'refused' });
+    expect(chainStep(one, 'h1', next => ({ type: 'issued', id: next('jc'), job: 'Mage', questId: next('q'), level: 1, at: AT }), DAY)).toEqual({ ok: false, why: 'running' });
     expect(chainStep(one, 'h9', () => ({ type: 'abandoned', by: 'gm' }), DAY)).toEqual({ ok: false, why: 'no-hunter' });
   });
 });

@@ -6,11 +6,10 @@
 // at a time, and a chapter does not close while its reward editor would drop a row (`mayClose`). Save runs `parseStory` and writes what it gives back (`saveEntry`); the maker refuses first what the parser
 // would drop (a chapter without a window title, a quest without a title) and a chapter too large to send. No rule of the
 // game is here.
-import { esc, field } from './ui.js';
+import { esc, field, wrote } from './ui.js';
 import { CHAPTERS_MAX, CHAPTER_MAX, STORY_BOUNDS, chapterSize, parseStory, storyLines } from '../core/story/story.ts';
 import { UNFINISHED_ROWS, WORDS_BOUNDS, newRewards } from '../core/rewards.ts';
-import { LIMITS } from '../core/save.ts';
-import { saveEntry } from '../core/library.ts';
+import { saveEntry, savedWords } from '../core/library.ts';
 import { atLibrary } from '../core/save-step.ts';
 
 const FOR = [['table', 'The table'], ['hunters', 'Chosen hunters']];
@@ -159,8 +158,7 @@ export function storyMaker(app, story) {
           const why = quest ? quest.check() : '';
           if (why) { shell.error(`Chapter ${open + 1}'s quest: ${why}`); return undefined; }
           const t = /** @type {import('../core/story/story.ts').StoryTemplate} */ (parseStory(r)), id = story ? story.id : store.id('st');
-          const done = store.apply('library-story', atLibrary(l => saveEntry(l, 'stories', { ...t, id })));
-          if (!done.ok) { shell.error('why' in done && done.why === 'taken' ? `Another story is named ${t.name}.` : `You have ${LIMITS.libraryStories} stories, the most the Workshop holds.`); return undefined; }
+          if (!wrote('Workshop', store.apply('library-story', atLibrary(l => saveEntry(l, 'stories', { ...t, id }))), savedWords('story', t.name))) return undefined;
           return id;
         },
       };

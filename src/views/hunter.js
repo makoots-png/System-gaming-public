@@ -8,8 +8,7 @@ import { fightHold, heldLines } from '../core/combat/fight-save.ts';
 import { combatantId, hunterId } from '../core/combat/ability-types.ts';
 import { checksOf, fitted, hunterSheet, setAdjust, setMaximum } from '../core/hunter/sheet.ts';
 import { ALLOCATION_WORDS, allocated, available, confirm, hasPending, lower, plusPoint, raise, setPoints, setStat } from '../core/hunter/progress.ts';
-import { atHunter, atLibrary, both, isRefused, orKeep, refuse } from '../core/save-step.ts';
-import { READ_ONLY } from '../core/store-life.ts';
+import { TOLD, atHunter, atLibrary, both, isRefused, orKeep, refuse } from '../core/save-step.ts';
 import { dropBoon, giveTitle, nameActiveTitle, reevaluate as reevaluated, removeTitle, rename, setJob, setRank, toggleTitle, writeTitle, cleanName } from '../core/hunter/record.ts';
 import { grant, levelEdit, sheetEdit } from '../core/hunter/grant.ts';
 import { setGold } from '../core/hunter/inventory.ts';
@@ -19,6 +18,7 @@ import { removeBundle, saveBundle } from '../core/rewards.ts';
 import { FELL_WORDS, SAVES_TO_END, WAYS_BACK, can, changeFatigue, changeMana, fatigueNews, hpOf, lifeNews, manaOf, setFatigue, setMana } from '../core/hunter/vitals.ts';
 import { lifeWord } from '../core/combat/row-life.ts';
 import { chipDef, chipsOf, isStateChip } from '../core/hunter/chips.ts';
+import { PUT_WORDS } from '../core/hunter/conditions.ts';
 import { oneOf } from '../core/one-of.ts';
 import { gmSource } from '../core/effects.ts';
 import { BUNDLE_NAME, newRewards, parseRewards, parseWords } from '../core/rewards.ts';
@@ -147,7 +147,7 @@ export function register(app) {
     /** @type {T | null} */
     let out = null;
     const write = s => { const x = step(s); if (isRefused(x)) return x; out = x; return x.save; };
-    if (parts.length) return app.api.combat.held(parts, write) ? out : refuse('fight');
+    if (parts.length) { const w = app.api.combat.held(parts, write); return isRefused(w) ? w : out; }
     const w = store.apply(why, write);
     return isRefused(w) ? w : out;
   }
@@ -197,41 +197,43 @@ export function register(app) {
     const S = app.api.sync;
     return fightHold(store.get().fight, who, { seat: app.seat(), doc: S.doc('fight'), key: 'hid' in who ? S.myKey(hunterId(who.hid)) : null });
   };
-  const gmHolds = () => { ui.toast('System', 'During the GM\'s fight, the GM changes your HP, mana, fatigue and statuses.', { kind: 'warning' }); return false; };
-  /** `write`, a step on the hunter, on the sheet in one write; false when there is no such hunter or `write` refuses. */
-  const toSheet = (hid, why, write) => onHunter(hid, why, write).ok;
+  const gmHolds = () => { ui.toast('System', 'During the GM\'s fight, the GM changes your HP, mana, fatigue and statuses.', { kind: 'warning' }); return refuse(TOLD); };
   /**
    * The one writer of a hunter's HP, mana, fatigue, life and statuses, beside the fight's own write-back (fight-save.ts `fought`):
    * `onRow(cid, sheet, onSheet)` in this phone's fight, `onTable(sheet)` in the GM's fight (refused with a toast unless
    * given), else `onSheet(h)` in one update. `sheet()` writes `onSheet` for what the row does not hold (a life event), and
    * `onRow` may carry `onSheet` as a fight command's `also` instead. A sheet write of them sits inside a call of this
-   * (tests/lint.test.ts).
+   * (tests/lint.test.ts). Answers the write's Applied whole, for the caller's `ui.wrote`: the store's, the fight's
+   * (`TOLD`: its news said why), or `TOLD` from `gmHolds`.
+   * @typedef {import('../core/save-step.ts').Applied} Applied
    * @param {string} hid @param {string} why @param {(h: any) => unknown} onSheet
-   * @param {(cid: string, sheet: () => boolean, onSheet: (h: any) => unknown) => boolean} onRow @param {(sheet: () => boolean) => boolean} [onTable]
-   * @returns {boolean}
+   * @param {(cid: string, sheet: () => Applied, onSheet: (h: any) => unknown) => Applied} onRow @param {(sheet: () => Applied) => Applied} [onTable]
+   * @returns {Applied}
    */
   function vitalsEdit(hid, why, onSheet, onRow, onTable = gmHolds) {
-    const at = fightOf({ hid }), sheet = () => toSheet(hid, why, onSheet);
-    return !at ? sheet() : at.at === 'row' ? onRow(at.cid, sheet, onSheet) : onTable(sheet);
+    const at = fightOf({ hid }), sheet = () => onHunter(hid, why, onSheet);
+    if (!at) return sheet();
+    return at.at === 'row' ? onRow(at.cid, sheet, onSheet) : onTable(sheet);
   }
   /** A hand edit of HP, mana or fatigue: the fight's `adjust` on the row, refused in the GM's fight, else `onSheet(h)`. */
   const handEdit = (hid, delta, onSheet, why) => vitalsEdit(hid, why, orKeep(onSheet), cid => app.api.combat.adjust(cid, delta));
   /**
    * `write`, a change of hunter `hid`'s HP or life, and what it did to the life, worked out from the life read before and
-   * read again after (src/core/hunter/vitals.ts `lifeNews`): null when it wrote nothing, `news` null when the state stayed.
+   * read again after (src/core/hunter/vitals.ts `lifeNews`): the write's refusal whole, else `news`, null when the state stayed.
    */
   function lifeWrite(hid, write) {
-    const was = store.hunter(hid)?.life; if (!was || !write()) return null;
+    const was = store.hunter(hid)?.life; if (!was) return refuse('no-hunter');
+    const w = write(); if (isRefused(w)) return w;
     const now = store.hunter(hid)?.life;
-    return { news: now ? lifeNews(was, now) : null };
+    return { ok: /** @type {const} */ (true), news: now ? lifeNews(was, now) : null };
   }
   /** The toast of a fall: HP reached 0. */
   const fellToast = w => { if (w && w.news && w.news.kind === 'fell') ui.toast('Warning', FELL_WORDS, { kind: 'warning' }); };
-  const restRefused = () => { ui.toast('System', 'You cannot rest during a fight.', { kind: 'warning' }); return false; };
-  /** A status put on a row by hand (Add status): the def the status carries, else the rules' under its key. */
+  const restRefused = () => { ui.toast('System', 'You cannot rest during a fight.', { kind: 'warning' }); return refuse(TOLD); };
+  /** A status put on a row by hand (Add status): the def the status carries, else the rules' under its key; refused as the sheet's `putStatus` refuses. */
   const statusToRow = (cid, s) => {
     const def = s.def || rules().conditions[s.key];
-    return !!def && !isStateChip(s.key) && app.api.combat.status(cid, { add: { key: s.key, def, rounds: s.rounds ?? null, tier: s.source.tier } });
+    return isStateChip(s.key) ? refuse('state-chip') : !def ? refuse('no-def') : app.api.combat.status(cid, { add: { key: s.key, def, rounds: s.rounds ?? null, tier: s.source.tier } });
   };
 
   // ── app.api.hunter (§B5) ──
@@ -305,13 +307,14 @@ export function register(app) {
       return vitalsEdit(hid, `life-${event.type}`, h => lifeEvent(h, event), cid => app.api.combat.life(cid, event),
         () => (event.type === 'deathSave' ? saveToTable(hid, event.roll) : gmHolds()));
     },
-    deathSave(hid) { const h = store.hunter(hid); return !!h && deathSave(h); },
+    deathSave(hid) { const h = store.hunter(hid); return h ? deathSave(h) : refuse('no-hunter'); },
     /** HP and mana to their maxima: in a fight the row's (`combat.refill`), refused in the GM's fight. */
     fightOf,
     // the price is checked where the mana lives: the row refuses a paid adjust it cannot cover, the sheet's `spend` the same
     spendMana(hid, n, also = null) {
       n = Math.max(0, int(n));
-      if (!n) return !!also && toSheet(hid, 'mana', also);
+      if (!n && !also) return refuse('unchanged');
+      if (!n) return onHunter(hid, 'mana', also);
       return vitalsEdit(hid, 'mana', also ? both(x => sheetEdit(x, { type: 'spend', mana: n }, rules()), also) : x => sheetEdit(x, { type: 'spend', mana: n }, rules()),
         cid => app.api.combat.spend(cid, n, also ? atHunter(hid, also) : null));
     },
@@ -327,9 +330,9 @@ export function register(app) {
   app.api.bundles = {
     list: () => store.get().library.rewards.map(b => ({ ...b, rewards: parseRewards(b.rewards) })),
     save(name, rewards, id = null, window = null) {
-      const rw = parseRewards(rewards); if (!rw) return { ok: false, why: 'blank' };
+      const rw = parseRewards(rewards); if (!rw) return refuse('blank');
       const bid = id || store.id('rb'), r = store.apply('bundle-save', atLibrary(l => saveBundle(l, bid, name, rw, LIMITS.libraryRewards, window ? parseWords(window) : null)));
-      return 'why' in r ? { ok: false, why: r.why === 'taken' || r.why === 'full' || r.why === READ_ONLY ? r.why : 'blank' } : { ok: true, id: bid };
+      return isRefused(r) ? r : { ok: /** @type {const} */ (true), id: bid };
     },
     remove(id) { return ui.wrote('Workshop', store.apply('bundle-remove', atLibrary(l => removeBundle(l, id)))); },
   };
@@ -438,7 +441,7 @@ export function register(app) {
         const inp = el.querySelector('[data-hpamt]'), msg = el.querySelector('[data-hpmsg]'), a = api.parseAmount(inp.value), h = store.active();
         if (!a) { msg.textContent = api.amountMsg(inp.value); return; }
         const hl = heal || a.heal, before = sheetOf(h).hp;
-        const w = lifeWrite(h.id, () => (hl ? api.heal(h.id, a.n) : api.damage(h.id, a.n))); if (!w) return;
+        const w = lifeWrite(h.id, () => (hl ? api.heal(h.id, a.n) : api.damage(h.id, a.n))); if (!ui.wrote('System', w)) return;
         const hp = sheetOf(store.hunter(h.id)).hp;
         msg.textContent = `${hl ? 'Healed' : 'Took'} ${Math.abs(hp - before)} (asked ${a.n}). HP ${hp}.`;
         fellToast(w);
@@ -456,7 +459,7 @@ export function register(app) {
         if ('emblem' in d) return app.api.identity.edit(h.id);
         if ('idedit' in d || 'iddone' in d) return showIdForm(el, 'idedit' in d);
         if (d.rest) {
-          if (!api.rest(d.rest, h.id)) return;
+          if (!ui.wrote('System', api.rest(d.rest, h.id))) return;
           return ui.toast('System', d.rest === 'long' ? 'Long rest complete. Fully restored.' : 'Short rest complete.');
         }
         if (d.hp || d.mana || d.ft) {
@@ -468,7 +471,7 @@ export function register(app) {
             if (key === 'mana') return { ...x, ...(val === 'full' ? setMana(x, m.manaMax, m) : changeMana(x, n, m)) };
             return { ...x, ...(val === 'full' ? setFatigue(x, m.fatigueMax, m, R) : val === 'rest' ? setFatigue(x, 0, m, R) : changeFatigue(x, n, m, R)) };
           }, key));
-          if (!w) return;
+          if (!ui.wrote('System', w)) return;
           fellToast(w);
           const now = store.hunter(h.id), crossed = key === 'ft' && now ? fatigueNews(tired, now, maxima(now), R) : null;
           if (crossed) ui.toast('Warning', crossed === 'collapsed' ? 'You have collapsed from exhaustion.' : 'Fatigue is critically high.', { kind: 'warning' });
@@ -483,12 +486,12 @@ export function register(app) {
         }
         if ('condAdd' in d) {
           const key = el.querySelector('[data-cond-sel]').value;
-          api.addCondition(h.id, { key, def: rules().conditions[key], rounds: null, source: gmSource(h.rank) }); return;
+          ui.wrote('System', api.addCondition(h.id, { key, def: rules().conditions[key], rounds: null, source: gmSource(h.rank) }), PUT_WORDS); return;
         }
-        if (d.condDel) { api.removeCondition(h.id, d.condDel); return; }
-        if ('dsave' in d) return deathSave(h);
-        if ('stabilize' in d && app.isGM()) return api.life(h.id, { type: 'stabilize' });
-        if ('revive' in d && app.isGM() && api.life(h.id, { type: 'revive' })) return ui.toast('System', `${h.name} is revived at 1 HP.`);
+        if (d.condDel) { ui.wrote('System', api.removeCondition(h.id, d.condDel)); return; }
+        if ('dsave' in d) { ui.wrote('Death save', deathSave(h)); return; }
+        if ('stabilize' in d && app.isGM()) { ui.wrote('System', api.life(h.id, { type: 'stabilize' })); return; }
+        if ('revive' in d && app.isGM() && ui.wrote('System', api.life(h.id, { type: 'revive' }))) return ui.toast('System', `${h.name} is revived at 1 HP.`);
       });
     },
     update,
@@ -506,32 +509,34 @@ export function register(app) {
   let shownHunter = null, shownLevel = null; // the hunter and level the sheet showed last: a change of hunter is drawn at once, a change of level is a level-up
   /**
    * The death save `roll` of hunter `hid` posted to the GM's fight (protocol.ts `deathSave`), from this phone, the
-   * hunter's own: whether the outbox took it.
+   * hunter's own: what the outbox answered, whole.
    */
   function saveToTable(hid, roll) {
-    const S = app.api.sync, posted = S.post(S.event('deathSave', { by: S.myKey(hunterId(hid)), roll }));
-    return posted.ok;
+    const S = app.api.sync;
+    return S.post(S.event('deathSave', { by: S.myKey(hunterId(hid)), roll }));
   }
   /**
-   * One death save: the d20, the life event and what it did. Answers whether it was rolled (the sheet, the HUD, a GM's
-   * card). In the GM's fight the roll goes to the GM's row, and what it did is told when the row's life comes back (room-events.ts `vitals`).
+   * One death save: the d20, the life event and what it did, told on a write. Answers the write's Applied whole, for
+   * the caller's `ui.wrote` (the sheet, the HUD, a GM's card); refused `cannot` when the hunter's life takes no save. In
+   * the GM's fight the roll goes to the GM's row, and what it did is told when the row's life comes back (room-events.ts `vitals`).
    */
   function deathSave(h) {
-    if (!can(h.life, 'deathSave')) return false;
+    if (!can(h.life, 'deathSave')) return refuse('cannot');
     const r = app.api.dice.roll('1d20', { label: 'Death save', hid: h.id }), nat = r.natural ?? r.total;
     const at = fightOf({ hid: h.id });
     if (at && at.at === 'gm') {
-      if (!api.life(h.id, { type: 'deathSave', roll: nat })) return false;
+      const posted = api.life(h.id, { type: 'deathSave', roll: nat }); if (isRefused(posted)) return posted;
       ui.toast('Death save', `You rolled ${nat}. It counts when the GM's fight takes it.`, { kind: 'info' });
-      return true;
+      return posted;
     }
-    const w = lifeWrite(h.id, () => api.life(h.id, { type: 'deathSave', roll: nat })), news = w && w.news;
-    if (!news) return false;
+    const w = lifeWrite(h.id, () => api.life(h.id, { type: 'deathSave', roll: nat }));
+    if (isRefused(w) || !w.news) return w;
+    const news = w.news;
     // the words follow what the life table did with the roll (vitals.ts `lifeNews`), never a copy of its numbers
     const msg = news.kind === 'raised' ? 'Natural 20! You regain 1 HP.' : news.kind === 'stable' ? `${SAVES_TO_END} successes: you are stable.`
       : news.kind === 'died' ? `${SAVES_TO_END} failures: you are dead. ${WAYS_BACK} brings you back.` : news.kind === 'saved' ? `Death save success (${nat}).` : `Death save failed (${nat}).`;
     ui.toast('Death save', msg, { kind: news.kind === 'saved' || news.kind === 'stable' || news.kind === 'raised' ? 'info' : 'warning' });
-    return true;
+    return w;
   }
 
   function update(el) {
@@ -685,7 +690,7 @@ export function register(app) {
     const b = store.hunter(hid)?.boons.find(x => x.id === id); if (!b) return;
     if (!await ui.confirm({ title: `Redeem ${b.name}?`, body: `${b.text ? `${b.text} ` : ''}The GM is told, and the boon is used up.`, confirmLabel: 'Redeem' })) return;
     // the boon leaves and the GM's report is written in one write (src/core/use-told.ts)
-    if (!app.api.uses.told(hid, 'boon-redeem', h => dropBoon(h, id), { what: 'boon', name: b.name, text: b.text, target: 'self', tell: true }).ok) return;
+    if (!ui.wrote('System', app.api.uses.told(hid, 'boon-redeem', h => dropBoon(h, id), { what: 'boon', name: b.name, text: b.text, target: 'self', tell: true }))) return;
     ui.toast('System', `${b.name} redeemed. The GM has been told.`);
   }
 

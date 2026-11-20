@@ -53,6 +53,14 @@ describe('a Create or Join tap', () => {
     expect(answers(r.effects)).toEqual([['create', ok(CODE)]]);
   });
 
+  test('a join of the room the phone is in, as the same role, answers that role', () => {
+    for (const [join, link, role] of [[JOIN_GM, LIVE_GM, 'gm'], [JOIN_PLAYER, LIVE_PLAYER, 'player']] as const) {
+      const r = run(START, tap(join, NOBODY, role), linked(join, link));
+      expect(r.state).toEqual(NO_ATTEMPT);
+      expect(answers(r.effects)).toEqual([[role, ok(role)]]);
+    }
+  });
+
   test('a join with the GM key answers gm, a player\'s join answers player', () => {
     expect(answers(run(asGM, linked(REPLY, LIVE_GM)).effects)).toEqual([['gm', ok('gm')]]);
     expect(answers(run(asMira, linked(REPLY, LIVE_PLAYER)).effects)).toEqual([['mira', ok('player')]]);
@@ -60,7 +68,7 @@ describe('a Create or Join tap', () => {
 
   test('a tap the link does not take fails at once: busy while the link holds another, net with an update coming', () => {
     const handed = attemptStep(START, tap(JOIN_PLAYER, PICKED, 'mira')).state;
-    const held = run(handed, linked(JOIN_PLAYER, LIVE_PLAYER));
+    const held = run(handed, linked(JOIN_PLAYER, CREATING));
     expect(held.state).toEqual(NO_ATTEMPT);
     expect(answers(held.effects)).toEqual([['mira', no('busy')]]);
     expect(answers(run(handed, linked(JOIN_PLAYER, UPGRADING)).effects)).toEqual([['mira', no('net')]]);

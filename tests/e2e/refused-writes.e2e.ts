@@ -160,7 +160,6 @@ test('a failed quest reopened in a tab that cannot save stays failed, and the pl
 });
 
 test('a shadow summoned in a tab that cannot save is told as not saved, never as too little mana', async ({ device }) => {
-  test.fixme(true, 'open: hunter.spendMana answers a boolean (HunterApi in src/core/api.ts), so shadows.js cannot tell a read-only refusal from too little mana; the fix answers the Applied and tells it in shadows.js, files outside this unit (tests/lint.test.ts `open`)');
   // the leftover of AW-views-1: hunter.spendMana answered false for a refused write, and the Shadows view read it as too little mana
   const page = await openReadOnly(device, newerSave({ edit: s => {
     s.hunters[0].shadows = [{ id: 'sh900', name: 'Igris', rank: 'E', archetype: 'brute', grade: 'Normal', monster: null, hp: 10, summoned: false, notes: '' }];

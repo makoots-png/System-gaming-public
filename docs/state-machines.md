@@ -640,7 +640,7 @@ Where it lives:
 
 ## The room link and the sheet push
 
-Every state of the link and the push together that the model check of tests/sync-model.test.ts reaches from the four ways a page boots (tests/models/sync-world.ts), breadth first: taps, timers, and every kind of reply to each request that is out. The walk found 68538 states and 1966579 steps.
+Every state of the link and the push together that the model check of tests/sync-model.test.ts reaches from the four ways a page boots (tests/models/sync-world.ts), breadth first: taps, timers, and every kind of reply to each request that is out. The walk found 70350 states and 2010067 steps.
 
 ### The room link
 
@@ -684,7 +684,7 @@ stateDiagram-v2
 
 The chart shows what the room pill and the Room view say. It leaves out the waits between polls (5 s, 3 s in a fight, longer after failures; a hidden page does not poll, except a GM's page that may notify, which polls every 30 s), how many polls failed, whether a poll is out or waiting, the room code, the last room and the GM key, and whether the phone is the GM or a player, except where a step depends on it. Opening and joining a room go back to the box the phone came from when they fail. Updating the app is never left: the page reloads.
 
-8 chart states, 16 arrows. Hidden: a save replaced by an import, a restore or a reset starts the link again from the room in the new save, from any state but No room server and Updating the app. A server on a newer build sends every state to Updating the app; the chart draws that arrow from In a room only (217709 steps.)
+8 chart states, 16 arrows. Hidden: a save replaced by an import, a restore or a reset starts the link again from the room in the new save, from any state but No room server and Updating the app. A server on a newer build sends every state to Updating the app; the chart draws that arrow from In a room only (226769 steps.)
 
 ### The room link and the sheet push
 
@@ -734,7 +734,7 @@ stateDiagram-v2
 
 A player's phone sends its hunter to the room while it is in a room as a player, and only then. The link side is cut down to that one question. The push side leaves out the waits (3 s after a change, then 3 s doubling to 60 s after failures, 30 s while another phone holds the hunter) and how many sends failed. A GM's phone never sends a sheet.
 
-9 chart states, 15 arrows. Hidden: a save replaced by an import, a restore or a reset, which leaves the room and enters the one in the new save; and Play as another hunter, which sends the new hunter soon from any push state but Off (348590 steps.)
+9 chart states, 15 arrows. Hidden: a save replaced by an import, a restore or a reset, which leaves the room and enters the one in the new save; and Play as another hunter, which sends the new hunter soon from any push state but Off (352214 steps.)
 
 Where it lives:
 

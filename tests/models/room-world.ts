@@ -22,7 +22,7 @@ import { hunterIdOf, sheetKeyOf } from '../../src/core/ids.ts';
 import { parseDayKey } from '../../src/core/day.ts';
 import { freshSave } from '../../src/core/save.ts';
 import type { Save } from '../../src/core/save.ts';
-import { isRefused } from '../../src/core/save-step.ts';
+import { TOLD, isRefused, refuse } from '../../src/core/save-step.ts';
 import type { Fight } from '../../src/core/combat/fight-types.ts';
 import { roleOf } from '../../src/core/role.ts';
 import { applyRoomEvent } from '../../src/edge/room-events.ts';
@@ -362,7 +362,7 @@ function applyOne(w: World, p: Phone, ev: RoomEvent): void {
       return true;
     },
     rules: () => RULES, now: () => new Date(w.clock).toISOString(), today: () => parseDayKey(new Date(w.clock).toISOString().slice(0, 10))!, toast: () => {}, system: () => {},
-    hunter: { fightOf: () => null, granted: () => ({ lines: [], levelup: null, popup: null }), gmHolds: () => false },
+    hunter: { fightOf: () => null, granted: () => ({ lines: [], levelup: null, popup: null }), gmHolds: () => refuse(TOLD) },
     stepsDone: () => {},
     // coin.js `landed`: the coin's table takes the first landing of a roll
     coinLanded: (roll: RollId, side: CoinSide) => write(w, p, s => { s.coins = stepCoin(s.coins, roll, { type: 'land', side }); }),

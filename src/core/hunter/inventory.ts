@@ -25,8 +25,19 @@ import type { Life } from './vitals.ts';
 
 type Carrying = { items: Item[]; equipped: Record<Slot, ItemId | null>; gold: number };
 
-/** What makes two unworn things one stack: everything but the id and the count. */
-const stackKey = (i: ItemTemplate | Item): string => [i.name, i.rar, i.type, i.dice, i.value, i.weight, i.armor, i.resist, JSON.stringify(i.bonus), JSON.stringify(i.effects ?? []), i.target ?? '', i.tell ? 'tell' : '', i.revive ? 'revive' : ''].join('|');
+/**
+ * Whether a field of an item tells two things apart: true, they are different things and never one stack; false, it is
+ * the stack's own business (the id of its first entry, the count, the slot, which no stackable item has). A field added
+ * to `Item` fails the typecheck here until it is decided.
+ */
+const DISTINGUISHES: Record<keyof Item, boolean> = {
+  id: false, qty: false, slot: false,
+  name: true, rar: true, type: true, dice: true, bonus: true, value: true, weight: true, desc: true, armor: true, resist: true,
+  attack: true, penFlat: true, effects: true, target: true, tell: true, worn: true, revive: true,
+};
+const DISTINGUISHING = (Object.keys(DISTINGUISHES) as (keyof Item)[]).filter(k => DISTINGUISHES[k]);
+/** What makes two unworn things one stack: every field that `DISTINGUISHES`, and nothing else. */
+const stackKey = (i: Partial<Item>): string => JSON.stringify(DISTINGUISHING.map(k => (k === 'effects' ? i.effects ?? [] : i[k] ?? null)));
 const stackable = (i: ItemTemplate | Item): boolean => !i.slot;
 /** The held item a new one would join, or null when it makes its own entry. */
 export const stackOf = (h: Carrying, it: ItemTemplate): Item | null =>
@@ -42,7 +53,7 @@ export const sellable = (i: Pick<Item, 'revive'>): boolean => !i.revive;
  * item, or one not bought back (`sellable`), sells for nothing. (Before, an item priced 0 sold for half of base value
  * times multiplier, a second price rule.)
  */
-export const sellPrice = (i: Pick<Item, 'value' | 'rar' | 'revive'>, R: Pick<Rules, 'baseValue' | 'rarities'>): number => {
+export const sellPrice = (i: Pick<Item, 'rar'> & Partial<Pick<Item, 'value' | 'revive'>>, R: Pick<Rules, 'baseValue' | 'rarities'>): number => {
   const price = sellable(i) ? valueOf(i, R) : 0;
   return price > 0 ? Math.max(1, Math.floor(price / 2)) : 0;
 };

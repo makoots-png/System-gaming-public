@@ -783,9 +783,10 @@ describe('status: the GM\'s Status window, which takes no time', () => {
   test('a stun on the current hunter ends its turn as a use would: it waits a standard action, the next row acts, and its sheet hears of the stun', () => {
     const r = play(...duel(), putOn('A', grant('stunned', STUN, 3000)));
     expect([running(r).currentId, running(r).now, body(r.fight, 'A').at]).toEqual([id('M'), tick(500), tick(1000)]);
+    // the sheet hears the time left as the command leaves the fight, at 500: 3000 - 500 ticks is 2.5 rounds
     expect(r.effects.filter(e => e.type === 'vitals')).toEqual([{
       type: 'vitals', hunterId: hunterId('h-A'), life: { at: 'up', hp: HP }, mana: 10, fatigue: 0,
-      statuses: [{ key: statusKey('stunned'), def: STUN, source: { id: null, tier: 0 }, rounds: 3 }],
+      statuses: [{ key: statusKey('stunned'), def: STUN, source: { id: null, tier: 0 }, rounds: 2.5 }],
     }]);
   });
 
@@ -1799,6 +1800,18 @@ describe('a reaction (kits design 8.4, table 8.9.1)', () => {
     const r = play(...base, armed('A', REACT, 'M'), pass('B'));
     expect(running(r).currentId).toBe(id('A'));
     refuses(play(...base).fight, armed('A', REACT), 'noTarget');
+  });
+
+  test('a turn reaction\'s cost reaches its hunter\'s sheet, on this phone and on a player\'s, as a use on its own turn does', () => {
+    const REACT = reaction('react', 'turn', { cost: { ...reaction('react', 'turn').cost, mana: 5, fatigue: 2 } });
+    const base = (holder: NewRow['holder']) => [add(row('A', 'party', { abilities: [HIT, REACT], holder }), row('M', 'foe'), row('B', 'party')),
+      start(['B', 20], ['M', 15], ['A', 1]), armed('A', REACT, 'M')] as const;
+    const local = reduce(play(...base({ kind: 'local', hunterId: hunterId('h-A') })).fight, pass('B'), ctx);
+    expect(running(local).currentId).toBe(id('A'));
+    expect(local.effects.filter(e => e.type === 'vitals').at(-1)).toMatchObject({ hunterId: hunterId('h-A'), mana: 10 - 5, fatigue: 0 + 2 });
+    const key = sheetKey('dev-a:h1');
+    const remote = reduce(play(...base({ kind: 'remote', remote: key })).fight, pass('B'), ctx);
+    expect(remote.effects.filter(e => e.type === 'sendRemote').at(-1)).toMatchObject({ remote: key, mana: 10 - 5, fatigue: 0 + 2 });
   });
 
   test('a reactor that goes down is unarmed', () => {

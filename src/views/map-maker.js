@@ -4,14 +4,13 @@
 // effects editor, and the party's fog and sight. Save runs `parseBattleMap` and keeps what it gives back in
 // `library.maps`. The Workshop (workshop.js) lists the maps; the gate form (gates.js) names one; combat.js starts a
 // fight on it. Exposes app.api.maps.
-import { NOT_SAVED } from './ui.js';
 import { TERRAIN, TERRAINS } from '../core/combat/space.ts';
 import { zoneTone } from '../core/combat/zones.ts';
-import { MAP_BOUNDS, MAX_MAPS, openArena, parseBattleMap } from '../core/registry/maps.ts';
+import { MAP_BOUNDS, openArena, parseBattleMap } from '../core/registry/maps.ts';
 import { MAX_ZONES } from '../core/combat/zones.ts';
 import { oneOf } from '../core/one-of.ts';
 import { atLibrary } from '../core/save-step.ts';
-import { removeEntry, saveById } from '../core/library.ts';
+import { removeEntry, saveById, savedWords } from '../core/library.ts';
 
 const TERRAIN_WORD = { floor: 'Floor', wall: 'Wall', cover: 'Cover', rough: 'Rough', pit: 'Pit' };
 const SIDE_WORD = { party: 'Party start', foe: 'Foe start' };
@@ -173,9 +172,8 @@ export function register(app) {
         function saveAs(id) {
           const map = parseBattleMap(raw(id), app.rules());
           if (!map) { shell.error('Name the map.'); return undefined; }
-          if (!list().some(x => x.id === map.id) && list().length >= MAX_MAPS) { shell.error(`The library holds ${MAX_MAPS} maps at most.`); return undefined; }
-          // a write the store refused (another tab took over, a newer save) saved nothing: the maker stays open and says so
-          if (!store.apply('library-map', atLibrary(l => saveById(l, 'maps', map))).ok) { shell.error(NOT_SAVED); return undefined; }
+          // a write refused (the library full, another tab took over, a newer save) saved nothing: the maker stays open and says so
+          if (!ui.wrote('Workshop', store.apply('library-map', atLibrary(l => saveById(l, 'maps', map))), savedWords('map', map.name))) return undefined;
           return map;
         }
         return {

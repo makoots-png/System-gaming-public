@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { DOCS, DOC_MAX, NOTED_MAX, EVENTS, EVENT_TYPES, newEvent, onTurn, parseDocName, parseEvent, parseRoomState, parseSheet, SHEET_MAX, speaksFor, standsFor, useRoute } from '../src/core/protocol.ts';
+import { DOCS, DOC_MAX, NOTED_MAX, EVENTS, EVENT_TYPES, newEvent, onTurn, parseDocName, parseEvent, parseRoomState, parseSheet, SHEET_MAX, sentAgain, speaksFor, stampTime, standsFor, useRoute } from '../src/core/protocol.ts';
 import { endEvent, isSealed } from '../src/core/protocol.ts';
 import { FACE_LINES, hunterFace, parseServedSheet, servedTo, sheetFor } from '../src/core/protocol.ts';
 import type { RoomEvent, RoomViewer } from '../src/core/protocol.ts';
@@ -166,6 +166,25 @@ describe('a new event, as a phone sends one', () => {
   test('two events from one phone in the same millisecond get different ids', () => {
     const a = newEvent('hp', body('hp') as never, { ...stamp, rand: 0.1 })!, b = newEvent('hp', body('hp') as never, { ...stamp, rand: 0.2 })!;
     expect(a.payload.eid).not.toBe(b.payload.eid);
+  });
+
+  test('a page whose clock stands still and whose random part is fixed (a test\'s dice) still makes a new id each time: each is stamped after its last', () => {
+    const made: string[] = [];
+    let last = 0;
+    for (let i = 0; i < 3; i++) { last = stampTime(last, stamp.now); made.push(newEvent(i === 1 ? 'deathSave' : 'roll', body(i === 1 ? 'deathSave' : 'roll') as never, { ...stamp, now: last, rand: 0 })!.payload.eid); }
+    expect(new Set(made).size).toBe(3);
+    expect(stampTime(stamp.now + 5, stamp.now), 'a clock that went back is passed by the last stamp too').toBe(stamp.now + 6);
+    expect(stampTime(stamp.now, stamp.now + 40), 'a clock that moved on is used as it reads').toBe(stamp.now + 40);
+  });
+
+  test('a message under an id already held is that message again only when it is the same, or an offer\'s end; anything else is another message', () => {
+    const save = newEvent('deathSave', body('deathSave') as never, stamp)!, roll = parseEvent('roll', { ...VALID.roll[1], eid: save.payload.eid })!;
+    const reordered = parseEvent('deathSave', Object.fromEntries(Object.entries(save.payload).reverse()))!;
+    expect(sentAgain(save, reordered), 'the same message, its keys in another order (as a store may keep them)').toBe(true);
+    expect(sentAgain(roll, save), 'a death save under its roll\'s id').toBe(false);
+    expect(sentAgain(save, parseEvent('deathSave', { ...save.payload, roll: 20 })!), 'the same type with another roll').toBe(false);
+    const accept = parseEvent('offerEnd', VALID.offerEnd[1])!, stop = parseEvent('offerStop', VALID.offerStop[1])!;
+    expect(sentAgain(accept, stop), 'an offer\'s later end: its first end is its one end').toBe(true);
   });
 
   test('an id the sender wrote is replaced by a new one', () => {

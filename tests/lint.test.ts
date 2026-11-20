@@ -153,7 +153,7 @@ test('every module of src/edge names the state it keeps for the page: each let a
     'sync.ts attempt': 'the Create or Join tap machine\'s state (src/core/sync/attempt.ts)', 'sync.ts shown': 'what the room showed at the last poll',
     'sync.ts srvSkew': 'the server clock\'s distance from this one', 'sync.ts lastOk': 'when a request last came back',
     'sync.ts sheetText': 'the bound sheet as the push last sent it', 'sync.ts invited': 'the invite this tab holds',
-    'sync.ts running': 'whether the outbox\'s flush is running',
+    'sync.ts running': 'whether the outbox\'s flush is running', 'sync.ts stamped': 'the time in the id of the last event this page made',
     'upgrade.ts update': 'the update machine\'s state (src/core/upgrade.ts)', 'upgrade.ts quiet': 'the timer of the quiet reload',
     'rules.ts sourceOf': 'the store\'s save, bound at start (`bindSave`)', 'rules.ts roomRulesOf': 'the room\'s rules doc (its build and personal gates\' switches), bound by sync.ts (`bindRoom`)',
     'rules.ts made': 'the rules in force and the overrides, statuses and room rules they were made from',
@@ -498,6 +498,21 @@ test('only the fight changes a combatant\'s place, shield, stagger, channel, thr
   expect(report(hits), 'a combatant changes only in src/core/combat/fight.ts and the rule modules it calls (resolve.ts, charge.ts, effect-ops.ts, fight-turn.ts, fight-channel.ts, and the kits\' land.ts and triggers.ts). Send a command (adjust, status, move, act) through send() in combat.js.').toEqual([]);
 });
 
+test('what a fight row\'s sheet hears is read once a command, by reduce: only sheetBacks makes a vitals, sendRemote or shadowHp', async () => {
+  // Each step once called the write-back itself (`consequences`, a GM's edit in setup, a join), so a path that changed a
+  // row and skipped it left the sheet behind: a turn reaction's mana and fatigue reached neither the hunter's sheet nor
+  // the player's phone (BUG-rules-5). `reduce` now reads it from the fight the command found and the one it left.
+  const maker = 'src/core/combat/fight-turn.ts', caller = 'src/core/combat/fight.ts';
+  const builds = /\{\s*type:\s*'(vitals|sendRemote|shadowHp)'/, calls = /\bsheetBacks\s*\(/;
+  const lines = (await sourceLines('src')).filter(line => !isComment(line.text));
+  const built = lines.filter(line => builds.test(line.text));
+  expect(built.length, 'the rule sees the write-backs sheetBacks makes').toBeGreaterThan(0);
+  expect(report(built.filter(line => line.file !== maker)), 'a write-back to a sheet is made only in fight-turn.ts, by sheetBacks, which reduce calls for every command. Change the row; reduce tells its sheet.').toEqual([]);
+  const called = lines.filter(line => calls.test(line.text) && !/\bfunction sheetBacks\b/.test(line.text));
+  expect(report(called.filter(line => line.file !== caller || !line.text.includes('sheetBacks(f, g, ctx)'))), 'only reduce in fight.ts calls sheetBacks, once a command, from the fight it found to the one it left.').toEqual([]);
+  expect(called.length, 'reduce calls sheetBacks').toBe(1);
+});
+
 test('a row\'s life changes only in row-life.ts', async () => {
   // A hunter's life in a fight had two homes, the row's HP and the sheet's life, and each rule that changed HP ran its own
   // clamp, so a heal raised a dead hunter's row while its sheet stayed dead (docs/agent-handoff/audit/notes-dead-row.md).
@@ -783,6 +798,26 @@ test('a view reads a bound core names, never writes its number: copies, item qua
   expect(report(hits), 'read the bound from core (MONSTER_BOUNDS.copies and copiesOf, ITEM_BOUNDS.qty, MAX_ZONES, MAP_BOUNDS.size, hotbar\'s full)').toEqual([]);
 });
 
+test('a hunter\'s level is bounded once, in src/core/hunter/level.ts', async () => {
+  // BUG-rules-18 and AW-rules-11: the fight's reader took a hunter row's level only up to 200 while the hunter's own
+  // reader took 9999, so a running fight with a hunter above 200 was deleted on reload. The game has no top level
+  // (the owner, Nov 20); the bound outside data is read within is MIN_LEVEL to MAX_LEVEL, and a reader asks parseLevel
+  // (refuses) or levelOf (mends). A level read against numbers written in place is a second definition of a level.
+  const bound = /\blevel\w*\s*,\s*\d+\s*,\s*\d|\blevel\w*\s*[:=]\s*[\w.]+\(\s*\d|Math\.(?:max|min)\(\s*\d+\s*,\s*(?:Math\.\w+\(\s*)?level\b/i;
+  const old = [
+    '  const level = whole(b.level, 1, 200);',
+    '  h.level = int(h.level, 1, 1, MAX_LEVEL); h.xp = Math.max(0, h.xp); h.gold = Math.max(0, h.gold);',
+    "const LEVEL = wholeIn(1, 9999, 'a level a hunter can reach: 1 to progress.ts MAX_LEVEL');",
+    "    return { face: { name: text(NAME_MAX)(own(f, 'name')), level: int(1, MAX_LEVEL)(own(f, 'level')), job: null } };",
+    '  const to = Math.min(MAX_LEVEL, Math.max(1, Math.trunc(level) || 1));',
+    'export const xpToNext = (R: Rules, level: number): number => R.xpPerLevel * Math.max(1, level);',
+  ];
+  expect(old.map(t => bound.test(t)), 'the rule sees each old bound').toEqual(old.map(() => true));
+  const lines = [...await sourceLines('src'), ...(await Bun.file(`${ROOT}/server.ts`).text()).split('\n').map((text, i) => ({ file: 'server.ts', line: i + 1, text }))];
+  const hits = lines.filter(line => !isComment(line.text) && bound.test(line.text));
+  expect(report(hits), 'read a level with parseLevel or levelOf, or name MIN_LEVEL and MAX_LEVEL (src/core/hunter/level.ts)').toEqual([]);
+});
+
 test('a view sends a room message as it is: the room\'s reader cuts each field to its bound', async () => {
   // quests.js cut a progress message's objective labels at 80 while the room's reader (protocol.ts) keeps 100, and
   // uses.js and quests.js cut names and titles at the reader's own numbers: two homes for one bound, already apart.
@@ -965,6 +1000,7 @@ test('a view reads the answer of every write to the save: a refused write never 
     "src/views/quests.js: store.apply('quest-update', s => told(s, stamp()": ROOM,
     "src/views/coin.js: store.apply('coin-call', s => callTaken(s, { id:": ROOM,
     "src/views/bestiary.js: store.apply('codex-room', s => codexFromRoom(s, ": ROOM,
+    "src/views/bestiary.js: store.apply('codex-record', s => recordDefeatSte": 'a defeat counted on the fight\'s events, which follow only a fight write the store took (combat.js `command`, `combat-ended`), so a read-only tab never gets here; its one refusal, `counted`, is a row counted already (the end counts every row down), which needs no word',
     "src/edge/sync.ts: store.apply('sync-status', atSync(serverSeen))": 'the mark that a server answered, for the next boot\'s probe: refused, the next boot probes from the page as before',
     "src/edge/sync.ts: store.apply('noticed', s => released(s, noticeHe": 'the facts a fight held, released when the room\'s fight doc lets them go: refused, they wait in the inbox for the next release',
     "src/edge/sync.ts: boxDo('outbox-gone', b => roomGone(b, code), s =": OUTBOX,
@@ -976,9 +1012,7 @@ test('a view reads the answer of every write to the save: a refused write never 
   // A write whose refusal is lost today, in a file outside the unit that made this rule stricter (audit 2026-11-20,
   // NEW-sync-1). Each names what its fix needs. Fix one and its line leaves the list; a new one never joins it.
   const ANSWERS = 'an api member answers whether it wrote (its type in src/core/api.ts), so its caller cannot say a read-only tab\'s refusal: answer the Applied and let the caller tell it with ui.wrote';
-  const MAKER = 'AW-views-1: a maker says any refusal in its own words, a read-only tab\'s too: tell it with ui.wrote and the core module\'s words';
   const open: Record<string, string> = {
-    'src/views/hunter.js: onHunter(hid, why, write)': `toSheet, under hunter.spendMana and every vitals member: ${ANSWERS}; shadows.js then says "Not enough mana" for a read-only tab`,
     "src/edge/sync.ts: store.apply(reason, s => atOutbox(f)(heard ? hea": 'boxDo, under flush: answers whether it wrote, so postLetter cannot tell a read-only tab\'s refusal from no room',
     "src/edge/sync.ts: flush('outbox-post', b => { const r = postIn(b, ": 'postLetter answers a read-only tab\'s refusal as noRoom: `Posting` (src/core/api.ts) and `PostAnswer` (src/core/sync/connection.ts) need its own why, and the views that read it',
     "src/edge/sync.ts: store.apply('sync-link', s => linkWritten(s, fie": 'BUG-sync-7: a read-only tab\'s link moves on while its save does not',
@@ -987,28 +1021,6 @@ test('a view reads the answer of every write to the save: a refused write never 
     "src/edge/sync.ts: store.apply('sync-join', s => boundTo(addHunter(": 'bindJoin: a Join in a read-only tab binds no hunter and says nothing',
     "src/edge/sync.ts: store.apply('sync-join', s => boundTo(s, binds.h": 'bindJoin: a Join in a read-only tab binds no hunter and says nothing',
     "src/edge/sync.ts: store.apply('gmkeys-forget', atSync(s => ringGon": 'forgetKey: a Forget in a read-only tab keeps the key and says nothing',
-    "src/views/custom.js: store.apply('loadout-save', atHunter(hid, h => s": ANSWERS,
-    "src/views/custom.js: store.apply('loadout-save', atHunter(hid, h => o": ANSWERS,
-    "src/views/custom.js: store.apply('loadout-rename', atHunter(hid, h =>": ANSWERS,
-    "src/views/custom.js: store.apply('loadout-del', atHunter(hid, h => re": ANSWERS,
-    "src/views/custom.js: store.apply('build', atHunter(hid, h => pathChos": ANSWERS,
-    "src/views/custom.js: store.apply('build', atHunter(hid, h => pickPerk": ANSWERS,
-    "src/views/custom.js: store.apply('build', atHunter(hid, h => respecHu": ANSWERS,
-    "src/views/custom.js: store.apply('stat', atHunter(hid, x => raiseMany": ANSWERS,
-    "src/views/bestiary.js: store.apply('monster-save', s => monsterSaved(s,": ANSWERS,
-    "src/views/quests.js: store.apply('job-chain', s => { const r = chainS": `AW-views-1, issueJobChain: ${ANSWERS}; the Job Change picker then says the hunter already has one`,
-    "src/views/feat-maker.js: store.apply('library-feat', atLibrary(l => saveF": MAKER,
-    "src/views/forge.js: store().apply('forge-status', atLibrary(l => sav": MAKER,
-    "src/views/loot.js: store.apply('library-save', atLibrary(l => saveE": MAKER,
-    "src/views/skills.js: store.apply('library-skill', atLibrary(l => save": MAKER,
-    "src/views/story-maker.js: store.apply('library-story', atLibrary(l => save": MAKER,
-    "src/views/map-maker.js: store.apply('library-map', atLibrary(l => saveBy": MAKER,
-    "src/views/hunter.js: store.apply('bundle-save', atLibrary(l => saveBu": MAKER,
-    "src/views/io.js: store.apply('import-hunter', sv => withImportedH": 'an import says any refusal as a read-only tab\'s',
-    "src/views/bestiary.js: store.apply('codex-record', s => recordDefeatSte": 'a defeat recorded in the codex stops at any refusal and says nothing',
-    "src/views/effects.js: store.apply('use', atHunter(hid, x => { const y ": 'a use read by .ok: its refusal is not told by its kind',
-    "src/views/uses.js: store.apply(why, both(change ? atHunter(hid, cha": 'a use told to the GM answers { ok: false } for any refusal and says nothing',
-    'src/views/combat.js: store.apply(`combat-${cmds.map(x => x.type).join': 'the fight\'s write, read by .ok and .why: src/views/combat.js is the fight\'s own unit',
   };
   // src/edge writes the save too (sync.ts switches the active hunter and fills the outbox); store.ts is the writer itself
   const files = [...await sourceTexts('src/views'), { file: 'src/app.js', text: await Bun.file(`${ROOT}/src/app.js`).text() },

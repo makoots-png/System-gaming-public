@@ -8,7 +8,7 @@ import { BUILT_IN_STATUSES } from '../core/registry/statuses.ts';
 import { monsterSheetOf } from '../core/registry/monsters.ts';
 import { LIMITS } from '../core/save.ts';
 import { atLibrary } from '../core/save-step.ts';
-import { copyName, duplicateEntry, namedLike, removeEntry, removeStatus, removeStory, saveEntry, saveStatus } from '../core/library.ts';
+import { copyName, duplicateEntry, namedLike, removeEntry, removeStatus, removeStory, saveEntry, saveStatus, savedWords } from '../core/library.ts';
 import { exampleSkills, exampleStatuses } from '../core/registry/kit-examples.ts';
 import { BUILT_IN_BUNDLES, MOMENT_WORDS } from '../core/registry/bundles.ts';
 import { rewardLines } from '../core/rewards.ts';
@@ -131,7 +131,7 @@ export function register(app) {
       const b = BUILT_IN_BUNDLES.find(x => x.key === id); if (!b) return;
       const name = namedLike(L.rewards, b.name, null) ? copyName(b.name, L.rewards.map(x => x.name), 60) : b.name;
       const done = A().bundles.save(name, b.rewards, null, b.window);
-      if (ui.wrote('Workshop', done, { full: `The library holds ${LIMITS.libraryRewards} bundles at most.` })) ui.toast('Workshop', `${name} is in your bundles.`);
+      if (ui.wrote('Workshop', done, savedWords('bundle', name))) ui.toast('Workshop', `${name} is in your bundles.`);
       return;
     }
     if (kind === 'story') {
@@ -230,7 +230,7 @@ export function register(app) {
       if (a === 'edit') return void await bundleMaker(app, b);
       if (a === 'dup') {
         if (L.rewards.length >= LIMITS.libraryRewards) return void ui.toast('Workshop', `The library holds ${LIMITS.libraryRewards} bundles at most.`, { kind: 'warning' });
-        return void ui.wrote('Workshop', A().bundles.save(copyName(b.name, L.rewards.map(x => x.name), 60), b.rewards, null, b.window || null), { full: `The library holds ${LIMITS.libraryRewards} bundles at most.` });
+        { const name = copyName(b.name, L.rewards.map(x => x.name), 60); return void ui.wrote('Workshop', A().bundles.save(name, b.rewards, null, b.window || null), savedWords('bundle', name)); }
       }
       if (a === 'del' && await ui.confirm({ title: 'Delete bundle?', body: `${b.name}. Rewards already given from it stay given.`, danger: true, confirmLabel: 'Delete' })) A().bundles.remove(b.id);
       return;

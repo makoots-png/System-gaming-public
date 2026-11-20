@@ -306,7 +306,7 @@ export function register(app) {
         if (!a) return note(app.api.hunter.amountMsg(inp.value));
         const hpNow = () => app.api.hunter.sheet(store.hunter(h.id)).hp;
         const hl = heal || a.heal, before = hpNow();
-        if (!(hl ? app.api.hunter.heal(h.id, a.n) : app.api.hunter.damage(h.id, a.n))) return;
+        if (!ui.wrote('System', hl ? app.api.hunter.heal(h.id, a.n) : app.api.hunter.damage(h.id, a.n))) return;
         const after = hpNow(); inp.value = '';
         paintHud(el); note(`${hl ? 'Healed' : 'Took'} ${Math.abs(after - before)} (asked ${a.n}). HP ${after}.`);
         if (keep) { const i = el.querySelector('[data-tbamt]'); if (i) i.focus(); }
@@ -332,7 +332,7 @@ export function register(app) {
           paintHud(el); return;
         }
         if (ev.target.closest('[data-tbdsave]')) {
-          const h = meHunter(encounter()); if (h) app.api.hunter.deathSave(h.id);
+          const h = meHunter(encounter()); if (h) ui.wrote('Death save', app.api.hunter.deathSave(h.id));
           paintHud(el); return;
         }
         if (ev.target.closest('[data-tbdmg]')) return applyAmt(false, false);

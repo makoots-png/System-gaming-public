@@ -7,7 +7,9 @@ import { statBonus } from './hunter/sheet.ts';
 import { VERDICT_WORDS, verdict } from './coin.ts';
 import { CAP_ROUNDS } from './combat/play.ts';
 import { ODDS_RUNS } from './combat/odds.ts';
-import { shopOpen } from './hunter/inventory.ts';
+import { sellPrice, shopOpen } from './hunter/inventory.ts';
+import { priceOf } from './registry/items.ts';
+import type { Rarity } from './registry/items.ts';
 import { FUMBLE_FAILURES, REVIVE_HP, SAVES_TO_END, SAVE_FUMBLE, SAVE_SUCCESS, SAVE_UP, SAVE_UP_HP, WAYS_BACK } from './hunter/vitals.ts';
 
 const sign = (n: number): string => (n >= 0 ? '+' : '') + n;
@@ -77,3 +79,24 @@ export function soloLines(R: Pick<Rules, 'solo'>): readonly string[] {
       : ['Personal gates are off.']),
   ];
 }
+
+/** One tier of the sale table: its multiplier, the price an unpriced item of it has (`priceOf`) and what the Bag pays for it (`sellPrice`). */
+export interface SaleRow { readonly rar: Rarity; readonly mult: number; readonly price: number; readonly sell: number }
+
+/** The sale table of the Loot section, each figure from the function the game pays with. */
+export function saleRows(R: Pick<Rules, 'baseValue' | 'rarities'>): readonly SaleRow[] {
+  return (Object.keys(R.rarities) as Rarity[]).map(rar => ({ rar, mult: R.rarities[rar].mult, price: priceOf(R, rar), sell: sellPrice({ rar }, R) }));
+}
+
+/** How an item that sets no price is priced and sold. */
+export function saleLine(R: Pick<Rules, 'baseValue' | 'rarities'>): string {
+  return `An item that sets no price costs base ${R.baseValue} gold × its tier's multiplier × 10 in the shop, and the Association buys it back at half that, rounded down.`;
+}
+
+/** What completing every daily gives: the daily quest's own points (the template a new hunter's daily is made from), and the streak's. */
+export function dailyPointsLine(R: Pick<Rules, 'dailyTemplate' | 'streakBonusEvery'>): string {
+  return `Completing every daily in a cycle grants +${R.dailyTemplate.rewards.points}, and every ${R.streakBonusEvery}-day streak grants +1 more.`;
+}
+
+/** The percent of a hit's size a body of `armor` takes off, before the flat part: what `afterDefence` (combat/land.ts) does with `armorK`. */
+export const armorCutPct = (R: Pick<Rules, 'fight'>, armor: number): number => Math.round(100 - 100 * R.fight.armorK / (R.fight.armorK + armor));

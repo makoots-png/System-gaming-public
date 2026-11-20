@@ -3,7 +3,8 @@
 // and then the typed fields are clamped and checked. Keys the types do not know are kept as they are, because the
 // untyped view modules still stash fields of their own on these objects and dropping them would lose that data. The
 // repair works in place and returns the object it was given: views hold on to a hunter between updates, so the object
-// must stay the same one. One run (`RepairRun`) claims every id once and notes the entities whose id must be replaced.
+// must stay the same one. One run (`RepairRun`) claims every id once and notes the entities whose id must be replaced,
+// each with the hunter that holds it, so the save's repair can point that hunter's references at the new ids.
 // Pure, and a leaf of the save: it imports nothing that reads a save.
 
 import { SAVE_ID_RE } from './ids.ts';
@@ -14,6 +15,7 @@ import { parseSkill } from './registry/skills.ts';
 import type { Skill } from './registry/skills.ts';
 import { MAX_MAPS } from './registry/maps.ts';
 import type { Rules } from './rules.ts';
+import type { Hunter } from './hunter/hunter.ts';
 
 /** What a read needs from outside: the clock, and the makers of this phone's device id and device token (random, the edge's). */
 export type ParseEnv = { now: Date; newDeviceId: () => DeviceId; newDeviceToken: () => string };
@@ -65,11 +67,14 @@ export function optional<T extends object>(o: T, key: keyof T & string, ok: (v: 
   if (key in o && !ok(o[key])) delete o[key];
 }
 
+/** An entity whose id must be replaced, the prefix of its new id, and the hunter that holds it (null: the save's own lists). */
+export type BadId = [o: { id: string }, prefix: string, owner: Hunter | null];
 /**
- * One repair run: the save's rules, and every id seen so far with the entities whose id must be replaced. `sheet` is a
- * hunter another phone sent: its build path is checked against that phone's rules, which this run does not have.
+ * One repair run: the save's rules, and every id seen so far with the entities whose id must be replaced. `owner`: the
+ * hunter whose lists this run is reading (hunter.ts `fixHunter` reads them with a run of its own), else null. `sheet`
+ * is a hunter another phone sent: its build path is checked against that phone's rules, which this run does not have.
  */
-export type RepairRun = { R: Rules; env: ParseEnv; ids: Set<string>; bad: [{ id: string }, string][]; sheet?: true };
+export type RepairRun = { R: Rules; env: ParseEnv; ids: Set<string>; bad: BadId[]; owner: Hunter | null; sheet?: true };
 
 /** A list of entities: drops what is not an object, fills defaults, and notes a missing or repeated id for a new one. */
 export function list<T extends { id: string }>(run: RepairRun, value: unknown, prefix: string, example: () => T, fix?: (o: T) => void): T[] {
@@ -82,7 +87,7 @@ export function list<T extends { id: string }>(run: RepairRun, value: unknown, p
 }
 /** Keeps a good id, or notes a malformed or repeated one for a new id. */
 export function claimId(run: RepairRun, o: { id: string }, prefix: string): void {
-  if (!SAVE_ID_RE.test(o.id) || idNumber(o.id) > SEQ_MAX || run.ids.has(o.id)) run.bad.push([o, prefix]); else run.ids.add(o.id);
+  if (!SAVE_ID_RE.test(o.id) || idNumber(o.id) > SEQ_MAX || run.ids.has(o.id)) run.bad.push([o, prefix, run.owner]); else run.ids.add(o.id);
 }
 
 /**

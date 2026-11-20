@@ -3,7 +3,7 @@
 import { GATE_STATUSES, GATE_TYPES, SPAWN_TYPES, can, countdown, gateXp as rosterXp, monsterId, newGate, parseGate, xpDue } from '../core/gates/gate.ts';
 import { RANKS } from '../core/save.ts';
 import { cryptoRandom } from '../edge/roll.ts';
-import { clearShares, gateFact, settleClear, splitAward } from '../core/gates/pay.ts';
+import { clearShares, settleClear, splitAward } from '../core/gates/pay.ts';
 import { newRewards, parseRewards } from '../core/rewards.ts';
 import { isRefused } from '../core/save-step.ts';
 import { oneOf } from '../core/one-of.ts';
@@ -35,6 +35,8 @@ export function register(app) {
   const stamp = () => ({ at: new Date().toISOString(), cap: app.rules().logCap });
   /** When a step happens: now, today's day key at the save's reset hour, and the rules (hunter.js `dayNow`). */
   const dayNow = () => ({ ...stepTime(store.get(), new Date()), R: app.rules() });
+  /** What makes the id of a message a write here posts unique (protocol.ts `newEvent`): this phone, now, a random part. */
+  const stampNow = () => ({ device: store.get().settings.deviceId, now: Date.now(), rand: cryptoRandom() });
   const monsterOf = id => api.bestiary.get(id);
   const xpOf = id => { const m = monsterOf(id); return m ? monsterXp(m, app.rules()) : 0; };
 
@@ -127,14 +129,17 @@ export function register(app) {
     const S = api.sync;
     // the player's device assigns its own item ids
     const bare = list => list.map(i => { const c = { ...i }; delete c.id; return c; });
-    // each player paid also remembers the gate it cleared (pay.ts `gateFact`), in the room's `noted` (feature 1's notes 2.3)
-    const rankOf = key => { const r = rem.find(x => x.key === key); return r ? r.data.rank : null; };
-    const posts = { room: S.room(), events: plan.shares.flatMap(x => (x.payee.kind === 'remote' ? [S.event('award', { to: [x.payee.key], rewards: { ...newRewards(), xp: x.xp, gold: x.gold, items: bare(x.items) } }),
-      S.event('noted', { to: [x.payee.key], facts: [gateFact(g, rankOf(x.payee.key), store.get().world.day)] })] : [])).filter(Boolean) };
+    // each player paid: its award, and its rank as its pushed sheet says, which its gate fact is measured against (pay.ts `settleClear`)
+    const players = plan.shares.flatMap(x => {
+      if (x.payee.kind !== 'remote') return [];
+      const key = x.payee.key, pays = S.event('award', { to: [key], rewards: { ...newRewards(), xp: x.xp, gold: x.gold, items: bare(x.items) } });
+      return pays ? [{ key, rank: rem.find(r => r.key === key)?.data.rank ?? null, pays }] : [];
+    });
+    const code = S.room(), inRoom = code ? { code, stamp: stampNow(), players } : null;
     const locals = plan.shares.flatMap(x => (x.payee.kind === 'local' ? [{ hid: x.payee.hid, rewards: parseRewards({ xp: x.xp, gold: x.gold, items: x.items }) ?? newRewards() }] : []));
     const pay = { due: plan.due, xp: share.xp, gold: share.gold, items: items.map(i => i.name), payees: payees.map(p => p.name) };
     const done = { settled: null };
-    if (!ui.wrote('! Gate', store.apply('gate-clear', s => { const r = settleClear(s, id, pay, locals, posts, dayNow()); if (isRefused(r)) return r; done.settled = r; return r.save; }))) return false;
+    if (!ui.wrote('! Gate', store.apply('gate-clear', s => { const r = settleClear(s, id, pay, locals, inRoom, dayNow()); if (isRefused(r)) return r; done.settled = r; return r.save; }))) return false;
     const settled = done.settled;
     S.flush();
     const all = plan.shares.length > 1, rewards = [`${ui.fmt(share.xp)} XP${all ? ' each' : ''}`];
@@ -331,7 +336,8 @@ export function register(app) {
     const p = ev.payload, s = store.get(), plan = soloPlan(s, p, app.rules()), g = gate(p.gate);
     const loot = plan.kind === 'paid' && g ? lootOf(g.rank, true) : { gold: 0, items: [] };
     const body = soloAnswerBody(s, p.eid, p, plan, loot), answer = body ? sync().event('soloAnswer', body) : null;
-    if (!sync().once(p.eid, x => soloTaken(x, p, plan, answer, loot, { day: dayNow(), room: room() }))) return;
+    const code = room(), rank = sync().remoteSheets().find(r => r.key === p.by)?.data.rank ?? null;
+    if (!sync().once(p.eid, x => soloTaken(x, p, plan, answer, loot, { day: dayNow(), room: code ? { code, stamp: stampNow() } : null, rank }))) return;
     sync().flush();
     refreshView();
     ui.toast('! Gate', takenLine(s, p, plan).text, { kind: 'info' });
