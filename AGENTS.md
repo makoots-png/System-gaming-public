@@ -76,6 +76,7 @@ When a mistake is made, apply `.claude/skills/correct/SKILL.md` (the owner's sta
 | The server's Postgres path is tested, not only the memory store | the public repository's unit job with a Postgres beside it (`.github/workflows/ci.yml`, being added: `docs/agent-handoff/audit/brief-ci-remote.md`) |
 | A lead hands over when it is due (40 turns, or a compaction) | `.claude/hooks/handoff-due.py`: from 40 turns every turn is told the hand-off is due; from 80 a launch of a new helper is refused until the next lead; after a compaction the first turn is told to hand over |
 | A push's tested tree is the pushed commit's, not the checkout's | `testedTree` in `scripts/ci-plan.ts`, fed `CI_PUSHED` by `.githooks/pre-push`; its cases in `tests/ci-plan.test.ts` |
+| No AI attribution lines in a commit (the owner's rule; a harness may ask for them, and the Nov 20 lead added one) | `.githooks/commit-msg`, which refuses a message with `Co-Authored-By:` or `Claude-Session:` and says to remove it |
 | Every other rule of the code | its test in `tests/lint.test.ts`, named for the rule |
 
 ## Rules

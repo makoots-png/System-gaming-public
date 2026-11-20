@@ -1,0 +1,81 @@
+From d3b68aeb6906e0126db4d9d7f13ec1e98c7c85f4 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Fri, 20 Nov 2026 05:06:27 +0000
+Subject: [PATCH 5/7] A player's map keeps the zoom of the last fight when the
+ next starts on the same ground: the failing case
+
+The player zooms out over their token in one fight; the GM clears it and starts another on the same 12 by 10 ground with
+the same hunter first. The player's map, mounted once for the HUD, still says the ground is framed (its `fitted` is the
+grid's size, not the fight), so the new fight opens at the old zoom, a token 36 px across where a fight opens at 44 at
+least (audit BUG-views-8). The fight's words over the frame and the hunter's place are kept the same, so neither refits
+the map by another path.
+---
+ tests/e2e/battle-map.e2e.ts | 45 ++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 44 insertions(+), 1 deletion(-)
+
+diff --git a/tests/e2e/battle-map.e2e.ts b/tests/e2e/battle-map.e2e.ts
+index aebcdae..956b2f1 100644
+--- a/tests/e2e/battle-map.e2e.ts
++++ b/tests/e2e/battle-map.e2e.ts
+@@ -5,7 +5,7 @@ import type { Page } from '@playwright/test';
+ import { RULES } from '../../src/core/rules.ts';
+ import { abilityId } from '../../src/core/combat/ability-types.ts';
+ import { abilityOf } from '../../src/core/registry/ability-kinds.ts';
+-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, fightRow } from './helpers.ts';
++import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, fightRow, answerWindow } from './helpers.ts';
+ 
+ const HUNTER = 'Kai Map', MONSTER = 'Cave Rat', BRAKK = 'Brakk Ironhide';
+ /** Every die rolls its lowest face: a reaction d20 of 1 is caught and a crit, so a use lands. */
+@@ -367,6 +367,49 @@ test('a GM\'s fight opens on the map, and while it runs the screen is the fight:
+   await expect(map(player).locator('[data-frame]')).toBeVisible();
+ });
+ 
++test('a player who zoomed the map out in one fight finds the next fight on the same ground opened at the zoom a fight opens at', async ({ device }) => {
++  const { gm, player } = await room(device);
++  const { kai } = await fight(gm, player, [{ x: 6, y: 6 }]);
++  const world = map(player).locator('[data-world]');
++  const transform = () => world.evaluate(w => (w as HTMLElement).style.transform);
++
++  await test.step('the player zooms out over their own token, which stays in sight', async () => {
++    const framed = await transform(), b = (await token(player, kai).boundingBox())!;
++    await player.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
++    for (let i = 0; i < 3; i++) await player.mouse.wheel(0, 100);
++    await expect.poll(transform).not.toBe(framed);
++  });
++
++  const next = await test.step('the GM clears the fight and starts another on the same ground, Kai first again at (2, 2)', async () => {
++    await combat(gm).locator('[data-tools-open]').tap();
++    await combat(gm).getByRole('dialog', { name: 'Fight tools' }).locator('[data-clear]').tap();
++    await answerWindow(gm, 'Clear the fight?', 'Clear');
++    await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (remote)` });
++    await combat(gm).locator('[data-addh]').tap();
++    await combat(gm).locator('[data-qline]').fill(`${MONSTER} x1, E, brute`);
++    await combat(gm).locator('[data-qadd]').tap();
++    await combat(gm).locator('[data-start]').tap();
++    const id = await gm.evaluate(name => {
++      let out = '';
++      hunterApp.store.update((d: any) => {
++        const f = d.fight, k = f.rows.find((r: any) => r.name === name), rat = f.rows.find((r: any) => r.kind === 'monster');
++        k.place = { x: 2, y: 2 }; k.at = f.now; k.tie = 0; rat.place = { x: 9, y: 7 }; rat.at = f.now + 1; rat.tie = 0;
++        f.currentId = k.id; out = k.id;
++      }, 'test-setup');
++      return out;
++    }, HUNTER);
++    await expect(combat(player).locator('.tb-mine')).toContainText('YOUR TURN');
++    await expect.poll(() => placeOf(player, id)).toEqual([2, 2]);
++    return id;
++  });
++
++  await test.step('the player\'s map opens the new fight as a map opens a fight: a token is at least 44 px', async () => {
++    await expect(token(player, next)).toBeVisible();
++    const t = (await token(player, next).boundingBox())!;
++    expect(Math.min(t.width, t.height), 'a token is at least 44 px').toBeGreaterThanOrEqual(44);
++  });
++});
++
+ /** Every die rolls its highest face: a reaction d20 of 20 uses all the time a slow ability gives to move. */
+ const highestDice = (page: Page) => page.evaluate(() => Object.defineProperty(crypto, 'getRandomValues', { configurable: true, value: (a: Uint32Array) => a.fill(0xffffffff) }));
+ 
+-- 
+2.43.0
+

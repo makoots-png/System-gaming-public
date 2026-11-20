@@ -1,0 +1,127 @@
+From 6c3720f61e26f30185d7c36c966edbecf69f8b8d Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Fri, 20 Nov 2026 04:46:19 +0000
+Subject: [PATCH 2/7] Revert "WIP kept at a container restart: unfinished,
+ unproven, for the helper that takes this branch over"
+
+This reverts commit 133457810a286597d350913204d3ec6eb310d0e8.
+---
+ src/views/map-maker.js      | 22 +++++++++-------------
+ tests/e2e/battle-map.e2e.ts | 37 -------------------------------------
+ 2 files changed, 9 insertions(+), 50 deletions(-)
+
+diff --git a/src/views/map-maker.js b/src/views/map-maker.js
+index 421bba0..68498a0 100644
+--- a/src/views/map-maker.js
++++ b/src/views/map-maker.js
+@@ -59,7 +59,7 @@ export function register(app) {
+       zones: base.zones.map(z => ({ id: String(z.id), name: z.name, ops: z.ops, tiles: new Set(z.ground.tiles.map(p => p.y * base.w + p.x)) })),
+       starts: { party: base.starts.party.map(p => p.y * base.w + p.x), foe: base.starts.foe.map(p => p.y * base.w + p.x) },
+     };
+-    let brush = 'wall', zoneAt = 0, eff = null, painting = false;
++    let brush = 'wall', zoneAt = 0, eff = null, asNew = false, painting = false;
+     return M.open({
+       tag: '! Map', title: m ? `Edit ${m.name}` : 'New map', save: 'Save map', cls: 'mpm',
+       build(el, shell) {
+@@ -145,7 +145,7 @@ export function register(app) {
+             zoneAt = st.zones.length - 1; brush = `zone:${zoneAt}`; drawBrushes(); drawZone();
+           } else if (b.hasAttribute('data-delzone')) {
+             st.zones.splice(zoneAt, 1); brush = 'wall'; drawBrushes(); drawZone(); drawGrid();
+-          } else if (b.hasAttribute('data-asnew')) { const map = saveAs(store.id('mp')); if (map) shell.done(map); return; }
++          } else if (b.hasAttribute('data-asnew')) { asNew = true; shell.done(save()); return; }
+           shell.changed();
+         });
+         el.addEventListener('input', ev => {
+@@ -160,18 +160,14 @@ export function register(app) {
+           if (t.matches('[data-fog]')) st.fog = t.checked;
+           if (eff && t.closest('[data-zfx]') && st.zones[zoneAt]) { st.zones[zoneAt].ops = eff.ops(); for (const i of st.zones[zoneAt].tiles) paintCell(i); }
+         });
+-        /** The map the form holds under `id`, as the parser reads it. */
+-        const raw = id => ({
+-          id, name: st.name, w: st.w, h: st.h, tiles: st.tiles.join(''), fog: st.fog, sight: st.sight,
++        /** The map the form holds, as the parser reads it. */
++        const raw = () => ({
++          id: m && !asNew ? m.id : store.id('mp'), name: st.name, w: st.w, h: st.h, tiles: st.tiles.join(''), fog: st.fog, sight: st.sight,
+           zones: st.zones.filter(z => z.tiles.size).map(z => ({ id: z.id, name: z.name.trim() || 'Field', ops: z.ops, ground: { kind: 'tiles', tiles: [...z.tiles].sort((a, b) => a - b).map(i => ({ x: i % st.w, y: Math.floor(i / st.w) })) } })),
+           starts: { party: st.starts.party.map(i => ({ x: i % st.w, y: Math.floor(i / st.w) })), foe: st.starts.foe.map(i => ({ x: i % st.w, y: Math.floor(i / st.w) })) },
+         });
+-        /**
+-         * Saves the form as map `id` (the map being edited, or a new one): answers the map saved, or undefined when it was
+-         * refused, which the window says and stays open for.
+-         */
+-        function saveAs(id) {
+-          const map = parseBattleMap(raw(id), app.rules());
++        function save() {
++          const map = parseBattleMap(raw(), app.rules());
+           if (!map) { shell.error('Name the map.'); return undefined; }
+           if (!list().some(x => x.id === map.id) && list().length >= MAX_MAPS) { shell.error(`The library holds ${MAX_MAPS} maps at most.`); return undefined; }
+           // a write the store refused (another tab took over, a newer save) saved nothing: the maker stays open and says so
+@@ -180,7 +176,7 @@ export function register(app) {
+         }
+         return {
+           preview: () => {
+-            const n = c => st.tiles.filter(x => x === TERRAIN[c].char).length, read = parseBattleMap({ ...raw(''), name: st.name || 'x' }, app.rules());
++            const n = c => st.tiles.filter(x => x === TERRAIN[c].char).length, read = parseBattleMap({ ...raw(), name: st.name || 'x' }, app.rules());
+             const ground = TERRAINS.filter(t => t !== 'floor' && n(t)).map(t => `${n(t)} ${TERRAIN_WORD[t].toLowerCase()}`);
+             return [
+               `${st.w} by ${st.h} tiles${ground.length ? `: ${ground.join(', ')}` : ', all floor'}`,
+@@ -190,7 +186,7 @@ export function register(app) {
+             ];
+           },
+           blocked: () => !st.name.trim() || !!(eff && eff.blocked()),
+-          save: () => saveAs(m ? m.id : store.id('mp')),
++          save,
+         };
+       },
+     });
+diff --git a/tests/e2e/battle-map.e2e.ts b/tests/e2e/battle-map.e2e.ts
+index d1623ca..aebcdae 100644
+--- a/tests/e2e/battle-map.e2e.ts
++++ b/tests/e2e/battle-map.e2e.ts
+@@ -367,43 +367,6 @@ test('a GM\'s fight opens on the map, and while it runs the screen is the fight:
+   await expect(map(player).locator('[data-frame]')).toBeVisible();
+ });
+ 
+-test('a player who dragged the map off one fight finds the next fight framed on their map, as a double tap frames it', async ({ device }) => {
+-  const { gm, player } = await room(device);
+-  await fight(gm, player, [{ x: 6, y: 6 }]);
+-  const frame = map(player).locator('[data-frame]'), world = map(player).locator('[data-world]');
+-  const transform = () => world.evaluate(w => (w as HTMLElement).style.transform);
+-
+-  await test.step('the player drags the map until the fight is off its frame', async () => {
+-    const framed = await transform(), b = (await frame.boundingBox())!;
+-    for (let i = 0; i < 6; i++) {
+-      await player.mouse.move(b.x + b.width * 0.8, b.y + b.height * 0.7);
+-      await player.mouse.down();
+-      await player.mouse.move(b.x + b.width * 0.1, b.y + b.height * 0.1, { steps: 8 });
+-      await player.mouse.up();
+-    }
+-    await expect.poll(transform).not.toBe(framed);
+-  });
+-
+-  const next = await test.step('the GM clears the fight and starts another with Brakk and a rat, which the player is not in', async () => {
+-    await combat(gm).locator('[data-tools-open]').tap();
+-    await combat(gm).getByRole('dialog', { name: 'Fight tools' }).locator('[data-clear]').tap();
+-    await answerWindow(gm, 'Clear the fight?', 'Clear');
+-    await combat(gm).locator('[data-hsel]').selectOption({ label: BRAKK });
+-    await combat(gm).locator('[data-addh]').tap();
+-    await combat(gm).locator('[data-qline]').fill(`${MONSTER} x1, E, brute`);
+-    await combat(gm).locator('[data-qadd]').tap();
+-    await combat(gm).locator('[data-start]').tap();
+-    return gm.evaluate(() => hunterApp.store.get().fight.rows.map((r: any) => r.id as string));
+-  });
+-
+-  await test.step('the player\'s map shows the new fight framed: a double tap, which frames the map, moves nothing', async () => {
+-    for (const id of next) await expect(token(player, id)).toBeAttached();
+-    const opened = await transform();
+-    await frame.dblclick({ position: { x: 4, y: 4 } });
+-    expect(await transform()).toBe(opened);
+-  });
+-});
+-
+ /** Every die rolls its highest face: a reaction d20 of 20 uses all the time a slow ability gives to move. */
+ const highestDice = (page: Page) => page.evaluate(() => Object.defineProperty(crypto, 'getRandomValues', { configurable: true, value: (a: Uint32Array) => a.fill(0xffffffff) }));
+ 
+-- 
+2.43.0
+

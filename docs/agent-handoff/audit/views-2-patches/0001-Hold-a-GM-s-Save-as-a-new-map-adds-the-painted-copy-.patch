@@ -1,0 +1,40 @@
+From b626f6c5f2fa2e36840d70add8db8cb953f25f2b Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Fri, 20 Nov 2026 04:46:14 +0000
+Subject: [PATCH 1/7] Hold: a GM's Save as a new map adds the painted copy and
+ keeps the map edited
+
+---
+ tests/e2e/maps.e2e.ts | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/tests/e2e/maps.e2e.ts b/tests/e2e/maps.e2e.ts
+index c0b486f..26f63c9 100644
+--- a/tests/e2e/maps.e2e.ts
++++ b/tests/e2e/maps.e2e.ts
+@@ -220,6 +220,22 @@ test('a GM whose Save as a new map is refused keeps the map maker open with the
+   });
+ });
+ 
++test('a GM\'s Save as a new map adds the painted copy under the new name, and the map edited keeps its floor', async ({ device }) => {
++  const gm = (await device('gm')).page;
++  await onboardGM(gm);
++  await gm.evaluate(() => hunterApp.store.update((d: any) => { d.library.maps.push({ id: 'mp901', name: 'Old Hall', w: 20, h: 14, tiles: '.'.repeat(280), fog: false, sight: 8, starts: { party: [], foe: [] }, zones: [] }); }, 'test-setup'));
++  await go(gm, 'workshop');
++  await gm.locator('#view-workshop [data-ws="map"] li', { hasText: 'Old Hall' }).locator('[data-act="edit"]').tap();
++  await maker(gm).locator('[data-brush="wall"]').tap();
++  await cell(gm, 4, 4).tap();
++  await maker(gm).locator('[data-name]').fill('New Hall');
++  await maker(gm).locator('[data-asnew]').tap();
++  await expect(maker(gm)).toHaveCount(0);
++  const maps = await gm.evaluate(() => hunterApp.store.get().library.maps);
++  expect(maps.map((m: any) => [m.name, m.tiles[4 * 20 + 4]])).toEqual([['Old Hall', '.'], ['New Hall', '#']]);
++  expect(maps[1].id).not.toBe('mp901');
++});
++
+ test('a map shared from the Workshop arrives on another phone with its walls and its fire', async ({ device }) => {
+   const gm = (await device('gm')).page;
+   await onboardGM(gm);
+-- 
+2.43.0
+

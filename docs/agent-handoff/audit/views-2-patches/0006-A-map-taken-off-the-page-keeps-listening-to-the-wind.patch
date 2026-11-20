@@ -1,0 +1,46 @@
+From c3969205da517f1978390f8df0d69a0e395a3f6f Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Fri, 20 Nov 2026 05:35:24 +0000
+Subject: [PATCH 6/7] A map taken off the page keeps listening to the window:
+ the failing case
+
+A player who switches the fight between list and map three times leaves three maps behind, each still on the window's
+resize (2 listeners become 5), with its hotbar observer and its news line (audit BUG-views-8). Nothing tells a map that
+the screen replaced its box.
+---
+ tests/e2e/battle-map.e2e.ts | 19 +++++++++++++++++++
+ 1 file changed, 19 insertions(+)
+
+diff --git a/tests/e2e/battle-map.e2e.ts b/tests/e2e/battle-map.e2e.ts
+index 956b2f1..f3ee45f 100644
+--- a/tests/e2e/battle-map.e2e.ts
++++ b/tests/e2e/battle-map.e2e.ts
+@@ -410,6 +410,25 @@ test('a player who zoomed the map out in one fight finds the next fight on the s
+   });
+ });
+ 
++test('a player who switches the fight between list and map three times leaves no map behind listening to the window', async ({ device }) => {
++  const { gm, player } = await room(device);
++  await fight(gm, player, [{ x: 6, y: 6 }]);
++  const cdp = await player.context().newCDPSession(player);
++  const resizers = async () => {
++    const { result } = await cdp.send('Runtime.evaluate', { expression: 'window' });
++    const { listeners } = await cdp.send('DOMDebugger.getEventListeners', { objectId: result.objectId! });
++    return listeners.filter(l => l.type === 'resize').length;
++  };
++  const first = await resizers();
++  for (let i = 0; i < 3; i++) {
++    await combat(player).locator('[data-fview="list"]').tap();
++    await expect(map(player)).toHaveCount(0);
++    await combat(player).locator('[data-fview="map"]').tap();
++    await expect(map(player).locator('[data-frame]')).toBeVisible();
++  }
++  expect(await resizers()).toBe(first);
++});
++
+ /** Every die rolls its highest face: a reaction d20 of 20 uses all the time a slow ability gives to move. */
+ const highestDice = (page: Page) => page.evaluate(() => Object.defineProperty(crypto, 'getRandomValues', { configurable: true, value: (a: Uint32Array) => a.fill(0xffffffff) }));
+ 
+-- 
+2.43.0
+
