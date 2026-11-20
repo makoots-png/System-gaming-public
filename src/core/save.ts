@@ -1,15 +1,14 @@
 // save.ts: what a save is. The types, the default of every entity and the parser at the boundary. A save from before
 // schema 4 (the new combat rules) is not read: `loadSave` keeps its text for the backups and opens a new campaign.
-// Pure: the caller passes the clock and the device id maker in `ParseEnv`.
+// Pure: the caller passes the clock and the device id maker in `ParseEnv`. A hunter, its default and its repair are
+// src/core/hunter/hunter.ts, and the repair's tools src/core/repair.ts, both below this file: a module this file loads
+// (the outbox, the story runs, protocol.ts) may load them, never this file.
 // A change to the shape of a save is made here and in tests/save.test.ts.
 import { parseFeats } from './hunter/feats.ts';
-import { parseObjectiveCount } from './hunter/counts.ts';
-import type { ObjectiveCount } from './hunter/counts.ts';
 import type { FeatDef } from './hunter/feats.ts';
 import { STATUS_KEY_RE } from './combat/effect-ops.ts';
-import type { SheetStatus, StatusDef } from './combat/effect-ops.ts';
-import { parseFight, parseSheetStatus, parseStatusDef } from './combat/fight-parse.ts';
-import { MAX_STATUSES } from './combat/fight-types.ts';
+import type { StatusDef } from './combat/effect-ops.ts';
+import { parseFight, parseStatusDef } from './combat/fight-parse.ts';
 import type { Fight } from './combat/fight-types.ts';
 import { monsterId, newGate, parseGate, parseGateId } from './gates/gate.ts';
 import type { Gate, GateMonster, GateStatus, GateType } from './gates/gate.ts';
@@ -21,60 +20,57 @@ import type { RoomPlaces } from './sync/seen.ts';
 import type { Outbox } from './sync/outbox.ts';
 import type { RoomEvent } from './protocol.ts';
 import { ITEM_TYPES, LOOT_ITEMS, RARITIES, SHOP_ITEMS, SLOTS, itemOf, parseItem } from './registry/items.ts';
-import { ARCHETYPE_LIST, parseMonster } from './registry/monsters.ts';
-import { SKILL_SEEDS, SKILL_TYPES, parseSkill, skillOf } from './registry/skills.ts';
+import { parseMonster } from './registry/monsters.ts';
+import { SKILL_SEEDS, SKILL_TYPES, skillOf } from './registry/skills.ts';
 import type { SkillType } from './registry/skills.ts';
 import type { ItemTemplate, ItemType, Rarity, Slot } from './registry/items.ts';
 import type { Skill } from './registry/skills.ts';
 import type { Item } from './registry/items.ts';
 import type { Loot, Monster, StartStatus } from './registry/monsters.ts';
-import { MAX_MAPS, parseBattleMap } from './registry/maps.ts';
+import { parseBattleMap } from './registry/maps.ts';
 import type { BattleMap } from './registry/maps.ts';
 import { parseStory } from './story/story.ts';
 import type { Story } from './story/story.ts';
 import { keptRuns, parseStoryRun } from './story/run.ts';
 import type { StoryRun } from './story/run.ts';
-import type { Archetype } from './hunter/derive.ts';
 import { oneOf } from './one-of.ts';
 import { parseCoins } from './coin.ts';
 import { parseCheck, parseRollKind } from './roll.ts';
 import type { Check, RollKind } from './roll.ts';
 import type { Coin } from './coin.ts';
-import { STAT_KEYS, baseStats, statsBy } from './stats.ts';
-import type { StatKey, Stats } from './stats.ts';
-import { PERK_KEYS, RANKS } from './rules.ts';
-import type { Perk, Rank } from './rules.ts';
+import { RANKS } from './rules.ts';
+import type { Rank } from './rules.ts';
 /** The ranks, and a rank: src/core/rules.ts. */
 export { RANKS };
 export type { Rank };
-import { REWARD_BOUNDS, newRewards, parseBundle, parseRewards } from './rewards.ts';
+import { newRewards, parseBundle } from './rewards.ts';
 import type { RewardBundle, Rewards } from './rewards.ts';
-import { MAX_LEVEL, newProgress, pendingTotal } from './hunter/progress.ts';
-import type { Pending, Progress } from './hunter/progress.ts';
-import { newVitals, parseLife, parseUsed } from './hunter/vitals.ts';
-import { hunterSheet } from './hunter/sheet.ts';
+import type { Progress } from './hunter/progress.ts';
 import { isStateChip } from './hunter/chips.ts';
-import { parsePenalty } from './hunter/penalty.ts';
-import { newSolo, parseSolo } from './gates/personal.ts';
-import { newChronicle, parseChronicle } from './hunter/chronicle.ts';
-import type { Chronicle } from './hunter/chronicle.ts';
-import type { Solo } from './gates/personal.ts';
 import { parseRuns } from './gates/solo-wait.ts';
 import type { WaitingRun } from './gates/solo-wait.ts';
 import { parseOffers } from './trade/offer.ts';
 import type { OfferRecord } from './trade/offer.ts';
 import type { Penalty } from './hunter/penalty.ts';
-import { parseJobChain } from './hunter/job-chain.ts';
 import type { JobChain } from './hunter/job-chain.ts';
 import type { Life, Vitals } from './hunter/vitals.ts';
-import { parseCombatantId, parseDeviceId, parseGmKey, parseRoomCode, parseSaveId, SAVE_ID_RE, saveId, titleKey } from './ids.ts';
-import type { BoonId, ChainId, CombatantId, DeviceId, EventId, GateId, GmKey, HunterId, IdOf, ItemId, LoadoutId, LogId, MonsterId, QuestId, RollEntryId, ShadowId, TitleId } from './ids.ts';
+import { parseCombatantId, parseDeviceId, parseGmKey, parseRoomCode, parseSaveId, saveId } from './ids.ts';
+import type { CombatantId, DeviceId, EventId, GateId, GmKey, HunterId, IdOf, LogId, MonsterId, QuestId, RollEntryId } from './ids.ts';
 import type { RoomCode } from './ids.ts';
-import { EMBLEMS, HUNTER_COLORS, RULES as BASE_RULES, pathOf, rulesOf } from './rules.ts';
+import { RULES as BASE_RULES, rulesOf } from './rules.ts';
 import { parseOverrides } from './overrides.ts';
-import { dayKey, parseDayKey, timeOf } from './day.ts';
+import { dayKey, parseDayKey } from './day.ts';
 import type { DayKey } from './day.ts';
 import type { Rules } from './rules.ts';
+import { LIMITS, NO_DEVICE, SEQ_MAX, VITAL_MAX, claimId, fill, idNumber, int, isNum, isObj, isStr, items, list, num, numOrNull, optional, refill, skills, str } from './repair.ts';
+import type { ParseEnv, Rec, RepairRun } from './repair.ts';
+import {
+  QUEST_KINDS, QUEST_SOURCES, QUEST_STATUSES, SHADOW_GRADES, fixHunter, hunterExample, jobOf, newBoon, newEquipped, newHunter, newLoadout,
+  newQuest, newShadow, newStats, newTitle, parseSheetHunter, questState,
+} from './hunter/hunter.ts';
+import type {
+  Boon, Build, Condition, Daily, Hunter, Loadout, Objective, Quest, QuestKind, QuestSource, QuestState, QuestStatus, Shadow, ShadowGrade, Title,
+} from './hunter/hunter.ts';
 export { rulesOf };
 export type { Rules };
 /** A gate, its statuses and its default: src/core/gates/gate.ts. Only its transition table changes a gate's status or XP paid. */
@@ -82,9 +78,6 @@ export type { Gate, GateMonster, GateStatus, GateType };
 
 // ── enums ──
 export const MODES = ['player', 'gm'] as const;
-export const QUEST_KINDS = ['daily', 'main', 'side', 'job', 'urgent', 'penalty'] as const;
-export const QUEST_STATUSES = ['active', 'done', 'failed'] as const;
-export const QUEST_SOURCES = ['gm', 'system', 'self'] as const;
 /** The skill enum and the one skill parser: src/core/registry/skills.ts. */
 export { SKILL_TYPES };
 export type { SkillType };
@@ -93,62 +86,22 @@ export { ITEM_TYPES, RARITIES, SLOTS };
 export type { ItemTemplate, ItemType, Rarity, Slot };
 /** A skill, an item and a monster live in the registry that owns each (src/core/registry/). */
 export type { Item, Loot, Monster, Skill, StartStatus };
-export const SHADOW_GRADES = ['Normal', 'Elite', 'Knight', 'Elite Knight', 'Commander', 'Marshal'] as const;
 export const LOG_KINDS = ['system', 'award', 'quest', 'gate', 'combat', 'rank', 'use', 'story'] as const;
 
 export type Mode = (typeof MODES)[number];
-export type QuestKind = (typeof QUEST_KINDS)[number];
-export type QuestStatus = (typeof QUEST_STATUSES)[number];
-export type QuestSource = (typeof QUEST_SOURCES)[number];
-export type ShadowGrade = (typeof SHADOW_GRADES)[number];
 export type LogKind = (typeof LOG_KINDS)[number];
 
 // ── entities. A `?` field is one a view adds and removes as it goes, so it has no default. ──
-/** A status on a hunter: its def, who applied it and the rounds left (src/core/combat/effect-ops.ts `SheetStatus`). */
-export type Condition = SheetStatus;
 export type { StatusDef };
-
-/**
- * A quest's objective. `count`: the System moves it by the hunter's facts on the phone that holds the hunter (counts.ts
- * `objectiveStep`, in the notice step): its progress is the count, capped at its target, and no tap moves it. Absent: a tap moves it.
- */
-export type Objective = { label: string; target: number; progress: number; count?: ObjectiveCount };
+/** A hunter and what it holds (quests, titles, boons, shadows, loadouts), its defaults and its repair: src/core/hunter/hunter.ts. */
+export {
+  QUEST_KINDS, QUEST_SOURCES, QUEST_STATUSES, SHADOW_GRADES, jobOf, newBoon, newEquipped, newHunter, newLoadout, newQuest, newShadow, newStats,
+  newTitle, parseSheetHunter, questState,
+};
+export type { Boon, Build, Condition, Daily, Hunter, Loadout, Objective, Quest, QuestKind, QuestSource, QuestState, QuestStatus, Shadow, ShadowGrade, Title };
 /** What a reward may hold and its one reader: src/core/rewards.ts. */
 export { newRewards };
 export type { RewardBundle, Rewards };
-/** An active quest has not ended; a done or failed one has the time it ended. A view sets both with `questState`. */
-export type QuestState = { status: 'active'; doneAt: null } | { status: Exclude<QuestStatus, 'active'>; doneAt: string };
-export const questState = (status: QuestStatus, at: string): QuestState => (status === 'active' ? { status, doneAt: null } : { status, doneAt: at });
-export type Quest = QuestState & {
-  id: QuestId; kind: QuestKind; title: string; desc: string; objectives: Objective[]; rewards: Rewards;
-  issuedAt: string; dueAt: string | null; from: QuestSource; penaltyText: string;
-  /** On a Job Change step's quest: the id of the chain that issued it (src/core/hunter/job-chain.ts). A back-reference only. */
-  chainId?: ChainId;
-  /** What failing costs: given by `grant` in the write that fails it (grant.ts `questFailed`). Empty gives nothing. */
-  onFail: Rewards;
-};
-export type Loadout = { id: LoadoutId; name: string; slots: Partial<Record<Slot, ItemId>> };
-/**
- * A title a hunter holds. `bonus`: while it is the active one, the eight stats, `hpMax` and `manaMax` (`PERK_KEYS`).
- * `seedKey`: the key of the rule title it was given from (src/core/hunter/record.ts `giveTitle`), kept through a rename.
- */
-export type Title = {
-  id: TitleId; name: string; desc: string; bonus: Perk; seedKey?: string;
-  /** While it is the active title, this status is on its hunter's row in every fight, at the hunter's rank (rows.ts `wornStatuses`). */
-  worn?: StatusDef;
-};
-/** A text reward the GM honours at the table, held until the player redeems it. `at`: when it was given. */
-export type Boon = { id: BoonId; name: string; text: string; at: string };
-/**
- * A shadow a hunter keeps. Its body is a monster's at its rank and archetype, of the kind its grade gives
- * (src/core/combat/rows.ts `SHADOW_KINDS`), so its max HP is worked out, not stored. `hp`: its HP now.
- */
-export type Shadow = {
-  id: ShadowId; name: string; monster: string | null; rank: Rank; archetype: Archetype; grade: ShadowGrade; hp: number; summoned: boolean;
-  notes: string;
-};
-export type Daily = { streak: number; lastCompleteKey: DayKey | null; lastCheckedKey: DayKey | null };
-export type Build = { path: string | null; picks: (0 | 1)[] };
 /** Level, XP, peak level and ability points: src/core/hunter/progress.ts. Only its functions change them. */
 export type { Progress };
 /** Life (HP, dying, stable, dead), mana, fatigue and collapse: src/core/hunter/vitals.ts. Only its functions change them. */
@@ -157,23 +110,6 @@ export type { Life, Vitals };
 export type { Penalty };
 /** The Job Change chain, tied to its open step's quest: src/core/hunter/job-chain.ts. Only its functions change it. */
 export type { JobChain };
-/**
- * A hunter. Its sheet (max HP, mana, speed, armor and the rest) is worked out from these fields by
- * src/core/hunter/sheet.ts `hunterSheet`. `hpAdj` and `manaAdj` are the GM's edits of max HP and max mana.
- */
-export type Hunter = Progress & Vitals & {
-  id: HunterId; name: string; /** The hunter's job, or null for none. */ job: string | null; rank: Rank; gold: number; stats: Stats;
-  hpAdj: number; manaAdj: number; conditions: Condition[];
-  titleId: TitleId | null; titles: Title[]; quests: Quest[]; skills: Skill[]; items: Item[]; equipped: Record<Slot, ItemId | null>;
-  shadows: Shadow[]; daily: Daily; penalty: Penalty | null; jobChain: JobChain | null; notes: string; updatedAt: string;
-  emblem: string; color: string; loadouts: Loadout[]; build: Build; boons: Boon[];
-  /** Its personal gates, the System's, and their clock: src/core/gates/personal.ts and solo.ts. Only their functions change them. */
-  solo: Solo;
-  /** What the System remembers of it (its facts, kept and waiting, and its lifetime numbers): src/core/hunter/chronicle.ts. Only `record` and `noticed` change it. */
-  chronicle: Chronicle;
-  /** The hunter a new install starts with (`starterHunter`), until first-run setup replaces it or makes it the player's (src/core/starter.ts). */
-  seed?: true;
-};
 
 /** A fight and its rows: src/core/combat/fight-types.ts. Only the fight's reducer (src/core/combat/fight.ts) changes them. */
 export type { Fight };
@@ -281,41 +217,14 @@ export const CODEX_SEEN_MAX = 400;
 export const SCHEMA = 4;
 /** A fight's drop: its gold and its items, as a monster's loot holds them (registry/monsters.ts `Loot`). */
 export type Dropped = { gold: number; items: ItemTemplate[] };
+/** Bounds for junk or hostile saves only: src/core/repair.ts. */
+export { LIMITS };
 
-/** Bounds for junk or hostile saves only. GM rules (loadoutCap, path tiers) never prune saved data. */
-export const LIMITS = { loadouts: 24, picks: 12, libraryItems: 200, libraryStatuses: 200, librarySkills: 200, libraryRewards: 200, libraryMaps: MAX_MAPS, libraryFeats: 100, libraryStories: 30, boons: 50 } as const;
-
-export const newStats = (R: Rules = BASE_RULES): Stats => ({ ...baseStats(R.fight) });
-export const newEquipped = (): Record<Slot, ItemId | null> => ({
-  weapon: null, offhand: null, head: null, chest: null, hands: null, legs: null, feet: null, neck: null, ring1: null, ring2: null,
-});
 export const newSyncSettings = (): SyncSettings => ({ room: null, cursor: 0, serverOk: false, deviceToken: '' });
 export const newSettings = (deviceId: DeviceId): Settings => ({
   mode: 'player', activeHunterId: saveId('h', 1), dailyResetHour: 0, onboarded: true, sound: false, deviceId, sync: newSyncSettings(),
 });
 export const newWorld = (): World => ({ day: 1, lastDailyKey: null, session: 0 });
-export const newQuest = (): Quest => ({
-  id: saveId('q', 0), kind: 'side', title: '', desc: '', objectives: [], rewards: newRewards(), status: 'active', issuedAt: '', doneAt: null,
-  dueAt: null, from: 'self', penaltyText: '', onFail: newRewards(),
-});
-export const newLoadout = (): Loadout => ({ id: saveId('lo', 0), name: '', slots: {} });
-export const newTitle = (): Title => ({ id: saveId('t', 0), name: '', desc: '', bonus: {} });
-export const newBoon = (): Boon => ({ id: saveId('bn', 0), name: '', text: '', at: '' });
-export const newShadow = (): Shadow => ({
-  id: saveId('sh', 0), name: '', monster: null, rank: 'E', archetype: 'brute', grade: 'Normal', hp: 1, summoned: false, notes: '',
-});
-/** A level 1 hunter with the rules' base stats and its creation points unspent, up at the full HP and mana its sheet gives. */
-export const newHunter = (R: Rules = BASE_RULES): Hunter => {
-  const stats = newStats(R);
-  const h: Hunter = {
-    ...newProgress(), ...newVitals({ hpMax: 1, manaMax: 0, fatigueMax: 0 }), id: saveId('h', 1), name: 'Hunter', job: null, rank: 'E',
-    gold: 0, stats, hpAdj: 0, manaAdj: 0, conditions: [], titleId: null, titles: [],
-    quests: [], skills: [], items: [], equipped: newEquipped(), shadows: [],
-    daily: { streak: 0, lastCompleteKey: null, lastCheckedKey: null }, penalty: null, jobChain: null, notes: '', updatedAt: '',
-    emblem: '', color: '', loadouts: [], build: { path: null, picks: [] }, boons: [], solo: newSolo(), chronicle: newChronicle(),
-  };
-  return Object.assign(h, newVitals(hunterSheet(h, R).sheet));
-};
 /** A blank bestiary entry: what `parseMonster` reads an empty object as. The bestiary's codex entries start from it until W5. */
 export const newMonster = (): Monster => ({ ...parseMonster({})!, id: saveId('m', 0) });
 export const newLogEntry = (): LogEntry => ({ id: saveId('l', 0), at: '', kind: 'system', hunterId: null, title: '', text: '' });
@@ -330,14 +239,11 @@ export const newSave = (deviceId: DeviceId): Save => ({
 });
 
 // ── parser ──
-// How a save is repaired: each object is filled by its default ("fill by example": a missing or wrongly typed field
-// takes the default's value) and then the typed fields are clamped and checked. Keys the types do not know are kept
-// as they are, because the untyped view modules still stash fields of their own on these objects and dropping them
-// would lose that data. The repair works in place and returns the object it was given: views hold on to a hunter
-// between updates, so the object must stay the same one.
+// How a save is repaired, in place, each object filled by its default and then checked: src/core/repair.ts. A hunter's
+// repair is `fixHunter` in src/core/hunter/hunter.ts.
 
-/** What a read needs from outside: the clock, and the makers of this phone's device id and device token (random, the edge's). */
-export type ParseEnv = { now: Date; newDeviceId: () => DeviceId; newDeviceToken: () => string };
+/** What a read needs from outside: src/core/repair.ts. */
+export type { ParseEnv };
 
 export type Parsed =
   /**
@@ -354,80 +260,14 @@ export type Parsed =
   | { kind: 'old'; serverOk: boolean }
   | { kind: 'invalid'; reason: 'not-json' | 'not-an-object' | 'not-a-save' };
 
-type Rec = Record<string, unknown>;
-const ID_RE = SAVE_ID_RE;
-const isObj = (v: unknown): v is Rec => v !== null && typeof v === 'object' && !Array.isArray(v);
-const isStr = (v: unknown): v is string => typeof v === 'string';
-const isNum = (v: unknown): v is number => Number.isFinite(v);
-const isBool = (v: unknown): v is boolean => typeof v === 'boolean';
-function num(v: unknown, fallback: number, lo = -Infinity, hi = Infinity): number {
-  const n = Number(v);
-  return Number.isFinite(n) && v !== null && v !== '' ? Math.min(hi, Math.max(lo, n)) : fallback;
-}
-const int = (v: unknown, fallback: number, lo?: number, hi?: number): number => Math.round(num(v, fallback, lo, hi));
-const str = <D extends string | null>(v: unknown, fallback: D, max = 500): string | D => (isStr(v) ? v.slice(0, max) : fallback);
-const strOrNull = (v: unknown): string | null => (isStr(v) ? v : null);
-const numOrNull = (v: unknown): number | null => (isNum(v) ? v : null);
-
-/**
- * A job as a hunter holds it: the name (spaces cleaned, at most 60 characters), or null for none, a blank or the old
- * default word "None". "No job" is null, never a word a view compares with (implicit audit 3, H9).
- */
-export const jobOf = (v: unknown): string | null => { const j = String(typeof v === 'string' ? v : '').replace(/\s+/g, ' ').trim().slice(0, 60); return j && j !== 'None' ? j : null; };
-
-function fillValue(v: unknown, example: unknown): unknown {
-  if (typeof example === 'number') return isNum(v) ? v : example;
-  if (typeof example === 'string') return isStr(v) ? v.slice(0, 500) : example;
-  if (typeof example === 'boolean') return isBool(v) ? v : example;
-  if (example === null) return v === undefined ? null : v;
-  if (Array.isArray(example)) return Array.isArray(v) ? v : example;
-  return isObj(v) ? fill(v, example as Rec) : example;
-}
-/**
- * Fills `o` in place from a fresh default and returns it as that type. After it, every number, string, boolean,
- * array and object field of the default has that kind of value. Enums, nullable fields and list entries are not
- * checked yet: the caller does that next.
- */
-function fill<T extends object>(o: Rec, example: T): T {
-  for (const [key, value] of Object.entries(example)) o[key] = fillValue(o[key], value);
-  return o as T;
-}
-/** Removes an optional field whose value is not of its type. */
-function optional<T extends object>(o: T, key: keyof T & string, ok: (v: unknown) => boolean): void {
-  if (key in o && !ok(o[key])) delete o[key];
-}
-
-/**
- * One repair run: the save's rules, and every id seen so far with the entities whose id must be replaced. `sheet` is a
- * hunter another phone sent: its build path is checked against that phone's rules, which this run does not have.
- */
-type Run = { R: Rules; env: ParseEnv; ids: Set<string>; bad: [{ id: string }, string][]; sheet?: true };
-
-/** A list of entities: drops what is not an object, fills defaults, and notes a missing or repeated id for a new one. */
-function list<T extends { id: string }>(run: Run, value: unknown, prefix: string, example: () => T, fix?: (o: T) => void): T[] {
-  return (Array.isArray(value) ? value : []).filter(isObj).map(raw => {
-    const o = fill(raw, example());
-    if (fix) fix(o);
-    claimId(run, o, prefix);
-    return o;
-  });
-}
-/** Keeps a good id, or notes a malformed or repeated one for a new id. */
-function claimId(run: Run, o: { id: string }, prefix: string): void {
-  if (!ID_RE.test(o.id) || idNumber(o.id) > SEQ_MAX || run.ids.has(o.id)) run.bad.push([o, prefix]); else run.ids.add(o.id);
-}
 /** Gates come from their own parser, which builds new objects with only the fields a gate has. One without an id takes the default's. */
-function gates(run: Run, value: unknown): Gate[] {
+function gates(run: RepairRun, value: unknown): Gate[] {
   return (Array.isArray(value) ? value : []).filter(isObj).flatMap(raw => {
     const g = parseGate(raw) ?? parseGate({ ...raw, id: newGate().id });
     if (!g) return [];
     claimId(run, g, 'g');
     return [g];
   });
-}
-/** A title's bonus keeps only a perk key (`PERK_KEYS`) with a finite number. */
-function fixBonus(bonus: Rec): void {
-  for (const key of Object.keys(bonus)) if (!(PERK_KEYS as readonly string[]).includes(key) || !isNum(bonus[key])) delete bonus[key];
 }
 function codexOf(v: Rec): Record<string, CodexEntry> {
   const out: Record<string, CodexEntry> = {};
@@ -447,37 +287,20 @@ function codexOf(v: Rec): Record<string, CodexEntry> {
   }
   return out;
 }
-/**
- * Empties `raw` and fills it with `t` and an id (its own, else `defaultId`), noting a bad id for a new one. The object
- * stays the same one, because a view may hold it between updates.
- */
-function refill<T extends { id: string }>(run: Run, raw: Rec, t: Omit<T, 'id'>, defaultId: string, prefix: string): T {
-  const id = isStr(raw.id) ? raw.id : defaultId;
-  for (const key of Object.keys(raw)) delete raw[key];
-  const o = Object.assign(raw, t, { id }) as unknown as T;
-  claimId(run, o, prefix);
-  return o;
-}
-/** Saved items, each read by `parseItem`; one it refuses (no name) is dropped, one without an id takes the default's. */
-const items = (run: Run, value: unknown): Item[] =>
-  (Array.isArray(value) ? value : []).filter(isObj).flatMap(raw => { const t = parseItem(raw); return t ? [refill<Item>(run, raw, t, 'i0', 'i')] : []; });
 /** The GM's monsters, each read by `parseMonster`; one without an id takes the default's. */
-const monsters = (run: Run, value: unknown): Monster[] =>
+const monsters = (run: RepairRun, value: unknown): Monster[] =>
   (Array.isArray(value) ? value : []).filter(isObj).flatMap(raw => { const t = parseMonster(raw); return t ? [refill<Monster>(run, raw, t, 'm0', 'm')] : []; });
-/** Saved skills, each read by `parseSkill`; one it refuses (no name) is dropped, one without an id takes the default's. */
-const skills = (run: Run, value: unknown): Skill[] =>
-  (Array.isArray(value) ? value : []).filter(isObj).flatMap(raw => { const t = parseSkill(raw); return t ? [refill<Skill>(run, raw, t, 's0', 's')] : []; });
 /** The GM's reward bundles, each read by `parseBundle`; one without a name is dropped, one without an id takes the default's. */
-const bundles = (run: Run, value: unknown): RewardBundle[] =>
+const bundles = (run: RepairRun, value: unknown): RewardBundle[] =>
   (Array.isArray(value) ? value : []).filter(isObj).flatMap(raw => { const t = parseBundle(raw); return t ? [refill<RewardBundle>(run, raw, t, 'rb0', 'rb')] : []; });
 /** The GM's battle maps, each read by `parseBattleMap`; one without a name is dropped, one without an id takes the default's. */
-const maps = (run: Run, value: unknown): BattleMap[] =>
+const maps = (run: RepairRun, value: unknown): BattleMap[] =>
   (Array.isArray(value) ? value : []).filter(isObj).flatMap(raw => { const t = parseBattleMap(raw, run.R); return t ? [refill<BattleMap>(run, raw, t, 'mp0', 'mp')] : []; });
 /** The GM's stories, each read by `parseStory`; one without a name or a chapter is dropped, one without an id takes the default's. */
-const stories = (run: Run, value: unknown): Story[] =>
+const stories = (run: RepairRun, value: unknown): Story[] =>
   (Array.isArray(value) ? value : []).filter(isObj).flatMap(raw => { const t = parseStory(raw); return t ? [refill<Story>(run, raw, t, 'st0', 'st')] : []; });
 /** The stories on the table, each read by `parseStoryRun` (one naming no story or no state is dropped), then `keptRuns`. */
-const storyRuns = (run: Run, value: unknown): StoryRun[] =>
+const storyRuns = (run: RepairRun, value: unknown): StoryRun[] =>
   keptRuns((Array.isArray(value) ? value : []).filter(isObj).flatMap(raw => { const t = parseStoryRun(raw); return t ? [refill<StoryRun>(run, raw, t, 'sr0', 'sr')] : []; }));
 /** Items without ids (the shop): each read by `parseItem`, one it refuses dropped. */
 const templates = (value: unknown): ItemTemplate[] => (Array.isArray(value) ? value : []).flatMap(raw => parseItem(raw) ?? []);
@@ -487,9 +310,6 @@ function droppedOf(v: unknown): Dropped | null {
   const gold = typeof v.gold === 'number' && Number.isFinite(v.gold) ? Math.max(0, Math.floor(v.gold)) : 0, items = templates(v.items);
   return gold || items.length ? { gold, items } : null;
 }
-/** A hunter's conditions, each read by `parseSheetStatus`; one that does not read, or a chip the hunter's state draws, is dropped. At most `MAX_STATUSES`, as on a fight row. */
-const conditions = (R: Rules, value: unknown[]): Condition[] =>
-  value.flatMap(c => parseSheetStatus(c, R) ?? []).filter(c => !isStateChip(c.key)).slice(0, MAX_STATUSES);
 
 /**
  * The GM's statuses: at most `LIMITS.libraryStatuses`, each under a key `STATUS_KEY_RE` accepts that is not a chip a
@@ -504,107 +324,6 @@ function statusLibrary(value: Rec): Record<string, StatusDef> {
     if (def) out[key] = def;
   }
   return out;
-}
-/** Bound for junk only: the GM's max HP edit stops at 9999, and a level 9999 hunter's HP is far below this. */
-const VITAL_MAX = 1e9;
-/** Bound for junk only: a level holds `pointsPerLevel` points, 3 by default, so MAX_LEVEL holds 30,006 with the creation points. */
-const POINTS_MAX = 1e6;
-/**
- * Life, mana, fatigue, collapse and the uses spent this rest, within bounds for junk only: the maxima come from the sheet,
- * and a GM's rule change never prunes a hunter. A life that does not read is up at the full HP of the hunter's sheet, so
- * this runs last. A `used` that does not read is none spent (`parseUsed`).
- */
-function fixVitals(h: Hunter, R: Rules): void {
-  h.life = parseLife(h.life, VITAL_MAX) ?? newVitals(hunterSheet(h, R).sheet).life;
-  h.mana = int(h.mana, 0, 0, VITAL_MAX); h.fatigue = int(h.fatigue, 0, 0, VITAL_MAX);
-  h.used = parseUsed(h.used, R);
-}
-
-/** The default a stored hunter is filled from. */
-const hunterExample = (R: Rules): Hunter => newHunter(R);
-function fixHunter(run: Run, h: Hunter): void {
-  const { R } = run;
-  h.name = h.name.slice(0, 60) || 'Hunter'; h.job = jobOf(h.job);
-  h.rank = oneOf(h.rank, RANKS, 'E');
-  h.level = int(h.level, 1, 1, MAX_LEVEL); h.xp = Math.max(0, h.xp); h.gold = Math.max(0, h.gold);
-  h.peakLevel = int(h.peakLevel, h.level, h.level, MAX_LEVEL);
-  h.bonusPoints = int(h.bonusPoints, 0, -POINTS_MAX, POINTS_MAX); h.spent = int(h.spent, 0, 0, POINTS_MAX);
-  h.hpAdj = int(h.hpAdj, 0, -VITAL_MAX, VITAL_MAX); h.manaAdj = int(h.manaAdj, 0, -VITAL_MAX, VITAL_MAX);
-  // A missing stat takes the rules' base. A pending count is a whole number of 1 or more, else none is pending.
-  // One way: a hunter stored with `statsLocked` (the confirmed stats, beside stats that held the pending points too, and
-  // `spent` that counted them) keeps its unconfirmed points as pending, and they leave `spent` (progress.ts header).
-  const old = h as Hunter & { statsLocked?: unknown };
-  const locked: Rec | null = isObj(old.statsLocked) ? old.statsLocked : null;
-  delete old.statsLocked;
-  const stored: Rec = isObj(h.pending) ? h.pending : {};
-  const pending: Pending = {};
-  const raw: Rec = isObj(h.stats) ? h.stats : {}, read = statsBy(k => int(raw[k], R.fight.statBase, 0, POINTS_MAX));
-  for (const k of STAT_KEYS) {
-    const was = locked ? locked[k] : undefined;
-    const n = locked ? (isNum(was) ? read[k] - Math.max(0, Math.round(was)) : 0) : int(stored[k], 0, 0, POINTS_MAX);
-    if (n >= 1) pending[k] = n;
-  }
-  h.stats = { ...raw, ...(locked ? statsBy(k => read[k] - (pending[k] ?? 0)) : read) }; // keys the types do not know are kept, as everywhere in the repair
-  h.pending = pending;
-  if (locked) h.spent = Math.max(0, h.spent - pendingTotal(h));
-  h.conditions = conditions(R, h.conditions);
-  h.titles = list(run, h.titles, 't', newTitle, t => {
-    t.name = t.name.slice(0, 60); fixBonus(t.bonus); if (t.seedKey !== undefined && !titleKey(t.seedKey)) delete t.seedKey;
-    if (t.worn !== undefined) { const worn = parseStatusDef(t.worn, BASE_RULES); if (worn) t.worn = worn; else delete t.worn; }
-  });
-  if (h.titleId !== null && !h.titles.some(t => t.id === h.titleId)) h.titleId = null;
-  optional(h, 'seed', v => v === true);
-  // A boon without a name is dropped; past the cap the oldest go (a new boon is added last).
-  h.boons = list(run, h.boons, 'bn', newBoon, b => {
-    b.name = b.name.trim().slice(0, REWARD_BOUNDS.boonName); b.text = b.text.slice(0, REWARD_BOUNDS.boonText); b.at = b.at.slice(0, 40);
-  }).filter(b => b.name).slice(-LIMITS.boons);
-  h.quests = list(run, h.quests, 'q', newQuest, q => {
-    q.penaltyText = q.penaltyText.slice(0, 300); q.title = q.title.slice(0, 120);
-    q.kind = oneOf(q.kind, QUEST_KINDS, 'side'); q.from = oneOf(q.from, QUEST_SOURCES, 'self');
-    q.objectives = q.objectives.filter(isObj).map(o => {
-      const count = o.count === undefined ? null : parseObjectiveCount(o.count), { count: _, ...rest } = o;
-      return { ...rest, label: str(o.label, '', 120), target: num(o.target, 1), progress: num(o.progress, 0), ...(count ? { count } : {}) };
-    });
-    q.rewards = parseRewards(q.rewards) ?? newRewards(); q.onFail = parseRewards(q.onFail) ?? newRewards();
-    Object.assign(q, questState(oneOf(q.status, QUEST_STATUSES, 'active'), strOrNull(q.doneAt) ?? q.issuedAt)); q.dueAt = timeOf(q.dueAt);
-    optional(q, 'chainId', isStr);
-  });
-  // A save from before the chain had its own field kept it on the quests as `step` and `chainJob`: read once, then dropped.
-  h.jobChain = parseJobChain(h.jobChain, h.quests);
-  for (const q of h.quests) { delete (q as Rec).step; delete (q as Rec).chainJob; }
-  h.skills = skills(run, h.skills);
-  h.items = items(run, h.items);
-  for (const slot of SLOTS) if (!h.items.some(i => i.id === h.equipped[slot])) h.equipped[slot] = null;
-  h.shadows = list(run, h.shadows, 'sh', newShadow, x => {
-    x.name = x.name.slice(0, 60); x.rank = oneOf(x.rank, RANKS, 'E'); x.grade = oneOf(x.grade, SHADOW_GRADES, 'Normal');
-    x.archetype = oneOf(x.archetype, ARCHETYPE_LIST, 'brute'); x.hp = int(x.hp, 1, 0, VITAL_MAX); x.monster = strOrNull(x.monster);
-  });
-  const d = h.daily;
-  d.lastCompleteKey = parseDayKey(d.lastCompleteKey); d.lastCheckedKey = parseDayKey(d.lastCheckedKey);
-  d.streak = Math.max(0, d.streak);
-  h.penalty = parsePenalty(h.penalty, h.quests, run.env.now.toISOString());
-  h.solo = parseSolo(h.solo);
-  h.chronicle = parseChronicle(h.chronicle);
-  // Looks: an unknown emblem or color means "automatic". A loadout slot keeps only a real item, each item once (the
-  // fit is checked at swap time). The build path must exist. A lowered loadoutCap or fewer tiers keep the data.
-  if (!Object.hasOwn(EMBLEMS, h.emblem)) h.emblem = '';
-  if (!HUNTER_COLORS.includes(h.color)) h.color = '';
-  h.loadouts = list(run, h.loadouts, 'lo', newLoadout, l => {
-    l.name = l.name.replace(/\s+/g, ' ').trim().slice(0, 24) || 'Set';
-    const slots: Loadout['slots'] = {}; const used = new Set<string>();
-    for (const slot of SLOTS) {
-      const item = h.items.find(i => i.id === l.slots[slot]);
-      if (item && !used.has(item.id)) { slots[slot] = item.id; used.add(item.id); }
-    }
-    l.slots = slots;
-  }).slice(0, LIMITS.loadouts);
-  const b = h.build;
-  if (run.sheet ? !isStr(b.path) : !pathOf(R, b.path)) b.path = null;
-  if (run.sheet && b.path !== null) b.path = b.path.slice(0, 40);
-  const cut = b.picks.findIndex(x => x !== 0 && x !== 1);
-  if (cut >= 0) b.picks.length = cut;
-  b.picks.length = Math.min(b.picks.length, b.path ? LIMITS.picks : 0);
-  fixVitals(h, R);
 }
 
 function fixSync(sync: SyncSettings, now: number): void {
@@ -636,13 +355,6 @@ function fixSync(sync: SyncSettings, now: number): void {
 
 /** A device token shorter than this is not a secret: the load makes a new one. */
 export const DEVICE_TOKEN_MIN = 16;
-
-/** The largest number an id may end in. Above it `seq + 1` stops being exact, so such an id is replaced. */
-const SEQ_MAX = 1e15;
-const idNumber = (id: string): number => Number(/(\d+)$/.exec(id)?.[1] ?? 0);
-
-/** The example save's device id: the repair makes one when the stored one does not read. */
-const NO_DEVICE = '' as DeviceId;
 /** Repairs a save-shaped object in place. */
 function repair(s: Rec, env: ParseEnv, fight: FightRepair = 'read'): Save {
   const save = fill(s, newSave(NO_DEVICE));
@@ -650,7 +362,7 @@ function repair(s: Rec, env: ParseEnv, fight: FightRepair = 'read'): Save {
   // An override the rules do not have, or of the wrong type, is dropped here, so it never reaches `rulesOf`.
   save.rulesOverrides = parseOverrides(save.rulesOverrides).overrides;
   const R = rulesOf(save.rulesOverrides, save.library.statuses);
-  const run: Run = { R, env, ids: new Set(), bad: [] };
+  const run: RepairRun = { R, env, ids: new Set(), bad: [] };
   const st = save.settings;
   st.mode = oneOf(st.mode, MODES, 'player');
   st.dailyResetHour = int(st.dailyResetHour, 0, 0, 23);
@@ -806,22 +518,6 @@ export function loadSave(stored: StoredKeys, env: ParseEnv): Loaded {
     }
     case 'invalid': return { ...quiet, save: freshSave(env, { onboarded: true }), backup: { reason: 'unreadable', data: text }, notice: 'unreadable' };
   }
-}
-
-/**
- * A hunter another phone sent to a room (its sheet), repaired the way a save's hunter is, or null when it is not an
- * object or its id is not a hunter id. In place, like the save repair. Two differences: the build path is kept as sent
- * (it means something only under the sending phone's rules), and a malformed id inside the hunter
- * (a quest's, an item's) is kept, since no other phone looks things up by those ids. A penalty with no start date
- * takes the epoch: the sending phone's own repair always sets one.
- */
-export function parseSheetHunter(value: unknown): Hunter | null {
-  if (!isObj(value)) return null;
-  const run: Run = { R: BASE_RULES, env: { now: new Date(0), newDeviceId: () => NO_DEVICE, newDeviceToken: () => '' }, ids: new Set(), bad: [], sheet: true };
-  const h = fill(value, hunterExample(BASE_RULES));
-  if (!ID_RE.test(h.id)) return null;
-  fixHunter(run, h);
-  return h;
 }
 
 /**

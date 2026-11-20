@@ -2,9 +2,9 @@
 // and shared. It draws `app.api.sync.conn()` (what `connection()` in src/core/sync/connection.ts answers) with the room
 // code and the role, after each `sync:status` and change: out of a room it says what this phone would do there (a
 // player joins, a GM creates), in one the room's code. It keeps no state of its own.
-import type { App } from '../views/app.ts';
+import type { App } from './app.ts';
 import type { Connection } from '../core/sync/connection.ts';
-import { onUpdate, updateNow } from './upgrade.ts';
+import { onUpdate, updateNow } from '../edge/upgrade.ts';
 
 const CSS = `.sync-pill{font-size:12px;padding:4px 9px;white-space:nowrap;display:inline-flex;align-items:center;gap:5px;cursor:pointer}#sync-pill .sp-txt{white-space:nowrap}
     .sync-pill[data-conn=ready]{border-color:var(--gold);color:var(--gold)}.sync-pill[data-conn=unreachable],.sync-pill[data-conn=reconnecting],.sync-pill[data-conn=notSent],.sync-pill[data-conn=locked],.sync-pill[data-conn=tooBig],.sync-pill[data-conn=sheetTooBig]{border-color:#ff9d4d;color:#ff9d4d}.sync-pill[data-conn=live],.sync-pill[data-conn=waiting],.sync-pill[data-conn=connecting],.sync-pill[data-conn=creating],.sync-pill[data-conn=joining],.sync-pill[data-conn=upgrading]{color:var(--cyan,#4dd8ff)}
@@ -23,7 +23,7 @@ export function register(app: App): void {
   ui.css('sync', CSS);
   document.addEventListener('click', e => { const t = e.target as Element | null; if (t?.closest?.('[data-roompill],[data-joinpill]')) app.go('room'); });
   // While the app updates, the pill says where the update is (src/core/upgrade.ts, run by src/edge/upgrade.ts): the
-  // share of the files the new worker has cached. The pill is an edge module, so the number is its text, not a bar of motion.ts.
+  // share of the files the new worker has cached, as its text.
   onUpdate(render);
   const updating = (): [string, string] => {
     const u = updateNow();

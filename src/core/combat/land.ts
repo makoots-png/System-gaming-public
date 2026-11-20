@@ -13,7 +13,8 @@ import { delayed, hastened, hasteStep, interval, paceCost, stunned, tick } from 
 import type { Tick } from './timeline.ts';
 import type { CombatantId, DamageType } from './ability-types.ts';
 import type { Sheet } from '../hunter/derive.ts';
-import { applyStatus, atTier, controlFactor, countOn, cureStatus, dispelled, lasting, removeStatus, shielded, stackOf, stacked, statusOn, statusShield, withStatuses } from './effect-ops.ts';
+import { applyStatus, controlFactor, cureStatus, dispelled, lasting, removeStatus, shielded, stackOf, statusOn, statusShield, withStatuses } from './effect-ops.ts';
+import { atTier, countOn, stacked } from './op-amount.ts';
 import { admitted, damageShare, harmful, healShare, markWards, wardedDamage } from './standing.ts';
 import type { Body, LandOp, Op, OpRules, Reach, Source, Status, StatusKey, Threshold, Tiered } from './effect-ops.ts';
 import type { Side } from './space.ts';

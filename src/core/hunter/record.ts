@@ -2,12 +2,12 @@
 // one, its boons. Pure. A view changes these only through a function here, in `store.apply` (src/core/save-step.ts).
 // A change to the active title or a title's bonus changes the sheet: chain `fitted` (sheet.ts) after it.
 // Ids and times are arguments: the store reserves an id (`store.id('t')`), the view reads the clock.
-import { RANKS, jobOf } from '../save.ts';
+import { jobOf } from './hunter.ts';
 import type { Boon, Rank, Title } from '../save.ts';
 import type { StatusDef } from '../combat/effect-ops.ts';
 import { oneOf } from '../one-of.ts';
 import { titleKey } from '../ids.ts';
-import { rankForLevel, rankIdx } from '../rules.ts';
+import { RANKS, rankForLevel, rankIdx } from '../rules.ts';
 import type { Rules } from '../rules.ts';
 import { refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';

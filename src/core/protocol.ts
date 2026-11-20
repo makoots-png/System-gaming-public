@@ -5,7 +5,7 @@
 import { GATE_STATUSES, GATE_TYPES, monsterId, parseGateId, shownGate } from './gates/gate.ts';
 import { isStateChip } from './hunter/chips.ts';
 import type { GateFields, GateId, GateStatus, ShownGate } from './gates/gate.ts';
-import { QUEST_KINDS, QUEST_STATUSES, RANKS, SHADOW_GRADES, parseSheetHunter } from './save.ts';
+import { QUEST_KINDS, QUEST_STATUSES, SHADOW_GRADES, parseSheetHunter } from './hunter/hunter.ts';
 import { ARCHETYPE_LIST, MONSTER_BOUNDS, parseMonster } from './registry/monsters.ts';
 import type { MonsterTemplate } from './registry/monsters.ts';
 import { RUN_OUTCOMES } from './combat/odds.ts';
@@ -16,7 +16,7 @@ import type { LifeState } from './hunter/vitals.ts';
 import type { ShadowOrigin } from './hunter/shadows.ts';
 import { BUNDLE_NAME, newRewards, parseRewards, parseWords } from './rewards.ts';
 import type { SystemWords } from './rewards.ts';
-import { RULES, SOLO_BOUNDS } from './rules.ts';
+import { RANKS, RULES, SOLO_BOUNDS } from './rules.ts';
 import { parseFact } from './hunter/facts.ts';
 import type { Fact } from './hunter/facts.ts';
 import { parseFeats } from './hunter/feats.ts';

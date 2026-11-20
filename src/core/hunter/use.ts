@@ -9,7 +9,8 @@
 // (`Item.revive`, the Resurrection Crystal) has no ability and is refused in a fight (`USE_WORDS.fight`): a dead hunter's
 // row stays in the fight until it ends, and the GM's Revive is the way back inside one.
 import { amountDice, amountOn } from '../effects.ts';
-import { atTier, healsFully } from '../combat/effect-ops.ts';
+import { healsFully } from '../combat/effect-ops.ts';
+import { atTier } from '../combat/op-amount.ts';
 import { roundsOf } from '../combat/timeline.ts';
 import type { Op, Source } from '../combat/effect-ops.ts';
 import type { Dice } from '../formula.ts';

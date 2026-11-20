@@ -13,7 +13,8 @@ import { defaultPlace, dist, GRID_SIDE, openGrid, pathCost, place, sees, straigh
 import type { Place } from './space.ts';
 import { acted, cost, interval, opening, paceCost, tick, walkCost } from './timeline.ts';
 import type { Tick } from './timeline.ts';
-import { applyStatus, atTier, modified, removeStatus, statusOn, statusShield, withStatuses } from './effect-ops.ts';
+import { applyStatus, modified, removeStatus, statusOn, statusShield, withStatuses } from './effect-ops.ts';
+import { atTier } from './op-amount.ts';
 import type { Body, Status, StatusKey } from './effect-ops.ts';
 import { landUse, leftZone, placeOf, ready, resolve } from './resolve.ts';
 import { alive } from './land.ts';

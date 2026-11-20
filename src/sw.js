@@ -8,7 +8,7 @@ const CACHE = 'hunter-system-' + __BUILD__;
 const SHELL = __SHELL__;
 
 // While it installs it tells every page of the app how many of the files it has cached and how many failed, so an
-// update shows a true percentage (src/edge/upgrade.ts follows it, src/edge/room-pill.ts says it). The count is
+// update shows a true percentage (src/edge/upgrade.ts follows it, src/views/room-pill.ts says it). The count is
 // src/core/upgrade.ts's, the rule the page reads too. A file that fails fails the install: the worker drops its own
 // cache and never takes over, so the old worker and its whole cache stay; the browser tries again at the next load.
 self.addEventListener('install', e => {

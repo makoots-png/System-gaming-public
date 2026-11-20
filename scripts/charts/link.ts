@@ -14,7 +14,7 @@ const pushEvent = (m: Move): PushEvent | null => { let e: PushEvent | null = nul
 
 // ── the link alone ──
 const OUT = 'Out of a room', IN = 'In a room', ASK = 'Creating or joining a room';
-/** The words of the room pill and the Room view (render in src/edge/room-pill.ts, STATE in src/views/room.js). */
+/** The words of the room pill and the Room view (render in src/views/room-pill.ts, STATE in src/views/room.js). */
 const LINK: { readonly [A in LinkAt]: (l: Extract<Link, { at: A }>) => readonly string[] } = {
   off: () => ['No room server'],
   idle: l => [OUT, typeof l.server === 'object' ? 'Offline' : 'Ready to join'],

@@ -1,7 +1,8 @@
 // effects.ts: what an item does when it is used, as the ops of the fight (src/core/combat/effect-ops.ts), and its card's
 // words. Pure. What an item adds while worn is its stats and gear numbers, which src/core/hunter/sheet.ts reads.
 // src/views/effects.js rolls and applies the ops to a hunter: `amountDice` says what to roll, `amountOn` what it comes to.
-import { atTier, FULL_HEAL, healsFully, opLines } from './combat/effect-ops.ts';
+import { FULL_HEAL, healsFully, opLines } from './combat/effect-ops.ts';
+import { atTier } from './combat/op-amount.ts';
 import type { DescribeRules, Op, Source } from './combat/effect-ops.ts';
 import { diceOf, evaluate } from './formula.ts';
 import type { FormulaBody, Dice } from './formula.ts';

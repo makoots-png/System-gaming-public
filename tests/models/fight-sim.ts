@@ -27,7 +27,8 @@ import { ARCHETYPE_ATTACKS, ATTACK_ID, SKILL_ABILITIES, weaponAttack } from '../
 import type { BuiltInSkill } from '../../src/core/registry/abilities.ts';
 import { STARTER_GEAR } from '../../src/core/registry/items.ts';
 import type { AbilityInput } from '../../src/core/registry/ability-kinds.ts';
-import { inRange, onCooldown, payCost, resolve, taunted } from '../../src/core/combat/resolve.ts';
+import { onCooldown, payCost } from '../../src/core/combat/charge.ts';
+import { inRange, resolve, taunted } from '../../src/core/combat/resolve.ts';
 import type { Aim, Rolls } from '../../src/core/combat/resolve.ts';
 import { fightId, reduce } from '../../src/core/combat/fight.ts';
 import type { Ctx, Effect, Ended, NewRow, Running } from '../../src/core/combat/fight.ts';

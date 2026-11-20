@@ -7,7 +7,8 @@
 
 import type { StatusKey, LandOp } from './effect-ops.ts';
 import type { Body, OpRules, Reach } from './effect-ops.ts';
-import { isStacking, removeStatus, stackOf, withStatuses } from './effect-ops.ts';
+import { removeStatus, stackOf, withStatuses } from './effect-ops.ts';
+import { isStacking } from './op-amount.ts';
 import { stackStep } from './stacks.ts';
 import type { Ability, CombatantId, Outcome, Tag } from './ability-types.ts';
 import { alive, landOps, landThreshold, reached } from './land.ts';

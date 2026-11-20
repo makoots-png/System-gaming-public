@@ -1,7 +1,7 @@
 // party.ts: the hunters on this phone and which one is active. Pure. A view changes them only through a function
 // here, in `store.apply` (src/core/save-step.ts). A new hunter is made by the store (`store.newHunter`, which reserves
 // its ids) and handed in. The room's bound hunter follows a deleted one here; the room link's own fields are sync.ts's.
-import { newHunter } from './save.ts';
+import { newHunter } from './hunter/hunter.ts';
 import type { HunterRef, SheetKey } from './ids.ts';
 import type { Hunter, Save } from './save.ts';
 import type { Rules } from './rules.ts';

@@ -14,7 +14,7 @@ import type { Grid, Place, Side } from './space.ts';
 import { anchorOf, zoneTiles, zoneTone } from './zones.ts';
 import type { ZoneId, ZoneTone } from './zones.ts';
 import type { AbilityId, CombatantId, HunterId } from './ability-types.ts';
-import { stacked } from './effect-ops.ts';
+import { stacked } from './op-amount.ts';
 import type { Body, StatusDef, StatusKey } from './effect-ops.ts';
 import { isUp, partyView } from './fight-turn.ts';
 import { alive } from './land.ts';

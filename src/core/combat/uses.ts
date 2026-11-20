@@ -1,7 +1,7 @@
 // uses.ts: an ability with uses a fight or a long rest (docs/agent-handoff/kits/design.md section 1.4, table 2.3), as a
 // machine. Pure. A row counts each such ability's uses in `Body.used` (this fight's, and for one limited a rest the
 // rest's before the fight, from the hunter's `Vitals.used`); `usesOf` reads where it stands against its gates, rule 3b
-// refuses a spent one (`noUses`, resolve.ts), the reducer counts a use that resolved (`counted`), and the GM sets one with
+// refuses a spent one (`noUses`, charge.ts), the reducer counts a use that resolved (`counted`), and the GM sets one with
 // the fight's `adjust`. A long rest clears the hunter's count (vitals.ts `rest`). A new event is a member of `UsesEvent`
 // and its cells in `TABLE` (the typecheck asks), its line in tests/models/uses-events.ts and its words in
 // scripts/charts/uses.ts.

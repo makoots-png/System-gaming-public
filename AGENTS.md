@@ -38,8 +38,8 @@ On a machine that ships its own Chromium (a cloud box), skip the Playwright inst
 ```
 src/app.js     entry: view registry, routing, header. Lists every module it registers
 src/core/      pure logic. No DOM, no storage, no network, no imports from edge or views
-src/edge/      the store (localStorage), the room link and its pill (network), edge/rules.ts (the current rules for views), edge/roll.ts (every die a fight asks for)
-src/views/     DOM modules, one per screen or panel
+src/edge/      the store (localStorage), the room link (network), edge/rules.ts (the current rules for views), edge/roll.ts (every die a fight asks for)
+src/views/     DOM modules: one per screen or panel, and the room pill in the header
 src/sw.js      service worker source
 public/        files served as they are (index.html, app.css, manifest, icons)
 scripts/build.ts   bundles src/ and public/. The build id is a hash of the inputs

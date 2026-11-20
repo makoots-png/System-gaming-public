@@ -206,7 +206,7 @@ test('only src/core/hunter/progress.ts changes a hunter\'s level, XP, peak level
   const level = new RegExp(String.raw`(\w+)\.level${assign}`);
   // a skill's (`k`) and a shadow's (`s`) level were permitted in skills.js and shadows.js long after neither wrote one
   // (implicit audit 2, step 3); a level write anywhere else is a hunter's
-  const owners = ['src/core/hunter/progress.ts', 'src/core/save.ts'];
+  const owners = ['src/core/hunter/progress.ts', 'src/core/hunter/hunter.ts'];
   const writes = (line: Line) => field.test(line.text) || level.test(line.text);
   const old: Line = { file: 'src/views/hunter.js', line: 0, text: 'h.level++; h.points = Math.max(0, h.points + pts);' };
   expect(writes(old), 'the rule sees the old counter').toBe(true);
@@ -220,7 +220,7 @@ test('only src/core/hunter/progress.ts changes a hunter\'s stats or the points p
   // `pending` the points not yet confirmed, and raise, lower, confirm, raiseMany, setStat and startingStats own them.
   // A monster's or a fight row's stats are not a hunter's: the fight's modules and the monster maker are left out.
   const writes = /(?<![\w$])(h|x|hunter|p)\.(stats|pending)\b\s*(\[[^\]]*\]\s*)?([-+*/]?=(?![=>])|\+\+|--)|\b(h|x|hunter)\.(stats|pending)\s*=/;
-  const owners = ['src/core/hunter/progress.ts', 'src/core/save.ts'];
+  const owners = ['src/core/hunter/progress.ts', 'src/core/hunter/hunter.ts'];
   const old: Line = { file: 'src/views/hunter.js', line: 0, text: 'if (paid) { Object.assign(h, paid); h.stats[k]++; } else if (gm) { h.stats[k]++; h.statsLocked[k] = h.stats[k]; }' };
   expect(writes.test(old.text), 'the rule sees the old stat write').toBe(true);
   expect(writes.test('const h = startingStats(x, p.stats); h.pending[k] -= 1;'), 'and a pending write').toBe(true);
@@ -237,7 +237,7 @@ test('only src/core/hunter/vitals.ts changes a hunter\'s HP, mana, fatigue, life
   const field = new RegExp(String.raw`(\w+)\.(hp|mana|fatigue|life|collapsed|deathSaves)${assign}`, 'g');
   // `down` is a plain word elsewhere (a body, a pointer, a database), so it counts only as a key or a chip's argument.
   const chip = /['"]exhausted['"]|(?:addC|key|chip|Chip)\W[^'"\n]*['"]down['"]/;
-  const owners = ['src/core/hunter/vitals.ts', 'src/core/save.ts'];
+  const owners = ['src/core/hunter/vitals.ts', 'src/core/hunter/hunter.ts'];
   // chips.ts draws the chips: it is the one place that may name one (the chip at 0 HP reads Down or Down, stable there).
   const chipNamers = [...owners, 'src/core/hunter/chips.ts', 'src/core/registry/statuses.ts'];
   const writes = (line: Line) => [...line.text.matchAll(field)].length > 0;
@@ -255,7 +255,7 @@ test('only src/core/hunter/penalty.ts changes a hunter\'s penalty, and nothing e
   // penalty is tied to its quest by id: a view assigns what `penaltyAfter` answers, and the chip is drawn by chipsOf.
   const writes = /\.penalty\s*([-+*/]?=(?![=>])|\|\|=)|\bpenalty\s*:\s*\{/;
   const chip = /['"]penalized['"]/;
-  const owners = ['src/core/hunter/penalty.ts', 'src/core/save.ts'];
+  const owners = ['src/core/hunter/penalty.ts', 'src/core/hunter/hunter.ts'];
   const old: Line = { file: 'src/views/quests.js', line: 0, text: "h.penalty = h.penalty ? { since: h.penalty.since, days } : { since: iso(), days }; h.conditions.push({ key: 'penalized', rounds: null });" };
   expect(writes.test(old.text), 'the rule sees the old penalty write').toBe(true);
   expect(chip.test(old.text), 'the rule sees the old condition').toBe(true);
@@ -268,7 +268,7 @@ test('only src/core/hunter/job-chain.ts changes a hunter\'s Job Change chain, an
   // wrote the store behind a `syncing` flag, with no failed state. Now `jobChain` on the hunter is the chain: a view
   // assigns what `chainAfter` answers, and the step quests come from its `issueQuest` effect (stepQuest sets chainId).
   const writes = /\.jobChain\s*([-+*/]?=(?![=>])|\|\|=)|\bjobChain\s*:\s*\{|\.(chainId|step|chainJob)\s*=(?![=>])|\bchainJob\b|\bchainId\s*:/;
-  const owners = ['src/core/hunter/job-chain.ts', 'src/core/save.ts'];
+  const owners = ['src/core/hunter/job-chain.ts', 'src/core/hunter/hunter.ts'];
   const old: Line = { file: 'src/views/quests.js', line: 0, text: 'if (partial.chainId) { q.chainId = String(partial.chainId).slice(0, 40); q.step = clampInt(partial.step, 1, 99) || 1; }' };
   expect(writes.test(old.text), 'the rule sees the old quest chain write').toBe(true);
   const hits = (await sourceLines('src')).filter(line => !owners.includes(line.file) && !isComment(line.text) && writes.test(line.text));
@@ -293,7 +293,7 @@ test('a quest\'s status and end time are set together by questState', async () =
   // A status beside a date: five writers in quests.js set both by hand. One call sets both, so they cannot disagree.
   const lines = [...await sourceLines('src/core'), ...await sourceLines('src/edge'), ...await sourceLines('src/views')];
   const hits = lines.filter(({ text }) => !isComment(text) && /\.doneAt\s*=[^=]/.test(text));
-  expect(report(hits), 'Object.assign(q, questState(status, at)) from src/core/save.ts').toEqual([]);
+  expect(report(hits), 'Object.assign(q, questState(status, at)) from src/core/hunter/hunter.ts').toEqual([]);
 });
 
 test('no browser code uses AbortSignal.timeout or AbortSignal.any, which iOS 15 lacks', async () => {
@@ -464,14 +464,14 @@ test('only the fight changes a combatant\'s place, HP, shield, stagger, channel,
   // The old fight kept a hunter's fight state in two homes (the row and the sheet) and combat.js patched a row in place
   // (`c.hp = ...`), so the GM's screen, the save and the room disagreed. A row now changes only in the fight's modules,
   // by a command the GM's send() in combat.js gives the reducer; core elsewhere makes new rows (rows.ts) but changes none.
-  const owners = /^src\/core\/combat\/(fight[\w-]*|resolve|effect-ops|land|triggers)\.ts$/;
+  const owners = /^src\/core\/combat\/(fight[\w-]*|resolve|charge|effect-ops|land|triggers)\.ts$/;
   const fields = 'place|hp|shield|stagger|channel|threat|statuses';
   const assign = new RegExp(String.raw`(\w+)\.(${fields})(\s*([-+*/]?=(?![=>])|\+\+|--|\|\|=|\?\?=)|(\.\w+)*\.(push|splice|sort|unshift|pop|shift|reverse)\()`, 'g');
   const copy = new RegExp(String.raw`\{\s*\.\.\.[^,{}]+,[^{}]*\b(${fields})\s*:`);
-  // Not a combatant: a shadow the save repairs (`x`; shadows.js's `s`, permitted after it stopped writing one, is gone), the GM's status library (`library.statuses`, and its copies in library.ts), a room
+  // Not a combatant: a shadow a hunter's repair fixes (`x`, src/core/hunter/hunter.ts; shadows.js's `s`, permitted after it stopped writing one, is gone), the GM's status library (`library.statuses`, and its copies in library.ts), a room
   // payload or doc row that protocol.ts reads, a saved shadow healed by src/core/hunter/shadows.ts, and the statuses of a
   // reward given (src/core/hunter/grant.ts), which are a sheet's, never a row's.
-  const notRows: Record<string, string[]> = { 'src/core/save.ts': ['x'] };
+  const notRows: Record<string, string[]> = { 'src/core/hunter/hunter.ts': ['x'] };
   const notCopies = ['src/core/protocol.ts', 'src/core/library.ts', 'src/core/hunter/shadows.ts', 'src/core/hunter/grant.ts'];
   const writes = (line: Line) => [...line.text.matchAll(assign)].some(m => m[1] !== 'library' && !(notRows[line.file] ?? []).includes(m[1]!))
     || (!notCopies.includes(line.file) && copy.test(line.text));
@@ -482,7 +482,7 @@ test('only the fight changes a combatant\'s place, HP, shield, stagger, channel,
   ];
   for (const line of old) expect(writes(line), `the rule sees ${line.text}`).toBe(true);
   const hits = (await sourceLines('src')).filter(line => !owners.test(line.file) && !isComment(line.text) && writes(line));
-  expect(report(hits), 'a combatant changes only in src/core/combat/fight.ts and the rule modules it calls (resolve.ts, effect-ops.ts, fight-turn.ts, fight-channel.ts, and the kits\' land.ts and triggers.ts). Send a command (adjust, status, move, act) through send() in combat.js.').toEqual([]);
+  expect(report(hits), 'a combatant changes only in src/core/combat/fight.ts and the rule modules it calls (resolve.ts, charge.ts, effect-ops.ts, fight-turn.ts, fight-channel.ts, and the kits\' land.ts and triggers.ts). Send a command (adjust, status, move, act) through send() in combat.js.').toEqual([]);
 });
 
 test('nothing imports a module deleted with the old fight', async () => {

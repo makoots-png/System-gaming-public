@@ -1,12 +1,13 @@
 // The dependency map (scripts/deps.ts, docs/dependency-map.md) is current, and the invisible links it shows hold:
 // every event heard is emitted, every event emitted is heard, every entry of AppEvents is used, every app.api member
 // used is registered, every one declared in AppApi (src/core/api.ts) is registered and the reverse, every one
-// registered is used, and nothing new is unresolved. Each allow list names what is wrong today; an entry that is fixed
-// must leave its list, and a new problem fails the test. That an event name is an entry of AppEvents and that a member
-// used is declared in AppApi is the compiler's check (tsconfig.json and tsconfig.views.json), not this file's.
+// registered is used, nothing new is unresolved, every import keeps its layer's rule (a type import too), and no
+// modules load one another (value imports; a type import is erased). Each allow list names what is wrong today; an
+// entry that is fixed must leave its list, and a new problem fails the test. The layers and the cycles have no list. That an event name is an entry of AppEvents and that a member used is declared in
+// AppApi is the compiler's check (tsconfig.json and tsconfig.views.json), not this file's.
 
 import { expect, test } from 'bun:test';
-import { buildMap, mapIsCurrent, readTypeTable, scanFile, type DepsMap, type Unresolved } from '../scripts/deps.ts';
+import { assemble, buildMap, layerBreaks, mapIsCurrent, readTypeTable, scanFile, valueCycles, type DepsMap, type Scan, type Unresolved } from '../scripts/deps.ts';
 
 const map: DepsMap = await buildMap();
 const TESTS_ONLY = 'used only by browser tests, for setup or to read state';
@@ -78,6 +79,47 @@ test('every registered app.api member is used by some module', () => {
 test('nothing new is unresolved in the dependency map', () => {
   const now = map.unresolved.map(u => `${u.file}: ${u.what}`);
   expect(sorted(now), 'write the call so the map can follow it: a literal event name, app.api.<name>.<member> or a declared alias of app.api.').toEqual(sorted(UNRESOLVED));
+});
+
+test('every import keeps its layer\'s rule: core imports only core, edge never a view, the server no browser module', () => {
+  expect(layerBreaks(map), 'move the file, or the type both sides need, to the layer it belongs to. The Layers table of docs/dependency-map.md says what each layer may import; a type import counts too.').toEqual([]);
+});
+
+test('the layer check sees an edge module that imports a view, though the import is only a type', () => {
+  const scans = new Map<string, Scan>([
+    ['src/edge/link.ts', scanFile('src/edge/link.ts', "import type { App } from '../views/app.ts';\nimport { step } from '../core/step.ts';\n")],
+    ['src/views/app.ts', scanFile('src/views/app.ts', "import { link } from '../edge/link.ts';\n")],
+    ['src/core/step.ts', scanFile('src/core/step.ts', 'export const step = 1;\n')],
+  ]);
+  expect(layerBreaks(assemble(scans))).toEqual(['src/edge/link.ts imports src/views/app.ts']);
+});
+
+test('no modules load one another: each module has loaded everything it imports a value from before it runs', () => {
+  expect(valueCycles(map), 'in a cycle one module runs before another has loaded, and a value it reads at its top is not there yet. Move what both sides need into a module that imports neither, or import only its type.').toEqual([]);
+});
+
+test('the map tells an import of types, which the build erases, from an import that loads its module', () => {
+  const s = scanFile('src/core/x.ts', [
+    "import type { A } from './a.ts';",
+    "export type { B } from './b.ts';",
+    "import { type C } from './c.ts';",
+    "import { d } from './d.ts';",
+    "export * from './e.ts';",
+    "import './f.ts';",
+    "const g = () => import('./g.ts');",
+  ].join('\n'));
+  expect(s.typeImports).toEqual(['src/core/a.ts', 'src/core/b.ts']);
+  expect(s.imports).toEqual(['src/core/c.ts', 'src/core/d.ts', 'src/core/e.ts', 'src/core/f.ts', 'src/core/g.ts']);
+});
+
+test('the cycle check finds modules that load one another, and not a loop closed by a type import', () => {
+  const scans = new Map<string, Scan>([
+    ['src/core/a.ts', scanFile('src/core/a.ts', "import { b } from './b.ts';\nexport const a = 1;\n")],
+    ['src/core/b.ts', scanFile('src/core/b.ts', "import { c } from './c.ts';\nexport const b = 1;\n")],
+    ['src/core/c.ts', scanFile('src/core/c.ts', "import { a } from './a.ts';\nimport { d } from './d.ts';\nexport const c = 1;\n")],
+    ['src/core/d.ts', scanFile('src/core/d.ts', "import type { C } from './c.ts';\nexport const d = 1;\n")],
+  ]);
+  expect(valueCycles(assemble(scans))).toEqual([['src/core/a.ts imports src/core/b.ts', 'src/core/b.ts imports src/core/c.ts', 'src/core/c.ts imports src/core/a.ts']]);
 });
 
 test('the map follows an alias of app.api into a call, and reads each member of a registration', () => {

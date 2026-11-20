@@ -20,6 +20,7 @@ import type { ZoneId } from './zones.ts';
 import type { Extraction } from './extraction.ts';
 import type { BearerEvent, Trigger, Trip } from './triggers.ts';
 import { stackStep } from './stacks.ts';
+import { SHEET_OP_KEYS, atTier, countOn, isStacking, isTiers, stacked } from './op-amount.ts';
 import { harmful, withSheetOps } from './standing.ts';
 import type { Stack } from './stacks.ts';
 import type { HunterRef, Id, ShadowId } from '../ids.ts';
@@ -66,7 +67,6 @@ export type PlainDef = DefBase & { readonly stack?: never };
 export type StackDef = DefBase & { readonly stack: StackRule };
 /** A def is plain or stacking; only a stacking def may have a threshold, and only its status a count. */
 export type StatusDef = PlainDef | StackDef;
-export const isStacking = (def: StatusDef): def is StackDef => def.stack !== undefined;
 /**
  * How a stacking status counts (kits design 1.1 and table 2.1): its cap (1 to `stackCap`); how stacks leave (`never`
  * but with the status, one a `round` held, or all on its bearer's named `event`); whether the count is the fight's alone
@@ -207,8 +207,7 @@ export type Op =
   | { readonly op: 'negate' }
   /** A cure of the first harmful status (the earliest put on), or of every one (8.1's Dispel and Purge). */
   | { readonly op: 'dispel'; readonly which: 'first' | 'all' };
-/** The sheet numbers a `sheet` op may change (kits table 8.1). */
-export const SHEET_OP_KEYS = ['armor', 'resist', 'pen', 'critFaces', 'exposed', 'critSize', 'costCut', 'range'] as const;
+/** A sheet number a `sheet` op may change (op-amount.ts `SHEET_OP_KEYS`). */
 export type SheetOpKey = (typeof SHEET_OP_KEYS)[number];
 export const SHARE_ON = ['dealt', 'taken', 'healed'] as const;
 export type ShareOn = (typeof SHARE_ON)[number];
@@ -269,9 +268,8 @@ type StatusCommon = {
 export type PlainStatus = StatusCommon & { readonly def: PlainDef; readonly stacks?: never };
 /** A status of a stacking def: its count, 1 to its def's cap (kits design 1.1). */
 export type StackStatus = StatusCommon & { readonly def: StackDef; readonly stacks: number };
-/** One status on a body. Its def says which: `statusOn` builds one from any def, `stacked` tells them apart. */
+/** One status on a body. Its def says which: `statusOn` builds one from any def, `stacked` (op-amount.ts) tells them apart. */
 export type Status = PlainStatus | StackStatus;
-export const stacked = (s: Status): s is StackStatus => isStacking(s.def);
 /** What a status is besides its def and count, as `statusOn` takes it. */
 export type StatusFields = StatusCommon;
 /**
@@ -393,12 +391,6 @@ export type Body = Clock & {
   readonly extraction?: Extraction;
 };
 
-// ── reading an op at its source's tier ──
-
-const isTiers = <T>(v: Tiered<T>): v is Tiers<T> => Array.isArray(v);
-/** The value of a `Tiered` number at `tier` (0 to 5, its last value). */
-export const atTier = <T>(v: Tiered<T>, tier: number): T => isTiers(v) ? v[Math.max(0, Math.min(v.length - 1, tier))]! : v;
-
 /** The rule numbers this file reads. */
 export type OpRules = DeriveRules;
 
@@ -424,8 +416,6 @@ export function lasting(def: StatusDef, duration: Tick, tier: number, potency: n
 /** The later of two ends (a body's tick, a sheet's rounds left); null, until removed, is the latest. */
 const later = <T extends number>(a: T | null, b: T | null): T | null => (a === null || b === null ? null : a >= b ? a : b);
 
-/** What a status's per-stack numbers are multiplied by: its stacks, or 1 for a plain status (kits design 1.1 rule 4). */
-export const countOn = (s: Status): number => (stacked(s) ? s.stacks : 1);
 /** A status's count as the stack machine (stacks.ts) holds it: held at its stacks, or absent for a plain one. */
 export const stackOf = (s: Status | undefined): Stack => (s !== undefined && stacked(s) ? { at: 'held', n: s.stacks } : { at: 'absent' });
 

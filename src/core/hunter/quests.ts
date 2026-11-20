@@ -11,7 +11,7 @@ import { systemCompletes, systemCounts } from './quest-rights.ts';
 import { missedDays, penaltyAfter, penaltyQuest } from './penalty.ts';
 import type { PenaltyEffect, PenaltyEvent } from './penalty.ts';
 import type { Role } from '../role.ts';
-import { QUEST_KINDS, QUEST_SOURCES, QUEST_STATUSES, questState } from '../save.ts';
+import { QUEST_KINDS, QUEST_SOURCES, QUEST_STATUSES, questState } from './hunter.ts';
 import type { Hunter, Objective, Quest, QuestKind, QuestSource, QuestStatus, Save } from '../save.ts';
 import { newRewards, parseRewards } from '../rewards.ts';
 import type { Rewards } from '../rewards.ts';

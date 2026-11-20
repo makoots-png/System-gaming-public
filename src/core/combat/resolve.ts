@@ -1,8 +1,9 @@
 // resolve.ts: what one use of an ability does, worked out whole (docs/agent-handoff/rw/design.md section 3.1, rules 2 to
 // 19, in that order). Pure: the edge asks `needs` which dice to roll, rolls them and passes them in; nothing is rolled or
 // validated here. A use the rules refuse comes back as a refusal and changes nothing. Each rule is one function below,
-// named for what it decides. A new rule is a function here, called in its place in `resolve`, with a test in
-// tests/resolve.test.ts that fails when the rule is removed.
+// named for what it decides. Rules 3 to 4 are the exception: an armed reaction asks them too, so they are `charged` in
+// charge.ts, which this file and fight-react.ts both import. A new rule is a function here, called in its place in
+// `resolve`, with a test in tests/resolve.test.ts that fails when the rule is removed.
 
 import { tallyOf } from './row-tally.ts';
 import { diceOf, evaluate, rollOf, withEdge } from '../formula.ts';
@@ -14,17 +15,17 @@ import { dist, dodge, inShape, sees, shovePath, terrain, TERRAIN, tiles, tilesOf
 import type { Grid, Place, Side } from './space.ts';
 import { acted, delayed, extraNow, extraStep, interval, refunded, stunned, tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
-import type { Ability, Avoid, CombatantId, AbilityGate, Outcome, Price } from './ability-types.ts';
-import { atTier, controlFactor, countOn, cureStatus, dispelled, removeStatus, shielded, stackOf, stacked, withStatuses } from './effect-ops.ts';
+import type { Ability, Avoid, CombatantId, Outcome } from './ability-types.ts';
+import { controlFactor, cureStatus, dispelled, removeStatus, shielded, withStatuses } from './effect-ops.ts';
+import { atTier, countOn, stacked } from './op-amount.ts';
 import { boostsOn, concealed, critFacesAgainst, damageShare, edgeOn, edgeStep, healShare, rangeWith, wardedDamage } from './standing.ts';
 import type { Body, OpRules, Status, StatusKey, UseOp } from './effect-ops.ts';
 import { afterDefence, alive, broken, channelBreaks, clamp, cureLands, hasteOn, healed, hurt, landEnd, landMove, landThreshold, live, opsOf, landStatus, threatened, throughShield } from './land.ts';
-import { insideZone } from './triggers.ts';
 import type { Burst, LandFired } from './land.ts';
-import { stackStep } from './stacks.ts';
-import { usesOf } from './uses.ts';
 import { freeZoneId, MAX_ZONES } from './zones.ts';
 import type { Ground, Zone } from './zones.ts';
+import { charged, stacksOn, taken } from './charge.ts';
+import type { ChargeRefusal } from './charge.ts';
 import { beforeReactions } from './fight-react.ts';
 import type { Reacted } from './fight-react.ts';
 
@@ -61,12 +62,8 @@ export function castDice(n: Needs, aim: Aim, own: readonly number[], rolled: Rol
   const ids = Object.keys(n.dice) as CombatantId[], mine = typeof aim === 'string' && ids.includes(aim) ? aim : ids[0];
   return Object.fromEntries(ids.map(id => [id, id === mine ? own : rolled[id] ?? []]));
 }
-/**
- * Why a use was refused. `gated`: a `holds` gate of rule 3b does not hold; `noUses`: its uses a fight or a rest are
- * spent (table 2.3); `hp`: an HP price would take the user to 0 or
- * less; `stacks`: the user holds fewer stacks than a price asks (kits design 1.4).
- */
-export type UseRefusal = 'taunted' | 'cooldown' | 'gated' | 'noUses' | 'mana' | 'hp' | 'stacks' | 'range' | 'noTarget' | 'needsRoll'
+/** Why a use was refused: rules 3 to 4's refusals (`ChargeRefusal`, charge.ts), and those of the rules here. */
+export type UseRefusal = ChargeRefusal | 'taunted' | 'range' | 'noTarget' | 'needsRoll'
   /** A second extra action in one round of fight time (kits design 8.6.1, `extraPerRound`). */
   | 'extra'
   /** A blink of a rooted user, or one to a tile it does not see, may not stand on or is taken (kits design 8.3.5). */
@@ -109,78 +106,10 @@ export function taunted(a: Ability, user: Body, bodies: readonly Body[], at: Pla
   return false;
 }
 
-// Rule 3.
-export const onCooldown = (a: Ability, user: Body, now: Tick): boolean => now < (user.readyAt[a.id] ?? 0);
-
-/** The stacks of `key` a body holds: its count for a stacking status, 1 for a plain one, 0 for none. */
-const stacksOn = (b: Body, key: StatusKey, now: Tick): number => { const s = live(b, now).find(x => x.key === key); return s ? countOn(s) : 0; };
-// Rule 3b (kits design 1.4): every `holds` gate holds: the user, or the body at the aim, has at least `atLeast` stacks of
-// the status (1 for a plain one: a mode); and an ability limited to n uses a fight or a rest has one left on the user's
-// row (uses.ts, table 2.3).
-export function gated(a: Ability, user: Body, bodies: readonly Body[], at: Place, now: Tick): 'gated' | 'noUses' | null {
-  const target = bodies.find(b => alive(b) && samePlace(b.place, at));
-  const held = (g: Extract<AbilityGate, { kind: 'holds' }>): number => (g.on === 'self' ? stacksOn(user, g.key, now) : target ? stacksOn(target, g.key, now) : 0);
-  if ((a.gates ?? []).some(g => g.kind === 'holds' && held(g) < g.atLeast)) return 'gated';
-  if ((a.gates ?? []).some(g => g.kind === 'inside' && !insideZone(user, g.zone))) return 'gated';
-  return usesOf(a, user)?.at === 'spent' ? 'noUses' : null;
-}
-
-/** An HP price's HP for a body of `hpMax`: a flat number, or its share of max HP rounded up. */
-export const hpPrice = (p: Extract<Price, { kind: 'hp' }>, hpMax: number): number => (p.amount.kind === 'flat' ? p.amount.n : Math.ceil(p.amount.share * hpMax));
-/**
- * Rule 4's kit prices (kits design 1.4), paid with the mana: an HP price, refused at the HP it would take (never the
- * killing blow), past the shield; a price in the user's own stacks, refused when it holds fewer than `n` (or none for
- * `all`), whose count is the formula's `spent`. A zone price is the zones unit's (design 5.3 unit 9).
- */
-export function payPrices(a: Ability, user: Body, now: Tick, R: ResolveRules): { user: Body; spent: number } | UseRefusal {
-  let u = user, spent = 0;
-  for (const p of a.prices ?? []) {
-    if (p.kind === 'hp') {
-      const hp = hpPrice(p, u.sheet.hpMax);
-      if (u.hp <= hp) return 'hp';
-      u = { ...u, hp: u.hp - hp };
-    } else if (p.kind === 'stacks' && p.from === 'self') {
-      const held = stacksOn(u, p.key, now), take = p.take.kind === 'all' ? held : p.take.n;
-      if (held < Math.max(1, take)) return 'stacks';
-      u = withStatuses(u, taken(u, p.key, take, now), now, R);
-      spent += take;
-    }
-  }
-  return { user: u, spent };
-}
-/** A body's statuses with `m` stacks of `key` taken by a price (table 2.1): a plain status goes whole; spent is not ended. */
-function taken(b: Body, key: StatusKey, m: number, now: Tick) {
-  const s = live(b, now).find(x => x.key === key);
-  if (!s || !stacked(s)) return removeStatus(b.statuses, key);
-  const after = stackStep(stackOf(s), { type: 'price', m }, { rule: s.def.stack, at: null }).stack;
-  return after.at === 'held' ? b.statuses.map(x => x.key === key ? { ...s, stacks: after.n } : x) : removeStatus(b.statuses, key);
-}
-
-// Rule 4: what a use costs its user, its fatigue and mana each cut by the user's `costCut`.
-export const costOf = (a: Pick<Ability, 'cost'>, costCut: number): { readonly fatigue: number; readonly mana: number } =>
-  ({ fatigue: Math.ceil(a.cost.fatigue * (1 - costCut)), mana: Math.ceil(a.cost.mana * (1 - costCut)) });
-// Rule 4: paid before anything can miss. Mana must be on hand; fatigue rises to the capacity at most.
-export function payCost(a: Ability, user: Body): Body | null {
-  const { fatigue, mana } = costOf(a, user.sheet.costCut);
-  if (mana > user.mana) return null;
-  return { ...user, mana: user.mana - mana, fatigue: Math.min(user.sheet.fatigueMax, user.fatigue + fatigue) };
-}
-
-/**
- * Rules 3, 3b and 4 for a user, whatever it aims at: off its cooldown, its gates holding at `at` and a use left, its cost
- * and its kit prices paid. A use asks it after rule 2; an armed reaction asks it to fire (fight-react.ts), so a reaction
- * is refused and charged as a use is.
- */
-export function charged(a: Ability, user: Body, bodies: readonly Body[], at: Place, now: Tick, R: ResolveRules): { user: Body; spent: number } | UseRefusal {
-  if (onCooldown(a, user, now)) return 'cooldown';
-  const gate = gated(a, user, bodies, at, now);
-  if (gate) return gate;
-  const cost = payCost(a, user);
-  return cost === null ? 'mana' : payPrices(a, cost, now, R);
-}
+// Rules 3 to 4 (cooldown, gates and uses, cost and kit prices) are `charged` in charge.ts, which a reaction asks as well.
 
 // Rule 5: within the ability's range, and the tiles a user's `sheet` ops add to a range of 2 or more (kits design 8.1).
-export const inRange = (a: Pick<Ability, 'aim' | 'range'>, user: { readonly place: Place }, at: Place, range: number = a.range): boolean =>
+export const inRange =(a: Pick<Ability, 'aim' | 'range'>, user: { readonly place: Place }, at: Place, range: number = a.range): boolean =>
   a.aim === 'self' || dist(user.place, at) <= range;
 /** An ability's range for `user`: its own, and the tiles its `sheet` ops add to a range of 2 or more (standing.ts). */
 export const rangeFor = (a: Pick<Ability, 'range'>, user: Pick<Body, 'statuses'>, R: ResolveRules): number => rangeWith(a.range, user, R);
@@ -523,7 +452,7 @@ export type Answers = {
 export type Ready = { readonly at: Place; readonly paid: Body; readonly spent: number };
 /**
  * Rules 2 to 5 of a use, before anything lands: an aim that is there and not concealed, no taunt, no extra action taken
- * this round, `charged` (rules 3 to 4) and the range. A channel's begin asks the same (fight.ts), so a channel pays what
+ * this round, `charged` (rules 3 to 4, charge.ts) and the range. A channel's begin asks the same (fight.ts), so a channel pays what
  * a use pays.
  */
 export function ready(a: Ability, user: Body, bodies: readonly Body[], aim: Aim, grid: Grid, now: Tick, R: ResolveRules): Ready | UseRefusal {

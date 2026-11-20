@@ -6,7 +6,7 @@
 
 import type { Sheet } from '../hunter/derive.ts';
 import type { Rules } from '../rules.ts';
-import { atTier, countOn, SHEET_OP_KEYS } from './effect-ops.ts';
+import { atTier, countOn, SHEET_OP_KEYS } from './op-amount.ts';
 import type { Body, ShareOn, SheetOpKey, Status, StatusDef, StatusKey } from './effect-ops.ts';
 import type { Ability, CombatantId } from './ability-types.ts';
 

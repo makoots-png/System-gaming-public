@@ -21,7 +21,8 @@ import { abilityId, combatantId, hunterId, REACT_WHEN, tag } from './ability-typ
 import { parseSaveId, parseSheetKey } from '../ids.ts';
 import type { Ability, AbilityEffect, AbilityId, CombatantId, Delivery, AbilityGate, Gap, Price, RuleTicks, Summon, Tag } from './ability-types.ts';
 import { bounded } from '../registry/scalers.ts';
-import { amountOp, AURA_ON, isStacking, isStatusKey, LAND_USE_OPS, reactionMayHold, modified, shadowId, SHARE_ON, SHEET_OP_KEYS, statusKey, statusOn, TYPE_MAX, isUseOp } from './effect-ops.ts';
+import { amountOp, AURA_ON, isStatusKey, LAND_USE_OPS, reactionMayHold, modified, shadowId, SHARE_ON, statusKey, statusOn, TYPE_MAX, isUseOp } from './effect-ops.ts';
+import { isStacking, SHEET_OP_KEYS } from './op-amount.ts';
 import type {
   Body, Channel, Due, End, Holder, Intent, LandOp, Op, Origin, Reach, SheetStatus, StackRule, Status, StatusDef, StatusKey, Threshold, Tiered, UseOp,
 } from './effect-ops.ts';

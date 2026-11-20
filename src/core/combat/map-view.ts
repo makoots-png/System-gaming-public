@@ -3,15 +3,17 @@
 // picked into a `MapScene`: the grid, each token, and the selection's tiles (where a move can go and the way it goes,
 // or an ability's reach, who it can hit and where its splash and ring land). `tapOn` says what a tap on a tile does, and
 // `hotbar` which abilities sit in the bar. Pure, and no new rule: every tile set comes from space.ts and every legality
-// from resolve.ts (rules 4 to 6) or fight-view.ts (`aims`). src/views/map.js draws the scene and converts tiles to pixels;
-// nothing else. A new thing drawn on the map is a field here with its case in tests/map-view.test.ts.
+// from charge.ts (rule 4), resolve.ts (rules 5 to 6) or fight-view.ts (`aims`). src/views/map.js draws the scene and
+// converts tiles to pixels; nothing else. A new thing drawn on the map is a field here with its case in
+// tests/map-view.test.ts.
 import type { Rules } from '../rules.ts';
 import { ATTACK_ID, itemOfAbility } from '../registry/abilities.ts';
 import { dist, percent, place, reachable, straightPath, terrainOfChar, tiles, tilesOf, walkPath } from './space.ts';
 import type { Grid, Place, MoveReach, Shape, Terrain, Tiles } from './space.ts';
 import { cost, roundsOf, tick, walkCost } from './timeline.ts';
 import type { Tick } from './timeline.ts';
-import { costOf, inRange, whoIsIn } from './resolve.ts';
+import { costOf } from './charge.ts';
+import { inRange, whoIsIn } from './resolve.ts';
 import type { Ability, CombatantId } from './ability-types.ts';
 import type { Body, Op, OpRules } from './effect-ops.ts';
 import { band, tilesOfRuns, UNSEEN } from './fight-doc.ts';

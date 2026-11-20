@@ -1,7 +1,9 @@
-// The dependency map: who imports whom, who calls which `app.api` member, who emits and who hears each event, and
-// which save keys each module changes. It reads `src/` and `server.ts` as text with regular expressions over the
-// patterns this codebase uses (listed in docs/agent-handoff/p3/notes-deps.md). What the patterns cannot follow goes
-// in the Unresolved list with its file and line; nothing is guessed.
+// The dependency map: who imports whom (a value, which loads the module, or only types, which the build erases), who
+// calls which `app.api` member, who emits and who hears each event, and which save keys each module changes. It finds
+// each import that breaks its layer's rule (`layerBreaks`) and each group of modules that load one another
+// (`valueCycles`); tests/deps.test.ts expects neither. It reads `src/` and `server.ts` as text with regular expressions
+// over the patterns this codebase uses (listed in docs/agent-handoff/p3/notes-deps.md). What the patterns cannot follow
+// goes in the Unresolved list with its file and line; nothing is guessed.
 //
 //   bun scripts/deps.ts              print the whole map as Markdown
 //   bun scripts/deps.ts <name>       one entry, both directions: a file, an API name, `name.member`, or an event
@@ -19,7 +21,12 @@ export type Use = Loc & { api: string; member: string | null };
 export type Unresolved = Loc & { what: string };
 export type Module = {
   file: string; layer: Layer;
-  imports: string[]; importedBy: string[];
+  /** What this module loads: each module it imports a value from, imports for its effects, or loads with `import()`. */
+  imports: string[];
+  /** What it imports only types from (`import type`, `export type`): erased when built, so loaded by nobody. */
+  typeImports: string[];
+  /** Each module that imports this one, values or types. */
+  importedBy: string[];
   provides: string[]; uses: Use[];
   emits: Loc[]; listens: Loc[]; emitNames: string[]; listenNames: string[];
   writes: string[]; unreadUpdates: number;
@@ -159,7 +166,7 @@ function landing(alias: Alias, chain: string[]): Ref | null {
 }
 
 export type Scan = {
-  imports: string[]; provides: { api: string; member: string | null; at: Loc }[]; uses: Use[];
+  imports: string[]; typeImports: string[]; provides: { api: string; member: string | null; at: Loc }[]; uses: Use[];
   emits: { name: string; at: Loc }[]; listens: { name: string; at: Loc }[];
   writes: string[]; unreadUpdates: number; unresolved: Unresolved[];
   views: Screen[]; panels: Screen[];
@@ -168,18 +175,19 @@ export type Scan = {
 export function scanFile(file: string, text: string): Scan {
   const { code, skel } = lex(text), lineOf = liner(text);
   const at = (offset: number): Loc => ({ file, line: lineOf(offset) });
-  const out: Scan = { imports: [], provides: [], uses: [], emits: [], listens: [], writes: [], unreadUpdates: 0, unresolved: [], views: [], panels: [] };
+  const out: Scan = { imports: [], typeImports: [], provides: [], uses: [], emits: [], listens: [], writes: [], unreadUpdates: 0, unresolved: [], views: [], panels: [] };
   const unresolved = (offset: number, what: string): void => {
     const u = { ...at(offset), what };
     if (!out.unresolved.some(x => x.line === u.line && x.what === what)) out.unresolved.push(u);
   };
   const inCode = (offset: number): boolean => skel[offset] !== ' '; // not inside a string, a template's text or a regex
 
-  // imports, static and dynamic, relative only
+  // imports, static and dynamic, relative only. `import type` and `export type` are erased when built; any other
+  // import loads its module, `import { type A }` too (tsconfig.json has verbatimModuleSyntax, which keeps it).
   const dir = file.includes('/') ? file.slice(0, file.lastIndexOf('/')) : '';
-  for (const m of code.matchAll(/\b(?:import|export)\s+(?:type\s+)?(?:[^'";]*?\bfrom\s*)?['"]([^'"]+)['"]|\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g)) {
-    const path = m[1] ?? m[2]!;
-    if (path.startsWith('.')) out.imports.push(normalize(`${dir}/${path}`));
+  for (const m of code.matchAll(/\b(?:import|export)\s+(type\s+(?!from\b))?(?:[^'";]*?\bfrom\s*)?['"]([^'"]+)['"]|\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g)) {
+    const path = m[2] ?? m[3]!;
+    if (path.startsWith('.')) (m[1] ? out.typeImports : out.imports).push(normalize(`${dir}/${path}`));
   }
 
   // aliases: `X = app.api`, `X = () => app.api.sync`, `X = Y()`, `X = A().sync || {}`, `X = app.api.hunter!`, and so on, to a fixed point.
@@ -347,7 +355,7 @@ export function assemble(scans: Map<string, Scan>): DepsMap {
   const event = (name: string): Event => { let e = events.get(name); if (!e) events.set(name, e = { name, emitters: [], listeners: [] }); return e; };
   for (const [file, s] of [...scans].sort(([a], [b]) => (a < b ? -1 : 1))) {
     modules.set(file, {
-      file, layer: layerOf(file), imports: uniq(s.imports), importedBy: [],
+      file, layer: layerOf(file), imports: uniq(s.imports), typeImports: uniq(s.typeImports).filter(t => !s.imports.includes(t)), importedBy: [],
       provides: uniq(s.provides.map(p => p.api)), uses: s.uses,
       emits: s.emits.map(e => e.at), listens: s.listens.map(e => e.at),
       emitNames: uniq(s.emits.map(e => e.name)), listenNames: uniq(s.listens.map(e => e.name)),
@@ -360,7 +368,7 @@ export function assemble(scans: Map<string, Scan>): DepsMap {
     unresolved.push(...s.unresolved);
     views.push(...s.views); panels.push(...s.panels);
   }
-  for (const m of modules.values()) for (const target of m.imports) modules.get(target)?.importedBy.push(m.file);
+  for (const m of modules.values()) for (const target of [...m.imports, ...m.typeImports]) modules.get(target)?.importedBy.push(m.file);
   for (const m of modules.values()) m.importedBy.sort();
   unresolved.sort(byLoc);
   return { modules, apis: new Map([...apis].sort(([a], [b]) => (a < b ? -1 : 1))), events: new Map([...events].sort(([a], [b]) => (a < b ? -1 : 1))), unresolved, eventTable: new Map(), apiTable: new Map(), views, panels };
@@ -403,6 +411,38 @@ const IMPORT_RULE: Record<Layer, { rule: string; may: string[] }> = {
   server: { rule: '`server.ts` imports `src/core` and `scripts/`, never `src/edge` or `src/views`.', may: ['core', 'other'] },
 };
 const targetLayer = (path: string): string => (path.startsWith('src/') ? layerOf(path) : 'other');
+export const LAYERS = ['core', 'edge', 'views', 'entry', 'server'] as const satisfies readonly Layer[];
+
+/** Each import against its layer's rule (`IMPORT_RULE`), a type import too: `file imports target`, by file. */
+export function layerBreaks(map: DepsMap, layer?: Layer): string[] {
+  return [...map.modules.values()].filter(m => layer === undefined || m.layer === layer)
+    .flatMap(m => [...m.imports, ...m.typeImports].sort().filter(t => !IMPORT_RULE[m.layer].may.includes(targetLayer(t))).map(t => `${m.file} imports ${t}`));
+}
+
+/**
+ * Each cycle of value imports: modules that load one another, so one of them runs before another has finished loading,
+ * and a value it reads at its top is not there yet. A cycle is a strongly connected group of `imports` (types do not
+ * count), given as the imports inside it, `file imports target`.
+ */
+export function valueCycles(map: DepsMap): string[][] {
+  const index = new Map<string, number>(), low = new Map<string, number>(), stack: string[] = [], on = new Set<string>();
+  const out: string[][] = [];
+  const visit = (file: string): void => {
+    index.set(file, index.size); low.set(file, index.get(file)!); stack.push(file); on.add(file);
+    for (const t of map.modules.get(file)!.imports) {
+      if (!map.modules.has(t)) continue;
+      if (!index.has(t)) { visit(t); low.set(file, Math.min(low.get(file)!, low.get(t)!)); }
+      else if (on.has(t)) low.set(file, Math.min(low.get(file)!, index.get(t)!));
+    }
+    if (low.get(file) !== index.get(file)) return;
+    const group = new Set<string>();
+    for (let f = stack.pop()!; ; f = stack.pop()!) { on.delete(f); group.add(f); if (f === file) break; }
+    const inside = [...group].sort().flatMap(f => map.modules.get(f)!.imports.filter(t => group.has(t)).map(t => `${f} imports ${t}`));
+    if (inside.length) out.push(inside);
+  };
+  for (const file of map.modules.keys()) if (!index.has(file)) visit(file);
+  return out.sort((a, b) => (a[0]! < b[0]! ? -1 : 1));
+}
 
 export function renderMap(map: DepsMap): string {
   const mods = [...map.modules.values()], apis = [...map.apis.values()], events = [...map.events.values()];
@@ -421,17 +461,21 @@ export function renderMap(map: DepsMap): string {
     '| Layer | Files | Import rule | Imports that break it |',
     '|---|---|---|---|',
   ];
-  for (const layer of ['core', 'edge', 'views', 'entry', 'server'] as const) {
-    const inLayer = mods.filter(m => m.layer === layer);
-    const breaks = inLayer.flatMap(m => m.imports.filter(t => !IMPORT_RULE[layer].may.includes(targetLayer(t))).map(t => `${m.file} imports ${t}`));
+  for (const layer of LAYERS) {
+    const inLayer = mods.filter(m => m.layer === layer), breaks = layerBreaks(map, layer);
     out.push(`| ${layer} | ${inLayer.length} | ${IMPORT_RULE[layer].rule} | ${breaks.length ? list(breaks) : 'none'} |`);
   }
+
+  const cycles = valueCycles(map);
+  out.push('', '## Cycles of value imports', '', 'Modules that load one another: one runs before another has finished loading. Types do not count. `tests/deps.test.ts` fails on any.', '');
+  for (const c of cycles) out.push(`- ${list(c)}`);
+  if (!cycles.length) out.push('None.');
 
   out.push('', '## Modules', '');
   for (const m of mods) {
     out.push(`### ${tick(m.file)}`, '');
     const lines: [string, string][] = [];
-    lines.push(['Imports', list(m.imports)], ['Imported by', list(m.importedBy)]);
+    lines.push(['Imports', list(m.imports)], ['Imports types from', list(m.typeImports)], ['Imported by', list(m.importedBy)]);
     const own = m.provides.map(n => map.apis.get(n)!);
     lines.push(['Provides', own.map(a => `${tick(`app.api.${a.name}`)}: ${list(uniq([...a.members.keys()]))}`).join('; ')]);
     const called = uniq(m.uses.filter(u => !m.provides.includes(u.api)).map(u => u.api));
@@ -498,6 +542,7 @@ function where(locs: Loc[]): string {
 function moduleEntry(map: DepsMap, m: Module): string[] {
   const out = [`## ${m.file} (${m.layer})`, '', 'Depends on:'];
   for (const t of m.imports) out.push(`- imports ${t}`);
+  for (const t of m.typeImports) out.push(`- imports types from ${t}`);
   for (const n of uniq(m.uses.map(u => u.api))) {
     const mine = m.uses.filter(u => u.api === n);
     for (const member of uniq(mine.map(u => u.member ?? ''))) {

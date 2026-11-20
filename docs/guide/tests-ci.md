@@ -10,7 +10,7 @@ Each file below starts with a header that says what it owns and who may change i
 | The words a screen shows: the voice, one name for each thing (fight, status, bag, gear, field, bundle, the room button at the top), how a new sentence is checked | `docs/agent-handoff/copy-tasks.md`; a placeholder marked `TODO(copy)` fails the lint "no placeholder words are left marked"; a sentence goes in core, never in the view | `tests/lint.test.ts` |
 | The app on real phone profiles: an iPhone and an Android phone with touch, a laptop GM, hidden and offline, a reload mid-fight, landscape | `tests/e2e/phone.e2e.ts` (`device(label, { userAgent: ANDROID_UA })` in `helpers.ts`) | `tests/e2e/phone.e2e.ts` |
 
-Each content table has a test that checks every entry, so new content needs no new test: run `bun run test`. After a change to imports, `app.api`, events, views or panels, run `bun run deps -- --write`; after one to a machine, `bun run charts`. A new module with a `register(app)` is imported and listed in `MODULES` in `src/app.js`. Only what the build produced is served: a new static file goes in `public/`.
+Each content table has a test that checks every entry, so new content needs no new test: run `bun run test`. After a change to imports, `app.api`, events, views or panels, run `bun run deps -- --write`; `tests/deps.test.ts` then refuses an import that breaks its layer's rule (a type import too) and any modules that load one another (value imports), each listed by file; after one to a machine, `bun run charts`. A new module with a `register(app)` is imported and listed in `MODULES` in `src/app.js`. Only what the build produced is served: a new static file goes in `public/`.
 
 ## CI is local
 

@@ -1,7 +1,8 @@
 // The app object `src/app.js` builds and hands to each module's `register(app)`. A view names it in one JSDoc line,
 // `/** @param {import('./app.ts').App} app */`, and tsconfig.views.json checks the view's calls against it.
 // It lives with the views, not next to `AppApi` in core: it holds the store and the windows (views/ui.js), which core
-// may not import. src/edge/sync.ts is registered like a view and takes the same type.
+// may not import. src/edge/sync.ts is registered like a view but takes `SyncHost`, the part of this type it uses, so
+// the edge imports nothing from the views.
 
 import type { AppApi } from '../core/api.ts';
 import type { Rules } from '../core/rules.ts';

@@ -14,7 +14,7 @@ import type { Ability, CombatantId, ReactWhen } from './ability-types.ts';
 import { landsAlone } from './effect-ops.ts';
 import type { Body, LandOp } from './effect-ops.ts';
 import { alive, held, landOps } from './land.ts';
-import { charged } from './resolve.ts';
+import { charged } from './charge.ts';
 import type { Answers, ResolveRules } from './resolve.ts';
 import { formulaOf } from '../registry/ability-kinds.ts';
 import { dist } from './space.ts';
@@ -68,7 +68,7 @@ export const armedAbility = (b: Body): Ability | null => {
 };
 /**
  * What firing `r`'s reaction at `aim` would leave of `r` (table 8.9.1's "may"): armed and not spent, up, not held, and
- * then a use's rules 3 to 4 (resolve.ts `charged`: off its cooldown, its gates holding at the aim, a use left, its cost
+ * then a use's rules 3 to 4 (charge.ts `charged`: off its cooldown, its gates holding at the aim, a use left, its cost
  * and its kit prices paid). Null when it may not fire.
  */
 function chargedReaction(rows: ReadonlyMap<CombatantId, Body>, r: Body, aim: CombatantId, now: Tick, R: ResolveRules): Body | null {

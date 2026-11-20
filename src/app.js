@@ -29,7 +29,7 @@ import * as shadows from './views/shadows.js';
 import * as gm from './views/gm.js';
 import * as io from './views/io.js';
 import * as sync from './edge/sync.ts';
-import * as roomPill from './edge/room-pill.ts';
+import * as roomPill from './views/room-pill.ts';
 import * as room from './views/room.js';
 import * as onboard from './views/onboard.js';
 import * as table from './views/table.js';

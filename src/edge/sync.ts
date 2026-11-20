@@ -4,7 +4,7 @@
 // (taps, timers, the page, server replies) and carries out their effects. Every
 // `app.api.sync` answer is a selector over the two states (src/core/sync/connection.ts). What this phone owes the room
 // (room events and tombstones) is the outbox in the save (src/core/sync/outbox.ts), sent from here after each good poll.
-// The pill and the Data panel are beside it (room-pill.ts).
+// The room pill (src/views/room-pill.ts) and the Room view draw what it answers.
 //
 // State this file owns, all inside `register`. The lint rule in tests/lint.test.ts allows these `let`s and no other:
 //   link, push      the two machines
@@ -36,7 +36,9 @@ import type { store as Store } from './store.ts';
 import { bindNotice } from './store.ts';
 import { released } from '../core/hunter/noticed.ts';
 import { fightHold } from '../core/combat/fight-save.ts';
-import type { App } from '../views/app.ts';
+import type { Bus } from './bus.ts';
+import type { Rules } from '../core/rules.ts';
+import type { Seat } from '../core/role.ts';
 import type { AppApi, RemoteSheet, SyncApi } from '../core/api.ts';
 import { DOCS, DOC_MAX, REMOVED_MS, SHEET_MAX, newEvent, parseRoomCode, parseRoomState } from '../core/protocol.ts';
 import type { DeviceId, DocName, DocOf, EventBody, EventType, RoomCode, RoomDocs, RoomEvent, RoomState, ServedSheet, SheetKey, Stored } from '../core/protocol.ts';
@@ -134,9 +136,29 @@ const NOTHING_SHOWN: Shown = { gen: null, sheets: {}, docs: {}, presence: {}, pr
 /** A reply and the room data that came with it, for the `apply` effect. */
 type Data = { kind: 'poll'; r: RoomState; after: number } | { kind: 'head'; now: string } | null;
 
-export function register(app: App): void {
+/** A System window this file opens: its words, and the actions a player picks from (it answers the value tapped). */
+type SyncWindow = {
+  tag: string; title: string; kind: string; body: string; lines?: string[]; rewards?: string[];
+  actions?: { label: string; value: unknown; cancel?: boolean; primary?: boolean }[];
+};
+/**
+ * What this file uses of the app object src/app.js hands to `register`: the bus, the store, the rules, every module's
+ * `app.api`, the seat, the way to a view, the build id it sets, and the toast and the System window of src/views/ui.js.
+ * The `App` of src/views/app.ts has all of it, and app.js's call of `register` is checked against this type
+ * (tsconfig.views.json). The edge names what it uses so it imports nothing from the views.
+ */
+export type SyncHost = Bus & {
+  store: typeof Store;
+  rules(): Rules;
+  api: AppApi;
+  seat(): Seat;
+  go(id: string): void;
+  build?: string;
+  ui: { toast(tag: string, text: string, opts?: { kind: string }): void; system(w: SyncWindow): Promise<unknown> };
+};
+
+export function register(app: SyncHost): void {
   const { store, ui } = app;
-  const { esc } = ui;
   const sy = (): SyncSettings => store.get().settings.sync;
   const deviceId = (): DeviceId => store.get().settings.deviceId;
   const web = /^https?:$/.test(location.protocol);

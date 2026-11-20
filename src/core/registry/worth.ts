@@ -23,7 +23,7 @@ import { defaultTicks, formulaOf, KINDS, kindDefaults, recommended } from './abi
 import type { SampleRules } from './ability-kinds.ts';
 import { scalerMean, scalersOf } from './scalers.ts';
 import type { Scaler } from './scalers.ts';
-import { atTier, isStacking } from '../combat/effect-ops.ts';
+import { atTier, isStacking } from '../combat/op-amount.ts';
 import type { End, LandOp, Op, OpKind, StatusDef } from '../combat/effect-ops.ts';
 import type { Trigger } from '../combat/triggers.ts';
 import type { Ability, AbilityKind, Delivery, Price } from '../combat/ability-types.ts';
