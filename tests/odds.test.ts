@@ -206,25 +206,30 @@ describe('the general policy', () => {
   // Random fights with the kits (tests/models/fight-play.ts' roster on its walled map): a random side of each, some
   // random commands first so statuses, zones, stacks and channels are under way, then played out on `sensible`.
   // play.ts throws on any refusal, so a run that ends is a run in which the policy chose nothing the reducer refused.
-  test('never chooses what the reducer refuses, over random fights with the kits', () => {
-    let played = 0;
-    for (let seed = 1; seed <= 120; seed++) {
-      const g = rng(seed);
-      const party = ROSTER.filter(r => r.side === 'party' && g.chance(0.6)), foes = ROSTER.filter(r => r.side === 'foe' && g.chance(0.6));
-      const rows = [...(party.length ? party : [ROSTER[0]!]), ...(foes.length ? foes : [ROSTER[4]!])];
-      let f: Fight | null = reduce(null, { type: 'add', fightId: fightId('f-walk'), rows, openings: [], grid: GRID }, ctx).fight;
-      let n = 0;
-      for (let i = 0; i < g.int(0, 30); i++) {
-        const r = reduce(f, randomCommand(g, f, () => `x${n++}`), ctx);
-        if (!r.effects.some(e => e.type === 'refused') && r.fight && (r.fight.phase === 'setup' || r.fight.phase === 'running')) f = r.fight;
-      }
-      if (!weighable(f)) continue;
-      let p: Play = playBegin(f, seed, RULES).play;
-      for (let k = 0; !playOver(p) && k < 6000; k++) p = playStep(p as Play & { readonly fight: Running }, () => sensible, { capRounds: 40, endAtRounds: null }, RULES).play;
-      expect(playOver(p), `seed ${seed}`).toBe(true);
-      played++;
+  // One test per seed, as tests/fight-sim.test.ts does per row: all 120 fights in one test outran bun's 5 s timer on a
+  // two-core runner (the public repository's unit job, Nov 20), and a failure now names its seed.
+  const SEEDS = Array.from({ length: 120 }, (_, i) => i + 1);
+  const walked = (seed: number): Fight | null => {
+    const g = rng(seed);
+    const party = ROSTER.filter(r => r.side === 'party' && g.chance(0.6)), foes = ROSTER.filter(r => r.side === 'foe' && g.chance(0.6));
+    const rows = [...(party.length ? party : [ROSTER[0]!]), ...(foes.length ? foes : [ROSTER[4]!])];
+    let f: Fight | null = reduce(null, { type: 'add', fightId: fightId('f-walk'), rows, openings: [], grid: GRID }, ctx).fight;
+    let n = 0;
+    for (let i = 0; i < g.int(0, 30); i++) {
+      const r = reduce(f, randomCommand(g, f, () => `x${n++}`), ctx);
+      if (!r.effects.some(e => e.type === 'refused') && r.fight && (r.fight.phase === 'setup' || r.fight.phase === 'running')) f = r.fight;
     }
-    expect(played).toBeGreaterThanOrEqual(100);
+    return f;
+  };
+  test('at least 100 of the random fights can be played to their end', () => {
+    expect(SEEDS.filter(seed => weighable(walked(seed))).length).toBeGreaterThanOrEqual(100);
+  });
+  for (const seed of SEEDS) test(`never chooses what the reducer refuses, in the random fight of seed ${seed}`, () => {
+    const f = walked(seed);
+    if (!weighable(f)) return;
+    let p: Play = playBegin(f, seed, RULES).play;
+    for (let k = 0; !playOver(p) && k < 6000; k++) p = playStep(p as Play & { readonly fight: Running }, () => sensible, { capRounds: 40, endAtRounds: null }, RULES).play;
+    expect(playOver(p)).toBe(true);
   });
 });
 
