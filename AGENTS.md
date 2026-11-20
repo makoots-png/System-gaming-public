@@ -64,6 +64,7 @@ Read only the guide file for the area a change touches. Each has "Where things l
 - `docs/guide/tests-ci.md`: test conventions, the local CI and the push hook, screen looks, copy and words.
 - `docs/guide/machines.md`: the list of every state machine and how its chart is drawn.
 - `docs/audit/2026-11-19-neon-audit.md`: architecture, implicit state-machine and bug audit of `a11b6a5d` (154 findings, ordered by importance).
+- `docs/audit/2026-11-20-neon-reaudit.md`: the re-audit of those findings at `9ef33bd6` (PR 43) with evidence: each finding's status (fixed, open, new), the steps a person takes, what shows and what should, and whether it was run or read. Read this one first, by a finding's ID, never whole.
 
 ## Rules and what enforces them
 

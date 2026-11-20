@@ -2,7 +2,9 @@
 // checked against an end written by hand, so the expected sheet comes from the end itself: what the play left is what
 // the sheet holds, through the life machine for the death saves. The engine's own play is checked once end to end.
 import { afterEach, describe, expect, test } from 'bun:test';
-import { RULES } from '../src/core/rules.ts';
+import { RULES, rulesOf } from '../src/core/rules.ts';
+import type { StatusDef } from '../src/core/combat/effect-ops.ts';
+import { seedMonsters } from '../src/core/registry/monsters.ts';
 import type { Rules } from '../src/core/rules.ts';
 import { freshSave, newHunter } from '../src/core/save.ts';
 import type { Hunter, ParseEnv, Save } from '../src/core/save.ts';
@@ -360,6 +362,29 @@ describe('a world gate open to solo runs, in a room', () => {
     const refused = after.settings.sync.outbox!.at(-1)!.letter;
     expect(refused.kind === 'event' && refused.event.payload).toMatchObject({ verdict: 'refused', why: 'taken', to: ['d-other:h5'] });
     expect(after.gates[0]!.xpPaid, 'paid once').toBe(50);
+  });
+
+  // The GM made Stunned do nothing; the goblins of the gate start the fight stunned for good. On the GM's table they
+  // act, so a player's run of that gate must play them acting too, not by the player's own built-in Stunned.
+  test('a status the GM edited plays in a player\'s run as the GM edited it, not as the player\'s built-in', () => {
+    const dazed = { label: 'Stunned', desc: 'Only dazed.', ops: [] };
+    const sleeper = { ...seedMonsters(RULES).find(m => m.id === goblin)!, id: 'm-sleeper' as MonsterId, statuses: [{ key: 'stunned', rounds: null }] };
+    const gate = { ...worldGate, monsters: [{ monsterId: sleeper.id, count: 2 }] };
+    const runOn = (library: Record<string, StatusDef>) => {
+      const built = soloDoc({ ...gmSave([gate]), monsters: [sleeper] }, rulesOf({}, library), DOC_MAX).doc;
+      const world = worldDoc(gmSave([gate]), 1, new Set(built.gates.map(g => g.id)), 0);
+      const targets = soloTargets(DOCS.world(JSON.parse(JSON.stringify(world))), DOCS.solo(JSON.parse(JSON.stringify(built))));
+      const p = { ...alone(), gates: [] };
+      const ready = ok(soloReady(p, H1, WORLD, ctx({ seat: 'player', bound: H1, room: { targets, waiting: [] } })));
+      const f = soloFight(ready.h, ready.target, RULES)!;
+      let run: OddsRun = oddsStep(IDLE, { type: 'ask', fight: f.fight, seed: 7, of: 1 }, f.R);
+      while (run.state === 'running') run = oddsStep(run, { type: 'step', commands: 25 }, f.R);
+      if (run.state !== 'done') throw new Error('no answer');
+      return { hp: run.odds.ends[0]!.party[ME]!.hp, start: ready.h.life.at === 'up' ? ready.h.life.hp : 0 };
+    };
+    const asBuilt = runOn({}), asEdited = runOn({ stunned: dazed });
+    expect(asBuilt.hp, 'built-in Stunned holds the goblins, so they never strike').toBe(asBuilt.start);
+    expect(asEdited.hp, 'the GM\'s Stunned holds nothing, so the goblins strike').toBeLessThan(asEdited.start);
   });
 
   test('a lost run enters a detected gate and needs no answer; a plan that no longer holds writes nothing', () => {

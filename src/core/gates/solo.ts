@@ -11,7 +11,7 @@
 // the gates it opened, each with built-in monsters and a closing time. `soloTick` opens and closes them for the time
 // that passed; `soloWake` is its term of the one timer (quests.ts `nextWake`).
 import { killFacts } from '../combat/fight-facts.ts';
-import { RANKS, rankIdx } from '../rules.ts';
+import { RANKS, rankIdx, withStatuses } from '../rules.ts';
 import { record } from '../hunter/chronicle.ts';
 import type { Fact } from '../hunter/facts.ts';
 import { hunterSheet } from '../hunter/sheet.ts';
@@ -240,7 +240,7 @@ export type SoloFight = { readonly fight: Setup; readonly hunter: CombatantId; r
  * statuses over the rules' for this fight only (`R` of the answer: the run plays by it). Null when the reducer refuses it.
  */
 export function soloFight(h: Hunter, t: SoloTarget, R0: Rules): SoloFight | null {
-  const R: Rules = Object.keys(t.statuses).length ? { ...R0, conditions: { ...t.statuses, ...R0.conditions } } : R0;
+  const R = withStatuses(R0, t.statuses);
   const me = combatantId('solo-h'), shadows: Record<CombatantId, ShadowId> = {};
   const rows: NewRow[] = [hunterRow(h, me, R)];
   h.shadows.filter(s => s.summoned).forEach((s, i) => { const id = combatantId(`solo-s${i}`); shadows[id] = s.id; rows.push(shadowRow(s, h.id, id, R)); });

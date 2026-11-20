@@ -1,6 +1,6 @@
 // gm.js (U11): the GM screen. Party board, awards, System broadcast, quest/gate shortcuts, roll tables,
 // rules editor, session log and world day. Everything is called through app.api.X at call time (stub or real).
-import { RANKS, dueAt as dueIn, parseOverrides } from '../edge/rules.ts';
+import { RANKS, dueAt as dueIn, parseOverrides, refusalWords } from '../edge/rules.ts';
 import { can, vitalChipsOf } from '../core/hunter/vitals.ts';
 import { chipDef } from '../core/hunter/chips.ts';
 import { gmSource } from '../core/effects.ts';
@@ -565,14 +565,11 @@ export function register(app) {
   }
 
   // ── rules editor ──
-  const REFUSAL = { object: 'must be an object', list: 'must be a list', number: 'must be a number', boolean: 'must be true or false', text: 'must be text',
-    statuses: 'statuses are made in the Workshop', entry: 'is not in the shape this rule\'s entries have', length: 'has the wrong number of entries' };
-  const refusalText = r => (r.reason === 'unknown' ? `Unknown rule: ${r.path}` : r.path ? `${r.path}: ${REFUSAL[r.reason]}.` : 'Overrides must be a JSON object.');
   function checkRules() {
     const ta = $('#gm-r-text'), raw = ta.value.trim() || '{}';
     let parsed; try { parsed = JSON.parse(raw); } catch (e) { return { err: `Invalid JSON: ${e.message}` }; }
     const { overrides, refused } = parseOverrides(parsed);
-    return refused.length ? { err: refusalText(refused[0]) } : { parsed: overrides, diff: diffCount(overrides, app.RULES) };
+    return refused.length ? { err: refusalWords(refused[0]) } : { parsed: overrides, diff: diffCount(overrides, app.RULES) };
   }
   function liveRules() {
     const r = checkRules(), m = $('#gm-r-msg');

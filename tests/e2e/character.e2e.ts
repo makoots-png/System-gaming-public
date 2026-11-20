@@ -332,6 +332,30 @@ test('GM Reset rules restores the rule numbers but keeps roll tables and the sta
   });
 });
 
+test('a GM\'s round of 0 ticks is refused in the Rules editor: Save stays off and the fight keeps its 1000 ticks', async ({ device }) => {
+  const p = (await device('gm-domain')).page;
+  await onboardGM(p);
+  await go(p, 'gm');
+  await openSection(p, 'rules');
+  await p.locator('#gm-r-text').fill('{"fight":{"round":0}}');
+  await expect(p.locator('#gm-r-text')).toHaveAttribute('aria-invalid', 'true');
+  await expect(p.locator('#gm-r-save')).toBeDisabled();
+  await p.locator('#gm-r-text').fill('{"fight":{"round":1200}}');
+  await expect(p.locator('#gm-r-text')).toHaveAttribute('aria-invalid', 'false');
+  await p.locator('#gm-r-save').tap();
+  await expect.poll(() => p.evaluate(() => hunterApp.rules().fight.round as number)).toBe(1200);
+});
+
+// The words are refusalWords in src/core/overrides.ts, the one place a refused override is put into words.
+test('the Rules editor names the bounds of a number out of its domain and why they are there', async ({ device }) => {
+  const p = (await device('gm-domain-words')).page;
+  await onboardGM(p);
+  await go(p, 'gm');
+  await openSection(p, 'rules');
+  await p.locator('#gm-r-text').fill('{"fight":{"round":0}}');
+  await expect(p.locator('#gm-r-msg')).toHaveText('fight.round: must be a whole number from 100 to 10000. Ticks in a round: under 100 the rounding of speed shows, 0 divides by 0.');
+});
+
 test('The skill maker starts the formula at the kind\'s recommendation, unmarked: a Shot is the quick share of 1d8 + phys, and the card says how it is used', async ({ device }) => {
   const p = (await device('skill-kind')).page;
   await onboardGM(p);

@@ -69,13 +69,13 @@ describe('an override of a list rule', () => {
   test('a rank\'s three DCs and a range\'s two ends keep their length', () => {
     const { overrides, refused } = parseOverrides({ rankTable: { E: { dc: [10, 12] }, D: { dc: [12, 14, 'x'] }, C: { dc: [18, 20, 22] } }, loot: { E: { gold: [10, 60, 90] } }, gateSpawn: { regulars: { E: [2, 4] } } });
     expect(overrides).toEqual({ rankTable: { E: {}, D: {}, C: { dc: [18, 20, 22] } }, loot: { E: {} }, gateSpawn: { regulars: { E: [2, 4] } } });
-    expect(refused).toEqual([{ path: 'rankTable.E.dc', reason: 'length' }, { path: 'rankTable.D.dc', reason: 'number' }, { path: 'loot.E.gold', reason: 'length' }]);
+    expect(refused).toEqual([{ path: 'rankTable.E.dc', reason: 'length' }, { path: 'rankTable.D.dc.2', reason: 'number' }, { path: 'loot.E.gold', reason: 'length' }]);
   });
 
   test('a new rarity needs its color and its price factor; a shipped one may change either alone', () => {
     const { overrides, refused } = parseOverrides({ rarities: { common: { mult: 2 }, relic: { color: '#000000', mult: 500 }, cursed: { color: '#330000' }, broken: { mult: -1, color: '#111111' } } });
     expect(overrides).toEqual({ rarities: { common: { mult: 2 }, relic: { color: '#000000', mult: 500 } } });
-    expect(refused).toEqual([{ path: 'rarities.cursed', reason: 'entry' }, { path: 'rarities.broken', reason: 'entry' }]);
+    expect(refused.map(r => [r.path, r.reason])).toEqual([['rarities.cursed', 'entry'], ['rarities.broken.mult', 'range']]);
     expect(rulesOf(overrides).rarities.common).toEqual({ color: RULES.rarities.common.color, mult: 2 });
   });
 
@@ -83,10 +83,7 @@ describe('an override of a list rule', () => {
   test('the personal gates\' numbers keep their bounds: hours and the stay 1 to 168, held 1 to 10, a share 0 to 100, a pack of 1 to 12 low to high', () => {
     const { overrides, refused } = parseOverrides({ solo: { hours: 0, held: 11, stays: 169, ranks: { below: 101, same: 50 }, pack: [3, 2], personal: false } });
     expect(overrides).toEqual({ solo: { ranks: { same: 50 }, personal: false } });
-    expect(refused).toEqual([
-      { path: 'solo.hours', reason: 'number' }, { path: 'solo.held', reason: 'number' }, { path: 'solo.stays', reason: 'number' },
-      { path: 'solo.ranks.below', reason: 'number' }, { path: 'solo.pack', reason: 'number' },
-    ]);
+    expect(refused.map(r => [r.path, r.reason])).toEqual([['solo.hours', 'range'], ['solo.held', 'range'], ['solo.stays', 'range'], ['solo.ranks.below', 'range'], ['solo.pack', 'order']]);
     const kept = parseOverrides({ solo: { hours: 4, held: 6, stays: 48, pack: [2, 4] } });
     expect(kept.refused).toEqual([]);
     expect(rulesOf(kept.overrides).solo).toEqual({ ...RULES.solo, hours: 4, held: 6, stays: 48, pack: [2, 4] });

@@ -5,6 +5,8 @@ import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect, test } from 'bun:test';
 import { GATE_STATUSES } from '../src/core/gates/gate.ts';
+import { domainOf, inDomain } from '../src/core/rules.ts';
+import { ruleNumbers } from './fixtures/rule-numbers.ts';
 
 const ROOT = import.meta.dir + '/..';
 
@@ -154,7 +156,7 @@ test('every module of src/edge names the state it keeps for the page: each let a
     'sync.ts running': 'whether the outbox\'s flush is running',
     'upgrade.ts update': 'the update machine\'s state (src/core/upgrade.ts)', 'upgrade.ts quiet': 'the timer of the quiet reload',
     'rules.ts sourceOf': 'the store\'s save, bound at start (`bindSave`)', 'rules.ts roomRulesOf': 'the room\'s rules doc (its build and personal gates\' switches), bound by sync.ts (`bindRoom`)',
-    'rules.ts cacheKey': 'the overrides the cached rules were built from', 'rules.ts cacheVal': 'the rules built from them',
+    'rules.ts made': 'the rules in force and the overrides, statuses and room rules they were made from',
     'store.ts prefs': 'this phone\'s prefs as read and written', 'store.ts device': 'whether this phone\'s memory is kept or failing',
     'store.ts state': 'the save', 'store.ts life': 'the store\'s life machine\'s state (src/core/store-life.ts)',
     'sync.ts FIGHT_MOVES': 'a constant: the room messages that are a player\'s own moves in the GM\'s fight',
@@ -542,7 +544,18 @@ test('no balance number is a literal in the fight\'s rule modules: it is a rule 
   const lines = (await sourceLines('src/core')).filter(l => ruled.test(l.file) && l.file !== 'src/core/combat/fight-parse.ts');
   expect(new Set(lines.map(l => l.file)).size, 'the fight\'s rule modules are found').toBeGreaterThan(5);
   const hits = lines.filter(l => !isComment(l.text) && !cap.test(l.text) && numbers(l.text).length);
-  expect(report(hits), 'put the number in RULES.fight (src/core/rules.ts) with its reason as a comment and read it as R.fight.<name>. A cap on data that decides no fight is a named UPPER_CASE constant.').toEqual([]);
+  expect(report(hits), 'put the number in RULES.fight (src/core/rules.ts) with its reason as a comment and its domain (whole(), real() or of()), and read it as R.fight.<name>. A cap on data that decides no fight is a named UPPER_CASE constant.').toEqual([]);
+});
+
+test('every rule number has its domain beside it in RULES, and its shipped value is inside it', () => {
+  // A GM's override took any finite number: 0 XP a level sent a hunter to level 9999, a stat base of 0 made every sheet
+  // not a number, dice of a billion sides ate the phone's memory (audit BUG-rules-1). overrides.ts now refuses a number
+  // out of its rule's domain, so a rule declared as a bare number would take any override again.
+  const numbers = ruleNumbers();
+  expect(numbers.length, 'the walk finds the rule numbers').toBeGreaterThan(300);
+  expect(numbers.filter(n => !domainOf(n.path)).map(n => n.path), 'declare the rule in src/core/rules.ts with whole(value, least, most, why), real(...) or of(value, a shared domain)').toEqual([]);
+  const outside = numbers.filter(n => { const d = domainOf(n.path)!; return ![n.value].flat().every(x => inDomain(x, d)) || d.least > d.most || !d.why.trim(); });
+  expect(outside.map(n => [n.path, n.value, domainOf(n.path)]), 'a shipped number inside its domain, least at most most, and a why').toEqual([]);
 });
 
 // ── motion (src/views/motion.ts and the Motion block of public/app.css) ──
