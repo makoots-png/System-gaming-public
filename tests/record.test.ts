@@ -3,6 +3,10 @@ import { describe, expect, test } from 'bun:test';
 import { cleanName, dropBoon, giveBoons, giveTitle, holdsTitle, nameActiveTitle, rankStanding, rankStep, titleNamed, reevaluate, removeTitle, rename, setJob, setRank, toggleTitle, writeTitle } from '../src/core/hunter/record.ts';
 import type { ProgressRank, ProgressRankEvent } from '../src/core/hunter/record.ts';
 import { atLevel } from '../src/core/hunter/progress.ts';
+import { levelled } from '../src/core/hunter/grant.ts';
+import { record } from '../src/core/hunter/chronicle.ts';
+import { saveId } from '../src/core/ids.ts';
+import { day } from './fixtures/ids.ts';
 import type { Rank } from '../src/core/rules.ts';
 import { RULES, rankForLevel } from '../src/core/rules.ts';
 import { newHunter } from '../src/core/save.ts';
@@ -80,6 +84,15 @@ describe('the rank, a machine: where it stands against the rank the level earns 
       expect(facts(next), 'a new rank is a fact of the chronicle, an unmoved one is not').toEqual(after.rank === h.rank ? [] : [{ kind: 'rank', rank: after.rank }]);
     });
   }
+
+  test('a level change goes through rankStep: levelled gives what the rank machine gives for a moved level, from each standing', () => {
+    const at = '2026-01-01T00:00:00.000Z', today = { at, today: day(at.slice(0, 10)), R: RULES };
+    for (const from of [follows, behind, above]) {
+      const before = from(), moved = { ...before, level: before.level + 1 };
+      const got = levelled(before.level, moved, today, p => saveId(p, 1)).hunter;
+      expect(got).toEqual(ok(rankStep(record(moved, { kind: 'level', level: moved.level }), { type: 'levelMoved' }, RULES)));
+    }
+  });
 
   test('the GM\'s word that is not a rank keeps the rank and records nothing', () => {
     for (const from of [follows, behind, above]) expect(ok(rankStep(from(), { type: 'set', rank: 'Z' }, RULES))).toEqual(from());

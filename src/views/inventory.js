@@ -76,9 +76,12 @@ export function register(app) {
     ui.toast('System', `${it.name} used.${said ? ` On the target: ${said}.` : ''}${w.sent ? ` ${reportWords(app.api.sync.conn())}` : ''}`);
     return true;
   }
-  /** A player's item used in the GM's fight: the `cast` is posted, and the item stays in the bag until the GM's fight takes it. */
+  /**
+   * A player's item used in the GM's fight: the `cast` is posted through the turn's hold as a use from the bag (nothing
+   * sent while the turn waits on a command), and the item stays in the bag until the GM's fight takes it.
+   */
   async function throwOnTable(h, it) {
-    const p = await app.api.uses.cast(h.id, itemAbilityId(it.id));
+    const p = await app.api.uses.cast(h.id, itemAbilityId(it.id), undefined, 'bag');
     if (p && p.ok) ui.toast('System', postNews(p, app.api.sync.conn()) === 'sent' ? `${it.name}: sent to the GM.` : `${it.name}: goes to the GM when the room answers.`);
   }
   /** Consumable `it` used by hunter `h` on itself outside a fight: its ops, the item spent and the report, in one write. */

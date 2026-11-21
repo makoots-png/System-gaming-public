@@ -4,7 +4,8 @@
 // off. The hold is `free`; `picking`, a command tapped and not posted yet (a use's target window is open, or its post has
 // not answered); or `sent` from the doc at `from` as the outbox entry `id`. A sent command lets go when a doc of another
 // `at` arrives (the GM's phone answered it), when the room refuses it, when a full outbox drops it, or when the phone
-// leaves the room. src/views/table.js keeps the one value and moves it only through `turnHoldStep`. Pure.
+// leaves the room. src/views/uses.js keeps the one value and moves it only through `turnHoldStep`; every command of the
+// turn, from the table, the Skills panel or the Bag, goes through it (`app.api.uses.command`). Pure.
 
 /** The turn on this phone: free to act, a command being picked or posted, or a command sent and not answered. */
 export type TurnHold =
@@ -17,16 +18,17 @@ export const TURN_HOLD_STATES = ['free', 'picking', 'sent'] as const satisfies r
 export const TURN_FREE: TurnHold = { at: 'free' };
 const PICKING: TurnHold = { at: 'picking' };
 
+/** How a tapped command came: `turn` for a step, a use, End turn or a Release; `bag` for a consumable's use (inventory.js `use`). */
+export type TurnHoldVia = 'turn' | 'bag';
 /**
- * What moves the hold. `tap`: a command of the turn tapped, `via` `turn` for a step, a use, End turn or a Release, `bag`
- * for a consumable the List sends through the bag (inventory.js `use`). `posted`: the command tapped went to the outbox
+ * What moves the hold. `tap`: a command of the turn tapped, from the table, the Skills panel or the Bag, `via` as it came. `posted`: the command tapped went to the outbox
  * as entry `id`, while the doc at `from` was the latest. `unposted`: nothing was posted (the window cancelled, nobody in
  * reach, not the hunter's turn by then, no room). `doc`: a fight doc at `at` arrived. `refused`, `dropped`: the outbox
  * entry `id` was refused by the room, or let go by a full outbox (src/core/sync/outbox.ts). `left`: the phone's room
  * changed.
  */
 export type TurnHoldEvent =
-  | { readonly kind: 'tap'; readonly via: 'turn' | 'bag' }
+  | { readonly kind: 'tap'; readonly via: TurnHoldVia }
   | { readonly kind: 'posted'; readonly from: string; readonly id: string }
   | { readonly kind: 'unposted' }
   | { readonly kind: 'doc'; readonly at: string }
@@ -53,7 +55,7 @@ type Cell<S extends TurnHoldState, K extends TurnHoldEventKind> = (s: Extract<Tu
 const TABLE: { readonly [S in TurnHoldState]: { readonly [K in TurnHoldEventKind]: Cell<S, K> } } = {
   free: {
     // SMX-views-5.1 waits on the owner's ruling ("using a consumable in a fight takes the player's turn", proposed by the
-    // hunt). Built as the List behaves today: a consumable goes through the bag and holds nothing, so the turn's buttons
+    // hunt). Built as the app behaves today: a consumable goes through the bag and holds nothing, so the turn's buttons
     // stay on. The ruling is this one cell: `{ hold: PICKING, send: 'held' }` sends it as a use, held like the map's.
     tap: (s, e) => (e.via === 'bag' ? { hold: s, send: 'unheld' } : { hold: PICKING, send: 'held' }),
     // the answer of a command the hold does not wait on: the bag's, or one tapped before the phone left its room

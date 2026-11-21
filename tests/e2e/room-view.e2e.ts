@@ -53,6 +53,25 @@ test('a GM opens a room from the Room view and sees the code, the QR and link fe
   });
 });
 
+test('the enlarged QR fills its window on a 390 px phone the first time it opens, even when the window is drawn late', async ({ device }) => {
+  const gmDevice = await device('gm', { blockServiceWorker: true });
+  await gmDevice.ctx.addInitScript(() => { (globalThis as any).__e2ePopupDelay = 150; });
+  const gm = gmDevice.page;
+  await gmCreatesRoomInView(gm);
+  await gm.locator(V + '[data-qr]').tap();
+  const qr = gm.locator('.sys-overlay.show .rm-sys-qr svg');
+  await expect(qr).toBeVisible();
+  const fit = () => gm.evaluate(() => {
+    const box = document.querySelector('.sys-overlay.show .rm-sys-qr')!, svg = box.querySelector('svg')!, win = box.closest('.sys-window')!;
+    const modules = Number(svg.getAttribute('viewBox')!.split(' ')[2]);
+    const code = svg.getBoundingClientRect(), shown = win.getBoundingClientRect();
+    const inside = code.left >= shown.left && code.right <= shown.right && code.top >= shown.top && code.bottom <= shown.bottom && code.right <= innerWidth && code.bottom <= innerHeight;
+    return { width: code.width, most: modules * Math.floor(Math.min(box.clientWidth, 560) / modules), inside };
+  });
+  await expect.poll(async () => { const f = await fit(); return { width: f.width, inside: f.inside }; }, { message: 'the code is the largest whole number of modules the window holds, all of it on screen' })
+    .toEqual({ width: (await fit()).most, inside: true });
+});
+
 test('a player types a wrong code, fixes it, joins, and the GM sees them under Who is here', async ({ device }) => {
   const gm = (await device('gm', { blockServiceWorker: true })).page, player = (await device('player', { blockServiceWorker: true })).page;
   const code = await gmCreatesRoomInView(gm);

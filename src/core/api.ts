@@ -545,11 +545,24 @@ export type UsesApi = {
   /** Whether hunter `hid` has a row in the room's running fight on this player's phone (a use there is a `cast`). */
   onTable(hid: string): boolean;
   /**
-   * Hunter `hid` on a player's phone uses its ability `abilityId` in the GM's fight: on its turn, at a target `aims` lets
-   * it reach (picked in a window, or `aim` when the map picked it), with its own dice, posted as the room's `cast`.
-   * Answers the post, or null when nothing was cast (not its turn, nobody in reach, the picker cancelled).
+   * The turn on this player's phone (src/core/combat/hold.ts): free, a command being picked or posted, or one sent and
+   * not answered. While it is not free the table's turn buttons are off.
    */
-  cast(hid: string, abilityId: string, aim?: CombatantId | Place): Promise<Posting | null>;
+  hold(): import('./combat/hold.ts').TurnHold;
+  /**
+   * A command of the turn tapped on any screen (a step, a use, End turn, a Release; `via` `bag` for a consumable's use),
+   * the one way one goes out: `post` runs only when the hold lets it, under the hold for `turn` and unheld for `bag`
+   * (SMX-views-5.1), and the hold hears its answer. Answers the post's answer, or null when nothing was posted (the turn
+   * held, after a word to the player, or `post` sent nothing).
+   */
+  command(post: () => Posting | null | Promise<Posting | null>, via?: import('./combat/hold.ts').TurnHoldVia): Promise<Posting | null>;
+  /**
+   * Hunter `hid` on a player's phone uses its ability `abilityId` in the GM's fight, through `command` with `via`: on its
+   * turn, at a target `aims` lets it reach (picked in a window, or `aim` when the map picked it), with its own dice,
+   * posted as the room's `cast`. Answers the post, or null when nothing was cast (the turn held, not its turn, nobody in
+   * reach, the picker cancelled).
+   */
+  cast(hid: string, abilityId: string, aim?: CombatantId | Place, via?: import('./combat/hold.ts').TurnHoldVia): Promise<Posting | null>;
 };
 
 /**

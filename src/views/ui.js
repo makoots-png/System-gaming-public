@@ -298,7 +298,10 @@ function confirmable() {
  * @typedef {{ label: string; value?: unknown; cancel?: boolean; primary?: boolean; danger?: boolean }} SystemAction
  * @typedef {{ tag?: string; title?: string; kind?: string; body?: string; html?: string; size?: string; layout?: string;
  *   lines?: string[]; rewards?: (string | { label?: string; text?: string })[]; actions?: SystemAction[];
- *   form?: { label?: string; value?: string | number; type: 'text' | 'number'; min?: number; max?: number; maxlength?: number } }} SystemWindow
+ *   form?: { label?: string; value?: string | number; type: 'text' | 'number'; min?: number; max?: number; maxlength?: number };
+ *   drawn?: (win: HTMLElement) => void }} SystemWindow
+ * `drawn` runs once, as the window is put on the page (the machine's `draw`: at once, or when a waiting window's turn
+ * comes), with the window: what in it takes its size from the window measures it then, never as `system` is asked.
  */
 /** A System window; answers the `value` of the action tapped (a form answers what was typed). @param {SystemWindow} [o] @returns {Promise<any>} */
 export function system(o = {}) {
@@ -379,6 +382,7 @@ function show(/** @type {SystemWin} */ w) {
   el.addEventListener('pointerdown', e => { if (e.target === el) done(dismissValue); });
   w.root = el; w.win = win;
   document.body.appendChild(el);
+  if (o.drawn) o.drawn(win);
   enter(win); enter(el, 'fade');
   // a window taller than the screen opens at its title: the focus on its button must not scroll it to its end
   if (input) { input.focus(); input.select(); } else (bar.querySelector('button.primary') || bar.querySelector('button') || win).focus({ preventScroll: true });

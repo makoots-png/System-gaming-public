@@ -145,6 +145,16 @@ describe('the windows', () => {
     expect(windowStep(NO_WINDOWS, { kind: 'next' })).toEqual({ windows: NO_WINDOWS, fx: [] });
   });
 
+  test('a System window is drawn once, as it goes from waiting to open, so what it runs as it is drawn runs once and finds it on the page', () => {
+    const walk = bfs([NO_WINDOWS], s => WINDOW_WALK.map(event => ({ event, to: windowStep(s, event).windows })), s => JSON.stringify(s));
+    const draws = walk.states.flatMap(s => WINDOW_WALK.flatMap(e => {
+      const r = windowStep(s, e);
+      return r.fx.flatMap(f => (f.kind === 'draw' ? [`${windowAt(s, f.id)} to ${windowAt(r.windows, f.id)}`] : []));
+    }));
+    expect(draws.length).toBeGreaterThan(0);
+    expect([...new Set(draws)]).toEqual(['queued to open']);
+  });
+
   test('in every state the walk reaches: one place per window, at most one System window open, none over the first-run window, one sheet of a name, and the keys with the top open one', () => {
     expect([...new Set(WINDOW_WALK.map(e => e.kind))].sort()).toEqual([...WINDOW_EVENTS].sort());
     const walk = bfs([NO_WINDOWS], s => WINDOW_WALK.map(event => ({ event, to: windowStep(s, event).windows })), s => JSON.stringify(s));

@@ -396,18 +396,28 @@ test('in a tab that cannot save, Join on an invite says it is not saved and the 
   if (process.env.E2E_SHOT) await phone.screenshot({ path: process.env.E2E_SHOT });
 });
 
-/** A GM on Campaign ready whose Create room waits on the server until `release` is called. */
+/**
+ * A GM on Campaign ready whose Create room the server has answered, but whose answer reaches the phone only once
+ * `release` is called. `made` is the code of the room the server made; `answered` settles once the answer was handed on
+ * (or refused, the page having dropped the request).
+ */
 async function campaignReadyWithHeldCreate(device: (label: string, o?: object) => Promise<{ page: Page }>) {
   const gm = (await device('gm', { blockServiceWorker: true })).page;
-  let release = () => {};
-  const held = new Promise<void>(r => { release = r; });
-  await gm.route('**/api/rooms', async route => { if (route.request().method() === 'POST') await held; await route.continue(); });
+  let release = () => {}, madeIt = (_: string) => {}, handedOn = () => {};
+  const held = new Promise<void>(r => { release = r; }), made = new Promise<string>(r => { madeIt = r; }), answered = new Promise<void>(r => { handedOn = r; });
+  await gm.route('**/api/rooms', async route => {
+    if (route.request().method() !== 'POST') return route.continue();
+    const answer = await route.fetch();
+    madeIt(String((await answer.json()).code));
+    await held;
+    try { await route.fulfill({ response: answer }); } finally { handedOn(); }
+  });
   await openApp(gm);
   for (const b of ['[data-yes]', '[data-gm]', '[data-starter]']) await gm.locator(`${OB} ${b}`).tap();
   const win = await windowTitled(gm, 'Campaign ready');
   await win.locator('[data-obcreate]').tap();
   await expect(win.locator('[data-obcreate]')).toHaveAttribute('aria-busy', 'true');
-  return { gm, release };
+  return { gm, release, made, answered };
 }
 
 test('a GM who taps Later while Create room is under way closes the window and stays on the page when the create answers', async ({ device }) => {
@@ -422,14 +432,15 @@ test('a GM who taps Later while Create room is under way closes the window and s
   await expect(gm.locator(OB)).toHaveCount(0);
 });
 
-test.fixme('a GM who taps Later while Create room is under way is in no room once the server answers', async ({ device }) => {
-  // the window sends the cancel (onboarding.ts `cancelCreate`, carried out as sync.leave()), but the link ignores a
-  // leave while it creates (src/core/sync/link.ts `creating`), so the room still opens: link.ts's to change
-  const { gm, release } = await campaignReadyWithHeldCreate(device);
+test('a GM who taps Later while Create room is under way is in no room once the server answers, and keeps nothing of the room it made', async ({ device }) => {
+  const { gm, release, made, answered } = await campaignReadyWithHeldCreate(device);
+  const code = await made;
   await gm.locator(`${OB} [data-oblater]`).tap();
   release();
+  await answered;
   await expect.poll(() => gm.evaluate(() => hunterApp.api.sync.detail().conn)).not.toBe('creating');
   expect(await gm.evaluate(() => [hunterApp.api.sync.room(), hunterApp.seat()])).toEqual([null, 'alone']);
+  expect(await rawSave(gm), 'neither the room\'s code nor its GM key is in the save').not.toContain(code);
 });
 
 test('the ? guide closes with Escape and gives the focus back to the ? button', async ({ device }) => {

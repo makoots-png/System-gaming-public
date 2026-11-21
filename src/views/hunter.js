@@ -1,7 +1,7 @@
 // hunter.js (U02): the sheet (src/core/hunter/sheet.ts), allocation, ranks, titles, party, level-up, conditions, rests,
 // app.api.hunter. It computes no number of its own: the stats, the sheet and the checks are `hunterSheet` and `checksOf`.
 import { stepTime } from '../core/day.ts';
-import { PERK_KEYS, PERK_LABELS, xpToNext, rankForLevel, rankIdx, rules } from '../edge/rules.ts';
+import { PERK_KEYS, PERK_LABELS, xpToNext, rules } from '../edge/rules.ts';
 import { STAT_KEYS, STAT_LABELS, STAT_SHORT } from '../core/stats.ts';
 import { SHEET_LABELS } from '../core/hunter/derive.ts';
 import { fightHold, heldLines } from '../core/combat/fight-save.ts';
@@ -9,7 +9,7 @@ import { combatantId, hunterId } from '../core/combat/ability-types.ts';
 import { checksOf, fitted, hunterSheet, setAdjust, setMaximum } from '../core/hunter/sheet.ts';
 import { ALLOCATION_WORDS, allocated, available, confirm, hasPending, lower, plusPoint, raise, setPoints, setStat } from '../core/hunter/progress.ts';
 import { TOLD, atHunter, atLibrary, both, isRefused, orKeep, refuse } from '../core/save-step.ts';
-import { dropBoon, giveTitle, nameActiveTitle, reevaluate as reevaluated, removeTitle, rename, setJob, setRank, toggleTitle, writeTitle, cleanName } from '../core/hunter/record.ts';
+import { dropBoon, giveTitle, nameActiveTitle, rankStanding, reevaluate as reevaluated, removeTitle, rename, setJob, setRank, toggleTitle, writeTitle, cleanName } from '../core/hunter/record.ts';
 import { grant, levelEdit, sheetEdit } from '../core/hunter/grant.ts';
 import { setGold } from '../core/hunter/inventory.ts';
 import { addHunter, removeHunter } from '../core/party.ts';
@@ -175,8 +175,8 @@ export function register(app) {
   });
 
   // ── rank re-evaluation ──
-  const eligibleRank = h => rankForLevel(h.level);
-  const canReeval = h => rankIdx(eligibleRank(h)) > rankIdx(h.rank);
+  const eligibleRank = h => { const s = rankStanding(h, rules()); return s.at === 'follows' ? h.rank : s.earns; };
+  const canReeval = h => rankStanding(h, rules()).at === 'behind';
   async function reevaluate(hid) {
     const h = store.hunter(hid); if (!h || !canReeval(h)) return false;
     const from = h.rank, to = eligibleRank(h);

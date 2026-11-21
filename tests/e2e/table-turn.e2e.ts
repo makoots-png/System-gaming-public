@@ -481,6 +481,49 @@ test('a target picked after the fight changed under the window keeps the turn he
   });
 });
 
+test('a Use on the Skills panel holds the turn as the table does: a second Use and a potion from the Bag send nothing until the GM\'s phone answers', async ({ device }) => {
+  const potion = { name: 'Health Potion', rar: 'common', type: 'consumable', qty: 2, slot: null, bonus: {}, effects: [{ op: 'heal', amount: { kind: 'number', value: 30 }, when: 'use' }], desc: 'Restores 30 HP.' };
+  // setOffline reaches the app's requests only past no service worker
+  const { gm, player } = await room(device, [potion], OFFLINE);
+  const jab = abilityOf('strike', { id: abilityId('jab'), name: 'Jab' }, RULES);
+  await player.evaluate(a => { const s = hunterApp.store; s.update(() => { s.active().skills.push({ id: s.id('s'), name: 'Jab', type: 'active', level: 1, label: null, desc: '', ability: a }); }, 'test-setup'); }, jab);
+  await expect.poll(() => gm.evaluate(() => (hunterApp.api.sync.remoteSheets() as any[]).some(r => r.data.skills.some((k: any) => k.name === 'Jab')))).toBe(true);
+  await fight(gm, player, { x: 2, y: 3 });
+  await lowestDice(gm); await lowestDice(player);
+  const rat = await fightRow(gm, MONSTER), strike = combat(player).locator('[data-cast="attack"]');
+  const useJab = player.locator('#view-status [data-panel="skills"] button[aria-label="Use Jab"]');
+  await player.evaluate(() => { const S = hunterApp.api.sync, post = S.post, w = window as any; w.__casts = 0; S.post = (ev: any, o: any) => { if (ev.type === 'cast') w.__casts++; return post(ev, o); }; });
+  const casts = () => player.evaluate(() => (window as any).__casts as number);
+
+  await test.step('with the GM\'s phone away, the player taps Use on Jab in the Skills panel and picks the rat: the table\'s buttons go off', async () => {
+    await gm.context().setOffline(true);
+    await expect.poll(() => gm.evaluate(() => hunterApp.api.sync.status())).toBe('offline');
+    await go(player, 'status');
+    await useJab.tap();
+    await answerWindow(player, /Use .+ on…/, MONSTER);
+    await expect.poll(casts).toBe(1);
+    await go(player, 'combat');
+    await expect(strike).toBeDisabled();
+    await expect(combat(player).locator('[data-acts] [data-pass]')).toHaveCount(0);
+  });
+
+  await test.step('a second Use on Jab and the potion\'s Use in the Bag send nothing, and the player reads that the last move waits', async () => {
+    await go(player, 'status');
+    await useJab.tap();
+    await expect(player.locator('.toast', { hasText: 'Your last move waits for the GM.' }).first()).toBeVisible();
+    await expect(player.locator('.sys-overlay.show')).toHaveCount(0);
+    await player.locator('[data-panel="inventory"] .inv-card', { hasText: 'Health Potion' }).getByRole('button', { name: 'Use Health Potion' }).tap();
+    expect(await casts()).toBe(1);
+  });
+
+  await test.step('the GM\'s phone back, it takes the one Jab: the rat is hit and the turn lets go', async () => {
+    await gm.context().setOffline(false);
+    await expect.poll(async () => (await fightRow(gm, MONSTER)).hp, { timeout: 20_000 }).toBeLessThan(rat.hp);
+    await expect.poll(() => player.evaluate(() => hunterApp.api.uses.hold().at), { timeout: 15_000 }).toBe('free');
+    expect(await casts()).toBe(1);
+  });
+});
+
 test('the GM ends the fight while the GM\'s phone is offline: the player still gets the XP, once, when the GM\'s phone is back', async ({ device }) => {
   // setOffline reaches the app's requests only past no service worker
   const { gm, player } = await room(device, [], { blockServiceWorker: true, allowConsole: [/ERR_INTERNET_DISCONNECTED|net::ERR|Failed to fetch/] });

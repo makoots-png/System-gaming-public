@@ -709,15 +709,17 @@ stateDiagram-v2
   s5 --> s2 : you tap Leave room
   s5 --> s10 : the server runs a newer build
   s5 --> s2 : the room is gone, or you are put out of it
+  s9 --> s1 : you tap Later or Leave room while the room is made
   s9 --> s5 : the room opens or lets you in
   s9 --> s1 : refused or no answer, back where you were
+  s9 --> s2 : you tap Later or Leave room while the room is made
   s9 --> s2 : refused or no answer, back where you were
   s9 --> s5 : refused or no answer, back where you were
 ```
 
-The chart shows what the room pill and the Room view say. It leaves out the waits between polls (5 s, 3 s in a fight, longer after failures; a hidden page does not poll, except a GM's page that may notify, which polls every 30 s), how many polls failed, whether a poll is out or waiting, the room code, the last room and the GM key, and whether the phone is the GM or a player, except where a step depends on it. Opening and joining a room go back to the box the phone came from when they fail. Updating the app is never left: the page reloads.
+The chart shows what the room pill and the Room view say. It leaves out the waits between polls (5 s, 3 s in a fight, longer after failures; a hidden page does not poll, except a GM's page that may notify, which polls every 30 s), how many polls failed, whether a poll is out or waiting, the room code, the last room and the GM key, and whether the phone is the GM or a player, except where a step depends on it. Opening and joining a room go back to the box the phone came from when they fail. Later or Leave room while a room is made goes out of every room, the one the phone was in included. Updating the app is never left: the page reloads.
 
-8 chart states, 16 arrows. Hidden: a save replaced by an import, a restore or a reset starts the link again from the room in the new save, from any state but No room server and Updating the app. A server on a newer build sends every state to Updating the app; the chart draws that arrow from In a room only (226769 steps.)
+8 chart states, 18 arrows. Hidden: a save replaced by an import, a restore or a reset starts the link again from the room in the new save, from any state but No room server and Updating the app. A server on a newer build sends every state to Updating the app; the chart draws that arrow from In a room only (226769 steps.)
 
 ### The room link and the sheet push
 

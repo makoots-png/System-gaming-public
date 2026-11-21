@@ -36,7 +36,7 @@ import type { Completed, QuestCompletedBy, QuestWhy, Rollover } from './quests.t
 import { reportsProgress } from './quest-rights.ts';
 import { newEvent } from '../protocol.ts';
 import { atOutbox, post } from '../sync/outbox.ts';
-import { giveBoons, giveTitle, holdsTitle, setJob, titleNamed } from './record.ts';
+import { giveBoons, giveTitle, holdsTitle, rankStep, setJob, titleNamed } from './record.ts';
 import { fitted, hunterSheet } from './sheet.ts';
 import { giveSkill } from './skills-held.ts';
 import { lifeNews, vitalStep } from './vitals.ts';
@@ -92,7 +92,10 @@ export function stepsReached(h: Hunter, effects: readonly ChainEffect[], day: Da
 export function levelled(from: number, after0: Hunter, day: Day, next: <P extends string>(prefix: P) => IdOf<P>): Levelled {
   if (after0.level === from) return { hunter: after0, said: [], done: [] };
   // the level's fact, recorded where every level change is told (chronicle.ts)
-  const after = record(after0, { kind: 'level', level: after0.level });
+  const recorded = record(after0, { kind: 'level', level: after0.level });
+  // the rank machine is told the level moved (record.ts `RANK_TABLE`); a row that refuses it keeps the rank
+  const stepped = rankStep(recorded, { type: 'levelMoved' }, day.R);
+  const after = isRefused(stepped) ? recorded : stepped;
   if (!after.jobChain) return { hunter: after, said: [], done: [] };
   const t = chained(after, { type: 'levelChanged', level: after.level });
   const r = stepsReached(t.hunter, t.effects, day, next);

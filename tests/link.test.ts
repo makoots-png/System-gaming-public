@@ -339,6 +339,46 @@ describe('leaving', () => {
     expect(timers(r.fx)).toEqual([10000]);
   });
 
+  // the table: creating × leave. Later in first-run setup and Leave room both send `leave` while a Create is out
+  test('a Create cancelled before the server answers opens no room: the phone is where it was, and the room\'s answer is dropped', () => {
+    const r = fresh().tap({ type: 'create' });
+    const old = r.state.gen;
+    r.tap({ type: 'leave' });
+    expect(r.state).toMatchObject({ at: 'idle', server: 'ok', last: null, next: 'timer' });
+    expect(r.state.gen).not.toBe(old);
+    expect(r.fx).toContainEqual({ type: 'abort', gen: old });
+    expect(calls(r.fx)).toEqual([]);
+    expect(timers(r.fx)).toEqual([5000]);
+    expect(notices(r.fx)).toEqual([]);
+    expect(saved(r.fx), 'the save held no room while the create was out, and holds none now').toEqual({});
+    const out = r.state;
+    r.late({ type: 'created', code: ROOM_A, key: KEY_A }, old);
+    expect(r.state, 'the room the server made meanwhile is not entered').toBe(out);
+    expect(r.fx, 'nor is its code or GM key kept').toEqual([]);
+  });
+
+  test('a GM in a room who starts a new room and taps Leave room is out of both: the room they were in is the last room, and the save keeps no key', () => {
+    const r = gmInA().tap({ type: 'create' });
+    const old = r.state.gen;
+    r.tap({ type: 'leave' });
+    expect(r.state).toMatchObject({ at: 'idle', server: 'ok', last: { code: ROOM_A, why: 'left' } });
+    expect(r.fx).toContainEqual({ type: 'abort', gen: old });
+    expect(saved(r.fx)).toEqual({ room: null, last: { code: ROOM_A, why: 'left' }, gmKey: null });
+    expect(calls(r.fx)).toEqual([]);
+    const out = r.state;
+    r.late({ type: 'created', code: ROOM_B, key: KEY_A }, old);
+    expect(r.state).toBe(out);
+  });
+
+  test('a Create cancelled on a page with no room server leaves the page with no room server', () => {
+    const r = run(boot({ server: false, room: null, last: null })).tap({ type: 'create' });
+    const old = r.state.gen;
+    r.tap({ type: 'leave' });
+    expect(r.state.at).toBe('off');
+    expect(r.fx).toContainEqual({ type: 'abort', gen: old });
+    expect(timers(r.fx)).toEqual([]);
+  });
+
   test('Forget clears the last room', () => {
     const r = playerInA().tap({ type: 'leave' }).tap({ type: 'forget' });
     expect(r.state).toMatchObject({ at: 'idle', last: null });

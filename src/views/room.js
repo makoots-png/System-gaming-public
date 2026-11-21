@@ -286,11 +286,13 @@ export function register(app) {
     q.qr.addEventListener('click', () => {
       const link = Y().inviteLink(), svg = qrSvg(link, { quiet: 4 }); if (!svg) return;
       const s = +/viewBox="0 0 (\d+)/.exec(svg)[1], px0 = s * 2;
-      ui.system({ tag: '! System', title: `ROOM ${Y().room() || ''}`, size: 'form', html: `<div class="rm-sys-qr">${sized(svg, px0)}</div>`, actions: [{ label: 'Close', value: null, cancel: true, primary: true }] });
-      // grow the code to what the window can hold without scrolling: its width, and its height limit less everything else in it
-      const box = document.querySelector('.sys-overlay.show .rm-sys-qr'), win = box && box.closest('.sys-window'), sv = box && box.firstElementChild; if (!win || !sv) return;
-      const maxH = parseFloat(getComputedStyle(win).maxHeight) || innerHeight - 32, room = Math.min(box.clientWidth, maxH - (win.scrollHeight - px0) - 8, 560), px = s * Math.max(2, Math.floor(room / s));
-      sv.setAttribute('width', px); sv.setAttribute('height', px);
+      // once the window is on the page, grow the code to what it can hold without scrolling: its width, and its height limit less everything else in it
+      const drawn = win => {
+        const box = win.querySelector('.rm-sys-qr'), sv = box.firstElementChild;
+        const maxH = parseFloat(getComputedStyle(win).maxHeight) || innerHeight - 32, room = Math.min(box.clientWidth, maxH - (win.scrollHeight - px0) - 8, 560), px = s * Math.max(2, Math.floor(room / s));
+        sv.setAttribute('width', px); sv.setAttribute('height', px);
+      };
+      ui.system({ tag: '! System', title: `ROOM ${Y().room() || ''}`, size: 'form', html: `<div class="rm-sys-qr">${sized(svg, px0)}</div>`, actions: [{ label: 'Close', value: null, cancel: true, primary: true }], drawn });
     });
     q.retry.addEventListener('click', async e => { const b = e.currentTarget; b.disabled = true; try { await Y().retry(); } finally { b.disabled = false; render(); } });
     q.showkey.addEventListener('click', e => { const i = q.gmkey, on = i.type !== 'text'; i.type = on ? 'text' : 'password'; e.currentTarget.textContent = on ? 'Hide' : 'Show'; e.currentTarget.setAttribute('aria-pressed', String(on)); });

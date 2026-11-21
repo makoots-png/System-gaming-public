@@ -16,7 +16,6 @@ import { hunterAbilities } from '../core/combat/rows.ts';
 import { roundOf } from '../core/combat/timeline.ts';
 import { itemOfAbility } from '../core/registry/abilities.ts';
 import { TABLE_REFUSAL_WORDS } from '../core/combat/refusal-words.ts';
-import { TURN_FREE, turnHoldStep } from '../core/combat/hold.ts';
 import * as motion from './motion.ts';
 import { bind, keyed } from './patch.ts';
 
@@ -221,36 +220,9 @@ export function register(app) {
   // ── D03: "Your kit" beside the HUD on desktop (>=1100 only; never rendered below, so phone/tablet are untouched) ──
   const kitOn = () => app.layout.desktop();
   const myTurn = e => { const r = e && curRow(e); return !!(r && isMine(r)); };
-  /**
-   * Whether this phone's turn waits on a command it tapped (a step, a use, End turn, a Release): the machine of
-   * src/core/combat/hold.ts, moved only by `holdTo`. While it is not free the turn's buttons are off.
-   */
-  let hold = TURN_FREE;
-  const waitsFor = e => !!e && e.ended === false && hold.at !== 'free';
+  /** Whether this phone's turn waits on a command it tapped, on any screen (app.api.uses `hold`): its buttons are off. */
+  const waitsFor = e => !!e && e.ended === false && app.api.uses.hold().at !== 'free';
   const canAct = e => myTurn(e) && !waitsFor(e);
-  /** The hold after `ev`, redrawn when it moved; answers how a tapped command goes out. */
-  const holdTo = ev => {
-    const m = turnHoldStep(hold, ev);
-    if (m.hold !== hold) { hold = m.hold; refresh(); }
-    return m.send;
-  };
-  /**
-   * A command of the turn, tapped: `post` sends it under the hold, its answer (the outbox entry, or nothing sent) fed
-   * back as the hold's `posted` or `unposted`, at the doc of that moment. `bag`: a consumable's use through the bag,
-   * which the hold sends unheld today (SMX-views-5.1). Answers the post's answer, or null when nothing was posted.
-   */
-  const command = (post, bag = null) => {
-    const send = holdTo({ kind: 'tap', via: bag ? 'bag' : 'turn' });
-    if (send === 'unheld' && bag) bag();
-    if (send !== 'held') return Promise.resolve(null);
-    return Promise.resolve(post()).then(r => {
-      const now = encounter();
-      holdTo(r && r.ok && now ? { kind: 'posted', from: now.at, id: r.id } : { kind: 'unposted' });
-      return r;
-    });
-  };
-  app.on('sync:outbox', o => { if (o.at === 'refused' || o.at === 'dropped') holdTo({ kind: o.at, id: o.id }); });
-  app.on('sync:room', () => holdTo({ kind: 'left' }));
   /** The doc's rows as spots, this hunter's row, the map and the nearest foe its first foe ability aims at. */
   function table(e, h) {
     /** @type {(import('../core/protocol.ts').FightDocRow & import('../core/combat/fight-view.ts').Spot)[]} */
@@ -334,7 +306,7 @@ export function register(app) {
         if (kb && !kb.disabled) {
           const e = encounter(), h = meHunter(e); if (!h) return;
           const cast = kb.dataset.cast ? hunterAbilities(h, app.rules()).find(a => a.id === kb.dataset.cast) : null, iid = cast ? itemOfAbility(cast) : null;
-          if (kb.dataset.cast) { if (cast) void command(() => app.api.uses.cast(h.id, cast.id), iid !== null ? () => app.api.inventory.use(h.id, iid) : null); }
+          if (kb.dataset.cast) { if (cast) { if (iid !== null) app.api.inventory.use(h.id, iid); else void app.api.uses.cast(h.id, cast.id); } }
           else if (kb.dataset.step) walk(e, h, Number(kb.dataset.step));
           else if (kb.dataset.kitItem) app.api.inventory.use(h.id, kb.dataset.kitItem);
           else app.api.dice.roll('1d20', { label: 'd20', hid: h.id });
@@ -386,7 +358,7 @@ export function register(app) {
   function pass() {
     const e = encounter(), h = meHunter(e); if (!e || e.ended !== false || !h || !canAct(e)) return;
     const S = sync();
-    void command(() => S.post(S.event('pass', { by: S.myKey(h.id), at: e.now })))
+    void app.api.uses.command(() => S.post(S.event('pass', { by: S.myKey(h.id), at: e.now })))
       .then(r => { if (r && !r.ok) ui.news('Not in the room: your turn was not ended.', 'warn'); });
   }
   // ── the map (src/views/map.js) over the room's fight doc ──
@@ -427,14 +399,14 @@ export function register(app) {
     // the Release of this hunter's channel: a tap on the ability it holds, which the GM's phone takes as its Release
     release: () => {
       const e = encounter(), h = meHunter(e), me = e && meRow(e); if (!h || !me || !me.channel) return;
-      void command(() => app.api.uses.cast(h.id, me.channel.ability, me.id));
+      void app.api.uses.cast(h.id, me.channel.ability, me.id);
     },
     pass: () => pass(),
     paint: null,
     move: (to, dash) => {
       const e = encounter(), h = meHunter(e); if (!e || e.ended !== false || !h || !canAct(e)) return;
       const S = sync();
-      void command(() => S.post(S.event('step', { by: S.myKey(h.id), place: { x: to.x, y: to.y }, at: e.now, dash })))
+      void app.api.uses.command(() => S.post(S.event('step', { by: S.myKey(h.id), place: { x: to.x, y: to.y }, at: e.now, dash })))
         .then(r => { if (r && !r.ok) ui.news('Not in the room: the step was not sent.', 'warn'); });
     },
     place: null,
@@ -442,7 +414,7 @@ export function register(app) {
       const e = encounter(), h = meHunter(e); if (!h || !canAct(e)) return;
       // an item stays in the bag until the GM's fight takes it: the room's `spent` takes it then (fight-save.ts `itemSpent`).
       // The map sends a consumable as a use, held as any use is (the List's goes through the bag: SMX-views-5.1)
-      void command(() => app.api.uses.cast(h.id, a.id, aim));
+      void app.api.uses.cast(h.id, a.id, aim);
     },
     offTurn: () => ui.news(myTurn(encounter()) ? 'Waiting for the GM\'s phone to take your last move.' : 'It is not your turn.', 'warning'),
     card: id => { cardId = id; refresh(); },
@@ -490,7 +462,7 @@ export function register(app) {
     const t = table(e, h); if (!t.me || !t.foe || !canAct(e)) return;
     const s = (dir > 0 ? stepToward : stepAway)(t.spots, t.me.id, t.foe.id, t.me.stride, t.grid); if (!s) return;
     const S = sync();
-    void command(() => S.post(S.event('step', { by: S.myKey(h.id), place: { x: s.place.x, y: s.place.y }, at: e.now, dash: false })))
+    void app.api.uses.command(() => S.post(S.event('step', { by: S.myKey(h.id), place: { x: s.place.x, y: s.place.y }, at: e.now, dash: false })))
       .then(r => { if (r && !r.ok) ui.news('Not in the room: the step was not sent.', 'warn'); });
   }
   /** The bursts of the doc just drawn: a burst at the bearer's token (or its row), and the count on its chips pops. */
@@ -577,7 +549,6 @@ export function register(app) {
   // ───────────────────────── turn cue + end ─────────────────────────
   function onDocs() {
     const e = encounter();
-    if (e) holdTo({ kind: 'doc', at: e.at });
     if (inRoomPlayer() && e) {
       const cur = e.ended === false ? rowsOf(e).find(r => r.id === e.currentId) : null, mine = cur ? myKeys().find(k => k.key === cur.key) : null;
       const no = e.ended === false ? e.refused : null, was = parseTold(cues.read());

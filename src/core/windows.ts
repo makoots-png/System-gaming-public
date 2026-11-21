@@ -63,7 +63,9 @@ export type WindowEventKind = WindowEvent['kind'];
 export const WINDOW_EVENTS = ['ask', 'next', 'open', 'close', 'gone', 'answered', 'escape', 'went'] as const satisfies readonly WindowEventKind[];
 
 /**
- * What src/views/ui.js carries out. `draw`: a System window's turn came; draw it on top. `dismiss`: play the window's move
+ * What src/views/ui.js carries out. `draw`: a System window's turn came; draw it on top, then run its `drawn` (what in
+ * it takes its size from the window measures it then: the room's QR code). A window is drawn once, as it goes from waiting
+ * to open. `dismiss`: play the window's move
  * out, then answer `gone`. `next`: a System window or the first-run window went; send `next` a task later. `shut`: a sheet
  * went by Escape or a tab; its owner takes it down. `forget`: the window is off the stack; drop what the page kept of it.
  */
