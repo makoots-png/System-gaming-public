@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { NO_WINDOWS, WINDOW_EVENTS, keyWindow, openSystem, windowAt, windowId, windowStep } from '../src/core/windows.ts';
+import { NO_WINDOWS, WINDOW_EVENTS, keyWindow, openSheet, openSystem, windowAt, windowId, windowStep } from '../src/core/windows.ts';
 import type { WindowEvent, Windows } from '../src/core/windows.ts';
 import { bfs } from '../scripts/statecharts.ts';
 import { FIRST_RUN, SYSTEM_WINDOWS, WINDOW_WALK } from './models/window-events.ts';
@@ -68,10 +68,66 @@ describe('the windows', () => {
     expect(order(windows)).toEqual([`${MAKER} open`, `${A} open`]);
   });
 
-  test('a sheet never takes the keys, and goes at once with no move out', () => {
-    const on = run(NO_WINDOWS, { kind: 'open', id: MAKER, of: 'maker' }, { kind: 'open', id: SHEET, of: 'sheet' });
-    expect(keyWindow(on.windows)).toBe(MAKER);
+  test('a sheet its owner takes down goes at once with no move out, and its owner is not told again', () => {
+    const on = run(NO_WINDOWS, { kind: 'open', id: MAKER, of: 'maker' }, { kind: 'open', id: SHEET, of: 'sheet', sheet: 'fightTools' });
     expect(run(on.windows, { kind: 'close', id: SHEET })).toEqual({ windows: { shown: [{ id: MAKER, kind: 'maker', at: 'open' }], queued: [] }, fx: [`forget ${SHEET}`] });
+  });
+
+  test('a sheet on top takes the keys (Escape takes it down wherever the focus is), and a window opened over it takes them back', () => {
+    const on = run(NO_WINDOWS, { kind: 'open', id: SHEET, of: 'sheet', sheet: 'quickRoll' });
+    expect(keyWindow(on.windows)).toBe(SHEET);
+    expect(openSheet(on.windows, 'quickRoll')).toBe(SHEET);
+    const under = run(on.windows, ...asked(A)).windows;
+    expect(keyWindow(under)).toBe(A);
+    expect(windowStep(under, { kind: 'escape', id: SHEET })).toEqual({ windows: under, fx: [] });
+  });
+
+  test('Escape on an open sheet takes it off and tells its owner to take it down; on any other window Escape is its own and changes nothing here', () => {
+    const on = run(NO_WINDOWS, { kind: 'open', id: SHEET, of: 'sheet', sheet: 'quickRoll' });
+    expect(run(on.windows, { kind: 'escape', id: SHEET })).toEqual({ windows: NO_WINDOWS, fx: [`shut ${SHEET}`, `forget ${SHEET}`] });
+    const sys = run(NO_WINDOWS, ...asked(A)).windows;
+    expect(windowStep(sys, { kind: 'escape', id: A })).toEqual({ windows: sys, fx: [] });
+    const maker = run(NO_WINDOWS, { kind: 'open', id: MAKER, of: 'maker' }).windows;
+    expect(windowStep(maker, { kind: 'escape', id: MAKER })).toEqual({ windows: maker, fx: [] });
+  });
+
+  test('a tap on a tab, the one shown too, takes every sheet off and tells each owner; the System windows and makers stay', () => {
+    const CARD = windowId(9);
+    const up = run(NO_WINDOWS, { kind: 'open', id: MAKER, of: 'maker' }, { kind: 'open', id: SHEET, of: 'sheet', sheet: 'fightTools' },
+      { kind: 'open', id: CARD, of: 'sheet', sheet: 'rowCard' }, ...asked(A)).windows;
+    const went = run(up, { kind: 'went' });
+    expect(order(went.windows)).toEqual([`${MAKER} open`, `${A} open`]);
+    expect(went.fx).toEqual([`shut ${SHEET}`, `forget ${SHEET}`, `shut ${CARD}`, `forget ${CARD}`]);
+    const none = run(NO_WINDOWS, ...asked(A)).windows;
+    expect(windowStep(none, { kind: 'went' }).windows).toBe(none);
+  });
+
+  test('Escape and a tab move only an open sheet: every other window, in every place, stays as it is', () => {
+    const places: Record<string, Windows> = {
+      'a System window waiting': run(NO_WINDOWS, ...asked(B), ...asked(A)).windows,
+      'a System window open': run(NO_WINDOWS, ...asked(A)).windows,
+      'a System window leaving': run(NO_WINDOWS, ...asked(A), { kind: 'close', id: A }).windows,
+      'a maker open': run(NO_WINDOWS, { kind: 'open', id: A, of: 'maker' }).windows,
+      'the first-run window open': run(NO_WINDOWS, { kind: 'open', id: A, of: 'onboard' }).windows,
+      'a sheet open': run(NO_WINDOWS, { kind: 'open', id: A, of: 'sheet', sheet: 'tokenCard' }).windows,
+      'no window': NO_WINDOWS,
+    };
+    const moves = (s: Windows) => [windowStep(s, { kind: 'escape', id: A }), windowStep(s, { kind: 'went' })].map(r => (r.windows === s ? 'stays' : `off, ${r.fx.map(f => f.kind).join(' ')}`));
+    expect(Object.fromEntries(Object.entries(places).map(([k, s]) => [k, moves(s)]))).toEqual({
+      'a System window waiting': ['stays', 'stays'],
+      'a System window open': ['stays', 'stays'],
+      'a System window leaving': ['stays', 'stays'],
+      'a maker open': ['stays', 'stays'],
+      'the first-run window open': ['stays', 'stays'],
+      'a sheet open': ['off, shut forget', 'off, shut forget'],
+      'no window': ['stays', 'stays'],
+    });
+  });
+
+  test('a sheet already up is not opened twice: one Quick Roll at most', () => {
+    const on = run(NO_WINDOWS, { kind: 'open', id: SHEET, of: 'sheet', sheet: 'quickRoll' }).windows;
+    expect(windowStep(on, { kind: 'open', id: windowId(9), of: 'sheet', sheet: 'quickRoll' })).toEqual({ windows: on, fx: [] });
+    expect(windowStep(on, { kind: 'open', id: windowId(9), of: 'sheet', sheet: 'tokenCard' }).windows.shown).toHaveLength(2);
   });
 
   test('Confirm all of the open System window answers a waiting one; with none open nothing answers it', () => {
@@ -89,7 +145,7 @@ describe('the windows', () => {
     expect(windowStep(NO_WINDOWS, { kind: 'next' })).toEqual({ windows: NO_WINDOWS, fx: [] });
   });
 
-  test('in every state the walk reaches: one place per window, at most one System window open, none over the first-run window, and the keys with the top open one', () => {
+  test('in every state the walk reaches: one place per window, at most one System window open, none over the first-run window, one sheet of a name, and the keys with the top open one', () => {
     expect([...new Set(WINDOW_WALK.map(e => e.kind))].sort()).toEqual([...WINDOW_EVENTS].sort());
     const walk = bfs([NO_WINDOWS], s => WINDOW_WALK.map(event => ({ event, to: windowStep(s, event).windows })), s => JSON.stringify(s));
     expect(walk.states.length).toBeGreaterThan(20);
@@ -97,6 +153,8 @@ describe('the windows', () => {
       const ids = [...s.shown.map(w => w.id), ...s.queued];
       expect(new Set(ids).size).toBe(ids.length);
       expect(s.shown.filter(w => w.kind === 'system' && w.at === 'open').length).toBeLessThanOrEqual(1);
+      const sheets = s.shown.flatMap(w => (w.kind === 'sheet' ? [w.sheet] : []));
+      expect(new Set(sheets).size).toBe(sheets.length);
       const firstRun = s.shown.findIndex(w => w.id === FIRST_RUN && w.at === 'open'), sys = openSystem(s);
       if (firstRun >= 0 && sys !== null) expect(s.shown.findIndex(w => w.id === sys)).toBeLessThan(firstRun);
       const top = [...s.shown].reverse().find(w => w.at === 'open');

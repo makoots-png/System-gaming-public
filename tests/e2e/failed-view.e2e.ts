@@ -57,3 +57,19 @@ test('a phone whose service worker does not register logs why, as it will not op
   await onboardPlayer(page, 'Mira Test');
   await expect.poll(() => warnings(errors, 'sync:worker')).toHaveLength(1);
 });
+
+test('a panel whose rule for showing breaks before it ever showed is never set up: it says it failed in its place, and the screen around it still draws', async ({ device }) => {
+  const { page, errors } = await device('player', { allowConsole: [/\[when:whenless-panel\] no rule today/] });
+  await onboardPlayer(page, 'Mira Test');
+  await page.evaluate(() => {
+    hunterApp.registerPanel({ id: 'whenless-panel', view: 'status', title: 'Whenless', when: () => { throw new Error('no rule today'); },
+      mount(el: HTMLElement) { (window as any).__mounts = ((window as any).__mounts ?? 0) + 1; el.innerHTML = '<p data-drawn>Drawn</p>'; } });
+    hunterApp.redraw();
+  });
+  const panel = page.locator('#view-status [data-panel="whenless-panel"]');
+  await expect(panel).toContainText('This panel failed to load.');
+  await expect(panel.locator('[data-drawn]')).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).__mounts ?? 0)).toBe(0);
+  await expect(page.locator('#view-status [data-idedit]')).toBeVisible();
+  expect(warnings(errors, 'when:whenless-panel')).toHaveLength(1);
+});

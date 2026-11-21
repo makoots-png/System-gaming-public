@@ -1156,7 +1156,6 @@ test('a view hangs state on an element only where this list names it with its re
     'src/views/gates.js': { count: 1, why: 'what a gate card was drawn from (`_sig`), so only a changed card is drawn again' },
     'src/views/room.js': { count: 1, why: 'a copied button\'s timer that puts its label back (`_t`)' },
     'src/views/io.js': { count: 1, why: 'a button\'s timer that puts its label back (`_t`)' },
-    'src/views/onboard.js': { count: 1, why: 'where the focus goes back as the quick start guide closes (`_trigger`)' },
   };
   const hung = /\b[\w$]+\._[\w$]+\s*=(?!=)/g;
   const old: Line = { file: 'src/views/ui.js', line: 0, text: "  if (hold) { t._act = hold.act; t.dataset.held = ''; }" };
@@ -1390,8 +1389,8 @@ test('every let a view keeps for the page is named here with what it holds, and 
     'io.js refresh': 'the Data view\'s redraw, set by its mount',
     'motion.ts tokens': 'the motion tokens read once from the page\'s CSS', 'motion.ts osReduce': what.handle,
     'motion.ts layerEl': what.handle, 'motion.ts bits': what.handle,
-    'onboard.js root': what.handle, 'onboard.js me': what.handle, 'onboard.js onEsc': what.handle,
-    'onboard.js at': 'the step of first-run setup on screen (src/core/onboarding.ts), null when it is not running',
+    'onboard.js root': what.handle, 'onboard.js me': what.handle,
+    'onboard.js at': 'the first-run window: its step, what the step\'s tap has under way and the ? guide (src/core/onboarding.ts), moved only by go',
     'quests.js wake': 'the one timer\'s id, set for nextWake (src/core/hunter/quests.ts)',
     'quests.js tab': what.shown, 'quests.js form': 'the quest form\'s state (src/core/hunter/quest-form.ts), moved only by questFormStep through formMoved',
     'quests.js autoTitle': 'whether the quest form\'s title is still the one it made, so a pick may replace it',

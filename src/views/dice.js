@@ -262,11 +262,14 @@ export function register(app) {
   sheetInst = controls(sheet.querySelector('[data-roller]'), { quickChecks: false });
   // where the bottom nav / rail is visible (phones, landscape phones) the nav's Dice tab is the opener and the FAB is display:none
   const NAV = '#nav-bottom a[href="#/dice"]', docked = () => !fab.getClientRects().length;
-  /** The sheet is open; while it leaves it is already closed (inert, and a tap opens it again). */
+  /**
+   * The sheet is open; while it leaves it is already closed (inert, and a tap opens it again). It is the `quickRoll`
+   * sheet of src/core/windows.ts: Escape while it is on top, a tab or its own "Dice tab" take it down.
+   */
   let isOpen = false;
   const syncNav = () => document.querySelectorAll(NAV).forEach(a => { a.setAttribute('aria-controls', 'dice-sheet'); if (a.hasAttribute('aria-current')) a.removeAttribute('aria-expanded'); else a.setAttribute('aria-expanded', String(isOpen)); });
   const setOpen = open => {
-    isOpen = open; sheet.inert = !open; ui.sheet(sheet, open);
+    isOpen = open; sheet.inert = !open; ui.sheet('quickRoll', open, () => setOpen(false));
     if (open) { sheet.hidden = false; void motion.enter(sheet); } else if (!sheet.hidden) void motion.hide(sheet);
     fab.setAttribute('aria-expanded', String(open)); syncNav();
     fab.setAttribute('aria-label', open ? 'Close dice roller' : 'Open dice roller');
@@ -280,7 +283,5 @@ export function register(app) {
   new MutationObserver(syncNav).observe(document.getElementById('nav-bottom'), { childList: true });
   sheet.querySelector('[data-full]').addEventListener('click', () => app.go('dice'));
   sheet.querySelector('[data-close]').addEventListener('click', () => setOpen(false));
-  sheet.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); } });
-  app.on('view', () => setOpen(false));
   app.on('change', () => { if (isOpen) sheetInst.update(); });
 }

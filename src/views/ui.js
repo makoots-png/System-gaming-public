@@ -15,7 +15,7 @@ import { store } from '../edge/store.ts';
 import { reported } from '../edge/report.ts';
 import { READ_ONLY } from '../core/store-life.ts';
 import { TOLD } from '../core/save-step.ts';
-import { NO_WINDOWS, keyWindow, openSystem, windowId, windowStep } from '../core/windows.ts';
+import { NO_WINDOWS, anyOpen, keyWindow, openSheet, openSystem, windowId, windowStep } from '../core/windows.ts';
 import { NOT_HELD, heldKey, heldStep } from '../core/held.ts';
 export { reduced } from './motion.ts';
 
@@ -170,10 +170,11 @@ export function news(/** @type {string} */ msg, kind = 'info') {
 
 // ── the windows: one machine (src/core/windows.ts), drawn here ──
 /**
- * A window's parts on the page: its overlay (`root`), the part that moves (`win`) and what it does with a key (`key`). A System window has its words (`o`), its answer (`resolve`) and its
- * Confirm all button (`all`) too. `openWindow` answers one, for `closeWindow`.
+ * A window's parts on the page: its overlay (`root`), the part that moves (`win`) and what it does with a key (`key`). A
+ * System window has its words (`o`), its answer (`resolve`) and its Confirm all button (`all`) too; a sheet has its
+ * owner's `shut`, which takes it down. `openWindow` answers one, for `closeWindow`.
  * @typedef {import('../core/windows.ts').WindowKind} WindowKind
- * @typedef {{ id: import('../core/windows.ts').WindowId; kind: WindowKind; root: HTMLElement | null; win: HTMLElement | null; key: ((e: KeyboardEvent) => void) | null }} Win
+ * @typedef {{ id: import('../core/windows.ts').WindowId; kind: WindowKind; root: HTMLElement | null; win: HTMLElement | null; key: ((e: KeyboardEvent) => void) | null; shut?: () => void }} Win
  * @typedef {Win & { o: SystemWindow; resolve: (v: any) => void; all: HTMLElement | null }} SystemWin
  */
 /** The windows on screen, waiting and going (src/core/windows.ts), moved only by `move`. */
@@ -229,6 +230,7 @@ function move(e) {
     if (fx.kind === 'draw') show(/** @type {SystemWin} */ (parts.get(fx.id)));
     else if (fx.kind === 'dismiss') { const w = parts.get(fx.id); void dismiss(w.root, w.win).then(() => move({ kind: 'gone', id: fx.id })); }
     else if (fx.kind === 'next') setTimeout(() => move({ kind: 'next' }), LATE);
+    else if (fx.kind === 'shut') parts.get(fx.id).shut();
     else parts.delete(fx.id);
   }
   draw();
@@ -241,10 +243,8 @@ function draw() {
   top.all.hidden = n < 2; top.all.textContent = `Confirm all (${n})`;
 }
 
-/** A sheet counts while it is drawn: a sheet in a view that is not shown has no box. */
-const drawn = (/** @type {Win} */ w) => w.kind !== 'sheet' || !!w.root && w.root.getClientRects().length > 0;
 /** Is a window or a sheet over the page: the one answer for the app's keys, the fight's news and anything else that asks. */
-export const windowOpen = () => windows.shown.some(s => s.at === 'open' && drawn(parts.get(s.id)));
+export const windowOpen = () => anyOpen(windows);
 document.addEventListener('keydown', e => {
   const id = keyWindow(windows), w = id === null ? null : parts.get(id);
   if (w && w.key) w.key(e);
@@ -263,12 +263,22 @@ export function openWindow(kind, show, key) {
 }
 /** A window goes: it leaves while it fades, then is off. After a System window or the first-run window, the next one waiting opens a task later. */
 export function closeWindow(/** @type {Win} */ w) { move({ kind: 'close', id: w.id }); }
-/** A sheet over the page counts while `on` (its owner says so each time it draws it). @param {HTMLElement} el @param {boolean} on */
-export function sheet(el, on) {
-  const w = [...parts.values()].find(p => p.kind === 'sheet' && p.root === el);
-  if (on && !w) { const s = newWin('sheet'); s.root = el; move({ kind: 'open', id: s.id, of: 'sheet' }); }
-  else if (!on && w) move({ kind: 'close', id: w.id });
+/**
+ * Sheet `name` is up over the page while `on`: its owner says so each time it draws it. `shut` is how its owner takes it
+ * down when Escape is pressed while it is on top, or the page under it changes (`went`): the owner forgets it was open
+ * and hides it.
+ * @param {import('../core/windows.ts').WindowSheet} name @param {boolean} on @param {() => void} shut
+ */
+export function sheet(name, on, shut) {
+  const id = openSheet(windows, name);
+  if (on && id === null) {
+    const s = newWin('sheet'); s.shut = shut;
+    s.key = e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); move({ kind: 'escape', id: s.id }); } };
+    move({ kind: 'open', id: s.id, of: 'sheet', sheet: name });
+  } else if (!on && id !== null) move({ kind: 'close', id });
 }
+/** The page under the windows changed (app.js `route`: a tab, a link, the tab shown tapped again): every sheet goes. */
+export const went = () => move({ kind: 'went' });
 
 // ── System windows: one at a time, focus-trapped, Escape and the backdrop dismiss, focus restored ──
 // default (non-cancel) value of a window that may be bulk-confirmed; undefined = never auto-resolve (forms, multi-action dialogs)

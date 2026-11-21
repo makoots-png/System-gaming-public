@@ -7,6 +7,7 @@ import { RULES, rules } from './edge/rules.ts';
 import { chooseMode, roleOf, seatOf } from './core/role.ts';
 import { atSettings } from './core/save-step.ts';
 import { addHunter } from './core/party.ts';
+import { panelDraw, panelDrawn } from './core/panel.ts';
 import { PANEL_DEFAULTS, VIEW_DEFAULTS } from './views/app.ts';
 import * as ui from './views/ui.js';
 import * as motion from './views/motion.ts';
@@ -47,8 +48,12 @@ const views = new Map();
 const panels = [];
 /** Runs `fn`: true when it returned, false when it threw, which is logged at `where`. */
 const ran = (where, fn) => { try { fn(); return true; } catch (e) { reported(where, e); return false; } };
-/** What a view's, a panel's or a key's `when` says: a `when` that throws is a bug, logged, and the view or panel shows failed. */
-const asked = (x, where) => { try { return x.when() ? 'yes' : 'no'; } catch (e) { reported(where, e); return 'failed'; } };
+/**
+ * What a view's, a panel's or a key's `when` says (src/core/panel.ts `PanelSaid`): a `when` that throws is a bug, logged,
+ * and the view or panel shows failed.
+ * @returns {import('./core/panel.ts').PanelSaid}
+ */
+const asked = (x, where) => { try { return x.when() ? 'yes' : 'no'; } catch (e) { reported(where, e); return 'threw'; } };
 /** @type {import('./edge/api-table.ts').ApiTable<import('./core/api.ts').AppApi>} */
 const apis = apiTable();
 const linkRoom = () => app.api.sync.room(); // the room the link is in (src/edge/sync.ts, registered before any view draws)
@@ -65,7 +70,8 @@ export const app = {
   jumps: id => viewPanels(id).filter(p => p.jump).map(p => ({ label: p.jump, id: p.id })),
   go(id) {
     const want = '#/' + id;
-    if (location.hash === want) route(); else location.hash = want;
+    if (location.hash !== want) { location.hash = want; return; } // its hashchange routes it
+    route(); // the view shown, gone to again: a navigation all the same, so the sheets over it go (ui.went)
   },
   redraw: () => scheduleUpdate(),
   isGM: () => role() === 'gm',
@@ -102,7 +108,9 @@ document.addEventListener('keydown', e => {
 window.hunterApp = app; // handy for verify scripts
 
 const $ = id => document.getElementById(id);
-const avail = v => (!v.gmOnly || role() === 'gm') && asked(v, 'when:' + v.id) !== 'no'; // a failed one shows, drawn failed
+/** What a view's or panel's `when` says this draw; one for the GM only says no on a player's phone. */
+const said = def => (def.gmOnly && role() !== 'gm' ? 'no' : asked(def, 'when:' + def.id));
+const avail = v => said(v) !== 'no'; // a failed one shows, drawn failed
 const sortedViews = () => [...views.values()].filter(avail).sort((a, b) => a.order - b.order);
 const BOTTOM_PLAYER = ['status', 'quests', 'combat', 'dice'], BOTTOM_GM = ['gm', 'combat', 'quests', 'dice'];
 const bottomIds = () => (role() === 'gm' ? BOTTOM_GM : BOTTOM_PLAYER);
@@ -110,23 +118,25 @@ const bottomIds = () => (role() === 'gm' ? BOTTOM_GM : BOTTOM_PLAYER);
 // ── routing / mounting ──
 let current = null; const sections = new Map();
 
-function viewPanels(id) { return panels.filter(p => p.view === id && (!p.gmOnly || role() === 'gm') && asked(p, 'when:' + p.id) !== 'no').sort((a, b) => a.order - b.order); }
+/** Where panel `p` of view `id` is (src/core/panel.ts `PanelState`): `asked` until its box is first made. */
+const panelAt = (id, p) => sections.get(id)?.pmounted.get(p.id)?.at ?? 'asked';
+/** The panels of view `id` shown this draw, in order, each with what its `when` said (asked once). */
+function shownPanels(id) {
+  return panels.filter(p => p.view === id).map(p => ({ p, said: said(p) })).filter(x => panelDraw(panelAt(id, x.p), x.said).shown).sort((a, b) => a.p.order - b.p.order);
+}
+function viewPanels(id) { return shownPanels(id).map(x => x.p); }
 
-/** A view's main part or a panel whose mount, update or `when` threw: it says so, and runs no more until a reload. */
-function failed(part, what) {
-  part.state = 'failed';
-  part.el.innerHTML = what === null ? '<p class="empty">This panel failed to load.</p>'
-    : `<section class="win"><span class="cb"></span><h2>${ui.esc(what)}</h2><p class="empty">This section failed to load. The rest of the app still works.</p></section>`;
-}
-/** A part is mounted once, then updated after each change while it is shown, until one of its calls throws. */
-function mountPart(part, def, what) {
-  if (part.state !== 'new') return;
-  part.state = 'live';
-  if (!ran('mount:' + def.id, () => def.mount && def.mount(part.el))) failed(part, what);
-}
-function updatePart(part, def, what) {
-  if (part.state === 'live' && asked(def, 'when:' + def.id) === 'failed') failed(part, what);
-  if (part.state === 'live' && !ran('update:' + def.id, () => def.update && def.update(part.el))) failed(part, what);
+/**
+ * Draws a view's main part or a panel whose `when` said `when` this draw: the table of src/core/panel.ts says which of
+ * its calls run, and a part that fails says so in place and runs no more until a reload. The one writer of `part.at`.
+ */
+function drawPart(part, def, when, what) {
+  const was = part.at;
+  part.at = panelDrawn(was, when, call => ran(call + ':' + def.id, () => def[call] && def[call](part.el)));
+  if (part.at === 'failed' && was !== 'failed') {
+    part.el.innerHTML = what === null ? '<p class="empty">This panel failed to load.</p>'
+      : `<section class="win"><span class="cb"></span><h2>${ui.esc(what)}</h2><p class="empty">This section failed to load. The rest of the app still works.</p></section>`;
+  }
 }
 
 function ensureSection(v) {
@@ -134,41 +144,41 @@ function ensureSection(v) {
   if (!s) {
     const root = ui.h(`<section class="view" id="view-${ui.esc(v.id)}" aria-label="${ui.esc(v.label)}" hidden><div class="view-main"></div><div class="panels"></div></section>`);
     $('main').appendChild(root);
-    s = { root, pbox: root.querySelector('.panels'), main: { el: root.querySelector('.view-main'), state: 'new' }, pmounted: new Map() };
+    s = { root, pbox: root.querySelector('.panels'), main: { el: root.querySelector('.view-main'), at: 'asked' }, pmounted: new Map() };
     sections.set(v.id, s);
   }
   return s;
 }
 
-function renderView(v) {
+/** Draws view `v`, whose `when` said `when` this draw (not no), and the panels its own draw shows. */
+function renderView(v, when) {
   const s = ensureSection(v);
-  mountPart(s.main, v, v.label);
-  const want = viewPanels(v.id);
-  // mount new panels; hide panels that no longer apply
-  for (const p of want) {
+  const want = shownPanels(v.id);
+  // a panel's box is made the first time it shows; one no longer shown leaves the page, kept for when it shows again
+  for (const { p } of want) {
     if (!s.pmounted.has(p.id)) {
       const box = ui.h(`<section class="win panel" data-panel="${ui.esc(p.id)}"><span class="cb"></span>${p.title ? `<h2>${ui.esc(p.title)}</h2>` : ''}<div class="panel-body"></div></section>`);
-      s.pmounted.set(p.id, { box, el: box.querySelector('.panel-body'), state: 'new' });
+      s.pmounted.set(p.id, { box, el: box.querySelector('.panel-body'), at: 'asked' });
     }
-    mountPart(s.pmounted.get(p.id), p, null);
   }
-  const boxes = want.map(p => s.pmounted.get(p.id).box);
+  const boxes = want.map(({ p }) => s.pmounted.get(p.id).box);
   if (boxes.length !== s.pbox.children.length || boxes.some((b, i) => s.pbox.children[i] !== b)) s.pbox.replaceChildren(...boxes); // never churn DOM the user may be typing in
-  updatePart(s.main, v, v.label);
-  for (const p of want) updatePart(s.pmounted.get(p.id), p, null);
+  drawPart(s.main, v, when, v.label);
+  for (const { p, said: w } of want) drawPart(s.pmounted.get(p.id), p, w, null);
 }
 
 function route() {
+  ui.went();
   const m = /^#\/([\w-]+)/.exec(location.hash);
   let id = m ? m[1] : role() === 'gm' ? 'gm' : 'status'; // with no view in the address a GM opens on the GM view, a player on Status
-  let v = views.get(id);
-  if (!v || !avail(v)) { id = 'status'; v = views.get('status'); if (!v) return; }
+  let v = views.get(id), when = v ? said(v) : 'no';
+  if (when === 'no') { id = 'status'; v = views.get('status'); if (!v) return; when = said(v); }
   const from = current;
   if (from && from !== id) { const o = sections.get(from); if (o) o.root.hidden = true; }
   current = id;
   // shown before it is drawn: a view that measures itself as it draws (the map's frame) measures nothing while hidden
   ensureSection(v).root.hidden = false;
-  renderView(v);
+  renderView(v, when);
   if (from !== id) { window.scrollTo(0, 0); app.emit('view', { id, from }); }
   renderNav();
 }
@@ -275,9 +285,9 @@ function scheduleUpdate() {
   requestAnimationFrame(() => {
     pending = false;
     renderHeader();
-    const v = views.get(current);
-    if (!v || !avail(v)) return route();
-    renderView(v); renderNav();
+    const v = views.get(current), when = v ? said(v) : 'no';
+    if (when === 'no') return route();
+    renderView(v, when); renderNav();
   });
 }
 store.subscribe(p => { app.emit('change', p); scheduleUpdate(); });

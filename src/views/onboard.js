@@ -4,7 +4,7 @@ import { CODE_LEN, parseRoomCode } from '../core/ids.ts';
 import { tapWords } from '../core/sync/taps.ts';
 import { starterStep } from './starter.js';
 import { atSettings, both } from '../core/save-step.ts';
-import { firstStep, onboardStep } from '../core/onboarding.ts';
+import { createShows, joinShows, onboardStep } from '../core/onboarding.ts';
 import { ownSeed } from '../core/starter.ts';
 import { onboarded } from '../core/settings.ts';
 import { READ_ONLY } from '../core/store-life.ts';
@@ -44,26 +44,23 @@ export function register(app) {
     @media (min-width:721px) and (max-width:1099px) and (max-height:500px){.ob-overlay{padding:calc(8px + var(--sat)) calc(8px + var(--sar)) calc(8px + var(--sab)) calc(8px + var(--sal))}.ob-win{padding:14px 20px 12px}.ob-win h2{font-size:20px;margin-bottom:8px}.ob-win p{margin-bottom:8px}.ob-act{margin-top:8px}}`);
 
   /** The first-run window: one overlay on the window stack (ui.js), its content swapped per step. */
-  let root = null, me = null, onEsc = null;
+  let root = null, me = null;
   /** The window leaves as every window does (ui.js `closeWindow`); its leaving copy is no longer an `.ob-overlay`. */
   function close() {
     if (!root) return;
-    const el = root; root = null; onEsc = null;
+    const el = root; root = null;
     el.classList.replace('ob-overlay', 'ob-gone');
     closeWindow(me); me = null;
   }
   function key(e) {
-    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); const f = onEsc; if (f) f(); return; }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); ESC[at.at](); return; }
     if (e.key === 'Tab') trapTab(e, root);
   }
   // one overlay, content swapped per step; focus goes to [data-focus] or the first button. `about`: a plain line drawn
   // below the window on the backdrop, which the window names as its description.
-  function step(html, esc_, about = '') {
+  function step(html, about = '') {
     const fresh = !root;
-    if (fresh) {
-      const trigger = document.activeElement;
-      me = openWindow('onboard', () => { root = h('<div class="ob-overlay" role="presentation"></div>'); root._trigger = trigger; document.body.appendChild(root); return { root, win: null }; }, key);
-    }
+    if (fresh) me = openWindow('onboard', () => { root = h('<div class="ob-overlay" role="presentation"></div>'); document.body.appendChild(root); return { root, win: null }; }, key);
     const id = 'ob' + Math.random().toString(36).slice(2, 7);
     root.innerHTML = `<div class="ob-win" role="dialog" aria-modal="true" aria-labelledby="${id}"${about ? ` aria-describedby="${id}a"` : ''}><span class="cb"></span>${html.replace('{id}', id)}</div>${about ? `<p class="ob-about" id="${id}a">${esc(about)}</p>` : ''}`;
     root.classList.toggle('ob-with-about', !!about);
@@ -71,7 +68,6 @@ export function register(app) {
     // each step's window rises as every window does; the backdrop fades in once
     void enter(root.firstElementChild);
     if (fresh) void enter(root, 'fade');
-    onEsc = esc_;
     const f = root.querySelector('[data-focus]') || root.querySelector('button');
     if (f) f.focus();
     return root.firstElementChild;
@@ -79,28 +75,64 @@ export function register(app) {
 
   // the seed hunter a new install starts with becomes the player's own, neutral (no Wolf Slayer title, no canon items, skills or quest)
   const owned = (name, job = '') => s => ownSeed(s, name || 'Hunter', job);
-  /** The step of first-run setup on screen (src/core/onboarding.ts), or null when setup is not running. */
-  let at = null;
+  /** The window on screen: its step, what the step's tap has under way, the ? guide (src/core/onboarding.ts), moved only by `go`. @type {import('../core/onboarding.ts').OnboardingAt<Element>} */
+  let at = { at: 'shut' };
   /**
-   * Sends `event` to the setup machine. `write` is what the choice changes; on the transition that leaves setup it is
-   * written with the onboarded mark in one `store.apply`, so a reload sees both or neither. Answers the write's answer;
-   * a refused write is told (ui.js `wrote`) and the window stays where it was.
+   * Sends `e` to the window's machine. `write` is what the tap changes; on the transition that leaves setup it is written
+   * with the onboarded mark in one `store.apply`, so a reload sees both or neither. A write the save refused is told
+   * (ui.js `wrote`) and sent as `refused`: the step stays, and a check under way goes back to how it was before the tap.
+   * Answers the write's answer, or `stale` where `e` does not apply (a late answer, a second tap).
    */
-  function go(event, write = null) {
-    const t = at === null ? null : onboardStep(at, event);
+  function go(e, write = null) {
+    const t = onboardStep(at, e);
     if (!t) return { ok: false, why: 'stale' };
     const change = t.marks ? (write ? both(write, atSettings(onboarded)) : atSettings(onboarded)) : write;
-    if (change) { const r = store.apply(`onboard-${event}`, change); if (!ui.wrote('System', r)) return r; }
-    at = t.to;
-    DRAW[at](event);
+    if (change) {
+      const r = store.apply(`onboard-${e.type}`, change);
+      if (!ui.wrote('System', r)) { const back = onboardStep(at, { type: 'refused' }); if (back) moved(back, 'refused'); return r; }
+    }
+    moved(t, e.type);
     return { ok: true };
+  }
+  /** Takes the transition: a new step draws its window, every state paints its tap's progress, then the effects run. */
+  function moved(t, event) {
+    const was = at.at;
+    at = t.to;
+    if (at.at !== was) DRAW[at.at](event);
+    paint();
+    for (const fx of t.fx) {
+      if (fx.type === 'dropInvite') app.api.sync.dropInvite();
+      else if (fx.type === 'cancelCreate') app.api.sync.leave();
+      else if (fx.back instanceof HTMLElement && fx.back.isConnected) fx.back.focus();
+    }
+  }
+  const busy = (b, on) => { b.disabled = on; if (on) b.setAttribute('aria-busy', 'true'); else b.removeAttribute('aria-busy'); };
+  /** Paints what the step's tap has under way on the window drawn for the step: a check or a create out, a failure. */
+  function paint() {
+    if (at.at === 'player') busy(root.querySelector('[data-go]'), at.begin === 'checking');
+    else if (at.at === 'invite') {
+      const v = joinShows(at.join), q = s => root.querySelector(s), b = q('[data-go]'), mo = q('[data-obmore]');
+      busy(b, v.busy); b.textContent = v.tried ? 'Try again' : 'Join';
+      if (v.busy) q('[data-err]').textContent = '';
+      if (v.why) { q('[data-err]').textContent = why(v.why, invited()); q('[data-check]').textContent = ''; }
+      if (v.tried && mo.className) { mo.textContent = 'Continue without a room'; mo.className = ''; q('.ob-act').appendChild(mo); }
+    } else if (at.at === 'campaignReady') {
+      const v = createShows(at.create), b = root.querySelector('[data-obcreate]');
+      if (b) busy(b, v.busy);
+      root.querySelector('[data-msg]').textContent = v.why ? why(v.why) : '';
+    }
   }
   /** What a failed check or join for room `code` says (src/core/sync/taps.ts). */
   const why = (kind, code = '') => tapWords(kind, code) ?? '';
   // an invite link was opened before onboarding finished and the player did not take the join path: offer it now
   const invited = () => app.api.sync.invite();
   const offerJoin = () => { const c = invited(), sy = app.api.sync; if (c && sy.conn() !== 'off' && sy.room() !== c) app.go('room'); };
-  const skip = () => { go('skip', owned('Hunter')); offerJoin(); };
+  // each one's Escape too (ESC below); Skip goes on to the invite's room only once its write is saved
+  const skip = () => { if (go({ type: 'skip' }, owned('Hunter')).ok) offerJoin(); };
+  const more = () => { go({ type: 'more' }); };
+  const sheet = () => { if (go({ type: 'sheet' }).ok) app.go('status'); };
+  const later = () => { if (go({ type: 'later' }).ok) offerJoin(); };
+  const gotIt = () => { go({ type: 'gotIt' }); };
 
   /** This phone's facts now for `role`'s next steps (src/core/first-run.ts): read, never stored. `rooms`: false hides the room steps. */
   function facts(role, rooms = app.api.sync.conn() !== 'off') {
@@ -131,16 +163,16 @@ export function register(app) {
       <div class="ob-act"><button type="button" class="primary" data-focus data-yes>Yes</button>
       <button type="button" class="ob-no" data-no aria-label="No (the System does not allow it)">No</button></div>
       <p class="ob-err" role="status" data-msg></p>
-      <button type="button" class="ob-skip" data-skip>Skip intro</button>`, skip, ABOUT);
+      <button type="button" class="ob-skip" data-skip>Skip intro</button>`, ABOUT);
     const no = w.querySelector('[data-no]'), msg = w.querySelector('[data-msg]'); let n = 0;
     const dodge = () => {
       n++; no.style.transform = `translate(${(n % 2 ? -1 : 1) * (6 + (n % 3) * 4)}px, ${(n % 3 - 1) * 4}px)`;
       msg.style.color = 'var(--gold)';
       msg.textContent = n < 3 ? '[SYSTEM] Declining is not an option.' : '[SYSTEM] The System does not accept "No".';
-      if (n >= 4) go('accept'); // returns: the choice was never yours
+      if (n >= 4) go({ type: 'accept' }); // returns: the choice was never yours
     };
     no.addEventListener('click', dodge); no.addEventListener('pointerenter', () => { no.style.transform = `translate(${n % 2 ? 8 : -8}px, 0)`; });
-    w.querySelector('[data-yes]').addEventListener('click', () => go('accept'));
+    w.querySelector('[data-yes]').addEventListener('click', () => go({ type: 'accept' }));
     w.querySelector('[data-skip]').addEventListener('click', skip);
   }
 
@@ -148,15 +180,15 @@ export function register(app) {
     const w = step(`<div class="n-tag">! System</div><h2 id="{id}">Who are you?</h2>
       <p>Choose how you will use the System on this device.</p>${invited() && app.api.sync.conn() !== 'off' ? `<p class="ob-invite">You were invited to room <b>${esc(invited())}</b>. Choose <b>I'm a Player</b> to join it.</p>` : ''}
       <div class="ob-act"><button type="button" class="primary" data-focus data-player>I'm a Player</button><button type="button" data-gm>I'm the GM</button></div>
-      <button type="button" class="ob-skip" data-skip>Skip</button>`, skip);
-    w.querySelector('[data-player]').addEventListener('click', () => go('player'));
-    w.querySelector('[data-gm]').addEventListener('click', () => go('gm'));
+      <button type="button" class="ob-skip" data-skip>Skip</button>`);
+    w.querySelector('[data-player]').addEventListener('click', () => go({ type: 'player' }));
+    w.querySelector('[data-gm]').addEventListener('click', () => go({ type: 'gm' }));
     w.querySelector('[data-skip]').addEventListener('click', skip);
   }
 
   // opened from an invite link on a new device: one field, nothing saved until the room is known to exist
   function invite() {
-    const code = invited(), sy = app.api.sync; let failed = false;
+    const code = invited(), sy = app.api.sync;
     const w = step(`<div class="n-tag">! Invitation</div><h2 id="{id}">Join a room</h2>
       <p>[SYSTEM] You were invited to a room.</p>
       <div class="ob-chip" data-roomchip aria-label="Room code ${esc(code)}"><span>${esc(code.slice(0, 3))}</span><span>${esc(code.slice(3))}</span></div>
@@ -164,28 +196,22 @@ export function register(app) {
       <div class="ob-form"><label class="field"><span class="lbl">Hunter name</span><input type="text" data-name data-focus maxlength="60" autocomplete="off" enterkeyhint="go" placeholder="Your hunter's name"></label>
         <div class="ob-err" role="alert" data-err></div></div>
       <div class="ob-act"><button type="button" class="primary" data-go>Join</button></div>
-      <button type="button" class="ob-skip" data-obmore>other options</button>`, () => more());
-    const q = s => w.querySelector(s), err = q('[data-err]'), nm = q('[data-name]'), joinBtn = q('[data-go]'), mo = q('[data-obmore]');
-    const more = () => { if (failed) sy.dropInvite(); go('more'); };
+      <button type="button" class="ob-skip" data-obmore>other options</button>`);
+    const q = s => w.querySelector(s), err = q('[data-err]'), nm = q('[data-name]');
     sy.check(code).then(r => { if (!w.isConnected) return; q('[data-check]').textContent = !r.ok ? why('net') : r.exists ? 'Room found.' : why('notfound', code); });
-    const fail = msg => {
-      err.textContent = msg; q('[data-check]').textContent = ''; joinBtn.disabled = false; joinBtn.removeAttribute('aria-busy');
-      if (!failed) { failed = true; joinBtn.textContent = 'Try again'; mo.textContent = 'Continue without a room'; mo.className = ''; q('.ob-act').appendChild(mo); }
-    };
+    // a check that answers after other options, or a second tap while one is out, is stale (onboarding.ts)
     const run = async () => {
       const name = nm.value.trim();
       if (!name) { err.textContent = 'Enter a name for your hunter.'; nm.focus(); return; }
-      if (joinBtn.disabled) return;
-      err.textContent = ''; joinBtn.disabled = true; joinBtn.setAttribute('aria-busy', 'true');
-      const r = await sy.check(code); if (!w.isConnected) return; // backed out while the check ran
-      if (!r.ok) return fail(why('net'));
-      if (!r.exists) return fail(why('notfound', code));
-      if (!go('joined', owned(name)).ok) return fail('');
-      await joinBehind(code);
+      if (!go({ type: 'try' }).ok) return;
+      const r = await sy.check(code);
+      if (!r.ok) { go({ type: 'missed', why: 'net' }); return; }
+      if (!r.exists) { go({ type: 'missed', why: 'notfound' }); return; }
+      if (go({ type: 'joined' }, owned(name)).ok) await joinBehind(code);
     };
-    joinBtn.addEventListener('click', run);
+    q('[data-go]').addEventListener('click', run);
     nm.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); run(); } });
-    mo.addEventListener('click', more);
+    q('[data-obmore]').addEventListener('click', more);
   }
 
   function player() {
@@ -198,7 +224,7 @@ export function register(app) {
         <div class="ob-err" role="alert" data-err></div>
       </div>
       <div class="ob-act"><button type="button" data-back>Back</button><button type="button" class="primary" data-go>Begin</button></div>
-      <button type="button" class="ob-skip" data-skip>Skip</button>`, skip);
+      <button type="button" class="ob-skip" data-skip>Skip</button>`);
     const q = s => w.querySelector(s), err = q('[data-err]');
     const room = q('[data-room]'), chk = q('[data-check]'), sy = app.api.sync; let seq = 0, tm = 0;
     const codeIn = () => room.value.trim().toUpperCase();
@@ -214,22 +240,24 @@ export function register(app) {
     const begin = async () => {
       const name = q('[data-name]').value.trim();
       if (!name) { err.textContent = 'Enter a name for your hunter.'; q('[data-name]').focus(); return; }
-      const b = q('[data-go]'); if (b.disabled) return;
       const code = room ? (sy.parseInvite(room.value) || codeIn()) : '';
       if (code && parseRoomCode(code) === null) { err.textContent = `Room codes are ${CODE_LEN} characters.`; room.focus(); return; }
       err.textContent = '';
+      // a check that answers after Back or Skip, or a second Begin while one is out, is stale (onboarding.ts)
       if (code) {
-        b.disabled = true; b.setAttribute('aria-busy', 'true');
-        const r = await sy.check(code), bad = !r.ok ? why('net') : r.exists ? '' : why('notfound', code);
-        b.disabled = false; b.removeAttribute('aria-busy'); if (!w.isConnected) return; // backed out while the check ran
-        if (bad) { err.textContent = bad + ' Or clear the room code to begin without a room.'; room.focus(); return; }
+        if (!go({ type: 'try' }).ok) return;
+        const r = await sy.check(code);
+        if (!r.ok || !r.exists) {
+          if (go({ type: 'missed', why: r.ok ? 'notfound' : 'net' }).ok) { err.textContent = `${r.ok ? why('notfound', code) : why('net')} Or clear the room code to begin without a room.`; room.focus(); }
+          return;
+        }
       }
-      if (!go('begun', owned(name, q('[data-job]').value)).ok) return;
+      if (!go({ type: 'begun' }, owned(name, q('[data-job]').value)).ok) return;
       if (code) await joinBehind(code);
     };
     q('[data-go]').addEventListener('click', begin);
     q('[data-name]').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); begin(); } });
-    q('[data-back]').addEventListener('click', () => go('back'));
+    q('[data-back]').addEventListener('click', () => go({ type: 'back' }));
     q('[data-skip]').addEventListener('click', skip);
   }
 
@@ -239,15 +267,15 @@ export function register(app) {
       <div class="ob-act"><button type="button" class="primary" data-focus data-starter>Load starter campaign</button><button type="button" data-blank>Blank</button></div>
       <p class="ob-err" data-msg></p>
       <div class="ob-act"><button type="button" data-back>Back</button></div>
-      <button type="button" class="ob-skip" data-skip>Skip</button>`, skip);
+      <button type="button" class="ob-skip" data-skip>Skip</button>`);
     const q = s => w.querySelector(s);
     q('[data-starter]').addEventListener('click', () => {
       // a read-only tab's refusal is told by go; any other is the starter pack's own
-      const g = go('starter', starterStep(store, app));
+      const g = go({ type: 'starter' }, starterStep(store, app));
       if ('why' in g && g.why !== READ_ONLY) q('[data-msg]').textContent = 'Could not load the starter pack. Choose Blank instead.';
     });
-    q('[data-blank]').addEventListener('click', () => { go('blank', both(owned('Hunter'), atSettings(st => chooseMode(st, 'gm')))); });
-    q('[data-back]').addEventListener('click', () => go('back'));
+    q('[data-blank]').addEventListener('click', () => { go({ type: 'blank' }, both(owned('Hunter'), atSettings(st => chooseMode(st, 'gm')))); });
+    q('[data-back]').addEventListener('click', () => go({ type: 'back' }));
     q('[data-skip]').addEventListener('click', skip);
   }
 
@@ -268,10 +296,9 @@ export function register(app) {
     const w = step(`<div class="n-tag">! System</div><h2 id="{id}">Hunter created</h2>
       <p>${esc(createdLine(h.name, h.job))}</p>
       <div data-role="player">${nextHtml(f)}</div>
-      <div class="ob-act"><button type="button" class="primary" data-focus data-obsheet>Open my sheet</button><button type="button" data-objoin${mayJoin(f) ? '' : ' hidden'}>Join a room</button></div>`, sheet);
-    function sheet() { if (go('sheet').ok) app.go('status'); }
+      <div class="ob-act"><button type="button" class="primary" data-focus data-obsheet>Open my sheet</button><button type="button" data-objoin${mayJoin(f) ? '' : ' hidden'}>Join a room</button></div>`);
     w.querySelector('[data-obsheet]').addEventListener('click', sheet);
-    w.querySelector('[data-objoin]').addEventListener('click', () => { if (go('join').ok) app.go('room'); });
+    w.querySelector('[data-objoin]').addEventListener('click', () => { if (go({ type: 'join' }).ok) app.go('room'); });
   }
 
   // the GM's first step after setup, offering the room. With no room server, or an invite to join, there is nothing to
@@ -283,38 +310,36 @@ export function register(app) {
       ${offer ? `<p>${esc(ROOM_IS)}</p>` : ''}
       <div data-role="gm" data-rooms="${offer ? 'yes' : 'no'}">${nextHtml(f)}</div>
       <div class="ob-act">${offer ? '<button type="button" class="primary" data-focus data-obcreate>Create room</button><button type="button" data-oblater>Later</button>' : '<button type="button" class="primary" data-focus data-oblater>Continue</button>'}</div>
-      <p class="ob-err" role="status" data-msg></p>`, later);
-    function later() { if (go('later').ok) offerJoin(); }
+      <p class="ob-err" role="status" data-msg></p>`);
     w.querySelector('[data-oblater]').addEventListener('click', later);
+    // Later or Escape while the create is out cancels it, and its late answer is stale (onboarding.ts)
     const b = w.querySelector('[data-obcreate]');
     if (b) b.addEventListener('click', async () => {
-      b.disabled = true; b.setAttribute('aria-busy', 'true');
+      if (!go({ type: 'create' }).ok) return;
       try { await sy.create(); }
-      catch (e) { b.disabled = false; b.removeAttribute('aria-busy'); w.querySelector('[data-msg]').textContent = why(e && e.kind ? e.kind : 'net'); return; }
-      if (go('created').ok) app.go('room');
+      catch (e) { go({ type: 'createFailed', why: e && e.kind ? e.kind : 'net' }); return; }
+      if (go({ type: 'created' }).ok) app.go('room');
     });
   }
 
+  // the ? guide: it opens over no other window, and gives the focus back to what had it (onboarding.ts `quickstart`)
   function quickstart() {
-    if (root) return;
     const role = app.isGM() ? 'gm' : 'player';
     const w = step(`<div class="n-tag">! Quick start</div><h2 id="{id}">How it works</h2>
       <p>${esc(ABOUT)}</p>
       <div data-role="${role}">${nextHtml(facts(role))}</div>
       <div class="ob-h3">Tips</div><ol class="ob-tips">${TIPS[role].map(t => `<li>${esc(t)}</li>`).join('')}</ol>
-      <div class="ob-act"><button type="button" class="primary" data-focus data-ok>Got it</button><button type="button" data-skip>Skip</button></div>`, closeQs);
-    const back = root._trigger;
-    function closeQs() { close(); if (back && back.isConnected && back.focus) back.focus(); }
-    w.querySelector('[data-ok]').addEventListener('click', closeQs);
-    w.querySelector('[data-skip]').addEventListener('click', closeQs);
+      <div class="ob-act"><button type="button" class="primary" data-focus data-ok>Got it</button><button type="button" data-skip>Skip</button></div>`);
+    w.querySelector('[data-ok]').addEventListener('click', gotIt);
+    w.querySelector('[data-skip]').addEventListener('click', gotIt);
   }
 
-  /** Each step's window; `done` takes the window away. */
-  const DRAW = { welcome, role, invite, player, gm, hunterCreated, campaignReady, done: () => { at = null; close(); } };
-  app.api.onboard = { quickstart };
+  /** Each state's window; `shut` takes the window away. */
+  const DRAW = { shut: close, quickstart, welcome, role, invite, player, gm, hunterCreated, campaignReady };
+  /** What Escape does on each window: a setup step's Skip, the invite's other options, the confirmation's first way out, the guide's Got it. */
+  const ESC = { shut: () => {}, quickstart: gotIt, welcome: skip, role: skip, invite: more, player: skip, gm: skip, hunterCreated: sheet, campaignReady: later };
+  app.api.onboard = { quickstart: () => { go({ type: 'help', back: document.activeElement }); } };
   app.on('ready', () => {
-    if (store.get().settings.onboarded || root) return;
-    at = firstStep({ invited: !!invited() && app.api.sync.conn() !== 'off' });
-    DRAW[at]();
+    if (!store.get().settings.onboarded) go({ type: 'start', invited: !!invited() && app.api.sync.conn() !== 'off' });
   });
 }

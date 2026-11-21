@@ -1,10 +1,19 @@
 import type { Page } from '@playwright/test';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, openApp, activeHunter, ROOM_CODE } from './helpers.ts';
 import { ABOUT, ROOM_IS, ROOM_PATH, TIPS } from '../../src/core/first-run.ts';
+import { freshSave } from '../../src/core/save.ts';
+import { parseDeviceId } from '../../src/core/ids.ts';
 
 const SAVE_KEY = 'hunter-system-v4';
 const OB = '.ob-overlay';
 const NO_ROOM = /no room/i;
+const NOT_SAVED = 'Not saved: this tab cannot save right now. The banner at the top says why.';
+
+/** A new install's save as a newer app wrote it: this app opens it read-only, and setup has not run. */
+function newerFreshSave(): string {
+  const env = { now: new Date(), newDeviceId: () => parseDeviceId('d-e2e-readonly')!, newDeviceToken: () => 'test-device-token-0123456789abcd' };
+  return JSON.stringify({ ...freshSave(env, { onboarded: false }), schema: 99 });
+}
 
 const rawSave = (page: Page) => page.evaluate((k: string) => localStorage.getItem(k), SAVE_KEY);
 
@@ -349,4 +358,87 @@ test('the button at the top says Join room on a player\'s phone and Create room 
       await expect(page.locator('#view-data')).not.toContainText('Campaign Room');
     }
   });
+});
+
+test('in a tab that cannot save, Skip after an invite says it is not saved and the Welcome window stays, with no Room page under it', async ({ device }) => {
+  // SMX-views-12.1: the refused Skip went on to the Room page behind the window that stayed open
+  const phone = (await device('phone', { seed: { [SAVE_KEY]: newerFreshSave() } })).page;
+  await openInvite(phone, 'ZZZZ99');
+  await expect(phone.locator('#banners .banner')).toContainText('newer version');
+  const url = phone.url();
+  await phone.locator(`${OB} [data-obmore]`).tap();
+  await windowTitled(phone, 'Welcome');
+  await phone.locator(`${OB} [data-skip]`).tap();
+  await expect(phone.locator('.toast', { hasText: NOT_SAVED })).toHaveCount(1);
+  await expect(phone.locator(OB, { has: phone.locator('h2', { hasText: 'Welcome' }) })).toBeVisible();
+  expect(phone.url()).toBe(url);
+  await expect(phone.locator('#view-room')).toBeHidden();
+});
+
+test('in a tab that cannot save, Join on an invite says it is not saved and the window offers Join again as before, fitting a 390 px phone', async ({ device }) => {
+  // SMX-views-12: the refused Join turned the button into Try again over an empty error line
+  const { code } = await gmWithRoom(device);
+  const phone = (await device('phone', { seed: { [SAVE_KEY]: newerFreshSave() }, viewport: { width: 390, height: 844 } })).page;
+  await openInvite(phone, code);
+  await expect(phone.locator(`${OB} [data-check]`)).toContainText(/found/i);
+  await phone.locator(`${OB} [data-name]`).fill('Mira Vale');
+  await phone.locator(`${OB} [data-go]`).tap();
+  await expect(phone.locator('.toast', { hasText: NOT_SAVED })).toHaveCount(1);
+  await expect(phone.locator(`${OB} [data-go]`)).toHaveText('Join');
+  await expect(phone.locator(`${OB} [data-go]`)).toBeEnabled();
+  await expect(phone.locator(`${OB} [data-err]`)).toHaveText('');
+  await expect(phone.locator(`${OB} [data-obmore]`)).toHaveText('other options');
+  await expect(phone.locator(`${OB} [data-name]`)).toHaveValue('Mira Vale');
+  expect(await phone.evaluate(() => hunterApp.store.get().settings.onboarded)).toBe(false);
+  const box = await phone.locator(`${OB} [role=dialog]`).boundingBox();
+  expect(box && box.x >= 0 && box.x + box.width <= 390).toBe(true);
+  expect(await phone.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  if (process.env.E2E_SHOT) await phone.screenshot({ path: process.env.E2E_SHOT });
+});
+
+/** A GM on Campaign ready whose Create room waits on the server until `release` is called. */
+async function campaignReadyWithHeldCreate(device: (label: string, o?: object) => Promise<{ page: Page }>) {
+  const gm = (await device('gm', { blockServiceWorker: true })).page;
+  let release = () => {};
+  const held = new Promise<void>(r => { release = r; });
+  await gm.route('**/api/rooms', async route => { if (route.request().method() === 'POST') await held; await route.continue(); });
+  await openApp(gm);
+  for (const b of ['[data-yes]', '[data-gm]', '[data-starter]']) await gm.locator(`${OB} ${b}`).tap();
+  const win = await windowTitled(gm, 'Campaign ready');
+  await win.locator('[data-obcreate]').tap();
+  await expect(win.locator('[data-obcreate]')).toHaveAttribute('aria-busy', 'true');
+  return { gm, release };
+}
+
+test('a GM who taps Later while Create room is under way closes the window and stays on the page when the create answers', async ({ device }) => {
+  const { gm, release } = await campaignReadyWithHeldCreate(device);
+  const url = gm.url();
+  await gm.locator(`${OB} [data-oblater]`).tap();
+  await expect(gm.locator(OB)).toHaveCount(0);
+  release();
+  await expect.poll(() => gm.evaluate(() => hunterApp.api.sync.detail().conn)).not.toBe('creating');
+  expect(gm.url()).toBe(url);
+  await expect(gm.locator('#view-room')).toBeHidden();
+  await expect(gm.locator(OB)).toHaveCount(0);
+});
+
+test.fixme('a GM who taps Later while Create room is under way is in no room once the server answers', async ({ device }) => {
+  // the window sends the cancel (onboarding.ts `cancelCreate`, carried out as sync.leave()), but the link ignores a
+  // leave while it creates (src/core/sync/link.ts `creating`), so the room still opens: link.ts's to change
+  const { gm, release } = await campaignReadyWithHeldCreate(device);
+  await gm.locator(`${OB} [data-oblater]`).tap();
+  release();
+  await expect.poll(() => gm.evaluate(() => hunterApp.api.sync.detail().conn)).not.toBe('creating');
+  expect(await gm.evaluate(() => [hunterApp.api.sync.room(), hunterApp.seat()])).toEqual([null, 'alone']);
+});
+
+test('the ? guide closes with Escape and gives the focus back to the ? button', async ({ device }) => {
+  const phone = (await device('phone')).page;
+  await onboardPlayer(phone, 'Focus Back');
+  await phone.locator('#help-btn').focus();
+  await phone.locator('#help-btn').tap();
+  await windowTitled(phone, 'How it works');
+  await phone.keyboard.press('Escape');
+  await expect(phone.locator(OB)).toHaveCount(0);
+  await expect(phone.locator('#help-btn')).toBeFocused();
 });

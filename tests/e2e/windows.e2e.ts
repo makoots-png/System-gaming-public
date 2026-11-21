@@ -1,4 +1,4 @@
-import { test, expect, onboardPlayer, type Page } from './helpers.ts';
+import { test, expect, chooseList, go, onboardGM, onboardPlayer, startGoblinDenFight, type Page } from './helpers.ts';
 
 /** Whether the System window `title` names is what the player sees at its own middle, with no other window drawn over it. */
 const seenOnTop = (page: Page, title: string): Promise<boolean> => page.evaluate(t => {
@@ -38,5 +38,71 @@ test('a System window that comes while the quick start guide is open waits behin
   await test.step('Escape again takes off the System window', async () => {
     await page.keyboard.press('Escape');
     await expect(gate).toHaveCount(0);
+  });
+});
+
+const DESKTOP = { width: 1280, height: 800 };
+/** Whether the focus is in the dice roller's sheet. */
+const focusInRoller = (page: Page): Promise<boolean> => page.evaluate(() => !!document.activeElement?.closest('#dice-sheet'));
+
+test('on a desktop, Escape takes down the dice roller after a click beside it, and the keyboard shortcuts work again', async ({ device }) => {
+  const { page } = await device('player', { viewport: DESKTOP });
+  const roller = page.locator('#dice-sheet');
+  await onboardPlayer(page, 'Quick Roller');
+
+  await test.step('the player opens the dice roller, then clicks on the page beside it', async () => {
+    await page.locator('#dice-fab').click();
+    await expect(roller).toBeVisible();
+    await page.locator('#view-status h2').first().click();
+    await expect.poll(() => focusInRoller(page)).toBe(false);
+  });
+
+  await test.step('Escape takes the dice roller down', async () => {
+    await page.keyboard.press('Escape');
+    await expect(roller).toBeHidden();
+  });
+
+  await test.step('? opens the keyboard list again', async () => {
+    await page.keyboard.press('?');
+    await expect(page.locator('.sys-overlay.show', { hasText: 'KEYBOARD' })).toBeVisible();
+  });
+});
+
+test('on the Dice page, the dice roller\'s Dice tab takes the roller down', async ({ device }) => {
+  const { page } = await device('player', { viewport: DESKTOP });
+  const roller = page.locator('#dice-sheet');
+  await onboardPlayer(page, 'Quick Roller');
+  await go(page, 'dice');
+  await page.locator('#dice-fab').click();
+  await expect(roller).toBeVisible();
+  await roller.locator('[data-full]').click();
+  await expect(roller).toBeHidden();
+  await expect(page.locator('#view-dice')).toBeVisible();
+});
+
+test('a GM\'s Fight tools over the map go with Escape, and are not open again on the way back to Combat', async ({ device }) => {
+  const { page } = await device('gm');
+  const tools = page.locator('#view-combat').getByRole('dialog', { name: 'Fight tools' });
+  await onboardGM(page);
+  await chooseList(page);
+  await go(page, 'gates');
+  await startGoblinDenFight(page);
+  await page.locator('#view-combat [data-fview="map"]').tap();
+
+  await test.step('the GM opens the Fight tools and presses Escape', async () => {
+    await page.locator('#view-combat [data-tools-open]').tap();
+    await expect(tools).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(tools).toBeHidden();
+  });
+
+  await test.step('the GM opens them again, goes to the GM tab and back to Combat', async () => {
+    await page.locator('#view-combat [data-tools-open]').tap();
+    await expect(tools).toBeVisible();
+    await page.locator('#nav-bottom a[href="#/gm"]').tap();
+    await expect(page.locator('#view-gm')).toBeVisible();
+    await page.locator('#nav-bottom a[href="#/combat"]').tap();
+    await expect(page.locator('#view-combat [data-tools-open]')).toBeVisible();
+    await expect(tools).toBeHidden();
   });
 });

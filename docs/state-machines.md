@@ -1060,56 +1060,87 @@ Where it lives:
 
 ## First-run setup
 
-Every step reachable from Welcome and from an invite link under the 14 events of tests/models/onboarding-events.ts, breadth first. The walk found 8 states and 18 steps.
+Every state reachable from no window under the 24 events of tests/models/onboarding-events.ts, breadth first. The walk found 17 states and 53 steps.
 
-### First-run setup, from a new install to the app
+### The first-run window, from a new install to the app, and the ? guide
 
 ```mermaid
 ---
-title: First-run setup, from a new install to the app
+title: The first-run window, from a new install to the app, and the ? guide
 ---
 stateDiagram-v2
-  state "Welcome (Accept?)" as s1
-  state "Join a room (invite link)" as s2
-  state "Who are you?" as s3
-  state "Setup over (onboarded)" as s4
-  state "Hunter created (next steps, onboarded)" as s5
-  state "Name your hunter" as s6
-  state "Run the game (starter or blank)" as s7
-  state "Campaign ready (next steps, onboarded)" as s8
+  state "No window" as s1
+  state "Welcome (Accept?)" as s2
+  state "Join a room (invite link)" as s3 {
+    state "Join" as s4
+    state "Checking the room" as s5
+    state "No room: Try again" as s6
+    state "Checking again" as s7
+    s4 --> s5 : Join
+    s5 --> s6 : no room, or no answer
+    s5 --> s4 : the save refuses the write
+    s6 --> s7 : Join
+    s7 --> s6 : no room, or no answer
+    s7 --> s6 : the save refuses the write
+  }
+  state "How it works (the ? guide)" as s8
+  state "Who are you?" as s9
+  state "Name your hunter" as s10 {
+    state "Begin" as s11
+    state "Checking the room code" as s12
+    s11 --> s12 : Begin with a room code
+    s12 --> s11 : no room, or no answer
+    s12 --> s11 : the save refuses the write
+  }
+  state "Run the game (starter or blank)" as s13
+  state "Hunter created (next steps, onboarded)" as s14
+  state "Campaign ready (next steps, onboarded)" as s15 {
+    state "Create room or Later" as s16
+    state "Creating the room" as s17
+    state "Create failed: why, try again" as s18
+    s16 --> s17 : Create room
+    s17 --> s18 : the create fails
+    s18 --> s17 : Create room
+  }
   [*] --> s1
-  [*] --> s2
-  s1 --> s3 : Yes
-  s1 --> s4 : Skip or Escape (marks)
-  s2 --> s1 : other options
-  s2 --> s5 : Join (the room is there) (marks)
-  s3 --> s6 : I'm a Player
-  s3 --> s7 : I'm the GM
-  s3 --> s4 : Skip or Escape (marks)
-  s5 --> s4 : Open my sheet or Escape
-  s5 --> s4 : Join a room
-  s6 --> s3 : Back
-  s6 --> s4 : Skip or Escape (marks)
-  s6 --> s5 : Begin (marks)
-  s7 --> s3 : Back
-  s7 --> s4 : Skip or Escape (marks)
-  s7 --> s8 : Load starter campaign (marks)
-  s7 --> s8 : Blank (marks)
-  s8 --> s4 : Later, Continue or Escape
-  s8 --> s4 : Create room
+  s1 --> s2 : the app opens, not onboarded
+  s1 --> s3 : the app opens from an invite link
+  s1 --> s8 : the ? button
+  s2 --> s9 : Yes
+  s2 --> s1 : Skip or Escape (marks)
+  s3 --> s2 : other options or Escape
+  s8 --> s1 : Got it, Skip or Escape
+  s9 --> s10 : I'm a Player
+  s9 --> s13 : I'm the GM
+  s9 --> s1 : Skip or Escape (marks)
+  s3 --> s14 : the room is there (marks)
+  s10 --> s9 : Back
+  s10 --> s1 : Skip or Escape (marks)
+  s10 --> s14 : Begin (marks)
+  s13 --> s9 : Back
+  s13 --> s1 : Skip or Escape (marks)
+  s13 --> s15 : Load starter campaign (marks)
+  s13 --> s15 : Blank (marks)
+  s3 --> s2 : Continue without a room or Escape (drops the invite)
+  s14 --> s1 : Open my sheet or Escape
+  s14 --> s1 : Join a room
+  s10 --> s14 : the room is there (marks)
+  s15 --> s1 : Later, Continue or Escape
+  s15 --> s1 : the room is made
+  s15 --> s1 : Later or Escape (cancels the create)
 ```
 
-An arrow marked "(marks)" writes the onboarded mark in the same write as the choice it makes (the seed hunter made the player's own, the starter campaign); a reload before it starts setup over, a reload after it does not. Hunter created and Campaign ready list the role's next steps (src/core/first-run.ts); Campaign ready offers Create room only with a room server and no invite pending, else its one button is Continue. The quick start (the ? key) is a window of its own, not a step here.
+An arrow marked "(marks)" writes the onboarded mark in the same write as the choice it makes (the seed hunter made the player's own, the starter campaign); a reload before it starts setup over, a reload after it does not. A write the save refuses (a tab that cannot save) keeps the step: Skip and Begin stay where they were, and a Join under way goes back to how it was before the tap. A second tap while a check or a create is out, and an answer that comes after its window went, change nothing. Hunter created and Campaign ready list the role's next steps (src/core/first-run.ts); Campaign ready offers Create room only with a room server and no invite pending, else its one button is Continue. Why a check or a create failed (no answer, no such room) is in the words, not in the chart.
 
-8 chart states, 18 arrows. No step is hidden.
+15 chart states, 37 arrows. No step is hidden.
 
 Where it lives:
 
 | What | Where |
 |---|---|
-| The steps and events | `OnboardStep`, `OnboardEvent` and `TABLE` in `src/core/onboarding.ts` |
-| What changes it | `onboardStep(at, event)`; `firstStep` for where it opens |
-| Who calls it | `go` in `src/views/onboard.js`, started by the app's `ready` event |
+| The states and events | `OnboardingAt`, `OnboardingEvent` and `TABLE` in `src/core/onboarding.ts`; the sub-states `OnboardingJoin`, `OnboardingBegin`, `OnboardingCreate` |
+| What changes it | `onboardStep(at, event)`; `joinShows` and `createShows` for what a tap under way shows |
+| Who calls it | `go` in `src/views/onboard.js`, started by the app's `ready` event and the ? button |
 | The test to copy | `tests/onboarding.test.ts`; the walk's events are in `tests/models/onboarding-events.ts` |
 | The recipe | docs/guide/hunters.md, "A state or event of the ... machine" |
 
@@ -2455,16 +2486,16 @@ Where it lives:
 
 ## The windows
 
-Every state reachable from no window, under the 12 events of tests/models/window-events.ts over two System windows and the first-run window, breadth first. The walk found 67 states and 189 steps.
+Every state reachable from no window, under the 20 events of tests/models/window-events.ts over two System windows, the first-run window and the dice roller's sheet, breadth first. The walk found 256 states and 1297 steps.
 
-### The System windows and the first-run window
+### The System windows, the first-run window and a sheet
 
 ```mermaid
 ---
-title: The System windows and the first-run window
+title: The System windows, the first-run window and a sheet
 ---
 stateDiagram-v2
-  state "The System windows and the first-run window" as all {
+  state "The System windows, the first-run window and a sheet" as all {
     state "System windows" as r1 {
       state "None" as s1
       state "One waiting" as s2
@@ -2516,12 +2547,29 @@ stateDiagram-v2
       s14 --> s15 : setup or the guide closes
       s15 --> s13 : its move out ends
     }
+    --
+    state "The dice roller" as r3 {
+      state "Closed" as s16
+      state "Open, on top (takes Escape)" as s17
+      state "Open, under a window" as s18
+      [*] --> s16
+      s16 --> s17 : the dice roller opens on top
+      s17 --> s18 : setup or the quick start guide opens on top
+      s17 --> s16 : its × is tapped
+      s17 --> s16 : Escape is pressed
+      s17 --> s16 : a tab is tapped (the one shown too)
+      s17 --> s18 : its turn, the oldest waiting opens on top
+      s18 --> s17 : setup or the guide closes
+      s18 --> s16 : its × is tapped
+      s18 --> s16 : a tab is tapped (the one shown too)
+      s18 --> s17 : the open System window is answered
+    }
   }
 ```
 
-A System window (a notice, a confirm, a prompt) opens one at a time and not over the first-run window, which takes the whole screen (its quick start guide too): asked while either is open, it waits, and the oldest waiting opens a task after the one before it closes. A maker, the shelf of awards and a story's window open at once over whatever is up and hold no System window; a sheet over the page (the dice roller, the Fight tools) counts while it is drawn and goes at once. Every window that opens goes on top, so the order of the windows is the order on screen, and the top open window that is not a sheet takes the keys. Confirm all on the open System window answers it and the waiting ones that have one answer.
+A System window (a notice, a confirm, a prompt) opens one at a time and not over the first-run window, which takes the whole screen (its quick start guide too): asked while either is open, it waits, and the oldest waiting opens a task after the one before it closes. A maker, the shelf of awards and a story's window open at once over whatever is up and hold no System window. A sheet over the page (the dice roller here; the Fight tools and a card over a map act the same) is up while its owner shows it and goes at once: by its own close, by Escape while it is on top wherever the focus is, or by a tap on a tab, the one shown too. Every window that opens goes on top, so the order of the windows is the order on screen, and the top open window takes the keys (a sheet only Escape). Confirm all on the open System window answers it and the waiting ones that have one answer.
 
-15 chart states, 29 arrows. No step is hidden.
+18 chart states, 39 arrows. No step is hidden.
 
 Where it lives:
 
@@ -2529,6 +2577,6 @@ Where it lives:
 |---|---|
 | The union | `Windows`, `WindowEvent`, `WindowFx`, `WINDOW_STATES` and `WINDOW_EVENTS` in `src/core/windows.ts` |
 | What changes it | `windowStep(windows, event)` and its `TABLE`, through `move` in `src/views/ui.js`, its one writer, which carries out each effect |
-| Who calls it | `system` (and `confirm`, `promptNum`, `promptText`), `openWindow` and `closeWindow` (`maker.js`, `onboard.js`, `give-shelf.js`, `stories.js`), `sheet` (`dice.js`, `combat.js`), all in `src/views/ui.js` |
+| Who calls it | `system` (and `confirm`, `promptNum`, `promptText`), `openWindow` and `closeWindow` (`maker.js`, `onboard.js`, `give-shelf.js`, `stories.js`), `sheet` (`dice.js`, `combat.js`, `table.js`, each with its `WindowSheet`), all in `src/views/ui.js`; `went` from `route` in `src/app.js` |
 | The test to copy | `tests/windows.test.ts`; the walk's events are in `tests/models/window-events.ts`; on screen, `tests/e2e/windows.e2e.ts` |
 | The recipe | docs/guide/makers.md, "A window on screen" |

@@ -740,8 +740,9 @@ export function register(app) {
   /**
    * What is open over the GM's map (audit row 44): nothing, the focused row's card (a phone's sheet), or the Fight tools
    * of fight `of` (Add to the fight, the log, End and Clear), which show while that fight runs in Map view. One writer,
-   * `overTo`. And who opens and closes the Build drawer (map-mount.ts `BuildDrawer`): the screen (`buildWanted`), or the
-   * GM's hand for the fight it was moved in. One writer, `drawerTo`.
+   * `overTo`. Over the page they are the sheets `fightTools` and `rowCard` of src/core/windows.ts, which Escape on top or
+   * a tab takes down (`shutOver`). And who opens and closes the Build drawer (map-mount.ts `BuildDrawer`): the screen
+   * (`buildWanted`), or the GM's hand for the fight it was moved in. One writer, `drawerTo`.
    * @type {{ at: 'none' } | { at: 'card' } | { at: 'tools'; of: string }}
    */
   let over = { at: 'none' }, build = /** @type {import('../core/combat/map-mount.ts').BuildDrawer} */ (SCREEN);
@@ -749,6 +750,8 @@ export function register(app) {
   /** The fight the Build drawer's hand is for: the one on screen, null when none or it has ended. */
   const drawerFight = f => (f && f.phase !== 'ended' ? f.id : null);
   const overTo = next => { over = next; render(); };
+  /** A sheet over the map is taken down by Escape or a tab (src/core/windows.ts `shut`): nothing is open over it after. */
+  const shutOver = () => overTo({ at: 'none' });
   /** The Fight tools show over the fight they were opened on, while it runs in Map view. */
   const toolsShown = (f, mapMode) => mapMode && over.at === 'tools' && !!f && over.of === f.id;
   /** The screen's Build drawer: open, but on a desktop once a fight is under way (D02). */
@@ -1236,7 +1239,7 @@ export function register(app) {
     bind($q('[data-bar]'), { head: bd.head, acts: bd.acts });
     const ta = $q('[data-toolacts]'); if (ta.innerHTML !== bd.tools) ta.innerHTML = bd.tools;
     $q('.win').classList.toggle('cmb-mapmode', mapMode);
-    const tl = $q('[data-tools]'); tl.classList.toggle('open', tools); ui.sheet(tl, tools && mapMode);
+    const tl = $q('[data-tools]'); tl.classList.toggle('open', tools); ui.sheet('fightTools', tools, shutOver);
     if (tools !== tl.hasAttribute('role')) { if (tools) tl.setAttribute('role', 'dialog'); else tl.removeAttribute('role'); }
     drawLog($q('[data-log]'), f ? f.log.map(l => l.text) : []);
     const main = $q('[data-main]'), mode = idle ? 'idle' : f && n ? 'fight' : 'empty';
@@ -1280,6 +1283,8 @@ export function register(app) {
       motion.slideTo(list, () => list.children, el => el.dataset.key, draw, listShown && !!(ids && lastOrder && ids !== lastOrder));
       lastOrder = ids;
     } else lastOrder = '';
+    // the card is a sheet over the map where the map hides it (under 900 px); wider it stands beside the map
+    ui.sheet('rowCard', mode === 'fight' && gm && fightView() === 'map' && over.at === 'card' && NARROW.matches, shutOver);
     if (fk && document.activeElement !== ae) { const el = [...root.querySelectorAll('[data-fk]')].find(x => x.dataset.fk === fk); if (el && !el.disabled) { el.focus(); if (caret !== null) el.setSelectionRange(caret, caret); } }
   }
 

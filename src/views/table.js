@@ -392,6 +392,10 @@ export function register(app) {
   // ── the map (src/views/map.js) over the room's fight doc ──
   /** The token whose card is open over the map, and the map drawn in the HUD (null while the HUD shows no map). */
   let cardId = null, mapView = null;
+  /** Under 900 px the token's card is a sheet over the map (the CSS's breakpoint for `.tb-sheet`); wider it stands under it. */
+  const NARROW = matchMedia('(max-width:899px)');
+  /** The card as a sheet over the page is src/core/windows.ts `tokenCard`: Escape on top or a tab takes it down. */
+  const shutCard = () => { cardId = null; refresh(); };
   /** The HUD's map leaves the page with the HUD's layout: it stops listening (map.js `destroy`). */
   const unmountMap = () => { if (mapView) { mapView.destroy(); mapView = null; } };
   /** @type {import('../core/api.ts').MapSource} */
@@ -447,6 +451,7 @@ export function register(app) {
   /** A token's card over the map: its name, its HP or band, its statuses. */
   function drawSheet(box, e) {
     const r = cardId && !e.ended ? e.rows.find(x => x.id === cardId) : null;
+    ui.sheet('tokenCard', !!r && NARROW.matches, shutCard);
     if (!r) { if (!box.hidden) { box.hidden = true; box.innerHTML = ''; box.dataset.sig = ''; } return; }
     const word = lifeWord(r), hp = r.kind === 'monster' ? (word ? '' : BAND_LABEL[r.band]) : `HP ${r.hp} / ${r.hpMax}`;
     const line = [hp && esc(hp), word && `<span class="lw" data-life-at="${r.life.at}">${esc(word)}</span>`, r.id === e.currentId && 'Their turn'].filter(Boolean).join(' · ');
@@ -507,8 +512,9 @@ export function register(app) {
   function paintHud(el) {
     turnTitle();
     const e = encounter();
+    const h = e && meHunter(e), onMap = !!e && store.prefs().fightView === 'map', kit = !onMap && !!h && kitOn(), mode = onMap ? 'map' : kit ? 'kit' : 'plain';
+    if (!onMap) ui.sheet('tokenCard', false, shutCard); // no map, no card over it
     if (!e) { if (el.dataset.mode) { el.dataset.mode = ''; unmountMap(); el.innerHTML = ''; } hud.on = false; return; }
-    const h = meHunter(e), onMap = store.prefs().fightView === 'map', kit = !onMap && !!h && kitOn(), mode = onMap ? 'map' : kit ? 'kit' : 'plain';
     if (el.dataset.mode !== mode) {
       el.dataset.mode = mode; unmountMap(); el.innerHTML = onMap ? mapTemplate() : hudTemplate(kit); hud.order = '';
       if (hud.msg && !onMap) el.querySelector('[data-tbmsg]').textContent = hud.msg;
