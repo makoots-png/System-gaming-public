@@ -1,6 +1,7 @@
 // kit-examples.ts: the kits' built-ins a GM opens and copies in the Workshop (docs/agent-handoff/kits/design.md sections
 // 5.2 and 8.12): a stacking status with a threshold, a trigger passive, an ability with an HP cost and a scaler, a
-// delayed curse, a mark and its detonation, a reaction and a summon, from Glas's, Einar's and Hwei's kits. They are not
+// delayed curse, a mark and its detonation, a reaction and a summon, from Glas's, Einar's and Hwei's kits, and a shadow's
+// and a seer's stealth (docs/agent-handoff/features/notes-7-stealth.md section 5's two examples). They are not
 // in a hunter's list or the status pickers: a GM copies one into the library (the Workshop's Duplicate) and changes it
 // there. Their numbers are the simulation's (`RULES.fight.kit.examples`, tests/models/fight-sim.ts), so each stays inside
 // its budget; tests/kit-examples.test.ts checks every entry parses and is not past the tolerance. To add one: an entry
@@ -54,6 +55,11 @@ export function exampleStatuses(R: Rules): Record<string, StatusDef> {
       label: 'Hemoplague', desc: 'When it ends, the bearer takes magical damage. Removing it early cancels the damage.', ops: [],
       end: { ops: [{ op: 'damage', type: 'magical', when: 'use', amount: formula(`${K.hemo.end} * (1d8 + mag)`, R) }], cleanse: 'cancel' },
     },
+    // Hidden even in a foe's sight, at a level that follows the user's rank E to S (section 5, example 1).
+    vanished: {
+      label: 'Vanished', desc: 'Hidden even in plain view. Being hurt, being revealed or dealing damage ends it.',
+      ops: [{ op: 'hidden', level: [1, 1, 2, 2, 3, 3], start: 'anywhere', ends: { hurt: true, revealed: true, dealt: true } }],
+    },
   };
 }
 
@@ -64,6 +70,7 @@ export function exampleSkills(R: Rules): SkillTemplate[] {
     ({ op: 'applyStatus', key: statusKey(key), def: S[key]!, duration: n === null ? null : rounds(n, R), ...(stacks ? { stacks } : {}) });
   const active = (name: string, desc: string, ability: Ability): SkillTemplate => ({ name, level: 1, label: null, desc, type: 'active', ability });
   const execute = suggestedScaler('strike', 'execute', R);
+  const vanish = make('support', 'Vanish', { aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null, ops: [apply('vanished', 2)] }, R);
   return [
     active('Bloodletting', 'A curse that deals magical damage and adds a Resonance stack to the target.',
       make('curse', 'Bloodletting', { effect: { type: 'magical', by: 'hand', formula: formula(`${K.blood.share} * (2d6 + mag)`, R) }, ops: [apply('resonance', 2)] }, R)),
@@ -88,5 +95,12 @@ export function exampleSkills(R: Rules): SkillTemplate[] {
     active('Call Sprite', 'Once a fight, summon a Sprite, a skirmisher that fights on your side for a few rounds.',
       { ...make('support', 'Call Sprite', { aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null }, R), gates: [{ kind: 'uses', per: 'fight', n: 1 }],
         summon: { name: 'Sprite', archetype: 'skirmisher', rounds: R.fight.kit.summonRounds, statuses: [] } }),
+    active('Vanish', 'You become Vanished for 2 rounds: hidden even in a foe\'s sight, at a stealth level that rises with your rank.', { ...vanish, cost: { ...vanish.cost, cooldown: rounds(5, R) } }),
+    { name: 'Unseen Blade', level: 1, label: null, desc: 'Dealing damage does not end your hiding, so each hit from hiding is an ambush until you are hurt or revealed.', type: 'passive', bonus: {},
+      worn: { label: 'Unseen Blade', desc: '', ops: [{ op: 'stayHidden', on: 'dealt' }] } },
+    { name: 'Hunter\'s Eye', level: 1, label: null, desc: 'Your sight level is 2: you see a foe hidden at stealth level 2 or lower.', type: 'passive', bonus: {},
+      worn: { label: 'Hunter\'s Eye', desc: '', ops: [{ op: 'sheet', key: 'sight', amount: 2 }] } },
+    active('Flare', 'A blast at a place that reveals each body it catches: a hide that ends when it is revealed ends, whatever your sight.',
+      make('blast', 'Flare', { effect: null, ops: [{ op: 'reveal' }] }, R)),
   ];
 }

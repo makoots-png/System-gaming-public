@@ -3,7 +3,7 @@
 import { RANKS, RULES, rules } from '../edge/rules.ts';
 import { xpToNext as xpToNextOf } from '../core/rules.ts';
 import { STAT_KEYS, STAT_LABELS, STAT_SHORT } from '../core/stats.ts';
-import { ICON_CREDIT, armorCutPct, checkExample, downLine, gatePayLines, iconCreditLine, naturalLines, pointsLine, saleLine, saleRows, dailyPointsLine, soloLines, statBonusLine } from '../core/rules-text.ts';
+import { ICON_CREDIT, armorCutPct, checkExample, downLine, gatePayLines, iconCreditLine, naturalLines, pointsLine, saleLine, saleRows, dailyPointsLine, soloLines, statBonusLine, stealthLines } from '../core/rules-text.ts';
 import { describeStatus } from '../core/combat/effect-ops.ts';
 
 const STAT_USE = {
@@ -172,6 +172,7 @@ export function register(app) {
       { id: 'conditions', title: 'Statuses', body: [
         table(['Status', 'Effect', 'Mechanics'], Object.keys(R.conditions).map(k => [esc(tr(k).label), esc(tr(k).desc), esc(describeStatus(tr(k), null, R).join('; ') || '—')])),
         p('A number by rank is read at the rank of whoever put the status on.'),
+        '<h3>Hiding</h3>' + ul(stealthLines(R).map(esc)),
       ] },
       { id: 'combat', title: 'Combat turn order', body: [
         ul([`Turns come by <b>speed</b>, not in rounds that go around the table. A round is the time a body of speed 100 needs for one standard action; at speed 200 you act twice a round, at ${F.speedMin} once in ${fmtX(100 / F.speedMin)} rounds.`,

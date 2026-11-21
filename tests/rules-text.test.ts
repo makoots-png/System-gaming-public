@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { armorCutPct, checkExample, dailyPointsLine, downLine, gatePayLines, iconCreditLine, ICON_CREDIT, naturalLines, pointsLine, saleLine, saleRows, soloLines, statBonusLine } from '../src/core/rules-text.ts';
+import { armorCutPct, checkExample, dailyPointsLine, downLine, gatePayLines, iconCreditLine, ICON_CREDIT, naturalLines, pointsLine, saleLine, saleRows, soloLines, statBonusLine, stealthLines } from '../src/core/rules-text.ts';
 import { afterDefence } from '../src/core/combat/land.ts';
 import { sellPrice } from '../src/core/hunter/inventory.ts';
 import { CAP_ROUNDS } from '../src/core/combat/play.ts';
@@ -243,6 +243,27 @@ describe('the world gate\'s lines', () => {
     expect(gatePayLines(R)[0]).toContain('made for a party of 2');
     expect(gatePayLines(R)[1]).toBe('Each hunter\'s share of 100: 200 alone, 100 of 2, 44 of 3, 25 of 4.');
     expect(gatePayLines(R)[3]).toContain('2 times the gold roll and 2 times the XP');
+  });
+});
+
+describe('the lines on hiding', () => {
+  const withStealth = (o: Partial<Rules['fight']['stealth']>): Rules => ({ ...RULES, fight: { ...RULES.fight, stealth: { ...RULES.fight.stealth, ...o } } });
+
+  test('say that a foe with no sight content sees no hide, and that sight 2 sees a hide at 2: the owner\'s ruling 1, equal sight sees', () => {
+    expect(stealthLines(RULES)[0]).toBe('A hidden body is hidden from each foe whose sight level is lower than its stealth level. Everyone\'s sight level starts at 0, so a foe with no sight from a skill, an item or a status sees no hidden body; a foe with sight level 2 sees a body hidden at level 2 or lower. Its own side always sees it.');
+  });
+
+  test('follow a GM\'s change of everyone\'s sight', () => {
+    expect(stealthLines(withStealth({ sightBase: 1 }))[0]).toContain('starts at 1, so a foe with no sight from a skill, an item or a status sees a body hidden at level 1 or lower');
+  });
+
+  test('say the ambush\'s share of the rules, and follow a GM\'s change of it', () => {
+    expect(stealthLines(RULES)[2]).toBe(`A hit from hiding on a foe that does not see you deals ×${RULES.fight.stealth.ambush} damage. It does not add to another damage increase: only the larger counts.`);
+    expect(stealthLines(withStealth({ ambush: 1.25 }))[2]).toContain('deals ×1.25 damage');
+  });
+
+  test('say a hide\'s time, a cure, and each of the three events a status may end it on', () => {
+    expect(stealthLines(RULES)[3]).toBe('A hide ends when its time runs out, when a cure removes it, or on any of these its status names: its bearer loses HP; it is revealed, by a reveal such as a Flare\'s or by a hit from an area or from a use aimed at a place; or its bearer\'s own use or reaction deals damage to a foe (not a field or a status it left earlier).');
   });
 });
 

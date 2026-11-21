@@ -9,6 +9,7 @@ import { tick } from '../src/core/combat/timeline.ts';
 import { describeStatus, isControl, modified, statusKey, statusOn } from '../src/core/combat/effect-ops.ts';
 import type { Op, Origin, Status, StatusDef, Tiered } from '../src/core/combat/effect-ops.ts';
 import { parseStatusDef } from '../src/core/combat/fight-parse.ts';
+import { hideOf } from '../src/core/combat/standing.ts';
 import { BUILT_IN_STATUSES, STATE_CHIP_DEFS, STATUS_KEYS } from '../src/core/registry/statuses.ts';
 import type { BuiltInStatus } from '../src/core/registry/statuses.ts';
 import { STATE_CHIPS, chipDef } from '../src/core/hunter/chips.ts';
@@ -22,6 +23,7 @@ const sizes = (o: Op): number[] | null => {
     case 'damage': case 'heal': case 'mana': case 'fatigue': return Array.isArray(o.amount) ? TIERS.map(t => meanOf(at(o.amount, t))) : null;
     case 'speed': return Array.isArray(o.pct) ? TIERS.map(t => Math.abs(at(o.pct, t))) : null;
     case 'stat': return Array.isArray(o.amount) ? TIERS.map(t => Math.abs(at(o.amount, t))) : null;
+    case 'hidden': return Array.isArray(o.level) ? TIERS.map(t => at(o.level, t)) : null;
     default: return null;
   }
 };
@@ -120,8 +122,15 @@ group('the old statuses restated (plan 3.1)', () => {
     expect(spread).toEqual({ op: 'spread', range: RULES.fight.spreadRange });
   });
 
-  test('Invisible and Stealth do nothing the fight counts', () => {
-    expect([BUILT_IN_STATUSES.invisible.ops, BUILT_IN_STATUSES.stealth.ops]).toEqual([[], []]);
+  test('Stealth hides out of sight and Invisible in the open, each ended by a hurt, a reveal or damage dealt', () => {
+    // one level per rank E to S (notes-7-stealth.md section 5), with rank E at 1: everyone's sight starts at 0 and a body
+    // is hidden only from a lower sight (the owner's ruling 1), so a hide at 0 would hide from nobody
+    const ALL_ENDS = { hurt: true, revealed: true, dealt: true };
+    expect(BUILT_IN_STATUSES.stealth.ops).toEqual([{ op: 'hidden', level: [1, 1, 2, 3, 4, 5], start: 'unseen', ends: ALL_ENDS }]);
+    expect(BUILT_IN_STATUSES.invisible.ops).toEqual([{ op: 'hidden', level: [1, 1, 2, 3, 4, 5], start: 'anywhere', ends: ALL_ENDS }]);
+    const hideAt = (key: BuiltInStatus, t: number) => hideOf(statusKey(key), BUILT_IN_STATUSES[key], t)!.level;
+    expect(TIERS.map(t => hideAt('stealth', t))).toEqual(TIERS.map(t => Math.max(1, t)));
+    expect(TIERS.map(t => hideAt('invisible', t))).toEqual(TIERS.map(t => hideAt('stealth', t)));
   });
 
   test('at every rank Burning deals more a round than Bleeding, and Bleeding at least as much as Poisoned', () => {

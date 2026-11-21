@@ -38,10 +38,17 @@ const STATUSES = {
     { op: 'speed', pct: each(20, 25, 30, 35, 40, 50) },
     { op: 'refund', pct: 50, chance: 25 },
   ] },
-  invisible: { label: 'Invisible', desc: 'Unseen.', ops: [] },
+  // The two built-in hides (docs/agent-handoff/features/notes-7-stealth.md section 5): one level per rank, E to S. Level 0
+  // is not a hide's level (standing.ts `HideLevel`: everyone's sight starts at 0), so rank E hides at 1, as the parser
+  // reads a 0 (fight-parse.ts `hideLevelOf`). Invisible differs only in where it may start: in a foe's sight too.
+  invisible: { label: 'Invisible', desc: 'Hidden even in plain view. Being hurt, being revealed or dealing damage ends it.', ops: [
+    { op: 'hidden', level: [1, 1, 2, 3, 4, 5], start: 'anywhere', ends: { hurt: true, revealed: true, dealt: true } },
+  ] },
   prone: { label: 'Prone', desc: 'Has lower Agility, so its Reaction drops.', ops: [{ op: 'stat', key: 'agi', amount: FOUR_N }] },
   restrained: { label: 'Restrained', desc: 'Cannot move, and has lower Control, so its Accuracy drops.', ops: [{ op: 'root' }, { op: 'stat', key: 'ctl', amount: FOUR_N }] },
-  stealth: { label: 'Stealth', desc: 'Hidden from view.', ops: [] },
+  stealth: { label: 'Stealth', desc: 'Hidden out of every foe\'s sight. Being hurt, being revealed or dealing damage ends it.', ops: [
+    { op: 'hidden', level: [1, 1, 2, 3, 4, 5], start: 'unseen', ends: { hurt: true, revealed: true, dealt: true } },
+  ] },
   bloodlust: { label: 'Bloodlust', desc: 'Has lower Discipline, Strength and Power, so its Will drops and its hits do less damage.', ops: [
     { op: 'stat', key: 'dis', amount: FOUR_N },
     { op: 'stat', key: 'str', amount: DAMAGE_N },

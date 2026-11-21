@@ -1,13 +1,20 @@
 // Every kit example in src/core/registry/kit-examples.ts must pass these. A new example is checked here with no new test.
 import { describe as group, expect, test } from 'bun:test';
 import { formulaOf } from '../src/core/registry/ability-kinds.ts';
-import { RULES } from '../src/core/rules.ts';
+import { RANKS, RULES } from '../src/core/rules.ts';
 import { exampleSkills, exampleStatuses } from '../src/core/registry/kit-examples.ts';
 import { parseSkill } from '../src/core/registry/skills.ts';
 import { parseStatusDef } from '../src/core/combat/fight-parse.ts';
 import { STATUS_KEY_RE } from '../src/core/combat/effect-ops.ts';
 import { abilityWorth, gateCredit, wornWorth } from '../src/core/registry/worth.ts';
 import { printFormula } from '../src/core/formula.ts';
+import { baseStats } from '../src/core/stats.ts';
+import { modified, statusKey, statusOn } from '../src/core/combat/effect-ops.ts';
+import type { Origin, StatusDef } from '../src/core/combat/effect-ops.ts';
+import { hideOf, stealthOf } from '../src/core/combat/standing.ts';
+import { perceives } from '../src/core/combat/sight.ts';
+import { openGrid, place } from '../src/core/combat/space.ts';
+import { tick } from '../src/core/combat/timeline.ts';
 
 const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 
@@ -51,4 +58,37 @@ test('the examples hold every block the brief names: a stacking status with a th
   expect(abilities.some(a => a.react)).toBe(true);
   expect(abilities.some(a => a.summon)).toBe(true);
   expect(abilities.some(a => a.gates?.some(g => g.kind === 'holds'))).toBe(true);
+});
+
+group('the stealth examples (notes-7-stealth.md section 5)', () => {
+  const K = exampleSkills(RULES), by = (name: string) => K.find(k => k.name === name)!;
+  const worn = (name: string): StatusDef => { const k = by(name); if (k.type !== 'passive' || !k.worn) throw new Error(name); return k.worn; };
+  const ability = (name: string) => { const k = by(name); if (k.type !== 'active' || !k.ability) throw new Error(name); return k.ability; };
+  const on = (key: string, def: StatusDef, tier = 0) => statusOn(def, { key: statusKey(key), source: { id: null, tier }, until: null, since: tick(0), settledAt: tick(0) });
+  const HUNTER: Origin = { kind: 'hunter', build: { stats: baseStats(RULES.fight), level: 1, gear: [], perks: {} } };
+  const vanished = exampleStatuses(RULES).vanished!;
+
+  test('Vanish puts Vanished on its user for 2 rounds, ready again 5 rounds later, and hides it in the open at 1, 1, 2, 2, 3, 3 by rank', () => {
+    const a = ability('Vanish');
+    expect([a.aim, a.effect, a.cost.cooldown]).toEqual(['self', null, 5 * RULES.fight.round]);
+    expect(a.ops).toEqual([{ op: 'applyStatus', key: statusKey('vanished'), def: vanished, duration: 2 * RULES.fight.round }]);
+    expect(vanished.ops).toEqual([{ op: 'hidden', level: [1, 1, 2, 2, 3, 3], start: 'anywhere', ends: { hurt: true, revealed: true, dealt: true } }]);
+  });
+
+  test('Unseen Blade keeps its bearer hidden when it deals damage, and only then', () => {
+    expect([...stealthOf({ statuses: [on('unseen-blade', worn('Unseen Blade'))] }).kept]).toEqual(['dealt']);
+  });
+
+  test('a foe with Hunter\'s Eye sees a Vanished hunter of rank E to B (level 1 or 2) and not one of rank A or S (level 3)', () => {
+    const sight = modified(HUNTER, [on('hunters-eye', worn('Hunter\'s Eye'))], RULES).sheet.sight;
+    expect(sight).toBe(2);
+    const sees = RANKS.map((_, t) => perceives({ place: place(0, 0), side: 'foe', up: true, sight }, { place: place(5, 0), side: 'party', stealth: hideOf(statusKey('vanished'), vanished, t)!.level },
+      openGrid(20, 14), { kind: 'whole' }));
+    expect(sees).toEqual([true, true, true, true, false, false]);
+  });
+
+  test('Flare is a blast at a place that deals nothing and reveals each body it lands on', () => {
+    const a = ability('Flare');
+    expect([a.kind, a.aim, a.effect, a.ops]).toEqual(['blast', 'place', null, [{ op: 'reveal' }]]);
+  });
 });

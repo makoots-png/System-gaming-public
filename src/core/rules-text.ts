@@ -13,6 +13,12 @@ import type { PriceRules, Rarity } from './registry/items.ts';
 import { shareEach } from './gates/pay.ts';
 import { FUMBLE_FAILURES, REVIVE_HP, SAVES_TO_END, SAVE_FUMBLE, SAVE_SUCCESS, SAVE_UP, SAVE_UP_HP, WAYS_BACK } from './hunter/vitals.ts';
 import { levelAfterRaising } from './hunter/progress.ts';
+import { HIDE_LEVELS, ambushShare, asLevel } from './combat/standing.ts';
+import type { Level } from './combat/standing.ts';
+import { perceives } from './combat/sight.ts';
+import { openGrid, place } from './combat/space.ts';
+import { STEALTH_ENDS } from './combat/effect-ops.ts';
+import type { StealthEnd } from './combat/effect-ops.ts';
 
 const sign = (n: number): string => (n >= 0 ? '+' : '') + n;
 
@@ -89,6 +95,35 @@ export function soloLines(R: Pick<Rules, 'solo'>): readonly string[] {
         `The first gate after personal gates start for a hunter (a new hunter, one revived, or personal gates turned back on) holds one monster of the hunter's own rank. The rest hold ${S.pack[0]} to ${S.pack[1]}, one rank below the hunter's to one above.`,
         `A cleared personal gate pays ${pct(S.lootShare)} of the loot a world gate of its rank rolls: ${pct(S.lootShare)} of the gold, rounded down, and an item ${pct(S.lootShare)} of the time. A world gate run alone pays as a world gate.`]
       : ['Personal gates are off.']),
+  ];
+}
+
+/** Each event that may end a hide, in words (effect-ops.ts `STEALTH_ENDS`; the owner's rulings 2 and 6). */
+const HIDE_END_WORDS: { readonly [E in StealthEnd]: string } = {
+  hurt: 'its bearer loses HP',
+  revealed: 'it is revealed, by a reveal such as a Flare\'s or by a hit from an area or from a use aimed at a place',
+  dealt: 'its bearer\'s own use or reaction deals damage to a foe (not a field or a status it left earlier)',
+};
+/** The highest stealth level a foe of `sight` sees, by the one sight rule (sight.ts `perceives`), or null when it sees no hide. */
+const seenUpTo = (sight: Level): Level | null => {
+  const sees = (level: Level) => perceives({ place: place(0, 0), side: 'foe', up: true, sight }, { place: place(1, 0), side: 'party', stealth: level }, openGrid(2, 1), { kind: 'whole' });
+  return HIDE_LEVELS.filter(sees).at(-1) ?? null;
+};
+/** The sight level of the line's example of a foe that sees some hides (Hunter's Eye's, kit-examples.ts). */
+const SIGHT_EXAMPLE: Level = 2;
+/**
+ * Who sees a hidden body (sight.ts `perceives`, from everyone's `stealth.sightBase`), what a hit from hiding deals
+ * (standing.ts `ambushShare` of a user and a target with no statuses), and what ends a hide (`STEALTH_ENDS`).
+ */
+export function stealthLines(R: Pick<Rules, 'fight'>): readonly string[] {
+  const base = asLevel(R.fight.stealth.sightBase), atBase = seenUpTo(base), atExample = seenUpTo(SIGHT_EXAMPLE);
+  const ambush = Math.round(ambushShare({ statuses: [] }, { statuses: [] }, R) * 100) / 100;
+  const ends = STEALTH_ENDS.map(e => HIDE_END_WORDS[e]);
+  return [
+    `A hidden body is hidden from each foe whose sight level is lower than its stealth level. Everyone's sight level starts at ${base}, so a foe with no sight from a skill, an item or a status sees ${atBase === null ? 'no hidden body' : `a body hidden at level ${atBase} or lower`}; a foe with sight level ${SIGHT_EXAMPLE} sees ${atExample === null ? 'no hidden body' : `a body hidden at level ${atExample} or lower`}. Its own side always sees it.`,
+    'A foe cannot aim at a hidden body it does not see. An area, or a use aimed at a place, still catches it, and that hit reveals it.',
+    `A hit from hiding on a foe that does not see you deals ×${ambush} damage. It does not add to another damage increase: only the larger counts.`,
+    `A hide ends when its time runs out, when a cure removes it, or on any of these its status names: ${ends.slice(0, -1).join('; ')}; or ${ends.at(-1)}.`,
   ];
 }
 

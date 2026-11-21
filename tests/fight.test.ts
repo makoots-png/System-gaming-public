@@ -46,6 +46,7 @@ import { parseAbility, parseFight } from '../src/core/combat/fight-parse.ts';
 import { attemptsLeft, extractionStep, UNTRIED } from '../src/core/combat/extraction.ts';
 import { EXTRACTION_WALK } from './models/extraction-events.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
+import { SKILL_ABILITIES } from '../src/core/registry/abilities.ts';
 import { can, fightId, owed, reduce, runningState } from '../src/core/combat/fight.ts';
 import type { Command, CommandType, Ctx, Effect, Fight, NewRow, Opening, Result, RowLifeEvent, Running, StatusGrant, ZoneDraft } from '../src/core/combat/fight.ts';
 import { needs } from '../src/core/combat/resolve.ts';
@@ -1721,6 +1722,19 @@ describe('wards and stealth (kits design 8.1 and 8.7, tables 8.9.4 and 8.9.5)', 
     const hidden = play(...hiding([]));
     expect(keys(hidden.fight, 'A')).toEqual(['hide']);
     refuses(hidden.fight, hit('M', 'A'), 'noTarget');
+  });
+
+  test('the Stealth skill hides its hunter behind a wall, where a foe cannot pick it, and is refused in a foe\'s sight; the built-in Invisible lands in the open', () => {
+    const STEALTH = SKILL_ABILITIES.Stealth(RULES)!;
+    const hidden = play(add(row('A', 'party', { abilities: [HIT, STEALTH] }), row('M', 'foe')), wall, start(['A', 20], ['M', 10]), use('A', STEALTH));
+    expect(keys(hidden.fight, 'A')).toEqual(['stealth']);
+    refuses(hidden.fight, hit('M', 'A'), 'noTarget');
+    refuses(play(...duel({ abilities: [HIT, STEALTH] })).fight, use('A', STEALTH), 'seen');
+    const INVISIBLE = ability('support', 'invisible', null, { aim: 'self', effect: null, shape: { kind: 'self' },
+      ops: [{ op: 'applyStatus', key: statusKey('invisible'), def: RULES.conditions.invisible!, duration: tick(3 * ROUND) }] });
+    const open = play(...duel({ abilities: [HIT, INVISIBLE] }), use('A', INVISIBLE));
+    expect(keys(open.fight, 'A')).toEqual(['invisible']);
+    refuses(open.fight, hit('M', 'A'), 'noTarget');
   });
 
   test('a hidden body that slows a foe stays hidden: a use that deals no damage does not give it away', () => {
