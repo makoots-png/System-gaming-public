@@ -12,7 +12,9 @@ import type { GivenBundle, RoomCode, RoomEvent } from './protocol.ts';
 import { record } from './hunter/chronicle.ts';
 import type { Rewards } from './rewards.ts';
 import type { Save } from './save.ts';
-import { isRefused } from './save-step.ts';
+import { isRefused, refuse } from './save-step.ts';
+import type { Refused } from './save-step.ts';
+import type { FightId } from './combat/fight-types.ts';
 import { told } from './session-log.ts';
 import type { Said, Stamp } from './session-log.ts';
 import { atOutbox, post } from './sync/outbox.ts';
@@ -52,4 +54,66 @@ export function gmAward(save: Save, locals: readonly { readonly hid: string; rea
     granted.push({ hid, g: { ...g, save: next } });
   }
   return { save: sent(next, s, { at: day.at, cap: day.R.logCap }), granted };
+}
+
+// ── the Award form's tie to a fight's drop ──
+// Before, the form's tie to the loot was a flag on its section (`dataset.drop`) and the reward it would open with a
+// `let` of gm.js (`pendingAward`). The flag stayed set when the GM folded the form or replaced the loot, so a later
+// unrelated award dealt the loot as if it were given (SMX-gates-1, SMX-views-11.1). Now the tie is this machine: gm.js
+// keeps its one value and steps it only through `draftStep`, and a send deals only the drop its draft names.
+export const AWARD_DRAFT_STATES = ['blank', 'opening', 'fromDrop'] as const;
+/**
+ * The Award form: tied to nothing (whatever the GM typed); asked to open with `rewards` (a bundle's, or drop `drop`'s)
+ * when the GM view next draws it; holding the drop of fight `fight`, whose send deals it.
+ */
+export type AwardDraft =
+  | { readonly at: 'blank' }
+  | { readonly at: 'opening'; readonly rewards: Rewards; readonly bundle: string | null; readonly drop: FightId | null }
+  | { readonly at: 'fromDrop'; readonly fight: FightId };
+export const BLANK_DRAFT: Extract<AwardDraft, { at: 'blank' }> = { at: 'blank' };
+export const AWARD_DRAFT_EVENTS = ['open', 'drawn', 'bundle', 'fold', 'gone', 'sent'] as const;
+/**
+ * `award.open` (Award loot… with its drop, a bundle's Award… from the Workshop); the GM view drew the form; the GM
+ * picked a bundle in the form; the GM folded Award; the drop the form holds no longer waits (set aside, or given from
+ * another tab); the form's send wrote.
+ */
+export type AwardDraftEvent =
+  | { readonly type: 'open'; readonly rewards: Rewards; readonly bundle: string | null; readonly drop: FightId | null }
+  | { readonly type: 'drawn' } | { readonly type: 'bundle' } | { readonly type: 'fold' } | { readonly type: 'gone' } | { readonly type: 'sent' };
+/** What the form does beside the step: stays as it is, is filled with `rewards` (its bundle shown picked), or is emptied. */
+export type DraftForm = { readonly do: 'keep' } | { readonly do: 'fill'; readonly rewards: Rewards; readonly bundle: string | null } | { readonly do: 'clear' };
+export type AwardDraftStep = { readonly draft: AwardDraft; readonly form: DraftForm };
+type DraftFn<E extends AwardDraftEvent['type']> = (d: AwardDraft, e: Extract<AwardDraftEvent, { type: E }>) => AwardDraftStep;
+const KEEP: DraftForm = { do: 'keep' }, untied = (form: DraftForm): AwardDraftStep => ({ draft: BLANK_DRAFT, form });
+const opened: DraftFn<'open'> = (_d, e) => ({ draft: { at: 'opening', rewards: e.rewards, bundle: e.bundle, drop: e.drop }, form: KEEP });
+/**
+ * Every state against every event; null: refused, nothing changes. A drop's form folded, or whose drop left, is emptied
+ * as it is untied: the loot still waits, offered again, and the form no longer gives it a second time.
+ */
+const DRAFT_TABLE: { readonly [S in AwardDraft['at']]: { readonly [E in AwardDraftEvent['type']]: DraftFn<E> | null } } = {
+  blank: { open: opened, drawn: null, bundle: () => untied(KEEP), fold: () => untied(KEEP), gone: null, sent: () => untied(KEEP) },
+  opening: {
+    open: opened,
+    drawn: d => {
+      if (d.at !== 'opening') return untied(KEEP);
+      const form: DraftForm = { do: 'fill', rewards: d.rewards, bundle: d.bundle };
+      return { draft: d.drop ? { at: 'fromDrop', fight: d.drop } : BLANK_DRAFT, form };
+    },
+    bundle: null, fold: null, gone: null, sent: null,
+  },
+  fromDrop: { open: opened, drawn: null, bundle: () => untied(KEEP), fold: () => untied({ do: 'clear' }), gone: () => untied({ do: 'clear' }), sent: () => untied(KEEP) },
+};
+/** `d` after `e`, with what the form does, or null where the table refuses it. */
+export function draftStep(d: AwardDraft, e: AwardDraftEvent): AwardDraftStep | null {
+  const step = DRAFT_TABLE[d.at][e.type] as DraftFn<AwardDraftEvent['type']> | null;
+  return step ? step(d, e) : null;
+}
+/**
+ * The drop a send from `draft` deals in its write: the one the form holds, none from a blank form. A send of the loot
+ * that would leave `unreached` picked hunters without it (a player's, with no room) is refused whole (`unreached`), so
+ * nothing is written and the loot waits: loot leaves only by being given or by the GM's Set aside (SMX-gates-1.1).
+ */
+export function sendDeals(draft: AwardDraft, unreached: number): { readonly deals: FightId | null } | Refused<'unreached'> {
+  if (draft.at !== 'fromDrop') return { deals: null };
+  return unreached > 0 ? refuse('unreached') : { deals: draft.fight };
 }

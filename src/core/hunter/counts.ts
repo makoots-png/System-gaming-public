@@ -54,30 +54,39 @@ function holds(f: Fact, t: Test): boolean {
 export const passes = (f: Fact, c: FactCount): boolean => f.kind === c.on && c.where.every(t => holds(f, t));
 
 /**
- * A count after fact `f` at window mark `mark` (`markOf`): null when `f` is not of its kind; `broke` when it is of its
- * kind, fails its tests, and the window is a row; else the count moved (or unchanged when it fails its tests). A fact in
- * a new mark starts the count again before it adds.
- *   window      | passes, same mark | passes, new mark | fails its tests
- *   ever        | n + adds          | (no new mark)    | unchanged
- *   row         | n + adds          | (no new mark)    | broke (n 0)
- *   session ... | n + adds          | adds             | unchanged
- * `adds`: 1 for `facts`; the field's value for `sum`; for `distinct` 1 when the value is new (then kept); for `max` the
- * rise of the field's value over `n`, never below 0.
+ * What fact `f` did to a count (`countStep`). `moved`: it passed the count's tests and the count after it (a new window
+ * starts again from 0 first). `same`: it is of the count's kind and left the count as it was: it failed the tests of a
+ * count not in a row, gave a different-values count a value it has seen in this window, or had no value for the field
+ * its count measures. `broke`: it failed the tests
+ * of a count in a row, and the count after it is 0 with no values seen, so a new row counts every value again
+ * (SMX-rules-9.2). A feat and a quest's objective both read this one answer (noticed.ts, `objectiveStep`).
  */
-export function countStep(c: Counted, f: Fact, count: FactCount, mark: string): Counted | 'broke' | null {
+export type CountMove = { readonly to: 'moved' | 'broke'; readonly count: Counted } | { readonly to: 'same' };
+const SAME: CountMove = { to: 'same' };
+/**
+ * A count after fact `f` at window mark `mark` (`markOf`): null when `f` is not of its kind, else its move (`CountMove`).
+ *   window      | passes, same mark | passes, new mark | fails its tests
+ *   ever        | n + adds          | (no new mark)    | same
+ *   row         | n + adds          | (no new mark)    | broke (n 0, no values)
+ *   session ... | n + adds          | adds             | same
+ * `adds`: 1 for `facts`; the field's value for `sum`; for `distinct` 1 when the value is new (then kept), else the count
+ * is the same; for `max` the rise of the field's value over `n`, never below 0.
+ */
+export function countStep(c: Counted, f: Fact, count: FactCount, mark: string): CountMove | null {
   if (f.kind !== count.on) return null;
-  if (!passes(f, count)) return count.within === 'row' ? 'broke' : c;
-  const base: Counted = c.mark === mark ? c : { n: 0, mark };
+  if (!passes(f, count)) return count.within === 'row' ? { to: 'broke', count: { n: 0, mark: c.mark } } : SAME;
+  const fresh = c.mark !== mark, base: Counted = fresh ? { n: 0, mark } : c;
+  const moved = (to: Counted): CountMove => ({ to: 'moved', count: to });
   const m = count.measure;
-  if (m.of === 'facts') return { ...base, n: Math.min(COUNT_MAX, base.n + 1) };
+  if (m.of === 'facts') return moved({ ...base, n: Math.min(COUNT_MAX, base.n + 1) });
   const v = field(f, m.field);
   if (m.of === 'distinct') {
-    if (v === null || v === undefined) return base;
-    const key = String(v).trim().toLowerCase(), seen = base.vals ?? [];
-    return seen.includes(key) ? base : { ...base, n: base.n + 1, vals: [...seen, key].slice(-VALS_MAX) };
+    const key = v === null || v === undefined ? null : String(v).trim().toLowerCase(), seen = base.vals ?? [];
+    if (key === null || seen.includes(key)) return fresh ? moved(base) : SAME;
+    return moved({ ...base, n: base.n + 1, vals: [...seen, key].slice(-VALS_MAX) });
   }
-  if (typeof v !== 'number') return base;
-  return m.of === 'sum' ? { ...base, n: Math.min(COUNT_MAX, base.n + Math.max(0, v)) } : { ...base, n: Math.max(base.n, v) };
+  if (typeof v !== 'number') return fresh ? moved(base) : SAME;
+  return moved(m.of === 'sum' ? { ...base, n: Math.min(COUNT_MAX, base.n + Math.max(0, v)) } : { ...base, n: Math.max(base.n, v) });
 }
 
 // ── the boundary ──
@@ -160,7 +169,7 @@ export function objectiveStep(o: { readonly target: number; readonly progress: n
   if (o.progress >= o.target) return null;
   const from: Counted = { n: o.progress, mark: o.count.mark, ...(o.count.vals ? { vals: o.count.vals } : {}) };
   const r = countStep(from, f, o.count.rule, mark);
-  if (r === null || r === from) return null;
-  const to = r === 'broke' ? { n: 0, mark: from.mark } : r;
+  if (r === null || r.to === 'same') return null;
+  const to = r.count;
   return { progress: Math.min(o.target, to.n), count: { rule: o.count.rule, mark: to.mark, ...(to.vals ? { vals: to.vals } : {}) } };
 }

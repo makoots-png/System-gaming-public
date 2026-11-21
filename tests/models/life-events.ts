@@ -1,6 +1,6 @@
 // The events of a hunter's life walk. Shared by tests/vitals.test.ts and the state charts (scripts/charts/life.ts), so
 // both walk the same events.
-import type { LifeEvent } from '../../src/core/hunter/vitals.ts';
+import type { LifeEvent, Maxima, VitalEvent } from '../../src/core/hunter/vitals.ts';
 
 /** The chart's hunter starts with 20 max HP (the test's too). On maxChanged the maximum drops to 12, so the walk also covers HP above a lowered maximum. */
 export const WALK_MAX = 20, LOWERED_MAX = 12;
@@ -14,3 +14,16 @@ export const WALK_EVENTS: LifeEvent[] = [
 
 /** The maximum after `event`: the walk lowers it on maxChanged and keeps it otherwise. */
 export const maxAfter = (event: LifeEvent, max: number): number => (event.type === 'maxChanged' ? LOWERED_MAX : max);
+
+/** The collapse's walk starts with a capacity of 100; on maxChanged the capacity drops to 80, so the walk covers fatigue fitted to a lower capacity. */
+export const COLLAPSE_MAX: Maxima = { hpMax: WALK_MAX, manaMax: 0, fatigueMax: 100 };
+export const COLLAPSE_LOWERED: Maxima = { ...COLLAPSE_MAX, fatigueMax: 80 };
+
+/** 8 events: fatigue up 30 and down 30, a short and a long rest, the capacity lowered, the fight's totals at 100 and at 70, and a refill. */
+export const COLLAPSE_EVENTS: VitalEvent[] = [
+  { type: 'fatigue', delta: 30 }, { type: 'fatigue', delta: -30 }, { type: 'rest', kind: 'short' }, { type: 'rest', kind: 'long' },
+  { type: 'maxChanged' }, { type: 'fightTotals', life: { at: 'up', hp: WALK_MAX }, mana: 0, fatigue: 100 },
+  { type: 'fightTotals', life: { at: 'up', hp: WALK_MAX }, mana: 0, fatigue: 70 }, { type: 'refill' },
+];
+/** The maxima after `event`: the walk lowers the capacity on maxChanged and keeps it otherwise. */
+export const collapseMaxAfter = (event: VitalEvent, m: Maxima): Maxima => (event.type === 'maxChanged' ? COLLAPSE_LOWERED : m);

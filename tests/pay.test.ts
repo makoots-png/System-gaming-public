@@ -1,6 +1,7 @@
 // What a fight's end and a gate's Clear pay (src/core/gates/pay.ts): each one step, all of it or nothing.
 import { describe, expect, test } from 'bun:test';
-import { clearGoldEach, clearShares, dropDealt, encounterAwards, gateFact, planEncounter, settleClear, settleEncounter, shareEach } from '../src/core/gates/pay.ts';
+import { LOOT_EVENTS, LOOT_STATES, clearGoldEach, clearShares, dropDealt, dropLine, encounterAwards, gateFact, lootOffered, lootStep, planEncounter, settleClear, settleEncounter, shareEach } from '../src/core/gates/pay.ts';
+import type { LootEvent } from '../src/core/gates/pay.ts';
 import { remoteFacts } from '../src/core/combat/fight-facts.ts';
 import { loadSave } from '../src/core/save.ts';
 import type { Payee } from '../src/core/gates/pay.ts';
@@ -10,7 +11,7 @@ import { combatantId } from '../src/core/combat/ability-types.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 import { hunterRow, remoteRow } from '../src/core/combat/rows.ts';
 import { freshSave, newHunter } from '../src/core/save.ts';
-import type { Hunter, Save } from '../src/core/save.ts';
+import type { Dropped, FightLoot, Hunter, Save } from '../src/core/save.ts';
 import { newEvent, parseSheetKey } from '../src/core/protocol.ts';
 import type { RoomCode, RoomEvent } from '../src/core/protocol.ts';
 import { isRefused } from '../src/core/save-step.ts';
@@ -33,12 +34,12 @@ const ok = <T>(r: T | Refused): T => { if (isRefused(r)) throw new Error(`refuse
  * A GM's save in the Goblin Den's fight, ended: this phone's hunter, Kai on a player's phone, and a goblin that went
  * down for 60 XP. The fight's rows are real rows; only its summary is set, as `end` would after the goblin fell.
  */
-function inDen(xpPaid = 0): Save {
+function inDen(xpPaid = 0, id = 'f-den'): Save {
   const s = freshSave({ now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-gm') }, { onboarded: true }), h = s.hunters[0]!;
   const ctx = { rules: RULES };
   const rows = [hunterRow(h, combatantId('c1'), RULES), remoteRow({ ...newHunter(RULES), id: 'h1', name: 'Kai' }, KAI, combatantId('c2'), RULES),
     { ...hunterRow({ ...newHunter(RULES), id: 'x', name: 'Goblin' }, combatantId('c3'), RULES), side: 'foe' as const, holder: null, name: 'Goblin', xp: 60 }];
-  const added = reduce(null, { type: 'add', fightId: fightId('f-den'), rows, openings: [] }, ctx).fight;
+  const added = reduce(null, { type: 'add', fightId: fightId(id), rows, openings: [] }, ctx).fight;
   const run = reduce(added, { type: 'start', openings: rows.map(r => ({ id: r.id, d20: 10, tie: 0 })) }, ctx).fight;
   const ended = reduce(run, { type: 'end' }, ctx).fight as Ended;
   const fight: Ended = { ...ended, summary: { ...ended.summary, xp: 60, down: [combatantId('c3')] } };
@@ -129,14 +130,14 @@ describe('the end of a fight', () => {
     expect(out.log[0]!.text).toBe('1 defeated, 60 XP.');
   });
 
-  test('what the fight dropped stays on the save after the settle, read back after a reload, until the GM gives it or sets it aside', () => {
+  test('what the fight dropped waits on the save after the settle, read back after a reload, until the GM gives it or sets it aside', () => {
     const s = inDen(), plan = planEncounter(s.fight as Ended, 'g-den', s, PARTY, xpOf);
     const out = ok(settleEncounter(s, plan, 'skip', { room: ROOM, events: [] }, DAY, HOARD)).save;
-    expect(out.dropped).toEqual(HOARD);
+    expect(out.loot).toEqual({ at: 'waiting', drops: [{ fight: 'f-den', ...HOARD }] });
     const env = { now: new Date(AT), newDeviceId: () => 'd-x' as never, newDeviceToken: () => 't' };
-    expect(loadSave({ v4: JSON.stringify(out), v3: null, v2: null, v1: null }, env).save.dropped).toEqual(HOARD);
-    expect(dropDealt(out).dropped).toBeNull();
-    expect(ok(settleEncounter(s, plan, 'skip', { room: ROOM, events: [] }, DAY, NONE)).save.dropped).toBeNull();
+    expect(loadSave({ v4: JSON.stringify(out), v3: null, v2: null, v1: null }, env).save.loot).toEqual(out.loot);
+    expect(ok(dropDealt(out, fightId('f-den'))).loot).toEqual({ at: 'none' });
+    expect(ok(settleEncounter(s, plan, 'skip', { room: ROOM, events: [] }, DAY, NONE)).save.loot, 'a fight that dropped nothing leaves nothing waiting').toEqual({ at: 'none' });
   });
 
   test('the step leaves the save it was given as it was', () => {
@@ -203,5 +204,49 @@ describe('a player\'s hunter whose sheet is not on the GM\'s phone', () => {
     const f = inDen().fight as Ended;
     expect(remoteFacts(f, () => null, 'Den')).toEqual(remoteFacts(f, () => 'E', 'Den'));
     expect(remoteFacts(f, () => null, 'Den').map(n => n.to)).toEqual([KAI]);
+  });
+});
+
+describe('a fight\'s loot waiting for the GM (SMX-gates-1)', () => {
+  const A: Dropped = { fight: fightId('f-a'), gold: 900, items: [] }, B: Dropped = { fight: fightId('f-b'), gold: 75, items: [] };
+  const NO_LOOT: FightLoot = { at: 'none' };
+  test('every state answers every event: a drop is added after the ones waiting, never over them; dealing a drop takes that one alone', () => {
+    const states: { readonly [S in FightLoot['at']]: FightLoot } = { none: NO_LOOT, waiting: { at: 'waiting', drops: [A] } };
+    const events: { readonly [E in LootEvent['type']]: readonly LootEvent[] } = {
+      dropped: [{ type: 'dropped', drop: B }, { type: 'dropped', drop: A }],
+      dealt: [{ type: 'dealt', fight: A.fight }, { type: 'dealt', fight: B.fight }],
+    };
+    const table = Object.fromEntries(LOOT_STATES.map(s => [s, Object.fromEntries(LOOT_EVENTS.map(e => [e, events[e].map(ev => lootStep(states[s], ev))]))]));
+    expect(table).toEqual({
+      none: { dropped: [{ at: 'waiting', drops: [B] }, { at: 'waiting', drops: [A] }], dealt: [null, null] },
+      waiting: { dropped: [{ at: 'waiting', drops: [A, B] }, null], dealt: [NO_LOOT, null] },
+    });
+    expect(lootStep({ at: 'waiting', drops: [A, B] }, { type: 'dealt', fight: A.fight })).toEqual({ at: 'waiting', drops: [B] });
+  });
+
+  test('loot the GM put off with Later survives the next fight\'s settle, with no loot or with its own, and the oldest is offered first (SMX-gates-1.3)', () => {
+    const first = inDen(0, 'f-1'), plan1 = planEncounter(first.fight as Ended, 'g-den', first, PARTY, xpOf);
+    const later = ok(settleEncounter(first, plan1, 'skip', { room: ROOM, events: [] }, DAY, { gold: 900, items: [] })).save;
+    const second = { ...later, fight: inDen(0, 'f-2').fight, fightRefs: { gate: gid('g-den'), monsters: {} } };
+    const plan2 = planEncounter(second.fight as Ended, 'g-den', second, PARTY, xpOf);
+    const empty = ok(settleEncounter(second, plan2, 'skip', { room: ROOM, events: [] }, DAY, NONE)).save;
+    expect(empty.loot).toEqual({ at: 'waiting', drops: [{ fight: 'f-1', gold: 900, items: [] }] });
+    const both = ok(settleEncounter(second, plan2, 'skip', { room: ROOM, events: [] }, DAY, HOARD)).save;
+    expect(both.loot).toEqual({ at: 'waiting', drops: [{ fight: 'f-1', gold: 900, items: [] }, { fight: 'f-2', ...HOARD }] });
+    expect(lootOffered(both.loot)).toEqual({ fight: 'f-1', gold: 900, items: [] });
+    expect(lootOffered(ok(dropDealt(both, fightId('f-1'))).loot)).toEqual({ fight: 'f-2', ...HOARD });
+  });
+
+  test('a drop dealt is gone, so dealing it again (Set aside twice, a send after a Set aside) is refused and changes nothing', () => {
+    const s: Save = { ...inDen(), loot: { at: 'waiting', drops: [A] } };
+    const once = ok(dropDealt(s, A.fight));
+    expect(dropDealt(once, A.fight)).toEqual({ ok: false, why: 'no-drop' });
+    expect(lootOffered(once.loot)).toBeNull();
+  });
+
+  test('a drop in one line: its gold, then each item with its count past one', () => {
+    const shard = { ...({} as Dropped['items'][number]), name: 'Frost Shard', qty: 2 }, rope = { ...shard, name: 'Rope', qty: 1 };
+    expect(dropLine({ gold: 1500, items: [shard, rope] }, n => n.toLocaleString('en-US'))).toBe('1,500 gold, Frost Shard ×2, Rope');
+    expect(dropLine({ gold: 0, items: [] }, String)).toBe('');
   });
 });

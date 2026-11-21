@@ -98,7 +98,7 @@ export type AwardApi = {
   /**
    * Shows the GM view with the Award form open and its reward editor holding `rewards` (a fight's loot, a bundle; with
    * `bundleId`, that bundle shows as picked): no hunter is picked, nothing is sent until the GM sends it. With `drop`,
-   * the rewards are the last fight's drop (`Save.dropped`), which the send deals with in its write (pay.ts `dropDealt`).
+   * the rewards are a drop of the loot waiting (`Save.loot`), which the send deals with in its write (pay.ts `dropDealt`).
    */
   open(rewards: Rewards, bundleId?: string, drop?: boolean): void;
 };

@@ -20,8 +20,8 @@ function step(e: EntryEvent, from: S): string {
     case 'send': return 'a good poll, or the post itself [first of its room]';
     case 'sent': return 'the room takes it';
     case 'failed': return 'no answer, or the server fails';
-    case 'refused': return from.at === 'queued' ? 'the room no longer exists' : 'the room refuses it (4xx)';
-    case 'reload': return 'the page reloads';
+    case 'refused': return from.at === 'queued' ? 'the room no longer exists' : 'the room refuses it (4xx), or no longer exists';
+    case 'reload': return 'the page reloads, or this phone leaves the room';
     case 'drop': return from.at === 'refused' ? 'a newer refusal, or a full box' : from.at === 'sending' ? 'its hunter (a tombstone\'s) is bound again' : 'its hunter is bound again, or a full box';
   }
 }
@@ -37,7 +37,7 @@ export const outbox = machine<S, EntryEvent>({
   kindsOf: s => [s.at],
   views: [{
     title: 'One message in the outbox: a use, a roll, a coin call, an award, a deleted hunter\'s tombstone',
-    note: 'The outbox is in the save, so a message posted offline or before a reload is still there after it. Messages of one room go one at a time, oldest first, and only while this phone is in that room; another room\'s wait. A message whose send got no answer may have reached the room: it is sent again, and the room takes an event id once (server.ts `addEvent`; a tombstone is a sheet put), so it is never a second message. A full box (100) lets the oldest refusal go, then the oldest waiting message, and says so.',
+    note: 'The outbox is in the save, so a message posted offline or before a reload is still there after it. Messages of one room go one at a time, oldest first, and only while this phone is in that room; another room\'s wait. Leaving the room drops a send on its way, and its answer is never heard. A message whose send got no answer may have reached the room: it is sent again, and the room takes an event id once (server.ts `addEvent`; a tombstone is a sheet put), so it is never a second message. A full box (100) lets the oldest refusal go, then the oldest waiting message, and says so.',
     hides: '',
     state: s => LABEL[s.at],
     step,

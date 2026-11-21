@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { CHRONICLE_MAX, INBOX_MAX, PUSHED_FACTS, newChronicle, parseChronicle, pushedChronicle, record } from '../src/core/hunter/chronicle.ts';
 import { FACT_FIELDS, FACT_KINDS, KEPT, parseFact } from '../src/core/hunter/facts.ts';
 import type { Fact, FactKind } from '../src/core/hunter/facts.ts';
-import { noticed, released } from '../src/core/hunter/noticed.ts';
+import { INBOX, noticed, released } from '../src/core/hunter/noticed.ts';
 import type { NoticeCtx } from '../src/core/hunter/noticed.ts';
 import { grant, sheetEdit } from '../src/core/hunter/grant.ts';
 import { completeQuest, failQuest, rollover } from '../src/core/hunter/quests.ts';
@@ -68,16 +68,45 @@ describe('the notice step', () => {
   test('a hunter a fight holds keeps its facts until a write in which no fight holds it', () => {
     const held = (_s: Save, id: HunterId): boolean => id === H1;
     const s = noticed(saveOf(record(mira(), level), record({ ...mira(), id: H2 }, title)), () => ctx({ held }));
-    expect(inbox(s.hunters[0]!), 'held: waiting').toEqual([level]);
+    const stamp = { at: AT, day: TODAY, session: 4 };
+    expect(inbox(s.hunters[0]!), 'held: waiting, stamped by the write it happened in').toEqual([{ ...level, ...stamp }]);
     expect(inbox(s.hunters[1]!), 'free: taken').toEqual([]);
     const more = { ...s, hunters: [record(s.hunters[0]!, roll), s.hunters[1]!] };
-    expect(inbox(noticed(more, () => ctx({ held })).hunters[0]!), 'still held: appended').toEqual([level, roll]);
+    const later = { at: '2026-11-18T10:30:00.000Z', day: TODAY, session: 5 };
+    expect(inbox(noticed(more, () => ctx({ held, at: later.at, session: later.session })).hunters[0]!), 'still held: appended, each with its own stamp').toEqual([{ ...level, ...stamp }, { ...roll, ...later }]);
     expect(released(more, held)).toEqual({ ok: false, why: 'unchanged' });
     expect(released(more, free)).toBe(more);
     const after = noticed(more, () => ctx({ at: '2026-11-18T11:00:00.000Z' })).hunters[0]!;
     expect(after.chronicle.facts, 'noticed when let go, at that write\'s moment').toEqual([{ ...level, at: '2026-11-18T11:00:00.000Z', day: TODAY, session: 4 }]);
     expect(after.chronicle.tally.nat20).toBe(1);
     expect(released(noticed(more, () => ctx()), free), 'nothing waits: a repeat writes nothing').toEqual({ ok: false, why: 'unchanged' });
+  });
+});
+
+describe('a fact in a hunter\'s inbox, a machine (noticed.ts `INBOX`)', () => {
+  const now = { at: AT, day: TODAY, session: 4 };
+  const NEXT = '2026-11-19T10:00:00.000Z', then = { at: NEXT, day: dayKey(new Date(NEXT), 0), session: 5 };
+  const held = (): boolean => true;
+  test('every state against every end of a write: recorded or waiting, held or free', () => {
+    const waiting = { ...level, ...now };
+    expect(INBOX.recorded.held(level, then), 'recorded, held: waits, stamped by this write').toEqual({ ...level, ...then });
+    expect(INBOX.recorded.free(level, then), 'recorded, free: taken with this write\'s stamp').toEqual(then);
+    expect(INBOX.waiting.held(waiting, then), 'waiting, still held: as it was').toBe(waiting);
+    expect(INBOX.waiting.free(waiting, then), 'waiting, freed: taken with the stamp of the write that frees it, as today (SMX-rules-9.1 waits on the day ruling)').toEqual(then);
+  });
+  test('a held write that records nothing leaves the save as it was', () => {
+    const s = noticed(saveOf(record(mira(), level)), () => ctx({ held }));
+    expect(noticed(s, () => ctx({ held, at: NEXT, today: then.day, session: 5 }))).toBe(s);
+  });
+  test('freed on a later day, a waiting fact is kept with the day of the write that frees it, as today (SMX-rules-9.1 waits)', () => {
+    const s = noticed(saveOf(record(mira(), level)), () => ctx({ held }));
+    const after = noticed(s, () => ctx({ at: NEXT, today: then.day, session: 5 })).hunters[0]!.chronicle;
+    expect(after.inbox).toEqual([]);
+    expect(after.facts).toEqual([{ ...level, ...then }]);
+  });
+  test('a waiting fact keeps its stamp through a load; a fact recorded and not yet noticed reads with none', () => {
+    const c = parseChronicle({ inbox: [{ ...level, ...now }, roll] });
+    expect(c.inbox).toEqual([{ ...level, ...now }, roll]);
   });
 });
 

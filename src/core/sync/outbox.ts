@@ -4,9 +4,9 @@
 // Every message a phone sends the room goes in here first: a room event (a player's use, roll or coin call, a GM's
 // award) or a deleted hunter's tombstone. It is sent after each good poll, one at a time per room in the order it was
 // posted, and leaves the box only when the room took it (`sent`) or nothing will ever take it (`dropped`). A send that
-// got no answer, or a 5xx, puts it back in the queue; a reload does the same to one that was on its way. The room takes
-// an event id once (server.ts `addEvent`) and a tombstone is a sheet put, so sending one again after a lost answer is
-// never a second message. A different message under an id already used is refused, by the box and by the room alike
+// got no answer, or a 5xx, puts it back in the queue; a reload, or the link leaving the stretch it was sent in, does the
+// same to one that was on its way (its answer is never heard). The room takes an event id once (server.ts `addEvent`)
+// and a tombstone is a sheet put, so sending one again after a lost answer is never a second message. A different message under an id already used is refused, by the box and by the room alike
 // (`sentAgain` in src/core/protocol.ts): never answered as taken, so a lost message is never silent.
 //
 // One entry's life is a machine (docs/state-machines.md, "A message to the room"): `queued`, `sending`, then `sent`,
@@ -32,8 +32,8 @@ export const ENTRY_EVENTS = ['send', 'sent', 'failed', 'refused', 'reload', 'dro
 export type EntryEventType = (typeof ENTRY_EVENTS)[number];
 /**
  * What happens to an entry. `send`: it goes out now. `sent`: the room took it (2xx). `failed`: no answer, or a 5xx.
- * `refused`: the room answered 4xx with `why` (or its room no longer exists). `reload`: the page it was sent from is gone,
- * so its answer will never be heard. `drop`: nothing will ever take it (its hunter is bound again, the box is full, or
+ * `refused`: the room answered 4xx with `why` (or its room no longer exists). `reload`: its answer will never be heard,
+ * since the page it was sent from is gone or the link left the stretch it was sent in. `drop`: nothing will ever take it (its hunter is bound again, the box is full, or
  * the player put a refusal away).
  */
 export type EntryEvent =
@@ -130,10 +130,15 @@ export function step(box: Outbox, id: string, e: EntryEvent): Outbox {
 /** Every entry for which `pick` holds, after `e`. */
 export const stepAll = (box: Outbox, pick: (e: Entry) => boolean, e: EntryEvent): Outbox =>
   box.filter(pick).reduce((b, x) => step(b, x.id, e), box);
-/** A new page: nothing it sent before will be answered, so every entry on its way is queued again. */
+/**
+ * Nothing sent before will be answered, so every entry on its way is queued again: a new page, or the link left the
+ * stretch the send was made in (its request is dropped, and an answer to it is never heard). Every entry on its way is
+ * of the stretch the link is in, so this is each of them.
+ */
 export const reloaded = (box: Outbox): Outbox => stepAll(box, e => e.at === 'sending', { type: 'reload' });
-/** The room no longer exists: what waits for it is refused. */
-export const roomGone = (box: Outbox, room: RoomCode): Outbox => stepAll(box, e => e.room === room && e.at === 'queued', { type: 'refused', why: 'no such room' });
+/** The room no longer exists: nothing will take what waits for it or what is on its way to it, so both are refused. */
+export const roomGone = (box: Outbox, room: RoomCode): Outbox =>
+  stepAll(box, e => e.room === room && (e.at === 'queued' || e.at === 'sending'), { type: 'refused', why: 'no such room' });
 /** Hunter `hid` is bound again on this phone: its tombstones are dropped (a bound hunter's card is never tombstoned). */
 export const rebound = (box: Outbox, hid: string): Outbox => stepAll(box, e => e.letter.kind === 'tomb' && e.letter.hid === hid, { type: 'drop' });
 

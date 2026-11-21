@@ -30,7 +30,7 @@ import { rollNeeds, rollOpenings, rollSettle } from '../edge/roll.ts';
 import { weighable } from '../core/combat/odds.ts';
 import { onTurn } from '../core/protocol.ts';
 import { parseSheetKey } from '../core/ids.ts';
-import { dropDealt, encounterAwards, planEncounter, pays, settleEncounter } from '../core/gates/pay.ts';
+import { LOOT_WORDS, dropDealt, dropLine, encounterAwards, lootOffered, planEncounter, pays, settleEncounter } from '../core/gates/pay.ts';
 import { TOLD, WROTE, isRefused, refuse } from '../core/save-step.ts';
 import { appliedOnce, wasApplied } from '../core/applied.ts';
 import { lifeWord, rowLifeTakes } from '../core/combat/row-life.ts';
@@ -495,18 +495,24 @@ export function register(app) {
     await offerDrop();
   }
   /**
-   * The last fight's drop the GM has not dealt with (`Save.dropped`, kept by the settle): Award loot… opens the Award form
-   * with it, whose send clears it; Set aside clears it; Later keeps it, offered again when the app next opens.
+   * The oldest drop the GM has not dealt with (`Save.loot`, added to by each settle, pay.ts `lootOffered`): Award loot…
+   * opens the Award form with it, whose send deals it; Set aside deals it and offers the next; Later keeps them all,
+   * offered again when the app next opens or the next fight ends.
    */
   async function offerDrop() {
-    const d = store.get().dropped; if (!d || !app.isGM()) return;
-    const give = await ui.system({ tag: '! Fight', title: 'Loot dropped', kind: 'quest', body: 'Award loot opens the Award form with it. Set aside gives it to nobody.', lines: [lootText(d)],
-      actions: [{ label: 'Later', value: null, cancel: true }, { label: 'Set aside', value: 'aside' }, { label: 'Award loot…', value: 'award', primary: true }] });
-    if (give === 'award') A().award.open({ ...newRewards(), gold: d.gold, items: d.items }, undefined, true);
-    else if (give === 'aside') ui.wrote('! Fight', store.apply('drop-aside', dropDealt));
+    for (;;) {
+      const loot = store.get().loot, d = lootOffered(loot); if (!d || !app.isGM()) return;
+      const more = loot.at === 'waiting' ? loot.drops.length - 1 : 0;
+      const after = more ? ` The loot of ${more} more fight${more === 1 ? '' : 's'} waits after it.` : '';
+      const give = await ui.system({ tag: '! Fight', title: 'Loot dropped', kind: 'quest', body: `Award loot opens the Award form with it. Set aside gives it to nobody.${after}`, lines: [lootText(d)],
+        actions: [{ label: 'Later', value: null, cancel: true }, { label: 'Set aside', value: 'aside' }, { label: 'Award loot…', value: 'award', primary: true }] });
+      // the Award form opens the drop this window offered, the oldest (gm.js `award.open`)
+      if (give === 'award') return A().award.open({ ...newRewards(), gold: d.gold, items: d.items }, undefined, true);
+      if (give !== 'aside' || !ui.wrote('! Fight', store.apply('drop-aside', s => dropDealt(s, d.fight)), LOOT_WORDS)) return;
+    }
   }
   /** What a fight dropped, in one line: "50 gold, Frost Shard ×2"; '' for nothing. */
-  const lootText = l => [l.gold ? `${ui.fmt(l.gold)} gold` : '', ...l.items.map(i => `${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`)].filter(Boolean).join(', ');
+  const lootText = l => dropLine(l, ui.fmt);
 
   /**
    * ONE party summary window (B1) for rewards already given in one step: each hunter's lines (hunter.js `granted`, its

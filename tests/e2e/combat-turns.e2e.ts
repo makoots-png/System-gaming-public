@@ -289,13 +289,13 @@ test('the loot of a fight the GM has not given yet is offered again after a relo
   await tapCombat(page, '[data-end]');
   await chooseInWindow(page, 'End without XP');
   await answerWindow(page, 'Loot dropped', 'Later');
-  expect(await page.evaluate(() => hunterApp.store.get().dropped)).toEqual({ gold: 75, items: [] });
+  expect(await page.evaluate(() => hunterApp.store.get().loot.drops.map((d: any) => d.gold))).toEqual([75]);
 
   await test.step('after a reload the Loot dropped window offers the 75 gold again', async () => {
     await page.reload();
     await expect(page.locator('.sys-overlay.show', { hasText: 'Loot dropped' })).toContainText('75 gold');
     await answerWindow(page, 'Loot dropped', 'Set aside');
-    await expect.poll(() => page.evaluate(() => hunterApp.store.get().dropped)).toBeNull();
+    await expect.poll(() => page.evaluate(() => hunterApp.store.get().loot)).toEqual({ at: 'none' });
   });
 });
 

@@ -9,7 +9,7 @@
 // settle of it is refused (`no-fight`).
 import { reduce } from '../combat/fight.ts';
 import { rankSeen } from '../combat/fight-facts.ts';
-import type { Ctx, Ended, Fight } from '../combat/fight-types.ts';
+import type { Ctx, Ended, Fight, FightId } from '../combat/fight-types.ts';
 import type { CombatantId } from '../combat/ability-types.ts';
 import { grant } from '../hunter/grant.ts';
 import type { Day, Granted } from '../hunter/grant.ts';
@@ -17,7 +17,7 @@ import { newRewards } from '../rewards.ts';
 import type { Rewards } from '../rewards.ts';
 import { newEvent, parseSheetKey } from '../protocol.ts';
 import type { EventBody, EventStamp, RoomCode, RoomEvent, SheetKey } from '../protocol.ts';
-import type { Dropped, Save } from '../save.ts';
+import type { Dropped, FightLoot, Save } from '../save.ts';
 import { isRefused, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
 import { atOutbox, post } from '../sync/outbox.ts';
@@ -108,10 +108,11 @@ function payAll(save: Save, locals: readonly { hid: string; rewards: Rewards }[]
 
 /**
  * The end of fight `plan.fightId`, as the GM chose: its gate paid what it awards (`encounterEnded`, with its log line)
- * and told who fought it (`fought`), each local hunter given its share, each player's award posted, and the fight cleared with what it came from, in one
- * step. Refused when the save's fight is not that fight, ended (`no-fight`): it was settled already, or it is still on.
+ * and told who fought it (`fought`), each local hunter given its share, each player's award posted, the fight cleared
+ * with what it came from, and what its monsters dropped (`drop`) added to the loot waiting, in one step. Refused when
+ * the save's fight is not that fight, ended (`no-fight`): it was settled already, or it is still on.
  */
-export function settleEncounter(save: Save, plan: EncounterPlan, choice: 'award' | 'skip', posts: Posts, day: Day, drop: Dropped): Settled | Refused<'no-fight'> {
+export function settleEncounter(save: Save, plan: EncounterPlan, choice: 'award' | 'skip', posts: Posts, day: Day, drop: Omit<Dropped, 'fight'>): Settled | Refused<'no-fight'> {
   const f: Fight | null = save.fight ?? null;
   if (!f || f.id !== plan.fightId || f.phase !== 'ended') return refuse('no-fight');
   const paid = pays(plan, choice);
@@ -123,14 +124,51 @@ export function settleEncounter(save: Save, plan: EncounterPlan, choice: 'award'
   const locals = paid ? plan.payees.flatMap(p => (p.kind === 'local' ? [{ hid: p.hid, rewards: { ...newRewards(), xp: plan.each } }] : [])) : [];
   const out = payAll(ended, locals, paid ? posts : { room: null, events: [] }, day);
   const ctx: Ctx = { rules: day.R };
-  // what the fight dropped is kept on the save until the GM gives it or sets it aside, so a reload keeps the offer
-  const cleared = { ...out.save, fight: reduce(out.save.fight, { type: 'clear' }, ctx).fight, dropped: drop.gold || drop.items.length ? drop : null };
+  // what the fight dropped waits on the save after the drops before it until the GM gives it or sets it aside
+  const loot = drop.gold || drop.items.length ? lootStep(out.save.loot, { type: 'dropped', drop: { fight: plan.fightId, ...drop } }) ?? out.save.loot : out.save.loot;
+  const cleared = { ...out.save, fight: reduce(out.save.fight, { type: 'clear' }, ctx).fight, loot };
   delete cleared.fightRefs;
   return { save: cleared, granted: out.granted };
 }
 
-/** The last fight's drop dealt with: given in the Award form's send, or set aside by the GM. A save with none is the same. */
-export const dropDealt = (save: Save): Save => (save.dropped === null ? save : { ...save, dropped: null });
+// ── a fight's loot waiting for the GM ──
+// Before, `Save.dropped` held one drop: the next fight's settle wrote its own over it (or null), so loot put off with
+// Later was lost (SMX-gates-1.3). Now the loot is a list, added to by each settle and taken from one drop at a time.
+export const LOOT_STATES = ['none', 'waiting'] as const;
+export const LOOT_EVENTS = ['dropped', 'dealt'] as const;
+/** A fight's settle dropped `drop` (one that holds something); the GM dealt with the drop of `fight` (gave it in the Award form's send, or set it aside). */
+export type LootEvent = { readonly type: 'dropped'; readonly drop: Dropped } | { readonly type: 'dealt'; readonly fight: FightId };
+type LootFn<E extends LootEvent['type']> = (l: FightLoot, e: Extract<LootEvent, { type: E }>) => FightLoot | null;
+const dropsOf = (l: FightLoot): readonly Dropped[] => (l.at === 'waiting' ? l.drops : []);
+/** The loot with `drops`, oldest first: waiting, or none when the list is empty. */
+const lootWith = (drops: readonly Dropped[]): FightLoot => { const [first, ...rest] = drops; return first ? { at: 'waiting', drops: [first, ...rest] } : { at: 'none' }; };
+/** Every state against every event; null: refused, nothing changes. A fight drops once, and a drop is dealt with once. */
+const LOOT_TABLE: { readonly [S in FightLoot['at']]: { readonly [E in LootEvent['type']]: LootFn<E> | null } } = {
+  none: { dropped: (_l, e) => lootWith([e.drop]), dealt: null },
+  waiting: {
+    dropped: (l, e) => (dropsOf(l).some(d => d.fight === e.drop.fight) ? null : lootWith([...dropsOf(l), e.drop])),
+    dealt: (l, e) => (dropsOf(l).some(d => d.fight === e.fight) ? lootWith(dropsOf(l).filter(d => d.fight !== e.fight)) : null),
+  },
+};
+/** `l` after `e`, or null where the table refuses it. */
+export function lootStep(l: FightLoot, e: LootEvent): FightLoot | null {
+  const step = LOOT_TABLE[l.at][e.type] as LootFn<LootEvent['type']> | null;
+  return step ? step(l, e) : null;
+}
+/** The drop of fight `fight` dealt with: given in the Award form's send, or set aside by the GM. Refused (`no-drop`) when it is not waiting. */
+export function dropDealt(save: Save, fight: FightId): Save | Refused<'no-drop'> {
+  const loot = lootStep(save.loot, { type: 'dealt', fight });
+  return loot ? { ...save, loot } : refuse('no-drop');
+}
+/** What a refused deal says: the drop was given or set aside already (another tab, a stale window). */
+export const LOOT_WORDS: { readonly 'no-drop': string } = { 'no-drop': 'That loot was given or set aside already.' };
+/** The drop of fight `fight` while it waits; null once it was dealt with. */
+export const dropWaiting = (l: FightLoot, fight: FightId): Dropped | null => (l.at === 'waiting' ? l.drops.find(d => d.fight === fight) ?? null : null);
+/** The drop the Loot dropped window offers: the oldest waiting. Null when none waits. */
+export const lootOffered = (l: FightLoot): Dropped | null => (l.at === 'waiting' ? l.drops[0] : null);
+/** A drop in one line: "50 gold, Frost Shard ×2"; '' for nothing. `fmt` writes a number as the screen does. */
+export const dropLine = (d: Pick<Dropped, 'gold' | 'items'>, fmt: (n: number) => string): string =>
+  [d.gold ? `${fmt(d.gold)} gold` : '', ...d.items.map(i => `${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`)].filter(Boolean).join(', ');
 
 // ── a gate's Clear ──
 /** What one payee of a Clear gets: its share of the XP and the gold, and the gate's items to the one taker. */

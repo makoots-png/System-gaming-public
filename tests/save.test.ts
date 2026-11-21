@@ -23,7 +23,7 @@ import { tick } from '../src/core/combat/timeline.ts';
 import { fightId, reduce } from '../src/core/combat/fight.ts';
 import type { Command, Ctx, Fight } from '../src/core/combat/fight.ts';
 import { MAX_STATUSES } from '../src/core/combat/fight-types.ts';
-import { ITEM_BOUNDS } from '../src/core/registry/items.ts';
+import { ITEM_BOUNDS, LOOT_ITEMS, itemOf } from '../src/core/registry/items.ts';
 import { seedMonsters } from '../src/core/registry/monsters.ts';
 import { formulaOf, abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { parseFormula, printFormula } from '../src/core/formula.ts';
@@ -908,6 +908,37 @@ describe('what a repair fixes', () => {
     const broken = parseRaw({ schema: SCHEMA, hunters: [{ id: 'h1', name: 'Kai' }], fight: { ...fight, rows: [...fight.rows, { id: 'c9', kind: 'dragon' }] } });
     expect(broken.fight).toBeNull();
     expect(onlyHunter(broken).name).toBe('Kai');
+  });
+});
+
+describe('the loot waiting for the GM (SMX-gates-1)', () => {
+  const shard = itemOf(RULES, LOOT_ITEMS[0]!);
+  const loot = (drops: unknown, at: unknown = 'waiting'): Save['loot'] => parseRaw({ schema: SCHEMA, hunters: [], loot: { at, drops } }).loot;
+
+  test('loot waiting reads back whole, in the order the fights dropped it', () => {
+    const drops = [{ fight: 'f-1', gold: 900, items: [] }, { fight: 'f-2', gold: 0, items: [shard] }];
+    expect(loot(drops)).toEqual({ at: 'waiting', drops: drops as never });
+  });
+
+  test('what is not waiting loot reads as none: no loot, none, an empty list, a state it does not know, the old single drop', () => {
+    expect(parseRaw({ schema: SCHEMA, hunters: [] }).loot).toEqual({ at: 'none' });
+    expect(loot([], 'waiting')).toEqual({ at: 'none' });
+    expect(loot([{ fight: 'f-1', gold: 5, items: [] }], 'none')).toEqual({ at: 'none' });
+    expect(loot([{ fight: 'f-1', gold: 5, items: [] }], 'later')).toEqual({ at: 'none' });
+    const old = parseRaw({ schema: SCHEMA, hunters: [], dropped: { gold: 75, items: [] } });
+    expect([old.loot, 'dropped' in old]).toEqual([{ at: 'none' }, false]);
+  });
+
+  test('a drop that does not read is left out and the rest kept: no fight, gold not a whole number from 0, items not a list, nothing in it, a second drop of one fight', () => {
+    const good = { fight: 'f-9', gold: 40, items: [] };
+    const bad = [{ gold: 5, items: [] }, { fight: '', gold: 5, items: [] }, { fight: 'f-2', gold: 2.5, items: [] }, { fight: 'f-3', gold: -1, items: [] },
+      { fight: 'f-4', gold: '5', items: [] }, { fight: 'f-5', gold: 5, items: 'Orb' }, { fight: 'f-6', gold: 0, items: [] }, 'f-7', { ...good, gold: 41 }];
+    expect(loot([good, ...bad])).toEqual({ at: 'waiting', drops: [good as never] });
+    expect(loot(bad.slice(0, -1))).toEqual({ at: 'none' });
+  });
+
+  test('an item of a drop is read by parseItem: one it refuses is left out of the drop', () => {
+    expect(loot([{ fight: 'f-1', gold: 5, items: [shard, { qty: 1 }] }])).toEqual({ at: 'waiting', drops: [{ fight: 'f-1', gold: 5, items: [shard] }] as never });
   });
 });
 

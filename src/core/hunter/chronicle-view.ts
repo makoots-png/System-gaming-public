@@ -174,11 +174,15 @@ export const featNewsLine = (hunter: string, feat: string): string => `${hunter}
 const seenOf = (v: unknown): FeatsSeen => (v && typeof v === 'object' && !Array.isArray(v)
   ? Object.fromEntries(Object.entries(v).filter(([, l]) => Array.isArray(l)).map(([k, l]) => [k, (l as unknown[]).filter((x): x is string => typeof x === 'string')]))
   : {});
+/** The most sheets the memory holds, a bound for junk: a table's players over many rooms. */
+export const SEEN_SHEETS_MAX = 100;
 /**
  * The feats the players' sheets show earned that this phone has not seen, as news, and what it has seen after them.
  * A sheet the memory does not hold is seen for the first time: its earned feats are marked seen and none is told, so a
  * room with feats already earned is not told every one at once, and a memory that does not read is a first sight of
- * every sheet. A sheet no longer in the room is forgotten. `seen` is the memory as stored, read here.
+ * every sheet. A sheet missing from this poll keeps what was seen of it, so a player who drops out for a poll and earns a
+ * feat is told when its sheet is back (SMX-gates-6.2); the memory holds the sheets in the room first, then the others
+ * as they were, to `SEEN_SHEETS_MAX`. `seen` is the memory as stored, read here.
  */
 export function featsSeen(seen: unknown, sheets: readonly SheetFeats[]): { readonly told: readonly FeatNews[]; readonly seen: FeatsSeen } {
   const was = seenOf(seen), told: FeatNews[] = [], next: Record<string, readonly string[]> = {};
@@ -188,5 +192,6 @@ export function featsSeen(seen: unknown, sheets: readonly SheetFeats[]): { reado
     if (before) for (const [k, name] of earned) if (!before.includes(k)) told.push({ key: s.key, feat: k, line: featNewsLine(s.name, name) });
     next[s.key] = earned.map(([k]) => k);
   }
-  return { told, seen: next };
+  for (const [k, l] of Object.entries(was)) if (!Object.hasOwn(next, k)) next[k] = l;
+  return { told, seen: Object.fromEntries(Object.entries(next).slice(0, SEEN_SHEETS_MAX)) };
 }

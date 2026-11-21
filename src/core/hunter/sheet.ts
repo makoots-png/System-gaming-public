@@ -17,7 +17,7 @@ import { checkPenalty } from './penalty.ts';
 import { weightOf } from '../registry/items.ts';
 import type { Penalty } from './penalty.ts';
 import { allocated, available } from './progress.ts';
-import { fatiguePast, fitMaxima } from './vitals.ts';
+import { fatiguePast, vitalStep } from './vitals.ts';
 import type { Vitals } from './vitals.ts';
 import type { Progress } from './progress.ts';
 
@@ -28,7 +28,7 @@ export type SheetPath = {
 };
 
 /** The rules this file reads. */
-export type SheetRules = DeriveRules & Pick<Rules, 'rankBonus' | 'fatigue' | 'penaltyCheck'> & {
+export type SheetRules = DeriveRules & Pick<Rules, 'rankBonus' | 'fatigue' | 'rest' | 'penaltyCheck'> & {
   readonly build: { readonly enabled: boolean };
   readonly paths: Readonly<Record<string, SheetPath>>;
 };
@@ -183,13 +183,18 @@ export function checksOf(h: SheetHunter, at: { stats: Stats; sheet: Sheet }, R: 
 
 /**
  * The hunter after a change to what its sheet is built from (a stat, a level, worn gear, a title, a perk, a passive):
- * HP, mana and fatigue brought down to the maxima its sheet now gives (vitals.ts `fitMaxima`).
+ * HP, mana and fatigue brought down to the maxima its sheet now gives (vitals.ts `vitalStep`'s `maxChanged`).
  */
-export const fitted = <H extends SheetHunter & Vitals>(h: H, R: SheetRules): H => ({ ...h, ...fitMaxima(h, hunterSheet(h, R).sheet) });
+export const fitted = <H extends SheetHunter & Vitals>(h: H, R: SheetRules): H => ({ ...h, ...vitalStep(h, { type: 'maxChanged' }, hunterSheet(h, R).sheet, R) });
 
-/** The GM's edit of max HP or max mana to `n`: its adjustment (`hpAdj`, `manaAdj`) moves by the difference, then `fitted`. */
+/** The least a maximum can be: the sheet never gives less (derive.ts), so a lower target is that floor. */
+const MAX_FLOOR = { hpMax: 1, manaMax: 0 } as const;
+/**
+ * The GM's edit of max HP or max mana to `n` (at least its floor, `MAX_FLOOR`): its adjustment (`hpAdj`, `manaAdj`)
+ * moves by the difference, then `fitted`. The same edit twice moves nothing the second time.
+ */
 export function setMaximum<H extends SheetHunter & Vitals>(h: H, key: 'hpMax' | 'manaMax', n: number, R: SheetRules): H {
-  const adj = key === 'hpMax' ? 'hpAdj' : 'manaAdj', by = (Math.trunc(n) || 0) - hunterSheet(h, R).sheet[key];
+  const adj = key === 'hpMax' ? 'hpAdj' : 'manaAdj', by = Math.max(MAX_FLOOR[key], Math.trunc(n) || 0) - hunterSheet(h, R).sheet[key];
   return fitted({ ...h, [adj]: h[adj] + by }, R);
 }
 /** The GM's edit of an adjustment of max HP or max mana itself, then `fitted`. */

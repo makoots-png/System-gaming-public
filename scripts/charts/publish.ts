@@ -18,8 +18,9 @@ function step(e: PublishEvent, from: Publish): string {
     case 'changed': return from.at === 'sending' ? 'a change while the put is out' : 'the save, a poll or the link changes';
     case 'due': return 'the timer fires: the doc is built and put if the room holds another';
     case 'answered': return from.at === 'sendingStale' ? 'the put is answered: build it again' : {
-      stored: 'the room takes it', tooBig: 'the room refuses it as too big', failed: 'no answer, or another refusal', unsent: 'nothing to put: the room holds it already',
+      stored: 'the room takes it', tooBig: 'the room refuses it as too big', failed: 'no answer, or another refusal', unsent: 'nothing to put: the room holds it already, or there is none',
     }[e.put];
+    case 'left': return 'the GM leaves the room or opens another: the timer and the put are dropped';
   }
 }
 
@@ -31,7 +32,7 @@ export const publish = machine<Publish, PublishEvent>({
   kindsOf: s => [s.at],
   views: [{
     title: 'One room doc on the GM\'s phone: the fight, the world, the rules, the codex, the solo gates, the feats',
-    note: 'One machine per doc. The doc itself is not in the machine: when a put is due the GM\'s phone builds it and puts it only when the room holds another, so a failed put is tried again at the next change or poll. A doc the room refused as too big is marked with the stretch of the link it was refused in, and the pill says so; the chart leaves the mark out.',
+    note: 'One machine per doc. The doc itself is not in the machine: when a put is due the GM\'s phone builds it and puts it only when the room holds another, so a failed put is tried again at the next change or poll. Each timer and put belongs to the stretch of the link it was set going in: only that stretch\'s room is put to, and an answer or a timer of a stretch the link has left moves nothing. A doc the room refused as too big is marked, and the pill says so, until the room takes one, there is nothing to put, or the GM leaves the room; the chart leaves the mark out.',
     hides: '',
     state: s => LABEL[s.at],
     step,
@@ -39,7 +40,7 @@ export const publish = machine<Publish, PublishEvent>({
   where: [
     ['The union', '`Publish`, `PublishEvent`, `PublishEffect`, `PUBLISH_STATES`, `PUBLISH_EVENTS` and `PUTS` in `src/core/sync/publish.ts`'],
     ['What changes it', '`publishStep` and its `TABLE`'],
-    ['Who calls it', '`publishDo` in `src/edge/sync.ts`: `republish` raises `changed` for each doc, the timer `due`, `publishNow` `answered`'],
+    ['Who calls it', '`publishDo` in `src/edge/sync.ts`: `republish` raises `changed` for each doc, the timer `due`, `publishNow` `answered`, `stretchLeft` `left` at the link\'s `abort`'],
     ['The test to copy', '`tests/publish.test.ts`; the walk\'s events are in `tests/models/publish-events.ts`'],
     ['The recipe', 'docs/guide/machines.md and docs/guide/room-sync.md, "A state or event of the ... machine"'],
   ],

@@ -221,11 +221,14 @@ export function register(app) {
   }
 
   // ── End, held under Undo ──
-  /** End of run `runId` held `END_HOLD_MS` under Undo, then written with the count of opens of the tap: a story opened meanwhile is not ended. */
+  /**
+   * End of run `runId` held `END_HOLD_MS` under Undo, then written with the count of opens of the tap: a story opened
+   * meanwhile is not ended. A second End story of the run while one is held does nothing (src/core/held.ts).
+   */
   function endStory(runId) {
     const run = S().storyRuns.find(r => r.id === runId); if (!run) return;
     const seen = run.opens;
-    ui.toast(W.tag, W.endedToast(run.name), { hold: { ms: END_HOLD_MS, undo: W.undo, act: () => {
+    ui.toast(W.tag, W.endedToast(run.name), { hold: { what: { kind: 'end', run: runId }, ms: END_HOLD_MS, undo: W.undo, act: () => {
       const out = move(runId, (at, session) => ({ type: 'end', seen, at, session }));
       if (isRefused(out)) { const now = S().storyRuns.find(r => r.id === runId); ui.toast(W.tag, words(out.why, now ? now.state.chapter + 1 : 1), { kind: 'warning' }); }
     } } });

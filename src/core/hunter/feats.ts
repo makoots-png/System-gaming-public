@@ -10,10 +10,11 @@
 //   hidden --counted [n >= reach and its state tests hold]--> earned
 //   hidden --counted [shown at a count, n >= that count]----> shown
 //   hidden --counted [otherwise]----------------------------> hidden (the count kept)
-//   hidden --broke (a row's fact failed its tests)----------> hidden (n 0)
-//   hidden --unlocked (the feat it waits on was earned)-----> shown
+//   hidden --broke (a row's fact failed its tests)----------> hidden (n 0, no values)
+//   hidden --unlocked (the feat it waits on was earned)-----> `UNLOCKED_TO` by its show rule: shown today
 //   shown  --counted [n >= reach and its state tests hold]--> earned
 //   shown  --counted [otherwise], broke, unlocked-----------> shown
+//   hidden, shown --again (a fact that left the count as it was)--> nothing today (`AGAIN`, SMX-gates-6.1)
 //   earned --anything---------------------------------------> earned (nothing: null in the table)
 import { RANKS, rankIdx } from '../rules.ts';
 import type { Rules } from '../rules.ts';
@@ -61,30 +62,47 @@ export type FeatEvent =
   /** A fact of its kind failed its tests, for a count in a row. */
   | { readonly type: 'broke'; readonly count: Counted }
   /** The feat it waits on to be shown was earned. */
-  | { readonly type: 'unlocked' };
+  | { readonly type: 'unlocked' }
+  /** A fact of its kind left its count as it was (counts.ts `CountMove` `same`): the count, and whether its state tests hold now. */
+  | { readonly type: 'again'; readonly count: Counted; readonly also: boolean };
 export type FeatFx = 'earned' | 'shown' | null;
 /** The write's moment: its time and the day it fell on (`FactStamp`'s two fields). */
 export type FeatNow = { readonly at: string; readonly day: DayKey };
 type Ctx = { readonly def: FeatDef; readonly now: FeatNow };
 type Cell<E extends FeatEvent['type']> = ((s: FeatState & { at: 'hidden' | 'shown' }, e: Extract<FeatEvent, { type: E }>, c: Ctx) => { state: FeatState; fx: FeatFx }) | null;
-const earnedOr = (s: { at: 'hidden' | 'shown' }, e: Extract<FeatEvent, { type: 'counted' }>, c: Ctx): { state: FeatState; fx: FeatFx } => {
+const earnedOr = (s: { at: 'hidden' | 'shown' }, e: Extract<FeatEvent, { type: 'counted' | 'again' }>, c: Ctx): { state: FeatState; fx: FeatFx } => {
   if (e.count.n >= c.def.rule.reach && e.also) return { state: { at: 'earned', on: c.now.at, day: c.now.day, name: c.def.name }, fx: 'earned' };
   const show = c.def.show, now = s.at === 'hidden' && show.at === 'count' && e.count.n >= show.n;
   return { state: { at: now ? 'shown' : s.at, ...e.count }, fx: now ? 'shown' : null };
 };
+/**
+ * Where `unlocked` takes a hidden feat, by its show rule. The notice step sends it only to a feat shown after another
+ * (noticed.ts), but each row is named: a feat hidden until earned is shown too, as the app does today. Whether it stays
+ * hidden waits on the owner's "never show" ruling (SMX-gates-6.2), and that ruling is the `never` row.
+ */
+export const UNLOCKED_TO: { readonly [A in Show['at']]: 'hidden' | 'shown' } = { start: 'shown', count: 'shown', feat: 'shown', never: 'shown' };
+const unlocked: Cell<'unlocked'> = (s, _e, c) => (UNLOCKED_TO[c.def.show.at] === 'shown' ? { state: { ...s, at: 'shown' }, fx: 'shown' } : { state: s, fx: null });
+/**
+ * A fact that left a hidden or shown feat's count as it was moves nothing today, even when the count is full and the
+ * feat's state tests now hold (the row full × its tests holding). Whether that fact earns the feat waits on the owner's
+ * ruling (SMX-gates-6.1): the ruling is this cell, `earnedOr` in place of null.
+ */
+const AGAIN: Cell<'again'> = null;
 /** Every cell of a feat's machine: a state by an event. */
 export const TABLE: { readonly [S in (typeof FEAT_STATES)[number]]: { readonly [E in FeatEvent['type']]: Cell<E> } } = {
   hidden: {
     counted: earnedOr,
-    broke: (s, e) => ({ state: { at: s.at, ...e.count, n: 0 }, fx: null }),
-    unlocked: s => ({ state: { ...s, at: 'shown' }, fx: 'shown' }),
+    broke: (s, e) => ({ state: { at: s.at, ...e.count }, fx: null }),
+    unlocked,
+    again: AGAIN,
   },
   shown: {
     counted: earnedOr,
-    broke: (s, e) => ({ state: { at: s.at, ...e.count, n: 0 }, fx: null }),
+    broke: (s, e) => ({ state: { at: s.at, ...e.count }, fx: null }),
     unlocked: s => ({ state: s, fx: null }),
+    again: AGAIN,
   },
-  earned: { counted: null, broke: null, unlocked: null },
+  earned: { counted: null, broke: null, unlocked: null, again: null },
 };
 /** A feat's place on a hunter that has none yet: shown from the start, or hidden. */
 export const startOf = (def: FeatDef): FeatState => ({ at: def.show.at === 'start' ? 'shown' : 'hidden', ...NO_COUNT });

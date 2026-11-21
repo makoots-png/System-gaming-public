@@ -15,7 +15,7 @@ import { setGold } from '../core/hunter/inventory.ts';
 import { addHunter, removeHunter } from '../core/party.ts';
 import { logLine, logged } from '../core/session-log.ts';
 import { removeBundle, saveBundle } from '../core/rewards.ts';
-import { FELL_WORDS, SAVES_TO_END, WAYS_BACK, can, changeFatigue, changeMana, fatigueNews, hpOf, lifeNews, manaOf, setFatigue, setMana } from '../core/hunter/vitals.ts';
+import { FELL_WORDS, SAVES_TO_END, WAYS_BACK, can, fatigueNews, hpOf, lifeNews, manaOf } from '../core/hunter/vitals.ts';
 import { lifeWord } from '../core/combat/row-life.ts';
 import { chipDef, chipsOf, isStateChip } from '../core/hunter/chips.ts';
 import { PUT_WORDS } from '../core/hunter/conditions.ts';
@@ -161,7 +161,8 @@ export function register(app) {
     if (at && (g.fight.statuses.length || g.fight.refill)) {
       if (at.at === 'row') {
         lines.push(...heldLines(g.fight.statuses, rules()));
-        if (g.fight.refill && levelup) levelup = { ...levelup, refill: true };
+        // the row's refill, its life now on the sheet: "HP and mana fully restored" only when HP was (a dead row stays dead)
+        if (g.fight.refill && levelup && store.hunter(hid)?.life.at !== 'dead') levelup = { ...levelup, refill: true };
       } else gmHolds();
     }
     if (levelup) app.emit('levelup', levelup);
@@ -468,8 +469,7 @@ export function register(app) {
           const delta = key === 'hp' ? { hp: val === 'full' ? m.hpMax : n } : key === 'mana' ? { mana: val === 'full' ? m.manaMax : n } : { fatigue: val === 'full' ? m.fatigueMax : val === 'rest' ? -m.fatigueMax : n };
           const w = lifeWrite(h.id, () => handEdit(h.id, delta, x => {
             if (key === 'hp') return lifeEvent(x, val === 'full' ? { type: 'setHp', hp: m.hpMax } : n < 0 ? { type: 'damage', amount: -n } : { type: 'heal', amount: n });
-            if (key === 'mana') return { ...x, ...(val === 'full' ? setMana(x, m.manaMax, m) : changeMana(x, n, m)) };
-            return { ...x, ...(val === 'full' ? setFatigue(x, m.fatigueMax, m, R) : val === 'rest' ? setFatigue(x, 0, m, R) : changeFatigue(x, n, m, R)) };
+            return key === 'mana' ? sheetEdit(x, { type: 'mana', delta: delta.mana }, R) : sheetEdit(x, { type: 'fatigue', delta: delta.fatigue }, R);
           }, key));
           if (!ui.wrote('System', w)) return;
           fellToast(w);

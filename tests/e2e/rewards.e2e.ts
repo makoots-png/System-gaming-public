@@ -248,3 +248,50 @@ test('the GM awards the title Steady Hand worn in fights as Hasted: once it is t
     expect(others.every((n: number) => n === 0)).toBe(true);
   });
 });
+
+test('the GM folds an Award form holding a fight\'s 75 gold and later sends Brakk +25 XP: Brakk gets the XP and no gold, and the 75 gold is offered again', async ({ device }) => {
+  const gm = (await device('gm')).page;
+  await onboardGM(gm);
+  await gm.evaluate(() => hunterApp.store.update((d: any) => { d.loot = { at: 'waiting', drops: [{ fight: 'f-hoard', gold: 75, items: [] }] }; }, 'test-setup'));
+  await gm.reload();
+  const tie = gm.locator('#gm-award-tie'), toggle = gm.locator('[data-tog="award"]');
+  const brakk = () => gm.evaluate(() => { const h = hunterApp.store.get().hunters.find((x: any) => x.name === 'Brakk Ironhide'); return { gold: h.gold as number, level: h.level as number, xp: h.xp as number }; });
+  const goldWaiting = () => gm.evaluate(() => { const l = hunterApp.store.get().loot; return l.at === 'waiting' ? l.drops.map((d: any) => d.gold) : []; });
+
+  await test.step('Award loot opens the form with the 75 gold, and the line naming the loot fits a 390 px phone', async () => {
+    await answerWindow(gm, 'Loot dropped', 'Award loot');
+    await expect(gm.locator('#gm-gold')).toHaveValue('75');
+    await expect(tie).toHaveText('Fight loot: 75 gold. Send award gives it; fold Award to keep it for later.');
+    await tie.scrollIntoViewIfNeeded();
+    const box = await tie.evaluate(el => ({ scroll: el.scrollWidth, client: el.clientWidth, right: el.getBoundingClientRect().right, page: document.documentElement.clientWidth }));
+    expect(box.scroll).toBeLessThanOrEqual(box.client);
+    expect(box.right).toBeLessThanOrEqual(box.page);
+    await gm.screenshot({ path: '/tmp/pw-sm-u5-award-tie-390.png' });
+  });
+
+  await test.step('folding Award empties the form and unties it; the 75 gold still waits', async () => {
+    await toggle.tap();
+    await toggle.tap();
+    await expect(tie).toBeHidden();
+    await expect(gm.locator('#gm-gold')).not.toHaveValue('75');
+    expect(await goldWaiting()).toEqual([75]);
+  });
+
+  await test.step('+25 XP sent to Brakk gives him 25 XP and no gold, and the 75 gold still waits', async () => {
+    const before = await brakk();
+    await gm.fill('#gm-xp', '25');
+    await gm.locator('#gm-targets label', { hasText: 'Brakk Ironhide' }).locator('input').check();
+    await gm.locator('#gm-award-go').tap();
+    await expect(gm.locator('#gm-award-msg')).toContainText('Sent to Brakk Ironhide.');
+    await dismissAll(gm, 4);
+    const after = await brakk();
+    expect(after.gold).toBe(before.gold);
+    expect(after.level === before.level ? after.xp - before.xp : 'levelled').toBe(25);
+    expect(await goldWaiting()).toEqual([75]);
+  });
+
+  await test.step('after a reload the Loot dropped window offers the 75 gold again', async () => {
+    await gm.reload();
+    await expect(gm.locator('.sys-overlay.show', { hasText: 'Loot dropped' })).toContainText('75 gold');
+  });
+});

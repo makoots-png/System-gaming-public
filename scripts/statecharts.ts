@@ -22,7 +22,7 @@ import { store } from './charts/store.ts';
 import { fight } from './charts/fight.ts';
 import { gate } from './charts/gate.ts';
 import { jobChain } from './charts/job-chain.ts';
-import { life } from './charts/life.ts';
+import { life, collapse } from './charts/life.ts';
 import { foeLife } from './charts/foe-life.ts';
 import { link } from './charts/link.ts';
 import { penalty } from './charts/penalty.ts';
@@ -38,7 +38,7 @@ import { delayed } from './charts/delayed.ts';
 import { zone } from './charts/zone.ts';
 import { summon } from './charts/summon.ts';
 import { uses } from './charts/uses.ts';
-import { feat } from './charts/feat.ts';
+import { feat, inbox } from './charts/feat.ts';
 import { story } from './charts/story.ts';
 import { edge, extras, reaction, shove, stealth, ward } from './charts/wave2.ts';
 
@@ -77,7 +77,7 @@ export type Machine<S, E> = {
 /** Lets the list below hold machines of different state types. A function declaration, so the chart files can call it while this file is still loading them. */
 export function machine<S, E>(m: Machine<S, E>): Machine<unknown, unknown> { return m as unknown as Machine<unknown, unknown>; }
 
-export const MACHINES: readonly Machine<unknown, unknown>[] = [fight, channel, stacks, trips, delayed, zone, summon, uses, reaction, edge, shove, stealth, ward, extras, gate, link, life, foeLife, penalty, jobChain, coin, onboarding, gestureChart, choiceChart, shadow, extraction, quest, db, upgrade, outbox, publish, attempt, store, odds, soloClock, soloWait, runPhaseChart, feat, offerRoom, offerGiver, offerTaker, offerWatch, story, detailOpen, mapMountChart, windowsChart];
+export const MACHINES: readonly Machine<unknown, unknown>[] = [inbox, fight, channel, stacks, trips, delayed, zone, summon, uses, reaction, edge, shove, stealth, ward, extras, gate, link, life, collapse, foeLife, penalty, jobChain, coin, onboarding, gestureChart, choiceChart, shadow, extraction, quest, db, upgrade, outbox, publish, attempt, store, odds, soloClock, soloWait, runPhaseChart, feat, offerRoom, offerGiver, offerTaker, offerWatch, story, detailOpen, mapMountChart, windowsChart];
 
 // ── walking ──
 /** Breadth first from `starts`: every state `moves` reaches, one per key. `maxDepth` bounds a machine with no end of states. */

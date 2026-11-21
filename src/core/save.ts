@@ -9,7 +9,8 @@ import type { FeatDef } from './hunter/feats.ts';
 import { STATUS_KEY_RE } from './combat/effect-ops.ts';
 import type { StatusDef } from './combat/effect-ops.ts';
 import { parseFight, parseStatusDef } from './combat/fight-parse.ts';
-import type { Fight } from './combat/fight-types.ts';
+import { fightId } from './combat/fight-types.ts';
+import type { Fight, FightId } from './combat/fight-types.ts';
 import { monsterId, newGate, parseGate, parseGateId } from './gates/gate.ts';
 import type { Gate, GateMonster, GateStatus, GateType } from './gates/gate.ts';
 import { parseApplied, parseHeld } from './applied.ts';
@@ -190,10 +191,11 @@ export type Save = {
   shop: ItemTemplate[] | null;
   fight: Fight | null; log: LogEntry[]; rolls: RollEntry[];
   /**
-   * What the last fight's defeated monsters dropped and the GM has not given or set aside yet (pay.ts `settleEncounter`
-   * keeps it; the Award form's send or the GM's Set aside clears it, `dropDealt`), so a reload keeps the offer. Null: none.
+   * What fights' defeated monsters dropped and the GM has not given or set aside yet, oldest first (pay.ts: `settleEncounter`
+   * adds a fight's drop, `dropDealt` takes one away as the Award form's send gives it or the GM sets it aside), so a
+   * reload keeps the offer and a later fight never writes over it.
    */
-  dropped: Dropped | null;
+  loot: FightLoot;
   /** What the fight came from, which the fight itself does not hold. Written only by src/views/combat.js. */
   fightRefs?: FightRefs;
   /** The bestiary's record of defeated monsters by `name|rank`, and the combatant ids already counted (the newest `CODEX_SEEN_MAX`). */
@@ -215,8 +217,10 @@ export const CODEX_SEEN_MAX = 400;
 // ── defaults. Each factory is typed by its entity, so a field added to a type without a default does not compile. ──
 /** 4: the new combat rules (eight stats, mana, gear weight). A save of an older schema is not read. */
 export const SCHEMA = 4;
-/** A fight's drop: its gold and its items, as a monster's loot holds them (registry/monsters.ts `Loot`). */
-export type Dropped = { gold: number; items: ItemTemplate[] };
+/** A fight's drop: the fight it came from, its gold and its items, as a monster's loot holds them (registry/monsters.ts `Loot`). */
+export type Dropped = { readonly fight: FightId; readonly gold: number; readonly items: ItemTemplate[] };
+/** The loot waiting for the GM (pay.ts `lootStep`): none, or the drops of one or more fights, oldest first, one per fight. */
+export type FightLoot = { readonly at: 'none' } | { readonly at: 'waiting'; readonly drops: readonly [Dropped, ...Dropped[]] };
 /** Bounds for junk or hostile saves only: src/core/repair.ts. */
 export { LIMITS };
 
@@ -235,7 +239,7 @@ export const newRollEntry = (): RollEntry => ({
 /** An empty save, the example a stored one is filled from: no hunters. Read through the repair, every save holds one. */
 export const newSave = (deviceId: DeviceId): Save => ({
   schema: SCHEMA, savedAt: '', seq: 100, settings: newSettings(deviceId), rulesOverrides: {}, world: newWorld(), hunters: [], gates: [],
-  monsters: [], library: { items: [], statuses: {}, skills: [], rewards: [], maps: [], feats: {}, stories: [] }, shop: null, fight: null, dropped: null, log: [], rolls: [], codex: {}, codexSeen: [], coins: [], calls: [], storyRuns: [],
+  monsters: [], library: { items: [], statuses: {}, skills: [], rewards: [], maps: [], feats: {}, stories: [] }, shop: null, fight: null, loot: { at: 'none' }, log: [], rolls: [], codex: {}, codexSeen: [], coins: [], calls: [], storyRuns: [],
 });
 
 // ── parser ──
@@ -304,11 +308,25 @@ const storyRuns = (run: RepairRun, value: unknown): StoryRun[] =>
   keptRuns((Array.isArray(value) ? value : []).filter(isObj).flatMap(raw => { const t = parseStoryRun(raw); return t ? [refill<StoryRun>(run, raw, t, 'sr0', 'sr')] : []; }));
 /** Items without ids (the shop): each read by `parseItem`, one it refuses dropped. */
 const templates = (value: unknown): ItemTemplate[] => (Array.isArray(value) ? value : []).flatMap(raw => parseItem(raw) ?? []);
-/** A stored drop: its gold a whole number from 0, its items each read by `parseItem`; null when it holds nothing. */
-function droppedOf(v: unknown): Dropped | null {
-  if (!isObj(v)) return null;
-  const gold = typeof v.gold === 'number' && Number.isFinite(v.gold) ? Math.max(0, Math.floor(v.gold)) : 0, items = templates(v.items);
-  return gold || items.length ? { gold, items } : null;
+/** The longest id of a fight a drop names: what the fight's parser reads as one (fight-parse.ts `idText`). */
+const FIGHT_ID_MAX = 80;
+/**
+ * A stored drop: the id of the fight it came from, its gold a whole number from 0 and its items a list, each read by
+ * `parseItem`. Null for anything else, and for a drop that holds nothing.
+ */
+function dropOf(v: unknown): Dropped | null {
+  if (!isObj(v) || typeof v.fight !== 'string' || !v.fight || v.fight.length > FIGHT_ID_MAX || !Array.isArray(v.items)) return null;
+  const gold = v.gold, items = templates(v.items);
+  if (typeof gold !== 'number' || !Number.isInteger(gold) || gold < 0) return null;
+  return gold || items.length ? { fight: fightId(v.fight), gold, items } : null;
+}
+/** The stored loot: waiting with each drop that reads, the first of each fight kept; none when no drop reads or it is not waiting. */
+function lootOf(v: unknown): FightLoot {
+  if (!isObj(v) || v.at !== 'waiting' || !Array.isArray(v.drops)) return { at: 'none' };
+  const drops: Dropped[] = [];
+  for (const raw of v.drops) { const d = dropOf(raw); if (d && !drops.some(x => x.fight === d.fight)) drops.push(d); }
+  const [first, ...rest] = drops;
+  return first ? { at: 'waiting', drops: [first, ...rest] } : { at: 'none' };
 }
 
 /**
@@ -383,7 +401,9 @@ function repair(s: Rec, env: ParseEnv, fight: FightRepair = 'read'): Save {
   save.storyRuns = storyRuns(run, save.storyRuns);
   save.gates = gates(run, save.gates);
   save.shop = Array.isArray(save.shop) ? templates(save.shop) : null;
-  save.dropped = droppedOf(save.dropped);
+  save.loot = lootOf(save.loot);
+  // the old single drop (`dropped`, before SMX-gates-1) is not read: old saves need not keep it
+  delete (save as Rec).dropped;
   save.codex = codexOf(save.codex);
   save.codexSeen = save.codexSeen.flatMap(v => parseCombatantId(v) ?? []).slice(-CODEX_SEEN_MAX);
   save.coins = parseCoins(save.coins); save.calls = parseCoins(save.calls);

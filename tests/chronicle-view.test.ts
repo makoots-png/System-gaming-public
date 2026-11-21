@@ -8,7 +8,7 @@ import { newChronicle, pushedChronicle } from '../src/core/hunter/chronicle.ts';
 import type { Chronicle, FeatState } from '../src/core/hunter/chronicle.ts';
 import { FACT_FIELDS, FACT_KINDS, parseFact } from '../src/core/hunter/facts.ts';
 import type { Fact, FactKind, FactOf, Kept } from '../src/core/hunter/facts.ts';
-import { CHRONICLE_WORDS, FACT_LINES, FEATS_SWITCH_WORDS, FIRST, boardLine, chronicleView, factLine, factWhen, featsSeen } from '../src/core/hunter/chronicle-view.ts';
+import { CHRONICLE_WORDS, FACT_LINES, FEATS_SWITCH_WORDS, FIRST, SEEN_SHEETS_MAX, boardLine, chronicleView, factLine, factWhen, featsSeen } from '../src/core/hunter/chronicle-view.ts';
 import { featsFor } from '../src/core/hunter/feats.ts';
 import type { FeatBook } from '../src/core/hunter/feats.ts';
 import { BUILT_IN_FEATS } from '../src/core/registry/feats.ts';
@@ -221,9 +221,17 @@ describe('the GM\'s news of a feat a player earned', () => {
     expect(next.told).toEqual([{ key: 'dev-a:h1', feat: 'threads-end', line: 'Mira earned the feat Thread\'s End.' }]);
     expect(featsSeen(next.seen, [mira({ uphill: won('Uphill'), 'threads-end': won('Thread\'s End') })]).told).toEqual([]);
   });
-  test('a sheet that left the room is forgotten, and seen for the first time again when it comes back', () => {
+  test('a sheet missing from one poll keeps what was seen of it, so a feat it earned meanwhile is told when it is back (SMX-gates-6.2)', () => {
     const first = featsSeen({}, [mira({ uphill: won('Uphill') })]);
-    expect(featsSeen(first.seen, []).seen).toEqual({});
-    expect(featsSeen(featsSeen(first.seen, []).seen, [mira({ uphill: won('Uphill'), x: won('X') })]).told).toEqual([]);
+    const gone = featsSeen(first.seen, []);
+    expect(gone.seen).toEqual({ 'dev-a:h1': ['uphill'] });
+    expect(featsSeen(gone.seen, [mira({ uphill: won('Uphill'), x: won('X') })]).told).toEqual([{ key: 'dev-a:h1', feat: 'x', line: 'Mira earned the feat X.' }]);
+  });
+  test('the memory holds at most SEEN_SHEETS_MAX sheets: the ones in the room first, then the newest of those away', () => {
+    const away = Object.fromEntries(Array.from({ length: SEEN_SHEETS_MAX }, (_, i) => [`dev-${String(i).padStart(3, '0')}:h1`, []]));
+    const r = featsSeen(away, [mira({ uphill: won('Uphill') })]);
+    expect(Object.keys(r.seen)).toHaveLength(SEEN_SHEETS_MAX);
+    expect(Object.keys(r.seen)[0]).toBe('dev-a:h1');
+    expect(Object.keys(r.seen).at(-1)).toBe(`dev-${String(SEEN_SHEETS_MAX - 2).padStart(3, '0')}:h1`);
   });
 });

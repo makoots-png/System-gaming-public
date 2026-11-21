@@ -17,8 +17,8 @@ import { pickables, sheetName } from '../core/party.ts';
 import { tapWords } from '../core/sync/taps.ts';
 import { featsSwitched, resetRuleNumbers, resetTable, saveRuleNumbers, writeTable } from '../core/rules.ts';
 import { CHRONICLE_WORDS, FEATS_SWITCH_WORDS, boardLine } from '../core/hunter/chronicle-view.ts';
-import { gmAward, sent } from '../core/award.ts';
-import { dropDealt } from '../core/gates/pay.ts';
+import { BLANK_DRAFT, draftStep, gmAward, sendDeals, sent } from '../core/award.ts';
+import { LOOT_WORDS, dropDealt, dropLine, dropWaiting, lootOffered } from '../core/gates/pay.ts';
 import { SPAWN_TYPES } from '../core/gates/gate.ts';
 import { stepTime } from '../core/day.ts';
 import { isRefused } from '../core/save-step.ts';
@@ -169,6 +169,7 @@ export function register(app) {
 .gm-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
 .gm-msg{min-height:20px;font-size:13px;color:var(--green);margin:4px 0}
 .gm-msg.bad{color:#ff8a96}
+.gm-tie{margin:6px 0;padding:6px 8px;border-left:3px solid var(--gold);font-size:13px;overflow-wrap:anywhere}
 .dlg-actions .gm-msg{flex:1 1 0;min-width:0;margin:0;align-self:center}
 .gm-prev{position:relative;margin:8px 0 12px;padding:18px 16px;text-align:center;border:1px solid var(--line-bright);background:var(--panel-solid);box-shadow:0 0 24px rgba(63,192,255,.35)}
 .gm-prev .n-tag{font-size:12px;letter-spacing:.3em;text-transform:uppercase;color:var(--cyan);margin-bottom:8px;overflow-wrap:anywhere}
@@ -379,17 +380,41 @@ export function register(app) {
   // ── award: the reward editor (app.api.maker.rewards) and who gets it ──
   /** @type {import('../core/api.ts').RewardEditor | null} */
   let editor = null;
-  /** A reward the Award form opens with (a fight's loot, a bundle from the Workshop), filled in when the GM view is next drawn. */
-  let pendingAward = null;
+  /**
+   * The Award form's tie to a fight's drop, and what it opens with when the GM view is next drawn: the one value of the
+   * machine in src/core/award.ts, stepped only by `draft`.
+   * @type {import('../core/award.ts').AwardDraft}
+   */
+  let awardDraft = BLANK_DRAFT;
   /** @type {import('../core/api.ts').QuestFields | null} Issue quest's fields: the one quest form (quest-fields.js) */
   let questForm = null;
-  app.api.award = { open(rewards, bundleId, drop) { pendingAward = { rewards, bundleId, drop: !!drop }; app.go('gm'); } };
-  const awardSec = () => root.querySelector('.gm-sec[data-sec="award"]');
-  function openPendingAward() {
-    const p = pendingAward; pendingAward = null;
-    editor.set(p.rewards, p.bundleId);
-    // the form holds the last fight's drop: its send deals with it in the same write (pay.ts `dropDealt`)
-    awardSec().dataset.drop = p.drop ? '1' : '';
+  /**
+   * The Award form after `e`: its draft stepped (award.ts `draftStep`), the form filled or emptied as the step says, and
+   * the line that names the loot it holds drawn again. Answers whether the table took it.
+   * @param {import('../core/award.ts').AwardDraftEvent} e
+   */
+  function draft(e) {
+    const r = draftStep(awardDraft, e); if (!r) return false;
+    awardDraft = r.draft;
+    if (r.form.do === 'fill') editor.set(r.form.rewards, r.form.bundle || undefined);
+    else if (r.form.do === 'clear') editor.set(newRewards());
+    showTie();
+    return true;
+  }
+  /** The drop the Award form holds while it waits; null for a form tied to none, or once the drop was dealt with. */
+  const tiedDrop = () => (awardDraft.at === 'fromDrop' ? dropWaiting(S().loot, awardDraft.fight) : null);
+  /** The line over the reward that says the form holds a fight's loot, and how to keep it for later. */
+  function showTie() {
+    const p = root && root.querySelector('#gm-award-tie'), d = tiedDrop(); if (!p) return;
+    p.hidden = !d; p.textContent = d ? `Fight loot: ${dropLine(d, ui.fmt)}. Send award gives it; fold Award to keep it for later.` : '';
+  }
+  // Award loot… opens the drop the Loot dropped window offered, the oldest waiting (combat.js `offerDrop`)
+  app.api.award = { open(rewards, bundleId, drop) {
+    const d = drop ? lootOffered(S().loot) : null;
+    draft({ type: 'open', rewards, bundle: bundleId || null, drop: d ? d.fight : null }); app.go('gm');
+  } };
+  function openDraft() {
+    if (!draft({ type: 'drawn' })) return;
     open.award = true; applyOpen();
     say('#gm-award-msg', 'Pick who gets it, then Send award.');
     // after the view is shown (routing scrolls a newly shown view to its top)
@@ -401,18 +426,17 @@ export function register(app) {
     if (editor.blocked()) return say('#gm-award-msg', UNFINISHED_ROWS, true);
     const rw = editor.value();
     if (isEmptyReward(rw)) return say('#gm-award-msg', 'Add something to the reward: XP, gold, points or a row.', true);
-    // the form holds the last fight's drop: its send deals with it in the same write (pay.ts `dropDealt`)
-    if (sendAward(local, remote, rw, null, '#gm-award-msg', awardSec().dataset.drop === '1')) awardSec().dataset.drop = '';
+    if (sendAward(local, remote, rw, null, '#gm-award-msg', awardDraft)) draft({ type: 'sent' });
   }
   /**
    * `rw` given to this phone's hunters `local` and posted to the players' `remote`, in one write with its log line (and,
-   * from the Award form, the last fight's drop dealt with, `fromDrop`). `bundle`: the bundle it was given from by hand
-   * (the GM's awards for roleplay), recorded in each hunter's chronicle and shown in its window's words. Says what it did
-   * under `msg`; answers whether it wrote.
+   * from the Award form, the drop its draft holds dealt with, award.ts `sendDeals`: a loot send that would miss a picked
+   * player is not made). `bundle`: the bundle it was given from by hand (the GM's awards for roleplay), recorded in each
+   * hunter's chronicle and shown in its window's words. Says what it did under `msg`; answers whether it wrote.
    * @param {string[]} local @param {import('../core/ids.ts').SheetKey[]} remote @param {import('../core/rewards.ts').Rewards} rw
-   * @param {import('../core/protocol.ts').GivenBundle | null} bundle @param {string} msg @param {boolean} [fromDrop]
+   * @param {import('../core/protocol.ts').GivenBundle | null} bundle @param {string} msg @param {import('../core/award.ts').AwardDraft} [form]
    */
-  function sendAward(local, remote, rw, bundle, msg, fromDrop = false) {
+  function sendAward(local, remote, rw, bundle, msg, form = BLANK_DRAFT) {
     const bits = bundle ? bundle.name : [...rewardLines(app.rules(), rw)].join(', ');
     // a player's hunter in this phone's fight: the row holds its statuses, so the reward's go on the row (in the award's write) and the award posted holds the rest
     const held = remote.length && rw.statuses.length ? remote.filter(k => fightRowOf(k) !== null) : [], free = remote.filter(k => !held.includes(k));
@@ -420,6 +444,9 @@ export function register(app) {
     const awards = [{ to: free, rewards: rw }, { to: held, rewards: rest }].filter(a => a.to.length && (bundle || !isEmptyReward(a.rewards)))
       .map(a => ({ to: a.to, p: postable('award', bundle ? { ...a, bundle } : a) }));
     const lost = remote.filter(k => awards.some(a => !a.p.ev && a.to.includes(k))), posted = remote.filter(k => !lost.includes(k));
+    const failed = !lost.length ? '' : awards.some(a => a.p.why === 'noRoom') ? `${andList(lost.map(remoteName))} need${lost.length === 1 ? 's' : ''} a room: open one with the room button at the top.` : `Not sent to ${andList(lost.map(remoteName))}: the room would not take this award.`;
+    const deal = sendDeals(form, lost.length);
+    if (isRefused(deal)) { say(msg, `${failed} Nothing was sent, and the loot waits.`, true); return false; }
     const here = local.map(nameOf), away = posted.map(remoteName);
     const said = here.length || away.length ? [line('award', bundle ? 'GM gave' : 'GM award', `${bits} → ${[...here, ...away].join(', ')}`, local[0] || null)] : [];
     // every hunter of this phone granted, every player's award posted, the log line, and what this phone's fight holds
@@ -428,17 +455,17 @@ export function register(app) {
     const day = { ...stepTime(S(), new Date()), R: app.rules() }, events = awards.flatMap(a => (a.p.ev ? [a.p.ev] : [])), code = room();
     const players = playerHeld(remotes(), posted.filter(k => held.includes(k)), rw.statuses);
     const out = A().hunter.grantWrite(bundle ? 'gm-give' : 'gm-award', sv => {
-      const a = gmAward(sv, locals, rw, { room: code, events, said }, day, bundle);
-      return { ...a, save: fromDrop ? dropDealt(a.save) : a.save, held: [...a.granted.map(({ hid, g }) => ({ who: { hid }, ...g.fight })), ...players] };
+      const a = gmAward(sv, locals, rw, { room: code, events, said }, day, bundle), save = deal.deals ? dropDealt(a.save, deal.deals) : a.save;
+      if (isRefused(save)) return save;
+      return { ...a, save, held: [...a.granted.map(({ hid, g }) => ({ who: { hid }, ...g.fight })), ...players] };
     });
-    if (isRefused(out)) { say(msg, 'Not saved: nothing was sent.', true); return false; }
+    if (isRefused(out)) { say(msg, out.why === 'no-drop' ? `${LOOT_WORDS['no-drop']} Nothing was sent.` : 'Not saved: nothing was sent.', true); return false; }
     if (events.length) A().sync.flush();
     // one System popup per hunter, queued by ui.system; a bundle's in its own words
     const words = bundle && bundle.window ? { title: bundle.window.title, body: bundle.window.line || bundle.name, tag: '! Reward', kind: 'quest' } : undefined;
     for (const { hid, g } of out.granted) A().hunter.granted(hid, g, words);
     const sentTo = names => (names.length ? `${bundle ? `Gave ${bundle.name} to` : 'Sent to'} ${andList(names)}.` : '');
     const waiting = away.length && !goesNow() ? `${andList(away)} get${away.length === 1 ? 's' : ''} it when the room answers.` : '';
-    const failed = !lost.length ? '' : awards.some(a => a.p.why === 'noRoom') ? `${andList(lost.map(remoteName))} need${lost.length === 1 ? 's' : ''} a room: open one with the room button at the top.` : `Not sent to ${andList(lost.map(remoteName))}: the room would not take this award.`;
     say(msg, [waiting ? sentTo(here) : sentTo([...here, ...away]), waiting, failed].filter(Boolean).join(' '), !!lost.length);
     return true;
   }
@@ -456,10 +483,13 @@ export function register(app) {
     const own = A().bundles.list().map(b => ({ key: b.id, name: b.name, rewards: b.rewards, window: b.window || null }));
     const b = await giveShelf({ name, own, recent: readRecent(recentMemory.read()), R: app.rules() });
     if (!b) return;
+    const heldIn = room();
     const give = () => {
+      // a player's award goes to the room it was picked in, or not at all (SMX-gates-5.3b)
+      if (key && room() !== heldIn) return say('#gm-board-msg', `Not given: the room changed while ${b.name} was held.`, true);
       if (sendAward(key ? [] : [id], key ? [key] : [], b.rewards, { key: b.key, name: b.name, window: b.window }, '#gm-board-msg')) recentMemory.write(recentGives(recentMemory.read(), b.key));
     };
-    ui.toast(SHELF_WORDS.toastTag, SHELF_WORDS.given(b.name, name), { hold: { ms: GIVE_HOLD_MS, act: give, undo: SHELF_WORDS.undo } });
+    ui.toast(SHELF_WORDS.toastTag, SHELF_WORDS.given(b.name, name), { hold: { what: { kind: 'give', to: id, bundle: b.key }, ms: GIVE_HOLD_MS, act: give, undo: SHELF_WORDS.undo } });
   }
   /** "Mira", "Mira and Brakk", "Mira, Brakk and Eldrin". */
   const andList = names => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`);
@@ -679,6 +709,7 @@ export function register(app) {
           <div class="lbl">Hunters <span id="gm-sel-sum-a" class="gm-sum"></span></div>
           <div class="gm-targets"><label class="gm-chk"><input type="checkbox" id="gm-all"><span><strong>All</strong></span></label></div>
           <div class="gm-targets" id="gm-targets"></div>
+          <p class="gm-tie" id="gm-award-tie" hidden></p>
           <div class="gm-rw" id="gm-rw"></div>
           <div class="dlg-actions"><div class="gm-msg" id="gm-award-msg" role="status"></div><button type="button" class="primary" id="gm-award-go">Send award</button></div>`, false, true),
         section('bcast', 'System broadcast', `
@@ -784,7 +815,12 @@ export function register(app) {
         }
         if (t.hasAttribute('data-gmdmg') || t.hasAttribute('data-gmheal')) { typedHp(t.closest('[data-hid]'), t.hasAttribute('data-gmheal'), false); return; }
         if (t.dataset.make) { make(t.dataset.make); return; }
-        if (t.dataset.tog) { open[t.dataset.tog] = !(open[t.dataset.tog] ?? false); applyOpen(); return; }
+        if (t.dataset.tog) {
+          open[t.dataset.tog] = !(open[t.dataset.tog] ?? false); applyOpen();
+          // folding Award puts the loot it holds off, as Later: the form is emptied and the loot waits
+          if (t.dataset.tog === 'award' && !open.award) draft({ type: 'fold' });
+          return;
+        }
         if (t.dataset.rmstatus !== undefined) { const key = t.closest('[data-hid]').dataset.hid, sk = t.dataset.rmstatus;
           const r = remotes().find(x => x.key === key), c = r && (r.data.conditions || []).find(x => x && x.key === sk);
           sendStatus(key, { remove: sk }, n => `Removed ${c ? condLabel(c) : sk} from ${n}`); return; }
@@ -813,6 +849,8 @@ export function register(app) {
       el.addEventListener('change', e => {
         const t = e.target;
         if (t.id === 'gm-all') { sel.clear(); if (t.checked) renderTargetsAll(); renderTargets(); return; }
+        // a bundle picked in the Award form replaces what it held: a drop it held is no longer what it sends
+        if (t.matches('#gm-rw [data-rw-bundle]') && t.value) { draft({ type: 'bundle' }); return; }
         if (t.dataset && t.dataset.sel) { t.checked ? sel.add(t.dataset.sel) : sel.delete(t.dataset.sel); renderTargets(); return; }
         if (t.name === 'gm-b-to') renderTargets();
         if (t.id === 'gm-b-preset') {
@@ -833,7 +871,10 @@ export function register(app) {
     },
     update(el) {
       root = el;
-      if (pendingAward) openPendingAward();
+      if (awardDraft.at === 'opening') openDraft();
+      // the drop the form holds was set aside or given elsewhere: the form lets it go
+      if (awardDraft.at === 'fromDrop' && !tiedDrop()) draft({ type: 'gone' });
+      showTie();
       const csig = JSON.stringify(ov()), cs = $('#gm-cheat'); if (cs.dataset.sig !== csig) { cs.dataset.sig = csig; cs.innerHTML = cheatSheet(); }
       renderBoard(); renderTargets();
       $('#gm-hsum-stories').textContent = A().stories.paint($('#gm-stories'));

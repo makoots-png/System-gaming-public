@@ -122,10 +122,22 @@ describe('the outbox', () => {
     expect(r2.box[0]!.at).toBe('sending');
   });
 
-  test('a room that no longer exists refuses what waits for it; what is on its way is answered by its own request', () => {
+  test('a room that no longer exists refuses what waits for it and what is on its way; a late answer to that send moves neither (SMX-sync-4.1)', () => {
     let box = posted(posted(posted([], A, used('a1')), A, used('a2')), B, used('b1'));
     box = step(box, box[0]!.id, { type: 'send' });
-    expect(states(roomGone(box, A))).toEqual(['sending', 'refused', 'queued']);
+    const gone = roomGone(box, A);
+    expect(gone.map(e => [e.at, e.at === 'refused' ? e.why : ''])).toEqual([['refused', 'no such room'], ['refused', 'no such room'], ['queued', '']]);
+    for (const late of [{ type: 'failed' }, { type: 'sent' }, { type: 'reload' }] as const) expect(step(gone, box[0]!.id, late)).toBe(gone);
+    expect(reloaded(gone)).toBe(gone);
+    expect([next(gone, A), waiting(gone, A)]).toEqual([null, 0]);
+  });
+
+  test('the link leaves the stretch a message was sent in: its answer is never heard, so it waits again and goes at the next good poll in its room', () => {
+    let box = posted(posted([], A, used('a1')), A, used('a2'));
+    box = step(box, box[0]!.id, { type: 'send' });
+    const left = reloaded(box);
+    expect(states(left)).toEqual(['queued', 'queued']);
+    expect(next(left, A)?.id).toBe(box[0]!.id);
   });
 
   test('a hunter bound again on this phone drops its tombstones, in every room', () => {

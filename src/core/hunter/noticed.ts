@@ -4,14 +4,15 @@
 // lifetime tally and kept when its kind is kept (facts.ts `KEPT`).
 //
 // A hunter a fight holds keeps its inbox until the fight lets it go: what a fact leads to may change what a fight holds
-// (a reward's statuses), and the fight's next totals would write over it. Its inbox, a machine of two states:
-//   empty   --a write records facts, no fight holds the hunter--> empty    (noticed in that write)
-//   empty   --a write records facts, a fight holds it-->           waiting
-//   waiting --a write records facts, still held-->                 waiting  (appended)
-//   waiting --a write in which no fight holds it-->                empty    (noticed, oldest first)
-//   (a write that records nothing leaves either state as it is while held, and empties `waiting` once free)
-// On a player's phone the GM's fight holds a hunter through the room's fight doc, which is not in the save: sync.ts runs
-// one write when that doc lets a hunter with a waiting inbox go (`released`).
+// (a reward's statuses), and the fight's next totals would write over it. A fact in the inbox is a machine of two states
+// (`INBOX`), moved at the end of each write by whether a fight holds its hunter:
+//   recorded --held--> waiting  (stamped with this write's moment: the moment it happened)
+//   recorded --free--> taken    (with this write's stamp)
+//   waiting  --held--> waiting  (as it was)
+//   waiting  --free--> taken    (with the stamp of the write that frees it, as today: SMX-rules-9.1 waits on the day ruling)
+// A taken fact is folded, kept and counted, oldest first. On a player's phone the GM's fight holds a hunter through the
+// room's fight doc, which is not in the save: sync.ts runs one write when that doc lets a hunter with a waiting inbox go
+// (`released`).
 import type { Hunter, Quest, Save } from '../save.ts';
 import type { DayKey } from '../day.ts';
 import { sheetKeyOf } from '../ids.ts';
@@ -20,13 +21,13 @@ import type { Rules } from '../rules.ts';
 import { isRefused, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
 import { CHRONICLE_MAX, tallyAfter } from './chronicle.ts';
-import type { Chronicle, FeatState } from './chronicle.ts';
+import type { Chronicle, FeatState, InboxFact } from './chronicle.ts';
 import { kept } from './facts.ts';
 import type { Fact, FactStamp, Kept } from './facts.ts';
 import { countStep, markOf, objectiveStep } from './counts.ts';
 import type { Counted } from './counts.ts';
 import { featStep, startOf, stateHolds } from './feats.ts';
-import type { FeatBook, FeatDef } from './feats.ts';
+import type { FeatBook, FeatDef, FeatEvent } from './feats.ts';
 import { finishQuest, grant } from './grant.ts';
 import { reportsProgress, systemCompletes } from './quest-rights.ts';
 import { newEvent } from '../protocol.ts';
@@ -49,18 +50,54 @@ export type Earned = { readonly hid: HunterId; readonly key: string };
 
 const waiting = (save: Save): boolean => save.hunters.some(h => h.chronicle.inbox.length > 0);
 
+/** A hunter's inbox between two writes: empty, or holding facts a fight keeps waiting (its chart: scripts/charts/feat.ts `inbox`). */
+export const INBOX_STATES = ['empty', 'waiting'] as const;
+export type InboxState = (typeof INBOX_STATES)[number];
+/** Where a fact in the inbox is: recorded in this write, or stamped and waiting for a fight to let its hunter go. */
+export type InboxAt = 'recorded' | 'waiting';
+/** A fact stamped by the write it happened in is waiting; one recorded in this write has no stamp yet. */
+const isWaiting = (f: InboxFact): f is Kept => 'at' in f;
+type InboxRow<F extends InboxFact> = {
+  /** The fact at the end of a write in which a fight holds its hunter: waiting, stamped. */
+  readonly held: (f: F, now: FactStamp) => Kept;
+  /** The stamp the fact is taken with at the end of a write in which no fight holds its hunter. */
+  readonly free: (f: F, now: FactStamp) => FactStamp;
+};
+/** Every cell of a fact's life in the inbox: its state by the end of a write, held or free, with the write's stamp `now`. */
+export const INBOX: { readonly [S in InboxAt]: InboxRow<S extends 'waiting' ? Kept : Fact> } = {
+  recorded: {
+    held: (f, now) => ({ ...f, ...now }),
+    free: (_f, now) => now,
+  },
+  waiting: {
+    held: f => f,
+    // SMX-rules-9.1 waits on the owner's day ruling: today a waiting fact is taken with the write that frees it, so a fight
+    // held over midnight counts its facts in the next day. The ruling "the day it happened" is
+    // `f => ({ at: f.at, day: f.day, session: f.session })` here.
+    free: (_f, now) => now,
+  },
+};
+/** The stamp fact `f` is taken with in a write that frees its hunter (`INBOX`, the `free` column). */
+const takenWith = (f: InboxFact, now: FactStamp): FactStamp => (isWaiting(f) ? INBOX.waiting.free(f, now) : INBOX.recorded.free(f, now));
+/** A held hunter's inbox at the end of a write: each fact recorded in it stamped (`INBOX`, the `held` column); the same list when none was. */
+function heldInbox(inbox: readonly InboxFact[], now: FactStamp): readonly InboxFact[] {
+  const out = inbox.map(f => (isWaiting(f) ? INBOX.waiting.held(f, now) : INBOX.recorded.held(f, now)));
+  return out.every((f, i) => f === inbox[i]) ? inbox : out;
+}
+
 /** The chronicle with fact `f` taken: folded into the tally and kept when its kind is kept, with `stamp`. */
-function took(c: Chronicle, f: Fact, stamp: FactStamp): Chronicle {
+function took(c: Chronicle, f: InboxFact, stamp: FactStamp): Chronicle {
   return { ...c, tally: tallyAfter(c.tally, f), facts: kept(f) ? [...c.facts, { ...f, ...stamp } as Kept].slice(-CHRONICLE_MAX) : c.facts };
 }
 
 /**
- * Hunter `hid`'s inbox taken, oldest first: each fact stamped, folded and kept, then counted by every feat (`countStep`,
- * `featStep`). A feat earned is marked, told as a `feat` fact at the end of the inbox, the feats shown after it are
- * shown, and its reward is given (`grant`, which may tell a level or a title as facts of their own). The loop takes
- * those too; it ends, since each feat is earned once and a grant's facts are at most a level and a title a feat.
+ * Hunter `hid`'s inbox taken, oldest first: each fact folded and kept with the stamp it is taken with (`INBOX`), then
+ * counted by every feat (`countStep`, `featStep`). A feat earned is marked, told as a `feat` fact at the end of the
+ * inbox, the feats shown after it are shown, and its reward is given (`grant`, which may tell a level or a title as
+ * facts of their own). The loop takes those too; it ends, since each feat is earned once and a grant's facts are at
+ * most a level and a title a feat.
  */
-function noticeHunter(save: Save, hid: HunterId, c: NoticeCtx, stamp: FactStamp): Save {
+function noticeHunter(save: Save, hid: HunterId, c: NoticeCtx, now: FactStamp): Save {
   let s = save;
   const hunter = (): Hunter => s.hunters.find(h => h.id === hid)!;
   const put = (h: Hunter): void => { s = { ...s, hunters: s.hunters.map(x => (x.id === hid ? h : x)) }; };
@@ -68,7 +105,8 @@ function noticeHunter(save: Save, hid: HunterId, c: NoticeCtx, stamp: FactStamp)
   const byKind = new Map<string, (readonly [string, FeatDef])[]>();
   for (const e of c.feats) { const l = byKind.get(e[1].rule.on); if (l) l.push(e); else byKind.set(e[1].rule.on, [e]); }
   for (let h = hunter(); h.chronicle.inbox.length; h = hunter()) {
-    const [f, ...rest] = h.chronicle.inbox as [Fact, ...Fact[]];
+    const [f, ...rest] = h.chronicle.inbox as [InboxFact, ...InboxFact[]];
+    const stamp = takenWith(f, now);
     const ch: Chronicle = took({ ...h.chronicle, inbox: rest }, f, stamp);
     const earned: (readonly [string, FeatDef])[] = [];
     let feats: Record<string, FeatState> | null = null;
@@ -76,9 +114,10 @@ function noticeHunter(save: Save, hid: HunterId, c: NoticeCtx, stamp: FactStamp)
       const was = (feats ?? ch.feats)[key] ?? startOf(def);
       if (was.at === 'earned') continue;
       const from: Counted = { n: was.n, mark: was.mark, ...(was.vals ? { vals: was.vals } : {}) };
-      const moved = countStep(from, f, def.rule, markOf(def.rule.within, stamp, ch.tally.longRests));
-      if (moved === null || moved === from) continue;
-      const ev = moved === 'broke' ? { type: 'broke' as const, count: { ...from, n: 0 } } : { type: 'counted' as const, count: moved, also: def.rule.also.every(t => stateHolds(t, { ...h, chronicle: ch })) };
+      const move = countStep(from, f, def.rule, markOf(def.rule.within, stamp, ch.tally.longRests));
+      if (!move) continue;
+      const also = (): boolean => def.rule.also.every(t => stateHolds(t, { ...h, chronicle: ch }));
+      const ev: FeatEvent = move.to === 'broke' ? { type: 'broke', count: move.count } : move.to === 'moved' ? { type: 'counted', count: move.count, also: also() } : { type: 'again', count: from, also: also() };
       const st = featStep(was, ev, def, stamp);
       if (!st) continue;
       feats ??= { ...ch.feats };
@@ -156,15 +195,21 @@ function countQuests(save: Save, hid: HunterId, f: Fact, stamp: FactStamp, c: No
 }
 
 /**
- * The save with every inbox of a hunter no fight holds taken (`noticeHunter`), stamped with the moment `ctx` answers.
+ * The save at the end of a write, each inbox fact moved by `INBOX` with the moment `ctx` answers: every inbox of a hunter
+ * no fight holds taken (`noticeHunter`), and the facts this write recorded for a held hunter stamped to wait.
  * A save whose inboxes are all empty is answered as it is, after a length check of each and nothing else: the context
  * is asked for only when a fact waits, so a write that recorded nothing costs one look at each hunter.
  */
 export function noticed(save: Save, ctx: () => NoticeCtx): Save {
   if (!waiting(save)) return save;
-  const c = ctx(), stamp: FactStamp = { at: c.at, day: c.today, session: c.session };
+  const c = ctx(), now: FactStamp = { at: c.at, day: c.today, session: c.session };
   let s = save;
-  for (const h of save.hunters) if (h.chronicle.inbox.length && !c.held(save, h.id)) s = noticeHunter(s, h.id, c, stamp);
+  for (const h of save.hunters) {
+    if (!h.chronicle.inbox.length) continue;
+    if (!c.held(save, h.id)) { s = noticeHunter(s, h.id, c, now); continue; }
+    const inbox = heldInbox(h.chronicle.inbox, now);
+    if (inbox !== h.chronicle.inbox) s = { ...s, hunters: s.hunters.map(x => (x.id === h.id ? { ...x, chronicle: { ...x.chronicle, inbox } } : x)) };
+  }
   return s;
 }
 

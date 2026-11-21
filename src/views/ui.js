@@ -16,6 +16,7 @@ import { reported } from '../edge/report.ts';
 import { READ_ONLY } from '../core/store-life.ts';
 import { TOLD } from '../core/save-step.ts';
 import { NO_WINDOWS, keyWindow, openSystem, windowId, windowStep } from '../core/windows.ts';
+import { NOT_HELD, heldKey, heldStep } from '../core/held.ts';
 export { reduced } from './motion.ts';
 
 // ── chime: generated WebAudio, only after a user gesture, only when settings.sound is on ──
@@ -63,17 +64,19 @@ function toastBox() {
   return box;
 }
 /**
- * A toast that ends with what it says: `act` runs as it ends, never if its Undo is tapped. It ends after `ms`, or sooner
- * when a third toast pushes it off or the page is hidden or left (`heldNow`), so a give held back is never lost. The
- * write it holds is the one the action makes at once without it (gm.js's Give…): only later. A held toast takes no
- * `key`: it holds its one write, so it never adds up with another.
- * @typedef {{ ms: number; act: () => void; undo: string }} Hold
+ * A toast that holds a write (`what`, src/core/held.ts): `act` runs as the held write is committed, never after its Undo.
+ * It is committed after `ms`, or sooner when a third toast pushes it off (the row ruling SMX-gates-5.1 waits on) or the
+ * page is hidden or left (`heldNow`), so a give held back is never lost. The write it holds is the one the action makes
+ * at once without it (gm.js's Give…, stories.js's End story): only later. A second hold of a write already held is
+ * refused: no toast, and `toast` answers null. A held toast takes no `key`: it holds its one write, so it never adds up.
+ * @typedef {{ what: import('../core/held.ts').HeldWhat; ms: number; act: () => void; undo: string }} Hold
  */
 /**
- * Each toast on screen by its element, oldest first, until it goes: the timer that ends it and, for a held toast, the
- * write it makes as it ends (`act`, null for a plain toast). A toast leaves as it ends, as its Undo or × is tapped, or as
- * a third toast pushes it off, so its write runs at most once and no timer outlives it.
- * @type {Map<HTMLElement, { timer: ReturnType<typeof setTimeout>; act: (() => void) | null }>}
+ * Each toast on screen by its element, oldest first, until it goes: the timer that ends it and, for a held toast, its
+ * held write (its key, its state of src/core/held.ts, stepped only by `heldStep`, and `act`, the write it makes). A toast
+ * leaves as it ends, as its Undo or × is tapped, or as a third toast pushes it off, so its write runs at most once and no
+ * timer outlives it.
+ * @type {Map<HTMLElement, { timer: ReturnType<typeof setTimeout>; held: { key: string; write: import('../core/held.ts').HeldWrite; act: () => void } | null }>}
  */
 const toasts = new Map();
 /** Takes toast `t` off the screen and out of `toasts`: answers what it kept, or null when it had already gone. @param {HTMLElement} t */
@@ -83,10 +86,18 @@ function off(t) {
   void dismiss(t);
   return kept;
 }
-/** A toast ends: its held write, if it holds one, runs as it goes. @param {HTMLElement} t */
-function ended(t) { const kept = off(t); if (kept && kept.act) kept.act(); }
+/**
+ * Toast `t` goes by `e` (its time, Undo or ×, a third toast, the page hidden): its held write, if it holds one, is
+ * stepped by `e` and made when that commits it.
+ * @param {HTMLElement} t @param {import('../core/held.ts').HeldEvent} e
+ */
+function ended(t, e) {
+  const kept = off(t); if (!kept || !kept.held) return;
+  const next = heldStep(kept.held.write, e);
+  if (next && next.at === 'committed') kept.held.act();
+}
 /** The page is hidden or left: every held toast ends now, its write made. */
-function heldNow() { for (const [t, kept] of toasts) if (kept.act) ended(t); }
+function heldNow() { for (const [t, kept] of toasts) if (kept.held) ended(t, { type: 'hidden' }); }
 document.addEventListener('visibilitychange', () => { if (document.hidden) heldNow(); });
 addEventListener('pagehide', heldNow);
 /**
@@ -95,12 +106,16 @@ addEventListener('pagehide', heldNow);
  */
 export function toast(tag, msg, opts = {}) {
   const box = toastBox(); const kind = opts.kind || 'info', hold = opts.hold, key = hold ? undefined : opts.key;
+  const held = hold ? { key: heldKey(hold.what), act: hold.act } : null;
+  const was = held ? [...toasts.values()].find(k => k.held && k.held.key === held.key) : null;
+  const write = hold ? heldStep(was ? was.held.write : NOT_HELD, { type: 'pick', at: Date.now(), ms: hold.ms }) : null;
+  if (hold && !write) return null;
   if (key) { // e.g. {key:'xp', amount:10, fmt:n=>`+${n} XP acquired.`}
     const prev = [...toasts.keys()].find(t => t.dataset.key === key);
     if (prev && opts.amount !== undefined) {
       const total = Number(prev.dataset.amount) + opts.amount; prev.dataset.amount = String(total);
       prev.querySelector('.t-msg').textContent = opts.fmt ? opts.fmt(total) : msg;
-      const kept = toasts.get(prev); clearTimeout(kept.timer); kept.timer = setTimeout(() => ended(prev), TOAST_MS); return prev;
+      const kept = toasts.get(prev); clearTimeout(kept.timer); kept.timer = setTimeout(() => ended(prev, { type: 'due' }), TOAST_MS); return prev;
     }
   }
   const end = hold ? `<button type="button" class="t-undo">${esc(hold.undo)}</button>` : '<button type="button" class="t-x" aria-label="Dismiss notification">&times;</button>';
@@ -108,11 +123,11 @@ export function toast(tag, msg, opts = {}) {
   if (key) { t.dataset.key = key; t.dataset.amount = String(opts.amount ?? 0); }
   if (hold) t.dataset.held = '';
   // Undo drops the held write; the × of a plain toast only takes it away
-  t.querySelector('.t-x, .t-undo').addEventListener('click', () => { off(t); });
+  t.querySelector('.t-x, .t-undo').addEventListener('click', () => { ended(t, { type: 'undo' }); });
   box.appendChild(t);
   enter(t, 'toast');
-  toasts.set(t, { timer: setTimeout(() => ended(t), hold ? hold.ms : TOAST_MS), act: hold ? hold.act : null });
-  for (const old of [...toasts.keys()].slice(0, -2)) ended(old);
+  toasts.set(t, { timer: setTimeout(() => ended(t, { type: 'due' }), hold ? hold.ms : TOAST_MS), held: held && write ? { ...held, write } : null });
+  for (const old of [...toasts.keys()].slice(0, -2)) ended(old, { type: 'crowded' });
   return t;
 }
 /** The tag of the fight's news (`news`): a refused write told under it is said in the fight's news, as the fight's own refusals are. */

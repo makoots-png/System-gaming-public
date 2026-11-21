@@ -36,8 +36,8 @@ import type { Completed, QuestWhy, Rollover } from './quests.ts';
 import { giveBoons, giveTitle, holdsTitle, setJob, titleNamed } from './record.ts';
 import { fitted, hunterSheet } from './sheet.ts';
 import { giveSkill } from './skills-held.ts';
-import { can, changeFatigue, changeMana, hit, lifeNews, refill, rest, setFatigue, setMana, spendMana, withLife } from './vitals.ts';
-import type { Life, LifeEvent } from './vitals.ts';
+import { lifeNews, vitalStep } from './vitals.ts';
+import type { Life, LifeEvent, VitalEvent } from './vitals.ts';
 import { record } from './chronicle.ts';
 import type { LifeHow } from './facts.ts';
 import { saveId } from '../ids.ts';
@@ -180,7 +180,11 @@ export function grant(save: Save, hid: string, r: Rewards, build: BuildChange | 
     const from = h.level, change = gainXp(h, r.xp, R);
     h = fitted(addXp(h, r.xp, R), R); xp = change.xp;
     let refilled = false;
-    if (change.refill && o.vitals === 'sheet') { h = { ...h, ...refill(h, sheetOf(h, R)) }; refilled = true; }
+    if (change.refill && o.vitals === 'sheet') {
+      const v = vitalStep(h, { type: 'refill' }, sheetOf(h, R), R);
+      // "HP and mana fully restored" is said only when HP was: a dead hunter's refill fills mana alone (SMX-rules-1.2)
+      if (!isRefused(v)) { h = { ...h, ...v }; refilled = v.life.at !== 'dead'; }
+    }
     refillLeft = change.refill && o.vitals === 'fight';
     if (change.to > change.from) levelup = { hunterId: hid, from: change.from, to: change.to, points: change.points, refill: refilled };
     const l = levelled(from, h, o, ids.next);
@@ -326,6 +330,13 @@ const howOf = (e: SheetEdit, before: Life, after: Life): LifeHow =>
 const failuresOf = (life: Life): number => (life.at === 'dying' ? life.failures : 0);
 
 /**
+ * Whether a status put on or taken off fits the vitals to the maxima it leaves. SMX-rules-1.3 waits on the owner: whether
+ * a status change brings HP, mana and fatigue down to the new maxima at once. Today it does not: the stored numbers stay
+ * above a lowered maximum (the sheet shows at most the maximum, `hpOf`, `manaOf`) until the next change fits them.
+ */
+const STATUS_FITS: { readonly put: boolean; readonly drop: boolean } = { put: false, drop: false };
+
+/**
  * Hunter `h` after `e`, each with the maxima its sheet gives. A life event its state does not take (a heal on a dead
  * hunter) is refused (`cannot`), and so is a price of more mana than the hunter holds (`mana`); a status put on that changes nothing, or taken off that is not held, is refused
  * (`unchanged`), as `putStatus` and `dropStatus` answer. What the change did to the life (`lifeNews`) and a rest are
@@ -340,15 +351,14 @@ export function sheetEdit(h: Hunter, e: SheetEdit, R: Rules): Hunter | Refused<'
   return e.type === 'rest' ? record(withLife, { kind: 'rest', long: e.kind === 'long' }) : withLife;
 }
 function edited(h: Hunter, e: SheetEdit, R: Rules): Hunter | Refused<'cannot' | 'mana' | 'state-chip' | 'no-def' | 'unchanged'> {
-  const m = sheetOf(h, R);
+  const step = (ev: VitalEvent): Hunter | Refused<'cannot' | 'mana'> => { const v = vitalStep(h, ev, sheetOf(h, R), R); return isRefused(v) ? v : { ...h, ...v }; };
+  const fits = (x: Hunter | Refused<'state-chip' | 'no-def' | 'unchanged'>, edit: 'put' | 'drop') => (isRefused(x) || !STATUS_FITS[edit] ? x : fitted(x, R));
   switch (e.type) {
-    case 'life': return can(h.life, e.event.type) ? { ...h, ...hit(h, e.event, m) } : refuse('cannot');
-    case 'mana': return { ...h, ...changeMana(h, e.delta, m) };
-    case 'spend': { const v = spendMana(h, e.mana, m); return isRefused(v) ? v : { ...h, ...v }; }
-    case 'fatigue': return { ...h, ...changeFatigue(h, e.delta, m, R) };
-    case 'totals': return { ...h, ...setFatigue(setMana(withLife(h, e.life, m), e.mana, m), e.fatigue, m, R), conditions: e.statuses.map(s => ({ ...s })), ...(e.used ? { used: { ...e.used } } : {}) };
-    case 'put': return putStatus(h, e.status, R.conditions);
-    case 'drop': return dropStatus(h, e.key);
-    case 'rest': return { ...h, ...rest(h, e.kind, m, R) };
+    case 'life': return step(e.event.type === 'revive' ? { type: 'revive', by: e.by ?? 'gm' } : e.event);
+    case 'mana': case 'spend': case 'fatigue': case 'rest': return step(e);
+    // the life, mana and fatigue fitted to the maxima the sheet gave before the fight's statuses replace its own
+    case 'totals': { const x = step({ type: 'fightTotals', life: e.life, mana: e.mana, fatigue: e.fatigue, ...(e.used ? { used: e.used } : {}) }); return isRefused(x) ? x : { ...x, conditions: e.statuses.map(s => ({ ...s })) }; }
+    case 'put': return fits(putStatus(h, e.status, R.conditions), 'put');
+    case 'drop': return fits(dropStatus(h, e.key), 'drop');
   }
 }

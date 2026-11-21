@@ -107,6 +107,20 @@ test('a GM alone turns on The wager for one hunter and sees its first window; op
     await expect(card(page)).toHaveCount(1);
   });
 
+  await test.step('End story tapped twice holds one end: one toast, and its Undo keeps the story running (SMX-gates-5.3a)', async () => {
+    const toast = page.locator('#toasts .toast', { hasText: 'Ended The wager.' });
+    for (let i = 0; i < 2; i++) {
+      await card(page).locator('[data-st-more]').tap();
+      await page.locator('.sys-overlay.show .sys-actions button', { hasText: 'End story' }).tap();
+      await expect(toast).toHaveCount(1);
+    }
+    await toast.locator('.t-undo').tap();
+    await expect(toast).toHaveCount(0);
+    await page.waitForTimeout(2500);
+    expect((await runs(page))[0]!.state.at).toBe('running');
+    await expect(card(page)).toHaveCount(1);
+  });
+
   await test.step('ended again, it is written when the toast ends: the card goes and the story is in the Ended fold', async () => {
     await card(page).locator('[data-st-more]').tap();
     await page.locator('.sys-overlay.show .sys-actions button', { hasText: 'End story' }).tap();

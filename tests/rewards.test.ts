@@ -8,13 +8,14 @@ import type { ItemTemplate } from '../src/core/registry/items.ts';
 import { SKILL_SEEDS, skillOf } from '../src/core/registry/skills.ts';
 import { statusKey } from '../src/core/combat/effect-ops.ts';
 import type { StatusDef } from '../src/core/combat/effect-ops.ts';
-import { finishQuest, grant } from '../src/core/hunter/grant.ts';
+import { finishQuest, grant, sheetEdit } from '../src/core/hunter/grant.ts';
 import { useItem } from '../src/core/hunter/use.ts';
 import { settleClear } from '../src/core/gates/pay.ts';
 import { questIn } from './models/quest-events.ts';
 import { den } from './models/gate-events.ts';
 import type { Granted } from '../src/core/hunter/grant.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
+import { hpOf } from '../src/core/hunter/vitals.ts';
 import { available, levelPoints, pendingTotal } from '../src/core/hunter/progress.ts';
 import { freshSave } from '../src/core/save.ts';
 import type { Hunter, Save } from '../src/core/save.ts';
@@ -286,6 +287,15 @@ describe('a reward given (src/core/hunter/grant.ts)', () => {
     expect([after.life, after.mana]).toEqual([{ at: 'up', hp: max.hpMax }, max.manaMax]);
   });
 
+  test('a dead hunter\'s level-up fills mana and leaves the hunter dead, and does not say HP and mana were restored (SMX-rules-1.2)', () => {
+    const save = fresh(), h = hunter(save), dead = { ...save, hunters: [{ ...h, life: { at: 'dead' as const }, mana: 0 }] };
+    const g = given(dead, { ...newRewards(), xp: 100 });
+    const after = hunter(g.save), max = hunterSheet(after, RULES).sheet;
+    // whether a dead hunter is refilled at all waits on the owner; today the mana fills
+    expect([after.life, after.mana]).toEqual([{ at: 'dead' }, max.manaMax]);
+    expect(g.levelup).toEqual({ hunterId: 'h1', from: 1, to: 2, points: RULES.pointsPerLevel, refill: false });
+  });
+
   test('while a fight holds the hunter\'s vitals, a status and the refill are left for the fight, and the rest lands', () => {
     const save = fresh(), h = hunter(save), hurt = { ...save, hunters: [{ ...h, life: { at: 'up' as const, hp: 1 } }] };
     const g = given(hurt, { ...newRewards(), xp: 100, gold: 5, statuses: [{ key: statusKey('hasted'), rounds: 3 }] }, 'fight');
@@ -410,5 +420,20 @@ describe('a Resurrection Crystal given in a reward, with no code of its own (not
     if (isRefused(out)) throw new Error(out.why);
     expect(out.save.gates[0]!.status).toBe('cleared');
     raised(out.save);
+  });
+});
+
+describe('a status put on or taken off the sheet (grant.ts sheetEdit)', () => {
+  const WEAK: StatusDef = { label: 'Weakened', desc: '', ops: [{ op: 'stat', key: 'vit', amount: -20 }] };
+  test('a status that lowers max HP leaves the stored HP above it, which the sheet shows at the maximum (SMX-rules-1.3, today)', () => {
+    const h = freshSave({ now: new Date(0), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-test') }, { onboarded: true }).hunters[0]!;
+    const full = hunterSheet(h, RULES).sheet.hpMax;
+    const put = sheetEdit(h, { type: 'put', status: { key: statusKey('weakened'), def: WEAK, rounds: null, source: { id: null, tier: 0 } } }, RULES);
+    if (isRefused(put)) throw new Error(put.why);
+    const lower = hunterSheet(put, RULES).sheet.hpMax;
+    expect(lower).toBeLessThan(full);
+    // whether a status change fits HP to the new maximum at once waits on the owner; today it does not
+    expect(put.life).toEqual({ at: 'up', hp: full });
+    expect(hpOf(put.life, lower), 'the sheet shows the maximum').toBe(lower);
   });
 });

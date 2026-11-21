@@ -1,7 +1,8 @@
 // chronicle.ts: what the System remembers of a hunter (docs/agent-handoff/features/notes-1-feats.md section 1). Pure.
 // `record` is the one writer of a hunter's inbox: the one function that does a thing appends its fact in that thing's
-// write. `noticed` (noticed.ts) is the one reader that empties it, in the same write: it stamps each fact, folds it into
-// the lifetime tally (`TALLY`) and keeps the last `CHRONICLE_MAX` facts worth reading (facts.ts `KEPT`). The sheet push
+// write. `noticed` (noticed.ts) stamps each fact in the same write and empties the inbox: it folds each fact into the
+// lifetime tally (`TALLY`) and keeps the last `CHRONICLE_MAX` facts worth reading (facts.ts `KEPT`); a hunter a fight
+// holds keeps its stamped facts waiting (noticed.ts `INBOX`). The sheet push
 // carries a cut of it (`pushedChronicle`). A lint keeps both writers: tests/lint.test.ts.
 import { parseCounted } from './counts.ts';
 import type { Counted } from './counts.ts';
@@ -10,6 +11,12 @@ import { dayKey, parseDayKey, timeOf } from '../day.ts';
 import type { DayKey } from '../day.ts';
 import { parseFact, parseKept } from './facts.ts';
 import type { Fact, Kept } from './facts.ts';
+
+/**
+ * A fact in a hunter's inbox: recorded in this write and not stamped yet (a `Fact`), or stamped by the write it happened
+ * in and waiting for a fight to let its hunter go (a `Kept`). noticed.ts `INBOX` is its machine.
+ */
+export type InboxFact = Fact | Kept;
 
 /**
  * The lifetime numbers, each the fold of every fact ever noticed by its row of `TALLY`. A new key is a member here and
@@ -64,10 +71,10 @@ export const TALLY: { readonly [K in TallyKey]: (f: Fact) => number } = {
 
 export type Chronicle = {
   /**
-   * Facts this write recorded and `noticed` has not taken yet. Between writes it is empty, or holds the facts of a
-   * hunter a fight holds until the fight lets it go (noticed.ts).
+   * Facts this write recorded and `noticed` has not taken yet, unstamped. Between writes it is empty, or holds the
+   * stamped facts of a hunter a fight holds until the fight lets it go (noticed.ts `INBOX`).
    */
-  readonly inbox: readonly Fact[];
+  readonly inbox: readonly InboxFact[];
   /** The last `CHRONICLE_MAX` kept facts, stamped, oldest first. */
   readonly facts: readonly Kept[];
   readonly tally: Tally;
@@ -122,8 +129,9 @@ type Rec = Record<string, unknown>;
 const isObj = (v: unknown): v is Rec => v !== null && typeof v === 'object' && !Array.isArray(v);
 const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 /**
- * A chronicle from outside data (a save, a sheet), or an empty one. A fact or kept fact that does not read is dropped;
- * the newest are kept to their bounds; a tally number is whole, from 0 to its bound, and 0 when it does not read.
+ * A chronicle from outside data (a save, a sheet), or an empty one. A fact or kept fact that does not read is dropped,
+ * and an inbox fact keeps its stamp when it has one that reads; the newest are kept to their bounds; a tally number is
+ * whole, from 0 to its bound, and 0 when it does not read.
  */
 export function parseChronicle(v: unknown): Chronicle {
   if (!isObj(v)) return newChronicle();
@@ -133,7 +141,7 @@ export function parseChronicle(v: unknown): Chronicle {
     return [k, typeof n === 'number' && Number.isFinite(n) ? Math.max(0, Math.min(TALLY_MAX, Math.round(n))) : 0];
   })) as { [K in TallyKey]: number };
   return {
-    inbox: list(v.inbox).flatMap(f => parseFact(f) ?? []).slice(-INBOX_MAX),
+    inbox: list(v.inbox).flatMap(f => parseKept(f) ?? parseFact(f) ?? []).slice(-INBOX_MAX),
     facts: list(v.facts).flatMap(f => parseKept(f) ?? []).slice(-CHRONICLE_MAX),
     tally,
     feats: featStates(v.feats),

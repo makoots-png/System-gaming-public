@@ -204,4 +204,17 @@ describe('the GM\'s edit of max HP and max mana', () => {
     const down = setMaximum(h, 'hpMax', max - 10, RULES);
     expect(down.life).toMatchObject({ hp: max - 10 });
   });
+  test('max HP set to 0 is 1, the least the sheet gives; set again it moves nothing, and set back the adjustment is 0 again (SMX-rules-1.3)', () => {
+    const h = newHunter(RULES), max = hunterSheet(h, RULES).sheet.hpMax;
+    const once = setMaximum(h, 'hpMax', 0, RULES), twice = setMaximum(once, 'hpMax', 0, RULES);
+    expect([once.hpAdj, hunterSheet(once, RULES).sheet.hpMax, once.life]).toEqual([1 - max, 1, { at: 'up', hp: 1 }]);
+    expect(twice).toEqual(once);
+    expect(setMaximum(twice, 'hpMax', max, RULES).hpAdj).toBe(0);
+  });
+  test('max mana set below 0 is 0; set again it moves nothing', () => {
+    const h = newHunter(RULES), max = hunterSheet(h, RULES).sheet.manaMax;
+    const once = setMaximum(h, 'manaMax', -5, RULES);
+    expect([once.manaAdj, hunterSheet(once, RULES).sheet.manaMax, once.mana]).toEqual([-max, 0, 0]);
+    expect(setMaximum(once, 'manaMax', -5, RULES)).toEqual(once);
+  });
 });

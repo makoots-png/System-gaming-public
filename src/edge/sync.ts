@@ -20,8 +20,9 @@
 //   stamped         the time in the id of the last event this page made (`stampTime` in src/core/protocol.ts), so the
 //                   next id is later and two ids of this page never meet
 // and these containers, each named where it is made: `queue` (events raised while effects run), `inflight` (open
-// requests by gen), `timers` (one per name), `peeked` (the Room view's 30 s code check cache), `publishers`,
-// `publishing` (each room doc's publish machine on the GM's phone, src/core/sync/publish.ts).
+// requests by gen: the link's, each doc's put and each outbox send), `timers` (one per name), `peeked` (the Room view's
+// 30 s code check cache), `publishers`, `publishing` (each room doc's publish machine on the GM's phone,
+// src/core/sync/publish.ts).
 // The save fields `room`, `cursor`, `lastRoom`, `gmKey` and `seen` (where this phone stopped reading a room it went out
 // of, src/core/sync/seen.ts) are written only by the link's `save` effect, here; a poll page's cursor is written in the
 // same write as what the page's events land on a player's phone (`apply`), so a reload never finds one without the other.
@@ -203,10 +204,10 @@ export function register(app: SyncHost): void {
    * A request outside the machines, answered as a `Call` (src/core/sync/outbox.ts): taken, offline, refused with the
    * server's reason, or the server's failure. Once the link is upgrading nothing is asked: the app reloads.
    */
-  async function call(method: string, path: string, body?: unknown, key?: string | null): Promise<Call> {
+  async function call(method: string, path: string, body?: unknown, key?: string | null, signal?: AbortSignal): Promise<Call> {
     if (link.at === 'upgrading') return { ok: false, why: 'server' };
     let a: Answer;
-    try { a = await fetchApi(method, path, { body, key: key ?? null }); } catch (e) { return { ok: false, why: failKind(e) === 'server' ? 'server' : 'offline' }; }
+    try { a = await fetchApi(method, path, { body, key: key ?? null, ...(signal ? { signal } : {}) }); } catch (e) { return { ok: false, why: failKind(e) === 'server' ? 'server' : 'offline' }; }
     return callOf(a.status, errorOf(a), a.data);
   }
 
@@ -297,7 +298,7 @@ export function register(app: SyncHost): void {
     for (const x of fx) {
       switch (x.type) {
         case 'request': linkRequest(x.gen, x.timeoutMs, x.call); break;
-        case 'abort': abortGen(x.gen); break;
+        case 'abort': abortGen(x.gen); stretchLeft(); break;
         case 'setTimer': setTimer(x.name, x.ms); break;
         case 'clearTimer': clearTimer(x.name); break;
         case 'save': if (page) cursor = x.fields; else save(x.fields, before); break;
@@ -328,6 +329,23 @@ export function register(app: SyncHost): void {
     const open = inflight.get(gen); if (!open) return;
     inflight.delete(gen);
     for (const ac of open) ac.abort();
+  }
+  /**
+   * A request outside the machines made in stretch `gen` (a doc's put, an outbox send): dropped with the stretch's other
+   * requests when the link leaves it, and then answered as no answer. Made in a stretch already left, it is dropped at once.
+   */
+  async function inStretch<T>(gen: Gen, ask: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    const ac = track(gen);
+    if (link.gen !== gen) abortGen(gen);
+    try { return await ask(ac.signal); } finally { untrack(gen, ac); }
+  }
+  /**
+   * The link left a stretch (link.ts `abort`) and dropped its requests, so nothing of it is answered here: each room
+   * doc's put and timer go with it (publish.ts `left`), and what was on its way to the room waits again.
+   */
+  function stretchLeft(): void {
+    for (const name of publishing.keys()) publishDo(name, { type: 'left' });
+    unheard();
   }
   function setTimer(name: 'poll' | 'push', ms: number): void {
     clearTimer(name);
@@ -649,16 +667,21 @@ export function register(app: SyncHost): void {
    * the box is never seen with a message waiting behind nothing. Answers whether the write was made.
    */
   function flush(reason = 'outbox-send', first: ((b: Outbox) => Outbox) | null = null, heard: ((s: Save) => Save) | null = null): boolean {
-    const code = link.at === 'live' ? link.code : null, key = link.at === 'live' ? link.key : null;
+    const code = link.at === 'live' ? link.code : null, key = link.at === 'live' ? link.key : null, gen = link.gen;
     if (!first && (!code || !nextOut(box(), code))) return false; // nothing to write: a poll with nothing waiting writes nothing
     const pick: { e: Entry | null } = { e: null };
     const wrote = boxDo(reason, b => { const b1 = first ? first(b) : b; pick.e = code ? nextOut(b1, code) : null; return pick.e ? outStep(b1, pick.e.id, { type: 'send' }) : b1; }, heard);
     const out = pick.e;
-    if (wrote && out && code) void deliver(code, key, out).then(c => answered(out, c));
+    if (wrote && out && code) void inStretch(gen, signal => deliver(code, key, out, signal)).then(c => answered(out, c, gen));
     return wrote;
   }
-  /** The room answered `e`: taken or refused, the next goes at once; with no answer it waits for the next good poll. */
-  function answered(e: Entry, c: Call): void {
+  /**
+   * The room answered `e`, sent in stretch `gen`: taken or refused, the next goes at once; with no answer it waits for the
+   * next good poll. The answer of a stretch the link left is never heard: the entry waits again already (`unheard`), and
+   * the room it was for is not the one this phone shows (audit SMX-sync-4.2).
+   */
+  function answered(e: Entry, c: Call, gen: Gen): void {
+    if (link.gen !== gen) return;
     const ev: EntryEvent = sentEvent(c);
     if (ev.type === 'failed') boxDo('outbox-failed', b => outStep(b, e.id, ev));
     // a solo run's message the room took is marked taken in the same write as its letter leaves the box (solo-wait.ts)
@@ -673,12 +696,17 @@ export function register(app: SyncHost): void {
     }
     emitStatus();
   }
+  /**
+   * Nothing sent before is answered here, so what was on its way waits again (the room takes an id once): a new page, or
+   * the link left the stretch it was sent in (`stretchLeft`).
+   */
+  function unheard(): void { if (box().some(e => e.at === 'sending')) boxDo('outbox-reload', reloaded); }
   /** One entry's request: an event is posted (with the GM key on the GM's phone), a tombstone put over the hunter's sheet. */
-  function deliver(code: RoomCode, key: GmKey | null, e: Entry): Promise<Call> {
+  function deliver(code: RoomCode, key: GmKey | null, e: Entry, signal: AbortSignal): Promise<Call> {
     const at = encodeURIComponent(code);
-    if (e.letter.kind === 'tomb') return call('PUT', `/rooms/${at}/sheets/${encodeURIComponent(myKey(e.letter.hid))}`, { from: deviceId(), data: { deleted: true } }, key);
+    if (e.letter.kind === 'tomb') return call('PUT', `/rooms/${at}/sheets/${encodeURIComponent(myKey(e.letter.hid))}`, { from: deviceId(), data: { deleted: true } }, key, signal);
     const ev = e.letter.event;
-    return call('POST', `/rooms/${at}/events`, { from: deviceId(), type: ev.type, payload: ev.payload }, key);
+    return call('POST', `/rooms/${at}/events`, { from: deviceId(), type: ev.type, payload: ev.payload }, key, signal);
   }
   /** A message as the player reads it when the room refuses it. */
   const WHAT_SENT: Partial<Record<RoomEvent['type'], string>> = {
@@ -756,15 +784,16 @@ export function register(app: SyncHost): void {
     return newEvent(type, body, { device: deviceId(), now: stamped, rand: Math.random() });
   };
   /**
-   * Puts a room doc. The GM's phone then shows the doc as `DOCS` reads it, as every other phone will. `tooBig`: longer
-   * than `DOC_MAX`, counted here before it is sent or by the server's 413.
+   * Puts a room doc in the room of stretch `gen`, and nowhere once the link has left it. The GM's phone then shows the doc
+   * as `DOCS` reads it, as every other phone will. `tooBig`: longer than `DOC_MAX`, counted here before it is sent or by
+   * the server's 413.
    */
-  async function putDoc(name: DocName, data: unknown): Promise<'stored' | 'tooBig' | 'failed'> {
-    const gm = gmRoom(), gen = link.gen, parsed = DOCS[name](data);
+  async function putDoc(name: DocName, data: unknown, gen: Gen): Promise<'stored' | 'tooBig' | 'failed'> {
+    const gm = link.gen === gen ? gmRoom() : null, parsed = DOCS[name](data);
     if (!gm || !parsed) return 'failed';
     const body = JSON.stringify(data); if (body.length > DOC_MAX) return 'tooBig';
     let a: Answer;
-    try { a = await fetchApi('PUT', `/rooms/${encodeURIComponent(gm.code)}/sheets/_${name}`, { body: { from: deviceId(), data: JSON.parse(body) }, key: gm.key }); } catch (e) { failKind(e); return 'failed'; }
+    try { a = await inStretch(gen, signal => fetchApi('PUT', `/rooms/${encodeURIComponent(gm.code)}/sheets/_${name}`, { body: { from: deviceId(), data: JSON.parse(body) }, key: gm.key, signal })); } catch (e) { failKind(e); return 'failed'; }
     if (a.status === 413) return 'tooBig';
     if (a.status < 200 || a.status >= 300) return 'failed';
     // stored in the room of `gen`; shown only while this phone is still in that stretch of the link
@@ -788,11 +817,11 @@ export function register(app: SyncHost): void {
     publishing.set(name, state);
     for (const fx of effects) {
       switch (fx.type) {
-        case 'setTimer': setTimeout(() => publishDo(name, { type: 'due' }), publishWait(name)); break; // the machine is `waiting` until it fires
+        case 'setTimer': setTimeout(() => publishDo(name, { type: 'due', gen: fx.gen }), publishWait(name)); break; // the machine is `waiting` until it fires, or the stretch is left
         case 'put': {
-          const gen = link.gen;
+          const { gen } = fx;
           // a doc whose build throws is a bug: logged once, and the machine hears a failed put, so the doc is put again at the next change
-          publishNow(name).then(put => publishDo(name, { type: 'answered', gen, put }), e => { reported('sync:publish', e); publishDo(name, { type: 'answered', gen, put: 'failed' }); });
+          publishNow(name, gen).then(put => publishDo(name, { type: 'answered', gen, put }), e => { reported('sync:publish', e); publishDo(name, { type: 'answered', gen, put: 'failed' }); });
           break;
         }
         case 'status': emitStatus(); break;
@@ -801,23 +830,23 @@ export function register(app: SyncHost): void {
   }
   function republish(): void {
     if (!gmRoom()) return;
-    for (const name of publishers.keys()) publishDo(name, { type: 'changed' });
+    const gen = link.gen;
+    for (const name of publishers.keys()) publishDo(name, { type: 'changed', gen });
   }
   /** The doc without what a player can do without, for a second put after the room refused the first as too big: the fight's log. */
   const shorter = (data: unknown): unknown => (isObj(data) && Array.isArray(data.log) && data.log.length ? { ...data, log: [] } : null);
-  /** The put of doc `name` its machine asked for: built now, and put only when it differs from the room's. */
-  async function publishNow<K extends PublishedDoc>(name: K): Promise<PutAnswer> {
-    if (!gmRoom() || shown.gen !== link.gen) return 'unsent';
+  /** The put of doc `name` its machine asked for in stretch `gen`: built now, and put only when it differs from the room's. */
+  async function publishNow<K extends PublishedDoc>(name: K, gen: Gen): Promise<PutAnswer> {
+    if (link.gen !== gen || !gmRoom() || shown.gen !== gen) return 'unsent';
     const data = publishers.get(name)!(), want = data === null ? null : (DOCS[name](data) as DocOf<K> | null);
     if (!want) return 'unsent';
     const have = view().docs[name]?.data as DocOf<K> | undefined;
     if (have && sameDoc(name, want, have)) return 'unsent';
-    const gen = link.gen;
-    let put = await putDoc(name, data);
+    let put = await putDoc(name, data, gen);
     const short = put === 'tooBig' ? shorter(data) : null;
     if (short !== null) {
       console.info(`[sync] the room refused the ${name} doc as too big; putting it again without its log`);
-      put = await putDoc(name, short);
+      put = await putDoc(name, short, gen);
     }
     // a fight that began or ended, or a turn that came to a player or left one, sets how often this phone polls
     if (put === 'stored' && name === 'fight' && link.gen === gen) linkDo({ type: 'paced', pace: paceOf(want as DocOf<'fight'>, true, deviceId()) });
@@ -885,7 +914,7 @@ export function register(app: SyncHost): void {
   }
 
   // ── what the pill and the views show ──
-  const conn = (): Connection => connection(link, push, link.at === 'live' && [...publishing.values()].some(p => p.tooBig === link.gen), stalled(box(), room()));
+  const conn = (): Connection => connection(link, push, [...publishing.values()].some(p => p.tooBig), stalled(box(), room()));
   /** Coarser than `conn`: is there a server here at all, and is it answering. */
   const status = (): 'off' | 'offline' | 'connected' => {
     const c = conn();
@@ -962,8 +991,7 @@ export function register(app: SyncHost): void {
   }
 
   // ── boot ──
-  // a new page: nothing the last one sent is answered here, so what was on its way waits again (the room takes an id once)
-  if (box().some(e => e.at === 'sending')) boxDo('outbox-reload', reloaded);
+  unheard();
   runLink(started.effects, started.state, null);
   if (web && 'serviceWorker' in navigator) {
     // a worker that does not register leaves the app working online and not offline: logged, as the player cannot act on it

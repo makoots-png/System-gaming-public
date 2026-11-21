@@ -8,7 +8,7 @@ import type { Gen } from '../../src/core/sync/link.ts';
 export const START: Publish = PUBLISH_IDLE;
 /** The stretch of the link the walk's answers come in. */
 export const WALK_GEN = 1 as Gen;
-/** One of each event, and an answer of each kind. */
+/** One of each event, and an answer of each kind, in the walk's stretch; and the link leaving it. */
 export const WALK_EVENTS: readonly PublishEvent[] = [
-  { type: 'changed' }, { type: 'due' }, ...PUTS.map(put => ({ type: 'answered', gen: WALK_GEN, put }) as const),
+  { type: 'changed', gen: WALK_GEN }, { type: 'due', gen: WALK_GEN }, ...PUTS.map(put => ({ type: 'answered', gen: WALK_GEN, put }) as const), { type: 'left' },
 ];

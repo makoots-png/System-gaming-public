@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  LIFE_STATES, LIFE_EVENT_TYPES, can, changeFatigue, changeMana, fatiguePast, vitalChipsOf, fitMaxima, hit, hpOf, lifeAfter, manaOf, newVitals, parseUsed,
-  refill, rest, setFatigue, setMana, usedOf, SAVES_TO_END, fatigueNews, lifeNews, spendMana,
+  LIFE_STATES, LIFE_EVENT_TYPES, FATIGUE_STATES, VITAL_EVENT_TYPES, VITAL_TABLE, can, fatiguePast, fatigueState, vitalChipsOf, hpOf, lifeAfter, manaOf, newVitals, parseUsed,
+  refill, rest, usedOf, SAVES_TO_END, fatigueNews, lifeNews, vitalStep,
 } from '../src/core/hunter/vitals.ts';
+import { isRefused } from '../src/core/save-step.ts';
 import { abilityId } from '../src/core/combat/ability-types.ts';
-import type { Life, LifeEvent, LifeEventType, LifeState, Vitals } from '../src/core/hunter/vitals.ts';
+import type { FatigueState, Life, LifeEvent, LifeEventType, LifeState, Maxima, VitalEvent, Vitals } from '../src/core/hunter/vitals.ts';
 import { RULES } from '../src/core/rules.ts';
 import { WALK_EVENTS, maxAfter } from './models/life-events.ts';
 import type { Rules } from '../src/core/rules.ts';
@@ -24,6 +25,10 @@ const MAX = 20;
 const M = { hpMax: MAX, manaMax: 10, fatigueMax: 100 };
 const BIG = { ...M, fatigueMax: 120 };
 const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v));
+/** The vitals after `e` (`vitalStep`), for a test whose event the state takes. */
+const step = (v: Vitals, e: VitalEvent, m: Maxima = M): Vitals => { const x = vitalStep(v, e, m, R); if (isRefused(x)) throw new Error(`${e.type} refused: ${x.why}`); return x; };
+const mana = (v: Vitals, delta: number, m: Maxima = M) => step(v, { type: 'mana', delta }, m);
+const fatigue = (v: Vitals, delta: number, m: Maxima = M) => step(v, { type: 'fatigue', delta }, m);
 
 const up = (hp: number): Life => ({ at: 'up', hp });
 const dying = (successes: 0 | 1 | 2, failures: 0 | 1 | 2): Life => ({ at: 'dying', successes, failures });
@@ -160,28 +165,27 @@ describe('vitals: mana, fatigue, rests and the refill', () => {
     expect(newVitals(M)).toEqual({ life: up(20), mana: 10, fatigue: 0, collapsed: false, used: {} });
   });
   test('mana moves within 0 and the max', () => {
-    expect(changeMana(v({ mana: 4 }), 3, M).mana).toBe(7);
-    expect(changeMana(v({ mana: 4 }), -9, M).mana).toBe(0);
-    expect(changeMana(v({ mana: 4 }), 50, M).mana).toBe(10);
-    expect(setMana(v({ mana: 4 }), 99, M).mana).toBe(10);
+    expect(mana(v({ mana: 4 }), 3).mana).toBe(7);
+    expect(mana(v({ mana: 4 }), -9).mana).toBe(0);
+    expect(mana(v({ mana: 4 }), 50).mana).toBe(10);
     expect(manaOf({ mana: 30 }, M)).toBe(10);
   });
   test('fatigue reaching the capacity of 100 collapses the hunter; lowering it keeps the collapse', () => {
-    const tired = changeFatigue(v({ fatigue: 90 }), 10, M, R);
+    const tired = fatigue(v({ fatigue: 90 }), 10);
     expect(tired).toMatchObject({ fatigue: 100, collapsed: true });
-    expect(changeFatigue(tired, -30, M, R)).toMatchObject({ fatigue: 70, collapsed: true });
-    expect(setFatigue(tired, 0, M, R)).toMatchObject({ fatigue: 0, collapsed: true });
-    expect(changeFatigue(v({ fatigue: 90 }), 9, M, R)).toMatchObject({ fatigue: 99, collapsed: false });
+    expect(fatigue(tired, -30)).toMatchObject({ fatigue: 70, collapsed: true });
+    expect(fatigue(tired, -100)).toMatchObject({ fatigue: 0, collapsed: true });
+    expect(fatigue(v({ fatigue: 90 }), 9)).toMatchObject({ fatigue: 99, collapsed: false });
   });
   test('fatigue stays within 0 and the capacity', () => {
-    expect(changeFatigue(v({ fatigue: 90 }), 50, M, R).fatigue).toBe(100);
-    expect(changeFatigue(v({ fatigue: 10 }), -50, M, R).fatigue).toBe(0);
+    expect(fatigue(v({ fatigue: 90 }), 50).fatigue).toBe(100);
+    expect(fatigue(v({ fatigue: 10 }), -50).fatigue).toBe(0);
   });
   test('the thresholds are shares of the capacity: with 120, collapse comes at 120 and the penalty at 60', () => {
     // collapseAt 100% of 120 is 120; penaltyAt 50% of 120 is 60; disAt 80% of 120 is 96.
-    expect(changeFatigue(v({ fatigue: 90 }), 20, BIG, R)).toMatchObject({ fatigue: 110, collapsed: false });
-    expect(changeFatigue(v({ fatigue: 110 }), 10, BIG, R)).toMatchObject({ fatigue: 120, collapsed: true });
-    expect(changeFatigue(v({ fatigue: 110 }), 50, BIG, R).fatigue).toBe(120);
+    expect(fatigue(v({ fatigue: 90 }), 20, BIG)).toMatchObject({ fatigue: 110, collapsed: false });
+    expect(fatigue(v({ fatigue: 110 }), 10, BIG)).toMatchObject({ fatigue: 120, collapsed: true });
+    expect(fatigue(v({ fatigue: 110 }), 50, BIG).fatigue).toBe(120);
     expect([fatiguePast(59, BIG, R.fatigue.penaltyAt), fatiguePast(60, BIG, R.fatigue.penaltyAt)]).toEqual([false, true]);
     expect([fatiguePast(95, BIG, R.fatigue.disAt), fatiguePast(96, BIG, R.fatigue.disAt)]).toEqual([false, true]);
   });
@@ -208,7 +212,7 @@ describe('vitals: mana, fatigue, rests and the refill', () => {
     expect(refill(v({ life: DEAD, mana: 1 }), M)).toMatchObject({ life: DEAD, mana: 10 });
   });
   test('a lower maximum brings HP, mana and fatigue down to it', () => {
-    expect(fitMaxima(v({ life: up(20), mana: 10, fatigue: 90 }), { hpMax: 15, manaMax: 6, fatigueMax: 80 })).toMatchObject({ life: up(15), mana: 6, fatigue: 80 });
+    expect(vitalStep(v({ life: up(20), mana: 10, fatigue: 90 }), { type: 'maxChanged' }, { hpMax: 15, manaMax: 6, fatigueMax: 80 }, R)).toMatchObject({ life: up(15), mana: 6, fatigue: 80 });
   });
   test('the chips drawn from the state: Down while dying or stable, Dead when dead, Exhausted while collapsed', () => {
     expect(vitalChipsOf(v({}))).toEqual([]);
@@ -254,7 +258,7 @@ describe('uses spent this rest (kits design 1.4, table 2.3)', () => {
   test('a new hunter has spent none, and every change of life, mana or fatigue keeps what was spent', () => {
     expect(newVitals(M).used).toEqual({});
     const v = spent();
-    for (const after of [hit(v, { type: 'damage', amount: 3 }, M), changeMana(v, -2, M), setFatigue(v, 40, M, R), refill(v, M), fitMaxima(v, M)]) {
+    for (const after of [step(v, { type: 'damage', amount: 3 }), mana(v, -2), fatigue(v, 40), refill(v, M), step(v, { type: 'maxChanged' })]) {
       expect(after.used).toEqual(v.used);
     }
   });
@@ -322,13 +326,12 @@ describe('what a change of fatigue crossed (fatigueNews)', () => {
   });
 });
 
-describe('mana paid as a price (spendMana)', () => {
-  const base = newVitals(M);
+describe('mana paid as a price (the spend event)', () => {
   test('the price is taken whole, or refused with nothing taken', () => {
-    const v = setMana(base, 4, M);
-    expect(manaOf(spendMana(v, 3, M) as Vitals, M)).toBe(1);
-    expect(spendMana(v, 5, M)).toEqual({ ok: false, why: 'mana' });
-    expect(manaOf(spendMana(v, 4, M) as Vitals, M), 'all of it may be paid').toBe(0);
+    const v = { ...newVitals(M), mana: 4 };
+    expect(manaOf(step(v, { type: 'spend', mana: 3 }), M)).toBe(1);
+    expect(vitalStep(v, { type: 'spend', mana: 5 }, M, R)).toEqual({ ok: false, why: 'mana' });
+    expect(manaOf(step(v, { type: 'spend', mana: 4 }), M), 'all of it may be paid').toBe(0);
   });
 });
 
@@ -341,5 +344,124 @@ describe('the way back from dead, named the same everywhere', () => {
     expect(crystal?.name).toBe('Resurrection Crystal');
     expect(WAYS_BACK).toBe(`The GM's Revive or a ${crystal!.name}`);
     expect(STATE_CHIP_DEFS.dead.desc).toBe(`Three failed death saves. ${WAYS_BACK} brings the hunter back.`);
+  });
+});
+
+describe('the vitals machine: every life state against every event (vitalStep)', () => {
+  // Each state starts with 4 of 10 mana, fatigue 90 of 100, not collapsed, one use spent. Worked from the rules above:
+  // a short rest gives back ceil(25% of 20) = 5 HP, ceil(50% of 10) = 5 mana and takes 25 fatigue off; a long rest
+  // gives back all of them and the uses. A heal of the dead and damage to the down are the life table's refusals.
+  const USED = { [abilityId('dash')]: 1 };
+  const start = (life: Life): Vitals => ({ life, mana: 4, fatigue: 90, collapsed: false, used: USED });
+  /** The lower maxima `maxChanged` is played with: 10 HP, 3 mana, a capacity of 80. */
+  const LOW: Maxima = { hpMax: 10, manaMax: 3, fatigueMax: 80 };
+  const EVENTS: Record<string, VitalEvent> = {
+    'damage 5': { type: 'damage', amount: 5 }, 'heal 6': { type: 'heal', amount: 6 }, 'HP set to 9': { type: 'setHp', hp: 9 },
+    'a death save of 15': { type: 'deathSave', roll: 15 }, 'stabilize': { type: 'stabilize' },
+    'the GM\'s revive': { type: 'revive', by: 'gm' }, 'a crystal\'s revive': { type: 'revive', by: 'item' },
+    '+3 mana': { type: 'mana', delta: 3 }, 'a price of 3 mana': { type: 'spend', mana: 3 }, 'a price of 5 mana': { type: 'spend', mana: 5 },
+    '+10 fatigue': { type: 'fatigue', delta: 10 }, 'a refill': { type: 'refill' },
+    'a short rest': { type: 'rest', kind: 'short' }, 'a long rest': { type: 'rest', kind: 'long' }, 'lower maxima': { type: 'maxChanged' },
+    'the fight\'s totals': { type: 'fightTotals', life: up(30), mana: 50, fatigue: 100, used: {} },
+  };
+  type Out = Vitals | 'cannot' | 'mana';
+  const was = (life: Life, o: Partial<Vitals> = {}): Vitals => ({ ...start(life), ...o });
+  const L = SAMPLE;
+  const TOTALS = (): Vitals => ({ life: up(20), mana: 10, fatigue: 100, collapsed: true, used: {} });
+  const EXPECTED: Record<LifeState, Record<string, Out>> = {
+    up: {
+      'damage 5': was(up(7)), 'heal 6': was(up(18)), 'HP set to 9': was(up(9)), 'a death save of 15': 'cannot', 'stabilize': 'cannot',
+      'the GM\'s revive': 'cannot', 'a crystal\'s revive': 'cannot', '+3 mana': was(L.up, { mana: 7 }), 'a price of 3 mana': was(L.up, { mana: 1 }),
+      'a price of 5 mana': 'mana', '+10 fatigue': was(L.up, { fatigue: 100, collapsed: true }), 'a refill': was(up(20), { mana: 10 }),
+      'a short rest': was(up(17), { mana: 9, fatigue: 65 }), 'a long rest': was(up(20), { mana: 10, fatigue: 0, used: {} }),
+      'lower maxima': was(up(10), { mana: 3, fatigue: 80 }), 'the fight\'s totals': TOTALS(),
+    },
+    dying: {
+      'damage 5': 'cannot', 'heal 6': was(up(6)), 'HP set to 9': was(up(9)), 'a death save of 15': was(dying(2, 1)), 'stabilize': was(STABLE),
+      'the GM\'s revive': 'cannot', 'a crystal\'s revive': 'cannot', '+3 mana': was(L.dying, { mana: 7 }), 'a price of 3 mana': was(L.dying, { mana: 1 }),
+      'a price of 5 mana': 'mana', '+10 fatigue': was(L.dying, { fatigue: 100, collapsed: true }), 'a refill': was(up(20), { mana: 10 }),
+      'a short rest': was(up(5), { mana: 9, fatigue: 65 }), 'a long rest': was(up(20), { mana: 10, fatigue: 0, used: {} }),
+      'lower maxima': was(L.dying, { mana: 3, fatigue: 80 }), 'the fight\'s totals': TOTALS(),
+    },
+    stable: {
+      'damage 5': 'cannot', 'heal 6': was(up(6)), 'HP set to 9': was(up(9)), 'a death save of 15': 'cannot', 'stabilize': 'cannot',
+      'the GM\'s revive': 'cannot', 'a crystal\'s revive': 'cannot', '+3 mana': was(STABLE, { mana: 7 }), 'a price of 3 mana': was(STABLE, { mana: 1 }),
+      'a price of 5 mana': 'mana', '+10 fatigue': was(STABLE, { fatigue: 100, collapsed: true }), 'a refill': was(up(20), { mana: 10 }),
+      'a short rest': was(up(5), { mana: 9, fatigue: 65 }), 'a long rest': was(up(20), { mana: 10, fatigue: 0, used: {} }),
+      'lower maxima': was(STABLE, { mana: 3, fatigue: 80 }), 'the fight\'s totals': TOTALS(),
+    },
+    // SMX-rules-1.2 waits on the owner: a dead hunter's refill and rests are taken today, the life staying dead.
+    dead: {
+      'damage 5': 'cannot', 'heal 6': 'cannot', 'HP set to 9': 'cannot', 'a death save of 15': 'cannot', 'stabilize': 'cannot',
+      'the GM\'s revive': was(up(1)), 'a crystal\'s revive': was(up(1)), '+3 mana': was(DEAD, { mana: 7 }), 'a price of 3 mana': was(DEAD, { mana: 1 }),
+      'a price of 5 mana': 'mana', '+10 fatigue': was(DEAD, { fatigue: 100, collapsed: true }), 'a refill': was(DEAD, { mana: 10 }),
+      'a short rest': was(DEAD, { mana: 9, fatigue: 65 }), 'a long rest': was(DEAD, { mana: 10, fatigue: 0, used: {} }),
+      'lower maxima': was(DEAD, { mana: 3, fatigue: 80 }), 'the fight\'s totals': TOTALS(),
+    },
+  };
+
+  test('the events played cover every event type', () => {
+    expect(new Set(Object.values(EVENTS).map(e => e.type))).toEqual(new Set(VITAL_EVENT_TYPES));
+  });
+  for (const s of LIFE_STATES) {
+    for (const [name, e] of Object.entries(EVENTS)) {
+      test(`${s} × ${name}`, () => {
+        const v = start(L[s]), before = copy(v);
+        const got = vitalStep(v, e, e.type === 'maxChanged' ? LOW : M, R);
+        const want = EXPECTED[s][name]!;
+        expect(isRefused(got) ? got.why : got).toEqual(want);
+        expect(v, 'the input is not changed').toEqual(before);
+      });
+    }
+  }
+  test('a hunter\'s fields beside the vitals stay out of the answer', () => {
+    expect(Object.keys(step({ ...start(up(12)), name: 'Jinwoo' } as Vitals, { type: 'mana', delta: 1 })).sort()).toEqual(['collapsed', 'fatigue', 'life', 'mana', 'used']);
+  });
+  test('every state takes a fitted maximum and the fight\'s totals', () => {
+    for (const s of LIFE_STATES) expect([VITAL_TABLE[s].maxChanged, VITAL_TABLE[s].fightTotals]).toEqual([true, true]);
+  });
+  test('the refill without rules (starter.ts) answers what vitalStep\'s refill does, in every state', () => {
+    for (const s of LIFE_STATES) for (const collapsed of [false, true]) {
+      const v = { ...start(L[s]), collapsed };
+      expect(refill(v, M)).toEqual(step(v, { type: 'refill' }));
+    }
+  });
+});
+
+describe('the collapse: fresh, tired and collapsed against every fatigue move', () => {
+  // Tired from 50% of the capacity, collapsed from 100% and until a long rest. Fresh starts at 10, tired at 60, the
+  // collapsed hunter at 60 with the latch set. A short rest takes 25 off.
+  const START: Record<FatigueState, Vitals> = {
+    fresh: { ...newVitals(M), fatigue: 10 }, tired: { ...newVitals(M), fatigue: 60 }, collapsed: { ...newVitals(M), fatigue: 60, collapsed: true },
+  };
+  const totals = (f: number): VitalEvent => ({ type: 'fightTotals', life: up(MAX), mana: 10, fatigue: f });
+  /** The lower capacity fitted: 50. */
+  const HALF: Maxima = { ...M, fatigueMax: 50 };
+  const MOVES: [string, VitalEvent, Maxima, Record<FatigueState, FatigueState>][] = [
+    ['+50 fatigue', { type: 'fatigue', delta: 50 }, M, { fresh: 'tired', tired: 'collapsed', collapsed: 'collapsed' }],
+    ['-40 fatigue: lowering it keeps a collapse', { type: 'fatigue', delta: -40 }, M, { fresh: 'fresh', tired: 'fresh', collapsed: 'collapsed' }],
+    ['a short rest keeps a collapse', { type: 'rest', kind: 'short' }, M, { fresh: 'fresh', tired: 'fresh', collapsed: 'collapsed' }],
+    ['a long rest ends it', { type: 'rest', kind: 'long' }, M, { fresh: 'fresh', tired: 'fresh', collapsed: 'fresh' }],
+    // SMX-rules-6.1 waits on the owner: 60 fitted to a capacity of 50 is 50 of 50, past the collapse share, and does not collapse today.
+    ['the capacity lowered to 50', { type: 'maxChanged' }, HALF, { fresh: 'fresh', tired: 'tired', collapsed: 'collapsed' }],
+    ['the fight\'s totals at 100', totals(100), M, { fresh: 'collapsed', tired: 'collapsed', collapsed: 'collapsed' }],
+    // SMX-rules-6.2 waits on the owner: a collapse reached in the fight's totals holds after the fight brings fatigue to 70.
+    ['the fight\'s totals at 70', totals(70), M, { fresh: 'tired', tired: 'tired', collapsed: 'collapsed' }],
+    ['a refill keeps it', { type: 'refill' }, M, { fresh: 'fresh', tired: 'tired', collapsed: 'collapsed' }],
+    ['+3 mana keeps it', { type: 'mana', delta: 3 }, M, { fresh: 'fresh', tired: 'tired', collapsed: 'collapsed' }],
+    ['a price of 3 mana keeps it', { type: 'spend', mana: 3 }, M, { fresh: 'fresh', tired: 'tired', collapsed: 'collapsed' }],
+    ['damage 5 keeps it', { type: 'damage', amount: 5 }, M, { fresh: 'fresh', tired: 'tired', collapsed: 'collapsed' }],
+  ];
+  for (const [name, e, m, want] of MOVES) {
+    for (const s of FATIGUE_STATES) {
+      test(`${s} × ${name}: ${want[s]}`, () => {
+        expect(fatigueState(START[s], M, R), 'the start').toBe(s);
+        expect(fatigueState(step(START[s], e, m), m, R)).toBe(want[s]);
+      });
+    }
+  }
+  test('fatigue at 100 in the fight, brought to 70 before its end, leaves the sheet collapsed (SMX-rules-6.2, today)', () => {
+    const mid = step(START.fresh, totals(100));
+    expect(step(mid, totals(70))).toMatchObject({ fatigue: 70, collapsed: true });
   });
 });
