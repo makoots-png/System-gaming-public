@@ -32,7 +32,7 @@ export const iconPick = machine<IconPick, IconPickEvent>({
   where: [
     ['The union', '`IconPick`, `IconPickEvent`, `ICON_PICK_STATES` and `ICON_PICK_EVENTS` in `src/core/icon-pick.ts`'],
     ['What changes it', '`iconPickStep(icon, event)` and its `TABLE` in `src/core/icon-pick.ts`; the row\'s line is `iconShown` and `iconWords` there'],
-    ['Who calls it', '`iconField` in `src/views/maker.js`, which keeps one `picker` per maker and moves it only by `iconPickStep`; its sheet is a window over the maker (ui.js `openWindow`)'],
+    ['Who calls it', '`iconField` in `src/views/maker.js`, which keeps one `picker` per maker and moves it only by `iconPickStep`; its sheet is the window sheet `iconPick` (ui.js `sheet`), which a change of tab takes down'],
     ['The test to copy', '`tests/icon-pick.test.ts`, "every state against every event"'],
     ['The recipe', 'docs/guide/makers.md, "An icon"'],
   ],

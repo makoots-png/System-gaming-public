@@ -6,7 +6,7 @@
 // effects editor, one row per op of the fight (src/core/combat/effect-ops.ts), an amount a formula read by `parseFormula`;
 // `rewards` is the reward editor (reward-editor.js). No game rule lives here: a maker builds its form from these parts and
 // saves what the kind's parser gives back.
-import { esc, css, field, h, closeWindow, confirm, formEnter, openWindow, trapTab } from './ui.js';
+import { esc, css, field, h, closeWindow, confirm, formEnter, openWindow, sheet, trapTab } from './ui.js';
 import { enter, pop } from './motion.ts';
 import { icon, iconHref, sprite } from './icons.ts';
 import { GROUP_WORDS, iconPickStart, iconPickStep, iconShown, iconWords, pickerGroups } from '../core/icon-pick.ts';
@@ -1011,8 +1011,8 @@ function worthBar(box) {
  * use and a line saying why ("Wolf, from its type", "Raven, picked"). A tap opens a sheet over the maker: a row of the
  * icon groups, the thing's own first, and a grid of 44 px cells, the first "Default" with the default's picture. A tap on
  * a cell picks it and closes the sheet; "Default" stores no key. The row's state is the machine of src/core/icon-pick.ts,
- * kept in `picker` and moved only by `iconPickStep` (`move`). The sheet is a window over its maker (ui.js `openWindow`):
- * while it is up it takes the keys (Escape closes it, Tab stays in it), and a press anywhere beside its panel closes it.
+ * kept in `picker` and moved only by `iconPickStep` (`move`). The sheet is the sheet `iconPick` of the window stack (ui.js `sheet`):
+ * Escape or a change of tab (`went`) takes it down, Tab stays in it, and a press anywhere beside its panel closes it.
  * It is drawn inside the row, so a tap on a cell is a press in the form, which the maker's draft reads as a change;
  * opening the sheet, a group and its close are marked `data-mk-look` and change nothing. The default follows the form:
  * the line is drawn again from `subject` after each input, change and tap in the maker's window.
@@ -1024,8 +1024,8 @@ function worthBar(box) {
 export function iconField(box, win, o) {
   /** The row's machine (src/core/icon-pick.ts): the pick, and the sheet closed or open at a group. */
   let picker = iconPickStart(o.thing, o.pick || null);
-  /** The sheet's window while it is up, for `closeWindow`; null while it is closed. @type {import('./ui.js').Win | null} */
-  let sheetWin = null;
+  /** The sheet's overlay while it is up; null while it is closed. @type {HTMLElement | null} */
+  let sheetEl = null;
   sprite();
   const first = iconShown(o.subject(), picker.pick);
   box.classList.add('mk-ic');
@@ -1045,10 +1045,8 @@ export function iconField(box, win, o) {
     const cell = (key, label, inner, cls = '') => `<button type="button" class="mk-ic-cell${cls}" data-ic-key="${key}" aria-label="${esc(label)}" title="${esc(label)}" aria-pressed="${pick === key}">${inner}</button>`;
     root.querySelector('[data-ic-grid]').innerHTML = [cell('', `Default: ${iconWords(d)}`, `${icon(d.key)}<span>Default</span>`, ' mk-ic-def'), ...iconsOf(at).map(k => cell(k, iconDef(k).label, icon(k)))].join('');
   };
-  function onKey(e) {
-    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); move({ kind: 'shut' }); }
-    else if (e.key === 'Tab' && sheetWin && sheetWin.win) trapTab(e, sheetWin.win);
-  }
+  /** Tab stays in the sheet while it is up (Escape is the stack's: `sheet` hands it to `move`). */
+  const onKey = e => { if (e.key === 'Tab' && sheetEl) trapTab(e, /** @type {HTMLElement} */ (sheetEl.firstElementChild)); };
   /** Moves the row by `e` and draws what changed: the sheet up, its group, or the sheet gone and the row's line. */
   function move(e) {
     const was = picker;
@@ -1060,12 +1058,13 @@ export function iconField(box, win, o) {
         <div class="seg mk-ic-groups" role="group" aria-label="Groups of icons">${pickerGroups(o.thing).map(g => `<button type="button" data-mk-look data-ic-group="${g}" aria-pressed="false">${esc(GROUP_WORDS[g])}</button>`).join('')}</div>
         <div class="mk-ic-grid" data-ic-grid></div></div></div>`);
       paint(root);
-      sheetWin = openWindow('maker', () => { box.appendChild(root); enter(root.firstElementChild); enter(root, 'fade'); return { root, win: /** @type {HTMLElement} */ (root.firstElementChild) }; }, onKey);
+      box.appendChild(root); enter(root.firstElementChild); enter(root, 'fade'); sheetEl = root; root.addEventListener('keydown', onKey);
+      sheet('iconPick', true, () => move({ kind: 'shut' }));
       opener.setAttribute('aria-expanded', 'true');
       /** @type {HTMLElement} */ (root.querySelector('.mk-ic-cell[aria-pressed=true]') || root.querySelector('.mk-ic-cell')).focus({ preventScroll: true });
-    } else if (picker.at === 'open' && sheetWin) paint(sheetWin.root);
-    else if (sheetWin) {
-      closeWindow(sheetWin); sheetWin = null;
+    } else if (picker.at === 'open' && sheetEl) paint(sheetEl);
+    else if (sheetEl) {
+      sheet('iconPick', false, () => {}); sheetEl.remove(); sheetEl = null;
       opener.setAttribute('aria-expanded', 'false'); opener.focus({ preventScroll: true });
       line();
     }

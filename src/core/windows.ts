@@ -18,10 +18,10 @@ export type WindowKind = 'system' | 'maker' | 'onboard' | 'shelf' | 'story' | 's
 /**
  * Every sheet over the page, by its owner: the dice roller (`quickRoll`, dice.js), the GM's Fight tools over a map
  * (`fightTools`) and the card of the row picked on a phone's map (`rowCard`, both combat.js), and a player's card of a
- * token on its map (`tokenCard`, table.js). One of each at most.
+ * token on its map (`tokenCard`, table.js), and a maker's icon picker over the maker (`iconPick`, maker.js). One of each at most.
  */
-export type WindowSheet = 'quickRoll' | 'fightTools' | 'rowCard' | 'tokenCard';
-export const WINDOW_SHEETS = ['quickRoll', 'fightTools', 'rowCard', 'tokenCard'] as const satisfies readonly WindowSheet[];
+export type WindowSheet = 'quickRoll' | 'fightTools' | 'rowCard' | 'tokenCard' | 'iconPick';
+export const WINDOW_SHEETS = ['quickRoll', 'fightTools', 'rowCard', 'tokenCard', 'iconPick'] as const satisfies readonly WindowSheet[];
 /**
  * A window drawn: `open`, or `leaving` while its move out plays (no longer open: it takes no key and counts for nothing).
  * A sheet is open until it goes, at once, with no move out.

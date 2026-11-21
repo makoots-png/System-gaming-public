@@ -1929,3 +1929,17 @@ test('in the status maker opening the icons and closing them changes nothing, a 
     expect('icon' in (await saved())).toBe(false);
   });
 });
+
+test('a change of tab takes the icon picker down and leaves the maker under it open', async ({ device }) => {
+  const page = (await device('gm', { viewport: { width: 360, height: 640 } })).page;
+  await onboardGM(page);
+  const d = statusMaker(page);
+  await go(page, 'workshop');
+  await workshop(page, 'status').locator('[data-new]').tap();
+  await iconOpen(d).tap();
+  await expect(iconSheet(d)).toBeVisible();
+  await page.evaluate(() => { location.hash = '#/status'; });
+  await expect(iconSheet(d)).toHaveCount(0);
+  await expect(d).toBeVisible();
+  await expect(iconOpen(d)).toHaveAttribute('aria-expanded', 'false');
+});

@@ -102,3 +102,36 @@ test('a hunter\'s potion, in the hotbar\'s drawer on the map, shows the picture 
   expect(await drawn(slot.locator('.ic'))).toMatchObject({ href: '#i-potion', side: 20, hidden: 'true' });
   await inside(slot, PHONE.width);
 });
+
+test('a status on the GM card and on the player\'s table HUD starts with its picture, and the chip fits a phone', async ({ device }) => {
+  const gm = (await device('gm', { viewport: PHONE })).page, player = (await device('player', { viewport: PHONE })).page;
+  await onboardGM(gm);
+  await chooseList(gm);
+  const code = await createRoom(gm);
+  await onboardPlayer(player, 'Kai Test', code);
+  await chooseList(player);
+  await dismissAll(player, 4);
+  await expect(gm.locator('#gm-board .gm-card.remote', { hasText: 'Kai Test' })).toHaveCount(1);
+  await go(gm, 'combat');
+  await expect(gm.locator('#view-combat [data-hsel] option', { hasText: 'Kai Test (remote)' })).toHaveCount(1);
+  await gm.locator('#view-combat [data-hsel]').selectOption({ label: 'Kai Test (remote)' });
+  await gm.locator('#view-combat [data-addh]').tap();
+  await gm.locator('#view-combat [data-qline]').fill('Cave Rat, E, brute');
+  await gm.locator('#view-combat [data-qadd]').tap();
+  await gm.locator('#view-combat .cmb-row', { hasText: 'Kai Test' }).first().locator('[data-pick]').tap();
+  const card = gm.locator('#view-combat .cmb-card');
+  await expect(card.locator('h3')).toContainText('Kai Test');
+  await card.locator('[data-cforge]').tap();
+  await gm.locator('.fg-overlay [data-existing] [data-chip="poisoned"]').tap();
+  const gmChip = card.locator('.cmb-conds [data-chip="poisoned"] .c-info');
+  expect(await drawn(gmChip.locator('.ic'))).toMatchObject({ href: '#i-poison', side: 14, hidden: 'true' });
+  await inside(gmChip.locator('..'), PHONE.width);
+  expect(await noSideScroll(gm)).toBe(true);
+
+  await gm.locator('#view-combat [data-start]').tap();
+  await go(player, 'combat');
+  const hudChip = player.locator('#view-combat [aria-label="Your statuses"] [data-chip="poisoned"] .c-info');
+  expect(await drawn(hudChip.locator('.ic'))).toMatchObject({ href: '#i-poison', side: 14, hidden: 'true' });
+  await inside(hudChip.locator('..'), PHONE.width);
+  expect(await noSideScroll(player)).toBe(true);
+});

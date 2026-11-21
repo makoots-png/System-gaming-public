@@ -19,6 +19,7 @@ import { TABLE_REFUSAL_WORDS } from '../core/combat/refusal-words.ts';
 import * as motion from './motion.ts';
 import { bind, keyed } from './patch.ts';
 import { icon, sprite } from './icons.ts';
+import { statusIcon } from '../core/registry/icon-defaults.ts';
 
 const FEED_MAX = 20;
 const BANDS = { healthy: 100, wounded: 70, bloodied: 45, critical: 20, down: 0 };
@@ -152,7 +153,7 @@ export function register(app) {
       const key = s.key, def = s.def || (Object.hasOwn(R.conditions, key) ? R.conditions[key] : null), name = def ? def.label : s.label || key;
       const left = s.left !== undefined ? s.left : s.rounds, n = s.stacks;
       const ends = !!(def && def.end), when = left != null ? ` · ${ends ? 'in ' : ''}${left} round${left === 1 ? '' : 's'}` : '';
-      return `<span class="chip${n ? ' stk' : ''}" data-chip="${esc(key)}"${def && def.color ? ` style="border-color:${esc(def.color)}"` : ''}><button type="button" class="c-info"${D().control(list, key)}>${esc(name)}${n ? ` <b class="c-n" data-stacks="${n}" data-sk="${esc(`${rowKey}:${key}`)}">${n}</b>` : ''}${esc(when)}</button></span>`
+      return `<span class="chip${n ? ' stk' : ''}" data-chip="${esc(key)}"${def && def.color ? ` style="border-color:${esc(def.color)}"` : ''}><button type="button" class="c-info"${D().control(list, key)}><span class="c-ic">${icon(statusIcon(key, def || { ops: [] }))}</span>${esc(name)}${n ? ` <b class="c-n" data-stacks="${n}" data-sk="${esc(`${rowKey}:${key}`)}">${n}</b>` : ''}${esc(when)}</button></span>`
         + D().panel(list, key, () => ({ kind: 'status', label: name, def, tier: s.source ? s.source.tier : s.tier ?? null, ...(n ? { stacks: n } : {}), left: left ?? null }));
     }).join('')}</div>`;
   }

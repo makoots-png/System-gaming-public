@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { NO_WINDOWS, WINDOW_EVENTS, keyWindow, openSheet, openSystem, windowAt, windowId, windowStep } from '../src/core/windows.ts';
+import { NO_WINDOWS, WINDOW_EVENTS, WINDOW_SHEETS, keyWindow, openSheet, openSystem, windowAt, windowId, windowStep } from '../src/core/windows.ts';
 import type { WindowEvent, Windows } from '../src/core/windows.ts';
 import { bfs } from '../scripts/statecharts.ts';
 import { FIRST_RUN, SYSTEM_WINDOWS, WINDOW_WALK } from './models/window-events.ts';
@@ -122,6 +122,16 @@ describe('the windows', () => {
       'a sheet open': ['off, shut forget', 'off, shut forget'],
       'no window': ['stays', 'stays'],
     });
+  });
+
+  test('a change of tab takes down every sheet there is, the icon picker too', () => {
+    const open = WINDOW_SHEETS.map((sheet, i) => ({ kind: 'open', id: windowId(20 + i), of: 'sheet', sheet }) as const);
+    expect(WINDOW_SHEETS).toContain('iconPick');
+    const up = run(NO_WINDOWS, ...open).windows;
+    expect(up.shown).toHaveLength(WINDOW_SHEETS.length);
+    const went = windowStep(up, { kind: 'went' });
+    expect(went.windows).toEqual(NO_WINDOWS);
+    expect(went.fx.filter(f => f.kind === 'shut')).toHaveLength(WINDOW_SHEETS.length);
   });
 
   test('a sheet already up is not opened twice: one Quick Roll at most', () => {
