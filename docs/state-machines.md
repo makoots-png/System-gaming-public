@@ -1202,7 +1202,7 @@ Where it lives:
 
 ## A shadow
 
-Every state of one shadow reachable from a hunter with that shadow resting (tests/models/shadow-events.ts) under the 3 events of its life, breadth first. The walk found 3 states and 4 steps.
+Every state of one shadow reachable from a hunter with that shadow resting at full HP (tests/models/shadow-events.ts) under the 6 events of its life, breadth first. The walk found 7 states and 30 steps.
 
 ### A shadow, from its extraction to its release
 
@@ -1214,24 +1214,36 @@ stateDiagram-v2
   state "In the army" as s1
   state "Summoned" as s2
   state "Released (gone)" as s3
+  state "In the army at 0 HP" as s4
+  state "Summoned at 0 HP" as s5
   [*] --> s1
   s1 --> s2 : Summon (pays its rank's summon mana)
   s1 --> s3 : Release, after a confirm
+  s1 --> s4 : it falls to 0 HP in a fight
   s2 --> s1 : Dismiss (no mana back)
   s2 --> s3 : Release, after a confirm
+  s2 --> s5 : it falls to 0 HP in a fight
+  s4 --> s5 : Summon (pays its rank's summon mana)
+  s4 --> s3 : Release, after a confirm
+  s4 --> s1 : a fight leaves it above 0 HP
+  s4 --> s1 : Full HP
+  s5 --> s4 : Dismiss (no mana back)
+  s5 --> s3 : Release, after a confirm
+  s5 --> s2 : a fight leaves it above 0 HP
+  s5 --> s2 : Full HP
 ```
 
-The chart starts when a shadow has joined the army (an extraction that passed, or the GM's grant). It leaves out its HP, which a fight writes back and Heal refills, its name and its notes: none of them moves the state. A summon the hunter has not the mana for is refused before the event.
+The chart starts when a shadow has joined the army (an extraction that passed, or the GM's grant). Its HP is in its state, and a box is drawn for a shadow at 0 HP; a fight that leaves it hurt but above 0, and Full HP on a shadow above 0, stay in their box. Two cells wait on the owner (rules-10.1): a shadow that falls stays Summoned, and one at 0 HP may be summoned. A summon the hunter has not the mana for is refused before the event; its name and notes do not move the state.
 
-3 chart states, 4 arrows. No step is hidden.
+5 chart states, 14 arrows. No step is hidden.
 
 Where it lives:
 
 | What | Where |
 |---|---|
-| The union | `ShadowState`, `ShadowEvent`, `SHADOW_STATES` and `SHADOW_EVENTS` in `src/core/hunter/shadows.ts` |
-| What changes it | `stepShadow(hunter, id, event)` and its `TABLE`; `can` for the panel's buttons |
-| Who calls it | `src/views/shadows.js` (Summon, Dismiss, Release) |
+| The union | `ShadowState` (where it is, with its HP), `ShadowEvent`, the table's `ShadowCase` and `ShadowColumn` in `src/core/hunter/shadows.ts` |
+| What changes it | `stepShadow(hunter, id, event)` and its `TABLE`; `setShadowHp` (a fight's write-back) and `healShadow` (Full HP) step it; `can` for the panel's buttons |
+| Who calls it | `src/views/shadows.js` (Summon, Dismiss, Full HP, Release), `src/core/combat/fight-save.ts` and `src/core/gates/solo.ts` (a fight's HP) |
 | The test to copy | `tests/shadows.test.ts`; the walk's events are in `tests/models/shadow-events.ts` |
 | The recipe | docs/guide/hunters.md, "A state or event of the ... machine" |
 

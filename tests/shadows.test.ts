@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { SHADOW_EVENTS, SHADOW_STATES, addShadow, extractDc, extractOutcome, healShadow, newShadowOf, noteShadow, renameShadow, risesAs, shadowState, stepShadow, transition } from '../src/core/hunter/shadows.ts';
+import { SHADOW_CASES, SHADOW_COLUMNS, addShadow, can, extractDc, extractOutcome, healShadow, newShadowOf, noteShadow, renameShadow, risesAs, setShadowHp, shadowCase, shadowColumn, shadowMove, shadowState, stepShadow } from '../src/core/hunter/shadows.ts';
+import type { ShadowEvent, ShadowState } from '../src/core/hunter/shadows.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
 import { ARMY, WALK_EVENTS } from './models/shadow-events.ts';
 import { shadowSheet } from '../src/core/combat/rows.ts';
@@ -18,43 +19,92 @@ test('a new shadow is at the full HP its body gives, not summoned, its name clea
   expect(newShadowOf({ ...origin, name: ' ' }, shid('sh2'), RULES).name).toBe('Shadow');
 });
 
+const SUMMON = { kind: 'summon' } as const, DISMISS = { kind: 'dismiss' } as const, RELEASE = { kind: 'release' } as const;
+const army = (s: Partial<typeof shade> = {}) => ok(addShadow(newHunter(RULES), { ...shade, ...s }, RULES));
+
 test('round trip: a shadow summoned then dismissed leaves the army as it was (the mana it cost is not given back)', () => {
-  const h = ok(addShadow(newHunter(RULES), shade, RULES));
-  expect(ok(stepShadow(ok(stepShadow(h, 'sh1', 'summon')), 'sh1', 'dismiss'))).toEqual(h);
+  const h = army();
+  expect(ok(stepShadow(ok(stepShadow(h, 'sh1', SUMMON)), 'sh1', DISMISS))).toEqual(h);
 });
 
 test('round trip: a shadow that joins then is released leaves the hunter as it was', () => {
   const h = newHunter(RULES);
-  expect(ok(stepShadow(ok(addShadow(h, shade, RULES)), 'sh1', 'release'))).toEqual(h);
-  expect(stepShadow(h, 'sh1', 'release')).toEqual({ ok: false, why: 'not-now' });
+  expect(ok(stepShadow(ok(addShadow(h, shade, RULES)), 'sh1', RELEASE))).toEqual(h);
+  expect(stepShadow(h, 'sh1', RELEASE)).toEqual({ ok: false, why: 'not-now' });
 });
 
 test('heal brings HP to the full, a rename is cut to 60 and refused blank, notes are cut to 500', () => {
-  const hurt = ok(addShadow(newHunter(RULES), { ...shade, hp: 1 }, RULES));
+  const hurt = army({ hp: 1 });
   expect(ok(healShadow(hurt, 'sh1', RULES)).shadows[0]!.hp).toBe(shade.hp);
   expect(ok(renameShadow(hurt, 'sh1', 'x'.repeat(70))).shadows[0]!.name).toHaveLength(60);
   expect(renameShadow(hurt, 'sh1', '  ')).toEqual({ ok: false, why: 'blank' });
   expect(ok(noteShadow(hurt, 'sh1', 'n'.repeat(600))).shadows[0]!.notes).toHaveLength(500);
 });
 
-test('the machine: a resting shadow is summoned, a summoned one dismissed, either released, and a released one takes nothing', () => {
-  const rows = SHADOW_STATES.map(st => [st, Object.fromEntries(SHADOW_EVENTS.map(e => [e, transition(st, e)]))]);
-  expect(Object.fromEntries(rows)).toEqual({
-    resting: { summon: 'summoned', dismiss: null, release: 'released' },
-    summoned: { summon: null, dismiss: 'resting', release: 'released' },
-    released: { summon: null, dismiss: null, release: null },
+describe('a shadow\'s life: resting or summoned with its HP, or released', () => {
+  test('the table: every case of a shadow against every column of an event, the refused ones null', () => {
+    const rows = SHADOW_CASES.map(c => [c, Object.fromEntries(SHADOW_COLUMNS.map(e => [e, shadowMove(c, e)]))]);
+    expect(Object.fromEntries(rows)).toEqual({
+      resting: { summon: 'summoned', dismiss: null, release: 'released', fought: 'resting', fell: 'resting', heal: 'resting' },
+      restingFallen: { summon: 'summoned', dismiss: null, release: 'released', fought: 'resting', fell: 'resting', heal: 'resting' },
+      summoned: { summon: null, dismiss: 'resting', release: 'released', fought: 'summoned', fell: 'summoned', heal: 'summoned' },
+      summonedFallen: { summon: null, dismiss: 'resting', release: 'released', fought: 'summoned', fell: 'summoned', heal: 'summoned' },
+      released: { summon: null, dismiss: null, release: null, fought: null, fell: null, heal: null },
+    });
   });
-});
 
-test('every walk of the army\'s events moves the stored shadow as the table says, and refuses the rest', () => {
-  for (const first of WALK_EVENTS) for (const second of WALK_EVENTS) {
-    let h = ARMY();
-    for (const e of [first, second]) {
-      const want = transition(shadowState(h, 'sh1'), e), next = stepShadow(h, 'sh1', e);
-      expect(isRefused(next)).toBe(want === null);
-      if (!isRefused(next)) { h = next; expect(shadowState(h, 'sh1')).toBe(want!); }
+  test('a shadow\'s case is where it is, and in the army whether its HP is 0; a fight that leaves it at 0 or below is the fell column', () => {
+    expect([{ at: 'resting', hp: 4 }, { at: 'resting', hp: 0 }, { at: 'summoned', hp: 4 }, { at: 'summoned', hp: 0 }, { at: 'released' }].map(s => shadowCase(s as ShadowState)))
+      .toEqual(['resting', 'restingFallen', 'summoned', 'summonedFallen', 'released']);
+    expect([SUMMON, DISMISS, RELEASE, { kind: 'fought', hp: 3 }, { kind: 'fought', hp: 0 }, { kind: 'fought', hp: -2 }, { kind: 'heal', hpMax: 9 }].map(e => shadowColumn(e as ShadowEvent)))
+      .toEqual(['summon', 'dismiss', 'release', 'fought', 'fell', 'fell', 'heal']);
+  });
+
+  test('the stored shadow is read as its state: summoned or resting with its HP, released when it is not in the army', () => {
+    expect(shadowState(army({ hp: 7 }), 'sh1')).toEqual({ at: 'resting', hp: 7 });
+    expect(shadowState(army({ hp: 0, summoned: true }), 'sh1')).toEqual({ at: 'summoned', hp: 0 });
+    expect(shadowState(army(), 'sh9')).toEqual({ at: 'released' });
+  });
+
+  test('a fight leaves a summoned shadow summoned at the HP it ended on', () => {
+    const h = ok(setShadowHp(army({ summoned: true }), 'sh1', 3));
+    expect(h.shadows[0]).toEqual({ ...shade, summoned: true, hp: 3 });
+  });
+
+  test('rules-10.1 waits on the owner: a shadow that falls to 0 HP in a fight stays summoned today, at 0 HP', () => {
+    expect(ok(setShadowHp(army({ summoned: true }), 'sh1', 0)).shadows[0]).toEqual({ ...shade, summoned: true, hp: 0 });
+  });
+
+  test('a fight that leaves a shadow below 0 stores 0, never a negative HP', () => {
+    expect(ok(setShadowHp(army({ summoned: true }), 'sh1', -4)).shadows[0]!.hp).toBe(0);
+  });
+
+  test('rules-10.1 waits on the owner: a resting shadow at 0 HP may be summoned today, still at 0 HP', () => {
+    expect(can(army({ hp: 0 }), 'sh1', SUMMON)).toBe(true);
+    expect(ok(stepShadow(army({ hp: 0 }), 'sh1', SUMMON)).shadows[0]).toEqual({ ...shade, summoned: true, hp: 0 });
+  });
+
+  test('Full HP brings a fallen shadow back to the full HP its body gives, summoned or resting as it was', () => {
+    expect(ok(healShadow(army({ hp: 0, summoned: true }), 'sh1', RULES)).shadows[0]).toEqual({ ...shade, summoned: true });
+    expect(ok(healShadow(army({ hp: 0 }), 'sh1', RULES)).shadows[0]).toEqual(shade);
+  });
+
+  test('a released shadow takes no fight\'s HP and no heal: both are refused and the hunter is left as it was', () => {
+    const h = newHunter(RULES);
+    expect([setShadowHp(h, 'sh1', 3), healShadow(h, 'sh1', RULES)]).toEqual([{ ok: false, why: 'not-now' }, { ok: false, why: 'not-now' }]);
+  });
+
+  test('every walk of three of the army\'s events moves the stored shadow as the table says, and refuses the rest', () => {
+    for (const a of WALK_EVENTS) for (const b of WALK_EVENTS) for (const c of WALK_EVENTS) {
+      let h = ARMY();
+      for (const e of [a, b, c]) {
+        const was = shadowState(h, 'sh1'), want = shadowMove(shadowCase(was), shadowColumn(e)), next = stepShadow(h, 'sh1', e);
+        expect(isRefused(next)).toBe(want === null);
+        expect(can(h, 'sh1', e)).toBe(want !== null);
+        if (!isRefused(next)) { h = next; expect(shadowState(h, 'sh1').at).toBe(want!); }
+      }
     }
-  }
+  });
 });
 
 describe('the DC to extract a shadow (RULES.shadow: base 10, 3 a rank, a boss +5, never under 5)', () => {

@@ -5,6 +5,7 @@ import { tapWords } from '../core/sync/taps.ts';
 import * as motion from './motion.ts';
 import { qrSvg } from '../core/qr.js';
 import { ROOM_IS, ROOM_PATH } from '../core/first-run.ts';
+import { LOBBY_START, checkAnswer, checkAsking, lobbyStep, seatBusy } from '../core/sync/lobby.ts';
 /** Whether `v` is a room code (src/core/ids.ts `parseRoomCode`). */
 const isCode = v => parseRoomCode(v) !== null;
 const STYLE = `
@@ -59,7 +60,10 @@ export function register(app) {
   const { store, ui } = app, { esc, h } = ui, Y = () => app.api.sync, sy = () => store.get().settings.sync;
   ui.css('room', STYLE);
   let el, root, q, raf = 0;
-  const view = { jc: null, ic: null, hid: null, open: new Set(), t: 0 };
+  // the lobby (src/core/sync/lobby.ts, moved only by lobbyDo), the timer of its code check's pause, the hunter picked under Play as
+  let lobbyNow = LOBBY_START, pause = 0, picked = null;
+  /** The roster rows whose Manage is open. */
+  const open = new Set();
   // the room card's state line and connection line, by conn() (src/core/sync/connection.ts)
   const STATE = {
     live: ['Live', 'Live.'], connecting: ['Connecting', 'Connecting to the room.'], reconnecting: ['Reconnecting', 'Reconnecting. The server does not answer yet.'],
@@ -164,7 +168,7 @@ export function register(app) {
     el = m; root = m.closest('.view'); m.innerHTML = TPL;
     const $ = s => m.querySelector(s); q = new Proxy({}, { get: (c, k) => { const n = String(k); return c[n] || (c[n] = $(n.includes('_') ? `[data-${n.split('_')[0]}="${n.split('_')[1]}"]` : `[data-${n}]`)); } });
     on();
-    const p = Y().invite(); if (p) checkInvite(p); // an invite comes only with the page's address, before the view is drawn
+    const p = Y().invite(); if (p) lobbyDo({ type: 'asked', code: p }); // an invite comes only with the page's address, before the view is drawn
     setInterval(() => { if (vis() && q.card && !q.card.hidden) { const d = Y().detail(); set(q.ago, d.lastOk ? `Last sync ${ago(d.lastOk)}.` : 'No sync yet.'); } }, 1000);
     window.addEventListener('resize', sched);
   }
@@ -187,10 +191,28 @@ export function register(app) {
   const replaced = e => !!e && e.kind === 'replaced';
   /** What a failed tap for room `code` says (src/core/sync/taps.ts): nothing for a campaign replaced while it waited. */
   const said = (e, code, typed = false) => tapWords(e && e.kind ? e.kind : 'net', code, typed) ?? '';
+  /** The lobby's one writer: steps it (src/core/sync/lobby.ts) and carries out what the step answers. */
+  function lobbyDo(e) {
+    const r = lobbyStep(lobbyNow, e); lobbyNow = r.state;
+    for (const x of r.effects) {
+      if (x.type === 'setTimer') pause = setTimeout(() => lobbyDo({ type: 'paused', code: x.code }), x.ms);
+      else if (x.type === 'clearTimer') clearTimeout(pause);
+      else if (x.type === 'ask') Y().check(x.code).then(answer => lobbyDo({ type: 'answered', of: x.of, code: x.code, answer }));
+      else if (x.type === 'confirm') {
+        ui.confirm({ title: `Remove ${x.name}?`, body: `${x.name} leaves the party board and any fight. Their device keeps the hunter and stops syncing with this room.`, danger: true, confirmLabel: 'Remove from room' })
+          .then(yes => lobbyDo({ type: 'confirmed', key: x.key, room: x.room, yes: !!yes }));
+      } else if (x.type === 'send') {
+        // the room first: a removal the server did not take leaves the hunter in the fight as in the room
+        const A = Y(), asked = x.act === 'remove' ? A.kick(x.key) : x.act === 'release' ? A.release(x.key) : A.allowBack(x.key);
+        asked.then(call => lobbyDo({ type: 'seatAnswered', act: x.act, key: x.key, room: x.room, call }));
+      } else if (x.type === 'told') told(x);
+    }
+    sched();
+  }
   // the "as GM" buttons: the stored key or nothing (a refused key must not turn into a player join)
   async function asGM(code, errEl) {
     if (!Y().gmRooms().some(r => r.code === code) || busy()) return;
-    errEl.textContent = '';
+    errEl.textContent = ''; lobbyDo({ type: 'joinTapped' });
     try { await Y().rejoinGM(code); ui.toast('System', `Rejoined ${code} as GM.`, { kind: 'info' }); window.scrollTo(0, 0); }
     catch (e) { errEl.textContent = said(e, code); }
   }
@@ -199,13 +221,14 @@ export function register(app) {
     errEl.textContent = '';
     if (o.name === '') { errEl.textContent = 'Name your new hunter.'; q.newname.focus(); return; }
     try {
+      lobbyDo({ type: 'joinTapped' });
       const role = await Y().joinRoom(code, o);
       ui.toast('System', role === 'gm' ? `Rejoined ${code} as GM.` : `Joined room ${code}.`, { kind: 'info' });
-      view.jc = null; view.ic = null; view.hid = null; q.newname.value = ''; q.code.value = ''; window.scrollTo(0, 0);
+      lobbyDo({ type: 'joined' }); picked = null; q.newname.value = ''; q.code.value = ''; window.scrollTo(0, 0);
     } catch (e) {
       if (replaced(e)) return;
       const k = e && e.kind; errEl.textContent = said(e, code);
-      if (k === 'notfound') { const r = { ok: true, exists: false, gm: false }; if (kind === 'join') view.jc = { code, r }; if (kind === 'invite') view.ic = { code, r }; if (kind === 'last') errEl.textContent = ''; }
+      if (k === 'notfound') { if (kind === 'join' || kind === 'invite') lobbyDo({ type: 'notFound', of: kind, code }); else errEl.textContent = ''; }
       if (field) { field.focus(); field.select(); }
     } finally { render(); }
   }
@@ -215,28 +238,28 @@ export function register(app) {
       let v = q.code.value;
       if (!/^[A-Za-z0-9]{0,6}$/.test(v)) { const c = Y().parseInvite(v); if (c) v = c; }
       v = v.toUpperCase(); if (!e.isComposing) upper(q.code, v); else v = q.code.value.toUpperCase();
-      q.err.textContent = ''; view.jc = null; clearTimeout(view.t);
-      if (isCode(v)) view.t = setTimeout(() => runCheck(v), 300);
+      q.err.textContent = ''; lobbyDo({ type: 'typed', code: parseRoomCode(v) });
       render();
     });
     q.code.addEventListener('keydown', e => { if (e.key === 'Enter' && !q.join.disabled) { e.preventDefault(); q.join.click(); } });
-    q.join.addEventListener('click', () => { const v = q.code.value; if (isCode(v)) doJoin('join', v, who(view.jc && view.jc.code === v ? view.jc.r : null), q.err, q.code); });
+    q.join.addEventListener('click', () => { const v = q.code.value; if (isCode(v)) doJoin('join', v, who(checkAnswer(lobbyNow.join, v)), q.err, q.code); });
     q.hunter.addEventListener('change', async () => {
       if (app.seat() !== 'alone') { await Y().switchTo(q.hunter.value); q.hunter.value = bound(); render(); return; }
-      view.hid = q.hunter.value; render(); if (view.hid === '__new') q.newname.focus();
+      picked = q.hunter.value; render(); if (picked === '__new') q.newname.focus();
     });
-    q.joininvite.addEventListener('click', () => { const c = Y().invite(); if (c) doJoin('invite', c, who(view.ic && view.ic.code === c ? view.ic.r : null), q.ierr, null); });
-    q.notthis.addEventListener('click', () => { Y().dropInvite(); view.ic = null; q.ierr.textContent = ''; render(); });
+    q.joininvite.addEventListener('click', () => { const c = Y().invite(); if (c) doJoin('invite', c, who(checkAnswer(lobbyNow.invite, c)), q.ierr, null); });
+    q.notthis.addEventListener('click', () => { Y().dropInvite(); lobbyDo({ type: 'dropped' }); q.ierr.textContent = ''; render(); });
     q.rejoinlast.addEventListener('click', () => { const l = Y().lastRoom(); if (!l) return; if (l.gm) asGM(l.code, q.lerr); else doJoin('last', l.code, { hunterId: joinPick() }, q.lerr, null); });
     q.forgetlast.addEventListener('click', () => { q.lerr.textContent = ''; Y().forgetLast(); });
     q.create.addEventListener('click', async () => {
-      q.cerr.textContent = ''; if (busy()) return;
+      q.cerr.textContent = ''; if (busy()) return; lobbyDo({ type: 'joinTapped' });
       try { await Y().create(); } catch (e) { q.cerr.textContent = said(e, ''); }
     });
     q.rcode.addEventListener('input', e => { if (!e.isComposing) upper(e.target, e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '')); });
     q.rejoingm.addEventListener('click', async () => {
       if (busy()) return; q.kerr.textContent = ''; const code = q.rcode.value.trim().toUpperCase(), key = q.rkey.value.trim();
       if (!isCode(code) || !key) { q.kerr.textContent = `Enter the ${CODE_LEN}-character room code and the GM key.`; return; }
+      lobbyDo({ type: 'joinTapped' });
       try { await Y().rejoinGM(code, key); q.rkey.value = ''; ui.toast('System', `Rejoined ${code} as GM.`, { kind: 'info' }); window.scrollTo(0, 0); }
       catch (x) { q.kerr.textContent = said(x, code, !!key); }
     });
@@ -279,41 +302,30 @@ export function register(app) {
     // roster actions
     el.addEventListener('click', e => {
       const b = e.target.closest('button'); if (!b) return;
-      if (b.dataset.manage) { const k = b.dataset.manage; view.open.has(k) ? view.open.delete(k) : view.open.add(k); render(); const nb = [...q.roster.querySelectorAll('button[data-manage]')].find(x => x.dataset.manage === k); if (nb) nb.focus(); }
-      else if (b.dataset.gmkick) kick(b.dataset.gmkick);
-      else if (b.dataset.gmrelease) Y().release(b.dataset.gmrelease).then(c => ui.toast('System', c.ok ? 'Released. That hunter can now be claimed by its player\'s device.' : `Could not release: ${whyNot(c)}.`, { kind: c.ok ? 'info' : 'warn' }));
-      else if (b.dataset.gmallow) allow(b.dataset.gmallow);
+      if (b.dataset.manage) { const k = b.dataset.manage; open.has(k) ? open.delete(k) : open.add(k); render(); const nb = [...q.roster.querySelectorAll('button[data-manage]')].find(x => x.dataset.manage === k); if (nb) nb.focus(); }
+      else if (b.dataset.gmkick) seat('remove', b.dataset.gmkick);
+      else if (b.dataset.gmrelease) seat('release', b.dataset.gmrelease);
+      else if (b.dataset.gmallow) seat('allow', b.dataset.gmallow);
     });
     // the server back: its old errors go and what it could not check is checked again; another room: its old errors go
-    app.on('sync:status', e => { if (e.serverBack) { clearErrs(); recheck(); } sched(); });
-    app.on('sync:room', () => { clearErrs(); sched(); });
+    app.on('sync:status', e => { if (e.serverBack) { clearErrs(); lobbyDo({ type: 'serverBack', invite: Y().invite() }); } sched(); });
+    app.on('sync:room', e => { clearErrs(); lobbyDo({ type: 'room', code: e.to }); sched(); });
     app.on('sync:sheets', sched); app.on('sync:docs', sched); app.on('change', sched);
   }
   const whyNot = c => (c.why === 'offline' ? 'the server did not answer. Check the connection and try again' : c.why === 'refused' ? `the room refused it (${c.reason})` : 'the server failed. Try again');
-  // ported from gm.js kickPlayer / allowBackPlayer
-  async function kick(key) {
-    const r = Y().roster().find(x => x.key === key), name = r ? r.name : 'this hunter';
-    if (!(await ui.confirm({ title: `Remove ${name}?`, body: `${name} leaves the party board and any fight. Their device keeps the hunter and stops syncing with this room.`, danger: true, confirmLabel: 'Remove from room' }))) return;
-    // the room first: a removal the server did not take leaves the hunter in the fight as in the room
-    const c = await Y().kick(key), n = c.ok ? app.api.combat.removeRemote(key) : 0;
-    view.open.delete(key); ui.toast('System', c.ok ? `Removed ${name} from the room${n ? ' and the fight' : ''}.` : `Could not remove ${name}: ${whyNot(c)}.`, { kind: c.ok ? 'info' : 'warn' }); render();
+  /** A GM's tap on a seat action; the lobby sends it once, in the room it was tapped in. */
+  function seat(act, key) {
+    const r = act === 'allow' ? Y().recentKicks().find(x => x.key === key) : Y().roster().find(x => x.key === key);
+    lobbyDo({ type: 'seatTapped', act, key, name: r ? r.name : act === 'allow' ? 'the player' : 'this hunter', room: Y().room() });
   }
-  async function allow(key) {
-    const k = Y().recentKicks().find(x => x.key === key), name = k ? k.name : 'the player', c = await Y().allowBack(key);
-    ui.toast('System', c.ok ? `${name} can rejoin now.` : `Could not allow ${name} back: ${whyNot(c)}.`, { kind: c.ok ? 'info' : 'warn' }); render();
-  }
-  function checkInvite(p) {
-    view.ic = { code: p, r: null }; sched();
-    Y().check(p).then(r => { if (view.ic && view.ic.code === p) { view.ic = { code: p, r }; sched(); } });
-  }
-  /** The code checks the server could not answer, asked again. */
-  function recheck() {
-    const p = Y().invite(); if (p && view.ic && view.ic.code === p && view.ic.r && !view.ic.r.ok) checkInvite(p);
-    if (view.jc && view.jc.r && !view.jc.r.ok && q.code.value === view.jc.code) runCheck(view.jc.code);
-  }
-  function runCheck(v) {
-    view.jc = { code: v, r: null }; render();
-    Y().check(v).then(r => { if (q.code.value === v) { view.jc = { code: v, r }; render(); } });
+  /** A seat action's answer, told in the room it was sent in (the lobby drops one from a room the phone left). */
+  function told(x) {
+    const c = x.call, ok = c.ok === true, n = x.name;
+    if (x.act === 'remove') {
+      const out = ok ? app.api.combat.removeRemote(x.key) : 0; open.delete(x.key);
+      ui.toast('System', ok ? `Removed ${n} from the room${out ? ' and the fight' : ''}.` : `Could not remove ${n}: ${whyNot(c)}.`, { kind: ok ? 'info' : 'warn' });
+    } else if (x.act === 'release') ui.toast('System', ok ? 'Released. That hunter can now be claimed by its player\'s device.' : `Could not release: ${whyNot(c)}.`, { kind: ok ? 'info' : 'warn' });
+    else ui.toast('System', ok ? `${n} can rejoin now.` : `Could not allow ${n} back: ${whyNot(c)}.`, { kind: ok ? 'info' : 'warn' });
   }
   const sized = (svg, px) => svg.replace('<svg ', `<svg width="${px}" height="${px}" `);
 
@@ -323,25 +335,25 @@ export function register(app) {
     const A = Y(), c = A.conn(), code = A.room(), seat = app.seat(), hs = hunters();
     if (c === 'off') return;
     // the invite lasts until it is joined or dropped; the link spends it once live in its room (sync.ts `spendInvite`)
-    const pend = A.invite(), ic = pend && view.ic && view.ic.code === pend ? view.ic : null, toward = A.detail().joining;
+    const pend = A.invite(), ia = pend ? checkAnswer(lobbyNow.invite, pend) : null, toward = A.detail().joining;
     // invite card
     q.invite.hidden = !pend;
     if (pend) {
       setCode(q.invcode, pend);
-      const [k, t] = chk(ic && ic.r, pend); q.invcheck.dataset.k = k; set(q.invcheck, t);
+      const [k, t] = chk(ia, pend); q.invcheck.dataset.k = k; set(q.invcheck, t);
       q.invnote.hidden = !code; set(q.invnote, code ? `You are in room ${code}. Joining ${pend} switches rooms.` : '');
       set(q.joininvite, code ? `Switch to ${pend}` : 'Join room');
       q.joininvite.disabled = busy(); q.joininvite.setAttribute('aria-busy', String(toward === pend));
     }
     // Play as row: one node, moved to wherever it is needed
-    const inRoom = !!code, jr = pend ? ic && ic.r : view.jc && view.jc.code === q.code.value ? view.jc.r : null;
+    const inRoom = !!code, jr = pend ? ia : checkAnswer(lobbyNow.join, q.code.value);
     const host = pend ? q.pahost_i : inRoom ? q.pahost_c : q.pahost_j;
-    const showPA = hs.length > 1 && (inRoom ? seat === 'player' && !pend : !(jr && jr.gm));
+    const showPA = hs.length > 1 && (inRoom ? seat === 'player' && !pend : !(jr && jr.ok === true && jr.gm));
     q.playas.hidden = !showPA; place(q.playas, host); place(q.newf, host);
     set(q.palbl, inRoom ? 'Playing as' : 'Play as');
     const psig = (inRoom ? 'r' : 'l') + hs.map(x => x.id + x.name + x.level).join('|');
     if (q.hunter.dataset.sig !== psig) { q.hunter.dataset.sig = psig; q.hunter.innerHTML = hs.map(x => `<option value="${esc(x.id)}">${esc(x.name)} (Lv ${esc(x.level || 1)})</option>`).join('') + (inRoom ? '' : '<option value="__new">+ New hunter</option>'); }
-    if (document.activeElement !== q.hunter) { const want = inRoom ? bound() : view.hid && (view.hid === '__new' || hs.some(x => x.id === view.hid)) ? view.hid : joinPick(); if (q.hunter.value !== want) q.hunter.value = want; }
+    if (document.activeElement !== q.hunter) { const want = inRoom ? bound() : picked && (picked === '__new' || hs.some(x => x.id === picked)) ? picked : joinPick(); if (q.hunter.value !== want) q.hunter.value = want; }
     q.newf.hidden = !(showPA && !inRoom && q.hunter.value === '__new');
     // lobby / card
     q.lobby.hidden = inRoom; q.card.hidden = !inRoom;
@@ -358,9 +370,9 @@ export function register(app) {
     if (l) { set(q.lastcode, l.code); set(q.rejoinlast, `Rejoin ${l.code}${l.gm ? ' as GM' : ''}`); set(q.gonetext, `Room ${l.code} no longer exists.`); }
     q.rejoinlast.disabled = busy(); q.rejoinlast.setAttribute('aria-busy', String(!!l && toward === l.code));
     // join
-    const v = q.code.value, ok = isCode(v), jc = view.jc && view.jc.code === v ? view.jc : null;
+    const v = q.code.value, ok = isCode(v), ja = checkAnswer(lobbyNow.join, v);
     q.join.disabled = !ok || busy(); q.join.setAttribute('aria-busy', String(ok && toward === v));
-    const [k, t] = !v ? ['', ''] : ok ? (jc ? chk(jc.r, v) : ['', '']) : v.length >= 6 ? ['bad', `Codes have ${CODE_LEN} letters or digits (no ${CODE_LEFT_OUT.slice(0, -1).join(', ')} or ${CODE_LEFT_OUT.at(-1)}).`] : ['', ''];
+    const [k, t] = !v ? ['', ''] : ok ? (ja ? chk(ja, v) : checkAsking(lobbyNow.join, v) ? chk(null, v) : ['', '']) : v.length >= 6 ? ['bad', `Codes have ${CODE_LEN} letters or digits (no ${CODE_LEFT_OUT.slice(0, -1).join(', ')} or ${CODE_LEFT_OUT.at(-1)}).`] : ['', ''];
     q.check.dataset.k = k; set(q.check, t);
     nodes.join.querySelector('[data-path]').hidden = gm; q.create.parentNode.querySelector('[data-gmonly]').hidden = gm; nodes.create.querySelector('[data-path]').hidden = !gm;
     q.create.disabled = busy(); q.create.setAttribute('aria-busy', String(c === 'creating')); set(q.create, gm ? 'Create room' : 'Create room as GM');
@@ -396,17 +408,18 @@ export function register(app) {
     if (!gm) return;
     // roster
     const rs = A.roster(), on = rs.filter(r => r.state === 'online').length, away = rs.filter(r => r.state === 'away').length;
-    for (const k of [...view.open]) if (!rs.some(r => r.key === k)) view.open.delete(k);
+    for (const k of [...open]) if (!rs.some(r => r.key === k)) open.delete(k);
     set(q.count, !rs.length ? 'No players yet. Share the code or the link.' : rs.some(r => r.state !== 'unknown') ? `${rs.length} here: ${on} online${away ? `, ${away} away` : ''}` : `${rs.length} here`);
-    const sig = JSON.stringify(rs) + [...view.open].join();
+    // a key whose seat action is out has its buttons wait (src/core/sync/lobby.ts `seatBusy`)
+    const waits = k => (seatBusy(lobbyNow.seats, k, code) ? ' disabled aria-busy="true"' : ''), sig = JSON.stringify(rs) + [...open].join() + '|' + rs.map(r => waits(r.key)).join();
     if (q.roster.dataset.sig !== sig) {
       q.roster.dataset.sig = sig;
       const st = r => r.state === 'online' ? 'online' : r.state === 'away' ? (r.seen === 'just now' || !r.seen ? 'away' : `away ${r.seen}`) : r.seen ? `last sync ${r.seen === 'just now' ? r.seen : r.seen + ' ago'}` : '';
-      q.roster.innerHTML = rs.map(r => { const o = view.open.has(r.key); return `<li class="rm-p"><div class="rm-prow"><span class="rm-pm" data-st="${r.state}" aria-hidden="true"></span><div class="rm-pi"><b>${esc(r.name)}</b><small>Lv ${esc(r.level)}${r.job ? ' · ' + esc(r.job) : ''}${st(r) ? ' · ' + esc(st(r)) : ''}</small></div><button type="button" data-manage="${esc(r.key)}" aria-expanded="${o}" aria-label="Manage ${esc(r.name)}">Manage</button></div>${o ? `<div class="rm-pact"><button type="button" class="danger" data-gmkick="${esc(r.key)}">Remove from room</button><button type="button" data-gmrelease="${esc(r.key)}">Release to a new device</button></div>` : ''}</li>`; }).join('');
+      q.roster.innerHTML = rs.map(r => { const o = open.has(r.key); return `<li class="rm-p"><div class="rm-prow"><span class="rm-pm" data-st="${r.state}" aria-hidden="true"></span><div class="rm-pi"><b>${esc(r.name)}</b><small>Lv ${esc(r.level)}${r.job ? ' · ' + esc(r.job) : ''}${st(r) ? ' · ' + esc(st(r)) : ''}</small></div><button type="button" data-manage="${esc(r.key)}" aria-expanded="${o}" aria-label="Manage ${esc(r.name)}">Manage</button></div>${o ? `<div class="rm-pact"><button type="button" class="danger" data-gmkick="${esc(r.key)}"${waits(r.key)}>Remove from room</button><button type="button" data-gmrelease="${esc(r.key)}"${waits(r.key)}>Release to a new device</button></div>` : ''}</li>`; }).join('');
     }
-    const ks = A.recentKicks().filter(k => !rs.some(r => r.key === k.key)), ksig = JSON.stringify(ks);
+    const ks = A.recentKicks().filter(k => !rs.some(r => r.key === k.key)), ksig = JSON.stringify(ks) + '|' + ks.map(k => waits(k.key)).join();
     q.kickbox.hidden = !ks.length;
-    if (q.kicks.dataset.sig !== ksig) { q.kicks.dataset.sig = ksig; q.kicks.innerHTML = ks.map(k => `<li class="rm-kick"><b>${esc(k.name)}</b><button type="button" class="primary" data-gmallow="${esc(k.key)}" aria-label="Allow ${esc(k.name)} back into the room">Allow back</button></li>`).join(''); }
+    if (q.kicks.dataset.sig !== ksig) { q.kicks.dataset.sig = ksig; q.kicks.innerHTML = ks.map(k => `<li class="rm-kick"><b>${esc(k.name)}</b><button type="button" class="primary" data-gmallow="${esc(k.key)}"${waits(k.key)} aria-label="Allow ${esc(k.name)} back into the room">Allow back</button></li>`).join(''); }
     // GM tools
     const key = sy().gmKey; q.keyrow.hidden = !key; if (key && q.gmkey.value !== key) q.gmkey.value = key;
     roomsRows(A.gmRooms().filter(r => !r.current));

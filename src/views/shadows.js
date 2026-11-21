@@ -5,7 +5,7 @@ import { canExtract as canExtractJob, RANKS } from '../edge/rules.ts';
 import { shadowSheet } from '../core/combat/rows.ts';
 import { ARCHETYPE_LIST, MONSTER_KINDS } from '../core/registry/monsters.ts';
 import { oneOf } from '../core/one-of.ts';
-import { armyCap, can, extractDc, extractOutcome, healShadow, noteShadow, renameShadow, risesAs, shadowRises, stepShadow } from '../core/hunter/shadows.ts';
+import { armyCap, can, extractDc, extractOutcome, healShadow, noteShadow, renameShadow, risesAs, shadowRises, shadowState, stepShadow } from '../core/hunter/shadows.ts';
 import { monsterId } from '../core/gates/gate.ts';
 import { atHunter } from '../core/save-step.ts';
 
@@ -89,11 +89,11 @@ export function register(app) {
 
   function summon(hid, sid) {
     const h = store.hunter(hid), s = h && h.shadows.find(x => x.id === sid); if (!s) return false;
-    if (can(h, sid, 'dismiss')) return ui.wrote('System', onArmy(hid, 'shadow-unsummon', x => stepShadow(x, sid, 'dismiss')));
-    if (!can(h, sid, 'summon')) return false;
+    if (can(h, sid, { kind: 'dismiss' })) return ui.wrote('System', onArmy(hid, 'shadow-unsummon', x => stepShadow(x, sid, { kind: 'dismiss' })));
+    if (!can(h, sid, { kind: 'summon' })) return false;
     // the mana (where it lives: the fight's row or the sheet) and the summon are one write, so a summon refused costs nothing
     const cost = summonCost(s);
-    return ui.wrote('System', A().hunter.spendMana(hid, cost, x => stepShadow(x, sid, 'summon')), { mana: `Not enough mana to summon ${s.name} (${cost} mana).` });
+    return ui.wrote('System', A().hunter.spendMana(hid, cost, x => stepShadow(x, sid, { kind: 'summon' })), { mana: `Not enough mana to summon ${s.name} (${cost} mana).` });
   }
 
   A().shadows = { canExtract, extract };
@@ -113,12 +113,13 @@ export function register(app) {
 `);
 
   function rosterHtml(h) {
-    const used = h.shadows.length, c = cap(h), summoned = h.shadows.filter(s => s.summoned);
+    const on = s => shadowState(h, s.id).at === 'summoned';
+    const used = h.shadows.length, c = cap(h), summoned = h.shadows.filter(on);
     const total = summoned.reduce((a, s) => a + summonCost(s), 0);
-    const cards = h.shadows.map(s => `<li class="sh-card${s.summoned ? ' on' : ''}" data-sid="${esc(s.id)}">
+    const cards = h.shadows.map(s => `<li class="sh-card${on(s) ? ' on' : ''}" data-sid="${esc(s.id)}">
       <h3>${esc(s.name)}</h3>
       <div class="sh-meta">${ui.rankBadge(s.rank)}<span>${esc(s.grade)}</span><span>${esc(s.archetype)}</span><span>HP ${int(s.hp)} / ${hpMaxOf(s)}</span><span>Summon ${summonCost(s)} mana</span></div>
-      <div class="sh-row"><button type="button" class="${s.summoned ? '' : 'primary'}" data-act="summon" aria-pressed="${s.summoned}">${s.summoned ? 'Unsummon' : 'Summon'}</button>
+      <div class="sh-row"><button type="button" class="${on(s) ? '' : 'primary'}" data-act="summon" aria-pressed="${on(s)}">${on(s) ? 'Unsummon' : 'Summon'}</button>
         <button type="button" data-act="rename">Rename</button><button type="button" data-act="heal">Full HP</button></div>
       <div class="sh-row"><button type="button" class="danger grow" data-act="release">Release</button></div>
       <label class="field"><span class="lbl">Notes</span><textarea data-notes maxlength="500">${esc(s.notes)}</textarea></label></li>`).join('');
@@ -142,7 +143,7 @@ export function register(app) {
         if (act === 'heal') return void ui.wrote('System', onArmy(h.id, 'shadow-heal', x => healShadow(x, s.id, rules())));
         if (act === 'rename') { const n = await ui.promptText({ title: 'Rename shadow', label: 'Name', value: s.name }); if (n) ui.wrote('System', onArmy(h.id, 'shadow-rename', x => renameShadow(x, s.id, n))); return; }
         if (act === 'release' && await ui.confirm({ title: 'Release shadow?', body: `${s.name} leaves your army. This cannot be undone.`, danger: true, confirmLabel: 'Release' })) {
-          ui.wrote('System', onArmy(h.id, 'shadow-release', x => stepShadow(x, s.id, 'release')));
+          ui.wrote('System', onArmy(h.id, 'shadow-release', x => stepShadow(x, s.id, { kind: 'release' })));
         }
       });
       el.addEventListener('change', e => {

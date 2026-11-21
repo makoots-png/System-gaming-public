@@ -338,3 +338,52 @@ test('a GM who leaves the room in one tab sees the second tab of the same browse
   await expect.poll(() => roomOf(second)).toBeNull();
   await expect.poll(() => second.evaluate(() => hunterApp.store.get().settings.sync.room)).toBeNull();
 });
+
+test('a GM who double taps Release sends one request, sees one toast, and the waiting row still fits a phone', async ({ device }) => {
+  const gm = (await device('gm', { blockServiceWorker: true })).page, player = (await device('player', { blockServiceWorker: true })).page;
+  const code = await gmCreatesRoomInView(gm);
+  await onboardPlayer(player, 'Kai Test');
+  await playerJoinsInView(player, code);
+  await expect(gm.locator(V + '[data-roster]')).toContainText('Kai');
+  let releases = 0;
+  gm.on('request', r => { if (r.method() === 'POST' && /\/release$/.test(r.url())) releases++; });
+  await gm.route(/\/release$/, async route => { await new Promise(r => setTimeout(r, 800)); await route.continue().catch(() => {}); });
+  await gm.locator(V + '[data-manage]').first().tap();
+  const release = gm.locator(V + '[data-gmrelease]').first();
+
+  await test.step('the second tap while the first is out sends nothing, and the button waits', async () => {
+    await release.tap();
+    await gm.evaluate(() => (document.querySelector('#view-room [data-gmrelease]') as HTMLElement | null)?.click());
+    await expect(release).toBeDisabled();
+    await expect(release).toHaveAttribute('aria-busy', 'true');
+    expect(await gm.evaluate(() => document.scrollingElement!.scrollWidth <= innerWidth), 'the page does not scroll sideways').toBe(true);
+    const box = await release.boundingBox();
+    expect(box && box.x >= 0 && box.x + box.width <= 390, 'the waiting button is inside the screen').toBe(true);
+  });
+
+  await test.step('one answer comes back as one toast, and the button is usable again', async () => {
+    await expect(gm.locator('#toasts .toast', { hasText: 'Released.' })).toHaveCount(1);
+    await expect(release).toBeEnabled();
+    await gm.unroute(/\/release$/);
+    expect(releases).toBe(1);
+    await expect(gm.locator('#toasts .toast', { hasText: 'Released.' })).toHaveCount(1);
+  });
+});
+
+test('a code typed just before Create room is never asked of the server once the room is made', async ({ device }) => {
+  const gm = (await device('gm', { blockServiceWorker: true })).page;
+  await onboardGM(gm);
+  await openRoomView(gm);
+  const peeks: string[] = [];
+  gm.on('request', r => { if (r.method() === 'GET' && /\/api\/rooms\/ZZZ999\?peek=1/.test(r.url())) peeks.push(r.url()); });
+  await gm.route(/\/api\/rooms$/, async route => {
+    if (route.request().method() === 'POST') await new Promise(r => setTimeout(r, 800));
+    await route.continue().catch(() => {});
+  });
+  await gm.locator(V + '[data-code]').fill('ZZZ999');
+  await gm.locator(V + '[data-create]').tap();
+  await expect(gm.locator(V + '[data-roomcode]')).toHaveText(ROOM_CODE);
+  await gm.unroute(/\/api\/rooms$/);
+  await expect(gm.locator(V + '[data-roomcode]')).toHaveText(ROOM_CODE);
+  expect(peeks).toEqual([]);
+});
