@@ -303,8 +303,8 @@ describe('a quest finished in one step (grant.ts finishQuest)', () => {
       expect(r.completed.allDaily).toBe(true);
       expect([h.life, h.mana]).toEqual([before.life, before.mana]);
     }
-    const dying = { ...s, hunters: [{ ...before, life: { at: 'dying' as const, successes: 0 as const, failures: 1 as const } }] };
-    expect(ok(finishQuest(dying, 'h1', 'd2', DAY)).save.hunters[0]!.life).toEqual(dying.hunters[0]!.life);
+    const dead = { ...s, hunters: [{ ...before, life: { at: 'dead' as const } }] };
+    expect(ok(finishQuest(dead, 'h1', 'd2', DAY)).save.hunters[0]!.life).toEqual(dead.hunters[0]!.life);
   });
 
   test(`the streak's bonus gives ${STREAK_BONUS_POINTS} point beside the quest's own`, () => {

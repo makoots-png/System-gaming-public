@@ -19,7 +19,7 @@ export const REFUSAL_WORDS: { readonly [R in Refusal]: string } = {
   notMonster: 'Only a monster can do that.', nothingDue: 'Nothing is due.', noIntent: 'No move was planned.',
   notExtractor: 'Only a hunter in the fight whose job may extract can try.',
   notHunter: 'Only a hunter\'s row can be refilled.',
-  lifeCannot: 'Not in this state: Revive is for the dead, Stabilize and death saves for the dying.',
+  lifeCannot: 'Not in this state: Revive is for the dead.',
   fudgeValue: 'A fudge is a whole number of faces, and a forced roll is a 1 or a 20.',
 };
 

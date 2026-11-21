@@ -299,12 +299,11 @@ describe('the shop is closed to the dead (the owner, Nov 19: "Whole shop should 
     expect(shopOpen(dead)).toBe(false);
   });
 
-  test('a hunter who is down, dying or stable, still buys and sells', () => {
-    for (const life of [{ at: 'dying', successes: 0, failures: 0 }, { at: 'stable' }] as const) {
-      expect(shopOpen({ life })).toBe(true);
-      expect(ok(buy(rich(life), potion, iid('i2'), RULES)).items.find(i => i.id === 'i1')!.qty).toBe(2);
-      expect(ok(sell(rich(life), 'i1', 1, RULES)).items).toEqual([]);
-    }
+  test('a hunter who is up buys and sells at any HP', () => {
+    const life = { at: 'up', hp: 1 } as const;
+    expect(shopOpen({ life })).toBe(true);
+    expect(ok(buy(rich(life), potion, iid('i2'), RULES)).items.find(i => i.id === 'i1')!.qty).toBe(2);
+    expect(ok(sell(rich(life), 'i1', 1, RULES)).items).toEqual([]);
   });
 
   test('a refused purchase says why: short of gold names the item; dead names the ways back and who can give a crystal', () => {

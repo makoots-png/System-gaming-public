@@ -34,7 +34,7 @@ const plain = (rows: readonly NewRow[]): NewRow[] => rows.map(r => ({ ...r }));
 /** One played fight's end for a lone row `a`, written by hand: fatigue 5 and up unless the parts say otherwise. */
 const end = (outcome: RunEnd['outcome'], rounds: number, row: Partial<RowEnd>): RunEnd => ({
   outcome, rounds, commands: 0, spent: [],
-  party: { ['a' as never]: { hp: 0, mana: 0, fatigue: 5, statuses: [], used: {}, down: false, saves: [], life: 'up', ...row } },
+  party: { ['a' as never]: { hp: 0, mana: 0, fatigue: 5, statuses: [], used: {}, life: 'up', lifeLeft: null, kills: [], ...row } },
 });
 const small = (): Setup => setupOf(plain([hunter('tank', 'C').row, hunter('cannon', 'C').row,
   monster('C', 'brute', 'normal', 'm1').row, monster('C', 'skirmisher', 'normal', 'm2').row, monster('C', 'caster', 'normal', 'm3').row]));
@@ -50,14 +50,14 @@ describe('the odds of a fight', () => {
     const f = setupOf(plain([hunter('bruiser', 'S', 'a').row, hunter('tank', 'S', 'b').row, monster('E', 'brute', 'normal', 'm').row]));
     const r = readOdds(oddsOf(f, 1, 40));
     expect(r.won).toBeGreaterThanOrEqual(0.95);
-    expect(r.party.every(p => p.down === 0)).toBe(true);
+    expect(r.party.every(p => p.dead === 0)).toBe(true);
   });
 
   test('a party that cannot win wins nearly no run', () => {
     const f = setupOf(plain([hunter('cannon', 'E', 'a').row, monster('S', 'brute', 'boss', 'b1').row, monster('S', 'brute', 'boss', 'b2').row]));
     const r = readOdds(oddsOf(f, 2, 40));
     expect(r.won).toBeLessThanOrEqual(0.05);
-    expect(r.party[0]!.down).toBeGreaterThanOrEqual(0.95);
+    expect(r.party[0]!.dead).toBeGreaterThanOrEqual(0.95);
   });
 
   test('a fight nobody can hurt ends at the cap as a stalemate, never a win or a loss', () => {
@@ -77,69 +77,64 @@ describe('the odds of a fight', () => {
     expect(odds.rows.map(r => r.id)).toEqual(['tank', 'cannon'] as never);
   });
 
-  test('the line says the chance, who goes down most and the rounds; the detail each hunter\'s end', () => {
+  test('the line says the chance, who dies most and the rounds; the detail each hunter\'s end', () => {
     const r = readOdds({
       of: 4, rows: [{ id: 'a' as never, name: 'Mira', hpMax: 40, manaMax: 20, fatigueMax: 100 }],
       ends: [
         end('won', 5, { hp: 30, mana: 10 }),
         end('won', 5.5, { hp: 20, mana: 8 }),
         end('won', 6.25, { hp: 10, mana: 6 }),
-        end('lost', 7, { hp: 0, mana: 0, down: true, saves: [5, 3, 2], life: 'dead' }),
+        end('lost', 7, { hp: 0, mana: 0, life: 'dead' }),
       ],
     });
-    expect(oddsLine(r, 'party')).toBe('The party wins 75% of 4 fights. Mira is most likely to go down (25%). About 6 rounds.');
+    expect(oddsLine(r, 'party')).toBe('The party wins 75% of 4 fights. Mira is most likely to die (25%). About 6 rounds.');
     expect(oddsDetail(r, 'party')).toEqual([
       'Rounds: 5 to 7, most often about 6.',
       'The party loses 25%.',
-      'Mira: down in 25%, dead in 25%. Ends with 0 to 30 of 40 HP, 0 to 10 of 20 mana, 5 of 100 fatigue.',
+      'Mira: dead in 25%. Ends with 0 to 30 of 40 HP, 0 to 10 of 20 mana, 5 of 100 fatigue.',
     ]);
   });
 
-  test('a hunter alone reads the same numbers as its own chance: to clear, to go down and to die, never "the party"', () => {
+  test('a hunter alone reads the same numbers as its own chance: to clear and to die, never "the party"', () => {
     const r = readOdds({
       of: 4, rows: [{ id: 'a' as never, name: 'Mira', hpMax: 40, manaMax: 20, fatigueMax: 100 }],
       ends: [
         end('won', 5, { hp: 30, mana: 10 }),
-        end('lost', 7, { hp: 0, mana: 0, down: true, saves: [5, 3, 2], life: 'dead' }),
-        end('lost', 7, { hp: 0, mana: 0, down: true, saves: [15, 13, 12], life: 'stable' }),
-        end('lost', 7, { hp: 0, mana: 0, down: true, saves: [20], life: 'up' }),
+        end('lost', 7, { hp: 0, mana: 0, life: 'dead' }),
+        end('lost', 7, { hp: 0, mana: 0, life: 'dead' }),
+        end('lost', 7, { hp: 0, mana: 0, life: 'dead' }),
       ],
     });
-    expect(oddsLine(r, 'alone')).toBe('You clear it in 25% of 4 plays. Down in 75%, dead in 25%. About 7 rounds.');
+    expect(oddsLine(r, 'alone')).toBe('You clear it in 25% of 4 plays. Dead in 75%. About 7 rounds.');
     expect(oddsDetail(r, 'alone')[1]).toBe('The run fails in 75%.');
     expect([oddsLine(r, 'alone'), ...oddsDetail(r, 'alone')].join(' ')).not.toContain('party');
     const never = readOdds({ of: 1, rows: r.party, ends: [end('won', 3, { hp: 30, mana: 20 })] });
-    expect(oddsLine(never, 'alone')).toBe('You clear it in 100% of 1 plays. Never down in these plays. About 3 rounds.');
+    expect(oddsLine(never, 'alone')).toBe('You clear it in 100% of 1 plays. Never dead in these plays. About 3 rounds.');
   });
 });
 
-describe('who dies after a played fight (lead-look-6-odds.md, finding 1)', () => {
-  // A table stabilizes a downed hunter when the party won and an ally stands; alone, or when the fight is lost, nobody
-  // can, and the death saves run to their end (notes-2-solo.md 1.1).
-  test('a won fight leaves a downed hunter down and not dead while another hunter stands', () => {
+describe('who dies in a played fight (lead-look-6-odds.md, finding 1)', () => {
+  // At 0 HP a hunter is dead, and nothing in a play raises the dead: a won fight leaves a fallen hunter dead too.
+  test('a hunter at 0 HP is dead at the end, even when the party won', () => {
     const f = setupOf(plain([hunter('bruiser', 'S', 'a').row, atHp(hunter('tank', 'E', 'b').row, 0), monster('E', 'brute', 'normal', 'm').row]));
     const odds = oddsOf(f, 11, 40), b = 'b' as never;
     expect(odds.ends.filter(e => e.outcome === 'won').length).toBeGreaterThanOrEqual(38);
-    for (const e of odds.ends.filter(x => x.outcome === 'won')) expect([e.party[b]!.down, e.party[b]!.saves, e.party[b]!.life]).toEqual([true, [], 'dying']);
-    expect(readOdds(odds).party.find(p => p.id === b)!.dead).toBe(0);
+    for (const e of odds.ends) expect([e.party[b]!.life, e.party[b]!.lifeLeft]).toEqual(['dead', { at: 'dead' }]);
+    expect(readOdds(odds).party.find(p => p.id === b)!.dead).toBe(1);
   });
 
-  test('alone, a downed hunter\'s death saves run to their end', () => {
+  test('alone against what it cannot beat, a hunter at 0 HP is dead', () => {
     const f = setupOf(plain([hunter('cannon', 'E', 'a').row, monster('S', 'brute', 'boss', 'b1').row, monster('S', 'brute', 'boss', 'b2').row]));
-    const ends = oddsOf(f, 2, 40).ends.map(e => e.party['a' as never]!).filter(e => e.down && e.hp === 0);
+    const ends = oddsOf(f, 2, 40).ends.map(e => e.party['a' as never]!).filter(e => e.hp === 0);
     expect(ends.length).toBeGreaterThanOrEqual(38);
-    for (const e of ends) {
-      expect(e.saves.length).toBeGreaterThanOrEqual(1);
-      expect(['stable', 'dead', 'up']).toContain(e.life);
-    }
-    expect(ends.some(e => e.life === 'dead')).toBe(true);
+    for (const e of ends) expect(e.life).toBe('dead');
   });
 });
 
 describe('what a played fight spends (lead-look-6-odds.md, findings 2 and 3)', () => {
   test('the detail gives fatigue of its capacity, as the sheet does', () => {
     const r = readOdds({ of: 1, rows: [{ id: 'a' as never, name: 'Mira', hpMax: 40, manaMax: 20, fatigueMax: 60 }], ends: [end('won', 3, { hp: 30, mana: 20, fatigue: 30 })] });
-    expect(oddsDetail(r, 'party').at(-1)).toBe('Mira: never down. Ends with 30 of 40 HP, 20 of 20 mana, 30 of 60 fatigue.');
+    expect(oddsDetail(r, 'party').at(-1)).toBe('Mira: never dead. Ends with 30 of 40 HP, 20 of 20 mana, 30 of 60 fatigue.');
   });
 
   // The starters hold no ability that costs mana (only the blast kind does), so their mana stays full; a hunter that

@@ -350,7 +350,7 @@ describe('tokens', () => {
       { ...base, id: id('k'), name: 'Kai', side: 'party', place: { x: 0, y: 0 }, band: 'wounded', life: { at: 'up' }, kind: 'hunter', hp: 15, hpMax: 20, stride: 3, move: 6 },
       { ...base, id: id('m'), name: 'Rat', side: 'foe', place: { x: 1, y: 0 }, band: 'bloodied', life: { at: 'up' }, kind: 'monster', intent: null, stagger: null, suggest: null },
       { ...base, id: id('dead'), name: 'Rat B', side: 'foe', place: { x: 2, y: 0 }, band: 'down', life: { at: 'dead' }, kind: 'monster', intent: null, stagger: null, suggest: null },
-      { ...base, id: id('fell'), name: 'Mira', side: 'party', place: { x: 3, y: 0 }, band: 'down', life: { at: 'dying' }, kind: 'hunter', hp: 0, hpMax: 20, stride: 3, move: 6 },
+      { ...base, id: id('fell'), name: 'Mira', side: 'party', place: { x: 3, y: 0 }, band: 'down', life: { at: 'dead' }, kind: 'hunter', hp: 0, hpMax: 20, stride: 3, move: 6 },
     ] satisfies FightDocRow[];
     const s = mapScene({ bodies: docBodies(rows, r => r.id === 'k', openGrid(4, 1)), grid: openGrid(4, 1), currentId: id('m'), actor: null }, { kind: 'none' }, RULES);
     expect(s.tokens.map(t => [t.id, t.ring.band ?? t.ring.share, t.current, t.down, t.mine])).toEqual([

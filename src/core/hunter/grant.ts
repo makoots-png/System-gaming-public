@@ -365,23 +365,17 @@ export type SheetEdit =
   | { type: 'rest'; kind: 'short' | 'long' };
 
 /**
- * How a fight's totals changed a life (the fight's own `life` command writes it there): dead to up only a revive can do,
- * the GM's; a change while dying that does not stand the hunter up (a save made or failed, a death) only a death save.
- * Anything else is the fight's.
+ * How edit `e` changed a life from `before`, for its fact (facts.ts `LifeHow`): a fight's totals that stand a dead
+ * hunter up are the GM's Revive of its row (the fight's `revive` command), any other the fight's; a revive is by who
+ * raised; anything else is by hand.
  */
-const fightHow = (before: Life, after: Life): LifeHow =>
-  before.at === 'dead' ? 'gm' : before.at === 'dying' && (after.at === 'dying' || after.at === 'dead') ? 'save' : 'fight';
-/** How edit `e` changed a life from `before` to `after`, for its fact (facts.ts `LifeHow`). */
-const howOf = (e: SheetEdit, before: Life, after: Life): LifeHow =>
-  e.type === 'totals' ? fightHow(before, after) : e.type === 'rest' ? 'rest'
-  : e.type === 'life' && e.event.type === 'deathSave' ? 'save' : e.type === 'life' && e.event.type === 'revive' ? e.by ?? 'gm' : 'hand';
-/** The death saves failed before a change, while dying; 0 otherwise. */
-const failuresOf = (life: Life): number => (life.at === 'dying' ? life.failures : 0);
+const howOf = (e: SheetEdit, before: Life): LifeHow =>
+  e.type === 'totals' ? (before.at === 'dead' ? 'gm' : 'fight') : e.type === 'life' && e.event.type === 'revive' ? e.by ?? 'gm' : 'hand';
 
 /**
  * Whether a change of life from `before` to `after` raised a hunter from death: the life table's `revive` (the GM's
  * Revive, a Resurrection Crystal), or a fight's totals that stand up a hunter the sheet holds dead (the GM's Revive of
- * the fight's row, written back). A heal or a natural 20 that stands a dying hunter up is no raising.
+ * the fight's row, written back).
  */
 const raisedFromDeath = (before: Life, after: Life): boolean => before.at === 'dead' && after.at !== 'dead';
 /**
@@ -417,14 +411,15 @@ const STATUS_FITS: { readonly put: boolean; readonly drop: boolean } = { put: fa
  * (`unchanged`), as `putStatus` and `dropStatus` answer. What the change did to the life (`lifeNews`) and a rest are
  * recorded as facts on the hunter in the same answer (chronicle.ts `record`). A change that raises the hunter from death
  * (`raisedFromDeath`: the life's `revive` by the GM or an item, or a fight's totals) costs its levels in the same answer
- * (`raisedAt`); the hunter it answers is up, so a second write of the same change costs nothing.
+ * (`raisedAt`); the hunter it answers is up, so a second write of the same change costs nothing. A revive takes off
+ * every status the hunter holds.
  */
 export function sheetEdit(h: Hunter, e: SheetEdit, R: Rules): Hunter | Refused<'cannot' | 'mana' | 'state-chip' | 'no-def' | 'unchanged'> {
   const next = edited(h, e, R);
   if (isRefused(next)) return next;
   // what the change did to the life, and a rest, are facts (chronicle.ts), recorded in the edit's own write
   const news = lifeNews(h.life, next.life);
-  const withLife = news ? record(next, { kind: 'life', news: news.kind, how: howOf(e, h.life, next.life), failures: failuresOf(h.life) }) : next;
+  const withLife = news ? record(next, { kind: 'life', news: news.kind, how: howOf(e, h.life) }) : next;
   // a raising from death costs levels (the owner's ruling 9), told after the life's fact
   const raised = raisedFromDeath(h.life, next.life) ? raisedAt(withLife, R) : withLife;
   return e.type === 'rest' ? record(raised, { kind: 'rest', long: e.kind === 'long' }) : raised;
@@ -433,7 +428,8 @@ function edited(h: Hunter, e: SheetEdit, R: Rules): Hunter | Refused<'cannot' | 
   const step = (ev: VitalEvent): Hunter | Refused<'cannot' | 'mana'> => { const v = vitalStep(h, ev, sheetOf(h, R), R); return isRefused(v) ? v : { ...h, ...v }; };
   const fits = (x: Hunter | Refused<'state-chip' | 'no-def' | 'unchanged'>, edit: 'put' | 'drop') => (isRefused(x) || !STATUS_FITS[edit] ? x : fitted(x, R));
   switch (e.type) {
-    case 'life': return step(e.event.type === 'revive' ? { type: 'revive', by: e.by ?? 'gm' } : e.event);
+    // a revive takes off every status, so a poison does not kill the hunter again (the owner, Nov 21)
+    case 'life': { const x = step(e.event.type === 'revive' ? { type: 'revive', by: e.by ?? 'gm' } : e.event); return isRefused(x) || e.event.type !== 'revive' ? x : { ...x, conditions: [] }; }
     case 'mana': case 'spend': case 'fatigue': case 'rest': return step(e);
     // the life, mana and fatigue fitted to the maxima the sheet gave before the fight's statuses replace its own
     case 'totals': { const x = step({ type: 'fightTotals', life: e.life, mana: e.mana, fatigue: e.fatigue, ...(e.used ? { used: e.used } : {}) }); return isRefused(x) ? x : { ...x, conditions: e.statuses.map(s => ({ ...s })) }; }

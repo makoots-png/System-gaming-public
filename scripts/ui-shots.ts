@@ -674,7 +674,7 @@ async function gmRest(g: Phone, p: Phone | null) {
       s.device('feat-told:' + s.active().id).write(earned.map(([k]) => k));
       s.update(() => {
         const h = s.active();
-        h.chronicle = { inbox: [], facts, tally: { ...h.chronicle.tally, won: 12, kills: 1048, gates: 5, fell: 3, feats: 4 },
+        h.chronicle = { inbox: [], facts, tally: { ...h.chronicle.tally, won: 12, kills: 1048, gates: 5, died: 3, feats: 4 },
           feats: { ...Object.fromEntries(earned.map(([k, name], i) => [k, { at: 'earned', on: at(i * 8), day: at(i * 8).slice(0, 10), name }])), ratcatcher: { at: 'shown', n: 25 }, 'red-ledger': { at: 'shown', n: 9 } } };
       }, 'ui-shots');
     });
@@ -780,19 +780,15 @@ async function playerScreens(p: Phone) {
     await page.locator('#view-room').waitFor({ state: 'visible' });
     await shot(p, 'room-view-from-pill');
   });
-  await step(p, 3, 'dying, a chip card and dead', async () => {
+  await step(p, 2, 'dead and a chip card', async () => {
     await go(p, 'status');
-    await page.evaluate(() => (window as any).hunterApp.store.update(() => { (window as any).hunterApp.store.active().life = { at: 'dying', successes: 1, failures: 1 }; }, 'shot-setup'));
-    await status.locator('[data-chips] [data-chip]').first().waitFor();
-    await show(status.locator('[data-death]'), 'center');
-    await shot(p, 'hunter-dying');
-    await press(p, status.locator('[data-chips] [data-chip]').first());
-    await status.locator('[data-chips] .dt').first().waitFor({ state: 'visible' });
-    await shot(p, 'status-chip-card');
     await page.evaluate(() => (window as any).hunterApp.store.update(() => { (window as any).hunterApp.store.active().life = { at: 'dead' }; }, 'shot-setup'));
     await status.locator('[data-chips] [data-chip="dead"]').waitFor();
     await page.evaluate(() => window.scrollTo(0, 0));
     await shot(p, 'hunter-dead');
+    await press(p, status.locator('[data-chips] [data-chip="dead"]'));
+    await status.locator('[data-chips] .dt').first().waitFor({ state: 'visible' });
+    await shot(p, 'status-chip-card');
   });
   await step(p, 2, 'room left', async () => {
     await go(p, 'room');

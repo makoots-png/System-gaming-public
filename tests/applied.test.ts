@@ -236,18 +236,10 @@ describe('what the GM\'s fight sends a player\'s phone', () => {
     });
   });
 
-  test('another player\'s step, cast or death save changes nothing on this phone', () => {
+  test('another player\'s step or cast changes nothing on this phone', () => {
     const p = phone(), before = p.hunter;
     p.receive(1, 'step', { by: 'd-player2:h4', place: { x: 1, y: 1 }, at: 0 });
     p.receive(2, 'cast', { by: 'd-player2:h4', ability: 'strike', aim: 'c1', at: 0 });
-    p.receive(3, 'deathSave', { by: 'd-player2:h4', roll: 4 });
-    expect([p.hunter, p.toasts, p.applied]).toEqual([before, [], []]);
-  });
-
-  test('this hunter\'s own death save, echoed by the room, changes nothing: the sheet waits for the row\'s life in the fight\'s totals', () => {
-    const dying: Life = { at: 'dying', successes: 0, failures: 0 };
-    const p = phone({ fight: true, life: dying }), before = p.hunter;
-    p.receive(1, 'deathSave', { by: 'd-player1:h1', roll: 15 });
     expect([p.hunter, p.toasts, p.applied]).toEqual([before, [], []]);
   });
 });
@@ -255,43 +247,27 @@ describe('what the GM\'s fight sends a player\'s phone', () => {
 describe('a hunter\'s life in the GM\'s fight reaches its sheet in the fight\'s totals', () => {
   const totals = (life: Life) => ({ to: ['d-player1:h1'], life, mana: 3, fatigue: 0, statuses: [] });
   const fresh = phone().hunter;
-  const dying = (successes: 0 | 1 | 2, failures: 0 | 1 | 2): Life => ({ at: 'dying', successes, failures });
   /** The life facts the sheet recorded (chronicle.ts), as the Chronicle reads them. */
   const lifeFacts = (h: Hunter) => h.chronicle.inbox.flatMap(f => (f.kind === 'life' ? [{ news: f.news, how: f.how }] : []));
 
-  test('a hit to 0 HP in the fight puts the sheet down, dying with no saves, and the player is told to roll a death save', () => {
+  test('a hit to 0 HP in the fight leaves the sheet dead, as the row is, and the player is told the ways back', () => {
     const p = phone({ fight: true });
-    p.receive(1, 'vitals', { ...totals(dying(0, 0)), reason: 'Goblin hits Kai' });
-    expect(p.hunter.life).toEqual(dying(0, 0));
-    expect(p.toasts).toEqual(['You are down. Goblin hits Kai Roll a death save on your sheet.']);
-  });
-
-  test('each death save the GM\'s fight took is written as the row holds it, and told as a success or a failure with its count', () => {
-    const p = phone({ fight: true, life: dying(0, 0) });
-    p.receive(1, 'vitals', totals(dying(1, 0)));
-    p.receive(2, 'vitals', totals(dying(1, 2)));
-    expect(p.hunter.life).toEqual(dying(1, 2));
-    expect(p.toasts).toEqual(['Success: 1 of 3.', 'Failed: 2 of 3.']);
-  });
-
-  test('a third failure in the fight leaves the sheet dead, as the row is', () => {
-    const p = phone({ fight: true, life: dying(0, 2) });
-    p.receive(1, 'vitals', totals({ at: 'dead' }));
+    p.receive(1, 'vitals', { ...totals({ at: 'dead' }), reason: 'Goblin hits Kai' });
     expect(p.hunter.life).toEqual({ at: 'dead' });
-    expect(p.toasts).toEqual(['You are dead. The GM\'s Revive or a Resurrection Crystal brings you back.']);
-    expect(lifeFacts(p.hunter).at(-1)).toEqual({ news: 'died', how: 'save' });
+    expect(p.toasts).toEqual(['You are dead. Goblin hits Kai The GM\'s Revive or a Resurrection Crystal brings you back.']);
+    expect(lifeFacts(p.hunter).at(-1)).toEqual({ news: 'died', how: 'fight' });
   });
 
   // Fails today, so it waits as a todo: the GM's outbox keeps one total a hunter (protocol.ts `standsFor`), so the death
-  // is let go and the sheet reads dying to up, which grant.ts `fightHow` records as the fight's raise. Keeping a total of
+  // is let go and the sheet reads up to up: no death, no revive and no levels lost. Keeping a total of
   // each life state apart is a design call (it undoes unit 2's "a later total stands for an earlier one" and lets an older
   // held total land after a newer one); notes-dead-row.md section 10 has both ways. `bun test --todo` runs it.
   test.todo('a death then the GM\'s Revive posted while the room is away reach the sheet as a death and the GM\'s revive (notes-dead-row.md section 10, leftover 2)', () => {
     const dead = parseEvent('vitals', { eid: e(1), ...totals({ at: 'dead' }) })!, up = parseEvent('vitals', { eid: e(2), ...totals({ at: 'up', hp: REVIVE_HP }) })!;
     const box = [dead, up].reduce((b: Outbox, ev) => post(b, 'ABCD23' as RoomCode, { kind: 'event', event: ev }, standsFor(ev)).box, []);
-    const p = phone({ fight: true, life: dying(0, 2) });
+    const p = phone({ fight: true, life: { at: 'up', hp: 5 } });
     for (const x of box) if (x.letter.kind === 'event') applyRoomEvent(x.letter.event, p.deps);
-    expect(lifeFacts(p.hunter).slice(-2)).toEqual([{ news: 'died', how: 'save' }, { news: 'raised', how: 'gm' }]);
+    expect(lifeFacts(p.hunter).slice(-2)).toEqual([{ news: 'died', how: 'fight' }, { news: 'raised', how: 'gm' }]);
   });
 
   test('the GM\'s Revive in the fight stands a dead sheet up at the row\'s HP, recorded as the GM\'s revive', () => {

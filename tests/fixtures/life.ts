@@ -3,10 +3,9 @@
 import type { Body, BodyLife, CombatantKind } from '../../src/core/combat/effect-ops.ts';
 import type { NewRow } from '../../src/core/combat/fight-types.ts';
 
-/** A row of `kind` at `hp` HP: up from 1 HP; at 0 a hunter has just fallen (dying, no saves made) and anything else is dead. */
+/** A row of `kind` at `hp` HP: up from 1 HP, dead at 0. */
 export function lifeAt(kind: CombatantKind, hp: number): BodyLife {
-  if (kind === 'hunter') return { kind, life: hp >= 1 ? { at: 'up', hp } : { at: 'dying', successes: 0, failures: 0 } };
-  return { kind, life: hp >= 1 ? { at: 'up', hp } : { at: 'dead' } };
+  return { kind, life: hp >= 1 ? { at: 'up', hp } : { at: 'dead' } } as BodyLife;
 }
 /** Row `b` standing at `hp` HP (`lifeAt`), the rest of it as it was. */
 export const atHp = <T extends Body | NewRow>(b: T, hp: number): T => ({ ...b, ...lifeAt(b.kind, hp) }) as T;

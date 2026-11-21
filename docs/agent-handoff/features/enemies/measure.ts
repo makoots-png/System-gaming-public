@@ -169,7 +169,7 @@ function fightOf(r: Row, k: FightKindName, runs: number): Fought {
   const o: Odds = run.odds, n = o.ends.length, share = (p: (e: Odds['ends'][number]) => boolean): number => o.ends.filter(p).length / n;
   return {
     rounds: o.ends.reduce((s, e) => s + e.rounds, 0) / n, won: share(e => e.outcome === 'won'),
-    down: share(e => Object.values(e.party).some(x => x.down)), dead: share(e => Object.values(e.party).some(x => x.life === 'dead')),
+    down: share(e => Object.values(e.party).some(x => x.life === 'dead')), dead: share(e => Object.values(e.party).some(x => x.life === 'dead')),
   };
 }
 

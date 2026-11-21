@@ -5,7 +5,7 @@ import { oneOf } from './one-of.ts';
 
 /**
  * What a roll was for. `check`: a stat check from the Dice view or the sheet. `die`: a roll from the Dice view's buttons
- * or expression. `other`: everything a rule rolls for itself (a death save, a shadow extraction, the fight's d20).
+ * or expression. `other`: everything a rule rolls for itself (a shadow extraction, the fight's d20).
  */
 export const ROLL_KINDS = ['check', 'die', 'other'] as const;
 export type RollKind = (typeof ROLL_KINDS)[number];

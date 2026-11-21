@@ -50,7 +50,7 @@ import { EXTRACTION_WALK } from './models/extraction-events.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { SKILL_ABILITIES } from '../src/core/registry/abilities.ts';
 import { can, fightId, owed, reduce, runningState } from '../src/core/combat/fight.ts';
-import type { Command, CommandType, Ctx, Effect, Fight, ForcedFace, Fudge, FudgeScope, NewRow, Opening, Result, RowLifeEvent, Running, StatusGrant, ZoneDraft } from '../src/core/combat/fight.ts';
+import type { Command, CommandType, Ctx, Effect, Fight, ForcedFace, Fudge, FudgeScope, NewRow, Opening, Result, Running, StatusGrant, ZoneDraft } from '../src/core/combat/fight.ts';
 import { needs } from '../src/core/combat/resolve.ts';
 import type { Rolls } from '../src/core/combat/resolve.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
@@ -733,115 +733,107 @@ describe('adjust: the GM\'s hand edit, which takes no time', () => {
     ]);
   });
 
-  test('the GM bringing the current hunter to 0 leaves it dying and starts the next turn', () => {
+  test('the GM bringing the current hunter to 0 leaves it dead and starts the next turn', () => {
     const r = play(add(row('A', 'party'), row('B', 'party'), row('M', 'foe')), start(['A', 20], ['B', 10], ['M', 1]), adjust('A', { hp: -999 }));
-    expect(r.effects.find(e => e.type === 'vitals')).toMatchObject({ hunterId: hunterId('h-A'), life: { at: 'dying', successes: 0, failures: 0 } });
+    expect(r.effects.find(e => e.type === 'vitals')).toMatchObject({ hunterId: hunterId('h-A'), life: { at: 'dead' } });
     expect([running(r).currentId, running(r).now]).toEqual([id('B'), tick(500)]);
   });
 
   test('a monster the GM revives after another body took its tile is refused, so no two bodies share a tile', () => {
     const r = play(...trio(), adjust('M', { hp: -999 }), { type: 'place', id: id('N'), to: place(0, 10) });
     expect(body(r.fight, 'M').place).toEqual(place(0, 10));
-    refuses(r.fight, { type: 'life', id: id('M'), event: { type: 'revive' } }, 'taken');
+    refuses(r.fight, { type: 'revive', id: id('M') }, 'taken');
   });
 });
 
 describe('a row\'s life: every change of a row\'s HP goes through its life (row-life.ts), so only Revive lifts the dead', () => {
   const MEND = { ...ability('support', 'mend', null, FAR), effect: { type: 'heal', by: 'hand', formula: f('20') } } as Ability;
-  const life = (at: string, event: RowLifeEvent): Command => ({ type: 'life', id: id(at), event });
-  const save = (at: string, roll: number): Command => life(at, { type: 'deathSave', roll });
+  const revive = (at: string): Command => ({ type: 'revive', id: id(at) });
   const lifeOf = (r: { fight: Fight | null }, name: string): Body['life'] => body(r.fight, name).life;
-  const DYING = { at: 'dying', successes: 0, failures: 0 } as const, DEAD = { at: 'dead' } as const;
-  /** Hunters A and B against M, and the GM's hand takes A to 0: A is dying (its turn goes to B). */
-  const fallen = (): Command[] => [add(row('A', 'party'), row('B', 'party', { abilities: [HIT, MEND] }), row('M', 'foe')), start(['A', 20], ['B', 15], ['M', 10]), adjust('A', { hp: -999 })];
-  /** The same, and A fails three death saves (a 2 is one failure each): dead. */
-  const dead = (): Command[] => [...fallen(), save('A', 2), save('A', 2), save('A', 2)];
+  const DEAD = { at: 'dead' } as const;
+  /** Hunters A and B against M, and the GM's hand takes A to 0: A is dead (its turn goes to B). */
+  const dead = (): Command[] => [add(row('A', 'party'), row('B', 'party', { abilities: [HIT, MEND] }), row('M', 'foe')), start(['A', 20], ['B', 15], ['M', 10]), adjust('A', { hp: -999 })];
   const mended = (at: string): Command => ({ type: 'act', by: id('B'), ability: MEND.id, aim: id(at), rolls: rolls(), force: true });
   const spring = (at: Place): Command => ({ type: 'zoneAdd', zone: { id: zoneId('spring'), name: 'Spring', tiles: [at], spares: null, tier: 0, duration: null, ops: [{ op: 'heal', amount: f('10'), when: 'use' }] } });
 
-  test('three failed death saves leave a fallen hunter\'s row dead, and its sheet hears each one with the life itself', () => {
+  test('a hunter\'s row at 0 HP is dead at once, and its sheet hears the death with the life itself', () => {
     const r = play(...dead());
     expect(lifeOf(r, 'A')).toEqual(DEAD);
-    const told = r.effects.flatMap(e => (e.type === 'vitals' && e.hunterId === hunterId('h-A') ? [e.life] : []));
-    expect(told).toEqual([DYING, { ...DYING, failures: 1 }, { ...DYING, failures: 2 }, DEAD]);
-    expect(running(r).log[0]!.text).toBe('R1: A fails a third death save and dies.');
+    expect(r.effects.flatMap(e => (e.type === 'vitals' && e.hunterId === hunterId('h-A') ? [e.life] : []))).toEqual([DEAD]);
   });
 
-  test('the GM\'s hand heal stands a fallen hunter\'s row up, and of a dead one it is refused: nothing to change', () => {
-    expect(lifeOf(play(...fallen(), adjust('A', { hp: 10 })), 'A')).toEqual({ at: 'up', hp: 10 });
+  test('the GM\'s hand heal of a dead hunter\'s row is refused: nothing to change', () => {
     refuses(play(...dead()).fight, adjust('A', { hp: 10 }), 'noChange');
   });
 
-  test('an ally\'s heal stands a fallen hunter\'s row up and leaves a dead one dead', () => {
-    expect(lifeOf(play(...fallen(), mended('A')), 'A').at).toBe('up');
+  test('an ally\'s heal leaves a dead hunter dead', () => {
     expect(lifeOf(play(...dead(), mended('A')), 'A')).toEqual(DEAD);
   });
 
-  test('a paid heal (a healing ground\'s entry) stands a fallen hunter\'s row up and leaves a dead one dead', () => {
-    const at = body(play(...fallen()).fight, 'A').place;
-    expect(lifeOf(play(...fallen(), spring(at)), 'A')).toEqual({ at: 'up', hp: 10 });
+  test('a paid heal (a healing ground\'s entry) leaves a dead hunter dead', () => {
+    const at = body(play(...dead()).fight, 'A').place;
     expect(lifeOf(play(...dead(), spring(at)), 'A')).toEqual(DEAD);
   });
 
-  test('a heal land op (a trigger\'s, a threshold\'s, a zone end\'s) stands a fallen hunter\'s row up and leaves a dead one dead', () => {
-    const healOf = (b: Body): Body['life'] => {
-      const rows = new Map([[b.id, b]]);
-      landOps(rows, [{ op: 'heal', amount: f('10'), when: 'use' }], null, [b.id], { id: null, tier: 0 }, tick(0), RULES);
-      return rows.get(b.id)!.life;
-    };
-    expect(healOf(body(play(...fallen()).fight, 'A'))).toEqual({ at: 'up', hp: 10 });
-    expect(healOf(body(play(...dead()).fight, 'A'))).toEqual(DEAD);
+  test('a heal land op (a trigger\'s, a threshold\'s, a zone end\'s) leaves a dead hunter dead', () => {
+    const b = body(play(...dead()).fight, 'A'), rows = new Map([[b.id, b]]);
+    landOps(rows, [{ op: 'heal', amount: f('10'), when: 'use' }], null, [b.id], { id: null, tier: 0 }, tick(0), RULES);
+    expect(rows.get(b.id)!.life).toEqual(DEAD);
   });
 
-  test('a level-up\'s refill stands a fallen hunter\'s row up at its maximum and leaves a dead one dead', () => {
-    expect(lifeOf(play(...fallen(), { type: 'refill', id: id('A') }), 'A')).toEqual({ at: 'up', hp: HP });
+  test('a level-up\'s refill leaves a dead hunter\'s row dead', () => {
     expect(lifeOf(play(...dead(), { type: 'refill', id: id('A') }), 'A')).toEqual(DEAD);
   });
 
   test('the GM\'s Revive stands a dead hunter\'s row up at 1 HP: it takes turns again and its sheet hears it', () => {
-    const before = play(...dead()), r = play(...dead(), life('A', { type: 'revive' }));
+    const before = play(...dead()), r = play(...dead(), revive('A'));
     expect(lifeOf(r, 'A')).toEqual({ at: 'up', hp: REVIVE_HP });
     expect(body(r.fight, 'A').at).toBeGreaterThanOrEqual(running(before).now);
     expect(r.effects.at(-1)).toMatchObject({ type: 'vitals', hunterId: hunterId('h-A'), life: { at: 'up', hp: REVIVE_HP } });
     expect(running(r).log[0]!.text).toBe('R1: A is revived (GM).');
   });
 
-  test('a player\'s hunter\'s row sends its phone the life itself: the fall, each death save, the death and the GM\'s Revive', () => {
+  test('a poisoned hunter raised by the GM\'s Revive has no status and is not killed again by the poison', () => {
+    const venom = st('venom', null, { op: 'damage', type: 'magical', amount: f('999') });
+    const turnOf = (x: Fight | null): CombatantId => running({ fight: x }).currentId;
+    let now = play(add(row('A', 'party', { statuses: [venom] }), row('B', 'party'), row('M', 'foe')), start(['B', 20], ['M', 15], ['A', 10])).fight;
+    for (let i = 0; i < 6 && body(now, 'A').life.at === 'up'; i++) now = reduce(now, pass(turnOf(now)), ctx).fight;
+    expect(body(now, 'A').life, 'the poison kills A as its turn comes').toEqual(DEAD);
+    now = reduce(now, revive('A'), ctx).fight;
+    expect([body(now, 'A').life, body(now, 'A').statuses]).toEqual([{ at: 'up', hp: REVIVE_HP }, []]);
+    for (let i = 0; i < 6 && turnOf(now) !== id('A'); i++) now = reduce(now, pass(turnOf(now)), ctx).fight;
+    expect(turnOf(now), 'A\'s next turn has started').toBe(id('A'));
+    expect(body(now, 'A').life).toEqual({ at: 'up', hp: REVIVE_HP });
+  });
+
+  test('a player\'s hunter\'s row sends its phone the life itself: the death and the GM\'s Revive', () => {
     const key = sheetKey('dev-a:h1');
-    const r = play(add(row('A', 'party', { holder: { kind: 'remote', remote: key } }), row('B', 'party'), row('M', 'foe')), start(['A', 20], ['B', 15], ['M', 10]), adjust('A', { hp: -999 }),
-      save('A', 2), save('A', 2), save('A', 2), life('A', { type: 'revive' }));
+    const r = play(add(row('A', 'party', { holder: { kind: 'remote', remote: key } }), row('B', 'party'), row('M', 'foe')), start(['A', 20], ['B', 15], ['M', 10]), adjust('A', { hp: -999 }), revive('A'));
     const told = r.effects.flatMap(e => (e.type === 'sendRemote' && e.remote === key ? [e.life] : []));
-    expect(told).toEqual([{ at: 'up', hp: HP }, DYING, { ...DYING, failures: 1 }, { ...DYING, failures: 2 }, DEAD, { at: 'up', hp: REVIVE_HP }]);
+    expect(told).toEqual([{ at: 'up', hp: HP }, DEAD, { at: 'up', hp: REVIVE_HP }]);
   });
 
   test('a player\'s hunter joining the fight tells its phone the row\'s life at once, even unchanged: the row is the one writer from the join', () => {
     const key = sheetKey('dev-a:h1'), a = row('A', 'party', { holder: { kind: 'remote', remote: key }, hp: 0 });
-    expect(play(add(a, row('M', 'foe'))).effects.filter(e => e.type === 'sendRemote'), 'into a fight in setup').toEqual([{ type: 'sendRemote', remote: key, life: DYING, mana: 10, fatigue: 0, statuses: [] }]);
+    expect(play(add(a, row('M', 'foe'))).effects.filter(e => e.type === 'sendRemote'), 'into a fight in setup').toEqual([{ type: 'sendRemote', remote: key, life: DEAD, mana: 10, fatigue: 0, statuses: [] }]);
     const late = play(add(row('B', 'party'), row('M', 'foe')), start(['B', 20], ['M', 10]), join([a], openings(['A', 10])));
-    expect(late.effects.flatMap(e => (e.type === 'sendRemote' ? [e.life] : [])), 'into a running fight').toEqual([DYING]);
+    expect(late.effects.flatMap(e => (e.type === 'sendRemote' ? [e.life] : [])), 'into a running fight').toEqual([DEAD]);
   });
 
   test('a defeated monster comes back only by the GM\'s Revive, at 1 HP: a hand heal of it is refused', () => {
     const r = play(...trio(), adjust('M', { hp: -999 }));
     expect(lifeOf(r, 'M')).toEqual(DEAD);
     refuses(r.fight, adjust('M', { hp: 10 }), 'noChange');
-    expect(lifeOf(play(...trio(), adjust('M', { hp: -999 }), life('M', { type: 'revive' })), 'M')).toEqual({ at: 'up', hp: REVIVE_HP });
+    expect(lifeOf(play(...trio(), adjust('M', { hp: -999 }), revive('M')), 'M')).toEqual({ at: 'up', hp: REVIVE_HP });
   });
 
-  test('Revive of a row that is not dead is refused, and so is a death save or Stabilize of a row not dying, and a death save that is no d20 face', () => {
+  test('Revive of a row that is not dead is refused', () => {
     const r = play(...trio());
-    refuses(r.fight, life('A', { type: 'revive' }), 'lifeCannot');
-    refuses(r.fight, life('M', { type: 'revive' }), 'lifeCannot');
-    refuses(r.fight, save('A', 15), 'lifeCannot');
-    refuses(play(...fallen()).fight, life('A', { type: 'revive' }), 'lifeCannot');
-    refuses(play(...dead()).fight, life('A', { type: 'stabilize' }), 'lifeCannot');
-    const down = play(...trio(), adjust('M', { hp: -999 }));
-    refuses(down.fight, life('M', { type: 'stabilize' }), 'lifeCannot');
-    refuses(down.fight, save('M', 15), 'lifeCannot');
-    refuses(play(...fallen()).fight, save('A', 21), 'needsRoll');
-    refuses(r.fight, life('ghost', { type: 'revive' }), 'unknown');
-    refuses(null, life('A', { type: 'revive' }), 'notNow');
-    refuses(play(...dead(), { type: 'end' }).fight, life('A', { type: 'revive' }), 'notNow');
+    refuses(r.fight, revive('A'), 'lifeCannot');
+    refuses(r.fight, revive('M'), 'lifeCannot');
+    refuses(r.fight, revive('ghost'), 'unknown');
+    refuses(null, revive('A'), 'notNow');
+    refuses(play(...dead(), { type: 'end' }).fight, revive('A'), 'notNow');
   });
 });
 
@@ -1527,7 +1519,7 @@ describe('a zone on the ground: the kits\' upkeep, cap per owner and end (kits d
     expect(new Set((fight as Extract<Fight, { phase: 'ended' }>).summary.down)).toEqual(new Set([id('A'), id('M')]));
     const fell = last.findIndex(e => e.type === 'defeated');
     expect(fell, 'the zone\'s end downed M in the pass that ended the fight').toBeGreaterThan(-1);
-    expect(last.some(e => e.type === 'vitals' && e.hunterId === hunterId('h-A') && e.life.at === 'dying'), 'A\'s fall reaches its sheet').toBe(true);
+    expect(last.some(e => e.type === 'vitals' && e.hunterId === hunterId('h-A') && e.life.at === 'dead'), 'A\'s death reaches its sheet').toBe(true);
     expect(last.slice(fell).some(e => e.type === 'turnStarted'), 'no turn began after the zone downed both').toBe(false);
   });
 });
@@ -2424,9 +2416,9 @@ describe('the fudge: the GM\'s hidden weight on the fight\'s dice (notes-8-fudge
 describe('the fight\'s table: every state under every command (SMX-rules-3)', () => {
   const ALL: Record<CommandType, true> = {
     add: true, remove: true, start: true, act: true, move: true, endTurn: true, release: true, setIntent: true, reveal: true, place: true, adjust: true, refill: true,
-    life: true, status: true, settle: true, paint: true, zoneAdd: true, zoneRemove: true, resize: true, arm: true, extract: true, fudge: true, end: true, clear: true,
+    revive: true, status: true, settle: true, paint: true, zoneAdd: true, zoneRemove: true, resize: true, arm: true, extract: true, fudge: true, end: true, clear: true,
   };
-  const SETUP: CommandType[] = ['add', 'remove', 'start', 'setIntent', 'reveal', 'place', 'adjust', 'refill', 'life', 'status', 'paint', 'zoneAdd', 'zoneRemove', 'resize', 'arm', 'extract', 'fudge', 'end', 'clear'];
+  const SETUP: CommandType[] = ['add', 'remove', 'start', 'setIntent', 'reveal', 'place', 'adjust', 'refill', 'revive', 'status', 'paint', 'zoneAdd', 'zoneRemove', 'resize', 'arm', 'extract', 'fudge', 'end', 'clear'];
   const RUNNING = (Object.keys(ALL) as CommandType[]).filter(t => t !== 'start');
   const CHARGE = ability('blast', 'charge', '10 * (1 + charge)', { channel: { growth: 'linear', max: 5 }, range: tiles(20) });
   const owing = play(add(row('A', 'party', { abilities: [HIT, CHARGE], statuses: [haste(-50)] }), row('M', 'foe')), start(['A', 20], ['M', 1]),

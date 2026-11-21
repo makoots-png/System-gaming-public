@@ -2037,3 +2037,101 @@ test('a change of tab takes the icon picker down and leaves the maker under it o
   await expect(d).toBeVisible();
   await expect(iconOpen(d)).toHaveAttribute('aria-expanded', 'false');
 });
+
+test('a GM makes the Bulwark, a worn item whose wearer can use a shield of a flat, a scaling and a combined amount; the words line shows each, the library keeps them and Edit reads them back', async ({ device }) => {
+  const page = (await device('gm')).page;
+  await onboardGM(page);
+  const d = itemMaker(page), fx = (i: number) => d.locator(`[data-active-fx] [data-row="${i}"]`);
+  const hp = sampleBody('C', 'str', RULES).sheet.hpMax;
+  const words = (text: string, now: number) => `${text} (${now} on a sample rank C wearer)`;
+  await go(page, 'workshop');
+  await workshop(page, 'item').locator('[data-new]').tap();
+  await d.locator('#lf-name').fill('Bulwark');
+  await d.locator('[data-chips="type"] [data-chip="armor"]').tap();
+  await d.locator('[data-group="active"] summary').tap();
+  await d.locator('[data-active-on]').check();
+  await d.locator('[data-chips="akind"] [data-chip="support"]').tap();
+  await d.locator('[data-chips="aaim"] [data-chip="self"]').tap();
+  await d.locator('[data-chips="ftype"] [data-chip="none"]').tap();
+
+  await test.step('a flat amount reads as its number', async () => {
+    await d.locator('[data-active-fx] [data-add]').tap();
+    await fx(0).locator('[data-f="kind"]').selectOption('shield');
+    await fx(0).locator('[data-f="q"]').fill('12');
+    await expect(fx(0).locator('[data-words]')).toHaveText('12');
+  });
+
+  await test.step('Grows with max HP, 20 %, Add, puts the term in the field and the words line says what it is on a sample wearer', async () => {
+    await d.locator('[data-active-fx] [data-add]').tap();
+    await fx(1).locator('[data-f="kind"]').selectOption('shield');
+    await fx(1).locator('[data-f="q"]').fill('');
+    await expect(fx(1).locator('[data-grow-unit]')).toHaveText('%');
+    await fx(1).locator('[data-grow-add]').tap();
+    await expect(fx(1).locator('[data-f="q"]')).toHaveValue('0.2 * hpmax');
+    await expect(fx(1).locator('[data-words]')).toHaveText(words('20% of max HP', Math.round(0.2 * hp)));
+  });
+
+  await test.step('a stat is a multiple, and Add after a number gives a combined amount', async () => {
+    await d.locator('[data-active-fx] [data-add]').tap();
+    await fx(2).locator('[data-f="kind"]').selectOption('shield');
+    await fx(2).locator('[data-f="q"]').fill('10');
+    await fx(2).locator('[data-grow-add]').tap();
+    await expect(fx(2).locator('[data-f="q"]')).toHaveValue('10 + 0.2 * hpmax');
+    await expect(fx(2).locator('[data-words]')).toHaveText(words('10 + 20% of max HP', Math.round(10 + 0.2 * hp)));
+    await fx(2).locator('[data-grow-name]').selectOption('str');
+    await expect(fx(2).locator('[data-grow-unit]')).toHaveText('×');
+    await fx(2).locator('[data-grow-by]').fill('0.5');
+    await fx(2).locator('[data-grow-add]').tap();
+    await expect(fx(2).locator('[data-f="q"]')).toHaveValue('10 + 0.2 * hpmax + 0.5 * str');
+    await fx(2).locator('[data-f="q"]').fill('10 + 0.2 * hpmax');
+  });
+
+  await test.step('Save keeps the item and its active; the library holds the three amounts', async () => {
+    await d.locator('[data-apply]').tap();
+    await expect(d).toHaveCount(0);
+    const saved = await libraryItem(page, 'Bulwark');
+    const amount = (text: string) => { const p = parseFormula(text, RULES); return p.ok ? p.formula : null; };
+    expect(saved.active.kind).toBe('support');
+    expect(saved.active.aim).toBe('self');
+    expect(saved.active.ops).toEqual([12, '0.2 * hpmax', '10 + 0.2 * hpmax'].map(t => ({ op: 'shield', amount: typeof t === 'number' ? { kind: 'number', value: t } : amount(t) })));
+  });
+
+  await test.step('Edit shows the active as saved, each amount in its field and its words', async () => {
+    await workshop(page, 'item').locator('li', { hasText: 'Bulwark' }).locator('[data-act="edit"]').tap();
+    await expect(d.locator('[data-active-on]')).toBeChecked();
+    await expect(d.locator('[data-chips="akind"] [data-chip="support"]')).toHaveAttribute('aria-pressed', 'true');
+    await expect(fx(0).locator('[data-f="q"]')).toHaveValue('12');
+    await expect(fx(1).locator('[data-f="q"]')).toHaveValue('0.2 * hpMax');
+    await expect(fx(2).locator('[data-words]')).toHaveText(words('10 + 20% of max HP', Math.round(10 + 0.2 * hp)));
+    await d.locator('[data-cancel]').tap();
+  });
+});
+
+test('on a 390 px phone the item maker\'s "Its wearer can use" group, the Grows with row and the words line, fit the screen with no sideways scroll', async ({ device }) => {
+  const page = (await device('gm', { viewport: { width: 390, height: 844 } })).page;
+  await onboardGM(page);
+  const d = itemMaker(page), row = d.locator('[data-active-fx] [data-row="0"]');
+  await go(page, 'gm');
+  await page.locator('#gm-make [data-make="item"]').tap();
+  await d.locator('[data-chips="type"] [data-chip="armor"]').tap();
+  await d.locator('[data-group="active"] summary').tap();
+  await d.locator('[data-active-on]').check();
+  await d.locator('[data-chips="akind"] [data-chip="support"]').tap();
+  await d.locator('[data-active-fx] [data-add]').tap();
+  await row.locator('[data-f="kind"]').selectOption('shield');
+  await row.locator('[data-f="q"]').fill('10');
+  await row.locator('[data-grow-add]').tap();
+  await row.locator('[data-grow-name]').selectOption('armorpenflat');
+  await row.locator('[data-grow-by]').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: '/tmp/pw-items9-group-390.png' });
+  const fit = await row.locator('.mk-grows-row').evaluate(el => ({
+    page: document.documentElement.scrollWidth - innerWidth,
+    inside: [...el.children].every(c => { const r = c.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth; }),
+    oneLine: Math.max(...[...el.children].map(c => { const r = c.getBoundingClientRect(); return r.top + r.height / 2; })) - Math.min(...[...el.children].map(c => { const r = c.getBoundingClientRect(); return r.top + r.height / 2; })),
+    select: el.querySelector('select')!.getBoundingClientRect().width,
+  }));
+  expect(fit.inside, 'every part of the row inside the screen').toBe(true);
+  expect(fit.oneLine, 'the row on one line').toBeLessThan(10);
+  expect(fit.page, 'the page does not scroll sideways').toBeLessThanOrEqual(0);
+  expect(fit.select, 'the select has room to read').toBeGreaterThanOrEqual(90);
+});

@@ -28,7 +28,7 @@ import type { Worth } from './registry/worth.ts';
 import type { StatBlock } from './registry/monsters.ts';
 import type { Gate, GateType } from './gates/gate.ts';
 import type { WorldWhy } from './gates/world.ts';
-import type { FightId, NewRow, RowLifeEvent, Running, Setup } from './combat/fight-types.ts';
+import type { FightId, NewRow, Running, Setup } from './combat/fight-types.ts';
 import type { OddsRead, OddsVoice } from './combat/odds.ts';
 import type { ExtractionOutcome } from './combat/extraction.ts';
 import type { MapInput, ViewAs } from './combat/map-view.ts';
@@ -130,16 +130,11 @@ export type CombatApi = {
    */
   spend(cid: string, mana: number, also: Step<Save> | null): Applied;
   /**
-   * The GM's Revive of row `cid` (its card's, the GM board's): the fight's `life` command, which stands only the dead up
-   * at the life table's revive HP (vitals.ts `REVIVE_HP`). The fight holds every row's life, so a player's hunter's
-   * phone hears it in the room's `vitals`. Answers as `adjust`.
+   * The GM's Revive of row `cid` (its card's, the GM board's): the fight's `revive` command, which stands only the dead
+   * up at the life table's revive HP (vitals.ts `REVIVE_HP`) and takes off every status. The fight holds every row's
+   * life, so a player's hunter's phone hears it in the room's `vitals`. Answers as `adjust`.
    */
   revive(cid: string): Applied;
-  /**
-   * A life event on row `cid` that is not HP (the fight's `life` command, row-life.ts): the GM's Revive or Stabilize, or a
-   * death save with its d20. Answers as `adjust`.
-   */
-  life(cid: string, event: RowLifeEvent): Applied;
   /**
    * What a grant hands to this phone's fight (grant.ts `Granted.fight`) put on the rows it names (fight-save.ts
    * `heldCommands`: a status each, a refill), with `also` (the grant's own step) in the same write: all of it, or nothing
@@ -308,13 +303,11 @@ export type HunterApi = {
   damage(hid: string, n: number): Applied;
   heal(hid: string, n: number): Applied;
   /**
-   * A life event beside HP (Revive, Stabilize, a death save): on the sheet through the life machine (refused `cannot`
-   * when it does not apply in the hunter's state), or, while this phone's fight holds the hunter, the fight's `life`
-   * command on its row (the row holds the life). In the GM's fight a death save is posted to the GM's row: the outbox's answer.
+   * The GM's Revive of a dead hunter: on the sheet through the life machine, every status taken off (grant.ts
+   * `sheetEdit`; refused `cannot` when the hunter is not dead), or, while this phone's fight holds the hunter, the
+   * fight's `revive` command on its row (the row holds the life). Refused in the GM's fight on a player's phone.
    */
-  life(hid: string, event: RowLifeEvent): Applied;
-  /** Rolls one death save for this hunter (the d20 goes to the dice log) and says what it did. Refused `cannot` when it cannot be rolled. */
-  deathSave(hid: string): Applied;
+  revive(hid: string): Applied;
   /**
    * The one answer to "where do this hunter's HP, mana, fatigue, life and statuses live now": a row of this phone's fight
    * (`cid`), the GM's fight on a player's phone (`gm`, where a change is refused), or the sheet (null). Every writer asks it.
@@ -730,8 +723,8 @@ export type MapSource = {
   /** The GM paints tiles during a fight with a terrain or more of a zone on the ground. Null on a player's phone. */
   paint: ((tiles: Place[], brush: { terrain: Terrain } | { zone: ZoneId }) => void) | null;
   /**
-   * A word for what this phone draws over the map's frame that can change its height (a player's turn line, death saves,
-   * the number of chips). The map works its frame's height out again when the word changes. Absent where nothing does.
+   * A word for what this phone draws over the map's frame that can change its height (a player's turn line, the life's
+   * word, the number of chips). The map works its frame's height out again when the word changes. Absent where nothing does.
    */
   over?: () => string;
   offTurn(): void;

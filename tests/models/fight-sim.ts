@@ -34,7 +34,7 @@ import { inRange, resolve, taunted } from '../../src/core/combat/resolve.ts';
 import type { Aim, Rolls } from '../../src/core/combat/resolve.ts';
 import { fightId, reduce } from '../../src/core/combat/fight.ts';
 import type { Ctx, Effect, Ended, NewRow, Running } from '../../src/core/combat/fight.ts';
-import { CAP_ROUNDS, lifeOfSaves, playBegin, playOver, playSaves, playStep } from '../../src/core/combat/play.ts';
+import { CAP_ROUNDS, playBegin, playOver, playStep } from '../../src/core/combat/play.ts';
 import type { Limits, Play } from '../../src/core/combat/play.ts';
 import type { Policy as TurnPolicy, TurnChoice } from '../../src/core/combat/policy.ts';
 import { rng } from './fight-play.ts';
@@ -482,8 +482,8 @@ export type Tally = {
 };
 export type FightRecord = {
   readonly winner: 'party' | 'foe' | null; readonly rounds: number; readonly capped: boolean;
-  /** Hunters that hit 0 HP at some point, and those whose death saves after the fight ended at dead. */
-  readonly down: readonly string[]; readonly dead: readonly string[];
+  /** Hunters that died (hit 0 HP), in the order they died. */
+  readonly dead: readonly string[];
   readonly staggers: number;
   /** Ticks each row's next turn was pushed by a hold another row's use landed on it (a stagger apart), and the fight's length in ticks. */
   readonly held: Readonly<Record<string, number>>; readonly ticks: number;
@@ -599,10 +599,9 @@ export function playFight(setup: Setup, seed: number): FightRecord {
   }
   const ended = p as Play & { readonly fight: Ended }, f = ended.fight;
   for (const r of f.rows) { const t = tally[r.id]!; t.fatigue = r.fatigue; t.mana = r.mana; }
-  const dead = Object.entries(playSaves(ended)).filter(([id, faces]) => lifeOfSaves(faces, f.rows.find(r => r.id === id)!.sheet.hpMax) === 'dead').map(([id]) => id);
   channels.dropped = channels.begun - channels.completed - channels.broken;
   return {
-    winner: f.summary.winner, rounds: f.summary.rounds, capped: ended.capped, down: [...ended.down], dead: [...dead], staggers, held, ticks: f.now, channels, tally,
+    winner: f.summary.winner, rounds: f.summary.rounds, capped: ended.capped, dead: [...ended.down], staggers, held, ticks: f.now, channels, tally,
     end: Object.fromEntries(f.rows.map(r => [r.id, { hp: rowHp(r), fatigue: r.fatigue, mana: r.mana }])),
   };
 }

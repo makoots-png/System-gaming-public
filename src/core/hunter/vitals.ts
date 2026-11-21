@@ -1,62 +1,45 @@
-// vitals.ts: a hunter's life (HP, dying, stable, dead), mana, fatigue and collapse. Pure.
-// One field, `life`, holds what HP, the dying chip and the death saves used to hold in three places. Its one
-// table of events is `lifeAfter`. The vitals together (life, mana, fatigue, the collapse, spent uses) have one machine,
-// `vitalStep`, whose table is `VITAL_TABLE`: a sheet's change goes through grant.ts `sheetEdit`, which calls it. The save
-// repair reads a stored hunter in src/core/save.ts. The maxima are not stored: the caller reads them from the hunter's
-// sheet and passes them in.
+// vitals.ts: a hunter's life (HP, or dead), mana, fatigue and collapse. Pure.
+// One field, `life`, holds HP and death. Its one table of events is `lifeAfter`. The vitals together (life, mana,
+// fatigue, the collapse, spent uses) have one machine, `vitalStep`, whose table is `VITAL_TABLE`: a sheet's change goes
+// through grant.ts `sheetEdit`, which calls it. The save repair reads a stored hunter in src/core/save.ts. The maxima are
+// not stored: the caller reads them from the hunter's sheet and passes them in.
 import type { Rules } from '../rules.ts';
 import type { AbilityId } from '../combat/ability-types.ts';
 import { isRefused, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
 
 // ── life ──
-export const LIFE_STATES = ['up', 'dying', 'stable', 'dead'] as const;
+export const LIFE_STATES = ['up', 'dead'] as const;
 export type LifeState = (typeof LIFE_STATES)[number];
-/** Death saves made so far while dying. A third success makes the hunter stable, a third failure dead. */
-type Saves = 0 | 1 | 2;
-/** Up has at least 1 HP. Dying, stable and dead have 0 HP. Only `revive` brings back the dead: the GM's, or a Resurrection Crystal used (use.ts). */
+/**
+ * Up has at least 1 HP. A hunter at 0 HP is dead (the owner, Nov 21: "Youre dead. You need to be ressed."), and only
+ * `revive` brings it back: the GM's, or a Resurrection Crystal used (use.ts). A revive also takes off every status
+ * (grant.ts `sheetEdit` on the sheet, fight.ts `revive` on a fight's row).
+ */
 export type Life =
   | { at: 'up'; hp: number }
-  | { at: 'dying'; successes: Saves; failures: Saves }
-  | { at: 'stable' }
   | { at: 'dead' };
 
 /**
- * What can happen to a hunter's life. `setHp` is the HP the sheet's bar or the GM sets. `deathSave` carries the d20
- * the player rolled. `revive` is the GM's Revive or a Resurrection Crystal's use, for the dead only. `maxChanged` is sent
- * when the maximum HP changes.
+ * What can happen to a hunter's life. `setHp` is the HP the sheet's bar or the GM sets. `revive` is the GM's Revive or
+ * a Resurrection Crystal's use, for the dead only. `maxChanged` is sent when the maximum HP changes.
  */
 export type LifeEvent =
   | { type: 'damage'; amount: number }
   | { type: 'heal'; amount: number }
   | { type: 'setHp'; hp: number }
-  | { type: 'deathSave'; roll: number }
-  | { type: 'stabilize' }
   | { type: 'revive' }
   | { type: 'maxChanged' };
 export type LifeEventType = LifeEvent['type'];
-export const LIFE_EVENT_TYPES = ['damage', 'heal', 'setHp', 'deathSave', 'stabilize', 'revive', 'maxChanged'] as const satisfies readonly LifeEventType[];
+export const LIFE_EVENT_TYPES = ['damage', 'heal', 'setHp', 'revive', 'maxChanged'] as const satisfies readonly LifeEventType[];
 
-/**
- * The death save numbers, today's (and the rules reference's "d20, 10 or higher succeeds"): a 20 brings the hunter
- * up at 1 HP, 10 to 19 is a success, 2 to 9 a failure, a 1 two failures. Three of either ends the dying.
- */
-export const SAVE_SUCCESS = 10, SAVE_UP = 20;
-/** The HP a hunter has after a natural 20 on a death save. */
-export const SAVE_UP_HP = 1;
-/** The roll that counts as more than one failure, and how many (the Rules page's "a 1 counts as two failures"). */
-export const SAVE_FUMBLE = 1, FUMBLE_FAILURES = 2;
-/** Successes or failures that end the dying: the death panel's pips count up to it. */
-export const SAVES_TO_END = 3;
-
-/** HP as the sheet shows it: at most the maximum, 0 for a hunter who is down. */
+/** HP as the sheet shows it: at most the maximum, 0 for a dead hunter. */
 export const hpOf = (life: Life, hpMax: number): number => (life.at === 'up' ? Math.min(life.hp, hpMax) : 0);
 
 /** A whole number of at least 1, or null for anything else. */
 const amountOf = (n: number): number | null => (Number.isFinite(n) && Math.trunc(n) >= 1 ? Math.trunc(n) : null);
-const DOWN: Life = { at: 'dying', successes: 0, failures: 0 };
-/** Up at `hp`, capped at the maximum; 0 or less is a fresh fall. */
-const at = (hp: number, hpMax: number): Life => (hp >= 1 ? { at: 'up', hp: Math.min(hp, Math.max(1, hpMax)) } : DOWN);
+/** Up at `hp`, capped at the maximum; 0 or less is dead. */
+const at = (hp: number, hpMax: number): Life => (hp >= 1 ? { at: 'up', hp: Math.min(hp, Math.max(1, hpMax)) } : { at: 'dead' });
 
 type Step<T extends LifeEventType> = (life: Life, event: Extract<LifeEvent, { type: T }>, hpMax: number) => Life;
 /** For one state: what each event does there. `null` means the event does not apply, and the life stays as it is. */
@@ -64,26 +47,15 @@ type Row = { readonly [T in LifeEventType]: Step<T> | null };
 
 const damage: Step<'damage'> = (life, e, max) => { const n = amountOf(e.amount); return n === null ? life : at(hpOf(life, max) - n, max); };
 const heal: Step<'heal'> = (life, e, max) => { const n = amountOf(e.amount); return n === null ? life : at(hpOf(life, max) + n, max); };
-/** Down: only an HP above 0 changes anything, so setting 0 keeps the saves made. */
-const setHp: Step<'setHp'> = (life, e, max) => { const n = Math.trunc(e.hp); return Number.isFinite(n) && (life.at === 'up' || n >= 1) ? at(n, max) : life; };
-const deathSave: Step<'deathSave'> = (life, e) => {
-  if (life.at !== 'dying' || !Number.isInteger(e.roll) || e.roll < 1 || e.roll > SAVE_UP) return life;
-  if (e.roll === SAVE_UP) return { at: 'up', hp: SAVE_UP_HP };
-  if (e.roll >= SAVE_SUCCESS) { const s = life.successes + 1; return s >= SAVES_TO_END ? { at: 'stable' } : { ...life, successes: s as Saves }; }
-  const f = life.failures + (e.roll === SAVE_FUMBLE ? FUMBLE_FAILURES : 1);
-  return f >= SAVES_TO_END ? { at: 'dead' } : { ...life, failures: f as Saves };
-};
-const stabilize: Step<'stabilize'> = () => ({ at: 'stable' });
-/** The HP a revive brings a dead hunter back at; a fight's row of that hunter is raised to it too (combat.js `revive`). */
+const setHp: Step<'setHp'> = (life, e, max) => { const n = Math.trunc(e.hp); return Number.isFinite(n) ? at(n, max) : life; };
+/** The HP a revive brings a dead hunter back at; a fight's row of that hunter is raised to it too (fight.ts `revive`). */
 export const REVIVE_HP = 1;
 const revive: Step<'revive'> = () => ({ at: 'up', hp: REVIVE_HP });
 const maxChanged: Step<'maxChanged'> = (life, _e, max) => (life.at === 'up' && life.hp > max ? at(max, max) : life);
 
 const TABLE: { readonly [S in LifeState]: Row } = {
-  up: { damage, heal, setHp, deathSave: null, stabilize: null, revive: null, maxChanged },
-  dying: { damage: null, heal, setHp, deathSave, stabilize, revive: null, maxChanged: null },
-  stable: { damage: null, heal, setHp, deathSave: null, stabilize: null, revive: null, maxChanged: null },
-  dead: { damage: null, heal: null, setHp: null, deathSave: null, stabilize: null, revive, maxChanged: null },
+  up: { damage, heal, setHp, revive: null, maxChanged },
+  dead: { damage: null, heal: null, setHp: null, revive, maxChanged: null },
 };
 
 /** The life after `event`, for a hunter with `hpMax` maximum HP. The same life when the event does not apply. Never changes its input. */
@@ -95,23 +67,15 @@ export function lifeAfter(life: Life, event: LifeEvent, hpMax: number): Life {
   return next === life ? life : { ...next };
 }
 /**
- * What a change of life was, for the words a player reads: fell (HP reached 0), raised (up again from down: a heal, a
- * natural 20, a revive), a death save made or failed while still dying (with the count now), stable, or died. Worked
- * out from the lives before and after a write, so the words follow what the table did, never what was asked (implicit
- * audit 3, H1, H2).
+ * What a change of life was, for the words a player reads: died (HP reached 0) or raised (up again from dead: a
+ * revive). Worked out from the lives before and after a write, so the words follow what the table did, never what was
+ * asked (implicit audit 3, H1, H2).
  */
-export type LifeNews =
-  | { readonly kind: 'fell' } | { readonly kind: 'raised' } | { readonly kind: 'stable' } | { readonly kind: 'died' }
-  | { readonly kind: 'saved'; readonly successes: number } | { readonly kind: 'failed'; readonly failures: number };
-/** What the change from `before` to `after` was, or null when the state and the saves are the same (HP moved while up). */
+export type LifeNews = { readonly kind: 'died' } | { readonly kind: 'raised' };
+/** What the change from `before` to `after` was, or null when the state is the same (HP moved while up). */
 export function lifeNews(before: Life, after: Life): LifeNews | null {
-  if (after.at === 'dead') return before.at === 'dead' ? null : { kind: 'died' };
-  if (after.at === 'up') return before.at === 'up' ? null : { kind: 'raised' };
-  if (after.at === 'stable') return before.at === 'stable' ? null : { kind: 'stable' };
-  if (before.at !== 'dying') return { kind: 'fell' };
-  if (after.successes > before.successes) return { kind: 'saved', successes: after.successes };
-  if (after.failures > before.failures) return { kind: 'failed', failures: after.failures };
-  return null;
+  if (before.at === after.at) return null;
+  return after.at === 'dead' ? { kind: 'died' } : { kind: 'raised' };
 }
 
 /** The life event of a signed HP change: below 0 is damage, above 0 a heal. */
@@ -176,7 +140,7 @@ export type VitalEvent =
 export type VitalEventType = VitalEvent['type'];
 /** The events beside the life's own: the vitals table's columns. */
 type OwnType = Exclude<VitalEventType, Exclude<LifeEventType, 'maxChanged'>>;
-export const VITAL_EVENT_TYPES = ['damage', 'heal', 'setHp', 'deathSave', 'stabilize', 'revive', 'mana', 'spend', 'fatigue', 'refill', 'rest', 'maxChanged', 'fightTotals'] as const satisfies readonly VitalEventType[];
+export const VITAL_EVENT_TYPES = ['damage', 'heal', 'setHp', 'revive', 'mana', 'spend', 'fatigue', 'refill', 'rest', 'maxChanged', 'fightTotals'] as const satisfies readonly VitalEventType[];
 /** Why `vitalStep` refused: the hunter's state does not take the event (`cannot`), or a price is more mana than held (`mana`). */
 export type VitalRefusal = 'cannot' | 'mana';
 /** The events every state takes: a maximum fitted and the fight's totals. */
@@ -190,8 +154,6 @@ type VitalRow = { readonly [T in OwnType]: T extends Always ? true : boolean };
 const TAKES = { mana: true, spend: true, fatigue: true, refill: true, rest: true, maxChanged: true, fightTotals: true } as const satisfies VitalRow;
 export const VITAL_TABLE: { readonly [S in LifeState]: VitalRow } = {
   up: TAKES,
-  dying: TAKES,
-  stable: TAKES,
   // SMX-rules-1.2 waits on the owner: whether a dead hunter may rest and is refilled on a level-up. Today both are taken:
   // mana fills, a long rest ends a collapse and gives back the uses, and the life stays dead (the life table's heal).
   dead: { ...TAKES, refill: true, rest: true },
@@ -216,8 +178,8 @@ const collapsedAfter = (move: CollapseMove, was: boolean, fatigue: number, m: Ma
   move === 'keep' ? was : move === 'rise' ? was || fatiguePast(fatigue, m, R.fatigue.collapseAt) : fatiguePast(fatigue, m, R.fatigue.collapseAt);
 
 /**
- * The life and mana a refill leaves: HP healed to the maximum through the life machine (the dead stay dead, the down
- * stand up), mana full. The one meaning of a refill, for a sheet (`refill`) and for a fight's row (row-life.ts `refilledRow`).
+ * The life and mana a refill leaves: HP healed to the maximum through the life machine (the dead stay dead), mana
+ * full. The one meaning of a refill, for a sheet (`refill`) and for a fight's row (row-life.ts `refilledRow`).
  */
 export const refilled = (v: Pick<Vitals, 'life' | 'mana'>, m: Pick<Maxima, 'hpMax' | 'manaMax'>): Pick<Vitals, 'life' | 'mana'> =>
   ({ life: lifeAfter(v.life, { type: 'heal', amount: m.hpMax }, m.hpMax), mana: manaCap(m) });
@@ -288,23 +250,22 @@ export function fatigueNews(before: Pick<Vitals, 'fatigue' | 'collapsed'>, after
 
 // ── the chips drawn from the state ──
 /** The keys of the chips the vitals draw. src/core/hunter/chips.ts lists every chip a hunter's state draws. */
-export const VITAL_CHIPS = ['down', 'dead', 'exhausted'] as const;
+export const VITAL_CHIPS = ['dead', 'exhausted'] as const;
 export type VitalChip = (typeof VITAL_CHIPS)[number];
-/** The chips the vitals draw: Down while dying or stable, Dead, and Exhausted while collapsed. */
+/** The chips the vitals draw: Dead, and Exhausted while collapsed. */
 export function vitalChipsOf(v: Pick<Vitals, 'life' | 'collapsed'>): VitalChip[] {
   const out: VitalChip[] = [];
-  if (v.life.at === 'dying' || v.life.at === 'stable') out.push('down');
   if (v.life.at === 'dead') out.push('dead');
   if (v.collapsed) out.push('exhausted');
   return out;
 }
 /**
- * The ways back from dead, as every place that tells a dead hunter names them (the sheet, the death save's toast, a solo
- * run, the Dead chip, the Rules page): one name each, the GM's button and the item.
+ * The ways back from dead, as every place that tells a dead hunter names them (the sheet, the toast of a death, a solo run,
+ * the Dead chip, the Rules page): one name each, the GM's button and the item.
  */
 export const WAYS_BACK = 'The GM\'s Revive or a Resurrection Crystal';
 /** The toast when a change takes a hunter's HP to 0. */
-export const FELL_WORDS = 'HP has reached 0. You are down.';
+export const DIED_WORDS = `HP has reached 0. You are dead. ${WAYS_BACK} brings you back.`;
 
 /** The uses of `id` spent this rest: the count the fight writes back (`vitals`), after each limited use resolves. */
 export const usedOf = (v: Pick<Vitals, 'used'>, id: AbilityId): number => v.used[id] ?? 0;
@@ -325,15 +286,13 @@ export function parseUsed(value: unknown, R: Pick<Rules, 'fight'>): Readonly<Rec
   }
   return out as Readonly<Record<AbilityId, number>>;
 }
-/** The life in `value`, or null when it is not one. Up HP is a whole number from 1 to `hpCap`; a count of saves is 0 to 2. */
+/** The life in `value`, or null when it is not one. Up HP is a whole number from 1 to `hpCap`. */
 export function parseLife(value: unknown, hpCap: number): Life | null {
   if (value === null || typeof value !== 'object') return null;
   const o = value as Record<string, unknown>;
   const n = (v: unknown, lo: number, hi: number): number | null => (typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, Math.round(v))) : null);
   switch (o.at) {
     case 'up': { const hp = n(o.hp, 1, hpCap); return hp === null ? null : { at: 'up', hp }; }
-    case 'dying': return { at: 'dying', successes: (n(o.successes, 0, 2) ?? 0) as Saves, failures: (n(o.failures, 0, 2) ?? 0) as Saves };
-    case 'stable': return { at: 'stable' };
     case 'dead': return { at: 'dead' };
     default: return null;
   }

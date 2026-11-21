@@ -14,7 +14,8 @@ import { ICON_GROUPS, ICON_KEYS, iconDef, iconsOf } from '../core/registry/icons
 import { BONUS_KEYS, BONUS_LABELS, rules } from '../edge/rules.ts';
 import { RANKS } from '../core/rules.ts';
 import { STAT_KEYS, STAT_LABELS } from '../core/stats.ts';
-import { bareRefusal, parseFormula, printFormula } from '../core/formula.ts';
+import { amountWords, bareRefusal, parseFormula, printFormula } from '../core/formula.ts';
+import { SHEET_LABELS } from '../core/hunter/derive.ts';
 import { OP_KINDS, opLines } from '../core/combat/effect-ops.ts';
 import { HIDE_LEVELS } from '../core/combat/sight-levels.ts';
 import { isFormulaKey } from '../core/combat/op-amount.ts';
@@ -149,6 +150,23 @@ function toNumberRow(r) {
 const flatOf = f => (f.kind === 'number' ? f.value : f.kind === 'negate' && f.arg.kind === 'number' ? -f.arg.value : null);
 /** The sample hunter a lasting change's words are read on in the maker: rank C, its points in Strength and Vitality. */
 const SAMPLE_RANK = 'C';
+/** What a formula amount grows with: a stat is read times a number, a sheet number as a share of it. */
+const GROWS_WITH = [...STAT_KEYS.map(k => [k, STAT_LABELS[k]]), ...Object.entries(SHEET_LABELS).map(([k, l]) => [k.toLowerCase(), l])];
+/** The unit typed beside a "Grows with" name: `×` for a stat, `%` for a sheet number. */
+const growUnit = name => (STAT_KEYS.includes(name) ? '×' : '%');
+/** The text a "Grows with" row adds to an amount (`0.2 * hpmax` for 20 on max HP), or '' when the number is not above 0. */
+function growTerm(name, by) {
+  const n = Number(by);
+  if (!Number.isFinite(n) || n <= 0 || !GROWS_WITH.some(([k]) => k === name)) return '';
+  return `${Number((growUnit(name) === '%' ? n / 100 : n).toPrecision(12))} * ${name}`;
+}
+/** The "Grows with" row of formula row `i`: pick a stat or sheet number, type how much, Add puts its term in the amount. */
+const growsRow = i => `<div class="mk-grows"><span class="lbl">Grows with</span><div class="mk-grows-row"><select data-grow-name aria-label="Grows with, effect ${i + 1}">${GROWS_WITH.map(([k, l]) => `<option value="${k}"${k === 'hpmax' ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select><input type="number" inputmode="decimal" step="any" min="0" data-grow-by aria-label="How much, effect ${i + 1}" value="20"><span data-grow-unit>%</span><button type="button" class="quiet" data-grow-add>Add</button></div></div>`;
+/** An amount in words on the sample wearer: `10 + 20% of max HP (34 on a sample rank C wearer)`. */
+function amountLine(f) {
+  const body = sampleBody(SAMPLE_RANK, 'str', rules());
+  return amountWords(f, body).replace(/\(now (-?\d+)\)$/, `($1 on a sample rank ${SAMPLE_RANK} wearer)`);
+}
 const PLAIN_KINDS = ['hold', 'root', 'taunt', 'untargetable', 'invulnerable', 'safeguard', 'alert', 'extra', 'negate', 'reveal'];
 /** Where a hide may start (effect-ops.ts `HIDE_STARTS`), and the three events that may end it (`STEALTH_ENDS`), as the GM reads them. */
 const START_LABEL = [['unseen', 'Out of sight'], ['anywhere', 'Anywhere']];
@@ -424,7 +442,7 @@ function effects(box, o) {
       else body = input(`data-f="q" placeholder="${placeholder}"`, `${what} ${number ? 'value' : 'amount'}`, r.q);
       if (number && NUMBERS[r.kind].label) body = group(NUMBERS[r.kind].label, body);
       if (r.kind === 'refund') body += `<label class="field"><span class="lbl">Chance (%)</span><input type="number" inputmode="numeric" step="1" min="1" max="100" data-f="chance" aria-label="Chance of effect ${i + 1}" value="${esc(r.chance)}"></label>`;
-      if (formula && (r.mode !== 'rank' || one)) body += '<p class="mk-avg" data-avg></p>';
+      if (formula && (r.mode !== 'rank' || one)) body += `${growsRow(i)}<p class="mk-avg" data-words></p><p class="mk-avg" data-avg></p>`;
       if (r.kind === 'hidden') {
         body += group('Starts', segF('start', `Where effect ${i + 1} may start`, START_LABEL, r.start));
         body += group('Ends when', `<div class="mk-chips" role="group" aria-label="What ends effect ${i + 1}">${STEALTH_END_LABEL.map(([e, l]) => `<button type="button" class="mk-chip" data-end="${e}" aria-pressed="${!!r.ends[e]}">${esc(l)}</button>`).join('')}</div>`);
@@ -474,6 +492,8 @@ function effects(box, o) {
     el.classList.toggle('bad', !!c.err);
     el.querySelectorAll('[data-t]').forEach(inp => inp.setAttribute('aria-invalid', String(c.bad.includes(Number(inp.dataset.t)))));
     el.querySelectorAll('[data-f=q],[data-f=text],[data-f=status],[data-f=rounds],[data-f=chance],[data-f=tag],[data-f=addStacks]').forEach(inp => inp.setAttribute('aria-invalid', String(!!c.err && !c.bad.length)));
+    const words = el.querySelector('[data-words]');
+    if (words) words.textContent = !c.op || !c.op.amount || isTiers(c.op.amount) ? '' : amountLine(c.op.amount);
     const avg = el.querySelector('[data-avg]');
     if (avg) avg.textContent = !c.op || !c.op.amount || isTiers(c.op.amount) ? '' : lasting(rows[i]) ? lastingLine(c.op) : averagesLine(c.op.amount, c.op.op === 'damage' ? c.op.type : null, 'str');
   }
@@ -521,6 +541,11 @@ function effects(box, o) {
   box.addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b || !box.contains(b)) return;
     const rowEl = b.closest('[data-row]'), i = rowEl ? Number(rowEl.dataset.row) : -1;
+    if (b.hasAttribute('data-grow-add')) {
+      const term = growTerm(rowEl.querySelector('[data-grow-name]').value, rowEl.querySelector('[data-grow-by]').value); if (!term) return;
+      const q = rowEl.querySelector('[data-f=q]'); q.value = q.value.trim() ? `${q.value.trim()} + ${term}` : term;
+      q.dispatchEvent(new Event('input', { bubbles: true })); return;
+    }
     if (b.dataset.q) {
       const op = /** @type {any} */ (QUICK[o.kind].find(q => q[0] === b.dataset.q)[2]);
       const r = op.op === 'applyStatus' || op.op === 'cureStatus' ? blank(op.op) : rowOf(op);
@@ -545,6 +570,7 @@ function effects(box, o) {
   box.addEventListener('change', async e => {
     const t = e.target, rowEl = t.closest && t.closest('[data-row]'); if (!rowEl) return;
     const i = Number(rowEl.dataset.row), r = rows[i];
+    if (t.dataset.growName !== undefined) { rowEl.querySelector('[data-grow-unit]').textContent = growUnit(t.value); return; }
     if (t.dataset.f === 'kind') {
       const same = FORMULA_KINDS.includes(t.value) && FORMULA_KINDS.includes(r.kind);
       rows[i] = same ? { ...r, kind: t.value } : blank(t.value);
@@ -1207,7 +1233,8 @@ export function register(app) {
 .mk-formula{display:flex;flex-direction:column;gap:6px}
 .mk-formula-row{display:flex;gap:6px;align-items:stretch}.mk-formula-row input{flex:1 1 0;min-width:0;font-family:var(--font-mono)}
 .mk-edited{margin-left:6px;padding:0 6px;border:1px solid var(--gold);color:var(--gold);font-size:12px;letter-spacing:.08em;text-transform:uppercase}
-.mk-avg{margin:0;font-size:13px;color:var(--cyan-dim)}.mk-avg:empty{display:none}
+.mk-grows{display:flex;flex-direction:column;gap:4px;min-width:0}.mk-grows-row{display:flex;align-items:center;gap:6px;min-width:0}.mk-win .mk-grows select{flex:1 1 0;width:auto;min-width:0}.mk-win .mk-grows input[type=number]{flex:none;width:4.5em}.mk-grows button{flex:none}
+.mk-avg{margin:0;overflow-wrap:anywhere;font-size:13px;color:var(--cyan-dim)}.mk-avg:empty{display:none}
 .mk-group{border:1px solid var(--line);background:rgba(10,26,46,.55)}
 .mk-group>summary{display:flex;align-items:center;padding:0 10px;cursor:pointer;font-size:14px;color:var(--ice)}
 .mk-group-body{display:flex;flex-direction:column;gap:8px;padding:0 10px 10px}

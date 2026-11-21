@@ -24,9 +24,9 @@ import type { MonsterKind } from './derive.ts';
  */
 const every = <T extends string>() => <const L extends readonly T[]>(l: L & ([Exclude<T, L[number]>] extends [never] ? unknown : never)): L => l;
 
-/** How a hunter's life changed (the life machine's `lifeNews`): from a fight's totals, a death save, a revive by the GM or an item, a rest, or a hand edit. */
-export type LifeHow = 'fight' | 'save' | 'gm' | 'item' | 'rest' | 'hand';
-export const LIFE_HOWS = every<LifeHow>()(['fight', 'save', 'gm', 'item', 'rest', 'hand']);
+/** How a hunter's life changed (the life machine's `lifeNews`): from a fight's totals, a revive by the GM or an item, or a hand edit. */
+export type LifeHow = 'fight' | 'gm' | 'item' | 'hand';
+export const LIFE_HOWS = every<LifeHow>()(['fight', 'gm', 'item', 'hand']);
 
 /** How a fight ended for a hunter's side: won, lost, or the GM ended it with both sides up. */
 export type FightOutcome = 'won' | 'lost' | 'ended';
@@ -64,8 +64,8 @@ export type Fact =
   | { readonly kind: 'penaltyIssued'; readonly days: number }
   /** The daily penalty lifted after `days` (quests.ts `penalized`). */
   | { readonly kind: 'penaltyLifted'; readonly days: number }
-  /** A change of life (grant.ts `sheetEdit`): what it was, how, and the death saves failed before it. */
-  | { readonly kind: 'life'; readonly news: LifeNews['kind']; readonly how: LifeHow; readonly failures: number }
+  /** A change of life (grant.ts `sheetEdit`): what it was and how. */
+  | { readonly kind: 'life'; readonly news: LifeNews['kind']; readonly how: LifeHow }
   /** A new level (grant.ts `levelled`). */
   | { readonly kind: 'level'; readonly level: number }
   /** A new rank (record.ts `setRank`, `reevaluate`). */
@@ -154,8 +154,7 @@ export const FACT_FIELDS: { readonly [K in FactKind]: FieldsOf<K> } = {
   penaltyIssued: { days: num('Days missed', 0, N) },
   penaltyLifted: { days: num('Days it held', 0, N) },
   life: {
-    news: pick('What happened', every<LifeNews['kind']>()(['fell', 'raised', 'stable', 'died', 'saved', 'failed'])), how: pick('How', LIFE_HOWS),
-    failures: num('Death saves failed before', 0, 3),
+    news: pick('What happened', every<LifeNews['kind']>()(['died', 'raised'])), how: pick('How', LIFE_HOWS),
   },
   level: { level: num('Level', 1, N) },
   rank: { rank: rank('Rank') },
@@ -176,11 +175,11 @@ export const FACT_KINDS = Object.keys(FACT_FIELDS) as readonly FactKind[];
 
 /**
  * Whether the chronicle keeps a fact once it is counted. Kills, rolls, coins, the shop, rests and consumables are many
- * and small: they count (the tally) and are dropped; a kill lives on in its fight's `kills`, `bosses` and `names`. A death save made or failed while still dying is the same.
+ * and small: they count (the tally) and are dropped; a kill lives on in its fight's `kills`, `bosses` and `names`.
  */
 export const KEPT: { readonly [K in FactKind]: (f: FactOf<K>) => boolean } = {
   fight: () => true, kill: () => false, solo: () => true, gate: () => true, closed: () => true, quest: () => true, daily: () => true, streakLost: () => true, penaltyIssued: () => true, penaltyLifted: () => true,
-  life: f => f.news !== 'saved' && f.news !== 'failed', level: () => true, rank: () => true, title: () => true, feat: () => true, given: () => true, chapter: () => true,
+  life: () => true, level: () => true, rank: () => true, title: () => true, feat: () => true, given: () => true, chapter: () => true,
   roll: () => false, coin: () => false, shop: () => false, rest: () => false, used: () => false, shadow: () => true,
 };
 /** Whether the chronicle keeps `f`. */

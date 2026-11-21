@@ -227,7 +227,7 @@ export function unequip<H extends Carrying>(h: H, slot: string, inFight: boolean
   return isRefused(to) ? to : emptySlot(h, s);
 }
 
-/** Whether the shop trades with a hunter in this life: with anyone but the dead. Down, dying or stable, it still trades. */
+/** Whether the shop trades with a hunter in this life: with anyone but the dead. */
 export const shopOpen = (h: { readonly life: Pick<Life, 'at'> }): boolean => h.life.at !== 'dead';
 /** What the shop says to a dead hunter, in place of its Buy and Sell buttons and when a purchase or a sale is refused. */
 export const SHOP_CLOSED = `The shop is closed while you are dead. You cannot buy or sell. ${WAYS_BACK} brings you back. The GM or another hunter can give you a Resurrection Crystal.`;

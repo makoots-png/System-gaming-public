@@ -128,7 +128,7 @@ type DocBody = { readonly hp: number; readonly hpMax: number; readonly stride: n
  * shadow's `stride` is the tiles one move may walk as its fight sheet holds it now (a slow or a root included), which a
  * player's phone needs for its Toward and Away and its movement area on the map; `move` is its sheet's `move` in whole
  * tiles, as far as a dash runs (design 4.6), for the map's lighter dash area. `life` is the row's life's state by its
- * kind's table (row-life.ts `LifeAt`): a hunter's dying, stable or dead, any other row's dead; every phone reads its word
+ * kind's table (row-life.ts `LifeAt`): dead for every kind (a foe's reads Defeated); every phone reads its word
  * from row-life.ts `lifeWord` and whether it is up from row-hp.ts `isUp`.
  */
 export type FightDocRow = DocRowBase & (
@@ -435,8 +435,8 @@ function statusWire(s: DocStatus, defs: Record<string, StatusDef>): Record<strin
 }
 /**
  * A row on the wire. Its names: i id, n name, s side, k sheet key, p place, a at, v speed, b band, st statuses, sh shield,
- * sl shield's rounds, c channel, t taunt, ic the row's icon, d life (its state's index in `LIFE_STATES`, absent while up: 1 dying, 2 stable,
- * 3 dead), q kind; a monster's in intent, g stagger, u suggested target; a body's h HP, hm max HP, r stride, m move; a
+ * sl shield's rounds, c channel, t taunt, ic the row's icon, d life (its state's index in `LIFE_STATES`, absent while up: 1 dead), q
+ * kind; a monster's in intent, g stagger, u suggested target; a body's h HP, hm max HP, r stride, m move; a
  * summon's o owner, l rounds left.
  */
 function rowWire(r: FightDocRow, defs: Record<string, StatusDef>): Record<string, unknown> {

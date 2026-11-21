@@ -17,7 +17,7 @@ function step(e: LifeEvent, from: Foe, to: Foe): string {
     case 'damage': return 'damage takes HP to 0';
     case 'setHp': return 'HP set to 0';
     case 'revive': return 'the GM taps Revive, up at 1 HP';
-    case 'heal': case 'deathSave': case 'stabilize': case 'maxChanged':
+    case 'heal': case 'maxChanged':
       throw new Error(`${e.type} moved a foe's life from ${from.life.at} to ${to.life.at}, which the chart has no label for`);
   }
 }
@@ -34,7 +34,7 @@ export const foeLife = machine<Foe, LifeEvent>({
   kindsOf: f => [f.life.at],
   views: [{
     title: 'A monster, shadow or summon in a fight, from up to defeated and back',
-    note: 'The chart shows what a combat card says of a row that is not a hunter. Damage that leaves HP above 0, a heal and a lower maximum stay in Up. At 0 HP the row is defeated and gone from the map: no heal, no GM\'s hand edit and no regeneration lifts it, only the GM\'s Revive. A foe is never dying: death saves and Stabilize are a hunter\'s (see "A hunter\'s life").',
+    note: 'The chart shows what a combat card says of a row that is not a hunter. Damage that leaves HP above 0, a heal and a lower maximum stay in Up. At 0 HP the row is defeated and gone from the map: no heal, no GM\'s hand edit and no regeneration lifts it, only the GM\'s Revive. A hunter\'s life follows the same states (see "A hunter\'s life").',
     hides: '',
     state: f => LABEL[f.life.at],
     step,
@@ -42,7 +42,7 @@ export const foeLife = machine<Foe, LifeEvent>({
   where: [
     ['The union', '`FoeLife` and `FOE_LIFE_STATES` in `src/core/combat/row-life.ts`; a row holds it by its kind (`BodyLife` in `src/core/combat/effect-ops.ts`)'],
     ['What changes it', '`foeLifeAfter(life, event, hpMax)` and its `FOE_TABLE`; `rowLifeAfter(row, event)`, the one writer of a row\'s life, picks this table or the hunter\'s by the row\'s kind'],
-    ['Who calls it', 'every HP change of the fight through `rowLifeAfter` (`hurt` and `healed` in `land.ts`, `payDue` in `fight-turn.ts`, an HP price in `charge.ts`, `withStatuses` in `effect-ops.ts`, `adjust` and the `life` command in `fight.ts`)'],
+    ['Who calls it', 'every HP change of the fight through `rowLifeAfter` (`hurt` and `healed` in `land.ts`, `payDue` in `fight-turn.ts`, an HP price in `charge.ts`, `withStatuses` in `effect-ops.ts`, `adjust` and the `revive` command in `fight.ts`)'],
     ['The test to copy', '`tests/fight.test.ts`, "a row\'s life"'],
     ['The recipe', 'docs/guide/combat.md, "Where a fight row\'s life changes"'],
   ],

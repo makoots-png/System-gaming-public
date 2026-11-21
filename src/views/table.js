@@ -5,7 +5,7 @@
 // `now` as `at`, so the GM's phone takes a tap only on that turn. By the device's choice the HUD shows the battle map
 // (src/views/map.js, its scene from `docBodies` and `mapScene` of map-view.ts over the doc), which sends the same `step`
 // and `cast`.
-import { can } from '../core/hunter/vitals.ts';
+import { WAYS_BACK } from '../core/hunter/vitals.ts';
 import { lifeWord } from '../core/combat/row-life.ts';
 import { isUp } from '../core/combat/row-hp.ts';
 import { WAIT_WORDS, aims, docSpots, readyIn, stepAway, stepToward, waitChoices } from '../core/combat/fight-view.ts';
@@ -86,7 +86,7 @@ export function register(app) {
     .tb-banner{margin:0;font-size:14px;color:var(--cyan);letter-spacing:.04em}
     .tb-death{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border:1px solid var(--life);padding:8px 10px;margin-bottom:8px}
     .tb-death .lw{font-size:13px}
-    .tb-death button{min-height:var(--control-h)}
+    .tb-death span{font-size:14px;color:var(--ice)}
     .tb-mine{font-family:var(--font-display);font-weight:700;font-size:calc(22px*var(--ts));letter-spacing:.18em;color:var(--ground);background:var(--cyan);padding:8px 12px;margin:0 0 8px;text-align:center}
     .tb-banner.mine{font-family:var(--font-display);font-weight:700;font-size:calc(20px*var(--ts));letter-spacing:.14em;color:var(--ground);background:var(--cyan);padding:8px 12px;text-align:center}
     .tb-feed{list-style:none;margin:0;padding:0;display:grid;gap:6px}
@@ -131,13 +131,11 @@ export function register(app) {
   const curRow = e => rowsOf(e).find(r => r.id === e.currentId) || null;
   const share = (v, max) => Math.min(1, Math.max(0, v / Math.max(1, max)));
 
-  const canSave = h => !!h && can(h.life, 'deathSave');
-  /** The HUD's life line for hunter `h` while it is not up: its row's word (row-life.ts `lifeWord`), and Roll death save while it is dying. */
+  /** The HUD's life line for hunter `h` while it is dead: its row's word (row-life.ts `lifeWord`) and the ways back. */
   function deathHtml(e, h) {
     const me = e && !e.ended ? meRow(e) : null, at = me ? me.life : h.life, word = lifeWord({ kind: 'hunter', life: at });
     if (!word) return '';
-    const save = canSave(h) && can(at, 'deathSave') ? '<button type="button" class="primary" data-tbdsave>Roll death save</button>' : '';
-    return `<div class="tb-death" data-life-at="${at.at}"><b class="lw" data-life-at="${at.at}">${esc(word)}</b>${save}</div>`;
+    return `<div class="tb-death" data-life-at="${at.at}"><b class="lw" data-life-at="${at.at}">${esc(word)}</b><span>${esc(WAYS_BACK)} brings you back.</span></div>`;
   }
   const statusDef = c => app.api.effects.statusDef(c);
   const D = () => app.api.detail;
@@ -184,7 +182,7 @@ export function register(app) {
   /** The HUD's template, with "Your kit" beside it on desktop (`kit`). Its fields are `hudDesc`'s; the rows go in `.tb-rows`. */
   const VIEWS = /** @type {const} */ (['map', 'list']);
   const segHtml = () => `<div class="seg tb-view" role="group" aria-label="Fight view">${VIEWS.map(v => `<button type="button" data-fview="${v}" aria-pressed="${store.prefs().fightView === v}">${v === 'map' ? 'Map' : 'List'}</button>`).join('')}</div>`;
-  /** The HUD with the map: "Your turn", the Map and List choice, the death save, the map, and a token's card when one is open. */
+  /** The HUD with the map: "Your turn", the Map and List choice, the death line, the map, and a token's card when one is open. */
   const mapTemplate = () => `<div class="slot"><div class="slot" data-part="mine"></div><div class="slot" data-part="seg"></div><div class="slot" data-part="death"></div><div class="slot" data-part="chips"></div><div data-mapbox></div><div class="tb-sheet" data-tbsheet hidden></div></div>`;
   const hudTemplate = kit => {
     const main = `<div class="slot" data-part="mine"></div><div class="slot" data-part="seg"></div><div class="tb-round" role="status" data-text="round"></div>
@@ -213,8 +211,8 @@ export function register(app) {
         hp: `${d.hp} / ${d.hpMax}`, hpLabel: `HP ${d.hp} of ${d.hpMax}`, hpF: share(d.hp, d.hpMax),
         mana: `${d.mana} / ${d.manaMax}`, manaLabel: `Mana ${d.mana} of ${d.manaMax}`, manaF: share(d.mana, d.manaMax),
         chips: myChips(e, h),
-        // A27: at 0 HP the one thing the HUD asks for is the death save. The word is the row's life in the GM's fight (the
-        // sheet hears it a message later); the save is offered while both the row and the sheet are dying, as both must take it.
+        // A27: at 0 HP the HUD says the hunter is dead. The word is the row's life in the GM's fight (the sheet hears it a
+        // message later).
         death: deathHtml(e, h),
       });
     }
@@ -315,10 +313,6 @@ export function register(app) {
           else if (kb.dataset.step) walk(e, h, Number(kb.dataset.step));
           else if (kb.dataset.kitItem) app.api.inventory.use(h.id, kb.dataset.kitItem);
           else app.api.dice.roll('1d20', { label: 'd20', hid: h.id });
-          paintHud(el); return;
-        }
-        if (ev.target.closest('[data-tbdsave]')) {
-          const h = meHunter(encounter()); if (h) ui.wrote('Death save', app.api.hunter.deathSave(h.id));
           paintHud(el); return;
         }
         if (ev.target.closest('[data-tbdmg]')) return applyAmt(false, false);

@@ -39,7 +39,7 @@ test('alone, the System opens a personal gate; the hunter reads its odds, enters
   await expect(page.locator('#gt-list'), 'under a personal gate the world list names itself').toHaveText('No world gates.');
   await expect(card.locator('[data-odds] .hint')).toHaveText('Plays this gate to the end 100 times by the rules and shows how often you clear it.');
   await card.locator('[data-odds-ask]').tap();
-  await expect(card.locator('[data-oddsline]')).toHaveText(/^You clear it in \d+% of 100 plays\. (Down in \d+%(, dead in \d+%)?|Never down in these plays)\. About \d+ rounds?\.$/, { timeout: 60_000 });
+  await expect(card.locator('[data-oddsline]')).toHaveText(/^You clear it in \d+% of 100 plays\. (Dead in \d+%|Never dead in these plays)\. About \d+ rounds?\.$/, { timeout: 60_000 });
   await card.locator('[data-oddsline]').tap();
   await expect(card.locator('[data-dt-panel="odds"]')).toContainText(/Rounds: /);
   await expect(card.locator('[data-dt-panel="odds"]')).not.toContainText('party');

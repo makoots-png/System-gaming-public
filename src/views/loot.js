@@ -16,6 +16,9 @@ import { wornWorth } from '../core/registry/worth.ts';
 import { itemSpend, spendLine } from '../core/registry/item-budget.ts';
 import { ATTACKS, GRADES, ITEM_BOUNDS, KIT_SHARE, RARITIES, SAMPLE_WEARER, parseItem, piece, valueOf, weightOf, wornSpeed } from '../core/registry/items.ts';
 import { tooLarge } from '../core/size.ts';
+import { abilityId } from '../core/combat/ability-types.ts';
+import { kindDefaults } from '../core/registry/ability-kinds.ts';
+import { tiles } from '../core/combat/space.ts';
 import { iconField } from './maker.js';
 
 const TYPE_LABEL = { weapon: 'Weapon', armor: 'Armor', accessory: 'Accessory', consumable: 'Consumable', material: 'Material', key: 'Key', misc: 'Misc' };
@@ -23,6 +26,9 @@ const AUTO_SLOT = { weapon: 'weapon', armor: 'chest', accessory: 'ring1' };
 /** The types a hunter wears: only these show the slot, the gear numbers and the bonus. */
 const WORN = Object.keys(AUTO_SLOT);
 const SLOT_LABEL = { weapon: 'Weapon', offhand: 'Off-hand', head: 'Head', chest: 'Chest', hands: 'Hands', legs: 'Legs', feet: 'Feet', neck: 'Neck', ring1: 'Ring 1', ring2: 'Ring 2' };
+/** The kinds of ability an item's wearer may be given (the skill maker's), and what each is called. */
+const ACTIVE_KINDS = /** @type {const} */ (['strike', 'shot', 'blast', 'curse', 'support']);
+const ACTIVE_LABEL = { strike: 'Strike', shot: 'Shot', blast: 'Blast', curse: 'Curse', support: 'Support' };
 const ATTACK_LABEL = { strike: 'Strike', shot: 'Shot' };
 const KITS = /** @type {const} */ ([['light', 'Light'], ['medium', 'Medium'], ['heavy', 'Heavy']]);
 /** The gear numbers of a worn item, each a field of the form. */
@@ -49,6 +55,7 @@ export function register(app) {
 .lf-cols,.lf-col{display:contents}
 .lf-unworn [data-worn]{display:none}
 .lf-worn{display:flex;flex-direction:column;gap:8px}
+.lf-active-body{display:flex;flex-direction:column;gap:8px;min-width:0}
 .lf-spend{margin:0;font-size:13px;color:var(--cyan-dim);overflow-wrap:anywhere}.lf-spend.over{color:var(--gold)}
 @media (min-width:1100px){
   .lf-win.dlg-form{max-width:760px;width:min(760px,calc(100vw - 48px))}
@@ -65,6 +72,7 @@ export function register(app) {
     const ini = initial && typeof initial === 'object' ? parseItem({ name: 'x', ...initial }) : null;
     const was = ini ? { ...ini, name: initial.name || '' } : null;
     const M = app.api.maker, gm = app.isGM(), B = ITEM_BOUNDS;
+    const wasActive = was && was.active ? was.active : null;
     let type = was ? was.type : 'misc', slotDirty = !!(was && was.slot);
     return M.open({
       tag: '! Loot', title: was && was.name ? 'Edit item' : 'New item', save: 'Save item', cls: 'lf',
@@ -95,6 +103,16 @@ export function register(app) {
             <details class="mk-group" data-group="worn"><summary data-sum="worn"></summary><div class="mk-group-body">
               <label class="lf-chk"><input type="checkbox" data-worn-on${was && was.worn ? ' checked' : ''}><span>In a fight, its wearer wears a status</span></label>
               <div data-worn-f><div class="lbl">What the status does</div><div data-worn-fx></div><div data-worn-kit></div></div>
+            </div></details>
+            <details class="mk-group" data-group="active"><summary data-sum="active"></summary><div class="mk-group-body">
+              <label class="lf-chk"><input type="checkbox" data-active-on${was && was.active ? ' checked' : ''}><span>In a fight, its wearer can use an ability</span></label>
+              <div class="lf-active-body" data-active-f>
+                <div class="lbl">Kind</div>
+                ${M.chips('akind', ACTIVE_KINDS.map(k => [k, ACTIVE_LABEL[k]]), wasActive ? wasActive.kind : 'support', { label: 'Kind' })}
+                <div data-active-self-w><div class="lbl">Affects</div>${M.chips('aaim', [['ally', 'An ally'], ['self', 'The user']], wasActive && wasActive.aim === 'self' ? 'self' : 'ally', { label: 'Affects' })}</div>
+                <div data-active-form></div>
+                <div class="lbl">Effects on each target</div><div data-active-fx></div>
+              </div>
             </div></details>
           </div>
           </div><div class="lf-col" data-later>
@@ -134,6 +152,28 @@ export function register(app) {
           wornFx = M.effects($('[data-worn-fx]'), { ops: wasWorn ? wasWorn.ops : [], kind: 'status', newStatus: () => app.api.forge.status({ mode: 'library' }) });
           wornKit = M.statusBlocks($('[data-worn-kit]'), wasWorn, 'lfw');
         };
+        // the ability its wearer may use (item-stats 6.1): the skill maker's ability form, drawn when its box is first ticked
+        const ownId = wasActive ? wasActive.id : abilityId(store.id('ab'));
+        /** @type {{ ops: () => any[]; blocked: () => boolean }} */
+        let activeFx = { ops: () => [], blocked: () => false };
+        /** @type {{ value: (id: any, name: string) => any; blocked: () => boolean; setKind: (k: any) => void }} */
+        let activeForm = { value: () => null, blocked: () => false, setKind: () => {} };
+        let activeMade = false;
+        const activeOn = () => $('[data-active-on]').checked;
+        const activeKind = () => oneOf(M.picked(el, 'akind'), ACTIVE_KINDS, 'support');
+        const activeEditors = () => {
+          if (activeMade) return; activeMade = true;
+          activeFx = M.effects($('[data-active-fx]'), { ops: wasActive ? wasActive.ops : [], kind: 'skill', newStatus: () => app.api.forge.status({ mode: 'library' }) });
+          activeForm = M.ability($('[data-active-form]'), { kind: activeKind(), ability: wasActive });
+        };
+        /** The ability the form holds, named for the item; a support on the user reaches only the user. Null while its formula does not read. */
+        const activeOf = name => {
+          const k = activeKind(), v = activeForm.value(ownId, name || 'Item');
+          if (!v) return null;
+          const d = kindDefaults(k, rules());
+          const reach = k === 'support' && M.picked(el, 'aaim') === 'self' ? { aim: 'self', shape: { kind: 'self' }, range: tiles(0) } : { aim: d.aim, foesOnly: d.foesOnly };
+          return { ...v, ...reach, ops: activeFx.ops() };
+        };
         /** The item the form holds, every number inside the parser's bounds. A type that is not worn keeps the slot, gear and bonus it was saved with, unseen. */
         const formItem = () => {
           const worn = WORN.includes(type), same = was && was.type === type, weapon = type === 'weapon';
@@ -159,6 +199,8 @@ export function register(app) {
           if (type === 'consumable' && (gm ? $('#lf-revive').checked : was && was.revive)) out.revive = true;
           if (worn && wornOn()) out.worn = { label: out.name || 'Item', desc: wasWorn ? wasWorn.desc : '', ops: wornFx.ops(), ...(wasWorn && wasWorn.color ? { color: wasWorn.color } : {}), ...wornKit.fields() };
           else if (!worn && was && was.worn && same) out.worn = was.worn;
+          if (worn && activeOn()) { const a = activeOf(out.name); if (a) out.active = a; }
+          else if (!worn && wasActive && same) out.active = wasActive;
           for (const k of Object.keys(out.bonus)) out.bonus[k] = Math.max(-B.bonus, Math.min(B.bonus, out.bonus[k]));
           return out;
         };
@@ -171,6 +213,10 @@ export function register(app) {
           if (wornOn()) wornEditors();
           $('[data-worn-f]').hidden = !wornOn();
           $('[data-sum="worn"]').textContent = wornOn() ? 'In a fight: wears a status' : 'In a fight: nothing more';
+          if (activeOn()) { activeEditors(); activeForm.setKind(activeKind()); }
+          $('[data-active-f]').hidden = !activeOn();
+          $('[data-active-self-w]').hidden = activeKind() !== 'support';
+          $('[data-sum="active"]').textContent = activeOn() ? `Its wearer can use: ${ACTIVE_LABEL[activeKind()].toLowerCase()}` : 'Its wearer can use: nothing';
           el.closest('.lf-win').classList.toggle('lf-unworn', !WORN.includes(type));
           $('[data-weapon]').hidden = type !== 'weapon';
           if (gm) $('[data-revive-w]').hidden = type !== 'consumable';
@@ -209,7 +255,7 @@ export function register(app) {
               ...(it.worn && worn ? describeStatus(it.worn, null, rules()).map(l => `In a fight: ${l}`) : []),
             ].filter(Boolean);
           },
-          blocked: () => fx.blocked() || (WORN.includes(type) && wornOn() && (wornFx.blocked() || wornKit.blocked())),
+          blocked: () => fx.blocked() || (WORN.includes(type) && wornOn() && (wornFx.blocked() || wornKit.blocked())) || (WORN.includes(type) && activeOn() && (activeFx.blocked() || activeForm.blocked())),
           save() {
             const form = formItem(), pick = iconRow.pick();
             if (pick) form.icon = pick;

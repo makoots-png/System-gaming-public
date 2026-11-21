@@ -11,6 +11,9 @@ import { hunterSheet } from '../src/core/hunter/sheet.ts';
 import { REVIVE_HP, hpOf, lifeAfter } from '../src/core/hunter/vitals.ts';
 import type { Life } from '../src/core/hunter/vitals.ts';
 import { statusKey } from '../src/core/combat/effect-ops.ts';
+import { combatantId } from '../src/core/combat/ability-types.ts';
+import { hunterRow } from '../src/core/combat/rows.ts';
+import { gmSource } from '../src/core/effects.ts';
 import { RANKS, RULES } from '../src/core/rules.ts';
 import type { Rank } from '../src/core/rules.ts';
 import { freshSave, newHunter } from '../src/core/save.ts';
@@ -53,12 +56,6 @@ describe('a consumable used on oneself outside a fight', () => {
     expect(useItem(dead, 'i1', [[]], RULES)).toEqual({ ok: false, why: 'nothing' });
   });
 
-  test('a dying hunter is healed up', () => {
-    const dying: Hunter = { ...holding(POTION, 1), life: { at: 'dying', successes: 0, failures: 1 } };
-    const u = ok(useItem(dying, 'i1', [[]], RULES));
-    expect(u.hunter.life).toEqual({ at: 'up', hp: 30 });
-    expect(u.lines).toEqual(['+30 HP']);
-  });
 
   test('a cure takes only a status the hunter holds, and says its name', () => {
     const cure: ItemTemplate = { ...POTION, name: 'Antidote', effects: [{ op: 'cureStatus', key: statusKey('poisoned') }] };
@@ -101,12 +98,19 @@ describe('a Resurrection Crystal used from the bag', () => {
     expect(useItem(once, 'i1', [], RULES)).toEqual({ ok: false, why: 'not-dead' });
   });
 
-  test('a hunter who is up, down or stable is refused and keeps the crystal: it brings back only the dead', () => {
-    for (const life of [{ at: 'up', hp: 5 }, { at: 'dying', successes: 1, failures: 2 }, { at: 'stable' }] as Life[]) {
-      expect([life.at, useItem(as(life), 'i1', [], RULES)]).toEqual([life.at, { ok: false, why: 'not-dead' }]);
-    }
+  test('a hunter who is up is refused and keeps the crystal: it brings back only the dead', () => {
+    expect(useItem(as({ at: 'up', hp: 5 }), 'i1', [], RULES)).toEqual({ ok: false, why: 'not-dead' });
     expect(USE_WORDS['not-dead']('Resurrection Crystal')).toBe('Resurrection Crystal only brings back a dead hunter. You still have it.');
     expect(USE_WORDS.fight('Resurrection Crystal')).toBe('Use Resurrection Crystal after the fight.');
+  });
+
+  test('a poisoned hunter raised by a crystal has no status and is not killed again by the poison', () => {
+    const poisoned = { key: statusKey('poisoned'), def: RULES.conditions.poisoned!, source: gmSource('E'), rounds: null };
+    const dead: Hunter = { ...as({ at: 'dead' }), conditions: [poisoned] };
+    expect(hunterRow(dead, combatantId('c1'), RULES).statuses.map(x => x.key), 'dead, the hunter still holds the poison').toEqual([statusKey('poisoned')]);
+    const u = ok(useItem(dead, 'i1', [], RULES));
+    expect([u.hunter.life, u.hunter.conditions]).toEqual([{ at: 'up', hp: REVIVE_HP }, []]);
+    expect(hunterRow(u.hunter, combatantId('c1'), RULES).statuses, 'it joins its next fight with no poison to pay').toEqual([]);
   });
 
   test('its use is told to the GM: posted from a player\'s phone in a room, logged on a phone alone or the GM\'s', () => {
@@ -202,10 +206,9 @@ describe('a raising costs levels (economy design 7.1 `reviveLevelShare`, the own
     expect([u.hunter.level, u.lines]).toEqual([1, [`Up at ${REVIVE_HP} HP`]]);
   });
 
-  test('only a raising from death costs levels: a heal that stands a dying hunter up, or a natural 20, takes none', () => {
-    const dying: Hunter = { ...deadAt(31), life: { at: 'dying', successes: 0, failures: 0 } };
-    expect(ok(sheetEdit(dying, { type: 'life', event: { type: 'heal', amount: 5 } }, RULES)).level).toBe(31);
-    expect(ok(sheetEdit(dying, { type: 'life', event: { type: 'deathSave', roll: 20 } }, RULES)).level).toBe(31);
+  test('only a raising from death costs levels: a heal of a hunter who is up takes none', () => {
+    const hurt: Hunter = { ...deadAt(31), life: { at: 'up', hp: 1 } };
+    expect(ok(sheetEdit(hurt, { type: 'life', event: { type: 'heal', amount: 5 } }, RULES)).level).toBe(31);
   });
 
   test('a GM\'s share is read: a tenth of level 31, rounded up, takes 4', () => {

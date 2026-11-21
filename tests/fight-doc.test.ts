@@ -138,7 +138,7 @@ describe('the fight on the table', () => {
     expect(doc).toMatchObject({ active: true, now: 0, currentId: 'A' });
     expect(doc.ahead).toEqual(['A', 'M', 'A', 'M', 'A', 'M', 'A', 'M']);
     expect(rowIn(doc, 'M')).toMatchObject({ at: 500, speed: 100, life: { at: 'up' } });
-    expect(rowIn(doc, 'B')).toMatchObject({ band: 'down', life: { at: 'dying' } });
+    expect(rowIn(doc, 'B')).toMatchObject({ band: 'down', life: { at: 'dead' } });
   });
 
   test('a row shows its live statuses (not one whose time ran out, owed to its settle) with the rounds left to one decimal, at most 12, and a live shield\'s amount', () => {
@@ -219,28 +219,23 @@ describe('the end of a fight on the table', () => {
 });
 
 describe('a row\'s life as every phone reads it (notes-dead-row.md section 10)', () => {
-  const save = (roll: number): Command => ({ type: 'life', id: id('B'), event: { type: 'deathSave', roll } });
   const fallen = () => play(add(row('A', 'party'), row('B', 'party', { hp: 0 }), row('M', 'foe'), row('G', 'foe', { hp: 0 })), start(['A', 20], ['B', 20], ['M', 10], ['G', 10]));
   /** The doc as a player's phone holds it: published on the wire and read back by the room's reader. */
   const onPhone = (fight: Fight) => live(DOCS.fight(JSON.parse(JSON.stringify(fightWire(live(fightDoc(fight, RULES, docCtx())))))) as FightDoc);
   const lives = (doc: FightDoc) => live(doc).rows.map(r => [r.id, r.kind, r.life.at]);
 
-  test('a hunter who fell is dying on a player\'s phone, stable once the GM stabilizes it; a monster at 0 HP is dead; the rest are up', () => {
-    expect(lives(onPhone(fallen()))).toEqual([['A', 'hunter', 'up'], ['B', 'hunter', 'dying'], ['M', 'monster', 'up'], ['G', 'monster', 'dead']]);
-    const stable = reduce(fallen(), { type: 'life', id: id('B'), event: { type: 'stabilize' } }, ctx).fight!;
-    expect(rowIn(onPhone(stable), 'B').life).toEqual({ at: 'stable' });
+  test('a hunter who fell is dead on a player\'s phone, and so is a monster at 0 HP; the rest are up', () => {
+    expect(lives(onPhone(fallen()))).toEqual([['A', 'hunter', 'up'], ['B', 'hunter', 'dead'], ['M', 'monster', 'up'], ['G', 'monster', 'dead']]);
   });
 
-  test('a hunter whose saves fail three times is dead on a player\'s phone, and up again once the GM revives it', () => {
-    const f = fallen(), dead = [save(1), save(5)].reduce((g, c) => reduce(g, c, ctx).fight!, f);
-    expect(rowIn(onPhone(dead), 'B').life).toEqual({ at: 'dead' });
-    const back = reduce(dead, { type: 'life', id: id('B'), event: { type: 'revive' } }, ctx).fight!;
+  test('a dead hunter is up again on a player\'s phone once the GM revives it', () => {
+    const back = reduce(fallen(), { type: 'revive', id: id('B') }, ctx).fight!;
     expect(rowIn(onPhone(back), 'B')).toMatchObject({ life: { at: 'up' }, hp: 1 });
   });
 
-  test('on the wire a life is one short field, d, absent while up: 1 dying, 2 stable, 3 dead (a defeated monster 3), as LIFE_STATES orders them', () => {
+  test('on the wire a life is one short field, d, absent while up: 1 dead (a hunter\'s and a defeated monster\'s), as LIFE_STATES orders them', () => {
     const rows = (fightWire(live(fightDoc(fallen(), RULES, docCtx()))) as { rows: Record<string, unknown>[] }).rows;
-    expect(rows.map(r => r.d)).toEqual([undefined, 1, undefined, 3]);
+    expect(rows.map(r => r.d)).toEqual([undefined, 1, undefined, 1]);
   });
 });
 

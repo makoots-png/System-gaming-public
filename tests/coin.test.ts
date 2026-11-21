@@ -78,7 +78,7 @@ describe('which roll calls the coin', () => {
     ['a d20 with a modifier from the Dice view', roll({ kind: 'die', expr: 'd20-1+2', natural: 1 }), true],
     ['a d20 with two dice beside it', roll({ kind: 'die', expr: '1d20+2d6' }), false],
     ['two d6 with no d20', roll({ kind: 'die', expr: '2d6', natural: null }), false],
-    ['a death save, an extraction or the fight\'s d20', roll({ kind: 'other', expr: '1d20' }), false],
+    ['an extraction or the fight\'s d20', roll({ kind: 'other', expr: '1d20' }), false],
     ['a d20 from the Dice view in a running fight', roll({ kind: 'die', expr: '1d20', inFight: true }), false],
   ];
   for (const [name, facts, calls] of rows) test(`${name}: ${calls ? 'the coin' : 'the true roll'}`, () => expect(isCoinRoll(facts)).toBe(calls));

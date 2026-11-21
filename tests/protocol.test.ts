@@ -103,7 +103,7 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
 
 describe('every event type', () => {
   test('the table has an entry for each room message, and for nothing else', () => {
-    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'cast', 'chain', 'chapter', 'coinCall', 'coinLand', 'deathSave', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'revive', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'status', 'step', 'system', 'used', 'vitals']);
+    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'cast', 'chain', 'chapter', 'coinCall', 'coinLand', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'revive', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'status', 'step', 'system', 'used', 'vitals']);
   });
 
   test('only the GM may send what changes a hunter, speaks for the System or lands a coin; a player sends rolls, quest progress, uses, steps, casts, passes and coin calls', () => {
@@ -112,8 +112,8 @@ describe('every event type', () => {
   });
 
   test('what a player sends speaks for one hunter: only that hunter\'s phone may send it', () => {
-    expect(EVENT_TYPES.filter(t => EVENTS[t].ownSheet).sort()).toEqual(['arm', 'cast', 'coinCall', 'deathSave', 'offer', 'offerEnd', 'pass', 'questUpdate', 'roll', 'soloRun', 'step', 'used']);
-    for (const t of ['roll', 'questUpdate', 'used', 'step', 'cast', 'pass', 'deathSave', 'coinCall', 'arm', 'soloRun', 'offer', 'offerEnd'] as const) expect(speaksFor(parseEvent(t, valid(t))!)).toBe(KEY as SheetKey);
+    expect(EVENT_TYPES.filter(t => EVENTS[t].ownSheet).sort()).toEqual(['arm', 'cast', 'coinCall', 'offer', 'offerEnd', 'pass', 'questUpdate', 'roll', 'soloRun', 'step', 'used']);
+    for (const t of ['roll', 'questUpdate', 'used', 'step', 'cast', 'pass', 'coinCall', 'arm', 'soloRun', 'offer', 'offerEnd'] as const) expect(speaksFor(parseEvent(t, valid(t))!)).toBe(KEY as SheetKey);
     expect(speaksFor(parseEvent('award', valid('award'))!)).toBeNull();
   });
 
@@ -174,18 +174,18 @@ describe('a new event, as a phone sends one', () => {
   test('a page whose clock stands still and whose random part is fixed (a test\'s dice) still makes a new id each time: each is stamped after its last', () => {
     const made: string[] = [];
     let last = 0;
-    for (let i = 0; i < 3; i++) { last = stampTime(last, stamp.now); made.push(newEvent(i === 1 ? 'deathSave' : 'roll', body(i === 1 ? 'deathSave' : 'roll') as never, { ...stamp, now: last, rand: 0 })!.payload.eid); }
+    for (let i = 0; i < 3; i++) { last = stampTime(last, stamp.now); made.push(newEvent(i === 1 ? 'pass' : 'roll', body(i === 1 ? 'pass' : 'roll') as never, { ...stamp, now: last, rand: 0 })!.payload.eid); }
     expect(new Set(made).size).toBe(3);
     expect(stampTime(stamp.now + 5, stamp.now), 'a clock that went back is passed by the last stamp too').toBe(stamp.now + 6);
     expect(stampTime(stamp.now, stamp.now + 40), 'a clock that moved on is used as it reads').toBe(stamp.now + 40);
   });
 
   test('a message under an id already held is that message again only when it is the same, or an offer\'s end; anything else is another message', () => {
-    const save = newEvent('deathSave', body('deathSave') as never, stamp)!, roll = parseEvent('roll', { ...VALID.roll[1], eid: save.payload.eid })!;
-    const reordered = parseEvent('deathSave', Object.fromEntries(Object.entries(save.payload).reverse()))!;
-    expect(sentAgain(save, reordered), 'the same message, its keys in another order (as a store may keep them)').toBe(true);
-    expect(sentAgain(roll, save), 'a death save under its roll\'s id').toBe(false);
-    expect(sentAgain(save, parseEvent('deathSave', { ...save.payload, roll: 20 })!), 'the same type with another roll').toBe(false);
+    const pass = newEvent('pass', body('pass') as never, stamp)!, roll = parseEvent('roll', { ...VALID.roll[1], eid: pass.payload.eid })!;
+    const reordered = parseEvent('pass', Object.fromEntries(Object.entries(pass.payload).reverse()))!;
+    expect(sentAgain(pass, reordered), 'the same message, its keys in another order (as a store may keep them)').toBe(true);
+    expect(sentAgain(roll, pass), 'a pass under its roll\'s id').toBe(false);
+    expect(sentAgain(pass, parseEvent('pass', { ...pass.payload, at: 9999 })!), 'the same type with another time').toBe(false);
     const accept = parseEvent('offerEnd', VALID.offerEnd[1])!, stop = parseEvent('offerStop', VALID.offerStop[1])!;
     expect(sentAgain(accept, stop), 'an offer\'s later end: its first end is its one end').toBe(true);
   });
@@ -426,18 +426,17 @@ describe('the fight\'s totals for a hunter', () => {
     expect(vitals({ mana: 1e12, fatigue: 7.9 })).toMatchObject({ mana: 1e9, fatigue: 7 });
   });
 
-  test('the row\'s life is carried whole in each of its states: up with its HP, dying with its saves, stable, dead', () => {
-    for (const life of [{ at: 'up', hp: 20 }, { at: 'dying', successes: 2, failures: 1 }, { at: 'stable' }, { at: 'dead' }]) expect(vitals({ life })!.life).toEqual(life);
+  test('the row\'s life is carried whole in each of its states: up with its HP, dead', () => {
+    for (const life of [{ at: 'up', hp: 20 }, { at: 'dead' }]) expect(vitals({ life })!.life).toEqual(life);
   });
 
-  test('a life is read as a save reads one: up HP from 1 to a billion, saves from 0 to 2, clamped, and nothing else kept', () => {
+  test('a life is read as a save reads one: up HP from 1 to a billion, clamped, and nothing else kept', () => {
     expect(vitals({ life: { at: 'up', hp: 2e9 } })!.life).toEqual({ at: 'up', hp: 1e9 });
-    expect(vitals({ life: { at: 'dying', successes: 5, failures: -1 } })!.life).toEqual({ at: 'dying', successes: 2, failures: 0 });
     expect(vitals({ life: { at: 'dead', hp: 30 } })!.life).toEqual({ at: 'dead' });
   });
 
-  test('a life that is not one of the four, or an up life with no HP, is refused: a life is never guessed', () => {
-    for (const life of [{ at: 'down' }, { at: 'up' }, { at: 'up', hp: '20' }, 'dead', 0, null]) expect(vitals({ life })).toBeNull();
+  test('a life that is not one of the two, or an up life with no HP, is refused: a life is never guessed', () => {
+    for (const life of [{ at: 'down' }, { at: 'dying', successes: 0, failures: 0 }, { at: 'stable' }, { at: 'up' }, { at: 'up', hp: '20' }, 'dead', 0, null]) expect(vitals({ life })).toBeNull();
   });
 
   test('a total left out, or not a number, is refused: a total is never guessed', () => {
@@ -467,7 +466,7 @@ describe('the fight\'s totals for a hunter', () => {
 
   test(`at most ${MAX_STATUSES} statuses, the fight row's own cap; one that does not read, or a chip the hunter's state draws, is dropped`, () => {
     expect(vitals({ statuses: many(100, i => ({ ...BURN, key: `s${i}` })) })!.statuses).toHaveLength(MAX_STATUSES);
-    expect(vitals({ statuses: [{ ...BURN, def: null }, { ...BURN, key: 'down' }, { ...BURN, rounds: -1 }, BURN] })!.statuses).toEqual([BURN]);
+    expect(vitals({ statuses: [{ ...BURN, def: null }, { ...BURN, key: 'dead' }, { ...BURN, rounds: -1 }, BURN] })!.statuses).toEqual([BURN]);
   });
 });
 
@@ -542,9 +541,9 @@ describe('a status change', () => {
     expect(status({ add: [grant({ key: 'k'.repeat(80) })] })!.add).toHaveLength(1);
   });
 
-  test('Down, Dead, Exhausted and Penalized are drawn from a hunter\'s state, so adding or removing one is dropped', () => {
-    const p = status({ add: [grant({ key: 'down' }), grant({ key: 'dead' }), grant({ key: 'exhausted' }), grant({ key: 'penalized' }), grant({})],
-      remove: ['down', 'exhausted', 'dead', 'penalized', 'burning'] })!;
+  test('Dead, Exhausted and Penalized are drawn from a hunter\'s state, so adding or removing one is dropped', () => {
+    const p = status({ add: [grant({ key: 'dead' }), grant({ key: 'exhausted' }), grant({ key: 'penalized' }), grant({})],
+      remove: ['exhausted', 'dead', 'penalized', 'burning'] })!;
     expect(p.add).toEqual([grant({})]);
     expect(p.remove).toEqual(['burning']);
   });
@@ -746,32 +745,6 @@ describe('a pass', () => {
   });
 });
 
-describe('a player\'s death save in the GM\'s fight', () => {
-  const save = (fields: Raw) => payload('deathSave', { ...valid('deathSave'), ...fields });
-
-  test('names the hunter and the d20 it rolled, and nothing else', () => {
-    expect(Object.keys(save({ at: 2500, life: { at: 'dead' } })!).sort()).toEqual(['by', 'eid', 'roll']);
-  });
-
-  test('each face of the d20 is a roll', () => {
-    for (let roll = 1; roll <= 20; roll++) expect(save({ roll })!.roll).toBe(roll);
-  });
-
-  test('a roll off the d20 is refused, never clamped: a 0 read as 1 would count two failures, a 21 read as 20 would stand the hunter up', () => {
-    for (const roll of [0, 21, -1, 9.5, '9', null, undefined]) expect(save({ roll })).toBeNull();
-  });
-
-  test('speaks for its hunter: only that hunter\'s phone may send it', () => {
-    expect(EVENTS.deathSave.ownSheet).toBe(true);
-    expect(EVENTS.deathSave.gmOnly).toBe(false);
-    expect(speaksFor(parseEvent('deathSave', valid('deathSave'))!)).toBe(KEY as SheetKey);
-  });
-
-  test('each death save stands for itself: a second one does not take the first one\'s place in the outbox', () => {
-    expect(standsFor(parseEvent('deathSave', valid('deathSave'))!)).toBeNull();
-  });
-});
-
 describe('a player\'s step or cast on the GM\'s phone', () => {
   /** A running fight at `now`, the turn of row c1, held by the hunter of `KEY` on another phone; row c2 is a monster. */
   const fight = (o: { now?: number; currentId?: string; phase?: string; holder?: Raw | null } = {}): Fight => ({
@@ -863,11 +836,11 @@ describe('the fight doc', () => {
     expect(rowsOf([...bad, KAI_ROW])).toEqual([KAI_ROW]);
   });
 
-  test('a row\'s life comes through by its kind\'s table: a hunter dying, stable or dead, a monster dead; a dying monster or a state off the table drops the row', () => {
-    const lives = [{ ...KAI_ROW, life: { at: 'dying' } }, { ...KAI_ROW, id: 'c3', life: { at: 'stable' } }, { ...KAI_ROW, id: 'c4', life: { at: 'dead' } }, { ...GOBLIN_ROW, life: { at: 'dead' } }];
+  test('a row\'s life comes through by its kind\'s table: a hunter dead, a monster dead; a state off the table drops the row', () => {
+    const lives = [{ ...KAI_ROW, id: 'c4', life: { at: 'dead' } }, { ...GOBLIN_ROW, life: { at: 'dead' } }];
     expect(rowsOf(lives)).toEqual(lives);
     const wire = fightWire({ ...copy(LIVE), rows: [KAI_ROW, GOBLIN_ROW] } as never) as Raw;
-    const off = [{ ...wire.rows[1], d: 1 }, { ...wire.rows[0], d: 4 }, { ...wire.rows[0], d: 0 }, { ...wire.rows[0], d: 'dead' }, { ...wire.rows[0], d: true }];
+    const off = [{ ...wire.rows[1], d: 2 }, { ...wire.rows[0], d: 2 }, { ...wire.rows[0], d: 4 }, { ...wire.rows[0], d: 0 }, { ...wire.rows[0], d: 'dead' }, { ...wire.rows[0], d: true }];
     expect((DOCS.fight({ ...wire, rows: [...off, wire.rows[0]] }) as Raw).rows).toEqual([KAI_ROW]);
   });
 
@@ -1029,7 +1002,7 @@ describe('the fight doc', () => {
     }
     expect(LONGEST_ICON.length, 'the longest key the registry holds fits ICON_KEY_MAX').toBeLessThanOrEqual(ICON_KEY_MAX);
     const row = worstDoc(false).rows[0]!, wireRow = (r: Raw) => JSON.stringify((fightWire({ ...worstDoc(false), rows: [r] } as never) as Raw).rows[0]).length;
-    const hunter = { ...row, kind: 'hunter', key: KEY, life: { at: 'stable' }, intent: undefined, stagger: undefined, suggest: undefined, hp: 99999, hpMax: 99999, stride: 64, move: 64 };
+    const hunter = { ...row, kind: 'hunter', key: KEY, life: { at: 'dead' }, intent: undefined, stagger: undefined, suggest: undefined, hp: 99999, hpMax: 99999, stride: 64, move: 64 };
     expect(wireRow(hunter), 'a worst-case hunter row is no longer than the worst-case monster row').toBeLessThanOrEqual(wireRow(row));
     const summon = { ...hunter, kind: 'summon', key: null, life: { at: 'dead' }, owner: 'm-31', left: 12345.6 };
     expect(wireRow(summon), 'a worst-case summon row is no longer than the worst-case monster row').toBeLessThanOrEqual(wireRow(row));

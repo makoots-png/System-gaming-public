@@ -492,8 +492,8 @@ test('a view computes no fight number: from the modules that work one out it imp
   // it shows: a fight screen's numbers from src/core/combat/fight-view.ts, a sheet's from src/core/hunter/sheet.ts
   // (app.api.hunter.sheet), a room row's from the fight doc (fight-doc.ts).
   const mayImport: Record<string, readonly string[]> = {
-    // a formula's text, read and printed; a typed roll's edge and its natural (the Dice view); why a formula cannot be a lasting change, in words (the status maker)
-    'src/core/formula.ts': ['parseFormula', 'printFormula', 'withEdge', 'naturalOf', 'bareRefusal'],
+    // a formula's text, read and printed; a typed roll's edge and its natural (the Dice view); why a formula cannot be a lasting change, in words (the status maker); an amount in words (`amountWords`, the maker's words line)
+    'src/core/formula.ts': ['parseFormula', 'printFormula', 'withEdge', 'naturalOf', 'bareRefusal', 'amountWords'],
     'src/core/hunter/derive.ts': ['SHEET_LABELS'],
     'src/core/combat/resolve.ts': ['needs'], // which dice a use asks for, rolled in src/edge/roll.ts
     // TERRAIN and TERRAINS: the map maker paints a terrain by its character; whether a body may stand there is the parser's
@@ -592,8 +592,8 @@ test('a row\'s life changes only in row-life.ts', async () => {
   // the hunter's life machine or the foe table. rows.ts and fight-parse.ts make whole new rows, which this rule does not
   // see. A hunter's own life on its sheet (src/core/hunter) is the life machine's, written by vitals.ts.
   const mayWrite = ['src/core/combat/row-life.ts'];
-  // Not a row: a played row's end (`RowEnd`), whose `life` is the state its death saves left.
-  const notRows: Record<string, string> = { 'src/core/combat/odds.ts': 'saves: faces, life,' };
+  // Not a row: a played row's end (`RowEnd`), whose `life` is the state the fight left it in, up or dead.
+  const notRows: Record<string, string> = { 'src/core/combat/odds.ts': "life: isUp(r) ? 'up' : 'dead'" };
   // Not a row either: the fight doc's row (fight-doc.ts `docRow` makes it from a row, protocol.ts `fightRow` reads it off
   // the wire), whose `life` is a copy of the row's life's state for the players' table to read, never written back.
   const docRows = ['src/core/combat/fight-doc.ts', 'src/core/protocol.ts'];
@@ -607,7 +607,7 @@ test('a row\'s life changes only in row-life.ts', async () => {
   const all = (await sourceLines('src')).filter(line => !line.file.startsWith('src/core/hunter/') && !isComment(line.text) && writes(line.text));
   const permitted = (line: Line) => mayWrite.includes(line.file) || docRows.includes(line.file) || (notRows[line.file] !== undefined && line.text.includes(notRows[line.file]!));
   expect([...mayWrite, ...docRows, ...Object.keys(notRows)].filter(f => !all.some(l => l.file === f && permitted(l))), 'a permit that permits nothing leaves the list').toEqual([]);
-  expect(report(all.filter(line => !permitted(line))), 'a row\'s life changes only through rowLifeAfter (src/core/combat/row-life.ts), so no heal, hit or edit goes around the life machine. Call it with the life event, or send the fight\'s `life` or `adjust` command.').toEqual([]);
+  expect(report(all.filter(line => !permitted(line))), 'a row\'s life changes only through rowLifeAfter (src/core/combat/row-life.ts), so no heal, hit or edit goes around the life machine. Call it with the life event, or send the fight\'s `revive` or `adjust` command.').toEqual([]);
 });
 
 test('only withThreat in src/core/combat/effect-ops.ts writes a fight row\'s threat table', async () => {

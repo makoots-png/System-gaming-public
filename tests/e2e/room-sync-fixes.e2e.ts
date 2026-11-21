@@ -623,19 +623,11 @@ test('a player\'s dead hunter is revived by the GM from the GM\'s phone and stan
   const player = await playerInRoom(device, code);
   const hp = player.locator('#view-status [data-bar="hp"] [data-cur]');
   const panel = player.locator('#view-status [data-death]');
-  const pips = player.locator('#view-status [data-pips]');
 
-  await test.step('the player falls to 0 HP and fails three death saves: the hunter is Dead', async () => {
+  await test.step('the player falls to 0 HP: the hunter is Dead', async () => {
     await go(player, 'status');
     for (let i = 0; i < 40 && (await activeHunter(player)).hp > 0; i++) await player.locator('#view-status [data-hp="-5"]').first().tap();
     await expect(hp).toHaveText('0');
-    // Math.random answers 0.2, so each d20 is 1 + floor(0.2 x 20) = 5: a failure (2 to 9). Three failures are death.
-    await player.evaluate(() => { (window as any).__r = Math.random; Math.random = () => 0.2; });
-    for (const after of [/0 successes, 1 failures/, /0 successes, 2 failures/, /^Dead$/]) {
-      await player.locator('#view-status [data-dsave]').tap();
-      await expect(pips).toHaveAttribute('aria-label', after);
-    }
-    await player.evaluate(() => { Math.random = (window as any).__r; });
     await expect(panel.locator('[data-life]')).toHaveText('Dead');
   });
 

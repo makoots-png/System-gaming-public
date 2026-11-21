@@ -32,7 +32,7 @@ test('the GM building a fight plays it out 100 times, sees the count as it goes,
 
   await test.step('the answer is one line with the party\'s chance, who goes down most and the rounds', async () => {
     const line = odds(page).locator('[data-oddsline]');
-    await expect(line).toHaveText(/^The party wins \d+% of 100 fights\. (.+ is most likely to go down \(\d+%\)|Nobody went down)\.? About \d+ rounds\.$/, { timeout: 60_000 });
+    await expect(line).toHaveText(/^The party wins \d+% of 100 fights\. (.+ is most likely to die \(\d+%\)|Nobody died)\.? About \d+ rounds\.$/, { timeout: 60_000 });
     expect(await kept(page), 'playing the odds changed nothing in the save').toBe(before);
   });
 

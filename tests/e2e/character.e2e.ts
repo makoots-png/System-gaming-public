@@ -1,19 +1,9 @@
 import type { Page } from '@playwright/test';
 import { RULES } from '../../src/core/rules.ts';
-import { downLine, naturalLines, pointsLine, soloLines, statBonusLine } from '../../src/core/rules-text.ts';
+import { deathLine, naturalLines, pointsLine, soloLines, statBonusLine } from '../../src/core/rules-text.ts';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, openApp, tapIfShown, switchToPlayerMode, answerWindow, startGoblinDenFight, chooseList } from './helpers.ts';
 
-const pips = (p: Page) => p.locator('#view-status [data-pips]');
-const dsave = (p: Page) => p.locator('#view-status [data-dsave]');
-
-async function withFails(p: Page, fn: () => Promise<void>): Promise<void> {
-  await p.evaluate(() => { (window as any).__r = Math.random; Math.random = () => 0.2; });
-  try { await fn(); } finally { await p.evaluate(() => { Math.random = (window as any).__r; }); }
-}
-
-async function rollFailedSaves(p: Page, n: number): Promise<void> {
-  await withFails(p, async () => { for (let i = 0; i < n; i++) { await dsave(p).tap(); await p.waitForTimeout(300); } });
-}
+const lifeWord = (p: Page) => p.locator('#view-status [data-death] [data-life]');
 
 async function hpTo0(p: Page): Promise<void> {
   for (let i = 0; i < 40 && (await activeHunter(p)).hp > 0; i++) await p.locator('#view-status [data-hp="-5"]').first().tap();
@@ -93,61 +83,50 @@ async function sheetNumbers(p: Page) {
   return { lv: +(await text('#view-status [data-lv]')), ap: +(await text('#view-status [data-ap]')), hp: await bar('hp'), mana: await bar('mana') };
 }
 
-test('At 0 HP the chip says the same word as the death panel, has no remove button, and healing gets the hunter up so the next fall starts the saves over', async ({ device }) => {
+test('At 0 HP the hunter is dead: the chip says the same word as the death panel, has no remove button, and a heal does not raise it', async ({ device }) => {
   const p = (await device('player-chip')).page;
   await onboardGM(p);
   await switchToPlayerMode(p);
   await go(p, 'status');
-  const x = p.locator('#view-status [data-chips] [data-cond-del="down"]');
 
-  await test.step('at 0 HP with 2 failed saves the chip reads Dying, as the death panel does, without a remove button', async () => {
+  await test.step('at 0 HP the chip and the death panel both read Dead, without a remove button', async () => {
     await hpTo0(p);
-    await rollFailedSaves(p, 2);
-    await expect(pips(p)).toHaveAttribute('aria-label', /2 failures/);
-    await expect(p.locator('#view-status [data-chips] [data-chip="down"]')).toHaveText(/^\s*Dying/);
-    await expect(p.locator('#view-status [data-life]')).toHaveText('Dying');
-    await expect(x).toHaveCount(0);
+    await expect(p.locator('#view-status [data-chips] [data-chip="dead"]')).toHaveText(/^\s*Dead/);
+    await expect(lifeWord(p)).toHaveText('Dead');
+    await expect(p.locator('#view-status [data-chips] [data-cond-del="dead"]')).toHaveCount(0);
+    await expect(p.locator('#view-status [data-dsave]')).toHaveCount(0);
   });
 
-  await test.step('stabilized, the chip and the panel both read Stable', async () => {
-    await p.evaluate(() => hunterApp.api.hunter.life(hunterApp.store.active().id, { type: 'stabilize' }));
-    await expect(p.locator('#view-status [data-life]')).toHaveText('Stable');
-    await expect(p.locator('#view-status [data-chips] [data-chip="down"]')).toHaveText(/^\s*Stable/);
-  });
-
-  await test.step('healing to 1 HP hides the death panel and the chip, and a fresh drop to 0 starts the saves over', async () => {
+  await test.step('a heal of 1 leaves the hunter dead at 0 HP', async () => {
     await p.locator('#view-status [data-hp="1"]').first().tap();
-    await expect(p.locator('#view-status [data-death]')).toBeHidden();
-    await expect(p.locator('#view-status [data-chips] [data-chip="down"]')).toHaveCount(0);
-    await p.locator('#view-status [data-hp="-1"]').first().tap();
-    await expect(pips(p)).toHaveAttribute('aria-label', /0 successes, 0 failures/);
-    await expect(dsave(p)).toBeEnabled();
+    await expect(p.locator('#view-status [data-bar="hp"] [data-cur]')).toHaveText('0');
+    await expect(lifeWord(p)).toHaveText('Dead');
   });
 });
 
-test('A local hunter at 0 HP shows Dying on the combat card, with no status to remove for it there', async ({ device }) => {
+test('A local hunter at 0 HP shows Dead on the combat card, with no status to remove for it there', async ({ device }) => {
   const p = (await device('gm-combat')).page;
   await onboardGM(p);
   const hid = await p.evaluate(() => hunterApp.store.active().id);
   await p.evaluate(id => hunterApp.store.update(() => {
-    hunterApp.store.hunter(id).life = { at: 'dying', successes: 1, failures: 2 };
+    hunterApp.store.hunter(id).life = { at: 'dead' };
   }, 'test-setup'), hid);
   await go(p, 'combat');
   await addToCombat(p, hid);
   const cid = await p.evaluate(id => hunterApp.store.get().fight.rows.find((r: any) => r.holder && r.holder.hunterId === id).id, hid);
   await p.locator(`#view-combat [data-pick="${cid}"]`).tap();
   const card = p.locator(`#view-combat .cmb-card[data-cid="${cid}"]`);
-  await expect(card.locator('.cmb-tag.lw')).toHaveText('Dying');
-  await expect(card.locator('[data-rc="down"]')).toHaveCount(0);
+  await expect(card.locator('.cmb-tag.lw')).toHaveText('Dead');
+  await expect(card.locator('[data-rc="dead"]')).toHaveCount(0);
   await go(p, 'status');
-  await expect(pips(p)).toHaveAttribute('aria-label', /1 successes, 2 failures/);
+  await expect(lifeWord(p)).toHaveText('Dead');
 });
 
-test('A GM sees a remote hunter at 0 HP as Dying with no remove button, on the board and in combat', async ({ device }) => {
+test('A GM sees a remote hunter at 0 HP as Dead with no remove button, on the board and in combat', async ({ device }) => {
   const gm = (await device('gm-room')).page, pl = (await device('player-room')).page;
   const card = gm.locator('#gm-board .gm-card.remote', { hasText: 'Kai Test' });
 
-  await test.step('the player joins the room, drops to 0 HP and fails two death saves', async () => {
+  await test.step('the player joins the room and drops to 0 HP', async () => {
     await onboardGM(gm);
     const code = await createRoom(gm);
     await onboardPlayer(pl, 'Kai Test', code);
@@ -155,19 +134,18 @@ test('A GM sees a remote hunter at 0 HP as Dying with no remove button, on the b
     await dismissAll(pl, 4);
     await go(pl, 'status');
     await hpTo0(pl);
-    await rollFailedSaves(pl, 2);
-    await expect(pips(pl)).toHaveAttribute('aria-label', /2 failures/);
+    await expect(lifeWord(pl)).toHaveText('Dead');
   });
 
-  await test.step('the GM party board shows Dying without a remove button', async () => {
+  await test.step('the GM party board shows Dead without a remove button', async () => {
     await go(gm, 'gm');
     await expect(card).toHaveCount(1);
-    await expect(card).toContainText(/Dying/);
+    await expect(card).toContainText(/Dead/);
     await expect(card).toContainText('0 /');
-    await expect(card.locator('[data-rmstatus="down"]')).toHaveCount(0);
+    await expect(card.locator('[data-rmstatus="dead"]')).toHaveCount(0);
   });
 
-  await test.step('the remote combat card shows Dying and offers no status to remove for it', async () => {
+  await test.step('the remote combat card shows Dead and offers no status to remove for it', async () => {
     await go(gm, 'combat');
     const key = await gm.evaluate(() => {
       const o = [...document.querySelectorAll('#view-combat [data-hsel] option')].find(x => (x.textContent ?? '').endsWith('(remote)')); // the player's hunter as the GM reads it
@@ -178,9 +156,9 @@ test('A GM sees a remote hunter at 0 HP as Dying with no remove button, on the b
     const cid = await gm.evaluate(() => hunterApp.store.get().fight.rows.find((r: any) => r.holder && r.holder.kind === 'remote').id);
     await gm.locator(`#view-combat [data-pick="${cid}"]`).tap();
     const rcard = gm.locator(`#view-combat .cmb-card[data-cid="${cid}"]`);
-    await expect(rcard.locator('.cmb-tag.lw')).toHaveText('Dying');
-    await expect(rcard.locator('[data-rc="down"]')).toHaveCount(0);
-    await expect(pips(pl)).toHaveAttribute('aria-label', /0 successes, 2 failures/);
+    await expect(rcard.locator('.cmb-tag.lw')).toHaveText('Dead');
+    await expect(rcard.locator('[data-rc="dead"]')).toHaveCount(0);
+    await expect(lifeWord(pl)).toHaveText('Dead');
   });
 });
 
@@ -399,7 +377,7 @@ async function recordToasts(p: Page): Promise<() => Promise<string[]>> {
   return () => p.evaluate(() => [...(window as any).__said] as string[]);
 }
 
-test('the sheet says what a step did: fatigue is "critically high" once, as it crosses into disadvantage, and a failed death save says it failed', async ({ device }) => {
+test('the sheet says what a step did: fatigue is "critically high" once, as it crosses into disadvantage, and a fall to 0 HP says the hunter is dead', async ({ device }) => {
   const p = (await device('sheet-news')).page;
   await onboardGM(p);
   await go(p, 'status');
@@ -416,31 +394,26 @@ test('the sheet says what a step did: fatigue is "critically high" once, as it c
     expect((await said()).filter(t => /fatigue|collapsed/i.test(t))).toEqual(['Fatigue is critically high.']);
   });
 
-  await test.step('at 0 HP a failed death save says it failed, with the roll', async () => {
+  await test.step('at 0 HP the sheet says the hunter is dead, once, with the ways back', async () => {
     await hpTo0(p);
-    await withFails(p, async () => { await dsave(p).tap(); await expect(pips(p)).toHaveAttribute('aria-label', /0 successes, 1 failures/); });
-    expect((await said()).filter(t => t.startsWith('Death save') || t.includes('You are down'))).toEqual(['HP has reached 0. You are down.', 'Death save failed (5).']);
+    await expect(lifeWord(p)).toHaveText('Dead');
+    expect((await said()).filter(t => t.includes('You are dead'))).toEqual(['HP has reached 0. You are dead. The GM\'s Revive or a Resurrection Crystal brings you back.']);
   });
 });
 
-test('A hunter with three failed death saves is dead, a heal does not raise them, and the GM revives them at 1 HP from the board', async ({ device }) => {
+test('A hunter at 0 HP is dead, a heal and a rest do not raise them, and the GM revives them at 1 HP from the board with every status gone', async ({ device }) => {
   const p = (await device('gm-dead')).page;
   await onboardGM(p);
   await go(p, 'status');
   const panel = p.locator('#view-status [data-death]');
 
-  await test.step('three failed saves make the hunter Dead, and the roll button is off', async () => {
+  await test.step('poisoned, then at 0 HP the hunter is Dead', async () => {
+    await p.locator('#view-status [data-cond-sel]').selectOption('poisoned');
+    await p.locator('#view-status [data-cond-add]').tap();
+    await expect(p.locator('#view-status [data-chips] [data-chip="poisoned"]')).toHaveCount(1);
     await hpTo0(p);
-    // withFails makes Math.random answer 0.2, so the d20 is 1 + floor(0.2 x 20) = 5: a failure (2 to 9).
-    await withFails(p, async () => {
-      for (const after of [/0 successes, 1 failures/, /0 successes, 2 failures/, /^Dead$/]) {
-        await dsave(p).tap();
-        await expect(pips(p)).toHaveAttribute('aria-label', after);
-      }
-    });
     await expect(panel.locator('[data-life]')).toHaveText('Dead');
     await expect(p.locator('#view-status [data-chips] [data-chip="dead"]')).toHaveCount(1);
-    await expect(dsave(p)).toBeDisabled();
   });
 
   await test.step('healing 5 and a long rest leave the hunter dead at 0 HP', async () => {
@@ -450,7 +423,7 @@ test('A hunter with three failed death saves is dead, a heal does not raise them
     await expect(panel.locator('[data-life]')).toHaveText('Dead');
   });
 
-  await test.step('the GM board shows Dead with a Revive button, and Revive brings the hunter up at 1 HP', async () => {
+  await test.step('the GM board shows Dead with a Revive button, and Revive brings the hunter up at 1 HP with no status left', async () => {
     const name = (await activeHunter(p)).name;
     await go(p, 'gm');
     const card = p.locator('#gm-board .gm-card:not(.remote)', { hasText: name });
@@ -460,6 +433,7 @@ test('A hunter with three failed death saves is dead, a heal does not raise them
     await go(p, 'status');
     await expect(panel).toBeHidden();
     await expect(p.locator('#view-status [data-bar="hp"] [data-cur]')).toHaveText('1');
+    await expect(p.locator('#view-status [data-chips] [data-chip="poisoned"]')).toHaveCount(0);
   });
 });
 
@@ -646,7 +620,7 @@ test('the rules reference says a timed status is paid at the start of its bearer
   await expect(p.locator('#view-rules')).not.toContainText('count down at the end');
 });
 
-test('a player\'s rules page opens with How checks work and has no GM quick card, and the 0 HP line says down', async ({ device }) => {
+test('a player\'s rules page opens with How checks work and has no GM quick card, and the 0 HP line says dead', async ({ device }) => {
   const p = (await device('rules-player')).page;
   await onboardPlayer(p, 'Kai Test');
   await dismissAll(p);
@@ -666,8 +640,9 @@ test('a player\'s rules page opens with How checks work and has no GM quick card
     await expect(p.locator('#view-rules')).toContainText(pointsLine());
     await expect(p.locator('#view-rules')).not.toContainText('or leave the Status view, to lock it in');
   });
-  await expect(p.locator('#view-rules')).toContainText('At 0 HP a hunter is down and makes death saves');
-  await expect(p.locator('#view-rules')).toContainText(downLine(RULES));
+  await expect(p.locator('#view-rules')).toContainText('At 0 HP a hunter is dead.');
+  await expect(p.locator('#view-rules')).toContainText(deathLine(RULES));
+  await expect(p.locator('#view-rules')).not.toContainText('death save');
   await expect(p.locator('#view-rules')).not.toContainText('Unconscious');
   await test.step('the Gates section tells solo runs and the personal gates, the first of them the even one', async () => {
     for (const line of soloLines(RULES)) await expect(p.locator('#rr-gates')).toContainText(line);
@@ -694,31 +669,30 @@ test('the rules reference explains the eight stats, Armor and Resist, and the tu
   await expect(p.locator('#rr-combat')).toContainText('Turns come by speed');
 });
 
-test('a dying hunter in a fight is asked for the death save first on the GM\'s card', async ({ device }) => {
-  const p = (await device('gm-dsave')).page;
+test('a hunter who falls in a fight is Dead on the GM\'s card, which offers Revive, and the Revive stands it up at 1 HP', async ({ device }) => {
+  const p = (await device('gm-dead-card')).page;
   await onboardGM(p);
   const hid = await p.evaluate(() => hunterApp.store.active().id);
   const cid = async () => p.evaluate(id => hunterApp.store.get().fight.rows.find((r: any) => r.holder && r.holder.hunterId === id).id, hid);
 
-  await test.step('the GM runs a fight with the hunter, who falls to 0 HP', async () => {
+  await test.step('the GM runs a fight with the hunter, who falls to 0 HP and is dead', async () => {
     await combatReady(p);
     await p.locator(`#view-combat [data-pick="${await cid()}"]`).tap();
     await p.locator(`#view-combat .cmb-card[data-cid="${await cid()}"] [data-defeat]`).tap();
-    await expect.poll(async () => (await activeHunter(p)).life.at).toBe('dying');
+    await expect.poll(async () => (await activeHunter(p)).life.at).toBe('dead');
   });
 
-  await test.step('the hunter\'s card leads with Dying and Roll death save', async () => {
+  await test.step('the hunter\'s card reads Dead and offers Revive, which stands it up at 1 HP', async () => {
     const card = p.locator(`#view-combat .cmb-card[data-cid="${await cid()}"]`);
-    await expect(card.locator('.cmb-death b')).toHaveText('Dying');
-    await expect(card.locator('.cmb-death button')).toHaveText('Roll death save');
-    await expect(p.locator('.sys-overlay.show')).toHaveCount(0);
-    await withFails(p, async () => { await card.locator('.cmb-death button').tap(); });
-    await expect.poll(async () => (await activeHunter(p)).life.failures).toBe(1);
+    await expect(card.locator('.cmb-tag.lw')).toHaveText('Dead');
+    await expect(card.locator('[data-dsave], [data-stabilize]')).toHaveCount(0);
+    await card.locator('[data-revive]').tap();
+    await expect.poll(async () => (await activeHunter(p)).life).toEqual({ at: 'up', hp: 1 });
   });
 });
 
-test('a player in a room at 0 HP is asked for the death save on their HUD, and the roll counts on both phones', async ({ device }) => {
-  const gm = (await device('gm-room-dsave')).page, pl = (await device('player-room-dsave')).page;
+test('a player in a room at 0 HP reads Dead on their HUD in the GM\'s fight, with the ways back and nothing to roll', async ({ device }) => {
+  const gm = (await device('gm-room-dead')).page, pl = (await device('player-room-dead')).page;
 
   await test.step('the player joins the room and drops to 0 HP', async () => {
     await onboardGM(gm);
@@ -730,11 +704,11 @@ test('a player in a room at 0 HP is asked for the death save on their HUD, and t
     await hpTo0(pl);
   });
 
-  await test.step('the GM puts the player in a fight and the player\'s HUD asks for the death save', async () => {
+  await test.step('the GM puts the player in a fight and the player\'s HUD reads Dead', async () => {
     await go(gm, 'gm');
     await expect(gm.locator('#gm-board .gm-card.remote', { hasText: 'Kai Test' })).toHaveCount(1);
     // the row joins with the life of the sheet the GM's phone has read, and from then on the row's life is the sheet's
-    await expect.poll(() => gm.evaluate(() => (hunterApp.api.sync.remoteSheets() as any[]).find(r => r.data.name === 'Kai Test')?.data.life.at)).toBe('dying');
+    await expect.poll(() => gm.evaluate(() => (hunterApp.api.sync.remoteSheets() as any[]).find(r => r.data.name === 'Kai Test')?.data.life.at)).toBe('dead');
     await go(gm, 'combat');
     await expect(gm.locator('#view-combat [data-hsel] option', { hasText: 'Kai Test' })).toHaveCount(1);
     const key = await gm.evaluate(() => {
@@ -750,12 +724,9 @@ test('a player in a room at 0 HP is asked for the death save on their HUD, and t
     await dismissAll(gm, 3);
     await go(pl, 'combat');
     const row = pl.locator('#view-combat .tb-death');
-    await expect(row.locator('b')).toHaveText('Dying');
-    await expect(pl.locator('.sys-overlay.show')).toHaveCount(0);
-    await withFails(pl, async () => { await row.locator('button').tap(); });
-    await expect.poll(async () => (await activeHunter(pl)).life.failures).toBe(1);
-    await go(pl, 'status');
-    await expect(pl.locator('#view-status [data-pips]')).toHaveAttribute('aria-label', /1 failures/);
+    await expect(row.locator('b')).toHaveText('Dead');
+    await expect(row).toContainText('The GM\'s Revive or a Resurrection Crystal brings you back.');
+    await expect(row.locator('button')).toHaveCount(0);
   });
 });
 

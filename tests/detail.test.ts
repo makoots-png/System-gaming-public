@@ -77,13 +77,13 @@ describe('detailOf the odds', () => {
     const odds = readOdds({
       of: 2, rows: [{ id: 'a' as never, name: 'Brakk', hpMax: 50, manaMax: 10, fatigueMax: 100 }],
       ends: [
-        { outcome: 'won', rounds: 4, commands: 20, spent: [], party: { ['a' as never]: { hp: 50, mana: 10, fatigue: 0, statuses: [], used: {}, down: false, saves: [], life: 'up' } } },
-        { outcome: 'lost', rounds: 4, commands: 20, spent: [], party: { ['a' as never]: { hp: 0, mana: 2, fatigue: 0, statuses: [], used: {}, down: true, saves: [], life: 'dying' } } },
+        { outcome: 'won', rounds: 4, commands: 20, spent: [], party: { ['a' as never]: { hp: 50, mana: 10, fatigue: 0, statuses: [], used: {}, life: 'up', lifeLeft: null, kills: [] } } },
+        { outcome: 'lost', rounds: 4, commands: 20, spent: [], party: { ['a' as never]: { hp: 0, mana: 2, fatigue: 0, statuses: [], used: {}, life: 'dead', lifeLeft: null, kills: [] } } },
       ],
     });
     expect(detailOf({ kind: 'odds', odds, voice: 'party' }, RULES)).toEqual({
       title: 'The odds', about: '',
-      lines: ['Rounds: 4, most often about 4.', 'The party loses 50%.', 'Brakk: down in 50%. Ends with 0 to 50 of 50 HP, 2 to 10 of 10 mana, 0 of 100 fatigue.'],
+      lines: ['Rounds: 4, most often about 4.', 'The party loses 50%.', 'Brakk: dead in 50%. Ends with 0 to 50 of 50 HP, 2 to 10 of 10 mana, 0 of 100 fatigue.'],
     });
     expect(detailOf({ kind: 'odds', odds, voice: 'alone' }, RULES).lines[1]).toBe('The run fails in 50%.');
   });

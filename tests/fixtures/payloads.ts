@@ -61,8 +61,8 @@ export const VALID: Record<EventType, [Raw, Raw]> = {
     { eid: EID, to: [KEY], hp: -7, mana: 0, fatigue: 0, reason: 'GM' },
   ],
   vitals: [
-    { eid: EID, to: [KEY], life: { at: 'dying', successes: 1, failures: 2 }, mana: 5, fatigue: 30, statuses: [BURN] },
-    { eid: EID, to: [KEY], life: { at: 'dying', successes: 1, failures: 2 }, mana: 5, fatigue: 30, statuses: [BURN], reason: '' },
+    { eid: EID, to: [KEY], life: { at: 'up', hp: 12 }, mana: 5, fatigue: 30, statuses: [BURN] },
+    { eid: EID, to: [KEY], life: { at: 'up', hp: 12 }, mana: 5, fatigue: 30, statuses: [BURN], reason: '' },
   ],
   spent: [
     { eid: EID, to: [KEY], item: 'i12' },
@@ -103,10 +103,6 @@ export const VALID: Record<EventType, [Raw, Raw]> = {
   pass: [
     { eid: EID, by: KEY, at: 2500 },
     { eid: EID, by: KEY, at: 2500 },
-  ],
-  deathSave: [
-    { eid: EID, by: KEY, roll: 9 },
-    { eid: EID, by: KEY, roll: 9 },
   ],
   coinCall: [
     { eid: EID, by: KEY, roll: 'd-player1:r12', who: 'Kai', what: 'STR check', face: 20, call: 'heads' },

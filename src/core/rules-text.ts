@@ -11,7 +11,7 @@ import { sellPrice, shopOpen } from './hunter/inventory.ts';
 import { RARITIES, priceOf } from './registry/items.ts';
 import type { PriceRules, Rarity } from './registry/items.ts';
 import { shareEach } from './gates/pay.ts';
-import { FUMBLE_FAILURES, REVIVE_HP, SAVES_TO_END, SAVE_FUMBLE, SAVE_SUCCESS, SAVE_UP, SAVE_UP_HP, WAYS_BACK } from './hunter/vitals.ts';
+import { REVIVE_HP, WAYS_BACK } from './hunter/vitals.ts';
 import { levelAfterRaising } from './hunter/progress.ts';
 import { ambushShare } from './combat/standing.ts';
 import { HIDE_LEVELS, asLevel } from './combat/sight-levels.ts';
@@ -65,7 +65,7 @@ export function pointsLine(): string {
   return 'Spend points with + on a stat. − takes back a point you have not confirmed. Confirm locks the points in; until then they wait, also after you leave the Status view. The GM can edit any stat, and that edit is confirmed at once.';
 }
 
-/** The level of the down line's worked example of a raising: one where the share of the shipped rule takes two levels. */
+/** The level of the death line's worked example of a raising: one where the share of the shipped rule takes two levels. */
 const RAISED_EXAMPLE = 31;
 /**
  * What happens at 0 HP, from the life machine's own numbers (vitals.ts), the ways back from dead (`WAYS_BACK`), what a
@@ -73,13 +73,13 @@ const RAISED_EXAMPLE = 31;
  * dead (inventory.ts `shopOpen`): the sentence is there only while the rule closes it. `R` is the rules the page plays
  * by.
  */
-export function downLine(R: Pick<Rules, 'reviveLevelShare'>): string {
+export function deathLine(R: Pick<Rules, 'reviveLevelShare'>): string {
   const shop = shopOpen({ life: { at: 'dead' } }) ? '' : ' The shop is closed to a dead hunter, who can neither buy nor sell. The GM or another hunter can still give a dead hunter a Resurrection Crystal.';
   const pct = Math.round(R.reviveLevelShare * 10000) / 100, back = levelAfterRaising(RAISED_EXAMPLE, R);
   const cost = back < RAISED_EXAMPLE
     ? ` A raising costs levels: ${pct}% of the hunter's level, rounded up, at least one and never below level 1, so a hunter who died at level ${RAISED_EXAMPLE} comes back at level ${back}.`
     : ' A raising costs no levels.';
-  return `At 0 HP a hunter is down and makes death saves: a d20, ${SAVE_SUCCESS} or higher succeeds. ${SAVES_TO_END} successes make the hunter stable (still down, no more saves) and ${SAVES_TO_END} failures are fatal. A ${SAVE_UP} gets up at ${SAVE_UP_HP} HP, and a ${SAVE_FUMBLE} counts as ${FUMBLE_FAILURES} failures. The GM can stabilize a hunter. Healing and rest do not raise the dead: ${WAYS_BACK} from the bag does, at ${REVIVE_HP} HP, outside a fight.${cost}${shop}`;
+  return `At 0 HP a hunter is dead. Healing and rest do not raise the dead: ${WAYS_BACK} does, at ${REVIVE_HP} HP, and takes off every status, so a poison does not kill the hunter again. A crystal is used from the bag, outside a fight.${cost}${shop}`;
 }
 
 /**

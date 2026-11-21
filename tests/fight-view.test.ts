@@ -107,7 +107,7 @@ describe('order: the turns ahead', () => {
     expect(turns.map(t => t.row.id)).toContain(id('J'));
   });
 
-  test('a monster at 0 and a dying hunter take no turns, so the order leaves them out', () => {
+  test('a monster at 0 and a dead hunter take no turns, so the order leaves them out', () => {
     const fight = play(add(row('A', 'party'), row('B', 'party'), row('M1', 'foe'), row('M2', 'foe')),
       start(['A', 20], ['B', 20], ['M1', 20], ['M2', 20]), adjust('B', -999), adjust('M2', -999));
     expect(new Set(order(fight, 8, RULES).map(t => t.row.id))).toEqual(new Set([id('A'), id('M1')]));
@@ -161,7 +161,7 @@ describe('cardOf: what a combatant\'s card shows', () => {
     expect(cardOf(setup, body(setup, 'A'), RULES).turn).toBe(false);
   });
 
-  test('a monster at 0 and a dying hunter are down on their cards', () => {
+  test('a monster at 0 and a dead hunter are down on their cards', () => {
     const fight = play(add(row('A', 'party'), row('B', 'party'), row('M1', 'foe'), row('M2', 'foe')),
       start(['A', 20], ['B', 20], ['M1', 20], ['M2', 20]), adjust('B', -999), adjust('M2', -999));
     expect(['A', 'B', 'M1', 'M2'].map(n => cardOf(fight, body(fight, n), RULES).down)).toEqual([false, true, false, true]);
@@ -210,10 +210,10 @@ describe('aims: whom an ability can aim at', () => {
     expect(aims(spots, id('A'), self, GRID).map(a => [a.target.id, a.dist, a.inRange, a.inShape])).toEqual([['A', 0, true, true]]);
   });
 
-  test('an ally ability offers its user\'s side on the map, a dying hunter among them, and no shadow gone at 0 nor any foe', () => {
-    const spots = [spot('A', 'party', 0, 0), spot('Dying', 'party', 2, 0, { down: true }), spot('Shade', 'party', 1, 0, { kind: 'shadow', down: true }),
+  test('an ally ability offers its user\'s side on the map, a dead hunter among them, and no shadow gone at 0 nor any foe', () => {
+    const spots = [spot('A', 'party', 0, 0), spot('Dead', 'party', 2, 0, { down: true }), spot('Shade', 'party', 1, 0, { kind: 'shadow', down: true }),
       spot('Far', 'party', 9, 0), spot('M', 'foe', 1, 1)];
-    expect(aims(spots, id('A'), ability('support'), GRID).map(a => [a.target.id, a.dist, a.inRange])).toEqual([['A', 0, true], ['Dying', 2, true], ['Far', 9, false]]);
+    expect(aims(spots, id('A'), ability('support'), GRID).map(a => [a.target.id, a.dist, a.inRange])).toEqual([['A', 0, true], ['Dead', 2, true], ['Far', 9, false]]);
   });
 
   test('an unknown user has nothing to aim at', () => {

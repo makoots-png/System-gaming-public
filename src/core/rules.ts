@@ -433,7 +433,7 @@ const SPEC = {
     // seeds; at 1 it completes 0.208 (se 0.019), inside design 6's 10 to 25%, and no other row moves (sim-log.md).
     threatBeforeDefence: of(1, SHARE),
     tauntBurst: real(2, 0, 10, 'times the gap to the leader a taunt adds: 10 holds a monster for the fight'), // a taunt adds twice the gap to the leader, the smallest rule that matters after the taunt ends
-    tauntRounds: whole(2, 0, 10, 'rounds a taunt holds: 10 is past any fight'), // one or two of the monster's turns: enough to pull it off a dying hunter, short enough to keep taunting
+    tauntRounds: whole(2, 0, 10, 'rounds a taunt holds: 10 is past any fight'), // one or two of the monster's turns: enough to pull it off a hunter about to die, short enough to keep taunting
     // Stagger (design 4.3)
     staggerWeak: real(1.5, 1, 5, 'a weak hit\'s weight on the bar: under 1 a chip counts less than its damage'), // a hit under a third of a same-rank hit fills 1.5 times its damage: chips help without being the way to kill
     staggerCost: real(1.5, 0, 10, 'rounds a full bar pushes the monster\'s turn: 10 is past any fight'), // a full bar moves the monster's next turn to now + 1.5 rounds: it misses one turn and part of another

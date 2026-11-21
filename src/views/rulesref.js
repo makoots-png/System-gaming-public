@@ -3,7 +3,7 @@
 import { RANKS, RULES, rules } from '../edge/rules.ts';
 import { xpToNext as xpToNextOf } from '../core/rules.ts';
 import { STAT_KEYS, STAT_LABELS, STAT_SHORT } from '../core/stats.ts';
-import { ICON_CREDIT, armorCutPct, checkExample, downLine, gatePayLines, iconCreditLine, naturalLines, pointsLine, saleLine, saleRows, dailyPointsLine, soloLines, statBonusLine, stealthLines } from '../core/rules-text.ts';
+import { ICON_CREDIT, armorCutPct, checkExample, deathLine, gatePayLines, iconCreditLine, naturalLines, pointsLine, saleLine, saleRows, dailyPointsLine, soloLines, statBonusLine, stealthLines } from '../core/rules-text.ts';
 import { describeStatus } from '../core/combat/effect-ops.ts';
 
 const STAT_USE = {
@@ -169,7 +169,7 @@ export function register(app) {
         ul([`Fatigue runs from 0 to your fatigue capacity. At ${R.fatigue.penaltyAt}% of it: −${R.fatigue.penalty} to all checks. At ${R.fatigue.disAt}%: disadvantage on checks. At ${R.fatigue.collapseAt}%: collapse (Exhausted, cannot act until a long rest).`,
           `<b>Short rest</b>: +${R.rest.short.hpPct}% max HP, +${R.rest.short.mpPct}% max mana, −${R.rest.short.fatigue}% of your fatigue capacity.`,
           `<b>Long rest</b>: +${R.rest.long.hpPct}% max HP and mana, −${R.rest.long.fatigue}% of your fatigue capacity, Exhausted cleared (only a long rest clears it).`,
-          esc(downLine(R))]),
+          esc(deathLine(R))]),
       ] },
       { id: 'conditions', title: 'Statuses', body: [
         table(['Status', 'Effect', 'Mechanics'], Object.keys(R.conditions).map(k => [esc(tr(k).label), esc(tr(k).desc), esc(describeStatus(tr(k), null, R).join('; ') || '—')])),

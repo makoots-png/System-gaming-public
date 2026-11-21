@@ -22,11 +22,12 @@
 // - "every build wins 25 to 75% against every other" (E): the three builds of the triangle, one row a pair, read the
 //   same way (the second build's share is one minus the first's, as no duel reached the cap).
 // - "a pack that can hurt" (the speed party's rows): two normal skirmishers (ranged) and an elite brute.
-// - "no hunter dying in more than 1 run in 10": the share of fights in which some hunter reaches 0 HP is at most 0.10.
-// - "at most one hunter down in more than 1 run in 4, a death in under 1 in 20": a hunter reaches 0 HP in at most
-//   1 fight in 4; a hunter left at 0 when the fight ends rolls death saves through `lifeAfter` with nobody to help, and
-//   ends dead in under 1 fight in 20.
-// - "front hunter": the first hunter of the party's line, the one the pack reaches first.
+// - A hunter at 0 HP is dead (the owner, Nov 21: no death saves), so going down and dying are one event, a death, and
+//   each bound below is a share of fights in which some hunter dies.
+// - "no hunter dying in more than 1 run in 10": a hunter dies in at most 1 pack fight in 10.
+// - "at most one hunter down in more than 1 run in 4, a death in under 1 in 20": with down and death one event, the
+//   pair cannot both stand; the row keeps the design's bound on a hunter lost, a death in under 1 boss fight in 20.
+// - "front hunter": the first hunter of the party's line, the one the pack reaches first; "goes down" is read as dies.
 // - "Fatigue over three fights of 6 rounds": a party of the five builds against two same-rank bosses, ended by the GM at
 //   6 rounds, three times, with HP back to full and 55 fatigue back between fights (`RULES.fight.fightRest`) and no mana
 //   back. "No build is at its capacity before the third fight" is read as at most 1 dungeon in 20; "the fastest is" as
@@ -101,7 +102,7 @@ const share = (xs: readonly boolean[]): Measure => {
 };
 const avg = (xs: readonly number[]): Measure => ({ value: mean(xs), se: sd(xs) / Math.sqrt(xs.length), note: '' });
 const ratio = (a: Measure, b: Measure): Measure => {
-  if (a.value === 0 && b.value === 0) return { value: NaN, se: NaN, note: 'neither goes down' };
+  if (a.value === 0 && b.value === 0) return { value: NaN, se: NaN, note: 'neither dies' };
   const r = a.value / b.value;
   return { value: r, se: Math.abs(r) * Math.sqrt((a.se / a.value) ** 2 + (b.se / b.value) ** 2), note: `${fmt(a.value)} over ${fmt(b.value)}` };
 };
@@ -130,7 +131,7 @@ const rounds = (key: string, play: Play, runs: number, won = false): Measure => 
   const rs = runsOf(key, play, runs).map(r => r[0]!).filter(r => !won || r.winner === 'party');
   return { ...avg(rs.map(r => r.rounds)), note: `${rs.filter(r => r.winner === 'party').length} of ${runs} won` };
 };
-const anyDown = (key: string, play: Play, runs: number): Measure => share(runsOf(key, play, runs).map(r => r[0]!.down.length > 0));
+const anyDead = (key: string, play: Play, runs: number): Measure => share(runsOf(key, play, runs).map(r => r[0]!.dead.length > 0));
 /** Of the channels begun (all, or only those begun while the boss aimed at the channeler), the share released at full charge. */
 const completes = (key: string, play: Play, runs: number, which: 'all' | 'aimed' | 'elsewhere' = 'all'): Measure => {
   const rs = runsOf(key, play, runs).map(r => r[0]!.channels);
@@ -138,7 +139,7 @@ const completes = (key: string, play: Play, runs: number, which: 'all' | 'aimed'
   const begun = rs.reduce((n, c) => n + of(c)[0]!, 0), done = rs.reduce((n, c) => n + of(c)[1]!, 0), p = begun ? done / begun : NaN;
   return { value: p, se: Math.sqrt(p * (1 - p) / begun), note: `${begun} channels begun in ${runs} fights, ${rs.reduce((n, c) => n + c.broken, 0)} broken in all` };
 };
-const frontDown = (key: string, play: Play, runs: number, front: string): Measure => share(runsOf(key, play, runs).map(r => r[0]!.down.includes(front)));
+const frontDead = (key: string, play: Play, runs: number, front: string): Measure => share(runsOf(key, play, runs).map(r => r[0]!.dead.includes(front)));
 
 /** The builds of design section 2 and the status build, before the kits. */
 const PLAIN_BUILDS = (Object.keys(BUILDS) as Archetype[]).filter(a => !(KIT_BUILDS as readonly string[]).includes(a));
@@ -192,15 +193,14 @@ const atE: Row[] = SIDES.map(([a, b]) => ({
 }));
 const partyRows = (rank: Rank): Row[] => [
   { name: `the mixed party clears a same-rank pack in 2 to 5 rounds at ${rank}`, setup: `mixed v pack ${rank}`, runs: RUNS.tenth, measure: () => rounds(`mixed v pack ${rank}`, vsPack(MIXED, rank), RUNS.tenth), low: 2, high: 5, lever: 'kinds.normal' },
-  { name: `a hunter goes down in at most 1 pack fight in 10 at ${rank}`, setup: `mixed v pack ${rank}`, runs: RUNS.tenth, measure: () => anyDown(`mixed v pack ${rank}`, vsPack(MIXED, rank), RUNS.tenth), low: 0, high: 0.1, lever: 'kinds.normal' },
+  { name: `a hunter dies in at most 1 pack fight in 10 at ${rank}`, setup: `mixed v pack ${rank}`, runs: RUNS.tenth, measure: () => anyDead(`mixed v pack ${rank}`, vsPack(MIXED, rank), RUNS.tenth), low: 0, high: 0.1, lever: 'kinds.normal' },
   { name: `the mixed party beats a same-rank boss in 4 to 8 rounds at ${rank}`, setup: `mixed v boss ${rank}`, runs: RUNS.quarter, measure: () => rounds(`mixed v boss ${rank}`, vsBoss(MIXED, rank), RUNS.quarter), low: 4, high: 8, lever: 'kinds.boss' },
-  { name: `a hunter goes down in at most 1 boss fight in 4 at ${rank}`, setup: `mixed v boss ${rank}`, runs: RUNS.quarter, measure: () => anyDown(`mixed v boss ${rank}`, vsBoss(MIXED, rank), RUNS.quarter), low: 0, high: 0.25, lever: 'kinds.boss' },
-  { name: `a hunter dies in under 1 boss fight in 20 at ${rank}`, setup: `mixed v boss ${rank}`, runs: RUNS.quarter, measure: () => share(runsOf(`mixed v boss ${rank}`, vsBoss(MIXED, rank), RUNS.quarter).map(r => r[0]!.dead.length > 0)), low: 0, high: 0.05, lever: 'kinds.boss' },
+  { name: `a hunter dies in under 1 boss fight in 20 at ${rank}`, setup: `mixed v boss ${rank}`, runs: RUNS.quarter, measure: () => anyDead(`mixed v boss ${rank}`, vsBoss(MIXED, rank), RUNS.quarter), low: 0, high: 0.05, lever: 'kinds.boss' },
   { name: `a boss fight has 1 or 2 staggers at ${rank}`, setup: `mixed v boss ${rank}`, runs: RUNS.quarter, measure: () => avg(runsOf(`mixed v boss ${rank}`, vsBoss(MIXED, rank), RUNS.quarter).map(r => r[0]!.staggers)), low: 1, high: 2, lever: 'kinds.boss.stagger and staggerRegrow' },
   { name: `three speed builds clear a pack that can hurt no faster than the mixed party at ${rank}`, setup: `speed v hurting pack ${rank}`, runs: RUNS.tenth,
     measure: () => ratio(rounds(`speed v hurting pack ${rank}`, vsHurtingPack(['speed', 'speed', 'speed'], rank), RUNS.tenth, true), rounds(`mixed v hurting pack ${rank}`, vsHurtingPack(MIXED, rank), RUNS.tenth, true)), low: 1, high: Infinity, lever: 'cost.quick (the quick share 0.7)' },
-  { name: `the speed party's front hunter goes down at least twice as often as the mixed party's against a pack that can hurt at ${rank}`, setup: `speed v hurting pack ${rank}`, runs: RUNS.tenth,
-    measure: () => ratio(frontDown(`speed v hurting pack ${rank}`, vsHurtingPack(['speed', 'speed', 'speed'], rank), RUNS.tenth, 'speed'), frontDown(`mixed v hurting pack ${rank}`, vsHurtingPack(MIXED, rank), RUNS.tenth, 'tank')), low: 2, high: Infinity, lever: 'cost.quick (the quick share 0.7)' },
+  { name: `the speed party's front hunter dies at least twice as often as the mixed party's against a pack that can hurt at ${rank}`, setup: `speed v hurting pack ${rank}`, runs: RUNS.tenth,
+    measure: () => ratio(frontDead(`speed v hurting pack ${rank}`, vsHurtingPack(['speed', 'speed', 'speed'], rank), RUNS.tenth, 'speed'), frontDead(`mixed v hurting pack ${rank}`, vsHurtingPack(MIXED, rank), RUNS.tenth, 'tank')), low: 2, high: Infinity, lever: 'cost.quick (the quick share 0.7)' },
 ];
 // ── the kits (kits design 3.2) ──
 /** Opponents a kit is weighed against: the triangle's three. */

@@ -110,7 +110,7 @@ test('on a 360 px phone a dead hunter\'s sheet shows Dead and the way back on th
   await go(player, 'status');
   const death = player.locator('#view-status [data-death]'), back = death.locator('[data-wayback]');
   await expect(death.locator('[data-life]')).toHaveText('Dead');
-  await expect(back).toHaveText('The GM\'s Revive or a Resurrection Crystal brings you back.');
+  await expect(back).toHaveText('The GM\'s Revive or a Resurrection Crystal brings you back, with every status gone.');
   await expect(back).toBeInViewport({ ratio: 1 });
   const box = await back.boundingBox(), size = await back.evaluate(e => parseFloat(getComputedStyle(e).fontSize));
   expect(box!.x + box!.width, 'the line ends inside the screen').toBeLessThanOrEqual(360);
@@ -865,7 +865,7 @@ for (const viewport of [SMALL_PHONE, PHONE]) {
       for (const id of told) s.tell({ type: 'answered', campaign: s.told().campaign, topic: { of: 'feat', hunter: s.active().id }, id });
       s.update(() => {
         const h = s.active();
-        h.chronicle = { inbox: [], facts, tally: { ...h.chronicle.tally, won: 12, kills: 1048, gates: 5, fell: 3, feats: 4 },
+        h.chronicle = { inbox: [], facts, tally: { ...h.chronicle.tally, won: 12, kills: 1048, gates: 5, died: 3, feats: 4 },
           feats: { ...Object.fromEntries(told.map((k, i) => [k, { at: 'earned', on: at(i), day: at(i).slice(0, 10), name: k === 'threads-end' ? 'Thread\'s End' : k }])), ratcatcher: { at: 'shown', n: 25 } } };
       }, 'test-setup');
     });

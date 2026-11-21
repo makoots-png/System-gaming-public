@@ -163,7 +163,7 @@ export function register(app) {
 .gm-chip.ok{border-color:var(--green);color:var(--green)}
 .gm-hp{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
 .gm-hp button{flex:1 1 44px;min-height:40px}
-.gm-hp :is([data-grevive],[data-gstabilize]){flex:1 0 auto;padding-inline:14px} /* the life's one action keeps its whole word on a 390 px phone */
+.gm-hp [data-grevive]{flex:1 0 auto;padding-inline:14px} /* the life's one action keeps its whole word on a 390 px phone */
 .gm-chip.rm{display:inline-flex;align-items:center;gap:4px;padding-right:0}
 .gm-x{min-width:40px;min-height:40px;padding:0;background:none;border:0;box-shadow:none;color:inherit;font-size:14px}
 .gm-seg{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0}.gm-seg .gm-chk{flex:1 1 140px}
@@ -225,12 +225,10 @@ export function register(app) {
     const v = vitalsOf(h), ft = clamp(num(h.fatigue), 0, v.fatigueMax);
     const rank = RANKS.includes(h.rank) ? h.rank : 'E';
     // the vitals' chips; the penalty's chip is `pen` below, with its days. While this phone's fight holds the hunter its row
-    // holds the life (row-life.ts), so the chips and the life's button read the row's, as the combat card does; Stabilize
-    // only where it can be sent: the fight's row, or a hunter of this phone (the room has no Stabilize message)
+    // holds the life (row-life.ts), so the chips and the life's button read the row's, as the combat card does
     const row = heldRow(remote ? { key } : { hid: h.id }), life = row ? row.life : h.life;
-    const drawn = life ? vitalChipsOf({ life, collapsed: h.collapsed }).map(k => `<span class="gm-chip pen"${ofLife(k) ? ` data-life-at="${life.at}"` : ''}>${esc(chipDef(k, life).label)}</span>`).join('') : '';
+    const drawn = life ? vitalChipsOf({ life, collapsed: h.collapsed }).map(k => `<span class="gm-chip pen"${ofLife(k) ? ` data-life-at="${life.at}"` : ''}>${esc(chipDef(k).label)}</span>`).join('') : '';
     const revive = life && can(life, 'revive') ? `<button type="button" class="primary" data-grevive aria-label="Revive ${esc(h.name)}">Revive</button>` : '';
-    const stabilize = life && can(life, 'stabilize') && (row || !remote) ? `<button type="button" class="primary" data-gstabilize aria-label="Stabilize ${esc(h.name)}">Stabilize</button>` : '';
     const cond = drawn + (Array.isArray(h.conditions) ? h.conditions : []).filter(c => c && typeof c.key === 'string')
       .map(c => remote
         ? `<span class="gm-chip rm">${esc(condLabel(c))}${c.rounds ? ` · ${esc(int(c.rounds))} round${int(c.rounds) === 1 ? '' : 's'}` : ''}<button type="button" class="gm-x" data-rmstatus="${esc(c.key)}" aria-label="Remove ${esc(condLabel(c))} from ${esc(h.name)}">✕</button></span>`
@@ -253,7 +251,7 @@ export function register(app) {
       <div class="gm-hp" role="group" aria-label="Quick HP for ${esc(h.name)}">
         <button type="button" data-hp="-5" aria-label="Damage 5 to ${esc(h.name)}" title="Damage 5 to ${esc(h.name)}">−5</button><button type="button" data-hp="-1" aria-label="Damage 1 to ${esc(h.name)}" title="Damage 1 to ${esc(h.name)}">−1</button>
         <button type="button" data-hp="1" aria-label="Heal 1 to ${esc(h.name)}" title="Heal 1 to ${esc(h.name)}">+1</button><button type="button" data-hp="5" aria-label="Heal 5 to ${esc(h.name)}" title="Heal 5 to ${esc(h.name)}">+5</button>
-        ${revive}${stabilize}${remote ? `<button type="button" data-rstatus aria-label="Add status to ${esc(h.name)}" title="Add status to ${esc(h.name)}">Status</button>` : ''}<button type="button" data-hbuild aria-label="Build for ${esc(h.name)}">Build</button><button type="button" data-ggive aria-label="Give a bundle to ${esc(h.name)}">Give…</button></div>
+        ${revive}${remote ? `<button type="button" data-rstatus aria-label="Add status to ${esc(h.name)}" title="Add status to ${esc(h.name)}">Status</button>` : ''}<button type="button" data-hbuild aria-label="Build for ${esc(h.name)}">Build</button><button type="button" data-ggive aria-label="Give a bundle to ${esc(h.name)}">Give…</button></div>
       <div class="hp-amt" role="group" aria-label="Type an HP amount for ${esc(h.name)}">
         <label class="field"><span class="lbl">HP amount</span><input type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" spellcheck="false" placeholder="7 or +5" title="Enter = damage, Shift+Enter or +N = heal" data-gmamt aria-label="HP amount for ${esc(h.name)}"></label>
         <button type="button" class="danger" data-gmdmg aria-label="Damage ${esc(h.name)}">Damage</button><button type="button" data-gmheal aria-label="Heal ${esc(h.name)}">Heal</button></div>
@@ -831,13 +829,7 @@ export function register(app) {
         if (t.dataset.gchron !== undefined) { A().chronicle.open(t.closest('[data-hid]').dataset.hid); return; }
         if (t.dataset.feats) { switchFeats(t.dataset.feats === 'on'); return; }
         if (t.dataset.grevive !== undefined && t.closest('.gm-card.remote')) { sendRevive(t.closest('[data-hid]').dataset.hid); return; }
-        if (t.dataset.gstabilize !== undefined) {
-          const c = t.closest('[data-hid]'), key = c.dataset.hid, remote = c.classList.contains('remote'), cid = remote ? fightRowOf(key) : null;
-          const name = remote ? remoteName(key) : (S().hunters.find(x => x.id === key) || {}).name || 'hunter';
-          if (remote ? cid !== null && ui.wrote('GM', A().combat.life(cid, { type: 'stabilize' })) : ui.wrote('GM', A().hunter.life(key, { type: 'stabilize' }))) say('#gm-board-msg', `Stabilized ${name}.`);
-          return;
-        }
-        if (t.dataset.grevive !== undefined) { const hid = t.closest('[data-hid]').dataset.hid, was = (S().hunters.find(x => x.id === hid) || {}).level; if (ui.wrote('GM', A().hunter.life(hid, { type: 'revive' }))) { const now = S().hunters.find(x => x.id === hid); say('#gm-board-msg', now ? `Revived ${now.name}. ${raisedLine(was, now.level)}.` : 'Revived hunter.'); } return; }
+        if (t.dataset.grevive !== undefined) { const hid = t.closest('[data-hid]').dataset.hid, was = (S().hunters.find(x => x.id === hid) || {}).level; if (ui.wrote('GM', A().hunter.revive(hid))) { const now = S().hunters.find(x => x.id === hid); say('#gm-board-msg', now ? `Revived ${now.name}. ${raisedLine(was, now.level)}.` : 'Revived hunter.'); } return; }
         if (t.dataset.hp && t.closest('.gm-card.remote')) { sendHp(t.closest('[data-hid]').dataset.hid, int(t.dataset.hp)); return; }
         if (t.dataset.hp) { const hid = t.closest('[data-hid]').dataset.hid, n = int(t.dataset.hp); ui.wrote('GM', n < 0 ? A().hunter.damage(hid, -n) : A().hunter.heal(hid, n)); return; }
         const act = { 'gm-notify': askNotify, 'gm-uses-go': openUses, 'gm-award-go': doAward, 'gm-b-go': doBroadcast, 'gm-q-go': doIssue, 'gm-g-go': doSpawn, 'gm-s-go': startSession, 'gm-t-go': doRoll,

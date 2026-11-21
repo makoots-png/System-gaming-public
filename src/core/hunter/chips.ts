@@ -5,7 +5,6 @@
 // label and for the reason a change to it is refused.
 import { VITAL_CHIPS, vitalChipsOf } from './vitals.ts';
 import type { Vitals } from './vitals.ts';
-import { lifeWord } from '../combat/row-life.ts';
 import { PENALTY_CHIPS, penaltyChipsOf } from './penalty.ts';
 import type { Penalty } from './penalty.ts';
 import { STATE_CHIP_DEFS } from '../registry/statuses.ts';
@@ -18,22 +17,15 @@ export const isStateChip = (key: unknown): key is StateChip => (STATE_CHIPS as r
 /** The chips a hunter shows for its state, vitals first. */
 export const chipsOf = (h: Pick<Vitals, 'life' | 'collapsed'> & { penalty: Penalty | null }): StateChip[] => [...vitalChipsOf(h), ...penaltyChipsOf(h)];
 
-/**
- * What a chip reads for this hunter. The chip of a hunter at 0 HP says what the death panel and every fight card say,
- * Dying or Stable (A23, row-life.ts `lifeWord`): one state, one word. The key is `down`.
- */
-export function chipDef(key: StateChip, life: Pick<Vitals, 'life'>['life']): StatusDef {
-  const word = key === 'down' ? lifeWord({ kind: 'hunter', life }) : null;
-  return word ? { ...STATE_CHIP_DEFS.down, label: word } : STATE_CHIP_DEFS[key];
-}
+/** What a chip reads: its label and description in the status registry (`STATE_CHIP_DEFS`). */
+export const chipDef = (key: StateChip): StatusDef => STATE_CHIP_DEFS[key];
 
-/** Whether chip `key` is drawn from the hunter's life (its word is the life's, `chipDef`), so a screen colors it by the life's state. */
-export const ofLife = (key: StateChip): boolean => key === 'down' || key === 'dead';
+/** Whether chip `key` is drawn from the hunter's life, so a screen colors it by the life's state. */
+export const ofLife = (key: StateChip): boolean => key === 'dead';
 
 /** What a GM is told when a combat command tries to put a chip on or take it off. */
 export const CHIP_REFUSAL: Readonly<Record<StateChip, string>> = {
-  down: 'Down and Dead follow HP and death saves.',
-  dead: 'Down and Dead follow HP and death saves.',
+  dead: 'Dead follows HP and ends with a revive.',
   exhausted: 'Exhausted follows fatigue and ends with a long rest.',
   penalized: 'Penalized follows a missed daily and ends when its Penalty Zone quest is done.',
 };

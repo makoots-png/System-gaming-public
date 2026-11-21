@@ -24,7 +24,7 @@ export type InboxFact = Fact | Kept;
  */
 export const TALLY_KEYS = [
   'fights', 'won', 'kills', 'bosses', 'crits', 'struck', 'avoided', 'healed', 'gates', 'soloWon', 'soloLost', 'retreats', 'quests', 'questsFailed', 'dailies', 'streaksLost', 'penalties', 'penaltyDays',
-  'fell', 'died', 'revived', 'levels', 'titles', 'feats', 'hiddenFeats', 'given', 'shadows', 'coinsWon', 'coinsLost', 'nat20', 'nat1', 'longRests',
+  'died', 'revived', 'levels', 'titles', 'feats', 'hiddenFeats', 'given', 'shadows', 'coinsWon', 'coinsLost', 'nat20', 'nat1', 'longRests',
   'bought', 'sold', 'used',
 ] as const;
 export type TallyKey = (typeof TALLY_KEYS)[number];
@@ -50,7 +50,6 @@ export const TALLY: { readonly [K in TallyKey]: (f: Fact) => number } = {
   streaksLost: f => (f.kind === 'streakLost' ? 1 : 0),
   penalties: f => (f.kind === 'penaltyIssued' ? 1 : 0),
   penaltyDays: f => (f.kind === 'penaltyIssued' ? f.days : 0),
-  fell: f => (f.kind === 'life' && f.news === 'fell' ? 1 : 0),
   died: f => (f.kind === 'life' && f.news === 'died' ? 1 : 0),
   revived: f => (f.kind === 'life' && f.news === 'raised' && (f.how === 'gm' || f.how === 'item') ? 1 : 0),
   levels: f => (f.kind === 'level' ? 1 : 0),

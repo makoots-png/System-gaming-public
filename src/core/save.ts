@@ -108,7 +108,7 @@ export { newRewards };
 export type { RewardBundle, Rewards };
 /** Level, XP, peak level and ability points: src/core/hunter/progress.ts. Only its functions change them. */
 export type { Progress };
-/** Life (HP, dying, stable, dead), mana, fatigue and collapse: src/core/hunter/vitals.ts. Only its functions change them. */
+/** Life (HP, or dead), mana, fatigue and collapse: src/core/hunter/vitals.ts. Only its functions change them. */
 export type { Life, Vitals };
 /** The daily penalty, tied to its Penalty Zone quest: src/core/hunter/penalty.ts. Only its functions change it. */
 export type { Penalty };

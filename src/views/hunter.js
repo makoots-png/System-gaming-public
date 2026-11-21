@@ -15,7 +15,7 @@ import { setGold } from '../core/hunter/inventory.ts';
 import { addHunter, removeHunter } from '../core/party.ts';
 import { logLine, logged } from '../core/session-log.ts';
 import { removeBundle, saveBundle } from '../core/rewards.ts';
-import { FELL_WORDS, SAVES_TO_END, WAYS_BACK, can, fatigueNews, hpOf, lifeNews, manaOf } from '../core/hunter/vitals.ts';
+import { DIED_WORDS, WAYS_BACK, can, fatigueNews, hpOf, lifeNews, manaOf } from '../core/hunter/vitals.ts';
 import { lifeWord } from '../core/combat/row-life.ts';
 import { chipDef, chipsOf, isStateChip } from '../core/hunter/chips.ts';
 import { PUT_WORDS } from '../core/hunter/conditions.ts';
@@ -62,8 +62,7 @@ const CSS = `
 .death{border:1px solid var(--red);background:rgba(255,77,94,.08);padding:8px 12px;margin:8px 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .death[hidden]{display:none}
 .death b{color:#ff8a96;letter-spacing:.12em;text-transform:uppercase;font-size:13px}
-.death .pips{font-family:var(--font-mono);font-size:16px}
-.death [data-wayback]{flex:1 1 100%;margin:0;font-size:14px;color:var(--ice)}.death [data-wayback][hidden]{display:none}
+.death [data-wayback]{flex:1 1 100%;margin:0;font-size:14px;color:var(--ice)}
 .stat .s-roll{display:block;width:100%;border:0;background:none;padding:2px 0;color:inherit;font:inherit;cursor:pointer;min-height:44px}
 .stat .s-roll:hover{background:rgba(77,216,255,.08)}
 .stat .s-roll span{display:block}
@@ -234,8 +233,8 @@ export function register(app) {
     const now = store.hunter(hid)?.life;
     return { ok: /** @type {const} */ (true), news: now ? lifeNews(was, now) : null };
   }
-  /** The toast of a fall: HP reached 0. */
-  const fellToast = w => { if (w && w.news && w.news.kind === 'fell') ui.toast('Warning', FELL_WORDS, { kind: 'warning' }); };
+  /** The toast of a death: HP reached 0. */
+  const diedToast = w => { if (w && w.news && w.news.kind === 'died') ui.toast('Warning', DIED_WORDS, { kind: 'warning' }); };
   const restRefused = () => { ui.toast('System', 'You cannot rest during a fight.', { kind: 'warning' }); return refuse(TOLD); };
   /** A status put on a row by hand (Add status): the def the status carries, else the rules' under its key; refused as the sheet's `putStatus` refuses. */
   const statusToRow = (cid, s) => {
@@ -305,16 +304,11 @@ export function register(app) {
     damage(hid, n) { return handEdit(hid, { hp: -Math.abs(int(n)) }, h => lifeEvent(h, { type: 'damage', amount: Math.abs(int(n)) }), 'damage'); },
     heal(hid, n) { return handEdit(hid, { hp: Math.abs(int(n)) }, h => lifeEvent(h, { type: 'heal', amount: Math.abs(int(n)) }), 'heal'); },
     /**
-     * A life event (src/core/hunter/vitals.ts): the sheet's and GM board's death save, Stabilize and Revive. In this phone's
-     * fight the row holds the life: the event is the fight's `life` command, and the sheet hears the row's new life in the
-     * same write. In the GM's fight the GM's row holds it: a death save goes there as the room's `deathSave`, and the sheet
-     * hears the row's new life in the room's `vitals`; any other event is the GM's. False when it does not apply or was not posted.
+     * The GM's Revive (src/core/hunter/vitals.ts), from the sheet or the GM board: on the sheet it stands the dead hunter
+     * up and takes off every status (grant.ts `sheetEdit`). In this phone's fight the row holds the life: it is the
+     * fight's `revive` command, and the sheet hears the row's new life in the same write. In the GM's fight it is the GM's.
      */
-    life(hid, event) {
-      return vitalsEdit(hid, `life-${event.type}`, h => lifeEvent(h, event), cid => app.api.combat.life(cid, event),
-        () => (event.type === 'deathSave' ? saveToTable(hid, event.roll) : gmHolds()));
-    },
-    deathSave(hid) { const h = store.hunter(hid); return h ? deathSave(h) : refuse('no-hunter'); },
+    revive(hid) { return vitalsEdit(hid, 'life-revive', h => lifeEvent(h, { type: 'revive' }), cid => app.api.combat.revive(cid)); },
     /** HP and mana to their maxima: in a fight the row's (`combat.refill`), refused in the GM's fight. */
     fightOf,
     // the price is checked where the mana lives: the row refuses a paid adjust it cannot cover, the sheet's `spend` the same
@@ -419,11 +413,9 @@ export function register(app) {
           <p class="hp-amt-msg" id="hp-amt-msg" data-hpmsg role="status" aria-live="polite"></p>
         </div>
         <div class="death" data-death hidden>
-          <b data-life></b><span class="pips" data-pips></span>
-          <button type="button" class="primary" data-dsave>Roll death save</button>
-          <button type="button" data-stabilize hidden>Stabilize</button>
+          <b data-life></b>
           <button type="button" class="primary" data-revive hidden>Revive</button>
-          <p class="note" data-wayback hidden></p>
+          <p class="note" data-wayback></p>
         </div>
         <div class="lbl dv-sub">Statuses</div>
         <div class="chips" data-chips></div>
@@ -451,7 +443,7 @@ export function register(app) {
         const w = lifeWrite(h.id, () => (hl ? api.heal(h.id, a.n) : api.damage(h.id, a.n))); if (!ui.wrote('System', w)) return;
         const hp = sheetOf(store.hunter(h.id)).hp;
         msg.textContent = `${hl ? 'Healed' : 'Took'} ${Math.abs(hp - before)} (asked ${a.n}). HP ${hp}.`;
-        fellToast(w);
+        diedToast(w);
         inp.value = ''; inp.focus();
       };
       el.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('[data-hpamt]')) { e.preventDefault(); if (api.amountFromKey(e, e.target.value)) applyHpAmt(e.shiftKey); } });
@@ -478,7 +470,7 @@ export function register(app) {
             return key === 'mana' ? sheetEdit(x, { type: 'mana', delta: delta.mana }, R) : sheetEdit(x, { type: 'fatigue', delta: delta.fatigue }, R);
           }, key));
           if (!ui.wrote('System', w)) return;
-          fellToast(w);
+          diedToast(w);
           const now = store.hunter(h.id), crossed = key === 'ft' && now ? fatigueNews(tired, now, maxima(now), R) : null;
           if (crossed) ui.toast('Warning', crossed === 'collapsed' ? 'You have collapsed from exhaustion.' : 'Fatigue is critically high.', { kind: 'warning' });
           return;
@@ -495,11 +487,9 @@ export function register(app) {
           ui.wrote('System', api.addCondition(h.id, { key, def: rules().conditions[key], rounds: null, source: gmSource(h.rank) }), PUT_WORDS); return;
         }
         if (d.condDel) { ui.wrote('System', api.removeCondition(h.id, d.condDel)); return; }
-        if ('dsave' in d) { ui.wrote('Death save', deathSave(h)); return; }
-        if ('stabilize' in d && app.isGM()) { ui.wrote('System', api.life(h.id, { type: 'stabilize' })); return; }
         if ('revive' in d && app.isGM()) {
           const was = h.level; // the store writes into the hunter a view holds, so the level before is read before the write
-          if (ui.wrote('System', api.life(h.id, { type: 'revive' }))) return ui.toast('System', `${h.name} is revived. ${raisedLine(was, store.hunter(h.id).level)}.`);
+          if (ui.wrote('System', api.revive(h.id))) return ui.toast('System', `${h.name} is revived. ${raisedLine(was, store.hunter(h.id).level)}.`);
         }
       });
     },
@@ -516,38 +506,6 @@ export function register(app) {
   }
 
   let shownHunter = null, shownLevel = null; // the hunter and level the sheet showed last: a change of hunter is drawn at once, a change of level is a level-up
-  /**
-   * The death save `roll` of hunter `hid` posted to the GM's fight (protocol.ts `deathSave`), from this phone, the
-   * hunter's own: what the outbox answered, whole.
-   */
-  function saveToTable(hid, roll) {
-    const S = app.api.sync;
-    return S.post(S.event('deathSave', { by: S.myKey(hunterId(hid)), roll }));
-  }
-  /**
-   * One death save: the d20, the life event and what it did, told on a write. Answers the write's Applied whole, for
-   * the caller's `ui.wrote` (the sheet, the HUD, a GM's card); refused `cannot` when the hunter's life takes no save. In
-   * the GM's fight the roll goes to the GM's row, and what it did is told when the row's life comes back (room-events.ts `vitals`).
-   */
-  function deathSave(h) {
-    if (!can(h.life, 'deathSave')) return refuse('cannot');
-    const r = app.api.dice.roll('1d20', { label: 'Death save', hid: h.id }), nat = r.natural ?? r.total;
-    const at = fightOf({ hid: h.id });
-    if (at && at.at === 'gm') {
-      const posted = api.life(h.id, { type: 'deathSave', roll: nat }); if (isRefused(posted)) return posted;
-      ui.toast('Death save', `You rolled ${nat}. It counts when the GM's fight takes it.`, { kind: 'info' });
-      return posted;
-    }
-    const w = lifeWrite(h.id, () => api.life(h.id, { type: 'deathSave', roll: nat }));
-    if (isRefused(w) || !w.news) return w;
-    const news = w.news;
-    // the words follow what the life table did with the roll (vitals.ts `lifeNews`), never a copy of its numbers
-    const msg = news.kind === 'raised' ? 'Natural 20! You regain 1 HP.' : news.kind === 'stable' ? `${SAVES_TO_END} successes: you are stable.`
-      : news.kind === 'died' ? `${SAVES_TO_END} failures: you are dead. ${WAYS_BACK} brings you back.` : news.kind === 'saved' ? `Death save success (${nat}).` : `Death save failed (${nat}).`;
-    ui.toast('Death save', msg, { kind: news.kind === 'saved' || news.kind === 'stable' || news.kind === 'raised' ? 'info' : 'warning' });
-    return w;
-  }
-
   function update(el) {
     const h = store.active(), d = sheetOf(h), gm = app.isGM(), r = rules();
     const q = s => el.querySelector(s);
@@ -577,25 +535,17 @@ export function register(app) {
       motion.fillTo(row.querySelector('.bar'), max ? cur / max : 0, sameHunter ? {} : { from: max ? cur / max : 0 });
     };
     setBar('hp', d.hp, d.sheet.hpMax); setBar('mana', d.mana, d.sheet.manaMax); setBar('ft', h.fatigue, d.sheet.fatigueMax);
-    const life = h.life, down = life.at !== 'up';
-    q('[data-death]').hidden = !down;
-    if (down) {
-      const s = life.at === 'dying' ? life.successes : life.at === 'stable' ? SAVES_TO_END : 0, f = life.at === 'dying' ? life.failures : life.at === 'dead' ? SAVES_TO_END : 0;
-      const word = lifeWord({ kind: 'hunter', life });
-      q('[data-life]').textContent = word;
-      q('[data-pips]').textContent = `${'●'.repeat(s)}${'○'.repeat(SAVES_TO_END - s)}  /  ${'✕'.repeat(f)}${'·'.repeat(SAVES_TO_END - f)}`;
-      q('[data-pips]').setAttribute('aria-label', life.at === 'dying' ? `Death saves: ${s} successes, ${f} failures` : word);
-      q('[data-dsave]').disabled = !can(life, 'deathSave');
-      q('[data-stabilize]').hidden = !gm || !can(life, 'stabilize');
+    const life = h.life, dead = life.at === 'dead';
+    q('[data-death]').hidden = !dead;
+    if (dead) {
+      q('[data-life]').textContent = lifeWord({ kind: 'hunter', life });
       q('[data-revive]').hidden = !gm || !can(life, 'revive');
-      const back = q('[data-wayback]');
-      back.hidden = life.at !== 'dead';
-      back.textContent = `${WAYS_BACK} brings you back.`;
+      q('[data-wayback]').textContent = `${WAYS_BACK} brings you back, with every status gone.`;
     }
     const sel = q('[data-cond-sel]'), opts = Object.entries(r.conditions).filter(([k]) => !isStateChip(k)).map(([k, c]) => `<option value="${esc(k)}">${esc(c.label)}</option>`).join('');
     if (sel._h !== opts) { const keep = sel.value; sel._h = opts; sel.innerHTML = opts; if (keep) sel.value = keep; } // library statuses show up without a reload
     // the chips drawn from the hunter's state (src/core/hunter/chips.ts) have no x: nothing removes them by hand
-    const chips = [...chipsOf(h).map(key => ({ c: { key, rounds: null, def: chipDef(key, h.life), source: null }, key, rm: false })), ...h.conditions.map(c => ({ c, key: c.key, rm: true }))];
+    const chips = [...chipsOf(h).map(key => ({ c: { key, rounds: null, def: chipDef(key), source: null }, key, rm: false })), ...h.conditions.map(c => ({ c, key: c.key, rm: true }))];
     const chipBox = q('[data-chips]'), chipsWere = sameHunter ? new Map([...chipBox.querySelectorAll('[data-chip]')].map(c => [c.dataset.chip, c])) : null;
     if (chipsWere) for (const [key, c] of chipsWere) if (!chips.some(x => x.key === key)) motion.fadeOff(c);
     setHTML(chipBox, chips.length ? chips.map(({ c, key, rm }) => {

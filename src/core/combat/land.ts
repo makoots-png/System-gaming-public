@@ -54,8 +54,8 @@ export function throughShield(target: Body, dealt: number, now: Tick): { target:
   return { target: { ...target, shield: s.amount - absorbed > 0 ? { ...s, amount: s.amount - absorbed } : null }, absorbed };
 }
 
-// Rule 14: HP stays in 0 to max, through the row's life (row-life.ts): at 0 a hunter is dying and a foe dead, and a heal
-// never lifts a dead row.
+// Rule 14: HP stays in 0 to max, through the row's life (row-life.ts): at 0 a row is dead, and a heal never lifts a
+// dead row.
 export const hurt = (target: Body, damage: number): Body => rowLifeAfter(target, { type: 'damage', amount: damage });
 export const healed = (target: Body, amount: number): Body => rowLifeAfter(target, { type: 'heal', amount });
 /**

@@ -24,11 +24,10 @@ const count = (v: number, one: string, many = `${one}s`): string => `${n(v)} ${v
 const QUEST_WORDS: { readonly [K in QuestKind]: string } = { daily: 'daily', main: 'main', side: 'side', job: 'Job Change', urgent: 'urgent', penalty: 'penalty' };
 /** How a change of life came about, after its verb. */
 const HOW_WORDS: { readonly [H in LifeHow]: string } = {
-  fight: ' in a fight', save: ' on a death save', gm: ' by the GM', item: ' with an item', rest: ' with a rest', hand: ' after a change by hand',
+  fight: ' in a fight', gm: ' by the GM', item: ' with an item', hand: ' after a change by hand',
 };
 /** How a hunter came out of a lost solo run. */
-const AFTER_WORDS: { readonly [L in LifeState]: string } = { up: 'was up at its end', dying: 'was down at its end', stable: 'was down and stable at its end', dead: 'died' };
-const failed = (v: number): string => (v ? `, after ${count(v, 'failed death save')}` : '');
+const AFTER_WORDS: { readonly [L in LifeState]: string } = { up: 'was up at its end', dead: 'died' };
 /** A fight's foes and where it was: " in Goblin Den against 3 Goblins", each part left out when the fact has none. */
 const against = (f: FactOf<'fight'>): string => `${f.gate ? ` in ${f.gate}` : ''}${f.names ? ` against ${f.names}` : ''}`;
 /** How a hunter's row ended a fight: its HP share, or down. */
@@ -54,12 +53,8 @@ export const FACT_LINES: { readonly [K in FactKind]: (f: FactOf<K>) => string } 
   penaltyLifted: f => `The daily penalty ended after ${count(f.days, 'day')}.`,
   life: f => {
     switch (f.news) {
-      case 'fell': return `Went down${HOW_WORDS[f.how]}.`;
-      case 'raised': return f.how === 'gm' || f.how === 'item' ? `Revived${HOW_WORDS[f.how]}.` : `Got back up${HOW_WORDS[f.how]}.`;
-      case 'stable': return `Became stable${f.failures ? ` after ${count(f.failures, 'failed death save')}` : ''}.`;
-      case 'died': return `Died${HOW_WORDS[f.how]}${failed(f.failures)}.`;
-      case 'saved': return `Passed a death save, with ${n(f.failures)} failed before it.`;
-      case 'failed': return `Failed a death save, with ${n(f.failures)} failed before it.`;
+      case 'raised': return `Revived${HOW_WORDS[f.how]}.`;
+      case 'died': return `Died${HOW_WORDS[f.how]}.`;
     }
   },
   level: f => `Reached level ${n(f.level)}.`,
@@ -83,7 +78,7 @@ export const factWhen = (f: Pick<Kept, 'session' | 'day'>): string => (f.session
 // ── the panel as data ──
 /** The lifetime numbers a screen shows, in order, each a key of the tally with its label. */
 export const NUMBERS: readonly (readonly [TallyKey, string])[] = [
-  ['won', 'Fights won'], ['kills', 'Monsters defeated'], ['gates', 'Gates cleared'], ['fell', 'Times down'], ['feats', 'Feats'],
+  ['won', 'Fights won'], ['kills', 'Monsters defeated'], ['gates', 'Gates cleared'], ['died', 'Deaths'], ['feats', 'Feats'],
 ];
 /** How many rows of each list the panel shows before "Show all". */
 export const FIRST = { earned: 3, shown: 3, facts: 5 } as const;

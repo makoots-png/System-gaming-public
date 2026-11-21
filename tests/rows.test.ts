@@ -68,8 +68,8 @@ describe('a hunter on this phone', () => {
     expect([r.threat, r.stagger, r.shield, r.channel, r.intent, r.readyAt]).toEqual([null, null, null, null, null, {}]);
   });
 
-  test('a dying hunter joins at 0 HP, and HP, mana and fatigue above the maxima join at the maxima', () => {
-    expect(rowHp(hunterRow(hunter({ life: { at: 'dying', successes: 1, failures: 0 } }), id('c1'), RULES))).toBe(0);
+  test('a dead hunter joins at 0 HP, and HP, mana and fatigue above the maxima join at the maxima', () => {
+    expect(rowHp(hunterRow(hunter({ life: { at: 'dead' } }), id('c1'), RULES))).toBe(0);
     const r = hunterRow(hunter({ life: { at: 'up', hp: 999 }, mana: 999, fatigue: 999, hpAdj: 5 }), id('c1'), RULES);
     expect([rowHp(r), r.mana, r.fatigue]).toEqual([F.hpBase + 5, F.manaBase, F.fatigueBase]);
   });

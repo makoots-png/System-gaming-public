@@ -78,8 +78,7 @@ export const STATUS_KEYS = Object.keys(STATUSES) as BuiltInStatus[];
  * statuses: no picker offers them, and a room message or combat command that adds or removes one is refused.
  */
 export const STATE_CHIP_DEFS: Readonly<Record<StateChip, StatusDef>> = {
-  down: { label: 'Down', desc: 'At 0 HP a hunter is down and makes death saves. Three successes make it stable, three failures are fatal.', ops: [] },
-  dead: { label: 'Dead', desc: `Three failed death saves. ${WAYS_BACK} brings the hunter back.`, ops: [] },
+  dead: { label: 'Dead', desc: `HP reached 0. ${WAYS_BACK} brings the hunter back, with every status gone.`, ops: [] },
   exhausted: { label: 'Exhausted', desc: 'Collapsed: cannot act until a long rest.', ops: [] },
   penalized: { label: 'Penalized', desc: 'Daily Quest failed: -2 to all checks until the Penalty Zone quest is done.', ops: [] },
 };

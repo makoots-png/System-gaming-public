@@ -20,7 +20,7 @@ import type { ReadyCtx, SoloGate, SoloRoute, SoloRun, SoloTarget } from '../src/
 import { newSolo, parseSolo, personalGateId, soloTracked, soloWake } from '../src/core/gates/personal.ts';
 import type { PersonalGate } from '../src/core/gates/personal.ts';
 import { soloRank } from '../src/core/gates/spawn.ts';
-import { WAYS_BACK, lifeAfter } from '../src/core/hunter/vitals.ts';
+import { WAYS_BACK } from '../src/core/hunter/vitals.ts';
 import { nextWake } from '../src/core/hunter/quests.ts';
 import { dayKey } from '../src/core/day.ts';
 import { SHOP_ITEMS, itemOf } from '../src/core/registry/items.ts';
@@ -54,7 +54,7 @@ const PERSONAL: SoloGate = { kind: 'personal', id: personalGateId(1) }, WORLD: S
 /** A run's end written by hand: Mira's row as `row` says, the outcome and the rounds. Its life as the fight left it is its HP's (`lifeAt`). */
 function endOf(outcome: RunEnd['outcome'], row: Partial<RowEnd>, spent: RunEnd['spent'] = []): RunEnd {
   const hp = row.hp ?? 7, { life: lifeLeft } = lifeAt('hunter', hp);
-  return { outcome, rounds: 4, commands: 30, spent, party: { [ME]: { hp, mana: 3, fatigue: 22, statuses: [], used: {}, down: false, saves: [], life: 'up', lifeLeft: lifeLeft as Life, kills: [], ...row } } };
+  return { outcome, rounds: 4, commands: 30, spent, party: { [ME]: { hp, mana: 3, fatigue: 22, statuses: [], used: {}, life: lifeLeft.at, lifeLeft: lifeLeft as Life, kills: [], ...row } } };
 }
 const runOf = (s: Save, end: RunEnd, route: SoloRoute = 'local'): SoloRun => ({ end, hunter: ME, shadows: {}, from: soloKey(s.hunters[0]!), route });
 const ROOM = room('ABCD23'), IN_ROOM: SoloRoute = { room: ROOM };
@@ -90,18 +90,13 @@ describe('a run writes what the play left, in one write', () => {
     expect(h.chronicle.inbox[1]).toEqual({ kind: 'kill', monster: 'Goblin', rank: 'D', type: 'Humanoid', mkind: 'normal', above: 1, hpPct: 55, payback: false, where: 'solo' });
   });
 
-  test('a run that fell leaves the hunter down with the saves it rolled, through the life machine', () => {
+  test('a run that fell leaves the hunter dead, as its row was at the fight\'s end', () => {
     const s = alone();
-    const dead = ok(soloRan(s, H1, PERSONAL, runOf(s, endOf('lost', { hp: 0, down: true, saves: [5, 3, 2], life: 'dead' })), NO_LOOT, { day, ready: ctx() }));
+    const dead = ok(soloRan(s, H1, PERSONAL, runOf(s, endOf('lost', { hp: 0 })), NO_LOOT, { day, ready: ctx() }));
     expect(hunter(dead.save).life).toEqual({ at: 'dead' });
     expect(hunter(dead.save).solo.gates.map(g => g.id), 'the gate stays').toEqual([personalGateId(1)]);
     expect(hunter(dead.save).xp).toBe(0);
     expect(dead.save.log[0]!.text).toBe('Mira fell in "Goblin Warren" (E-rank) alone in 4 rounds and died.');
-    const stable = ok(soloRan(s, H1, PERSONAL, runOf(s, endOf('lost', { hp: 0, down: true, saves: [12, 15, 11], life: 'stable' })), NO_LOOT, { day, ready: ctx() }));
-    expect(hunter(stable.save).life).toEqual({ at: 'stable' });
-    const twice = [2, 15, 3].reduce((l, roll) => lifeAfter(l, { type: 'deathSave', roll }, 30), lifeAfter({ at: 'up', hp: 30 }, { type: 'setHp', hp: 0 }, 30));
-    const dying = ok(soloRan(s, H1, PERSONAL, runOf(s, endOf('lost', { hp: 0, down: true, saves: [2, 15, 3], life: 'dead' })), NO_LOOT, { day, ready: ctx() }));
-    expect(hunter(dying.save).life, 'the machine decides, not the end\'s claim').toEqual(twice);
   });
 
   test('a retreat pays its cost and leaves the gate open', () => {
@@ -138,7 +133,7 @@ describe('a run writes what the play left, in one write', () => {
   });
 
   test('a world gate the hunter fell in is entered, and pays nothing', () => {
-    const s = alone(), r = ok(soloRan(s, H1, WORLD, runOf(s, endOf('lost', { hp: 0, down: true, saves: [12, 12, 12], life: 'stable' })), NO_LOOT, { day, ready: ctx() }));
+    const s = alone(), r = ok(soloRan(s, H1, WORLD, runOf(s, endOf('lost', { hp: 0 })), NO_LOOT, { day, ready: ctx() }));
     expect(r.save.gates[0]!.status).toBe('raiding');
     expect(hunter(r.save).xp).toBe(0);
   });
@@ -151,11 +146,9 @@ describe('a run writes what the play left, in one write', () => {
 describe('who may enter, and the words of each refusal', () => {
   const s = alone();
   const why = (save: Save, gate: SoloGate, c: Partial<ReadyCtx> = {}) => { const r = soloReady(save, H1, gate, ctx(c)); return isRefused(r) ? r.why : 'ok'; };
-  test('the hunter: in a fight, down, dead, collapsed', () => {
+  test('the hunter: in a fight, dead, collapsed', () => {
     expect(why(s, PERSONAL)).toBe('ok');
     expect(why(s, PERSONAL, { held: true })).toBe('fight');
-    expect(why(alone({ life: { at: 'dying', successes: 0, failures: 0 } }), PERSONAL)).toBe('down');
-    expect(why(alone({ life: { at: 'stable' } }), PERSONAL)).toBe('down');
     expect(why(alone({ life: { at: 'dead' } }), PERSONAL)).toBe('dead');
     expect(why(alone({ collapsed: true }), PERSONAL)).toBe('collapsed');
     expect(why(alone({ penalty: { since: AT, days: 1, questId: 'q1' as never } }), PERSONAL), 'a penalty bars no gate').toBe('ok');
@@ -455,7 +448,7 @@ describe('a world gate open to solo runs, in a room', () => {
   });
 
   test('today a lost run of a gate the GM took out of solo runs still enters it (SMX-gates-2.2, as the app behaves until the ruling)', () => {
-    const s = gmSave([{ ...worldGate, solo: false }]), lost = { ...paidRun, outcome: 'lost' as const, life: 'stable' as const };
+    const s = gmSave([{ ...worldGate, solo: false }]), lost = { ...paidRun, outcome: 'lost' as const, life: 'dead' as const };
     expect(ok(soloTaken(s, lost, soloPlan(s, lost, RULES), null, NO_LOOT, TAKEN)).gates[0]!.status).toBe('raiding');
   });
 });
@@ -498,13 +491,13 @@ describe('the words of a solo run name the way back and speak to one hunter', ()
   });
 
   test('the card\'s odds line and the confirm read one hunter\'s chance from the same numbers', () => {
-    const end = (outcome: RunEnd['outcome'], life: RowEnd['life']): RunEnd => ({ outcome, rounds: 3, commands: 9, spent: [], party: { [ME]: { hp: 0, mana: 0, fatigue: 0, statuses: [], used: {}, down: life !== 'up', saves: [], life, lifeLeft: null, kills: [] } } });
-    const r = readOdds({ of: 4, rows: [{ id: ME, name: 'Mira', hpMax: 40, manaMax: 10, fatigueMax: 100 }], ends: [end('won', 'up'), end('lost', 'dead'), end('lost', 'dead'), end('lost', 'stable')] });
+    const end = (outcome: RunEnd['outcome'], life: RowEnd['life']): RunEnd => ({ outcome, rounds: 3, commands: 9, spent: [], party: { [ME]: { hp: 0, mana: 0, fatigue: 0, statuses: [], used: {}, life, lifeLeft: null, kills: [] } } });
+    const r = readOdds({ of: 4, rows: [{ id: ME, name: 'Mira', hpMax: 40, manaMax: 10, fatigueMax: 100 }], ends: [end('won', 'up'), end('lost', 'dead'), end('lost', 'dead'), end('lost', 'up')] });
     const line = oddsLine(r, 'alone'), confirm = soloConfirmLines(r);
     expect(line.startsWith(confirm[0]!)).toBe(true);
     expect(confirm[0]).toBe('You clear it in 25% of 4 plays.');
     expect(line).toContain(confirm[2]!);
-    expect(confirm[2]).toBe('Down in 75%, dead in 50%.');
+    expect(confirm[2]).toBe('Dead in 50%.');
     expect(line).not.toContain('party');
   });
 });

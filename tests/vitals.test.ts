@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   LIFE_STATES, LIFE_EVENT_TYPES, FATIGUE_STATES, VITAL_EVENT_TYPES, VITAL_TABLE, can, fatiguePast, fatigueState, vitalChipsOf, hpOf, lifeAfter, manaOf, newVitals, parseUsed,
-  refill, rest, usedOf, SAVES_TO_END, fatigueNews, lifeNews, vitalStep,
+  refill, rest, usedOf, fatigueNews, lifeNews, vitalStep,
 } from '../src/core/hunter/vitals.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import { abilityId } from '../src/core/combat/ability-types.ts';
@@ -31,55 +31,27 @@ const mana = (v: Vitals, delta: number, m: Maxima = M) => step(v, { type: 'mana'
 const fatigue = (v: Vitals, delta: number, m: Maxima = M) => step(v, { type: 'fatigue', delta }, m);
 
 const up = (hp: number): Life => ({ at: 'up', hp });
-const dying = (successes: 0 | 1 | 2, failures: 0 | 1 | 2): Life => ({ at: 'dying', successes, failures });
-const STABLE: Life = { at: 'stable' }, DEAD: Life = { at: 'dead' };
-/** One hunter in each state: up at 12 of 20 HP, dying with one success and one failure, stable, dead. */
-const SAMPLE: Record<LifeState, Life> = { up: up(12), dying: dying(1, 1), stable: STABLE, dead: DEAD };
+const DEAD: Life = { at: 'dead' };
+/** One hunter in each state: up at 12 of 20 HP, dead. */
+const SAMPLE: Record<LifeState, Life> = { up: up(12), dead: DEAD };
 
 describe('the life of a hunter: every state and event', () => {
-  // The death save numbers are today's (src/views/hunter.js before this model, and the rules reference: "d20, 10 or
-  // higher succeeds; three successes stabilize, three failures are fatal"): a 20 brings the hunter up at 1 HP, 10 to 19
-  // is a success, 2 to 9 a failure, a 1 counts as two failures. 'no change' means the event does not apply there.
+  // the owner, Nov 21: "Youre dead. You need to be ressed." At 0 HP a hunter is dead, and only a revive (the GM's, or a
+  // Resurrection Crystal) brings it back, at 1 HP. 'no change' means the event does not apply there.
   const rows: [LifeState, string, LifeEvent, Life | 'no change'][] = [
     ['up', 'damage 5: 12 - 5 = 7', { type: 'damage', amount: 5 }, up(7)],
-    ['up', 'damage 12: 12 - 12 = 0, dying with no saves yet', { type: 'damage', amount: 12 }, dying(0, 0)],
-    ['up', 'damage 50: well past 0, still just dying', { type: 'damage', amount: 50 }, dying(0, 0)],
+    ['up', 'damage 12: 12 - 12 = 0, dead', { type: 'damage', amount: 12 }, DEAD],
+    ['up', 'damage 50: well past 0, dead', { type: 'damage', amount: 50 }, DEAD],
     ['up', 'heal 5: 12 + 5 = 17', { type: 'heal', amount: 5 }, up(17)],
     ['up', 'heal 50: capped at the max of 20', { type: 'heal', amount: 50 }, up(20)],
     ['up', 'setHp 3', { type: 'setHp', hp: 3 }, up(3)],
-    ['up', 'setHp 0: dying', { type: 'setHp', hp: 0 }, dying(0, 0)],
+    ['up', 'setHp 0: dead', { type: 'setHp', hp: 0 }, DEAD],
     ['up', 'setHp 99: capped at 20', { type: 'setHp', hp: 99 }, up(20)],
-    ['up', 'deathSave', { type: 'deathSave', roll: 15 }, 'no change'],
-    ['up', 'stabilize', { type: 'stabilize' }, 'no change'],
     ['up', 'revive', { type: 'revive' }, 'no change'],
     ['up', 'maxChanged to 20 with 12 HP', { type: 'maxChanged' }, 'no change'],
-    ['dying', 'damage', { type: 'damage', amount: 5 }, 'no change'],
-    ['dying', 'heal 5: up from 0 at 5', { type: 'heal', amount: 5 }, up(5)],
-    ['dying', 'heal 50: up at the max of 20', { type: 'heal', amount: 50 }, up(20)],
-    ['dying', 'setHp 4', { type: 'setHp', hp: 4 }, up(4)],
-    ['dying', 'setHp 0', { type: 'setHp', hp: 0 }, 'no change'],
-    ['dying', 'deathSave 20: up at 1 HP', { type: 'deathSave', roll: 20 }, up(1)],
-    ['dying', 'deathSave 19: a second success', { type: 'deathSave', roll: 19 }, dying(2, 1)],
-    ['dying', 'deathSave 10: a second success', { type: 'deathSave', roll: 10 }, dying(2, 1)],
-    ['dying', 'deathSave 9: a second failure', { type: 'deathSave', roll: 9 }, dying(1, 2)],
-    ['dying', 'deathSave 2: a second failure', { type: 'deathSave', roll: 2 }, dying(1, 2)],
-    ['dying', 'deathSave 1: two failures on top of one is three: dead', { type: 'deathSave', roll: 1 }, DEAD],
-    ['dying', 'stabilize', { type: 'stabilize' }, STABLE],
-    ['dying', 'revive', { type: 'revive' }, 'no change'],
-    ['dying', 'maxChanged', { type: 'maxChanged' }, 'no change'],
-    ['stable', 'damage', { type: 'damage', amount: 5 }, 'no change'],
-    ['stable', 'heal 5', { type: 'heal', amount: 5 }, up(5)],
-    ['stable', 'setHp 4', { type: 'setHp', hp: 4 }, up(4)],
-    ['stable', 'setHp 0', { type: 'setHp', hp: 0 }, 'no change'],
-    ['stable', 'deathSave', { type: 'deathSave', roll: 20 }, 'no change'],
-    ['stable', 'stabilize', { type: 'stabilize' }, 'no change'],
-    ['stable', 'revive', { type: 'revive' }, 'no change'],
-    ['stable', 'maxChanged', { type: 'maxChanged' }, 'no change'],
     ['dead', 'damage', { type: 'damage', amount: 5 }, 'no change'],
     ['dead', 'heal 50', { type: 'heal', amount: 50 }, 'no change'],
     ['dead', 'setHp 20', { type: 'setHp', hp: 20 }, 'no change'],
-    ['dead', 'deathSave 20', { type: 'deathSave', roll: 20 }, 'no change'],
-    ['dead', 'stabilize', { type: 'stabilize' }, 'no change'],
     ['dead', 'revive: up at 1 HP', { type: 'revive' }, up(1)],
     ['dead', 'maxChanged', { type: 'maxChanged' }, 'no change'],
   ];
@@ -99,49 +71,19 @@ describe('the life of a hunter: every state and event', () => {
   test('can() says which events apply in each state: what the sheet and the GM board ask before they show a button', () => {
     expect(can(DEAD, 'revive')).toBe(true);
     expect(can(DEAD, 'heal')).toBe(false);
-    expect(can(dying(0, 0), 'deathSave')).toBe(true);
-    expect(can(dying(0, 0), 'stabilize')).toBe(true);
-    expect(can(STABLE, 'deathSave')).toBe(false);
-    expect(can(STABLE, 'stabilize')).toBe(false);
-    expect(can(up(5), 'deathSave')).toBe(false);
     expect(can(up(5), 'revive')).toBe(false);
+    expect(can(up(5), 'damage')).toBe(true);
   });
-});
-
-describe('death saves', () => {
-  test('three successes from fresh make the hunter stable', () => {
-    let life: Life = dying(0, 0);
-    for (const roll of [10, 12, 19]) life = lifeAfter(life, { type: 'deathSave', roll }, MAX);
-    expect(life).toEqual(STABLE);
-  });
-  test('three failures from fresh make the hunter dead, and nothing but a revive brings them back', () => {
-    let life: Life = dying(0, 0);
-    for (const roll of [2, 5, 9]) life = lifeAfter(life, { type: 'deathSave', roll }, MAX);
-    expect(life).toEqual(DEAD);
-    for (const e of [{ type: 'heal', amount: MAX }, { type: 'setHp', hp: MAX }, { type: 'deathSave', roll: 20 }, { type: 'stabilize' }] as LifeEvent[]) {
-      expect(lifeAfter(life, e, MAX), e.type).toEqual(DEAD);
-    }
-    expect(lifeAfter(life, { type: 'revive' }, MAX)).toEqual(up(1));
-  });
-  test('a 1 counts as two failures: a 1 then any failure is dead', () => {
-    const once = lifeAfter(dying(0, 0), { type: 'deathSave', roll: 1 }, MAX);
-    expect(once).toEqual(dying(0, 2));
-    expect(lifeAfter(once, { type: 'deathSave', roll: 9 }, MAX)).toEqual(DEAD);
-  });
-  test('a roll that is not a whole number from 1 to 20 changes nothing', () => {
-    for (const roll of [0, 21, 3.5, Number.NaN]) expect(lifeAfter(dying(1, 1), { type: 'deathSave', roll }, MAX)).toEqual(dying(1, 1));
-  });
-  test('falling again after getting up starts the saves from nothing', () => {
-    const back = lifeAfter(dying(2, 2), { type: 'heal', amount: 3 }, MAX);
-    expect(lifeAfter(back, { type: 'damage', amount: 3 }, MAX)).toEqual(dying(0, 0));
+  test('the hunter\'s life has two states, up and dead: nothing between them', () => {
+    expect([...LIFE_STATES]).toEqual(['up', 'dead']);
   });
 });
 
 describe('HP and the maximum', () => {
-  test('hpOf reads HP up to the maximum, and 0 for a hunter who is down', () => {
+  test('hpOf reads HP up to the maximum, and 0 for a hunter who is dead', () => {
     expect(hpOf(up(12), MAX)).toBe(12);
     expect(hpOf(up(30), MAX)).toBe(20);
-    for (const life of [dying(0, 0), STABLE, DEAD]) expect(hpOf(life, MAX)).toBe(0);
+    expect(hpOf(DEAD, MAX)).toBe(0);
   });
   test('a lower maximum brings HP down to it; a higher one does not raise HP', () => {
     expect(lifeAfter(up(18), { type: 'maxChanged' }, 15)).toEqual(up(15));
@@ -201,29 +143,25 @@ describe('vitals: mana, fatigue, rests and the refill', () => {
     expect(after).toEqual({ life: up(20), mana: 10, fatigue: 0, collapsed: false, used: {} });
     expect(rest(v({ fatigue: 120, collapsed: true }), 'long', BIG, R)).toMatchObject({ fatigue: 0, collapsed: false });
   });
-  test('a rest brings a dying or stable hunter up, but not a dead one', () => {
-    expect(rest(v({ life: dying(1, 2) }), 'short', M, R).life).toEqual(up(5));
-    expect(rest(v({ life: STABLE }), 'long', M, R).life).toEqual(up(20));
+  test('a rest does not raise the dead', () => {
+    expect(rest(v({ life: DEAD }), 'short', M, R).life).toEqual(DEAD);
     expect(rest(v({ life: DEAD }), 'long', M, R).life).toEqual(DEAD);
   });
   test('the level-up refill fills HP and mana, but does not raise the dead', () => {
     expect(refill(v({ life: up(3), mana: 1 }), M)).toMatchObject({ life: up(20), mana: 10 });
-    expect(refill(v({ life: STABLE, mana: 1 }), M)).toMatchObject({ life: up(20), mana: 10 });
     expect(refill(v({ life: DEAD, mana: 1 }), M)).toMatchObject({ life: DEAD, mana: 10 });
   });
   test('a lower maximum brings HP, mana and fatigue down to it', () => {
     expect(vitalStep(v({ life: up(20), mana: 10, fatigue: 90 }), { type: 'maxChanged' }, { hpMax: 15, manaMax: 6, fatigueMax: 80 }, R)).toMatchObject({ life: up(15), mana: 6, fatigue: 80 });
   });
-  test('the chips drawn from the state: Down while dying or stable, Dead when dead, Exhausted while collapsed', () => {
+  test('the chips drawn from the state: Dead when dead, Exhausted while collapsed', () => {
     expect(vitalChipsOf(v({}))).toEqual([]);
-    expect(vitalChipsOf(v({ life: dying(0, 0) }))).toEqual(['down']);
-    expect(vitalChipsOf(v({ life: STABLE }))).toEqual(['down']);
     expect(vitalChipsOf(v({ life: DEAD, collapsed: true }))).toEqual(['dead', 'exhausted']);
   });
 });
 
 describe('every sequence of up to 5 events keeps the invariants', () => {
-  // Up: HP from 1 to the max. Dying: each counter 0 to 2. Dead: only a revive leaves it. Every answer is a new object.
+  // Up: HP from 1 to the max. Dead: only a revive leaves it. Every answer is a new object.
   const events = WALK_EVENTS;
   test('the event list covers every event type', () => {
     expect(new Set(events.map(e => e.type))).toEqual(new Set<LifeEventType>(LIFE_EVENT_TYPES));
@@ -232,8 +170,7 @@ describe('every sequence of up to 5 events keeps the invariants', () => {
     let checked = 0;
     const bad: string[] = [];
     const broken = (life: Life, max: number): boolean =>
-      (life.at === 'up' && !(Number.isInteger(life.hp) && life.hp >= 1 && life.hp <= max))
-      || (life.at === 'dying' && ![life.successes, life.failures].every(n => n === 0 || n === 1 || n === 2));
+      life.at === 'up' && !(Number.isInteger(life.hp) && life.hp >= 1 && life.hp <= max);
     const walk = (life: Life, max: number, path: string[], depth: number): void => {
       checked++;
       if (broken(life, max)) bad.push(`${path.join(' > ')}: ${JSON.stringify(life)}`);
@@ -246,8 +183,8 @@ describe('every sequence of up to 5 events keeps the invariants', () => {
       }
     };
     for (const s of LIFE_STATES) walk(SAMPLE[s], MAX, [s], 0);
-    // 4 starts, 12 events, depths 0 to 5: 4 x (1 + 12 + 12^2 + 12^3 + 12^4 + 12^5) = 4 x 271,453
-    expect(checked).toBe(4 * 271_453);
+    // 2 starts, 7 events, depths 0 to 5: 2 x (1 + 7 + 7^2 + 7^3 + 7^4 + 7^5) = 2 x 19,608
+    expect(checked).toBe(2 * 19_608);
     expect(bad.slice(0, 5)).toEqual([]);
   });
 });
@@ -277,35 +214,19 @@ describe('uses spent this rest (kits design 1.4, table 2.3)', () => {
 
 describe('what a change of life was, as the player reads it (lifeNews)', () => {
   const news = (life: Life, e: LifeEvent) => lifeNews(life, lifeAfter(life, e, MAX));
-  test('damage to 0 is a fall; damage that leaves HP is nothing to tell', () => {
-    expect(news(up(5), { type: 'damage', amount: 5 })).toEqual({ kind: 'fell' });
+  test('damage to 0 is a death; damage that leaves HP is nothing to tell', () => {
+    expect(news(up(5), { type: 'damage', amount: 5 })).toEqual({ kind: 'died' });
+    expect(news(up(5), { type: 'setHp', hp: 0 })).toEqual({ kind: 'died' });
     expect(news(up(5), { type: 'damage', amount: 4 })).toBeNull();
   });
-  test('a death save of 10 or more is a success and of 9 or less a failure, with the count the table keeps', () => {
-    expect(news(dying(0, 0), { type: 'deathSave', roll: 10 })).toEqual({ kind: 'saved', successes: 1 });
-    expect(news(dying(0, 0), { type: 'deathSave', roll: 9 })).toEqual({ kind: 'failed', failures: 1 });
-    expect(news(dying(0, 0), { type: 'deathSave', roll: 1 }), 'a natural 1 is two failures').toEqual({ kind: 'failed', failures: 2 });
-  });
-  test('the third success is stable, the third failure dead, a natural 20 up again', () => {
-    expect(news(dying(2, 0), { type: 'deathSave', roll: 12 })).toEqual({ kind: 'stable' });
-    expect(news(dying(0, 2), { type: 'deathSave', roll: 3 })).toEqual({ kind: 'died' });
-    expect(news(dying(1, 1), { type: 'deathSave', roll: 20 })).toEqual({ kind: 'raised' });
-  });
-  test('a heal from down and the GM\'s revive raise; the GM\'s stabilize is stable', () => {
-    expect(news(STABLE, { type: 'heal', amount: 3 })).toEqual({ kind: 'raised' });
+  test('the GM\'s revive raises the dead', () => {
     expect(news(DEAD, { type: 'revive' })).toEqual({ kind: 'raised' });
-    expect(news(dying(1, 2), { type: 'stabilize' })).toEqual({ kind: 'stable' });
   });
-  test('an event the state does not take is nothing to tell: a refused write never says the hunter is dying', () => {
-    for (const life of [up(5), dying(1, 1), STABLE, DEAD]) for (const t of LIFE_EVENT_TYPES) {
+  test('an event the state does not take is nothing to tell: a heal of the dead raises nobody', () => {
+    for (const life of [up(5), DEAD]) for (const t of LIFE_EVENT_TYPES) {
       if (can(life, t)) continue;
-      expect(news(life, { type: t, amount: 3, hp: 3, roll: 15 } as LifeEvent)).toBeNull();
+      expect(news(life, { type: t, amount: 3, hp: 3 } as LifeEvent)).toBeNull();
     }
-  });
-  test(`the dying ends at ${SAVES_TO_END} of either, which the death panel's pips count to`, () => {
-    let life: Life = dying(0, 0);
-    for (let i = 1; i < SAVES_TO_END; i++) { life = lifeAfter(life, { type: 'deathSave', roll: 15 }, MAX); expect(life.at).toBe('dying'); }
-    expect(lifeAfter(life, { type: 'deathSave', roll: 15 }, MAX)).toEqual(STABLE);
   });
 });
 
@@ -344,21 +265,20 @@ describe('the way back from dead, named the same everywhere', () => {
     expect(crystals.length).toBeGreaterThan(0);
     for (const c of crystals) expect(c.name).toMatch(/^Resurrection Crystal \([EDCBAS]\)$/);
     expect(WAYS_BACK).toBe('The GM\'s Revive or a Resurrection Crystal');
-    expect(STATE_CHIP_DEFS.dead.desc).toBe(`Three failed death saves. ${WAYS_BACK} brings the hunter back.`);
+    expect(STATE_CHIP_DEFS.dead.desc).toBe(`HP reached 0. ${WAYS_BACK} brings the hunter back, with every status gone.`);
   });
 });
 
 describe('the vitals machine: every life state against every event (vitalStep)', () => {
   // Each state starts with 4 of 10 mana, fatigue 90 of 100, not collapsed, one use spent. Worked from the rules above:
   // a short rest gives back ceil(25% of 20) = 5 HP, ceil(50% of 10) = 5 mana and takes 25 fatigue off; a long rest
-  // gives back all of them and the uses. A heal of the dead and damage to the down are the life table's refusals.
+  // gives back all of them and the uses. A heal of the dead and a revive of the living are the life table's refusals.
   const USED = { [abilityId('dash')]: 1 };
   const start = (life: Life): Vitals => ({ life, mana: 4, fatigue: 90, collapsed: false, used: USED });
   /** The lower maxima `maxChanged` is played with: 10 HP, 3 mana, a capacity of 80. */
   const LOW: Maxima = { hpMax: 10, manaMax: 3, fatigueMax: 80 };
   const EVENTS: Record<string, VitalEvent> = {
     'damage 5': { type: 'damage', amount: 5 }, 'heal 6': { type: 'heal', amount: 6 }, 'HP set to 9': { type: 'setHp', hp: 9 },
-    'a death save of 15': { type: 'deathSave', roll: 15 }, 'stabilize': { type: 'stabilize' },
     'the GM\'s revive': { type: 'revive', by: 'gm' }, 'a crystal\'s revive': { type: 'revive', by: 'item' },
     '+3 mana': { type: 'mana', delta: 3 }, 'a price of 3 mana': { type: 'spend', mana: 3 }, 'a price of 5 mana': { type: 'spend', mana: 5 },
     '+10 fatigue': { type: 'fatigue', delta: 10 }, 'a refill': { type: 'refill' },
@@ -371,29 +291,15 @@ describe('the vitals machine: every life state against every event (vitalStep)',
   const TOTALS = (): Vitals => ({ life: up(20), mana: 10, fatigue: 100, collapsed: true, used: {} });
   const EXPECTED: Record<LifeState, Record<string, Out>> = {
     up: {
-      'damage 5': was(up(7)), 'heal 6': was(up(18)), 'HP set to 9': was(up(9)), 'a death save of 15': 'cannot', 'stabilize': 'cannot',
+      'damage 5': was(up(7)), 'heal 6': was(up(18)), 'HP set to 9': was(up(9)),
       'the GM\'s revive': 'cannot', 'a crystal\'s revive': 'cannot', '+3 mana': was(L.up, { mana: 7 }), 'a price of 3 mana': was(L.up, { mana: 1 }),
       'a price of 5 mana': 'mana', '+10 fatigue': was(L.up, { fatigue: 100, collapsed: true }), 'a refill': was(up(20), { mana: 10 }),
       'a short rest': was(up(17), { mana: 9, fatigue: 65 }), 'a long rest': was(up(20), { mana: 10, fatigue: 0, used: {} }),
       'lower maxima': was(up(10), { mana: 3, fatigue: 80 }), 'the fight\'s totals': TOTALS(),
     },
-    dying: {
-      'damage 5': 'cannot', 'heal 6': was(up(6)), 'HP set to 9': was(up(9)), 'a death save of 15': was(dying(2, 1)), 'stabilize': was(STABLE),
-      'the GM\'s revive': 'cannot', 'a crystal\'s revive': 'cannot', '+3 mana': was(L.dying, { mana: 7 }), 'a price of 3 mana': was(L.dying, { mana: 1 }),
-      'a price of 5 mana': 'mana', '+10 fatigue': was(L.dying, { fatigue: 100, collapsed: true }), 'a refill': was(up(20), { mana: 10 }),
-      'a short rest': was(up(5), { mana: 9, fatigue: 65 }), 'a long rest': was(up(20), { mana: 10, fatigue: 0, used: {} }),
-      'lower maxima': was(L.dying, { mana: 3, fatigue: 80 }), 'the fight\'s totals': TOTALS(),
-    },
-    stable: {
-      'damage 5': 'cannot', 'heal 6': was(up(6)), 'HP set to 9': was(up(9)), 'a death save of 15': 'cannot', 'stabilize': 'cannot',
-      'the GM\'s revive': 'cannot', 'a crystal\'s revive': 'cannot', '+3 mana': was(STABLE, { mana: 7 }), 'a price of 3 mana': was(STABLE, { mana: 1 }),
-      'a price of 5 mana': 'mana', '+10 fatigue': was(STABLE, { fatigue: 100, collapsed: true }), 'a refill': was(up(20), { mana: 10 }),
-      'a short rest': was(up(5), { mana: 9, fatigue: 65 }), 'a long rest': was(up(20), { mana: 10, fatigue: 0, used: {} }),
-      'lower maxima': was(STABLE, { mana: 3, fatigue: 80 }), 'the fight\'s totals': TOTALS(),
-    },
     // SMX-rules-1.2 waits on the owner: a dead hunter's refill and rests are taken today, the life staying dead.
     dead: {
-      'damage 5': 'cannot', 'heal 6': 'cannot', 'HP set to 9': 'cannot', 'a death save of 15': 'cannot', 'stabilize': 'cannot',
+      'damage 5': 'cannot', 'heal 6': 'cannot', 'HP set to 9': 'cannot',
       'the GM\'s revive': was(up(1)), 'a crystal\'s revive': was(up(1)), '+3 mana': was(DEAD, { mana: 7 }), 'a price of 3 mana': was(DEAD, { mana: 1 }),
       'a price of 5 mana': 'mana', '+10 fatigue': was(DEAD, { fatigue: 100, collapsed: true }), 'a refill': was(DEAD, { mana: 10 }),
       'a short rest': was(DEAD, { mana: 9, fatigue: 65 }), 'a long rest': was(DEAD, { mana: 10, fatigue: 0, used: {} }),

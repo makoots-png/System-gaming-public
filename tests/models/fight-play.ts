@@ -23,7 +23,7 @@ import { abilityOf } from '../../src/core/registry/ability-kinds.ts';
 import { needs } from '../../src/core/combat/resolve.ts';
 import type { Aim, Rolls } from '../../src/core/combat/resolve.ts';
 import { fightId, pendingKey } from '../../src/core/combat/fight.ts';
-import type { Command, Ctx, Fight, NewRow, Opening, RowLifeEvent } from '../../src/core/combat/fight.ts';
+import type { Command, Ctx, Fight, NewRow, Opening } from '../../src/core/combat/fight.ts';
 import { zoneId } from '../../src/core/combat/zones.ts';
 import { EXTRACTION_OUTCOMES } from '../../src/core/combat/extraction.ts';
 import type { Zone } from '../../src/core/combat/zones.ts';
@@ -232,14 +232,10 @@ const gmAdjust = (g: Rng, id: CombatantId): Command => ({
   ...(g.chance(0.1) ? { used: { ability: g.pick([HEMOPLAGUE.id, SPRITE.id, STRIKE.id]), spent: g.int(0, 2) } } : {}),
 });
 
-/**
- * The fight's `life` command (row-life.ts): the GM's Revive or Stabilize, or a death save of a d20, mostly on a row that
- * is down so most land; on any other row the fight refuses it.
- */
-function gmLife(g: Rng, fight: Fight, anyId: () => CombatantId): Command {
-  const event = g.pick<RowLifeEvent>([{ type: 'revive' }, { type: 'stabilize' }, { type: 'deathSave', roll: g.int(1, 20) }]);
+/** The GM's Revive, mostly of a row that is dead so most land; on any other row the fight refuses it. */
+function gmRevive(g: Rng, fight: Fight, anyId: () => CombatantId): Command {
   const down = fight.rows.filter(r => !isUp(r));
-  return { type: 'life', id: down.length && g.chance(0.8) ? g.pick(down).id : anyId(), event };
+  return { type: 'revive', id: down.length && g.chance(0.8) ? g.pick(down).id : anyId() };
 }
 
 // ── the GM's ground: paint and zones ──
@@ -293,7 +289,7 @@ export function randomCommand(g: Rng, fight: Fight | null, fresh: () => string):
     return g.chance(0.8) ? { type: 'clear' } : g.pick<Command>([{ type: 'end' }, { type: 'extract', id: corpse(), by: fight.rows.find(r => r.kind === 'hunter')?.id ?? combatantId('c-ghost'), outcome: EXTRACTION_OUTCOMES[fight.log.length % EXTRACTION_OUTCOMES.length]! }]);
   }
   if (fight.phase === 'setup') {
-    const kind = g.pick(['start', 'start', 'start', 'add', 'remove', 'place', 'intent', 'reveal', 'end', 'act', 'adjust', 'refill', 'life', 'status', 'ground', 'fudge'] as const);
+    const kind = g.pick(['start', 'start', 'start', 'add', 'remove', 'place', 'intent', 'reveal', 'end', 'act', 'adjust', 'refill', 'revive', 'status', 'ground', 'fudge'] as const);
     switch (kind) {
       case 'start': return { type: 'start', openings: openingsOf(g, g.chance(0.9) ? fight.rows : fight.rows.slice(1)) };
       case 'add': return { type: 'add', fightId: fightId(fresh()), rows: [monster()], openings: [] };
@@ -305,7 +301,7 @@ export function randomCommand(g: Rng, fight: Fight | null, fresh: () => string):
       case 'act': return { type: 'act', by: anyId(), ability: abilityId('strike'), aim: anyId(), rolls: { dice: {}, react: {} } };
       case 'adjust': return gmAdjust(g, anyId());
       case 'refill': return { type: 'refill', id: anyId() };
-      case 'life': return gmLife(g, fight, anyId);
+      case 'revive': return gmRevive(g, fight, anyId);
       case 'status': return gmStatus(g, anyId());
       case 'ground': return ground(g, fight, () => fight.rows.length ? g.pick(fight.rows).place : anyPlace(g));
       case 'fudge': return gmFudge(g, anyId());
@@ -316,7 +312,7 @@ export function randomCommand(g: Rng, fight: Fight | null, fresh: () => string):
   const user = fight.rows.find(r => r.id === by) ?? cur;
   const kind = g.pick([
     'act', 'act', 'act', 'act', 'act', 'act', 'move', 'move', 'pass', 'pass', 'release', 'settle', 'settle', 'intent', 'reveal', 'place', 'add',
-    'remove', 'end', 'force', 'adjust', 'refill', 'life', 'status', 'ground', 'ground', 'arm', 'fudge',
+    'remove', 'end', 'force', 'adjust', 'refill', 'revive', 'status', 'ground', 'ground', 'arm', 'fudge',
   ] as const);
   switch (kind) {
     case 'act': case 'force': {
@@ -352,7 +348,7 @@ export function randomCommand(g: Rng, fight: Fight | null, fresh: () => string):
     case 'end': return g.chance(0.5) ? { type: 'end' } : { type: 'clear' };
     case 'adjust': return gmAdjust(g, anyId());
     case 'refill': return { type: 'refill', id: anyId() };
-    case 'life': return gmLife(g, fight, anyId);
+    case 'revive': return gmRevive(g, fight, anyId);
     case 'status': return gmStatus(g, g.chance(0.3) ? cur.id : anyId());
     case 'ground': return ground(g, fight, () => g.pick(fight.rows).place);
     case 'fudge': return gmFudge(g, anyId());

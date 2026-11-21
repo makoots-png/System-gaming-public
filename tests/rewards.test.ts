@@ -78,8 +78,8 @@ describe('hostile input', () => {
     expect([r.items, r.skills, r.boons, r.statuses]).toEqual([[POTION], [SLASH], [], [{ key: 'hasted', rounds: 3 }]]);
   });
 
-  test('a status drawn from a hunter\'s state (Dead, Down, Exhausted, Penalized) cannot be given', () => {
-    expect(read({ statuses: ['dead', 'down', 'exhausted', 'penalized', 'hasted'].map(key => ({ key, rounds: 1 })) }).statuses).toEqual([{ key: 'hasted', rounds: 1 }]);
+  test('a status drawn from a hunter\'s state (Dead, Exhausted, Penalized) cannot be given', () => {
+    expect(read({ statuses: ['dead', 'exhausted', 'penalized', 'hasted'].map(key => ({ key, rounds: 1 })) }).statuses).toEqual([{ key: 'hasted', rounds: 1 }]);
   });
 
   test('a title without a name is none; its bonus keeps the eight stats, max HP and max mana where they are not 0', () => {

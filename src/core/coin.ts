@@ -51,8 +51,8 @@ export type RollFacts = {
 const PLAIN_D20 = /^1?d20([+-]\d+)*$/i;
 /**
  * The one rule: a roll calls the coin when its d20 shows a natural 1 or 20, it is a check (a stat check, or a Dice view
- * roll of one d20 and flat numbers), and the hunter is not in a running fight. A death save, an extraction and the
- * fight's d20 are true rolls.
+ * roll of one d20 and flat numbers), and the hunter is not in a running fight. An extraction and the fight's d20
+ * are true rolls.
  */
 export function isCoinRoll(r: RollFacts): r is RollFacts & { natural: CoinNatural } {
   if (r.inFight || (r.natural !== 1 && r.natural !== 20)) return false;

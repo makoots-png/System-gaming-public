@@ -39,7 +39,7 @@ Where it lives:
 
 ## A fight
 
-The 2,500 random fights of tests/fight-model.test.ts, each of 10 to 49 commands from no fight. The walk found 37468 states and 73570 steps.
+The 2,500 random fights of tests/fight-model.test.ts, each of 10 to 49 commands from no fight. The walk found 37531 states and 73570 steps.
 
 ### A fight, from building it to its summary
 
@@ -56,8 +56,8 @@ stateDiagram-v2
   s1 --> s2 : the GM adds combatants
   s2 --> s3 : the GM starts it, everyone rolls an opening
   s2 --> s4 : the GM ends it before it starts
-  s4 --> s1 : the GM closes it
   s3 --> s4 : the GM ends it
+  s4 --> s1 : the GM closes it
   s3 --> s1 : the GM closes it
   s3 --> s4 : a side has nobody standing
 ```
@@ -1086,7 +1086,7 @@ Where it lives:
 
 ## A hunter's life
 
-Every life reachable from a new hunter (up at 20 of 20 HP) under the 12 events of the walk in tests/vitals.test.ts (tests/models/life-events.ts), breadth first. The walk found 54 states and 648 steps.
+Every life reachable from a new hunter (up at 20 of 20 HP) under the 7 events of the walk in tests/vitals.test.ts (tests/models/life-events.ts), breadth first. The walk found 34 states and 238 steps.
 
 ### A hunter's life, from up to dead and back
 
@@ -1096,26 +1096,16 @@ title: A hunter's life, from up to dead and back
 ---
 stateDiagram-v2
   state "Up" as s1
-  state "Dying" as s2
-  state "Stable" as s3
-  state "Dead" as s4
+  state "Dead" as s2
   [*] --> s1
   s1 --> s2 : damage takes HP to 0
   s1 --> s2 : HP set to 0 on the bar
-  s2 --> s1 : healed (a heal, a rest or a refill)
-  s2 --> s1 : HP set above 0 on the bar
-  s2 --> s1 : a death save of 20, up at 1 HP
-  s2 --> s3 : the GM taps Stabilize
-  s2 --> s4 : a third death save fails (a 1 counts as two)
-  s3 --> s1 : healed (a heal, a rest or a refill)
-  s3 --> s1 : HP set above 0 on the bar
-  s4 --> s1 : the GM taps Revive or a Resurrection Crystal is used, up at 1 HP
-  s2 --> s3 : a third death save succeeds
+  s2 --> s1 : the GM taps Revive or a Resurrection Crystal is used, up at 1 HP, every status gone
 ```
 
-The chart shows what the sheet, the GM board and a combat card say of a hunter. Everything that keeps the hunter up stays in Up: damage that leaves HP above 0, a heal, a lower maximum. A dying hunter's first and second saves, of either kind, stay in Dying; the pips count them, and getting up clears them. Damage to a hunter who is down changes nothing. Only a revive leaves Dead, the GM's Revive or a Resurrection Crystal used from the bag outside a fight: healing, a rest and a refill do not. MP, fatigue and a collapse are kept beside the life and are not drawn.
+The chart shows what the sheet, the GM board and a combat card say of a hunter. Everything that keeps the hunter up stays in Up: damage that leaves HP above 0, a heal, a lower maximum. At 0 HP the hunter is dead: there are no death saves. Only a revive leaves Dead, the GM's Revive or a Resurrection Crystal used from the bag outside a fight, and it takes off every status the hunter holds, so a poison does not kill it again: healing, a rest and a refill do not. MP, fatigue and a collapse are kept beside the life and are not drawn.
 
-4 chart states, 11 arrows. No step is hidden.
+2 chart states, 3 arrows. No step is hidden.
 
 Where it lives:
 
@@ -1123,7 +1113,7 @@ Where it lives:
 |---|---|
 | The union | `Life`, `LifeEvent` and `LIFE_STATES` in `src/core/hunter/vitals.ts` |
 | What changes it | `lifeAfter(life, event, hpMax)` and its `TABLE`; on a sheet `vitalStep` and its `VITAL_TABLE` (the life's events through `TABLE`), called by `sheetEdit` in `src/core/hunter/grant.ts`; `can(life, eventType)` for a button |
-| Who calls it | `lifeEvent` and `api.life` in `src/views/hunter.js`, through `sheetEdit` (the sheet; the GM board's Revive in `src/views/gm.js` calls `api.life`), `useItem` in `src/core/hunter/use.ts` (a Resurrection Crystal, through `sheetEdit`), and in a fight `rowLifeAfter` in `src/core/combat/row-life.ts`, the one writer of a hunter row's life, which the `vitals` write-back carries to the sheet |
+| Who calls it | `lifeEvent` and `api.revive` in `src/views/hunter.js`, through `sheetEdit` (the sheet; the GM board's Revive in `src/views/gm.js` calls `api.revive`), `useItem` in `src/core/hunter/use.ts` (a Resurrection Crystal, through `sheetEdit`), and in a fight `rowLifeAfter` in `src/core/combat/row-life.ts`, the one writer of a hunter row's life, which the `vitals` write-back carries to the sheet |
 | The test to copy | `tests/vitals.test.ts`; the walk's events are in `tests/models/life-events.ts` |
 | The recipe | docs/guide/hunters.md, "To add a field to a hunter" (a new life state or event) |
 
@@ -1170,7 +1160,7 @@ Where it lives:
 
 ## A foe's life in a fight
 
-Every life reachable from a foe up at 20 of 20 HP under the 12 events of the hunter's life walk (tests/models/life-events.ts), breadth first. The walk found 34 states and 408 steps.
+Every life reachable from a foe up at 20 of 20 HP under the 7 events of the hunter's life walk (tests/models/life-events.ts), breadth first. The walk found 34 states and 238 steps.
 
 ### A monster, shadow or summon in a fight, from up to defeated and back
 
@@ -1187,7 +1177,7 @@ stateDiagram-v2
   s2 --> s1 : the GM taps Revive, up at 1 HP
 ```
 
-The chart shows what a combat card says of a row that is not a hunter. Damage that leaves HP above 0, a heal and a lower maximum stay in Up. At 0 HP the row is defeated and gone from the map: no heal, no GM's hand edit and no regeneration lifts it, only the GM's Revive. A foe is never dying: death saves and Stabilize are a hunter's (see "A hunter's life").
+The chart shows what a combat card says of a row that is not a hunter. Damage that leaves HP above 0, a heal and a lower maximum stay in Up. At 0 HP the row is defeated and gone from the map: no heal, no GM's hand edit and no regeneration lifts it, only the GM's Revive. A hunter's life follows the same states (see "A hunter's life").
 
 2 chart states, 3 arrows. No step is hidden.
 
@@ -1197,7 +1187,7 @@ Where it lives:
 |---|---|
 | The union | `FoeLife` and `FOE_LIFE_STATES` in `src/core/combat/row-life.ts`; a row holds it by its kind (`BodyLife` in `src/core/combat/effect-ops.ts`) |
 | What changes it | `foeLifeAfter(life, event, hpMax)` and its `FOE_TABLE`; `rowLifeAfter(row, event)`, the one writer of a row's life, picks this table or the hunter's by the row's kind |
-| Who calls it | every HP change of the fight through `rowLifeAfter` (`hurt` and `healed` in `land.ts`, `payDue` in `fight-turn.ts`, an HP price in `charge.ts`, `withStatuses` in `effect-ops.ts`, `adjust` and the `life` command in `fight.ts`) |
+| Who calls it | every HP change of the fight through `rowLifeAfter` (`hurt` and `healed` in `land.ts`, `payDue` in `fight-turn.ts`, an HP price in `charge.ts`, `withStatuses` in `effect-ops.ts`, `adjust` and the `revive` command in `fight.ts`) |
 | The test to copy | `tests/fight.test.ts`, "a row's life" |
 | The recipe | docs/guide/combat.md, "Where a fight row's life changes" |
 

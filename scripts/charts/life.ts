@@ -11,19 +11,14 @@ import { bfs, machine } from '../statecharts.ts';
 type Hunter = { life: Life; hpMax: number };
 
 /** The words of the sheet and the GM's cards (`LIFE_TAG` in src/core/hunter/vitals.ts), with Up for a hunter on their feet. */
-const LABEL: { readonly [S in LifeState]: string } = { up: 'Up', dying: 'Dying', stable: 'Stable', dead: 'Dead' };
+const LABEL: { readonly [S in LifeState]: string } = { up: 'Up', dead: 'Dead' };
 
 function step(e: LifeEvent, from: Hunter, to: Hunter): string {
   switch (e.type) {
     case 'damage': return 'damage takes HP to 0';
-    case 'heal': return 'healed (a heal, a rest or a refill)';
-    case 'setHp': return to.life.at === 'up' ? 'HP set above 0 on the bar' : 'HP set to 0 on the bar';
-    case 'deathSave':
-      if (to.life.at === 'up') return 'a death save of 20, up at 1 HP';
-      return to.life.at === 'stable' ? 'a third death save succeeds' : 'a third death save fails (a 1 counts as two)';
-    case 'stabilize': return 'the GM taps Stabilize';
-    case 'revive': return 'the GM taps Revive or a Resurrection Crystal is used, up at 1 HP';
-    case 'maxChanged': throw new Error(`maxChanged moved a life from ${from.life.at} to ${to.life.at}, which the chart has no label for`);
+    case 'setHp': return 'HP set to 0 on the bar';
+    case 'revive': return 'the GM taps Revive or a Resurrection Crystal is used: up at 1 HP, every status gone';
+    case 'heal': case 'maxChanged': throw new Error(`maxChanged moved a life from ${from.life.at} to ${to.life.at}, which the chart has no label for`);
   }
 }
 
@@ -39,7 +34,7 @@ export const life = machine<Hunter, LifeEvent>({
   kindsOf: h => [h.life.at],
   views: [{
     title: 'A hunter\'s life, from up to dead and back',
-    note: 'The chart shows what the sheet, the GM board and a combat card say of a hunter. Everything that keeps the hunter up stays in Up: damage that leaves HP above 0, a heal, a lower maximum. A dying hunter\'s first and second saves, of either kind, stay in Dying; the pips count them, and getting up clears them. Damage to a hunter who is down changes nothing. Only a revive leaves Dead, the GM\'s Revive or a Resurrection Crystal used from the bag outside a fight: healing, a rest and a refill do not. MP, fatigue and a collapse are kept beside the life and are not drawn.',
+    note: 'The chart shows what the sheet, the GM board and a combat card say of a hunter. Everything that keeps the hunter up stays in Up: damage that leaves HP above 0, a heal, a lower maximum. At 0 HP the hunter is dead: there are no death saves. Only a revive leaves Dead, the GM\'s Revive or a Resurrection Crystal used from the bag outside a fight, and it takes off every status the hunter holds, so a poison does not kill it again: healing, a rest and a refill do not. MP, fatigue and a collapse are kept beside the life and are not drawn.',
     hides: '',
     state: h => LABEL[h.life.at],
     step,
@@ -47,7 +42,7 @@ export const life = machine<Hunter, LifeEvent>({
   where: [
     ['The union', '`Life`, `LifeEvent` and `LIFE_STATES` in `src/core/hunter/vitals.ts`'],
     ['What changes it', '`lifeAfter(life, event, hpMax)` and its `TABLE`; on a sheet `vitalStep` and its `VITAL_TABLE` (the life\'s events through `TABLE`), called by `sheetEdit` in `src/core/hunter/grant.ts`; `can(life, eventType)` for a button'],
-    ['Who calls it', '`lifeEvent` and `api.life` in `src/views/hunter.js`, through `sheetEdit` (the sheet; the GM board\'s Revive in `src/views/gm.js` calls `api.life`), `useItem` in `src/core/hunter/use.ts` (a Resurrection Crystal, through `sheetEdit`), and in a fight `rowLifeAfter` in `src/core/combat/row-life.ts`, the one writer of a hunter row\'s life, which the `vitals` write-back carries to the sheet'],
+    ['Who calls it', '`lifeEvent` and `api.revive` in `src/views/hunter.js`, through `sheetEdit` (the sheet; the GM board\'s Revive in `src/views/gm.js` calls `api.revive`), `useItem` in `src/core/hunter/use.ts` (a Resurrection Crystal, through `sheetEdit`), and in a fight `rowLifeAfter` in `src/core/combat/row-life.ts`, the one writer of a hunter row\'s life, which the `vitals` write-back carries to the sheet'],
     ['The test to copy', '`tests/vitals.test.ts`; the walk\'s events are in `tests/models/life-events.ts`'],
     ['The recipe', 'docs/guide/hunters.md, "To add a field to a hunter" (a new life state or event)'],
   ],

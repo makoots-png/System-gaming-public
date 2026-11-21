@@ -765,7 +765,7 @@ describe('a status\'s own life on its bearer (SMX-rules-2)', () => {
       expect([f0.phase === 'running' && f0.currentId, f0.phase === 'running' && f0.now]).toEqual([M, 950]);
       expect(rowIn(f0, A).statuses.map(s => [s.key, s.owed])).toEqual([['ward', true]]);
       const hit = play(...begin([ward({ op: 'invulnerable' })]), { type: 'act', by: M, ability: BIG.id, aim: A, rolls: { dice: {}, react: { [A]: 10 } as Record<CombatantId, number> } });
-      expect([rowHp(rowIn(hit, A)), rowIn(hit, A).life.at]).toEqual([0, 'dying']);
+      expect([rowHp(rowIn(hit, A)), rowIn(hit, A).life.at]).toEqual([0, 'dead']);
     });
 
     test('a Strength buff that ran out at 500 is off its bearer\'s sheet when time reaches 950, though its heal is still owed', () => {

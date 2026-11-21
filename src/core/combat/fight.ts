@@ -30,7 +30,7 @@ import type { Ability, CombatantId, Outcome } from './ability-types.ts';
 import { channelCan, channelStep, released } from './fight-channel.ts';
 import { eventsOf, raised } from './triggers.ts';
 import { burstsOf, consequences, D20, ended, held, holdsSide, logged, marked, overIf, partyView, payDue, rowOf, sentAway, sheetBacks, spreadTo, startTurn, triggered, unwarded, withRow, zoneEnds } from './fight-turn.ts';
-import { hpChange, lifeNews, SAVES_TO_END } from '../hunter/vitals.ts';
+import { hpChange } from '../hunter/vitals.ts';
 import { refilledRow, rowLifeAfter, rowLifeTakes } from './row-life.ts';
 import { summonRow } from './rows.ts';
 import { crowded } from './summons.ts';
@@ -527,34 +527,18 @@ function refill<F extends Setup | Running>(f: F, cmd: Extract<Command, { type: '
   return gmChange(f, row, line(`${u.name} is refilled: HP ${signed(rowHp(row) - rowHp(u))}, mana ${signed(row.mana - u.mana)} (level up).`, [u.id]), ctx);
 }
 
-/** The words a log line gives what a `life` command did: the life's news (vitals.ts `lifeNews`), the GM's own taps marked. */
-function lifeSaid(name: string, before: Body, after: Body, cmd: Extract<Command, { type: 'life' }>): string {
-  const news = after.kind === 'hunter' && before.kind === 'hunter' ? lifeNews(before.life, after.life) : null;
-  if (cmd.event.type === 'revive') return `${name} is revived (GM).`;
-  if (cmd.event.type === 'stabilize') return `${name} is stabilized (GM).`;
-  switch (news?.kind) {
-    case 'raised': return `${name} rolls a ${cmd.event.roll} on a death save and gets up.`;
-    case 'stable': return `${name} makes a third death save and is stable.`;
-    case 'died': return `${name} fails a third death save and dies.`;
-    case 'saved': return `${name} makes a death save (${news.successes} of ${SAVES_TO_END}).`;
-    case 'failed': return `${name} fails a death save (${news.failures} of ${SAVES_TO_END}).`;
-    default: return `${name} rolls a death save.`;
-  }
-}
 /**
- * The `life` command: row `id`'s life takes a Revive, a Stabilize or a death save through its kind's table (row-life.ts).
- * One its life does not take is refused (`lifeCannot`): Revive is the dead's, Stabilize and a death save a dying
- * hunter's; a death save whose roll is no face of a d20 is refused (`needsRoll`). No time passes; what follows is any
- * change's (`gmChange`): a row stood up rejoins the turns, and a hunter's sheet hears its new life.
+ * The GM's Revive: dead row `id` stood up at the revive HP through its kind's table (row-life.ts), and every status taken
+ * off (the owner, Nov 21: "when a res crystal is used, you cleanse all status effects. Like a poison doesn't immediately
+ * re-kill you"). A row that is not dead is refused (`lifeCannot`). No time passes; what follows is any change's
+ * (`gmChange`): a row stood up rejoins the turns, and a hunter's sheet hears its new life and its statuses gone.
  */
-function life<F extends Setup | Running>(f: F, cmd: Extract<Command, { type: 'life' }>, ctx: Ctx): Result {
+function revive<F extends Setup | Running>(f: F, cmd: Extract<Command, { type: 'revive' }>, ctx: Ctx): Result {
   const u = rowOf(f, cmd.id);
   if (!u) return refused(f, 'unknown');
-  if (!rowLifeTakes(u, cmd.event.type)) return refused(f, 'lifeCannot');
-  if (cmd.event.type === 'deathSave' && !(Number.isInteger(cmd.event.roll) && cmd.event.roll >= 1 && cmd.event.roll <= D20.sides)) return refused(f, 'needsRoll');
-  const row = rowLifeAfter(u, cmd.event);
-  if (row === u) return refused(f, 'noChange');
-  return gmChange(f, row, line(lifeSaid(u.name, u, row, cmd), [u.id]), ctx);
+  if (!rowLifeTakes(u, 'revive')) return refused(f, 'lifeCannot');
+  const row = withStatuses(rowLifeAfter(u, { type: 'revive' }), [], f.phase === 'running' ? f.now : tick(0), ctx.rules);
+  return gmChange(f, row, line(`${u.name} is revived (GM).`, [u.id]), ctx);
 }
 
 /** The GM's Status window: a status taken off, then one put on with the GM as its source. Nothing to change is refused. */
@@ -698,16 +682,16 @@ function extract<F extends Fight>(f: F, cmd: Extract<Command, { type: 'extract' 
 
 // ── the table ──
 const ACTING: Row<'running'> = {
-  add: addTo, remove: removeRunning, start: null, act, move, endTurn, release, setIntent, reveal, place: placeRow, adjust, refill, life, status, settle: settleDue,
+  add: addTo, remove: removeRunning, start: null, act, move, endTurn, release, setIntent, reveal, place: placeRow, adjust, refill, revive, status, settle: settleDue,
   paint, zoneAdd, zoneRemove, resize, arm, extract, fudge, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
 };
 const TABLE: { readonly [S in Exclude<FightState, 'running'>]: Row<S> } & { readonly running: { readonly [S in RunningState['at']]: Row<'running'> } } = {
   none: {
     add: create, remove: null, start: null, act: null, move: null, endTurn: null, release: null, setIntent: null, reveal: null, place: null, adjust: null, refill: null,
-    life: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract: null, fudge: null, end: null, clear: null,
+    revive: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract: null, fudge: null, end: null, clear: null,
   },
   setup: {
-    add: addTo, remove: removeInSetup, start, act: null, move: null, endTurn: null, release: null, setIntent, reveal, place: placeRow, adjust, refill, life, status,
+    add: addTo, remove: removeInSetup, start, act: null, move: null, endTurn: null, release: null, setIntent, reveal, place: placeRow, adjust, refill, revive, status,
     settle: null, paint, zoneAdd, zoneRemove, resize, arm, extract, fudge, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
   },
   // a running fight's two states (`runningState`): its turn's actor acts, or the fight owes dice first
@@ -721,7 +705,7 @@ const TABLE: { readonly [S in Exclude<FightState, 'running'>]: Row<S> } & { read
   // extract a shadow from a fallen monster. It holds no weight to set: the GM's fudge ended with the fight.
   ended: {
     add: null, remove: null, start: null, act: null, move: null, endTurn: null, release: null, setIntent: null, reveal: null, place: null, adjust: null, refill: null,
-    life: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract, fudge: null, end: null, clear: () => done(null, []),
+    revive: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract, fudge: null, end: null, clear: () => done(null, []),
   },
 };
 

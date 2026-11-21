@@ -7,7 +7,7 @@ import type { LifeState } from '../hunter/vitals.ts';
  */
 export const rowHp = (b: Pick<Body, 'life'>): number => (b.life.at === 'up' ? b.life.hp : 0);
 /**
- * Up: able to take a turn. A hunter at 0 HP is dying, stable or dead, a foe at 0 HP dead: none is up. It reads a fight's
+ * Up: able to take a turn. A row at 0 HP is dead (a foe's reads Defeated): none is up. It reads a fight's
  * row and the fight doc's row alike (fight-doc.ts: the life's state without its HP).
  */
 export const isUp = (b: { readonly life: { readonly at: LifeState } }): boolean => b.life.at === 'up';

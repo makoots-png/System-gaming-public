@@ -84,7 +84,7 @@ function campaign(): Save {
   h.shadows = [{ ...newShadow(), id: shid('sh150'), name: 'Igris', rank: 'B', archetype: 'skirmisher', grade: 'Knight', hp: 80, notes: 'Loyal.' }];
   h.titles.push({ id: tid('t151'), name: 'Gate Breaker', desc: '', bonus: { str: 2, manaMax: 3 } });
   h.manaAdj = 4; h.hpAdj = -3;
-  h.life = { at: 'dying', successes: 1, failures: 2 };
+  h.life = { at: 'up', hp: 7 };
   save.monsters = seedMonsters(RULES).slice(0, 2);
   save.gates = [{ ...newGate(), id: 'g152' as Save['gates'][number]['id'], name: 'Den', status: 'cleared', clearedDay: 3, xpPaid: 120 }];
   save.fight = runningFight();
@@ -544,7 +544,7 @@ describe('a damaged or hostile save', () => {
 describe('what a repair fixes', () => {
   test('a stored life keeps only the fields of its state, within bounds', () => {
     const life = (v: unknown) => onlyHunter(parseRaw(withHunter({ life: v }))).life;
-    expect(life({ at: 'dying', successes: 5, failures: -1, hp: 30 })).toEqual({ at: 'dying', successes: 2, failures: 0 });
+    expect(life({ at: 'dying', successes: 1, failures: 2 }), 'a life from before death saves went away does not read').toEqual(life({ at: 'zombie' }));
     expect(life({ at: 'up', hp: 12.4 })).toEqual({ at: 'up', hp: 12 });
     expect(life({ at: 'dead', hp: 9 })).toEqual({ at: 'dead' });
     expect(life({ at: 'up', hp: 0 }), 'up means at least 1 HP').toEqual({ at: 'up', hp: 1 });
@@ -649,7 +649,7 @@ describe('what a repair fixes', () => {
       { ...POISONED, extra: 1 }, SLOWED,
       { ...POISONED, def: 'junk' }, { ...POISONED, source: { id: 'c3', tier: 12 } }, { ...POISONED, source: 'the GM' },
       { ...POISONED, rounds: -1 }, { ...POISONED, rounds: 'soon' }, { ...POISONED, key: undefined }, 'poisoned',
-      { ...SLOWED, key: 'down' }, { ...SLOWED, key: 'penalized' },
+      { ...SLOWED, key: 'dead' }, { ...SLOWED, key: 'penalized' },
     ] })));
     expect(h.conditions).toEqual([POISONED, SLOWED] as unknown as Hunter['conditions']);
   });
@@ -811,7 +811,7 @@ describe('what a repair fixes', () => {
 
   test('the status library drops a bad key, a hunter\'s state chip, a def without a name and what is not a def', () => {
     const def = { label: 'Fine', desc: '', ops: [] };
-    const statuses = { fine: def, 'Bad Key': def, 'trailing-': def, ['x'.repeat(41)]: def, down: def, penalized: def, nameless: { desc: 'x', ops: [] }, junk: 5 };
+    const statuses = { fine: def, 'Bad Key': def, 'trailing-': def, ['x'.repeat(41)]: def, dead: def, penalized: def, nameless: { desc: 'x', ops: [] }, junk: 5 };
     const save = parseRaw({ schema: SCHEMA, hunters: [], library: { items: [], statuses } });
     expect(save.library.statuses).toEqual({ fine: def });
   });

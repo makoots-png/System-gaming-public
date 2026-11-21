@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { armorCutPct, checkExample, dailyPointsLine, downLine, gatePayLines, iconCreditLine, ICON_CREDIT, naturalLines, pointsLine, saleLine, saleRows, soloLines, statBonusLine, stealthLines } from '../src/core/rules-text.ts';
+import { armorCutPct, checkExample, dailyPointsLine, deathLine, gatePayLines, iconCreditLine, ICON_CREDIT, naturalLines, pointsLine, saleLine, saleRows, soloLines, statBonusLine, stealthLines } from '../src/core/rules-text.ts';
 import { afterDefence } from '../src/core/combat/land.ts';
 import { sellPrice } from '../src/core/hunter/inventory.ts';
 import { CAP_ROUNDS } from '../src/core/combat/play.ts';
@@ -12,14 +12,14 @@ import { SIDES } from '../src/core/coin.ts';
 import { allocated, confirm, lower, newProgress, raise } from '../src/core/hunter/progress.ts';
 import type { Allocating } from '../src/core/hunter/progress.ts';
 import { isRefused } from '../src/core/save-step.ts';
-import { FUMBLE_FAILURES, REVIVE_HP, SAVES_TO_END, SAVE_FUMBLE, SAVE_SUCCESS, SAVE_UP, SAVE_UP_HP, WAYS_BACK, lifeAfter } from '../src/core/hunter/vitals.ts';
+import { REVIVE_HP, WAYS_BACK, lifeAfter } from '../src/core/hunter/vitals.ts';
+import { statusKey } from '../src/core/combat/effect-ops.ts';
 import { useItem } from '../src/core/hunter/use.ts';
 import { sheetEdit } from '../src/core/hunter/grant.ts';
 import { buy, putItem, sell } from '../src/core/hunter/inventory.ts';
 import { RARITIES, SHOP_ITEMS, itemOf, parseItem, priceOf, valueOf } from '../src/core/registry/items.ts';
 import { newHunter } from '../src/core/save.ts';
 import { isRefused as refused } from '../src/core/save-step.ts';
-import type { Life } from '../src/core/hunter/vitals.ts';
 import { RULES } from '../src/core/rules.ts';
 import type { Rules } from '../src/core/rules.ts';
 import { STAT_KEYS } from '../src/core/stats.ts';
@@ -95,39 +95,29 @@ describe('the points line', () => {
   });
 });
 
-describe('the down line', () => {
-  const dying = (successes: 0 | 1 | 2, failures: 0 | 1 | 2): Life => ({ at: 'dying', successes, failures });
-  const save = (life: Life, roll: number): Life => lifeAfter(life, { type: 'deathSave', roll }, 20);
-  const line = downLine(RULES);
+describe('the death line', () => {
+  const line = deathLine(RULES);
 
-  test('its numbers are the ones the machine plays', () => {
-    expect(line).toContain(`${SAVE_SUCCESS} or higher succeeds`);
-    expect(save(dying(0, 0), SAVE_SUCCESS)).toEqual(dying(1, 0));
-    expect(save(dying(0, 0), SAVE_SUCCESS - 1)).toEqual(dying(0, 1));
-    expect(line).toContain(`A ${SAVE_UP} gets up at ${SAVE_UP_HP} HP`);
-    expect(save(dying(1, 1), SAVE_UP)).toEqual({ at: 'up', hp: SAVE_UP_HP });
-    expect(line).toContain(`a ${SAVE_FUMBLE} counts as ${FUMBLE_FAILURES} failures`);
-    expect(save(dying(0, 0), SAVE_FUMBLE)).toEqual(dying(0, FUMBLE_FAILURES as 2));
+  test('at 0 HP a hunter is dead, as the machine plays it: no death saves, no getting up', () => {
+    expect(line.startsWith('At 0 HP a hunter is dead.')).toBe(true);
+    expect(line).not.toMatch(/death save|stable|stabiliz/i);
+    expect(lifeAfter({ at: 'up', hp: 5 }, { type: 'damage', amount: 5 }, 20)).toEqual({ at: 'dead' });
   });
 
-  test('three successes make it stable and three failures dead, and Revive brings the dead back at its HP', () => {
-    expect(SAVES_TO_END).toBe(3);
-    expect(line).toContain(`${SAVES_TO_END} successes make the hunter stable`);
-    expect(line).toContain(`${SAVES_TO_END} failures are fatal`);
-    let life: Life = dying(0, 0);
-    for (let i = 0; i < SAVES_TO_END; i++) life = save(life, SAVE_SUCCESS);
-    expect(life).toEqual({ at: 'stable' });
-    life = dying(0, 0);
-    for (let i = 0; i < SAVES_TO_END; i++) life = save(life, SAVE_SUCCESS - 1);
-    expect(life).toEqual({ at: 'dead' });
-    expect(lifeAfter(life, { type: 'revive' }, 20)).toEqual({ at: 'up', hp: REVIVE_HP });
-    expect(line).toContain(`Healing and rest do not raise the dead: ${WAYS_BACK} from the bag does, at ${REVIVE_HP} HP, outside a fight.`);
+  test('healing and rest do not raise the dead; Revive and a crystal do, at the revive HP, with every status taken off', () => {
+    expect(line).toContain(`Healing and rest do not raise the dead: ${WAYS_BACK} does, at ${REVIVE_HP} HP, and takes off every status, so a poison does not kill the hunter again.`);
+    expect(lifeAfter({ at: 'dead' }, { type: 'heal', amount: 10 }, 20)).toEqual({ at: 'dead' });
+    expect(lifeAfter({ at: 'dead' }, { type: 'revive' }, 20)).toEqual({ at: 'up', hp: REVIVE_HP });
+    const poisoned = { key: statusKey('poisoned'), def: RULES.conditions.poisoned!, source: { id: null, tier: 0 }, rounds: null };
+    const up = sheetEdit({ ...newHunter(RULES), life: { at: 'dead' as const }, conditions: [poisoned] }, { type: 'life', event: { type: 'revive' } }, RULES);
+    expect(refused(up) ? up : up.conditions).toEqual([]);
   });
 
   test('the Resurrection Crystal the line names raises the dead at the HP it states, as the GM\'s Revive does', () => {
     const crystal = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Resurrection Crystal (E)')!);
     expect(crystal.name.startsWith('Resurrection Crystal'), 'the shop\'s crystals carry the name the line says, and their rank').toBe(true);
     expect(WAYS_BACK).toContain('Resurrection Crystal');
+    expect(line).toContain('A crystal is used from the bag, outside a fight.');
     const h = { ...putItem(newHunter(RULES), crystal, 'i1' as never), life: { at: 'dead' as const } }, u = useItem(h, 'i1', [], RULES);
     expect(refused(u) ? u : u.hunter.life).toEqual({ at: 'up', hp: REVIVE_HP });
   });
@@ -140,24 +130,16 @@ describe('the down line', () => {
   });
 
   test('the raising\'s line follows a GM\'s share: a tenth takes 4 of level 31', () => {
-    expect(downLine({ ...RULES, reviveLevelShare: 0.1 })).toContain('A raising costs levels: 10% of the hunter\'s level, rounded up, at least one and never below level 1, so a hunter who died at level 31 comes back at level 27.');
+    expect(deathLine({ ...RULES, reviveLevelShare: 0.1 })).toContain('A raising costs levels: 10% of the hunter\'s level, rounded up, at least one and never below level 1, so a hunter who died at level 31 comes back at level 27.');
   });
 
-  test('the shop is closed to the dead, as the line says: a dead hunter\'s purchase and sale are refused, a stable one\'s are not', () => {
+  test('the shop is closed to the dead, as the line says: a dead hunter\'s purchase and sale are refused, a living one\'s are not', () => {
     expect(line).toContain('The shop is closed to a dead hunter, who can neither buy nor sell. The GM or another hunter can still give a dead hunter a Resurrection Crystal.');
     const potion = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Health Potion')!);
     const rich = { ...putItem(newHunter(RULES), potion, 'i1' as never), gold: 1000 };
     expect(buy({ ...rich, life: { at: 'dead' } }, potion, 'i2' as never, RULES)).toEqual({ ok: false, why: 'dead' });
     expect(sell({ ...rich, life: { at: 'dead' } }, 'i1', 1, RULES)).toEqual({ ok: false, why: 'dead' });
-    expect(refused(buy({ ...rich, life: { at: 'stable' } }, potion, 'i2' as never, RULES))).toBe(false);
-  });
-
-  test('healing does not raise the dead', () => {
-    expect(lifeAfter({ at: 'dead' }, { type: 'heal', amount: 10 }, 20)).toEqual({ at: 'dead' });
-  });
-
-  test('a stable hunter makes no more saves', () => {
-    expect(save({ at: 'stable' }, SAVE_UP)).toEqual({ at: 'stable' });
+    expect(refused(buy({ ...rich, life: { at: 'up', hp: 1 } }, potion, 'i2' as never, RULES))).toBe(false);
   });
 });
 

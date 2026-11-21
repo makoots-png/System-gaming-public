@@ -259,7 +259,7 @@ describe('a consumable used in a fight', () => {
     const origin: Origin = { kind: 'hunter', build: { stats: baseStats(R.fight), level: 1, gear: [], perks: {} } }, m = modified(origin, [], R);
     return {
       id: combatantId('me'), name: 'Me', side: 'party', kind: 'hunter', origin, tier: 0, stats: m.stats, sheet: m.sheet, place: place(5, 5),
-      life: hp >= 1 ? { at: 'up', hp } : { at: 'dying', successes: 0, failures: 0 }, mana, fatigue, shield: null, stagger: null, channel: null, threat: null, statuses: [], readyAt: {}, abilities: [], intent: null, holder: null,
+      life: hp >= 1 ? { at: 'up', hp } : { at: 'dead' }, mana, fatigue, shield: null, stagger: null, channel: null, threat: null, statuses: [], readyAt: {}, abilities: [], intent: null, holder: null,
       at: NOW, speed: m.sheet.speed, tie: 0, xp: 0,
     };
   };

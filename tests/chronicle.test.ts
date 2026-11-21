@@ -111,30 +111,26 @@ describe('a fact in a hunter\'s inbox, a machine (noticed.ts `INBOX`)', () => {
 });
 
 describe('each fact is recorded by its one writer, in that thing\'s write', () => {
-  test('a change of life: a fall, a death save, a revive by the GM or by an item', () => {
+  test('a change of life: a death, a revive by the GM or by an item', () => {
     const h = mira();
-    const fell = ok(sheetEdit(h, { type: 'life', event: { type: 'damage', amount: hpMax(h) } }, RULES));
-    expect(inbox(fell)).toEqual([{ kind: 'life', news: 'fell', how: 'hand', failures: 0 }]);
-    const failed = ok(sheetEdit(fell, { type: 'life', event: { type: 'deathSave', roll: 1 } }, RULES));
-    expect(inbox(failed).at(-1)).toEqual({ kind: 'life', news: 'failed', how: 'save', failures: 0 });
-    expect(KEPT.life({ kind: 'life', news: 'failed', how: 'save', failures: 0 }), 'a death save made or failed is not kept').toBe(false);
-    const up = ok(sheetEdit(failed, { type: 'life', event: { type: 'deathSave', roll: 20 } }, RULES));
-    expect(inbox(up).at(-1)).toEqual({ kind: 'life', news: 'raised', how: 'save', failures: 2 });
+    const died = ok(sheetEdit(h, { type: 'life', event: { type: 'damage', amount: hpMax(h) } }, RULES));
+    expect(inbox(died)).toEqual([{ kind: 'life', news: 'died', how: 'hand' }]);
+    expect(KEPT.life({ kind: 'life', news: 'died', how: 'hand' }), 'a death is kept').toBe(true);
     const dead: Hunter = { ...mira(), life: { at: 'dead' } };
-    expect(inbox(ok(sheetEdit(dead, { type: 'life', event: { type: 'revive' } }, RULES)))).toEqual([{ kind: 'life', news: 'raised', how: 'gm', failures: 0 }]);
-    expect(inbox(ok(sheetEdit(dead, { type: 'life', event: { type: 'revive' }, by: 'item' }, RULES)))).toEqual([{ kind: 'life', news: 'raised', how: 'item', failures: 0 }]);
+    expect(inbox(ok(sheetEdit(dead, { type: 'life', event: { type: 'revive' } }, RULES)))).toEqual([{ kind: 'life', news: 'raised', how: 'gm' }]);
+    expect(inbox(ok(sheetEdit(dead, { type: 'life', event: { type: 'revive' }, by: 'item' }, RULES)))).toEqual([{ kind: 'life', news: 'raised', how: 'item' }]);
     expect(inbox(ok(sheetEdit(h, { type: 'mana', delta: -1 }, RULES))), 'no change of life, no fact').toEqual([]);
   });
 
-  test('a fight\'s totals that take a hunter to 0 HP are a fall from the fight', () => {
+  test('a fight\'s totals that take a hunter to 0 HP are a death in the fight', () => {
     const h = mira();
-    expect(inbox(ok(sheetEdit(h, { type: 'totals', life: { at: 'dying', successes: 0, failures: 0 }, mana: h.mana, fatigue: 0, statuses: [] }, RULES)))).toEqual([{ kind: 'life', news: 'fell', how: 'fight', failures: 0 }]);
+    expect(inbox(ok(sheetEdit(h, { type: 'totals', life: { at: 'dead' }, mana: h.mana, fatigue: 0, statuses: [] }, RULES)))).toEqual([{ kind: 'life', news: 'died', how: 'fight' }]);
   });
 
-  test('a rest, short or long; a long rest that brings a stable hunter up is also that life\'s fact', () => {
+  test('a rest, short or long; a rest of a dead hunter raises nobody', () => {
     expect(inbox(ok(sheetEdit(mira(), { type: 'rest', kind: 'short' }, RULES)))).toEqual([{ kind: 'rest', long: false }]);
-    const stable: Hunter = { ...mira(), life: { at: 'stable' } };
-    expect(inbox(ok(sheetEdit(stable, { type: 'rest', kind: 'long' }, RULES)))).toEqual([{ kind: 'life', news: 'raised', how: 'rest', failures: 0 }, { kind: 'rest', long: true }]);
+    const dead: Hunter = { ...mira(), life: { at: 'dead' } };
+    expect(inbox(ok(sheetEdit(dead, { type: 'rest', kind: 'long' }, RULES)))).toEqual([{ kind: 'rest', long: true }]);
   });
 
   test('a new level, a new rank and a title given', () => {

@@ -5,18 +5,16 @@
 // (`owed`) is paid at once, as the GM's phone does. A refusal throws: a policy asks the rules' own checks first, so a
 // refusal is a bug in the policy. Pure: the whole state of a play, the dice source's included, is the `Play` value.
 import type { Rules } from '../rules.ts';
-import { lifeAfter } from '../hunter/vitals.ts';
-import type { Life, LifeState } from '../hunter/vitals.ts';
 import type { CombatantId } from './ability-types.ts';
 import type { ItemId } from '../ids.ts';
 import { itemOfAbility } from '../registry/abilities.ts';
-import { isUp, rowHp } from './row-hp.ts';
+import { rowHp } from './row-hp.ts';
 import type { Body } from './effect-ops.ts';
 import { owed, reduce } from './fight.ts';
 import type { Command, Ctx, Effect, Ended, Fight, Refusal, Running, Setup } from './fight-types.ts';
 import { needs } from './resolve.ts';
 import type { Aim, Rolls } from './resolve.ts';
-import { drawNeeds, drawOpenings, drawSettle, faceOf, seededSource } from '../draws.ts';
+import { drawNeeds, drawOpenings, drawSettle, seededSource } from '../draws.ts';
 import type { Random } from './../gates/spawn.ts';
 import type { TurnChoice, Policy } from './policy.ts';
 
@@ -30,8 +28,7 @@ export const PLAY_STEPS_MAX = 5000;
 /** An item a row used up in a played fight: the row, and the item its ability was (`itemOfAbility`). */
 export type UsedUp = { readonly by: CombatantId; readonly item: ItemId };
 /**
- * A fight being played: the fight, the dice source's state, the hunters that have been at 0 HP in the order they went
- * down, whether it ended at its cap, the commands played, and the items used up, one per use, in order.
+ * A fight being played: the fight, the dice source's state, the hunters that have died in the order they died, whether it ended at its cap, the commands played, and the items used up, one per use, in order.
  */
 export type Play = {
   readonly fight: Running | Ended; readonly source: number; readonly down: readonly CombatantId[]; readonly capped: boolean; readonly steps: number;
@@ -123,34 +120,4 @@ export function playStep(p: Play & { readonly fight: Running }, policyOf: (me: B
     play: { fight: after.fight, source: src.state(), down: downOf(after.fight, down), capped: false, steps: p.steps + 1, spent: item ? [...p.spent, { by: me.id, item }] : p.spent },
     before: f, me, choice, rolls, effects: [...r.effects, ...after.effects],
   };
-}
-
-/**
- * The life a hunter's death save faces lead to from a fresh fall, through the life machine (`lifeAfter`): dying while
- * they have not ended it, stable, up at 1 HP on a 20, or dead.
- */
-export function lifeOfSaves(faces: readonly number[], hpMax: number): LifeState {
-  let life: Life = lifeAfter({ at: 'up', hp: Math.max(1, hpMax) }, { type: 'setHp', hp: 0 }, hpMax);
-  for (const roll of faces) life = lifeAfter(life, { type: 'deathSave', roll }, hpMax);
-  return life.at;
-}
-/** The faces of the death saves of a hunter left at 0 HP with nobody to stabilize it, rolled until the dying ends. */
-function saves(hpMax: number, random: Random): number[] {
-  const faces: number[] = [];
-  let life: Life = lifeAfter({ at: 'up', hp: Math.max(1, hpMax) }, { type: 'setHp', hp: 0 }, hpMax);
-  for (let i = 0; i < 10 && life.at === 'dying'; i++) { const roll = faceOf(20, random); faces.push(roll); life = lifeAfter(life, { type: 'deathSave', roll }, hpMax); }
-  return faces;
-}
-/**
- * A play's end: the death save faces of each hunter that went down and is still at 0 HP, in the order they went down.
- * Nobody rolls when the party won and another hunter of the party is up: an ally stabilizes or heals in one tap, as a
- * table does (notes-2-solo.md 1.1). Alone, or in a fight lost or stalled, the saves run to their end. A shadow or a
- * summon standing is no ally that can help. A hunter not down has no entry.
- */
-export function playSaves(p: Play & { readonly fight: Ended }): Readonly<Record<CombatantId, readonly number[]>> {
-  const random = seededSource(p.source).random, f = p.fight, out: Record<CombatantId, readonly number[]> = {};
-  const fallen = p.down.filter(id => !isUp(f.rows.find(x => x.id === id)!));
-  const helped = !p.capped && f.summary.winner === 'party' && f.rows.some(r => r.side === 'party' && r.kind === 'hunter' && isUp(r));
-  for (const id of fallen) out[id] = helped ? [] : saves(f.rows.find(x => x.id === id)!.sheet.hpMax, random);
-  return out;
 }

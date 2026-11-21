@@ -18,7 +18,7 @@ const FIGHT: FactOf<'fight'> = {
   healed: 0, raised: 0, hexes: 0, kills: 2, bosses: 0, turnKills: 1, items: 0, allies: 1, alliesDown: 0, sideUp: 2, foes: 3, foeTop: 0, bossTop: null, gate: 'Goblin Den', names: '3 Goblins',
 };
 const SOLO: FactOf<'solo'> = { kind: 'solo', outcome: 'won', name: 'Ash Hollow', rank: 'E', above: 0, rounds: 5, endPct: 30, life: 'up', personal: true };
-const LIFE: FactOf<'life'> = { kind: 'life', news: 'fell', how: 'fight', failures: 0 };
+const LIFE: FactOf<'life'> = { kind: 'life', news: 'died', how: 'fight' };
 const QUEST: FactOf<'quest'> = { kind: 'quest', end: 'done', qkind: 'side', from: 'gm', title: 'Find it' };
 
 /** One fact of each kind, and the sentence it reads as. A kind added to facts.ts fails the typecheck here until it has both. */
@@ -33,7 +33,7 @@ const SAMPLES: { readonly [K in FactKind]: readonly [FactOf<K>, string] } = {
   streakLost: [{ kind: 'streakLost', streak: 7 }, 'Lost a daily streak of 7 days.'],
   penaltyIssued: [{ kind: 'penaltyIssued', days: 2 }, 'Got the daily penalty for 2 missed days.'],
   penaltyLifted: [{ kind: 'penaltyLifted', days: 2 }, 'The daily penalty ended after 2 days.'],
-  life: [LIFE, 'Went down in a fight.'],
+  life: [LIFE, 'Died in a fight.'],
   level: [{ kind: 'level', level: 5 }, 'Reached level 5.'],
   rank: [{ kind: 'rank', rank: 'C' }, 'Became rank C.'],
   title: [{ kind: 'title', name: 'Still Standing' }, 'Got the title Still Standing.'],
@@ -66,25 +66,17 @@ describe('one sentence a kind of fact', () => {
   });
 
   test('a solo run says its gate, its rounds and how the hunter came out of it', () => {
-    expect(factLine({ ...SOLO, outcome: 'lost', life: 'dying' })).toBe('Lost a solo run in Ash Hollow (rank E) in 5 rounds and was down at its end.');
-    expect(factLine({ ...SOLO, outcome: 'lost', life: 'stable' })).toBe('Lost a solo run in Ash Hollow (rank E) in 5 rounds and was down and stable at its end.');
+    expect(factLine({ ...SOLO, outcome: 'lost', life: 'up' })).toBe('Lost a solo run in Ash Hollow (rank E) in 5 rounds and was up at its end.');
     expect(factLine({ ...SOLO, outcome: 'lost', life: 'dead' })).toBe('Lost a solo run in Ash Hollow (rank E) in 5 rounds and died.');
     expect(factLine({ ...SOLO, outcome: 'stalled', rounds: 30 })).toBe('Retreated from a solo run in Ash Hollow (rank E) after 30 rounds, at 30% HP.');
   });
 
   test('a change of life says what happened and how', () => {
     const life = (o: Partial<FactOf<'life'>>) => factLine({ ...LIFE, ...o });
-    expect(life({ news: 'raised', how: 'fight' })).toBe('Got back up in a fight.');
     expect(life({ news: 'raised', how: 'gm' })).toBe('Revived by the GM.');
     expect(life({ news: 'raised', how: 'item' })).toBe('Revived with an item.');
-    expect(life({ news: 'raised', how: 'rest' })).toBe('Got back up with a rest.');
-    expect(life({ news: 'fell', how: 'hand' })).toBe('Went down after a change by hand.');
-    expect(life({ news: 'stable', how: 'save', failures: 2 })).toBe('Became stable after 2 failed death saves.');
-    expect(life({ news: 'stable', how: 'save', failures: 0 })).toBe('Became stable.');
-    expect(life({ news: 'died', how: 'save', failures: 2 })).toBe('Died on a death save, after 2 failed death saves.');
-    expect(life({ news: 'died', how: 'fight', failures: 0 })).toBe('Died in a fight.');
-    expect(life({ news: 'saved', how: 'save', failures: 1 })).toBe('Passed a death save, with 1 failed before it.');
-    expect(life({ news: 'failed', how: 'save', failures: 1 })).toBe('Failed a death save, with 1 failed before it.');
+    expect(life({ news: 'died', how: 'hand' })).toBe('Died after a change by hand.');
+    expect(life({ news: 'died', how: 'fight' })).toBe('Died in a fight.');
   });
 
   test('the other kinds in their other forms: one of a thing is singular, a cost and a failure are said', () => {
@@ -128,9 +120,9 @@ describe('the Chronicle panel as data', () => {
   const mira = (o: Partial<Chronicle> = {}): Chronicle => ({ ...newChronicle(), ...o });
 
   test('the lifetime numbers are the tally\'s, in the order the panel shows them', () => {
-    const c = mira({ tally: { ...newChronicle().tally, won: 12, kills: 48, gates: 5, fell: 3, feats: 7, fights: 20 } });
+    const c = mira({ tally: { ...newChronicle().tally, won: 12, kills: 48, gates: 5, died: 3, feats: 7, fights: 20 } });
     expect(chronicleView(c, BOOK, RULES).numbers).toEqual([
-      { label: 'Fights won', n: 12 }, { label: 'Monsters defeated', n: 48 }, { label: 'Gates cleared', n: 5 }, { label: 'Times down', n: 3 }, { label: 'Feats', n: 7 },
+      { label: 'Fights won', n: 12 }, { label: 'Monsters defeated', n: 48 }, { label: 'Gates cleared', n: 5 }, { label: 'Deaths', n: 3 }, { label: 'Feats', n: 7 },
     ]);
   });
 

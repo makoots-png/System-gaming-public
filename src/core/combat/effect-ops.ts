@@ -493,8 +493,8 @@ export function withThreat(b: Body, change: (t: ThreatTable) => ThreatTable): Bo
 }
 /**
  * Which life a row holds goes with its kind (docs/agent-handoff/audit/notes-dead-row.md section 2): a hunter's row holds
- * the hunter's `Life` (vitals.ts: up, dying, stable, dead), any other row a `FoeLife` (row-life.ts: up or dead), so a
- * dying monster cannot be written. A row's HP is its life's (row-hp.ts `rowHp`); only row-life.ts changes it.
+ * the hunter's `Life` (vitals.ts: up or dead), any other row a `FoeLife` (row-life.ts: up or dead). A row's HP is its
+ * life's (row-hp.ts `rowHp`); only row-life.ts changes it.
  */
 export type BodyLife =
   | { readonly kind: 'hunter'; readonly life: Life }

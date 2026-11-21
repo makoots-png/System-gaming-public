@@ -2,7 +2,7 @@
 //
 // A run is one play of the odds engine (odds.ts, play.ts) of one hunter, as its row joins a fight, against a gate's
 // monsters, with a seed the edge drew: no fight is shown and none is stored. What the play left on the hunter's row is
-// written to its sheet through the writers each part already has (`sheetEdit`'s totals, the life machine's death saves,
+// written to its sheet through the writers each part already has (`sheetEdit`'s totals,
 // `spendItem`, `setShadowHp`), and the gate is paid as a Clear pays (`settleClear`, `grant`, `gateXp`, `xpDue`), a world
 // gate's as a Clear for a party of one (pay.ts `shareEach`), in one step for `store.apply` (`soloRan`): all of it or none. The outcome is the engine's `RunOutcome`: `won` the gate is
 // cleared, `lost` the hunter fell, `stalled` a retreat at the time cap.
@@ -154,12 +154,11 @@ const sameRoute = (a: SoloRoute, b: SoloRoute): boolean => (a === 'local' || b =
 
 /** Why a run may not start or be written. */
 export type SoloRefusal =
-  | 'no-hunter' | 'fight' | 'down' | 'dead' | 'collapsed' | 'gone' | 'closed' | 'not-solo' | 'off' | 'not-played' | 'waiting' | 'empty' | 'changed' | 'moved';
+  | 'no-hunter' | 'fight' | 'dead' | 'collapsed' | 'gone' | 'closed' | 'not-solo' | 'off' | 'not-played' | 'waiting' | 'empty' | 'changed' | 'moved';
 /** What a refused run says, to the player who tapped (copy-tasks.md: why, and the way out). */
 export const SOLO_REFUSAL_WORDS: { readonly [R in SoloRefusal]: string } = {
   'no-hunter': 'This hunter is no longer on this phone.',
   fight: 'A fight holds this hunter. Finish it first.',
-  down: 'This hunter is down. Heal or rest first.',
   dead: `This hunter is dead. ${WAYS_BACK} brings it back.`,
   collapsed: 'This hunter has collapsed from fatigue. Take a long rest first.',
   gone: 'This gate is gone.',
@@ -208,7 +207,6 @@ export function soloReady(save: Pick<Save, 'hunters' | 'gates' | 'monsters'>, hi
   if (!h) return refuse('no-hunter');
   if (c.held) return refuse('fight');
   if (h.life.at === 'dead') return refuse('dead');
-  if (h.life.at !== 'up') return refuse('down');
   if (h.collapsed) return refuse('collapsed');
   const seeds = seedMonsters(c.R);
   if (gate.kind === 'personal') {
@@ -267,8 +265,8 @@ export type SoloLoot = { readonly gold: number; readonly items: readonly ItemTem
 
 /**
  * Hunter `h` as the run left it, through the writer each part has: the row's totals (`sheetEdit`: the row's life,
- * mana, fatigue with its collapse, the statuses a sheet keeps, the uses spent this rest), each death
- * save face through the life machine (`deathSave`), each item it used up (`spendItem`), each shadow's HP (`setShadowHp`).
+ * mana, fatigue with its collapse, the statuses a sheet keeps, the uses spent this rest), each item it used up
+ * (`spendItem`), each shadow's HP (`setShadowHp`).
  */
 export function ranOn(h: Hunter, run: SoloRun, R: Rules): Hunter {
   const row = run.end.party[run.hunter];
@@ -276,7 +274,6 @@ export function ranOn(h: Hunter, run: SoloRun, R: Rules): Hunter {
   // a part its writer refuses (an item no longer held) leaves the hunter as it was
   const kept = (was: Hunter, next: Hunter | Refused): Hunter => (isRefused(next) ? was : next);
   let x = kept(h, sheetEdit(h, { type: 'totals', life: row.lifeLeft, mana: row.mana, fatigue: row.fatigue, statuses: row.statuses, used: row.used }, R));
-  for (const roll of row.saves) x = kept(x, sheetEdit(x, { type: 'life', event: { type: 'deathSave', roll } }, R));
   for (const sp of run.end.spent) if (sp.by === run.hunter) x = kept(x, spendItem(x, sp.item, R));
   for (const [cid, sid] of Object.entries(run.shadows)) { const e = run.end.party[cid as CombatantId]; if (e) x = kept(x, setShadowHp(x, sid, e.hp)); }
   return x;
@@ -288,7 +285,7 @@ export const OUTCOME_WORDS: { readonly [O in RunOutcome]: { readonly title: stri
   lost: { title: 'RUN FAILED', did: 'fell in' },
   stalled: { title: 'RETREAT', did: `retreated from` },
 };
-const LIFE_WORDS: { readonly [L in LifeState]: string } = { up: '', dying: ' and is down', stable: ' and is down, stable', dead: ' and died' };
+const LIFE_WORDS: { readonly [L in LifeState]: string } = { up: '', dead: ' and died' };
 /** The session log's line of a run: who, what, which gate, how long, and how the hunter came out. */
 export function runLine(name: string, gate: { readonly name: string; readonly rank: Rank }, outcome: RunOutcome, rounds: number, life: LifeState, hunterId: HunterId | null): Said {
   const r = Math.max(1, Math.round(rounds)), when = outcome === 'stalled' ? ` after ${CAP_ROUNDS} rounds` : ` in ${r} round${r === 1 ? '' : 's'}`;
@@ -550,8 +547,6 @@ export function runCostLines(before: Vitals, after: Vitals, m: Maxima): string[]
   const out = [`HP ${hpOf(before.life, m.hpMax)} to ${hpOf(after.life, m.hpMax)} of ${m.hpMax}`, `Mana ${manaOf(before, m)} to ${manaOf(after, m)} of ${m.manaMax}`,
     `Fatigue ${Math.min(before.fatigue, m.fatigueMax)} to ${Math.min(after.fatigue, m.fatigueMax)} of ${m.fatigueMax}`];
   if (after.life.at === 'dead') out.push(`You died. ${WAYS_BACK} brings you back.`);
-  else if (after.life.at === 'stable') out.push('You are down, stable. Healing gets you up.');
-  else if (after.life.at === 'dying') out.push('You are down. Roll your death saves on your sheet.');
   if (after.collapsed && !before.collapsed) out.push('You have collapsed from exhaustion.');
   return out;
 }

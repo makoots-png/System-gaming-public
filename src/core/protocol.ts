@@ -11,7 +11,7 @@ import type { MonsterTemplate } from './registry/monsters.ts';
 import { RUN_OUTCOMES } from './combat/odds.ts';
 import type { RunOutcome } from './combat/odds.ts';
 import { CAP_ROUNDS } from './combat/play.ts';
-import { LIFE_STATES, SAVE_UP, parseLife } from './hunter/vitals.ts';
+import { LIFE_STATES, parseLife } from './hunter/vitals.ts';
 import type { Life, LifeState } from './hunter/vitals.ts';
 import type { ShadowOrigin } from './hunter/shadows.ts';
 import { BUNDLE_NAME, newRewards, parseRewards, parseWords } from './rewards.ts';
@@ -99,8 +99,6 @@ const text = (n: number) => (v: unknown): string => (typeof v === 'string' ? v.s
 const filled = (n: number) => (v: unknown): string => { const s = text(n)(v); return s.trim() ? s : refuse(); };
 const int = (lo: number, hi: number) => (v: unknown): number =>
   (typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, Math.trunc(v))) : refuse());
-/** A face of the d20 a death save rolls: a whole number from 1 to 20. Refused, never clamped: a 0 read as 1 would count two failures. */
-const d20Face = (v: unknown): number => (typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= SAVE_UP ? v : refuse());
 const bool = (v: unknown): boolean => (typeof v === 'boolean' ? v : refuse());
 /** A reader of one of `list`: anything else refuses the event. */
 const choiceOf = <T extends string>(list: readonly T[]) => (v: unknown): T => oneOf(v, list, null) ?? refuse();
@@ -230,8 +228,8 @@ export type HpPayload = Base & { to: SheetKey[]; hp: number; mana: number; fatig
 /**
  * The fight's write-back of a hunter on another phone (the `sendRemote` effect of src/core/combat/fight-types.ts): its
  * life (its HP with it), mana, fatigue and statuses as the fight's row holds them. The row is the one writer of that
- * life while the fight holds the hunter, so the player's sheet takes it as it is (grant.ts `totals`): a death save, a
- * death and the GM's Revive all reach the sheet here. Totals, so a repeat changes nothing. For one hunter.
+ * life while the fight holds the hunter, so the player's sheet takes it as it is (grant.ts `totals`): a death and the
+ * GM's Revive all reach the sheet here. Totals, so a repeat changes nothing. For one hunter.
  */
 export type VitalsPayload = Base & { to: [SheetKey]; life: Life; mana: number; fatigue: number; statuses: SheetStatus[]; reason: string };
 /**
@@ -285,13 +283,6 @@ export type StepPayload = Base & { by: SheetKey; place: DocPlace; at: Tick; dash
  * for a step.
  */
 export type CastPayload = Base & { by: SheetKey; ability: AbilityId; aim: CombatantId | DocPlace; at: Tick };
-/**
- * A player's death save in the GM's fight: the hunter of `by`, dying, rolled `roll` on the d20 on its own phone. The GM's
- * phone takes it once by its id as the fight's `life` command (a `deathSave` with that roll) on that hunter's row, and
- * the player's sheet changes only when the row's new life comes back in `vitals`. Not bound to a turn: the row's life
- * refuses a save unless it is dying.
- */
-export type DeathSavePayload = Base & { by: SheetKey; roll: number };
 /**
  * A player's pass in the GM's fight: the hunter of `by` ends its turn, at the cost of the fight's `endTurn`. `at` as for
  * a step, so a replay or a stale tap ends no later turn.
@@ -367,7 +358,7 @@ export type ChapterPayload = Base & { to: SheetKey[] } & ChapterBody;
 type Payloads = {
   offer: OfferPayload; offerEnd: OfferEndPayload; offerStop: OfferStopPayload;
   system: SystemPayload; award: AwardPayload; quest: QuestPayload; hp: HpPayload; vitals: VitalsPayload; spent: SpentPayload; status: StatusPayload; revive: RevivePayload;
-  roll: RollPayload; questUpdate: QuestUpdatePayload; used: UsedPayload; step: StepPayload; cast: CastPayload; pass: PassPayload; deathSave: DeathSavePayload; chain: ChainPayload;
+  roll: RollPayload; questUpdate: QuestUpdatePayload; used: UsedPayload; step: StepPayload; cast: CastPayload; pass: PassPayload; chain: ChainPayload;
   coinCall: CoinCallPayload; coinLand: CoinLandPayload; arm: ArmPayload; shadow: ShadowPayload; soloRun: SoloRunPayload; soloAnswer: SoloAnswerPayload; noted: NotedPayload;
   chapter: ChapterPayload;
 };
@@ -485,7 +476,6 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
     };
   } },
   pass: { gmOnly: false, ownSheet: true, read: o => ({ ...base(o), by: sheetKey(own(o, 'by')), at: time0(own(o, 'at')) }) },
-  deathSave: { gmOnly: false, ownSheet: true, read: o => ({ ...base(o), by: sheetKey(own(o, 'by')), roll: d20Face(own(o, 'roll')) }) },
   arm: { gmOnly: false, ownSheet: true, read: o => {
     const ability = own(o, 'ability'), on = own(o, 'on');
     const id = (v: unknown, max: number) => typeof v === 'string' && v.length > 0 && v.length <= max ? v : refuse();
@@ -536,7 +526,7 @@ type EventEntry<K extends EventType> = {
 export const EVENTS: { readonly [K in EventType]: EventEntry<K> } = {
   offer: entry('offer'), offerEnd: entry('offerEnd'), offerStop: entry('offerStop'),
   system: entry('system'), award: entry('award'), quest: entry('quest'), hp: entry('hp'), vitals: entry('vitals'), spent: entry('spent'), status: entry('status'),
-  revive: entry('revive'), roll: entry('roll'), questUpdate: entry('questUpdate'), used: entry('used'), step: entry('step'), cast: entry('cast'), pass: entry('pass'), deathSave: entry('deathSave'),
+  revive: entry('revive'), roll: entry('roll'), questUpdate: entry('questUpdate'), used: entry('used'), step: entry('step'), cast: entry('cast'), pass: entry('pass'),
   chain: entry('chain'), coinCall: entry('coinCall'), coinLand: entry('coinLand'), arm: entry('arm'), shadow: entry('shadow'),
   soloRun: entry('soloRun'), soloAnswer: entry('soloAnswer'), noted: entry('noted'),
   chapter: entry('chapter'),
@@ -591,7 +581,7 @@ export function newEvent<K extends EventType>(type: K, body: EventBody<K>, stamp
 /**
  * The time of a page's next event id: its clock's now, or one millisecond after the page's last when the clock has not
  * passed it. So every id one page makes differs by its time alone, however close together the posts and whatever
- * `Math.random` answers (a test fixes it for its dice; one tap posts a roll and a death save in one millisecond).
+ * `Math.random` answers (a test fixes it for its dice; one tap may post two events in one millisecond).
  */
 export const stampTime = (last: number, now: number): number => Math.max(Math.trunc(now), last + 1);
 /** `v` as JSON with each object's keys sorted, so two readings of one message compare equal whatever order a store keeps. */
@@ -787,7 +777,7 @@ function docStatus(v: unknown, defs: Record<string, StatusDef>): DocStatus {
 const bandAt = (v: unknown): Band => (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < BANDS.length ? BANDS[v]! : refuse());
 /**
  * A row's life on the wire (`d`): its state's index in `LIFE_STATES`, absent while up, one of `states`, the row's kind's
- * table (a hunter's every state, any other row's up or dead). Anything else is refused, so a dying monster never reads.
+ * table (up or dead for every kind). Anything else is refused.
  */
 function wireLife<S extends LifeState>(v: unknown, states: readonly S[]): { readonly at: S } {
   if (v === undefined) return { at: oneOf('up', states, null) ?? refuse() };

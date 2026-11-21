@@ -78,7 +78,7 @@ describe('a count and its window (table 5.6)', () => {
     expect(parseCount({ on: 'kill', measure: { of: 'sum', field: 'type' } })).toBeNull();
   });
   test('a kind with no number field takes each time and different values only; every measure a kind takes reads back with each field it offers', () => {
-    const noNumber = ['closed', 'quest', 'rank', 'title', 'feat', 'given', 'chapter', 'coin', 'rest', 'used', 'shadow'];
+    const noNumber = ['closed', 'quest', 'life', 'rank', 'title', 'feat', 'given', 'chapter', 'coin', 'rest', 'used', 'shadow'];
     for (const kind of FACT_KINDS) {
       expect([kind, measuresFor(kind)]).toEqual([kind, noNumber.includes(kind) ? ['facts', 'distinct'] : ['facts', 'sum', 'distinct', 'max']]);
       for (const of of measuresFor(kind)) {

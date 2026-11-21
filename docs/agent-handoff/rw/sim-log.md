@@ -1320,3 +1320,36 @@ By kind: normal 28 of 174 (29), elite 0 of 107, boss 6 of 62, mythic 0 of 23. Th
 (269), worth over 172 (172), rounds over 142 (143), a death 30, the party's win share 23, rounds under 2. One normal row
 at E crossed an edge; at 150 runs a share near its bound moves by that much between draws, so the threat rule moves the
 sweep by nothing past its noise. The sweep is unit 6's to fit.
+
+## No death saves (Nov 21): going down and dying are one event
+
+the owner, Nov 21: "Let's do away with death saves entirely." A hunter at 0 HP is dead; only a revive brings it back. The
+rows that spoke of a hunter going down and of one dying are restated as deaths (`tests/fight-sim.test.ts`, the header's
+reading and `partyRows`):
+
+- "a hunter goes down in at most 1 pack fight in 10" is now "a hunter dies in at most 1 pack fight in 10" (design 6: "no
+  hunter dying in more than 1 run in 10").
+- "a hunter goes down in at most 1 boss fight in 4" and "a hunter dies in under 1 boss fight in 20" cannot both stand
+  when the two are one event. The row kept is the design's bound on a hunter lost: "a hunter dies in under 1 boss fight
+  in 20". The 1-in-4 row is gone; under the death bound it could never bind.
+- "the speed party's front hunter goes down at least twice as often" is now "dies at least twice as often".
+
+Measured on the same seeds, before (`62d87ff`, the old rows) and after (this change):
+
+| Row | Bound | Before | After |
+|---|---|---|---|
+| a hunter goes down / dies in a pack fight at C | at most 0.10 | 0.000 | 0.000 |
+| a hunter goes down in a boss fight at C | at most 0.25 | 0.000 | (row gone) |
+| a hunter dies in a boss fight at C | under 0.05 | 0.000 | 0.000 |
+| front hunter, speed over mixed, at C | at least 2 | 8.200 (se 3.767; 0.273 over 0.033) | 8.200 |
+| a hunter goes down / dies in a pack fight at S | at most 0.10 | 0.013 (se 0.009) | 0.013 |
+| a hunter goes down in a boss fight at S | at most 0.25 | 0.013 (se 0.007) | (row gone) |
+| a hunter dies in a boss fight at S | under 0.05 | 0.000 | 0.013 (se 0.007) |
+| front hunter, speed over mixed, at S | at least 2 | 9.667 (se 3.992; 0.387 over 0.040) | 9.667 |
+
+Every restated row is inside; none goes to `OPEN`, and no number in `RULES.fight` moved. The values equal the old "goes
+down" shares because the play itself did not change: no policy heals or stabilizes an ally at 0 HP (`alliesOf` in
+`policy.ts` reads only rows that are up), so a hunter who went down stayed at 0 to the fight's end before too. What
+changed is after the fight: the old death row counted only hunters whose death saves, rolled with nobody to help, ended
+at dead (0.000 at S); now each of those falls is a death, so the boss row at S reads the old down share, 0.013, five
+standard errors under its 0.05.

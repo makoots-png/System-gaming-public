@@ -62,7 +62,7 @@ export type MapBody = Spot & {
    * map seen as everything draws it dimmed. Always false on a player's, which holds only what the party perceives.
    */
   readonly unseen: boolean;
-  /** The word for its life while it is not up (row-life.ts `lifeWord`: Dying, Stable, Dead, Defeated), else null. */
+  /** The word for its life while it is not up (row-life.ts `lifeWord`: Dead, Defeated), else null. */
   readonly word: string | null;
   /** Its picture (row-icon.ts `rowIcon`; on a player's phone the doc's, which is the GM's answer), or null: its initials show. */
   readonly icon: IconKey | null;

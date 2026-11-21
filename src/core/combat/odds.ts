@@ -12,7 +12,7 @@ import type { CombatantId } from './ability-types.ts';
 import type { Fight, Running, Setup } from './fight-types.ts';
 import { sheetTotals } from './fight-turn.ts';
 import type { SheetTotals } from './fight-turn.ts';
-import { CAP_ROUNDS, lifeOfSaves, playBegin, playOver, playSaves, playStep } from './play.ts';
+import { CAP_ROUNDS, playBegin, playOver, playStep } from './play.ts';
 import type { Limits, Play, UsedUp } from './play.ts';
 import type { Life, LifeState } from '../hunter/vitals.ts';
 import { sensible } from './policy.ts';
@@ -22,13 +22,12 @@ import { isUp } from './row-hp.ts';
 export const RUN_OUTCOMES = ['won', 'lost', 'stalled'] as const;
 export type RunOutcome = (typeof RUN_OUTCOMES)[number];
 /**
- * A party row at a played fight's end: what it leaves on its sheet (`sheetTotals`), whether it went down, the death save
- * faces it rolled in order (none when up, or when left down beside a standing ally of a won fight, `playSaves`), and
- * the life those faces lead to from a fall (`lifeOfSaves`; up when it never fell or stands again).
+ * A party row at a played fight's end: what it leaves on its sheet (`sheetTotals`) and whether it is up or dead (a
+ * shadow's dead is defeated). Nothing in a play stands a row up from 0 HP, so a row that went down is dead at the end.
  */
 export type RowEnd = SheetTotals & {
-  readonly down: boolean; readonly saves: readonly number[]; readonly life: LifeState;
-  /** A hunter row's life as the fight left it, before the death saves after it (what a solo run writes back); null for a shadow. */
+  readonly life: LifeState;
+  /** A hunter row's life as the fight left it (what a solo run writes back); null for a shadow. */
   readonly lifeLeft: Life | null;
   /** The monsters it took down (a solo run's kill facts, solo.ts). */ readonly kills: readonly KillSeen[];
 };
@@ -36,8 +35,6 @@ export type RowEnd = SheetTotals & {
 export type RunEnd = {
   readonly outcome: RunOutcome; readonly rounds: number; readonly commands: number; readonly party: Readonly<Record<CombatantId, RowEnd>>; readonly spent: readonly UsedUp[];
 };
-/** Whether a row's end is dead: its death saves ended it. */
-export const deadEnd = (e: RowEnd): boolean => e.life === 'dead';
 /** A party row the odds tell of: its id, its name and its maxima at the start. */
 export type OddsRow = { readonly id: CombatantId; readonly name: string; readonly hpMax: number; readonly manaMax: number; readonly fatigueMax: number };
 /** The engine's answer: how many fights it played, the party's rows, and every fight's end. */
@@ -61,14 +58,13 @@ const partyRows = (f: Fight): OddsRow[] => f.rows.filter(r => r.side === 'party'
   .map(r => ({ id: r.id, name: r.name, hpMax: r.sheet.hpMax, manaMax: r.sheet.manaMax, fatigueMax: r.sheet.fatigueMax }));
 /** A played fight's end: its outcome, and each party row of `rows` as the play left it (notes-2-solo.md section 2). */
 export function endOf(p: Play & { readonly fight: { readonly phase: 'ended' } }, rows: readonly OddsRow[], R: Rules): RunEnd {
-  const f = p.fight, saves = playSaves(p);
+  const f = p.fight;
   const outcome: RunOutcome = p.capped ? 'stalled' : f.summary.winner === 'party' ? 'won' : 'lost';
   const party: Record<CombatantId, RowEnd> = {};
   for (const { id } of rows) {
     const r = f.rows.find(x => x.id === id);
     if (!r) continue;
-    const faces = saves[id] ?? [], life: LifeState = isUp(r) ? 'up' : lifeOfSaves(faces, r.sheet.hpMax);
-    party[id] = { ...sheetTotals(r, f.now, R), down: p.down.includes(id) || !isUp(r), saves: faces, life, lifeLeft: r.kind === 'hunter' ? r.life : null, kills: killsSeen(tallyOf(r), f.rows) };
+    party[id] = { ...sheetTotals(r, f.now, R), life: isUp(r) ? 'up' : 'dead', lifeLeft: r.kind === 'hunter' ? r.life : null, kills: killsSeen(tallyOf(r), f.rows) };
   }
   return { outcome, rounds: f.summary.rounds, commands: p.steps, party, spent: p.spent };
 }
@@ -149,7 +145,8 @@ export const progressOf = (r: OddsRun, R: Rules): { readonly done: number; reado
 // ── reading the odds ──
 /** A spread over the runs: the 10th, 50th and 90th percentile (nearest rank). */
 export type Percentiles = { readonly low: number; readonly mid: number; readonly high: number };
-export type RowRead = OddsRow & { readonly down: number; readonly dead: number; readonly hp: Percentiles; readonly mana: Percentiles; readonly fatigue: Percentiles };
+/** A party row's spread: `dead` the share of runs it ended dead (a shadow defeated). */
+export type RowRead = OddsRow & { readonly dead: number; readonly hp: Percentiles; readonly mana: Percentiles; readonly fatigue: Percentiles };
 /** The odds read: the share of runs won, lost and stalled, the rounds, and each party row's spread. */
 export type OddsRead = { readonly of: number; readonly won: number; readonly lost: number; readonly stalled: number; readonly rounds: Percentiles; readonly party: readonly RowRead[] };
 
@@ -168,7 +165,7 @@ export function readOdds(o: Odds): OddsRead {
     party: o.rows.map(row => {
       const ends = o.ends.flatMap(e => (e.party[row.id] ? [e.party[row.id]!] : []));
       return {
-        ...row, down: share(ends.filter(x => x.down).length), dead: share(ends.filter(deadEnd).length),
+        ...row, dead: share(ends.filter(x => x.life === 'dead').length),
         hp: spreadOf(ends.map(x => x.hp)), mana: spreadOf(ends.map(x => x.mana)), fatigue: spreadOf(ends.map(x => x.fatigue)),
       };
     }),
@@ -181,8 +178,8 @@ const pct = (share: number): string => `${Math.round(100 * share)}%`;
 const range = (s: Percentiles): string => { const low = Math.round(s.low), high = Math.round(s.high); return low === high ? `${low}` : `${low} to ${high}`; };
 /** About how many rounds: the median, whole, and at least 1. */
 const about = (s: Percentiles): number => Math.max(1, Math.round(s.mid));
-/** The row most likely to go down, null when none ever did. */
-const mostDown = (r: OddsRead): RowRead | null => [...r.party].sort((a, b) => b.down - a.down)[0] ?? null;
+/** The row most likely to die, null when there is none. */
+const mostDead = (r: OddsRead): RowRead | null => [...r.party].sort((a, b) => b.dead - a.dead)[0] ?? null;
 
 /**
  * Who the odds speak to: the GM weighing a party's fight (`party`), or a player weighing a solo gate for one hunter
@@ -204,18 +201,18 @@ const VOICE: { readonly [V in OddsVoice]: { readonly won: (r: OddsRead) => strin
 };
 /** The share of fights won, in `voice`'s words: the first sentence of the line and of a solo run's confirm. */
 export const wonLine = (r: OddsRead, voice: OddsVoice): string => VOICE[voice].won(r);
-/** One row's chance to go down and die, as a sentence: what a hunter alone reads after its chance to clear. */
-export const fateLine = (row: RowRead): string => (row.down > 0 ? `Down in ${pct(row.down)}${row.dead > 0 ? `, dead in ${pct(row.dead)}` : ''}.` : 'Never down in these plays.');
+/** One row's chance to die, as a sentence: what a hunter alone reads after its chance to clear. */
+export const fateLine = (row: RowRead): string => (row.dead > 0 ? `Dead in ${pct(row.dead)}.` : 'Never dead in these plays.');
 /** The control's hint under its button, in `voice`'s words. */
 export const oddsHint = (voice: OddsVoice): string => VOICE[voice].hint;
 
 /**
- * The one line acted on: the chance to win, then for a party who is most likely to go down, for a hunter alone its
- * chance to go down and die; about how many rounds.
+ * The one line acted on: the chance to win, then for a party who is most likely to die, for a hunter alone its chance
+ * to die; about how many rounds.
  */
 export function oddsLine(r: OddsRead, voice: OddsVoice): string {
-  const worst = mostDown(r);
-  const who = voice === 'alone' && worst ? fateLine(worst) : worst && worst.down > 0 ? `${worst.name} is most likely to go down (${pct(worst.down)}).` : 'Nobody went down.';
+  const worst = mostDead(r);
+  const who = voice === 'alone' && worst ? fateLine(worst) : worst && worst.dead > 0 ? `${worst.name} is most likely to die (${pct(worst.dead)}).` : 'Nobody died.';
   return `${wonLine(r, voice)} ${who} About ${about(r.rounds)} round${about(r.rounds) === 1 ? '' : 's'}.`;
 }
 /** The detail under the line: the rounds, the losses, the stalemates, each party row's end. */
@@ -224,7 +221,7 @@ export function oddsDetail(r: OddsRead, voice: OddsVoice): string[] {
   if (r.lost > 0) out.push(VOICE[voice].lost(r.lost));
   if (r.stalled > 0) out.push(`No winner by round ${CAP_ROUNDS} in ${pct(r.stalled)}.`);
   for (const p of r.party) {
-    const fate = p.down > 0 ? `down in ${pct(p.down)}${p.dead > 0 ? `, dead in ${pct(p.dead)}` : ''}` : 'never down';
+    const fate = p.dead > 0 ? `dead in ${pct(p.dead)}` : 'never dead';
     out.push(`${p.name}: ${fate}. Ends with ${range(p.hp)} of ${p.hpMax} HP, ${range(p.mana)} of ${p.manaMax} mana, ${range(p.fatigue)} of ${p.fatigueMax} fatigue.`);
   }
   return out;

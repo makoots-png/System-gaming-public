@@ -171,14 +171,17 @@ function check(before: Fight | null, cmd: Command, after: Fight | null, effects:
 
 /**
  * A row's tally (row-tally.ts): no count goes down over a command, its lowest HP share never rises, a row other than a
- * hunter keeps only its kills, and every kill names a foe of the fight on the other side.
+ * hunter keeps only its kills, and every kill names a foe of the fight on the other side as it is counted. A kill keeps
+ * its row's id after the GM removes that row (fight-facts.ts `killsSeen` reads only the rows still there; a turn's count
+ * keeps it): seed 1269 removed a hunter a wolf had killed, which the same commands did at 62d87ff too.
  */
 function tallyWrong(before: Fight | null, after: Fight): string | null {
   const COUNTS = ['hits', 'crits', 'critRunMax', 'struck', 'avoided', 'dealt', 'taken', 'healed', 'raised', 'hexes', 'downs', 'turns', 'items'] as const;
   for (const r of after.rows) {
     const t = tallyOf(r), was = before?.rows.find(x => x.id === r.id);
     if (r.kind !== 'hunter' && r.tally && Object.keys(r.tally).some(k => k !== 'kills')) return `${r.id}, not a hunter, keeps ${Object.keys(r.tally).join(', ')}`;
-    for (const k of t.kills) { const foe = after.rows.find(x => x.id === k.row); if (!foe || foe.side === r.side) return `${r.id} counts a kill of ${k.row}, not a foe in the fight`; }
+    const held = was ? tallyOf(was).kills.length : 0;
+    for (const k of t.kills.slice(held)) { const foe = [...after.rows, ...(before?.rows ?? [])].find(x => x.id === k.row); if (!foe || foe.side === r.side) return `${r.id} counts a kill of ${k.row}, not a foe in the fight`; }
     if (!was) continue;
     const w = tallyOf(was);
     for (const k of COUNTS) if (t[k] < w[k]) return `${r.id}'s ${k} went from ${w[k]} to ${t[k]}`;
@@ -341,6 +344,15 @@ describe('what random play found', () => {
     const started = r.effects.flatMap(e => e.type === 'turnStarted' ? [[e.id, e.now]] : []);
     expect(started[0]).toEqual([cid('c-brakk'), 0]);
     expect(started.at(-1)![1]).toBeGreaterThan(0);
+  });
+  // Seed 1269: a wolf killed Mira and the GM removed her; the wolf's kill kept her id, which the model read as no foe.
+  test('a monster\'s kill of a hunter the GM then removes stays counted, and the fight plays on', () => {
+    const mira = ROSTER.find(x => x.id === 'c-mira')!, hp = modified(mira.origin, [], RULES).sheet.hpMax;
+    const r = replay([...opening('c-w2'), { type: 'adjust', id: cid('c-mira'), hp: 1 - hp },
+      { type: 'act', by: cid('c-w2'), ability: abilityId('plague-bite'), aim: cid('c-mira'), rolls: rolls({ 'c-mira': [7] }, { 'c-mira': 15 }), force: true },
+      { type: 'remove', id: cid('c-mira') }]);
+    expect(r.problem).toBeNull();
+    expect(tallyOf(r.fight!.rows.find(x => x.id === 'c-w2')!).kills.map(k => k.row)).toEqual([cid('c-mira')]);
   });
 });
 

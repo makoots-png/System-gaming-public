@@ -3,7 +3,7 @@
 // the boundary parser fight-parse.ts. The row of a fight is `Body` (effect-ops.ts).
 import type { Rules } from '../rules.ts';
 import type { Dice } from '../formula.ts';
-import type { Life, LifeEvent } from '../hunter/vitals.ts';
+import type { Life } from '../hunter/vitals.ts';
 import type { Grid, Place, Side, Terrain, Tiles } from './space.ts';
 import type { Tick } from './timeline.ts';
 import type { AbilityId, CombatantId, HunterId } from './ability-types.ts';
@@ -115,11 +115,6 @@ export type Opening = { readonly id: CombatantId; readonly d20: number; readonly
 
 /** What the reducer may know besides the fight: the rules. A row's life is the row's own (row-life.ts). */
 export type Ctx = { readonly rules: Rules };
-/**
- * The events of a row's life that are not HP (the life machine's, vitals.ts), which the `life` command carries: the GM's
- * Revive of the dead, the GM's Stabilize of a dying hunter, a dying hunter's death save with the d20 rolled.
- */
-export type RowLifeEvent = Extract<LifeEvent, { readonly type: 'revive' | 'stabilize' | 'deathSave' }>;
 
 // ── commands ──
 export type Command =
@@ -175,11 +170,11 @@ export type Command =
    */
   | { readonly type: 'refill'; readonly id: CombatantId }
   /**
-   * Row `id`'s life takes `event` (row-life.ts `rowLifeAfter`): Revive stands a dead row up at the revive HP (a hunter or
-   * a foe), Stabilize and a death save are a dying hunter's. Refused (`lifeCannot`) when its life does not take the event.
-   * No time passes; a row stood up rejoins the turns.
+   * The GM's Revive of dead row `id` (a hunter or a foe): its life up at the revive HP (row-life.ts `rowLifeAfter`) and
+   * every status taken off, so a poison does not kill it again. Refused (`lifeCannot`) when the row is not dead. No time
+   * passes; a row stood up rejoins the turns.
    */
-  | { readonly type: 'life'; readonly id: CombatantId; readonly event: RowLifeEvent }
+  | { readonly type: 'revive'; readonly id: CombatantId }
   /**
    * The GM's Status window on `id`: `remove` takes a status off, then `add` puts one on from the GM at `tier`, lasting
    * `duration` (null until removed). No time passes; a hold put on the current row ends its turn, as a use would.
@@ -239,7 +234,7 @@ export type Refusal = UseRefusal
   | 'notExtractor'
   /** A refill of a row no hunter holds: a level-up is a hunter's. */
   | 'notHunter'
-  /** A `life` command its row's life does not take: Revive of a row not dead, a death save of a hunter not dying. */
+  /** A `revive` of a row that is not dead. */
   | 'lifeCannot'
   /** A `fudge` whose weight is not a whole number, or whose forced face is not 1 or 20. */
   | 'fudgeValue';
