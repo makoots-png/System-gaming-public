@@ -9,6 +9,7 @@ import { FULL_HEAL } from '../combat/effect-ops.ts';
 import type { Op } from '../combat/effect-ops.ts';
 import { parseOp } from '../combat/fight-parse.ts';
 import { withinSize } from '../size.ts';
+import { parseFormula } from '../formula.ts';
 import type { Formula } from '../formula.ts';
 import { kitGear, pointsAt, sheetOf, split } from '../hunter/derive.ts';
 import type { DeriveRules, GearPiece, Kit } from '../hunter/derive.ts';
@@ -18,6 +19,13 @@ import { oneOf } from '../one-of.ts';
 import { isIconKey } from './icons.ts';
 import type { IconKey } from './icons.ts';
 import type { ItemId } from '../ids.ts';
+import { abilityId, tag } from '../combat/ability-types.ts';
+import type { Ability } from '../combat/ability-types.ts';
+import type { StatusDef } from '../combat/effect-ops.ts';
+import { statusKey } from '../combat/effect-ops.ts';
+import { tiles } from '../combat/space.ts';
+import { tick } from '../combat/timeline.ts';
+import { abilityOf } from './ability-kinds.ts';
 import { parsePowers } from './powers.ts';
 import type { Powers } from './powers.ts';
 
@@ -90,9 +98,9 @@ type Common = { name: string; rar: Rarity; desc: string; value?: number; grade?:
  * consumable the ops it does when used. The rest is a thing to carry and sell.
  */
 export type ItemDef =
-  | Common & { type: 'weapon'; slot: 'weapon'; dice: string; attack: Attack; bonus?: ItemBonus }
-  | Common & { type: 'armor'; slot: ArmorSlot; kit: Kit; bonus?: ItemBonus }
-  | Common & { type: 'accessory'; slot: 'neck' | 'ring1' | 'ring2'; bonus: ItemBonus }
+  | Common & Powers & { type: 'weapon'; slot: 'weapon'; dice: string; attack: Attack; bonus?: ItemBonus }
+  | Common & Powers & { type: 'armor'; slot: ArmorSlot; kit: Kit; bonus?: ItemBonus }
+  | Common & Powers & { type: 'accessory'; slot: 'neck' | 'ring1' | 'ring2'; bonus: ItemBonus }
   | Common & { type: 'consumable'; effects: Op[]; revive?: true; tell?: true }
   | Common & { type: 'material' | 'key' | 'misc' };
 
@@ -127,6 +135,87 @@ export const SHOP_ITEMS: readonly ItemDef[] = [
   })),
 ];
 
+// ── the recipes: items built only from shapes that exist (item-stats units 3 and 10) ──
+// Each is sized to its grade by `itemSpend` (item-budget.ts), and each comment says how its spend adds up. A recipe part
+// that needs a shape not built yet (`healPower`, `shieldDrain`, `lowHp`, `imposed`) is left out and said in its comment.
+/** A formula from its text. A built-in's text is checked here, once, at load: a wrong one stops the app and its test. */
+const formula = (text: string): Formula => {
+  const p = parseFormula(text, RULES);
+  if ('error' in p) throw new Error(`a built-in item's formula "${text}": ${p.error}`);
+  return p.formula;
+};
+/** A fight round in ticks, times `n`. */
+const rounds = (n: number) => tick(n * RULES.fight.round);
+/** Spellblade's mark: it leaves with the next hit its bearer deals (the stack leaves on `hitDealt`). */
+const SPELLBLADE_READY: StatusDef = {
+  label: 'Spellblade ready', desc: 'The next hit deals bonus damage.', ops: [],
+  stack: { cap: 1, leave: { kind: 'event', event: 'hitDealt' }, keep: 'fight', threshold: null },
+};
+/** Bulwark: a shield of 10 + 5% of max HP on its user, ready again 8 rounds later (once a fight of six rounds); it takes a standard action. */
+const BULWARK: Ability = abilityOf('support', {
+  id: abilityId('bulwark'), name: 'Bulwark', aim: 'self', shape: { kind: 'self' }, range: tiles(0), delivery: { kind: 'sure' },
+  effect: { type: 'shield', by: 'hand', formula: formula('10 + 0.05 * hpmax') },
+  cost: { fatigue: 0, mana: 0, time: abilityOf('support', { id: abilityId('x'), name: 'x' }, RULES).cost.time, cooldown: rounds(8) },
+}, RULES);
+
+/** The recipe items: the library holds them with the other loot, and a gate may drop them by rarity. */
+export const RECIPE_ITEMS: readonly ItemDef[] = [
+  // Thornmail, Epic+: Vitality 1 costs 1.00, a struck trigger's reflect `1 + 0.01 * armor` 5.15 (read on the build with the
+  // most armor, one strike a round), so it spends 6.15 against Epic+'s 5.86 to 6.73. The plan's `3 + 0.1 * armor` spends 32
+  // here. Its healing cut (a `share` op on `healed`) is left out: `itemSpend` cannot price it yet.
+  {
+    name: 'Thornmail', rar: 'epic', grade: 1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { vit: 1 },
+    desc: 'Heavy chest armor that adds 1 Vitality. A foe that strikes its wearer takes magic damage of 1 + 1% of the wearer\'s armor.',
+    worn: {
+      label: 'Thornmail', desc: 'Strikes against the wearer hurt the striker.', ops: [],
+      triggers: [{ on: 'struck', tag: null, to: 'other', limit: { kind: 'each' }, ops: [
+        { op: 'damage', type: 'magical', amount: formula('1 + 0.01 * armor'), when: 'use' },
+      ] }],
+    },
+  },
+  // Spellblade, Rare: the 1d8 is under a rare weapon's free die and refunds nothing (spend 0 on its own, as armor under its
+  // piece); the hit trigger `2 + 0.02 * str` is read on the build that favours Strength, at one hit a round (the trigger's
+  // rate, whatever the mark holds back): 3.43 against Rare's 3.10 to 3.71. The mark's stack has no rule worth reads.
+  // A GM tags a skill "spell" for it to ready the blade.
+  {
+    name: 'Spellblade', rar: 'rare', type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', bonus: {},
+    desc: 'After its wearer uses an ability tagged "spell", the next hit deals 2 + 2% of Strength more physical damage.',
+    worn: {
+      label: 'Spellblade', desc: 'A spell readies the next hit.', ops: [],
+      triggers: [
+        { on: 'used', tag: tag('spell'), to: 'self', limit: { kind: 'each' }, ops: [{ op: 'applyStatus', key: statusKey('spellblade-ready'), def: SPELLBLADE_READY, duration: null }] },
+        { on: 'hitDealt', tag: null, to: 'other', limit: { kind: 'each' }, need: { kind: 'holds', key: statusKey('spellblade-ready') }, ops: [{ op: 'damage', type: 'physical', amount: formula('2 + 0.02 * str'), when: 'use' }] },
+      ],
+    },
+  },
+  // Healer's Charm, Rare: Presence 2 costs 2.00 and a heal of `0.05 * sup` (a twentieth of the wearer's heal power) on a kill
+  // 1.24 (its rate is 0.35 a round, on the support build), so it spends 3.24 against Rare's 3.10 to 3.71. A per-round
+  // heal would be unweighed (worth.ts reads no standing heal), so the heal is a trigger. `healPower` (unit 1) is not built.
+  {
+    name: "Healer's Charm", rar: 'rare', type: 'accessory', slot: 'neck', bonus: { pre: 2 },
+    desc: 'A charm that adds 2 Presence. Each kill its wearer makes heals it by 5% of its heal power.',
+    worn: {
+      label: "Healer's Charm", desc: 'A kill heals its wearer.', ops: [],
+      triggers: [{ on: 'kill', tag: null, to: 'self', limit: { kind: 'each' }, ops: [{ op: 'heal', amount: formula('0.05 * sup'), when: 'use' }] }],
+    },
+  },
+  // Bulwark Ring, Rare+: no bonus; the active's shield `10 + 0.05 * hpmax` on the build with the most max HP, over the
+  // support's standard shield, times its uses a round (one in 8, its cooldown) times the rate a worn worth pays: 4.17
+  // against Rare+'s 3.71 to 4.43. The plan's `10 + 0.2 * hpmax` every 3 rounds spends 23.2 here.
+  {
+    name: 'Bulwark Ring', rar: 'rare', grade: 1, type: 'accessory', slot: 'ring1', bonus: {},
+    desc: 'Its wearer can use Bulwark in a fight: a shield of 10 + 5% of max HP, ready again after 8 rounds.',
+    active: BULWARK,
+  },
+  // Warden's Plate, Epic−: the heavy chest piece is free; the `sheet` armor op `0.015 * hpmax` is read on the build with the
+  // most max HP and costs the Vitality whose armor it is (item-budget.ts `SHEET_OP_COST`): 4.92 against Epic−'s top 5.10.
+  {
+    name: "Warden's Plate", rar: 'epic', grade: -1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: {},
+    desc: 'Heavy chest armor. Its wearer has armor equal to 1.5% of max HP more.',
+    worn: { label: "Warden's Plate", desc: 'Armor grows with max HP.', ops: [{ op: 'sheet', key: 'armor', amount: formula('0.015 * hpmax') }] },
+  },
+];
+
 // A piece of armour's kit is the old AC it gave: 0 or 1 light, 2 medium, 3 or more heavy (plan section 3.3). Old stats
 // map as dex Agility, con Vitality, int Power, wis Instinct, cha Presence; old max MP is a fifth as max mana.
 /** The items a gate's loot roll picks from by rarity (with the shop's stock). Priced by the rule unless they say otherwise. */
@@ -156,6 +245,7 @@ export const LOOT_ITEMS: readonly ItemDef[] = [
   { name: 'Crown of the Shadow Sovereign', rar: 'mythic', grade: -1, type: 'armor', slot: 'head', kit: 'heavy', bonus: { pow: 5, ins: 5 }, desc: 'A heavy crown that adds 5 Power and 5 Instinct.' },
   { name: 'Armor of the Absolute Being', rar: 'mythic', grade: 1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { vit: 5, hpMax: 100 }, desc: 'Heavy chest armor that adds 5 Vitality and 100 max HP.' },
   { name: "Ring of the Monarch's Will", rar: 'mythic', grade: 1, type: 'accessory', slot: 'ring1', bonus: { str: 6, pre: 6 }, desc: 'A ring that adds 6 Strength and 6 Presence.' },
+  ...RECIPE_ITEMS,
 ];
 
 /** The item each of the starter campaign's three hunters begins with (src/views/starter.js). It is given as is: no price. */
@@ -260,6 +350,9 @@ export function weaponWeight(dice: string): number {
   return Number(m[1]) >= 2 ? 4 : Number(m[2]) <= 6 ? 1 : 2;
 }
 
+/** The powers a built-in def holds, copied as they are (a def without any gives `{}`). */
+const powersOf = (def: Powers): Powers => ({ ...(def.worn ? { worn: def.worn } : {}), ...(def.active ? { active: def.active } : {}) });
+
 /**
  * A built-in item as an item a hunter can hold (no id yet): a price only when it sets one (else the rule's, `valueOf`),
  * a grade only when it is a minus or a plus (the middle is none, as `parseItem` reads it).
@@ -269,9 +362,9 @@ export function itemOf(R: Rules, def: ItemDef): ItemTemplate {
   switch (def.type) {
     case 'weapon':
       const { weight: _byDice, ...unweighed } = base; // a weapon's weight is its dice's (`weightOf`)
-      return { ...unweighed, slot: def.slot, dice: def.dice, attack: def.attack, bonus: { ...def.bonus } };
-    case 'armor': return { ...base, slot: def.slot, bonus: { ...def.bonus }, ...piece(def.kit, def.slot, R) };
-    case 'accessory': return { ...base, slot: def.slot, bonus: { ...def.bonus } };
+      return { ...unweighed, slot: def.slot, dice: def.dice, attack: def.attack, bonus: { ...def.bonus }, ...powersOf(def) };
+    case 'armor': return { ...base, slot: def.slot, bonus: { ...def.bonus }, ...piece(def.kit, def.slot, R), ...powersOf(def) };
+    case 'accessory': return { ...base, slot: def.slot, bonus: { ...def.bonus }, ...powersOf(def) };
     case 'consumable': return { ...base, slot: null, bonus: {}, ...(def.effects.length ? { effects: [...def.effects] } : {}), ...(def.revive ? { revive: true } : {}), ...(def.tell ? { tell: true } : {}) };
     default: return { ...base, slot: null, bonus: {} };
   }

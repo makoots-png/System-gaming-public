@@ -18,12 +18,14 @@ import { abilityId } from '../src/core/combat/ability-types.ts';
 import type { Ability } from '../src/core/combat/ability-types.ts';
 import { cost, tick } from '../src/core/combat/timeline.ts';
 import { tiles } from '../src/core/combat/space.ts';
-import { LOOT_ITEMS, RARITIES, SAMPLE_WEARER, SHOP_ITEMS, STARTER_GEAR, itemOf, piece, valueOf } from '../src/core/registry/items.ts';
+import { LOOT_ITEMS, RARITIES, RECIPE_ITEMS, SAMPLE_WEARER, SHOP_ITEMS, STARTER_GEAR, itemOf, piece, valueOf } from '../src/core/registry/items.ts';
 import type { Grade, ItemDef, ItemTemplate, Rarity } from '../src/core/registry/items.ts';
 import type { StatusDef } from '../src/core/combat/effect-ops.ts';
 import { gradeBand, gradeOfSpend, itemSpend, middleBudget, powersSpend, spendLine, tierSpan } from '../src/core/registry/item-budget.ts';
 
 const ALL: readonly ItemDef[] = [...SHOP_ITEMS, ...LOOT_ITEMS, ...Object.values(STARTER_GEAR)];
+/** The recipe items hold their own spends and grades (tests/items.test.ts, "the recipe items"); the figures below are the older built-ins'. */
+const OLDER: readonly ItemDef[] = ALL.filter(d => !RECIPE_ITEMS.includes(d));
 const def = (name: string): ItemDef => ALL.find(d => d.name === name)!;
 const spendOf = (name: string): number => itemSpend(itemOf(RULES, def(name)), RULES)!.points;
 /** A worn item of `rar` with nothing on it but what `rest` sets. */
@@ -317,14 +319,14 @@ group('the built-in items against the budget (economy design 2.5, ruling 6)', ()
       'Armor of the Black Knight': 3, 'Boots of Shadow Step': 4, "Kamish's Wrath": 21.3, 'Orb of Avarice': 16,
       'Crown of the Shadow Sovereign': 10, "Ring of the Monarch's Will": 12, "Monarch's Scepter": 53.4, 'Armor of the Absolute Being': 45,
     };
-    const worn = ALL.filter(d => d.type === 'weapon' || d.type === 'armor' || d.type === 'accessory');
+    const worn = OLDER.filter(d => d.type === 'weapon' || d.type === 'armor' || d.type === 'accessory');
     expect(worn.map(d => d.name).sort()).toEqual(Object.keys(SPEND).sort());
     for (const d of worn) expect(Number(spendOf(d.name).toFixed(1)), d.name).toBe(SPEND[d.name]!);
   });
 
   test('each built-in\'s grade is block [2.5]\'s: plain gear its tier\'s minus (the Knight Killer too, now its Lethality is weighed), the Worn Hunter Boots, the Mana Talisman and the Ring of the Monarch\'s Will plus', () => {
     const PLUS = ['Worn Hunter Boots', 'Mana Talisman', "Ring of the Monarch's Will", ...KEPT];
-    for (const d of ALL.filter(d => d.type === 'weapon' || d.type === 'armor' || d.type === 'accessory')) expect(d.grade, d.name).toBe(PLUS.includes(d.name) ? 1 : -1);
+    for (const d of OLDER.filter(d => d.type === 'weapon' || d.type === 'armor' || d.type === 'accessory')) expect(d.grade, d.name).toBe(PLUS.includes(d.name) ? 1 : -1);
     for (const d of ALL.filter(d => d.type === 'consumable' || d.type === 'material')) expect(d.grade, `${d.name}: a thing used up or sold has no grade`).toBeUndefined();
   });
 

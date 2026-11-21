@@ -31,7 +31,7 @@ test('a dead hunter alone reads the way back on the sheet, uses a Resurrection C
   await go(page, 'status');
   const death = page.locator('#view-status [data-death]');
   await expect(death.locator('[data-life]')).toHaveText('Dead');
-  await expect(death.locator('[data-wayback]')).toHaveText('The GM\'s Revive or a Resurrection Crystal brings you back.');
+  await expect(death.locator('[data-wayback]')).toHaveText('The GM\'s Revive or a Resurrection Crystal brings you back, with every status gone.');
   await expect(crystalCard(page).locator('[data-sell]'), 'a crystal is not bought back').toHaveCount(0);
   await crystalCard(page).locator('[data-use]').tap();
   await expect(page.locator('#toasts .toast').last()).toContainText('Resurrection Crystal (E) used: Up at 1 HP.');

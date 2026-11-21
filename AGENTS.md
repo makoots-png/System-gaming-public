@@ -84,6 +84,7 @@ When a mistake is made, apply `.claude/skills/correct/SKILL.md` (the owner's sta
 | A lead's notes are never left unpushed (Nov 20: the harness's push reminder cost a turn after every turn) | the lead's checkout is `lead-backlog`, pushed after each commit; the harness's stop hook then names any commit that is not |
 | A row of the trail carries the machine's time, not a typed one (Nov 21: a lead's rows ran 90 minutes ahead, twice) | `scripts/trail.sh <area> "<text>"`, which stamps the row with `date -u`; a lead appends rows only through it |
 | A running helper's branch is always named in the handoff's Now block (Nov 21: a lead's edit cut three helpers' lines) | `scripts/trail.sh`, which at every row names each worktree branch that `handoff.md` does not |
+| A helper that moves a rule's number or a screen's words runs the browser files that hold them (Nov 21: two public runs went red on typed copies in `makers.e2e.ts` and `crystal.e2e.ts`) | the public run's browser parts, which stop the push; a browser test reads a number from `RULES`, and a brief says to `grep -rl` the old words in `tests/e2e` and run those files |
 | Every other rule of the code | its test in `tests/lint.test.ts`, named for the rule |
 
 ## Rules

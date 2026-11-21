@@ -8,12 +8,13 @@ import { parseFormula } from '../src/core/formula.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 import { BUILT_IN_STATUSES } from '../src/core/registry/statuses.ts';
 import { describeItem, effectsOf, gmSource, gradeLabel, itemOps, itemSource } from '../src/core/effects.ts';
-import { GRADES, ITEM_TYPES, KIT_SHARE, LOOT_ITEMS, RARITIES, SHOP_ITEMS, STARTER_GEAR, itemOf, parseItem, ITEM_BOUNDS, piece, priceOf, wornSpeed, defaultShop, builtInItems, lootPool, valueOf, weightOf, weaponWeight } from '../src/core/registry/items.ts';
+import { GRADES, ITEM_TYPES, KIT_SHARE, LOOT_ITEMS, RARITIES, RECIPE_ITEMS, SHOP_ITEMS, STARTER_GEAR, itemOf, parseItem, ITEM_BOUNDS, piece, priceOf, wornSpeed, defaultShop, builtInItems, lootPool, valueOf, weightOf, weaponWeight } from '../src/core/registry/items.ts';
 import type { Grade, ItemDef, ItemTemplate, Rarity } from '../src/core/registry/items.ts';
 import { parseStatusDef } from '../src/core/combat/fight-parse.ts';
 import { abilityId } from '../src/core/combat/ability-types.ts';
 import { tiles } from '../src/core/combat/space.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
+import { gradeBand, gradeOfSpend, itemSpend } from '../src/core/registry/item-budget.ts';
 
 const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 const LISTS: [string, readonly ItemDef[]][] = [['shop', SHOP_ITEMS], ['loot', LOOT_ITEMS], ['starter', Object.values(STARTER_GEAR)]];
@@ -499,5 +500,61 @@ group('an item\'s icon', () => {
     const worn = (icon: unknown) => parseItem({ name: 'Charm', type: 'accessory', slot: 'neck', worn: { label: 'Warded', desc: '', ops: [], icon } })!.worn!;
     expect(worn('ward').icon).toBe('ward');
     expect(worn('nope')).not.toHaveProperty('icon');
+  });
+});
+
+// The recipes (item-stats units 3 and 10): items built only from shapes that exist, each sized so its spend line sits in
+// its own grade. The expected grade is the one the item carries (absent: the middle); `gradeOfSpend` is the rule's reading.
+group('the recipe items: each is read back whole and spends inside its grade', () => {
+  const holds = (name: string): ItemTemplate => of(name);
+  const formulaOf = (text: string) => { const p = parseFormula(text, RULES); if (!p.ok) throw new Error(p.error); return p.formula; };
+  const spendOf = (name: string) => itemSpend(holds(name), RULES)!;
+  test('there are five: a Thornmail, a Spellblade, a healer\'s charm, a Bulwark and a Warden\'s Plate', () => {
+    expect(RECIPE_ITEMS.map(d => d.name)).toEqual(['Thornmail', 'Spellblade', "Healer's Charm", 'Bulwark Ring', "Warden's Plate"]);
+    for (const d of RECIPE_ITEMS) expect(LOOT_ITEMS, d.name).toContain(d);
+  });
+  for (const d of RECIPE_ITEMS) {
+    test(`${d.name} parses to itself, powers whole, and its spend is inside ${gradeLabel(d.rar, d.grade ?? 0)}`, () => {
+      const item = holds(d.name);
+      expect(parseItem(copy(item))).toEqual(copy(item));
+      expect(item.worn !== undefined || item.active !== undefined, 'it holds a power').toBe(true);
+      const s = spendOf(d.name);
+      expect(gradeOfSpend(RULES, d.rar, s.points), `spends ${s.points.toFixed(2)} in the tier of ${d.rar}`).toBe(d.grade ?? 0);
+      const band = gradeBand(RULES, d.rar, d.grade ?? 0);
+      expect(s.points).toBeLessThanOrEqual(band.high + 1e-9);
+      if (band.low !== null) expect(s.points).toBeGreaterThan(band.low);
+    });
+  }
+  test('Thornmail strikes back with magic damage of 1 + 1% of the wearer\'s armor and prices whole', () => {
+    const t = holds('Thornmail').worn!.triggers![0]!;
+    expect([t.on, t.to]).toEqual(['struck', 'other']);
+    expect(t.ops.map(o => o.op)).toEqual(['damage']);
+    expect(spendOf('Thornmail').unweighed).toEqual([]);
+  });
+  test('Spellblade readies on an ability tagged "spell" and spends its mark with the next hit it deals', () => {
+    const [ready, strike] = holds('Spellblade').worn!.triggers!;
+    expect([ready!.on, strike!.on]).toEqual(['used', 'hitDealt']);
+    expect(strike!.need).toEqual({ kind: 'holds', key: statusKey('spellblade-ready') });
+    const mark = ready!.ops[0]!;
+    expect(mark.op === 'applyStatus' && mark.def.stack?.leave).toEqual({ kind: 'event', event: 'hitDealt' });
+  });
+  test('Healer\'s Charm adds Presence and heals its wearer on a kill by a share of its heal power', () => {
+    const c = holds("Healer's Charm");
+    expect(c.bonus).toEqual({ pre: 2 });
+    expect(c.worn!.triggers![0]).toMatchObject({ on: 'kill', to: 'self' });
+  });
+  test('Bulwark Ring gives its wearer a shield of 10 + a share of max HP to use on themselves, once in 8 rounds', () => {
+    const a = holds('Bulwark Ring').active!;
+    expect(a.aim).toBe('self');
+    expect(a.effect).toMatchObject({ type: 'shield', formula: formulaOf('10 + 0.05 * hpmax') });
+    expect(a.cost.cooldown).toBe(tick(8 * RULES.fight.round));
+    expect(spendOf('Bulwark Ring').unweighed).toEqual([]);
+  });
+  test('Warden\'s Plate adds armor equal to a share of max HP, and is a heavy chest piece', () => {
+    const p = holds("Warden's Plate");
+    expect(p.slot).toBe('chest');
+    expect(p.worn!.ops).toEqual([{ op: 'sheet', key: 'armor', amount: formulaOf('0.015 * hpmax') }]);
+    expect([p.armor, p.resist]).toEqual([piece('heavy', 'chest', RULES).armor, piece('heavy', 'chest', RULES).resist]);
+    expect(spendOf("Warden's Plate").unweighed).toEqual([]);
   });
 });

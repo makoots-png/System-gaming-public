@@ -197,6 +197,8 @@ Each lands alone with its tests and `bun run test` green. Units 1 and 2 change `
 | 11 | A title's band and budget (6.7) | opus | `core/rules.ts` (`titleBudget`), `hunter/hunter.ts` and `rewards.ts` (`band`), `registry/item-budget.ts` (`titleSpend`, its line), `registry/feats.ts` and the rule titles in `rules.ts` (a band each, from the ideas file's section) | `item-budget.test.ts` (Still Standing's spend worked from `BONUS_COST` at E; a title with an active at D; over is said, not refused); `rewards.test.ts` (`band` read, absent is E); every built-in title inside its band | a feat's title "Last Light" gives a once-a-fight heal and its line says it fits rank C |
 | 12 | The title editor's rows (6.7) | sonnet | `views/reward-editor.js` (Band chips, "Usable in fights", the spend line), `views/hunter.js` (the title card's powers) | `tests/e2e/feats.e2e.ts` or the reward editor's file (a title with a band and an active saves through a feat's reward and is worn into a fight); a 390 px look | the GM gives a title with a power from the feat maker on a phone |
 
+The Lifeline Locket (a shield under 30% HP) waits for unit 2 (`lowHp`): a first-hit stand-in was a different, stronger item. Thornmail's healing cut returns when `itemSpend` prices a `share` op.
+
 Order: 1 and 2 may run side by side once `balance-2` and `haste-lol` have landed: their only shared file is `rules.ts`,
 in different blocks of `fight.kit` (unit 1 adds `shieldDrainMax` and the bonus lists, unit 2 `lowHpAt` and two rates), and
 `fight-turn.ts`, in different functions (the per-round heal, the tick's events); the lead merges the second. Unit 3 after
