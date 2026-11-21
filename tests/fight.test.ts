@@ -923,7 +923,7 @@ describe('who holds a row\'s sheet, and the XP of the foes', () => {
 });
 
 describe('a stored row holds only its own kind\'s fields (SMX-rules-8)', () => {
-  const WOLF: Origin = { kind: 'monster', name: 'Wolf', rank: 'E', archetype: 'brute', monsterKind: 'normal', tweak: { hp: 1, stats: {}, traits: [] } };
+  const WOLF: Origin = { kind: 'monster', name: 'Wolf', rank: 'E', archetype: 'brute', monsterKind: 'normal', tweak: { hp: 1, dealt: 1, stats: {}, traits: [] } };
   const stored = (): { rows: Record<string, unknown>[] } => JSON.parse(JSON.stringify(play(add(
     row('A', 'party'), row('M', 'foe', { origin: WOLF, xp: 30 }),
     row('S', 'party', { kind: 'shadow', origin: WOLF, holder: { kind: 'shadow', hunterId: hunterId('h-A'), shadowId: shadowId('s-1') } }),
@@ -1647,7 +1647,7 @@ describe('a monster\'s kind shortens nothing that lands on it (the owner, Nov 21
   const ROUND = RULES.fight.round;
   const STUN = ability('curse', 'stun', null, { ...FAR, effect: null, ops: [{ op: 'applyStatus', key: statusKey('stunned'), def: { label: 'Stunned', desc: '', ops: [{ op: 'hold' }] }, duration: tick(2 * ROUND) }] });
   const SLOW = ability('curse', 'slow', null, { ...FAR, effect: null, ops: [{ op: 'applyStatus', key: statusKey('slowed'), def: { label: 'Slowed', desc: '', ops: [{ op: 'speed', pct: -30 }] }, duration: tick(2 * ROUND) }] });
-  const of = (kind: MonsterKind): Origin => ({ kind: 'monster', name: 'Monster', rank: 'C', archetype: 'brute', monsterKind: kind, tweak: { hp: 1, stats: {}, traits: [] } });
+  const of = (kind: MonsterKind): Origin => ({ kind: 'monster', name: 'Monster', rank: 'C', archetype: 'brute', monsterKind: kind, tweak: { hp: 1, dealt: 1, stats: {}, traits: [] } });
   /** How long the status `a` puts on lasts on a monster of `kind` at rank C, from A's use. */
   const lasts = (a: Ability, key: string, kind: MonsterKind): number => {
     const m = body(play(add(row('A', 'party', { abilities: [a] }), row('M', 'foe', { origin: of(kind) })), start(['A', 20], ['M', 10]), hit('A', 'M', a)).fight, 'M');
@@ -1954,7 +1954,7 @@ describe('forced movement: a shove, a blink, a swap (kits design 8.3, table 8.9.
   });
 
   test('a boss moves the whole push as any body does (the owner, Nov 21), a rooted body none, and a dodge is not a push', () => {
-    const boss = { kind: 'monster', name: 'Monster', rank: 'E', archetype: 'brute', monsterKind: 'boss', tweak: { hp: 1, stats: {}, traits: [] } } as const;
+    const boss = { kind: 'monster', name: 'Monster', rank: 'E', archetype: 'brute', monsterKind: 'boss', tweak: { hp: 1, dealt: 1, stats: {}, traits: [] } } as const;
     const r = play(add(row('A', 'party', { abilities: [P3], place: place(5, 2) }), row('M', 'foe', { place: place(5, 4), origin: boss })), start(['A', 20], ['M', 10]), hit('A', 'M', P3));
     expect(at(r.fight, 'M')).toEqual(place(5, 7));
     const held = play(placed([5, 2], [5, 4]), { type: 'status', id: id('M'), add: { key: statusKey('root'), def: { label: 'Root', desc: '', ops: [{ op: 'root' }] }, duration: null, tier: 0 } }, start(['A', 20], ['M', 10]), hit('A', 'M', P3));

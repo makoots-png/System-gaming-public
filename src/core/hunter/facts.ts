@@ -35,14 +35,14 @@ export type Fact =
    * A hunter row's fight, at the fight's end (combat/fight-facts.ts `rowFacts`, from the row's tally): how it ended, its
    * rounds; the row up at the end, its falls, its lowest HP share while up and its share at the end (%), whether it stood
    * at exactly 1 HP; hits struck on it, its hits and crits and its most crits in a row, uses it avoided; HP dealt, taken
-   * and healed on allies, allies its heals raised, statuses put on foes; foes it took down, bosses among them, its most in
+   * and healed on allies, statuses put on foes; foes it took down, bosses among them, its most in
    * one turn; consumables used; its side's other hunters, how many of them were down at the end, how many of its side
    * were up; the foes, the highest foe rank above the hunter's, the highest boss's (null: none); the gate the fight came
    * from ('' for none) and the foes' names.
    */
   | { readonly kind: 'fight'; readonly outcome: FightOutcome; readonly rounds: number; readonly up: boolean; readonly downs: number; readonly low: number;
       readonly endPct: number; readonly exactOne: boolean; readonly struck: number; readonly hits: number; readonly crits: number; readonly critRun: number;
-      readonly avoided: number; readonly dealt: number; readonly taken: number; readonly healed: number; readonly raised: number; readonly hexes: number;
+      readonly avoided: number; readonly dealt: number; readonly taken: number; readonly healed: number; readonly hexes: number;
       readonly kills: number; readonly bosses: number; readonly turnKills: number; readonly items: number; readonly allies: number; readonly alliesDown: number;
       readonly sideUp: number; readonly foes: number; readonly foeTop: number; readonly bossTop: number | null; readonly gate: string; readonly names: string }
   /** A foe this hunter took down in a fight or a solo run: the monster's name, rank, type and kind, its rank above the hunter's, the hunter's HP share then (%), whether it had put the hunter down this fight. */
@@ -129,7 +129,7 @@ export const FACT_FIELDS: { readonly [K in FactKind]: FieldsOf<K> } = {
     outcome: pick('Outcome', every<FightOutcome>()(['won', 'lost', 'ended'])), rounds: num('Rounds', 0, 1000), up: flag('Up at the end'), downs: num('Times down', 0, N),
     low: num('Lowest HP while up (%)', 0, 100), endPct: num('HP at the end (%)', 0, 100), exactOne: flag('At exactly 1 HP'), struck: num('Times struck', 0, N),
     hits: num('Hits', 0, N), crits: num('Crits', 0, N), critRun: num('Crits in a row', 0, N), avoided: num('Uses avoided', 0, N), dealt: num('Damage dealt', 0, N),
-    taken: num('Damage taken', 0, N), healed: num('HP healed on allies', 0, N), raised: num('Allies brought up', 0, N), hexes: num('Statuses put on foes', 0, N),
+    taken: num('Damage taken', 0, N), healed: num('HP healed on allies', 0, N), hexes: num('Statuses put on foes', 0, N),
     kills: num('Foes defeated', 0, N), bosses: num('Bosses defeated', 0, N), turnKills: num('Most defeated in one turn', 0, N), items: num('Consumables used', 0, N),
     allies: num('Other hunters', 0, N), alliesDown: num('Other hunters down at the end', 0, N), sideUp: num('Its side up at the end', 0, N), foes: num('Foes', 0, N),
     foeTop: num('Highest foe rank above the hunter\'s', -RANK_SPAN, RANK_SPAN), bossTop: { ...num('Highest boss rank above the hunter\'s', -RANK_SPAN, RANK_SPAN), none: true },

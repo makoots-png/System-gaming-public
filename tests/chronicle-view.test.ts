@@ -15,7 +15,7 @@ import { BUILT_IN_FEATS } from '../src/core/registry/feats.ts';
 
 const FIGHT: FactOf<'fight'> = {
   kind: 'fight', outcome: 'won', rounds: 6, up: true, downs: 0, low: 12, endPct: 12, exactOne: false, struck: 4, hits: 5, crits: 1, critRun: 1, avoided: 0, dealt: 60, taken: 40,
-  healed: 0, raised: 0, hexes: 0, kills: 2, bosses: 0, turnKills: 1, items: 0, allies: 1, alliesDown: 0, sideUp: 2, foes: 3, foeTop: 0, bossTop: null, gate: 'Goblin Den', names: '3 Goblins',
+  healed: 0, hexes: 0, kills: 2, bosses: 0, turnKills: 1, items: 0, allies: 1, alliesDown: 0, sideUp: 2, foes: 3, foeTop: 0, bossTop: null, gate: 'Goblin Den', names: '3 Goblins',
 };
 const SOLO: FactOf<'solo'> = { kind: 'solo', outcome: 'won', name: 'Ash Hollow', rank: 'E', above: 0, rounds: 5, endPct: 30, life: 'up', personal: true };
 const LIFE: FactOf<'life'> = { kind: 'life', news: 'died', how: 'fight' };

@@ -34,7 +34,7 @@ const write = (s: Save, facts: readonly Fact[], c: NoticeCtx): Save => noticed({
 const me = (s: Save): Hunter => s.hunters[0]!;
 const fight = (o: Partial<Extract<Fact, { kind: 'fight' }>> = {}): Fact => ({
   kind: 'fight', outcome: 'won', rounds: 4, up: true, downs: 0, low: 60, endPct: 80, exactOne: false, struck: 2, hits: 3, crits: 0, critRun: 0, avoided: 0, dealt: 30, taken: 10,
-  healed: 0, raised: 0, hexes: 0, kills: 1, bosses: 0, turnKills: 1, items: 0, allies: 1, alliesDown: 0, sideUp: 2, foes: 1, foeTop: 0, bossTop: null, gate: '', names: 'Wolf', ...o,
+  healed: 0, hexes: 0, kills: 1, bosses: 0, turnKills: 1, items: 0, allies: 1, alliesDown: 0, sideUp: 2, foes: 1, foeTop: 0, bossTop: null, gate: '', names: 'Wolf', ...o,
 });
 const solo = (o: Partial<Extract<Fact, { kind: 'solo' }>> = {}): Fact => ({ kind: 'solo', outcome: 'won', name: 'Den', rank: 'E', above: 0, rounds: 4, endPct: 60, life: 'up', personal: true, ...o });
 const kill = (type: string): Fact => ({ kind: 'kill', monster: 'X', rank: 'E', type, mkind: 'normal', above: 0, hpPct: 50, payback: false, where: 'fight' });

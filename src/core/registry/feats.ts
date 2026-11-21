@@ -69,9 +69,6 @@ const ENTRIES: readonly (readonly [string, FeatDef])[] = [
   // F28: shown after a hundred
   ['four-figures', feat('Four Figures', 'ONE THOUSAND', 'A thousand monsters defeated.', { at: 'count', n: 100 }, facts('kill', []), 1000,
     title('Four Figures', 'Defeated a thousand monsters.', { str: 2, ctl: 2 }, { points: 3 }))],
-  // F30
-  ['on-your-feet', feat('On Your Feet', 'GET UP. AGAIN', 'Ten downed allies healed back up.', SHOWN, sum('fight', 'raised'), 10,
-    title('On Your Feet', 'Got ten downed allies back up.', { pre: 2 }))],
   // F31 (its hidden quest left to the GM)
   ['field-naturalist', feat('Field Naturalist', 'THE SYSTEM IS TAKING NOTES', 'Monsters of five different types defeated.', HIDDEN,
     { on: 'kill', where: [], measure: { of: 'distinct', field: 'type' }, within: 'ever' }, 5, points(1))],

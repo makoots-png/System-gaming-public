@@ -253,6 +253,17 @@ const SPEC = {
     ranks: { below: of(25, SHARE_OF_SPAWNS), same: of(60, SHARE_OF_SPAWNS), above: of(15, SHARE_OF_SPAWNS) },
     pack: each([1, 2], wholeIn(1, SOLO_BOUNDS.pack, 'monsters in a personal gate: a lone hunter against more than 12 is no run')),
     lootShare: of(0.25, SHARE), // economy design 4.2: a cleared personal gate pays a quarter of one hunter's share of a world gate (the owner: "A quarter.")
+    // How much harder a solo run's fight is than the same fight at the table. The owner (Nov 21): "let's make auto runs 25%
+    // harder than optimal gameplay clears. Have that factor into the odds given for the auto clears." The run is one
+    // play of the odds engine, each side as well as its policy plays, so a player at the table can only do worse; this
+    // takes the run's edge back. A fight's difficulty is its foes' HP times the damage they deal, so each foe gets the
+    // square root of the factor on each (gates/solo.ts `soloFight`: its tweak's `hp`, and `dealt` on every hit after the
+    // shares) and their product is the factor. Not its power: a hit is its dice plus its power, so power times 1.118
+    // made an E foe's strike 7% harder, not 11.8%, and raised its heals too. The odds a card shows play that fight.
+    // Measured (one play each, 3000 gates a rank, the six plain builds of tests/models/fight-sim.ts at the rank against
+    // a personal gate rolled as soloTick rolls one, the S gate an A one as `pooled` makes it; se 0.9 points each): the
+    // run's win chance at 1 then 1.25 is E 45.2% to 37.1%, C 42.7% to 34.7%, S 59.4% to 50.0%.
+    autoHarder: real(1.25, 1, 4, 'times the table\'s difficulty: under 1 a run is easier than the table, past 4 a foe has over twice its HP and deals over twice its damage'),
   },
   // feats (hunter/feats.ts): `on` is the GM's one switch for every feat the System notices; the room's `rules` doc carries it to the players
   feats: { on: true },

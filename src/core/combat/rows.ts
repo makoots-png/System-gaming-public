@@ -80,7 +80,8 @@ export type RowMonster = {
   readonly type?: string;
   /** The picture a GM picked for it (`Monster.icon`); absent: its default (icon-defaults.ts `monsterIcon`). */
   readonly icon?: IconKey;
-  readonly tweak: { readonly hp?: number; readonly stats?: Partial<Readonly<Record<StatKey, number>>>; readonly traits?: readonly MonsterTrait[] };
+  /** Its seed's tweak (derive.ts `Tweak`), an absent part as `NO_TWEAK` has it; only a solo run's fight sets `dealt`. */
+  readonly tweak: { readonly hp?: number; readonly dealt?: number; readonly stats?: Partial<Readonly<Record<StatKey, number>>>; readonly traits?: readonly MonsterTrait[] };
   readonly abilities: readonly Ability[];
   /** Absent: the rule's for its rank and kind (`monsterXp`). */
   readonly xp?: number;

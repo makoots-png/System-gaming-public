@@ -100,7 +100,7 @@ for (const [i, m] of MONSTERS.entries()) {
     });
 
     test('no ability of its own deals more than 60% of a same-rank tank\'s max HP at mean dice, caught, without a crit', () => {
-      const user: Origin = { kind: 'monster', name: 'Monster', rank: m.rank, archetype: m.archetype, monsterKind: m.kind, tweak: { hp: m.tweak.hp ?? 1, stats: m.tweak.stats ?? {}, traits: m.tweak.traits ?? [] } };
+      const user: Origin = { kind: 'monster', name: 'Monster', rank: m.rank, archetype: m.archetype, monsterKind: m.kind, tweak: { hp: m.tweak.hp ?? 1, dealt: 1, stats: m.tweak.stats ?? {}, traits: m.tweak.traits ?? [] } };
       const u = body('user', user, place(5, 5), 'foe', m.rank), tank = body('tank', tankOf(m.rank), place(6, 5), 'party', m.rank);
       for (const a of m.abilities) {
         if (a.effect?.type !== 'physical' && a.effect?.type !== 'magical') continue;
@@ -214,15 +214,15 @@ group('a monster made from its rank', () => {
 
   test('a tweak\'s stats reach the sheet: the Ice Elf\'s Instinct +8 is 8 more Instinct than a plain C skirmisher', () => {
     const elf = seed('ice-elf'), base = ARCHETYPES.skirmisher;
-    const with8 = modified({ kind: 'monster', name: 'Monster', rank: 'C', archetype: 'skirmisher', monsterKind: 'normal', tweak: { hp: 0.8, stats: { ins: 8 }, traits: [] } }, [], RULES).stats.ins;
-    const plain = modified({ kind: 'monster', name: 'Monster', rank: 'C', archetype: 'skirmisher', monsterKind: 'normal', tweak: { hp: 0.8, stats: {}, traits: [] } }, [], RULES).stats.ins;
+    const with8 = modified({ kind: 'monster', name: 'Monster', rank: 'C', archetype: 'skirmisher', monsterKind: 'normal', tweak: { hp: 0.8, dealt: 1, stats: { ins: 8 }, traits: [] } }, [], RULES).stats.ins;
+    const plain = modified({ kind: 'monster', name: 'Monster', rank: 'C', archetype: 'skirmisher', monsterKind: 'normal', tweak: { hp: 0.8, dealt: 1, stats: {}, traits: [] } }, [], RULES).stats.ins;
     expect([elf.tweak.stats?.ins, with8 - plain, base.main]).toEqual([8, 8, 'agi']);
   });
 });
 
 group('a trait changes a monster\'s body by its rule (RULES.fight.traits, balance plan section 1)', () => {
   const T = RULES.fight.traits;
-  const tweak = (traits: readonly MonsterTrait[], hp = 1) => ({ hp, stats: {}, traits });
+  const tweak = (traits: readonly MonsterTrait[], hp = 1) => ({ hp, dealt: 1, stats: {}, traits });
   const sheet = (traits: readonly MonsterTrait[], mods: readonly StatusMod[] = [], hp = 1) => monsterSheet('C', 'brute', 'boss', RULES, mods, tweak(traits, hp));
   const plain = sheet([]);
 

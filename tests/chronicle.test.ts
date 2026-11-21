@@ -223,7 +223,7 @@ describe('the boundary', () => {
     const B = 1e9;
     const fat: Fact = {
       kind: 'fight', outcome: 'ended', rounds: 1000, up: false, downs: B, low: 100, endPct: 100, exactOne: false, struck: B, hits: B, crits: B, critRun: B, avoided: B,
-      dealt: B, taken: B, healed: B, raised: B, hexes: B, kills: B, bosses: B, turnKills: B, items: B, allies: B, alliesDown: B, sideUp: B, foes: B, foeTop: -5, bossTop: -5,
+      dealt: B, taken: B, healed: B, hexes: B, kills: B, bosses: B, turnKills: B, items: B, allies: B, alliesDown: B, sideUp: B, foes: B, foeTop: -5, bossTop: -5,
       gate: 'G'.repeat(60), names: 'N'.repeat(80),
     };
     const kept = Array.from({ length: CHRONICLE_MAX }, () => ({ ...fat, at: AT, day: TODAY, session: 999999 }));

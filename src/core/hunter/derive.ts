@@ -248,11 +248,13 @@ export const sheetOf = (build: SheetBasis, R: DeriveRules, mods: readonly Status
 /**
  * What a monster's seed changes on its archetype's body (design 2.4): `hp` multiplies its max HP after its kind's factor,
  * `stats` adds points to named stats before their curves, as a hunter's spent points do, and each of `traits` applies its
- * rule (`RULES.fight.traits`, balance plan section 1). It carries no armor of its own.
+ * rule (`RULES.fight.traits`, balance plan section 1). It carries no armor of its own. `dealt` multiplies the damage of
+ * every hit it deals, after rule 11c's shares (resolve.ts `shared`, land.ts `landOne`): no seed sets it, only a solo
+ * run's fight (`RULES.solo.autoHarder`, gates/solo.ts `soloFight`).
  */
-export type Tweak = { readonly hp: number; readonly stats: Partial<Readonly<Record<StatKey, number>>>; readonly traits: readonly MonsterTrait[] };
+export type Tweak = { readonly hp: number; readonly dealt: number; readonly stats: Partial<Readonly<Record<StatKey, number>>>; readonly traits: readonly MonsterTrait[] };
 /** The tweak of a monster its seed leaves as its archetype makes it. */
-export const NO_TWEAK: Tweak = { hp: 1, stats: {}, traits: [] };
+export const NO_TWEAK: Tweak = { hp: 1, dealt: 1, stats: {}, traits: [] };
 
 /** A monster's stats: its rank's points split 2:1 by its archetype, plus its seed's tweak. */
 export function monsterStats(rank: Rank, archetype: Archetype, R: DeriveRules, tweak: Tweak = NO_TWEAK): Stats {

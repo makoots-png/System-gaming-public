@@ -17,7 +17,7 @@ import { isUp, rowHp } from './row-hp.ts';
 import { rowLifeAfter } from './row-life.ts';
 import { applyStatus, cureStatus, dispelled, lasting, removeStatus, shieldOn, stackOf, statusOn, statusShield, withStatuses, withThreat } from './effect-ops.ts';
 import { atTier, countOn, stacked } from './op-amount.ts';
-import { admitted, counting, damageShare, harmful, healShare, hideStarts, markWards, stealthOf, stealthStep, wardedDamage } from './standing.ts';
+import { admitted, counting, damageShare, dealtBy, harmful, healShare, hideStarts, markWards, stealthOf, stealthStep, wardedDamage } from './standing.ts';
 import type { StealthEndEvent } from './standing.ts';
 import type { Body, LandOp, Op, OpRules, Reach, Source, Status, StatusKey, Threshold, Tiered, UseOp } from './effect-ops.ts';
 import type { Side } from './space.ts';
@@ -341,7 +341,7 @@ function landOne(o: LandOp, user: Body, t: Body, source: Source, now: Tick, R: O
   const none = { fired: null, gained: null, cured: null, lands: [] };
   switch (o.op) {
     case 'damage': {
-      const raw = Math.max(0, at(o.amount)) * damageShare(user === t ? null : user, t, R), dealt = afterDefence(raw, o.type, user.sheet, t.sheet, R);
+      const by = user === t ? null : user, raw = Math.max(0, at(o.amount)) * damageShare(by, t, R) * dealtBy(by), dealt = afterDefence(raw, o.type, user.sheet, t.sheet, R);
       const s = throughShield(t, dealt, now);
       return { target: hurt(s.target, wardedDamage(s.target, dealt - s.absorbed)), dealt, ...none };
     }

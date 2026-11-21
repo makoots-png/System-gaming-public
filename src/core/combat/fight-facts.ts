@@ -56,7 +56,7 @@ export function rowFacts(f: Ended, cid: CombatantId, rank: Rank, gate: string): 
   const fight: Fact = {
     kind: 'fight', outcome, rounds: Math.max(1, Math.round(f.summary.rounds)), up: isUp(me), downs: t.downs, low: t.low, endPct: pct(me), exactOne: t.exactOne,
     struck: t.struck, hits: t.hits, crits: t.crits, critRun: t.critRunMax, avoided: t.avoided, dealt: t.dealt, taken: t.taken, healed: t.healed,
-    raised: t.raised, hexes: t.hexes, kills: t.kills.length, bosses: kills.filter(k => k.kind === 'kill' && k.mkind === 'boss').length, turnKills: turnKillsMax(t),
+    hexes: t.hexes, kills: t.kills.length, bosses: kills.filter(k => k.kind === 'kill' && k.mkind === 'boss').length, turnKills: turnKillsMax(t),
     items: t.items, allies: allies.length, alliesDown: allies.filter(b => !isUp(b)).length, sideUp: side.filter(isUp).length, foes: foes.length,
     foeTop: monsters.length ? Math.max(...monsters.map(o => above(o.rank))) : 0, bossTop: bosses.length ? Math.max(...bosses.map(o => above(o.rank))) : null,
     gate, names: namesOf(foes),

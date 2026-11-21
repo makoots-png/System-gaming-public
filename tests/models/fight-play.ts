@@ -179,7 +179,7 @@ export const ROSTER: readonly NewRow[] = [
     { holder: { kind: 'shadow', hunterId: hunterId('h-sela'), shadowId: shadowId('s-igris') }, statuses: [EASEL] }),
   row('c-w1', 'Wolf A', 'foe', 'monster', mon('D', 'skirmisher', 'normal'), [BITE, HOWL], { xp: 50, statuses: [SICK, holding('resonance', RESONANCE, 1)] }),
   row('c-w2', 'Wolf B', 'foe', 'monster', mon('D', 'skirmisher', 'normal'), [BITE, PLAGUE], { xp: 50, statuses: [RETRIBUTION] }),
-  row('c-imp', 'Imp', 'foe', 'monster', mon('D', 'caster', 'normal', { hp: 0.7, stats: { ins: 8 }, traits: [] }), [CURSE, SHOT, SPRITE], { place: place(15, 11), xp: 40 }),
+  row('c-imp', 'Imp', 'foe', 'monster', mon('D', 'caster', 'normal', { hp: 0.7, dealt: 1, stats: { ins: 8 }, traits: [] }), [CURSE, SHOT, SPRITE], { place: place(15, 11), xp: 40 }),
   // wave 2's blocks on two rows of their own, so the blocks above keep the share of random play they had
   row('c-kai', 'Kai', 'party', 'hunter', build('agi', 'str', 'light'), [BOUNDARY, SHATTER, HEMOPLAGUE, PARRY, SURGE, SHOVE, TRANSFER, BLINK, REACT],
     { holder: { kind: 'local', hunterId: hunterId('h-kai') }, statuses: [wornStatus('crimson-pact', 'Crimson Pact')] }),

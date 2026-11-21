@@ -160,14 +160,14 @@ describe('monsters (table 2.6)', () => {
   });
 
   test('a seed\'s HP factor multiplies max HP on top of its kind\'s and changes nothing else: half of the C brute boss\'s 284 is 142 (2.4)', () => {
-    const plain = monsterSheet('C', 'brute', 'boss', RULES), half = monsterSheet('C', 'brute', 'boss', RULES, [], { hp: 0.5, stats: {}, traits: [] });
+    const plain = monsterSheet('C', 'brute', 'boss', RULES), half = monsterSheet('C', 'brute', 'boss', RULES, [], { hp: 0.5, dealt: 1, stats: {}, traits: [] });
     expect(half.hpMax).toBe(142);
     expect(KEYS.filter(k => k !== 'hpMax' && half[k] !== plain[k])).toEqual([]);
   });
 
   test('a seed\'s stat tweak adds points before the curve, as a hunter\'s spent points do (2.4)', () => {
     // A C brute has 12 + 3 * 19 = 69 points split 2:1: Strength 10 + 46 = 56 and Vitality 10 + 23 = 33, in the medium kit.
-    const keen = monsterSheet('C', 'brute', 'normal', RULES, [], { hp: 1, stats: { ins: 8 }, traits: [] });
+    const keen = monsterSheet('C', 'brute', 'normal', RULES, [], { hp: 1, dealt: 1, stats: { ins: 8 }, traits: [] });
     const same = sheetOf({ stats: stats({ str: 56, vit: 33, ins: 18 }), level: 20, gear: kitGear('medium', RULES), perks: {} }, RULES);
     const unscaled: SheetNumber[] = ['speed', 'armor', 'resist', 'react', 'opening', 'critFaces'];
     expect(unscaled.map(k => keen[k])).toEqual(unscaled.map(k => same[k]));

@@ -11,7 +11,17 @@ import type { Hunter, ParseEnv, Save } from '../src/core/save.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import type { Refused } from '../src/core/save-step.ts';
 import { combatantId } from '../src/core/combat/ability-types.ts';
-import { IDLE, oddsLine, oddsStep, readOdds } from '../src/core/combat/odds.ts';
+import { IDLE, ODDS_RUNS, oddsLine, oddsStep, readOdds } from '../src/core/combat/odds.ts';
+import type { CombatantId } from '../src/core/combat/ability-types.ts';
+import type { Body } from '../src/core/combat/effect-ops.ts';
+import { fightId, reduce } from '../src/core/combat/fight.ts';
+import { hunterRow, monsterRows } from '../src/core/combat/rows.ts';
+import { rowHp } from '../src/core/combat/row-hp.ts';
+import { resolve } from '../src/core/combat/resolve.ts';
+import { openGrid, place } from '../src/core/combat/space.ts';
+import { tick } from '../src/core/combat/timeline.ts';
+import { diceOf, mean } from '../src/core/formula.ts';
+import { formulaOf } from '../src/core/registry/ability-kinds.ts';
 import type { OddsRun, RowEnd, RunEnd } from '../src/core/combat/odds.ts';
 import { SOLO_REFUSAL_WORDS, pooled, runCostLines, soloConfirmLines, soloAnswerBody, soloDoc, soloFight, soloKey, soloPlan, soloRan, soloReady, soloRoute, soloRunBody, soloTaken, soloTargets, soloTick } from '../src/core/gates/solo.ts';
 import { worldDoc } from '../src/core/gates/world.ts';
@@ -200,6 +210,55 @@ describe('the run is one play of the engine', () => {
     const ready = ok(soloReady(s, H1, PERSONAL, ctx())), f = soloFight(ready.h, ready.target, RULES)!;
     expect(f.fight.rows.map(r => [r.name, r.side])).toEqual([['Mira', 'party'], ['Igris', 'party'], ['Goblin A', 'foe'], ['Goblin B', 'foe'], ['Goblin C', 'foe']]);
     expect(Object.values(f.shadows)).toEqual(['sh1']);
+  });
+});
+
+describe('a solo run\'s foes are harder than the table\'s by the rule (RULES.solo.autoHarder)', () => {
+  const GOBLIN = seedMonsters(RULES).find(m => m.id === goblin)!, FOE = combatantId('solo-m0-0'), GRID = openGrid(RULES.fight.grid.w, RULES.fight.grid.h);
+  const withHarder = (n: number): Rules => ({ ...RULES, solo: { ...RULES.solo, autoHarder: n } });
+  /** Mira against `count` goblins as the GM's fight at the table makes it: the hunter's row and the monster's rows, by the reducer's `add`. */
+  const tableFight = (h: Hunter, count: number) => reduce(null, { type: 'add', fightId: fightId('solo'), openings: [],
+    rows: [hunterRow(h, ME, RULES), ...monsterRows(GOBLIN, Array.from({ length: count }, (_, k) => combatantId(`solo-m0-${k}`)), RULES)] }, { rules: RULES }).fight!;
+  const row = (rows: readonly Body[], id: CombatantId): Body => rows.find(b => b.id === id)!;
+  /** The hit of `foe`'s attack on `target` before the target's defence, every die at its mean and no crit. */
+  const hitOf = (foe: Body, target: Body): number => {
+    const a = foe.abilities[0]!, user = { ...foe, place: place(1, 0) }, t = { ...target, place: place(0, 0) };
+    const r = resolve(a, user, [user, t], t.id, GRID, { dice: { [t.id]: diceOf(formulaOf(a, RULES)!).map(mean) }, react: { [t.id]: 20 } }, tick(0), RULES);
+    if (!r.ok) throw new Error(r.reason);
+    return r.outcomes[0]!.raw;
+  };
+
+  test('a solo run\'s foe has the square root of the rule times the HP and deals it times the damage of the same foe at the table', () => {
+    const each = Math.sqrt(RULES.solo.autoHarder), s = alone();
+    const ready = ok(soloReady(s, H1, PERSONAL, ctx())), solo = soloFight(ready.h, ready.target, RULES)!.fight, table = tableFight(ready.h, 1);
+    const hp = rowHp(row(table.rows, FOE));
+    // each max HP is rounded to a whole point, so the solo one is within half a point of its exact value
+    expect(Math.abs(rowHp(row(solo.rows, FOE)) - hp * each)).toBeLessThanOrEqual(0.5 * (1 + each));
+    expect(row(solo.rows, FOE).sheet.hpMax).toBe(rowHp(row(solo.rows, FOE)));
+    expect(hitOf(row(solo.rows, FOE), row(solo.rows, ME))).toBeCloseTo(hitOf(row(table.rows, FOE), row(table.rows, ME)) * each, 9);
+    expect(row(solo.rows, FOE).xp, 'its XP is the table\'s').toBe(row(table.rows, FOE).xp);
+    expect([row(solo.rows, FOE).sheet.speed, row(solo.rows, FOE).sheet.armor], 'its speed and armor are the table\'s').toEqual([row(table.rows, FOE).sheet.speed, row(table.rows, FOE).sheet.armor]);
+    expect(row(solo.rows, FOE).stagger, 'its stagger bar is the table\'s').toEqual(row(table.rows, FOE).stagger);
+  });
+
+  test('at autoHarder 1 a solo fight is the table\'s fight', () => {
+    const s = alone({ solo: { clock: { at: 'off' }, gates: [pgate(1, AT, 24, 2)] } });
+    const ready = ok(soloReady(s, H1, PERSONAL, ctx())), table = tableFight(ready.h, 2);
+    expect(soloFight(ready.h, ready.target, withHarder(1))!.fight).toEqual(table);
+    expect(soloFight(ready.h, ready.target, RULES)!.fight).not.toEqual(table);
+  });
+
+  test('the odds shown for a solo run are of the fight the run plays', () => {
+    const s = alone({ solo: { clock: { at: 'off' }, gates: [pgate(1, AT, 24, 2)] } });
+    const ready = ok(soloReady(s, H1, PERSONAL, ctx()));
+    // the fight a gate's card gives its odds box (gates.js `soloCard`), played as the box plays it
+    const card = soloFight(ready.h, ready.target, RULES)!;
+    let odds: OddsRun = oddsStep(IDLE, { type: 'ask', fight: card.fight, seed: 42, of: ODDS_RUNS }, card.R);
+    while (odds.state === 'running') odds = oddsStep(odds, { type: 'step', commands: 500 }, card.R);
+    if (odds.state !== 'done') throw new Error('no answer');
+    const each = Math.sqrt(RULES.solo.autoHarder), hp = rowHp(row(tableFight(ready.h, 2).rows, FOE));
+    expect(Math.abs(rowHp(row(card.fight.rows, FOE)) - hp * each), 'the odds play the harder foes').toBeLessThanOrEqual(0.5 * (1 + each));
+    expect(played(s, PERSONAL, 42).end, 'the run of the same seed is the odds\' first play').toEqual(odds.odds.ends[0]);
   });
 });
 

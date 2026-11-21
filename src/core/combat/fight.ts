@@ -268,7 +268,7 @@ function landed(f: Running, use: Landed, ctx: Ctx): Result {
   const z = a.zoneAct ? zoneActed(used0.zones, u.id, a.zoneAct, at, used0.rows, used0.grid, used0.now, R) : null;
   const used = z?.acted ? logged({ ...used0, zones: z.zones }, line(`${z.acted.name} ${a.zoneAct!.act === 'shift' ? 'moves' : 'widens'}.`, [], [z.acted.id]), R) : used0;
   const pushedIn = new Set<string>(z?.acted ? used.rows.map(b => b.id) : r.shoved);
-  const scored = { ...used, rows: tallied(used.rows, { type: 'used', by: u.id, ability: a, outcomes: r.outcomes, before: rows }) };
+  const scored = { ...used, rows: tallied(used.rows, { type: 'used', by: u.id, ability: a, outcomes: r.outcomes }) };
   const fired = triggered(scored, eventsOf(a, u.id, r.outcomes, rows, scored.rows), ctx);
   const fx: Fx = [{ type: 'used', by: u.id, ability: a.id, line: useLine }, ...critsOf(r.outcomes), ...burstsOf([...r.bursts, ...reacted.bursts])];
   return after(f, afterReactions(fired, u.id, r.outcomes, R, reacted.count, fx), use.by, null, ctx, fx, pushedIn);

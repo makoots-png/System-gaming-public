@@ -22,8 +22,8 @@ export type RowTally = {
   readonly struck: number; readonly avoided: number;
   /** HP its uses took from foes (after defence and shields), HP it lost to anything, HP its uses healed on allies. */
   readonly dealt: number; readonly taken: number; readonly healed: number;
-  /** Allies its heals brought up from down; statuses its uses put on foes. */
-  readonly raised: number; readonly hexes: number;
+  /** Statuses its uses put on foes. */
+  readonly hexes: number;
   /** Times it went down; its lowest HP share while up (%; absent is 100); whether it stood at exactly 1 HP. */
   readonly downs: number; readonly low: number; readonly exactOne: boolean;
   /** Turns it began, consumables it used. */
@@ -34,7 +34,7 @@ export type RowTally = {
   readonly downedBy: readonly CombatantId[];
 };
 export const NO_TALLY: RowTally = {
-  hits: 0, crits: 0, critRun: 0, critRunMax: 0, struck: 0, avoided: 0, dealt: 0, taken: 0, healed: 0, raised: 0, hexes: 0,
+  hits: 0, crits: 0, critRun: 0, critRunMax: 0, struck: 0, avoided: 0, dealt: 0, taken: 0, healed: 0, hexes: 0,
   downs: 0, low: 100, exactOne: false, turns: 0, items: 0, kills: [], downedBy: [],
 };
 /** A row's tally, absent fields read as zero (none at all on a row nothing has happened to). */
@@ -48,8 +48,8 @@ export const turnKillsMax = (t: RowTally): number => {
 
 /** What the reducer tells the tally. */
 export type TallyEvent =
-  /** A use landed: its user, the ability, what it did to each target, and the rows before it. */
-  | { readonly type: 'used'; readonly by: CombatantId; readonly ability: Pick<Ability, 'item'>; readonly outcomes: readonly Outcome[]; readonly before: readonly Body[] }
+  /** A use landed: its user, the ability and what it did to each target. */
+  | { readonly type: 'used'; readonly by: CombatantId; readonly ability: Pick<Ability, 'item'>; readonly outcomes: readonly Outcome[] }
   /** Anything changed rows (`consequences`): the rows before it. */
   | { readonly type: 'changed'; readonly before: readonly Body[] }
   /** A row's turn began. */
@@ -93,11 +93,11 @@ export function tallied(rows: readonly Body[], e: TallyEvent): Body[] {
   };
   switch (e.type) {
     case 'used': {
-      const before = new Map(e.before.map(b => [b.id, b] as const)), user = map.get(e.by);
+      const user = map.get(e.by);
       if (!user) break;
       if (e.ability.item) bump(e.by, t => ({ ...t, items: t.items + 1 }));
       for (const o of e.outcomes) {
-        const target = map.get(o.target), was = before.get(o.target);
+        const target = map.get(o.target);
         if (!target) continue;
         const foe = target.side !== user.side, hit = (o.type === 'physical' || o.type === 'magical') && o.avoid !== 'out' && o.dealt > 0;
         if (hit && foe) {
@@ -108,10 +108,7 @@ export function tallied(rows: readonly Body[], e: TallyEvent): Body[] {
         }
         if (hit) bump(o.target, t => ({ ...t, struck: t.struck + 1 }));
         if (o.avoid === 'out' || o.avoid === 'resisted') bump(o.target, t => ({ ...t, avoided: t.avoided + 1 }));
-        if (o.type === 'heal' && !foe && o.target !== e.by && o.dealt > 0) {
-          const up = !!was && !isUp(was) && isUp(target);
-          bump(e.by, t => ({ ...t, healed: t.healed + o.dealt, raised: t.raised + (up ? 1 : 0) }));
-        }
+        if (o.type === 'heal' && !foe && o.target !== e.by && o.dealt > 0) bump(e.by, t => ({ ...t, healed: t.healed + o.dealt }));
         if (foe && o.statuses.length) bump(e.by, t => ({ ...t, hexes: t.hexes + o.statuses.length }));
       }
       break;

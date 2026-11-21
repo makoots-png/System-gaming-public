@@ -376,7 +376,7 @@ describe('tokens', () => {
 
   describe('a token\'s picture (icons design 5, ruling 1)', () => {
     const build: Origin = { kind: 'hunter', build: { stats: baseStats(RULES.fight), level: 1, gear: kitGear('light', RULES), perks: {} } };
-    const beast = (o: { icon?: IconKey } = {}): Origin => ({ kind: 'monster', name: 'Rat', rank: 'E', archetype: 'brute', monsterKind: 'normal', tweak: { hp: 1, stats: {}, traits: [] }, type: 'Beast', ...o });
+    const beast = (o: { icon?: IconKey } = {}): Origin => ({ kind: 'monster', name: 'Rat', rank: 'E', archetype: 'brute', monsterKind: 'normal', tweak: { hp: 1, dealt: 1, stats: {}, traits: [] }, type: 'Beast', ...o });
     const row = (name: string, side: Side, origin: Origin, x: number): NewRow => ({
       id: id(name), name, side, ...lifeAt(side === 'party' ? 'hunter' : 'monster', 20), origin, tier: 0, place: place(x, 0), mana: 0, fatigue: 0, shield: null, stagger: null,
       channel: null, threat: side === 'foe' ? {} : null, statuses: [], readyAt: {}, abilities: [STRIKE], intent: null,

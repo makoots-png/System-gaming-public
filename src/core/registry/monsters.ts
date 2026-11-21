@@ -186,8 +186,8 @@ export const monsterXp = (m: { readonly xp?: number; readonly rank: Rank; readon
   m.xp ?? xpOf(R, m.rank, m.kind, m.tweak.traits);
 
 /** A monster's tweak as its body reads it: an absent factor 1, absent stats none, absent traits none. */
-export const tweakOfMonster = (t: { readonly hp?: number; readonly stats?: Partial<Readonly<Record<StatKey, number>>>; readonly traits?: readonly MonsterTrait[] }): Tweak =>
-  ({ hp: t.hp ?? NO_TWEAK.hp, stats: t.stats ?? NO_TWEAK.stats, traits: t.traits ?? NO_TWEAK.traits });
+export const tweakOfMonster = (t: { readonly hp?: number; readonly dealt?: number; readonly stats?: Partial<Readonly<Record<StatKey, number>>>; readonly traits?: readonly MonsterTrait[] }): Tweak =>
+  ({ hp: t.hp ?? NO_TWEAK.hp, dealt: t.dealt ?? NO_TWEAK.dealt, stats: t.stats ?? NO_TWEAK.stats, traits: t.traits ?? NO_TWEAK.traits });
 
 /** A monster's sheet: its rank, archetype and kind through `derive`, with its tweak. */
 export const monsterSheetOf = (m: Pick<Monster, 'rank' | 'archetype' | 'kind' | 'tweak'>, R: DeriveRules): Sheet =>

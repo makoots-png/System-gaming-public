@@ -31,7 +31,7 @@ import { WAYS_BACK, hpOf, manaOf } from '../hunter/vitals.ts';
 import type { LifeState, Maxima, Vitals } from '../hunter/vitals.ts';
 import { newRewards } from '../rewards.ts';
 import type { ItemTemplate } from '../registry/items.ts';
-import { monsterXp, parseMonster, seedMonsters } from '../registry/monsters.ts';
+import { monsterXp, parseMonster, seedMonsters, tweakOfMonster } from '../registry/monsters.ts';
 import type { Monster, MonsterTemplate } from '../registry/monsters.ts';
 import type { StatusDef } from '../combat/effect-ops.ts';
 import { combatantId } from '../combat/ability-types.ts';
@@ -239,16 +239,27 @@ export const soloKey = (h: Hunter): string => JSON.stringify([h.life, h.mana, h.
 /** The fight a run plays, and how its rows map back to the sheet. */
 export type SoloFight = { readonly fight: Setup; readonly hunter: CombatantId; readonly shadows: Readonly<Record<CombatantId, ShadowId>>; readonly R: Rules };
 /**
+ * Monster `m` as a solo run meets it (`RULES.solo.autoHarder`, whose comment has the reason): its tweak's HP factor and
+ * the damage of each hit it deals (`Tweak.dealt`) each times the rule's square root, so their product, the fight's
+ * difficulty, is the rule. Its XP, loot, speed, armor and stagger bar stay the table's.
+ */
+const harder = (m: RowMonster, R: Pick<Rules, 'solo'>): RowMonster => {
+  const each = Math.sqrt(R.solo.autoHarder), t = tweakOfMonster(m.tweak);
+  return { ...m, tweak: { hp: t.hp * each, dealt: t.dealt * each, stats: t.stats, traits: t.traits } };
+};
+/**
  * The fight of hunter `h` against `t`, in setup, made by the reducer's own `add` on the open arena: the hunter's row
- * (`hunterRow`), a row for each summoned shadow, then each roster line's monsters (`monsterRows`), with the target's
- * statuses over the rules' for this fight only (`R` of the answer: the run plays by it). Null when the reducer refuses it.
+ * (`hunterRow`), a row for each summoned shadow, then each roster line's monsters (`monsterRows`) made harder by the
+ * rule (`harder`), with the target's statuses over the rules' for this fight only (`R` of the answer: the run plays by
+ * it). The one builder of a solo fight: the odds a gate's card shows play this fight, and so does the run. Null when
+ * the reducer refuses it.
  */
 export function soloFight(h: Hunter, t: SoloTarget, R0: Rules): SoloFight | null {
   const R = withStatuses(R0, t.statuses);
   const me = combatantId('solo-h'), shadows: Record<CombatantId, ShadowId> = {};
   const rows: NewRow[] = [hunterRow(h, me, R)];
   h.shadows.filter(s => s.summoned).forEach((s, i) => { const id = combatantId(`solo-s${i}`); shadows[id] = s.id; rows.push(shadowRow(s, h.id, id, R)); });
-  t.monsters.forEach((m, i) => rows.push(...monsterRows(m.monster, Array.from({ length: m.count }, (_, k) => combatantId(`solo-m${i}-${k}`)), R)));
+  t.monsters.forEach((m, i) => rows.push(...monsterRows(harder(m.monster, R), Array.from({ length: m.count }, (_, k) => combatantId(`solo-m${i}-${k}`)), R)));
   const r = reduce(null, { type: 'add', fightId: fightId('solo'), rows, openings: [] }, { rules: R });
   return r.fight?.phase === 'setup' ? { fight: r.fight, hunter: me, shadows, R } : null;
 }

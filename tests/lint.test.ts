@@ -1955,3 +1955,12 @@ test('a view that mounts the battle map destroys it when it takes the map\'s box
   const keeping = new Set(lines.filter(line => /\.destroy\(\)/.test(line.text)).map(line => line.file));
   expect(mounting.filter(file => !keeping.has(file)), 'call the map view\'s destroy() before replacing its box').toEqual([]);
 });
+
+test('the Gates view makes a solo fight only by soloFight: the odds a card shows and the run play the one fight', async () => {
+  // A run's foes are harder than the table's by `RULES.solo.autoHarder`, which soloFight (src/core/gates/solo.ts) applies.
+  // A row built or a fight added in the view would be a second builder: its odds could be of one fight and its run of another.
+  const lines = (await sourceLines('src/views')).filter(line => line.file === 'src/views/gates.js' && !isComment(line.text));
+  expect(lines.filter(line => /\bsoloFight\s*\(/.test(line.text)).length, 'the rule sees the card\'s soloFight and the run\'s').toBe(2);
+  const built = lines.filter(line => /\b(hunterRow|monsterRows|shadowRow|remoteRow)\s*\(|(?<![.\w$])reduce\s*\(|type:\s*'add'/.test(line.text));
+  expect(report(built), 'build a solo run\'s fight with soloFight in src/core/gates/solo.ts, for the odds box and for the run').toEqual([]);
+});

@@ -131,7 +131,7 @@ describe('the single-hit bound of design section 6', () => {
         const tank = body('tank', hunter('tank', rank), place(6, 5), 'foe', rank);
         const users = user === 'hunter'
           ? Object.keys(BUILDS).map(b => [b, hunter(b, rank)] as const)
-          : KINDS_OF_MONSTER.map(k => [`${user} ${k}`, { kind: 'monster', name: 'Monster', rank, archetype: user, monsterKind: k } as Origin] as const);
+          : KINDS_OF_MONSTER.map(k => [`${user} ${k}`, { kind: 'monster', name: 'Monster', rank, archetype: user, monsterKind: k, tweak: NO_TWEAK } satisfies Origin] as const);
         for (const [who, origin] of users) {
           const u = body('user', origin, place(5, 5), 'party', rank);
           const r = resolve(a, u, [u, tank], tank.id, GRID, { dice: { [tank.id]: diceOf(formulaOf(a, RULES)!).map(mean) }, react: { [tank.id]: D20 } }, NOW, R);

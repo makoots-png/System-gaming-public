@@ -64,7 +64,7 @@ const bool = (v: unknown): boolean | null => typeof v === 'boolean' ? v : null;
 function tallyRead(v: unknown): Partial<RowTally> | undefined {
   if (!isObj(v)) return undefined;
   const out: { -readonly [K in keyof RowTally]?: RowTally[K] } = {};
-  for (const k of ['hits', 'crits', 'critRun', 'critRunMax', 'struck', 'avoided', 'dealt', 'taken', 'healed', 'raised', 'hexes', 'downs', 'turns', 'items'] as const) {
+  for (const k of ['hits', 'crits', 'critRun', 'critRunMax', 'struck', 'avoided', 'dealt', 'taken', 'healed', 'hexes', 'downs', 'turns', 'items'] as const) {
     const n = whole(v[k], 0, BIG); if (n !== null && n !== NO_TALLY[k]) out[k] = n;
   }
   const low = whole(v.low, 0, 100); if (low !== null && low !== NO_TALLY.low) out.low = low;
@@ -682,10 +682,10 @@ const MONSTER_TRAITS = (R: Rules) => Object.keys(R.fight.traits) as MonsterTrait
 /** A seed's tweak: an HP factor above 0 and at most 10, points added to named stats, and the traits of `R.fight.traits` it names, each once. */
 function tweakOf(v: unknown, R: Rules): Tweak | null {
   if (!isObj(v) || !isObj(v.stats) || !Array.isArray(v.traits)) return null;
-  const hp = num(v.hp, 0, 10), stats: Partial<Record<(typeof STAT_KEYS)[number], number>> = {}, traits: MonsterTrait[] = [];
+  const hp = num(v.hp, 0, 10), dealt = num(v.dealt, 0, 10), stats: Partial<Record<(typeof STAT_KEYS)[number], number>> = {}, traits: MonsterTrait[] = [];
   for (const [k, x] of Object.entries(v.stats)) { const key = oneOf(k, STAT_KEYS, null), n = num(x, -10000, 10000); if (!key || n === null) return null; stats[key] = n; }
   for (const t of v.traits) { const trait = oneOf(t, MONSTER_TRAITS(R), null); if (!trait || traits.includes(trait)) return null; traits.push(trait); }
-  return hp === null || hp === 0 ? null : { hp, stats, traits };
+  return hp === null || hp === 0 || dealt === null ? null : { hp, dealt, stats, traits };
 }
 function originOf(v: unknown, R: Rules): Origin | null {
   if (!isObj(v)) return null;

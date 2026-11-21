@@ -328,7 +328,7 @@ describe('an ability\'s icon', () => {
 
 describe('a fight row\'s icon (row-icon.ts), the one answer the map token, the card, the turn order and the fight doc draw', () => {
   const monster = (o: { icon?: IconKey; type?: string; archetype?: Archetype } = {}): Origin =>
-    ({ kind: 'monster', name: 'Rat', rank: 'E', archetype: o.archetype ?? 'brute', monsterKind: 'normal', tweak: { hp: 1, stats: {}, traits: [] }, ...(o.type ? { type: o.type } : {}), ...(o.icon ? { icon: o.icon } : {}) });
+    ({ kind: 'monster', name: 'Rat', rank: 'E', archetype: o.archetype ?? 'brute', monsterKind: 'normal', tweak: { hp: 1, dealt: 1, stats: {}, traits: [] }, ...(o.type ? { type: o.type } : {}), ...(o.icon ? { icon: o.icon } : {}) });
   const build: Origin = { kind: 'hunter', build: { stats: baseStats(RULES.fight), level: 1, gear: kitGear('light', RULES), perks: {} } };
   /** Each row as the design and ruling 1 say it is drawn: [what it is, its kind, its origin, the sheet behind it, its picture]. */
   const TABLE: readonly (readonly [string, CombatantKind, Origin, { emblem: string } | null, IconKey | null])[] = [

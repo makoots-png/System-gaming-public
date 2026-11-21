@@ -163,6 +163,13 @@ describe('the solo run\'s lines', () => {
     expect(soloLines({ ...RULES, solo: { ...RULES.solo, personal: false } })[1]).toBe('Personal gates are off.');
   });
 
+  test('say how much harder a run\'s foes are, and on what: the square root of the rule on their HP and on their damage', () => {
+    const root = Math.round(Math.sqrt(RULES.solo.autoHarder) * 100) / 100, pct = `${Math.round((RULES.solo.autoHarder - 1) * 1000) / 10}%`;
+    expect(soloLines(RULES)[0]).toContain(`So its foes are ${pct} harder than at the table: each has ${root} times its HP and deals ${root} times its damage.`);
+    expect(soloLines({ ...RULES, solo: { ...RULES.solo, autoHarder: 1.44 } })[0]).toContain('44% harder than at the table: each has 1.2 times its HP and deals 1.2 times its damage');
+    expect(soloLines({ ...RULES, solo: { ...RULES.solo, autoHarder: 1 } })[0]).not.toContain('harder');
+  });
+
   test('say what share of a world gate\'s loot a cleared personal gate pays, and that a world gate run alone pays in full', () => {
     const pct = `${RULES.solo.lootShare * 100}%`;
     expect(soloLines(RULES)[3]).toBe(`A cleared personal gate pays ${pct} of the loot a world gate of its rank rolls: ${pct} of the gold, rounded down, and an item ${pct} of the time. A world gate run alone pays as a world gate.`);

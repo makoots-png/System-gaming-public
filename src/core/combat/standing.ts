@@ -195,6 +195,11 @@ const hitShare = (dealt: number, target: Pick<Body, 'statuses'>, R: StandingRule
 export const damageShare = (user: Pick<Body, 'statuses'> | null, target: Pick<Body, 'statuses'>, R: StandingRules): number =>
   hitShare(user ? shareOf(user, 'dealt') : 1, target, R);
 /**
+ * What a hit from `user` (null: a status's own per-round damage, or a body hurting itself) is multiplied by after rule
+ * 11c's shares, outside their cap: a monster's tweak's `dealt` (derive.ts `Tweak`, set only on a solo run's foes), else 1.
+ */
+export const dealtBy = (user: Pick<Body, 'origin'> | null): number => (user?.origin.kind === 'monster' ? user.origin.tweak.dealt : 1);
+/**
  * Rule 11c for an ambush (resolve.ts `ambushes`): what a use's hit from hiding on a target that does not perceive its
  * user is multiplied by. The rules' `stealth.ambush` is one more of the user's dealt increases, of which only the
  * strongest applies (notes-7-stealth.md section 2), so a dealt buff and an ambush do not compound; the product stays

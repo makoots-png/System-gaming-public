@@ -19,7 +19,7 @@ import type { Ability, Avoid, CombatantId, Outcome } from './ability-types.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import { removeStatus, shielded, shieldOn, withStatuses } from './effect-ops.ts';
 import { atTier, countOn, stacked } from './op-amount.ts';
-import { ambushShare, boostsOn, critFacesAgainst, damageShare, edgeOn, edgeStep, healShare, hides, shieldShare, rangeWith, warded, wardedDamage } from './standing.ts';
+import { ambushShare, boostsOn, critFacesAgainst, damageShare, dealtBy, edgeOn, edgeStep, healShare, hides, shieldShare, rangeWith, warded, wardedDamage } from './standing.ts';
 import { eyesOf, figureOf, perceivedBy, perceives, watched } from './sight.ts';
 import type { Lookout } from './sight.ts';
 import type { Fog } from './fight-types.ts';
@@ -211,13 +211,14 @@ const covered = (raw: number, a: Ability, target: Body, grid: Grid, R: ResolveRu
 
 // Rule 11c (kits design 8.1): a damaging use is multiplied by the user's dealt share and the target's taken share, a heal
 // by the target's healed share and a shield by its shielded share, each product within `kit.shareCap` of 1 (standing.ts). A hit on a target that does not
-// perceive its hidden user is an ambush (`ambushes`): the rules' `stealth.ambush` joins the user's dealt increases.
+// perceive its hidden user is an ambush (`ambushes`): the rules' `stealth.ambush` joins the user's dealt increases. A
+// damaging use is then multiplied by its user's `dealtBy` (a solo run's foe's tweak), outside the cap.
 function shared(raw: number, a: Ability, user: Body, target: Body, grid: Grid, R: ResolveRules): number {
   const type = a.effect?.type;
   if (type === 'heal') return raw * healShare(target, R);
   if (type === 'shield') return raw * shieldShare(target, R);
   if (type !== 'physical' && type !== 'magical') return raw;
-  return raw * (ambushes(user, target, grid) ? ambushShare(user, target, R) : damageShare(user, target, R));
+  return raw * (ambushes(user, target, grid) ? ambushShare(user, target, R) : damageShare(user, target, R)) * dealtBy(user);
 }
 /**
  * Rule 11c's ambush (notes-7-stealth.md section 3's table, the owner's rulings 3 and 5): `target`'s own eyes do not

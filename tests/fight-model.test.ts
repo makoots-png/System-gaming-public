@@ -176,7 +176,7 @@ function check(before: Fight | null, cmd: Command, after: Fight | null, effects:
  * keeps it): seed 1269 removed a hunter a wolf had killed, which the same commands did at 62d87ff too.
  */
 function tallyWrong(before: Fight | null, after: Fight): string | null {
-  const COUNTS = ['hits', 'crits', 'critRunMax', 'struck', 'avoided', 'dealt', 'taken', 'healed', 'raised', 'hexes', 'downs', 'turns', 'items'] as const;
+  const COUNTS = ['hits', 'crits', 'critRunMax', 'struck', 'avoided', 'dealt', 'taken', 'healed', 'hexes', 'downs', 'turns', 'items'] as const;
   for (const r of after.rows) {
     const t = tallyOf(r), was = before?.rows.find(x => x.id === r.id);
     if (r.kind !== 'hunter' && r.tally && Object.keys(r.tally).some(k => k !== 'kills')) return `${r.id}, not a hunter, keeps ${Object.keys(r.tally).join(', ')}`;

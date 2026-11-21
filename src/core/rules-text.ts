@@ -85,12 +85,14 @@ export function deathLine(R: Pick<Rules, 'reviveLevelShare'>): string {
 /**
  * What a solo run is (gates/solo.ts): one play of the fight on the rules, the cost it leaves kept, a death possible,
  * the time cap a retreat; and the System's personal gates from `RULES.solo`, the first of them the even gate (`soloTick`),
- * and the share of a world gate's loot a cleared one pays (`solo.lootShare`, spawn.ts `lootShareOf`).
+ * and the share of a world gate's loot a cleared one pays (`solo.lootShare`, spawn.ts `lootShareOf`); how much harder
+ * its foes are (`solo.autoHarder`, the square root of it on their HP and on their damage, solo.ts `soloFight`).
  */
 export function soloLines(R: Pick<Rules, 'solo'>): readonly string[] {
-  const S = R.solo;
+  const S = R.solo, root = Math.round(Math.sqrt(S.autoHarder) * 100) / 100;
+  const harder = S.autoHarder > 1 ? ` So its foes are ${pct(S.autoHarder - 1)} harder than at the table: each has ${root} times its HP and deals ${root} times its damage.` : '';
   return [
-    `A solo run plays one fight to its end on the rules. Before it, the odds show how ${ODDS_RUNS} plays of that fight went; the run is one more play and can go better or worse. What it leaves of HP, mana and fatigue stays. A hunter can die alone. A run with no winner by round ${CAP_ROUNDS} is a retreat: its cost stays and the gate stays open.`,
+    `A solo run plays one fight to its end on the rules, each side as well as it can.${harder} Before it, the odds show how ${ODDS_RUNS} plays of that fight went; the run is one more play and can go better or worse. What it leaves of HP, mana and fatigue stays. A hunter can die alone. A run with no winner by round ${CAP_ROUNDS} is a retreat: its cost stays and the gate stays open.`,
     ...(S.personal
       ? [`The System opens a personal gate every ${S.hours} hours, at most ${S.held} at once. Each closes ${S.stays} hours after it opens, cleared or not.`,
         `The first gate after personal gates start for a hunter (a new hunter, one revived, or personal gates turned back on) holds one monster of the hunter's own rank. The rest hold ${S.pack[0]} to ${S.pack[1]}, one rank below the hunter's to one above.`,

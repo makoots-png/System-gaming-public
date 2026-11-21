@@ -24,7 +24,7 @@ const ctx: Ctx = { rules: RULES };
 const f = (text: string) => { const p = parseFormula(text, RULES); if (!p.ok) throw new Error(p.error); return p.formula; };
 const id = combatantId;
 const HUNTER: Origin = { kind: 'hunter', build: { stats: baseStats(RULES.fight), level: 1, gear: kitGear('light', RULES), perks: {} } };
-const WOLF: Origin = { kind: 'monster', name: 'Wolf', rank: 'D', archetype: 'brute', monsterKind: 'normal', tweak: { hp: 1, stats: {}, traits: [] }, type: 'Beast' };
+const WOLF: Origin = { kind: 'monster', name: 'Wolf', rank: 'D', archetype: 'brute', monsterKind: 'normal', tweak: { hp: 1, dealt: 1, stats: {}, traits: [] }, type: 'Beast' };
 const ALPHA: Origin = { ...WOLF, name: 'Alpha', monsterKind: 'boss', rank: 'C' };
 const FAR = { range: tiles(20), shape: { kind: 'touch', reach: tiles(20) } } as const;
 const ability = (name: string, text: string): Ability => ({ ...abilityOf('strike', { id: abilityId(name), name }, RULES), ...FAR, effect: { type: 'physical', by: 'hand', formula: f(text) } });

@@ -286,8 +286,8 @@ describe('a monster', () => {
   test('its seed\'s tweak scales its HP, adds to its stats and carries its traits', () => {
     const tweak = { hp: 0.7, stats: { ins: 8 }, traits: ['slow' as const] };
     const [r] = monsterRows(monster({ archetype: 'caster', tweak }), [id('m1')], R);
-    expect(r!.origin).toEqual({ kind: 'monster', name: 'Goblin', rank: 'E', archetype: 'caster', monsterKind: 'normal', tweak });
-    expect(rowHp(r!)).toBe(monsterSheet('E', 'caster', 'normal', RULES, [], tweak).hpMax);
+    expect(r!.origin).toEqual({ kind: 'monster', name: 'Goblin', rank: 'E', archetype: 'caster', monsterKind: 'normal', tweak: { ...tweak, dealt: 1 } });
+    expect(rowHp(r!)).toBe(monsterSheet('E', 'caster', 'normal', RULES, [], { ...tweak, dealt: 1 }).hpMax);
     expect(rowHp(r!)).toBeLessThan(monsterSheet('E', 'caster', 'normal', RULES).hpMax);
   });
 
@@ -413,7 +413,7 @@ describe('a summon (kits design 1.9)', () => {
   const row = summonRow({ id: id('c-hwei'), side: 'party', tier: 2 }, spec, id('c-sprite'), tick(3000), R);
 
   test('is a normal monster\'s body of its archetype at its user\'s rank, with the archetype\'s attack, on its user\'s side', () => {
-    expect([row.kind, row.side, row.tier, row.origin]).toEqual(['summon', 'party', 2, { kind: 'monster', name: 'Sprite', rank: 'C', archetype: 'skirmisher', monsterKind: 'normal', tweak: { hp: 1, stats: {}, traits: [] } }]);
+    expect([row.kind, row.side, row.tier, row.origin]).toEqual(['summon', 'party', 2, { kind: 'monster', name: 'Sprite', rank: 'C', archetype: 'skirmisher', monsterKind: 'normal', tweak: { hp: 1, dealt: 1, stats: {}, traits: [] } }]);
     expect(row.abilities.map(a => a.id)).toEqual([ARCHETYPE_ATTACKS.skirmisher(RULES).id]);
     expect([rowHp(row), row.xp, row.holder, row.threat, row.stagger]).toEqual([monsterSheet('C', 'skirmisher', 'normal', RULES, [{ op: 'speed', pct: -30 }]).hpMax, 0, null, null, null]);
   });
