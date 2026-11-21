@@ -10,7 +10,7 @@ import { checksOf, fitted, hunterSheet, setAdjust, setMaximum } from '../core/hu
 import { ALLOCATION_WORDS, allocated, available, confirm, hasPending, lower, plusPoint, raise, setPoints, setStat } from '../core/hunter/progress.ts';
 import { TOLD, atHunter, atLibrary, both, isRefused, orKeep, refuse } from '../core/save-step.ts';
 import { dropBoon, giveTitle, nameActiveTitle, rankStanding, reevaluate as reevaluated, removeTitle, rename, setJob, setRank, toggleTitle, writeTitle, cleanName } from '../core/hunter/record.ts';
-import { grant, levelEdit, sheetEdit } from '../core/hunter/grant.ts';
+import { grant, levelEdit, raisedLine, sheetEdit } from '../core/hunter/grant.ts';
 import { setGold } from '../core/hunter/inventory.ts';
 import { addHunter, removeHunter } from '../core/party.ts';
 import { logLine, logged } from '../core/session-log.ts';
@@ -491,7 +491,10 @@ export function register(app) {
         if (d.condDel) { ui.wrote('System', api.removeCondition(h.id, d.condDel)); return; }
         if ('dsave' in d) { ui.wrote('Death save', deathSave(h)); return; }
         if ('stabilize' in d && app.isGM()) { ui.wrote('System', api.life(h.id, { type: 'stabilize' })); return; }
-        if ('revive' in d && app.isGM() && ui.wrote('System', api.life(h.id, { type: 'revive' }))) return ui.toast('System', `${h.name} is revived at 1 HP.`);
+        if ('revive' in d && app.isGM()) {
+          const was = h.level; // the store writes into the hunter a view holds, so the level before is read before the write
+          if (ui.wrote('System', api.life(h.id, { type: 'revive' }))) return ui.toast('System', `${h.name} is revived. ${raisedLine(was, store.hunter(h.id).level)}.`);
+        }
       });
     },
     update,

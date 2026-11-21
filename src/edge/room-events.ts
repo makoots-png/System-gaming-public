@@ -8,7 +8,7 @@
 // of it landed, and a repeat changes nothing. Each change is a core step (src/core/hunter/grant.ts, quests.ts).
 import { describeStatus } from '../core/combat/effect-ops.ts';
 import type { SheetStatus } from '../core/combat/effect-ops.ts';
-import { chainStep, grant, idsFrom, sheetEdit } from '../core/hunter/grant.ts';
+import { chainStep, grant, idsFrom, raisedLine, sheetEdit } from '../core/hunter/grant.ts';
 import type { Granted, SheetEdit, StepDone } from '../core/hunter/grant.ts';
 import { chained, issueQuest, withTold } from '../core/hunter/quests.ts';
 import { told } from '../core/session-log.ts';
@@ -109,10 +109,10 @@ const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS }
     // the fight's own totals, its row's life among them: written on the sheet wherever the fight is, so a repeat changes nothing
     const next = sheetEdit(h, { type: 'totals', life: p.life, mana: p.mana, fatigue: p.fatigue, statuses: p.statuses }, app.rules());
     if (isRefused(next)) return { save: s, tell: nothing };
-    const had = new Set(h.conditions.map(c => c.key));
+    const had = new Set(h.conditions.map(c => c.key)), was = h.level; // the save is written into `h`: the level before is kept here
     return { save: withHunter(s, next), tell: () => {
       for (const st of p.statuses) if (!had.has(st.key)) statusToast(app, st);
-      fightLifeTold(app, h.life, next.life, p.reason);
+      fightLifeTold(app, h.life, next.life, p.reason, was, next.level);
     } };
   }) },
   // the GM's fight took this hunter's use of an item: one leaves the bag (src/core/hunter/use.ts `spendItem`); an item
@@ -128,9 +128,9 @@ const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS }
   // and this phone hears it in `vitals`, so a revive sent before the hunter joined a fight lands on nothing
   revive: { once: true, land: (_p, hids, app) => save => forEach(save, hids, (s, h) => {
     if (app.hunter.fightOf({ hid: h.id })) return { save: s, tell: nothing };
-    const next = sheetEdit(h, { type: 'life', event: { type: 'revive' } }, app.rules());
+    const was = h.level, next = sheetEdit(h, { type: 'life', event: { type: 'revive' } }, app.rules()); // the save is written into `h`, so the level before is kept here
     return isRefused(next) ? { save: s, tell: nothing }
-      : { save: withHunter(s, next), tell: () => app.toast('! System', 'The GM has revived you. You are up at 1 HP.', { kind: 'good' }) };
+      : { save: withHunter(s, next), tell: () => app.toast('! System', `The GM has revived you. ${raisedLine(was, next.level)}.`, { kind: 'good' }) };
   }) },
   // the chain machine refuses what does not apply (a second chain, a reissue of a chain that has not failed): nothing happens
   chain: { once: true, land: landChain },
@@ -249,7 +249,7 @@ const fellTold = (app: ApplyDeps, reason: string): void => app.toast('! Warning'
  * (vitals.ts `lifeNews`), so the words follow what the row's life did: a fall, each death save the fight took, stable,
  * dead, or up again (a revive of the dead, else a heal or a natural 20).
  */
-function fightLifeTold(app: ApplyDeps, before: Life, after: Life, reason: string): void {
+function fightLifeTold(app: ApplyDeps, before: Life, after: Life, reason: string, levelBefore: number, levelAfter: number): void {
   const news = lifeNews(before, after);
   if (!news) return;
   const hp = after.at === 'up' ? after.hp : 0;
@@ -259,7 +259,7 @@ function fightLifeTold(app: ApplyDeps, before: Life, after: Life, reason: string
     case 'failed': app.toast('Death save', `Failed: ${news.failures} of ${SAVES_TO_END}.`, { kind: 'warn' }); return;
     case 'stable': app.toast('Death save', `${SAVES_TO_END} successes: you are stable.`, { kind: 'info' }); return;
     case 'died': app.toast('! Warning', `You are dead. ${WAYS_BACK} brings you back.`, { kind: 'warn' }); return;
-    case 'raised': app.toast('! System', before.at === 'dead' ? `You are revived. You are up at ${hp} HP.` : `You are up again at ${hp} HP.`, { kind: 'good' }); return;
+    case 'raised': app.toast('! System', before.at === 'dead' ? `You are revived. ${raisedLine(levelBefore, levelAfter)}.` : `You are up again at ${hp} HP.`, { kind: 'good' }); return;
   }
 }
 

@@ -3,7 +3,7 @@
 import { RANKS, RULES, rules } from '../edge/rules.ts';
 import { xpToNext as xpToNextOf } from '../core/rules.ts';
 import { STAT_KEYS, STAT_LABELS, STAT_SHORT } from '../core/stats.ts';
-import { armorCutPct, checkExample, downLine, gatePayLines, naturalLines, pointsLine, saleLine, saleRows, dailyPointsLine, soloLines, statBonusLine } from '../core/rules-text.ts';
+import { ICON_CREDIT, armorCutPct, checkExample, downLine, gatePayLines, iconCreditLine, naturalLines, pointsLine, saleLine, saleRows, dailyPointsLine, soloLines, statBonusLine } from '../core/rules-text.ts';
 import { describeStatus } from '../core/combat/effect-ops.ts';
 
 const STAT_USE = {
@@ -22,6 +22,8 @@ const CSS = `
 .rr-search{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
 .rr-search .field{flex:1 1 220px}
 .rr-search input{width:100%}
+.rr-credit{margin:14px 0 4px;font-size:12px;color:var(--cyan-dim);text-align:center;overflow-wrap:anywhere}
+.rr-credit a{color:inherit}
 .rr-toc{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .rr-toc a{font-size:12px;letter-spacing:.08em;color:var(--cyan-dim);border:1px solid var(--line);padding:4px 8px;text-decoration:none;min-height:32px;display:inline-flex;align-items:center}
 .rr-toc a:hover{color:var(--cyan);border-color:var(--cyan)}
@@ -164,7 +166,7 @@ export function register(app) {
         ul([`Fatigue runs from 0 to your fatigue capacity. At ${R.fatigue.penaltyAt}% of it: −${R.fatigue.penalty} to all checks. At ${R.fatigue.disAt}%: disadvantage on checks. At ${R.fatigue.collapseAt}%: collapse (Exhausted, cannot act until a long rest).`,
           `<b>Short rest</b>: +${R.rest.short.hpPct}% max HP, +${R.rest.short.mpPct}% max mana, −${R.rest.short.fatigue}% of your fatigue capacity.`,
           `<b>Long rest</b>: +${R.rest.long.hpPct}% max HP and mana, −${R.rest.long.fatigue}% of your fatigue capacity, Exhausted cleared (only a long rest clears it).`,
-          esc(downLine())]),
+          esc(downLine(R))]),
       ] },
       { id: 'conditions', title: 'Statuses', body: [
         table(['Status', 'Effect', 'Mechanics'], Object.keys(R.conditions).map(k => [esc(tr(k).label), esc(tr(k).desc), esc(describeStatus(tr(k), null, R).join('; ') || '—')])),
@@ -215,6 +217,8 @@ export function register(app) {
     ];
   }
 
+  const link = l => `<a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(l.text)}</a>`;
+  const creditHtml = () => iconCreditLine().replace(ICON_CREDIT.site.text, link(ICON_CREDIT.site)).replace(ICON_CREDIT.licence.text, link(ICON_CREDIT.licence));
   const render = () => sections().map(s => `<section class="win rr-sec" id="rr-${s.id}" data-sec="${esc(s.title)}"><span class="cb"></span><h2>${esc(s.title)}</h2>${s.body.join('')}</section>`).join('');
 
   function applyFilter(root) {
@@ -240,7 +244,8 @@ export function register(app) {
         <div class="rr-search">${ui.field('Search the rules', '<input type="text" data-rr-q maxlength="60" placeholder="e.g. fatigue, DC, shadow" autocomplete="off">')}<span class="empty" data-rr-count aria-live="polite"></span></div>
         <nav class="rr-toc" aria-label="Rules sections" data-rr-toc></nav></section>
         <div data-rr-body></div>
-        <section class="win" data-rr-none hidden><span class="cb"></span><p class="rr-none">No rules match that search.</p></section>`;
+        <section class="win" data-rr-none hidden><span class="cb"></span><p class="rr-none">No rules match that search.</p></section>
+        <p class="rr-credit" data-rr-credit>${creditHtml()}</p>`;
       el.querySelector('[data-rr-q]').addEventListener('input', () => applyFilter(el));
       el.querySelector('[data-rr-toc]').addEventListener('click', e => {
         const a = e.target.closest('a'); if (!a) return; e.preventDefault();

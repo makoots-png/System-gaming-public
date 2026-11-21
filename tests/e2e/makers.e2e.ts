@@ -1224,6 +1224,76 @@ test('every kind of op round-trips through the status maker and its parser, the 
   }
 });
 
+test('a GM makes a hide by rank that starts anywhere and that only damage it deals ends; the library holds those fields and Edit shows them as saved', async ({ device }) => {
+  const page = (await device('gm')).page;
+  await onboardGM(page);
+  const d = statusMaker(page), fx = d.locator('[data-row="0"]');
+  await go(page, 'workshop');
+  await workshop(page, 'status').locator('[data-new]').tap();
+  await d.locator('[data-name]').fill('Veil');
+  await d.locator('[data-add]').tap();
+  await fx.locator('[data-f="kind"]').selectOption('hidden');
+
+  await test.step('the row offers a stealth level, Out of sight or Anywhere, and the three ends, each on', async () => {
+    await expect(fx.locator('[data-f="q"]')).toHaveValue('1');
+    await expect(fx.locator('[data-set="start"]')).toHaveText(['Out of sight', 'Anywhere']);
+    await expect(fx.locator('[data-set="start"][aria-pressed="true"]')).toHaveText('Out of sight');
+    await expect(fx.locator('[data-end]')).toHaveText(['Hurt', 'Revealed', 'It deals damage']);
+    await expect(fx.locator('[data-end][aria-pressed="true"]')).toHaveCount(3);
+    await expect(d.locator('.mk-preview')).toContainText('It ends when it is hurt, is revealed or deals damage');
+  });
+
+  await test.step('level 3 at rank S, Anywhere, and Hurt and Revealed off', async () => {
+    await fx.locator('[data-mode="rank"]').tap();
+    await fx.locator('[data-t="5"]').fill('3');
+    await fx.locator('[data-set="start"][data-v="anywhere"]').tap();
+    await fx.locator('[data-end="hurt"]').tap();
+    await fx.locator('[data-end="revealed"]').tap();
+    await expect(fx.locator('[data-err]')).toHaveText('');
+    await expect(d.locator('.mk-preview')).toContainText('Hidden at stealth level 1 / 1 / 1 / 1 / 1 / 3, by rank E to S');
+    await expect(d.locator('.mk-preview')).toContainText('It hides even in a foe\'s sight. It ends when it deals damage');
+    await d.getByRole('button', { name: 'Save status' }).tap();
+    await expect(d).toHaveCount(0);
+  });
+
+  await test.step('the library holds the op the form said, and the parser reads it back the same', async () => {
+    const [, def] = await libraryStatus(page, 'Veil');
+    expect(def.ops).toEqual([{ op: 'hidden', level: [1, 1, 1, 1, 1, 3], start: 'anywhere', ends: { hurt: false, revealed: false, dealt: true } }]);
+    expect(parseOp(def.ops[0], RULES)).toEqual(def.ops[0]);
+  });
+
+  await test.step('Edit shows the level by rank, Anywhere, and only It deals damage on', async () => {
+    await workshop(page, 'status').locator('li', { hasText: 'Veil' }).locator('.nm').tap();
+    await expect(fx.locator('[data-t]')).toHaveCount(6);
+    expect(await fx.locator('[data-t]').evaluateAll(els => els.map(e => (e as HTMLInputElement).value))).toEqual(['1', '1', '1', '1', '1', '3']);
+    await expect(fx.locator('[data-set="start"][aria-pressed="true"]')).toHaveText('Anywhere');
+    await expect(fx.locator('[data-end][aria-pressed="true"]')).toHaveText(['It deals damage']);
+    await d.locator('[data-cancel]').tap();
+    await expect(d).toHaveCount(0);
+  });
+});
+
+test('on a 390 px phone the status maker\'s hide row, its level by rank, Starts and Ends when, fits the screen with no sideways scroll', async ({ device }) => {
+  const page = (await device('gm', { viewport: { width: 390, height: 844 } })).page;
+  await onboardGM(page);
+  const d = statusMaker(page), fx = d.locator('[data-row="0"]');
+  await go(page, 'workshop');
+  await workshop(page, 'status').locator('[data-new]').tap();
+  await d.locator('[data-add]').tap();
+  await fx.locator('[data-f="kind"]').selectOption('hidden');
+  await fx.locator('[data-mode="rank"]').tap();
+  await expect(fx.locator('[data-end]')).toHaveCount(3);
+  await fx.scrollIntoViewIfNeeded();
+  const fit = await fx.evaluate(el => ({
+    scroll: el.scrollWidth, client: el.clientWidth, page: document.documentElement.scrollWidth - innerWidth,
+    inside: [...el.querySelectorAll('button, input, select')].every(c => { const r = c.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth; }),
+  }));
+  expect(fit.scroll).toBeLessThanOrEqual(fit.client);
+  expect(fit.inside, 'every control of the row inside the screen').toBe(true);
+  expect(fit.page, 'the page does not scroll sideways').toBeLessThanOrEqual(0);
+  await page.screenshot({ path: '/tmp/pw-st2-hide-390.png' });
+});
+
 test('a GM makes a fire blast that leaves burning ground for 2 rounds; in a fight the ground stays where it landed and a foe left standing in it burns', async ({ device }) => {
   const page = (await device('gm')).page;
   await onboardGM(page);

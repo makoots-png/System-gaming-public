@@ -575,7 +575,7 @@ describe('what a repair fixes', () => {
 
   test('a value outside its list falls back to the default of that field', () => {
     const save = parseRaw({ schema: SCHEMA, settings: { mode: 'admin', dailyResetHour: 99 }, world: { day: -2, session: -3 },
-      hunters: [{ id: 'h1', rank: 'Z', emblem: 'dragon', color: 'red',
+      hunters: [{ id: 'h1', rank: 'Z', emblem: 'unicorn', color: 'red',
         quests: [{ id: 'q1', kind: 'weird', status: 'lost', from: 'nobody' }], skills: [{ id: 's1', name: 'Dash', type: 'aura' }],
         items: [{ id: 'i1', name: 'Gun', rar: 'godly', type: 'gun', slot: 'tail', qty: -2 }],
         shadows: [{ id: 'sh1', rank: 'Q', grade: 'King', archetype: 'dragon', hp: -5 }] }],

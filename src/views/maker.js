@@ -13,6 +13,7 @@ import { RANKS } from '../core/rules.ts';
 import { STAT_KEYS, STAT_LABELS } from '../core/stats.ts';
 import { parseFormula, printFormula } from '../core/formula.ts';
 import { OP_KINDS, opLines } from '../core/combat/effect-ops.ts';
+import { HIDE_LEVELS } from '../core/combat/standing.ts';
 import { parseOp } from '../core/combat/fight-parse.ts';
 import { RARITIES } from '../core/registry/items.ts';
 import { BUILT_IN_STATUSES } from '../core/registry/statuses.ts';
@@ -78,9 +79,9 @@ const KIND_LABEL = {
   hold: 'Cannot act (stun)', root: 'Cannot move (root)', taunt: 'Taunt', threat: 'Threat', channel: 'Channel', staggerRate: 'Stagger fill %',
   refund: 'Extra-turn chance', applyStatus: 'Apply status', cureStatus: 'Cure status', note: 'Note', aura: 'Aura around the bearer', spread: 'Spreads to others',
   sheet: 'Armor, crit or range', share: 'Damage or healing %', untargetable: 'Cannot be aimed at', invulnerable: 'Cannot drop under 1 HP',
-  safeguard: 'Blocks harmful statuses', edge: 'Rolls twice (advantage)', boost: 'Held die', hidden: 'Hidden', alert: 'Never surprised',
+  safeguard: 'Blocks harmful statuses', edge: 'Rolls twice (advantage)', boost: 'Held die', hidden: 'Hidden (stealth)', alert: 'Never surprised',
   shove: 'Push or pull', move: 'Move stacks', hasten: 'Hasten their turn', extra: 'Another action', guard: 'Guard (reaction)',
-  negate: 'Negate (reaction)', dispel: 'Cure harmful',
+  negate: 'Negate (reaction)', dispel: 'Cure harmful', stayHidden: 'Stays hidden',
 };
 /** Whom a status's aura reaches (effect-ops.ts `AURA_ON`). */
 const AURA_LABEL = [['all', 'Everyone'], ['allies', 'Allies'], ['foes', 'Foes']];
@@ -106,6 +107,7 @@ const NUMBERS = {
   speed: { key: 'pct', lo: -100, hi: 1000 }, stat: { key: 'amount', lo: -999, hi: 999 }, threat: { key: 'amount', lo: -9999, hi: 9999 },
   staggerRate: { key: 'pct', lo: -100, hi: 1000 }, refund: { key: 'pct', lo: 1, hi: 100 }, delay: { key: 'ticks', lo: 0.1, hi: 10, decimal: true, rounds: true },
   share: { key: 'pct', lo: -100, hi: 100 }, sheet: { key: 'amount', lo: -60, hi: 60 },
+  hidden: { key: 'level', lo: HIDE_LEVELS[0], hi: HIDE_LEVELS[HIDE_LEVELS.length - 1], placeholder: '1', label: 'Stealth level' },
 };
 const NUMBER_KINDS = Object.keys(NUMBERS);
 /** A number op's field and bounds: a sheet op's are its key's rule (kits table 8.1; fight-parse.ts clamps to the same), the rest `NUMBERS`. */
@@ -115,7 +117,10 @@ function specOf(r) {
   const hi = { armor: K.armorOp, resist: K.armorOp, pen: F.penCap, critFaces: K.critFacesMax, exposed: K.critFacesMax, critSize: K.critSizeMax - F.critSizeBase, costCut: K.costCutMax, range: K.rangeAdd }[key] ?? K.armorOp;
   return { key: 'amount', lo: -hi, hi, decimal: key === 'pen' || key === 'critSize' || key === 'costCut' };
 }
-const PLAIN_KINDS = ['hold', 'root', 'taunt', 'untargetable', 'invulnerable', 'safeguard', 'hidden', 'alert', 'extra', 'negate'];
+const PLAIN_KINDS = ['hold', 'root', 'taunt', 'untargetable', 'invulnerable', 'safeguard', 'alert', 'extra', 'negate'];
+/** Where a hide may start (effect-ops.ts `HIDE_STARTS`), and the three events that may end it (`STEALTH_ENDS`), as the GM reads them. */
+const START_LABEL = [['unseen', 'Out of sight'], ['anywhere', 'Anywhere']];
+const STEALTH_END_LABEL = [['hurt', 'Hurt'], ['revealed', 'Revealed'], ['dealt', 'It deals damage']];
 /** The sheet numbers a `sheet` op changes (effect-ops.ts `SHEET_OP_KEYS`), as the GM reads them. */
 const SHEET_KEY_LABEL = [['armor', 'Armor'], ['resist', 'Resist'], ['pen', 'Penetration (share)'], ['critFaces', 'Crit faces'], ['exposed', 'Faces foes crit it on'],
   ['critSize', 'Crit size'], ['costCut', 'Cost cut (share)'], ['range', 'Range']];
@@ -184,7 +189,7 @@ function rowOf(o) {
     addStacks: o.stacks === undefined ? '' : String(o.stacks), sheetKey: o.op === 'sheet' ? o.key : 'armor', shareOn: o.op === 'share' ? o.on : 'taken', side: o.side || 'attack',
     edgeKeep: o.op === 'edge' ? o.keep : 'better', tag: o.op === 'edge' && o.tag ? o.tag : '', spend: o.op === 'edge' ? !!o.spend : true, dieMode: o.op === 'boost' ? o.die.kind : 'die',
     dir: o.dir || 'away', from: o.op === 'shove' ? o.from : 'user', moveKey: o.op === 'move' ? o.key : 'harmful', moveFrom: o.op === 'move' ? o.from : 'user', as: o.op === 'move' && o.as ? o.as : '',
-    which: o.which || 'first',
+    which: o.which || 'first', start: o.op === 'hidden' ? o.start : null, ends: o.op === 'hidden' ? { ...o.ends } : null, stayOn: o.op === 'stayHidden' ? o.on : null,
   };
   if (FORMULA_KINDS.includes(o.op) || ONE_FORMULA.includes(o.op)) {
     if (o.op === 'damage') r.type = o.type;
@@ -209,7 +214,7 @@ function rowOf(o) {
   else if (o.op === 'shove') r.q = String(o.tiles);
   else if (o.op === 'move') r.q = o.take === 'all' ? '' : String(o.take);
   else if (o.op === 'hasten' || o.op === 'guard') r.q = String(Math.round(o.share * 1000) / 10);
-  else if (!PLAIN_KINDS.includes(o.op) && o.op !== 'edge' && o.op !== 'dispel') return { ...r, kind: 'keep', keep: o };
+  else if (!PLAIN_KINDS.includes(o.op) && o.op !== 'edge' && o.op !== 'dispel' && o.op !== 'stayHidden') return { ...r, kind: 'keep', keep: o };
   return r;
 }
 const tierName = (t, item) => (item ? RARITIES[t] : `rank ${RANKS[t]}`);
@@ -260,6 +265,7 @@ function checkRow(r, item) {
     if (r.kind === 'stat') return ok({ op: 'stat', key: r.stat, amount: v });
     if (r.kind === 'sheet') return ok({ op: 'sheet', key: r.sheetKey, amount: v });
     if (r.kind === 'share') return ok({ op: 'share', on: r.shareOn, pct: v });
+    if (r.kind === 'hidden') return ok({ op: 'hidden', level: v, start: r.start, ends: { ...r.ends } });
     if (r.kind === 'refund') {
       const t = String(r.chance).trim(), c = Number(t);
       if (!(t !== '' && Number.isInteger(c) && c >= 1 && c <= 100)) return fail('Write the chance, a whole number of percent from 1 to 100.');
@@ -294,6 +300,7 @@ function checkRow(r, item) {
     return ok({ op: r.kind, share: n / 100 });
   }
   if (r.kind === 'dispel') return ok({ op: 'dispel', which: r.which === 'all' ? 'all' : 'first' });
+  if (r.kind === 'stayHidden') return ok({ op: 'stayHidden', on: r.stayOn });
   if (r.kind === 'channel') return ok({ op: 'channel', mode: r.chMode === 'break' ? 'break' : 'protect' });
   if (r.kind === 'aura' || r.kind === 'spread') {
     // the rules' widest aura and longest spread (design 4.8)
@@ -356,15 +363,22 @@ function effects(box, o) {
     const input = (attrs, label, value) => (number
       ? `<input type="number" inputmode="${decimal ? 'decimal' : 'numeric'}" step="${decimal ? 'any' : '1'}" ${attrs} aria-label="${esc(label)}" value="${esc(value)}">`
       : `<input type="text" autocomplete="off" spellcheck="false" ${attrs} aria-label="${esc(label)}" value="${esc(value)}">`);
-    const placeholder = number ? (NUMBERS[r.kind].rounds ? 'Rounds, e.g. 0.5' : '−20') : '2d6 + 1';
+    const placeholder = number ? (NUMBERS[r.kind].placeholder ?? (NUMBERS[r.kind].rounds ? 'Rounds, e.g. 0.5' : '−20')) : '2d6 + 1';
+    /** A labelled group of buttons: a `div`, so a tap on its label presses none of them. */
+    const group = (label, inner) => `<div class="field"><span class="lbl">${esc(label)}</span>${inner}</div>`;
     const K = rules().fight.kit, stacksIn = r.kind === 'applyStatus' || r.kind === 'cureStatus'
       ? (stacking(r) || r.addStacks ? smallNum('addStacks', r.kind === 'applyStatus' ? 'Stacks it adds' : 'Stacks it takes', r.addStacks, { aria: `Stacks of effect ${i + 1}`, placeholder: r.kind === 'applyStatus' ? '1' : 'All' }) : '') : '';
     let body = '';
     if (formula || number) {
       if (r.mode === 'rank' && !one) body = `<div class="mk-tiers">${tierLabels.map(([short, full], t) => `<label class="mk-tier"><span>${esc(short)}</span>${input(`data-t="${t}"`, `${what} at ${full}`, r.tiers[t])}</label>`).join('')}</div>`;
       else body = input(`data-f="q" placeholder="${placeholder}"`, `${what} ${number ? 'value' : 'amount'}`, r.q);
+      if (number && NUMBERS[r.kind].label) body = group(NUMBERS[r.kind].label, body);
       if (r.kind === 'refund') body += `<label class="field"><span class="lbl">Chance (%)</span><input type="number" inputmode="numeric" step="1" min="1" max="100" data-f="chance" aria-label="Chance of effect ${i + 1}" value="${esc(r.chance)}"></label>`;
       if (formula && (r.mode !== 'rank' || one)) body += '<p class="mk-avg" data-avg></p>';
+      if (r.kind === 'hidden') {
+        body += group('Starts', segF('start', `Where effect ${i + 1} may start`, START_LABEL, r.start));
+        body += group('Ends when', `<div class="mk-chips" role="group" aria-label="What ends effect ${i + 1}">${STEALTH_END_LABEL.map(([e, l]) => `<button type="button" class="mk-chip" data-end="${e}" aria-pressed="${!!r.ends[e]}">${esc(l)}</button>`).join('')}</div>`);
+      }
     } else if (r.kind === 'applyStatus' && r.mode === 'rank') {
       const rounds = (attrs, label, value) => `<input type="number" min="1" max="999" step="1" inputmode="numeric" ${attrs} aria-label="${esc(label)}" value="${esc(value)}">`;
       body = `${statusSelect(r, i, !!o.newStatus)}<div class="mk-tiers">${tierLabels.map(([short, full], t) => `<label class="mk-tier"><span>${esc(short)}</span>${rounds(`data-t="${t}"`, `Rounds of effect ${i + 1} at ${full}`, r.tiers[t])}</label>`).join('')}</div>`;
@@ -383,6 +397,7 @@ function effects(box, o) {
         <div class="mk-two">${smallNum('q', 'Stacks', r.q, { aria: `Stacks effect ${i + 1} moves`, placeholder: 'All' })}<label class="field"><span class="lbl">Arrives as</span><select data-f="as" data-pick aria-label="Effect ${i + 1} arrives as">${opt('', 'The same status', r.as)}${list.map(([k, l]) => opt(k, l, r.as)).join('')}</select></label></div>`;
     } else if (r.kind === 'hasten' || r.kind === 'guard') body = smallNum('q', r.kind === 'hasten' ? 'Sooner by (% of your action)' : 'Takes off the strike (%)', r.q, { aria: `Percent of effect ${i + 1}`, decimal: true });
     else if (r.kind === 'dispel') body = segF('which', `Which harmful statuses, effect ${i + 1}`, WHICH_LABEL, r.which);
+    else if (r.kind === 'stayHidden') body = group('Stays hidden when', segF('stayOn', `What effect ${i + 1} keeps from ending a hide`, STEALTH_END_LABEL, r.stayOn));
     else if (r.kind === 'note') body = `<input type="text" maxlength="200" autocomplete="off" data-f="text" aria-label="Note of effect ${i + 1}" placeholder="What the GM rules on" value="${esc(r.text)}">`;
     else if (r.kind === 'channel') body = seg('data-channel', `Channel of effect ${i + 1}`, CHANNEL_LABEL, r.chMode);
     else if (r.kind === 'aura' || r.kind === 'spread') {
@@ -448,6 +463,8 @@ function effects(box, o) {
     if (kind === 'hasten') return rowOf({ op: 'hasten', share: 0.5 });
     if (kind === 'guard') return rowOf({ op: 'guard', share: K.parry });
     if (kind === 'dispel') return rowOf({ op: 'dispel', which: 'first' });
+    if (kind === 'hidden') return rowOf(parseOp({ op: 'hidden' }, R));
+    if (kind === 'stayHidden') return rowOf({ op: 'stayHidden', on: STEALTH_END_LABEL[0][0] });
     return rowOf({ op: kind, type: 'physical', amount: dice(1, 6), ...when });
   };
 
@@ -466,6 +483,7 @@ function effects(box, o) {
     if (b.dataset.channel) { rows[i].chMode = b.dataset.channel; render(); raise(); return; }
     if (b.dataset.on) { rows[i].on = b.dataset.on; render(); raise(); return; }
     if (b.dataset.set) { rows[i][b.dataset.set] = b.dataset.v; render(); raise(); return; }
+    if (b.dataset.end) { const r = rows[i]; r.ends = { ...r.ends, [b.dataset.end]: !r.ends[b.dataset.end] }; render(); raise(); return; }
     if (b.dataset.mode) {
       const r = rows[i]; if (r.mode === b.dataset.mode) return;
       r.mode = b.dataset.mode;

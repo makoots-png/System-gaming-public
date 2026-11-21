@@ -63,8 +63,7 @@ test('a dead B-rank hunter\'s C crystal is refused, saying the crystal is kept, 
   await holding(page, { at: 'dead' }, 1, 0, 'C');
   await go(page, 'status');
   await crystalCard(page).locator('[data-use]').tap();
-  await expect(page.locator('#toasts .toast').last()).toContainText('Resurrection Crystal (C)');
-  await expect(page.locator('#toasts .toast').last()).toContainText('You still have it.');
+  await expect(page.locator('#toasts .toast').last()).toContainText('Resurrection Crystal (C) brings back a hunter of rank C or lower. Mira is rank B. You still have it.');
   const h = await activeHunter(page);
   expect([h.life, h.level, crystals(h)]).toEqual([{ at: 'dead' }, 31, 1]);
 });
@@ -80,6 +79,35 @@ test('a dead hunter at level 31 raised by a crystal of its rank stands at level 
   await expect(page.locator('#toasts .toast').last()).toContainText('Resurrection Crystal (B) used: Up at 1 HP at level 29, 2 levels lost.');
   const h = await activeHunter(page);
   expect([h.life, h.level, h.rank, crystals(h)]).toEqual([{ at: 'up', hp: 1 }, 29, 'B', 0]);
+});
+
+test('a GM who revives their own dead level-31 hunter from the board reads the level it came back at and the levels lost', async ({ device }) => {
+  const { page } = await device('gm-raised');
+  await onboardGM(page);
+  await standing(page, 31, 'B');
+  await holding(page, { at: 'dead' }, 0);
+  await go(page, 'gm');
+  const name = (await activeHunter(page)).name;
+  await page.locator('#gm-board .gm-card:not(.remote)', { hasText: name }).locator('[data-grevive]').tap();
+  await expect(page.locator('#gm-board-msg')).toHaveText(`Revived ${name}. Up at 1 HP at level 29, 2 levels lost.`);
+  expect((await activeHunter(page)).level).toBe(29);
+});
+
+test('a GM\'s Revive of a player\'s dead level-31 hunter tells the player the level and the levels lost', async ({ device }) => {
+  const gm = (await device('gm')).page, player = (await device('player')).page;
+  await onboardGM(gm);
+  const code = await createRoom(gm);
+  await onboardPlayer(player, 'Kai', code);
+  await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBe(code);
+  await dismissAll(player, 4);
+  await standing(player, 31, 'B');
+  await holding(player, { at: 'dead' }, 0);
+  await go(gm, 'gm');
+  const card = gm.locator('#gm-board .gm-card.remote', { hasText: 'Kai' });
+  await expect(card).toContainText('Dead');
+  await card.locator('[data-grevive]').tap();
+  await expect(player.locator('#toasts .toast').last()).toContainText('The GM has revived you. Up at 1 HP at level 29, 2 levels lost.');
+  expect((await activeHunter(player)).level).toBe(29);
 });
 
 test('the shop sells a C crystal for 12,500 gold, ten Clears of rank C, and a hunter with that much buys one', async ({ device }) => {

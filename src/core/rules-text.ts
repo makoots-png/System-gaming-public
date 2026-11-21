@@ -1,7 +1,6 @@
 // rules-text.ts: the lines of the Rules page that state a rule the game plays elsewhere, worked out from the functions
 // that play it, so the page cannot drift from the game (tests/rules-text.test.ts pins each one). Pure. The page itself
 // is src/views/rulesref.js, which keeps its layout and calls these.
-import { RULES } from './rules.ts';
 import type { Rank, Rules } from './rules.ts';
 import { above } from './stats.ts';
 import { statBonus } from './hunter/sheet.ts';
@@ -65,9 +64,9 @@ const RAISED_EXAMPLE = 31;
  * What happens at 0 HP, from the life machine's own numbers (vitals.ts), the ways back from dead (`WAYS_BACK`), what a
  * raising costs (`reviveLevelShare`, worked by progress.ts `levelAfterRaising` at level 31), and the shop's door for the
  * dead (inventory.ts `shopOpen`): the sentence is there only while the rule closes it. `R` is the rules the page plays
- * by; left out, the shipped rules (src/views/rulesref.js does not pass its own yet, so a GM's share is not said there).
+ * by.
  */
-export function downLine(R: Pick<Rules, 'reviveLevelShare'> = RULES): string {
+export function downLine(R: Pick<Rules, 'reviveLevelShare'>): string {
   const shop = shopOpen({ life: { at: 'dead' } }) ? '' : ' The shop is closed to a dead hunter, who can neither buy nor sell. The GM or another hunter can still give a dead hunter a Resurrection Crystal.';
   const pct = Math.round(R.reviveLevelShare * 10000) / 100, back = levelAfterRaising(RAISED_EXAMPLE, R);
   const cost = back < RAISED_EXAMPLE
@@ -130,3 +129,17 @@ export function gatePayLines(R: Pick<Rules, 'gateParty'>): readonly string[] {
     `A solo run of a world gate is a party of one: ${P} times the gold roll and ${P} times the XP.`,
   ];
 }
+
+/**
+ * Who drew the game's icons and where they come from (game-icons.net, CC BY 3.0, which asks for a mention); the authors
+ * are the ones icons-credit.md names, which tests/rules-text.test.ts holds to this list.
+ */
+export const ICON_CREDIT = {
+  authors: ['Lorc', 'Delapouite'],
+  site: { text: 'game-icons.net', url: 'https://game-icons.net' },
+  licence: { text: 'CC BY 3.0', url: 'https://creativecommons.org/licenses/by/3.0/' },
+} as const;
+
+/** The line at the Rules page's foot that credits the icons, as plain words. */
+export const iconCreditLine = (): string =>
+  `Icons made by ${ICON_CREDIT.authors.join(' and ')}, from ${ICON_CREDIT.site.text}, under ${ICON_CREDIT.licence.text}.`;

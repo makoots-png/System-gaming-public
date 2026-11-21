@@ -7,7 +7,7 @@ import { builtInItems, defaultShop, lootPool, parseItem, valueOf, weightOf } fro
 import { itemAbilityId } from '../core/registry/abilities.ts';
 import { BUY_REFUSALS, BUY_WORDS, GEAR_WORDS, SHOP_CLOSED, addGold, buy, editItem, equip, putItem, removeItem, removeShopItem, sell, sellable, sellPrice as sellPriceOf, sellTotal, shopOpen, stackOf, unequip, wearMove, withShop, writeShopItem } from '../core/hunter/inventory.ts';
 import { fitted } from '../core/hunter/sheet.ts';
-import { USE_WORDS, spendItem, usable, useDice, useItem, useWords } from '../core/hunter/use.ts';
+import { USE_WORDS, spendItem, tooLowOf, usable, useDice, useItem, useWords } from '../core/hunter/use.ts';
 import { atHunter, both, isRefused, refuse } from '../core/save-step.ts';
 import { cryptoRandom, rollSettle } from '../edge/roll.ts';
 import { rollLoot } from '../core/gates/spawn.ts';
@@ -87,11 +87,11 @@ export function register(app) {
   /** Consumable `it` used by hunter `h` on itself outside a fight: its ops, the item spent and the report, in one write. */
   function useOnSelf(h, it, ops) {
     const R = rules(), rolls = useDice(ops, itemSource(it).tier).map(d => rollSettle(d)), u = useItem(h, it.id, rolls, R);
-    if (isRefused(u)) { ui.toast('System', USE_WORDS[u.why](it.name), { kind: 'warning' }); return false; }
+    if (isRefused(u)) { ui.toast('System', USE_WORDS[u.why](it.name, tooLowOf(it, h, R)), { kind: 'warning' }); return false; }
     const said = u.lines.join(', ');
     const w = app.api.uses.told(h.id, 'item-use', x => { const y = useItem(x, it.id, rolls, R); return isRefused(y) ? y : y.hunter; },
       it.tell ? { what: 'item', name: it.name, text: [it.desc, said].filter(Boolean).join(' · '), target: 'self', tell: true } : null);
-    if (!ui.wrote('System', w, useWords(it.name))) return false;
+    if (!ui.wrote('System', w, useWords(it.name, tooLowOf(it, h, R)))) return false;
     ui.toast('System', `${it.name} used: ${said}.`);
     return true;
   }

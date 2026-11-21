@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { test, expect, onboardGM, go, dismissAll, answerWindow, chooseList, fightRow, PHONE } from './helpers.ts';
-import { saleRows } from '../../src/core/rules-text.ts';
+import { iconCreditLine, saleRows } from '../../src/core/rules-text.ts';
 import { RULES } from '../../src/core/rules.ts';
 
 for (const width of [PHONE.width, 320]) {
@@ -25,6 +25,29 @@ for (const width of [PHONE.width, 320]) {
     });
   });
 }
+
+test('on a 390 px phone the Rules page ends with the icons\' credit, whole, linked safely, and a search that matches nothing does not hide it', async ({ device }) => {
+  const p = (await device('rules-credit', { viewport: { width: 390, height: 844 } })).page;
+  await onboardGM(p);
+  await dismissAll(p);
+  await go(p, 'rules');
+  const credit = p.locator('[data-rr-credit]');
+  await credit.scrollIntoViewIfNeeded();
+  await expect(credit).toHaveText(iconCreditLine());
+  const box = await credit.evaluate(el => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+  expect(box.scroll).toBeLessThanOrEqual(box.client);
+  const links = credit.locator('a');
+  await expect(links).toHaveText(['game-icons.net', 'CC BY 3.0']);
+  await expect(links.nth(0)).toHaveAttribute('href', 'https://game-icons.net');
+  await expect(links.nth(1)).toHaveAttribute('href', 'https://creativecommons.org/licenses/by/3.0/');
+  for (const a of await links.all()) {
+    await expect(a).toHaveAttribute('target', '_blank');
+    await expect(a).toHaveAttribute('rel', 'noopener noreferrer');
+  }
+  await p.locator('[data-rr-q]').fill('zzzqqq');
+  await expect(p.locator('[data-rr-none]')).toBeVisible();
+  await expect(credit).toBeVisible();
+});
 
 /** A monster of the bestiary that drops `gold` and nothing else. */
 const looter = (id: string, name: string, gold: number) => ({ id, name, rank: 'E', type: '', archetype: 'brute', kind: 'normal', tweak: {}, abilities: [], notes: [], xp: 40, extractable: false, desc: '', statuses: [], loot: { gold, items: [] } });

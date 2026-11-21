@@ -28,6 +28,7 @@ import * as motion from './motion.ts';
 import { compareTimes } from '../core/day.ts';
 import { postNews } from '../core/sync/connection.ts';
 import { running } from '../core/story/run.ts';
+import { raisedLine } from '../core/hunter/grant.ts';
 
 /** The Make row at the top of the GM view: a kind the Workshop makes and its button. */
 const MAKE = [['status', 'Status'], ['item', 'Item'], ['skill', 'Skill'], ['monster', 'Monster'], ['bundle', 'Bundle']];
@@ -836,7 +837,7 @@ export function register(app) {
           if (remote ? cid !== null && ui.wrote('GM', A().combat.life(cid, { type: 'stabilize' })) : ui.wrote('GM', A().hunter.life(key, { type: 'stabilize' }))) say('#gm-board-msg', `Stabilized ${name}.`);
           return;
         }
-        if (t.dataset.grevive !== undefined) { const hid = t.closest('[data-hid]').dataset.hid; if (ui.wrote('GM', A().hunter.life(hid, { type: 'revive' }))) say('#gm-board-msg', `Revived ${(S().hunters.find(x => x.id === hid) || {}).name || 'hunter'} at 1 HP.`); return; }
+        if (t.dataset.grevive !== undefined) { const hid = t.closest('[data-hid]').dataset.hid, was = (S().hunters.find(x => x.id === hid) || {}).level; if (ui.wrote('GM', A().hunter.life(hid, { type: 'revive' }))) { const now = S().hunters.find(x => x.id === hid); say('#gm-board-msg', now ? `Revived ${now.name}. ${raisedLine(was, now.level)}.` : 'Revived hunter.'); } return; }
         if (t.dataset.hp && t.closest('.gm-card.remote')) { sendHp(t.closest('[data-hid]').dataset.hid, int(t.dataset.hp)); return; }
         if (t.dataset.hp) { const hid = t.closest('[data-hid]').dataset.hid, n = int(t.dataset.hp); ui.wrote('GM', n < 0 ? A().hunter.damage(hid, -n) : A().hunter.heal(hid, n)); return; }
         const act = { 'gm-notify': askNotify, 'gm-uses-go': openUses, 'gm-award-go': doAward, 'gm-b-go': doBroadcast, 'gm-q-go': doIssue, 'gm-g-go': doSpawn, 'gm-s-go': startSession, 'gm-t-go': doRoll,

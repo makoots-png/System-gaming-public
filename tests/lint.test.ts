@@ -1179,7 +1179,7 @@ test('a hunter\'s level moves only in src/core/hunter/grant.ts, which tells the 
   // hunter.js emitted after their own write, so a new writer, an import or a throw between left the step behind. Every
   // step that moves a level is in grant.ts (`grant`, `levelEdit`), and each runs `levelled`.
   const owners = ['src/core/hunter/progress.ts', 'src/core/hunter/grant.ts'];
-  const moves = /(?<![.\w$])(addXp|atLevel|setLevel|gainXp)\(/;
+  const moves = /(?<![.\w$])(addXp|atLevel|setLevel|gainXp|raisedLevels)\(/;
   const old: Line = { file: 'src/views/hunter.js', line: 0, text: "    onHunter(hid, 'xp', both(x => addXp(x, n, rules()), fit));" };
   expect(moves.test(old.text), 'the rule sees the old XP write').toBe(true);
   const hits = (await sourceLines('src')).filter(line => !owners.includes(line.file) && !isComment(line.text) && moves.test(line.text));

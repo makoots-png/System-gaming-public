@@ -475,7 +475,7 @@ describe('a channel\'s release lands as a use does (design 4.1)', () => {
 
   test('a channeled hide is refused at its begin while a foe that is up sees the user (kits 8.7.2)', () => {
     const CLOAK = channeled(ability('support', 'cloak', null, { aim: 'self', effect: null, shape: { kind: 'self' },
-      ops: [{ op: 'applyStatus', key: statusKey('cloak'), def: { label: 'Cloak', desc: '', ops: [{ op: 'hidden' }] }, duration: tick(3 * ROUND) }] }), 'cloak');
+      ops: [{ op: 'applyStatus', key: statusKey('cloak'), def: { label: 'Cloak', desc: '', ops: [{ op: 'hidden', level: 1, start: 'unseen', ends: { hurt: true, revealed: true, dealt: true } }] }, duration: tick(3 * ROUND) }] }), 'cloak');
     refuses(play(...duel({ abilities: [CLOAK] })).fight, use('A', CLOAK, 'A'), 'seen');
   });
 
@@ -498,7 +498,7 @@ describe('a channel\'s release lands as a use does (design 4.1)', () => {
 
   test('a release on a foe ends its user\'s hide, as a use from hiding does (kits 8.7.3)', () => {
     const HIDE = ability('support', 'hide', null, { aim: 'self', effect: null, shape: { kind: 'self' },
-      ops: [{ op: 'applyStatus', key: statusKey('hide'), def: { label: 'hide', desc: '', ops: [{ op: 'hidden' }] }, duration: tick(3 * ROUND) }] });
+      ops: [{ op: 'applyStatus', key: statusKey('hide'), def: { label: 'hide', desc: '', ops: [{ op: 'hidden', level: 1, start: 'unseen', ends: { hurt: true, revealed: true, dealt: true } }] }, duration: tick(3 * ROUND) }] });
     const BOOM = channeled(ability('blast', 'boom', '5', { range: tiles(20) }), 'boom');
     const wall: Command = { type: 'paint', tiles: Array.from({ length: 20 }, (_, x) => place(x, 6)), terrain: 'wall' };
     const r = play(add(row('A', 'party', { abilities: [HIDE, BOOM] }), row('M', 'foe')), wall, start(['A', 20], ['M', 10]),
@@ -1640,7 +1640,7 @@ describe('wards and stealth (kits design 8.1 and 8.7, tables 8.9.4 and 8.9.5)', 
   const ROUND = RULES.fight.round;
   const self = (name: string, ...ops: Op[]): Ability => ability('support', name, null, { aim: 'self', effect: null, shape: { kind: 'self' },
     ops: [{ op: 'applyStatus', key: statusKey(name), def: { label: name, desc: '', ops }, duration: tick(3 * ROUND) }] });
-  const VEIL = self('veil', { op: 'untargetable' }), STONE = self('stone', { op: 'invulnerable' }), HIDE = self('hide', { op: 'hidden' });
+  const VEIL = self('veil', { op: 'untargetable' }), STONE = self('stone', { op: 'invulnerable' }), HIDE = self('hide', { op: 'hidden', level: 1, start: 'unseen', ends: { hurt: true, revealed: true, dealt: true } });
   const SLOW = ability('curse', 'slow', null, { ...FAR, effect: null, ops: [{ op: 'applyStatus', key: statusKey('slowed'), def: { label: 'Slowed', desc: '', ops: [{ op: 'speed', pct: -30 }] }, duration: tick(2 * ROUND) }] });
   const use = (by: string, a: Ability, at: string = by): Command => ({ type: 'act', by: id(by), ability: a.id, aim: id(at), rolls: rolls({ [at]: 10 }) });
   const keys = (fight: Fight | null, name: string) => body(fight, name).statuses.map(x => x.key);

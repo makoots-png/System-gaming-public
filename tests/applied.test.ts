@@ -6,6 +6,7 @@ import { post } from '../src/core/sync/outbox.ts';
 import type { Outbox } from '../src/core/sync/outbox.ts';
 import { freshSave } from '../src/core/save.ts';
 import { setLevel } from '../src/core/hunter/progress.ts';
+import { raisedLine } from '../src/core/hunter/grant.ts';
 import type { Hunter, Rules, Save } from '../src/core/save.ts';
 import { TOLD, isRefused, refuse } from '../src/core/save-step.ts';
 import type { SheetStatus, Source } from '../src/core/combat/effect-ops.ts';
@@ -297,8 +298,15 @@ describe('a hunter\'s life in the GM\'s fight reaches its sheet in the fight\'s 
     const p = phone({ fight: true, life: { at: 'dead' } });
     p.receive(1, 'vitals', totals({ at: 'up', hp: REVIVE_HP }));
     expect(p.hunter.life).toEqual({ at: 'up', hp: REVIVE_HP });
-    expect(p.toasts).toEqual([`You are revived. You are up at ${REVIVE_HP} HP.`]);
+    expect(p.toasts).toEqual([`You are revived. ${raisedLine(1, 1)}.`]);
     expect(lifeFacts(p.hunter).at(-1)).toEqual({ news: 'raised', how: 'gm' });
+  });
+
+  test('the GM\'s Revive in the fight costs levels on the sheet, and the toast says how many', () => {
+    const p = phone({ fight: true, level: 30, life: { at: 'dead' } });
+    p.receive(1, 'vitals', totals({ at: 'up', hp: REVIVE_HP }));
+    expect(p.hunter.level).toBeLessThan(30);
+    expect(p.toasts).toEqual([`You are revived. ${raisedLine(30, p.hunter.level)}.`]);
   });
 
   test('the row\'s HP is written within the sheet\'s own maximum', () => {

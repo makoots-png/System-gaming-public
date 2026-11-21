@@ -6,7 +6,8 @@
 // raised by its sight ops in standing.ts `withSheetOps`). Each case is in tests/sight.test.ts.
 import { inSight } from './space.ts';
 import type { Grid, Place, Side, Tiles } from './space.ts';
-import { holds, LEVELS } from './standing.ts';
+import { asLevel, counting } from './standing.ts';
+import { atTier } from './op-amount.ts';
 import type { Level } from './standing.ts';
 import { isUp } from './row-hp.ts';
 import type { Body } from './effect-ops.ts';
@@ -34,10 +35,13 @@ export function perceives(e: Eyes, f: Figure, grid: Grid, range: SightRange): bo
 export const eyesOf = (b: Body): Eyes => ({ place: b.place, side: b.side, up: isUp(b), sight: b.sheet.sight });
 
 /**
- * A fight body as eyes see it: its place, its side, and its stealth. The hidden op carries no level yet, so a body
- * holding one hides at the lowest level, the one notes-7-stealth.md section 2 gives a hidden op with none written.
+ * A fight body as eyes see it: its place, its side, and its stealth: the highest level of the hidden ops of its statuses
+ * that count, each at its source's tier, or null with none (notes-7-stealth.md section 2, a body's stealth).
  */
-export const figureOf = (b: Body): Figure => ({ place: b.place, side: b.side, stealth: holds(b, 'hidden') ? LEVELS[0] : null });
+export const figureOf = (b: Body): Figure => {
+  const levels = counting(b.statuses).flatMap(s => s.def.ops.flatMap(o => (o.op === 'hidden' ? [atTier(o.level, s.source.tier)] : [])));
+  return { place: b.place, side: b.side, stealth: levels.length ? asLevel(Math.max(...levels)) : null };
+};
 
 /** How far a fight lets its bodies look: its fog's sight, or the whole map when it keeps no fog. */
 export const rangeOf = (f: Pick<Fight, 'fog'>): SightRange => (f.fog ? { kind: 'tiles', n: f.fog.sight } : { kind: 'whole' });

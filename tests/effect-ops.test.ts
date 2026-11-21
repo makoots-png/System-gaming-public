@@ -438,17 +438,17 @@ describe('wave 2\'s ops as data (kits design 8.1 to 8.6, table 8.1)', () => {
   const K = RULES.fight.kit;
   const OPS: Op[] = [
     { op: 'sheet', key: 'armor', amount: 20 }, { op: 'sheet', key: 'exposed', amount: [0.5, 0.5, 1, 1, 1.5, 1.5] }, { op: 'share', on: 'taken', pct: 25 },
-    { op: 'untargetable' }, { op: 'invulnerable' }, { op: 'safeguard' }, { op: 'hidden' }, { op: 'alert' },
+    { op: 'untargetable' }, { op: 'invulnerable' }, { op: 'safeguard' }, { op: 'hidden', level: 2, start: 'unseen', ends: { hurt: true, revealed: true, dealt: true } }, { op: 'alert' },
     { op: 'edge', side: 'attack', keep: 'better', tag: null, spend: true }, { op: 'boost', side: 'defend', die: { kind: 'die', sides: 6 } },
     { op: 'shove', dir: 'toward', from: 'user', tiles: 3 }, { op: 'move', key: 'harmful', take: 'all', from: 'target', as: null },
     { op: 'move', key: statusKey('energize'), take: 2, from: 'user', as: statusKey('momentum') },
-    { op: 'hasten', share: 1 }, { op: 'extra' }, { op: 'guard', share: K.parry }, { op: 'negate' }, { op: 'dispel', which: 'first' },
+    { op: 'hasten', share: 1 }, { op: 'extra' }, { op: 'guard', share: K.parry }, { op: 'negate' }, { op: 'dispel', which: 'first' }, { op: 'stayHidden', on: 'dealt' },
   ];
 
   test('each reads back through the parser as written, and every kind is one of them', () => {
     for (const o of OPS) expect(parseOp(JSON.parse(JSON.stringify(o)), RULES)).toEqual(o);
     const kinds = new Set(OPS.map(o => o.op));
-    for (const k of ['sheet', 'share', 'untargetable', 'invulnerable', 'safeguard', 'edge', 'boost', 'hidden', 'alert', 'shove', 'move', 'hasten', 'extra', 'guard', 'negate', 'dispel']) expect(kinds.has(k as Op['op'])).toBe(true);
+    for (const k of ['sheet', 'share', 'untargetable', 'invulnerable', 'safeguard', 'edge', 'boost', 'hidden', 'alert', 'shove', 'move', 'hasten', 'extra', 'guard', 'negate', 'dispel', 'stayHidden']) expect(kinds.has(k as Op['op'])).toBe(true);
   });
 
   test('a number past its rule is held at it: armor at a suit of plate, a shove at half a walk, a held die at a d20, a share at 100%', () => {
@@ -467,6 +467,61 @@ describe('wave 2\'s ops as data (kits design 8.1 to 8.6, table 8.1)', () => {
     expect(lines[2]).toBe('Damage taken +25%');
     expect(lines[8]).toBe('Its next use against a foe: the target rolls twice and keeps the lower. Spent once used');
     expect(lines[10]).toBe('Pulls each target 3 tiles toward you');
+  });
+});
+
+describe('the hidden op\'s fields and the stayHidden op (stealth design section 2, with the owner\'s rulings)', () => {
+  const ALL = { hurt: true, revealed: true, dealt: true } as const;
+  const read = (v: unknown): Op | null => parseOp(v, RULES);
+  const line = (o: Op): string => describeStatus({ label: 'x', desc: '', ops: [o] }, null, RULES)[0]!;
+
+  test('a hidden op reads back its level, where it may start and what ends it, as written, its level by rank too', () => {
+    const ops: Op[] = [
+      { op: 'hidden', level: 3, start: 'anywhere', ends: { hurt: false, revealed: true, dealt: false } },
+      { op: 'hidden', level: [1, 1, 2, 2, 3, 5], start: 'unseen', ends: ALL },
+      { op: 'hidden', level: 5, start: 'unseen', ends: { hurt: false, revealed: false, dealt: false } },
+    ];
+    for (const o of ops) expect(read(JSON.parse(JSON.stringify(o)))).toEqual(o);
+  });
+
+  test('a hidden op with no field written is the kits\' Stealth: level 1, it hides only out of sight, and a hurt, a reveal or damage it deals ends it', () => {
+    expect(read({ op: 'hidden' })).toEqual({ op: 'hidden', level: 1, start: 'unseen', ends: ALL });
+  });
+
+  test('a level of 0 reads as 1, the lowest that hides from anyone; under 0 is 1, past 5 is 5, a fraction rounds down, and a level that is not one is 1', () => {
+    const level = (v: unknown) => { const o = read({ op: 'hidden', level: v }); return o?.op === 'hidden' ? o.level : null; };
+    expect([0, -3, 2.7, 5, 9, 'two', null].map(level)).toEqual([1, 1, 2, 5, 5, 1, 1]);
+    expect(level([0, 1, 2, 3, 4, 9])).toEqual([1, 1, 2, 3, 4, 5]);
+    expect(level([1, 2, 3])).toBe(1);
+  });
+
+  test('a wrong start reads as out of sight, a wrong or missing end as true, and an end other than the three is dropped', () => {
+    expect(read({ op: 'hidden', level: 2, start: 'nowhere', ends: { hurt: false, seen: false, dealt: 'no' } }))
+      .toEqual({ op: 'hidden', level: 2, start: 'unseen', ends: { hurt: false, revealed: true, dealt: true } });
+    expect(read({ op: 'hidden', level: 2, start: 'anywhere', ends: 'never' })).toEqual({ op: 'hidden', level: 2, start: 'anywhere', ends: ALL });
+  });
+
+  test('a stayHidden op reads back each of the three ends, and one that names none of them is refused', () => {
+    for (const on of ['hurt', 'revealed', 'dealt'] as const) expect(read({ op: 'stayHidden', on })).toEqual({ op: 'stayHidden', on });
+    expect([read({ op: 'stayHidden', on: 'seen' }), read({ op: 'stayHidden' })]).toEqual([null, null]);
+  });
+
+  test('a hide says its level, where it may start and what ends it; a stayHidden says which end it keeps off', () => {
+    expect(line({ op: 'hidden', level: 1, start: 'unseen', ends: ALL }))
+      .toBe('Hidden at stealth level 1: only a foe with that sight level or higher sees it. It hides only out of every foe\'s sight. It ends when it is hurt, is revealed or deals damage');
+    expect(line({ op: 'hidden', level: [1, 1, 2, 2, 3, 5], start: 'anywhere', ends: { hurt: false, revealed: false, dealt: true } }))
+      .toBe('Hidden at stealth level 1 / 1 / 2 / 2 / 3 / 5, by rank E to S: only a foe with that sight level or higher sees it. It hides even in a foe\'s sight. It ends when it deals damage');
+    expect(line({ op: 'hidden', level: 4, start: 'unseen', ends: { hurt: false, revealed: false, dealt: false } }))
+      .toBe('Hidden at stealth level 4: only a foe with that sight level or higher sees it. It hides only out of every foe\'s sight. Only its time or a cure ends it');
+    expect(line({ op: 'hidden', level: 2, start: 'unseen', ends: { hurt: true, revealed: false, dealt: true } })).toMatch(/It ends when it is hurt or deals damage$/);
+    expect([line({ op: 'stayHidden', on: 'hurt' }), line({ op: 'stayHidden', on: 'revealed' }), line({ op: 'stayHidden', on: 'dealt' })])
+      .toEqual(['Stays hidden when it is hurt', 'Stays hidden when it is revealed', 'Stays hidden when it deals damage']);
+  });
+
+  test('a sight op says the stealth it sees through, with no plus: sight levels do not add (ruling 8)', () => {
+    expect(line({ op: 'sheet', key: 'sight', amount: 2 })).toBe('Sees foes hidden at stealth level 2 or under');
+    expect(line({ op: 'sheet', key: 'sight', amount: [0, 1, 1, 2, 3, 4] })).toBe('Sees foes hidden at stealth level 0 / 1 / 1 / 2 / 3 / 4 or under, by rank E to S');
+    expect(line({ op: 'sheet', key: 'armor', amount: 5 })).toBe('Armor +5');
   });
 });
 
@@ -545,7 +600,7 @@ describe('a status\'s own life on its bearer (SMX-rules-2)', () => {
   });
 
   test('an active status counts; an owed one counts for nothing on any reader, as if it were gone', () => {
-    const ward = def({ op: 'invulnerable' }, { op: 'safeguard' }, { op: 'hidden' }, { op: 'hold' }, { op: 'channel', mode: 'protect' }, { op: 'stat', key: 'str', amount: 10 },
+    const ward = def({ op: 'invulnerable' }, { op: 'safeguard' }, { op: 'hidden', level: 1, start: 'unseen', ends: { hurt: true, revealed: true, dealt: true } }, { op: 'hold' }, { op: 'channel', mode: 'protect' }, { op: 'stat', key: 'str', amount: 10 },
       { op: 'share', on: 'taken', pct: -50 }, { op: 'sheet', key: 'armor', amount: 20 }, { op: 'edge', side: 'defend', keep: 'better', tag: null, spend: false },
       { op: 'boost', side: 'defend', die: { kind: 'face', n: 3 } });
     expect([counts(status('w', ward, 100)), counts(owedOn('w', ward))]).toEqual([true, false]);

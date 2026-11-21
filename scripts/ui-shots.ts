@@ -7,10 +7,13 @@
 // Files are `<role>-<size>-<nn>-<screen>.png`. A shot is the screen at deviceScaleFactor 1 with Date starting at a fixed time on each load,
 // Math.random seeded and animations off. The room code comes from the server, so screens that show it differ between runs.
 // A step whose selector is missing is reported and the script exits 1 at the end; the other steps still run.
+// First comes `icons-1280-01-icons.png`, every icon of the registry by group at 14, 24 and 40 px (a status chip, a card,
+// a token seen close), where a new icon is checked against its group. `--only icons` shoots that page alone.
 import { mkdirSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { chromium, type Browser, type BrowserContext, type LaunchOptions, type Locator, type Page } from '@playwright/test';
+import { ICON_GROUPS, iconDef, iconsOf } from '../src/core/registry/icons.ts';
 
 const arg = (name: string): string | undefined => { const i = process.argv.indexOf(name); return i < 0 ? undefined : process.argv[i + 1]; };
 const IPHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
@@ -847,6 +850,34 @@ async function pass(browser: Browser, url: string, gmSize: Size, gmTouch: boolea
   }
 }
 
+/** The sizes the icon sheet draws each icon at: a status chip's, a fight card's, and a token's seen close. */
+const ICON_SIZES = [14, 24, 40] as const;
+
+/** Every icon of src/core/registry/icons.ts by group, drawn over the app in its colours: one shot. */
+async function iconSheet(browser: Browser, url: string) {
+  const d = await device(browser, { width: 1280, height: 1000 }, false, 'icons-1280');
+  try {
+    await step(d, 1, 'every icon', async () => {
+      await openApp(d, url);
+      const groups = ICON_GROUPS.map(group => ({ group, icons: iconsOf(group).map(key => ({ key, path: iconDef(key).path })) }));
+      await d.page.evaluate(({ groups, sizes }) => {
+        const svg = (path: string, px: number) => `<svg width="${px}" height="${px}" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="${path}"/></svg>`;
+        const sheet = document.createElement('div');
+        sheet.id = 'icon-sheet';
+        sheet.style.cssText = 'position:fixed;inset:0;z-index:999;overflow:auto;padding:8px 12px;background:var(--panel-solid);color:var(--cyan)';
+        sheet.innerHTML = groups.map(g => `<h3 style="margin:6px 0 4px;font-size:13px;color:var(--cyan-dim)">${g.group} (${g.icons.length})</h3>`
+          + `<div style="display:grid;grid-template-columns:repeat(12,1fr);gap:4px">${g.icons.map(i => `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:3px;border:1px solid var(--line)">`
+          + `<div style="display:flex;align-items:flex-end;gap:6px">${sizes.map(px => svg(i.path, px)).join('')}</div>`
+          + `<span style="font-size:11px;color:var(--cyan-dim)">${i.key}</span></div>`).join('')}</div>`).join('');
+        document.body.appendChild(sheet);
+      }, { groups, sizes: [...ICON_SIZES] });
+      await shot(d, 'icons');
+    });
+  } finally {
+    await d.ctx.close();
+  }
+}
+
 /** `bun server.ts` on `port` in its own process group, once its health check answers; `stop` ends it and what it started. */
 async function serve(port: number): Promise<{ url: string; stop(): void }> {
   const child = spawn('bun', ['server.ts'], { env: { ...process.env, PORT: String(port) }, stdio: 'ignore', detached: true });
@@ -862,15 +893,18 @@ async function serve(port: number): Promise<{ url: string; stop(): void }> {
 
 async function main() {
   const port = arg('--serve'), out = arg('--out');
-  if ((!arg('--url') && !port) || !out) throw new Error('usage: (--url URL | --serve PORT) --out DIR');
+  if ((!arg('--url') && !port) || !out) throw new Error('usage: (--url URL | --serve PORT) --out DIR [--only icons]');
   OUT = out;
   mkdirSync(out, { recursive: true });
   const server = port ? await serve(Number(port)) : null;
   const url = server ? server.url : String(arg('--url'));
   const browser = await chromium.launch(launchOptions());
   try {
-    await pass(browser, url, { width: 1280, height: 800 }, false, 'gm-1280', true);
-    await pass(browser, url, { width: 390, height: 844 }, true, 'gm-390', false);
+    await iconSheet(browser, url);
+    if (arg('--only') !== 'icons') {
+      await pass(browser, url, { width: 1280, height: 800 }, false, 'gm-1280', true);
+      await pass(browser, url, { width: 390, height: 844 }, true, 'gm-390', false);
+    }
   } finally {
     await browser.close();
     server?.stop();

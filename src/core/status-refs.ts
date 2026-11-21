@@ -87,7 +87,7 @@ function opWalk(o: Op | LandOp, f: KeyFn): Op | LandOp {
     case 'move': return { ...o, key: o.key === 'harmful' || o.key === 'event' ? o.key : f(o.key), as: o.as === null ? null : f(o.as) };
     case 'note': case 'speed': case 'delay': case 'hold': case 'root': case 'taunt': case 'threat': case 'channel': case 'staggerRate':
     case 'stat': case 'refund': case 'aura': case 'spread': case 'sheet': case 'share': case 'untargetable': case 'invulnerable':
-    case 'safeguard': case 'edge': case 'boost': case 'hidden': case 'alert': case 'shove': case 'hasten': case 'extra': case 'guard':
+    case 'safeguard': case 'edge': case 'boost': case 'hidden': case 'stayHidden': case 'alert': case 'shove': case 'hasten': case 'extra': case 'guard':
     case 'negate': case 'dispel': return o;
     default: return o satisfies never;
   }

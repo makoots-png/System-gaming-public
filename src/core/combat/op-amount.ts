@@ -16,6 +16,8 @@ export const SHEET_ADD_KEYS = ['armor', 'resist', 'pen', 'critFaces', 'exposed',
 export const SHEET_LEVEL_KEYS = ['sight'] as const;
 /** The sheet numbers a `sheet` op may change, each read one of the two ways above. */
 export const SHEET_OP_KEYS = [...SHEET_ADD_KEYS, ...SHEET_LEVEL_KEYS] as const;
+/** Whether sheet op key `k` is a level, which ops raise to their highest, not a number they add to. */
+export const isLevelKey = (k: (typeof SHEET_OP_KEYS)[number]): k is (typeof SHEET_LEVEL_KEYS)[number] => (SHEET_LEVEL_KEYS as readonly string[]).includes(k);
 
 /** Whether a `Tiered` number holds one value per tier. */
 export const isTiers = <T>(v: Tiered<T>): v is Tiers<T> => Array.isArray(v);

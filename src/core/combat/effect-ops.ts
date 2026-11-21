@@ -20,8 +20,9 @@ import type { ZoneId } from './zones.ts';
 import type { Extraction } from './extraction.ts';
 import type { BearerEvent, Trigger, Trip } from './triggers.ts';
 import { stackStep } from './stacks.ts';
-import { SHEET_OP_KEYS, atTier, countOn, isStacking, isTiers, stacked } from './op-amount.ts';
-import { counting, harmful, statusLife, statusStep, withSheetOps } from './standing.ts';
+import { SHEET_LEVEL_KEYS, SHEET_OP_KEYS, atTier, countOn, isLevelKey, isStacking, isTiers, stacked } from './op-amount.ts';
+import { asLevel, counting, harmful, statusLife, statusStep, withSheetOps } from './standing.ts';
+import type { HideLevel } from './standing.ts';
 import { rowLifeAfter } from './row-life.ts';
 import type { FoeLife } from './row-life.ts';
 import type { Life } from '../hunter/vitals.ts';
@@ -189,8 +190,16 @@ export type Op =
   | { readonly op: 'edge'; readonly side: EdgeSide; readonly keep: 'better' | 'worse'; readonly tag: Tag | null; readonly spend: boolean }
   /** A held die (8.2): `attack` lowers each target's face by its roll, `defend` raises the bearer's; a die of 2 to `boostSides` sides, or a fixed face. It always spends. */
   | { readonly op: 'boost'; readonly side: EdgeSide; readonly die: { readonly kind: 'die'; readonly sides: number } | { readonly kind: 'face'; readonly n: number } }
-  /** The other side cannot aim at the bearer nor catch it, and a hidden foe is out of the room's doc (8.7). */
-  | { readonly op: 'hidden' }
+  /**
+   * Stealth (docs/agent-handoff/features/notes-7-stealth.md section 2, with the owner's rulings): the bearer hides at
+   * `level` (by its source's rank), from every viewer whose sight level is lower; `start` says whether it may hide in a
+   * foe's sight (`anywhere`) or only out of it (`unseen`); `ends` which of the three events end it. Its time and a cure
+   * end it as any status. Until stealth units 3 and 4 the fight reads none of the three: a foe cannot aim at the bearer
+   * nor catch it, a hidden foe is out of the room's doc (8.7), and acting, a foe beside it or a hurt reveals it.
+   */
+  | { readonly op: 'hidden'; readonly level: Tiered<HideLevel>; readonly start: HideStart; readonly ends: StealthEnds }
+  /** Worn by a class or a skill upgrade: while the bearer holds it, none of its hidden statuses ends on `on` (section 2). */
+  | { readonly op: 'stayHidden'; readonly on: StealthEnd }
   /** The bearer is never surprised (8.7). */
   | { readonly op: 'alert' }
   /** A push or a pull of a caught target, 1 to `kit.shoveMax` tiles, away from or toward the user or the aim (8.3, rule 18). */
@@ -212,9 +221,19 @@ export type Op =
   | { readonly op: 'dispel'; readonly which: 'first' | 'all' };
 /** A sheet number a `sheet` op may change (op-amount.ts `SHEET_OP_KEYS`). */
 export type SheetOpKey = (typeof SHEET_OP_KEYS)[number];
+/** A sheet level a `sheet` op raises (op-amount.ts `SHEET_LEVEL_KEYS`), not adds to. */
+export type SheetLevelKey = (typeof SHEET_LEVEL_KEYS)[number];
 export const SHARE_ON = ['dealt', 'taken', 'healed'] as const;
 export type ShareOn = (typeof SHARE_ON)[number];
 export type EdgeSide = 'attack' | 'defend';
+/** What may end a hide (the owner's three events): its bearer loses HP, it is revealed, or a use or reaction of its own deals HP damage to the other side. */
+export const STEALTH_ENDS = ['hurt', 'revealed', 'dealt'] as const;
+export type StealthEnd = (typeof STEALTH_ENDS)[number];
+/** Which of the three end a hide: each true ends it. With all three false only its time and a cure end it. */
+export type StealthEnds = { readonly [E in StealthEnd]: boolean };
+/** Where a hide may start: only out of every foe's sight that is up (`unseen`, the kits' rule), or in the open too (`anywhere`, Invisible). */
+export const HIDE_STARTS = ['unseen', 'anywhere'] as const;
+export type HideStart = (typeof HIDE_STARTS)[number];
 /** Whom a status's aura reaches, from its bearer's side: everyone, its allies, or its foes. */
 export const AURA_ON = ['all', 'allies', 'foes'] as const;
 export type AuraOn = (typeof AURA_ON)[number];
@@ -224,7 +243,7 @@ const OP_KIND_SET: { readonly [K in OpKind]: true } = {
   damage: true, heal: true, mana: true, fatigue: true, applyStatus: true, cureStatus: true, note: true, speed: true, delay: true,
   hold: true, root: true, taunt: true, threat: true, shield: true, channel: true, staggerRate: true, stat: true, refund: true, aura: true, spread: true,
   sheet: true, share: true, untargetable: true, invulnerable: true, safeguard: true, edge: true, boost: true, hidden: true, alert: true,
-  shove: true, move: true, hasten: true, extra: true, guard: true, negate: true, dispel: true,
+  shove: true, move: true, hasten: true, extra: true, guard: true, negate: true, dispel: true, stayHidden: true,
 };
 export const OP_KINDS = Object.keys(OP_KIND_SET) as readonly OpKind[];
 
@@ -652,7 +671,7 @@ export function modsOf(statuses: readonly Status[]): { mods: StatusMod[]; rooted
       case 'damage': case 'heal': case 'mana': case 'fatigue': case 'applyStatus': case 'cureStatus': case 'note': case 'delay':
       case 'hold': case 'taunt': case 'threat': case 'shield': case 'channel': case 'staggerRate': case 'refund': case 'aura': case 'spread':
       case 'sheet': case 'share': case 'untargetable': case 'invulnerable': case 'safeguard': case 'edge': case 'boost': case 'hidden': case 'alert':
-      case 'shove': case 'move': case 'hasten': case 'extra': case 'guard': case 'negate': case 'dispel': break;
+      case 'shove': case 'move': case 'hasten': case 'extra': case 'guard': case 'negate': case 'dispel': case 'stayHidden': break;
       default: o satisfies never;
     }
   }
@@ -782,7 +801,10 @@ function opLine(o: Op, tier: number | null, R: DescribeRules): string {
     }
     case 'aura': return `Gives off its other effects to ${o.on === 'all' ? 'everyone' : o.on} within ${o.radius} tile${o.radius === 1 ? '' : 's'}`;
     case 'spread': return `Spreads each round to anyone within ${o.range} tile${o.range === 1 ? '' : 's'} who fails to resist it, once a fight`;
-    case 'sheet': { const n = num(o.amount, signed); return `${SHEET_OP_TEXT[o.key]} ${n.text}${rank(n)}`; }
+    case 'sheet': {
+      if (isLevelKey(o.key)) { const n = num(o.amount, a => `${asLevel(a)}`); return `${SHEET_LEVEL_TEXT[o.key]} ${n.text} or under${rank(n)}`; }
+      const n = num(o.amount, signed); return `${SHEET_ADD_TEXT[o.key]} ${n.text}${rank(n)}`;
+    }
     case 'share': { const p = num(o.pct, n => `${signed(n)}%`); return `${SHARE_TEXT[o.on]} ${p.text}${rank(p)}`; }
     case 'untargetable': return 'Foes cannot aim at it or hit it with an area, for a round, once a fight. Acting on a foe ends it';
     case 'invulnerable': return 'Damage does not take it under 1 HP, for a round, once a fight';
@@ -796,7 +818,12 @@ function opLine(o: Op, tier: number | null, R: DescribeRules): string {
       const die = o.die.kind === 'die' ? `a d${o.die.sides}` : `${o.die.n}`;
       return o.side === 'attack' ? `Its next use against a foe: each target's die is lowered by ${die}` : `The next use against it: its die is raised by ${die}`;
     }
-    case 'hidden': return 'Hidden: foes cannot aim at it or hit it with an area. It is revealed when it acts, when a foe is beside it, or when it is hurt';
+    case 'hidden': {
+      const l = num(o.level, n => `${n}`), ends = STEALTH_ENDS.filter(e => o.ends[e]).map(e => STEALTH_END_TEXT[e]);
+      const ended = ends.length ? `It ends when it ${ends.length > 1 ? `${ends.slice(0, -1).join(', ')} or ${ends.at(-1)}` : ends[0]}` : 'Only its time or a cure ends it';
+      return `Hidden at stealth level ${l.text}${rank(l)}: only a foe with that sight level or higher sees it. ${HIDE_START_TEXT[o.start]}. ${ended}`;
+    }
+    case 'stayHidden': return `Stays hidden when it ${STEALTH_END_TEXT[o.on]}`;
     case 'alert': return 'Never surprised';
     case 'shove': return `${o.dir === 'away' ? 'Pushes' : 'Pulls'} each target ${o.tiles} tile${o.tiles === 1 ? '' : 's'} ${o.dir === 'away' ? 'away from' : 'toward'} ${o.from === 'user' ? 'you' : 'the center'}`;
     case 'move': {
@@ -812,10 +839,14 @@ function opLine(o: Op, tier: number | null, R: DescribeRules): string {
   }
 }
 
-const SHEET_OP_TEXT: { readonly [K in SheetOpKey]: string } = {
+const SHEET_ADD_TEXT: { readonly [K in Exclude<SheetOpKey, SheetLevelKey>]: string } = {
   armor: 'Armor', resist: 'Resist', pen: 'Penetration (share)', critFaces: 'Crit faces', exposed: 'Faces a foe crits it on', critSize: 'Crit size',
-  costCut: 'Cost cut (share)', range: 'Range of 2 or more', sight: 'Sight level',
+  costCut: 'Cost cut (share)', range: 'Range of 2 or more',
 };
+/** A sheet level's words, read before its level and "or under": a level is no amount added, the highest source is the level (ruling 8). */
+const SHEET_LEVEL_TEXT: { readonly [K in SheetLevelKey]: string } = { sight: 'Sees foes hidden at stealth level' };
+const STEALTH_END_TEXT: { readonly [E in StealthEnd]: string } = { hurt: 'is hurt', revealed: 'is revealed', dealt: 'deals damage' };
+const HIDE_START_TEXT: { readonly [S in HideStart]: string } = { unseen: 'It hides only out of every foe\'s sight', anywhere: 'It hides even in a foe\'s sight' };
 const SHARE_TEXT: { readonly [K in ShareOn]: string } = { dealt: 'Damage dealt', taken: 'Damage taken', healed: 'Healing received' };
 
 /** Ops in words, one line each, read at `tier` (the source's rank or an item's rarity, 0 to 5), or every rank with null. */

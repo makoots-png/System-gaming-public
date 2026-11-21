@@ -667,7 +667,7 @@ test('a player\'s rules page opens with How checks work and has no GM quick card
     await expect(p.locator('#view-rules')).not.toContainText('or leave the Status view, to lock it in');
   });
   await expect(p.locator('#view-rules')).toContainText('At 0 HP a hunter is down and makes death saves');
-  await expect(p.locator('#view-rules')).toContainText(downLine());
+  await expect(p.locator('#view-rules')).toContainText(downLine(RULES));
   await expect(p.locator('#view-rules')).not.toContainText('Unconscious');
   await test.step('the Gates section tells solo runs and the personal gates, the first of them the even one', async () => {
     for (const line of soloLines(RULES)) await expect(p.locator('#rr-gates')).toContainText(line);

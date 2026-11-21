@@ -13,6 +13,9 @@ import { asLevel, LEVELS } from '../src/core/combat/standing.ts';
 import { modified, statusKey, statusOn } from '../src/core/combat/effect-ops.ts';
 import type { Body, Op, Origin, Status, StatusFields } from '../src/core/combat/effect-ops.ts';
 import { combatantId } from '../src/core/combat/ability-types.ts';
+import { parseOp } from '../src/core/combat/fight-parse.ts';
+import type { HideLevel } from '../src/core/combat/standing.ts';
+import type { Tiered } from '../src/core/combat/effect-ops.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 import { lifeAt } from './fixtures/life.ts';
 
@@ -96,8 +99,10 @@ describe('a level', () => {
 
 describe('a fight body\'s eyes and figure', () => {
   const hunter: Origin = { kind: 'hunter', build: { stats: baseStats(RULES.fight), level: 1, gear: kitGear('light', RULES), perks: {} } };
-  const status = (key: string, ...ops: Op[]): Status =>
-    statusOn({ label: key, desc: '', ops }, { key: statusKey(key), source: { id: null, tier: 0 }, until: tick(100), since: tick(0), settledAt: tick(0) });
+  const status = (key: string, ...ops: Op[]): Status => statusAt(0, key, ...ops);
+  const statusAt = (tier: number, key: string, ...ops: Op[]): Status =>
+    statusOn({ label: key, desc: '', ops }, { key: statusKey(key), source: { id: null, tier }, until: tick(100), since: tick(0), settledAt: tick(0) });
+  const hide = (level: Tiered<HideLevel>): Op => ({ op: 'hidden', level, start: 'unseen', ends: { hurt: true, revealed: true, dealt: true } });
   const owed = (s: Status): Status => statusOn(s.def, { ...(s as StatusFields), owed: true });
   function body(statuses: readonly Status[], o: { side?: 'party' | 'foe'; hp?: number; at?: Place } = {}): Body {
     const { stats, sheet } = modified(hunter, statuses, RULES);
@@ -113,13 +118,25 @@ describe('a fight body\'s eyes and figure', () => {
     expect(eyesOf(body([status('eye', { op: 'sheet', key: 'sight', amount: 2 })], { side: 'foe', hp: 0 }))).toEqual({ place: place(2, 3), side: 'foe', up: false, sight: 2 });
   });
 
-  test('a body with no hidden status has no stealth; one hidden hides at level 0, the hidden op\'s level until it carries one', () => {
+  test('a body with no hidden status has no stealth; one hidden hides at its hidden op\'s level', () => {
     expect(figureOf(body([]))).toEqual({ place: place(2, 3), side: 'party', stealth: null });
-    expect(figureOf(body([status('stealth', { op: 'hidden' })], { side: 'foe' }))).toEqual({ place: place(2, 3), side: 'foe', stealth: 0 });
+    expect(figureOf(body([status('stealth', hide(2))], { side: 'foe' }))).toEqual({ place: place(2, 3), side: 'foe', stealth: 2 });
+  });
+
+  test('a hide by rank is read at its source\'s tier, and of two hides the higher level counts', () => {
+    expect(figureOf(body([statusAt(3, 'stealth', hide([1, 1, 2, 4, 5, 5]))])).stealth).toBe(4);
+    expect(figureOf(body([status('stealth', hide(2)), status('cloak', hide(4)), status('veil', hide(3))])).stealth).toBe(4);
+  });
+
+  test('a hide with no level written hides from a body with no sight content, and a sight op of 1 sees it (the default level is 1, ruling 1)', () => {
+    const plain = parseOp({ op: 'hidden' }, RULES)!, foe = figureOf(body([status('stealth', plain)], { side: 'foe' }));
+    expect<number>(eyesOf(body([])).sight).toBe(RULES.fight.stealth.sightBase);
+    expect(perceives(eyesOf(body([])), foe, OPEN, WHOLE)).toBe(false);
+    expect(perceives(eyesOf(body([status('eye', { op: 'sheet', key: 'sight', amount: 1 })])), foe, OPEN, WHOLE)).toBe(true);
   });
 
   test('a hidden status whose time ran out (owed until its settle) hides nothing', () => {
-    expect(figureOf(body([owed(status('stealth', { op: 'hidden' }))])).stealth).toBeNull();
+    expect(figureOf(body([owed(status('stealth', hide(3)))])).stealth).toBeNull();
   });
 
   test('a fight with fog looks as far as its fog\'s sight; a fight with none sees the whole map', () => {

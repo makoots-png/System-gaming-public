@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { armorCutPct, checkExample, dailyPointsLine, downLine, gatePayLines, naturalLines, pointsLine, saleLine, saleRows, soloLines, statBonusLine } from '../src/core/rules-text.ts';
+import { armorCutPct, checkExample, dailyPointsLine, downLine, gatePayLines, iconCreditLine, ICON_CREDIT, naturalLines, pointsLine, saleLine, saleRows, soloLines, statBonusLine } from '../src/core/rules-text.ts';
 import { afterDefence } from '../src/core/combat/land.ts';
 import { sellPrice } from '../src/core/hunter/inventory.ts';
 import { CAP_ROUNDS } from '../src/core/combat/play.ts';
@@ -243,5 +243,17 @@ describe('the world gate\'s lines', () => {
     expect(gatePayLines(R)[0]).toContain('made for a party of 2');
     expect(gatePayLines(R)[1]).toBe('Each hunter\'s share of 100: 200 alone, 100 of 2, 44 of 3, 25 of 4.');
     expect(gatePayLines(R)[3]).toContain('2 times the gold roll and 2 times the XP');
+  });
+});
+
+describe('the icons\' credit', () => {
+  test('say who made the icons, where from and under which licence, as the owner asked for', () => {
+    expect(iconCreditLine()).toBe('Icons made by Lorc and Delapouite, from game-icons.net, under CC BY 3.0.');
+  });
+
+  test('name every author icons-credit.md names', async () => {
+    const credit = await Bun.file(`${import.meta.dir}/../src/core/registry/icons-credit.md`).text();
+    const named = new Set([...credit.matchAll(/^\| \S+ \| (\S+) \|/gm)].map(m => m[1]).filter(a => a !== 'Author' && a !== 'drawn'));
+    expect([...named].sort()).toEqual([...ICON_CREDIT.authors].sort());
   });
 });

@@ -347,7 +347,7 @@ describe('the kits on the table (kits design 1.11)', () => {
 
 describe('a hidden foe (kits design 8.7)', () => {
   test('is not in the party\'s doc, nor is its name in the log, while it hides; once seen it is back', () => {
-    const veil: Status = { key: statusKey('hide'), def: { label: 'Hidden', desc: '', ops: [{ op: 'hidden' }] }, source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0) };
+    const veil: Status = { key: statusKey('hide'), def: { label: 'Hidden', desc: '', ops: [{ op: 'hidden', level: 1, start: 'unseen', ends: { hurt: true, revealed: true, dealt: true } }] }, source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0) };
     const fight = play(add(row('A', 'party'), row('Sly', 'foe')), start(['A', 20], ['Sly', 10]));
     const hid = withBody(fight, 'Sly', { statuses: [veil] });
     expect(live(fightDoc(hid, RULES, docCtx())).rows.map(r => r.id)).toEqual(['A']);
@@ -355,7 +355,7 @@ describe('a hidden foe (kits design 8.7)', () => {
   });
 
   test('a log line is left out by the rows it is about, not by its words: a hidden Rat hides its own lines, not Ratatoskr\'s', () => {
-    const veil: Status = { key: statusKey('hide'), def: { label: 'Hidden', desc: '', ops: [{ op: 'hidden' }] }, source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0) };
+    const veil: Status = { key: statusKey('hide'), def: { label: 'Hidden', desc: '', ops: [{ op: 'hidden', level: 1, start: 'unseen', ends: { hurt: true, revealed: true, dealt: true } }] }, source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0) };
     const fight = play(add(row('A', 'party'), row('Rat', 'foe'), row('Ratatoskr', 'foe')), start(['A', 20], ['Rat', 10], ['Ratatoskr', 5]));
     const hid = { ...withBody(fight, 'Rat', { statuses: [veil] }), log: [line('Ratatoskr swings.', [id('Ratatoskr')]), line('The blast hits 2.', [id('Rat'), id('A')])] };
     expect(live(fightDoc(hid, RULES, docCtx())).log).toEqual(['Ratatoskr swings.']);

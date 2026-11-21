@@ -23,14 +23,15 @@ import { parseSaveId, parseSheetKey } from '../ids.ts';
 import type { Ability, AbilityEffect, AbilityId, CombatantId, Delivery, AbilityGate, Gap, Price, RuleTicks, Summon, Tag } from './ability-types.ts';
 import { bounded } from '../registry/scalers.ts';
 import { isUp } from './row-hp.ts';
-import { amountOp, AURA_ON, isStatusKey, LAND_USE_OPS, reactionMayHold, modified, shadowId, SHARE_ON, statusKey, statusOn, TYPE_MAX, isUseOp } from './effect-ops.ts';
+import { amountOp, AURA_ON, HIDE_STARTS, STEALTH_ENDS, isStatusKey, LAND_USE_OPS, reactionMayHold, modified, shadowId, SHARE_ON, statusKey, statusOn, TYPE_MAX, isUseOp } from './effect-ops.ts';
 import { isStacking, SHEET_OP_KEYS } from './op-amount.ts';
-import { LEVELS } from './standing.ts';
+import { asLevel, LEVELS } from './standing.ts';
+import type { HideLevel } from './standing.ts';
 import { parseLife } from '../hunter/vitals.ts';
 import { parseLevel } from '../hunter/level.ts';
 import type {
   Body, Channel, CombatantKind, Due, End, Holder, HunterRow, Intent, LandOp, MonsterRow, Op, Origin, Reach, ShadowRow, SheetStatus, StackRule, Stagger, Status,
-  StatusDef, StatusKey, SummonRow, ThreatTable, Threshold, Tiered, UseOp,
+  StatusDef, StatusKey, StealthEnds, SummonRow, ThreatTable, Threshold, Tiered, UseOp,
 } from './effect-ops.ts';
 import type { FoeLife } from './row-life.ts';
 import { BEARER_EVENTS, PARTY_EVENTS } from './triggers.ts';
@@ -298,7 +299,9 @@ function wave2Op(v: Rec, R: Rules): Op | null {
       return amount === null ? null : { op: 'sheet', key, amount };
     }
     case 'share': { const on = oneOf(v.on, SHARE_ON, null), pct = tiered(v.pct, x => within(x, -100, 100)); return on && pct !== null ? { op: 'share', on, pct } : null; }
-    case 'untargetable': case 'invulnerable': case 'safeguard': case 'hidden': case 'alert': case 'extra': case 'negate': return { op: v.op };
+    case 'untargetable': case 'invulnerable': case 'safeguard': case 'alert': case 'extra': case 'negate': return { op: v.op };
+    case 'hidden': return { op: 'hidden', level: tiered(v.level, hideLevelOf) ?? HIDE_DEFAULT.level, start: oneOf(v.start, HIDE_STARTS, HIDE_DEFAULT.start), ends: stealthEndsOf(v.ends) };
+    case 'stayHidden': { const on = oneOf(v.on, STEALTH_ENDS, null); return on && { op: 'stayHidden', on }; }
     case 'edge': {
       const side = oneOf(v.side, EDGE_SIDES, null), keep = oneOf(v.keep, ['better', 'worse'] as const, null), t = v.tag === null ? null : tagOf(v.tag, R), spend = bool(v.spend);
       return side && keep && (t !== null || v.tag === null) && spend !== null ? { op: 'edge', side, keep, tag: t, spend } : null;
@@ -322,6 +325,18 @@ function wave2Op(v: Rec, R: Rules): Op | null {
     default: return null;
   }
 }
+/**
+ * A hidden op's fields when none is written, or one is wrong (docs/agent-handoff/features/notes-7-stealth.md section 2):
+ * the kits' Stealth as built. Level 1, the lowest a hide may hold (standing.ts `HideLevel`); only out of sight; every end.
+ */
+const HIDE_DEFAULT = { level: 1, start: 'unseen', ends: { hurt: true, revealed: true, dealt: true } } as const satisfies Pick<Extract<Op, { op: 'hidden' }>, 'level' | 'start' | 'ends'>;
+/** A number read into a hide's level as `asLevel` reads a level, with 0 (a hide that hides from nobody) read as 1; null when it is not a number. */
+const hideLevelOf = (x: unknown): HideLevel | null => { if (!isNum(x)) return null; const l = asLevel(x); return l === 0 ? HIDE_DEFAULT.level : l; };
+/** Which of the three events end a hide: each one written true or false as written, any other its default (true); a key not of the three is dropped. */
+const stealthEndsOf = (v: unknown): StealthEnds => {
+  const o = isObj(v) ? v : {};
+  return { hurt: bool(o.hurt) ?? HIDE_DEFAULT.ends.hurt, revealed: bool(o.revealed) ?? HIDE_DEFAULT.ends.revealed, dealt: bool(o.dealt) ?? HIDE_DEFAULT.ends.dealt };
+};
 const useOpOf = (v: unknown, R: Rules): UseOp | null => { const o = opOf(v, R, 0); return o && isUseOp(o) ? o : null; };
 const COLOR_RE = /^#[0-9a-f]{6}$/i;
 function defOf(v: unknown, R: Rules, depth: number): StatusDef | null {
