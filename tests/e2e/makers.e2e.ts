@@ -4,6 +4,8 @@
 import type { Locator, Page } from '@playwright/test';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, answerWindow, startGoblinDenFight, openApp, chooseList } from './helpers.ts';
 import { RULES } from '../../src/core/rules.ts';
+import { itemSpend } from '../../src/core/registry/item-budget.ts';
+import type { ItemTemplate } from '../../src/core/registry/items.ts';
 import { baseStats } from '../../src/core/stats.ts';
 import type { StatKey } from '../../src/core/stats.ts';
 import { kitGear } from '../../src/core/hunter/derive.ts';
@@ -413,9 +415,14 @@ test('the item maker says what a rare weapon spends against its grade, names the
     await d.locator('[data-bonus="str"]').fill('2');
   });
 
-  await test.step('Lethality is weighed: a point of it spends 0.59 at rare (balance plan section 9, on a same-rank elite in its kit at its tier), so +2 Strength and 1 Lethality spend 2.6', async () => {
+  // The expected points come from the rule (`itemSpend`), not a typed number: a balance pass moves Lethality's price
+  // (0.59 a point at rare before package A, 0.66 at C after), and this step holds that the maker shows the rule's sum.
+  await test.step('Lethality is weighed (balance plan section 9, on a same-rank foe in its kit at its tier): +2 Strength and 1 Lethality spend what the rule says, more than Strength alone', async () => {
+    const piece: ItemTemplate = { name: 'Fang', rar: 'rare', type: 'weapon', slot: 'weapon', qty: 1, dice: '1d12', attack: 'strike', bonus: { str: 2, armorPenFlat: 1 }, desc: '', armor: 0, resist: 0 };
+    const points = itemSpend(piece, RULES)!.points;
+    expect(points).toBeGreaterThan(2);
     await d.locator('[data-bonus="armorPenFlat"]').fill('1');
-    await expect(spend).toHaveText('Spends 2.6 points. Rare− holds up to 3.1.');
+    await expect(spend).toHaveText(`Spends ${points.toFixed(1)} points. Rare− holds up to 3.1.`);
   });
 
   await test.step('a consumable has no budget, so no line', async () => {
@@ -515,9 +522,9 @@ test('the enemy maker shows the body a rank, an archetype and a kind make, and X
   const normal = await body();
   await d.locator('[data-chips="kind"] [data-chip="boss"]').tap();
   await expect(xp).toHaveAttribute('placeholder', 'By the rule: 750');
-  // a boss has 3.2 bodies of HP where a normal monster has 0.6: within rounding, 16/3 times
+  // a boss's HP factor over a normal monster's (RULES.fight.kinds: 2.8 over 0.6 since package A), within rounding
   const boss = await body();
-  expect(Math.abs(boss.hp - normal.hp * 3.2 / 0.6)).toBeLessThanOrEqual(3);
+  expect(Math.abs(boss.hp - normal.hp * RULES.fight.kinds.boss.hp / RULES.fight.kinds.normal.hp)).toBeLessThanOrEqual(3);
   await d.locator('[data-chips="archetype"] [data-chip="skirmisher"]').tap();
   // a skirmisher puts its points in Agility and wears the light kit: faster than a brute, with less armor
   const skirmisher = await body();
