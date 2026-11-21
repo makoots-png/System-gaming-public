@@ -1,15 +1,16 @@
 // The coin call (src/views/coin.js, src/core/coin.ts): a check's natural 1 or 20 outside a fight asks the player heads or
-// tails; the GM rules in a System window, and the player's phone hears only where the coin landed.
+// tails; the GM rules in a System window and sees the side, and the player's phone hears only that the coin was flipped
+// (the owner, Nov 21: the GM says the outcome at the table).
 import type { Page } from '@playwright/test';
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, answerWindow, openApp, roomHeaders, save, SMALL_PHONE } from './helpers.ts';
+import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, answerWindow, openApp, roomHeaders, save, PHONE, SMALL_PHONE } from './helpers.ts';
 
 const HUNTER = 'Kai Test';
 const card = (page: Page) => page.locator('[data-coin-card]');
 const gmWindow = (gm: Page) => gm.locator('.sys-overlay.show', { hasText: 'Coin call' });
 
-/** A GM and a player in one room, the player's card on the GM's party board. Answers the room code too. */
-async function room(device: (label: string) => Promise<{ page: Page }>): Promise<{ gm: Page; player: Page; code: string }> {
-  const gm = (await device('gm')).page, player = (await device('player')).page;
+/** A GM and a player in one room on 390 px phones, the player's card on the GM's party board. Answers the room code too. */
+async function room(device: (label: string, o?: { viewport?: typeof PHONE }) => Promise<{ page: Page }>): Promise<{ gm: Page; player: Page; code: string }> {
+  const gm = (await device('gm', { viewport: PHONE })).page, player = (await device('player', { viewport: PHONE })).page;
   await onboardGM(gm);
   const code = await createRoom(gm);
   await onboardPlayer(player, HUNTER, code);
@@ -44,14 +45,30 @@ async function call(player: Page, side: 'Heads' | 'Tails'): Promise<void> {
   await expect(card(player).locator('[data-words]')).toHaveText('In the air');
 }
 
-/** The player's coin after it landed: the side its face rests on and the words under it. */
+/** The GM's toast after a ruling: the side the coin landed on and what it means, for the GM to say at the table. */
+const gmTold = (gm: Page) => gm.locator('#toasts .toast', { hasText: 'It landed' });
+
+/**
+ * The player's coin after the GM ruled it in a room: its words, and whether anything on the card names a side it landed
+ * on or a verdict. The card holds no coin face, since a face at rest shows a side.
+ */
+async function flipped(player: Page, called: 'Heads' | 'Tails'): Promise<void> {
+  const row = card(player).locator('li', { hasText: `You called ${called}` });
+  await expect(row.locator('[data-words]')).toHaveText('Flipped');
+  await expect(row).toContainText('The GM tells you how it landed.');
+  await expect(row.locator('[data-coin-face], [data-side]')).toHaveCount(0);
+  const text = (await row.textContent()) ?? '';
+  expect(text.replace(`You called ${called}`, '')).not.toMatch(/Heads|Tails|Critical|Success|Saved|Right|Wrong/);
+}
+
+/** The player's coin after it landed alone: the side its face rests on and the words under it. */
 async function landed(player: Page): Promise<{ side: string | null; words: string }> {
   const words = card(player).locator('[data-words]');
   await expect(words).not.toHaveText('In the air');
   return { side: await card(player).locator('[data-coin-face]').getAttribute('data-side'), words: (await words.textContent()) ?? '' };
 }
 
-test('a player\'s natural 20 asks heads or tails; the GM sees the call and rules Right; the coin lands on the called side and reads "Critical success"', async ({ device }) => {
+test('a player\'s natural 20 asks heads or tails; the GM rules Right and is told it landed Heads, a critical success; the player\'s phone says only that it was flipped', async ({ device }) => {
   const { gm, player } = await room(device);
   await flipShows(gm, 'tails');
   await check(player, 20);
@@ -60,56 +77,76 @@ test('a player\'s natural 20 asks heads or tails; the GM sees the call and rules
   await expect(gmWindow(gm)).toContainText('STR check');
   await expect(gmWindow(gm)).toContainText('Natural 20');
   await answerWindow(gm, 'Coin call', 'Right');
-  expect(await landed(player)).toEqual({ side: 'heads', words: 'Critical success' });
+  await expect(gmTold(gm)).toContainText(`${HUNTER} called Heads. It landed Heads: Critical success.`);
+  await flipped(player, 'Heads');
+  await expect(player.locator('#view-dice [data-flag]')).toHaveText('Flipped');
   const log = (await save(gm)).log[0];
-  expect(log.text).toContain('Ruled Right');
+  expect(log.text).toContain('Ruled Right: the coin landed Heads');
 });
 
-test('Wrong on a natural 1 lands the coin on the other side and reads "Critical failure"', async ({ device }) => {
+test('Wrong on a natural 1: the GM is told it landed on the other side, a critical failure, and the player\'s phone says only that it was flipped', async ({ device }) => {
   const { gm, player } = await room(device);
   await flipShows(gm, 'heads');
   await check(player, 1);
   await call(player, 'Heads');
   await expect(gmWindow(gm)).toContainText('Natural 1');
   await answerWindow(gm, 'Coin call', 'Wrong');
-  expect(await landed(player)).toEqual({ side: 'tails', words: 'Critical failure' });
+  await expect(gmTold(gm)).toContainText(`${HUNTER} called Heads. It landed Tails: Critical failure.`);
+  await flipped(player, 'Heads');
 });
 
-test('Let the coin decide lands a side and the words agree with it', async ({ device }) => {
+test('Let the coin decide: the GM is told the true flip\'s side and what it means, and the player\'s phone says only that it was flipped', async ({ device }) => {
   const { gm, player } = await room(device);
   await flipShows(gm, 'heads');
   await check(player, 20);
   await call(player, 'Tails');
   await answerWindow(gm, 'Coin call', 'Let the coin decide');
-  expect(await landed(player)).toEqual({ side: 'heads', words: 'Success' });
+  await expect(gmTold(gm)).toContainText(`${HUNTER} called Tails. It landed Heads: Success.`);
+  await flipped(player, 'Tails');
 });
 
-test('the player\'s phone holds nothing that tells a ruling from a flip: the room\'s landing and the stored coin hold only the side', async ({ device }) => {
+test('the player\'s phone never receives the side or the ruling: the room\'s message holds the roll alone, and the stored coin and log hold no side', async ({ device }) => {
   const { gm, player, code } = await room(device);
   await flipShows(gm, 'heads');
   await check(player, 20);
   await call(player, 'Heads');
   await answerWindow(gm, 'Coin call', 'Right');
-  await landed(player);
+  await flipped(player, 'Heads');
   await card(player).getByRole('button', { name: 'Close' }).tap();
   await check(player, 20);
   await call(player, 'Heads');
-  await answerWindow(gm, 'Coin call', 'Let the coin decide');
-  await landed(player);
+  await answerWindow(gm, 'Coin call', 'Wrong');
+  await flipped(player, 'Heads');
 
   const events = (await (await player.request.get(`/api/rooms/${code}?after=0`, { headers: await roomHeaders(player) })).json()).events as any[];
   const landings = events.filter(e => e.type === 'coinLand').map(e => e.payload);
-  expect(landings.map(p => Object.keys(p).sort())).toEqual([['eid', 'roll', 'side'], ['eid', 'roll', 'side']]);
-  expect(landings.map(p => p.side)).toEqual(['heads', 'heads']);
+  expect(landings.map(p => Object.keys(p).sort())).toEqual([['eid', 'roll'], ['eid', 'roll']]);
   expect(events.map(e => e.type).filter(t => t.startsWith('coin'))).toEqual(['coinCall', 'coinLand', 'coinCall', 'coinLand']);
 
   const s = await save(player);
-  expect(s.coins.map((c: any) => Object.keys(c).sort())).toEqual([['at', 'call', 'face', 'hunter', 'id', 'side', 'what', 'who'], ['at', 'call', 'face', 'hunter', 'id', 'side', 'what', 'who']]);
-  expect(s.coins.map((c: any) => c.hunter), 'the coin names the hunter who rolled, and nothing of the ruling').toEqual([{ kind: 'local', hunterId: s.settings.activeHunterId }, { kind: 'local', hunterId: s.settings.activeHunterId }]);
+  expect(s.coins.map((c: any) => [c.at, Object.keys(c).sort()])).toEqual([0, 1].map(() => ['ruled', ['at', 'call', 'face', 'hunter', 'id', 'what', 'who']]));
   const lines = s.log.filter((l: any) => l.title.startsWith('Coin'));
-  expect(lines).toHaveLength(2);
-  expect([lines[0].title, lines[0].text]).toEqual([lines[1].title, lines[1].text]);
-  expect(JSON.stringify([s.coins, lines])).not.toMatch(/Ruled|Right|Wrong|decide/);
+  expect(lines.map((l: any) => l.text)).toEqual([0, 1].map(() => 'Natural 20 for STR check. The GM flipped the coin.'));
+  expect(JSON.stringify([s.coins, lines])).not.toMatch(/Tails|Ruled|Right|Wrong|decide|landed|Critical|Success|Saved/);
+  expect(s.hunters.flatMap((h: any) => h.chronicle.facts).filter((f: any) => f.kind === 'coin'), 'no coin fact says whether the call was right').toEqual([]);
+});
+
+test('on a 390 px phone the player\'s flipped coin card fits the screen beside the nav and its Close button is a thumb\'s size', async ({ device }) => {
+  const { gm, player } = await room(device);
+  await check(player, 20);
+  await call(player, 'Heads');
+  await answerWindow(gm, 'Coin call', 'Right');
+  await flipped(player, 'Heads');
+  await expect.poll(() => card(player).evaluate(el => el.getAnimations({ subtree: true }).filter(a => a.playState === 'running').length)).toBe(0);
+  const box = await card(player).evaluate(el => {
+    const r = el.getBoundingClientRect(), b = el.querySelector('[data-close]')!.getBoundingClientRect();
+    return { left: r.left, right: r.right, bottom: r.bottom, button: b.height, nav: document.getElementById('nav-bottom')!.getBoundingClientRect().top, width: innerWidth };
+  });
+  expect(box.width).toBe(PHONE.width);
+  expect(box.left).toBeGreaterThanOrEqual(0);
+  expect(box.right).toBeLessThanOrEqual(box.width);
+  expect(box.bottom).toBeLessThanOrEqual(box.nav);
+  expect(box.button).toBeGreaterThanOrEqual(44);
 });
 
 test('a hunter in a running fight who rolls a natural 20 gets no coin', async ({ device }) => {
@@ -164,9 +201,9 @@ test('a reload on either phone while the coin is in the air keeps it in the air 
     await openApp(gm);
     await expect(gmWindow(gm)).toContainText(`${HUNTER} called Tails`);
   });
-  await test.step('the GM\'s ruling still reaches the player', async () => {
+  await test.step('the GM\'s ruling still reaches the player, with no side', async () => {
     await answerWindow(gm, 'Coin call', 'Right');
-    expect(await landed(player)).toEqual({ side: 'tails', words: 'Critical success' });
+    await flipped(player, 'Tails');
   });
 });
 
@@ -201,10 +238,10 @@ test('a GM who closes a coin call\'s window is not asked again until they tap Ru
     await expect(gmWindow(gm)).toHaveCount(0);
     await expect(putOff(gm)).toHaveCount(1);
   });
-  await test.step('Rule, then Right: the player\'s coin lands on the called side and the card no longer offers the call', async () => {
+  await test.step('Rule, then Right: the player\'s coin is flipped and the card no longer offers the call', async () => {
     await putOff(gm).getByRole('button', { name: 'Rule' }).tap();
     await answerWindow(gm, 'Coin call', 'Right');
-    expect(await landed(player)).toEqual({ side: 'tails', words: 'Critical success' });
+    await flipped(player, 'Tails');
     await expect(putOff(gm)).toHaveCount(0);
     await expect(card(gm)).toBeHidden();
   });

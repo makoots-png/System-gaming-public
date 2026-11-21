@@ -990,7 +990,7 @@ None.
 - Imports types from: `src/core/api.ts`, `src/core/role.ts`, `src/core/rules.ts`, `src/core/save.ts`, `src/core/sync/taps.ts`, `src/edge/bus.ts`
 - Imported by: `src/app.js`
 - Provides: `app.api.sync`: `allowBack`, `bound`, `check`, `conn`, `create`, `detail`, `doc`, `dropInvite`, `event`, `flush`, `forget`, `forgetKey`, `forgetLast`, `gmRooms`, `invite`, `inviteLink`, `joinRoom`, `kick`, `lastRoom`, `leave`, `myKey`, `once`, `parseInvite`, `post`, `publish`, `recentKicks`, `rejoinGM`, `release`, `remoteSheets`, `retry`, `room`, `roster`, `status`, `switchTo`
-- Uses: `app.api.coin` (landed) from `src/views/coin.js`; `app.api.hunter` (fightOf, gmHolds, granted) from `src/views/hunter.js`; `app.api.quests` (stepsDone) from `src/views/quests.js`
+- Uses: `app.api.coin` (ruled) from `src/views/coin.js`; `app.api.hunter` (fightOf, gmHolds, granted) from `src/views/hunter.js`; `app.api.quests` (stepsDone) from `src/views/quests.js`
 - Used by: `app.api.sync`: `src/app.js`, `src/views/bestiary.js`, `src/views/chronicle.js`, `src/views/coin.js`, `src/views/combat.js`, `src/views/custom.js`, `src/views/feats.js`, `src/views/gates.js`, `src/views/gm.js`, `src/views/hunter.js`, `src/views/inventory.js`, `src/views/onboard.js`, `src/views/quests.js`, `src/views/room-pill.ts`, `src/views/room.js`, `src/views/shadows.js`, `src/views/skills.js`, `src/views/stories.js`, `src/views/table.js`, `src/views/uses.js`
 - Emits: `sync:docs` (heard by `src/app.js`, `src/views/bestiary.js`, `src/views/gates.js`, `src/views/room.js`, `src/views/table.js`, `src/views/uses.js`), `sync:event` (heard by `src/views/coin.js`, `src/views/combat.js`, `src/views/gates.js`, `src/views/quests.js`, `src/views/table.js`, `src/views/uses.js`), `sync:outbox` (heard by `src/views/uses.js`), `sync:room` (heard by `src/views/onboard.js`, `src/views/room.js`, `src/views/uses.js`), `sync:sheets` (heard by `src/views/gm.js`, `src/views/quests.js`, `src/views/room.js`, `src/views/table.js`), `sync:status` (heard by `src/app.js`, `src/views/gm.js`, `src/views/onboard.js`, `src/views/room-pill.ts`, `src/views/room.js`)
 - Hears: `change` (emitted by `src/app.js`)
@@ -1035,7 +1035,7 @@ None.
 
 - Imports: `src/core/coin.ts`, `src/edge/notify.ts`, `src/edge/roll.ts`, `src/views/motion.ts`
 - Imported by: `src/app.js`
-- Provides: `app.api.coin`: `landed`, `of`, `rolled`
+- Provides: `app.api.coin`: `of`, `rolled`, `ruled`
 - Uses: `app.api.hunter` (fightOf) from `src/views/hunter.js`; `app.api.sync` (event, myKey, post) from `src/edge/sync.ts`
 - Used by: `app.api.coin`: `src/edge/sync.ts`, `src/views/dice.js`
 - Hears: `change` (emitted by `src/app.js`), `sync:event` (emitted by `src/edge/sync.ts`)
@@ -1398,9 +1398,9 @@ Registered in `src/views/coin.js`. Type: `CoinApi`.
 
 | Member | Signature | Used by |
 |---|---|---|
-| `landed` | `(roll: RollId, side: CoinSide): void` | `src/edge/sync.ts` |
 | `of` | `(roll: string): Coin \| null` | `src/views/dice.js` |
 | `rolled` | `(o: { hid: HunterId; roll: RollEntryId; kind: RollKind; expr: string; natural: number \| null; label: string }): boolean` | `src/views/dice.js` |
+| `ruled` | `(roll: RollId): void` | `src/edge/sync.ts` |
 
 ### `app.api.combat`
 

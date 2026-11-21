@@ -1,10 +1,11 @@
 // coin.ts: the coin call (docs/agent-handoff/later-phases/coin-notes.md). On a natural 1 or 20 of a check outside a fight
-// the player calls heads or tails. In a room the GM's phone picks the side the coin lands on; alone, a true flip does. This
-// file holds the rule for when a roll calls the coin, the one table of a coin's life, the side the GM's phone sends, what
-// a landing means, the GM's window for the calls (`CoinPrompt`, its own table), and the parsers of a stored coin. Pure:
+// the player calls heads or tails. In a room the GM's phone picks the side the coin lands on and keeps it: the player's
+// phone hears only that the GM ruled, and the GM says the outcome at the table (the owner, Nov 21, for-the-owner.md Open 5).
+// Alone, a true flip lands it. This file holds the rule for when a roll calls the coin, the one table of a coin's life,
+// the side the GM's phone keeps and the message it sends, what a landing means, the GM's window for the calls (`CoinPrompt`, its own table), and the parsers of a stored coin. Pure:
 // the die and the flip are rolled in src/edge/roll.ts.
 // src/views/coin.js changes a coin only through `transition` (or `stepCoin`, which calls it), in the save steps at the
-// end of the list section (`coinRolled`, `coinCalled`, `coinLanded`, `callTaken`, `callRuled`) given to `store.apply`.
+// end of the list section (`coinRolled`, `coinCalled`, `coinRuled`, `callTaken`, `callRuled`) given to `store.apply`.
 import { oneOf } from './one-of.ts';
 import { refuse } from './save-step.ts';
 import type { Seat } from './role.ts';
@@ -61,7 +62,7 @@ export function isCoinRoll(r: RollFacts): r is RollFacts & { natural: CoinNatura
 export const decider = (seat: Seat): 'gm' | 'flip' => (seat === 'player' ? 'gm' : 'flip');
 
 // ── the coin ──
-export const COIN_STATES = ['uncalled', 'called', 'landed'] as const;
+export const COIN_STATES = ['uncalled', 'called', 'ruled', 'landed'] as const;
 export type CoinState = (typeof COIN_STATES)[number];
 /**
  * What every coin has: the roll's id, the hunter who rolled (one of this phone's on a player's coin, the caller's sheet key
@@ -70,15 +71,18 @@ export type CoinState = (typeof COIN_STATES)[number];
 export type CoinFields = { id: RollId; hunter: HunterRef; who: string; what: string; face: CoinNatural };
 /**
  * A coin. `uncalled`: the die showed its natural and the player has not picked. `called`: the player picked `call` and
- * the coin is in the air. `landed`: it shows `side`. Nothing in a coin says how its side was chosen.
+ * the coin is in the air. `ruled`: a player's coin in a room that the GM has ruled; the side stays on the GM's phone, so
+ * this coin holds none. `landed`: it shows `side` (a coin flipped alone or on the GM's own phone, and the GM's held
+ * calls). Nothing in a coin says how its side was chosen.
  */
 export type Coin =
   | (CoinFields & { at: 'uncalled' })
   | (CoinFields & { at: 'called'; call: CoinSide })
+  | (CoinFields & { at: 'ruled'; call: CoinSide })
   | (CoinFields & { at: 'landed'; call: CoinSide; side: CoinSide });
 
-/** What can happen to a coin: the player calls a side, or it lands on one. */
-export type CoinEvent = { type: 'call'; side: CoinSide } | { type: 'land'; side: CoinSide };
+/** What can happen to a coin: the player calls a side, the GM's ruling arrives with no side, or it lands on a side. */
+export type CoinEvent = { type: 'call'; side: CoinSide } | { type: 'ruled' } | { type: 'land'; side: CoinSide };
 export type CoinEventType = CoinEvent['type'];
 
 // ── the table ──
@@ -88,17 +92,19 @@ type Row = { readonly [T in CoinEventType]: Step<T> | null };
 
 const fieldsOf = (c: Coin): CoinFields => ({ id: c.id, hunter: c.hunter, who: c.who, what: c.what, face: c.face });
 const calls: Step<'call'> = (c, e) => ({ ...fieldsOf(c), at: 'called', call: e.side });
-/** Only a called coin lands, so the call is there to keep. */
+/** Only a called coin lands or is ruled, so the call is there to keep. */
 const lands: Step<'land'> = (c, e) => (c.at === 'called' ? { ...fieldsOf(c), at: 'landed', call: c.call, side: e.side } : c);
+const rules: Step<'ruled'> = c => (c.at === 'called' ? { ...fieldsOf(c), at: 'ruled', call: c.call } : c);
 
 /**
- * A second call is refused: the side a player picked is the one the GM was told. A landing before the call cannot come
- * (the GM's phone answers a call), and a second landing is refused: the first side stands, whatever arrives after it.
+ * A second call is refused: the side a player picked is the one the GM was told. A landing or a ruling before the call
+ * cannot come (the GM's phone answers a call), and a second one is refused: the first answer stands, whatever arrives after it.
  */
 const TABLE: { readonly [S in CoinState]: Row } = {
-  uncalled: { call: calls, land: null },
-  called: { call: null, land: lands },
-  landed: { call: null, land: null },
+  uncalled: { call: calls, ruled: null, land: null },
+  called: { call: null, ruled: rules, land: lands },
+  ruled: { call: null, ruled: null, land: null },
+  landed: { call: null, ruled: null, land: null },
 };
 
 /** The coin after `event`. The same coin when the event does not apply in its state. Never changes its input. */
@@ -115,8 +121,8 @@ export const otherSide = (s: CoinSide): CoinSide => (s === 'heads' ? 'tails' : '
 /** The side a true flip shows for a number in [0, 1) (src/edge/roll.ts `flip` passes its random number). */
 export const sideOf = (r: number): CoinSide => (r < 0.5 ? 'heads' : 'tails');
 /**
- * The side the GM's phone sends: the called side when the GM rules Right, the other when Wrong, the flip's side when the
- * coin decides. The landing carries only this side, so a player's phone cannot tell a ruling from a flip.
+ * The side the GM's phone keeps for a call: the called side when the GM rules Right, the other when Wrong, the flip's side
+ * when the coin decides. It never leaves the GM's phone (`landingOf`).
  */
 export function landing(call: CoinSide, ruling: Ruling, flip: CoinSide): CoinSide {
   switch (ruling) {
@@ -125,11 +131,13 @@ export function landing(call: CoinSide, ruling: Ruling, flip: CoinSide): CoinSid
     case 'coin': return flip;
   }
 }
-/** What the GM's phone sends for a coin: the roll and the side, and nothing else (the `coinLand` room message without its id). */
-export type LandingBody = { roll: RollId; side: CoinSide };
-/** The landing the GM's phone sends for a called coin, for the GM's ruling and the side a true flip showed. */
-export const landingOf = (coin: CoinFields & { call: CoinSide }, ruling: Ruling, flip: CoinSide): LandingBody =>
-  ({ roll: coin.id, side: landing(coin.call, ruling, flip) });
+/**
+ * What the GM's phone sends once it has ruled a call: the roll, and nothing else (the `coinLand` room message without its
+ * id). No side and no ruling, so the player's phone cannot show where the coin landed or whether the call was right.
+ */
+export type LandingBody = { roll: RollId };
+/** The message the GM's phone sends for a call it has ruled, whatever the ruling and the side. */
+export const landingOf = (coin: CoinFields): LandingBody => ({ roll: coin.id });
 export const VERDICTS =['critSuccess', 'success', 'saved', 'critFailure'] as const;
 export type Verdict = (typeof VERDICTS)[number];
 /** The words the app shows for a landing. The GM narrates the rest; no number changes by it. */
@@ -144,17 +152,21 @@ export function verdict(face: CoinNatural, called: CoinSide, landed: CoinSide): 
 
 /** A side as the app writes it. */
 export const SIDE_WORDS: { readonly [S in CoinSide]: string } = { heads: 'Heads', tails: 'Tails' };
-/** What a phone shows for a coin: the question before the call, "In the air" until it lands, then what the landing means. */
+/**
+ * What a phone shows for a coin: the question before the call, "In the air" until it lands, "Flipped" once the GM ruled
+ * (the GM says the rest at the table), then what a landing means.
+ */
 export function coinWords(c: Coin): string {
   switch (c.at) {
     case 'uncalled': return 'Heads or tails?';
     case 'called': return 'In the air';
+    case 'ruled': return 'Flipped';
     case 'landed': return VERDICT_WORDS[verdict(c.face, c.call, c.side)];
   }
 }
 
 // ── a phone's list of coins ──
-/** Coins a phone keeps: each list keeps its newest. A landed coin stays so a replayed call or landing finds it and changes nothing. */
+/** Coins a phone keeps: each list keeps its newest. A landed or ruled coin stays so a replayed call or answer finds it and changes nothing. */
 export const COINS_MAX = 40;
 /** `coins` with `coin` at the end, unless a coin of that roll is there already (then `coins` itself). The oldest go past `COINS_MAX`. */
 export function addCoin(coins: readonly Coin[], coin: Coin): readonly Coin[] {
@@ -174,8 +186,10 @@ export function takeCall(calls: readonly Coin[], c: CoinFields & { call: CoinSid
 }
 /** The coin of roll `id` in `coins`, or null. */
 export const coinOf = (coins: readonly Coin[], id: RollId): Coin | null => coins.find(c => c.id === id) ?? null;
-/** The coins not yet landed, oldest first: the player's coins in the air, the calls the GM has still to answer. */
-export const inAir = (coins: readonly Coin[]): Coin[] => coins.filter(c => c.at !== 'landed');
+/** Whether the coin has its answer: it landed on a side, or the GM ruled it. */
+export const isSettled = (c: Coin): c is Coin & { at: 'ruled' | 'landed' } => c.at === 'ruled' || c.at === 'landed';
+/** The coins not yet landed or ruled, oldest first: the player's coins in the air, the calls the GM has still to answer. */
+export const inAir = (coins: readonly Coin[]): Coin[] => coins.filter(c => !isSettled(c));
 
 // ── the save's coins and calls, as store.apply steps ──
 /** The parts of the save a coin step reads and writes: a player's `coins`, the GM's `calls`, the session log. */
@@ -194,7 +208,10 @@ function stepAt(coins: readonly Coin[], id: RollId, at: CoinState, event: CoinEv
   return c.at === at ? stepCoin(coins, id, event) : refuse('not-now');
 }
 const landedOf = (coins: readonly Coin[], id: RollId): (Coin & { at: 'landed' }) | null => { const c = coinOf(coins, id); return c && c.at === 'landed' ? c : null; };
-/** A coin this phone's hunter called has landed: whether the call was right is a fact of its chronicle (chronicle.ts). */
+/**
+ * A coin this phone's hunter called has landed: whether the call was right is a fact of its chronicle (chronicle.ts). A
+ * coin the GM ruled in a room records nothing: this phone does not know the side.
+ */
 function coinFact<S extends CoinSave>(save: S, c: Coin & { at: 'landed' }): S {
   const who = c.hunter;
   return who.kind === 'local' ? { ...save, hunters: save.hunters.map(h => (h.id === who.hunterId ? record(h, { kind: 'coin', won: c.call === c.side }) : h)) } : save;
@@ -213,19 +230,19 @@ export function coinCalled<S extends CoinSave>(save: S, id: RollId, side: CoinSi
   const coins = stepCoin(called, id, { type: 'land', side: landOn }), c = landedOf(coins, id);
   return c ? told(coinFact({ ...save, coins }, c), stamp, landedLine(c)) : { ...save, coins };
 }
-/** The GM's landing reaches the player: a called coin lands on `side`, and the landing is logged. */
-export function coinLanded<S extends CoinSave>(save: S, id: RollId, side: CoinSide, stamp: Stamp): Next<S> {
-  const coins = stepAt(save.coins, id, 'called', { type: 'land', side });
+/** The GM's ruling reaches the player: a called coin is ruled, with no side, and the log says the GM flipped it. */
+export function coinRuled<S extends CoinSave>(save: S, id: RollId, stamp: Stamp): Next<S> {
+  const coins = stepAt(save.coins, id, 'called', { type: 'ruled' });
   if ('ok' in coins) return coins;
-  const c = landedOf(coins, id);
-  return c ? told(coinFact({ ...save, coins }, c), stamp, landedLine(c)) : { ...save, coins };
+  const c = coinOf(coins, id);
+  return c && c.at === 'ruled' ? told({ ...save, coins }, stamp, line(`Coin: ${c.who} called ${SIDE_WORDS[c.call]}`, `Natural ${c.face} for ${c.what}. The GM flipped the coin.`)) : { ...save, coins };
 }
 /** A player's call reaches the GM: held once per roll; a call for a roll the GM holds already is refused. */
 export function callTaken<S extends CoinSave>(save: S, call: CoinFields & { call: CoinSide }): Next<S> {
   if (coinOf(save.calls, call.id)) return refuse('not-now');
   return { ...save, calls: takeCall(save.calls, call) };
 }
-/** The GM rules a held call: it lands on `side` (`landingOf` of the ruling and a flip) and the ruling is logged. */
+/** The GM rules a held call: it lands on `side` (`landing` of the ruling and a flip) and the ruling is logged. */
 export function callRuled<S extends CoinSave>(save: S, id: RollId, ruling: Ruling, side: CoinSide, stamp: Stamp): Next<S> {
   const calls = stepAt(save.calls, id, 'called', { type: 'land', side });
   if ('ok' in calls) return calls;
@@ -324,7 +341,7 @@ export function parseCoin(v: unknown): Coin | null {
   const fields: CoinFields = { id, hunter, who: text(v.who, COIN_TEXT_MAX), what: text(v.what, COIN_TEXT_MAX), face };
   const at = oneOf(v.at, COIN_STATES, null), call = oneOf(v.call, SIDES, null), side = oneOf(v.side, SIDES, null);
   if (at === 'uncalled') return { ...fields, at };
-  if (at === 'called' && call) return { ...fields, at, call };
+  if ((at === 'called' || at === 'ruled') && call) return { ...fields, at, call };
   if (at === 'landed' && call && side) return { ...fields, at, call, side };
   return null;
 }

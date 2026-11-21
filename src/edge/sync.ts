@@ -561,7 +561,7 @@ export function register(app: SyncHost): void {
       return { fightOf: h.fightOf, granted: h.granted, gmHolds: h.gmHolds };
     },
     stepsDone: (hid, done) => app.api.quests!.stepsDone(hid, done),
-    coinLanded: (roll, side) => app.api.coin!.landed(roll, side),
+    coinRuled: roll => app.api.coin!.ruled(roll),
   };
   /** `write` and the event id in one write, the first time only (src/core/applied.ts `appliedOnce`). A repeat writes nothing. */
   const once: SyncApi['once'] = (eid, write) => store.apply('sync-applied', appliedOnce(eid, write)).ok;
@@ -771,7 +771,7 @@ export function register(app: SyncHost): void {
   }
   /** A message as the player reads it when the room refuses it. */
   const WHAT_SENT: Partial<Record<RoomEvent['type'], string>> = {
-    used: 'a use you told the GM of', roll: 'a roll', questUpdate: 'a quest\'s progress', coinCall: 'a coin call', coinLand: 'a coin\'s landing',
+    used: 'a use you told the GM of', roll: 'a roll', questUpdate: 'a quest\'s progress', coinCall: 'a coin call', coinLand: 'a coin\'s ruling',
     step: 'a step', cast: 'a use in the fight', pass: 'the end of a turn', deathSave: 'a death save', arm: 'a reaction', award: 'an award', quest: 'a quest', chain: 'a Job Change',
     soloRun: 'a solo run', soloAnswer: 'the answer to a solo run',
   };

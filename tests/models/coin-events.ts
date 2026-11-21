@@ -6,16 +6,16 @@ import { hid } from '../fixtures/ids.ts';
 
 /** Asha's Strength check that showed a natural 20. */
 export const fields = (): CoinFields => ({ id: rollId('d-asha:r12')!, hunter: { kind: 'local', hunterId: hid('h1') }, who: 'Asha', what: 'STR check', face: 20 });
-/** That coin in `at`: called heads, landed tails. */
+/** That coin in `at`: called heads, landed tails (a ruled coin holds no side). */
 export function coinIn(at: CoinState, call: CoinSide = 'heads', side: CoinSide = 'tails'): Coin {
   if (at === 'uncalled') return { ...fields(), at };
-  if (at === 'called') return { ...fields(), at, call };
+  if (at === 'called' || at === 'ruled') return { ...fields(), at, call };
   return { ...fields(), at, call, side };
 }
 
-/** Four events: each call and each landing. */
+/** Five events: each call, the GM's ruling with no side, and each landing. */
 export const WALK_EVENTS: CoinEvent[] = [
-  { type: 'call', side: 'heads' }, { type: 'call', side: 'tails' }, { type: 'land', side: 'heads' }, { type: 'land', side: 'tails' },
+  { type: 'call', side: 'heads' }, { type: 'call', side: 'tails' }, { type: 'ruled' }, { type: 'land', side: 'heads' }, { type: 'land', side: 'tails' },
 ];
 
 // ── the GM's window for the calls (the coin prompt, SMX-views-7) ──

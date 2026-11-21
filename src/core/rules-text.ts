@@ -56,7 +56,7 @@ export function naturalLines(): readonly string[] {
   const w = VERDICT_WORDS;
   return [
     'A natural 20 on the d20 succeeds whatever the total, and a natural 1 fails whatever the total.',
-    `Outside a fight, a natural 1 or 20 on a check also calls the coin: you call heads or tails, and in a room the GM's phone picks the side. On a 1, a right call reads ${w[verdict(1, 'heads', 'heads')]} and a wrong one ${w[verdict(1, 'heads', 'tails')]}. On a 20, a right call reads ${w[verdict(20, 'heads', 'heads')]} and a wrong one ${w[verdict(20, 'heads', 'tails')]}. The coin changes no number: the GM rules what it means.`,
+    `Outside a fight, a natural 1 or 20 on a check also calls the coin: you call heads or tails. Alone the coin flips; in a room the GM decides how it lands and tells you at the table, and your phone shows only that it was flipped. On a 1, a right call reads ${w[verdict(1, 'heads', 'heads')]} and a wrong one ${w[verdict(1, 'heads', 'tails')]}. On a 20, a right call reads ${w[verdict(20, 'heads', 'heads')]} and a wrong one ${w[verdict(20, 'heads', 'tails')]}. The coin changes no number: the GM rules what it means.`,
   ];
 }
 

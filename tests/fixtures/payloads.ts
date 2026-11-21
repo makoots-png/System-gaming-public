@@ -113,8 +113,8 @@ export const VALID: Record<EventType, [Raw, Raw]> = {
     { eid: EID, by: KEY, roll: 'd-player1:r12', who: 'Kai', what: 'STR check', face: 20, call: 'heads' },
   ],
   coinLand: [
-    { eid: EID, roll: 'd-player1:r12', side: 'tails' },
-    { eid: EID, roll: 'd-player1:r12', side: 'tails' },
+    { eid: EID, roll: 'd-player1:r12' },
+    { eid: EID, roll: 'd-player1:r12' },
   ],
   arm: [
     { eid: EID, by: KEY, ability: 'parry', on: null },

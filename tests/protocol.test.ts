@@ -701,15 +701,13 @@ describe('a coin call', () => {
 describe('a coin\'s landing', () => {
   const land = (fields: Raw) => payload('coinLand', { ...valid('coinLand'), ...fields });
 
-  test('a landing needs the roll\'s id and heads or tails', () => {
+  test('a ruling needs the roll\'s id', () => {
     for (const roll of ['', 'has space', 'r'.repeat(81), 12, null]) expect(land({ roll })).toBeNull();
-    for (const side of ['edge', 'Tails', '', null]) expect(land({ side })).toBeNull();
-    expect(land({ side: 'heads' })!.side).toBe('heads');
   });
 
-  test('a landing holds the roll and the side and nothing that says how the side was chosen', () => {
-    expect(land({ ruling: 'right', flip: true, by: KEY, call: 'heads' })).toEqual(VALID.coinLand[1]);
-    expect(Object.keys(VALID.coinLand[1]).sort()).toEqual(['eid', 'roll', 'side']);
+  test('a ruling read off the wire holds the roll alone: a side, a ruling or a verdict sent beside it is dropped', () => {
+    expect(land({ side: 'heads', ruling: 'right', won: true, verdict: 'critSuccess', flip: true, by: KEY, call: 'heads' })).toEqual(VALID.coinLand[1]);
+    expect(Object.keys(VALID.coinLand[1]).sort()).toEqual(['eid', 'roll']);
   });
 });
 

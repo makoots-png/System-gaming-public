@@ -7,13 +7,14 @@ import { bfs, machine } from '../statecharts.ts';
 
 /** The words of the coin on the player's phone and of the GM's window. */
 const LABEL: { readonly [S in CoinState]: string } = {
-  uncalled: 'Heads or tails? (no call yet)', called: 'In the air (the GM is asked)', landed: 'Landed',
+  uncalled: 'Heads or tails? (no call yet)', called: 'In the air (the GM is asked)', ruled: 'Flipped (no side on this phone)', landed: 'Landed on a side',
 };
 
 function step(e: CoinEvent): string {
   switch (e.type) {
     case 'call': return 'the player taps Heads or Tails';
-    case 'land': return 'the landing arrives (the GM\'s Right, Wrong or coin, or a flip when alone)';
+    case 'ruled': return 'the GM\'s ruling arrives in a room (Right, Wrong or coin; the side stays on the GM\'s phone)';
+    case 'land': return 'a true flip alone or on the GM\'s own phone, or the GM rules a call it holds';
   }
 }
 
@@ -25,7 +26,7 @@ export const coin = machine<Coin, CoinEvent>({
   kindsOf: c => [c.at],
   views: [{
     title: 'A coin, from the natural 1 or 20 to its landing',
-    note: 'The chart shows the coin on the player\'s phone; the GM\'s phone holds the same coin from the call on. It leaves out which side was called and which side it landed on: both sides move the same. A second call, a landing before the call and a second landing change nothing, so a replayed message is not drawn. The coin does not land by itself: a coin the GM never answers stays in the air.',
+    note: 'The chart shows a coin on the phone that called it, and the GM\'s held copy of a call. In a room the player\'s coin ends Flipped, with no side (the owner, Nov 21): the GM says the outcome at the table, and the GM\'s copy lands on the side. Alone, the coin lands on a true flip. It leaves out which side was called and which side it landed on: both sides move the same. A second call, an answer before the call and a second answer change nothing, so a replayed message is not drawn. The coin does not land by itself: a coin the GM never answers stays in the air.',
     hides: '',
     state: c => LABEL[c.at],
     step,

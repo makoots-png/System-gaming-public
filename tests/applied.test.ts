@@ -103,7 +103,7 @@ function phone(o: { conditions?: SheetStatus[]; fight?: boolean; level?: number;
       gmHolds: () => { toasts.push(HELD); return refuse(TOLD); },
     },
     stepsDone: (_hid, done) => { completed.push(...done.map(d => d.quest.title)); },
-    coinLanded: () => {},
+    coinRuled: () => {},
   };
   const receive = (eid: number, type: string, payload: Raw): void => {
     const ev = parseEvent(type, { eid: e(eid), ...payload });

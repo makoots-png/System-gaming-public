@@ -88,17 +88,18 @@ function safety(w: World): string | null {
 }
 
 /**
- * A player's coin lands only on the side the GM's phone chose for it, and keeps it: a replayed call or landing changes
- * nothing. The GM's session log records each ruling once.
+ * A player's coin in a room never holds a side (the owner, Nov 21: the GM says it at the table), and it is ruled only once
+ * the GM's phone has landed it: a replayed call or ruling changes nothing. The GM's session log records each ruling once.
  */
 function coinRule(w: World): string | null {
   const gm = w.phones[0]!;
   for (const [roll, n] of Object.entries(gm.ruled)) if (n > 1) return `the GM's session log records the ruling of ${roll} ${n} times`;
   for (const p of w.phones.slice(1)) {
     for (const c of p.save.coins) {
-      if (c.at !== 'landed') continue;
+      if (c.at === 'landed') return `${p.name}'s coin ${c.id} shows the side ${c.side}, which only the GM's phone may hold`;
+      if (c.at !== 'ruled') continue;
       const held = coinOf(gm.save.calls, c.id);
-      if (held?.at !== 'landed' || held.side !== c.side) return `${p.name}'s coin ${c.id} landed ${c.side}, but the GM's phone holds it as ${held?.at === 'landed' ? held.side : held?.at ?? 'nothing'}`;
+      if (held?.at !== 'landed' || held.call !== c.call) return `${p.name}'s coin ${c.id} is ruled, but the GM's phone holds it as ${held?.at ?? 'nothing'}`;
     }
   }
   return null;
@@ -205,7 +206,7 @@ async function converged(w: World): Promise<string | null> {
     for (const ev of room.events) {
       if (ev.type !== 'coinLand' || ev.seq <= from || !ev.payload.roll.startsWith(`${p.device}:`)) continue;
       const c = coinOf(p.save.coins, ev.payload.roll);
-      if (c?.at !== 'landed') return `the landing of ${ev.payload.roll} (seq ${ev.seq}) is in the room, but ${p.name}'s coin is ${c?.at ?? 'gone'}`;
+      if (c?.at !== 'ruled') return `the ruling of ${ev.payload.roll} (seq ${ev.seq}) is in the room, but ${p.name}'s coin is ${c?.at ?? 'gone'}`;
     }
   }
   if (gmCode && gm.stretch && gm.stretch.room === gmCode) {
@@ -242,7 +243,7 @@ async function converged(w: World): Promise<string | null> {
         if (c.at !== 'landed' || !c.id.startsWith(`${p.device}:`) || !on || !p.stretch || !gm.stretch) continue;
         if (p.stretch.room !== gmCode || gm.stretch.room !== gmCode || p.stretch.at > on.at || gm.stretch.at > on.at) continue;
         const mineNow = coinOf(p.save.coins, c.id);
-        if (mineNow?.at !== 'landed' || mineNow.side !== c.side) return `the GM landed ${c.id} on ${c.side}, but ${p.name}'s coin is ${mineNow?.at ?? 'gone'}`;
+        if (mineNow?.at !== 'ruled') return `the GM landed ${c.id} on ${c.side}, but ${p.name}'s coin is ${mineNow?.at ?? 'gone'}`;
       }
     }
   }

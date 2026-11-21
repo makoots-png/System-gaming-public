@@ -316,8 +316,8 @@ export type ChainPayload = Base & { to: SheetKey[]; job: JobName; kind: ChainKin
  */
 export type CoinCallPayload = Base & { by: SheetKey; roll: RollId; who: string; what: string; face: CoinNatural; call: CoinSide };
 /**
- * Where the GM's phone says the coin of `roll` landed: the roll and the side, and nothing else. A ruling and a true flip
- * send the same message, so no field may say how the side was chosen. A phone acts on the first landing of a roll only.
+ * The GM's phone has ruled the coin of `roll`: the roll, and nothing else. The side and the ruling stay on the GM's phone
+ * (the owner, Nov 21: the GM says the outcome at the table), so no field may carry either. A phone acts on the first one of a roll only.
  */
 export type CoinLandPayload = Base & LandingBody;
 /**
@@ -500,7 +500,7 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
     ...base(o), by: sheetKey(own(o, 'by')), roll: roll(own(o, 'roll')), who: opt(own(o, 'who'), text(COIN_TEXT_MAX), ''),
     what: opt(own(o, 'what'), text(COIN_TEXT_MAX), ''), face: need(faceOf(own(o, 'face'))), call: side(own(o, 'call')),
   }) },
-  coinLand: { gmOnly: true, ownSheet: false, read: o => ({ ...base(o), roll: roll(own(o, 'roll')), side: side(own(o, 'side')) }) },
+  coinLand: { gmOnly: true, ownSheet: false, read: o => ({ ...base(o), roll: roll(own(o, 'roll')) }) },
   shadow: { gmOnly: true, ownSheet: false, read: o => {
     const to = toList(own(o, 'to'));
     return { ...base(o), to: to.length === 1 ? [to[0]!] : refuse(), shadow: shadowOrigin(own(o, 'shadow')) };

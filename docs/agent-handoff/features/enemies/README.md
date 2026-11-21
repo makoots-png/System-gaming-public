@@ -62,6 +62,27 @@ rest 1.
     rare to gain"): the simulation gives each bonus key's gain in win share and rounds to kill for one budget's
     worth of it; the keys are ranked, and a key's rank sets the lowest rarity an item may hold it at and how often
     a drop rolls it, in place of pricing a strong key up until it is fair. A rule each, in `itemBudget`.
+13. How good each stat is, and where each derived number comes from (the owner, Nov 21: "also have it look at how good
+    the stats are if they aren't planning to already, and where we should source things like % pen, lethality,
+    tenacity, etc..."). Two measurements with the simulation. (a) The eight stats: for each, what ten more points do
+    to win share and rounds to kill for each sample build at C and S, so a stat that is worth much less than the
+    others is found (he said of Strength and Discipline: "throwing more of a bone to those stats"). (b) Each derived
+    number (the two percent penetrations, Lethality, Unravel, tenacity, potency, lifesteal, haste, heal power and the
+    rest): which source it should have: a stat's curve (and which stat), items only, titles and paths, or a mix;
+    today percent penetration is Control's for both kinds and tenacity is Strength and Discipline's. The answer is a
+    table, one row a number, with the measurement that decided it, and the weak stats are given the numbers that
+    fit them. The numbers are the lead's to set (the owner: "you have a better view of the numbers"); he judges the
+    results.
+    The result he wants (Nov 21): "The stats should be roughly equal in strength, with benefits to pushing towards a
+    single or a few stats in particular as a class." So two bounds: (i) ten points of any one stat are worth about the
+    same as ten of any other (say within a quarter of the mean, measured as in (a)); (ii) a build that puts its
+    points into one or a few stats beats a build that spreads the same points evenly, at what its class does (a
+    cannon's damage, a tank's staying power), by a clear and bounded margin. Today's curve works against (ii): the
+    Rules page says "points spread over several stats are worth about as much as points put in one" (`effExp`, the
+    effective points of a stat grow slower than the stat). Measure what the curve gives now, then move it, or give a
+    class its reward another way (a path's or a job's bonus that grows with its own stat), and say which.
+    He confirmed it the same hour: "Specializing should pay off for sure." So (ii) is a bound that must hold, and the
+    Rules page's sentence on spread points goes with whatever replaces it.
 
 ## What the seed shape could not say
 

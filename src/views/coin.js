@@ -1,10 +1,12 @@
 // coin.js: the coin call (src/core/coin.ts, docs/agent-handoff/later-phases/coin-notes.md). The one writer of the save's
 // `coins` (the coins this phone's hunters called) and `calls` (on the GM's phone, the calls players sent).
 // A player's phone: a check's natural 1 or 20 asks "Heads or tails?" in the coin card; the pick goes to the GM as
-// `coinCall` and the coin stays in the air until the GM's `coinLand` arrives. Alone, or on the GM's own phone, a true flip
-// from src/edge/roll.ts lands it at once.
+// `coinCall` and the coin stays in the air until the GM's `coinLand` arrives; it carries no side, so the card says only
+// that the coin was flipped and the GM says the outcome at the table. Alone, or on the GM's own phone, a true flip from
+// src/edge/roll.ts lands it at once and the card shows the side.
 // The GM's phone: each call is asked in a System window, oldest first, until the GM rules Right, Wrong or Let the coin
-// decide; the session log here records the ruling, and the landing carries only the side (`landingOf`). A window closed
+// decide; the session log and a toast here say the side and what it means, and the message sent holds only the roll
+// (`landingOf`). A window closed
 // with no ruling (Later, Escape, a tap beside it) puts the call off: the coin card offers it with Rule, and nothing asks
 // it again until that tap (src/core/coin.ts `CoinPrompt`).
 // A send the room did not take is sent again after the next poll; a new page sends again each call still in the air,
@@ -13,8 +15,8 @@ import { flip } from '../edge/roll.ts';
 import { notifyHidden } from '../edge/notify.ts';
 import * as motion from './motion.ts';
 import {
-  COIN_PROMPT_IDLE, SIDE_WORDS, callRuled, callTaken, coinCalled, coinLanded, coinOf, coinPromptPutOff, coinPromptStep, coinRolled, coinWords, decider,
-  isCoinRoll, landingOf, newRollId, rollId, verdict,
+  COIN_PROMPT_IDLE, SIDE_WORDS, callRuled, callTaken, coinCalled, coinOf, coinPromptPutOff, coinPromptStep, coinRolled, coinRuled, coinWords, decider,
+  isCoinRoll, isSettled, landing, landingOf, newRollId, rollId, verdict,
 } from '../core/coin.ts';
 
 const CSS = `
@@ -73,7 +75,7 @@ export function register(app) {
 
   // ── a player's coins ──
   /**
-   * Coins that landed while this page was open and are not closed yet: the card shows them with what they mean.
+   * Coins that landed or were ruled while this page was open and are not closed yet: the card shows them until Close.
    * @type {Set<string>}
    */
   const fresh = new Set();
@@ -86,11 +88,11 @@ export function register(app) {
       const face = o.natural === 1 ? 1 : 20;
       return ui.wrote('! Coin', store.apply('coin', s => coinRolled(s, { id, hunter: { kind: 'local', hunterId: h.id }, who: h.name.slice(0, 60), what: (o.label || o.expr).slice(0, 60), face, at: 'uncalled' })));
     },
-    landed(roll, side) {
+    ruled(roll) {
       const c = coinOf(store.get().coins, roll); if (!c || c.at !== 'called') return;
       // before the update: the card draws on its `change`
       fresh.add(roll);
-      if (!ui.wrote('! Coin', store.apply('coin', s => coinLanded(s, roll, side, stamp())))) fresh.delete(roll);
+      if (!ui.wrote('! Coin', store.apply('coin', s => coinRuled(s, roll, stamp())))) fresh.delete(roll);
     },
     of: roll => { const id = newRollId(deviceId(), roll); return id ? coinOf(store.get().coins, id) : null; },
   };
@@ -110,13 +112,16 @@ export function register(app) {
     <ul class="coin-later" aria-label="Coin calls put off"></ul></section>`);
   document.body.appendChild(card);
   const list = card.querySelector('.coin-list'), laterList = card.querySelector('.coin-later');
-  const shownCoins = () => store.get().coins.filter(c => c.at !== 'landed' || fresh.has(c.id));
+  const shownCoins = () => store.get().coins.filter(c => !isSettled(c) || fresh.has(c.id));
   const coinFace = side => `<div class="coin-air"><div class="coin" data-coin-face${side ? ` data-side="${side}"` : ''}><span class="coin-h">${esc(SIDE_WORDS.heads)}</span><span class="coin-t">${esc(SIDE_WORDS.tails)}</span></div></div>`;
   function rowHtml(c) {
     const what = `<p class="coin-what">${esc(c.who)} · Natural ${c.face} · ${esc(c.what)}</p>`;
     if (c.at === 'uncalled') return `<div class="coin-row"><h2>${esc(coinWords(c))}</h2>${what}
       <div class="coin-pick"><button type="button" data-call="heads">${esc(SIDE_WORDS.heads)}</button><button type="button" data-call="tails">${esc(SIDE_WORDS.tails)}</button></div></div>`;
     if (c.at === 'called') return `<div class="coin-row">${coinFace(null)}<h2>You called ${esc(SIDE_WORDS[c.call])}</h2>${what}<p class="coin-words" data-words>${esc(coinWords(c))}</p></div>`;
+    // no coin face: a face at rest shows a side
+    if (c.at === 'ruled') return `<div class="coin-row"><h2>You called ${esc(SIDE_WORDS[c.call])}</h2>${what}<p class="coin-words" data-words>${esc(coinWords(c))}</p>
+      <p class="coin-what">The GM tells you how it landed.</p><button type="button" class="quiet coin-close" data-close>Close</button></div>`;
     return `<div class="coin-row">${coinFace(c.side)}<h2>${esc(SIDE_WORDS[c.side])}</h2>${what}
       <p class="coin-words v-${verdict(c.face, c.call, c.side)}" data-words>${esc(coinWords(c))}</p>
       <button type="button" class="quiet coin-close" data-close>Close</button></div>`;
@@ -181,7 +186,7 @@ export function register(app) {
     const c = coinOf(store.get().calls, id);
     if (!c || c.at !== 'called') { prompted({ type: 'putOff' }); seen(); return; }
     ui.system({ tag: '! Coin call', title: `${c.who || 'A hunter'} called ${SIDE_WORDS[c.call]}`, kind: 'info',
-      body: 'Was the call right? The player sees only where the coin lands.',
+      body: 'Was the call right? The player\'s phone shows only that the coin was flipped. Tell them how it landed.',
       lines: [`Rolled for: ${c.what || 'a check'}`, `Natural ${c.face}`, `Called: ${SIDE_WORDS[c.call]}`],
       actions: [{ label: 'Right', value: 'right' }, { label: 'Wrong', value: 'wrong' }, { label: 'Let the coin decide', value: 'coin' }, { label: 'Later', value: null, cancel: true }] })
       .then(v => {
@@ -191,21 +196,24 @@ export function register(app) {
       });
   }
   /**
-   * The GM's answer: the landing and the session log's ruling in one update, then the landing (only the side) is sent.
-   * Answers whether it was written: a refused ruling sends nothing, and its call is put off.
+   * The GM's answer: the landing and the session log's ruling in one update, a toast of the side and what it means for
+   * the GM to say, then the message (only the roll) is sent. Answers whether it was written: a refused ruling sends
+   * nothing, and its call is put off.
    */
   function rule(id, ruling) {
     const c = coinOf(store.get().calls, id); if (!c || c.at !== 'called') return false;
-    const body = landingOf(c, ruling, flip());
-    if (!ui.wrote('! Coin call', store.apply('coin-rule', s => callRuled(s, id, ruling, body.side, stamp())))) return false;
-    sendLanding(body);
+    const side = landing(c.call, ruling, flip());
+    if (!ui.wrote('! Coin call', store.apply('coin-rule', s => callRuled(s, id, ruling, side, stamp())))) return false;
+    const now = coinOf(store.get().calls, id);
+    if (now && now.at === 'landed') ui.toast('! Coin call', `${now.who || 'A hunter'} called ${SIDE_WORDS[now.call]}. It landed ${SIDE_WORDS[now.side]}: ${coinWords(now)}.`, { kind: 'info' });
+    sendLanding(landingOf(c));
     return true;
   }
   app.on('sync:event', ({ event: ev }) => {
     if (!app.isGM() || ev.type !== 'coinCall') return;
     const p = ev.payload, held = coinOf(store.get().calls, p.roll);
-    // a call already answered: its landing may have been lost, so the same side goes again
-    if (held && held.at === 'landed') { sendLanding({ roll: held.id, side: held.side }); return; }
+    // a call already answered: its message may have been lost, so it goes again
+    if (held && held.at === 'landed') { sendLanding(landingOf(held)); return; }
     if (held) return;
     // a call this tab cannot keep is not asked or notified: a read-only tab's banner says why
     if (!store.apply('coin-call', s => callTaken(s, { id: p.roll, hunter: { kind: 'remote', remote: p.by }, who: p.who, what: p.what, face: p.face, call: p.call })).ok) return;

@@ -1426,7 +1426,7 @@ Where it lives:
 
 ## A coin call
 
-Every coin reachable from a natural 20 that called the coin (tests/models/coin-events.ts) under the 4 events of the walk in tests/coin.test.ts, breadth first. The walk found 7 states and 28 steps.
+Every coin reachable from a natural 20 that called the coin (tests/models/coin-events.ts) under the 5 events of the walk in tests/coin.test.ts, breadth first. The walk found 9 states and 45 steps.
 
 ### A coin, from the natural 1 or 20 to its landing
 
@@ -1437,15 +1437,17 @@ title: A coin, from the natural 1 or 20 to its landing
 stateDiagram-v2
   state "Heads or tails? (no call yet)" as s1
   state "In the air (the GM is asked)" as s2
-  state "Landed" as s3
+  state "Flipped (no side on this phone)" as s3
+  state "Landed on a side" as s4
   [*] --> s1
   s1 --> s2 : the player taps Heads or Tails
-  s2 --> s3 : the landing arrives (the GM's Right, Wrong or coin, or a flip when alone)
+  s2 --> s3 : the GM's ruling arrives in a room (Right, Wrong or coin, the side stays on the GM's phone)
+  s2 --> s4 : a true flip alone or on the GM's own phone, or the GM rules a call it holds
 ```
 
-The chart shows the coin on the player's phone; the GM's phone holds the same coin from the call on. It leaves out which side was called and which side it landed on: both sides move the same. A second call, a landing before the call and a second landing change nothing, so a replayed message is not drawn. The coin does not land by itself: a coin the GM never answers stays in the air.
+The chart shows a coin on the phone that called it, and the GM's held copy of a call. In a room the player's coin ends Flipped, with no side (the owner, Nov 21): the GM says the outcome at the table, and the GM's copy lands on the side. Alone, the coin lands on a true flip. It leaves out which side was called and which side it landed on: both sides move the same. A second call, an answer before the call and a second answer change nothing, so a replayed message is not drawn. The coin does not land by itself: a coin the GM never answers stays in the air.
 
-3 chart states, 2 arrows. No step is hidden.
+4 chart states, 3 arrows. No step is hidden.
 
 Where it lives:
 

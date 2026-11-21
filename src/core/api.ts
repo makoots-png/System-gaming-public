@@ -41,7 +41,7 @@ import type { ZoneId } from './combat/zones.ts';
 import type { DiceRoll, LevelUp } from './events.ts';
 import type { Thing } from './detail.ts';
 import type { DetailEvent } from './detail-open.ts';
-import type { Coin, RollId, CoinSide } from './coin.ts';
+import type { Coin, RollId } from './coin.ts';
 import type { Check, RollKind } from './roll.ts';
 import type { DeviceId, HunterId, HunterRef, ItemId, MonsterId, RollEntryId, SheetKey, StoryId } from './ids.ts';
 
@@ -693,8 +693,8 @@ export type CoinApi = {
    * `roll` is the roll's id in the roll log. Answers whether it asked.
    */
   rolled(o: { hid: HunterId; roll: RollEntryId; kind: RollKind; expr: string; natural: number | null; label: string }): boolean;
-  /** The GM's landing of a coin this phone called (the `coinLand` room message): the first one of a roll lands it. */
-  landed(roll: RollId, side: CoinSide): void;
+  /** The GM's ruling of a coin this phone called (the `coinLand` room message, no side): the first one of a roll marks it ruled. */
+  ruled(roll: RollId): void;
   /** The coin of roll `roll` of this phone's roll log, or null when that roll called none. */
   of(roll: string): Coin | null;
 };

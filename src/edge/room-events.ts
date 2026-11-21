@@ -31,7 +31,7 @@ import { isRefused, refuse } from '../core/save-step.ts';
 import type { Refused, Step } from '../core/save-step.ts';
 import type { store } from './store.ts';
 import type { RoomHunter } from '../core/api.ts';
-import type { RollId, CoinSide } from '../core/coin.ts';
+import type { RollId } from '../core/coin.ts';
 import type { DayKey } from '../core/day.ts';
 
 type Window = { tag: string; title: string; kind: string; body?: string | undefined; lines?: string[]; rewards?: string[] };
@@ -51,8 +51,8 @@ export type ApplyDeps = {
   hunter: RoomHunter;
   /** The windows of the Job Change steps a change completed in its own write (quests.js `stepsDone`). */
   stepsDone: (hid: string, done: readonly StepDone[]) => void;
-  /** The GM's landing of a coin this phone called (`coinLand`): src/views/coin.js lands it, once per roll. */
-  coinLanded: (roll: RollId, side: CoinSide) => void;
+  /** The GM's ruling of a coin this phone called (`coinLand`, no side): src/views/coin.js marks it ruled, once per roll. */
+  coinRuled: (roll: RollId) => void;
 };
 
 /** What a change answers for the save it is given: the next save, and what to tell the player once it is written. */
@@ -148,9 +148,9 @@ const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS }
   arm: GM_ONLY_READS,
   // the GM's phone keeps the call and asks the GM (src/views/coin.js)
   coinCall: GM_ONLY_READS,
-  // not `once`: the coin's own table takes the first landing of a roll and refuses any after it, so a replay changes
-  // nothing, and a landing for a roll this phone does not hold finds no coin
-  coinLand: { once: false, apply: (p, _hids, app) => { app.coinLanded(p.roll, p.side); } },
+  // not `once`: the coin's own table takes the first ruling of a roll and refuses any after it, so a replay changes
+  // nothing, and a ruling for a roll this phone does not hold finds no coin
+  coinLand: { once: false, apply: (p, _hids, app) => { app.coinRuled(p.roll); } },
   // the GM's phone rolled this hunter's extraction in its fight and the shadow rose: it joins the army with its log line
   // (core/hunter/shadows.ts `shadowRises`); an army at its cap takes none, and the player is told
   shadow: { once: true, land: (p, hids, app) => save => forEach(save, hids, (s, h) => {
@@ -438,7 +438,7 @@ function lineOf(tag: string, title: string, rest: readonly string[]): string {
  */
 export function awayDeps(app: ApplyDeps, lines: string[]): ApplyDeps {
   return {
-    store: app.store, once: app.once, rules: app.rules, now: app.now, today: app.today, stepsDone: app.stepsDone, coinLanded: app.coinLanded,
+    store: app.store, once: app.once, rules: app.rules, now: app.now, today: app.today, stepsDone: app.stepsDone, coinRuled: app.coinRuled,
     toast: (_tag, text) => { lines.push(text); },
     system: w => { lines.push(lineOf(w.tag, w.title, [w.body ?? '', ...(w.lines ?? []), ...(w.rewards ?? [])])); },
     hunter: {

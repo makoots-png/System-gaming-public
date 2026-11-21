@@ -1,8 +1,8 @@
 import { parseSheetKey } from '../src/core/ids.ts';
 import { describe, expect, test } from 'bun:test';
 import {
-  COINS_MAX, COIN_STATES, RULINGS, SIDES, VERDICT_WORDS, addCoin, can, coinOf, coinWords, decider, inAir, isCoinRoll, landing, landingOf, newRollId,
-  parseCoin, parseCoins, rollId, sideOf, stepCoin, takeCall, transition, verdict, callRuled, callTaken, coinCalled, coinLanded, coinRolled,
+  COINS_MAX, COIN_STATES, RULINGS, SIDES, VERDICT_WORDS, addCoin, can, coinOf, coinWords, decider, inAir, isCoinRoll, isSettled, landing, landingOf, newRollId,
+  parseCoin, parseCoins, rollId, sideOf, stepCoin, takeCall, transition, verdict, callRuled, callTaken, coinCalled, coinRuled, coinRolled,
   COIN_PROMPT_EVENTS, COIN_PROMPT_IDLE, COIN_PROMPT_STATES, coinPromptPutOff, coinPromptStep,
 } from '../src/core/coin.ts';
 import { isRefused } from '../src/core/save-step.ts';
@@ -17,15 +17,22 @@ describe('the life of a coin', () => {
   const rows: [CoinState, CoinEvent, Coin | 'no change'][] = [
     ['uncalled', { type: 'call', side: 'heads' }, { ...fields(), at: 'called', call: 'heads' }],
     ['uncalled', { type: 'call', side: 'tails' }, { ...fields(), at: 'called', call: 'tails' }],
+    ['uncalled', { type: 'ruled' }, 'no change'],
     ['uncalled', { type: 'land', side: 'heads' }, 'no change'],
     ['called', { type: 'call', side: 'tails' }, 'no change'],
+    ['called', { type: 'ruled' }, { ...fields(), at: 'ruled', call: 'heads' }],
     ['called', { type: 'land', side: 'heads' }, { ...fields(), at: 'landed', call: 'heads', side: 'heads' }],
     ['called', { type: 'land', side: 'tails' }, { ...fields(), at: 'landed', call: 'heads', side: 'tails' }],
+    ['ruled', { type: 'call', side: 'tails' }, 'no change'],
+    ['ruled', { type: 'ruled' }, 'no change'],
+    ['ruled', { type: 'land', side: 'tails' }, 'no change'],
     ['landed', { type: 'call', side: 'heads' }, 'no change'],
+    ['landed', { type: 'ruled' }, 'no change'],
     ['landed', { type: 'land', side: 'heads' }, 'no change'],
   ];
+  const eventName = (e: CoinEvent): string => (e.type === 'ruled' ? e.type : `${e.type} ${e.side}`);
   for (const [from, event, to] of rows) {
-    test(`${from} + ${event.type} ${event.side}: ${to === 'no change' ? to : to.at}`, () => {
+    test(`${from} + ${eventName(event)}: ${to === 'no change' ? to : to.at}`, () => {
       const before = coinIn(from), after = transition(before, event);
       if (to === 'no change') expect(after).toBe(before);
       else expect(after).toEqual(to);
@@ -34,7 +41,7 @@ describe('the life of a coin', () => {
   }
 
   test('every state and event pair has a row above', () => {
-    const types: CoinEventType[] = ['call', 'land'];
+    const types: CoinEventType[] = ['call', 'ruled', 'land'];
     const covered = new Set(rows.map(([from, e]) => `${from} ${e.type}`));
     expect(COIN_STATES.flatMap(s => types.map(t => `${s} ${t}`)).filter(k => !covered.has(k))).toEqual([]);
   });
@@ -43,6 +50,13 @@ describe('the life of a coin', () => {
     let c = coinIn('called', 'tails');
     for (const e of [{ type: 'land', side: 'heads' }, ...WALK_EVENTS] as CoinEvent[]) c = transition(c, e);
     expect(c).toEqual({ ...fields(), at: 'landed', call: 'tails', side: 'heads' });
+  });
+
+  test('a ruled coin holds no side, and nothing that arrives after the ruling gives it one', () => {
+    let c = transition(coinIn('called', 'tails'), { type: 'ruled' });
+    for (const e of WALK_EVENTS) c = transition(c, e);
+    expect(c).toEqual({ ...fields(), at: 'ruled', call: 'tails' });
+    expect('side' in c).toBe(false);
   });
 
   test('a transition never changes the coin it was given', () => {
@@ -98,26 +112,21 @@ describe('the GM\'s ruling and what the landing means', () => {
     expect(words(1, 'tails', 'heads')).toBe('Critical failure');
   });
 
-  test('a phone asks "Heads or tails?" before the call, says "In the air" until the coin lands, then what the landing means', () => {
+  test('a phone asks "Heads or tails?" before the call, says "In the air" until the coin lands, "Flipped" once the GM ruled, then what a landing means', () => {
     expect(coinWords(coinIn('uncalled'))).toBe('Heads or tails?');
     expect(coinWords(coinIn('called'))).toBe('In the air');
+    for (const face of [1, 20] as const) for (const call of SIDES) expect(coinWords({ ...fields(), face, at: 'ruled', call })).toBe('Flipped');
     expect(coinWords({ ...fields(), face: 20, at: 'landed', call: 'heads', side: 'heads' })).toBe('Critical success');
     expect(coinWords({ ...fields(), face: 1, at: 'landed', call: 'heads', side: 'tails' })).toBe('Critical failure');
   });
 
-  test('a landing never reveals the ruling: for each call, the messages a ruling can send are the messages a true flip can send', () => {
-    for (const call of SIDES) {
-      const coin = { ...fields(), call };
-      const sent = (rulings: readonly ('right' | 'wrong' | 'coin')[]): string[] =>
-        [...new Set(rulings.flatMap(r => SIDES.map(flip => JSON.stringify(landingOf(coin, r, flip)))))].sort();
-      const ruled = sent(['right', 'wrong']), flipped = sent(['coin']);
-      expect(ruled).toEqual(flipped);
-      expect(flipped).toEqual([JSON.stringify({ roll: coin.id, side: 'heads' }), JSON.stringify({ roll: coin.id, side: 'tails' })]);
+  test('the message to the player\'s phone holds the roll alone: the same for every call, ruling and side the GM\'s phone keeps', () => {
+    const sent = new Set<string>();
+    for (const call of SIDES) for (const r of RULINGS) for (const flip of SIDES) {
+      const held = transition({ ...fields(), at: 'called', call }, { type: 'land', side: landing(call, r, flip) });
+      sent.add(JSON.stringify(landingOf(held)));
     }
-  });
-
-  test('a landing holds the roll and the side and no other field, whatever the ruling', () => {
-    for (const r of RULINGS) expect(Object.keys(landingOf({ ...fields(), call: 'heads' }, r, 'tails')).sort()).toEqual(['roll', 'side']);
+    expect([...sent]).toEqual([JSON.stringify({ roll: fields().id })]);
   });
 });
 
@@ -165,9 +174,10 @@ describe('a phone\'s coins', () => {
     expect(transition(coinIn('called'), { type: 'land', side: 'heads' }).hunter).toEqual(fields().hunter);
   });
 
-  test('the coins in the air are the ones not landed, oldest first', () => {
-    const list = [coinIn('landed'), { ...b, at: 'called', call: 'heads' } as Coin, { ...a, id: rollId('d-asha:r14')! }];
+  test('the coins in the air are the ones not landed or ruled, oldest first', () => {
+    const list = [coinIn('landed'), { ...b, at: 'called', call: 'heads' } as Coin, { ...coinIn('ruled'), id: rollId('d-asha:r15')! }, { ...a, id: rollId('d-asha:r14')! }];
     expect(inAir(list).map(c => c.id)).toEqual([b.id, rollId('d-asha:r14')!]);
+    expect(COIN_STATES.filter(at => isSettled(coinIn(at)))).toEqual(['ruled', 'landed']);
   });
 });
 
@@ -184,6 +194,11 @@ describe('a stored coin', () => {
     expect(parseCoin({ ...coinIn('called'), call: 'edge' })).toBeNull();
     expect(parseCoin({ ...coinIn('landed'), side: undefined })).toBeNull();
     expect(parseCoin({ ...coinIn('called'), at: 'spinning' })).toBeNull();
+    expect(parseCoin({ ...coinIn('ruled'), call: undefined })).toBeNull();
+  });
+
+  test('a stored ruled coin reads back with no side, even when one was written beside it', () => {
+    expect(parseCoin({ ...coinIn('ruled'), side: 'tails' })).toEqual(coinIn('ruled'));
   });
 
   test('a long name or label is cut to 60 characters', () => {
@@ -218,18 +233,18 @@ describe('the save\'s coins and calls (the steps coin.js applies)', () => {
     // heads called, tails landed: the hunter's chronicle holds a coin called wrong
     expect(s.hunters[0]!.chronicle.inbox).toEqual([{ kind: 'coin', won: false }]);
   });
-  test('in a room, a call waits for the GM; the landing then lands it and logs it; a second landing is refused', () => {
+  test('in a room, a call waits for the GM; the ruling marks it flipped with no side, logs no side or verdict, and records no chronicle fact; a second ruling is refused', () => {
     const called = coinCalled(coinRolled(empty(), uncalled), id, 'heads', null, stamp);
     if (isRefused(called)) throw new Error(called.why);
     expect(coinOf(called.coins, id)!.at).toBe('called');
     expect(called.log).toEqual([]);
-    const landed = coinLanded(called, id, 'heads', stamp);
-    if (isRefused(landed)) throw new Error(landed.why);
-    expect(coinOf(landed.coins, id)).toMatchObject({ at: 'landed', side: 'heads' });
-    expect(landed.log).toHaveLength(1);
-    expect(called.hunters[0]!.chronicle.inbox).toEqual([]);
-    expect(landed.hunters[0]!.chronicle.inbox).toEqual([{ kind: 'coin', won: true }]);
-    expect(coinLanded(landed, id, 'tails', stamp)).toEqual({ ok: false, why: 'not-now' });
+    const ruled = coinRuled(called, id, stamp);
+    if (isRefused(ruled)) throw new Error(ruled.why);
+    expect(coinOf(ruled.coins, id)).toEqual({ ...fields(), at: 'ruled', call: 'heads' });
+    expect([ruled.log[0]!.title, ruled.log[0]!.text]).toEqual([`Coin: ${fields().who} called Heads`, `Natural ${fields().face} for ${fields().what}. The GM flipped the coin.`]);
+    expect(JSON.stringify(ruled.log)).not.toMatch(/Tails|Right|Wrong|Critical|Success|Saved/);
+    expect(ruled.hunters[0]!.chronicle.inbox).toEqual([]);
+    expect(coinRuled(ruled, id, stamp)).toEqual({ ok: false, why: 'not-now' });
   });
   test('the GM holds a call once, rules it, and the ruling is logged with the side', () => {
     const call = { ...fields(), call: 'tails' as const };
@@ -243,7 +258,7 @@ describe('the save\'s coins and calls (the steps coin.js applies)', () => {
     expect(callRuled(ruled, id, 'wrong', 'heads', stamp)).toEqual({ ok: false, why: 'not-now' });
   });
   test('a step on a roll nobody holds is refused', () => {
-    expect(coinLanded(empty(), id, 'heads', stamp)).toEqual({ ok: false, why: 'missing' });
+    expect(coinRuled(empty(), id, stamp)).toEqual({ ok: false, why: 'missing' });
   });
 });
 

@@ -314,7 +314,7 @@ describe('only the GM\'s tap moves a story', () => {
       rules: () => RULES, now: () => AT, today: () => TODAY,
       toast: () => {}, system: () => {},
       hunter: { fightOf: () => null, granted: (_hid, g) => ({ lines: g.lines, levelup: g.levelup, popup: null }), gmHolds: () => refuse(TOLD) },
-      stepsDone: () => {}, coinLanded: () => {},
+      stepsDone: () => {}, coinRuled: () => {},
     };
     for (const [i, type] of EVENT_TYPES.entries()) {
       // each message under its own id; an offer's end keeps the id its offer gives it (ids.ts `endIdOf`), which its reader checks

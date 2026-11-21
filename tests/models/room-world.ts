@@ -26,10 +26,10 @@ import { TOLD, isRefused, refuse } from '../../src/core/save-step.ts';
 import type { Fight } from '../../src/core/combat/fight-types.ts';
 import { roleOf } from '../../src/core/role.ts';
 import { applyRoomEvent } from '../../src/edge/room-events.ts';
-import { RULINGS, addCoin, coinOf, inAir, landingOf, newRollId, stepCoin, takeCall } from '../../src/core/coin.ts';
+import { RULINGS, addCoin, coinOf, inAir, landing, landingOf, newRollId, stepCoin, takeCall } from '../../src/core/coin.ts';
 import { callOf, next as nextOut, post as postIn, reloaded, roomGone, sentEvent, step as outStep } from '../../src/core/sync/outbox.ts';
 import type { Entry, Letter, Outbox } from '../../src/core/sync/outbox.ts';
-import type { Coin, RollId, CoinSide } from '../../src/core/coin.ts';
+import type { Coin, RollId } from '../../src/core/coin.ts';
 import type { ApplyDeps } from '../../src/edge/room-events.ts';
 import { handler } from '../../server.ts';
 import { runPosted, runTaken, runsGone, waitingGates } from '../../src/core/gates/solo-wait.ts';
@@ -469,8 +469,8 @@ function applyOne(w: World, p: Phone, ev: RoomEvent): void {
     rules: () => RULES, now: () => new Date(w.clock).toISOString(), today: () => parseDayKey(new Date(w.clock).toISOString().slice(0, 10))!, toast: () => {}, system: () => {},
     hunter: { fightOf: () => null, granted: () => ({ lines: [], levelup: null, popup: null }), gmHolds: () => refuse(TOLD) },
     stepsDone: () => {},
-    // coin.js `landed`: the coin's table takes the first landing of a roll
-    coinLanded: (roll: RollId, side: CoinSide) => write(w, p, s => { s.coins = stepCoin(s.coins, roll, { type: 'land', side }); }),
+    // coin.js `ruled`: the coin's table takes the first ruling of a roll
+    coinRuled: (roll: RollId) => write(w, p, s => { s.coins = stepCoin(s.coins, roll, { type: 'ruled' }); }),
   };
   applyRoomEvent(ev, deps);
   if (took) { p.ledger[ev.payload.eid] = (p.ledger[ev.payload.eid] ?? 0) + 1; bump(w, p); }
@@ -553,7 +553,7 @@ function castOne(w: World, p: Phone, ev: RoomEvent): void {
 function callOne(w: World, p: Phone, ev: RoomEvent): void {
   if (ev.type !== 'coinCall') return;
   const c = ev.payload, held = coinOf(p.save.calls, c.roll);
-  if (held?.at === 'landed') { sendLanding(w, p, held.id, held.side); return; }
+  if (held?.at === 'landed') { sendLanding(w, p, held); return; }
   write(w, p, s => { s.calls = takeCall(s.calls, { id: c.roll, hunter: { kind: 'remote', remote: c.by }, who: c.who, what: c.what, face: c.face, call: c.call }); });
 }
 /** coin.js `byOf`: the sheet key of the hunter that called, read from the coin. */
@@ -562,8 +562,9 @@ const byOf = (p: Phone, c: Coin): SheetKey => (c.hunter.kind === 'local' ? sheet
 function sendCall(w: World, p: Phone, c: Extract<Coin, { at: 'called' }>): void {
   post(w, p, 'coinCall', { by: byOf(p, c), roll: c.id, who: c.who, what: c.what, face: c.face, call: c.call }, `coin ${c.id}`);
 }
-function sendLanding(w: World, p: Phone, roll: RollId, side: CoinSide): void {
-  post(w, p, 'coinLand', { roll, side }, `coin ${roll}`);
+function sendLanding(w: World, p: Phone, c: Coin): void {
+  const body = landingOf(c);
+  post(w, p, 'coinLand', body, `coin ${body.roll}`);
 }
 /** coin.js on a player's phone: a check shows a natural 20, the player calls heads, and the call goes to the GM. */
 function coinCall(w: World, p: Phone): void {
@@ -582,11 +583,11 @@ function coinCall(w: World, p: Phone): void {
 function rule(w: World, p: Phone, player: Phone): void {
   const c = inAir(p.save.calls).find(x => x.id.startsWith(`${player.device}:`));
   if (c?.at !== 'called') return;
-  const body = landingOf(c, RULINGS[w.made % RULINGS.length]!, 'tails');
-  write(w, p, s => { s.calls = stepCoin(s.calls, c.id, { type: 'land', side: body.side }); });
+  const side = landing(c.call, RULINGS[w.made % RULINGS.length]!, 'tails');
+  write(w, p, s => { s.calls = stepCoin(s.calls, c.id, { type: 'land', side }); });
   p.ruled[c.id] = (p.ruled[c.id] ?? 0) + 1;
   p.ruledOn[c.id] = { at: w.clock, page: p.page };
-  sendLanding(w, p, body.roll, body.side);
+  sendLanding(w, p, c);
 }
 
 /** The hunter changes: its counter moves on. */
