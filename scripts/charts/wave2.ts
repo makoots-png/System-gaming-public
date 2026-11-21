@@ -23,15 +23,15 @@ export const reaction = machine<ReactState, ReactEvent>({
   kindsOf: s => [s],
   views: [{
     title: 'A reaction on its reactor, from armed to spent',
-    note: 'A player arms one of its hunter\'s reactions with the room\'s `arm`, the GM anyone\'s with the fight\'s. It fires by rule at its moment: before a foe\'s use lands on its reactor or an ally within reach, before a hit takes one of them to 0, after a foe\'s use landed on one, or before a named body\'s turn. It fires when its reactor is up, not held, its ability ready and paid for; otherwise it stays armed and says nothing. Its time comes off its reactor\'s next turn. A use sets off at most 4. Never written to a sheet.',
+    note: 'A player arms one of its hunter\'s reactions with the room\'s `arm`, the GM anyone\'s with the fight\'s. It fires by rule at its moment: before a foe\'s use lands on its reactor or an ally within reach, before a hit takes one of them to 0, after a foe\'s use landed on one, or before a named body\'s turn. It fires when its reactor is up, not held, its ability ready and paid for; otherwise it stays armed and says nothing. Its time comes off its reactor\'s next turn. A use sets off at most 4. Never written to a sheet. Two rows wait on a ruling and are drawn as the app behaves today: a reactor who is down arms (rules-4.3a), and a reaction fires at an aim already down (rules-4.2).',
     hides: 'arming another while armed, and a moment while spent, change nothing and are not drawn',
     state: s => (s === 'unarmed' ? 'Unarmed' : s === 'armed' ? 'Armed' : s === 'fired' ? 'Firing' : 'Spent'),
     step: (e, from, to) => {
       if (from === to) return null;
       switch (e.type) {
-        case 'arm': return 'armed (the room\'s arm, the GM\'s arm)';
+        case 'arm': return 'armed (the room\'s arm, the GM\'s arm; by a reactor down too, today)';
         case 'disarm': return 'disarmed';
-        case 'moment': return 'its moment, and it may fire';
+        case 'moment': return 'its moment, and it may fire (at an aim down too, today)';
         case 'resolves': return 'its use resolves: its time comes off its next turn';
         case 'turnStart': return 'its turn starts (a turn reaction: the named body\'s)';
         case 'down': return 'its reactor goes down, or the fight ends';
@@ -40,8 +40,8 @@ export const reaction = machine<ReactState, ReactEvent>({
   }],
   where: [
     ['The union', '`ReactState`, `ReactEvent` and `REACT_STATES` in `src/core/combat/fight-react.ts`; the row\'s `armed` in `Body` (`effect-ops.ts`)'],
-    ['What changes it', '`reactStep(state, event)` and its `TABLE`; `fireReaction`, `turnReaction` and `restored` carry it out'],
-    ['Who calls it', '`act` and `arm` in `src/core/combat/fight.ts` (rules 7c and 19c), `resolve` in `resolve.ts` (rule 13b, `Answers.lethal`), `startTurn` and `consequences` in `fight-turn.ts`'],
+    ['What changes it', '`reactStep(state, event)` and its `TABLE`; `react` fires one at every moment, `restored` restores them'],
+    ['Who calls it', '`act` and `arm` in `src/core/combat/fight.ts` (rules 7c and 19c), `resolve` in `resolve.ts` (rule 13b, `Answers.lethal`), `startTurn` (`turnReaction`) and `consequences` in `fight-turn.ts`'],
     ['The test to copy', '`tests/fight.test.ts` ("a reaction"); the walk\'s events are in `tests/models/wave2-events.ts`'],
     ['The recipe', 'docs/guide/combat.md, "A reaction moment"'],
   ],

@@ -5,7 +5,10 @@ import { LIMITS, newHunter, newSave } from '../src/core/save.ts';
 import type { Hunter, Item, Save } from '../src/core/save.ts';
 import { RULES, rulesOf } from '../src/core/rules.ts';
 import type { Rules } from '../src/core/rules.ts';
-import { parseItem } from '../src/core/registry/items.ts';
+import { parseItem, priceOf, valueOf, RARITIES } from '../src/core/registry/items.ts';
+import { sellPrice } from '../src/core/hunter/inventory.ts';
+import { DOCS, WIRES } from '../src/core/protocol.ts';
+import type { RoomRules } from '../src/core/protocol.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import type { Refused } from '../src/core/save-step.ts';
 import { dev, iid, loid } from './fixtures/ids.ts';
@@ -101,23 +104,76 @@ describe('the GM\'s build switches', () => {
   });
   test('in a room a player plays by the room\'s switches, and by their own again once out of it', () => {
     const own = rulesOf({ build: { playerPick: false, respecGold: 9 } });
-    const inRoom = withRoomRules(own, { build: { enabled: true, playerPick: true }, solo: own.solo, feats: own.feats });
+    const inRoom = withRoomRules(own, { ...roomRulesOf(own), build: { enabled: true, playerPick: true } });
     expect([buildsOn(inRoom), mayPick(inRoom, 'player')], 'the room says builds on, players pick').toEqual([true, true]);
     expect(inRoom.build.respecGold, 'the room carries only its two switches').toBe(9);
     expect(withRoomRules(own, null), 'out of the room: the player\'s own rules, the same object').toBe(own);
     expect(mayPick(withRoomRules(own, null), 'player'), 'their own players-pick, off').toBe(false);
-    expect(buildsOn(withRoomRules(own, { build: { enabled: false, playerPick: true }, solo: own.solo, feats: own.feats })), 'a room with builds off turns them off').toBe(false);
+    expect(buildsOn(withRoomRules(own, { ...roomRulesOf(own), build: { enabled: false, playerPick: true } })), 'a room with builds off turns them off').toBe(false);
   });
   test('in a room a player\'s personal gates follow the room\'s switch and hours, and the rest of its own solo rules', () => {
     const own = rulesOf({ solo: { hours: 12, held: 5 } });
-    const inRoom = withRoomRules(own, { build: { enabled: true, playerPick: true }, solo: { personal: false, hours: 4 }, feats: own.feats });
+    const inRoom = withRoomRules(own, { ...roomRulesOf(own), solo: { ...roomRulesOf(own).solo, personal: false, hours: 4 } });
     expect(inRoom.solo).toEqual({ ...own.solo, personal: false, hours: 4 });
-    expect(roomRulesOf(rulesOf({ solo: { hours: 6 }, build: { playerPick: false } }))).toEqual({ build: { enabled: true, playerPick: false }, solo: { personal: true, hours: 6 }, feats: { on: true } });
+    expect(roomRulesOf(rulesOf({ solo: { hours: 6 }, build: { playerPick: false } }))).toMatchObject({ build: { enabled: true, playerPick: false }, solo: { personal: true, hours: 6 }, feats: { on: true } });
   });
   test('in a room a player\'s feats follow the GM\'s switch', () => {
     const own = rulesOf({});
     expect(roomRulesOf(rulesOf({ feats: { on: false } })).feats).toEqual({ on: false });
-    expect(withRoomRules(own, { build: { enabled: true, playerPick: true }, solo: own.solo, feats: { on: false } }).feats.on).toBe(false);
+    expect(withRoomRules(own, { ...roomRulesOf(own), feats: { on: false } }).feats.on).toBe(false);
+  });
+});
+
+describe('the room carries the economy', () => {
+  /** The GM's rules as a player's phone reads them: the rules doc of `gm` on the wire and back through the room's parser. */
+  const fromGM = (gm: Rules): RoomRules => {
+    const doc = DOCS.rules(JSON.parse(JSON.stringify(WIRES.rules(roomRulesOf(gm)))));
+    if (!doc) throw new Error('the room refused the GM\'s own rules doc');
+    return doc;
+  };
+  const own = rulesOf({});
+
+  test('a player\'s shop prices a rare item by the GM\'s C loot gold, and every other rarity as before', () => {
+    const inRoom = withRoomRules(own, fromGM(rulesOf({ loot: { C: { gold: [1000, 3000] } } })));
+    expect(priceOf(inRoom, 'rare'), 'a rare is ranked C: the middle of the GM\'s 1000 to 3000').toBe(2000);
+    expect(priceOf(own, 'rare'), 'out of the room: the middle of the shipped 500 to 2000').toBe(1250);
+    for (const rar of RARITIES.filter(r => r !== 'rare')) expect(priceOf(inRoom, rar), rar).toBe(priceOf(own, rar));
+    expect(valueOf({ rar: 'rare', type: 'weapon' }, inRoom), 'the shop\'s price of a rare weapon').toBe(2000);
+    expect(valueOf({ rar: 'rare', type: 'consumable' }, inRoom), 'a rare consumable: the shipped used-up share, a half, of 2000').toBe(1000);
+  });
+
+  test('a player\'s sale pays the GM\'s sale share', () => {
+    const inRoom = withRoomRules(own, fromGM(rulesOf({ saleShare: 0.5 })));
+    expect(sellPrice({ rar: 'rare', type: 'weapon' }, inRoom), 'half of the shipped rare price, 1250').toBe(625);
+    expect(sellPrice({ rar: 'rare', type: 'weapon' }, own), 'out of the room: the shipped quarter of 1250, rounded down').toBe(312);
+  });
+
+  // Each economy rule the GM may edit, the GM's edit, and where the player's rules hold it.
+  const EDITS: ReadonlyArray<readonly [string, Record<string, unknown>, (R: Rules) => unknown, unknown]> = [
+    ['a rarity\'s rank', { rarities: { rare: { rank: 'B' } } }, R => R.rarities.rare.rank, 'B'],
+    ['the grade step', { gradeStep: 1.2 }, R => R.gradeStep, 1.2],
+    ['the sale share', { saleShare: 0.5 }, R => R.saleShare, 0.5],
+    ['a used-up item\'s share', { usedUpShare: 0.3 }, R => R.usedUpShare, 0.3],
+    ['the Clears a reviving item costs', { reviveClears: 20 }, R => R.reviveClears, 20],
+    ['the share of the level a raising takes', { reviveLevelShare: 0.1 }, R => R.reviveLevelShare, 0.1],
+    ['a personal gate\'s share of the loot', { solo: { lootShare: 0.5 } }, R => R.solo.lootShare, 0.5],
+    ['the party a world gate is made for', { gateParty: 6 }, R => R.gateParty, 6],
+    ['a rank\'s loot gold', { loot: { C: { gold: [1000, 3000] } } }, R => R.loot.C.gold, [1000, 3000]],
+    ['a rank\'s loot weights', { loot: { E: { weights: { rare: 50 } } } }, R => R.loot.E.weights.rare, 50],
+  ];
+  for (const [rule, edit, at, want] of EDITS) {
+    test(`the GM's edit of ${rule} reaches a player's rules in the room, and leaves them once out of it`, () => {
+      expect(at(own), 'the edit is not the shipped value').not.toEqual(want);
+      expect(at(withRoomRules(own, fromGM(rulesOf(edit))))).toEqual(want);
+      expect(at(withRoomRules(own, null))).toEqual(at(own));
+    });
+  }
+
+  test('a rarity keeps the player\'s own color under the room\'s rank, and the room carries only the six an item can carry', () => {
+    const mine = rulesOf({ rarities: { rare: { color: '#123456' } } });
+    const gm = rulesOf({ rarities: { rare: { rank: 'B', color: '#000000' }, cursed: { color: '#330000', rank: 'S' } } });
+    expect(Object.keys(roomRulesOf(gm).rarities).sort()).toEqual([...RARITIES].sort());
+    expect(withRoomRules(mine, fromGM(gm)).rarities.rare).toEqual({ color: '#123456', rank: 'B' });
   });
 });
 

@@ -16,7 +16,8 @@ import type { Life, LifeState } from './hunter/vitals.ts';
 import type { ShadowOrigin } from './hunter/shadows.ts';
 import { BUNDLE_NAME, newRewards, parseRewards, parseWords } from './rewards.ts';
 import type { SystemWords } from './rewards.ts';
-import { RANKS, RULES, SOLO_BOUNDS } from './rules.ts';
+import { RANKS, RULES, SOLO_BOUNDS, domainOf } from './rules.ts';
+import type { Rules } from './rules.ts';
 import { parseFact } from './hunter/facts.ts';
 import type { Fact } from './hunter/facts.ts';
 import { parseFeats } from './hunter/feats.ts';
@@ -684,10 +685,30 @@ export type CodexDoc = { at: string; entries: CodexDocEntry[] };
 export const CODEX_DOC_ENTRIES = 200;
 /**
  * The GM's rules a player's phone plays by in the room (src/core/hunter/build.ts `withRoomRules`): the build switches,
- * and the personal gates' switch and hours (`RULES.solo`). Laid over the player's own rules, never written to its save.
- * `feats.on`: the GM's switch for the feats the System notices (hunter/feats.ts); a doc without it reads as on.
+ * the personal gates' switch, hours and share of the loot (`RULES.solo`), and the economy (each rule's reason in
+ * economy design 7.1), so a GM's edit prices an item the same on every phone. Laid over the player's own rules, never
+ * written to its save. `feats.on`: the GM's switch for the feats the System notices (hunter/feats.ts); a doc without it
+ * reads as on. Every other field is required: each number is read in its rule's domain (`ruleNumber`).
  */
-export type RoomRules = { build: { enabled: boolean; playerPick: boolean }; solo: { personal: boolean; hours: number }; feats: { on: boolean } };
+export type RoomRules = {
+  build: { enabled: boolean; playerPick: boolean };
+  solo: { personal: boolean; hours: number; lootShare: number };
+  feats: { on: boolean };
+  /** The rank whose Clear prices each rarity an item can carry (`RARITIES`); its color stays the phone's own. */
+  rarities: RoomRarities;
+  gradeStep: number;
+  saleShare: number;
+  usedUpShare: number;
+  reviveClears: number;
+  reviveLevelShare: number;
+  gateParty: number;
+  loot: Rules['loot'];
+};
+/** Each rarity an item can carry, with the rank whose Clear prices it. */
+export type RoomRarities = { readonly [R in Rarity]: { readonly rank: Rank } };
+/** One `T` for each rarity an item can carry, made by `f`: how the room's rarities are written, read and laid over. */
+export const eachRarity = <T>(f: (r: Rarity) => T): Record<Rarity, T> =>
+  Object.fromEntries(RARITIES.map(r => [r, f(r)])) as Record<Rarity, T>; // the compiler cannot follow a map over a list to its keys
 /** A gate as the room's world doc carries it: a cleared one with the day it was cleared (gate.ts `countdown` reads both); `solo` when the solo doc holds it. */
 export type WorldGate = ShownGate & { solo?: true };
 /** One roster line of a solo gate in the solo doc: `n` of the doc's monster `m` (its key in `monsters`). */
@@ -952,15 +973,52 @@ function soloDocOf(data: unknown): SoloDoc {
   return { gates: listOf(own(o, 'gates'), WORLD_GATES, soloGate), monsters, statuses };
 }
 
+/**
+ * A number of the rule at dotted `path` (`saleShare`, `loot.C.gold`), read in that rule's domain (rules.ts `domainOf`), so
+ * the room takes what the Rules editor takes: clamped to it as every number here is, whole when the rule is.
+ */
+const ruleNumber = (path: string) => (v: unknown): number => {
+  const d = domainOf(path);
+  if (!d) throw new Error(`protocol.ts reads ${path}, a rule with no domain`);
+  return (d.whole ? int : num)(d.least, d.most)(v);
+};
+/** A rank's loot gold: two numbers of its rule, low to high as overrides.ts keeps a GM's; any other is refused. */
+function goldRange(v: unknown, path: string): number[] {
+  if (!Array.isArray(v) || v.length !== 2) return refuse();
+  const lo = ruleNumber(path)(v[0]), hi = ruleNumber(path)(v[1]);
+  return lo <= hi ? [lo, hi] : refuse();
+}
+/** A rank's loot table: its gold and each weight the shipped table has (overrides.ts refuses a GM's other keys). */
+function lootRank<K extends Rank>(v: unknown, rank: K): Rules['loot'][K] {
+  const o = obj(v), w = obj(own(o, 'weights')), shipped = RULES.loot[rank].weights;
+  const weights = Object.fromEntries(Object.keys(shipped).map(k => [k, ruleNumber(`loot.${rank}.weights.${k}`)(own(w, k))]));
+  return { gold: goldRange(own(o, 'gold'), `loot.${rank}.gold`), weights } as Rules['loot'][K]; // the shipped table's keys, each read
+}
+/** The room's rules doc: every field required but the feats switch (on when absent). */
+function roomRulesDoc(o: Rec): RoomRules {
+  const b = obj(own(o, 'build')), so = obj(own(o, 'solo')), ra = obj(own(o, 'rarities')), lo = obj(own(o, 'loot'));
+  const rule = (k: 'gradeStep' | 'saleShare' | 'usedUpShare' | 'reviveClears' | 'reviveLevelShare' | 'gateParty'): number => ruleNumber(k)(own(o, k));
+  return {
+    build: { enabled: bool(own(b, 'enabled')), playerPick: bool(own(b, 'playerPick')) },
+    solo: { personal: bool(own(so, 'personal')), hours: int(1, SOLO_BOUNDS.hours)(own(so, 'hours')), lootShare: ruleNumber('solo.lootShare')(own(so, 'lootShare')) },
+    feats: { on: own(obj(opt(own(o, 'feats'), v => v, {})), 'on') !== false },
+    rarities: eachRarity(r => ({ rank: choiceOf(RANKS)(own(obj(own(ra, r)), 'rank')) })),
+    gradeStep: rule('gradeStep'),
+    saleShare: rule('saleShare'),
+    usedUpShare: rule('usedUpShare'),
+    reviveClears: rule('reviveClears'),
+    reviveLevelShare: rule('reviveLevelShare'),
+    gateParty: rule('gateParty'),
+    loot: { E: lootRank(own(lo, 'E'), 'E'), D: lootRank(own(lo, 'D'), 'D'), C: lootRank(own(lo, 'C'), 'C'), B: lootRank(own(lo, 'B'), 'B'), A: lootRank(own(lo, 'A'), 'A'), S: lootRank(own(lo, 'S'), 'S') },
+  };
+}
+
 /** Every room document by name, with its parser (unknown in, the doc or null out). A name missing here does not compile. */
 export const DOCS: { readonly [K in DocName]: (data: unknown) => Docs[K] | null } = {
   fight: data => attempt(() => fightDocOf(obj(data))),
   kicked: data => attempt(() => { const o = obj(data); return { keys: bySheetKey(own(o, 'keys'), time), names: opt(own(o, 'names'), v => bySheetKey(v, text(60)), {}) }; }),
   codex: data => attempt(() => { const o = obj(data); return { at: text(40)(own(o, 'at')), entries: listOf(own(o, 'entries'), CODEX_DOC_ENTRIES, codexEntry) }; }),
-  rules: data => attempt(() => {
-    const o = obj(data), b = obj(own(o, 'build')), so = obj(own(o, 'solo'));
-    return { build: { enabled: bool(own(b, 'enabled')), playerPick: bool(own(b, 'playerPick')) }, solo: { personal: bool(own(so, 'personal')), hours: int(1, SOLO_BOUNDS.hours)(own(so, 'hours')) }, feats: { on: own(obj(opt(own(o, 'feats'), v => v, {})), 'on') !== false } };
-  }),
+  rules: data => attempt(() => roomRulesDoc(obj(data))),
   world: data => attempt(() => { const o = obj(data); return { day: int(1, 1e6)(own(o, 'day')), session: opt(own(o, 'session'), int(0, 1e6), 0), gates: listOf(own(o, 'gates'), WORLD_GATES, worldGate) }; }),
   solo: data => attempt(() => soloDocOf(data)),
   feats: data => attempt(() => ({ feats: parseFeats(own(obj(data), 'feats'), FEATS_DOC_MAX) })),

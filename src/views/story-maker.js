@@ -2,13 +2,17 @@
 // through `app.api.maker.open`: the story's name, when to turn it on, who it is for, then its chapters as a list with one
 // chapter open at a time under its line: its name, its window's title and line, the GM's note, its reward (the reward
 // editor) and, when "Issues a quest" is ticked, its quest (the one quest form, app.api.quests.fields). The chapters are
-// held as data; opening another chapter reads the open one into the list first, so the page has one chapter's editors
-// at a time, and a chapter does not close while its reward editor would drop a row (`mayClose`). Save runs `parseStory` and writes what it gives back (`saveEntry`); the maker refuses first what the parser
-// would drop (a chapter without a window title, a quest without a title) and a chapter too large to send. No rule of the
-// game is here.
+// held as data (src/core/draft.ts `ChapterDraft`), each quest whole as the quest form answers it, its "If it fails" cost
+// included; opening another chapter reads the open one into the list first, so the page has one chapter's editors at a
+// time, and a chapter does not close while its reward editor would drop a row (`mayClose`). Save checks every chapter,
+// open or folded (`storyProblem`: a window title, a quest's title, a Job Change quest's job, a chapter too large to
+// send), opens the one at fault, then runs `parseStory` and writes what it gives back (`saveEntry`). No rule of the game
+// is here.
 import { esc, field, wrote } from './ui.js';
-import { CHAPTERS_MAX, CHAPTER_MAX, STORY_BOUNDS, chapterSize, parseStory, storyLines } from '../core/story/story.ts';
-import { UNFINISHED_ROWS, WORDS_BOUNDS, newRewards } from '../core/rewards.ts';
+import { CHAPTERS_MAX, STORY_BOUNDS, STORY_FOR, parseStory, storyLines } from '../core/story/story.ts';
+import { oneOf } from '../core/one-of.ts';
+import { newChapter, newChapterQuest, storyProblem } from '../core/draft.ts';
+import { UNFINISHED_ROWS, WORDS_BOUNDS } from '../core/rewards.ts';
 import { saveEntry, savedWords } from '../core/library.ts';
 import { atLibrary } from '../core/save-step.ts';
 
@@ -25,13 +29,6 @@ const CSS = `
 .stm-acts{display:flex;gap:6px;flex-wrap:wrap}.stm-acts button{flex:1 1 auto;min-height:var(--control-h)}
 `;
 
-/** A new chapter: a window title to write and nothing else. */
-const blankChapter = () => ({ name: '', words: { title: '', line: '' }, rewards: newRewards(), quest: null, note: '' });
-/** A new chapter quest: the quest form's fields, empty. */
-const blankQuest = () => ({ kind: 'side', title: '', desc: '', objectives: [], rewards: newRewards(), dueHours: null, penaltyText: '' });
-/** A chapter's quest as the quest form answers it, with the fields a chapter keeps. */
-const chapterQuestOf = v => ({ kind: v.kind, title: v.title, desc: v.desc, objectives: v.objectives, rewards: v.rewards, dueHours: v.dueHours, penaltyText: v.penaltyText });
-
 /**
  * The story maker for library story `story`, or a new one when null. Answers the id it saved under, or null.
  * @param {import('./app.ts').App} app @param {import('../core/story/story.ts').Story | null} story
@@ -42,8 +39,8 @@ export function storyMaker(app, story) {
   return A.maker.open({
     tag: 'Workshop', title: story ? `Edit ${story.name}` : 'New story', save: 'Save story', cls: 'stm',
     build(body, shell) {
-      /** @type {any[]} the chapters as the form holds them, in order; the open one is read from its fields by `current` */
-      const chapters = story ? story.chapters.map(c => ({ ...c })) : [blankChapter()];
+      /** @type {import('../core/draft.ts').ChapterDraft[]} the chapters as the form holds them, in order; the open one is read from its fields by `current` */
+      const chapters = story ? story.chapters.map(c => ({ ...c })) : [newChapter()];
       /** the open chapter's place in `chapters`, or -1 when every chapter is folded */
       let open = 0;
       /** @type {import('../core/api.ts').RewardEditor | null} the open chapter's reward editor */
@@ -78,7 +75,7 @@ export function storyMaker(app, story) {
         const c = chapters[open];
         return {
           name: $('#stm-cname').value, words: { title: $('#stm-wtitle').value, line: $('#stm-wline').value }, note: $('#stm-note').value,
-          rewards: rewards ? rewards.value() : c.rewards, quest: $('#stm-hasq').checked ? (quest ? chapterQuestOf(quest.value()) : c.quest || blankQuest()) : null,
+          rewards: rewards ? rewards.value() : c.rewards, quest: $('#stm-hasq').checked ? (quest ? quest.value() : c.quest || newChapterQuest()) : null,
         };
       }
       /** The chapters with the open one read from its fields. */
@@ -99,19 +96,7 @@ export function storyMaker(app, story) {
         shell.changed();
       }
       /** The form as raw data, for the parser. */
-      const raw = () => ({ name: $('#stm-name').value, when: $('#stm-when').value, for: A.maker.picked(body, 'for') || 'table', chapters: allChapters() });
-      /** What stops a save, in the maker's words, and the chapter it is about; null when nothing does. */
-      function problem(r) {
-        if (!r.name.trim()) return { why: 'Name the story.', at: -1 };
-        for (const [i, c] of r.chapters.entries()) {
-          if (!c.words.title.trim()) return { why: `Give chapter ${i + 1} a window title.`, at: i };
-          if (c.quest && !c.quest.title.trim()) return { why: `Give chapter ${i + 1}'s quest a title.`, at: i };
-        }
-        const read = parseStory(r);
-        const big = read ? read.chapters.findIndex(c => chapterSize(c) > CHAPTER_MAX) : -1;
-        return big >= 0 ? { why: `Chapter ${big + 1} is too large to send to players' phones. Give it fewer items.`, at: big } : null;
-      }
-
+      const raw = () => ({ name: $('#stm-name').value, when: $('#stm-when').value, for: oneOf(A.maker.picked(body, 'for'), STORY_FOR, 'table'), chapters: allChapters() });
       /**
        * Whether the open chapter may close (another chapter opened, its own line folded, a chapter added or moved): not
        * while its reward editor or its quest's would drop a row (`blocked()`, the editor's own answer), which the maker
@@ -131,14 +116,14 @@ export function storyMaker(app, story) {
         if (!moves || !mayClose()) return;
         keep();
         if (b.hasAttribute('data-chopen')) { const i = Number(b.dataset.chopen); open = open === i ? -1 : i; draw(open >= 0 ? '#stm-wtitle' : null); return; }
-        if (b.hasAttribute('data-chadd')) { chapters.push(blankChapter()); open = chapters.length - 1; draw('#stm-wtitle'); return; }
+        if (b.hasAttribute('data-chadd')) { chapters.push(newChapter()); open = chapters.length - 1; draw('#stm-wtitle'); return; }
         if (to !== null) { [chapters[open], chapters[to]] = [chapters[to], chapters[open]]; open = to; draw(); }
       });
       // the box draws or takes away the quest form alone: the chapter's reward editor, and what it holds, stay as they are
       body.addEventListener('change', e => {
         const t = /** @type {Element} */ (e.target); if (t.id !== 'stm-hasq') return;
         const box = $('[data-stm-q]');
-        if ($('#stm-hasq').checked) { quest = A.quests.fields(box, { id: 'stq', use: 'chapter', role: 'gm', initial: chapters[open].quest || blankQuest() }); const f = $('[data-stm-q] [name=title]'); if (f) f.focus(); }
+        if ($('#stm-hasq').checked) { quest = A.quests.fields(box, { id: 'stq', use: 'chapter', role: 'gm', initial: chapters[open].quest || newChapterQuest() }); const f = $('[data-stm-q] [name=title]'); if (f) f.focus(); }
         else { quest = null; box.replaceChildren(); }
         shell.changed();
       });
@@ -150,11 +135,15 @@ export function storyMaker(app, story) {
       $('[data-chs]').setAttribute('data-later', '');
       return {
         blocked: () => !!(rewards && rewards.blocked()) || !!(quest && quest.rewards && quest.rewards.blocked()),
-        preview() { const r = raw(), p = problem(r); return p ? [p.why] : storyLines(/** @type {any} */ (parseStory(r)), app.rules()); },
+        preview() { const r = raw(), p = storyProblem(r); return p ? [p.why] : storyLines(/** @type {any} */ (parseStory(r)), app.rules()); },
         save() {
           keep();
-          const r = raw(), p = problem(r);
-          if (p) { if (p.at >= 0 && p.at !== open) { open = p.at; draw(); } shell.error(p.why); return undefined; }
+          const r = raw(), p = storyProblem(r);
+          if (p) {
+            if (p.at >= 0 && p.at !== open) { open = p.at; draw(); }
+            if (p.inQuest && quest) quest.check();
+            shell.error(p.why); return undefined;
+          }
           const why = quest ? quest.check() : '';
           if (why) { shell.error(`Chapter ${open + 1}'s quest: ${why}`); return undefined; }
           const t = /** @type {import('../core/story/story.ts').StoryTemplate} */ (parseStory(r)), id = story ? story.id : store.id('st');

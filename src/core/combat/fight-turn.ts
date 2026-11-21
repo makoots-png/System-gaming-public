@@ -115,6 +115,9 @@ export function triggered<F extends Running>(f: F, events: readonly Raised[], ct
   return t.said.length ? logged(g, line(`Then: ${t.said.join(', ')}.`, [...t.about]), ctx.rules) : g;
 }
 
+/** Thresholds that went off (a use's, a reaction's), one `burst` a bearer. */
+export const burstsOf = (bursts: readonly { readonly bearer: CombatantId }[]): Fx => [...new Set(bursts.map(b => b.bearer))].map(id => ({ type: 'burst', id }));
+
 /** Whether a row keeps its side in the fight: up, and not a summon (kits design 1.9: a fight is not held by a sprite). */
 export const holdsSide = (b: Body): boolean => isUp(b) && !isSummon(b);
 /** A side with nobody up ends the fight. A summon does not count. */
@@ -417,7 +420,7 @@ export function startTurn(f: Running, ctx: Ctx, fx: Fx): Running | Ended {
     const first = next(g.rows.filter(isUp))!;
     // a `turn` reaction armed on the body whose turn comes next moves its reactor's turn before it (kits design 8.6.3)
     const map = new Map(g.rows.map(b => [b.id, b] as const)), jumped = turnReaction(map, first, g.now, R);
-    if (jumped) { g = consequences(g.rows, logged({ ...g, rows: g.rows.map(b => map.get(b.id)!) }, line(`${jumped.said}.`, [...jumped.about]), R), ctx, fx); continue; }
+    if (jumped) { fx.push(...burstsOf(jumped.bursts)); g = consequences(g.rows, logged({ ...g, rows: g.rows.map(b => map.get(b.id)!) }, line(`${jumped.said}.`, [...jumped.about]), R), ctx, fx); continue; }
     // Taken before time moves, so a status that ends for anyone reaches its sheet.
     const before = g.rows, time = advance(g, tick(Math.max(g.now, first.at)), R);
     g = grounded(time.fight, ctx, fx);

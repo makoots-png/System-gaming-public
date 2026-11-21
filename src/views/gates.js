@@ -13,7 +13,7 @@ import { advanceDay as advanceWorld, closeGate, deleteGate, editGate, enterGate,
 import { compareTimes, stepTime } from '../core/day.ts';
 import { OUTCOME_WORDS, SOLO_REFUSAL_WORDS, SOLO_WORDS, closesIn, personalNews, runCostLines, soloAnswerBody, soloConfirmLines, soloDoc, soloFight, soloKey, soloPlan, soloRan, soloReady, soloRoute, soloRuleSet, soloRunBody, soloTaken, soloTargets, soloTick, takenLine } from '../core/gates/solo.ts';
 import { byClosing } from '../core/gates/personal.ts';
-import { runDismissed, shownOf, waitWords, waitingGates } from '../core/gates/solo-wait.ts';
+import { STOP_WAITING, mayDismiss, runDismissed, shownOf, waitWords, waitingGates } from '../core/gates/solo-wait.ts';
 import { NO_RUN, mayEnter, playingOn, runPhaseStep } from '../core/gates/solo-run.ts';
 import { IDLE, ODDS_FRAME_MS, oddsStep, progressOf } from '../core/combat/odds.ts';
 import { oddsSeed } from '../edge/roll.ts';
@@ -242,11 +242,11 @@ export function register(app) {
 
   /** The room's solo gates as this phone plays them: from the room's docs on a player's phone. */
   const roomTargets = () => (app.seat() === 'player' ? soloTargets(sync().doc('world'), sync().doc('solo')) : []);
-  /** What `soloReady` reads of the phone now, for hunter `hid`. */
+  /** What `soloReady` reads of the phone now, for hunter `hid`: where a world gate's run settles now (`soloRoute`) among it. */
   function readyCtx(hid) {
-    const seat = app.seat(), code = room(), bound = sync().bound();
-    return { R: app.rules(), seat, held: !!api.hunter.fightOf({ hid }), nowMs: Date.now(), bound: bound ? bound.id : null,
-      room: seat === 'player' && code ? { targets: roomTargets(), waiting: waitingGates(store.get(), code, hid) } : null };
+    const seat = app.seat(), code = room(), bound = sync().bound(), route = soloRoute(seat, code);
+    return { R: app.rules(), route, held: !!api.hunter.fightOf({ hid }), nowMs: Date.now(), bound: bound ? bound.id : null,
+      room: route !== 'local' ? { targets: roomTargets(), waiting: waitingGates(store.get(), route.room, hid) } : null };
   }
   /** The key of a solo gate's odds box: one per gate and hunter. */
   const oddsKeyOf = (gate, hid) => `solo:${gate.kind}:${gate.id}:${hid}`;
@@ -292,10 +292,11 @@ export function register(app) {
     const go = await ui.system({ tag: '! Gate', kind: 'warning', title: SOLO_WORDS.confirm, body: first.target.name, lines: soloConfirmLines(read),
       actions: [{ label: SOLO_WORDS.notNow, value: null, cancel: true }, { label: SOLO_WORDS.enter, value: 'go', primary: true }] });
     if (go !== 'go') return;
-    const ready = soloReady(store.get(), hid, gate, readyCtx(hid));
+    const at = readyCtx(hid), ready = soloReady(store.get(), hid, gate, at);
     if (isRefused(ready)) { ui.toast('! Gate', SOLO_REFUSAL_WORDS[ready.why], { kind: 'warn' }); return; }
     const made = soloFight(ready.h, ready.target, app.rules()); if (!made) return;
-    const from = soloKey(ready.h);
+    // the hunter it plays and where it settles, as they stand at the start: the write is refused if either moved
+    const from = soloKey(ready.h), route = at.route;
     runMoved({ type: 'go' });
     // one play: the odds' machine asked for one fight, a few commands a frame, with the round and the moves as its count
     const end = await new Promise(resolve => {
@@ -310,13 +311,13 @@ export function register(app) {
       requestAnimationFrame(frame);
     });
     if (!end) return;
-    const runOf = { end, hunter: made.hunter, shadows: made.shadows, from }, R = app.rules();
-    const toRoom = gate.kind === 'world' && soloRoute(app.seat()) === 'room';
+    const runOf = { end, hunter: made.hunter, shadows: made.shadows, from, route }, R = app.rules();
+    const toRoom = gate.kind === 'world' && route !== 'local';
     // a cleared gate's loot, rolled before the write as a Clear's is; the GM's phone rolls a room's gate's
     const loot = end.outcome === 'won' && !toRoom ? lootOf(ready.target.rank, ready.target.boss) : { gold: 0, items: [] };
     const body = toRoom ? soloRunBody(ready.h, runOf, ready.target, sync().myKey(hid), R) : null, event = body ? sync().event('soloRun', body) : null;
     const done = { ran: null };
-    const w = store.apply('solo-run', s => { const r = soloRan(s, hid, gate, runOf, loot, { day: dayNow(), ready: readyCtx(hid), room: toRoom ? { code: room(), event } : null }); if (isRefused(r)) return r; done.ran = r; return r.save; });
+    const w = store.apply('solo-run', s => { const r = soloRan(s, hid, gate, runOf, loot, { day: dayNow(), ready: readyCtx(hid), event }); if (isRefused(r)) return r; done.ran = r; return r.save; });
     if (!ui.wrote('! Gate', w, SOLO_REFUSAL_WORDS)) return;
     const ran = done.ran;
     if (toRoom) sync().flush();
@@ -518,10 +519,10 @@ export function register(app) {
         const target = isRefused(ready) ? null : ready.target, made = isRefused(ready) ? null : soloFight(ready.h, ready.target, R);
         const sy = store.get().settings.sync, code = room();
         const waiting = gate.kind === 'world' && code ? (sy.runs || []).find(x => x.room === code && x.hid === h.id && x.gate === gate.id) : null;
-        const lost = waiting && shownOf(waiting, sy.outbox || []).state === 'lost';
+        const away = waiting && mayDismiss(waiting, sy.outbox || []);
         const mons = target ? target.monsters.map(m => `<li><span class="cnt">×${esc(m.count)}</span><span>${esc(m.monster.name)}</span></li>`).join('') : '';
         const line = waiting ? waitWords(waiting, sy.outbox || []) : isRefused(ready) ? SOLO_REFUSAL_WORDS[ready.why] : '';
-        const acts = lost ? `<button type="button" data-solo-dismiss="${esc(waiting.run)}">${esc(SOLO_WORDS.dismiss)}</button>`
+        const acts = away ? `<button type="button" data-solo-dismiss="${esc(waiting.run)}">${esc(SOLO_WORDS.dismiss)}</button>`
           : target ? `<button type="button" class="primary" data-solo-enter${mayEnter(runPhase) ? '' : ' disabled'}>${esc(SOLO_WORDS.enter)}</button>` : '';
         return { key: oddsKeyOf(gate, h.id), fight: made ? made.fight : null, html: `<article class="gate solo" data-solo="${esc(gate.kind)}:${esc(gate.id)}" aria-label="${esc(rank)}-rank solo gate ${esc(name)}">
           <div class="gt-head">${ui.rankBadge(rank)}<span class="gt-name">${esc(name)}</span><span class="gt-chip st-detected">${esc(gate.kind === 'personal' ? 'Personal' : 'Solo')}</span></div>
@@ -593,11 +594,19 @@ export function register(app) {
       mounted.render = render;
       mounted.paintRun = paintRun;
 
+      /** Run `id` put away: a taken one only after the question, since it gives up the GM's pay (gates/solo-wait.ts `STOP_WAITING`). */
+      async function dismissRun(id) {
+        const sy = store.get().settings.sync, w = (sy.runs || []).find(x => x.run === id);
+        if (w && shownOf(w, sy.outbox || []).state === 'taken'
+          && !await ui.confirm({ title: STOP_WAITING.title, body: STOP_WAITING.body, danger: true, confirmLabel: STOP_WAITING.confirm })) return;
+        if (ui.wrote('! Gate', store.apply('solo-dismiss', s => runDismissed(s, id)))) render();
+      }
+
       el.addEventListener('click', async e => {
         const solo = e.target.closest('[data-solo-enter],[data-solo-dismiss]');
         if (solo) {
           const card = solo.closest('[data-solo]'), [kind, id] = card.dataset.solo.split(':'), h = store.active();
-          if (solo.hasAttribute('data-solo-dismiss')) { if (ui.wrote('! Gate', store.apply('solo-dismiss', s => runDismissed(s, solo.dataset.soloDismiss)))) render(); return; }
+          if (solo.hasAttribute('data-solo-dismiss')) { await dismissRun(solo.dataset.soloDismiss); return; }
           if (h) await enterAlone(kind === 'personal' ? { kind: 'personal', id } : { kind: 'world', id }, h.id);
           return;
         }

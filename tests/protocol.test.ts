@@ -8,7 +8,9 @@ import { ITEM_BOUNDS, LOOT_ITEMS, itemOf } from '../src/core/registry/items.ts';
 import { PERK_KEYS } from '../src/core/rules.ts';
 import type { EventType, SheetKey } from '../src/core/protocol.ts';
 import { newHunter } from '../src/core/save.ts';
-import { RULES } from '../src/core/rules.ts';
+import { RULES, domainOf } from '../src/core/rules.ts';
+import { roomRulesOf } from '../src/core/hunter/build.ts';
+import { RARITIES } from '../src/core/registry/items.ts';
 import { SHOP_ITEMS, parseItem } from '../src/core/registry/items.ts';
 import { parseMonster, seedMonsters } from '../src/core/registry/monsters.ts';
 import { soloDoc } from '../src/core/gates/solo.ts';
@@ -1048,15 +1050,70 @@ describe('the other room docs', () => {
   });
 
   test('the room\'s rules: the build switches and the personal gates\' switch true or false, its hours whole within their bounds', () => {
-    const rules = { build: { enabled: false, playerPick: true }, solo: { personal: false, hours: 4 }, feats: { on: false } };
-    expect(DOCS.rules(rules)).toEqual(rules);
+    const rules = { ...roomRulesOf(RULES), build: { enabled: false, playerPick: true }, solo: { ...roomRulesOf(RULES).solo, personal: false, hours: 4 }, feats: { on: false } };
+    expect(DOCS.rules(copy(rules))).toEqual(rules);
     const { feats: _none, ...older } = rules;
     expect(DOCS.rules(older)!.feats, 'a doc without the feats switch reads as on').toEqual({ on: true });
     expect(DOCS.rules({ ...rules, build: { enabled: 'no', playerPick: true } })).toBeNull();
-    expect(DOCS.rules({ ...rules, solo: { personal: 'yes', hours: 4 } })).toBeNull();
-    expect(DOCS.rules({ ...rules, solo: { personal: true, hours: 0 } })!.solo.hours).toBe(1);
-    expect(DOCS.rules({ ...rules, solo: { personal: true, hours: 1e6 } })!.solo.hours).toBe(168);
+    expect(DOCS.rules({ ...rules, solo: { ...rules.solo, personal: 'yes' } })).toBeNull();
+    expect(DOCS.rules({ ...rules, solo: { ...rules.solo, hours: 0 } })!.solo.hours).toBe(1);
+    expect(DOCS.rules({ ...rules, solo: { ...rules.solo, hours: 1e6 } })!.solo.hours).toBe(168);
     expect(DOCS.rules({ enabled: true, playerPick: true }), 'the old build doc is not read').toBeNull();
+  });
+
+  describe('the room\'s rules carry the economy, each number read in its rule\'s domain', () => {
+    const doc = roomRulesOf(RULES);
+    /** The doc with `patch` over it, through JSON as the wire carries it: a field set to undefined is not there. */
+    const read = (patch: Record<string, unknown>) => DOCS.rules(copy({ ...doc, ...patch }));
+    /** The doc with `rank`'s loot replaced by `loot`. */
+    const loot = (rank: 'E' | 'C', l: Record<string, unknown>) => read({ loot: { ...copy(doc.loot), [rank]: { ...copy(doc.loot[rank]), ...l } } });
+
+    test('the shipped economy comes through as it went', () => {
+      expect(DOCS.rules(copy(doc))).toEqual(doc);
+      expect(Object.keys(doc).sort()).toEqual(['build', 'feats', 'gateParty', 'gradeStep', 'loot', 'rarities', 'reviveClears', 'reviveLevelShare', 'saleShare', 'solo', 'usedUpShare']);
+    });
+
+    test('a rule number past its domain is read at the domain\'s end, and a whole rule whole', () => {
+      const SHARES = ['saleShare', 'usedUpShare', 'reviveLevelShare'] as const;
+      for (const k of SHARES) expect([read({ [k]: -1 })![k], read({ [k]: 2 })![k]], k).toEqual([domainOf(k)!.least, domainOf(k)!.most]);
+      expect([read({ gradeStep: 0.5 })!.gradeStep, read({ gradeStep: 9 })!.gradeStep]).toEqual([domainOf('gradeStep')!.least, domainOf('gradeStep')!.most]);
+      expect([read({ reviveClears: 0 })!.reviveClears, read({ reviveClears: 1e9 })!.reviveClears]).toEqual([domainOf('reviveClears')!.least, domainOf('reviveClears')!.most]);
+      expect([read({ gateParty: 0 })!.gateParty, read({ gateParty: 99 })!.gateParty, read({ gateParty: 4.7 })!.gateParty]).toEqual([domainOf('gateParty')!.least, domainOf('gateParty')!.most, 4]);
+      expect(read({ solo: { ...doc.solo, lootShare: 3 } })!.solo.lootShare).toBe(domainOf('solo.lootShare')!.most);
+      expect(loot('C', { gold: [-5, 2e9] })!.loot.C.gold).toEqual([domainOf('loot.C.gold')!.least, domainOf('loot.C.gold')!.most]);
+      expect(loot('E', { weights: { ...doc.loot.E.weights, rare: 5000 } })!.loot.E.weights.rare).toBe(domainOf('loot.E.weights.rare')!.most);
+    });
+
+    test('a doc whose economy is not the rules\' shape is refused whole', () => {
+      const WRONG: ReadonlyArray<readonly [string, () => unknown]> = [
+        ['a share that is text', () => read({ saleShare: '0.25' })],
+        ['no grade step', () => read({ gradeStep: undefined })],
+        ['no used-up share', () => read({ usedUpShare: undefined })],
+        ['no revive Clears', () => read({ reviveClears: undefined })],
+        ['no level share of a raising', () => read({ reviveLevelShare: undefined })],
+        ['no world gate party', () => read({ gateParty: undefined })],
+        ['the solo rules without the loot share', () => read({ solo: { personal: true, hours: 8 } })],
+        ['a rarity ranked past S', () => read({ rarities: { ...copy(doc.rarities), rare: { rank: 'Z' } } })],
+        ['a rarity that is only its rank', () => read({ rarities: { ...copy(doc.rarities), rare: 'C' } })],
+        ['a rarity missing', () => { const { mythic: _gone, ...five } = copy(doc.rarities); return read({ rarities: five }); }],
+        ['no rarities', () => read({ rarities: undefined })],
+        ['a rank\'s gold high to low', () => loot('C', { gold: [2000, 500] })],
+        ['a rank\'s gold of three numbers', () => loot('C', { gold: [500, 1000, 2000] })],
+        ['a rank\'s gold that is text', () => loot('C', { gold: ['500', 2000] })],
+        ['a shipped weight missing', () => loot('E', { weights: { common: 70, uncommon: 25 } })],
+        ['a weight that is text', () => loot('E', { weights: { ...doc.loot.E.weights, common: 'many' } })],
+        ['a rank missing from the loot', () => { const { S: _gone, ...five } = copy(doc.loot); return read({ loot: five }); }],
+        ['the rules doc before the economy', () => DOCS.rules({ build: doc.build, solo: { personal: true, hours: 8 }, feats: doc.feats })],
+      ];
+      for (const [why, parsed] of WRONG) expect(parsed(), why).toBeNull();
+    });
+
+    test('a rarity carries only its rank, the six an item can carry; a loot table only its shipped weights', () => {
+      const r = read({ rarities: { ...copy(doc.rarities), rare: { rank: 'B', color: '#000000' }, cursed: { rank: 'S' } } })!;
+      expect(Object.keys(r.rarities).sort()).toEqual([...RARITIES].sort());
+      expect(r.rarities.rare).toEqual({ rank: 'B' });
+      expect(loot('E', { weights: { ...doc.loot.E.weights, mythic: 9 } })!.loot.E.weights).toEqual(doc.loot.E.weights);
+    });
   });
 
   test('a world gate open to solo runs says so, and only then', () => {
@@ -1195,7 +1252,7 @@ describe('the poll answer', () => {
   const ANSWER = {
     gm: false, now: '2026-11-12T12:00:00.000Z', events: [event(1), event(2, 'questUpdate')], next: 2, more: false,
     sheets: { [KEY]: { at: '2026-11-12T12:00:00.000Z', from: 'd-player1', data: copy(VALID_SHEET[1]) } },
-    docs: { rules: { at: '2026-11-12T12:00:00.000Z', from: 'd-gm1', data: { build: { enabled: true, playerPick: false }, solo: { personal: true, hours: 8 }, feats: { on: true } } } },
+    docs: { rules: { at: '2026-11-12T12:00:00.000Z', from: 'd-gm1', data: copy(roomRulesOf(RULES)) } },
   };
   const parse = (fields: Raw = {}) => parseRoomState({ ...copy(ANSWER), ...fields }) as Raw | null;
 

@@ -3,7 +3,8 @@
 //
 // The database's life is a machine (docs/state-machines.md, "The room server's database"): `opening` at start, then
 // `ready` when Postgres answers or `down` when it does not. While down, no room route answers (503) and /api/health
-// says so; server.ts opens it again every `DB_RETRY_MS` until it answers. Rooms are never kept in memory under
+// says so; server.ts opens it again every `DB_RETRY_MS` until it answers. `closed` is its end, at a shutdown: it takes
+// no event, so a try that answers after it is closed again and a down one is tried no more. Rooms are never kept in memory under
 // DATABASE_URL: a restart would lose them all, and a phone would be told its room no longer exists.
 import type { KickedDoc, SheetKey } from './protocol.ts';
 import { REMOVED_MS, ROOM_SHEETS } from './protocol.ts';
@@ -60,32 +61,41 @@ export function pushed(kicked: KickedDoc | null, key: SheetKey, held: boolean, s
   return !held && sheets >= ROOM_SHEETS ? 'full' : 'stored';
 }
 /**
- * The GM's two changes of who is kept out: `remove` takes the hunter's sheet out of the room, frees its phone's binding
- * and records the removal; `allow` lifts the record so the hunter may rejoin at once.
+ * The GM's two changes of who is kept out: `remove` takes the hunter's sheet out of the room, moves its phone's slot
+ * (`removed` in src/core/sync/owner.ts: freed with the phone's last sheet only) and records the removal; `allow` lifts
+ * the record so the hunter may rejoin at once.
  */
 export type RemovalChange = 'remove' | 'allow';
 
 // ── the database's life ──
-export const DB_STATES = ['opening', 'ready', 'down'] as const;
+export const DB_STATES = ['opening', 'ready', 'down', 'closed'] as const;
 export type DbState = (typeof DB_STATES)[number];
-export const DB_EVENTS = ['opened', 'failed'] as const;
+export const DB_EVENTS = ['opened', 'failed', 'close'] as const;
 export type DbEventType = (typeof DB_EVENTS)[number];
 /** How often a down database is opened again: a room is back within this of Postgres answering. One failed connect costs nothing. */
 export const DB_RETRY_MS = 10_000;
 /**
  * The database as the server holds it. `S` is the store (server.ts's `Store`); a down one keeps when the outage began
- * and the last error's code, which /api/health shows (the message, which may name the host, goes only to the log).
+ * and the last error's code, which /api/health shows (the message, which may name the host, goes only to the log). A
+ * closed one holds no store: closing a ready one closes its store.
  */
 export type Db<S> =
   | { at: 'opening' }
   | { at: 'ready'; store: S }
-  | { at: 'down'; since: number; error: string };
-export type DbEvent<S> = { type: 'opened'; store: S } | { type: 'failed'; at: number; error: string };
-/** The state each event leads to, or null where it does not apply. A ready database stays ready: a query that fails later is that request's 500. */
+  | { at: 'down'; since: number; error: string }
+  | { at: 'closed' };
+/** Postgres answers a try; a try fails; the server shuts the database (`Database.close`). */
+export type DbEvent<S> = { type: 'opened'; store: S } | { type: 'failed'; at: number; error: string } | { type: 'close' };
+/**
+ * The state each event leads to, or null where it does not apply. A ready database stays ready: a query that fails
+ * later is that request's 500. Every state but `closed` closes; `closed` takes nothing, so a store a try opened after
+ * the close is closed by its caller and a failed try schedules no other.
+ */
 const TABLE: { readonly [St in DbState]: { readonly [E in DbEventType]: DbState | null } } = {
-  opening: { opened: 'ready', failed: 'down' },
-  down: { opened: 'ready', failed: 'down' },
-  ready: { opened: null, failed: null },
+  opening: { opened: 'ready', failed: 'down', close: 'closed' },
+  down: { opened: 'ready', failed: 'down', close: 'closed' },
+  ready: { opened: null, failed: null, close: 'closed' },
+  closed: { opened: null, failed: null, close: null },
 };
 /** The state `event` leads to from `state`, or null. */
 export const dbTransition = (state: DbState, event: DbEventType): DbState | null => TABLE[state][event];
@@ -93,8 +103,11 @@ export const dbTransition = (state: DbState, event: DbEventType): DbState | null
 export function dbStep<S>(db: Db<S>, e: DbEvent<S>): Db<S> {
   const to = dbTransition(db.at, e.type);
   if (to === null) return db;
-  if (e.type === 'opened') return { at: 'ready', store: e.store };
-  return { at: 'down', since: db.at === 'down' ? db.since : e.at, error: e.error };
+  switch (e.type) {
+    case 'opened': return { at: 'ready', store: e.store };
+    case 'failed': return { at: 'down', since: db.at === 'down' ? db.since : e.at, error: e.error };
+    case 'close': return { at: 'closed' };
+  }
 }
 /** What /api/health answers for the database, apart from a ready store's own check. */
 export type Health = { status: 200 | 503; body: { ok: boolean; db: string; since?: string; error?: string } };
@@ -102,6 +115,7 @@ export function dbHealth<S>(db: Db<S>, kind: string): Health {
   switch (db.at) {
     case 'ready': return { status: 200, body: { ok: true, db: kind } };
     case 'opening': return { status: 503, body: { ok: false, db: kind, error: 'opening' } };
+    case 'closed': return { status: 503, body: { ok: false, db: kind, error: 'closed' } };
     case 'down': return { status: 503, body: { ok: false, db: kind, since: new Date(db.since).toISOString(), error: db.error } };
   }
 }

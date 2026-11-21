@@ -1,6 +1,7 @@
 // maker.js: the parts every maker dialog is built from, on app.api.maker. The shell (`open`) owns the dialog: it opens
 // on the window stack (ui.js, which traps Tab and hands it the keys), asks before Escape or a press beside it drops an
-// edited form, Enter in a field moves to the next one (ui.js `formEnter`; Ctrl or Cmd and Enter saves), the fit to the visual viewport when the keyboard opens, the sticky Cancel and Save bar and the
+// edited form (its draft, src/core/draft.ts: a body's surface with no field, as the map maker's grid, is marked
+// `data-mk-paint` and a press on it is an edit), Enter in a field moves to the next one (ui.js `formEnter`; Ctrl or Cmd and Enter saves), the fit to the visual viewport when the keyboard opens, the sticky Cancel and Save bar and the
 // live preview. `chips` and `picked` are toggle chips; `bonus` and `readBonus` are the ten bonus fields; `effects` is the
 // effects editor, one row per op of the fight (src/core/combat/effect-ops.ts), an amount a formula read by `parseFormula`;
 // `rewards` is the reward editor (reward-editor.js). No game rule lives here: a maker builds its form from these parts and
@@ -23,6 +24,7 @@ import { abilityId } from '../core/combat/ability-types.ts';
 import { percent, tiles } from '../core/combat/space.ts';
 import { roundsOf, tick } from '../core/combat/timeline.ts';
 import { oneOf } from '../core/one-of.ts';
+import { draftStep } from '../core/draft.ts';
 import { rewardEditor, rewardEditorCss } from './reward-editor.js';
 import { abilityBlocks, kitPartsCss, statusBlocks, triggerList } from './kit-parts.js';
 
@@ -808,7 +810,8 @@ function buildAbility(box, o) {
   }
   const tell = () => { const f = read(); ff.set({ pace: paceOf(f.cost.time, R), channel: f.channel ? f.channel.growth : null }); draw(); };
   box.addEventListener('click', e => { if (e.target.closest('[data-chips="pace"],[data-chips="growth"],[data-chips="shape"],[data-chips="delivery"],[data-chips="zwhere"]')) tell(); });
-  box.addEventListener('input', e => { if (e.target.dataset && (e.target.dataset.a || 'ztrig' in e.target.dataset)) draw(); });
+  // the field's end editor raises its own input on a row added or changed, so its "Add what lands" goes with the row
+  box.addEventListener('input', e => { if (e.target.dataset && (e.target.dataset.a || 'ztrig' in e.target.dataset || 'zendFx' in e.target.dataset)) draw(); });
   box.addEventListener('change', e => { if (e.target.dataset && (e.target.dataset.a === 'channel' || e.target.dataset.a === 'ring')) tell(); else draw(); });
   draw();
   return {
@@ -871,6 +874,22 @@ function openMaker(o) {
     let previewEl = null;
     /** @type {import('../core/api.ts').MakerBody<T>} */
     let body = { save: () => undefined };
+    /**
+     * The form's draft (src/core/draft.ts): `clean` until the GM changes it, `edited` after, `asking` while "Discard
+     * changes?" is up, `closed` once the window went. It moves only by `step`, and only a step's answer asks or closes.
+     * A change is a trusted input or change in the body, a press of its buttons, or a press on a surface it marks
+     * `data-mk-paint`; the search above a long list changes no field (its events stop at it), and opening a group is not
+     * a change. Cancel and Save are the GM's own choice and close without asking.
+     * @type {import('../core/draft.ts').Draft}
+     */
+    let draft = 'clean';
+    /** Moves the draft by `e`; a close answers `v`. */
+    function step(e, v = null) {
+      const s = draftStep(draft, e);
+      draft = s.draft;
+      if (s.then === 'close') finish(v);
+      else if (s.then === 'ask') void confirm({ title: 'Discard changes?', body: 'What you changed in this form is lost.', danger: true, confirmLabel: 'Discard' }).then(drop => step(drop ? 'dropped' : 'kept'));
+    }
     const shell = {
       el: win,
       changed() {
@@ -880,7 +899,7 @@ function openMaker(o) {
         }
         ok.disabled = !!(body.blocked && body.blocked());
       },
-      done(v) { finish(v); },
+      done(v) { step('closed', v); },
       error(text) { err.textContent = text || ''; },
     };
     body = o.build(bodyEl, shell) || body;
@@ -890,7 +909,7 @@ function openMaker(o) {
       if (!bodyEl.contains(previewEl)) bodyEl.appendChild(previewEl);
     }
 
-    const save = () => { if (ok.disabled) return; err.textContent = ''; const v = body.save(); if (v !== undefined) finish(v); };
+    const save = () => { if (ok.disabled) return; err.textContent = ''; const v = body.save(); if (v !== undefined) step('closed', v); };
     /** @type {import('./ui.js').Win | null} */
     let me = null;
     function finish(v) {
@@ -898,27 +917,12 @@ function openMaker(o) {
       if (me) closeWindow(me);
       if (trigger && trigger.isConnected && trigger.focus) trigger.focus(); resolve(v);
     }
-    /**
-     * The form is `clean` until the GM changes it (types, picks, ticks, taps a button of the form), then `edited`. Escape
-     * or a press beside an edited form asks before it drops the GM's work; Cancel is the GM's own choice and does not ask.
-     * The search above a long list changes no field (its events stop at it), and opening a group is not a change.
-     * @type {'clean' | 'edited'}
-     */
-    let form = 'clean';
-    const touched = e => { if (e.isTrusted && bodyEl.contains(e.target)) form = 'edited'; };
+    const touched = e => { if (e.isTrusted && bodyEl.contains(e.target)) step('changed'); };
     bodyEl.addEventListener('input', touched); bodyEl.addEventListener('change', touched);
     bodyEl.addEventListener('click', e => { if (e.target.closest('button')) touched(e); });
-    let asking = false;
-    async function leave() {
-      if (form === 'clean') return finish(null);
-      if (asking) return;
-      asking = true;
-      const drop = await confirm({ title: 'Discard changes?', body: 'What you changed in this form is lost.', danger: true, confirmLabel: 'Discard' });
-      asking = false;
-      if (drop) finish(null);
-    }
+    bodyEl.addEventListener('pointerdown', e => { if (e.isTrusted && e.target.closest('[data-mk-paint]')) step('painted'); });
     function onKey(e) {
-      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); void leave(); return; }
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); step('leave'); return; }
       if (formEnter(e, bodyEl, save)) return;
       if (e.key === 'Tab') trapTab(e, win);
     }
@@ -938,12 +942,12 @@ function openMaker(o) {
     win.addEventListener('click', e => {
       const b = e.target.closest('button'); if (!b) return;
       if (b.closest('[data-chips]')) return shell.changed();
-      if (b.matches('[data-cancel]') && b.parentElement.classList.contains('mk-actions')) return finish(null);
+      if (b.matches('[data-cancel]') && b.parentElement.classList.contains('mk-actions')) return step('closed');
       if (b === ok) return save();
     });
     win.addEventListener('input', () => shell.changed());
     win.addEventListener('change', () => shell.changed());
-    el.addEventListener('mousedown', e => { if (e.target === el) void leave(); });
+    el.addEventListener('mousedown', e => { if (e.target === el) step('leave'); });
     if (window.visualViewport) { window.visualViewport.addEventListener('resize', fit); fit(); }
     shell.changed();
     me = openWindow('maker', () => { document.body.appendChild(el); enter(win); enter(el, 'fade'); return { root: el, win }; }, onKey);

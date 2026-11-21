@@ -1,5 +1,6 @@
 // map-maker.js: the GM's battle maps (src/core/registry/maps.ts) and their maker. The maker is the map drawn as a grid of
-// tiles in the maker shell (maker.js): a brush (a terrain of space.ts `TERRAIN`, one of the map's zones, a start tile for
+// tiles in the maker shell (maker.js; the grid is marked `data-mk-paint`, so a tile painted is an edit the shell asks
+// about before Escape drops it): a brush (a terrain of space.ts `TERRAIN`, one of the map's zones, a start tile for
 // a side, or the eraser) painted by a tap or a drag, the size by steppers, each zone's name and effects through the
 // effects editor, and the party's fog and sight. Save runs `parseBattleMap` and keeps what it gives back in
 // `library.maps`. The Workshop (workshop.js) lists the maps; the gate form (gates.js) names one; combat.js starts a
@@ -66,7 +67,7 @@ export function register(app) {
         el.innerHTML = `<label class="field"><span class="lbl">Name</span><input type="text" maxlength="${MAP_BOUNDS.name}" data-name value="${esc(st.name)}" autocomplete="off"></label>
           <div class="mpm-size">${step('w', 'Width')}${step('h', 'Height')}</div>
           <div class="lbl">Brush</div><div class="mpm-brush seg" role="group" aria-label="Brush" data-brushes></div>
-          <div class="mpm-scroll"><div class="mpm-grid" data-grid role="grid" aria-label="The map: tap or drag to paint"></div></div>
+          <div class="mpm-scroll"><div class="mpm-grid" data-grid data-mk-paint role="grid" aria-label="The map: tap or drag to paint"></div></div>
           <div class="mpm-zone" data-zonebox hidden></div>
           <label class="mk-check"><input type="checkbox" data-fog${st.fog ? ' checked' : ''}><span>Fog of war: the party sees only what is in its sight</span></label>
           <label class="field"><span class="lbl">Sight (tiles)</span><input type="number" min="${MAP_BOUNDS.sight[0]}" max="${MAP_BOUNDS.sight[1]}" inputmode="numeric" data-sight value="${st.sight}"></label>

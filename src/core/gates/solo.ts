@@ -45,7 +45,7 @@ import { fateLine, wonLine } from '../combat/odds.ts';
 import type { OddsRead, RunEnd, RunOutcome } from '../combat/odds.ts';
 import { seededSource } from '../draws.ts';
 import { can, gateXp, xpDue } from './gate.ts';
-import type { GateMonster } from './gate.ts';
+import type { Gate, GateMonster } from './gate.ts';
 import { rollGate, soloRank } from './spawn.ts';
 import type { SpawnMonster } from './spawn.ts';
 import { enteredAlone, worldOrder } from './world.ts';
@@ -142,14 +142,19 @@ export function soloTick<S extends Pick<Save, 'hunters' | 'seq'>>(save: S, o: Ti
 // ── a run ──
 /** Where a solo gate is: one of the hunter's own, or a gate of the world list (this phone's, or the room's by its doc). */
 export type SoloGate = { readonly kind: 'personal'; readonly id: PersonalGateId } | { readonly kind: 'world'; readonly id: GateId };
-/** Where a run of a world gate settles: on this phone (alone, or the GM's own hunter), or in the room (a player's). */
-export type SoloRoute = 'here' | 'room';
-/** The one rule of where a world gate's run settles, by the seat (role.ts). */
-export const soloRoute = (seat: Seat): SoloRoute => (seat === 'player' ? 'room' : 'here');
+/**
+ * Where a run of a world gate settles: on this phone (`local`: alone, or the GM's own hunter), or in room `room` by the
+ * GM's phone (a player's). A run records it as it starts (`SoloRun.route`) and is settled by it: two gates of one id,
+ * the phone's own and a room's, are two gates (audit SMX-gates-2.1).
+ */
+export type SoloRoute = 'local' | { readonly room: RoomCode };
+/** The one rule of where a world gate's run settles, by the seat (role.ts) and the room this phone is in. */
+export const soloRoute = (seat: Seat, room: RoomCode | null): SoloRoute => (seat === 'player' && room ? { room } : 'local');
+const sameRoute = (a: SoloRoute, b: SoloRoute): boolean => (a === 'local' || b === 'local' ? a === b : a.room === b.room);
 
 /** Why a run may not start or be written. */
 export type SoloRefusal =
-  | 'no-hunter' | 'fight' | 'down' | 'dead' | 'collapsed' | 'gone' | 'closed' | 'not-solo' | 'off' | 'not-played' | 'waiting' | 'empty' | 'changed';
+  | 'no-hunter' | 'fight' | 'down' | 'dead' | 'collapsed' | 'gone' | 'closed' | 'not-solo' | 'off' | 'not-played' | 'waiting' | 'empty' | 'changed' | 'moved';
 /** What a refused run says, to the player who tapped (copy-tasks.md: why, and the way out). */
 export const SOLO_REFUSAL_WORDS: { readonly [R in SoloRefusal]: string } = {
   'no-hunter': 'This hunter is no longer on this phone.',
@@ -165,6 +170,7 @@ export const SOLO_REFUSAL_WORDS: { readonly [R in SoloRefusal]: string } = {
   waiting: 'Your run here is waiting for the GM\'s answer.',
   empty: 'This gate has no monsters.',
   changed: 'Your hunter changed while the run played, so the run paid nothing. Enter again.',
+  moved: 'This phone joined or left a room while the run played, so the run paid nothing. Enter again.',
 };
 
 /** What a run is played against: the gate's name and rank, its monsters as rows read them, each with its count, and the statuses they name. */
@@ -175,9 +181,9 @@ export type SoloTarget = {
   readonly statuses: Readonly<Record<string, StatusDef>>;
 };
 
-/** What `soloReady` reads besides the save: the rules, the seat, whether a fight holds the hunter, the time, the room's own reads. */
+/** What `soloReady` reads besides the save: the rules, where a world gate's run settles now, whether a fight holds the hunter, the time, the room's own reads. */
 export type ReadyCtx = {
-  readonly R: Rules; readonly seat: Seat; readonly held: boolean; readonly nowMs: number;
+  readonly R: Rules; readonly route: SoloRoute; readonly held: boolean; readonly nowMs: number;
   /** A player in a room: the hunter it plays there (sync `bound()`), and the room's solo gates as its docs give them. */
   readonly bound?: HunterId | null;
   readonly room?: { readonly targets: readonly SoloTarget[]; readonly waiting: readonly GateId[] } | null;
@@ -213,7 +219,7 @@ export function soloReady(save: Pick<Save, 'hunters' | 'gates' | 'monsters'>, hi
     const monsters = roster(g.monsters, null, id => seeds.find(m => m.id === id) ?? null);
     return monsters.length ? { h, target: { gate, name: g.name, rank: g.rank, boss: false, monsters, statuses: {} } } : refuse('empty');
   }
-  if (soloRoute(c.seat) === 'room') {
+  if (c.route !== 'local') {
     if (c.bound !== h.id) return refuse('not-played');
     const t = c.room?.targets.find(x => x.gate.kind === 'world' && x.gate.id === gate.id);
     if (!t) return refuse('not-solo');
@@ -249,8 +255,13 @@ export function soloFight(h: Hunter, t: SoloTarget, R0: Rules): SoloFight | null
   return r.fight?.phase === 'setup' ? { fight: r.fight, hunter: me, shadows, R } : null;
 }
 
-/** One run as played: its end (`odds.ts` `RunEnd`, the engine asked for one play), the rows of the sheet, and the key of the hunter it was played from. */
-export type SoloRun = { readonly end: RunEnd; readonly hunter: CombatantId; readonly shadows: Readonly<Record<CombatantId, ShadowId>>; readonly from: string };
+/**
+ * One run as played: its end (`odds.ts` `RunEnd`, the engine asked for one play), the rows of the sheet, the key of the
+ * hunter it was played from, and where it settles, as the phone stood when it started (`ReadyCtx.route` then).
+ */
+export type SoloRun = {
+  readonly end: RunEnd; readonly hunter: CombatantId; readonly shadows: Readonly<Record<CombatantId, ShadowId>>; readonly from: string; readonly route: SoloRoute;
+};
 /** The loot the view rolled before the write (`rollLoot`), paid only when the run cleared. */
 export type SoloLoot = { readonly gold: number; readonly items: readonly ItemTemplate[] };
 
@@ -289,10 +300,10 @@ export type Ran = {
   readonly save: Save; readonly outcome: RunOutcome; readonly before: Vitals; readonly after: Vitals; readonly granted: Granted | null; readonly xp: number;
 };
 /**
- * What `soloRan` reads besides the save: the moment and the readiness context; for a player's run of a room's gate the
- * room and the `soloRun` message the view made from `soloRunBody` (its id is the run's).
+ * What `soloRan` reads besides the save: the moment and the readiness context as the phone stands at the write; for a
+ * player's run of a room's gate the `soloRun` message the view made from `soloRunBody` (its id is the run's).
  */
-export type RanCtx = { readonly day: Day; readonly ready: ReadyCtx; readonly room?: { readonly code: RoomCode; readonly event: RoomEvent } | null };
+export type RanCtx = { readonly day: Day; readonly ready: ReadyCtx; readonly event?: RoomEvent | null };
 
 const vitalsOf = (h: Hunter): Vitals => ({ life: h.life, mana: h.mana, fatigue: h.fatigue, collapsed: h.collapsed, used: h.used });
 
@@ -300,12 +311,14 @@ const vitalsOf = (h: Hunter): Vitals => ({ life: h.life, mana: h.mana, fatigue: 
  * Hunter `hid`'s run `run` of `gate` written, in one step: the run's log line, the hunter as the play left it (`ranOn`),
  * then the gate: a personal gate cleared leaves the list and pays its roster's XP (`gateXp`) and `loot` (`grant`); a
  * world gate cleared on this phone is its Clear for this one hunter (`settleClear`, its XP due and `loot`); a world gate
- * the hunter fell in or retreated from is entered when detected (`enteredAlone`). Refused whole when the run may no longer
- * be written (`soloReady`), or the hunter changed since the run began (`changed`). A player's run of a room's gate
- * (`soloRoute`) writes nothing of the gate: its `soloRun` message goes in the outbox and a won run waits for the GM's
- * answer (`runPosted`); refused (`no-room`) without that message.
+ * the hunter fell in or retreated from is entered when detected (`enteredAlone`). Refused whole when a world gate's run
+ * no longer has the route it started on (`moved`: the phone joined or left a room), the run may no longer be written
+ * (`soloReady`), or the hunter changed since the run began (`changed`). A run in a room (`run.route`) writes nothing of
+ * the gate: its `soloRun` message goes in that room's outbox and a won run waits for the GM's answer (`runPosted`);
+ * refused (`no-room`) without that message.
  */
 export function soloRan(save: Save, hid: string, gate: SoloGate, run: SoloRun, loot: SoloLoot, c: RanCtx): Ran | Refused<SoloRefusal | 'unchanged' | 'missing' | 'no-hunter' | 'no-room'> {
+  if (gate.kind === 'world' && !sameRoute(run.route, c.ready.route)) return refuse('moved');
   const R = c.day.R, ready = soloReady(save, hid, gate, c.ready);
   if (isRefused(ready)) return ready;
   const { h, target } = ready;
@@ -332,7 +345,7 @@ export function soloRan(save: Save, hid: string, gate: SoloGate, run: SoloRun, l
       if (isRefused(g2)) return g2;
       s = g2.save; granted = g2;
     }
-  } else if (soloRoute(c.ready.seat) === 'here') {
+  } else if (run.route === 'local') {
     if (outcome === 'won') {
       // the gate's Clear for a party of one: its whole pot of XP due and gold rolled (pay.ts `shareEach`, n = 1)
       const g = save.gates.find(x => x.id === gate.id)!, all = [...seedMonsters(R), ...save.monsters];
@@ -348,10 +361,10 @@ export function soloRan(save: Save, hid: string, gate: SoloGate, run: SoloRun, l
     }
   } else {
     // a player's run of a room's gate: its message to the GM's phone, and a won run waits for the answer (solo-wait.ts)
-    const room = c.room, ev = room?.event;
-    if (!room || !ev || ev.type !== 'soloRun' || ev.payload.gate !== gate.id || ev.payload.outcome !== outcome) return refuse('no-room');
-    s = atOutbox(b => post(b, room.code, { kind: 'event', event: ev }).box)(s);
-    if (outcome === 'won') s = runPosted(s, { run: ev.payload.eid, room: room.code, hid: h.id, gate: gate.id, name: target.name, at: c.day.at, state: 'posted' });
+    const code = run.route.room, ev = c.event;
+    if (!ev || ev.type !== 'soloRun' || ev.payload.gate !== gate.id || ev.payload.outcome !== outcome) return refuse('no-room');
+    s = atOutbox(b => post(b, code, { kind: 'event', event: ev }).box)(s);
+    if (outcome === 'won') s = runPosted(s, { run: ev.payload.eid, room: code, hid: h.id, gate: gate.id, name: target.name, at: c.day.at, state: 'posted' });
   }
   return { save: s, outcome, before: vitalsOf(h), after: vitalsOf(s.hunters.find(x => x.id === h.id) ?? after), granted, xp };
 }
@@ -416,13 +429,32 @@ export function soloTargets(world: WorldDoc | null, doc: SoloDoc | null): SoloTa
  * hunter's share of it, and `party` the rule (`gateParty`) its gold roll is shared by when it is rolled (`shareEach`).
  */
 export type SoloPlan = { readonly kind: 'paid'; readonly due: number; readonly xp: number; readonly party: number } | { readonly kind: 'refused'; readonly why: SoloRefused } | { readonly kind: 'report' };
-/** The plan for run `p` on the GM's save as it stands: the one rule, asked again inside the write (`soloTaken`). */
+/** The GM's gate as a player's run finds it: gone, cleared, closed (no Clear possible), still clearable but no longer open to solo runs, or open to them. */
+export const SOLO_GATE_FOUND = ['gone', 'cleared', 'closed', 'notSolo', 'open'] as const;
+export type SoloGateFound = (typeof SOLO_GATE_FOUND)[number];
+/** What the GM's phone does with a run: pay it as the gate's Clear, answer it refused with why, or only note it. */
+type PlanCell = 'pay' | 'report' | SoloRefused;
+/** Each gate as the run finds it, against each outcome of the run: every cell. */
+export const PLAN_TABLE: { readonly [G in SoloGateFound]: { readonly [O in RunOutcome]: PlanCell } } = {
+  gone: { won: 'gone', lost: 'report', stalled: 'report' },
+  cleared: { won: 'taken', lost: 'report', stalled: 'report' },
+  closed: { won: 'closed', lost: 'report', stalled: 'report' },
+  // SMX-gates-2.2 waits on the owner's ruling (proposed: a gate not open to solo runs refuses a solo run, which makes the
+  // won cell a refusal). As the app behaves today, a gate the GM took out of solo runs while a run played is paid, and a
+  // lost or stalled run enters it (`soloTaken`).
+  notSolo: { won: 'pay', lost: 'report', stalled: 'report' },
+  // SMX-gates-2.3 waits on its ruling (a solo clear's rewards and System text wait for the GM): today `pay` pays at once.
+  open: { won: 'pay', lost: 'report', stalled: 'report' },
+};
+const gateFound = (g: Gate | undefined): SoloGateFound =>
+  (!g ? 'gone' : !can(g, 'clear') ? (g.status === 'cleared' ? 'cleared' : 'closed') : g.solo ? 'open' : 'notSolo');
+/** The plan for run `p` on the GM's save as it stands (`PLAN_TABLE`): the one rule, asked again inside the write (`soloTaken`). */
 export function soloPlan(save: Pick<Save, 'gates' | 'monsters'>, p: SoloRunPayload, R: Rules): SoloPlan {
-  if (p.outcome !== 'won') return { kind: 'report' };
-  const g = save.gates.find(x => x.id === p.gate);
-  if (!g) return { kind: 'refused', why: 'gone' };
-  if (!can(g, 'clear')) return { kind: 'refused', why: g.status === 'cleared' ? 'taken' : 'closed' };
-  const all = [...seedMonsters(R), ...save.monsters], due = xpDue(g, id => { const m = all.find(x => x.id === id); return m ? monsterXp(m, R) : 0; });
+  const g = save.gates.find(x => x.id === p.gate), cell = PLAN_TABLE[gateFound(g)][p.outcome];
+  if (cell === 'report') return { kind: 'report' };
+  if (cell !== 'pay') return { kind: 'refused', why: cell };
+  // the table pays only a gate it found (open or notSolo)
+  const all = [...seedMonsters(R), ...save.monsters], due = xpDue(g!, id => { const m = all.find(x => x.id === id); return m ? monsterXp(m, R) : 0; });
   return { kind: 'paid', due, xp: shareEach(due, 1, R.gateParty), party: R.gateParty };
 }
 /** The `soloAnswer` body for run `p` under `plan` with the loot rolled: null for a report, which needs none. */

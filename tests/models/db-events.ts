@@ -7,9 +7,10 @@ export type AnyStore = { readonly name: 'store' };
 export const STORE: AnyStore = { name: 'store' };
 /** The database as the server starts it. */
 export const START: Db<AnyStore> = { at: 'opening' };
-/** Postgres answers; Postgres refuses the connection (twice, at two times, so a second failure is walked). */
+/** Postgres answers; Postgres refuses the connection (twice, at two times, so a second failure is walked); the server shuts down. */
 export const WALK_EVENTS: readonly DbEvent<AnyStore>[] = [
   { type: 'opened', store: STORE },
   { type: 'failed', at: 1000, error: 'ERR_POSTGRES_CONNECTION_REFUSED' },
   { type: 'failed', at: 2000, error: 'ERR_POSTGRES_CONNECTION_REFUSED' },
+  { type: 'close' },
 ];

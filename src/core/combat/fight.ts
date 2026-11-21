@@ -20,15 +20,15 @@ import type { Body, Status, StatusKey } from './effect-ops.ts';
 import { landUse, leftZone, placeOf, ready, resolve } from './resolve.ts';
 import { alive } from './land.ts';
 import type { Resolved } from './resolve.ts';
-import { fireReaction, reactorsFor, reactState, reactStep, withReact } from './fight-react.ts';
+import { react, reactorsFor, reactState, reactStep, withReact } from './fight-react.ts';
 import { holds, stealthStep } from './standing.ts';
 import { counted, usesGates } from './uses.ts';
 import type { Aim } from './resolve.ts';
 import { combatantId } from './ability-types.ts';
 import type { Ability, CombatantId, Outcome } from './ability-types.ts';
-import { channelCan, channelStep } from './fight-channel.ts';
+import { channelCan, channelStep, released } from './fight-channel.ts';
 import { eventsOf, raised } from './triggers.ts';
-import { consequences, D20, ended, held, holdsSide, logged, marked, overIf, partyView, payDue, rowOf, sentAway, sheetBacks, spreadTo, startTurn, triggered, uncovered, withRow, zoneEnds } from './fight-turn.ts';
+import { burstsOf, consequences, D20, ended, held, holdsSide, logged, marked, overIf, partyView, payDue, rowOf, sentAway, sheetBacks, spreadTo, startTurn, triggered, uncovered, withRow, zoneEnds } from './fight-turn.ts';
 import { hpChange, lifeNews, SAVES_TO_END } from '../hunter/vitals.ts';
 import { refilledRow, rowLifeAfter, rowLifeTakes } from './row-life.ts';
 import { summonRow } from './rows.ts';
@@ -267,7 +267,8 @@ function landed(f: Running, use: Landed, ctx: Ctx): Result {
   const pushedIn = new Set<string>(z?.acted ? used.rows.map(b => b.id) : r.shoved);
   const scored = { ...used, rows: tallied(used.rows, { type: 'used', by: u.id, ability: a, outcomes: r.outcomes, before: rows }) };
   const fired = triggered(scored, eventsOf(a, u.id, r.outcomes, rows, scored.rows), ctx);
-  return after(f, afterReactions(fired, u.id, r.outcomes, R, reacted.count), use.by, null, ctx, [{ type: 'used', by: u.id, ability: a.id, line: useLine }, ...critsOf(r.outcomes), ...burstsOf(r.bursts)], pushedIn);
+  const fx: Fx = [{ type: 'used', by: u.id, ability: a.id, line: useLine }, ...critsOf(r.outcomes), ...burstsOf([...r.bursts, ...reacted.bursts])];
+  return after(f, afterReactions(fired, u.id, r.outcomes, R, reacted.count, fx), use.by, null, ctx, fx, pushedIn);
 }
 
 /**
@@ -294,9 +295,10 @@ function summoned(f: Running, a: Ability, by: CombatantId, ctx: Ctx): Running {
 
 /**
  * Rule 19c (kits design 8.4.1): after a foe's use and its triggers, each body it landed on (caught or in its ring) sets
- * off the armed `after` reactions that protect it, aimed at the user, within the use's `reactionsPerUse`.
+ * off the armed `after` reactions that protect it, aimed at the user, within the use's `reactionsPerUse`. Whether one
+ * fires at a user already down is the reaction table's (`react`). The thresholds they set off go into `fx`.
  */
-function afterReactions(f: Running, by: CombatantId, outcomes: readonly Outcome[], R: Rules, count: { n: number }): Running {
+function afterReactions(f: Running, by: CombatantId, outcomes: readonly Outcome[], R: Rules, count: { n: number }, fx: Fx): Running {
   const user = rowOf(f, by);
   if (!user) return f;
   const map = new Map(f.rows.map(b => [b.id, b] as const)), said: string[] = [], about: CombatantId[] = [];
@@ -304,12 +306,13 @@ function afterReactions(f: Running, by: CombatantId, outcomes: readonly Outcome[
     const t = map.get(o.target);
     if (!t || t.side === user.side || (o.avoid !== 'caught' && o.avoid !== 'ring')) continue;
     for (const r of reactorsFor(map, t, 'after', by, f.now, R)) {
-      if (count.n >= R.fight.kit.reactionsPerUse || !map.get(by)) break;
-      const fired = fireReaction(map, r.id, by, f.now, R);
+      if (count.n >= R.fight.kit.reactionsPerUse) break;
+      const fired = react(map, r.id, by, f.now, R);
       if (!fired) continue;
       count.n++;
       said.push(fired.said);
       about.push(...fired.about);
+      fx.push(...burstsOf(fired.bursts));
     }
   }
   return said.length ? logged({ ...f, rows: f.rows.map(b => map.get(b.id)!) }, line(`Then: ${said.join(', ')}.`, [by, ...about]), R) : f;
@@ -328,7 +331,9 @@ function arm<F extends Setup | Running>(f: F, cmd: Extract<Command, { type: 'arm
   const on = a.react.when === 'turn' ? cmd.on ?? null : null;
   if (a.react.when === 'turn' && (on === null || on === u.id || !rowOf(f, on))) return refused(f, 'noTarget');
   if (u.armed?.ability === a.id && u.armed.on === on) return refused(f, 'noChange');
-  return done(withRow(f, withReact(u, reactStep(reactState(u), { type: 'arm' }), { ability: a.id, on })), []);
+  const s = reactStep(reactState(u), { type: 'arm', up: isUp(u) });
+  if (s === 'unarmed') return refused(f, 'down');
+  return done(withRow(f, withReact(u, s, { ability: a.id, on })), []);
 }
 
 /** Whether a use hides its user: it puts a status with `hidden` on (kits design 8.7). */
@@ -342,12 +347,11 @@ const seenByFoes = (f: Running, u: Body, R: Rules): boolean =>
 
 /** The `crit` effects of a use's outcomes: one per target a critical hit landed on. */
 const critsOf = (outcomes: readonly Outcome[]): Fx => outcomes.filter(o => o.crit).map(o => ({ type: 'crit', id: o.target }));
-/** A use's thresholds that went off, one `burst` a bearer. */
-const burstsOf = (bursts: readonly { readonly bearer: CombatantId }[]): Fx => [...new Set(bursts.map(b => b.bearer))].map(id => ({ type: 'burst', id }));
 
 /**
- * A channel goes off: a holding one on its user's turn, costing the ability's time; a broken one at once, costing no
- * time. It lands what its begin paid (`landUse`), where it was aimed however far that is now; nothing is asked again
+ * A channel goes off: what it costs is read from the state it is released from and whose turn it is (fight-channel.ts
+ * `released`): a holding one on its user's turn, costing the ability's time; a broken one at once, out of its user's
+ * turn costing no time. It lands what its begin paid (`landUse`), where it was aimed however far that is now; nothing is asked again
  * but its dice. What follows is a use's (`landed`), the same as `act`'s. One that can land nothing (its aim gone, a
  * blink with nowhere to stand) goes off at nothing and ends, so a broken one is never owed for good.
  */
@@ -357,20 +361,20 @@ const release: Step<'running', 'release'> = (f, cmd, ctx) => {
   if (!isUp(u)) return refused(f, 'down');
   const c = u.channel;
   if (!c || !channelCan(c, 'release')) return refused(f, 'noChannel');
-  if (c.state === 'holding' && cmd.by !== f.currentId) return refused(f, 'notYourTurn');
+  const off = released(c, cmd.by === f.currentId ? 'own' : 'other');
+  if (!off) return refused(f, 'notYourTurn');
   const a = u.abilities.find(x => x.id === c.ability);
   if (!a) return refused(f, 'unknownAbility');
-  const turn = cmd.by === f.currentId;
+  const turn = off.costs === 'turn';
   const nothing = (): Result => {
-    const done = { ...(turn ? acted(u, f.now, a.cost.time, R.fight) : u), channel: channelStep(c, { type: 'release' }) };
+    const done = { ...(turn ? acted(u, f.now, a.cost.time, R.fight) : u), channel: off.channel };
     return after(f, logged(withRow(f, done), line(`${u.name}'s ${a.name} is released and hits nothing.`, [u.id]), R), turn ? u.id : '', null, ctx, []);
   };
   const at = placeOf(c.aim, f.rows);
   if (!at) return nothing();
   const r = landUse(a, u, { at, paid: u, spent: c.spent }, f.rows, c.aim, f.grid, cmd.rolls, f.now, R);
   if (r.ok === false) return r.reason === 'needsRoll' ? refused(f, r.reason) : nothing();
-  // it goes off; out of its user's turn (a broken one) it costs no time
-  const fired = (b: Body): Body => b.id !== u.id ? b : { ...b, channel: channelStep(c, { type: 'release' }), ...(turn ? {} : { at: u.at }) };
+  const fired = (b: Body): Body => b.id !== u.id ? b : { ...b, channel: off.channel, ...(turn ? {} : { at: u.at }) };
   return landed(f, { a, u, rows: f.rows, at, r: { ...r, bodies: r.bodies.map(fired) }, taken: [], head: `${u.name}'s ${a.name} is released at charge ${c.charge}`, by: turn ? u.id : '' }, ctx);
 };
 
@@ -649,7 +653,11 @@ function extract<F extends Fight>(f: F, cmd: Extract<Command, { type: 'extract' 
 }
 
 // ── the table ──
-const TABLE: { readonly [S in FightState]: Row<S> } = {
+const ACTING: Row<'running'> = {
+  add: addTo, remove: removeRunning, start: null, act, move, endTurn, release, setIntent, reveal, place: placeRow, adjust, refill, life, status, settle: settleDue,
+  paint, zoneAdd, zoneRemove, resize, arm, extract, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
+};
+const TABLE: { readonly [S in Exclude<FightState, 'running'>]: Row<S> } & { readonly running: { readonly [S in RunningState['at']]: Row<'running'> } } = {
   none: {
     add: create, remove: null, start: null, act: null, move: null, endTurn: null, release: null, setIntent: null, reveal: null, place: null, adjust: null, refill: null,
     life: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract: null, end: null, clear: null,
@@ -658,9 +666,12 @@ const TABLE: { readonly [S in FightState]: Row<S> } = {
     add: addTo, remove: removeInSetup, start, act: null, move: null, endTurn: null, release: null, setIntent, reveal, place: placeRow, adjust, refill, life, status,
     settle: null, paint, zoneAdd, zoneRemove, resize, arm, extract, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
   },
+  // a running fight's two states (`runningState`): its turn's actor acts, or the fight owes dice first
   running: {
-    add: addTo, remove: removeRunning, start: null, act, move, endTurn, release, setIntent, reveal, place: placeRow, adjust, refill, life, status, settle: settleDue,
-    paint, zoneAdd, zoneRemove, resize, arm, extract, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
+    acting: ACTING,
+    // rules-3.2 waits on the owner's ruling on whether a turn may end while dice are owed. Today it may: act, move and
+    // endTurn apply here as in `acting`, and the dice stay owed.
+    owing: { ...ACTING, act, move, endTurn },
   },
   // The rows of an ended fight are the summary's record: the GM edits the hunters' sheets from here on, and may still
   // extract a shadow from a fallen monster.
@@ -670,8 +681,12 @@ const TABLE: { readonly [S in FightState]: Row<S> } = {
   },
 };
 
+/** The row of `TABLE` for `f`: its phase's, and for a running fight its running state's. */
+const rowFor = (f: Fight | null): Row<FightState> =>
+  (f?.phase === 'running' ? TABLE.running[runningState(f).at] : TABLE[stateOf(f) as Exclude<FightState, 'running'>]) as Row<FightState>;
+
 /** Whether `type` applies to a fight in this state: what a view asks before it shows the button. */
-export const can = (f: Fight | null, type: CommandType): boolean => TABLE[stateOf(f)][type] !== null;
+export const can = (f: Fight | null, type: CommandType): boolean => rowFor(f)[type] !== null;
 
 /** What the fight waits on the dice of the phone that runs it for: a `settle` with `dice`, or a broken channel's `release`. */
 export type Owed =
@@ -689,6 +704,18 @@ export function owed(f: Fight | null): Owed[] {
     ...f.pending.map((p): Owed => ({ kind: 'settle', id: p.id, key: pendingKey(p), dice: 'due' in p ? diceOf(atTier(p.due.op.amount, p.due.tier)) : p.spread.targets.map(() => D20) })),
     ...f.rows.filter(r => r.channel?.state === 'broken' && isUp(r)).map((r): Owed => ({ kind: 'release', id: r.id })),
   ];
+}
+
+/**
+ * A running fight's state: `acting`, its turn's actor may act; or `owing`, it waits on dice first (`owed`, in the order
+ * they are paid). Read from the fight as it stands, so it has no writer of its own: a pending entry paid or a broken
+ * channel gone off leaves `owing` by itself.
+ */
+export type RunningState = { readonly at: 'acting' } | { readonly at: 'owing'; readonly owed: readonly [Owed, ...Owed[]] };
+export const RUNNING_STATES = ['acting', 'owing'] as const satisfies readonly RunningState['at'][];
+export function runningState(f: Running): RunningState {
+  const o = owed(f);
+  return o.length ? { at: 'owing', owed: o as [Owed, ...Owed[]] } : { at: 'acting' };
 }
 
 /**
@@ -710,7 +737,7 @@ function explored(f: Fight): Fight {
  */
 export function reduce(f: Fight | null, cmd: Command, ctx: Ctx): Result {
   // The table's type pairs each state with its fight and each key with the step for that command.
-  const step = TABLE[stateOf(f)][cmd.type] as Step<FightState, CommandType> | null;
+  const step = rowFor(f)[cmd.type] as Step<FightState, CommandType> | null;
   if (!step) return refused(f, 'notNow');
   const r = step(f as never, cmd as never, ctx);
   if (!r.fight || r.fight === f) return r;

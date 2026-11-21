@@ -141,6 +141,31 @@ test('with the GM\'s phone offline, the run waits for it and is paid once when i
   expect(lifetime(hunterOf(await save(kai!.page))), 'paid once, across reloads of both phones').toBe(once);
 });
 
+// SMX-gates-2.4: the room took the run and the GM's phone never pays it; the player stops waiting and the gate is free.
+test('a run the room took and the GM\'s phone has not paid can be put away after a question, and the gate entered again', async ({ device }) => {
+  const { gm, players: [kai] } = await roomWithSoloDen(device, ['Kai'], { allowConsole: [/ERR_INTERNET_DISCONNECTED/] });
+  await gm.ctx.setOffline(true);
+  await runDen(kai!.page);
+  const card = worldCard(kai!.page, 'Goblin Den');
+  await expect(card).toContainText('Cleared. Waiting for the GM\'s phone to pay it.', { timeout: 30_000 });
+  const dismiss = card.locator('[data-solo-dismiss]');
+  await expect(dismiss).toBeVisible();
+  await expect(card.locator('[data-solo-enter]')).toHaveCount(0);
+  const box = (await dismiss.boundingBox())!, cardBox = (await card.boundingBox())!;
+  expect(box.x + box.width <= cardBox.x + cardBox.width && cardBox.x + cardBox.width <= 390, 'the button and its card fit a 390 px phone').toBe(true);
+  await dismiss.tap();
+  const ask = kai!.page.locator('.sys-overlay.show', { hasText: /stop waiting\?/i });
+  await expect(ask).toBeVisible();
+  await expect(ask).toContainText('If the GM\'s phone pays this run later, it pays you nothing. Its cost stays, and you can enter the gate again.');
+  await ask.locator('.sys-actions button', { hasText: 'Cancel' }).tap();
+  await expect(card.locator('[data-solo-dismiss]'), 'Cancel keeps the run waiting').toBeVisible();
+  await card.locator('[data-solo-dismiss]').tap();
+  await kai!.page.locator('.sys-overlay.show .sys-actions button', { hasText: 'Stop waiting' }).tap();
+  await expect(card.locator('[data-solo-enter]')).toBeVisible();
+  await expect(card).not.toContainText('Waiting for the GM');
+  expect((await save(kai!.page)).settings.sync.runs ?? []).toEqual([]);
+});
+
 test('two players clear one gate: the first is paid, the second is told it was taken and keeps its cost', async ({ device }) => {
   const { code, players: [kai, rei] } = await roomWithSoloDen(device, ['Kai', 'Rei']);
   const reiXp = lifetime(hunterOf(await save(rei!.page)));

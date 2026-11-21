@@ -4,6 +4,8 @@
 import { expect, test } from 'bun:test';
 import { bindRoom, bindSave, rules } from '../src/edge/rules.ts';
 import { RULES } from '../src/core/rules.ts';
+import { roomRulesOf } from '../src/core/hunter/build.ts';
+import type { RoomRules } from '../src/core/protocol.ts';
 import { freshSave, repairSave } from '../src/core/save.ts';
 import type { ParseEnv } from '../src/core/save.ts';
 import type { StatusDef } from '../src/core/combat/effect-ops.ts';
@@ -32,7 +34,7 @@ test('a read of the rules between two writes does not walk the GM\'s statuses, h
 
 test('a write of the save reaches the next read: new overrides, a new status, the room\'s rules', () => {
   const save = { rulesOverrides: {} as Record<string, unknown>, library: { statuses: library(2) } };
-  let room: { build: { enabled: boolean; playerPick: boolean }; solo: { personal: boolean; hours: number }; feats: { on: boolean } } | null = null;
+  let room: RoomRules | null = null;
   bindRoom(() => room);
   bindSave(() => save);
   expect(rules().xpPerLevel).toBe(RULES.xpPerLevel);
@@ -40,9 +42,9 @@ test('a write of the save reaches the next read: new overrides, a new status, th
   expect(rules().xpPerLevel).toBe(150);
   save.library = { statuses: { ...library(2), 'gm-new': { ...burning, label: 'Fresh' } } };
   expect(status('gm-new')?.label).toBe('Fresh');
-  room = { build: { enabled: false, playerPick: false }, solo: { personal: false, hours: 12 }, feats: { on: true } };
+  room = { ...roomRulesOf(RULES), build: { enabled: false, playerPick: false }, solo: { personal: false, hours: 12, lootShare: RULES.solo.lootShare } };
   expect([rules().build.enabled, rules().solo.hours]).toEqual([false, 12]);
-  room = { ...room, solo: { personal: false, hours: 6 } };
+  room = { ...room, solo: { ...room.solo, hours: 6 } };
   expect(rules().solo.hours, 'the room\'s rules are read by value: a new doc of other hours is a change').toBe(6);
 });
 

@@ -5,7 +5,7 @@ import { describe, expect, test } from 'bun:test';
 import { freshSave } from '../src/core/save.ts';
 import type { Save } from '../src/core/save.ts';
 import { isRefused } from '../src/core/save-step.ts';
-import { RUNS_MAX, TABLE, WAIT_EVENTS, WAIT_STATES, parseRuns, runAnswered, runDismissed, runPosted, runTaken, runsGone, shownOf, waitStep, waitWords, waitingGates } from '../src/core/gates/solo-wait.ts';
+import { RUNS_MAX, WAIT_EVENTS, WAIT_STATES, mayDismiss, parseRuns, runAnswered, runDismissed, runPosted, runTaken, runsGone, shownOf, waitStep, waitWords, waitingGates } from '../src/core/gates/solo-wait.ts';
 import type { WaitingRun } from '../src/core/gates/solo-wait.ts';
 import { post, step } from '../src/core/sync/outbox.ts';
 import type { Outbox } from '../src/core/sync/outbox.ts';
@@ -51,8 +51,28 @@ describe('what the player sees of a waiting run', () => {
 });
 
 describe('the machine', () => {
-  test('every state answers every event in the table', () => {
-    for (const st of WAIT_STATES) for (const e of WAIT_EVENTS) expect(TABLE[st][e] === null || typeof TABLE[st][e] === 'string', `${st} ${e}`).toBe(true);
+  // Each shown state against each event, the refused cells too: what the player sees next (`stays` where the event does
+  // not apply, `end` where the run leaves the list). The rule: the room's taking moves only a posted run; an answer
+  // closes a run still waiting; a room gone loses a run still waiting; the player puts away a lost run, or stops waiting
+  // for one the room took (SMX-gates-2.4: a GM's phone that missed it would hold it, and its gate, for good).
+  const EXPECTED = {
+    posted: { taken: 'taken', answered: 'end', roomGone: 'lost', dismiss: 'stays' },
+    taken: { taken: 'stays', answered: 'end', roomGone: 'lost', dismiss: 'end' },
+    lost: { taken: 'stays', answered: 'stays', roomGone: 'stays', dismiss: 'end' },
+  } as const;
+  /** A run in shown state `st`, with the outbox it is read with. */
+  const at = (st: (typeof WAIT_STATES)[number]): { w: WaitingRun; box: Outbox } => {
+    const ev = runEvent(1), s = posted(save0(), ev), w = s.settings.sync.runs![0]!, box = s.settings.sync.outbox!;
+    return st === 'posted' ? { w, box } : st === 'taken' ? { w: { ...w, state: 'taken' }, box: [] } : { w, box: [] };
+  };
+  test('every state answers every event as the rule says, the refused cells too', () => {
+    for (const st of WAIT_STATES) for (const e of WAIT_EVENTS) {
+      const { w, box } = at(st);
+      expect(shownOf(w, box).state, st).toBe(st);
+      const out = waitStep(w, box, { type: e });
+      const seen = out === 'end' ? 'end' : out === w ? 'stays' : shownOf(out, box).state;
+      expect(`${st} × ${e}: ${seen}`).toBe(`${st} × ${e}: ${EXPECTED[st][e]}`);
+    }
   });
 
   test('an answer closes a posted or taken run; a lost one waits only for the player to put it away', () => {
@@ -61,9 +81,25 @@ describe('the machine', () => {
     expect(ok<Save>(runAnswered(withBox(runTaken(withBox(s, b => step(b, id, { type: 'send' })), id), b => step(b, id, { type: 'sent' })), id)).settings.sync.runs).toEqual([]);
     const lost = runsGone(s, ROOM);
     expect(runAnswered(lost, id)).toEqual({ ok: false, why: 'no-run' });
-    expect(runDismissed(s, id), 'a run still waiting is not put away').toEqual({ ok: false, why: 'no-run' });
+    expect(runDismissed(s, id), 'a run whose letter is still on its way is not put away').toEqual({ ok: false, why: 'no-run' });
     expect(ok<Save>(runDismissed(lost, id)).settings.sync.runs).toEqual([]);
     expect(runAnswered(save0(), id), 'no run, no answer').toEqual({ ok: false, why: 'no-run' });
+  });
+
+  // SMX-gates-2.4: the room took the run, and the GM's phone never pays it (a read-only GM tab, a GM who cleared the
+  // gate by hand). The player stops waiting: the gate is free to run again, and an answer that comes after pays nothing.
+  test('a run the room took and the GM\'s phone never answers can be put away; its gate is free again and a late answer pays nothing', () => {
+    const ev = runEvent(1), id = ev.payload.eid;
+    const sending = withBox(posted(save0(), ev), b => step(b, id, { type: 'send' }));
+    const taken = withBox(runTaken(sending, id), b => step(b, id, { type: 'sent' }));
+    expect(shown(taken)).toEqual([['g1', 'taken']]);
+    expect(waitingGates(taken, ROOM, 'h1'), 'the gate is held while the run waits').toEqual(['g1']);
+    expect(mayDismiss(taken.settings.sync.runs![0]!, [])).toBe(true);
+    expect(mayDismiss(sending.settings.sync.runs![0]!, sending.settings.sync.outbox!), 'a run on its way waits for the room').toBe(false);
+    const away = ok<Save>(runDismissed(taken, id));
+    expect(away.settings.sync.runs).toEqual([]);
+    expect(waitingGates(away, ROOM, 'h1')).toEqual([]);
+    expect(runAnswered(away, id), 'the answer after pays nothing').toEqual({ ok: false, why: 'no-run' });
   });
 
   test('a room gone loses only its own runs', () => {

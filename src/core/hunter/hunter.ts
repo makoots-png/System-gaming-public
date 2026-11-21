@@ -28,6 +28,7 @@ import { newProgress, pendingTotal } from './progress.ts';
 import { levelOf } from './level.ts';
 import type { Pending, Progress } from './progress.ts';
 import { newVitals, parseLife, parseUsed } from './vitals.ts';
+import { parseWorn } from './inventory.ts';
 import type { Vitals } from './vitals.ts';
 import { hunterSheet } from './sheet.ts';
 import { isStateChip } from './chips.ts';
@@ -252,7 +253,7 @@ export function fixHunter(saveRun: RepairRun, h: Hunter): void {
 
 /**
  * Points a hunter's references at what it holds, once the save's repair has given every object its final id: the
- * active title, the gear, each loadout's slots (each item once; the fit is checked at swap time), and the quest of the
+ * active title, the gear (`parseWorn`: each item once, single, in a slot it fits), each loadout's slots (each item once; the fit is checked at swap time), and the quest of the
  * penalty and of the Job Change chain. A stored reference meant the first object of its list stored under that id, so
  * it is read against the ids as stored: `storedAs` holds, for each object of this hunter's that took a new id, its new
  * id and the id it was stored under. A reference that names nothing is cleared (the title, the gear), or read by the
@@ -262,7 +263,8 @@ export function fixRefs(h: Hunter, storedAs: ReadonlyMap<string, string>, now: s
   const named = <T extends { id: string }>(list: readonly T[], ref: unknown): T | undefined =>
     isStr(ref) ? list.find(o => (storedAs.get(o.id) ?? o.id) === ref) : undefined;
   h.titleId = named(h.titles, h.titleId)?.id ?? null;
-  for (const slot of SLOTS) h.equipped[slot] = named(h.items, h.equipped[slot])?.id ?? null;
+  const stored = h.equipped;
+  h.equipped = parseWorn(slot => named(h.items, stored[slot]));
   for (const l of h.loadouts) {
     const slots: Loadout['slots'] = {};
     for (const slot of SLOTS) {

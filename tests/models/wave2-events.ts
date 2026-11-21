@@ -5,9 +5,11 @@ import type { EdgeEvent, StealthEvent, WardEvent } from '../../src/core/combat/s
 import type { ShoveEvent } from '../../src/core/combat/space.ts';
 import type { ExtraEvent, HasteEvent } from '../../src/core/combat/timeline.ts';
 
-/** 8.9.1: armed and disarmed; a moment that may fire and one that may not; its use resolving; its turn; down. */
+/** 8.9.1: armed by a reactor up and by one down, and disarmed; a moment that may fire at an aim up or down, and one that may not; its use resolving; its turn; down. */
 export const REACT_WALK: readonly ReactEvent[] = [
-  { type: 'arm' }, { type: 'disarm' }, { type: 'moment', may: true }, { type: 'moment', may: false }, { type: 'resolves' }, { type: 'turnStart' }, { type: 'down' },
+  { type: 'arm', up: true }, { type: 'arm', up: false }, { type: 'disarm' },
+  { type: 'moment', may: true, aim: 'up' }, { type: 'moment', may: true, aim: 'down' }, { type: 'moment', may: false, aim: 'up' },
+  { type: 'resolves' }, { type: 'turnStart' }, { type: 'down' },
 ];
 /** 8.9.2: one or two stacks land; a die reached that spends and one worn; its end. */
 export const EDGE_WALK: readonly EdgeEvent[] = [{ type: 'lands', k: 1 }, { type: 'reached', spend: true }, { type: 'reached', spend: false }, { type: 'ends' }];

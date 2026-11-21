@@ -10,6 +10,8 @@
 //
 // One run's life is a machine over what the player sees (`shownOf`): posted, taken, lost, and the end (answered or
 // dismissed: out of the list). Its `TABLE` has every cell; docs/state-machines.md draws it ("A solo run waiting").
+// A run the room took may be put away too: a GM's phone that missed it (a read-only tab, a gate cleared by hand) never
+// answers it, and the run would hold its gate for good (audit SMX-gates-2.4). An answer after that pays nothing.
 
 import type { Save } from '../save.ts';
 import type { Outbox } from '../sync/outbox.ts';
@@ -35,16 +37,19 @@ export type LostWhy = 'refused' | 'dropped' | 'gone';
 export const WAIT_EVENTS = ['taken', 'answered', 'roomGone', 'dismiss'] as const;
 /**
  * What happens to a waiting run: the room took its message (sync.ts, with the outbox's `sent`); the GM's answer landed
- * (either verdict); the room no longer exists (the link's `gone`); the player put a lost run away.
+ * (either verdict); the room no longer exists (the link's `gone`); the player put a lost or taken run away.
  */
 export type WaitEvent = { readonly type: (typeof WAIT_EVENTS)[number] };
 /** A run's next stored state, or `end` when it leaves the list; null where the event does not apply. */
 type Cell = WaitStored | 'end' | null;
 
-/** Each shown state's answer to each event (notes-2-solo.md section 5: 3 states by 4 events, every cell). */
+/**
+ * Each shown state's answer to each event (notes-2-solo.md section 5: 3 states by 4 events, every cell). A posted run
+ * cannot be put away: its letter is still queued or on its way, and the outbox makes it taken or lost.
+ */
 export const TABLE: { readonly [S in WaitState]: { readonly [E in WaitEvent['type']]: Cell } } = {
   posted: { taken: 'taken', answered: 'end', roomGone: 'gone', dismiss: null },
-  taken: { taken: null, answered: 'end', roomGone: 'gone', dismiss: null },
+  taken: { taken: null, answered: 'end', roomGone: 'gone', dismiss: 'end' },
   lost: { taken: null, answered: null, roomGone: null, dismiss: 'end' },
 };
 
@@ -98,8 +103,13 @@ export const runsGone = <S extends Pick<Save, 'settings'>>(s: S, room: RoomCode)
  * answered, so a second answer (a second GM phone, a replay) pays nothing: the run's id is the player's guard.
  */
 export const runAnswered = <S extends Pick<Save, 'settings'>>(s: S, run: string): S | Refused<'no-run'> => stepRuns(s, w => w.run === run, { type: 'answered' });
-/** The player put lost run `run` away. Refused (`no-run`) for a run that is not lost. */
+/**
+ * The player put run `run` away: a lost one, or a taken one it stops waiting for (`mayDismiss`). Refused (`no-run`) for
+ * a run still posted.
+ */
 export const runDismissed = <S extends Pick<Save, 'settings'>>(s: S, run: string): S | Refused<'no-run'> => stepRuns(s, w => w.run === run, { type: 'dismiss' });
+/** Whether the player may put `w` away now (the table's `dismiss` cell): its card's Dismiss. */
+export const mayDismiss = (w: WaitingRun, box: Outbox): boolean => TABLE[shownOf(w, box).state].dismiss !== null;
 /** The gates hunter `hid` has a run of waiting in room `room` (soloReady's `waiting`: no second run of one gate before its answer). */
 export const waitingGates = (s: Pick<Save, 'settings'>, room: RoomCode, hid: string): GateId[] => {
   const box = s.settings.sync.outbox ?? [];
@@ -113,6 +123,12 @@ export const WAIT_WORDS: { readonly [S in WaitState]: string } & { readonly lost
   lost: 'The room did not take this run, so it paid nothing. Its cost stays.',
   gone: 'The room is gone, so the run paid nothing. Its cost stays.',
 };
+/** The question before a taken run is put away: it gives up the pay. */
+export const STOP_WAITING = {
+  title: 'Stop waiting?',
+  body: 'If the GM\'s phone pays this run later, it pays you nothing. Its cost stays, and you can enter the gate again.',
+  confirm: 'Stop waiting',
+} as const;
 /** The words of `w` as the player sees it. */
 export const waitWords = (w: WaitingRun, box: Outbox): string => { const s = shownOf(w, box); return s.why === 'gone' ? WAIT_WORDS.gone : WAIT_WORDS[s.state]; };
 

@@ -5,7 +5,7 @@ import { oneOf } from '../core/one-of.ts';
 import { itemOps, itemSource } from '../core/effects.ts';
 import { builtInItems, defaultShop, lootPool, parseItem, valueOf, weightOf } from '../core/registry/items.ts';
 import { itemAbilityId } from '../core/registry/abilities.ts';
-import { BUY_REFUSALS, BUY_WORDS, SHOP_CLOSED, addGold, buy, editItem, equip, putItem, removeItem, removeShopItem, sell, sellable, sellPrice as sellPriceOf, sellTotal, shopOpen, stackOf, unequip, withShop, writeShopItem } from '../core/hunter/inventory.ts';
+import { BUY_REFUSALS, BUY_WORDS, GEAR_WORDS, SHOP_CLOSED, addGold, buy, editItem, equip, putItem, removeItem, removeShopItem, sell, sellable, sellPrice as sellPriceOf, sellTotal, shopOpen, stackOf, unequip, wearMove, withShop, writeShopItem } from '../core/hunter/inventory.ts';
 import { fitted } from '../core/hunter/sheet.ts';
 import { USE_WORDS, spendItem, usable, useDice, useItem, useWords } from '../core/hunter/use.ts';
 import { atHunter, both, isRefused, refuse } from '../core/save-step.ts';
@@ -26,13 +26,16 @@ export function register(app) {
   const { store, ui } = app;
   const { esc, fmt } = ui;
 
+  /** Whether hunter `hid` is in a fight: inventory.ts refuses every change of what is worn there (`TABLE`). */
+  const inFight = hid => app.api.loadouts.inFight(hid);
   /**
-   * Gear does not change in a running fight: the fight's row holds the sheet it started with (m2-plan section 4.4, W4).
-   * Answers true, after a toast that says so, when the hunter is in one.
+   * Whether `event` on item `itemId` is refused now (inventory.ts `wearMove`), after the toast that says why: the Bag asks
+   * before it opens a confirm or the item maker, so a worn item in a fight is refused at the tap.
    */
-  const fighting = hid => {
-    if (!app.api.loadouts.inFight(hid)) return false;
-    ui.toast('System', 'Gear cannot change during a fight.', { kind: 'warning' });
+  const wearRefused = (h, itemId, event) => {
+    const to = wearMove(h, itemId, event, inFight(h.id));
+    if (!isRefused(to)) return false;
+    ui.wrote('System', to, GEAR_WORDS);
     return true;
   };
 
@@ -104,11 +107,11 @@ export function register(app) {
     rollLoot: (rank, { boss = false } = {}) => rollLoot(rules(), rank, boss, lootPool(rules()), cryptoRandom),
     equip(hid, itemId) {
       const h = store.hunter(hid), it = h?.items.find(i => i.id === itemId);
-      if (!it || !it.slot || fighting(hid)) return false;
+      if (!it || !it.slot) return false;
       const splitId = it.qty > 1 ? store.id('i') : it.id;
-      return ui.wrote('System', onBag(hid, 'equip', x => equip(x, itemId, splitId)));
+      return ui.wrote('System', onBag(hid, 'equip', x => equip(x, itemId, splitId, inFight(hid))), GEAR_WORDS);
     },
-    unequip(hid, slot) { if (!fighting(hid)) ui.wrote('System', onBag(hid, 'unequip', x => unequip(x, slot))); },
+    unequip(hid, slot) { ui.wrote('System', onBag(hid, 'unequip', x => unequip(x, slot, inFight(hid))), GEAR_WORDS); },
     use(hid, itemId) {
       const h = store.hunter(hid), it = h ? usable(h, itemId) : null;
       if (!it) return false;
@@ -132,7 +135,7 @@ export function register(app) {
       const h = store.hunter(hid), it = h?.items.find(i => i.id === itemId);
       if (!it) return 0;
       const got = sellTotal(it, n, rules());
-      return ui.wrote('System', onBag(hid, 'sell', x => sell(x, itemId, n, rules()))) ? got : 0;
+      return ui.wrote('System', onBag(hid, 'sell', x => sell(x, itemId, n, rules(), inFight(hid))), GEAR_WORDS) ? got : 0;
     },
   };
 
@@ -219,7 +222,7 @@ export function register(app) {
         const it = await app.api.loot.item({ initial: item || undefined, library: false });
         if (!it) return;
         if (target === 'shop') ui.wrote('System', shopEdit(shown => writeShopItem(shown, editId, it)));
-        else if (editId) ui.wrote('System', onBag(store.active().id, 'item-edit', x => editItem(x, editId, it)));
+        else if (editId) { const hid = store.active().id; ui.wrote('System', onBag(hid, 'item-edit', x => editItem(x, editId, it, inFight(hid))), GEAR_WORDS); }
         else api.addItem(store.active().id, it);
       };
 
@@ -250,7 +253,7 @@ export function register(app) {
         else if (d.equip) api.equip(id, d.equip);
         else if (d.unequipItem) { const s = SLOTS.find(k => h.equipped[k] === d.unequipItem); if (s) api.unequip(id, s); }
         else if (d.sell) {
-          const it = h.items.find(x => x.id === d.sell); if (!it) return;
+          const it = h.items.find(x => x.id === d.sell); if (!it || wearRefused(h, it.id, 'remove')) return;
           let n = 1;
           if (it.qty > 1) { n = await ui.promptNum({ title: `Sell ${it.name}`, label: `Quantity to sell (${fmt(sellPrice(it))} gold each)`, value: 1, min: 1, max: it.qty }); if (!n) return; }
           else if (!(await ui.confirm({ title: 'Sell item?', body: `${it.name} for ${fmt(sellPrice(it))} gold`, confirmLabel: 'Sell' }))) return;
@@ -258,8 +261,9 @@ export function register(app) {
           if (got) ui.toast('System', `Sold ${it.name} for ${fmt(got)} gold.`);
         } else if (d.del) {
           const it = h.items.find(x => x.id === d.del);
-          if (it && await ui.confirm({ title: 'Remove item?', body: it.name, danger: true, confirmLabel: 'Remove' })) ui.wrote('System', onBag(h.id, 'item-del', x => removeItem(x, it.id)));
-        } else if (d.editItem) { const it = h.items.find(x => x.id === d.editItem); if (it) openForm('inv', it); }
+          if (!it || wearRefused(h, it.id, 'remove')) return;
+          if (await ui.confirm({ title: 'Remove item?', body: it.name, danger: true, confirmLabel: 'Remove' })) ui.wrote('System', onBag(h.id, 'item-del', x => removeItem(x, it.id, inFight(h.id))), GEAR_WORDS);
+        } else if (d.editItem) { const it = h.items.find(x => x.id === d.editItem); if (it && !wearRefused(h, it.id, 'edit')) openForm('inv', it); }
         else if (d.buy !== undefined) {
           const tpl = shopList()[Number(d.buy)]; if (!tpl) return;
           const words = Object.fromEntries(BUY_REFUSALS.map(w => [w, BUY_WORDS[w](tpl.name)]));

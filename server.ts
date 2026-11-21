@@ -10,6 +10,8 @@ import { DOCS, DOC_MAX, SHEET_MAX, WIRES, wireDocs, EVENTS, ROOM_PAGE, deviceOf,
 import type { DeviceId, DocName, EventId, DocOf, KickedDoc, RoomCode, RoomDocs, RoomEvent, RoomState, RoomSheet, ServedSheet, SheetKey, Stored, StoredEvent, RoomViewer } from './src/core/protocol.ts';
 import { DB_RETRY_MS, dbHealth, dbStep, kickedAfter, liveSince, pushed, roomLive } from './src/core/room-server.ts';
 import type { Db, DbEvent, Pushed, RemovalChange } from './src/core/room-server.ts';
+import { ownedBy, ownerOf, ownerStep, parseTokenHash } from './src/core/sync/owner.ts';
+import type { Owner, OwnerEvent, TokenHash } from './src/core/sync/owner.ts';
 
 const NO_CACHE = /\.(html|js|css)$/;
 const BASE_HEADERS = { 'Server-Timing': 'hunter-api', 'X-Content-Type-Options': 'nosniff' };
@@ -87,18 +89,22 @@ export interface Store {
    */
   pushSheet(code: RoomCode, key: SheetKey, from: DeviceId, sheet: RoomSheet, now: number): Promise<Pushed>;
   /**
-   * The GM removes `key`'s hunter (its sheet out of the room, its phone's binding freed, the removal in the `_kicked`
-   * doc under the name the board showed) or allows it back (the removal lifted). Answers the doc after. One change of
-   * the room, as `pushSheet`: the `_kicked` doc has no other writer, so no removal is lost to another.
+   * The GM removes `key`'s hunter (its sheet out of the room, its phone's slot moved by `removed` with the phone's sheets
+   * left, so freed only with its last, the removal in the `_kicked` doc under the name the board showed) or allows it
+   * back (the removal lifted). Answers the doc after. One change of the room, as `pushSheet`: the `_kicked` doc has no
+   * other writer, so no removal is lost to another.
    */
   setRemoval(code: RoomCode, key: SheetKey, change: RemovalChange, now: number): Promise<KickedDoc>;
   /** Any doc but `kicked`, which only `setRemoval` writes. */
   putDoc<K extends Exclude<DocName, 'kicked'>>(code: RoomCode, name: K, from: DeviceId, doc: DocOf<K>, now: number): Promise<void>;
-  /** The sha256 of the device token that owns `dev`'s sheets in this room (S07). */
-  owner(code: RoomCode, dev: DeviceId): Promise<string | null>;
-  /** The first writer wins: a device already bound keeps its owner. */
-  bindOwner(code: RoomCode, dev: DeviceId, hash: string): Promise<void>;
-  releaseOwner(code: RoomCode, dev: DeviceId): Promise<void>;
+  /** `dev`'s slot in this room: which phone's token speaks for its sheets (S07, src/core/sync/owner.ts). A read. */
+  owner(code: RoomCode, dev: DeviceId): Promise<Owner>;
+  /**
+   * Moves `dev`'s slot by `ownerStep` and answers it after: a phone's write (the first writer of a free slot binds it)
+   * or the GM's release. One change of the room, so of two first writes at once one binds and the other is refused.
+   * A removal moves it inside `setRemoval`, which alone knows how many of the phone's sheets are left.
+   */
+  moveOwner(code: RoomCode, dev: DeviceId, event: Exclude<OwnerEvent, { type: 'removed' }>): Promise<Owner>;
   see(code: RoomCode, dev: DeviceId, now: number): void;
   presence(code: RoomCode): ReadonlyMap<DeviceId, number>;
   close(): Promise<void>;
@@ -133,7 +139,14 @@ function withDoc<K extends DocName>(docs: RoomDocs, name: K, doc: Stored<DocOf<K
 const nameOn = (sheet: RoomSheet | null): string => (sheet && 'hunter' in sheet ? sheet.hunter.name : '');
 
 /** A room in memory. `events[i]` has seq i + 1, since the store forgets none; `ids` answers an event id's seq. */
-type MemRoom = { touched: number; events: StoredEvent[]; ids: Map<EventId, number>; board: Board; keyHash: string; owners: Map<DeviceId, string> };
+type MemRoom = { touched: number; events: StoredEvent[]; ids: Map<EventId, number>; board: Board; keyHash: string; owners: Map<DeviceId, TokenHash> };
+/** The slot `dev` has in a memory room. */
+const memOwner = (r: MemRoom, dev: DeviceId): Owner => ownerOf(r.owners.get(dev) ?? null);
+/** Keeps `o` as `dev`'s slot in a memory room: a free slot holds no row. */
+function keepMemOwner(r: MemRoom, dev: DeviceId, o: Owner): Owner {
+  if (o.at === 'bound') r.owners.set(dev, o.hash); else r.owners.delete(dev);
+  return o;
+}
 export function memoryStore(): Store {
   const rooms = new Map<RoomCode, MemRoom>(), book = presenceBook();
   /** A room a route already touched in this request. */
@@ -177,7 +190,7 @@ export function memoryStore(): Store {
       return { events, next: events.length ? events[events.length - 1]!.seq : after, more: events.length >= ROOM_PAGE };
     },
     async board(code) { const b = room(code).board; return { sheets: { ...b.sheets }, docs: { ...b.docs } }; },
-    // each of the two is one synchronous step, so no other request runs inside it
+    // each of the three is one synchronous step, so no other request runs inside it
     async pushSheet(code, key, from, sheet, now) {
       const { sheets, docs } = room(code).board;
       const answer = pushed(docs.kicked?.data ?? null, key, key in sheets, Object.keys(sheets).length, now);
@@ -187,15 +200,18 @@ export function memoryStore(): Store {
     async setRemoval(code, key, change, now) {
       const r = room(code), { sheets, docs } = r.board;
       const name = change === 'remove' ? nameOn(sheets[key]?.data ?? null) : null;
-      if (change === 'remove') { delete sheets[key]; r.owners.delete(deviceOf(key)); }
+      if (change === 'remove') {
+        delete sheets[key];
+        const dev = deviceOf(key), left = Object.keys(sheets).filter(k => deviceOf(k as SheetKey) === dev).length;
+        keepMemOwner(r, dev, ownerStep(memOwner(r, dev), { type: 'removed', left }));
+      }
       const doc = kickedAfter(docs.kicked?.data ?? null, key, name, now);
       docs.kicked = { at: iso(now), from: SERVER_DEVICE, data: doc };
       return doc;
     },
     async putDoc(code, name, from, doc, now) { withDoc(room(code).board.docs, name, { at: iso(now), from, data: doc }); },
-    async owner(code, dev) { return room(code).owners.get(dev) ?? null; },
-    async bindOwner(code, dev, hash) { const o = room(code).owners; if (!o.has(dev)) o.set(dev, hash); },
-    async releaseOwner(code, dev) { room(code).owners.delete(dev); },
+    async owner(code, dev) { return memOwner(room(code), dev); },
+    async moveOwner(code, dev, event) { const r = room(code); return keepMemOwner(r, dev, ownerStep(memOwner(r, dev), event)); },
     see: book.see,
     presence: book.of,
     async close() {},
@@ -248,6 +264,16 @@ export async function postgresStore(url: string): Promise<Store> {
     const [row] = await tx`SELECT data FROM sheets WHERE room = ${code} AND hid = '_kicked'`;
     return change(tx, row ? DOCS.kicked(row.data) : null);
   });
+  const ownerIn = async (q: BunSqlTx, code: RoomCode, dev: DeviceId): Promise<Owner> =>
+    ownerOf(parseTokenHash((await q`SELECT token_hash FROM sheet_owners WHERE room = ${code} AND device = ${dev}`)[0]?.token_hash));
+  /** `dev`'s slot moved by `event` inside a change of the room (`inRoom`): `ownerStep` decides, the row follows. */
+  const moveIn = async (tx: BunSqlTx, code: RoomCode, dev: DeviceId, event: OwnerEvent): Promise<Owner> => {
+    const was = await ownerIn(tx, code, dev), after = ownerStep(was, event);
+    if (after === was) return was;
+    if (after.at === 'free') await tx`DELETE FROM sheet_owners WHERE room = ${code} AND device = ${dev}`;
+    else await tx`INSERT INTO sheet_owners (room, device, token_hash) VALUES (${code}, ${dev}, ${after.hash}) ON CONFLICT (room, device) DO UPDATE SET token_hash = EXCLUDED.token_hash`;
+    return after;
+  };
   return {
     kind: 'postgres',
     async check() { await db`SELECT 1`; },
@@ -321,7 +347,9 @@ export async function postgresStore(url: string): Promise<Store> {
         if (change === 'remove') {
           const [row] = await tx`DELETE FROM sheets WHERE room = ${code} AND hid = ${key} RETURNING data`;
           name = nameOn(row ? parseSheet(key, row.data) : null);
-          await tx`DELETE FROM sheet_owners WHERE room = ${code} AND device = ${deviceOf(key)}`;
+          const dev = deviceOf(key);
+          const [n] = await tx`SELECT COUNT(*) AS kept FROM sheets WHERE room = ${code} AND left(hid, 1) <> '_' AND split_part(hid, ':', 1) = ${dev}`;
+          await moveIn(tx, code, dev, { type: 'removed', left: Number(n?.kept) });
         }
         const doc = kickedAfter(kicked, key, name, now);
         await put(tx, code, '_kicked', SERVER_DEVICE, WIRES.kicked(doc), now);
@@ -329,9 +357,8 @@ export async function postgresStore(url: string): Promise<Store> {
       });
     },
     async putDoc(code, name, from, doc, now) { await put(db, code, '_' + name, from, WIRES[name](doc), now); },
-    async owner(code, dev) { return text((await db`SELECT token_hash FROM sheet_owners WHERE room = ${code} AND device = ${dev}`)[0]?.token_hash); },
-    async bindOwner(code, dev, hash) { await db`INSERT INTO sheet_owners (room, device, token_hash) VALUES (${code}, ${dev}, ${hash}) ON CONFLICT (room, device) DO NOTHING`; },
-    async releaseOwner(code, dev) { await db`DELETE FROM sheet_owners WHERE room = ${code} AND device = ${dev}`; },
+    async owner(code, dev) { return ownerIn(db, code, dev); },
+    async moveOwner(code, dev, event) { return inRoom(code, tx => moveIn(tx, code, dev, event)); },
     see: book.see,
     presence: book.of,
     async close() { await db.close(); },
@@ -340,44 +367,56 @@ export async function postgresStore(url: string): Promise<Store> {
 
 // ── the database's life (src/core/room-server.ts) ──
 export type Database = { readonly kind: Store['kind']; now(): Promise<Db<Store>>; close(): Promise<void> };
+/**
+ * A database whose one state is `db`, moved only by `dbStep`. A store the step does not take (a try that answers after
+ * the close) is closed at once, and so is a ready one's at the close: the state then holds no store.
+ */
+function lifeOf(start: Db<Store>) {
+  let db = start;
+  return {
+    now: (): Db<Store> => db,
+    async event(e: DbEvent<Store>): Promise<void> {
+      const was = db;
+      db = dbStep(db, e);
+      if (e.type === 'opened' && db.at !== 'ready') await e.store.close();
+      if (was.at === 'ready' && db.at === 'closed') await was.store.close();
+    },
+  };
+}
 /** A database over a store already open: a test's, or the memory store. */
 export const openDatabase = (store: Store): Database => {
-  const db: Db<Store> = { at: 'ready', store };
-  return { kind: store.kind, now: async () => db, close: () => store.close() };
+  const life = lifeOf({ at: 'ready', store });
+  return { kind: store.kind, now: async () => life.now(), close: () => life.event({ type: 'close' }) };
 };
 /**
  * The rooms' database: the memory store when `url` is not set, else Postgres and only Postgres. A Postgres that does
  * not answer leaves the database down: no room route answers (503), /api/health says since when and why, the log says
- * it loudly, and it is opened again every `retryMs` until it answers. `now()` waits for the first attempt.
+ * it loudly, and it is opened again every `retryMs` until it answers or the database is closed. `now()` waits for the
+ * first attempt.
  */
 export function database(url: string | undefined, open: (url: string) => Promise<Store> = postgresStore, retryMs = DB_RETRY_MS): Database {
   if (!url) return openDatabase(memoryStore());
-  const at = url;
-  let db: Db<Store> = { at: 'opening' };
-  let retry: ReturnType<typeof setTimeout> | null = null, closed = false;
-  const event = (e: DbEvent<Store>) => { db = dbStep(db, e); };
+  const at = url, life = lifeOf({ at: 'opening' });
   async function attempt(): Promise<void> {
-    retry = null;
+    if (life.now().at === 'closed') return; // a try set before the close
+    let store: Store;
     try {
-      const store = await open(at);
-      if (closed) { await store.close(); return; }
-      event({ type: 'opened', store });
-      console.log('[server] Postgres answers: rooms are served');
+      store = await open(at);
     } catch (e) {
-      event({ type: 'failed', at: Date.now(), error: codeOf(e) });
-      console.error(`[server] DATABASE_URL is set and Postgres does not answer (${messageOf(e)}). No room is served and /api/health answers 503 until it does. Trying again in ${retryMs / 1000} s.`);
-      if (!closed) retry = setTimeout(() => { void attempt(); }, retryMs);
+      await life.event({ type: 'failed', at: Date.now(), error: codeOf(e) });
+      const down = life.now().at === 'down';
+      console.error(`[server] DATABASE_URL is set and Postgres does not answer (${messageOf(e)}). ${down ? `No room is served and /api/health answers 503 until it does. Trying again in ${retryMs / 1000} s.` : 'The database is closed: no more tries.'}`);
+      if (down) setTimeout(() => { void attempt(); }, retryMs);
+      return;
     }
+    await life.event({ type: 'opened', store });
+    if (life.now().at === 'ready') console.log('[server] Postgres answers: rooms are served');
   }
   const first = attempt();
   return {
     kind: 'postgres',
-    now: async () => { await first; return db; },
-    async close() {
-      closed = true;
-      if (retry) clearTimeout(retry);
-      if (db.at === 'ready') await db.store.close();
-    },
+    now: async () => { await first; return life.now(); },
+    close: () => life.event({ type: 'close' }),
   };
 }
 
@@ -401,21 +440,26 @@ async function gmOk(req: Request, st: Store, code: RoomCode): Promise<boolean> {
   let d = got.length ^ want.length; for (let i = 0; i < want.length; i++) d |= (got.charCodeAt(i) || 0) ^ want.charCodeAt(i);
   return d === 0;
 }
+/** The hash of the request's device token, or null when it carries none of the app's form: such a request proves nothing. */
+async function tokenOf(req: Request): Promise<TokenHash | null> {
+  const tok = req.headers.get('x-device-token') || '';
+  return tok.length < 16 || tok.length > 128 ? null : parseTokenHash(await sha(tok));
+}
 /**
- * S07: whether this request proves it comes from the phone `dev`: its device token. A phone is bound to the hash of the
- * first token it sends, on a poll or a write, and every later request for it needs the same token. A request with no
- * token proves nothing: every phone of this build sends one, from its first poll on, so a phone that has not pushed yet
- * (a new join, a rejoin after a removal released it) is already proven when a message sealed to its hunter arrives.
+ * S07: whether this poll comes from the phone `dev`: its token is the one `dev`'s slot is bound to. A read moves no
+ * slot (src/core/sync/owner.ts), so a phone that polls with another's device id never takes it; a phone is bound by
+ * its first write, the sheet push that follows its join.
  */
 async function proven(req: Request, st: Store, code: RoomCode, dev: DeviceId): Promise<boolean> {
-  const tok = req.headers.get('x-device-token') || '';
-  if (tok.length < 16 || tok.length > 128) return false;
-  const hash = await sha(tok);
-  await st.bindOwner(code, dev, hash);
-  return (await st.owner(code, dev)) === hash;
+  const hash = await tokenOf(req);
+  return hash !== null && ownedBy(await st.owner(code, dev), hash);
 }
-/** Whether this request may write for the phone `dev`: the GM's key, or `dev`'s device token (`proven`). */
-const mayWriteFor = async (req: Request, st: Store, code: RoomCode, dev: DeviceId, gm: boolean): Promise<boolean> => gm || proven(req, st, code, dev);
+/** Whether this request may write for the phone `dev`: the GM's key, or `dev`'s token, whose write binds a free slot. */
+async function mayWriteFor(req: Request, st: Store, code: RoomCode, dev: DeviceId, gm: boolean): Promise<boolean> {
+  if (gm) return true;
+  const hash = await tokenOf(req);
+  return hash !== null && ownedBy(await st.moveOwner(code, dev, { type: 'write', hash }), hash);
+}
 /**
  * What the faces of a poll carry: every table shows its bags until the trading switch lands with unit 4, which reads it
  * here from the rules doc (notes-5-trade.md 10, ruling 4: a table with trading off sends faces without bag lines).
@@ -507,13 +551,13 @@ async function api(req: Request, parts: string[], database: Database): Promise<R
     if (!key) return J({ error: 'bad hunter id' }, 400);
     return J({ ok: true, kicked: await st.setRemoval(code, key, 'allow', now) });
   }
-  if (parts[2] === 'release' && parts.length === 3) { // S07: the GM frees a device's hunter binding so another device can claim it
+  if (parts[2] === 'release' && parts.length === 3) { // S07: the GM frees a device's slot, so the player's new phone binds it by its first write
     if (m !== 'POST') return J({ error: 'method' }, 405);
     if (!gm) return J({ error: 'gm only' }, 403);
     const b = await readJson(req); if (b instanceof Response) return b;
     const dev = parseDeviceId(b.device);
     if (!dev) return J({ error: 'bad device' }, 400);
-    await st.releaseOwner(code, dev); return J({ ok: true });
+    await st.moveOwner(code, dev, { type: 'release' }); return J({ ok: true });
   }
   if (parts[2] === 'sheets' && parts.length === 4) {
     if (m !== 'PUT' && m !== 'DELETE') return J({ error: 'method' }, 405);
@@ -522,7 +566,7 @@ async function api(req: Request, parts: string[], database: Database): Promise<R
     if (!isDoc && !key) return J({ error: 'bad hunter id' }, 400);
     if (m === 'DELETE') { // R01: the GM removes a player's hunter from the room (their device keeps its own copy)
       if (!key || !gm) return J({ error: 'gm only' }, 403);
-      return J({ ok: true, kicked: await st.setRemoval(code, key, 'remove', now) }); // S07: the removal frees the phone's binding too
+      return J({ ok: true, kicked: await st.setRemoval(code, key, 'remove', now) }); // S07: the removal of a phone's last sheet frees its slot too
     }
     if (docName === 'kicked') return J({ error: 'server doc' }, 403); // only the removal routes write it (`setRemoval`)
     if (isDoc && !gm) return J({ error: 'gm only' }, 403);

@@ -109,6 +109,7 @@ His words: "Do it all. Two helpers at a time is fine for speed if it's helpful. 
 
 | File | What it is |
 |---|---|
+| `for-the-owner.md` | The running list of what needs the owner's call (the owner, Nov 21: "Have a running list of things I need to address.  for-the-owner.md is fine"). Every lead adds a question there when it asks it, and moves it to Answered with his words when he rules |
 | `NEXT-SESSION-PROMPT.md` | The prompt the owner pastes to start the next lead session. Keep it current, and when you ask for a fresh session, give him its text |
 | `handoff.md` | Latest lead handoff (end of the UI and UX run). Read first after this file |
 | `later-phases/combat-rework-notes.md` | The next phase in the owner's words (Nov 13): speed turns, eight stats, armor and resist, formulas, channeling, what to balance |

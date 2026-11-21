@@ -1,7 +1,7 @@
 // rules.ts: the rules a view sees. src/core/rules.ts holds the numbers and the pure helpers (they take the rules as an
 // argument); this file reads the GM's overrides from the save and binds the helpers to them, so a view calls
 // `xpToNext(level)` or `rules().fight`. On a player's phone in a room the room's rules (the GM's `rules` doc: the build
-// and personal gates' switches) are laid over the save's (`withRoomRules` in src/core/hunter/build.ts); nothing of the
+// and personal gates' switches and the economy's rules) are laid over the save's (`withRoomRules` in src/core/hunter/build.ts); nothing of the
 // room is written to the save.
 // It re-exports the constants of core/rules.ts and the day's clock of core/day.ts, so a view has one import.
 import { RULES, rankForLevel as rankForLevelOf, rulesOf, xpToNext as xpToNextOf } from '../core/rules.ts';

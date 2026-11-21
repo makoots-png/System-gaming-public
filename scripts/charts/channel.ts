@@ -32,14 +32,14 @@ export const channel = machine<Channel | null, ChannelEvent>({
   kindsOf: c => [channelState(c)],
   views: [{
     title: 'A channel, from its start to going off',
-    note: 'The chart shows the channel on its user\'s card. Its charge grows one a turn to its max and stays in Channeling. At its max the user releases it or loses it on a pass. A broken channel waits for the GM\'s release, which resolves it at once at its halved charge and costs its user no time.',
+    note: 'The chart shows the channel on its user\'s card. Its charge grows one a turn to its max and stays in Channeling. At its max the user releases it or loses it on a pass. A broken channel waits for the GM\'s release, which resolves it at once at its halved charge and costs its user no time out of its turn. What a release costs is read from the state it went off from (`released`); a channel broken as its user\'s own turn starts costs that turn today, a row that waits on a ruling (rules-3.1).',
     hides: '',
     state: c => LABEL[channelState(c)],
     step,
   }],
   where: [
     ['The union', '`Channel` in `src/core/combat/effect-ops.ts`, `ChannelEvent` in `src/core/combat/fight-channel.ts`'],
-    ['What changes it', '`channelStep(channel, event)` and its `TABLE` in `src/core/combat/fight-channel.ts`, called by the fight\'s reducer and, for every break, by `broken` in `src/core/combat/land.ts`'],
+    ['What changes it', '`channelStep(channel, event)` and its `TABLE` in `src/core/combat/fight-channel.ts`, called by the fight\'s reducer and, for every break, by `broken` in `src/core/combat/land.ts`; what a release costs is `released` and its `RELEASE` table'],
     ['Who calls it', '`src/core/combat/fight.ts`, `fight-turn.ts` and `land.ts`'],
     ['The test to copy', '`tests/fight.test.ts`, "a channel (4.1)"'],
     ['The recipe', 'A new event is a member of `ChannelEvent` and its cell in every row of `TABLE`'],

@@ -155,7 +155,7 @@ test('every module of src/edge names the state it keeps for the page: each let a
     'sync.ts sheetText': 'the bound sheet as the push last sent it', 'sync.ts invited': 'the invite this tab holds',
     'sync.ts running': 'whether the outbox\'s flush is running', 'sync.ts stamped': 'the time in the id of the last event this page made',
     'upgrade.ts update': 'the update machine\'s state (src/core/upgrade.ts)', 'upgrade.ts quiet': 'the timer of the quiet reload',
-    'rules.ts sourceOf': 'the store\'s save, bound at start (`bindSave`)', 'rules.ts roomRulesOf': 'the room\'s rules doc (its build and personal gates\' switches), bound by sync.ts (`bindRoom`)',
+    'rules.ts sourceOf': 'the store\'s save, bound at start (`bindSave`)', 'rules.ts roomRulesOf': 'the room\'s rules doc (its build and personal gates\' switches and the economy\'s rules), bound by sync.ts (`bindRoom`)',
     'rules.ts made': 'the rules in force and the overrides, statuses and room rules they were made from',
     'store.ts prefs': 'this phone\'s prefs as read and written', 'store.ts device': 'whether this phone\'s memory is kept or failing',
     'store.ts state': 'the save', 'store.ts life': 'the store\'s life machine\'s state (src/core/store-life.ts)',
@@ -1180,7 +1180,7 @@ test('a view keeps no machine in flags: its closure state is counted per file, a
   // of a component's `mount` (four spaces in or less) is counted, and each file's count is what it holds.
   const named: Record<string, { count: number; why: string }> = {
     'src/views/map.js': { count: 15, why: 'the three machines\' values (choice, g, life: map-mount.ts holds what was framed and the words over the frame), the scene and what the last frame drew (areaSig, along, draws, zonesWas, far, seen), the resize waiting for a frame (sized), the frame\'s place under a finger, the hold timer, the paint brush, the news line\'s timer; the open detail is detail.js\'s' },
-    'src/views/maker.js': { count: 15, why: 'the makers\' window stack and form (body, me, form, asking, previewEl), the formula field (ticks, type, gapOn, text, kind), an effect row\'s amount and value, the field\'s end editor (zendFx), the ability form\'s kind' },
+    'src/views/maker.js': { count: 14, why: 'the makers\' window stack and form (body, me, draft, previewEl), the formula field (ticks, type, gapOn, text, kind), an effect row\'s amount and value, the field\'s end editor (zendFx), the ability form\'s kind' },
     'src/views/combat.js': { count: 9, why: 'the GM\'s fight screen: the side marked surprised, the doc\'s last refusal and burst, what is open over the map (over), the root and the map\'s handle, and locals of three functions (aim twice, actions); the odds\' run is odds-box.js\'s' },
     'src/views/gm.js': { count: 8, why: 'the root, the Award editor\'s and Issue quest\'s handles, the reward the Award form opens with (pendingAward), and locals of a tool\'s form (n, msg, text, parsed)' },
     'src/views/quests.js': { count: 7, why: 'the rollover\'s timer (wake), the tab and the quest form on screen, whether the title is the one the form made (autoTitle), the view\'s handle, and locals of two functions (out, penalties)' },

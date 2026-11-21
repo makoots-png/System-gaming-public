@@ -54,3 +54,26 @@ export function channelStep(c: Channel | null, event: ChannelEvent): Channel | n
 
 /** Whether `type` applies to a channel in this state. */
 export const channelCan = (c: Channel | null, type: ChannelEventType): boolean => TABLE[channelState(c)][type] !== null;
+
+/** Whose turn a release comes on: its user's own, or another body's. */
+export type ReleaseTurn = 'own' | 'other';
+/** What a release costs its user: `turn`, the ability's time, and its turn ends; `free`, no time and no turn. */
+export type ReleaseCost = 'turn' | 'free';
+/** A channel that went off, and what that cost its user. */
+export type Released = { readonly channel: Channel; readonly costs: ReleaseCost };
+/**
+ * What a release costs, by the state it was released from and whose turn it came on. `null`: refused (a holding
+ * channel goes off only on its user's turn). A channel with no release in `TABLE` (none, fired) has no row here.
+ */
+const RELEASE: { readonly [S in 'holding' | 'broken']: { readonly [T in ReleaseTurn]: ReleaseCost | null } } = {
+  holding: { own: 'turn', other: null },
+  // rules-3.1 waits on the owner's ruling on whether a broken channel costs its user's turn when it breaks as that turn
+  // starts. Today it does (the code's own words say a broken release costs no time; that holds only out of its turn).
+  broken: { own: 'turn', other: 'free' },
+};
+/** `c` released on `turn`: the fired channel and what it cost, read from the state it was released from. Null when it may not go off. */
+export function released(c: Channel | null, turn: ReleaseTurn): Released | null {
+  if (!c || (c.state !== 'holding' && c.state !== 'broken')) return null;
+  const costs = RELEASE[c.state][turn], channel = channelStep(c, { type: 'release' });
+  return costs && channel ? { channel, costs } : null;
+}

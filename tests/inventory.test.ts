@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { BUY_WORDS, SHOP_CLOSED, addGold, buy, editItem, equip, putItem, removeItem, sell, sellPrice, sellable, setGold, shopOpen, takeItems, unequip, withShop, writeShopItem, removeShopItem } from '../src/core/hunter/inventory.ts';
+import { BUY_WORDS, GEAR_WORDS, SHOP_CLOSED, WEAR_EVENTS, WEAR_STATES, addGold, buy, editItem, equip, putItem, removeItem, sell, sellPrice, sellable, setGold, shopOpen, takeItems, unequip, wearMove, wearOf, withShop, writeShopItem, removeShopItem } from '../src/core/hunter/inventory.ts';
+import type { WearEvent, WearState, WearWhy } from '../src/core/hunter/inventory.ts';
+import { parseSheetHunter } from '../src/core/hunter/hunter.ts';
+import { hunterSheet } from '../src/core/hunter/sheet.ts';
+import { GEAR, IN_BAG, wearBy } from './models/gear-events.ts';
 import { SHOP_ITEMS, STARTER_GEAR, itemOf, parseItem, priceOf } from '../src/core/registry/items.ts';
 import type { ItemTemplate } from '../src/core/registry/items.ts';
 import { RANKS, RULES } from '../src/core/rules.ts';
@@ -44,11 +48,11 @@ describe('the bag', () => {
 
   test('round trip: an item put in the bag and removed leaves the hunter as it was', () => {
     const h = hunter();
-    expect(ok(removeItem(putItem(h, shield, iid('i1')), 'i1'))).toEqual(h);
+    expect(ok(removeItem(putItem(h, shield, iid('i1')), 'i1', false))).toEqual(h);
   });
 
   test('taking the last one of a worn item takes it out of its slot too', () => {
-    const worn = ok(equip(putItem(hunter(), shield, iid('i1')), 'i1', iid('i900')));
+    const worn = ok(equip(putItem(hunter(), shield, iid('i1')), 'i1', iid('i900'), false));
     const gone = ok(takeItems(worn, 'i1', 1));
     expect(gone.items).toEqual([]);
     expect(gone.equipped.offhand).toBeNull();
@@ -56,8 +60,8 @@ describe('the bag', () => {
   });
 
   test('an edit keeps the id; gear edited into a thing without a slot is taken off', () => {
-    const worn = ok(equip(putItem(hunter(), shield, iid('i1')), 'i1', iid('i900')));
-    const edited = ok(editItem(worn, 'i1', { ...shield, name: 'Plank', slot: null, type: 'misc' }));
+    const worn = ok(equip(putItem(hunter(), shield, iid('i1')), 'i1', iid('i900'), false));
+    const edited = ok(editItem(worn, 'i1', { ...shield, name: 'Plank', slot: null, type: 'misc' }, false));
     expect(edited.items[0]).toMatchObject({ id: 'i1', name: 'Plank' });
     expect(edited.equipped.offhand).toBeNull();
   });
@@ -66,28 +70,128 @@ describe('the bag', () => {
 describe('what is worn', () => {
   test('round trip: equip then unequip leaves the hunter as it was', () => {
     const h = putItem(hunter(), shield, iid('i1'));
-    expect(ok(unequip(ok(equip(h, 'i1', iid('i900'))), 'offhand'))).toEqual(h);
+    expect(ok(unequip(ok(equip(h, 'i1', iid('i900'), false)), 'offhand', false))).toEqual(h);
   });
 
   test('a ring goes to the first free ring slot; a third swaps out the one in its own slot', () => {
     let h = putItem(putItem(putItem(hunter(), ring('A'), iid('r1')), ring('B'), iid('r2')), ring('C'), iid('r3'));
-    h = ok(equip(h, 'r1', iid('i901'))); h = ok(equip(h, 'r2', iid('i901')));
+    h = ok(equip(h, 'r1', iid('i901'), false)); h = ok(equip(h, 'r2', iid('i901'), false));
     expect([h.equipped.ring1, h.equipped.ring2]).toEqual(['r1', 'r2']);
-    h = ok(equip(h, 'r3', iid('i901')));
+    h = ok(equip(h, 'r3', iid('i901'), false));
     expect([h.equipped.ring1, h.equipped.ring2]).toEqual(['r3', 'r2']);
   });
 
   test('one of a stack of gear is split off and worn', () => {
     const two = { ...putItem(hunter(), shield, iid('i1')), items: [{ ...shield, id: iid('i1'), qty: 2 }] };
-    const h = ok(equip(two, 'i1', iid('i9')));
+    const h = ok(equip(two, 'i1', iid('i9'), false));
     expect(h.items.map(i => [i.id, i.qty])).toEqual([['i1', 1], ['i9', 1]]);
     expect(h.equipped.offhand).toBe(iid('i9'));
   });
 
   test('a thing without a slot, an item not held and a word that is not a slot are refused', () => {
-    expect(equip(putItem(hunter(), potion, iid('i1')), 'i1', iid('i901'))).toEqual({ ok: false, why: 'not-gear' });
-    expect(equip(hunter(), 'nope', iid('i901'))).toEqual({ ok: false, why: 'no-item' });
-    expect(unequip(hunter(), 'tail')).toEqual({ ok: false, why: 'no-slot' });
+    expect(equip(putItem(hunter(), potion, iid('i1')), 'i1', iid('i901'), false)).toEqual({ ok: false, why: 'not-gear' });
+    expect(equip(hunter(), 'nope', iid('i901'), false)).toEqual({ ok: false, why: 'no-item' });
+    expect(unequip(hunter(), 'tail', false)).toEqual({ ok: false, why: 'no-slot' });
+  });
+});
+
+describe('what one item is: in the bag, worn or gone (SMX-rules-5)', () => {
+  /**
+   * The rule, cell by cell. A worn thing is one item in one slot it fits. Out of a fight every event takes it where the
+   * tap says; Equip on a worn thing leaves it where it is; an edit to another slot takes it off. In a fight the fight's
+   * row holds the sheet it started with, so nothing worn changes and nothing is put on (m2-plan 4.4); the bag still
+   * changes. A thing not held is not there to change, and a thing not worn is not taken off.
+   */
+  const RULE: { readonly [P in 'calm' | 'fight']: { readonly [S in WearState]: { readonly [E in WearEvent]: WearState | WearWhy } } } = {
+    calm: {
+      bag: { equip: 'worn', unequip: 'not-worn', edit: 'bag', reslot: 'bag', remove: 'gone' },
+      worn: { equip: 'worn', unequip: 'bag', edit: 'worn', reslot: 'bag', remove: 'gone' },
+      gone: { equip: 'no-item', unequip: 'not-worn', edit: 'no-item', reslot: 'no-item', remove: 'no-item' },
+    },
+    fight: {
+      bag: { equip: 'in-fight', unequip: 'not-worn', edit: 'bag', reslot: 'bag', remove: 'gone' },
+      worn: { equip: 'in-fight', unequip: 'in-fight', edit: 'in-fight', reslot: 'in-fight', remove: 'in-fight' },
+      gone: { equip: 'no-item', unequip: 'not-worn', edit: 'no-item', reslot: 'no-item', remove: 'no-item' },
+    },
+  };
+  const AT: { readonly [S in WearState]: () => Hunter } = {
+    bag: IN_BAG,
+    worn: () => ok(equip(IN_BAG(), GEAR, iid('i900'), false)),
+    gone: () => hunter(),
+  };
+  const states = WEAR_STATES as readonly string[];
+  for (const phase of ['calm', 'fight'] as const) {
+    for (const state of WEAR_STATES) {
+      for (const event of WEAR_EVENTS) {
+        const cell = RULE[phase][state][event];
+        test(`${phase === 'fight' ? 'in a fight' : 'out of a fight'}, ${event} on a shield ${state === 'gone' ? 'not held' : state === 'bag' ? 'in the bag' : 'worn'}: ${states.includes(cell) ? `it is ${cell === 'bag' ? 'in the bag' : cell}` : `refused (${cell})`}`, () => {
+          const h = AT[state](), inFight = phase === 'fight';
+          const after = wearBy(h, event, inFight);
+          if (states.includes(cell)) {
+            expect(wearOf(ok(after), GEAR)).toBe(cell as WearState);
+            expect(wearMove(h, GEAR, event, inFight)).toBe(cell as WearState);
+          } else {
+            expect(after).toEqual({ ok: false, why: cell });
+            expect(wearMove(h, GEAR, event, inFight)).toEqual({ ok: false, why: cell });
+          }
+        });
+      }
+    }
+  }
+
+  const strong = (name: string): ItemTemplate => ({ ...ring(name), bonus: { str: 5 } });
+  /** A hunter as a save or another phone holds it, wearing `equipped` over `items`, read as the app reads one. */
+  const read = (items: Hunter['items'], equipped: Partial<Hunter['equipped']>): Hunter => {
+    const h = hunter(0);
+    const back = parseSheetHunter(JSON.parse(JSON.stringify({ ...h, items, equipped: { ...h.equipped, ...equipped } })));
+    if (!back) throw new Error('the hunter did not read');
+    return back;
+  };
+
+  test('a save with one ring in both ring slots reads it in the first only, and the sheet counts its strength once (5.1)', () => {
+    const iron = [{ ...strong('Iron Ring'), id: iid('i1') }];
+    const twice = read(iron, { ring1: iid('i1'), ring2: iid('i1') }), bare = read(iron, {});
+    expect([twice.equipped.ring1, twice.equipped.ring2]).toEqual([iid('i1'), null]);
+    expect(hunterSheet(twice, RULES).stats.str - hunterSheet(bare, RULES).stats.str, 'one ring of +5 strength').toBe(5);
+  });
+
+  test('a save that wears a stack of three, or a shield on the head, reads that slot empty and keeps the item in the bag (5.1)', () => {
+    const h = read([{ ...shield, id: iid('i1'), qty: 3 }, { ...shield, id: iid('i2') }], { offhand: iid('i1'), head: iid('i2') });
+    expect([h.equipped.offhand, h.equipped.head]).toEqual([null, null]);
+    expect(h.items.map(i => [i.id, i.qty])).toEqual([['i1', 3], ['i2', 1]]);
+    const fine = read([{ ...shield, id: iid('i1') }], { offhand: iid('i1') });
+    expect(fine.equipped.offhand, 'a single shield in its own slot stays worn').toBe(iid('i1'));
+  });
+
+  test('an edit that moves a worn shield to the chest, or makes it a stack of three, takes it off; an edit of its words leaves it worn (5.2)', () => {
+    const worn = AT.worn();
+    for (const change of [{ slot: 'chest' }, { qty: 3 }] as const) {
+      const h = ok(editItem(worn, GEAR, { ...shield, ...change }, false));
+      expect(Object.values(h.equipped), JSON.stringify(change)).toEqual(Object.values(hunter().equipped));
+      expect(wearOf(h, GEAR)).toBe('bag');
+    }
+    expect(ok(editItem(worn, GEAR, { ...shield, desc: 'Notched.' }, false)).equipped.offhand).toBe(GEAR);
+  });
+
+  test('a ring worn in the second ring slot, edited to say the first, still fits and stays where it is', () => {
+    let h = putItem(putItem(hunter(), ring('A'), iid('r1')), ring('B'), iid('r2'));
+    h = ok(equip(ok(equip(h, 'r1', iid('i901'), false)), 'r2', iid('i901'), false));
+    expect(ok(editItem(h, 'r2', { ...ring('B'), slot: 'ring1', desc: 'Etched.' }, false)).equipped).toMatchObject({ ring1: 'r1', ring2: 'r2' });
+  });
+
+  test('Equip on a ring worn in the first ring slot leaves it there and the second slot empty (5.3b)', () => {
+    const h = ok(equip(putItem(hunter(), ring('A'), iid('r1')), 'r1', iid('i901'), false));
+    expect(ok(equip(h, 'r1', iid('i901'), false))).toEqual(h);
+  });
+
+  test('in a fight a worn shield is not sold, removed or edited; a potion in the bag still sells, and the refusal has words (5.3c)', () => {
+    const worn = putItem(AT.worn(), potion, iid('i2'));
+    const R = RULES;
+    expect(sell(worn, GEAR, 1, R, true)).toEqual({ ok: false, why: 'in-fight' });
+    expect(removeItem(worn, GEAR, true)).toEqual({ ok: false, why: 'in-fight' });
+    expect(editItem(worn, GEAR, { ...shield, desc: 'Notched.' }, true)).toEqual({ ok: false, why: 'in-fight' });
+    expect(ok(sell(worn, 'i2', 1, R, true)).items.map(i => i.id)).toEqual([GEAR]);
+    expect(GEAR_WORDS['in-fight']).toBe('Gear cannot change during a fight.');
   });
 });
 

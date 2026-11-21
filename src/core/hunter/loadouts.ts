@@ -5,11 +5,15 @@
 import { RULES } from '../rules.ts';
 import type { Rules } from '../rules.ts';
 import { LIMITS } from '../save.ts';
-import type { Hunter, Item, Loadout, Save, Slot } from '../save.ts';
+import type { Hunter, Loadout, Save, Slot } from '../save.ts';
 import { refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
 import { saveId } from '../ids.ts';
 import type { LoadoutId } from '../ids.ts';
+import { emptySlot, fits, wearIn } from './inventory.ts';
+
+/** Whether an item can be worn in a slot; inventory.ts owns it, and the Loadouts panel (custom.js) reads it here. */
+export { fits };
 
 /** How long a set's name may be. */
 export const LOADOUT_NAME_MAX = 24;
@@ -22,9 +26,6 @@ export function loadoutCap(R: Rules): number {
   const c = Math.trunc(Number(R.loadoutCap));
   return Math.min(LIMITS.loadouts, Number.isFinite(c) ? Math.max(0, c) : RULES.loadoutCap);
 }
-/** Whether item `it` can be worn in `slot`: its own slot, or either ring slot for a ring. */
-export const fits = (it: Pick<Item, 'slot'> | null | undefined, slot: string): boolean =>
-  !!(it && it.slot && (it.slot === slot || (it.slot.startsWith('ring') && slot.startsWith('ring'))));
 /** The gear worn now, as a set's slots. */
 const worn = (h: Hunter, R: Rules): Loadout['slots'] => {
   const slots: Loadout['slots'] = {};
@@ -58,9 +59,10 @@ export function removeLoadout(h: Hunter, id: string): Hunter | Refused<LoadoutWh
 
 /**
  * Set `lid` of hunter `hid` put on, in one step. A slot the set leaves empty is emptied; a listed item that is there,
- * fits and has a copy is worn (one taken off a stack becomes its own item, with an id from the save's `seq`, and the set
- * names it from then on), and leaves any other slot it was in; an item gone or unfit leaves its slot as it is and is
- * named in `skipped`. Refused in a fight. Answers the save and what was skipped.
+ * fits and has a copy is worn (`wearIn`: one taken off a stack becomes its own item, with an id from the save's `seq`,
+ * and the set names it from then on), and leaves any other slot it was in; an item gone or unfit leaves its slot as it
+ * is and is named in `skipped`. Refused in a fight, as every change of what is worn is (inventory.ts `TABLE`). Answers
+ * the save and what was skipped.
  */
 export function swapLoadout<S extends Pick<Save, 'hunters' | 'seq'>>(save: S, hid: string, lid: string, R: Rules, inFight: boolean): { save: S; skipped: string[] } | Refused<LoadoutWhy | 'no-hunter'> {
   const hi = save.hunters.findIndex(x => x.id === hid);
@@ -68,23 +70,18 @@ export function swapLoadout<S extends Pick<Save, 'hunters' | 'seq'>>(save: S, hi
   const h = save.hunters[hi]!, li = atSet(h, lid);
   if (li < 0) return refuse('missing');
   if (inFight) return refuse('in-fight');
-  let seq = save.seq;
-  const eq = { ...h.equipped }, slots = { ...h.loadouts[li]!.slots }, skipped: string[] = [];
-  let items = h.items;
+  let seq = save.seq, on: Hunter = h;
+  const slots = { ...h.loadouts[li]!.slots }, skipped: string[] = [];
   for (const slot of R.slots as readonly Slot[]) {
     const want = slots[slot] || null;
-    if (!want) { eq[slot] = null; continue; }
-    let it = items.find(i => i.id === want);
+    if (!want) { on = emptySlot(on, slot); continue; }
+    const it = on.items.find(i => i.id === want);
     if (!it || !fits(it, slot) || !(it.qty >= 1)) { skipped.push(it ? it.name : slot); continue; }
-    if (it.qty > 1) {
-      const from = it, one: Item = { ...structuredClone(from), id: saveId('i', ++seq), qty: 1 };
-      items = [...items.map(i => (i === from ? { ...i, qty: i.qty - 1 } : i)), one];
-      slots[slot] = one.id; it = one;
-    }
-    for (const s of Object.keys(eq) as Slot[]) if (eq[s] === it.id) eq[s] = null;
-    eq[slot] = it.id;
+    const id = it.qty > 1 ? saveId('i', ++seq) : it.id;
+    on = wearIn(on, it.id, slot, id);
+    slots[slot] = id;
   }
   const loadouts = h.loadouts.map((l, i) => (i === li ? { ...l, slots } : l));
-  const next: Hunter = { ...h, equipped: eq, items, loadouts };
+  const next: Hunter = { ...on, loadouts };
   return { save: { ...save, seq, hunters: save.hunters.map((x, i) => (i === hi ? next : x)) }, skipped };
 }

@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { DB_EVENTS, DB_STATES, ROOM_TTL_MS, dbHealth, dbStep, dbTransition, keptOut, kickedAfter, pushed, roomLive } from '../src/core/room-server.ts';
 import type { Db } from '../src/core/room-server.ts';
+import { FREE, OWNER_EVENTS, OWNER_STATES, ownedBy, ownerStep } from '../src/core/sync/owner.ts';
+import type { Owner, OwnerEvent, TokenHash } from '../src/core/sync/owner.ts';
 import type { SheetKey } from '../src/core/protocol.ts';
 import { REMOVED_MS, ROOM_SHEETS } from '../src/core/protocol.ts';
 
@@ -72,9 +74,24 @@ describe('the room server\'s database', () => {
     for (const e of [{ type: 'opened', store }, { type: 'failed', at: 9, error: 'x' }] as const) expect(dbStep(ready, e)).toBe(ready);
   });
 
-  test('every state answers every event: ready takes none, the others take both', () => {
+  test('every state answers every event: ready takes only a close, closed takes none, the others take all three', () => {
     const cells = DB_STATES.flatMap(s => DB_EVENTS.map(e => `${s} ${e} ${dbTransition(s, e)}`));
-    expect(cells).toEqual(['opening opened ready', 'opening failed down', 'ready opened null', 'ready failed null', 'down opened ready', 'down failed down']);
+    expect(cells).toEqual([
+      'opening opened ready', 'opening failed down', 'opening close closed',
+      'ready opened null', 'ready failed null', 'ready close closed',
+      'down opened ready', 'down failed down', 'down close closed',
+      'closed opened null', 'closed failed null', 'closed close null',
+    ]);
+  });
+
+  test('a closed database stays closed (SMX-sync-7): a try that answers or fails after the close moves nothing', () => {
+    const closed: Db<typeof store> = { at: 'closed' };
+    for (const from of [{ at: 'opening' }, { at: 'ready', store }, down(5)] as const) expect(dbStep(from, { type: 'close' })).toEqual(closed);
+    for (const e of [{ type: 'opened', store }, { type: 'failed', at: 9, error: 'x' }, { type: 'close' }] as const) expect(dbStep(closed, e)).toBe(closed);
+  });
+
+  test('a closed database serves no room: health answers 503 and says closed', () => {
+    expect(dbHealth({ at: 'closed' }, 'postgres')).toEqual({ status: 503, body: { ok: false, db: 'postgres', error: 'closed' } });
   });
 
   test('health is 200 only when the database is ready, and a down one says since when and the error\'s code', () => {
@@ -97,5 +114,38 @@ describe('the record of who the GM removed (kickedAfter)', () => {
     const doc = kickedAfter(null, A, 'Mira', at);
     expect(Object.keys(kickedAfter(doc, B, 'Kai', at + REMOVED_MS - 1).keys)).toEqual([A, B]);
     expect(Object.keys(kickedAfter(doc, B, 'Kai', at + REMOVED_MS).keys)).toEqual([B]);
+  });
+});
+
+describe('a device\'s slot in a room: which phone speaks for it (SMX-sync-5)', () => {
+  const MINE = 'a'.repeat(64) as TokenHash, THEIRS = 'b'.repeat(64) as TokenHash;
+  const bound = (hash: TokenHash): Owner => ({ at: 'bound', hash });
+  const name = (o: Owner): string => (o.at === 'free' ? 'free' : o.hash === MINE ? 'mine' : 'theirs');
+  const EVENTS: readonly [string, OwnerEvent][] = [
+    ['my write', { type: 'write', hash: MINE }],
+    ['their write', { type: 'write', hash: THEIRS }],
+    ['release', { type: 'release' }],
+    ['removed, one sheet left', { type: 'removed', left: 1 }],
+    ['removed, none left', { type: 'removed', left: 0 }],
+  ];
+
+  test('every slot against every event: only a write binds a free slot, a bound one keeps its phone through another\'s write, and only a release or the last sheet\'s removal frees it', () => {
+    expect([...OWNER_STATES]).toEqual(['free', 'bound']);
+    expect([...OWNER_EVENTS]).toEqual(['write', 'release', 'removed']);
+    const cells = [FREE, bound(MINE)].flatMap(o => EVENTS.map(([what, e]) => `${name(o)} × ${what} → ${name(ownerStep(o, e))}`));
+    expect(cells).toEqual([
+      'free × my write → mine', 'free × their write → theirs', 'free × release → free', 'free × removed, one sheet left → free', 'free × removed, none left → free',
+      'mine × my write → mine', 'mine × their write → mine', 'mine × release → free', 'mine × removed, one sheet left → mine', 'mine × removed, none left → free',
+    ]);
+  });
+
+  test('a request speaks for the device only with the token its slot is bound to: a free slot is no one\'s, so a poll on it proves nothing', () => {
+    expect([ownedBy(FREE, MINE), ownedBy(bound(MINE), MINE), ownedBy(bound(MINE), THEIRS)]).toEqual([false, true, false]);
+  });
+
+  test('a write that loses a free slot to another\'s first write is refused, and the first writer keeps it', () => {
+    const won = ownerStep(FREE, { type: 'write', hash: THEIRS });
+    const late = ownerStep(won, { type: 'write', hash: MINE });
+    expect([ownedBy(late, MINE), ownedBy(late, THEIRS)]).toEqual([false, true]);
   });
 });

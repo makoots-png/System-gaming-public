@@ -19,7 +19,13 @@ import { summonStep } from '../src/core/combat/summons.ts';
 import { SUMMON_WALK } from './models/summon-events.ts';
 import { usesStep } from '../src/core/combat/uses.ts';
 import { USES_WALK } from './models/uses-events.ts';
-import { tick } from '../src/core/combat/timeline.ts';
+import { interval, tick } from '../src/core/combat/timeline.ts';
+import { CHANNEL_EVENTS, CHANNEL_STATES, channelState, channelStep, released } from '../src/core/combat/fight-channel.ts';
+import type { ChannelEvent } from '../src/core/combat/fight-channel.ts';
+import { REACT_STATES, reactStep } from '../src/core/combat/fight-react.ts';
+import type { ReactEvent, ReactState } from '../src/core/combat/fight-react.ts';
+import { REACT_WALK } from './models/wave2-events.ts';
+import { tallyOf } from '../src/core/combat/row-tally.ts';
 import { REFUSAL_WORDS, TABLE_REFUSAL_WORDS } from '../src/core/combat/refusal-words.ts';
 import { TABLE_REFUSALS } from '../src/core/combat/fight-doc.ts';
 import { abilityId, combatantId, hunterId } from '../src/core/combat/ability-types.ts';
@@ -34,8 +40,8 @@ import { parseAbility, parseFight } from '../src/core/combat/fight-parse.ts';
 import { attemptsLeft, extractionStep, UNTRIED } from '../src/core/combat/extraction.ts';
 import { EXTRACTION_WALK } from './models/extraction-events.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
-import { fightId, owed, reduce } from '../src/core/combat/fight.ts';
-import type { Command, Ctx, Effect, Fight, NewRow, Opening, Result, RowLifeEvent, Running, StatusGrant, ZoneDraft } from '../src/core/combat/fight.ts';
+import { can, fightId, owed, reduce, runningState } from '../src/core/combat/fight.ts';
+import type { Command, CommandType, Ctx, Effect, Fight, NewRow, Opening, Result, RowLifeEvent, Running, StatusGrant, ZoneDraft } from '../src/core/combat/fight.ts';
 import { needs } from '../src/core/combat/resolve.ts';
 import type { Rolls } from '../src/core/combat/resolve.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
@@ -339,6 +345,64 @@ describe('a channel (4.1)', () => {
 
   test('a release with no channel is refused', () => {
     refuses(play(...duel()).fight, { type: 'release', by: id('A'), rolls: rolls() }, 'noChannel');
+  });
+
+  test('the machine: every state of a channel under every event of its table (design 4.1)', () => {
+    const chan = (state: 'holding' | 'broken' | 'fired') => ({ ability: CHARGE.id, aim: id('M'), charge: 2, spent: 0, state });
+    const events: Record<(typeof CHANNEL_EVENTS)[number], ChannelEvent> = {
+      begin: { type: 'begin', ability: CHARGE.id, aim: id('M'), spent: 0 }, grow: { type: 'grow', max: 5 }, release: { type: 'release' },
+      interrupt: { type: 'interrupt', share: 0.5 }, drop: { type: 'drop' },
+    };
+    const expected: Record<(typeof CHANNEL_STATES)[number], Record<(typeof CHANNEL_EVENTS)[number], (typeof CHANNEL_STATES)[number]>> = {
+      none: { begin: 'holding', grow: 'none', release: 'none', interrupt: 'none', drop: 'none' },
+      holding: { begin: 'holding', grow: 'holding', release: 'fired', interrupt: 'broken', drop: 'none' },
+      broken: { begin: 'broken', grow: 'broken', release: 'fired', interrupt: 'broken', drop: 'none' },
+      fired: { begin: 'holding', grow: 'fired', release: 'fired', interrupt: 'fired', drop: 'fired' },
+    };
+    for (const s of CHANNEL_STATES) for (const e of CHANNEL_EVENTS) {
+      expect(channelState(channelStep(s === 'none' ? null : chan(s), events[e])), `${s} × ${e}`).toBe(expected[s][e]);
+    }
+  });
+
+  test('a release reads where it was released from: a holding one on its user\'s turn costs the turn, a broken one out of it costs nothing', () => {
+    const chan = (state: 'holding' | 'broken' | 'fired') => ({ ability: CHARGE.id, aim: id('M'), charge: 2, spent: 0, state });
+    const expected = {
+      none: { own: null, other: null }, fired: { own: null, other: null },
+      holding: { own: 'turn', other: null },
+      // rules-3.1 waits on the owner: today a broken channel released on its user's own turn costs that turn
+      broken: { own: 'turn', other: 'free' },
+    } as const;
+    for (const s of CHANNEL_STATES) for (const turn of ['own', 'other'] as const) {
+      const r = released(s === 'none' ? null : chan(s), turn);
+      expect(r && r.costs, `${s} × ${turn}`).toBe(expected[s][turn]);
+      if (r) expect(r.channel.state).toBe('fired');
+    }
+  });
+
+  test('a channel broken as its user\'s own turn starts costs that turn when it goes off (rules-3.1, as the app does today)', () => {
+    const r = play(add(caster(), row('M', 'foe')), start(['A', 20], ['M', 1]), begin('A', 'M'), pass('M'));
+    const g = running(r), a = body(g, 'A');
+    expect(g.currentId).toBe(id('A'));
+    const broke = { ...g, rows: g.rows.map(b => b.id === 'A' ? { ...b, channel: { ...b.channel!, state: 'broken' as const } } : b) };
+    const out = reduce(broke, { type: 'release', by: id('A'), rolls: rolls({ M: 10 }) }, ctx);
+    expect(out.effects.find(e => e.type === 'refused')).toBeUndefined();
+    expect([body(out.fight, 'A').at, running(out).currentId]).toEqual([tick(g.now + interval(a.speed, CHARGE.cost.time, RULES.fight)), id('M')]);
+  });
+
+  test('a running fight owes dice while a broken channel waits to go off, and acts again once it has', () => {
+    const r = play(add(caster({ statuses: [haste(-50)] }), row('M', 'foe')), start(['A', 20], ['M', 1]), begin('A', 'M'), hit('M', 'A'));
+    expect(runningState(running(play(add(caster(), row('M', 'foe')), start(['A', 20], ['M', 1]))))).toEqual({ at: 'acting' });
+    expect(runningState(running(r))).toEqual({ at: 'owing', owed: [{ kind: 'release', id: id('A') }] });
+    const out = reduce(r.fight, { type: 'release', by: id('A'), rolls: rolls({ M: 10 }) }, ctx);
+    expect(runningState(running(out))).toEqual({ at: 'acting' });
+  });
+
+  test('a turn may end while dice are owed, and the dice stay owed (rules-3.2, as the app does today)', () => {
+    const r = play(add(caster({ statuses: [haste(-50)] }), row('M', 'foe')), start(['A', 20], ['M', 1]), begin('A', 'M'), hit('M', 'A'));
+    expect(running(r).currentId).toBe(id('M'));
+    const out = reduce(r.fight, pass('M'), ctx);
+    expect(out.effects.find(e => e.type === 'refused')).toBeUndefined();
+    expect(runningState(running(out))).toEqual({ at: 'owing', owed: [{ kind: 'release', id: id('A') }] });
   });
 
   test('while it holds, a foe\'s threat for the channeler does not fade and grows with the payoff: 100 is 200 at charge 2 of a linear channel, 210.25 of an exponential one', () => {
@@ -1830,6 +1894,50 @@ describe('a reaction (kits design 8.4, table 8.9.1)', () => {
     expect(rowHp(body(r.fight, 'A'))).toBe(rowHp(body(play(...foeFirst([HIT]), hit('M', 'A', HIT, 20)).fight, 'A')));
   });
 
+  test('the machine: every state of a reaction under every event of tests/models/wave2-events.ts (table 8.9.1)', () => {
+    const key = (e: ReactEvent): string => e.type === 'arm' ? `arm ${e.up ? 'up' : 'down'}` : e.type === 'moment' ? `moment ${e.may ? 'may' : 'may not'} at ${e.aim}` : e.type;
+    const expected: Record<ReactState, Record<string, ReactState>> = {
+      // rules-4.3a waits on the owner: today a reactor who is down arms
+      unarmed: { 'arm up': 'armed', 'arm down': 'armed', disarm: 'unarmed', 'moment may at up': 'unarmed', 'moment may at down': 'unarmed', 'moment may not at up': 'unarmed', resolves: 'unarmed', turnStart: 'unarmed', down: 'unarmed' },
+      // rules-4.2 waits on the owner: today a reaction fires at an aim already down
+      armed: { 'arm up': 'armed', 'arm down': 'armed', disarm: 'unarmed', 'moment may at up': 'fired', 'moment may at down': 'fired', 'moment may not at up': 'armed', resolves: 'armed', turnStart: 'armed', down: 'unarmed' },
+      fired: { 'arm up': 'fired', 'arm down': 'fired', disarm: 'fired', 'moment may at up': 'fired', 'moment may at down': 'fired', 'moment may not at up': 'fired', resolves: 'spent', turnStart: 'fired', down: 'unarmed' },
+      spent: { 'arm up': 'spent', 'arm down': 'spent', disarm: 'unarmed', 'moment may at up': 'spent', 'moment may at down': 'spent', 'moment may not at up': 'spent', resolves: 'spent', turnStart: 'armed', down: 'unarmed' },
+    };
+    expect(REACT_WALK.map(key).sort()).toEqual(Object.keys(expected.unarmed).sort());
+    for (const s of REACT_STATES) for (const e of REACT_WALK) expect(reactStep(s, e), `${s} × ${key(e)}`).toBe(expected[s][key(e)]!);
+  });
+
+  test('a hunter who is down may arm a reaction (rules-4.3a, as the app does today)', () => {
+    const r = play(add(row('A', 'party', { abilities: [HIT, PARRY] }), row('B', 'party'), row('M', 'foe')), start(['M', 20], ['A', 10], ['B', 5]), hit('M', 'A', BIG));
+    expect(rowHp(body(r.fight, 'A'))).toBe(0);
+    const out = reduce(r.fight, armed('A', PARRY), ctx);
+    expect([out.effects, body(out.fight, 'A').armed]).toEqual([[], { ability: PARRY.id, on: null, spent: false }]);
+  });
+
+  test('a second ally\'s after reaction still fires at an attacker the first one\'s took down, and that kill is not counted (rules-4.2, as the app does today)', () => {
+    const KILL = reaction('kill', 'after', { effect: { type: 'physical', by: 'hand', formula: f('999') } });
+    const wide = ability('blast', 'quake', '5', { range: tiles(20), foesOnly: true, cost: { ...HIT.cost, mana: 0 } });
+    const r = play(add(row('A', 'party', { abilities: [KILL], place: place(5, 5) }), row('B', 'party', { abilities: [KILL], place: place(6, 5) }), row('C', 'party'), row('M', 'foe', { abilities: [wide] })),
+      start(['M', 20], ['A', 10], ['B', 9], ['C', 1]), armed('A', KILL), armed('B', KILL),
+      { type: 'act', by: id('M'), ability: wide.id, aim: place(5, 5), rolls: rolls({ A: 1, B: 1 }, { A: [], B: [] }) });
+    expect(r.fight!.phase).toBe('ended');
+    expect([rowHp(body(r.fight, 'M')), body(r.fight, 'A').armed?.spent, body(r.fight, 'B').armed?.spent]).toEqual([0, true, true]);
+    expect(tallyOf(body(r.fight, 'A')).kills).toEqual([]);
+  });
+
+  test('a reaction that pushes its aim past a threshold sets it off for all to see: its burst lands, is logged and is told (rules-4.3b)', () => {
+    const mark = (threshold: StackDef['stack']['threshold']): StackDef => ({ label: 'Mark', desc: '', ops: [], stack: { cap: 3, leave: { kind: 'never' }, keep: 'fight', threshold } });
+    const brand = (d: StackDef) => reaction('brand', 'after', { ops: [{ op: 'applyStatus', key: statusKey('mark'), def: d, duration: null }] });
+    const pop = mark({ at: { kind: 'count', n: 1 }, to: { kind: 'bearer' }, then: 'spend', ops: [{ op: 'damage', type: 'magical', amount: f('7'), when: 'use' }] });
+    const fought = (d: StackDef) => play(...foeFirst([HIT, brand(d)]), armed('A', brand(d)), hit('M', 'A'));
+    const plain = fought(mark(null)), burst = fought(pop);
+    const m = body(burst.fight, 'M');
+    expect(rowHp(body(plain.fight, 'M')) - rowHp(m)).toBe(afterDefence(7, 'magical', body(burst.fight, 'A').sheet, m.sheet, RULES));
+    expect(burst.effects).toContainEqual({ type: 'burst', id: id('M') });
+    expect(running(burst).log.some(l => l.text.includes('M\'s Mark goes off (M '))).toBe(true);
+  });
+
   test('a use sets off at most 4 reactions', () => {
     const wide = ability('blast', 'quake', '5', { range: tiles(20), foesOnly: true, cost: { ...HIT.cost, mana: 0 } });
     const party = ['A', 'B', 'C', 'D', 'E'].map((n, i) => row(n, 'party', { abilities: [PARRY], place: place(4 + i, 5) }));
@@ -1900,5 +2008,32 @@ describe('a fallen monster\'s extraction (implicit audit row 39)', () => {
     expect(play(...fallen(), { type: 'end' }).fight!.phase).toBe('ended');
     expect(body(play(...fallen(), { type: 'end' }, extract('M', 'risen')).fight, 'M').extraction).toEqual({ at: 'gone', why: 'risen' });
     refuses(null, extract('M', 'failed'), 'notNow');
+  });
+});
+
+describe('the fight\'s table: every state under every command (SMX-rules-3)', () => {
+  const ALL: Record<CommandType, true> = {
+    add: true, remove: true, start: true, act: true, move: true, endTurn: true, release: true, setIntent: true, reveal: true, place: true, adjust: true, refill: true,
+    life: true, status: true, settle: true, paint: true, zoneAdd: true, zoneRemove: true, resize: true, arm: true, extract: true, end: true, clear: true,
+  };
+  const SETUP: CommandType[] = ['add', 'remove', 'start', 'setIntent', 'reveal', 'place', 'adjust', 'refill', 'life', 'status', 'paint', 'zoneAdd', 'zoneRemove', 'resize', 'arm', 'extract', 'end', 'clear'];
+  const RUNNING = (Object.keys(ALL) as CommandType[]).filter(t => t !== 'start');
+  const CHARGE = ability('blast', 'charge', '10 * (1 + charge)', { channel: { growth: 'linear', max: 5 }, range: tiles(20) });
+  const owing = play(add(row('A', 'party', { abilities: [HIT, CHARGE], statuses: [haste(-50)] }), row('M', 'foe')), start(['A', 20], ['M', 1]),
+    { type: 'act', by: id('A'), ability: CHARGE.id, aim: id('M'), rolls: rolls() }, hit('M', 'A')).fight;
+  const states: [string, Fight | null, readonly CommandType[]][] = [
+    ['none', null, ['add']],
+    ['setup', play(add(row('A', 'party'), row('M', 'foe'))).fight, SETUP],
+    ['running, acting', play(...duel()).fight, RUNNING],
+    // rules-3.2 waits on the owner: today a turn may be taken and ended (act, move, endTurn) while dice are owed
+    ['running, owing', owing, RUNNING],
+    ['ended', play(...duel(), { type: 'end' }).fight, ['extract', 'clear']],
+  ];
+
+  test('each state takes the commands of its row and refuses the rest', () => {
+    expect(runningState(running({ fight: states[3]![1] })).at).toBe('owing');
+    for (const [name, fight, takes] of states) {
+      for (const t of Object.keys(ALL) as CommandType[]) expect(can(fight, t), `${name} × ${t}`).toBe(takes.includes(t));
+    }
   });
 });

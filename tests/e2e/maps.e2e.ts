@@ -220,6 +220,38 @@ test('a GM whose Save as a new map is refused keeps the map maker open with the 
   });
 });
 
+test('a GM who paints walls on a map and touches nothing else is asked before Escape or a press beside the maker drops them; Discard closes it and the map keeps its floor', async ({ device }) => {
+  const gm = (await device('gm', { viewport: { width: 390, height: 844 } })).page;
+  const ask = gm.getByRole('alertdialog', { name: 'Discard changes?' });
+  await onboardGM(gm);
+  await gm.evaluate(() => hunterApp.store.update((d: any) => { d.library.maps.push({ id: 'mp901', name: 'Old Hall', w: 20, h: 14, tiles: '.'.repeat(280), fog: false, sight: 8, starts: { party: [], foe: [] }, zones: [] }); }, 'test-setup'));
+  await go(gm, 'workshop');
+  await gm.locator('#view-workshop [data-ws="map"] li', { hasText: 'Old Hall' }).locator('[data-act="edit"]').tap();
+
+  await test.step('three walls dragged with the brush the maker opens on, then Escape: the maker asks, and Cancel keeps the walls', async () => {
+    const from = (await cell(gm, 4, 4).boundingBox())!, to = (await cell(gm, 4, 6).boundingBox())!;
+    await gm.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await gm.mouse.down();
+    await gm.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 6 });
+    await gm.mouse.up();
+    for (const y of [4, 5, 6]) await expect(cell(gm, 4, y)).toHaveClass(/wall/);
+    await gm.keyboard.press('Escape');
+    await expect(ask).toBeVisible();
+    await ask.getByRole('button', { name: 'Cancel' }).tap();
+    await expect(ask).toHaveCount(0);
+    await expect(cell(gm, 4, 5)).toHaveClass(/wall/);
+  });
+
+  await test.step('a press beside the maker asks again; Discard closes it, and the map in the library keeps its floor', async () => {
+    await gm.locator('.mpm-overlay').click({ position: { x: 3, y: 420 } });
+    await expect(ask).toBeVisible();
+    await ask.getByRole('button', { name: 'Discard' }).tap();
+    await expect(maker(gm)).toHaveCount(0);
+    const tiles = await gm.evaluate(() => hunterApp.store.get().library.maps[0].tiles as string);
+    expect([4, 5, 6].map(y => tiles[y * 20 + 4])).toEqual(['.', '.', '.']);
+  });
+});
+
 test('a GM\'s Save as a new map adds the painted copy under the new name, and the map edited keeps its floor', async ({ device }) => {
   const gm = (await device('gm')).page;
   await onboardGM(gm);

@@ -1204,6 +1204,28 @@ test('a GM makes a fire blast that leaves burning ground for 2 rounds; in a figh
   expect(rowIn(hit, 'T').statuses.some(s => s.def.label === 'Burning ground' && s.until === null)).toBe(true);
 });
 
+test('in the skill maker "Add what lands when it ends" goes the moment an effect is added under it, and Save keeps that effect as the field\'s end', async ({ device }) => {
+  const page = (await device('gm')).page;
+  await onboardGM(page);
+  const d = skillMaker(page), err = d.locator('[data-zend-err]');
+  await go(page, 'gm');
+  await page.locator('#gm-make [data-make="skill"]').tap();
+  await d.locator('#skm-name').fill('Ember Field');
+  await d.locator('[data-chips="kind"] [data-chip="blast"]').tap();
+  await d.locator('[data-group="zone"] > summary').tap();
+  await d.locator('[data-a="zone"]').check();
+  await d.locator('[data-a="zend"]').check();
+  await expect(err).toHaveText('Add what lands when it ends.');
+  await expect(d.locator('[data-apply]')).toBeDisabled();
+  await d.locator('[data-zend-fx] [data-q="damage"]').tap();
+  await expect(err).toHaveText('');
+  await expect(d.locator('[data-apply]')).toBeEnabled();
+  await d.locator('[data-apply]').tap();
+  await expect(d).toHaveCount(0);
+  const ember: Ability = (await librarySkill(page, 'Ember Field')).ability;
+  expect(ember.zone?.end?.map(op => [op.op, (op as { type?: string }).type])).toEqual([['damage', 'magical']]);
+});
+
 test('a GM makes a feat for 2 Beasts defeated in a session, from the Workshop: the library holds what the form said, the list says its rule, and Edit opens it as saved', async ({ device }) => {
   const page = (await device('gm')).page;
   await onboardGM(page);

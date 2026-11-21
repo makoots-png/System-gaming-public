@@ -1,12 +1,14 @@
 // build.ts: a hunter's build path (`hunter.build`: the path and the perk picked at each rank) and the GM's two switches
 // for builds (`rulesOverrides.build`: builds on, players pick; a player's phone in a room plays by the room's instead,
-// laid over its own by `withRoomRules` in src/edge/rules.ts, never written to its save). The Build panel and the GM's build menu (custom.js), and
+// laid over its own by `withRoomRules` in src/edge/rules.ts, never written to its save, with the room's other rules:
+// the personal gates' and the economy's). The Build panel and the GM's build menu (custom.js), and
 // a reward's build part (hunter.js `applyRewards`) change them only here, as steps. Pure: the caller passes the rules,
 // whether the phone is the GM's, and whether the hunter is in a fight. The paths, their perks and what they add are
 // rules.ts (`pathOf`, `perkOf`, `tiersOpen`, `pathBonus`). The ability points a path's Auto spends are progress.ts's.
 import { PERK_KEYS, PERK_LABELS, pathOf, perkOf, tiersOpen } from '../rules.ts';
 import type { Perk, Rules } from '../rules.ts';
 import type { Build, Hunter, Save } from '../save.ts';
+import { eachRarity } from '../protocol.ts';
 import type { BuildChange, RoomRules } from '../protocol.ts';
 import { addGold } from './inventory.ts';
 import { refuse } from '../save-step.ts';
@@ -103,13 +105,39 @@ export const buildRuleSet = <S extends Pick<Save, 'rulesOverrides'>>(save: S, pa
 /** The save back on the default build and path rules (`withoutBuildRules`), as one step for `store.apply`. */
 export const buildRulesReset = <S extends Pick<Save, 'rulesOverrides'>>(save: S): S => ({ ...save, rulesOverrides: withoutBuildRules(save.rulesOverrides) });
 /**
- * The rules a player's phone plays by while in a room: its own, with the room's (the GM's `rules` doc) over them: the
- * build switches and the personal gates' switch and hours. Nothing is copied into the player's save, so the player's
- * own rules are theirs again once the room is left.
+ * The rules a player's phone plays by while in a room: its own, with the room's (the GM's `rules` doc, `RoomRules`) over
+ * them: the build switches, the personal gates' switch, hours and loot share, and the economy, so a price is the GM's on
+ * every phone. A rarity takes the room's rank and keeps the phone's color. Nothing is copied into the player's save, so
+ * the player's own rules are theirs again once the room is left.
  */
 export function withRoomRules(R: Rules, room: RoomRules | null): Rules {
-  return room ? { ...R, build: { ...R.build, ...room.build }, solo: { ...R.solo, ...room.solo }, feats: { ...R.feats, ...room.feats } } : R;
+  if (!room) return R;
+  return {
+    ...R,
+    build: { ...R.build, ...room.build },
+    solo: { ...R.solo, ...room.solo },
+    feats: { ...R.feats, ...room.feats },
+    rarities: { ...R.rarities, ...eachRarity(r => ({ ...R.rarities[r], rank: room.rarities[r].rank })) },
+    gradeStep: room.gradeStep,
+    saleShare: room.saleShare,
+    usedUpShare: room.usedUpShare,
+    reviveClears: room.reviveClears,
+    reviveLevelShare: room.reviveLevelShare,
+    gateParty: room.gateParty,
+    loot: room.loot,
+  };
 }
 /** The room's `rules` doc the GM's phone publishes from its own rules: what `withRoomRules` lays over a player's. */
-export const roomRulesOf = (R: Rules): RoomRules =>
-  ({ build: { enabled: R.build.enabled !== false, playerPick: R.build.playerPick !== false }, solo: { personal: R.solo.personal, hours: R.solo.hours }, feats: { on: R.feats.on } });
+export const roomRulesOf = (R: Rules): RoomRules => ({
+  build: { enabled: R.build.enabled !== false, playerPick: R.build.playerPick !== false },
+  solo: { personal: R.solo.personal, hours: R.solo.hours, lootShare: R.solo.lootShare },
+  feats: { on: R.feats.on },
+  rarities: eachRarity(r => ({ rank: R.rarities[r].rank })),
+  gradeStep: R.gradeStep,
+  saleShare: R.saleShare,
+  usedUpShare: R.usedUpShare,
+  reviveClears: R.reviveClears,
+  reviveLevelShare: R.reviveLevelShare,
+  gateParty: R.gateParty,
+  loot: R.loot,
+});

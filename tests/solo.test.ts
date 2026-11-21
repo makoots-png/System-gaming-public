@@ -16,7 +16,7 @@ import type { OddsRun, RowEnd, RunEnd } from '../src/core/combat/odds.ts';
 import { SOLO_REFUSAL_WORDS, pooled, runCostLines, soloConfirmLines, soloAnswerBody, soloDoc, soloFight, soloKey, soloPlan, soloRan, soloReady, soloRoute, soloRunBody, soloTaken, soloTargets, soloTick } from '../src/core/gates/solo.ts';
 import { worldDoc } from '../src/core/gates/world.ts';
 import { DOCS, DOC_MAX, newEvent } from '../src/core/protocol.ts';
-import type { ReadyCtx, SoloGate, SoloRun, SoloTarget } from '../src/core/gates/solo.ts';
+import type { ReadyCtx, SoloGate, SoloRoute, SoloRun, SoloTarget } from '../src/core/gates/solo.ts';
 import { newSolo, parseSolo, personalGateId, soloTracked, soloWake } from '../src/core/gates/personal.ts';
 import type { PersonalGate } from '../src/core/gates/personal.ts';
 import { soloRank } from '../src/core/gates/spawn.ts';
@@ -28,7 +28,7 @@ import { putItem } from '../src/core/hunter/inventory.ts';
 import { seedId } from '../src/core/ids.ts';
 import type { GateId, HunterId, MonsterId } from '../src/core/ids.ts';
 import { den } from './models/gate-events.ts';
-import { dev, hid, iid } from './fixtures/ids.ts';
+import { dev, hid, iid, room } from './fixtures/ids.ts';
 import { lifeAt } from './fixtures/life.ts';
 import type { Life } from '../src/core/hunter/vitals.ts';
 
@@ -47,7 +47,7 @@ function alone(h: Partial<Hunter> = {}): Save {
   const s = freshSave(ENV, { onboarded: true });
   return { ...s, hunters: [mira({ solo: { clock: { at: 'off' }, gates: [pgate(1)] }, ...h })], gates: [worldGate] };
 }
-const ctx = (c: Partial<ReadyCtx> = {}): ReadyCtx => ({ R: RULES, seat: 'alone', held: false, nowMs: NOW, ...c });
+const ctx = (c: Partial<ReadyCtx> = {}): ReadyCtx => ({ R: RULES, route: 'local', held: false, nowMs: NOW, ...c });
 const day = { at: AT, today: dayKey(new Date(AT), 0), R: RULES };
 const PERSONAL: SoloGate = { kind: 'personal', id: personalGateId(1) }, WORLD: SoloGate = { kind: 'world', id: 'g-den' as GateId };
 
@@ -56,7 +56,8 @@ function endOf(outcome: RunEnd['outcome'], row: Partial<RowEnd>, spent: RunEnd['
   const hp = row.hp ?? 7, { life: lifeLeft } = lifeAt('hunter', hp);
   return { outcome, rounds: 4, commands: 30, spent, party: { [ME]: { hp, mana: 3, fatigue: 22, statuses: [], used: {}, down: false, saves: [], life: 'up', lifeLeft: lifeLeft as Life, kills: [], ...row } } };
 }
-const runOf = (s: Save, end: RunEnd): SoloRun => ({ end, hunter: ME, shadows: {}, from: soloKey(s.hunters[0]!) });
+const runOf = (s: Save, end: RunEnd, route: SoloRoute = 'local'): SoloRun => ({ end, hunter: ME, shadows: {}, from: soloKey(s.hunters[0]!), route });
+const ROOM = room('ABCD23'), IN_ROOM: SoloRoute = { room: ROOM };
 const NO_LOOT = { gold: 0, items: [] };
 const hunter = (s: Save): Hunter => s.hunters[0]!;
 /** All the XP a hunter has gained: its levels' XP (`xpPerLevel` × level for each) and what it holds toward the next. */
@@ -142,8 +143,8 @@ describe('a run writes what the play left, in one write', () => {
     expect(hunter(r.save).xp).toBe(0);
   });
 
-  test('a player in a room settles a room\'s gate in the room, never on its own phone', () => {
-    expect([soloRoute('alone'), soloRoute('gm'), soloRoute('player')]).toEqual(['here', 'here', 'room']);
+  test('a player in a room settles a room\'s gate in that room, never on its own phone; alone or the GM, on this phone', () => {
+    expect([soloRoute('alone', null), soloRoute('gm', ROOM), soloRoute('player', ROOM)]).toEqual(['local', 'local', { room: ROOM }]);
   });
 });
 
@@ -166,10 +167,10 @@ describe('who may enter, and the words of each refusal', () => {
     expect(why({ ...s, gates: [{ ...worldGate, solo: false }] }, WORLD)).toBe('not-solo');
     expect(why({ ...s, gates: [{ ...worldGate, status: 'closed' }] }, WORLD)).toBe('closed');
     const target: SoloTarget = { gate: WORLD, name: 'Goblin Den', rank: 'E', boss: false, monsters: [], statuses: {} };
-    expect(why(s, WORLD, { seat: 'player', bound: hid('h9') })).toBe('not-played');
-    expect(why(s, WORLD, { seat: 'player', bound: H1, room: { targets: [], waiting: [] } })).toBe('not-solo');
-    expect(why(s, WORLD, { seat: 'player', bound: H1, room: { targets: [target], waiting: [WORLD.id as GateId] } })).toBe('waiting');
-    expect(why(s, WORLD, { seat: 'player', bound: H1, room: { targets: [target], waiting: [] } })).toBe('empty');
+    expect(why(s, WORLD, { route: IN_ROOM, bound: hid('h9') })).toBe('not-played');
+    expect(why(s, WORLD, { route: IN_ROOM, bound: H1, room: { targets: [], waiting: [] } })).toBe('not-solo');
+    expect(why(s, WORLD, { route: IN_ROOM, bound: H1, room: { targets: [target], waiting: [WORLD.id as GateId] } })).toBe('waiting');
+    expect(why(s, WORLD, { route: IN_ROOM, bound: H1, room: { targets: [target], waiting: [] } })).toBe('empty');
     expect(why(alone({ solo: { clock: { at: 'off' }, gates: [{ ...pgate(1), monsters: [{ monsterId: 'seed:none' as MonsterId, count: 1 }] }] } }), PERSONAL)).toBe('empty');
   });
   test('every refusal says why in one plain sentence or two, with no em dash, semicolon or exclamation mark', () => {
@@ -187,7 +188,7 @@ function played(s: Save, gate: SoloGate, seed: number, R: Rules = RULES): SoloRu
   let run: OddsRun = oddsStep(IDLE, { type: 'ask', fight: f.fight, seed, of: 1 }, f.R);
   while (run.state === 'running') run = oddsStep(run, { type: 'step', commands: 25 }, f.R);
   if (run.state !== 'done') throw new Error('no answer');
-  return { end: run.odds.ends[0]!, hunter: f.hunter, shadows: f.shadows, from: soloKey(ready.h) };
+  return { end: run.odds.ends[0]!, hunter: f.hunter, shadows: f.shadows, from: soloKey(ready.h), route: 'local' };
 }
 
 describe('the run is one play of the engine', () => {
@@ -319,7 +320,7 @@ describe('a hunter\'s personal gates read from a save', () => {
 
 
 describe('a world gate open to solo runs, in a room', () => {
-  const KEY = 'd-me:h1' as never, ROOM = 'ABCD23' as never;
+  const KEY = 'd-me:h1' as never;
   /** The GM's phone in room ROOM, with no pushed sheet of the run's hunter. */
   const TAKEN = { day, room: { code: ROOM, stamp: { device: 'd-gm', now: NOW, rand: 0.75 } }, rank: null };
   const gmSave = (gates = [worldGate]): Save => ({ ...alone(), gates });
@@ -336,18 +337,39 @@ describe('a world gate open to solo runs, in a room', () => {
 
   test('a player\'s won run writes its cost, its message and a run waiting for the answer, and nothing of the gate', () => {
     const p = { ...alone(), gates: [] }, d = docs(gmSave()), targets = soloTargets(DOCS.world(d.world), DOCS.solo(d.solo));
-    const ready: Partial<ReadyCtx> = { seat: 'player', bound: H1, room: { targets, waiting: [] } };
-    const run = runOf(p, endOf('won', {}));
+    const ready: Partial<ReadyCtx> = { route: IN_ROOM, bound: H1, room: { targets, waiting: [] } };
+    const run = runOf(p, endOf('won', {}), IN_ROOM);
     const body = soloRunBody(hunter(p), run, targets[0]!, KEY, RULES)!;
     const event = newEvent('soloRun', body, { device: 'd-me', now: NOW, rand: 0.5 })!;
-    const r = ok(soloRan(p, H1, WORLD, run, NO_LOOT, { day, ready: ctx(ready), room: { code: ROOM, event } }));
+    const r = ok(soloRan(p, H1, WORLD, run, NO_LOOT, { day, ready: ctx(ready), event }));
     expect(body).toEqual({ by: KEY, gate: WORLD.id, name: 'Mira', outcome: 'won', rounds: 4, life: 'up' });
     expect(hunter(r.save).mana).toBe(3);
     expect(r.save.settings.sync.outbox!.map(e => e.id)).toEqual([event.payload.eid]);
-    expect(r.save.settings.sync.runs!.map(w => [w.run, w.gate, w.state])).toEqual([[event.payload.eid, WORLD.id, 'posted']]);
+    expect(r.save.settings.sync.runs!.map(w => [w.run, w.room, w.gate, w.state])).toEqual([[event.payload.eid, ROOM, WORLD.id, 'posted']]);
     expect([hunter(r.save).xp, r.save.gates]).toEqual([0, []]);
     expect(soloReady(r.save, H1, WORLD, ctx({ ...ready, room: { targets, waiting: [WORLD.id as GateId] } })), 'no second run before the answer').toEqual({ ok: false, why: 'waiting' });
     expect(soloRan(p, H1, WORLD, run, NO_LOOT, { day, ready: ctx(ready) }), 'no message, no write').toEqual({ ok: false, why: 'no-room' });
+  });
+
+  // SMX-gates-2.1: every new save numbers its gates from one seq, so a player's own S-rank gate and the room's E-rank
+  // gate can share an id. A run started in the room and ended with the phone alone was paid as the phone's own S gate.
+  test('a run settles where it started: one begun in the room and ended alone is refused, and the phone\'s own gate of the same id is untouched', () => {
+    const own = { ...worldGate, rank: 'S' as const, name: 'Jeju Island' }, p = { ...alone(), gates: [own] };
+    const d = docs(gmSave()), targets = soloTargets(DOCS.world(d.world), DOCS.solo(d.solo));
+    expect(targets.map(t => t.gate), 'the room\'s gate has the id of the phone\'s own').toEqual([WORLD]);
+    const run = runOf(p, endOf('won', {}), IN_ROOM);
+    const left = soloRan(p, H1, WORLD, run, { gold: 40, items: [] }, { day, ready: ctx() });
+    expect(left).toEqual({ ok: false, why: 'moved' });
+    const otherRoom = soloRan(p, H1, WORLD, run, NO_LOOT, { day, ready: ctx({ route: { room: room('WXYZ45') }, bound: H1, room: { targets, waiting: [] } }) });
+    expect(otherRoom, 'ended in another room').toEqual({ ok: false, why: 'moved' });
+    const joined = soloRan(p, H1, WORLD, runOf(p, endOf('won', {})), NO_LOOT, { day, ready: ctx({ route: IN_ROOM, bound: H1, room: { targets, waiting: [] } }) });
+    expect(joined, 'begun alone, ended in a room').toEqual({ ok: false, why: 'moved' });
+    expect(SOLO_REFUSAL_WORDS.moved).toBe('This phone joined or left a room while the run played, so the run paid nothing. Enter again.');
+  });
+
+  test('a personal gate is the hunter\'s own wherever the phone is: a run of it begun in a room and ended alone is written', () => {
+    const s = alone(), r = ok(soloRan(s, H1, PERSONAL, runOf(s, endOf('won', {}), IN_ROOM), NO_LOOT, { day, ready: ctx() }));
+    expect(hunter(r.save).solo.gates).toEqual([]);
   });
 
   const paidRun = { eid: 'd-me-run1' as never, by: KEY, gate: WORLD.id as GateId, name: 'Mira', outcome: 'won' as const, rounds: 4, life: 'up' as const };
@@ -384,7 +406,7 @@ describe('a world gate open to solo runs, in a room', () => {
       const world = worldDoc(gmSave([gate]), 1, new Set(built.gates.map(g => g.id)), 0);
       const targets = soloTargets(DOCS.world(JSON.parse(JSON.stringify(world))), DOCS.solo(JSON.parse(JSON.stringify(built))));
       const p = { ...alone(), gates: [] };
-      const ready = ok(soloReady(p, H1, WORLD, ctx({ seat: 'player', bound: H1, room: { targets, waiting: [] } })));
+      const ready = ok(soloReady(p, H1, WORLD, ctx({ route: IN_ROOM, bound: H1, room: { targets, waiting: [] } })));
       const f = soloFight(ready.h, ready.target, RULES)!;
       let run: OddsRun = oddsStep(IDLE, { type: 'ask', fight: f.fight, seed: 7, of: 1 }, f.R);
       while (run.state === 'running') run = oddsStep(run, { type: 'step', commands: 25 }, f.R);
@@ -405,6 +427,36 @@ describe('a world gate open to solo runs, in a room', () => {
     expect(soloTaken(s, paidRun, stale, answerOf(s, stale), NO_LOOT, TAKEN)).toEqual({ ok: false, why: 'changed' });
     expect(soloPlan({ ...s, gates: [{ ...worldGate, status: 'closed' }] }, paidRun, RULES)).toEqual({ kind: 'refused', why: 'closed' });
     expect(soloPlan({ ...s, gates: [] }, paidRun, RULES)).toEqual({ kind: 'refused', why: 'gone' });
+  });
+
+  // The GM's phone's answer to a run, by the gate as the run finds it and the run's outcome, every cell. A won run of a
+  // gate it can clear is that gate's Clear for one hunter (50 XP due, a party of 4: 200 XP); one it cannot clear is
+  // answered with why; a lost or stalled run needs no answer.
+  test('every gate the GM\'s phone holds against every outcome of a run', () => {
+    const PAID = { kind: 'paid', due: 50, xp: 200, party: 4 } as const, REPORT = { kind: 'report' } as const;
+    const gates = {
+      gone: [], cleared: [{ ...worldGate, status: 'cleared' as const, clearedDay: 1 }], closed: [{ ...worldGate, status: 'closed' as const }],
+      notSolo: [{ ...worldGate, solo: false }], open: [worldGate],
+    };
+    const expected = {
+      gone: { won: { kind: 'refused', why: 'gone' }, lost: REPORT, stalled: REPORT },
+      cleared: { won: { kind: 'refused', why: 'taken' }, lost: REPORT, stalled: REPORT },
+      closed: { won: { kind: 'refused', why: 'closed' }, lost: REPORT, stalled: REPORT },
+      // SMX-gates-2.2 waits on the owner's ruling (proposed: a gate not open to solo runs refuses a solo run). Today a
+      // gate the GM unticked "Open to solo runs" on while the run played is paid, and a lost run enters it.
+      notSolo: { won: PAID, lost: REPORT, stalled: REPORT },
+      // SMX-gates-2.3 waits on its ruling (a solo clear's rewards wait for the GM): today the pay goes at once.
+      open: { won: PAID, lost: REPORT, stalled: REPORT },
+    } as const;
+    for (const [at, list] of Object.entries(gates)) for (const outcome of ['won', 'lost', 'stalled'] as const) {
+      const plan = soloPlan({ ...gmSave(), gates: list }, { ...paidRun, outcome }, RULES);
+      expect([at, outcome, plan]).toEqual([at, outcome, expected[at as keyof typeof expected][outcome]]);
+    }
+  });
+
+  test('today a lost run of a gate the GM took out of solo runs still enters it (SMX-gates-2.2, as the app behaves until the ruling)', () => {
+    const s = gmSave([{ ...worldGate, solo: false }]), lost = { ...paidRun, outcome: 'lost' as const, life: 'stable' as const };
+    expect(ok(soloTaken(s, lost, soloPlan(s, lost, RULES), null, NO_LOOT, TAKEN)).gates[0]!.status).toBe('raiding');
   });
 });
 

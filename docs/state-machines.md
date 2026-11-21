@@ -68,7 +68,7 @@ stateDiagram-v2
   s4 --> s1 : it acts, moves or goes down
 ```
 
-The chart shows the channel on its user's card. Its charge grows one a turn to its max and stays in Channeling. At its max the user releases it or loses it on a pass. A broken channel waits for the GM's release, which resolves it at once at its halved charge and costs its user no time.
+The chart shows the channel on its user's card. Its charge grows one a turn to its max and stays in Channeling. At its max the user releases it or loses it on a pass. A broken channel waits for the GM's release, which resolves it at once at its halved charge and costs its user no time out of its turn. What a release costs is read from the state it went off from (`released`); a channel broken as its user's own turn starts costs that turn today, a row that waits on a ruling (rules-3.1).
 
 4 chart states, 7 arrows. No step is hidden.
 
@@ -77,7 +77,7 @@ Where it lives:
 | What | Where |
 |---|---|
 | The union | `Channel` in `src/core/combat/effect-ops.ts`, `ChannelEvent` in `src/core/combat/fight-channel.ts` |
-| What changes it | `channelStep(channel, event)` and its `TABLE` in `src/core/combat/fight-channel.ts`, called by the fight's reducer and, for every break, by `broken` in `src/core/combat/land.ts` |
+| What changes it | `channelStep(channel, event)` and its `TABLE` in `src/core/combat/fight-channel.ts`, called by the fight's reducer and, for every break, by `broken` in `src/core/combat/land.ts`; what a release costs is `released` and its `RELEASE` table |
 | Who calls it | `src/core/combat/fight.ts`, `fight-turn.ts` and `land.ts` |
 | The test to copy | `tests/fight.test.ts`, "a channel (4.1)" |
 | The recipe | A new event is a member of `ChannelEvent` and its cell in every row of `TABLE` |
@@ -360,7 +360,7 @@ Where it lives:
 
 ## A reaction
 
-Every state reachable from unarmed under the 7 events of tests/models/wave2-events.ts, breadth first. The walk found 4 states and 28 steps.
+Every state reachable from unarmed under the 9 events of tests/models/wave2-events.ts, breadth first. The walk found 4 states and 36 steps.
 
 ### A reaction on its reactor, from armed to spent
 
@@ -374,9 +374,9 @@ stateDiagram-v2
   state "Firing" as s3
   state "Spent" as s4
   [*] --> s1
-  s1 --> s2 : armed (the room's arm, the GM's arm)
+  s1 --> s2 : armed (the room's arm, the GM's arm, by a reactor down too, today)
   s2 --> s1 : disarmed
-  s2 --> s3 : its moment, and it may fire
+  s2 --> s3 : its moment, and it may fire (at an aim down too, today)
   s2 --> s1 : its reactor goes down, or the fight ends
   s3 --> s4 : its use resolves, its time comes off its next turn
   s3 --> s1 : its reactor goes down, or the fight ends
@@ -385,7 +385,7 @@ stateDiagram-v2
   s4 --> s1 : its reactor goes down, or the fight ends
 ```
 
-A player arms one of its hunter's reactions with the room's `arm`, the GM anyone's with the fight's. It fires by rule at its moment: before a foe's use lands on its reactor or an ally within reach, before a hit takes one of them to 0, after a foe's use landed on one, or before a named body's turn. It fires when its reactor is up, not held, its ability ready and paid for; otherwise it stays armed and says nothing. Its time comes off its reactor's next turn. A use sets off at most 4. Never written to a sheet.
+A player arms one of its hunter's reactions with the room's `arm`, the GM anyone's with the fight's. It fires by rule at its moment: before a foe's use lands on its reactor or an ally within reach, before a hit takes one of them to 0, after a foe's use landed on one, or before a named body's turn. It fires when its reactor is up, not held, its ability ready and paid for; otherwise it stays armed and says nothing. Its time comes off its reactor's next turn. A use sets off at most 4. Never written to a sheet. Two rows wait on a ruling and are drawn as the app behaves today: a reactor who is down arms (rules-4.3a), and a reaction fires at an aim already down (rules-4.2).
 
 4 chart states, 9 arrows. Hidden: arming another while armed, and a moment while spent, change nothing and are not drawn (0 steps.)
 
@@ -394,8 +394,8 @@ Where it lives:
 | What | Where |
 |---|---|
 | The union | `ReactState`, `ReactEvent` and `REACT_STATES` in `src/core/combat/fight-react.ts`; the row's `armed` in `Body` (`effect-ops.ts`) |
-| What changes it | `reactStep(state, event)` and its `TABLE`; `fireReaction`, `turnReaction` and `restored` carry it out |
-| Who calls it | `act` and `arm` in `src/core/combat/fight.ts` (rules 7c and 19c), `resolve` in `resolve.ts` (rule 13b, `Answers.lethal`), `startTurn` and `consequences` in `fight-turn.ts` |
+| What changes it | `reactStep(state, event)` and its `TABLE`; `react` fires one at every moment, `restored` restores them |
+| Who calls it | `act` and `arm` in `src/core/combat/fight.ts` (rules 7c and 19c), `resolve` in `resolve.ts` (rule 13b, `Answers.lethal`), `startTurn` (`turnReaction`) and `consequences` in `fight-turn.ts` |
 | The test to copy | `tests/fight.test.ts` ("a reaction"); the walk's events are in `tests/models/wave2-events.ts` |
 | The recipe | docs/guide/combat.md, "A reaction moment" |
 
@@ -1249,7 +1249,7 @@ Where it lives:
 
 ## The room server's database
 
-Every state reachable from the server's start (tests/models/db-events.ts) under the 3 events of the walk, breadth first. The walk found 4 states and 12 steps.
+Every state reachable from the server's start (tests/models/db-events.ts) under the 4 events of the walk, breadth first. The walk found 5 states and 20 steps.
 
 ### The rooms' database, from the server's start (with DATABASE_URL)
 
@@ -1261,15 +1261,19 @@ stateDiagram-v2
   state "Starting (Postgres asked)" as s1
   state "Rooms served" as s2
   state "No rooms: health 503, the log says why" as s3
+  state "Shut down: no rooms, no more tries" as s4
   [*] --> s1
   s1 --> s2 : Postgres answers
   s1 --> s3 : Postgres does not answer
+  s1 --> s4 : the server shuts down
+  s2 --> s4 : the server shuts down
   s3 --> s2 : Postgres answers a try (every 10 s)
+  s3 --> s4 : the server shuts down
 ```
 
-Without DATABASE_URL the rooms are in memory and the database is ready from the start. With it, the rooms are in Postgres and nowhere else: while it is down no room route answers (503, never "no such room", so no phone takes its room for gone), the site itself still loads, and the server opens it again every 10 s. A query that fails once the database is ready is that request's 500, and /api/health asks Postgres each time, so it answers 503 then too; the chart leaves that out, since nothing is reopened.
+Without DATABASE_URL the rooms are in memory and the database is ready from the start. With it, the rooms are in Postgres and nowhere else: while it is down no room route answers (503, never "no such room", so no phone takes its room for gone), the site itself still loads, and the server opens it again every 10 s. A query that fails once the database is ready is that request's 500, and /api/health asks Postgres each time, so it answers 503 then too; the chart leaves that out, since nothing is reopened. A shutdown closes it from any state, and a try that answers after it is closed again.
 
-3 chart states, 3 arrows. No step is hidden.
+4 chart states, 6 arrows. No step is hidden.
 
 Where it lives:
 
@@ -1277,7 +1281,7 @@ Where it lives:
 |---|---|
 | The union | `Db`, `DbEvent`, `DB_STATES` and `DB_EVENTS` in `src/core/room-server.ts` |
 | What changes it | `dbStep(db, event)` and its `TABLE`; `dbHealth` for what /api/health answers |
-| Who calls it | `database(url)` in `server.ts`, which opens Postgres and tries again while it is down |
+| Who calls it | `database(url)` and `openDatabase(store)` in `server.ts`: the first opens Postgres and tries again while it is down; both hold their `Db` as their one state and close through it |
 | The test to copy | `tests/room-server.test.ts`; the walk's events are in `tests/models/db-events.ts`; a down Postgres end to end in `tests/server-rooms.test.ts` and `tests/server-start.test.ts` |
 | The recipe | docs/guide/hunters.md, "A state or event of the ... machine" |
 
@@ -1641,11 +1645,12 @@ stateDiagram-v2
   s2 --> s3 : the player puts it away
   s4 --> s3 : the GM's phone answers, paid, or taken
   s4 --> s2 : the room is gone
+  s4 --> s3 : the player stops waiting
 ```
 
-The gate is the GM's phone's alone: the player's phone keeps only its claim, by the run's event id, and pays the answer only while the run waits, so a second answer pays nothing. Its cost was written with the run. Posted and lost are read from the outbox (the letter queued or on its way; refused or let go), taken and gone are stored; a reload changes nothing, and leaving the room only makes it wait.
+The gate is the GM's phone's alone: the player's phone keeps only its claim, by the run's event id, and pays the answer only while the run waits, so a second answer pays nothing. Its cost was written with the run. Posted and lost are read from the outbox (the letter queued or on its way; refused or let go), taken and gone are stored; a reload changes nothing, and leaving the room only makes it wait. A run the room took can be put away after a question (a GM's phone that missed it would hold it and its gate for good); an answer after that pays nothing.
 
-4 chart states, 8 arrows. Hidden: The letter's own sends and failed sends (they stay in Waiting for the room), and each event that does not apply. (0 steps.)
+4 chart states, 9 arrows. Hidden: The letter's own sends and failed sends (they stay in Waiting for the room), and each event that does not apply. (0 steps.)
 
 Where it lives:
 
@@ -1653,7 +1658,7 @@ Where it lives:
 |---|---|
 | The union | `WaitingRun`, `WaitState`, `WaitEvent`, `WAIT_STATES` and `WAIT_EVENTS` in `src/core/gates/solo-wait.ts`; the list is the save's `settings.sync.runs` |
 | What changes it | `waitStep` and its `TABLE`; `runPosted`, `runTaken`, `runsGone`, `runAnswered`, `runDismissed` |
-| Who calls it | `soloRan` (gates/solo.ts) writes it; `boxDo` in `src/edge/sync.ts` hears the room take it or the room gone; `landSoloAnswer` in `src/edge/room-events.ts` answers it; `src/views/gates.js` puts a lost one away |
+| Who calls it | `soloRan` (gates/solo.ts) writes it; `boxDo` in `src/edge/sync.ts` hears the room take it or the room gone; `landSoloAnswer` in `src/edge/room-events.ts` answers it; `src/views/gates.js` puts a lost or taken one away (`mayDismiss`) |
 | The test to copy | `tests/solo-wait.test.ts`; the walk's events are in `tests/models/solo-events.ts`; two players in `tests/room-system-model.test.ts` |
 | The recipe | docs/guide/room-sync.md, "A room message" |
 

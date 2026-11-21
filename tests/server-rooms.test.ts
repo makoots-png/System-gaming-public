@@ -10,11 +10,13 @@ import { ROOM_TTL_MS } from '../src/core/room-server.ts';
 import { newEvent } from '../src/core/protocol.ts';
 import { CHAPTER_MAX, chapterSize } from '../src/core/story/story.ts';
 import { worstBody, worstChapter } from './fixtures/worst-chapter.ts';
+import { roomRulesOf } from '../src/core/hunter/build.ts';
+import { rulesOf } from '../src/core/rules.ts';
 
 type Reply = { status: number; body: Record<string, any> };
 
 /** The room's rules doc as a GM's phone publishes it (build.ts `roomRulesOf`). */
-const RULES_DOC = { build: { enabled: true, playerPick: false }, solo: { personal: true, hours: 8 }, feats: { on: true } };
+const RULES_DOC = roomRulesOf(rulesOf({ build: { playerPick: false } }));
 const { build } = await buildApp();
 
 /** Every request carries this build's id, as the app's requests do. tests/server-handshake.test.ts covers the refusals. */
@@ -455,17 +457,18 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
     expect(later.body.next).toBe(4);
   });
 
-  test('a phone that has pushed nothing yet gets the messages sealed to its hunter from its first poll, and its token holds the device from then on', async () => {
+  test('a poll binds no phone: before its first write a phone gets no message sealed to its hunter, and a thief who polled first cannot write for it', async () => {
     const { code, gm } = await newRoom();
     const NEW = 'd-player4', D = `${NEW}:h1`;
     await call('PUT', `/api/rooms/${code}/sheets/${A}`, { headers: token(PLAYER), body: sheetOf(PLAYER, 'Kai') });
     const toNew = { ...offer('d-player1-mo2'), to: [D] };
     expect((await call('POST', `/api/rooms/${code}/events`, { headers: token(PLAYER), body: { from: PLAYER, type: 'offer', payload: toNew } })).body).toEqual({ seq: 1 });
-    const mine = await call('GET', `/api/rooms/${code}?after=0&d=${NEW}`, { headers: token(NEW) });
-    expect(eids(mine)).toEqual(['d-player1-mo2']);
     expect(eids(await call('GET', `/api/rooms/${code}?after=0&d=${NEW}`, { headers: token('thief') }))).toEqual([]);
+    expect(eids(await call('GET', `/api/rooms/${code}?after=0&d=${NEW}`, { headers: token(NEW) }))).toEqual([]);
+    expect((await call('PUT', `/api/rooms/${code}/sheets/${D}`, { headers: token(NEW), body: sheetOf(NEW, 'Rin') })).status).toBe(200);
+    expect(eids(await call('GET', `/api/rooms/${code}?after=0&d=${NEW}`, { headers: token(NEW) }))).toEqual(['d-player1-mo2']);
     expect(await call('PUT', `/api/rooms/${code}/sheets/${D}`, { headers: token('thief'), body: sheetOf(NEW, 'Mallory') })).toEqual({ status: 403, body: { error: 'not your sheet' } });
-    expect((await call('GET', `/api/rooms/${code}`, { headers: gm })).body.sheets[D]).toBeUndefined();
+    expect((await call('GET', `/api/rooms/${code}`, { headers: gm })).body.sheets[D].data.hunter.name).toBe('Rin');
   });
 
   test('a face pushed as a sheet is refused, and the room is unchanged', async () => {
@@ -473,6 +476,57 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
     const face = { from: PLAYER, data: { face: { name: 'Kai', level: 99, job: null, bag: [] } } };
     expect(await call('PUT', `/api/rooms/${code}/sheets/${A}`, { headers: token(PLAYER), body: face })).toEqual({ status: 400, body: { error: 'bad sheet' } });
     expect((await call('GET', `/api/rooms/${code}`, { headers: gm })).body.sheets).toEqual({});
+  });
+});
+
+describe('a phone\'s hold on its hunters (SMX-sync-5)', () => {
+  const VIC = 'd-vic1', ONE = `${VIC}:h1`, TWO = `${VIC}:h2`;
+  const chapter = (eid: string, to: string) => ({ eid, to: [to], words: { title: 'SECRET CHAPTER', line: '' }, rewards: { points: 5 }, quest: null });
+  const two = (name: string, id: string) => ({ from: VIC, data: { hunter: { id, name } } });
+  /** A room where the victim's phone holds two hunters, Kai and Rin, and the GM has sent Rin a sealed chapter. */
+  async function victimRoom() {
+    const { code, gm } = await newRoom();
+    for (const [key, body] of [[ONE, two('Kai', 'h1')], [TWO, two('Rin', 'h2')]] as const) {
+      expect((await call('PUT', `/api/rooms/${code}/sheets/${key}`, { headers: token(VIC), body })).status).toBe(200);
+    }
+    expect((await call('POST', `/api/rooms/${code}/events`, { headers: gm, body: { from: 'd-gm', type: 'chapter', payload: chapter('d-gm-c1', TWO) } })).body).toEqual({ seq: 1 });
+    const poll = (headers: Record<string, string>) => call('GET', `/api/rooms/${code}?after=0&d=${VIC}`, { headers });
+    const push = (headers: Record<string, string>, name: string) => call('PUT', `/api/rooms/${code}/sheets/${TWO}`, { headers, body: two(name, 'h2') });
+    return { code, gm, poll, push };
+  }
+  const titles = (r: Reply): string[] => r.body.events.map((e: any) => e.payload.words?.title ?? e.payload.title);
+
+  test('after the GM removes one of a phone\'s two hunters, another phone polling with its id gets only faces and no sealed chapter, and the player still writes the other', async () => {
+    const { code, gm, poll, push } = await victimRoom();
+    expect((await call('DELETE', `/api/rooms/${code}/sheets/${ONE}`, { headers: gm })).status).toBe(200);
+    const thief = await poll(token('thief'));
+    expect(titles(thief)).toEqual([]);
+    expect(thief.body.sheets[TWO].data).toEqual({ face: { name: 'Rin', level: 1, job: null, bag: [] } });
+    expect(await push(token('thief'), 'Mallory')).toEqual({ status: 403, body: { error: 'not your sheet' } });
+    expect((await push(token(VIC), 'Rin')).status).toBe(200);
+    expect(titles(await poll(token(VIC)))).toEqual(['SECRET CHAPTER']);
+  });
+
+  test('after the GM releases a phone, another phone that polls first with its id reads no sealed chapter and takes nothing: the player\'s new phone writes and holds it', async () => {
+    const { code, gm, poll, push } = await victimRoom();
+    expect((await call('POST', `/api/rooms/${code}/release`, { headers: gm, body: { device: VIC } })).body).toEqual({ ok: true });
+    const thief = await poll(token('thief'));
+    expect(titles(thief)).toEqual([]);
+    expect(thief.body.sheets[TWO].data).toHaveProperty('face');
+    expect((await push(token('newphone'), 'Rin')).status).toBe(200);
+    expect(titles(await poll(token('newphone')))).toEqual(['SECRET CHAPTER']);
+    expect(await push(token('thief'), 'Mallory')).toEqual({ status: 403, body: { error: 'not your sheet' } });
+    expect(await push(token(VIC), 'Rin')).toEqual({ status: 403, body: { error: 'not your sheet' } });
+  });
+
+  test('removing a phone\'s last hunter frees it: once the GM allows it back, the player\'s new phone may push it', async () => {
+    const { code, gm } = await newRoom();
+    const path = `/api/rooms/${code}/sheets/${ONE}`;
+    expect((await call('PUT', path, { headers: token(VIC), body: two('Kai', 'h1') })).status).toBe(200);
+    expect((await call('DELETE', path, { headers: gm })).status).toBe(200);
+    expect((await call('DELETE', `/api/rooms/${code}/kicks/${ONE}`, { headers: gm })).status).toBe(200);
+    expect((await call('PUT', path, { headers: token('newphone'), body: two('Kai', 'h1') })).status).toBe(200);
+    expect(await call('PUT', path, { headers: token(VIC), body: two('Kai', 'h1') })).toEqual({ status: 403, body: { error: 'not your sheet' } });
   });
 });
 
@@ -731,6 +785,45 @@ describe('a Postgres that does not answer', () => {
       expect((await call('GET', '/api/health', { server })).body).toEqual({ ok: true, db: 'postgres' });
       expect((await call('POST', '/api/rooms', { server })).status).toBe(200);
     } finally { await db.close(); }
+  });
+});
+
+describe('a database the server shuts (SMX-sync-7)', () => {
+  const closedHealth = { status: 503, body: { ok: false, db: 'postgres', error: 'closed' } };
+
+  test('shut while Postgres is still answering its first try: the store that try opens is closed, and no room is served', async () => {
+    let answer = (_: Store): void => {}, closes = 0;
+    const store: Store = { ...memoryStore(), kind: 'postgres', close: async () => { closes++; } };
+    const db = database('postgres://later', () => new Promise<Store>(resolve => { answer = resolve; }), 60_000), server = serverOf(db);
+    const closing = db.close();
+    answer(store);
+    await closing;
+    expect((await db.now()).at).toBe('closed');
+    expect(closes).toBe(1);
+    expect(await call('GET', '/api/health', { server })).toEqual(closedHealth);
+    expect(await call('POST', '/api/rooms', { server })).toEqual({ status: 503, body: { error: 'no database' } });
+  });
+
+  test('shut while Postgres does not answer: no other try is made', async () => {
+    let tries = 0;
+    const open = async (): Promise<Store> => { tries++; throw Object.assign(new Error('Failed to connect'), { code: 'ERR_POSTGRES_CONNECTION_REFUSED' }); };
+    const db = database('postgres://never', open, 5), server = serverOf(db);
+    expect((await db.now()).at).toBe('down');
+    await db.close();
+    await new Promise(resolve => setTimeout(resolve, 40));
+    expect(tries).toBe(1);
+    expect(await call('GET', '/api/health', { server })).toEqual(closedHealth);
+  });
+
+  test('shut when ready: its store is closed once, and health and every room route answer 503', async () => {
+    let closes = 0;
+    const db = openDatabase({ ...memoryStore(), kind: 'postgres', close: async () => { closes++; } }), server = serverOf(db);
+    expect((await call('POST', '/api/rooms', { server })).status).toBe(200);
+    await db.close();
+    await db.close();
+    expect(closes).toBe(1);
+    expect(await call('GET', '/api/health', { server })).toEqual(closedHealth);
+    expect(await call('POST', '/api/rooms', { server })).toEqual({ status: 503, body: { error: 'no database' } });
   });
 });
 

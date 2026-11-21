@@ -60,7 +60,7 @@ function waitArrow(e: WaitModelEvent, from: WaitWorld, to: WaitWorld): string | 
     case 'refused': return 'the room refuses the run';
     case 'drop': return 'the outbox lets it go';
     case 'roomGone': return 'the room is gone';
-    case 'dismiss': return 'the player puts it away';
+    case 'dismiss': return shownState(from) === 'taken' ? 'the player stops waiting' : 'the player puts it away';
     default: return null;
   }
 }
@@ -72,7 +72,7 @@ export const soloWait = machine<WaitWorld, WaitModelEvent>({
   kindsOf: s => [shownState(s)],
   views: [{
     title: 'A player\'s won run of a room\'s solo gate, until the GM\'s phone answers',
-    note: 'The gate is the GM\'s phone\'s alone: the player\'s phone keeps only its claim, by the run\'s event id, and pays the answer only while the run waits, so a second answer pays nothing. Its cost was written with the run. Posted and lost are read from the outbox (the letter queued or on its way; refused or let go), taken and gone are stored; a reload changes nothing, and leaving the room only makes it wait.',
+    note: 'The gate is the GM\'s phone\'s alone: the player\'s phone keeps only its claim, by the run\'s event id, and pays the answer only while the run waits, so a second answer pays nothing. Its cost was written with the run. Posted and lost are read from the outbox (the letter queued or on its way; refused or let go), taken and gone are stored; a reload changes nothing, and leaving the room only makes it wait. A run the room took can be put away after a question (a GM\'s phone that missed it would hold it and its gate for good); an answer after that pays nothing.',
     hides: 'The letter\'s own sends and failed sends (they stay in Waiting for the room), and each event that does not apply.',
     state: s => WAIT_LABEL[shownState(s)],
     step: waitArrow,
@@ -80,7 +80,7 @@ export const soloWait = machine<WaitWorld, WaitModelEvent>({
   where: [
     ['The union', '`WaitingRun`, `WaitState`, `WaitEvent`, `WAIT_STATES` and `WAIT_EVENTS` in `src/core/gates/solo-wait.ts`; the list is the save\'s `settings.sync.runs`'],
     ['What changes it', '`waitStep` and its `TABLE`; `runPosted`, `runTaken`, `runsGone`, `runAnswered`, `runDismissed`'],
-    ['Who calls it', '`soloRan` (gates/solo.ts) writes it; `boxDo` in `src/edge/sync.ts` hears the room take it or the room gone; `landSoloAnswer` in `src/edge/room-events.ts` answers it; `src/views/gates.js` puts a lost one away'],
+    ['Who calls it', '`soloRan` (gates/solo.ts) writes it; `boxDo` in `src/edge/sync.ts` hears the room take it or the room gone; `landSoloAnswer` in `src/edge/room-events.ts` answers it; `src/views/gates.js` puts a lost or taken one away (`mayDismiss`)'],
     ['The test to copy', '`tests/solo-wait.test.ts`; the walk\'s events are in `tests/models/solo-events.ts`; two players in `tests/room-system-model.test.ts`'],
     ['The recipe', 'docs/guide/room-sync.md, "A room message"'],
   ],
