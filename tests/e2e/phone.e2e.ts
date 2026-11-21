@@ -308,6 +308,16 @@ async function makers(gm: Page, label: string): Promise<Finding[]> {
       if (covered) out.push({ view: `${label} ${k} maker`, what: `its last field, focused, is ${covered}` });
     }
     out.push(...(await check(gm, `${label} ${k} maker`)));
+    // a maker with an Icon row (icons design 6): its sheet of icons, open on the thing's own group, then closed by Escape
+    const icons = dlg.locator('[data-ic-open]');
+    if (await icons.count()) {
+      await icons.tap();
+      await expect(dlg.locator('.mk-ic-panel')).toBeVisible();
+      await gm.evaluate(() => Promise.all(document.getAnimations().filter(a => a.effect?.getTiming().iterations !== Infinity).map(a => a.finished.then(() => true, () => false))));
+      out.push(...(await check(gm, `${label} ${k} maker's icons`)));
+      await gm.keyboard.press('Escape');
+      await expect(dlg.locator('.mk-ic-panel')).toHaveCount(0);
+    }
     await gm.keyboard.press('Escape');
     await expect(dlg).toBeHidden();
   }

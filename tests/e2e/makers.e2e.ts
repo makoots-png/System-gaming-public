@@ -23,6 +23,7 @@ import type { Command, Ctx, Fight, NewRow } from '../../src/core/combat/fight.ts
 import { UNFINISHED_ROWS, newRewards } from '../../src/core/rewards.ts';
 import { EXAMPLE_STORIES } from '../../src/core/registry/stories.ts';
 import { rowHp } from '../../src/core/combat/row-hp.ts';
+import { iconsOf } from '../../src/core/registry/icons.ts';
 
 const combat = (page: Page) => page.locator('#view-combat');
 const statusMaker = (page: Page) => page.locator('.fg-overlay [role=dialog]');
@@ -1767,5 +1768,164 @@ test('a half-written reward row keeps its chapter open in the story maker, and t
     await expect(d).toHaveCount(0);
     const [s] = await libraryStories(page);
     expect(s.chapters.map((c: any) => c.rewards.boons)).toEqual([[{ name: 'A favor', text: '' }], []]);
+  });
+});
+
+// ── the Icon row of the monster, item and status makers (icons design 6) ──
+/** A maker's Icon row (its one button) and the sheet it opens over the maker. */
+const iconOpen = (d: Locator) => d.locator('[data-ic-open]');
+const iconSheet = (d: Locator) => d.locator('.mk-ic-panel');
+/** The sheet's cell of the icon named `label`, or "Default". */
+const iconCell = (d: Locator, label: string) => iconSheet(d).locator(label === 'Default' ? '.mk-ic-def' : `.mk-ic-cell[title="${label}"]`);
+const iconGroup = (d: Locator, words: string) => iconSheet(d).locator('[data-ic-group]', { hasText: words });
+
+test('in the item maker the Icon row follows the type and attack picked, a raven from the Foe group is saved on the item, and Default saves no key', async ({ device }) => {
+  const page = (await device('gm', { viewport: { width: 360, height: 640 } })).page;
+  await onboardGM(page);
+  const d = itemMaker(page);
+  await go(page, 'workshop');
+  await workshop(page, 'item').locator('[data-new]').tap();
+  await d.locator('#lf-name').fill('Raven Draught');
+
+  await test.step('the row says why the item shows its picture as its type and attack change', async () => {
+    await d.locator('[data-chips="type"] [data-chip="weapon"]').tap();
+    await expect(iconOpen(d)).toHaveText('Sword, from its type');
+    await d.locator('[data-chips="attack"] [data-chip="shot"]').tap();
+    await expect(iconOpen(d)).toHaveText('Bow, from its attack');
+    await d.locator('[data-chips="type"] [data-chip="consumable"]').tap();
+    await expect(iconOpen(d)).toHaveText('Potion, from its type');
+  });
+
+  await test.step('the sheet opens on the Item group, Default first with the potion; the GM picks the raven from Foe', async () => {
+    await iconOpen(d).tap();
+    await expect(iconSheet(d).locator('[data-ic-group]')).toHaveText(['Item', 'Foe', 'Status', 'Ability', 'Emblem']);
+    await expect(iconGroup(d, 'Item')).toHaveAttribute('aria-pressed', 'true');
+    await expect(iconSheet(d).locator('.mk-ic-cell')).toHaveCount(iconsOf('item').length + 1);
+    await expect(iconCell(d, 'Default')).toHaveAttribute('aria-label', 'Default: Potion, from its type');
+    await expect(iconCell(d, 'Default')).toHaveAttribute('aria-pressed', 'true');
+    await iconGroup(d, 'Foe').tap();
+    await expect(iconSheet(d).locator('.mk-ic-cell')).toHaveCount(iconsOf('foe').length + 1);
+    await iconCell(d, 'Raven').tap();
+    await expect(iconSheet(d)).toHaveCount(0);
+    await expect(iconOpen(d)).toHaveText('Raven, picked');
+    await d.locator('[data-apply]').tap();
+    await expect(d).toHaveCount(0);
+    expect((await libraryItem(page, 'Raven Draught')).icon).toBe('raven');
+  });
+
+  await test.step('Edit shows the pick, the sheet opens on its group with it lit, and Default saves the item with no key', async () => {
+    const saved = await libraryItem(page, 'Raven Draught');
+    await workshop(page, 'item').locator(`li[data-id="${saved.id}"] [data-act="edit"]`).tap();
+    await expect(iconOpen(d)).toHaveText('Raven, picked');
+    await iconOpen(d).tap();
+    await expect(iconGroup(d, 'Foe')).toHaveAttribute('aria-pressed', 'true');
+    await expect(iconCell(d, 'Raven')).toHaveAttribute('aria-pressed', 'true');
+    await iconCell(d, 'Default').tap();
+    await expect(iconSheet(d)).toHaveCount(0);
+    await expect(iconOpen(d)).toHaveText('Potion, from its type');
+    await d.locator('[data-apply]').tap();
+    await expect(d).toHaveCount(0);
+    const item = await libraryItem(page, 'Raven Draught');
+    expect(item.id).toBe(saved.id);
+    expect('icon' in item).toBe(false);
+  });
+});
+
+test('in the monster maker the Icon row follows the type typed, a blood drop from the Status group is saved on the monster, and Default saves no key', async ({ device }) => {
+  const page = (await device('gm', { viewport: { width: 390, height: 844 } })).page;
+  await onboardGM(page);
+  const d = monsterMaker(page);
+  const saved = () => page.evaluate(() => hunterApp.store.get().monsters.find((m: any) => m.name === 'Pale Hound'));
+  await go(page, 'workshop');
+  await workshop(page, 'monster').locator('[data-new]').tap();
+  await d.locator('#enm-name').fill('Pale Hound');
+
+  await test.step('a beast is a wolf by its type, and the sheet opens on Foe', async () => {
+    await d.locator('#enm-type').fill('Beast');
+    await expect(iconOpen(d)).toHaveText('Wolf, from its type');
+    await iconOpen(d).tap();
+    await expect(iconSheet(d).locator('[data-ic-group]').first()).toHaveText('Foe');
+    await expect(iconGroup(d, 'Foe')).toHaveAttribute('aria-pressed', 'true');
+    await expect(iconCell(d, 'Default')).toHaveAttribute('aria-label', 'Default: Wolf, from its type');
+  });
+
+  await test.step('the GM picks Blood from the Status group, and the monster is saved with it', async () => {
+    await iconGroup(d, 'Status').tap();
+    await iconCell(d, 'Blood').tap();
+    await expect(iconSheet(d)).toHaveCount(0);
+    await expect(iconOpen(d)).toHaveText('Blood, picked');
+    await d.locator('[data-apply]').tap();
+    await expect(d).toHaveCount(0);
+    expect((await saved()).icon).toBe('blood');
+  });
+
+  await test.step('Edit, Default, Save: the monster has no key and shows its type\'s wolf again', async () => {
+    await go(page, 'workshop');
+    await workshop(page, 'monster').locator(`li[data-id="${(await saved()).id}"] [data-act="edit"]`).tap();
+    await expect(iconOpen(d)).toHaveText('Blood, picked');
+    await iconOpen(d).tap();
+    await expect(iconGroup(d, 'Status')).toHaveAttribute('aria-pressed', 'true');
+    await iconCell(d, 'Default').tap();
+    await expect(iconOpen(d)).toHaveText('Wolf, from its type');
+    await d.locator('[data-apply]').tap();
+    await expect(d).toHaveCount(0);
+    expect('icon' in (await saved())).toBe(false);
+  });
+});
+
+test('in the status maker opening the icons and closing them changes nothing, a pick is a change the maker asks before dropping, an axe from the Item group is saved, and Default saves no key', async ({ device }) => {
+  const page = (await device('gm', { viewport: { width: 360, height: 640 } })).page;
+  await onboardGM(page);
+  const d = statusMaker(page), ask = page.getByRole('alertdialog', { name: 'Discard changes?' });
+  const saved = () => page.evaluate(() => hunterApp.store.get().library.statuses['ember-mark']);
+  await go(page, 'workshop');
+
+  await test.step('the sheet opened and closed by Escape leaves the form untouched: Escape then closes the maker', async () => {
+    await workshop(page, 'status').locator('[data-new]').tap();
+    await expect(iconOpen(d)).toHaveText('Status, the default');
+    await iconOpen(d).tap();
+    await expect(iconSheet(d).locator('[data-ic-group]').first()).toHaveText('Status');
+    await page.keyboard.press('Escape');
+    await expect(iconSheet(d)).toHaveCount(0);
+    await expect(iconOpen(d)).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(d).toHaveCount(0);
+    await expect(ask).toHaveCount(0);
+  });
+
+  await test.step('a pick is a change: Escape asks before dropping it', async () => {
+    await workshop(page, 'status').locator('[data-new]').tap();
+    await iconOpen(d).tap();
+    await iconCell(d, 'Blood').tap();
+    await page.keyboard.press('Escape');
+    await expect(ask).toBeVisible();
+    await ask.getByRole('button', { name: 'Discard' }).tap();
+    await expect(d).toHaveCount(0);
+  });
+
+  await test.step('the row follows the first effect; the GM picks the axe from the Item group and saves', async () => {
+    await workshop(page, 'status').locator('[data-new]').tap();
+    await d.locator('[data-name]').fill('Ember Mark');
+    await d.locator('[data-quick] [data-q="d4"]').tap();
+    await expect(iconOpen(d)).toHaveText('Slash, from its first effect');
+    await iconOpen(d).tap();
+    await iconGroup(d, 'Item').tap();
+    await iconCell(d, 'Axe').tap();
+    await expect(iconOpen(d)).toHaveText('Axe, picked');
+    await d.getByRole('button', { name: 'Save status' }).tap();
+    await expect(d).toHaveCount(0);
+    expect((await saved()).icon).toBe('axe');
+  });
+
+  await test.step('Edit, Default, Save: the status has no key and its row names its first effect again', async () => {
+    await workshop(page, 'status').locator('li[data-id="ember-mark"] [data-act="edit"]').tap();
+    await expect(iconOpen(d)).toHaveText('Axe, picked');
+    await iconOpen(d).tap();
+    await expect(iconGroup(d, 'Item')).toHaveAttribute('aria-pressed', 'true');
+    await iconCell(d, 'Default').tap();
+    await expect(iconOpen(d)).toHaveText('Slash, from its first effect');
+    await d.getByRole('button', { name: 'Save status' }).tap();
+    await expect(d).toHaveCount(0);
+    expect('icon' in (await saved())).toBe(false);
   });
 });

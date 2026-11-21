@@ -7,7 +7,10 @@
 // `rewards` is the reward editor (reward-editor.js). No game rule lives here: a maker builds its form from these parts and
 // saves what the kind's parser gives back.
 import { esc, css, field, h, closeWindow, confirm, formEnter, openWindow, trapTab } from './ui.js';
-import { enter } from './motion.ts';
+import { enter, pop } from './motion.ts';
+import { icon, iconHref, sprite } from './icons.ts';
+import { GROUP_WORDS, iconPickStart, iconPickStep, iconShown, iconWords, pickerGroups } from '../core/icon-pick.ts';
+import { ICON_GROUPS, ICON_KEYS, iconDef, iconsOf } from '../core/registry/icons.ts';
 import { PERK_KEYS, PERK_LABELS, rules } from '../edge/rules.ts';
 import { RANKS } from '../core/rules.ts';
 import { STAT_KEYS, STAT_LABELS } from '../core/stats.ts';
@@ -896,8 +899,8 @@ function openMaker(o) {
      * The form's draft (src/core/draft.ts): `clean` until the GM changes it, `edited` after, `asking` while "Discard
      * changes?" is up, `closed` once the window went. It moves only by `step`, and only a step's answer asks or closes.
      * A change is a trusted input or change in the body, a press of its buttons, or a press on a surface it marks
-     * `data-mk-paint`; the search above a long list changes no field (its events stop at it), and opening a group is not
-     * a change. Cancel and Save are the GM's own choice and close without asking.
+     * `data-mk-paint`; the search above a long list changes no field (its events stop at it), opening a group is not
+     * a change, and neither is a button marked `data-mk-look`, which only shows something (the Icon row's sheet, its groups). Cancel and Save are the GM's own choice and close without asking.
      * @type {import('../core/draft.ts').Draft}
      */
     let draft = 'clean';
@@ -937,7 +940,7 @@ function openMaker(o) {
     }
     const touched = e => { if (e.isTrusted && bodyEl.contains(e.target)) step('changed'); };
     bodyEl.addEventListener('input', touched); bodyEl.addEventListener('change', touched);
-    bodyEl.addEventListener('click', e => { if (e.target.closest('button')) touched(e); });
+    bodyEl.addEventListener('click', e => { if (e.target.closest('button') && !e.target.closest('[data-mk-look]')) touched(e); });
     bodyEl.addEventListener('pointerdown', e => { if (e.isTrusted && e.target.closest('[data-mk-paint]')) step('painted'); });
     function onKey(e) {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); step('leave'); return; }
@@ -1000,6 +1003,86 @@ function worthBar(box) {
     box.classList.toggle('over', w.over);
     line.textContent = worthLine(w);
   };
+}
+
+// ── the Icon row ──
+/**
+ * The Icon row of the monster, item and status makers, put in `box` (icons design 6): one button that shows the icon in
+ * use and a line saying why ("Wolf, from its type", "Raven, picked"). A tap opens a sheet over the maker: a row of the
+ * icon groups, the thing's own first, and a grid of 44 px cells, the first "Default" with the default's picture. A tap on
+ * a cell picks it and closes the sheet; "Default" stores no key. The row's state is the machine of src/core/icon-pick.ts,
+ * kept in `picker` and moved only by `iconPickStep` (`move`). The sheet is a window over its maker (ui.js `openWindow`):
+ * while it is up it takes the keys (Escape closes it, Tab stays in it), and a press anywhere beside its panel closes it.
+ * It is drawn inside the row, so a tap on a cell is a press in the form, which the maker's draft reads as a change;
+ * opening the sheet, a group and its close are marked `data-mk-look` and change nothing. The default follows the form:
+ * the line is drawn again from `subject` after each input, change and tap in the maker's window.
+ * @param {HTMLElement} box where the row goes, in the maker's body
+ * @param {HTMLElement} win the maker's window (`shell.el`)
+ * @param {{ thing: import('../core/icon-pick.ts').IconThing; pick?: import('../core/registry/icons.ts').IconKey | null; subject: () => import('../core/icon-pick.ts').IconSubject }} o
+ * @returns {{ pick(): import('../core/registry/icons.ts').IconKey | null }}
+ */
+export function iconField(box, win, o) {
+  /** The row's machine (src/core/icon-pick.ts): the pick, and the sheet closed or open at a group. */
+  let picker = iconPickStart(o.thing, o.pick || null);
+  /** The sheet's window while it is up, for `closeWindow`; null while it is closed. @type {import('./ui.js').Win | null} */
+  let sheetWin = null;
+  sprite();
+  const first = iconShown(o.subject(), picker.pick);
+  box.classList.add('mk-ic');
+  box.innerHTML = `<div class="lbl">Icon</div><button type="button" class="mk-ic-open" data-mk-look data-ic-open aria-haspopup="dialog" aria-expanded="false"><span class="mk-ic-box">${icon(first.key)}</span><span class="mk-ic-why">${esc(iconWords(first))}</span></button>`;
+  const opener = /** @type {HTMLElement} */ (box.querySelector('[data-ic-open]')), why = box.querySelector('.mk-ic-why'), use = box.querySelector('.mk-ic-box use');
+  /** Draws the row from the form and the pick. A changed icon pops in: it is new, and the GM made it so. */
+  const line = () => {
+    const s = iconShown(o.subject(), picker.pick), words = iconWords(s), href = iconHref(s.key);
+    if (use.getAttribute('href') !== href) { use.setAttribute('href', href); void pop(box.querySelector('.mk-ic-box')); }
+    if (why.textContent !== words) why.textContent = words;
+  };
+  /** The sheet's groups and cells for the state now: its group pressed; "Default" with the default's picture, then the group's icons, the pick in use pressed. */
+  const paint = root => {
+    if (picker.at !== 'open') return;
+    const at = picker.group, pick = picker.pick || '', d = iconShown(o.subject(), null);
+    for (const b of root.querySelectorAll('[data-ic-group]')) b.setAttribute('aria-pressed', String(b.dataset.icGroup === at));
+    const cell = (key, label, inner, cls = '') => `<button type="button" class="mk-ic-cell${cls}" data-ic-key="${key}" aria-label="${esc(label)}" title="${esc(label)}" aria-pressed="${pick === key}">${inner}</button>`;
+    root.querySelector('[data-ic-grid]').innerHTML = [cell('', `Default: ${iconWords(d)}`, `${icon(d.key)}<span>Default</span>`, ' mk-ic-def'), ...iconsOf(at).map(k => cell(k, iconDef(k).label, icon(k)))].join('');
+  };
+  function onKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); move({ kind: 'shut' }); }
+    else if (e.key === 'Tab' && sheetWin && sheetWin.win) trapTab(e, sheetWin.win);
+  }
+  /** Moves the row by `e` and draws what changed: the sheet up, its group, or the sheet gone and the row's line. */
+  function move(e) {
+    const was = picker;
+    picker = iconPickStep(picker, e);
+    if (picker === was) return;
+    if (picker.at === 'open' && was.at === 'closed') {
+      const root = h(`<div class="mk-ic-sheet"><div class="mk-ic-panel" role="group" aria-label="Pick an icon">
+        <div class="mk-ic-head"><span class="lbl">Pick an icon</span><button type="button" class="icon-btn" data-mk-look data-ic-shut aria-label="Close the icons">&times;</button></div>
+        <div class="seg mk-ic-groups" role="group" aria-label="Groups of icons">${pickerGroups(o.thing).map(g => `<button type="button" data-mk-look data-ic-group="${g}" aria-pressed="false">${esc(GROUP_WORDS[g])}</button>`).join('')}</div>
+        <div class="mk-ic-grid" data-ic-grid></div></div></div>`);
+      paint(root);
+      sheetWin = openWindow('maker', () => { box.appendChild(root); enter(root.firstElementChild); enter(root, 'fade'); return { root, win: /** @type {HTMLElement} */ (root.firstElementChild) }; }, onKey);
+      opener.setAttribute('aria-expanded', 'true');
+      /** @type {HTMLElement} */ (root.querySelector('.mk-ic-cell[aria-pressed=true]') || root.querySelector('.mk-ic-cell')).focus({ preventScroll: true });
+    } else if (picker.at === 'open' && sheetWin) paint(sheetWin.root);
+    else if (sheetWin) {
+      closeWindow(sheetWin); sheetWin = null;
+      opener.setAttribute('aria-expanded', 'false'); opener.focus({ preventScroll: true });
+      line();
+    }
+  }
+  // on the window, so the maker's own handlers (in its body) have read the tap or the typing first
+  win.addEventListener('click', e => {
+    const t = e.target instanceof Element && box.contains(e.target) ? e.target.closest('[data-ic-open],[data-ic-group],[data-ic-key],[data-ic-shut],.mk-ic-sheet') : null;
+    if (!t) return line();
+    if (t.matches('[data-ic-open]')) move({ kind: 'opened' });
+    else if (t.matches('[data-ic-group]')) { const g = oneOf(t.dataset.icGroup, ICON_GROUPS, null); if (g) move({ kind: 'group', group: g }); }
+    else if (t.matches('[data-ic-key]')) move({ kind: 'picked', key: oneOf(t.dataset.icKey, ICON_KEYS, null) });
+    // its close, or a press on the dimmed page around its panel
+    else if (t.matches('[data-ic-shut]') || t === e.target) move({ kind: 'shut' });
+  });
+  win.addEventListener('input', line);
+  win.addEventListener('change', line);
+  return { pick: () => picker.pick };
 }
 
 /**

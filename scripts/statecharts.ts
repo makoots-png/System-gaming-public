@@ -43,6 +43,7 @@ import { story } from './charts/story.ts';
 import { edge, extras, reaction, shove, stealth, ward } from './charts/wave2.ts';
 import { gear } from './charts/gear.ts';
 import { dcPick } from './charts/dc-pick.ts';
+import { iconPick } from './charts/icon-pick.ts';
 import { turnHold } from './charts/hold.ts';
 import { told } from './charts/told.ts';
 import { lobbyCheck, lobbySeat } from './charts/lobby.ts';
@@ -89,7 +90,7 @@ export function machine<S, E>(m: Machine<S, E>): Machine<unknown, unknown> { ret
 
 export const MACHINES: readonly Machine<unknown, unknown>[] = [
   inbox, fight, channel, stacks, statusLifeChart, trips, delayed, zone, summon, uses, reaction, edge, shove, stealth, ward, extras, turnHold,
-  gate, link, bind, removedNotice, lobbyCheck, lobbySeat, life, collapse, foeLife, penalty, jobChain, progress, rank, gear, coin, coinPrompt, dcPick,
+  gate, link, bind, removedNotice, lobbyCheck, lobbySeat, life, collapse, foeLife, penalty, jobChain, progress, rank, gear, coin, coinPrompt, dcPick, iconPick,
   onboarding, gestureChart, choiceChart, shadow, extraction, quest, questForm, db, upgrade, outbox, publish, attempt, store, odds,
   soloClock, soloWait, runPhaseChart, soloPlanChart, feat, told, offerRoom, offerGiver, offerTaker, offerWatch, story, draft, detailOpen,
   mapMountChart, mapSlotChart, buildDrawerChart, windowsChart, panel,

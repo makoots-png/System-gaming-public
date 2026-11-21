@@ -1531,6 +1531,58 @@ Where it lives:
 | The test to copy | `tests/dc-pick.test.ts`, "every state against every event" |
 | The recipe | docs/guide/hunters.md, "A state or event of the ... machine" |
 
+## A maker's icon
+
+Every state reachable from an item maker opened on a new item, under the 6 events of each kind, breadth first. The walk found 6 states and 18 steps.
+
+### The Icon row of the monster, item and status makers
+
+```mermaid
+---
+title: The Icon row of the monster, item and status makers
+---
+stateDiagram-v2
+  state "Closed, Default" as s1
+  state "Open on its own group" as s2
+  state "Open on another group" as s3
+  state "Closed, an icon picked" as s4
+  state "Open on another group, an icon picked" as s5
+  state "Open on its own group, an icon picked" as s6
+  [*] --> s1
+  s1 --> s2 : the GM taps the Icon row
+  s2 --> s3 : the GM taps a group
+  s2 --> s4 : the GM taps an icon
+  s2 --> s1 : the GM taps Default
+  s2 --> s1 : Escape, a tap beside the sheet or its ×
+  s3 --> s2 : the GM taps a group
+  s3 --> s4 : the GM taps an icon
+  s3 --> s1 : the GM taps Default
+  s3 --> s1 : Escape, a tap beside the sheet or its ×
+  s4 --> s5 : the GM taps the Icon row
+  s5 --> s6 : the GM taps a group
+  s5 --> s4 : the GM taps an icon
+  s5 --> s1 : the GM taps Default
+  s5 --> s4 : Escape, a tap beside the sheet or its ×
+  s6 --> s5 : the GM taps a group
+  s6 --> s4 : the GM taps an icon
+  s6 --> s1 : the GM taps Default
+  s6 --> s4 : Escape, a tap beside the sheet or its ×
+```
+
+The sheet opens on the thing's own group (a monster's Foe, an item's Item, a status's Status), or on the group of the icon picked, so the pick in use is lit. Default stores no key: the thing shows the picture its form gives (icon-defaults.ts), and the row's line says which field gives it. The pick is saved only with the form: Cancel drops it as it drops any field. The walk taps one group past the item's own, Foe; each other group moves it the same way.
+
+6 chart states, 18 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `IconPick`, `IconPickEvent`, `ICON_PICK_STATES` and `ICON_PICK_EVENTS` in `src/core/icon-pick.ts` |
+| What changes it | `iconPickStep(icon, event)` and its `TABLE` in `src/core/icon-pick.ts`; the row's line is `iconShown` and `iconWords` there |
+| Who calls it | `iconField` in `src/views/maker.js`, which keeps one `picker` per maker and moves it only by `iconPickStep`; its sheet is a window over the maker (ui.js `openWindow`) |
+| The test to copy | `tests/icon-pick.test.ts`, "every state against every event" |
+| The recipe | docs/guide/makers.md, "An icon" |
+
 ## First-run setup
 
 Every state reachable from no window under the 24 events of tests/models/onboarding-events.ts, breadth first. The walk found 17 states and 53 steps.

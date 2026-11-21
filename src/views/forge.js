@@ -10,6 +10,7 @@ import { atLibrary } from '../core/save-step.ts';
 import { saveStatus, savedWords } from '../core/library.ts';
 import { defWorth } from '../core/registry/worth.ts';
 import { tooLarge } from '../core/size.ts';
+import { iconField } from './maker.js';
 
 const SWATCHES = [['#4dd8ff', 'Cyan'], ['#ff4d5e', 'Red'], ['#ffc94d', 'Gold'], ['#a064ff', 'Purple'], ['#4dffa0', 'Green']];
 
@@ -61,7 +62,8 @@ function openForge(opts) {
         </div>` : ''}<div class="fg-col" data-newcol>
         <div class="fg-a1"><div class="lbl fg-new">${editKey ? 'Edit status' : 'New status'}</div>
         <label class="field"><span class="lbl">Name</span><input type="text" data-name maxlength="40" autocomplete="off" spellcheck="false" placeholder="e.g. Ember Mark"></label>
-        <label class="field"><span class="lbl">Description</span><input type="text" data-desc maxlength="200" autocomplete="off" placeholder="What the System says it does"></label></div>
+        <label class="field"><span class="lbl">Description</span><input type="text" data-desc maxlength="200" autocomplete="off" placeholder="What the System says it does"></label>
+        <div data-icon></div></div>
         <div class="fg-b" data-later><div class="lbl">Effects</div>
         <div class="fg-fx" data-fx></div>
         <div class="fg-kit" data-kit></div>
@@ -87,6 +89,13 @@ function openForge(opts) {
       const source = () => (rank ? gmSource(oneOf(M.picked(el, 'strength'), RANKS, rank)) : null);
       const formDef = () => ({ label: name.value.replace(/\s+/g, ' ').trim().slice(0, 40), desc: desc.value.replace(/\s+/g, ' ').trim().slice(0, 200), color, ops: fx.ops(), ...kit.fields() });
       const withSource = v => { const src = source(); return src ? { ...v, source: src } : v; };
+      /** The key the status is saved under: its own when edited, else the one its name makes (a built-in's key is never made). */
+      const keyOf = label => editKey || E.slug(label, library());
+      // the Icon row (icons design 6): its default is read from the key, the effects and the end the form holds
+      const iconRow = iconField(q('[data-icon]'), shell.el, {
+        thing: 'status', pick: editDef && editDef.icon ? editDef.icon : null,
+        subject: () => { const f = formDef(); return { thing: 'status', key: keyOf(f.label), def: { ops: f.ops, ...(f.end ? { end: f.end } : {}) } }; },
+      });
       /** An existing status as the window answers it: on with the Rounds and Strength shown. */
       const existing = key => withSource({ key, rounds: roundsVal(), def: A.rules().conditions[key] });
 
@@ -106,9 +115,9 @@ function openForge(opts) {
         },
         blocked: () => fx.blocked() || kit.blocked(),
         save() {
-          const form = formDef();
+          const pick = iconRow.pick(), form = { ...formDef(), ...(pick ? { icon: pick } : {}) };
           if (!form.label) { shell.error('Give the status a name.'); name.focus(); return undefined; }
-          const known = editKey || form.ops.length || form.stack || form.triggers || form.end ? null : knownKey(A.rules().conditions, form.label); // a typed name with no mechanics is that status
+          const known = editKey || form.ops.length || form.stack || form.triggers || form.end || form.icon ? null : knownKey(A.rules().conditions, form.label); // a typed name with no mechanics and no icon picked is that status
           if (known) return existing(known);
           const big = tooLarge('status', form);
           if (big) { shell.error(big); return undefined; }
@@ -116,7 +125,7 @@ function openForge(opts) {
           if (!def || canon(def) !== canon(form)) console.error('The Status dialog wrote a status its parser reads differently', form, def);
           if (!def) { shell.error('This status cannot be saved.'); return undefined; }
           const save = apply ? q('[data-save]').checked : true;
-          const newKey = editKey || E.slug(form.label, library());
+          const newKey = keyOf(form.label);
           if (save && !wrote('Workshop', saveToLibrary(newKey, def), savedWords('status', def.label))) return undefined;
           return withSource({ key: newKey, rounds: apply ? roundsVal() : null, def });
         },

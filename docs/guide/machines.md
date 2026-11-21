@@ -31,6 +31,7 @@ Hunters:
 - a quest (`hunter/quests.ts`) and the Quests view's quest form (`hunter/quest-form.ts`)
 - a coin call and the GM's window for the calls (`coin.ts`)
 - the Dice view's quick check DC (`dc-pick.ts` `dcPickStep`)
+- a maker's Icon row (`icon-pick.ts` `iconPickStep`, kept by `maker.js` `iconField`)
 - first-run setup (`onboarding.ts`)
 
 Gates, feats and stories:

@@ -51,6 +51,7 @@
   --icon-bag:24px; /* at the start of a bag line, before the item's name, in its rarity's colour */
   --icon-card:24px; /* in a fight card's head, before the name */
   --icon-list:32px; /* at the left of a bestiary line */
+  --icon-pick:24px; /* in a maker's Icon row and in each 44 px cell of its picker */
 }
 /* Device accent + text size: the only copy of these values. <html data-accent/data-ts> is set from hunter-system-prefs by the
    inline script in index.html (before first paint) and by custom.js; swatches reuse the same rules. acc2 = .85, deep = .3, deep2 = .45 of acc. */
@@ -507,6 +508,25 @@ html:has(.overlay.show) .toast-box,html:has(.ob-overlay) .toast-box,html:has(.dx
   .sys-window.dlg-form{width:min(760px,calc(100vw - 48px))}
 }
 @media (max-width:374px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* ── a maker's Icon row and its picker (maker.js `iconField`, icons design 6) ── */
+/* the row: one button, the icon in use in a 44 px square, then why it shows */
+.mk-ic{display:flex;flex-direction:column;gap:4px}
+.mk-ic-open{display:flex;align-items:center;gap:10px;width:100%;min-height:var(--control-h);padding:0 10px 0 0;text-align:left}
+.mk-ic-box{display:flex;align-items:center;justify-content:center;flex:none;width:var(--control-h);height:var(--control-h);border-right:1px solid var(--line);color:var(--cyan);--ic:var(--icon-pick)}
+.mk-ic-why{flex:1;min-width:0;font-size:calc(14px*var(--ts));color:var(--ice);overflow-wrap:anywhere}
+/* the sheet: the page dimmed around it (a press there closes it), its panel at the foot of the screen, as wide as the maker */
+.mk-ic-sheet{position:fixed;inset:0;z-index:1;background:rgba(2,6,12,.6)}
+.mk-ic-panel{position:absolute;left:0;right:0;bottom:0;margin:0 auto;width:min(480px,100%);max-height:calc(100% - 24px - var(--sat));overflow-y:auto;overscroll-behavior:contain;
+  display:flex;flex-direction:column;gap:8px;padding:8px calc(8px + var(--sar)) calc(12px + var(--sab)) calc(8px + var(--sal));
+  background:var(--panel-solid);border:1px solid var(--line-bright);border-bottom:none;box-shadow:0 -8px 30px rgba(var(--acc2-rgb),.25);text-align:left}
+.mk-ic-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.mk-ic-groups>button{min-height:var(--control-h);padding:0 6px}
+/* seven 44 px cells a row at 360 px, more room each at 390 */
+.mk-ic-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--control-h),1fr));gap:4px}
+.mk-ic-cell{display:flex;align-items:center;justify-content:center;gap:6px;min-width:var(--control-h);min-height:var(--control-h);padding:0;color:var(--ice);--ic:var(--icon-pick)}
+.mk-ic-def{grid-column:span 2;font-size:calc(13px*var(--ts))}
+.mk-ic-cell[aria-pressed=true]{background:var(--cyan);border-color:var(--cyan);color:var(--ground);box-shadow:none}
 
 /* ── Motion: the block src/views/motion.ts owns. The only @keyframes and timed transitions of the app, timed by the tokens. ── */
 /* a press answers under the thumb in the frame it lands (no transition in), and springs back over --t-fast */

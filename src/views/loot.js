@@ -16,6 +16,7 @@ import { wornWorth } from '../core/registry/worth.ts';
 import { itemSpend, spendLine } from '../core/registry/item-budget.ts';
 import { ATTACKS, GRADES, ITEM_BOUNDS, KIT_SHARE, RARITIES, SAMPLE_WEARER, parseItem, piece, valueOf, weightOf, wornSpeed } from '../core/registry/items.ts';
 import { tooLarge } from '../core/size.ts';
+import { iconField } from './maker.js';
 
 const TYPE_LABEL = { weapon: 'Weapon', armor: 'Armor', accessory: 'Accessory', consumable: 'Consumable', material: 'Material', key: 'Key', misc: 'Misc' };
 const AUTO_SLOT = { weapon: 'weapon', armor: 'chest', accessory: 'ring1' };
@@ -70,6 +71,7 @@ export function register(app) {
       build(el, shell) {
         el.innerHTML = `<div class="lf-cols"><div class="lf-col">
           ${ui.field('Name', `<input type="text" id="lf-name" maxlength="60" autocomplete="off" value="${esc(was ? was.name : '')}">`)}
+          <div data-icon></div>
           <div class="lbl">Type</div>
           ${M.chips('type', ITEM_TYPES.map(t => [t, TYPE_LABEL[t] || cap(t)]), type, { label: 'Type' })}
           <div class="lf-grid">
@@ -161,6 +163,11 @@ export function register(app) {
           for (const k of Object.keys(out.bonus)) out.bonus[k] = Math.max(-B.bonus, Math.min(B.bonus, out.bonus[k]));
           return out;
         };
+        // the Icon row (icons design 6): its default is read from the type, slot, attack and revive the form holds
+        const iconRow = iconField($('[data-icon]'), shell.el, {
+          thing: 'item', pick: was && was.icon ? was.icon : null,
+          subject: () => { const it = formItem(); return { thing: 'item', item: { type: it.type, slot: it.slot, ...(it.attack ? { attack: it.attack } : {}), ...(it.revive ? { revive: true } : {}) } }; },
+        });
         const sync = () => {
           if (wornOn()) wornEditors();
           $('[data-worn-f]').hidden = !wornOn();
@@ -205,7 +212,8 @@ export function register(app) {
           },
           blocked: () => fx.blocked() || (WORN.includes(type) && wornOn() && (wornFx.blocked() || wornKit.blocked())),
           save() {
-            const form = formItem();
+            const form = formItem(), pick = iconRow.pick();
+            if (pick) form.icon = pick;
             if (!form.name) { shell.error('Give the item a name.'); $('#lf-name').focus(); return undefined; }
             const big = (form.worn ? tooLarge('status', form.worn) : null) || tooLarge('item', form);
             if (big) { shell.error(big); return undefined; }

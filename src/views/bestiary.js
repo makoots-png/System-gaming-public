@@ -19,6 +19,7 @@ import { runsFight } from '../core/role.ts';
 import { monsterIcon } from '../core/registry/icon-defaults.ts';
 import * as motion from './motion.ts';
 import { icon, sprite } from './icons.ts';
+import { iconField } from './maker.js';
 
 /** @param {import('./app.ts').App} app */
 export function register(app) {
@@ -228,6 +229,7 @@ export function register(app) {
       build(el, shell) {
         el.innerHTML = `
           ${ui.field('Name', `<input type="text" id="enm-name" maxlength="60" autocomplete="off" placeholder="e.g. Ice Warden" value="${esc(own || m.id ? start.name : '')}">`)}
+          <div data-icon></div>
           <div class="lbl">Rank</div>
           ${M.chips('rank', RANKS.map(r => [r, r]), rank, { label: 'Rank' })}
           <div class="lbl">Archetype</div>
@@ -291,6 +293,8 @@ export function register(app) {
           $('[data-derived]').textContent = `HP ${ui.fmt(s.hpMax)} · Armor ${s.armor} · Resist ${s.resist} · Speed ${s.speed}`;
         };
         lists(); derived();
+        // the Icon row (icons design 6): its default is read from the type typed and the archetype picked
+        const iconRow = iconField($('[data-icon]'), shell.el, { thing: 'monster', pick: start.icon || null, subject: () => ({ thing: 'monster', monster: { type: $('#enm-type').value, archetype } }) });
         el.addEventListener('click', e => {
           const t = e.target.closest('button'); if (!t) return;
           if (t.closest('[data-chips="rank"]')) { rank = oneOf(M.picked(el, 'rank'), RANKS, rank); lists(); }
@@ -339,7 +343,7 @@ export function register(app) {
         return {
           preview: () => monsterLines(formMonster()),
           save() {
-            const form = formMonster();
+            const pick = iconRow.pick(), form = { ...formMonster(), ...(pick ? { icon: pick } : {}) };
             if (!form.name) { shell.error('Give the monster a name.'); $('#enm-name').focus(); return undefined; }
             const out = parseMonster(form);
             if (canon(out) !== canon(form)) console.error('The monster maker wrote a monster its parser reads differently', form, out);
