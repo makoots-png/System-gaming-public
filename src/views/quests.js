@@ -2,14 +2,15 @@
 import { dueAt as dueIn, nextReset } from '../edge/rules.ts';
 import { canDeleteQuest } from '../core/hunter/penalty.ts';
 import { CHAIN_WORDS, canReissue } from '../core/hunter/job-chain.ts';
-import { mayChangeQuest, reportsProgress, systemCompletes, systemCounts } from '../core/hunter/quest-rights.ts';
+import { COMPLETER, completerOf, mayChangeQuest, reportsProgress, systemCounts } from '../core/hunter/quest-rights.ts';
 import { pickables, pickedRef } from '../core/party.ts';
 import { JOB_NAMES, isJobName } from '../core/registry/jobs.ts';
 import { newRewards, rewardLines as linesOf } from '../core/rewards.ts';
 import { atHunter } from '../core/save-step.ts';
 import { objectivesSum, questUpdateSaid, told } from '../core/session-log.ts';
-import { chained, completeQuest, deleteQuest as questDeleted, editQuest, issueQuest, nextWake, overdue, questNews, questOffer, reopenQuest, rolloverDue, setProgress as progressSet, tracked as penalizable, withTold } from '../core/hunter/quests.ts';
+import { chained, completeQuest, deleteQuest as questDeleted, editQuest, issueQuest, nextWake, overdue, questNews, questOffer, questTold, reopenQuest, rolloverDue, rolloverRetry, setProgress as progressSet, tracked as penalizable, withTold } from '../core/hunter/quests.ts';
 import { fillTo } from './motion.ts';
+import { QUEST_FORM_CLOSED, questFormStep } from '../core/hunter/quest-form.ts';
 import { compareTimes, stepTime } from '../core/day.ts';
 import { STREAK_BONUS_POINTS, chainStep, finishQuest, questFailed, rolledOver } from '../core/hunter/grant.ts';
 import { sent } from '../core/award.ts';
@@ -230,7 +231,7 @@ export function register(app) {
     // one write: the quest, its reward and the GM's post, with what this phone's fight holds (the reward's statuses or a
     // level-up's refill) on the hunter's row (hunter.grantWrite)
     const out = app.api.hunter.grantWrite('quest-done', s => {
-      const r = finishQuest(s, hid, qid, day);
+      const r = finishQuest(s, hid, qid, { ...day, by: 'hand' });
       if (isRefused(r)) return r;
       const fight = r.granted.fight;
       return { ...r, granted: { ...r.granted, fight }, save: sent(r.save, { room: code, events: post ? [post] : [], said: [] }, { at: day.at, cap: day.R.logCap }), held: [{ who: { hid }, ...fight }] };
@@ -272,20 +273,19 @@ export function register(app) {
     return true;
   }
 
-  // ── a quest the System completed (feature 1's notes 17.14): its window once, told in device memory ──
+  // ── a quest the System completed (feature 1's notes 17.14): its window, until answered (quests.ts `questNews`, `questTold`) ──
   /** The quests asked of the player and not answered yet, by hunter and quest, so a second change does not queue a second window. */
   const telling = new Set();
-  const toldMemory = hid => store.device('quest-told:' + hid);
-  const toldOf = hid => { const raw = toldMemory(hid).read(); return Array.isArray(raw) ? raw.filter(x => typeof x === 'string') : []; };
   function tellDone() {
+    if (store.readOnly) return;
     const s = store.get(), many = s.hunters.length > 1;
-    for (const h of s.hunters) for (const q of questNews(h, toldOf(h.id))) {
+    for (const h of s.hunters) for (const q of questNews(h)) {
       const id = `${h.id}|${q.id}`;
       if (telling.has(id)) continue;
       telling.add(id);
       app.emit('quest:done', { hunterId: h.id, quest: q });
       void ui.system({ tag: '! Quest', kind: 'quest', title: q.kind === 'urgent' ? 'URGENT QUEST COMPLETE' : 'QUEST COMPLETE', body: `${many ? `${h.name}: ` : ''}${q.title}`, rewards: rewardLines(q.rewards) })
-        .then(() => { telling.delete(id); toldMemory(h.id).write([...toldOf(h.id), q.id].slice(-200)); });
+        .then(() => { telling.delete(id); ui.wrote('! Quest', store.apply('quest-told', atHunter(h.id, x => questTold(x, q.id)))); });
     }
   }
   // after the task that wrote, as a feat's window is (feats.js)
@@ -299,41 +299,46 @@ export function register(app) {
   // to do (nextWake in quests.ts), set
   // again after every change of the save and when the page is shown
   let wake = 0;
-  function arm() {
+  /** The one timer set for `at` (ms), or for nextWake when not given. */
+  function arm(at) {
     clearTimeout(wake);
     if (store.readOnly) return;
     const now = new Date();
-    wake = setTimeout(checkDaily, nextWake(store.get(), now, resetHour(), { personal: app.rules().solo.personal, gm: app.isGM() }) - now.getTime());
+    wake = setTimeout(checkDaily, (at ?? nextWake(store.get(), now, resetHour(), { personal: app.rules().solo.personal, gm: app.isGM() })) - now.getTime());
   }
+  /**
+   * The rollover and what each overdue quest costs, with what this phone's fight holds of a cost on its row, in one write
+   * (grant.ts `rolledOver`); then its windows, from what the saved write answered. A refused write shows nothing, as
+   * nothing of it was saved, and is tried again (`rolloverRetry`).
+   */
   function checkDaily() {
     if (store.readOnly) return;
     // the one timer also wakes for the System's clock (nextWake's term `soloWake`): personal gates open and close first
     app.api.gates.tick();
     const now = new Date(), key = stepTime(store.get(), now).today, nowMs = now.getTime();
     if (!rolloverDue(store.get(), key, nowMs)) { arm(); return; }
-    let penalties = [], failedUrgent = [], costs = [];
-    // the rollover and what each overdue quest costs, with what this phone's fight holds of a cost on its row, in one write (grant.ts `rolledOver`)
-    app.api.hunter.grantWrite('daily-check', s => {
-      const r = rolledOver(s, { today: key, at: now.toISOString(), nowMs, gm: app.isGM(), R: app.rules(), vitals: hid => (app.api.hunter.fightOf({ hid }) ? 'fight' : 'sheet') });
-      penalties = r.told.penalties; failedUrgent = r.told.failed; costs = r.costs;
-      return { save: told(r.save, stamp(), ...r.said), held: r.costs.map(c => ({ who: { hid: c.hid }, ...c.granted.fight })) };
+    const room = app.seat() === 'player' ? app.api.sync.room() : null;
+    const out = app.api.hunter.grantWrite('daily-check', s => {
+      const r = rolledOver(s, { today: key, at: now.toISOString(), nowMs, gm: app.isGM(), R: app.rules(), vitals: hid => (app.api.hunter.fightOf({ hid }) ? 'fight' : 'sheet'), room });
+      return { ...r, save: told(r.save, stamp(), ...r.said), held: r.failed.map(f => ({ who: { hid: f.hid }, ...f.granted.fight })) };
     });
+    if (isRefused(out)) { arm(rolloverRetry(now)); return; }
     const many = store.get().hunters.length > 1;
-    for (const p of penalties) {
+    for (const p of out.penalties) {
       ui.system({ tag: '! Penalty', kind: 'penalty', title: 'PENALTY',
         body: `${many ? `${p.name}: ` : ''}You have failed to complete the Daily Quest. You will be transported to the Penalty Zone.`,
         lines: [...(p.days > 1 ? [`Days missed: ${p.days}`] : []), 'Streak reset to 0', 'Penalized: -2 to all checks until the Penalty Zone is cleared'] });
     }
-    for (const f of failedUrgent) {
-      const cost = costs.find(c => c.hid === f.hid && c.granted.lines.length);
-      ui.system({ tag: '! Quest', kind: 'warning', title: 'QUEST FAILED', body: `${many ? `${f.name}: ` : ''}${f.title}: the time limit has expired.`, ...(cost ? { rewards: cost.granted.lines } : {}) });
+    for (const f of out.failed) {
+      ui.system({ tag: '! Quest', kind: 'warning', title: 'QUEST FAILED', body: `${many ? `${f.name}: ` : ''}${f.title}: the time limit has expired.`, ...(f.granted.lines.length ? { rewards: f.granted.lines } : {}) });
+      app.api.hunter.granted(f.hid, f.granted, { popup: false });
     }
   }
 
   // ── view ──
   ui.css('quests', STYLE);
   questFieldsCss(ui.css);
-  let tab = 'active', editId = null;
+  let tab = 'active', form = QUEST_FORM_CLOSED;
   /** What each objective's bar showed last, by quest id and objective. */
   const barsWas = new Map();
 
@@ -364,7 +369,7 @@ export function register(app) {
       ${cost.length ? `<div class="qb pen" data-onfail><h4>${esc(FAIL_WORDS.legend)}</h4><div class="qr">${cost.map(r => `<span>${esc(r)}</span>`).join('')}</div></div>` : ''}
       ${q.penaltyText ? `<div class="qb pen"><h4>Penalty</h4><p>${esc(q.penaltyText)}</p></div>` : ''}`}
       <div class="qa">
-        ${live ? `${systemCompletes(q) ? '' : `<button type="button" class="primary" data-done="${id}">Complete</button>`}<button type="button" data-fail="${id}">Fail</button>` : ''}
+        ${live ? `${COMPLETER[completerOf(q)].button ? `<button type="button" class="primary" data-done="${id}">Complete</button>` : ''}<button type="button" data-fail="${id}">Fail</button>` : ''}
         ${q.status === 'failed' && !q.chainId ? `<button type="button" data-reopen="${id}">Reopen</button>` : ''}
         ${lock ? '' : `<button type="button" data-edit="${id}">Edit</button>`}
         ${gm ? `<button type="button" data-issue="${id}">Issue to…</button>` : ''}
@@ -382,22 +387,34 @@ export function register(app) {
     warn.textContent = `⚠ Daily quest incomplete. Penalty in ${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
   }
 
+  /**
+   * The quest form moved by `ev` (src/core/hunter/quest-form.ts), shown while it is open; a form that closes is emptied.
+   * @param {HTMLElement} el @param {import('../core/hunter/quest-form.ts').QuestFormEvent} ev
+   */
+  function formMoved(el, ev) {
+    const was = form, f = el.querySelector('form[data-form]');
+    form = questFormStep(form, ev);
+    f.hidden = form.at === 'closed';
+    if (form.at === 'closed' && was.at !== 'closed') f.reset();
+  }
+  /** The form opened for a new quest, or for quest `q` of the hunter on screen, for the role and hunter on screen. */
   function openForm(el, q) {
-    const f = el.querySelector('form[data-form]'), gm = app.isGM();
-    editId = q ? q.id : null;
-    f.hidden = false;
+    const hid = store.active().id;
+    formMoved(el, q ? { type: 'edit', role: role(), hid, qid: q.id } : { type: 'new', role: role(), hid });
+    if (form.at === 'closed') return;
+    const f = el.querySelector('form[data-form]'), gm = form.role === 'gm';
     f.reset();
     f.querySelector('[data-ftitle]').textContent = q ? 'Edit quest' : 'New quest';
-    questForm = questFields(app, f.querySelector('[data-qfields]'), { id: 'qf', use: q ? 'edit' : 'new', role: role(), initial: q });
+    questForm = questFields(app, f.querySelector('[data-qfields]'), { id: 'qf', use: q ? 'edit' : 'new', role: form.role, initial: q });
     autoTitle = false;
     f.querySelector('[data-preset]').hidden = !(gm && !q);
     const who = f.querySelector('[data-who]');
     who.hidden = !(gm && !q);
     if (gm && !q) {
-      const act = store.active().id, rem = remotes();
+      const rem = remotes();
       const chk = (val, label, on, extra = '') => `<label class="chk"><input type="checkbox" name="to" value="${esc(val)}"${extra}${on ? ' checked' : ''}> ${esc(label)}</label>`;
       who.querySelector('[data-whobox]').innerHTML = (rem.length + store.get().hunters.length > 1 ? '<label class="chk"><input type="checkbox" data-all> Whole party</label>' : '')
-        + store.get().hunters.map(h => chk(h.id, h.name, h.id === act && !rem.length, ' data-local')).join('')
+        + store.get().hunters.map(h => chk(h.id, h.name, h.id === hid && !rem.length, ' data-local')).join('')
         + rem.map(r => chk(r.key, `${r.name} (player)`, false)).join('');
     }
     f.querySelector('.qf-err').textContent = '';
@@ -411,24 +428,30 @@ export function register(app) {
     return app.api.sync.remoteSheets().filter(r => r.data && typeof r.data === 'object')
       .map(r => ({ key: r.key, name: r.data.name }));
   };
+  /**
+   * Save quest: the form's quest written to the hunter and with the role it was opened for. A form the screen moved under
+   * (another hunter, the GM/Player switch) is closed first and saves nothing (quest-form.ts `seen`).
+   */
   function submitForm(el, f) {
-    const gm = app.isGM(), err = f.querySelector('.qf-err');
+    formMoved(el, { type: 'seen', role: role(), hid: store.active().id });
+    if (form.at === 'closed') return;
+    const at = form, gm = at.role === 'gm', err = f.querySelector('.qf-err');
     const why = questForm.check();
     if (why) { err.textContent = why; return; }
     const v = questForm.value(), { kind, title, objectives } = v;
-    const existing = editId && store.active().quests.find(x => x.id === editId);
+    const existing = at.at === 'editing' ? store.hunter(at.hid)?.quests.find(x => x.id === at.qid) ?? null : null;
     // a date and time typed for an urgent quest, else hours from now (the GM's new quest), else an edit keeps its due time unless it is urgent now
     const dueAt = v.dueAt ?? (v.dueHours !== null ? dueIn(v.dueHours, new Date()) : null) ?? (existing && kind !== 'urgent' ? existing.dueAt : null);
     const rewards = gm ? v.rewards : existing ? existing.rewards : newRewards();
     const penaltyText = gm ? v.penaltyText.slice(0, 300) : existing ? existing.penaltyText || '' : '';
     const onFail = gm ? v.onFail : existing ? existing.onFail : newRewards();
     const partial = { kind, title, desc: v.desc, objectives, rewards, onFail, dueAt, penaltyText };
-    if (existing) {
-      // a refused edit keeps the form open with what was typed
-      if (!ui.wrote('! Quest', store.apply('quest-edit', atHunter(store.active().id, h => editQuest(h, existing.id, { kind, title, desc: partial.desc, objectives, rewards, onFail, dueAt, penaltyText }, role()))))) return;
+    if (at.at === 'editing') {
+      // a refused edit (the quest gone meanwhile included) keeps the form open with what was typed
+      if (!ui.wrote('! Quest', store.apply('quest-edit', atHunter(at.hid, h => editQuest(h, at.qid, { kind, title, desc: partial.desc, objectives, rewards, onFail, dueAt, penaltyText }, at.role))))) return;
     } else {
       const picks = gm ? [...f.querySelectorAll('[name=to]:checked')] : [];
-      const to = gm ? picks.filter(c => c.hasAttribute('data-local')).map(c => c.value) : [store.active().id];
+      const to = gm ? picks.filter(c => c.hasAttribute('data-local')).map(c => c.value) : [at.hid];
       const keys = picks.filter(c => !c.hasAttribute('data-local')).map(c => c.value);
       if (!to.length && !keys.length) { err.textContent = 'Pick at least one hunter.'; return; }
       if (to.length && !api.issue(to, { ...partial, from: gm ? 'gm' : 'self' }).length) return;
@@ -438,7 +461,7 @@ export function register(app) {
           : news === 'noRoom' ? 'Not in a room. Quest not sent.' : 'The room would not take this quest.', { kind: news === 'sent' || news === 'waits' ? 'info' : 'warn' });
       }
     }
-    editId = null; f.hidden = true; f.reset();
+    formMoved(el, { type: 'saved' });
   }
 
   async function setProgress(hid, qid, i, value) {
@@ -534,7 +557,7 @@ export function register(app) {
         if ('new' in d) return openForm(el, null);
         if ('chain' in d) { if (app.isGM()) pickChain(); return; }
         if (d.rchain && app.isGM() && (d.kind === 'reissue' || d.kind === 'abandon')) return sendChain(d.rchain, d.job, d.kind);
-        if ('cancel' in d) { editId = null; f.hidden = true; return; }
+        if ('cancel' in d) { formMoved(el, { type: 'cancelled' }); return; }
         if ('jobpreset' in d) { questForm.set({ kind: 'job', title: `Job Change: ${questForm.value().rewards.job || ''}` }); autoTitle = true; questForm.rewards.ensure('job'); return; }
         if (d.edit) { const q = find(d.edit); if (q && mayChange(q)) openForm(el, q); return; }
         if (d.done) { const q = find(d.done); if (q && await ui.confirm({ title: 'Complete quest?', body: q.title, confirmLabel: 'Complete' })) complete(h.id, d.done); return; }
@@ -593,12 +616,14 @@ export function register(app) {
         <p class="qc-desc">${gm ? 'Reissue the step to let the hunter try again, or abandon the Job Change.' : 'The GM can reissue it.'}</p>
         ${gm ? '<div class="qa"><button type="button" class="primary" data-reissue>Reissue</button><button type="button" class="danger" data-abandon>Abandon</button></div>' : ''}` : '';
       el.querySelector('[data-countdown]').hidden = tab !== 'daily';
+      // the form opened for another hunter or role closes (quest-form.ts `seen`)
+      formMoved(el, { type: 'seen', role: gm ? 'gm' : 'player', hid: h.id });
       tick(el);
       renderParty(el);
     },
   });
 
-  app.on('change', arm);
+  app.on('change', () => arm());
   // the first check waits for every module: the rollover asks who the GM is, which the room link answers (sync, listed later)
   app.on('ready', checkDaily);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) checkDaily(); });

@@ -32,7 +32,10 @@ import { addGold, putItem, stackOf } from './inventory.ts';
 import { addXp, atLevel, gainXp, grantPoints } from './progress.ts';
 import type { ChainEffect, ChainEvent, ChainRefusal } from './job-chain.ts';
 import { chained, completeQuest, failQuest, rollover } from './quests.ts';
-import type { Completed, QuestWhy, Rollover } from './quests.ts';
+import type { Completed, QuestCompletedBy, QuestWhy, Rollover } from './quests.ts';
+import { reportsProgress } from './quest-rights.ts';
+import { newEvent } from '../protocol.ts';
+import { atOutbox, post } from '../sync/outbox.ts';
 import { giveBoons, giveTitle, holdsTitle, setJob, titleNamed } from './record.ts';
 import { fitted, hunterSheet } from './sheet.ts';
 import { giveSkill } from './skills-held.ts';
@@ -40,8 +43,8 @@ import { lifeNews, vitalStep } from './vitals.ts';
 import type { Life, LifeEvent, VitalEvent } from './vitals.ts';
 import { record } from './chronicle.ts';
 import type { LifeHow } from './facts.ts';
-import { saveId } from '../ids.ts';
-import type { IdOf } from '../ids.ts';
+import { saveId, sheetKeyOf } from '../ids.ts';
+import type { HunterId, IdOf, RoomCode } from '../ids.ts';
 import type { DayKey } from '../day.ts';
 
 /** Where a hunter's HP, mana, fatigue and statuses live now: its sheet, or a fight's row (this phone's or the GM's). */
@@ -230,19 +233,19 @@ export type Finished = {
   save: Save; quest: Quest; completed: Completed; granted: Granted; job: string | null; done: StepDone[];
 };
 /**
- * Hunter `hid`'s active quest `qid` completed, in one step (implicit audit 3, Q1): the quest done, the penalty and the
+ * Hunter `hid`'s active quest `qid` completed by `by` (a tap when not given), in one step (implicit audit 3, Q1): the quest done, the penalty and the
  * streak (`completeQuest`), the Job Change steps the chain asked to complete (`stepsReached`), the quest's reward given
  * (`grant`) with the streak's bonus points; every log line with it. Finishing the day's dailies restores no HP or mana
  * (the owner, 19 Nov: dailies do not recover you). A step
  * quest of a chain gives no job of its own: the chain grants the job. Refused as `completeQuest` refuses, and when the
  * hunter is not there (`no-hunter`).
  */
-export function finishQuest(save: Save, hid: string, qid: string, o: Day & { vitals: VitalsAt }): Finished | Refused<'no-hunter' | 'belowLevel' | QuestWhy> {
+export function finishQuest(save: Save, hid: string, qid: string, o: Day & { vitals: VitalsAt; by?: QuestCompletedBy }): Finished | Refused<'no-hunter' | 'belowLevel' | QuestWhy> {
   const at = save.hunters.findIndex(h => h.id === hid);
   if (at < 0) return refuse('no-hunter');
   const h = save.hunters[at]!, quest = h.quests.find(q => q.id === qid), ids = idsFrom(save.seq), R = o.R;
   if (!quest) return refuse('missing');
-  const c = completeQuest(h, qid, { at: o.at, today: o.today, nextQuestId: ids.next('q'), streakBonusEvery: R.streakBonusEvery });
+  const c = completeQuest(h, qid, { at: o.at, today: o.today, nextQuestId: ids.next('q'), streakBonusEvery: R.streakBonusEvery, ...(o.by ? { by: o.by } : {}) });
   if (isRefused(c)) return c;
   const chain = c.effects.filter((fx): fx is Extract<ChainEffect, { type: 'completeQuest' | 'grantJob' }> => fx.type === 'completeQuest' || fx.type === 'grantJob');
   const r = stepsReached(c.hunter, chain, o, ids.next);
@@ -273,26 +276,60 @@ export function questFailed(save: Save, hid: string, qid: string, o: Day & { vit
   if (isRefused(g)) return g;
   return { save: g.save, quest, granted: g, effects: f.effects };
 }
-/** What the daily rollover did (`rollover`), and each overdue quest's cost as given, by hunter. */
-export type RolledOver = { save: Save; said: Said[]; told: Rollover; costs: { hid: string; granted: Granted }[] };
+// ── a quest's end, told to the room ──
+/**
+ * Whether the GM's room hears of the end of a quest it issued that a player's phone ends with no tap, in the write that
+ * ends it, by how it ended: `counted`, the System completing it (noticed.ts `countQuests`); `overdue`, the rollover
+ * failing it past its due time. A tapped Complete or Fail is posted by the Quests view (quests.js `progressPost`).
+ */
+export const ROOM_HEARS: { readonly [How in 'counted' | 'overdue']: boolean } = {
+  counted: true,
+  // as today: SMX-gates-3.3 waits on the owner's ruling, proposed "an urgent quest that runs out fails with its cost, and
+  // the room hears of it" (true)
+  overdue: false,
+};
+/** A fraction made from a quest's id, so the same quest's end is the same room event however often it is posted. */
+function idShare(id: string): number {
+  let x = 2166136261;
+  for (let i = 0; i < id.length; i++) x = Math.imul(x ^ id.charCodeAt(i), 16777619) >>> 0;
+  return x / 2 ** 32;
+}
+/**
+ * Quest `q` of hunter `hid` as it ended (done or failed) posted to the GM of `room` in this write (`questUpdate`), under
+ * the key the Quests view posts a tapped one with, so a progress post still waiting is replaced by it.
+ */
+export function questEnded(save: Save, hid: HunterId, q: Quest & { status: 'done' | 'failed' }, o: { at: string; room: RoomCode }): Save {
+  const h = save.hunters.find(x => x.id === hid), device = save.settings.deviceId;
+  if (!h) return save;
+  const event = newEvent('questUpdate', {
+    by: sheetKeyOf(device, hid), name: h.name, questId: q.id, title: q.title, kind: q.kind, status: q.status,
+    objectives: q.objectives.map(o => ({ label: o.label, progress: o.progress, target: o.target })),
+  }, { device, now: Date.parse(o.at), rand: idShare(q.id) });
+  return event ? atOutbox(box => post(box, o.room, { kind: 'event', event }, `quest ${hid} ${q.id}`).box)(save) : save;
+}
+
+/** What the daily rollover did (`rollover`): the hunters it penalized, and each quest it failed past its due time with its cost as given. */
+export type RolledOver = { save: Save; said: Said[]; penalties: Rollover['penalties']; failed: (Rollover['failed'][number] & { granted: Granted })[] };
 /**
  * The daily rollover (`rollover`, quests.ts) with what each quest it failed for being past due costs, given by `grant` in
  * the same step: the one place an overdue quest's cost is paid, as `questFailed` is for a tapped Fail. `vitals` says
- * where each hunter's vitals are now.
+ * where each hunter's vitals are now; `room` is the room this phone is a player in (null alone or on the GM's phone),
+ * told of the quests the GM issued when `ROOM_HEARS.overdue`. The Quests view shows its windows only once its write is saved.
  */
-export function rolledOver(save: Save, o: Day & { nowMs: number; gm: boolean; vitals: (hid: string) => VitalsAt }): RolledOver {
+export function rolledOver(save: Save, o: Day & { nowMs: number; gm: boolean; vitals: (hid: string) => VitalsAt; room: RoomCode | null }): RolledOver {
   const r = rollover(save, { today: o.today, at: o.at, nowMs: o.nowMs, gm: o.gm });
   let s = r.save;
-  const costs: RolledOver['costs'] = [];
+  const failed: RolledOver['failed'] = [];
   for (const f of r.told.failed) {
     const q = s.hunters.find(h => h.id === f.hid)?.quests.find(x => x.id === f.qid);
-    if (!q) continue;
+    if (!q || q.status !== 'failed') continue;
     const g = grant(s, f.hid, q.onFail, null, { ...o, vitals: o.vitals(f.hid) });
     if (isRefused(g)) continue;
     s = g.save;
-    costs.push({ hid: f.hid, granted: g });
+    if (ROOM_HEARS.overdue && o.room && reportsProgress(q, 'player')) s = questEnded(s, f.hid, q, { at: o.at, room: o.room });
+    failed.push({ ...f, granted: g });
   }
-  return { save: s, said: r.said, told: r.told, costs };
+  return { save: s, said: r.said, penalties: r.told.penalties, failed };
 }
 
 /** A change the GM or the fight makes to a hunter's HP, mana, fatigue, life or statuses on its sheet. */

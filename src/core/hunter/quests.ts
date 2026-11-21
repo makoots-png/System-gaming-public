@@ -7,12 +7,12 @@
 import { soloWake } from '../gates/personal.ts';
 import { chainAfter } from './job-chain.ts';
 import type { ChainEffect, ChainEvent } from './job-chain.ts';
-import { systemCompletes, systemCounts } from './quest-rights.ts';
+import { systemCounts } from './quest-rights.ts';
 import { missedDays, penaltyAfter, penaltyQuest } from './penalty.ts';
 import type { PenaltyEffect, PenaltyEvent } from './penalty.ts';
 import type { Role } from '../role.ts';
 import { QUEST_KINDS, QUEST_SOURCES, QUEST_STATUSES, questState } from './hunter.ts';
-import type { Hunter, Objective, Quest, QuestKind, QuestSource, QuestStatus, Save } from '../save.ts';
+import type { Hunter, Objective, Quest, QuestKind, QuestSource, QuestState, Save } from '../save.ts';
 import { newRewards, parseRewards } from '../rewards.ts';
 import type { Rewards } from '../rewards.ts';
 import { oneOf } from '../one-of.ts';
@@ -23,7 +23,7 @@ import { RECHECK_MS, dayGap, dayKey, nextReset, timeOf } from '../day.ts';
 import type { DayKey } from '../day.ts';
 import type { Said, Stamp } from '../session-log.ts';
 import { saveId } from '../ids.ts';
-import type { QuestId } from '../ids.ts';
+import type { HunterId, QuestId } from '../ids.ts';
 import { record } from './chronicle.ts';
 import type { Fact } from './facts.ts';
 import { parseObjectiveCount } from './counts.ts';
@@ -33,28 +33,53 @@ import type { QuestOffer } from '../protocol.ts';
 const questFact = (q: Quest, end: 'done' | 'failed'): Fact => ({ kind: 'quest', end, qkind: q.kind, from: q.from, title: q.title });
 
 // ── the life of a quest ──
-/** What can happen to a quest. `reset` is the daily rollover (dailies only); `reopen` the Reopen of a failed quest. */
-export const QUEST_EVENTS = ['complete', 'fail', 'reopen', 'reset'] as const;
+/**
+ * Where a quest is: active; `untold`, done by the System (its last counted objective filled) with its QUEST COMPLETE
+ * window not yet answered; done; failed. The status of a done quest and its `told` (hunter.ts `QuestState`) are one phase.
+ */
+export const QUEST_PHASES = ['active', 'untold', 'done', 'failed'] as const;
+export type QuestPhase = (typeof QUEST_PHASES)[number];
+export const questPhase = (q: QuestState): QuestPhase => (q.status === 'done' && !q.told ? 'untold' : q.status);
+/**
+ * What can happen to a quest. `complete`: a tap (Complete, or a filled objective's "Complete quest?"), whose own window
+ * shows at once; `counted`: the System completing it (noticed.ts `countQuests`); `told`: its window answered; `reset`:
+ * the daily rollover (dailies only); `reopen`: the Reopen of a failed quest.
+ */
+export const QUEST_EVENTS = ['complete', 'counted', 'told', 'fail', 'reopen', 'reset'] as const;
 export type QuestEvent = (typeof QUEST_EVENTS)[number];
-/** For each status, where each event leads, or null where it does not apply. */
-export const TABLE: { readonly [S in QuestStatus]: { readonly [E in QuestEvent]: QuestStatus | null } } = {
-  active: { complete: 'done', fail: 'failed', reopen: null, reset: 'active' },
-  done: { complete: null, fail: null, reopen: null, reset: 'active' },
-  failed: { complete: null, fail: null, reopen: 'active', reset: 'active' },
+/**
+ * For each phase, where each event leads, or null where it does not apply. A daily reset before its window is answered
+ * is active again and its window is not shown, as when the window was kept in the phone's memory.
+ */
+export const TABLE: { readonly [P in QuestPhase]: { readonly [E in QuestEvent]: QuestPhase | null } } = {
+  active: { complete: 'done', counted: 'untold', told: null, fail: 'failed', reopen: null, reset: 'active' },
+  untold: { complete: null, counted: null, told: 'done', fail: null, reopen: null, reset: 'active' },
+  done: { complete: null, counted: null, told: null, fail: null, reopen: null, reset: 'active' },
+  failed: { complete: null, counted: null, told: null, fail: null, reopen: 'active', reset: 'active' },
 };
 export type QuestWhy = 'missing' | 'not-now' | 'chain' | 'not-daily' | 'pastDue';
+/** A quest's body: all but its phase (status, end time and told). */
+function bodyOf(q: Quest): Omit<Quest, 'status' | 'doneAt'> {
+  const { status: _s, doneAt: _d, ...rest } = q;
+  if (!('told' in rest)) return rest;
+  const { told: _t, ...body } = rest;
+  return body;
+}
 /**
  * Quest `q` after `event` at time `at`, or why not. A completed quest's objectives are full; a reset daily is active
- * with its progress back to 0; a Job Change step is not reopened (the GM reissues its chain instead).
+ * with its progress back to 0; a Job Change step is not reopened (the GM reissues its chain instead). Its window told,
+ * a quest keeps the time it ended.
  */
 export function questStep(q: Quest, event: QuestEvent, at: string): Quest | Refused<QuestWhy> {
-  const to = TABLE[q.status][event];
+  const to = TABLE[questPhase(q)][event];
   if (!to) return refuse('not-now');
   if (event === 'reopen' && q.chainId) return refuse('chain');
   if (event === 'reset' && q.kind !== 'daily') return refuse('not-daily');
-  const objectives = event === 'complete' ? q.objectives.map(o => ({ ...o, progress: o.target }))
+  const objectives = event === 'complete' || event === 'counted' ? q.objectives.map(o => ({ ...o, progress: o.target }))
     : event === 'reset' ? q.objectives.map(o => ({ ...o, progress: 0 })) : q.objectives;
-  return { ...q, ...questState(to, at), objectives };
+  const ended = event === 'told' && q.doneAt !== null ? q.doneAt : at;
+  const state = to === 'untold' ? questState('done', ended, false) : to === 'done' ? questState('done', ended, true) : questState(to, ended);
+  return { ...bodyOf(q), ...state, objectives };
 }
 
 // ── what a quest holds, from a form or a message ──
@@ -208,12 +233,14 @@ export function deleteQuest(h: Hunter, qid: string, by: Role): Told<ChainEffect 
 
 /** What a completion did besides the quest: the streak reached (or null), whether a bonus point is due, whether every daily is done, whether the penalty lifted. */
 export type Completed = Told<ChainEffect | PenaltyEffect> & { streak: number | null; bonus: boolean; allDaily: boolean; lifted: boolean };
+/** Who completed a quest: a tap, or the System counting it (`counted`, whose window waits to be told). */
+export type QuestCompletedBy = 'hand' | 'system';
 /**
- * Active quest `qid` completed at `at` on day `today`: its objectives full, the penalty asked whether it lifts, the
+ * Active quest `qid` completed by `by` (a tap when not given) at `at` on day `today`: its objectives full, the penalty asked whether it lifts, the
  * chain told (a level step below its level is refused, `belowLevel`), and, when it was the last daily of the day,
  * the streak counted (one more after yesterday, else 1) with a bonus point every `streakBonusEvery` days.
  */
-export function completeQuest(h: Hunter, qid: string, o: { at: string; today: DayKey; nextQuestId: QuestId; streakBonusEvery: number }): Completed | Refused<QuestWhy | 'belowLevel'> {
+export function completeQuest(h: Hunter, qid: string, o: { at: string; today: DayKey; nextQuestId: QuestId; streakBonusEvery: number; by?: QuestCompletedBy }): Completed | Refused<QuestWhy | 'belowLevel'> {
   const q = h.quests[atQuest(h, qid)];
   if (!q) return refuse('missing');
   if (q.status !== 'active') return refuse('not-now');
@@ -223,7 +250,7 @@ export function completeQuest(h: Hunter, qid: string, o: { at: string; today: Da
     if (c.effects.some(fx => fx.type === 'refused')) return refuse('belowLevel');
     next = c.hunter; said = c.said; effects = c.effects;
   }
-  const finished = questStep(next.quests[atQuest(next, qid)]!, 'complete', o.at);
+  const finished = questStep(next.quests[atQuest(next, qid)]!, o.by === 'system' ? 'counted' : 'complete', o.at);
   if ('ok' in finished) return finished;
   next = record(withQuest(next, finished), questFact(q, 'done'));
   const p = penalized(next, { type: 'questCompleted', questId: q.id });
@@ -250,7 +277,7 @@ export const overdue = (q: Quest, nowMs: number): boolean => q.status === 'activ
 /** Whether a missed daily penalizes `h`: always on a player's phone; on the GM's (NPCs, pregens) once it has completed a daily. */
 export const tracked = (h: Pick<Hunter, 'daily'>, gm: boolean): boolean => !gm || !!h.daily.lastCompleteKey;
 /** A hunter the rollover penalized, and an urgent quest it failed for being past due. */
-export type Rollover = { penalties: { hid: string; name: string; days: number }[]; failed: { hid: string; qid: string; name: string; title: string }[] };
+export type Rollover = { penalties: { hid: HunterId; name: string; days: number }[]; failed: { hid: HunterId; qid: QuestId; name: string; title: string }[] };
 /**
  * The daily rollover on day `today` at time `at` (`nowMs` its time in ms): each hunter not yet checked today has its
  * dailies reset; days with a daily left undone since its last check reset the streak and raise the penalty (only for a
@@ -290,6 +317,13 @@ export function rollover<S extends Pick<Save, 'hunters' | 'world' | 'seq'>>(save
   return { save: { ...save, seq, hunters, world: { ...save.world, lastDailyKey: o.today } }, said, told };
 }
 
+/**
+ * When the phone tries a rollover again whose write was refused (a fight that holds a cost's part refused it, or the
+ * store could not write): `RECHECK_MS` on, not at once, as the rollover is still due and would be refused again at once.
+ * A change of the save or the page shown tries it sooner.
+ */
+export const rolloverRetry = (now: Date): number => now.getTime() + RECHECK_MS;
+
 /** Whether the rollover has anything to do on day `today`: a new day, a hunter not checked today, or an urgent quest past due. */
 export function rolloverDue(save: Pick<Save, 'hunters' | 'world'>, today: DayKey, nowMs: number): boolean {
   return save.world.lastDailyKey !== today || save.hunters.some(h => !h.daily.lastCheckedKey || dayGap(h.daily.lastCheckedKey, today) > 0 || h.quests.some(q => overdue(q, nowMs)));
@@ -312,9 +346,18 @@ export function nextWake(save: Pick<Save, 'hunters' | 'world'>, now: Date, hour:
 export { QUEST_STATUSES };
 
 /**
- * The quests of `h` the System completed (feature 1's notes 17.14: done, with a counted objective) that are not in
- * `told`, oldest first: the Quests view shows each one's window once and keeps what it told in device memory.
+ * The quests of `h` the System completed whose window is not yet told (`untold`), oldest first: the Quests view shows
+ * each one's window and, when it is answered, writes `questTold`. A daily completed again after its reset is untold again.
  */
-export function questNews(h: Pick<Hunter, 'quests'>, told: readonly string[]): Quest[] {
-  return h.quests.filter(q => q.status === 'done' && systemCompletes(q) && !told.includes(q.id));
+export function questNews(h: Pick<Hunter, 'quests'>): Quest[] {
+  return h.quests.filter(q => questPhase(q) === 'untold');
+}
+/**
+ * Quest `qid`'s window answered: done, as it ended. A quest told already, reset or deleted since its window opened is
+ * left as it is, so an answer that comes late or twice changes nothing.
+ */
+export function questTold(h: Hunter, qid: string): Hunter {
+  const q = h.quests[atQuest(h, qid)];
+  const told = q ? questStep(q, 'told', '') : null;
+  return !told || 'ok' in told ? h : withQuest(h, told);
 }

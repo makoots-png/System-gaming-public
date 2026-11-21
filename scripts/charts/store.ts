@@ -14,6 +14,7 @@ function label(l: StoreLife): string {
       case 'otherTab': return 'Refuses every change, its own kept in Backups (Another tab saved)';
       case 'mineUnkept': return 'Still shows its own save, refuses every change (Another tab saved; storage too full to keep yours: export it)';
       case 'loadUnkept': return 'Will not write over a save it could not open nor back up (Storage too full)';
+      case 'fightUnkept': return 'Shows the save without its unreadable fight, will not write over it (Storage too full)';
     }
     case 'ready': switch (l.write) {
       case 'clean': return 'Saved';
@@ -42,13 +43,13 @@ function step(e: StoreEvent, from: StoreLife): string | null {
 
 export const store = machine<StoreLife, StoreEvent>({
   name: 'The store',
-  walked: `Every state reachable from the four lives a load opens in (no storage, a newer app's save, this app's, a text storage was too full to back up) under the ${WALK_EVENTS.length} events of tests/models/store-events.ts, breadth first.`,
+  walked: `Every state reachable from the five lives a load opens in (no storage, a newer app's save, this app's, a text storage was too full to back up, a save whose fight storage was too full to back up) under the ${WALK_EVENTS.length} events of tests/models/store-events.ts, breadth first.`,
   walk: () => bfs(STARTS, l => WALK_EVENTS.map(event => ({ event, to: storeStep(l, event).life })), l => JSON.stringify(l)),
   kinds: [...STORE_STATES, ...WRITES],
   kindsOf: l => (l.at === 'ready' ? [l.at, l.write] : [l.at]),
   views: [{
     title: 'The store, from the load to a save written',
-    note: 'The chart shows one tab. A write is an effect the store carries out at once; its answer is the arrow after it ("storage takes the write", "storage is full or blocked"). In "Refuses every change" a player\'s change is refused with the banner\'s words; the room link\'s own bookkeeping, and the GM\'s fight until combat.js `send` is one step, still change memory and are dropped at the reload. A reload opens the tab again from the load.',
+    note: 'The chart shows one tab. A write is an effect the store carries out at once; its answer is the arrow after it ("storage takes the write", "storage is full or blocked"). In "Refuses every change" a player\'s change is refused with the banner\'s words, and the tab takes no part in a room (its save keeps the room for a tab that may write); the GM\'s fight until combat.js `send` is one step still changes memory, dropped at the reload. A reload opens the tab again from the load.',
     hides: '',
     state: label,
     step: (e, from) => step(e, from),

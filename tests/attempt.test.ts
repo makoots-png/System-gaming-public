@@ -81,7 +81,9 @@ describe('a Create or Join tap', () => {
 
   test('while the link stays in the tap\'s stretch nothing answers; leaving it ends the tap as its notice says', () => {
     expect(run(asMira, linked(REPLY, PEEK), linked(REPLY, HEAD)).effects).toEqual([]);
-    const cases: [LinkNotice, TapKind][] = [['notFound', 'notfound'], ['keyRefused', 'keyRefused'], ['notAllowedBack', 'removed'], ['unreachable', 'net'], ['serverError', 'net'], ['replaced', 'replaced']];
+    const cases: [LinkNotice, TapKind][] = [['notFound', 'notfound'], ['keyRefused', 'keyRefused'], ['notAllowedBack', 'removed'], ['unreachable', 'net'], ['serverError', 'net'], ['replaced', 'replaced'],
+      // a tab that stopped saving while the tap waited (SMX-sync-1): its banner says why, so the tap says nothing more
+      ['readOnly', 'replaced']];
     for (const [notice, kind] of cases) {
       const r = run(asMira, linked(REPLY, IDLE, [notice]));
       expect(r.state).toEqual(NO_ATTEMPT);
@@ -94,7 +96,7 @@ describe('a Create or Join tap', () => {
   test('a join for a typed name changes nothing until it ends: a failed one makes no hunter, a joined one binds a new hunter of that name', () => {
     expect(asRin.at === 'joining' && asRin.joins).toEqual({ as: 'named', name: 'Rin' });
     expect(run(asRin, linked(REPLY, HEAD)).effects).toEqual([]);
-    for (const n of ['notFound', 'notAllowedBack', 'unreachable', 'replaced'] as const) {
+    for (const n of ['notFound', 'notAllowedBack', 'unreachable', 'replaced', 'readOnly'] as const) {
       expect(run(asRin, linked(REPLY, HEAD), linked(REPLY, IDLE, [n])).effects.map(x => x.type), `ended by ${n}`).toEqual(['answer']);
     }
     expect(joinBinds(asRin, () => MIRA, hid('h3'))).toEqual({ make: 'Rin' });

@@ -1,7 +1,7 @@
 // The events of the battle map's life on the page (src/core/combat/map-mount.ts), over two fights, shared by
 // tests/map-mount.test.ts and the state chart (scripts/charts/map-mount.ts), so both walk the same events.
 import { fightId } from '../../src/core/combat/fight-types.ts';
-import type { MapMountEvent } from '../../src/core/combat/map-mount.ts';
+import type { BuildDrawerEvent, MapMountEvent } from '../../src/core/combat/map-mount.ts';
 
 /** Two fights one after the other on the same ground. */
 export const MOUNT_FIGHTS = [fightId('f1'), fightId('f2')] as const;
@@ -19,4 +19,13 @@ export const MOUNT_WALK: readonly MapMountEvent[] = [
   { kind: 'resized', shown: true },
   { kind: 'resized', shown: false },
   { kind: 'gone' },
+];
+
+/** Every event of the Build drawer (map-mount.ts `buildDrawer`) over the two fights and none: a toggle with and against the screen in each, and each drawn. */
+export const DRAWER_WALK: readonly BuildDrawerEvent[] = [
+  ...[...MOUNT_FIGHTS, null].flatMap(fight => [
+    { kind: 'toggled', open: true, wanted: false, fight },
+    { kind: 'toggled', open: true, wanted: true, fight },
+    { kind: 'drawn', fight },
+  ] as const),
 ];

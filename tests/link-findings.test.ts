@@ -82,7 +82,7 @@ describe('deferred sync findings', () => {
   test('finding 8: joining room B from room A remembers A as the last room', () => {
     const r = play(inRoom(A), { type: 'join', code: B, key: null, from: null }, { type: 'peeked', exists: true }, { type: 'headed', cursor: 1, gm: false, kicked: false });
     expect(r.state).toMatchObject({ at: 'live', code: B, last: { code: A, why: 'left' } });
-    expect(r.fx).toContainEqual({ type: 'save', fields: { room: B, cursor: 1, last: { code: A, why: 'left' } } });
+    expect(r.fx).toContainEqual({ type: 'save', fields: { room: B, cursor: 1, last: { code: A, why: 'left' }, gmKey: null } });
   });
 
   test('finding 9: Leave sends nothing to the room, so the GM board keeps the card as away', () => {

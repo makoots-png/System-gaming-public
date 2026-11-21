@@ -2,7 +2,8 @@
 // a quest the GM issued (one the GM sent, or a Job Change step); the GM may change any; a phone alone is its own GM.
 // The System counts the objective of a chain's open level step ("Reach Level 10"), so nobody gets minus and plus there.
 import { describe, expect, test } from 'bun:test';
-import { gmIssued, mayChangeQuest, reportsProgress, systemCounts } from '../src/core/hunter/quest-rights.ts';
+import { COMPLETER, QUEST_COMPLETERS, completerOf, gmIssued, mayChangeQuest, reportsProgress, systemCounts } from '../src/core/hunter/quest-rights.ts';
+import type { Objective } from '../src/core/save.ts';
 import type { JobChain } from '../src/core/hunter/job-chain.ts';
 import { jcid, qid } from './fixtures/ids.ts';
 
@@ -52,5 +53,30 @@ describe('which objectives the System counts', () => {
     expect(systemCounts({ id: qid('q0'), chainId: jcid('jc1') }, chain(1))).toBe(false);
     expect(systemCounts({ id: qid('q1') }, chain(1))).toBe(false);
     expect(systemCounts({ id: qid('q1'), chainId: jcid('jc1') }, null)).toBe(false);
+  });
+});
+
+describe('who completes a quest (SMX-gates-4)', () => {
+  const byHand: Objective = { label: 'Report to the guild', target: 1, progress: 0 };
+  const counted: Objective = { label: 'Beasts defeated', target: 1, progress: 0, count: { rule: { on: 'kill', where: [], measure: { of: 'facts' }, within: 'ever' }, mark: '' } };
+  test('every objective counted is the System\'s; none counted, or no objective, is the hand\'s; some of each is mixed', () => {
+    expect(completerOf({ objectives: [counted, counted] })).toBe('system');
+    expect(completerOf({ objectives: [byHand] })).toBe('hand');
+    expect(completerOf({ objectives: [] })).toBe('hand');
+    expect(completerOf({ objectives: [counted, byHand] })).toBe('mixed');
+  });
+  // Every completer and what it gives: a Complete button on the card, and the System completing it when its last
+  // objective fills from a fact.
+  const rows: [typeof QUEST_COMPLETERS[number], { button: boolean; counted: boolean }][] = [
+    ['system', { button: false, counted: true }],
+    ['hand', { button: true, counted: false }],
+    // as today: SMX-gates-4.1 waits on the owner's ruling (proposed: a quest with any hand-ticked objective keeps its Complete button)
+    ['mixed', { button: false, counted: true }],
+  ];
+  for (const [who, gives] of rows) test(`a ${who} quest: Complete button ${gives.button ? 'shown' : 'hidden'}, ${gives.counted ? '' : 'never '}completed by the System`, () => {
+    expect(COMPLETER[who]).toEqual(gives);
+  });
+  test('the rows are every completer', () => {
+    expect(rows.map(r => r[0])).toEqual([...QUEST_COMPLETERS]);
   });
 });

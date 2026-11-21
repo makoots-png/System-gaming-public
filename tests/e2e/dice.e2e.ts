@@ -69,3 +69,47 @@ test.describe('a roll typed the Roll20 way', () => {
     await expect(recent).toHaveText(['/r d20+4', '/r 2d6']);
   });
 });
+
+// The quick check's DC (src/core/dc-pick.ts): a choice of a rank and a level of the rules' rank table, or no DC. The
+// shipped table (src/core/rules.ts `rankTable`) gives E Standard 13, and D Hard and C Easy both 20.
+test.describe('the quick check\'s DC', () => {
+  let p: Page;
+  const dc = () => p.locator('#view-dice [data-dc]');
+  const check = async (): Promise<unknown> => {
+    const n = (await save(p)).rolls.length;
+    await p.locator('#view-dice [data-checks] [data-st="str"]').tap();
+    await expect.poll(() => save(p).then(s => s.rolls.length)).toBe(n + 1);
+    return (await last(p)).check?.dc ?? null;
+  };
+  const setRules = (o: Record<string, unknown>) => p.evaluate(x => hunterApp.store.update((d: any) => { d.rulesOverrides = x; }, 'test-setup'), o);
+  test.beforeEach(async ({ device }) => {
+    p = (await device('dice-dc')).page;
+    await onboardPlayer(p, 'Kai Test');
+    await dismissAll(p);
+    await go(p, 'dice');
+  });
+
+  test('a new E-rank hunter\'s check is rolled against E Standard, DC 13', async () => {
+    await expect(dc().locator('option:checked')).toHaveText('E Standard (DC 13)');
+    expect(await check()).toBe(13);
+  });
+
+  test('No DC stays No DC when the GM changes the rank table', async () => {
+    await dc().selectOption({ label: 'No DC (just roll)' });
+    await setRules({ rankTable: { E: { dc: [11, 14, 17] } } });
+    await expect(dc().locator('option', { hasText: 'E Standard' })).toHaveText('E Standard (DC 14)');
+    await expect(dc().locator('option:checked')).toHaveText('No DC (just roll)');
+    expect(await check()).toBeNull();
+  });
+
+  test('C Easy stays C Easy, not D Hard of the same number, and follows the GM\'s new number for it', async () => {
+    await dc().selectOption({ label: 'C Easy (DC 20)' });
+    await setRules({ rankTable: { S: { dc: [46, 51, 56] } } });
+    await expect(dc().locator('option', { hasText: 'S Easy' })).toHaveText('S Easy (DC 46)');
+    await expect(dc().locator('option:checked')).toHaveText('C Easy (DC 20)');
+    expect(await check()).toBe(20);
+    await setRules({ rankTable: { C: { dc: [21, 25, 29] } } });
+    await expect(dc().locator('option:checked')).toHaveText('C Easy (DC 21)');
+    expect(await check()).toBe(21);
+  });
+});

@@ -433,6 +433,29 @@ test('a save the app cannot open, when storage is too full to back it up, is nev
   expect(await stored(page, V4)).toBe(junk);
 });
 
+test('a save that opens whole but for its damaged fight, when storage is too full to back it up, says the fight could not be read, not that the save could not be opened', async ({ device }) => {
+  // SMX-sync-9.2: the banner said "Your save could not be opened" over a hunter and campaign that had opened
+  const env = { now: new Date(), newDeviceId: () => parseDeviceId('d-e2e-fight')!, newDeviceToken: () => 'test-device-token-0123456789abcd' };
+  const base = freshSave(env, { onboarded: true });
+  const text = JSON.stringify({ ...base, hunters: [{ ...base.hunters[0]!, name: 'Intact Hero' }], fight: { phase: 'running', rows: 'not rows' } });
+  const { page, ctx } = await device('phone', { seed: { [V4]: text } });
+  await ctx.addInitScript(key => {
+    const set = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (k: string, v: string) {
+      if (k === key) throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+      return set.call(this, k, v);
+    };
+  }, BACKUPS);
+  await openApp(page);
+  await expect(banner(page, 'running fight in your save could not be read, and storage is too full')).toHaveCount(1);
+  await expect(banner(page, 'could not be opened')).toHaveCount(0);
+  await go(page, 'status');
+  await expect(page.locator('#view-status [data-idname]')).toHaveText('Intact Hero');
+  await editIdentity(page, 'name', 'Written Over');
+  await expect(page.locator('#view-status [data-idname]')).toHaveText('Intact Hero');
+  expect(await stored(page, V4)).toBe(text);
+});
+
 test('a reset that cannot back up the campaign first asks before it goes on, and Cancel keeps the campaign', async ({ device }) => {
   const text = asCurrent(await fixtureText('main-player.json'));
   const { page } = await device('phone', { seed: { [V4]: text }, pinTo: pinAfter(text) });

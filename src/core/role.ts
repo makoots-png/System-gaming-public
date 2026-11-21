@@ -16,7 +16,11 @@ export type RoleSettings = {
   };
 };
 
-/** `room`: the room this phone's link is in, null when it is in none. In a room, the phone that holds its GM key is the GM. */
+/**
+ * `room`: the room this phone's link is in, null when it is in none. In a room, the phone that holds its GM key is the
+ * GM. The save's key is the link's: the link writes its room and key in one step (src/core/sync/link.ts `saves`), out
+ * of a room the save holds none, and a tab that may not write is in no room (link.ts `readOnly`).
+ */
 export const seatOf = (settings: RoleSettings, room: string | null): Seat => (room === null ? 'alone' : settings.sync.gmKey ? 'gm' : 'player');
 
 /** In a room the role is the seat. Alone, the phone chooses. */

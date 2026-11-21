@@ -49,7 +49,7 @@ export type AppEvents = {
    * sync.ts when the room answered a message from the outbox (src/core/sync/outbox.ts): `id` is the entry's (an event's
    * id), `seq` the room's for it. A player's table lets its turn go when the room refused the move it waits on.
    */
-  'sync:outbox': { id: string; at: 'sent'; seq: number | null } | { id: string; at: 'refused'; why: string };
+  'sync:outbox': { id: string; at: 'sent'; seq: number | null } | { id: string; at: 'refused'; why: string } | { id: string; at: 'dropped' };
   /**
    * sync.ts when the link to the room changes. The pill, the Room view and room-aware buttons redraw. `serverBack`: the
    * server answers again after failing (link.ts `serverBack`), so a view checks again what it could not.

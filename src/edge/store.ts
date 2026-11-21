@@ -1,7 +1,7 @@
 // store.ts: the one module that touches the browser's storage (a lint test names the two others: sync.ts's invite and
 // upgrade.ts's note). It keeps the save, the backups ring, the device prefs and the views' device memory, the notices
-// and the subscribers, and runs the store's life (src/core/store-life.ts): whether this tab may change the save and
-// whether storage holds it. What a save is, how one is repaired and what an old one becomes is src/core/save.ts.
+// and the subscribers, the one wait for the save's next write (`flushTimer`), and runs the store's life
+// (src/core/store-life.ts): whether this tab may change the save and whether storage holds it. What a save is, how one is repaired and what an old one becomes is src/core/save.ts.
 import { ACCENTS, TEXT_SCALES, bindSave, rules } from './rules.ts';
 import { featsFor } from '../core/hunter/feats.ts';
 import type { FeatDef } from '../core/hunter/feats.ts';
@@ -102,6 +102,7 @@ const LIFE_TEXT: { readonly [N in LifeNotice]: string } = {
   noStorage: 'Browser storage is unavailable; progress will not be saved.',
   mineUnkept: 'Another tab saved this campaign, and storage is too full to keep this tab\'s unsaved changes in Backups. This tab still shows them but cannot save: export them from the Data tab now, then reload.',
   loadUnkept: 'Your save could not be opened, and storage is too full to keep a copy of it in Backups, so this tab will not write over it. Free some storage and reload, or reset the campaign in the Data tab to start again without it.',
+  fightUnkept: 'The running fight in your save could not be read, and storage is too full to keep a copy of the save in Backups, so this tab shows everything else but will not write over it. Free some storage and reload.',
   saveFailed: 'Saving failed (storage full or blocked). Export your data from the Data tab to avoid losing progress.',
   deviceFailed: 'This phone\'s own settings, such as pinned abilities and the fight view, could not be kept: storage is full or blocked.',
 };
@@ -154,8 +155,8 @@ function load(): { save: Save; opened: Opened } {
   };
   const stored: StoredKeys = { v4: read(SAVE_KEY), v3: read(OLD_KEY_V3), v2: read(OLD_KEY_V2), v1: read(OLD_KEY_V1) };
   const loaded = loadSave(stored, env());
-  const backup = !loaded.backup ? 'none' : pushBackup(loaded.backup.reason, loaded.backup.data, backupCap(loaded.save)) ? 'kept' : 'failed';
-  if (loaded.notice && backup !== 'failed') raised.push({ id: loaded.notice, text: LOAD_TEXT[loaded.notice] });
+  const backup: Opened['backup'] = !loaded.backup ? 'none' : pushBackup(loaded.backup.reason, loaded.backup.data, backupCap(loaded.save)) ? 'kept' : { unkept: loaded.notice ?? 'unreadable' };
+  if (loaded.notice && backup === 'kept') raised.push({ id: loaded.notice, text: LOAD_TEXT[loaded.notice] });
   return { save: loaded.save, opened: { storage: blocked ? 'blocked' : 'ok', newer: loaded.readOnly, backup } };
 }
 const loaded = load();
@@ -193,13 +194,39 @@ function writeSave(): boolean {
   return writeKey(SAVE_KEY, JSON.stringify(state));
 }
 /**
+ * The one wait for the save's next write (`due`): none; the next frame, with a second's `fallback` for a page that draws
+ * no frames (a hidden one); or the task after that frame, the fallback still set. A write ends it, whatever raised the
+ * write (`due`, the page left, a replace), so nothing armed for an earlier change can write a later one before its frame.
+ */
+type FlushTimer =
+  | { at: 'idle' }
+  | { at: 'frame'; frame: number; fallback: ReturnType<typeof setTimeout> }
+  | { at: 'task'; task: ReturnType<typeof setTimeout>; fallback: ReturnType<typeof setTimeout> };
+let flushTimer: FlushTimer = { at: 'idle' };
+/** Ends the wait: nothing of it fires. */
+function cancelFlush(): void {
+  const t = flushTimer;
+  if (t.at === 'frame') { cancelAnimationFrame(t.frame); clearTimeout(t.fallback); }
+  if (t.at === 'task') { clearTimeout(t.task); clearTimeout(t.fallback); }
+  flushTimer = { at: 'idle' };
+}
+/** The wait came to its end: `due`. */
+function flushDue(): void {
+  cancelFlush();
+  run({ type: 'due' });
+}
+/**
  * A change's write waits for the frame that shows it: writing the whole save (its text and the storage call, 3 to 4 ms
  * on a phone at 4x CPU) in the tap's own task would hold that frame back. `due` comes in a task after the next frame, or
  * after a second on a page that draws no frames (a hidden one); the page hidden or left is `leaving`.
  */
 function schedule(): void {
-  requestAnimationFrame(() => setTimeout(() => run({ type: 'due' }), 0));
-  setTimeout(() => run({ type: 'due' }), 1000);
+  cancelFlush();
+  const fallback = setTimeout(flushDue, 1000);
+  const frame = requestAnimationFrame(() => {
+    if (flushTimer.at === 'frame' && flushTimer.frame === frame) flushTimer = { at: 'task', task: setTimeout(flushDue, 0), fallback };
+  });
+  flushTimer = { at: 'frame', frame, fallback };
 }
 /**
  * Carries out a step of the store's life and the steps its effects lead to (a write's answer). `theirs`: the other
@@ -214,11 +241,12 @@ function carry(first: StoreStep, theirs: Save | null = null, quiet = false): voi
     life = s.life;
     for (const fx of s.effects) {
       if (fx === 'schedule') schedule();
-      else if (fx === 'write') queue.push(storeStep(life, { type: writeSave() ? 'wrote' : 'writeFailed' }));
+      else if (fx === 'write') { cancelFlush(); queue.push(storeStep(life, { type: writeSave() ? 'wrote' : 'writeFailed' })); }
       else if (fx === 'keepMine') queue.push(storeStep(life, { type: pushBackup('before another tab saved', JSON.stringify(state), backupCap(state)) ? 'kept' : 'keepFailed' }));
       else if (theirs) { state = theirs; took = true; }
     }
   }
+  if (life.at !== 'ready') cancelFlush(); // a tab that does not write waits for no write
   if (quiet) return;
   if (took) emit({ reason: 'storage' }); // sync.ts tells a save of another room by its own rule (`otherRoom`)
   else if (JSON.stringify(noticesOf(life, device)) !== before) emit({ reason: 'notice' });
@@ -262,9 +290,9 @@ export type Read = { ok: true; save: Save; kind: 'hunter' | 'campaign' } | { ok:
 export const store = {
   get: (): Save => state,
   /**
-   * The edge's way to change the save (sync.ts, and `apply` underneath); a view uses `apply`. `fn` mutates the save, then
-   * it is repaired, stored and announced. In a read-only tab the change stays in memory: the edge's own bookkeeping (the
-   * link's cursor), which the reload drops and the stored cursor replays.
+   * What `apply` writes with, and a test's setup: every write of the app is an `apply`, which a read-only tab refuses
+   * (sync.ts's too: a read-only tab takes no part in a room, src/core/sync/link.ts `readOnly`). `fn` mutates the save,
+   * then it is repaired, stored and announced; it does not ask whether the tab may write.
    */
   update<T>(fn: (save: Save) => T, reason = 'update'): T {
     const result = fn(state);

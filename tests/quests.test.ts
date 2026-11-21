@@ -1,23 +1,23 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import {
-  TABLE, chained, cleanObjectives, completeQuest, deleteQuest, editQuest, failQuest, issueQuest, nextWake, overdue, pastDue, questOf, questStep,
-  questOffer, reopenQuest, rollover, rolloverDue, setProgress, tracked, withTold,
+  QUEST_EVENTS, QUEST_PHASES, TABLE, chained, cleanObjectives, completeQuest, deleteQuest, editQuest, failQuest, issueQuest, nextWake, overdue, pastDue, questNews, questOf, questPhase, questStep, questTold,
+  questOffer, reopenQuest, rollover, rolloverDue, rolloverRetry, setProgress, tracked, withTold,
 } from '../src/core/hunter/quests.ts';
-import type { QuestEvent } from '../src/core/hunter/quests.ts';
+import type { QuestEvent, QuestPhase } from '../src/core/hunter/quests.ts';
 import { freshSave, newHunter, newRewards, repairSave } from '../src/core/save.ts';
 import type { Hunter, Objective, Quest, QuestStatus, Save } from '../src/core/save.ts';
 import { RULES } from '../src/core/rules.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import type { Refused } from '../src/core/save-step.ts';
-import { questIn } from './models/quest-events.ts';
+import { questAt, questIn } from './models/quest-events.ts';
 
 /** Personal gates off (gates/personal.ts `soloWake`): these cases are the quests' own times. */
 const NO_GATES = { personal: false, gm: false };
 import { day, dev, hid, jcid, qid } from './fixtures/ids.ts';
 import type { QuestId } from '../src/core/ids.ts';
 import type { DayKey } from '../src/core/day.ts';
-import { STREAK_BONUS_POINTS, chainStep, finishQuest, questFailed, rolledOver } from '../src/core/hunter/grant.ts';
-import { GM_QUEST_KINDS, PLAYER_QUEST_KINDS, questKindsFor, systemCompletes } from '../src/core/hunter/quest-rights.ts';
+import { ROOM_HEARS, STREAK_BONUS_POINTS, chainStep, finishQuest, questEnded, questFailed, rolledOver } from '../src/core/hunter/grant.ts';
+import { COMPLETER, GM_QUEST_KINDS, PLAYER_QUEST_KINDS, completerOf, questKindsFor } from '../src/core/hunter/quest-rights.ts';
 import { noticed } from '../src/core/hunter/noticed.ts';
 import type { NoticeCtx } from '../src/core/hunter/noticed.ts';
 import { record } from '../src/core/hunter/chronicle.ts';
@@ -25,30 +25,43 @@ import type { Fact } from '../src/core/hunter/facts.ts';
 import { parseRoomCode } from '../src/core/ids.ts';
 import { QUEST_KINDS } from '../src/core/save.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
+import { QUEST_FORM_CLOSED, questFormStep } from '../src/core/hunter/quest-form.ts';
+import type { QuestFormEvent, QuestFormState } from '../src/core/hunter/quest-form.ts';
 
 const ok = <T>(r: T | Refused): T => { if (isRefused(r)) throw new Error(`refused: ${r.why}`); return r as T; };
 const AT = '2026-11-14T10:00:00.000Z';
 const hunterWith = (...quests: Quest[]): Hunter => ({ ...newHunter(RULES), id: hid('h1'), quests });
 const daily = (id: string, status: QuestStatus = 'active'): Quest => ({ ...questIn(status, 'daily'), id: qid(id), title: `Daily ${id}` });
-const opts = (o: Partial<{ today: DayKey; nextQuestId: QuestId }> = {}) => ({ at: AT, today: day('2026-11-14'), nextQuestId: qid('q99'), streakBonusEvery: RULES.streakBonusEvery, ...o });
+const opts = (o: Partial<{ today: DayKey; nextQuestId: QuestId }> = {}) => ({ at: AT, today: day('2026-11-14'), nextQuestId: qid('q99'), streakBonusEvery: RULES.streakBonusEvery, by: 'hand' as const, ...o });
 
 describe('the life of a quest', () => {
-  // Every status and event: the status it leads to, or 'refused'. A reset applies to a daily only (the side quest refuses it).
-  const rows: [QuestStatus, QuestEvent, QuestStatus | 'refused'][] = [
-    ['active', 'complete', 'done'], ['active', 'fail', 'failed'], ['active', 'reopen', 'refused'], ['active', 'reset', 'refused'],
-    ['done', 'complete', 'refused'], ['done', 'fail', 'refused'], ['done', 'reopen', 'refused'], ['done', 'reset', 'refused'],
-    ['failed', 'complete', 'refused'], ['failed', 'fail', 'refused'], ['failed', 'reopen', 'active'], ['failed', 'reset', 'refused'],
+  // Every phase and event: the phase it leads to, or 'refused'. A reset applies to a daily only (the side quest refuses it).
+  const rows: [QuestPhase, QuestEvent, QuestPhase | 'refused'][] = [
+    ['active', 'complete', 'done'], ['active', 'counted', 'untold'], ['active', 'told', 'refused'], ['active', 'fail', 'failed'], ['active', 'reopen', 'refused'], ['active', 'reset', 'refused'],
+    ['untold', 'complete', 'refused'], ['untold', 'counted', 'refused'], ['untold', 'told', 'done'], ['untold', 'fail', 'refused'], ['untold', 'reopen', 'refused'], ['untold', 'reset', 'refused'],
+    ['done', 'complete', 'refused'], ['done', 'counted', 'refused'], ['done', 'told', 'refused'], ['done', 'fail', 'refused'], ['done', 'reopen', 'refused'], ['done', 'reset', 'refused'],
+    ['failed', 'complete', 'refused'], ['failed', 'counted', 'refused'], ['failed', 'told', 'refused'], ['failed', 'fail', 'refused'], ['failed', 'reopen', 'active'], ['failed', 'reset', 'refused'],
   ];
   for (const [from, event, to] of rows) {
     test(`a ${from} side quest + ${event}: ${to}`, () => {
-      const r = questStep(questIn(from), event, AT);
+      const r = questStep(questAt(from), event, AT);
       if (to === 'refused') expect(isRefused(r)).toBe(true);
-      else expect(ok(r).status).toBe(to);
+      else expect(questPhase(ok(r))).toBe(to);
     });
   }
-  test('the table: a reset leads every status of a daily back to active', () => {
-    for (const s of ['active', 'done', 'failed'] as const) expect(ok(questStep(questIn(s, 'daily'), 'reset', AT))).toMatchObject({ status: 'active', doneAt: null, objectives: [{ progress: 0 }] });
-    expect(Object.values(TABLE).map(r => r.reset)).toEqual(['active', 'active', 'active']);
+  test('the rows are every phase against every event', () => {
+    expect(rows.map(([p, e]) => `${p} ${e}`)).toEqual(QUEST_PHASES.flatMap(p => QUEST_EVENTS.map(e => `${p} ${e}`)));
+  });
+  test('the table: a reset leads every phase of a daily back to active', () => {
+    for (const p of QUEST_PHASES) expect(ok(questStep(questAt(p, 'daily'), 'reset', AT))).toMatchObject({ status: 'active', doneAt: null, objectives: [{ progress: 0 }] });
+    expect(Object.values(TABLE).map(r => r.reset)).toEqual(['active', 'active', 'active', 'active']);
+  });
+  test('a quest the System completes is done untold, with its end time; told, it keeps that time; reset, it carries no told', () => {
+    const untold = ok(questStep(questIn('active', 'daily'), 'counted', AT));
+    expect(untold).toMatchObject({ status: 'done', doneAt: AT, told: false, objectives: [{ progress: 3 }] });
+    expect(ok(questStep(untold, 'told', '2026-11-14T11:00:00.000Z'))).toMatchObject({ status: 'done', doneAt: AT, told: true });
+    expect('told' in ok(questStep(untold, 'reset', AT))).toBe(false);
+    expect(ok(questStep(questIn('active'), 'complete', AT))).toMatchObject({ status: 'done', told: true });
   });
   test('a completed quest has its objectives full and its end time; a failed one keeps its progress', () => {
     expect(ok(questStep(questIn('active'), 'complete', AT))).toMatchObject({ status: 'done', doneAt: AT, objectives: [{ progress: 3 }] });
@@ -116,6 +129,9 @@ describe('when the phone next runs the rollover', () => {
     process.env.TZ = 'Europe/Berlin';
     expect(nextWake(checked(urgent('2026-11-14T09:00:00.000Z')), new Date(AT), 0, NO_GATES)).toBe(ms(AT));
     expect(nextWake(checked(), new Date('2026-11-14T23:00:00.000Z'), 0, NO_GATES)).toBe(ms('2026-11-14T23:00:00.000Z'));
+  });
+  test('a rollover whose write was refused is tried again a minute on, not at once (SMX-gates-3.2)', () => {
+    expect(rolloverRetry(new Date(AT))).toBe(ms(AT) + 60_000);
   });
 });
 
@@ -377,10 +393,31 @@ describe('a quest that counts by itself, and what failing costs (feature 1\'s no
     expect(quest(s).status, 'the objective moved by taps is not full').toBe('active');
     expect(write(s, [kill('Beast')], ctx({ session: 4 })).hunters[0]!.quests[0]!.objectives[0]!.progress, 'a full objective stays full').toBe(3);
   });
+  test('a quest the System completes waits, untold, for its window; a tapped one is told at once', () => {
+    const s = write(saveWith(counted({ objectives: [beasts(1)] })), [kill('Beast')]);
+    expect(questNews(s.hunters[0]!).map(q => q.id)).toEqual(['q7']);
+    const told = questTold(s.hunters[0]!, 'q7');
+    expect(questNews(told)).toEqual([]);
+    expect(questTold(told, 'q7'), 'a second answer changes nothing').toBe(told);
+    expect(questTold(told, 'q404'), 'nor one for a quest gone').toBe(told);
+    const byTap = ok(finishQuest(saveWith(counted({ objectives: [{ label: 'Report', target: 1, progress: 1 }] })), 'h1', 'q7', { at: AT, today: day('2026-11-14'), R: RULES, vitals: 'sheet' }));
+    expect(questNews(byTap.save.hunters[0]!)).toEqual([]);
+  });
+  test('a GM\'s daily the System counts shows its window on day 2 as on day 1 (SMX-gates-4.2)', () => {
+    const daily = counted({ kind: 'daily', objectives: [beasts(1)] });
+    const checked = (sv: Save, d: string): Save => ({ ...sv, world: { ...sv.world, lastDailyKey: day(d) }, hunters: sv.hunters.map(h => ({ ...h, daily: { ...h.daily, lastCheckedKey: day(d) } })) });
+    let s = write(checked(saveWith(daily), '2026-11-14'), [kill('Beast')]);
+    expect(questNews(s.hunters[0]!).map(q => q.title), 'day 1').toEqual(['Ten Beasts']);
+    s = { ...s, hunters: [questTold(s.hunters[0]!, 'q7')] };
+    s = rollover(s, { today: day('2026-11-15'), at: '2026-11-15T10:00:00.000Z', nowMs: Date.parse('2026-11-15T10:00:00.000Z'), gm: false }).save;
+    expect(quest(s).status, 'reset in place, the same id').toBe('active');
+    s = write(s, [kill('Beast')], ctx({ at: '2026-11-15T11:00:00.000Z', today: day('2026-11-15') }));
+    expect(questNews(s.hunters[0]!).map(q => q.title), 'day 2').toEqual(['Ten Beasts']);
+  });
   test('a counted objective refuses a tap; a quest with none is never completed by the System', () => {
     expect(setProgress(hunterWith(counted()), 'q7', 0, 2)).toEqual({ ok: false, why: 'not-now' });
     const byHand = counted({ objectives: [{ label: 'Beasts', target: 1, progress: 1 }] });
-    expect(systemCompletes(byHand)).toBe(false);
+    expect(COMPLETER[completerOf(byHand)].counted).toBe(false);
     expect(quest(write(saveWith(byHand), [kill('Beast')])).status).toBe('active');
   });
   test('a GM\'s counted quest on a player\'s phone in a room posts its end once, in the write that completes it', () => {
@@ -401,10 +438,39 @@ describe('a quest that counts by itself, and what failing costs (feature 1\'s no
     expect(f.save.hunters[0]!.gold).toBe(70);
     expect(f.granted.lines).toEqual(['Loses 30 gold']);
     const urgent = counted({ kind: 'urgent', dueAt: '2026-11-14T09:00:00.000Z', onFail: cost });
-    const r = rolledOver(saveWith(urgent), { ...day0, nowMs: Date.parse(AT), gm: false, vitals: () => 'sheet' });
+    const r = rolledOver(saveWith(urgent), { ...day0, nowMs: Date.parse(AT), gm: false, vitals: () => 'sheet', room: null });
     expect(quest(r.save).status).toBe('failed');
     expect(r.save.hunters[0]!.gold).toBe(70);
-    expect(r.costs.map(c => c.hid)).toEqual(['h1']);
+    expect(r.failed.map(f => [f.hid, f.qid, f.granted.lines])).toEqual([['h1', 'q7', ['Loses 30 gold']]]);
+  });
+  test('two urgent quests that run out at once each carry their own cost (SMX-gates-3.3)', () => {
+    const day0 = { at: AT, today: day('2026-11-14'), R: RULES, vitals: () => 'sheet' as const, nowMs: Date.parse(AT), gm: false, room: null };
+    const due = '2026-11-14T09:00:00.000Z';
+    const a = counted({ id: qid('q7'), kind: 'urgent', title: 'Hold the bridge', dueAt: due, onFail: { ...newRewards(), gold: -30 } });
+    const b = counted({ id: qid('q8'), kind: 'urgent', title: 'Guard the gate', dueAt: due, onFail: { ...newRewards(), gold: -5 } });
+    const r = rolledOver({ ...saveWith(a), hunters: [{ ...hunterWith(a, b), gold: 100 }] }, day0);
+    expect(r.failed.map(f => [f.title, f.granted.lines])).toEqual([['Hold the bridge', ['Loses 30 gold']], ['Guard the gate', ['Loses 5 gold']]]);
+    expect(r.save.hunters[0]!.gold).toBe(65);
+  });
+  test('a GM\'s urgent quest that runs out on a player\'s phone in a room is not posted to the room, as today (SMX-gates-3.3 waits on its ruling)', () => {
+    const room = parseRoomCode('ABC234')!;
+    const urgent = counted({ kind: 'urgent', dueAt: '2026-11-14T09:00:00.000Z' });
+    const r = rolledOver(saveWith(urgent), { at: AT, today: day('2026-11-14'), R: RULES, vitals: () => 'sheet', nowMs: Date.parse(AT), gm: false, room });
+    expect(ROOM_HEARS).toEqual({ counted: true, overdue: false });
+    expect(quest(r.save).status).toBe('failed');
+    expect(r.save.settings.sync.outbox ?? []).toEqual([]);
+  });
+  test('the post a quest\'s end makes, done or failed, carries the quest as it ended, so the ruling is one row', () => {
+    const room = parseRoomCode('ABC234')!;
+    const failed = ok(questStep({ ...questIn('active'), id: qid('q7'), from: 'gm', title: 'Hold the bridge' }, 'fail', AT));
+    if (failed.status === 'active') throw new Error('not ended');
+    const s = questEnded(saveWith(failed), hid('h1'), failed, { at: AT, room });
+    const box = s.settings.sync.outbox ?? [];
+    expect(box).toHaveLength(1);
+    const e = box[0]!.letter as { kind: 'event'; event: { type: string; payload: { status: string; questId: string; objectives: unknown } } };
+    expect(e.event.type).toBe('questUpdate');
+    expect(e.event.payload).toMatchObject({ status: 'failed', questId: 'q7', objectives: [{ label: 'Goblins', progress: 1, target: 3 }] });
+    expect(questEnded(s, hid('h1'), failed, { at: AT, room }).settings.sync.outbox, 'posted again it replaces itself').toHaveLength(1);
   });
   test('the count and the cost survive the save\'s repair and the room\'s quest message; a count that does not read leaves a row moved by taps', () => {
     const q = counted({ onFail: { ...newRewards(), xp: -20 } });
@@ -415,4 +481,36 @@ describe('a quest that counts by itself, and what failing costs (feature 1\'s no
     expect(offer.objectives.map(o => !!o.count)).toEqual([true, false]);
     expect(offer.onFail.xp).toBe(-20);
   });
+});
+
+describe('the Quests view\'s quest form (quest-form.ts, SMX-views-4)', () => {
+  const closed = QUEST_FORM_CLOSED;
+  const asNew: QuestFormState = { at: 'new', role: 'player', hid: hid('h1') };
+  const editing: QuestFormState = { at: 'editing', role: 'gm', hid: hid('h1'), qid: qid('q1') };
+  const opensNew: QuestFormEvent = { type: 'new', role: 'gm', hid: hid('h2') };
+  const opensEdit: QuestFormEvent = { type: 'edit', role: 'player', hid: hid('h2'), qid: qid('q2') };
+  // Every state against every event: the form it leads to. `seen` is the screen as it is now: the form's own role and
+  // hunter leave it, another of either closes it.
+  const rows: [string, QuestFormState, string, QuestFormEvent, QuestFormState][] = [
+    ['closed', closed, 'New quest', opensNew, { at: 'new', role: 'gm', hid: hid('h2') }],
+    ['closed', closed, 'Edit', opensEdit, { at: 'editing', role: 'player', hid: hid('h2'), qid: qid('q2') }],
+    ['closed', closed, 'saved', { type: 'saved' }, closed],
+    ['closed', closed, 'Cancel', { type: 'cancelled' }, closed],
+    ['closed', closed, 'seen', { type: 'seen', role: 'gm', hid: hid('h2') }, closed],
+    ['new', asNew, 'New quest', opensNew, { at: 'new', role: 'gm', hid: hid('h2') }],
+    ['new', asNew, 'Edit', opensEdit, { at: 'editing', role: 'player', hid: hid('h2'), qid: qid('q2') }],
+    ['new', asNew, 'saved', { type: 'saved' }, closed],
+    ['new', asNew, 'Cancel', { type: 'cancelled' }, closed],
+    ['new', asNew, 'seen as it was', { type: 'seen', role: 'player', hid: hid('h1') }, asNew],
+    ['new', asNew, 'seen with another hunter', { type: 'seen', role: 'player', hid: hid('h2') }, closed],
+    ['new', asNew, 'seen as the GM', { type: 'seen', role: 'gm', hid: hid('h1') }, closed],
+    ['editing', editing, 'New quest', opensNew, { at: 'new', role: 'gm', hid: hid('h2') }],
+    ['editing', editing, 'Edit', opensEdit, { at: 'editing', role: 'player', hid: hid('h2'), qid: qid('q2') }],
+    ['editing', editing, 'saved', { type: 'saved' }, closed],
+    ['editing', editing, 'Cancel', { type: 'cancelled' }, closed],
+    ['editing', editing, 'seen as it was', { type: 'seen', role: 'gm', hid: hid('h1') }, editing],
+    ['editing', editing, 'seen with another hunter', { type: 'seen', role: 'gm', hid: hid('h2') }, closed],
+    ['editing', editing, 'seen as a player', { type: 'seen', role: 'player', hid: hid('h1') }, closed],
+  ];
+  for (const [from, s, what, e, to] of rows) test(`${from} + ${what}: ${to.at}`, () => { expect(questFormStep(s, e)).toEqual(to); });
 });

@@ -17,12 +17,12 @@ import { acted, delayed, extraNow, extraStep, interval, refunded, stunned, tick 
 import type { Tick } from './timeline.ts';
 import type { Ability, Avoid, CombatantId, Outcome } from './ability-types.ts';
 import { isUp, rowHp } from './row-hp.ts';
-import { controlFactor, cureStatus, dispelled, removeStatus, shielded, withStatuses } from './effect-ops.ts';
+import { controlFactor, removeStatus, shielded, withStatuses } from './effect-ops.ts';
 import { atTier, countOn, stacked } from './op-amount.ts';
 import { boostsOn, concealed, critFacesAgainst, damageShare, edgeOn, edgeStep, healShare, rangeWith, wardedDamage } from './standing.ts';
 import type { HeldDieId } from './standing.ts';
 import type { Body, OpRules, Status, StatusKey, UseOp } from './effect-ops.ts';
-import { afterDefence, alive, broken, channelBreaks, clamp, cureLands, hasteOn, healed, hurt, landEnd, landMove, landThreshold, live, opsOf, landStatus, threatened, throughShield } from './land.ts';
+import { afterDefence, alive, broken, channelBreaks, clamp, cleansed, hasteOn, healed, hurt, landEnd, landMove, landThreshold, live, opsOf, landStatus, threatened, throughShield } from './land.ts';
 import type { Burst, LandFired } from './land.ts';
 import { freeZoneId, MAX_ZONES } from './zones.ts';
 import type { Ground, Zone } from './zones.ts';
@@ -255,10 +255,10 @@ function landOps(a: Ability, user: Body, target: Body, dice: readonly number[], 
         keys.push(op.key);
         break;
       }
-      case 'cureStatus': {
-        const was = t.statuses.find(s => s.key === op.key), list = cureStatus(t.statuses, op.key, op.stacks);
-        if (was && !list.some(s => s.key === op.key) && cureLands(was)) detonated.push(was);
-        t = withStatuses(t, list, now, R);
+      // a cure and a dispel are one edge with a land op's (land.ts `cleansed`): a detonation lands once the use's outcome is in
+      case 'cureStatus': case 'dispel': {
+        const c = cleansed(t, op, now, R);
+        t = c.target; detonated.push(...c.lands);
         break;
       }
       case 'delay': t = delayed(t, atTier(op.ticks, user.tier)); break;
@@ -274,12 +274,6 @@ function landOps(a: Ability, user: Body, target: Body, dice: readonly number[], 
       }
       case 'channel': if (op.mode === 'break') breaks = true; break;
       case 'note': break;
-      case 'dispel': {
-        const list = dispelled(t.statuses, op.which);
-        for (const s of t.statuses) if (!list.includes(s) && cureLands(s)) detonated.push(s);
-        t = withStatuses(t, list, now, R);
-        break;
-      }
       // a shove lands after every outcome, in its order (rule 18c, `pushed`)
       case 'shove': break;
       // a move changes the user too: it lands after the target's ops (`movedOn`)

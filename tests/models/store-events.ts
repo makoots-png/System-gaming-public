@@ -17,10 +17,14 @@ export const WALK_EVENTS: readonly StoreEvent[] = [
   { type: 'keepFailed' },
 ];
 
-/** Every life a load opens in: storage blocked, a newer app's save, this app's, and a text storage was too full to back up. */
+/**
+ * Every life a load opens in: storage blocked, a newer app's save, this app's, a text storage was too full to back up,
+ * and a save whose running fight storage was too full to back up.
+ */
 export const STARTS: readonly StoreLife[] = [
   opened({ storage: 'blocked', newer: false, backup: 'none' }).life,
   opened({ storage: 'ok', newer: true, backup: 'none' }).life,
   opened({ storage: 'ok', newer: false, backup: 'none' }).life,
-  opened({ storage: 'ok', newer: false, backup: 'failed' }).life,
+  opened({ storage: 'ok', newer: false, backup: { unkept: 'unreadable' } }).life,
+  opened({ storage: 'ok', newer: false, backup: { unkept: 'fight' } }).life,
 ];

@@ -34,6 +34,8 @@ export function register(app) {
   const { esc } = ui;
   const toast = msg => ui.news(msg, 'warning');
   const D = () => app.api.detail;
+  /** The count of maps mounted, for each one's own detail list (two maps on one page never share an open detail). */
+  let mounts = 0;
 
   ui.css('map', `
 .mp{display:flex;flex-direction:column;gap:8px;min-width:0}
@@ -200,6 +202,8 @@ export function register(app) {
       <div class="mp-drawer" data-drawer hidden></div>
     </div>`;
     const $ = s => /** @type {HTMLElement} */ (el.querySelector(s));
+    /** This map's list in app.api.detail: its open detail is its own. */
+    const dtList = `map-${++mounts}`;
     const frame = $('[data-frame]'), world = $('[data-world]'), tokensBox = $('[data-tokens]'), areaBox = /** @type {any} */ (el.querySelector('[data-area]')), fx = $('[data-fx]');
     /** The pan and zoom: the world's offset in the frame in pixels, and its scale. */
     const view = { x: 0, y: 0, s: 1 };
@@ -300,7 +304,7 @@ export function register(app) {
             clearTimeout(holdTimer); holdTimer = 0; g = IDLE; frame.classList.remove('panning');
             choice = NO_CHOICE; brush = null; along = null; areaSig = '';
             was.clear(); zonesWas = []; edges.clear();
-            D().move('map', { kind: 'close' }, drawDetail);
+            D().move(dtList, { kind: 'close' }, drawDetail);
             break;
           // the frame's size, read only when the map asks (a draw's own read would lay the page out in the redraw)
           case 'measure': live({ kind: 'sized', shown: frame.clientWidth > 0, over: e.over }); break;
@@ -311,6 +315,8 @@ export function register(app) {
           case 'stop':
             removeEventListener('resize', onResize); cancelAnimationFrame(sized); sized = 0;
             cutSeen.disconnect(); off(); clearTimeout(holdTimer); holdTimer = 0; clearTimeout(newsTimer); newsTimer = 0;
+            D().move(dtList, { kind: 'close' }, () => {});
+            el.replaceChildren();
             break;
           default: break;
         }
@@ -325,7 +331,7 @@ export function register(app) {
       for (const fx of r.fx) {
         switch (fx.kind) {
           case 'card': src.card(fx.id); break;
-          case 'zone': D().move('map', { kind: 'toggle', key: `zone:${fx.id}` }, drawDetail); break;
+          case 'zone': D().move(dtList, { kind: 'toggle', key: `zone:${fx.id}` }, drawDetail); break;
           case 'refuse': toast('Out of reach.'); break;
           case 'offTurn': src.offTurn(); break;
           case 'move': src.move(fx.to, fx.dash); break;
@@ -414,8 +420,8 @@ export function register(app) {
           case 'putBack': { const t = tokEl(fx.tok); if (t) { t.classList.remove('lifted'); t.style.transform = t.dataset.at || ''; } break; }
           case 'tap': tapAt(fx.target); break;
           case 'press': run(fx.control); break;
-          case 'detail': D().move('map', { kind: 'toggle', key: `ab:${fx.control.slice(fx.control.indexOf(':') + 1)}` }, drawDetail); break;
-          case 'undetail': D().move('map', { kind: 'drop', key: `ab:${fx.control.slice(fx.control.indexOf(':') + 1)}` }, drawDetail); break;
+          case 'detail': D().move(dtList, { kind: 'toggle', key: `ab:${fx.control.slice(fx.control.indexOf(':') + 1)}` }, drawDetail); break;
+          case 'undetail': D().move(dtList, { kind: 'drop', key: `ab:${fx.control.slice(fx.control.indexOf(':') + 1)}` }, drawDetail); break;
           case 'drop': if (src.place) src.place(fx.tok, fx.to); break;
           case 'paint': if (brush && src.paint) src.paint(/** @type {any} */ (fx.tiles), brush.zone ? { zone: brush.zone } : { terrain: brush.terrain }); break;
           default: break;
@@ -478,13 +484,13 @@ export function register(app) {
         case 'pass': if (scene) act({ kind: 'pass', scene }); redrawSoon(); return;
         case 'pin': pin(arg); return;
         case 'ab': pick(arg); return;
-        case 'dt': D().move('map', { kind: 'close' }, drawDetail); return;
+        case 'dt': D().move(dtList, { kind: 'close' }, drawDetail); return;
         default: return;
       }
     }
     /** An ability from the hotbar: its reach and targets show (a self ability is aimed at once); a second tap puts it down. */
     function pick(id) {
-      D().move('map', { kind: 'close' }, drawDetail);
+      D().move(dtList, { kind: 'close' }, drawDetail);
       const k = src.kit(), a = k && k.list.find(x => x.id === id);
       if (scene && a && act({ kind: 'pick', scene, ability: a })) draw();
     }
@@ -504,9 +510,9 @@ export function register(app) {
       const z = scene && scene.zones.find(x => x.id === id);
       return z ? { kind: 'zone', name: z.name, tone: z.tone, left: z.left, ops: z.ops ?? null, tier: z.tier ?? 0 } : null;
     }
-    /** The map's open detail (the list `map` of app.api.detail: `ab:<ability id>` or `zone:<zone id>`) under the map. */
+    /** The map's open detail (its list `dtList` of app.api.detail: `ab:<ability id>` or `zone:<zone id>`) under the map. */
     function drawDetail() {
-      const key = D().openIn('map'), box = $('[data-mapdt]'), html = key ? D().panel('map', key, () => thingOf(key), true) : '';
+      const key = D().openIn(dtList), box = $('[data-mapdt]'), html = key ? D().panel(dtList, key, () => thingOf(key), true) : '';
       if (box.dataset.sig !== html) { box.dataset.sig = html; box.innerHTML = html; }
     }
 
@@ -780,8 +786,8 @@ export function register(app) {
       if (world.dataset.tone !== tone) world.dataset.tone = tone;
       const gt = $('[data-grid]'); gt.setAttribute('aria-pressed', String(store.prefs().mapGrid));
       drawTerrain(); drawZones(); drawFog(); drawArea(f); drawLines(); drawTokens(f); drawOrder(); drawNow(); drawConfirm(f); drawHotbar(); drawPaint(); drawSending(waiting);
-      const dt = D().openIn('map');
-      if (dt && !thingOf(dt)) D().move('map', { kind: 'drop', key: dt }, drawDetail); else drawDetail();
+      const dt = D().openIn(dtList);
+      if (dt && !thingOf(dt)) D().move(dtList, { kind: 'drop', key: dt }, drawDetail); else drawDetail();
       // a turn that comes to a body out of sight frames the map again, so the one acting is on screen
       const lost = turned && !!scene.actor && seen.fw > 0 && !!scene.anchor && !inSight(scene.anchor);
       live({ kind: 'drawn', tokens: scene.tokens.length > 0, over: src.over ? src.over() : '', lost });

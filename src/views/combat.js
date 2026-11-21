@@ -17,6 +17,7 @@ import { attemptsLeft, UNTRIED } from '../core/combat/extraction.ts';
 import { castDice, needs } from '../core/combat/resolve.ts';
 import { WAIT_WORDS, aims, cardOf, channelView, order, readyIn, spotOf, statusGrant, stepAway, stepToward, timeOf, usesLeft, waitChoices } from '../core/combat/fight-view.ts';
 import { fightBodies, fightGround, pinKeyOf } from '../core/combat/map-view.ts';
+import { SCREEN, buildDrawer, mapSlot } from '../core/combat/map-mount.ts';
 import { hunterRow, monsterRows, remoteRow, shadowRow } from '../core/combat/rows.ts';
 import { TABLE_REFUSALS, fightDoc, fightWire } from '../core/combat/fight-doc.ts';
 import { REFUSAL_WORDS } from '../core/combat/refusal-words.ts';
@@ -720,15 +721,33 @@ export function register(app) {
   let root = null, sel = null, lastOrder = '', shownLog = null;
   /** Under 900 px the map hides the list and the card (the CSS's breakpoint for `.cmb-main.map`). */
   const NARROW = matchMedia('(max-width:899px)');
-  /** The map drawn in this screen's fight box, or null while the box shows no fight (it is destroyed with the box). */
+  /**
+   * The map mounted in this screen's fight box, or null while the box shows none: the screen's handle on it, and so the
+   * box's state (map-mount.ts `MapSlot`), written only by `slotTo`.
+   */
   let mapView = null;
+  /**
+   * Gives the box event `e` (map-mount.ts `mapSlot`: it `shows` the fight on the map in `box`, or `hides` it) and carries
+   * out what it answers: a hidden map is destroyed, not left listening (SMX-views-8.1).
+   */
+  const slotTo = (e, box = null) => {
+    for (const fx of mapSlot(mapView ? 'mounted' : 'empty', e).fx) {
+      if (fx === 'mount') mapView = A().map.mount(box, mapSource);
+      else if (fx === 'draw') mapView.draw();
+      else if (fx === 'destroy') { mapView.destroy(); mapView = null; }
+    }
+  };
   /**
    * What is open over the GM's map (audit row 44): nothing, the focused row's card (a phone's sheet), or the Fight tools
    * of fight `of` (Add to the fight, the log, End and Clear), which show while that fight runs in Map view. One writer,
-   * `overTo`. And who opens and closes the Build drawer: the screen (`buildWanted`) until the GM toggles it by hand.
+   * `overTo`. And who opens and closes the Build drawer (map-mount.ts `BuildDrawer`): the screen (`buildWanted`), or the
+   * GM's hand for the fight it was moved in. One writer, `drawerTo`.
    * @type {{ at: 'none' } | { at: 'card' } | { at: 'tools'; of: string }}
    */
-  let over = { at: 'none' }, build = /** @type {'screen' | 'hand'} */ ('screen');
+  let over = { at: 'none' }, build = /** @type {import('../core/combat/map-mount.ts').BuildDrawer} */ (SCREEN);
+  const drawerTo = e => { build = buildDrawer(build, e); };
+  /** The fight the Build drawer's hand is for: the one on screen, null when none or it has ended. */
+  const drawerFight = f => (f && f.phase !== 'ended' ? f.id : null);
   const overTo = next => { over = next; render(); };
   /** The Fight tools show over the fight they were opened on, while it runs in Map view. */
   const toolsShown = (f, mapMode) => mapMode && over.at === 'tools' && !!f && over.of === f.id;
@@ -1194,7 +1213,8 @@ export function register(app) {
     const gm = canRun(), wrap = $q('[data-buildwrap]');
     wrap.hidden = !gm; // P01: players never get the encounter builder
     const bld = $q('[data-build]'), act = running(f), wanted = buildWanted(f);
-    if (build === 'screen' && bld.open !== wanted) bld.open = wanted;
+    drawerTo({ kind: 'drawn', fight: drawerFight(f) });
+    if (build.at === 'screen' && bld.open !== wanted) bld.open = wanted;
     const n = f ? f.rows.length : 0, idle = !gm && !n; // a player with no local fight: the GM's HUD is the table, so no empty tracker body
     $q('[data-loglbl]').hidden = idle; $q('[data-log]').hidden = idle;
     const elsewhere = gm && !n && otherGMLive() ? '<p class="empty" data-elsewhere role="status">Another GM device is running a fight. Adding to a fight here replaces it.</p>' : '';
@@ -1222,7 +1242,7 @@ export function register(app) {
     const main = $q('[data-main]'), mode = idle ? 'idle' : f && n ? 'fight' : 'empty';
     if (main.dataset.mode !== mode) {
       main.dataset.mode = mode;
-      if (mapView) { mapView.destroy(); mapView = null; }
+      slotTo('hides');
       main.innerHTML = mode === 'fight' ? '<div class="cmb-main"><div data-mapbox></div><ul class="cmb-list" aria-label="Turn order"></ul><div data-cardbox><button type="button" class="quiet cmb-sheetx" data-sheetclose>Close</button></div></div>'
         : mode === 'empty' ? '<p class="empty">Add party hunters, monsters or shadows to begin.</p>' : '';
     }
@@ -1233,10 +1253,7 @@ export function register(app) {
       main.querySelector('.cmb-main').classList.toggle('map', onMap);
       cardBox.classList.toggle('sheet', onMap && over.at === 'card');
       box.hidden = !onMap;
-      if (onMap) {
-        if (!mapView) mapView = A().map.mount(box, mapSource);
-        mapView.draw();
-      }
+      slotTo(onMap ? 'shows' : 'hides', box);
       // on a phone the map hides the list, and the card until a token's is opened: what is hidden is not drawn
       const narrow = onMap && NARROW.matches, listShown = !narrow, cardShown = !narrow || over.at === 'card';
       const ordered = listShown ? listOrder(f) : [];
@@ -1271,11 +1288,12 @@ export function register(app) {
     mount,
     update() { render(); },
   });
-  // a toggle of the Build drawer to other than what the screen wants is the GM's hand (the parser's `open` and the
-  // screen's own changes land where it wants); from then on the drawer is the GM's
+  // a toggle of the Build drawer: one to other than what the screen wants is the GM's hand, for this fight (map-mount.ts
+  // `buildDrawer`)
   document.addEventListener('toggle', ev => {
     const t = ev.target; if (!(t && t.matches && t.matches('[data-build]'))) return;
-    if (t.open !== buildWanted(fight())) build = 'hand';
+    const f = fight();
+    drawerTo({ kind: 'toggled', open: t.open, wanted: buildWanted(f), fight: drawerFight(f) });
   }, true);
 
   // ── D02: combat keys (B5). Registry ignores keys while typing, with a modal open, on repeat, or with Ctrl/Alt/Meta ──

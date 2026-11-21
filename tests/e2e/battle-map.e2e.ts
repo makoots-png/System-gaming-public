@@ -429,7 +429,83 @@ test('a player who switches the fight between list and map three times leaves no
   expect(await resizers()).toBe(first);
 });
 
-type TraceEvent = { name: string; ph: string; ts: number; dur?: number; pid: number; tid: number; args?: { name?: string; data?: { type?: string }; beginData?: { stackTrace?: { functionName: string; url: string; lineNumber: number; columnNumber: number }[] } } };
+/** A GM alone with Brakk and one rat, the fight started on the map. */
+async function gmMapFight(gm: Page): Promise<void> {
+  await onboardGM(gm);
+  await go(gm, 'combat');
+  await combat(gm).locator('[data-hsel]').selectOption({ label: BRAKK });
+  await combat(gm).locator('[data-addh]').tap();
+  await combat(gm).locator('[data-qline]').fill(`${MONSTER} x1, E, brute`);
+  await combat(gm).locator('[data-qadd]').tap();
+  await combat(gm).locator('[data-start]').tap();
+  await expect(map(gm).locator('.mp-tok')).toHaveCount(2);
+}
+
+test('a GM who switches a running fight from map to list three times leaves no map behind in the hidden box or listening to the window', async ({ device }) => {
+  const gm = (await device('gm')).page;
+  await gmMapFight(gm);
+  const cdp = await gm.context().newCDPSession(gm);
+  const resizers = async () => {
+    const { result } = await cdp.send('Runtime.evaluate', { expression: 'window' });
+    const { listeners } = await cdp.send('DOMDebugger.getEventListeners', { objectId: result.objectId! });
+    return listeners.filter(l => l.type === 'resize').length;
+  };
+  const first = await resizers();
+  for (let i = 0; i < 3; i++) {
+    await combat(gm).locator('[data-fview="list"]').tap();
+    await expect(combat(gm).locator('.cmb-list .cmb-row')).toHaveCount(2);
+    await expect(map(gm).locator('.mp-tok')).toHaveCount(0);
+    expect(await resizers(), 'the hidden map no longer listens to the window').toBe(first - 1);
+    await combat(gm).locator('[data-fview="map"]').tap();
+    await expect(map(gm).locator('.mp-tok')).toHaveCount(2);
+  }
+  expect(await resizers()).toBe(first);
+});
+
+test('on a 390 px phone the GM\'s fight switched from map to list fits the screen\'s width, with the turn order and no map', async ({ device }) => {
+  const gm = (await device('gm')).page;
+  await gmMapFight(gm);
+  await combat(gm).locator('[data-fview="list"]').tap();
+  await expect(combat(gm).locator('.cmb-list .cmb-row')).toHaveCount(2);
+  await expect(map(gm)).toBeHidden();
+  await expect(combat(gm).locator('.cmb-row.cur')).toBeInViewport();
+  expect(await gm.evaluate(() => document.documentElement.scrollWidth), 'nothing reaches past the screen\'s width').toBeLessThanOrEqual(390);
+  await gm.screenshot({ path: '/tmp/pw-sm-u20-list-390.png' });
+});
+
+test('on a wide screen Add to the fight opened by hand in one fight folds away again when the next fight starts', async ({ device }) => {
+  const gm = (await device('gm', { viewport: { width: 1280, height: 800 } })).page;
+  await onboardGM(gm);
+  await chooseList(gm);
+  await go(gm, 'combat');
+  const build = combat(gm).locator('[data-build]');
+  const start = async () => {
+    await combat(gm).locator('[data-hsel]').selectOption({ label: BRAKK });
+    await combat(gm).locator('[data-addh]').tap();
+    await combat(gm).locator('[data-qline]').fill(`${MONSTER} x1, E, brute`);
+    await combat(gm).locator('[data-qadd]').tap();
+    await combat(gm).locator('[data-start]').tap();
+    await expect(combat(gm).locator('.cmb-row.cur')).toHaveCount(1);
+  };
+  await test.step('the first fight starts and the drawer folds away; the GM opens it by hand', async () => {
+    await start();
+    await expect(build).not.toHaveAttribute('open', '');
+    await build.locator('summary').tap();
+    await expect(build).toHaveAttribute('open', '');
+  });
+  await test.step('the GM clears the fight: with no fight the drawer is open to build the next', async () => {
+    await combat(gm).locator('[data-clear]').tap();
+    await answerWindow(gm, 'Clear the fight?', 'Clear');
+    await expect(combat(gm).locator('.cmb-row')).toHaveCount(0);
+    await expect(build).toHaveAttribute('open', '');
+  });
+  await test.step('the next fight starts and the drawer folds away as it did in the first', async () => {
+    await start();
+    await expect(build).not.toHaveAttribute('open', '');
+  });
+});
+
+type TraceEvent ={ name: string; ph: string; ts: number; dur?: number; pid: number; tid: number; args?: { name?: string; data?: { type?: string }; beginData?: { stackTrace?: { functionName: string; url: string; lineNumber: number; columnNumber: number }[] } } };
 test('the GM\'s tap on a hotbar slot of a settled, framed map draws its reach with no layout of the page inside the tap', async ({ device }) => {
   // A layout read inside the tap lays the page out there, and the frame lays it out again after the redraw's writes: the
   // lag test's stutter on a pick (tests/e2e/feel.e2e.ts, "an ability picked on the map"). Settled: a move still running

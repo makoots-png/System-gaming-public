@@ -33,6 +33,7 @@ function linkStep(m: Move, from: World, to: World): string | null {
     case 'create': case 'join': return 'you tap Create room or Join room';
     case 'leave': return 'you tap Leave room';
     case 'replaced': return null;
+    case 'readOnly': return 'this tab stops saving (another tab saved)';
     case 'upgrade': return from.link.at === 'live' ? 'the server runs a newer build' : null;
     case 'created': return 'the room opens or lets you in';
     case 'headed': return from.link.at === 'joining' && to.link.at === 'live' && to.link.code === from.link.code ? 'the room opens or lets you in' : BACK;

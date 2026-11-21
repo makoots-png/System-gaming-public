@@ -1280,7 +1280,7 @@ Where it lives:
 
 ## A quest
 
-Every quest reachable from an active side quest and an active daily (tests/models/quest-events.ts) under the 4 events of the walk in tests/quests.test.ts, breadth first. The walk found 8 states and 14 steps.
+Every quest reachable from an active side quest and an active daily (tests/models/quest-events.ts) under the 6 events of the walk in tests/quests.test.ts, breadth first. The walk found 10 states and 20 steps.
 
 ### A quest, from issued to its end
 
@@ -1292,33 +1292,81 @@ stateDiagram-v2
   state "Active" as s1
   state "Active (daily)" as s2
   state "Completed" as s3
-  state "Failed" as s4
-  state "Completed (daily)" as s5
-  state "Failed (daily)" as s6
+  state "Completed, its window waiting" as s4
+  state "Failed" as s5
+  state "Completed (daily)" as s6
+  state "Completed, its window waiting (daily)" as s7
+  state "Failed (daily)" as s8
   [*] --> s1
   [*] --> s2
-  s1 --> s3 : Complete (the objectives fill)
-  s1 --> s4 : Fail, or an urgent quest past its due time
-  s2 --> s5 : Complete (the objectives fill)
-  s2 --> s6 : Fail, or an urgent quest past its due time
-  s4 --> s1 : Reopen (not a Job Change step)
-  s5 --> s2 : the daily rollover (a daily only)
-  s6 --> s2 : Reopen (not a Job Change step)
+  s1 --> s3 : Complete tapped (the objectives fill)
+  s1 --> s4 : the System counts its last objective full
+  s1 --> s5 : Fail, or an urgent quest past its due time
+  s2 --> s6 : Complete tapped (the objectives fill)
+  s2 --> s7 : the System counts its last objective full
+  s2 --> s8 : Fail, or an urgent quest past its due time
+  s4 --> s3 : its QUEST COMPLETE window answered
+  s5 --> s1 : Reopen (not a Job Change step)
   s6 --> s2 : the daily rollover (a daily only)
+  s7 --> s6 : its QUEST COMPLETE window answered
+  s7 --> s2 : the daily rollover (a daily only)
+  s8 --> s2 : Reopen (not a Job Change step)
+  s8 --> s2 : the daily rollover (a daily only)
 ```
 
-Both the side quest and the daily are drawn; only a daily is reset by the rollover, from any status. A completed quest stays completed (a daily until its next reset). Deleting a quest takes it off the list from any status and is not drawn. Progress on an objective is not a status: it changes only while the quest is active.
+Both the side quest and the daily are drawn; only a daily is reset by the rollover, from any phase. A completed quest stays completed (a daily until its next reset). A quest the System completes waits for its window to be answered; a daily reset before that is not told (as when the window was kept in the phone's memory). Deleting a quest takes it off the list from any status and is not drawn. Progress on an objective is not a status: it changes only while the quest is active.
 
-6 chart states, 8 arrows. No step is hidden.
+8 chart states, 13 arrows. No step is hidden.
 
 Where it lives:
 
 | What | Where |
 |---|---|
-| The union | `QUEST_STATUSES` and `questState` in `src/core/save.ts`; `QuestEvent` in `src/core/hunter/quests.ts` |
-| What changes it | `questStep(quest, event, at)` and its `TABLE`; the steps `completeQuest`, `failQuest`, `reopenQuest`, `rollover` |
-| Who calls it | `src/views/quests.js` through `store.apply` |
+| The union | `QuestState` and `questState` in `src/core/hunter/hunter.ts` (a done quest's `told`); `QUEST_PHASES`, `questPhase` and `QuestEvent` in `src/core/hunter/quests.ts` |
+| What changes it | `questStep(quest, event, at)` and its `TABLE`; the steps `completeQuest` (by a tap or the System), `failQuest`, `reopenQuest`, `questTold`, `rollover` |
+| Who calls it | `src/views/quests.js` through `store.apply` (`tellDone` writes `questTold`); `countQuests` in `src/core/hunter/noticed.ts` (the System's completion) |
 | The test to copy | `tests/quests.test.ts`; the walk's events are in `tests/models/quest-events.ts` |
+| The recipe | docs/guide/hunters.md, "A state or event of the ... machine" |
+
+## The quest form
+
+Every state reachable from a closed form, under the 8 events of tests/models/quest-events.ts (FORM_WALK: two hunters, a player and the GM), breadth first. The walk found 3 states and 16 steps.
+
+### The Quests view's form, from the tap that opens it to Save or Cancel
+
+```mermaid
+---
+title: The Quests view's form, from the tap that opens it to Save or Cancel
+---
+stateDiagram-v2
+  state "Closed" as s1
+  state "New quest" as s2
+  state "Editing a quest" as s3
+  [*] --> s1
+  s1 --> s2 : + New quest
+  s1 --> s3 : Edit, or Reopen with its due time past
+  s2 --> s3 : Edit, or Reopen with its due time past
+  s2 --> s1 : Save quest, saved
+  s2 --> s1 : Cancel
+  s2 --> s1 : another hunter chosen, or the GM/Player switch
+  s3 --> s2 : + New quest
+  s3 --> s1 : Save quest, saved
+  s3 --> s1 : Cancel
+  s3 --> s1 : another hunter chosen, or the GM/Player switch
+```
+
+The form is opened as a player on hunter 1, so the screen seen on hunter 2 or as the GM closes it; seen as it was it is no move and is not drawn. The GM's form is the same machine with the role swapped. A Save the form refuses (a field missing, no hunter picked, a refused write) keeps it open and is not drawn. The GM view's Issue quest and the story maker draw the same fields in forms of their own.
+
+3 chart states, 10 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `QuestFormState`, `QuestFormEvent` and `QUEST_FORM_STATES` in `src/core/hunter/quest-form.ts` |
+| What changes it | `questFormStep(state, event)`, through `formMoved` in `src/views/quests.js`, which keeps the value (`form`) and shows the form while it is open |
+| Who calls it | `src/views/quests.js`: + New quest, Edit, Reopen, Save quest, Cancel, and every draw of the view (`seen`) |
+| The test to copy | `tests/quests.test.ts` ("the Quests view's quest form"); the walk's events are `FORM_WALK` in `tests/models/quest-events.ts`; on screen, `tests/e2e/gates-quests-dailies.e2e.ts` |
 | The recipe | docs/guide/hunters.md, "A state or event of the ... machine" |
 
 ## The room server's database
@@ -1543,7 +1591,7 @@ Where it lives:
 
 ## The store
 
-Every state reachable from the four lives a load opens in (no storage, a newer app's save, this app's, a text storage was too full to back up) under the 11 events of tests/models/store-events.ts, breadth first. The walk found 12 states and 132 steps.
+Every state reachable from the five lives a load opens in (no storage, a newer app's save, this app's, a text storage was too full to back up, a save whose fight storage was too full to back up) under the 11 events of tests/models/store-events.ts, breadth first. The walk found 13 states and 143 steps.
 
 ### The store, from the load to a save written
 
@@ -1556,41 +1604,44 @@ stateDiagram-v2
   state "Shows a newer app's save, refuses every change (Newer version)" as s2
   state "A change waits for its write, a frame later" as s3
   state "Will not write over a save it could not open nor back up (Storage too full)" as s4
-  state "Saved" as s5
-  state "A change is not saved (Saving failed)" as s6
-  state "Puts its own save in Backups before it shows another tab's" as s7
-  state "A newer change waits for its write (Saving failed)" as s8
-  state "Refuses every change, its own kept in Backups (Another tab saved)" as s9
-  state "Still shows its own save, refuses every change (Another tab saved; storage too full to keep yours: export it)" as s10
+  state "Shows the save without its unreadable fight, will not write over it (Storage too full)" as s5
+  state "Saved" as s6
+  state "A change is not saved (Saving failed)" as s7
+  state "Puts its own save in Backups before it shows another tab's" as s8
+  state "A newer change waits for its write (Saving failed)" as s9
+  state "Refuses every change, its own kept in Backups (Another tab saved)" as s10
+  state "Still shows its own save, refuses every change (Another tab saved; storage too full to keep yours: export it)" as s11
   [*] --> s1
   [*] --> s2
   [*] --> s3
   [*] --> s4
+  [*] --> s5
   s2 --> s3 : a backup is restored, a file imported or the campaign reset
-  s3 --> s5 : storage takes the write
-  s3 --> s6 : storage is full or blocked
-  s3 --> s7 : another tab saves, whatever it stores
+  s3 --> s6 : storage takes the write
+  s3 --> s7 : storage is full or blocked
+  s3 --> s8 : another tab saves, whatever it stores
   s4 --> s3 : a backup is restored, a file imported or the campaign reset
-  s5 --> s3 : the player changes something
-  s5 --> s2 : another tab of a newer app saves
-  s5 --> s7 : another tab stores what this app cannot read
   s5 --> s3 : a backup is restored, a file imported or the campaign reset
-  s6 --> s8 : the player changes something
-  s6 --> s5 : storage takes the write
-  s6 --> s7 : another tab saves, whatever it stores
-  s6 --> s8 : a backup is restored, a file imported or the campaign reset
-  s7 --> s9 : the backups take this tab's save
-  s7 --> s10 : storage is too full to back it up
-  s8 --> s5 : storage takes the write
-  s8 --> s6 : storage is full or blocked
-  s8 --> s7 : another tab saves, whatever it stores
-  s9 --> s3 : a backup is restored, a file imported or the campaign reset
+  s6 --> s3 : the player changes something
+  s6 --> s2 : another tab of a newer app saves
+  s6 --> s8 : another tab stores what this app cannot read
+  s6 --> s3 : a backup is restored, a file imported or the campaign reset
+  s7 --> s9 : the player changes something
+  s7 --> s6 : storage takes the write
+  s7 --> s8 : another tab saves, whatever it stores
+  s7 --> s9 : a backup is restored, a file imported or the campaign reset
+  s8 --> s10 : the backups take this tab's save
+  s8 --> s11 : storage is too full to back it up
+  s9 --> s6 : storage takes the write
+  s9 --> s7 : storage is full or blocked
+  s9 --> s8 : another tab saves, whatever it stores
   s10 --> s3 : a backup is restored, a file imported or the campaign reset
+  s11 --> s3 : a backup is restored, a file imported or the campaign reset
 ```
 
-The chart shows one tab. A write is an effect the store carries out at once; its answer is the arrow after it ("storage takes the write", "storage is full or blocked"). In "Refuses every change" a player's change is refused with the banner's words; the room link's own bookkeeping, and the GM's fight until combat.js `send` is one step, still change memory and are dropped at the reload. A reload opens the tab again from the load.
+The chart shows one tab. A write is an effect the store carries out at once; its answer is the arrow after it ("storage takes the write", "storage is full or blocked"). In "Refuses every change" a player's change is refused with the banner's words, and the tab takes no part in a room (its save keeps the room for a tab that may write); the GM's fight until combat.js `send` is one step still changes memory, dropped at the reload. A reload opens the tab again from the load.
 
-10 chart states, 20 arrows. No step is hidden.
+11 chart states, 21 arrows. No step is hidden.
 
 Where it lives:
 

@@ -317,8 +317,19 @@ describe('leaving', () => {
     expect(r.state).toMatchObject({ at: 'idle', server: 'ok', last: { code: ROOM_A, why: 'left' } });
     expect(r.fx).toContainEqual({ type: 'abort', gen: old });
     expect(news(r.fx)).toEqual(['linkLost']);
-    expect(saved(r.fx)).toEqual({ room: null, cursor: 0, last: { code: ROOM_A, why: 'left' } });
+    expect(saved(r.fx)).toEqual({ room: null, cursor: 0, last: { code: ROOM_A, why: 'left' }, gmKey: null });
     expect(timers(r.fx)).toEqual([5000]);
+  });
+
+  test('a GM who leaves keeps no GM key for the room it left: the key stays only in the ring (SMX-sync-12.1)', () => {
+    const r = gmInA().tap({ type: 'leave' });
+    expect(r.state).toMatchObject({ at: 'idle', last: { code: ROOM_A, why: 'left' } });
+    expect(saved(r.fx)).toEqual({ room: null, last: { code: ROOM_A, why: 'left' }, gmKey: null });
+  });
+
+  test('a GM sent out of a room (gone, its key lost) keeps no GM key either', () => {
+    expect(saved(gmInA().tap({ type: 'timerFired', name: 'poll' }).reply({ type: 'gone' }).fx)).toMatchObject({ room: null, gmKey: null });
+    expect(saved(gmInA().reply({ type: 'keyLost' }).fx)).toMatchObject({ room: null, gmKey: null });
   });
 
   test('Leave while reconnecting shows the server as unreachable and keeps the wait', () => {
@@ -332,6 +343,63 @@ describe('leaving', () => {
     const r = playerInA().tap({ type: 'leave' }).tap({ type: 'forget' });
     expect(r.state).toMatchObject({ at: 'idle', last: null });
     expect(saved(r.fx)).toEqual({ last: null });
+  });
+});
+
+describe('a tab that stops saving (SMX-sync-1)', () => {
+  test('a player whose tab stops saving is out of the room and told; the save keeps the room and where it stopped reading, and no poll moves past it', () => {
+    const r = playerInA().tap({ type: 'timerFired', name: 'poll' });
+    const old = r.state.gen;
+    r.tap({ type: 'readOnly' });
+    expect(r.state).toMatchObject({ at: 'idle', server: 'ok', last: null });
+    expect(notices(r.fx)).toEqual(['readOnly']);
+    expect(saved(r.fx), 'nothing is written: the save still says room A at cursor 40').toEqual({});
+    expect(r.fx).toContainEqual({ type: 'abort', gen: old });
+    expect(news(r.fx)).toEqual(['linkLost']);
+    expect(calls(r.fx)).toEqual([]);
+    const page = r.state;
+    r.late({ type: 'polled', cursor: 55, more: false, pace: 'table', fightAt: null }, old);
+    expect(r.state, 'the poll that was out lands nowhere').toBe(page);
+  });
+
+  test('a GM whose tab stops saving leaves the room too, so it never puts the room\'s docs back to its own frozen save', () => {
+    const r = gmInA().tap({ type: 'readOnly' });
+    expect(r.state).toMatchObject({ at: 'idle' });
+    expect(notices(r.fx)).toEqual(['readOnly']);
+    expect(saved(r.fx)).toEqual({});
+  });
+
+  test('a create or a join under way ends where the tab was not in a room, and the tap is told', () => {
+    const join = fresh().tap({ type: 'join', code: ROOM_B, key: null, from: null }).reply({ type: 'peeked', exists: true });
+    const old = join.state.gen;
+    join.tap({ type: 'readOnly' });
+    expect(join.state).toMatchObject({ at: 'idle' });
+    expect(notices(join.fx)).toEqual(['readOnly']);
+    expect(join.fx).toContainEqual({ type: 'abort', gen: old });
+    join.late({ type: 'headed', cursor: 9, gm: false, kicked: false }, old);
+    expect(join.state.at, 'the room\'s late answer does not put the tab in it').toBe('idle');
+
+    const create = gmInA().tap({ type: 'create' }).tap({ type: 'readOnly' });
+    expect(create.state, 'from a room, the create ends out of every room').toMatchObject({ at: 'idle' });
+    expect(notices(create.fx)).toEqual(['readOnly']);
+    expect(saved(create.fx)).toEqual({});
+  });
+
+  test('a tab out of a room, with no server, or updating, has nothing to leave', () => {
+    for (const r of [fresh(), run(boot({ server: false, room: null, last: null }))]) {
+      const before = r.state;
+      expect(r.tap({ type: 'readOnly' }).state).toBe(before);
+      expect(r.fx).toEqual([]);
+    }
+    const up = playerInA().tap({ type: 'upgrade', stuck: false });
+    const before = up.state;
+    expect(up.tap({ type: 'readOnly' }).state).toBe(before);
+  });
+
+  test('a restore, an import or a reset makes the tab save again, and the link enters the room the save holds', () => {
+    const r = playerInA().tap({ type: 'readOnly' }).tap({ type: 'replaced', room: { code: ROOM_A, key: null, cursor: 40 }, last: null });
+    expect(r.state).toMatchObject({ at: 'live', code: ROOM_A, cursor: 40 });
+    expect(calls(r.fx)).toEqual([{ req: 'poll', code: ROOM_A, cursor: 40, key: null }]);
   });
 });
 

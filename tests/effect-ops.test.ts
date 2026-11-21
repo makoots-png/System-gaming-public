@@ -8,7 +8,7 @@ import type { Formula } from '../src/core/formula.ts';
 import { place, tiles } from '../src/core/combat/space.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 import type { Tick } from '../src/core/combat/timeline.ts';
-import { combatantId } from '../src/core/combat/ability-types.ts';
+import { abilityId, combatantId } from '../src/core/combat/ability-types.ts';
 import {
   addSheetStatus, applyStatus, controlFactor, cureStatus, describeStatus, dueAmount, FULL_HEAL, isControl, lasting, modified, modsOf, onSheet, opLines, removeStatus, settle,
   sheetStatuses, shielded, statusKey, statusOn, withStatuses,
@@ -16,12 +16,17 @@ import {
 import { parseOp, parseStatusDef } from '../src/core/combat/fight-parse.ts';
 import type { Body, Op, Origin, StackDef, StackRule, Status, StatusDef, StatusFields } from '../src/core/combat/effect-ops.ts';
 import { stackStep } from '../src/core/combat/stacks.ts';
-import { harmful, withSheetOps } from '../src/core/combat/standing.ts';
+import { admitted, boostsOn, counts, damageShare, edgeOn, harmful, holds, sheetAdds, STATUS_LIVES, statusStep, wardedDamage, withSheetOps } from '../src/core/combat/standing.ts';
+import type { StatusLife } from '../src/core/combat/standing.ts';
 import { zoneTone } from '../src/core/combat/zones.ts';
 import { payDue } from '../src/core/combat/fight-turn.ts';
-import { landOps } from '../src/core/combat/land.ts';
+import { channelBreaks, held, landOps } from '../src/core/combat/land.ts';
 import type { Stack, StackCtx } from '../src/core/combat/stacks.ts';
-import { WALK_EVENTS as STACK_WALK } from './models/stack-events.ts';
+import { STATUS_WALK, WALK_EVENTS as STACK_WALK } from './models/stack-events.ts';
+import { fightId, reduce } from '../src/core/combat/fight.ts';
+import type { Command, Fight, NewRow } from '../src/core/combat/fight.ts';
+import { abilityOf } from '../src/core/registry/ability-kinds.ts';
+import type { Ability, CombatantId } from '../src/core/combat/ability-types.ts';
 import { rng } from './models/fight-play.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
 import { atHp, lifeAt } from './fixtures/life.ts';
@@ -508,5 +513,119 @@ describe('wave 2\'s sheet and share ops (kits design 8.1)', () => {
     const live = payDue(shielded, due, [], tick(40), RULES), past = payDue(shielded, due, [], tick(60), RULES);
     expect([rowHp(shielded) - rowHp(live), live.shield]).toEqual([6, null]);
     expect(rowHp(shielded) - rowHp(past)).toBe(10);
+  });
+});
+
+describe('a status\'s own life on its bearer (SMX-rules-2)', () => {
+  const owedOn = (key: string, d: StatusDef): Status => status(key, d, 0, { owed: true });
+  // Read in the order of tests/models/stack-events.ts STATUS_WALK: land (runs, past); time (ahead, ahead owing, past, past
+  // owing); settle (ahead, past); taken.
+  const EXPECTED: { readonly [S in StatusLife]: readonly StatusLife[] } = {
+    gone: ['active', 'owed', 'gone', 'gone', 'gone', 'gone', 'gone', 'gone', 'gone'],
+    active: ['active', 'active', 'active', 'active', 'gone', 'owed', 'active', 'gone', 'gone'],
+    owed: ['active', 'owed', 'gone', 'owed', 'gone', 'owed', 'gone', 'gone', 'gone'],
+  };
+
+  test('every life against every event: only a land brings it on; time past its end keeps it owed only while its settle owes; a settle past its end or a taking ends it', () => {
+    expect(STATUS_WALK.length).toBe(9);
+    for (const life of STATUS_LIVES) expect(STATUS_WALK.map(e => statusStep(life, e)), life).toEqual([...EXPECTED[life]]);
+  });
+
+  test('an active status counts; an owed one counts for nothing on any reader, as if it were gone', () => {
+    const ward = def({ op: 'invulnerable' }, { op: 'safeguard' }, { op: 'hidden' }, { op: 'hold' }, { op: 'channel', mode: 'protect' }, { op: 'stat', key: 'str', amount: 10 },
+      { op: 'share', on: 'taken', pct: -50 }, { op: 'sheet', key: 'armor', amount: 20 }, { op: 'edge', side: 'defend', keep: 'better', tag: null, spend: false },
+      { op: 'boost', side: 'defend', die: { kind: 'face', n: 3 } });
+    expect([counts(status('w', ward, 100)), counts(owedOn('w', ward))]).toEqual([true, false]);
+    const plain = body(), channel = { ability: abilityId('m'), aim: place(0, 0), charge: 2, spent: 0, state: 'holding' as const };
+    const live = withStatuses({ ...body(), channel }, [status('w', ward, 100)], tick(0), RULES), gone = withStatuses({ ...body(), channel }, [owedOn('w', ward)], tick(0), RULES);
+    const foe = body(hunterOf(), { id: combatantId('f'), side: 'foe' }), poison = def({ op: 'damage', type: 'magical', amount: f('2') });
+    const reads = (b: Body) => [holds(b, 'invulnerable'), holds(b, 'hidden'), wardedDamage(b, 999) < 999, held(b, tick(0)), channelBreaks(b, 0, true, tick(0)),
+      b.stats.str, b.sheet.armor, damageShare(foe, b, RULES), sheetAdds(b.statuses).armor, edgeOn({ tags: [] }, foe, b).cut, boostsOn(foe, b).length,
+      admitted(b, poison, 'foe', 1000, 0, RULES).ok];
+    expect(reads(live)).toEqual([true, true, true, true, false, plain.stats.str + 10, plain.sheet.armor + 20, 0.5, 20, 'kh', 1, false]);
+    expect(reads(gone)).toEqual(reads({ ...plain, channel }));
+  });
+
+  test('a status put on whose end is already behind it lands owed: it counts for nothing and waits for time or its settle to take it', () => {
+    const slow = def({ op: 'speed', pct: -50 });
+    const list = applyStatus([], status('s', slow, 500, { since: tick(500), settledAt: tick(500) }));
+    expect(list.map(s => s.owed)).toEqual([true]);
+    expect(applyStatus(list, status('s', slow, 900, { since: tick(500), settledAt: tick(500) })).map(s => s.owed)).toEqual([undefined]);
+  });
+
+  describe('in a fight (SMX-rules-2.1: a status whose time ran out on another body\'s turn)', () => {
+    const BIG: Ability = { ...abilityOf('strike', { id: abilityId('big'), name: 'big' }, RULES), range: tiles(20), shape: { kind: 'touch', reach: tiles(20) }, effect: { type: 'physical', by: 'hand', formula: f('999') } };
+    const row = (name: string, side: 'party' | 'foe', statuses: Status[] = []): NewRow => {
+      const kind = side === 'party' ? 'hunter' : 'monster', hp = modified(hunterOf(), [], RULES).sheet.hpMax;
+      return { id: combatantId(name), name, side, ...lifeAt(kind, hp), origin: hunterOf(), tier: 0, place: null, mana: 10, fatigue: 0, shield: null, stagger: null, channel: null,
+        threat: kind === 'monster' ? {} : null, statuses, readyAt: {}, abilities: [BIG], intent: null, holder: null, xp: 0 };
+    };
+    const play = (...cmds: Command[]): Fight => cmds.reduce<Fight | null>((fight, cmd) => {
+      const r = reduce(fight, cmd, { rules: RULES });
+      const no = r.effects.find(e => e.type === 'refused');
+      if (no) throw new Error(`${cmd.type} refused: ${JSON.stringify(no)}`);
+      return r.fight;
+    }, null)!;
+    const A = combatantId('A'), M = combatantId('M');
+    // A acts at 0 and next at 1000 (a standard action of a speed-100 body); M's opening d20 of 1 puts its first turn at 950.
+    const opening: Command[] = [{ type: 'add', fightId: fightId('f-1'), rows: [], openings: [] }];
+    const begin = (statuses: Status[]): Command[] => [
+      { ...opening[0]!, rows: [row('A', 'party', statuses), row('M', 'foe')] } as Command,
+      { type: 'start', openings: [{ id: A, d20: 20, tie: 0 }, { id: M, d20: 1, tie: 0 }] },
+      { type: 'endTurn', by: A },
+    ];
+    const rowIn = (fight: Fight, id: CombatantId): Body => fight.rows.find(r => r.id === id)!;
+    // ends at 500, and owes its heal of 1 a round to A's next settle (at 1000), so it stays on A's row past its end
+    const ward = (...ops: Op[]): Status => status('ward', def(...ops, { op: 'heal', amount: f('1') }), 500);
+
+    test('an invulnerable ward that ran out at 500 does not save its bearer from M\'s lethal hit at 950', () => {
+      const f0 = play(...begin([ward({ op: 'invulnerable' })]));
+      expect([f0.phase === 'running' && f0.currentId, f0.phase === 'running' && f0.now]).toEqual([M, 950]);
+      expect(rowIn(f0, A).statuses.map(s => [s.key, s.owed])).toEqual([['ward', true]]);
+      const hit = play(...begin([ward({ op: 'invulnerable' })]), { type: 'act', by: M, ability: BIG.id, aim: A, rolls: { dice: {}, react: { [A]: 10 } as Record<CombatantId, number> } });
+      expect([rowHp(rowIn(hit, A)), rowIn(hit, A).life.at]).toEqual([0, 'dying']);
+    });
+
+    test('a Strength buff that ran out at 500 is off its bearer\'s sheet when time reaches 950, though its heal is still owed', () => {
+      const f0 = play(...begin([ward({ op: 'stat', key: 'str', amount: 10 })]));
+      expect(rowIn(f0, A).stats.str).toBe(stats().str);
+    });
+  });
+});
+
+describe('a land op meets the rules a use meets (SMX-rules-2.3b)', () => {
+  const from = (o: RowPatch<Body> = {}): Body => body(hunterOf(), { id: combatantId('foe'), side: 'foe', ...o });
+  const landOn = (t: Body, ops: Op[], src: Body = from()) => {
+    const rows = new Map([[t.id, t], [src.id, src]]);
+    const r = landOps(rows, ops as never, src, [t.id], { id: src.id, tier: 0 }, tick(0), RULES);
+    return { landed: r.landed[0]!, after: rows.get(t.id)! };
+  };
+  const bomb = (cleanse: 'cancel' | 'land'): StatusDef => ({ label: 'Bomb', desc: '', ops: [], end: { ops: [{ op: 'damage', type: 'magical', amount: f('20') }], cleanse } });
+
+  test('a status a safeguard refuses is not reported gained, and is not on the bearer', () => {
+    const t = body(hunterOf(), { statuses: [status('guard', def({ op: 'safeguard' }), 1000)] });
+    const r = landOn(t, [{ op: 'applyStatus', key: statusKey('poison'), def: def({ op: 'damage', type: 'magical', amount: f('2') }), duration: tick(2000) }]);
+    expect([r.landed.gained, r.after.statuses.map(s => s.key)]).toEqual([[], ['guard']]);
+  });
+
+  test('a channel break does not break a channel a status protects, and breaks one it does not', () => {
+    const channel = { ability: abilityId('m'), aim: place(0, 0), charge: 2, spent: 0, state: 'holding' as const };
+    const guarded = body(hunterOf(), { channel, statuses: [status('focus', def({ op: 'channel', mode: 'protect' }), 1000)] });
+    expect(landOn(guarded, [{ op: 'channel', mode: 'break' }]).after.channel?.state).toBe('holding');
+    expect(landOn(body(hunterOf(), { channel }), [{ op: 'channel', mode: 'break' }]).after.channel?.state).toBe('broken');
+  });
+
+  test('a dispel of a bomb that a cure sets off lands its end, as a cure of it does; one a cure cancels lands nothing', () => {
+    const on = (d: StatusDef) => body(hunterOf(), { statuses: [status('bomb', { ...d, ops: [{ op: 'root' }] }, 3000)] });
+    const dispel = landOn(on(bomb('land')), [{ op: 'dispel', which: 'all' }]), cure = landOn(on(bomb('land')), [{ op: 'cureStatus', key: statusKey('bomb') }]);
+    expect(dispel.landed.dealt).toBeGreaterThan(0);
+    expect([dispel.landed.dealt, rowHp(dispel.after), dispel.after.statuses]).toEqual([cure.landed.dealt, rowHp(cure.after), []]);
+    expect(landOn(on(bomb('cancel')), [{ op: 'dispel', which: 'all' }]).landed.dealt).toBe(0);
+  });
+
+  test('a cure of a bomb the same ops put on a moment before sets it off: the cure reads the bearer as the ops left it', () => {
+    const put: Op = { op: 'applyStatus', key: statusKey('bomb'), def: bomb('land'), duration: tick(3000) };
+    const r = landOn(body(), [put, { op: 'cureStatus', key: statusKey('bomb') }], body(hunterOf(), { id: combatantId('ally'), side: 'party' }));
+    expect([r.landed.dealt > 0, r.landed.gained, r.landed.cured]).toEqual([true, ['bomb'], ['bomb']]);
   });
 });

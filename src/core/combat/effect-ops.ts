@@ -21,7 +21,7 @@ import type { Extraction } from './extraction.ts';
 import type { BearerEvent, Trigger, Trip } from './triggers.ts';
 import { stackStep } from './stacks.ts';
 import { SHEET_OP_KEYS, atTier, countOn, isStacking, isTiers, stacked } from './op-amount.ts';
-import { harmful, withSheetOps } from './standing.ts';
+import { counting, harmful, statusLife, statusStep, withSheetOps } from './standing.ts';
 import { rowLifeAfter } from './row-life.ts';
 import type { FoeLife } from './row-life.ts';
 import type { Life } from '../hunter/vitals.ts';
@@ -111,7 +111,7 @@ export const LAND_USE_OPS = ['applyStatus', 'cureStatus', 'delay', 'threat', 'sh
 export const landsAlone = (o: UseOp): o is Extract<UseOp, LandOp> => (LAND_USE_OPS as readonly string[]).includes(o.op);
 /**
  * Whether a reaction's ability may hold use op `o`: a reaction lands its ops as a trigger does (`landsAlone`, fight-react.ts
- * `fireReaction`), and a guard or a negate answers the use it fires on. A push or pull and an extra action are a use's own
+ * `react`), and a guard or a negate answers the use it fires on. A push or pull and an extra action are a use's own
  * (they need its outcomes and its user's turn), so a reaction holding one is refused by the parser and the skill maker.
  */
 export const reactionMayHold = (o: UseOp): boolean => landsAlone(o) || o.op === 'guard' || o.op === 'negate';
@@ -250,13 +250,19 @@ export const isUseOp = (o: Op): o is UseOp => Object.hasOwn(USE_OP_SET, o.op);
 export type Source = { readonly id: CombatantId | null; readonly tier: number };
 
 /**
- * What every status on a body has: one instance per key. `until` null lasts until removed. Its per-round ops have been
+ * A status's end and its life (standing.ts `statusLife`, SMX-rules-2): `until` null lasts until removed; `owed`, set
+ * once its time ran out while its bearer's settle still owes a per-round span or its end, absent while it runs. Written
+ * only by `applyStatus` (a land) and fight-turn.ts `advance` (time), each through `statusStep` and on a status with an
+ * end (`owedOf`). Not a union of the two: fight.ts `joined` moves a status's times by a spread, which a union refuses.
+ */
+type StatusTime = { readonly until: Tick | null; readonly owed?: true };
+/**
+ * What every status on a body has: one instance per key, its end and life (`StatusTime`). Its per-round ops have been
  * paid from `since` to `settledAt`, so what it has dealt so far is known and each settle pays only the difference.
  */
-type StatusCommon = {
+type StatusCommon = StatusTime & {
   readonly key: StatusKey;
   readonly source: Source;
-  readonly until: Tick | null;
   readonly since: Tick;
   readonly settledAt: Tick;
   /** The zone this status is the hold of (zones.ts): the body stands in it while `until` is null. Absent on any other status. */
@@ -280,8 +286,9 @@ export type StatusFields = StatusCommon;
  * way core builds a status from a def it did not write itself.
  */
 export function statusOn(def: StatusDef, fields: StatusFields, stacks = 1): Status {
-  const { key, source, until, since, settledAt, zone, worn } = fields;
-  const base: StatusCommon = { key, source, until, since, settledAt, ...(zone === undefined ? {} : { zone }), ...(worn ? { worn } : {}) };
+  const { key, source, since, settledAt, zone, worn } = fields;
+  const time: StatusTime = fields.owed && fields.until !== null ? { until: fields.until, owed: true } : { until: fields.until };
+  const base: StatusCommon = { ...time, key, source, since, settledAt, ...(zone === undefined ? {} : { zone }), ...(worn ? { worn } : {}) };
   if (!isStacking(def)) return { ...base, def };
   return { ...base, def, stacks: Math.max(1, Math.min(def.stack.cap, Math.trunc(stacks))) };
 }
@@ -431,18 +438,28 @@ const later = <T extends number>(a: T | null, b: T | null): T | null => (a === n
 export const stackOf = (s: Status | undefined): Stack => (s !== undefined && stacked(s) ? { at: 'held', n: s.stacks } : { at: 'absent' });
 
 /**
- * A status put on a list: a key the list lacks is added at the end. A key it holds stays one instance in its place: the
- * source with the higher tier wins (a tie goes to the new one, with its def), it lasts the later of the two ends, and it
- * keeps the time its per-round ops are paid to, so no span is paid twice. A stacking status adds the incoming stacks to
- * the ones it holds, to its cap (stacks.ts `apply`); a threshold is not read here (resolve.ts reads it for a use).
+ * A status put on a list at its `since` (every land puts one on from the fight's now): a key the list lacks is added at
+ * the end. A key it holds stays one instance in its place: the source with the higher tier wins (a tie goes to the new
+ * one, with its def), it lasts the later of the two ends, and it keeps the time its per-round ops are paid to, so no
+ * span is paid twice. A stacking status adds the incoming stacks to the ones it holds, to its cap (stacks.ts `apply`); a
+ * threshold is not read here (resolve.ts reads it for a use). Its life is the land's (standing.ts `statusStep`): active
+ * while its end is ahead, owed when even the later end is behind it.
  */
 export function applyStatus(list: readonly Status[], incoming: Status): Status[] {
-  const at = list.findIndex(s => s.key === incoming.key);
-  if (at < 0) return [...list, incoming];
-  const old = list[at]!, kept = oneInstance(old, stackOf(old), incoming, countOn(incoming));
-  const fields = { key: incoming.key, source: kept.source, until: later(old.until, incoming.until), since: old.since, settledAt: old.settledAt, ...(old.worn ? { worn: old.worn } : {}) };
+  const at = list.findIndex(s => s.key === incoming.key), old = at < 0 ? undefined : list[at]!;
+  const until = old ? later(old.until, incoming.until) : incoming.until, now = incoming.since;
+  const life = statusStep(old ? statusLife(old) : 'gone', { type: 'land', runs: until === null || until > now });
+  const time: StatusTime = life === 'owed' && until !== null ? { until, owed: true } : { until };
+  if (!old) return [...list, incoming.owed === time.owed ? incoming : statusOn(incoming.def, fieldsOf(incoming, time), countOn(incoming))];
+  const kept = oneInstance(old, stackOf(old), incoming, countOn(incoming));
+  const fields: StatusFields = { ...time, key: incoming.key, source: kept.source, since: old.since, settledAt: old.settledAt, ...(old.worn ? { worn: old.worn } : {}) };
   return list.map((s, i) => i === at ? statusOn(kept.def, fields, kept.stacks) : s);
 }
+/** A status's fields with its end and life `time`. */
+const fieldsOf = (s: Omit<StatusCommon, keyof StatusTime>, time: StatusTime): StatusFields =>
+  ({ ...time, key: s.key, source: s.source, since: s.since, settledAt: s.settledAt, ...(s.zone === undefined ? {} : { zone: s.zone }), ...(s.worn ? { worn: s.worn } : {}) });
+/** Status `s` marked owed (standing.ts `statusLife`): its time ran out at `until` while its settle still owes its bearer. */
+export const owedOf = (s: Status & { readonly until: Tick }): Status => statusOn(s.def, fieldsOf(s, { until: s.until, owed: true }), countOn(s));
 /**
  * The one instance a key keeps when a second is put on, on a body (`applyStatus`) or a sheet (`addSheetStatus`): the
  * source with the higher tier wins (a tie goes to the new one, with its def); a stacking one adds `k` to the count it
@@ -532,12 +549,12 @@ export const perRound = (o: Op): o is Due['op'] =>
 /**
  * What the bearer's turn start at `now` does to its statuses. Each per-round op is due for the time from its status's
  * `settledAt` to `now`, or to its end if that came first, at the count the status holds as it settles (kits design 1.1
- * rule 7); `settledAt` moves there. Then one of two things happens to it, its time first. A status whose end is at or
- * before `now` is `expired`: it ends at the count it settled at, and its end lands (the owner, Nov 20: when its time and
- * the round that takes its last stack fall on one turn, it goes off rather than fading). Any other stacking status whose
- * stacks leave a round loses one for each whole round held since `since` that this span completed (as a spread counts
- * its rounds); one that loses its last is `spent`, gone but not ended. Both are the stack machine's steps (stacks.ts:
- * `timeEnds` goes `ended`, a `round` that takes the last goes `spent`).
+ * rule 7); `settledAt` moves there. Then, in this order: its life's `settle` (standing.ts `statusStep`) ends a status
+ * whose end is at or before `now`, owed or not: it is `expired`, at the count it settled at, and its end lands (the owner,
+ * Nov 20: when its time and the round that takes its last stack fall on one turn, it goes off rather than fading). Only
+ * a status that stays then decays: a stacking one whose stacks leave a round loses one for each whole round held since
+ * `since` that this span completed (as a spread counts its rounds), and one that loses its last is `spent`, gone but not
+ * ended (the stack machine's `round` step, stacks.ts).
  */
 export function settle(statuses: readonly Status[], now: Tick, R: OpRules): { statuses: Status[]; due: Due[]; expired: Status[]; spent: Status[] } {
   const kept: Status[] = [], expired: Status[] = [], spent: Status[] = [], due: Due[] = [];
@@ -548,12 +565,11 @@ export function settle(statuses: readonly Status[], now: Tick, R: OpRules): { st
     const count = stacked(s) ? s.stacks : 1;
     if (span > 0) for (const op of s.def.ops) if (perRound(op)) due.push({ key: s.key, op, tier: s.source.tier, before, share: span / R.fight.round, stacks: count });
     const settledAt = tick(Math.max(s.settledAt, end)), next: Status = { ...s, settledAt };
-    const timeEnds = s.until !== null && now >= s.until;
-    if (!stacked(s)) { (timeEnds ? expired : kept).push(next); continue; }
+    if (statusStep(statusLife(s), { type: 'settle', past: s.until !== null && now >= s.until }) === 'gone') { expired.push(next); continue; }
+    if (!stacked(s)) { kept.push(next); continue; }
     const rounds = Math.floor((settledAt - s.since) / R.fight.round) - Math.floor((s.settledAt - s.since) / R.fight.round);
-    const step = stackStep(stackOf(s), timeEnds ? { type: 'timeEnds' } : { type: 'round', rounds }, { rule: s.def.stack, at: null });
-    if (step.gone === 'ended') expired.push(next);
-    else if (step.stack.at === 'held') kept.push({ ...s, settledAt, stacks: step.stack.n });
+    const step = stackStep(stackOf(s), { type: 'round', rounds }, { rule: s.def.stack, at: null });
+    if (step.stack.at === 'held') kept.push({ ...s, settledAt, stacks: step.stack.n });
     else spent.push(next);
   }
   return { statuses: kept, due, expired, spent };
@@ -573,14 +589,15 @@ export function dueAmount(d: Due, scope: Scope, dice: readonly number[]): number
 // ── what statuses do to a sheet ──
 
 /**
- * The sheet changes a body's statuses make: `stat` changes, one speed change, and whether it is rooted. Of the speed
- * changes only the strongest slow and the strongest haste apply, and they multiply (proposals.md, point 2). A stacking
- * status's numbers are per stack (kits design 1.1 rule 4); a root acts from one stack; `derive` keeps speed in its clamp.
+ * The sheet changes a body's statuses that count (standing.ts `counts`) make: `stat` changes, one speed change, and
+ * whether it is rooted. Of the speed changes only the strongest slow and the strongest haste apply, and they multiply
+ * (proposals.md, point 2). A stacking status's numbers are per stack (kits design 1.1 rule 4); a root acts from one
+ * stack; `derive` keeps speed in its clamp.
  */
 export function modsOf(statuses: readonly Status[]): { mods: StatusMod[]; rooted: boolean } {
   const mods: StatusMod[] = [];
   let slow = 0, haste = 0, rooted = false;
-  for (const s of statuses) for (const o of s.def.ops) {
+  for (const s of counting(statuses)) for (const o of s.def.ops) {
     const tier = s.source.tier, n = countOn(s);
     switch (o.op) {
       case 'stat': mods.push({ op: 'stat', key: o.key, amount: atTier(o.amount, tier) * n }); break;

@@ -13,7 +13,7 @@ import { acted, next, paceCost, roundOf, roundsOf, tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import { rowLifeAfter, sameLife } from './row-life.ts';
-import { applyStatus, dueAmount, onSheet, perRound, settle, sheetStatuses, statusOn, withStatuses } from './effect-ops.ts';
+import { applyStatus, dueAmount, onSheet, owedOf, perRound, settle, sheetStatuses, statusOn, withStatuses } from './effect-ops.ts';
 import { atTier } from './op-amount.ts';
 import type { Body, Due, HunterRow, SheetStatus, Status, StatusKey } from './effect-ops.ts';
 import type { SheetKey } from '../ids.ts';
@@ -26,7 +26,7 @@ import { fire, raised } from './triggers.ts';
 import { alive, held, landEnd, landOps, throughShield } from './land.ts';
 export { held };
 import { dismissed, isSummon, timeUp } from './summons.ts';
-import { damageShare, healShare, holds, stealthStep, wardedDamage } from './standing.ts';
+import { damageShare, healShare, holds, statusLife, statusStep, stealthStep, wardedDamage } from './standing.ts';
 import { reactState, reactStep, restored, turnReaction, withReact } from './fight-react.ts';
 import { restUsed } from './uses.ts';
 import { ARMED, endStep } from './delayed.ts';
@@ -75,15 +75,16 @@ export function payDue(b: Body, due: Due, dice: readonly number[], now: Tick, R:
 
 /**
  * A status its bearer's turn must still settle: per-round ops not paid to its end yet, or an end (a delayed effect,
- * kits table 2.2) that lands at that settle. It stays until then.
+ * kits table 2.2) that lands at that settle. It stays until then, owed (standing.ts `statusStep`).
  */
-const owes = (s: Body['statuses'][number]): boolean => s.until !== null && ((s.settledAt < s.until && s.def.ops.some(perRound)) || s.def.end !== undefined);
+const owes = (s: Status): boolean => s.until !== null && ((s.settledAt < s.until && s.def.ops.some(perRound)) || s.def.end !== undefined);
 
 /**
  * Time moves from `f.now` to `now` for everyone: every threat table falls by the decay for the time that passed (so a
  * monster reads it decayed by elapsed time at its turn start), except the entry of a body holding a channel, which is not
- * idle (design 4.1); and shields and statuses that ended are dropped, except a status that still owes its bearer a
- * per-round op.
+ * idle (design 4.1); shields that ended are dropped; and each status takes its life's `time` step (standing.ts
+ * `statusStep`): one whose end is now behind it is owed while its bearer's settle still owes it (`owes`), and counts no
+ * more, else it is gone. A body whose statuses changed has its sheet worked out again.
  */
 function advance(f: Running, now: Tick, R: Rules): { fight: Running; ended: Raised[] } {
   if (now === f.now) return { fight: f, ended: [] };
@@ -94,11 +95,13 @@ function advance(f: Running, now: Tick, R: Rules): { fight: Running; ended: Rais
     let x = r;
     if (x.threat) x = { ...x, threat: Object.fromEntries(Object.entries(x.threat).map(([id, t]) => [id, holding.has(id) ? t : t * k])) };
     if (x.shield && x.shield.until <= now) x = { ...x, shield: null };
-    const kept = x.statuses.filter(s => s.until === null || s.until > now || owes(s));
-    if (kept.length !== x.statuses.length) {
-      for (const s of x.statuses) if (!kept.includes(s) && s.zone === undefined) ended.push(raised(x.id, 'statusEnded', null, [], s.key));
-      x = withStatuses(x, kept, now, R);
+    const kept: Status[] = [];
+    for (const s of x.statuses) {
+      const life = statusStep(statusLife(s), { type: 'time', past: s.until !== null && s.until <= now, owes: owes(s) });
+      if (life === 'gone') { if (s.zone === undefined) ended.push(raised(x.id, 'statusEnded', null, [], s.key)); }
+      else kept.push(life === 'owed' && !s.owed && s.until !== null ? owedOf({ ...s, until: s.until }) : s);
     }
+    if (kept.some((s, i) => s !== x.statuses[i]) || kept.length !== x.statuses.length) x = withStatuses(x, kept, now, R);
     return x;
   });
   return { fight: { ...f, now, rows }, ended };

@@ -18,6 +18,7 @@ import type { Aim, Resolved, Rolls } from '../src/core/combat/resolve.ts';
 import { rng } from './models/fight-play.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
 import { heldDieId } from '../src/core/combat/standing.ts';
+import { landOps } from '../src/core/combat/land.ts';
 import { atHp, lifeAt } from './fixtures/life.ts';
 import type { RowPatch } from './fixtures/life.ts';
 
@@ -497,6 +498,26 @@ describe('wave 2\'s sheet and share ops in a use (kits design 8.1, rule 11c)', (
     const cleanse = (which: 'first' | 'all') => find(run(ability('support', { effect: null, ops: [{ op: 'dispel', which }] }), u, [u, t], t.id, rolls({ t: [] })).bodies, 't').statuses.map(s => s.key);
     expect(cleanse('first')).toEqual(['haste', 'weak']);
     expect(cleanse('all')).toEqual(['haste']);
+  });
+
+  test('a use\'s dispel of a bomb a cure sets off lands its end as a land op\'s dispel does: the same hit on the same body (SMX-rules-2.3b)', () => {
+    const u = body('u', hunterOrigin('support'), place(5, 5), 'party');
+    const def: StatusDef = { label: 'Bomb', desc: '', ops: [{ op: 'root' }], end: { ops: [{ op: 'damage', type: 'magical', amount: formula('20') }], cleanse: 'land' } };
+    const t = withOps(body('t', hunterOrigin('tank'), place(6, 5), 'party'), statusOn(def, { key: statusKey('bomb'), source: { id: null, tier: 0 }, until: tick(NOW + 3000), since: NOW, settledAt: NOW }));
+    const used = run(ability('support', { effect: null, ops: [{ op: 'dispel', which: 'all' }] }), u, [u, t], t.id, rolls({ t: [] }));
+    const rows = new Map([[t.id, t]]), land = landOps(rows, [{ op: 'dispel', which: 'all' }], null, [t.id], { id: null, tier: 0 }, NOW, RULES);
+    expect(used.bursts.map(b => b.landed[0]!.dealt)).toEqual([land.landed[0]!.dealt]);
+    expect(land.landed[0]!.dealt).toBeGreaterThan(0);
+    expect(rowHp(find(used.bodies, 't'))).toBe(rowHp(rows.get(t.id)!));
+  });
+
+  test('a use reads a ward whose time ran out as gone: an owed invulnerable status does not hold its bearer at 1 HP (SMX-rules-2.1)', () => {
+    const u = body('u', hunterOrigin('bruiser'), place(5, 5), 'party'), big = ability('strike', {}, '999');
+    const ward: StatusDef = { label: 'Ward', desc: '', ops: [{ op: 'invulnerable' }], end: { ops: [], cleanse: 'cancel' } };
+    const on = (owed: boolean) => withOps(body('t', monsterOrigin('skirmisher'), place(6, 5), 'foe'),
+      statusOn(ward, { key: statusKey('ward'), source: { id: null, tier: 0 }, until: owed ? tick(NOW - 500) : tick(NOW + 500), since: tick(0), settledAt: tick(0), ...(owed ? { owed: true as const } : {}) }));
+    const hp = (t: Body) => rowHp(find(run(big, u, [u, t], t.id, rolls({ t: [] }, { t: 10 })).bodies, 't'));
+    expect([hp(on(false)), hp(on(true))]).toEqual([1, 0]);
   });
 });
 

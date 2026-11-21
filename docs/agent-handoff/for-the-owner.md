@@ -14,7 +14,7 @@ Each machine is being built to behave as the app does today, with the row below 
 
 1. Does a dead hunter get nothing from a rest or a level-up (no mana, no Exhausted cleared, no uses back)?
 2. Does taking off a status clamp HP, mana and fatigue to the new maxima at once, and is max HP at least 1?
-3. Does a status stop counting the moment its time runs out, even when its last tick is still owed?
+3. Does a status stop counting the moment its time runs out, even when its last tick is still owed? (Built as yes, Nov 21: before, a hold, a taunt and the fight card stopped at once while wards and buffs lasted until the bearer's turn, so one answer had to be picked to make them agree. No is one word in `STATUS_COUNTS`, `src/core/combat/standing.ts`.)
 4. Does a broken channel released on its user's own turn cost the user that turn?
 5. Must the owed dice be rolled before a turn can end?
 6. May a hunter who is down arm a reaction, and do a reaction's kills count?

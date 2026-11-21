@@ -24,11 +24,21 @@ describe('the store\'s life', () => {
   });
 
   test('a stored text the app cannot open, which storage was too full to back up, is never written over: the tab opens read-only and says so', () => {
-    const r = opened({ storage: 'ok', newer: false, backup: 'failed' });
-    expect(r).toEqual({ life: { at: 'readOnly', why: 'loadUnkept' }, effects: [] });
+    for (const lost of ['unreadable', 'old'] as const) {
+      const r = opened({ storage: 'ok', newer: false, backup: { unkept: lost } });
+      expect(r).toEqual({ life: { at: 'readOnly', why: 'loadUnkept' }, effects: [] });
+      expect(mayChange(r.life)).toBe(false);
+      expect(noticesOf(r.life, 'kept')).toEqual(['loadUnkept']);
+      expect(at(r.life, changed, due, leaving).effects).toEqual([]);
+      expect(at(r.life, { type: 'replaced' })).toEqual({ life: { at: 'ready', write: 'dirty' }, effects: ['write'] });
+    }
+  });
+
+  test('a save that opened whole but for its running fight, which storage was too full to back up, says that, not that the save could not be opened (SMX-sync-9.2)', () => {
+    const r = opened({ storage: 'ok', newer: false, backup: { unkept: 'fight' } });
+    expect(r).toEqual({ life: { at: 'readOnly', why: 'fightUnkept' }, effects: [] });
     expect(mayChange(r.life)).toBe(false);
-    expect(noticesOf(r.life, 'kept')).toEqual(['loadUnkept']);
-    expect(at(r.life, changed, due, leaving).effects).toEqual([]);
+    expect(noticesOf(r.life, 'kept')).toEqual(['fightUnkept']);
     expect(at(r.life, { type: 'replaced' })).toEqual({ life: { at: 'ready', write: 'dirty' }, effects: ['write'] });
   });
 
@@ -99,7 +109,7 @@ describe('the store\'s life', () => {
   });
 
   test('a read-only tab refuses every change, never writes, and says why', () => {
-    for (const why of ['newer', 'otherTab', 'mineUnkept', 'loadUnkept'] as const) {
+    for (const why of ['newer', 'otherTab', 'mineUnkept', 'loadUnkept', 'fightUnkept'] as const) {
       const l: StoreLife = { at: 'readOnly', why };
       expect(mayChange(l)).toBe(false);
       expect(at(l, changed, due, leaving, wrote, failed, other('save'), other('newer'), other('unreadable'), { type: 'kept' }, { type: 'keepFailed' })).toEqual({ life: l, effects: [] });
@@ -197,5 +207,79 @@ describe('the day\'s backup', () => {
     expect(dailyBackupDue('2026-11-14T05:00:00Z', now)).toBe(false); // 00:00 on the 14th there
     expect(dailyBackupDue('2026-11-14T04:59:00Z', now)).toBe(true); // 23:59 on the 13th there
     expect(dailyBackupDue('not a time', now)).toBe(true);
+  });
+});
+
+describe('the save\'s write after a change, on the page (src/edge/store.ts)', () => {
+  /** A page with a clock of its own: its timers and frames run only when the test moves the clock or draws a frame. */
+  type Due = { id: number; at: number; fn: () => void };
+  const page = { now: 0, ids: 0, timers: [] as Due[], frames: [] as { id: number; fn: () => void }[], writes: [] as string[] };
+  const disk = new Map<string, string>();
+  const storage = {
+    getItem: (k: string): string | null => disk.get(k) ?? null,
+    setItem: (k: string, v: string): void => { disk.set(k, v); if (k === 'hunter-system-v4') page.writes.push(v); },
+    removeItem: (k: string): void => { disk.delete(k); },
+    key: (i: number): string | null => [...disk.keys()][i] ?? null,
+    get length(): number { return disk.size; },
+  };
+  const g = globalThis as unknown as Record<string, unknown>;
+  const real = { setTimeout: g.setTimeout, clearTimeout: g.clearTimeout };
+  /** Moves the clock to `t`, running each timer that falls due on the way, in order. */
+  const advance = (t: number): void => {
+    for (;;) {
+      const next = page.timers.filter(d => d.at <= t).sort((a, b) => a.at - b.at || a.id - b.id)[0];
+      if (!next) break;
+      page.timers = page.timers.filter(d => d !== next);
+      page.now = next.at; next.fn();
+    }
+    page.now = t;
+  };
+  /** The browser draws a frame: each frame callback asked for runs, then the tasks it set for now. */
+  const drawFrame = (): void => { const fs = page.frames; page.frames = []; fs.forEach(f => f.fn()); advance(page.now); };
+
+  test('a change is written once, after the frame that shows it; a wait left from an earlier change never writes a later one before its frame (SMX-sync-9.1)', async () => {
+    Object.assign(g, {
+      localStorage: storage, sessionStorage: storage,
+      document: { visibilityState: 'visible', addEventListener: () => {} },
+      addEventListener: () => {},
+      requestAnimationFrame: (fn: () => void): number => { const id = ++page.ids; page.frames.push({ id, fn }); return id; },
+      cancelAnimationFrame: (id: number): void => { page.frames = page.frames.filter(f => f.id !== id); },
+      setTimeout: (fn: () => void, ms = 0): number => { const id = ++page.ids; page.timers.push({ id, at: page.now + ms, fn }); return id; },
+      clearTimeout: (id: number): void => { page.timers = page.timers.filter(d => d.id !== id); },
+    });
+    try {
+      const { store } = await import('../src/edge/store.ts');
+      expect(page.writes.length, 'a ready tab writes its save as it opens').toBe(1);
+      const edit = (name: string): void => store.update(s => { s.hunters[0]!.name = name; });
+      const written = (): string | undefined => page.writes.length ? JSON.parse(page.writes[page.writes.length - 1]!).hunters[0].name : undefined;
+
+      edit('First');
+      expect(page.writes.length, 'nothing is written in the tap\'s own task').toBe(1);
+      drawFrame();
+      expect(page.writes.length).toBe(2);
+      expect(written()).toBe('First');
+
+      advance(995);
+      edit('Second');
+      advance(1000);
+      expect(page.writes.length, 'the first change\'s second-long fallback is gone with its write: the second change waits for its frame').toBe(2);
+      drawFrame();
+      expect(page.writes.length).toBe(3);
+      expect(written()).toBe('Second');
+
+      advance(5000);
+      expect(page.writes.length, 'nothing is left to write once the change is written').toBe(3);
+      expect(page.timers).toEqual([]);
+
+      edit('Hidden');
+      advance(6000);
+      expect(page.writes.length, 'a page that draws no frame writes a second after the change').toBe(4);
+      expect(written()).toBe('Hidden');
+      drawFrame();
+      expect(page.writes.length, 'and the frame that comes later writes nothing more').toBe(4);
+      expect(store.life()).toEqual({ at: 'ready', write: 'clean' });
+    } finally {
+      Object.assign(g, real);
+    }
   });
 });

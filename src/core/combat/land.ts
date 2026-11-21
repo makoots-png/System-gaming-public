@@ -17,7 +17,7 @@ import { isUp, rowHp } from './row-hp.ts';
 import { rowLifeAfter } from './row-life.ts';
 import { applyStatus, controlFactor, cureStatus, dispelled, lasting, removeStatus, shielded, stackOf, statusOn, statusShield, withStatuses } from './effect-ops.ts';
 import { atTier, countOn, stacked } from './op-amount.ts';
-import { admitted, damageShare, harmful, healShare, markWards, wardedDamage } from './standing.ts';
+import { admitted, counting, damageShare, harmful, healShare, markWards, wardedDamage } from './standing.ts';
 import type { Body, LandOp, Op, OpRules, Reach, Source, Status, StatusKey, Threshold, Tiered } from './effect-ops.ts';
 import type { Side } from './space.ts';
 import { ARMED, endStep } from './delayed.ts';
@@ -63,8 +63,11 @@ export function threatened(target: Body, from: CombatantId, amount: number): Bod
 export const broken = (target: Body, R: Pick<OpRules, 'fight'>): Body =>
   target.channel ? { ...target, channel: channelStep(target.channel, { type: 'interrupt', share: R.fight.breakShare }) } : target;
 
-/** A body's statuses still running at `now`. */
-export const live = (b: Body, now: Tick): Status[] => b.statuses.filter(s => s.until === null || s.until > now);
+/**
+ * A body's statuses that count (standing.ts `counts`: an owed one, whose time ran out, does not). `_now` is not read:
+ * a status's life already holds the end of its time; it stays for the callers in charge.ts.
+ */
+export const live = (b: Body, _now: Tick): Status[] => counting(b.statuses);
 /** Each op of a body's live statuses, at its source's tier, with the count a per-stack number is multiplied by (kits design 1.1). */
 export const opsOf = (b: Body, now: Tick) => live(b, now).flatMap(s => s.def.ops.map(op => ({ op, tier: s.source.tier, n: countOn(s) })));
 /** Held: a live status holds it (a stun), so its turns are passed by rule and it fires no reaction. */
@@ -187,12 +190,10 @@ export function landOps(rows: Map<CombatantId, Body>, ops: readonly LandOp[], hi
       const r = landOne(op, user, t, source, now, R, o.times ?? 1, source.id === null ? null : rows.get(source.id)?.side ?? null, o.cross ?? false);
       t = r.target; dealt += r.dealt;
       if (r.fired) fired.push(r.fired);
-      if (op.op === 'applyStatus') gained.push(op.key);
-      if (op.op === 'cureStatus' && r.cured) {
-        cured.push(op.key);
-        const gone = rows.get(id)!.statuses.find(x => x.key === op.key);
-        if (gone && cureLands(gone)) { rows.set(t.id, t); const e = landEnd(rows, t.id, gone, now, R); t = rows.get(t.id)!; dealt += e.dealt; }
-      }
+      if (r.gained) gained.push(r.gained);
+      if (r.cured) cured.push(r.cured);
+      // a cure's or a dispel's detonation (table 2.2) lands on the bearer as the ops left it
+      for (const gone of r.lands) { rows.set(t.id, t); const e = landEnd(rows, t.id, gone, now, R); t = rows.get(t.id)!; dealt += e.dealt; }
     }
     rows.set(t.id, t);
     landed.push({ target: t.id, dealt, down: before > 0 && rowHp(t) === 0, gained, cured });
@@ -203,6 +204,18 @@ export function landOps(rows: Map<CombatantId, Body>, ops: readonly LandOp[], hi
 
 /** Whether a cure that takes `s` whole sets its end off (table 2.2: its `cleanse` is `land`). */
 export const cureLands = (s: Status): boolean => s.def.end !== undefined && endStep(ARMED, { type: 'cure' }, s.def.end).lands;
+/** What takes statuses off a body: a cure of a key (`stacks` of it, or all) or a dispel of the first harmful one or all. */
+export type Cleanse = Extract<LandOp, { readonly op: 'cureStatus' | 'dispel' }>;
+/**
+ * A cure or a dispel on `t` at `now`, one edge for a use's op (resolve.ts, rule 18) and a land op (`landOne`): the body
+ * without what it took, the statuses it took whole (their life's `taken`, standing.ts), and those of them whose end it
+ * sets off (`cureLands`), for the caller to land on the bearer.
+ */
+export function cleansed(t: Body, c: Cleanse, now: Tick, R: OpRules): { target: Body; gone: Status[]; lands: Status[] } {
+  const list = c.op === 'dispel' ? dispelled(t.statuses, c.which) : cureStatus(t.statuses, c.key, c.stacks);
+  const gone = t.statuses.filter(s => !list.some(x => x.key === s.key));
+  return { target: withStatuses(t, list, now, R), gone, lands: gone.filter(cureLands) };
+}
 /**
  * A delayed effect's end landing on its bearer (kits design 1.6, table 2.2), from the status's source, at its formulas'
  * averages times its stacks. The source's sheet reads as the user and meets the bearer's defence; a source no longer in
@@ -232,7 +245,7 @@ export function landThreshold(rows: Map<CombatantId, Body>, f: LandFired, now: T
  */
 export function kitOf(user: Body, target: Body, R: OpRules): KitScope {
   const K = R.fight.kit;
-  const stacks = (b: Body) => Object.fromEntries(b.statuses.map(s => [s.key, Math.min(K.stackCap, countOn(s))])) as Record<StatusKey, number>;
+  const stacks = (b: Body) => Object.fromEntries(counting(b.statuses).map(s => [s.key, Math.min(K.stackCap, countOn(s))])) as Record<StatusKey, number>;
   const missing = (b: Body): number => (b.sheet.hpMax > 0 ? Math.max(0, Math.min(1, 1 - rowHp(b) / b.sheet.hpMax)) : 0);
   return { stacks: { user: stacks(user), target: stacks(target) }, field: {}, missing: { user: missing(user), target: missing(target) }, held: {}, hits: 0, kills: Math.min(K.kills, tallyOf(user).kills.length), spent: 0 };
 }
@@ -283,10 +296,11 @@ export function landMove(rows: Map<CombatantId, Body>, op: Extract<LandOp, { op:
  * One land op on `t` at its average from `source`'s tier, read with `user` as the user, every amount times `times`. A
  * refund is time back on the bearer's own turn, which the caller gives (triggers.ts); here it changes nothing.
  */
-function landOne(o: LandOp, user: Body, t: Body, source: Source, now: Tick, R: OpRules, times: number, from: Side | null, cross: boolean): { target: Body; dealt: number; cured: boolean; fired: LandFired | null } {
+function landOne(o: LandOp, user: Body, t: Body, source: Source, now: Tick, R: OpRules, times: number, from: Side | null, cross: boolean):
+  { target: Body; dealt: number; fired: LandFired | null; gained: StatusKey | null; cured: StatusKey | null; lands: readonly Status[] } {
   const scope: Scope = { user: { stats: user.stats, sheet: user.sheet }, target: { stats: t.stats, sheet: t.sheet }, charge: 0, kit: kitOf(user, t, R) };
   const at = (f: Tiered<Formula>) => average(atTier(f, source.tier), scope) * times;
-  const none = { cured: false, fired: null };
+  const none = { fired: null, gained: null, cured: null, lands: [] };
   switch (o.op) {
     case 'damage': {
       const raw = Math.max(0, at(o.amount)) * damageShare(user === t ? null : user, t, R), dealt = afterDefence(raw, o.type, user.sheet, t.sheet, R);
@@ -295,21 +309,22 @@ function landOne(o: LandOp, user: Body, t: Body, source: Source, now: Tick, R: O
     }
     case 'heal': { const n = Math.max(0, Math.round(at(o.amount) * healShare(t, R))); return { target: healed(t, n), dealt: 0, ...none }; }
     case 'applyStatus': {
+      // a status a safeguard or a spent ward refuses is not put on, and so not gained
       const p = landStatus(t, o, user, source, from, cross, now, R);
-      return { target: p.breaks && channelBreaks(p.target, 0, true, now) ? broken(p.target, R) : p.target, dealt: 0, cured: false, fired: p.fired };
+      return { target: p.breaks && channelBreaks(p.target, 0, true, now) ? broken(p.target, R) : p.target, dealt: 0, ...none, fired: p.fired, gained: p.put ? o.key : null };
     }
-    case 'cureStatus': {
-      const list = cureStatus(t.statuses, o.key, o.stacks);
-      return { target: withStatuses(t, list, now, R), dealt: 0, cured: t.statuses.some(s => s.key === o.key) && !list.some(s => s.key === o.key), fired: null };
+    case 'cureStatus': case 'dispel': {
+      const c = cleansed(t, o, now, R);
+      return { target: c.target, dealt: 0, ...none, cured: o.op === 'cureStatus' && c.gone.length ? o.key : null, lands: c.lands };
     }
     case 'delay': return { target: delayed(t, atTier(o.ticks, source.tier)), dealt: 0, ...none };
     case 'threat': return { target: source.id === null ? t : threatened(t, source.id, atTier(o.amount, source.tier)), dealt: 0, ...none };
     case 'shield': return { target: { ...t, shield: shielded(t.shield, { amount: Math.max(0, Math.round(average(o.amount, scope) * times)), until: tick(now + R.fight.shieldLife * R.fight.round) }, now) }, dealt: 0, ...none };
     case 'mana': return { target: { ...t, mana: clamp(t.mana + Math.round(at(o.amount)), 0, t.sheet.manaMax) }, dealt: 0, ...none };
     case 'fatigue': return { target: { ...t, fatigue: clamp(t.fatigue + Math.round(at(o.amount)), 0, t.sheet.fatigueMax) }, dealt: 0, ...none };
-    case 'channel': return { target: o.mode === 'break' && t.channel?.state === 'holding' ? broken(t, R) : t, dealt: 0, ...none };
+    // rule 17: a break meets a protection as a use's does
+    case 'channel': return { target: o.mode === 'break' && channelBreaks(t, 0, true, now) ? broken(t, R) : t, dealt: 0, ...none };
     case 'note': case 'refund': return { target: t, dealt: 0, ...none };
-    case 'dispel': return { target: withStatuses(t, dispelled(t.statuses, o.which), now, R), dealt: 0, ...none };
     case 'hasten': return { target: hasteOn(user, t, o.share, now, R), dealt: 0, ...none };
     // a move changes two bodies, so `landOps` lands it before it asks here
     case 'move': return { target: t, dealt: 0, ...none };

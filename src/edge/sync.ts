@@ -63,6 +63,8 @@ import type { TapKind } from '../core/sync/taps.ts';
 import { NOBODY, NO_ATTEMPT, attemptStep, joinBinds } from '../core/sync/attempt.ts';
 import type { Attempt, AttemptEvent, JoinBinds, JoinFor, RoomTap } from '../core/sync/attempt.ts';
 import { atSync, boundTo, linkSaved, ringGone, serverSeen } from '../core/sync/bind.ts';
+import { refuse } from '../core/save-step.ts';
+import { READ_ONLY } from '../core/store-life.ts';
 import { runTaken, runsGone } from '../core/gates/solo-wait.ts';
 import { atOutbox, callOf, next as nextOut, post as postIn, rebound, reloaded, roomGone, sentEvent, stalled, step as outStep, waiting } from '../core/sync/outbox.ts';
 import type { Call, Entry, EntryEvent, Letter, Outbox } from '../core/sync/outbox.ts';
@@ -218,9 +220,12 @@ export function register(app: SyncHost): void {
     const code = l ? parseRoomCode(l.code) : null;
     return code && l ? { code, why: l.why } : null;
   };
-  /** The room the save holds, as the link reads it at boot and after the save is replaced. */
+  /**
+   * The room the save holds, as the link reads it at boot and after the save is replaced. None in a tab that may not
+   * write its save: it takes no part in a room (link.ts `readOnly`), and its save keeps the room for a tab that may.
+   */
   const storedRoom = (): BootInput['room'] => {
-    const code = sy().room ? parseRoomCode(sy().room) : null;
+    const code = sy().room && !store.readOnly ? parseRoomCode(sy().room) : null;
     return code ? { code, key: sy().gmKey ?? null, cursor: sy().cursor || 0 } : null;
   };
   /** Another tab wrote a save whose room or GM key is not the one this link is in (it left, joined or opened another). */
@@ -455,6 +460,7 @@ export function register(app: SyncHost): void {
       case 'removed': if (code) showRemoved(code, bound()); return;
       case 'upgradeStuck': store.notify({ id: 'upgrade', text: STUCK_TEXT }); return;
       case 'notFound': if (code) peeked.delete(code); return;
+      case 'readOnly': ui.toast('System', code ? `This tab cannot save, so it left room ${code}. The save keeps the room: reload to go back in.` : 'This tab cannot save, so it stopped opening the room.', { kind: 'warn' }); return;
       case 'keyRefused': case 'notAllowedBack': case 'unreachable': case 'serverError': case 'replaced': return;
     }
   }
@@ -602,9 +608,14 @@ export function register(app: SyncHost): void {
       }
     }
   }
-  /** Start a create or a join. A tap while one is out is answered at once as `busy` (attempt.ts). */
-  const begin = (tap: RoomTap, who: JoinFor = NOBODY): Promise<string> =>
-    new Promise<string>((resolve, reject) => attemptDo({ type: 'tap', tap, who, reply: { resolve, reject } }));
+  /**
+   * Start a create or a join. A tap while one is out is answered at once as `busy` (attempt.ts). A tab that may not write
+   * its save enters no room (link.ts `readOnly`): the tap is told as any refused write is, and fails with no words of its own.
+   */
+  const begin = (tap: RoomTap, who: JoinFor = NOBODY): Promise<string> => {
+    if (store.readOnly) { ui.wrote('System', refuse(READ_ONLY)); return Promise.reject(tapError('replaced')); }
+    return new Promise<string>((resolve, reject) => attemptDo({ type: 'tap', tap, who, reply: { resolve, reject } }));
+  };
   const keyFor = (code: RoomCode): GmKey | null => (sy().gmKeys || {})[code] ?? null;
   /** A join of `code`, reading on from where this phone stopped when it last went out of that room (seen.ts `seenFrom`). */
   const joining = (code: RoomCode, key: GmKey | null): Extract<LinkEvent, { type: 'join' }> => ({ type: 'join', code, key, from: seenFrom(sy().seen, code, Date.now() + srvSkew) });
@@ -658,6 +669,8 @@ export function register(app: SyncHost): void {
     const code = room(); if (!code) return { ok: false, why: 'noRoom' };
     let dropped: readonly Entry[] = [];
     if (!flush('outbox-post', b => { const r = postIn(b, code, letter, key); dropped = r.dropped; return r.box; })) return { ok: false, why: 'noRoom' };
+    // each message the full box let go is told to whoever waits on its id (a turn's hold: SMX-sync-4.3)
+    for (const d of dropped) app.emit('sync:outbox', { id: d.id, at: 'dropped' });
     if (dropped.length) ui.toast('Sync', `Too much is waiting for the room, so ${dropped.length === 1 ? 'the oldest message was' : `the ${dropped.length} oldest messages were`} dropped.`, { kind: 'warn' });
     return { ok: true, id: letter.kind === 'event' ? letter.event.payload.eid : `tomb ${letter.hid}`, dropped: dropped.length };
   }
@@ -969,7 +982,8 @@ export function register(app: SyncHost): void {
 
   // ── the page and the network ──
   app.on('change', change => {
-    if (change.replaced || (change.reason === 'storage' && otherRoom())) linkDo({ type: 'replaced', room: storedRoom(), last: storedLast(sy().lastRoom) });
+    if (store.readOnly) linkDo({ type: 'readOnly' });
+    else if (change.replaced || (change.reason === 'storage' && otherRoom())) linkDo({ type: 'replaced', room: storedRoom(), last: storedLast(sy().lastRoom) });
     if (push.at !== 'off') { const h = bound(); if (h && JSON.stringify(pushedSheet(h)) !== sheetText) pushDo({ type: 'changed' }); }
     republish();
   });

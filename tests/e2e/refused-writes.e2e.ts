@@ -170,3 +170,27 @@ test('a shadow summoned in a tab that cannot save is told as not saved, never as
   await expect(toast(page, 'Not enough mana')).toHaveCount(0);
   expect((await save(page)).hunters[0].shadows[0].summoned).toBe(false);
 });
+
+test('a GM in a tab that cannot save who taps Create room is told it is not saved, and no room opens', async ({ device }) => {
+  // SMX-sync-1.2: the room opened, the link held its key, and the seat read the save's (none), so the GM was shown it as a player
+  const page = await openReadOnly(device, newerSave({ gm: true }));
+  const creates: string[] = [];
+  page.on('request', r => { if (r.method() === 'POST' && new URL(r.url()).pathname === '/api/rooms') creates.push(r.url()); });
+  await go(page, 'room');
+  await page.locator('#view-room [data-create]').tap();
+  await expect(toast(page, NOT_SAVED)).toHaveCount(1);
+  expect(await page.evaluate(() => [hunterApp.api.sync.room(), hunterApp.seat()])).toEqual([null, 'alone']);
+  expect(creates).toEqual([]);
+});
+
+test('a tab that cannot save, whose save holds a room, sits in no room and asks it nothing; the save keeps the room, its key and where it stopped', async ({ device }) => {
+  // SMX-sync-1.1: the tab polled the room, moved past the GM's award it could not land, and posted as if in no room
+  const KEY = 'gmkeygmkeygmkey1';
+  const page = await openReadOnly(device, newerSave({ gm: true, edit: s => { s.settings.sync = { ...s.settings.sync, room: 'ABC234', gmKey: KEY, cursor: 7 }; } }));
+  const asked: string[] = [];
+  page.on('request', r => { if (new URL(r.url()).pathname.startsWith('/api/rooms/ABC234')) asked.push(r.url()); });
+  await expect.poll(() => page.evaluate(() => hunterApp.api.sync.status())).toBe('connected');
+  expect(await page.evaluate(() => [hunterApp.api.sync.room(), hunterApp.seat()])).toEqual([null, 'alone']);
+  expect(asked).toEqual([]);
+  expect((await save(page)).settings.sync).toMatchObject({ room: 'ABC234', gmKey: KEY, cursor: 7 });
+});

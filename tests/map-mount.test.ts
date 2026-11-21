@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { BLANK, MAP_MOUNT_EVENTS, MAP_MOUNT_STATES, mapMount } from '../src/core/combat/map-mount.ts';
-import type { MapMount, MapMountEvent } from '../src/core/combat/map-mount.ts';
+import { BLANK, BUILD_DRAWER_STATES, MAP_MOUNT_EVENTS, MAP_MOUNT_STATES, MAP_SLOT_EVENTS, MAP_SLOT_STATES, SCREEN, buildDrawer, mapMount, mapSlot } from '../src/core/combat/map-mount.ts';
+import type { BuildDrawer, BuildDrawerEvent, MapMount, MapMountEvent, MapSlot, MapSlotFx } from '../src/core/combat/map-mount.ts';
 import type { FightId } from '../src/core/combat/fight-types.ts';
-import { MOUNT_FIGHTS, MOUNT_WALK } from './models/map-mount-events.ts';
+import { DRAWER_WALK, MOUNT_FIGHTS, MOUNT_WALK } from './models/map-mount-events.ts';
 
 const [F1, F2] = MOUNT_FIGHTS;
 const show = (fight: FightId | null): MapMountEvent => ({ kind: 'show', fight });
@@ -67,5 +67,54 @@ describe('the battle map on the page', () => {
     expect([...new Set(MOUNT_WALK.map(e => e.kind))].sort()).toEqual([...MAP_MOUNT_EVENTS].sort());
     const states: MapMount[] = [BLANK, { at: 'opening', fight: F1 }, { at: 'framed', fight: F2, over: '' }, { at: 'gone' }];
     for (const s of states) for (const e of MOUNT_WALK) expect(MAP_MOUNT_STATES).toContain(mapMount(s, e).mount.at);
+  });
+});
+
+describe('the fight screen\'s map box', () => {
+  test('every state against every draw: a box that shows the fight on the map holds a map, one that hides it holds none', () => {
+    const cells = MAP_SLOT_STATES.flatMap(s => MAP_SLOT_EVENTS.map(e => [s, e, mapSlot(s, e)] as const));
+    expect(cells).toEqual([
+      ['empty', 'shows', { slot: 'mounted', fx: ['mount', 'draw'] }],
+      ['empty', 'hides', { slot: 'empty', fx: [] }],
+      ['mounted', 'shows', { slot: 'mounted', fx: ['draw'] }],
+      ['mounted', 'hides', { slot: 'empty', fx: ['destroy'] }],
+    ]);
+  });
+
+  test('the GM\'s switch from Map to List, or to the Player seat, takes the hidden map down, and the switch back mounts a new one', () => {
+    let slot: MapSlot = 'empty';
+    const fx: MapSlotFx[] = [];
+    for (const e of ['shows', 'shows', 'hides', 'hides', 'shows'] as const) { const r = mapSlot(slot, e); slot = r.slot; fx.push(...r.fx); }
+    expect({ slot, fx }).toEqual({ slot: 'mounted', fx: ['mount', 'draw', 'draw', 'destroy', 'mount', 'draw'] });
+  });
+});
+
+describe('who opens the Build drawer', () => {
+  const toggled = (open: boolean, wanted: boolean, fight: FightId | null): BuildDrawerEvent => ({ kind: 'toggled', open, wanted, fight });
+  const drawnIn = (fight: FightId | null): BuildDrawerEvent => ({ kind: 'drawn', fight });
+  const hand = (fight: FightId | null): BuildDrawer => ({ at: 'hand', fight });
+
+  test('every state against every event: the screen keeps the drawer until the GM moves it against the screen, and the GM keeps it for that fight only', () => {
+    const states: BuildDrawer[] = [SCREEN, hand(F1), hand(null)];
+    const events = [toggled(true, false, F1), toggled(false, true, F1), toggled(true, true, F1), toggled(false, true, null), drawnIn(F1), drawnIn(F2), drawnIn(null)];
+    expect(states.map(s => events.map(e => buildDrawer(s, e)))).toEqual([
+      [hand(F1), hand(F1), SCREEN, hand(null), SCREEN, SCREEN, SCREEN],
+      [hand(F1), hand(F1), hand(F1), hand(null), hand(F1), SCREEN, SCREEN],
+      [hand(F1), hand(F1), hand(F1), hand(null), SCREEN, SCREEN, hand(null)],
+    ]);
+    expect(BUILD_DRAWER_STATES).toEqual(['screen', 'hand']);
+  });
+
+  test('the drawer the GM opened by hand in one fight is the screen\'s again once that fight ends, and in the next fight', () => {
+    const opened = buildDrawer(SCREEN, toggled(true, false, F1));
+    expect(opened).toEqual(hand(F1));
+    expect(buildDrawer(opened, drawnIn(F1))).toBe(opened);
+    expect(buildDrawer(opened, drawnIn(null))).toEqual(SCREEN);
+    expect(buildDrawer(opened, drawnIn(F2))).toEqual(SCREEN);
+  });
+
+  test('the walk\'s events are every kind, and every state answers each of them with a state', () => {
+    expect([...new Set(DRAWER_WALK.map(e => e.kind))].sort()).toEqual(['drawn', 'toggled']);
+    for (const s of [SCREEN, hand(F1), hand(null)]) for (const e of DRAWER_WALK) expect(BUILD_DRAWER_STATES).toContain(buildDrawer(s, e).at);
   });
 });

@@ -863,7 +863,7 @@ test('a GM makes a quest the System counts: two short rests complete it with its
     await answerWindow(page, 'QUEST COMPLETE');
     const done = await q();
     expect(done.status).toBe('done');
-    expect(await page.evaluate(id => hunterApp.store.device('quest-told:' + hunterApp.store.active().id).read(), done.id), 'the window is remembered as told').toContain(done.id);
+    await expect.poll(async () => (await q()).told, 'the window answered is told in the quest').toBe(true);
     await page.reload();
     await expect(page.locator('#view-status [data-rest="short"]')).toBeVisible();
   });
@@ -923,4 +923,150 @@ test('from the GM view with Issue quest open, "Defeat 10 Beasts in one session, 
     count: { rule: { on: 'kill', where: [{ field: 'type', op: '=', value: 'Beast' }], measure: { of: 'facts' }, within: 'session' }, mark: '' } }]);
   expect(q.onFail).toMatchObject({ gold: -50 });
   expect(taps, 'Counted by 2, Add a condition 1, its field 2, Within 2, the Award section 1, the hunter 1, Issue quest 1').toBe(10);
+});
+
+/** The GM's phone alone, its feats and personal gates off, so no window of theirs stands in front of the ones a test waits for. */
+async function quietGM(device: (label: string, options?: DeviceOptions) => Promise<{ page: Page }>, start: string): Promise<Page> {
+  const page = await newYorkPhone(device, 'gm', start);
+  await onboardGM(page);
+  await dismissAll(page, 6);
+  await page.evaluate(() => hunterApp.store.update((d: any) => { d.rulesOverrides.feats = { on: false }; d.rulesOverrides.solo = { personal: false }; }, 'test-setup'));
+  return page;
+}
+/** The GM writes an urgent quest for the hunter on screen, due in `hours`, that costs `gold` if it fails. */
+async function urgentWithCost(page: Page, title: string, hours: number, gold: number): Promise<void> {
+  const form = page.locator('#view-quests form[data-form]');
+  await page.locator('#view-quests [data-new]').tap();
+  await form.locator('[name=kind]').selectOption('urgent');
+  await form.locator('[name=title]').fill(title);
+  await form.locator('[name=dueHours]').fill(String(hours));
+  await form.locator('#qf-fail-gold').fill(String(-gold));
+  await form.locator('button[type=submit]').tap();
+  await expect(form).toBeHidden();
+  await expect(page.locator('#view-quests .qc', { hasText: title }).locator('[data-onfail]')).toContainText(`Loses ${gold} gold`);
+}
+
+test('two urgent quests that run out at once each show their own cost, and each cost is paid', async ({ device }) => {
+  const page = await quietGM(device, '2026-11-10T12:00:00-05:00');
+  const gold = () => page.evaluate(() => hunterApp.store.active().gold);
+  await go(page, 'quests');
+  await urgentWithCost(page, 'Hold the bridge', 0.25, 30);
+  await urgentWithCost(page, 'Guard the gate', 0.25, 5);
+  await page.evaluate(() => hunterApp.store.update(() => { hunterApp.store.active().gold = 100; }, 'test-setup'));
+  await page.clock.runFor(16 * 60_000);
+  const failed = page.locator('.sys-overlay.show', { hasText: 'QUEST FAILED' });
+  await expect(failed.first()).toContainText('Hold the bridge');
+  await expect(failed.first()).toContainText('Loses 30 gold');
+  await answerWindow(page, 'Hold the bridge');
+  await expect(failed.first()).toContainText('Guard the gate');
+  await expect(failed.first()).toContainText('Loses 5 gold');
+  await expect(failed.first()).not.toContainText('Loses 30 gold');
+  await answerWindow(page, 'Guard the gate');
+  expect(await gold()).toBe(65);
+});
+
+test('an urgent quest whose failing write is refused shows no QUEST FAILED and stays active; a minute on the rollover fails it once', async ({ device }) => {
+  const page = await newYorkPhone(device, 'player', '2026-11-10T12:00:00-05:00');
+  await onboardPlayer(page, 'Solo Test');
+  await dismissAll(page);
+  const form = page.locator('#view-quests form[data-form]');
+  const status = () => page.evaluate(() => hunterApp.store.active().quests.find((q: any) => q.title === 'Hold the bridge').status);
+  const failed = page.locator('.sys-overlay', { hasText: 'QUEST FAILED' });
+  await go(page, 'quests');
+  await page.locator('#view-quests [data-new]').tap();
+  await form.locator('[name=kind]').selectOption('urgent');
+  await form.locator('[name=title]').fill('Hold the bridge');
+  await form.locator('[name=dueAt]').fill('2026-11-10T12:10');
+  await form.locator('button[type=submit]').tap();
+  await expect(form).toBeHidden();
+
+  await test.step('the write is refused at 12:10: no window, the quest still active, and no second try within the minute', async () => {
+    await page.evaluate(() => {
+      const api = hunterApp.api.hunter, w = window as any;
+      w.kept = api.grantWrite; w.tries = 0;
+      api.grantWrite = (why: string, step: (s: unknown) => unknown) => (why === 'daily-check' ? (w.tries++, step(hunterApp.store.get()), { ok: false, why: 'fight' }) : w.kept(why, step));
+    });
+    await page.clock.runFor(10 * 60_000 + 1_000);
+    expect(await page.evaluate(() => (window as any).tries)).toBe(1);
+    await page.clock.runFor(30_000);
+    expect(await page.evaluate(() => (window as any).tries), 'tried again a minute on, not at once').toBe(1);
+    await expect(failed).toHaveCount(0);
+    expect(await status()).toBe('active');
+  });
+
+  await test.step('the refusal gone, the next try fails it with one window', async () => {
+    await page.evaluate(() => { hunterApp.api.hunter.grantWrite = (window as any).kept; });
+    await page.clock.runFor(31_000);
+    await expect(failed).toHaveCount(1);
+    await expect(failed).toContainText('Hold the bridge: the time limit has expired.');
+    expect(await status()).toBe('failed');
+  });
+});
+
+test('a GM editing one hunter\'s quest who picks another hunter sees the form close, and no quest is copied to the other hunter', async ({ device }) => {
+  const page = await quietGM(device, '2026-11-10T12:00:00-05:00');
+  const form = page.locator('#view-quests form[data-form]');
+  const titles = (i: number) => page.evaluate(n => hunterApp.store.get().hunters[n].quests.map((q: any) => q.title), i);
+  const [first, second] = await page.evaluate(() => hunterApp.store.get().hunters.slice(0, 2).map((h: any) => h.id));
+  await page.evaluate(h => hunterApp.api.quests.issue([h], { kind: 'side', title: 'Clear the den', objectives: [{ label: 'Goblins', target: 3 }] }), first);
+  await page.locator('#hunter-sel').selectOption(first);
+  await go(page, 'quests');
+  const before = await titles(1);
+  const card = page.locator('#view-quests .qc', { hasText: 'Clear the den' });
+  await card.locator('[data-edit]').tap();
+  await expect(form).toBeVisible();
+  await form.locator('[name=title]').fill('Copied over');
+  await page.locator('#hunter-sel').selectOption(second);
+  await expect(form).toBeHidden();
+  expect(await titles(1)).toEqual(before);
+  expect((await titles(0)).includes('Copied over')).toBe(false);
+});
+
+test('a New quest form opened as a player closes when the phone switches to GM mode, and saves nothing', async ({ device }) => {
+  const page = (await device('player')).page;
+  await onboardPlayer(page, 'Solo Test');
+  await dismissAll(page);
+  const form = page.locator('#view-quests form[data-form]');
+  await go(page, 'quests');
+  await page.locator('#view-quests [data-new]').tap();
+  await form.locator('[name=title]').fill('Half written');
+  await page.locator('#mode-pill').tap();
+  await answerWindow(page, 'Switch to GM mode?', 'Enter GM mode');
+  await expect(form).toBeHidden();
+  await page.locator('#view-quests [data-new]').tap();
+  await expect(form.locator('[data-who]'), 'opened again as the GM, the form asks whom it is for').toBeVisible();
+  expect(await page.evaluate(() => hunterApp.store.get().hunters.flatMap((h: any) => h.quests.map((q: any) => q.title)))).not.toContain('Half written');
+});
+
+test('a GM\'s daily the System counts opens QUEST COMPLETE on the second day as on the first', async ({ device }) => {
+  const page = await quietGM(device, '2026-11-10T12:00:00-05:00');
+  const form = page.locator('#view-quests form[data-form]');
+  const rest = async () => { await go(page, 'status'); await page.locator('#view-status [data-rest="short"]').tap(); };
+
+  await test.step('the GM writes a daily of one short rest, counted by the System', async () => {
+    await go(page, 'quests');
+    await page.locator('#view-quests [data-new]').tap();
+    await form.locator('[name=kind]').selectOption('daily');
+    await form.locator('[name=title]').fill('Catch your breath');
+    await form.locator('[name=olabel]').fill('Short rests');
+    await form.locator('[data-ocb]').selectOption('system');
+    await form.locator('[data-ocount] [data-ck]').selectOption('rest');
+    await form.locator('button[type=submit]').tap();
+    await expect(form).toBeHidden();
+  });
+
+  await test.step('day 1: a short rest completes it and its window opens', async () => {
+    await rest();
+    await answerWindow(page, 'QUEST COMPLETE');
+  });
+
+  await test.step('day 2: the daily is active again, and a short rest opens its window again', async () => {
+    await passMinutePast(page, '2026-11-11T12:00:00-05:00');
+    await dismissAll(page);
+    await go(page, 'quests');
+    await page.locator('#view-quests [data-tab="daily"]').tap();
+    await expect(page.locator('#view-quests .qc', { hasText: 'Catch your breath' })).toHaveAttribute('data-st', 'active');
+    await rest();
+    await answerWindow(page, 'QUEST COMPLETE');
+  });
 });

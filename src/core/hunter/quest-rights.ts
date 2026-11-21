@@ -39,7 +39,24 @@ export function systemCounts(q: Pick<Quest, 'id' | 'chainId'>, chain: JobChain |
   return BUILT_IN_JOBS[chain.job].steps[(chain.step - 1) as 0 | 1 | 2].goal === 'level';
 }
 /**
- * Whether the System completes this quest: one of its objectives is counted (feature 1's notes 17.14). It completes in
- * the write whose fact fills its last objective, and no tap completes it.
+ * Who completes a quest, read from its objectives (feature 1's notes 17.14): `system` when every one is counted from the
+ * hunter's facts, `hand` when none is (or it has none), `mixed` when some are.
  */
-export const systemCompletes = (q: Pick<Quest, 'objectives'>): boolean => q.objectives.some(o => !!o.count);
+export const QUEST_COMPLETERS = ['system', 'hand', 'mixed'] as const;
+export type QuestCompleter = (typeof QUEST_COMPLETERS)[number];
+export function completerOf(q: Pick<Quest, 'objectives'>): QuestCompleter {
+  const n = q.objectives.filter(o => o.count).length;
+  return n === 0 ? 'hand' : n === q.objectives.length ? 'system' : 'mixed';
+}
+/**
+ * What each completer gives a quest. `button`: a Complete button on its card. `counted`: the System completes it in the
+ * write whose fact fills its last objective (noticed.ts `countQuests`). A hand-ticked row of a `mixed` quest that fills
+ * last asks "Complete quest?" (quests.js `setProgress`).
+ */
+export const COMPLETER: { readonly [C in QuestCompleter]: { readonly button: boolean; readonly counted: boolean } } = {
+  system: { button: false, counted: true },
+  hand: { button: true, counted: false },
+  // as today: SMX-gates-4.1 waits on the owner's ruling, proposed "a quest with any hand-ticked objective keeps its
+  // Complete button" (button: true); until then a cancelled "Complete quest?" is left by a minus and a plus
+  mixed: { button: false, counted: true },
+};

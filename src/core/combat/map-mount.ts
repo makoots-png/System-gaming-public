@@ -9,6 +9,8 @@
 // Whether the frame has a size is a layout read, and a read in the middle of a redraw lays the page out there and again
 // in the frame after (the lag test's pick on the map): a draw says only what it drew, and the map asks for the frame's
 // size (`measure`) only where the answer decides a move, the view answering `sized`.
+// Two tables of the GM's fight screen around its map follow (audit SMX-views-8): its box, which holds a map only while it
+// shows one (`mapSlot`), and who holds the Build drawer, the screen or the GM's hand for one fight (`buildDrawer`).
 import type { FightId } from './fight-types.ts';
 
 /**
@@ -47,7 +49,8 @@ export const MAP_MOUNT_EVENTS = ['show', 'drawn', 'sized', 'resized', 'gone'] as
  * brush, the tokens' and zones' last draw, the open detail). `measure`: read whether the frame has a size and answer
  * `sized` with the draw's words over the frame. `frame`: work the frame's height out, then frame the fight.
  * `reheight`: work the height out again, and frame again only when it changed. `refit`: frame again at the frame's size
- * as last framed. `stop`: stop listening (the window's resize, the hotbar's observer, the news line, the timers).
+ * as last framed. `stop`: stop listening (the window's resize, the hotbar's observer, the news line, the timers), close
+ * its open detail and empty its box.
  */
 export type MapMountFx = { readonly kind: 'forget' | 'measure' | 'frame' | 'reheight' | 'refit' | 'stop' };
 export type MapMountMoved = { readonly mount: MapMount; readonly fx: readonly MapMountFx[] };
@@ -101,5 +104,68 @@ const TABLE: { readonly [S in MapMountState]: { readonly [K in MapMountEventKind
 export function mapMount(s: MapMount, e: MapMountEvent): MapMountMoved {
   // The table's type pairs each state's row with the cells for that state, so the cell for `e.kind` takes `s` and `e`.
   const row = TABLE[s.at] as { readonly [K in MapMountEventKind]: (s: MapMount, e: MapMountEvent) => MapMountMoved };
+  return row[e.kind](s, e);
+}
+
+// ── the fight screen around the map (src/views/combat.js; audit SMX-views-8) ──
+
+/**
+ * The GM's fight screen's map box: `empty`, or a map `mounted` in it. The screen's handle on the map it mounted is the
+ * one record of it, so the state is whether the screen holds one.
+ */
+export type MapSlot = 'empty' | 'mounted';
+export const MAP_SLOT_STATES = ['empty', 'mounted'] as const satisfies readonly MapSlot[];
+/**
+ * A draw of the screen: its box `shows` the fight on the map, or `hides` it (List view, the Player seat, no fight, or
+ * the box's markup about to be replaced). A hidden map is taken down rather than kept listening (SMX-views-8.1).
+ */
+export type MapSlotEvent = 'shows' | 'hides';
+export const MAP_SLOT_EVENTS = ['shows', 'hides'] as const satisfies readonly MapSlotEvent[];
+/** What the screen carries out: `mount` a map in the box, `draw` it, `destroy` it (its `gone`) and let the handle go. */
+export type MapSlotFx = 'mount' | 'draw' | 'destroy';
+export type MapSlotMoved = { readonly slot: MapSlot; readonly fx: readonly MapSlotFx[] };
+const SLOT_TABLE: { readonly [S in MapSlot]: { readonly [E in MapSlotEvent]: MapSlotMoved } } = {
+  empty: { shows: { slot: 'mounted', fx: ['mount', 'draw'] }, hides: { slot: 'empty', fx: [] } },
+  mounted: { shows: { slot: 'mounted', fx: ['draw'] }, hides: { slot: 'empty', fx: ['destroy'] } },
+};
+/** The screen's map box after `e`, and what the screen carries out for it. */
+export const mapSlot = (s: MapSlot, e: MapSlotEvent): MapSlotMoved => SLOT_TABLE[s][e];
+
+/**
+ * Who opens and closes the fight screen's Build drawer (Add to the fight): the `screen` (open, but closed on a desktop
+ * once a fight is under way), or the GM's `hand` for the fight it was moved in (`fight`: null when the screen showed
+ * none, or one that had ended). The hand lasts that fight only (SMX-views-8.2).
+ */
+export type BuildDrawer = { readonly at: 'screen' } | { readonly at: 'hand'; readonly fight: FightId | null };
+export type BuildDrawerState = BuildDrawer['at'];
+export const BUILD_DRAWER_STATES = ['screen', 'hand'] as const satisfies readonly BuildDrawerState[];
+/** The drawer as a screen first draws it. */
+export const SCREEN: BuildDrawer = { at: 'screen' };
+/**
+ * What moves it. `toggled`: the drawer opened or closed (`open`) while the screen wanted it `wanted`, in `fight`.
+ * `drawn`: the screen draws `fight` (null: none, or one that ended).
+ */
+export type BuildDrawerEvent =
+  | { readonly kind: 'toggled'; readonly open: boolean; readonly wanted: boolean; readonly fight: FightId | null }
+  | { readonly kind: 'drawn'; readonly fight: FightId | null };
+export type BuildDrawerEventKind = BuildDrawerEvent['kind'];
+
+type DrawerCell<S extends BuildDrawerState, K extends BuildDrawerEventKind> = (s: Extract<BuildDrawer, { at: S }>, e: Extract<BuildDrawerEvent, { kind: K }>) => BuildDrawer;
+const DRAWER_TABLE: { readonly [S in BuildDrawerState]: { readonly [K in BuildDrawerEventKind]: DrawerCell<S, K> } } = {
+  screen: {
+    // the screen's own change, and the parser's open, land where the screen wants it: only a move against it is the GM's
+    toggled: (s, e) => (e.open === e.wanted ? s : { at: 'hand', fight: e.fight }),
+    drawn: s => s,
+  },
+  hand: {
+    toggled: (s, e) => (e.fight === s.fight ? s : { at: 'hand', fight: e.fight }),
+    // the fight it was moved in ended, was cleared, or another began
+    drawn: (s, e) => (e.fight === s.fight ? s : SCREEN),
+  },
+};
+/** Who holds the Build drawer after `e`; the same value when `e` changes nothing. */
+export function buildDrawer(s: BuildDrawer, e: BuildDrawerEvent): BuildDrawer {
+  // The table's type pairs each state's row with the cells for that state, so the cell for `e.kind` takes `s` and `e`.
+  const row = DRAWER_TABLE[s.at] as { readonly [K in BuildDrawerEventKind]: (s: BuildDrawer, e: BuildDrawerEvent) => BuildDrawer };
   return row[e.kind](s, e);
 }

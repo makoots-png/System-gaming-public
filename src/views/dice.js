@@ -2,13 +2,15 @@
 // formula read by `parseFormula` (src/core/formula.ts: Roll20's dice, a leading `/r` optional) and rolled with its faces
 // by `rollFormula` (src/edge/roll.ts); the view shows each face's fate as core gives it and computes no total itself.
 import { clearRolls, rolled } from '../core/session-log.ts';
-import { RANKS, rules } from '../edge/rules.ts';
+import { rules } from '../edge/rules.ts';
 import * as motion from './motion.ts';
 import { STAT_KEYS, STAT_LABELS, STAT_SHORT } from '../core/stats.ts';
 import { rollFormula, trayRandom } from '../edge/roll.ts';
 import { naturalOf, parseFormula, printFormula, withEdge } from '../core/formula.ts';
 import { coinWords } from '../core/coin.ts';
 import { checkResult } from '../core/roll.ts';
+import { DC_GROUPS, DC_KEYS, dcKeyOf, dcOf, dcPickStep, dcStart, dcWords } from '../core/dc-pick.ts';
+import { oneOf } from '../core/one-of.ts';
 
 const DICE = [4, 6, 8, 10, 12, 20, 100];
 /** The typed rolls this device keeps, newest first, to roll again with a tap. */
@@ -183,15 +185,16 @@ export function register(app) {
       } else if (b.dataset.st) {
         try {
           setErr('');
-          const sel = q('[data-dc]'), dc = sel && sel.value ? Number(sel.value) : undefined;
-          critToast(app.api.dice.check(store.active().id, b.dataset.st, { dc, adv: inst.mode === 'adv', dis: inst.mode === 'dis' }));
+          const against = dcOf(dc, rules().rankTable) ?? undefined;
+          critToast(app.api.dice.check(store.active().id, b.dataset.st, { dc: against, adv: inst.mode === 'adv', dis: inst.mode === 'dis' }));
         } catch (err) { setErr(err.message); }
       }
     });
     q('[data-expr]').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); q('[data-go]').click(); } });
     // a bad formula says what is wrong under the field as it is typed
     q('[data-expr]').addEventListener('input', e => { const t = e.target.value.trim(), p = t ? parseFormula(t.replace(/[−–]/g, '-'), rules()) : null; setErr(p && 'error' in p ? p.error : ''); });
-    let dcSig = '';
+    /** The quick check's DC (src/core/dc-pick.ts), moved only by `dcPickStep`; the sheet has no quick check. */
+    let dc = quickChecks ? dcStart(store.active().rank) : null;
     inst.update = () => {
       const rs = store.get().rolls, last = rs[0], t = q('[data-total]'), f = q('[data-flag]');
       t.className = `roll-total${last && last.crit ? ' crit' : last && last.fumble ? ' fail' : ''}`;
@@ -211,22 +214,17 @@ export function register(app) {
       f.textContent = coin ? coinWords(coin) : last && last.crit ? 'Critical hit' : last && last.fumble ? 'Critical failure' : v ? `${v.success ? 'Success' : 'Failure'} vs DC ${v.dc}` : '';
       if (!quickChecks) return;
       const h = store.active(), rt = rules().rankTable, sel = q('[data-dc]');
-      const sig = JSON.stringify(RANKS.map(r => rt[r] && rt[r].dc));
-      if (sig !== dcSig) {
-        dcSig = sig; const keep = sel.value || `${h.rank}:1`;
-        sel.innerHTML = '<option value="">No DC (just roll)</option>' + RANKS.filter(r => rt[r]).map(r => `<optgroup label="${esc(r)}-rank">${['Easy', 'Standard', 'Hard'].map((n, i) => `<option value="${esc(rt[r].dc[i])}" data-k="${esc(r)}:${i}">${esc(r)} ${n} (DC ${esc(rt[r].dc[i])})</option>`).join('')}</optgroup>`).join('');
-        const opt = [...sel.options].find(o => o.dataset.k === keep || o.value === keep);
-        if (opt) sel.value = opt.value;
-      }
-      if (!inst.dcInit && !sel.dataset.touched) { // default to the hunter's own rank, standard
-        const opt = [...sel.options].find(o => o.dataset.k === `${h.rank}:1`); if (opt) sel.value = opt.value; inst.dcInit = true;
-      }
+      dc = dcPickStep(dc, { kind: 'hunterRank', rank: h.rank });
+      // the options are drawn again only when the rank table's numbers change, so an open select is left alone
+      const opts = `<option value="none">${esc(dcWords('none', rt))}</option>` + DC_GROUPS.map(g => `<optgroup label="${esc(g.rank)}-rank">${g.keys.map(k => `<option value="${esc(k)}">${esc(dcWords(k, rt))}</option>`).join('')}</optgroup>`).join('');
+      if (sel.dataset.sig !== opts) { sel.dataset.sig = opts; sel.innerHTML = opts; }
+      if (sel.value !== dcKeyOf(dc)) sel.value = dcKeyOf(dc);
       q('[data-who]').textContent = '· ' + h.name;
       const bonus = app.api.hunter.sheet(h).checks.bonus;
       const html = STAT_KEYS.map(k => { const lab = STAT_SHORT[k], alias = STAT_LABELS[k], b = bonus[k]; return `<button type="button" data-st="${esc(k)}" aria-label="${esc(alias)} check ${b >= 0 ? '+' : ''}${b}"><span class="cs">${esc(lab)}</span><span class="cb2">${b >= 0 ? '+' : ''}${b}</span></button>`; }).join('');
       const box = q('[data-checks]'); if (box.dataset.sig !== html) { box.dataset.sig = html; box.innerHTML = html; }
     };
-    if (quickChecks) q('[data-dc]').addEventListener('change', e => { e.target.dataset.touched = '1'; });
+    if (quickChecks) q('[data-dc]').addEventListener('change', e => { dc = dcPickStep(dc, { kind: 'picked', key: oneOf(e.target.value, DC_KEYS, dcKeyOf(dc)) }); });
     return inst; // drawn by its first update: the view's after its mount, the sheet's when it opens, never inside register (the coin's api is not there yet)
   }
 

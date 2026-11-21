@@ -58,6 +58,9 @@ export type AttemptResult<R> = { readonly state: Attempt<R>; readonly effects: r
 /** The link's notices that end a tap, and the kind each fails it as. A tap that ends with none of them out of a room fails as `net`. */
 const TAP_OF: { readonly [N in LinkNotice]: TapKind | null } = {
   notFound: 'notfound', keyRefused: 'keyRefused', notAllowedBack: 'removed', replaced: 'replaced', unreachable: 'net', serverError: 'net',
+  // the tab stopped saving while the tap waited: its banner says why. taps.ts has no kind of its own for it, and
+  // `replaced` is the one that says nothing more (a ruling on its own words is one row in taps.ts and this one here)
+  readOnly: 'replaced',
   gone: null, removed: null, keyLost: null, upgradeStuck: null,
 };
 

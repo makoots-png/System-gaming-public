@@ -450,7 +450,7 @@ function statusOf(v: unknown, R: Rules): Status | null {
   const until = v.until === null ? null : tickOf(v.until), since = tickOf(v.since), settledAt = tickOf(v.settledAt);
   const zone = v.zone === undefined ? undefined : typeof v.zone === 'string' && v.zone.length > 0 && v.zone.length <= 40 ? zoneId(v.zone) : null;
   if ((v.until !== null && until === null) || since === null || settledAt === null || zone === null) return null;
-  const fields = { key: base.key, source: base.source, until, since, settledAt, ...(zone === undefined ? {} : { zone }), ...(v.worn === true ? { worn: true as const } : {}) };
+  const fields = { key: base.key, source: base.source, until, since, settledAt, ...(zone === undefined ? {} : { zone }), ...(v.worn === true ? { worn: true as const } : {}), ...(v.owed === true ? { owed: true as const } : {}) };
   return statusOn(base.def, fields, clamped(v.stacks, 1, R.fight.kit.stackCap));
 }
 /**

@@ -66,9 +66,14 @@ export type Condition = SheetStatus;
  * `objectiveStep`, in the notice step): its progress is the count, capped at its target, and no tap moves it. Absent: a tap moves it.
  */
 export type Objective = { label: string; target: number; progress: number; count?: ObjectiveCount };
-/** An active quest has not ended; a done or failed one has the time it ended. A view sets both with `questState`. */
-export type QuestState = { status: 'active'; doneAt: null } | { status: Exclude<QuestStatus, 'active'>; doneAt: string };
-export const questState = (status: QuestStatus, at: string): QuestState => (status === 'active' ? { status, doneAt: null } : { status, doneAt: at });
+/**
+ * An active quest has not ended; a done or failed one has the time it ended. A done quest's `told`: whether its
+ * completion was shown (one the System completed is done untold until its window is answered: quests.ts `questStep`).
+ * A step sets them together with `questState`.
+ */
+export type QuestState = { status: 'active'; doneAt: null } | { status: 'done'; doneAt: string; told: boolean } | { status: 'failed'; doneAt: string };
+export const questState = (status: QuestStatus, at: string, told = true): QuestState =>
+  (status === 'active' ? { status, doneAt: null } : status === 'done' ? { status, doneAt: at, told } : { status, doneAt: at });
 export type Quest = QuestState & {
   id: QuestId; kind: QuestKind; title: string; desc: string; objectives: Objective[]; rewards: Rewards;
   issuedAt: string; dueAt: string | null; from: QuestSource; penaltyText: string;
@@ -222,7 +227,8 @@ export function fixHunter(saveRun: RepairRun, h: Hunter): void {
       return { ...rest, label: str(o.label, '', 120), target: num(o.target, 1), progress: num(o.progress, 0), ...(count ? { count } : {}) };
     });
     q.rewards = parseRewards(q.rewards) ?? newRewards(); q.onFail = parseRewards(q.onFail) ?? newRewards();
-    Object.assign(q, questState(oneOf(q.status, QUEST_STATUSES, 'active'), strOrNull(q.doneAt) ?? q.issuedAt)); q.dueAt = timeOf(q.dueAt);
+    const told = !('told' in q && q.told === false); Reflect.deleteProperty(q, 'told');
+    Object.assign(q, questState(oneOf(q.status, QUEST_STATUSES, 'active'), strOrNull(q.doneAt) ?? q.issuedAt, told)); q.dueAt = timeOf(q.dueAt);
     optional(q, 'chainId', isStr);
   });
   h.skills = skills(run, h.skills);

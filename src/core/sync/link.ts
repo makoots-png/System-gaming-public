@@ -120,6 +120,13 @@ export type LinkEvent =
   | { type: 'paced'; pace: PollPace }
   /** The whole save was replaced (import, restore, reset): the link starts again from the room it now holds, as at boot. */
   | { type: 'replaced'; room: BootInput['room']; last: Last }
+  /**
+   * This tab may no longer write its save (src/core/store-life.ts `readOnly`: another tab saved, a newer app's save, or
+   * storage too full to keep what a load could not open). It takes no part in a room: it could keep nothing the room sends
+   * nor where it stopped reading, and as a GM it would put the room's docs back to its own frozen save. Only `replaced`
+   * (a restore, an import or a reset, which make the tab ready) starts the link again.
+   */
+  | { type: 'readOnly' }
   // the page and the network
   | { type: 'online' }
   | { type: 'offline' }
@@ -159,7 +166,7 @@ export type SaveFields = {
   ring?: { keep: RoomCode; key: GmKey } | { drop: RoomCode } | { gone: RoomCode };
 };
 /** A toast or a window. The view holds the words. */
-export type LinkNotice = 'gone' | 'removed' | 'notFound' | 'keyRefused' | 'notAllowedBack' | 'keyLost' | 'unreachable' | 'serverError' | 'upgradeStuck' | 'replaced';
+export type LinkNotice = 'gone' | 'removed' | 'notFound' | 'keyRefused' | 'notAllowedBack' | 'keyLost' | 'unreachable' | 'serverError' | 'upgradeStuck' | 'replaced' | 'readOnly';
 /** What the link tells the sheet push. */
 export type LinkNews = { type: 'linkLive'; gen: Gen } | { type: 'linkLost' } | { type: 'pollOk'; gen: Gen } | { type: 'retry' };
 export type LinkEffect =
@@ -206,7 +213,9 @@ const notify = (id: LinkNotice, code: RoomCode | null): LinkEffect => ({ type: '
 export function reduce(link: Link, event: LinkEvent): LinkResult {
   const out = step(link, event);
   if (out.state === link) return out;
-  return { state: out.state, effects: [...saves(link, out.state), ...out.effects, { type: 'status', serverBack: serverBack(link, out.state) }] };
+  // a tab that may not write keeps its save as it was: room, cursor and key, so a reload that may write goes back in where it stopped
+  const kept = event.type === 'readOnly' ? [] : saves(link, out.state);
+  return { state: out.state, effects: [...kept, ...out.effects, { type: 'status', serverBack: serverBack(link, out.state) }] };
 }
 
 function step(link: Link, event: LinkEvent): Step {
@@ -214,6 +223,7 @@ function step(link: Link, event: LinkEvent): Step {
   if (link.at === 'upgrading') return same(link);
   if ('gen' in event && event.gen !== link.gen) return same(link);
   if (event.type === 'replaced') return link.at === 'off' ? same(link) : replaced(link, event);
+  if (event.type === 'readOnly') return link.at === 'off' || link.at === 'idle' ? same(link) : outOfRooms(link);
   switch (link.at) {
     case 'off': return event.type === 'create' || event.type === 'join' ? begin(link, event) : same(link);
     case 'idle': return idle(link, event);
@@ -407,6 +417,15 @@ function replaced(link: Idle | Creating | Joining | Live, event: Extract<LinkEve
   const tap = link.at === 'creating' || link.at === 'joining' ? [notify('replaced', null)] : [];
   return leaving(link, room ? live(gen, room.code, room.key, room.cursor, last, 'connecting') : toIdle(gen, serverOf(link), last), ...tap);
 }
+/**
+ * The tab stopped saving: out of the room it is in, or back from the create or join under way to no room (the tap is
+ * told, as by `replaced`). What is known about the server and the last room stays.
+ */
+function outOfRooms(link: Creating | Joining | Live): Step {
+  const gen = nextGen(link.gen), b: Back = link.at === 'live' ? link : link.back;
+  const to = b.at === 'off' ? same({ at: 'off', gen }) : toIdle(gen, serverOf(link), b.last);
+  return leaving(link, to, notify('readOnly', link.at === 'creating' ? null : link.code));
+}
 function serverOf(link: Idle | Creating | Joining | Live): Server {
   switch (link.at) {
     case 'idle': return link.server;
@@ -419,11 +438,14 @@ function sentOut(link: Live, gen: Gen, why: 'gone' | 'removed'): Step {
 }
 
 // ── what the save and the views hear ──
-type Stored = { room: RoomCode | null; cursor: number; last: Last; gmKey?: GmKey | null };
-/** What the save holds for this link. Null: leave the save as it is (no server, or a reload is coming). */
+type Stored = { room: RoomCode | null; cursor: number; last: Last; gmKey: GmKey | null };
+/**
+ * What the save holds for this link. Null: leave the save as it is (no server, or a reload is coming). Out of a room the
+ * save holds no GM key: a key is the seat in the room the phone is in, and the ring keeps it for a return.
+ */
 function stored(link: Link): Stored | null {
   switch (link.at) {
-    case 'idle': return { room: null, cursor: 0, last: link.last };
+    case 'idle': return { room: null, cursor: 0, last: link.last, gmKey: null };
     case 'live': return { room: link.code, cursor: link.cursor, last: link.last, gmKey: link.key };
     case 'creating': case 'joining': return stored(link.back);
     case 'off': case 'upgrading': return null;
@@ -437,7 +459,8 @@ function saves(before: Link, after: Link): LinkEffect[] {
   if (!b || a.room !== b.room) fields.room = a.room;
   if (!b || a.cursor !== b.cursor) fields.cursor = a.cursor;
   if (!b || !sameLast(a.last, b.last)) fields.last = a.last;
-  if (a.gmKey !== undefined && (!b || a.gmKey !== b.gmKey)) fields.gmKey = a.gmKey;
+  // the key goes with the room: a save written by an older build may hold a key the link's room never had
+  if (!b || a.room !== b.room || a.gmKey !== b.gmKey) fields.gmKey = a.gmKey;
   return Object.keys(fields).length ? [{ type: 'save', fields }] : [];
 }
 const failing = (l: Link): boolean => (l.at === 'idle' && typeof l.server === 'object') || (l.at === 'live' && typeof l.health === 'object');
