@@ -11,6 +11,7 @@ import { isUp } from './row-hp.ts';
 import { removeStatus, stackOf, withStatuses } from './effect-ops.ts';
 import { isStacking } from './op-amount.ts';
 import { stackStep } from './stacks.ts';
+import { counting } from './standing.ts';
 import type { Ability, CombatantId, Outcome, Tag } from './ability-types.ts';
 import { alive, landOps, landThreshold, reached } from './land.ts';
 import { refunded, tick } from './timeline.ts';
@@ -127,8 +128,8 @@ function matches(t: Trigger, e: Raised): boolean {
   if (t.on === 'used') return e.tags.includes(t.tag);
   return !('tag' in t) || t.tag === null || e.tags.includes(t.tag);
 }
-/** A trigger's condition on where (kits design 8.8): its bearer holds the status, or stands in a zone of the name. */
-const needMet = (t: Trigger, b: Body): boolean => !t.need || (t.need.kind === 'holds' ? b.statuses.some(s => s.key === (t.need as { key: StatusKey }).key) : insideZone(b, t.need.zone));
+/** A trigger's condition on where (kits design 8.8): its bearer holds the status and it counts (standing.ts `counts`), or stands in a zone of the name. */
+const needMet = (t: Trigger, b: Body): boolean => !t.need || (t.need.kind === 'holds' ? counting(b.statuses).some(s => s.key === (t.need as { key: StatusKey }).key) : insideZone(b, t.need.zone));
 /** Whether `b` stands in a zone named `name`: it holds that zone's open hold (zones.ts, whose def is labelled by the zone's name). */
 export const insideZone = (b: Pick<Body, 'statuses'>, name: string): boolean => b.statuses.some(s => s.zone !== undefined && s.until === null && s.def.label === name);
 const targetsOf = (rows: ReadonlyMap<CombatantId, Body>, bearer: Body, to: TriggerTo, e: Raised): CombatantId[] =>
@@ -160,7 +161,7 @@ export type TriggerFired = { readonly bodies: Body[]; readonly said: string[]; r
  * Fires the triggers `events` set off at `now` (design 1.3, rule 19b). The events are depth 1; the events a trigger's
  * ops raise (a hit dealt and struck, a kill, a status gained or ended) are one deeper, and nothing fires past
  * `kit.depth`; at most `kit.fires` triggers fire in all. Each event's bearer, if it is up, fires its live statuses'
- * triggers in list order and each def's in order, when the trigger answers the event and its limit lets it
+ * triggers in list order (those that count, standing.ts `counts`) and each def's in order, when the trigger answers the event and its limit lets it
  * (`tripStep` on the row's `trips`). A trigger's ops land from its status's source at their averages, as a hit the
  * bearer deals (design 1.3.9), on itself, the event's other body or its reach; a `refund` gives the bearer back that
  * share of the wait to its next turn; a status put on checks its threshold, which lands at once. Then the bearer's
@@ -178,8 +179,7 @@ export function fire(bodies: readonly Body[], events: readonly Raised[], now: Ti
       const b = rows.get(e.bearer);
       // a bearer fires only while up, but on its own going down (kits design 8.5.3)
       if (!b || (!isUp(b) && e.event !== 'down')) continue;
-      for (const s of b.statuses) {
-        if (s.until !== null && s.until <= now) continue;
+      for (const s of counting(b.statuses)) {
         (s.def.triggers ?? []).forEach((t, i) => {
           if (!matches(t, e) || !needMet(t, b)) return;
           const cur = rows.get(b.id)!, key = tripKey(s.key, i);

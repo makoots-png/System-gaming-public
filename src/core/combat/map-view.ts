@@ -104,7 +104,7 @@ export function fightBodies(f: Fight, R: OpRules & Pick<Rules, 'dice'>, mine: (b
         reacted: b.armed?.spent === true,
       },
       aim: to ? { kind: i ? 'intent' : 'suggest', to, area, revealed: i ? i.revealed : false, words: i && i.revealed ? { name: i.name, what: i.lines[0] ?? null } : null } : null,
-      summon: b.kind === 'summon' ? { owner: b.owner ?? b.id, left: k.summon } : null,
+      summon: b.kind === 'summon' ? { owner: b.owner, left: k.summon } : null,
       stealth: holds(b, 'hidden'), word: lifeWord(b),
     };
   });

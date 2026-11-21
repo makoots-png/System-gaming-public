@@ -15,7 +15,7 @@ import type { CombatantId, DamageType } from './ability-types.ts';
 import type { Sheet } from '../hunter/derive.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import { rowLifeAfter } from './row-life.ts';
-import { applyStatus, controlFactor, cureStatus, dispelled, lasting, removeStatus, shielded, stackOf, statusOn, statusShield, withStatuses } from './effect-ops.ts';
+import { applyStatus, controlFactor, cureStatus, dispelled, lasting, removeStatus, shielded, stackOf, statusOn, statusShield, withStatuses, withThreat } from './effect-ops.ts';
 import { atTier, countOn, stacked } from './op-amount.ts';
 import { admitted, counting, damageShare, harmful, healShare, markWards, wardedDamage } from './standing.ts';
 import type { Body, LandOp, Op, OpRules, Reach, Source, Status, StatusKey, Threshold, Tiered } from './effect-ops.ts';
@@ -50,10 +50,8 @@ export const hurt = (target: Body, damage: number): Body => rowLifeAfter(target,
 export const healed = (target: Body, amount: number): Body => rowLifeAfter(target, { type: 'heal', amount });
 
 // Rule 15: a monster's threat table.
-export function threatened(target: Body, from: CombatantId, amount: number): Body {
-  if (!target.threat || amount === 0) return target;
-  return { ...target, threat: { ...target.threat, [from]: (target.threat[from] ?? 0) + amount } };
-}
+export const threatened = (target: Body, from: CombatantId, amount: number): Body =>
+  amount === 0 ? target : withThreat(target, t => ({ ...t, [from]: (t[from] ?? 0) + amount }));
 
 /**
  * Rule 17 (design 4.1): a holding channel breaks and waits to go off at once at `breakShare` of its charge. The channel's
@@ -63,19 +61,22 @@ export function threatened(target: Body, from: CombatantId, amount: number): Bod
 export const broken = (target: Body, R: Pick<OpRules, 'fight'>): Body =>
   target.channel ? { ...target, channel: channelStep(target.channel, { type: 'interrupt', share: R.fight.breakShare }) } : target;
 
-/**
- * A body's statuses that count (standing.ts `counts`: an owed one, whose time ran out, does not). `_now` is not read:
- * a status's life already holds the end of its time; it stays for the callers in charge.ts.
- */
-export const live = (b: Body, _now: Tick): Status[] => counting(b.statuses);
+/** A body's statuses that count (standing.ts `counts`: an owed one, whose time ran out, does not). */
+export const live = (b: Body): Status[] => counting(b.statuses);
 /** Each op of a body's live statuses, at its source's tier, with the count a per-stack number is multiplied by (kits design 1.1). */
-export const opsOf = (b: Body, now: Tick) => live(b, now).flatMap(s => s.def.ops.map(op => ({ op, tier: s.source.tier, n: countOn(s) })));
-/** Held: a live status holds it (a stun), so its turns are passed by rule and it fires no reaction. */
-export const held = (b: Body, now: Tick): boolean => opsOf(b, now).some(({ op }) => op.op === 'hold');
-/** Whether a holding channel breaks: a hit of its `hold` share of max HP, or a forced break (a hold, a root, a taunt put on), unless a status protects it. */
-export function channelBreaks(target: Body, damage: number, forced: boolean, now: Tick): boolean {
+export const opsOf = (b: Body) => live(b).flatMap(s => s.def.ops.map(op => ({ op, tier: s.source.tier, n: countOn(s) })));
+/**
+ * Held: a live status holds it (a stun), so its turns are passed by rule and it fires no reaction. `_now` is not read
+ * (a status's life holds its end); it goes when tests/effect-ops.test.ts stops passing it.
+ */
+export const held = (b: Body, _now: Tick): boolean => opsOf(b).some(({ op }) => op.op === 'hold');
+/**
+ * Whether a holding channel breaks: a hit of its `hold` share of max HP, or a forced break (a hold, a root, a taunt put
+ * on), unless a status protects it. `_now` is not read, as `held`'s.
+ */
+export function channelBreaks(target: Body, damage: number, forced: boolean, _now: Tick): boolean {
   if (target.channel?.state !== 'holding') return false;
-  if (opsOf(target, now).some(({ op }) => op.op === 'channel' && op.mode === 'protect')) return false;
+  if (opsOf(target).some(({ op }) => op.op === 'channel' && op.mode === 'protect')) return false;
   return forced || damage >= target.sheet.hold * target.sheet.hpMax;
 }
 

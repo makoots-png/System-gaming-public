@@ -90,7 +90,10 @@ function pathOf(h: SheetHunter, R: SheetRules): SheetPath | null {
   return R.build.enabled && id !== null && Object.hasOwn(R.paths, id) ? R.paths[id] ?? null : null;
 }
 
-/** The perks of the picks the hunter's rank has opened: tier i opens at rank i (E 0 to S 5). Later picks are kept, not counted. */
+/**
+ * The perks of the picks the hunter's rank has opened: tier i opens at rank i (E 0 to S 5). Later picks are kept, not
+ * counted. The rank held opens them, also above its level's (record.ts `RANK_TABLE`'s `above`, SMX-rules-7.2 waits).
+ */
 function pathPerks(h: SheetHunter, R: SheetRules): Bonus[] {
   const path = pathOf(h, R);
   if (!path) return [];

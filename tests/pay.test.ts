@@ -6,7 +6,7 @@ import { remoteFacts } from '../src/core/combat/fight-facts.ts';
 import { loadSave } from '../src/core/save.ts';
 import type { Payee } from '../src/core/gates/pay.ts';
 import { reduce, fightId } from '../src/core/combat/fight.ts';
-import type { Ended } from '../src/core/combat/fight-types.ts';
+import type { Ended, NewRow } from '../src/core/combat/fight-types.ts';
 import { combatantId } from '../src/core/combat/ability-types.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 import { hunterRow, remoteRow } from '../src/core/combat/rows.ts';
@@ -38,7 +38,7 @@ function inDen(xpPaid = 0, id = 'f-den'): Save {
   const s = freshSave({ now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-gm') }, { onboarded: true }), h = s.hunters[0]!;
   const ctx = { rules: RULES };
   const rows = [hunterRow(h, combatantId('c1'), RULES), remoteRow({ ...newHunter(RULES), id: 'h1', name: 'Kai' }, KAI, combatantId('c2'), RULES),
-    { ...hunterRow({ ...newHunter(RULES), id: 'x', name: 'Goblin' }, combatantId('c3'), RULES), side: 'foe' as const, holder: null, name: 'Goblin', xp: 60 }];
+    { ...hunterRow({ ...newHunter(RULES), id: 'x', name: 'Goblin' }, combatantId('c3'), RULES), kind: 'monster', side: 'foe', holder: null, threat: {}, name: 'Goblin', xp: 60 } as NewRow];
   const added = reduce(null, { type: 'add', fightId: fightId(id), rows, openings: [] }, ctx).fight;
   const run = reduce(added, { type: 'start', openings: rows.map(r => ({ id: r.id, d20: 10, tie: 0 })) }, ctx).fight;
   const ended = reduce(run, { type: 'end' }, ctx).fight as Ended;

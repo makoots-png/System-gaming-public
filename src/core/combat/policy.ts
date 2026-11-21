@@ -12,7 +12,7 @@ import type { Ability } from './ability-types.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import type { Body } from './effect-ops.ts';
 import type { Running } from './fight-types.ts';
-import { concealed } from './standing.ts';
+import { concealed, counting } from './standing.ts';
 import { dist } from './space.ts';
 import type { Place } from './space.ts';
 import { usable, whoIsIn } from './resolve.ts';
@@ -67,9 +67,10 @@ function damageOf(f: Running, me: Body, a: Ability, t: Body, R: Rules): number {
 }
 /** The status keys a use puts on its target. */
 const putsOn = (a: Ability): string[] => a.ops.flatMap(o => (o.op === 'applyStatus' ? [o.key as string] : []));
-const lacks = (b: Body, a: Ability, now: number): boolean => {
+/** Whether `b` lacks a status `a` puts on: one it holds that does not count (standing.ts `counts`) is lacked. */
+const lacks = (b: Body, a: Ability): boolean => {
   const keys = putsOn(a);
-  return keys.length > 0 && keys.some(k => !b.statuses.some(s => s.key === k && (s.until === null || s.until > now)));
+  return keys.length > 0 && keys.some(k => !counting(b.statuses).some(s => s.key === k));
 };
 const mends = (a: Ability): boolean => a.effect?.type === 'heal' || a.effect?.type === 'shield' || a.ops.some(o => o.op === 'shield');
 
@@ -114,11 +115,11 @@ function partyChoice(f: Running, me: Body, uses: readonly Ability[], foes: reado
   if (call) return { type: 'act', ability: call, aim: aimAt(call, me, me) };
   const taunt = tauntOf(me, f.now, R), forced = taunt && foes.find(b => b.id === taunt.by);
   const target = forced || nearest(me, foes)!;
-  const curse = uses.find(a => a.aim !== 'self' && a.aim !== 'ally' && !a.effect && lacks(target, a, f.now) && fits(f, me, a, aimAt(a, me, target), R));
+  const curse = uses.find(a => a.aim !== 'self' && a.aim !== 'ally' && !a.effect && lacks(target, a) && fits(f, me, a, aimAt(a, me, target), R));
   if (curse) return { type: 'act', ability: curse, aim: aimAt(curse, me, target) };
   const hit = strongest(f, me, uses, [target], R) ?? (forced ? null : strongest(f, me, uses, foes, R));
   if (hit) return hit;
-  const buff = uses.find(a => a.aim === 'self' && !a.effect && !a.summon && lacks(me, a, f.now) && fits(f, me, a, me.id, R));
+  const buff = uses.find(a => a.aim === 'self' && !a.effect && !a.summon && lacks(me, a) && fits(f, me, a, me.id, R));
   if (buff) return { type: 'act', ability: buff, aim: me.id };
   return step(f, me, target);
 }

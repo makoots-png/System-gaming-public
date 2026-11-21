@@ -44,7 +44,7 @@ function body(origin: Origin = hunterOf(), o: RowPatch<Body> = {}): Body {
     id: combatantId('b'), side: 'party', ...lifeAt(kind ?? (origin.kind === 'hunter' ? 'hunter' : 'monster'), hp ?? sheet.hpMax), origin, tier: 0, stats: st, sheet,
     place: place(0, 0), mana: sheet.manaMax, fatigue: 0, shield: null, stagger: null, channel: null, threat: null,
     statuses: [], readyAt: {}, abilities: [], intent: null, holder: null, xp: 0, name: 'Body', at: tick(1000), speed: sheet.speed, tie: 0, ...rest,
-  };
+  } as Body;
 }
 const near = (actual: readonly number[], expected: readonly number[], digits: number): void => {
   expect(actual.length).toBe(expected.length);
@@ -558,7 +558,7 @@ describe('a status\'s own life on its bearer (SMX-rules-2)', () => {
     const row = (name: string, side: 'party' | 'foe', statuses: Status[] = []): NewRow => {
       const kind = side === 'party' ? 'hunter' : 'monster', hp = modified(hunterOf(), [], RULES).sheet.hpMax;
       return { id: combatantId(name), name, side, ...lifeAt(kind, hp), origin: hunterOf(), tier: 0, place: null, mana: 10, fatigue: 0, shield: null, stagger: null, channel: null,
-        threat: kind === 'monster' ? {} : null, statuses, readyAt: {}, abilities: [BIG], intent: null, holder: null, xp: 0 };
+        threat: kind === 'monster' ? {} : null, statuses, readyAt: {}, abilities: [BIG], intent: null, holder: null, xp: 0 } as NewRow;
     };
     const play = (...cmds: Command[]): Fight => cmds.reduce<Fight | null>((fight, cmd) => {
       const r = reduce(fight, cmd, { rules: RULES });

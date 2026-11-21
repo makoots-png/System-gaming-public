@@ -98,7 +98,7 @@ export const diceFor = (a: Ability, tier: number, R: KindRules): Dice[] => { con
 // Rule 2: a taunted user aims at its taunter, or at a place whose shape holds it, while the taunter is up and in range.
 export function taunted(a: Ability, user: Body, bodies: readonly Body[], at: Place, grid: Grid, now: Tick): boolean {
   if (!againstFoes(a)) return false;
-  for (const s of live(user, now)) {
+  for (const s of live(user)) {
     if (!s.def.ops.some(o => o.op === 'taunt') || s.source.id === null) continue;
     const src = bodies.find(b => b.id === s.source.id);
     if (!src || !isUp(src) || dist(user.place, src.place) > a.range) continue;
@@ -161,10 +161,10 @@ const crit = (a: Ability, user: Body, target: Body, avoid: Avoid, d20: number | 
 export type Snapshot = { readonly bodies: ReadonlyMap<CombatantId, { readonly stacks: Readonly<Record<StatusKey, number>>; readonly missing: number }>; readonly user: CombatantId; readonly field: Readonly<Record<StatusKey, number>>; readonly held: Readonly<Record<StatusKey, number>>; readonly hits: number; readonly kills: number; readonly spent: number };
 export function snapshot(user: Body, bodies: readonly Body[], hits: number, spent: number, now: Tick, R: ResolveRules): Snapshot {
   const K = R.fight.kit, up = bodies.filter(isUp);
-  const stacksOf = (b: Body) => Object.fromEntries(live(b, now).map(s => [s.key, Math.min(K.stackCap, countOn(s))])) as Record<StatusKey, number>;
+  const stacksOf = (b: Body) => Object.fromEntries(live(b).map(s => [s.key, Math.min(K.stackCap, countOn(s))])) as Record<StatusKey, number>;
   const field: Record<StatusKey, number> = {};
-  for (const b of up) for (const s of live(b, now)) field[s.key] = Math.min(K.fieldStacks, (field[s.key] ?? 0) + countOn(s));
-  const held = Object.fromEntries(live(user, now).map(s => [s.key, Math.min(K.held, Math.max(0, (now - s.since) / R.fight.round))])) as Record<StatusKey, number>;
+  for (const b of up) for (const s of live(b)) field[s.key] = Math.min(K.fieldStacks, (field[s.key] ?? 0) + countOn(s));
+  const held = Object.fromEntries(live(user).map(s => [s.key, Math.min(K.held, Math.max(0, (now - s.since) / R.fight.round))])) as Record<StatusKey, number>;
   const all = new Map(bodies.map(b => [b.id, { stacks: stacksOf(b), missing: b.sheet.hpMax > 0 ? Math.max(0, Math.min(1, 1 - rowHp(b) / b.sheet.hpMax)) : 0 }] as const));
   return { bodies: all, user: user.id, field, held, hits: Math.min(K.hits, hits), kills: Math.min(K.kills, tallyOf(user).kills.length), spent };
 }
@@ -182,8 +182,8 @@ function kitFor(s: Snapshot, target: CombatantId, spentHere: number): KitScope {
 function targetPrices(a: Ability, target: Body, now: Tick, R: ResolveRules): { target: Body; spent: number } {
   let t = target, spent = 0;
   for (const p of a.prices ?? []) if (p.kind === 'stacks' && p.from === 'target') {
-    const held = stacksOn(t, p.key, now), take = Math.min(held, p.take.kind === 'all' ? held : p.take.n);
-    if (take > 0) { t = withStatuses(t, taken(t, p.key, take, now), now, R); spent += take; }
+    const held = stacksOn(t, p.key), take = Math.min(held, p.take.kind === 'all' ? held : p.take.n);
+    if (take > 0) { t = withStatuses(t, taken(t, p.key, take), now, R); spent += take; }
   }
   return { target: t, spent };
 }
@@ -227,9 +227,10 @@ function defended(raw: number, a: Ability, user: Body, target: Body, R: ResolveR
 
 // Rule 16: a weak hit fills the bar 1.5 times; a full bar costs the target 1.5 rounds, empties and grows 50%.
 function staggered(target: Body, damage: number, now: Tick, R: ResolveRules): { target: Body; fill: number; staggered: boolean } {
+  // only a monster keeps a bar (effect-ops.ts `Body`)
+  if (target.kind !== 'monster' || !target.stagger || damage <= 0) return { target, fill: 0, staggered: false };
   const bar = target.stagger;
-  if (!bar || damage <= 0) return { target, fill: 0, staggered: false };
-  const rate = 1 + opsOf(target, now).reduce((sum, { op, tier, n }) => op.op === 'staggerRate' ? sum + atTier(op.pct, tier) * n : sum, 0) / 100;
+  const rate = 1 + opsOf(target).reduce((sum, { op, tier, n }) => op.op === 'staggerRate' ? sum + atTier(op.pct, tier) * n : sum, 0) / 100;
   const fill = damage * (damage < R.fight.staggerWeakBelow * bar.hit ? R.fight.staggerWeak : 1) * Math.max(0, rate);
   if (bar.fill + fill < bar.max) return { target: { ...target, stagger: { ...bar, fill: bar.fill + fill } }, fill, staggered: false };
   const floor = stunned(target, now, tick(R.fight.staggerCost * R.fight.round));
@@ -319,7 +320,7 @@ export function leftZone(a: Ability, user: Body, at: Place, grid: Grid, now: Tic
 // Rule 19: the user's next turn, then any delay on it, then any extra-turn refund; the ability's cooldown.
 function userTime(a: Ability, user: Body, now: Tick, refundRoll: number | undefined, R: ResolveRules): Body {
   let u = acted(user, now, a.cost.time, R.fight);
-  const ops = opsOf(user, now);
+  const ops = opsOf(user);
   const delay = ops.reduce((n, { op, tier }) => op.op === 'delay' ? n + atTier(op.ticks, tier) : n, 0);
   if (delay) u = delayed(u, tick(delay));
   const pct = ops.reduce((best, { op, tier }) => op.op === 'refund' && refundLands(op.chance, refundRoll) ? Math.max(best, atTier(op.pct, tier)) : best, 0);
@@ -340,7 +341,7 @@ const extraTaken = (a: Ability, user: Body, now: Tick, R: ResolveRules): boolean
 // A refund with a chance lands when the user's d20 is within that percent of the die (each face is a twentieth of 100%):
 // 20% on 1 to 4.
 const refundLands = (chance: number, d20: number | undefined): boolean => chance >= 100 || (d20 !== undefined && d20 * 100 / 20 <= chance);
-const refundRolls = (user: Body, now: Tick): boolean => opsOf(user, now).some(({ op }) => op.op === 'refund' && op.chance < 100);
+const refundRolls = (user: Body, now: Tick): boolean => opsOf(user).some(({ op }) => op.op === 'refund' && op.chance < 100);
 
 /**
  * The dice and reaction rolls the edge must roll for this use of `a` by `user`, as the fight stands (`bodies`): those of

@@ -28,12 +28,12 @@ import { tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
 import { combatantId, hunterId } from './ability-types.ts';
 import { parseSaveId } from '../ids.ts';
-import type { SheetKey } from '../ids.ts';
+import type { HunterRef, SheetKey } from '../ids.ts';
 import type { Ability, CombatantId, Summon } from './ability-types.ts';
 import { freeStatusKey, modified, shadowId, statusKey, statusOn, TYPE_MAX } from './effect-ops.ts';
 import { RANKS } from '../rules.ts';
 import { itemSource } from '../effects.ts';
-import type { Body, Holder, Op, Origin, SheetStatus, Stagger, Status, StatusDef } from './effect-ops.ts';
+import type { Body, Op, Origin, SheetStatus, Stagger, Status, StatusDef } from './effect-ops.ts';
 import { resolve } from './resolve.ts';
 import { usesGates } from './uses.ts';
 import { MAX_ABILITIES, MAX_STATUSES, NAME_MAX } from './fight-types.ts';
@@ -153,7 +153,7 @@ function wornStatuses(h: RowHunter, id: CombatantId, taken: readonly string[], n
  * worn statuses, its life as the sheet holds it (a dead hunter joins dead), and its mana and fatigue as the sheet holds
  * them, each within the maximum its statuses leave.
  */
-function partyRow(h: RowHunter, id: CombatantId, holder: Holder, R: RowRules): NewRow {
+function partyRow(h: RowHunter, id: CombatantId, holder: HunterRef, R: RowRules): NewRow {
   const now = JOINS, origin: Origin = { kind: 'hunter', build: buildOf(h, R) };
   const kept = h.conditions.slice(0, MAX_STATUSES).map(c => starting(c.key, c.def, c.source, c.rounds, now, R, c.stacks));
   const statuses = [...kept, ...wornStatuses(h, id, kept.map(s => s.key), now, R)].slice(0, MAX_STATUSES);
@@ -192,16 +192,15 @@ export function sameRankHit(rank: Rank, R: RowRules): number {
   const perks = TIER_BUDGET.slice(0, rankIdx(rank) + 1).reduce((s, v) => s + v, 0);
   const build: SheetBasis = { stats: { ...points, [a.main]: points[a.main] + perks }, level, gear: kitGear(a.kit, R), perks: {} };
   const strike = ARCHETYPE_ATTACKS.brute(R);
-  const standing = (id: string, side: Body['side'], kind: Body['kind'], origin: Origin, at: Place): Body => {
+  const standing = (id: string, side: Body['side'], origin: Origin, at: Place) => {
     const { stats, sheet } = modified(origin, [], R);
     return {
-      id: combatantId(id), name: id, side, kind, origin, tier: rankIdx(rank), stats, sheet, place: at, life: { at: 'up', hp: sheet.hpMax }, mana: sheet.manaMax,
-      fatigue: 0, shield: null, stagger: null, channel: null, threat: kind === 'monster' ? {} : null, statuses: [], readyAt: {}, abilities: [strike],
-      intent: null, holder: null, xp: 0, at: tick(0), speed: sheet.speed, tie: 0,
+      id: combatantId(id), name: id, side, origin, tier: rankIdx(rank), stats, sheet, place: at, life: { at: 'up', hp: sheet.hpMax } as const, mana: sheet.manaMax,
+      fatigue: 0, shield: null, stagger: null, channel: null, statuses: [], readyAt: {}, abilities: [strike], intent: null, holder: null, at: tick(0), speed: sheet.speed, tie: 0,
     };
   };
-  const u = standing('u', 'party', 'hunter', { kind: 'hunter', build }, place(0, 0));
-  const t = standing('t', 'foe', 'monster', { kind: 'monster', name: 't', rank, archetype: 'brute', monsterKind: 'normal', tweak: NO_TWEAK }, place(1, 0));
+  const u: Body = { ...standing('u', 'party', { kind: 'hunter', build }, place(0, 0)), kind: 'hunter', threat: null, xp: 0 };
+  const t: Body = { ...standing('t', 'foe', { kind: 'monster', name: 't', rank, archetype: 'brute', monsterKind: 'normal', tweak: NO_TWEAK }, place(1, 0)), kind: 'monster', threat: {}, xp: 0 };
   const mean = diceOf(formulaOf(strike, R)!).map(meanOf);
   const r = resolve(strike, u, [u, t], t.id, openGrid(R.fight.grid.w, R.fight.grid.h), { dice: { [t.id]: mean }, react: { [t.id]: NO_CRIT } }, tick(0), R);
   return r.ok ? r.outcomes[0]?.dealt ?? 0 : 0;

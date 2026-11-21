@@ -41,11 +41,12 @@ const st = (key: string, until: number | null, label = key): Status =>
 function row(name: string, side: Side, o: RowPatch<NewRow> = {}): NewRow {
   const { kind: k, hp, ...rest } = o;
   const kind = k ?? (side === 'party' ? 'hunter' : 'monster');
+  // a row of `kind` with that kind's own fields (effect-ops.ts `Body`); a patch that names a summon gives its owner and end
   return {
     id: id(name), name, side, ...lifeAt(kind, hp ?? HP_MAX), origin, tier: 0, place: null, mana: 10, fatigue: 0, shield: null, stagger: null, channel: null,
     threat: kind === 'monster' ? {} : null, statuses: [], readyAt: {}, abilities: [HIT, SLAM], intent: null,
     holder: kind === 'hunter' ? { kind: 'local', hunterId: hunterId(`h-${name}`) } : null, xp: 0, ...rest,
-  };
+  } as NewRow;
 }
 function play(...commands: Command[]): Fight {
   let fight: Fight | null = null;
@@ -110,10 +111,10 @@ describe('the fight on the table', () => {
     expect(rowIn(doc, 'B')).toMatchObject({ band: 'down', life: { at: 'dying' } });
   });
 
-  test('a row shows its live statuses with the rounds left to one decimal, at most 12, and a live shield\'s amount', () => {
+  test('a row shows its live statuses (not one whose time ran out, owed to its settle) with the rounds left to one decimal, at most 12, and a live shield\'s amount', () => {
     const many = Array.from({ length: 13 }, (_, i) => st(`s${i}`, null));
     const fight = play(add(row('A', 'party'), row('M', 'foe')), start(['A', 20], ['M', 10]));
-    const timed = withBody(fight, 'A', { statuses: [st('burning', 2500, 'Burning'), st('marked', null, 'Marked'), st('gone', 0)], shield: { amount: 12, until: tick(2000) } });
+    const timed = withBody(fight, 'A', { statuses: [st('burning', 2500, 'Burning'), st('marked', null, 'Marked'), { ...st('gone', 0), owed: true }], shield: { amount: 12, until: tick(2000) } });
     expect(rowIn(fightDoc(timed, RULES, docCtx()), 'A')).toMatchObject({
       statuses: [{ key: 'burning', label: 'Burning', left: 2.5 }, { key: 'marked', label: 'Marked', left: null }], shield: 12,
     });
@@ -238,7 +239,7 @@ describe('the doc stays small enough for the room', () => {
     const fight = play(add(...rows), start(...rows.map(r => [r.id, 10] as [string, number])));
     const full = {
       ...fight, log: Array.from({ length: 5 }, () => line('y'.repeat(300))),
-      rows: fight.rows.map(r => ({ ...r, shield: { amount: 99999, until: tick(99999) }, intent: r.kind === 'monster' ? { ability: SLAM.id, aim: place(19, 13), revealed: true } : null })),
+      rows: fight.rows.map((r): Body => (r.kind === 'monster' ? { ...r, shield: { amount: 99999, until: tick(99999) }, intent: { ability: SLAM.id, aim: place(19, 13), revealed: true } } : { ...r, shield: { amount: 99999, until: tick(99999) } })),
     };
     const doc = live(fightDoc(full, RULES, docCtx()));
     expect(doc.rows).toHaveLength(20);

@@ -27,11 +27,14 @@ import type { ReactEvent, ReactState } from '../src/core/combat/fight-react.ts';
 import { REACT_WALK } from './models/wave2-events.ts';
 import { tallyOf } from '../src/core/combat/row-tally.ts';
 import { REFUSAL_WORDS, TABLE_REFUSAL_WORDS } from '../src/core/combat/refusal-words.ts';
-import { TABLE_REFUSALS } from '../src/core/combat/fight-doc.ts';
 import { abilityId, combatantId, hunterId } from '../src/core/combat/ability-types.ts';
 import { parseSheetKey } from '../src/core/ids.ts';
+import type { DeviceId, SheetKey } from '../src/core/ids.ts';
+import { TABLE_REFUSALS, fightDoc } from '../src/core/combat/fight-doc.ts';
+import { tauntOf } from '../src/core/combat/fight-view.ts';
+import { sensible } from '../src/core/combat/policy.ts';
 import type { Ability, AbilityKind, CombatantId } from '../src/core/combat/ability-types.ts';
-import { modified, shadowId, statusKey } from '../src/core/combat/effect-ops.ts';
+import { modified, shadowId, statusKey, statusOn } from '../src/core/combat/effect-ops.ts';
 import type { Body, Op, Origin, StackDef, Status, StatusDef, UseOp } from '../src/core/combat/effect-ops.ts';
 import { afterDefence, landOps } from '../src/core/combat/land.ts';
 import { ARMED, endStep } from '../src/core/combat/delayed.ts';
@@ -69,11 +72,12 @@ function row(name: string, side: Side, o: RowPatch<NewRow> = {}): NewRow {
   const { kind: k, hp, ...rest } = o;
   const origin = o.origin ?? hunterOrigin(), hpMax = modified(origin, o.statuses ?? [], RULES).sheet.hpMax;
   const kind = k ?? (side === 'party' ? 'hunter' : 'monster');
+  // a row of `kind` with that kind's own fields (effect-ops.ts `Body`); a patch that names a summon gives its owner and end
   return {
     id: id(name), name, side, ...lifeAt(kind, hp ?? hpMax), origin, tier: 0, place: null, mana: 10, fatigue: 0, shield: null, stagger: null, channel: null,
     threat: kind === 'monster' ? {} : null, statuses: [], readyAt: {}, abilities: [HIT, BIG], intent: null,
     holder: kind === 'hunter' ? { kind: 'local', hunterId: hunterId(`h-${name}`) } : null, xp: 0, ...rest,
-  };
+  } as NewRow;
 }
 const haste = (pct: number): Status => st(`speed${pct}`, null, { op: 'speed', pct });
 const openings = (...list: [string, number, number?][]): Opening[] => list.map(([name, d20, tie]) => ({ id: id(name), d20, tie: tie ?? 0 }));
@@ -908,6 +912,51 @@ describe('who holds a row\'s sheet, and the XP of the foes', () => {
       start(['A', 20], ['M', 1], ['N', 1], ['O', 1]), hit('A', 'M', BIG), { type: 'remove', id: id('M') }, { type: 'remove', id: id('N') }] as const;
     expect(play(...base, { type: 'end' }).effects.at(-1)).toMatchObject({ type: 'ended', summary: { xp: 30 } });
     expect(play(...base, adjust('O', { hp: -999 })).effects.at(-1)).toMatchObject({ type: 'ended', summary: { winner: 'party', xp: 100 } });
+  });
+});
+
+describe('a stored row holds only its own kind\'s fields (SMX-rules-8)', () => {
+  const WOLF: Origin = { kind: 'monster', name: 'Wolf', rank: 'E', archetype: 'brute', monsterKind: 'normal', tweak: { hp: 1, stats: {} } };
+  const stored = (): { rows: Record<string, unknown>[] } => JSON.parse(JSON.stringify(play(add(
+    row('A', 'party'), row('M', 'foe', { origin: WOLF, xp: 30 }),
+    row('S', 'party', { kind: 'shadow', origin: WOLF, holder: { kind: 'shadow', hunterId: hunterId('h-A'), shadowId: shadowId('s-1') } }),
+    row('U', 'foe', { kind: 'summon', origin: WOLF, owner: id('M'), until: tick(5000) }),
+  ), start(['A', 20], ['M', 10], ['S', 5], ['U', 1])).fight));
+  /** The stored fight with row `name`'s fields changed (`undefined` drops one), read back. */
+  const edited = (name: string, patch: Record<string, unknown>) => {
+    const f = stored();
+    f.rows = f.rows.map(r => (r.id === name ? JSON.parse(JSON.stringify({ ...r, ...patch })) : r));
+    return parseFight(f, RULES);
+  };
+  const local = { kind: 'local', hunterId: 'h-A' }, bar = { fill: 0, max: 10, hit: 5 }, intent = { ability: 'hit', aim: 'A', revealed: false };
+
+  test('a fight of a hunter, a monster, a shadow and a summon, each with its own fields, reads back as it was', () => {
+    const f = stored();
+    expect(parseFight(f, RULES)).toEqual(JSON.parse(JSON.stringify(f)));
+  });
+
+  test('a row that holds a field of another kind does not read, and its fight reads as none', () => {
+    const cases: [string, string, Record<string, unknown>][] = [
+      ['a hunter with a stagger bar', 'A', { stagger: bar }],
+      ['a hunter with an extraction', 'A', { extraction: { at: 'open', tried: 1 } }],
+      ['a hunter with a threat table', 'A', { threat: {} }],
+      ['a hunter with an intent', 'A', { intent }],
+      ['a hunter worth XP', 'A', { xp: 30 }],
+      ['a hunter with an owner', 'A', { owner: 'M' }],
+      ['a hunter held as a shadow', 'A', { holder: { kind: 'shadow', hunterId: 'h-A', shadowId: 's-1' } }],
+      ['a monster held by a hunter', 'M', { holder: local }],
+      ['a monster with an owner and an end', 'M', { owner: 'A', until: 5000 }],
+      ['a monster with no threat table', 'M', { threat: null }],
+      ['a shadow held by a hunter', 'S', { holder: local }],
+      ['a shadow with a stagger bar', 'S', { stagger: bar }],
+      ['a shadow with a threat table', 'S', { threat: {} }],
+      ['a summon with no owner', 'U', { owner: undefined }],
+      ['a summon with no end', 'U', { until: undefined }],
+      ['a summon with an intent', 'U', { intent }],
+      ['a summon worth XP', 'U', { xp: 10 }],
+      ['a summon with an extraction', 'U', { extraction: { at: 'open', tried: 1 } }],
+    ];
+    for (const [what, name, patch] of cases) expect(edited(name, patch), what).toBeNull();
   });
 });
 
@@ -2035,5 +2084,64 @@ describe('the fight\'s table: every state under every command (SMX-rules-3)', ()
     for (const [name, fight, takes] of states) {
       for (const t of Object.keys(ALL) as CommandType[]) expect(can(fight, t), `${name} × ${t}`).toBe(takes.includes(t));
     }
+  });
+});
+
+describe('a status whose time ran out counts for no reader while its bearer\'s settle still owes it (SMX-rules-2)', () => {
+  /** Ends at `until` and owes its heal of 1 a round to its bearer's next settle, so it stays on the row past its end. */
+  const owing = (key: string, until: number, ...ops: Op[]): Status => st(key, until, ...ops, { op: 'heal', amount: f('1') });
+  /** A worn status whose trigger hits the striker for 50 when its bearer is struck, only while it holds `need` when one is named. */
+  const thorns = (need: string | null, until: number | null = null): Status => statusOn({
+    label: 'Thorns', desc: '', ops: [{ op: 'heal', amount: f('1') }], triggers: [{
+      on: 'struck', tag: null, to: 'other', limit: { kind: 'each' }, ops: [{ op: 'damage', type: 'physical', amount: f('50') }],
+      ...(need ? { need: { kind: 'holds', key: statusKey(need) } } : {}),
+    }],
+  }, st('thorns', until));
+  /** A at 0 passes; M's turn at 500, when A's statuses of `until` 500 have run out and A's settle at 1000 still owes them. */
+  const atM = (...statuses: Status[]) => [add(row('A', 'party', { statuses }), row('M', 'foe')), start(['A', 20], ['M', 10]), pass('A')] as const;
+  /** M at 0 passes; A's turn at 500, when M's statuses of `until` 500 have run out and M's settle at 1000 still owes them. */
+  const atA = (a: Partial<NewRow>, ...statuses: Status[]) => [add(row('A', 'party', a), row('M', 'foe', { statuses })), start(['A', 10], ['M', 20]), pass('M')] as const;
+  const hurt = (fight: Fight | null, name: string): number => body(fight, name).sheet.hpMax - rowHp(body(fight, name));
+
+  test('the status is on its bearer\'s row at 500, owed', () => {
+    expect(body(play(...atM(owing('ward', 500))).fight, 'A').statuses.map(s => [s.key, s.owed])).toEqual([['ward', true]]);
+  });
+
+  test('a trigger that needs a status its bearer held until 500 does not fire when its bearer is struck at 500; held until 2000, it does', () => {
+    expect(hurt(play(...atM(owing('ward', 500), thorns('ward')), hit('M', 'A')).fight, 'M')).toBe(0);
+    expect(hurt(play(...atM(owing('ward', 2000), thorns('ward')), hit('M', 'A')).fight, 'M')).toBeGreaterThan(0);
+  });
+
+  test('the trigger of a status that ran out at 500 does not fire at 500', () => {
+    expect(hurt(play(...atM(thorns(null, 500)), hit('M', 'A')).fight, 'M')).toBe(0);
+    expect(hurt(play(...atM(thorns(null, 2000)), hit('M', 'A')).fight, 'M')).toBeGreaterThan(0);
+  });
+
+  test('the table\'s doc does not show it, and the GM\'s card shows no taunt from it', () => {
+    const taunted = (until: number) => ({ ...owing('taunted', until, { op: 'taunt' }), source: { id: id('M'), tier: 0 } });
+    const doc = (until: number) => {
+      const fight = play(...atM(owing('ward', until), taunted(until))).fight!;
+      const d = fightDoc(fight, RULES, { by: 'd-gm' as DeviceId, at: '2026-11-21T10:00:00.000Z', was: null, keyOf: h => h as unknown as SheetKey })!;
+      const a = d.ended ? null : d.rows.find(r => r.id === 'A')!;
+      return [a?.statuses.map(s => s.key), a?.taunt, tauntOf(body(fight, 'A'), tick(500), RULES)];
+    };
+    expect(doc(500)).toEqual([[], null, null]);
+    expect(doc(2000)).toEqual([['ward', 'taunted'], { by: 'M', left: 1.5 }, { by: 'M', left: 1.5 }]);
+  });
+
+  test('a hunter\'s turn puts its curse on a foe whose same status ran out at 500, and not on one that holds it until 2000', () => {
+    const HEX = { ...ability('curse', 'hex', null, FAR), effect: null, ops: [{ op: 'applyStatus', key: statusKey('hex'), def: { label: 'Hex', desc: '', ops: [] }, duration: tick(2000) } as UseOp] };
+    const choice = (until: number) => {
+      const f = running(play(...atA({ abilities: [HEX, HIT] }, owing('hex', until))));
+      const c = sensible(f, body(f, 'A'), RULES);
+      return c.type === 'act' ? c.ability.id : c.type;
+    };
+    expect([choice(500), choice(2000)]).toEqual(['hex', 'hit']);
+  });
+
+  test('a use gated on the target holding a mark is refused on a foe whose mark ran out at 500', () => {
+    const MARKED = ability('strike', 'marked', '10', { ...FAR, gates: [{ kind: 'holds', key: statusKey('mark'), on: 'target', atLeast: 1 }] });
+    const use = (until: number) => reduce(running(play(...atA({ abilities: [MARKED] }, owing('mark', until)))), hit('A', 'M', MARKED), ctx).effects.find(e => e.type === 'refused');
+    expect([use(500), use(2000)]).toEqual([{ type: 'refused', reason: 'gated' }, undefined]);
   });
 });

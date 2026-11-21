@@ -131,7 +131,7 @@ function newRow(name: string, side: 'party' | 'foe', origin: Origin, x: number, 
   return {
     id: combatantId(name), name, side, kind: side === 'party' ? 'hunter' : 'monster', origin, tier: 2, place: place(x, 6), life: { at: 'up', hp: sheet.hpMax }, mana: sheet.manaMax, fatigue: 0,
     shield: null, stagger: null, channel: null, threat: side === 'foe' ? {} : null, statuses: [], readyAt: {}, abilities, intent: null, holder: null, xp: 0,
-  };
+  } as NewRow;
 }
 const ctx: Ctx = { rules: RULES };
 const step = (f: Fight | null, cmd: Command): Fight => {

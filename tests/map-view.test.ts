@@ -362,7 +362,7 @@ describe('tokens', () => {
       id: id(name), name, side, ...lifeAt(side === 'party' ? 'hunter' : 'monster', hp), origin, tier: 0, place: null, mana: 0, fatigue: 0, shield: null, stagger: null,
       channel: null, threat: side === 'foe' ? {} : null, statuses: [], readyAt: {}, abilities: [STRIKE], intent: null,
       holder: side === 'party' ? { kind: 'local', hunterId: hunterId(name) } : null, xp: 0,
-    });
+    } as NewRow);
     const f = reduce(null, { type: 'add', fightId: fightId('f'), rows: [row('A', 'party', hpMax / 2), row('M', 'foe', hpMax / 2)], openings: [] }, { rules: RULES }).fight as Fight;
     const [a, m] = fightBodies(f, RULES, b => b.id === 'A');
     expect([a!.ring, a!.mine, a!.stride, a!.dash]).toEqual([{ share: 0.5, band: null }, true, Math.ceil(RULES.fight.moveBase * RULES.fight.strideShare), RULES.fight.moveBase]);

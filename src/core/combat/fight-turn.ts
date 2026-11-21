@@ -13,7 +13,7 @@ import { acted, next, paceCost, roundOf, roundsOf, tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import { rowLifeAfter, sameLife } from './row-life.ts';
-import { applyStatus, dueAmount, onSheet, owedOf, perRound, settle, sheetStatuses, statusOn, withStatuses } from './effect-ops.ts';
+import { applyStatus, dueAmount, onSheet, owedOf, perRound, settle, sheetStatuses, statusOn, withStatuses, withThreat } from './effect-ops.ts';
 import { atTier } from './op-amount.ts';
 import type { Body, Due, HunterRow, SheetStatus, Status, StatusKey } from './effect-ops.ts';
 import type { SheetKey } from '../ids.ts';
@@ -93,7 +93,7 @@ function advance(f: Running, now: Tick, R: Rules): { fight: Running; ended: Rais
   const holding = new Set(f.rows.filter(r => r.channel?.state === 'holding').map(r => r.id as string));
   const rows = f.rows.map(r => {
     let x = r;
-    if (x.threat) x = { ...x, threat: Object.fromEntries(Object.entries(x.threat).map(([id, t]) => [id, holding.has(id) ? t : t * k])) };
+    x = withThreat(x, t => Object.fromEntries(Object.entries(t).map(([id, n]) => [id, holding.has(id) ? n : n * k])));
     if (x.shield && x.shield.until <= now) x = { ...x, shield: null };
     const kept: Status[] = [];
     for (const s of x.statuses) {
@@ -469,7 +469,7 @@ export function startTurn(f: Running, ctx: Ctx, fx: Fx): Running | Ended {
         // table by what the charge multiplied the payoff by, so a wind-up every foe can see draws its eye.
         const id = row.id, side = row.side, k = row.channel!.charge;
         const growth = a?.channel?.growth === 'linear' ? (1 + R.fight.channelLin * k) / (1 + R.fight.channelLin * (k - 1)) : R.fight.channelExp;
-        g = { ...g, rows: g.rows.map(b => b.side !== side && isUp(b) && b.threat ? { ...b, threat: { ...b.threat, [id]: (b.threat[id] ?? 0) * growth } } : b) };
+        g = { ...g, rows: g.rows.map(b => b.side !== side && isUp(b) ? withThreat(b, t => ({ ...t, [id]: (t[id] ?? 0) * growth })) : b) };
       }
     }
     // its turn began: it may be hastened again (kits table 8.9.6), and the reactions its turn restores are armed again (8.9.1)

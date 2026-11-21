@@ -390,7 +390,7 @@ function newRow(id: string, name: string, side: NewRow['side'], kind: NewRow['ki
   return {
     id: combatantId(id), name, side, kind, origin, tier, place: null, life: { at: 'up', hp: sheet.hpMax }, mana: sheet.manaMax, fatigue: 0, shield: null,
     stagger: null, channel: null, threat: kind === 'monster' ? {} : null, statuses: [], readyAt: {}, abilities: uses, intent: null, holder: null, xp: 0,
-  };
+  } as NewRow;
 }
 export function hunter(a: Archetype, rank: Rank, id: string = a, R: Rules = RULES): SimRow {
   const origin: Origin = { kind: 'hunter', build: buildOf(a, rank, R) };
@@ -414,7 +414,7 @@ export function monster(rank: Rank, archetype: MonsterArchetype, kind: MonsterKi
   const base = newRow(id, id, 'foe', 'monster', origin, tierOf(rank), [MONSTER_ABILITY[archetype](R)], R);
   const bar = R.fight.kinds[kind].stagger;
   const hit = bar > 0 ? sameRankHit(rank, R) : 0;
-  return { row: bar > 0 ? { ...base, stagger: { fill: 0, max: bar * hit, hit } } : base, policy: monsterPolicy };
+  return { row: bar > 0 ? { ...base, stagger: { fill: 0, max: bar * hit, hit } } : base, policy: monsterPolicy } as SimRow;
 }
 
 // ── what a fight leaves for the rows to measure ──

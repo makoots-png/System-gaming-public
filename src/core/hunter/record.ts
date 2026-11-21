@@ -35,13 +35,59 @@ export function setJob<H extends Named>(h: H, job: string | null): H {
   return { ...h, job: jobOf(job) };
 }
 
-/** The GM's choice of rank; a word that is not a rank keeps the rank. A new rank is a fact of the chronicle. */
-export const setRank = <H extends Named & Chronicled>(h: H, rank: unknown): H => ranked(h, oneOf(rank, RANKS, h.rank));
-/** The rank the hunter's level earns when it is above the rank held; else refused (`not-eligible`). */
-export function reevaluate<H extends Named & Chronicled>(h: H, R: Rules): H | Refused<'not-eligible'> {
-  const to = rankForLevel(R, h.level);
-  return rankIdx(to) > rankIdx(h.rank) ? ranked(h, to) : refuse('not-eligible');
+// ── the rank, a machine (`RANK_TABLE`, `rankStep`). Only the rank is stored; where it stands is read with the level:
+//
+//   follows --the GM sets another rank--------------> above or behind
+//   follows --re-evaluate------------------------------> refused `not-eligible`
+//   behind  --re-evaluate------------------------------> follows (the rank the level earns, a fact of the chronicle)
+//   behind  --the GM sets a rank-----------------------> where that rank stands
+//   above   --re-evaluate------------------------------> refused `not-eligible`
+//   above   --the GM sets a rank-----------------------> where that rank stands
+//   any     --the level moved--------------------------> the rank kept (SMX-rules-7.2 waits for `above`)
+
+/**
+ * Where a hunter's rank stands against the rank its level earns (rules.ts `rankForLevel`): the same (`follows`), below
+ * it, so the GM may re-evaluate (`behind`), or above it, set by the GM or kept after levels lost (`above`).
+ */
+export type ProgressRank = { readonly at: 'follows' } | { readonly at: 'behind' | 'above'; readonly earns: Rank };
+export const rankStanding = (h: Pick<Named, 'rank' | 'level'>, R: Rules): ProgressRank => {
+  const earns = rankForLevel(R, h.level), d = rankIdx(earns) - rankIdx(h.rank);
+  return d === 0 ? { at: 'follows' } : { at: d > 0 ? 'behind' : 'above', earns };
+};
+/** What can happen to a rank: the GM's re-evaluation, the GM's choice of a rank (any word), the level moved. */
+export type ProgressRankEvent = { readonly type: 'reevaluate' } | { readonly type: 'set'; readonly rank: unknown } | { readonly type: 'levelMoved' };
+/**
+ * What an event does to the rank: to the rank the level earns, to the GM's choice, kept, or refused (null). Every state
+ * takes the GM's choice (`set` is `chosen` in each row by its type), so a GM's set reads no rules.
+ */
+type RankMove = 'earned' | 'kept' | null;
+type RankRow = { readonly reevaluate: RankMove; readonly levelMoved: RankMove; readonly set: 'chosen' };
+export const RANK_TABLE: { readonly [S in ProgressRank['at']]: RankRow } = {
+  follows: { reevaluate: null, set: 'chosen', levelMoved: 'kept' },
+  behind: { reevaluate: 'earned', set: 'chosen', levelMoved: 'kept' },
+  // SMX-rules-7.2 waits on the owner: whether the rank follows a level lost below its rank's unless the GM marked the rank
+  // as set. Today it is kept, with its check bonus and the path tiers it opened. The ruling needs the GM's mark stored
+  // beside the rank (hunter.ts), since a rank above its level's is today either the GM's or kept after levels lost.
+  above: { reevaluate: null, set: 'chosen', levelMoved: 'kept' },
+};
+
+/**
+ * The hunter after `e` to its rank: the one writer of a hunter's rank. A new rank is a fact of the chronicle; a GM's
+ * word that is not a rank keeps the rank. Refused (`not-eligible`) where the table refuses.
+ */
+export function rankStep<H extends Named & Chronicled>(h: H, e: Extract<ProgressRankEvent, { type: 'set' }>): H;
+export function rankStep<H extends Named & Chronicled>(h: H, e: ProgressRankEvent, R: Rules): H | Refused<'not-eligible'>;
+export function rankStep<H extends Named & Chronicled>(h: H, e: ProgressRankEvent, R?: Rules): H | Refused<'not-eligible'> {
+  if (e.type === 'set') return ranked(h, oneOf(e.rank, RANKS, h.rank));
+  // The overloads pass the rules with every event but `set`.
+  const move = RANK_TABLE[rankStanding(h, R!).at][e.type];
+  if (move === null) return refuse('not-eligible');
+  return move === 'kept' ? h : ranked(h, rankForLevel(R!, h.level));
 }
+/** The GM's choice of rank; a word that is not a rank keeps the rank. */
+export const setRank = <H extends Named & Chronicled>(h: H, rank: unknown): H => rankStep(h, { type: 'set', rank });
+/** The rank the hunter's level earns when it is above the rank held (`behind`); else refused (`not-eligible`). */
+export const reevaluate = <H extends Named & Chronicled>(h: H, R: Rules): H | Refused<'not-eligible'> => rankStep(h, { type: 'reevaluate' }, R);
 
 // ── titles ──
 /**

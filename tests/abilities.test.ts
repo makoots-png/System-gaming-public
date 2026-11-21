@@ -111,7 +111,7 @@ describe('the single-hit bound of design section 6', () => {
       id: combatantId(id), name: id, side, kind: origin.kind === 'hunter' ? 'hunter' : 'monster', origin, tier: tier(rank), stats: m.stats, sheet: m.sheet,
       place: at, life: { at: 'up', hp: m.sheet.hpMax }, mana: m.sheet.manaMax, fatigue: 0, shield: null, stagger: null, channel: null, threat: origin.kind === 'monster' ? {} : null,
       statuses: [], readyAt: {}, abilities: [], intent: null, holder: null, at: NOW, speed: m.sheet.speed, tie: 0, xp: 0,
-    };
+    } as Body;
   };
   // A d20 of 7 is past every crit face (at most 6) and, with the edge capped at 6, under the resist roll of 15; adjacent,
   // nothing lands slowly enough to step out of.

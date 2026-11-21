@@ -20,6 +20,7 @@ import type { LifeState } from '../hunter/vitals.ts';
 import { sheetStatuses, statusKey } from './effect-ops.ts';
 import type { Body, Channel, CombatantKind, OpRules, SheetStatus, StatusDef } from './effect-ops.ts';
 import { usesOf } from './uses.ts';
+import { counting } from './standing.ts';
 import type { Fight, StatusGrant } from './fight-types.ts';
 
 // ── the order ahead ──
@@ -94,7 +95,7 @@ export function cardOf(f: Fight, row: Body, R: OpRules & KindRules): Card {
     intent: intentOf(row, R),
     threat: threatOf(f, row, R),
     taunt: tauntOf(row, timeOf(f), R),
-    summon: row.kind === 'summon' && row.until !== undefined ? roundsLeft(row.until, timeOf(f), R) : null,
+    summon: row.kind === 'summon' ? roundsLeft(row.until, timeOf(f), R) : null,
   };
 }
 
@@ -179,7 +180,7 @@ export function threatOf(f: Fight, row: Body, R: { readonly fight: { readonly ro
 /** A taunt on a body: who taunted it and the rounds it has left (null until removed). */
 export type TauntView = { readonly by: CombatantId; readonly left: number | null };
 export function tauntOf(row: Body, now: Tick, R: { readonly fight: { readonly round: number } }): TauntView | null {
-  const s = row.statuses.find(x => x.source.id !== null && (x.until === null || x.until > now) && x.def.ops.some(o => o.op === 'taunt'));
+  const s = counting(row.statuses).find(x => x.source.id !== null && x.def.ops.some(o => o.op === 'taunt'));
   return s && s.source.id !== null ? { by: s.source.id, left: s.until === null ? null : roundsLeft(s.until, now, R) } : null;
 }
 

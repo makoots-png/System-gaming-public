@@ -169,7 +169,7 @@ function row(id: string, name: string, side: NewRow['side'], kind: NewRow['kind'
     id: combatantId(id), name, side, ...lifeAt(kind, sheet.hpMax), origin, tier: 1, place: null, mana: sheet.manaMax, fatigue: 0, shield: null,
     stagger: null, channel: null, threat: kind === 'monster' ? {} : null, statuses: [], readyAt: {}, abilities, intent: null,
     holder: null, xp: 0, ...o,
-  };
+  } as NewRow;
 }
 export const ROSTER: readonly NewRow[] = [
   row('c-brakk', 'Brakk', 'party', 'hunter', build('str', 'vit', 'medium'), [STRIKE, STUN, TAUNT, VIOLENCE], { holder: { kind: 'local', hunterId: hunterId('h-brakk') }, statuses: [PAIN_IS_POWER, holding('pain', PAIN, 2)] }),

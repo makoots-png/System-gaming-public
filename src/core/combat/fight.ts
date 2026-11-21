@@ -14,7 +14,7 @@ import type { Place } from './space.ts';
 import { acted, cost, interval, opening, paceCost, tick, walkCost } from './timeline.ts';
 import type { Tick } from './timeline.ts';
 import { isUp, rowHp } from './row-hp.ts';
-import { applyStatus, modified, removeStatus, statusOn, statusShield, withStatuses } from './effect-ops.ts';
+import { applyStatus, modified, removeStatus, statusOn, statusShield, withStatuses, withThreat } from './effect-ops.ts';
 import { atTier } from './op-amount.ts';
 import type { Body, Status, StatusKey } from './effect-ops.ts';
 import { landUse, leftZone, placeOf, ready, resolve } from './resolve.ts';
@@ -119,10 +119,7 @@ const create: Step<'none', 'add'> = (_f, cmd, ctx) => {
 function removeFrom<F extends Setup | Running>(f: F, id: string, R: Rules): F | null {
   const row = rowOf(f, id);
   if (!row) return null;
-  const rows = f.rows.filter(r => r.id !== id).map(r => {
-    if (!r.threat || !(id in r.threat)) return r;
-    return { ...r, threat: Object.fromEntries(Object.entries(r.threat).filter(([k]) => k !== id)) };
-  });
+  const rows = f.rows.filter(r => r.id !== id).map(r => (r.threat && id in r.threat ? withThreat(r, t => Object.fromEntries(Object.entries(t).filter(([k]) => k !== id))) : r));
   // A foe removed while down keeps the XP it earned the party.
   const g = { ...f, rows, banked: row.side === 'foe' && !isUp(row) ? f.banked + row.xp : f.banked };
   return logged(g.phase === 'running' ? { ...g, pending: g.pending.filter(p => p.id !== id) } : g, line(`${row.name} leaves the fight.`, [row.id]), R);
@@ -431,7 +428,7 @@ function setIntent<F extends Setup | Running>(f: F, cmd: Extract<Command, { type
 function reveal<F extends Setup | Running>(f: F, cmd: Extract<Command, { type: 'reveal' }>, ctx: Ctx): Result {
   const u = rowOf(f, cmd.by);
   if (!u) return refused(f, 'unknown');
-  if (!u.intent) return refused(f, 'noIntent');
+  if (u.kind !== 'monster' || !u.intent) return refused(f, 'noIntent');
   if (u.intent.revealed) return refused(f, 'noChange');
   const a = u.abilities.find(x => x.id === u.intent!.ability);
   return done(logged(withRow(f, { ...u, intent: { ...u.intent, revealed: true } }), line(`${u.name}'s ${a?.name ?? 'intent'} is revealed.`, [u.id]), ctx.rules), []);

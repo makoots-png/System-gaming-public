@@ -337,20 +337,18 @@ export type Holder = HunterRef | { readonly kind: 'shadow'; readonly hunterId: H
  */
 export type Intent = { readonly ability: AbilityId; readonly aim: Place | CombatantId; readonly revealed: boolean };
 
+/** A shadow's holder: the hunter on this phone whose Shadows panel keeps its HP (`shadowHp`). */
+export type ShadowHolder = Extract<Holder, { readonly kind: 'shadow' }>;
+/** A threat table (design 4.2): what each foe of its keeper has done to it, which its keeper's target follows. */
+export type ThreatTable = Readonly<Record<CombatantId, number>>;
+
 /**
- * Which life a row holds goes with its kind (docs/agent-handoff/audit/notes-dead-row.md section 2): a hunter's row holds
- * the hunter's `Life` (vitals.ts: up, dying, stable, dead), any other row a `FoeLife` (row-life.ts: up or dead), so a
- * dying monster cannot be written. A row's HP is its life's (row-hp.ts `rowHp`); only row-life.ts changes it.
+ * What every row has, whatever its kind. `stats` and `sheet` are what `modified` makes of `origin` and `statuses`;
+ * `speed` (from `Clock`) is the sheet's speed. `readyAt` is when each used ability is ready again. Its origin is not its
+ * kind's: rows.ts gives a hunter its build and the rest a monster's, but `derive` reads either for any row, and the
+ * fight's tests stand monsters on a hunter's build for their known numbers.
  */
-export type BodyLife =
-  | { readonly kind: 'hunter'; readonly life: Life }
-  | { readonly kind: Exclude<CombatantKind, 'hunter'>; readonly life: FoeLife };
-/**
- * A combatant in a fight as one use of an ability reads and changes it: the row of the reducer (design 4 and 5.4). `stats`
- * and `sheet` are what `modified` makes of `origin` and `statuses`; `speed` (from `Clock`) is the sheet's speed. `threat`
- * is null on a body that keeps no threat table (anything but a monster). `readyAt` is when each used ability is ready again.
- */
-export type Body = Clock & BodyLife & {
+type BodyCommon = Clock & {
   readonly id: CombatantId;
   readonly name: string;
   readonly side: Side;
@@ -363,19 +361,11 @@ export type Body = Clock & BodyLife & {
   readonly mana: number;
   readonly fatigue: number;
   readonly shield: Shield | null;
-  readonly stagger: Stagger | null;
   readonly channel: Channel | null;
-  readonly threat: Readonly<Record<CombatantId, number>> | null;
   readonly statuses: readonly Status[];
   readonly readyAt: Readonly<Record<AbilityId, Tick>>;
   /** What it can use in this fight. */
   readonly abilities: readonly Ability[];
-  /** A monster's announced next use; null for anyone else and for a monster the GM has not set one on. */
-  readonly intent: Intent | null;
-  /** Whose sheet the fight writes back to; null for a monster, and for a shadow or hunter no sheet holds. */
-  readonly holder: Holder | null;
-  /** What the party earns when this row is a foe that goes down (0 for anyone else). */
-  readonly xp: number;
   /** Where each trigger of its statuses stands against its limit (kits table 2.5), by `tripKey`; absent when none has fired. */
   readonly trips?: Readonly<Record<string, Trip>>;
   /**
@@ -388,10 +378,6 @@ export type Body = Clock & BodyLife & {
    * limited a rest also the rest's before the fight. Absent when none.
    */
   readonly used?: Readonly<Record<AbilityId, number>>;
-  /** A summon's: the row that called it, whose phone commands it (kits design 1.9). Absent on any other row. */
-  readonly owner?: CombatantId;
-  /** A summon's: when it leaves, at its first turn start at or after this time (table 2.4). Absent on any other row. */
-  readonly until?: Tick;
   /** The wards it has had this fight (kits design 8.1, table 8.9.5): each reaches a body once a fight. Absent when none. */
   readonly warded?: readonly ('untargetable' | 'invulnerable')[];
   /** The extra actions it took in the round of fight time `round` (`floor(now / round)`, kits table 8.9.6); absent before its first. */
@@ -403,11 +389,71 @@ export type Body = Clock & BodyLife & {
    * rest), and whether it fired since it was last restored. Absent when it holds none.
    */
   readonly armed?: { readonly ability: AbilityId; readonly on: CombatantId | null; readonly spent: boolean };
-  /** A fallen monster's shadow extraction (extraction.ts): the attempts made on it, or gone. Absent before the first. */
-  readonly extraction?: Extraction;
 };
-/** A hunter's row: its life is the life machine's. */
-export type HunterRow = Extract<Body, { readonly kind: 'hunter' }>;
+/**
+ * The fields of one kind only (SMX-rules-8). Another kind's are null or absent in each, so a row cannot hold them:
+ * - `holder`: whose sheet the fight writes back to: a hunter's (on this phone or another) or a shadow's hunter; null for
+ *   a monster and a summon, and for a hunter or shadow no sheet holds.
+ * - `threat`: a monster's table, and a summon's on the foes' side, as a monster's (rows.ts `summonRow`); null for the rest.
+ * - `stagger`: an elite's or a boss's bar; null for a monster without one and for every other kind.
+ * - `intent`: a monster's announced next use (fight.ts `setIntent` refuses any other kind); null when none.
+ * - `xp`: what the party earns when a monster goes down; 0 for every other kind.
+ * - `owner` and `until`: a summon's caller, whose phone commands it, and when it leaves (table 2.4).
+ * - `extraction`: a fallen monster's shadow extraction (extraction.ts); absent before the first attempt.
+ */
+type HunterOwn = {
+  readonly kind: 'hunter'; readonly life: Life; readonly holder: HunterRef | null;
+  readonly threat: null; readonly stagger: null; readonly intent: null; readonly xp: 0;
+  readonly owner?: never; readonly until?: never; readonly extraction?: never;
+};
+type MonsterOwn = {
+  readonly kind: 'monster'; readonly life: FoeLife; readonly holder: null;
+  readonly threat: ThreatTable; readonly stagger: Stagger | null; readonly intent: Intent | null; readonly xp: number;
+  readonly owner?: never; readonly until?: never; readonly extraction?: Extraction;
+};
+type ShadowOwn = {
+  readonly kind: 'shadow'; readonly life: FoeLife; readonly holder: ShadowHolder | null;
+  readonly threat: null; readonly stagger: null; readonly intent: null; readonly xp: 0;
+  readonly owner?: never; readonly until?: never; readonly extraction?: never;
+};
+type SummonOwn = {
+  readonly kind: 'summon'; readonly life: FoeLife; readonly holder: null;
+  readonly threat: ThreatTable | null; readonly stagger: null; readonly intent: null; readonly xp: 0;
+  readonly owner: CombatantId; readonly until: Tick; readonly extraction?: never;
+};
+/** A hunter's row: its life is the life machine's (vitals.ts). */
+export type HunterRow = BodyCommon & HunterOwn;
+/** A monster's row. */
+export type MonsterRow = BodyCommon & MonsterOwn;
+/** A shadow's row: the monster it was, on its hunter's side. */
+export type ShadowRow = BodyCommon & ShadowOwn;
+/** A summon's row: called by its owner for a few rounds (kits design 1.9). */
+export type SummonRow = BodyCommon & SummonOwn;
+/**
+ * A combatant in a fight as one use of an ability reads and changes it: the row of the reducer (design 4 and 5.4), one
+ * of four kinds, each with only its own fields (SMX-rules-8).
+ */
+export type Body = HunterRow | MonsterRow | ShadowRow | SummonRow;
+/**
+ * `b` with its threat table changed by `change`: a monster's, and a summon's that keeps one; any other row as it was.
+ * Every write of a table goes through here, so none can give one to a row whose kind keeps none.
+ */
+export function withThreat(b: Body, change: (t: ThreatTable) => ThreatTable): Body {
+  switch (b.kind) {
+    case 'monster': return { ...b, threat: change(b.threat) };
+    case 'summon': return b.threat === null ? b : { ...b, threat: change(b.threat) };
+    case 'hunter': case 'shadow': return b;
+    default: return b satisfies never;
+  }
+}
+/**
+ * Which life a row holds goes with its kind (docs/agent-handoff/audit/notes-dead-row.md section 2): a hunter's row holds
+ * the hunter's `Life` (vitals.ts: up, dying, stable, dead), any other row a `FoeLife` (row-life.ts: up or dead), so a
+ * dying monster cannot be written. A row's HP is its life's (row-hp.ts `rowHp`); only row-life.ts changes it.
+ */
+export type BodyLife =
+  | { readonly kind: 'hunter'; readonly life: Life }
+  | { readonly kind: Exclude<CombatantKind, 'hunter'>; readonly life: FoeLife };
 
 /** The rule numbers this file reads. */
 export type OpRules = DeriveRules;

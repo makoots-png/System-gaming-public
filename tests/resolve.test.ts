@@ -43,7 +43,7 @@ function body(id: string, origin: Origin, at: Place, side: Side, o: RowPatch<Bod
     id: combatantId(id), side, ...lifeAt(kind ?? (origin.kind === 'hunter' ? 'hunter' : 'monster'), hp ?? s.hpMax), origin, tier: 2, stats: m.stats, sheet: s, place: at,
     mana: s.manaMax, fatigue: 0, shield: null, stagger: null, channel: null, threat: origin.kind === 'monster' ? {} : null,
     statuses: [], readyAt: {}, abilities: [], intent: null, holder: null, xp: 0, name: 'Body', at: NOW, speed: s.speed, tie: 0, ...rest,
-  };
+  } as Body;
 }
 const ability = (kind: AbilityKind, o: Partial<Ability> = {}, text?: string): Ability => {
   const a = abilityOf(kind, { id: abilityId(kind), name: kind }, RULES);
@@ -225,12 +225,12 @@ describe('each rule of design 3.1', () => {
   });
 
   test('rule 16: a weak hit fills the stagger bar 1.5 times its damage, a normal one its damage', () => {
-    const boss = { ...foe, sheet: { ...foe.sheet, armor: 0 }, stagger: { fill: 0, max: 88, hit: 22 } };
+    const boss = { ...foe, sheet: { ...foe.sheet, armor: 0 }, stagger: { fill: 0, max: 88, hit: 22 } } as Body;
     expect([hitFoe(ability('strike', {}, '6'), user, boss).outcomes[0]!.stagger, hitFoe(ability('strike', {}, '20'), user, boss).outcomes[0]!.stagger]).toEqual([9, 20]);
   });
 
   test('rule 16: a full bar moves the target\'s next turn 1.5 rounds on, empties and grows 75%', () => {
-    const boss = { ...foe, sheet: { ...foe.sheet, armor: 0 }, stagger: { fill: 80, max: 88, hit: 22 } };
+    const boss = { ...foe, sheet: { ...foe.sheet, armor: 0 }, stagger: { fill: 80, max: 88, hit: 22 } } as Body;
     const r = hitFoe(ability('strike', {}, '20'), user, boss);
     expect([r.outcomes[0]!.staggered, find(r.bodies, 't').at, find(r.bodies, 't').stagger]).toEqual([true, NOW + 1500, { fill: 0, max: 154, hit: 22, until: NOW + 1500 }]);
   });
@@ -250,7 +250,7 @@ describe('each rule of design 3.1', () => {
 
   test('rule 18: a taunt adds twice the gap to the leader to the taunter\'s threat, after the hit\'s own threat', () => {
     const taunt = ability('strike', { ops: [statusOf('taunted', { op: 'taunt' })] }, '1');
-    const t = { ...foe, threat: { x: 100, u: 10 } };
+    const t = { ...foe, threat: { x: 100, u: 10 } as Record<string, number> } as Body;
     expect(find(hitFoe(taunt, user, t).bodies, 't').threat).toEqual({ x: 100, u: 11 + 2 * (100 - 11) });
   });
 

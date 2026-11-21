@@ -3,7 +3,8 @@
 // read node by node, at most `FORMULA_PARTS` parts. A row's stats, sheet and speed are not read: they are worked out
 // again from its origin and statuses, as the reducer keeps them. XP banked and summed may pass a row's bound, so it is
 // read up to the largest safe whole number. The reducer trusts what this answers. A new field of `Fight` or `Body` gets
-// its line here and its value in the round trip of tests/fight-model.test.ts.
+// its line here (a field of one kind of row in its kind's reader, `OWN`) and its value in the round trip of
+// tests/fight-model.test.ts.
 import { RANKS } from '../rules.ts';
 import type { Rules } from '../rules.ts';
 import { oneOf } from '../one-of.ts';
@@ -27,8 +28,10 @@ import { isStacking, SHEET_OP_KEYS } from './op-amount.ts';
 import { parseLife } from '../hunter/vitals.ts';
 import { parseLevel } from '../hunter/level.ts';
 import type {
-  Body, BodyLife, Channel, CombatantKind, Due, End, Holder, Intent, LandOp, Op, Origin, Reach, SheetStatus, StackRule, Status, StatusDef, StatusKey, Threshold, Tiered, UseOp,
+  Body, Channel, CombatantKind, Due, End, Holder, HunterRow, Intent, LandOp, MonsterRow, Op, Origin, Reach, ShadowRow, SheetStatus, StackRule, Stagger, Status,
+  StatusDef, StatusKey, SummonRow, ThreatTable, Threshold, Tiered, UseOp,
 } from './effect-ops.ts';
+import type { FoeLife } from './row-life.ts';
 import { BEARER_EVENTS, PARTY_EVENTS } from './triggers.ts';
 import type { Limit, Need, Trigger, Trip } from './triggers.ts';
 import { fightId, LOG_CAP, LOG_LINE_MAX, MAX_ABILITIES, MAX_PENDING, MAX_ROWS, MAX_SPREAD, MAX_STATUSES, NAME_MAX, PHASES } from './fight-types.ts';
@@ -689,43 +692,93 @@ const SIDES = ['party', 'foe'] as const;
 const BODY_KINDS = ['hunter', 'monster', 'shadow', 'summon'] as const;
 const CHANNEL_STATES = ['holding', 'broken', 'fired'] as const;
 /**
- * A row's life by its kind (effect-ops.ts `BodyLife`): a hunter's as a sheet stores it (vitals.ts `parseLife`), anything
- * else's up at 1 to its maximum HP, or dead. Null when it reads as neither: a fight stored before rows held their life
- * (an `hp` number) reads as no fight, and its hunters keep their sheets.
+ * A life of any row but a hunter's (row-life.ts `FoeLife`): up at 1 to its maximum HP, or dead. A hunter's is read as a
+ * sheet stores it (vitals.ts `parseLife`). Null when it reads as neither: a fight stored before rows held their life (an
+ * `hp` number) reads as no fight, and its hunters keep their sheets.
  */
-function bodyLifeOf(kind: CombatantKind, v: unknown, hpMax: number): BodyLife | null {
-  if (kind === 'hunter') { const life = parseLife(v, Math.max(1, hpMax)); return life && { kind, life }; }
+function foeLifeOf(v: unknown, hpMax: number): FoeLife | null {
   if (!isObj(v)) return null;
-  if (v.at === 'dead') return { kind, life: { at: 'dead' } };
+  if (v.at === 'dead') return { at: 'dead' };
   const hp = v.at === 'up' ? whole(v.hp, 1, BIG) : null;
-  return hp === null ? null : { kind, life: { at: 'up', hp: Math.min(hp, Math.max(1, hpMax)) } };
+  return hp === null ? null : { at: 'up', hp: Math.min(hp, Math.max(1, hpMax)) };
 }
+/** A stored stagger bar (design 4.3), or null for none; undefined when it does not read. */
+function staggerOf(v: unknown): Stagger | null | undefined {
+  if (v === null) return null;
+  const s = isObj(v) ? v : {}, fill = num(s.fill, 0, BIG), max = num(s.max, 0, BIG), hit = num(s.hit, 0, BIG);
+  if (fill === null || max === null || hit === null) return undefined;
+  const until = s.until === undefined ? null : tickOf(s.until);
+  return until === null ? { fill, max, hit } : { fill, max, hit, until };
+}
+/** A stored intent (design 4.5), or null for none; undefined when it does not read. */
+function intentOf(v: unknown, grid: Grid): Intent | null | undefined {
+  if (v === null) return null;
+  const i = isObj(v) ? v : {}, ability = idText(i.ability), aim = aimOn(i.aim, grid);
+  return ability && aim ? { ability: abilityId(ability), aim, revealed: i.revealed === true } : undefined;
+}
+/** A stored threat table, or null for none; undefined when it does not read. */
+const threatOf = (v: unknown): ThreatTable | null | undefined => v === null ? null : idRecord<CombatantId, number>(v, MAX_ROWS, x => num(x, 0, BIG), combatantId) ?? undefined;
+/** What a row's own fields read against: the stored row, its grid and its maximum HP. */
+type OwnIn = { readonly v: Rec; readonly grid: Grid; readonly hpMax: number };
+/** The fields of another kind a kind holds as null (`HunterRow` and the rest, effect-ops.ts): each must be stored as null. */
+const NULLS = (v: Rec, keys: readonly ('holder' | 'threat' | 'stagger' | 'intent')[]): boolean => keys.every(k => v[k] === null);
+/** The fields of another kind a kind holds absent: each must be absent from the stored row. */
+const ABSENT = (v: Rec, keys: readonly ('owner' | 'until' | 'extraction')[]): boolean => keys.every(k => v[k] === undefined);
+/** The fields a row's kind decides (effect-ops.ts `HunterRow` and the rest), one kind's at a time. */
+type OwnKey = 'kind' | 'life' | 'holder' | 'threat' | 'stagger' | 'intent' | 'xp' | 'owner' | 'until' | 'extraction';
+type OwnOf = Pick<HunterRow, OwnKey> | Pick<MonsterRow, OwnKey> | Pick<ShadowRow, OwnKey> | Pick<SummonRow, OwnKey>;
+/**
+ * A row's own fields, read by its kind (SMX-rules-8): each kind reads its own and requires another kind's to be null or
+ * absent, so a stored row that holds a field of another kind (a hunter's stagger bar, a live monster's holder, a summon
+ * with no owner) does not read, and neither does its fight. Its life is read by its kind too: a hunter's as a sheet
+ * stores it, the rest's by `foeLifeOf`.
+ */
+const OWN: { readonly [K in CombatantKind]: (o: OwnIn) => OwnOf | null } = {
+  hunter: ({ v, hpMax }) => {
+    const holder = holderOf(v.holder), life = parseLife(v.life, Math.max(1, hpMax));
+    if (holder === undefined || holder?.kind === 'shadow' || !life || v.xp !== 0) return null;
+    if (!NULLS(v, ['threat', 'stagger', 'intent']) || !ABSENT(v, ['owner', 'until', 'extraction'])) return null;
+    return { kind: 'hunter', life, holder, threat: null, stagger: null, intent: null, xp: 0 };
+  },
+  monster: ({ v, grid, hpMax }) => {
+    const life = foeLifeOf(v.life, hpMax), threat = threatOf(v.threat), stagger = staggerOf(v.stagger);
+    const intent = intentOf(v.intent, grid), xp = whole(v.xp, 0, BIG), extraction = v.extraction === undefined ? undefined : extractionOf(v.extraction);
+    if (!life || !threat || stagger === undefined || intent === undefined || xp === null || extraction === null) return null;
+    if (!NULLS(v, ['holder']) || !ABSENT(v, ['owner', 'until'])) return null;
+    return { kind: 'monster', life, holder: null, threat, stagger, intent, xp, ...(extraction === undefined ? {} : { extraction }) };
+  },
+  shadow: ({ v, hpMax }) => {
+    const life = foeLifeOf(v.life, hpMax), read = holderOf(v.holder), holder = read === null ? null : read?.kind === 'shadow' ? read : undefined;
+    if (!life || holder === undefined || v.xp !== 0) return null;
+    if (!NULLS(v, ['threat', 'stagger', 'intent']) || !ABSENT(v, ['owner', 'until', 'extraction'])) return null;
+    return { kind: 'shadow', life, holder, threat: null, stagger: null, intent: null, xp: 0 };
+  },
+  summon: ({ v, hpMax }) => {
+    const life = foeLifeOf(v.life, hpMax), threat = threatOf(v.threat), owner = idText(v.owner), until = tickOf(v.until);
+    if (!life || threat === undefined || !owner || until === null || v.xp !== 0) return null;
+    if (!NULLS(v, ['holder', 'stagger', 'intent']) || !ABSENT(v, ['extraction'])) return null;
+    return { kind: 'summon', life, holder: null, threat, stagger: null, intent: null, xp: 0, owner: combatantId(owner), until };
+  },
+};
 function rowOf(v: unknown, grid: Grid, R: Rules): Body | null {
   if (!isObj(v)) return null;
   const id = idText(v.id), name = text(v.name, NAME_MAX), side = oneOf(v.side, SIDES, null), kind = oneOf(v.kind, BODY_KINDS, null);
   const origin = originOf(v.origin, R), tier = whole(v.tier, 0, 5), at = tickOf(v.at), tie = num(v.tie, -BIG, BIG);
   const statuses = all(v.statuses, MAX_STATUSES, x => statusOf(x, R)), abilities = all(v.abilities, MAX_ABILITIES, x => abilityOf(x, R));
-  const where = tileOn(v.place, grid), holder = holderOf(v.holder), xp = whole(v.xp, 0, BIG);
-  if (!id || name === null || !side || !kind || !origin || tier === null || at === null || tie === null || !statuses || !abilities || !where || holder === undefined
-    || xp === null) return null;
+  const where = tileOn(v.place, grid);
+  if (!id || name === null || !side || !kind || !origin || tier === null || at === null || tie === null || !statuses || !abilities || !where) return null;
   const { stats, sheet } = modified(origin, statuses, R);
+  const own = OWN[kind]({ v, grid, hpMax: sheet.hpMax });
   // a maximum worked out from today's rules may be lower than when the row was stored (a GM lowered a rule): the row
   // keeps at most its maximum, as a stack keeps at most its cap, and the fight still reads
   const upTo = (x: unknown, max: number): number | null => { const n = num(x, 0, BIG); return n === null ? null : Math.min(n, max); };
-  const lived = bodyLifeOf(kind, v.life, sheet.hpMax), mana = upTo(v.mana, sheet.manaMax), fatigue = upTo(v.fatigue, sheet.fatigueMax);
+  const mana = upTo(v.mana, sheet.manaMax), fatigue = upTo(v.fatigue, sheet.fatigueMax);
   const readyAt = idRecord<AbilityId, Tick>(v.readyAt, MAX_ABILITIES, tickOf, abilityId);
-  const threat = v.threat === null ? null : idRecord<CombatantId, number>(v.threat, MAX_ROWS, x => num(x, 0, BIG), combatantId);
-  let shield: Body['shield'] = null, stagger: Body['stagger'] = null, channel: Channel | null = null, intent: Intent | null = null;
+  let shield: Body['shield'] = null, channel: Channel | null = null;
   if (v.shield !== null) {
     const amount = isObj(v.shield) ? num(v.shield.amount, 0, BIG) : null, until = isObj(v.shield) ? tickOf(v.shield.until) : null;
     if (amount === null || until === null) return null;
     shield = { amount, until };
-  }
-  if (v.stagger !== null) {
-    const s = isObj(v.stagger) ? v.stagger : {}, fill = num(s.fill, 0, BIG), max = num(s.max, 0, BIG), hit = num(s.hit, 0, BIG);
-    if (fill === null || max === null || hit === null) return null;
-    const until = s.until === undefined ? null : tickOf(s.until);
-    stagger = until === null ? { fill, max, hit } : { fill, max, hit, until };
   }
   if (v.channel !== null) {
     const c = isObj(v.channel) ? v.channel : {}, ability = idText(c.ability), aim = aimOn(c.aim, grid);
@@ -733,16 +786,9 @@ function rowOf(v: unknown, grid: Grid, R: Rules): Body | null {
     if (!ability || !aim || charge === null || spent === null || !state) return null;
     channel = { ability: abilityId(ability), aim, charge, spent, state };
   }
-  if (v.intent !== null) {
-    const i = isObj(v.intent) ? v.intent : {}, ability = idText(i.ability), aim = aimOn(i.aim, grid);
-    if (!ability || !aim) return null;
-    intent = { ability: abilityId(ability), aim, revealed: i.revealed === true };
-  }
   const tally = v.tally === undefined ? undefined : tallyRead(v.tally);
   const used = v.used === undefined ? undefined : idRecord<AbilityId, number>(v.used, MAX_ABILITIES, x => whole(x, 0, R.fight.kit.fightUses), abilityId);
   if (used === null) return null;
-  const owner = v.owner === undefined ? undefined : idText(v.owner), until = v.until === undefined ? undefined : tickOf(v.until);
-  if (owner === null || until === null) return null;
   const trips = v.trips === undefined ? undefined : idRecord<string, Trip>(v.trips, MAX_STATUSES * R.fight.kit.triggers, tripOf, k => k);
   const warded = v.warded === undefined ? undefined : all(v.warded, 2, x => oneOf(x, ['untargetable', 'invulnerable'] as const, null));
   const ex = isObj(v.extras) ? v.extras : null, exRound = ex && whole(ex.round, 0, BIG), exN = ex && whole(ex.n, 1, BIG);
@@ -750,17 +796,15 @@ function rowOf(v: unknown, grid: Grid, R: Rules): Body | null {
   const ar = isObj(v.armed) ? v.armed : null, arAbility = ar && idText(ar.ability), arOn = ar && (ar.on === null ? null : idText(ar.on)), arSpent = ar && bool(ar.spent);
   const armed = v.armed === undefined ? undefined : ar && arAbility && (arOn !== null || ar.on === null) && arSpent !== null
     ? { ability: abilityId(arAbility), on: arOn === null ? null : combatantId(arOn), spent: arSpent } : null;
-  const extraction = v.extraction === undefined ? undefined : extractionOf(v.extraction);
-  if (warded === null || extras === null || hastened === null || armed === null || extraction === null) return null;
-  if (lived === null || mana === null || fatigue === null || !readyAt || (v.threat !== null && !threat) || trips === null) return null;
+  if (warded === null || extras === null || hastened === null || armed === null) return null;
+  if (own === null || mana === null || fatigue === null || !readyAt || trips === null) return null;
   // a body on the map stands where a body may; a monster or shadow at 0 is gone from it, and a wall may since cover its tile
-  if ((lived.life.at === 'up' || kind === 'hunter') && !placeOn(where, grid)) return null;
+  if ((own.life.at === 'up' || own.kind === 'hunter') && !placeOn(where, grid)) return null;
   return {
-    id: combatantId(id), name, side, ...lived, origin, tier, stats, sheet, place: where, mana, fatigue, shield, stagger, channel, threat,
-    statuses, readyAt, abilities, intent, holder, xp, at, speed: sheet.speed, tie, ...(trips ? { trips } : {}), ...(tally ? { tally } : {}),
-    ...(owner === undefined ? {} : { owner: combatantId(owner) }), ...(until === undefined ? {} : { until }), ...(used === undefined ? {} : { used }),
+    id: combatantId(id), name, side, origin, tier, stats, sheet, place: where, mana, fatigue, shield, channel,
+    statuses, readyAt, abilities, at, speed: sheet.speed, tie, ...(trips ? { trips } : {}), ...(tally ? { tally } : {}), ...(used === undefined ? {} : { used }),
     ...(warded === undefined ? {} : { warded }), ...(extras === undefined ? {} : { extras }), ...(hastened ? { hastened } : {}), ...(armed ? { armed } : {}),
-    ...(extraction === undefined ? {} : { extraction }),
+    ...own,
   };
 }
 /** A corpse's extraction (extraction.ts): open with the attempts made (a rule lowered since leaves it none left), or gone and why. */

@@ -34,7 +34,7 @@ function row(name: string, side: Side, origin: Origin = side === 'party' ? HUNTE
   return {
     id: id(name), name, side, kind: side === 'party' ? 'hunter' : 'monster', origin, tier: 0, place: null, life: { at: 'up', hp: hpMax }, mana: 10, fatigue: 0, shield: null, stagger: null,
     channel: null, threat: side === 'foe' ? {} : null, statuses: [], readyAt: {}, abilities: [HIT, BIG], intent: null, holder: null, xp: 0,
-  };
+  } as NewRow;
 }
 function play(...commands: Command[]): Fight {
   let fight: Fight | null = null;

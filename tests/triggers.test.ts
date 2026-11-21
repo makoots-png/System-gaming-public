@@ -49,7 +49,7 @@ function row(name: string, side: Side, statuses: Status[] = [], o: RowPatch<NewR
   return {
     id: id(name), name, side, ...lifeAt(kind ?? (side === 'party' ? 'hunter' : 'monster'), hp ?? hpMax), origin, tier: 0, place: null, mana: 10, fatigue: 0, shield: null, stagger: null,
     channel: null, threat: side === 'foe' ? {} : null, statuses, readyAt: {}, abilities: [HIT, SWORD, BIG], intent: null, holder: null, xp: 0, ...rest,
-  };
+  } as NewRow;
 }
 function play(...commands: Command[]): Fight {
   let fight: Fight | null = null;

@@ -22,7 +22,7 @@ import { LIFE_STATES } from '../hunter/vitals.ts';
 import type { LifeState } from '../hunter/vitals.ts';
 import { partyView } from './fight-turn.ts';
 import { alive } from './land.ts';
-import { holds } from './standing.ts';
+import { counting, holds } from './standing.ts';
 import { cardOf, channelView, intentOf, tauntOf, usesLeft } from './fight-view.ts';
 import type { Fight, FightId, Refusal } from './fight-types.ts';
 
@@ -348,7 +348,7 @@ function keyOf(b: Body, o: DocContext): SheetKey | null {
 }
 
 function docRow(f: Fight, b: Body, now: Tick, R: Rules, o: DocContext): FightDocRow {
-  const live = b.statuses.filter(s => s.until === null || s.until > now), k = cardOf(f, b, R), c = channelView(b, R);
+  const live = counting(b.statuses), k = cardOf(f, b, R), c = channelView(b, R);
   const base: DocRowBase = {
     id: b.id, name: b.name, side: b.side, key: keyOf(b, o), place: { x: b.place.x, y: b.place.y }, at: b.at, speed: b.speed,
     band: band(rowHp(b), b.sheet.hpMax),
@@ -363,7 +363,7 @@ function docRow(f: Fight, b: Body, now: Tick, R: Rules, o: DocContext): FightDoc
   const body: DocBody = { hp: rowHp(b), hpMax: b.sheet.hpMax, stride: b.sheet.stride, move: Math.floor(b.sheet.move) };
   if (b.kind === 'hunter') return { ...base, ...body, kind: 'hunter', life: { at: b.life.at } };
   const life = { at: b.life.at };
-  if (b.kind === 'summon') return { ...base, ...body, kind: 'summon', life, owner: b.owner ?? b.id, left: b.until === undefined ? null : Math.max(0, roundsOf(b.until - now, R, 'up')) };
+  if (b.kind === 'summon') return { ...base, ...body, kind: 'summon', life, owner: b.owner, left: Math.max(0, roundsOf(b.until - now, R, 'up')) };
   if (b.kind === 'shadow') return { ...base, ...body, kind: 'shadow', life };
   const i = intentOf(b, R);
   const intent = i && {

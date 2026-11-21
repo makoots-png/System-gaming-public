@@ -17,7 +17,7 @@ import type { Beside } from '../src/core/combat/fight-save.ts';
 import { fightId, owed, reduce, reduceAll } from '../src/core/combat/fight.ts';
 import { MAX_STATUSES } from '../src/core/combat/fight-types.ts';
 import { statusKey } from '../src/core/combat/effect-ops.ts';
-import type { Command, Ctx, Fight, Result, Running } from '../src/core/combat/fight-types.ts';
+import type { Command, Ctx, Fight, NewRow, Result, Running } from '../src/core/combat/fight-types.ts';
 import { abilityId, combatantId } from '../src/core/combat/ability-types.ts';
 import type { CombatantId } from '../src/core/combat/ability-types.ts';
 import { tick } from '../src/core/combat/timeline.ts';
@@ -49,11 +49,15 @@ function gmSave(): Save {
   return { ...s, hunters: [{ ...h, shadows: [shadow] }], gates: [den('detected')] };
 }
 /** The rows of the fight: this phone's hunter (c1), Kai (c2), the shadow (c4) and a goblin (c3). */
-function rowsOf(s: Save) {
+/** A goblin foe worth 60 XP, a monster's row on a fresh hunter's build (its numbers a fresh hunter's). */
+function goblin(): NewRow {
+  const g = hunterRow({ ...newHunter(RULES), id: 'x', name: 'Goblin' }, id('c3'), RULES);
+  if (g.kind !== 'hunter') throw new Error('a hunter\'s row');
+  return { ...g, kind: 'monster', life: { at: 'up', hp: rowHp(g) }, side: 'foe', holder: null, name: 'Goblin', threat: {}, xp: 60 };
+}
+function rowsOf(s: Save): NewRow[] {
   const h = s.hunters[0]!;
-  return [hunterRow(h, id('c1'), RULES), remoteRow({ ...newHunter(RULES), id: 'h1', name: 'Kai' }, KAI, id('c2'), RULES),
-    { ...hunterRow({ ...newHunter(RULES), id: 'x', name: 'Goblin' }, id('c3'), RULES), side: 'foe' as const, holder: null, name: 'Goblin', xp: 60 },
-    shadowRow(h.shadows[0]!, h.id, id('c4'), RULES)];
+  return [hunterRow(h, id('c1'), RULES), remoteRow({ ...newHunter(RULES), id: 'h1', name: 'Kai' }, KAI, id('c2'), RULES), goblin(), shadowRow(h.shadows[0]!, h.id, id('c4'), RULES)];
 }
 
 /**
@@ -218,8 +222,7 @@ describe('an item used in the fight leaves its bag in the write that takes the u
     const s0 = gmSave(), h = putItem({ ...s0.hunters[0]!, life: { at: 'up' as const, hp: 1 } }, { ...POTION, qty: 2 }, iid('i5'));
     const kaiH = putItem({ ...newHunter(RULES), id: 'h1', name: 'Kai', life: { at: 'up' as const, hp: 1 } }, { ...POTION, qty: 2 }, iid('i5'));
     const p: Phone = { save: { ...s0, hunters: [h] }, room: [], events: 0 };
-    const goblin = { ...hunterRow({ ...newHunter(RULES), id: 'x', name: 'Goblin' }, id('c3'), RULES), side: 'foe' as const, holder: null, name: 'Goblin', xp: 60 };
-    write(p, { type: 'add', fightId: fightId('f1'), rows: [hunterRow(h, id('c1'), RULES), remoteRow(kaiH, KAI, id('c2'), RULES), goblin], openings: [] });
+    write(p, { type: 'add', fightId: fightId('f1'), rows: [hunterRow(h, id('c1'), RULES), remoteRow(kaiH, KAI, id('c2'), RULES), goblin()], openings: [] });
     write(p, { type: 'start', openings: [{ id: id('c1'), d20: 20, tie: 0 }, { id: id('c2'), d20: 15, tie: 0 }, { id: id('c3'), d20: 10, tie: 0 }] });
     return p;
   }

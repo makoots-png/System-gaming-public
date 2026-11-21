@@ -1,6 +1,9 @@
 import { jobOf } from '../src/core/save.ts';
 import { describe, expect, test } from 'bun:test';
-import { cleanName, dropBoon, giveBoons, giveTitle, holdsTitle, nameActiveTitle, titleNamed, reevaluate, removeTitle, rename, setJob, setRank, toggleTitle, writeTitle } from '../src/core/hunter/record.ts';
+import { cleanName, dropBoon, giveBoons, giveTitle, holdsTitle, nameActiveTitle, rankStanding, rankStep, titleNamed, reevaluate, removeTitle, rename, setJob, setRank, toggleTitle, writeTitle } from '../src/core/hunter/record.ts';
+import type { ProgressRank, ProgressRankEvent } from '../src/core/hunter/record.ts';
+import { atLevel } from '../src/core/hunter/progress.ts';
+import type { Rank } from '../src/core/rules.ts';
 import { RULES, rankForLevel } from '../src/core/rules.ts';
 import { newHunter } from '../src/core/save.ts';
 import type { Hunter } from '../src/core/save.ts';
@@ -36,6 +39,58 @@ describe('name, job and rank', () => {
     expect(up.rank).toBe(rankForLevel(RULES, level));
     expect(reevaluate(hunter(), RULES)).toEqual({ ok: false, why: 'not-eligible' });
     expect(reevaluate({ ...hunter(), level, rank: 'S' }, RULES)).toEqual({ ok: false, why: 'not-eligible' });
+  });
+});
+
+describe('the rank, a machine: where it stands against the rank the level earns (SMX-rules-7)', () => {
+  // The shipped rules: rank D from level 10, A from level 50 (RULES.rankLevels), read here so a change to them moves
+  // the cases with it.
+  const D = RULES.rankLevels.D, A = RULES.rankLevels.A;
+  const ranked = (rank: Rank, level: number): Hunter => ({ ...hunter(), rank, level });
+  const follows = () => ranked('E', 1), behind = () => ranked('E', D), above = () => ranked('A', 1);
+  const facts = (h: Hunter) => h.chronicle.inbox.filter(f => f.kind === 'rank');
+  type Row = [name: string, from: () => Hunter, event: ProgressRankEvent, after: { rank: Rank; at: ProgressRank['at'] } | Refused];
+
+  const ROWS: Row[] = [
+    ['follows × re-evaluate: refused, the level earns no higher rank', follows, { type: 'reevaluate' }, { ok: false, why: 'not-eligible' }],
+    ['follows × the GM sets B: rank B, above its level', follows, { type: 'set', rank: 'B' }, { rank: 'B', at: 'above' }],
+    ['follows × the level moved: the rank stays', follows, { type: 'levelMoved' }, { rank: 'E', at: 'follows' }],
+    ['behind × re-evaluate: the rank its level earns', behind, { type: 'reevaluate' }, { rank: 'D', at: 'follows' }],
+    ['behind × the GM sets C: rank C', behind, { type: 'set', rank: 'C' }, { rank: 'C', at: 'above' }],
+    ['behind × the level moved: the rank stays, re-evaluation still offered', behind, { type: 'levelMoved' }, { rank: 'E', at: 'behind' }],
+    ['above × re-evaluate: refused, the level earns a lower rank', above, { type: 'reevaluate' }, { ok: false, why: 'not-eligible' }],
+    ['above × the GM sets E: the rank its level earns', above, { type: 'set', rank: 'E' }, { rank: 'E', at: 'follows' }],
+    // SMX-rules-7.2 waits on the owner: whether the rank follows a level lost unless the GM marked it. Today it stays.
+    ['above × the level moved: the rank stays (SMX-rules-7.2 waits)', above, { type: 'levelMoved' }, { rank: 'A', at: 'above' }],
+  ];
+
+  test('the standing is read from the rank and the level: follows, behind (with the rank it earns) or above', () => {
+    expect(rankStanding(follows(), RULES)).toEqual({ at: 'follows' });
+    expect(rankStanding(behind(), RULES)).toEqual({ at: 'behind', earns: 'D' });
+    expect(rankStanding(above(), RULES)).toEqual({ at: 'above', earns: 'E' });
+  });
+
+  for (const [name, from, event, after] of ROWS) {
+    test(name, () => {
+      const h = from(), got = rankStep(h, event, RULES);
+      if (isRefused(after)) return void expect(got).toEqual(after);
+      const next = ok(got);
+      expect(next.rank).toBe(after.rank);
+      expect(rankStanding(next, RULES).at).toBe(after.at);
+      expect(facts(next), 'a new rank is a fact of the chronicle, an unmoved one is not').toEqual(after.rank === h.rank ? [] : [{ kind: 'rank', rank: after.rank }]);
+    });
+  }
+
+  test('the GM\'s word that is not a rank keeps the rank and records nothing', () => {
+    for (const from of [follows, behind, above]) expect(ok(rankStep(from(), { type: 'set', rank: 'Z' }, RULES))).toEqual(from());
+  });
+
+  test('SMX-rules-7.2 waits: a rank A hunter set from level 50 to 1 keeps rank A, and re-evaluation is refused', () => {
+    const h = atLevel(ranked('A', A), 1, 0, RULES);
+    expect(h.level).toBe(1);
+    expect(h.rank).toBe('A');
+    expect(rankStanding(h, RULES)).toEqual({ at: 'above', earns: 'E' });
+    expect(reevaluate(h, RULES)).toEqual({ ok: false, why: 'not-eligible' });
   });
 });
 
