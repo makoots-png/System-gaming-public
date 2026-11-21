@@ -448,26 +448,18 @@ export function parseFormula(text: string, rules: FormulaRules): ParsedFormula {
   }
 }
 
+/** A formula's leaf: a part read, not worked out from other parts. */
+type Leaf = Exclude<Formula, { readonly kind: 'negate' | 'binary' | 'min' | 'max' | 'fn' }>;
 /**
- * The formula's value. A step whose result is not a finite number (a division by 0, a root of a negative number, an
- * overflow) counts as 0: design 3.4 says division by 0 is 0, and one rule covers every such step.
+ * The one walk of a formula's arithmetic: each leaf read by `leaf`, in reading order, and the steps between them. A step
+ * whose result is not a finite number (a division by 0, a root of a negative number, an overflow) counts as 0: design 3.4
+ * says division by 0 is 0, and one rule covers every such step.
  */
-export function evaluate(formula: Formula, env: Env): number {
-  let die = 0;
-  const kit = env.kit ?? NO_KIT;
+function valueOf(formula: Formula, leaf: (f: Leaf) => number): number {
   const finite = (n: number): number => Number.isFinite(n) ? n : 0;
   const ev = (f: Formula): number => {
     switch (f.kind) {
-      case 'number': return f.value;
-      case 'dice': return env.dice[die++] ?? 0;
-      case 'stat': return env[f.whose].stats[f.key];
-      case 'sheet': return env[f.whose].sheet[f.key];
-      case 'charge': return env.charge;
-      case 'stacks': return kit.stacks[f.whose][f.key] ?? 0;
-      case 'field': return kit.field[f.key] ?? 0;
-      case 'missing': return kit.missing[f.whose];
-      case 'held': return kit.held[f.key] ?? 0;
-      case 'count': return kit[f.name];
+      case 'number': case 'dice': case 'stat': case 'sheet': case 'charge': case 'stacks': case 'field': case 'missing': case 'held': case 'count': return leaf(f);
       case 'negate': return -ev(f.arg);
       case 'min': return Math.min(ev(f.left), ev(f.right));
       case 'max': return Math.max(ev(f.left), ev(f.right));
@@ -496,6 +488,55 @@ export function evaluate(formula: Formula, env: Env): number {
     }
   };
   return finite(ev(formula));
+}
+
+/** The formula's value: each dice term the total the edge rolled for it, each name what `env` holds (`valueOf`). */
+export function evaluate(formula: Formula, env: Env): number {
+  let die = 0;
+  const kit = env.kit ?? NO_KIT;
+  return valueOf(formula, f => {
+    switch (f.kind) {
+      case 'number': return f.value;
+      case 'dice': return env.dice[die++] ?? 0;
+      case 'stat': return env[f.whose].stats[f.key];
+      case 'sheet': return env[f.whose].sheet[f.key];
+      case 'charge': return env.charge;
+      case 'stacks': return kit.stacks[f.whose][f.key] ?? 0;
+      case 'field': return kit.field[f.key] ?? 0;
+      case 'missing': return kit.missing[f.whose];
+      case 'held': return kit.held[f.key] ?? 0;
+      case 'count': return kit[f.name];
+      default: return f satisfies never;
+    }
+  });
+}
+
+/**
+ * Whether an amount raises (1), lowers (-1) or is 0: the sign of its value with every name at 1 and each dice term at
+ * its mean, so `-0.1 * armor` lowers and `0.1 * hpmax` raises, on any body. One reading for what a standing change does
+ * (standing.ts `harmful`): a formula whose sign turns with the body (`hpmax - 50`) is read as it is at every name 1.
+ */
+export const signOf = (f: Formula): number => Math.sign(valueOf(f, x => (x.kind === 'number' ? x.value : x.kind === 'dice' ? mean(x) : 1)));
+
+/**
+ * Why a formula cannot be a lasting change (a status's `stat` or `sheet` op, item-stats.md 6.2), or null when it can. A
+ * lasting change is read on its bearer's own bare body, outside any use (effect-ops.ts `bareBody`), so it reads only the
+ * bearer's stats and sheet numbers, numbers and dice: never the target's, a use's charge, nor the kits' names. The one
+ * check, for the parser (fight-parse.ts) and the status maker's words.
+ */
+export function bareRefusal(f: Formula): string | null {
+  switch (f.kind) {
+    case 'number': case 'dice': return null;
+    case 'stat': case 'sheet': {
+      const name = f.kind === 'sheet' ? f.key.toLowerCase() : f.key;
+      return f.whose === 'user' ? null : `A lasting change reads its bearer's own numbers: write ${name}, not target.${name}.`;
+    }
+    case 'charge': case 'missing': case 'stacks': case 'field': case 'held': case 'count':
+      return `A lasting change reads its bearer's own numbers: ${printFormula(f)} is read only in a use.`;
+    case 'negate': case 'fn': return bareRefusal(f.arg);
+    case 'binary': case 'min': case 'max': return bareRefusal(f.left) ?? bareRefusal(f.right);
+    default: return f satisfies never;
+  }
 }
 
 /** The dice the edge rolls for one use of the formula, in reading order. */

@@ -21,9 +21,10 @@ import type { ZoneId } from './zones.ts';
 import type { Extraction } from './extraction.ts';
 import type { BearerEvent, Trigger, Trip } from './triggers.ts';
 import { stackStep } from './stacks.ts';
-import { SHEET_LEVEL_KEYS, SHEET_OP_KEYS, atTier, countOn, isLevelKey, isStacking, isTiers, stacked } from './op-amount.ts';
-import { asLevel, counting, harmful, shieldShare, statusLife, statusStep, withSheetOps } from './standing.ts';
-import type { HideLevel } from './standing.ts';
+import { SHEET_FORMULA_KEYS, SHEET_LEVEL_KEYS, SHEET_OP_KEYS, atTier, bareAmount, countOn, isFormulaSheetOp, isLevelKey, isStacking, isTiers, stacked } from './op-amount.ts';
+import { counting, harmful, shieldShare, statusLife, statusStep, withSheetOps } from './standing.ts';
+import { asLevel } from './sight-levels.ts';
+import type { HideLevel } from './sight-levels.ts';
 import { rowLifeAfter } from './row-life.ts';
 import type { FoeLife } from './row-life.ts';
 import type { Life } from '../hunter/vitals.ts';
@@ -153,7 +154,11 @@ export type Op =
   | { readonly op: 'channel'; readonly mode: 'protect' | 'break' }
   /** A signed percent on what the bearer's stagger bar fills by. */
   | { readonly op: 'staggerRate'; readonly pct: Tiered<number> }
-  | { readonly op: 'stat'; readonly key: StatKey; readonly amount: Tiered<number> }
+  /**
+   * A change to one of the bearer's stats: a flat number or a formula on its bearer's own numbers (item-stats.md 6.2),
+   * read on its bare body (`modsOf`), so a stat it raises does not change what it reads.
+   */
+  | { readonly op: 'stat'; readonly key: StatKey; readonly amount: Tiered<Formula> }
   /** An extra-turn passive: `pct` of the action's time comes back when the bearer's d20 falls within `chance` percent. */
   | { readonly op: 'refund'; readonly pct: Tiered<number>; readonly chance: number }
   /**
@@ -172,9 +177,12 @@ export type Op =
    * percent), crit faces, crit size or the cost cut, each kept within its rule (`kit.armorOp`, `fight.penMax` for the
    * percent pair, `kit.armorOp` for the flat pair, `kit.critFacesMax`, `kit.critSizeMax`, `kit.costCutMax`); or
    * `exposed`, the crit faces any attacker gains against the bearer (0.5 a stack, the sum rounded down); or `range`,
-   * tiles added to the bearer's ranges of 2 or more (`kit.rangeAdd`). Ops of one key add, as `stat` ops do.
+   * tiles added to the bearer's ranges of 2 or more (`kit.rangeAdd`). Ops of one key add, as `stat` ops do. A key of
+   * `SHEET_FORMULA_KEYS` (op-amount.ts) holds a formula on its bearer's bare body (item-stats.md 6.2), each op's value
+   * kept within its bound (standing.ts `sheetOpCap`); `exposed`, `range` and the sight level hold a plain number.
    */
-  | { readonly op: 'sheet'; readonly key: SheetOpKey; readonly amount: Tiered<number> }
+  | { readonly op: 'sheet'; readonly key: SheetFormulaKey; readonly amount: Tiered<Formula> }
+  | { readonly op: 'sheet'; readonly key: SheetNumberKey; readonly amount: Tiered<number> }
   /**
    * A signed percent on the damage the bearer deals or takes, or the heals or shields it gets (8.1, rule 11c): of each,
    * the strongest increase and the strongest decrease apply and multiply; the product stays within `kit.shareCap` of 1.
@@ -234,6 +242,12 @@ export type Op =
 export type SheetOpKey = (typeof SHEET_OP_KEYS)[number];
 /** A sheet level a `sheet` op raises (op-amount.ts `SHEET_LEVEL_KEYS`), not adds to. */
 export type SheetLevelKey = (typeof SHEET_LEVEL_KEYS)[number];
+/** A sheet number whose `sheet` op takes a formula (op-amount.ts `SHEET_FORMULA_KEYS`). */
+export type SheetFormulaKey = (typeof SHEET_FORMULA_KEYS)[number];
+/** A sheet number or level whose `sheet` op holds a plain number. */
+export type SheetNumberKey = Exclude<SheetOpKey, SheetFormulaKey>;
+/** A `sheet` op whose amount is a formula (op-amount.ts `isFormulaSheetOp`). */
+export type SheetFormulaOp = Extract<Op, { readonly op: 'sheet'; readonly key: SheetFormulaKey }>;
 /** What a `share` op changes: the damage its bearer deals or takes, the heals it gets, or the shields it gets. */
 export const SHARE_ON = ['dealt', 'taken', 'healed', 'shielded'] as const;
 export type ShareOn = (typeof SHARE_ON)[number];
@@ -606,7 +620,7 @@ export const sheetStatuses = (list: readonly Status[], now: Tick, R: OpRules): S
  * (`before`) and the share of a round it pays for now.
  */
 export type Due = {
-  readonly key: StatusKey; readonly op: Extract<Op, { readonly amount: Tiered<Formula> }>; readonly tier: number;
+  readonly key: StatusKey; readonly op: Extract<Op, { readonly op: 'damage' | 'heal' | 'mana' | 'fatigue' | 'shield' }>; readonly tier: number;
   readonly before: number; readonly share: number;
   /** The count it pays at: a stacking status's stacks when its bearer settles (kits design 1.1 rule 7), else 1. */
   readonly stacks: number;
@@ -663,17 +677,18 @@ export function dueAmount(d: Due, scope: Scope, dice: readonly number[]): number
 
 /**
  * The sheet changes a body's statuses that count (standing.ts `counts`) make: `stat` changes, one speed change, and
- * whether it is rooted. Of the speed changes only the strongest slow and the strongest haste apply, and they multiply
+ * whether it is rooted. A `stat` op's formula reads `bare`, the body before any status (`bareBody`), so one stat op
+ * never feeds another. Of the speed changes only the strongest slow and the strongest haste apply, and they multiply
  * (proposals.md, point 2). A stacking status's numbers are per stack (kits design 1.1 rule 4); a root acts from one
  * stack; `derive` keeps speed in its clamp.
  */
-export function modsOf(statuses: readonly Status[]): { mods: StatusMod[]; rooted: boolean } {
+export function modsOf(statuses: readonly Status[], bare: FormulaBody): { mods: StatusMod[]; rooted: boolean } {
   const mods: StatusMod[] = [];
   let slow = 0, haste = 0, rooted = false;
   for (const s of counting(statuses)) for (const o of s.def.ops) {
     const tier = s.source.tier, n = countOn(s);
     switch (o.op) {
-      case 'stat': mods.push({ op: 'stat', key: o.key, amount: atTier(o.amount, tier) * n }); break;
+      case 'stat': mods.push({ op: 'stat', key: o.key, amount: bareAmount(o.amount, tier, bare) * n }); break;
       case 'speed': { const pct = atTier(o.pct, tier) * n; slow = Math.min(slow, pct); haste = Math.max(haste, pct); break; }
       case 'root': rooted = true; break;
       case 'damage': case 'heal': case 'mana': case 'fatigue': case 'applyStatus': case 'cureStatus': case 'note': case 'delay':
@@ -687,18 +702,29 @@ export function modsOf(statuses: readonly Status[]): { mods: StatusMod[]; rooted
   return { mods, rooted };
 }
 
-/**
- * The stats and the sheet of a body of this origin under these statuses, through `derive`, then the `sheet` ops of
- * kits design 8.1 (standing.ts `withSheetOps`). A rooted body moves 0 tiles.
- */
-export function modified(origin: Origin, statuses: readonly Status[], R: OpRules): { stats: Stats; sheet: Sheet } {
-  const { mods, rooted } = modsOf(statuses);
-  const bonus = (k: StatKey): number => mods.reduce((n, m) => m.op === 'stat' && m.key === k ? n + m.amount : n, 0);
+/** The stats and the sheet of a body of this origin under no status: what `derive` makes of it alone. */
+export function bareBody(origin: Origin, R: OpRules): FormulaBody {
   const base = origin.kind === 'hunter' ? origin.build.stats : monsterStats(origin.rank, origin.archetype, R, origin.tweak);
   const perks = origin.kind === 'hunter' ? origin.build.perks : {};
-  const stats = Object.fromEntries(STAT_KEYS.map(k => [k, base[k] + (perks[k] ?? 0) + bonus(k)])) as Record<StatKey, number>;
-  const derived = origin.kind === 'hunter' ? sheetOf(origin.build, R, mods) : monsterSheet(origin.rank, origin.archetype, origin.monsterKind, R, mods, origin.tweak);
-  const sheet = withSheetOps(derived, statuses, R);
+  const stats = Object.fromEntries(STAT_KEYS.map(k => [k, base[k] + (perks[k] ?? 0)])) as Record<StatKey, number>;
+  return { stats, sheet: derivedSheet(origin, [], R) };
+}
+const derivedSheet = (origin: Origin, mods: readonly StatusMod[], R: OpRules): Sheet =>
+  origin.kind === 'hunter' ? sheetOf(origin.build, R, mods) : monsterSheet(origin.rank, origin.archetype, origin.monsterKind, R, mods, origin.tweak);
+
+/**
+ * The stats and the sheet of a body of this origin under these statuses (item-stats.md 6.2): its bare body first
+ * (`bareBody`), on which every `stat` and `sheet` op's formula is read, in one pass, so no change feeds another and the
+ * order of the statuses does not matter; then `derive` with the `stat` and speed changes (`modsOf`), then the `sheet`
+ * ops of kits design 8.1 (standing.ts `withSheetOps`). A rooted body moves 0 tiles.
+ */
+export function modified(origin: Origin, statuses: readonly Status[], R: OpRules): { stats: Stats; sheet: Sheet } {
+  const bare = bareBody(origin, R);
+  const { mods, rooted } = modsOf(statuses, bare);
+  const bonus = (k: StatKey): number => mods.reduce((n, m) => m.op === 'stat' && m.key === k ? n + m.amount : n, 0);
+  const stats = mods.length ? Object.fromEntries(STAT_KEYS.map(k => [k, bare.stats[k] + bonus(k)])) as Record<StatKey, number> : bare.stats;
+  const derived = mods.length ? derivedSheet(origin, mods, R) : bare.sheet;
+  const sheet = withSheetOps(derived, statuses, bare, R);
   return { stats, sheet: rooted ? { ...sheet, move: 0, stride: tiles(0) } : sheet };
 }
 
@@ -753,6 +779,8 @@ export type DescribeRules = { readonly fight: { readonly round: number }; readon
 
 const BY_RANK = ', by rank E to S';
 const signed = (n: number): string => `${n < 0 ? '−' : '+'}${Math.abs(n)}`;
+/** A change's amount in words with its sign in front: `+10% of max HP (now 20)`, `−8`; words that start with a minus keep it. */
+const signedWords = (text: string): string => (text.startsWith('−') || text.startsWith('-') ? text : `+${text}`);
 const roundsText = (n: number): string => `${n} round${n === 1 ? '' : 's'}`;
 
 /**
@@ -814,7 +842,7 @@ function opLine(o: Op, tier: number | null, R: DescribeRules, wearer: FormulaBod
     case 'shield': return `Shield: ${amountWords(o.amount, wearer)}`;
     case 'channel': return o.mode === 'protect' ? 'A hit does not break a channel' : 'Breaks a channel';
     case 'staggerRate': { const p = num(o.pct, n => `${signed(n)}%`); return `Stagger fills ${p.text}${rank(p)}`; }
-    case 'stat': { const n = num(o.amount, signed); return `${STAT_LABELS[o.key]} ${n.text}${rank(n)}`; }
+    case 'stat': { const a = amount(o.amount); return `${STAT_LABELS[o.key]}: ${signedWords(a.text)}${rank(a)}`; }
     case 'refund': {
       const p = num(o.pct, n => `${n}%`);
       return `${o.chance}% chance to get ${p.text} of an action's time back${rank(p)}`;
@@ -822,6 +850,7 @@ function opLine(o: Op, tier: number | null, R: DescribeRules, wearer: FormulaBod
     case 'aura': return `Gives off its other effects to ${o.on === 'all' ? 'everyone' : o.on} within ${o.radius} tile${o.radius === 1 ? '' : 's'}`;
     case 'spread': return `Spreads each round to anyone within ${o.range} tile${o.range === 1 ? '' : 's'} who fails to resist it, once a fight`;
     case 'sheet': {
+      if (isFormulaSheetOp(o)) { const a = amount(o.amount); return `${SHEET_ADD_TEXT[o.key]}: ${signedWords(a.text)}${rank(a)}`; }
       if (isLevelKey(o.key)) { const n = num(o.amount, a => `${asLevel(a)}`); return `${SHEET_LEVEL_TEXT[o.key]} ${n.text} or under${rank(n)}`; }
       const n = num(o.amount, signed); return `${SHEET_ADD_TEXT[o.key]} ${n.text}${rank(n)}`;
     }

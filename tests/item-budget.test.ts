@@ -415,21 +415,21 @@ group('what a held thing\'s powers spend (item-stats 6.5)', () => {
 
   test('a worn `sheet` op of 4 armor spends what 4 armor above the item\'s piece does: the Vitality whose armor it is', () => {
     const perPoint = 1 / ((wearer('C', { vit: 10 }).armor - wearer('C').armor) / 10);
-    const plated: StatusDef = { label: 'Plated', desc: '', ops: [{ op: 'sheet', key: 'armor', amount: 4 }] };
+    const plated: StatusDef = { label: 'Plated', desc: '', ops: [{ op: 'sheet', key: 'armor', amount: { kind: 'number', value: 4 } }] };
     expect(itemSpend(gear('rare', { worn: plated }), RULES)!.points).toBeCloseTo(4 * perPoint, 9);
     expect(itemSpend(gear('rare', { worn: plated }), RULES)!.unweighed).toEqual([]);
     expect(itemSpend(gear('rare', { worn: plated }), RULES)!.points).toBeCloseTo(itemSpend(gear('rare', { armor: 4 }), RULES)!.points, 9);
   });
 
   test('a worn `stat` op spends as a bonus of its size, and a `sheet` op on a share as that many hundredths of its bonus: 2 Discipline spend 2, crit size 0.1 ten points', () => {
-    const steady: StatusDef = { label: 'Steady', desc: '', ops: [{ op: 'stat', key: 'dis', amount: 2 }] };
+    const steady: StatusDef = { label: 'Steady', desc: '', ops: [{ op: 'stat', key: 'dis', amount: { kind: 'number', value: 2 } }] };
     expect(itemSpend(gear('rare', { worn: steady }), RULES)).toEqual({ points: 2, unweighed: [] });
-    const keen: StatusDef = { label: 'Keen', desc: '', ops: [{ op: 'sheet', key: 'critSize', amount: 0.1 }] };
+    const keen: StatusDef = { label: 'Keen', desc: '', ops: [{ op: 'sheet', key: 'critSize', amount: { kind: 'number', value: 0.1 } }] };
     expect(itemSpend(gear('rare', { worn: keen }), RULES)!.points).toBeCloseTo(10 * onePoint('critSize', 'C'), 9);
   });
 
   test('a `sheet` op with no rule (range) is named as not weighed, and the rest of the status is still weighed', () => {
-    const odd: StatusDef = { label: 'Odd', desc: '', ops: [{ op: 'stat', key: 'dis', amount: 2 }, { op: 'sheet', key: 'range', amount: 1 }] };
+    const odd: StatusDef = { label: 'Odd', desc: '', ops: [{ op: 'stat', key: 'dis', amount: { kind: 'number', value: 2 } }, { op: 'sheet', key: 'range', amount: 1 }] };
     expect(itemSpend(gear('rare', { worn: odd }), RULES)).toEqual({ points: 2, unweighed: ['worn'] });
   });
 

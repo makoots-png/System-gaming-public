@@ -1160,7 +1160,7 @@ describe('the other room docs', () => {
     const built = soloDoc({ gates, monsters: [] }, RULES, DOC_MAX), wire = JSON.stringify(built.doc);
     console.log(`the worst-case solo doc of built-in monsters: ${wire.length} characters (gates ${JSON.stringify(built.doc.gates).length}, monsters ${JSON.stringify(built.doc.monsters).length}, ${Object.keys(built.doc.monsters).length} of them; the largest ${Math.max(...Object.values(built.doc.monsters).map(m => JSON.stringify(m).length))})`);
     expect(built.left).toEqual([]);
-    expect(wire.length).toBeLessThanOrEqual(DOC_MAX / 2);
+    expect(wire.length, 'the built-in monsters leave the GM\'s monsters most of the room: 55% of DOC_MAX at most (a stat op\'s amount is a formula since item-stats 6.2, 25 characters a value more than a number)').toBeLessThanOrEqual(DOC_MAX * 0.55);
     expect(DOCS.solo(JSON.parse(wire))).toEqual(built.doc);
     const hex = seeds.find(m => m.abilities.length)!.abilities[0]!;
     const heavy = (i: number): Monster => ({ ...seeds[0]!, id: `m${i + 1}` as never, name: 'H'.repeat(60), abilities: many(11, k => ({ ...hex, id: `a${k}` as never, name: 'A'.repeat(60) })) });

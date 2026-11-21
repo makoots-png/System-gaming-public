@@ -8,7 +8,7 @@
 import { inSight, tiles } from './space.ts';
 import type { Grid, Place, Side, Tiles } from './space.ts';
 import { stealthLevel, stealthOf } from './standing.ts';
-import type { Level } from './standing.ts';
+import type { Level } from './sight-levels.ts';
 import { isUp } from './row-hp.ts';
 import type { Body } from './effect-ops.ts';
 import type { Fight } from './fight-types.ts';

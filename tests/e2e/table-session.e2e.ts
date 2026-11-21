@@ -314,10 +314,10 @@ test('on a phone one tap on a built-in status in the Status dialog applies it, a
   await chip.tap();
   await expect(gm.locator('.fg-overlay')).toHaveCount(0);
   await expect(gmCard(gm).locator('.cmb-conds')).toContainText('Poisoned');
-  // Poisoned at an E-rank target's strength (statuses.ts): 1d4 magical damage a round, Control −8
+  // Poisoned at an E-rank target's strength (statuses.ts): 1d4 magical damage a round, Control: −8
   await gmCard(gm).locator('[data-chip="poisoned"] [data-dt-key]').tap();
   await expect(gmCard(gm).locator('.cmb-conds .dt')).toContainText('1d4 magical damage a round');
-  await expect(gmCard(gm).locator('.cmb-conds .dt')).toContainText('Control −8');
+  await expect(gmCard(gm).locator('.cmb-conds .dt')).toContainText('Control: −8');
 });
 
 test('typing the name of a built-in status with no effects applies that status, not a copy', async ({ device }) => {

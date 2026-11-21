@@ -17,8 +17,9 @@ import { afterDefence, castDice, needs, resolve } from '../src/core/combat/resol
 import type { Aim, Resolved, Rolls } from '../src/core/combat/resolve.ts';
 import { rng } from './models/fight-play.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
-import { heldDieId, LEVELS } from '../src/core/combat/standing.ts';
-import type { HideLevel, Level } from '../src/core/combat/standing.ts';
+import { heldDieId } from '../src/core/combat/standing.ts';
+import { LEVELS } from '../src/core/combat/sight-levels.ts';
+import type { HideLevel, Level } from '../src/core/combat/sight-levels.ts';
 import { landOps } from '../src/core/combat/land.ts';
 import { cooldownOf } from '../src/core/combat/charge.ts';
 import { atHp, lifeAt } from './fixtures/life.ts';
@@ -171,7 +172,7 @@ describe('each rule of design 3.1', () => {
   });
 
   test('rule 8b: a resisted direct use deals half and applies no status', () => {
-    const hex = ability('curse', { ops: [statusOf('weakened', { op: 'stat', key: 'str', amount: -5 })] }, '20');
+    const hex = ability('curse', { ops: [statusOf('weakened', { op: 'stat', key: 'str', amount: { kind: 'number', value: -5 } })] }, '20');
     const target = body('t', monsterOrigin('caster'), place(8, 5), 'foe', {}, { resist: 0 });
     const at = (d20: number) => run(hex, user, [user, target], target.id, rolls({ t: [] }, { t: d20 })).outcomes[0]!;
     expect([at(20).avoid, at(20).dealt, at(20).statuses, at(3).avoid, at(3).dealt, at(3).statuses]).toEqual(['resisted', 10, [], 'caught', 20, ['weakened']]);
@@ -562,10 +563,10 @@ describe('wave 2\'s sheet and share ops in a use (kits design 8.1, rule 11c)', (
 
   test('armor +20 from a sheet op meets the hit as worn armor does; a crit size op is held at 2', () => {
     const u = body('u', hunterOrigin('bruiser'), place(5, 5), 'party'), t = body('t', hunterOrigin('tank'), place(6, 5), 'foe');
-    const plated = withOps(t, marked('plate', { op: 'sheet', key: 'armor', amount: 20 }));
+    const plated = withOps(t, marked('plate', { op: 'sheet', key: 'armor', amount: { kind: 'number', value: 20 } }));
     expect(plated.sheet.armor).toBe(t.sheet.armor + 20);
     expect(swing(u, plated).dealt).toBe(afterDefence(20, 'physical', u.sheet, { ...t.sheet, armor: t.sheet.armor + 20 }, RULES));
-    expect(withOps(u, marked('big', { op: 'sheet', key: 'critSize', amount: 0.5 }), marked('bigger', { op: 'sheet', key: 'critSize', amount: 0.5 })).sheet.critSize).toBe(RULES.fight.kit.critSizeMax);
+    expect(withOps(u, marked('big', { op: 'sheet', key: 'critSize', amount: { kind: 'number', value: 0.5 } }), marked('bigger', { op: 'sheet', key: 'critSize', amount: { kind: 'number', value: 0.5 } })).sheet.critSize).toBe(RULES.fight.kit.critSizeMax);
   });
 
   test('a target\'s exposed faces add to the user\'s crit faces, together at most 6', () => {

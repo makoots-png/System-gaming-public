@@ -341,7 +341,7 @@ describe('explain', () => {
   const R: SheetRules = { ...RULES, paths: { striker: PATH } };
   const VEST: SheetItem = { id: 'vest', weight: 6, armor: 12, resist: 3, bonus: { str: 2 } };
   const SLOWED: StatusDef = { label: 'Slowed', desc: '', ops: [{ op: 'speed', pct: [-20, -25, -30, -35, -40, -50] }] };
-  const FRIGHTENED: StatusDef = { label: 'Frightened', desc: '', ops: [{ op: 'stat', key: 'dis', amount: -8 }] };
+  const FRIGHTENED: StatusDef = { label: 'Frightened', desc: '', ops: [{ op: 'stat', key: 'dis', amount: { kind: 'number', value: -8 } }] };
   const on = (key: string, def: StatusDef): SheetCondition => ({ key: statusKey(key), def, source: { id: null, tier: 0 } });
   const part = (h: SheetHunter, key: SheetNumber, from: SheetSource): number => explain(h, key, R).parts.find(p => p.from === from)!.amount;
   // every source at once: points spent, a level, worn gear with a bonus, a title, a path pick, a passive, the GM's change, two statuses

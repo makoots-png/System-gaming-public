@@ -6,7 +6,7 @@ import { BUILT_IN_STATUSES } from './registry/statuses.ts';
 import { BUILT_IN_PATHS } from './registry/paths.ts';
 import { STAT_KEYS, STAT_SHORT } from './stats.ts';
 import { GRID_SIDE } from './combat/space.ts';
-import { LEVELS } from './combat/standing.ts';
+import { LEVELS } from './combat/sight-levels.ts';
 import { MAX_LEVEL, MIN_LEVEL } from './hunter/level.ts';
 import type { StatKey } from './stats.ts';
 import type { StatusDef } from './combat/effect-ops.ts';

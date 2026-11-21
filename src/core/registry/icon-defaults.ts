@@ -2,7 +2,8 @@
 // 3), so "why does this thing have this picture" has one answer. Each answer is the thing's own key when it holds one,
 // else a cell of a table below. A table keyed by a union is a mapped type, so the typecheck asks for a cell when an
 // archetype, slot, item type, attack, op kind, damage type, ability kind or built-in status is added. The default is
-// never stored: a changed type or a better table reaches every thing that never picked. Pure; imports types only.
+// never stored: a changed type or a better table reaches every thing that never picked. Pure; imports types, and the
+// one reading of an amount's sign (formula.ts `signOf`) with the one reading of a tier (op-amount.ts `atTier`).
 // To change a default: change its cell, then `bun run test` (tests/icons.test.ts states each cell as the design does).
 import type { IconKey } from './icons.ts';
 import type { Attack, ItemType, Slot } from './items.ts';
@@ -10,6 +11,8 @@ import type { BuiltInStatus } from './statuses.ts';
 import type { Archetype } from '../hunter/derive.ts';
 import type { AbilityKind, DamageType } from '../combat/ability-types.ts';
 import type { Op, OpKind, StatusDef, Tiered } from '../combat/effect-ops.ts';
+import { signOf } from '../formula.ts';
+import { atTier } from '../combat/op-amount.ts';
 import type { ItemId } from '../ids.ts';
 
 /** The sixteen enemy types (the enemy draft's), by their lowercase name, each with its picture. */
@@ -75,7 +78,7 @@ type OpCell<K extends OpKind> = IconKey | ((o: Extract<Op, { readonly op: K }>) 
 /** Each op kind's picture, for a GM's status by its first op. The kinds no picture says better take `status`. */
 const OP_ICON: { readonly [K in OpKind]: OpCell<K> } = {
   damage: o => DAMAGE_ICON[o.type], heal: 'heal', mana: 'mana', fatigue: 'weary',
-  speed: o => bySign(o.pct, 'wing', 'snail'), stat: o => bySign(o.amount, 'up', 'down'),
+  speed: o => bySign(o.pct, 'wing', 'snail'), stat: o => (signOf(atTier(o.amount, 0)) < 0 ? 'down' : 'up'),
   hold: 'dizzy', root: 'chain', shield: 'shield', hidden: 'hood', stayHidden: 'hood', spread: 'plague', cureStatus: 'cure', dispel: 'cure',
   taunt: 'taunt', threat: 'taunt', untargetable: 'ward', invulnerable: 'ward', safeguard: 'ward', delay: 'timer', refund: 'timer',
   shove: 'push', move: 'push', reveal: 'eye',

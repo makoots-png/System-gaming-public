@@ -12,7 +12,7 @@ import { isIconKey } from '../registry/icons.ts';
 import { STAT_KEYS } from '../stats.ts';
 import { SHEET_LABELS } from '../hunter/derive.ts';
 import type { Archetype, Bonus, GearPiece, MonsterKind, SheetNumber, Tweak } from '../hunter/derive.ts';
-import { COUNT_NAMES, diceModsOf, FNS, FORMULA_PARTS } from '../formula.ts';
+import { bareRefusal, COUNT_NAMES, diceModsOf, FNS, FORMULA_PARTS } from '../formula.ts';
 import { withinSize } from '../size.ts';
 import type { BinaryOp, Formula } from '../formula.ts';
 import { TERRAIN, TERRAINS, percent, place, tiles } from './space.ts';
@@ -25,9 +25,10 @@ import type { Ability, AbilityEffect, AbilityId, CombatantId, Delivery, AbilityG
 import { bounded } from '../registry/scalers.ts';
 import { isUp } from './row-hp.ts';
 import { amountOp, AURA_ON, HIDE_STARTS, STEALTH_ENDS, isStatusKey, LAND_USE_OPS, reactionMayHold, modified, shadowId, SHARE_ON, statusKey, statusOn, TYPE_MAX, isUseOp } from './effect-ops.ts';
-import { isStacking, SHEET_OP_KEYS } from './op-amount.ts';
-import { asLevel, LEVELS } from './standing.ts';
-import type { HideLevel } from './standing.ts';
+import { isFormulaKey, isStacking, SHEET_OP_KEYS } from './op-amount.ts';
+import { sheetOpCap } from './standing.ts';
+import { asLevel } from './sight-levels.ts';
+import type { HideLevel } from './sight-levels.ts';
 import { parseLife } from '../hunter/vitals.ts';
 import { parseLevel } from '../hunter/level.ts';
 import type {
@@ -274,12 +275,22 @@ function opOf(v: unknown, R: Rules, depth: number): Op | null {
     case 'shield': { const amount = formula(v.amount); return amount ? { op: 'shield', amount } : null; }
     case 'channel': { const mode = oneOf(v.mode, ['protect', 'break'] as const, null); return mode ? { op: 'channel', mode } : null; }
     case 'staggerRate': { const pct = tiered(v.pct, anyNum); return pct === null ? null : { op: 'staggerRate', pct }; }
-    case 'stat': { const key = oneOf(v.key, STAT_KEYS, null), amount = tiered(v.amount, anyNum); return key && amount !== null ? { op: 'stat', key, amount } : null; }
+    case 'stat': { const key = oneOf(v.key, STAT_KEYS, null), amount = tiered(v.amount, x => bareFormulaOf(x, R, BIG)); return key && amount !== null ? { op: 'stat', key, amount } : null; }
     case 'refund': { const pct = tiered(v.pct, x => num(x, 0, 100)), chance = num(v.chance, 0, 100); return pct !== null && chance !== null ? { op: 'refund', pct, chance } : null; }
     case 'spread': { const range = whole(v.range, 1, 64); return range === null ? null : { op: 'spread', range }; }
     case 'aura': { const radius = whole(v.radius, 1, 64), on = oneOf(v.on, AURA_ON, null); return radius !== null && on ? { op: 'aura', radius, on } : null; }
     default: return wave2Op(v, R);
   }
+}
+/**
+ * A lasting change's amount (a `stat` op's, or a `sheet` op's of `SHEET_FORMULA_KEYS`, item-stats.md 6.2): a plain number,
+ * read as a number formula held within `cap` either way (a hunter's saved worn items keep their numbers), or a formula
+ * that reads only its bearer's own numbers (formula.ts `bareRefusal`); null for anything else.
+ */
+function bareFormulaOf(v: unknown, R: Rules, cap: number): Formula | null {
+  const f = typeof v === 'number' ? (Number.isFinite(v) ? { kind: 'number', value: v } as const : null) : formulaOf(v, R);
+  if (!f || bareRefusal(f) !== null) return null;
+  return f.kind === 'number' ? { kind: 'number', value: Math.max(-cap, Math.min(cap, f.value)) } : f;
 }
 /** A number held within `lo` to `hi` (kits table 8.1: one past a bound is clamped, as the kits' whole numbers are); null when it is not a number. */
 const within = (v: unknown, lo: number, hi: number): number | null => typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : null;
@@ -295,7 +306,8 @@ function wave2Op(v: Rec, R: Rules): Op | null {
     case 'sheet': {
       const key = oneOf(v.key, SHEET_OP_KEYS, null);
       if (!key) return null;
-      const cap = { armor: K.armorOp, resist: K.armorOp, armorPen: F.penMax, resistPen: F.penMax, armorPenFlat: K.armorOp, resistPenFlat: K.armorOp, critFaces: K.critFacesMax, exposed: K.critFacesMax, critSize: K.critSizeMax - F.critSizeBase, costCut: K.costCutMax, range: K.rangeAdd, sight: Math.max(...LEVELS) }[key];
+      const cap = sheetOpCap(key, R);
+      if (isFormulaKey(key)) { const amount = tiered(v.amount, x => bareFormulaOf(x, R, cap)); return amount === null ? null : { op: 'sheet', key, amount }; }
       const amount = tiered(v.amount, x => within(x, -cap, cap));
       return amount === null ? null : { op: 'sheet', key, amount };
     }

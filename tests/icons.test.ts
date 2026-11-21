@@ -252,8 +252,8 @@ const SAMPLE: { readonly [K in OpKind]: Extract<Op, { readonly op: K }> } = {
   cureStatus: { op: 'cureStatus', key: statusKey('plain') }, note: { op: 'note', text: 'A note' }, speed: { op: 'speed', pct: 20 },
   delay: { op: 'delay', ticks: tick(10) }, hold: { op: 'hold' }, root: { op: 'root' }, taunt: { op: 'taunt' }, threat: { op: 'threat', amount: 5 },
   shield: { op: 'shield', amount: num(5) }, channel: { op: 'channel', mode: 'protect' }, staggerRate: { op: 'staggerRate', pct: 10 },
-  stat: { op: 'stat', key: 'str', amount: 4 }, refund: { op: 'refund', pct: 50, chance: 25 }, aura: { op: 'aura', radius: 1, on: 'all' },
-  spread: { op: 'spread', range: 1 }, sheet: { op: 'sheet', key: 'armor', amount: 2 }, share: { op: 'share', on: 'dealt', pct: 10 },
+  stat: { op: 'stat', key: 'str', amount: { kind: 'number', value: 4 } }, refund: { op: 'refund', pct: 50, chance: 25 }, aura: { op: 'aura', radius: 1, on: 'all' },
+  spread: { op: 'spread', range: 1 }, sheet: { op: 'sheet', key: 'armor', amount: { kind: 'number', value: 2 } }, share: { op: 'share', on: 'dealt', pct: 10 },
   untargetable: { op: 'untargetable' }, invulnerable: { op: 'invulnerable' }, safeguard: { op: 'safeguard' },
   edge: { op: 'edge', side: 'attack', keep: 'better', tag: null, spend: false }, boost: { op: 'boost', side: 'attack', die: { kind: 'die', sides: 4 } },
   hidden: { op: 'hidden', level: 1, start: 'unseen', ends: { hurt: true, revealed: true, dealt: true } }, stayHidden: { op: 'stayHidden', on: 'hurt' }, alert: { op: 'alert' }, shove: { op: 'shove', dir: 'away', from: 'user', tiles: 1 },
@@ -291,9 +291,9 @@ describe('a status\'s default icon', () => {
     expect(opIcon({ op: 'damage', type: 'magical', amount: num(3) })).toBe('spark');
     expect(opIcon({ op: 'speed', pct: -20 })).toBe('snail');
     expect(opIcon({ op: 'speed', pct: [10, -20, -20, -20, -20, -20] })).toBe('wing');
-    expect(opIcon({ op: 'stat', key: 'ctl', amount: -4 })).toBe('down');
-    expect(opIcon({ op: 'stat', key: 'ctl', amount: [-8, -12, -16, -20, -24, -32] })).toBe('down');
-    expect(opIcon({ op: 'stat', key: 'ctl', amount: 0 })).toBe('up');
+    expect(opIcon({ op: 'stat', key: 'ctl', amount: { kind: 'number', value: -4 } })).toBe('down');
+    expect(opIcon({ op: 'stat', key: 'ctl', amount: [{ kind: 'number', value: -8 }, { kind: 'number', value: -12 }, { kind: 'number', value: -16 }, { kind: 'number', value: -20 }, { kind: 'number', value: -24 }, { kind: 'number', value: -32 }] })).toBe('down');
+    expect(opIcon({ op: 'stat', key: 'ctl', amount: { kind: 'number', value: 0 } })).toBe('up');
   });
 
   test('of a GM\'s status with no ops is a timer when it has an end, else the plain status', () => {

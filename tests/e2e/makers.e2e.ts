@@ -17,7 +17,7 @@ import type { Ability } from '../../src/core/combat/ability-types.ts';
 import { modified, OP_KINDS, statusKey } from '../../src/core/combat/effect-ops.ts';
 import type { Origin, StatusDef } from '../../src/core/combat/effect-ops.ts';
 import { parseOp } from '../../src/core/combat/fight-parse.ts';
-import { formulaOf as formulaNow, abilityOf, defaultTicks, recommended } from '../../src/core/registry/ability-kinds.ts';
+import { formulaOf as formulaNow, abilityOf, defaultTicks, recommended, sampleBody } from '../../src/core/registry/ability-kinds.ts';
 import { fightId, reduce } from '../../src/core/combat/fight.ts';
 import type { Command, Ctx, Fight, NewRow } from '../../src/core/combat/fight.ts';
 import { UNFINISHED_ROWS, newRewards } from '../../src/core/rewards.ts';
@@ -1270,6 +1270,51 @@ test('a GM makes a hide by rank that starts anywhere and that only damage it dea
     expect(await fx.locator('[data-t]').evaluateAll(els => els.map(e => (e as HTMLInputElement).value))).toEqual(['1', '1', '1', '1', '1', '3']);
     await expect(fx.locator('[data-set="start"][aria-pressed="true"]')).toHaveText('Anywhere');
     await expect(fx.locator('[data-end][aria-pressed="true"]')).toHaveText(['It deals damage']);
+    await d.locator('[data-cancel]').tap();
+    await expect(d).toHaveCount(0);
+  });
+});
+
+test('a GM makes Bulwark, armor of 10% of max HP: the row reads it on a sample hunter, the library keeps the formula, Edit shows it, and what a bearer lacks is refused in words', async ({ device }) => {
+  const page = (await device('gm')).page;
+  await onboardGM(page);
+  const d = statusMaker(page), fx = d.locator('[data-row="0"]');
+  const now = Math.round(0.1 * sampleBody('C', 'str', RULES).sheet.hpMax), K = RULES.fight.kit;
+  await go(page, 'workshop');
+  await workshop(page, 'status').locator('[data-new]').tap();
+  await d.locator('[data-name]').fill('Bulwark');
+  await d.locator('[data-add]').tap();
+  await fx.locator('[data-f="kind"]').selectOption('sheet');
+
+  await test.step('the target\'s max HP is refused with what to write instead, and Save stays off', async () => {
+    await fx.locator('[data-f="q"]').fill('0.1 * target.hpmax');
+    await expect(fx.locator('[data-err]')).toHaveText('A lasting change reads its bearer\'s own numbers: write hpmax, not target.hpmax.');
+    await expect(d.locator('[data-apply]')).toBeDisabled();
+  });
+
+  await test.step('a number past the rule is refused, as the number row refused it', async () => {
+    await fx.locator('[data-f="q"]').fill('500');
+    await expect(fx.locator('[data-err]')).toHaveText(`Write a whole number from -${K.armorOp} to ${K.armorOp}, or a formula on its bearer's numbers.`);
+  });
+
+  await test.step('0.1 * hpmax reads on a sample rank C hunter and in the preview, and Save keeps the formula', async () => {
+    await fx.locator('[data-f="q"]').fill('0.1 * hpmax');
+    await expect(fx.locator('[data-err]')).toHaveText('');
+    await expect(fx.locator('[data-avg]')).toHaveText(`On a sample rank C hunter: Armor: +10% of max HP (now ${now})`);
+    await expect(d.locator('.mk-preview')).toContainText('Armor: +10% of max HP');
+    await d.locator('[data-apply]').tap();
+    await expect(d).toHaveCount(0);
+    const [, def] = await libraryStatus(page, 'Bulwark'), typed = parseFormula('0.1 * hpmax', RULES);
+    expect(def.ops).toEqual([{ op: 'sheet', key: 'armor', amount: typed.ok ? typed.formula : null }]);
+    expect(parseOp(def.ops[0], RULES)).toEqual(def.ops[0]);
+  });
+
+  await test.step('Edit shows the formula; on Range the row is a number field, empty, that takes only a number', async () => {
+    await workshop(page, 'status').locator('li', { hasText: 'Bulwark' }).locator('.nm').tap();
+    await expect(fx.locator('[data-f="q"]')).toHaveValue('0.1 * hpMax');
+    await fx.locator('[data-f="sheetKey"]').selectOption('range');
+    await expect(fx.locator('[data-f="q"]')).toHaveValue('');
+    await expect(fx.locator('[data-err]')).toHaveText(`Write a whole number from -${K.rangeAdd} to ${K.rangeAdd}.`);
     await d.locator('[data-cancel]').tap();
     await expect(d).toHaveCount(0);
   });

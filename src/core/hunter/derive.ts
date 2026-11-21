@@ -11,8 +11,8 @@ import type { StatKey, Stats } from '../stats.ts';
 import { tiles } from '../combat/space.ts';
 import type { Tiles } from '../combat/space.ts';
 import type { Brand } from '../ids.ts';
-import { asLevel } from '../combat/standing.ts';
-import type { Level } from '../combat/standing.ts';
+import { asLevel } from '../combat/sight-levels.ts';
+import type { Level } from '../combat/sight-levels.ts';
 
 /** A share from 0 to 1, such as the part of a cost taken off. */
 export type Share = Brand<number, 'Share'>;

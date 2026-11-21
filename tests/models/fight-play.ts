@@ -68,7 +68,7 @@ const BLAST = make('blast', 'blast', { cost: { fatigue: 0, mana: 4, time: 150 as
     grow: { step: tiles(1), cap: tiles(4) } } });
 const CURSE = make('curse', 'curse', { ops: [status('burning', 2000, { op: 'damage', type: 'magical', amount: f('1d4 + 1') }), status('slowed', 1500, { op: 'speed', pct: -30 })] });
 const STUN = make('strike', 'stun', { range: tiles(3), ops: [status('stunned', 800, { op: 'hold' })] });
-const ROOT = make('shot', 'snare', { ops: [status('rooted', 1200, { op: 'root' }), status('weakened', 3000, { op: 'stat', key: 'vit', amount: -20 })] });
+const ROOT = make('shot', 'snare', { ops: [status('rooted', 1200, { op: 'root' }), status('weakened', 3000, { op: 'stat', key: 'vit', amount: { kind: 'number', value: -20 } })] });
 const TAUNT = make('curse', 'taunt', { effect: null, delivery: { kind: 'sure' }, range: tiles(12), shape: { kind: 'touch', reach: tiles(12) },
   ops: [status('taunted', 2000, { op: 'taunt' })] });
 const SHIELD = make('support', 'shield');
@@ -147,7 +147,7 @@ const SURGE = make('strike', 'surge', { range: tiles(2), ops: [{ op: 'extra' }] 
 const TRANSFER = make('support', 'transfer', { aim: 'ally', effect: null, range: tiles(8), ops: [{ op: 'hasten', share: 1 }] });
 const HIDE = make('support', 'hide', { aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null, ops: [status('hidden', 2000, { op: 'hidden', level: 1, start: 'unseen', ends: { hurt: true, revealed: true, dealt: true } })] });
 const VEIL = make('support', 'veil', { aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null, ops: [status('veil', 2000, { op: 'untargetable' }), status('aegis', 2000, { op: 'safeguard' })] });
-const BRITTLE = make('curse', 'brittle', { ops: [status('brittle', 2000, { op: 'share', on: 'taken', pct: 25 }, { op: 'sheet', key: 'exposed', amount: 1 }, { op: 'sheet', key: 'armor', amount: -10 })] });
+const BRITTLE = make('curse', 'brittle', { ops: [status('brittle', 2000, { op: 'share', on: 'taken', pct: 25 }, { op: 'sheet', key: 'exposed', amount: 1 }, { op: 'sheet', key: 'armor', amount: { kind: 'number', value: -10 } })] });
 const CLEANSE = make('support', 'cleanse', { effect: null, ops: [{ op: 'dispel', which: 'all' }, { op: 'move', key: 'harmful', take: 'all', from: 'target', as: null }] });
 const PUSH_FIELD = make('blast', 'push-field', { cost: { fatigue: 0, mana: 2, time: 100 as never, cooldown: tick(0) }, effect: null, zoneAct: { act: 'shift', name: null, by: 4 } });
 /** Kai's Boundary as the fight begins: around Kai, until removed, ending with Kai. */
@@ -210,7 +210,7 @@ function rollsFor(g: Rng, fight: Fight, by: CombatantId, a: Ability, aim: Aim): 
 const def = (label: string, ...ops: Op[]): StatusDef => ({ label, desc: '', ops });
 const GM_STATUSES: readonly [string, StatusDef][] = [
   ['stunned', def('Stunned', { op: 'hold' })], ['slowed', def('Slowed', { op: 'speed', pct: -30 })],
-  ['burning', def('Burning', { op: 'damage', type: 'magical', amount: f('1d6') })], ['weakened', def('Weakened', { op: 'stat', key: 'vit', amount: -20 })],
+  ['burning', def('Burning', { op: 'damage', type: 'magical', amount: f('1d6') })], ['weakened', def('Weakened', { op: 'stat', key: 'vit', amount: { kind: 'number', value: -20 } })],
   ['sickness', def('Radiating sickness', { op: 'damage', type: 'magical', amount: f('2') }, { op: 'speed', pct: -10 }, { op: 'aura', radius: 2, on: 'all' })],
   ['plague', def('Plague', { op: 'damage', type: 'physical', amount: f('1d4') }, { op: 'spread', range: 2 })],
 ];
@@ -239,7 +239,7 @@ function gmLife(g: Rng, fight: Fight, anyId: () => CombatantId): Command {
 // ── the GM's ground: paint and zones ──
 const ZONE_OPS: readonly (readonly Op[])[] = [
   [{ op: 'damage', type: 'magical', amount: f('3') }], [{ op: 'damage', type: 'physical', amount: f('1d6'), when: 'use' }],
-  [{ op: 'speed', pct: -40 }, { op: 'heal', amount: f('2') }], [{ op: 'root' }], [{ op: 'stat', key: 'agi', amount: -10 }, { op: 'damage', type: 'magical', amount: f('2'), when: 'use' }],
+  [{ op: 'speed', pct: -40 }, { op: 'heal', amount: f('2') }], [{ op: 'root' }], [{ op: 'stat', key: 'agi', amount: { kind: 'number', value: -10 } }, { op: 'damage', type: 'magical', amount: f('2'), when: 'use' }],
 ];
 function ground(g: Rng, fight: Fight, anyRow: () => Place): Command {
   const k = g.int(0, 3);

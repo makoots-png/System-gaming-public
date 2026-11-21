@@ -737,8 +737,9 @@ export type SoloDoc = { gates: SoloDocGate[]; monsters: Record<string, MonsterTe
  * within `DOC_MAX`, so the doc is never longer by construction, and the reader refuses a longer one. What decides how
  * many gates fit is the monsters, each sent once. Measured (tests/protocol.test.ts, "the worst-case solo doc on the
  * wire"): 40 gates of 60-character names, three lines of 26 copies and a boss each, naming every one of the 22 built-in
- * monsters, are 29,996 characters: 9,466 of gates (about 237 a gate) and 20,209 of monsters (about 920 a monster, the
- * largest 1,744), under half of `DOC_MAX`. A GM's monster at its bounds is far larger (11 abilities with their ops and
+ * monsters, are 31,664 characters: 9,466 of gates (about 237 a gate) and 21,877 of monsters (about 994 a monster, the
+ * largest 2,059), about half of `DOC_MAX` (the test holds them to 55%; a built-in status's `stat` op holds six formulas
+ * since item-stats.md 6.2, `{"kind":"number","value":-8}` where a number was). A GM's monster at its bounds is far larger (11 abilities with their ops and
  * nested status defs), so one gate of many of them can pass `DOC_MAX` alone: such a gate is never sent, the world doc
  * does not mark it solo, and the GM's card says so (the same test builds one of 50 such monsters and sees it left out).
  */

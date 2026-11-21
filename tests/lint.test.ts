@@ -492,7 +492,8 @@ test('a view computes no fight number: from the modules that work one out it imp
   // it shows: a fight screen's numbers from src/core/combat/fight-view.ts, a sheet's from src/core/hunter/sheet.ts
   // (app.api.hunter.sheet), a room row's from the fight doc (fight-doc.ts).
   const mayImport: Record<string, readonly string[]> = {
-    'src/core/formula.ts': ['parseFormula', 'printFormula', 'withEdge', 'naturalOf'], // a formula's text, read and printed; a typed roll's edge and its natural (the Dice view)
+    // a formula's text, read and printed; a typed roll's edge and its natural (the Dice view); why a formula cannot be a lasting change, in words (the status maker)
+    'src/core/formula.ts': ['parseFormula', 'printFormula', 'withEdge', 'naturalOf', 'bareRefusal'],
     'src/core/hunter/derive.ts': ['SHEET_LABELS'],
     'src/core/combat/resolve.ts': ['needs', 'diceFor', 'castDice'], // which dice a use asks for, rolled in src/edge/roll.ts
     // TERRAIN and TERRAINS: the map maker paints a terrain by its character; whether a body may stand there is the parser's

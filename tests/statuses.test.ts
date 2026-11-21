@@ -22,7 +22,7 @@ const sizes = (o: Op): number[] | null => {
   switch (o.op) {
     case 'damage': case 'heal': case 'mana': case 'fatigue': return Array.isArray(o.amount) ? TIERS.map(t => meanOf(at(o.amount, t))) : null;
     case 'speed': return Array.isArray(o.pct) ? TIERS.map(t => Math.abs(at(o.pct, t))) : null;
-    case 'stat': return Array.isArray(o.amount) ? TIERS.map(t => Math.abs(at(o.amount, t))) : null;
+    case 'stat': return Array.isArray(o.amount) ? TIERS.map(t => Math.abs(meanOf(at(o.amount, t)))) : null;
     case 'hidden': return Array.isArray(o.level) ? TIERS.map(t => at(o.level, t)) : null;
     default: return null;
   }
@@ -143,7 +143,7 @@ group('the old statuses restated (plan 3.1)', () => {
 
 group('a status card in words', () => {
   test('a status on a body reads its source\'s rank; the picker\'s card reads every rank E to S', () => {
-    expect(describeStatus(BUILT_IN_STATUSES.poisoned, 2, RULES)).toEqual(['1d6 magical damage a round', 'Control −16']);
+    expect(describeStatus(BUILT_IN_STATUSES.poisoned, 2, RULES)).toEqual(['1d6 magical damage a round', 'Control: −16']);
     expect(describeStatus(BUILT_IN_STATUSES.slowed, null, RULES)).toEqual(['Speed −20% / −25% / −30% / −35% / −40% / −50%, by rank E to S']);
     expect(describeStatus(BUILT_IN_STATUSES.hasted, 5, RULES)).toEqual(['Speed +50%', '25% chance to get 50% of an action\'s time back']);
     expect(describeStatus(BUILT_IN_STATUSES.paralyzed, 0, RULES)).toEqual(['Cannot act', 'Cannot move']);

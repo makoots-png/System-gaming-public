@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
-import { amountWords, average, diceOf, diceModsOf, evaluate, EXPLODE_MAX, FORMULA_PARTS, mean, meets, naturalOf, parseFormula, partsOf, printFormula, REROLL_MAX, rolled, rollOf, withEdge } from '../src/core/formula.ts';
+import { amountWords, average, diceOf, diceModsOf, evaluate, EXPLODE_MAX, FORMULA_PARTS, mean, meets, naturalOf, parseFormula, partsOf, printFormula, REROLL_MAX, rolled, rollOf, signOf, withEdge, bareRefusal } from '../src/core/formula.ts';
 import type { Dice, Env, Formula, KitScope, Rolled, Scope } from '../src/core/formula.ts';
 import { statusKey } from '../src/core/combat/effect-ops.ts';
 import { SHEET_LABELS, share } from '../src/core/hunter/derive.ts';
@@ -212,6 +212,19 @@ describe('the dice to roll and the average', () => {
   test('average puts each dice term at its mean, count * (sides + 1) / 2', () => {
     expect(average(parse('2d6 + 1d20 - 3'), SCOPE)).toBe(14.5);
     expect(average(parse('min(1d4, 1d6)'), SCOPE)).toBe(2.5);
+  });
+
+  test('signOf reads an amount with every name at 1 and each die at its mean: a share of a number lowers or raises on any body', () => {
+    expect(['-0.1 * armor', '0.1 * hpmax', '10 + 0.2 * hpmax', '0', '-target.str', '2 - 1d6', '1d6 - 3', 'max(-2, -str)', 'stacks(pain) - 2'].map(t => signOf(parse(t))))
+      .toEqual([-1, 1, 1, 0, -1, -1, 1, -1, -1]);
+  });
+
+  test('a lasting change reads only its bearer\'s own numbers: bareRefusal says what to write instead, and lets the rest through', () => {
+    expect(['12', '0.1 * hpmax', '10 + 0.2 * hpmax - 1d4', 'floor(str / 2)'].map(t => bareRefusal(parse(t)))).toEqual([null, null, null, null]);
+    expect(bareRefusal(parse('0.1 * target.hpmax'))).toBe('A lasting change reads its bearer\'s own numbers: write hpmax, not target.hpmax.');
+    expect(bareRefusal(parse('max(str, target.str)'))).toBe('A lasting change reads its bearer\'s own numbers: write str, not target.str.');
+    expect(['charge', '2 * missing', 'stacks(pain)', 'kills'].map(t => bareRefusal(parse(t)))).toEqual(['charge', 'missing', 'stacks(pain)', 'kills']
+      .map(n => `A lasting change reads its bearer's own numbers: ${n} is read only in a use.`));
   });
 });
 

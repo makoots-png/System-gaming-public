@@ -10,7 +10,7 @@ import { tick } from '../src/core/combat/timeline.ts';
 import type { Tick } from '../src/core/combat/timeline.ts';
 import { abilityId, combatantId } from '../src/core/combat/ability-types.ts';
 import {
-  addSheetStatus, applyStatus, cureStatus, describeStatus, dueAmount, FULL_HEAL, isControl, lasting, modified, modsOf, onSheet, opLines, removeStatus, settle,
+  addSheetStatus, applyStatus, bareBody, cureStatus, describeStatus, dueAmount, FULL_HEAL, isControl, lasting, modified, modsOf, onSheet, opLines, removeStatus, settle,
   sheetStatuses, shielded, statusKey, statusOn, statusShield, withStatuses,
 } from '../src/core/combat/effect-ops.ts';
 import { parseOp, parseStatusDef } from '../src/core/combat/fight-parse.ts';
@@ -54,8 +54,8 @@ const sheetUnder = (...ops: Op[]) => modified(hunterOf(), [status('s', def(...op
 
 describe('what each op does to a sheet', () => {
   test('a stat op adds to the stat before its curve: Strength 10 raised by 10 gives 0.6 * eff(20) = 10.45 physical power', () => {
-    expect(sheetUnder({ op: 'stat', key: 'str', amount: 10 }).phys).toBeCloseTo(10.45, 2);
-    expect(modified(hunterOf(), [status('s', def({ op: 'stat', key: 'str', amount: 10 }), null)], RULES).stats.str).toBe(20);
+    expect(sheetUnder({ op: 'stat', key: 'str', amount: { kind: 'number', value: 10 } }).phys).toBeCloseTo(10.45, 2);
+    expect(modified(hunterOf(), [status('s', def({ op: 'stat', key: 'str', amount: { kind: 'number', value: 10 } }), null)], RULES).stats.str).toBe(20);
   });
 
   test('a speed op changes speed by its percent', () => {
@@ -98,7 +98,7 @@ describe('speed changes', () => {
     const list = [status('a', def({ op: 'speed', pct: -30 }), null), status('b', def({ op: 'speed', pct: -10 }), null),
       status('c', def({ op: 'speed', pct: 20 }), null), status('d', def({ op: 'speed', pct: 5 }), null)];
     expect(modified(hunterOf(), list, RULES).sheet.speed).toBe(84);
-    const [mod, ...rest] = modsOf(list).mods;
+    const [mod, ...rest] = modsOf(list, bareBody(hunterOf(), RULES)).mods;
     expect([mod?.op, rest]).toEqual(['speed', []]);
     near([mod?.op === 'speed' ? mod.pct : NaN], [-16], 10);
   });
@@ -111,7 +111,7 @@ describe('speed changes', () => {
 
   test('a status that lowers max HP brings a full body down to the new max, and leaves a hurt one below it as it is', () => {
     const full = body(hunterOf(stats({ vit: 40 })));
-    const weak = [status('weak', def({ op: 'stat', key: 'vit', amount: -30 }), 3000)];
+    const weak = [status('weak', def({ op: 'stat', key: 'vit', amount: { kind: 'number', value: -30 } }), 3000)];
     const after = withStatuses(full, weak, tick(500), RULES);
     expect(after.sheet.hpMax).toBeLessThan(full.sheet.hpMax);
     expect(rowHp(after)).toBe(after.sheet.hpMax);
@@ -307,7 +307,7 @@ describe('a stacking status (kits design 1.1, table 2.1)', () => {
 
   test('every number of its ops is per stack: 3 stacks of +4 Strength are +12, of a 10% slow a 30% slow; a root acts from one', () => {
     const at3 = (...ops: Op[]) => modified(hunterOf(), [of(stacking({}, ...ops), 3)], RULES);
-    expect(at3({ op: 'stat', key: 'str', amount: 4 }).stats.str).toBe(10 + 12);
+    expect(at3({ op: 'stat', key: 'str', amount: { kind: 'number', value: 4 } }).stats.str).toBe(10 + 12);
     expect(at3({ op: 'speed', pct: -10 }).sheet.speed).toBe(70);
     expect(at3({ op: 'root' }).sheet.move).toBe(0);
   });
@@ -451,7 +451,7 @@ describe('the stack machine, cell by cell (kits table 2.1)', () => {
 describe('wave 2\'s ops as data (kits design 8.1 to 8.6, table 8.1)', () => {
   const K = RULES.fight.kit;
   const OPS: Op[] = [
-    { op: 'sheet', key: 'armor', amount: 20 }, { op: 'sheet', key: 'exposed', amount: [0.5, 0.5, 1, 1, 1.5, 1.5] }, { op: 'share', on: 'taken', pct: 25 },
+    { op: 'sheet', key: 'armor', amount: { kind: 'number', value: 20 } }, { op: 'sheet', key: 'exposed', amount: [0.5, 0.5, 1, 1, 1.5, 1.5] }, { op: 'share', on: 'taken', pct: 25 },
     { op: 'untargetable' }, { op: 'invulnerable' }, { op: 'safeguard' }, { op: 'hidden', level: 2, start: 'unseen', ends: { hurt: true, revealed: true, dealt: true } }, { op: 'alert' },
     { op: 'edge', side: 'attack', keep: 'better', tag: null, spend: true }, { op: 'boost', side: 'defend', die: { kind: 'die', sides: 6 } },
     { op: 'shove', dir: 'toward', from: 'user', tiles: 3 }, { op: 'move', key: 'harmful', take: 'all', from: 'target', as: null },
@@ -466,8 +466,8 @@ describe('wave 2\'s ops as data (kits design 8.1 to 8.6, table 8.1)', () => {
   });
 
   test('a number past its rule is held at it: armor at a suit of plate, a shove at half a walk, a held die at a d20, a share at 100%', () => {
-    expect(parseOp({ op: 'sheet', key: 'armor', amount: -500 }, RULES)).toEqual({ op: 'sheet', key: 'armor', amount: -K.armorOp });
-    expect(parseOp({ op: 'sheet', key: 'critSize', amount: 3 }, RULES)).toEqual({ op: 'sheet', key: 'critSize', amount: K.critSizeMax - RULES.fight.critSizeBase });
+    expect(parseOp({ op: 'sheet', key: 'armor', amount: -500 }, RULES)).toEqual({ op: 'sheet', key: 'armor', amount: { kind: 'number', value: -K.armorOp } });
+    expect(parseOp({ op: 'sheet', key: 'critSize', amount: 3 }, RULES)).toEqual({ op: 'sheet', key: 'critSize', amount: { kind: 'number', value: K.critSizeMax - RULES.fight.critSizeBase } });
     expect(parseOp({ op: 'shove', dir: 'away', from: 'aim', tiles: 9 }, RULES)).toEqual({ op: 'shove', dir: 'away', from: 'aim', tiles: K.shoveMax });
     expect(parseOp({ op: 'boost', side: 'attack', die: { kind: 'die', sides: 100 } }, RULES)).toEqual({ op: 'boost', side: 'attack', die: { kind: 'die', sides: K.boostSides } });
     expect(parseOp({ op: 'share', on: 'dealt', pct: 400 }, RULES)).toEqual({ op: 'share', on: 'dealt', pct: 100 });
@@ -476,17 +476,17 @@ describe('wave 2\'s ops as data (kits design 8.1 to 8.6, table 8.1)', () => {
   });
 
   test('the four penetrations as sheet ops: the percent pair held at penMax, the flat pair at a suit of plate\'s 60', () => {
-    expect(parseOp({ op: 'sheet', key: 'armorPen', amount: 90 }, RULES)).toEqual({ op: 'sheet', key: 'armorPen', amount: RULES.fight.penMax });
-    expect(parseOp({ op: 'sheet', key: 'resistPen', amount: [5, 10, 15, 20, 25, 30] }, RULES)).toEqual({ op: 'sheet', key: 'resistPen', amount: [5, 10, 15, 20, 25, 30] });
-    expect(parseOp({ op: 'sheet', key: 'armorPenFlat', amount: -500 }, RULES)).toEqual({ op: 'sheet', key: 'armorPenFlat', amount: -K.armorOp });
-    expect(parseOp({ op: 'sheet', key: 'resistPenFlat', amount: 12 }, RULES)).toEqual({ op: 'sheet', key: 'resistPenFlat', amount: 12 });
+    expect(parseOp({ op: 'sheet', key: 'armorPen', amount: 90 }, RULES)).toEqual({ op: 'sheet', key: 'armorPen', amount: { kind: 'number', value: RULES.fight.penMax } });
+    expect(parseOp({ op: 'sheet', key: 'resistPen', amount: [5, 10, 15, 20, 25, 30] }, RULES)).toEqual({ op: 'sheet', key: 'resistPen', amount: [{ kind: 'number', value: 5 }, { kind: 'number', value: 10 }, { kind: 'number', value: 15 }, { kind: 'number', value: 20 }, { kind: 'number', value: 25 }, { kind: 'number', value: 30 }] });
+    expect(parseOp({ op: 'sheet', key: 'armorPenFlat', amount: -500 }, RULES)).toEqual({ op: 'sheet', key: 'armorPenFlat', amount: { kind: 'number', value: -K.armorOp } });
+    expect(parseOp({ op: 'sheet', key: 'resistPenFlat', amount: 12 }, RULES)).toEqual({ op: 'sheet', key: 'resistPenFlat', amount: { kind: 'number', value: 12 } });
   });
 
   test('an old status\'s pen op, a share of armor or resist ignored, reads as the armor and the magic percent of the same amount', () => {
     const old = parseStatusDef({ label: 'Keen', desc: '', ops: [{ op: 'sheet', key: 'pen', amount: 0.1 }, { op: 'sheet', key: 'pen', amount: [0.05, 0.1, 0.15, 0.2, 0.25, 0.3] }] }, RULES)!;
     expect(old.ops).toEqual([
-      { op: 'sheet', key: 'armorPen', amount: 10 }, { op: 'sheet', key: 'resistPen', amount: 10 },
-      { op: 'sheet', key: 'armorPen', amount: [5, 10, 15, 20, 25, 30] }, { op: 'sheet', key: 'resistPen', amount: [5, 10, 15, 20, 25, 30] },
+      { op: 'sheet', key: 'armorPen', amount: { kind: 'number', value: 10 } }, { op: 'sheet', key: 'resistPen', amount: { kind: 'number', value: 10 } },
+      { op: 'sheet', key: 'armorPen', amount: [{ kind: 'number', value: 5 }, { kind: 'number', value: 10 }, { kind: 'number', value: 15 }, { kind: 'number', value: 20 }, { kind: 'number', value: 25 }, { kind: 'number', value: 30 }] }, { op: 'sheet', key: 'resistPen', amount: [{ kind: 'number', value: 5 }, { kind: 'number', value: 10 }, { kind: 'number', value: 15 }, { kind: 'number', value: 20 }, { kind: 'number', value: 25 }, { kind: 'number', value: 30 }] },
     ]);
     expect(parseOp({ op: 'sheet', key: 'pen', amount: 0.1 }, RULES)).toBeNull();
   });
@@ -559,20 +559,20 @@ describe('the hidden op\'s fields and the stayHidden op (stealth design section 
   test('a sight op says the stealth it sees through, with no plus: sight levels do not add (ruling 8)', () => {
     expect(line({ op: 'sheet', key: 'sight', amount: 2 })).toBe('Sees foes hidden at stealth level 2 or under');
     expect(line({ op: 'sheet', key: 'sight', amount: [0, 1, 1, 2, 3, 4] })).toBe('Sees foes hidden at stealth level 0 / 1 / 1 / 2 / 3 / 4 or under, by rank E to S');
-    expect(line({ op: 'sheet', key: 'armor', amount: 5 })).toBe('Armor +5');
+    expect(line({ op: 'sheet', key: 'armor', amount: { kind: 'number', value: 5 } })).toBe('Armor: +5');
   });
 });
 
 describe('wave 2\'s sheet and share ops (kits design 8.1)', () => {
   test('harmful is one rule: a slow, a lowered sheet number, raised exposure, raised damage taken or lowered healing; a haste or a ward is not', () => {
     const is = (...ops: Op[]) => harmful({ ops });
-    expect([is({ op: 'speed', pct: -10 }), is({ op: 'sheet', key: 'armor', amount: -5 }), is({ op: 'sheet', key: 'exposed', amount: 1 }),
+    expect([is({ op: 'speed', pct: -10 }), is({ op: 'sheet', key: 'armor', amount: { kind: 'number', value: -5 } }), is({ op: 'sheet', key: 'exposed', amount: 1 }),
       is({ op: 'share', on: 'taken', pct: 10 }), is({ op: 'share', on: 'healed', pct: -50 }), is({ op: 'share', on: 'dealt', pct: -10 })]).toEqual([true, true, true, true, true, true]);
-    expect([is({ op: 'speed', pct: 10 }), is({ op: 'sheet', key: 'armor', amount: 5 }), is({ op: 'share', on: 'taken', pct: -10 }), is({ op: 'invulnerable' })]).toEqual([false, false, false, false]);
+    expect([is({ op: 'speed', pct: 10 }), is({ op: 'sheet', key: 'armor', amount: { kind: 'number', value: 5 } }), is({ op: 'share', on: 'taken', pct: -10 }), is({ op: 'invulnerable' })]).toEqual([false, false, false, false]);
   });
 
   test('a zone that lowers armor is drawn as one that holds back', () => {
-    expect(zoneTone([{ op: 'sheet', key: 'armor', amount: -10 }])).toBe('hinder');
+    expect(zoneTone([{ op: 'sheet', key: 'armor', amount: { kind: 'number', value: -10 } }])).toBe('hinder');
     expect(zoneTone([{ op: 'share', on: 'dealt', pct: 20 }])).toBe('plain');
   });
 
@@ -583,17 +583,17 @@ describe('wave 2\'s sheet and share ops (kits design 8.1)', () => {
 
   test('a percent penetration op adds to the bearer\'s own and stops at penMax (60); a flat one adds, never under 0', () => {
     const plain = modified(hunterOf(), [], RULES).sheet;
-    const on = (...ops: Op[]) => withSheetOps(plain, [status('x', def(...ops), null)], RULES);
-    expect([on({ op: 'sheet', key: 'armorPen', amount: 20 }).armorPen, on({ op: 'sheet', key: 'resistPen', amount: 20 }).resistPen]).toEqual([plain.armorPen + 20, plain.resistPen + 20]);
-    expect(on({ op: 'sheet', key: 'armorPen', amount: 60 }, { op: 'sheet', key: 'armorPen', amount: 60 }).armorPen).toBe(RULES.fight.penMax);
-    expect([on({ op: 'sheet', key: 'armorPenFlat', amount: 8 }).armorPenFlat, on({ op: 'sheet', key: 'resistPenFlat', amount: -8 }).resistPenFlat]).toEqual([8, 0]);
-    expect(on({ op: 'sheet', key: 'armorPen', amount: 20 }).resistPen).toBe(plain.resistPen);
+    const on = (...ops: Op[]) => withSheetOps(plain, [status('x', def(...ops), null)], bareBody(hunterOf(), RULES), RULES);
+    expect([on({ op: 'sheet', key: 'armorPen', amount: { kind: 'number', value: 20 } }).armorPen, on({ op: 'sheet', key: 'resistPen', amount: { kind: 'number', value: 20 } }).resistPen]).toEqual([plain.armorPen + 20, plain.resistPen + 20]);
+    expect(on({ op: 'sheet', key: 'armorPen', amount: { kind: 'number', value: 60 } }, { op: 'sheet', key: 'armorPen', amount: { kind: 'number', value: 60 } }).armorPen).toBe(RULES.fight.penMax);
+    expect([on({ op: 'sheet', key: 'armorPenFlat', amount: { kind: 'number', value: 8 } }).armorPenFlat, on({ op: 'sheet', key: 'resistPenFlat', amount: { kind: 'number', value: -8 } }).resistPenFlat]).toEqual([8, 0]);
+    expect(on({ op: 'sheet', key: 'armorPen', amount: { kind: 'number', value: 20 } }).resistPen).toBe(plain.resistPen);
   });
 
   test('a status with no sheet op leaves the sheet derive made, to the last field', () => {
     const plain = modified(hunterOf(), [], RULES).sheet;
-    expect(modified(hunterOf(), [status('x', def({ op: 'stat', key: 'str', amount: 0 }), null)], RULES).sheet).toEqual(plain);
-    expect(withSheetOps(plain, [status('x', def({ op: 'share', on: 'taken', pct: 10 }), null)], RULES)).toBe(plain);
+    expect(modified(hunterOf(), [status('x', def({ op: 'stat', key: 'str', amount: { kind: 'number', value: 0 } }), null)], RULES).sheet).toEqual(plain);
+    expect(withSheetOps(plain, [status('x', def({ op: 'share', on: 'taken', pct: 10 }), null)], bareBody(hunterOf(), RULES), RULES)).toBe(plain);
   });
 
   test('sight ops do not add: the highest is the body\'s sight level, at most 5, and never under its own (ruling 8)', () => {
@@ -606,7 +606,7 @@ describe('wave 2\'s sheet and share ops (kits design 8.1)', () => {
     const atA = status('eye', def({ op: 'sheet', key: 'sight', amount: [0, 1, 1, 2, 3, 4] }), null, { source: { id: null, tier: 4 } });
     const plain = modified(hunterOf(), [], RULES).sheet;
     expect(modified(hunterOf(), [atA], RULES).sheet).toEqual({ ...plain, sight: 3 });
-    expect(Object.keys(sheetAdds([atA]))).not.toContain('sight');
+    expect(Object.keys(sheetAdds([atA], bareBody(hunterOf(), RULES), RULES))).not.toContain('sight');
   });
 
   test('a per-round damage reads its bearer\'s damage taken share at the settle: 10 a round on a body taking +50% is 15', () => {
@@ -631,6 +631,73 @@ describe('wave 2\'s sheet and share ops (kits design 8.1)', () => {
   });
 });
 
+describe('a lasting change that grows with its bearer: `stat` and `sheet` take a formula (item-stats 6.2)', () => {
+  const plainOf = (o: Origin) => modified(o, [], RULES);
+  const raw = (v: unknown): Op => { const o = parseOp(v, RULES); if (!o) throw new Error(`refused: ${JSON.stringify(v)}`); return o; };
+  const sheetOp = (key: string, text: string): unknown => ({ op: 'sheet', key, amount: f(text) });
+  const flat = (value: number): Formula => ({ kind: 'number', value });
+
+  test('armor of 0.1 * hpmax on a bearer of max HP 200 adds 20', () => {
+    const plain = plainOf(hunterOf()), bare = { stats: plain.stats, sheet: { ...plain.sheet, hpMax: 200 } };
+    expect(withSheetOps(plain.sheet, [status('ward', def(raw(sheetOp('armor', '0.1 * hpmax'))), null)], bare, RULES).armor).toBe(plain.sheet.armor + 20);
+  });
+
+  test('a stat op on Vitality beside it raises max HP but not what the armor reads, in either order', () => {
+    const armor = status('ward', def(raw(sheetOp('armor', '0.1 * hpmax'))), null);
+    const vit = status('hardy', def({ op: 'stat', key: 'vit', amount: flat(30) }), null);
+    const plain = plainOf(hunterOf()).sheet, hardy = modified(hunterOf(), [vit], RULES).sheet, both = modified(hunterOf(), [armor, vit], RULES).sheet;
+    expect(both.hpMax).toBeGreaterThan(plain.hpMax);
+    expect(both.armor).toBeCloseTo(hardy.armor + 0.1 * plain.hpMax, 9);
+    expect(modified(hunterOf(), [vit, armor], RULES).sheet).toEqual(both);
+  });
+
+  test('a stat op of 0.5 * vit reads the bearer\'s own Vitality before any status: one pass, no feedback', () => {
+    const grow = status('grow', def({ op: 'stat', key: 'vit', amount: f('0.5 * vit') }), null);
+    const lift = status('lift', def({ op: 'stat', key: 'vit', amount: flat(10) }), null);
+    const vit = plainOf(hunterOf()).stats.vit;
+    expect(modified(hunterOf(), [grow, lift], RULES).stats.vit).toBe(vit + 0.5 * vit + 10);
+  });
+
+  test('the rule\'s bound holds each op: armor of 1 * hpmax at max HP 200 adds kit.armorOp, and two stacks add it twice', () => {
+    const plain = plainOf(hunterOf()), bare = { stats: plain.stats, sheet: { ...plain.sheet, hpMax: 200 } }, op = raw(sheetOp('armor', 'hpmax'));
+    expect(withSheetOps(plain.sheet, [status('wall', def(op), null)], bare, RULES).armor).toBe(plain.sheet.armor + RULES.fight.kit.armorOp);
+    const wall: StackDef = { label: 'Wall', desc: '', ops: [op], stack: { cap: 5, leave: { kind: 'never' }, keep: 'fight', threshold: null } };
+    const two = statusOn(wall, { key: statusKey('wall'), source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0) }, 2);
+    expect(withSheetOps(plain.sheet, [two], bare, RULES).armor).toBe(plain.sheet.armor + 2 * RULES.fight.kit.armorOp);
+  });
+
+  test('a number still reads as a flat amount, held at its bound as before', () => {
+    expect(raw({ op: 'stat', key: 'str', amount: 4 })).toEqual({ op: 'stat', key: 'str', amount: flat(4) });
+    expect(raw({ op: 'sheet', key: 'armor', amount: [1, 2, 3, 4, 5, 999] })).toEqual({ op: 'sheet', key: 'armor', amount: [1, 2, 3, 4, 5, RULES.fight.kit.armorOp].map(flat) });
+    expect(raw({ op: 'sheet', key: 'armor', amount: f('2000') })).toEqual({ op: 'sheet', key: 'armor', amount: flat(RULES.fight.kit.armorOp) });
+  });
+
+  test('the parser refuses what a bare body lacks (the target, a charge, missing, the kits\' names) and a malformed formula', () => {
+    for (const text of ['0.1 * target.hpmax', 'charge', '10 * missing', 'stacks(pain)', 'field(pain)', 'held(pain)', 'hits', 'kills + str', 'spent']) {
+      expect(parseOp(sheetOp('armor', text), RULES), text).toBeNull();
+      expect(parseOp({ op: 'stat', key: 'str', amount: f(text) }, RULES), text).toBeNull();
+    }
+    expect(parseOp({ op: 'sheet', key: 'armor', amount: { kind: 'binary', op: '*', left: flat(0.1) } }, RULES)).toBeNull();
+    expect(parseOp({ op: 'stat', key: 'str', amount: 'str' }, RULES)).toBeNull();
+  });
+
+  test('exposed, range and sight hold a plain number: a formula there is refused', () => {
+    for (const key of ['exposed', 'range', 'sight']) expect(parseOp(sheetOp(key, '0.1 * hpmax'), RULES), key).toBeNull();
+    expect(raw({ op: 'sheet', key: 'exposed', amount: 1 })).toEqual({ op: 'sheet', key: 'exposed', amount: 1 });
+  });
+
+  test('a lowering formula is harmful, a raising one is not: -0.1 * armor and 0.1 * hpmax', () => {
+    expect([harmful(def(raw(sheetOp('armor', '-0.1 * armor')))), harmful(def(raw(sheetOp('armor', '0.1 * hpmax'))))]).toEqual([true, false]);
+    expect([harmful(def({ op: 'stat', key: 'str', amount: f('-0.2 * str') })), harmful(def({ op: 'stat', key: 'str', amount: f('0.2 * str') }))]).toEqual([true, false]);
+  });
+
+  test('its words name the share and, on a wearer, what it comes to now: "Armor: +10% of max HP (now 12)"', () => {
+    const plain = plainOf(hunterOf()), wearer = { stats: plain.stats, sheet: { ...plain.sheet, hpMax: 120 } }, op = raw(sheetOp('armor', '0.1 * hpmax'));
+    expect(opLines([op], 0, RULES, wearer)).toEqual(['Armor: +10% of max HP (now 12)']);
+    expect(opLines([op, { op: 'stat', key: 'str', amount: f('-0.3 * vit') }], 0, RULES)).toEqual(['Armor: +10% of max HP', 'Strength: −0.3 × Vitality']);
+  });
+});
+
 describe('a status\'s own life on its bearer (SMX-rules-2)', () => {
   const owedOn = (key: string, d: StatusDef): Status => status(key, d, 0, { owed: true });
   // Read in the order of tests/models/stack-events.ts STATUS_WALK: land (runs, past); time (ahead, ahead owing, past, past
@@ -647,15 +714,15 @@ describe('a status\'s own life on its bearer (SMX-rules-2)', () => {
   });
 
   test('an active status counts; an owed one counts for nothing on any reader, as if it were gone', () => {
-    const ward = def({ op: 'invulnerable' }, { op: 'safeguard' }, { op: 'hidden', level: 1, start: 'unseen', ends: { hurt: true, revealed: true, dealt: true } }, { op: 'hold' }, { op: 'channel', mode: 'protect' }, { op: 'stat', key: 'str', amount: 10 },
-      { op: 'share', on: 'taken', pct: -50 }, { op: 'sheet', key: 'armor', amount: 20 }, { op: 'edge', side: 'defend', keep: 'better', tag: null, spend: false },
+    const ward = def({ op: 'invulnerable' }, { op: 'safeguard' }, { op: 'hidden', level: 1, start: 'unseen', ends: { hurt: true, revealed: true, dealt: true } }, { op: 'hold' }, { op: 'channel', mode: 'protect' }, { op: 'stat', key: 'str', amount: { kind: 'number', value: 10 } },
+      { op: 'share', on: 'taken', pct: -50 }, { op: 'sheet', key: 'armor', amount: { kind: 'number', value: 20 } }, { op: 'edge', side: 'defend', keep: 'better', tag: null, spend: false },
       { op: 'boost', side: 'defend', die: { kind: 'face', n: 3 } });
     expect([counts(status('w', ward, 100)), counts(owedOn('w', ward))]).toEqual([true, false]);
     const plain = body(), channel = { ability: abilityId('m'), aim: place(0, 0), charge: 2, spent: 0, state: 'holding' as const };
     const live = withStatuses({ ...body(), channel }, [status('w', ward, 100)], tick(0), RULES), gone = withStatuses({ ...body(), channel }, [owedOn('w', ward)], tick(0), RULES);
     const foe = body(hunterOf(), { id: combatantId('f'), side: 'foe' }), poison = def({ op: 'damage', type: 'magical', amount: f('2') });
     const reads = (b: Body) => [holds(b, 'invulnerable'), holds(b, 'hidden'), wardedDamage(b, 999) < 999, held(b, tick(0)), channelBreaks(b, 0, true, tick(0)),
-      b.stats.str, b.sheet.armor, damageShare(foe, b, RULES), sheetAdds(b.statuses).armor, edgeOn({ tags: [] }, foe, b).cut, boostsOn(foe, b).length,
+      b.stats.str, b.sheet.armor, damageShare(foe, b, RULES), sheetAdds(b.statuses, b, RULES).armor, edgeOn({ tags: [] }, foe, b).cut, boostsOn(foe, b).length,
       admitted(b, poison, 'foe', 1000, 0, RULES).ok];
     expect(reads(live)).toEqual([true, true, true, true, false, plain.stats.str + 10, plain.sheet.armor + 20, 0.5, 20, 'kh', 1, false]);
     expect(reads(gone)).toEqual(reads({ ...plain, channel }));
@@ -702,7 +769,7 @@ describe('a status\'s own life on its bearer (SMX-rules-2)', () => {
     });
 
     test('a Strength buff that ran out at 500 is off its bearer\'s sheet when time reaches 950, though its heal is still owed', () => {
-      const f0 = play(...begin([ward({ op: 'stat', key: 'str', amount: 10 })]));
+      const f0 = play(...begin([ward({ op: 'stat', key: 'str', amount: { kind: 'number', value: 10 } })]));
       expect(rowIn(f0, A).stats.str).toBe(stats().str);
     });
   });

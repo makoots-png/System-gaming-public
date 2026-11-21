@@ -252,7 +252,7 @@ describe('what the bar cannot estimate it names, never counting it as 0', () => 
   });
 
   test('a status alone weighs its per-round damage over the reference fight, whole, and names its stat change and its end', () => {
-    const rot: StatusDef = { label: 'Rot', desc: '', ops: [{ op: 'damage', type: 'magical', amount: f('1d8 + mag'), when: 'turn' }, { op: 'stat', key: 'str', amount: -2 }],
+    const rot: StatusDef = { label: 'Rot', desc: '', ops: [{ op: 'damage', type: 'magical', amount: f('1d8 + mag'), when: 'turn' }, { op: 'stat', key: 'str', amount: { kind: 'number', value: -2 } }],
       end: { ops: [{ op: 'damage', type: 'magical', amount: f('1d8 + mag'), when: 'use' }], cleanse: 'cancel' } };
     const w = defWorth(rot, RULES);
     expect(w.worth).toBeCloseTo(RULES.fight.kit.referenceRounds / 0.775, 6);

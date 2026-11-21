@@ -9,12 +9,12 @@ import { TERRAIN, openGrid, place, seenBy, tiles, inSight } from '../src/core/co
 import type { Grid, Place, Terrain } from '../src/core/combat/space.ts';
 import { eyesOf, figureOf, perceives, rangeOf } from '../src/core/combat/sight.ts';
 import type { Eyes, Figure, SightRange } from '../src/core/combat/sight.ts';
-import { asLevel, LEVELS } from '../src/core/combat/standing.ts';
+import { asLevel, LEVELS } from '../src/core/combat/sight-levels.ts';
 import { modified, statusKey, statusOn } from '../src/core/combat/effect-ops.ts';
 import type { Body, Op, Origin, Status, StatusFields } from '../src/core/combat/effect-ops.ts';
 import { combatantId } from '../src/core/combat/ability-types.ts';
 import { parseOp } from '../src/core/combat/fight-parse.ts';
-import type { HideLevel } from '../src/core/combat/standing.ts';
+import type { HideLevel } from '../src/core/combat/sight-levels.ts';
 import type { Tiered } from '../src/core/combat/effect-ops.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 import { lifeAt } from './fixtures/life.ts';

@@ -28,7 +28,8 @@ import { REACT_STATES, reactStep } from '../src/core/combat/fight-react.ts';
 import type { ReactEvent, ReactState } from '../src/core/combat/fight-react.ts';
 import { INVISIBLE_HIDE, REACT_WALK, STEALTH_HIDE, STEALTH_WALK } from './models/wave2-events.ts';
 import { stealthLevel, stealthStep } from '../src/core/combat/standing.ts';
-import type { HideLevel, Stealth, StealthEvent } from '../src/core/combat/standing.ts';
+import type { Stealth, StealthEvent } from '../src/core/combat/standing.ts';
+import type { HideLevel } from '../src/core/combat/sight-levels.ts';
 import { tallyOf } from '../src/core/combat/row-tally.ts';
 import { REFUSAL_WORDS, TABLE_REFUSAL_WORDS } from '../src/core/combat/refusal-words.ts';
 import { abilityId, combatantId, hunterId } from '../src/core/combat/ability-types.ts';
@@ -1141,7 +1142,7 @@ describe('a zone on the ground (4.7)', () => {
   });
 
   // ── an aura (design 4.8) ──
-  const glow: Op = { op: 'stat', key: 'agi', amount: 10 };
+  const glow: Op = { op: 'stat', key: 'agi', amount: { kind: 'number', value: 10 } };
   /** A support on its user that leaves an aura of `radius` around it holding `ops`. */
   const auraOf = (ops: Op[], radius = 1, o: Partial<Ability> = {}): Ability => ({
     ...ability('support', 'aura', null, { aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null, ...o }),

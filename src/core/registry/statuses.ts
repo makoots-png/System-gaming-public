@@ -14,9 +14,9 @@ const dice = (count: number, sides: number): Formula => ({ kind: 'dice', count, 
 const num = (value: number): Formula => ({ kind: 'number', value });
 const each = <T>(...v: Tiers<T>): Tiers<T> => v;
 /** 4N of the old modifier at each tier: 4 times 2, 3, 4, 5, 6, 8. */
-const FOUR_N = each(-8, -12, -16, -20, -24, -32);
+const FOUR_N = each(num(-8), num(-12), num(-16), num(-20), num(-24), num(-32));
 /** The old damage modifier N (-1 -3 -5 -9 -13 -19) as stat points: power is 0.6 * eff, so round(N / 0.6). */
-const DAMAGE_N = each(-2, -5, -8, -15, -22, -32);
+const DAMAGE_N = each(num(-2), num(-5), num(-8), num(-15), num(-22), num(-32));
 
 const STATUSES = {
   bleeding: { label: 'Bleeding', desc: 'Takes physical damage every round.', ops: [
@@ -32,7 +32,7 @@ const STATUSES = {
   paralyzed: { label: 'Paralyzed', desc: 'Cannot move or act.', ops: [{ op: 'hold' }, { op: 'root' }] },
   stunned: { label: 'Stunned', desc: 'Cannot act.', ops: [{ op: 'hold' }] },
   frightened: { label: 'Frightened', desc: 'Has lower Discipline, so its Will drops.', ops: [{ op: 'stat', key: 'dis', amount: FOUR_N }] },
-  blinded: { label: 'Blinded', desc: 'Has much lower Control, so its Accuracy drops.', ops: [{ op: 'stat', key: 'ctl', amount: each(-16, -24, -32, -40, -48, -64) }] },
+  blinded: { label: 'Blinded', desc: 'Has much lower Control, so its Accuracy drops.', ops: [{ op: 'stat', key: 'ctl', amount: each(num(-16), num(-24), num(-32), num(-40), num(-48), num(-64)) }] },
   slowed: { label: 'Slowed', desc: 'Moves and acts more slowly.', ops: [{ op: 'speed', pct: each(-20, -25, -30, -35, -40, -50) }] },
   hasted: { label: 'Hasted', desc: 'Moves and acts faster, and sometimes gets part of an action back.', ops: [
     { op: 'speed', pct: each(20, 25, 30, 35, 40, 50) },

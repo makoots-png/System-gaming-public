@@ -100,7 +100,7 @@ describe('hostile input', () => {
   });
 
   test('a status def of the fight\'s ops comes through as it was written', () => {
-    const def: StatusDef = { label: 'Chilled', desc: 'Slower in the cold.', ops: [{ op: 'speed', pct: -20 }, { op: 'stat', key: 'agi', amount: [-4, -6, -8, -10, -12, -16] }] };
+    const def: StatusDef = { label: 'Chilled', desc: 'Slower in the cold.', ops: [{ op: 'speed', pct: -20 }, { op: 'stat', key: 'agi', amount: [{ kind: 'number', value: -4 }, { kind: 'number', value: -6 }, { kind: 'number', value: -8 }, { kind: 'number', value: -10 }, { kind: 'number', value: -12 }, { kind: 'number', value: -16 }] }] };
     expect(read({ statuses: [{ key: 'chilled', rounds: 2, def }] }).statuses).toEqual([{ key: statusKey('chilled'), rounds: 2, def }]);
   });
 
@@ -424,7 +424,7 @@ describe('a Resurrection Crystal given in a reward, with no code of its own (not
 });
 
 describe('a status put on or taken off the sheet (grant.ts sheetEdit)', () => {
-  const WEAK: StatusDef = { label: 'Weakened', desc: '', ops: [{ op: 'stat', key: 'vit', amount: -20 }] };
+  const WEAK: StatusDef = { label: 'Weakened', desc: '', ops: [{ op: 'stat', key: 'vit', amount: { kind: 'number', value: -20 } }] };
   test('a status that lowers max HP leaves the stored HP above it, which the sheet shows at the maximum (SMX-rules-1.3, today)', () => {
     const h = freshSave({ now: new Date(0), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-test') }, { onboarded: true }).hunters[0]!;
     const full = hunterSheet(h, RULES).sheet.hpMax;

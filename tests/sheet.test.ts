@@ -28,7 +28,7 @@ const RING: SheetItem = { id: 'ring', weight: 0, bonus: { vit: 5 } };
 const PLATE: SheetItem = { id: 'plate', weight: 32, armor: 60, resist: 20, bonus: { pow: 3 } };
 
 const SLOWED: StatusDef = { label: 'Slowed', desc: '', ops: [{ op: 'speed', pct: [-20, -25, -30, -35, -40, -50] }] };
-const FRIGHTENED: StatusDef = { label: 'Frightened', desc: '', ops: [{ op: 'stat', key: 'dis', amount: -8 }] };
+const FRIGHTENED: StatusDef = { label: 'Frightened', desc: '', ops: [{ op: 'stat', key: 'dis', amount: { kind: 'number', value: -8 } }] };
 const RESTRAINED: StatusDef = { label: 'Restrained', desc: '', ops: [{ op: 'root' }] };
 const on = (key: string, def: StatusDef, tier = 0): SheetCondition => ({ key: statusKey(key), def, source: { id: null, tier } });
 

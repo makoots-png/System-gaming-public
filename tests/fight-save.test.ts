@@ -363,7 +363,7 @@ describe('an award to hunters this phone\'s fight holds is one write: the award,
   }
 
   test('a level-up\'s refill fills the row to the maxima the reward\'s own statuses gave it', () => {
-    const hardy = { label: 'Hardy', desc: '', ops: [{ op: 'stat', key: 'vit', amount: 20 }] } as const;
+    const hardy = { label: 'Hardy', desc: '', ops: [{ op: 'stat', key: 'vit', amount: { kind: 'number', value: 20 } }] } as const;
     const p = heldFight(), before = row(p.save, 'c1').sheet;
     ok(award(p, null, { ...REWARD, statuses: [{ key: statusKey('hardy'), rounds: 3, def: hardy }] }));
     const c1 = row(p.save, 'c1');

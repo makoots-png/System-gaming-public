@@ -49,7 +49,7 @@ const active = (a: Ability | null) => ({ type: 'active', ability: a }) as const;
 const SLOWED: StatusDef = { label: 'Slowed', desc: '', ops: [{ op: 'speed', pct: [-20, -25, -30, -35, -40, -50] }] };
 const STEALTH: StatusDef = { label: 'Stealth', desc: '', ops: [] };
 const REGEN: StatusDef = { label: 'Regenerating', desc: '', ops: [{ op: 'heal', amount: { kind: 'number', value: 10 } }] };
-const POISONED: StatusDef = { label: 'Poisoned', desc: '', ops: [{ op: 'stat', key: 'ctl', amount: -8 }] };
+const POISONED: StatusDef = { label: 'Poisoned', desc: '', ops: [{ op: 'stat', key: 'ctl', amount: { kind: 'number', value: -8 } }] };
 const condition = (key: string, def: StatusDef, rounds: number | null): SheetStatus => ({ key: statusKey(key), def, source: { id: null, tier: 1 }, rounds });
 /** The rules with the new status defs a monster's start statuses are looked up in (W1a puts them in `RULES.conditions`). */
 const R = { ...RULES, conditions: { regenerating: REGEN, poisoned: POISONED } };

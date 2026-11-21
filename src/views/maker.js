@@ -14,14 +14,16 @@ import { ICON_GROUPS, ICON_KEYS, iconDef, iconsOf } from '../core/registry/icons
 import { BONUS_KEYS, BONUS_LABELS, rules } from '../edge/rules.ts';
 import { RANKS } from '../core/rules.ts';
 import { STAT_KEYS, STAT_LABELS } from '../core/stats.ts';
-import { parseFormula, printFormula } from '../core/formula.ts';
+import { bareRefusal, parseFormula, printFormula } from '../core/formula.ts';
 import { OP_KINDS, opLines } from '../core/combat/effect-ops.ts';
-import { HIDE_LEVELS } from '../core/combat/standing.ts';
+import { HIDE_LEVELS } from '../core/combat/sight-levels.ts';
+import { isFormulaKey } from '../core/combat/op-amount.ts';
+import { sheetOpCap } from '../core/combat/standing.ts';
 import { parseOp } from '../core/combat/fight-parse.ts';
 import { RARITIES } from '../core/registry/items.ts';
 import { BUILT_IN_STATUSES } from '../core/registry/statuses.ts';
 import { isStateChip } from '../core/hunter/chips.ts';
-import { abilityOf, averages, checkGap, defaultTicks, gapOf, paceOf, paceTime, powerStat, recommended, ruleTicks, SCALER_CHOICES, suggestedScaler, ticksOf } from '../core/registry/ability-kinds.ts';
+import { abilityOf, averages, checkGap, defaultTicks, gapOf, paceOf, paceTime, powerStat, recommended, ruleTicks, sampleBody, SCALER_CHOICES, suggestedScaler, ticksOf } from '../core/registry/ability-kinds.ts';
 import { FAMILY, nameOf } from '../core/registry/scalers.ts';
 import { worthLine } from '../core/registry/worth.ts';
 import { abilityId } from '../core/combat/ability-types.ts';
@@ -104,22 +106,49 @@ const FORMULA_KINDS = ['damage', 'heal', 'mana', 'fatigue'];
 const ONE_FORMULA = ['shield'];
 /**
  * Ops whose value is a number, by rank: the op's field, the parser's bounds, whether it may have decimals, and whether it
- * is typed in rounds and kept in ticks (a delay).
+ * is typed in rounds and kept in ticks (a delay). A sheet op is a number row only on a key that holds a number (`lasting`).
  */
 const NUMBERS = {
-  speed: { key: 'pct', lo: -100, hi: 1000 }, stat: { key: 'amount', lo: -999, hi: 999 }, threat: { key: 'amount', lo: -9999, hi: 9999 },
+  speed: { key: 'pct', lo: -100, hi: 1000 }, threat: { key: 'amount', lo: -9999, hi: 9999 },
   staggerRate: { key: 'pct', lo: -100, hi: 1000 }, refund: { key: 'pct', lo: 1, hi: 100 }, delay: { key: 'ticks', lo: 0.1, hi: 10, decimal: true, rounds: true },
   share: { key: 'pct', lo: -100, hi: 100 }, sheet: { key: 'amount', lo: -60, hi: 60 },
   hidden: { key: 'level', lo: HIDE_LEVELS[0], hi: HIDE_LEVELS[HIDE_LEVELS.length - 1], placeholder: '1', label: 'Stealth level' },
 };
 const NUMBER_KINDS = Object.keys(NUMBERS);
-/** A number op's field and bounds: a sheet op's are its key's rule (kits table 8.1; fight-parse.ts clamps to the same), the rest `NUMBERS`. */
+/** The bounds a stat op's flat amount is typed within: what its number row held before it took a formula. */
+const STAT_SPEC = { key: 'amount', lo: -999, hi: 999 };
+/**
+ * A number's field and bounds: a stat op's `STAT_SPEC`; a sheet op's its key's rule (standing.ts `sheetOpCap`, which the
+ * parser and the reader keep too); the rest `NUMBERS`. A lasting row checks a flat amount against them.
+ */
 function specOf(r) {
+  if (r.kind === 'stat') return STAT_SPEC;
   if (r.kind !== 'sheet') return NUMBERS[r.kind];
-  const F = rules().fight, K = F.kit, key = r.sheetKey;
-  const hi = { armor: K.armorOp, resist: K.armorOp, armorPen: F.penMax, resistPen: F.penMax, armorPenFlat: K.armorOp, resistPenFlat: K.armorOp, critFaces: K.critFacesMax, exposed: K.critFacesMax, critSize: K.critSizeMax - F.critSizeBase, costCut: K.costCutMax, range: K.rangeAdd }[key] ?? K.armorOp;
-  return { key: 'amount', lo: -hi, hi, decimal: key === 'critSize' || key === 'costCut' };
+  const hi = sheetOpCap(r.sheetKey, rules());
+  return { key: 'amount', lo: -hi, hi, decimal: r.sheetKey === 'critSize' || r.sheetKey === 'costCut' };
 }
+/**
+ * A row whose amount is a lasting change's formula (item-stats 6.2): a stat op, or a sheet op on a key that takes one
+ * (op-amount.ts `SHEET_FORMULA_KEYS`). Exposed and range are read inside a use, where no bearer's body is at hand, so
+ * theirs stay a number row; what a lasting formula may read is `bareRefusal`'s, the parser's check.
+ */
+const lasting = r => r.kind === 'stat' || (r.kind === 'sheet' && isFormulaKey(r.sheetKey));
+/** A row whose amount is a formula: the formula kinds, the shield, and a lasting change. */
+const formulaRow = r => FORMULA_KINDS.includes(r.kind) || ONE_FORMULA.includes(r.kind) || lasting(r);
+/** A row whose amount is a plain number (`NUMBERS`). */
+const numberRow = r => NUMBER_KINDS.includes(r.kind) && !lasting(r);
+/**
+ * A lasting row moved to a key that holds a number (a sheet op's Armor to Range): its number field keeps a written
+ * number and starts empty for a formula, which a number field cannot show; the formula it came with is dropped.
+ */
+function toNumberRow(r) {
+  const keep = t => (String(t).trim() !== '' && Number.isFinite(Number(t)) ? t : '');
+  r.q = keep(r.q); r.tiers = r.tiers.map(keep); r.amount = undefined;
+}
+/** A formula that is a written number (`12`, `-8`), as that number; null when it reads a name or rolls a die. */
+const flatOf = f => (f.kind === 'number' ? f.value : f.kind === 'negate' && f.arg.kind === 'number' ? -f.arg.value : null);
+/** The sample hunter a lasting change's words are read on in the maker: rank C, its points in Strength and Vitality. */
+const SAMPLE_RANK = 'C';
 const PLAIN_KINDS = ['hold', 'root', 'taunt', 'untargetable', 'invulnerable', 'safeguard', 'alert', 'extra', 'negate', 'reveal'];
 /** Where a hide may start (effect-ops.ts `HIDE_STARTS`), and the three events that may end it (`STEALTH_ENDS`), as the GM reads them. */
 const START_LABEL = [['unseen', 'Out of sight'], ['anywhere', 'Anywhere']];
@@ -152,7 +181,7 @@ const dice = (count, sides) => ({ kind: 'dice', count, sides });
 const QUICK = {
   status: [
     ['slow', 'Speed −20%', { op: 'speed', pct: -20 }], ['haste', 'Speed +20%', { op: 'speed', pct: 20 }],
-    ['ctl', 'Control −8', { op: 'stat', key: 'ctl', amount: -8 }], ['dis', 'Discipline −8', { op: 'stat', key: 'dis', amount: -8 }],
+    ['ctl', 'Control −8', { op: 'stat', key: 'ctl', amount: num(-8) }], ['dis', 'Discipline −8', { op: 'stat', key: 'dis', amount: num(-8) }],
     ['d4', '1d4 damage a round', { op: 'damage', type: 'physical', amount: dice(1, 4) }], ['d6', '1d6 magical a round', { op: 'damage', type: 'magical', amount: dice(1, 6) }],
     ['h4', '1d4 heal a round', { op: 'heal', amount: dice(1, 4) }], ['hold', 'Cannot act', { op: 'hold' }], ['root', 'Cannot move', { op: 'root' }],
   ],
@@ -195,13 +224,13 @@ function rowOf(o) {
     dir: o.dir || 'away', from: o.op === 'shove' ? o.from : 'user', moveKey: o.op === 'move' ? o.key : 'harmful', moveFrom: o.op === 'move' ? o.from : 'user', as: o.op === 'move' && o.as ? o.as : '',
     which: o.which || 'first', start: o.op === 'hidden' ? o.start : null, ends: o.op === 'hidden' ? { ...o.ends } : null, stayOn: o.op === 'stayHidden' ? o.on : null,
   };
-  if (FORMULA_KINDS.includes(o.op) || ONE_FORMULA.includes(o.op)) {
+  if (o.op === 'stat') r.stat = o.key;
+  if (formulaRow(r)) {
     if (o.op === 'damage') r.type = o.type;
     if (isTiers(o.amount)) { r.mode = 'rank'; r.tiers = o.amount.map(printFormula); r.q = r.tiers[0]; } else r.q = o.amount ? printFormula(o.amount) : '';
     // the amount as it came, kept while its text is not changed: "-10" reads back as a negation of 10, the same number in another tree
     r.amount = o.amount; r.shown = JSON.stringify(r.mode === 'rank' ? r.tiers : r.q);
-  } else if (NUMBER_KINDS.includes(o.op)) {
-    if (o.op === 'stat') r.stat = o.key;
+  } else if (numberRow(r)) {
     if (o.op === 'refund') r.chance = String(o.chance ?? '');
     const v = o[specOf(r).key];
     if (isTiers(v)) { r.mode = 'rank'; r.tiers = v.map(x => typed(o.op, x)); r.q = r.tiers[0]; } else r.q = v === undefined ? '' : typed(o.op, v);
@@ -223,6 +252,23 @@ function rowOf(o) {
 }
 const tierName = (t, item) => (item ? RARITIES[t] : `rank ${RANKS[t]}`);
 /**
+ * A lasting row's op, or what is wrong with it: each formula (one, or one by rank) reads only its bearer's own numbers
+ * (`bareRefusal`'s words), and a written number keeps the bounds its number row had (`specOf`: whole unless the key is a
+ * share, within the rule, not 0 at every rank), kept as a number. A formula that reads a name is held to the rule's
+ * bound where it is read (standing.ts `sheetOpCap`).
+ */
+function checkLasting(r, amount, item, fail, ok) {
+  const spec = specOf(r), all = isTiers(amount) ? amount : [amount];
+  const words = spec.decimal ? `Write a number from ${spec.lo} to ${spec.hi}, or a formula on its bearer's numbers.` : `Write a whole number from ${spec.lo} to ${spec.hi}, or a formula on its bearer's numbers.`;
+  const wrong = f => { const n = flatOf(f); return bareRefusal(f) ?? (n !== null && (n < spec.lo || n > spec.hi || (!spec.decimal && !Number.isInteger(n))) ? words : null); };
+  const bad = all.flatMap((f, i) => (wrong(f) ? [i] : []));
+  if (bad.length) return fail(isTiers(amount) ? `At ${tierName(bad[0], item)}: ${wrong(all[bad[0]])}` : wrong(amount), isTiers(amount) ? bad : []);
+  if (all.every(f => flatOf(f) === 0)) return fail(isTiers(amount) ? 'Not 0 at every rank.' : 'Not 0.');
+  const flat = f => { const n = flatOf(f); return n === null ? f : num(n); };
+  const out = isTiers(amount) ? amount.map(flat) : flat(amount);
+  return ok(r.kind === 'stat' ? { op: 'stat', key: r.stat, amount: out } : { op: 'sheet', key: r.sheetKey, amount: out });
+}
+/**
  * The op a row holds, or what is wrong with it: `err` the words on the row, `bad` the values by rank that are wrong. A
  * formula is read by `parseFormula` with the rules' dice limits, and its error is the row's.
  */
@@ -231,7 +277,7 @@ function checkRow(r, item) {
   const fail = (err, bad = []) => ({ op: null, err, bad });
   const ok = op => ({ op, err: '', bad: [] });
   if (r.kind === 'keep') return ok(r.keep);
-  if (FORMULA_KINDS.includes(r.kind) || ONE_FORMULA.includes(r.kind)) {
+  if (formulaRow(r)) {
     const read = t => parseFormula(t, R), rank = r.mode === 'rank' && !ONE_FORMULA.includes(r.kind);
     let amount;
     if (r.amount && JSON.stringify(r.mode === 'rank' ? r.tiers : r.q) === r.shown) amount = r.amount;
@@ -245,9 +291,10 @@ function checkRow(r, item) {
       amount = p.formula;
     }
     if (r.kind === 'shield') return ok({ op: 'shield', amount });
+    if (lasting(r)) return checkLasting(r, amount, item, fail, ok);
     return ok({ op: r.kind, ...(r.kind === 'damage' ? { type: r.type } : {}), amount, ...when });
   }
-  if (NUMBER_KINDS.includes(r.kind)) {
+  if (numberRow(r)) {
     const spec = specOf(r), lo = spec.lo, hi = spec.hi;
     const read = t => {
       const s = String(t).trim(), n = Number(s);
@@ -266,7 +313,6 @@ function checkRow(r, item) {
       if (v === null) return fail(words);
       if (v === 0) return fail('Not 0.');
     }
-    if (r.kind === 'stat') return ok({ op: 'stat', key: r.stat, amount: v });
     if (r.kind === 'sheet') return ok({ op: 'sheet', key: r.sheetKey, amount: v });
     if (r.kind === 'share') return ok({ op: 'share', on: r.shareOn, pct: v });
     if (r.kind === 'hidden') return ok({ op: 'hidden', level: v, start: r.start, ends: { ...r.ends } });
@@ -361,13 +407,13 @@ function effects(box, o) {
       return `<div class="mk-fx" data-row="${i}"><div class="mk-fx-top"><span class="mk-keep">${esc(opLines([r.keep], null, rules()).join('; ') || r.keep.op)}</span>
         <button type="button" class="icon-btn" data-rm aria-label="Remove effect ${i + 1}">&times;</button></div><p class="mk-fx-err" data-err role="alert"></p></div>`;
     }
-    const one = ONE_FORMULA.includes(r.kind), formula = FORMULA_KINDS.includes(r.kind) || one, number = NUMBER_KINDS.includes(r.kind), what = KIND_LABEL[r.kind];
+    const one = ONE_FORMULA.includes(r.kind), formula = formulaRow(r), number = numberRow(r), what = KIND_LABEL[r.kind];
     const decimal = number && specOf(r).decimal;
     const modes = (formula && !one) || number || r.kind === 'applyStatus' ? [['flat', 'Same at every rank'], ['rank', item ? 'By rarity' : 'By rank']] : [];
     const input = (attrs, label, value) => (number
       ? `<input type="number" inputmode="${decimal ? 'decimal' : 'numeric'}" step="${decimal ? 'any' : '1'}" ${attrs} aria-label="${esc(label)}" value="${esc(value)}">`
       : `<input type="text" autocomplete="off" spellcheck="false" ${attrs} aria-label="${esc(label)}" value="${esc(value)}">`);
-    const placeholder = number ? (NUMBERS[r.kind].placeholder ?? (NUMBERS[r.kind].rounds ? 'Rounds, e.g. 0.5' : '−20')) : '2d6 + 1';
+    const placeholder = number ? (NUMBERS[r.kind].placeholder ?? (NUMBERS[r.kind].rounds ? 'Rounds, e.g. 0.5' : '−20')) : lasting(r) ? '10 or 0.1 * hpmax' : '2d6 + 1';
     /** A labelled group of buttons: a `div`, so a tap on its label presses none of them. */
     const group = (label, inner) => `<div class="field"><span class="lbl">${esc(label)}</span>${inner}</div>`;
     const K = rules().fight.kit, stacksIn = r.kind === 'applyStatus' || r.kind === 'cureStatus'
@@ -429,7 +475,7 @@ function effects(box, o) {
     el.querySelectorAll('[data-t]').forEach(inp => inp.setAttribute('aria-invalid', String(c.bad.includes(Number(inp.dataset.t)))));
     el.querySelectorAll('[data-f=q],[data-f=text],[data-f=status],[data-f=rounds],[data-f=chance],[data-f=tag],[data-f=addStacks]').forEach(inp => inp.setAttribute('aria-invalid', String(!!c.err && !c.bad.length)));
     const avg = el.querySelector('[data-avg]');
-    if (avg) avg.textContent = c.op && c.op.amount && !isTiers(c.op.amount) ? averagesLine(c.op.amount, c.op.op === 'damage' ? c.op.type : null, 'str') : '';
+    if (avg) avg.textContent = !c.op || !c.op.amount || isTiers(c.op.amount) ? '' : lasting(rows[i]) ? lastingLine(c.op) : averagesLine(c.op.amount, c.op.op === 'damage' ? c.op.type : null, 'str');
   }
   function render(focusRow) {
     const full = rows.length >= MAX_ROWS;
@@ -448,7 +494,7 @@ function effects(box, o) {
     if (kind === 'cureStatus') return rowOf({ op: 'cureStatus', key: first ? first[0] : '' });
     if (kind === 'note' || PLAIN_KINDS.includes(kind)) return rowOf({ op: kind, text: '' });
     if (kind === 'speed') return rowOf({ op: 'speed', pct: -10 });
-    if (kind === 'stat') return rowOf({ op: 'stat', key: 'str', amount: -4 });
+    if (kind === 'stat') return rowOf({ op: 'stat', key: 'str', amount: num(-4) });
     if (kind === 'delay') return rowOf({ op: 'delay', ticks: R.fight.round / 2 });
     if (kind === 'threat') return rowOf({ op: 'threat', amount: 10 });
     if (kind === 'staggerRate') return rowOf({ op: 'staggerRate', pct: 50 });
@@ -458,7 +504,7 @@ function effects(box, o) {
     if (kind === 'spread') return rowOf({ op: 'spread', range: R.fight.spreadRange });
     if (kind === 'shield') return rowOf({ op: 'shield', amount: num(10) });
     const K = R.fight.kit;
-    if (kind === 'sheet') return rowOf({ op: 'sheet', key: 'armor', amount: 10 });
+    if (kind === 'sheet') return rowOf({ op: 'sheet', key: 'armor', amount: num(10) });
     if (kind === 'share') return rowOf({ op: 'share', on: 'taken', pct: 25 });
     if (kind === 'edge') return rowOf({ op: 'edge', side: 'attack', keep: 'better', tag: null, spend: true });
     if (kind === 'boost') return rowOf({ op: 'boost', side: 'attack', die: { kind: 'die', sides: 6 } });
@@ -505,7 +551,7 @@ function effects(box, o) {
       render(); raise(); return;
     }
     if (t.dataset.f === 'stat') { r.stat = t.value; mark(i); return; }
-    if (t.dataset.f === 'sheetKey') { r.sheetKey = t.value; render(); raise(); return; }
+    if (t.dataset.f === 'sheetKey') { const was = lasting(r); r.sheetKey = t.value; if (was && !lasting(r)) toNumberRow(r); render(); raise(); return; }
     if (t.dataset.f === 'moveKey' || t.dataset.f === 'as') { r[t.dataset.f] = t.value; mark(i); return; }
     if (t.dataset.f === 'spend') { r.spend = t.checked; mark(i); return; }
     if (t.dataset.f === 'status') {
@@ -543,6 +589,8 @@ const FORMULA_NAMES = [
   ['target.stacks(KEY)', 'Its stacks on the target'], ['stacks(KEY)', 'Its stacks on you'], ['spent', 'Stacks this use spent'], ['field(KEY)', 'Its stacks on everyone'],
   ['held(KEY)', 'Rounds you held it'], ['target.missing', 'Target\'s missing HP share'], ['missing', 'Your missing HP share'], ['hits', 'Bodies hit'], ['kills', 'Your kills this fight'],
 ];
+/** A lasting change in words on the maker's sample hunter (`SAMPLE_RANK`): `Armor: +10% of max HP (now 12)`. */
+const lastingLine = op => `On a sample rank ${SAMPLE_RANK} hunter: ${opLines([op], 0, rules(), sampleBody(SAMPLE_RANK, 'str', rules())).join('')}`;
 /** The averages line of a formula: at E, C and S on a same-rank brute, and after its Armor or Resist for a damage type. */
 function averagesLine(f, type, main) {
   const rows = averages(f, type, main, rules()), r = n => String(Math.round(n));
