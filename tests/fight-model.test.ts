@@ -18,7 +18,8 @@ import { held, partyView } from '../src/core/combat/fight-turn.ts';
 import { isUp, rowHp } from '../src/core/combat/row-hp.ts';
 import { hpOf } from '../src/core/hunter/vitals.ts';
 import { alive } from '../src/core/combat/land.ts';
-import { concealed } from '../src/core/combat/standing.ts';
+import { warded } from '../src/core/combat/standing.ts';
+import { perceivedBy } from '../src/core/combat/sight.ts';
 import { parseFight } from '../src/core/combat/fight-parse.ts';
 import { MAX_SPREAD, reduce } from '../src/core/combat/fight.ts';
 import type { Command, Effect, Fight } from '../src/core/combat/fight.ts';
@@ -214,9 +215,10 @@ function kitsWrong(before: Fight | null, cmd: Command, after: Fight, effects: re
 
 /**
  * Wave 2's invariants (kits design 8.10): a reaction never fires twice between two of its reactor's turns; a foe that is
- * untargetable or hidden is never a use's aim; a ward reaches a body once a fight; no turn that moved is set before the
- * next tick; no body takes more than `extraPerRound` extra actions in a round. (A forced move never ending on a wall, a
- * pit or a body is the place checks of `check`, which every command meets.)
+ * untargetable, or that the user's side does not perceive (sight.ts `perceivedBy`), is never a use's aim; a ward reaches
+ * a body once a fight; no turn that moved is set before the next tick; no body takes more than `extraPerRound` extra
+ * actions in a round. (A forced move never ending on a wall, a pit or a body is the place checks of `check`, which every
+ * command meets.)
  */
 function wave2Wrong(before: Fight | null, cmd: Command, after: Fight, effects: readonly Effect[], mem: Memory): string | null {
   const refused = effects.some(e => e.type === 'refused');
@@ -229,7 +231,7 @@ function wave2Wrong(before: Fight | null, cmd: Command, after: Fight, effects: r
   }
   if (cmd.type === 'act' && before && !refused && typeof cmd.aim === 'string') {
     const u = before.rows.find(r => r.id === cmd.by), t = before.rows.find(r => r.id === cmd.aim);
-    if (u && t && concealed(t, u.side)) return `${u.id} used ${cmd.ability} on ${t.id}, which is hidden or untargetable to it`;
+    if (u && t && (warded(t, u.side) || !perceivedBy(u.side, t, before))) return `${u.id} used ${cmd.ability} on ${t.id}, which is untargetable to it or which its side does not perceive`;
   }
   for (const r of after.rows) {
     const was = before?.rows.find(x => x.id === r.id);

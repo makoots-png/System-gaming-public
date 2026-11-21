@@ -17,7 +17,7 @@ import { isUp, rowHp } from './row-hp.ts';
 import { rowLifeAfter } from './row-life.ts';
 import { applyStatus, controlFactor, cureStatus, dispelled, lasting, removeStatus, shielded, stackOf, statusOn, statusShield, withStatuses, withThreat } from './effect-ops.ts';
 import { atTier, countOn, stacked } from './op-amount.ts';
-import { admitted, counting, damageShare, harmful, healShare, markWards, stealthOf, stealthStep, wardedDamage } from './standing.ts';
+import { admitted, counting, damageShare, harmful, healShare, hideStarts, markWards, stealthOf, stealthStep, wardedDamage } from './standing.ts';
 import type { StealthEndEvent } from './standing.ts';
 import type { Body, LandOp, Op, OpRules, Reach, Source, Status, StatusKey, Threshold, Tiered, UseOp } from './effect-ops.ts';
 import type { Side } from './space.ts';
@@ -101,15 +101,17 @@ export type Put = { readonly target: Body; readonly put: boolean; readonly threa
 /**
  * Rule 18's status on a body, one rule for a use's op (resolve.ts) and a land op (a trigger, a threshold, a delayed end,
  * a reaction): a control status lasts less on a tenacious or a boss target (`lasting`, `controlFactor`); a safeguard or
- * a ward may refuse it (`admitted`); with `cross` a stacking one checks its threshold (rule 18a, `crossed`); its shield
+ * a ward may refuse it (`admitted`); a hide that starts out of sight is refused on a body a foe that is up watches
+ * (`hideStarts`, whoever puts it on); with `cross` a stacking one checks its threshold (rule 18a, `crossed`); its shield
  * ops give a shield read with `by` as the user; a hold stuns; a taunt makes a threat burst for its source; a hold, a
  * root or a taunt asks a holding channel to break (`breaks`). `by` is whose potency the duration reads (a use's user, a
- * land's hitter), `source` the status's source at its tier, `side` the side it comes from (null: none).
+ * land's hitter), `source` the status's source at its tier, `side` the side it comes from (null: none), `watched`
+ * whether a foe that is up has `t` in sight (sight.ts `watched`, which needs the map: resolve.ts asks it for a use).
  */
-export function landStatus(t: Body, op: Extract<Op, { op: 'applyStatus' }>, by: Body, source: Source, side: Side | null, cross: boolean, now: Tick, R: OpRules): Put {
+export function landStatus(t: Body, op: Extract<Op, { op: 'applyStatus' }>, by: Body, source: Source, side: Side | null, cross: boolean, watched: boolean, now: Tick, R: OpRules): Put {
   const d = op.duration === null ? null : lasting(op.def, atTier(op.duration, source.tier), source.tier, by.sheet.potency, t.sheet.tenacity, controlFactor(t, R));
   const door = admitted(t, op.def, side, d === null ? null : now + d, now, R);
-  if (!door.ok) return { target: t, put: false, threat: 0, breaks: false, fired: null };
+  if (!door.ok || !hideStarts(t, op.key, op.def, source.tier, watched)) return { target: t, put: false, threat: 0, breaks: false, fired: null };
   const until = door.until === null ? null : tick(door.until), warded = markWards(t.warded, op.def);
   let b = warded === undefined ? t : { ...t, warded };
   const before = stackOf(b.statuses.find(x => x.key === op.key));
@@ -326,8 +328,9 @@ function landOne(o: LandOp, user: Body, t: Body, source: Source, now: Tick, R: O
     }
     case 'heal': { const n = Math.max(0, Math.round(at(o.amount) * healShare(t, R))); return { target: healed(t, n), dealt: 0, ...none }; }
     case 'applyStatus': {
-      // a status a safeguard or a spent ward refuses is not put on, and so not gained
-      const p = landStatus(t, o, user, source, from, cross, now, R);
+      // a status a safeguard or a spent ward refuses is not put on, and so not gained. A land op has no map, so a hide it
+      // puts on is not asked whether a foe watches its body (triggers.ts, fight-turn.ts and fight-react.ts hold no grid here)
+      const p = landStatus(t, o, user, source, from, cross, false, now, R);
       return { target: p.breaks && channelBreaks(p.target, 0, true, now) ? broken(p.target, R) : p.target, dealt: 0, ...none, fired: p.fired, gained: p.put ? o.key : null };
     }
     case 'cureStatus': case 'dispel': {

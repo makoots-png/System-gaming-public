@@ -465,7 +465,6 @@ const SPEC = {
       zoneMove: of(6, RANGE), // tiles one use moves a zone: a round's walk
       zoneGrow: of(2, RADIUS), // tiles of radius one use adds to a zone, to `fieldRadiusMax`
       extraPerRound: whole(1, 0, 4, 'extra actions a body takes a round: past 4 the fastest build is the fight'), // extra actions (a refund to now) one body takes in a round of fight time: the fastest build stays under 4 turns to the tank's 1
-      hideReveal: of(1, RANGE), // a hidden body is revealed by a foe that is up within this many tiles: adjacent
       surprise: whole(1, 0, 5, 'rounds a surprised side waits: 5 is most of a fight'), // rounds a surprised side's openings are pushed back
       doArmed: whole(12, 0, 24, 'party rows the room doc names as armed: 24 keeps the doc in its cap'), // party rows whose armed reaction the room doc names: 4 hunters, 4 shadows, 4 summons
       // The maker warns past 1.08 times a pace's budget (design 3): the triangle's closest margin on paper is the cannon over

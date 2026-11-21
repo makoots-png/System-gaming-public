@@ -179,8 +179,11 @@ export const healShare = (target: Pick<Body, 'statuses' | 'kind' | 'origin'>, R:
 export type Flag = 'untargetable' | 'invulnerable' | 'safeguard' | 'hidden' | 'alert';
 /** Whether one of `b`'s statuses that count has the op `flag`. */
 export const holds = (b: Pick<Body, 'statuses'>, flag: Flag): boolean => counting(b.statuses).some(s => s.def.ops.some(o => o.op === flag));
-/** Whether a body of `side` may not aim at `b` nor catch it: `b` is of the other side and untargetable or hidden. */
-export const concealed = (b: Pick<Body, 'statuses' | 'side'>, side: Body['side']): boolean => b.side !== side && (holds(b, 'untargetable') || holds(b, 'hidden'));
+/**
+ * Whether a body of `side` may not aim at `b` nor catch it in a shape: `b` is of the other side and untargetable (8.1).
+ * A hidden body is not warded: whom a use may pick is the sight rule's (sight.ts `perceivedBy`), and a shape catches it.
+ */
+export const warded = (b: Pick<Body, 'statuses' | 'side'>, side: Body['side']): boolean => b.side !== side && holds(b, 'untargetable');
 /** The two wards a body takes once a fight (kits design 8.1, the row's `warded`). */
 export type Ward = 'untargetable' | 'invulnerable';
 export const WARDS: readonly Ward[] = ['untargetable', 'invulnerable'];
@@ -286,6 +289,19 @@ export function hideOf(key: StatusKey, def: Pick<StatusDef, 'ops'>, tier: number
   if (!ops.length) return null;
   const level = Math.max(...ops.map(o => atTier(o.level, tier))) as HideLevel;
   return { key, level, ends: { hurt: ops.some(o => o.ends.hurt), revealed: ops.some(o => o.ends.revealed), dealt: ops.some(o => o.ends.dealt) } };
+}
+/** Whether a use of `a` hides a body: it puts a status with a `hidden` op on (kits design 8.7). */
+export const hides = (a: Pick<Ability, 'ops'>): boolean => a.ops.some(o => o.op === 'applyStatus' && o.def.ops.some(x => x.op === 'hidden'));
+/**
+ * Whether a status of `def` under `key`, put on at `tier` on `b`, may land as far as its hides go: the stealth machine's
+ * `hide` on `b`'s stealth leaves it hidden for each of its hidden ops' starts, `watched` whether a foe that is up has `b`
+ * in sight (sight.ts `watched`). A status with no hidden op hides nothing and may land.
+ */
+export function hideStarts(b: Pick<Body, 'statuses'>, key: StatusKey, def: Pick<StatusDef, 'ops'>, tier: number, watched: boolean): boolean {
+  const hide = hideOf(key, def, tier);
+  if (hide === null) return true;
+  const s = stealthOf(b);
+  return def.ops.every(o => o.op !== 'hidden' || stealthState(stealthStep(s, { type: 'hide', hide, start: o.start, watched })) === 'hidden');
 }
 /** A body's stealth, read from its statuses that count (`counts`): their hides, and the ends their `stayHidden` ops keep. */
 export function stealthOf(b: Pick<Body, 'statuses'>): Stealth {

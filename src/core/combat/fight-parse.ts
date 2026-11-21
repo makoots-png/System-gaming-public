@@ -368,11 +368,11 @@ function reachOf(v: unknown, R: Rules): Reach | null {
   if (v.kind === 'most') return on && v.of === 'hp' ? { kind: 'most', of: 'hp', radius, on } : null;
   return v.kind === 'area' && on ? { kind: 'area', radius, on } : null;
 }
-/** What a threshold, a trigger or an end lands (effect-ops.ts `LandOp`): a use op that lands alone, a hit or a heal, a reveal, or time back (`refund`, 1 to 100%). */
+/** What a threshold, a trigger or an end lands (effect-ops.ts `LandOp`): a use op that lands alone (a reveal among them), a hit or a heal, or time back (`refund`, 1 to 100%). */
 function landOpOf(v: unknown, R: Rules, depth: number): LandOp | null {
   if (isObj(v) && v.op === 'refund') { const pct = num(v.pct, 1, 100); return pct === null ? null : { op: 'refund', pct }; }
   const o = opOf(v, R, depth);
-  return o && (o.op === 'damage' || o.op === 'heal' || o.op === 'reveal' || oneOf(o.op, LAND_USE_OPS, null)) ? o as LandOp : null;
+  return o && (o.op === 'damage' || o.op === 'heal' || oneOf(o.op, LAND_USE_OPS, null)) ? o as LandOp : null;
 }
 const landOpsOf = (v: unknown, R: Rules, depth: number): LandOp[] | null =>
   Array.isArray(v) ? all(v.slice(0, R.fight.kit.triggerOps), R.fight.kit.triggerOps, x => landOpOf(x, R, depth)) : null;

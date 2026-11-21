@@ -92,8 +92,8 @@ const AURA_LABEL = [['all', 'Everyone'], ['allies', 'Allies'], ['foes', 'Foes']]
 const ROW_KINDS = {
   status: OP_KINDS,
   item: ['damage', 'heal', 'mana', 'fatigue', 'applyStatus', 'cureStatus', 'note'],
-  skill: ['applyStatus', 'cureStatus', 'delay', 'threat', 'shield', 'channel', 'mana', 'fatigue', 'note', 'shove', 'move', 'hasten', 'extra', 'guard', 'negate', 'dispel'],
-  /** What a threshold, a trigger or a delayed end lands (effect-ops.ts `LandOp`): a hit or a heal at once, a reveal, and the ability ops that land alone (`LAND_USE_OPS`). */
+  skill: ['applyStatus', 'cureStatus', 'delay', 'threat', 'shield', 'channel', 'mana', 'fatigue', 'note', 'shove', 'move', 'hasten', 'extra', 'guard', 'negate', 'dispel', 'reveal'],
+  /** What a threshold, a trigger or a delayed end lands (effect-ops.ts `LandOp`): a hit or a heal at once, and the ability ops that land alone (`LAND_USE_OPS`, a reveal among them). */
   land: ['damage', 'heal', 'applyStatus', 'cureStatus', 'shield', 'mana', 'fatigue', 'threat', 'delay', 'note', 'move', 'hasten', 'dispel', 'reveal'],
 };
 /** Ops whose amount is a formula (by rank), and the shield, whose amount is one formula. */

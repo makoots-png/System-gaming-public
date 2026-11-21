@@ -21,7 +21,7 @@ import { landUse, leftZone, placeOf, ready, resolve } from './resolve.ts';
 import { alive, putBy, stealthAfter } from './land.ts';
 import type { Resolved } from './resolve.ts';
 import { react, reactorsFor, reactState, reactStep, withReact } from './fight-react.ts';
-import { hideOf, holds, stealthOf, stealthState, stealthStep } from './standing.ts';
+import { hides, hideStarts, holds } from './standing.ts';
 import { watched } from './sight.ts';
 import { counted, usesGates } from './uses.ts';
 import type { Aim } from './resolve.ts';
@@ -208,13 +208,13 @@ const act: Step<'running', 'act'> = (f, cmd, ctx) => {
   if (!hideLands(a, u, f, R)) return refused(f, 'seen');
   // a channel's begin is a use's rules 2 to 5 (`ready`): it pays what a use pays, once, its zone price too; its release lands what was paid
   if (a.channel) {
-    const ok = ready(a, u, rows, cmd.aim, f.grid, f.now, R);
+    const ok = ready(a, u, rows, cmd.aim, f.grid, f.now, R, f.fog);
     if (typeof ok === 'string') return refused(f, ok);
     const c = acted({ ...counted(ok.paid, a, R), channel: channelStep(null, { type: 'begin', ability: a.id, aim: cmd.aim, spent: ok.spent }) }, f.now, a.cost.time, R.fight);
     const begun = logged({ ...withRow(f, c), zones: f.zones.filter(z => !taken.includes(z)) }, line(`${u.name} begins to channel ${a.name}.`, [u.id]), R);
     return after(f, zoneEnds(begun, landingOf(taken, f.now, R), rows, ctx), u.id, null, ctx, []);
   }
-  const resolved = resolve(a, u, rows, cmd.aim, f.grid, cmd.rolls, f.now, R);
+  const resolved = resolve(a, u, rows, cmd.aim, f.grid, cmd.rolls, f.now, R, f.fog);
   if (resolved.ok === false) return refused(f, resolved.reason);
   // table 2.3: a use that resolved is one more spent of an ability limited a fight or a rest
   const r = { ...resolved, bodies: resolved.bodies.map(b => b.id === u.id ? counted(b, a, R) : b) };
@@ -336,18 +336,16 @@ function arm<F extends Setup | Running>(f: F, cmd: Extract<Command, { type: 'arm
   return done(withRow(f, withReact(u, s, { ability: a.id, on })), []);
 }
 
-/** Whether a use hides its user: it puts a status with `hidden` on (kits design 8.7). */
-const hides = (a: Ability): boolean => a.ops.some(o => o.op === 'applyStatus' && o.def.ops.some(x => x.op === 'hidden'));
 /**
- * Whether each hide a use of `a` puts on lands on its user `u` as it stands now: the stealth machine's `hide` on its
- * stealth, from where each may start and whether a foe that is up has `u` in sight (sight.ts `watched`). A use that hides
- * nobody lands.
+ * Whether each hide a use of `a` on its user puts on lands on `u` as it stands now (standing.ts `hideStarts`: where each
+ * may start, and whether a foe that is up has `u` in sight, sight.ts `watched`), so a hide on oneself in a foe's sight
+ * is refused before anything is paid. A use aimed at another body, or that hides nobody, lands: a hide it puts on a
+ * watched body is refused on that body as the use lands (land.ts `landStatus`).
  */
 function hideLands(a: Ability, u: Body, f: Running, R: Rules): boolean {
-  const puts = a.ops.flatMap(o => (o.op === 'applyStatus' ? o.def.ops.flatMap(x => (x.op === 'hidden' ? [{ key: o.key, def: o.def, start: x.start }] : [])) : []));
-  if (!puts.length) return true;
-  const s = stealthOf(u), seen = watched(u, f, R);
-  return puts.every(p => stealthState(stealthStep(s, { type: 'hide', hide: hideOf(p.key, p.def, u.tier)!, start: p.start, watched: seen })) === 'hidden');
+  if (a.aim !== 'self' || !hides(a)) return true;
+  const seen = watched(u, f, R);
+  return a.ops.every(o => o.op !== 'applyStatus' || hideStarts(u, o.key, o.def, u.tier, seen));
 }
 /**
  * The stealth events a use raises (notes-7-stealth.md section 4, with the owner's rulings), on `bodies` as it left them:
@@ -389,7 +387,7 @@ const release: Step<'running', 'release'> = (f, cmd, ctx) => {
   };
   const at = placeOf(c.aim, f.rows);
   if (!at) return nothing();
-  const r = landUse(a, u, { at, paid: u, spent: c.spent }, f.rows, c.aim, f.grid, cmd.rolls, f.now, R);
+  const r = landUse(a, u, { at, paid: u, spent: c.spent }, f.rows, c.aim, f.grid, cmd.rolls, f.now, R, f.fog);
   if (r.ok === false) return r.reason === 'needsRoll' ? refused(f, r.reason) : nothing();
   const fired = (b: Body): Body => b.id !== u.id ? b : { ...b, channel: off.channel, ...(turn ? {} : { at: u.at }) };
   return landed(f, { a, u, rows: f.rows, at, r: { ...r, bodies: r.bodies.map(fired) }, taken: [], head: `${u.name}'s ${a.name} is released at charge ${c.charge}`, by: turn ? u.id : '' }, ctx);

@@ -3,6 +3,8 @@
 // plays any row from what it holds: its own abilities, each asked of the rules' own check (`usable`: rules 2 to 5, aim,
 // taunt, extra action, cooldown, cost, gates, prices, uses, range, and a body in its shape), so it never chooses what the reducer refuses. A
 // monster plays its intent when it may, else on the target its threat table suggests (`threatOf`, the GM's card's rule).
+// A row chooses among the foes its side perceives (sight.ts `perceivedBy`, rule 2's question); a row whose side perceives
+// none walks toward the nearest it would see with no fog (`soughtOf`), else passes.
 // A new choice is a line of `sensible` with a case in tests/odds.test.ts; the tests' archetype policies
 // (tests/models/fight-sim.ts) are policies too, passed to the same loop.
 import type { Rules } from '../rules.ts';
@@ -12,7 +14,8 @@ import type { Ability } from './ability-types.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import type { Body } from './effect-ops.ts';
 import type { Running } from './fight-types.ts';
-import { concealed, counting } from './standing.ts';
+import { counting, hides, warded } from './standing.ts';
+import { perceivedBy } from './sight.ts';
 import { dist } from './space.ts';
 import type { Place } from './space.ts';
 import { usable, whoIsIn } from './resolve.ts';
@@ -35,7 +38,13 @@ const HURT = 0.5;
 const byId = (a: Body, b: Body): number => (a.id < b.id ? -1 : 1);
 const nearest = (me: Body, list: readonly Body[]): Body | undefined =>
   [...list].sort((a, b) => dist(me.place, a.place) - dist(me.place, b.place) || rowHp(a) - rowHp(b) || byId(a, b))[0];
-const foesOf = (f: Running, me: Body): Body[] => f.rows.filter(r => r.side !== me.side && isUp(r) && !concealed(r, me.side));
+/** The foes a row may choose: up, not warded from it, and perceived by its side (sight.ts `perceivedBy`, as rule 2 asks). */
+const foesOf = (f: Running, me: Body): Body[] => f.rows.filter(r => r.side !== me.side && isUp(r) && !warded(r, me.side) && perceivedBy(me.side, r, f));
+/**
+ * The foes a row's side would perceive with no fog: where a side that sees no foe in a fog walks to find one, as a
+ * player walks into the dark toward the fight. A foe hidden past every sight of the side is not sought.
+ */
+const soughtOf = (f: Running, me: Body): Body[] => f.rows.filter(r => r.side !== me.side && isUp(r) && !warded(r, me.side) && perceivedBy(me.side, r, { ...f, fog: null }));
 const alliesOf = (f: Running, me: Body): Body[] => f.rows.filter(r => r.side === me.side && isUp(r));
 
 /**
@@ -44,10 +53,10 @@ const alliesOf = (f: Running, me: Body): Body[] => f.rows.filter(r => r.side ===
  */
 const playable = (a: Ability): boolean =>
   !a.react && !a.move && !a.zoneAct && !(a.prices ?? []).some(p => p.kind === 'zone')
-  && !a.ops.some(o => o.op === 'applyStatus' && o.def.ops.some(x => x.op === 'hidden'));
+  && !hides(a);
 
 const aimAt = (a: Ability, me: Body, t: Body): Aim => a.aim === 'place' ? t.place : a.aim === 'self' ? me.id : t.id;
-const fits = (f: Running, me: Body, a: Ability, aim: Aim, R: Rules): boolean => usable(a, me, f.rows, aim, f.grid, f.now, R);
+const fits = (f: Running, me: Body, a: Ability, aim: Aim, R: Rules): boolean => usable(a, me, f.rows, aim, f.grid, f.now, R, f.fog);
 
 /** The bodies a use at `t` lands on, and whether it would catch one of the user's own side. */
 function caught(f: Running, me: Body, a: Ability, t: Body): { foes: number; allies: boolean } {
@@ -131,7 +140,7 @@ export const sensible: Policy = (f, me, R) => {
     return c.charge >= max ? { type: 'release' } : PASS;
   }
   const foes = foesOf(f, me);
-  if (!foes.length) return PASS;
+  if (!foes.length) { const sought = nearest(me, soughtOf(f, me)); return sought ? step(f, me, sought) : PASS; }
   const uses = me.abilities.filter(playable);
   return me.threat ? monsterChoice(f, me, uses, foes, R) : partyChoice(f, me, uses, foes, R);
 };

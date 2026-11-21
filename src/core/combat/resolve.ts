@@ -19,10 +19,13 @@ import type { Ability, Avoid, CombatantId, Outcome } from './ability-types.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import { controlFactor, removeStatus, shielded, withStatuses } from './effect-ops.ts';
 import { atTier, countOn, stacked } from './op-amount.ts';
-import { boostsOn, concealed, critFacesAgainst, damageShare, edgeOn, edgeStep, healShare, rangeWith, wardedDamage } from './standing.ts';
+import { boostsOn, critFacesAgainst, damageShare, edgeOn, edgeStep, healShare, hides, rangeWith, warded, wardedDamage } from './standing.ts';
+import { perceivedBy, watched } from './sight.ts';
+import type { Lookout } from './sight.ts';
+import type { Fog } from './fight-types.ts';
 import type { HeldDieId } from './standing.ts';
 import type { Body, OpRules, Status, StatusKey, UseOp } from './effect-ops.ts';
-import { afterDefence, alive, broken, channelBreaks, clamp, cleansed, hasteOn, healed, hurt, landEnd, landMove, landThreshold, live, opsOf, landStatus, threatened, throughShield } from './land.ts';
+import { afterDefence, alive, broken, channelBreaks, clamp, cleansed, hasteOn, healed, hurt, landEnd, landMove, landThreshold, live, opsOf, landStatus, stealthAfter, threatened, throughShield } from './land.ts';
 import type { Burst, LandFired } from './land.ts';
 import { freeZoneId, MAX_ZONES } from './zones.ts';
 import type { Ground, Zone } from './zones.ts';
@@ -240,8 +243,9 @@ function staggered(target: Body, damage: number, now: Tick, R: ResolveRules): { 
 // Rule 17: a channel breaks on a single hit of at least `hold * hpMax`, or on an op that breaks it, unless protected.
 
 // Rule 18: the ability's ops on a target it caught. A control status lasts less on a tenacious or a boss target. A
-// stacking status adds the op's stacks (kits design 1.1); rule 18a checks its threshold after each application.
-function landOps(a: Ability, user: Body, target: Body, dice: readonly number[], now: Tick, R: ResolveRules): { target: Body; keys: StatusKey[]; breaks: boolean; threat: number; fired: LandFired[]; detonated: Status[] } {
+// stacking status adds the op's stacks (kits design 1.1); rule 18a checks its threshold after each application. `seen`:
+// whether a foe that is up has the target in sight, which refuses a hide that starts out of sight (land.ts `landStatus`).
+function landOps(a: Ability, user: Body, target: Body, dice: readonly number[], seen: boolean, now: Tick, R: ResolveRules): { target: Body; keys: StatusKey[]; breaks: boolean; threat: number; fired: LandFired[]; detonated: Status[] } {
   const f = formulaOf(a, R);
   let t = target, breaks = false, threat = 0, die = f ? diceOf(f).length : 0;
   const keys: StatusKey[] = [], fired: LandFired[] = [], detonated: Status[] = [];
@@ -249,7 +253,7 @@ function landOps(a: Ability, user: Body, target: Body, dice: readonly number[], 
     switch (op.op) {
       case 'applyStatus': {
         // the one rule for a status put on a body (land.ts `landStatus`), a trigger's and a threshold's too
-        const p = landStatus(t, op, user, { id: user.id, tier: user.tier }, user.side, true, now, R);
+        const p = landStatus(t, op, user, { id: user.id, tier: user.tier }, user.side, true, seen, now, R);
         if (!p.put) break;
         t = p.target; threat += p.threat; breaks ||= p.breaks;
         if (p.fired) fired.push(p.fired);
@@ -280,6 +284,8 @@ function landOps(a: Ability, user: Body, target: Body, dice: readonly number[], 
       // a move changes the user too: it lands after the target's ops (`movedOn`)
       case 'move': break;
       case 'hasten': t = hasteOn(user, t, op.share, now, R); break;
+      // the stealth machine's `revealed` (a Flare's), as the land op lands it (land.ts `landOne`)
+      case 'reveal': t = stealthAfter(t, { type: 'revealed' }, now, R); break;
       // an extra action is the user's (`userTime`); a guard and a negate are a reaction's (fight-react.ts)
       case 'extra': case 'guard': case 'negate': break;
       default: op satisfies never;
@@ -430,8 +436,11 @@ function spendEdges(a: Ability, user: Body, targets: readonly Body[], rows: Map<
   }
 }
 
-/** The bodies a use of `user` may catch: those on the map, but a foe that is untargetable or hidden (kits design 8.1, 8.7). */
-const catchable = (bodies: readonly Body[], user: Body): Body[] => bodies.filter(b => alive(b) && !concealed(b, user.side));
+/**
+ * The bodies a use of `user` may catch: those on the map, but a foe that is untargetable (kits design 8.1). A hidden body
+ * is caught: a shape at a place finds it whatever the sight (notes-7-stealth.md section 3).
+ */
+const catchable = (bodies: readonly Body[], user: Body): Body[] => bodies.filter(b => alive(b) && !warded(b, user.side));
 
 const outcome = (target: CombatantId, avoid: Avoid, to: Place | null, type: Outcome['type']): Outcome =>
   ({ target, avoid, to, crit: false, raw: 0, dealt: 0, absorbed: 0, type, statuses: [], threat: 0, stagger: 0, staggered: false, channelBroken: false, down: false });
@@ -448,15 +457,14 @@ export type Answers = {
 /** A use that may land (`ready`): the tile it aims at, its user with the cost and kit prices paid, and the stacks a price took (the formula's `spent`). */
 export type Ready = { readonly at: Place; readonly paid: Body; readonly spent: number };
 /**
- * Rules 2 to 5 of a use, before anything lands: an aim that is there and not concealed, no taunt, no extra action taken
- * this round, `charged` (rules 3 to 4, charge.ts) and the range. A channel's begin asks the same (fight.ts), so a channel pays what
- * a use pays.
+ * Rules 2 to 5 of a use, before anything lands: an aim that is there and may be picked (`pickable`), no taunt, no extra
+ * action taken this round, `charged` (rules 3 to 4, charge.ts) and the range. A channel's begin asks the same (fight.ts),
+ * so a channel pays what a use pays. `fog` is the fight's (null: none, so eyes look over the whole map).
  */
-export function ready(a: Ability, user: Body, bodies: readonly Body[], aim: Aim, grid: Grid, now: Tick, R: ResolveRules): Ready | UseRefusal {
+export function ready(a: Ability, user: Body, bodies: readonly Body[], aim: Aim, grid: Grid, now: Tick, R: ResolveRules, fog: Fog | null = null): Ready | UseRefusal {
   const at = placeOf(aim, bodies);
   if (at === null) return 'noTarget';
-  // a foe that is untargetable or hidden cannot be aimed at (kits design 8.1, 8.7)
-  if (typeof aim === 'string' && bodies.some(b => b.id === aim && concealed(b, user.side))) return 'noTarget';
+  if (typeof aim === 'string' && !pickable(bodies.find(b => b.id === aim)!, user, { rows: bodies, grid, fog })) return 'noTarget';
   if (taunted(a, user, bodies, at, grid, now)) return 'taunted';
   if (extraTaken(a, user, now, R)) return 'extra';
   const priced = charged(a, user, bodies, at, now, R);
@@ -466,12 +474,19 @@ export function ready(a: Ability, user: Body, bodies: readonly Body[], aim: Aim,
 }
 
 /**
+ * Rule 2: whether `user` may pick `t` as its target: `t` is not warded from it (standing.ts `warded`, the untargetable
+ * ward), and the user's side perceives it in `seen` (sight.ts `perceivedBy`: a hidden body only by a sight at its level
+ * or above; in a fog only within the fog's sight of a body of the side, the owner's rulings 1 and 7).
+ */
+const pickable = (t: Body, user: Body, seen: Lookout): boolean => !warded(t, user.side) && perceivedBy(user.side, t, seen);
+
+/**
  * Whether a use may be made now as far as anything but its dice decides: `ready` (rules 2 to 5), then for an ally
  * ability or an aimed body a body in its shape (rule 6's refusal in `landUse`). A blink's landing is not asked. The odds'
  * policy asks it before it chooses (policy.ts), so it never chooses what the reducer refuses.
  */
-export function usable(a: Ability, user: Body, bodies: readonly Body[], aim: Aim, grid: Grid, now: Tick, R: ResolveRules): boolean {
-  const r = ready(a, user, bodies, aim, grid, now, R);
+export function usable(a: Ability, user: Body, bodies: readonly Body[], aim: Aim, grid: Grid, now: Tick, R: ResolveRules, fog: Fog | null = null): boolean {
+  const r = ready(a, user, bodies, aim, grid, now, R, fog);
   if (typeof r === 'string') return false;
   if (a.aim !== 'ally' && typeof aim !== 'string') return true;
   const { hit, ring } = whoIsIn(a, r.paid, catchable(bodies, r.paid), r.at, grid);
@@ -479,20 +494,20 @@ export function usable(a: Ability, user: Body, bodies: readonly Body[], aim: Aim
 }
 /**
  * One use of `a` by `user` aimed at `aim` at time `now`, by design 3.1 rules 2 to 19. `bodies` is every combatant of the
- * fight, the user among them; the result holds them all, changed where the use changed them. Rule 1 (whose turn it is)
- * and rule 20 (the log) are the reducer's.
+ * fight, the user among them, and `fog` its fog; the result holds them all, changed where the use changed them. Rule 1
+ * (whose turn it is) and rule 20 (the log) are the reducer's.
  */
-export function resolve(a: Ability, user: Body, bodies: readonly Body[], aim: Aim, grid: Grid, rolls: Rolls, now: Tick, R: ResolveRules): Resolved {
-  const r = ready(a, user, bodies, aim, grid, now, R);
-  return typeof r === 'string' ? { ok: false, reason: r } : landUse(a, user, r, bodies, aim, grid, rolls, now, R);
+export function resolve(a: Ability, user: Body, bodies: readonly Body[], aim: Aim, grid: Grid, rolls: Rolls, now: Tick, R: ResolveRules, fog: Fog | null = null): Resolved {
+  const r = ready(a, user, bodies, aim, grid, now, R, fog);
+  return typeof r === 'string' ? { ok: false, reason: r } : landUse(a, user, r, bodies, aim, grid, rolls, now, R, fog);
 }
 /**
  * Rules 5b to 19: a use that `ready` let through lands. A channel's release lands this way with what its begin paid, so
  * nothing is asked or paid twice; it can still be refused for a missing roll, a blink with nowhere to stand, or no body
  * in its shape for an ally ability or an aimed body.
  */
-export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body[], aim: Aim, grid: Grid, rolls: Rolls, now: Tick, R: ResolveRules): Resolved {
-  const { at } = ok;
+export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body[], aim: Aim, grid: Grid, rolls: Rolls, now: Tick, R: ResolveRules, fog: Fog | null = null): Resolved {
+  const { at } = ok, hiding = hides(a);
   const f = field(a, user, ok.paid, bodies, at, grid, now, R);
   if (typeof f === 'string') return { ok: false, reason: f };
   const { from, hit, ring, answers } = f;
@@ -541,7 +556,9 @@ export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body
     else if (type === 'shield') t = { ...t, shield: shielded(t.shield, { amount: dealt, until: tick(now + R.fight.shieldLife * R.fight.round) }, now) };
     let channelBroken = false;
     const lands = end.avoid === 'caught';
-    const landed = lands ? landOps(a, u, t, dice, now, R) : { target: t, keys: [], breaks: false, threat: 0, fired: [], detonated: [] };
+    // a hide that starts out of sight is refused on a body a foe that is up watches, whoever casts it (land.ts `landStatus`)
+    const seen = hiding && watched(t, { rows: [...rows.values()], grid, fog }, R);
+    const landed = lands ? landOps(a, u, t, dice, seen, now, R) : { target: t, keys: [], breaks: false, threat: 0, fired: [], detonated: [] };
     if (channelBreaks(t, hpDamage, landed.breaks, now)) { channelBroken = true; }
     t = channelBroken ? broken(landed.target, R) : landed.target;
     rows.set(t.id, t);

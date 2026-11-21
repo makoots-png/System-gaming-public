@@ -227,3 +227,10 @@ His answers, in the order of the questions: "Uh yes. Yes. Multiplier replaces ad
 9. The GM's "See as" stays where the GM set it. It does not follow the acting enemy.
 
 A builder reads this section first and builds units 1 to 8 by it.
+
+## What was built differently (Nov 21, units 1 to 4)
+
+- A hide's default level is 1 and 0 is not a hide's level (the lead's ruling from ruling 1 and `sightBase` 0; for-the-owner 23).
+- `kit.hideReveal` is removed: by ruling 4 nearness reveals nothing, so every `kit.hideReveal` above is history.
+- `revealed` is raised by a `reveal` op and by a foe's radius hit (ruling 2). **Open, for unit 5's brief: a line catches a hidden body without revealing it (fight.ts `useStealth` reads only `radius`); by ruling 2 a line that covers tiles is an area too. Build it with its test.**
+- Open, scored 2 or under: a hide put on by a trigger, a threshold, an end or a reaction skips the watched check (land.ts `landOne` passes `false`); a strike aimed at a tile catches a hidden body standing there; `fog` is an optional last argument of `ready`, `usable`, `resolve`, `landUse`; in fog a side that sees no foe walks toward the nearest foe's real place.

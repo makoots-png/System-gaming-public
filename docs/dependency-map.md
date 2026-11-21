@@ -135,7 +135,7 @@ None.
 ### `src/core/combat/fight-types.ts`
 
 - Imports types from: `src/core/combat/ability-types.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/extraction.ts`, `src/core/combat/resolve.ts`, `src/core/combat/space.ts`, `src/core/combat/timeline.ts`, `src/core/combat/zones.ts`, `src/core/formula.ts`, `src/core/hunter/vitals.ts`, `src/core/ids.ts`, `src/core/rules.ts`
-- Imported by: `src/core/api.ts`, `src/core/award.ts`, `src/core/combat/fight-doc.ts`, `src/core/combat/fight-facts.ts`, `src/core/combat/fight-parse.ts`, `src/core/combat/fight-save.ts`, `src/core/combat/fight-turn.ts`, `src/core/combat/fight-view.ts`, `src/core/combat/fight.ts`, `src/core/combat/map-mount.ts`, `src/core/combat/map-view.ts`, `src/core/combat/odds.ts`, `src/core/combat/play.ts`, `src/core/combat/policy.ts`, `src/core/combat/refusal-words.ts`, `src/core/combat/rows.ts`, `src/core/combat/sight.ts`, `src/core/combat/table-news.ts`, `src/core/draws.ts`, `src/core/events.ts`, `src/core/gates/pay.ts`, `src/core/gates/solo.ts`, `src/core/hunter/hunter.ts`, `src/core/protocol.ts`, `src/core/registry/maps.ts`, `src/core/registry/monsters.ts`, `src/core/save.ts`, `src/edge/odds-run.ts`, `src/edge/roll.ts`, `src/views/kit-parts.js`
+- Imported by: `src/core/api.ts`, `src/core/award.ts`, `src/core/combat/fight-doc.ts`, `src/core/combat/fight-facts.ts`, `src/core/combat/fight-parse.ts`, `src/core/combat/fight-save.ts`, `src/core/combat/fight-turn.ts`, `src/core/combat/fight-view.ts`, `src/core/combat/fight.ts`, `src/core/combat/map-mount.ts`, `src/core/combat/map-view.ts`, `src/core/combat/odds.ts`, `src/core/combat/play.ts`, `src/core/combat/policy.ts`, `src/core/combat/refusal-words.ts`, `src/core/combat/resolve.ts`, `src/core/combat/rows.ts`, `src/core/combat/sight.ts`, `src/core/combat/table-news.ts`, `src/core/draws.ts`, `src/core/events.ts`, `src/core/gates/pay.ts`, `src/core/gates/solo.ts`, `src/core/hunter/hunter.ts`, `src/core/protocol.ts`, `src/core/registry/maps.ts`, `src/core/registry/monsters.ts`, `src/core/save.ts`, `src/edge/odds-run.ts`, `src/edge/roll.ts`, `src/views/kit-parts.js`
 
 ### `src/core/combat/fight-view.ts`
 
@@ -194,7 +194,7 @@ None.
 
 ### `src/core/combat/policy.ts`
 
-- Imports: `src/core/combat/fight-view.ts`, `src/core/combat/resolve.ts`, `src/core/combat/row-hp.ts`, `src/core/combat/space.ts`, `src/core/combat/standing.ts`, `src/core/formula.ts`, `src/core/registry/ability-kinds.ts`
+- Imports: `src/core/combat/fight-view.ts`, `src/core/combat/resolve.ts`, `src/core/combat/row-hp.ts`, `src/core/combat/sight.ts`, `src/core/combat/space.ts`, `src/core/combat/standing.ts`, `src/core/formula.ts`, `src/core/registry/ability-kinds.ts`
 - Imports types from: `src/core/combat/ability-types.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/fight-types.ts`, `src/core/rules.ts`
 - Imported by: `src/core/combat/odds.ts`, `src/core/combat/play.ts`
 
@@ -205,8 +205,8 @@ None.
 
 ### `src/core/combat/resolve.ts`
 
-- Imports: `src/core/combat/charge.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/fight-react.ts`, `src/core/combat/land.ts`, `src/core/combat/op-amount.ts`, `src/core/combat/row-hp.ts`, `src/core/combat/row-tally.ts`, `src/core/combat/space.ts`, `src/core/combat/standing.ts`, `src/core/combat/timeline.ts`, `src/core/combat/zones.ts`, `src/core/formula.ts`, `src/core/registry/ability-kinds.ts`
-- Imports types from: `src/core/combat/ability-types.ts`, `src/core/rules.ts`
+- Imports: `src/core/combat/charge.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/fight-react.ts`, `src/core/combat/land.ts`, `src/core/combat/op-amount.ts`, `src/core/combat/row-hp.ts`, `src/core/combat/row-tally.ts`, `src/core/combat/sight.ts`, `src/core/combat/space.ts`, `src/core/combat/standing.ts`, `src/core/combat/timeline.ts`, `src/core/combat/zones.ts`, `src/core/formula.ts`, `src/core/registry/ability-kinds.ts`
+- Imports types from: `src/core/combat/ability-types.ts`, `src/core/combat/fight-types.ts`, `src/core/rules.ts`
 - Imported by: `src/core/combat/fight-react.ts`, `src/core/combat/fight-turn.ts`, `src/core/combat/fight-types.ts`, `src/core/combat/fight-view.ts`, `src/core/combat/fight.ts`, `src/core/combat/map-view.ts`, `src/core/combat/play.ts`, `src/core/combat/policy.ts`, `src/core/combat/rows.ts`, `src/core/draws.ts`, `src/edge/roll.ts`, `src/views/combat.js`, `src/views/uses.js`
 
 ### `src/core/combat/row-hp.ts`
@@ -242,7 +242,7 @@ None.
 
 - Imports: `src/core/combat/row-hp.ts`, `src/core/combat/space.ts`, `src/core/combat/standing.ts`
 - Imports types from: `src/core/combat/effect-ops.ts`, `src/core/combat/fight-types.ts`, `src/core/rules.ts`
-- Imported by: `src/core/combat/fight.ts`
+- Imported by: `src/core/combat/fight.ts`, `src/core/combat/policy.ts`, `src/core/combat/resolve.ts`
 
 ### `src/core/combat/space.ts`
 

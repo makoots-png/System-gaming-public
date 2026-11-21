@@ -14,6 +14,9 @@ import { sensible } from '../src/core/combat/policy.ts';
 import { hunter, monster } from './models/fight-sim.ts';
 import { GRID, ROSTER, ctx, randomCommand, rng } from './models/fight-play.ts';
 import { atHp } from './fixtures/life.ts';
+import { statusKey, statusOn } from '../src/core/combat/effect-ops.ts';
+import { tiles } from '../src/core/combat/space.ts';
+import { tick } from '../src/core/combat/timeline.ts';
 
 const setupOf = (rows: readonly NewRow[], grid = undefined as typeof GRID | undefined): Setup => {
   const r = reduce(null, { type: 'add', fightId: fightId('f-odds'), rows, openings: [], ...(grid ? { grid } : {}) }, ctx);
@@ -231,6 +234,27 @@ describe('the general policy', () => {
     let p: Play = playBegin(f, seed, RULES).play;
     for (let k = 0; !playOver(p) && k < 6000; k++) p = playStep(p as Play & { readonly fight: Running }, () => sensible, { capRounds: 40, endAtRounds: null }, RULES).play;
     expect(playOver(p)).toBe(true);
+  });
+});
+
+describe('the policy and the sight rule (stealth unit 4)', () => {
+  // The policy picks only a foe its side perceives (sight.ts `perceivedBy`), as the reducer's rule 2 does, so a play
+  // never throws on a refusal. A side that perceives no foe in a fog walks toward where it would see one with no fog.
+  const cloak = statusOn({ label: 'Cloak', desc: '', ops: [{ op: 'hidden', level: 5, start: 'anywhere', ends: { hurt: false, revealed: false, dealt: false } }] },
+    { key: statusKey('cloak'), source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0) });
+
+  test('a hunter hidden past every foe\'s sight is never picked, and the fight still plays to its end', () => {
+    const a = hunter('bruiser', 'S', 'a').row;
+    const odds = oddsOf(setupOf([{ ...a, statuses: [...a.statuses, cloak] }, monster('E', 'brute', 'normal', 'm').row]), 5, 20);
+    expect(readOdds(odds).won).toBeGreaterThanOrEqual(0.95);
+    expect(odds.ends.every(e => e.party['a' as never]!.hp === odds.rows[0]!.hpMax)).toBe(true);
+  });
+
+  test('in a fog where neither side sees the other at the start, a party that cannot lose still wins nearly every run', () => {
+    const rows = plain([hunter('bruiser', 'S', 'a').row, hunter('tank', 'S', 'b').row, monster('E', 'brute', 'normal', 'm').row]);
+    const r = reduce(null, { type: 'add', fightId: fightId('f-fog'), rows, openings: [], fog: { sight: tiles(3), seen: '0'.repeat(RULES.fight.grid.w * RULES.fight.grid.h) } }, ctx);
+    if (r.fight?.phase !== 'setup') throw new Error('no setup');
+    expect(readOdds(oddsOf(r.fight, 6, 40)).won).toBeGreaterThanOrEqual(0.95);
   });
 });
 

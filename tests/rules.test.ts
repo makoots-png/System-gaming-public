@@ -238,7 +238,7 @@ describe('the kits\' rules (kits design 1.11, 3 and 8.0)', () => {
     expect(K.zoneGrow).toBeLessThanOrEqual(F.fieldRadiusMax);
     expect(K.parry > 0 && K.parry < 0.5).toBe(true);
     expect(K.doArmed).toBe(12);
-    for (const n of [K.boostSides, K.shoveMax, K.blinkMax, K.reactionsPerUse, K.zoneMove, K.zoneGrow, K.extraPerRound, K.hideReveal, K.surprise]) expect(Number.isInteger(n) && n >= 1).toBe(true);
+    for (const n of [K.boostSides, K.shoveMax, K.blinkMax, K.reactionsPerUse, K.zoneMove, K.zoneGrow, K.extraPerRound, K.surprise]) expect(Number.isInteger(n) && n >= 1).toBe(true);
   });
 
   test('a GM\'s override of a kit number passes and the fight reads it; a kit rule that does not exist is refused', () => {

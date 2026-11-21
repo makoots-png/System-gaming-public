@@ -104,13 +104,13 @@ export type Reach = { readonly kind: 'bearer' } | { readonly kind: 'area'; reado
 export type End = { readonly ops: readonly LandOp[]; readonly cleanse: 'cancel' | 'land' };
 /**
  * What a threshold, a trigger or an end lands: an ability's own ops that land on one body at a time (`LAND_USE_OPS`), a
- * hit or a heal (whose damage formula may carry the scalers of kits design 8.0; nothing kills outright), a reveal, and time
+ * hit or a heal (whose damage formula may carry the scalers of kits design 8.0; nothing kills outright; a reveal among them), and time
  * back on the bearer's turn (`pct` of its last action). A push or pull needs the map and an anchor, an extra action is the user's
  * own turn, and a guard or a negate answers a use: a use's rules, which nothing lands outside one, so none is a land op.
  */
-export type LandOp = Extract<UseOp, { readonly op: (typeof LAND_USE_OPS)[number] }> | Extract<Op, { readonly op: 'damage' | 'heal' | 'reveal' }> | { readonly op: 'refund'; readonly pct: number };
+export type LandOp = Extract<UseOp, { readonly op: (typeof LAND_USE_OPS)[number] }> | Extract<Op, { readonly op: 'damage' | 'heal' }> | { readonly op: 'refund'; readonly pct: number };
 /** The use ops a land op may be (land.ts `landOne` lands each). */
-export const LAND_USE_OPS = ['applyStatus', 'cureStatus', 'delay', 'threat', 'shield', 'channel', 'note', 'mana', 'fatigue', 'move', 'hasten', 'dispel'] as const satisfies readonly UseOp['op'][];
+export const LAND_USE_OPS = ['applyStatus', 'cureStatus', 'delay', 'threat', 'shield', 'channel', 'note', 'mana', 'fatigue', 'move', 'hasten', 'dispel', 'reveal'] as const satisfies readonly UseOp['op'][];
 /** Whether a use op is one a land op may be. */
 export const landsAlone = (o: UseOp): o is Extract<UseOp, LandOp> => (LAND_USE_OPS as readonly string[]).includes(o.op);
 /**
@@ -197,15 +197,17 @@ export type Op =
    * Stealth (docs/agent-handoff/features/notes-7-stealth.md section 2, with the owner's rulings): the bearer hides at
    * `level` (by its source's rank), from every viewer whose sight level is lower; `start` says whether it may hide in a
    * foe's sight (`anywhere`) or only out of it (`unseen`); `ends` which of the three events end it (the stealth machine,
-   * standing.ts `stealthStep`). Its time and a cure end it as any status. Until stealth unit 4 a foe cannot aim at the
-   * bearer nor catch it whatever its sight, and a hidden foe is out of the room's doc (8.7).
+   * standing.ts `stealthStep`). Its time and a cure end it as any status. A foe picks the bearer only when its side
+   * perceives it (sight.ts `perceivedBy`); a shape at a place catches it. Until stealth unit 6 a hidden foe is out of the
+   * room's doc (8.7).
    */
   | { readonly op: 'hidden'; readonly level: Tiered<HideLevel>; readonly start: HideStart; readonly ends: StealthEnds }
   /** Worn by a class or a skill upgrade: while the bearer holds it, none of its hidden statuses ends on `on` (section 2). */
   | { readonly op: 'stayHidden'; readonly on: StealthEnd }
   /**
-   * A land op (a trigger's, a threshold's, a delayed end's): the stealth machine's `revealed` on each body it lands on,
-   * which ends each of its hides that ends on a reveal (notes-7-stealth.md section 4, a Flare's). Nothing in a status.
+   * A use op and a land op (a trigger's, a threshold's, a delayed end's, a reaction's): the stealth machine's `revealed`
+   * on each body it lands on, which ends each of its hides that ends on a reveal (notes-7-stealth.md section 4, a
+   * Flare's). Nothing in a status.
    */
   | { readonly op: 'reveal' }
   /** The bearer is never surprised (8.7). */
@@ -260,11 +262,11 @@ export const OP_KINDS = Object.keys(OP_KIND_SET) as readonly OpKind[];
  * `fatigue` change the target's at once (an item drunk in a fight: abilities.ts `itemAbility`).
  */
 export type UseOp = Extract<Op, { readonly op: 'applyStatus' | 'cureStatus' | 'delay' | 'threat' | 'shield' | 'channel' | 'note' | 'mana' | 'fatigue'
-  | 'shove' | 'move' | 'hasten' | 'extra' | 'guard' | 'negate' | 'dispel' }>;
+  | 'shove' | 'move' | 'hasten' | 'extra' | 'guard' | 'negate' | 'dispel' | 'reveal' }>;
 /** Every use op, once: the typecheck asks for a new member of `UseOp` here, so no reader of the list can miss one. */
 const USE_OP_SET: { readonly [K in UseOp['op']]: true } = {
   applyStatus: true, cureStatus: true, delay: true, threat: true, shield: true, channel: true, note: true, mana: true, fatigue: true,
-  shove: true, move: true, hasten: true, extra: true, guard: true, negate: true, dispel: true,
+  shove: true, move: true, hasten: true, extra: true, guard: true, negate: true, dispel: true, reveal: true,
 };
 /**
  * Whether op `o` is one an ability carries to each target it lands on; the rest act only from inside a status. The one

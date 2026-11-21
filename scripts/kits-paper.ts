@@ -663,7 +663,6 @@ const KIT2 = {
   zoneMove: 6, // tiles one use moves a zone: a round's walk
   zoneGrow: 2, // tiles of radius one use adds to a zone, to `fieldRadiusMax`
   extraPerRound: 1, // extra actions (a refund to now, or a hasten on self) one body takes in a round of fight time
-  hideReveal: 1, // a hidden body is revealed by a foe within this many tiles: adjacent
   surprise: 1, // rounds a surprised row's opening is pushed back
   doArmed: 12, // party rows whose armed reaction the doc names: 4 hunters, 4 shadows, 4 summons
 } as const;
@@ -817,7 +816,6 @@ function part8a(): void {
     ['zoneMove', KIT2.zoneMove, 'A zone shift is clamped to 1 to 6 tiles'],
     ['zoneGrow', KIT2.zoneGrow, 'A zone growth is clamped to 1 to 2 tiles, the radius to `fieldRadiusMax`'],
     ['extraPerRound', KIT2.extraPerRound, 'Not a parser bound: a second extra action in a round is refused (`extra`)'],
-    ['hideReveal', KIT2.hideReveal, 'Not a parser bound: a foe within 1 tile reveals a hidden body'],
     ['surprise', `${KIT2.surprise} round`, 'Not a parser bound: a surprised row\'s opening is a round later'],
     ['scaleCap', SCALE.scaleCap, 'A scaler\'s scale is clamped to 0 to 1; its start to the open range between its ends'],
     ['scalers', SCALE.scalers, 'A formula keeps its first 2 scalers'],

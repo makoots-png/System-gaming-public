@@ -17,7 +17,8 @@ import { afterDefence, castDice, needs, resolve } from '../src/core/combat/resol
 import type { Aim, Resolved, Rolls } from '../src/core/combat/resolve.ts';
 import { rng } from './models/fight-play.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
-import { heldDieId } from '../src/core/combat/standing.ts';
+import { heldDieId, LEVELS } from '../src/core/combat/standing.ts';
+import type { HideLevel, Level } from '../src/core/combat/standing.ts';
 import { landOps } from '../src/core/combat/land.ts';
 import { atHp, lifeAt } from './fixtures/life.ts';
 import type { RowPatch } from './fixtures/life.ts';
@@ -604,5 +605,48 @@ describe('advantage and held dice: rule 7b, the kept face (kits design 8.2, tabl
     const [u, t] = pair([edge('a', 'attack', 'better'), edge('b', 'attack', 'better')]);
     expect(needs(curse, u, [u, t], t.id, GRID, NOW, RULES).second).toEqual([t.id]);
     expect(avoid(u, t, with2(18, 11))).toBe('caught');
+  });
+});
+
+describe('who a use may pick and who it catches: the one sight rule (notes-7-stealth.md section 3, stealth unit 4)', () => {
+  // A picked target (rule 2) is refused `noTarget` when no body of the user's side perceives it (sight.ts `perceivedBy`):
+  // a hidden body is seen by a sight at its level or above (the owner's ruling 1). A shape at a place catches it whatever
+  // the sight; only the untargetable ward keeps a foe out of a shape.
+  const curse = ability('curse', {}, '10'), blast = ability('blast', {}, '10');
+  const worn = (key: string, ...ops: Op[]): Status => statusOn({ label: key, desc: '', ops }, { key: statusKey(key), source: { id: null, tier: 0 }, until: null, since: NOW, settledAt: NOW });
+  const cloak = (level: HideLevel): Status => worn('cloak', { op: 'hidden', level, start: 'anywhere', ends: { hurt: true, revealed: true, dealt: true } });
+  const user = (sight: Level = 0, at = place(2, 5)) => body('u', hunterOrigin('cannon'), at, 'party', {}, { sight });
+  const foe = (...statuses: Status[]) => body('t', monsterOrigin('brute'), place(8, 5), 'foe', { statuses });
+  const picked = (u: Body, bodies: Body[]) => resolve(curse, u, bodies, combatantId('t'), GRID, rolls({ t: [] }, { t: 1 }), NOW, RULES);
+
+  test('a foe hidden at 3 is picked by a sight of 3 or more and refused noTarget under it', () => {
+    const t = foe(cloak(3));
+    expect(LEVELS.map(sight => { const u = user(sight); const r = picked(u, [u, t]); return r.ok || r.reason; })).toEqual(['noTarget', 'noTarget', 'noTarget', true, true, true]);
+  });
+
+  test('an ally whose sight reaches a hidden foe lets the user pick it; a foe with no stealth is picked by any sight', () => {
+    const u = user(0), t = foe(cloak(2)), ally = body('a', hunterOrigin('tank'), place(2, 7), 'party', {}, { sight: 2 });
+    expect(picked(u, [u, t, ally]).ok).toBe(true);
+    expect(picked(u, [u, foe()]).ok).toBe(true);
+  });
+
+  test('a blast at a hidden foe\'s place catches it, which no sight of the user perceives', () => {
+    const u = user(0), t = foe(cloak(5));
+    const r = run(blast, u, [u, t], t.place, rolls({ t: [] }, { t: 1 }));
+    expect(r.outcomes.map(o => [o.target, o.avoid !== 'out', o.dealt > 0])).toEqual([['t', true, true]]);
+  });
+
+  test('a use\'s reveal op ends each hide it catches that ends on a reveal; a hide that does not stays, and a use with no reveal op ends none', () => {
+    const flare = ability('blast', { effect: null, ops: [{ op: 'reveal' }] }), dud = ability('blast', { effect: null });
+    const shroud = worn('shroud', { op: 'hidden', level: 1, start: 'anywhere', ends: { hurt: true, revealed: false, dealt: true } });
+    const after = (a: Ability, s: Status) => { const u = user(0), t = foe(s); return find(run(a, u, [u, t], t.place, rolls({ t: [] }, { t: 1 })).bodies, 't').statuses.map(x => x.key); };
+    expect([after(flare, cloak(2)), after(flare, shroud), after(dud, cloak(2))]).toEqual([[], ['shroud'], ['cloak']]);
+  });
+
+  test('an untargetable foe is neither picked nor caught by a blast at its place', () => {
+    const u = user(5), t = foe(worn('veil', { op: 'untargetable' }));
+    expect(picked(u, [u, t])).toEqual({ ok: false, reason: 'noTarget' });
+    const r = run(blast, u, [u, t], t.place, rolls({ t: [] }, { t: 1 }));
+    expect([r.outcomes, find(r.bodies, 't')]).toEqual([[], t]);
   });
 });

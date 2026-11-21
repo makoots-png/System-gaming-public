@@ -1,7 +1,8 @@
 // sight.ts: who perceives whom in a fight, one rule for every reader (docs/agent-handoff/features/notes-7-stealth.md
-// sections 2 and 3, with the owner's rulings 1 and 8 at its end). A viewer's `Eyes`, a body seen as a `Figure`, and how
+// sections 2 and 3, with the owner's rulings 1, 7 and 8 at its end). A viewer's `Eyes`, a body seen as a `Figure`, and how
 // far the fight lets eyes look (`SightRange`): the rule `perceives` compares them. A reader turns its bodies into eyes
-// and figures with `eyesOf` and `figureOf`, and its fight into a range with `rangeOf` or the whole map. Pure. The
+// and figures with `eyesOf` and `figureOf`, and its fight into a range with `rangeOf` or the whole map; whether a side
+// perceives a body (`perceivedBy`) decides whom a use may pick, and `watched` where a hide may start. Pure. The
 // geometry is space.ts `inSight`, the levels standing.ts `LEVELS`; a body's sight level is its sheet's (derive.ts,
 // raised by its sight ops in standing.ts `withSheetOps`). Each case is in tests/sight.test.ts.
 import { inSight, tiles } from './space.ts';
@@ -42,10 +43,22 @@ export const figureOf = (b: Body): Figure => ({ place: b.place, side: b.side, st
 
 /** How far a fight lets its bodies look: its fog's sight, or the whole map when it keeps no fog. */
 export const rangeOf = (f: Pick<Fight, 'fog'>): SightRange => (f.fog ? { kind: 'tiles', n: f.fog.sight } : { kind: 'whole' });
+/** What a question of sight reads of a fight: its bodies (the eyes), its map (the walls) and its fog (how far eyes look). */
+export type Lookout = Pick<Fight, 'rows' | 'grid' | 'fog'>;
+/**
+ * Whether side `side` perceives `b`: some body of it does, by its own eyes, within the fight's range (`rangeOf`). One body
+ * must both reach `b` and see its stealth level: a body with line of sight and a low sight beside one with a high sight
+ * and no line does not bring `b` in. The one answer to whom a use may pick (resolve.ts `ready`, rule 2) and whom a played
+ * row chooses among (policy.ts): a body picks a target it cannot itself see when an ally sees it (the owner's ruling 7).
+ */
+export const perceivedBy = (side: Side, b: Body, f: Lookout): boolean => {
+  const fig = figureOf(b), range = rangeOf(f);
+  return f.rows.some(o => o.side === side && perceives(eyesOf(o), fig, f.grid, range));
+};
 /**
  * Whether a foe that is up has `b`'s tile in its sight: the fog's, or `fight.sight` tiles with no fog kept, on a line a
  * wall does not stop (section 3's hide row: the body is seen as if not hidden). A hide that starts `unseen` lands only
  * when none does (standing.ts `stealthStep`).
  */
-export const watched = (b: Body, f: Pick<Fight, 'rows' | 'grid' | 'fog'>, R: Pick<Rules, 'fight'>): boolean =>
+export const watched = (b: Body, f: Lookout, R: Pick<Rules, 'fight'>): boolean =>
   f.rows.some(o => o.side !== b.side && perceives(eyesOf(o), { ...figureOf(b), stealth: null }, f.grid, { kind: 'tiles', n: f.fog?.sight ?? tiles(R.fight.sight) }));
