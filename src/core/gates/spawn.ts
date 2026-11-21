@@ -97,14 +97,27 @@ export function soloRank(rank: Rank, odds: RankOdds, rand: Random): Rank {
 /** One thing a loot roll gave: gold, or an item of the pool. */
 export type LootDrop<I> = { readonly kind: 'gold'; readonly gold: number } | { readonly kind: 'item'; readonly item: I };
 /**
- * A loot roll of `rank`'s table (the rules' `loot`, E's for a rank it lacks): its gold anywhere in the table's span when
- * it has one, then one pick by rarity weight (two for a boss), each an item of the picked rarity from `pool`, none when
- * the pool holds none of it. The Clear of a gate rolls a boss's; the GM's roll table a regular's.
+ * Whose roll it is: a boss's makes two picks; `share` is the part of the table the roll pays, from 0 to 1 (`lootShareOf`):
+ * the gold rolled times it, rounded down, and each pick made with that chance. 1 is the whole table.
  */
-export function rollLoot<I extends { readonly rar: string }>(R: Pick<Rules, 'loot'>, rank: Rank, boss: boolean, pool: readonly I[], rand: Random): LootDrop<I>[] {
+export type LootAsk = { readonly boss: boolean; readonly share: number };
+/**
+ * The share of its loot roll a cleared gate pays (economy design 4.2): a personal gate the rule `solo.lootShare`, a world
+ * gate all of it, whether a party clears it or one hunter runs it alone.
+ */
+export const lootShareOf = (R: Pick<Rules, 'solo'>, kind: 'personal' | 'world'): number => (kind === 'personal' ? R.solo.lootShare : 1);
+/**
+ * A loot roll of `rank`'s table (the rules' `loot`, E's for a rank it lacks): its gold anywhere in the table's span when
+ * it has one, times the ask's share, then one pick by rarity weight (two for a boss), each made when a draw falls under
+ * the share and then an item of the picked rarity from `pool`, none when the pool holds none of it. A share of 1 draws no
+ * chance, so a world gate's roll reads the same numbers as before shares. The Clear of a gate rolls a boss's; the GM's
+ * roll table a regular's; a personal gate's run its share.
+ */
+export function rollLoot<I extends { readonly rar: string }>(R: Pick<Rules, 'loot'>, rank: Rank, ask: LootAsk, pool: readonly I[], rand: Random): LootDrop<I>[] {
   const t = R.loot[rank] ?? R.loot.E, out: LootDrop<I>[] = [];
-  if (t.gold) { const [lo = 0, hi = lo] = t.gold; out.push({ kind: 'gold', gold: lo + below(Math.max(0, hi - lo) + 1, rand) }); }
-  for (let n = boss ? 2 : 1; n > 0; n--) {
+  if (t.gold) { const [lo = 0, hi = lo] = t.gold; out.push({ kind: 'gold', gold: Math.floor((lo + below(Math.max(0, hi - lo) + 1, rand)) * ask.share) }); }
+  for (let n = ask.boss ? 2 : 1; n > 0; n--) {
+    if (ask.share < 1 && rand() >= ask.share) continue;
     const rar = pickWeighted(t.weights, rand), of = rar === null ? [] : pool.filter(x => x.rar === rar);
     if (of.length) out.push({ kind: 'item', item: of[below(of.length, rand)]! });
   }

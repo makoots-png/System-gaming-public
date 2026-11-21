@@ -2,7 +2,9 @@
 // campaign's hunters begin with. To add an item: add an entry to its list and run `bun run test` (tests/items.test.ts
 // checks every entry). The GM's own items live in the save (`library`, `shop`), not here.
 // `parseItem` is the one reader of an item from outside data: a save, a room message, a form, an import. The `Item` type
-// lives here; save.ts re-exports it.
+// lives here; save.ts re-exports it. A worn item's grade is the one its spend reads (item-budget.ts, economy design 2.5):
+// most built-in gear is plain for its tier, so its minus. Six are past their tier's top and kept as they are at its plus
+// (the owner's ruling 6, "Keep them."); tests/item-budget.test.ts names them, so a seventh fails it.
 import { FULL_HEAL } from '../combat/effect-ops.ts';
 import type { Op, StatusDef } from '../combat/effect-ops.ts';
 import { parseOp, parseStatusDef, statusTooLarge } from '../combat/fight-parse.ts';
@@ -97,12 +99,13 @@ export const SHOP_ITEMS: readonly ItemDef[] = [
   { name: 'Mana Potion', rar: 'common', type: 'consumable', effects: [mana(4)], desc: 'Restores 4 mana.' },
   { name: 'Elixir of Life', rar: 'epic', type: 'consumable', effects: [{ op: 'heal', amount: FULL_HEAL, when: 'use' }], desc: 'Fully restores HP.' },
   { name: 'Stamina Tonic', rar: 'common', type: 'consumable', effects: [rest(25)], desc: 'Removes 25 fatigue.' },
-  { name: 'Iron Dagger', rar: 'common', type: 'weapon', slot: 'weapon', dice: '1d4', attack: 'strike', desc: 'A plain iron dagger.' },
-  { name: "Hunter's Leather", rar: 'common', type: 'armor', slot: 'chest', kit: 'light', desc: 'Light leather armor for the chest.' },
-  { name: 'Steel Longsword', rar: 'common', type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', desc: 'A plain steel sword.' },
-  // "Cruel to armored foes": 5 points of armor ignored on every hit.
-  { name: 'Knight Killer', rar: 'rare', type: 'weapon', slot: 'weapon', dice: '1d10', attack: 'strike', bonus: { str: 2 }, penFlat: 5, desc: 'A dagger whose hits ignore 5 points of armor.' },
-  { name: 'Ring of Vitality', rar: 'epic', type: 'accessory', slot: 'ring1', bonus: { vit: 5 }, desc: 'A ring that adds 5 Vitality.' },
+  { name: 'Iron Dagger', rar: 'common', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d4', attack: 'strike', desc: 'A plain iron dagger.' },
+  { name: "Hunter's Leather", rar: 'common', grade: -1, type: 'armor', slot: 'chest', kit: 'light', desc: 'Light leather armor for the chest.' },
+  { name: 'Steel Longsword', rar: 'common', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', desc: 'A plain steel sword.' },
+  // "Cruel to armored foes": 5 points of armor ignored on every hit. Its d10 and +2 Strength spend under Rare−'s top; the
+  // armor ignored, which the budget cannot weigh, is what makes it Rare+ (design 2.5).
+  { name: 'Knight Killer', rar: 'rare', grade: 1, type: 'weapon', slot: 'weapon', dice: '1d10', attack: 'strike', bonus: { str: 2 }, penFlat: 5, desc: 'A dagger whose hits ignore 5 points of armor.' },
+  { name: 'Ring of Vitality', rar: 'epic', grade: -1, type: 'accessory', slot: 'ring1', bonus: { vit: 5 }, desc: 'A ring that adds 5 Vitality.' },
   // 100,000 by hand (notes-2b-crystal.md section 3) until the tiered crystal prices each by its rank, `reviveClears`
   // Clears of it (economy design section 5, unit 4). The GM tells the table how common they are; its use is told to the GM.
   { name: 'Resurrection Crystal', rar: 'mythic', type: 'consumable', effects: [], revive: true, tell: true, value: 100000, desc: 'A dead hunter who uses it comes back to life.' },
@@ -112,38 +115,38 @@ export const SHOP_ITEMS: readonly ItemDef[] = [
 // map as dex Agility, con Vitality, int Power, wis Instinct, cha Presence; old max MP is a fifth as max mana.
 /** The items a gate's loot roll picks from by rarity (with the shop's stock). Priced by the rule unless they say otherwise. */
 export const LOOT_ITEMS: readonly ItemDef[] = [
-  { name: 'Goblin Shortbow', rar: 'common', type: 'weapon', slot: 'weapon', dice: '1d6', attack: 'shot', desc: 'Dropped by a gate goblin.' },
-  { name: 'Padded Cap', rar: 'common', type: 'armor', slot: 'head', kit: 'light', desc: 'A light cloth cap.' },
+  { name: 'Goblin Shortbow', rar: 'common', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d6', attack: 'shot', desc: 'Dropped by a gate goblin.' },
+  { name: 'Padded Cap', rar: 'common', grade: -1, type: 'armor', slot: 'head', kit: 'light', desc: 'A light cloth cap.' },
   { name: 'Mana Crystal Shard', rar: 'common', type: 'material', desc: 'A piece of mana crystal. Sell it for gold.' },
-  { name: 'Worn Hunter Boots', rar: 'common', type: 'armor', slot: 'feet', kit: 'light', bonus: { agi: 1 }, desc: 'Light boots that add 1 Agility.' },
-  { name: 'Orc Warrior\'s Cleaver', rar: 'uncommon', type: 'weapon', slot: 'weapon', dice: '1d10', attack: 'strike', bonus: { str: 1 }, desc: 'A heavy cleaver that adds 1 Strength.' },
-  { name: 'Reinforced Hunter Vest', rar: 'uncommon', type: 'armor', slot: 'chest', kit: 'medium', desc: 'A leather vest with metal plates. Medium armor for the chest.' },
-  { name: 'Ironhide Gauntlets', rar: 'uncommon', type: 'armor', slot: 'hands', kit: 'light', bonus: { str: 1 }, desc: 'Light gauntlets that add 1 Strength.' },
-  { name: 'Mana Talisman', rar: 'uncommon', type: 'accessory', slot: 'neck', bonus: { manaMax: 1 }, desc: 'A charm worn at the neck that adds 1 max mana.' },
-  { name: 'Swift Runner Greaves', rar: 'uncommon', type: 'armor', slot: 'legs', kit: 'light', bonus: { agi: 1 }, desc: 'Light leg armor that adds 1 Agility.' },
-  { name: "Kasaka's Venom Fang", rar: 'rare', type: 'weapon', slot: 'weapon', dice: '1d6', attack: 'strike', bonus: { agi: 2 }, desc: 'A fang used as a dagger. Adds 2 Agility.' },
-  { name: "Ice Elf's Cloak", rar: 'rare', type: 'armor', slot: 'chest', kit: 'heavy', bonus: { vit: 1 }, desc: 'A heavy cloak that adds 1 Vitality.' },
-  { name: 'Mage Circlet', rar: 'rare', type: 'armor', slot: 'head', kit: 'light', bonus: { pow: 2, manaMax: 2 }, desc: 'A silver headband that adds 2 Power and 2 max mana.' },
-  { name: "Baruka's Mana Ring", rar: 'rare', type: 'accessory', slot: 'ring2', bonus: { manaMax: 3 }, desc: 'A ring that adds 3 max mana.' },
-  { name: 'Frost Giant Hammer', rar: 'epic', type: 'weapon', slot: 'weapon', dice: '2d6', attack: 'strike', bonus: { str: 3 }, desc: 'A hammer with a head of ice. Adds 3 Strength.' },
-  { name: "Knight's Aegis", rar: 'epic', type: 'armor', slot: 'offhand', kit: 'heavy', bonus: { vit: 1 }, desc: 'A heavy tower shield that adds 1 Vitality.' },
-  { name: 'Cloak of the Shadow Hunter', rar: 'epic', type: 'armor', slot: 'chest', kit: 'heavy', bonus: { agi: 2 }, desc: 'A heavy cloak that adds 2 Agility.' },
-  { name: 'Helm of the Iron Knight', rar: 'epic', type: 'armor', slot: 'head', kit: 'medium', bonus: { vit: 2 }, desc: 'A medium helmet that adds 2 Vitality.' },
-  { name: "Kamish's Wrath", rar: 'legendary', type: 'weapon', slot: 'weapon', dice: '3d8', attack: 'strike', bonus: { str: 4, agi: 2 }, desc: 'A pair of daggers made from a dragon\'s fang. Adds 4 Strength and 2 Agility.' },
-  { name: 'Armor of the Black Knight', rar: 'legendary', type: 'armor', slot: 'chest', kit: 'heavy', bonus: { vit: 3 }, desc: 'Heavy chest armor that adds 3 Vitality.' },
-  { name: 'Orb of Avarice', rar: 'legendary', type: 'accessory', slot: 'neck', bonus: { pow: 4, manaMax: 6 }, desc: 'An orb worn at the neck that adds 4 Power and 6 max mana.' },
-  { name: 'Boots of Shadow Step', rar: 'legendary', type: 'armor', slot: 'feet', kit: 'light', bonus: { agi: 4 }, desc: 'Light boots that add 4 Agility.' },
-  { name: "Monarch's Scepter", rar: 'mythic', type: 'weapon', slot: 'weapon', dice: '4d8', attack: 'strike', bonus: { pow: 6, manaMax: 10 }, desc: 'A scepter that adds 6 Power and 10 max mana.' },
-  { name: 'Crown of the Shadow Sovereign', rar: 'mythic', type: 'armor', slot: 'head', kit: 'heavy', bonus: { pow: 5, ins: 5 }, desc: 'A heavy crown that adds 5 Power and 5 Instinct.' },
-  { name: 'Armor of the Absolute Being', rar: 'mythic', type: 'armor', slot: 'chest', kit: 'heavy', bonus: { vit: 5, hpMax: 100 }, desc: 'Heavy chest armor that adds 5 Vitality and 100 max HP.' },
-  { name: "Ring of the Monarch's Will", rar: 'mythic', type: 'accessory', slot: 'ring1', bonus: { str: 6, pre: 6 }, desc: 'A ring that adds 6 Strength and 6 Presence.' },
+  { name: 'Worn Hunter Boots', rar: 'common', grade: 1, type: 'armor', slot: 'feet', kit: 'light', bonus: { agi: 1 }, desc: 'Light boots that add 1 Agility.' },
+  { name: 'Orc Warrior\'s Cleaver', rar: 'uncommon', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d10', attack: 'strike', bonus: { str: 1 }, desc: 'A heavy cleaver that adds 1 Strength.' },
+  { name: 'Reinforced Hunter Vest', rar: 'uncommon', grade: -1, type: 'armor', slot: 'chest', kit: 'medium', desc: 'A leather vest with metal plates. Medium armor for the chest.' },
+  { name: 'Ironhide Gauntlets', rar: 'uncommon', grade: -1, type: 'armor', slot: 'hands', kit: 'light', bonus: { str: 1 }, desc: 'Light gauntlets that add 1 Strength.' },
+  { name: 'Mana Talisman', rar: 'uncommon', grade: 1, type: 'accessory', slot: 'neck', bonus: { manaMax: 1 }, desc: 'A charm worn at the neck that adds 1 max mana.' },
+  { name: 'Swift Runner Greaves', rar: 'uncommon', grade: -1, type: 'armor', slot: 'legs', kit: 'light', bonus: { agi: 1 }, desc: 'Light leg armor that adds 1 Agility.' },
+  { name: "Kasaka's Venom Fang", rar: 'rare', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d6', attack: 'strike', bonus: { agi: 2 }, desc: 'A fang used as a dagger. Adds 2 Agility.' },
+  { name: "Ice Elf's Cloak", rar: 'rare', grade: -1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { vit: 1 }, desc: 'A heavy cloak that adds 1 Vitality.' },
+  { name: 'Mage Circlet', rar: 'rare', grade: 1, type: 'armor', slot: 'head', kit: 'light', bonus: { pow: 2, manaMax: 2 }, desc: 'A silver headband that adds 2 Power and 2 max mana.' },
+  { name: "Baruka's Mana Ring", rar: 'rare', grade: 1, type: 'accessory', slot: 'ring2', bonus: { manaMax: 3 }, desc: 'A ring that adds 3 max mana.' },
+  { name: 'Frost Giant Hammer', rar: 'epic', grade: -1, type: 'weapon', slot: 'weapon', dice: '2d6', attack: 'strike', bonus: { str: 3 }, desc: 'A hammer with a head of ice. Adds 3 Strength.' },
+  { name: "Knight's Aegis", rar: 'epic', grade: -1, type: 'armor', slot: 'offhand', kit: 'heavy', bonus: { vit: 1 }, desc: 'A heavy tower shield that adds 1 Vitality.' },
+  { name: 'Cloak of the Shadow Hunter', rar: 'epic', grade: -1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { agi: 2 }, desc: 'A heavy cloak that adds 2 Agility.' },
+  { name: 'Helm of the Iron Knight', rar: 'epic', grade: -1, type: 'armor', slot: 'head', kit: 'medium', bonus: { vit: 2 }, desc: 'A medium helmet that adds 2 Vitality.' },
+  { name: "Kamish's Wrath", rar: 'legendary', grade: 1, type: 'weapon', slot: 'weapon', dice: '3d8', attack: 'strike', bonus: { str: 4, agi: 2 }, desc: 'A pair of daggers made from a dragon\'s fang. Adds 4 Strength and 2 Agility.' },
+  { name: 'Armor of the Black Knight', rar: 'legendary', grade: -1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { vit: 3 }, desc: 'Heavy chest armor that adds 3 Vitality.' },
+  { name: 'Orb of Avarice', rar: 'legendary', grade: 1, type: 'accessory', slot: 'neck', bonus: { pow: 4, manaMax: 6 }, desc: 'An orb worn at the neck that adds 4 Power and 6 max mana.' },
+  { name: 'Boots of Shadow Step', rar: 'legendary', grade: -1, type: 'armor', slot: 'feet', kit: 'light', bonus: { agi: 4 }, desc: 'Light boots that add 4 Agility.' },
+  { name: "Monarch's Scepter", rar: 'mythic', grade: 1, type: 'weapon', slot: 'weapon', dice: '4d8', attack: 'strike', bonus: { pow: 6, manaMax: 10 }, desc: 'A scepter that adds 6 Power and 10 max mana.' },
+  { name: 'Crown of the Shadow Sovereign', rar: 'mythic', grade: -1, type: 'armor', slot: 'head', kit: 'heavy', bonus: { pow: 5, ins: 5 }, desc: 'A heavy crown that adds 5 Power and 5 Instinct.' },
+  { name: 'Armor of the Absolute Being', rar: 'mythic', grade: 1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { vit: 5, hpMax: 100 }, desc: 'Heavy chest armor that adds 5 Vitality and 100 max HP.' },
+  { name: "Ring of the Monarch's Will", rar: 'mythic', grade: 1, type: 'accessory', slot: 'ring1', bonus: { str: 6, pre: 6 }, desc: 'A ring that adds 6 Strength and 6 Presence.' },
 ];
 
 /** The item each of the starter campaign's three hunters begins with (src/views/starter.js). It is given as is: no price. */
 export const STARTER_GEAR = {
   // A tower shield is not light, whatever its old AC of 1 said: a heavy kit's offhand.
-  towerShield: { name: 'Dented Tower Shield', rar: 'common', type: 'armor', slot: 'offhand', kit: 'heavy', desc: 'A dented, heavy tower shield.' },
-  huntingBow: { name: 'Hunting Bow', rar: 'common', type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'shot', desc: 'A worn hunting bow.' },
+  towerShield: { name: 'Dented Tower Shield', rar: 'common', grade: -1, type: 'armor', slot: 'offhand', kit: 'heavy', desc: 'A dented, heavy tower shield.' },
+  huntingBow: { name: 'Hunting Bow', rar: 'common', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'shot', desc: 'A worn hunting bow.' },
   manaPotion: { name: 'Mana Potion', rar: 'common', type: 'consumable', effects: [mana(2)], desc: 'Restores 2 mana.' },
 } as const satisfies Record<string, ItemDef>;
 

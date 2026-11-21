@@ -1,8 +1,8 @@
 // The spawn roll of a new gate (src/core/gates/spawn.ts): pack sizes, who is picked, and the rules' spawn weights.
-import { expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { RANKS, RULES } from '../src/core/rules.ts';
 import type { Rank } from '../src/core/rules.ts';
-import { DEFAULT_PACK, MAX_KINDS, packRange, pickWeighted, placeholderName, rollGate, rollLoot } from '../src/core/gates/spawn.ts';
+import { DEFAULT_PACK, MAX_KINDS, lootShareOf, packRange, pickWeighted, placeholderName, rollGate, rollLoot } from '../src/core/gates/spawn.ts';
 import type { Random, SpawnMonster } from '../src/core/gates/spawn.ts';
 import { seedMonsters } from '../src/core/registry/monsters.ts';
 
@@ -96,15 +96,63 @@ test('a name the GM types is kept, cut to 60 characters', () => {
   expect(rollGate(RULES, { name: 'x'.repeat(80) }, BESTIARY, always(0)).name).toBe('x'.repeat(60));
 });
 
-test('a loot roll: gold in the rank\'s span, one pick by rarity weight (two for a boss), an item of that rarity; a rarity the pool lacks gives none', () => {
+test('a world gate\'s loot roll (share 1): gold in the rank\'s span, one pick by rarity weight (two for a boss), an item of that rarity; a rarity the pool lacks gives none', () => {
   const pool = [{ rar: 'common', name: 'Rag' }, { rar: 'rare', name: 'Gem' }] as const;
   const [lo, hi] = RULES.loot.E.gold!;
   const fixed = (...v: number[]): Random => { let i = 0; return () => v[i++ % v.length]!; };
+  const world = (boss: boolean) => ({ boss, share: 1 });
   // 0 draws the lowest gold and the first weight (common), the first of the pool's commons
-  expect(rollLoot(RULES, 'E', false, pool, fixed(0))).toEqual([{ kind: 'gold', gold: lo }, { kind: 'item', item: pool[0] }]);
-  expect(rollLoot(RULES, 'E', true, pool, fixed(0)).filter(d => d.kind === 'item')).toHaveLength(2);
+  expect(rollLoot(RULES, 'E', world(false), pool, fixed(0))).toEqual([{ kind: 'gold', gold: lo }, { kind: 'item', item: pool[0] }]);
+  expect(rollLoot(RULES, 'E', world(true), pool, fixed(0)).filter(d => d.kind === 'item')).toHaveLength(2);
   // just under 1 draws the highest gold and the last weight (rare, E's 5%), the pool's one rare
-  expect(rollLoot(RULES, 'E', false, pool, fixed(0.9999))).toEqual([{ kind: 'gold', gold: hi }, { kind: 'item', item: pool[1] }]);
+  expect(rollLoot(RULES, 'E', world(false), pool, fixed(0.9999))).toEqual([{ kind: 'gold', gold: hi }, { kind: 'item', item: pool[1] }]);
   // uncommon (E's weights: common 70, uncommon 25): the pool has none, so no item
-  expect(rollLoot(RULES, 'E', false, pool, fixed(0, 0.8))).toEqual([{ kind: 'gold', gold: lo }]);
+  expect(rollLoot(RULES, 'E', world(false), pool, fixed(0, 0.8))).toEqual([{ kind: 'gold', gold: lo }]);
+});
+
+describe('a personal gate\'s loot roll pays the share solo.lootShare names (economy design 4.2)', () => {
+  const pool = [{ rar: 'common', name: 'Rag' }, { rar: 'rare', name: 'Gem' }] as const;
+  const share = RULES.solo.lootShare;
+  const [lo = 0, hi = 0] = RULES.loot.E.gold!;
+  const fixed = (...v: number[]): Random => { let i = 0; return () => v[i++ % v.length]!; };
+  const personal = (boss: boolean) => ({ boss, share });
+
+  test('its gold is the share of the gold rolled, rounded down', () => {
+    // E's gold [50, 150] at a quarter: 50 pays 12, 150 pays 37
+    expect(rollLoot(RULES, 'E', personal(false), pool, fixed(0))[0]).toEqual({ kind: 'gold', gold: Math.floor(lo * share) });
+    expect(rollLoot(RULES, 'E', personal(false), pool, fixed(0.9999))[0]).toEqual({ kind: 'gold', gold: Math.floor(hi * share) });
+    expect(rollLoot({ ...RULES, loot: { ...RULES.loot, E: { ...RULES.loot.E, gold: [100, 100] } } }, 'E', { boss: false, share: 0.5 }, pool, fixed(0))[0]).toEqual({ kind: 'gold', gold: 50 });
+  });
+
+  test('its pick happens when a draw falls under the share, before the rarity is drawn', () => {
+    // gold, then the chance, then the rarity and the item: a chance draw of 0 is under the share, so the pick is made
+    expect(rollLoot(RULES, 'E', personal(false), pool, fixed(0))).toEqual([{ kind: 'gold', gold: Math.floor(lo * share) }, { kind: 'item', item: pool[0] }]);
+    // a chance draw of the share itself is not under it: no pick
+    expect(rollLoot(RULES, 'E', personal(false), pool, fixed(0, share))).toEqual([{ kind: 'gold', gold: Math.floor(lo * share) }]);
+    // just under 1: no pick
+    expect(rollLoot(RULES, 'E', personal(false), pool, fixed(0.9999))).toEqual([{ kind: 'gold', gold: Math.floor(hi * share) }]);
+    // a share of 0 never picks
+    expect(rollLoot(RULES, 'E', { boss: true, share: 0 }, pool, fixed(0)).filter(d => d.kind === 'item')).toHaveLength(0);
+  });
+
+  test('a boss\'s two picks each draw their own chance', () => {
+    expect(rollLoot(RULES, 'E', personal(true), pool, fixed(0)).filter(d => d.kind === 'item')).toHaveLength(2);
+    // gold 0; first chance 0 (picked), rarity 0, item 0; second chance just at the share (not picked)
+    expect(rollLoot(RULES, 'E', personal(true), pool, fixed(0, 0, 0, 0, share)).filter(d => d.kind === 'item')).toEqual([{ kind: 'item', item: pool[0] }]);
+  });
+
+  test('over many seeded rolls the pick is made about the share of the time', () => {
+    const rand = seeded(7), runs = 4000;
+    let picks = 0;
+    for (let i = 0; i < runs; i++) picks += rollLoot(RULES, 'E', personal(false), [{ rar: 'common' }, { rar: 'uncommon' }, { rar: 'rare' }], rand).filter(d => d.kind === 'item').length;
+    expect(Math.abs(picks / runs - share)).toBeLessThan(0.03);
+  });
+});
+
+test('a cleared gate\'s share of its loot roll: a personal gate the rule solo.lootShare, a world gate all of it, also when run alone', () => {
+  expect(lootShareOf(RULES, 'personal')).toBe(RULES.solo.lootShare);
+  expect(lootShareOf(RULES, 'world')).toBe(1);
+  const edited = { ...RULES, solo: { ...RULES.solo, lootShare: 0.5 } };
+  expect(lootShareOf(edited, 'personal')).toBe(0.5);
+  expect(lootShareOf(edited, 'world')).toBe(1);
 });

@@ -223,8 +223,8 @@ describe('gold, buying and selling', () => {
     const dear: Rules = { ...RULES, loot: Object.fromEntries(RANKS.map(r => [r, { ...RULES.loot[r], gold: RULES.loot[r].gold.map(g => g * 3) }])) as Rules['loot'] };
     const h = hunter(1e6), { value: _typed, ...byRule } = shield;
     const bought = ok(buy(h, byRule, iid('i1'), dear));
-    expect(h.gold - bought.gold).toBe(3 * priceOf(RULES, shield.rar));
-    expect(ok(sell(bought, 'i1', 1, dear)).gold - bought.gold).toBe(sale(3 * priceOf(RULES, shield.rar)));
+    expect(h.gold - bought.gold).toBe(priceOf(dear, shield.rar, shield.grade));
+    expect(ok(sell(bought, 'i1', 1, dear)).gold - bought.gold).toBe(sale(priceOf(dear, shield.rar, shield.grade)));
   });
 
   test('round trip: buy then sell gives back the item and costs the price less what it sells for', () => {

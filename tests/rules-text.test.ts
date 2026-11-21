@@ -167,6 +167,13 @@ describe('the solo run\'s lines', () => {
     expect(soloLines(R)[1]).toContain('every 4 hours, at most 6 at once');
     expect(soloLines({ ...RULES, solo: { ...RULES.solo, personal: false } })[1]).toBe('Personal gates are off.');
   });
+
+  test('say what share of a world gate\'s loot a cleared personal gate pays, and that a world gate run alone pays in full', () => {
+    const pct = `${RULES.solo.lootShare * 100}%`;
+    expect(soloLines(RULES)[3]).toBe(`A cleared personal gate pays ${pct} of the loot a world gate of its rank rolls: ${pct} of the gold, rounded down, and an item ${pct} of the time. A world gate run alone pays as a world gate.`);
+    expect(soloLines({ ...RULES, solo: { ...RULES.solo, lootShare: 0.5 } })[3]).toContain('pays 50% of the loot');
+    expect(soloLines({ ...RULES, solo: { ...RULES.solo, personal: false } }).join(' ')).not.toContain('A cleared personal gate');
+  });
 });
 
 describe('the Rules page states what the game pays', () => {

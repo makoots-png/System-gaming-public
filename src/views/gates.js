@@ -7,7 +7,7 @@ import { clearGoldEach, clearShares, settleClear, shareEach } from '../core/gate
 import { newRewards, parseRewards } from '../core/rewards.ts';
 import { isRefused } from '../core/save-step.ts';
 import { oneOf } from '../core/one-of.ts';
-import { placeholderName, rollGate } from '../core/gates/spawn.ts';
+import { lootShareOf, placeholderName, rollGate } from '../core/gates/spawn.ts';
 import { MONSTER_BOUNDS, copiesOf, monsterSheetOf, monsterXp } from '../core/registry/monsters.ts';
 import { advanceDay as advanceWorld, closeGate, deleteGate, editGate, enterGate, mergeWorld as mergeDoc, sessionStarted, spawnGate, worldDoc as worldDocOf, worldDocUnmerged, worldEmptyWords } from '../core/gates/world.ts';
 import { gateNews, gateTold, hunterNews } from '../core/told.ts';
@@ -251,9 +251,12 @@ export function register(app) {
   }
   /** The key of a solo gate's odds box: one per gate and hunter. */
   const oddsKeyOf = (gate, hid) => `solo:${gate.kind}:${gate.id}:${hid}`;
-  /** The loot a Clear of `rank` rolls (a boss's when `boss`), as `soloRan` and `soloTaken` take it. */
-  const lootOf = (rank, boss) => {
-    const dropped = api.inventory.rollLoot(rank, { boss }) || [];
+  /**
+   * The loot a Clear of `rank` rolls (a boss's when `boss`) at the share a gate of `kind` pays (spawn.ts `lootShareOf`: a
+   * personal gate `solo.lootShare`, a world gate all of it), as `soloRan` and `soloTaken` take it.
+   */
+  const lootOf = (rank, boss, kind) => {
+    const dropped = api.inventory.rollLoot(rank, { boss, share: lootShareOf(app.rules(), kind) }) || [];
     // the player's device assigns its own item ids
     return { gold: dropped.reduce((n, e) => n + (e.kind === 'gold' ? e.gold : 0), 0), items: dropped.flatMap(e => (e.kind === 'item' ? [e.item] : [])) };
   };
@@ -315,7 +318,7 @@ export function register(app) {
     const runOf = { end, hunter: made.hunter, shadows: made.shadows, from, route }, R = app.rules();
     const toRoom = gate.kind === 'world' && route !== 'local';
     // a cleared gate's loot, rolled before the write as a Clear's is; the GM's phone rolls a room's gate's
-    const loot = end.outcome === 'won' && !toRoom ? lootOf(ready.target.rank, ready.target.boss) : { gold: 0, items: [] };
+    const loot = end.outcome === 'won' && !toRoom ? lootOf(ready.target.rank, ready.target.boss, gate.kind) : { gold: 0, items: [] };
     const body = toRoom ? soloRunBody(ready.h, runOf, ready.target, sync().myKey(hid), R) : null, event = body ? sync().event('soloRun', body) : null;
     const done = { ran: null };
     const w = store.apply('solo-run', s => { const r = soloRan(s, hid, gate, runOf, loot, { day: dayNow(), ready: readyCtx(hid), event }); if (isRefused(r)) return r; done.ran = r; return r.save; });
@@ -336,7 +339,7 @@ export function register(app) {
   app.on('sync:event', ({ event: ev }) => {
     if (app.seat() !== 'gm' || ev.type !== 'soloRun') return;
     const p = ev.payload, s = store.get(), plan = soloPlan(s, p, app.rules()), g = gate(p.gate);
-    const loot = plan.kind === 'paid' && g ? lootOf(g.rank, true) : { gold: 0, items: [] };
+    const loot = plan.kind === 'paid' && g ? lootOf(g.rank, true, 'world') : { gold: 0, items: [] };
     const body = soloAnswerBody(s, p.eid, p, plan, loot), answer = body ? sync().event('soloAnswer', body) : null;
     const code = room(), rank = sync().remoteSheets().find(r => r.key === p.by)?.data.rank ?? null;
     if (!sync().once(p.eid, x => soloTaken(x, p, plan, answer, loot, { day: dayNow(), room: code ? { code, stamp: stampNow() } : null, rank }))) return;

@@ -25,7 +25,7 @@ async function enterAlone(page: Page): Promise<void> {
   await ask.locator('.sys-actions button', { hasText: 'Enter alone' }).tap();
 }
 
-test('alone, the System opens a personal gate; the hunter reads its odds, enters alone, and its cost and reward are written once', async ({ device }) => {
+test('alone, the System opens a personal gate; the hunter reads its odds, enters alone, and its cost and reward (a share of a world gate\'s gold) are written once', async ({ device }) => {
   const { page } = await device('solo');
   await onboardPlayer(page, 'Mira');
   await dismissAll(page);
@@ -47,9 +47,14 @@ test('alone, the System opens a personal gate; the hunter reads its odds, enters
   const done = page.locator('.sys-overlay.show', { hasText: 'GATE CLEARED' });
   await expect(done).toBeVisible({ timeout: 30_000 });
   await expect(done).toContainText(/HP \d+ to \d+ of \d+/);
+  const [lo = 0, hi = 0] = RULES.loot.E.gold!, share = RULES.solo.lootShare;
+  const paid = Number((await done.textContent())?.match(/\+(\d+) gold/)?.[1]);
+  expect(paid, 'the window says the gold paid: solo.lootShare of an E gate\'s gold roll, rounded down').toBeGreaterThanOrEqual(Math.floor(lo * share));
+  expect(paid).toBeLessThanOrEqual(Math.floor(hi * share));
   await done.locator('.sys-actions button').first().tap();
   await dismissAll(page);
   const after = hunterOf(await save(page)), s = await save(page);
+  expect(after.gold - before.gold, 'the gold the window said, once').toBe(paid);
   expect(after.solo.gates, 'the cleared gate is gone').toHaveLength(0);
   expect(after.xp + 100 * (after.level - 1), 'its roster\'s XP, once').toBeGreaterThan(before.xp);
   expect(s.log.filter((l: any) => l.title === 'Solo run')).toHaveLength(1);

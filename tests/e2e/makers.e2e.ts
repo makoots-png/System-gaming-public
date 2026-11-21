@@ -384,6 +384,67 @@ test('a GM grades an epic item Epic+: the price by the rule is gradeStep times t
   });
 });
 
+test('the item maker says what a rare weapon spends against its grade, names the grade that holds it, warns past the tier\'s top, names armor ignored as not weighed, and shows nothing for a consumable', async ({ device }) => {
+  const page = (await device('gm')).page;
+  await onboardGM(page);
+  const d = itemMaker(page), spend = d.locator('[data-spend]'), grades = d.locator('[data-chips="grade"]');
+  await go(page, 'gm');
+  await page.locator('#gm-make [data-make="item"]').tap();
+  await d.locator('[data-chips="type"] [data-chip="weapon"]').tap();
+  await d.locator('#lf-rar').selectOption('rare');
+  // a rare weapon's free die is 1d12 (1d8 and weaponStep 1 a tier for two tiers), so +2 Strength is its whole spend:
+  // under Rare−'s top of 3.1 (design block [2.4])
+  await d.locator('#lf-dice').fill('1d12');
+  await d.locator('[data-bonus="str"]').fill('2');
+
+  await test.step('a weighed item: its points, what its grade holds, and the grade that holds it', async () => {
+    await expect(spend).toHaveText('Spends 2.0 points. Rare holds 3.1 to 3.7; this is Rare− (up to 3.1).');
+    await grades.locator('[data-chip="-1"]').tap();
+    await expect(spend).toHaveText('Spends 2.0 points. Rare− holds up to 3.1.');
+    await expect(spend).not.toHaveClass(/\bover\b/);
+  });
+
+  await test.step('past the tier\'s top it warns, and never stops the save', async () => {
+    await d.locator('[data-bonus="str"]').fill('6');
+    await expect(spend).toHaveText('Spends 6.0 points, past the top of Rare+ (4.4): stronger than any grade of Rare.');
+    await expect(spend).toHaveClass(/\bover\b/);
+    await d.locator('[data-bonus="str"]').fill('2');
+  });
+
+  await test.step('an unweighed item: armor ignored is named, with the words to test it in a fight', async () => {
+    await d.locator('#lf-pen').fill('5');
+    await expect(spend).toHaveText('Spends 2.0 points. Rare− holds up to 3.1. Without armor ignored on a hit, which the budget cannot weigh: test it in a fight.');
+  });
+
+  await test.step('a consumable has no budget, so no line', async () => {
+    await d.locator('[data-chips="type"] [data-chip="consumable"]').tap();
+    await expect(spend).toBeHidden();
+  });
+});
+
+test('on a 390 px phone the item maker\'s spend line, past the tier\'s top and naming what it cannot weigh, fits the screen with no sideways scroll', async ({ device }) => {
+  const page = (await device('gm', { viewport: { width: 390, height: 844 } })).page;
+  await onboardGM(page);
+  const d = itemMaker(page), spend = d.locator('[data-spend]');
+  await go(page, 'gm');
+  await page.locator('#gm-make [data-make="item"]').tap();
+  await d.locator('[data-chips="type"] [data-chip="weapon"]').tap();
+  await d.locator('#lf-rar').selectOption('legendary');
+  await d.locator('#lf-dice').fill('3d8');
+  await d.locator('[data-bonus="str"]').fill('4');
+  await d.locator('#lf-pen').fill('5');
+  await expect(spend).toContainText('stronger than any grade of Legendary');
+  await spend.scrollIntoViewIfNeeded();
+  const fit = await spend.evaluate(el => {
+    const r = el.getBoundingClientRect();
+    return { scroll: el.scrollWidth, client: el.clientWidth, inside: r.left >= 0 && r.right <= innerWidth, page: document.documentElement.scrollWidth - innerWidth };
+  });
+  expect(fit.scroll).toBeLessThanOrEqual(fit.client);
+  expect(fit.inside, 'the line inside the screen').toBe(true);
+  expect(fit.page, 'the page does not scroll sideways').toBeLessThanOrEqual(0);
+  await page.screenshot({ path: '/tmp/pw-e3-spend-390.png' });
+});
+
 test('an effect whose amount the formula reader refuses ("abc") shows its error on its row and Save stays off until it is fixed', async ({ device }) => {
   const page = (await device('gm')).page;
   await onboardGM(page);

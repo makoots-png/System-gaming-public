@@ -68,7 +68,8 @@ export function downLine(): string {
 
 /**
  * What a solo run is (gates/solo.ts): one play of the fight on the rules, the cost it leaves kept, a death possible,
- * the time cap a retreat; and the System's personal gates from `RULES.solo`, the first of them the even gate (`soloTick`).
+ * the time cap a retreat; and the System's personal gates from `RULES.solo`, the first of them the even gate (`soloTick`),
+ * and the share of a world gate's loot a cleared one pays (`solo.lootShare`, spawn.ts `lootShareOf`).
  */
 export function soloLines(R: Pick<Rules, 'solo'>): readonly string[] {
   const S = R.solo;
@@ -76,7 +77,8 @@ export function soloLines(R: Pick<Rules, 'solo'>): readonly string[] {
     `A solo run plays one fight to its end on the rules. Before it, the odds show how ${ODDS_RUNS} plays of that fight went; the run is one more play and can go better or worse. What it leaves of HP, mana and fatigue stays. A hunter can die alone. A run with no winner by round ${CAP_ROUNDS} is a retreat: its cost stays and the gate stays open.`,
     ...(S.personal
       ? [`The System opens a personal gate every ${S.hours} hours, at most ${S.held} at once. Each closes ${S.stays} hours after it opens, cleared or not.`,
-        `The first gate after personal gates start for a hunter (a new hunter, one revived, or personal gates turned back on) holds one monster of the hunter's own rank. The rest hold ${S.pack[0]} to ${S.pack[1]}, one rank below the hunter's to one above.`]
+        `The first gate after personal gates start for a hunter (a new hunter, one revived, or personal gates turned back on) holds one monster of the hunter's own rank. The rest hold ${S.pack[0]} to ${S.pack[1]}, one rank below the hunter's to one above.`,
+        `A cleared personal gate pays ${pct(S.lootShare)} of the loot a world gate of its rank rolls: ${pct(S.lootShare)} of the gold, rounded down, and an item ${pct(S.lootShare)} of the time. A world gate run alone pays as a world gate.`]
       : ['Personal gates are off.']),
   ];
 }

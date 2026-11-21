@@ -107,7 +107,7 @@ export function register(app) {
       return added ? { ...added } : null;
     },
     addGold(hid, n) { ui.wrote('System', onBag(hid, 'gold', x => addGold(x, n))); },
-    rollLoot: (rank, { boss = false } = {}) => rollLoot(rules(), rank, boss, lootPool(rules()), cryptoRandom),
+    rollLoot: (rank, { boss = false, share = 1 } = {}) => rollLoot(rules(), rank, { boss, share }, lootPool(rules()), cryptoRandom),
     equip(hid, itemId) {
       const h = store.hunter(hid), it = h?.items.find(i => i.id === itemId);
       if (!it || !it.slot) return false;

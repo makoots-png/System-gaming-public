@@ -3,7 +3,8 @@
 // The worn block (slot, weight, armor and resist, the bonus while worn) shows for a weapon, armor or accessory; a weapon
 // also has its dice and how it attacks. What an item does when used is its effect rows, ops of the fight. Its grade
 // (minus, middle, plus) is a row of chips named for the rarity picked, Epic−, Epic, Epic+; a blank Value shows the price
-// the rule gives the rarity, grade and type (`valueOf`).
+// the rule gives the rarity, grade and type (`valueOf`). Under the preview, a worn item's spend line says what it spends
+// of its tier's budget against the grade picked (item-budget.ts `spendLine`): a warning when the grade is under it, never a refusal.
 import { PERK_LABELS, TIERS, rules } from '../edge/rules.ts';
 import { ITEM_TYPES } from '../core/save.ts';
 import { atLibrary } from '../core/save-step.ts';
@@ -12,6 +13,7 @@ import { oneOf } from '../core/one-of.ts';
 import { REVIVE_TEXT, effectsOf, gradeLabel } from '../core/effects.ts';
 import { describeStatus } from '../core/combat/effect-ops.ts';
 import { wornWorth } from '../core/registry/worth.ts';
+import { itemSpend, spendLine } from '../core/registry/item-budget.ts';
 import { ATTACKS, GRADES, ITEM_BOUNDS, KIT_SHARE, RARITIES, SAMPLE_WEARER, parseItem, piece, valueOf, weightOf, wornSpeed } from '../core/registry/items.ts';
 import { tooLarge } from '../core/size.ts';
 
@@ -46,6 +48,7 @@ export function register(app) {
 .lf-cols,.lf-col{display:contents}
 .lf-unworn [data-worn]{display:none}
 .lf-worn{display:flex;flex-direction:column;gap:8px}
+.lf-spend{margin:0;font-size:13px;color:var(--cyan-dim);overflow-wrap:anywhere}.lf-spend.over{color:var(--gold)}
 @media (min-width:1100px){
   .lf-win.dlg-form{max-width:760px;width:min(760px,calc(100vw - 48px))}
   .lf-cols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 22px;align-items:start}
@@ -99,6 +102,7 @@ export function register(app) {
           <div data-target-w><div class="lbl">Affects</div>${M.chips('target', [['self', 'The user'], ['other', 'A target']], was && was.target === 'other' ? 'other' : 'self', { label: 'Affects' })}</div>
           <div data-worth-box></div>
           <div data-mk-preview></div>
+          <p class="lf-spend" data-spend hidden></p>
           ${gm ? `<label class="lf-chk"><input type="checkbox" id="lf-tell"${was && was.tell ? ' checked' : ''}><span>Tell me when it is used</span></label>` : ''}
           ${gm ? `<label class="lf-chk" data-revive-w><input type="checkbox" id="lf-revive"${was && was.revive ? ' checked' : ''}><span>${esc(REVIVE_TEXT)}</span></label>` : ''}
           ${library ? '<label class="lf-chk"><input type="checkbox" id="lf-save" checked><span>Save to library</span></label>' : ''}
@@ -111,6 +115,15 @@ export function register(app) {
         const fx = M.effects($('[data-fx]'), { ops: was ? was.effects || [] : [], kind: 'item', newStatus: () => app.api.forge.status({ mode: 'library' }) });
         // the worth line of the status the item wears in a fight (worth.ts `wornWorth`, a kit with no ability)
         const drawWorth = M.worth($('[data-worth-box]'));
+        /** The spend line of the form's item against the grade picked; hidden for an item nobody wears, which has no budget. */
+        const drawSpend = it => {
+          const box = $('[data-spend]'), s = itemSpend(it, rules());
+          box.hidden = !s;
+          if (!s) return;
+          const line = spendLine(s, rules(), it.rar, it.grade || 0);
+          box.textContent = line.words;
+          box.classList.toggle('over', line.over);
+        };
         // the worn status (kits design 1.3.2): its editors are drawn when its box is first ticked
         const wasWorn = was && was.worn ? was.worn : null;
         let wornFx = { ops: () => [], blocked: () => false }, wornKit = { fields: () => ({}), blocked: () => false }, wornMade = false;
@@ -181,6 +194,7 @@ export function register(app) {
           preview() {
             const it = formItem(), worn = WORN.includes(it.type);
             drawWorth(it.worn && worn ? wornWorth(it.worn, rules()) : null);
+            drawSpend(it);
             return [
               it.type === 'weapon' && it.dice ? `${ATTACK_LABEL[it.attack]} with ${it.dice}${it.penFlat ? `, ignoring ${it.penFlat} armor` : ''}` : '',
               worn ? `Weight ${weightOf(it)} · Armor ${it.armor} · Resist ${it.resist}` : '',
