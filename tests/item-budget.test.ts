@@ -9,11 +9,19 @@ import { kitGear, monsterSheet, pointsAt, sheetOf, split } from '../src/core/hun
 import type { Sheet, SheetNumber } from '../src/core/hunter/derive.ts';
 import type { StatKey } from '../src/core/stats.ts';
 import { KINDS } from '../src/core/registry/ability-kinds.ts';
+import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { referenceBody } from '../src/core/registry/worth.ts';
+import type { RefBuild } from '../src/core/registry/worth.ts';
+import { parseFormula } from '../src/core/formula.ts';
+import type { Formula } from '../src/core/formula.ts';
+import { abilityId } from '../src/core/combat/ability-types.ts';
+import type { Ability } from '../src/core/combat/ability-types.ts';
+import { cost, tick } from '../src/core/combat/timeline.ts';
+import { tiles } from '../src/core/combat/space.ts';
 import { LOOT_ITEMS, RARITIES, SAMPLE_WEARER, SHOP_ITEMS, STARTER_GEAR, itemOf, piece, valueOf } from '../src/core/registry/items.ts';
 import type { Grade, ItemDef, ItemTemplate, Rarity } from '../src/core/registry/items.ts';
 import type { StatusDef } from '../src/core/combat/effect-ops.ts';
-import { gradeBand, gradeOfSpend, itemSpend, middleBudget, spendLine, tierSpan } from '../src/core/registry/item-budget.ts';
+import { gradeBand, gradeOfSpend, itemSpend, middleBudget, powersSpend, spendLine, tierSpan } from '../src/core/registry/item-budget.ts';
 
 const ALL: readonly ItemDef[] = [...SHOP_ITEMS, ...LOOT_ITEMS, ...Object.values(STARTER_GEAR)];
 const def = (name: string): ItemDef => ALL.find(d => d.name === name)!;
@@ -138,12 +146,12 @@ group('what an item spends, in points on the sample wearer (economy design 2.3)'
     expect(s.unweighed).toEqual([]);
   });
 
-  test('a worn status\'s standing ops are named as not weighed, never counted; the Knight Killer\'s 5 Lethality is weighed: −0.7 for its die and Strength, and 5 at its rate', () => {
+  test('a worn status\'s standing ops with no rule are named as not weighed, never counted; the Knight Killer\'s 5 Lethality is weighed: −0.7 for its die and Strength, and 5 at its rate', () => {
     const kk = itemSpend(itemOf(RULES, def('Knight Killer')), RULES)!;
     expect(kk.points).toBeCloseTo(-1 * 2.72 + 2 + 5 * penRate('armorPenFlat', 'C'), 1);
     expect(kk.unweighed).toEqual([]);
-    const guarded: StatusDef = { label: 'Guarded', desc: '', ops: [{ op: 'stat', key: 'vit', amount: 2 }] };
-    expect(itemSpend(gear('rare', { worn: guarded }), RULES)!.unweighed).toEqual(['worn']);
+    const hasted: StatusDef = { label: 'Hasted', desc: '', ops: [{ op: 'speed', pct: 10 }] };
+    expect(itemSpend(gear('rare', { worn: hasted }), RULES)).toEqual({ points: 0, unweighed: ['worn'] });
   });
 
   test('an item nobody wears has no budget: a consumable, a material, a key spend nothing at all, not 0', () => {
@@ -345,10 +353,97 @@ group('the item maker\'s spend line (economy design 2.4)', () => {
     expect(line(gear('rare', { bonus: { manaMax: 3 } }), 1)).toEqual({ words: 'Spends 6.0 points, past the top of Rare+ (4.4): stronger than any grade of Rare.', over: true });
   });
 
-  test('what the budget cannot weigh is named, with the words to test it in a fight: a worn status\'s standing ops', () => {
-    const guarded: StatusDef = { label: 'Guarded', desc: '', ops: [{ op: 'stat', key: 'vit', amount: 2 }] };
-    expect(line(gear('rare', { bonus: { ins: 4 }, worn: guarded }), 1)).toEqual({
+  test('what the budget cannot weigh is named, with the words to test it in a fight: a worn status\'s standing op with no rule', () => {
+    const hasted: StatusDef = { label: 'Hasted', desc: '', ops: [{ op: 'speed', pct: 10 }] };
+    expect(line(gear('rare', { bonus: { ins: 4 }, worn: hasted }), 1)).toEqual({
       words: 'Spends 4.0 points. Rare+ holds 3.7 to 4.4. Without what its worn status does that its worth line cannot weigh, which the budget cannot weigh: test it in a fight.',
+      over: false,
+    });
+  });
+});
+
+// ── what a held thing's powers spend (item-stats 6.5), worked from the rules ──
+/** A formula the rules read. */
+const f = (text: string): Formula => { const p = parseFormula(text, RULES); if (!p.ok) throw new Error(p.error); return p.formula; };
+/**
+ * The rate any worn worth pays (economy design 2.3): a standard action a round costs the tier's strike (1d8's 4.5 plus its
+ * power times the bruiser's physical power) over what a Strength point adds to the sample wearer's physical power.
+ */
+const perAction = (rank: Rank): number =>
+  (4.5 + KINDS.strike.power * referenceBody('bruiser', rank, RULES).sheet.phys) / ((wearer(rank, { str: 10 }).phys - wearer(rank).phys) / 10);
+const C = (b: RefBuild) => referenceBody(b, 'C', RULES);
+const BUILDS: readonly RefBuild[] = ['speed', 'tank', 'cannon', 'bruiser', 'support'];
+/** An active a ring's wearer uses on themselves: a support of `time` and `cooldown` rounds whose shield is `text`. */
+const shieldActive = (text: string, o: { readonly rounds?: number; readonly time?: number } = {}): Ability => abilityOf('support', {
+  id: abilityId('bulwark'), name: 'Bulwark', aim: 'self', shape: { kind: 'self' }, range: tiles(0), delivery: { kind: 'sure' },
+  effect: { type: 'shield', by: 'hand', formula: f(text) },
+  cost: { fatigue: 0, mana: 0, time: cost(o.time ?? RULES.fight.cost.standard), cooldown: tick((o.rounds ?? 3) * RULES.fight.round) },
+}, RULES);
+
+group('what a held thing\'s powers spend (item-stats 6.5)', () => {
+  test('an active spends its worth a use times its uses a round, at the rate a worn worth pays: a Bulwark shield of 10 + 20% of max HP every 3 rounds on a rare ring', () => {
+    // its worth a use: the shield on the build with the most max HP, over the support's standard shield, 1.5 * sup (sure: whole)
+    const most = Math.max(...BUILDS.map(b => C(b).sheet.hpMax)), worth = (10 + 0.2 * most) / (1.5 * C('support').sheet.sup);
+    // its uses a round: its standard time lets the support use it speed / speedBase times a round, its cooldown a third: the fewer
+    const uses = Math.min(C('support').sheet.speed / RULES.fight.speedBase, 1 / 3);
+    expect(uses).toBe(1 / 3);
+    const s = itemSpend(gear('rare', { active: shieldActive('10 + 0.2 * hpmax') }), RULES)!;
+    expect(s.points).toBeCloseTo(worth * uses * perAction('C'), 9);
+    expect(s.unweighed).toEqual([]);
+  });
+
+  test('a GM who raises the Bulwark\'s 20% of max HP to 40% doubles what its scaling part spends', () => {
+    const at = (text: string) => itemSpend(gear('rare', { active: shieldActive(text) }), RULES)!.points;
+    expect(at('0.4 * hpmax')).toBeCloseTo(2 * at('0.2 * hpmax'), 9);
+    expect(at('0.4 * hpmax')).toBeGreaterThan(at('0.2 * hpmax'));
+  });
+
+  test('an active with no cooldown is used as often as its time lets the support; a once-a-fight gate holds it to one use in the reference fight', () => {
+    const support = C('support').sheet, flat = shieldActive('30', { rounds: 0 }), worth = 30 / (1.5 * support.sup);
+    expect(itemSpend(gear('rare', { active: flat }), RULES)!.points).toBeCloseTo(worth * support.speed / RULES.fight.speedBase * perAction('C'), 9);
+    for (const per of ['fight', 'rest'] as const) {
+      const once = { ...shieldActive('30', { rounds: 2 }), gates: [{ kind: 'uses' as const, per, n: 1 }] };
+      expect(itemSpend(gear('rare', { active: once }), RULES)!.points, per).toBeCloseTo(worth / RULES.fight.kit.referenceRounds * perAction('C'), 9);
+    }
+  });
+
+  test('a quick active with nothing else holding it is used standard over quick times as often as a standard one, so it spends that many times as much', () => {
+    const quick = shieldActive('30', { rounds: 0, time: RULES.fight.cost.quick }), standard = shieldActive('30', { rounds: 0 });
+    const spend = (a: Ability) => itemSpend(gear('rare', { active: a }), RULES)!.points;
+    expect(spend(quick)).toBeCloseTo(spend(standard) * RULES.fight.cost.standard / RULES.fight.cost.quick, 9);
+  });
+
+  test('a worn `sheet` op of 4 armor spends what 4 armor above the item\'s piece does: the Vitality whose armor it is', () => {
+    const perPoint = 1 / ((wearer('C', { vit: 10 }).armor - wearer('C').armor) / 10);
+    const plated: StatusDef = { label: 'Plated', desc: '', ops: [{ op: 'sheet', key: 'armor', amount: 4 }] };
+    expect(itemSpend(gear('rare', { worn: plated }), RULES)!.points).toBeCloseTo(4 * perPoint, 9);
+    expect(itemSpend(gear('rare', { worn: plated }), RULES)!.unweighed).toEqual([]);
+    expect(itemSpend(gear('rare', { worn: plated }), RULES)!.points).toBeCloseTo(itemSpend(gear('rare', { armor: 4 }), RULES)!.points, 9);
+  });
+
+  test('a worn `stat` op spends as a bonus of its size, and a `sheet` op on a share as that many hundredths of its bonus: 2 Discipline spend 2, crit size 0.1 ten points', () => {
+    const steady: StatusDef = { label: 'Steady', desc: '', ops: [{ op: 'stat', key: 'dis', amount: 2 }] };
+    expect(itemSpend(gear('rare', { worn: steady }), RULES)).toEqual({ points: 2, unweighed: [] });
+    const keen: StatusDef = { label: 'Keen', desc: '', ops: [{ op: 'sheet', key: 'critSize', amount: 0.1 }] };
+    expect(itemSpend(gear('rare', { worn: keen }), RULES)!.points).toBeCloseTo(10 * onePoint('critSize', 'C'), 9);
+  });
+
+  test('a `sheet` op with no rule (range) is named as not weighed, and the rest of the status is still weighed', () => {
+    const odd: StatusDef = { label: 'Odd', desc: '', ops: [{ op: 'stat', key: 'dis', amount: 2 }, { op: 'sheet', key: 'range', amount: 1 }] };
+    expect(itemSpend(gear('rare', { worn: odd }), RULES)).toEqual({ points: 2, unweighed: ['worn'] });
+  });
+
+  test('a title\'s powers are weighed the same way at a rank: powersSpend at C is what a rare ring\'s active spends', () => {
+    const p = { active: shieldActive('10 + 0.2 * hpmax') };
+    expect(powersSpend(p, 'C', RULES)).toEqual(itemSpend(gear('rare', p), RULES)!);
+  });
+
+  test('the spend line names an active it cannot weigh, with the words to test it in a fight', () => {
+    const taunting = abilityOf('support', { id: abilityId('roar'), name: 'Roar', effect: null, ops: [{ op: 'threat', amount: 5 }] }, RULES);
+    const s = itemSpend(gear('rare', { active: taunting }), RULES)!;
+    expect(s.unweighed).toEqual(['active']);
+    expect(spendLine(s, RULES, 'rare', -1)).toEqual({
+      words: 'Spends 0.0 points. Rare− holds up to 3.1. Without what its active does that its worth line cannot weigh, which the budget cannot weigh: test it in a fight.',
       over: false,
     });
   });

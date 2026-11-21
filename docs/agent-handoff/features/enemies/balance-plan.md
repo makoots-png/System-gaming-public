@@ -99,8 +99,10 @@ Why a kind: a rank past S adds a row to every rank table (`rankTable`, `loot`, `
 tweak cannot be picked for a GM's own monster; a rule of its own says again what a kind says. `MonsterKind` is the key
 of `fight.kinds`, so the typecheck names every table that must take the row.
 
-Its numbers are **measured** by two simulation rows: M1, four hunters at S's first level win under 1 fight in 20; M2,
-four hunters at level 100 (30 past S's first) win 1 fight in 4 to 3 in 4 (the owner's question 3).
+Its numbers are **measured** by one simulation row, M1 (the owner, Nov 21: "A mythic should be basically impossible to
+beat, like 5-10% odds for a party of 3"): three hunters at S's first level win 5 to 10 fights in 100 against a mythic
+row alone. M2 (a party far past S) is not a bound: the GM's hidden weight on rolls (`features/notes-8-fudge.md`) is how
+a party is given a chance.
 
 **`unbeatable`**: no new mechanic. Each of the 23 lines is either built from pieces that exist (a starting status:
 `regenerating`, a hide for "never seen whole"; an aura or a growing zone, `Ground.around` and `Growth`, for "its heat
@@ -258,8 +260,8 @@ Each can be answered in a line. The default is what is built if there is no answ
 1. **Name for flat magic penetration**: Unravel, Spellbreak or Sever? *Default: Unravel.*
 2. **Percent penetration from Control, for armor and magic both, as today?** Or armor percent from Strength? *Default:
    Control for both. Physical builds get theirs from items.*
-3. **Mythic: beatable only far past S, or never inside the rules?** *Default: four hunters 30 levels past S's first level
-   (level 100) win about half the time; at S's first level, under 1 in 20.*
+3. **Mythic**: answered, Nov 21: "A mythic should be basically impossible to beat, like 5-10% odds for a party of 3."
+   Three hunters at S win 5 to 10% (row M1).
 4. **Not extractable: Construct, Ooze, Spirit, and every mythic?** *Default: yes, those four.*
 5. **Do monster types mean anything in a fight** (a weakness, a resistance)? *Default: no, for now. A type decides only
    extraction and the default icon.*

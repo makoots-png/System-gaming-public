@@ -58,6 +58,7 @@ type FightBound = {
   /** The most that may share a fight with a hunter down; null: not bounded. */ readonly downMax: number | null;
   /** The most that may share a fight with a hunter dead (death saves after it); null: not bounded. */ readonly deadMax: number | null;
   /** The most the party may win; null: not bounded. */ readonly wonMax: number | null;
+  /** The least the party must win (a mythic is near impossible, not impossible); absent: not bounded. */ readonly wonMin?: number;
 };
 const MIXED: readonly BuildName[] = ['tank', 'bruiser', 'cannon'];
 const BOUNDS = {
@@ -72,7 +73,7 @@ const BOUNDS = {
     elite: { section: '2 check 3 (default)', fight: 'the row and two normal skirmishers', party: MIXED, rounds: [3, 6], downMax: 1 / 6, deadMax: null, wonMax: null },
     boss: { section: '2 check 3', fight: 'the row alone', party: MIXED, rounds: [4, 8], downMax: 0.25, deadMax: 0.05, wonMax: null },
     /** Section 4, M1: four hunters at S's first level win under 1 fight in 20 (the fourth is the support, the simulation's fifth build less the speed). */
-    mythic: { section: '4 (M1)', fight: 'the row alone, four hunters at S', party: [...MIXED, 'support'], rounds: null, downMax: null, deadMax: null, wonMax: 0.05 },
+    mythic: { section: '4 (M1), the owner: 5 to 10% for a party of 3', fight: 'the row alone, three hunters at S', party: MIXED, rounds: null, downMax: null, deadMax: null, wonMin: 0.05, wonMax: 0.1 },
   } satisfies Record<FightKindName, FightBound>,
 } as const;
 type FightKindName = 'normal' | 'elite' | 'boss' | 'mythic';
@@ -183,6 +184,7 @@ function verdict(row: Row, runs: number): Line {
   if (b.downMax !== null && f.down > b.downMax) out.push(`a hunter down in ${pct(f.down)} over ${pct(b.downMax)}`);
   if (b.deadMax !== null && f.dead > b.deadMax) out.push(`a death in ${pct(f.dead)} over ${pct(b.deadMax)}`);
   if (b.wonMax !== null && f.won > b.wonMax) out.push(`the party wins ${pct(f.won)} over ${pct(b.wonMax)}`);
+  if (b.wonMin !== undefined && f.won < b.wonMin) out.push(`the party wins ${pct(f.won)} under ${pct(b.wonMin)}`);
   return { row, k, w, h, f, out };
 }
 const pct = (n: number): string => `${Math.round(100 * n)}%`;

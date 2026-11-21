@@ -19,6 +19,7 @@ import type { Applied, Step } from '../core/save-step.ts';
 import { saveId } from '../core/ids.ts';
 import type { DeviceId, HunterId, IdOf } from '../core/ids.ts';
 import { noticed } from '../core/hunter/noticed.ts';
+import { lettersKept } from '../core/trade/offer.ts';
 import type { NoticeCtx } from '../core/hunter/noticed.ts';
 import { fightHold } from '../core/combat/fight-save.ts';
 import { NO_TOLD, parseTold, toldStep } from '../core/told.ts';
@@ -332,12 +333,15 @@ export const store = {
    * then repaired, stored and announced as `update` does. A refusal changes, stores and announces nothing; a read-only
    * tab refuses every step (`read-only`), so the screen never shows a change the next load would drop. The notice step
    * (src/core/hunter/noticed.ts) runs on the step's answer in the same write, so a fact a step recorded is taken with it;
-   * a step that recorded none costs it a length check of each hunter's inbox.
+   * a step that recorded none costs it a length check of each hunter's inbox. Before it, an offer whose letter the step
+   * let go before it was ever sent ends with its goods back (src/core/trade/offer.ts `lettersKept`), whichever step let it
+   * go (a full outbox, a rebind, the room gone); a save with no offer records costs it nothing.
    */
   apply(reason: string, step: Step<Save>): Applied {
     if (!mayChange(life)) return refuse(READ_ONLY);
-    const next = step(state);
-    if (isRefused(next)) return next;
+    const answered = step(state);
+    if (isRefused(answered)) return answered;
+    const next = lettersKept(answered);
     // a player in a room checks the built-ins with the GM's feats from the room's feats doc over them; alone or the GM, this save's library
     const done = noticed(next, () => {
       const room = noticeOf(next), R = rules();

@@ -90,7 +90,7 @@ export { ITEM_TYPES, RARITIES, SLOTS };
 export type { ItemTemplate, ItemType, Rarity, Slot };
 /** A skill, an item and a monster live in the registry that owns each (src/core/registry/). */
 export type { Item, Loot, Monster, Skill, StartStatus };
-export const LOG_KINDS = ['system', 'award', 'quest', 'gate', 'combat', 'rank', 'use', 'story'] as const;
+export const LOG_KINDS = ['system', 'award', 'quest', 'gate', 'combat', 'rank', 'use', 'story', 'trade'] as const;
 
 export type Mode = (typeof MODES)[number];
 export type LogKind = (typeof LOG_KINDS)[number];

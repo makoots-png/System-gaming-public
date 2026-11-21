@@ -1518,6 +1518,92 @@ fault, so the fix is where a join starts and nothing about how a message lands),
 (no link state for the catch-up; `applyAll` replaced, not kept beside `landAll`), `principle-test-behavior-not-implementation`
 (the model's rule is what a player has after any interleaving; each new test was shown to fail on the old join).
 
+### 12.11 Unit 2: the room settles a trade (what was built, what was built differently, and why)
+
+Goal of the unit: an offer posted on one phone and answered on another settles both sheets once, whatever the links do,
+also on a phone that was out of the room and catches up. Built on unit 0 (ruling 1 of 13): there is no fold of a join's
+history; a returning phone reads its offers' ends on its catch-up pages.
+
+Who writes what (each one writer, each in one write):
+
+| What | Its one writer | In which write |
+|---|---|---|
+| The goods aside and the record at a tap | the core taps (`offerPosted`, `offerAnswered`, `offerTakenBack`, `offerStopped`), through `store.apply`, then `app.api.sync.flush()` (as a solo run posts) | the tap's |
+| A record's `tried` (its letter left once) and `unsent` (its letter let go before a send) | `lettersKept`, which the store runs on every write's answer (store.ts `apply`, before `noticed`) | the write that put the letter on its way or let it go |
+| A record's `taken` | sync.ts `answered` (`letterTaken`, beside `runTaken`) | the write that takes the letter out of the box |
+| The end read: each record's step, its goods moved, its letters dropped, the GM's log line (kind `trade`) | sync.ts `landPage` (`offersSeen` over the page whole, own echoes included) | the page's write, with its cursor and the appliers' lands |
+| The room gone | sync.ts `notice` 'gone' (`offersGone`) | the write that refuses the room's letters |
+
+Built differently from the design, each the choice with the fewest new concepts:
+
+1. **`tried` is read from the box, not raised by `boxDo`.** The letter is put on its way inside `flush`'s write, where
+   the entry to send is picked; raising `tried` there needed a third hook on `boxDo`. A letter `sending` in the box is
+   exactly "it left once", so `lettersKept`, which already follows each record's letter after every write, reads it. One
+   reader of "what the box did to my letter" instead of two. `offersHeard` became `letterTaken` (taken only: a letter the
+   room took leaves the box as one let go does, so taken cannot be read from the box).
+2. **No history mode in the fold.** `offersSeen` lost its `from` argument (ruling 1): a GM phone back in the room logs a
+   trade that ended while it was out, as every message lands once from a phone's first join.
+3. **No new API.** The taps are core steps a view writes with `store.apply` and then `app.api.sync.flush()`, the way a
+   solo run posts. Unit 4 passes the gate (`on`: true until its switch; `held`: `fightHold`).
+4. **News carry their offer id** (`OfferNews.offer`), so sync.ts tells a trade that ended while the phone was out as a
+   line of the away window ("Trade: ...") and any other as a toast tagged Trade.
+5. **The log kind `trade` is added now** (`LOG_KINDS`): the fold writes the GM's line in the page's write.
+6. **The exhaustive run stays with one player**: a trade needs two, and three phones at depth 3 is far past its time
+   budget. The trade is walked by 300 random walks from two live players that prefer a trade's taps, and named tests.
+
+Found while building, and fixed at its cause:
+
+- **A phone back after a removal lost every sealed message sent while it was out.** A removal frees the device's slot
+  (owner.ts); the join's catch-up polls come before the sheet push binds it again, so those polls are not proven, the
+  server filtered the sealed offers and ends out, and the cursor passed them. Found by the model ("a giver removed with
+  its offer open reads the accept once"). Fix: `servedPage` (protocol.ts), the server's page for a viewer: a poll that
+  names a device it is not proven for stops just before the first sealed event naming that device, with no `more`; the
+  phone reads it on a later poll, proven. The same held for every sealed message, not only a trade's.
+
+Found, not fixed (outside the unit):
+
+- **A removed player can come back onto the GM's roster** when its sheet changes while its removal is unheard and more
+  than the server's 20 s removal window passes before its push (the trade walks, seed 76: a removal, an offer whose
+  letter's answer is lost, so the clock passes 20 s, then the push of the changed sheet is taken). Any sheet change does
+  it (an edit too); a trade makes one likelier. The trade walks leave the removal out; the removal's window is the room
+  server's.
+- **A phone away from a room for more than 30 days** starts at the room's end (`seenFrom`), so an open record of that
+  room never reads its end. The 30 days guard against a code naming another room; the records then wait for Take back,
+  whose letter the room answers with the first end's seq, and the record waits as `withdrawing-taken` for good.
+
+The five leftovers the trail names for this unit (decisions.tsv, Nov 19 13:20Z):
+
+1. **The away window's lines carried an upper-case System title inside a body line.** Fixed: `lineOf` (room-events.ts)
+   leaves out a title in the System's upper case ("Reward: +30 XP. +12 gold"); a title of other words (a quest's name,
+   the GM's own) stays. A quest's line keeps its window's "GOAL:" label, which is the window's line as it shows it.
+2. **`seen` is not cleared when a save is imported or restored.** Read, not a fault today: `seen` is a phone field
+   (`SYNC_OWNER` in save.ts, with `applied`, `held`, `runs` and `offers`), so `keepPhone` keeps this phone's places
+   across every swap and never takes a file's (save.test.ts, the swap case). A place only says where this phone stopped
+   reading; the applied ring, also the phone's, keeps a second read from landing twice. Nothing changed.
+3. **A "Play as" rebind moves `joinedAt`.** Read, not a fault: `playAs` keeps `joined` (bind.ts, "The join stays",
+   SMX-sync-2.2; bind.test.ts asserts it); only a join's head writes it (`bindJoin`). Nothing changed.
+4. **The first test of room-sync.e2e.ts waited on fixed timers.** Fixed: it waits for the link to be live after the
+   reload and for a later message from the GM to land, after which every earlier one has been read again. The five tests
+   of the file pass (`E2E_PORT=3360`, 1.1 m).
+5. **A save holding a thing over its cap loses it at load without a word.** Not done; stopped here for time. What it
+   needs: each reader that drops a thing for its size (`parseItem`, `parseStatusDef`, `parseAbility`) counted where a
+   save is read, a `LoadNotice` for it ("Some things in this save are larger than the app now keeps..."), and the stored
+   text kept in the backups as the other notices do. Only a thing made before the caps (Nov 19) can be over them.
+
+Tests: `tests/offer.test.ts` (the history cases rewritten as a catch-up page; news carry their offer),
+`tests/room-system-model.test.ts` ("a trade between two players": an offer settled through a lost answer and a reload
+of each phone; an accept and a take back sent at once, both orders; a giver removed and allowed back; 300 walks from two
+live players that keep every rule of 1.8 after each move and at rest, and reach settled, refused, withdrawn and
+stopped), `tests/server-rooms.test.ts` ("a phone back after a removal polls before its sheet binds it again"),
+`tests/applied.test.ts` (the away line). The exhaustive run is unchanged at 16,385 sequences (a copy of the base gave
+the same count). The room messages' size bound is unchanged: no message was added.
+
+Principles that changed a choice: `principle-fix-root-causes` (the lost sealed message was fixed where the cursor
+passes it, in the server's page, not by a refetch on the phone); `principle-subtract-before-you-add` (the fold's history
+mode and `offersHeard`'s `tried` went, no new API); `principle-make-operations-idempotent` (each move in the write
+that ends its record; the model reads every page twice through its reloads); `principle-test-behavior-not-implementation`
+(the model's rules are what the players hold, checked against what the real server stored).
+
 ## 13. The lead's rulings after units 1 and 3 (Nov 19)
 
 1. **Unit 0's design (section 11) is approved**: the save keeps the cursor a phone had when it left a room (`seen[code]`, 30 days), a join goes live at that cursor through the normal appliers, a page's lands and its cursor are one write, and the model's rule is that every message lands exactly once from a phone's first join. It replaces unit 2's separate fold of a join's history: unit 2 is built on it. A room never visited still starts at its end. The messages a phone caught up on are told in one window; its words are the lead's to read before the push.

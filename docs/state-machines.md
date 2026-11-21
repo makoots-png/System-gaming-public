@@ -2797,7 +2797,7 @@ Where it lives:
 | What | Where |
 |---|---|
 | The union | `OfferRecord` (its giver arm) and its rows in `src/core/trade/offer.ts`; the save's `settings.sync.offers` |
-| What changes it | `recordStep` and its `GIVER`; the taps `offerPosted`, `offerAnswered`, `offerTakenBack`, `offerStopped`; `offersHeard`, `lettersKept`, `offersGone`, `offersSeen` |
+| What changes it | `recordStep` and its `GIVER`; the taps `offerPosted`, `offerAnswered`, `offerTakenBack`, `offerStopped`; `letterTaken`, `lettersKept`, `offersGone`, `offersSeen` |
 | Who calls it | The trade view (unit 4) for the taps; sync.ts (unit 2) for what the box heard, the fold of each page and a join's history, and the room gone; the store runs `lettersKept` after every step (unit 2) |
 | The test to copy | `tests/offer.test.ts` ("every cell of the three records", the walk of two players and the GM); the walk's events are in `tests/models/trade-events.ts` |
 | The recipe | docs/guide/room-sync.md, "A room message"; notes-5-trade.md 1.6 and 12.1 |
@@ -2898,7 +2898,7 @@ Where it lives:
 | What | Where |
 |---|---|
 | The union | `OfferRecord` (its taker arm) and its rows in `src/core/trade/offer.ts`; the save's `settings.sync.offers` |
-| What changes it | `recordStep` and its `TAKER`; the taps `offerPosted`, `offerAnswered`, `offerTakenBack`, `offerStopped`; `offersHeard`, `lettersKept`, `offersGone`, `offersSeen` |
+| What changes it | `recordStep` and its `TAKER`; the taps `offerPosted`, `offerAnswered`, `offerTakenBack`, `offerStopped`; `letterTaken`, `lettersKept`, `offersGone`, `offersSeen` |
 | Who calls it | The trade view (unit 4) for the taps; sync.ts (unit 2) for what the box heard, the fold of each page and a join's history, and the room gone; the store runs `lettersKept` after every step (unit 2) |
 | The test to copy | `tests/offer.test.ts` ("every cell of the three records", the walk of two players and the GM); the walk's events are in `tests/models/trade-events.ts` |
 | The recipe | docs/guide/room-sync.md, "A room message"; notes-5-trade.md 1.6 and 12.1 |
@@ -2966,7 +2966,7 @@ Where it lives:
 | What | Where |
 |---|---|
 | The union | `OfferRecord` (its GM arm) and its rows in `src/core/trade/offer.ts`; the save's `settings.sync.offers` |
-| What changes it | `recordStep` and its `WATCH`; the taps `offerPosted`, `offerAnswered`, `offerTakenBack`, `offerStopped`; `offersHeard`, `lettersKept`, `offersGone`, `offersSeen` |
+| What changes it | `recordStep` and its `WATCH`; the taps `offerPosted`, `offerAnswered`, `offerTakenBack`, `offerStopped`; `letterTaken`, `lettersKept`, `offersGone`, `offersSeen` |
 | Who calls it | The trade view (unit 4) for the taps; sync.ts (unit 2) for what the box heard, the fold of each page and a join's history, and the room gone; the store runs `lettersKept` after every step (unit 2) |
 | The test to copy | `tests/offer.test.ts` ("every cell of the three records", the walk of two players and the GM); the walk's events are in `tests/models/trade-events.ts` |
 | The recipe | docs/guide/room-sync.md, "A room message"; notes-5-trade.md 1.6 and 12.1 |

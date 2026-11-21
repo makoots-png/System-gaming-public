@@ -1117,6 +1117,20 @@ export function servedTo(ev: RoomEvent, v: RoomViewer): boolean {
   if (v.kind === 'gm' || !isSealed(ev)) return true;
   return v.kind === 'phone' && named(ev).some(k => deviceOf(k) === v.device);
 }
+/**
+ * A page of the room's events as viewer `v` gets it (`servedTo`), and the cursor past it. A poll that names device
+ * `claims` and is not proven for it stops just before the first sealed event that names that device: the cursor would
+ * otherwise pass a message for that phone which it never got. That is a phone back in the room after a removal, which
+ * freed its slot: its catch-up polls come before the sheet push that binds the slot again (owner.ts), and it reads the
+ * message on a later poll, proven. Its page then says no `more`, so it waits for its next poll rather than asking again
+ * at once. A phone that names another's device learns no more than that a sealed message waits there.
+ */
+export function servedPage<E extends RoomEvent & { readonly seq: number }>(page: { readonly events: readonly E[]; readonly next: number; readonly more: boolean }, v: RoomViewer, claims: DeviceId | null): { events: E[]; next: number; more: boolean } {
+  const held = v.kind === 'anyone' && claims !== null ? page.events.findIndex(e => isSealed(e) && named(e).some(k => deviceOf(k) === claims)) : -1;
+  if (held < 0) return { events: page.events.filter(e => servedTo(e, v)), next: page.next, more: page.more };
+  const before = page.events.slice(0, held);
+  return { events: before.filter(e => servedTo(e, v)), next: page.events[held]!.seq - 1, more: false };
+}
 const faceLine = (v: unknown): FaceLine => {
   const o = obj(v);
   return { id: need(parseSaveId<'i'>(own(o, 'id'))), name: text(ITEM_BOUNDS.name)(own(o, 'name')), qty: int(1, ITEM_BOUNDS.qty)(own(o, 'qty')), rar: choiceOf(RARITIES)(own(o, 'rar')) };

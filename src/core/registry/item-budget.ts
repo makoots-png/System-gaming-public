@@ -1,24 +1,29 @@
 // item-budget.ts: what an item of a tier and a grade may hold, and what an item spends of it (economy design 2.3 and
 // 2.4, the owner's ruling 1: "some items lower stats but better abilities"). The unit is the point, one point on a stat;
 // everything a worn item carries is converted to points on the item maker's sample wearer (`SAMPLE_WEARER`) at the first
-// level of its rarity's rank. A tier's budget is a span of points cut in three grades; the price reads the grade the
-// maker picked (items.ts `valueOf`), never the spend, so the spend line only tells the maker whether they agree. A block
-// with no measure is named in `Spend.unweighed`, never counted as 0, as worth.ts does. Tests: tests/item-budget.test.ts.
+// level of its rarity's rank, and the amounts of its powers (a passive and an active, `powersSpend`) are read on the
+// paper build each favours (worth.ts `bestScope`, item-stats 6.5). A tier's budget is a span of points cut in three
+// grades; the price reads the grade the maker picked (items.ts `valueOf`), never the spend, so the spend line only tells
+// the maker whether they agree. A block with no measure is named in `Spend.unweighed`, never counted as 0, as worth.ts does. Tests: tests/item-budget.test.ts.
 import { BONUS_HUNDREDTHS, RANKS } from '../rules.ts';
 import type { BonusKey, Perk, Rank, Rules } from '../rules.ts';
 import type { StatKey } from '../stats.ts';
 import { kitGear, monsterSheet, pointsAt, sheetOf, split } from '../hunter/derive.ts';
 import type { Kit, Sheet } from '../hunter/derive.ts';
 import { defenceLeft, throughDefence } from '../combat/land.ts';
-import type { DamageType } from '../combat/ability-types.ts';
+import type { Ability, DamageType } from '../combat/ability-types.ts';
+import { cooldownOf } from '../combat/charge.ts';
+import { atTier } from '../combat/op-amount.ts';
+import type { Op, SheetOpKey } from '../combat/effect-ops.ts';
 import { average, NO_KIT, parseFormula } from '../formula.ts';
-import type { Scope } from '../formula.ts';
+import type { Formula, Scope } from '../formula.ts';
 import { gradeLabel } from '../effects.ts';
 import { GRADES, KIT_SHARE, SAMPLE_WEARER, piece, weightOf } from './items.ts';
 import type { ArmorSlot, Grade, Item, Rarity } from './items.ts';
 import { KINDS } from './ability-kinds.ts';
-import { BUILD_OF, hpRate, referenceBody, wornWorth } from './worth.ts';
+import { abilityWorth, bestScope, BUILD_OF, hpRate, referenceBody, usesPerRound, wornWorth } from './worth.ts';
 import type { WorthRules } from './worth.ts';
+import type { Powers } from './powers.ts';
 
 /** The rule numbers the budget reads: the body and the fight's yardstick (worth.ts), each rarity's rank, the budget's share and the slots. */
 export type BudgetRules = WorthRules & Pick<Rules, 'rarities' | 'itemBudget' | 'slots'>;
@@ -57,15 +62,16 @@ export const gradeOfSpend = (R: BudgetRules, rar: Rarity, points: number): Grade
   GRADES.find(g => points <= gradeBand(R, rar, g).high + 1e-9) ?? null;
 
 // ── what an item spends (design 2.3) ──
-/** What an item carries that the budget has no measure for: the standing ops of a worn status. */
-export type Unbudgeted = 'worn';
+/** What an item carries that the budget has no measure for: a part of its worn status or of its active with no rule in worth.ts. */
+export type Unbudgeted = 'worn' | 'active';
 const UNBUDGETED_WORDS: { readonly [U in Unbudgeted]: string } = {
   worn: 'what its worn status does that its worth line cannot weigh',
+  active: 'what its active does that its worth line cannot weigh',
 };
 /** An item's spend in points beyond its slot's free numbers, and what it carries that the budget cannot weigh. */
 export type Spend = { readonly points: number; readonly unweighed: readonly Unbudgeted[] };
 /** What a spend reads of an item. */
-export type Spendable = Pick<Item, 'rar' | 'type' | 'slot' | 'dice' | 'bonus' | 'armor' | 'resist'> & Partial<Pick<Item, 'weight' | 'worn'>>;
+export type Spendable = Pick<Item, 'rar' | 'type' | 'slot' | 'dice' | 'bonus' | 'armor' | 'resist'> & Partial<Pick<Item, 'weight' | 'worn' | 'active'>>;
 
 /** The points a conversion is read over: max HP and max mana are whole numbers, so one point's share is read off ten. */
 const READ_OVER = 10;
@@ -170,6 +176,70 @@ const BONUS_COST: { readonly [K in BonusKey]: (r: Rates, R: BudgetRules) => numb
   armorPenFlat: (r, R) => penCost('armorPenFlat', r, R), resistPenFlat: (r, R) => penCost('resistPenFlat', r, R),
   drain: drainCost, haste: hasteCost,
 };
+/** What bonus key `k` costs for one of its sheet number: a `sheet` op adds to the number itself, a bonus point `unitOf` of it. */
+const perNumber = (k: BonusKey) => (r: Rates, R: BudgetRules): number => BONUS_COST[k](r, R) / unitOf(k);
+/**
+ * What one of each number a `sheet` op adds to costs, as a bonus of that size (item-stats 6.5): armor and resist the
+ * Vitality whose armor it is (`r.armor`), as an item's armor above its piece does; a number a bonus key also feeds, that
+ * key's cost (`perNumber`). Null, no rule, so it is named as not weighed: `exposed` (the faces a foe crits its bearer on,
+ * a drawback), `range` and the level `sight`.
+ */
+const SHEET_OP_COST: { readonly [K in SheetOpKey]: ((r: Rates, R: BudgetRules) => number) | null } = {
+  armor: r => 1 / r.armor, resist: r => 1 / r.armor,
+  armorPen: perNumber('armorPen'), resistPen: perNumber('resistPen'), armorPenFlat: perNumber('armorPenFlat'), resistPenFlat: perNumber('resistPenFlat'),
+  critFaces: perNumber('critFaces'), critSize: perNumber('critSize'), costCut: perNumber('costCut'),
+  exposed: null, range: null, sight: null,
+};
+/** An amount of a standing op: a number as it is, a formula's average on the paper build it favours (`bestScope`). */
+const amountOn = (v: number | Formula, rank: Rank, R: BudgetRules): number => (typeof v === 'number' ? v : average(v, bestScope(v, rank, R)));
+/**
+ * What a `stat` or `sheet` op of a held thing's worn status spends at the rank of `r`, as a bonus of its size: its amount
+ * at the rank's tier times a stat point's cost (one) or the number's (`SHEET_OP_COST`); null for a number with no rule.
+ */
+function standingPoints(o: Extract<Op, { readonly op: 'stat' | 'sheet' }>, r: Rates, R: BudgetRules): number | null {
+  const cost = o.op === 'stat' ? BONUS_COST[o.key](r, R) : SHEET_OP_COST[o.key]?.(r, R) ?? null;
+  return cost === null ? null : amountOn(atTier(o.amount, RANKS.indexOf(r.rank)), r.rank, R) * cost;
+}
+/**
+ * The uses a round an active is weighed at (item-stats 6.5): the fewest of what its time lets its kind's paper build
+ * use (`usesPerRound`: it takes an action), a round over its cooldown (read by `cooldownOf` at no haste, since ability
+ * haste is bought and weighed on its own), and each `uses` gate's n over the reference fight's rounds (a rest's read as
+ * a fight's, so it is never undercharged).
+ */
+function activeUses(a: Ability, rank: Rank, R: BudgetRules): number {
+  const cooldown = cooldownOf(a.cost.cooldown, 0);
+  const gated = (a.gates ?? []).flatMap(g => (g.kind === 'uses' ? [g.n / R.fight.kit.referenceRounds] : []));
+  return Math.min(usesPerRound(a.kind, a.cost.time, rank, R), cooldown > 0 ? R.fight.round / cooldown : Infinity, ...gated);
+}
+/**
+ * What a held thing's powers spend at `rank`, in points (item-stats 6.5), each amount read on the paper build it favours
+ * (worth.ts `bestScope`). The worn status: each `stat` and `sheet` op as a bonus of its size (`standingPoints`), the rest
+ * its worth a round (`wornWorth`); the active: its worth a use (`abilityWorth`) times its uses a round (`activeUses`).
+ * Both are standard actions a round, at the rate any worn worth pays: the tier's strike over what a Strength point adds
+ * to it (`r.strike / r.phys`). What worth.ts cannot weigh of either is named, never counted as 0. An item's spend adds
+ * it at its rarity's rank.
+ */
+export function powersSpend(p: Powers, rank: Rank, R: BudgetRules): Spend {
+  const r = ratesAt(rank, R), perAction = r.strike / r.phys, unweighed: Unbudgeted[] = [];
+  let points = 0;
+  if (p.worn) {
+    const rest: Op[] = [];
+    for (const o of p.worn.ops) {
+      const n = o.op === 'stat' || o.op === 'sheet' ? standingPoints(o, r, R) : null;
+      if (n === null) rest.push(o);
+      else points += n;
+    }
+    const w = wornWorth({ ...p.worn, ops: rest }, R, rank, { on: 'best' });
+    points += w.worth * perAction;
+    if (w.unweighed.length) unweighed.push('worn');
+  }
+  if (p.active) {
+    const w = abilityWorth(p.active, R, { rank, on: 'best' });
+    points += w.worth * activeUses(p.active, rank, R) * perAction;
+    if (w.unweighed.length) unweighed.push('active');
+  }
+  return { points, unweighed };
+}
 const isArmorSlot = (s: Spendable['slot']): s is ArmorSlot => s !== null && Object.hasOwn(KIT_SHARE, s);
 /**
  * The armor and resist a slot gives for free: the piece (`piece`) of the heaviest kit whose piece in that slot weighs no
@@ -188,12 +258,12 @@ function freeGuard(it: Spendable, R: BudgetRules): { readonly armor: number; rea
  * costs the stat points that would give it (`FED_BY`), a penetration the power points that add its damage (`penCost`),
  * lifesteal and ability haste their worth a round (`drainCost`, `hasteCost`); a weapon's mean die above its tier's free die (the strike's die plus
  * `weaponStep` a tier above the first; below it, less than nothing) costs the Strength whose `phys` would deal it; armor
- * or resist above the piece its weight carries costs the Vitality whose armor it is; a worn status its worth a round
- * (`wornWorth`) in standard actions of damage, at the same rate as damage. Weight and the slot's own piece are free.
+ * or resist above the piece its weight carries costs the Vitality whose armor it is; its powers what `powersSpend`
+ * weighs them at its rarity's rank. Weight and the slot's own piece are free.
  */
 export function itemSpend(it: Spendable, R: BudgetRules): Spend | null {
   if (it.type !== 'weapon' && it.type !== 'armor' && it.type !== 'accessory') return null;
-  const rank = R.rarities[it.rar].rank, r = ratesAt(rank, R), unweighed: Unbudgeted[] = [];
+  const rank = R.rarities[it.rar].rank, r = ratesAt(rank, R);
   let points = (Object.keys(BONUS_COST) as BonusKey[]).reduce((n, k) => n + (it.bonus[k] ? it.bonus[k] * BONUS_COST[k](r, R) : 0), 0);
   if (it.type === 'weapon') {
     const free = strikeDie(r.body, R) + R.itemBudget.weaponStep * RANKS.indexOf(rank);
@@ -201,12 +271,8 @@ export function itemSpend(it: Spendable, R: BudgetRules): Spend | null {
   }
   const guard = freeGuard(it, R);
   points += (Math.max(0, it.armor - guard.armor) + Math.max(0, it.resist - guard.resist)) / r.armor;
-  if (it.worn) {
-    const w = wornWorth(it.worn, R, rank);
-    points += w.worth * r.strike / r.phys;
-    if (w.unweighed.length) unweighed.push('worn');
-  }
-  return { points, unweighed };
+  const powers = powersSpend(it, rank, R);
+  return { points: points + powers.points, unweighed: powers.unweighed };
 }
 
 // ── the item maker's line (design 2.4) ──

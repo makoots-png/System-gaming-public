@@ -461,7 +461,7 @@ describe('a page of the room lands as one change (notes-5-trade.md 11.5)', () =>
     const quest = parseEvent('quest', { eid: e(3), to: ['d-player1:h1'], quest: { kind: 'side', title: 'The Den', desc: 'Clear it.' } })!;
     const hp = parseEvent('hp', { eid: e(4), to: ['d-player1:h1'], hp: 0, mana: 0, fatigue: 10, reason: 'A long march' })!;
     p.page([], [award(1, 10), told, quest, hp, award(2, 5)], ev => (ev.payload.eid === e(2) ? p.deps : away));
-    expect(lines).toEqual(['Reward: REWARD RECEIVED. +10 gold', 'Notification: A storm is coming. Take cover.', 'Quest: The Den. GOAL: Clear it.', '+10 fatigue · A long march']);
+    expect(lines, 'a title in the System\'s upper case stays in its window: a line leaves it out').toEqual(['Reward: +10 gold', 'Notification: A storm is coming. Take cover.', 'Quest: The Den. GOAL: Clear it.', '+10 fatigue · A long march']);
     expect([p.windows, p.toasts], 'none of them opened a window or a toast of its own').toEqual([[], []]);
     expect(p.said, 'the award sent after the phone was back opens its own window, as live').toEqual([{ title: 'REWARD RECEIVED', body: 'The System has delivered a reward.' }]);
     expect([p.hunter.gold, p.hunter.quests.some(q => q.title === 'The Den'), p.applied]).toEqual([gold + 15, true, [e(1), e(3), e(4), e(2)]]);

@@ -354,10 +354,10 @@ export function offerStopped(save: Save, id: OfferId): Save | TapRefused {
 }
 
 // ── what the box and the link hear ──
-/** The outbox heard letter `letter` leave (`tried`) or the room take it (`taken`): the record whose current letter it is steps (sync.ts `boxDo`, unit 2). */
-export function offersHeard(save: Save, letter: string, heard: 'tried' | 'taken'): Save {
+/** The room took letter `letter` (sync.ts `answered`, in the write that takes it out of the box): the record whose current letter it is steps `taken`. */
+export function letterTaken(save: Save, letter: string): Save {
   const r = offersOf(save).find(x => letterIdOf(x) === letter);
-  return r ? stepIn(save, r, { type: heard }).save : save;
+  return r ? stepIn(save, r, { type: 'taken' }).save : save;
 }
 /** Room `room` is gone: each of its records steps `roomGone` (a never-sent one gives its goods back; one the room may hold is stranded). */
 export function offersGone(save: Save, room: RoomCode): { readonly save: Save; readonly closed: readonly Closed[] } {
@@ -371,9 +371,11 @@ export function offersGone(save: Save, room: RoomCode): { readonly save: Save; r
   return { save: s, closed: out };
 }
 /**
- * The step the store runs after every step (unit 2, beside `noticed`): each record whose current letter was never taken and
- * is no longer queued or on its way in the box steps `unsent`. Whichever writer let the letter go, a never-sent offer's goods
- * come back in that same write. A second run changes nothing.
+ * The step the store runs after every step (store.ts `apply`, before `noticed`): each record follows its current letter in
+ * the box. A letter on its way that the record knew only as queued was sent once (`tried`): the write that put it on its
+ * way is this one. A letter never taken that is no longer queued or on its way was let go (`unsent`): whichever writer
+ * let it go, a never-sent offer's goods come back in that same write. `taken` is not read here (a letter the room took
+ * leaves the box as one let go does): sync.ts hears it in the write that takes it out. A second run changes nothing.
  */
 export function lettersKept(save: Save): Save {
   const box = boxOf(save);
@@ -382,14 +384,15 @@ export function lettersKept(save: Save): Save {
     const l = letterOf(r), id = letterIdOf(r);
     if (l === null || id === null || l.heard === 'taken') continue;
     const e = box.find(x => x.id === id);
-    if (!e || (e.at !== 'queued' && e.at !== 'sending')) s = stepIn(s, r, { type: 'unsent' }).save;
+    if (e?.at === 'sending') { if (l.heard === 'queued') s = stepIn(s, r, { type: 'tried' }).save; }
+    else if (e?.at !== 'queued') s = stepIn(s, r, { type: 'unsent' }).save;
   }
   return s;
 }
 
-// ── the fold: reading offers and ends from a page or a join's history (notes-5-trade.md 1.9) ──
-/** What a phone tells of offers: a toast to a player, a line for the GM's session log (its kind `trade` is unit 4's). */
-export type OfferNews = { readonly kind: 'toast' | 'log'; readonly text: string };
+// ── the fold: reading offers and ends from each page (notes-5-trade.md 1.9, and 13's ruling 1) ──
+/** What a phone tells of offer `offer`: a toast to a player, a line of the GM's session log (kind `trade`). */
+export type OfferNews = { readonly kind: 'toast' | 'log'; readonly offer: OfferId; readonly text: string };
 /** What the fold answers: the next save, what it tells, and the records it ended. */
 export type Seen = { readonly save: Save; readonly news: readonly OfferNews[]; readonly closed: readonly Closed[] };
 
@@ -405,14 +408,15 @@ function kept(save: Save, r: OfferRecord): Save {
 }
 
 /**
- * A batch of stored events read by this phone in room `me.room`: a poll page (`poll`, own events included, since a phone
- * learns its own accept or take back won only by reading it as the end) or a join's history (`history`). For each record of
- * the room whose end the batch holds: the end steps it. A giver's own offer read: the room has it (`taken`). Each offer with
- * no end in the batch: a taker's record (offered) on the phone of the hunter it is for, a watch record on the GM's phone. An
- * offer and its end in one batch create nothing (nothing of the taker moved); the GM's phone logs it from a poll and leaves
- * it from history (an old one). Keyed by ids, so a batch read twice ends each record once; it never throws on a parsed event.
+ * A page of stored events read by this phone in room `me.room`, own events included, since a phone learns its own accept
+ * or take back won only by reading it as the end. A phone back in a room reads on from where it stopped (seen.ts), so its
+ * catch-up pages come here as any page does (notes-5-trade.md 13, ruling 1). For each record of the room whose end the
+ * page holds: the end steps it. A giver's own offer read: the room has it (`taken`). Each offer with no end in the page: a
+ * taker's record (offered) on the phone of the hunter it is for, a watch record on the GM's phone. An offer and its end in
+ * one page create nothing (nothing of the taker moved); the GM's phone logs it. Keyed by ids, so a page read twice ends
+ * each record once; it never throws on a parsed event.
  */
-export function offersSeen(save: Save, events: readonly StoredEvent[], from: 'poll' | 'history', me: { readonly room: RoomCode; readonly seat: 'gm' | 'player' }): Seen {
+export function offersSeen(save: Save, events: readonly StoredEvent[], me: { readonly room: RoomCode; readonly seat: 'gm' | 'player' }): Seen {
   const offers = new Map<OfferId, Offer>(), ends = new Map<OfferId, OfferEnd>();
   for (const ev of events) {
     const end = endOf(ev);
@@ -434,7 +438,7 @@ export function offersSeen(save: Save, events: readonly StoredEvent[], from: 'po
   for (const [id, o] of offers) {
     const end = ends.get(id);
     if (end) {
-      if (me.seat === 'gm' && from === 'poll' && !offersOf(save).some(r => r.offer.id === id)) news.push({ kind: 'log', text: gmLine(o, outcomeOf(o, end)) });
+      if (me.seat === 'gm' && !offersOf(save).some(r => r.offer.id === id)) news.push({ kind: 'log', offer: id, text: gmLine(o, outcomeOf(o, end)) });
       continue;
     }
     if (offersOf(s).some(r => r.offer.id === id)) continue;
@@ -442,7 +446,7 @@ export function offersSeen(save: Save, events: readonly StoredEvent[], from: 'po
     const hid = hunterIdOf(o.to);
     if (deviceOf(o.to) !== device || !s.hunters.some(h => h.id === hid)) continue;
     s = kept(s, { side: 'taker', offer: o, hid, state: 'offered' });
-    if (offersOf(s).some(r => r.offer.id === id)) news.push({ kind: 'toast', text: offeredLine(o) });
+    if (offersOf(s).some(r => r.offer.id === id)) news.push({ kind: 'toast', offer: id, text: offeredLine(o) });
   }
   return { save: s, news, closed: done };
 }
@@ -494,10 +498,11 @@ function takerLine(c: Closed): string {
 }
 /** What a record's end tells: a toast on a player's phone, a log line on the GM's (none for the room gone). */
 export function closeNews(c: Closed): OfferNews | null {
-  if (c.record.side === 'giver') return { kind: 'toast', text: giverLine(c) };
-  if (c.record.side === 'taker') return { kind: 'toast', text: takerLine(c) };
+  const offer = c.record.offer.id;
+  if (c.record.side === 'giver') return { kind: 'toast', offer, text: giverLine(c) };
+  if (c.record.side === 'taker') return { kind: 'toast', offer, text: takerLine(c) };
   const outcome = oneOf(c.close, OFFER_OUTCOMES, null);
-  return outcome === null ? null : { kind: 'log', text: gmLine(c.record.offer, outcome) };
+  return outcome === null ? null : { kind: 'log', offer, text: gmLine(c.record.offer, outcome) };
 }
 /** What a giver's or taker's record says while it waits (the Offers tab). */
 export const STATE_WORDS: { readonly giver: { readonly [R in GiverRow]: (o: Offer) => string }; readonly taker: { readonly [R in TakerRow]: (o: Offer) => string } } = {

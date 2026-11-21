@@ -62,14 +62,16 @@ test('a GM and a player in one room see each other\'s changes', async ({ device 
   });
 
   await test.step('a reload on the player applies nothing twice', async () => {
-    await player.waitForTimeout(1500);
     const before = await activeHunter(player);
     await player.reload({ waitUntil: 'networkidle' });
     await player.waitForFunction(() => window.hunterApp && document.querySelectorAll('#nav-top a').length > 0);
-    await player.waitForTimeout(8000);
+    await expect.poll(() => player.evaluate(() => hunterApp.api.sync.conn())).toBe('live');
+    // the GM's damage is the room's newest message: once it lands, every earlier one has been read again
+    await kaiCard.locator('[data-hp="-5"]').tap();
+    await expect.poll(async () => (await activeHunter(player)).hp).toBe(before.hp - 5);
     await dismissAll(player, 4);
     const after = await activeHunter(player);
-    expect({ xp: after.xp, gold: after.gold, hp: after.hp, level: after.level }).toEqual({ xp: before.xp, gold: before.gold, hp: before.hp, level: before.level });
+    expect({ xp: after.xp, gold: after.gold, level: after.level }).toEqual({ xp: before.xp, gold: before.gold, level: before.level });
     await expect(kaiCard).toHaveCount(1);
   });
 });
@@ -109,7 +111,7 @@ test('a player who left the room and came back gets the award the GM sent meanwh
     expect((await activeHunter(player)).gold).toBe(before.gold + 12);
     const away = player.locator('.sys-overlay.show', { hasText: 'WHILE YOU WERE AWAY' });
     await expect(away).toContainText('These were sent while this phone was out of the room.');
-    await expect(away).toContainText('Reward: REWARD RECEIVED. +30 XP. +12 gold');
+    await expect(away).toContainText('Reward: +30 XP. +12 gold');
     await expect(player.locator('.sys-overlay.show', { hasText: 'The System has delivered a reward.' }), 'no window of its own beside it').toHaveCount(0);
     await dismissAll(player, 4);
   });

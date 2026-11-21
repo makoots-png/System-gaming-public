@@ -83,6 +83,7 @@ When a mistake is made, apply `.claude/skills/correct/SKILL.md` (the owner's sta
 | A lead session starts on Fable 5.2 (the owner, Nov 20; one was started on Opus) | `.claude/hooks/lead-model.py`, a hook that refuses a `create_session` whose model is not `claude-fable-5-2` |
 | A lead's notes are never left unpushed (Nov 20: the harness's push reminder cost a turn after every turn) | the lead's checkout is `lead-backlog`, pushed after each commit; the harness's stop hook then names any commit that is not |
 | A row of the trail carries the machine's time, not a typed one (Nov 21: a lead's rows ran 90 minutes ahead, twice) | `scripts/trail.sh <area> "<text>"`, which stamps the row with `date -u`; a lead appends rows only through it |
+| A running helper's branch is always named in the handoff's Now block (Nov 21: a lead's edit cut three helpers' lines) | `scripts/trail.sh`, which at every row names each worktree branch that `handoff.md` does not |
 | Every other rule of the code | its test in `tests/lint.test.ts`, named for the rule |
 
 ## Rules

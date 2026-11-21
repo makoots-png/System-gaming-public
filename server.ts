@@ -6,7 +6,7 @@
 
 import { CODE_CHARS, CODE_LEN } from './src/core/ids.ts';
 import { buildApp, type Built } from './scripts/build.ts';
-import { DOCS, DOC_MAX, SHEET_MAX, WIRES, wireDocs, EVENTS, ROOM_PAGE, deviceOf, isEventType, parseDeviceId, parseDocName, parseEvent, parseRoomCode, parseSheet, parseSheetKey, sentAgain, servedTo, sheetFor, speaksFor } from './src/core/protocol.ts';
+import { DOCS, DOC_MAX, SHEET_MAX, WIRES, wireDocs, EVENTS, ROOM_PAGE, deviceOf, isEventType, parseDeviceId, parseDocName, parseEvent, parseRoomCode, parseSheet, parseSheetKey, sentAgain, servedPage, sheetFor, speaksFor } from './src/core/protocol.ts';
 import type { DeviceId, DocName, EventId, DocOf, KickedDoc, RoomCode, RoomDocs, RoomEvent, RoomState, RoomSheet, ServedSheet, SheetKey, Stored, StoredEvent, RoomViewer } from './src/core/protocol.ts';
 import { DB_RETRY_MS, dbHealth, dbStep, kickedAfter, liveSince, pushed, roomLive } from './src/core/room-server.ts';
 import type { Db, DbEvent, Pushed, RemovalChange } from './src/core/room-server.ts';
@@ -513,7 +513,8 @@ async function api(req: Request, parts: string[], database: Database): Promise<R
     const after = Math.max(0, Math.floor(Number(query.get('after'))) || 0);
     const dev = parseDeviceId(query.get('d'));
     if (dev) st.see(code, dev, now);
-    // each phone gets what is for it (src/core/protocol.ts `servedTo`, `sheetFor`); the cursor passes what it did not get
+    // each phone gets what is for it (src/core/protocol.ts `servedPage`, `sheetFor`); the cursor passes what it did not get,
+    // but never a sealed message for the device the poll names while it is not proven
     const viewer: RoomViewer = gm ? { kind: 'gm' } : dev && (await proven(req, st, code, dev)) ? { kind: 'phone', device: dev } : { kind: 'anyone' };
     const [page, board] = await Promise.all([st.events(code, after), st.board(code)]);
     const sheets: Record<SheetKey, Stored<ServedSheet>> = {};
@@ -522,7 +523,7 @@ async function api(req: Request, parts: string[], database: Database): Promise<R
       gm,
       now: iso(now), // S11: server clock for everyone (joinedAt / kick stamps); presence stays GM-only
       ...(gm ? { presence: Object.fromEntries([...st.presence(code)].map(([d, t]) => [d, iso(t)])) } : {}),
-      events: page.events.filter(e => servedTo(e, viewer)), next: page.next, more: page.more, sheets, docs: board.docs,
+      ...servedPage(page, viewer, dev), sheets, docs: board.docs,
     };
     // the docs go out in the shape `DOCS` reads (`WIRES`); the store keeps them as read
     return J({ ...answer, docs: wireDocs(board.docs) });

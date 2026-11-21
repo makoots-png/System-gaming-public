@@ -422,6 +422,15 @@ export function landAll(save: Save, held: readonly RoomEvent[], events: readonly
 /** The first word of a window's tag, as a line names it: "! Quest" is "Quest". */
 const tagWord = (tag: string): string => tag.replace(/^!\s*/, '');
 /**
+ * A window as one line: its tag's word, its title, its body and lines. A title in the System's upper case ("REWARD
+ * RECEIVED") is the window's voice, kept to a window's title, so a line leaves it out: "Reward: +10 gold". A title of
+ * other words (a quest's name, the GM's own) is what the line is about, so it stays.
+ */
+function lineOf(tag: string, title: string, rest: readonly string[]): string {
+  const said = rest.filter(Boolean), voice = title === title.toUpperCase();
+  return voice ? `${tagWord(tag)}: ${said.join('. ')}` : [`${tagWord(tag)}: ${title}`, ...said].join('. ');
+}
+/**
  * The app a message tells through when it was sent while this phone was out of the room: each window and toast becomes
  * one line of `lines`, which sync.ts shows in one window after the page is written, in place of a window a message.
  * Whatever a tell does besides telling stays: a grant's level-up and Job Change steps (`granted` without its own
@@ -431,12 +440,12 @@ export function awayDeps(app: ApplyDeps, lines: string[]): ApplyDeps {
   return {
     store: app.store, once: app.once, rules: app.rules, now: app.now, today: app.today, stepsDone: app.stepsDone, coinLanded: app.coinLanded,
     toast: (_tag, text) => { lines.push(text); },
-    system: w => { lines.push([`${tagWord(w.tag)}: ${w.title}`, w.body, ...(w.lines ?? []), ...(w.rewards ?? [])].filter(Boolean).join('. ')); },
+    system: w => { lines.push(lineOf(w.tag, w.title, [w.body ?? '', ...(w.lines ?? []), ...(w.rewards ?? [])])); },
     hunter: {
       fightOf: target => app.hunter.fightOf(target), gmHolds: () => app.hunter.gmHolds(),
       granted: (hid, g, opts) => {
         const r = app.hunter.granted(hid, g, { ...opts, popup: false });
-        lines.push([`${tagWord(opts?.tag ?? '! Reward')}: ${opts?.title ?? 'REWARDS ACQUIRED'}`, ...r.lines].join('. '));
+        lines.push(lineOf(opts?.tag ?? '! Reward', opts?.title ?? 'REWARDS ACQUIRED', r.lines));
         return r;
       },
     },

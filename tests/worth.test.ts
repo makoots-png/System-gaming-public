@@ -9,7 +9,7 @@ import type { Formula } from '../src/core/formula.ts';
 import { abilityOf, defaultTicks, recommended } from '../src/core/registry/ability-kinds.ts';
 import type { AbilityInput } from '../src/core/registry/ability-kinds.ts';
 import { suggestScaler } from '../src/core/registry/scalers.ts';
-import { abilityWorth, defWorth, delayedShare, deliveredShare, firings, gateCredit, lapseAfter, hpPriceWorth, hpRate, modeCredit, referenceBody, thresholdWorth, wornWorth, worthLine } from '../src/core/registry/worth.ts';
+import { abilityWorth, bestScope, defWorth, delayedShare, deliveredShare, firings, gateCredit, lapseAfter, hpPriceWorth, hpRate, modeCredit, referenceBody, thresholdWorth, wornWorth, worthLine } from '../src/core/registry/worth.ts';
 import type { Rules } from '../src/core/rules.ts';
 import { exampleSkills } from '../src/core/registry/kit-examples.ts';
 import { place } from '../src/core/combat/space.ts';
@@ -177,6 +177,42 @@ describe('the example kits sit inside the tolerance, and a GM\'s overreach is wa
   test('the worth line says the worth and the budget, and past the tolerance by how much', () => {
     expect(worthLine({ worth: 1.04, budget: 1, over: false, unweighed: [] })).toBe('Worth 1.04 of a standard action (budget 1.00).');
     expect(worthLine({ worth: 1.12, budget: 1, over: true, unweighed: [] })).toBe('Worth 1.12 of a standard action (budget 1.00). Stronger than its pace allows by 12%.');
+  });
+});
+
+describe('an amount that grows with its holder is weighed on the build that gets the most from it (item-stats 6.5)', () => {
+  // An item or a title may be held by anyone, so an amount that scales costs what it gives the paper build of the rank
+  // on which it averages highest: never undercharged. A flat amount of what that build has is the same amount.
+  const C = (b: 'support' | 'bruiser' | 'tank' | 'speed' | 'cannon') => referenceBody(b, 'C', RULES);
+  const onHit = (op: 'heal' | 'damage', amount: Formula): StatusDef => ({
+    label: 'Charm', desc: '', ops: [],
+    triggers: [{ on: 'hitDealt', tag: null, to: op === 'heal' ? 'self' : 'other', limit: { kind: 'each' }, ops: [op === 'heal' ? { op, amount, when: 'use' } : { op, type: 'physical', amount, when: 'use' }] }],
+  });
+
+  test('a Presence amount reads the support, a Strength amount the bruiser, a max HP amount the build with the most max HP', () => {
+    expect(bestScope(f('pre'), 'C', RULES).user).toEqual(C('support'));
+    expect(bestScope(f('str'), 'C', RULES).user).toEqual(C('bruiser'));
+    const most = Math.max(...(['support', 'bruiser', 'tank', 'speed', 'cannon'] as const).map(b => C(b).sheet.hpMax));
+    expect(bestScope(f('0.2 * hpmax'), 'C', RULES).user.sheet.hpMax).toBe(most);
+  });
+
+  test('an item\'s heal on Presence on each hit dealt is weighed as a heal of the support\'s Presence, not the bruiser\'s', () => {
+    const pre = C('support').stats.pre;
+    expect(pre).toBeGreaterThan(C('bruiser').stats.pre);
+    expect(wornWorth(onHit('heal', f('pre')), RULES, 'C', { on: 'best' }).worth).toBeCloseTo(wornWorth(onHit('heal', f(`${pre}`)), RULES, 'C').worth, 9);
+    expect(wornWorth(onHit('heal', f('pre')), RULES, 'C').worth, 'a passive skill keeps the bruiser').toBeCloseTo(wornWorth(onHit('heal', f(`${C('bruiser').stats.pre}`)), RULES, 'C').worth, 9);
+  });
+
+  test('an item\'s hit on Strength on each hit dealt is weighed on the bruiser, as a passive skill\'s is', () => {
+    const str = C('bruiser').stats.str;
+    expect(wornWorth(onHit('damage', f('str')), RULES, 'C', { on: 'best' }).worth).toBeCloseTo(wornWorth(onHit('damage', f(`${str}`)), RULES, 'C').worth, 9);
+  });
+
+  test('an active strike on Presence is weighed as one of the support\'s Presence, an active shield on Strength as one of the bruiser\'s Strength', () => {
+    const strike = (text: string) => of('strike', { effect: { type: 'physical', by: 'hand', formula: f(text) } });
+    const shield = (text: string) => of('support', { effect: { type: 'shield', by: 'hand', formula: f(text) } });
+    expect(abilityWorth(strike('1d8 + pre'), RULES, { on: 'best' }).worth).toBeCloseTo(abilityWorth(strike(`1d8 + ${C('support').stats.pre}`), RULES).worth, 9);
+    expect(abilityWorth(shield('2 * str'), RULES, { on: 'best' }).worth).toBeCloseTo(abilityWorth(shield(`${2 * C('bruiser').stats.str}`), RULES).worth, 9);
   });
 });
 

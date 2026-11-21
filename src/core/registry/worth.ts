@@ -47,11 +47,29 @@ export function referenceBody(build: RefBuild, rank: Rank, R: WorthRules): { rea
   const base = split(b.main, b.second, pointsAt(level, R), R), stats = { ...base, [b.main]: base[b.main] + perks };
   return { stats, sheet: sheetOf({ stats, level, gear: kitGear(b.kit, R), perks: {} }, R) };
 }
-/** What a use reads at `rank`: the kind's paper build on a same-rank normal brute, with no kit snapshot (no stacks, full HP). */
-function scopeOf(kind: AbilityKind, rank: Rank, R: WorthRules): Scope {
+/** What a use by paper build `build` reads at `rank`: the build on a same-rank normal brute, with no kit snapshot (no stacks, full HP). */
+function buildScope(build: RefBuild, rank: Rank, R: WorthRules): Scope {
   const target = { stats: monsterStats(rank, 'brute', R), sheet: monsterSheet(rank, 'brute', 'normal', R) };
-  return { user: referenceBody(BUILD_OF[kind], rank, R), target, charge: 0, kit: NO_KIT };
+  return { user: referenceBody(build, rank, R), target, charge: 0, kit: NO_KIT };
 }
+/** What a use reads at `rank`: the kind's paper build (`BUILD_OF`) on a same-rank normal brute. */
+const scopeOf = (kind: AbilityKind, rank: Rank, R: WorthRules): Scope => buildScope(BUILD_OF[kind], rank, R);
+/**
+ * The scope of the five paper builds of `rank` on which `f` averages highest, on the same brute (item-stats 6.5): an
+ * amount that grows with its holder's stats costs what it gives the body that gets the most from it, a Presence heal on
+ * the support and a Strength hit on the bruiser, so it is never undercharged. On a tie (a flat amount) the first build
+ * of `BUILDS` that reaches the highest.
+ */
+export function bestScope(f: Formula, rank: Rank, R: WorthRules): Scope {
+  const scopes = (Object.keys(BUILDS) as RefBuild[]).map(b => buildScope(b, rank, R));
+  return scopes.reduce((best, s) => (average(f, s) > average(f, best) + 1e-9 ? s : best));
+}
+/**
+ * Whose numbers a weighing reads an amount on: `build`, the paper build of the ability's kind (a worn status's, the
+ * bruiser's), as a skill is weighed; `best`, each amount on the build it favours (`bestScope`), as an item's or a title's
+ * powers are weighed, since anyone may hold them.
+ */
+export type ReadOn = 'build' | 'best';
 /** One standard action of `kind` and `type` at `rank`, in what its formula averages: the yardstick every SA is. */
 function standardOf(kind: AbilityKind, type: NonNullable<Ability['effect']>['type'], rank: Rank, R: WorthRules): number {
   return average(recommended(kind, { ...defaultTicks(kind, type), pace: 'standard' }, R).formula, scopeOf(kind, rank, R));
@@ -66,7 +84,7 @@ export function hpPriceWorth(p: Extract<Price, { kind: 'hp' }>, hpMax: number, r
   return hp * hpRate(rank, R);
 }
 /** The uses of an ability of `time` a round by the paper build of `kind` at `rank`: its speed over the base, per standard action. */
-const usesPerRound = (kind: AbilityKind, time: number, rank: Rank, R: WorthRules): number =>
+export const usesPerRound = (kind: AbilityKind, time: number, rank: Rank, R: WorthRules): number =>
   referenceBody(BUILD_OF[kind], rank, R).sheet.speed / R.fight.speedBase * (R.fight.cost.standard / time);
 /**
  * A mode (design 1.7, table 3.5): a standard action and `hpShare` of max HP enter it for `rounds`; spread over the
@@ -184,32 +202,34 @@ function readsCounts(f: Formula): boolean {
 }
 
 /**
- * What a worth is read for: the scope, one standard action, the source's tier, the ability kind and rank a scaler is
- * weighed at; `landed`, what a part that lands outside the use's own roll is worth against the delivered yardstick
- * (`1 / deliveredShare` of the kind's delivery); `land` and `uses`, the share of the ability's uses that land its
+ * What a worth is read for: the scope, whether each formula is read on its own best build instead (`ReadOn`), one
+ * standard action, the source's tier, the ability kind and rank a scaler is weighed at; `landed`, what a part that lands
+ * outside the use's own roll is worth against the delivered yardstick (`1 / deliveredShare` of the kind's delivery); `land` and `uses`, the share of the ability's uses that land its
  * statuses and its uses over the reference fight (a threshold's whole firings read them); `miss`, the blocks met with no rule.
  */
 type At = {
-  readonly scope: Scope; readonly sa: number; readonly tier: number; readonly kind: AbilityKind; readonly rank: Rank;
+  readonly scope: Scope; readonly on: ReadOn; readonly sa: number; readonly tier: number; readonly kind: AbilityKind; readonly rank: Rank;
   readonly landed: number; readonly land: number; readonly uses: number; readonly miss: Set<Unweighed>;
 };
-function atOf(kind: AbilityKind, type: NonNullable<Ability['effect']>['type'], rank: Rank, o: { readonly land: number; readonly time: number }, R: WorthRules): At {
+function atOf(kind: AbilityKind, type: NonNullable<Ability['effect']>['type'], rank: Rank, o: { readonly land: number; readonly time: number; readonly on: ReadOn }, R: WorthRules): At {
   return {
-    scope: scopeOf(kind, rank, R), sa: standardOf(kind, type, rank, R), tier: RANKS.indexOf(rank), kind, rank,
+    scope: scopeOf(kind, rank, R), on: o.on, sa: standardOf(kind, type, rank, R), tier: RANKS.indexOf(rank), kind, rank,
     landed: 1 / deliveredShare(kindDefaults(kind, R).delivery, R), land: o.land, uses: R.fight.kit.referenceRounds * usesPerRound(kind, o.time, rank, R), miss: new Set(),
   };
 }
+/** The scope `f` is read on: the weighing's, or with `best` the paper build `f` favours. */
+const scopeFor = (f: Formula, at: At, R: WorthRules): Scope => (at.on === 'best' ? bestScope(f, at.rank, R) : at.scope);
 /**
- * A formula's average in SA. With the conditional scalers of design 8.0 it is its core's average times the base it
- * carries times the larger of its bonus against a pack's brute and against a boss (`scalerWorth`), so a scaler in a
- * threshold's, a trigger's, an end's or a per-round op's formula weighs as one in an ability's. A count it reads (other
+ * A formula's average in SA, read on `scopeFor`. With the conditional scalers of design 8.0 it is its core's average
+ * times the base it carries times the larger of its bonus against a pack's brute and against a boss (`scalerWorth`), so
+ * a scaler in a threshold's, a trigger's, an end's or a per-round op's formula weighs as one in an ability's. A count it reads (other
  * than a scaler's HP share) is read as 0 and named in `miss`.
  */
 function formulaWorth(f: Formula, at: At, R: WorthRules): number {
   const sc = scalersOf(f, R);
   if (readsCounts(sc ? sc.core : f)) at.miss.add('count');
-  if (!sc) return average(f, at.scope) / at.sa;
-  return average(sc.core, at.scope) / at.sa * sc.base * scalerWorth(sc.scalers, at.kind, at.rank, R).worst;
+  if (!sc) return average(f, scopeFor(f, at, R)) / at.sa;
+  return average(sc.core, scopeFor(sc.core, at, R)) / at.sa * sc.base * scalerWorth(sc.scalers, at.kind, at.rank, R).worst;
 }
 /** The scalers' bonus over the plain use against a pack's normal brute alone and a boss alone (`1 +` the sum of the means), and the larger. */
 export function scalerWorth(scalers: readonly Scaler[], kind: AbilityKind, rank: Rank, R: WorthRules): { readonly packs: number; readonly boss: number; readonly worst: number } {
@@ -276,9 +296,9 @@ const judged = (worth: number, budget: number, at: At, R: WorthRules): Worth =>
   ({ worth, budget, over: worth > budget * (1 + R.fight.kit.tolerance) + 1e-9, unweighed: [...at.miss] });
 
 /** What the bar weighs of an ability (the worth, before any budget), with the blocks it met that have no rule. */
-function weigh(a: Ability, rank: Rank, R: WorthRules): { readonly worth: number; readonly at: At } {
+function weigh(a: Ability, rank: Rank, on: ReadOn, R: WorthRules): { readonly worth: number; readonly at: At } {
   const type = a.effect?.type ?? KINDS[a.kind].type;
-  const at = atOf(a.kind, type, rank, { land: landShare(a, R), time: a.cost.time }, R);
+  const at = atOf(a.kind, type, rank, { land: landShare(a, R), time: a.cost.time, on }, R);
   const f = formulaOf(a, R);
   let worth = f ? formulaWorth(f, at, R) * deliveredShare(a.delivery, R) * at.landed : 0;
   worth += a.ops.reduce((n, op) => n + landWorth(op, at, R), 0) * at.land;
@@ -303,7 +323,7 @@ export function standardHeld(kind: AbilityKind, rank: Rank, R: WorthRules): { re
   for (const make of Object.values(SKILL_ABILITIES)) {
     const b = make(R);
     if (!b || b.kind !== kind || b.cost.cooldown > 0 || b.channel) continue;
-    const sa = weigh(b, rank, R).worth * R.fight.cost.standard / b.cost.time;
+    const sa = weigh(b, rank, 'build', R).worth * R.fight.cost.standard / b.cost.time;
     if (sa > best.sa + 1e-9) best = { sa, by: b.name };
   }
   return best;
@@ -313,11 +333,12 @@ export function standardHeld(kind: AbilityKind, rank: Rank, R: WorthRules): { re
  * times the share of it a target takes over the share the standard's delivery gives (with its scalers, the base it
  * carries times the larger of its bonus against a pack's brute and against a boss, design 8.0), plus the statuses its
  * ops apply times its land share, less what its HP prices pay. Its budget is its pace's share of what a standard action
- * of its kind may hold (`standardHeld`), plus `credit` (a mode's, `gateCredit`, for an ability the mode gates). A
- * channel, a reaction, a summon, a field, a move and a zone act are named as not weighed.
+ * of its kind may hold (`standardHeld`), plus `credit` (a mode's, `gateCredit`, for an ability the mode gates). Its
+ * amounts are read on its kind's paper build, or with `on: 'best'` each on the build it favours (`bestScope`, an item's
+ * or a title's active). A channel, a reaction, a summon, a field, a move and a zone act are named as not weighed.
  */
-export function abilityWorth(a: Ability, R: WorthRules, o: { readonly rank?: Rank; readonly credit?: number } = {}): Worth {
-  const rank = o.rank ?? 'C', { worth, at } = weigh(a, rank, R), held = standardHeld(a.kind, rank, R);
+export function abilityWorth(a: Ability, R: WorthRules, o: { readonly rank?: Rank; readonly credit?: number; readonly on?: ReadOn } = {}): Worth {
+  const rank = o.rank ?? 'C', { worth, at } = weigh(a, rank, o.on ?? 'build', R), held = standardHeld(a.kind, rank, R);
   const judgedAt = { ...judged(worth, a.cost.time / R.fight.cost.standard * held.sa + (o.credit ?? 0), at, R), ...(held.by ? { by: held.by } : {}) };
   const f = formulaOf(a, R), sc = f ? scalersOf(f, R) : null;
   if (!sc) return judgedAt;
@@ -326,11 +347,12 @@ export function abilityWorth(a: Ability, R: WorthRules, o: { readonly rank?: Ran
 }
 /**
  * A worn status's worth a round (a passive skill's or an item's, design 3): its triggers' ops times their event's rate,
- * against the tolerance, the budget of a kit with no ability. Read by a bruiser at `rank`; its standing ops are named as
- * not weighed.
+ * against the tolerance, the budget of a kit with no ability. In SA of a bruiser's strike at `rank`, its amounts read
+ * by the bruiser, or with `on: 'best'` each on the build it favours (`bestScope`, an item's or a title's worn status);
+ * its standing ops are named as not weighed.
  */
-export function wornWorth(def: StatusDef, R: WorthRules, rank: Rank = 'C'): Worth {
-  const at = atOf('strike', 'physical', rank, { land: 1, time: R.fight.cost.standard }, R);
+export function wornWorth(def: StatusDef, R: WorthRules, rank: Rank = 'C', o: { readonly on?: ReadOn } = {}): Worth {
+  const at = atOf('strike', 'physical', rank, { land: 1, time: R.fight.cost.standard, on: o.on ?? 'build' }, R);
   const worth = (def.triggers ?? []).reduce((n, t) => n + triggerWorth(t, at, R), 0);
   for (const o of def.ops) if (o.op !== 'note') at.miss.add(o.op);
   return { worth, budget: R.fight.kit.tolerance, over: worth > R.fight.kit.tolerance + 1e-9, unweighed: [...at.miss] };
@@ -341,7 +363,7 @@ export function wornWorth(def: StatusDef, R: WorthRules, rank: Rank = 'C'): Wort
  * ability sets one, so it is named as not weighed here.
  */
 export function defWorth(def: StatusDef, R: WorthRules, rank: Rank = 'C'): Worth {
-  const at = atOf('curse', 'magical', rank, { land: 1, time: R.fight.cost.standard }, R);
+  const at = atOf('curse', 'magical', rank, { land: 1, time: R.fight.cost.standard, on: 'build' }, R);
   const worth = statusWorth(def, isStacking(def) ? def.stack.cap : 1, null, at, R);
   return judged(worth, 1, at, R);
 }

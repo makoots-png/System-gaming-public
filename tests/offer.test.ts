@@ -4,7 +4,7 @@
 // an event id once, with the four rules checked after every step and the rest rule at its end.
 import { describe, expect, test } from 'bun:test';
 import {
-  GIVER, OFFER_OUTCOMES, TAKER, WATCH, endOf, lettersKept, offerAnswered, offerPosted, offerStopped, offerTakenBack, offersGone, offersHeard, offersOf, offersSeen,
+  GIVER, OFFER_OUTCOMES, TAKER, WATCH, endOf, lettersKept, offerAnswered, offerPosted, offerStopped, offerTakenBack, letterTaken, offersGone, offersOf, offersSeen,
   outcomeOf, parseOffers, recordStep,
 } from '../src/core/trade/offer.ts';
 import type { Closed, GiverRow, Offer, OfferEnd, OfferOutcome, OfferRecord, RecordEvent, TakerRow, WatchRow } from '../src/core/trade/offer.ts';
@@ -73,13 +73,13 @@ function addEvent(r: Room, from: DeviceId, ev: RoomEvent): number {
 function deliver(s: Save, r: Room, device: DeviceId): Save {
   const e = nextLetter(box(s), ROOM);
   if (!e || e.letter.kind !== 'event') return s;
-  let t = offersHeard(withBox(s, boxStep(box(s), e.id, { type: 'send' })), e.id, 'tried');
+  let t = lettersKept(withBox(s, boxStep(box(s), e.id, { type: 'send' })));
   addEvent(r, device, e.letter.event);
-  t = offersHeard(withBox(t, boxStep(box(t), e.id, { type: 'sent' })), e.id, 'taken');
+  t = letterTaken(withBox(t, boxStep(box(t), e.id, { type: 'sent' })), e.id);
   return lettersKept(t);
 }
 const seat = (s: Save): 'gm' | 'player' => (s.settings.deviceId === G ? 'gm' : 'player');
-const read = (s: Save, r: Room, from: 'poll' | 'history' = 'poll') => offersSeen(s, r.events, from, { room: ROOM, seat: seat(s) });
+const read = (s: Save, r: Room) => offersSeen(s, r.events, { room: ROOM, seat: seat(s) });
 
 describe('how an offer came out: the one rule every phone reads', () => {
   const o: Offer = { id: oid('d-brakk-x1'), room: ROOM, at: AT, by: KA, to: KB, names: { by: 'Brakk', to: 'Mira' }, gives: { gold: 0, items: [] }, asks: { gold: 20, items: [] } };
@@ -226,7 +226,7 @@ describe('the taps, each one write', () => {
   test('a take back whose letter the room refused can be tapped again, and the second letter goes out', () => {
     const r = newRoom(), { save, id } = offered(brakk(), pick(0, 1));
     const back = ok(offerTakenBack(deliver(save, r, A), id)), end = endIdOf(id);
-    const tried = offersHeard(withBox(back, boxStep(box(back), end, { type: 'send' })), end, 'tried');
+    const tried = lettersKept(withBox(back, boxStep(box(back), end, { type: 'send' })));
     const refused = lettersKept(withBox(tried, boxStep(box(tried), end, { type: 'refused', why: 'bad event' })));
     expect(offersOf(refused)[0]!.state).toBe('open');
     const again = lettersKept(ok(offerTakenBack(refused, id)));
@@ -236,7 +236,7 @@ describe('the taps, each one write', () => {
 
   test('a letter refused after it left once keeps the goods aside: the room may hold it, and Take back still works', () => {
     const { save, id } = offered(brakk(), pick(0, 1));
-    const sent = offersHeard(withBox(save, boxStep(box(save), id, { type: 'send' })), id, 'tried');
+    const sent = lettersKept(withBox(save, boxStep(box(save), id, { type: 'send' })));
     const refused = lettersKept(withBox(sent, boxStep(box(sent), id, { type: 'refused', why: 'bad event' })));
     expect(offersOf(refused)[0]!.state).toBe('posting-tried');
     expect(bag(refused)).toEqual(['Token 2', 'Token 3']);
@@ -259,8 +259,8 @@ describe('two phones settle through the room', () => {
     expect(gold(seenA.save)).toBe(120);
     expect(bag(seenB.save)).toEqual(['Token 1', 'Token 11', 'Token 12']);
     expect(gold(seenB.save)).toBe(30);
-    expect(seenA.news).toEqual([{ kind: 'toast', text: 'Mira accepted. You gave 1 Token 1 and got 20 gold.' }]);
-    expect(seenB.news).toEqual([{ kind: 'toast', text: 'You got 1 Token 1 from Brakk and gave 20 gold.' }]);
+    expect(seenA.news).toEqual([{ kind: 'toast', offer: id, text: 'Mira accepted. You gave 1 Token 1 and got 20 gold.' }]);
+    expect(seenB.news).toEqual([{ kind: 'toast', offer: id, text: 'You got 1 Token 1 from Brakk and gave 20 gold.' }]);
     expect([offersOf(seenA.save), offersOf(seenB.save)]).toEqual([[], []]);
   });
 
@@ -317,7 +317,7 @@ describe('two phones settle through the room', () => {
         expect([bag(sa.save), gold(sa.save), bag(sb.save), gold(sb.save)]).toEqual([['Token 2', 'Token 3'], 120, ['Token 1', 'Token 11', 'Token 12'], 30]);
       } else {
         expect([bag(sa.save), gold(sa.save), bag(sb.save), gold(sb.save)]).toEqual([['Token 1', 'Token 2', 'Token 3'], 100, ['Token 11', 'Token 12'], 50]);
-        expect(sb.news).toEqual([{ kind: 'toast', text: 'Brakk took back the offer before your answer reached the room. Back in your bag: 20 gold.' }]);
+        expect(sb.news).toEqual([{ kind: 'toast', offer: id, text: 'Brakk took back the offer before your answer reached the room. Back in your bag: 20 gold.' }]);
       }
     });
   }
@@ -331,26 +331,28 @@ describe('two phones settle through the room', () => {
     g = deliver(ok(offerStopped(g, id)), r, G);
     expect(r.events.at(-1)).toMatchObject({ type: 'offerStop', payload: { to: [KA, KB], offer: id } });
     const sg = read(g, r), sa = read(a, r);
-    expect(sg.news).toEqual([{ kind: 'log', text: 'You stopped Brakk\'s offer to Mira.' }]);
-    expect(sa.news).toEqual([{ kind: 'toast', text: 'The GM stopped your offer to Mira. Back in your bag: 1 Token 1.' }]);
+    expect(sg.news).toEqual([{ kind: 'log', offer: id, text: 'You stopped Brakk\'s offer to Mira.' }]);
+    expect(sa.news).toEqual([{ kind: 'toast', offer: id, text: 'The GM stopped your offer to Mira. Back in your bag: 1 Token 1.' }]);
     expect(bag(sa.save)).toEqual(['Token 1', 'Token 2', 'Token 3']);
   });
 
-  test('an offer settled within one page of the GM\'s poll is logged; from a join\'s history it is left alone', () => {
+  test('an offer settled within one page of the GM\'s poll is logged, once', () => {
     const r = newRoom();
     let { save: a, id } = offered(brakk(), pick(0, 1));
     a = deliver(a, r, A);
     deliver(ok(offerAnswered(read(mira(), r).save, id, 'refuse', OPEN)), r, B);
-    expect(read(gm(), r).news).toEqual([{ kind: 'log', text: 'Mira refused Brakk\'s offer.' }]);
-    expect(read(gm(), r, 'history').news).toEqual([]);
+    const seen = read(gm(), r);
+    expect(seen.news).toEqual([{ kind: 'log', offer: id, text: 'Mira refused Brakk\'s offer.' }]);
+    expect(offersOf(seen.save)).toEqual([]);
   });
 
-  test('a giver who was out of the room ends its offer from the history its join reads', () => {
+  test('a giver who was out of the room ends its offer from the catch-up page it reads when it is back', () => {
     const r = newRoom();
     let { save: a, id } = offered(brakk(), pick(0, 1));
     a = deliver(a, r, A);
+    const cursor = r.events.length;
     deliver(ok(offerAnswered(read(mira(), r).save, id, 'accept', OPEN)), r, B);
-    const seen = read(a, r, 'history');
+    const seen = offersSeen(a, r.events.filter(e => e.seq > cursor), { room: ROOM, seat: 'player' });
     expect(seen.closed.map(c => c.close)).toEqual(['settled']);
     expect(bag(seen.save)).toEqual(['Token 2', 'Token 3']);
   });
@@ -460,11 +462,11 @@ function noteClosed(w: World, who: string, closed: readonly Closed[]): void {
 function send(d: Device, w: World, how: 'ok' | 'lost' | 'failed' | 'refused' | 'hang', stored: boolean): void {
   const e = nextLetter(box(d.save), ROOM);
   if (!e || e.letter.kind !== 'event' || d.out) return;
-  d.save = lettersKept(offersHeard(withBox(d.save, boxStep(box(d.save), e.id, { type: 'send' })), e.id, 'tried'));
+  d.save = lettersKept(withBox(d.save, boxStep(box(d.save), e.id, { type: 'send' })));
   if (w.r.gone) { d.save = lettersKept(withBox(d.save, boxStep(box(d.save), e.id, { type: 'refused', why: 'no such room' }))); return; }
   // a refusal may follow a send the room stored (its answer lost, then the resend refused): the case that keeps goods aside
   if (how === 'ok' || how === 'lost' || ((how === 'hang' || how === 'refused') && stored)) addEvent(w.r, d.id, e.letter.event);
-  if (how === 'ok') d.save = offersHeard(withBox(d.save, boxStep(box(d.save), e.id, { type: 'sent' })), e.id, 'taken');
+  if (how === 'ok') d.save = letterTaken(withBox(d.save, boxStep(box(d.save), e.id, { type: 'sent' })), e.id);
   if (how === 'lost' || how === 'failed') d.save = withBox(d.save, boxStep(box(d.save), e.id, { type: 'failed' }));
   if (how === 'refused') d.save = withBox(d.save, boxStep(box(d.save), e.id, { type: 'refused', why: 'bad event' }));
   d.save = lettersKept(d.save);
@@ -474,18 +476,15 @@ function poll(d: Device, w: World, who: string, n: number, keep: boolean): void 
   if (d.out || w.r.gone) return;
   const page = w.r.events.filter(e => e.seq > d.cursor).slice(0, n);
   if (!page.length) return;
-  const seen = offersSeen(d.save, page, 'poll', { room: ROOM, seat: d.id === G ? 'gm' : 'player' });
+  const seen = offersSeen(d.save, page, { room: ROOM, seat: d.id === G ? 'gm' : 'player' });
   d.save = lettersKept(seen.save);
   noteClosed(w, who, seen.closed);
   if (keep) d.cursor = page.at(-1)!.seq;
 }
-function rejoin(d: Device, w: World, who: string): void {
+/** A phone back in the room reads on from where it stopped (seen.ts): its next polls are its catch-up. */
+function rejoin(d: Device, w: World): void {
   if (!d.out || w.r.gone) return;
   d.out = false;
-  const seen = offersSeen(d.save, w.r.events, 'history', { room: ROOM, seat: d.id === G ? 'gm' : 'player' });
-  d.save = lettersKept(seen.save);
-  noteClosed(w, who, seen.closed);
-  d.cursor = w.r.events.at(-1)?.seq ?? 0;
 }
 const tap = (d: Device, next: Save | Refused): void => { if (!isRefused(next)) d.save = lettersKept(next); };
 /** Where the room may close: from step `after`, with this chance a step. */
@@ -540,7 +539,7 @@ function walk(seed: number, steps: number, closing: Closing | null): World {
       if (e) d.save = lettersKept(withBox(d.save, boxStep(box(d.save), e.id, { type: 'drop' })));
     } else if (roll < 0.93) {
       what = `${who} is removed or comes back`;
-      if (d.out) rejoin(d, w, who); else d.out = true;
+      if (d.out) rejoin(d, w); else d.out = true;
     } else if (roll < 0.96) {
       what = 'a junk end';
       const r = any(offersOf(w.b.save).filter(x => x.side === 'taker'));
@@ -557,7 +556,7 @@ function rest(w: World): void {
   const devices = [['A', w.a], ['B', w.b], ['G', w.g]] as const;
   for (let round = 0; round < 12; round++) {
     for (const [who, d] of devices) {
-      rejoin(d, w, who);
+      rejoin(d, w);
       d.save = lettersKept(withBox(d.save, reloaded(box(d.save))));
       for (let n = 0; n < 50 && nextLetter(box(d.save), ROOM); n++) send(d, w, 'ok', true);
       poll(d, w, who, 10_000, true);

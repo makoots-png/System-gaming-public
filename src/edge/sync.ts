@@ -29,7 +29,8 @@
 // src/core/sync/publish.ts).
 // The save fields `room`, `cursor`, `lastRoom`, `gmKey` and `seen` (where this phone stopped reading a room it went out
 // of, src/core/sync/seen.ts) are written only by the link's `save` effect, here; a poll page's cursor is written in the
-// same write as what the page's events land on a player's phone (`apply`), so a reload never finds one without the other.
+// same write as what the page's events land on a player's phone and what the page says of offers on every phone (`apply`,
+// `landPage`), so a reload never finds one without the other.
 // The save's `outbox` only here, with a step of src/core/sync/outbox.ts (`boxDo`, and `rebound` at a bind).
 import { addHunter, setActive } from '../core/party.ts';
 import { stepTime } from '../core/day.ts';
@@ -48,8 +49,8 @@ import type { Rules } from '../core/rules.ts';
 import type { Seat } from '../core/role.ts';
 import type { AppApi, RemoteSheet, SyncApi } from '../core/api.ts';
 import { DOCS, DOC_MAX, REMOVED_MS, SHEET_MAX, newEvent, parseRoomCode, parseRoomState, stampTime } from '../core/protocol.ts';
-import type { DeviceId, DocName, DocOf, EventBody, EventType, RoomCode, RoomDocs, RoomEvent, RoomState, ServedSheet, SheetKey, Stored } from '../core/protocol.ts';
-import { deviceOf, hunterIdOf, parseSheetKey, sheetKeyOf } from '../core/ids.ts';
+import type { DeviceId, DocName, DocOf, EventBody, EventType, RoomCode, RoomDocs, RoomEvent, RoomState, ServedSheet, SheetKey, Stored, StoredEvent } from '../core/protocol.ts';
+import { deviceOf, endIdOf, hunterIdOf, parseSheetKey, sheetKeyOf } from '../core/ids.ts';
 import type { HunterId } from '../core/ids.ts';
 import { appliedOnce } from '../core/applied.ts';
 import { seenFrom } from '../core/sync/seen.ts';
@@ -71,6 +72,9 @@ import type { BindAnswer, BindAsked, RemovedEvent, RemovedNotice } from '../core
 import { refuse } from '../core/save-step.ts';
 import { READ_ONLY } from '../core/store-life.ts';
 import { runTaken, runsGone } from '../core/gates/solo-wait.ts';
+import { closeNews, letterTaken, offersGone, offersSeen } from '../core/trade/offer.ts';
+import type { OfferNews } from '../core/trade/offer.ts';
+import { told } from '../core/session-log.ts';
 import { atOutbox, callOf, next as nextOut, post as postIn, rebound, reloaded, roomGone, sentEvent, stalled, step as outStep, waiting } from '../core/sync/outbox.ts';
 import type { Call, Entry, EntryEvent, Letter, Outbox } from '../core/sync/outbox.ts';
 import type { Hunter, LastRoom, Save, SyncSettings } from '../core/save.ts';
@@ -463,7 +467,16 @@ export function register(app: SyncHost): void {
   /** A toast or a window. A notice that ends a tap is the tap machine's to answer (`attemptDo`), and the view that made it shows it. */
   function notice(id: LinkNotice, code: RoomCode | null): void {
     switch (id) {
-      case 'gone': if (code) { peeked.delete(code); boxDo('outbox-gone', b => roomGone(b, code), s => runsGone(s, code)); } ui.toast('Sync', 'This room no longer exists, so this phone left it.', { kind: 'warn' }); return;
+      case 'gone': {
+        ui.toast('Sync', 'This room no longer exists, so this phone left it.', { kind: 'warn' });
+        if (!code) return;
+        peeked.delete(code);
+        // the room's offers step `roomGone` in the write that refuses its letters: a never-sent one gives its goods back
+        const ended: { news: OfferNews[] } = { news: [] };
+        boxDo('outbox-gone', b => roomGone(b, code), s => { const g = offersGone(runsGone(s, code), code); ended.news = g.closed.flatMap(c => closeNews(c) ?? []); return g.save; });
+        for (const n of ended.news) if (n.kind === 'toast') ui.toast('Trade', n.text);
+        return;
+      }
       case 'keyLost': ui.toast('System', `The GM key for room ${code ?? ''} no longer works, so this phone left the room.`, { kind: 'warn' }); return;
       case 'removed': if (code) removalDo({ type: 'removed', room: code, hunter: bound()?.id ?? null }); return;
       case 'upgradeStuck': store.notify({ id: 'upgrade', text: STUCK_TEXT }); return;
@@ -487,15 +500,16 @@ export function register(app: SyncHost): void {
     const player = link.at === 'live' && link.key === null, dev = deviceId();
     // a message the room took before this phone's join came while the phone was out of the room: it is told in one window
     const joined = link.at === 'live' && link.key === null ? joinedAt(sy(), link.code) : null;
+    const page = r.events.filter(e => e.seq > after).sort((a, b) => a.seq - b.seq);
     const fresh: RoomEvent[] = [], away = new Set<RoomEvent>();
-    for (const ev of r.events.filter(e => e.seq > after).sort((a, b) => a.seq - b.seq)) {
+    for (const ev of page) {
       if (ev.from === dev) continue; // our own sends echo back; never apply or re-announce them
       app.emit('sync:event', { event: ev });
       const e = { type: ev.type, payload: ev.payload } as RoomEvent;
       fresh.push(e);
       if (joined !== null && Date.parse(ev.at) < joined) away.add(e);
     }
-    landPage(player ? fresh : null, away, cursor, before);
+    landPage(player ? fresh : null, page, away, joined, cursor, before);
     if (player) release();
     heard();
     app.emit('sync:sheets', { sheets: shown.sheets });
@@ -504,24 +518,37 @@ export function register(app: SyncHost): void {
     flush();
   }
   /**
-   * One write for a poll page: its cursor, and on a player's phone what its events land (room-events.ts `landAll`: the
-   * events held from earlier pages, then this page's) and the events held now (`settings.sync.held`). Then the player is
-   * told, in the room's order; the messages of `away` (sent while this phone was out of the room) as lines of one window.
+   * One write for a poll page: its cursor; on a player's phone what its events land (room-events.ts `landAll`: the events
+   * held from earlier pages, then this page's) and the events held now (`settings.sync.held`); and on every phone in the
+   * room what the page says of offers (src/core/trade/offer.ts `offersSeen`, over the page whole, this phone's own echoes
+   * included: a phone learns that its own accept or take back won only by reading it as the end), with the GM's log lines of
+   * trades. Then the player is told, in the room's order; the messages of `away` (sent while this phone was out of the
+   * room, `joined`) as lines of one window.
    */
-  function landPage(events: RoomEvent[] | null, away: ReadonlySet<RoomEvent>, cursor: SaveFields | null, before: Link): void {
-    if (!cursor && !(events && (events.length || sy().held?.length))) return; // nothing to write
-    const lines: string[] = [], awayApp = awayDeps(deps, lines), did: { page: PageLanded | null } = { page: null };
+  function landPage(events: RoomEvent[] | null, page: readonly StoredEvent[], away: ReadonlySet<RoomEvent>, joined: number | null, cursor: SaveFields | null, before: Link): void {
+    const me = link.at === 'live' ? { room: link.code, seat: link.key === null ? 'player' as const : 'gm' as const } : null;
+    if (!cursor && !(events && (events.length || sy().held?.length)) && !(me && page.length)) return; // nothing to write
+    const lines: string[] = [], awayApp = awayDeps(deps, lines), did: { page: PageLanded | null; news: readonly OfferNews[] } = { page: null, news: [] };
     const wrote = store.apply('sync-page', s => {
       const at = cursor ? linkWritten(s, cursor, before) : s;
-      if (!events) return at;
-      const page = did.page = landAll(at, at.settings.sync.held ?? [], events, deps, ev => (away.has(ev) ? awayApp : deps));
-      return { ...page.save, settings: { ...page.save.settings, sync: { ...page.save.settings.sync, held: page.held } } };
+      const landed = events ? did.page = landAll(at, at.settings.sync.held ?? [], events, deps, ev => (away.has(ev) ? awayApp : deps)) : null;
+      const next = landed ? { ...landed.save, settings: { ...landed.save.settings, sync: { ...landed.save.settings.sync, held: landed.held } } } : at;
+      if (!me) return next;
+      const seen = offersSeen(next, page, me);
+      did.news = seen.news;
+      const logs = seen.news.flatMap(n => (n.kind === 'log' ? [{ kind: 'trade' as const, hunterId: null, title: 'Trade', text: n.text }] : []));
+      return told(seen.save, { at: new Date().toISOString(), cap: app.rules().logCap }, ...logs);
     });
-    const page = did.page;
-    if (!wrote.ok || !page) return;
-    for (const tell of page.tells) tell();
+    if (!wrote.ok) return;
+    const landed = did.page;
+    for (const tell of landed?.tells ?? []) tell();
+    for (const n of did.news) {
+      if (n.kind !== 'toast') continue;
+      const ids: readonly string[] = [n.offer, endIdOf(n.offer)], ev = page.find(e => ids.includes(e.payload.eid));
+      if (joined !== null && ev && Date.parse(ev.at) < joined) lines.push(`Trade: ${n.text}`); else ui.toast('Trade', n.text);
+    }
     if (lines.length) void ui.system({ tag: '! System', title: 'WHILE YOU WERE AWAY', kind: 'info', body: AWAY_BODY, lines });
-    if (page.fresh.length) ui.toast('Sync', 'A message from the GM could not be applied on this phone. It is kept and tried again.', { kind: 'warn' });
+    if (landed?.fresh.length) ui.toast('Sync', 'A message from the GM could not be applied on this phone. It is kept and tried again.', { kind: 'warn' });
   }
   const skewFrom = (now: string): void => { const t = Date.parse(now); if (Number.isFinite(t)) srvSkew = t - Date.now(); };
   /** What the appliers in room-events.ts use of the app; read when an event arrives, after every module has registered. */
@@ -716,8 +743,10 @@ export function register(app: SyncHost): void {
     if (link.gen !== gen) return;
     const ev: EntryEvent = sentEvent(c);
     if (ev.type === 'failed') boxDo('outbox-failed', b => outStep(b, e.id, ev));
-    // a solo run's message the room took is marked taken in the same write as its letter leaves the box (solo-wait.ts)
-    else flush(`outbox-${ev.type}`, b => outStep(b, e.id, ev), ev.type === 'sent' ? s => runTaken(s, e.id) : null);
+    // a solo run's message, or an offer's letter, the room took is heard taken in the same write as its letter leaves the
+    // box (solo-wait.ts `runTaken`, trade/offer.ts `letterTaken`); one on its way was heard tried in the write that sent it
+    // (the store's `lettersKept`)
+    else flush(`outbox-${ev.type}`, b => outStep(b, e.id, ev), ev.type === 'sent' ? s => letterTaken(runTaken(s, e.id), e.id) : null);
     // a player's own fight move: the link polls quickly until the fight doc it was sent from changes
     if (c.ok && e.letter.kind === 'event' && FIGHT_MOVES.has(e.letter.event.type)) linkDo({ type: 'sent', from: view().docs.fight?.data.at ?? null });
     if (ev.type === 'sent') app.emit('sync:outbox', { id: e.id, at: 'sent', seq: c.ok && isObj(c.data) && typeof c.data.seq === 'number' ? c.data.seq : null });

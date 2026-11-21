@@ -457,6 +457,21 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
     expect(later.body.next).toBe(4);
   });
 
+  test('a phone back after a removal polls before its sheet binds it again: its cursor stops short of the offer sealed to it, and the poll after its push gets the offer', async () => {
+    const { code, gm, post, poll } = await tradeRoom();
+    expect((await call('DELETE', `/api/rooms/${code}/sheets/${B}`, { headers: gm })).status).toBe(200);
+    expect((await post(PLAYER, 'offer', offer('d-player1-mo3'))).body).toEqual({ seq: 4 });
+    expect((await post('gm', 'system', system('Later', 'd-gm-w3'), gm)).body).toEqual({ seq: 5 });
+    const back = await poll(OTHER, token(OTHER), 3);
+    expect([eids(back), back.body.next, back.body.more]).toEqual([[], 3, false]);
+    expect((await call('DELETE', `/api/rooms/${code}/kicks/${B}`, { headers: gm })).status).toBe(200);
+    expect((await call('PUT', `/api/rooms/${code}/sheets/${B}`, { headers: token(OTHER), body: mira })).status).toBe(200);
+    const proven = await poll(OTHER, token(OTHER), back.body.next);
+    expect([eids(proven), proven.body.next]).toEqual([['d-player1-mo3', 'd-gm-w3'], 5]);
+    const thief = await poll(OTHER, token('thief'), 3);
+    expect([eids(thief), thief.body.next], 'a phone that names Mira\'s device without her token is held there too, and learns nothing more').toEqual([[], 3]);
+  });
+
   test('a poll binds no phone: before its first write a phone gets no message sealed to its hunter, and a thief who polled first cannot write for it', async () => {
     const { code, gm } = await newRoom();
     const NEW = 'd-player4', D = `${NEW}:h1`;
