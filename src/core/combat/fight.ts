@@ -239,7 +239,7 @@ type Landed = {
 /**
  * What follows a use that landed, the one path of `act` and `release`, so a rule added here holds for both: acting on a
  * foe or a place ends its user's untargetable ward (kits design 8.1); its stealth events (`useStealth`); one log line
- * naming each target's outcome (rule 20); the zones its price took end and its own goes down (rule 18b); a summon (18d); a zone act (kits 8.5.4),
+ * naming each target's outcome and the user's lifesteal (rule 20); the zones its price took end and its own goes down (rule 18b); a summon (18d); a zone act (kits 8.5.4),
  * whose bodies, as a shove's, pay no entry (8.3.4, 8.5.5); the tally; its triggers (19b); the `after` reactions (19c);
  * then the next turn.
  */
@@ -252,6 +252,7 @@ function landed(f: Running, use: Landed, ctx: Ctx): Result {
   const said = [
     ...reacted.said, ...reacted.lethal,
     ...r.outcomes.map(o => `${rowOf(f, o.target)?.name ?? o.target} ${o.avoid === 'out' ? 'avoids it' : `${o.avoid}${o.crit ? ', crit' : ''}${o.dealt ? ` ${o.dealt}` : ''}`}`),
+    ...(r.drained > 0 ? [`${u.name} drains ${r.drained}`] : []),
     ...r.bursts.map(b => `${rowOf(f, b.bearer)?.name ?? b.bearer}'s ${b.label} goes off${b.landed.some(l => l.dealt) ? ` (${b.landed.map(l => `${rowOf(f, l.target)?.name ?? l.target} ${l.dealt}`).join(', ')})` : ''}`),
   ];
   // the zones its price ends land their ends when old enough (table 2.6), then its own zone goes down (rule 18b, the cap per owner)
@@ -572,7 +573,7 @@ function status<F extends Setup | Running>(f: F, cmd: Extract<Command, { type: '
   let row = withStatuses(u, list, now, ctx.rules);
   if (cmd.add) {
     const until = cmd.add.duration === null ? null : tick(now + cmd.add.duration), self = { stats: row.stats, sheet: row.sheet };
-    row = { ...row, shield: statusShield(cmd.add.def, row.shield, { user: self, target: self, charge: 0 }, now, until, ctx.rules) };
+    row = { ...row, shield: statusShield(cmd.add.def, row, { user: self, target: self, charge: 0 }, now, until, ctx.rules) };
   }
   return gmChange(f, row, line(`${u.name}: ${said.join(', ')} (GM).`, [u.id]), ctx);
 }

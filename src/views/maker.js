@@ -128,7 +128,7 @@ const STEALTH_END_LABEL = [['hurt', 'Hurt'], ['revealed', 'Revealed'], ['dealt',
 const SHEET_KEY_LABEL = [['armor', 'Armor'], ['resist', 'Resist'], ['armorPen', 'Armor penetration (%)'], ['resistPen', 'Magic penetration (%)'],
   ['armorPenFlat', 'Lethality'], ['resistPenFlat', 'Unravel'], ['critFaces', 'Crit faces'], ['exposed', 'Faces foes crit it on'],
   ['critSize', 'Crit size'], ['costCut', 'Cost cut (share)'], ['range', 'Range']];
-const SHARE_LABEL = [['dealt', 'Dealt'], ['taken', 'Taken'], ['healed', 'Healing']];
+const SHARE_LABEL = [['dealt', 'Dealt'], ['taken', 'Taken'], ['healed', 'Healing'], ['shielded', 'Shields']];
 const SIDE_LABEL = [['attack', 'Its attacks'], ['defend', 'Its defense']];
 const KEEP_LABEL = [['better', 'Better for it'], ['worse', 'Worse for it']];
 const DIE_LABEL = [['die', 'A die'], ['face', 'A fixed number']];

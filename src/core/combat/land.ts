@@ -15,7 +15,7 @@ import type { CombatantId, DamageType } from './ability-types.ts';
 import type { Sheet } from '../hunter/derive.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import { rowLifeAfter } from './row-life.ts';
-import { applyStatus, cureStatus, dispelled, lasting, removeStatus, shielded, stackOf, statusOn, statusShield, withStatuses, withThreat } from './effect-ops.ts';
+import { applyStatus, cureStatus, dispelled, lasting, removeStatus, shieldOn, stackOf, statusOn, statusShield, withStatuses, withThreat } from './effect-ops.ts';
 import { atTier, countOn, stacked } from './op-amount.ts';
 import { admitted, counting, damageShare, harmful, healShare, hideStarts, markWards, stealthOf, stealthStep, wardedDamage } from './standing.ts';
 import type { StealthEndEvent } from './standing.ts';
@@ -58,6 +58,16 @@ export function throughShield(target: Body, dealt: number, now: Tick): { target:
 // never lifts a dead row.
 export const hurt = (target: Body, damage: number): Body => rowLifeAfter(target, { type: 'damage', amount: damage });
 export const healed = (target: Body, amount: number): Body => rowLifeAfter(target, { type: 'heal', amount });
+/**
+ * Lifesteal (balance plan section 10), after rule 14: `user` heals back its sheet's `drain` share of `lost`, the HP its
+ * use took from other bodies (what rule 14 took: never a shield's part, nothing past 0), times its healing received
+ * share (rule 11c, so a cut to healing cuts a drain), rounded, through its life (`healed`). A user that is not up
+ * drains nothing: a drain is no revive.
+ */
+export function drained(user: Body, lost: number, R: OpRules): Body {
+  if (!isUp(user) || lost <= 0 || user.sheet.drain <= 0) return user;
+  return healed(user, Math.round(lost * user.sheet.drain * healShare(user, R)));
+}
 
 // Rule 15: a monster's threat table.
 export const threatened = (target: Body, from: CombatantId, amount: number): Body =>
@@ -127,7 +137,7 @@ export function landStatus(t: Body, op: Extract<Op, { op: 'applyStatus' }>, by: 
   b = withStatuses(b, applyStatus(b.statuses, statusOn(op.def, { key: op.key, source, until, since: now, settledAt: now }, op.stacks ?? 1)), now, R);
   const c = cross ? crossed(b, op.key, before, op.stacks ?? 1, now, R) : { target: b, fired: null };
   b = c.target;
-  b = { ...b, shield: statusShield(op.def, b.shield, { user: { stats: by.stats, sheet: by.sheet }, target: { stats: b.stats, sheet: b.sheet }, charge: 0 }, now, until, R) };
+  b = { ...b, shield: statusShield(op.def, b, { user: { stats: by.stats, sheet: by.sheet }, target: { stats: b.stats, sheet: b.sheet }, charge: 0 }, now, until, R) };
   let threat = 0, breaks = false;
   for (const o of op.def.ops) {
     if (o.op === 'hold' && until !== null) b = stunned(b, now, tick(until - now));
@@ -348,7 +358,7 @@ function landOne(o: LandOp, user: Body, t: Body, source: Source, now: Tick, R: O
     }
     case 'delay': return { target: delayed(t, atTier(o.ticks, source.tier)), dealt: 0, ...none };
     case 'threat': return { target: source.id === null ? t : threatened(t, source.id, atTier(o.amount, source.tier)), dealt: 0, ...none };
-    case 'shield': return { target: { ...t, shield: shielded(t.shield, { amount: Math.max(0, Math.round(average(o.amount, scope) * times)), until: tick(now + R.fight.shieldLife * R.fight.round) }, now) }, dealt: 0, ...none };
+    case 'shield': return { target: { ...t, shield: shieldOn(t, average(o.amount, scope) * times, tick(now + R.fight.shieldLife * R.fight.round), now, R) }, dealt: 0, ...none };
     case 'mana': return { target: { ...t, mana: clamp(t.mana + Math.round(at(o.amount)), 0, t.sheet.manaMax) }, dealt: 0, ...none };
     case 'fatigue': return { target: { ...t, fatigue: clamp(t.fatigue + Math.round(at(o.amount)), 0, t.sheet.fatigueMax) }, dealt: 0, ...none };
     // rule 17: a break meets a protection as a use's does

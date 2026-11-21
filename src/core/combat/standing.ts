@@ -191,6 +191,8 @@ export const ambushShare = (user: Pick<Body, 'statuses'>, target: Pick<Body, 'st
 };
 /** Rule 11c: what a heal `target` gets is multiplied by, a per-round one too. */
 export const healShare = (target: Pick<Body, 'statuses'>, R: StandingRules): number => capped(shareOf(target, 'healed'), R);
+/** Rule 11c: what a shield `target` gets is multiplied by (its `shielded` share), whoever or whatever gives it. */
+export const shieldShare = (target: Pick<Body, 'statuses'>, R: StandingRules): number => capped(shareOf(target, 'shielded'), R);
 
 // ── the wards and stealth (kits design 8.1 and 8.7) ──
 /** The ops a body's standing reads by name: a ward, stealth, being alert. */

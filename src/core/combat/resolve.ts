@@ -17,19 +17,19 @@ import { acted, delayed, extraNow, extraStep, interval, refunded, stunned, tick 
 import type { Tick } from './timeline.ts';
 import type { Ability, Avoid, CombatantId, Outcome } from './ability-types.ts';
 import { isUp, rowHp } from './row-hp.ts';
-import { removeStatus, shielded, withStatuses } from './effect-ops.ts';
+import { removeStatus, shielded, shieldOn, withStatuses } from './effect-ops.ts';
 import { atTier, countOn, stacked } from './op-amount.ts';
-import { ambushShare, boostsOn, critFacesAgainst, damageShare, edgeOn, edgeStep, healShare, hides, rangeWith, warded, wardedDamage } from './standing.ts';
+import { ambushShare, boostsOn, critFacesAgainst, damageShare, edgeOn, edgeStep, healShare, hides, shieldShare, rangeWith, warded, wardedDamage } from './standing.ts';
 import { eyesOf, figureOf, perceivedBy, perceives, watched } from './sight.ts';
 import type { Lookout } from './sight.ts';
 import type { Fog } from './fight-types.ts';
 import type { HeldDieId } from './standing.ts';
 import type { Body, OpRules, Status, StatusKey, UseOp } from './effect-ops.ts';
-import { afterDefence, alive, broken, channelBreaks, clamp, cleansed, hasteOn, healed, hurt, landEnd, landMove, landThreshold, live, opsOf, landStatus, stealthAfter, threatened, throughShield } from './land.ts';
+import { afterDefence, alive, broken, channelBreaks, clamp, cleansed, drained, hasteOn, healed, hurt, landEnd, landMove, landThreshold, live, opsOf, landStatus, stealthAfter, threatened, throughShield } from './land.ts';
 import type { Burst, LandFired } from './land.ts';
 import { freeZoneId, MAX_ZONES } from './zones.ts';
 import type { Ground, Zone } from './zones.ts';
-import { charged, stacksOn, taken } from './charge.ts';
+import { charged, cooled, stacksOn, taken } from './charge.ts';
 import type { ChargeRefusal } from './charge.ts';
 import { beforeReactions } from './fight-react.ts';
 import type { Reacted } from './fight-react.ts';
@@ -82,7 +82,11 @@ export { afterDefence } from './land.ts';
  */
 export type Resolved =
   | { readonly ok: false; readonly reason: UseRefusal }
-  | { readonly ok: true; readonly outcomes: readonly Outcome[]; readonly bodies: readonly Body[]; readonly bursts: readonly Burst[]; readonly shoved: readonly CombatantId[]; readonly reacted: Reacted };
+  | {
+    readonly ok: true; readonly outcomes: readonly Outcome[]; readonly bodies: readonly Body[]; readonly bursts: readonly Burst[]; readonly shoved: readonly CombatantId[]; readonly reacted: Reacted;
+    /** The HP the user's lifesteal healed it (land.ts `drained`), 0 for none. */
+    readonly drained: number;
+  };
 export type ResolveRules = OpRules & Pick<Rules, 'dice'>;
 
 const samePlace = (a: Place, b: Place): boolean => a.x === b.x && a.y === b.y;
@@ -215,11 +219,12 @@ const covered = (raw: number, a: Ability, target: Body, grid: Grid, R: ResolveRu
   inCover(a, target.place, grid) ? raw * (1 - R.fight.coverShare) : raw;
 
 // Rule 11c (kits design 8.1): a damaging use is multiplied by the user's dealt share and the target's taken share, a heal
-// by the target's healed share, each product within `kit.shareCap` of 1 (standing.ts). A hit on a target that does not
+// by the target's healed share and a shield by its shielded share, each product within `kit.shareCap` of 1 (standing.ts). A hit on a target that does not
 // perceive its hidden user is an ambush (`ambushes`): the rules' `stealth.ambush` joins the user's dealt increases.
 function shared(raw: number, a: Ability, user: Body, target: Body, grid: Grid, R: ResolveRules): number {
   const type = a.effect?.type;
   if (type === 'heal') return raw * healShare(target, R);
+  if (type === 'shield') return raw * shieldShare(target, R);
   if (type !== 'physical' && type !== 'magical') return raw;
   return raw * (ambushes(user, target, grid) ? ambushShare(user, target, R) : damageShare(user, target, R));
 }
@@ -281,7 +286,7 @@ function landOps(a: Ability, user: Body, target: Body, dice: readonly number[], 
         const f = rolled(op, user.tier)!, n = diceOf(f).length, roll = dice.slice(die, die + n);
         die += n;
         const v = Math.round(evaluate(f, { user: { stats: user.stats, sheet: user.sheet }, target: { stats: t.stats, sheet: t.sheet }, charge: 0, dice: roll }));
-        if (op.op === 'shield') t = { ...t, shield: shielded(t.shield, { amount: Math.max(0, v), until: tick(now + R.fight.shieldLife * R.fight.round) }, now) };
+        if (op.op === 'shield') t = { ...t, shield: shieldOn(t, v, tick(now + R.fight.shieldLife * R.fight.round), now, R) };
         else if (op.op === 'mana') t = { ...t, mana: clamp(t.mana + v, 0, t.sheet.manaMax) };
         else t = { ...t, fatigue: clamp(t.fatigue + v, 0, t.sheet.fatigueMax) };
         break;
@@ -345,7 +350,7 @@ function userTime(a: Ability, user: Body, now: Tick, refundRoll: number | undefi
     const round = Math.floor(now / R.fight.round), n = u.extras?.round === round ? u.extras.n + 1 : 1;
     u = { ...extraNow(u, now), extras: { round, n } };
   }
-  return { ...u, readyAt: { ...u.readyAt, [a.id]: tick(now + a.cost.cooldown) } };
+  return cooled(a, u, now);
 }
 /** Whether a use with an extra action comes in a round of fight time in which its user took `extraPerRound` already. */
 const extraTaken = (a: Ability, user: Body, now: Tick, R: ResolveRules): boolean => {
@@ -531,6 +536,8 @@ export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body
   const rows = new Map(f.bodies.map(b => [b.id, b] as const));
   const snap = snapshot(from, [...rows.values()], hit.length + ring.length, ok.spent, now, R);
   const outcomes: Outcome[] = [], bursts: Burst[] = [];
+  // the HP the use took from bodies other than its user, its hit's and its ops' as they land: what its lifesteal reads
+  let lost = 0;
   for (const first of [...hit, ...ring]) {
     const u = rows.get(user.id)!;
     let t = rows.get(first.id)!;
@@ -576,6 +583,7 @@ export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body
       if (m?.fired) landed.fired.push(m.fired);
       t = rows.get(t.id)!;
     }
+    if (t.id !== user.id) lost += Math.max(0, before - rowHp(t));
     outcomes.push({
       target: t.id, avoid: end.avoid, to: end.to, crit: isCrit, raw, dealt, absorbed, type, statuses: landed.keys,
       threat: threat + landed.threat, stagger: fill, staggered: stag, channelBroken, down: before > 0 && rowHp(t) === 0,
@@ -586,8 +594,9 @@ export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body
   }
   if (rollsReaction(a)) spendEdges(a, rows.get(user.id)!, [...hit, ...ring].map(b => rows.get(b.id)!), rows, now, R);
   const shoved = [...swapped(a, user.id, outcomes, rows, grid, R), ...pushed(a, user.id, at, outcomes, rows, grid, R)];
-  rows.set(user.id, userTime(a, rows.get(user.id)!, now, rolls.refund, R));
-  return { ok: true, outcomes, bodies: bodies.map(b => rows.get(b.id)!), bursts, shoved, reacted: f.reacted };
+  const hpBefore = rowHp(rows.get(user.id)!), stole = drained(rows.get(user.id)!, lost, R);
+  rows.set(user.id, userTime(a, stole, now, rolls.refund, R));
+  return { ok: true, outcomes, bodies: bodies.map(b => rows.get(b.id)!), bursts, shoved, reacted: f.reacted, drained: rowHp(stole) - hpBefore };
 }
 
 /** Rule 5b: the user on the tile a blink aims at, or why not: rooted, or a tile it does not see, may not stand on, or is taken. */

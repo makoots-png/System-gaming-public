@@ -22,7 +22,7 @@ import type { Extraction } from './extraction.ts';
 import type { BearerEvent, Trigger, Trip } from './triggers.ts';
 import { stackStep } from './stacks.ts';
 import { SHEET_LEVEL_KEYS, SHEET_OP_KEYS, atTier, countOn, isLevelKey, isStacking, isTiers, stacked } from './op-amount.ts';
-import { asLevel, counting, harmful, statusLife, statusStep, withSheetOps } from './standing.ts';
+import { asLevel, counting, harmful, shieldShare, statusLife, statusStep, withSheetOps } from './standing.ts';
 import type { HideLevel } from './standing.ts';
 import { rowLifeAfter } from './row-life.ts';
 import type { FoeLife } from './row-life.ts';
@@ -176,8 +176,8 @@ export type Op =
    */
   | { readonly op: 'sheet'; readonly key: SheetOpKey; readonly amount: Tiered<number> }
   /**
-   * A signed percent on the damage the bearer deals or takes, or the heals it gets (8.1, rule 11c): of each, the
-   * strongest increase and the strongest decrease apply and multiply; the product stays within `kit.shareCap` of 1.
+   * A signed percent on the damage the bearer deals or takes, or the heals or shields it gets (8.1, rule 11c): of each,
+   * the strongest increase and the strongest decrease apply and multiply; the product stays within `kit.shareCap` of 1.
    */
   | { readonly op: 'share'; readonly on: ShareOn; readonly pct: Tiered<number> }
   /** A foe's use cannot aim at the bearer nor catch it; it ends when the bearer acts against a foe or a place (8.1). */
@@ -234,7 +234,8 @@ export type Op =
 export type SheetOpKey = (typeof SHEET_OP_KEYS)[number];
 /** A sheet level a `sheet` op raises (op-amount.ts `SHEET_LEVEL_KEYS`), not adds to. */
 export type SheetLevelKey = (typeof SHEET_LEVEL_KEYS)[number];
-export const SHARE_ON = ['dealt', 'taken', 'healed'] as const;
+/** What a `share` op changes: the damage its bearer deals or takes, the heals it gets, or the shields it gets. */
+export const SHARE_ON = ['dealt', 'taken', 'healed', 'shielded'] as const;
 export type ShareOn = (typeof SHARE_ON)[number];
 export type EdgeSide = 'attack' | 'defend';
 /** What may end a hide (the owner's three events): its bearer loses HP, it is revealed, or a use or reaction of its own deals HP damage to the other side. */
@@ -721,18 +722,26 @@ export function shielded(current: Shield | null, incoming: Shield, now: Tick): S
   if (current === null || current.until <= now) return incoming;
   return { amount: Math.max(current.amount, incoming.amount), until: tick(Math.max(current.until, incoming.until)) };
 }
+/**
+ * The shield `bearer` holds once a shield of `amount` lands on it, lasting to `until`: the amount times the bearer's
+ * shields received share (rule 11c, standing.ts `shieldShare`), rounded, never under 0, then held with the shield it has
+ * (`shielded`). A use's own shield effect reads that share in rule 11c with its heal (resolve.ts `shared`), so its
+ * outcome says what landed; every other shield lands here.
+ */
+export const shieldOn = (bearer: Pick<Body, 'shield' | 'statuses'>, amount: number, until: Tick, now: Tick, R: OpRules): Shield =>
+  shielded(bearer.shield, { amount: Math.max(0, Math.round(amount * shieldShare(bearer, R))), until }, now);
 
 /**
  * The shield a status gives its bearer as it lands: each `shield` op of its def at its formula's average, read with
  * `scope` (the one who applied it as the user, the bearer as the target), lasting as long as the status, or the rules'
- * shield life for a status that lasts until removed. The average, because the GM's Status window rolls no dice; two
- * shields do not add (`shielded`).
+ * shield life for a status that lasts until removed; it lands as any shield (`shieldOn`, the bearer's shields received
+ * share). The average, because the GM's Status window rolls no dice; two shields do not add (`shielded`).
  */
-export function statusShield(def: StatusDef, current: Shield | null, scope: Scope, now: Tick, until: Tick | null, R: OpRules): Shield | null {
-  let out = current;
+export function statusShield(def: StatusDef, bearer: Pick<Body, 'shield' | 'statuses'>, scope: Scope, now: Tick, until: Tick | null, R: OpRules): Shield | null {
+  let out = bearer.shield;
   for (const o of def.ops) if (o.op === 'shield') {
     const amount = Math.max(0, Math.round(average(o.amount, scope)));
-    if (amount > 0) out = shielded(out, { amount, until: until ?? tick(now + R.fight.shieldLife * R.fight.round) }, now);
+    if (amount > 0) out = shieldOn({ shield: out, statuses: bearer.statuses }, amount, until ?? tick(now + R.fight.shieldLife * R.fight.round), now, R);
   }
   return out;
 }
@@ -855,7 +864,7 @@ const SHEET_ADD_TEXT: { readonly [K in Exclude<SheetOpKey, SheetLevelKey>]: stri
 const SHEET_LEVEL_TEXT: { readonly [K in SheetLevelKey]: string } = { sight: 'Sees foes hidden at stealth level' };
 const STEALTH_END_TEXT: { readonly [E in StealthEnd]: string } = { hurt: 'is hurt', revealed: 'is revealed', dealt: 'deals damage' };
 const HIDE_START_TEXT: { readonly [S in HideStart]: string } = { unseen: 'It hides only out of every foe\'s sight', anywhere: 'It hides even in a foe\'s sight' };
-const SHARE_TEXT: { readonly [K in ShareOn]: string } = { dealt: 'Damage dealt', taken: 'Damage taken', healed: 'Healing received' };
+const SHARE_TEXT: { readonly [K in ShareOn]: string } = { dealt: 'Damage dealt', taken: 'Damage taken', healed: 'Healing received', shielded: 'Shields received' };
 
 /** Ops in words, one line each, read at `tier` (the source's rank or an item's rarity, 0 to 5), or every rank with null. */
 export const opLines = (ops: readonly Op[], tier: number | null, R: DescribeRules): string[] => ops.map(o => opLine(o, tier, R)).filter(Boolean);

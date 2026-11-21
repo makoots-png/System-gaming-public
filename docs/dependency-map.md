@@ -72,8 +72,8 @@ None.
 
 ### `src/core/combat/charge.ts`
 
-- Imports: `src/core/combat/effect-ops.ts`, `src/core/combat/land.ts`, `src/core/combat/op-amount.ts`, `src/core/combat/row-hp.ts`, `src/core/combat/row-life.ts`, `src/core/combat/stacks.ts`, `src/core/combat/triggers.ts`, `src/core/combat/uses.ts`
-- Imports types from: `src/core/combat/ability-types.ts`, `src/core/combat/space.ts`, `src/core/combat/timeline.ts`
+- Imports: `src/core/combat/effect-ops.ts`, `src/core/combat/land.ts`, `src/core/combat/op-amount.ts`, `src/core/combat/row-hp.ts`, `src/core/combat/row-life.ts`, `src/core/combat/stacks.ts`, `src/core/combat/timeline.ts`, `src/core/combat/triggers.ts`, `src/core/combat/uses.ts`
+- Imports types from: `src/core/combat/ability-types.ts`, `src/core/combat/space.ts`
 - Imported by: `src/core/combat/fight-react.ts`, `src/core/combat/map-view.ts`, `src/core/combat/resolve.ts`
 
 ### `src/core/combat/delayed.ts`

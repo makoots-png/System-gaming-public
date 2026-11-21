@@ -20,7 +20,7 @@ const LIMITS = { dice: { maxDice: 50, maxSides: 1000 } };
 const sheet = (o: Partial<Sheet>): Sheet => ({
   hpMax: 95, manaMax: 10, fatigueMax: 114, carry: 43, weight: 18, speed: 100, move: 6, stride: tiles(3), armor: 39, resist: 5,
   armorPen: 2.5, resistPen: 3.5, armorPenFlat: 4, resistPenFlat: 7, phys: 26.16, mag: 6, sup: 26.16, react: 10.5, aim: 11, will: 12, critFaces: 2, critSize: 1.5, opening: 1,
-  tenacity: 17, potency: 14, threat: 1.46, hold: share(0.22), costCut: share(0.07), shadows: 8, sight: 4, ...o,
+  tenacity: 17, potency: 14, threat: 1.46, hold: share(0.22), costCut: share(0.07), drain: share(0.09), cooldownCut: share(0.11), shadows: 8, sight: 4, ...o,
 });
 const stats = (o: Partial<Stats>): Stats => ({ str: 10, agi: 10, vit: 10, ins: 10, dis: 10, pre: 10, pow: 10, ctl: 10, ...o });
 const SCOPE: Scope = {

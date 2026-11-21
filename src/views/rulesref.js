@@ -185,6 +185,7 @@ export function register(app) {
       { id: 'skills', title: 'Skills and abilities', body: [
         ul([`<b>Active</b> skills are abilities of five kinds: a strike (reach ${F.abilityKinds.strike.range} tile), a shot (range ${F.abilityKinds.shot.range}), a blast (a radius at range ${F.abilityKinds.blast.range}), a curse (range ${F.abilityKinds.curse.range}) and a support (range ${F.abilityKinds.support.range}, on an ally or the user).`,
           'Each kind has its cost in fatigue and mana, its pace and a formula for its damage, heal or shield. A cooldown is in rounds.',
+          `<b>Lifesteal</b>, from items and perks, heals you that share of the HP your abilities take from others, up to ${Math.round(F.kit.drainMax * 100)}%; what cuts your healing cuts it too. <b>Ability haste</b> takes that share off every cooldown, up to ${Math.round(F.kit.cooldownCutMax * 100)}%, and never takes one to nothing.`,
           '<b>Passive</b> skills grant their bonus permanently.', 'Skill levels run 1–10; level 10 shows MAX. The GM raises levels.']),
       ] },
       { id: 'shadows', title: 'Shadows', body: [

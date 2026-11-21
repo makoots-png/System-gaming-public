@@ -11,7 +11,7 @@ import type { Tick } from '../src/core/combat/timeline.ts';
 import { abilityId, combatantId } from '../src/core/combat/ability-types.ts';
 import {
   addSheetStatus, applyStatus, cureStatus, describeStatus, dueAmount, FULL_HEAL, isControl, lasting, modified, modsOf, onSheet, opLines, removeStatus, settle,
-  sheetStatuses, shielded, statusKey, statusOn, withStatuses,
+  sheetStatuses, shielded, statusKey, statusOn, statusShield, withStatuses,
 } from '../src/core/combat/effect-ops.ts';
 import { parseOp, parseStatusDef } from '../src/core/combat/fight-parse.ts';
 import type { Body, Op, Origin, StackDef, StackRule, Status, StatusDef, StatusFields } from '../src/core/combat/effect-ops.ts';
@@ -256,6 +256,36 @@ describe('shields (design 4.4)', () => {
 
   test('a shield past its end counts for nothing', () => {
     expect(shielded({ amount: 50, until: tick(400) }, { amount: 20, until: tick(3000) }, tick(500))).toEqual({ amount: 20, until: 3000 });
+  });
+});
+
+describe('shields received, the `shielded` share (balance plan section 10, rule 11c)', () => {
+  const more = (pct: number): Status => status('warded', def({ op: 'share', on: 'shielded', pct }), null);
+  const giver = (amount: string): StatusDef => def({ op: 'shield', amount: f(amount) });
+  const self = (b: Body) => ({ user: { stats: b.stats, sheet: b.sheet }, target: { stats: b.stats, sheet: b.sheet }, charge: 0 });
+
+  test('it reads back through the parser, says what it changes, and is harmful only when it lowers shields', () => {
+    for (const pct of [25, -40]) expect(parseOp({ op: 'share', on: 'shielded', pct }, RULES)).toEqual({ op: 'share', on: 'shielded', pct });
+    expect(describeStatus(def({ op: 'share', on: 'shielded', pct: 25 }), 0, RULES)).toEqual(['Shields received +25%']);
+    expect([harmful(def({ op: 'share', on: 'shielded', pct: 25 })), harmful(def({ op: 'share', on: 'shielded', pct: -40 }))]).toEqual([false, true]);
+  });
+
+  test('a status\'s shield of 20 lands as 30 on a bearer whose shields received is +50%, and as 20 on one with none', () => {
+    const plain = body(), warded = body(hunterOf(), { statuses: [more(50)] });
+    expect(statusShield(giver('20'), plain, self(plain), tick(0), tick(2000), RULES)).toEqual({ amount: 20, until: 2000 });
+    expect(statusShield(giver('20'), warded, self(warded), tick(0), tick(2000), RULES)).toEqual({ amount: 30, until: 2000 });
+  });
+
+  test('the share stays within kit.shareCap of 1: +100% lands a shield of 20 as 20 times 1.5, -100% as 20 times 0.5', () => {
+    const cap = RULES.fight.kit.shareCap, up = body(hunterOf(), { statuses: [more(100)] }), down = body(hunterOf(), { statuses: [more(-100)] });
+    expect(statusShield(giver('20'), up, self(up), tick(0), tick(2000), RULES)!.amount).toBe(Math.round(20 * (1 + cap)));
+    expect(statusShield(giver('20'), down, self(down), tick(0), tick(2000), RULES)!.amount).toBe(Math.round(20 * (1 - cap)));
+  });
+
+  test('a land op\'s shield of 20 lands as 30 on a bearer whose shields received is +50%', () => {
+    const t = body(hunterOf(), { statuses: [more(50)] }), rows = new Map([[t.id, t]]);
+    landOps(rows, [{ op: 'shield', amount: f('20') }], null, [t.id], { id: null, tier: 0 }, tick(0), RULES);
+    expect(rows.get(t.id)!.shield!.amount).toBe(30);
   });
 });
 

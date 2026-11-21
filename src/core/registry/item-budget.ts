@@ -17,7 +17,7 @@ import { gradeLabel } from '../effects.ts';
 import { GRADES, KIT_SHARE, SAMPLE_WEARER, piece, weightOf } from './items.ts';
 import type { ArmorSlot, Grade, Item, Rarity } from './items.ts';
 import { KINDS } from './ability-kinds.ts';
-import { BUILD_OF, referenceBody, wornWorth } from './worth.ts';
+import { BUILD_OF, hpRate, referenceBody, wornWorth } from './worth.ts';
 import type { WorthRules } from './worth.ts';
 
 /** The rule numbers the budget reads: the body and the fight's yardstick (worth.ts), each rarity's rank, the budget's share and the slots. */
@@ -99,12 +99,14 @@ const dieMean = (text: string, body: Scope['user'], R: BudgetRules): number => m
 
 /** The four penetrations, which no stat feeds alone (Control feeds the percent pair of both): each is weighed by `penCost`. */
 type PenKey = 'armorPen' | 'resistPen' | 'armorPenFlat' | 'resistPenFlat';
+/** Lifesteal and ability haste, which no stat feeds: each is weighed by its worth a round (`drainCost`, `hasteCost`). */
+type UnfedKey = 'drain' | 'cooldownCut';
 /**
  * The stat that feeds each other sheet key in `derive` (balance plan section 10): a bonus on the key costs the points of
  * that stat that make the same change on the sample wearer. Tenacity reads Strength and Discipline together, so its
  * points are spent on both evenly; the reaction reads Instinct first and Agility after, so Instinct weighs it.
  */
-const FED_BY: { readonly [K in Exclude<BonusKey, StatKey | PenKey>]: readonly StatKey[] } = {
+const FED_BY: { readonly [K in Exclude<BonusKey, StatKey | PenKey | UnfedKey>]: readonly StatKey[] } = {
   hpMax: ['vit'], manaMax: ['pow'], fatigueMax: ['vit'], carry: ['str'], speed: ['agi'], move: ['agi'], react: ['ins'], aim: ['ctl'], will: ['dis'], critFaces: ['ins'], critSize: ['ctl'], opening: ['ins'],
   tenacity: ['str', 'dis'], potency: ['ctl'], threat: ['pre'], hold: ['dis'], costCut: ['ctl'],
 };
@@ -132,7 +134,30 @@ function penCost(k: PenKey, r: Rates, R: BudgetRules): number {
   const stat = dealt(hit + (physical ? r.phys : r.mag), wearer) - dealt(hit, wearer);
   return key / stat;
 }
-/** Each bonus key's cost in points: a stat point is the unit; every other key by the stat that feeds it, or as a penetration. */
+/**
+ * A key no stat feeds (balance plan section 10) costs its worth a round in standard actions, at the rate a worn status
+ * pays (`r.strike / r.phys`: the Strength points whose physical power adds that much to one standard action a round).
+ */
+const unfedCost = (saPerRound: number, r: Rates): number => saPerRound * r.strike / r.phys;
+/**
+ * A point of lifesteal, `drain` (a hundredth): a hundredth of the HP one standard action a round takes, healed back. The
+ * action is the tier's strike (`strike`) on a same-rank normal brute, worth.ts's target, through its armor by rule 12
+ * with the wearer's penetration; an HP healed is worth what a support's standard heal makes it (`hpRate`).
+ */
+function drainCost(r: Rates, R: BudgetRules): number {
+  const wearer = r.sheet({}), brute = monsterSheet(r.rank, 'brute', 'normal', R);
+  const taken = throughDefence(r.strike, defenceLeft('physical', wearer, brute), R);
+  return unfedCost(unitOf('drain') * taken * hpRate(r.rank, R), r);
+}
+/**
+ * A point of ability haste, `cooldownCut` (a hundredth): an ability that comes back every `itemBudget.cooldownRounds`
+ * rounds is used a hundredth of `1 / cooldownRounds` more times a round, each extra use weighed as a whole standard
+ * action. The bar weighs the built-ins with a cooldown at about their budget a use (worth.ts), and what a cooldown holds
+ * back that the bar cannot weigh (a hide, a haste, a field) is why it has one, so a whole action is the reading that
+ * does not undercharge it.
+ */
+const hasteCost = (r: Rates, R: BudgetRules): number => unfedCost(unitOf('cooldownCut') / R.itemBudget.cooldownRounds, r);
+/** Each bonus key's cost in points: a stat point is the unit; every other key by the stat that feeds it, as a penetration, or by its worth a round. */
 const BONUS_COST: { readonly [K in BonusKey]: (r: Rates, R: BudgetRules) => number } = {
   str: () => 1, agi: () => 1, vit: () => 1, pow: () => 1, ins: () => 1, pre: () => 1, ctl: () => 1, dis: () => 1,
   hpMax: r => fedCost('hpMax', r), manaMax: r => fedCost('manaMax', r), fatigueMax: r => fedCost('fatigueMax', r),
@@ -142,6 +167,7 @@ const BONUS_COST: { readonly [K in BonusKey]: (r: Rates, R: BudgetRules) => numb
   threat: r => fedCost('threat', r), hold: r => fedCost('hold', r), costCut: r => fedCost('costCut', r),
   armorPen: (r, R) => penCost('armorPen', r, R), resistPen: (r, R) => penCost('resistPen', r, R),
   armorPenFlat: (r, R) => penCost('armorPenFlat', r, R), resistPenFlat: (r, R) => penCost('resistPenFlat', r, R),
+  drain: drainCost, cooldownCut: hasteCost,
 };
 const isArmorSlot = (s: Spendable['slot']): s is ArmorSlot => s !== null && Object.hasOwn(KIT_SHARE, s);
 /**
@@ -158,7 +184,8 @@ function freeGuard(it: Spendable, R: BudgetRules): { readonly armor: number; rea
 /**
  * What a worn item spends, in points on the sample wearer at its rarity's rank (design 2.3); null for an item nobody
  * wears (a consumable, a material, a key), which has no budget. Each bonus point on a stat is one; any other bonus key
- * costs the stat points that would give it (`FED_BY`), a penetration the power points that add its damage (`penCost`); a weapon's mean die above its tier's free die (the strike's die plus
+ * costs the stat points that would give it (`FED_BY`), a penetration the power points that add its damage (`penCost`),
+ * lifesteal and ability haste their worth a round (`drainCost`, `hasteCost`); a weapon's mean die above its tier's free die (the strike's die plus
  * `weaponStep` a tier above the first; below it, less than nothing) costs the Strength whose `phys` would deal it; armor
  * or resist above the piece its weight carries costs the Vitality whose armor it is; a worn status its worth a round
  * (`wornWorth`) in standard actions of damage, at the same rate as damage. Weight and the slot's own piece are free.

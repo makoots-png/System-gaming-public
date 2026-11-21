@@ -5,6 +5,7 @@
 // condition or price of a use is a function here, called in `charged`, with a test in tests/resolve.test.ts.
 
 import type { Place } from './space.ts';
+import { tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
 import type { Ability, AbilityGate, Price } from './ability-types.ts';
 import { rowHp } from './row-hp.ts';
@@ -29,6 +30,15 @@ const samePlace = (a: Place, b: Place): boolean => a.x === b.x && a.y === b.y;
 
 // Rule 3.
 export const onCooldown = (a: Ability, user: Body, now: Tick): boolean => now < (user.readyAt[a.id] ?? 0);
+/**
+ * Rule 19's cooldown, the twin of rule 4's cost: an ability's cooldown in ticks cut by its user's `cooldownCut` (ability
+ * haste), rounded up and never under 1 tick, so only a cooldown of 0 is none.
+ */
+export const cooldownOf = (a: Pick<Ability, 'cost'>, cooldownCut: number): number =>
+  a.cost.cooldown === 0 ? 0 : Math.max(1, Math.ceil(a.cost.cooldown * (1 - cooldownCut)));
+/** A user that has just used `a` at `now`, with `a` ready again once its cut cooldown (`cooldownOf`) has passed: the one place a cooldown is set. */
+export const cooled = (a: Ability, user: Body, now: Tick): Body =>
+  ({ ...user, readyAt: { ...user.readyAt, [a.id]: tick(now + cooldownOf(a, user.sheet.cooldownCut)) } });
 
 /** The stacks of `key` a body holds: its count for a stacking status, 1 for a plain one, 0 for none. */
 export const stacksOn = (b: Body, key: StatusKey): number => { const s = live(b).find(x => x.key === key); return s ? countOn(s) : 0; };

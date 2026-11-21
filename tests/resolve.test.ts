@@ -290,6 +290,71 @@ describe('each rule of design 3.1', () => {
   });
 });
 
+describe('lifesteal, ability haste and shields received (balance plan section 10, unit 1b)', () => {
+  const foe = body('t', monsterOrigin('brute'), place(6, 5), 'foe', {}, { armor: 0 });
+  const forty = ability('strike', {}, '40');
+  /** A C bruiser at 50 HP, its sheet's lifesteal `drain`. */
+  const drinker = (drain: number, o: RowPatch<Body> = {}) => body('u', hunterOrigin('bruiser'), place(5, 5), 'party', { hp: 50, ...o }, { drain: share(drain) });
+  const hit = (u: Body, t: Body = foe, a: Ability = forty) => run(a, u, [u, t], t.id, rolls({ t: [] }, { t: 10 }));
+  const hpAfter = (r: Resolved, id: string): number => rowHp(find(ok(r).bodies, id));
+  const marked = (key: string, ...ops: Op[]): Status => statusOn({ label: key, desc: '', ops }, { key: statusKey(key), source: { id: null, tier: 2 }, until: null, since: NOW, settledAt: NOW });
+
+  test('a hit that takes 40 HP heals a user with 10% lifesteal 4, and the use says so', () => {
+    const r = hit(drinker(0.1));
+    expect([r.outcomes[0]!.dealt, rowHp(foe) - hpAfter(r, 't'), hpAfter(r, 'u'), r.drained]).toEqual([40, 40, 54, 4]);
+  });
+
+  test('a shield\'s part is no HP lost: a shield of 30 leaves 10 taken and 1 healed, a shield of 40 leaves nothing', () => {
+    const at = (amount: number) => hit(drinker(0.1), { ...foe, shield: { amount, until: tick(NOW + 1000) } });
+    expect([hpAfter(at(30), 'u'), at(30).drained, hpAfter(at(40), 'u'), at(40).drained]).toEqual([51, 1, 50, 0]);
+  });
+
+  test('nothing past 0 HP counts: a hit of 40 on a foe at 10 HP heals 10% of 10, 1', () => {
+    const r = hit(drinker(0.1), atHp(foe, 10));
+    expect([hpAfter(r, 't'), hpAfter(r, 'u')]).toEqual([0, 51]);
+  });
+
+  test('the user\'s healing received share cuts it: Brutalize\'s -50% heals 2 of 40 at 10%', () => {
+    const cut = drinker(0.1, { statuses: [marked('brutal', { op: 'share', on: 'healed', pct: -50 })] });
+    expect(hpAfter(hit(cut), 'u')).toBe(52);
+  });
+
+  test('a drain never lifts a user past its max HP, and a user with none heals nothing', () => {
+    const full = body('u', hunterOrigin('bruiser'), place(5, 5), 'party', {}, { drain: share(0.1) });
+    expect([hpAfter(hit(full), 'u'), hit(full).drained]).toEqual([full.sheet.hpMax, 0]);
+    expect([hpAfter(hit(drinker(0)), 'u'), hit(drinker(0)).drained]).toEqual([50, 0]);
+  });
+
+  test('lifesteal is held at kit.drainMax (20%): 99 points of it on a perk heal 8 of 40, as 20 points do', () => {
+    const base = hunterOrigin('bruiser');
+    const perked = (n: number): Body => body('u', { ...base, build: { ...(base as Extract<Origin, { kind: 'hunter' }>).build, perks: { drain: n } } } as Origin, place(5, 5), 'party', { hp: 50 });
+    expect([perked(99).sheet.drain, perked(20).sheet.drain]).toEqual([RULES.fight.kit.drainMax, 0.2]);
+    expect([hpAfter(hit(perked(99)), 'u'), hpAfter(hit(perked(20)), 'u')]).toEqual([58, 58]);
+  });
+
+  test('ability haste takes its share off the cooldown a use sets: 25% makes 2000 ticks 1500', () => {
+    const slam = { ...forty, cost: { ...forty.cost, cooldown: tick(2000) } };
+    const hasted = body('u', hunterOrigin('bruiser'), place(5, 5), 'party', {}, { cooldownCut: share(0.25) });
+    expect([find(hit(hasted, foe, slam).bodies, 'u').readyAt[slam.id], find(hit(drinker(0), foe, slam).bodies, 'u').readyAt[slam.id]]).toEqual([NOW + 1500, NOW + 2000]);
+  });
+
+  test('ability haste never takes a cooldown to 0: a cooldown of 1 tick stays 1, of 3 at a 25% cut is 3 rounded up, and a cooldown of 0 stays 0', () => {
+    const hasted = body('u', hunterOrigin('bruiser'), place(5, 5), 'party', {}, { cooldownCut: share(0.25) });
+    const ready = (cd: number) => find(hit(hasted, foe, { ...forty, cost: { ...forty.cost, cooldown: tick(cd) } }).bodies, 'u').readyAt[forty.id];
+    expect([ready(1), ready(3), ready(0)]).toEqual([NOW + 1, NOW + 3, NOW]);
+  });
+
+  test('a use\'s shield and its shield op on an ally whose shields received is +50% land half again, and what the use says is what landed', () => {
+    const support = body('u', hunterOrigin('support'), place(5, 5), 'party');
+    const plain = body('a', hunterOrigin('tank'), place(6, 5), 'party'), warded = { ...plain, statuses: [marked('warded', { op: 'share', on: 'shielded', pct: 50 })] };
+    const cast = (t: Body) => run(ability('support'), support, [support, t], t.id, rolls({ a: [] }));
+    const before = cast(plain).outcomes[0]!, after = cast(warded);
+    expect([after.outcomes[0]!.dealt, find(after.bodies, 'a').shield!.amount]).toEqual([Math.round(before.raw * 1.5), Math.round(before.raw * 1.5)]);
+    const op = ability('support', { effect: null, ops: [{ op: 'shield', amount: formula('20') }] });
+    expect([plain, warded].map(t => find(run(op, support, [support, t], t.id, rolls({ a: [] })).bodies, 'a').shield!.amount)).toEqual([20, 30]);
+  });
+});
+
 describe('what a use needs and what a refusal leaves', () => {
   test('needs lists each body in the shape with the formula\'s dice and a reaction d20', () => {
     const user = body('u', hunterOrigin('cannon'), place(10, 0), 'foe');

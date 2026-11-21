@@ -12,12 +12,12 @@
 import { interval, tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
 import type { Ability, CombatantId, ReactWhen } from './ability-types.ts';
-import { isUp } from './row-hp.ts';
+import { isUp, rowHp } from './row-hp.ts';
 import { landsAlone } from './effect-ops.ts';
 import type { Body, LandOp } from './effect-ops.ts';
-import { alive, held, landOps, landThreshold, putBy, stealthAfter } from './land.ts';
+import { alive, drained, held, landOps, landThreshold, putBy, stealthAfter } from './land.ts';
 import type { Burst } from './land.ts';
-import { charged } from './charge.ts';
+import { charged, cooled } from './charge.ts';
 import type { Answers, ResolveRules } from './resolve.ts';
 import { formulaOf } from '../registry/ability-kinds.ts';
 import { dist } from './space.ts';
@@ -126,21 +126,27 @@ export type ReactionFired = { readonly guard: number; readonly negate: boolean; 
  * reaction, which moves its turn itself), its cooldown and use counted, and its use resolves, which spends it. Null,
  * changing nothing, when it does not fire (an earlier reaction of the same use changed what it asks). Its effect and
  * its ops land on `aim` at their averages from its reactor at its tier, as a trigger's do, a status put on checking its
- * threshold; a `guard` and a `negate` are given back for the use it answers. Changes `rows`.
+ * threshold, and the reactor's lifesteal heals it a share of the HP they took (land.ts `drained`); a `guard` and a
+ * `negate` are given back for the use it answers. Changes `rows`.
  */
 export function react(rows: Map<CombatantId, Body>, reactor: CombatantId, aim: CombatantId, now: Tick, R: ResolveRules): ReactionFired | null {
   const r = rows.get(reactor), a = r && armedAbility(r), m = r && atMoment(rows, r, aim, now, R);
   if (!a || !m?.paid) return null;
   let b: Body = m.paid;
   if (a.react!.when !== 'turn') b = { ...b, at: tick(b.at + interval(b.speed, a.cost.time, R.fight)) };
-  b = withReact(counted({ ...b, readyAt: { ...b.readyAt, [a.id]: tick(now + a.cost.cooldown) } }, a, R), reactStep(m.to, { type: 'resolves' }));
+  b = withReact(counted(cooled(a, b, now), a, R), reactStep(m.to, { type: 'resolves' }));
   rows.set(b.id, b);
   const ops: LandOp[] = [];
   const f = formulaOf(a, R);
   if (a.effect && f) ops.push(a.effect.type === 'heal' ? { op: 'heal', amount: f, when: 'use' } : a.effect.type === 'shield' ? { op: 'shield', amount: f }
     : { op: 'damage', type: a.effect.type, amount: f, when: 'use' });
   ops.push(...a.ops.filter(landsAlone));
+  const hpOf = (id: CombatantId): number => { const x = rows.get(id); return x ? rowHp(x) : 0; }, aimHp = hpOf(aim);
   const out = ops.length ? landOps(rows, ops, rows.get(b.id)!, [aim], { id: b.id, tier: b.tier }, now, R, { cross: true }) : { landed: [], fired: [] };
+  // lifesteal (land.ts `drained`) reads the HP the reaction took from its aim, when that is another body
+  const ownHp = hpOf(b.id), stole = drained(rows.get(b.id)!, aim === b.id ? 0 : Math.max(0, aimHp - hpOf(aim)), R);
+  rows.set(b.id, stole);
+  const drank = rowHp(stole) - ownHp;
   const bursts = out.fired.map(x => landThreshold(rows, x, now, R));
   // the stealth machine's `dealt` (the owner's ruling 6): a reaction of its own that deals HP damage to the other side ends
   // each hide its reactor held that ends on it, but one this reaction put on
@@ -151,7 +157,7 @@ export function react(rows: Map<CombatantId, Body>, reactor: CombatantId, aim: C
   const went = bursts.map(x => `${name(x.bearer)}'s ${x.label} goes off${x.landed.some(l => l.dealt) ? ` (${x.landed.map(l => `${name(l.target)} ${l.dealt}`).join(', ')})` : ''}`);
   return {
     guard, negate, bursts,
-    said: `${b.name} reacts with ${a.name}${dealt.length ? ` (${dealt.join(', ')})` : ''}${went.length ? `; ${went.join('; ')}` : ''}`,
+    said: `${b.name} reacts with ${a.name}${dealt.length ? ` (${dealt.join(', ')})` : ''}${drank > 0 ? `; ${b.name} drains ${drank}` : ''}${went.length ? `; ${went.join('; ')}` : ''}`,
     about: [b.id, ...out.landed.filter(l => l.dealt).map(l => l.target), ...bursts.flatMap(x => [x.bearer, ...x.landed.map(l => l.target)])],
   };
 }

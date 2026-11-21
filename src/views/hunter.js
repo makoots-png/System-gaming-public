@@ -32,8 +32,8 @@ const int = v => Math.trunc(Number(v)) || 0;
 const sgn = n => (n >= 0 ? '+' : '-') + Math.abs(n);
 /** The derived numbers the Derived panel shows, in its order (m2-plan section 4.4, W4). */
 const SHOWN = ['speed', 'armor', 'resist', 'react', 'aim', 'will', 'manaMax', 'fatigueMax', 'carry', 'weight', 'sight'];
-/** The four penetrations (rule 12), each shown on the sheet only while it is above 0. */
-const PENETRATIONS = ['armorPen', 'resistPen', 'armorPenFlat', 'resistPenFlat'];
+/** The numbers only a bonus gives, each shown on the sheet only while it is above 0: the four penetrations (rule 12), lifesteal and ability haste. */
+const FROM_BONUSES = ['armorPen', 'resistPen', 'armorPenFlat', 'resistPenFlat', 'drain', 'cooldownCut'];
 
 const CSS = `
 .id-read{display:flex;align-items:center;gap:10px;margin-bottom:12px}
@@ -681,7 +681,7 @@ export function register(app) {
       const number = k => `<button type="button" class="dv" data-dv-k="${k}"${app.api.detail.control('sheet-numbers', k)} aria-label="${esc(SHEET_LABELS[k])} ${esc(shown(d.sheet[k]))}"><span class="lbl">${esc(SHEET_LABELS[k])}</span><b>${esc(shown(d.sheet[k]))}</b></button>`
         + app.api.detail.panel('sheet-numbers', k, () => ({ kind: 'number', key: k, hunter: h }));
       setHTML(el.querySelector('[data-dv]'), [
-        ...SHOWN.map(number), ...PENETRATIONS.filter(k => d.sheet[k] > 0).map(number),
+        ...SHOWN.map(number), ...FROM_BONUSES.filter(k => d.sheet[k] > 0).map(number),
         cell('Rank bonus', sgn(rankBonus), 'rank'), cell('Fatigue penalty', c.tired ? sgn(-c.tired) : '0', 'fatigue'),
       ].join(''));
       setHTML(el.querySelector('[data-cb]'), STAT_KEYS.map(k => `<div class="dv" data-cb-k="${k}"><span class="lbl">${STAT_SHORT[k]}</span><b>${esc(sgn(c.bonus[k]))}</b></div>`).join(''));
