@@ -23,7 +23,7 @@ const STRIKER: SheetPath = { alloc: { agi: 2, str: 1 }, tiers: [[{ agi: 2 }, { h
 const R: SheetRules = { ...RULES, paths: { striker: STRIKER } };
 
 const VEST: SheetItem = { id: 'vest', weight: 6, armor: 12, resist: 3 };
-const KNIFE: SheetItem = { id: 'knife', weight: 1, penFlat: 5, bonus: { str: 2 } };
+const KNIFE: SheetItem = { id: 'knife', weight: 1, bonus: { str: 2, armorPenFlat: 5 } };
 const RING: SheetItem = { id: 'ring', weight: 0, bonus: { vit: 5 } };
 const PLATE: SheetItem = { id: 'plate', weight: 32, armor: 60, resist: 20, bonus: { pow: 3 } };
 
@@ -41,8 +41,8 @@ describe('buildOf', () => {
   test('only worn items are gear; an item in the bag adds nothing', () => {
     const h = hunter({ items: [VEST, KNIFE, PLATE], equipped: { chest: 'vest', weapon: 'knife', offhand: null } });
     const b = buildOf(h, R);
-    expect(b.gear).toEqual([{ weight: 6, armor: 12, resist: 3 }, { weight: 1, armor: 0, resist: 0, penFlat: 5 }]);
-    expect(b.perks).toEqual({ str: 2 });
+    expect(b.gear).toEqual([{ weight: 6, armor: 12, resist: 3 }, { weight: 1, armor: 0, resist: 0 }]);
+    expect(b.perks).toEqual({ str: 2, armorPenFlat: 5 });
   });
 
   test('the active title, worn gear, open path perks, passive skills and the GM\'s adjustments all add up', () => {
@@ -53,7 +53,7 @@ describe('buildOf', () => {
       skills: [{ type: 'passive', bonus: { str: 1, hpMax: 10 } }, { type: 'active' }],
       hpAdj: 7, manaAdj: -3,
     });
-    expect(buildOf(h, R).perks).toEqual({ str: 5, vit: 5, agi: 2, hpMax: 17, manaMax: -3 });
+    expect(buildOf(h, R).perks).toEqual({ str: 5, vit: 5, agi: 2, hpMax: 17, manaMax: -3, armorPenFlat: 5 });
   });
 
   test('only the active title counts', () => {
@@ -85,9 +85,9 @@ describe('hunterSheet', () => {
       .toEqual([45, 10, 100, 20, 100, 3, 0, 0]);
   });
 
-  test('worn gear\'s weight, armor, resist and flat penetration reach the sheet', () => {
+  test('worn gear\'s weight, armor, resist and its bonus\'s Lethality reach the sheet', () => {
     const { sheet } = hunterSheet(hunter({ items: [VEST, KNIFE], equipped: { chest: 'vest', weapon: 'knife' } }), R);
-    expect([sheet.weight, sheet.armor, sheet.resist, sheet.penFlat]).toEqual([7, 12, 3, 5]);
+    expect([sheet.weight, sheet.armor, sheet.resist, sheet.armorPenFlat]).toEqual([7, 12, 3, 5]);
   });
 
   test('a stat bonus raises the stat and the numbers it feeds', () => {

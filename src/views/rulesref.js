@@ -131,7 +131,7 @@ export function register(app) {
       { id: 'armor', title: 'Armor and Resist', body: [ul([
         `<b>Armor</b> reduces physical damage and <b>Resist</b> reduces magical damage. Damage dealt = damage × ${F.armorK} / (${F.armorK} + defense): ${kit.heavy.armor} armor takes ${armorCutPct(R, kit.heavy.armor)}% off, and no amount makes a body immune.`,
         `Before that, ${Math.round(F.armorFlat * 100)}% of the defense comes off every hit as a flat amount, so a weak hit loses more than a strong one.`,
-        'Penetration (from Control, and some weapons) ignores a share of the target\'s defense.',
+        `<b>Penetration</b> lowers the defense before any of this. Armor penetration works against armor and magic penetration against resist, each a percent of it: Control gives up to ${F.penCap}% of both, items and perks more, never past ${F.penMax}% in all. Then <b>Lethality</b> ignores that many points of armor and <b>Unravel</b> that many of resist, from items and perks.`,
         `Gear gives most of it. A full set of gear: light weighs ${kit.light.weight} (armor ${kit.light.armor}, resist ${kit.light.resist}), medium ${kit.medium.weight} (${kit.medium.armor}, ${kit.medium.resist}), heavy ${kit.heavy.weight} (${kit.heavy.armor}, ${kit.heavy.resist}). Weight over half your carry slows you, up to ${Math.round(F.loadSlow * 100)}% at full carry.`]),
       ] },
       { id: 'leveling', title: 'Leveling and points', body: [

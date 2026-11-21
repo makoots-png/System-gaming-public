@@ -8,7 +8,7 @@
 import type { StackDef, StackStatus, Status, StatusDef, Tiered, Tiers } from './effect-ops.ts';
 
 /** The sheet numbers a `sheet` op adds to: ops of one key add, as `stat` ops do (kits table 8.1). */
-export const SHEET_ADD_KEYS = ['armor', 'resist', 'pen', 'critFaces', 'exposed', 'critSize', 'costCut', 'range'] as const;
+export const SHEET_ADD_KEYS = ['armor', 'resist', 'armorPen', 'resistPen', 'armorPenFlat', 'resistPenFlat', 'critFaces', 'exposed', 'critSize', 'costCut', 'range'] as const;
 /**
  * The sheet levels a `sheet` op raises: ops of one key do not add, the highest of them and the body's own is the level
  * (the owner's ruling 8 on sight, docs/agent-handoff/features/notes-7-stealth.md).

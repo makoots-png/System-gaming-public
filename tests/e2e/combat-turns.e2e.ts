@@ -227,9 +227,9 @@ test('a caster rat\'s Curse tapped on its card hurts Brakk by what the damage ru
   const F = await page.evaluate(() => hunterApp.rules().fight);
   // A caster's Curse is 1d8 + mag, magical, direct (src/core/registry/abilities.ts). With every die on 1 the reaction d20
   // is 1: under the resist DC, so caught, and within the rat's crit faces, so a crit (design 3.1 rules 8b and 9). Rule
-  // 11 multiplies by the crit size; rule 12 takes Brakk's Resist, less the rat's penetration, off the hit.
+  // 11 multiplies by the crit size; rule 12 takes Brakk's Resist, less the rat's magic penetration (percent, then Unravel), off the hit.
   const raw = (1 + rat.sheet.mag) * rat.sheet.critSize;
-  const left = Math.max(0, brakk.sheet.resist * (1 - rat.sheet.pen) - rat.sheet.penFlat);
+  const left = Math.max(0, brakk.sheet.resist * (1 - rat.sheet.resistPen / 100) - rat.sheet.resistPenFlat);
   const dealt = Math.max(1, Math.round(Math.max(0, raw - F.armorFlat * left) * F.armorK / (F.armorK + left)));
   await lowestDice(page);
 

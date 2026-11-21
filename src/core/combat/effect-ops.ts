@@ -168,8 +168,9 @@ export type Op =
   | { readonly op: 'spread'; readonly range: number }
   // ── wave 2 (kits design 8.1 to 8.6) ──
   /**
-   * A change to the bearer's sheet after `derive` (8.1): armor, resist, pen, crit faces, crit size or the cost cut, each
-   * kept within its rule (`kit.armorOp`, `fight.penCap`, `kit.critFacesMax`, `kit.critSizeMax`, `kit.costCutMax`); or
+   * A change to the bearer's sheet after `derive` (8.1): armor, resist, the four penetrations (the percent pair in whole
+   * percent), crit faces, crit size or the cost cut, each kept within its rule (`kit.armorOp`, `fight.penMax` for the
+   * percent pair, `kit.armorOp` for the flat pair, `kit.critFacesMax`, `kit.critSizeMax`, `kit.costCutMax`); or
    * `exposed`, the crit faces any attacker gains against the bearer (0.5 a stack, the sum rounded down); or `range`,
    * tiles added to the bearer's ranges of 2 or more (`kit.rangeAdd`). Ops of one key add, as `stat` ops do.
    */
@@ -847,7 +848,7 @@ function opLine(o: Op, tier: number | null, R: DescribeRules): string {
 }
 
 const SHEET_ADD_TEXT: { readonly [K in Exclude<SheetOpKey, SheetLevelKey>]: string } = {
-  armor: 'Armor', resist: 'Resist', pen: 'Penetration (share)', critFaces: 'Crit faces', exposed: 'Faces a foe crits it on', critSize: 'Crit size',
+  armor: 'Armor', resist: 'Resist', armorPen: 'Armor penetration (%)', resistPen: 'Magic penetration (%)', armorPenFlat: 'Lethality', resistPenFlat: 'Unravel', critFaces: 'Crit faces', exposed: 'Faces a foe crits it on', critSize: 'Crit size',
   costCut: 'Cost cut (share)', range: 'Range of 2 or more',
 };
 /** A sheet level's words, read before its level and "or under": a level is no amount added, the highest source is the level (ruling 8). */

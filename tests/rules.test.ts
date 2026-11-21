@@ -2,10 +2,11 @@
 // in one table and forgotten in another fails, and so does a column that stops rising with rank.
 import { describe, expect, test } from 'bun:test';
 import { parseOverrides } from '../src/core/overrides.ts';
-import { canExtract, rewardJobs, PERK_KEYS, PERK_LABELS, RANKS, RULES, rulesOf, TIERS, featsSwitched, resetRuleNumbers, resetTable, saveRuleNumbers, writeTable } from '../src/core/rules.ts';
+import { canExtract, rewardJobs, BONUS_KEYS, BONUS_LABELS, RANKS, RULES, rulesOf, TIERS, featsSwitched, resetRuleNumbers, resetTable, saveRuleNumbers, writeTable } from '../src/core/rules.ts';
 import { RANKS as SAVE_RANKS, RARITIES, SLOTS } from '../src/core/save.ts';
 import { JOB_NAMES } from '../src/core/registry/jobs.ts';
 import { STAT_KEYS } from '../src/core/stats.ts';
+import { SHEET_LABELS } from '../src/core/hunter/derive.ts';
 import type { StatusDef } from '../src/core/combat/effect-ops.ts';
 
 const rising = (xs: number[]): boolean => xs.every((x, i) => i === 0 || x > xs[i - 1]!);
@@ -43,10 +44,14 @@ test('an elite is worth more XP than a normal monster of its rank, a boss more t
   expect([k.normal.xp, k.elite.xp, k.boss.xp]).toEqual([1, 1.5, 3]);
 });
 
-test('a perk, a title or a passive adds to a stat, max HP or max mana and to nothing else, and every title says which', () => {
-  expect([...PERK_KEYS]).toEqual([...STAT_KEYS, 'hpMax', 'manaMax']);
-  expect(Object.keys(PERK_LABELS).sort()).toEqual([...PERK_KEYS].sort());
-  for (const t of RULES.titles) for (const k of Object.keys(t.bonus)) expect([t.name, (PERK_KEYS as readonly string[]).includes(k)]).toEqual([t.name, true]);
+test('a bonus adds to a stat or to a sheet number derive adds it to, never to weight, armor, resist, sight, stride, shadows or a power (the owner, Nov 21), and every key has its words', () => {
+  const sheetKeys = Object.keys(SHEET_LABELS);
+  expect(BONUS_KEYS.slice(0, STAT_KEYS.length)).toEqual([...STAT_KEYS]);
+  expect(BONUS_KEYS.slice(STAT_KEYS.length).filter(k => !sheetKeys.includes(k))).toEqual([]);
+  expect(sheetKeys.filter(k => !(BONUS_KEYS as readonly string[]).includes(k)).sort()).toEqual(['armor', 'mag', 'phys', 'resist', 'shadows', 'sight', 'stride', 'sup', 'weight']);
+  expect(Object.keys(BONUS_LABELS).sort()).toEqual([...BONUS_KEYS].sort());
+  expect([BONUS_LABELS.armorPenFlat, BONUS_LABELS.resistPenFlat]).toEqual(['Lethality', 'Unravel']);
+  for (const t of RULES.titles) for (const k of Object.keys(t.bonus)) expect([t.name, (BONUS_KEYS as readonly string[]).includes(k)]).toEqual([t.name, true]);
 });
 
 test('the built-in titles add to the stat the old one mapped to', () => {

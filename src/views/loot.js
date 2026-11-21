@@ -5,7 +5,7 @@
 // (minus, middle, plus) is a row of chips named for the rarity picked, Epic−, Epic, Epic+; a blank Value shows the price
 // the rule gives the rarity, grade and type (`valueOf`). Under the preview, a worn item's spend line says what it spends
 // of its tier's budget against the grade picked (item-budget.ts `spendLine`): a warning when the grade is under it, never a refusal.
-import { PERK_LABELS, TIERS, rules } from '../edge/rules.ts';
+import { BONUS_LABELS, TIERS, rules } from '../edge/rules.ts';
 import { ITEM_TYPES } from '../core/save.ts';
 import { atLibrary } from '../core/save-step.ts';
 import { saveEntry, savedWords } from '../core/library.ts';
@@ -27,7 +27,7 @@ const ATTACK_LABEL = { strike: 'Strike', shot: 'Shot' };
 const KITS = /** @type {const} */ ([['light', 'Light'], ['medium', 'Medium'], ['heavy', 'Heavy']]);
 /** The gear numbers of a worn item, each a field of the form. */
 const GEAR = [['weight', 'Weight'], ['armor', 'Armor'], ['resist', 'Resist']];
-const BONUS_LABEL = { ...PERK_LABELS, hpMax: 'Max HP', manaMax: 'Max mana' };
+const BONUS_LABEL = { ...BONUS_LABELS, hpMax: 'Max HP', manaMax: 'Max mana' };
 const cap = s => s[0].toUpperCase() + s.slice(1);
 const int = (v, lo, hi) => { const n = Math.trunc(Number(v)); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : 0; };
 /** Keys sorted, so the form's item and the parser's compare by what they hold. */
@@ -85,7 +85,6 @@ export function register(app) {
             ${ui.field('Damage dice', `<input type="text" id="lf-dice" maxlength="30" placeholder="1d8" autocomplete="off" value="${esc(was ? was.dice : '')}">`)}
             <div class="lbl">Attacks with</div>
             ${M.chips('attack', ATTACKS.map(a => [a, ATTACK_LABEL[a]]), was && was.attack ? was.attack : 'strike', { label: 'Attacks with' })}
-            ${ui.field('Armor ignored on a hit', `<input type="number" id="lf-pen" inputmode="numeric" min="0" max="${B.penFlat}" placeholder="0" value="${esc(was && was.penFlat ? was.penFlat : '')}">`)}
           </div>
           <div class="lf-worn" data-worn>
             ${ui.field('Slot', `<select id="lf-slot"><option value="">None</option>${rules().slots.map(s => `<option value="${s}">${SLOT_LABEL[s] || s}</option>`).join('')}</select>`)}
@@ -152,7 +151,7 @@ export function register(app) {
           if (value !== undefined) out.value = value;
           if (grade()) out.grade = grade();
           if (weight !== undefined) out.weight = weight;
-          if (weapon) { out.attack = oneOf(M.picked(el, 'attack'), ATTACKS, 'strike'); const pen = int($('#lf-pen').value, 0, B.penFlat); if (pen) out.penFlat = pen; }
+          if (weapon) out.attack = oneOf(M.picked(el, 'attack'), ATTACKS, 'strike');
           const effects = fx.ops(); if (effects.length) out.effects = effects;
           if (effectsOf(out).length && M.picked(el, 'target') === 'other') out.target = 'other';
           if (gm ? $('#lf-tell').checked : was && was.tell) out.tell = true;
@@ -203,7 +202,7 @@ export function register(app) {
             drawWorth(it.worn && worn ? wornWorth(it.worn, rules()) : null);
             drawSpend(it);
             return [
-              it.type === 'weapon' && it.dice ? `${ATTACK_LABEL[it.attack]} with ${it.dice}${it.penFlat ? `, ignoring ${it.penFlat} armor` : ''}` : '',
+              it.type === 'weapon' && it.dice ? `${ATTACK_LABEL[it.attack]} with ${it.dice}` : '',
               worn ? `Weight ${weightOf(it)} · Armor ${it.armor} · Resist ${it.resist}` : '',
               worn ? (sp => `A ${SAMPLE_WEARER.rank}-rank hunter in ${SAMPLE_WEARER.kit} gear: speed ${sp.bare}, ${sp.worn} with this on too`)(wornSpeed({ ...it, weight: weightOf(it) }, rules())) : '',
               bonusText(it.bonus) && `Worn: ${bonusText(it.bonus)}`, ...lines(it),

@@ -1,6 +1,6 @@
 // Every built-in item in src/core/registry/items.ts must pass these. A new item is checked here with no new test.
 import { describe as group, expect, test } from 'bun:test';
-import { PERK_KEYS, RANKS, RULES, rulesOf } from '../src/core/rules.ts';
+import { BONUS_KEYS, RANKS, RULES, rulesOf } from '../src/core/rules.ts';
 import type { Rank, Rules } from '../src/core/rules.ts';
 import { FULL_HEAL, statusKey } from '../src/core/combat/effect-ops.ts';
 import type { Op } from '../src/core/combat/effect-ops.ts';
@@ -8,7 +8,7 @@ import { parseFormula } from '../src/core/formula.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 import { BUILT_IN_STATUSES } from '../src/core/registry/statuses.ts';
 import { describeItem, effectsOf, gmSource, gradeLabel, itemOps, itemSource } from '../src/core/effects.ts';
-import { GRADES, ITEM_TYPES, KIT_SHARE, LOOT_ITEMS, RARITIES, SHOP_ITEMS, STARTER_GEAR, itemOf, parseItem, piece, priceOf, wornSpeed, defaultShop, builtInItems, lootPool, valueOf, weightOf, weaponWeight } from '../src/core/registry/items.ts';
+import { GRADES, ITEM_TYPES, KIT_SHARE, LOOT_ITEMS, RARITIES, SHOP_ITEMS, STARTER_GEAR, itemOf, parseItem, ITEM_BOUNDS, piece, priceOf, wornSpeed, defaultShop, builtInItems, lootPool, valueOf, weightOf, weaponWeight } from '../src/core/registry/items.ts';
 import type { Grade, ItemDef, ItemTemplate, Rarity } from '../src/core/registry/items.ts';
 import { parseStatusDef } from '../src/core/combat/fight-parse.ts';
 
@@ -71,7 +71,7 @@ for (const [list, defs] of LISTS) {
 
       test('its bonus is whole numbers on one of the eight stats, max HP or max mana, none of them zero', () => {
         for (const [k, v] of Object.entries(item.bonus)) {
-          expect(PERK_KEYS as readonly string[]).toContain(k);
+          expect(BONUS_KEYS as readonly string[]).toContain(k);
           expect(Number.isInteger(v) && v !== 0).toBe(true);
         }
       });
@@ -262,8 +262,9 @@ group('the items as plan section 3.3 restates them', () => {
     expect(itemOf(RULES, STARTER_GEAR.towerShield)).toMatchObject({ weight: 5, armor: 9, resist: 9 });
   });
 
-  test('the Knight Killer ignores 5 armor beside its Strength 2', () => {
-    expect(of('Knight Killer')).toMatchObject({ penFlat: 5, bonus: { str: 2 } });
+  test('the Knight Killer holds 5 Lethality beside its Strength 2, and no old field of armor ignored', () => {
+    expect(of('Knight Killer').bonus).toEqual({ str: 2, armorPenFlat: 5 });
+    expect(of('Knight Killer')).not.toHaveProperty('penFlat');
   });
 
   test('a Mana Potion of 20 old MP restores 4 mana, the Elixir of Life heals fully and the Stamina Tonic removes 25 fatigue', () => {
@@ -352,12 +353,25 @@ group('parseItem: an item from a save, a room message, a form or an import', () 
     expect([-3, 4, 5000].map(resist => parseItem(plain({ resist }))!.resist)).toEqual([0, 4, 999]);
   });
 
-  test('a weapon\'s attack is strike or shot, kept only then; armor ignored is kept only above 0, at most 999', () => {
+  test('a weapon\'s attack is strike or shot, kept only then', () => {
     expect(parseItem(plain({ attack: 'shot' }))!.attack).toBe('shot');
     expect(parseItem(plain({ attack: 'strike' }))!.attack).toBe('strike');
-    expect(parseItem(plain({ penFlat: 5 }))!.penFlat).toBe(5);
-    expect(parseItem(plain({ penFlat: 5000 }))!.penFlat).toBe(999);
-    for (const penFlat of [0, -2]) expect(parseItem(plain({ penFlat }))).not.toHaveProperty('penFlat');
+  });
+
+  test('an old item\'s armor ignored, `penFlat`, reads as that much Lethality in its bonus, above 0 and at most the bonus bound, and the old field is gone', () => {
+    expect(parseItem(plain({ penFlat: 5, bonus: { str: 2 } }))!.bonus).toEqual({ str: 2, armorPenFlat: 5 });
+    expect(parseItem(plain({ penFlat: 5000 }))!.bonus).toEqual({ armorPenFlat: ITEM_BOUNDS.bonus });
+    for (const penFlat of [0, -2, '5']) expect(parseItem(plain({ penFlat }))!.bonus).toEqual({});
+    expect(parseItem(plain({ penFlat: 5 }))).not.toHaveProperty('penFlat');
+  });
+
+  test('an item that holds Lethality keeps its own over an old armor ignored', () => {
+    expect(parseItem(plain({ penFlat: 5, bonus: { armorPenFlat: 3 } }))!.bonus).toEqual({ armorPenFlat: 3 });
+  });
+
+  test('a bonus keeps every bonus key, each a whole number within the bound: the four penetrations, a share read in hundredths, a stat', () => {
+    const bonus = { armorPen: 10, resistPen: 12.7, armorPenFlat: 5, resistPenFlat: -4, costCut: 5, dex: 3, weight: 4, sight: 2, str: 1 };
+    expect(parseItem(plain({ bonus }))!.bonus).toEqual({ str: 1, armorPen: 10, resistPen: 12, armorPenFlat: 5, resistPenFlat: -4, costCut: 5 });
   });
 
   test('value is 0 to a billion gold', () => {

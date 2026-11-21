@@ -1,7 +1,7 @@
 // hunter.js (U02): the sheet (src/core/hunter/sheet.ts), allocation, ranks, titles, party, level-up, conditions, rests,
 // app.api.hunter. It computes no number of its own: the stats, the sheet and the checks are `hunterSheet` and `checksOf`.
 import { stepTime } from '../core/day.ts';
-import { PERK_KEYS, PERK_LABELS, xpToNext, rules } from '../edge/rules.ts';
+import { BONUS_KEYS, BONUS_LABELS, xpToNext, rules } from '../edge/rules.ts';
 import { STAT_KEYS, STAT_LABELS, STAT_SHORT } from '../core/stats.ts';
 import { SHEET_LABELS } from '../core/hunter/derive.ts';
 import { fightHold, heldLines } from '../core/combat/fight-save.ts';
@@ -30,9 +30,10 @@ import { statusIcon } from '../core/registry/icon-defaults.ts';
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const int = v => Math.trunc(Number(v)) || 0;
 const sgn = n => (n >= 0 ? '+' : '-') + Math.abs(n);
-const BKEYS = PERK_KEYS;
 /** The derived numbers the Derived panel shows, in its order (m2-plan section 4.4, W4). */
 const SHOWN = ['speed', 'armor', 'resist', 'react', 'aim', 'will', 'manaMax', 'fatigueMax', 'carry', 'weight', 'sight'];
+/** The four penetrations (rule 12), each shown on the sheet only while it is above 0. */
+const PENETRATIONS = ['armorPen', 'resistPen', 'armorPenFlat', 'resistPenFlat'];
 
 const CSS = `
 .id-read{display:flex;align-items:center;gap:10px;margin-bottom:12px}
@@ -380,7 +381,7 @@ export function register(app) {
     } });
   const setHTML = (el, html) => { if (el._h !== html) { el._h = html; el.innerHTML = html; } };
   const setVal = (i, v) => { if (i && document.activeElement !== i && i.value !== String(v)) i.value = v; };
-  const bonusText = b => { const o = BKEYS.filter(k => b && Number(b[k])).map(k => `${sgn(Number(b[k]))} ${PERK_LABELS[k]}`); return o.length ? o.join(', ') : 'No bonus'; };
+  const bonusText = b => { const o = BONUS_KEYS.filter(k => b && Number(b[k])).map(k => `${sgn(Number(b[k]))} ${BONUS_LABELS[k]}`); return o.length ? o.join(', ') : 'No bonus'; };
   const stepBtns = (attr, vals) => vals.map(v => v === 'full' ? `<button type="button" data-${attr}="full">Full</button>` : v === 'rest' ? `<button type="button" data-${attr}="rest">Rest</button>`
     : `<button type="button" data-${attr}="${v}" aria-label="${v < 0 ? 'Decrease' : 'Increase'} by ${Math.abs(v)}">${v < 0 ? '&minus;' : '+'}${Math.abs(v)}</button>`).join('');
   const bar = (key, label, ctl) => `<div class="bar-row" data-bar="${key}">
@@ -680,7 +681,7 @@ export function register(app) {
       const number = k => `<button type="button" class="dv" data-dv-k="${k}"${app.api.detail.control('sheet-numbers', k)} aria-label="${esc(SHEET_LABELS[k])} ${esc(shown(d.sheet[k]))}"><span class="lbl">${esc(SHEET_LABELS[k])}</span><b>${esc(shown(d.sheet[k]))}</b></button>`
         + app.api.detail.panel('sheet-numbers', k, () => ({ kind: 'number', key: k, hunter: h }));
       setHTML(el.querySelector('[data-dv]'), [
-        ...SHOWN.map(number),
+        ...SHOWN.map(number), ...PENETRATIONS.filter(k => d.sheet[k] > 0).map(number),
         cell('Rank bonus', sgn(rankBonus), 'rank'), cell('Fatigue penalty', c.tired ? sgn(-c.tired) : '0', 'fatigue'),
       ].join(''));
       setHTML(el.querySelector('[data-cb]'), STAT_KEYS.map(k => `<div class="dv" data-cb-k="${k}"><span class="lbl">${STAT_SHORT[k]}</span><b>${esc(sgn(c.bonus[k]))}</b></div>`).join(''));

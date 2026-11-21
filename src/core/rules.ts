@@ -10,6 +10,7 @@ import { LEVELS } from './combat/standing.ts';
 import { MAX_LEVEL, MIN_LEVEL } from './hunter/level.ts';
 import type { StatKey } from './stats.ts';
 import type { StatusDef } from './combat/effect-ops.ts';
+import type { SheetNumber } from './hunter/derive.ts';
 import type { Rewards } from './rewards.ts';
 
 const deepFreeze = <T>(o: T): T => { if (o && typeof o === 'object' && !Object.isFrozen(o)) { Object.freeze(o); Object.values(o as object).forEach(deepFreeze); } return o; };
@@ -201,6 +202,11 @@ const SPEC = {
   itemBudget: {
     share: real(0.5, 0, 2, 'the share of a hunter\'s points its gear may hold, over the slots: 0 leaves an item no budget, 2 is twice the hunter\'s own'), // half of what a hunter of the tier's rank holds at its first level, over the 10 slots
     weaponStep: real(1, 0, 10, 'mean damage a weapon\'s free die gains a tier: 0 keeps every tier at the reference die, 10 is past any die\'s step'), // the free die rises by 1 mean damage a tier from 1d8
+    // The foe a point of penetration is weighed against (balance plan section 9): a same-rank monster of this kind, a
+    // brute's armor for the armor pair and a caster's resist for the resist pair. Penetration is worth more the thicker
+    // the defence, so the foe is named; the elite sits between a pack's normal and a boss. One of `fight.kinds`
+    // (overrides.ts refuses any other).
+    penFoe: 'elite' as 'normal' | 'elite' | 'boss',
   },
   shadow: {
     maxAttempts: whole(3, 1, 20, 'tries at one corpse: 0 would offer an Extract that cannot be tried'),
@@ -290,7 +296,12 @@ const SPEC = {
     strideShare: real(0.5, 0.1, 1, 'the share of a move one command walks: under a tenth no step is taken'), // one move command walks at most half of `move`, so a turn is never one long walk
     armorVitCap: of(30, STAT_CAP), // gear carries most armor, so the tank pays weight for it; Vitality gives a little to every body
     resistDisCap: of(40, STAT_CAP), // the magical twin of armor, from the will stat, so the tank in plate is open to magic
-    penCap: of(0.4, SHARE), // Control finds the gap, and armor still stops 60% of what it would against the best caster
+    // Penetration in whole percent of the armor or resist a hit meets (rule 12, balance plan section 9). Control's curve
+    // gives up to `penCap` of both the armor and the magic percent: Control finds the gap. `penMax` caps the percent with
+    // every bonus on it (an item's, a perk's, a status's), so armor always stops at least 40% of what it would; a bonus
+    // passes Control's curve cap, never this one.
+    penCap: of(40, STAT_CAP),
+    penMax: whole(60, 0, 100, 'the most armor or resist a hit\'s percent penetration ignores: at 100 a hit ignores all of it'),
     powerK: real(0.6, 0.01, 10, 'damage a point of a power stat gives: under 0.01 nobody is hurt'), // phys, mag and sup are 0.6 * eff of their stat: uncapped, so damage keeps growing with rank
     critFacesCap: whole(5, 0, 10, 'd20 faces a crit takes: past 10 half of every use is a crit'), // a crit is 5% to 30% of uses, never the 1 in 3 where it becomes the expected hit
     critSizeBase: real(1.5, 1, 5, 'a crit\'s size: under 1 a crit hurts less than a hit'), critSizeCap: real(0.5, 0, 5, 'a crit\'s largest growth: 5 is six times a hit'), // a crit is 1.5 to 2 times: felt, and never more than today's double dice
@@ -601,13 +612,35 @@ export function rankForLevel(R: Rules, level: number): Rank {
 }
 
 // ── build paths (pure; also used by the save repair in save.ts on raw data, so every lookup tolerates junk) ──
-/** What a perk, a title or a passive adds: points on a stat, max HP or max mana (derive.ts `Bonus` reads them). */
-export const PERK_KEYS = [...STAT_KEYS, 'hpMax', 'manaMax'] as const;
-export type PerkKey = (typeof PERK_KEYS)[number];
-export type Perk = Partial<Record<PerkKey, number>>;
+/**
+ * The keys of every bonus (balance plan section 10): what a perk, a title, a passive skill, a worn item or the GM's grant
+ * may add. The eight stats add before their curves; every other key is the sheet number of that name (derive.ts), added
+ * after its stat's curve cap and never past its sheet clamp. Three sheet numbers are left out: `weight`, `armor` and
+ * `resist` are a worn piece's own fields (what its weight buys), so each has one route; `sight` takes the higher, not
+ * the sum; `stride` and `shadows` no stat of an item names.
+ */
+// No `phys`, `mag` or `sup`: the owner (Nov 21), "Idk about attack and ability power. I think that's hard to do." A bonus raises power through Strength, Power and Presence.
+export const BONUS_KEYS = [...STAT_KEYS, 'hpMax', 'manaMax', 'fatigueMax', 'carry', 'speed', 'move',
+  'armorPen', 'resistPen', 'armorPenFlat', 'resistPenFlat', 'react', 'aim', 'will', 'critFaces', 'critSize', 'opening',
+  'tenacity', 'potency', 'threat', 'hold', 'costCut'] as const satisfies readonly (StatKey | SheetNumber)[];
+export type BonusKey = (typeof BONUS_KEYS)[number];
+/**
+ * The bonus keys whose sheet number is a share or a multiplier (crit size 1.5 to 2, the threat multiplier, the channel's
+ * hold, the cost cut): a bonus is a whole number, so a point of one of these is a hundredth of the number (derive.ts).
+ */
+export const BONUS_HUNDREDTHS: readonly BonusKey[] = ['critSize', 'threat', 'hold', 'costCut'];
+export type Perk = Partial<Record<BonusKey, number>>;
 export type Path = { name: string; alloc: Partial<Record<StatKey, number>>; tiers: Perk[][] };
-/** The short word for each bonus key. A screen that says "Max HP" overrides hpMax and manaMax itself. */
-export const PERK_LABELS: Readonly<Record<PerkKey, string>> = { ...STAT_SHORT, hpMax: 'HP', manaMax: 'Mana' };
+/**
+ * The short words for each bonus key, read after a signed number ("+5 Lethality"). A screen that says "Max HP"
+ * overrides hpMax and manaMax itself. A key read in hundredths says so with its %.
+ */
+export const BONUS_LABELS: Readonly<Record<BonusKey, string>> = {
+  ...STAT_SHORT, hpMax: 'HP', manaMax: 'Mana', fatigueMax: 'Fatigue capacity', carry: 'Carry', speed: 'Speed', move: 'Move',
+  armorPen: '% Armor penetration', resistPen: '% Magic penetration',
+  armorPenFlat: 'Lethality', resistPenFlat: 'Unravel', react: 'Reaction', aim: 'Accuracy', will: 'Will', critFaces: 'Crit faces',
+  critSize: '% Crit size', opening: 'Opening', tenacity: 'Tenacity', potency: 'Potency', threat: '% Threat', hold: '% Channel hold', costCut: '% Cost cut',
+};
 export const pathOf = (R: Rules, id: unknown): Path | null => {
   const paths = (R.paths || {}) as Record<string, unknown>;
   return typeof id === 'string' && Object.hasOwn(paths, id) && isObj(paths[id]) ? paths[id] as Path : null;
@@ -625,7 +658,7 @@ export function pathBonus(R: Rules, build: { path?: unknown; picks?: unknown } |
   const n = Math.min(build.picks.length, tiersOpen(p, rank));
   for (let i = 0; i < n; i++) {
     const b = perkOf(p, i, build.picks[i] as number);
-    for (const k of PERK_KEYS) { const v = b[k]; if (Number.isFinite(v) && v) out[k] = (out[k] || 0) + Math.trunc(v as number); }
+    for (const k of BONUS_KEYS) { const v = b[k]; if (Number.isFinite(v) && v) out[k] = (out[k] || 0) + Math.trunc(v as number); }
   }
   return { p, out, n };
 }

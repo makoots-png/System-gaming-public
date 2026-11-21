@@ -165,7 +165,7 @@ const ability = fields<Ability>({
 /** An item: what its use does and the status it puts on while worn. */
 export const item: Walk<ItemTemplate> = fields<ItemTemplate>({
   name: none, rar: none, grade: none, type: none, slot: none, qty: none, dice: none, bonus: none, value: none, weight: none, desc: none, armor: none,
-  resist: none, attack: none, icon: none, penFlat: none, effects: ops, target: none, tell: none, worn: statusDef, revive: none,
+  resist: none, attack: none, icon: none, effects: ops, target: none, tell: none, worn: statusDef, revive: none,
 });
 const SKILL_PARTS = { name: none, level: none, label: none, desc: none, type: none } as const;
 const activeSkill = fields<Extract<SkillTemplate, { type: 'active' }>>({ ...SKILL_PARTS, ability });

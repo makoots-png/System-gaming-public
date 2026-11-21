@@ -96,3 +96,14 @@ test('a save whose GM set the sight base to 6 loads with 0: the base is a sight 
   const raised = loaded({ fight: { stealth: { sightBase: 2 } } });
   expect(hunterSheet(newHunter(raised), raised).sheet.sight).toBe(2);
 });
+
+test('a save whose GM set the foe penetration is weighed against to a kind that is not one loads with the elite; a boss is kept', () => {
+  expect(parseOverrides({ itemBudget: { penFoe: 'dragon' } })).toEqual({ overrides: { itemBudget: {} }, refused: [{ path: 'itemBudget.penFoe', reason: 'entry' }] });
+  expect(loaded({ itemBudget: { penFoe: 'dragon' } }).itemBudget.penFoe).toBe('elite');
+  expect(loaded({ itemBudget: { penFoe: 'boss' } }).itemBudget.penFoe).toBe('boss');
+});
+
+test('a percent penetration\'s cap is a whole percent from 0 to 100: a GM\'s 150 is refused and the cap stays at 60', () => {
+  expect(loaded({ fight: { penMax: 150 } }).fight.penMax).toBe(60);
+  expect(loaded({ fight: { penMax: 45 } }).fight.penMax).toBe(45);
+});

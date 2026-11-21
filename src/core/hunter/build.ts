@@ -5,7 +5,7 @@
 // a reward's build part (hunter.js `applyRewards`) change them only here, as steps. Pure: the caller passes the rules,
 // whether the phone is the GM's, and whether the hunter is in a fight. The paths, their perks and what they add are
 // rules.ts (`pathOf`, `perkOf`, `tiersOpen`, `pathBonus`). The ability points a path's Auto spends are progress.ts's.
-import { PERK_KEYS, PERK_LABELS, pathOf, perkOf, tiersOpen } from '../rules.ts';
+import { BONUS_KEYS, BONUS_LABELS, pathOf, perkOf, tiersOpen } from '../rules.ts';
 import type { Perk, Rules } from '../rules.ts';
 import type { Build, Hunter, Save } from '../save.ts';
 import { eachRarity } from '../protocol.ts';
@@ -30,7 +30,7 @@ export function respecCost(h: Pick<Hunter, 'level'>, R: Rules): number {
 }
 /** A perk's words: "STR +2, HP +5", or a dash for none. */
 export const perkText = (b: Perk): string =>
-  PERK_KEYS.filter(k => isObj(b) && Number.isFinite(b[k]) && b[k]).map(k => `${PERK_LABELS[k]} +${Math.trunc(b[k]!)}`).join(', ') || '—';
+  BONUS_KEYS.filter(k => isObj(b) && Number.isFinite(b[k]) && b[k]).map(k => `${BONUS_LABELS[k]} +${Math.trunc(b[k]!)}`).join(', ') || '—';
 
 const withBuild = (h: Hunter, build: Build): Hunter => ({ ...h, build });
 

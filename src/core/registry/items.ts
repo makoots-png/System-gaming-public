@@ -12,8 +12,8 @@ import { withinSize } from '../size.ts';
 import type { Formula } from '../formula.ts';
 import { kitGear, pointsAt, sheetOf, split } from '../hunter/derive.ts';
 import type { DeriveRules, GearPiece, Kit } from '../hunter/derive.ts';
-import { PERK_KEYS, RULES, clearOf } from '../rules.ts';
-import type { PerkKey, Rules } from '../rules.ts';
+import { BONUS_KEYS, RULES, clearOf } from '../rules.ts';
+import type { BonusKey, Rules } from '../rules.ts';
 import { oneOf } from '../one-of.ts';
 import { isIconKey } from './icons.ts';
 import type { IconKey } from './icons.ts';
@@ -37,11 +37,11 @@ export type Attack = (typeof ATTACKS)[number];
 export const GRADES = [-1, 0, 1] as const;
 export type Grade = (typeof GRADES)[number];
 
-/** What an item adds while worn: points on a stat, max HP or max mana. */
-export type ItemBonus = Partial<Record<PerkKey, number>>;
+/** What an item adds while worn: points on any bonus key (`BONUS_KEYS`), a stat or a number of the sheet. */
+export type ItemBonus = Partial<Record<BonusKey, number>>;
 
 /**
- * An item a hunter holds. Worn, it adds its `bonus` and its gear numbers (`weight`, `armor`, `resist`, `penFlat`) to the
+ * An item a hunter holds. Worn, it adds its `bonus` and its gear numbers (`weight`, `armor`, `resist`) to the
  * sheet (src/core/hunter/sheet.ts). A weapon in the weapon slot attacks with its `dice` as its `attack`. Used, it does
  * its `effects` (src/core/effects.ts) to the user, or to another it picks when `target` is `other`.
  */
@@ -56,7 +56,7 @@ export type Item = {
   /** Its weight as typed; absent, the rule's (`weightOf`: a weapon's by its dice), so a change of the dice reaches it. */
   weight?: number;
   desc: string; armor: number; resist: number;
-  attack?: Attack; penFlat?: number; effects?: Op[];
+  attack?: Attack; effects?: Op[];
   /** All of its use effects go to another the user picks. Without it they go to the user. */
   target?: 'other';
   /** The GM is told when a player uses it (the room's `used` message, and the session log). */
@@ -84,7 +84,7 @@ type Common = { name: string; rar: Rarity; desc: string; value?: number; grade?:
  * consumable the ops it does when used. The rest is a thing to carry and sell.
  */
 export type ItemDef =
-  | Common & { type: 'weapon'; slot: 'weapon'; dice: string; attack: Attack; bonus?: ItemBonus; penFlat?: number }
+  | Common & { type: 'weapon'; slot: 'weapon'; dice: string; attack: Attack; bonus?: ItemBonus }
   | Common & { type: 'armor'; slot: ArmorSlot; kit: Kit; bonus?: ItemBonus }
   | Common & { type: 'accessory'; slot: 'neck' | 'ring1' | 'ring2'; bonus: ItemBonus }
   | Common & { type: 'consumable'; effects: Op[]; revive?: true; tell?: true }
@@ -107,9 +107,10 @@ export const SHOP_ITEMS: readonly ItemDef[] = [
   { name: 'Iron Dagger', rar: 'common', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d4', attack: 'strike', desc: 'A plain iron dagger.' },
   { name: "Hunter's Leather", rar: 'common', grade: -1, type: 'armor', slot: 'chest', kit: 'light', desc: 'Light leather armor for the chest.' },
   { name: 'Steel Longsword', rar: 'common', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', desc: 'A plain steel sword.' },
-  // "Cruel to armored foes": 5 points of armor ignored on every hit. Its d10 and +2 Strength spend under Rare−'s top; the
-  // armor ignored, which the budget cannot weigh, is what makes it Rare+ (design 2.5).
-  { name: 'Knight Killer', rar: 'rare', grade: 1, type: 'weapon', slot: 'weapon', dice: '1d10', attack: 'strike', bonus: { str: 2 }, penFlat: 5, desc: 'A dagger whose hits ignore 5 points of armor.' },
+  // "Cruel to armored foes": 5 Lethality, 5 points of armor ignored on every hit (a resist is not armor). It was Rare+
+  // while the budget could not weigh the armor ignored (design 2.5); weighed (balance plan section 9: 0.71 points a point
+  // of Lethality at C), its d10, +2 Strength and 5 Lethality spend 2.8, under Rare−'s top.
+  { name: 'Knight Killer', rar: 'rare', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d10', attack: 'strike', bonus: { str: 2, armorPenFlat: 5 }, desc: 'A dagger whose hits ignore 5 points of armor.' },
   { name: 'Ring of Vitality', rar: 'epic', grade: -1, type: 'accessory', slot: 'ring1', bonus: { vit: 5 }, desc: 'A ring that adds 5 Vitality.' },
   // One Resurrection Crystal of each rank (economy design section 5, the owner's ruling 4): its rarity's rank is the rank it
   // raises up to, and its price `reviveClears` Clears of that rank. The GM tells the table how common they are; its use
@@ -248,7 +249,7 @@ export function itemOf(R: Rules, def: ItemDef): ItemTemplate {
   switch (def.type) {
     case 'weapon':
       const { weight: _byDice, ...unweighed } = base; // a weapon's weight is its dice's (`weightOf`)
-      return { ...unweighed, slot: def.slot, dice: def.dice, attack: def.attack, bonus: { ...def.bonus }, ...(def.penFlat ? { penFlat: def.penFlat } : {}) };
+      return { ...unweighed, slot: def.slot, dice: def.dice, attack: def.attack, bonus: { ...def.bonus } };
     case 'armor': return { ...base, slot: def.slot, bonus: { ...def.bonus }, ...piece(def.kit, def.slot, def.rar, R) };
     case 'accessory': return { ...base, slot: def.slot, bonus: { ...def.bonus } };
     case 'consumable': return { ...base, slot: null, bonus: {}, ...(def.effects.length ? { effects: [...def.effects] } : {}), ...(def.revive ? { revive: true } : {}), ...(def.tell ? { tell: true } : {}) };
@@ -258,7 +259,7 @@ export function itemOf(R: Rules, def: ItemDef): ItemTemplate {
 
 // ── the one parser ──
 /** The bounds of every item, wherever it comes from. Weight is design 2.3's 0 to 50; an item does at most 12 things, as a status. */
-export const ITEM_BOUNDS = { name: 60, desc: 500, dice: 30, qty: 9999, value: 1e9, bonus: 999, weight: 50, armor: 999, resist: 999, penFlat: 999, effects: 12 } as const;
+export const ITEM_BOUNDS = { name: 60, desc: 500, dice: 30, qty: 9999, value: 1e9, bonus: 999, weight: 50, armor: 999, resist: 999, effects: 12 } as const;
 type Rec = Record<string, unknown>;
 const isObj = (v: unknown): v is Rec => v !== null && typeof v === 'object' && !Array.isArray(v);
 /** A finite number cut to a whole one and clamped, or `d` when the value is not a number. */
@@ -268,10 +269,11 @@ const text = (v: unknown, n: number): string => (typeof v === 'string' ? v.slice
 /**
  * An item read from outside data, without its id, or null when it is not an object or has no name. Each field of the
  * wrong type or value takes the default a new item has; a number is cut to a whole one inside `ITEM_BOUNDS`. The bonus
- * keeps the ten bonus keys (the eight stats, `hpMax`, `manaMax`) that are not 0. Each effect is read by the fight's op
+ * keeps each bonus key (`BONUS_KEYS`) that is not 0; an old item's `penFlat` (armor its hits ignored, from before the
+ * four penetrations) is read as its bonus's `armorPenFlat`, Lethality, when it has none: the one-way read of old gear. Each effect is read by the fight's op
  * reader with the shipped rules' dice limits (as a reward is), one it refuses dropped, at most 12. `grade` is kept when it
  * is 1 or -1 (anything else is the middle, left out, so one item is never two stacks by a 0), `attack` when it is
- * strike or shot, `penFlat` when it is above 0, `target` only when it is `other`, `tell` only when it is true, `revive`
+ * strike or shot, `target` only when it is `other`, `tell` only when it is true, `revive`
  * only when it is true on a consumable, `icon` only when it is a key of the icon registry (an unknown one is dropped, the
  * default shows), and `worn` when the status reader takes it. Every other key is dropped. An item
  * past its size (size.ts `THING_MAX.item`), or whose worn status is past a status's, is refused whole: null.
@@ -283,7 +285,9 @@ export function parseItem(v: unknown): ItemTemplate | null {
   if (!name) return null;
   const bonus: ItemBonus = {};
   const rawBonus = isObj(v.bonus) ? v.bonus : {};
-  for (const k of PERK_KEYS) { const n = whole(Object.hasOwn(rawBonus, k) ? rawBonus[k] : 0, -B.bonus, B.bonus, 0); if (n) bonus[k] = n; }
+  for (const k of BONUS_KEYS) { const n = whole(Object.hasOwn(rawBonus, k) ? rawBonus[k] : 0, -B.bonus, B.bonus, 0); if (n) bonus[k] = n; }
+  const oldPenFlat = whole(v.penFlat, 0, B.bonus, 0);
+  if (oldPenFlat && bonus.armorPenFlat === undefined) bonus.armorPenFlat = oldPenFlat;
   const out: ItemTemplate = {
     name, rar: oneOf(v.rar, RARITIES, 'common'), type: oneOf(v.type, ITEM_TYPES, 'misc'), slot: oneOf(v.slot, SLOTS, null), qty: whole(v.qty, 1, B.qty, 1),
     dice: text(v.dice, B.dice).trim(), bonus, desc: text(v.desc, B.desc),
@@ -297,8 +301,6 @@ export function parseItem(v: unknown): ItemTemplate | null {
   if (isIconKey(v.icon)) out.icon = v.icon;
   const attack = oneOf(v.attack, ATTACKS, null);
   if (attack) out.attack = attack;
-  const penFlat = whole(v.penFlat, 0, B.penFlat, 0);
-  if (penFlat) out.penFlat = penFlat;
   const effects = (Array.isArray(v.effects) ? v.effects : []).flatMap(o => parseOp(o, RULES) ?? []).slice(0, B.effects);
   if (effects.length) out.effects = effects;
   if (v.target === 'other') out.target = 'other';

@@ -445,6 +445,22 @@ describe('wave 2\'s ops as data (kits design 8.1 to 8.6, table 8.1)', () => {
     expect(parseOp({ op: 'edge', side: 'up', keep: 'better', tag: null, spend: true }, RULES)).toBeNull();
   });
 
+  test('the four penetrations as sheet ops: the percent pair held at penMax, the flat pair at a suit of plate\'s 60', () => {
+    expect(parseOp({ op: 'sheet', key: 'armorPen', amount: 90 }, RULES)).toEqual({ op: 'sheet', key: 'armorPen', amount: RULES.fight.penMax });
+    expect(parseOp({ op: 'sheet', key: 'resistPen', amount: [5, 10, 15, 20, 25, 30] }, RULES)).toEqual({ op: 'sheet', key: 'resistPen', amount: [5, 10, 15, 20, 25, 30] });
+    expect(parseOp({ op: 'sheet', key: 'armorPenFlat', amount: -500 }, RULES)).toEqual({ op: 'sheet', key: 'armorPenFlat', amount: -K.armorOp });
+    expect(parseOp({ op: 'sheet', key: 'resistPenFlat', amount: 12 }, RULES)).toEqual({ op: 'sheet', key: 'resistPenFlat', amount: 12 });
+  });
+
+  test('an old status\'s pen op, a share of armor or resist ignored, reads as the armor and the magic percent of the same amount', () => {
+    const old = parseStatusDef({ label: 'Keen', desc: '', ops: [{ op: 'sheet', key: 'pen', amount: 0.1 }, { op: 'sheet', key: 'pen', amount: [0.05, 0.1, 0.15, 0.2, 0.25, 0.3] }] }, RULES)!;
+    expect(old.ops).toEqual([
+      { op: 'sheet', key: 'armorPen', amount: 10 }, { op: 'sheet', key: 'resistPen', amount: 10 },
+      { op: 'sheet', key: 'armorPen', amount: [5, 10, 15, 20, 25, 30] }, { op: 'sheet', key: 'resistPen', amount: [5, 10, 15, 20, 25, 30] },
+    ]);
+    expect(parseOp({ op: 'sheet', key: 'pen', amount: 0.1 }, RULES)).toBeNull();
+  });
+
   test('each says what it does', () => {
     const lines = OPS.map(o => describeStatus({ label: 'x', desc: '', ops: [o] }, 0, RULES)[0]);
     expect(lines.every(l => typeof l === 'string' && l.length > 0)).toBe(true);
@@ -533,6 +549,15 @@ describe('wave 2\'s sheet and share ops (kits design 8.1)', () => {
   test('a zone holds back exactly when a safeguard would refuse its status as harmful: a field that taunts is drawn as one that holds back', () => {
     const ops: Op[][] = [[{ op: 'taunt' }], [{ op: 'root' }], [{ op: 'speed', pct: 10 }], [{ op: 'share', on: 'healed', pct: -50 }], [{ op: 'invulnerable' }]];
     expect(ops.map(o => zoneTone(o) === 'hinder')).toEqual(ops.map(o => harmful({ ops: o })));
+  });
+
+  test('a percent penetration op adds to the bearer\'s own and stops at penMax (60); a flat one adds, never under 0', () => {
+    const plain = modified(hunterOf(), [], RULES).sheet;
+    const on = (...ops: Op[]) => withSheetOps(plain, [status('x', def(...ops), null)], RULES);
+    expect([on({ op: 'sheet', key: 'armorPen', amount: 20 }).armorPen, on({ op: 'sheet', key: 'resistPen', amount: 20 }).resistPen]).toEqual([plain.armorPen + 20, plain.resistPen + 20]);
+    expect(on({ op: 'sheet', key: 'armorPen', amount: 60 }, { op: 'sheet', key: 'armorPen', amount: 60 }).armorPen).toBe(RULES.fight.penMax);
+    expect([on({ op: 'sheet', key: 'armorPenFlat', amount: 8 }).armorPenFlat, on({ op: 'sheet', key: 'resistPenFlat', amount: -8 }).resistPenFlat]).toEqual([8, 0]);
+    expect(on({ op: 'sheet', key: 'armorPen', amount: 20 }).resistPen).toBe(plain.resistPen);
   });
 
   test('a status with no sheet op leaves the sheet derive made, to the last field', () => {

@@ -2,7 +2,7 @@
 // store.setPrefs), hunter identity (emblem + color on the sheet, hunter/identity.ts), equipment loadouts
 // (hunter/loadouts.ts), build paths (hunter/build.ts over the rules.ts table, GM-overridable). This file draws and taps.
 import { iconDef, iconsOf, isIconKey } from '../core/registry/icons.ts';
-import { HUNTER_COLORS, ACCENTS, TEXT_SCALES, RANKS, PERK_KEYS, PERK_LABELS, pathOf, perkOf, tiersOpen } from '../edge/rules.ts';
+import { HUNTER_COLORS, ACCENTS, TEXT_SCALES, RANKS, BONUS_HUNDREDTHS, BONUS_KEYS, BONUS_LABELS, pathOf, perkOf, tiersOpen } from '../edge/rules.ts';
 import * as ui from './ui.js';
 import { oneOf } from '../core/one-of.ts';
 import { available, raiseMany } from '../core/hunter/progress.ts';
@@ -303,7 +303,7 @@ export function register(app) {
 
   const deltaRows = (h, bonus) => {
     const d = A().hunter.sheet(h);
-    return PERK_KEYS.filter(k => bonus[k]).map(k => { const cur = k in d.stats ? d.stats[k] : d.sheet[k]; return `<li><span>${PERK_LABELS[k]}</span><span>${esc(cur)} → <b class="up">${esc(cur + Math.trunc(bonus[k]))}</b></span></li>`; }).join('');
+    return BONUS_KEYS.filter(k => bonus[k]).map(k => { const cur = k in d.stats ? d.stats[k] : d.sheet[k], add = Math.trunc(bonus[k]) / (BONUS_HUNDREDTHS.includes(k) ? 100 : 1); return `<li><span>${BONUS_LABELS[k]}</span><span>${esc(cur)} → <b class="up">${esc(cur + add)}</b></span></li>`; }).join('');
   };
   async function choosePath(hid, id) {
     const p = pathOf(rules(), id); if (!p) return;
@@ -356,7 +356,7 @@ export function register(app) {
       if (!on()) html = `<p class="cz-note bd-off">The GM has turned builds off. Your path is kept.</p>`;
       else if (!p) html = `<p class="cz-note">Pick a path. Each rank unlocks one perk.</p>
         <div class="bd-paths">${Object.keys(R.paths || {}).filter(id => pathOf(R, id)).map(id => `<button type="button" data-bdpath="${esc(id)}"${canPick() ? '' : ' disabled'}><span>${esc(R.paths[id].name || id)}</span>
-          <small>${esc(Object.keys(R.paths[id].alloc || {}).map(k => PERK_LABELS[k] || k).join(' · '))}</small></button>`).join('')}</div>`;
+          <small>${esc(Object.keys(R.paths[id].alloc || {}).map(k => BONUS_LABELS[k] || k).join(' · '))}</small></button>`).join('')}</div>`;
       else {
         const next = h.build.picks.length, free = available(h, R);
         html = `<div class="bd-head"><span>${badge(h, 'sm')}<b>${esc(p.name || h.build.path)}</b></span><span class="cz-note">${Math.min(next, open)}/${(p.tiers || []).length} perks</span></div>

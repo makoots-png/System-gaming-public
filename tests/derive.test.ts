@@ -39,29 +39,31 @@ const SHOWN = ['E', 'C', 'S'] as const;
 const near = (actual: number, printed: number): boolean => Math.abs(actual - printed) <= 0.005 + 1e-9;
 const KEYS = Object.keys(SHEET_LABELS) as SheetNumber[];
 
-// Tables 2.3.E, 2.3.C and 2.3.S: one column per build, the rows in the order of SHEET_LABELS. The last, the sight level,
-// is no table's: every body sees at the rules' `fight.stealth.sightBase`, 0, until a status raises it (notes-7-stealth.md).
+// Tables 2.3.E, 2.3.C and 2.3.S: one column per build, the rows in the order of SHEET_LABELS. The tables print one
+// penetration, a share; the sheet holds it as two percents (armor and magic, both from Control: the share times 100,
+// 40 * x(ctl) / (x(ctl) + 40)) and two flat numbers (Lethality and Unravel, from bonuses only, 0 on a plain build;
+// balance plan section 9). The last, the sight level, is no table's: every body sees at the rules' `fight.stealth.sightBase`, 0, until a status raises it (notes-7-stealth.md).
 const TABLE_2_3: Record<Shown, Record<BuildId, readonly number[]>> = {
   E: {
-    speed: [45, 10, 100, 24, 8, 114, 6.84, 4, 10, 15, 0, 0, 7.85, 6, 6, 17.41, 10, 10, 1, 1.50, 0, 2.09, 0, 1, 0.15, 0, 2, 0],
-    tank: [51, 10, 108, 24, 32, 65, 3.90, 2, 65, 20, 0, 0, 7.85, 6, 6, 10, 10, 10, 1, 1.50, 0, 2.09, 0, 1, 0.15, 0, 2, 0],
-    cannon: [45, 15, 100, 20, 8, 100, 6, 3, 10, 15, 0.03, 0, 6, 10.45, 6, 10, 13.09, 10, 1, 1.54, 0, 0, 3.58, 1, 0.15, 0.02, 2, 0],
-    bruiser: [48, 10, 104, 28, 18, 90, 5.40, 3, 32, 5, 0, 0, 10.45, 6, 6, 10, 10, 10, 1, 1.50, 0, 4.44, 0, 1, 0.15, 0, 2, 0],
-    support: [45, 10, 100, 20, 8, 100, 6, 3, 10, 18, 0, 0, 6, 6, 10.45, 10, 10, 13.09, 1, 1.50, 0, 2.09, 0, 1.16, 0.17, 0, 3, 0],
+    speed: [45, 10, 100, 24, 8, 114, 6.84, 4, 10, 15, 0, 0, 0, 0, 7.85, 6, 6, 17.41, 10, 10, 1, 1.50, 0, 2.09, 0, 1, 0.15, 0, 2, 0],
+    tank: [51, 10, 108, 24, 32, 65, 3.90, 2, 65, 20, 0, 0, 0, 0, 7.85, 6, 6, 10, 10, 10, 1, 1.50, 0, 2.09, 0, 1, 0.15, 0, 2, 0],
+    cannon: [45, 15, 100, 20, 8, 100, 6, 3, 10, 15, 2.87, 2.87, 0, 0, 6, 10.45, 6, 10, 13.09, 10, 1, 1.54, 0, 0, 3.58, 1, 0.15, 0.02, 2, 0],
+    bruiser: [48, 10, 104, 28, 18, 90, 5.40, 3, 32, 5, 0, 0, 0, 0, 10.45, 6, 6, 10, 10, 10, 1, 1.50, 0, 4.44, 0, 1, 0.15, 0, 2, 0],
+    support: [45, 10, 100, 20, 8, 100, 6, 3, 10, 18, 0, 0, 0, 0, 6, 6, 10.45, 10, 10, 13.09, 1, 1.50, 0, 2.09, 0, 1.16, 0.17, 0, 3, 0],
   },
   C: {
-    speed: [81, 10, 100, 34, 8, 141, 8.46, 5, 10, 15, 0, 0, 15.59, 6, 6, 43.60, 10, 10, 1, 1.50, 0, 7.96, 0, 1, 0.15, 0, 2, 0],
-    tank: [114, 10, 123, 34, 32, 70, 4.20, 3, 74, 20, 0, 0, 15.59, 6, 6, 10, 10, 10, 1, 1.50, 0, 7.96, 0, 1, 0.15, 0, 2, 0],
-    cannon: [81, 24, 100, 20, 8, 100, 6, 3, 10, 15, 0.11, 0, 6, 26.16, 6, 10, 25.99, 10, 1, 1.64, 0, 0, 14.28, 1, 0.15, 0.07, 2, 0],
-    bruiser: [101, 10, 114, 43, 18, 100, 6, 3, 39, 5, 0, 0, 26.16, 6, 6, 10, 10, 10, 1, 1.50, 0, 12.83, 0, 1, 0.15, 0, 2, 0],
-    support: [81, 10, 100, 20, 8, 100, 6, 3, 10, 26, 0, 0, 6, 6, 26.16, 10, 10, 25.99, 1, 1.50, 0, 7.96, 0, 1.46, 0.22, 0, 8, 0],
+    speed: [81, 10, 100, 34, 8, 141, 8.46, 5, 10, 15, 0, 0, 0, 0, 15.59, 6, 6, 43.60, 10, 10, 1, 1.50, 0, 7.96, 0, 1, 0.15, 0, 2, 0],
+    tank: [114, 10, 123, 34, 32, 70, 4.20, 3, 74, 20, 0, 0, 0, 0, 15.59, 6, 6, 10, 10, 10, 1, 1.50, 0, 7.96, 0, 1, 0.15, 0, 2, 0],
+    cannon: [81, 24, 100, 20, 8, 100, 6, 3, 10, 15, 11.42, 11.42, 0, 0, 6, 26.16, 6, 10, 25.99, 10, 1, 1.64, 0, 0, 14.28, 1, 0.15, 0.07, 2, 0],
+    bruiser: [101, 10, 114, 43, 18, 100, 6, 3, 39, 5, 0, 0, 0, 0, 26.16, 6, 6, 10, 10, 10, 1, 1.50, 0, 12.83, 0, 1, 0.15, 0, 2, 0],
+    support: [81, 10, 100, 20, 8, 100, 6, 3, 10, 26, 0, 0, 0, 0, 6, 6, 26.16, 10, 10, 25.99, 1, 1.50, 0, 7.96, 0, 1.46, 0.22, 0, 8, 0],
   },
   S: {
-    speed: [174, 10, 100, 46, 8, 162, 9.72, 5, 10, 15, 0, 0, 32.61, 6, 6, 98.27, 10, 10, 1, 1.50, 0, 14.98, 0, 1, 0.15, 0, 2, 0],
-    tank: [282, 10, 134, 46, 32, 70, 4.2, 3, 81, 20, 0, 0, 32.61, 6, 6, 10, 10, 10, 1, 1.50, 0, 14.98, 0, 1, 0.15, 0, 2, 0],
-    cannon: [174, 31, 100, 20, 8, 100, 6, 3, 10, 15, 0.21, 0, 6, 58.96, 6, 10, 54.36, 10, 1, 1.76, 0, 0, 26.29, 1, 0.15, 0.13, 2, 0],
-    bruiser: [257, 10, 126, 54, 18, 100, 6, 3, 46, 5, 0, 0, 58.96, 6, 6, 10, 10, 10, 1, 1.50, 0, 20.88, 0, 1, 0.15, 0, 2, 0],
-    support: [174, 10, 100, 20, 8, 100, 6, 3, 10, 36, 0, 0, 6, 6, 58.96, 10, 10, 54.36, 1, 1.50, 0, 14.98, 0, 1.69, 0.28, 0, 19, 0],
+    speed: [174, 10, 100, 46, 8, 162, 9.72, 5, 10, 15, 0, 0, 0, 0, 32.61, 6, 6, 98.27, 10, 10, 1, 1.50, 0, 14.98, 0, 1, 0.15, 0, 2, 0],
+    tank: [282, 10, 134, 46, 32, 70, 4.2, 3, 81, 20, 0, 0, 0, 0, 32.61, 6, 6, 10, 10, 10, 1, 1.50, 0, 14.98, 0, 1, 0.15, 0, 2, 0],
+    cannon: [174, 31, 100, 20, 8, 100, 6, 3, 10, 15, 21.03, 21.03, 0, 0, 6, 58.96, 6, 10, 54.36, 10, 1, 1.76, 0, 0, 26.29, 1, 0.15, 0.13, 2, 0],
+    bruiser: [257, 10, 126, 54, 18, 100, 6, 3, 46, 5, 0, 0, 0, 0, 58.96, 6, 6, 10, 10, 10, 1, 1.50, 0, 20.88, 0, 1, 0.15, 0, 2, 0],
+    support: [174, 10, 100, 20, 8, 100, 6, 3, 10, 36, 0, 0, 0, 0, 6, 6, 58.96, 10, 10, 54.36, 1, 1.50, 0, 14.98, 0, 1.69, 0.28, 0, 19, 0],
   },
 };
 const TABLE_2_6: readonly (readonly [Shown, Archetype, MonsterKind, number, number, number, number, number])[] = [
@@ -103,8 +105,8 @@ describe('the five builds (tables 2.3.E, 2.3.C and 2.3.S)', () => {
     });
   }
 
-  test('the sheet has the 27 numbers the tables print, in their order, and the sight level after them', () => {
-    expect(KEYS).toHaveLength(28);
+  test('the sheet has the 27 numbers the tables print, the penetration as four, in their order, and the sight level after them', () => {
+    expect(KEYS).toHaveLength(30);
     expect(KEYS.at(-1)).toBe('sight');
     expect(Object.keys(sheetOf(build('tank', 'C'), RULES))).toEqual(KEYS);
   });
@@ -165,10 +167,6 @@ describe('kits and weight (table 2.5)', () => {
     expect([s.weight, s.armor, s.resist]).toEqual([8, 24, 7]);
   });
 
-  test('flat penetration comes from gear alone and adds up over the pieces (design 2.3)', () => {
-    const on = (gear: GearPiece[]): number => sheetOf({ stats: stats({ ctl: 83 }), level: 20, gear, perks: {} }, RULES).penFlat;
-    expect([on([LIGHT]), on([{ weight: 2, armor: 0, resist: 0, penFlat: 5 }, { weight: 0, armor: 0, resist: 0, penFlat: 3 }])]).toEqual([0, 8]);
-  });
 
   test('the speed factor of each kit on Strength 10, 33 and 83', () => {
     const factor = (kit: GearPiece, str: number): number => sheetOf({ stats: stats({ str }), level: 1, gear: [kit], perks: {} }, RULES).speed / 100;
@@ -222,7 +220,7 @@ describe('the bounds the design states for the curves', () => {
     // Design 2.2: each number's cap as the design gives it, and its floor where it has one. A count that is rounded may
     // reach its top (6 crit faces, an opening bonus of 6); the clamp holds speed inside 40 to 250.
     const below: [SheetNumber, number][] = [
-      ['manaMax', 40], ['fatigueMax', 150], ['carry', 70], ['armor', 30], ['resist', 40], ['pen', 0.4], ['critSize', 2], ['tenacity', 60],
+      ['manaMax', 40], ['fatigueMax', 150], ['carry', 70], ['armor', 30], ['resist', 40], ['armorPen', 40], ['resistPen', 40], ['critSize', 2], ['tenacity', 60],
       ['potency', 50], ['threat', 2], ['hold', 0.4], ['costCut', 0.25],
     ];
     const within: [SheetNumber, number, number][] = [['critFaces', 1, 6], ['opening', 0, 6], ['speed', 40, 250], ['critSize', 1.5, 2], ['costCut', 0, 1]];
@@ -348,7 +346,7 @@ describe('explain', () => {
   // every source at once: points spent, a level, worn gear with a bonus, a title, a path pick, a passive, the GM's change, two statuses
   const FULL = hunter({
     stats: stats({ vit: 18, agi: 16, str: 14, pow: 12 }), level: 9, rank: 'D',
-    items: [VEST], equipped: { chest: 'vest' }, titleId: 't', titles: [{ id: 't', bonus: { ins: 3, threat: 0.1 } }],
+    items: [VEST], equipped: { chest: 'vest' }, titleId: 't', titles: [{ id: 't', bonus: { ins: 3, threat: 10 } }],
     build: { path: 'striker', picks: [0] }, skills: [{ type: 'passive', bonus: { dis: 2, critSize: 0.05 } }],
     hpAdj: 7, manaAdj: -2, conditions: [on('slowed', SLOWED), on('frightened', FRIGHTENED)],
   });
@@ -387,5 +385,45 @@ describe('explain', () => {
   test('a slow is the Statuses part of Speed, and a hunter with no status has none', () => {
     expect(part(FULL, 'speed', 'statuses')).toBeLessThan(0);
     expect(part(hunter(), 'speed', 'statuses')).toBe(0);
+  });
+});
+
+describe('the bonus keys on a sheet (balance plan sections 9 and 10)', () => {
+  const plain = (perks: SheetBasis['perks'] = {}, ctl = 10): Sheet => sheetOf({ stats: stats({ ctl }), level: 20, gear: [MEDIUM], perks }, RULES);
+
+  test('Lethality and Unravel come from bonuses alone: a plain body in any kit holds 0, and a bonus adds its points', () => {
+    expect([plain().armorPenFlat, plain().resistPenFlat, plain({}, 83).armorPenFlat]).toEqual([0, 0, 0]);
+    expect([plain({ armorPenFlat: 5 }).armorPenFlat, plain({ resistPenFlat: 7 }).resistPenFlat, plain({ armorPenFlat: 5 }).resistPenFlat]).toEqual([5, 7, 0]);
+  });
+
+  test('Control gives both percents on its curve, 40 * x(ctl) / (x(ctl) + 40): 11.42 at Control 33', () => {
+    const x = 10 * Math.pow(3.3, 0.8) - 10, pct = 40 * x / (x + 40);
+    expect(plain({}, 33).armorPen).toBeCloseTo(pct, 9);
+    expect(plain({}, 33).resistPen).toBeCloseTo(pct, 9);
+  });
+
+  test('a percent bonus adds after Control\'s cap of 40, and the sum stops at penMax, 60', () => {
+    expect(plain({ armorPen: 15 }).armorPen).toBe(15);
+    expect(plain({ resistPen: 15 }, 33).resistPen).toBeCloseTo(plain({}, 33).resistPen + 15, 9);
+    expect([plain({ armorPen: 50 }, 1000).armorPen, plain({ resistPen: 999 }).resistPen]).toEqual([60, 60]);
+  });
+
+  test('a bonus on a share or a multiplier adds a hundredth a point: 10 on the cost cut is 0.10, 20 on crit size 0.20, 50 on threat 0.50, 5 on the channel\'s hold 0.05', () => {
+    const base = plain(), more = plain({ costCut: 10, critSize: 20, threat: 50, hold: 5 });
+    expect(more.costCut - base.costCut).toBeCloseTo(0.1, 9);
+    expect(more.critSize - base.critSize).toBeCloseTo(0.2, 9);
+    expect(more.threat - base.threat).toBeCloseTo(0.5, 9);
+    expect(more.hold - base.hold).toBeCloseTo(0.05, 9);
+  });
+
+  test('a bonus never passes a sheet clamp: crit faces stay in 1 to kit.critFacesMax, crit size in 1.5 to kit.critSizeMax, the cost cut in 0 to kit.costCutMax', () => {
+    const K = RULES.fight.kit, high = plain({ critFaces: 99, critSize: 999, costCut: 999 }), low = plain({ critFaces: -99, critSize: -999, costCut: -999 });
+    expect([high.critFaces, high.critSize, high.costCut]).toEqual([K.critFacesMax, K.critSizeMax, K.costCutMax]);
+    expect([low.critFaces, low.critSize, low.costCut]).toEqual([1, RULES.fight.critSizeBase, 0]);
+  });
+
+  test('a bonus on a stat-fed number adds after the curve\'s cap: 30 on potency over Control 1000\'s near-50', () => {
+    expect(plain({ potency: 30 }, 1000).potency).toBeCloseTo(plain({}, 1000).potency + 30, 9);
+    expect(plain({}, 1000).potency).toBeLessThan(RULES.fight.potencyCap);
   });
 });

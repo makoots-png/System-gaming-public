@@ -184,15 +184,39 @@ describe('each rule of design 3.1', () => {
     expect([hitFoe(flat, keen, t, 3).outcomes[0]!.dealt, hitFoe(flat, keen, t, 4).outcomes[0]!.dealt]).toEqual([20, 10]);
   });
 
-  test('rule 12: penetration takes its share of the armor first, then the flat amount', () => {
-    const t = body('t', monsterOrigin('brute'), place(6, 5), 'foe', {}, { armor: 100 });
-    const piercer = body('u', hunterOrigin('bruiser'), place(5, 5), 'party', {}, { pen: share(0.5), penFlat: 20 });
+  // Rule 12 by the balance plan's formula: left = max(0, def * (1 - pct / 100) - flat), dealt = round((raw - 0.03 * left)
+  // * 100 / (100 + left)). With 100 defence, 50% and 20 flat leave 30: a 130 hit deals 129.1 * 100 / 130 = 99.3, 99.
+  // With the other pair's numbers only, all 100 stand: (130 - 3) * 100 / 200 = 63.5, 64.
+  const NO_PEN = { armorPen: 0, resistPen: 0, armorPenFlat: 0, resistPenFlat: 0 };
+  const magical = (raw: number): Ability => { const a = ability('strike', {}, String(raw)); return { ...a, effect: { ...a.effect!, type: 'magical' } } as Ability; };
+  test('rule 12: a physical hit meets armor, less the armor percent first, then Lethality', () => {
+    const t = body('t', monsterOrigin('brute'), place(6, 5), 'foe', {}, { armor: 100, resist: 0 });
+    const piercer = body('u', hunterOrigin('bruiser'), place(5, 5), 'party', {}, { ...NO_PEN, armorPen: 50, armorPenFlat: 20 });
     expect(hitFoe(ability('strike', {}, '130'), piercer, t).outcomes[0]!.dealt).toBe(99);
+  });
+
+  test('rule 12: a magical hit meets resist, less the magic percent first, then Unravel', () => {
+    const t = body('t', monsterOrigin('brute'), place(6, 5), 'foe', {}, { armor: 0, resist: 100 });
+    const piercer = body('u', hunterOrigin('bruiser'), place(5, 5), 'party', {}, { ...NO_PEN, resistPen: 50, resistPenFlat: 20 });
+    expect(hitFoe(magical(130), piercer, t).outcomes[0]!.dealt).toBe(99);
+  });
+
+  test('rule 12: the other pair cuts nothing: the magic pair on a physical hit and the armor pair on a magical one leave all 100', () => {
+    const t = body('t', monsterOrigin('brute'), place(6, 5), 'foe', {}, { armor: 100, resist: 100 });
+    const magicPen = body('u', hunterOrigin('bruiser'), place(5, 5), 'party', {}, { ...NO_PEN, resistPen: 50, resistPenFlat: 20 });
+    const armorPen = body('u', hunterOrigin('bruiser'), place(5, 5), 'party', {}, { ...NO_PEN, armorPen: 50, armorPenFlat: 20 });
+    expect([hitFoe(ability('strike', {}, '130'), magicPen, t).outcomes[0]!.dealt, hitFoe(magical(130), armorPen, t).outcomes[0]!.dealt]).toEqual([64, 64]);
+  });
+
+  test('rule 12: flat penetration past what the percent leaves takes the defence to 0, never below', () => {
+    const t = body('t', monsterOrigin('brute'), place(6, 5), 'foe', {}, { armor: 20, resist: 0 });
+    const piercer = body('u', hunterOrigin('bruiser'), place(5, 5), 'party', {}, { ...NO_PEN, armorPen: 50, armorPenFlat: 40 });
+    expect(hitFoe(ability('strike', {}, '130'), piercer, t).outcomes[0]!.dealt).toBe(130);
   });
 
   test('rule 12: the flat part of armor (3% of it) comes off before the percentage, so a weak hit loses more than a strong one', () => {
     const t = body('t', monsterOrigin('brute'), place(6, 5), 'foe', {}, { armor: 100 });
-    const plain = body('u', hunterOrigin('bruiser'), place(5, 5), 'party', {}, { pen: share(0), penFlat: 0 });
+    const plain = body('u', hunterOrigin('bruiser'), place(5, 5), 'party', {}, NO_PEN);
     const dealt = (raw: number): number => hitFoe(ability('strike', {}, String(raw)), plain, t).outcomes[0]!.dealt;
     expect([dealt(9), dealt(103)]).toEqual([3, 50]);
   });

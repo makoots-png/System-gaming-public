@@ -24,7 +24,7 @@ const hunter = (gold = 100): Hunter => ({ ...newHunter(RULES), gold });
 const sale = (price: number, R: Pick<Rules, 'saleShare'> = RULES): number => (price > 0 ? Math.max(1, Math.floor(price * R.saleShare)) : 0);
 
 describe('the bag', () => {
-  const differing: [string, Partial<ItemTemplate>][] = [['description', { desc: 'a second telling' }], ['attack', { attack: 'shot' }], ['flat penetration', { penFlat: 3 }], ['grade', { grade: 1 }], ['icon', { icon: 'crystal' }]];
+  const differing: [string, Partial<ItemTemplate>][] = [['description', { desc: 'a second telling' }], ['attack', { attack: 'shot' }], ['grade', { grade: 1 }], ['icon', { icon: 'crystal' }]];
   for (const [what, change] of differing) {
     test(`two slotless things that differ only in their ${what} stay two stacks`, () => {
       const h = putItem(putItem(hunter(), potion, iid('i1')), { ...potion, ...change }, iid('i2'));

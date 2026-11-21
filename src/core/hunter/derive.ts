@@ -4,6 +4,7 @@
 // `SHEET_LABELS` (the typecheck asks), its formula here, its reason in design.md section 2.2 and its row in
 // tests/derive.test.ts. A formula may then name it with no change to src/core/formula.ts.
 
+import { BONUS_HUNDREDTHS } from '../rules.ts';
 import type { Rank, Rules } from '../rules.ts';
 import { above, baseStats, capped, eff } from '../stats.ts';
 import type { StatKey, Stats } from '../stats.ts';
@@ -13,7 +14,7 @@ import type { Brand } from '../ids.ts';
 import { asLevel } from '../combat/standing.ts';
 import type { Level } from '../combat/standing.ts';
 
-/** A share from 0 to 1, such as the part of armor ignored. */
+/** A share from 0 to 1, such as the part of a cost taken off. */
 export type Share = Brand<number, 'Share'>;
 export const share = (n: number): Share => n as Share;
 
@@ -34,10 +35,15 @@ export type Sheet = {
   readonly stride: Tiles;
   readonly armor: number;
   readonly resist: number;
-  /** The part of the target's armor or resist ignored. */
-  readonly pen: Share;
-  /** Armor or resist ignored after `pen`, from gear only. */
-  readonly penFlat: number;
+  /**
+   * Penetration (rule 12): the whole percent of a target's armor a physical hit ignores and of its resist a magical one
+   * ignores, each at most `fight.penMax`; then the flat points of either it ignores after the percent (Lethality and
+   * Unravel), from bonuses only.
+   */
+  readonly armorPen: number;
+  readonly resistPen: number;
+  readonly armorPenFlat: number;
+  readonly resistPenFlat: number;
   /** Physical, magical and support power: what a damage, heal or shield formula reads. */
   readonly phys: number;
   readonly mag: number;
@@ -81,19 +87,20 @@ export type SheetNumber = keyof Sheet;
 export const SHEET_LABELS: { readonly [K in SheetNumber]: string } = {
   hpMax: 'Max HP', manaMax: 'Max mana', fatigueMax: 'Fatigue capacity', carry: 'Carry', weight: 'Gear weight',
   speed: 'Speed', move: 'Move (tiles a round)', stride: 'Stride (tiles a turn)', armor: 'Armor', resist: 'Resist',
-  pen: 'Penetration (share)', penFlat: 'Penetration (flat)', phys: 'Physical power', mag: 'Magical power', sup: 'Support power', react: 'Reaction',
+  armorPen: 'Armor penetration (%)', resistPen: 'Magic penetration (%)', armorPenFlat: 'Lethality', resistPenFlat: 'Unravel', phys: 'Physical power', mag: 'Magical power', sup: 'Support power', react: 'Reaction',
   aim: 'Accuracy', will: 'Will', critFaces: 'Crit faces (of d20)', critSize: 'Crit size', opening: 'Opening bonus',
   tenacity: 'Tenacity', potency: 'Potency', threat: 'Threat multiplier', hold: 'Channel hold (share of max HP)',
   costCut: 'Cost cut (share)', shadows: 'Shadow capacity', sight: 'Sight level',
 };
 
-/** What one worn item adds to the kit (design 2.3). Neck and rings weigh 0. `penFlat` is armor or resist the wearer's hits ignore. */
-export type GearPiece = { readonly weight: number; readonly armor: number; readonly resist: number; readonly penFlat?: number };
+/** What one worn item adds to the kit (design 2.3). Neck and rings weigh 0. */
+export type GearPiece = { readonly weight: number; readonly armor: number; readonly resist: number };
 
 /**
  * Bonuses from perks: a stat key adds to that stat before its curve, a `Sheet` key adds to that number where it is worked
- * out, before anything that reads it and before it is rounded or clamped. The sight level is the one key that does not
- * add: the higher of the base and the perk is the level (the owner's ruling 8, sources of sight do not add).
+ * out, after its stat's curve cap, before anything that reads it and before it is rounded or clamped. A key of
+ * `BONUS_HUNDREDTHS` adds a hundredth a point. The sight level is the one key that does not add: the higher of the base
+ * and the perk is the level (the owner's ruling 8, sources of sight do not add).
  */
 export type Bonus = Partial<Readonly<Record<StatKey | SheetNumber, number>>>;
 
@@ -147,14 +154,18 @@ const HUNTER: Factors = { hp: 1, power: 1 };
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
+const HUNDREDTHS: ReadonlySet<StatKey | SheetNumber> = new Set(BONUS_HUNDREDTHS);
+
 // Design 2.2, in the order the numbers read each other: weight and carry give the load, the load and Agility the speed,
-// the speed the move. Crit faces, crit size, the opening bonus and the cost cut never fall below their base. However far
-// perks lower them (an item's, a title's, the GM's `hpAdj` and `manaAdj`), max HP and fatigue capacity stay at 1 or
-// more and max mana at 0 or more: a body with no HP to hold could not be up (vitals.ts), one with no capacity would be
-// collapsed at rest.
+// the speed the move. However far perks lower them (an item's, a title's, the GM's `hpAdj` and `manaAdj`), max HP and
+// fatigue capacity stay at 1 or more and max mana at 0 or more: a body with no HP to hold could not be up (vitals.ts),
+// one with no capacity would be collapsed at rest. A bonus passes a stat's curve cap but never a sheet clamp (balance
+// plan section 10): the speed range, the opening's cap, the percent penetration's `penMax`, and the crit faces, crit size
+// and cost cut a status may reach (`kit.critFacesMax`, `kit.critSizeMax`, `kit.costCutMax`), which no stat alone reaches;
+// crit faces, crit size and the cost cut never fall below their base.
 function derive(stats: Stats, level: number, gear: readonly GearPiece[], perks: Bonus, mods: readonly StatusMod[], f: Factors, R: DeriveRules): Sheet {
-  const F = R.fight;
-  const b = (k: StatKey | SheetNumber): number => perks[k] ?? 0;
+  const F = R.fight, K = F.kit;
+  const b = (k: StatKey | SheetNumber): number => (perks[k] ?? 0) / (HUNDREDTHS.has(k) ? 100 : 1);
   const statMod = (k: StatKey): number => mods.reduce((s, m) => m.op === 'stat' && m.key === k ? s + m.amount : s, 0);
   const speedPct = mods.reduce((s, m) => m.op === 'speed' ? s + m.pct : s, 0);
   const score = (k: StatKey): number => stats[k] + b(k) + statMod(k);
@@ -187,22 +198,24 @@ function derive(stats: Stats, level: number, gear: readonly GearPiece[], perks: 
     stride: tiles(Math.max(1, Math.ceil(move * F.strideShare + b('stride')))),
     armor: Math.round(total('armor') + c('vit', F.armorVitCap) + b('armor')),
     resist: Math.round(total('resist') + c('dis', F.resistDisCap) + b('resist')),
-    pen: share(c('ctl', F.penCap) + b('pen')),
-    penFlat: total('penFlat') + b('penFlat'),
+    armorPen: Math.min(F.penMax, c('ctl', F.penCap) + b('armorPen')),
+    resistPen: Math.min(F.penMax, c('ctl', F.penCap) + b('resistPen')),
+    armorPenFlat: b('armorPenFlat'),
+    resistPenFlat: b('resistPenFlat'),
     phys: f.power * F.powerK * e('str') + b('phys'),
     mag: f.power * F.powerK * e('pow') + b('mag'),
     sup: f.power * F.powerK * e('pre') + b('sup'),
     react: F.statBase + x('ins') + F.reactAgi * x('agi') + b('react'),
     aim: e('ctl') + b('aim'),
     will: e('dis') + b('will'),
-    critFaces: 1 + Math.round(up('ins', F.critFacesCap) + b('critFaces')),
-    critSize: F.critSizeBase + up('ctl', F.critSizeCap) + b('critSize'),
+    critFaces: clamp(1 + Math.round(up('ins', F.critFacesCap) + b('critFaces')), 1, K.critFacesMax),
+    critSize: clamp(F.critSizeBase + up('ctl', F.critSizeCap) + b('critSize'), F.critSizeBase, K.critSizeMax),
     opening: Math.min(F.openCap, Math.round(F.openK * Math.max(0, x('ins')) + b('opening'))),
     tenacity: capped(above(blend('str', 'dis'), F), F.tenacityCap, F) + b('tenacity'),
     potency: c('ctl', F.potencyCap) + b('potency'),
     threat: 1 + c('pre', F.threatCap) + b('threat'),
     hold: share(F.holdBase + c('dis', F.holdCap) + b('hold')),
-    costCut: share(up('ctl', F.costCutCap) + b('costCut')),
+    costCut: share(clamp(up('ctl', F.costCutCap) + b('costCut'), 0, K.costCutMax)),
     shadows: Math.floor(e('pre') * F.shadowPerEff + b('shadows')),
     sight: asLevel(Math.max(F.stealth.sightBase, b('sight'))),
   };

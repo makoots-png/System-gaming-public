@@ -286,7 +286,7 @@ function part3(): void {
     ['Tiles it can move', `floor(${skirm.move.toFixed(2)} * 0.10 * ${share(swingReact, e1).toFixed(2)}) = ${can1}`], ['Needs to be out', '1 (from distance 1 to 2)'],
     ['Outcome', avoidOf(can1, null, 1)], ['Best case (d20 = 20)', `${reach(skirm.move, swingLand, 20, e1)} tile: ${avoidOf(reach(skirm.move, swingLand, 20, e1), null, 1)}`],
     ['Crit', `react die ${swingReact} <= crit faces ${bruiser.critFaces}? no`], ['Formula', `6 + ${bruiser.phys.toFixed(2)} = ${raw1.toFixed(2)}`],
-    ['Armor', `${skirm.armor}, penetration ${bruiser.pen}: x ${(100 / (100 + skirm.armor)).toFixed(3)}`], ['Dealt', `${mitigate(raw1, skirm.armor, bruiser.pen)} of ${skirm.hpMax} HP`],
+    ['Armor', `${skirm.armor}, penetration ${bruiser.armorPen / 100}: x ${(100 / (100 + skirm.armor)).toFixed(3)}`], ['Dealt', `${mitigate(raw1, skirm.armor, bruiser.armorPen / 100)} of ${skirm.hpMax} HP`],
     ['Bruiser next turn', `now + ${interval(bruiser.speed)} ticks`],
   ]);
 
@@ -301,9 +301,9 @@ function part3(): void {
     const outs = faces.map(f => avoidOf(reach(t.move, arrowLand, f, e), null, 1));
     const caught = outs.filter(o => o === 'caught').length;
     const crit = faces.filter((f, i) => outs[i] === 'caught' && f <= speed.critFaces).length;
-    const raw = 4.5 + speed.phys, hit = mitigate(raw, t.armor, speed.pen);
+    const raw = 4.5 + speed.phys, hit = mitigate(raw, t.armor, speed.armorPen / 100);
     return [label, t.move.toFixed(2), e, `${faces.find((f, i) => outs[i] === 'out') ?? 'never'}`, pct(caught / 20), pct(crit / 20), hit,
-      ((caught - crit) / 20 * hit + crit / 20 * mitigate(raw * speed.critSize, t.armor, speed.pen)).toFixed(1)];
+      ((caught - crit) / 20 * hit + crit / 20 * mitigate(raw * speed.critSize, t.armor, speed.armorPen / 100)).toFixed(1)];
   };
   table(['Target', 'Move', 'Edge', 'Lowest d20 that dodges', 'Caught', 'Crit', 'Dealt on a hit (average dice)', 'Expected dealt'],
     [ex2(caster, 'C caster (normal), speed 100'), ex2(skirm, 'C skirmisher (normal), speed 138'), ex2(speed, 'C speed build, speed 141')]);
@@ -318,11 +318,11 @@ function part3(): void {
   const ex3 = (t: Sheet, label: string): (string | number)[] => {
     const e = reactEdge(t.react, cannon.aim);
     const outs = faces.map(f => avoidOf(reach(t.move, blastLand, f, e), 2, 3));
-    const raw = 13.5 + 1.5 * cannon.mag, hit = mitigate(raw, t.resist, cannon.pen), ringHit = mitigate(raw * F.ringShare, t.resist, cannon.pen);
+    const raw = 13.5 + 1.5 * cannon.mag, hit = mitigate(raw, t.resist, cannon.resistPen / 100), ringHit = mitigate(raw * F.ringShare, t.resist, cannon.resistPen / 100);
     const n = (o: Avoid): number => outs.filter(x => x === o).length;
     const crit = faces.filter((f, i) => outs[i] === 'caught' && f <= cannon.critFaces).length;
     return [label, t.move.toFixed(2), e, `${floorMax(t.move * blastLand)}`, pct(n('caught') / 20), pct(n('ring') / 20), pct(n('out') / 20), hit, ringHit,
-      ((n('caught') - crit) / 20 * hit + crit / 20 * mitigate(raw * cannon.critSize, t.resist, cannon.pen) + n('ring') / 20 * ringHit).toFixed(1)];
+      ((n('caught') - crit) / 20 * hit + crit / 20 * mitigate(raw * cannon.critSize, t.resist, cannon.resistPen / 100) + n('ring') / 20 * ringHit).toFixed(1)];
   };
   const floorMax = (v: number): number => Math.floor(v);
   table(['Target', 'Move', 'Edge', 'Most tiles (d20 = 20)', 'Caught', 'Ring', 'Out', 'Dealt caught', 'Dealt in ring', 'Expected dealt'],
@@ -345,7 +345,7 @@ function part3(): void {
 /** A same-rank hit: the bruiser's average Cleave on a same-rank normal brute, after armor. */
 const sameRankHit = (rank: Rank): number => {
   const u = sheetOf(BUILDS[3]!, rank), t = monsterSheet('brute', rank, 'normal');
-  return mitigate(4.5 + u.phys, t.armor, u.pen);
+  return mitigate(4.5 + u.phys, t.armor, u.armorPen / 100);
 };
 
 function part4(): void {
@@ -353,7 +353,7 @@ function part4(): void {
   out('Table 4.1: a channel of a base ability (3d8 + 1.5 * mag by a C cannon, 47 after a normal target\'s resist), by turns held.');
   out('Linear is `base * (1 + 0.5 * charge)`, exponential `base * 1.45 ^ charge`. Broken fires at half the charge, rounded down.');
   out();
-  const base = mitigate(13.5 + 1.5 * sheetOf(BUILDS[2]!, 'C').mag, monsterSheet('brute', 'C', 'normal').resist, sheetOf(BUILDS[2]!, 'C').pen);
+  const base = mitigate(13.5 + 1.5 * sheetOf(BUILDS[2]!, 'C').mag, monsterSheet('brute', 'C', 'normal').resist, sheetOf(BUILDS[2]!, 'C').resistPen / 100);
   const bossHp = monsterSheet('brute', 'C', 'boss').hpMax;
   table(['Turns held (charge)', 'Linear', 'Exponential', 'Broken at this charge (exponential)', 'Exponential as a share of a C boss (449 HP)'],
     [0, 1, 2, 3, 4, 5].map(c => [c, Math.round(base * (1 + F.channelLin * c)), Math.round(base * Math.pow(F.channelExp, c)),
@@ -373,7 +373,7 @@ function part4(): void {
   const per = party.map(([, b]) => sheetOf(b, 'C'));
   const names = party.map(([n], i) => `${n} (x${per[i]!.threat.toFixed(2)})`);
   // damage a round: a strike or blast each turn, at the build's own turn rate
-  const dmgRound = [mitigate(4.5 + per[0]!.phys, 39, 0), mitigate(13.5 + 1.5 * per[1]!.mag, 5, per[1]!.pen) * 100 / COST.heavy, mitigate(4.5 + per[2]!.phys, 39, 0)]
+  const dmgRound = [mitigate(4.5 + per[0]!.phys, 39, 0), mitigate(13.5 + 1.5 * per[1]!.mag, 5, per[1]!.resistPen / 100) * 100 / COST.heavy, mitigate(4.5 + per[2]!.phys, 39, 0)]
     .map((dd, i) => dd * per[i]!.speed / 100);
   const threat = [0, 0, 0];
   const rows4: (string | number)[][] = [];
@@ -500,8 +500,8 @@ const faces20 = Array.from({ length: 20 }, (_, i) => i + 1);
 /** Expected damage of one use of `a` by `u` on `t`, over the target's 20 faces (touch when land * move < 1 tile). */
 function expected(a: Attack, u: Sheet, t: Sheet): number {
   const avg = a.dice * (a.faces + 1) / 2 + a.flat(u);
-  const def = a.type === 'physical' ? t.armor : t.resist;
-  const hit = mitigate(avg, def, u.pen), crit = mitigate(avg * u.critSize, def, u.pen);
+  const def = a.type === 'physical' ? t.armor : t.resist, pen = (a.type === 'physical' ? u.armorPen : u.resistPen) / 100;
+  const hit = mitigate(avg, def, pen), crit = mitigate(avg * u.critSize, def, pen);
   const e = reactEdge(t.react, u.aim);
   let total = 0;
   for (const f of faces20) {
@@ -611,7 +611,8 @@ function part6(): void {
       return uses.map(([label, b, a]) => {
         const u = sheetOf(b, r), def = (t: Sheet): number => a.type === 'physical' ? t.armor : t.resist;
         const avg = a.dice * (a.faces + 1) / 2 + a.flat(u), top = a.dice * a.faces + a.flat(u);
-        const onM = mitigate(avg, def(m), u.pen), onT = mitigate(avg, def(tank), u.pen), best = mitigate(top * u.critSize, def(tank), u.pen);
+        const pen = (a.type === 'physical' ? u.armorPen : u.resistPen) / 100;
+        const onM = mitigate(avg, def(m), pen), onT = mitigate(avg, def(tank), pen), best = mitigate(top * u.critSize, def(tank), pen);
         return [r, label, onM, pct(onM / m.hpMax), onT, pct(onT / tank.hpMax), best, pct(best / tank.hpMax)];
       });
     }));

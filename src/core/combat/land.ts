@@ -29,12 +29,21 @@ export const clamp = (v: number, lo: number, hi: number): number => Math.min(hi,
 /** On the map: a monster or shadow at 0 HP is gone from it; a hunter at 0 still lies there. */
 export const alive = (b: Body): boolean => isUp(b) || b.kind === 'hunter';
 
-// Rule 12: penetration percent, then flat; then the flat part of what is left comes off the hit, then the percentage; at least 1.
+// Rule 12 (balance plan section 9): the damage type picks the defence and the pair of penetrations, as in LoL: armor
+// and the armor pair for a physical hit, resist and the resist pair for a magical one. The percent comes off first, then
+// the flat points; then the flat part of what is left comes off the hit, then the percentage; at least 1.
+/** The armor or resist a hit of `type` from a user with this sheet meets on a target with this one, after penetration. */
+export function defenceLeft(type: DamageType, user: Pick<Sheet, 'armorPen' | 'resistPen' | 'armorPenFlat' | 'resistPenFlat'>, target: Pick<Sheet, 'armor' | 'resist'>): number {
+  const physical = type === 'physical';
+  const def = physical ? target.armor : target.resist, pct = physical ? user.armorPen : user.resistPen, flat = physical ? user.armorPenFlat : user.resistPenFlat;
+  return Math.max(0, def * (1 - pct / 100) - flat);
+}
+/** What of a hit of `raw` gets through `left` defence, before rule 12 rounds it: item-budget.ts weighs a point of penetration on it. */
+export const throughDefence = (raw: number, left: number, R: Pick<OpRules, 'fight'>): number =>
+  Math.max(0, raw - R.fight.armorFlat * left) * R.fight.armorK / (R.fight.armorK + left);
 /** Rule 12 for a hit of `raw` of `type` from a user with this sheet on a target with this one (the maker's preview reads it too). */
-export function afterDefence(raw: number, type: DamageType, user: Pick<Sheet, 'pen' | 'penFlat'>, target: Pick<Sheet, 'armor' | 'resist'>, R: Pick<OpRules, 'fight'>): number {
-  const def = type === 'physical' ? target.armor : target.resist;
-  const left = Math.max(0, def * (1 - user.pen) - user.penFlat);
-  return Math.max(1, Math.round(Math.max(0, raw - R.fight.armorFlat * left) * R.fight.armorK / (R.fight.armorK + left)));
+export function afterDefence(raw: number, type: DamageType, user: Pick<Sheet, 'armorPen' | 'resistPen' | 'armorPenFlat' | 'resistPenFlat'>, target: Pick<Sheet, 'armor' | 'resist'>, R: Pick<OpRules, 'fight'>): number {
+  return Math.max(1, Math.round(throughDefence(raw, defenceLeft(type, user, target), R)));
 }
 
 // Rule 13: the shield takes it first.

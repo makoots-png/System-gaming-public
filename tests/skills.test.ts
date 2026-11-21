@@ -1,6 +1,6 @@
 // Every built-in and starter skill in src/core/registry/skills.ts must pass these. A new skill is checked here with no new test.
 import { describe as group, expect, test } from 'bun:test';
-import { PERK_KEYS, RULES } from '../src/core/rules.ts';
+import { BONUS_KEYS, RULES } from '../src/core/rules.ts';
 import { SKILL_ABILITIES } from '../src/core/registry/abilities.ts';
 import { SKILL_BOUNDS, SKILL_SEEDS, STARTER_SKILLS, parseSkill, skillOf } from '../src/core/registry/skills.ts';
 import type { SkillDef, SkillTemplate } from '../src/core/registry/skills.ts';
@@ -33,7 +33,7 @@ for (const [list, defs] of LISTS) {
       test('a passive one\'s bonus is whole numbers on one of the eight stats, max HP or max mana, none of them zero', () => {
         if (skill.type !== 'passive') return;
         for (const [k, v] of Object.entries(skill.bonus)) {
-          expect(PERK_KEYS as readonly string[]).toContain(k);
+          expect(BONUS_KEYS as readonly string[]).toContain(k);
           expect(Number.isInteger(v) && v !== 0).toBe(true);
         }
       });

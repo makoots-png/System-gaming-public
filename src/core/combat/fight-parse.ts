@@ -295,7 +295,7 @@ function wave2Op(v: Rec, R: Rules): Op | null {
     case 'sheet': {
       const key = oneOf(v.key, SHEET_OP_KEYS, null);
       if (!key) return null;
-      const cap = { armor: K.armorOp, resist: K.armorOp, pen: F.penCap, critFaces: K.critFacesMax, exposed: K.critFacesMax, critSize: K.critSizeMax - F.critSizeBase, costCut: K.costCutMax, range: K.rangeAdd, sight: Math.max(...LEVELS) }[key];
+      const cap = { armor: K.armorOp, resist: K.armorOp, armorPen: F.penMax, resistPen: F.penMax, armorPenFlat: K.armorOp, resistPenFlat: K.armorOp, critFaces: K.critFacesMax, exposed: K.critFacesMax, critSize: K.critSizeMax - F.critSizeBase, costCut: K.costCutMax, range: K.rangeAdd, sight: Math.max(...LEVELS) }[key];
       const amount = tiered(v.amount, x => within(x, -cap, cap));
       return amount === null ? null : { op: 'sheet', key, amount };
     }
@@ -340,9 +340,19 @@ const stealthEndsOf = (v: unknown): StealthEnds => {
 };
 const useOpOf = (v: unknown, R: Rules): UseOp | null => { const o = opOf(v, R, 0); return o && isUseOp(o) ? o : null; };
 const COLOR_RE = /^#[0-9a-f]{6}$/i;
+/** An old share (0.1) as whole percent (10), each value of a list of tiers; anything else as it is, for the reader to refuse. */
+const asPercent = (a: unknown): unknown => (typeof a === 'number' ? Math.round(a * 1e4) / 100 : Array.isArray(a) ? a.map(asPercent) : a);
+/**
+ * A status's ops with each old `pen` sheet op (a share of armor or resist ignored, from before the four penetrations)
+ * read as the two percent ops it was, `armorPen` and `resistPen` of the same amount in whole percent: the one-way read
+ * of a saved status (balance plan section 9).
+ */
+const oldPenRead = (v: unknown): unknown => (Array.isArray(v)
+  ? v.flatMap(o => (isObj(o) && o.op === 'sheet' && o.key === 'pen' ? (['armorPen', 'resistPen'] as const).map(key => ({ ...o, key, amount: asPercent(o.amount) })) : [o]))
+  : v);
 function defOf(v: unknown, R: Rules, depth: number): StatusDef | null {
   if (!isObj(v)) return null;
-  const label = text(v.label, NAME_MAX), desc = text(v.desc, 500), ops = all(v.ops, 12, x => opOf(x, R, depth));
+  const label = text(v.label, NAME_MAX), desc = text(v.desc, 500), ops = all(oldPenRead(v.ops), 12, x => opOf(x, R, depth));
   if (v.color !== undefined && !(typeof v.color === 'string' && COLOR_RE.test(v.color))) return null;
   if (label === null || desc === null || !ops) return null;
   const K = R.fight.kit;
@@ -678,9 +688,8 @@ function originOf(v: unknown, R: Rules): Origin | null {
   const gear = all(b.gear, 12, (g): GearPiece | null => {
     if (!isObj(g)) return null;
     const weight = num(g.weight, 0, 1000), armor = num(g.armor, 0, 10000), resist = num(g.resist, 0, 10000);
-    const penFlat = g.penFlat === undefined ? undefined : num(g.penFlat, 0, 10000);
-    if (weight === null || armor === null || resist === null || penFlat === null) return null;
-    return penFlat === undefined ? { weight, armor, resist } : { weight, armor, resist, penFlat };
+    if (weight === null || armor === null || resist === null) return null;
+    return { weight, armor, resist };
   });
   const keys = [...STAT_KEYS, ...SHEET_KEYS] as string[];
   const perks: Rec = {};

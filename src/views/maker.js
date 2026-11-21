@@ -11,7 +11,7 @@ import { enter, pop } from './motion.ts';
 import { icon, iconHref, sprite } from './icons.ts';
 import { GROUP_WORDS, iconPickStart, iconPickStep, iconShown, iconWords, pickerGroups } from '../core/icon-pick.ts';
 import { ICON_GROUPS, ICON_KEYS, iconDef, iconsOf } from '../core/registry/icons.ts';
-import { PERK_KEYS, PERK_LABELS, rules } from '../edge/rules.ts';
+import { BONUS_KEYS, BONUS_LABELS, rules } from '../edge/rules.ts';
 import { RANKS } from '../core/rules.ts';
 import { STAT_KEYS, STAT_LABELS } from '../core/stats.ts';
 import { parseFormula, printFormula } from '../core/formula.ts';
@@ -32,7 +32,7 @@ import { draftStep } from '../core/draft.ts';
 import { rewardEditor, rewardEditorCss } from './reward-editor.js';
 import { abilityBlocks, kitPartsCss, statusBlocks, triggerList } from './kit-parts.js';
 
-const BONUS_LABEL = { ...PERK_LABELS, hpMax: 'Max HP', manaMax: 'Max mana' };
+const BONUS_LABEL = { ...BONUS_LABELS, hpMax: 'Max HP', manaMax: 'Max mana' };
 
 // ── chips ──
 /**
@@ -60,16 +60,16 @@ function press(btn) {
   if (!was) btn.setAttribute('aria-pressed', 'true');
 }
 
-// ── the ten bonus fields ──
-/** The ten bonus inputs (the eight stats, max HP, max mana), each empty when 0. */
+// ── the bonus fields ──
+/** An input for each bonus key (`BONUS_KEYS`: the eight stats, then the sheet's numbers), each empty when 0. */
 function bonus(values = {}) {
-  return `<div class="mk-bonus" data-bonus-fields>${PERK_KEYS.map(k => field(BONUS_LABEL[k],
+  return `<div class="mk-bonus" data-bonus-fields>${BONUS_KEYS.map(k => field(BONUS_LABEL[k],
     `<input type="number" step="1" inputmode="numeric" data-bonus="${k}" placeholder="0" value="${values && Number(values[k]) ? esc(Math.trunc(Number(values[k]))) : ''}">`)).join('')}</div>`;
 }
 /** What the bonus inputs under `root` hold: each whole number that is not 0. */
 function readBonus(root) {
   const out = {};
-  for (const k of PERK_KEYS) {
+  for (const k of BONUS_KEYS) {
     const inp = root.querySelector(`[data-bonus="${k}"]`), n = inp ? Math.trunc(Number(inp.value)) : 0;
     if (Number.isFinite(n) && n) out[k] = n;
   }
@@ -117,15 +117,16 @@ const NUMBER_KINDS = Object.keys(NUMBERS);
 function specOf(r) {
   if (r.kind !== 'sheet') return NUMBERS[r.kind];
   const F = rules().fight, K = F.kit, key = r.sheetKey;
-  const hi = { armor: K.armorOp, resist: K.armorOp, pen: F.penCap, critFaces: K.critFacesMax, exposed: K.critFacesMax, critSize: K.critSizeMax - F.critSizeBase, costCut: K.costCutMax, range: K.rangeAdd }[key] ?? K.armorOp;
-  return { key: 'amount', lo: -hi, hi, decimal: key === 'pen' || key === 'critSize' || key === 'costCut' };
+  const hi = { armor: K.armorOp, resist: K.armorOp, armorPen: F.penMax, resistPen: F.penMax, armorPenFlat: K.armorOp, resistPenFlat: K.armorOp, critFaces: K.critFacesMax, exposed: K.critFacesMax, critSize: K.critSizeMax - F.critSizeBase, costCut: K.costCutMax, range: K.rangeAdd }[key] ?? K.armorOp;
+  return { key: 'amount', lo: -hi, hi, decimal: key === 'critSize' || key === 'costCut' };
 }
 const PLAIN_KINDS = ['hold', 'root', 'taunt', 'untargetable', 'invulnerable', 'safeguard', 'alert', 'extra', 'negate', 'reveal'];
 /** Where a hide may start (effect-ops.ts `HIDE_STARTS`), and the three events that may end it (`STEALTH_ENDS`), as the GM reads them. */
 const START_LABEL = [['unseen', 'Out of sight'], ['anywhere', 'Anywhere']];
 const STEALTH_END_LABEL = [['hurt', 'Hurt'], ['revealed', 'Revealed'], ['dealt', 'It deals damage']];
 /** The sheet numbers a `sheet` op changes (effect-ops.ts `SHEET_OP_KEYS`), as the GM reads them. */
-const SHEET_KEY_LABEL = [['armor', 'Armor'], ['resist', 'Resist'], ['pen', 'Penetration (share)'], ['critFaces', 'Crit faces'], ['exposed', 'Faces foes crit it on'],
+const SHEET_KEY_LABEL = [['armor', 'Armor'], ['resist', 'Resist'], ['armorPen', 'Armor penetration (%)'], ['resistPen', 'Magic penetration (%)'],
+  ['armorPenFlat', 'Lethality'], ['resistPenFlat', 'Unravel'], ['critFaces', 'Crit faces'], ['exposed', 'Faces foes crit it on'],
   ['critSize', 'Crit size'], ['costCut', 'Cost cut (share)'], ['range', 'Range']];
 const SHARE_LABEL = [['dealt', 'Dealt'], ['taken', 'Taken'], ['healed', 'Healing']];
 const SIDE_LABEL = [['attack', 'Its attacks'], ['defend', 'Its defense']];

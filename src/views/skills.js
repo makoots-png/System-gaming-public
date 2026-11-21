@@ -15,7 +15,7 @@ import { tiles } from '../core/combat/space.ts';
 import { roundsOf } from '../core/combat/timeline.ts';
 import { oneOf } from '../core/one-of.ts';
 import { gmSource } from '../core/effects.ts';
-import { PERK_KEYS, PERK_LABELS, rules } from '../edge/rules.ts';
+import { BONUS_KEYS, BONUS_LABELS, rules } from '../edge/rules.ts';
 import { newRewards } from '../core/rewards.ts';
 import { SKILL_MAX_LEVEL, editSkill, forgetSkill, addSkill, levelUpSkill } from '../core/hunter/skills-held.ts';
 import { saveEntry, savedWords } from '../core/library.ts';
@@ -25,7 +25,7 @@ import { useWords } from '../core/hunter/use.ts';
 import { reportWords } from '../core/sync/connection.ts';
 import { tooLarge } from '../core/size.ts';
 
-const BONUS_LABEL = { ...PERK_LABELS, hpMax: 'Max HP', manaMax: 'Max mana' };
+const BONUS_LABEL = { ...BONUS_LABELS, hpMax: 'Max HP', manaMax: 'Max mana' };
 const KINDS = /** @type {const} */ (['strike', 'shot', 'blast', 'curse', 'support']);
 const KIND_LABEL = { strike: 'Strike', shot: 'Shot', blast: 'Blast', curse: 'Curse', support: 'Support', none: 'No fight use' };
 const AIM_LABEL = { foe: 'On a foe', ally: 'On an ally', self: 'On the user', place: 'On a place' };
@@ -69,7 +69,7 @@ export function register(app) {
   const int = (v, lo, hi) => { const n = Math.trunc(Number(v)); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : 0; };
   /** Keys sorted, so the form's skill and the parser's compare by what they hold. */
   const canon = v => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : 1))) : x));
-  const bonusText = b => PERK_KEYS.filter(k => b && b[k]).map(k => `${b[k] > 0 ? '+' : ''}${b[k]} ${BONUS_LABEL[k]}`).join(', ');
+  const bonusText = b => BONUS_KEYS.filter(k => b && b[k]).map(k => `${b[k] > 0 ? '+' : ''}${b[k]} ${BONUS_LABEL[k]}`).join(', ');
   /** @type {import('../core/api.ts').SkillsApi['lines']} */
   function skillLines(k, from) {
     if (k.type === 'passive') { const b = bonusText(k.bonus); return b ? [`While known: ${b}`] : []; }

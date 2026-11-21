@@ -31,7 +31,7 @@ function conv(rank: Rank): Conv {
 /** The points an item spends beyond its slot's free base, from the game's own `itemSpend`; `unweighed` names what it carries and the budget cannot weigh. */
 function spend(d: ItemDef): { pts: number; unweighed: string[] } {
   const sp = itemSpend(itemOf(RULES, d), RULES);
-  return { pts: sp?.points ?? 0, unweighed: (sp?.unweighed ?? []).map(u => (u === 'penFlat' ? 'armor ignored' : u)) };
+  return { pts: sp?.points ?? 0, unweighed: [...(sp?.unweighed ?? [])] };
 }
 /** Each tier's middle budget: `itemShare` of the points a hunter of its rank has at the rank's first level, over the slots. */
 const budget = (r: Rank): number => RULES.itemBudget.share * pointsAt(RULES.rankLevels[r], RULES) / RULES.slots.length;

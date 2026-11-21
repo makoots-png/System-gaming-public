@@ -385,7 +385,7 @@ test('a GM grades an epic item Epic+: the price by the rule is gradeStep times t
   });
 });
 
-test('the item maker says what a rare weapon spends against its grade, names the grade that holds it, warns past the tier\'s top, names armor ignored as not weighed, and shows nothing for a consumable', async ({ device }) => {
+test('the item maker says what a rare weapon spends against its grade, names the grade that holds it, warns past the tier\'s top, weighs Lethality, and shows nothing for a consumable', async ({ device }) => {
   const page = (await device('gm')).page;
   await onboardGM(page);
   const d = itemMaker(page), spend = d.locator('[data-spend]'), grades = d.locator('[data-chips="grade"]');
@@ -412,9 +412,9 @@ test('the item maker says what a rare weapon spends against its grade, names the
     await d.locator('[data-bonus="str"]').fill('2');
   });
 
-  await test.step('an unweighed item: armor ignored is named, with the words to test it in a fight', async () => {
-    await d.locator('#lf-pen').fill('5');
-    await expect(spend).toHaveText('Spends 2.0 points. Rare− holds up to 3.1. Without armor ignored on a hit, which the budget cannot weigh: test it in a fight.');
+  await test.step('Lethality is weighed: a point of it spends 0.71 at rare (balance plan section 9), so +2 Strength and 1 Lethality spend 2.7', async () => {
+    await d.locator('[data-bonus="armorPenFlat"]').fill('1');
+    await expect(spend).toHaveText('Spends 2.7 points. Rare− holds up to 3.1.');
   });
 
   await test.step('a consumable has no budget, so no line', async () => {
@@ -423,7 +423,7 @@ test('the item maker says what a rare weapon spends against its grade, names the
   });
 });
 
-test('on a 390 px phone the item maker\'s spend line, past the tier\'s top and naming what it cannot weigh, fits the screen with no sideways scroll', async ({ device }) => {
+test('on a 390 px phone the item maker\'s spend line, past the tier\'s top with Lethality and Unravel on the weapon, fits the screen with no sideways scroll', async ({ device }) => {
   const page = (await device('gm', { viewport: { width: 390, height: 844 } })).page;
   await onboardGM(page);
   const d = itemMaker(page), spend = d.locator('[data-spend]');
@@ -433,7 +433,8 @@ test('on a 390 px phone the item maker\'s spend line, past the tier\'s top and n
   await d.locator('#lf-rar').selectOption('legendary');
   await d.locator('#lf-dice').fill('3d8');
   await d.locator('[data-bonus="str"]').fill('4');
-  await d.locator('#lf-pen').fill('5');
+  await d.locator('[data-bonus="armorPenFlat"]').fill('5');
+  await d.locator('[data-bonus="resistPenFlat"]').fill('5');
   await expect(spend).toContainText('stronger than any grade of Legendary');
   await spend.scrollIntoViewIfNeeded();
   const fit = await spend.evaluate(el => {

@@ -4,10 +4,13 @@
 // level of its rarity's rank. A tier's budget is a span of points cut in three grades; the price reads the grade the
 // maker picked (items.ts `valueOf`), never the spend, so the spend line only tells the maker whether they agree. A block
 // with no measure is named in `Spend.unweighed`, never counted as 0, as worth.ts does. Tests: tests/item-budget.test.ts.
-import { RANKS } from '../rules.ts';
-import type { PerkKey, Rank, Rules } from '../rules.ts';
-import { kitGear, pointsAt, sheetOf, split } from '../hunter/derive.ts';
+import { BONUS_HUNDREDTHS, RANKS } from '../rules.ts';
+import type { BonusKey, Perk, Rank, Rules } from '../rules.ts';
+import type { StatKey } from '../stats.ts';
+import { kitGear, monsterSheet, pointsAt, sheetOf, split } from '../hunter/derive.ts';
 import type { Kit, Sheet } from '../hunter/derive.ts';
+import { defenceLeft, throughDefence } from '../combat/land.ts';
+import type { DamageType } from '../combat/ability-types.ts';
 import { average, NO_KIT, parseFormula } from '../formula.ts';
 import type { Scope } from '../formula.ts';
 import { gradeLabel } from '../effects.ts';
@@ -54,31 +57,35 @@ export const gradeOfSpend = (R: BudgetRules, rar: Rarity, points: number): Grade
   GRADES.find(g => points <= gradeBand(R, rar, g).high + 1e-9) ?? null;
 
 // ── what an item spends (design 2.3) ──
-/** What an item carries that the budget has no measure for: armor its hits ignore, and the standing ops of a worn status. */
-export type Unbudgeted = 'penFlat' | 'worn';
+/** What an item carries that the budget has no measure for: the standing ops of a worn status. */
+export type Unbudgeted = 'worn';
 const UNBUDGETED_WORDS: { readonly [U in Unbudgeted]: string } = {
-  penFlat: 'armor ignored on a hit', worn: 'what its worn status does that its worth line cannot weigh',
+  worn: 'what its worn status does that its worth line cannot weigh',
 };
 /** An item's spend in points beyond its slot's free numbers, and what it carries that the budget cannot weigh. */
 export type Spend = { readonly points: number; readonly unweighed: readonly Unbudgeted[] };
 /** What a spend reads of an item. */
-export type Spendable = Pick<Item, 'rar' | 'type' | 'slot' | 'dice' | 'bonus' | 'armor' | 'resist'> & Partial<Pick<Item, 'weight' | 'penFlat' | 'worn'>>;
+export type Spendable = Pick<Item, 'rar' | 'type' | 'slot' | 'dice' | 'bonus' | 'armor' | 'resist'> & Partial<Pick<Item, 'weight' | 'worn'>>;
 
 /** The points a conversion is read over: max HP and max mana are whole numbers, so one point's share is read off ten. */
 const READ_OVER = 10;
-/** What one point buys on the sample wearer at the first level of a rank (block [2.3]), the body itself, and one standard action in damage. */
+/**
+ * The sample wearer at the first level of a rank (block [2.3]): its sheet with a bonus on it, the body itself, what one
+ * point of Strength, Power and Vitality buys of physical power, magical power and armor, and one standard action in damage.
+ */
 type Rates = {
-  readonly hpMax: number; readonly manaMax: number; readonly phys: number; readonly armor: number;
+  readonly rank: Rank; readonly sheet: (perks: Perk) => Sheet;
+  readonly phys: number; readonly mag: number; readonly armor: number;
   readonly body: Scope['user']; readonly strike: number;
 };
 function ratesAt(rank: Rank, R: BudgetRules): Rates {
   const level = R.rankLevels[rank], stats = split(SAMPLE_WEARER.main, SAMPLE_WEARER.second, pointsAt(level, R), R);
-  const sheet = (perks: Partial<Record<PerkKey, number>>): Sheet => sheetOf({ stats, level, gear: kitGear(SAMPLE_WEARER.kit, R), perks }, R);
-  const bare = sheet({}), per = (k: PerkKey, n: 'hpMax' | 'manaMax' | 'phys' | 'armor'): number => (sheet({ [k]: READ_OVER })[n] - bare[n]) / READ_OVER;
+  const sheet = (perks: Perk): Sheet => sheetOf({ stats, level, gear: kitGear(SAMPLE_WEARER.kit, R), perks }, R);
+  const bare = sheet({}), per = (k: StatKey, n: 'mag' | 'phys' | 'armor'): number => (sheet({ [k]: READ_OVER })[n] - bare[n]) / READ_OVER;
   const body = { stats, sheet: bare };
   // worth.ts's yardstick: the strike's dice plus its power times the bruiser's phys
   const strike = strikeDie(body, R) + KINDS.strike.power * referenceBody(BUILD_OF.strike, rank, R).sheet.phys;
-  return { hpMax: per('vit', 'hpMax'), manaMax: per('pow', 'manaMax'), phys: per('str', 'phys'), armor: per('vit', 'armor'), body, strike };
+  return { rank, sheet, phys: per('str', 'phys'), mag: per('pow', 'mag'), armor: per('vit', 'armor'), body, strike };
 }
 /** The mean of dice text on `body`, or null when the rules refuse it. */
 function meanOf(text: string, body: Scope['user'], R: BudgetRules): number | null {
@@ -89,10 +96,52 @@ function meanOf(text: string, body: Scope['user'], R: BudgetRules): number | nul
 const strikeDie = (body: Scope['user'], R: BudgetRules): number => meanOf(KINDS.strike.dice ?? '0', body, R) ?? 0;
 /** The mean of a weapon's dice as the fight rolls them: text the rules refuse rolls the strike's own (abilities.ts `weaponAttack`). */
 const dieMean = (text: string, body: Scope['user'], R: BudgetRules): number => meanOf(text, body, R) ?? strikeDie(body, R);
-/** Each bonus key's cost in points: a stat point is the unit, max HP and max mana what the stat that gives them would cost. */
-const BONUS_COST: { readonly [K in PerkKey]: (r: Rates) => number } = {
+
+/** The four penetrations, which no stat feeds alone (Control feeds the percent pair of both): each is weighed by `penCost`. */
+type PenKey = 'armorPen' | 'resistPen' | 'armorPenFlat' | 'resistPenFlat';
+/**
+ * The stat that feeds each other sheet key in `derive` (balance plan section 10): a bonus on the key costs the points of
+ * that stat that make the same change on the sample wearer. Tenacity reads Strength and Discipline together, so its
+ * points are spent on both evenly; the reaction reads Instinct first and Agility after, so Instinct weighs it.
+ */
+const FED_BY: { readonly [K in Exclude<BonusKey, StatKey | PenKey>]: readonly StatKey[] } = {
+  hpMax: ['vit'], manaMax: ['pow'], fatigueMax: ['vit'], carry: ['str'], speed: ['agi'], move: ['agi'], react: ['ins'], aim: ['ctl'], will: ['dis'], critFaces: ['ins'], critSize: ['ctl'], opening: ['ins'],
+  tenacity: ['str', 'dis'], potency: ['ctl'], threat: ['pre'], hold: ['dis'], costCut: ['ctl'],
+};
+/** What one point of a bonus key adds to its sheet number: one, or a hundredth for a key of `BONUS_HUNDREDTHS`. */
+const unitOf = (k: BonusKey): number => ((BONUS_HUNDREDTHS as readonly BonusKey[]).includes(k) ? 0.01 : 1);
+/**
+ * A key a stat feeds: what a point of the key adds to its number, over what a point of the stat adds to it on the sample
+ * wearer (read over `READ_OVER` points of the stat, spread evenly over the stats of `FED_BY`).
+ */
+function fedCost(k: keyof typeof FED_BY, r: Rates): number {
+  const by = FED_BY[k], spent: Perk = Object.fromEntries(by.map(s => [s, READ_OVER / by.length]));
+  return unitOf(k) / ((r.sheet(spent)[k] - r.sheet({})[k]) / READ_OVER);
+}
+/**
+ * A penetration (balance plan section 9): the points of the power stat (Strength for the armor pair, Power for the
+ * resist pair) that add as much damage to one standard action of the tier, `strike`, on a same-rank foe of the kind
+ * `itemBudget.penFoe` (a brute's armor, a caster's resist) as a point of the key does, both read before rule 12 rounds.
+ */
+function penCost(k: PenKey, r: Rates, R: BudgetRules): number {
+  const physical = k === 'armorPen' || k === 'armorPenFlat', type: DamageType = physical ? 'physical' : 'magical';
+  const foe = monsterSheet(r.rank, physical ? 'brute' : 'caster', R.itemBudget.penFoe, R);
+  const dealt = (raw: number, user: Sheet): number => throughDefence(raw, defenceLeft(type, user, foe), R);
+  const wearer = r.sheet({}), hit = r.strike;
+  const key = (dealt(hit, r.sheet({ [k]: READ_OVER })) - dealt(hit, wearer)) / READ_OVER;
+  const stat = dealt(hit + (physical ? r.phys : r.mag), wearer) - dealt(hit, wearer);
+  return key / stat;
+}
+/** Each bonus key's cost in points: a stat point is the unit; every other key by the stat that feeds it, or as a penetration. */
+const BONUS_COST: { readonly [K in BonusKey]: (r: Rates, R: BudgetRules) => number } = {
   str: () => 1, agi: () => 1, vit: () => 1, pow: () => 1, ins: () => 1, pre: () => 1, ctl: () => 1, dis: () => 1,
-  hpMax: r => 1 / r.hpMax, manaMax: r => 1 / r.manaMax,
+  hpMax: r => fedCost('hpMax', r), manaMax: r => fedCost('manaMax', r), fatigueMax: r => fedCost('fatigueMax', r),
+  carry: r => fedCost('carry', r), speed: r => fedCost('speed', r), move: r => fedCost('move', r), react: r => fedCost('react', r), aim: r => fedCost('aim', r),
+  will: r => fedCost('will', r), critFaces: r => fedCost('critFaces', r), critSize: r => fedCost('critSize', r),
+  opening: r => fedCost('opening', r), tenacity: r => fedCost('tenacity', r), potency: r => fedCost('potency', r),
+  threat: r => fedCost('threat', r), hold: r => fedCost('hold', r), costCut: r => fedCost('costCut', r),
+  armorPen: (r, R) => penCost('armorPen', r, R), resistPen: (r, R) => penCost('resistPen', r, R),
+  armorPenFlat: (r, R) => penCost('armorPenFlat', r, R), resistPenFlat: (r, R) => penCost('resistPenFlat', r, R),
 };
 const isArmorSlot = (s: Spendable['slot']): s is ArmorSlot => s !== null && Object.hasOwn(KIT_SHARE, s);
 /**
@@ -108,8 +157,8 @@ function freeGuard(it: Spendable, R: BudgetRules): { readonly armor: number; rea
 
 /**
  * What a worn item spends, in points on the sample wearer at its rarity's rank (design 2.3); null for an item nobody
- * wears (a consumable, a material, a key), which has no budget. Each bonus point on a stat is one; max HP and max mana
- * cost the Vitality and Power that would give them; a weapon's mean die above its tier's free die (the strike's die plus
+ * wears (a consumable, a material, a key), which has no budget. Each bonus point on a stat is one; any other bonus key
+ * costs the stat points that would give it (`FED_BY`), a penetration the power points that add its damage (`penCost`); a weapon's mean die above its tier's free die (the strike's die plus
  * `weaponStep` a tier above the first; below it, less than nothing) costs the Strength whose `phys` would deal it; armor
  * or resist above the piece its weight carries costs the Vitality whose armor it is; a worn status its worth a round
  * (`wornWorth`) in standard actions of damage, at the same rate as damage. Weight and the slot's own piece are free.
@@ -117,12 +166,11 @@ function freeGuard(it: Spendable, R: BudgetRules): { readonly armor: number; rea
 export function itemSpend(it: Spendable, R: BudgetRules): Spend | null {
   if (it.type !== 'weapon' && it.type !== 'armor' && it.type !== 'accessory') return null;
   const rank = R.rarities[it.rar].rank, r = ratesAt(rank, R), unweighed: Unbudgeted[] = [];
-  let points = (Object.keys(BONUS_COST) as PerkKey[]).reduce((n, k) => n + (it.bonus[k] ?? 0) * BONUS_COST[k](r), 0);
+  let points = (Object.keys(BONUS_COST) as BonusKey[]).reduce((n, k) => n + (it.bonus[k] ? it.bonus[k] * BONUS_COST[k](r, R) : 0), 0);
   if (it.type === 'weapon') {
     const free = strikeDie(r.body, R) + R.itemBudget.weaponStep * RANKS.indexOf(rank);
     points += (dieMean(it.dice, r.body, R) - free) / r.phys;
   }
-  if (it.penFlat) unweighed.push('penFlat');
   const guard = freeGuard(it, R);
   points += (Math.max(0, it.armor - guard.armor) + Math.max(0, it.resist - guard.resist)) / r.armor;
   if (it.worn) {

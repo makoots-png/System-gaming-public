@@ -6,7 +6,7 @@
 // its default: a save that holds one loads with the default. rulesOf in rules.ts merges what is kept. Pure. Its own
 // module because the readers of a reward's parts (rewards.ts) import the rules.
 import { titleKey } from './ids.ts';
-import { OBJECTIVE_TARGET, PERK_KEYS, PERK_POINTS, RANKS, RULES, domainOf, inDomain } from './rules.ts';
+import { OBJECTIVE_TARGET, BONUS_KEYS, PERK_POINTS, RANKS, RULES, domainOf, inDomain } from './rules.ts';
 import type { Domain, Perk } from './rules.ts';
 import { REWARD_ENTRY } from './rewards.ts';
 
@@ -37,12 +37,12 @@ type Entry = (v: unknown) => unknown;
 /** Text with something in it, as written. */
 const text: Entry = v => (typeof v === 'string' && v.trim() ? v : null);
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
-/** A perk: points on the bonus keys (PERK_KEYS), each in PERK_POINTS; any other key refuses it. */
+/** A perk: points on the bonus keys (BONUS_KEYS), each in PERK_POINTS; any other key refuses it. */
 function perk(v: unknown): Perk | null {
   if (!isObj(v)) return null;
   const out: Perk = {};
   for (const [k, n] of Object.entries(v)) {
-    const key = PERK_KEYS.find(x => x === k);
+    const key = BONUS_KEYS.find(x => x === k);
     if (!key || !finite(n) || !inDomain(n, PERK_POINTS)) return null;
     out[key] = n;
   }
@@ -139,6 +139,8 @@ export const READERS: Readonly<Record<string, Reader>> = {
   'paths.*.tiers': entries(tier),
   rarities,
   'solo.pack': lowToHigh,
+  // text, but only a kind of `fight.kinds`: item-budget.ts weighs a penetration against a same-rank monster of this kind
+  'itemBudget.penFoe': (v, path, no) => (typeof v === 'string' && Object.hasOwn(RULES.fight.kinds, v) ? v : no(path, 'entry')),
 };
 const PATTERNS = Object.keys(READERS).map(k => ({ re: new RegExp(`^${k.replace(/\./g, '\\.').replace(/\*/g, '[^.]+')}$`), read: READERS[k]! }));
 /** The reader of the rule at `path`, or null when its shipped value reads it. */

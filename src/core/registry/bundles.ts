@@ -16,7 +16,7 @@
 // and `bun run test` (tests/bundles.test.ts reads every one).
 import { grantLines, newRewards } from '../rewards.ts';
 import type { RewardRules, RewardTitle, Rewards, SystemWords } from '../rewards.ts';
-import { PERK_KEYS, PERK_LABELS, RULES } from '../rules.ts';
+import { BONUS_KEYS, BONUS_LABELS, RULES } from '../rules.ts';
 import { SHOP_ITEMS, itemOf, parseItem } from './items.ts';
 import type { ItemTemplate } from './items.ts';
 
@@ -319,7 +319,7 @@ export const SHELF_WORDS = {
  * boon with what it lets the player do (a boon's name is often the award's own), or that it is the System's line alone.
  */
 export function givesLine(r: Rewards, R: RewardRules): string {
-  const bonus = (b: Record<string, number>): string => PERK_KEYS.filter(k => b[k]).map(k => `${b[k]! > 0 ? '+' : ''}${b[k]} ${PERK_LABELS[k]}`).join(', ');
+  const bonus = (b: Record<string, number>): string => BONUS_KEYS.filter(k => b[k]).map(k => `${b[k]! > 0 ? '+' : ''}${b[k]} ${BONUS_LABELS[k]}`).join(', ');
   const parts = grantLines(R, { ...r, title: null, boons: [] }).map(l => l.replace(/^(Item|Skill) acquired: /, '$1: '));
   if (r.title) { const b = bonus(r.title.bonus); parts.push(`Title: ${r.title.name}${b ? ` (${b})` : ''}`); }
   for (const b of r.boons) parts.push(`Boon: ${b.text}`);

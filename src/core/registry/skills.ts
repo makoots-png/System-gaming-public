@@ -7,8 +7,8 @@
 import type { Ability } from '../combat/ability-types.ts';
 import type { StatusDef } from '../combat/effect-ops.ts';
 import { abilityTooLarge, parseAbility, parseStatusDef, statusTooLarge } from '../combat/fight-parse.ts';
-import { PERK_KEYS, RULES } from '../rules.ts';
-import type { PerkKey } from '../rules.ts';
+import { BONUS_KEYS, RULES } from '../rules.ts';
+import type { BonusKey } from '../rules.ts';
 import { oneOf } from '../one-of.ts';
 import type { SkillId } from '../ids.ts';
 import { SKILL_ABILITIES } from './abilities.ts';
@@ -19,7 +19,7 @@ export const SKILL_TYPES = ['active', 'passive'] as const;
 export type SkillType = (typeof SKILL_TYPES)[number];
 
 /** What a passive skill adds while the hunter has it: points on a stat, max HP or max mana. */
-export type SkillBonus = Partial<Record<PerkKey, number>>;
+export type SkillBonus = Partial<Record<BonusKey, number>>;
 /**
  * A skill as a hunter or the library holds it, before it has an id. `label`: the GM's words on its badge, kept as
  * written; null (no words) shows its level, "Lv.n", which follows Lv +. An active one is used in a fight as its `ability`
@@ -96,7 +96,7 @@ export function parseSkill(v: unknown): SkillTemplate | null {
   if (oneOf(v.type, SKILL_TYPES, 'active') === 'active') return { ...base, type: 'active', ability: parseAbility(v.ability, RULES) };
   const bonus: SkillBonus = {};
   const rawBonus = isObj(v.bonus) ? v.bonus : {};
-  for (const k of PERK_KEYS) { const n = whole(Object.hasOwn(rawBonus, k) ? rawBonus[k] : 0, -B.bonus, B.bonus, 0); if (n) bonus[k] = n; }
+  for (const k of BONUS_KEYS) { const n = whole(Object.hasOwn(rawBonus, k) ? rawBonus[k] : 0, -B.bonus, B.bonus, 0); if (n) bonus[k] = n; }
   const worn = v.worn === undefined ? null : parseStatusDef(v.worn, RULES);
   return worn ? { ...base, type: 'passive', bonus, worn } : { ...base, type: 'passive', bonus };
 }

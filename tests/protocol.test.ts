@@ -6,7 +6,7 @@ import { FACE_LINES, hunterFace, parseServedSheet, servedTo, sheetFor } from '..
 import type { RoomEvent, RoomViewer } from '../src/core/protocol.ts';
 import { GOODS_LINES, OFFER_MAX, goodsSize } from '../src/core/trade/goods.ts';
 import { ITEM_BOUNDS, LOOT_ITEMS, itemOf } from '../src/core/registry/items.ts';
-import { PERK_KEYS } from '../src/core/rules.ts';
+import { BONUS_KEYS } from '../src/core/rules.ts';
 import type { EventType, SheetKey } from '../src/core/protocol.ts';
 import { newHunter } from '../src/core/save.ts';
 import { RULES, domainOf } from '../src/core/rules.ts';

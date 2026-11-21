@@ -113,7 +113,8 @@ export function sheetLevels(statuses: readonly Status[]): Readonly<Record<SheetL
   return out;
 }
 /**
- * A sheet after its statuses' `sheet` ops (kits design 8.1): armor and resist at 0 or more, pen to `penCap`, crit faces
+ * A sheet after its statuses' `sheet` ops (kits design 8.1): armor, resist and the flat penetrations at 0 or more, the
+ * percent penetrations to `penMax` (the cap `derive` keeps them to), crit faces
  * to `kit.critFacesMax`, crit size within `critSizeBase` and `kit.critSizeMax`, the cost cut to `kit.costCutMax`. A cap
  * the body's own sheet already passes (a perk) holds it there: an op never lowers a number past what the body had.
  * The sight level is the highest of the body's own and its sight ops (`sheetLevels`), so an op never lowers it either.
@@ -126,7 +127,8 @@ export function withSheetOps(sheet: Sheet, statuses: readonly Status[], R: Stand
   return {
     ...sheet,
     armor: Math.max(0, sheet.armor + a.armor), resist: Math.max(0, sheet.resist + a.resist),
-    pen: up(sheet.pen, a.pen, 0, F.penCap) as Sheet['pen'],
+    armorPen: up(sheet.armorPen, a.armorPen, 0, F.penMax), resistPen: up(sheet.resistPen, a.resistPen, 0, F.penMax),
+    armorPenFlat: Math.max(0, sheet.armorPenFlat + a.armorPenFlat), resistPenFlat: Math.max(0, sheet.resistPenFlat + a.resistPenFlat),
     critFaces: up(sheet.critFaces, Math.trunc(a.critFaces), 1, K.critFacesMax),
     critSize: up(sheet.critSize, a.critSize, F.critSizeBase, K.critSizeMax),
     costCut: up(sheet.costCut, a.costCut, 0, K.costCutMax) as Sheet['costCut'],

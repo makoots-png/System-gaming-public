@@ -605,9 +605,9 @@ describe('what a repair fixes', () => {
     expect(Object.keys(h.loadouts[0]!.slots)).toEqual(['weapon']);
   });
 
-  test('a title\'s bonus keeps the eight stats, max HP and max mana, each a number', () => {
-    const h = onlyHunter(parseRaw(withHunter({ titles: [{ id: 't1', name: 'Brave', bonus: { str: 2, manaMax: 3, hpMax: 'x', ac: 1, dex: 2, speed: 5, pre: 1 } }] })));
-    expect(h.titles[0]!.bonus).toEqual({ str: 2, manaMax: 3, pre: 1 });
+  test('a title\'s bonus keeps each bonus key (a stat, max mana, speed, Lethality) with a number, and drops any other key', () => {
+    const h = onlyHunter(parseRaw(withHunter({ titles: [{ id: 't1', name: 'Brave', bonus: { str: 2, manaMax: 3, hpMax: 'x', ac: 1, dex: 2, speed: 5, pre: 1, armorPenFlat: 4, weight: 3, phys: 2 } }] })));
+    expect(h.titles[0]!.bonus).toEqual({ str: 2, manaMax: 3, speed: 5, pre: 1, armorPenFlat: 4 });
   });
 
   test('a title keeps the rule title\'s key it was given from, and a key that is not one is dropped', () => {

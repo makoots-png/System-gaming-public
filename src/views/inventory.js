@@ -1,5 +1,5 @@
 // inventory.js (U05): inventory, equipment, gold, shop and loot tables. Publishes app.api.inventory.
-import { PERK_KEYS, PERK_LABELS, TIERS, rules } from '../edge/rules.ts';
+import { BONUS_KEYS, BONUS_LABELS, TIERS, rules } from '../edge/rules.ts';
 import { ITEM_TYPES, SLOTS } from '../core/save.ts';
 import { oneOf } from '../core/one-of.ts';
 import { itemOps, itemSource } from '../core/effects.ts';
@@ -15,13 +15,12 @@ import { cryptoRandom, rollSettle } from '../edge/roll.ts';
 import { rollLoot } from '../core/gates/spawn.ts';
 import { postNews, reportWords } from '../core/sync/connection.ts';
 
-const BONUS_KEYS = PERK_KEYS;
 const SLOT_LABEL = { weapon: 'Weapon', offhand: 'Off-hand', head: 'Head', chest: 'Chest', hands: 'Hands', legs: 'Legs', feet: 'Feet', neck: 'Neck', ring1: 'Ring 1', ring2: 'Ring 2' };
 const cap = s => s[0].toUpperCase() + s.slice(1);
 
 
 const sellPrice = i => sellPriceOf(i, rules());
-const bonusText = b => BONUS_KEYS.filter(k => b?.[k]).map(k => `${b[k] > 0 ? '+' : ''}${b[k]} ${PERK_LABELS[k]}`).join(', ');
+const bonusText = b => BONUS_KEYS.filter(k => b?.[k]).map(k => `${b[k] > 0 ? '+' : ''}${b[k]} ${BONUS_LABELS[k]}`).join(', ');
 
 /** @param {import('./app.ts').App} app */
 export function register(app) {

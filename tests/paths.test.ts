@@ -1,6 +1,6 @@
 // Every build path in src/core/registry/paths.ts must pass these. A new path is checked here with no new test.
 import { describe as group, expect, test } from 'bun:test';
-import { PERK_KEYS, RANKS, RULES, pathBonus, pathOf } from '../src/core/rules.ts';
+import { BONUS_KEYS, RANKS, RULES, pathBonus, pathOf } from '../src/core/rules.ts';
 import { STAT_KEYS } from '../src/core/stats.ts';
 import type { Perk } from '../src/core/rules.ts';
 import { BUILT_IN_PATHS, PERK_VALUE, TIER_BUDGET } from '../src/core/registry/paths.ts';
@@ -27,7 +27,7 @@ for (const id of Object.keys(BUILT_IN_PATHS) as PathId[]) {
     test('each perk is whole numbers on a stat, max HP or max mana, and both perks of a tier are worth its budget (2, 2, 3, 3, 4, 4)', () => {
       def.tiers.forEach((tier, i) => {
         for (const perk of tier) {
-          for (const [k, v] of Object.entries(perk)) { expect(PERK_KEYS as readonly string[]).toContain(k); expect(Number.isInteger(v) && v! > 0).toBe(true); }
+          for (const [k, v] of Object.entries(perk)) { expect(BONUS_KEYS as readonly string[]).toContain(k); expect(Number.isInteger(v) && v! > 0).toBe(true); }
           expect([id, i, worth(perk)]).toEqual([id, i, TIER_BUDGET[i]]);
         }
       });

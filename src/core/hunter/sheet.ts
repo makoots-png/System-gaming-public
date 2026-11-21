@@ -42,7 +42,6 @@ export type SheetItem = {
   readonly dice?: string;
   readonly armor?: number;
   readonly resist?: number;
-  readonly penFlat?: number;
   readonly bonus?: Bonus;
 };
 /** A skill as the sheet reads it: only a passive one carries a bonus. */
@@ -70,11 +69,12 @@ export type SheetHunter = {
   readonly conditions: readonly SheetCondition[];
 };
 
-const BONUS_KEYS: readonly (StatKey | SheetNumber)[] = [...STAT_KEYS, ...(Object.keys(SHEET_LABELS) as SheetNumber[])];
+/** Every key `sum` adds up: a stat or any number of the sheet. */
+const SUMMED: readonly (StatKey | SheetNumber)[] = [...STAT_KEYS, ...(Object.keys(SHEET_LABELS) as SheetNumber[])];
 
 function sum(bonuses: readonly Bonus[]): Bonus {
   const out: Partial<Record<StatKey | SheetNumber, number>> = {};
-  for (const b of bonuses) for (const k of BONUS_KEYS) { const v = b[k]; if (v) out[k] = (out[k] ?? 0) + v; }
+  for (const b of bonuses) for (const k of SUMMED) { const v = b[k]; if (v) out[k] = (out[k] ?? 0) + v; }
   return out;
 }
 
@@ -82,7 +82,7 @@ const worn = (h: SheetHunter): SheetItem[] =>
   Object.values(h.equipped).flatMap(id => h.items.find(i => i.id === id) ?? []);
 
 const gearOf = (i: SheetItem): GearPiece =>
-  ({ weight: weightOf(i), armor: i.armor ?? 0, resist: i.resist ?? 0, ...(i.penFlat === undefined ? {} : { penFlat: i.penFlat }) });
+  ({ weight: weightOf(i), armor: i.armor ?? 0, resist: i.resist ?? 0 });
 
 /** The hunter's path, or null when builds are off or the rules no longer have it. */
 function pathOf(h: SheetHunter, R: SheetRules): SheetPath | null {

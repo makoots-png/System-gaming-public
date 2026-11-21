@@ -221,7 +221,7 @@ describe('the Rules page states what the game pays', () => {
 test('the armor cut the Rules page states is what afterDefence takes off a hit when no flat part is taken first', () => {
   const R = { ...RULES, fight: { ...RULES.fight, armorFlat: 0 as typeof RULES.fight.armorFlat } };
   const armor = 40, hit = 10_000;
-  expect(armorCutPct(R, armor)).toBe(100 - Math.round(100 * afterDefence(hit, 'physical', { pen: 0 as never, penFlat: 0 }, { armor, resist: 0 }, R) / hit));
+  expect(armorCutPct(R, armor)).toBe(100 - Math.round(100 * afterDefence(hit, 'physical', { armorPen: 0, resistPen: 0, armorPenFlat: 0, resistPenFlat: 0 }, { armor, resist: 0 }, R) / hit));
 });
 
 describe('the world gate\'s lines', () => {

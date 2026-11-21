@@ -3,9 +3,13 @@
 // the middle budget is `itemBudget.share` of the points a hunter of the rank has at its first level, over the slots; the
 // spans tile on a log scale; a spend's conversions are block [2.3]'s.
 import { describe as group, expect, test } from 'bun:test';
-import { RULES } from '../src/core/rules.ts';
-import type { Rules } from '../src/core/rules.ts';
-import { kitGear, pointsAt, sheetOf, split } from '../src/core/hunter/derive.ts';
+import { RANKS, RULES } from '../src/core/rules.ts';
+import type { BonusKey, Rank, Rules } from '../src/core/rules.ts';
+import { kitGear, monsterSheet, pointsAt, sheetOf, split } from '../src/core/hunter/derive.ts';
+import type { Sheet, SheetNumber } from '../src/core/hunter/derive.ts';
+import type { StatKey } from '../src/core/stats.ts';
+import { KINDS } from '../src/core/registry/ability-kinds.ts';
+import { referenceBody } from '../src/core/registry/worth.ts';
 import { LOOT_ITEMS, RARITIES, SAMPLE_WEARER, SHOP_ITEMS, STARTER_GEAR, itemOf, piece, valueOf } from '../src/core/registry/items.ts';
 import type { Grade, ItemDef, ItemTemplate, Rarity } from '../src/core/registry/items.ts';
 import type { StatusDef } from '../src/core/combat/effect-ops.ts';
@@ -134,16 +138,83 @@ group('what an item spends, in points on the sample wearer (economy design 2.3)'
     expect(s.unweighed).toEqual([]);
   });
 
-  test('armor ignored and a worn status\'s standing ops are named as not weighed, never counted: the Knight Killer spends −0.7 without its 5 armor ignored', () => {
+  test('a worn status\'s standing ops are named as not weighed, never counted; the Knight Killer\'s 5 Lethality is weighed: −0.7 for its die and Strength, and 5 at its rate', () => {
     const kk = itemSpend(itemOf(RULES, def('Knight Killer')), RULES)!;
-    expect(kk.points).toBeCloseTo(-1 * 2.72 + 2, 1);
-    expect(kk.unweighed).toEqual(['penFlat']);
+    expect(kk.points).toBeCloseTo(-1 * 2.72 + 2 + 5 * penRate('armorPenFlat', 'C'), 1);
+    expect(kk.unweighed).toEqual([]);
     const guarded: StatusDef = { label: 'Guarded', desc: '', ops: [{ op: 'stat', key: 'vit', amount: 2 }] };
     expect(itemSpend(gear('rare', { worn: guarded }), RULES)!.unweighed).toEqual(['worn']);
   });
 
   test('an item nobody wears has no budget: a consumable, a material, a key spend nothing at all, not 0', () => {
     for (const type of ['consumable', 'material', 'key', 'misc'] as const) expect(itemSpend(gear('epic', { type, slot: null, bonus: { str: 3 } }), RULES)).toBeNull();
+  });
+});
+
+// ── each bonus key's cost (balance plan sections 9 and 10), worked from the rule ──
+/** The sample wearer at the first level of `rank`, in its kit, with `perks` on it (block [2.3]). */
+const wearer = (rank: Rank, perks: Partial<Record<StatKey | SheetNumber, number>> = {}): Sheet => {
+  const level = RULES.rankLevels[rank];
+  return sheetOf({ stats: split(SAMPLE_WEARER.main, SAMPLE_WEARER.second, pointsAt(level, RULES), RULES), level, gear: kitGear(SAMPLE_WEARER.kit, RULES), perks }, RULES);
+};
+/** The rarity whose tier is `rank`'s. */
+const rarityOf = (rank: Rank): Rarity => RARITIES.find(r => RULES.rarities[r].rank === rank)!;
+/** What one point of `key` on a ring of `rank`'s tier spends. */
+const onePoint = (key: BonusKey, rank: Rank): number => itemSpend(gear(rarityOf(rank), { bonus: { [key]: 1 } }), RULES)!.points;
+/**
+ * Section 10: a key a stat feeds costs the points of that stat that make the same change on the sample wearer. A point
+ * of the key adds 1 to its number, a hundredth for a share or a multiplier (critSize, threat, hold, costCut); a point of
+ * the stat adds what ten of them add, over ten. The stat of each is the one its formula in derive reads (design 2.2);
+ * tenacity reads Strength and Discipline as one score, so its points go half to each.
+ */
+const FED: readonly (readonly [Exclude<BonusKey, StatKey | 'armorPen' | 'resistPen' | 'armorPenFlat' | 'resistPenFlat'>, Partial<Record<StatKey, number>>, number])[] = [
+  ['hpMax', { vit: 10 }, 1], ['manaMax', { pow: 10 }, 1], ['fatigueMax', { vit: 10 }, 1], ['carry', { str: 10 }, 1], ['speed', { agi: 10 }, 1],
+  ['move', { agi: 10 }, 1], ['react', { ins: 10 }, 1],
+  ['aim', { ctl: 10 }, 1], ['will', { dis: 10 }, 1], ['critFaces', { ins: 10 }, 1], ['critSize', { ctl: 10 }, 0.01], ['opening', { ins: 10 }, 1],
+  ['tenacity', { str: 5, dis: 5 }, 1], ['potency', { ctl: 10 }, 1], ['threat', { pre: 10 }, 0.01], ['hold', { dis: 10 }, 0.01], ['costCut', { ctl: 10 }, 0.01],
+];
+const fedRate = (key: (typeof FED)[number][0], stats: Partial<Record<StatKey, number>>, unit: number, rank: Rank): number =>
+  unit / ((wearer(rank, stats)[key] - wearer(rank)[key]) / 10);
+/**
+ * Section 9: a penetration costs the points of the power stat (Strength for the armor pair, Power for the resist pair)
+ * that add as much damage to the tier's standard action (the strike: 1d8's 4.5 plus its power times the bruiser's
+ * physical power) on a same-rank elite (`itemBudget.penFoe`: a brute's armor, a caster's resist) as a point of the key,
+ * read over ten points of the key, before rule 12 rounds. Rule 12: left = max(0, def * (1 - pct / 100) - flat), dealt =
+ * max(0, raw - armorFlat * left) * armorK / (armorK + left).
+ */
+function penRate(key: 'armorPen' | 'resistPen' | 'armorPenFlat' | 'resistPenFlat', rank: Rank): number {
+  const F = RULES.fight, armorPair = key === 'armorPen' || key === 'armorPenFlat';
+  const foe = monsterSheet(rank, armorPair ? 'brute' : 'caster', 'elite', RULES), def = armorPair ? foe.armor : foe.resist;
+  const hit = 4.5 + KINDS.strike.power * referenceBody('bruiser', rank, RULES).sheet.phys;
+  const dealt = (raw: number, pct: number, flat: number): number => { const left = Math.max(0, def * (1 - pct / 100) - flat); return Math.max(0, raw - F.armorFlat * left) * F.armorK / (F.armorK + left); };
+  const own = armorPair ? wearer(rank).armorPen : wearer(rank).resistPen;
+  const percent = key === 'armorPen' || key === 'resistPen';
+  const perKey = (dealt(hit, own + (percent ? 10 : 0), percent ? 0 : 10) - dealt(hit, own, 0)) / 10;
+  const power = armorPair ? (wearer(rank, { str: 10 }).phys - wearer(rank).phys) / 10 : (wearer(rank, { pow: 10 }).mag - wearer(rank).mag) / 10;
+  return perKey / (dealt(hit + power, own, 0) - dealt(hit, own, 0));
+}
+
+group('each bonus key\'s cost (balance plan sections 9 and 10)', () => {
+  test('a point on a key a stat feeds costs the points of that stat that make the same change, at every rank', () => {
+    for (const rank of RANKS) for (const [key, stats, unit] of FED) expect(onePoint(key, rank), `${key} at ${rank}`).toBeCloseTo(fedRate(key, stats, unit, rank), 9);
+  });
+
+  test('a point of penetration costs the power points that add its damage on a same-rank elite, at every rank', () => {
+    for (const rank of RANKS) for (const key of ['armorPen', 'resistPen', 'armorPenFlat', 'resistPenFlat'] as const) expect(onePoint(key, rank), `${key} at ${rank}`).toBeCloseTo(penRate(key, rank), 9);
+  });
+
+  test('at C a point of Lethality spends 0.71, of Unravel 0.72, a percent of armor penetration 0.26 and of magic penetration 0.10', () => {
+    expect(['armorPenFlat', 'resistPenFlat', 'armorPen', 'resistPen'].map(k => Number(onePoint(k as BonusKey, 'C').toFixed(2)))).toEqual([0.71, 0.72, 0.26, 0.1]);
+  });
+
+  test('a percent of penetration is worth more the thicker the defence: the armor percent costs more at each rank up, where the brute\'s armor grows', () => {
+    const costs = RANKS.map(r => onePoint('armorPen', r));
+    expect(costs.every((c, i) => i === 0 || c > costs[i - 1]!)).toBe(true);
+  });
+
+  test('the penetrations are weighed against the foe `itemBudget.penFoe` names: a boss\'s armor is an elite\'s, so the cost is the same', () => {
+    const asBoss: Rules = { ...RULES, itemBudget: { ...RULES.itemBudget, penFoe: 'boss' } };
+    expect(itemSpend(gear('rare', { bonus: { armorPenFlat: 1 } }), asBoss)!.points).toBeCloseTo(onePoint('armorPenFlat', 'C'), 9);
   });
 });
 
@@ -191,7 +262,7 @@ group('the built-in items against the budget (economy design 2.5, ruling 6)', ()
     const SPEND: Readonly<Record<string, number>> = {
       'Iron Dagger': -4.7, 'Goblin Shortbow': -2.4, 'Steel Longsword': 0, 'Hunting Bow': 0, "Hunter's Leather": 0, 'Padded Cap': 0, 'Dented Tower Shield': 0, 'Worn Hunter Boots': 1,
       "Orc Warrior's Cleaver": 1, 'Reinforced Hunter Vest': 0, 'Ironhide Gauntlets': 1, 'Swift Runner Greaves': 1, 'Mana Talisman': 2,
-      "Kasaka's Venom Fang": -6.2, "Ice Elf's Cloak": 1, 'Knight Killer': -0.7, 'Mage Circlet': 6, "Baruka's Mana Ring": 6,
+      "Kasaka's Venom Fang": -6.2, "Ice Elf's Cloak": 1, 'Knight Killer': 2.8, 'Mage Circlet': 6, "Baruka's Mana Ring": 6,
       'Ring of Vitality': 5, 'Frost Giant Hammer': 1.5, "Knight's Aegis": 1, 'Cloak of the Shadow Hunter': 2, 'Helm of the Iron Knight': 2,
       'Armor of the Black Knight': 3, 'Boots of Shadow Step': 4, "Kamish's Wrath": 21.3, 'Orb of Avarice': 16,
       'Crown of the Shadow Sovereign': 10, "Ring of the Monarch's Will": 12, "Monarch's Scepter": 53.4, 'Armor of the Absolute Being': 45,
@@ -201,15 +272,15 @@ group('the built-in items against the budget (economy design 2.5, ruling 6)', ()
     for (const d of worn) expect(Number(spendOf(d.name).toFixed(1)), d.name).toBe(SPEND[d.name]!);
   });
 
-  test('each built-in\'s grade is block [2.5]\'s: plain gear its tier\'s minus, the Worn Hunter Boots, the Mana Talisman and the Ring of the Monarch\'s Will plus, the Knight Killer plus by its armor ignored', () => {
-    const PLUS = ['Worn Hunter Boots', 'Mana Talisman', 'Knight Killer', "Ring of the Monarch's Will", ...KEPT];
+  test('each built-in\'s grade is block [2.5]\'s: plain gear its tier\'s minus (the Knight Killer too, now its Lethality is weighed), the Worn Hunter Boots, the Mana Talisman and the Ring of the Monarch\'s Will plus', () => {
+    const PLUS = ['Worn Hunter Boots', 'Mana Talisman', "Ring of the Monarch's Will", ...KEPT];
     for (const d of ALL.filter(d => d.type === 'weapon' || d.type === 'armor' || d.type === 'accessory')) expect(d.grade, d.name).toBe(PLUS.includes(d.name) ? 1 : -1);
     for (const d of ALL.filter(d => d.type === 'consumable' || d.type === 'material')) expect(d.grade, `${d.name}: a thing used up or sold has no grade`).toBeUndefined();
   });
 
-  test('the shop after the budget (block [2.2]): Iron Dagger, Hunter\'s Leather and Steel Longsword 67, Knight Killer 1,875, Ring of Vitality 3,333', () => {
+  test('the shop after the budget (block [2.2]): Iron Dagger, Hunter\'s Leather and Steel Longsword 67, Knight Killer 833 (Rare−), Ring of Vitality 3,333', () => {
     const prices = ['Iron Dagger', "Hunter's Leather", 'Steel Longsword', 'Knight Killer', 'Ring of Vitality'].map(n => valueOf(itemOf(RULES, def(n)), RULES));
-    expect(prices).toEqual([67, 67, 67, 1875, 3333]);
+    expect(prices).toEqual([67, 67, 67, 833, 3333]);
   });
 });
 
@@ -234,9 +305,10 @@ group('the item maker\'s spend line (economy design 2.4)', () => {
     expect(line(gear('rare', { bonus: { manaMax: 3 } }), 1)).toEqual({ words: 'Spends 6.0 points, past the top of Rare+ (4.4): stronger than any grade of Rare.', over: true });
   });
 
-  test('what the budget cannot weigh is named, with the words to test it in a fight: the Knight Killer\'s armor ignored', () => {
-    expect(line(itemOf(RULES, def('Knight Killer')), 1)).toEqual({
-      words: 'Spends −0.7 points. Rare+ holds 3.7 to 4.4; this is Rare− (up to 3.1). Without armor ignored on a hit, which the budget cannot weigh: test it in a fight.',
+  test('what the budget cannot weigh is named, with the words to test it in a fight: a worn status\'s standing ops', () => {
+    const guarded: StatusDef = { label: 'Guarded', desc: '', ops: [{ op: 'stat', key: 'vit', amount: 2 }] };
+    expect(line(gear('rare', { bonus: { ins: 4 }, worn: guarded }), 1)).toEqual({
+      words: 'Spends 4.0 points. Rare+ holds 3.7 to 4.4. Without what its worn status does that its worth line cannot weigh, which the budget cannot weigh: test it in a fight.',
       over: false,
     });
   });

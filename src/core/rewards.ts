@@ -11,7 +11,7 @@ import { parseItem } from './registry/items.ts';
 import type { ItemTemplate } from './registry/items.ts';
 import { parseSkill } from './registry/skills.ts';
 import type { SkillTemplate } from './registry/skills.ts';
-import { PERK_KEYS, RULES } from './rules.ts';
+import { BONUS_KEYS, RULES } from './rules.ts';
 import type { Rules } from './rules.ts';
 import { refuse } from './save-step.ts';
 import type { Refused } from './save-step.ts';
@@ -78,7 +78,7 @@ function title(v: unknown): RewardTitle | null {
   const B = REWARD_BOUNDS, name = line(v.name, B.title);
   if (!name) return null;
   const raw = isObj(v.bonus) ? v.bonus : {}, bonus: Record<string, number> = {};
-  for (const k of PERK_KEYS) { const n = whole(Object.hasOwn(raw, k) ? raw[k] : 0, -B.bonus, B.bonus, 0); if (n) bonus[k] = n; }
+  for (const k of BONUS_KEYS) { const n = whole(Object.hasOwn(raw, k) ? raw[k] : 0, -B.bonus, B.bonus, 0); if (n) bonus[k] = n; }
   const key = titleKey(v.key), replaces = line(v.replaces, B.title), worn = v.worn === undefined ? null : parseStatusDef(v.worn, RULES);
   // a title in place of itself is that title
   return { name, desc: typeof v.desc === 'string' ? v.desc.slice(0, B.titleDesc) : '', bonus, ...(key ? { key } : {}), ...(replaces && replaces !== name ? { replaces } : {}), ...(worn ? { worn } : {}) };

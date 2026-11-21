@@ -20,7 +20,7 @@ import type { Archetype } from './derive.ts';
 import { oneOf } from '../one-of.ts';
 import { STAT_KEYS, baseStats, statsBy } from '../stats.ts';
 import type { Stats } from '../stats.ts';
-import { HUNTER_COLORS, PERK_KEYS, RANKS, RULES as BASE_RULES, pathOf } from '../rules.ts';
+import { HUNTER_COLORS, BONUS_KEYS, RANKS, RULES as BASE_RULES, pathOf } from '../rules.ts';
 import { isIconKey } from '../registry/icons.ts';
 import type { Perk, Rank, Rules } from '../rules.ts';
 import { REWARD_BOUNDS, newRewards, parseRewards } from '../rewards.ts';
@@ -85,7 +85,7 @@ export type Quest = QuestState & {
 };
 export type Loadout = { id: LoadoutId; name: string; slots: Partial<Record<Slot, ItemId>> };
 /**
- * A title a hunter holds. `bonus`: while it is the active one, the eight stats, `hpMax` and `manaMax` (`PERK_KEYS`).
+ * A title a hunter holds. `bonus`: while it is the active one, points on any bonus key (`BONUS_KEYS`).
  * `seedKey`: the key of the rule title it was given from (src/core/hunter/record.ts `giveTitle`), kept through a rename.
  */
 export type Title = {
@@ -158,9 +158,9 @@ export const newHunter = (R: Rules = BASE_RULES): Hunter => {
  * default word "None". "No job" is null, never a word a view compares with (implicit audit 3, H9).
  */
 export const jobOf = (v: unknown): string | null => { const j = String(typeof v === 'string' ? v : '').replace(/\s+/g, ' ').trim().slice(0, 60); return j && j !== 'None' ? j : null; };
-/** A title's bonus keeps only a perk key (`PERK_KEYS`) with a finite number. */
+/** A title's bonus keeps only a perk key (`BONUS_KEYS`) with a finite number. */
 function fixBonus(bonus: Rec): void {
-  for (const key of Object.keys(bonus)) if (!(PERK_KEYS as readonly string[]).includes(key) || !isNum(bonus[key])) delete bonus[key];
+  for (const key of Object.keys(bonus)) if (!(BONUS_KEYS as readonly string[]).includes(key) || !isNum(bonus[key])) delete bonus[key];
 }
 /** A hunter's conditions, each read by `parseSheetStatus`; one that does not read, or a chip the hunter's state draws, is dropped. At most `MAX_STATUSES`, as on a fight row. */
 const conditions = (R: Rules, value: unknown[]): Condition[] =>
