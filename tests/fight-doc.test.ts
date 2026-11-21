@@ -278,11 +278,13 @@ describe('the doc stays small enough for the room', () => {
   });
 });
 
+/** A wall down the middle with a gap at the bottom: a body at (1, 1) has no line to (8, 1), one at the gap (5, 4) has. */
+const ROOM = ['.....#....', '.....#....', '.....#....', '.....#....', '..........'];
+const grid = { w: 10, h: 5, tiles: ROOM.join('').split('').map(c => (c === '#' ? 'wall' : 'floor') as 'wall' | 'floor') };
+const fog = { sight: tiles(25), seen: '0'.repeat(50) };
+
 describe('the party\'s view: a fog of war (design 5.3)', () => {
-  // A wall down the middle with a gap at the bottom; Kai on the left, a Ghoul behind the wall with burning ground under it.
-  const ROOM = ['.....#....', '.....#....', '.....#....', '.....#....', '..........'];
-  const grid = { w: 10, h: 5, tiles: ROOM.join('').split('').map(c => (c === '#' ? 'wall' : 'floor') as 'wall' | 'floor') };
-  const fog = { sight: tiles(25), seen: '0'.repeat(50) };
+  // Kai on the left, a Ghoul behind the wall with burning ground under it.
   const fire: Command = { type: 'zoneAdd', zone: { id: 'z1' as never, name: 'Burning ground', tiles: [place(8, 1), place(8, 2)], spares: null, tier: 0, duration: null, ops: [] } };
   const setup = (...more: Command[]) => play(
     { type: 'add', fightId: fightId('f-fog'), rows: [row('Kai', 'party', { place: place(1, 1) }), row('Ghoul', 'foe', { place: place(8, 1) })], openings: [], grid, fog },
@@ -389,6 +391,56 @@ describe('a hidden foe (kits design 8.7)', () => {
     const fight = play(add(row('A', 'party'), row('Rat', 'foe'), row('Ratatoskr', 'foe')), start(['A', 20], ['Rat', 10], ['Ratatoskr', 5]));
     const hid = { ...withBody(fight, 'Rat', { statuses: [veil] }), log: [line('Ratatoskr swings.', [id('Ratatoskr')]), line('The blast hits 2.', [id('Rat'), id('A')])] };
     expect(live(fightDoc(hid, RULES, docCtx())).log).toEqual(['Ratatoskr swings.']);
+  });
+
+  // The fog's room: a Ghoul behind the wall hides at stealth level 2. Kai has no sight content (sight 0, the rules'
+  // `sightBase`); Eye holds a sight op of 2. A body that is up perceives a foe only with the foe in its own sight and its
+  // own sight at the foe's level or above (sight.ts `perceives`, the owner's ruling 1), so one hunter must do both.
+  const veil2: Status = { key: statusKey('veil'), def: { label: 'Veiled', desc: '', ops: [{ op: 'hidden', level: 2, start: 'anywhere', ends: { hurt: true, revealed: true, dealt: true } }] }, source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0) };
+  const eye: Status = { key: statusKey('eye'), def: { label: 'Hunter\'s Eye', desc: '', ops: [{ op: 'sheet', key: 'sight', amount: 2 }] }, source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0) };
+  const GAP = place(5, 4), BEHIND = place(1, 1);
+  const hiddenGhoul = (kai: ReturnType<typeof place> | null, eyeAt: ReturnType<typeof place> | null, ...more: Command[]) => play({
+    type: 'add', fightId: fightId('f-hide'), openings: [], grid, fog,
+    rows: [
+      ...(kai ? [row('Kai', 'party', { place: kai })] : []),
+      ...(eyeAt ? [row('Eye', 'party', { place: eyeAt, statuses: [eye] })] : []),
+      row('Ghoul', 'foe', { place: place(8, 1), statuses: [veil2] }),
+    ],
+  }, ...more);
+  const rowsOf = (fight: Fight) => live(fightDoc(fight, RULES, docCtx())).rows.map(r => r.id);
+
+  test('a foe hidden at level 2 is not in the doc while the only hunter who has it in sight has no sight content', () => {
+    expect(rowsOf(hiddenGhoul(GAP, null))).toEqual(['Kai']);
+    expect(JSON.stringify(fightDoc(hiddenGhoul(GAP, null), RULES, docCtx()))).not.toContain('Ghoul');
+  });
+
+  test('it is in the doc while a hunter with sight 2 has it in sight', () => {
+    expect(rowsOf(hiddenGhoul(null, GAP))).toEqual(['Eye', 'Ghoul']);
+  });
+
+  test('it is not in the doc when the hunter with sight 2 has no line to it and the one with a line has sight 0: one body must do both', () => {
+    expect(rowsOf(hiddenGhoul(GAP, BEHIND))).toEqual(['Kai', 'Eye']);
+    expect(rowsOf(hiddenGhoul(BEHIND, GAP))).toEqual(['Kai', 'Eye', 'Ghoul']);
+  });
+
+  test('a hunter with sight 2 who is down brings it in no more', () => {
+    expect(rowsOf(withBody(hiddenGhoul(null, GAP), 'Eye', { hp: 0 }))).toEqual(['Eye']);
+  });
+
+  test('its log lines follow it: out while no hunter perceives it, in while the hunter with sight 2 does, out again when that hunter steps back', () => {
+    const lines = [line('The Ghoul creeps.', [id('Ghoul')]), line('Kai waits.', [id('Kai')])];
+    const logOf = (fight: Fight) => live(fightDoc({ ...fight, log: lines }, RULES, docCtx())).log;
+    const out = { type: 'place', id: id('Eye'), to: place(6, 4) } as const, back = { type: 'place', id: id('Eye'), to: BEHIND } as const;
+    const behind = hiddenGhoul(GAP, BEHIND), stepped = hiddenGhoul(GAP, BEHIND, out), returned = hiddenGhoul(GAP, BEHIND, out, back);
+    expect(rowsOf(stepped)).toEqual(['Kai', 'Eye', 'Ghoul']);
+    expect([logOf(behind), logOf(stepped), logOf(returned)]).toEqual([['Kai waits.'], ['The Ghoul creeps.', 'Kai waits.'], ['Kai waits.']]);
+  });
+
+  test('a hidden hunter stays in the party\'s doc with its status chip', () => {
+    const fight = play({ type: 'add', fightId: fightId('f-hide'), openings: [], grid, fog, rows: [row('Kai', 'party', { place: GAP, statuses: [veil2] }), row('Ghoul', 'foe', { place: place(8, 1) })] });
+    const d = live(fightDoc(fight, RULES, docCtx()));
+    expect(d.rows.map(r => r.id)).toEqual(['Kai', 'Ghoul']);
+    expect(rowIn(d, 'Kai').statuses.map(s => s.label)).toEqual(['Veiled']);
   });
 });
 

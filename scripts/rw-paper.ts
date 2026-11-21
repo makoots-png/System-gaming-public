@@ -390,11 +390,12 @@ function part4(): void {
   out(`A taunt adds ${F.tauntBurst} times the current leader's lead over the taunter, so the taunter leads at once, and forces the`);
   out(`target for ${F.tauntRounds} rounds before tenacity.`);
   out();
-  out('Table 4.4: how long a taunt holds against the most disciplined build\'s tenacity, with the taunter\'s potency at 0.');
+  out('Table 4.4: how long a taunt holds against the build with the most tenacity (from Strength and Discipline together), with the taunter\'s potency at 0.');
   out();
   table(['Target', 'Tenacity', 'Taunt rounds'], (['E', 'C', 'S'] as const).map(r => {
-    const sh = sheetOf(BUILDS[4]!, r), f = F.tauntRounds * 100 / (100 + sh.tenacity);
-    return [`${r} support (the most Discipline)`, sh.tenacity.toFixed(1), f.toFixed(2)];
+    const b = BUILDS.reduce((best, x) => sheetOf(x, r).tenacity > sheetOf(best, r).tenacity ? x : best);
+    const sh = sheetOf(b, r), f = F.tauntRounds * 100 / (100 + sh.tenacity);
+    return [`${r} ${b.id}`, sh.tenacity.toFixed(1), f.toFixed(2)];
   }));
   out('An elite and a boss take a taunt as long as any body: a monster\'s kind does not shorten what lands on it (the owner, Nov 21).');
 

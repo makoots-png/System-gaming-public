@@ -7,11 +7,11 @@ import { ICON_CREDIT, armorCutPct, checkExample, downLine, gatePayLines, iconCre
 import { describeStatus } from '../core/combat/effect-ops.ts';
 
 const STAT_USE = {
-  str: 'Physical power, carry',
+  str: 'Physical power, carry, tenacity (with Discipline)',
   agi: 'Speed, Reaction (dodging what travels)',
   vit: 'Max HP, fatigue capacity, a little armor',
   ins: 'Reaction, the opening roll, crits',
-  dis: 'Will (resisting curses), resist, tenacity, holding a channel',
+  dis: 'Will (resisting curses), resist, tenacity (with Strength), holding a channel',
   pre: 'Support power (heals and shields), threat, shadow capacity',
   pow: 'Magical power, max mana',
   ctl: 'Accuracy, penetration, crit size, potency, a lower cost',
@@ -123,6 +123,7 @@ export function register(app) {
         `<b>Effective points</b> = ${F.statBase} × (score / ${F.statBase}) ^ ${F.effExp}. Doubling a stat gives ${fmtX(Math.pow(2, F.effExp))} times the effective points, not twice as many, so points spread over several stats are worth about as much as points put in one.`,
         `Physical, magical and support power are ${F.powerK} × the effective points of Strength, Power and Presence, with no cap: damage grows with rank.`,
         `<b>A capped number</b> (carry, speed, max HP's share, armor and resist from stats, crits, tenacity and the rest) grows with the effective points above ${F.statBase} and reaches half its cap at ${F.half} of them. It never reaches the cap.`,
+        `<b>Tenacity</b> reads Strength and Discipline as one score, the square root of their product: equal scores count as that score, and one left at ${F.statBase} pulls the other far down. A control status on you lasts its duration × (100 + the caster's potency) / (100 + your tenacity).`,
         `Max HP = ${F.hpBase} × (1 + (level − 1) / ${F.growthDiv}) × (1 + Vitality's capped share, up to ${F.hpVitCap * 100}%), plus bonuses. Most of it comes from level, so a fight takes about the same number of hits at every rank.`,
         `Max mana = ${F.manaBase} + Power's capped share (up to ${F.manaCap}). Fatigue capacity = ${F.fatigueBase} + Vitality's capped share (up to ${F.fatigueCap}).`,
         'Bonuses come from the active title, worn items, the build path and passive skills. The Status view shows every number of your sheet.']),

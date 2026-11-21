@@ -54,7 +54,10 @@ export type Sheet = {
   readonly critSize: number;
   /** Added to the opening d20. */
   readonly opening: number;
-  /** Shortens a control status on this body; potency lengthens one this body applies. */
+  /**
+   * Shortens a control status on this body; potency lengthens one this body applies. Tenacity comes from Strength and
+   * Discipline together (their `blend`), potency from Control.
+   */
   readonly tenacity: number;
   readonly potency: number;
   /** Multiplies the threat this body's damage makes. */
@@ -159,6 +162,10 @@ function derive(stats: Stats, level: number, gear: readonly GearPiece[], perks: 
   const x = (k: StatKey): number => above(score(k), F);
   const c = (k: StatKey, cap: number): number => capped(x(k), cap, F);
   const up = (k: StatKey, cap: number): number => capped(Math.max(0, x(k)), cap, F);
+  // Two stats read as one score, their geometric mean (a score under 1 counts as 1, as in `eff`): equal scores give that
+  // score, and a stat left at the base pulls the other down toward it. The curve is a power, so the blend's effective
+  // points are the geometric mean of the two stats' effective scores, less the base.
+  const blend = (k: StatKey, l: StatKey): number => Math.sqrt(Math.max(1, score(k)) * Math.max(1, score(l)));
   const total = (k: keyof GearPiece): number => gear.reduce((s, g) => s + (g[k] ?? 0), 0);
 
   const weight = total('weight') + b('weight');
@@ -191,7 +198,7 @@ function derive(stats: Stats, level: number, gear: readonly GearPiece[], perks: 
     critFaces: 1 + Math.round(up('ins', F.critFacesCap) + b('critFaces')),
     critSize: F.critSizeBase + up('ctl', F.critSizeCap) + b('critSize'),
     opening: Math.min(F.openCap, Math.round(F.openK * Math.max(0, x('ins')) + b('opening'))),
-    tenacity: c('dis', F.tenacityCap) + b('tenacity'),
+    tenacity: capped(above(blend('str', 'dis'), F), F.tenacityCap, F) + b('tenacity'),
     potency: c('ctl', F.potencyCap) + b('potency'),
     threat: 1 + c('pre', F.threatCap) + b('threat'),
     hold: share(F.holdBase + c('dis', F.holdCap) + b('hold')),

@@ -252,13 +252,13 @@ describe('a land op puts a status and hastens by a use\'s rules (rule 18, kits d
   const boss = (): NewRow => row('M', 'foe', [], { kind: 'monster', origin: BOSS, hp: modified(BOSS, [], RULES).sheet.hpMax });
   const lasts = (b: Body, key: string): number => { const s = b.statuses.find(x => x.key === key)!; return s.until! - s.since; };
 
-  test('a root from a "when you hit" trigger lasts on a boss as the same root from a use does: its whole length, as on any body', () => {
+  test('a root from a "when you hit" trigger lasts on a boss as the same root from a use does: its whole length less its tenacity\'s share, as on any body', () => {
     const snare = worn('Snare', { on: 'hitDealt', tag: null, to: 'other', limit: { kind: 'each' }, ops: [put('rooted', ROOTED)] });
     const byTrigger = play(...duel(row('A', 'party', [on('snare', snare)]), boss()), use('A', 'M'));
     const bind = ability('bind', '1', { ops: [put('rooted', ROOTED) as Ability['ops'][number]] });
     const byUse = play(...duel(row('A', 'party', [], { abilities: [bind] }), boss()), use('A', 'M', bind));
     expect(lasts(body(byTrigger, 'M'), 'rooted')).toBe(lasts(body(byUse, 'M'), 'rooted'));
-    expect(lasts(body(byTrigger, 'M'), 'rooted')).toBe(6 * RULES.fight.round);
+    expect(lasts(body(byTrigger, 'M'), 'rooted')).toBe(Math.round(6 * RULES.fight.round * 100 / (100 + modified(BOSS, [], RULES).sheet.tenacity)));
   });
 
   test('a stun from a trigger stuns as a use\'s does: the bearer\'s turn waits until it ends', () => {

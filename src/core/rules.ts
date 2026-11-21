@@ -295,7 +295,7 @@ const SPEC = {
     critFacesCap: whole(5, 0, 10, 'd20 faces a crit takes: past 10 half of every use is a crit'), // a crit is 5% to 30% of uses, never the 1 in 3 where it becomes the expected hit
     critSizeBase: real(1.5, 1, 5, 'a crit\'s size: under 1 a crit hurts less than a hit'), critSizeCap: real(0.5, 0, 5, 'a crit\'s largest growth: 5 is six times a hit'), // a crit is 1.5 to 2 times: felt, and never more than today's double dice
     openK: real(0.25, 0, 2, 'Instinct\'s share on the opening d20: 2 is twice its points'), openCap: whole(6, 0, 20, 'the most Instinct adds to the opening d20: 20 is the whole die'), // Instinct's opening bonus on the d20, capped at 6 so the die still decides 70% of the opening
-    tenacityCap: of(60, STAT_CAP), // control lasts duration * (100 + potency) / (100 + tenacity): at most 37% shorter
+    tenacityCap: of(60, STAT_CAP), // tenacity, from Strength and Discipline together; control lasts duration * (100 + potency) / (100 + tenacity): at most 37% shorter
     potencyCap: of(50, STAT_CAP), // mirrors tenacity, so equal investment cancels
     threatCap: real(1, 0, 10, 'Presence\'s most on threat: 10 is eleven times'), // a Presence build draws up to twice the threat for the same damage
     holdBase: real(0.15, 0.01, 1, 'the share of max HP one hit needs to break a channel: under 0.01 any tick breaks it'), holdCap: of(0.25, SHARE), // a single hit of hold * hpMax breaks a channel: a status tick never does, one real attack does

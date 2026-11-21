@@ -42,6 +42,12 @@ rest 1.
 7. Loot: none is given.
 8. The type list. Aquatic, Fey, Ooze, Plant, Elemental, Aberration, Spirit and Celestial are new beside the
    seeds' types, and whether a type should mean anything in a fight.
+9. The four penetration stats (the owner, Nov 21, `for-the-owner.md` Answered): flat and percent, for armor and for
+   resist, in place of today's `pen` and `penFlat`. Decide which stat feeds each, whether monsters hold them, what
+   today's flat-penetration gear becomes, each one's weight in the item budget (`itemSpend` does not weigh flat
+   penetration today), and a name for flat magic penetration. An item may hold each of the four. Measure it with
+   Tenacity from Strength and Discipline: both move damage and control against a boss, which is tough only by
+   HP, armor and resist.
 
 ## What the seed shape could not say
 

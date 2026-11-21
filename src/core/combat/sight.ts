@@ -48,8 +48,9 @@ export type Lookout = Pick<Fight, 'rows' | 'grid' | 'fog'>;
 /**
  * Whether side `side` perceives `b`: some body of it does, by its own eyes, within the fight's range (`rangeOf`). One body
  * must both reach `b` and see its stealth level: a body with line of sight and a low sight beside one with a high sight
- * and no line does not bring `b` in. The one answer to whom a use may pick (resolve.ts `ready`, rule 2) and whom a played
- * row chooses among (policy.ts): a body picks a target it cannot itself see when an ally sees it (the owner's ruling 7).
+ * and no line does not bring `b` in. The one answer to whom a use may pick (resolve.ts `ready`, rule 2), whom a played
+ * row chooses among (policy.ts): a body picks a target it cannot itself see when an ally sees it (the owner's ruling 7),
+ * and which rows the party's doc holds (fight-doc.ts `fightDoc`).
  */
 export const perceivedBy = (side: Side, b: Body, f: Lookout): boolean => {
   const fig = figureOf(b), range = rangeOf(f);

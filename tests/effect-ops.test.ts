@@ -153,8 +153,8 @@ describe('durations (design 3.1 rule 18 and table 4.4)', () => {
   const taunt = def({ op: 'taunt' });
   const rounds = (t: Tick): number => t / RULES.fight.round;
 
-  test('a taunt of 2 rounds holds 1.92, 1.71 and 1.52 rounds on the E, C and S support\'s tenacity', () => {
-    near([4.30, 17.14, 31.55].map(ten => rounds(lasting(taunt, tick(2000), 0, 0, ten))), [1.92, 1.71, 1.52], 2);
+  test('a taunt of 2 rounds holds 1.92, 1.77 and 1.65 rounds on the E, C and S bruiser\'s tenacity, the most of the five builds', () => {
+    near([4.44, 12.83, 20.88].map(ten => rounds(lasting(taunt, tick(2000), 0, 0, ten))), [1.915, 1.773, 1.654], 2);
   });
 
   test('potency lengthens a control status as tenacity shortens it, so equal amounts cancel', () => {

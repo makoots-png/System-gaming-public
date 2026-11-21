@@ -43,25 +43,25 @@ const KEYS = Object.keys(SHEET_LABELS) as SheetNumber[];
 // is no table's: every body sees at the rules' `fight.stealth.sightBase`, 0, until a status raises it (notes-7-stealth.md).
 const TABLE_2_3: Record<Shown, Record<BuildId, readonly number[]>> = {
   E: {
-    speed: [45, 10, 100, 24, 8, 114, 6.84, 4, 10, 15, 0, 0, 7.85, 6, 6, 17.41, 10, 10, 1, 1.50, 0, 0, 0, 1, 0.15, 0, 2, 0],
-    tank: [51, 10, 108, 24, 32, 65, 3.90, 2, 65, 20, 0, 0, 7.85, 6, 6, 10, 10, 10, 1, 1.50, 0, 0, 0, 1, 0.15, 0, 2, 0],
+    speed: [45, 10, 100, 24, 8, 114, 6.84, 4, 10, 15, 0, 0, 7.85, 6, 6, 17.41, 10, 10, 1, 1.50, 0, 2.09, 0, 1, 0.15, 0, 2, 0],
+    tank: [51, 10, 108, 24, 32, 65, 3.90, 2, 65, 20, 0, 0, 7.85, 6, 6, 10, 10, 10, 1, 1.50, 0, 2.09, 0, 1, 0.15, 0, 2, 0],
     cannon: [45, 15, 100, 20, 8, 100, 6, 3, 10, 15, 0.03, 0, 6, 10.45, 6, 10, 13.09, 10, 1, 1.54, 0, 0, 3.58, 1, 0.15, 0.02, 2, 0],
-    bruiser: [48, 10, 104, 28, 18, 90, 5.40, 3, 32, 5, 0, 0, 10.45, 6, 6, 10, 10, 10, 1, 1.50, 0, 0, 0, 1, 0.15, 0, 2, 0],
-    support: [45, 10, 100, 20, 8, 100, 6, 3, 10, 18, 0, 0, 6, 6, 10.45, 10, 10, 13.09, 1, 1.50, 0, 4.30, 0, 1.16, 0.17, 0, 3, 0],
+    bruiser: [48, 10, 104, 28, 18, 90, 5.40, 3, 32, 5, 0, 0, 10.45, 6, 6, 10, 10, 10, 1, 1.50, 0, 4.44, 0, 1, 0.15, 0, 2, 0],
+    support: [45, 10, 100, 20, 8, 100, 6, 3, 10, 18, 0, 0, 6, 6, 10.45, 10, 10, 13.09, 1, 1.50, 0, 2.09, 0, 1.16, 0.17, 0, 3, 0],
   },
   C: {
-    speed: [81, 10, 100, 34, 8, 141, 8.46, 5, 10, 15, 0, 0, 15.59, 6, 6, 43.60, 10, 10, 1, 1.50, 0, 0, 0, 1, 0.15, 0, 2, 0],
-    tank: [114, 10, 123, 34, 32, 70, 4.20, 3, 74, 20, 0, 0, 15.59, 6, 6, 10, 10, 10, 1, 1.50, 0, 0, 0, 1, 0.15, 0, 2, 0],
+    speed: [81, 10, 100, 34, 8, 141, 8.46, 5, 10, 15, 0, 0, 15.59, 6, 6, 43.60, 10, 10, 1, 1.50, 0, 7.96, 0, 1, 0.15, 0, 2, 0],
+    tank: [114, 10, 123, 34, 32, 70, 4.20, 3, 74, 20, 0, 0, 15.59, 6, 6, 10, 10, 10, 1, 1.50, 0, 7.96, 0, 1, 0.15, 0, 2, 0],
     cannon: [81, 24, 100, 20, 8, 100, 6, 3, 10, 15, 0.11, 0, 6, 26.16, 6, 10, 25.99, 10, 1, 1.64, 0, 0, 14.28, 1, 0.15, 0.07, 2, 0],
-    bruiser: [101, 10, 114, 43, 18, 100, 6, 3, 39, 5, 0, 0, 26.16, 6, 6, 10, 10, 10, 1, 1.50, 0, 0, 0, 1, 0.15, 0, 2, 0],
-    support: [81, 10, 100, 20, 8, 100, 6, 3, 10, 26, 0, 0, 6, 6, 26.16, 10, 10, 25.99, 1, 1.50, 0, 17.14, 0, 1.46, 0.22, 0, 8, 0],
+    bruiser: [101, 10, 114, 43, 18, 100, 6, 3, 39, 5, 0, 0, 26.16, 6, 6, 10, 10, 10, 1, 1.50, 0, 12.83, 0, 1, 0.15, 0, 2, 0],
+    support: [81, 10, 100, 20, 8, 100, 6, 3, 10, 26, 0, 0, 6, 6, 26.16, 10, 10, 25.99, 1, 1.50, 0, 7.96, 0, 1.46, 0.22, 0, 8, 0],
   },
   S: {
-    speed: [174, 10, 100, 46, 8, 162, 9.72, 5, 10, 15, 0, 0, 32.61, 6, 6, 98.27, 10, 10, 1, 1.50, 0, 0, 0, 1, 0.15, 0, 2, 0],
-    tank: [282, 10, 134, 46, 32, 70, 4.2, 3, 81, 20, 0, 0, 32.61, 6, 6, 10, 10, 10, 1, 1.50, 0, 0, 0, 1, 0.15, 0, 2, 0],
+    speed: [174, 10, 100, 46, 8, 162, 9.72, 5, 10, 15, 0, 0, 32.61, 6, 6, 98.27, 10, 10, 1, 1.50, 0, 14.98, 0, 1, 0.15, 0, 2, 0],
+    tank: [282, 10, 134, 46, 32, 70, 4.2, 3, 81, 20, 0, 0, 32.61, 6, 6, 10, 10, 10, 1, 1.50, 0, 14.98, 0, 1, 0.15, 0, 2, 0],
     cannon: [174, 31, 100, 20, 8, 100, 6, 3, 10, 15, 0.21, 0, 6, 58.96, 6, 10, 54.36, 10, 1, 1.76, 0, 0, 26.29, 1, 0.15, 0.13, 2, 0],
-    bruiser: [257, 10, 126, 54, 18, 100, 6, 3, 46, 5, 0, 0, 58.96, 6, 6, 10, 10, 10, 1, 1.50, 0, 0, 0, 1, 0.15, 0, 2, 0],
-    support: [174, 10, 100, 20, 8, 100, 6, 3, 10, 36, 0, 0, 6, 6, 58.96, 10, 10, 54.36, 1, 1.50, 0, 31.55, 0, 1.69, 0.28, 0, 19, 0],
+    bruiser: [257, 10, 126, 54, 18, 100, 6, 3, 46, 5, 0, 0, 58.96, 6, 6, 10, 10, 10, 1, 1.50, 0, 20.88, 0, 1, 0.15, 0, 2, 0],
+    support: [174, 10, 100, 20, 8, 100, 6, 3, 10, 36, 0, 0, 6, 6, 58.96, 10, 10, 54.36, 1, 1.50, 0, 14.98, 0, 1.69, 0.28, 0, 19, 0],
   },
 };
 const TABLE_2_6: readonly (readonly [Shown, Archetype, MonsterKind, number, number, number, number, number])[] = [
@@ -246,6 +246,37 @@ describe('the bounds the design states for the curves', () => {
     const tank = build('tank', 'E'), speedS = build('speed', 'S');
     expect(sheetOf(tank, RULES, [{ op: 'speed', pct: -90 }]).speed).toBe(40);
     expect(sheetOf(speedS, RULES, [{ op: 'speed', pct: 500 }]).speed).toBe(250);
+  });
+});
+
+describe('tenacity, from Strength and Discipline together (design 2.2, the owner, Nov 21)', () => {
+  const tenacity = (o: Partial<Stats>, perks: SheetBasis['perks'] = {}): number => sheetOf({ stats: stats(o), level: 20, gear: [], perks }, RULES).tenacity;
+  // Design 2.2: a capped number is 60 x / (x + 40) of the effective points x = 10 (s / 10) ^ 0.8 - 10 of the score it reads,
+  // 60 x / 40 below the base; tenacity reads the geometric mean of Strength and Discipline, sqrt(str * dis).
+  const curve = (s: number): number => { const x = 10 * Math.pow(s / 10, 0.8) - 10; return x >= 0 ? 60 * x / (x + 40) : 60 * x / 40; };
+
+  test('equal Strength and Discipline give the tenacity that much Discipline gave alone before the blend', () => {
+    for (const s of [10, 14, 33, 83, 200]) expect(tenacity({ str: s, dis: s }) - curve(s)).toBeCloseTo(0, 10);
+  });
+
+  test('Discipline alone gives less, the tenacity of the score sqrt(10 * dis): 7.96 at the C support\'s 33, not 17.14', () => {
+    expect(tenacity({ dis: 33 })).toBeCloseTo(curve(Math.sqrt(330)), 10);
+    expect(tenacity({ dis: 33 })).toBeCloseTo(7.96, 2);
+    for (const s of [14, 33, 83]) expect([s, tenacity({ dis: s }) < curve(s)]).toEqual([s, true]);
+  });
+
+  test('Strength alone gives the same tenacity as Discipline alone', () => {
+    for (const s of [14, 33, 83, 200]) expect([s, tenacity({ str: s })]).toEqual([s, tenacity({ dis: s })]);
+  });
+
+  test('tenacity stays under its cap of 60 with both stats at 1000, and a score lowered past 0 counts as 1', () => {
+    expect(tenacity({ str: 1000, dis: 1000 })).toBeLessThan(60);
+    expect(tenacity({ str: 1000, dis: 1000 })).toBeCloseTo(curve(1000), 10);
+    expect(tenacity({ str: -20, dis: 40 })).toBeCloseTo(curve(Math.sqrt(40)), 10);
+  });
+
+  test('a perk on tenacity still adds to the blend, as a monster\'s or a fixture\'s bonus does', () => {
+    expect(tenacity({ str: 33, dis: 33 }, { tenacity: 10 })).toBeCloseTo(curve(33) + 10, 10);
   });
 });
 

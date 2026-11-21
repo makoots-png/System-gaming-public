@@ -242,11 +242,12 @@ describe('each rule of design 3.1', () => {
     expect([at(11).outcomes[0]!.channelBroken, at(12).outcomes[0]!.channelBroken, find(at(12).bodies, 't').channel?.state]).toEqual([false, true, 'broken']);
   });
 
-  test('rule 18: a boss takes a control status for its whole duration, as a normal monster does (the owner, Nov 21)', () => {
+  test('rule 18: a boss takes a control status for its whole duration less its tenacity\'s share, as a normal monster does (the owner, Nov 21)', () => {
     const taunt = ability('strike', { ops: [statusOf('taunted', { op: 'taunt' })] }, '1');
     const until = (t: Body): number | null => find(hitFoe(taunt, user, t).bodies, 't').statuses[0]!.until;
     const boss = body('t', monsterOrigin('brute', 'boss'), place(6, 5), 'foe');
-    expect([until(foe), until(boss)]).toEqual([NOW + 2000, NOW + 2000]);
+    const whole = NOW + Math.round(2000 * 100 / (100 + foe.sheet.tenacity));
+    expect([boss.sheet.tenacity, until(foe), until(boss)]).toEqual([foe.sheet.tenacity, whole, whole]);
   });
 
   test('rule 18: a taunt adds twice the gap to the leader to the taunter\'s threat, after the hit\'s own threat', () => {

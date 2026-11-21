@@ -10,7 +10,7 @@ import type { DeviceId, SheetKey } from '../ids.ts';
 import { ahead, roundsOf, tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
 import { TERRAIN } from './space.ts';
-import type { Grid, Place, Side } from './space.ts';
+import type { Place, Side } from './space.ts';
 import { anchorOf, zoneTiles, zoneTone } from './zones.ts';
 import type { ZoneId, ZoneTone } from './zones.ts';
 import type { AbilityId, CombatantId, HunterId } from './ability-types.ts';
@@ -25,7 +25,8 @@ import { LIFE_STATES } from '../hunter/vitals.ts';
 import type { LifeState } from '../hunter/vitals.ts';
 import { partyView } from './fight-turn.ts';
 import { alive } from './land.ts';
-import { counting, holds } from './standing.ts';
+import { counting } from './standing.ts';
+import { perceivedBy } from './sight.ts';
 import { cardOf, channelView, intentOf, tauntOf, usesLeft } from './fight-view.ts';
 import type { Fight, FightId, Refusal } from './fight-types.ts';
 
@@ -235,22 +236,20 @@ export type DocContext = {
   readonly hunterOf?: HunterOf;
 };
 
-/** Whether the party sees `b`: one of its own, or a foe on a tile it sees that is not hidden (kits design 8.7). */
-const inView = (b: Body, lit: Set<number> | null, grid: Grid): boolean =>
-  b.side === 'party' || (!holds(b, 'hidden') && (lit === null || lit.has(b.place.y * grid.w + b.place.x)));
-
 /**
  * The doc for `f`, as the party sees it (design 5.3). No fight ends this phone's fight on the table (null when the
- * room's doc is another GM phone's, or already ended, so nothing is published); an ended fight is the ended doc. With a
- * fog, what the party cannot see is not in the doc at all: a foe on a tile it does not see now, its turn, its place in
- * the order, a zone's tiles it does not see, and the log lines about a foe or zone it does not see; a tile it saw
- * before keeps its terrain.
+ * room's doc is another GM phone's, or already ended, so nothing is published); an ended fight is the ended doc. The doc
+ * holds the party's own rows (a hidden hunter with its status) and a foe only while some party row perceives it by the
+ * one sight rule (sight.ts `perceivedBy`: one body that is up must both have it in sight and see its stealth level,
+ * notes-7-stealth.md section 3). What the party does not perceive is not in the doc at all: its row, its turn, its place
+ * in the order, and the log lines about it; with a fog also a zone's tiles it does not see, while a tile it saw before
+ * keeps its terrain.
  */
 export function fightDoc(f: Fight | null, R: Rules, o: DocContext): FightDoc | null {
   if (f === null) return o.was && o.was.ended === false && o.was.by === o.by ? { ended: true, active: false, id: o.was.id, at: o.at } : null;
   if (f.phase === 'ended') return { ended: true, active: false, id: f.id, at: o.at };
   const now = f.phase === 'running' ? f.now : tick(0), lit = partyView(f);
-  const seen = f.rows.filter(b => inView(b, lit, f.grid)), ids = new Set(seen.map(b => b.id as string));
+  const seen = f.rows.filter(b => perceivedBy('party', b, f)), ids = new Set(seen.map(b => b.id as string));
   const zones = docZones(f, lit, ids, now, R), shownZones = new Set(zones.map(z => z.id as string));
   const hiddenRows = new Set(f.rows.filter(b => !ids.has(b.id)).map(b => b.id)), hiddenZones = new Set(f.zones.filter(z => !shownZones.has(z.id)).map(z => z.id));
   const currentId = f.phase === 'running' && ids.has(f.currentId) ? f.currentId : null;

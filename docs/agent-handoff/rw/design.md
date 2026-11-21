@@ -105,14 +105,14 @@ One `STAT_KEYS = ['str', 'agi', 'vit', 'ins', 'dis', 'pre', 'pow', 'ctl']` in `s
 | Crit faces | `1 + round(capped(x(ins), 5))`, 1 to 6 faces of the reaction d20 | Instinct | A crit is 5% to 30%: never more often than the 1-in-3 where it becomes the expected hit |
 | Crit size | `1.5 + capped(x(ctl), 0.5)` | Control | 1.5 to 2 times: a crit is felt, and never more than today's "double the dice" |
 | Opening bonus | `min(6, round(0.25 * x(ins)))` on the opening d20 | Instinct | "Reacting first" from the owner's list; capped at 6 so the die still decides 70% of the opening |
-| Tenacity | `capped(x(dis), 60)` | Discipline | Control durations are multiplied by `(100 + potency) / (100 + tenacity)`: at most 37% shorter |
+| Tenacity | `capped(x(sqrt(str * dis)), 60)` | Strength and Discipline (their geometric mean: equal scores give that score's tenacity, one at the base little) | Control durations are multiplied by `(100 + potency) / (100 + tenacity)`: at most 37% shorter |
 | Potency | `capped(x(ctl), 50)` | Control | How well statuses land; mirrors tenacity so equal investment cancels |
 | Threat multiplier | `1 + capped(x(pre), 1)` | Presence | A Presence build draws up to twice the threat for the same damage (section 4.2) |
 | Channel hold | `0.15 + capped(x(dis), 0.25)` of max HP | Discipline | A single hit at least this big breaks a channel (section 4.1) |
 | Cost cut | `capped(x(ctl), 0.25)` | Control | "Lower costs" from the owner's list; at most a quarter off |
 | Shadow capacity | `floor(eff(pre) * 0.2)` | Presence | Replaces "army size is the INT score"; 2 at base, 19 for an S Presence build |
 
-Each stat feeds at least two numbers: Strength (`phys`, carry), Agility (speed, move, reaction), Vitality (HP, fatigue, armor), Instinct (crit faces, reaction, opening), Discipline (resist, will, tenacity, hold), Presence (`sup`, threat, shadows), Power (`mag`, mana), Control (accuracy, penetration, crit size, potency, cost cut).
+Each stat feeds at least two numbers: Strength (`phys`, carry, tenacity with Discipline), Agility (speed, move, reaction), Vitality (HP, fatigue, armor), Instinct (crit faces, reaction, opening), Discipline (resist, will, tenacity with Strength, hold), Presence (`sup`, threat, shadows), Power (`mag`, mana), Control (accuracy, penetration, crit size, potency, cost cut).
 
 Tables 2.3.E, 2.3.C and 2.3.S print every number for the five builds: speed (Agility 2 : Strength 1, light kit), tank (Vitality 2 : Strength 1, heavy), cannon (Power 2 : Control 1, light), bruiser (Strength 2 : Vitality 1, medium), support (Presence 2 : Discipline 1, light). Points split 2:1, every perk on the main stat. The speed build takes Strength second because Agility alone deals no damage; its damage per hit is 60% of the bruiser's at C and its turns are 1.41 times as many.
 
@@ -263,7 +263,7 @@ Break thresholds are in table 4.2: a cannon's channel breaks to any single hit o
 
 A monster's row holds `threat: Record<CombatantId, number>`. Rule: on every use that damages the monster, `threat[user] += dealt * user.threat`. At the monster's turn start every entry falls 10% (`t *= 0.9 ^ (elapsed / 1000)`, so decay is in time, not turns). The suggested target is the highest entry, drawn on the monster's card with the list behind it; the GM may target anyone, and the log records when it did not follow the suggestion.
 
-Table 4.3: three C hunters on one monster. The cannon leads from round 1 because it deals the most, which is what the rule is for. A `taunt` op adds twice the taunter's gap to the leader, so the taunter leads at once and stays ahead for several rounds after the forced window ends, and forces the target for 2 rounds before tenacity (table 4.4: 1.71 rounds on a C Discipline build, 0.85 on a boss). Reasons: 2 rounds is one or two of the monster's turns, long enough to pull a monster off a dying hunter and short enough that a tank must keep taunting; the burst of twice the gap is the smallest rule that makes a taunt matter after it ends without a number the GM must tune. Decay of 10% a round means a hunter who stops attacking fades out of the table in about 7 rounds.
+Table 4.3: three C hunters on one monster. The cannon leads from round 1 because it deals the most, which is what the rule is for. A `taunt` op adds twice the taunter's gap to the leader, so the taunter leads at once and stays ahead for several rounds after the forced window ends, and forces the target for 2 rounds before tenacity (table 4.4: 1.77 rounds on the C bruiser, the build with the most tenacity). Reasons: 2 rounds is one or two of the monster's turns, long enough to pull a monster off a dying hunter and short enough that a tank must keep taunting; the burst of twice the gap is the smallest rule that makes a taunt matter after it ends without a number the GM must tune. Decay of 10% a round means a hunter who stops attacking fades out of the table in about 7 rounds.
 
 A monster of kind boss takes a `taunt` at half duration, and a `hold`, `root` or `speed` op at half as well (its flat resistance; an elite at 0.75).
 

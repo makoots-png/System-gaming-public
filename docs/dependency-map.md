@@ -98,7 +98,7 @@ None.
 
 ### `src/core/combat/fight-doc.ts`
 
-- Imports: `src/core/combat/fight-turn.ts`, `src/core/combat/fight-view.ts`, `src/core/combat/land.ts`, `src/core/combat/op-amount.ts`, `src/core/combat/row-hp.ts`, `src/core/combat/row-icon.ts`, `src/core/combat/space.ts`, `src/core/combat/standing.ts`, `src/core/combat/timeline.ts`, `src/core/combat/zones.ts`, `src/core/hunter/vitals.ts`, `src/core/ids.ts`
+- Imports: `src/core/combat/fight-turn.ts`, `src/core/combat/fight-view.ts`, `src/core/combat/land.ts`, `src/core/combat/op-amount.ts`, `src/core/combat/row-hp.ts`, `src/core/combat/row-icon.ts`, `src/core/combat/sight.ts`, `src/core/combat/space.ts`, `src/core/combat/standing.ts`, `src/core/combat/timeline.ts`, `src/core/combat/zones.ts`, `src/core/hunter/vitals.ts`, `src/core/ids.ts`
 - Imports types from: `src/core/combat/ability-types.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/fight-types.ts`, `src/core/combat/row-life.ts`, `src/core/registry/icons.ts`, `src/core/rules.ts`
 - Imported by: `src/core/combat/map-view.ts`, `src/core/combat/refusal-words.ts`, `src/core/combat/table-news.ts`, `src/core/protocol.ts`, `src/views/combat.js`
 
@@ -242,7 +242,7 @@ None.
 
 - Imports: `src/core/combat/row-hp.ts`, `src/core/combat/space.ts`, `src/core/combat/standing.ts`
 - Imports types from: `src/core/combat/effect-ops.ts`, `src/core/combat/fight-types.ts`, `src/core/rules.ts`
-- Imported by: `src/core/combat/fight.ts`, `src/core/combat/policy.ts`, `src/core/combat/resolve.ts`
+- Imported by: `src/core/combat/fight-doc.ts`, `src/core/combat/fight.ts`, `src/core/combat/policy.ts`, `src/core/combat/resolve.ts`
 
 ### `src/core/combat/space.ts`
 
