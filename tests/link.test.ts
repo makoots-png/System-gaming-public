@@ -379,6 +379,62 @@ describe('leaving', () => {
     expect(timers(r.fx)).toEqual([]);
   });
 
+  // the table: joining × leave. Leave room while a Join is out (a player switching rooms from an invite) goes out of
+  // every room on a new gen, as creating × leave does: the join's answers are stale, so its room is never entered
+  test('a Join cancelled while the room is looked up lands in no room: the phone is where it was, and the room\'s answers are dropped', () => {
+    const r = fresh().tap({ type: 'join', code: ROOM_A, key: null, from: null });
+    const old = r.state.gen;
+    r.tap({ type: 'leave' });
+    expect(r.state).toMatchObject({ at: 'idle', server: 'ok', last: null, next: 'timer' });
+    expect(r.state.gen).not.toBe(old);
+    expect(r.fx).toContainEqual({ type: 'abort', gen: old });
+    expect(calls(r.fx)).toEqual([]);
+    expect(timers(r.fx)).toEqual([5000]);
+    expect(notices(r.fx)).toEqual([]);
+    expect(news(r.fx), 'no sheet push starts').toEqual([]);
+    expect(saved(r.fx), 'the save held no room while the join was out, and holds none now').toEqual({});
+    const out = r.state;
+    r.late({ type: 'peeked', exists: true }, old);
+    expect(r.state, 'the room found meanwhile is not asked for its head').toBe(out);
+    expect(r.fx).toEqual([]);
+  });
+
+  test('a GM\'s Join cancelled while the room\'s head is out keeps no key and enters no room when the head answers', () => {
+    const r = fresh().tap({ type: 'join', code: ROOM_A, key: KEY_A, from: null }).reply({ type: 'peeked', exists: true });
+    const old = r.state.gen;
+    r.tap({ type: 'leave' });
+    expect(r.state).toMatchObject({ at: 'idle', last: null });
+    expect(r.fx).toContainEqual({ type: 'abort', gen: old });
+    expect(saved(r.fx)).toEqual({});
+    const out = r.state;
+    r.late({ type: 'headed', cursor: 40, gm: true, kicked: false }, old);
+    expect(r.state, 'the room is not entered').toBe(out);
+    expect(r.fx, 'nor is its key kept, nor its head applied').toEqual([]);
+  });
+
+  test('a player in a room who switches to another and taps Leave room is out of both: the room they were in is the last room', () => {
+    const r = playerInA().tap({ type: 'join', code: ROOM_B, key: null, from: null });
+    const old = r.state.gen;
+    r.tap({ type: 'leave' });
+    expect(r.state).toMatchObject({ at: 'idle', server: 'ok', last: { code: ROOM_A, why: 'left' } });
+    expect(r.fx).toContainEqual({ type: 'abort', gen: old });
+    expect(saved(r.fx)).toEqual({ room: null, cursor: 0, last: { code: ROOM_A, why: 'left' }, gmKey: null });
+    expect(calls(r.fx)).toEqual([]);
+    expect(notices(r.fx)).toEqual([]);
+    const out = r.state;
+    r.late({ type: 'peeked', exists: true }, old).late({ type: 'headed', cursor: 7, gm: false, kicked: false }, old);
+    expect(r.state, 'room B is not entered').toBe(out);
+  });
+
+  test('a Join cancelled on a page with no room server leaves the page with no room server', () => {
+    const r = run(boot({ server: false, room: null, last: null })).tap({ type: 'join', code: ROOM_A, key: null, from: null });
+    const old = r.state.gen;
+    r.tap({ type: 'leave' });
+    expect(r.state.at).toBe('off');
+    expect(r.fx).toContainEqual({ type: 'abort', gen: old });
+    expect(timers(r.fx)).toEqual([]);
+  });
+
   test('Forget clears the last room', () => {
     const r = playerInA().tap({ type: 'leave' }).tap({ type: 'forget' });
     expect(r.state).toMatchObject({ at: 'idle', last: null });

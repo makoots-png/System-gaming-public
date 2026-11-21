@@ -288,6 +288,77 @@ test('only src/core/hunter/job-chain.ts changes a hunter\'s Job Change chain, an
   expect(report(hits), 'the Job Change chain changes only through src/core/hunter/job-chain.ts (chainAfter). Assign what it answers; push the quest its issueQuest effect carries.').toEqual([]);
 });
 
+test('only src/core/hunter/inventory.ts changes what a hunter wears', async () => {
+  // What one item is to a hunter (in the bag, worn, gone) is one machine, the wear's `TABLE` and `wearMove` in
+  // inventory.ts, and `equipped` is its stored half: `wearIn`, `emptySlot` and `unwear` there are its writes, and the
+  // save's repair (`fixRefs` in hunter.ts) reads a stored one through `parseWorn`. A second writer could wear an item
+  // in a slot it does not fit, wear one item twice, or change gear in a fight. Loadouts and the views go through them.
+  const owners = ['src/core/hunter/inventory.ts', 'src/core/hunter/hunter.ts'];
+  // Not a change of wear: a seed made neutral has no items, so nothing worn; hunters added from a file keep what they
+  // wear under the ids they are given.
+  const notWear: Record<string, string> = { 'src/core/hunter/identity.ts': 'equipped: newEquipped()', 'src/core/hunter/imported.ts': 'h.equipped[slot] = moved(items, h.equipped[slot])' };
+  const write = /\.equipped\s*(\[[^\]]*\]\s*)?(?:[-+*/]?=(?![=>])|\?\?=|\|\|=)|[{,]\s*equipped\s*:/;
+  for (const text of ['if (h.equipped[s] === id) h.equipped[s] = null;', 'return { ...h, equipped: { ...h.equipped, [slot]: id } };']) expect(write.test(text), `the rule sees ${text}`).toBe(true);
+  expect(write.test('const w = h.items.find(i => i.id === h.equipped[\'weapon\']);'), 'and not a read').toBe(false);
+  const all = (await sourceLines('src')).filter(line => !owners.includes(line.file) && !isComment(line.text) && write.test(line.text));
+  const permitted = (line: Line) => notWear[line.file] !== undefined && line.text.includes(notWear[line.file]!);
+  expect(Object.keys(notWear).filter(f => !all.some(l => l.file === f && permitted(l))), 'a permit that permits nothing leaves the list').toEqual([]);
+  expect(report(all.filter(line => !permitted(line))), 'what a hunter wears changes only through src/core/hunter/inventory.ts (equip, unequip, editItem, removeItem, sell; wearIn and emptySlot for a loadout), each asking the wear\'s TABLE first. Assign what it answers.').toEqual([]);
+});
+
+test('only src/core/hunter/shadows.ts changes a shadow\'s summoned and HP, through stepShadow', async () => {
+  // A shadow's place (resting, summoned, released) and its HP are one machine (`stepShadow` and its `TABLE`, rules-10):
+  // a released shadow refuses a heal and the fight's write-back, and a summon is refused while it is out. A second
+  // writer of `summoned` or of a shadow's `hp` would go around the table. hunter.ts holds the type, its default and the
+  // save's repair; a hunter's own HP is the life machine's (the vitals rule above).
+  const owners = ['src/core/hunter/shadows.ts', 'src/core/hunter/hunter.ts'];
+  const summoned = /\.summoned\s*(?:=(?![=>])|\?\?=|\|\|=)|[{,]\s*summoned\s*:/;
+  // A shadow's HP is told apart from a hunter's or a row's by the file: one that reads a hunter's shadows.
+  const hpWrite = /[\w$)\]!]\.hp\s*(?:[-+*/]?=(?![=>])|\?\?=|\|\|=)|\{\s*\.\.\.[^,{}]+,[^{}]*(?<![.\w$])hp\s*:/;
+  for (const text of ['s.summoned = !s.summoned;', 'h.shadows = h.shadows.map(x => x.id === sid ? { ...x, summoned: true } : x);']) expect(summoned.test(text), `the rule sees ${text}`).toBe(true);
+  for (const text of ['s.hp = Math.max(0, e.hp);', 'h.shadows = h.shadows.map(x => x.id === sid ? { ...x, hp: full } : x);']) expect(hpWrite.test(text), `the rule sees ${text}`).toBe(true);
+  expect(summoned.test('const out = h.shadows.filter(x => x.summoned);') || hpWrite.test('const left = s.hp > 0;'), 'and not a read').toBe(false);
+  const lines = (await sourceLines('src')).filter(line => !owners.includes(line.file) && !isComment(line.text));
+  const readsShadows = new Set(lines.filter(line => /\.shadows\b/.test(line.text)).map(line => line.file));
+  const hits = lines.filter(line => summoned.test(line.text) || (readsShadows.has(line.file) && hpWrite.test(line.text)));
+  expect(report(hits), 'a shadow is summoned, dismissed, released, healed or left at a fight\'s HP only by stepShadow in src/core/hunter/shadows.ts (setShadowHp, healShadow). Assign what it answers.').toEqual([]);
+});
+
+test('only src/core/hunter/record.ts changes a hunter\'s rank', async () => {
+  // A rank moves by the rank's machine (`rankStep`, `RANK_TABLE`, U11): the GM's choice, Re-evaluate when it is behind
+  // the level, kept when the level moves; a new rank is a fact of the chronicle in the same step. hunter.ts holds the
+  // type and the save's repair. A second writer would skip the fact or re-evaluate a rank that is not behind.
+  const owners = ['src/core/hunter/record.ts', 'src/core/hunter/hunter.ts'];
+  // Not a hunter's rank: a gate's (its edit, a roll), a rarity's in the room's rules, a rule override's entry, the
+  // codex's filter, and the rank typed for a monster in the GM's quick add.
+  const notHunters: Record<string, string> = {
+    'src/core/gates/world.ts': 'rank: g.rank', 'src/views/gates.js': 'rank: roll.rank', 'src/core/hunter/build.ts': 'room.rarities[r].rank',
+    'src/core/overrides.ts': '{ ...kept, rank }', 'src/views/bestiary.js': 'f.rank', 'src/views/combat.js': 'o.rank',
+  };
+  const write = /[\w$)\]!]\.rank\s*(?:=(?![=>])|\?\?=|\|\|=)|\{\s*\.\.\.[^,{}]+,[^{}]*(?<![.\w$])rank\s*[:,}]/;
+  for (const text of ['h.rank = rankForLevel(rules(), h.level);', 'return { ...h, rank: e.rank };', 'store.update(s => ({ ...h, rank }));']) expect(write.test(text), `the rule sees ${text}`).toBe(true);
+  expect(write.test('const r = rankStanding(h, rules()); if (h.rank === r.earns) return;'), 'and not a read').toBe(false);
+  const all = (await sourceLines('src')).filter(line => !owners.includes(line.file) && !isComment(line.text) && write.test(line.text));
+  const permitted = (line: Line) => notHunters[line.file] !== undefined && line.text.includes(notHunters[line.file]!);
+  expect(Object.keys(notHunters).filter(f => !all.some(l => l.file === f && permitted(l))), 'a permit that permits nothing leaves the list').toEqual([]);
+  expect(report(all.filter(line => !permitted(line))), 'a hunter\'s rank changes only through rankStep in src/core/hunter/record.ts (setRank, reevaluate; grant.ts `levelled` gives it levelMoved). Assign what it answers; a rank that is not a hunter\'s goes in this rule\'s list with what it is.').toEqual([]);
+});
+
+test('only src/views/dice.js moves the quick check\'s DC, and only by dcPickStep', async () => {
+  // The Dice view's quick check DC is one machine (src/core/dc-pick.ts, SMX-views-13): it opens on the hunter's rank
+  // (`dcStart`) and a pick makes it the player's (`dcPickStep`). The view keeps one `dc`; a second value or a write
+  // that is not a step would drop the player's pick at a redraw, or hold a number the GM's rank table no longer gives.
+  const owners = ['src/core/dc-pick.ts', 'src/views/dice.js'];
+  const names = /\b(dcPickStep|dcStart)\b/;
+  const lines = (await sourceLines('src')).filter(line => !isComment(line.text));
+  expect(report(lines.filter(line => !owners.includes(line.file) && names.test(line.text))), 'the quick check\'s DC is the Dice view\'s: move it in src/views/dice.js through dcPickStep').toEqual([]);
+  const assign = /(?<![\w$.])dc\s*=(?![=>])/, stepped = /=\s*(quickChecks \? )?(dcPickStep|dcStart)\(/;
+  expect(assign.test('dc = { at: \'chosen\', key };') && !stepped.test('dc = { at: \'chosen\', key };'), 'the rule sees a write by hand').toBe(true);
+  const dice = lines.filter(line => line.file === 'src/views/dice.js' && assign.test(line.text));
+  expect(dice.length, 'the rule finds dice.js\'s dc').toBeGreaterThan(0);
+  expect(report(dice.filter(line => !stepped.test(line.text))), 'set the DC only to what dcPickStep (or dcStart, as the view opens) answers').toEqual([]);
+});
+
 test('a choice from a list is read with the one oneOf in src/core/one-of.ts', async () => {
   // save.ts, gate.ts, spawn.ts, protocol.ts and store.ts each kept a private copy, with three different signatures.
   const lines = [...await sourceLines('src/core'), ...await sourceLines('src/edge'), ...await sourceLines('src/views')];
@@ -536,6 +607,21 @@ test('a row\'s life changes only in row-life.ts', async () => {
   const permitted = (line: Line) => mayWrite.includes(line.file) || docRows.includes(line.file) || (notRows[line.file] !== undefined && line.text.includes(notRows[line.file]!));
   expect([...mayWrite, ...docRows, ...Object.keys(notRows)].filter(f => !all.some(l => l.file === f && permitted(l))), 'a permit that permits nothing leaves the list').toEqual([]);
   expect(report(all.filter(line => !permitted(line))), 'a row\'s life changes only through rowLifeAfter (src/core/combat/row-life.ts), so no heal, hit or edit goes around the life machine. Call it with the life event, or send the fight\'s `life` or `adjust` command.').toEqual([]);
+});
+
+test('only withThreat in src/core/combat/effect-ops.ts writes a fight row\'s threat table', async () => {
+  // A row holds a threat table only by its kind (a monster, a foe's summon; `OWN` in fight-parse.ts, U4): `withThreat`
+  // is the one writer, and it leaves a row of another kind as it is. The fight's own rule (above) keeps threat in the
+  // fight's modules; this one keeps it in that function, so no rule writes a table onto a hunter's or a shadow's row.
+  // rows.ts and fight-parse.ts make whole new rows, which this rule does not see.
+  const owners = ['src/core/combat/effect-ops.ts'];
+  const assign = /[\w$)\]!]\.threat(\[[^\]]*\])?\s*(?:[-+*/]?=(?![=>])|\?\?=|\|\|=|\+\+|--)/;
+  const copy = /\{\s*\.\.\.[^,{}]+,[^{}]*(?<![.\w$])threat\s*[:,}]/;
+  const writes = (text: string) => assign.test(text) || copy.test(text);
+  for (const text of ['b.threat[from] = (b.threat[from] ?? 0) + amount;', 'return { ...t, threat: { ...t.threat, [from]: n } };']) expect(writes(text), `the rule sees ${text}`).toBe(true);
+  expect(writes('const top = r.threat && Object.keys(r.threat)[0];'), 'and not a read').toBe(false);
+  const hits = (await sourceLines('src')).filter(line => !owners.includes(line.file) && !isComment(line.text) && writes(line.text));
+  expect(report(hits), 'change a row\'s threat table with withThreat(row, change) (src/core/combat/effect-ops.ts), which writes it only on a row whose kind holds one').toEqual([]);
 });
 
 test('nothing imports a module deleted with the old fight', async () => {

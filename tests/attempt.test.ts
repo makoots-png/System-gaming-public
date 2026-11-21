@@ -5,9 +5,10 @@ import { ATTEMPT_STATES, NOBODY, NO_ATTEMPT, attemptStep, joinBinds } from '../s
 import type { Attempt, AttemptEffect, AttemptEvent, TapAnswer } from '../src/core/sync/attempt.ts';
 import type { HunterId } from '../src/core/ids.ts';
 import type { LinkNotice } from '../src/core/sync/link.ts';
+import { tapWords } from '../src/core/sync/taps.ts';
 import type { TapKind } from '../src/core/sync/taps.ts';
 import {
-  CODE, CREATE, CREATING, GEN, HEAD, IDLE, JOIN_GM, JOIN_PLAYER, LIVE_GM, LIVE_PLAYER, MIRA, NAMED, PEEK, PEEK_GM, PICKED, REPLY, START, UPGRADING, WALK_EVENTS, linked, tap,
+  CODE, CREATE, CREATING, GEN, HEAD, IDLE, JOIN_GM, JOIN_PLAYER, LEAVE, LIVE_GM, LIVE_PLAYER, MIRA, NAMED, PEEK, PEEK_GM, PICKED, REPLY, START, UPGRADING, WALK_EVENTS, linked, tap,
 } from './models/attempt-events.ts';
 import type { Asked } from './models/attempt-events.ts';
 import { hid } from './fixtures/ids.ts';
@@ -91,6 +92,16 @@ describe('a Create or Join tap', () => {
     }
     expect(answers(run(asMira, linked(REPLY, LIVE_PLAYER, ['replaced'])).effects), 'a campaign replaced into a room is no join').toEqual([['mira', no('replaced')]]);
     expect(answers(run(creating, linked(REPLY, UPGRADING)).effects), 'left with no word').toEqual([['create', no('net')]]);
+  });
+
+  test('a create or join ended by Leave room (or Later) fails as left, which says nothing: the person did it themself, the server was not missed', () => {
+    for (const [s, reply] of [[creating, 'create'], [asGM, 'gm'], [asMira, 'mira'], [asRin, 'rin']] as const) {
+      const r = run(s, linked(LEAVE, IDLE));
+      expect(r.state).toEqual(NO_ATTEMPT);
+      expect(answers(r.effects)).toEqual([[reply, no('left')]]);
+    }
+    expect(answers(run(asMira, linked(REPLY, HEAD), linked(LEAVE, IDLE)).effects), 'with the head out too').toEqual([['mira', no('left')]]);
+    expect(tapWords('left', CODE)).toBeNull();
   });
 
   test('a join for a typed name changes nothing until it ends: a failed one makes no hunter, a joined one binds a new hunter of that name', () => {

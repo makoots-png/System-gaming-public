@@ -8,8 +8,9 @@
 /**
  * Why a tap failed. `busy`: the link was not ready for a create or a join (it was leaving or held another). `replaced`:
  * an import, a restore or a reset replaced the campaign while it waited (no words: the new campaign is the answer).
+ * `left`: the person ended it themself, with Leave room or Later while it waited (no words: they are where they asked).
  */
-export const TAP_KINDS = ['badcode', 'notfound', 'keyRefused', 'removed', 'busy', 'replaced', 'net'] as const;
+export const TAP_KINDS = ['badcode', 'notfound', 'keyRefused', 'removed', 'busy', 'replaced', 'left', 'net'] as const;
 export type TapKind = (typeof TAP_KINDS)[number];
 
 const WORDS: { readonly [K in TapKind]: ((code: string, typed: boolean) => string) | null } = {
@@ -20,6 +21,7 @@ const WORDS: { readonly [K in TapKind]: ((code: string, typed: boolean) => strin
   removed: () => 'The GM removed you from that room. Ask the GM to allow you back.',
   busy: () => 'Another create or join is under way. Try again in a moment.',
   replaced: null,
+  left: null,
   net: () => 'Could not reach the server. Try again in a moment.',
 };
 /**

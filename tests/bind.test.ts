@@ -152,7 +152,7 @@ describe('the REMOVED FROM ROOM notice (SMX-sync-8)', () => {
       'rejoined': ['none', `tell Rejoined room ${A}.`],
       // today's behaviour: the window comes back where a second try can work (not allowed back yet, the server not reached)
       'rejoin failed: removed': again(NOT_BACK_YET), 'rejoin failed: net': again(tapWords('net', A)!),
-      'rejoin failed: notfound': ends(tapWords('notfound', A)), 'rejoin failed: busy': ends(tapWords('busy', A)), 'rejoin failed: replaced': ends(null),
+      'rejoin failed: notfound': ends(tapWords('notfound', A)), 'rejoin failed: busy': ends(tapWords('busy', A)), 'rejoin failed: replaced': ends(null), 'rejoin failed: left': ends(null),
       'rejoin failed: badcode': ends(tapWords('badcode', A)), 'rejoin failed: keyRefused': ends(tapWords('keyRefused', A)),
       'a join of B answered': ['rejoining A'], 'in room A': ['rejoining A'], 'in room B': ['rejoining A'], 'campaign replaced': ['none'],
     },

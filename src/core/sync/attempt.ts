@@ -55,7 +55,7 @@ export type AttemptEffect<R> =
   | { readonly type: 'answer'; readonly reply: R; readonly answer: TapAnswer };
 export type AttemptResult<R> = { readonly state: Attempt<R>; readonly effects: readonly AttemptEffect<R>[] };
 
-/** The link's notices that end a tap, and the kind each fails it as. A tap that ends with none of them out of a room fails as `net`. */
+/** The link's notices that end a tap, and the kind each fails it as. A tap that ends with none of them out of a room, and not by a leave, fails as `net`. */
 const TAP_OF: { readonly [N in LinkNotice]: TapKind | null } = {
   notFound: 'notfound', keyRefused: 'keyRefused', notAllowedBack: 'removed', replaced: 'replaced', unreachable: 'net', serverError: 'net',
   // the tab stopped saving while the tap waited: its banner says why. taps.ts has no kind of its own for it, and
@@ -83,9 +83,14 @@ function taken<R>(s: Extract<Attempt<R>, { at: 'handed' }>, link: Link): Out<R> 
   return answer(reply, { ok: false, kind: link.at === 'upgrading' || link.at === 'off' ? 'net' : 'busy' });
 }
 
-/** After each link step while a create or join is under way: nothing while the link stays in its stretch; out of it, the tap answers, live with no notice of its own as a success, else as the notice says. */
-function followed<R>(s: Extract<Attempt<R>, { at: 'creating' | 'joining' }>, link: Link, notices: readonly LinkNotice[]): Out<R> {
+/**
+ * After each link step while a create or join is under way: nothing while the link stays in its stretch; out of it, the
+ * tap answers: `left` when the step was the person's own Leave (or Later), live with no notice of its own as a success,
+ * else as the notice says.
+ */
+function followed<R>(s: Extract<Attempt<R>, { at: 'creating' | 'joining' }>, took: LinkEvent, link: Link, notices: readonly LinkNotice[]): Out<R> {
   if (link.at === s.at && link.gen === s.gen) return same(s);
+  if (took.type === 'leave') return answer(s.reply, { ok: false, kind: 'left' });
   const told = notices.map(n => TAP_OF[n]).find((k): k is TapKind => k !== null);
   if (link.at === 'live' && told === undefined) return answer(s.reply, { ok: true, value: s.at === 'creating' ? link.code : link.key !== null ? 'gm' : 'player' });
   return answer(s.reply, { ok: false, kind: told ?? 'net' });
@@ -97,8 +102,8 @@ type Table<R> = { readonly [S in Attempt<R>['at']]: { readonly [E in AttemptEven
 const TABLE: Table<unknown> = {
   none: { tap: (_, e) => ({ state: { at: 'handed', tap: e.tap, who: e.who, reply: e.reply }, effects: [{ type: 'link', tap: e.tap }] }), linked: same },
   handed: { tap: busy, linked: (s, e) => (e.took === s.tap ? taken(s, e.link) : same(s)) },
-  creating: { tap: busy, linked: (s, e) => followed(s, e.link, e.notices) },
-  joining: { tap: busy, linked: (s, e) => followed(s, e.link, e.notices) },
+  creating: { tap: busy, linked: (s, e) => followed(s, e.took, e.link, e.notices) },
+  joining: { tap: busy, linked: (s, e) => followed(s, e.took, e.link, e.notices) },
 };
 
 /** One event. A state answered unchanged is an event that changes nothing. */

@@ -183,10 +183,10 @@ export const NOT_BACK_YET = 'Not allowed back yet. Ask your GM to press Allow ba
 /**
  * A Rejoin that failed as `kind`: whether the window comes back to try again. Today's behaviour: it does where a second
  * try can work (the GM has not allowed the player back yet, or the server was not reached); a room that is gone, a
- * campaign replaced, or another create or join under way ends the notice with its words.
+ * campaign replaced, a Leave tapped meanwhile, or another create or join under way ends the notice with its words.
  */
 const AGAIN: { readonly [K in TapKind]: boolean } = {
-  removed: true, net: true, notfound: false, replaced: false, busy: false, badcode: false, keyRefused: false,
+  removed: true, net: true, notfound: false, replaced: false, left: false, busy: false, badcode: false, keyRefused: false,
 };
 
 const told = (room: RoomCode, hunter: HunterId | null): RemovedResult =>

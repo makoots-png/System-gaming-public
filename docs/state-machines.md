@@ -163,6 +163,47 @@ Where it lives:
 | The test to copy | `tests/effect-ops.test.ts` ("the stack machine, cell by cell"); the walk's events are in `tests/models/stack-events.ts` |
 | The recipe | docs/guide/combat.md, "A stacking status" |
 
+## A status's life
+
+Every life reachable from not on the bearer under the 9 events of tests/models/stack-events.ts `STATUS_WALK`, breadth first. The walk found 3 states and 27 steps.
+
+### A status on one bearer, from put on to gone
+
+```mermaid
+---
+title: A status on one bearer, from put on to gone
+---
+stateDiagram-v2
+  state "Not on the bearer" as s1
+  state "Active: its time runs, and it counts" as s2
+  state "Owed: its time ran out; it counts for nothing and waits for its bearer's settle" as s3
+  [*] --> s1
+  s1 --> s2 : a use, a land op, a spread or the GM puts it on
+  s1 --> s3 : put on with its end already behind it
+  s2 --> s1 : fight time passes its end, and it owes nothing
+  s2 --> s3 : fight time passes its end while its settle owes a round's share or its end
+  s2 --> s1 : its bearer's settle at or past its end, its end lands
+  s2 --> s1 : a cure, a dispel or a spend of its last stack takes it whole
+  s3 --> s2 : put on again with an end ahead, it runs again
+  s3 --> s1 : fight time passes its end, and it owes nothing
+  s3 --> s1 : its bearer's settle pays what it owes, and its end lands
+  s3 --> s1 : a cure, a dispel or a spend of its last stack takes it whole
+```
+
+A status counts for every reader of its ops (its wards, shares, stats, dice, a hold) only while it is active: `counts` reads the row `STATUS_COUNTS`, whose `owed` cell is SMX-rules-2.1's ruling, built as not counting. Once fight time passes its end it is owed while its bearer's next settle still has a per-round share to pay or an end to land, and it is gone at that settle; with nothing owed it is gone as time moves. Its count, when it stacks, is the stack machine's, and whether its end lands at a cure is the delayed effect's.
+
+3 chart states, 10 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `StatusLife`, `StatusEvent` and `STATUS_LIVES` in `src/core/combat/standing.ts`; the owed mark `Status.owed` in `src/core/combat/effect-ops.ts` |
+| What changes it | `statusStep(life, event)` and its `STATUS_TABLE`; whether it counts, `counts` and its `STATUS_COUNTS` |
+| Who calls it | `applyStatus` (a land) and `settle` in `src/core/combat/effect-ops.ts`; `advance` (time) in `src/core/combat/fight-turn.ts`; every reader asks `counts` (standing.ts, `modsOf`, land.ts `live`) |
+| The test to copy | `tests/effect-ops.test.ts` ("a status's own life on its bearer"); the walk's events are in `tests/models/stack-events.ts` |
+| The recipe | docs/guide/combat.md, "A stacking status" |
+
 ## A trigger's limit
 
 Every trip reachable from ready under each of 3 limits (every time, once a round, twice a fight) and the 3 events of tests/models/trip-events.ts (its event in round 0, in round 1, and a skip), breadth first. The walk found 7 states and 21 steps.
@@ -627,6 +668,45 @@ Where it lives:
 | The test to copy | `tests/timeline.test.ts` ("turn economy"), `tests/fight.test.ts` ("turn economy") |
 | The recipe | docs/guide/combat.md, "A status op" |
 
+## A player's held turn
+
+Every state reachable from a free turn, under the 11 events of the hold (one command's entry and doc, and another's), breadth first. The walk found 3 states and 8 steps.
+
+### A player's turn, held from the tap to the GM's answer
+
+```mermaid
+---
+title: A player's turn, held from the tap to the GM's answer
+---
+stateDiagram-v2
+  state "The turn's buttons on" as s1
+  state "A command being picked or posted (buttons off)" as s2
+  state "A command sent, waiting on the GM (buttons off)" as s3
+  [*] --> s1
+  s1 --> s2 : a step, a use, End turn or a Release is tapped (the table or the Skills panel)
+  s2 --> s3 : the command goes to the outbox
+  s2 --> s1 : nothing is posted (the window cancelled, nobody in reach, not the turn by then)
+  s2 --> s1 : the phone's room changes
+  s3 --> s1 : a fight doc after it arrives (the GM's phone answered)
+  s3 --> s1 : the room refuses the command
+  s3 --> s1 : a full outbox drops the command
+  s3 --> s1 : the phone's room changes
+```
+
+src/views/uses.js keeps the one hold for the phone (`hold`, `command`), so a command tapped on the table or in the Skills panel waits under it whichever screen is up, and the table reads it to turn its buttons off. A sent command lets go only on a doc of another `at`, or on its own outbox entry refused or dropped; a doc, a refusal or a drop of another entry moves nothing. A consumable thrown from the Bag (`via: 'bag'`) goes through the same `command` but posts unheld and leaves the turn free (ruling SMX-views-5.1; ruled the other way, it holds like a use from the map).
+
+3 chart states, 8 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `TurnHold`, `TurnHoldEvent`, `TurnHoldVia`, `TURN_HOLD_STATES` and `TURN_HOLD_EVENTS` in `src/core/combat/hold.ts` |
+| What changes it | `turnHoldStep(hold, event)` and its `TABLE` in `src/core/combat/hold.ts` |
+| Who calls it | `src/views/uses.js`, its one writer (`holdTo`, `hold`, `command`); the events `sync:outbox` (refused, dropped), `sync:room` and `sync:docs`; `src/views/table.js`, the Skills panel and the Bag post through `app.api.uses.command` |
+| The test to copy | `tests/hold.test.ts`, the whole table |
+| The recipe | docs/guide/room-sync.md, the held turn's row |
+
 ## A gate
 
 Every gate reachable from a new detected gate (the Goblin Den of tests/models/gate-events.ts, which breaks on day 5) under the 13 events of the walk in tests/gate.test.ts, breadth first. The walk found 6 states and 78 steps.
@@ -712,14 +792,16 @@ stateDiagram-v2
   s9 --> s1 : you tap Later or Leave room while the room is made
   s9 --> s5 : the room opens or lets you in
   s9 --> s1 : refused or no answer, back where you were
+  s9 --> s1 : you tap Leave room while joining a room
   s9 --> s2 : you tap Later or Leave room while the room is made
   s9 --> s2 : refused or no answer, back where you were
+  s9 --> s2 : you tap Leave room while joining a room
   s9 --> s5 : refused or no answer, back where you were
 ```
 
-The chart shows what the room pill and the Room view say. It leaves out the waits between polls (5 s, 3 s in a fight, longer after failures; a hidden page does not poll, except a GM's page that may notify, which polls every 30 s), how many polls failed, whether a poll is out or waiting, the room code, the last room and the GM key, and whether the phone is the GM or a player, except where a step depends on it. Opening and joining a room go back to the box the phone came from when they fail. Later or Leave room while a room is made goes out of every room, the one the phone was in included. Updating the app is never left: the page reloads.
+The chart shows what the room pill and the Room view say. It leaves out the waits between polls (5 s, 3 s in a fight, longer after failures; a hidden page does not poll, except a GM's page that may notify, which polls every 30 s), how many polls failed, whether a poll is out or waiting, the room code, the last room and the GM key, and whether the phone is the GM or a player, except where a step depends on it. Opening and joining a room go back to the box the phone came from when they fail. Later or Leave room while a room is made or joined goes out of every room, the one the phone was in included. Updating the app is never left: the page reloads.
 
-8 chart states, 18 arrows. Hidden: a save replaced by an import, a restore or a reset starts the link again from the room in the new save, from any state but No room server and Updating the app. A server on a newer build sends every state to Updating the app; the chart draws that arrow from In a room only (226769 steps.)
+8 chart states, 20 arrows. Hidden: a save replaced by an import, a restore or a reset starts the link again from the room in the new save, from any state but No room server and Updating the app. A server on a newer build sends every state to Updating the app; the chart draws that arrow from In a room only (226769 steps.)
 
 ### The room link and the sheet push
 
@@ -780,6 +862,203 @@ Where it lives:
 | Who calls them | `src/edge/sync.ts`, which holds the one current link and push and carries out their effects. `connection(link, push)` in `src/core/sync/connection.ts` says what the pill shows |
 | The test to copy | `tests/link.test.ts` and `tests/push.test.ts`; every reachable state is checked in `tests/sync-model.test.ts`, whose world and replies are in `tests/models/sync-world.ts` |
 | The recipe | docs/guide/room-sync.md, "To add a link state or a reply" |
+
+## A player's bind
+
+Every bind reachable from a player's save of two hunters in no room, under the 5 moves of a join (room A at two times, room B) and "Play as" each hunter, breadth first. The walk found 9 states and 34 steps.
+
+### The hunter this phone sends, and its join of the room
+
+```mermaid
+---
+title: The hunter this phone sends, and its join of the room
+---
+stateDiagram-v2
+  state "The hunter this phone sends, and its join of the room" as all {
+    state "The join" as r1 {
+      state "No join" as s1
+      state "Joined A, first" as s2
+      state "Joined A again, later" as s3
+      state "Joined B" as s4
+      [*] --> s1
+      s1 --> s2 : the first join of A with h1
+      s1 --> s3 : a later join of A with h2
+      s1 --> s4 : a join of B with h1
+      s2 --> s3 : a later join of A with h2
+      s2 --> s4 : a join of B with h1
+      s3 --> s2 : the first join of A with h1
+      s3 --> s4 : a join of B with h1
+      s4 --> s2 : the first join of A with h1
+      s4 --> s3 : a later join of A with h2
+    }
+    --
+    state "The hunter bound" as r2 {
+      state "no hunter bound" as s5
+      state "h1 bound" as s6
+      state "h2 bound" as s7
+      [*] --> s5
+      s5 --> s6 : the first join of A with h1
+      s5 --> s7 : a later join of A with h2
+      s5 --> s6 : a join of B with h1
+      s5 --> s6 : Play as h1
+      s5 --> s7 : Play as h2
+      s6 --> s7 : a later join of A with h2
+      s6 --> s7 : Play as h2
+      s7 --> s6 : the first join of A with h1
+      s7 --> s6 : a join of B with h1
+      s7 --> s6 : Play as h1
+    }
+  }
+```
+
+A join writes both the hunter bound and the join (its room and the server's time); "Play as" and a delete of the bound hunter (party.ts `removeHunter`, which binds the active one) move the hunter and never the join, so a message the room took while this phone was in it is never told as one sent while it was away. A join counts only for its own room: a save swapped in with another room reads no join. The "Play as" window's answer is read where the phone is when it comes (`playAsAnswered`): once the phone has left the room or another hunter is bound there, it only shows the hunter.
+
+7 chart states, 19 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The fields | `boundHunterId` and `joined` (`BindJoin`) of the save's sync settings (`src/core/save.ts`) |
+| What changes it | `boundTo` (a join), `playAs` and `rebindTo` in `src/core/sync/bind.ts`; `joinedAt` reads the join for its room only |
+| Who calls it | `src/edge/sync.ts` (a join answered, the "Play as" window through `playAsAnswered`), `src/core/party.ts` `removeHunter` (a delete of the bound hunter) |
+| The test to copy | `tests/bind.test.ts`, "a player's hunter bound to the room" |
+| The recipe | docs/guide/room-sync.md, the bind's row |
+
+## The REMOVED FROM ROOM notice
+
+Every state reachable from no notice, under the 27 events of the notice in two rooms, breadth first. The walk found 5 states and 38 steps.
+
+### The notice that the GM removed this phone
+
+```mermaid
+---
+title: The notice that the GM removed this phone
+---
+stateDiagram-v2
+  state "No notice" as s1
+  state "REMOVED FROM ROOM open" as s2
+  state "Rejoin on its way" as s3
+  [*] --> s1
+  s1 --> s2 : the GM removes this phone
+  s2 --> s3 : Rejoin is tapped
+  s2 --> s1 : OK is tapped
+  s2 --> s1 : the phone is in a room (Room view, invite, another tab)
+  s2 --> s1 : an import, a restore or a reset
+  s3 --> s2 : the GM removes this phone
+  s3 --> s1 : the Rejoin is taken
+  s3 --> s1 : the Rejoin fails for good (no room, campaign replaced, busy, bad code or key)
+  s3 --> s2 : not allowed back yet, or no server, the window again
+  s3 --> s1 : an import, a restore or a reset
+```
+
+The notice names its room and the hunter that was bound, so an answer of an old window, or a Rejoin's answer for another room, changes nothing. A removal from another room opens that room's window in place of the one up. A Rejoin that fails tells its words: where a second try can work (not allowed back yet, the server not reached) the window opens again; otherwise the notice ends.
+
+3 chart states, 10 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `RemovedNotice`, `RemovedEvent`, `RemovedEffect`, `REMOVED_STATES` and `REMOVED_EVENTS` in `src/core/sync/bind.ts` |
+| What changes it | `removedStep(notice, event)` and its `AGAIN` table |
+| Who calls it | `src/edge/sync.ts`, which keeps the one notice and carries out its effects (the window, the Rejoin, the toast) |
+| The test to copy | `tests/bind.test.ts`, "the REMOVED FROM ROOM notice" |
+| The recipe | docs/guide/room-sync.md, the bind's row |
+
+## A code check in the Room view
+
+Every state reachable from no code, under the 11 events of a check on one code, breadth first. The walk found 6 states and 36 steps.
+
+### The line under a room code
+
+```mermaid
+---
+title: The line under a room code
+---
+stateDiagram-v2
+  state "No line" as s1
+  state "Typed, the pause running" as s2
+  state "Checking..." as s3
+  state "No such room" as s4
+  state "The room is there" as s5
+  state "The server did not answer" as s6
+  [*] --> s1
+  s1 --> s2 : a whole code is typed
+  s1 --> s3 : the page opens on an invite link
+  s1 --> s4 : a join is refused as no such room
+  s2 --> s3 : typing stops for the pause
+  s2 --> s3 : the page opens on an invite link
+  s2 --> s4 : a join is refused as no such room
+  s2 --> s1 : Join, Create or Rejoin is tapped, or the room changes
+  s3 --> s2 : a whole code is typed
+  s3 --> s5 : the server finds the room
+  s3 --> s4 : the server finds no room
+  s3 --> s6 : the server does not answer
+  s3 --> s4 : a join is refused as no such room
+  s3 --> s1 : Join, Create or Rejoin is tapped, or the room changes
+  s4 --> s2 : a whole code is typed
+  s4 --> s3 : the page opens on an invite link
+  s5 --> s2 : a whole code is typed
+  s5 --> s3 : the page opens on an invite link
+  s5 --> s4 : a join is refused as no such room
+  s6 --> s2 : a whole code is typed
+  s6 --> s3 : the page opens on an invite link
+  s6 --> s4 : a join is refused as no such room
+  s6 --> s3 : the server answers again
+```
+
+Two checks run this machine: the code typed under Join a room and the code of an invite link. The typed code is asked after a pause (`LOBBY_PAUSE_MS`), the invite's at once. A pause's end or an answer for a code other than the one waited on or asked is late and changes nothing; a new code typed starts its own pause. The invite's check is asked again when the server answers only while that invite is still pending. What the server said stays until a new code, a join or a dropped invite.
+
+6 chart states, 22 arrows. Hidden: The field cut to less than a code, and a join made or the invite dropped: each goes back to no line from wherever it is. (10 steps.)
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `LobbyCheck`, `LobbyCheckEvent`, `LobbyCheckEffect`, `LOBBY_CHECK_STATES` and `LOBBY_CHECK_EVENTS` in `src/core/sync/lobby.ts` |
+| What changes it | `checkStep(check, event)` and its `CHECK` table, through `lobbyStep` (the join field's and the invite's check in one `Lobby`) |
+| Who calls it | `src/views/room.js`, which keeps the one `lobbyNow`, moves it only through `lobbyStep` and carries out its effects (the pause's one timer, the question to `sync.check`) |
+| The test to copy | `tests/lobby.test.ts` |
+| The recipe | docs/guide/room-sync.md, the lobby's row |
+
+## A GM's seat action
+
+Every state of one key's seat reachable from none out, under the 8 events of the seat in its room and a room change, breadth first. The walk found 4 states and 9 steps.
+
+### Remove, Release or Allow back on one seat
+
+```mermaid
+---
+title: Remove, Release or Allow back on one seat
+---
+stateDiagram-v2
+  state "No action out" as s1
+  state "Remove's confirm window open" as s2
+  state "Sent, its buttons waiting" as s3
+  [*] --> s1
+  s1 --> s2 : the GM taps Remove
+  s1 --> s3 : the GM taps Release or Allow back
+  s2 --> s3 : the GM confirms
+  s2 --> s1 : the GM cancels
+  s2 --> s1 : the phone's room changes
+  s3 --> s1 : the server answers (the GM is told)
+  s3 --> s1 : the phone's room changes
+```
+
+One action a key and room is out at a time: a second tap while one is out sends nothing. An action is tied to the room it was tapped in, so a room change drops it, and a confirm or an answer that comes back for it then does nothing (a Remove confirmed after the room changed removes nobody in the new room). A Remove the server took also takes the hunter out of the fight.
+
+3 chart states, 7 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `LobbySeat`, `LobbySeats`, `LobbySeatEvent`, `LobbySeatEffect`, `LOBBY_SEAT_STATES` and `LOBBY_SEAT_EVENTS` in `src/core/sync/lobby.ts` |
+| What changes it | `seatStep(seats, event)`, through `lobbyStep`; `seatBusy` says whether a key's buttons wait |
+| Who calls it | `src/views/room.js` (the seat buttons, the confirm window, the server's answer, `sync:room`) |
+| The test to copy | `tests/lobby.test.ts` |
+| The recipe | docs/guide/room-sync.md, the lobby's row |
 
 ## A hunter's life
 
@@ -984,6 +1263,141 @@ Where it lives:
 | The test to copy | `tests/job-chain.test.ts`; the walk's moves are in `tests/models/job-chain-events.ts` |
 | The recipe | docs/guide/hunters.md, "To add a job" |
 
+## A hunter's points and their allocation
+
+Every state reachable from a new hunter in four events or fewer, under every event of the allocation on one stat (+ and − by each role, Confirm, Auto with every point free, the GM's stat edit, a level up and down, a point given and taken), breadth first. The walk found 518 states and 1335 steps.
+
+### Points free, pending and confirmed
+
+```mermaid
+---
+title: Points free, pending and confirmed
+---
+stateDiagram-v2
+  state "Settled, points free" as s1
+  state "Points pending Confirm, points free" as s2
+  state "Points pending Confirm, no point free" as s3
+  state "Settled, no point free" as s4
+  [*] --> s1
+  s1 --> s2 : + on a stat
+  s1 --> s3 : Auto
+  s2 --> s1 : − on a point pending
+  s2 --> s1 : Confirm
+  s2 --> s3 : Auto
+  s2 --> s1 : the GM edits the stat
+  s3 --> s4 : the GM's + with no point free (edits the stat)
+  s3 --> s2 : − on a point pending
+  s3 --> s4 : Confirm
+  s3 --> s4 : the GM edits the stat
+  s3 --> s2 : the level moves (XP, or the GM)
+  s3 --> s2 : points given
+  s4 --> s1 : the level moves (XP, or the GM)
+  s4 --> s1 : points given
+  s2 --> s3 : + on a stat
+  s2 --> s3 : points taken (a quest's cost)
+  s2 --> s3 : the level moves (XP, or the GM)
+  s1 --> s4 : the level moves (XP, or the GM)
+  s1 --> s3 : + on a stat
+  s1 --> s4 : points taken (a quest's cost)
+```
+
+A point put on a stat is pending, not spent: it leaves the points free while it waits, and Confirm moves it into the stat. A player's − takes back only a pending point (with none, it is refused); the GM's − with nothing pending, and the GM's + with no point free, edit the stat. The GM's edit of a stat confirms what was pending on it. A level lost keeps the points pending, so a hunter can hold fewer points than it spent (no point free), and a deduction takes only the points free (both wait on ruling SMX-rules-7.1). Every change of level, XP, points or stats is an event of `progressStep`; the chart leaves out the starting stats and the GM's points shown, which act as the GM's edits.
+
+4 chart states, 20 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `ProgressAllocation`, `ProgressEvent` and `ProgressRefusal` in `src/core/hunter/progress.ts` |
+| What changes it | `progressStep(h, event, R)` and its `PROGRESS_TABLE`, named by `raise`, `lower`, `confirm`, `raiseMany`, `setStat`, `startingStats`, `addXp`, `atLevel`, `grantPoints` and `setPoints` |
+| Who calls it | `src/core/hunter/grant.ts` (rewards, `levelEdit`), `src/views/hunter.js` (+, −, Confirm, Auto, the GM's edits) in `store.apply` |
+| The test to copy | `tests/progress.test.ts`, "the allocation" |
+| The recipe | docs/guide/hunters.md, "A state or event of the ... machine" |
+
+## A hunter's rank
+
+Every state reachable from a new hunter, under the 5 moves of the level between the first levels of ranks E and D, Re-evaluate and the GM's choice of E or D, breadth first. The walk found 6 states and 13 steps.
+
+### Where a hunter's rank stands against its level
+
+```mermaid
+---
+title: Where a hunter's rank stands against its level
+---
+stateDiagram-v2
+  state "The rank the level earns" as s1
+  state "Below the level's rank (Re-evaluate offered)" as s2
+  state "Above the level's rank (the GM's, or kept after levels lost)" as s3
+  [*] --> s1
+  s1 --> s2 : the level rises past a rank's first level
+  s1 --> s3 : the GM sets a rank
+  s2 --> s1 : the level drops below it
+  s2 --> s1 : the GM taps Re-evaluate
+  s2 --> s1 : the GM sets a rank
+  s3 --> s1 : the level rises past a rank's first level
+  s3 --> s1 : the GM sets a rank
+  s1 --> s3 : the level drops below it
+  s1 --> s2 : the GM sets a rank
+```
+
+Only the rank is stored; where it stands is read with the level (`rankStanding`). A level moved keeps the rank: a rank behind waits for the GM's Re-evaluate, and a rank above stays, with its check bonus and the path tiers it opened (ruling SMX-rules-7.2 waits; it needs a GM's mark stored beside the rank). Re-evaluate is refused (`not-eligible`) unless the rank is behind. A new rank is a fact of the chronicle.
+
+3 chart states, 9 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `ProgressRank` and `ProgressRankEvent` in `src/core/hunter/record.ts` |
+| What changes it | `rankStep(h, event, R)` and its `RANK_TABLE`, named by `setRank` and `reevaluate`; `rankStanding` reads where it stands |
+| Who calls it | `src/core/hunter/grant.ts` `levelled` (`levelMoved`), `src/views/hunter.js` (Re-evaluate, the GM's rank) in `store.apply` |
+| The test to copy | `tests/record.test.ts`, the rank |
+| The recipe | docs/guide/hunters.md, "A state or event of the ... machine" |
+
+## Gear
+
+Every state of one shield reachable from a hunter with it in the bag (tests/models/gear-events.ts) under the 7 events of its wear and the hunter's fight, breadth first. The walk found 6 states and 18 steps.
+
+### One item, from the bag to worn to gone
+
+```mermaid
+---
+title: One item, from the bag to worn to gone
+---
+stateDiagram-v2
+  state "In the bag" as s1
+  state "Worn" as s2
+  state "Gone" as s3
+  state "In the bag, in a fight" as s4
+  state "Worn, locked by the fight" as s5
+  [*] --> s1
+  s1 --> s2 : Equip
+  s1 --> s3 : Sell or remove
+  s1 --> s4 : a fight with the hunter starts
+  s2 --> s1 : Unequip
+  s2 --> s1 : Edit it to another slot or a stack
+  s2 --> s3 : Sell or remove
+  s2 --> s5 : a fight with the hunter starts
+  s4 --> s3 : Sell or remove
+  s4 --> s1 : the fight ends
+  s5 --> s2 : the fight ends
+```
+
+The chart follows one shield, a single one. It leaves out a stack: Equip on one splits a single item off and wears that, and the stack stays in the bag. It leaves out which slot a worn item is in (a ring takes the first free ring slot) and the item a new one swaps out of its slot, which goes back to the bag. A save is read to these states by `parseWorn`: one item in two slots stays in the first; a stack or an item in a slot it does not fit goes back to the bag. A worn item used up or given away leaves through `takeItems`, which no tap offers in a fight.
+
+5 chart states, 10 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `WearState`, `WearEvent`, `WEAR_STATES` and `WEAR_EVENTS` in `src/core/hunter/inventory.ts` |
+| What changes it | `TABLE` and `wearMove` in `src/core/hunter/inventory.ts`, asked by `equip`, `unequip`, `editItem`, `removeItem` and `sell`; `wearIn` and `emptySlot` are the writes of a slot (`swapLoadout` in loadouts.ts too); `parseWorn` reads a save |
+| Who calls it | `src/views/inventory.js` (Equip, Unequip, Edit, Sell, Remove; `wearRefused` before a confirm), `src/views/custom.js` (a loadout's swap) |
+| The test to copy | `tests/inventory.test.ts`, "what one item is"; the walk's events are in `tests/models/gear-events.ts` |
+| The recipe | docs/guide/hunters.md, "A state or event of the ... machine" |
+
 ## A coin call
 
 Every coin reachable from a natural 20 that called the coin (tests/models/coin-events.ts) under the 4 events of the walk in tests/coin.test.ts, breadth first. The walk found 7 states and 28 steps.
@@ -1058,6 +1472,37 @@ Where it lives:
 | What changes it | `coinPromptStep(prompt, event)` and its `PROMPT_TABLE`, through `prompted` in `src/views/coin.js`, which keeps the value, opens the window on entering asking and draws the put-off calls |
 | Who calls it | `src/views/coin.js`: every change of the save (`seen`), the window's answer (`ruled`, `putOff`), the coin card's Rule (`reopen`) |
 | The test to copy | `tests/coin.test.ts` ("the GM's window for the calls"); the walk's events are in `tests/models/coin-events.ts`; on screen, `tests/e2e/coin.e2e.ts` ("is not asked again") |
+| The recipe | docs/guide/hunters.md, "A state or event of the ... machine" |
+
+## The quick check's DC
+
+Every state reachable from a Dice view opened on a hunter of rank E, under the 3 events of each kind, breadth first. The walk found 3 states and 4 steps.
+
+### The Dice view's quick check DC
+
+```mermaid
+---
+title: The Dice view's quick check DC
+---
+stateDiagram-v2
+  state "The hunter's rank, Standard" as s1
+  state "The player's pick" as s2
+  [*] --> s1
+  s1 --> s2 : the player picks a DC in the select (the one shown too)
+```
+
+The view opens on the active hunter's rank at Standard. A pick in the select, the option shown included, makes the DC the player's until the view is drawn anew from its start (another visit to Dice). A pick is a rank and a level, or no DC, never a number: the roll reads its number from the rules' rank table then, so a GM's change to the table moves the number and keeps the pick. The hunter's rank read at a draw moves nothing today (ruling SMX-views-13.1; ruled yes, a defaulted DC follows it).
+
+2 chart states, 1 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `DcPick`, `DcPickEvent`, `DC_PICK_STATES` and `DC_PICK_EVENTS` in `src/core/dc-pick.ts` |
+| What changes it | `dcPickStep(dc, event)` and its `TABLE` in `src/core/dc-pick.ts` |
+| Who calls it | `src/views/dice.js`, which keeps one `dc` and moves it only by `dcPickStep` (the select's change, each draw) |
+| The test to copy | `tests/dc-pick.test.ts`, "every state against every event" |
 | The recipe | docs/guide/hunters.md, "A state or event of the ... machine" |
 
 ## First-run setup
@@ -1628,7 +2073,7 @@ Where it lives:
 
 ## A Create or Join tap
 
-Every state reachable from no tap out, under the 20 events of tests/models/attempt-events.ts (a create never ends with a join's notice), breadth first, a state's tap and who it is for making a state (not which promise it answers). The walk found 9 states and 59 steps.
+Every state reachable from no tap out, under the 21 events of tests/models/attempt-events.ts (a create never ends with a join's notice), breadth first, a state's tap and who it is for making a state (not which promise it answers). The walk found 9 states and 63 steps.
 
 ### One tap at a time, from Create or Join until the view that tapped is answered
 
@@ -1657,6 +2102,7 @@ stateDiagram-v2
   s3 --> s1 : no answer, fails as net
   s3 --> s1 : the server fails, fails as net
   s3 --> s1 : the campaign is replaced, fails, with no words
+  s3 --> s1 : you tap Leave room or Later, fails as left, with no words
   s4 --> s1 : out with no word, fails as net
   s4 --> s1 : in the room, answers the code, gm or player
   s4 --> s1 : no such room, fails
@@ -1665,11 +2111,12 @@ stateDiagram-v2
   s4 --> s1 : no answer, fails as net
   s4 --> s1 : the server fails, fails as net
   s4 --> s1 : the campaign is replaced, fails, with no words
+  s4 --> s1 : you tap Leave room or Later, fails as left, with no words
 ```
 
 The link does the room's side (its requests, its stretch, where a failed tap returns); this machine answers the tap. A tap while one is out starts nothing and is answered at once as busy, which the view words "Another create or join is under way". A join for a typed name makes its hunter only once the phone is in the room, in the write that binds it, so a join that fails made nothing. Page memory: a reload starts with no tap out.
 
-6 chart states, 19 arrows. Hidden: Each event that changes nothing: a tap while one is out (answered busy, the state unchanged), and a link step that stays in the stretch. (0 steps.)
+6 chart states, 21 arrows. Hidden: Each event that changes nothing: a tap while one is out (answered busy, the state unchanged), and a link step that stays in the stretch. (0 steps.)
 
 Where it lives:
 
@@ -1921,6 +2368,50 @@ Where it lives:
 | The test to copy | `tests/solo-run.test.ts`; the walk's events are in `tests/models/solo-run-events.ts`; on screen, `tests/e2e/solo.e2e.ts` ("Enter alone cannot be tapped again", "a redraw of the solo panel") |
 | The recipe | docs/guide/gates-solo.md, the solo run rows |
 
+## A player's solo run on the GM's phone
+
+A run of each of the 3 outcomes arriving, against each of the 5 ways `PLAN_TABLE` finds the GM's gate. The walk found 8 states and 15 steps.
+
+### What the GM's phone does with a run
+
+```mermaid
+---
+title: What the GM's phone does with a run
+---
+stateDiagram-v2
+  state "A won run arrives" as s1
+  state "A lost run arrives" as s2
+  state "A stalled run arrives" as s3
+  state "Refused: the gate is gone" as s4
+  state "Refused: already cleared" as s5
+  state "Refused: the gate is closed" as s6
+  state "Paid as the gate's Clear for one" as s7
+  state "Noted (it enters a detected gate)" as s8
+  [*] --> s1
+  [*] --> s2
+  [*] --> s3
+  s1 --> s4 : its gate is gone
+  s1 --> s5 : its gate is already cleared
+  s1 --> s6 : its gate cannot be cleared
+  s1 --> s7 : open to solo runs, or taken out of them meanwhile
+  s2 --> s8 : whatever its gate
+  s3 --> s8 : whatever its gate
+```
+
+The table is asked when the run arrives and again inside its one write (`soloTaken`), which is refused (`changed`) when the plan no longer holds. A paid run is the gate's Clear for a party of one, paid at once (ruling SMX-gates-2.3 waits). A gate the GM took out of solo runs while the run played still pays a won run (ruling SMX-gates-2.2 waits; ruled the other way, its won cell is a refusal). A lost or stalled run is noted whatever the gate. The player's phone hears the answer as `soloAnswer`; a run nobody answers waits (`soloWait`).
+
+8 chart states, 6 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The table | `PLAN_TABLE`, `SoloGateFound`, `SOLO_GATE_FOUND` and `SoloPlan` in `src/core/gates/solo.ts`; the refusals `SOLO_REFUSED` in `src/core/protocol.ts` |
+| What reads it | `soloPlan(save, run, R)`, asked again by `soloTaken` inside the write |
+| Who calls it | `src/views/gates.js`, on a player's `soloRun` arriving at the GM's phone |
+| The test to copy | `tests/solo.test.ts`, the plan of a run |
+| The recipe | docs/guide/gates-solo.md, the solo run rows |
+
 ## A feat on a hunter
 
 Every state reachable from each feat's start, for a feat earned at a count of 2 under each of its 4 rules of when it is shown, under the 6 events of tests/models/feat-events.ts, breadth first. The walk found 23 states and 95 steps.
@@ -2046,6 +2537,58 @@ Where it lives:
 | Who calls it | `noticed` in `src/core/hunter/noticed.ts`, at the end of every `store.apply` |
 | The test to copy | `tests/feats.test.ts`; the walk's events are in `tests/models/feat-events.ts` |
 | The recipe | docs/guide/feats-stories.md, "A built-in feat" |
+
+## The campaign's told memory
+
+Every state of one hunter's feat and one room's gate reachable from a campaign opened with the hunter holding no feat, under the events of tests/models/told-events.ts (the room looked at, each piece answered in this campaign and the one before, the campaign replaced), breadth first; two campaigns' records holding the same pieces are one state. The walk found 6 states and 23 steps.
+
+### A piece of news, from its window to told
+
+```mermaid
+---
+title: A piece of news, from its window to told
+---
+stateDiagram-v2
+  state "A piece of news, from its window to told" as all {
+    state "A hunter's feat" as r1 {
+      state "Not told: its window shows" as s1
+      state "Told" as s2
+      [*] --> s1
+      s1 --> s2 : its window is answered
+      s1 --> s2 : a reset, an import or a restore, its hunter holding the feat
+      s2 --> s1 : a reset, an import or a restore, its hunter without the feat
+    }
+    --
+    state "A room's gate" as r2 {
+      state "The room never looked at" as s3
+      state "Told" as s2
+      state "Not told: its window shows" as s1
+      [*] --> s3
+      s3 --> s2 : a first look at the room, showing it
+      s3 --> s1 : a first look at the room, before it appears
+      s3 --> s2 : its window is answered
+      s2 --> s3 : a reset, an import or a restore, its hunter without the feat
+      s2 --> s3 : a reset, an import or a restore, its hunter holding the feat
+      s1 --> s2 : its window is answered
+      s1 --> s3 : a reset, an import or a restore, its hunter without the feat
+      s1 --> s3 : a reset, an import or a restore, its hunter holding the feat
+    }
+  }
+```
+
+A hunter's personal gate is told as its feat is. A record belongs to one campaign: a reset, an import or a restore starts a new one that takes what its hunters hold as told and has seen no room, and a window answered in the campaign before changes nothing. A room's first look tells every gate it shows (a broken one as broken too), so joining replays nothing. A gate's break is a second piece of the same gate, told the same way; the chart leaves it out. A phone that could keep no record (blocked storage) tells nothing and asks nothing.
+
+5 chart states, 11 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `ToldMemory`, `ToldEvent`, `ToldAt` and `TOLD_STATES` in `src/core/told.ts` |
+| What changes it | `toldStep(memory, event)` in `src/core/told.ts`, through `store.tell(event)` in `src/edge/store.ts`, its one writer (a replace on the store's own `replaced`); read by `store.told()` with `hunterNews` and `gateNews` |
+| Who calls it | `src/views/feats.js` (a feat's window answered) and `src/views/gates.js` (a room's world doc looked at, a room gate's window answered through `gateTold`, a personal gate's window answered) |
+| The test to copy | `tests/told.test.ts`, "the told memory of one piece of news" |
+| The recipe | docs/guide/gates-solo.md and docs/guide/feats-stories.md, the told rows |
 
 ## An offer in the room
 
@@ -2393,6 +2936,47 @@ Where it lives:
 | The test to copy | `tests/run.test.ts`; the walk's events are in `tests/models/story-events.ts` |
 | The recipe | docs/guide/hunters.md, "A state or event of the ... machine" |
 
+## A maker's form
+
+Every state reachable from a form just opened, under the 6 events of the form, breadth first. The walk found 4 states and 9 steps.
+
+### A maker's form, from open to close
+
+```mermaid
+---
+title: A maker's form, from open to close
+---
+stateDiagram-v2
+  state "Open, unchanged" as s1
+  state "Open, changed" as s2
+  state "Closed" as s3
+  state "'Discard changes?' up" as s4
+  [*] --> s1
+  s1 --> s2 : a field typed, picked or ticked, or a button of the form
+  s1 --> s2 : a tile painted (the map maker's grid)
+  s1 --> s3 : Escape, or a press beside the window
+  s1 --> s3 : Cancel or Save
+  s2 --> s4 : Escape, or a press beside the window
+  s2 --> s3 : Cancel or Save
+  s4 --> s2 : the question cancelled
+  s4 --> s3 : Discard tapped
+  s4 --> s3 : Cancel or Save
+```
+
+Every maker runs this one form in the maker shell (src/views/maker.js). Only the step's answer asks "Discard changes?" or closes the window, so a form closes once. Cancel and Save are the GM's own choice and close without asking; a change cannot arrive while the question covers the form, and a second Escape there is the question's own. At Save the story maker reads every chapter, open or folded (`storyProblem`), and puts the cursor on the first thing that stops it.
+
+4 chart states, 9 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `Draft`, `DraftEvent`, `DraftThen`, `DRAFTS` and `DRAFT_EVENTS` in `src/core/draft.ts` |
+| What changes it | `draftStep(draft, event)` and its `MOVES` |
+| Who calls it | `src/views/maker.js`, the maker shell, which holds the one `draft` of an open maker and moves it only by `draftStep` |
+| The test to copy | `tests/draft.test.ts` |
+| The recipe | docs/guide/makers.md, the maker's form row |
+
 ## A list's open detail
 
 Every state reachable from a closed list of two things, under the 5 events of tests/models/detail-open-events.ts, breadth first. The walk found 3 states and 10 steps.
@@ -2485,6 +3069,68 @@ Where it lives:
 | What changes it | `mapMount(mount, event)` and its `TABLE`, through `live` in `src/views/map.js`, its one writer |
 | Who calls it | `draw` in `src/views/map.js` (a draw begins, a draw is on the page, the frame's size read when the map asks), the window's resize, and `destroy`, which `src/views/combat.js` and `src/views/table.js` call when they take the map's box off the page |
 | The test to copy | `tests/map-mount.test.ts`; the walk's events are in `tests/models/map-mount-events.ts`; on screen, `tests/e2e/battle-map.e2e.ts` ("zoomed the map out in one fight") |
+
+## The fight screen's map box
+
+Both states of the box under its two draws, breadth first from an empty box. The walk found 2 states and 2 steps.
+
+### The GM's fight box holds a map only while it shows one
+
+```mermaid
+---
+title: The GM's fight box holds a map only while it shows one
+---
+stateDiagram-v2
+  state "No map in the box" as s1
+  state "A map in the box, drawn with the fight" as s2
+  [*] --> s1
+  s1 --> s2 : the box shows the fight on the map (mount)
+  s2 --> s1 : the box hides the map (destroy)
+```
+
+The screen draws its box with the fight on the map (Map view, the GM seat, a fight with rows) or hides it (List view, the Player seat, no fight, or the box about to be replaced). A hidden map is destroyed: it stops listening, closes its open detail and empties the box; showing the map again mounts a new one, framed afresh. A draw of a shown map draws it and moves nothing.
+
+2 chart states, 2 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `MapSlot`, `MapSlotEvent`, `MapSlotFx`, `MAP_SLOT_STATES` and `MAP_SLOT_EVENTS` in `src/core/combat/map-mount.ts` |
+| What changes it | `mapSlot(slot, event)` and its table, through `slotTo` in `src/views/combat.js`, the one writer of the screen's `mapView` |
+| Who calls it | `render` in `src/views/combat.js`: each draw of a fight, and before the box's markup is replaced |
+| The test to copy | `tests/map-mount.test.ts` ("the fight screen's map box"); on screen, `tests/e2e/battle-map.e2e.ts` ("leaves no map behind in the hidden box") |
+
+## Who holds the Build drawer
+
+Every state reachable from the screen's drawer, under the 9 events of tests/models/map-mount-events.ts over two fights and none, breadth first. The walk found 4 states and 21 steps.
+
+### Add to the fight: the screen's, or the GM's for one fight
+
+```mermaid
+---
+title: Add to the fight: the screen's, or the GM's for one fight
+---
+stateDiagram-v2
+  state "The screen's: open, closed on a desktop once a fight is under way" as s1
+  state "The GM's, for the fight it was moved in" as s2
+  [*] --> s1
+  s1 --> s2 : the GM opens or closes it against the screen
+  s2 --> s1 : the screen draws another fight, or none (a fight that ended is none)
+```
+
+The screen opens the drawer, and closes it on a desktop once a fight is under way. A toggle against what the screen wants makes it the GM's for the fight on screen (none, when no fight is on or it has ended); the GM keeps it through that fight, and a draw of another fight, no fight, or that fight ended gives it back to the screen.
+
+2 chart states, 2 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `BuildDrawer`, `BuildDrawerEvent`, `BUILD_DRAWER_STATES` and `SCREEN` in `src/core/combat/map-mount.ts` |
+| What changes it | `buildDrawer(drawer, event)` and its table, through `drawerTo` in `src/views/combat.js`, its one writer |
+| Who calls it | `render` in `src/views/combat.js` (each draw, with the fight on screen) and the document's `toggle` listener for `[data-build]` |
+| The test to copy | `tests/map-mount.test.ts` ("who opens the Build drawer"); on screen, `tests/e2e/battle-map.e2e.ts` ("folds away again when the next fight starts") |
 
 ## The windows
 
@@ -2582,3 +3228,37 @@ Where it lives:
 | Who calls it | `system` (and `confirm`, `promptNum`, `promptText`), `openWindow` and `closeWindow` (`maker.js`, `onboard.js`, `give-shelf.js`, `stories.js`), `sheet` (`dice.js`, `combat.js`, `table.js`, each with its `WindowSheet`), all in `src/views/ui.js`; `went` from `route` in `src/app.js` |
 | The test to copy | `tests/windows.test.ts`; the walk's events are in `tests/models/window-events.ts`; on screen, `tests/e2e/windows.e2e.ts` |
 | The recipe | docs/guide/makers.md, "A window on screen" |
+
+## A view's part or a panel on the page
+
+Every place reachable from a part not drawn yet, under the 9 draws (each answer of its `when`, with no call, its mount or its update throwing), breadth first. The walk found 3 states and 10 steps.
+
+### A part from its first draw to mounted or failed
+
+```mermaid
+---
+title: A part from its first draw to mounted or failed
+---
+stateDiagram-v2
+  state "Not mounted yet" as s1
+  state "Mounted, updated each draw it shows" as s2
+  state "'This section failed to load'" as s3
+  [*] --> s1
+  s1 --> s2 : a draw where it shows
+  s1 --> s3 : its when, mount or update throws
+  s2 --> s3 : its when, mount or update throws
+```
+
+Each draw of its view asks the part's `when` once. A `when` that says no hides the part wherever it is and changes nothing. A part is mounted once, the first time it shows, and updated each draw it shows after. A `when` or a call that throws is a bug, logged: the part shows "This section failed to load" whenever its `when` does not say no, and runs nothing more until a reload; a part whose `when` threw before it showed is never mounted.
+
+3 chart states, 3 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `PanelState`, `PanelSaid`, `PanelCall`, `PanelDraw`, `PANEL_STATES` and `PANEL_SAID` in `src/core/panel.ts` |
+| What changes it | `panelDrawn(at, said, ran)` and its `TABLE`; `panelDraw` says whether the part shows |
+| Who calls it | `src/app.js`, which keeps each part's place (`part.at`) and moves it only by `panelDrawn` as it draws a view |
+| The test to copy | `tests/views.test.ts`, the life of a part |
+| The recipe | docs/guide/makers.md, the panel row |

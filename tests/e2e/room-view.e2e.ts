@@ -1,4 +1,4 @@
-import { test, expect, onboardGM, onboardPlayer, openApp, go, dismissAll, ROOM_CODE, type Device } from './helpers.ts';
+import { test, expect, onboardGM, onboardPlayer, openApp, go, dismissAll, roomHeaders, ROOM_CODE, type Device } from './helpers.ts';
 import type { Page } from '@playwright/test';
 
 const V = '#view-room ';
@@ -252,6 +252,44 @@ test('a join under way from another window keeps the Room view from starting a s
     await expect.poll(() => roomOf(player)).toBe(code);
     await player.unroute(toRoom);
     await expect.poll(() => text(player, '[data-roomcode]')).toBe(code);
+  });
+});
+
+test('a player who taps Leave room while switching to an invite\'s room is in neither room once the server answers, and is told nothing', async ({ device }) => {
+  const gm = (await device('gm', { blockServiceWorker: true })).page, player = (await device('player', { blockServiceWorker: true })).page;
+  const a = await gmCreatesRoomInView(gm);
+  await onboardPlayer(player, 'Leave Test');
+  await playerJoinsInView(player, a);
+  const made = await player.request.post('/api/rooms', { headers: await roomHeaders(player) });
+  const b = String((await made.json()).code);
+  await openApp(player, `/?room=${b}`);
+  await expect(player.locator(V + '[data-invcheck]')).toContainText('Room found');
+  let release = (): void => {}, askedIt = (): void => {};
+  const held = new Promise<void>(r => { release = r; }), asked = new Promise<void>(r => { askedIt = r; });
+  const answered: Promise<void>[] = [];
+  await player.route(u => u.pathname === `/api/rooms/${b}`, route => {
+    answered.push((async () => {
+      const answer = await route.fetch();
+      askedIt(); await held;
+      await route.fulfill({ response: answer }).catch(() => {}); // the page dropped the request on Leave
+    })());
+  });
+
+  await test.step('Switch rooms, then Leave room before the room answers', async () => {
+    await player.locator(V + '[data-joininvite]').tap();
+    await asked;
+    await expect(player.locator(V + '[data-joininvite]')).toHaveAttribute('aria-busy', 'true');
+    await player.locator(V + '[data-leave]').tap();
+  });
+
+  await test.step('the room\'s answer lands on a phone in no room, which says nothing about the server', async () => {
+    release();
+    await Promise.all(answered);
+    await expect.poll(() => player.evaluate(() => hunterApp.api.sync.detail().conn)).not.toBe('joining');
+    expect(await player.evaluate(() => [hunterApp.api.sync.room(), hunterApp.seat()])).toEqual([null, 'alone']);
+    await expect(player.locator(V + '[data-rejoinlast]'), 'the room the player was in is the last room').toContainText(a);
+    await expect(player.locator(V + '[data-ierr]')).toHaveText('');
+    await expect(player.locator('#toasts .toast', { hasText: 'Could not reach the server' })).toHaveCount(0);
   });
 });
 

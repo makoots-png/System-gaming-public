@@ -30,9 +30,9 @@ import { quest, questForm } from './charts/quest.ts';
 import { shadow } from './charts/shadow.ts';
 import { extraction } from './charts/extraction.ts';
 import { detailOpen } from './charts/detail-open.ts';
-import { mapMountChart } from './charts/map-mount.ts';
+import { buildDrawerChart, mapMountChart, mapSlotChart } from './charts/map-mount.ts';
 import { windowsChart } from './charts/windows.ts';
-import { stacks } from './charts/stacks.ts';
+import { stacks, statusLifeChart } from './charts/stacks.ts';
 import { trips } from './charts/trips.ts';
 import { delayed } from './charts/delayed.ts';
 import { zone } from './charts/zone.ts';
@@ -41,6 +41,16 @@ import { uses } from './charts/uses.ts';
 import { feat, inbox } from './charts/feat.ts';
 import { story } from './charts/story.ts';
 import { edge, extras, reaction, shove, stealth, ward } from './charts/wave2.ts';
+import { gear } from './charts/gear.ts';
+import { dcPick } from './charts/dc-pick.ts';
+import { turnHold } from './charts/hold.ts';
+import { told } from './charts/told.ts';
+import { lobbyCheck, lobbySeat } from './charts/lobby.ts';
+import { panel } from './charts/panel.ts';
+import { bind, removedNotice } from './charts/bind.ts';
+import { progress, rank } from './charts/progress.ts';
+import { draft } from './charts/draft.ts';
+import { soloPlanChart } from './charts/solo-plan.ts';
 
 // ── what a machine file gives ──
 /** A chart state: a label, a path of labels (parent states first), or one label or path per region. */
@@ -77,7 +87,13 @@ export type Machine<S, E> = {
 /** Lets the list below hold machines of different state types. A function declaration, so the chart files can call it while this file is still loading them. */
 export function machine<S, E>(m: Machine<S, E>): Machine<unknown, unknown> { return m as unknown as Machine<unknown, unknown>; }
 
-export const MACHINES: readonly Machine<unknown, unknown>[] = [inbox, fight, channel, stacks, trips, delayed, zone, summon, uses, reaction, edge, shove, stealth, ward, extras, gate, link, life, collapse, foeLife, penalty, jobChain, coin, coinPrompt, onboarding, gestureChart, choiceChart, shadow, extraction, quest, questForm, db, upgrade, outbox, publish, attempt, store, odds, soloClock, soloWait, runPhaseChart, feat, offerRoom, offerGiver, offerTaker, offerWatch, story, detailOpen, mapMountChart, windowsChart];
+export const MACHINES: readonly Machine<unknown, unknown>[] = [
+  inbox, fight, channel, stacks, statusLifeChart, trips, delayed, zone, summon, uses, reaction, edge, shove, stealth, ward, extras, turnHold,
+  gate, link, bind, removedNotice, lobbyCheck, lobbySeat, life, collapse, foeLife, penalty, jobChain, progress, rank, gear, coin, coinPrompt, dcPick,
+  onboarding, gestureChart, choiceChart, shadow, extraction, quest, questForm, db, upgrade, outbox, publish, attempt, store, odds,
+  soloClock, soloWait, runPhaseChart, soloPlanChart, feat, told, offerRoom, offerGiver, offerTaker, offerWatch, story, draft, detailOpen,
+  mapMountChart, mapSlotChart, buildDrawerChart, windowsChart, panel,
+];
 
 // ── walking ──
 /** Breadth first from `starts`: every state `moves` reaches, one per key. `maxDepth` bounds a machine with no end of states. */

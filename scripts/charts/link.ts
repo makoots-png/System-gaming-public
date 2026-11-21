@@ -31,7 +31,7 @@ function linkStep(m: Move, from: World, to: World): string | null {
   if (!e) throw new Error(`a push event moved the link from ${from.link.at} to ${to.link.at}`);
   switch (e.type) {
     case 'create': case 'join': return 'you tap Create room or Join room';
-    case 'leave': return from.link.at === 'creating' ? 'you tap Later or Leave room while the room is made' : 'you tap Leave room';
+    case 'leave': return from.link.at === 'creating' ? 'you tap Later or Leave room while the room is made' : from.link.at === 'joining' ? 'you tap Leave room while joining a room' : 'you tap Leave room';
     case 'replaced': return null;
     case 'readOnly': return 'this tab stops saving (another tab saved)';
     case 'upgrade': return from.link.at === 'live' ? 'the server runs a newer build' : null;
@@ -95,7 +95,7 @@ function bothStep(m: Move, from: World, to: World): Arrow {
 
 const linkView: View<World, Move> = {
   title: 'The room link',
-  note: 'The chart shows what the room pill and the Room view say. It leaves out the waits between polls (5 s, 3 s in a fight, longer after failures; a hidden page does not poll, except a GM\'s page that may notify, which polls every 30 s), how many polls failed, whether a poll is out or waiting, the room code, the last room and the GM key, and whether the phone is the GM or a player, except where a step depends on it. Opening and joining a room go back to the box the phone came from when they fail. Later or Leave room while a room is made goes out of every room, the one the phone was in included. Updating the app is never left: the page reloads.',
+  note: 'The chart shows what the room pill and the Room view say. It leaves out the waits between polls (5 s, 3 s in a fight, longer after failures; a hidden page does not poll, except a GM\'s page that may notify, which polls every 30 s), how many polls failed, whether a poll is out or waiting, the room code, the last room and the GM key, and whether the phone is the GM or a player, except where a step depends on it. Opening and joining a room go back to the box the phone came from when they fail. Later or Leave room while a room is made or joined goes out of every room, the one the phone was in included. Updating the app is never left: the page reloads.',
   hides: 'a save replaced by an import, a restore or a reset starts the link again from the room in the new save, from any state but No room server and Updating the app. A server on a newer build sends every state to Updating the app; the chart draws that arrow from In a room only',
   state: (w): Shape => linkState(w.link),
   step: linkStep,

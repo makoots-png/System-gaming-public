@@ -182,8 +182,8 @@ describe('the hunters a picker offers', () => {
 });
 
 describe('why a tap failed, in words (src/core/sync/taps.ts)', () => {
-  test('every kind has its words, but a campaign replaced while it waited, which says nothing', () => {
-    for (const k of TAP_KINDS) expect(tapWords(k, 'ABCD23') === null).toBe(k === 'replaced');
+  test('every kind has its words, but a campaign replaced while it waited and a tap the person ended with Leave, which say nothing', () => {
+    for (const k of TAP_KINDS) expect(tapWords(k, 'ABCD23') === null).toBe(k === 'replaced' || k === 'left');
     expect(tapWords('notfound', 'ABCD23')).toContain('ABCD23');
     // a key the GM typed does not match the room; a key this phone kept is no longer valid (V4: the two had one sentence)
     expect(tapWords('keyRefused', 'ABCD23', true)).toBe('That GM key does not match this room.');

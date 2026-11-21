@@ -322,11 +322,13 @@ function creating(link: Creating, event: LinkEvent): Step {
   }
 }
 /**
- * Leave while a Create is out (Later in first-run setup, Leave room): out of every room, on a new gen, so the answer
- * of the create is stale and its room is never entered nor its key kept. A room the server made meanwhile is held by
- * no phone and goes when its life ends (room-server.ts `ROOM_TTL_MS`). From a room, that room is left as by any Leave.
+ * Leave while a Create or a Join is out (Later in first-run setup, Leave room while switching rooms): out of every room,
+ * on a new gen, so the answers of the create or join are stale and its room is never entered nor its key kept. A room
+ * the server made meanwhile is held by no phone and goes when its life ends (room-server.ts `ROOM_TTL_MS`); a join's
+ * head took no seat (a phone's slot is bound by its first write, the sheet push once live). From a room, that room is
+ * left as by any Leave.
  */
-function cancelled(link: Creating, gen: Gen): Step {
+function cancelled(link: Creating | Joining, gen: Gen): Step {
   const b = link.back;
   return leaving(link, b.at === 'live' ? toIdle(gen, serverOf(b), { code: b.code, why: 'left' }) : resume(b, gen));
 }
@@ -352,6 +354,7 @@ function joining(link: Joining, event: LinkEvent): Step {
       return leaving(link, live(gen, link.code, link.key, cursor, lastAfter(link.back, link.code), 'ok'), ...keep, { type: 'apply' });
     }
     case 'failed': return failed(link, gen, event.kind);
+    case 'leave': return cancelled(link, gen);
     default: return same(link);
   }
 }

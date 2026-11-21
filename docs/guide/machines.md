@@ -2,4 +2,48 @@
 
 ## Machines and their charts
 
-`docs/state-machines.md` charts every explicit machine: the fight and a channel (`fight.ts`, `fight-channel.ts`), a stacking status's count (`stacks.ts`), a trigger's limit (`triggers.ts`), a delayed effect (`delayed.ts`), a zone of the kits (`zones.ts`), a timed summon (`summons.ts`), a limited use (`uses.ts`), wave 2's reaction, edge, push, stealth, ward and turn extras (`fight-react.ts`, `standing.ts`, `space.ts`, `timeline.ts`; one file of views, `scripts/charts/wave2.ts`), a gate, the room link, a hunter's life, a foe's life in a fight (`combat/row-life.ts`), the penalty, the Job Change chain and a coin call (`coin.ts`), first-run setup (`onboarding.ts`), the battle map's life on the page (`combat/map-mount.ts`), a gesture on it (`combat/gesture.ts`) and what it has chosen (`choose`, `map-view.ts`), a shadow (`hunter/shadows.ts`) and a corpse's extraction (`combat/extraction.ts`), a quest (`hunter/quests.ts`), the room server's database (`room-server.ts`) and the app update (`upgrade.ts`), a message in the outbox (`sync/outbox.ts`), a room doc the GM publishes (`sync/publish.ts`), a Create or Join tap from the tap to its answer (`sync/attempt.ts`), the store's life (`store-life.ts`), a run of the odds engine (`combat/odds.ts`), a hunter's personal gates (`gates/solo.ts` `soloTick`), a solo run on this phone from the tap to its window (`gates/solo-run.ts`), a solo run waiting for the GM (`gates/solo-wait.ts`), a story on the table (`story/run.ts`), an offer in the room with the giver's, taker's and GM's records of it (`trade/offer.ts`), a list's open "more info" detail (`detail-open.ts`), and the windows on screen, waiting and going (`windows.ts`). `bun run charts` walks the real reducers with the event lists in `tests/models/` (the fight has no end of states, so its chart replays the random play of `tests/models/fight-play.ts`), and `tests/statecharts.test.ts` fails when the file is stale or a state has no box. Read a machine's chart before you change it. A new machine gets a view in `scripts/charts/` and an entry in `MACHINES` in `scripts/statecharts.ts`.
+`docs/state-machines.md` charts every explicit machine, one line each here, by area. `bun run charts` walks the real reducers with the event lists in `tests/models/` or the chart's own (the fight has no end of states, so its chart replays the random play of `tests/models/fight-play.ts`), and `tests/statecharts.test.ts` fails when the file is stale or a state has no box. Read a machine's chart before you change it. A new machine gets a view in `scripts/charts/` and an entry in `MACHINES` in `scripts/statecharts.ts`, and a line here.
+
+The fight:
+
+- the fight and a channel (`fight.ts`, `fight-channel.ts`)
+- a stacking status's count (`stacks.ts`), and a status's own life, active, owed or gone (`standing.ts` `statusStep`, chart in `scripts/charts/stacks.ts`)
+- a trigger's limit (`triggers.ts`), a delayed effect (`delayed.ts`), a zone of the kits (`zones.ts`), a timed summon (`summons.ts`), a limited use (`uses.ts`)
+- wave 2's reaction, edge, push, stealth, ward and turn extras (`fight-react.ts`, `standing.ts`, `space.ts`, `timeline.ts`; one file of views, `scripts/charts/wave2.ts`)
+- a foe's life in a fight (`combat/row-life.ts`), a corpse's extraction (`combat/extraction.ts`), a run of the odds engine (`combat/odds.ts`)
+- a player's turn held on this phone from the tap to the GM's answer (`combat/hold.ts` `turnHoldStep`, kept by `uses.js`)
+- the battle map's life on the page (`combat/map-mount.ts`), the fight screen's map box (`mapSlot`) and who holds the Build drawer (`buildDrawer`, both in `map-mount.ts`, written by `combat.js`)
+- a gesture on the map (`combat/gesture.ts`) and what it has chosen (`choose`, `map-view.ts`)
+
+The room:
+
+- the room link (`sync/link.ts`), a Create or Join tap from the tap to its answer (`sync/attempt.ts`), a message in the outbox (`sync/outbox.ts`), a room doc the GM publishes (`sync/publish.ts`)
+- a player's bind, the hunter it sends and its join of the room (`sync/bind.ts` `boundTo`, `playAs`), and the REMOVED FROM ROOM notice (`removedStep`, bind.ts)
+- the Room view's code check and a GM's seat action (`sync/lobby.ts` `checkStep`, `seatStep`, through `lobbyStep`)
+- the room server's database (`room-server.ts`)
+- an offer in the room with the giver's, taker's and GM's records of it (`trade/offer.ts`)
+
+Hunters:
+
+- a hunter's life (`hunter/vitals.ts`) and its collapse, the penalty (`hunter/penalty.ts`), the Job Change chain (`hunter/job-chain.ts`), a shadow (`hunter/shadows.ts`)
+- a hunter's points and their allocation (`hunter/progress.ts` `progressStep`, `PROGRESS_TABLE`) and its rank against its level (`hunter/record.ts` `rankStep`, `RANK_TABLE`)
+- one item's wear, in the bag, worn or gone (gear: `hunter/inventory.ts` `TABLE`, `wearMove`)
+- a quest (`hunter/quests.ts`) and the Quests view's quest form (`hunter/quest-form.ts`)
+- a coin call and the GM's window for the calls (`coin.ts`)
+- the Dice view's quick check DC (`dc-pick.ts` `dcPickStep`)
+- first-run setup (`onboarding.ts`)
+
+Gates, feats and stories:
+
+- a gate (`gates/gate.ts`), a hunter's personal gates (`gates/solo.ts` `soloTick`)
+- a solo run on this phone from the tap to its window (`gates/solo-run.ts`), a solo run waiting for the GM (`gates/solo-wait.ts`), and what the GM's phone does with a run (`gates/solo.ts` `PLAN_TABLE`)
+- a feat (`hunter/feats.ts`) and a hunter's inbox of facts (`chronicle.ts`, `noticed.ts`)
+- the campaign's told memory, a feat, a personal gate or a room's gate from its window to told (`told.ts` `toldStep`, through `store.tell`)
+- a story on the table (`story/run.ts`)
+
+The app:
+
+- the store's life (`store-life.ts`) and the app update (`upgrade.ts`)
+- the windows on screen, waiting and going (`windows.ts`), a list's open "more info" detail (`detail-open.ts`)
+- a view's part or a panel on the page (`panel.ts` `panelDrawn`, kept by `app.js`)
+- a maker's form from open to close (`draft.ts` `draftStep`, held by `maker.js`)

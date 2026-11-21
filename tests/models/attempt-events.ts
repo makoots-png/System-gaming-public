@@ -1,6 +1,6 @@
 // A Create or Join tap (src/core/sync/attempt.ts), from no tap out, and every event of its life: the four taps, the link
 // taking each or not, the link still in its stretch (peeking, asking the head), the link leaving it (into the room, or
-// back with each notice that ends a tap). Walked by the state chart
+// back with each notice that ends a tap, or out of every room on a Leave). Walked by the state chart
 // (scripts/charts/attempt.ts); tests/attempt.test.ts checks each move and walks random events.
 import { NOBODY, NO_ATTEMPT } from '../../src/core/sync/attempt.ts';
 import type { Attempt, AttemptEvent, RoomTap, JoinFor } from '../../src/core/sync/attempt.ts';
@@ -21,6 +21,8 @@ export const PICKED: JoinFor = { hunterId: MIRA, name: '' };
 export const NAMED: JoinFor = { hunterId: null, name: 'Rin' };
 /** A link event that is no tap: what the link takes while a create or join waits on the server. */
 export const REPLY: LinkEvent = { type: 'timerFired', name: 'poll' };
+/** Leave room (or Later in first-run setup) while a create or join is out: the link goes out of every room with no notice. */
+export const LEAVE: LinkEvent = { type: 'leave' };
 
 /** The stretch a create or join is under way in, and the next one, which the link takes as it leaves it. */
 export const GEN = 2 as Gen;
@@ -45,7 +47,7 @@ export const WALK_EVENTS: readonly AttemptEvent<Asked>[] = [
   tap(CREATE, NOBODY, 'create'), tap(JOIN_GM, NOBODY, 'join as GM'), tap(JOIN_PLAYER, PICKED, 'join as Mira'), tap(JOIN_PLAYER, NAMED, 'join as Rin'),
   linked(CREATE, CREATING), linked(JOIN_GM, PEEK_GM), linked(JOIN_PLAYER, PEEK), linked(CREATE, LIVE_GM), linked(JOIN_PLAYER, UPGRADING),
   linked(REPLY, PEEK), linked(REPLY, HEAD), linked(REPLY, LIVE_GM), linked(REPLY, LIVE_PLAYER), linked(REPLY, UPGRADING),
-  ...ENDS.map(n => linked(REPLY, IDLE, [n])), linked(REPLY, LIVE_PLAYER, ['replaced']),
+  ...ENDS.map(n => linked(REPLY, IDLE, [n])), linked(REPLY, LIVE_PLAYER, ['replaced']), linked(LEAVE, IDLE),
 ];
 /** The notices only a join's link step gives (link.ts `joining`): the chart does not walk them from a create. */
 const JOIN_ONLY: readonly LinkNotice[] = ['notFound', 'keyRefused', 'notAllowedBack'];

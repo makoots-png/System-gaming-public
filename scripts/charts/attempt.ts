@@ -34,6 +34,7 @@ function step(e: AttemptEvent<Asked>, from: Attempt<Asked>, to: Attempt<Asked>):
     case 'linked': {
       if (from.at === 'handed') return to.at === 'none' ? (e.link.at === 'upgrading' || e.link.at === 'off' ? 'no server, or an update: fails as net' : 'the link does not take it: fails as busy') : 'the link takes it';
       if (to.at !== 'none') return null;
+      if (e.took.type === 'leave') return 'you tap Leave room or Later: fails as left, with no words';
       const told = e.notices[0];
       if (told === undefined) return e.link.at === 'live' ? 'in the room: answers the code, gm or player' : 'out with no word: fails as net';
       return ENDED[told] ?? told;
