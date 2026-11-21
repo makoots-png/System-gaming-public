@@ -25,7 +25,7 @@ import { parseFight } from '../src/core/combat/fight-parse.ts';
 import { fightId, reduce } from '../src/core/combat/fight.ts';
 import type { Command, Ctx, Fight } from '../src/core/combat/fight.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
-import { ARCHETYPE_ATTACKS, ATTACK_ID, itemAbility, weaponAttack } from '../src/core/registry/abilities.ts';
+import { ARCHETYPE_ATTACKS, ATTACK_ID, itemAbility, itemOfAbility, weaponAttack, wornAbilityId } from '../src/core/registry/abilities.ts';
 import { hunterAbilities, hunterRow, monsterRows, remoteRow, sameRankHit, shadowRow, shadowSheet, staggerOf, summonRow } from '../src/core/combat/rows.ts';
 import { pinKeyOf } from '../src/core/combat/map-view.ts';
 import { codexKey } from '../src/core/bestiary.ts';
@@ -187,6 +187,81 @@ describe('what a hunter wears into a fight (kits design 1.3.2)', () => {
   test('a worn status never goes back to the sheet when the fight writes its statuses back', () => {
     const r = hunterRow(hunter({ skills: [{ type: 'passive', bonus: {}, worn: PAIN_IS_POWER }], conditions: [condition('stealth', STEALTH, null)] }), id('c1'), RULES);
     expect(r.statuses.filter(onSheet).map(s => s.key)).toEqual([statusKey('stealth')]);
+  });
+});
+
+describe('what a held thing lets its holder use in a fight (item-stats 6.1)', () => {
+  const f = (text: string) => { const p = parseFormula(text, RULES); if (!p.ok) throw new Error(p.error); return p.formula; };
+  const ROUNDS = 3;
+  /** Bulwark: a shield of 10 + 20% of max HP on its user, ready again `ROUNDS` rounds later. */
+  const support = skill('support', 'Bulwark');
+  const BULWARK: Ability = {
+    ...support, aim: 'self', shape: { kind: 'self' }, range: tiles(0), delivery: { kind: 'sure' },
+    effect: { type: 'shield', by: 'hand', formula: f('10 + 0.2 * hpmax') }, cost: { ...support.cost, cooldown: tick(ROUNDS * F.round) },
+  };
+  const LAST_LIGHT: Ability = { ...skill('support', 'Last Light'), aim: 'self', shape: { kind: 'self' }, range: tiles(0) };
+  const ring = (n: number, o: object = {}) => ({ id: `i${n}`, name: 'Bulwark Ring', rar: 'rare', bonus: {}, active: BULWARK, ...o });
+  const worn = wornAbilityId(BULWARK.id);
+  const names = (h: RowHunter) => hunterAbilities(h, RULES).map(a => a.id);
+
+  test('a worn item\'s active follows the skills, under its own id; the same item in the bag gives none', () => {
+    const h = hunter({ items: [ring(1)], equipped: { weapon: null, ring1: 'i1' }, skills: [active(skill('strike', 'Move 0'))] });
+    expect(names(h)).toEqual([ATTACK_ID, abilityId('move-0'), worn]);
+    expect(hunterAbilities(h, RULES)[2]).toEqual({ ...BULWARK, id: worn });
+    expect(names(hunter({ items: [ring(1)] })), 'in the bag').toEqual([ATTACK_ID]);
+  });
+
+  test('the active title\'s active is its hunter\'s; another title\'s is not', () => {
+    const titles = [{ id: 't1', bonus: {}, active: LAST_LIGHT }, { id: 't2', bonus: {}, active: BULWARK }];
+    expect(names(hunter({ titles, titleId: 't1' }))).toEqual([ATTACK_ID, wornAbilityId(LAST_LIGHT.id)]);
+    expect(names(hunter({ titles, titleId: 't2' }))).toEqual([ATTACK_ID, worn]);
+    expect(names(hunter({ titles, titleId: null })), 'no active title').toEqual([ATTACK_ID]);
+  });
+
+  test('two worn rings of one active give it once, and a skill of the same id keeps both', () => {
+    const h = hunter({ items: [ring(1), ring(2)], equipped: { weapon: null, ring1: 'i1', ring2: 'i2' }, skills: [active(BULWARK)] });
+    expect(names(h)).toEqual([ATTACK_ID, BULWARK.id, worn]);
+  });
+
+  test('a player uses a worn Bulwark in a fight: it shields 34 at max HP 120, spends nothing in the bag, and waits its cooldown, shortened by ability haste', () => {
+    // a level 1 hunter of base stats has `hpBase` max HP; the GM's adjustment brings it to 120
+    const fought = (haste: number) => {
+      const h = hunter({ hpAdj: 120 - F.hpBase, life: { at: 'up', hp: 120 }, items: [ring(1, { bonus: { haste } })], equipped: { weapon: null, ring1: 'i1' } });
+      const commands: Command[] = [
+        { type: 'add', fightId: fightId('f'), rows: [hunterRow(h, id('c1'), RULES), ...monsterRows(monster(), [id('m1')], R)], openings: [] },
+        { type: 'start', openings: [{ id: id('c1'), d20: 20, tie: 0 }, { id: id('m1'), d20: 1, tie: 0 }] },
+      ];
+      const started = commands.reduce<Fight | null>((g, cmd) => reduce(g, cmd, { rules: RULES }).fight, null)!;
+      const now = started.phase === 'running' ? started.now : tick(-1);
+      const used = reduce(started, { type: 'act', by: id('c1'), ability: worn, aim: id('c1'), rolls: { dice: {}, react: {} } as Rolls }, { rules: RULES });
+      return { now, used, row: used.fight!.rows.find(r => r.id === id('c1'))! };
+    };
+    const plain = fought(0);
+    expect(plain.used.effects.filter(e => e.type === 'refused')).toEqual([]);
+    expect(plain.row.shield?.amount, '10 + 0.2 * 120').toBe(34);
+    expect(itemOfAbility(plain.row.abilities.find(a => a.id === worn)!), 'no bag item is its use').toBeNull();
+    expect(plain.row.readyAt[worn]).toBe(tick(plain.now + ROUNDS * F.round));
+    // ability haste 50: the cooldown times 100 / 150, rounded up in ticks (League's formula)
+    const hasted = fought(50);
+    expect(hasted.row.readyAt[worn]).toBe(tick(hasted.now + Math.ceil(ROUNDS * F.round * 100 / 150)));
+  });
+
+  test('a held active limited to once a fight is refused the second time in that fight', () => {
+    const once: Ability = { ...BULWARK, cost: { ...BULWARK.cost, cooldown: tick(0) }, gates: [{ kind: 'uses', per: 'fight', n: 1 }] };
+    const h = hunter({ items: [ring(1, { active: once })], equipped: { weapon: null, ring1: 'i1' } });
+    const commands: Command[] = [
+      { type: 'add', fightId: fightId('f'), rows: [hunterRow(h, id('c1'), RULES), ...monsterRows(monster(), [id('m1')], R)], openings: [] },
+      { type: 'start', openings: [{ id: id('c1'), d20: 20, tie: 0 }, { id: id('m1'), d20: 1, tie: 0 }] },
+    ];
+    const started = commands.reduce<Fight | null>((g, cmd) => reduce(g, cmd, { rules: RULES }).fight, null)!;
+    const use: Command = { type: 'act', by: id('c1'), ability: worn, aim: id('c1'), rolls: { dice: {}, react: {} } as Rolls };
+    const first = reduce(started, use, { rules: RULES });
+    expect(first.effects.filter(e => e.type === 'refused')).toEqual([]);
+    expect(first.fight!.rows.find(r => r.id === id('c1'))!.used?.[worn], 'its one use a fight spent').toBe(1);
+    let g = first.fight!;
+    for (let turns = 0; g.phase === 'running' && g.currentId !== id('c1') && turns < 10; turns++) g = reduce(g, { type: 'endTurn', by: g.currentId }, { rules: RULES }).fight!;
+    expect(g.phase === 'running' && g.currentId, 'its holder\'s next turn').toBe(id('c1'));
+    expect(reduce(g, use, { rules: RULES }).effects).toContainEqual({ type: 'refused', reason: 'noUses' });
   });
 });
 

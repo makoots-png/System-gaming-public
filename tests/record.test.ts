@@ -1,5 +1,6 @@
 import { jobOf } from '../src/core/save.ts';
 import { describe, expect, test } from 'bun:test';
+import type { Powers } from '../src/core/registry/powers.ts';
 import { cleanName, dropBoon, giveBoons, giveTitle, holdsTitle, nameActiveTitle, rankStanding, rankStep, titleNamed, reevaluate, removeTitle, rename, setJob, setRank, toggleTitle, writeTitle } from '../src/core/hunter/record.ts';
 import type { ProgressRank, ProgressRankEvent } from '../src/core/hunter/record.ts';
 import { atLevel } from '../src/core/hunter/progress.ts';
@@ -118,6 +119,12 @@ describe('a title\'s worn status (feature 1\'s notes 17.14)', () => {
     expect(grown.titleId).toBe('t1');
     expect(giveTitle(h, { name: 'Plain', replaces: 'Iron Nerve' }, 't3', SEEDS).titles[0]!.worn, 'a title with none in another\'s place leaves none').toBeUndefined();
     expect(ok(writeTitle(h, 't1', { name: 'Renamed', desc: '', bonus: {} })).titles[0]!.worn).toEqual(STEADY);
+  });
+  test('a written title keeps its active too, when given and through the GM\'s edit', () => {
+    const ACTIVE = { id: 'a1', name: 'Bulwark' } as unknown as NonNullable<Powers['active']>;
+    const h = giveTitle(hunter(), { name: 'Last Light', desc: '', active: ACTIVE }, 't1', SEEDS);
+    expect(h.titles[0]!.active).toEqual(ACTIVE);
+    expect(ok(writeTitle(h, 't1', { name: 'Renamed', desc: '', bonus: {} })).titles[0]!.active).toEqual(ACTIVE);
   });
 });
 

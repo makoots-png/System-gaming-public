@@ -189,12 +189,18 @@ export function monsterAbility(spec: MonsterSpec, R: MonsterRules): Ability {
   }
 }
 
-// ── a consumable used in a fight ──
+// ── a consumable used in a fight, and a held thing's active ──
 
 /** What `itemAbility` reads of an item: a consumable, used on its user or (`target: 'other'`) on another. */
 export type ThrownItem = { readonly id: ItemId; readonly name: string; readonly rar: string; readonly target?: 'self' | 'other'; readonly effects?: readonly Op[] };
 /** The id of the ability of the item with id `itemId`: the room's `cast` names an ability in at most 40 characters. */
 export const itemAbilityId = (itemId: string): AbilityId => abilityId(`item-${itemId}`.slice(0, 40));
+/**
+ * The id a held thing's active has on its holder's row (registry/powers.ts, rows.ts `hunterAbilities`): `worn-` and its
+ * own id, cut to the 40 characters the room's `cast` names. Not a skill's own id, so a skill of the same id keeps both;
+ * two worn things of one active give one (League's "Unique").
+ */
+export const wornAbilityId = (id: AbilityId): AbilityId => abilityId(`worn-${id}`.slice(0, 40));
 /** The bag item an ability is the use of, else null (`Ability.item`). */
 export const itemOfAbility = (a: Pick<Ability, 'item'>): ItemId | null => a.item ?? null;
 

@@ -11,6 +11,9 @@ import { describeItem, effectsOf, gmSource, gradeLabel, itemOps, itemSource } fr
 import { GRADES, ITEM_TYPES, KIT_SHARE, LOOT_ITEMS, RARITIES, SHOP_ITEMS, STARTER_GEAR, itemOf, parseItem, ITEM_BOUNDS, piece, priceOf, wornSpeed, defaultShop, builtInItems, lootPool, valueOf, weightOf, weaponWeight } from '../src/core/registry/items.ts';
 import type { Grade, ItemDef, ItemTemplate, Rarity } from '../src/core/registry/items.ts';
 import { parseStatusDef } from '../src/core/combat/fight-parse.ts';
+import { abilityId } from '../src/core/combat/ability-types.ts';
+import { tiles } from '../src/core/combat/space.ts';
+import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 
 const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 const LISTS: [string, readonly ItemDef[]][] = [['shop', SHOP_ITEMS], ['loot', LOOT_ITEMS], ['starter', Object.values(STARTER_GEAR)]];
@@ -401,6 +404,16 @@ group('parseItem: an item from a save, a room message, a form or an import', () 
     expect(it.worn).toMatchObject({ stack: { cap: 5, threshold: { then: 'spend' } } });
     expect(parseItem(copy(it))).toEqual(it);
     expect(parseItem({ name: 'Ring', worn: { ops: [] } })).not.toHaveProperty('worn');
+  });
+
+  test('a weapon, armour or accessory keeps the powers it gives while worn; a consumable and a thing carried keep none (powers.ts)', () => {
+    const worn = { label: 'Warded', desc: '', ops: [] };
+    const active = abilityOf('support', { id: abilityId('ward'), name: 'Ward', aim: 'self', shape: { kind: 'self' }, range: tiles(0) }, RULES);
+    for (const type of ['weapon', 'armor', 'accessory']) expect(parseItem({ name: 'Ward', type, worn, active }), type).toMatchObject({ worn, active });
+    for (const type of ['consumable', 'material', 'key', 'misc']) {
+      const it = parseItem({ name: 'Ward', type, worn, active, effects: [{ op: 'heal', amount: number(5), when: 'use' }] })!;
+      expect([it.effects?.length, 'worn' in it, 'active' in it], type).toEqual([1, false, false]);
+    }
   });
 
   test('an item the GM is told about keeps tell; any other value leaves it out', () => {

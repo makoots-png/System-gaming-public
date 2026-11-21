@@ -162,10 +162,12 @@ const ability = fields<Ability>({
 });
 
 // ── the GM's things ──
-/** An item: what its use does and the status it puts on while worn. */
+/** The powers of an item or a title (registry/powers.ts): its worn status and its active's ability. */
+const POWERS = { worn: statusDef, active: ability } as const;
+/** An item: what its use does and its powers while worn. */
 export const item: Walk<ItemTemplate> = fields<ItemTemplate>({
   name: none, rar: none, grade: none, type: none, slot: none, qty: none, dice: none, bonus: none, value: none, weight: none, desc: none, armor: none,
-  resist: none, attack: none, icon: none, effects: ops, target: none, tell: none, worn: statusDef, revive: none,
+  resist: none, attack: none, icon: none, effects: ops, target: none, tell: none, revive: none, ...POWERS,
 });
 const SKILL_PARTS = { name: none, level: none, label: none, desc: none, type: none } as const;
 const activeSkill = fields<Extract<SkillTemplate, { type: 'active' }>>({ ...SKILL_PARTS, ability });
@@ -179,7 +181,7 @@ export function skill(k: SkillTemplate, f: KeyFn): SkillTemplate {
   }
 }
 const rewardStatus = fields<RewardStatus>({ key, rounds: none, def: statusDef });
-const rewardTitle = fields<RewardTitle>({ name: none, desc: none, bonus: none, key: none, replaces: none, worn: statusDef });
+const rewardTitle = fields<RewardTitle>({ name: none, desc: none, bonus: none, key: none, replaces: none, ...POWERS });
 const rewards = fields<Rewards>({
   xp: none, points: none, gold: none, items: list(item), title: rewardTitle, job: none, skills: list(skill), statuses: list(rewardStatus), boons: none,
 });

@@ -37,9 +37,9 @@ describe('one item, one status and one ability have a size (notes-5-trade.md 13,
     expect(parseItem(tome(10))?.effects).toHaveLength(10);
     expect(bytesOf(tome(12))).toBeGreaterThan(THING_MAX.item);
     expect(parseItem(tome(12))).toBeNull();
-    expect(parseItem({ name: 'Ring', worn: heavyDef(7) })?.worn).toEqual(heavyDef(7));
-    expect(parseItem({ name: 'Ring', worn: heavyDef(12) }), 'its worn status alone is over a status\'s size').toBeNull();
-    expect(parseItem({ name: 'Ring', worn: { label: 5 } })?.worn, 'a worn status that does not read is still left out, as before').toBeUndefined();
+    expect(parseItem({ name: 'Ring', type: 'accessory', worn: heavyDef(7) })?.worn).toEqual(heavyDef(7));
+    expect(parseItem({ name: 'Ring', type: 'accessory', worn: heavyDef(12) }), 'its worn status alone is over a status\'s size').toBeNull();
+    expect(parseItem({ name: 'Ring', type: 'accessory', worn: { label: 5 } })?.worn, 'a worn status that does not read is still left out, as before').toBeUndefined();
   });
 
   test('an ability over an ability\'s size is refused, and the skill that is that ability is refused whole', () => {

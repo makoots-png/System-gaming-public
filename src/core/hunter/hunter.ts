@@ -9,11 +9,13 @@
 
 import { parseObjectiveCount } from './counts.ts';
 import type { ObjectiveCount } from './counts.ts';
-import type { SheetStatus, StatusDef } from '../combat/effect-ops.ts';
-import { parseSheetStatus, parseStatusDef } from '../combat/fight-parse.ts';
+import type { SheetStatus } from '../combat/effect-ops.ts';
+import { parseSheetStatus } from '../combat/fight-parse.ts';
 import { MAX_STATUSES } from '../combat/fight-types.ts';
 import { SLOTS } from '../registry/items.ts';
 import type { Item, Slot } from '../registry/items.ts';
+import { parsePowers } from '../registry/powers.ts';
+import type { Powers } from '../registry/powers.ts';
 import { ARCHETYPE_LIST } from '../registry/monsters.ts';
 import type { Skill } from '../registry/skills.ts';
 import type { Archetype } from './derive.ts';
@@ -87,12 +89,10 @@ export type Loadout = { id: LoadoutId; name: string; slots: Partial<Record<Slot,
 /**
  * A title a hunter holds. `bonus`: while it is the active one, points on any bonus key (`BONUS_KEYS`).
  * `seedKey`: the key of the rule title it was given from (src/core/hunter/record.ts `giveTitle`), kept through a rename.
+ * Its `Powers` (registry/powers.ts), while it is the active title, are its hunter's in every fight at the hunter's rank:
+ * its `worn` status on the row, its `active` an ability (rows.ts `heldPowers`).
  */
-export type Title = {
-  id: TitleId; name: string; desc: string; bonus: Perk; seedKey?: string;
-  /** While it is the active title, this status is on its hunter's row in every fight, at the hunter's rank (rows.ts `wornStatuses`). */
-  worn?: StatusDef;
-};
+export type Title = { id: TitleId; name: string; desc: string; bonus: Perk; seedKey?: string } & Powers;
 /** A text reward the GM honours at the table, held until the player redeems it. `at`: when it was given. */
 export type Boon = { id: BoonId; name: string; text: string; at: string };
 /**
@@ -213,7 +213,8 @@ export function fixHunter(saveRun: RepairRun, h: Hunter): void {
   h.conditions = conditions(R, h.conditions);
   h.titles = list(run, h.titles, 't', newTitle, t => {
     t.name = t.name.slice(0, 60); fixBonus(t.bonus); if (t.seedKey !== undefined && !titleKey(t.seedKey)) delete t.seedKey;
-    if (t.worn !== undefined) { const worn = parseStatusDef(t.worn, BASE_RULES); if (worn) t.worn = worn; else delete t.worn; }
+    // its powers by their one parser; a part refused, or both when one is past its size, leave the title without them
+    const powers = parsePowers(t) ?? {}; delete t.worn; delete t.active; Object.assign(t, powers);
   });
   optional(h, 'seed', v => v === true);
   // A boon without a name is dropped; past the cap the oldest go (a new boon is added last).

@@ -1366,7 +1366,7 @@ describe('an offer between two hunters, and its one end', () => {
     const wide = (n: number) => 'ࠀ'.repeat(n);
     const note = (n: number) => ({ op: 'note', text: 'x'.repeat(n) });
     /** An item of exactly `THING_MAX.item` bytes: full three-byte texts, notes as effects and as worn ops, the last note cut to fit. */
-    const atCap = Array.from({ length: 201 }, (_, pad) => parseItem({ name: wide(ITEM_BOUNDS.name), desc: wide(ITEM_BOUNDS.desc), rar: 'mythic', effects: [...Array(11).fill(note(200)), note(pad)], worn: { label: 'w', desc: 'x'.repeat(500), ops: Array(10).fill(note(200)) } }))
+    const atCap = Array.from({ length: 201 }, (_, pad) => parseItem({ name: wide(ITEM_BOUNDS.name), desc: wide(ITEM_BOUNDS.desc), rar: 'mythic', type: 'accessory', effects: [...Array(11).fill(note(200)), note(pad)], worn: { label: 'w', desc: 'x'.repeat(500), ops: Array(10).fill(note(200)) } }))
       .find(it => it !== null && bytes(it) === THING_MAX.item)!;
     expect(bytes(atCap), 'an item of exactly the cap reads').toBe(THING_MAX.item);
     const offerOf = (item: unknown, lines: number) => ({
@@ -1400,7 +1400,7 @@ describe('an offer between two hunters, and its one end', () => {
     const def = (ops: unknown[]) => ({ label: 'Big', desc: '', ops });
     expect(parseStatusDef(def([leaf]), RULES), 'a status of that one op is over a status\'s size: refused whole').toBeNull();
     expect(parseItem({ name: 'Big', effects: [leaf] }), 'and an item with it as an effect').toBeNull();
-    expect(parseItem({ name: 'Big', worn: def([leaf]) }), 'an item whose worn status is too large is refused whole, never kept without it').toBeNull();
+    expect(parseItem({ name: 'Big', type: 'accessory', worn: def([leaf]) }), 'an item whose worn status is too large is refused whole, never kept without it').toBeNull();
     expect(parseAbility({ ...abilityOf('strike', { id: abilityId('big'), name: 'Big' }, RULES), ops: [{ op: 'applyStatus', key: 'big', def: def([leaf]), duration: null }] }, RULES), 'an ability that applies it').toBeNull();
     // what the caps then bound, by arithmetic from the counts each holder reads
     const sheetRest = JSON.stringify({ hunter: pushedSheet(newHunter(RULES)) }).length;
@@ -1416,7 +1416,7 @@ describe('an offer between two hunters, and its one end', () => {
 
   test('a hunter\'s sheet holds four items at an item\'s size and reads back whole; a fifth is over what the room takes', () => {
     const note = (n: number) => ({ op: 'note', text: 'x'.repeat(n) });
-    const big = (i: number) => ({ ...Array.from({ length: 501 }, (_, n) => parseItem({ name: `Tome ${i}`, desc: 'ࠀ'.repeat(n) + 'x'.repeat(500 - n), effects: Array(12).fill(note(200)), worn: { label: 'w', desc: 'x'.repeat(500), ops: Array(12).fill(note(200)) } })).findLast(it => it !== null)!, id: `i${i}` });
+    const big = (i: number) => ({ ...Array.from({ length: 501 }, (_, n) => parseItem({ name: `Tome ${i}`, type: 'accessory', desc: 'ࠀ'.repeat(n) + 'x'.repeat(500 - n), effects: Array(12).fill(note(200)), worn: { label: 'w', desc: 'x'.repeat(500), ops: Array(12).fill(note(200)) } })).findLast(it => it !== null)!, id: `i${i}` });
     const withItems = (n: number) => ({ hunter: { ...pushedSheet(newHunter(RULES)), id: 'h1', items: Array.from({ length: n }, (_, i) => big(i + 1)) } });
     const four = withItems(4), five = withItems(5);
     expect(goodsSize(four.hunter.items[0])).toBeGreaterThan(THING_MAX.item - 3);

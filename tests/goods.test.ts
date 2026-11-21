@@ -72,7 +72,7 @@ describe('setting goods aside and receiving them', () => {
 
   test('eight items at an item\'s size are put aside for one offer: nothing the readers take is refused for its size', () => {
     const note = (n: number) => ({ op: 'note', text: 'x'.repeat(n) });
-    const tome = (i: number) => Array.from({ length: 501 }, (_, n) => parseItem({ name: `Tome ${i}`, desc: 'ࠀ'.repeat(n) + 'x'.repeat(500 - n), effects: Array(12).fill(note(200)), worn: { label: 'w', desc: 'x'.repeat(500), ops: Array(12).fill(note(200)) } })).findLast(it => it !== null)!;
+    const tome = (i: number) => Array.from({ length: 501 }, (_, n) => parseItem({ name: `Tome ${i}`, type: 'accessory', desc: 'ࠀ'.repeat(n) + 'x'.repeat(500 - n), effects: Array(12).fill(note(200)), worn: { label: 'w', desc: 'x'.repeat(500), ops: Array(12).fill(note(200)) } })).findLast(it => it !== null)!;
     let h: Hunter = { ...newHunter(RULES), id: hid('h1') };
     for (let i = 1; i <= GOODS_LINES; i++) h = putItem(h, tome(i), iid(`i${i}`));
     expect(goodsSize(h.items[0]), 'each within two bytes of the size').toBeGreaterThan(THING_MAX.item - 3);

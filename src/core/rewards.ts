@@ -8,6 +8,8 @@ import type { StatusDef, StatusKey } from './combat/effect-ops.ts';
 import { parseStatusDef, statusTooLarge } from './combat/fight-parse.ts';
 import { isStateChip } from './hunter/chips.ts';
 import { parseItem } from './registry/items.ts';
+import { parsePowers } from './registry/powers.ts';
+import type { Powers } from './registry/powers.ts';
 import type { ItemTemplate } from './registry/items.ts';
 import { parseSkill } from './registry/skills.ts';
 import type { SkillTemplate } from './registry/skills.ts';
@@ -22,12 +24,9 @@ import type { BundleId } from './ids.ts';
  * `key`: the rule title it copies (src/core/rules.ts `titles`), when it does, so one held under another name is not given twice.
  * `replaces`: the name of a title the hunter may hold that this one takes the place of (record.ts `giveTitle`: that title
  * becomes this one, its id and whether it is active kept); a hunter who does not hold it gets this title as a new one.
+ * Its `Powers` (registry/powers.ts) are the held title's (hunter.ts `Title`): given in fights while it is the active title.
  */
-export type RewardTitle = {
-  name: string; desc: string; bonus: Record<string, number>; key?: string; replaces?: string;
-  /** While it is the hunter's active title, this status is on the hunter's row in every fight (save.ts `Title.worn`). */
-  worn?: StatusDef;
-};
+export type RewardTitle = { name: string; desc: string; bonus: Record<string, number>; key?: string; replaces?: string } & Powers;
 /**
  * A status a reward puts on the hunter. `rounds: null` lasts until removed. `def` for a status the receiver may not know;
  * without it the receiver's rules name the key.
@@ -73,15 +72,19 @@ function listOf<T>(v: unknown, n: number, read: (x: unknown) => T | null): T[] {
   return out;
 }
 
+/**
+ * A title read from outside data: a name, or null; its bonus keys inside the bound; its powers by `parsePowers`, a title
+ * whose worn status or active is past its size refused whole (null), as a skill is.
+ */
 function title(v: unknown): RewardTitle | null {
   if (!isObj(v)) return null;
-  const B = REWARD_BOUNDS, name = line(v.name, B.title);
-  if (!name) return null;
+  const B = REWARD_BOUNDS, name = line(v.name, B.title), powers = parsePowers(v);
+  if (!name || powers === null) return null;
   const raw = isObj(v.bonus) ? v.bonus : {}, bonus: Record<string, number> = {};
   for (const k of BONUS_KEYS) { const n = whole(Object.hasOwn(raw, k) ? raw[k] : 0, -B.bonus, B.bonus, 0); if (n) bonus[k] = n; }
-  const key = titleKey(v.key), replaces = line(v.replaces, B.title), worn = v.worn === undefined ? null : parseStatusDef(v.worn, RULES);
+  const key = titleKey(v.key), replaces = line(v.replaces, B.title);
   // a title in place of itself is that title
-  return { name, desc: typeof v.desc === 'string' ? v.desc.slice(0, B.titleDesc) : '', bonus, ...(key ? { key } : {}), ...(replaces && replaces !== name ? { replaces } : {}), ...(worn ? { worn } : {}) };
+  return { name, desc: typeof v.desc === 'string' ? v.desc.slice(0, B.titleDesc) : '', bonus, ...(key ? { key } : {}), ...(replaces && replaces !== name ? { replaces } : {}), ...powers };
 }
 /**
  * A status a reward gives: a key a status may have that is not a chip drawn from a hunter's state. Its def is read by

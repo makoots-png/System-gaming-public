@@ -18,7 +18,8 @@ import type { SheetHunter, SheetItem, SheetRules } from '../hunter/sheet.ts';
 import { lifeAfter } from '../hunter/vitals.ts';
 import type { Life } from '../hunter/vitals.ts';
 import { TIER_BUDGET } from '../registry/paths.ts';
-import { ARCHETYPE_ATTACKS, itemAbility, weaponAttack } from '../registry/abilities.ts';
+import { ARCHETYPE_ATTACKS, itemAbility, weaponAttack, wornAbilityId } from '../registry/abilities.ts';
+import type { Powers } from '../registry/powers.ts';
 import { monsterXp } from '../registry/monsters.ts';
 import type { Weapon } from '../registry/abilities.ts';
 import { formulaOf } from '../registry/ability-kinds.ts';
@@ -49,17 +50,16 @@ export type StatusDefs = Readonly<Partial<Record<string, StatusDef>>>;
 export type RowSkill = { readonly type: 'active'; readonly ability: Ability | null } | { readonly type: 'passive'; readonly bonus: Bonus; readonly worn?: StatusDef };
 /**
  * An item as a row reads it: a worn weapon is one with `attack` and `dice`; a consumable in the bag that goes to another
- * (`target: 'other'`) is an ability the hunter takes into the fight.
+ * (`target: 'other'`) is an ability the hunter takes into the fight; a worn one gives its powers (`heldPowers`).
  */
 export type RowItem = SheetItem & {
   readonly name: string; readonly dice?: string; readonly attack?: Weapon['attack'];
   readonly type?: string; readonly rar?: string; readonly qty?: number; readonly target?: 'other'; readonly effects?: readonly Op[];
-  readonly worn?: StatusDef;
-};
+} & Readonly<Powers>;
 /** The fields of a schema 4 hunter a row reads, on this phone or from a parsed remote sheet. */
 export type RowHunter = Omit<SheetHunter, 'skills' | 'items' | 'conditions' | 'titles'> & {
-  /** Each title's bonus, and its worn status (on the row while it is the active title). */
-  readonly titles: readonly { readonly id: string; readonly bonus: SheetHunter['titles'][number]['bonus']; readonly worn?: StatusDef }[];
+  /** Each title's bonus, and its powers (in the fight while it is the active title, `heldPowers`). */
+  readonly titles: readonly ({ readonly id: string; readonly bonus: SheetHunter['titles'][number]['bonus'] } & Readonly<Powers>)[];
   readonly id: string;
   readonly name: string;
   readonly life: Life;
@@ -113,11 +113,26 @@ function distinct(list: readonly Ability[]): Ability[] {
 
 // ── hunters ──
 
+/** What a hunter holds that gives powers in a fight, with the tier its worn status's source reads (`heldPowers`). */
+type Held = { readonly powers: Readonly<Powers>; readonly tier: number };
 /**
- * The worn weapon's attack, then each active skill's ability in the skill list's order, then each consumable in the bag
- * that does something in a fight (`itemAbility`), on its user or on another, in the bag's order.
+ * The one place a row reads what a hunter's held things give in a fight (item-stats 6.1): the active title's powers at
+ * the hunter's rank, then each worn item's (in a slot) at its rarity's tier, in the slots' order. Another title and an
+ * item in the bag give none.
  */
-export function hunterAbilities(h: Pick<RowHunter, 'items' | 'equipped' | 'skills'>, R: KindRules): Ability[] {
+export function heldPowers(h: Pick<RowHunter, 'titles' | 'titleId' | 'items' | 'equipped' | 'rank'>): Held[] {
+  const title = h.titles.find(t => t.id === h.titleId);
+  const worn = Object.values(h.equipped).flatMap(id => h.items.find(i => i.id === id) ?? []);
+  return [...(title ? [{ powers: title, tier: rankIdx(h.rank) }] : []), ...worn.map(i => ({ powers: i, tier: itemSource({ rar: i.rar ?? 'common' }).tier }))];
+}
+
+/**
+ * The worn weapon's attack, then each active skill's ability in the skill list's order, then the active of each held
+ * thing (`heldPowers`) as `wornAbilityId` of its id, then each consumable in the bag that does something in a fight
+ * (`itemAbility`), on its user or on another, in the bag's order. A held thing's active is its holder's at the holder's
+ * rank, as a skill's is, with its own cooldown and gates; it is never a bag item's use, so it spends nothing held.
+ */
+export function hunterAbilities(h: Pick<RowHunter, 'items' | 'equipped' | 'skills' | 'titles' | 'titleId' | 'rank'>, R: KindRules): Ability[] {
   const w = h.items.find(i => i.id === h.equipped['weapon']);
   const weapon: Weapon | null = w?.attack !== undefined && w.dice !== undefined ? { name: w.name, dice: w.dice, attack: w.attack } : null;
   const thrown = h.items.flatMap(i => {
@@ -126,14 +141,19 @@ export function hunterAbilities(h: Pick<RowHunter, 'items' | 'equipped' | 'skill
     const a = id !== null && i.type === 'consumable' && (i.qty ?? 0) > 0 ? itemAbility({ id, name: i.name, rar: i.rar ?? 'common', target: i.target === 'other' ? 'other' : 'self', effects: i.effects ?? [] }, R) : null;
     return a ? [a] : [];
   });
-  return distinct([weaponAttack(weapon, R), ...h.skills.flatMap(s => (s.type === 'active' && s.ability ? [s.ability] : [])), ...thrown]);
+  const held = heldPowers(h).flatMap(({ powers: { active } }): Ability[] => {
+    if (!active) return [];
+    const { item: _never, ...own } = active;
+    return [{ ...own, id: wornAbilityId(active.id) }];
+  });
+  return distinct([weaponAttack(weapon, R), ...h.skills.flatMap(s => (s.type === 'active' && s.ability ? [s.ability] : [])), ...held, ...thrown]);
 }
 
 /**
  * The worn statuses of a hunter (kits design 1.3.2): each passive skill's, at the hunter's rank with the row as its
- * source, then the active title's (feature 1's notes 17.14), the same way, then each worn item's (in a slot), at the
- * item's rarity with the row as its source (item-stats 6.3: its threshold and end read the wearer, and it is the
- * wearer's act), in the slots' order. Each lasts until removed, under a
+ * source, then each held thing's `worn` (`heldPowers`: the active title's at the hunter's rank, feature 1's notes 17.14,
+ * then each worn item's at the item's rarity), the row its source (item-stats 6.3: its threshold and end read the
+ * wearer, and it is the wearer's act). Each lasts until removed, under a
  * key made from its label that no condition and no other worn status holds, and is never written back (`worn`).
  */
 function wornStatuses(h: RowHunter, id: CombatantId, taken: readonly string[], now: Tick, R: RowRules): Status[] {
@@ -144,10 +164,7 @@ function wornStatuses(h: RowHunter, id: CombatantId, taken: readonly string[], n
     out.push(statusOn(def, { key, source, until: null, since: now, settledAt: now, worn: true }));
   };
   for (const s of h.skills) if (s.type === 'passive' && s.worn) put(s.worn, { id, tier: rankIdx(h.rank) });
-  const title = h.titles.find(t => t.id === h.titleId);
-  if (title && title.worn) put(title.worn, { id, tier: rankIdx(h.rank) });
-  const worn = new Set(Object.values(h.equipped));
-  for (const i of h.items) if (i.worn && worn.has(i.id)) put(i.worn, { id, tier: itemSource({ rar: i.rar ?? 'common' }).tier });
+  for (const { powers, tier } of heldPowers(h)) if (powers.worn) put(powers.worn, { id, tier });
   return out;
 }
 

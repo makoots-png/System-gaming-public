@@ -11,7 +11,9 @@ export const bytesOf = (v: unknown): number => new TextEncoder().encode(JSON.str
 /**
  * The most bytes each holds, as its reader gives it back.
  * - `item`, 7 KiB: the largest whole KiB at which an offer of 8 items (`GOODS_LINES`) fits the server's 64 KiB body.
- *   The largest item the app ships is 502 bytes (The Punchline).
+ *   The largest item the app ships is 502 bytes (The Punchline). Its powers (registry/powers.ts, a worn status and an
+ *   active) are inside it: the largest status and ability the app ships together are under 3 KiB. It does not grow by
+ *   an ability's size (item-stats 6.1 said so): 8 items of 15 KiB are past the body, and the offer's lines would shrink.
  * - `status`, 5 KiB: four times the largest status def the app ships (Resonance, 1,035 bytes), up to a KiB. An item can
  *   hold one at the cap as its worn status and keep 2 KiB of its own.
  * - `ability`, 8 KiB: four times the largest ability the app ships (Fester, 1,804 bytes), up to a KiB.

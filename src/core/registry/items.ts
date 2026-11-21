@@ -6,8 +6,8 @@
 // most built-in gear is plain for its tier, so its minus. Six are past their tier's top and kept as they are at its plus
 // (the owner's ruling 6, "Keep them."); tests/item-budget.test.ts names them, so a seventh fails it.
 import { FULL_HEAL } from '../combat/effect-ops.ts';
-import type { Op, StatusDef } from '../combat/effect-ops.ts';
-import { parseOp, parseStatusDef, statusTooLarge } from '../combat/fight-parse.ts';
+import type { Op } from '../combat/effect-ops.ts';
+import { parseOp } from '../combat/fight-parse.ts';
 import { withinSize } from '../size.ts';
 import type { Formula } from '../formula.ts';
 import { kitGear, pointsAt, sheetOf, split } from '../hunter/derive.ts';
@@ -18,6 +18,8 @@ import { oneOf } from '../one-of.ts';
 import { isIconKey } from './icons.ts';
 import type { IconKey } from './icons.ts';
 import type { ItemId } from '../ids.ts';
+import { parsePowers } from './powers.ts';
+import type { Powers } from './powers.ts';
 
 // The item enums live here, beside the one parser that reads them; save.ts re-exports them.
 export const RARITIES = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'] as const;
@@ -42,8 +44,10 @@ export type ItemBonus = Partial<Record<BonusKey, number>>;
 
 /**
  * An item a hunter holds. Worn, it adds its `bonus` and its gear numbers (`weight`, `armor`, `resist`) to the
- * sheet (src/core/hunter/sheet.ts). A weapon in the weapon slot attacks with its `dice` as its `attack`. Used, it does
- * its `effects` (src/core/effects.ts) to the user, or to another it picks when `target` is `other`.
+ * sheet (src/core/hunter/sheet.ts), and gives its `Powers` in every fight (powers.ts: its `worn` status on its wearer's
+ * row at the item's rarity, its `active` an ability its wearer may use; combat/rows.ts `heldPowers`). A weapon in the
+ * weapon slot attacks with its `dice` as its `attack`. Used, it does its `effects` (src/core/effects.ts) to the user, or
+ * to another it picks when `target` is `other`.
  */
 export type Item = {
   id: ItemId; name: string; rar: Rarity; type: ItemType; slot: Slot | null; qty: number; dice: string; bonus: ItemBonus;
@@ -61,8 +65,6 @@ export type Item = {
   target?: 'other';
   /** The GM is told when a player uses it (the room's `used` message, and the session log). */
   tell?: true;
-  /** While it is worn (in a slot), this status is on its wearer's row in every fight, at the item's rarity (kits design 1.3.2). */
-  worn?: StatusDef;
   /**
    * Used, it brings its dead user back through the life machine's `revive` (src/core/hunter/use.ts `useItem`): refused
    * while the user is not dead, and outside a fight only. It raises a hunter of its rarity's rank or lower (`revives`),
@@ -70,7 +72,10 @@ export type Item = {
    * buy it back (inventory.ts `sellable`) and no loot roll drops it (`lootPool`): the GM decides how many exist.
    */
   revive?: true;
-};
+} & Powers;
+
+/** The types a hunter wears (`parseItem` keeps powers on these alone): a consumable is used, and the rest are carried. */
+const WORN_TYPES: readonly ItemType[] = ['weapon', 'armor', 'accessory'];
 
 /** The slots a piece of armour may take, each with its share of a kit in hundredths (design table 2.5); they sum to 100. */
 export const KIT_SHARE = { chest: 35, legs: 20, offhand: 15, head: 10, hands: 10, feet: 10 } as const;
@@ -275,8 +280,9 @@ const text = (v: unknown, n: number): string => (typeof v === 'string' ? v.slice
  * is 1 or -1 (anything else is the middle, left out, so one item is never two stacks by a 0), `attack` when it is
  * strike or shot, `target` only when it is `other`, `tell` only when it is true, `revive`
  * only when it is true on a consumable, `icon` only when it is a key of the icon registry (an unknown one is dropped, the
- * default shows), and `worn` when the status reader takes it. Every other key is dropped. An item
- * past its size (size.ts `THING_MAX.item`), or whose worn status is past a status's, is refused whole: null.
+ * default shows), and its powers (`worn`, `active`) by `parsePowers` on a type that is worn (`WORN_TYPES`). Every other
+ * key is dropped. An item past its size (size.ts `THING_MAX.item`, its powers included), or whose worn status or active
+ * is past a status's or an ability's, is refused whole: null.
  */
 export function parseItem(v: unknown): ItemTemplate | null {
   if (!isObj(v)) return null;
@@ -306,9 +312,9 @@ export function parseItem(v: unknown): ItemTemplate | null {
   if (v.target === 'other') out.target = 'other';
   if (v.tell === true) out.tell = true;
   if (v.revive === true && out.type === 'consumable') out.revive = true;
-  const worn = v.worn === undefined ? null : parseStatusDef(v.worn, RULES);
-  if (worn) out.worn = worn;
-  // refused whole for its size, never cut: an item without the worn status or the effect it was made with is another item
-  if ((!worn && statusTooLarge(v.worn, RULES)) || !withinSize('item', out)) return null;
-  return out;
+  const powers = WORN_TYPES.includes(out.type) ? parsePowers(v) : {};
+  // refused whole for its size, never cut: an item without the power or the effect it was made with is another item
+  if (powers === null) return null;
+  const item: ItemTemplate = { ...out, ...powers };
+  return withinSize('item', item) ? item : null;
 }

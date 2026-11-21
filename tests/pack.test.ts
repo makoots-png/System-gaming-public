@@ -373,6 +373,12 @@ describe('a status named anywhere in a shared thing travels with it', () => {
     { where: 'the worn status of a reward\'s title', kind: 'rewards', name: 'Spoils', put: s => {
       s.library.rewards = [{ id: rbid('rb1'), name: 'Spoils', rewards: { ...newRewards(), title: { name: 'Plague Bearer', desc: '', bonus: {}, worn: { label: 'Plague', desc: '', ops: [], triggers: [{ on: 'hitDealt', tag: null, to: 'other', limit: each, ops: [apply] }] } } } }];
     } },
+    { where: 'the active of a worn item (powers.ts)', kind: 'items', name: 'Rot Ring', put: s => {
+      s.library.items = [{ ...parseItem({ name: 'Rot Ring', type: 'accessory', slot: 'ring1' })!, id: iid('i1'), active: { ...LANCE_ABILITY, ops: [apply] } }];
+    } },
+    { where: 'the active of a reward\'s title (powers.ts)', kind: 'rewards', name: 'Spoils', put: s => {
+      s.library.rewards = [{ id: rbid('rb1'), name: 'Spoils', rewards: { ...newRewards(), title: { name: 'Plague Bearer', desc: '', bonus: {}, active: { ...LANCE_ABILITY, ops: [apply] } } } }];
+    } },
     { where: 'a monster ability\'s condition', kind: 'monsters', name: 'Ghoul', put: s => {
       s.monsters = [{ ...parseMonster({ name: 'Ghoul', rank: 'C' })!, id: mid('m1'), abilities: [{ ...LANCE_ABILITY, ops: [], gates: [{ kind: 'holds', key: rot, on: 'target', atLeast: 2 }] }] }];
     } },
