@@ -23,7 +23,7 @@ const CSS = `
 .rr-search .field{flex:1 1 220px}
 .rr-search input{width:100%}
 .rr-credit{margin:14px 0 4px;font-size:12px;color:var(--cyan-dim);text-align:center;overflow-wrap:anywhere}
-.rr-credit a{color:inherit}
+.rr-credit a{color:inherit;display:inline-flex;align-items:center;justify-content:center;min-height:44px;min-width:44px}
 .rr-toc{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .rr-toc a{font-size:12px;letter-spacing:.08em;color:var(--cyan-dim);border:1px solid var(--line);padding:4px 8px;text-decoration:none;min-height:32px;display:inline-flex;align-items:center}
 .rr-toc a:hover{color:var(--cyan);border-color:var(--cyan)}
