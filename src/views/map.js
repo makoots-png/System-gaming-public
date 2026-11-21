@@ -144,6 +144,7 @@ export function register(app) {
 .mp-tools{position:absolute;right:6px;top:6px;z-index:3;display:flex;gap:6px}
 .mp-news{position:absolute;left:6px;right:6px;top:calc(var(--control-h) + 12px);z-index:3;margin:0;padding:6px 10px;pointer-events:none;font-size:13px;line-height:1.35;color:var(--ice);background:color-mix(in srgb,var(--ground) 88%,transparent);border:1px solid var(--line);border-left:3px solid var(--cyan)}
 .mp-news.warning,.mp-news.warn{border-left-color:var(--red)}.mp-news.good{border-left-color:var(--green)}
+.mp-seenas{position:absolute;left:6px;top:6px;z-index:3;margin:0;padding:4px 10px;max-width:calc(100% - 150px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;pointer-events:none;font-size:13px;color:var(--warm);background:color-mix(in srgb,var(--ground) 88%,transparent);border:1px solid var(--line)}
 .mp-sending{position:absolute;left:6px;bottom:6px;z-index:3;margin:0;padding:4px 10px;pointer-events:none;font-size:13px;color:var(--ice);background:color-mix(in srgb,var(--ground) 88%,transparent);border:1px solid var(--line)}
 .mp-tog{min-height:var(--control-h);min-width:var(--control-h);padding:0 10px;font-size:13px;background:color-mix(in srgb,var(--ground) 80%,transparent)}
 .mp-tog[aria-pressed=true]{background:var(--cyan);border-color:var(--cyan);color:var(--ground)}
@@ -200,6 +201,7 @@ export function register(app) {
         <div class="mp-world" data-world><div class="mp-ground"><div class="mp-floor"></div><div class="mp-layer" data-terrain></div><svg class="mp-walls" data-walls aria-hidden="true"></svg><svg class="mp-zones" data-zones aria-hidden="true"></svg><svg class="mp-fog" data-fog aria-hidden="true"></svg></div><div class="mp-layer" data-zlabels aria-hidden="true"></div><svg class="mp-shades" data-area aria-hidden="true"></svg><svg class="mp-lines" data-lines aria-hidden="true"></svg><div class="mp-layer" data-tokens></div><div class="mp-says" data-says></div><div class="mp-layer" data-fx></div></div>
         <p class="mp-news" data-news role="status" aria-live="polite" hidden></p>
         <p class="mp-sending" data-sending hidden></p>
+        <p class="mp-seenas" data-seenas hidden></p>
         <div class="mp-tools">${src.paint ? '<button type="button" class="mp-tog" data-painttog aria-pressed="false">Paint</button>' : ''}<button type="button" class="mp-tog" data-grid aria-pressed="false">Grid</button></div>
       </div>
       <div class="mp-paint seg" data-paint role="group" aria-label="Paint with" hidden></div>
@@ -539,7 +541,7 @@ export function register(app) {
         stag: x.stagger ? `--st:${x.stagger.share.toFixed(3)}` : '', noStag: !x.stagger, noTaunt: !x.taunted,
         pips: x.channel ? `<span class="mp-pips${x.channel.state === 'broken' ? ' broken' : ''}" style="--n:${x.channel.max}">${Array.from({ length: x.channel.max }, (_, i) => `<i style="--i:${i}"${i < x.channel.charge ? ' class="on"' : ''}></i>`).join('')}</span>` : '',
         cls: `mp-tok ${t.side}${t.summon ? ' summon' : ''}${t.hidden ? ' hidden' : ''}${t.current ? ' now' : ''}${t.down ? ' down' : ''}${t.mine ? ' mine' : ''}${can ? ' tgt' : ''}${dim ? ' dim' : ''}${inHit ? ' hit' : inRing ? ' ring' : ''}${x.stagger && x.stagger.staggered ? ' staggered' : ''}${mark ? ' marked' : ''}`,
-        label: `${t.name}, ${hp}${t.hidden ? ', out of the party\'s sight' : ''}${t.word ? `, ${t.word}` : ''}${t.current ? ', their turn' : ''}${t.statuses ? ', has statuses' : ''}${x.shield !== null ? ', shielded' : ''}${x.stagger && x.stagger.staggered ? ', staggered' : ''}${x.channel ? `, channeling ${x.channel.charge} of ${x.channel.max}` : ''}${x.taunted ? ', taunted' : ''}${t.summon ? `, ${t.summon.owner ? `${t.summon.owner}'s ` : ''}summon${t.summon.left !== null ? `, ${t.summon.left} round${t.summon.left === 1 ? '' : 's'} left` : ''}` : ''}${x.reacted ? ', reacted' : ''}`,
+        label: `${t.name}, ${hp}${t.hidden ? (t.side === 'foe' ? ', unseen by the party' : ', unseen by its foes') : ''}${t.word ? `, ${t.word}` : ''}${t.current ? ', their turn' : ''}${t.statuses ? ', has statuses' : ''}${x.shield !== null ? ', shielded' : ''}${x.stagger && x.stagger.staggered ? ', staggered' : ''}${x.channel ? `, channeling ${x.channel.charge} of ${x.channel.max}` : ''}${x.taunted ? ', taunted' : ''}${t.summon ? `, ${t.summon.owner ? `${t.summon.owner}'s ` : ''}summon${t.summon.left !== null ? `, ${t.summon.left} round${t.summon.left === 1 ? '' : 's'} left` : ''}` : ''}${x.reacted ? ', reacted' : ''}`,
       };
     }
     function drawTokens(f) {
@@ -662,6 +664,12 @@ export function register(app) {
       if (box.hidden === !waiting) return;
       box.hidden = !waiting;
       if (waiting) motion.progress(box, null, 'Sending to the GM');
+    }
+    /** The eyes the GM's map shows, named in its corner while they are one row's and not everything (map-view.ts `MapScene.eyes`). */
+    function drawSeenAs() {
+      const box = $('[data-seenas]'), e = scene.eyes, text = e ? `Seen as ${e.name}${e.down ? ', down: sees only its side' : ''}` : '';
+      box.hidden = !e;
+      if (box.textContent !== text) box.textContent = text;
     }
     /** The party's fog: a soft dark veil over what it does not see now, darker where it never saw; lighter on the GM's map. */
     function drawFog() {
@@ -795,7 +803,7 @@ export function register(app) {
       const tone = f.kind === 'aim' && scene.shades.length ? scene.shades[0].tone : '';
       if (world.dataset.tone !== tone) world.dataset.tone = tone;
       const gt = $('[data-grid]'); gt.setAttribute('aria-pressed', String(store.prefs().mapGrid));
-      drawTerrain(); drawZones(); drawFog(); drawArea(f); drawLines(); drawTokens(f); drawOrder(); drawNow(); drawConfirm(f); drawHotbar(); drawPaint(); drawSending(waiting);
+      drawTerrain(); drawZones(); drawFog(); drawArea(f); drawLines(); drawTokens(f); drawOrder(); drawNow(); drawConfirm(f); drawHotbar(); drawPaint(); drawSending(waiting); drawSeenAs();
       const dt = D().openIn(dtList);
       if (dt && !thingOf(dt)) D().move(dtList, { kind: 'drop', key: dt }, drawDetail); else drawDetail();
       // a turn that comes to a body out of sight frames the map again, so the one acting is on screen

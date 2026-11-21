@@ -408,6 +408,7 @@ export function register(app) {
       void app.api.uses.cast(h.id, me.channel.ability, me.id);
     },
     pass: () => pass(),
+    eyes: null,
     paint: null,
     move: (to, dash) => {
       const e = encounter(), h = meHunter(e); if (!e || e.ended !== false || !h || !canAct(e)) return;

@@ -8,8 +8,8 @@
 // tests/map-view.test.ts.
 import type { Rules } from '../rules.ts';
 import { ATTACK_ID, itemOfAbility } from '../registry/abilities.ts';
-import { dist, percent, place, reachable, straightPath, terrainOfChar, tiles, tilesOf, walkPath } from './space.ts';
-import type { Grid, Place, MoveReach, Shape, Terrain, Tiles } from './space.ts';
+import { dist, percent, place, reachable, seenBy, straightPath, terrainOfChar, tiles, tilesOf, walkPath } from './space.ts';
+import type { Grid, Place, MoveReach, Shape, Side, Terrain, Tiles } from './space.ts';
 import { cost, roundsOf, tick, walkCost } from './timeline.ts';
 import type { Tick } from './timeline.ts';
 import { costOf } from './charge.ts';
@@ -19,14 +19,14 @@ import type { Body, Op, OpRules } from './effect-ops.ts';
 import { band, tilesOfRuns, UNSEEN } from './fight-doc.ts';
 import type { Band, FightDoc, FightDocRow } from './fight-doc.ts';
 import { partyView } from './fight-turn.ts';
-import { holds } from './standing.ts';
+import { eyesOf, figureOf, perceivedBy, perceives, rangeOf } from './sight.ts';
 import { isUp } from './row-hp.ts';
 import { lifeWord } from './row-life.ts';
 import { anchorOf, zoneTiles, zoneTone } from './zones.ts';
 import type { ZoneId, ZoneTone } from './zones.ts';
 import { aims, cardOf, onMap, readyIn, spotOf } from './fight-view.ts';
 import type { Aiming, Spot } from './fight-view.ts';
-import type { Fight } from './fight-types.ts';
+import type { Fight, FightId } from './fight-types.ts';
 import { rowIcon } from './row-icon.ts';
 import type { HunterOf } from './row-icon.ts';
 import type { IconKey } from '../registry/icons.ts';
@@ -57,8 +57,11 @@ export type MapBody = Spot & {
   readonly aim: MapAimLine | null;
   /** A summon (kits design 1.9): the row that owns it and its rounds left (null: it stays); null for any other body. */
   readonly summon: { readonly owner: CombatantId; readonly left: number | null } | null;
-  /** Hidden by its own stealth (kits design 8.7): on the GM's map a foe so hidden is drawn dimmed, as one out of sight. */
-  readonly stealth: boolean;
+  /**
+   * No body of the other side perceives it (sight.ts `perceives`: out of every foe's sight, or hidden from it), so the GM's
+   * map seen as everything draws it dimmed. Always false on a player's, which holds only what the party perceives.
+   */
+  readonly unseen: boolean;
   /** The word for its life while it is not up (row-life.ts `lifeWord`: Dying, Stable, Dead, Defeated), else null. */
   readonly word: string | null;
   /** Its picture (row-icon.ts `rowIcon`; on a player's phone the doc's, which is the GM's answer), or null: its initials show. */
@@ -94,13 +97,47 @@ const ringOf = (exact: boolean, hp: number, hpMax: number): Ring => {
   return exact ? { share: hpMax > 0 ? Math.max(0, Math.min(1, hp / hpMax)) : 0, band: null } : { share: BAND_SHARE[b], band: b };
 };
 
+// ── whose eyes the GM's map shows ──
+
 /**
- * The GM's phone: every row of the fight. A party row's HP ring is exact, a foe's shows its band (as players see it).
- * `hunterOf` finds the sheet behind a hunter's row, for its emblem (row-icon.ts); absent, a hunter's token shows its initials.
+ * Whose eyes the GM's map shows (notes-7-stealth.md section 6): every body, each dimmed that the other side does not
+ * perceive (`everything`), or one foe row's, which leaves out what that row does not perceive (`row`). The GM picks it in
+ * the Fight tools' See as row and it stays there until the GM picks again (the owner's ruling 9).
  */
-export function fightBodies(f: Fight, R: OpRules & Pick<Rules, 'dice'>, mine: (b: Body) => boolean, hunterOf?: HunterOf): MapBody[] {
+export type ViewAs = { readonly kind: 'everything' } | { readonly kind: 'row'; readonly id: CombatantId };
+export const EVERYTHING: ViewAs = { kind: 'everything' };
+/** What a phone keeps of the choice (combat.js, `store.device('map-eyes', 'tab')`): the fight it was made in, and the choice. */
+export type KeptEyes = { readonly fight: FightId; readonly as: ViewAs };
+/** The rows whose eyes the GM may take: the foe rows, summons of the foe side included, in the fight's order. */
+export const eyesChoices = (f: Pick<Fight, 'rows'>): { id: CombatantId; name: string }[] =>
+  f.rows.filter(r => r.side === 'foe').map(r => ({ id: r.id, name: r.name }));
+/**
+ * The kept choice as it reads in fight `f`, parsed from the phone's memory: a row of `f`'s foes stays itself; anything
+ * else (nothing kept, another fight's choice, a row gone from the fight, a value this build cannot read) is everything.
+ */
+export function viewAsOf(kept: unknown, f: Pick<Fight, 'id' | 'rows'>): ViewAs {
+  if (!kept || typeof kept !== 'object') return EVERYTHING;
+  const k = kept as { fight?: unknown; as?: { kind?: unknown; id?: unknown } };
+  if (k.fight !== f.id || !k.as || k.as.kind !== 'row') return EVERYTHING;
+  const row = eyesChoices(f).find(c => c.id === k.as!.id);
+  return row ? { kind: 'row', id: row.id } : EVERYTHING;
+}
+/** The row whose eyes `as` takes in `f`, or null for everything. */
+const viewerOf = (f: Pick<Fight, 'rows'>, as: ViewAs): Body | null => (as.kind === 'row' ? f.rows.find(r => r.id === as.id) ?? null : null);
+const otherSide = (s: Side): Side => (s === 'party' ? 'foe' : 'party');
+
+/**
+ * The GM's phone: the rows of the fight that `as` shows (all under everything; under a row, those it perceives), each
+ * `unseen` under everything when the other side has a body up and none of its bodies perceives it (sight.ts
+ * `perceivedBy`). A party row's HP ring is exact, a foe's shows its band (as players see it). `hunterOf` finds the sheet
+ * behind a hunter's row, for its emblem (row-icon.ts); absent, a hunter's token shows its initials.
+ */
+export function fightBodies(f: Fight, R: OpRules & Pick<Rules, 'dice'>, mine: (b: Body) => boolean, as: ViewAs, hunterOf?: HunterOf): MapBody[] {
   const at = (aim: Place | CombatantId): Place | null => typeof aim === 'string' ? f.rows.find(r => r.id === aim)?.place ?? null : aim;
-  return f.rows.map(b => {
+  const viewer = viewerOf(f, as), range = rangeOf(f);
+  const shown = viewer ? f.rows.filter(b => perceives(eyesOf(viewer), figureOf(b), f.grid, range)) : f.rows;
+  const unseen = (b: Body): boolean => !viewer && f.rows.some(o => o.side !== b.side && isUp(o)) && !perceivedBy(otherSide(b.side), b, f);
+  return shown.map(b => {
     const k = cardOf(f, b, R), i = k.intent, to = i ? at(i.target) : k.threat?.suggest ? at(k.threat.suggest) : null;
     const a = i && b.abilities.find(x => x.id === (i.channel ? i.channel.ability : b.intent?.ability));
     const area = i && to && a && a.shape.kind === 'radius' ? (({ hit, ring }) => [...hit, ...ring])(tilesOf(a.shape, b.place, to, f.grid)) : null;
@@ -116,7 +153,7 @@ export function fightBodies(f: Fight, R: OpRules & Pick<Rules, 'dice'>, mine: (b
       },
       aim: to ? { kind: i ? 'intent' : 'suggest', to, area, revealed: i ? i.revealed : false, words: i && i.revealed ? { name: i.name, what: i.lines[0] ?? null } : null } : null,
       summon: b.kind === 'summon' ? { owner: b.owner, left: k.summon } : null,
-      stealth: holds(b, 'hidden'), word: lifeWord(b), icon: rowIcon(b, hunterOf ? hunterOf(b) : null),
+      unseen: unseen(b), word: lifeWord(b), icon: rowIcon(b, hunterOf ? hunterOf(b) : null),
     };
   });
 }
@@ -140,7 +177,7 @@ export function docBodies(rows: readonly FightDocRow[], mine: (r: FightDocRow) =
       channel: r.channel && { charge: r.channel.charge, max: r.channel.max, state: r.channel.state }, taunted: r.taunt !== null,
       reacted: spent.includes(r.id),
     };
-    const base = { id: r.id, side: r.side, kind: r.kind, place: from, down: !isUp(r), word: lifeWord(r), name: r.name, statuses: r.statuses.length > 0, mine: mine(r), extras, summon: r.kind === 'summon' ? { owner: r.owner, left: r.left } : null, stealth: false, icon: r.icon };
+    const base = { id: r.id, side: r.side, kind: r.kind, place: from, down: !isUp(r), word: lifeWord(r), name: r.name, statuses: r.statuses.length > 0, mine: mine(r), extras, summon: r.kind === 'summon' ? { owner: r.owner, left: r.left } : null, unseen: false, icon: r.icon };
     if (r.kind === 'monster') {
       const i = r.intent, to = i ? at(i.target) : r.suggest ? at(r.suggest) : null, v = i?.reveal ?? null;
       const shape: Shape | null = v && v.radius !== null ? { kind: 'radius', radius: tiles(v.radius), ring: v.outer === null ? null : { outer: tiles(v.outer), share: percent(50) } } : null;
@@ -178,7 +215,7 @@ export type MapToken = {
   /** `MapBody.word`: what its label says of its life while it is not up. */
   readonly word: string | null;
   readonly extras: Extras;
-  /** On the GM's map: a foe the party cannot see (out of sight, or hidden by its stealth), drawn dimmed. A player's map never holds one. */
+  /** On the GM's map seen as everything: a body no body of the other side perceives (`MapBody.unseen`), drawn dimmed. Never on a player's. */
   readonly hidden: boolean;
   /** A summon's owner's name and its rounds left (`MapBody.summon`); null for any other body. */
   readonly summon: { readonly owner: string; readonly left: number | null } | null;
@@ -307,17 +344,21 @@ export type MapZoneIn = {
  */
 export type DrawnZone = MapZoneIn & { readonly loops: readonly (readonly Corner[])[]; readonly at: Place; readonly grew: readonly (readonly Corner[])[] };
 /**
- * What the viewer knows of the party's view: the tiles the party sees now (`lit`), the tiles it has ever seen (`known`,
- * null on the GM's phone, which knows the whole map) and whether this is the GM's map (what the party cannot see is then
- * dimmed, not hidden).
+ * What the viewer knows of the eyes the map shows: the tiles they see now (`lit`: the party's, or on the GM's map seen as
+ * one row that row's own), the tiles the party has ever seen (`known`, null on the GM's phone, which knows the whole map)
+ * and whether this is the GM's map (what the eyes cannot see is then dimmed, not hidden).
  */
 export type MapSight = { readonly lit: ReadonlySet<number>; readonly known: ReadonlySet<number> | null; readonly gm: boolean };
 /** The fog the map draws: the outline of the tiles the party does not see now, and of those it never saw (dark). */
 export type MapFog = { readonly dim: readonly (readonly Corner[])[]; readonly dark: readonly (readonly Corner[])[]; readonly gm: boolean };
 
-/** The ground of the GM's fight: its zones and, with a fog, what the party sees (fight-turn.ts `partyView`). */
-export function fightGround(f: Fight, R: Pick<Rules, 'fight'>): { zones: MapZoneIn[]; sight: MapSight | null } {
-  const now = f.phase === 'setup' ? 0 : f.now, lit = partyView(f);
+/**
+ * The ground of the GM's fight: its zones and, with a fog, what the eyes `as` shows see: the party's (fight-turn.ts
+ * `partyView`) under everything, one row's own (space.ts `seenBy`, nothing while it is down) under a row.
+ */
+export function fightGround(f: Fight, R: Pick<Rules, 'fight'>, as: ViewAs): { zones: MapZoneIn[]; sight: MapSight | null } {
+  const now = f.phase === 'setup' ? 0 : f.now, viewer = viewerOf(f, as);
+  const lit = viewer ? f.fog && seenBy(viewer.side, [{ place: viewer.place, side: viewer.side, up: isUp(viewer) }], f.grid, f.fog.sight) : partyView(f);
   return {
     zones: f.zones.map(z => ({ id: z.id, name: z.name, tone: zoneTone(z.ops), tiles: zoneTiles(z, f.rows, f.grid, tick(now), R), anchor: anchorOf(z), left: z.until === null ? null : Math.max(0, roundsOf(z.until - now, R, 'up')), ops: z.ops, tier: z.tier })),
     sight: lit && { lit, known: null, gm: true },
@@ -355,6 +396,8 @@ export type MapScene = {
   readonly frame: Box;
   /** The body the view keeps in sight when the frame does not fit the screen: the one acting, else the viewer's own, else whose turn it is. */
   readonly anchor: Place | null;
+  /** The row whose eyes the GM's map shows (`MapInput.eyes`) and whether it is down (it then sees nothing of the other side); null for everything. */
+  readonly eyes: { readonly name: string; readonly down: boolean } | null;
 };
 /** A box of tiles, both ends inside. */
 export type Box = { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
@@ -365,6 +408,8 @@ export type Box = { readonly x0: number; readonly y0: number; readonly x1: numbe
 export type MapInput = {
   readonly bodies: readonly MapBody[]; readonly grid: Grid; readonly currentId: CombatantId | null; readonly actor: CombatantId | null;
   readonly zones?: readonly MapZoneIn[]; readonly sight?: MapSight | null;
+  /** The row whose eyes the scene shows, named on the map so the GM knows it is not everything; null for everything and on a player's phone. */
+  readonly eyes?: { readonly id: CombatantId; readonly name: string } | null;
   /** The zones the map drew before, so a field that grew in place shows its new edge (`DrawnZone.grew`). */
   readonly before?: readonly MapZoneIn[];
   /** A move this phone sent that the GM's phone has not answered: the way it asked for stays drawn until the answer. */
@@ -506,7 +551,7 @@ export function mapScene(input: MapInput, sel: Selection, R: MapRules): MapScene
   const { bodies, grid } = input, shown = bodies.filter(onMap);
   const terrain: MapTerrain[] = [];
   if (grid.tiles) grid.tiles.forEach((t, i) => { if (t !== 'floor') terrain.push({ place: place(i % grid.w, Math.floor(i / grid.w)), terrain: t }); });
-  const sight = input.sight ?? null, idx = (p: Place): number => p.y * grid.w + p.x;
+  const sight = input.sight ?? null;
   const user = shown.find(b => b.id === input.actor && !b.down) ?? null;
   const focus: MapFocus = user ? focusOf(user, shown, grid, sel, R) : { kind: 'none' };
   const aimedAt = focus.kind === 'aim' && focus.aim ? focus.aim.target : null;
@@ -515,7 +560,7 @@ export function mapScene(input: MapInput, sel: Selection, R: MapRules): MapScene
     id: b.id, place: b.place, side: b.side, kind: b.kind, name: b.name, label: labelOf(b.name), icon: b.icon, letter: b.icon && b.kind === 'monster' ? packLetter(b.name) : null,
     plate: plates.get(b.id) ?? null, ring: b.ring, bars: b.bars,
     current: b.id === input.currentId, down: b.down, word: b.word, statuses: b.statuses, mine: b.mine, extras: b.extras,
-    hidden: (b.side === 'foe' && b.stealth) || (!!sight && b.side === 'foe' && !sight.lit.has(idx(b.place))),
+    hidden: b.unseen,
     summon: b.summon && { owner: bodies.find(x => x.id === b.summon!.owner)?.name ?? '', left: b.summon.left },
   }));
   // a token covers its tile, and its name the tile its plate's strip is on
@@ -544,7 +589,8 @@ export function mapScene(input: MapInput, sel: Selection, R: MapRules): MapScene
   const frame = frameOf(grid, tokens.map(t => t.place), [...terrain.map(t => t.place), ...zones.flatMap(z => z.tiles)]);
   const anchor = (user ?? shown.find(b => b.mine) ?? shown.find(b => b.id === input.currentId) ?? null)?.place ?? null;
   const walls = outline(terrain.filter(t => t.terrain === 'wall').map(t => t.place));
-  return { w: grid.w, h: grid.h, terrain, walls, tokens, actor: user ? user.id : null, focus, shades: focus.kind === 'none' && input.sent && input.sent.way.length ? [{ kind: 'way', tone: 'move', loops: outline(input.sent.way) }] : shadesOf(focus), lines, zones, fog, frame, anchor };
+  const eyes = input.eyes ? { name: input.eyes.name, down: bodies.find(b => b.id === input.eyes!.id)?.down ?? false } : null;
+  return { w: grid.w, h: grid.h, terrain, walls, tokens, actor: user ? user.id : null, focus, shades: focus.kind === 'none' && input.sent && input.sent.way.length ? [{ kind: 'way', tone: 'move', loops: outline(input.sent.way) }] : shadesOf(focus), lines, zones, fog, frame, anchor, eyes };
 }
 
 function focusOf(user: MapBody, shown: readonly MapBody[], grid: Grid, sel: Selection, R: MapRules): MapFocus {

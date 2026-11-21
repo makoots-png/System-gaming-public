@@ -13,20 +13,20 @@ import { abilityId, combatantId, hunterId } from '../src/core/combat/ability-typ
 import type { Ability, AbilityKind, CombatantId } from '../src/core/combat/ability-types.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { ATTACK_ID, itemAbilityId } from '../src/core/registry/abilities.ts';
-import { modified } from '../src/core/combat/effect-ops.ts';
-import type { Body, CombatantKind, Origin } from '../src/core/combat/effect-ops.ts';
+import { modified, statusKey } from '../src/core/combat/effect-ops.ts';
+import type { Body, CombatantKind, Origin, Status } from '../src/core/combat/effect-ops.ts';
 import { fightId, reduce } from '../src/core/combat/fight.ts';
 import type { Fight, NewRow } from '../src/core/combat/fight.ts';
 import type { FightDocRow } from '../src/core/combat/fight-doc.ts';
 import { aims } from '../src/core/combat/fight-view.ts';
-import { NO_CHOICE, PINS, choose, docBodies, docGround, fightBodies, frameOf, hotbar, labelOf, mapScene, outline, packLetter, shortOf, tapOn, turnWords } from '../src/core/combat/map-view.ts';
+import { EVERYTHING, NO_CHOICE, PINS, choose, docBodies, docGround, eyesChoices, fightBodies, fightGround, frameOf, hotbar, labelOf, mapScene, outline, packLetter, shortOf, tapOn, turnWords, viewAsOf } from '../src/core/combat/map-view.ts';
 import { fightDoc, fightWire } from '../src/core/combat/fight-doc.ts';
 import type { FightDoc } from '../src/core/combat/fight-doc.ts';
 import { DOCS } from '../src/core/protocol.ts';
 import type { DeviceId } from '../src/core/ids.ts';
 import type { IconKey } from '../src/core/registry/icons.ts';
 import { iid } from './fixtures/ids.ts';
-import type { Choice, ChoiceEvent, ChoiceFx, HotbarKit, MapBody, MapScene, Selection } from '../src/core/combat/map-view.ts';
+import type { Choice, ChoiceEvent, ChoiceFx, HotbarKit, MapBody, MapScene, Selection, ViewAs } from '../src/core/combat/map-view.ts';
 import { rng } from './models/fight-play.ts';
 import { lifeAt } from './fixtures/life.ts';
 
@@ -57,7 +57,7 @@ function body(name: string, side: Side, x: number, y: number, o: { stride?: numb
   return {
     id: id(name), side, kind: o.kind ?? (side === 'party' ? 'hunter' : 'monster'), place: place(x, y), down: o.down ?? false, name,
     ring: { share: 1, band: null }, statuses: false, mine: o.mine ?? false, stride: tiles(o.stride ?? 0), dash: tiles(o.dash ?? 0), bars: null,
-    extras: { shield: null, stagger: null, channel: null, taunted: false, reacted: false }, aim: null, summon: null, stealth: false, word: null, icon: null,
+    extras: { shield: null, stagger: null, channel: null, taunted: false, reacted: false }, aim: null, summon: null, unseen: false, word: null, icon: null,
   };
 }
 const scene = (d: Drawn, sel: Selection = { kind: 'none' }, actor: string | null = '@'): MapScene =>
@@ -369,7 +369,7 @@ describe('tokens', () => {
       holder: side === 'party' ? { kind: 'local', hunterId: hunterId(name) } : null, xp: 0,
     } as NewRow);
     const f = reduce(null, { type: 'add', fightId: fightId('f'), rows: [row('A', 'party', hpMax / 2), row('M', 'foe', hpMax / 2)], openings: [] }, { rules: RULES }).fight as Fight;
-    const [a, m] = fightBodies(f, RULES, b => b.id === 'A');
+    const [a, m] = fightBodies(f, RULES, b => b.id === 'A', EVERYTHING);
     expect([a!.ring, a!.mine, a!.stride, a!.dash]).toEqual([{ share: 0.5, band: null }, true, Math.ceil(RULES.fight.moveBase * RULES.fight.strideShare), RULES.fight.moveBase]);
     expect(m!.ring.band).toBe('bloodied');
   });
@@ -396,7 +396,7 @@ describe('tokens', () => {
     ];
 
     test('the GM\'s map draws a hunter\'s emblem, a monster\'s type\'s picture with its pack letter and a pick; a hunter with no emblem keeps its initials', () => {
-      expect(drawn(fightBodies(f, RULES, () => false, hunterOf))).toEqual(PICTURE);
+      expect(drawn(fightBodies(f, RULES, () => false, EVERYTHING, hunterOf))).toEqual(PICTURE);
     });
     test('a player\'s map, from the doc on the wire, draws every token with the GM\'s picture', () => {
       const doc = fightDoc(f, RULES, { by: 'd-gm' as DeviceId, at: 'now', was: null, keyOf: () => null, hunterOf });
@@ -459,16 +459,70 @@ describe('the hotbar', () => {
   });
 });
 
-describe('a summon and a hidden foe on the map', () => {
-  test('a summon\'s token names its owner and its rounds left; a foe hidden by its stealth is drawn dimmed on the GM\'s map', () => {
+describe('a summon and an unseen body on the map', () => {
+  test('a summon\'s token names its owner and its rounds left; a body the other side does not perceive is drawn dimmed', () => {
     const { grid, bodies } = draw(['A.b', '...']);
     const sprite: MapBody = { ...body('Sprite', 'party', 1, 1, { kind: 'summon' }), summon: { owner: id('A'), left: 1.5 } };
-    const sly: MapBody = { ...body('Sly', 'foe', 2, 1), stealth: true };
+    const sly: MapBody = { ...body('Sly', 'foe', 2, 1), unseen: true };
     const scene = mapScene({ bodies: [...bodies, sprite, sly], grid, currentId: null, actor: null }, { kind: 'none' }, RULES);
     expect(scene.tokens.find(t => t.name === 'Sprite')!.summon).toEqual({ owner: 'A', left: 1.5 });
     expect(scene.tokens.find(t => t.name === 'A')!.summon).toBeNull();
     expect(scene.tokens.find(t => t.name === 'Sly')!.hidden).toBe(true);
     expect(scene.tokens.find(t => t.name === 'b')!.hidden).toBe(false);
+  });
+});
+
+describe('seen through one foe\'s eyes (notes-7-stealth.md section 6)', () => {
+  // One row of ten tiles, a wall at 2, a fog whose eyes look 3 tiles. Kai at 0, Mira at 4, Sly at 7 hiding at stealth
+  // level 2, the Goblin at 5 and a Rat at 9, each with sight 0 (the rules' `sightBase`). The party sees every tile: Kai 0 to 2 (the wall stops
+  // the line to 3), Mira 2 to 7, Sly 4 to 9. The Goblin's own eyes reach 2 to 8. It perceives Mira, 1 tile off; not Kai, 5
+  // off; not Sly, 2 off but hidden at a level above its sight (sight.ts `perceives`, the owner's ruling 1).
+  const origin: Origin = { kind: 'hunter', build: { stats: baseStats(RULES.fight), level: 1, gear: kitGear('light', RULES), perks: {} } };
+  const veil: Status = { key: statusKey('veil'), def: { label: 'Veiled', desc: '', ops: [{ op: 'hidden', level: 2, start: 'anywhere', ends: { hurt: true, revealed: true, dealt: true } }] }, source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0) };
+  const row = (name: string, side: Side, x: number, o: { statuses?: Status[]; hp?: number } = {}): NewRow => ({
+    id: id(name), name, side, ...lifeAt(side === 'party' ? 'hunter' : 'monster', o.hp ?? 20), origin, tier: 0, place: place(x, 0), mana: 0, fatigue: 0, shield: null, stagger: null,
+    channel: null, threat: side === 'foe' ? {} : null, statuses: o.statuses ?? [], readyAt: {}, abilities: [STRIKE], intent: null,
+    holder: side === 'party' ? { kind: 'local', hunterId: hunterId(name) } : null, xp: 0,
+  } as NewRow);
+  const grid: Grid = { w: 10, h: 1, tiles: [...'..#.......'].map(c => (c === '#' ? 'wall' : 'floor')) };
+  const room = (goblinHp = 20): Fight => reduce(null, {
+    type: 'add', fightId: fightId('f-eyes'), openings: [], grid, fog: { sight: tiles(3), seen: '0'.repeat(10) },
+    rows: [row('Kai', 'party', 0), row('Mira', 'party', 4), row('Sly', 'party', 7, { statuses: [veil] }), row('Goblin', 'foe', 5, { hp: goblinHp }), row('Rat', 'foe', 9)],
+  }, { rules: RULES }).fight as Fight;
+  const GOBLIN: ViewAs = { kind: 'row', id: id('Goblin') };
+  const sceneAs = (f: Fight, as: ViewAs) => mapScene({
+    bodies: fightBodies(f, RULES, () => false, as), grid: f.grid, currentId: null, actor: null,
+    eyes: as.kind === 'row' ? eyesChoices(f).find(c => c.id === as.id) ?? null : null, ...fightGround(f, RULES, as),
+  }, { kind: 'none' }, RULES);
+  const at = (...xs: number[]) => xs.map(x => place(x, 0));
+
+  test('as the Goblin sees it, the hidden hunter it cannot see is no token, nor the hunter out of its sight; the fog is its own', () => {
+    const s = sceneAs(room(), GOBLIN);
+    expect(s.tokens.map(t => [t.id, t.hidden])).toEqual([['Mira', false], ['Goblin', false], ['Rat', false]]);
+    expect(s.fog).toEqual({ dim: outline(at(0, 1, 9)), dark: [], gm: true });
+    expect(s.eyes).toEqual({ name: 'Goblin', down: false });
+  });
+
+  test('under everything the hidden hunter is there, dimmed, as is the hunter no foe has in sight; the fog is the party\'s', () => {
+    const s = sceneAs(room(), EVERYTHING);
+    expect(s.tokens.map(t => [t.id, t.hidden])).toEqual([['Kai', true], ['Mira', false], ['Sly', true], ['Goblin', false], ['Rat', false]]);
+    expect(s.fog).toEqual({ dim: [], dark: [], gm: true });
+    expect(s.eyes).toBeNull();
+  });
+
+  test('as a Goblin that is down, the map shows only its own side (it has left the map itself), every tile dimmed, and says it is down', () => {
+    const s = sceneAs(room(0), GOBLIN);
+    expect(s.tokens.map(t => t.id)).toEqual(['Rat']);
+    expect(s.fog).toEqual({ dim: outline(at(0, 1, 2, 3, 4, 5, 6, 7, 8, 9)), dark: [], gm: true });
+    expect(s.eyes).toEqual({ name: 'Goblin', down: true });
+  });
+
+  test('the choice kept on the phone reads as that foe only in its own fight while the row is in it; anything else is everything', () => {
+    const f = room(), kept = (fight: string, as: unknown) => viewAsOf({ fight, as }, f);
+    expect(eyesChoices(f)).toEqual([{ id: id('Goblin'), name: 'Goblin' }, { id: id('Rat'), name: 'Rat' }]);
+    expect(kept('f-eyes', GOBLIN)).toEqual(GOBLIN);
+    expect([kept('f-other', GOBLIN), kept('f-eyes', { kind: 'row', id: 'Gone' }), kept('f-eyes', { kind: 'row', id: 'Mira' }), kept('f-eyes', EVERYTHING), viewAsOf(null, f), viewAsOf('Goblin', f)])
+      .toEqual([EVERYTHING, EVERYTHING, EVERYTHING, EVERYTHING, EVERYTHING, EVERYTHING]);
   });
 });
 
@@ -566,14 +620,13 @@ describe('the ground on the map: zones and the fog', () => {
     expect(tapOn(s, place(3, 0))).toEqual({ kind: 'moveTo', to: place(3, 0) });
   });
 
-  test('the fog dims what the party does not see now and darkens what it never saw; on the GM\'s map a foe out of sight is dimmed', () => {
+  test('the fog dims what the party does not see now and darkens what it never saw, and lighter on the GM\'s map', () => {
     const d = draw(['@..a']);
     const sight = { lit: new Set([0, 1]), known: new Set([0, 1, 2]), gm: false };
     const s = mapScene({ bodies: d.bodies, grid: d.grid, currentId: null, actor: null, sight }, { kind: 'none' }, RULES);
     expect(s.fog).toEqual({ dim: outline([place(2, 0)]), dark: outline([place(3, 0)]), gm: false });
     const gm = mapScene({ bodies: d.bodies, grid: d.grid, currentId: null, actor: null, sight: { lit: new Set([0, 1]), known: null, gm: true } }, { kind: 'none' }, RULES);
     expect(gm.fog).toEqual({ dim: outline([place(2, 0), place(3, 0)]), dark: [], gm: true });
-    expect(gm.tokens.map(t => [t.id, t.hidden])).toEqual([['@', false], ['a', true]]);
   });
 
   test('a player\'s map reads the doc: walls it saw, an unseen tile as floor, zones from their runs, and what is lit', () => {

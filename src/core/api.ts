@@ -31,7 +31,7 @@ import type { WorldWhy } from './gates/world.ts';
 import type { FightId, NewRow, RowLifeEvent, Running, Setup } from './combat/fight-types.ts';
 import type { OddsRead, OddsVoice } from './combat/odds.ts';
 import type { ExtractionOutcome } from './combat/extraction.ts';
-import type { MapInput } from './combat/map-view.ts';
+import type { MapInput, ViewAs } from './combat/map-view.ts';
 import type { Ability, AbilityId, AbilityKind, CombatantId } from './combat/ability-types.ts';
 import type { Place } from './combat/space.ts';
 import type { Tick } from './combat/timeline.ts';
@@ -740,6 +740,11 @@ export type MapSource = {
   card(id: CombatantId): void;
   /** The actor's row arms one of its reactions, or disarms with null (kits design 8.4.2): at any time, not only its turn. */
   arm(ability: AbilityId | null): void;
+  /**
+   * Whose eyes the map shows (map-view.ts `ViewAs`; kits design 8.7, feature 7): the foe rows the GM may take, the choice
+   * as it reads for the fight now, and the GM's pick, kept on this phone until the GM picks again. Null on a player's phone.
+   */
+  eyes: { choices(): { id: CombatantId; name: string }[]; now(): ViewAs; set(v: ViewAs): void } | null;
 };
 /**
  * A map drawn in an element: `draw` after each change, `fit` to frame the whole fight, `destroy` when the screen takes the

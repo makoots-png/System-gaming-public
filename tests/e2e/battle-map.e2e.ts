@@ -505,6 +505,40 @@ test('on a wide screen Add to the fight opened by hand in one fight folds away a
   });
 });
 
+test('the GM taps See as a goblin and the hidden hunter it cannot see leaves the map; Everything brings it back dimmed', async ({ device }) => {
+  const page = (await device('gm')).page;
+  await onboardGM(page);
+  await chooseList(page);
+  await startGoblinDenFight(page);
+  const { brakk, goblin } = await page.evaluate(() => {
+    let out = { brakk: '', goblin: '' };
+    hunterApp.store.update((d: any) => {
+      const f = d.fight, b = f.rows.find((r: any) => r.name === 'Brakk Ironhide'), g = f.rows.find((r: any) => r.side === 'foe');
+      const veil = { label: 'Veiled', desc: '', ops: [{ op: 'hidden', level: 2, start: 'anywhere', ends: { hurt: true, revealed: true, dealt: true } }] };
+      b.statuses = [...b.statuses, { key: 'veil', def: veil, source: { id: null, tier: 0 }, until: null, since: f.now, settledAt: f.now }];
+      out = { brakk: b.id, goblin: g.name };
+    }, 'test-setup');
+    return out;
+  });
+  await combat(page).locator('[data-fview="map"]').tap();
+  await expect(token(page, brakk)).toHaveClass(/\bhidden\b/);
+  await combat(page).locator('[data-tools-open]').tap();
+  const seeAs = combat(page).getByRole('dialog', { name: 'Fight tools' }).getByRole('group', { name: 'See as' });
+  await expect(seeAs.getByRole('button', { name: 'Everything' })).toHaveAttribute('aria-pressed', 'true');
+  await test.step(`seen as ${goblin}`, async () => {
+    await seeAs.getByRole('button', { name: goblin, exact: true }).tap();
+    await expect(seeAs.getByRole('button', { name: goblin, exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(token(page, brakk)).toHaveCount(0);
+    await expect(map(page).locator('[data-seenas]')).toHaveText(`Seen as ${goblin}`);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth), 'the See as row fits a 390 px phone').toBeLessThanOrEqual(390);
+  });
+  await test.step('seen as everything', async () => {
+    await seeAs.getByRole('button', { name: 'Everything' }).tap();
+    await expect(token(page, brakk)).toHaveClass(/\bhidden\b/);
+    await expect(map(page).locator('[data-seenas]')).toBeHidden();
+  });
+});
+
 type TraceEvent ={ name: string; ph: string; ts: number; dur?: number; pid: number; tid: number; args?: { name?: string; data?: { type?: string }; beginData?: { stackTrace?: { functionName: string; url: string; lineNumber: number; columnNumber: number }[] } } };
 test('the GM\'s tap on a hotbar slot of a settled, framed map draws its reach with no layout of the page inside the tap', async ({ device }) => {
   // A layout read inside the tap lays the page out there, and the frame lays it out again after the redraw's writes: the

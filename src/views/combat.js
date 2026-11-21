@@ -16,7 +16,7 @@ import { remoteFacts } from '../core/combat/fight-facts.ts';
 import { attemptsLeft, UNTRIED } from '../core/combat/extraction.ts';
 import { castDice, needs } from '../core/combat/resolve.ts';
 import { WAIT_WORDS, aims, cardOf, channelView, order, readyIn, spotOf, statusGrant, stepAway, stepToward, timeOf, usesLeft, waitChoices } from '../core/combat/fight-view.ts';
-import { fightBodies, fightGround, pinKeyOf } from '../core/combat/map-view.ts';
+import { EVERYTHING, eyesChoices, fightBodies, fightGround, pinKeyOf, viewAsOf } from '../core/combat/map-view.ts';
 import { SCREEN, buildDrawer, mapSlot } from '../core/combat/map-mount.ts';
 import { hunterRow, monsterRows, remoteRow, shadowRow } from '../core/combat/rows.ts';
 import { TABLE_REFUSALS, fightDoc, fightWire } from '../core/combat/fight-doc.ts';
@@ -703,6 +703,7 @@ export function register(app) {
 .cmb-toolshead b{font-family:var(--font-display);letter-spacing:.14em;text-transform:uppercase;color:var(--cyan);margin-right:auto}
 .cmb-size{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center}.cmb-step{display:flex;flex-wrap:nowrap;gap:6px;align-items:center}.cmb-size b{font-family:inherit;letter-spacing:0;color:inherit;margin:0;min-width:2.2em;text-align:center}
 .cmb-size .icon-btn{min-width:var(--control-h);min-height:var(--control-h)}
+.cmb-eyes{display:flex;flex-direction:column;gap:4px}.cmb-eyes .seg>button{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .win.cmb-mapmode .cmb-log{max-height:none}
 @media (min-width:900px){.win.cmb-mapmode .cmb-tools.open{left:auto;top:0;bottom:0;width:min(520px,100vw);max-height:none;border-top:none;border-left:1px solid var(--line-bright)}}
 .cmb-sheetx{display:none}
@@ -765,14 +766,27 @@ export function register(app) {
   const FIGHT_VIEWS = /** @type {const} */ (['map', 'list']);
   const fightView = () => store.prefs().fightView;
   /**
-   * The map's source (src/core/api.ts `MapSource`): this phone's fight, its current row's kit, and the commands `send` takes.
+   * Whose eyes the GM's map shows (map-view.ts `ViewAs`), kept in this tab with the fight's id: read back through
+   * `viewAsOf`, so another fight, or a row gone from this one, reads as everything.
+   */
+  const eyesMemory = store.device('map-eyes', 'tab');
+  const viewAs = f => viewAsOf(eyesMemory.read(), f);
+  /**
+   * The map's source (src/core/api.ts `MapSource`): this phone's fight seen through the eyes the GM picked, its current
+   * row's kit, and the commands `send` takes.
    * @type {import('../core/api.ts').MapSource}
    */
   const mapSource = {
     input: () => {
       const f = fight(); if (!f || f.phase === 'ended') return null;
-      const R = rules(), c = cur(), actor = c && !isRemote(c) && !cardOf(f, c, R).down ? c.id : null;
-      return { fight: f.id, bodies: fightBodies(f, R, () => false, holderHunter), grid: f.grid, currentId: running(f) ? f.currentId : null, actor, ...fightGround(f, R) };
+      const R = rules(), c = cur(), actor = c && !isRemote(c) && !cardOf(f, c, R).down ? c.id : null, as = viewAs(f);
+      const eyes = as.kind === 'row' ? eyesChoices(f).find(x => x.id === as.id) || null : null;
+      return { fight: f.id, bodies: fightBodies(f, R, () => false, as, holderHunter), grid: f.grid, currentId: running(f) ? f.currentId : null, actor, eyes, ...fightGround(f, R, as) };
+    },
+    eyes: {
+      choices: () => { const f = fight(); return f ? eyesChoices(f) : []; },
+      now: () => { const f = fight(); return f ? viewAs(f) : EVERYTHING; },
+      set: v => { const f = fight(); if (f) { eyesMemory.write(/** @type {import('../core/combat/map-view.ts').KeptEyes} */ ({ fight: f.id, as: v })); render(); } },
     },
     order: () => { const f = fight(); return running(f) ? order(f, 6, rules()).map(t => ({ id: t.row.id, name: t.row.name })) : []; },
     kit: () => {
@@ -998,6 +1012,7 @@ export function register(app) {
       <p class="hp-amt-msg" data-amtlive role="status" aria-live="polite"></p>
       <div data-main></div>
       <div class="cmb-tools" data-tools aria-label="Fight tools"><div class="cmb-toolshead"><b>Fight tools</b><span class="slot" data-toolacts></span><button type="button" class="quiet" data-toolsx>Close</button></div>
+      <div class="cmb-eyes" data-eyesrow hidden><span class="lbl" aria-hidden="true">See as</span><div class="seg" role="group" aria-label="See as" data-eyesseg></div></div>
       <div data-buildwrap><details class="cmb-build" data-build open><summary>Add to the fight</summary><div class="cmb-bgrid">
         <fieldset><legend>Party hunters</legend><div class="add-row flush">
           <label class="field grow"><span class="lbl">Hunter</span><select data-hsel></select></label>
@@ -1065,6 +1080,10 @@ export function register(app) {
       }
       if (b.matches('[data-addh],[data-addparty],[data-addm],[data-adds]') && otherGMLive() && !(await confirmReplace())) return;
       if (b.hasAttribute('data-start')) return start();
+      if (b.dataset.eyes !== undefined) {
+        const id = oneOf(b.dataset.eyes, mapSource.eyes.choices().map(c => c.id), null);
+        mapSource.eyes.set(id ? { kind: 'row', id } : EVERYTHING); return;
+      }
       if (b.dataset.surp !== undefined) { surprised = b.dataset.surp === 'party' || b.dataset.surp === 'foe' ? b.dataset.surp : null; return render(); }
       if (b.dataset.garm !== undefined && r) { armRow(r, b.dataset.garm ? /** @type {any} */ (b.dataset.garm) : null); return; }
       if (b.hasAttribute('data-next')) return next();
@@ -1170,6 +1189,15 @@ export function register(app) {
     + `<button type="button" class="icon-btn" data-resize="${k}" data-d="-1" aria-label="Fewer ${k === 'w' ? 'columns' : 'rows'}">−</button><b data-mapsize="${k}">${f.grid[k]}</b>`
     + `<button type="button" class="icon-btn" data-resize="${k}" data-d="1" aria-label="More ${k === 'w' ? 'columns' : 'rows'}">+</button></span>`).join('')}</span>`;
 
+  /**
+   * The Fight tools' See as row (notes-7-stealth.md section 6): Everything, then each foe row whose eyes the map may show,
+   * the one the map shows pressed (`mapSource.eyes`).
+   */
+  function eyesRow() {
+    const e = mapSource.eyes, now = e.now(), on = id => (now.kind === 'row' ? now.id === id : id === '');
+    return [{ id: '', name: 'Everything' }, ...e.choices()].map(c => `<button type="button" data-fk="eyes-${esc(c.id)}" data-eyes="${esc(c.id)}" aria-pressed="${on(c.id)}">${esc(c.name)}</button>`).join('');
+  }
+
   /** The bar: what the fight is doing and the order ahead (`head`), then the GM's buttons for its state (`acts`). */
   function barDesc(f, gm, elsewhere, mapMode, tools) {
     const n = f ? f.rows.length : 0, act = running(f), turn = act ? order(f, 8, rules()) : [];
@@ -1247,6 +1275,8 @@ export function register(app) {
     const bd = barDesc(f, gm, elsewhere, mapMode, tools);
     bind($q('[data-bar]'), { head: bd.head, acts: bd.acts });
     const ta = $q('[data-toolacts]'); if (ta.innerHTML !== bd.tools) ta.innerHTML = bd.tools;
+    const er = $q('[data-eyesrow]'), eh = mapMode ? eyesRow() : '', es = $q('[data-eyesseg]');
+    er.hidden = !mapMode; if (es.dataset.sig !== eh) { es.dataset.sig = eh; es.innerHTML = eh; }
     $q('.win').classList.toggle('cmb-mapmode', mapMode);
     const tl = $q('[data-tools]'); tl.classList.toggle('open', tools); ui.sheet('fightTools', tools, shutOver);
     if (tools !== tl.hasAttribute('role')) { if (tools) tl.setAttribute('role', 'dialog'); else tl.removeAttribute('role'); }

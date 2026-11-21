@@ -10,6 +10,9 @@ draft. Nothing here is balanced and nothing is in the game yet.
 - Check: `bun docs/agent-handoff/features/enemies/check.ts`. It makes each row a monster the way `seedMonsters` does, reads it
   with `parseMonster`, and fails on a row the parser changes or refuses, a spec field the kind does not have,
   and a key or name held twice (the shipped seeds included).
+- Sweep: `flock /tmp/box.lock bun docs/agent-handoff/features/enemies/measure.ts` (about 5 minutes for all 366 rows; `--rank=C`,
+  `--kind=boss`, `--key=slug`, `--runs=N`, `--quiet` narrow it). One line a row: worth, single hit and fight against the plan's
+  bounds, then OK, EXC or OUT; exits 1 on an OUT. A row is EXC when a bullet "- `key`: reason" is under a heading "Exceptions..." here.
 
 ## Counts
 
