@@ -145,6 +145,15 @@ describe('add: rows join the fight', () => {
     const late = reduce(r.fight, join([row('B', 'party')], openings(['B', 10])), ctx);
     expect(body(late.fight, 'B').at).toBe(tick(500));
   });
+
+  test('a row that joins a running fight keeps its worn shield 2 rounds from the fight\'s now, as its statuses start from now', () => {
+    const r = play(...duel(), pass('A'));
+    expect(running(r).now, 'M\'s turn, half a round in').toBe(tick(500));
+    // rows.ts gives a worn shield `shieldLife` (2) rounds from its joining, tick 0
+    const shielded = row('B', 'party', { shield: { amount: 30, until: tick(RULES.fight.shieldLife * RULES.fight.round) } });
+    const after = play(...duel(), pass('A'), join([shielded], openings(['B', 20])));
+    expect(body(after.fight, 'B').shield).toEqual({ amount: 30, until: tick(500 + 2 * 1000) });
+  });
 });
 
 describe('start: the openings decide the first turns (1.2)', () => {

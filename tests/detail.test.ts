@@ -7,6 +7,7 @@ import { SKILL_ABILITIES } from '../src/core/registry/abilities.ts';
 import { BUILT_IN_STATUSES } from '../src/core/registry/statuses.ts';
 import { describeItem } from '../src/core/effects.ts';
 import { newHunter } from '../src/core/save.ts';
+import { hunterSheet } from '../src/core/hunter/sheet.ts';
 import { RULES } from '../src/core/rules.ts';
 import { readOdds } from '../src/core/combat/odds.ts';
 
@@ -47,6 +48,13 @@ describe('detailOf', () => {
   test('an item says its description and what its effects do at its rarity', () => {
     const item = { name: 'Ember Flask', rar: 'uncommon', desc: 'Throw it.', effects: BURNING.ops };
     expect(detailOf({ kind: 'item', item }, RULES)).toEqual({ title: 'Ember Flask', about: 'Throw it.', lines: describeItem(RULES, item, BURNING.ops) });
+  });
+
+  test('an item in a hunter\'s bag reads its amounts on that hunter: a shield of 10 + 20% of max HP says what it comes to now', () => {
+    const h = newHunter(RULES), ops = [{ op: 'shield', amount: { kind: 'binary', op: '+', left: { kind: 'number', value: 10 }, right: { kind: 'binary', op: '*', left: { kind: 'number', value: 0.2 }, right: { kind: 'sheet', whose: 'user', key: 'hpMax' } } } }] as const;
+    const item = { name: 'Bulwark', rar: 'rare', effects: ops }, now = Math.round(10 + 0.2 * hunterSheet(h, RULES).sheet.hpMax);
+    expect(detailOf({ kind: 'item', item, hunter: h }, RULES).lines).toEqual([`Shield: 10 + 20% of max HP (now ${now})`]);
+    expect(detailOf({ kind: 'item', item }, RULES).lines).toEqual(['Shield: 10 + 20% of max HP']);
   });
 
   test('a zone says what its tone does, its rounds left, and its ops where the phone knows them', () => {

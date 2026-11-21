@@ -23,7 +23,7 @@
 // Core rolls nothing: `rollOf` reads a term from faces the edge rolled (src/edge/roll.ts `rollTerm`) and says how many
 // more it needs; `evaluate` reads one total per term, as it always has, and `rolled` lays the faces beside the total.
 
-import { STAT_KEYS } from './stats.ts';
+import { STAT_KEYS, STAT_LABELS } from './stats.ts';
 import type { StatKey, Stats } from './stats.ts';
 import { SHEET_LABELS } from './hunter/derive.ts';
 import type { Sheet, SheetNumber } from './hunter/derive.ts';
@@ -747,4 +747,86 @@ export function printFormula(f: Formula): string {
     }
     default: return f satisfies never;
   }
+}
+
+/** One part of an amount a player reads in words: a number, or a multiple of one of the user's stats or sheet numbers. */
+type AmountPart =
+  | { readonly kind: 'number'; readonly value: number }
+  | { readonly kind: 'stat'; readonly times: number; readonly key: StatKey }
+  | { readonly kind: 'sheet'; readonly times: number; readonly key: SheetNumber };
+
+/** A number written in the formula (`0.3`, `-0.3`), or null. */
+const constOf = (f: Formula): number | null => (f.kind === 'number' ? f.value : f.kind === 'negate' && f.arg.kind === 'number' ? -f.arg.value : null);
+/** One of the user's stats or sheet numbers `times` over, or null. */
+function userName(f: Formula, times: number): AmountPart | null {
+  if (f.kind === 'stat' && f.whose === 'user') return { kind: 'stat', times, key: f.key };
+  if (f.kind === 'sheet' && f.whose === 'user') return { kind: 'sheet', times, key: f.key };
+  return null;
+}
+/** A number times one of the user's names, in either order (`0.3 * str`, `str * 0.3`), or the name alone (`str`). Null for anything else. */
+function namedPart(f: Formula): AmountPart | null {
+  if (f.kind !== 'binary' || f.op !== '*') return userName(f, 1);
+  const left = constOf(f.left), right = constOf(f.right);
+  if (left !== null) return userName(f.right, left);
+  if (right !== null) return userName(f.left, right);
+  return null;
+}
+/** A sum of numbers and named parts, each with its sign (`10 - 0.2 * hpmax` is 10 and −0.2 of max HP). Null for anything else. */
+function sumParts(f: Formula): AmountPart[] | null {
+  if (f.kind === 'number') return [f];
+  if (f.kind === 'negate') { const inner = sumParts(f.arg); return inner && inner.map(flipped); }
+  if (f.kind === 'binary' && (f.op === '+' || f.op === '-')) {
+    const left = sumParts(f.left), right = sumParts(f.right);
+    return left && right ? [...left, ...(f.op === '-' ? right.map(flipped) : right)] : null;
+  }
+  const named = namedPart(f);
+  return named ? [named] : null;
+}
+const flipped = (p: AmountPart): AmountPart => (p.kind === 'number' ? { ...p, value: -p.value } : { ...p, times: -p.times });
+const isNegative = (p: AmountPart): boolean => (p.kind === 'number' ? p.value < 0 : p.times < 0);
+/** A number in words with no float noise: 0.07 × 100 is 7, not 7.000000000000001. */
+const plainNumber = (n: number): string => String(Number(n.toPrecision(12)));
+/** A part's words without its sign: `12`, `0.3 × Strength`, `20% of max HP`. A multiple of 1 is the name alone. */
+function partWords(p: AmountPart): string {
+  switch (p.kind) {
+    case 'number': return plainNumber(Math.abs(p.value));
+    case 'stat': { const c = Math.abs(p.times); return c === 1 ? STAT_LABELS[p.key] : `${plainNumber(c)} × ${STAT_LABELS[p.key]}`; }
+    case 'sheet': {
+      const c = Math.abs(p.times), label = SHEET_LABELS[p.key], name = `${label[0]!.toLowerCase()}${label.slice(1)}`;
+      return c === 1 ? name : `${plainNumber(c * 100)}% of ${name}`;
+    }
+    default: return p satisfies never;
+  }
+}
+/**
+ * Whose numbers a formula's names read: `none` (only numbers and dice), `user` (only the user's stats and sheet numbers),
+ * or `other` (the target's, a use's charge or the kits' names, none of which a card knows).
+ */
+function namesRead(f: Formula): 'none' | 'user' | 'other' {
+  switch (f.kind) {
+    case 'number': case 'dice': return 'none';
+    case 'stat': case 'sheet': return f.whose === 'user' ? 'user' : 'other';
+    case 'charge': case 'stacks': case 'field': case 'missing': case 'held': case 'count': return 'other';
+    case 'negate': case 'fn': return namesRead(f.arg);
+    case 'binary': case 'min': case 'max': {
+      const l = namesRead(f.left), r = namesRead(f.right);
+      return l === 'other' || r === 'other' ? 'other' : l === 'user' || r === 'user' ? 'user' : 'none';
+    }
+    default: return f satisfies never;
+  }
+}
+
+/**
+ * An amount in words, the one place an amount a player reads becomes words (item-stats.md 6.4). A sum of numbers and the
+ * user's stats or sheet numbers reads part by part: `10 + 20% of max HP`, `5 + 0.3 × Strength`. Any other formula (dice,
+ * `min`, `target.`, the kits' names) is `printFormula`'s text. With a `body` (the one who holds it, as user and target),
+ * an amount that reads that body's numbers and rolls no dice ends with its value on that body, rounded: `(now 34)`. A
+ * flat number, an amount with dice, one that reads what a card does not know (the target, a charge, the kits' names) and
+ * any amount without a body have no "now".
+ */
+export function amountWords(f: Formula, body: FormulaBody | null): string {
+  const parts = sumParts(f);
+  const text = parts ? parts.map((p, i) => `${isNegative(p) ? (i === 0 ? '−' : ' − ') : (i === 0 ? '' : ' + ')}${partWords(p)}`).join('') : printFormula(f);
+  if (!body || namesRead(f) !== 'user' || diceOf(f).length) return text;
+  return `${text} (now ${Math.round(average(f, { user: body, target: body, charge: 0 }))})`;
 }

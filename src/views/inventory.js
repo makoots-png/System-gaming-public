@@ -173,7 +173,8 @@ export function register(app) {
     weightOf(i) ? `weight ${weightOf(i)}` : '', i.armor ? `armor ${i.armor}` : '', i.resist ? `resist ${i.resist}` : ''].filter(Boolean).map(esc).join(' · ');
   /** An item's name, which opens what it does and its description (app.api.detail) under its line. */
   const nameBtn = (list, key, i) => `<button type="button" class="i-name"${app.api.detail.control(list, key)}>${esc(i.name)}</button>`;
-  const itemDetail = (list, key, i) => app.api.detail.panel(list, key, () => ({ kind: 'item', item: i }));
+  /** What item `i` does, opened under its line; with `h`, the hunter whose bag holds it, its amounts say what they come to on `h`. */
+  const itemDetail = (list, key, i, h) => app.api.detail.panel(list, key, () => ({ kind: 'item', item: i, hunter: h }));
 
   // Equipment panel
   app.registerPanel({
@@ -300,7 +301,7 @@ export function register(app) {
         el.querySelector('[data-list]').innerHTML = list.length ? list.map(i => {
           const eq = equippedIds.has(i.id);
           return `<li class="inv-card${eq ? ' eq' : ''}" data-item="${esc(i.id)}"><div class="top">${pic(i)}${nameBtn('inv-items', i.id, i)}${chip(i.rar)}${i.qty > 1 ? `<span class="inv-qty">×${esc(i.qty)}</span>` : ''}${eq ? '<span class="inv-qty">equipped</span>' : ''}</div>
-            ${itemDetail('inv-items', i.id, i)}${metaLine(i) ? `<div class="meta">${metaLine(i)}</div>` : ''}
+            ${itemDetail('inv-items', i.id, i, h)}${metaLine(i) ? `<div class="meta">${metaLine(i)}</div>` : ''}
             <div class="acts">
               ${i.type === 'consumable' ? `<button type="button" data-use="${esc(i.id)}" aria-label="Use ${esc(i.name)}">Use</button>` : ''}
               ${i.slot ? (eq ? `<button type="button" data-unequip-item="${esc(i.id)}" aria-label="Unequip ${esc(i.name)}">Unequip</button>` : `<button type="button" data-equip="${esc(i.id)}" aria-label="Equip ${esc(i.name)}">Equip</button>`) : ''}

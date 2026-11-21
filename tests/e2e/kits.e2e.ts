@@ -70,7 +70,7 @@ test('a GM makes Sanguine Resonance in the status maker: stacks to 10, a heal fo
     const preview = d.locator('.mk-preview');
     await expect(preview).toContainText('Stacks to 10.');
     await expect(preview).toContainText('At vit stacks: Deals 3d6 magical damage. The stacks are spent.');
-    await expect(preview).toContainText('When its bearer is struck: Heals 1d4 HP on the other, every time.');
+    await expect(preview).toContainText('When its bearer is struck: Heal: 1d4 on the other, every time.');
     await expect(preview).toContainText('Gone when the fight ends.');
   });
 

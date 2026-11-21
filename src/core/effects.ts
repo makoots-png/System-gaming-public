@@ -43,10 +43,12 @@ export const gradeLabel = (rar: string, grade: Grade): string => `${rar[0]!.toUp
 
 /**
  * What an item's card says it does: its grade's label when it is a minus or a plus (a middle item's rarity says it all),
- * that it revives, then its ops (all of them, or `ops`), each number at the item's rarity tier.
+ * that it revives, then its ops (all of them, or `ops`), each number at the item's rarity tier. With a `wearer` (the
+ * hunter who holds it), an amount that reads the wearer's numbers says what it comes to on them: "Shield: 10 + 20% of max
+ * HP (now 34)".
  */
-export function describeItem(R: DescribeRules, item: ItemEffects, ops: readonly Op[] = effectsOf(item)): string[] {
-  return [...(item.grade ? [gradeLabel(item.rar, item.grade)] : []), ...(item.revive ? [REVIVE_TEXT] : []), ...opLines(ops, itemSource(item).tier, R)];
+export function describeItem(R: DescribeRules, item: ItemEffects, ops: readonly Op[] = effectsOf(item), wearer: FormulaBody | null = null): string[] {
+  return [...(item.grade ? [gradeLabel(item.rar, item.grade)] : []), ...(item.revive ? [REVIVE_TEXT] : []), ...opLines(ops, itemSource(item).tier, R, wearer)];
 }
 
 /** An op with an amount: what a use outside a fight rolls and applies to a hunter. */

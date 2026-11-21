@@ -76,11 +76,12 @@ function rowFrom(nr: NewRow, place: Place, at: Tick, tie: number, R: Rules): Bod
 const openingOf = (b: { speed: number; sheet: Body['sheet'] }, o: Opening, now: Tick, R: Rules): Tick => opening(now, b.speed, o.d20 + b.sheet.opening, R.fight);
 
 /**
- * A row as it joins at `now`: its statuses' times are from its joining (rows.ts builds them from tick 0), so each moves
- * to the fight's now. The one place a joining row's clock starts.
+ * A row as it joins at `now`: its statuses' times and its shield's end are from its joining (rows.ts builds them from
+ * tick 0), so each moves to the fight's now. The one place a joining row's clock starts.
  */
 const joined = (nr: NewRow, now: Tick): NewRow => now === 0 ? nr : {
   ...nr, statuses: nr.statuses.map(s => ({ ...s, since: tick(s.since + now), settledAt: tick(s.settledAt + now), until: s.until === null ? null : tick(s.until + now) })),
+  shield: nr.shield === null ? null : { ...nr.shield, until: tick(nr.shield.until + now) },
 };
 /**
  * Rows join, all or none, their statuses from the fight's now (`joined`; 0 in setup). A row without a free place takes

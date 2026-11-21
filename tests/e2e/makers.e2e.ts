@@ -126,7 +126,7 @@ test('a GM makes a status whose damage is a formula on the bearer\'s max HP, and
   await expect(d.locator('[data-apply]')).toBeDisabled();
   await d.locator('[data-row="0"] [data-f="q"]').fill('0.05 * hpMax');
   await expect(d.locator('[data-row="0"] [data-err]')).toHaveText('');
-  await expect(d.locator('.mk-preview')).toContainText('0.05 * hpMax physical damage a round');
+  await expect(d.locator('.mk-preview')).toContainText('5% of max HP physical damage a round');
   await d.locator('[data-apply]').tap();
   await expect(d).toHaveCount(0);
   const ops = await page.evaluate(() => hunterApp.store.get().library.statuses.wither.ops);
@@ -1174,7 +1174,7 @@ test('a GM makes a status with a shield of 20; on a hunter in a fight it takes a
   await d.locator('[data-add]').tap();
   await d.locator('[data-row="0"] [data-f="kind"]').selectOption('shield');
   await d.locator('[data-row="0"] [data-f="q"]').fill('20');
-  await expect(d.locator('.mk-preview')).toContainText('Shield of 20');
+  await expect(d.locator('.mk-preview')).toContainText('Shield: 20');
   await d.getByRole('button', { name: 'Save status' }).tap();
   await expect(d).toHaveCount(0);
 

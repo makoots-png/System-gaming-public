@@ -8,8 +8,8 @@ import type { Rank } from '../rules.ts';
 import type { IconKey } from '../registry/icons.ts';
 import { STAT_KEYS, STAT_LABELS } from '../stats.ts';
 import type { StatKey, Stats } from '../stats.ts';
-import { average, evaluate, printFormula } from '../formula.ts';
-import type { Formula, Scope } from '../formula.ts';
+import { amountWords, average, evaluate, printFormula } from '../formula.ts';
+import type { Formula, FormulaBody, Scope } from '../formula.ts';
 import { monsterSheet, monsterStats, sheetOf } from '../hunter/derive.ts';
 import type { Archetype, SheetBasis, DeriveRules, MonsterKind, Sheet, StatusMod, Tweak } from '../hunter/derive.ts';
 import { tiles } from './space.ts';
@@ -771,9 +771,13 @@ export const FULL_HEAL: Formula = { kind: 'sheet', whose: 'target', key: 'hpMax'
 export const healsFully = (amount: Tiered<Formula>, tier: number): boolean => { const f = atTier(amount, tier); return f.kind === 'sheet' && f.whose === 'target' && f.key === 'hpMax'; };
 const isNumber = (f: Formula): f is Extract<Formula, { kind: 'number' }> => f.kind === 'number';
 
-/** One op in words, read at `tier` (null: every rank). A `when` left out on a numeric op means every round. */
-function opLine(o: Op, tier: number | null, R: DescribeRules): string {
-  const amount = (a: Tiered<Formula>) => tieredText(a, tier, printFormula);
+/**
+ * One op in words, read at `tier` (null: every rank). A `when` left out on a numeric op means every round. Each formula
+ * amount is `amountWords`: with a `wearer` (the hunter who holds the item, as user and target) an amount that reads the
+ * wearer's numbers says what it comes to now. A status it applies is read without one: its numbers are its bearer's.
+ */
+function opLine(o: Op, tier: number | null, R: DescribeRules, wearer: FormulaBody | null = null): string {
+  const amount = (a: Tiered<Formula>) => tieredText(a, tier, f => amountWords(f, wearer));
   const num = (a: Tiered<number>, show: (n: number) => string) => tieredText(a, tier, show);
   const rank = (t: { byRank: boolean }) => (t.byRank ? BY_RANK : '');
   switch (o.op) {
@@ -785,7 +789,7 @@ function opLine(o: Op, tier: number | null, R: DescribeRules): string {
       const turn = (o.when ?? 'turn') === 'turn', at = atTier(o.amount, tier ?? 0);
       if (!turn && healsFully(o.amount, tier ?? 0)) return 'Heals fully';
       const a = amount(o.amount);
-      return `Heals ${a.text} HP${turn ? ' a round' : ''}${rank(a)}`;
+      return `${turn ? 'Heal each round' : 'Heal'}: ${a.text}${rank(a)}`;
     }
     case 'mana': { const a = amount(o.amount); return `Restores ${a.text} mana${(o.when ?? 'turn') === 'turn' ? ' a round' : ''}${rank(a)}`; }
     case 'fatigue': {
@@ -807,7 +811,7 @@ function opLine(o: Op, tier: number | null, R: DescribeRules): string {
     case 'root': return 'Cannot move';
     case 'taunt': return 'Must attack the one who taunted it';
     case 'threat': { const t = num(o.amount, n => signed(n)); return `${t.text} threat${rank(t)}`; }
-    case 'shield': return `Shield of ${printFormula(o.amount)}`;
+    case 'shield': return `Shield: ${amountWords(o.amount, wearer)}`;
     case 'channel': return o.mode === 'protect' ? 'A hit does not break a channel' : 'Breaks a channel';
     case 'staggerRate': { const p = num(o.pct, n => `${signed(n)}%`); return `Stagger fills ${p.text}${rank(p)}`; }
     case 'stat': { const n = num(o.amount, signed); return `${STAT_LABELS[o.key]} ${n.text}${rank(n)}`; }
@@ -866,8 +870,12 @@ const STEALTH_END_TEXT: { readonly [E in StealthEnd]: string } = { hurt: 'is hur
 const HIDE_START_TEXT: { readonly [S in HideStart]: string } = { unseen: 'It hides only out of every foe\'s sight', anywhere: 'It hides even in a foe\'s sight' };
 const SHARE_TEXT: { readonly [K in ShareOn]: string } = { dealt: 'Damage dealt', taken: 'Damage taken', healed: 'Healing received', shielded: 'Shields received' };
 
-/** Ops in words, one line each, read at `tier` (the source's rank or an item's rarity, 0 to 5), or every rank with null. */
-export const opLines = (ops: readonly Op[], tier: number | null, R: DescribeRules): string[] => ops.map(o => opLine(o, tier, R)).filter(Boolean);
+/**
+ * Ops in words, one line each, read at `tier` (the source's rank or an item's rarity, 0 to 5), or every rank with null.
+ * With a `wearer`, an amount that reads the wearer's numbers ends with what it comes to on them: `(now 34)`.
+ */
+export const opLines = (ops: readonly Op[], tier: number | null, R: DescribeRules, wearer: FormulaBody | null = null): string[] =>
+  ops.map(o => opLine(o, tier, R, wearer)).filter(Boolean);
 
 /**
  * What a status does, one line per op: on a body, at its source's tier; on the status card of a picker or the rules, with

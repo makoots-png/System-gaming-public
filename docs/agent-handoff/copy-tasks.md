@@ -87,3 +87,4 @@ From the dead-row unit 3 (notes-dead-row.md section 10), for the copy pass:
 - A monster at 0 HP now reads Defeated in the GM's order and on a player's list and token card, where it said Down; its card already said Defeated. The players' list hides a defeated monster's band word (Down) for the same reason.
 - The GM board's toast after Stabilize is "Stabilized Mira Test." (gm.js); after Revive it is "Revived Mira Test in the fight." Two shapes for one kind of line.
 - (Nov 21, stealth unit 8) The Stealth skill's description in `src/core/registry/skills.ts` still says "advantage on Stealth checks": hiding gives no advantage now, a hit from hiding deals 1.5 times (the owner's ruling 3).
+- (Nov 21, item-stats unit 5) A trigger's line on a card reads "struck: Heal: 1d4 on the other": two colons and a lower-case event. Wants one sentence ("When struck, heals the other 1d4").

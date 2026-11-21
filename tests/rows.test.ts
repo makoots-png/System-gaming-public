@@ -16,7 +16,11 @@ import { abilityId, combatantId, hunterId } from '../src/core/combat/ability-typ
 import { parseSheetKey } from '../src/core/ids.ts';
 import type { Ability, AbilityKind } from '../src/core/combat/ability-types.ts';
 import { onSheet, shadowId, statusKey } from '../src/core/combat/effect-ops.ts';
-import type { SheetStatus, StatusDef } from '../src/core/combat/effect-ops.ts';
+import type { SheetStatus, StackDef, StatusDef } from '../src/core/combat/effect-ops.ts';
+import { parseFormula } from '../src/core/formula.ts';
+import { tiles } from '../src/core/combat/space.ts';
+import { afterDefence } from '../src/core/combat/land.ts';
+import type { Rolls } from '../src/core/combat/resolve.ts';
 import { parseFight } from '../src/core/combat/fight-parse.ts';
 import { fightId, reduce } from '../src/core/combat/fight.ts';
 import type { Command, Ctx, Fight } from '../src/core/combat/fight.ts';
@@ -131,9 +135,9 @@ describe('what a hunter wears into a fight (kits design 1.3.2)', () => {
     const r = hunterRow(h, id('c1'), RULES);
     expect(r.statuses).toEqual([{ key: statusKey('pain-is-power'), def: PAIN_IS_POWER, source: { id: id('c1'), tier: 2 }, until: null, since: tick(0), settledAt: tick(0), worn: true }]);
   });
-  test('a worn item\'s status comes at the item\'s rarity (rare is C, tier 2) and from no combatant; the same item in the bag gives none', () => {
+  test('a worn item\'s status comes at the item\'s rarity (rare is C, tier 2) from its wearer\'s row; the same item in the bag gives none', () => {
     const worn = hunterRow(hunter({ items: [ring], equipped: { weapon: null, ring1: 'i1' } }), id('c1'), RULES);
-    expect(worn.statuses.map(s => [s.key, s.source, s.worn])).toEqual([[statusKey('thorns'), { id: null, tier: 2 }, true]]);
+    expect(worn.statuses.map(s => [s.key, s.source, s.worn])).toEqual([[statusKey('thorns'), { id: id('c1'), tier: 2 }, true]]);
     expect(hunterRow(hunter({ items: [ring] }), id('c1'), RULES).statuses).toEqual([]);
   });
   test('a worn status takes a key no condition holds, so both stay', () => {
@@ -145,6 +149,40 @@ describe('what a hunter wears into a fight (kits design 1.3.2)', () => {
     const r = hunterRow(hunter({ rank: 'C', titles, titleId: 't1' }), id('c1'), RULES);
     expect(r.statuses).toEqual([{ key: statusKey('pain-is-power'), def: PAIN_IS_POWER, source: { id: id('c1'), tier: 2 }, until: null, since: tick(0), settledAt: tick(0), worn: true }]);
     expect(hunterRow(hunter({ titles, titleId: null }), id('c1'), RULES).statuses, 'no active title, no worn status').toEqual([]);
+  });
+  test('an item\'s threshold damage of 0.5 * str reads its wearer\'s Strength, not the Strength of the foe it lands on (item-stats 6.3)', () => {
+    const f = (text: string) => { const p = parseFormula(text, RULES); if (!p.ok) throw new Error(p.error); return p.formula; };
+    const reach = { range: tiles(20), shape: { kind: 'touch', reach: tiles(20) } } as const;
+    const strike = skill('strike', 'Hit');
+    const hit: Ability = { ...strike, ...reach, effect: { type: strike.effect!.type, by: 'hand', formula: f('10') } as Ability['effect'] };
+    const mark = (threshold: StackDef['stack']['threshold']): StackDef => ({ label: 'Mark', desc: '', ops: [], stack: { cap: 3, leave: { kind: 'never' }, keep: 'fight', threshold } });
+    const brand = (m: StackDef): StatusDef => ({ label: 'Brand', desc: '', ops: [], triggers: [{ on: 'hitDealt', tag: null, to: 'other', limit: { kind: 'each' }, ops: [{ op: 'applyStatus', key: statusKey('mark'), def: m, duration: null }] }] });
+    const fought = (m: StackDef) => {
+      const ring = { id: 'i1', name: 'Brand Ring', rar: 'rare', bonus: {}, worn: brand(m) };
+      const rows = [hunterRow(hunter({ stats: stats({ str: 30 }), items: [ring], equipped: { weapon: null, ring1: 'i1' }, skills: [active(hit)] }), id('c1'), RULES), ...monsterRows(monster(), [id('m1')], R)];
+      const commands: Command[] = [
+        { type: 'add', fightId: fightId('f'), rows, openings: [] },
+        { type: 'start', openings: [{ id: id('c1'), d20: 20, tie: 0 }, { id: id('m1'), d20: 1, tie: 0 }] },
+        { type: 'act', by: id('c1'), ability: hit.id, aim: id('m1'), rolls: { dice: {}, react: { [id('m1')]: 10 } } as Rolls },
+      ];
+      return commands.reduce<Fight | null>((g, cmd) => reduce(g, cmd, { rules: RULES }).fight, null)!;
+    };
+    const plain = fought(mark(null)), burst = fought(mark({ at: { kind: 'count', n: 1 }, to: { kind: 'bearer' }, then: 'spend', ops: [{ op: 'damage', type: 'physical', amount: f('0.5 * str'), when: 'use' }] }));
+    const wearer = burst.rows.find(r => r.id === id('c1'))!, foe = burst.rows.find(r => r.id === id('m1'))!;
+    expect(foe.stats.str, 'the foe\'s Strength is not the wearer\'s').not.toBe(30);
+    expect(rowHp(plain.rows.find(r => r.id === id('m1'))!) - rowHp(foe)).toBe(afterDefence(0.5 * 30, 'physical', wearer.sheet, foe.sheet, RULES));
+  });
+  test('a worn item\'s shield of 10 + 0.2 * hpmax is on its wearer\'s row as the fight starts: at max HP 120, 34 times its shields received share', () => {
+    const p = parseFormula('10 + 0.2 * hpmax', RULES);
+    if (!p.ok) throw new Error(p.error);
+    // +50% shields received, within `kit.shareCap`: 34 * 1.5 = 51
+    const BULWARK: StatusDef = { label: 'Bulwark', desc: '', ops: [{ op: 'shield', amount: p.formula }, { op: 'share', on: 'shielded', pct: 50 }] };
+    const ring = { id: 'i1', name: 'Bulwark Ring', rar: 'rare', bonus: {}, worn: BULWARK };
+    // a level 1 hunter of base stats has `hpBase` max HP; the GM's adjustment brings it to 120
+    const r = hunterRow(hunter({ hpAdj: 120 - F.hpBase, life: { at: 'up', hp: 999 }, items: [ring], equipped: { weapon: null, ring1: 'i1' } }), id('c1'), RULES);
+    expect(r.life, 'max HP 120').toEqual({ at: 'up', hp: 120 });
+    expect(r.shield).toEqual({ amount: 51, until: tick(RULES.fight.shieldLife * F.round) });
+    expect(hunterRow(hunter({ items: [ring] }), id('c1'), RULES).shield, 'in the bag, no shield').toBeNull();
   });
   test('a worn status never goes back to the sheet when the fight writes its statuses back', () => {
     const r = hunterRow(hunter({ skills: [{ type: 'passive', bonus: {}, worn: PAIN_IS_POWER }], conditions: [condition('stealth', STEALTH, null)] }), id('c1'), RULES);

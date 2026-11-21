@@ -616,7 +616,7 @@ describe('wave 2\'s sheet and share ops (kits design 8.1)', () => {
   });
 
   test('a heal of the target\'s max HP reads "Heals fully" and fills any body; a heal that only reaches a big number is that number', () => {
-    expect(opLines([{ op: 'heal', amount: FULL_HEAL, when: 'use' }, { op: 'heal', amount: f('99999'), when: 'use' }], 0, RULES)).toEqual(['Heals fully', 'Heals 99999 HP']);
+    expect(opLines([{ op: 'heal', amount: FULL_HEAL, when: 'use' }, { op: 'heal', amount: f('99999'), when: 'use' }], 0, RULES)).toEqual(['Heals fully', 'Heal: 99999']);
     const b = body(hunterOf(), { hp: 1 }), rows = new Map([[b.id, b]]);
     landOps(rows, [{ op: 'heal', amount: FULL_HEAL, when: 'use' }], null, [b.id], { id: null, tier: 0 }, tick(0), RULES);
     expect(rowHp(rows.get(b.id)!)).toBe(b.sheet.hpMax);

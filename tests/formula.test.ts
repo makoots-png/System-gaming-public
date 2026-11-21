@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
-import { average, diceOf, diceModsOf, evaluate, EXPLODE_MAX, FORMULA_PARTS, mean, meets, naturalOf, parseFormula, partsOf, printFormula, REROLL_MAX, rolled, rollOf, withEdge } from '../src/core/formula.ts';
+import { amountWords, average, diceOf, diceModsOf, evaluate, EXPLODE_MAX, FORMULA_PARTS, mean, meets, naturalOf, parseFormula, partsOf, printFormula, REROLL_MAX, rolled, rollOf, withEdge } from '../src/core/formula.ts';
 import type { Dice, Env, Formula, KitScope, Rolled, Scope } from '../src/core/formula.ts';
 import { statusKey } from '../src/core/combat/effect-ops.ts';
 import { SHEET_LABELS, share } from '../src/core/hunter/derive.ts';
@@ -646,5 +646,45 @@ describe('a formula\'s size (notes-5-trade.md 12.3)', () => {
       expect(parseStatusDef(worn(over), RULES)).toBeNull();
     }
     expect(refusal('-'.repeat(200) + '1')).toBe('The formula has more than 200 parts, and a formula has at most 200. Each number, die, name, sign and face rolled again is a part.');
+  });
+});
+
+describe('an amount in words (item-stats.md 6.4)', () => {
+  // A wearer at max HP 120 and Strength 40; every other number is the sheet's own, so a word that read the wrong one shows.
+  const WEARER = { stats: stats({ str: 40 }), sheet: sheet({ hpMax: 120 }) };
+  const words = (text: string, body: Scope['user'] | null = WEARER): string => amountWords(parse(text), body);
+
+  test('the owner\'s three at max HP 120: flat, a share of max HP, and the two summed', () => {
+    expect(`Shield: ${words('12')}`).toBe('Shield: 12');
+    expect(`Shield: ${words('0.2 * hpmax')}`).toBe('Shield: 20% of max HP (now 24)');
+    expect(`Shield: ${words('10 + 0.2 * hpmax')}`).toBe('Shield: 10 + 20% of max HP (now 34)');
+  });
+
+  test('a stat reads as a multiple of its name: 5 + 0.3 × Strength at Strength 40 is 17', () => {
+    expect(words('5 + 0.3 * str')).toBe('5 + 0.3 × Strength (now 17)');
+    expect(words('str * 0.5')).toBe('0.5 × Strength (now 20)');
+    expect(words('str')).toBe('Strength (now 40)');
+  });
+
+  test('a part taken away reads with a minus: 10 - 0.05 * hpmax at max HP 120 is 4', () => {
+    expect(words('10 - 0.05 * hpmax')).toBe('10 − 5% of max HP (now 4)');
+  });
+
+  test('a formula with dice falls back to its own text and says no "now", since it is rolled', () => {
+    expect(words('2d6 + str')).toBe('2d6 + str');
+  });
+
+  test('a formula that reads the target or the kits\' names falls back to its text with no "now": a card does not know them', () => {
+    expect(words('0.1 * target.hpmax')).toBe('0.1 * target.hpMax');
+    expect(words('5 * stacks(burning)')).toBe('5 * stacks(burning)');
+  });
+
+  test('a formula outside the sum of parts that reads only the wearer falls back to its text and says what it comes to', () => {
+    expect(words('min(str, 30)')).toBe('min(str, 30) (now 30)');
+  });
+
+  test('no "now" without a body', () => {
+    expect(words('10 + 0.2 * hpmax', null)).toBe('10 + 20% of max HP');
+    expect(words('5 + 0.3 * str', null)).toBe('5 + 0.3 × Strength');
   });
 });

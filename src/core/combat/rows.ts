@@ -31,10 +31,10 @@ import { combatantId, hunterId } from './ability-types.ts';
 import { parseSaveId } from '../ids.ts';
 import type { HunterRef, SheetKey } from '../ids.ts';
 import type { Ability, CombatantId, Summon } from './ability-types.ts';
-import { freeStatusKey, modified, shadowId, statusKey, statusOn, TYPE_MAX } from './effect-ops.ts';
+import { freeStatusKey, modified, shadowId, statusKey, statusOn, statusShield, TYPE_MAX } from './effect-ops.ts';
 import { RANKS } from '../rules.ts';
 import { itemSource } from '../effects.ts';
-import type { Body, Op, Origin, SheetStatus, Stagger, Status, StatusDef } from './effect-ops.ts';
+import type { Body, Op, Origin, SheetStatus, Shield, Stagger, Status, StatusDef } from './effect-ops.ts';
 import { resolve } from './resolve.ts';
 import { usesGates } from './uses.ts';
 import { MAX_ABILITIES, MAX_STATUSES, NAME_MAX } from './fight-types.ts';
@@ -132,7 +132,8 @@ export function hunterAbilities(h: Pick<RowHunter, 'items' | 'equipped' | 'skill
 /**
  * The worn statuses of a hunter (kits design 1.3.2): each passive skill's, at the hunter's rank with the row as its
  * source, then the active title's (feature 1's notes 17.14), the same way, then each worn item's (in a slot), at the
- * item's rarity, in the slots' order. Each lasts until removed, under a
+ * item's rarity with the row as its source (item-stats 6.3: its threshold and end read the wearer, and it is the
+ * wearer's act), in the slots' order. Each lasts until removed, under a
  * key made from its label that no condition and no other worn status holds, and is never written back (`worn`).
  */
 function wornStatuses(h: RowHunter, id: CombatantId, taken: readonly string[], now: Tick, R: RowRules): Status[] {
@@ -146,7 +147,7 @@ function wornStatuses(h: RowHunter, id: CombatantId, taken: readonly string[], n
   const title = h.titles.find(t => t.id === h.titleId);
   if (title && title.worn) put(title.worn, { id, tier: rankIdx(h.rank) });
   const worn = new Set(Object.values(h.equipped));
-  for (const i of h.items) if (i.worn && worn.has(i.id)) put(i.worn, itemSource({ rar: i.rar ?? 'common' }));
+  for (const i of h.items) if (i.worn && worn.has(i.id)) put(i.worn, { id, tier: itemSource({ rar: i.rar ?? 'common' }).tier });
   return out;
 }
 
@@ -154,19 +155,21 @@ function wornStatuses(h: RowHunter, id: CombatantId, taken: readonly string[], n
  * A hunter's row: its build from `buildOf`, its conditions as statuses from its joining (tick 0; the fight's `add` moves
  * them to the fight's now) for the rounds each has left, then its
  * worn statuses, its life as the sheet holds it (a dead hunter joins dead), and its mana and fatigue as the sheet holds
- * them, each within the maximum its statuses leave.
+ * them, each within the maximum its statuses leave. Each worn status's `shield` ops land as it is put on (`statusShield`,
+ * the row as user and target, `shieldLife` rounds from its joining); a condition's shield landed when it was put on.
  */
 function partyRow(h: RowHunter, id: CombatantId, holder: HunterRef, R: RowRules): NewRow {
   const now = JOINS, origin: Origin = { kind: 'hunter', build: buildOf(h, R) };
   const kept = h.conditions.slice(0, MAX_STATUSES).map(c => starting(c.key, c.def, c.source, c.rounds, now, R, c.stacks));
   const statuses = [...kept, ...wornStatuses(h, id, kept.map(s => s.key), now, R)].slice(0, MAX_STATUSES);
-  const { sheet } = modified(origin, statuses, R), abilities = hunterAbilities(h, R);
+  const { stats, sheet } = modified(origin, statuses, R), abilities = hunterAbilities(h, R), self = { stats, sheet };
+  const shield = statuses.filter(s => s.worn).reduce<Shield | null>((held, s) => statusShield(s.def, { shield: held, statuses }, { user: self, target: self, charge: 0 }, now, null, R), null);
   // an ability limited a rest starts the fight with the uses its sheet has spent since the last long rest (table 2.3)
   const used = Object.fromEntries(abilities.filter(a => usesGates(a).some(g => g.per === 'rest') && (h.used?.[a.id] ?? 0) > 0).map(a => [a.id, h.used![a.id]!]));
   return {
     id, name: cut(h.name), side: 'party', kind: 'hunter', origin, tier: rankIdx(h.rank), place: null,
     life: lifeAfter(h.life, { type: 'maxChanged' }, sheet.hpMax), mana: clamp(h.mana, 0, sheet.manaMax), fatigue: clamp(h.fatigue, 0, sheet.fatigueMax),
-    shield: null, stagger: null, channel: null, threat: null, statuses, readyAt: {}, abilities, intent: null, holder, xp: 0,
+    shield, stagger: null, channel: null, threat: null, statuses, readyAt: {}, abilities, intent: null, holder, xp: 0,
     ...(Object.keys(used).length ? { used } : {}),
   };
 }
