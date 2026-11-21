@@ -232,5 +232,5 @@ A builder reads this section first and builds units 1 to 8 by it.
 
 - A hide's default level is 1 and 0 is not a hide's level (the lead's ruling from ruling 1 and `sightBase` 0; for-the-owner 23).
 - `kit.hideReveal` is removed: by ruling 4 nearness reveals nothing, so every `kit.hideReveal` above is history.
-- `revealed` is raised by a `reveal` op and by a foe's radius hit (ruling 2). **Open, for unit 5's brief: a line catches a hidden body without revealing it (fight.ts `useStealth` reads only `radius`); by ruling 2 a line that covers tiles is an area too. Build it with its test.**
+- `revealed` is raised by a `reveal` op and by a foe's radius hit (ruling 2). Unit 5 closed the line's gap with one rule: a use reveals each hidden body of the other side it caught and did not pick (aimed at by id). One narrower case differs from the ruling's letter and is asked of the owner (for-the-owner 25): a blast aimed by id at a hidden body its user sees does not reveal that body.
 - Open, scored 2 or under: a hide put on by a trigger, a threshold, an end or a reaction skips the watched check (land.ts `landOne` passes `false`); a strike aimed at a tile catches a hidden body standing there; `fog` is an optional last argument of `ready`, `usable`, `resolve`, `landUse`; in fog a side that sees no foe walks toward the nearest foe's real place.

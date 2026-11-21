@@ -19,8 +19,8 @@ import type { Ability, Avoid, CombatantId, Outcome } from './ability-types.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import { controlFactor, removeStatus, shielded, withStatuses } from './effect-ops.ts';
 import { atTier, countOn, stacked } from './op-amount.ts';
-import { boostsOn, critFacesAgainst, damageShare, edgeOn, edgeStep, healShare, hides, rangeWith, warded, wardedDamage } from './standing.ts';
-import { perceivedBy, watched } from './sight.ts';
+import { ambushShare, boostsOn, critFacesAgainst, damageShare, edgeOn, edgeStep, healShare, hides, rangeWith, warded, wardedDamage } from './standing.ts';
+import { eyesOf, figureOf, perceivedBy, perceives, watched } from './sight.ts';
 import type { Lookout } from './sight.ts';
 import type { Fog } from './fight-types.ts';
 import type { HeldDieId } from './standing.ts';
@@ -215,11 +215,20 @@ const covered = (raw: number, a: Ability, target: Body, grid: Grid, R: ResolveRu
   inCover(a, target.place, grid) ? raw * (1 - R.fight.coverShare) : raw;
 
 // Rule 11c (kits design 8.1): a damaging use is multiplied by the user's dealt share and the target's taken share, a heal
-// by the target's healed share, each product within `kit.shareCap` of 1 (standing.ts).
-function shared(raw: number, a: Ability, user: Body, target: Body, R: ResolveRules): number {
+// by the target's healed share, each product within `kit.shareCap` of 1 (standing.ts). A hit on a target that does not
+// perceive its hidden user is an ambush (`ambushes`): the rules' `stealth.ambush` joins the user's dealt increases.
+function shared(raw: number, a: Ability, user: Body, target: Body, grid: Grid, R: ResolveRules): number {
   const type = a.effect?.type;
-  return type === 'heal' ? raw * healShare(target, R) : type === 'physical' || type === 'magical' ? raw * damageShare(user, target, R) : raw;
+  if (type === 'heal') return raw * healShare(target, R);
+  if (type !== 'physical' && type !== 'magical') return raw;
+  return raw * (ambushes(user, target, grid) ? ambushShare(user, target, R) : damageShare(user, target, R));
 }
+/**
+ * Rule 11c's ambush (notes-7-stealth.md section 3's table, the owner's rulings 3 and 5): `target`'s own eyes do not
+ * perceive `user` over the whole map (sight.ts `perceives`), which only a hidden user's stealth can cause. A target that
+ * sees the user, at its stealth level or above, saw it coming; its allies' eyes do not warn it.
+ */
+const ambushes = (user: Body, target: Body, grid: Grid): boolean => !perceives(eyesOf(target), figureOf(user), grid, { kind: 'whole' });
 
 // Rule 12: penetration percent, then flat; then the flat part of what is left comes off the hit, then the percentage; at least 1.
 function defended(raw: number, a: Ability, user: Body, target: Body, R: ResolveRules): number {
@@ -534,7 +543,7 @@ export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body
     const isCrit = crit(a, u, t, end.avoid, d20, R);
     const price = targetPrices(a, t, now, R);
     t = price.target;
-    const raw = shared(covered(multiplied(formulaValue(a, u, t, dice, kitFor(snap, t.id, price.spent), R), a, u, end.avoid, isCrit, R), a, t, grid, R), a, u, t, R);
+    const raw = shared(covered(multiplied(formulaValue(a, u, t, dice, kitFor(snap, t.id, price.spent), R), a, u, end.avoid, isCrit, R), a, t, grid, R), a, u, t, grid, R);
     const guard = a.kind === 'strike' ? answers.guard?.[t.id] ?? 0 : 0;
     const dealt = defended(guard ? raw * (1 - guard) : raw, a, u, t, R);
     let absorbed = 0, hpDamage = 0, threat = 0, fill = 0, stag = false;

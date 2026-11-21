@@ -48,6 +48,7 @@
   --icon-order:16px; /* in a row of the turn order, before the name: one line of 13 px text */
   --icon-slot:20px; /* above a hotbar slot's name */
   --icon-token:22px; /* in a map token's 34 px disc: inside its stagger ring, which leaves 22 px clear on a foe's square disc */
+  --icon-bag:24px; /* at the start of a bag line, before the item's name, in its rarity's colour */
   --icon-card:24px; /* in a fight card's head, before the name */
   --icon-list:32px; /* at the left of a bestiary line */
 }

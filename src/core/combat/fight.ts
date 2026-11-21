@@ -219,7 +219,7 @@ const act: Step<'running', 'act'> = (f, cmd, ctx) => {
   // table 2.3: a use that resolved is one more spent of an ability limited a fight or a rest
   const r = { ...resolved, bodies: resolved.bodies.map(b => b.id === u.id ? counted(b, a, R) : b) };
   const forced = cmd.force && cmd.by !== f.currentId ? ' (GM)' : '';
-  return landed(f, { a, u, rows, at, r, taken, head: `${u.name} uses ${a.name}${forced}`, by: u.id }, ctx);
+  return landed(f, { a, u, rows, aim: cmd.aim, at, r, taken, head: `${u.name} uses ${a.name}${forced}`, by: u.id }, ctx);
 };
 
 /** The zones a zone price took whose end lands: those a round old or more (table 2.6). */
@@ -227,12 +227,12 @@ const landingOf = (taken: readonly Zone[], now: Tick, R: Rules): Zone[] => taken
 
 /**
  * A use that landed, as `act` and a channel's `release` hand it on: the ability, its user and the rows as the use found
- * them, the tile it aimed at, what `landUse` answered (with what the command does to its user: a use counted, a channel
+ * them, its aim (a body it picked, or a tile) and the tile that is, what `landUse` answered (with what the command does to its user: a use counted, a channel
  * gone off; and the reactions it set off), the zones its price takes now, the start of its log line, and who acted (none
  * for a broken channel going off out of its user's turn, which is no turn's action).
  */
 type Landed = {
-  readonly a: Ability; readonly u: Body; readonly rows: readonly Body[]; readonly at: Place;
+  readonly a: Ability; readonly u: Body; readonly rows: readonly Body[]; readonly aim: Aim; readonly at: Place;
   readonly r: Extract<Resolved, { readonly ok: true }>; readonly taken: readonly Zone[];
   readonly head: string; readonly by: string;
 };
@@ -244,11 +244,11 @@ type Landed = {
  * then the next turn.
  */
 function landed(f: Running, use: Landed, ctx: Ctx): Result {
-  const R = ctx.rules, { a, u, rows, at, taken } = use, reacted = use.r.reacted;
+  const R = ctx.rules, { a, u, rows, aim, at, taken } = use, reacted = use.r.reacted;
   // acting on a foe or a place ends the user's untargetable ward, after the use (kits design 8.1)
   const ends = (a.aim === 'foe' || a.aim === 'place') && !hides(a);
   const warded = ends ? use.r.bodies.map(b => b.id === u.id ? unwarded(b, f.now, R) : b) : use.r.bodies;
-  const r = { ...use.r, bodies: useStealth(a, u, use.r.outcomes, warded, f.now, R) };
+  const r = { ...use.r, bodies: useStealth(a, u, aim, use.r.outcomes, warded, f.now, R) };
   const said = [
     ...reacted.said, ...reacted.lethal,
     ...r.outcomes.map(o => `${rowOf(f, o.target)?.name ?? o.target} ${o.avoid === 'out' ? 'avoids it' : `${o.avoid}${o.crit ? ', crit' : ''}${o.dealt ? ` ${o.dealt}` : ''}`}`),
@@ -350,13 +350,15 @@ function hideLands(a: Ability, u: Body, f: Running, R: Rules): boolean {
 /**
  * The stealth events a use raises (notes-7-stealth.md section 4, with the owner's rulings), on `bodies` as it left them:
  * `dealt` on its user when it dealt HP damage to a body of the other side (ruling 6: its own use; a zone or a status it
- * left is not), on each hide but one the use itself put on; and `revealed` on each body of the other side an area of it
- * hit (a radius, ruling 2). A use that only slows or curses a foe gives its user away to nobody.
+ * left is not), on each hide but one the use itself put on; and `revealed` on each body of the other side it caught
+ * and did not pick (`aim`), ruling 2. Eyes found a picked body (resolve.ts `pickable`), so a hit on it shows nothing a
+ * foe did not see; a shape found a caught one on its tile, whether a radius, a line or a strike at a place covered it.
+ * A use that only slows or curses a foe gives its user away to nobody.
  */
-function useStealth(a: Ability, u: Body, outcomes: readonly Outcome[], bodies: readonly Body[], now: Tick, R: Rules): Body[] {
+function useStealth(a: Ability, u: Body, aim: Aim, outcomes: readonly Outcome[], bodies: readonly Body[], now: Tick, R: Rules): Body[] {
   const side = (id: CombatantId) => bodies.find(b => b.id === id)?.side ?? u.side;
   const dealt = outcomes.some(o => (o.type === 'physical' || o.type === 'magical') && o.dealt > 0 && side(o.target) !== u.side);
-  const area = a.shape.kind === 'radius', hit = new Set(outcomes.filter(o => area && o.avoid !== 'out' && side(o.target) !== u.side).map(o => o.target));
+  const hit = new Set(outcomes.filter(o => o.avoid !== 'out' && o.target !== aim && side(o.target) !== u.side).map(o => o.target));
   return bodies.map(b => b.id === u.id && dealt ? stealthAfter(b, { type: 'dealt' }, now, R, putBy(a.ops)) : hit.has(b.id) ? stealthAfter(b, { type: 'revealed' }, now, R) : b);
 }
 
@@ -390,7 +392,7 @@ const release: Step<'running', 'release'> = (f, cmd, ctx) => {
   const r = landUse(a, u, { at, paid: u, spent: c.spent }, f.rows, c.aim, f.grid, cmd.rolls, f.now, R, f.fog);
   if (r.ok === false) return r.reason === 'needsRoll' ? refused(f, r.reason) : nothing();
   const fired = (b: Body): Body => b.id !== u.id ? b : { ...b, channel: off.channel, ...(turn ? {} : { at: u.at }) };
-  return landed(f, { a, u, rows: f.rows, at, r: { ...r, bodies: r.bodies.map(fired) }, taken: [], head: `${u.name}'s ${a.name} is released at charge ${c.charge}`, by: turn ? u.id : '' }, ctx);
+  return landed(f, { a, u, rows: f.rows, aim: c.aim, at, r: { ...r, bodies: r.bodies.map(fired) }, taken: [], head: `${u.name}'s ${a.name} is released at charge ${c.charge}`, by: turn ? u.id : '' }, ctx);
 };
 
 /**

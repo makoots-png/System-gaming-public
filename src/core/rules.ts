@@ -408,6 +408,14 @@ const SPEC = {
     // from a class, an item or a flare: a curve on Instinct would let any hunter who spends points see every hide.
     stealth: {
       sightBase: whole(0, Math.min(...LEVELS), Math.max(...LEVELS), 'a sight level, one per rank E to S (standing.ts LEVELS): a level past 5 cannot be written'),
+      // The ambush (section 2, the owner's rulings 3 and 5): a use's hit from hiding on a target that does not perceive its
+      // user deals this many times as much, in place of the attacker's edge hiding gave. It is one of the user's dealt
+      // increases (rule 11c), so a dealt buff does not compound with it and `kit.shareCap` still bounds it. A hide is one
+      // action that deals nothing: at 1.5 a hide and a strike deal 1.5 strikes in two actions, so the ambush pays back
+      // half the action and the turns no foe can pick its bearer pay the rest; at 2 the pair deals what two strikes deal
+      // and those turns come free, so hiding beats striking outright. The worst heavy strike on a tank stays under design
+      // 6's 60% of its HP: table 8.10.2b's 38% (with the old edge, larger than without it) times 1.5 is 57%.
+      ambush: real(1.5, 1, 2, 'times a hit from hiding: 1 is no ambush, at 2 a hide and a strike deal two strikes\' damage and hiding beats striking outright'),
     },
     // Fields that move and spread (design 4.8)
     auraRadius: of(2, RADIUS), // an aura the maker starts: a blast's radius, so an aura and a blast read with the same ruler

@@ -1686,8 +1686,8 @@ describe('wards and stealth (kits design 8.1 and 8.7, tables 8.9.4 and 8.9.5)', 
   /** A behind the wall from M, with these abilities besides HIT and HIDE and these statuses, hides on its first turn. */
   const hiding = (abilities: Ability[], statuses: Status[] = []) =>
     [add(row('A', 'party', { abilities: [HIT, HIDE, ...abilities], statuses }), row('M', 'foe')), wall, start(['A', 20], ['M', 10]), use('A', HIDE)] as const;
-  /** A use of `a` by `by` at a place, on `who` there; a use from hiding has the attacker's edge (kits design 8.7.4), so it asks a second d20. */
-  const atPlace = (by: string, a: Ability, to: Place, who: string): Command => ({ type: 'act', by: id(by), ability: a.id, aim: to, rolls: { ...rolls({ [who]: 10 }, { [who]: [] }), second: { [id(who)]: 3 } } });
+  /** A use of `a` by `by` at a place, on `who` there, whose d20 of 1 cannot get it out. */
+  const atPlace = (by: string, a: Ability, to: Place, who: string): Command => ({ type: 'act', by: id(by), ability: a.id, aim: to, rolls: rolls({ [who]: 1 }, { [who]: [] }) });
   /** The GM burns A, and its burn pays on A's next turn. */
   const burnt: readonly Command[] = [
     { type: 'status', id: id('A'), add: { key: statusKey('burn'), def: st('burn', null, { op: 'damage', type: 'magical', amount: f('3'), when: 'turn' }).def, duration: null, tier: 0 } },
@@ -1699,7 +1699,6 @@ describe('wards and stealth (kits design 8.1 and 8.7, tables 8.9.4 and 8.9.5)', 
     const hidden = play(...hiding([]));
     expect(keys(hidden.fight, 'A')).toEqual(['hide']);
     refuses(hidden.fight, hit('M', 'A'), 'noTarget');
-    refuses(play(...hiding([BOOM]), pass('M')).fight, { type: 'act', by: id('A'), ability: BOOM.id, aim: place(0, 10), rolls: rolls({ M: 10 }, { M: [] }) }, 'needsRoll');
   });
 
   test('a hidden body that slows a foe stays hidden: a use that deals no damage does not give it away', () => {
@@ -1712,6 +1711,14 @@ describe('wards and stealth (kits design 8.1 and 8.7, tables 8.9.4 and 8.9.5)', 
     expect(hurtOf(r.fight, 'M')).toBeGreaterThan(0);
     expect(keys(r.fight, 'A')).toEqual([]);
     expect(running(r).log.some(l => /A is seen\.$/.test(l.text))).toBe(true);
+  });
+
+  test('a hidden body\'s blast says more damage on the log than the same blast from a body that is seen (the ambush, rule 11c)', () => {
+    const said = (r: { fight: Fight | null }) => Number(/: M caught(?:, crit)? (\d+)\.$/.exec(running(r).log.find(l => /A uses boom/.test(l.text))!.text)![1]);
+    const hidden = play(...hiding([BOOM]), pass('M'), atPlace('A', BOOM, place(0, 10), 'M'));
+    const seen = play(add(row('A', 'party', { abilities: [HIT, HIDE, BOOM] }), row('M', 'foe')), wall, start(['A', 20], ['M', 10]), pass('A'), pass('M'), atPlace('A', BOOM, place(0, 10), 'M'));
+    expect([said(seen), said(hidden)]).toEqual([hurtOf(seen.fight, 'M'), hurtOf(hidden.fight, 'M')]);
+    expect(said(hidden)).toBeGreaterThan(said(seen));
   });
 
   test('a hidden body whose reaction deals damage to a foe is seen', () => {
@@ -1766,10 +1773,10 @@ describe('wards and stealth (kits design 8.1 and 8.7, tables 8.9.4 and 8.9.5)', 
   const shade = (level: HideLevel) => self(`shade${level}`, { op: 'hidden', level, start: 'anywhere', ends: ends({ hurt: false }) });
   /** A worn status that raises its bearer's sight level to `n`. */
   const eye = (n: number): Status => st(`eye${n}`, null, { op: 'sheet', key: 'sight', amount: n });
-  const NOVA = ability('blast', 'nova', '5', { range: tiles(20) });
+  const NOVA = ability('blast', 'nova', '5', { range: tiles(20) }), LANCE = ability('shot', 'lance', '5', { range: tiles(20) });
   /** A, on the party's line at (0, 2), hides at `level` on its first turn; then it is M's turn, M wearing `sight`. */
   const shaded = (level: HideLevel, sight: Status[] = []) =>
-    [add(row('A', 'party', { abilities: [HIT, shade(level)] }), row('M', 'foe', { abilities: [HIT, NOVA], statuses: sight })), start(['A', 20], ['M', 10]), use('A', shade(level))] as const;
+    [add(row('A', 'party', { abilities: [HIT, shade(level)] }), row('M', 'foe', { abilities: [HIT, NOVA, LANCE], statuses: sight })), start(['A', 20], ['M', 10]), use('A', shade(level))] as const;
   const blasts = (by: string, at: Place, who: string): Command => ({ type: 'act', by: id(by), ability: NOVA.id, aim: at, rolls: rolls({ [who]: 1 }, { [who]: [] }) });
 
   test('a foe cannot pick a hidden body with a sight under its level, and can at its level or above (the owner\'s ruling 1)', () => {
@@ -1786,6 +1793,25 @@ describe('wards and stealth (kits design 8.1 and 8.7, tables 8.9.4 and 8.9.5)', 
     expect([hurtOf(strike.fight, 'A') > 0, keys(strike.fight, 'A')]).toEqual([true, ['shade1']]);
   });
 
+  // Ruling 2 by the one rule of fight.ts `useStealth`: a use reveals each hidden body of the other side that it caught and
+  // did not pick. Eyes find a picked body, so hitting it shows nothing new; the ground finds a caught one, whatever the shape.
+  const aimed = (a: Ability, aim: Place | string): Command => ({ type: 'act', by: id('M'), ability: a.id, aim: typeof aim === 'string' ? id(aim) : aim, rolls: rolls({ A: 1 }, { A: [] }) });
+
+  test('a foe\'s line at a place that catches a hidden body reveals it, as a strike at its tile does (the owner\'s ruling 2)', () => {
+    for (const a of [LANCE, HIT]) {
+      const r = play(...shaded(1), aimed(a, place(0, 2)));
+      expect([hurtOf(r.fight, 'A') > 0, keys(r.fight, 'A')], a.name).toEqual([true, []]);
+      expect(running(r).log.some(l => /A is seen\.$/.test(l.text)), a.name).toBe(true);
+    }
+  });
+
+  test('an aimed shot at a hidden body its user sees does not reveal it; a blast at its place from the same foe does', () => {
+    const shot = play(...shaded(1, [eye(1)]), aimed(LANCE, 'A'));
+    expect([hurtOf(shot.fight, 'A') > 0, keys(shot.fight, 'A')]).toEqual([true, ['shade1']]);
+    const blast = play(...shaded(1, [eye(1)]), aimed(NOVA, place(0, 2)));
+    expect([hurtOf(blast.fight, 'A') > 0, keys(blast.fight, 'A')]).toEqual([true, []]);
+  });
+
   test('an untargetable body is neither picked nor caught by a foe\'s blast at its place', () => {
     const veiled = play(add(row('A', 'party', { abilities: [HIT, VEIL] }), row('B', 'party', { place: place(1, 2) }), row('M', 'foe', { abilities: [HIT, NOVA] })),
       start(['A', 20], ['M', 10], ['B', 5]), use('A', VEIL));
@@ -1795,13 +1821,13 @@ describe('wards and stealth (kits design 8.1 and 8.7, tables 8.9.4 and 8.9.5)', 
     expect([hurtOf(blasted.fight, 'A'), hurtOf(blasted.fight, 'B') > 0]).toEqual([0, true]);
   });
 
-  test('a use that carries a reveal op (a Flare) reveals the hidden body its line catches; the parser reads the op back', () => {
-    // a shot's line is not an area, so the reveal here is the op's, not ruling 2's
+  test('a use that carries a reveal op (a Flare) reveals the hidden body it lands on; the parser reads the op back', () => {
+    // M sees A and picks it, so the reveal here is the op's, not ruling 2's (a picked body is not revealed by the hit)
     const FLARE = ability('shot', 'flare', null, { effect: null, range: tiles(20), ops: [{ op: 'reveal' }] });
     expect(parseAbility(JSON.parse(JSON.stringify(FLARE)), RULES)).toEqual(FLARE);
     const MIST = self('mist', { op: 'hidden', level: 1, start: 'anywhere', ends: ends({ hurt: false, revealed: false }) });
-    const flared = (hide: Ability) => play(add(row('A', 'party', { abilities: [HIT, hide] }), row('M', 'foe', { abilities: [HIT, FLARE] })), start(['A', 20], ['M', 10]), use('A', hide),
-      { type: 'act', by: id('M'), ability: FLARE.id, aim: place(0, 2), rolls: rolls({ A: 1 }) });
+    const flared = (hide: Ability) => play(add(row('A', 'party', { abilities: [HIT, hide] }), row('M', 'foe', { abilities: [HIT, FLARE], statuses: [eye(1)] })), start(['A', 20], ['M', 10]), use('A', hide),
+      { type: 'act', by: id('M'), ability: FLARE.id, aim: id('A'), rolls: rolls({ A: 1 }) });
     expect([keys(flared(shade(1)).fight, 'A'), keys(flared(MIST).fight, 'A')]).toEqual([[], ['mist']]);
   });
 

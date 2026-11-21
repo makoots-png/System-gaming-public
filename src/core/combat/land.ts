@@ -86,7 +86,7 @@ export function channelBreaks(target: Body, damage: number, forced: boolean, _no
  * `b` without each hidden status `e` ends; `b` itself when none ends. A hide of a key in `spare` meets no event: the use
  * or reaction that raised it put that hide on (`putBy`). Every caller raises its event here: a hurt (fight-turn.ts
  * `consequences`), damage its own use or reaction dealt (fight.ts `landed`, fight-react.ts `react`), a reveal (a
- * `reveal` op, `landOne`; a foe's area, `landed`).
+ * `reveal` op, `landOne`; a foe's use that caught it and did not pick it, `landed`).
  */
 export function stealthAfter<B extends Body>(b: B, e: StealthEndEvent, now: Tick, R: OpRules, spare: readonly StatusKey[] = []): B {
   const s = stealthOf(b), met = { ...s, hides: s.hides.filter(h => !spare.includes(h.key)) };

@@ -650,3 +650,47 @@ describe('who a use may pick and who it catches: the one sight rule (notes-7-ste
     expect([r.outcomes, find(r.bodies, 't')]).toEqual([[], t]);
   });
 });
+
+describe('the ambush: a hit from hiding, rule 11c (notes-7-stealth.md section 2, the owner\'s rulings 3 and 5, stealth unit 5)', () => {
+  // A hidden user's damage is a dealt increase of `fight.stealth.ambush` against each target whose own eyes do not
+  // perceive it; of the user's dealt increases only the strongest applies. It replaces the attacker's edge hiding gave.
+  const AMBUSH = RULES.fight.stealth.ambush;
+  const worn = (key: string, ...ops: Op[]): Status => statusOn({ label: key, desc: '', ops }, { key: statusKey(key), source: { id: null, tier: 0 }, until: null, since: NOW, settledAt: NOW });
+  const cloak = (level: HideLevel): Status => worn('cloak', { op: 'hidden', level, start: 'anywhere', ends: { hurt: true, revealed: true, dealt: true } });
+  const dealtUp = (pct: number): Status => worn(`fury${pct}`, { op: 'share', on: 'dealt', pct });
+  // 1d8 + 10 at a die of 5 is 15 before any share
+  const strike = ability('strike', {}, '1d8 + 10');
+  const user = (...statuses: Status[]) => body('u', hunterOrigin('bruiser'), place(5, 5), 'party', { statuses });
+  const foe = (sight: Level = 0, statuses: Status[] = [], at = place(6, 5), id = 't') => body(id, hunterOrigin('tank'), at, 'foe', { statuses }, { sight });
+  const swing = (u: Body, t: Body) => run(strike, u, [u, t], t.id, rolls({ [t.id]: [5] }, { [t.id]: 10 })).outcomes[0]!;
+
+  test('a hidden user\'s hit deals the ambush times the same hit unhidden at the same dice, and more after armor', () => {
+    const plain = swing(user(), foe()), hidden = swing(user(cloak(1)), foe());
+    expect([plain.raw, hidden.raw]).toEqual([15, 15 * AMBUSH]);
+    expect(hidden.dealt).toBeGreaterThan(plain.dealt);
+  });
+
+  test('no ambush against a target that perceives the user: a sight at its stealth level or above saw it coming (ruling 5)', () => {
+    expect(LEVELS.map(sight => swing(user(cloak(2)), foe(sight)).raw)).toEqual([15 * AMBUSH, 15 * AMBUSH, 15, 15, 15, 15]);
+  });
+
+  test('a blast from hiding ambushes each target its eyes miss and not one that sees the user', () => {
+    const blast = ability('blast', { delivery: { kind: 'sure' }, foesOnly: true }, '20');
+    const u = user(cloak(2)), blind = foe(0, [], place(8, 5), 'b'), seer = foe(2, [], place(9, 5), 's');
+    const r = run(blast, u, [u, blind, seer], blind.place, rolls({ b: [], s: [] }));
+    expect(r.outcomes.map(o => [o.target, o.raw])).toEqual([['b', 20 * AMBUSH], ['s', 20]]);
+  });
+
+  test('with a dealt share of +20% or +50% the hit from hiding is still the ambush times it, not the two compounded', () => {
+    // the target takes half, so the product stays inside the share cap and a compounded hit would show: 15 * 0.5 is 7.5
+    const half = worn('ward', { op: 'share', on: 'taken', pct: -50 }), t = foe(0, [half]);
+    expect(swing(user(), t).raw).toBe(7.5);
+    expect([20, 50].map(pct => swing(user(cloak(1), dealtUp(pct)), t).raw)).toEqual([7.5 * AMBUSH, 7.5 * AMBUSH]);
+  });
+
+  test('hiding gives the attacker no edge: a hidden user\'s use asks one d20 and lands with it, no second (ruling 3)', () => {
+    const u = user(cloak(1)), t = foe();
+    expect(needs(strike, u, [u, t], t.id, GRID, NOW, RULES)).toEqual({ dice: { t: [{ count: 1, sides: 8 }] }, react: ['t'], refund: false });
+    expect(resolve(strike, u, [u, t], t.id, GRID, rolls({ t: [5] }, { t: 10 }), NOW, RULES).ok).toBe(true);
+  });
+});

@@ -22,6 +22,7 @@ import type { PackKind } from './pack.ts';
 import type { Connection } from './sync/connection.ts';
 import type { Call } from './sync/outbox.ts';
 import type { ItemTemplate } from './registry/items.ts';
+import type { IconItem } from './registry/icon-defaults.ts';
 import type { SkillTemplate } from './registry/skills.ts';
 import type { Worth } from './registry/worth.ts';
 import type { StatBlock } from './registry/monsters.ts';
@@ -42,7 +43,7 @@ import type { Thing } from './detail.ts';
 import type { DetailEvent } from './detail-open.ts';
 import type { Coin, RollId, CoinSide } from './coin.ts';
 import type { Check, RollKind } from './roll.ts';
-import type { DeviceId, HunterId, HunterRef, MonsterId, RollEntryId, SheetKey, StoryId } from './ids.ts';
+import type { DeviceId, HunterId, HunterRef, ItemId, MonsterId, RollEntryId, SheetKey, StoryId } from './ids.ts';
 
 /** A System window's text (the options `ui.system` takes that a reward window passes on). */
 export type RewardWindow = { tag?: string; title?: string; kind?: string; body?: string | undefined; lines?: string[] | undefined };
@@ -706,6 +707,8 @@ export type MapKit = {
   /** The kits the hotbar shows (map-view.ts `HotbarKit`): the armed reaction and where it stands, and the uses left. */
   armed?: { ability: string; spent: boolean } | null;
   left?: Readonly<Record<string, number>>;
+  /** The actor's bag, for an item's use's picture (map-view.ts `HotbarKit`): the item with this id, or null when the bag holds none. */
+  itemOf?: (id: ItemId) => IconItem | null;
 };
 /**
  * What a phone gives its battle map (src/views/map.js): the scene's input, the order ahead by name, the actor's kit (null

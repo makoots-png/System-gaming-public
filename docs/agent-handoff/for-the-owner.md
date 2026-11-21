@@ -36,6 +36,8 @@ Each machine is being built to behave as the app does today, with the row below 
 22. Does a Resurrection Crystal handed over by another hunter after death count as bought before the death?
 23. Stealth, the lead's ruling to confirm (built in unit 2): by your ruling 1 a body is hidden only from sight of a lower level, and everyone's sight starts at 0, so a hide at level 0 would hide from nobody. A hidden status with no level written is level 1, and level 0 is not offered. Say if a plain hide should be something else.
 24. Icons, to confirm: the first set is taken from one outside set (game-icons, CC BY 3.0), by your ruling that drawings may come from elsewhere if they look consistent. That licence asks for credit, so the Rules page's foot gets a credit line. Say if you would rather every icon were drawn here.
+25. Stealth, a small case to confirm: a use reveals a hidden body it caught without picking it (a blast at a place, a line, a strike at a tile). A blast aimed straight at a hidden body its user can already see hits it but does not reveal it to the others. Say if every area hit should reveal, whoever it was aimed at.
+26. Stealth, the ambush is 1.5 times the hit (hide then strike is 1.5 strikes in two actions; 2 would make hiding beat striking outright). Against a boss it is 1.25, since a boss halves any such increase. Say if you want another number.
 
 ## Answered
 

@@ -38,7 +38,7 @@ None.
 ### `src/core/api.ts`
 
 - Imports: `src/core/combat/hold.ts`
-- Imports types from: `src/core/coin.ts`, `src/core/combat/ability-types.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/extraction.ts`, `src/core/combat/fight-save.ts`, `src/core/combat/fight-types.ts`, `src/core/combat/map-view.ts`, `src/core/combat/odds.ts`, `src/core/combat/space.ts`, `src/core/combat/timeline.ts`, `src/core/combat/triggers.ts`, `src/core/combat/zones.ts`, `src/core/detail-open.ts`, `src/core/detail.ts`, `src/core/events.ts`, `src/core/gates/gate.ts`, `src/core/gates/spawn.ts`, `src/core/gates/world.ts`, `src/core/hunter/conditions.ts`, `src/core/hunter/derive.ts`, `src/core/hunter/feats.ts`, `src/core/hunter/grant.ts`, `src/core/hunter/sheet.ts`, `src/core/ids.ts`, `src/core/pack.ts`, `src/core/protocol.ts`, `src/core/registry/items.ts`, `src/core/registry/maps.ts`, `src/core/registry/monsters.ts`, `src/core/registry/skills.ts`, `src/core/registry/worth.ts`, `src/core/rewards.ts`, `src/core/roll.ts`, `src/core/save-step.ts`, `src/core/save.ts`, `src/core/stats.ts`, `src/core/sync/connection.ts`, `src/core/sync/outbox.ts`
+- Imports types from: `src/core/coin.ts`, `src/core/combat/ability-types.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/extraction.ts`, `src/core/combat/fight-save.ts`, `src/core/combat/fight-types.ts`, `src/core/combat/map-view.ts`, `src/core/combat/odds.ts`, `src/core/combat/space.ts`, `src/core/combat/timeline.ts`, `src/core/combat/triggers.ts`, `src/core/combat/zones.ts`, `src/core/detail-open.ts`, `src/core/detail.ts`, `src/core/events.ts`, `src/core/gates/gate.ts`, `src/core/gates/spawn.ts`, `src/core/gates/world.ts`, `src/core/hunter/conditions.ts`, `src/core/hunter/derive.ts`, `src/core/hunter/feats.ts`, `src/core/hunter/grant.ts`, `src/core/hunter/sheet.ts`, `src/core/ids.ts`, `src/core/pack.ts`, `src/core/protocol.ts`, `src/core/registry/icon-defaults.ts`, `src/core/registry/items.ts`, `src/core/registry/maps.ts`, `src/core/registry/monsters.ts`, `src/core/registry/skills.ts`, `src/core/registry/worth.ts`, `src/core/rewards.ts`, `src/core/roll.ts`, `src/core/save-step.ts`, `src/core/save.ts`, `src/core/stats.ts`, `src/core/sync/connection.ts`, `src/core/sync/outbox.ts`
 - Imported by: `src/core/draft.ts`, `src/edge/room-events.ts`, `src/edge/sync.ts`, `src/views/app.ts`
 
 ### `src/core/applied.ts`
@@ -640,7 +640,7 @@ None.
 ### `src/core/registry/icon-defaults.ts`
 
 - Imports types from: `src/core/combat/ability-types.ts`, `src/core/combat/effect-ops.ts`, `src/core/hunter/derive.ts`, `src/core/ids.ts`, `src/core/registry/icons.ts`, `src/core/registry/items.ts`, `src/core/registry/statuses.ts`
-- Imported by: `src/core/combat/map-view.ts`, `src/core/combat/row-icon.ts`
+- Imported by: `src/core/api.ts`, `src/core/combat/map-view.ts`, `src/core/combat/row-icon.ts`, `src/views/bestiary.js`, `src/views/hunter.js`, `src/views/inventory.js`
 
 ### `src/core/registry/icons.ts`
 
@@ -997,7 +997,7 @@ None.
 
 ### `src/views/bestiary.js`
 
-- Imports: `src/core/bestiary.ts`, `src/core/combat/ability-types.ts`, `src/core/combat/row-hp.ts`, `src/core/combat/rows.ts`, `src/core/hunter/chips.ts`, `src/core/one-of.ts`, `src/core/registry/abilities.ts`, `src/core/registry/items.ts`, `src/core/registry/monsters.ts`, `src/core/registry/skills.ts`, `src/core/role.ts`, `src/core/save-step.ts`, `src/core/save.ts`, `src/edge/rules.ts`, `src/views/motion.ts`
+- Imports: `src/core/bestiary.ts`, `src/core/combat/ability-types.ts`, `src/core/combat/row-hp.ts`, `src/core/combat/rows.ts`, `src/core/hunter/chips.ts`, `src/core/one-of.ts`, `src/core/registry/abilities.ts`, `src/core/registry/icon-defaults.ts`, `src/core/registry/items.ts`, `src/core/registry/monsters.ts`, `src/core/registry/skills.ts`, `src/core/role.ts`, `src/core/save-step.ts`, `src/core/save.ts`, `src/edge/rules.ts`, `src/views/icons.ts`, `src/views/motion.ts`
 - Imported by: `src/app.js`
 - Provides: `app.api.bestiary`: `get`, `list`, `make`, `remove`, `save`, `statBlock`, `toCombatant`
 - Uses: `app.api.combat` (add, okToReplace) from `src/views/combat.js`; `app.api.loot` (item) from `src/views/loot.js`; `app.api.maker` (chips, open, picked) from `src/views/maker.js`; `app.api.skills` (lines, make) from `src/views/skills.js`; `app.api.sync` (doc, publish) from `src/edge/sync.ts`
@@ -1117,7 +1117,7 @@ None.
 
 ### `src/views/hunter.js`
 
-- Imports: `src/core/combat/ability-types.ts`, `src/core/combat/fight-save.ts`, `src/core/combat/row-life.ts`, `src/core/day.ts`, `src/core/effects.ts`, `src/core/hunter/chips.ts`, `src/core/hunter/conditions.ts`, `src/core/hunter/derive.ts`, `src/core/hunter/grant.ts`, `src/core/hunter/inventory.ts`, `src/core/hunter/progress.ts`, `src/core/hunter/record.ts`, `src/core/hunter/sheet.ts`, `src/core/hunter/vitals.ts`, `src/core/one-of.ts`, `src/core/party.ts`, `src/core/rewards.ts`, `src/core/save-step.ts`, `src/core/save.ts`, `src/core/session-log.ts`, `src/core/stats.ts`, `src/edge/rules.ts`, `src/views/motion.ts`
+- Imports: `src/core/combat/ability-types.ts`, `src/core/combat/fight-save.ts`, `src/core/combat/row-life.ts`, `src/core/day.ts`, `src/core/effects.ts`, `src/core/hunter/chips.ts`, `src/core/hunter/conditions.ts`, `src/core/hunter/derive.ts`, `src/core/hunter/grant.ts`, `src/core/hunter/inventory.ts`, `src/core/hunter/progress.ts`, `src/core/hunter/record.ts`, `src/core/hunter/sheet.ts`, `src/core/hunter/vitals.ts`, `src/core/one-of.ts`, `src/core/party.ts`, `src/core/registry/icon-defaults.ts`, `src/core/rewards.ts`, `src/core/save-step.ts`, `src/core/save.ts`, `src/core/session-log.ts`, `src/core/stats.ts`, `src/edge/rules.ts`, `src/views/icons.ts`, `src/views/motion.ts`
 - Imported by: `src/app.js`
 - Provides: `app.api.bundles`: `list`, `remove`, `save`; `app.api.hunter`: `addCondition`, `amountFromKey`, `amountMsg`, `applyRewards`, `damage`, `deathSave`, `deleteHunter`, `fightOf`, `gainXP`, `gmHolds`, `grantWrite`, `granted`, `heal`, `life`, `parseAmount`, `removeCondition`, `rest`, `sheet`, `spendMana`
 - Uses: `app.api.combat` (adjust, held, life, spend, status) from `src/views/combat.js`; `app.api.detail` (control, panel, wire) from `src/views/detail.js`; `app.api.dice` (check, roll) from `src/views/dice.js`; `app.api.identity` (badge, edit) from `src/views/custom.js`; `app.api.maker` (bonus, readBonus) from `src/views/maker.js`; `app.api.quests` (stepsDone) from `src/views/quests.js`; `app.api.sync` (doc, event, forget, myKey, post, switchTo) from `src/edge/sync.ts`; `app.api.uses` (told) from `src/views/uses.js`
@@ -1128,11 +1128,11 @@ None.
 ### `src/views/icons.ts`
 
 - Imports: `src/core/registry/icons.ts`
-- Imported by: `src/views/combat.js`, `src/views/map.js`, `src/views/table.js`
+- Imported by: `src/views/bestiary.js`, `src/views/combat.js`, `src/views/hunter.js`, `src/views/inventory.js`, `src/views/map.js`, `src/views/table.js`
 
 ### `src/views/inventory.js`
 
-- Imports: `src/core/effects.ts`, `src/core/gates/spawn.ts`, `src/core/hunter/inventory.ts`, `src/core/hunter/sheet.ts`, `src/core/hunter/use.ts`, `src/core/one-of.ts`, `src/core/registry/abilities.ts`, `src/core/registry/items.ts`, `src/core/save-step.ts`, `src/core/save.ts`, `src/core/sync/connection.ts`, `src/edge/roll.ts`, `src/edge/rules.ts`
+- Imports: `src/core/effects.ts`, `src/core/gates/spawn.ts`, `src/core/hunter/inventory.ts`, `src/core/hunter/sheet.ts`, `src/core/hunter/use.ts`, `src/core/one-of.ts`, `src/core/registry/abilities.ts`, `src/core/registry/icon-defaults.ts`, `src/core/registry/items.ts`, `src/core/save-step.ts`, `src/core/save.ts`, `src/core/sync/connection.ts`, `src/edge/roll.ts`, `src/edge/rules.ts`, `src/views/icons.ts`
 - Imported by: `src/app.js`
 - Provides: `app.api.inventory`: `addGold`, `addItem`, `buy`, `equip`, `itemTemplates`, `rollLoot`, `sell`, `shop`, `unequip`, `use`
 - Uses: `app.api.combat` (isActive, useItem) from `src/views/combat.js`; `app.api.detail` (control, panel, wire) from `src/views/detail.js`; `app.api.effects` (describeItem) from `src/views/effects.js`; `app.api.hunter` (fightOf, sheet) from `src/views/hunter.js`; `app.api.loadouts` (inFight) from `src/views/custom.js`; `app.api.loot` (item) from `src/views/loot.js`; `app.api.sync` (conn) from `src/edge/sync.ts`; `app.api.uses` (cast, told) from `src/views/uses.js`

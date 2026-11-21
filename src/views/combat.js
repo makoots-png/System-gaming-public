@@ -780,6 +780,7 @@ export function register(app) {
       return {
         list: shownAbilities(c).map(x => x.a), readyAt: c.readyAt, now: f.now, costCut: c.sheet.costCut, pinKey: pinKeyOf(c), channel: ch && ch.state === 'holding' ? ch : null,
         armed: c.armed ? { ability: c.armed.ability, spent: c.armed.spent } : null, left: usesLeft(c, c.abilities.length),
+        itemOf: id => (holderHunter(c)?.items ?? []).find(i => i.id === id) ?? null,
       };
     },
     arm: ability => { const c = cur(); if (c) armRow(c, ability); },

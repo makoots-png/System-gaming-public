@@ -151,16 +151,21 @@ export function rangeWith(range: number, b: Partial<Pick<Body, 'statuses'>>, R: 
 }
 
 /**
- * A body's share of one kind (rule 11c): of its `share` ops on `on`, the strongest increase and the strongest decrease
- * apply and multiply, as the speed ops of `modsOf` do. 1 when it has none.
+ * A body's shares of one kind (rule 11c), each a multiplier: of its `share` ops on `on`, the strongest increase (`up`,
+ * 1 or more) and the strongest decrease (`down`, 0 to 1), as the speed ops of `modsOf` keep them. 1 and 1 when it has none.
  */
-export function shareOf(b: Pick<Body, 'statuses'>, on: ShareOn): number {
+function sharesOf(b: Pick<Body, 'statuses'>, on: ShareOn): { readonly up: number; readonly down: number } {
   let up = 0, down = 0;
   for (const s of counting(b.statuses)) for (const o of s.def.ops) if (o.op === 'share' && o.on === on) {
     const pct = atTier(o.pct, s.source.tier) * countOn(s);
     up = Math.max(up, pct); down = Math.min(down, pct);
   }
-  return (1 + up / 100) * (1 + Math.max(-100, down) / 100);
+  return { up: 1 + up / 100, down: 1 + Math.max(-100, down) / 100 };
+}
+/** A body's share of one kind (rule 11c): its strongest increase and its strongest decrease multiply (`sharesOf`). */
+export function shareOf(b: Pick<Body, 'statuses'>, on: ShareOn): number {
+  const s = sharesOf(b, on);
+  return s.up * s.down;
 }
 /** A product of shares held within `kit.shareCap` of 1, and on an elite or a boss the part above 1 times its kind's control factor (8.1). */
 function capped(x: number, target: Pick<Body, 'kind' | 'origin'>, R: StandingRules): number {
@@ -168,9 +173,21 @@ function capped(x: number, target: Pick<Body, 'kind' | 'origin'>, R: StandingRul
   const factor = target.kind === 'monster' && target.origin.kind === 'monster' ? R.fight.kinds[target.origin.monsterKind].control : 1;
   return v > 1 ? 1 + (v - 1) * factor : v;
 }
+/** Rule 11c: what a hit is multiplied by, from the dealt share of whoever deals it and `target`'s taken share. */
+const hitShare = (dealt: number, target: Pick<Body, 'statuses' | 'kind' | 'origin'>, R: StandingRules): number => capped(dealt * shareOf(target, 'taken'), target, R);
 /** Rule 11c: what a hit from `user` (null: a status's own per-round damage) on `target` is multiplied by. */
 export const damageShare = (user: Pick<Body, 'statuses'> | null, target: Pick<Body, 'statuses' | 'kind' | 'origin'>, R: StandingRules): number =>
-  capped((user ? shareOf(user, 'dealt') : 1) * shareOf(target, 'taken'), target, R);
+  hitShare(user ? shareOf(user, 'dealt') : 1, target, R);
+/**
+ * Rule 11c for an ambush (resolve.ts `ambushes`): what a use's hit from hiding on a target that does not perceive its
+ * user is multiplied by. The rules' `stealth.ambush` is one more of the user's dealt increases, of which only the
+ * strongest applies (notes-7-stealth.md section 2), so a dealt buff and an ambush do not compound; the product stays
+ * within `kit.shareCap`, and on an elite or a boss its part above 1 is times the kind's control factor, as every share's.
+ */
+export const ambushShare = (user: Pick<Body, 'statuses'>, target: Pick<Body, 'statuses' | 'kind' | 'origin'>, R: StandingRules): number => {
+  const s = sharesOf(user, 'dealt');
+  return hitShare(Math.max(s.up, R.fight.stealth.ambush) * s.down, target, R);
+};
 /** Rule 11c: what a heal `target` gets is multiplied by, a per-round one too. */
 export const healShare = (target: Pick<Body, 'statuses' | 'kind' | 'origin'>, R: StandingRules): number => capped(shareOf(target, 'healed'), target, R);
 
@@ -247,8 +264,8 @@ export const stealthLevel = (s: Stealth): HideLevel | null => (s.hides.length ? 
 /**
  * What moves it: a hide put on (`start` its op's, `watched` whether a foe that is up has the body's tile in sight; the
  * fight raises it before a use that hides its user, fight.ts `act`), and the owner's three ends: its bearer loses HP
- * (`hurt`, fight-turn.ts `consequences`), it is revealed (`revealed`: a `reveal` op lands on it, or a foe's area hits
- * it, the owner's ruling 2; a foe beside it does not, ruling 4), or a use or a reaction of its own deals HP damage to the
+ * (`hurt`, fight-turn.ts `consequences`), it is revealed (`revealed`: a `reveal` op lands on it, or a foe's use catches
+ * it without picking it, the owner's ruling 2; a foe beside it does not, ruling 4), or a use or a reaction of its own deals HP damage to the
  * other side (`dealt`, fight.ts `landed` and fight-react.ts `react`, ruling 6).
  */
 export type StealthEvent =
@@ -331,8 +348,9 @@ export type Spent = { readonly id: CombatantId; readonly key: StatusKey };
 /**
  * The edge on `target`'s reaction d20 against `user`'s use of `a` (rule 7b): `kh` keeps the higher of two (the defender's
  * advantage), `kl` the lower (the attacker's), null one die. The user's attack edges (only one whose tag the ability
- * has, when it names one) and a hidden user's attack (8.7.4), the target's defend edges; an edge and its opposite
- * cancel, and two of one kind do not add. `spent`: every edge with `spend` that reached the die, cancelled or not.
+ * has, when it names one) and the target's defend edges; an edge and its opposite cancel, and two of one kind do not
+ * add. Hiding gives none: a hit from hiding is an ambush, rule 11c (the owner's ruling 3, `ambushShare`). `spent`: every
+ * edge with `spend` that reached the die, cancelled or not.
  */
 export function edgeOn(a: Pick<Ability, 'tags'>, user: Pick<Body, 'id' | 'statuses'>, target: Pick<Body, 'id' | 'statuses'>): { readonly cut: 'kh' | 'kl' | null; readonly spent: readonly Spent[] } {
   const ways = new Set<'kh' | 'kl'>(), spent: Spent[] = [];
@@ -345,7 +363,6 @@ export function edgeOn(a: Pick<Ability, 'tags'>, user: Pick<Body, 'id' | 'status
     }
   };
   reach(user, 'attack');
-  if (holds(user, 'hidden')) ways.add('kl');
   reach(target, 'defend');
   return { cut: ways.size === 1 ? [...ways][0]! : null, spent };
 }

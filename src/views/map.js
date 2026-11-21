@@ -14,7 +14,7 @@ import { BLANK, mapMount } from '../core/combat/map-mount.ts';
 import { place } from '../core/combat/space.ts';
 import * as motion from './motion.ts';
 import { bind, keyed } from './patch.ts';
-import { iconHref, sprite } from './icons.ts';
+import { icon, iconHref, sprite } from './icons.ts';
 
 /** Pixels in a tile at zoom 1: a thumb's width at the zoom a fight opens at. */
 const TILE = 40;
@@ -742,8 +742,8 @@ export function register(app) {
     function drawHotbar() {
       const k = src.kit(), hot = $('[data-slots]'), passBox = $('[data-passbox]'), dr = $('[data-drawer]');
       if (!k) { keyed(hot, [], hbTemplate); keyed(passBox, [], hbTemplate); dr.hidden = true; return; }
-      const h = hotbar(k.list, k.readyAt, k.now, k.costCut, store.prefs().pins[k.pinKey] ?? null, app.rules(), { armed: k.armed ?? null, left: k.left ?? {} });
-      const btn = s => { const d = slotDesc(s); return `<button type="button" class="${d.cls}"${d.ab ? ` data-ab="${esc(d.ab)}"` : ''}${d.arm ? ` data-arm="${esc(d.arm)}"` : ''} aria-pressed="${d.pressed}"${d.wait ? ' disabled' : ''} aria-label="${esc(d.label)}"><span>${esc(d.name)}</span><small>${esc(d.small)}</small></button>`; };
+      const h = hotbar(k.list, k.readyAt, k.now, k.costCut, store.prefs().pins[k.pinKey] ?? null, app.rules(), { armed: k.armed ?? null, left: k.left ?? {}, itemOf: k.itemOf });
+      const btn = s => { const d = slotDesc(s); return `<button type="button" class="${d.cls}"${d.ab ? ` data-ab="${esc(d.ab)}"` : ''}${d.arm ? ` data-arm="${esc(d.arm)}"` : ''} aria-pressed="${d.pressed}"${d.wait ? ' disabled' : ''} aria-label="${esc(d.label)}">${icon(s.icon)}<span>${esc(d.name)}</span><small>${esc(d.small)}</small></button>`; };
       const ch = k.channel, slots = [
         ...(ch ? [['release', hbDesc({ cls: 'mp-hb release', release: true, label: `Release ${ch.name}: charge ${ch.charge} of ${ch.max}, ${ch.factor} times its power`, name: `Release ${ch.name}`, small: `${ch.charge} of ${ch.max} · ×${ch.factor}` })]] : []),
         ...h.bar.map(s => [`ab:${s.id}`, slotDesc(s)]),

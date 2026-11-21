@@ -5,6 +5,8 @@ import { oneOf } from '../core/one-of.ts';
 import { itemOps, itemSource } from '../core/effects.ts';
 import { builtInItems, defaultShop, lootPool, parseItem, valueOf, weightOf } from '../core/registry/items.ts';
 import { itemAbilityId } from '../core/registry/abilities.ts';
+import { itemIcon } from '../core/registry/icon-defaults.ts';
+import { icon, sprite } from './icons.ts';
 import { BUY_REFUSALS, BUY_WORDS, GEAR_WORDS, SHOP_CLOSED, addGold, buy, editItem, equip, putItem, removeItem, removeShopItem, sell, sellable, sellPrice as sellPriceOf, sellTotal, shopOpen, stackOf, unequip, wearMove, withShop, writeShopItem } from '../core/hunter/inventory.ts';
 import { fitted } from '../core/hunter/sheet.ts';
 import { USE_WORDS, spendItem, tooLowOf, usable, useDice, useItem, useWords } from '../core/hunter/use.ts';
@@ -25,6 +27,7 @@ const bonusText = b => BONUS_KEYS.filter(k => b?.[k]).map(k => `${b[k] > 0 ? '+'
 export function register(app) {
   const { store, ui } = app;
   const { esc, fmt } = ui;
+  sprite();
 
   /** Whether hunter `hid` is in a fight: inventory.ts refuses every change of what is worn there (`TABLE`). */
   const inFight = hid => app.api.loadouts.inFight(hid);
@@ -150,6 +153,7 @@ export function register(app) {
 .inv-bar{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px}
 .inv-card{border:1px solid var(--line);background:rgba(10,26,46,.55);padding:9px 12px;display:flex;flex-direction:column;gap:6px}
 .inv-card .top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.inv-card .inv-ic{--ic:var(--icon-bag)}
 .inv-card .i-name{flex:1 1 140px;min-width:0;overflow-wrap:anywhere;font-weight:600}
 .inv-card button.i-name{min-height:var(--control-h);border:0;background:none;padding:0;text-align:left;color:inherit;font:inherit;font-weight:600}
 .inv-card .meta{font-size:13px;color:var(--cyan-dim);overflow-wrap:anywhere}
@@ -164,6 +168,8 @@ export function register(app) {
 `);
 
   const chip = r => `<span class="rar rar-${esc(r)}">${esc(r)}</span>`;
+  /** An item's picture (icon-defaults.ts `itemIcon`) in its rarity's colour, at the start of its line. */
+  const pic = i => icon(itemIcon(i), `inv-ic rar-${esc(i.rar)}`);
   const metaLine = i => [i.type, i.slot ? `slot: ${SLOT_LABEL[i.slot] || i.slot}` : '', i.dice ? `${i.dice}${i.attack ? ` ${i.attack}` : ''}` : '', bonusText(i.bonus),
     weightOf(i) ? `weight ${weightOf(i)}` : '', i.armor ? `armor ${i.armor}` : '', i.resist ? `resist ${i.resist}` : ''].filter(Boolean).map(esc).join(' · ');
   /** An item's name, which opens what it does and its description (app.api.detail) under its line. */
@@ -294,7 +300,7 @@ export function register(app) {
         const list = h.items.filter(i => filter === 'all' || i.type === filter);
         el.querySelector('[data-list]').innerHTML = list.length ? list.map(i => {
           const eq = equippedIds.has(i.id);
-          return `<li class="inv-card${eq ? ' eq' : ''}" data-item="${esc(i.id)}"><div class="top">${nameBtn('inv-items', i.id, i)}${chip(i.rar)}${i.qty > 1 ? `<span class="inv-qty">×${esc(i.qty)}</span>` : ''}${eq ? '<span class="inv-qty">equipped</span>' : ''}</div>
+          return `<li class="inv-card${eq ? ' eq' : ''}" data-item="${esc(i.id)}"><div class="top">${pic(i)}${nameBtn('inv-items', i.id, i)}${chip(i.rar)}${i.qty > 1 ? `<span class="inv-qty">×${esc(i.qty)}</span>` : ''}${eq ? '<span class="inv-qty">equipped</span>' : ''}</div>
             ${itemDetail('inv-items', i.id, i)}${metaLine(i) ? `<div class="meta">${metaLine(i)}</div>` : ''}
             <div class="acts">
               ${i.type === 'consumable' ? `<button type="button" data-use="${esc(i.id)}" aria-label="Use ${esc(i.name)}">Use</button>` : ''}
@@ -310,7 +316,7 @@ export function register(app) {
         closed.textContent = open ? '' : SHOP_CLOSED;
         el.querySelector('[data-shoplist]').innerHTML = shopList().map((t, n) => {
           const price = valueOf(t, rules()), poor = h.gold < price;
-          return `<li class="inv-card" data-shopitem="${esc(t.name)}"><div class="top">${nameBtn('inv-shop', String(n), t)}${chip(t.rar)}<span class="inv-qty">${fmt(price)} g</span></div>
+          return `<li class="inv-card" data-shopitem="${esc(t.name)}"><div class="top">${pic(t)}${nameBtn('inv-shop', String(n), t)}${chip(t.rar)}<span class="inv-qty">${fmt(price)} g</span></div>
             ${itemDetail('inv-shop', String(n), t)}${metaLine(t) ? `<div class="meta">${metaLine(t)}</div>` : ''}
             <div class="acts">${open ? `<button type="button" data-buy="${n}" aria-label="Buy ${esc(t.name)} for ${esc(price)} gold"${poor ? ' aria-disabled="true"' : ''}>Buy</button>` : ''}
               ${gm ? `<button type="button" data-shop-edit="${n}" aria-label="Edit shop item ${esc(t.name)}">Edit</button><button type="button" class="icon-btn danger" data-shop-del="${n}" aria-label="Remove ${esc(t.name)} from shop">&times;</button>` : ''}</div></li>`;

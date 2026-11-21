@@ -24,6 +24,8 @@ import { gmSource } from '../core/effects.ts';
 import { BUNDLE_NAME, newRewards, parseRewards, parseWords } from '../core/rewards.ts';
 import { LIMITS } from '../core/save.ts';
 import * as motion from './motion.ts';
+import { icon, sprite } from './icons.ts';
+import { statusIcon } from '../core/registry/icon-defaults.ts';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const int = v => Math.trunc(Number(v)) || 0;
@@ -49,6 +51,8 @@ const CSS = `
 .chip button{border:0;background:none;color:inherit;padding:0 10px;min-height:40px;min-width:40px}
 .chip button.c-info{padding:0 6px 0 10px;text-align:left;font:inherit}
 .chip .c-end{padding-right:10px}
+.chip .c-ic{display:inline-flex;margin-right:5px;vertical-align:-2px}
+.chip .c-ic .ic{--ic:var(--icon-chip)}
 .cond-add{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:6px}
 .cond-add .field{flex:1 1 150px}
 .rest-row{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 4px}
@@ -91,6 +95,7 @@ button.dv{display:block;width:100%;min-height:var(--control-h);color:inherit;fon
 export function register(app) {
   const { store, ui } = app;
   const { esc } = ui;
+  sprite();
   ui.css('hunter', CSS);
 
   const seedTitle = key => rules().titles.find(t => t.key === key) || null;
@@ -594,7 +599,7 @@ export function register(app) {
     if (chipsWere) for (const [key, c] of chipsWere) if (!chips.some(x => x.key === key)) motion.fadeOff(c);
     setHTML(chipBox, chips.length ? chips.map(({ c, key, rm }) => {
       const def = c.def, rd = c.rounds != null ? ` \u00b7 ${c.rounds} round${c.rounds === 1 ? '' : 's'}` : '', n = 'stacks' in c ? c.stacks : undefined;
-      return `<span class="chip${isStateChip(key) ? ' warn-c' : ''}" data-chip="${esc(key)}"${def.color ? ` style="border-color:${esc(def.color)}"` : ''}><button type="button" class="c-info"${app.api.detail.control('sheet-chips', key)}>${esc(def.label)}${n ? ` ×${n}` : ''}${rd}</button>${rm ? `<button type="button" data-cond-del="${esc(key)}" aria-label="Remove status ${esc(def.label)}">&times;</button>` : '<span class="c-end"></span>'}</span>`
+      return `<span class="chip${isStateChip(key) ? ' warn-c' : ''}" data-chip="${esc(key)}"${def.color ? ` style="border-color:${esc(def.color)}"` : ''}><button type="button" class="c-info"${app.api.detail.control('sheet-chips', key)}><span class="c-ic"${def.color ? ` style="color:${esc(def.color)}"` : ''}>${icon(statusIcon(key, def))}</span>${esc(def.label)}${n ? ` ×${n}` : ''}${rd}</button>${rm ? `<button type="button" data-cond-del="${esc(key)}" aria-label="Remove status ${esc(def.label)}">&times;</button>` : '<span class="c-end"></span>'}</span>`
         + app.api.detail.panel('sheet-chips', key, () => ({ kind: 'status', label: def.label, def, tier: c.source ? c.source.tier : null, ...(n ? { stacks: n } : {}), left: c.rounds ?? null }));
     }).join('') : '<span class="empty">No statuses.</span>');
     if (chipsWere) for (const c of chipBox.querySelectorAll('[data-chip]')) if (!chipsWere.has(c.dataset.chip)) motion.pop(c);

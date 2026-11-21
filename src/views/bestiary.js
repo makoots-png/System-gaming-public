@@ -16,12 +16,15 @@ import { isStateChip } from '../core/hunter/chips.ts';
 import { newMonster } from '../core/save.ts';
 import { codexDoc as codexDocOf, codexFromRoom, codexKey, mergeMonsters, monsterOfKind, playerShelf, recordDefeat as recordDefeatStep, recordKeyOf, recordOf, removeMonster, saveMonster as monsterSaved } from '../core/bestiary.ts';
 import { runsFight } from '../core/role.ts';
+import { monsterIcon } from '../core/registry/icon-defaults.ts';
 import * as motion from './motion.ts';
+import { icon, sprite } from './icons.ts';
 
 /** @param {import('./app.ts').App} app */
 export function register(app) {
   const { store, ui } = app;
   const { esc } = ui;
+  sprite();
 
   /** @type {import('../core/api.ts').BestiaryApi['statBlock']} */
   const statBlock = (rank, o = {}) => statBlockOf(app.rules(), rank, { ...o, kind: o.kind ?? (o.boss ? 'boss' : o.elite ? 'elite' : undefined) });
@@ -57,10 +60,10 @@ export function register(app) {
   // ── codex (B01): monsters are added as they are fought and beaten ──
   const codexOf = () => store.get().codex;
   const dateOf = iso => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }); };
-  /** What the codex keeps of a monster: its body's numbers from its rank, archetype, kind and tweak, and its abilities' names. */
+  /** What the codex keeps of a monster: its body's numbers from its rank, archetype, kind and tweak, its abilities' names, and its picture (the GM's pick, else its type's or archetype's), so a player's bestiary shows what the GM's does. */
   const infoOf = m => {
     const s = monsterSheetOf({ rank: m.rank, archetype: m.archetype, kind: m.kind, tweak: m.tweak || {} }, app.rules());
-    return { hpMax: s.hpMax, armor: s.armor, resist: s.resist, speed: s.speed, abilities: (m.abilities || []).slice(0, 4).map(a => String(a.name).slice(0, 70)) };
+    return { hpMax: s.hpMax, armor: s.armor, resist: s.resist, speed: s.speed, abilities: (m.abilities || []).slice(0, 4).map(a => String(a.name).slice(0, 70)), icon: monsterIcon(m) };
   };
   const statLines = i => [`HP ${i.hpMax} · Armor ${i.armor} · Resist ${i.resist} · Speed ${i.speed}`];
   // A17: a kill unlocks the Bestiary entry; that is news, not a question, so it is a toast (the entry holds the stats).
@@ -128,6 +131,7 @@ export function register(app) {
 .bst-card{border:1px solid var(--line);background:rgba(10,26,46,.6);padding:12px;min-width:0;display:flex;flex-direction:column;gap:8px}
 .bst-card.boss{border-color:rgba(255,201,77,.45)}
 .bst-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.bst-h .bst-ic{--ic:var(--icon-list);color:var(--cyan)}
 .bst-h .nm{font-family:var(--font-display);font-weight:700;font-size:17px;color:var(--ice);flex:1 1 140px;min-width:0;overflow-wrap:anywhere}
 .bst-tag{font-size:12px;letter-spacing:.12em;text-transform:uppercase;border:1px solid var(--line);padding:1px 6px;color:var(--cyan-dim)}
 .bst-tag.boss{color:var(--rank-s);border-color:rgba(255,201,77,.5)}
@@ -178,9 +182,11 @@ export function register(app) {
     const n = counts.get(m.id) || 1, id = esc(m.id), rec = recFor(m), i = m.synthetic ? m.info : infoOf(m);
     const badge = !rec ? (gm ? '<span class="bst-tag">Not encountered</span>' : '') : `<span class="bst-tag cdx">Defeated ×${rec.kills} · first ${esc(dateOf(rec.firstAt))}</span>`;
     const kind = m.kind || 'normal';
+    // a card of the room's codex has no type or archetype to work a default from: it draws the picture its entry carries, or none (an entry from before the field)
+    const pic = m.synthetic ? i.icon : monsterIcon(m);
     const attacks = m.synthetic ? i.abilities.map(a => `<li>${esc(a)}</li>`) : attacksOf(m).map(a => `<li><b>${esc(a.name)}</b> · ${esc(abilityLines(a, m.rank).slice(0, 1).join(''))}</li>`);
     return `<article class="bst-card${kind === 'boss' ? ' boss' : ''}" data-mid="${id}" aria-label="${esc(m.name)} stat block">
-      <div class="bst-h">${ui.rankBadge(m.rank)}<span class="nm">${esc(m.name)}</span>${kind !== 'normal' ? `<span class="bst-tag ${kind}">${KIND_LABEL[kind]}</span>` : ''}${m.auto ? '<span class="bst-tag">Auto</span>' : m.custom ? '<span class="bst-tag">Custom</span>' : ''}${badge}</div>
+      <div class="bst-h">${pic ? icon(pic, 'bst-ic') : ''}${ui.rankBadge(m.rank)}<span class="nm">${esc(m.name)}</span>${kind !== 'normal' ? `<span class="bst-tag ${kind}">${KIND_LABEL[kind]}</span>` : ''}${m.auto ? '<span class="bst-tag">Auto</span>' : m.custom ? '<span class="bst-tag">Custom</span>' : ''}${badge}</div>
       ${m.type || !m.synthetic ? `<div class="lbl">${esc([m.type, m.synthetic ? '' : ARCH_LABEL[m.archetype]].filter(Boolean).join(' · '))}</div>` : ''}
       <div class="bst-vit"><div><span>HP</span><b>${ui.fmt(i.hpMax)}</b></div><div><span>Armor</span><b>${esc(i.armor)}</b></div><div><span>Resist</span><b>${esc(i.resist)}</b></div><div><span>Speed</span><b>${esc(i.speed)}</b></div>${m.synthetic ? '' : `<div><span>XP</span><b>${ui.fmt(monsterXp(m, app.rules()))}</b></div>`}</div>
       ${attacks.length ? `<ul class="bst-ab">${attacks.join('')}</ul>` : ''}

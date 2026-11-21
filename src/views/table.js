@@ -397,6 +397,7 @@ export function register(app) {
       return {
         list: hunterAbilities(h, app.rules()), readyAt: myTurn(e) ? e.ready : {}, now: e.now, costCut: app.api.hunter.sheet(h).sheet.costCut, pinKey: myPinKey(h.id), channel: ch && ch.state === 'holding' ? ch : null,
         armed: armedOf(e), left: myTurn(e) ? e.left ?? {} : {},
+        itemOf: id => h.items.find(i => i.id === id) ?? null,
       };
     },
     arm: ability => { const e = encounter(), h = meHunter(e); if (h) armTo(e, h, ability); },

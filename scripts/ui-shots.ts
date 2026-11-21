@@ -74,8 +74,10 @@ async function shot(d: Phone, screen: string) {
 async function step(d: Phone, shots: number, name: string, fn: () => Promise<void>) {
   const start = d.n;
   try { await fn(); } catch (e) {
-    failures.push(`${d.prefix} ${name}: ${String(e).split('\n')[0]}`);
-    console.log(`FAILED ${d.prefix} ${name}: ${String(e).split('\n')[0]}`);
+    // the first lines of a timeout's call log name the locator and what stood in the way
+    const why = String(e).split('\n').map(l => l.trim()).filter(Boolean).slice(0, 14).join(' | ');
+    failures.push(`${d.prefix} ${name}: ${why}`);
+    console.log(`FAILED ${d.prefix} ${name}: ${why}`);
     const dbg = arg('--debug');
     if (dbg) { mkdirSync(dbg, { recursive: true }); await d.page.screenshot({ path: join(dbg, `${d.prefix}-${name.replace(/\W+/g, '-')}.png`) }).catch(() => {}); }
     await closeWindows(d).catch(() => {});
@@ -678,6 +680,9 @@ async function gmRest(g: Phone, p: Phone | null) {
     });
     const panel = page.locator('#view-status [data-panel="chronicle"]');
     await go(g, 'status');
+    // the seeded facts earn Brakk a feat (Debt Collected), which the app tells in a window over the sheet: answer it before the taps
+    await page.locator('.sys-overlay.show').first().waitFor({ timeout: 5_000 });
+    await closeWindows(g);
     await show(panel, 'start');
     await shot(g, 'chronicle-short');
     await press(g, panel.locator('[data-chr-all]'));
