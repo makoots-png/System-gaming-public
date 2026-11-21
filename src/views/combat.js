@@ -14,7 +14,7 @@ import { fightId, owed, reduce, reduceAll } from '../core/combat/fight.ts';
 import { fightGateName, fought, heldCommands, itemSpent } from '../core/combat/fight-save.ts';
 import { remoteFacts } from '../core/combat/fight-facts.ts';
 import { attemptsLeft, UNTRIED } from '../core/combat/extraction.ts';
-import { castDice, needs } from '../core/combat/resolve.ts';
+import { needs } from '../core/combat/resolve.ts';
 import { WAIT_WORDS, aims, cardOf, channelView, order, readyIn, spotOf, statusGrant, stepAway, stepToward, timeOf, usesLeft, waitChoices } from '../core/combat/fight-view.ts';
 import { EVERYTHING, eyesChoices, fightBodies, fightGround, pinKeyOf, viewAsOf } from '../core/combat/map-view.ts';
 import { SCREEN, buildDrawer, mapSlot } from '../core/combat/map-mount.ts';
@@ -403,7 +403,7 @@ export function register(app) {
     if (u.channel && u.channel.state === 'holding' && u.channel.ability === a.id) { told(releaseOf(u)); return; }
     const aim = typeof p.aim === 'string' ? p.aim : place(p.aim.x, p.aim.y);
     const n = needs(a, u, f.rows, aim, f.grid, f.now, rules()), rolls = rollNeeds(n);
-    told(send({ type: 'act', by: id, ability: a.id, aim, rolls: { ...rolls, dice: castDice(n, aim, p.dice, rolls.dice) } }));
+    told(send({ type: 'act', by: id, ability: a.id, aim, rolls }));
   });
 
   // ── hand edits ──

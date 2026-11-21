@@ -11,7 +11,7 @@ import { oneOf } from '../one-of.ts';
 import { isIconKey } from '../registry/icons.ts';
 import { STAT_KEYS } from '../stats.ts';
 import { SHEET_LABELS } from '../hunter/derive.ts';
-import type { Archetype, Bonus, GearPiece, MonsterKind, SheetNumber, Tweak } from '../hunter/derive.ts';
+import type { Archetype, Bonus, GearPiece, MonsterKind, MonsterTrait, SheetNumber, Tweak } from '../hunter/derive.ts';
 import { bareRefusal, COUNT_NAMES, diceModsOf, FNS, FORMULA_PARTS } from '../formula.ts';
 import { withinSize } from '../size.ts';
 import type { BinaryOp, Formula } from '../formula.ts';
@@ -38,8 +38,9 @@ import type {
 import type { FoeLife } from './row-life.ts';
 import { BEARER_EVENTS, PARTY_EVENTS } from './triggers.ts';
 import type { Limit, Need, Trigger, Trip } from './triggers.ts';
-import { fightId, LOG_CAP, LOG_LINE_MAX, MAX_ABILITIES, MAX_PENDING, MAX_ROWS, MAX_SPREAD, MAX_STATUSES, NAME_MAX, PHASES } from './fight-types.ts';
-import type { Fight, Fog, DueTurn, LogLine, Summary } from './fight-types.ts';
+import { fightId, FORCED_FACES, LOG_CAP, LOG_LINE_MAX, MAX_ABILITIES, MAX_PENDING, MAX_ROWS, MAX_SPREAD, MAX_STATUSES, NAME_MAX, PHASES } from './fight-types.ts';
+import type { Fight, Fog, DueTurn, ForcedFace, Fudge, LogLine, Summary } from './fight-types.ts';
+import { NO_FUDGE } from './fudge.ts';
 import type { Extraction } from './extraction.ts';
 import { NO_TALLY } from './row-tally.ts';
 import type { Kill, RowTally } from './row-tally.ts';
@@ -677,18 +678,20 @@ export const abilityTooLarge = (v: unknown, R: Rules): boolean => { const a = ab
 // ── a row ──
 const ARCHETYPE_LIST: readonly Archetype[] = ['brute', 'skirmisher', 'caster'];
 const MONSTER_KINDS = (R: Rules) => Object.keys(R.fight.kinds) as MonsterKind[];
-/** A seed's tweak: an HP factor above 0 and at most 10, and points added to named stats. */
-function tweakOf(v: unknown): Tweak | null {
-  if (!isObj(v) || !isObj(v.stats)) return null;
-  const hp = num(v.hp, 0, 10), stats: Partial<Record<(typeof STAT_KEYS)[number], number>> = {};
+const MONSTER_TRAITS = (R: Rules) => Object.keys(R.fight.traits) as MonsterTrait[];
+/** A seed's tweak: an HP factor above 0 and at most 10, points added to named stats, and the traits of `R.fight.traits` it names, each once. */
+function tweakOf(v: unknown, R: Rules): Tweak | null {
+  if (!isObj(v) || !isObj(v.stats) || !Array.isArray(v.traits)) return null;
+  const hp = num(v.hp, 0, 10), stats: Partial<Record<(typeof STAT_KEYS)[number], number>> = {}, traits: MonsterTrait[] = [];
   for (const [k, x] of Object.entries(v.stats)) { const key = oneOf(k, STAT_KEYS, null), n = num(x, -10000, 10000); if (!key || n === null) return null; stats[key] = n; }
-  return hp === null || hp === 0 ? null : { hp, stats };
+  for (const t of v.traits) { const trait = oneOf(t, MONSTER_TRAITS(R), null); if (!trait || traits.includes(trait)) return null; traits.push(trait); }
+  return hp === null || hp === 0 ? null : { hp, stats, traits };
 }
 function originOf(v: unknown, R: Rules): Origin | null {
   if (!isObj(v)) return null;
   if (v.kind === 'monster') {
     const rank = oneOf(v.rank, RANKS, null), archetype = oneOf(v.archetype, ARCHETYPE_LIST, null), monsterKind = oneOf(v.monsterKind, MONSTER_KINDS(R), null);
-    const tweak = tweakOf(v.tweak), name = text(v.name, NAME_MAX);
+    const tweak = tweakOf(v.tweak, R), name = text(v.name, NAME_MAX);
     const type = typeof v.type === 'string' && v.type ? v.type.slice(0, TYPE_MAX) : null;
     return name !== null && rank && archetype && monsterKind && tweak ? { kind: 'monster', name, rank, archetype, monsterKind, tweak, ...(type ? { type } : {}), ...(isIconKey(v.icon) ? { icon: v.icon } : {}) } : null;
   }
@@ -890,6 +893,31 @@ function hadOf(v: unknown): Fight['had'] | null {
   return out;
 }
 
+/**
+ * The GM's weight on a fight in setup or running (notes-8-fudge.md section 2): all 0 when the save has none. Null when a
+ * weight is not a whole number, a forced face is not 1 or 20, or it names a row the fight lacks. A row's weight of 0
+ * leaves no entry, as `fudgeStep` leaves none.
+ */
+function fudgeOf(v: unknown, rows: readonly Body[]): Fudge | null {
+  if (v === undefined) return NO_FUDGE;
+  if (!isObj(v) || !isObj(v.sides) || !isObj(v.rows) || !isObj(v.forced)) return null;
+  const weight = (n: unknown): number | null => typeof n === 'number' && Number.isSafeInteger(n) ? n : null;
+  const party = weight(v.sides.party), foe = weight(v.sides.foe), ids = new Set<string>(rows.map(r => r.id));
+  if (party === null || foe === null) return null;
+  const own: Record<CombatantId, number> = {}, forced: Record<CombatantId, ForcedFace> = {};
+  for (const [k, n] of Object.entries(v.rows)) {
+    const w = weight(n);
+    if (!ids.has(k) || w === null) return null;
+    if (w !== 0) own[combatantId(k)] = w;
+  }
+  for (const [k, face] of Object.entries(v.forced)) {
+    const f = oneOf(face, FORCED_FACES, null);
+    if (!ids.has(k) || f === null) return null;
+    forced[combatantId(k)] = f;
+  }
+  return { sides: { party, foe }, rows: own, forced };
+}
+
 /** A log line: its words and the ids of the rows (at most `MAX_ROWS`) and zones (`MAX_ZONES`) it is about. */
 function logLineOf(v: unknown): LogLine | null {
   if (!isObj(v)) return null;
@@ -915,11 +943,16 @@ export function parseFight(raw: unknown, R: Rules): Fight | null {
   const had = raw.had === undefined ? {} : hadOf(raw.had);
   if (!had) return null;
   const shared = { id: fightId(id), grid, zones, fog, rows, log, banked, had };
-  if (phase === 'setup') return { phase, ...shared };
+  if (phase === 'ended') {
+    const now = tickOf(raw.now), summary = summaryOf(raw.summary);
+    return now !== null && summary ? { phase, ...shared, now, summary } : null;
+  }
+  const fudge = fudgeOf(raw.fudge, rows);
+  if (!fudge) return null;
+  if (phase === 'setup') return { phase, ...shared, fudge };
   const now = tickOf(raw.now);
   if (now === null) return null;
-  if (phase === 'ended') { const summary = summaryOf(raw.summary); return summary ? { phase, ...shared, now, summary } : null; }
   const currentId = idText(raw.currentId), pending = all(raw.pending, MAX_PENDING, x => pendingOf(x, R));
   if (!currentId || !rows.some(r => r.id === currentId) || !pending) return null;
-  return { phase, ...shared, now, currentId: combatantId(currentId), pending };
+  return { phase, ...shared, now, currentId: combatantId(currentId), pending, fudge };
 }

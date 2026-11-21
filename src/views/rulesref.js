@@ -132,7 +132,7 @@ export function register(app) {
         `<b>Armor</b> reduces physical damage and <b>Resist</b> reduces magical damage. Damage dealt = damage × ${F.armorK} / (${F.armorK} + defense): ${kit.heavy.armor} armor takes ${armorCutPct(R, kit.heavy.armor)}% off, and no amount makes a body immune.`,
         `Before that, ${Math.round(F.armorFlat * 100)}% of the defense comes off every hit as a flat amount, so a weak hit loses more than a strong one.`,
         `<b>Penetration</b> lowers the defense before any of this. Armor penetration works against armor and magic penetration against resist, each a percent of it: Control gives up to ${F.penCap}% of both, items and perks more, never past ${F.penMax}% in all. Then <b>Lethality</b> ignores that many points of armor and <b>Unravel</b> that many of resist, from items and perks.`,
-        `Gear gives most of it. A full set of gear: light weighs ${kit.light.weight} (armor ${kit.light.armor}, resist ${kit.light.resist}), medium ${kit.medium.weight} (${kit.medium.armor}, ${kit.medium.resist}), heavy ${kit.heavy.weight} (${kit.heavy.armor}, ${kit.heavy.resist}). Weight over half your carry slows you, up to ${Math.round(F.loadSlow * 100)}% at full carry.`]),
+        `Gear gives most of it. A full set of gear: light weighs ${kit.light.weight} (armor ${kit.light.armor}, resist ${kit.light.resist}), medium ${kit.medium.weight} (${kit.medium.armor}, ${kit.medium.resist}), heavy ${kit.heavy.weight} (${kit.heavy.armor}, ${kit.heavy.resist}); its six pieces add up to that. A rarer piece has the same armor and resist as a common one: its rarity lets it hold more bonuses and raises its price. Weight over half your carry slows you, up to ${Math.round(F.loadSlow * 100)}% at full carry.`]),
       ] },
       { id: 'leveling', title: 'Leveling and points', body: [
         p(`XP needed to advance: <b>${esc(R.xpPerLevel)} × current level</b>. XP shows as progress within the current level.`),
@@ -152,9 +152,11 @@ export function register(app) {
         ul(['A defeated monster\'s XP goes to the hunters who fought it: whole to each in a fight started from no gate, shared as the gate\'s pot in a fight started from a gate (see Gates).']),
       ] },
       { id: 'monsters', title: 'Monsters', body: [
-        p(`A monster is a hunter of its rank's first level with its points split 2 to 1 by its archetype: a brute Strength and Vitality in medium gear, a skirmisher Agility and Strength in light gear, a caster Power and Control in light gear. Its kind multiplies its max HP and power; a stun, a push or a curse lands on an elite or a boss as on any monster.`),
-        table(['Kind', 'Max HP', 'Power', 'Stagger bar (hits)', 'XP'], Object.entries(F.kinds).map(([k, v]) => [esc(k), `×${v.hp}`, `×${v.power}`, v.stagger ? esc(v.stagger) : '—', `×${v.xp}`])),
-        p('Each monster attacks with its archetype\'s attack (a strike, a shot or a curse) and its own abilities. The monster maker shows the HP, armor, resist and speed its rank, archetype and kind give.'),
+        p(`A monster is a hunter of its rank's first level with its points split 2 to 1 by its archetype: a brute Strength and Vitality in medium gear, a skirmisher Agility and Strength in light gear, a caster Power and Control in light gear, the same gear at every rank. Its kind multiplies its max HP, power, armor and resist, so a boss is tougher only by its own numbers; a stun, a push or a curse lands on an elite or a boss as on any monster.`),
+        table(['Kind', 'Max HP', 'Power', 'Armor', 'Resist', 'Stagger bar (hits)', 'XP'], Object.entries(F.kinds).map(([k, v]) => [esc(k), `×${v.hp}`, `×${v.power}`, `×${v.armor}`, `×${v.resist}`, v.stagger ? esc(v.stagger) : '—', `×${v.xp}`])),
+        p('A trait changes a monster\'s body on top of its kind: its max HP, armor and resist by a factor, its speed by a percent.'),
+        table(['Trait', 'Max HP', 'Armor', 'Resist', 'Speed', 'XP'], Object.entries(F.traits).map(([k, v]) => [esc(k), `×${v.hp}`, `×${v.armor}`, `×${v.resist}`, v.speed ? `${v.speed > 0 ? '+' : ''}${v.speed}%` : '—', `×${v.xp}`])),
+        p('Each monster attacks with its archetype\'s attack (a strike, a shot or a curse) and its own abilities. The monster maker shows the HP, armor, resist and speed its rank, archetype, kind and traits give.'),
       ] },
       { id: 'daily', title: 'Daily quests and penalty', body: [
         p(`The daily cycle resets at ${esc(String(resetHour).padStart(2, '0'))}:00 local time. Default daily: <b>${esc(R.dailyTemplate.title)}</b>.`),

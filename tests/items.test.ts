@@ -27,7 +27,6 @@ const clear = (R: Rules, rank: Rank): number => (R.loot[rank].gold[0]! + R.loot[
 /** The rules with every rank's loot gold times `k`, as a GM's edit of the loot table would leave them. */
 const lootTimes = (k: number): Rules => ({ ...RULES, loot: Object.fromEntries(RANKS.map(r => [r, { ...RULES.loot[r], gold: RULES.loot[r].gold.map(g => g * k) }])) as Rules['loot'] });
 /** Half up, in whole numbers, so a share of 35 hundredths of 30 is 10.5 and rounds to 11 with no floating point doubt. */
-const halfUp = (n: number, hundredths: number): number => Math.floor((n * hundredths + 50) / 100);
 
 for (const [list, defs] of LISTS) {
   for (const def of defs) {
@@ -61,10 +60,12 @@ for (const [list, defs] of LISTS) {
         expect([item.armor, item.resist]).toEqual([0, 0]);
       });
 
-      test('a piece of armour is its slot\'s share of its kit, half up, with armor and resist raised by the rarity\'s index', () => {
+      test('a piece of armour is its slot\'s share of its kit to within a point, the same at every rarity (a rarer piece holds no more armor or resist)', () => {
         if (def.type !== 'armor') return;
-        const kit = RULES.fight.kits[def.kit], share = KIT_SHARE[def.slot], up = RARITIES.indexOf(def.rar);
-        expect([item.weight, item.armor, item.resist]).toEqual([halfUp(kit.weight, share), halfUp(kit.armor, share) + up, halfUp(kit.resist, share) + up]);
+        const kit = RULES.fight.kits[def.kit], share = KIT_SHARE[def.slot];
+        for (const n of ['weight', 'armor', 'resist'] as const) expect(Math.abs((item[n] ?? 0) - kit[n] * share / 100), n).toBeLessThan(1);
+        const common = itemOf(RULES, { ...def, rar: 'common' });
+        expect([item.weight, item.armor, item.resist]).toEqual([common.weight, common.armor, common.resist]);
       });
 
       test('a ring or neck piece, and anything not worn, weighs nothing and has no armor or resist', () => {
@@ -249,12 +250,12 @@ group('the items as plan section 3.3 restates them', () => {
     expect(of("Hunter's Leather")).toMatchObject({ weight: 3, armor: 4, resist: 5 });
   });
 
-  test('the Reinforced Hunter Vest, an uncommon medium chest, weighs 6 with armor 12 and resist 3: 35% of 18, 30 and 5, plus 1', () => {
-    expect(of('Reinforced Hunter Vest')).toMatchObject({ weight: 6, armor: 12, resist: 3 });
+  test('the Reinforced Hunter Vest, an uncommon medium chest, weighs 6 with armor 11 and resist 2: 35% of 18, 30 and 5 (6.3, 10.5, 1.75), the chest taking the points the rounding leaves', () => {
+    expect(of('Reinforced Hunter Vest')).toMatchObject({ weight: 6, armor: 11, resist: 2 });
   });
 
-  test('Ironhide Gauntlets weigh 1 with armor 2, resist 3 and Strength 1', () => {
-    expect(of('Ironhide Gauntlets')).toMatchObject({ weight: 1, armor: 2, resist: 3, bonus: { str: 1 } });
+  test('Ironhide Gauntlets weigh 1 with armor 1, resist 2 and Strength 1: a tenth of the light kit\'s 8, 10 and 15 (0.8, 1, 1.5)', () => {
+    expect(of('Ironhide Gauntlets')).toMatchObject({ weight: 1, armor: 1, resist: 2, bonus: { str: 1 } });
   });
 
   test('the Ring of Vitality weighs nothing and gives Vitality 5', () => {
@@ -427,7 +428,7 @@ group('the worn speed the item maker shows', () => {
     const none = wornSpeed({ weight: 0, armor: 5, resist: 5 }, RULES);
     expect(none.worn).toBe(none.bare);
     // the heavy kit's chest is 35% of its weight (KIT_SHARE): on top of a medium kit it passes the free load
-    const plate = wornSpeed(piece('heavy', 'chest', 'common', RULES), RULES);
+    const plate = wornSpeed(piece('heavy', 'chest', RULES), RULES);
     expect(plate.worn).toBeLessThan(plate.bare);
   });
 });

@@ -19,8 +19,9 @@ import type { RowMonster } from '../src/core/combat/rows.ts';
 import { BUILT_IN_STATUSES } from '../src/core/registry/statuses.ts';
 import { TIER_BUDGET } from '../src/core/registry/paths.ts';
 import { ARCHETYPE_ATTACKS, ATTACK_ID } from '../src/core/registry/abilities.ts';
-import { ARCHETYPE_LIST, MONSTER_BOUNDS, MONSTER_KINDS, SEEDS, copiesOf, lootOf, monsterSheetOf, parseMonster, seedMonsters, statBlock, monsterXp, xpOf } from '../src/core/registry/monsters.ts';
+import { ARCHETYPE_LIST, MONSTER_BOUNDS, MONSTER_KINDS, MONSTER_TRAITS, SEEDS, copiesOf, lootOf, monsterSheetOf, parseMonster, seedMonsters, statBlock, monsterXp, xpOf } from '../src/core/registry/monsters.ts';
 import type { Monster, MonsterTemplate } from '../src/core/registry/monsters.ts';
+import type { MonsterTrait, StatusMod } from '../src/core/hunter/derive.ts';
 import { parseItem } from '../src/core/registry/items.ts';
 
 const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v));
@@ -68,8 +69,9 @@ for (const [i, m] of MONSTERS.entries()) {
       expect([m.archetype, m.kind]).toEqual([archetype, kind]);
     });
 
-    test('its XP is its rank\'s, times its kind\'s factor and its own, rounded', () => {
-      expect(m.xp).toBe(Math.round(RULES.rankTable[m.rank].xp * RULES.fight.kinds[m.kind].xp * (tweak.xp ?? 1)));
+    test('its XP is its rank\'s, times its kind\'s factor, its traits\' and its own, rounded', () => {
+      const traits = (tweak.traits ?? []).reduce((p, t) => p * RULES.fight.traits[t].xp, 1);
+      expect(m.xp).toBe(Math.round(RULES.rankTable[m.rank].xp * RULES.fight.kinds[m.kind].xp * traits * (tweak.xp ?? 1)));
     });
 
     test('reads back unchanged through parseMonster, the reader the save, a pack and the bestiary editor use', () => {
@@ -98,7 +100,7 @@ for (const [i, m] of MONSTERS.entries()) {
     });
 
     test('no ability of its own deals more than 60% of a same-rank tank\'s max HP at mean dice, caught, without a crit', () => {
-      const user: Origin = { kind: 'monster', name: 'Monster', rank: m.rank, archetype: m.archetype, monsterKind: m.kind, tweak: { hp: m.tweak.hp ?? 1, stats: m.tweak.stats ?? {} } };
+      const user: Origin = { kind: 'monster', name: 'Monster', rank: m.rank, archetype: m.archetype, monsterKind: m.kind, tweak: { hp: m.tweak.hp ?? 1, stats: m.tweak.stats ?? {}, traits: m.tweak.traits ?? [] } };
       const u = body('user', user, place(5, 5), 'foe', m.rank), tank = body('tank', tankOf(m.rank), place(6, 5), 'party', m.rank);
       for (const a of m.abilities) {
         if (a.effect?.type !== 'physical' && a.effect?.type !== 'magical') continue;
@@ -212,9 +214,57 @@ group('a monster made from its rank', () => {
 
   test('a tweak\'s stats reach the sheet: the Ice Elf\'s Instinct +8 is 8 more Instinct than a plain C skirmisher', () => {
     const elf = seed('ice-elf'), base = ARCHETYPES.skirmisher;
-    const with8 = modified({ kind: 'monster', name: 'Monster', rank: 'C', archetype: 'skirmisher', monsterKind: 'normal', tweak: { hp: 0.8, stats: { ins: 8 } } }, [], RULES).stats.ins;
-    const plain = modified({ kind: 'monster', name: 'Monster', rank: 'C', archetype: 'skirmisher', monsterKind: 'normal', tweak: { hp: 0.8, stats: {} } }, [], RULES).stats.ins;
+    const with8 = modified({ kind: 'monster', name: 'Monster', rank: 'C', archetype: 'skirmisher', monsterKind: 'normal', tweak: { hp: 0.8, stats: { ins: 8 }, traits: [] } }, [], RULES).stats.ins;
+    const plain = modified({ kind: 'monster', name: 'Monster', rank: 'C', archetype: 'skirmisher', monsterKind: 'normal', tweak: { hp: 0.8, stats: {}, traits: [] } }, [], RULES).stats.ins;
     expect([elf.tweak.stats?.ins, with8 - plain, base.main]).toEqual([8, 8, 'agi']);
+  });
+});
+
+group('a trait changes a monster\'s body by its rule (RULES.fight.traits, balance plan section 1)', () => {
+  const T = RULES.fight.traits;
+  const tweak = (traits: readonly MonsterTrait[], hp = 1) => ({ hp, stats: {}, traits });
+  const sheet = (traits: readonly MonsterTrait[], mods: readonly StatusMod[] = [], hp = 1) => monsterSheet('C', 'brute', 'boss', RULES, mods, tweak(traits, hp));
+  const plain = sheet([]);
+
+  test('the six traits the draft\'s words ask for, each with its starting numbers', () => {
+    expect(MONSTER_TRAITS).toEqual(['frail', 'tough', 'slow', 'fast', 'armored', 'warded']);
+    expect(MONSTER_TRAITS.map(t => [T[t].hp, T[t].armor, T[t].resist, T[t].speed, T[t].xp])).toEqual([
+      [0.8, 1, 1, 0, 1], [1.3, 1, 1, 0, 1], [1, 1, 1, -30, 1], [1, 1, 1, 30, 1], [1, 1.5, 1, 0, 1], [1, 1, 1.5, 0, 1],
+    ]);
+  });
+
+  test('frail and tough multiply max HP as a seed\'s HP factor of their number does, and change nothing else', () => {
+    for (const t of ['frail', 'tough'] as const) {
+      const with_ = sheet([t]);
+      expect(with_.hpMax, t).toBe(sheet([], [], T[t].hp).hpMax);
+      expect(Object.keys(plain).filter(k => k !== 'hpMax' && with_[k as keyof typeof plain] !== plain[k as keyof typeof plain]), t).toEqual([]);
+    }
+  });
+
+  test('slow and fast change speed as a status of their percent does: slow is 30% slower, fast 30% faster', () => {
+    expect(sheet(['slow']).speed).toBe(sheet([], [{ op: 'speed', pct: T.slow.speed }]).speed);
+    expect(sheet(['fast']).speed).toBe(sheet([], [{ op: 'speed', pct: T.fast.speed }]).speed);
+    expect([sheet(['slow']).speed, plain.speed, sheet(['fast']).speed]).toEqual([Math.round(plain.speed * 0.7), plain.speed, Math.round(plain.speed * 1.3)]);
+    expect(sheet(['slow'], [{ op: 'speed', pct: -20 }]).speed, 'a slow status adds its percent to the trait\'s').toBe(sheet([], [{ op: 'speed', pct: -50 }]).speed);
+  });
+
+  test('armored multiplies armor and warded resist by 1.5 on top of the kind\'s factor, to the rounding', () => {
+    expect(Math.abs(sheet(['armored']).armor - T.armored.armor * plain.armor)).toBeLessThanOrEqual(1);
+    expect(sheet(['armored']).resist).toBe(plain.resist);
+    expect(Math.abs(sheet(['warded']).resist - T.warded.resist * plain.resist)).toBeLessThanOrEqual(1);
+    expect(sheet(['warded']).armor).toBe(plain.armor);
+  });
+
+  test('two traits multiply: tough and frail together are 1.04 of the HP', () => {
+    expect(sheet(['frail', 'tough']).hpMax).toBe(sheet([], [], T.frail.hp * T.tough.hp).hpMax);
+  });
+
+  test('a monster\'s traits reach its sheet, its fight row and its XP', () => {
+    const m = parseMonster({ name: 'Golem', rank: 'C', kind: 'boss', tweak: { traits: ['slow', 'armored'] } })!;
+    expect(monsterSheetOf(m, RULES)).toEqual(sheet(['slow', 'armored']));
+    const [row] = monsterRows(m, [combatantId('g1')], RULES);
+    expect(row!.origin).toMatchObject({ tweak: { traits: ['slow', 'armored'] } });
+    expect(monsterXp(m, RULES)).toBe(Math.round(RULES.rankTable.C.xp * RULES.fight.kinds.boss.xp * T.slow.xp * T.armored.xp));
   });
 });
 
@@ -244,6 +294,11 @@ group('parseMonster: a monster from a save, a pack or the bestiary editor', () =
       .toEqual({ hp: 1.25, stats: { ins: 8, str: 2, vit: 999, pow: -999 } });
     expect(parseMonster({ name: 'Wolf', tweak: { hp: 40 } })!.tweak).toEqual({ hp: 10 });
     for (const hp of [0, -1, '2', Infinity]) expect(parseMonster({ name: 'Wolf', tweak: { hp } })!.tweak).toEqual({});
+  });
+
+  test('a tweak keeps the traits the rules hold, each once, in the rules\' order; none is no traits field', () => {
+    expect(parseMonster({ name: 'Wolf', tweak: { traits: ['armored', 'huge', 'slow', 'armored', 5, null] } })!.tweak).toEqual({ traits: ['slow', 'armored'] });
+    for (const traits of [[], 'slow', { slow: true }, ['Slow']]) expect(parseMonster({ name: 'Wolf', tweak: { traits } })!.tweak, JSON.stringify(traits)).toEqual({});
   });
 
   test('numbers are whole and bounded: XP from 0 to a billion', () => {

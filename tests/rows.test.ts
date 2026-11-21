@@ -9,7 +9,7 @@ import type { ShadowGrade } from '../src/core/save.ts';
 import type { Stats } from '../src/core/stats.ts';
 import { buildOf } from '../src/core/hunter/sheet.ts';
 import { MAX_LEVEL } from '../src/core/hunter/level.ts';
-import { monsterSheet } from '../src/core/hunter/derive.ts';
+import { monsterSheet, NO_TWEAK } from '../src/core/hunter/derive.ts';
 import type { MonsterKind } from '../src/core/hunter/derive.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 import { abilityId, combatantId, hunterId } from '../src/core/combat/ability-types.ts';
@@ -283,8 +283,8 @@ describe('a monster', () => {
     expect(monsterRows(monster(), [id('m1')], R).map(r => r.name)).toEqual(['Goblin']);
   });
 
-  test('its seed\'s tweak scales its HP and adds to its stats', () => {
-    const tweak = { hp: 0.7, stats: { ins: 8 } };
+  test('its seed\'s tweak scales its HP, adds to its stats and carries its traits', () => {
+    const tweak = { hp: 0.7, stats: { ins: 8 }, traits: ['slow' as const] };
     const [r] = monsterRows(monster({ archetype: 'caster', tweak }), [id('m1')], R);
     expect(r!.origin).toEqual({ kind: 'monster', name: 'Goblin', rank: 'E', archetype: 'caster', monsterKind: 'normal', tweak });
     expect(rowHp(r!)).toBe(monsterSheet('E', 'caster', 'normal', RULES, [], tweak).hpMax);
@@ -330,15 +330,20 @@ describe('a monster', () => {
     expect(b!.statuses[0]!.stacks).toBe(10);
   });
 
-  test('an elite carries a stagger bar of 2.5 same-rank hits and a boss one of 4; a normal monster has none', () => {
+  test('an elite carries a stagger bar of 2.5 same-rank hits on its own body and a boss one of 4; a normal monster has none', () => {
+    const body = (rank: 'E' | 'C' | 'S', kind: 'normal' | 'elite' | 'boss', archetype: 'brute' | 'caster' = 'brute') => ({ rank, archetype, kind, tweak: NO_TWEAK });
     for (const rank of ['E', 'C', 'S'] as const) {
-      const hit = simHit(rank);
-      expect(sameRankHit(rank, RULES)).toBe(hit);
-      expect(staggerOf(rank, 'elite', RULES)).toEqual({ fill: 0, max: 2.5 * hit, hit });
-      expect(staggerOf(rank, 'boss', RULES)).toEqual({ fill: 0, max: 4 * hit, hit });
-      expect(staggerOf(rank, 'normal', RULES)).toBeNull();
+      for (const [kind, bar] of [['elite', 2.5], ['boss', 4]] as const) {
+        const hit = simHit(rank, RULES, 'brute', kind);
+        expect(sameRankHit(body(rank, kind), RULES)).toBe(hit);
+        expect(staggerOf(body(rank, kind), RULES)).toEqual({ fill: 0, max: bar * hit, hit });
+      }
+      expect(staggerOf(body(rank, 'normal'), RULES)).toBeNull();
+      // the boss's armor is 1.5 times a normal brute's, so a same-rank hit on it is smaller
+      expect(sameRankHit(body(rank, 'boss'), RULES)).toBeLessThan(sameRankHit(body(rank, 'normal'), RULES));
     }
-    expect(monsterRows(monster({ rank: 'C', archetype: 'brute', kind: 'boss' }), [id('m1')], R)[0]!.stagger).toEqual({ fill: 0, max: 4 * simHit('C'), hit: simHit('C') });
+    const hit = simHit('C', RULES, 'caster', 'boss');
+    expect(monsterRows(monster({ rank: 'C', archetype: 'caster', kind: 'boss' }), [id('m1')], R)[0]!.stagger).toEqual({ fill: 0, max: 4 * hit, hit });
   });
 });
 
@@ -408,7 +413,7 @@ describe('a summon (kits design 1.9)', () => {
   const row = summonRow({ id: id('c-hwei'), side: 'party', tier: 2 }, spec, id('c-sprite'), tick(3000), R);
 
   test('is a normal monster\'s body of its archetype at its user\'s rank, with the archetype\'s attack, on its user\'s side', () => {
-    expect([row.kind, row.side, row.tier, row.origin]).toEqual(['summon', 'party', 2, { kind: 'monster', name: 'Sprite', rank: 'C', archetype: 'skirmisher', monsterKind: 'normal', tweak: { hp: 1, stats: {} } }]);
+    expect([row.kind, row.side, row.tier, row.origin]).toEqual(['summon', 'party', 2, { kind: 'monster', name: 'Sprite', rank: 'C', archetype: 'skirmisher', monsterKind: 'normal', tweak: { hp: 1, stats: {}, traits: [] } }]);
     expect(row.abilities.map(a => a.id)).toEqual([ARCHETYPE_ATTACKS.skirmisher(RULES).id]);
     expect([rowHp(row), row.xp, row.holder, row.threat, row.stagger]).toEqual([monsterSheet('C', 'skirmisher', 'normal', RULES, [{ op: 'speed', pct: -30 }]).hpMax, 0, null, null, null]);
   });

@@ -248,7 +248,7 @@ const isArmorSlot = (s: Spendable['slot']): s is ArmorSlot => s !== null && Obje
 function freeGuard(it: Spendable, R: BudgetRules): { readonly armor: number; readonly resist: number } {
   const slot = it.slot, w = weightOf(it);
   if (!isArmorSlot(slot)) return { armor: 0, resist: 0 };
-  const fits = (Object.keys(R.fight.kits) as Kit[]).map(k => piece(k, slot, it.rar, R)).filter(p => p.weight <= w);
+  const fits = (Object.keys(R.fight.kits) as Kit[]).map(k => piece(k, slot, R)).filter(p => p.weight <= w);
   return fits.reduce((a, p) => (p.weight >= a.weight ? p : a), { weight: -1, armor: 0, resist: 0 });
 }
 

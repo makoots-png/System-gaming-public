@@ -266,7 +266,7 @@ test('a GM makes the consumable Bottled Storm in 7 taps from the home screen, an
   });
 });
 
-test('a GM makes epic gauntlets from the heavy kit with +2 STR; a hunter who wears them has 9 more armor and 2 more Strength', async ({ device }) => {
+test('a GM makes epic gauntlets from the heavy kit with +2 STR; a hunter who wears them has 6 more armor and 2 more Strength', async ({ device }) => {
   const page = (await device('gm')).page;
   await onboardGM(page);
   const d = itemMaker(page);
@@ -277,19 +277,20 @@ test('a GM makes epic gauntlets from the heavy kit with +2 STR; a hunter who wea
   await d.locator('#lf-rar').selectOption('epic');
   await d.getByLabel('Slot').selectOption('hands');
   await d.locator('[data-kit="heavy"]').tap();
-  // the heavy kit is weight 32, armor 60, resist 60 (RULES.fight.kits) and hands are a tenth of it (KIT_SHARE), each
-  // rounded half up: 3, 6, 6; an epic piece adds its rarity's index, 3, to armor and resist
+  // the heavy kit is weight 32, armor 60, resist 60 (RULES.fight.kits) and hands are a tenth of it (KIT_SHARE): 3.2, 6, 6.
+  // The weight's two points the rounding leaves go to the offhand (4.8) and the legs (6.4), so the hands keep 3; an epic
+  // piece holds what a common one does
   await expect(d.locator('[data-gear="weight"]')).toHaveValue('3');
-  await expect(d.locator('[data-gear="armor"]')).toHaveValue('9');
-  await expect(d.locator('[data-gear="resist"]')).toHaveValue('9');
+  await expect(d.locator('[data-gear="armor"]')).toHaveValue('6');
+  await expect(d.locator('[data-gear="resist"]')).toHaveValue('6');
   await d.locator('[data-bonus="str"]').fill('2');
-  await expect(d.locator('.mk-preview')).toContainText('Weight 3 · Armor 9 · Resist 9');
+  await expect(d.locator('.mk-preview')).toContainText('Weight 3 · Armor 6 · Resist 6');
   await expect(d.locator('.mk-preview')).toContainText('Worn: +2 STR');
   await d.locator('[data-apply]').tap();
   await expect(d).toHaveCount(0);
 
   const grips = await libraryItem(page, 'Rime Grips');
-  expect(grips).toMatchObject({ type: 'armor', rar: 'epic', slot: 'hands', weight: 3, armor: 9, resist: 9, bonus: { str: 2 } });
+  expect(grips).toMatchObject({ type: 'armor', rar: 'epic', slot: 'hands', weight: 3, armor: 6, resist: 6, bonus: { str: 2 } });
 
   const sheet = () => page.evaluate(() => { const x = hunterApp.api.hunter.sheet(hunterApp.store.active()); return { armor: x.sheet.armor as number, str: x.stats.str as number }; });
   await page.evaluate(it => hunterApp.api.inventory.addItem(hunterApp.store.active().id, it), grips);
@@ -298,7 +299,7 @@ test('a GM makes epic gauntlets from the heavy kit with +2 STR; a hunter who wea
   const equip = page.locator('[data-panel="inventory"] [aria-label="Equip Rime Grips"]');
   await equip.evaluate((el: any) => el.scrollIntoView({ block: 'center' }));
   await equip.tap();
-  await expect.poll(sheet).toEqual({ armor: before.armor + 9, str: before.str + 2 });
+  await expect.poll(sheet).toEqual({ armor: before.armor + 6, str: before.str + 2 });
 });
 
 test('in the item maker a consumable shows no slot, no gear numbers and no bonus while worn; a weapon shows them and how it attacks', async ({ device }) => {
@@ -412,9 +413,9 @@ test('the item maker says what a rare weapon spends against its grade, names the
     await d.locator('[data-bonus="str"]').fill('2');
   });
 
-  await test.step('Lethality is weighed: a point of it spends 0.71 at rare (balance plan section 9), so +2 Strength and 1 Lethality spend 2.7', async () => {
+  await test.step('Lethality is weighed: a point of it spends 0.59 at rare (balance plan section 9, on a same-rank elite in its kit at its tier), so +2 Strength and 1 Lethality spend 2.6', async () => {
     await d.locator('[data-bonus="armorPenFlat"]').fill('1');
-    await expect(spend).toHaveText('Spends 2.7 points. Rare− holds up to 3.1.');
+    await expect(spend).toHaveText('Spends 2.6 points. Rare− holds up to 3.1.');
   });
 
   await test.step('a consumable has no budget, so no line', async () => {
@@ -545,6 +546,46 @@ test('on a 390 px phone the enemy maker\'s starting status row keeps its × on t
     return Math.abs(mid(li.querySelector('.nm')!) - mid(li.querySelector('button[data-rm]')!));
   });
   expect(apart).toBeLessThan(12);
+});
+
+test('on a 390 px phone a GM ticks Slow and Armored in the enemy maker: the body is 30% slower with half again the armor, the six traits fit the screen, and the card names them', async ({ device }) => {
+  const page = (await device('gm', { viewport: { width: 390, height: 844 } })).page;
+  await onboardGM(page);
+  const d = monsterMaker(page), traits = d.locator('[data-chips="traits"]');
+  await go(page, 'gm');
+  await page.locator('#gm-make [data-make="monster"]').tap();
+  await d.locator('#enm-name').fill('Iron Sloth');
+  await d.locator('[data-chips="rank"] [data-chip="C"]').tap();
+  await expect(traits.locator('[data-chip]')).toHaveText(['Frail', 'Tough', 'Slow', 'Fast', 'Armored', 'Warded']);
+  const body = async () => {
+    const m = /HP (\d+) · Armor (\d+) · Resist (\d+) · Speed (\d+)/.exec(await d.locator('[data-derived]').innerText());
+    return { hp: Number(m![1]), armor: Number(m![2]), resist: Number(m![3]), speed: Number(m![4]) };
+  };
+  const plain = await body();
+  await traits.locator('[data-chip="slow"]').tap();
+  await traits.locator('[data-chip="armored"]').tap();
+  // RULES.fight.traits: slow is -30% speed, armored 1.5 times the armor, to the rounding; HP and resist are the plain body's
+  await expect.poll(async () => (await body()).speed).toBe(Math.round(plain.speed * 0.7));
+  const ticked = await body();
+  expect(Math.abs(ticked.armor - plain.armor * 1.5)).toBeLessThanOrEqual(1);
+  expect([ticked.hp, ticked.resist]).toEqual([plain.hp, plain.resist]);
+  await traits.scrollIntoViewIfNeeded();
+  const fit = await traits.evaluate(el => ({
+    scroll: el.scrollWidth, client: el.clientWidth, page: document.documentElement.scrollWidth - innerWidth,
+    inside: [...el.querySelectorAll('[data-chip]')].every(c => { const r = c.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.height >= 40; }),
+  }));
+  expect(fit.scroll).toBeLessThanOrEqual(fit.client);
+  expect(fit.inside, 'every trait inside the screen, tall enough to tap').toBe(true);
+  expect(fit.page, 'the page does not scroll sideways').toBeLessThanOrEqual(0);
+  await page.screenshot({ path: '/tmp/pw-balance2-traits-390.png' });
+  await d.locator('[data-apply]').tap();
+  await expect(d).toHaveCount(0);
+  const saved = await page.evaluate(() => hunterApp.store.get().monsters.find((m: any) => m.name === 'Iron Sloth'));
+  expect(saved.tweak).toEqual({ traits: ['slow', 'armored'] });
+  await go(page, 'bestiary');
+  const card = page.locator(`#view-bestiary [data-mid="${saved.id}"]`);
+  await expect(card.locator('> .lbl')).toContainText('Brute · Slow, Armored');
+  await expect(card.locator('.bst-vit')).toContainText(`Speed${ticked.speed}`);
 });
 
 /** Slowed as the rules hold it (src/core/registry/statuses.ts). */

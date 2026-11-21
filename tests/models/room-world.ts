@@ -862,7 +862,7 @@ export async function play(w: World, move: Move): Promise<boolean> {
     case 'offline': p.offline = true; linkDo(w, p, { type: 'offline' }); break;
     case 'online': p.offline = false; linkDo(w, p, { type: 'online' }); break;
     // a strike at the time the GM's fight is at as the player's table shows it (read off the GM's phone, as `invite` reads the code)
-    case 'cast': post(w, p, 'cast', { by: keyOf(p), ability: 'strike', aim: 'c2', at: w.phones[0]!.save.fightNow, dice: [4] }); break;
+    case 'cast': post(w, p, 'cast', { by: keyOf(p), ability: 'strike', aim: 'c2', at: w.phones[0]!.save.fightNow }); break;
     case 'coin': coinCall(w, p); break;
     case 'solo': soloRun(w, p); break;
     // a player arms its hunter's reaction (kits design 8.4.2): taken at any time, it changes nothing but its own row

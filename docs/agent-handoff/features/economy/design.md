@@ -155,10 +155,9 @@ gear on: Agility and Strength 2:1, medium kit), at its tier's rank's first level
 | An ability the item grants | `abilityWorth` the same way, once items can grant one (no such field today) | the kits' measure |
 | Armor ignored (`penFlat`), a worn status's standing ops | **not weighed**, named on the maker's line ("test it in a fight"), as `worth.ts` names what it cannot weigh | no measure exists; a 0 would hide it |
 
-What is free, the slot's own: an armor piece's `piece` numbers (its kit's share plus the rarity's index, the rule that
-already makes a plain epic piece better than a plain common one), a weapon's die up to the reference strike's 1d8 plus
-`weaponStep` (1) mean damage a tier above common (the same idea as `piece`'s rarity index: common 4.5, mythic 9.5), and
-weight. Block `[2.3]`, the conversions:
+What is free, the slot's own: an armor piece's `piece` numbers (its kit's share, the same at every rarity since balance
+unit 4: a plain epic piece is a plain common one's armor with an epic piece's budget beside it), a weapon's die up to the
+reference strike's 1d8 plus `weaponStep` (1) mean damage a tier above common (common 4.5, mythic 9.5), and weight. Block `[2.3]`, the conversions:
 
 | Rank | Max HP a Vitality point | Max mana a Power point | `phys` a Strength point | One standard action, damage | 1 max HP costs | 1 max mana costs | 1 damage costs | A worn status at the kits' tolerance (0.08) costs |
 |---|---|---|---|---|---|---|---|---|

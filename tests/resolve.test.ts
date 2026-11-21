@@ -13,7 +13,7 @@ import type { Ability, AbilityKind, Outcome } from '../src/core/combat/ability-t
 import { modified, statusKey, statusOn } from '../src/core/combat/effect-ops.ts';
 import type { Body, Op, Origin, StackDef, Status, StatusDef, UseOp } from '../src/core/combat/effect-ops.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
-import { afterDefence, castDice, needs, resolve } from '../src/core/combat/resolve.ts';
+import { afterDefence, needs, resolve } from '../src/core/combat/resolve.ts';
 import type { Aim, Resolved, Rolls } from '../src/core/combat/resolve.ts';
 import { rng } from './models/fight-play.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
@@ -64,7 +64,8 @@ const statusOf = (key: string, ...ops: Op[]): UseOp => ({ op: 'applyStatus', key
 const FACES = Array.from({ length: 20 }, (_, i) => i + 1);
 
 describe('the worked examples of design 3.5', () => {
-  test('3.A: a C bruiser\'s swing deals 29 of an adjacent C skirmisher\'s 48 HP, and no face of its d20 gets it out', () => {
+  // A C skirmisher wears the light kit, armor 10 (a rarer piece holds no more). Rule 12 on armor 10: (raw - 0.03 * 10) * 100 / 110.
+  test('3.A: a C bruiser\'s swing deals 29 of an adjacent C skirmisher\'s 48 HP, (32.16 - 0.3) * 100 / 110, and no face of its d20 gets it out', () => {
     const bruiser = body('u', hunterOrigin('bruiser'), place(5, 5), 'party'), skirm = body('t', monsterOrigin('skirmisher'), place(6, 5), 'foe');
     const r = run(ability('strike'), bruiser, [bruiser, skirm], skirm.id, rolls({ t: [6] }, { t: 9 }));
     const [o] = r.outcomes;
@@ -75,7 +76,7 @@ describe('the worked examples of design 3.5', () => {
     expect(best.outcomes[0]!.avoid).toBe('caught');
   });
 
-  test('3.B: an arrow at 8 tiles is dodged on 17 or more by a speed-100 target and on 6 or more by a speed-141 one, whose Agility gives it an edge of 6, and hits for 18', () => {
+  test('3.B: an arrow at 8 tiles is dodged on 17 or more by a speed-100 target and on 6 or more by a speed-141 one, whose Agility gives it an edge of 6, and hits the caster\'s armor 10 for 18', () => {
     const shot = ability('shot', {}, '1d8 + phys');
     const user = body('u', hunterOrigin('speed'), place(2, 6), 'party');
     const lowest = (target: Body): number => FACES.find(f => run(shot, user, [user, target], target.id, rolls({ t: [4.5] }, { t: f })).outcomes[0]!.avoid === 'out')!;
@@ -251,6 +252,17 @@ describe('each rule of design 3.1', () => {
     expect([find(r.bodies, 't').threat, r.outcomes[0]!.threat]).toEqual([null, 0]);
   });
 
+  test('rule 15: a monster\'s armor lowers the damage a hit deals and not the threat it makes, which counts the hit before defence', () => {
+    const loud = body('u', hunterOrigin('bruiser'), place(5, 5), 'party', {}, { threat: 1.5 });
+    const armored = { ...foe, sheet: { ...foe.sheet, armor: 50 } };
+    const r = hitFoe(ability('strike', {}, '20'), loud, armored);
+    expect(r.outcomes[0]!.dealt).toBeLessThan(20);
+    expect([find(r.bodies, 't').threat, r.outcomes[0]!.threat]).toEqual([{ u: 30 }, 30]);
+    const afterDefence = { ...RULES, fight: { ...RULES.fight, threatBeforeDefence: 0 } } as typeof RULES;
+    const old = ok(resolve(ability('strike', {}, '20'), loud, [loud, armored], armored.id, GRID, rolls({ t: [4] }, { t: 10 }), NOW, afterDefence));
+    expect(old.outcomes[0]!.threat).toBe(old.outcomes[0]!.dealt * 1.5);
+  });
+
   test('rule 16: a weak hit fills the stagger bar 1.5 times its damage, a normal one its damage', () => {
     const boss = { ...foe, sheet: { ...foe.sheet, armor: 0 }, stagger: { fill: 0, max: 88, hit: 22 } } as Body;
     expect([hitFoe(ability('strike', {}, '6'), user, boss).outcomes[0]!.stagger, hitFoe(ability('strike', {}, '20'), user, boss).outcomes[0]!.stagger]).toEqual([9, 20]);
@@ -369,12 +381,20 @@ describe('what a use needs and what a refusal leaves', () => {
     expect([Object.keys(n.dice), n.dice['a' as never], n.react, n.refund]).toEqual([['a', 'b'], [{ count: 2, sides: 8 }], ['a', 'b'], false]);
   });
 
-  test('a player\'s blast rolls each foe apart, as the GM\'s does: the player\'s dice land on the first it takes, the GM\'s phone rolls the other', () => {
+  test('a player\'s cast lands with the dice the GM\'s phone rolled for each target', () => {
     const user = body('u', hunterOrigin('cannon'), place(10, 0), 'foe');
-    const a = body('a', hunterOrigin('speed'), place(10, 7), 'party'), b = body('b', hunterOrigin('tank'), place(13, 7), 'party');
-    const n = needs(ability('blast'), user, [user, a, b], place(10, 7), GRID, NOW, RULES);
-    expect(castDice(n, place(10, 7), [8], { ['a' as never]: [3], ['b' as never]: [5] })).toEqual({ a: [8], b: [5] });
-    expect(castDice(n, b.id, [8], { ['a' as never]: [3], ['b' as never]: [5] })).toEqual({ a: [3], b: [8] });
+    const a = body('a', hunterOrigin('speed'), place(10, 7), 'party'), b = body('b', hunterOrigin('speed'), place(13, 7), 'party');
+    const bodies = [user, a, b], n = needs(ability('blast'), user, bodies, place(10, 7), GRID, NOW, RULES);
+    expect(Object.keys(n.dice)).toEqual(['a', 'b']);
+    const lost = (hit: Record<string, number[]>): [number, number] => {
+      const r = resolve(ability('blast'), user, bodies, place(10, 7), GRID, rolls(hit, { a: 1, b: 1 }), NOW, RULES);
+      if (!r.ok) throw new Error(r.reason);
+      const gone = (t: Body) => t.sheet.hpMax - rowHp(r.bodies.find(x => x.id === t.id)!);
+      return [gone(a), gone(b)];
+    };
+    const [lowA, lowB] = lost({ a: [2], b: [2] }), [highA, highB] = lost({ a: [16], b: [2] });
+    expect(highA).toBeGreaterThan(lowA);
+    expect(highB).toBe(lowB);
   });
 
   test('a missing roll is a refusal, not a throw', () => {

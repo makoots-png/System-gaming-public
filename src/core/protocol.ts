@@ -77,8 +77,6 @@ const MAX_TOTAL = 1e9;
 const MAX_TILE = 63;
 /** The most a channel's charge or its max may be on the wire: a channel's max is a small whole number (rules' `channelMax` 5). */
 const MAX_CHARGE = 99;
-/** Dice a player's `cast` carries, and the biggest face. */
-const MAX_DICE = 8, MAX_FACE = 999;
 /** The longest ability id a `cast` names. */
 const ABILITY_ID_MAX = 40;
 
@@ -286,7 +284,7 @@ export type StepPayload = Base & { by: SheetKey; place: DocPlace; at: Tick; dash
  * turn, with the player's own `dice`. The GM's phone rolls each target's reaction d20 itself (m2-plan.md 1.3). `at` as
  * for a step.
  */
-export type CastPayload = Base & { by: SheetKey; ability: AbilityId; aim: CombatantId | DocPlace; at: Tick; dice: number[] };
+export type CastPayload = Base & { by: SheetKey; ability: AbilityId; aim: CombatantId | DocPlace; at: Tick };
 /**
  * A player's death save in the GM's fight: the hunter of `by`, dying, rolled `roll` on the d20 on its own phone. The GM's
  * phone takes it once by its id as the fight's `life` command (a `deathSave` with that roll) on that hunter's row, and
@@ -483,7 +481,7 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
     return {
       ...base(o), by: sheetKey(own(o, 'by')),
       ability: typeof ability === 'string' && ability.length > 0 && ability.length <= ABILITY_ID_MAX ? abilityId(ability) : refuse(),
-      aim: aim(own(o, 'aim')), at: time0(own(o, 'at')), dice: opt(own(o, 'dice'), v => listOf(v, MAX_DICE, int(0, MAX_FACE)), []),
+      aim: aim(own(o, 'aim')), at: time0(own(o, 'at')),
     };
   } },
   pass: { gmOnly: false, ownSheet: true, read: o => ({ ...base(o), by: sheetKey(own(o, 'by')), at: time0(own(o, 'at')) }) },

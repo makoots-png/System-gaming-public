@@ -8,7 +8,7 @@
 // A class is a row of `BUILDS`; a monster archetype's attack is its built-in (`MONSTER_ABILITY`). A policy is a pure function from the
 // fight and its own row to a choice, written as a sensible player plays it, not as an optimizer.
 import { RANKS, RULES } from '../../src/core/rules.ts';
-import type { Rank, Rules } from '../../src/core/rules.ts';
+import type { BonusKey, Rank, Rules } from '../../src/core/rules.ts';
 import { baseStats } from '../../src/core/stats.ts';
 import type { StatKey, Stats } from '../../src/core/stats.ts';
 import { TIER_BUDGET } from '../../src/core/registry/paths.ts';
@@ -26,6 +26,8 @@ import { formulaOf, abilityOf } from '../../src/core/registry/ability-kinds.ts';
 import { ARCHETYPE_ATTACKS, ATTACK_ID, SKILL_ABILITIES, weaponAttack } from '../../src/core/registry/abilities.ts';
 import type { BuiltInSkill } from '../../src/core/registry/abilities.ts';
 import { STARTER_GEAR } from '../../src/core/registry/items.ts';
+import type { Rarity } from '../../src/core/registry/items.ts';
+import { itemSpend, middleBudget } from '../../src/core/registry/item-budget.ts';
 import type { AbilityInput } from '../../src/core/registry/ability-kinds.ts';
 import { onCooldown, payCost } from '../../src/core/combat/charge.ts';
 import { inRange, resolve, taunted } from '../../src/core/combat/resolve.ts';
@@ -87,6 +89,13 @@ export function abilities(R: Rules = RULES) {
     focus: make('curse', 'Focus', { ticks: { channel: 'exponential' } }, R),
     /** The tank's taunt: sure to land, forces the target for `tauntRounds` and bursts its threat to the lead. */
     taunt: make('curse', 'Taunt', { effect: null, delivery: { kind: 'sure' }, ops: [status('taunted', R.fight.tauntRounds, { op: 'taunt' }, R)] }, R),
+    /**
+     * A party's control (balance plan row P3): a curse with no damage that puts the built-in Stunned (a hold) on its target
+     * for a round, the target's Tenacity shortening it, back every `itemBudget.cooldownRounds` (3, the middle of the
+     * built-in skills' cooldowns). No built-in skill holds, so this is the plain control a kit maker would start from.
+     */
+    stun: ((a: Ability): Ability => ({ ...a, cost: { ...a.cost, cooldown: tick(R.itemBudget.cooldownRounds * R.fight.round) } }))(
+      make('curse', 'Stun', { effect: null, ops: [{ op: 'applyStatus', key: statusKey('stunned'), def: R.conditions.stunned, duration: tick(R.fight.round) }] }, R)),
     /** The status build's signature: Burning for 3 rounds, per-round magical damage by the user's rank, no direct damage. */
     ignite: make('curse', 'Ignite', {
       effect: null, ops: [status('burning', 3, { op: 'damage', type: 'magical', amount: BURNING.map(formula) as unknown as Tiers<ReturnType<typeof formula>> }, R)],
@@ -180,6 +189,7 @@ export function statsOf(main: StatKey, second: StatKey, rank: Rank, R: Rules = R
   const st = split(main, second, pointsAt(R.rankLevels[rank], R), R);
   return { ...baseStats(R.fight), ...st, [main]: st[main] + perkPoints(rank) };
 }
+/** A build at `rank` as a sheet reads it: its stats (`statsOf`) in its kit (`kitGear`), as a monster wears its own. */
 export const buildOf = (a: Archetype, rank: Rank, R: Rules = RULES): SheetBasis =>
   ({ stats: statsOf(BUILDS[a].main, BUILDS[a].second, rank, R), level: R.rankLevels[rank], gear: kitGear(BUILDS[a].kit, R), perks: {} });
 
@@ -272,6 +282,16 @@ const tankPolicy: Policy = (f, me, _plan, R) => {
   if (pull) return { type: 'act', ability: taunt, aim: pull.id };
   const target = taunter(f, me) ?? nearest(me, foesOf(f, me))!;
   return usable(f, me, strike, target.place) ? { type: 'act', ability: strike, aim: target.id } : charge(f, me, strike, target, R) ?? toward(f, me, target);
+};
+/**
+ * The tank with a control (row P3): taunts as the tank does; else stuns the foe with the most HP when it may and that
+ * foe's next turn comes within a round (later, a hold of a round moves nothing); else the tank's play.
+ */
+export const controlPolicy: Policy = (f, me, plan, R) => {
+  const choice = tankPolicy(f, me, plan, R), stun = me.abilities.find(a => a.id === 'stun');
+  if (!stun || (choice.type === 'act' && choice.ability.id === 'taunt')) return choice;
+  const big = [...foesOf(f, me)].sort((a, b) => rowHp(b) - rowHp(a) || (a.id < b.id ? -1 : 1))[0];
+  return big && big.at < f.now + R.fight.round && usable(f, me, stun, big.place) ? { type: 'act', ability: stun, aim: big.id } : choice;
 };
 /** Bruiser: Mutilation on the nearest foe when it is ready, else a strike, walking up to it. */
 const bruiserPolicy: Policy = (f, me) => {
@@ -392,28 +412,62 @@ function newRow(id: string, name: string, side: NewRow['side'], kind: NewRow['ki
     stagger: null, channel: null, threat: kind === 'monster' ? {} : null, statuses: [], readyAt: {}, abilities: uses, intent: null, holder: null, xp: 0,
   } as NewRow;
 }
-export function hunter(a: Archetype, rank: Rank, id: string = a, R: Rules = RULES): SimRow {
-  const origin: Origin = { kind: 'hunter', build: buildOf(a, rank, R) };
+export const hunter = (a: Archetype, rank: Rank, id: string = a, R: Rules = RULES): SimRow => hunterOn(a, rank, id, buildOf(a, rank, R), R);
+/** A hunter of build `a` on the sheet basis `build`. */
+function hunterOn(a: Archetype, rank: Rank, id: string, build: SheetBasis, R: Rules): SimRow {
+  const origin: Origin = { kind: 'hunter', build };
   const row = newRow(id, id, 'party', 'hunter', origin, tierOf(rank), BUILDS[a].uses(builtIns(R), abilities(R)), R), worn = BUILDS[a].worn?.() ?? [];
   return { row: worn.length ? { ...row, statuses: worn } : row, policy: BUILDS[a].policy };
 }
+
+// ── penetration's fairness (balance plan section 9, rows P1 and P2) ──
+/** How a build spends one item of its tier's middle budget: all on its main stat, on percent penetration, or on flat. */
+export type PenSpend = 'main' | 'percent' | 'flat';
+export const PEN_SPENDS: readonly PenSpend[] = ['main', 'percent', 'flat'];
+/** The builds that spend it, each with the pair of the defence its damage meets: the armor pair, the resist pair. */
+const PEN_PAIR = {
+  bruiser: { percent: 'armorPen', flat: 'armorPenFlat' },
+  cannon: { percent: 'resistPen', flat: 'resistPenFlat' },
+} as const satisfies Record<string, Record<Exclude<PenSpend, 'main'>, BonusKey>>;
+export type PenBuild = keyof typeof PEN_PAIR;
+/** A bonus key's price in stat points at `rank`: what one point of it on an accessory of the rank's rarity spends (`itemSpend`). */
+function priceAt(key: BonusKey, rank: Rank, R: Rules): number {
+  const rar = (Object.keys(R.rarities) as Rarity[]).find(r => R.rarities[r].rank === rank)!;
+  return itemSpend({ rar, type: 'accessory', slot: 'neck', dice: '', bonus: { [key]: READ_PRICE }, armor: 0, resist: 0 }, R)!.points / READ_PRICE;
+}
+/** Points of a key the price is read over, as item-budget.ts reads a key over 10. */
+const READ_PRICE = 10;
 /**
- * A same-rank hit (design 4.3, the paper's `sameRankHit`): the bruiser's strike at its average dice on a same-rank normal
- * brute, worked out by `resolve` itself.
+ * `a` holding one item of its tier's middle budget (`middleBudget`) spent all one way, at the item budget's own prices
+ * (`itemSpend`, which weighs a penetration on a same-rank `itemBudget.penFoe`): its main stat, or the percent or the flat
+ * penetration of the defence its damage meets. Unrounded, so the three spend the same points; the bonus is a perk.
  */
-export function sameRankHit(rank: Rank, R: Rules = RULES): number {
+export function spending(a: PenBuild, rank: Rank, spend: PenSpend, id: string = a, R: Rules = RULES): SimRow {
+  const budget = middleBudget(R, rank), key: BonusKey = spend === 'main' ? BUILDS[a].main : PEN_PAIR[a][spend];
+  return hunterOn(a, rank, id, { ...buildOf(a, rank, R), perks: { [key]: budget / priceAt(key, rank, R) } }, R);
+}
+/**
+ * A same-rank hit (design 4.3, the paper's `sameRankHit`): the bruiser's strike at its average dice on a same-rank monster
+ * of `archetype` and `kind` (the body that holds the bar; a normal brute by default), worked out by `resolve` itself.
+ */
+export function sameRankHit(rank: Rank, R: Rules = RULES, archetype: MonsterArchetype = 'brute', kind: MonsterKind = 'normal'): number {
   const at = (s: SimRow, p: Place): Body => { const m = modified(s.row.origin, [], R); return { ...s.row, ...m, place: p, speed: m.sheet.speed, at: tick(0), tie: 0 }; };
-  const u = at(hunter('bruiser', rank, 'u', R), place(0, 0)), t = at(monster(rank, 'brute', 'normal', 't', R), place(1, 0));
+  const u = at(hunter('bruiser', rank, 'u', R), place(0, 0)), t = at({ row: unbarred(rank, archetype, kind, 't', R), policy: monsterPolicy }, place(1, 0));
   const a = builtIns(R).strike, mean = diceOf(formulaOf(a, RULES)!).map(d => d.count * (d.sides + 1) / 2);
   const r = resolve(a, u, [u, t], t.id, openGrid(R.fight.grid.w, R.fight.grid.h), { dice: { [t.id]: mean }, react: { [t.id]: 20 } }, tick(0), R);
   if (!r.ok) throw new Error(r.reason);
   return r.outcomes[0]!.dealt;
 }
-export function monster(rank: Rank, archetype: MonsterArchetype, kind: MonsterKind, id: string, R: Rules = RULES): SimRow {
+/** A monster's row before its stagger bar. */
+function unbarred(rank: Rank, archetype: MonsterArchetype, kind: MonsterKind, id: string, R: Rules): NewRow {
   const origin: Origin = { kind: 'monster', name: 'Monster', rank, archetype, monsterKind: kind, tweak: NO_TWEAK };
-  const base = newRow(id, id, 'foe', 'monster', origin, tierOf(rank), [MONSTER_ABILITY[archetype](R)], R);
+  return newRow(id, id, 'foe', 'monster', origin, tierOf(rank), [MONSTER_ABILITY[archetype](R)], R);
+}
+/** A monster of the simulation; an elite's or a boss's stagger bar is its kind's number of same-rank hits on its own body. */
+export function monster(rank: Rank, archetype: MonsterArchetype, kind: MonsterKind, id: string, R: Rules = RULES): SimRow {
+  const base = unbarred(rank, archetype, kind, id, R);
   const bar = R.fight.kinds[kind].stagger;
-  const hit = bar > 0 ? sameRankHit(rank, R) : 0;
+  const hit = bar > 0 ? sameRankHit(rank, R, archetype, kind) : 0;
   return { row: bar > 0 ? { ...base, stagger: { fill: 0, max: bar * hit, hit } } : base, policy: monsterPolicy } as SimRow;
 }
 
@@ -431,6 +485,8 @@ export type FightRecord = {
   /** Hunters that hit 0 HP at some point, and those whose death saves after the fight ended at dead. */
   readonly down: readonly string[]; readonly dead: readonly string[];
   readonly staggers: number;
+  /** Ticks each row's next turn was pushed by a hold another row's use landed on it (a stagger apart), and the fight's length in ticks. */
+  readonly held: Readonly<Record<string, number>>; readonly ticks: number;
   /** Every channel begun, and of them those begun while the foe it aimed at was aiming at the channeler (`aimed`). */
   readonly channels: { begun: number; completed: number; broken: number; dropped: number; aimed: { begun: number; completed: number } };
   readonly tally: Readonly<Record<string, Tally>>;
@@ -471,6 +527,7 @@ export function playFight(setup: Setup, seed: number): FightRecord {
   });
   const tally: Record<string, Tally> = {};
   let staggers = 0;
+  const held: Record<string, number> = {};
   const channels = { begun: 0, completed: 0, broken: 0, dropped: 0, aimed: { begun: 0, completed: 0 } };
   /** Channelers whose channel began while its target aimed at them. */
   const underFire = new Set<string>();
@@ -518,6 +575,10 @@ export function playFight(setup: Setup, seed: number): FightRecord {
       const t = tally[me.id] ??= emptyTally(me);
       if (choice.type === 'act') {
         count(f, me, choice.ability, choice.aim, s.rolls!);
+        if (holds(choice.ability)) for (const r of f.rows) {
+          const after = p.fight.rows.find(x => x.id === r.id);
+          if (r.id !== me.id && after && after.at > r.at && !s.effects.some(e => e.type === 'staggered' && e.id === r.id)) held[r.id] = (held[r.id] ?? 0) + after.at - r.at;
+        }
         if (choice.ability.channel) {
           channels.begun++;
           const at = typeof choice.aim === 'string' ? f.rows.find(r => r.id === choice.aim) : undefined;
@@ -541,10 +602,13 @@ export function playFight(setup: Setup, seed: number): FightRecord {
   const dead = Object.entries(playSaves(ended)).filter(([id, faces]) => lifeOfSaves(faces, f.rows.find(r => r.id === id)!.sheet.hpMax) === 'dead').map(([id]) => id);
   channels.dropped = channels.begun - channels.completed - channels.broken;
   return {
-    winner: f.summary.winner, rounds: f.summary.rounds, capped: ended.capped, down: [...ended.down], dead: [...dead], staggers, channels, tally,
+    winner: f.summary.winner, rounds: f.summary.rounds, capped: ended.capped, down: [...ended.down], dead: [...dead], staggers, held, ticks: f.now, channels, tally,
     end: Object.fromEntries(f.rows.map(r => [r.id, { hp: rowHp(r), fatigue: r.fatigue, mana: r.mana }])),
   };
 }
+
+/** Whether a use puts a hold on what it catches (a stun, design 3.1 rule 18). */
+const holds = (a: Ability): boolean => a.ops.some(o => o.op === 'applyStatus' && o.def.ops.some(x => x.op === 'hold'));
 
 /**
  * Three fights in a row with the same party (a dungeon): HP back to full between fights, `rest` fatigue back, no mana

@@ -47,7 +47,7 @@ export const fight = machine<State, Command>({
   kindsOf: f => [stateOf(f)],
   views: [{
     title: 'A fight, from building it to its summary',
-    note: 'The chart shows the phase of the fight on the GM\'s screen. Everything inside a running fight stays in Fighting: turns and time, uses, walks, channels, statuses settling, staggers, shields, threat, intents, combatants who join or leave, the GM\'s hand edits and Status window. A fight ends by itself when one side has nobody up, after a use, a status, a channel going off, a hand edit or the last of a side leaving; the summary stays on screen until the GM closes it. A command the fight refuses changes nothing.',
+    note: 'The chart shows the phase of the fight on the GM\'s screen. Everything inside a running fight stays in Fighting: turns and time, uses, walks, channels, statuses settling, staggers, shields, threat, intents, combatants who join or leave, the GM\'s hand edits, Status window and fudge. The fudge goes with the fight when it ends. A fight ends by itself when one side has nobody up, after a use, a status, a channel going off, a hand edit or the last of a side leaving; the summary stays on screen until the GM closes it. A command the fight refuses changes nothing.',
     hides: '',
     state: f => LABEL[stateOf(f)],
     step,

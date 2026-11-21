@@ -6,7 +6,7 @@ import { describe as group, expect, test } from 'bun:test';
 import { RANKS, RULES } from '../src/core/rules.ts';
 import type { BonusKey, Rank, Rules } from '../src/core/rules.ts';
 import { kitGear, monsterSheet, pointsAt, sheetOf, split } from '../src/core/hunter/derive.ts';
-import type { Sheet, SheetNumber } from '../src/core/hunter/derive.ts';
+import type { MonsterKind, Sheet, SheetNumber } from '../src/core/hunter/derive.ts';
 import type { StatKey } from '../src/core/stats.ts';
 import { KINDS } from '../src/core/registry/ability-kinds.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
@@ -124,14 +124,14 @@ group('what an item spends, in points on the sample wearer (economy design 2.3)'
     const level = RULES.rankLevels.E, stats = split(SAMPLE_WEARER.main, SAMPLE_WEARER.second, pointsAt(level, RULES), RULES);
     const armor = (vit: number) => sheetOf({ stats, level, gear: kitGear(SAMPLE_WEARER.kit, RULES), perks: { vit } }, RULES).armor;
     const perPoint = 1 / ((armor(10) - armor(0)) / 10);
-    const leather = { slot: 'chest' as const, type: 'armor' as const, ...piece('light', 'chest', 'common', RULES) };
+    const leather = { slot: 'chest' as const, type: 'armor' as const, ...piece('light', 'chest', RULES) };
     expect(itemSpend(gear('common', { ...leather, armor: leather.armor + 2 }), RULES)!.points).toBeCloseTo(2 * perPoint, 9);
     expect(itemSpend(gear('common', { ...leather, resist: leather.resist + 2 }), RULES)!.points).toBeCloseTo(2 * perPoint, 9);
     expect(itemSpend(gear('common', { ...leather, armor: leather.armor - 2 }), RULES)!.points, 'armor under the piece refunds nothing').toBeCloseTo(0, 9);
   });
 
   test('weight is free and is what buys a kit\'s armor: a chest of the medium piece\'s weight holds its armor for nothing, the same armor with no weight spends it all', () => {
-    const vest = piece('medium', 'chest', 'common', RULES);
+    const vest = piece('medium', 'chest', RULES);
     expect(itemSpend(gear('common', { type: 'armor', slot: 'chest', ...vest }), RULES)!.points).toBeCloseTo(0, 9);
     const weightless = itemSpend(gear('common', { type: 'armor', slot: 'chest', ...vest, weight: 0 }), RULES)!.points;
     const onePoint = itemSpend(gear('common', { type: 'armor', slot: 'chest', weight: 0, armor: 1, resist: 0 }), RULES)!.points;
@@ -190,9 +190,9 @@ const fedRate = (key: (typeof FED)[number][0], stats: Partial<Record<StatKey, nu
  * read over ten points of the key, before rule 12 rounds. Rule 12: left = max(0, def * (1 - pct / 100) - flat), dealt =
  * max(0, raw - armorFlat * left) * armorK / (armorK + left).
  */
-function penRate(key: 'armorPen' | 'resistPen' | 'armorPenFlat' | 'resistPenFlat', rank: Rank): number {
+function penRate(key: 'armorPen' | 'resistPen' | 'armorPenFlat' | 'resistPenFlat', rank: Rank, kind: MonsterKind = 'elite'): number {
   const F = RULES.fight, armorPair = key === 'armorPen' || key === 'armorPenFlat';
-  const foe = monsterSheet(rank, armorPair ? 'brute' : 'caster', 'elite', RULES), def = armorPair ? foe.armor : foe.resist;
+  const foe = monsterSheet(rank, armorPair ? 'brute' : 'caster', kind, RULES), def = armorPair ? foe.armor : foe.resist;
   const hit = 4.5 + KINDS.strike.power * referenceBody('bruiser', rank, RULES).sheet.phys;
   const dealt = (raw: number, pct: number, flat: number): number => { const left = Math.max(0, def * (1 - pct / 100) - flat); return Math.max(0, raw - F.armorFlat * left) * F.armorK / (F.armorK + left); };
   const own = armorPair ? wearer(rank).armorPen : wearer(rank).resistPen;
@@ -229,7 +229,7 @@ group('each bonus key\'s cost (balance plan sections 9 and 10)', () => {
     for (const rank of RANKS) for (const key of ['drain', 'haste'] as const) expect(onePoint(key, rank), `${key} at ${rank}`).toBeCloseTo(unfedRate(key, rank), 9);
   });
 
-  test('at C a percent of lifesteal spends 0.45 and a point of ability haste 0.28: a middle rare ring (3.45) holds about 7% of the one or 12 haste', () => {
+  test('at C a percent of lifesteal spends 0.45 and a point of ability haste 0.28: a middle rare ring (3.45) holds about 8% of the one or 12 haste', () => {
     expect([Number(onePoint('drain', 'C').toFixed(2)), Number(onePoint('haste', 'C').toFixed(2))]).toEqual([0.45, 0.28]);
   });
 
@@ -251,8 +251,8 @@ group('each bonus key\'s cost (balance plan sections 9 and 10)', () => {
     for (const rank of RANKS) for (const key of ['armorPen', 'resistPen', 'armorPenFlat', 'resistPenFlat'] as const) expect(onePoint(key, rank), `${key} at ${rank}`).toBeCloseTo(penRate(key, rank), 9);
   });
 
-  test('at C a point of Lethality spends 0.71, of Unravel 0.72, a percent of armor penetration 0.26 and of magic penetration 0.10', () => {
-    expect(['armorPenFlat', 'resistPenFlat', 'armorPen', 'resistPen'].map(k => Number(onePoint(k as BonusKey, 'C').toFixed(2)))).toEqual([0.71, 0.72, 0.26, 0.1]);
+  test('at C a point of Lethality spends 0.66, of Unravel 0.69, a percent of armor penetration 0.31 and of magic penetration 0.12', () => {
+    expect(['armorPenFlat', 'resistPenFlat', 'armorPen', 'resistPen'].map(k => Number(onePoint(k as BonusKey, 'C').toFixed(2)))).toEqual([0.66, 0.69, 0.31, 0.12]);
   });
 
   test('a percent of penetration is worth more the thicker the defence: the armor percent costs more at each rank up, where the brute\'s armor grows', () => {
@@ -260,9 +260,11 @@ group('each bonus key\'s cost (balance plan sections 9 and 10)', () => {
     expect(costs.every((c, i) => i === 0 || c > costs[i - 1]!)).toBe(true);
   });
 
-  test('the penetrations are weighed against the foe `itemBudget.penFoe` names: a boss\'s armor is an elite\'s, so the cost is the same', () => {
+  test('the penetrations are weighed against the foe `itemBudget.penFoe` names: named a boss, whose kind thickens its armor past an elite\'s, a point costs what it adds on the boss', () => {
     const asBoss: Rules = { ...RULES, itemBudget: { ...RULES.itemBudget, penFoe: 'boss' } };
-    expect(itemSpend(gear('rare', { bonus: { armorPenFlat: 1 } }), asBoss)!.points).toBeCloseTo(onePoint('armorPenFlat', 'C'), 9);
+    const onBoss = itemSpend(gear('rare', { bonus: { armorPenFlat: 1 } }), asBoss)!.points;
+    expect(onBoss).toBeCloseTo(penRate('armorPenFlat', 'C', 'boss'), 9);
+    expect(Math.abs(onBoss - onePoint('armorPenFlat', 'C'))).toBeGreaterThan(0.01);
   });
 });
 
@@ -310,7 +312,7 @@ group('the built-in items against the budget (economy design 2.5, ruling 6)', ()
     const SPEND: Readonly<Record<string, number>> = {
       'Iron Dagger': -4.7, 'Goblin Shortbow': -2.4, 'Steel Longsword': 0, 'Hunting Bow': 0, "Hunter's Leather": 0, 'Padded Cap': 0, 'Dented Tower Shield': 0, 'Worn Hunter Boots': 1,
       "Orc Warrior's Cleaver": 1, 'Reinforced Hunter Vest': 0, 'Ironhide Gauntlets': 1, 'Swift Runner Greaves': 1, 'Mana Talisman': 2,
-      "Kasaka's Venom Fang": -6.2, "Ice Elf's Cloak": 1, 'Knight Killer': 2.8, 'Mage Circlet': 6, "Baruka's Mana Ring": 6,
+      "Kasaka's Venom Fang": -6.2, "Ice Elf's Cloak": 1, 'Knight Killer': 2.6, 'Mage Circlet': 6, "Baruka's Mana Ring": 6,
       'Ring of Vitality': 5, 'Frost Giant Hammer': 1.5, "Knight's Aegis": 1, 'Cloak of the Shadow Hunter': 2, 'Helm of the Iron Knight': 2,
       'Armor of the Black Knight': 3, 'Boots of Shadow Step': 4, "Kamish's Wrath": 21.3, 'Orb of Avarice': 16,
       'Crown of the Shadow Sovereign': 10, "Ring of the Monarch's Will": 12, "Monarch's Scepter": 53.4, 'Armor of the Absolute Being': 45,

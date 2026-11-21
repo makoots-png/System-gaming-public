@@ -73,7 +73,7 @@ const withBody = (fight: Fight, name: string, change: RowPatch<Body>): Fight => 
 
 describe('each row\'s picture on the table\'s doc: the GM\'s phone answers it and the doc carries the answer (icons design 5, ruling 1)', () => {
   const monsterOrigin = (o: { icon?: IconKey; type?: string } = {}): Origin =>
-    ({ kind: 'monster', name: 'Rat', rank: 'E', archetype: 'brute', monsterKind: 'normal', tweak: { hp: 1, stats: {} }, ...o });
+    ({ kind: 'monster', name: 'Rat', rank: 'E', archetype: 'brute', monsterKind: 'normal', tweak: { hp: 1, stats: {}, traits: [] }, ...o });
   /** A hunter with an emblem (A), one with none (B), a rat its GM gave a raven (M), a Beast (N), a type the table lacks (O). */
   const fight = () => play(add(
     row('A', 'party'), row('B', 'party'),

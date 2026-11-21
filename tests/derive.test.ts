@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { kitGear, monsterSheet, SHEET_LABELS, sheetOf } from '../src/core/hunter/derive.ts';
+import { KIT_SHARE, piece } from '../src/core/registry/items.ts';
 import type { Archetype, SheetBasis, GearPiece, MonsterKind, Sheet, SheetNumber } from '../src/core/hunter/derive.ts';
-import { RULES } from '../src/core/rules.ts';
+import { RANKS, RULES } from '../src/core/rules.ts';
 import { explain, hunterSheet, SOURCES } from '../src/core/hunter/sheet.ts';
 import type { SheetCondition, SheetHunter, SheetItem, SheetPath, SheetRules, SheetSource } from '../src/core/hunter/sheet.ts';
 import { statusKey } from '../src/core/combat/effect-ops.ts';
@@ -67,34 +68,39 @@ const TABLE_2_3: Record<Shown, Record<BuildId, readonly number[]>> = {
     support: [174, 10, 100, 20, 8, 100, 6, 3, 10, 36, 0, 0, 0, 0, 6, 6, 58.96, 10, 10, 54.36, 1, 1.50, 0, 14.98, 0, 1.69, 0.28, 0, 0, 0, 19, 0],
   },
 };
+// Table 2.6 with the body of balance plan section 1: a monster wears its archetype's kit (`kitGear`; a rarer piece holds
+// no more armor or resist, so the kit is the same at every rank), and its armor and resist (the kit's and its stat's
+// share, Vitality's 2, 9 and 16 for a brute at E, C and S, none for the others) are times its kind's factor, 1, 1.25 and
+// 1.5. Max HP is its kind's factor on the body (normal 0.6, elite 1.5, boss 2.8): a boss is 2.8 / 3.2 of the paper's
+// (the C brute boss 324 to 284); power is as the paper prints it.
 const TABLE_2_6: readonly (readonly [Shown, Archetype, MonsterKind, number, number, number, number, number])[] = [
   ['E', 'brute', 'normal', 29, 87, 32, 5, 6.72],
-  ['E', 'brute', 'elite', 72, 87, 32, 5, 9.60],
-  ['E', 'brute', 'boss', 153, 87, 32, 5, 11.52],
+  ['E', 'brute', 'elite', 72, 87, 40, 6, 9.60],
+  ['E', 'brute', 'boss', 134, 87, 48, 8, 11.52],
   ['E', 'skirmisher', 'normal', 27, 112, 10, 15, 5.50],
-  ['E', 'skirmisher', 'elite', 68, 112, 10, 15, 7.85],
-  ['E', 'skirmisher', 'boss', 144, 112, 10, 15, 9.42],
+  ['E', 'skirmisher', 'elite', 68, 112, 13, 19, 7.85],
+  ['E', 'skirmisher', 'boss', 126, 112, 15, 23, 9.42],
   ['E', 'caster', 'normal', 27, 100, 10, 15, 6.72],
-  ['E', 'caster', 'elite', 68, 100, 10, 15, 9.60],
-  ['E', 'caster', 'boss', 144, 100, 10, 15, 11.52],
+  ['E', 'caster', 'elite', 68, 100, 13, 19, 9.60],
+  ['E', 'caster', 'boss', 126, 100, 15, 23, 11.52],
   ['C', 'brute', 'normal', 61, 100, 39, 5, 16.66],
-  ['C', 'brute', 'elite', 152, 100, 39, 5, 23.81],
-  ['C', 'brute', 'boss', 324, 100, 39, 5, 28.57],
+  ['C', 'brute', 'elite', 152, 100, 48, 6, 23.81],
+  ['C', 'brute', 'boss', 284, 100, 58, 8, 28.57],
   ['C', 'skirmisher', 'normal', 48, 138, 10, 15, 10.92],
-  ['C', 'skirmisher', 'elite', 121, 138, 10, 15, 15.59],
-  ['C', 'skirmisher', 'boss', 258, 138, 10, 15, 18.71],
+  ['C', 'skirmisher', 'elite', 121, 138, 13, 19, 15.59],
+  ['C', 'skirmisher', 'boss', 226, 138, 15, 23, 18.71],
   ['C', 'caster', 'normal', 48, 100, 10, 15, 16.66],
-  ['C', 'caster', 'elite', 121, 100, 10, 15, 23.81],
-  ['C', 'caster', 'boss', 258, 100, 10, 15, 28.57],
+  ['C', 'caster', 'elite', 121, 100, 13, 19, 23.81],
+  ['C', 'caster', 'boss', 226, 100, 15, 23, 28.57],
   ['S', 'brute', 'normal', 154, 100, 46, 5, 37.82],
-  ['S', 'brute', 'elite', 385, 100, 46, 5, 54.03],
-  ['S', 'brute', 'boss', 822, 100, 46, 5, 64.84],
+  ['S', 'brute', 'elite', 385, 100, 57, 6, 54.03],
+  ['S', 'brute', 'boss', 719, 100, 69, 8, 64.84],
   ['S', 'skirmisher', 'normal', 105, 160, 10, 15, 22.83],
-  ['S', 'skirmisher', 'elite', 262, 160, 10, 15, 32.61],
-  ['S', 'skirmisher', 'boss', 558, 160, 10, 15, 39.14],
+  ['S', 'skirmisher', 'elite', 262, 160, 13, 19, 32.61],
+  ['S', 'skirmisher', 'boss', 488, 160, 15, 23, 39.14],
   ['S', 'caster', 'normal', 105, 100, 10, 15, 37.82],
-  ['S', 'caster', 'elite', 262, 100, 10, 15, 54.03],
-  ['S', 'caster', 'boss', 558, 100, 10, 15, 64.84],
+  ['S', 'caster', 'elite', 262, 100, 13, 19, 54.03],
+  ['S', 'caster', 'boss', 488, 100, 15, 23, 64.84],
 ];
 
 describe('the five builds (tables 2.3.E, 2.3.C and 2.3.S)', () => {
@@ -134,26 +140,64 @@ describe('monsters (table 2.6)', () => {
     });
   }
 
-  test('a kind scales max HP and power and nothing else', () => {
+  test('a kind scales max HP, power, armor and resist and nothing else', () => {
     const normal = monsterSheet('C', 'caster', 'normal', RULES), boss = monsterSheet('C', 'caster', 'boss', RULES);
-    const scaled: SheetNumber[] = ['hpMax', 'phys', 'mag', 'sup'];
+    const scaled: SheetNumber[] = ['hpMax', 'phys', 'mag', 'sup', 'armor', 'resist'];
     expect(KEYS.filter(k => !scaled.includes(k) && boss[k] !== normal[k])).toEqual([]);
     expect(boss.mag / normal.mag).toBeCloseTo(1.2 / 0.7, 10);
   });
 
-  test('a seed\'s HP factor multiplies max HP on top of its kind\'s and changes nothing else: half of the C brute boss\'s 324 is 162 (2.4)', () => {
-    const plain = monsterSheet('C', 'brute', 'boss', RULES), half = monsterSheet('C', 'brute', 'boss', RULES, [], { hp: 0.5, stats: {} });
-    expect(half.hpMax).toBe(162);
+  test('a boss is tougher by its kind\'s armor and resist (the owner, Nov 21): the C brute boss holds 1.5 times the normal\'s, rounded', () => {
+    // A C brute's body before its kind: the medium kit (armor 30, resist 5) and Vitality 33's share of armor.
+    const bare = sheetOf({ stats: stats({ str: 56, vit: 33 }), level: 20, gear: [], perks: {} }, RULES);
+    const set = { armor: 30, resist: 5 }, F = RULES.fight.kinds;
+    for (const kind of ['normal', 'elite', 'boss'] as const) {
+      const m = monsterSheet('C', 'brute', kind, RULES);
+      expect(Math.abs(m.armor - F[kind].armor * (set.armor + bare.armor)), kind).toBeLessThanOrEqual(1);
+      expect(m.resist, kind).toBe(Math.round(F[kind].resist * set.resist));
+    }
+    expect([F.normal.armor, F.elite.armor, F.boss.armor, F.normal.resist, F.elite.resist, F.boss.resist]).toEqual([1, 1.25, 1.5, 1, 1.25, 1.5]);
+  });
+
+  test('a seed\'s HP factor multiplies max HP on top of its kind\'s and changes nothing else: half of the C brute boss\'s 284 is 142 (2.4)', () => {
+    const plain = monsterSheet('C', 'brute', 'boss', RULES), half = monsterSheet('C', 'brute', 'boss', RULES, [], { hp: 0.5, stats: {}, traits: [] });
+    expect(half.hpMax).toBe(142);
     expect(KEYS.filter(k => k !== 'hpMax' && half[k] !== plain[k])).toEqual([]);
   });
 
   test('a seed\'s stat tweak adds points before the curve, as a hunter\'s spent points do (2.4)', () => {
-    // A C brute has 12 + 3 * 19 = 69 points split 2:1: Strength 10 + 46 = 56 and Vitality 10 + 23 = 33, in a medium kit.
-    const keen = monsterSheet('C', 'brute', 'normal', RULES, [], { hp: 1, stats: { ins: 8 } });
-    const same = sheetOf({ stats: stats({ str: 56, vit: 33, ins: 18 }), level: 20, gear: [MEDIUM], perks: {} }, RULES);
+    // A C brute has 12 + 3 * 19 = 69 points split 2:1: Strength 10 + 46 = 56 and Vitality 10 + 23 = 33, in the medium kit.
+    const keen = monsterSheet('C', 'brute', 'normal', RULES, [], { hp: 1, stats: { ins: 8 }, traits: [] });
+    const same = sheetOf({ stats: stats({ str: 56, vit: 33, ins: 18 }), level: 20, gear: kitGear('medium', RULES), perks: {} }, RULES);
     const unscaled: SheetNumber[] = ['speed', 'armor', 'resist', 'react', 'opening', 'critFaces'];
     expect(unscaled.map(k => keen[k])).toEqual(unscaled.map(k => same[k]));
     expect(keen.opening).toBeGreaterThan(monsterSheet('C', 'brute', 'normal', RULES).opening);
+  });
+});
+
+describe('a kit\'s six pieces (design 2.3)', () => {
+  const sum = (gear: readonly GearPiece[]): GearPiece => gear.reduce((t, g) => ({ weight: t.weight + g.weight, armor: t.armor + g.armor, resist: t.resist + g.resist }), { weight: 0, armor: 0, resist: 0 });
+  const SLOTS = Object.keys(KIT_SHARE) as (keyof typeof KIT_SHARE)[];
+  test('the six pieces of each kit add up to the kit exactly, and none is off its share by a whole point or more', () => {
+    for (const kit of ['light', 'medium', 'heavy'] as const) {
+      const k = RULES.fight.kits[kit];
+      expect(sum(SLOTS.map(slot => piece(kit, slot, RULES))), kit).toEqual({ weight: k.weight, armor: k.armor, resist: k.resist });
+      for (const slot of SLOTS) for (const n of ['weight', 'armor', 'resist'] as const) {
+        expect(Math.abs(piece(kit, slot, RULES)[n] - k[n] * KIT_SHARE[slot] / 100), `${kit} ${slot} ${n}`).toBeLessThan(1);
+      }
+    }
+  });
+
+  test('a point the rounding leaves goes to the piece that lost the most to it: the light kit\'s armor 10 is chest 4 (3.5), legs 2, then 1 a piece', () => {
+    // 3.5, 2, 1.5, 1, 1, 1 round down to 3, 2, 1, 1, 1, 1 (9); the point left goes to the larger of the two halves, the chest
+    expect(SLOTS.map(slot => piece('light', slot, RULES).armor)).toEqual([4, 2, 1, 1, 1, 1]);
+    // 1.75, 1, 0.75, 0.5, 0.5, 0.5 round down to 1, 1, 0, 0, 0, 0 (2); the three left go to the chest, the offhand and the head
+    expect(SLOTS.map(slot => piece('medium', slot, RULES).resist)).toEqual([2, 1, 1, 1, 0, 0]);
+  });
+
+  test('a monster wears its archetype\'s kit at every rank: an S skirmisher\'s armor and resist are the light kit\'s', () => {
+    const m = monsterSheet('S', 'skirmisher', 'normal', RULES), k = RULES.fight.kits.light;
+    expect([m.armor, m.resist, m.weight]).toEqual([k.armor, k.resist, k.weight]);
   });
 });
 

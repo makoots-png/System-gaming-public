@@ -3,7 +3,7 @@
 import { isRefused } from '../core/save-step.ts';
 import { RANKS, rankIdx } from '../edge/rules.ts';
 import {
-  ARCHETYPE_LIST, MONSTER_BOUNDS, MONSTER_KINDS, copiesOf, monsterSheetOf, parseMonster, seedMonsters, statBlock as statBlockOf, xpOf, monsterXp,
+  ARCHETYPE_LIST, MONSTER_BOUNDS, MONSTER_KINDS, MONSTER_TRAITS, TRAIT_LABEL, copiesOf, monsterSheetOf, parseMonster, seedMonsters, statBlock as statBlockOf, xpOf, monsterXp,
 } from '../core/registry/monsters.ts';
 import { ARCHETYPE_ATTACKS, ATTACK_ID } from '../core/registry/abilities.ts';
 import { oneOf } from '../core/one-of.ts';
@@ -81,7 +81,7 @@ export function register(app) {
     const rank = o && RANKS.includes(o.rank) ? o.rank : 'E', now = new Date().toISOString();
     const name = o ? o.name : 'Monster', key = codexKey(name, rank), was = codexOf()[key];
     const found = monsterOfKind(codexOf(), list(), key);
-    const made = found ? null : { ...parseMonster({ name, rank, archetype: o ? o.archetype : 'brute', kind: o ? o.monsterKind : 'normal', tweak: o ? { hp: o.tweak.hp, stats: o.tweak.stats } : {},
+    const made = found ? null : { ...parseMonster({ name, rank, archetype: o ? o.archetype : 'brute', kind: o ? o.monsterKind : 'normal', tweak: o ? { hp: o.tweak.hp, stats: o.tweak.stats, traits: o.tweak.traits } : {},
       abilities: (b.abilities || []).filter(a => a.id !== ATTACK_ID), xp: b.xp, desc: 'Auto-added on first defeat', type: 'Custom', auto: true }), id: store.id('m') };
     const entry = found || made;
     if (!store.apply('codex-record', s => recordDefeatStep(s, { bodyId: b.id, key, name: entry.name || name, rank, monsterId: entry.id, at: now }, made)).ok) return;
@@ -174,6 +174,8 @@ export function register(app) {
   const KIND_LABEL = { normal: 'Normal', elite: 'Elite', boss: 'Boss' };
   const ARCH_LABEL = { brute: 'Brute', skirmisher: 'Skirmisher', caster: 'Caster' };
   const ABILITY_KIND = { strike: 'Strike', shot: 'Shot', blast: 'Blast', curse: 'Curse', support: 'Support' };
+  /** A monster's traits by name ("Slow, Armored"), in the rules' order. */
+  const traitWords = m => ((m.tweak && m.tweak.traits) || []).map(t => TRAIT_LABEL[t]).join(', ');
   /** A monster's attacks in a fight: its archetype's, then its own. */
   const attacksOf = m => [ARCHETYPE_ATTACKS[m.archetype](app.rules()), ...(m.abilities || [])];
   /** An ability as a skill, so its lines are the skill maker's, read at the monster's rank. */
@@ -188,7 +190,7 @@ export function register(app) {
     const attacks = m.synthetic ? i.abilities.map(a => `<li>${esc(a)}</li>`) : attacksOf(m).map(a => `<li><b>${esc(a.name)}</b> · ${esc(abilityLines(a, m.rank).slice(0, 1).join(''))}</li>`);
     return `<article class="bst-card${kind === 'boss' ? ' boss' : ''}" data-mid="${id}" aria-label="${esc(m.name)} stat block">
       <div class="bst-h">${pic ? icon(pic, 'bst-ic') : ''}${ui.rankBadge(m.rank)}<span class="nm">${esc(m.name)}</span>${kind !== 'normal' ? `<span class="bst-tag ${kind}">${KIND_LABEL[kind]}</span>` : ''}${m.auto ? '<span class="bst-tag">Auto</span>' : m.custom ? '<span class="bst-tag">Custom</span>' : ''}${badge}</div>
-      ${m.type || !m.synthetic ? `<div class="lbl">${esc([m.type, m.synthetic ? '' : ARCH_LABEL[m.archetype]].filter(Boolean).join(' · '))}</div>` : ''}
+      ${m.type || !m.synthetic ? `<div class="lbl">${esc([m.type, m.synthetic ? '' : ARCH_LABEL[m.archetype], m.synthetic ? '' : traitWords(m)].filter(Boolean).join(' · '))}</div>` : ''}
       <div class="bst-vit"><div><span>HP</span><b>${ui.fmt(i.hpMax)}</b></div><div><span>Armor</span><b>${esc(i.armor)}</b></div><div><span>Resist</span><b>${esc(i.resist)}</b></div><div><span>Speed</span><b>${esc(i.speed)}</b></div>${m.synthetic ? '' : `<div><span>XP</span><b>${ui.fmt(monsterXp(m, app.rules()))}</b></div>`}</div>
       ${attacks.length ? `<ul class="bst-ab">${attacks.join('')}</ul>` : ''}
       ${!m.synthetic && m.notes.length ? `<ul class="bst-notes">${m.notes.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
@@ -210,7 +212,7 @@ export function register(app) {
   function monsterLines(m) {
     const s = infoOf(m);
     return [
-      `${m.rank}-rank ${KIND_LABEL[m.kind].toLowerCase()} ${ARCH_LABEL[m.archetype].toLowerCase()} · HP ${ui.fmt(s.hpMax)} · Armor ${s.armor} · Resist ${s.resist} · Speed ${s.speed} · XP ${ui.fmt(monsterXp(m, app.rules()))}`,
+      `${m.rank}-rank ${KIND_LABEL[m.kind].toLowerCase()} ${ARCH_LABEL[m.archetype].toLowerCase()}${traitWords(m) ? ` (${traitWords(m).toLowerCase()})` : ''} · HP ${ui.fmt(s.hpMax)} · Armor ${s.armor} · Resist ${s.resist} · Speed ${s.speed} · XP ${ui.fmt(monsterXp(m, app.rules()))}`,
       ...attacksOf(m).map(a => `${a.name}: ${abilityLines(a, m.rank).join('; ')}`),
       m.statuses.length ? `Starts with: ${m.statuses.map(st => `${st.stacks ? `${st.stacks} ` : ''}${statusLabel(st.key)} (${st.rounds === null ? 'until removed' : `${st.rounds} round${st.rounds === 1 ? '' : 's'}`})`).join(', ')}` : '',
       m.loot.gold || m.loot.items.length ? `Drops: ${[m.loot.gold ? `${ui.fmt(m.loot.gold)} gold` : '', ...m.loot.items.map(i => `${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`)].filter(Boolean).join(', ')}` : '',
@@ -236,6 +238,8 @@ export function register(app) {
           ${M.chips('archetype', ARCHETYPE_LIST.map(a => [a, ARCH_LABEL[a]]), archetype, { label: 'Archetype' })}
           <div class="lbl">Kind</div>
           ${M.chips('kind', MONSTER_KINDS.map(k => [k, KIND_LABEL[k]]), kind, { label: 'Kind' })}
+          <div class="lbl">Traits</div>
+          ${M.chips('traits', MONSTER_TRAITS.map(t => [t, TRAIT_LABEL[t]]), start.tweak.traits || [], { many: true, label: 'Traits' })}
           ${M.chips('flags', [['extractable', 'Extractable']], start.extractable ? ['extractable'] : [], { many: true, label: 'Extractable' })}
           <p class="enm-derived" data-derived aria-live="polite"></p>
           <div class="enm-grid">
@@ -273,22 +277,23 @@ export function register(app) {
           $('[data-item-add]').innerHTML = `<select data-add="item" aria-label="Add a loot item"${fullI ? ' disabled' : ''}><option value="">${fullI ? `Add an item (${B.lootItems} at most)` : 'Add an item…'}</option>
             ${lib.items.length ? `<optgroup label="Library">${lib.items.map(it => opt(`lib:${it.id}`, it.name)).join('')}</optgroup>` : ''}<option value="new">New item…</option></select>`;
         }
-        /** The tweak the form holds: its HP factor when one is typed (above 0, at most 10), and the stat points it was made with. */
+        /** The tweak the form holds: its HP factor when one is typed (above 0, at most 10), the stat points it was made with, and the traits ticked. */
         const tweakOf = () => {
           const t = $('#enm-hp').value.trim(), hp = Number(t);
-          return { ...(t !== '' && Number.isFinite(hp) && hp > 0 ? { hp: Math.min(B.hp, hp) } : {}), ...(start.tweak.stats ? { stats: { ...start.tweak.stats } } : {}) };
+          const traits = MONSTER_TRAITS.filter(k => /** @type {string[]} */ (M.picked(el, 'traits')).includes(k));
+          return { ...(t !== '' && Number.isFinite(hp) && hp > 0 ? { hp: Math.min(B.hp, hp) } : {}), ...(start.tweak.stats ? { stats: { ...start.tweak.stats } } : {}), ...(traits.length ? { traits } : {}) };
         };
         /** The monster the form holds, every number inside the parser's bounds. */
         const formMonster = () => ({
           name: $('#enm-name').value.trim().slice(0, B.name), rank, type: $('#enm-type').value.trim().slice(0, B.type), archetype, kind, tweak: tweakOf(),
           abilities: abilities.map(a => ({ ...a })), notes: $('#enm-notes').value.split('\n').map(t => t.trim().slice(0, B.note)).filter(Boolean).slice(0, B.notes),
-          // a blank XP is the rule's for its rank and kind (left out: monsterXp), so a change of the XP table reaches it
+          // a blank XP is the rule's for its rank, kind and traits (left out: monsterXp), so a change of the XP table reaches it
           ...($('#enm-xp').value.trim() === '' ? {} : { xp: int($('#enm-xp').value, 0, B.xp, 0) }), extractable: /** @type {string[]} */ (M.picked(el, 'flags')).includes('extractable'), desc: $('#enm-desc').value.slice(0, B.desc),
           statuses: statuses.map(st => ({ ...st })), loot: { gold: int($('#enm-gold').value, 0, B.gold, 0), items: items.map(i => ({ ...i })) },
         });
-        /** The body the rank, archetype, kind and HP factor make, shown as the GM picks them; and the rule's XP a blank field takes. */
+        /** The body the rank, archetype, kind, HP factor and traits make, shown as the GM picks them; and the rule's XP a blank field takes. */
         const derived = () => {
-          $('#enm-xp').placeholder = `By the rule: ${xpOf(app.rules(), rank, kind)}`;
+          $('#enm-xp').placeholder = `By the rule: ${xpOf(app.rules(), rank, kind, tweakOf().traits)}`;
           const s = infoOf({ rank, archetype, kind, tweak: tweakOf(), abilities: [] });
           $('[data-derived]').textContent = `HP ${ui.fmt(s.hpMax)} · Armor ${s.armor} · Resist ${s.resist} · Speed ${s.speed}`;
         };

@@ -91,7 +91,9 @@ const SHARE = realIn(0, 1, 'a share of a whole: 0 is none of it, 1 all of it');
 const KIT_WEIGHT = wholeIn(0, 200, 'a kit\'s weight: 200 is four times the heaviest carry a body has');
 const KIT_GUARD = wholeIn(0, 1000, 'a kit\'s armor or resist: armor divides, so 1000 still lets a tenth of a hit through');
 const KIND_FACTOR = realIn(0.1, 20, 'a factor on a monster\'s HP or power: under 0.1 it is not there, past 20 no party scratches it');
+const KIND_GUARD = realIn(0.1, 20, 'a factor on a monster\'s armor or resist: under 0.1 it wears nothing, at 20 a C brute\'s armor lets under a tenth of a hit through');
 const KIND_STAGGER = realIn(0, 20, 'a stagger bar in same-rank hits: 0 is no bar, past 20 it never fills');
+const TRAIT_SPEED = wholeIn(-90, 200, 'a trait\'s percent on speed: -90 is a body that barely moves, 200 three times as fast (the speed range clamps both)');
 const KIND_XP = realIn(0, 100, 'a factor on the rank\'s XP: 0 pays none, 100 is a whole gate in one monster');
 const WINDUP = wholeIn(0, 10_000, 'ticks before a use lands: 0 is at once, ten rounds is past any fight\'s patience');
 const RANGE = wholeIn(0, 40, 'tiles a use reaches: 0 is the user\'s own tile, 40 is the largest map\'s side');
@@ -328,16 +330,42 @@ const SPEC = {
       // (sim-log.md, round four). It was 0 until round two.
       heavy: { weight: of(32, KIT_WEIGHT), armor: of(60, KIT_GUARD), resist: of(60, KIT_GUARD) },
     },
-    // Monster kinds (design 2.4, 4.2 and 4.3): factors on max HP and power, and the stagger bar in same-rank hits (0 is
-    // no bar). A kind shortens and weakens nothing that lands on it: a boss is tougher by its own numbers (here its HP), not
-    // by halving a stun, a push or a share (the owner, Nov 21). A normal monster is a weaker body, so three hunters beat a
-    // pack of three. A boss has 3.2 bodies of HP with one turn: at 4 the S party needed 9.8 rounds (the simulation,
-    // docs/agent-handoff/rw/sim-log.md), past the 8 a boss fight may last, because the tank spends its turns taunting.
+    // Monster kinds (design 2.4, 4.2 and 4.3): factors on max HP, power, armor and resist, and the stagger bar in same-rank
+    // hits (0 is no bar). A kind shortens and weakens nothing that lands on it: a boss is tougher by its own numbers, "more
+    // hp, armor, magic resist" (the owner, Nov 21), not by halving a stun, a push or a share. A normal monster is a weaker
+    // body, so three hunters beat a pack of three. `armor` and `resist` multiply its kit's and its stat's share (derive.ts
+    // `monsterSheet`; balance plan section 1): normal 1, elite 1.25 between, boss 1.5, half again as a suit. The armor
+    // curve `armorK / (armorK + def)` flattens, so 1.5 times the armor is less than 1.5 times the toughness. A boss has
+    // 2.8 bodies of HP with one turn, measured against design 6's boss rows (the mixed party wins in 4 to 8 rounds at C
+    // and S, sim-log.md, balance unit 4): it was 3.2 while a boss's armor and resist were its kit's alone (C 6.2 rounds, S
+    // 7.7), and with 1.5 times the guard 3.2 took the S party 8.3 rounds, past the bound, so part of its toughness moved
+    // from HP into armor and resist: at 2.8 the fights are 5.9 and 7.3 rounds. At 4 bodies the S party needed 9.8 rounds,
+    // because the tank spends its turns taunting. An elite (1.5 HP, 1.25 guard) stays between a normal and a boss in each.
     // `xp` is the factor on the rank's XP (`rankTable`), as the old boss (3) and elite (1.5) rules gave it.
     kinds: {
-      normal: { hp: of(0.6, KIND_FACTOR), power: of(0.7, KIND_FACTOR), stagger: of(0, KIND_STAGGER), xp: of(1, KIND_XP) },
-      elite: { hp: of(1.5, KIND_FACTOR), power: of(1, KIND_FACTOR), stagger: of(2.5, KIND_STAGGER), xp: of(1.5, KIND_XP) },
-      boss: { hp: of(3.2, KIND_FACTOR), power: of(1.2, KIND_FACTOR), stagger: of(4, KIND_STAGGER), xp: of(3, KIND_XP) },
+      normal: { hp: of(0.6, KIND_FACTOR), power: of(0.7, KIND_FACTOR), armor: of(1, KIND_GUARD), resist: of(1, KIND_GUARD), stagger: of(0, KIND_STAGGER), xp: of(1, KIND_XP) },
+      elite: { hp: of(1.5, KIND_FACTOR), power: of(1, KIND_FACTOR), armor: of(1.25, KIND_GUARD), resist: of(1.25, KIND_GUARD), stagger: of(2.5, KIND_STAGGER), xp: of(1.5, KIND_XP) },
+      boss: { hp: of(2.8, KIND_FACTOR), power: of(1.2, KIND_FACTOR), armor: of(1.5, KIND_GUARD), resist: of(1.5, KIND_GUARD), stagger: of(4, KIND_STAGGER), xp: of(3, KIND_XP) },
+    },
+    // Monster traits (balance plan section 1): named changes to a monster's body that a row's words ask for, each the
+    // smallest set of pieces the body already has: a factor on max HP, on armor and on resist (after its kind's), a
+    // percent on speed (a `speed` StatusMod, read as a status's), and a factor on XP. The draft's words name slow in 15
+    // rows, armour in 19, fast in 6 and tough in 1; frail is in none, kept as the mirror of tough. Every number is a
+    // starting guess the simulation settles (balance plan unit 4). `xp` stays 1 until it is measured: the reference
+    // party's mean HP lost against a row with the trait over the same row without it, to a tenth.
+    traits: {
+      // the middle of the shipped seeds' hand HP factors under 1 (0.7 to 0.9)
+      frail: { hp: of(0.8, KIND_FACTOR), armor: of(1, KIND_GUARD), resist: of(1, KIND_GUARD), speed: of(0, TRAIT_SPEED), xp: of(1, KIND_XP) },
+      // the middle of the shipped seeds' hand HP factors over 1 (1.1 to 1.5)
+      tough: { hp: of(1.3, KIND_FACTOR), armor: of(1, KIND_GUARD), resist: of(1, KIND_GUARD), speed: of(0, TRAIT_SPEED), xp: of(1, KIND_XP) },
+      // what plate's bulk costs (`bulkSlow` on plate's 12 points over the carry): "slow" is as slow as a body in plate
+      slow: { hp: of(1, KIND_FACTOR), armor: of(1, KIND_GUARD), resist: of(1, KIND_GUARD), speed: of(-30, TRAIT_SPEED), xp: of(1, KIND_XP) },
+      // the mirror of slow
+      fast: { hp: of(1, KIND_FACTOR), armor: of(1, KIND_GUARD), resist: of(1, KIND_GUARD), speed: of(30, TRAIT_SPEED), xp: of(1, KIND_XP) },
+      // half again, as the boss's armor factor
+      armored: { hp: of(1, KIND_FACTOR), armor: of(1.5, KIND_GUARD), resist: of(1, KIND_GUARD), speed: of(0, TRAIT_SPEED), xp: of(1, KIND_XP) },
+      // the magical twin of armored
+      warded: { hp: of(1, KIND_FACTOR), armor: of(1, KIND_GUARD), resist: of(1.5, KIND_GUARD), speed: of(0, TRAIT_SPEED), xp: of(1, KIND_XP) },
     },
     // Defence (design 3.1 rule 12)
     armorK: whole(100, 1, 10_000, 'the armor curve\'s divisor: 0 makes a hit on bare skin not a number'), // dealt = raw * 100 / (100 + def): 60 armor takes 37% off, and no amount of armor makes a body immune
@@ -398,6 +426,12 @@ const SPEC = {
     breakShare: of(0.5, SHARE), // a broken channel fires at half its charge, rounded down
     // Threat (design 4.2)
     threatDecay: of(0.1, SHARE), // every entry falls 10% a round, so a hunter who stops attacking fades out in about 7 rounds
+    // The share of a hit's threat (rule 15) counted from its damage before the target's armor or resist, the rest from
+    // what it dealt after them. All of it, so a monster's own defence does not pick whom it aims at: at 0 a boss's 1.5
+    // times armor cut the physical builds' threat and left the cannon's, the boss aimed at the cannon in 57% of its acts
+    // during a channel (51% before that armor), and a channel begun under its aim completed 0.086 at C over 1,200 fresh
+    // seeds; at 1 it completes 0.208 (se 0.019), inside design 6's 10 to 25%, and no other row moves (sim-log.md).
+    threatBeforeDefence: of(1, SHARE),
     tauntBurst: real(2, 0, 10, 'times the gap to the leader a taunt adds: 10 holds a monster for the fight'), // a taunt adds twice the gap to the leader, the smallest rule that matters after the taunt ends
     tauntRounds: whole(2, 0, 10, 'rounds a taunt holds: 10 is past any fight'), // one or two of the monster's turns: enough to pull it off a dying hunter, short enough to keep taunting
     // Stagger (design 4.3)

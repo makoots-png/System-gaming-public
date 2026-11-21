@@ -12,7 +12,7 @@ import type { ShadowGrade } from '../save.ts';
 import type { StatKey } from '../stats.ts';
 import { diceOf, mean as meanOf } from '../formula.ts';
 import { ARCHETYPES, kitGear, NO_TWEAK, pointsAt, split } from '../hunter/derive.ts';
-import type { Archetype, Bonus, SheetBasis, MonsterKind, Sheet } from '../hunter/derive.ts';
+import type { Archetype, Bonus, SheetBasis, MonsterKind, MonsterTrait, Sheet, Tweak } from '../hunter/derive.ts';
 import { buildOf } from '../hunter/sheet.ts';
 import type { SheetHunter, SheetItem, SheetRules } from '../hunter/sheet.ts';
 import { lifeAfter } from '../hunter/vitals.ts';
@@ -20,7 +20,7 @@ import type { Life } from '../hunter/vitals.ts';
 import { TIER_BUDGET } from '../registry/paths.ts';
 import { ARCHETYPE_ATTACKS, itemAbility, weaponAttack, wornAbilityId } from '../registry/abilities.ts';
 import type { Powers } from '../registry/powers.ts';
-import { monsterXp } from '../registry/monsters.ts';
+import { monsterXp, tweakOfMonster } from '../registry/monsters.ts';
 import type { Weapon } from '../registry/abilities.ts';
 import { formulaOf } from '../registry/ability-kinds.ts';
 import type { KindRules } from '../registry/ability-kinds.ts';
@@ -80,7 +80,7 @@ export type RowMonster = {
   readonly type?: string;
   /** The picture a GM picked for it (`Monster.icon`); absent: its default (icon-defaults.ts `monsterIcon`). */
   readonly icon?: IconKey;
-  readonly tweak: { readonly hp?: number; readonly stats?: Partial<Readonly<Record<StatKey, number>>> };
+  readonly tweak: { readonly hp?: number; readonly stats?: Partial<Readonly<Record<StatKey, number>>>; readonly traits?: readonly MonsterTrait[] };
   readonly abilities: readonly Ability[];
   /** Absent: the rule's for its rank and kind (`monsterXp`). */
   readonly xp?: number;
@@ -204,13 +204,19 @@ export const remoteRow = (sheet: RowHunter, key: SheetKey, id: CombatantId, R: R
 /** The highest face of the reaction d20: never a crit, so the yardstick is a plain hit. */
 const NO_CRIT = 20;
 
+/** The body a stagger bar is measured on: the monster that holds it. */
+export type BarBody = { readonly rank: Rank; readonly archetype: Archetype; readonly kind: MonsterKind; readonly tweak: Tweak };
+
 /**
  * A same-rank hit (design 4.3, the yardstick of the stagger bar): a brute's build as a hunter of the rank's first level,
- * every perk of its tiers on its main stat, in its kit, striking a same-rank normal brute at average dice, through
- * `resolve`. tests/models/fight-sim.ts measures the same hit for the simulation.
+ * every perk of its tiers on its main stat, in its kit, striking `on` at average dice, through `resolve`. It is measured
+ * on the body that holds the bar, so a bar of 4 hits is 4 hits on that body whatever its kind's and traits' armor: on a
+ * same-rank normal brute an S boss's bar (armor 1.5 times) took more than 4 of the hits that land on the boss, so it
+ * staggered later than its kind's number says (sim-log.md, balance unit 4). tests/models/fight-sim.ts measures the same
+ * hit for the simulation.
  */
-export function sameRankHit(rank: Rank, R: RowRules): number {
-  const a = ARCHETYPES.brute, level = R.rankLevels[rank];
+export function sameRankHit(on: BarBody, R: RowRules): number {
+  const rank = on.rank, a = ARCHETYPES.brute, level = R.rankLevels[rank];
   const points = split(a.main, a.second, pointsAt(level, R), R);
   const perks = TIER_BUDGET.slice(0, rankIdx(rank) + 1).reduce((s, v) => s + v, 0);
   const build: SheetBasis = { stats: { ...points, [a.main]: points[a.main] + perks }, level, gear: kitGear(a.kit, R), perks: {} };
@@ -223,17 +229,17 @@ export function sameRankHit(rank: Rank, R: RowRules): number {
     };
   };
   const u: Body = { ...standing('u', 'party', { kind: 'hunter', build }, place(0, 0)), kind: 'hunter', threat: null, xp: 0 };
-  const t: Body = { ...standing('t', 'foe', { kind: 'monster', name: 't', rank, archetype: 'brute', monsterKind: 'normal', tweak: NO_TWEAK }, place(1, 0)), kind: 'monster', threat: {}, xp: 0 };
+  const t: Body = { ...standing('t', 'foe', { kind: 'monster', name: 't', rank, archetype: on.archetype, monsterKind: on.kind, tweak: on.tweak }, place(1, 0)), kind: 'monster', threat: {}, xp: 0 };
   const mean = diceOf(formulaOf(strike, R)!).map(meanOf);
   const r = resolve(strike, u, [u, t], t.id, openGrid(R.fight.grid.w, R.fight.grid.h), { dice: { [t.id]: mean }, react: { [t.id]: NO_CRIT } }, tick(0), R);
   return r.ok ? r.outcomes[0]?.dealt ?? 0 : 0;
 }
 
-/** The stagger bar of a monster of this kind and rank: its kind's number of same-rank hits, or none (design 4.3). */
-export function staggerOf(rank: Rank, kind: MonsterKind, R: RowRules): Stagger | null {
-  const bar = R.fight.kinds[kind].stagger;
+/** The stagger bar of a monster: its kind's number of same-rank hits on its own body, or none (design 4.3). */
+export function staggerOf(on: BarBody, R: RowRules): Stagger | null {
+  const bar = R.fight.kinds[on.kind].stagger;
   if (bar <= 0) return null;
-  const hit = sameRankHit(rank, R);
+  const hit = sameRankHit(on, R);
   return { fill: 0, max: bar * hit, hit };
 }
 
@@ -245,8 +251,8 @@ export function staggerOf(rank: Rank, kind: MonsterKind, R: RowRules): Stagger |
  */
 export function monsterRows(m: RowMonster, ids: readonly CombatantId[], R: RowRules & Pick<Rules, 'rankTable'> & { readonly conditions: StatusDefs }): NewRow[] {
   const now = JOINS;
-  const origin: Origin = { kind: 'monster', name: cut(m.name), rank: m.rank, archetype: m.archetype, monsterKind: m.kind, tweak: { hp: m.tweak.hp ?? NO_TWEAK.hp, stats: m.tweak.stats ?? NO_TWEAK.stats }, ...(m.type ? { type: m.type.slice(0, TYPE_MAX) } : {}), ...(m.icon ? { icon: m.icon } : {}) };
-  const tier = rankIdx(m.rank), stagger = staggerOf(m.rank, m.kind, R), abilities = distinct([ARCHETYPE_ATTACKS[m.archetype](R), ...m.abilities]);
+  const origin: Origin = { kind: 'monster', name: cut(m.name), rank: m.rank, archetype: m.archetype, monsterKind: m.kind, tweak: tweakOfMonster(m.tweak), ...(m.type ? { type: m.type.slice(0, TYPE_MAX) } : {}), ...(m.icon ? { icon: m.icon } : {}) };
+  const tier = rankIdx(m.rank), stagger = staggerOf({ rank: m.rank, archetype: m.archetype, kind: m.kind, tweak: tweakOfMonster(m.tweak) }, R), abilities = distinct([ARCHETYPE_ATTACKS[m.archetype](R), ...m.abilities]);
   return ids.map((id, i) => {
     const suffix = ids.length === 1 ? '' : ` ${letter(i)}`;
     const statuses = m.statuses.flatMap(s => {

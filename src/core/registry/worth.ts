@@ -33,7 +33,7 @@ export type WorthRules = SampleRules & SkillRules;
 
 // ── the reference bodies (design 2.3's paper builds, kits-paper `sheet`) ──
 export type RefBuild = 'speed' | 'tank' | 'cannon' | 'bruiser' | 'support';
-/** Each paper build: its main and second stat (two points to one) and its kit; its rank's perk points go to its main stat. */
+/** Each paper build: its main and second stat (two points to one) and its kit (`kitGear`); its rank's perk points go to its main stat. */
 const BUILDS: { readonly [B in RefBuild]: { readonly main: StatKey; readonly second: StatKey; readonly kit: Kit } } = {
   speed: { main: 'agi', second: 'str', kit: 'light' }, tank: { main: 'vit', second: 'str', kit: 'heavy' },
   cannon: { main: 'pow', second: 'ctl', kit: 'light' }, bruiser: { main: 'str', second: 'vit', kit: 'medium' },

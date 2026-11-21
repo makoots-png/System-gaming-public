@@ -20,6 +20,7 @@ export const REFUSAL_WORDS: { readonly [R in Refusal]: string } = {
   notExtractor: 'Only a hunter in the fight whose job may extract can try.',
   notHunter: 'Only a hunter\'s row can be refilled.',
   lifeCannot: 'Not in this state: Revive is for the dead, Stabilize and death saves for the dying.',
+  fudgeValue: 'A fudge is a whole number of faces, and a forced roll is a 1 or a 20.',
 };
 
 /** What a player reads when the GM's phone turned down their tap (table.js). */

@@ -86,7 +86,7 @@ test('a player\'s Strike sent on their turn changes the goblin\'s band on both p
     const hp = (await fightRow(gm, MONSTER)).hp, now = await gm.evaluate(() => hunterApp.store.get().fight.now);
     expect(sent).toHaveLength(1);
     expect(sent[0].at).toBeLessThan(now);
-    await player.evaluate(p => hunterApp.api.sync.post(hunterApp.api.sync.event('cast', { by: p.by, ability: p.ability, aim: p.aim, at: p.at, dice: p.dice })), sent[0]);
+    await player.evaluate(p => hunterApp.api.sync.post(hunterApp.api.sync.event('cast', { by: p.by, ability: p.ability, aim: p.aim, at: p.at })), sent[0]);
     // a roll sent after it reaches the GM's Table feed after it, so by then the GM's phone has read the replay
     await player.evaluate(n => hunterApp.api.dice.roll('1d20', { label: 'after the replay', who: n }), HUNTER);
     await openFeed(gm);
@@ -570,7 +570,7 @@ test('the GM\'s phone offline awards the party\'s XP and reads that the player g
   await expect(gm.getByText(`XP sent to ${HUNTER}.`)).toHaveCount(0);
 });
 
-test('a player\'s blast at two rats rolls each apart, as the GM\'s own does: the player\'s dice for the rat aimed at, the GM\'s phone\'s for the other', async ({ device }) => {
+test('a player\'s cast lands with the dice the GM\'s phone rolled for each target: a blast at two rats hurts both', async ({ device }) => {
   const { gm, player } = await room(device);
   const boom = { ...abilityOf('blast', { id: abilityId('boom'), name: 'Boom' }, RULES), range: tiles(6), shape: { kind: 'radius', radius: tiles(1), ring: null }, foesOnly: true };
   await player.evaluate(a => { const s = hunterApp.store; s.update(() => { s.active().skills.push({ id: s.id('s'), name: 'Boom', type: 'active', level: 1, label: null, desc: '', ability: a }); }, 'test-setup'); }, boom);
@@ -590,15 +590,14 @@ test('a player\'s blast at two rats rolls each apart, as the GM\'s own does: the
   await setupDoc(player, HUNTER, { x: 2, y: 0 });
   await go(player, 'combat');
   await expect(combat(player).locator('.tb-mine')).toContainText('YOUR TURN');
-  // the player's phone rolls its dice at their highest faces, the GM's phone every die at its lowest (a reaction d20 of 1: caught)
-  await player.evaluate(() => Object.defineProperty(crypto, 'getRandomValues', { configurable: true, value: (a: Uint32Array) => a.fill(0xffffffff) }));
+  // the GM's phone rolls every die at its lowest (a reaction d20 of 1: caught)
   await lowestDice(gm);
   await combat(player).locator('[data-cast="boom"]').tap();
   await answerWindow(player, /Use .+ on…/, `${MONSTER} A`);
   const lost = async (n: string) => { const r = await fightRow(gm, n); return r.sheet.hpMax - r.hp; };
   await expect.poll(() => lost(`${MONSTER} A`), { timeout: 15_000 }).toBeGreaterThan(0);
   await expect.poll(() => lost(`${MONSTER} B`)).toBeGreaterThan(0);
-  expect(await lost(`${MONSTER} A`)).toBeGreaterThan(await lost(`${MONSTER} B`));
+  expect(await lost(`${MONSTER} A`)).toBe(await lost(`${MONSTER} B`));
 });
 
 test('the GM extracts a fallen monster with a player\'s Necromancer, and the shadow that rises joins the army on the player\'s phone', async ({ device }) => {

@@ -9,7 +9,7 @@ import type { Rank, Rules } from '../rules.ts';
 import { STAT_KEYS } from '../stats.ts';
 import type { StatKey } from '../stats.ts';
 import { ARCHETYPES, monsterSheet, NO_TWEAK } from '../hunter/derive.ts';
-import type { Archetype, DeriveRules, MonsterKind, Sheet } from '../hunter/derive.ts';
+import type { Archetype, DeriveRules, MonsterKind, MonsterTrait, Sheet, Tweak } from '../hunter/derive.ts';
 import type { Ability } from '../combat/ability-types.ts';
 import { seedId } from '../ids.ts';
 import type { MonsterId } from '../ids.ts';
@@ -33,8 +33,12 @@ import type { IconKey } from './icons.ts';
 export type StartStatus = { key: string; rounds: number | null; stacks?: number };
 /** What a monster drops. Kept and read only: the end of a fight does not offer it yet. */
 export type Loot = { gold: number; items: ItemTemplate[] };
-/** How a monster differs from its rank, archetype and kind: `hp` multiplies its max HP, `stats` adds points to named stats. */
-export type MonsterTweak = { hp?: number; stats?: Partial<Record<StatKey, number>> };
+/**
+ * How a monster differs from its rank, archetype and kind: `hp` multiplies its max HP, `stats` adds points to named stats,
+ * and each of `traits` changes its body by its rule (`RULES.fight.traits`; absent, none). A seed row names a trait where
+ * its words ask for one ("slow", "armoured"), so its body comes from rules and not from a hand-set factor.
+ */
+export type MonsterTweak = { hp?: number; stats?: Partial<Record<StatKey, number>>; traits?: MonsterTrait[] };
 /**
  * A monster the GM keeps. Its body is a hunter of its rank's first level built 2:1 by its `archetype`, times its `kind`'s
  * factors, with its `tweak` (src/core/hunter/derive.ts `monsterSheet`). In a fight it attacks with its archetype's attack
@@ -60,6 +64,10 @@ export type StatBlock = MonsterTemplate & { id: string | null };
 
 export const ARCHETYPE_LIST = Object.keys(ARCHETYPES) as Archetype[];
 export const MONSTER_KINDS = Object.keys(RULES.fight.kinds) as MonsterKind[];
+/** Every trait, in the order a monster keeps them and the maker shows them. */
+export const MONSTER_TRAITS = Object.keys(RULES.fight.traits) as MonsterTrait[];
+/** Each trait's name on a screen. */
+export const TRAIT_LABEL: { readonly [T in MonsterTrait]: string } = { frail: 'Frail', tough: 'Tough', slow: 'Slow', fast: 'Fast', armored: 'Armored', warded: 'Warded' };
 
 /**
  * How a seed differs from its rank, archetype and kind: its tweak, a factor on its XP, whether a Necromancer may extract
@@ -164,19 +172,26 @@ export const SEEDS: readonly MonsterSeed[] = [
     'Demon king of the frozen castle.'],
 ];
 
-/** A monster's XP: its rank's XP times its kind's factor (normal 1, elite 1.5, boss 3) and its own, rounded. */
-export const xpOf = (R: Pick<Rules, 'rankTable' | 'fight'>, rank: Rank, kind: MonsterKind, factor = 1): number =>
-  Math.round(R.rankTable[rank].xp * R.fight.kinds[kind].xp * factor);
+/**
+ * A monster's XP: its rank's XP times its kind's factor (normal 1, elite 1.5, boss 3), each of its traits' (`xp` of
+ * `RULES.fight.traits`) and its own, rounded.
+ */
+export const xpOf = (R: Pick<Rules, 'rankTable' | 'fight'>, rank: Rank, kind: MonsterKind, traits: readonly MonsterTrait[] = [], factor = 1): number =>
+  Math.round(R.rankTable[rank].xp * R.fight.kinds[kind].xp * traits.reduce((p, t) => p * R.fight.traits[t].xp, 1) * factor);
 /**
  * A monster's XP: the one typed, else the rule's (`xpOf`). Implicit audit 3, B1: the rule's XP was stored as a number when
  * the maker saved, so a change of the XP table reached no saved monster, and "follows the rule" was guessed by equality.
  */
-export const monsterXp = (m: { readonly xp?: number; readonly rank: Rank; readonly kind: MonsterKind }, R: Pick<Rules, 'rankTable' | 'fight'>): number =>
-  m.xp ?? xpOf(R, m.rank, m.kind);
+export const monsterXp = (m: { readonly xp?: number; readonly rank: Rank; readonly kind: MonsterKind; readonly tweak: { readonly traits?: readonly MonsterTrait[] } }, R: Pick<Rules, 'rankTable' | 'fight'>): number =>
+  m.xp ?? xpOf(R, m.rank, m.kind, m.tweak.traits);
+
+/** A monster's tweak as its body reads it: an absent factor 1, absent stats none, absent traits none. */
+export const tweakOfMonster = (t: { readonly hp?: number; readonly stats?: Partial<Readonly<Record<StatKey, number>>>; readonly traits?: readonly MonsterTrait[] }): Tweak =>
+  ({ hp: t.hp ?? NO_TWEAK.hp, stats: t.stats ?? NO_TWEAK.stats, traits: t.traits ?? NO_TWEAK.traits });
 
 /** A monster's sheet: its rank, archetype and kind through `derive`, with its tweak. */
 export const monsterSheetOf = (m: Pick<Monster, 'rank' | 'archetype' | 'kind' | 'tweak'>, R: DeriveRules): Sheet =>
-  monsterSheet(m.rank, m.archetype, m.kind, R, [], { hp: m.tweak.hp ?? NO_TWEAK.hp, stats: m.tweak.stats ?? NO_TWEAK.stats });
+  monsterSheet(m.rank, m.archetype, m.kind, R, [], tweakOfMonster(m.tweak));
 
 /** A new monster of `rank`, a brute and normal unless `o` says otherwise: no abilities of its own, its XP by the rule. */
 export function statBlock(R: Rules, rank: Rank, o: { id?: string; name?: string; type?: string; archetype?: Archetype; kind?: MonsterKind } = {}): StatBlock {
@@ -193,8 +208,8 @@ export function statBlock(R: Rules, rank: Rank, o: { id?: string; name?: string;
 export function seedMonsters(R: Rules): Monster[] {
   return SEEDS.map(([slug, name, rank, type, archetype, kind, t, specs, notes, desc]) => ({
     id: seedId<'m'>(slug), name, rank, type, archetype, kind,
-    tweak: { ...(t.hp === undefined ? {} : { hp: t.hp }), ...(t.stats === undefined ? {} : { stats: { ...t.stats } }) },
-    abilities: specs.map(s => monsterAbility(s, R)), notes: notes.slice(), xp: xpOf(R, rank, kind, t.xp), extractable: t.extractable !== false, desc,
+    tweak: { ...(t.hp === undefined ? {} : { hp: t.hp }), ...(t.stats === undefined ? {} : { stats: { ...t.stats } }), ...(t.traits === undefined ? {} : { traits: [...t.traits] }) },
+    abilities: specs.map(s => monsterAbility(s, R)), notes: notes.slice(), xp: xpOf(R, rank, kind, t.traits, t.xp), extractable: t.extractable !== false, desc,
     statuses: (t.statuses ?? []).map(s => ({ ...s })), loot: { gold: 0, items: [] },
   }));
 }
@@ -221,15 +236,16 @@ function tweakOf(v: unknown): MonsterTweak {
   const hp = typeof t.hp === 'number' && Number.isFinite(t.hp) && t.hp > 0 ? Math.min(MONSTER_BOUNDS.hp, t.hp) : null;
   const raw = isObj(t.stats) ? t.stats : {}, stats: Partial<Record<StatKey, number>> = {};
   for (const k of STAT_KEYS) { const n = whole(Object.hasOwn(raw, k) ? raw[k] : 0, -MONSTER_BOUNDS.stat, MONSTER_BOUNDS.stat, 0); if (n) stats[k] = n; }
-  return { ...(hp === null ? {} : { hp }), ...(Object.keys(stats).length ? { stats } : {}) };
+  const named = Array.isArray(t.traits) ? t.traits : [], traits = MONSTER_TRAITS.filter(k => named.includes(k));
+  return { ...(hp === null ? {} : { hp }), ...(Object.keys(stats).length ? { stats } : {}), ...(traits.length ? { traits } : {}) };
 }
 
 /**
  * A monster read from outside data, without its id, or null when it is not an object. Each field of the wrong type or
  * value takes the default a new monster has (a blank name is "Monster", a brute, normal); a number is cut to a whole one
- * inside `MONSTER_BOUNDS`. The tweak keeps an HP factor above 0 (at most 10) and stat points from -999 to 999 that are
- * not 0. Each ability is read by the fight's ability reader with the shipped rules' limits, one it refuses dropped (at
- * most 11). Notes are the non-blank lines of text, at most 20 of 500. A starting status is a status key (not a hunter's
+ * inside `MONSTER_BOUNDS`. The tweak keeps an HP factor above 0 (at most 10), stat points from -999 to 999 that are
+ * not 0, and the traits it names that `RULES.fight.traits` holds, each once, in `MONSTER_TRAITS`' order. Each ability
+ * is read by the fight's ability reader with the shipped rules' limits, one it refuses dropped (at most 11). Notes are the non-blank lines of text, at most 20 of 500. A starting status is a status key (not a hunter's
  * state chip, each key once) with whole rounds 1 to 999 or null and a count of 1 to `kit.stackCap` (kept when above 1),
  * at most 8. Loot is gold and items read by `parseItem`
  * (at most 20). `icon` is kept only when it is a key of the icon registry (an unknown one is dropped, the default shows). `auto` (added on its first defeat) and `placeholder` (made by a gate's spawn) are kept only when true.

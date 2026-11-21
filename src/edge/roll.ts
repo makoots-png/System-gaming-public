@@ -4,10 +4,11 @@
 // `rollOpenings` gives `start` and `add` their `Opening`s; `rollSettle` gives `settle` its dice. Each takes a random
 // source (a number in [0, 1)) so a test can pass a seeded one; the default reads `crypto.getRandomValues`. A dice term
 // with Roll20's modifiers (src/core/formula.ts) is rolled face by face by `rollTerm`, which core reads; `rollFormula`
-// rolls a whole formula with its faces, for a view that shows them.
+// rolls a whole formula with its faces, for a view that shows them. Both take the GM's `Weight` (src/core/draws.ts), 0 by default.
 
 import { diceOf, rolled } from '../core/formula.ts';
 import { drawNeeds, drawOpenings, drawSettle, drawTerm, faceOf as face } from '../core/draws.ts';
+import type { Weight } from '../core/draws.ts';
 import type { Dice, Formula, Rolled, Scope, TermRoll } from '../core/formula.ts';
 import type { CombatantId } from '../core/combat/ability-types.ts';
 import type { Needs, Rolls } from '../core/combat/resolve.ts';
@@ -39,15 +40,15 @@ export const pick = <T>(list: readonly T[], random: Random = cryptoRandom): T | 
 /** A true flip of the coin (src/core/coin.ts): what a phone alone, or the GM's "Let the coin decide", lands on. */
 export const flip = (random: Random = cryptoRandom): CoinSide => sideOf(random());
 
-/** One dice term rolled: its faces drawn from `random` (src/core/draws.ts `drawTerm`). */
-export const rollTerm = (d: Dice, random: Random = cryptoRandom): TermRoll => drawTerm(d, random);
+/** One dice term rolled: its faces drawn from `random`, each weighed by `weight` (src/core/draws.ts `drawTerm`; 0 moves none). */
+export const rollTerm = (d: Dice, random: Random = cryptoRandom, weight: Weight = 0): TermRoll => drawTerm(d, random, weight);
 
 /** The total of one dice term: the sum of `d.count` dice of `d.sides` faces, or what its modifiers make of them. */
 export const rollDice = (d: Dice, random: Random = cryptoRandom): number => rollTerm(d, random).total;
 
-/** A formula rolled: each dice term's faces and the total (the Dice view's typed formula, a check). */
-export const rollFormula = (formula: Formula, scope: Scope, random: Random = cryptoRandom): Rolled =>
-  rolled(formula, scope, diceOf(formula).map(d => rollTerm(d, random)));
+/** A formula rolled: each dice term's faces, every one weighed by `weight`, and the total (the Dice view's typed formula, a check). */
+export const rollFormula = (formula: Formula, scope: Scope, random: Random = cryptoRandom, weight: Weight = 0): Rolled =>
+  rolled(formula, scope, diceOf(formula).map(d => rollTerm(d, random, weight)));
 
 /** Every die a use needs: one total per dice term for each target, a d20 for each reaction, a d20 for a refund with a chance. */
 export const rollNeeds = (needs: Needs, random: Random = cryptoRandom): Rolls => drawNeeds(needs, random);

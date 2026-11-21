@@ -125,7 +125,7 @@ const librarySkill = (page: Page, name: string) => page.evaluate(n => hunterApp.
 /** A C-rank caster's body (Power 63, Control 33, a light kit), as makers.e2e.ts builds its fight rows. */
 const caster: Origin = { kind: 'hunter', build: { stats: { ...baseStats(RULES.fight), pow: 63, ctl: 33 }, level: RULES.rankLevels.C, gear: kitGear('light', RULES), perks: {} } };
 /** A C-rank boss brute with five times its HP, so it stands through ten Festers and a burst. */
-const brute: Origin = { kind: 'monster', name: 'Monster', rank: 'C', archetype: 'brute', monsterKind: 'boss', tweak: { hp: 5, stats: {} } };
+const brute: Origin = { kind: 'monster', name: 'Monster', rank: 'C', archetype: 'brute', monsterKind: 'boss', tweak: { hp: 5, stats: {}, traits: [] } };
 function newRow(name: string, side: 'party' | 'foe', origin: Origin, x: number, abilities: Ability[] = []): NewRow {
   const { sheet } = modified(origin, [], RULES);
   return {

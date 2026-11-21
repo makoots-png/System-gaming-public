@@ -3,6 +3,7 @@ import { pick, rollDice, rollFormula, rollNeeds, rollOpenings, rollSettle, rollT
 import { diceOf, EXPLODE_MAX, mean, parseFormula, rollOf } from '../src/core/formula.ts';
 import type { Dice, Formula, Scope } from '../src/core/formula.ts';
 import type { Random } from '../src/edge/roll.ts';
+import type { Weight } from '../src/core/draws.ts';
 import type { Needs } from '../src/core/combat/resolve.ts';
 import { combatantId } from '../src/core/combat/ability-types.ts';
 import { heldDieId } from '../src/core/combat/standing.ts';
@@ -197,5 +198,79 @@ describe('the dice of rule 7b (kits design 8.2)', () => {
     expect(r.second).toEqual({ t: 11 });
     expect(r.boost).toEqual({ [bless]: 6, [focus]: 3 });
     expect('second' in rollNeeds({ dice: {}, react: [], refund: false })).toBe(false);
+  });
+});
+
+describe('the GM\'s weight on a draw (notes-8-fudge.md section 2): each face moved, kept on its die', () => {
+  const term = (text: string): Dice => {
+    const r = parseFormula(text, { dice: { maxDice: 50, maxSides: 1000 } });
+    if (!r.ok) throw new Error(r.error);
+    return diceOf(r.formula)[0]!;
+  };
+  /** A source that gives these faces in turn, each of a die of `sides`: (face - 0.5) / sides. */
+  const fall = (sides: number, ...faces: number[]): Random => () => (faces.shift()! - 0.5) / sides;
+  const shown = (text: string, random: Random, weight: Weight): [number, string][] =>
+    rollTerm(term(text), random, weight).faces.map(f => [f.face, f.fate]);
+
+  test('a weighted face moves by the weight and stays on its die', () => {
+    expect(rollTerm(term('1d6'), fall(6, 5), 3)).toEqual({ faces: [{ face: 6, fate: 'kept', exploded: false }], total: 6 });
+    expect(rollTerm(term('1d6'), fall(6, 2), -5)).toEqual({ faces: [{ face: 1, fate: 'kept', exploded: false }], total: 1 });
+    expect(rollTerm(term('1d20'), fall(20, 10), 2).total).toBe(12);
+    expect(rollTerm(term('1d20'), fall(20, 10), -2).total).toBe(8);
+    expect(shown('2d6', fall(6, 3, 6), 2)).toEqual([[5, 'kept'], [6, 'kept']]);
+    expect(rollTerm(term('2d6'), fall(6, 3, 6), 2).total).toBe(5 + 6);
+  });
+
+  test('advantage weighs each die before it keeps one', () => {
+    expect(shown('2d20kh1', fall(20, 7, 15), 2)).toEqual([[9, 'dropped'], [17, 'kept']]);
+    expect(rollTerm(term('2d20kh1'), fall(20, 7, 15), 2).total).toBe(17);
+    expect(shown('2d20kl1', fall(20, 7, 15), 2)).toEqual([[9, 'kept'], [17, 'dropped']]);
+    expect(rollTerm(term('2d20kl1'), fall(20, 7, 15), 2).total).toBe(9);
+  });
+
+  test('a forced face is every d20 of the roll', () => {
+    expect(shown('2d20kh1', fall(20, 7, 15), { forced: 1 })).toEqual([[1, 'kept'], [1, 'dropped']]);
+    expect(rollTerm(term('2d20kh1'), fall(20, 7, 15), { forced: 1 }).total).toBe(1);
+    expect(shown('2d20kl1', fall(20, 3, 9), { forced: 20 })).toEqual([[20, 'dropped'], [20, 'kept']]); // of equal faces the first ranks higher
+  });
+
+  test('a force touches only the d20s of a roll: a d6 beside them falls as drawn, from the number after theirs', () => {
+    const scope = { charge: 0 } as unknown as Scope;
+    const f = parseFormula('1d20 + 1d6 + 2', { dice: { maxDice: 50, maxSides: 1000 } });
+    if (!f.ok) throw new Error(f.error);
+    const numbers = [(4 - 0.5) / 20, (3 - 0.5) / 6];
+    const r = rollFormula(f.formula, scope, () => numbers.shift()!, { forced: 20 });
+    expect(r.terms.map(t => t.faces.map(x => x.face))).toEqual([[20], [3]]);
+    expect(r.total).toBe(20 + 3 + 2);
+  });
+
+  test('a die weighted to its top explodes as a rolled top does, within EXPLODE_MAX', () => {
+    const r = rollTerm(term('1d6!'), () => 0, 5);
+    expect(r.faces.map(f => f.face)).toEqual(new Array<number>(EXPLODE_MAX + 1).fill(6));
+    expect(r.faces.map(f => 'exploded' in f && f.exploded)).toEqual([...new Array<boolean>(EXPLODE_MAX).fill(true), false]);
+    expect(r.total).toBe(6 * (EXPLODE_MAX + 1));
+    expect(rollTerm(term('1d6!'), () => 0, 4)).toEqual({ faces: [{ face: 5, fate: 'kept', exploded: false }], total: 5 });
+  });
+
+  test('a weight of 0 draws what an unweighted draw draws from the same seed', () => {
+    for (const seed of SEEDS) for (const text of ['3d6', '2d20kh1', '2d20kl1', '4d6dl1', '3d8!r1kh2', '10d6>5', '2d10ro<3!', '1d20']) {
+      const d = term(text), plain = rollTerm(d, seeded(seed)), weighed = rollTerm(d, seeded(seed), 0);
+      expect([text, JSON.stringify(weighed)]).toEqual([text, JSON.stringify(plain)]);
+      const source = seeded(seed), fell = plain.faces.map(() => 1 + Math.floor(source() * d.sides));
+      expect([text, plain.faces.map(f => f.face)]).toEqual([text, fell]);
+    }
+    const scope = { charge: 0 } as unknown as Scope;
+    const f = parseFormula('/r 2d20kh1 + 1d6 + 4', { dice: { maxDice: 50, maxSides: 1000 } });
+    if (!f.ok) throw new Error(f.error);
+    for (const seed of SEEDS) expect(JSON.stringify(rollFormula(f.formula, scope, seeded(seed), 0))).toBe(JSON.stringify(rollFormula(f.formula, scope, seeded(seed))));
+  });
+
+  test('a weight moves faces and never which numbers fall: the dice after a weighted term fall as after an unweighted one', () => {
+    for (const weight of [3, -4, { forced: 20 } as const, { forced: 1 } as const]) for (const seed of SEEDS) {
+      const a = seeded(seed), b = seeded(seed);
+      rollTerm(term('2d20kh1'), a, weight); rollTerm(term('3d6'), a, weight);
+      rollTerm(term('2d20kh1'), b); rollTerm(term('3d6'), b);
+      expect(rollTerm(term('4d8'), a)).toEqual(rollTerm(term('4d8'), b));
+    }
   });
 });

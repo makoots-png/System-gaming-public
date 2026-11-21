@@ -48,7 +48,7 @@ const roll = { eid: 'd-player1-e1', by: `${PLAYER}:h1`, name: 'Kai', total: 17 }
 const questUpdate = { eid: 'd-player1-e2', by: `${PLAYER}:h1`, name: 'Kai', questId: 'q7', title: 'Den', kind: 'main', status: 'active' };
 const used = { eid: 'd-player1-e3', by: `${PLAYER}:h1`, who: 'Kai', what: 'boon', name: 'Free resurrection', text: 'Once.', tell: true };
 const step = { eid: 'd-player1-e4', by: `${PLAYER}:h1`, place: { x: 3, y: 4 }, at: 2500 };
-const cast = { eid: 'd-player1-e5', by: `${PLAYER}:h1`, ability: 'strike', aim: 'c2', at: 2500, dice: [4, 6] };
+const cast = { eid: 'd-player1-e5', by: `${PLAYER}:h1`, ability: 'strike', aim: 'c2', at: 2500 };
 /** A player's solo run of the room's gate g1, as gates/solo.ts `soloRunBody` writes it. */
 const soloRun = { eid: 'd-player1-e8', by: `${PLAYER}:h1`, gate: 'g1', name: 'Kai', outcome: 'won', rounds: 4, life: 'up' };
 const arm = { eid: 'd-player1-e8', by: `${PLAYER}:h1`, ability: 'parry', on: null };

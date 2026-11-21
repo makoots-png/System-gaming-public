@@ -195,6 +195,10 @@ same-rank boss of the new body:
   Tenacity from its own Strength and Discipline. Control still matters against a boss, without a lock.
 - The triangle's "cannon beats tank" row, whose lever is penetration, must still hold.
 
+**The lead's rulings after balance unit 2 measured them (Nov 21; the numbers are the lead's to set, the owner).** P1's armor pair and P2 hold at C and S. Two rows are open, each in `OPEN` of `tests/fight-sim.test.ts` with its value:
+- P1's magic pair at the boss (-0.080 at C, -0.119 at S). The row was measured on the brute boss, whose resist is 8: a percent takes little off a small number, at any price. A percent penetration is a counter to a high defence, so the magic pair is to be read on a boss whose high defence is resist (a warded kind, the brute's mirror), as the armor pair is read on the brute. `kinds.boss.resist` stays as it is: raising every boss's resist to make a percent pay would make magic worse against all of them. The next balance unit builds that boss in the simulation and measures the pair there; the bound is unchanged.
+- P3 (0.032 at C, 0.025 at S against 0.10 to 0.35). A one-round stun every three rounds should hold a boss near a third of its turns before Tenacity, so 3% says something takes most of it away. The next balance unit names what (the boss's Tenacity, the stun's resist roll, the tank's turns spent elsewhere) from the simulation's counters before any number moves.
+
 Levers if P1 or P2 fails, in order: `itemBudget.penFoe`, `fight.penMax`, the kinds' armor and resist. Each move goes in
 `sim-log.md`, before and after.
 

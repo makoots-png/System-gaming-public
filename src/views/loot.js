@@ -189,7 +189,7 @@ export function register(app) {
           if (e.target.closest('[data-chips="grade"]')) sync();
           const kit = e.target.closest('[data-kit]');
           if (kit && Object.hasOwn(KIT_SHARE, slotSel.value)) {
-            const p = piece(oneOf(kit.dataset.kit, KITS.map(([k]) => k), 'light'), slotSel.value, rarity(), rules());
+            const p = piece(oneOf(kit.dataset.kit, KITS.map(([k]) => k), 'light'), slotSel.value, rules());
             for (const [k] of GEAR) gearInput(k).value = String(p[k]);
             shell.changed();
           }

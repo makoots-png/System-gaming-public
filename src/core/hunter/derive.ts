@@ -133,6 +133,8 @@ export type StatusMod = { readonly op: 'stat'; readonly key: StatKey; readonly a
 export type Archetype = 'brute' | 'skirmisher' | 'caster';
 export type Kit = keyof Rules['fight']['kits'];
 export type MonsterKind = keyof Rules['fight']['kinds'];
+/** A named change to a monster's body (`RULES.fight.traits`: frail, tough, slow, fast, armored, warded). */
+export type MonsterTrait = keyof Rules['fight']['traits'];
 
 /** The rule numbers this module reads. */
 export type DeriveRules = Pick<Rules, 'fight' | 'rankLevels' | 'pointsPerLevel'>;
@@ -144,7 +146,11 @@ export const ARCHETYPES: { readonly [A in Archetype]: { readonly main: StatKey; 
   caster: { main: 'pow', second: 'ctl', kit: 'light' },
 };
 
-/** A kit as gear: one piece that weighs and protects what the kit does. */
+/**
+ * A kit as gear: one piece that weighs and protects what the kit does (design table 2.5). A full set of its six pieces
+ * adds up to the same numbers (registry/items.ts `piece`), and a rarer piece holds no more armor or resist than a common
+ * one, so a hunter of any rank in a full set, a monster and the paper builds all wear this.
+ */
 export const kitGear = (kit: Kit, R: DeriveRules): GearPiece[] => [R.fight.kits[kit]];
 
 /** The points a body has to spend at `level`: the creation points, then the points of every level after the first. */
@@ -159,9 +165,9 @@ export function split(main: StatKey, second: StatKey, points: number, R: DeriveR
   return stats;
 }
 
-/** What a monster's kind multiplies; a hunter's body is 1 and 1. */
-type Factors = { readonly hp: number; readonly power: number };
-const HUNTER: Factors = { hp: 1, power: 1 };
+/** What a monster's kind and traits multiply; a hunter's body is 1 in each. */
+type Factors = { readonly hp: number; readonly power: number; readonly armor: number; readonly resist: number };
+const HUNTER: Factors = { hp: 1, power: 1, armor: 1, resist: 1 };
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
@@ -208,8 +214,8 @@ function derive(stats: Stats, level: number, gear: readonly GearPiece[], perks: 
     speed,
     move,
     stride: tiles(Math.max(1, Math.ceil(move * F.strideShare + b('stride')))),
-    armor: Math.round(total('armor') + c('vit', F.armorVitCap) + b('armor')),
-    resist: Math.round(total('resist') + c('dis', F.resistDisCap) + b('resist')),
+    armor: Math.round(f.armor * (total('armor') + c('vit', F.armorVitCap)) + b('armor')),
+    resist: Math.round(f.resist * (total('resist') + c('dis', F.resistDisCap)) + b('resist')),
     armorPen: Math.min(F.penMax, c('ctl', F.penCap) + b('armorPen')),
     resistPen: Math.min(F.penMax, c('ctl', F.penCap) + b('resistPen')),
     armorPenFlat: b('armorPenFlat'),
@@ -241,11 +247,12 @@ export const sheetOf = (build: SheetBasis, R: DeriveRules, mods: readonly Status
 
 /**
  * What a monster's seed changes on its archetype's body (design 2.4): `hp` multiplies its max HP after its kind's factor,
- * and `stats` adds points to named stats before their curves, as a hunter's spent points do. It carries no armor.
+ * `stats` adds points to named stats before their curves, as a hunter's spent points do, and each of `traits` applies its
+ * rule (`RULES.fight.traits`, balance plan section 1). It carries no armor of its own.
  */
-export type Tweak = { readonly hp: number; readonly stats: Partial<Readonly<Record<StatKey, number>>> };
+export type Tweak = { readonly hp: number; readonly stats: Partial<Readonly<Record<StatKey, number>>>; readonly traits: readonly MonsterTrait[] };
 /** The tweak of a monster its seed leaves as its archetype makes it. */
-export const NO_TWEAK: Tweak = { hp: 1, stats: {} };
+export const NO_TWEAK: Tweak = { hp: 1, stats: {}, traits: [] };
 
 /** A monster's stats: its rank's points split 2:1 by its archetype, plus its seed's tweak. */
 export function monsterStats(rank: Rank, archetype: Archetype, R: DeriveRules, tweak: Tweak = NO_TWEAK): Stats {
@@ -255,11 +262,16 @@ export function monsterStats(rank: Rank, archetype: Archetype, R: DeriveRules, t
 }
 
 /**
- * A monster's sheet: a hunter of its rank's first level with its points split 2:1 by its archetype and its seed's
- * tweak, no perks, in its archetype's kit, its max HP and powers times its kind's factors and its max HP times the
- * tweak's. A shadow's sheet is the sheet of the monster it was extracted from.
+ * A monster's sheet (balance plan section 1): a hunter of its rank's first level with its points split 2:1 by its
+ * archetype and its seed's tweak, no perks, in its archetype's kit (`kitGear`). Its max HP is times its
+ * kind's factor, the tweak's and its traits'; its powers times its kind's; its armor and resist (the kit's and its
+ * stat's share) times its kind's and its traits'; each trait's speed percent is a `speed` mod beside its statuses'. A
+ * shadow's sheet is the sheet of the monster it was extracted from.
  */
 export function monsterSheet(rank: Rank, archetype: Archetype, kind: MonsterKind, R: DeriveRules, mods: readonly StatusMod[] = [], tweak: Tweak = NO_TWEAK): Sheet {
-  const k = R.fight.kinds[kind];
-  return derive(monsterStats(rank, archetype, R, tweak), R.rankLevels[rank], kitGear(ARCHETYPES[archetype].kit, R), {}, mods, { hp: k.hp * tweak.hp, power: k.power }, R);
+  const k = R.fight.kinds[kind], traits = tweak.traits.map(t => R.fight.traits[t]);
+  const times = (n: 'hp' | 'armor' | 'resist'): number => traits.reduce((p, t) => p * t[n], 1);
+  const paces = traits.map((t): StatusMod => ({ op: 'speed', pct: t.speed }));
+  const f: Factors = { hp: k.hp * tweak.hp * times('hp'), power: k.power, armor: k.armor * times('armor'), resist: k.resist * times('resist') };
+  return derive(monsterStats(rank, archetype, R, tweak), R.rankLevels[rank], kitGear(ARCHETYPES[archetype].kit, R), {}, [...mods, ...paces], f, R);
 }

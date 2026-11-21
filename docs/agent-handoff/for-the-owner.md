@@ -59,6 +59,14 @@ You typed (Nov 21): "Also with coin flips, the point is they call heads or tails
 
 A player's phone no longer learns how the coin landed, so in a room it can no longer record "called the coin right" or "wrong" in the Chronicle (it would tell the player the outcome). Built default: a coin you rule in a room records no coin fact; a coin flipped alone still does. Say if you want the fact kept another way (for one: recorded when you choose to reveal it).
 
+### 9. The fudge factor: four defaults the build uses (asked Nov 21)
+
+Say only what you want otherwise (`features/notes-8-fudge.md` section 6, numbers 10 to 13):
+- a. Your own roll outside a fight (your phone's dice tray, no hunter) is not weighted. "My own rolls" are the foes' in a fight.
+- b. The weight you set outside a fight does not carry into a fight, and a fight's does not carry out: a fight starts at 0, the table's weight stays until you set it to 0.
+- c. The shadow extraction's Presence check is not weighted while your phone rolls it.
+- d. +2 means 2 faces on every die, a d4's the same as a d20's.
+
 ## Answered
 
 - Nov 20: consumables priced by rank and how long they last (staple 0.1, one fight 0.5, one gate 1, escape stone 2): "Sure yes."

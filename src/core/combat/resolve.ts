@@ -58,15 +58,6 @@ export type Needs = {
   readonly dice: Readonly<Record<CombatantId, readonly Dice[]>>; readonly react: readonly CombatantId[]; readonly refund: boolean;
   readonly second?: readonly CombatantId[]; readonly boost?: readonly { readonly id: HeldDieId; readonly sides: number }[];
 };
-/**
- * The dice of a player's cast (the room's `cast`: one roll of the use's dice on the player's phone) by target: they land
- * on the body the cast aimed at, or on the first body the use takes when it aimed at a tile; every other target rolls its
- * own (`rolled`, the GM's phone's roll of `n`), as each target of the GM's own use does.
- */
-export function castDice(n: Needs, aim: Aim, own: readonly number[], rolled: Rolls['dice']): Rolls['dice'] {
-  const ids = Object.keys(n.dice) as CombatantId[], mine = typeof aim === 'string' && ids.includes(aim) ? aim : ids[0];
-  return Object.fromEntries(ids.map(id => [id, id === mine ? own : rolled[id] ?? []]));
-}
 /** Why a use was refused: rules 3 to 4's refusals (`ChargeRefusal`, charge.ts), and those of the rules here. */
 export type UseRefusal = ChargeRefusal | 'taunted' | 'range' | 'noTarget' | 'needsRoll'
   /** A second extra action in one round of fight time (kits design 8.6.1, `extraPerRound`). */
@@ -241,6 +232,11 @@ function defended(raw: number, a: Ability, user: Body, target: Body, R: ResolveR
   if (a.effect.type === 'heal' || a.effect.type === 'shield') return Math.max(0, Math.round(raw));
   return afterDefence(raw, a.effect.type, user.sheet, target.sheet, R);
 }
+
+// Rule 15 (design 4.2): the damage a hit's threat counts, `threatBeforeDefence` of it from the hit before the target's
+// armor or resist (`struck`), the rest from what it dealt after them; the user's threat multiplier is applied by the caller.
+const threatOfHit = (struck: number, dealt: number, R: ResolveRules): number =>
+  R.fight.threatBeforeDefence * Math.max(0, struck) + (1 - R.fight.threatBeforeDefence) * dealt;
 
 // Rule 16: a weak hit fills the bar 1.5 times; a full bar costs the target 1.5 rounds, empties and grows 50%.
 function staggered(target: Body, damage: number, now: Tick, R: ResolveRules): { target: Body; fill: number; staggered: boolean } {
@@ -552,7 +548,7 @@ export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body
     t = price.target;
     const raw = shared(covered(multiplied(formulaValue(a, u, t, dice, kitFor(snap, t.id, price.spent), R), a, u, end.avoid, isCrit, R), a, t, grid, R), a, u, t, grid, R);
     const guard = a.kind === 'strike' ? answers.guard?.[t.id] ?? 0 : 0;
-    const dealt = defended(guard ? raw * (1 - guard) : raw, a, u, t, R);
+    const struck = guard ? raw * (1 - guard) : raw, dealt = defended(struck, a, u, t, R);
     let absorbed = 0, hpDamage = 0, threat = 0, fill = 0, stag = false;
     const before = rowHp(t);
     if (type === 'physical' || type === 'magical') {
@@ -564,7 +560,7 @@ export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body
         if (answers.lethal(t.id, rows)) { t = rows.get(t.id)!; const again = throughShield(t, hpDamage, now); t = again.target; absorbed += again.absorbed; hpDamage = wardedDamage(t, hpDamage - again.absorbed); }
       }
       t = hurt(t, hpDamage);
-      threat = t.threat ? dealt * u.sheet.threat : 0;
+      threat = t.threat ? threatOfHit(struck, dealt, R) * u.sheet.threat : 0;
       t = threatened(t, u.id, threat);
       const s = staggered(t, hpDamage, now, R);
       t = s.target; fill = s.fill; stag = s.staggered;

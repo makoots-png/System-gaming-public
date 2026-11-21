@@ -80,6 +80,7 @@ const WORN_TYPES: readonly ItemType[] = ['weapon', 'armor', 'accessory'];
 /** The slots a piece of armour may take, each with its share of a kit in hundredths (design table 2.5); they sum to 100. */
 export const KIT_SHARE = { chest: 35, legs: 20, offhand: 15, head: 10, hands: 10, feet: 10 } as const;
 export type ArmorSlot = keyof typeof KIT_SHARE;
+const ARMOR_SLOTS = Object.keys(KIT_SHARE) as ArmorSlot[];
 
 /** Every item has these. Without `value` its price is the rule's (`valueOf`); with it, the price was set by hand. Without `grade`, the middle. */
 type Common = { name: string; rar: Rarity; desc: string; value?: number; grade?: Grade; icon?: IconKey };
@@ -113,8 +114,8 @@ export const SHOP_ITEMS: readonly ItemDef[] = [
   { name: "Hunter's Leather", rar: 'common', grade: -1, type: 'armor', slot: 'chest', kit: 'light', desc: 'Light leather armor for the chest.' },
   { name: 'Steel Longsword', rar: 'common', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', desc: 'A plain steel sword.' },
   // "Cruel to armored foes": 5 Lethality, 5 points of armor ignored on every hit (a resist is not armor). It was Rare+
-  // while the budget could not weigh the armor ignored (design 2.5); weighed (balance plan section 9: 0.71 points a point
-  // of Lethality at C), its d10, +2 Strength and 5 Lethality spend 2.8, under Rare−'s top.
+  // while the budget could not weigh the armor ignored (design 2.5); weighed (balance plan section 9: 0.66 points a point
+  // of Lethality at C), its d10, +2 Strength and 5 Lethality spend 2.6, under Rare−'s top.
   { name: 'Knight Killer', rar: 'rare', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d10', attack: 'strike', bonus: { str: 2, armorPenFlat: 5 }, desc: 'A dagger whose hits ignore 5 points of armor.' },
   { name: 'Ring of Vitality', rar: 'epic', grade: -1, type: 'accessory', slot: 'ring1', bonus: { vit: 5 }, desc: 'A ring that adds 5 Vitality.' },
   // One Resurrection Crystal of each rank (economy design section 5, the owner's ruling 4): its rarity's rank is the rank it
@@ -215,14 +216,28 @@ export const builtInItems = (R: Rules): ItemTemplate[] => [...SHOP_ITEMS, ...LOO
 export const lootPool = (R: Rules): ItemTemplate[] => builtInItems(R).filter(i => !i.revive);
 
 /**
- * A piece of armour: its slot's share of its kit's weight, armor and resist (`KIT_SHARE`; a full set of six is the kit),
- * each rounded half up, then armor and resist each raised by the rarity's index, common 0 to mythic 5 (design 2.3: armor
- * is a share stopped, so rarity adds to it rather than multiplying it).
+ * One number of a kit split over its six pieces by their shares (`KIT_SHARE`) so the six add up to it exactly: each piece
+ * takes its share rounded down, and each point the rounding left over goes to the piece that lost the most to it, on a
+ * tie the larger share and then the slot order (the largest-remainder rule). Rounding each piece alone made a light set
+ * armor 11 and resist 16 where the kit is 10 and 15 (sim-log.md, balance unit 4).
  */
-export function piece(kit: Kit, slot: ArmorSlot, rar: Rarity, R: Pick<Rules, 'fight'>): { weight: number; armor: number; resist: number } {
-  const k = R.fight.kits[kit], share = KIT_SHARE[slot], up = RARITIES.indexOf(rar);
-  const part = (n: number): number => Math.round(n * share / 100);
-  return { weight: part(k.weight), armor: part(k.armor) + up, resist: part(k.resist) + up };
+function splitOver(n: number): Readonly<Record<ArmorSlot, number>> {
+  // in hundredths, so a tie of what the rounding cut is an exact tie
+  const exact = ARMOR_SLOTS.map(slot => ({ slot, whole: Math.floor(n * KIT_SHARE[slot] / 100), cut: (n * KIT_SHARE[slot]) % 100 }));
+  const left = n - exact.reduce((s, e) => s + e.whole, 0);
+  const first = [...exact].sort((a, b) => b.cut - a.cut || KIT_SHARE[b.slot] - KIT_SHARE[a.slot]).slice(0, left).map(e => e.slot);
+  return Object.fromEntries(exact.map(e => [e.slot, e.whole + (first.includes(e.slot) ? 1 : 0)])) as Record<ArmorSlot, number>;
+}
+
+/**
+ * A piece of armour: its slot's part of its kit's weight, armor and resist (`splitOver`), so a full set of six is the kit
+ * (derive.ts `kitGear`). Its rarity gives it no armor or resist of its own: a rarer piece is better only by what its tier's
+ * budget lets it hold beside them (item-budget.ts) and costs more (`priceOf`), so a hunter and a monster of any rank wear
+ * the same kit and a boss is tougher only by its kind's factors.
+ */
+export function piece(kit: Kit, slot: ArmorSlot, R: Pick<Rules, 'fight'>): GearPiece {
+  const k = R.fight.kits[kit];
+  return { weight: splitOver(k.weight)[slot], armor: splitOver(k.armor)[slot], resist: splitOver(k.resist)[slot] };
 }
 
 /** The sample hunter the item maker weighs gear on: C rank, its points 2:1 in Agility and Strength, in the medium kit. */
@@ -255,7 +270,7 @@ export function itemOf(R: Rules, def: ItemDef): ItemTemplate {
     case 'weapon':
       const { weight: _byDice, ...unweighed } = base; // a weapon's weight is its dice's (`weightOf`)
       return { ...unweighed, slot: def.slot, dice: def.dice, attack: def.attack, bonus: { ...def.bonus } };
-    case 'armor': return { ...base, slot: def.slot, bonus: { ...def.bonus }, ...piece(def.kit, def.slot, def.rar, R) };
+    case 'armor': return { ...base, slot: def.slot, bonus: { ...def.bonus }, ...piece(def.kit, def.slot, R) };
     case 'accessory': return { ...base, slot: def.slot, bonus: { ...def.bonus } };
     case 'consumable': return { ...base, slot: null, bonus: {}, ...(def.effects.length ? { effects: [...def.effects] } : {}), ...(def.revive ? { revive: true } : {}), ...(def.tell ? { tell: true } : {}) };
     default: return { ...base, slot: null, bonus: {} };

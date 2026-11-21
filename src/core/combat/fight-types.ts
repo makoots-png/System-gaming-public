@@ -48,14 +48,38 @@ type Shared = {
  */
 export type Fog = { readonly sight: Tiles; readonly seen: string };
 /** Being built: rows join and stand in their places; nobody has a turn yet (`at` and `tie` are 0 until `start`). */
-export type Setup = Shared & { readonly phase: 'setup' };
+export type Setup = Shared & { readonly phase: 'setup'; readonly fudge: Fudge };
 /**
  * Under way: `now` is the time of the current turn, `currentId` whose it is. `pending` are the per-round ops due at a
  * turn start whose dice the edge has been asked to roll (a `rollSettle` effect) and that a `settle` command pays.
  */
-export type Running = Shared & { readonly phase: 'running'; readonly now: Tick; readonly currentId: CombatantId; readonly pending: readonly DueTurn[] };
-/** Over: a side had nobody up, or the GM ended it. The rows and the log stay for the summary screen until `clear`. */
+export type Running = Shared & { readonly phase: 'running'; readonly now: Tick; readonly currentId: CombatantId; readonly pending: readonly DueTurn[]; readonly fudge: Fudge };
+/**
+ * Over: a side had nobody up, or the GM ended it. The rows and the log stay for the summary screen until `clear`. It
+ * holds no `fudge`: the GM's weight ends with the fight, and the next one starts at 0.
+ */
 export type Ended = Shared & { readonly phase: 'ended'; readonly now: Tick; readonly summary: Summary };
+
+/** The faces a GM may force a row's next d20 roll to (notes-8-fudge.md section 2). */
+export const FORCED_FACES = [1, 20] as const;
+/** A row's next d20 roll as the GM forced it: 20 reads as well as it can for that row, 1 as badly. */
+export type ForcedFace = (typeof FORCED_FACES)[number];
+/**
+ * The GM's hidden weight on a fight's dice (docs/agent-handoff/features/notes-8-fudge.md section 2): a whole number of
+ * faces for each side and for a row (no entry: 0), the two added; plus means the dice fall that body's way. `forced`: a
+ * row's next d20 roll, set to 20 or 1 for that one roll. Only the GM's phone holds it; the fight's doc copies none of it.
+ */
+export type Fudge = {
+  readonly sides: Readonly<Record<Side, number>>;
+  readonly rows: Readonly<Record<CombatantId, number>>;
+  readonly forced: Readonly<Record<CombatantId, ForcedFace>>;
+};
+/** Whose weight a `fudge` command sets: a side's or one row's. */
+export type FudgeScope = { readonly kind: 'side'; readonly side: Side } | { readonly kind: 'row'; readonly id: CombatantId };
+/** What a `fudge` command sets: a weight to `n` faces, or a row's forced next roll (null takes it off). */
+export type FudgeSet =
+  | { readonly kind: 'weight'; readonly scope: FudgeScope; readonly n: number }
+  | { readonly kind: 'force'; readonly id: CombatantId; readonly face: ForcedFace | null };
 export type Fight = Setup | Running | Ended;
 
 /**
@@ -185,6 +209,11 @@ export type Command =
    * that extracts (its hunter's job and rank are the view's to judge, `canExtract`, `extractDc`).
    */
   | { readonly type: 'extract'; readonly id: CombatantId; readonly by: CombatantId; readonly outcome: ExtractionOutcome }
+  /**
+   * The GM sets the fight's hidden weight (`Fudge`): a side's or a row's to `n` faces, or a row's forced next roll. It
+   * sets, never adds. No time passes and nothing is logged.
+   */
+  | { readonly type: 'fudge'; readonly set: FudgeSet }
   /** The GM ends the fight now. */
   | { readonly type: 'end' }
   /** The ended fight's screen is closed: no fight. */
@@ -211,7 +240,9 @@ export type Refusal = UseRefusal
   /** A refill of a row no hunter holds: a level-up is a hunter's. */
   | 'notHunter'
   /** A `life` command its row's life does not take: Revive of a row not dead, a death save of a hunter not dying. */
-  | 'lifeCannot';
+  | 'lifeCannot'
+  /** A `fudge` whose weight is not a whole number, or whose forced face is not 1 or 20. */
+  | 'fudgeValue';
 // `extra` (a second extra action in a round, kits design 8.6.1) is a use's refusal, in `UseRefusal`.
 
 export type Effect =

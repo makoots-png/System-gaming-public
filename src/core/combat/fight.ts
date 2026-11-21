@@ -34,7 +34,8 @@ import { hpChange, lifeNews, SAVES_TO_END } from '../hunter/vitals.ts';
 import { refilledRow, rowLifeAfter, rowLifeTakes } from './row-life.ts';
 import { summonRow } from './rows.ts';
 import { crowded } from './summons.ts';
-import { line, MAX_ROWS, MAX_STATUSES, pendingKey } from './fight-types.ts';
+import { FORCED_FACES, line, MAX_ROWS, MAX_STATUSES, pendingKey } from './fight-types.ts';
+import { fudgeStep, NO_FUDGE } from './fudge.ts';
 import { attemptsLeft, extractionStep, UNTRIED } from './extraction.ts';
 import { entryKey, MAX_ZONE_TILES, MAX_ZONES, oldEnough, placeZone, pricedZones, zoneActed, zoneStep } from './zones.ts';
 import type { Zone } from './zones.ts';
@@ -113,7 +114,7 @@ const addTo = <F extends Setup | Running>(f: F, cmd: Extract<Command, { type: 'a
 };
 const create: Step<'none', 'add'> = (_f, cmd, ctx) => {
   const grid = cmd.grid ?? openGrid(ctx.rules.fight.grid.w, ctx.rules.fight.grid.h);
-  const setup: Setup = { phase: 'setup', id: cmd.fightId, grid, zones: cmd.zones ?? [], fog: cmd.fog ?? null, rows: [], log: [], banked: 0, had: {} };
+  const setup: Setup = { phase: 'setup', id: cmd.fightId, grid, zones: cmd.zones ?? [], fog: cmd.fog ?? null, rows: [], log: [], banked: 0, had: {}, fudge: NO_FUDGE };
   const r = add(setup, cmd, ctx);
   return 'effects' in r ? { fight: null, effects: r.effects } : done(r, []);
 };
@@ -122,8 +123,8 @@ function removeFrom<F extends Setup | Running>(f: F, id: string, R: Rules): F | 
   const row = rowOf(f, id);
   if (!row) return null;
   const rows = f.rows.filter(r => r.id !== id).map(r => (r.threat && id in r.threat ? withThreat(r, t => Object.fromEntries(Object.entries(t).filter(([k]) => k !== id))) : r));
-  // A foe removed while down keeps the XP it earned the party.
-  const g = { ...f, rows, banked: row.side === 'foe' && !isUp(row) ? f.banked + row.xp : f.banked };
+  // A foe removed while down keeps the XP it earned the party; the GM's weight on it goes with it.
+  const g = { ...f, rows, banked: row.side === 'foe' && !isUp(row) ? f.banked + row.xp : f.banked, fudge: fudgeStep(f.fudge, { kind: 'left', id: row.id }) };
   return logged(g.phase === 'running' ? { ...g, pending: g.pending.filter(p => p.id !== id) } : g, line(`${row.name} leaves the fight.`, [row.id]), R);
 }
 const removeInSetup: Step<'setup', 'remove'> = (f, cmd, ctx) => { const g = removeFrom(f, cmd.id, ctx.rules); return g ? done(g, []) : refused(f, 'unknown'); };
@@ -596,6 +597,21 @@ const settleDue: Step<'running', 'settle'> = (f, cmd, ctx) => {
   return after(f, g, '', line(`${row.name}: ${what} settles.`, [row.id]), ctx, []);
 };
 
+/**
+ * The GM's hidden weight on the fight's dice (notes-8-fudge.md section 2), through `fudgeStep`: a side's or a row's
+ * weight, or a row's forced next roll. A weight that is not a whole number, or a forced face that is not 1 or 20, is
+ * refused, and so is a row not in the fight. What is set already leaves the fight as it was, unrefused, so a replay or
+ * a double tap changes nothing. No time passes and nothing is logged: the weight is the GM's secret.
+ */
+function fudge<F extends Setup | Running>(f: F, cmd: Extract<Command, { type: 'fudge' }>, _ctx: Ctx): Result {
+  const s = cmd.set;
+  if (s.kind === 'weight' ? !Number.isSafeInteger(s.n) : s.face !== null && !FORCED_FACES.includes(s.face)) return refused(f, 'fudgeValue');
+  const id = s.kind === 'force' ? s.id : s.scope.kind === 'row' ? s.scope.id : null;
+  if (id !== null && !rowOf(f, id)) return refused(f, 'unknown');
+  const next = { ...f, fudge: fudgeStep(f.fudge, s) };
+  return done(next.fudge === f.fudge ? f : next, []);
+}
+
 // ── the ground ──
 /** A GM's change to the map or its zones, which takes no time: while running it follows as any change does. */
 function groundChange<F extends Setup | Running>(f: F, g: F, said: LogLine, ctx: Ctx): Result {
@@ -683,16 +699,16 @@ function extract<F extends Fight>(f: F, cmd: Extract<Command, { type: 'extract' 
 // ── the table ──
 const ACTING: Row<'running'> = {
   add: addTo, remove: removeRunning, start: null, act, move, endTurn, release, setIntent, reveal, place: placeRow, adjust, refill, life, status, settle: settleDue,
-  paint, zoneAdd, zoneRemove, resize, arm, extract, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
+  paint, zoneAdd, zoneRemove, resize, arm, extract, fudge, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
 };
 const TABLE: { readonly [S in Exclude<FightState, 'running'>]: Row<S> } & { readonly running: { readonly [S in RunningState['at']]: Row<'running'> } } = {
   none: {
     add: create, remove: null, start: null, act: null, move: null, endTurn: null, release: null, setIntent: null, reveal: null, place: null, adjust: null, refill: null,
-    life: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract: null, end: null, clear: null,
+    life: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract: null, fudge: null, end: null, clear: null,
   },
   setup: {
     add: addTo, remove: removeInSetup, start, act: null, move: null, endTurn: null, release: null, setIntent, reveal, place: placeRow, adjust, refill, life, status,
-    settle: null, paint, zoneAdd, zoneRemove, resize, arm, extract, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
+    settle: null, paint, zoneAdd, zoneRemove, resize, arm, extract, fudge, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
   },
   // a running fight's two states (`runningState`): its turn's actor acts, or the fight owes dice first
   running: {
@@ -702,10 +718,10 @@ const TABLE: { readonly [S in Exclude<FightState, 'running'>]: Row<S> } & { read
     owing: { ...ACTING, act, move, endTurn },
   },
   // The rows of an ended fight are the summary's record: the GM edits the hunters' sheets from here on, and may still
-  // extract a shadow from a fallen monster.
+  // extract a shadow from a fallen monster. It holds no weight to set: the GM's fudge ended with the fight.
   ended: {
     add: null, remove: null, start: null, act: null, move: null, endTurn: null, release: null, setIntent: null, reveal: null, place: null, adjust: null, refill: null,
-    life: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract, end: null, clear: () => done(null, []),
+    life: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract, fudge: null, end: null, clear: () => done(null, []),
   },
 };
 

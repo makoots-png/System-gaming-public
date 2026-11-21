@@ -39,6 +39,13 @@
 // - "Staggers in a boss fight: 1 or 2": the mean count of staggers in the party's boss fight.
 // - "The best single use with no channel": the mean HP a same-rank tank loses to one use of each build's abilities,
 //   reaction roll and crit included, over 400 uses; the row is the largest of them.
+// - Penetration's fairness (balance plan section 9, P1 and P2): one build of the mixed party spends one item of its tier's
+//   middle budget all on its main stat, on percent or on flat penetration of its pair (the bruiser armor, the cannon
+//   magic), the other build on its main stat (`spending`). Each pair is its own row, so a row names the pair that misses.
+//   P1 is the paired difference in rounds on the same seeds; "more than 25% faster" is the main stat's rounds over the
+//   variant's, the larger of the two variants.
+// - The party's control (P3): the share of the fight's time the boss's turn was pushed by the tank's stun (a hold of a
+//   round, `abilities().stun`), a stagger's push apart. No built-in skill holds, so the stun is the plain one.
 import { describe, expect, test } from 'bun:test';
 import { formulaOf } from '../src/core/registry/ability-kinds.ts';
 import { RULES } from '../src/core/rules.ts';
@@ -48,8 +55,8 @@ import { reduce, fightId } from '../src/core/combat/fight.ts';
 import type { Fight } from '../src/core/combat/fight.ts';
 import { diceOf } from '../src/core/formula.ts';
 import type { Place } from '../src/core/combat/space.ts';
-import { BUILDS, KIT_BUILDS, MONSTER_ABILITY, PLAIN_OF, SIM_RANKS, blastsAllowed, hunter, monster, playDungeon, playFight, rng, turnsPolicy, wave2 } from './models/fight-sim.ts';
-import type { Archetype, FightRecord, KitBuild, Plan, SimRow } from './models/fight-sim.ts';
+import { BUILDS, KIT_BUILDS, MONSTER_ABILITY, PLAIN_OF, SIM_RANKS, abilities, blastsAllowed, controlPolicy, hunter, monster, playDungeon, playFight, rng, spending, turnsPolicy, wave2 } from './models/fight-sim.ts';
+import type { Archetype, FightRecord, KitBuild, PenBuild, PenSpend, Plan, SimRow } from './models/fight-sim.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
 
 // ── the setups ──
@@ -292,6 +299,53 @@ const W2_ROWS: readonly Row[] = [
   })),
 ];
 
+// ── penetration and control against a boss tough by its body (balance plan section 9, rows P1 to P3) ──
+/** Each build that spends an item on a penetration, and the pair it holds: the bruiser's armor, the cannon's magic. */
+const PAIRS: readonly (readonly [PenBuild, string])[] = [['bruiser', 'armor'], ['cannon', 'magic']];
+/** The fights P1 and P2 read: a same-rank pack of three normal brutes, and a same-rank brute boss. */
+type PenFight = 'pack' | 'boss';
+const PEN_FOES: { readonly [F in PenFight]: (rank: Rank) => SimRow[] } = { pack, boss: rank => [monster(rank, 'brute', 'boss', 'boss')] };
+const PEN_RUNS: { readonly [F in PenFight]: number } = { pack: RUNS.tenth, boss: RUNS.quarter };
+/** The mixed party with `who` spending one item of its tier's middle budget `spend`'s way and the other build on its main stat. */
+const spendKey = (who: PenBuild, spend: PenSpend, fight: PenFight, rank: Rank): string => `spend ${spend === 'main' ? 'main' : `${who} ${spend}`} v ${fight} ${rank}`;
+const spendRuns = (who: PenBuild, spend: PenSpend, fight: PenFight, rank: Rank): FightRecord[][] => runsOf(spendKey(who, spend, fight, rank), (seed: number) => [playFight({
+  rows: [hunter('tank', rank), spending('bruiser', rank, who === 'bruiser' ? spend : 'main'), spending('cannon', rank, who === 'cannon' ? spend : 'main'), ...PEN_FOES[fight](rank)],
+}, seed)], PEN_RUNS[fight]);
+/** The rounds `slow` takes over those `fast` takes, fight by fight on the same seeds (the paired difference and its error). */
+const roundsOver = (slow: FightRecord[][], fast: FightRecord[][]): Measure => {
+  const d = slow.map((r, i) => r[0]!.rounds - fast[i]![0]!.rounds);
+  return { ...avg(d), note: `${fmt(mean(slow.map(r => r[0]!.rounds)))} over ${fmt(mean(fast.map(r => r[0]!.rounds)))} rounds` };
+};
+/** How much faster the quicker penetration clears than the main stat: the main stat's rounds over the variant's, the larger. */
+const fasterThanMain = (who: PenBuild, fight: PenFight, rank: Rank): Measure => {
+  const rounds = (spend: PenSpend): Measure => avg(spendRuns(who, spend, fight, rank).map(r => r[0]!.rounds));
+  const main = rounds('main'), [pct, flat] = [ratio(main, rounds('percent')), ratio(main, rounds('flat'))];
+  return { ...(pct.value >= flat.value ? pct : flat), note: `main over percent ${fmt(pct.value)}, over flat ${fmt(flat.value)}` };
+};
+/** The mixed party whose tank holds a control (a stun of a round, `abilities().stun`) and uses it (`controlPolicy`), against a boss. */
+const vsBossControlled = (rank: Rank) => (seed: number): FightRecord[] => {
+  const [tank, bruiser, cannon] = party(MIXED, rank);
+  return [playFight({ rows: [{ row: { ...tank!.row, abilities: [...tank!.row.abilities, abilities().stun] }, policy: controlPolicy }, bruiser!, cannon!, monster(rank, 'brute', 'boss', 'boss')] }, seed)];
+};
+const PEN_LEVER = 'itemBudget.penFoe, fight.penMax, the kinds\' armor and resist';
+const PEN_ROWS: readonly Row[] = (['C', 'S'] as const).flatMap(rank => [
+  ...PAIRS.flatMap(([who, pair]): Row[] => [
+    { name: `against a same-rank boss the ${who}'s ${pair} penetration clears in fewer rounds as percent than as flat at ${rank}`, setup: spendKey(who, 'flat', 'boss', rank), runs: 2 * RUNS.quarter,
+      measure: () => roundsOver(spendRuns(who, 'flat', 'boss', rank), spendRuns(who, 'percent', 'boss', rank)), low: 0, high: Infinity, lever: PEN_LEVER },
+    { name: `against a same-rank pack the ${who}'s ${pair} penetration clears in fewer rounds as flat than as percent at ${rank}`, setup: spendKey(who, 'flat', 'pack', rank), runs: 2 * RUNS.tenth,
+      measure: () => roundsOver(spendRuns(who, 'percent', 'pack', rank), spendRuns(who, 'flat', 'pack', rank)), low: 0, high: Infinity, lever: PEN_LEVER },
+    ...(['pack', 'boss'] as const).map((fight): Row => ({
+      name: `neither penetration of the ${who} clears a same-rank ${fight} more than 25% faster than its main stat at ${rank}`, setup: spendKey(who, 'main', fight, rank), runs: 3 * PEN_RUNS[fight],
+      measure: () => fasterThanMain(who, fight, rank), low: 0, high: 1.25, lever: PEN_LEVER,
+    })),
+  ]),
+  { name: `the party's control takes 10 to 35% of a same-rank boss's turns, stagger counted apart, at ${rank}`, setup: `control v boss ${rank}`, runs: RUNS.quarter,
+    measure: () => {
+      const rs = runsOf(`control v boss ${rank}`, vsBossControlled(rank), RUNS.quarter).map(r => r[0]!);
+      return { ...avg(rs.map(r => (r.held.boss ?? 0) / r.ticks)), note: `${fmt(mean(rs.map(r => r.tally.tank!.acts.stun ?? 0)))} stuns a fight, ${fmt(mean(rs.map(r => r.rounds)))} rounds` };
+    }, low: 0.1, high: 0.35, lever: 'the party\'s control (abilities().stun) and Tenacity' },
+]);
+
 const ROWS: readonly Row[] = [
   ...triangle('C'), ...triangle('S'), ...atE,
   ...partyRows('C'), ...partyRows('S'),
@@ -320,13 +374,22 @@ const ROWS: readonly Row[] = [
   { name: 'a status build against a tank at C (measured, no bound)', setup: 'status v tank C', runs: RUNS.even, measure: () => wins('status v tank C', duel('status', 'tank', 'C'), RUNS.even), low: 0, high: 1, lever: 'per-round damage skips armor and resist (notes-u4)' },
   ...KIT_ROWS,
   ...W2_ROWS,
+  ...PEN_ROWS,
 ];
 
 /**
  * The rows outside their bound, with the value measured: each stays `todo` until a change in RULES.fight brings it inside
- * (docs/agent-handoff/rw/sim-log.md says why each misses). None since round four.
+ * (docs/agent-handoff/rw/sim-log.md says why each misses, "Balance unit 2, step 2"). The rule calls are the lead's.
  */
-const OPEN: Readonly<Record<string, string>> = {};
+const OPEN: Readonly<Record<string, string>> = {
+  'against a same-rank boss the cannon\'s magic penetration clears in fewer rounds as percent than as flat at C':
+    '-0.080 (se 0.015): a brute boss\'s resist is 8, so 28 more percent takes 2.2 off it and 5 flat takes 5; no price or cap moves that, only kinds.boss.resist or the boss P1 is read on',
+  'against a same-rank boss the cannon\'s magic penetration clears in fewer rounds as percent than as flat at S':
+    '-0.119 (se 0.015): resist 8, the percent at fight.penMax 60 takes 3.1 off it and 8 flat takes 8',
+  'the party\'s control takes 10 to 35% of a same-rank boss\'s turns, stagger counted apart, at C':
+    '0.032 (se 0.003): the mixed party holds no control; with a plain stun of a round every 3 rounds the hold is a floor on a turn already coming, so a stun moves the boss about a fifth of a round',
+  'the party\'s control takes 10 to 35% of a same-rank boss\'s turns, stagger counted apart, at S': '0.025 (se 0.002): as at C',
+};
 
 // ── one test per row: the row is measured inside its test, so a bun timeout or the per-test times name the row ──
 const inside = (r: Row, m: Measure): boolean => m.value >= r.low && m.value <= r.high;

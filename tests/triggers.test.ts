@@ -248,7 +248,7 @@ describe('a land op puts a status and hastens by a use\'s rules (rule 18, kits d
   const ROOTED: StatusDef = { label: 'Rooted', desc: '', ops: [{ op: 'root' }] };
   const STUN: StatusDef = { label: 'Stunned', desc: '', ops: [{ op: 'hold' }] };
   const put = (key: string, def: StatusDef): LandOp => ({ op: 'applyStatus', key: statusKey(key), def, duration: tick(6 * RULES.fight.round) });
-  const BOSS: Origin = { kind: 'monster', name: 'Monster', rank: 'E', archetype: 'brute', monsterKind: 'boss', tweak: { hp: 1, stats: {} } };
+  const BOSS: Origin = { kind: 'monster', name: 'Monster', rank: 'E', archetype: 'brute', monsterKind: 'boss', tweak: { hp: 1, stats: {}, traits: [] } };
   const boss = (): NewRow => row('M', 'foe', [], { kind: 'monster', origin: BOSS, hp: modified(BOSS, [], RULES).sheet.hpMax });
   const lasts = (b: Body, key: string): number => { const s = b.statuses.find(x => x.key === key)!; return s.until! - s.since; };
 

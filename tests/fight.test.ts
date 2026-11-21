@@ -50,7 +50,7 @@ import { EXTRACTION_WALK } from './models/extraction-events.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { SKILL_ABILITIES } from '../src/core/registry/abilities.ts';
 import { can, fightId, owed, reduce, runningState } from '../src/core/combat/fight.ts';
-import type { Command, CommandType, Ctx, Effect, Fight, NewRow, Opening, Result, RowLifeEvent, Running, StatusGrant, ZoneDraft } from '../src/core/combat/fight.ts';
+import type { Command, CommandType, Ctx, Effect, Fight, ForcedFace, Fudge, FudgeScope, NewRow, Opening, Result, RowLifeEvent, Running, StatusGrant, ZoneDraft } from '../src/core/combat/fight.ts';
 import { needs } from '../src/core/combat/resolve.ts';
 import type { Rolls } from '../src/core/combat/resolve.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
@@ -931,7 +931,7 @@ describe('who holds a row\'s sheet, and the XP of the foes', () => {
 });
 
 describe('a stored row holds only its own kind\'s fields (SMX-rules-8)', () => {
-  const WOLF: Origin = { kind: 'monster', name: 'Wolf', rank: 'E', archetype: 'brute', monsterKind: 'normal', tweak: { hp: 1, stats: {} } };
+  const WOLF: Origin = { kind: 'monster', name: 'Wolf', rank: 'E', archetype: 'brute', monsterKind: 'normal', tweak: { hp: 1, stats: {}, traits: [] } };
   const stored = (): { rows: Record<string, unknown>[] } => JSON.parse(JSON.stringify(play(add(
     row('A', 'party'), row('M', 'foe', { origin: WOLF, xp: 30 }),
     row('S', 'party', { kind: 'shadow', origin: WOLF, holder: { kind: 'shadow', hunterId: hunterId('h-A'), shadowId: shadowId('s-1') } }),
@@ -1655,7 +1655,7 @@ describe('a monster\'s kind shortens nothing that lands on it (the owner, Nov 21
   const ROUND = RULES.fight.round;
   const STUN = ability('curse', 'stun', null, { ...FAR, effect: null, ops: [{ op: 'applyStatus', key: statusKey('stunned'), def: { label: 'Stunned', desc: '', ops: [{ op: 'hold' }] }, duration: tick(2 * ROUND) }] });
   const SLOW = ability('curse', 'slow', null, { ...FAR, effect: null, ops: [{ op: 'applyStatus', key: statusKey('slowed'), def: { label: 'Slowed', desc: '', ops: [{ op: 'speed', pct: -30 }] }, duration: tick(2 * ROUND) }] });
-  const of = (kind: MonsterKind): Origin => ({ kind: 'monster', name: 'Monster', rank: 'C', archetype: 'brute', monsterKind: kind, tweak: { hp: 1, stats: {} } });
+  const of = (kind: MonsterKind): Origin => ({ kind: 'monster', name: 'Monster', rank: 'C', archetype: 'brute', monsterKind: kind, tweak: { hp: 1, stats: {}, traits: [] } });
   /** How long the status `a` puts on lasts on a monster of `kind` at rank C, from A's use. */
   const lasts = (a: Ability, key: string, kind: MonsterKind): number => {
     const m = body(play(add(row('A', 'party', { abilities: [a] }), row('M', 'foe', { origin: of(kind) })), start(['A', 20], ['M', 10]), hit('A', 'M', a)).fight, 'M');
@@ -1962,7 +1962,7 @@ describe('forced movement: a shove, a blink, a swap (kits design 8.3, table 8.9.
   });
 
   test('a boss moves the whole push as any body does (the owner, Nov 21), a rooted body none, and a dodge is not a push', () => {
-    const boss = { kind: 'monster', name: 'Monster', rank: 'E', archetype: 'brute', monsterKind: 'boss', tweak: { hp: 1, stats: {} } } as const;
+    const boss = { kind: 'monster', name: 'Monster', rank: 'E', archetype: 'brute', monsterKind: 'boss', tweak: { hp: 1, stats: {}, traits: [] } } as const;
     const r = play(add(row('A', 'party', { abilities: [P3], place: place(5, 2) }), row('M', 'foe', { place: place(5, 4), origin: boss })), start(['A', 20], ['M', 10]), hit('A', 'M', P3));
     expect(at(r.fight, 'M')).toEqual(place(5, 7));
     const held = play(placed([5, 2], [5, 4]), { type: 'status', id: id('M'), add: { key: statusKey('root'), def: { label: 'Root', desc: '', ops: [{ op: 'root' }] }, duration: null, tier: 0 } }, start(['A', 20], ['M', 10]), hit('A', 'M', P3));
@@ -2323,12 +2323,110 @@ describe('a fallen monster\'s extraction (implicit audit row 39)', () => {
   });
 });
 
+describe('the fudge: the GM\'s hidden weight on the fight\'s dice (notes-8-fudge.md section 2)', () => {
+  const weigh = (scope: FudgeScope, n: number): Command => ({ type: 'fudge', set: { kind: 'weight', scope, n } });
+  const side = (s: Side): FudgeScope => ({ kind: 'side', side: s });
+  const one = (name: string): FudgeScope => ({ kind: 'row', id: id(name) });
+  const force = (name: string, face: ForcedFace | null): Command => ({ type: 'fudge', set: { kind: 'force', id: id(name), face } });
+  const fudgeOf = (fight: Fight | null): Fudge => { if (!fight || fight.phase === 'ended') throw new Error('no fudge on this fight'); return fight.fudge; };
+
+  test('a new fight\'s fudge is 0 for both sides, no row\'s own and no forced roll', () => {
+    expect(fudgeOf(play(add(row('A', 'party'), row('M', 'foe'))).fight)).toEqual({ sides: { party: 0, foe: 0 }, rows: {}, forced: {} });
+  });
+
+  test('a fudge is set, not added: the same command twice leaves +2', () => {
+    const once = play(...duel(), weigh(side('party'), 2));
+    const twice = reduce(once.fight, weigh(side('party'), 2), ctx);
+    expect(fudgeOf(twice.fight).sides).toEqual({ party: 2, foe: 0 });
+    expect(twice.fight).toBe(once.fight);
+    expect(twice.effects).toEqual([]);
+  });
+
+  test('a side\'s weight and a row\'s weight are kept apart, and a row set back to 0 leaves no entry', () => {
+    const { fight } = play(...duel(), weigh(side('foe'), -3), weigh(one('A'), 4), weigh(one('M'), 1), weigh(one('M'), 0));
+    expect(fudgeOf(fight)).toEqual({ sides: { party: 0, foe: -3 }, rows: { [id('A')]: 4 }, forced: {} });
+  });
+
+  test('a weight has no bound: +40 is kept as set', () => {
+    expect(fudgeOf(play(...duel(), weigh(one('M'), 40)).fight).rows).toEqual({ [id('M')]: 40 });
+  });
+
+  test('a GM forces a row\'s next roll to 20, then to 1, then takes it off', () => {
+    const r20 = play(...duel(), force('A', 20));
+    expect(fudgeOf(r20.fight).forced).toEqual({ [id('A')]: 20 });
+    const r1 = reduce(r20.fight, force('A', 1), ctx);
+    expect(fudgeOf(r1.fight).forced).toEqual({ [id('A')]: 1 });
+    expect(fudgeOf(reduce(r1.fight, force('A', null), ctx).fight).forced).toEqual({});
+  });
+
+  test('a weight that is not a whole number, or a forced face but 1 or 20, is refused', () => {
+    const { fight } = play(...duel());
+    refuses(fight, weigh(side('party'), 1.5), 'fudgeValue');
+    refuses(fight, weigh(one('A'), Number.NaN), 'fudgeValue');
+    refuses(fight, weigh(one('A'), Number.POSITIVE_INFINITY), 'fudgeValue');
+    refuses(fight, force('A', 7 as ForcedFace), 'fudgeValue');
+  });
+
+  test('a fudge on a row not in the fight is refused', () => {
+    const { fight } = play(...duel());
+    refuses(fight, weigh(one('ghost'), 2), 'unknown');
+    refuses(fight, force('ghost', 20), 'unknown');
+  });
+
+  test('setting a fudge writes no log line, raises no effect and takes no time, in setup and while running', () => {
+    const setup = play(add(row('A', 'party'), row('M', 'foe'))).fight!;
+    const set = reduce(setup, weigh(side('party'), 2), ctx);
+    expect(set.effects).toEqual([]);
+    expect(set.fight!.log).toEqual(setup.log);
+    const fighting = running(play(...duel()));
+    const r = reduce(fighting, force('M', 1), ctx), after = running(r);
+    expect(r.effects).toEqual([]);
+    expect([after.log, after.now, after.currentId, after.rows]).toEqual([fighting.log, fighting.now, fighting.currentId, fighting.rows]);
+  });
+
+  test('an ended fight refuses a fudge and holds none, so the next fight starts at 0', () => {
+    const over = play(...duel(), weigh(side('party'), 3), force('A', 20), { type: 'end' }).fight!;
+    expect(over.phase).toBe('ended');
+    expect('fudge' in over).toBe(false);
+    refuses(over, weigh(side('party'), 1), 'notNow');
+    refuses(null, weigh(side('party'), 1), 'notNow');
+    const next = reduce(reduce(over, { type: 'clear' }, ctx).fight, add(row('A', 'party'), row('M', 'foe')), ctx);
+    expect(fudgeOf(next.fight)).toEqual({ sides: { party: 0, foe: 0 }, rows: {}, forced: {} });
+  });
+
+  test('a removed row\'s weight and force go with it, and a row that joins again under its id starts at 0', () => {
+    const { fight } = play(add(row('A', 'party'), row('B', 'party'), row('M', 'foe')), weigh(one('B'), 2), force('B', 20), weigh(one('A'), 1), { type: 'remove', id: id('B') });
+    expect(fudgeOf(fight)).toEqual({ sides: { party: 0, foe: 0 }, rows: { [id('A')]: 1 }, forced: {} });
+    expect(fudgeOf(reduce(fight, add(row('B', 'party')), ctx).fight).rows).toEqual({ [id('A')]: 1 });
+  });
+
+  test('a fight read from a save without a fudge has all 0', () => {
+    const { fudge: _, ...stored } = running(play(...duel(), weigh(side('party'), 2)));
+    expect(fudgeOf(parseFight(JSON.parse(JSON.stringify(stored)), RULES))).toEqual({ sides: { party: 0, foe: 0 }, rows: {}, forced: {} });
+  });
+
+  test('a saved fudge reads back as it was set, and one naming a row the fight lacks, or not whole, is no fight', () => {
+    const fight = running(play(...duel(), weigh(side('foe'), -2), weigh(one('A'), 5), force('M', 1)));
+    const stored = JSON.parse(JSON.stringify(fight));
+    expect(fudgeOf(parseFight(stored, RULES))).toEqual(fight.fudge);
+    expect(parseFight({ ...stored, fudge: { ...stored.fudge, rows: { ghost: 1 } } }, RULES)).toBeNull();
+    expect(parseFight({ ...stored, fudge: { ...stored.fudge, forced: { A: 7 } } }, RULES)).toBeNull();
+    expect(parseFight({ ...stored, fudge: { ...stored.fudge, sides: { party: 0.5, foe: 0 } } }, RULES)).toBeNull();
+  });
+
+  test('the fight\'s doc for the players holds none of the fudge', () => {
+    const plain = running(play(...duel())), fudged = running(reduce(plain, weigh(side('party'), 2), ctx));
+    const o = { by: 'd-gm' as DeviceId, at: '2026-11-21T10:00:00.000Z', was: null, keyOf: (h: string) => h as unknown as SheetKey };
+    expect(JSON.stringify(fightDoc(fudged, RULES, o))).toBe(JSON.stringify(fightDoc(plain, RULES, o)));
+  });
+});
+
 describe('the fight\'s table: every state under every command (SMX-rules-3)', () => {
   const ALL: Record<CommandType, true> = {
     add: true, remove: true, start: true, act: true, move: true, endTurn: true, release: true, setIntent: true, reveal: true, place: true, adjust: true, refill: true,
-    life: true, status: true, settle: true, paint: true, zoneAdd: true, zoneRemove: true, resize: true, arm: true, extract: true, end: true, clear: true,
+    life: true, status: true, settle: true, paint: true, zoneAdd: true, zoneRemove: true, resize: true, arm: true, extract: true, fudge: true, end: true, clear: true,
   };
-  const SETUP: CommandType[] = ['add', 'remove', 'start', 'setIntent', 'reveal', 'place', 'adjust', 'refill', 'life', 'status', 'paint', 'zoneAdd', 'zoneRemove', 'resize', 'arm', 'extract', 'end', 'clear'];
+  const SETUP: CommandType[] = ['add', 'remove', 'start', 'setIntent', 'reveal', 'place', 'adjust', 'refill', 'life', 'status', 'paint', 'zoneAdd', 'zoneRemove', 'resize', 'arm', 'extract', 'fudge', 'end', 'clear'];
   const RUNNING = (Object.keys(ALL) as CommandType[]).filter(t => t !== 'start');
   const CHARGE = ability('blast', 'charge', '10 * (1 + charge)', { channel: { growth: 'linear', max: 5 }, range: tiles(20) });
   const owing = play(add(row('A', 'party', { abilities: [HIT, CHARGE], statuses: [haste(-50)] }), row('M', 'foe')), start(['A', 20], ['M', 1]),

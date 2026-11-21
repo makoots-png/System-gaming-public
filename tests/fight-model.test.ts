@@ -117,6 +117,8 @@ function check(before: Fight | null, cmd: Command, after: Fight | null, effects:
     const lit = partyView(after)!, missed = [...lit].find(i => after.fog!.seen[i] !== '1');
     if (missed !== undefined) return `the party sees tile ${missed} but the fog has not marked it seen`;
   }
+  if (after.phase === 'ended' && 'fudge' in after) return 'an ended fight still holds the GM\'s fudge';
+  if (after.phase !== 'ended') for (const id of [...Object.keys(after.fudge.rows), ...Object.keys(after.fudge.forced)]) if (!after.rows.some(r => r.id === id)) return `the fudge names ${id}, not in the fight`;
   if (after.phase === 'running') {
     const gone = after.zones.find(z => z.until !== null && z.until <= after.now);
     if (gone) return `${gone.id} ended at ${gone.until} and is still on the ground at ${after.now}`;

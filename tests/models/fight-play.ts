@@ -179,7 +179,7 @@ export const ROSTER: readonly NewRow[] = [
     { holder: { kind: 'shadow', hunterId: hunterId('h-sela'), shadowId: shadowId('s-igris') }, statuses: [EASEL] }),
   row('c-w1', 'Wolf A', 'foe', 'monster', mon('D', 'skirmisher', 'normal'), [BITE, HOWL], { xp: 50, statuses: [SICK, holding('resonance', RESONANCE, 1)] }),
   row('c-w2', 'Wolf B', 'foe', 'monster', mon('D', 'skirmisher', 'normal'), [BITE, PLAGUE], { xp: 50, statuses: [RETRIBUTION] }),
-  row('c-imp', 'Imp', 'foe', 'monster', mon('D', 'caster', 'normal', { hp: 0.7, stats: { ins: 8 } }), [CURSE, SHOT, SPRITE], { place: place(15, 11), xp: 40 }),
+  row('c-imp', 'Imp', 'foe', 'monster', mon('D', 'caster', 'normal', { hp: 0.7, stats: { ins: 8 }, traits: [] }), [CURSE, SHOT, SPRITE], { place: place(15, 11), xp: 40 }),
   // wave 2's blocks on two rows of their own, so the blocks above keep the share of random play they had
   row('c-kai', 'Kai', 'party', 'hunter', build('agi', 'str', 'light'), [BOUNDARY, SHATTER, HEMOPLAGUE, PARRY, SURGE, SHOVE, TRANSFER, BLINK, REACT],
     { holder: { kind: 'local', hunterId: hunterId('h-kai') }, statuses: [wornStatus('crimson-pact', 'Crimson Pact')] }),
@@ -218,6 +218,12 @@ function gmStatus(g: Rng, id: CombatantId): Command {
   const [key, d] = g.pick(GM_STATUSES), add = { key: statusKey(key), def: d, duration: g.chance(0.2) ? null : tick(g.int(1, 4) * 500), tier: g.int(0, 5) };
   const remove = statusKey(g.pick(GM_STATUSES)[0]);
   return g.chance(0.3) ? { type: 'status', id, remove } : g.chance(0.2) ? { type: 'status', id, remove, add } : { type: 'status', id, add };
+}
+/** The GM's fudge (notes-8-fudge.md section 2): a side's or a row's weight, now and then one that is not whole, or a row's forced next roll. */
+function gmFudge(g: Rng, id: CombatantId): Command {
+  if (g.chance(0.3)) return { type: 'fudge', set: { kind: 'force', id, face: g.pick([1, 20, null] as const) } };
+  const scope = g.chance(0.5) ? { kind: 'side', side: g.pick(['party', 'foe'] as const) } as const : { kind: 'row', id } as const;
+  return { type: 'fudge', set: { kind: 'weight', scope, n: g.chance(0.05) ? 1.5 : g.int(-3, 3) } };
 }
 const gmAdjust = (g: Rng, id: CombatantId): Command => ({
   type: 'adjust', id, ...(g.chance(0.8) ? { hp: g.int(-60, 30) } : {}), ...(g.chance(0.3) ? { mana: g.int(-5, 5) } : {}),
@@ -287,7 +293,7 @@ export function randomCommand(g: Rng, fight: Fight | null, fresh: () => string):
     return g.chance(0.8) ? { type: 'clear' } : g.pick<Command>([{ type: 'end' }, { type: 'extract', id: corpse(), by: fight.rows.find(r => r.kind === 'hunter')?.id ?? combatantId('c-ghost'), outcome: EXTRACTION_OUTCOMES[fight.log.length % EXTRACTION_OUTCOMES.length]! }]);
   }
   if (fight.phase === 'setup') {
-    const kind = g.pick(['start', 'start', 'start', 'add', 'remove', 'place', 'intent', 'reveal', 'end', 'act', 'adjust', 'refill', 'life', 'status', 'ground'] as const);
+    const kind = g.pick(['start', 'start', 'start', 'add', 'remove', 'place', 'intent', 'reveal', 'end', 'act', 'adjust', 'refill', 'life', 'status', 'ground', 'fudge'] as const);
     switch (kind) {
       case 'start': return { type: 'start', openings: openingsOf(g, g.chance(0.9) ? fight.rows : fight.rows.slice(1)) };
       case 'add': return { type: 'add', fightId: fightId(fresh()), rows: [monster()], openings: [] };
@@ -302,6 +308,7 @@ export function randomCommand(g: Rng, fight: Fight | null, fresh: () => string):
       case 'life': return gmLife(g, fight, anyId);
       case 'status': return gmStatus(g, anyId());
       case 'ground': return ground(g, fight, () => fight.rows.length ? g.pick(fight.rows).place : anyPlace(g));
+      case 'fudge': return gmFudge(g, anyId());
     }
   }
   const cur = fight.rows.find(r => r.id === fight.currentId)!;
@@ -309,7 +316,7 @@ export function randomCommand(g: Rng, fight: Fight | null, fresh: () => string):
   const user = fight.rows.find(r => r.id === by) ?? cur;
   const kind = g.pick([
     'act', 'act', 'act', 'act', 'act', 'act', 'move', 'move', 'pass', 'pass', 'release', 'settle', 'settle', 'intent', 'reveal', 'place', 'add',
-    'remove', 'end', 'force', 'adjust', 'refill', 'life', 'status', 'ground', 'ground', 'arm',
+    'remove', 'end', 'force', 'adjust', 'refill', 'life', 'status', 'ground', 'ground', 'arm', 'fudge',
   ] as const);
   switch (kind) {
     case 'act': case 'force': {
@@ -348,6 +355,7 @@ export function randomCommand(g: Rng, fight: Fight | null, fresh: () => string):
     case 'life': return gmLife(g, fight, anyId);
     case 'status': return gmStatus(g, g.chance(0.3) ? cur.id : anyId());
     case 'ground': return ground(g, fight, () => g.pick(fight.rows).place);
+    case 'fudge': return gmFudge(g, anyId());
     // the GM's arm, or a player's through the room (kits design 8.4.2): one of the row's reactions, another ability, or none
     case 'arm': {
       const who = g.chance(0.9) ? g.pick(fight.rows) : user, mine = who.abilities.filter(a => a.react);

@@ -8,23 +8,40 @@ import type { Dice, TermRoll } from './formula.ts';
 import { combatantId } from './combat/ability-types.ts';
 import type { CombatantId } from './combat/ability-types.ts';
 import type { Needs, Rolls } from './combat/resolve.ts';
-import type { Opening } from './combat/fight-types.ts';
+import type { ForcedFace, Opening } from './combat/fight-types.ts';
 import type { Random } from './gates/spawn.ts';
 
 /** One die of `sides` faces: 1 to `sides`. */
 export const faceOf = (sides: number, random: Random): number => 1 + Math.floor(random() * sides);
 
 /**
+ * The GM's weight on one draw (docs/agent-handoff/features/notes-8-fudge.md section 2): a whole number of faces each die
+ * moves by (0 leaves it as it fell), or a face every d20 of the draw is set to (`forced`, one roll's 1 or 20).
+ */
+export type Weight = number | { readonly forced: ForcedFace };
+
+/**
+ * A face as `w` leaves it: moved `w` faces and kept on its die, `clamp(face + w, 1, sides)`; a d20 under a force shows the
+ * forced face, and any other die under a force the face it fell on (a force touches d20s only).
+ */
+export function weighFace(face: number, sides: number, w: Weight): number {
+  if (typeof w !== 'number') return sides === 20 ? w.forced : face;
+  return Math.min(sides, Math.max(1, face + w));
+}
+
+/**
  * One dice term rolled: faces drawn from `random` as `rollOf` asks for them, until it has what it needs. A plain term
  * asks once for `count` faces; an exploding or rerolling one asks again for each die not yet standing. It ends: each ask
- * adds a face and a term reads at most count × (EXPLODE_MAX + 1) × (REROLL_MAX + 1) of them.
+ * adds a face and a term reads at most count × (EXPLODE_MAX + 1) × (REROLL_MAX + 1) of them. Each face is weighed by
+ * `weight` as it is drawn, so rerolls, explosions, keep and drop, and successes read the weighed face as a rolled one.
+ * A die draws one number from `random` whether it is weighed or not, so a weight moves faces and never which numbers fall.
  */
-export function drawTerm(d: Dice, random: Random): TermRoll {
+export function drawTerm(d: Dice, random: Random, weight: Weight = 0): TermRoll {
   const faces: number[] = [];
   for (;;) {
     const r = rollOf(d, faces);
     if (!('more' in r)) return r;
-    for (let i = 0; i < r.more; i++) faces.push(faceOf(d.sides, random));
+    for (let i = 0; i < r.more; i++) faces.push(weighFace(faceOf(d.sides, random), d.sides, weight));
   }
 }
 

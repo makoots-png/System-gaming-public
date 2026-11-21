@@ -973,3 +973,350 @@ the cannon's turn is worth more than the bruiser's, so that is the policy giving
 the turn given the other way. Bow Expert lifts the speed build by 0.077 against the tank and 0.068 against the cannon at
 C, under the tolerance in a duel; the worth's warning on a worn edge (kits design 8.10) stays, as a shot's damage a
 standard action rises by more than that.
+
+## A monster's body by rules (balance unit 2): measured, not retuned
+
+Balance plan section 1, built: a monster wears its archetype's kit at its rank's tier (`kitAt`, six pieces of the rarity
+whose index is the rank's, so its armor and resist rise by 6 a rank step), and its armor and resist are times its kind's
+factor (normal 1, elite 1.25, boss 1.5, `RULES.fight.kinds`). The simulation's hunters wear `kitAt` too. Traits
+(`RULES.fight.traits`) are on no row of the simulation. No number was moved: one lever brings back four of the eleven
+rows out, and unit 4 retunes. Before is the unit before (the run of `cd02c91`), after is this unit; a row is listed when it
+moved by more than twice its standard error or is out.
+
+| Row | Bound | Before | After | Kit only (kind factors 1) |
+|---|---|---|---|---|
+| speed beats cannon one on one at C | 0.60 to 0.90 | 0.606 | **0.599** (se 0.016) | 0.599 |
+| tank beats speed at S | 0.60 to 0.90 | 0.760 | 0.874 | 0.874 |
+| tank against speed at E | 0.25 to 0.75 | 0.619 | 0.570 | 0.570 |
+| mixed party clears a pack at C | 2 to 5 | 3.82 | 4.27 | 4.27 |
+| mixed party clears a pack at S | 2 to 5 | 4.62 | **5.55** | 5.55 |
+| mixed party beats a boss at C | 4 to 8 | 6.20 | 7.77 | 6.90 |
+| mixed party beats a boss at S | 4 to 8 | 7.71 | **10.90** | 9.39 |
+| staggers in a boss fight at S | 1 to 2 | 2.00 | **2.36** | 2.28 |
+| a channel under the boss's aim completes at C | 0.10 to 0.25 | 0.117 | **0.080** | 0.127 |
+| blood kit against cannon, less plain, at S | -0.08 to 0.08 | 0.000 | **0.118** | 0.118 |
+| blood kit party beats a boss at S | 4 to 8 | 7.13 | **10.00** | 8.59 |
+| blood kit party clears a pack at S | 2 to 5 | 4.95 | **5.86** | 5.86 |
+| summoner party beats a boss at C | 4 to 8 | 5.54 | 7.31 | 6.34 |
+| speed with Parry against the tank, less plain, at C | -0.08 to 0.08 | -0.030 | **-0.092** | -0.092 |
+| speed with Parry against the tank, less plain, at S | -0.08 to 0.08 | -0.013 | **0.090** | 0.090 |
+| cursed boss at S | 4 to 8 | 5.17 | 7.34 | 6.35 |
+| Surge and Transfer party beats a boss at S | 4 to 8 | 6.53 | **8.79** | 7.91 |
+| best single use on a same-rank tank at S | at most 0.60 | 0.255 | 0.215 | 0.215 |
+
+What moved them. The kit at the rank's tier alone (the last column, kind factors set to 1 for one run) puts nine rows out;
+the kinds' armor and resist add the channel row and the Transfer row. Every out row but two is at S, where the tier adds
+30 armor and resist to both sides: a normal S brute's armor goes from 46 to 77 and its resist from 5 to 37, while the
+party's damage grows with power, not with tier. The duel rows (Parry, blood kit against cannon) have no monster in them:
+they moved because both hunters now wear the S set. The C rows that went out sit within a standard error or two of their
+edge (speed against cannon 0.599 at 0.600).
+
+One lever, measured: `kinds.boss.hp` 3.2 to 2.4 (one run, not kept) brings the boss at S to 8.26 (still out), its
+staggers to 2.00, the blood kit's boss to 7.65 and Transfer's to 6.87, and leaves the cursed boss at C at 4.05, near its
+floor of 4. Boss HP is a factor for every rank, and the drift is by rank, so it cannot bring S back without taking C
+under. The levers the plan names, for unit 4: the boss's HP (`kinds.boss.hp`, plan section 1) and its armor and resist
+factors (`kinds.boss.armor`, `.resist`); `kinds.normal` for the packs at S; for the duels and the S rows together, the
+tier's step itself (one point a piece a rarity, `pieceAt`; the plan's "rise by 6 a rank step"), which no rule number
+holds today; `kit.parry` for the Parry rows; `holdBase` for the channel row.
+
+## The retune of unit 2's bodies (balance unit 4, its retune part): stopped at a rule for the owner
+
+No rule moved. Every number below is one run of the rows' own setups and seeds (the runs and fights of
+`tests/fight-sim.test.ts`, played by a scratch script on `tests/models/fight-sim.ts` with a rules patch; the script read
+the same values as the test for the unpatched rules, row for row). After the merge of `lead-backlog` the unit pass shows
+the same 11 rows out and nothing new.
+
+**The cause.** Three changes of unit 2, each measured alone:
+
+| What changed | Rows it moves | Evidence |
+|---|---|---|
+| A monster wears its rank's tier (+1 armor and resist a piece a tier, +30 at S) | every party row's length: pack at S 5.55, boss at S 10.9, the blood kit's and Transfer's boss and pack at S | monsters at tier 0 and hunters at their tier give the same party rows, to the hundredth, as nobody at a tier (pack S 4.62 and 4.65, boss S 8.31 and 8.33) |
+| A hunter wears its rank's tier | the duels: Parry at C -0.092 and at S +0.090, blood kit against cannon at S +0.118 | with the six pieces summed to the kit exactly and no tier, every duel row returns to its value before unit 2 to the thousandth (speed against cannon at C 0.606, Parry -0.030 and -0.013, blood 0.000, tank against speed at S 0.760) |
+| The six pieces of a kit each round half up | speed beats cannon at C, 0.606 to 0.599 | a full light set is armor 11 and resist 16 where the kit is 10 and 15, a medium set resist 7 where the kit is 5 |
+| A boss's armor and resist 1.5 | the boss rows at C and S (and so the staggers at S), the channel under the boss's aim at C | no tier and boss HP 2.8: boss C 6.01, S 7.35 |
+
+The tier's guard is defence with nothing beside it that hits harder by the tier: a same-rank hit fells a same-rank normal
+brute in 2.90 hits at C and 3.67 at S with no tier, 3.21 and 4.40 with it. So "both sides rise together" (plan section 1)
+keeps who wins and makes every fight at S about a fifth longer, and the additive step squeezes the kits (light 10 to 41,
+heavy 60 to 90 at S), which is what moves the duels.
+
+**The brief's questions, measured.**
+
+- *Should the builds wear their tier's item budget?* No. All of it on the main stat (10 slots of `middleBudget`) breaks the
+  triangle: tank against speed at S 0.098, cannon against tank at S 1.000 and at C 0.963, speed against cannon at C 0.473.
+  One item's budget on the main stat leaves the boss at S at 10.43. A monster holds no budget, so a row with it on the
+  hunters measures how a table spends its loot, not the rules; the P rows give one item's budget as a variant, as the
+  plan says.
+- *The hunters' own penetration at S:* the cannon 21% of both (Control's curve), every other build 0. Against the boss's
+  armor 115 at S the bruiser and the tank carry none.
+- *A boss's toughness split between HP and armor:* yes, the plan's own lever. Boss HP 2.8 holds the boss rows in every
+  setting below that keeps the party rows (C 5.9 to 6.2, S 7.3 to 8.0).
+- *Should a monster follow the tier at full value?* At full value with today's HP growth, no setting of the named levers
+  holds; see below.
+
+**Two settings that hold the party rows, and what each costs.**
+
+| | Nobody at a tier (the rarity adds no guard), pieces summed exactly, boss HP 2.8 | Everybody at the tier, HP growth over 31 levels (`growthDiv` 24 to 31), boss HP 2.7, Parry's guard 0.28 |
+|---|---|---|
+| pack C, S | 3.82, 4.62 | 3.85, 4.73 |
+| boss C, S | 5.90, 7.29 | 5.99, 7.78 |
+| blood boss S, pack S | 6.84, 4.95 | 7.25, 5.01 (**out**, se 0.073) |
+| Transfer boss S, cursed boss C | 6.07, 4.12 | 6.48, 4.10 |
+| Parry at C, at S | -0.030, -0.013 | -0.052, +0.063 |
+| blood kit against cannon at S | 0.000 | +0.043 |
+| speed beats cannon at C | 0.606 | **0.574** |
+| cannon beats tank at S | 0.861 | **0.909** (0.854 with plate's resist 66) |
+| the channel under the boss's aim at C | **0.064** | **0.080** |
+| What it changes | design 2.3's rule "rarity raises armor and resist by its index", and the economy's "a plain epic piece is better than a plain common one" | every hunter's and monster's max HP above level 1 (0.91 of today at level 20, 0.85 at 70) |
+
+`growthDiv` 31 is the one value that explains itself: with the tier's guard it puts a same-rank hit's count to fell a
+same-rank normal brute back where it was without the guard at every rank, within 1% (rms 0.6%; 30 and 32 are 1.7%).
+
+**Where I stopped: Parry at C and at S.** With every hunter at its tier and HP growth as it is, no guard holds both rows
+(800 runs each, the two openings' mean, plain speed 0.177 at C and 0.142 at S):
+
+| `kit.parry` | at C | at S |
+|---|---|---|
+| 0.29 | -0.107 | +0.003 |
+| 0.30 (today) | -0.092 | +0.090 |
+| 0.31 | -0.087 | +0.090 |
+| 0.315 | -0.065 | +0.185 |
+| 0.32 | -0.052 | +0.185 |
+
+The step at S is a threshold (a tank's swing falls under one more hit the speed build lives through), as round one of the
+kits found at 0.35. Both rows hold only with HP growth moved (0.27 to 0.29 at `growthDiv` 31) or with no tier.
+
+**The channel row is not `holdBase`'s.** Under the boss's aim at C it completes 0.064 at `holdBase` 0.15, 0.18 and 0.20
+alike: every boss hit on the cannon is over any of those holds (about 26 on 81 HP), so a channel completes only when the
+boss loses its turns, to a stagger or a miss. The boss's armor 1.5 makes each hit on it smaller, and its stagger bar is
+counted in hits on a normal brute (`sameRankHit`, rows.ts), so it staggers later and the channel is hit first. The lever
+is the bar's yardstick (a hit on the body that holds the bar) or `kinds.boss.stagger`, not the hold.
+
+**For the owner.** Does a rarer armor piece carry free armor and resist (design 2.3: +1 a piece a tier, +30 a mythic set),
+and does a monster's body wear it too (plan section 1)? If yes, every max HP above level 1 grows slower (`growthDiv` 31) and
+Parry, the triangle's cannon against tank at S, speed against cannon at C and the blood kit's pack at S each need a retune
+of their own. If no, a rarer piece is better only by its budget, and the rows hold with boss HP 2.8 and the pieces summed
+exactly, leaving the channel row to the stagger bar. Default if he does not answer: no free guard by rarity (fewest moves,
+every duel exactly as tuned before), but that reverses a written rule, so it is his.
+
+## Package A (balance unit 4): no guard by rarity, a kit's pieces add up to it, boss HP 2.8, the bar on its own body
+
+The lead picked package A from the entry above. Four moves, each a rule with its reason in the code:
+
+| Rule | From | To | Why |
+|---|---|---|---|
+| A rarer armour piece's armor and resist (`piece`, `registry/items.ts`; design 2.3) | +1 each a rarity index, +30 a mythic set | none: a rarer piece is better by its tier's budget and price | the free guard rose on both sides with nothing that hit harder beside it (every S fight a fifth longer, the duels moved); the owner, Nov 21: a boss is tougher by its own numbers |
+| A kit split over its six pieces | each piece rounded half up (light set 11 and 16 for a kit of 10 and 15) | the largest-remainder rule: each piece its share rounded down, each point left to the piece that lost the most (on a tie the larger share, then the slot order), so the six are the kit exactly | one set, one kit; `kitAt` and `pieceAt` go, and every body wears `kitGear` |
+| `fight.kinds.boss.hp` | 3.2 | 2.8 | measured: with the boss's 1.5 times armor and resist, 3.2 takes the mixed party 6.71 rounds at C and 8.29 at S (out); 2.8 gives 5.90 and 7.29 |
+| The stagger bar's yardstick (`sameRankHit`, `staggerOf` in `rows.ts`; design 4.3) | a brute's strike on a same-rank normal brute | the same strike on the monster that holds the bar | a bar of 4 hits is 4 hits on that boss: on the normal brute's armor an S boss's bar was more than 4 of the hits that land on it |
+
+Every row that moved by more than twice its standard error or is out. Before is the unit 2 tree (`f2ef93e` merged with
+`lead-backlog`), package A the first three rules (`4607e35`), last the fourth on top. One run of the test's own seeds each.
+
+| Row | Bound | Before | Package A | With the bar on its own body |
+|---|---|---|---|---|
+| speed beats cannon one on one at C | 0.60 to 0.90 | **0.599** | 0.606 | 0.606 |
+| tank beats speed at C | 0.60 to 0.90 | 0.824 | 0.798 | 0.798 |
+| speed beats cannon at S | 0.60 to 0.90 | 0.621 | 0.659 | 0.659 |
+| tank beats speed at S | 0.60 to 0.90 | 0.874 | 0.760 | 0.760 |
+| cannon beats tank at S | 0.60 to 0.90 | 0.896 | 0.861 | 0.861 |
+| tank against speed at E | 0.25 to 0.75 | 0.570 | 0.619 | 0.619 |
+| mixed party clears a pack at C | 2 to 5 | 4.27 | 3.82 | 3.82 |
+| mixed party clears a pack at S | 2 to 5 | **5.55** | 4.62 | 4.62 |
+| mixed party beats a boss at C | 4 to 8 | 7.77 | 5.90 | 5.92 |
+| mixed party beats a boss at S | 4 to 8 | **10.90** | 7.29 | 7.32 |
+| a hunter goes down in a boss fight at C | at most 0.25 | 0.017 | 0.000 | 0.003 |
+| staggers in a boss fight at S | 1 to 2 | **2.36** | 2.00 | 2.00 |
+| a channel under the boss's aim completes at C | 0.10 to 0.25 | **0.080** | **0.064** | **0.079** (se 0.016) |
+| best single use on a same-rank tank at C, at S (and the kits') | at most 0.60 | 0.263, 0.215 | 0.285, 0.255 | 0.285, 0.255 |
+| blood kit party beats a boss at C | 4 to 8 | 7.48 | 5.76 | 5.72 |
+| blood kit party clears a pack at C | 2 to 5 | 4.44 | 3.98 | 3.98 |
+| blood kit against cannon, less plain, at S | -0.08 to 0.08 | **0.118** | 0.000 | 0.000 |
+| blood kit party beats a boss at S | 4 to 8 | **10.00** | 6.84 | 6.85 |
+| blood kit party clears a pack at S | 2 to 5 | **5.86** | 4.95 | 4.95 |
+| the mark caster's stroke over a blast at C | at most 1 | 0.534 | 0.505 | 0.505 |
+| summoner party beats a boss at C | 4 to 8 | 7.31 | 5.44 | 5.46 |
+| the pain kit's Violence a boss fight at C (no bound) | none | 1.000 | 0.340 | 0.343 |
+| Parry against the tank, less plain, at C | -0.08 to 0.08 | **-0.092** | -0.030 | -0.030 |
+| Parry against the tank, less plain, at S | -0.08 to 0.08 | **0.090** | -0.013 | -0.013 |
+| cursed boss at C | 4 to 8 | 5.23 | 4.12 | 4.21 |
+| cursed boss at S | 4 to 8 | 7.34 | 4.95 | 5.06 |
+| Transfer party beats a boss at C | 4 to 8 | 6.58 | 5.13 | 5.22 |
+| Transfer party beats a boss at S | 4 to 8 | **8.79** | 6.07 | 6.51 |
+| Bow Expert against the tank at C (no bound) | none | 0.023 | 0.077 | 0.077 |
+
+Package A returns every duel to its value before unit 2 to the thousandth, as the entry above found. Ten of the eleven
+rows out come back; the staggers at C and S are 2.00, on the bound's top edge, as before unit 2. The cursed boss at C
+(4.21, se 0.025) is the row nearest an edge.
+
+### The channel row: still out, stopped
+
+**The bar's yardstick, measured.** Moving it onto the boss's own body takes the channel row from 0.064 to 0.079 and puts
+the staggers back where they fell before unit 2: over 600 seeds the first stagger at 1.42 rounds and the second at 4.17,
+against 1.50 and 4.27 for the bodies before unit 2 (boss HP 3.2, guard 1). It does not bring the row in.
+
+**The row's value before unit 2 was its seeds'.** Over 1200 fresh seeds (301 to 1500, the row's setup and measure):
+
+| Bodies | Aimed channels completed |
+|---|---|
+| before unit 2 (boss HP 3.2, armor and resist 1) | 0.097 (102 of 1056, se 0.009) |
+| package A, bar on a normal brute | 0.062 (71 of 1144) |
+| package A, bar on its own body (this branch) | 0.076 (87 of 1144, se 0.008) |
+
+The 0.117 the row read before unit 2 was a good draw of seeds 1 to 300: the row was at its floor all along.
+
+**What is left: the threat table.** A channel under the boss's aim completes only if the boss spends the five turns on
+something else; every boss hit on the cannon (about 30) is over its hold (12). Traced over 600 seeds, the staggers come
+after the channel begins as often as before; what changed is whom the boss aims at during a channel: the cannon in 515
+of 896 of its acts (0.57), against 445 of 881 (0.51) before unit 2. Threat is damage dealt after defence
+(`resolve.ts`, `dealt * sheet.threat`). A brute boss's 1.5 times its armor (39 to 58 at C) cuts the bruiser's and the
+speed build's damage a fight (96 to 88, 93 to 80), and 1.5 times its resist (5 to 8) leaves the cannon's at 111, so the
+cannon keeps the boss's aim longer. So the row moves with any armor on a physical boss: it is a consequence of the rule
+the owner set (a boss tougher by its armor and resist), not of a mistake.
+
+What would bring it in, none tried as a change: threat from damage before defence (a rule of the threat table, past this
+unit's files); a channel's threat (`fight-turn.ts`, round four's lever); or reading the bound against 1200 seeds, where it
+was 0.097 before unit 2 too. `holdBase` cannot (the entry above). The bound is untouched; the row stays out.
+
+### The sweep after package A
+
+`measure.ts --quiet`, 150 runs a fight, on the draft as it stands (unit 6 fits the rows). Inside of all, before (the unit
+2 tree) and after:
+
+| Rank | E | D | C | B | A | S |
+|---|---|---|---|---|---|---|
+| before | 15 of 56 | 5 of 59 | 7 of 59 | 6 of 58 | 1 of 53 | 0 of 81 |
+| after | 15 of 56 | 6 of 59 | 4 of 59 | 7 of 58 | 3 of 53 | 0 of 81 |
+
+By kind after: normal 29 of 174, elite 0 of 107, boss 6 of 62 (5 before), mythic 0 of 23. Rows outside for "rounds over"
+fell from 180 to 143; "a hunter down" is the largest reason (269, 266 before), then a row's worth over its budget (172).
+
+## Balance unit 2, step 1: threat counts the hit before defence
+
+**The decision.** Threat counts a hit before the monster's armor or resist (after a Parry's guard), times the user's
+threat multiplier: new rule `fight.threatBeforeDefence` (a share, 1; 0 is the old rule 15, `dealt * threat`), read in
+one place (`threatOfHit`, `resolve.ts`), written through `threatened` as before. Why at the cause: whom a monster aims at
+should follow what the party does to it, and a kind's armor is not something the party did. With threat after defence,
+the boss's 1.5 times armor (package A, the owner's "more hp, armor, magic resist") cut the physical builds' threat and left
+the cannon's, so the boss aimed at a channeling cannon in 57% of its acts (51% before the armor) and the channel row
+fell under its bound. No bound and no other number moved.
+
+**The channel row, over fresh seeds** (the row's own setup and measure, `vsBoss(['bruiser', 'speed', 'cannon'], 'C',
+'aimed')`, seeds 10001 to 11200):
+
+| Rule | Aimed channels completed | Fights where the cannon began one under the boss's aim |
+|---|---|---|
+| threat after defence (0) | 0.086 (98 of 1140, se 0.008) | 1140 of 1200 |
+| threat before defence (1) | 0.208 (93 of 447, se 0.019) | 447 of 1200 |
+
+The boss now turns to the cannon in fewer fights before its channel (the bruiser's and the speed build's swings count in
+full), and when it does, the physical builds pull it back off during the channel more often. 0.208 is inside 0.10 to 0.25
+by five standard errors at the floor and two at the ceiling.
+
+**The eleven rows that were out before package A**, the same fresh seeds (10001 on; duels 400 a side and opening, the kit
+and Parry rows 200 each, the boss and stagger rows 300, the pack rows 150):
+
+| Row | Bound | After defence (0) | Before defence (1) |
+|---|---|---|---|
+| speed beats cannon one on one at C | 0.60 to 0.90 | 0.652 (se 0.015) | 0.652 |
+| mixed party clears a pack at S | 2 to 5 | 4.444 (se 0.067) | 4.436 |
+| mixed party beats a boss at S | 4 to 8 | 7.263 (se 0.036) | 7.257 (se 0.032) |
+| staggers in a boss fight at S | 1 to 2 | 2.000 | 2.000 |
+| a channel under the boss's aim completes at C | 0.10 to 0.25 | **0.086** | 0.208 (se 0.019) |
+| blood kit against cannon, less plain, at S | -0.08 to 0.08 | -0.010 (se 0.035) | -0.010 |
+| blood kit party beats a boss at S | 4 to 8 | 6.777 | 6.772 |
+| blood kit party clears a pack at S | 2 to 5 | 4.735 | 4.712 |
+| Parry against the tank, less plain, at C | -0.08 to 0.08 | -0.010 (se 0.024) | -0.010 |
+| Parry against the tank, less plain, at S | -0.08 to 0.08 | 0.000 (se 0.025) | 0.000 |
+| Transfer party beats a boss at S | 4 to 8 | 6.497 (se 0.078) | 6.549 (se 0.081) |
+
+A duel has no threat table, so the duels are the same to the thousandth; the party rows move by under one standard error.
+
+**Every row of the test, its own seeds** (`tests/fight-sim.test.ts`, before and after; only the rows that moved by more
+than a rounding):
+
+| Row | Bound | Before | After |
+|---|---|---|---|
+| a channel under the boss's aim completes at C | 0.10 to 0.25 | **0.079** (279 begun) | 0.214 (se 0.038, 117 begun) |
+| a channel while the boss aims elsewhere completes at C (no bound) | none | 0.935 (201 begun) | 0.797 (271 begun) |
+| a channel behind a taunting tank completes at C | 0.50 to 1 | 0.715 (se 0.023) | 0.848 (se 0.018) |
+| a hunter goes down in a boss fight at S | at most 0.25 | 0.050 | 0.013 |
+| a hunter goes down in a pack fight at S | at most 0.10 | 0.027 | 0.013 |
+| Transfer party beats a boss at C | 4 to 8 | 5.216 | 5.275 |
+
+All 73 rows inside; the unit pass is green on this rule alone. The taunt's channel rose, likely because a tank's swings
+now count in full against the boss's armor, so its lead after a taunt holds longer (read, not traced). The cursed boss at C (4.196, se 0.026) is still
+the row nearest an edge.
+
+## Balance unit 2, step 2: the rows P1 to P3 (balance plan section 9)
+
+**How they are read.** One build of the mixed party spends one item of its tier's middle budget (`middleBudget`: 3.45
+points at C, 10.95 at S) all one way at the item budget's own prices (`itemSpend`, a penetration weighed on a same-rank
+elite, `itemBudget.penFoe`), unrounded so the three ways spend the same; the other build stays on its main stat. The
+bruiser holds the armor pair, the cannon the magic pair, each its own row (`spending`, `tests/models/fight-sim.ts`).
+What a budget buys:
+
+| Rank | Main stat | Bruiser: armor % | Bruiser: lethality | Cannon: magic % (Control's part first) | Cannon: flat |
+|---|---|---|---|---|---|
+| C | +3.45 | 11.2 | 5.2 | 11.4 + 28.1 = 39.5 | 5.0 |
+| S | +10.95 | 13.6 | 7.5 | 21.0 + 45.2, capped at `penMax` 60 | 8.0 |
+
+The bodies: a brute boss has armor 58 and resist 8 at C (69 and 8 at S), a normal brute 39 and 5 (46 and 5).
+
+**P3's control.** The mixed party holds none (no built-in skill holds). The row gives the tank a plain one: a curse with no
+damage that stuns for a round (the built-in Stunned, a hold, which Tenacity shortens and Will resists), back every
+`itemBudget.cooldownRounds` (3), used on the boss when its next turn comes within a round (`controlPolicy`). The measure
+is the share of the fight's time the boss's next turn was pushed by it, a stagger's push apart (`FightRecord.held`).
+
+**The rows** (`tests/fight-sim.test.ts`, seeds 1 on; P1 the paired difference on the same seeds):
+
+| Row | Bound | C | S |
+|---|---|---|---|
+| P1 armor, boss: flat's rounds less percent's | over 0 | 0.042 (se 0.010) | 0.020 (se 0.006) |
+| P1 armor, pack: percent's rounds less flat's | over 0 | 0.002 (se 0.002) | 0.017 (se 0.009) |
+| P1 magic, boss: flat's rounds less percent's | over 0 | **-0.080** (se 0.015) | **-0.119** (se 0.015) |
+| P1 magic, pack: percent's rounds less flat's | over 0 | 0.019 (se 0.009) | 0.045 (se 0.016) |
+| P2 armor, pack and boss: main's rounds over the faster variant's | at most 1.25 | 1.001, 1.007 | 1.002, 1.005 |
+| P2 magic, pack and boss | at most 1.25 | 1.000, 1.004 | 1.000, 1.010 |
+| P3 control's share of the boss's turns | 0.10 to 0.35 | **0.032** (se 0.003) | **0.025** (se 0.002) |
+| the triangle's cannon beats tank at S (unchanged) | 0.60 to 0.90 | | 0.861 |
+
+Four rows are out; they are `OPEN` (todo, with the value and the reason), so the unit pass stays green and names them.
+
+**P1 magic at the boss: the arithmetic, not a price.** Percent takes a share of what is there; a brute boss's resist is 8.
+At C the budget's 28.1 more percent takes 2.2 resist off and its 5 flat takes 5; at S the percent is at `penMax` and takes
+3.1 off against 8 flat. Percent passes flat only above a defence of flat over the percent bought: 18 at C, 20 at S. The
+plan's levers, in order:
+
+- `itemBudget.penFoe` 'normal' (measured, 300 boss and 150 pack fights): magic at the boss -0.018 (se 0.011) at C and
+  -0.119 at S, still out; and the armor pair's pack row at S goes to -0.001, out. Not moved.
+- `fight.penMax`: binds only at S, where even all 45 points of percent would take 3.6 off resist 8. Cannot.
+- `kinds.boss.resist`: from 1.5 to 3.6 at C and 4 at S would put a brute boss's resist (5 times it) over 18 and 20. It moves every boss row (the cannon
+  is the party's main damage) and the owner set the boss's factors; not tried.
+
+Or P1's magic row is read on a boss whose resist is its thick defence (a caster boss); that is a reading of the plan for
+the lead. The armor pair holds P1 at both ranks, though its pack row at C (0.002, se 0.002) is one standard error over 0.
+
+**P2 is far inside.** One item's budget is 3 to 10% of a build's main stat, so no way of spending it moves a fight by more
+than 1%. P2 would bind only for a build that holds many such items.
+
+**P3: about a fifth of a round a stun.** 0.99 stuns a fight at C over 6.1 rounds, 0.032 of the fight's time: 0.20 of a
+round a use. A hold is a floor (`stunned`: the next turn moves to now plus the hold, if that is later), so a stun of a
+round on a boss whose turn is half a round away moves it half a round, less Tenacity's cut, and a resisted one moves
+nothing (read, not traced). The row measures a control the party does not have; the stun's numbers (its round, its
+cooldown, who carries it) are the lead's to set before the row means anything.
+
+## Balance unit 2, step 3: the sweep with threat before defence
+
+`measure.ts --quiet`, 150 runs a fight, on the draft as it stands, 302 s. Inside of all, after package A (above) and with
+`threatBeforeDefence` 1:
+
+| Rank | E | D | C | B | A | S |
+|---|---|---|---|---|---|---|
+| package A | 15 of 56 | 6 of 59 | 4 of 59 | 7 of 58 | 3 of 53 | 0 of 81 |
+| threat before defence | 14 of 56 | 6 of 59 | 4 of 59 | 7 of 58 | 3 of 53 | 0 of 81 |
+
+By kind: normal 28 of 174 (29), elite 0 of 107, boss 6 of 62, mythic 0 of 23. The reasons outside: a hunter down 270
+(269), worth over 172 (172), rounds over 142 (143), a death 30, the party's win share 23, rounds under 2. One normal row
+at E crossed an edge; at 150 runs a share near its bound moves by that much between draws, so the threat rule moves the
+sweep by nothing past its noise. The sweep is unit 6's to fit.

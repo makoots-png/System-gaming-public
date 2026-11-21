@@ -725,11 +725,8 @@ describe('a cast', () => {
     for (const aim of ['', 'c'.repeat(81), { x: 64, y: 0 }, 5, null]) expect(cast({ aim })).toBeNull();
   });
 
-  test('at most 8 dice, each a whole face from 0 to 999; left out there are none', () => {
-    expect(cast({ dice: many(100, () => 3) })!.dice).toHaveLength(8);
-    expect(cast({ dice: [1e6, -2, 4.7, 'six', 5] })!.dice).toEqual([999, 0, 4, 5]);
-    const { dice: _, ...without } = valid('cast');
-    expect(payload('cast', without)!.dice).toEqual([]);
+  test('a cast carries no dice: a sent one is dropped, as the GM\'s phone rolls every die', () => {
+    expect(cast({ dice: [4, 6] })).not.toHaveProperty('dice');
   });
 
   test('a cast without the time the player saw is refused', () => {

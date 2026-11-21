@@ -8,12 +8,9 @@ import { logLine, logged } from '../core/session-log.ts';
 import { toldStep } from '../core/use-told.ts';
 import { atHunter, both, isRefused, refuse } from '../core/save-step.ts';
 import { notifyHidden } from '../edge/notify.ts';
-import { rollDice } from '../edge/roll.ts';
 import { aims, docSpots } from '../core/combat/fight-view.ts';
-import { diceFor } from '../core/combat/resolve.ts';
 import { openGrid } from '../core/combat/space.ts';
 import { hunterAbilities } from '../core/combat/rows.ts';
-import { rankIdx } from '../edge/rules.ts';
 import { useRoute } from '../core/protocol.ts';
 import { TURN_FREE, turnHoldStep } from '../core/combat/hold.ts';
 
@@ -120,8 +117,8 @@ export function register(app) {
         }
         // the window answers later, over a doc that may have moved on: the cast goes at the doc of this moment, on the turn then
         const at = turnOf(hid); if (!at) return null;
-        const S = app.api.sync, dice = diceFor(a, rankIdx(h.rank), app.rules()).map(d => rollDice(d));
-        return S.post(S.event('cast', { by: S.myKey(h.id), ability: a.id, aim, at: at.doc.now, dice }));
+        const S = app.api.sync;
+        return S.post(S.event('cast', { by: S.myKey(h.id), ability: a.id, aim, at: at.doc.now }));
       }, via);
     },
   };

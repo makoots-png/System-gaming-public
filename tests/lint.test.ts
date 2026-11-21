@@ -495,7 +495,7 @@ test('a view computes no fight number: from the modules that work one out it imp
     // a formula's text, read and printed; a typed roll's edge and its natural (the Dice view); why a formula cannot be a lasting change, in words (the status maker)
     'src/core/formula.ts': ['parseFormula', 'printFormula', 'withEdge', 'naturalOf', 'bareRefusal'],
     'src/core/hunter/derive.ts': ['SHEET_LABELS'],
-    'src/core/combat/resolve.ts': ['needs', 'diceFor', 'castDice'], // which dice a use asks for, rolled in src/edge/roll.ts
+    'src/core/combat/resolve.ts': ['needs'], // which dice a use asks for, rolled in src/edge/roll.ts
     // TERRAIN and TERRAINS: the map maker paints a terrain by its character; whether a body may stand there is the parser's
     'src/core/combat/space.ts': ['place', 'tiles', 'percent', 'openGrid', 'TERRAIN', 'TERRAINS'],
     'src/core/combat/timeline.ts': ['tick', 'roundOf', 'roundsOf'],
@@ -623,6 +623,29 @@ test('only withThreat in src/core/combat/effect-ops.ts writes a fight row\'s thr
   expect(writes('const top = r.threat && Object.keys(r.threat)[0];'), 'and not a read').toBe(false);
   const hits = (await sourceLines('src')).filter(line => !owners.includes(line.file) && !isComment(line.text) && writes(line.text));
   expect(report(hits), 'change a row\'s threat table with withThreat(row, change) (src/core/combat/effect-ops.ts), which writes it only on a row whose kind holds one').toEqual([]);
+});
+
+test('only the fight\'s fudge command writes a fight\'s fudge', async () => {
+  // The GM's hidden weight on the fight's dice (docs/agent-handoff/features/notes-8-fudge.md section 2) is one piece of
+  // state with one writer: `fudgeStep` in src/core/combat/fudge.ts, which fight.ts calls for the `fudge` command and for a
+  // row that leaves. A second writer could set a weight no command sent, or carry one past the fight's end, where
+  // `Ended` holds none. fight-parse.ts makes whole new fights, which this rule does not see.
+  const owner = 'src/core/combat/fudge.ts', caller = 'src/core/combat/fight.ts';
+  const copy = /\{\s*\.\.\.[^,{}]+,[^{}]*(?<![.\w$])fudge\s*[:,}]/;
+  const assign = /[\w$)\]!]\.fudge(\.(sides|rows|forced))?(\[[^\]]*\])?\s*(?:[-+*/]?=(?![=>])|\?\?=|\|\|=|\+\+|--)/;
+  const spread = /\.\.\.[\w$.!]*\.fudge\b/;
+  const writes = (text: string) => copy.test(text) || assign.test(text) || spread.test(text);
+  for (const text of ['return { ...f, fudge: { ...f.fudge, rows: {} } };', 'f.fudge = NO_FUDGE;', 'fight.fudge.rows[id] = 2;', 'const g = { ...f, rows, fudge };']) {
+    expect(writes(text), `the rule sees ${text}`).toBe(true);
+  }
+  expect(writes('const w = f.fudge.rows[id] ?? 0;'), 'a read of a fudge is no write').toBe(false);
+  const lines = (await sourceLines('src')).filter(line => !isComment(line.text));
+  const hits = lines.filter(line => line.file !== owner && writes(line.text));
+  const permitted = (line: Line) => line.file === caller && /(?<![.\w$])fudge:\s*fudgeStep\(/.test(line.text);
+  expect(hits.filter(permitted).length, 'the rule sees the fudge command\'s write and a leaving row\'s').toBe(2);
+  expect(report(hits.filter(line => !permitted(line))), 'a fight\'s fudge changes only as `fudge: fudgeStep(f.fudge, event)` in src/core/combat/fight.ts. Send the GM\'s `fudge` command through send() in combat.js.').toEqual([]);
+  const calls = lines.filter(line => /\bfudgeStep\s*\(/.test(line.text) && line.file !== owner);
+  expect(report(calls.filter(line => line.file !== caller)), 'only fight.ts calls fudgeStep').toEqual([]);
 });
 
 test('nothing imports a module deleted with the old fight', async () => {

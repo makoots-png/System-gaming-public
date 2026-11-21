@@ -97,8 +97,8 @@ export const VALID: Record<EventType, [Raw, Raw]> = {
     { eid: EID, by: KEY, place: { x: 3, y: 4 }, at: 2500, dash: false },
   ],
   cast: [
-    { eid: EID, by: KEY, ability: 'strike', aim: 'c2', at: 2500, dice: [4, 6] },
-    { eid: EID, by: KEY, ability: 'strike', aim: 'c2', at: 2500, dice: [4, 6] },
+    { eid: EID, by: KEY, ability: 'strike', aim: 'c2', at: 2500 },
+    { eid: EID, by: KEY, ability: 'strike', aim: 'c2', at: 2500 },
   ],
   pass: [
     { eid: EID, by: KEY, at: 2500 },
