@@ -12,8 +12,11 @@ export const COUNTS: readonly Count[] = Array.from({ length: OF + 1 }, (_, done)
 export const WALK_EVENTS: readonly UpdateEvent[] = [
   { type: 'refused', decision: { to: 'reload', build: BUILD } },
   { type: 'refused', decision: { to: 'stuck' } },
-  { type: 'looked', installing: true },
-  { type: 'looked', installing: false },
+  { type: 'noted', kept: true },
+  { type: 'noted', kept: false },
+  { type: 'looked', worker: 'installing' },
+  { type: 'looked', worker: 'waiting' },
+  { type: 'looked', worker: 'none' },
   ...COUNTS.map(count => ({ type: 'caching' as const, count })),
   { type: 'controlled' },
   { type: 'quiet' },

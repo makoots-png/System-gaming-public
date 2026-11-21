@@ -3,13 +3,14 @@ import { describe, expect, test } from 'bun:test';
 import {
   COINS_MAX, COIN_STATES, RULINGS, SIDES, VERDICT_WORDS, addCoin, can, coinOf, coinWords, decider, inAir, isCoinRoll, landing, landingOf, newRollId,
   parseCoin, parseCoins, rollId, sideOf, stepCoin, takeCall, transition, verdict, callRuled, callTaken, coinCalled, coinLanded, coinRolled,
+  COIN_PROMPT_EVENTS, COIN_PROMPT_IDLE, COIN_PROMPT_STATES, coinPromptPutOff, coinPromptStep,
 } from '../src/core/coin.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import { newHunter } from '../src/core/save.ts';
 import type { Hunter, LogEntry } from '../src/core/save.ts';
 import { hid } from './fixtures/ids.ts';
-import type { Coin, CoinEvent, CoinEventType, CoinState, RollFacts, CoinSide } from '../src/core/coin.ts';
-import { WALK_EVENTS, coinIn, fields } from './models/coin-events.ts';
+import type { Coin, CoinEvent, CoinEventType, CoinPrompt, CoinPromptEvent, CoinState, RollFacts, CoinSide } from '../src/core/coin.ts';
+import { CALL_A, CALL_B, PROMPT_WALK, WALK_EVENTS, coinIn, fields } from './models/coin-events.ts';
 
 describe('the life of a coin', () => {
   // Every state and event pair: the coin it leads to, or 'no change' when the event does not apply there.
@@ -243,5 +244,114 @@ describe('the save\'s coins and calls (the steps coin.js applies)', () => {
   });
   test('a step on a roll nobody holds is refused', () => {
     expect(coinLanded(empty(), id, 'heads', stamp)).toEqual({ ok: false, why: 'missing' });
+  });
+});
+
+
+describe('the GM\'s window for the calls (SMX-views-7)', () => {
+  const A = CALL_A, B = CALL_B;
+  const idle: CoinPrompt = COIN_PROMPT_IDLE;
+  const asking = (id: typeof A, later: (typeof A)[] = []): CoinPrompt => ({ at: 'asking', id, later });
+  const deferred = (first: typeof A, ...rest: (typeof A)[]): CoinPrompt => ({ at: 'deferred', ids: [first, ...rest] });
+  const seen = (...open: (typeof A)[]): CoinPromptEvent => ({ type: 'seen', open });
+  const ruled: CoinPromptEvent = { type: 'ruled' }, putOff: CoinPromptEvent = { type: 'putOff' };
+  const reopen = (id: typeof A): CoinPromptEvent => ({ type: 'reopen', id });
+  const name = (p: CoinPrompt): string => (p.at === 'idle' ? 'idle' : p.at === 'asking' ? `asking ${p.id} (later ${p.later.join(' ') || 'none'})` : `put off ${p.ids.join(' ')}`);
+  const eventName = (e: CoinPromptEvent): string => (e.type === 'seen' ? `seen [${e.open.join(' ')}]` : e.type === 'reopen' ? `reopen ${e.id}` : e.type);
+
+  // Every state against every event: the prompt it leads to, or 'no change'. A is the older call, B the newer.
+  const rows: [CoinPrompt, CoinPromptEvent, CoinPrompt | 'no change'][] = [
+    [idle, seen(), 'no change'],
+    [idle, seen(A), asking(A)],
+    [idle, seen(B), asking(B)],
+    [idle, seen(A, B), asking(A)],
+    [idle, ruled, 'no change'],
+    [idle, putOff, 'no change'],
+    [idle, reopen(A), 'no change'],
+    [idle, reopen(B), 'no change'],
+
+    // the window stays on screen whatever the save does; a newer call waits its turn
+    [asking(A), seen(), 'no change'],
+    [asking(A), seen(A), 'no change'],
+    [asking(A), seen(B), 'no change'],
+    [asking(A), seen(A, B), 'no change'],
+    [asking(A), ruled, idle],
+    [asking(A), putOff, deferred(A)],
+    [asking(A), reopen(A), 'no change'],
+    [asking(A), reopen(B), 'no change'],
+
+    [asking(A, [B]), seen(), asking(A)],
+    [asking(A, [B]), seen(A), asking(A)],
+    [asking(A, [B]), seen(B), 'no change'],
+    [asking(A, [B]), seen(A, B), 'no change'],
+    [asking(A, [B]), ruled, deferred(B)],
+    [asking(A, [B]), putOff, deferred(B, A)],
+    [asking(A, [B]), reopen(A), 'no change'],
+    [asking(A, [B]), reopen(B), 'no change'],
+
+    // a call put off is not asked again by a change; a newer call is
+    [deferred(A), seen(), idle],
+    [deferred(A), seen(A), 'no change'],
+    [deferred(A), seen(B), asking(B)],
+    [deferred(A), seen(A, B), asking(B, [A])],
+    [deferred(A), ruled, 'no change'],
+    [deferred(A), putOff, 'no change'],
+    [deferred(A), reopen(A), asking(A)],
+    [deferred(A), reopen(B), 'no change'],
+
+    [deferred(A, B), seen(), idle],
+    [deferred(A, B), seen(A), deferred(A)],
+    [deferred(A, B), seen(B), deferred(B)],
+    [deferred(A, B), seen(A, B), 'no change'],
+    [deferred(A, B), ruled, 'no change'],
+    [deferred(A, B), putOff, 'no change'],
+    [deferred(A, B), reopen(A), asking(A, [B])],
+    [deferred(A, B), reopen(B), asking(B, [A])],
+  ];
+  for (const [from, event, to] of rows) {
+    test(`${name(from)} + ${eventName(event)}: ${to === 'no change' ? to : name(to)}`, () => {
+      const after = coinPromptStep(from, event);
+      if (to === 'no change') expect(after).toBe(from);
+      else expect(after).toEqual(to);
+    });
+  }
+
+  test('every state and event pair has a row above', () => {
+    const covered = new Set(rows.map(([from, e]) => `${from.at} ${e.type}`));
+    expect(COIN_PROMPT_STATES.flatMap(s => COIN_PROMPT_EVENTS.map(t => `${s} ${t}`)).filter(k => !covered.has(k))).toEqual([]);
+  });
+
+  test('a GM who closes the window is not asked that call again, however often the save changes, until they tap it', () => {
+    let p = coinPromptStep(idle, seen(A));
+    expect(p).toEqual(asking(A));
+    p = coinPromptStep(p, putOff);
+    for (let i = 0; i < 5; i++) p = coinPromptStep(p, seen(A));
+    expect(p).toEqual(deferred(A));
+    expect(coinPromptPutOff(p)).toEqual([A]);
+    p = coinPromptStep(p, reopen(A));
+    expect(p).toEqual(asking(A));
+    p = coinPromptStep(coinPromptStep(p, seen()), ruled);
+    expect(p).toEqual(idle);
+  });
+
+  test('a call that arrives while another is put off opens its own window, and the put-off one stays offered', () => {
+    const p = coinPromptStep(deferred(A), seen(A, B));
+    expect(p).toEqual(asking(B, [A]));
+    expect(coinPromptPutOff(p)).toEqual([A]);
+    expect(coinPromptStep(p, ruled)).toEqual(deferred(A));
+  });
+
+  test('the calls offered as put off are those of the prompt, in the order the GM put them off', () => {
+    expect(coinPromptPutOff(idle)).toEqual([]);
+    expect(coinPromptPutOff(asking(A, [B]))).toEqual([B]);
+    expect(coinPromptPutOff(coinPromptStep(asking(A, [B]), putOff))).toEqual([B, A]);
+  });
+
+  test('a step never changes the prompt it was given', () => {
+    for (const [from] of rows) {
+      const copy = JSON.parse(JSON.stringify(from));
+      for (const e of PROMPT_WALK) coinPromptStep(from, e);
+      expect(from).toEqual(copy);
+    }
   });
 });

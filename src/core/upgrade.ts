@@ -1,10 +1,12 @@
 // upgrade.ts: the app update, one machine (docs/state-machines.md, "The app update"). A tab runs its build (`none`)
 // until the room server refuses it for running another (a 426 `upgrade`). Then `decideUpgrade` says whether it may
-// reload; if so it looks for the new build's service worker, follows that worker's count of the files it caches
-// (`installing`), waits for it to take over once every file is cached (`ready`) and reloads (`reloading`). A tab that
-// already reloaded for that build, or cannot note that it did, is `stuck`: it says so and never reloads, so it cannot
-// loop. The worker (src/sw.js) counts its files with `counted` and `installOf` below, the same rule the tab reads.
-// Pure: src/edge/upgrade.ts reads the inputs, sends the events and carries out the effects.
+// reload; if so it notes that it reloads for that build (`noting`), looks for the new build's service worker, follows
+// that worker's count of the files it caches (`installing`), waits for it to take over once every file is cached
+// (`ready`) and reloads (`reloading`). A tab that already reloaded for that build, or cannot keep the note, is `stuck`:
+// it says so and never reloads, so it cannot loop. The note is the machine's own effect, written only on the way out
+// of `none`, so a later refusal writes nothing. The worker (src/sw.js) counts its files with `counted` and `installOf`
+// below, the same rule the tab reads.
+// Pure: src/edge/upgrade.ts reads the inputs, sends the events and carries out the effects, one step at a time.
 
 // ── the decision a refusal brings ──
 export type UpgradeInput = {
@@ -12,18 +14,16 @@ export type UpgradeInput = {
   serverBuild: string;
   /** The server build this tab last reloaded for, or null when it has not reloaded for any. */
   reloadedFor: string | null;
-  /** Whether the tab kept its note that it reloads for `serverBuild` (a tab that cannot keep it could reload forever). */
-  noted: boolean;
 };
 export type Decision = { to: 'reload'; build: string } | { to: 'stuck' };
 
 /**
- * `reload` at most once per server build. A tab that reloaded and was refused again is `stuck`, as is one that cannot
- * note the reload. The tab's own build id is not an input: the server refused it, whatever it believes it runs (a
- * proxy that drops the header gives a refusal with equal ids).
+ * `reload` at most once per server build: a tab that reloaded for it and was refused again is `stuck`. (A tab that
+ * cannot note the reload is stuck too, at its `noted` event.) The tab's own build id is not an input: the server refused
+ * it, whatever it believes it runs (a proxy that drops the header gives a refusal with equal ids).
  */
 export function decideUpgrade(input: UpgradeInput): Decision {
-  return input.reloadedFor === input.serverBuild || !input.noted ? { to: 'stuck' } : { to: 'reload', build: input.serverBuild };
+  return input.reloadedFor === input.serverBuild ? { to: 'stuck' } : { to: 'reload', build: input.serverBuild };
 }
 
 // ── the worker's count ──
@@ -48,12 +48,14 @@ export function countOf(data: unknown): Count | null {
 }
 
 // ── the machine ──
-export const UPDATE_STATES = ['none', 'installing', 'ready', 'reloading', 'stuck'] as const;
+export const UPDATE_STATES = ['none', 'noting', 'installing', 'ready', 'reloading', 'stuck'] as const;
 export type UpdateState = (typeof UPDATE_STATES)[number];
 export type Update =
   /** The tab runs its build; no server refused it. A worker installing in the background changes nothing here. */
   | { at: 'none' }
-  /** Refused; the tab looks for the new build's worker and follows its count (null until the worker's first word). */
+  /** Refused for `build`: the tab notes that it reloads for it (the `note` effect), so it never reloads twice for one build. */
+  | { at: 'noting'; build: string }
+  /** Noted; the tab looks for the new build's worker and follows its count (null until the worker's first word). */
   | { at: 'installing'; build: string; count: Count | null }
   /** The new worker cached every file; the tab reloads when it takes over. */
   | { at: 'ready'; build: string }
@@ -65,8 +67,14 @@ export type Update =
 export type UpdateEvent =
   /** A room request was refused for another build: the decision above. */
   | { type: 'refused'; decision: Decision }
-  /** The worker registration's update check answered: a new worker installs, or none does (no worker, workers blocked, the same build, or the new one already took over, or the check failed). */
-  | { type: 'looked'; installing: boolean }
+  /** The note of `noting` is kept, or the tab cannot keep it (its storage is blocked or full), so a reload could repeat without end. */
+  | { type: 'noted'; kept: boolean }
+  /**
+   * The worker registration's update check answered with the new build's worker: `installing` (its count follows),
+   * `waiting` (installed with every file cached, about to take over), or `none` (no worker, workers blocked, the same
+   * build, the new one already took over, or the check failed). A worker installing is newer than one waiting, so it wins.
+   */
+  | { type: 'looked'; worker: 'installing' | 'waiting' | 'none' }
   /** The new worker's count. */
   | { type: 'caching'; count: Count }
   /** A new worker took control of this page. */
@@ -75,8 +83,12 @@ export type UpdateEvent =
   | { type: 'quiet' };
 export type UpdateEventType = UpdateEvent['type'];
 
-/** `look`: ask the worker registration to update. `wait`: (re)start the quiet timer. `reload`: reload the tab. `stuck`: say the app could not update. */
-export type UpdateEffect = 'look' | 'wait' | 'reload' | 'stuck';
+/**
+ * `note`: note that this tab reloads for the `noting` state's build, and send `noted`. `look`: ask the worker
+ * registration to update. `wait`: (re)start the quiet timer. `reload`: stop the timer and reload the tab. `stuck`: say
+ * the app could not update.
+ */
+export type UpdateEffect = 'note' | 'look' | 'wait' | 'reload' | 'stuck';
 export type UpdateStep = { state: Update; effects: readonly UpdateEffect[] };
 
 /**
@@ -90,6 +102,7 @@ export const NO_UPDATE: Update = { at: 'none' };
 
 const same = (u: Update): UpdateStep => ({ state: u, effects: [] });
 const reload = (build: string): UpdateStep => ({ state: { at: 'reloading', build }, effects: ['reload'] });
+const stuck: UpdateStep = { state: { at: 'stuck' }, effects: ['stuck'] };
 /** Where a count leads: the reload when a file failed (the reload fetches the app from the network, and the browser tries the worker again), `ready` when every file is cached. */
 const afterCount = (build: string, count: Count): UpdateStep => {
   const install = installOf(count);
@@ -101,23 +114,29 @@ type Cell<S extends UpdateState, E extends UpdateEventType> = (u: Extract<Update
 /** Each state's answer to each event. The typecheck asks for every cell. */
 export const TABLE: { readonly [S in UpdateState]: { readonly [E in UpdateEventType]: Cell<S, E> } } = {
   none: {
-    refused: (_, e) => (e.decision.to === 'reload' ? { state: { at: 'installing', build: e.decision.build, count: null }, effects: ['look', 'wait'] } : { state: { at: 'stuck' }, effects: ['stuck'] }),
+    refused: (_, e) => (e.decision.to === 'reload' ? { state: { at: 'noting', build: e.decision.build }, effects: ['note'] } : stuck),
+    noted: same, looked: same, caching: same, controlled: same, quiet: same,
+  },
+  /** A refusal while the tab notes, or later, is for the update already under way: it writes no second note. */
+  noting: {
+    refused: same,
+    noted: (u, e) => (e.kept ? { state: { at: 'installing', build: u.build, count: null }, effects: ['look', 'wait'] } : stuck),
     looked: same, caching: same, controlled: same, quiet: same,
   },
   installing: {
-    refused: same,
-    looked: (u, e) => (e.installing ? { state: u, effects: ['wait'] } : reload(u.build)),
+    refused: same, noted: same,
+    looked: (u, e) => (e.worker === 'installing' ? { state: u, effects: ['wait'] } : e.worker === 'waiting' ? { state: { at: 'ready', build: u.build }, effects: ['wait'] } : reload(u.build)),
     caching: (u, e) => afterCount(u.build, e.count),
     controlled: u => reload(u.build),
     quiet: u => reload(u.build),
   },
   ready: {
-    refused: same, looked: same, caching: same,
+    refused: same, noted: same, looked: same, caching: same,
     controlled: u => reload(u.build),
     quiet: u => reload(u.build),
   },
-  reloading: { refused: same, looked: same, caching: same, controlled: same, quiet: same },
-  stuck: { refused: same, looked: same, caching: same, controlled: same, quiet: same },
+  reloading: { refused: same, noted: same, looked: same, caching: same, controlled: same, quiet: same },
+  stuck: { refused: same, noted: same, looked: same, caching: same, controlled: same, quiet: same },
 };
 
 /** The next state and what to do. A cell that changes nothing answers the same state object. */

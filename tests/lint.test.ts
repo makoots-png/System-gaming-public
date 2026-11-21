@@ -1196,7 +1196,7 @@ test('a view keeps no machine in flags: its closure state is counted per file, a
     'src/views/kit-parts.js': { count: 2, why: 'the count of blocks made, for their ids; a threshold\'s and an end\'s effects editors, drawn when first ticked' },
     'src/views/onboard.js': { count: 2, why: 'first-run setup\'s window and its step (its steps are core onboarding.ts)' },
     'src/views/skills.js': { count: 2, why: 'the skill maker\'s type and kind on screen' },
-    'src/views/coin.js': { count: 1, why: 'the roll whose coin window is open or queued' },
+    'src/views/coin.js': { count: 1, why: 'the GM\'s window for the coin calls: the call it asks and the calls put off (src/core/coin.ts CoinPrompt, moved only by coinPromptStep); lost on a reload by design' },
     'src/views/custom.js': { count: 1, why: 'the HP last felt, so a buzz follows only a change' },
     'src/views/inventory.js': { count: 1, why: 'the bag\'s tab on screen' },
     'src/views/loot.js': { count: 1, why: 'the item maker\'s type on screen and whether its slot was set by hand' },
@@ -1369,7 +1369,7 @@ test('every let a view keeps for the page is named here with what it holds, and 
   };
   const named: Record<string, string> = {
     'bestiary.js lastHtml': what.drawn,
-    'coin.js asking': 'the roll whose coin window is open or queued; null when none',
+    'coin.js prompt': 'the GM\'s window for the coin calls: the call it asks and the calls put off (src/core/coin.ts CoinPrompt, moved only by coinPromptStep); lost on a reload by design',
     'combat.js surprised': 'the side the GM marked surprised before the start; the fight takes it at its start',
     'combat.js tableRefusal': 'the last refusal of a player\'s move for the fight doc, its count inside it (`n`), so a repeat is told again',
     'combat.js lastBurst': 'the last threshold burst for the fight doc, its count inside it (`n`), so a repeat is drawn again',

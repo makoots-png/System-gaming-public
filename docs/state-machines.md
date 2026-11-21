@@ -1015,6 +1015,49 @@ Where it lives:
 | The test to copy | `tests/coin.test.ts`; the walk's events are in `tests/models/coin-events.ts` |
 | The recipe | docs/guide/hunters.md, "A state or event of the ... machine" |
 
+## The GM's window for the coin calls
+
+Every state reachable from no call to rule, over two calls, under the 8 events of tests/models/coin-events.ts, breadth first. The walk found 9 states and 33 steps.
+
+### The GM's window for the coin calls, one at a time
+
+```mermaid
+---
+title: The GM's window for the coin calls, one at a time
+---
+stateDiagram-v2
+  state "No call to rule" as s1
+  state "A call's window open" as s2
+  state "Calls put off (the coin card offers Rule)" as s3
+  state "A call's window open, a call put off" as s4
+  [*] --> s1
+  s1 --> s2 : a call arrives (or the page opens with calls in the air)
+  s2 --> s1 : the GM taps Right, Wrong or Let the coin decide
+  s2 --> s3 : the GM taps Later, presses Escape or taps beside the window
+  s3 --> s1 : the put-off calls are ruled elsewhere or leave
+  s3 --> s2 : a call arrives (or the page opens with calls in the air)
+  s3 --> s4 : a call arrives (or the page opens with calls in the air)
+  s3 --> s2 : the GM taps Rule on a put-off call
+  s4 --> s2 : a put-off call is ruled elsewhere or leaves
+  s4 --> s3 : the GM taps Right, Wrong or Let the coin decide
+  s4 --> s3 : the GM taps Later, presses Escape or taps beside the window
+  s3 --> s4 : the GM taps Rule on a put-off call
+```
+
+The GM's phone only. Two calls, the older asked first; which call and in what order the GM put them off is left out. A change of the save never asks a put-off call again (audit SMX-views-7: closing the window once opened it again at once); only a tap on Rule in the coin card does, and a newer call opens its own window. An open window stays on screen whatever the save does, so the GM answers it. The prompt lives on the page: a new page asks each call in the air again. A ruling the save refuses is put off like Later.
+
+4 chart states, 11 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `CoinPrompt`, `CoinPromptEvent`, `COIN_PROMPT_STATES` and `COIN_PROMPT_EVENTS` in `src/core/coin.ts` |
+| What changes it | `coinPromptStep(prompt, event)` and its `PROMPT_TABLE`, through `prompted` in `src/views/coin.js`, which keeps the value, opens the window on entering asking and draws the put-off calls |
+| Who calls it | `src/views/coin.js`: every change of the save (`seen`), the window's answer (`ruled`, `putOff`), the coin card's Rule (`reopen`) |
+| The test to copy | `tests/coin.test.ts` ("the GM's window for the calls"); the walk's events are in `tests/models/coin-events.ts`; on screen, `tests/e2e/coin.e2e.ts` ("is not asked again") |
+| The recipe | docs/guide/hunters.md, "A state or event of the ... machine" |
+
 ## First-run setup
 
 Every step reachable from Welcome and from an invite link under the 14 events of tests/models/onboarding-events.ts, breadth first. The walk found 8 states and 18 steps.
@@ -1421,7 +1464,7 @@ Where it lives:
 
 ## The app update
 
-Every state reachable from a tab running its build under the 12 events of tests/models/upgrade-events.ts (a worker of two files), breadth first. The walk found 7 states and 84 steps.
+Every state reachable from a tab running its build under the 15 events of tests/models/upgrade-events.ts (a worker of two files), breadth first. The walk found 8 states and 120 steps.
 
 ### The app update, from a refusal to the new build
 
@@ -1431,33 +1474,37 @@ title: The app update, from a refusal to the new build
 ---
 stateDiagram-v2
   state "Runs its build" as s1
-  state "The new worker caches the app (Updating 40%)" as s2
+  state "Notes that it reloads for the new build" as s2
   state "Says it is out of date, never reloads" as s3
-  state "Reloads into the new build" as s4
+  state "The new worker caches the app (Updating 40%)" as s4
   state "Every file cached, the new worker takes over (Updating 100%)" as s5
+  state "Reloads into the new build" as s6
   [*] --> s1
   s1 --> s2 : the room server runs another build
-  s1 --> s3 : refused again for the build it reloaded for, or it cannot note the reload
-  s2 --> s4 : no new worker installs (none, blocked, the same build, or it already took over)
-  s2 --> s4 : a file does not cache
-  s2 --> s5 : the last file is cached
-  s2 --> s4 : the new worker takes control
-  s2 --> s4 : no word from the worker for 4 s
-  s5 --> s4 : the new worker takes control
-  s5 --> s4 : no word from the worker for 4 s
+  s1 --> s3 : refused again for the build it reloaded for
+  s2 --> s4 : the note is kept
+  s2 --> s3 : it cannot keep the note (storage blocked or full)
+  s4 --> s5 : the new worker is found installed, waiting to take over
+  s4 --> s6 : no new worker installs (none, blocked, the same build, or it already took over)
+  s4 --> s6 : a file does not cache
+  s4 --> s5 : the last file is cached
+  s4 --> s6 : the new worker takes control
+  s4 --> s6 : no word from the worker for 4 s
+  s5 --> s6 : the new worker takes control
+  s5 --> s6 : no word from the worker for 4 s
 ```
 
 The chart shows one tab. A worker installing while no server refused the tab changes nothing on it, so those arrows are not drawn. The quiet time starts again at each word of the worker, so a phone still counting is never reloaded mid-count. After a reload the page is the new build and its update starts again at "Runs its build"; a tab refused again for the build it reloaded for is stuck. What the worker does with a file that fails (it drops its cache and never takes over) is in src/sw.js.
 
-5 chart states, 9 arrows. No step is hidden.
+6 chart states, 12 arrows. No step is hidden.
 
 Where it lives:
 
 | What | Where |
 |---|---|
 | The union | `Update`, `UpdateEvent` and `UPDATE_STATES` in `src/core/upgrade.ts`; the worker's `Count`, `counted` and `installOf` beside them |
-| What changes it | `updateStep(update, event)` and its `TABLE`; `decideUpgrade` is the refusal's decision |
-| Who calls it | `src/edge/upgrade.ts` (`upgradeRefused`, called by `src/edge/sync.ts` on a 426), the one writer; `src/views/room-pill.ts` reads it; `src/sw.js` posts the count |
+| What changes it | `updateStep(update, event)` and its `TABLE`; `decideUpgrade` is the refusal's decision; the note that the tab reloads for a build is the `note` effect, written only on the way out of `none` |
+| Who calls it | `src/edge/upgrade.ts` (`upgradeRefused`, called by `src/edge/sync.ts` on a 426), the one writer, one step at a time (an event told while a step's effects run waits in its `queue`); `src/views/room-pill.ts` reads it; `src/sw.js` posts the count |
 | The test to copy | `tests/upgrade.test.ts`, `tests/sw.test.ts`; the walk's events are in `tests/models/upgrade-events.ts` |
 | The recipe | docs/guide/hunters.md, "A state or event of the ... machine" |
 

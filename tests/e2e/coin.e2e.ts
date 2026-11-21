@@ -169,3 +169,80 @@ test('a reload on either phone while the coin is in the air keeps it in the air 
     expect(await landed(player)).toEqual({ side: 'tails', words: 'Critical success' });
   });
 });
+
+/** The calls the GM put off, as the coin card offers them. */
+const putOff = (gm: Page) => card(gm).locator('[data-put-off]');
+
+test('a GM who closes a coin call\'s window is not asked again until they tap Rule on it in the coin card, and the ruling still reaches the player', async ({ device }) => {
+  const { gm, player } = await room(device);
+  await flipShows(gm, 'heads');
+  await check(player, 20);
+  await call(player, 'Tails');
+  await expect(gmWindow(gm)).toContainText(`${HUNTER} called Tails`);
+
+  await test.step('Escape puts the call off: the window stays closed and the coin card offers the call', async () => {
+    await gm.keyboard.press('Escape');
+    await expect(putOff(gm)).toContainText(`${HUNTER} called Tails`);
+    await expect(gmWindow(gm)).toHaveCount(0);
+  });
+  await test.step('the GM can look at the party board while the call waits', async () => {
+    await go(gm, 'status');
+    await go(gm, 'gm');
+    await expect(gm.locator('#gm-board .gm-card.remote', { hasText: HUNTER })).toBeVisible();
+    await expect(gmWindow(gm)).toHaveCount(0);
+  });
+  await test.step('Rule opens the window again; Later and a tap beside it each put it off again', async () => {
+    await putOff(gm).getByRole('button', { name: 'Rule' }).tap();
+    await answerWindow(gm, 'Coin call', 'Later');
+    await expect(putOff(gm)).toHaveCount(1);
+    await putOff(gm).getByRole('button', { name: 'Rule' }).tap();
+    await expect(gmWindow(gm)).toBeVisible();
+    await gmWindow(gm).tap({ position: { x: 4, y: 4 } });
+    await expect(gmWindow(gm)).toHaveCount(0);
+    await expect(putOff(gm)).toHaveCount(1);
+  });
+  await test.step('Rule, then Right: the player\'s coin lands on the called side and the card no longer offers the call', async () => {
+    await putOff(gm).getByRole('button', { name: 'Rule' }).tap();
+    await answerWindow(gm, 'Coin call', 'Right');
+    expect(await landed(player)).toEqual({ side: 'tails', words: 'Critical success' });
+    await expect(putOff(gm)).toHaveCount(0);
+    await expect(card(gm)).toBeHidden();
+  });
+});
+
+test('a call that arrives while another is put off opens its own window, and the put-off call stays in the coin card', async ({ device }) => {
+  const { gm, player } = await room(device);
+  await check(player, 20);
+  await call(player, 'Heads');
+  await expect(gmWindow(gm)).toContainText(`${HUNTER} called Heads`);
+  await gm.keyboard.press('Escape');
+  await expect(putOff(gm)).toHaveCount(1);
+
+  await check(player, 1);
+  await card(player).locator('li', { hasText: 'Natural 1' }).getByRole('button', { name: 'Tails', exact: true }).tap();
+  await expect(gmWindow(gm)).toContainText('Natural 1');
+  await expect(gmWindow(gm)).toContainText(`${HUNTER} called Tails`);
+  await expect(putOff(gm)).toHaveCount(1);
+  await expect(putOff(gm)).toContainText(`${HUNTER} called Heads`);
+  await answerWindow(gm, 'Coin call', 'Wrong');
+  await expect(gmWindow(gm)).toHaveCount(0);
+  await expect(putOff(gm)).toContainText(`${HUNTER} called Heads`);
+});
+
+test('on a 390 px phone the GM\'s put-off call fits the screen beside the nav and its Rule button is a thumb\'s size', async ({ device }) => {
+  const { gm, player } = await room(device);
+  await check(player, 20);
+  await call(player, 'Heads');
+  await expect(gmWindow(gm)).toBeVisible();
+  await gm.keyboard.press('Escape');
+  await expect(putOff(gm)).toHaveCount(1);
+  await expect.poll(() => card(gm).evaluate(el => el.getAnimations({ subtree: true }).filter(a => a.playState === 'running').length)).toBe(0);
+  const box = await card(gm).evaluate(el => {
+    const r = el.getBoundingClientRect(), b = el.querySelector('[data-put-off] button')!.getBoundingClientRect();
+    return { left: r.left, right: r.right, bottom: r.bottom, button: b.height, nav: document.getElementById('nav-bottom')!.getBoundingClientRect().top, width: innerWidth };
+  });
+  expect(box.left).toBeGreaterThanOrEqual(0);
+  expect(box.right).toBeLessThanOrEqual(box.width);
+  expect(box.bottom).toBeLessThanOrEqual(box.nav);
+  expect(box.button).toBeGreaterThanOrEqual(44);
+});

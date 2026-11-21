@@ -1,7 +1,8 @@
 // coin.ts: the coin call (docs/agent-handoff/later-phases/coin-notes.md). On a natural 1 or 20 of a check outside a fight
 // the player calls heads or tails. In a room the GM's phone picks the side the coin lands on; alone, a true flip does. This
 // file holds the rule for when a roll calls the coin, the one table of a coin's life, the side the GM's phone sends, what
-// a landing means, and the parsers of a stored coin. Pure: the die and the flip are rolled in src/edge/roll.ts.
+// a landing means, the GM's window for the calls (`CoinPrompt`, its own table), and the parsers of a stored coin. Pure:
+// the die and the flip are rolled in src/edge/roll.ts.
 // src/views/coin.js changes a coin only through `transition` (or `stepCoin`, which calls it), in the save steps at the
 // end of the list section (`coinRolled`, `coinCalled`, `coinLanded`, `callTaken`, `callRuled`) given to `store.apply`.
 import { oneOf } from './one-of.ts';
@@ -232,6 +233,80 @@ export function callRuled<S extends CoinSave>(save: S, id: RollId, ruling: Rulin
   if (!c) return { ...save, calls };
   return told({ ...save, calls }, stamp, line(`Coin: ${c.who} called ${SIDE_WORDS[c.call]}`, `Natural ${c.face} for ${c.what}. Ruled ${RULING_WORDS[ruling]}: the coin landed ${SIDE_WORDS[c.side]}.`));
 }
+
+// ── the GM's window for the calls (audit SMX-views-7) ──
+/** Calls the GM put off, in the order put off; never empty. */
+export type CoinPromptIds = readonly [RollId, ...RollId[]];
+/**
+ * The GM's phone's window for the calls in the air. `idle`: no window and none put off. `asking`: the window of call `id`
+ * is on screen, `later` the calls put off before it. `deferred`: no window, and the GM put off `ids`; a change of the
+ * save does not ask them again, a tap on one in the coin card does. Kept by src/views/coin.js for the page, so a new
+ * page asks each call again.
+ */
+export type CoinPrompt =
+  | { readonly at: 'idle' }
+  | { readonly at: 'asking'; readonly id: RollId; readonly later: readonly RollId[] }
+  | { readonly at: 'deferred'; readonly ids: CoinPromptIds };
+export const COIN_PROMPT_STATES = ['idle', 'asking', 'deferred'] as const satisfies readonly CoinPrompt['at'][];
+/** No window and nothing put off: the GM's phone starts so on each page. */
+export const COIN_PROMPT_IDLE: CoinPrompt = { at: 'idle' };
+/**
+ * What moves the prompt. `seen`: the save changed, and `open` are the calls still to rule, oldest first (none on a phone
+ * that is not the GM's). `ruled`: the GM's ruling was written. `putOff`: the window closed with no ruling written (Later,
+ * Escape, a tap beside it, or a ruling the save refused). `reopen`: the GM taps call `id` in the coin card.
+ */
+export type CoinPromptEvent =
+  | { readonly type: 'seen'; readonly open: readonly RollId[] }
+  | { readonly type: 'ruled' }
+  | { readonly type: 'putOff' }
+  | { readonly type: 'reopen'; readonly id: RollId };
+export const COIN_PROMPT_EVENTS = ['seen', 'ruled', 'putOff', 'reopen'] as const satisfies readonly CoinPromptEvent['type'][];
+
+/** Nothing on screen: `ids` put off, or idle when there are none. */
+function waiting(ids: readonly RollId[]): CoinPrompt {
+  const [first, ...rest] = ids;
+  return first === undefined ? COIN_PROMPT_IDLE : { at: 'deferred', ids: [first, ...rest] };
+}
+/** No window on screen and the save changed: the put-off calls still open stay put off, and the oldest other open call is asked. */
+function askOldest(putOff: readonly RollId[], open: readonly RollId[]): CoinPrompt {
+  const kept = putOff.filter(id => open.includes(id)), next = open.find(id => !kept.includes(id));
+  return next === undefined ? waiting(kept) : { at: 'asking', id: next, later: kept };
+}
+type PromptCell<S extends CoinPrompt['at'], T extends CoinPromptEvent['type']> =
+  (s: Extract<CoinPrompt, { at: S }>, e: Extract<CoinPromptEvent, { type: T }>) => CoinPrompt;
+/**
+ * What each event does in each state; a cell that answers its state unchanged changes nothing. One window at a time: an
+ * open window stays on screen whatever the save does (the GM answers it), and a tap on a put-off call waits until it closes.
+ */
+const PROMPT_TABLE: { readonly [S in CoinPrompt['at']]: { readonly [T in CoinPromptEvent['type']]: PromptCell<S, T> } } = {
+  idle: {
+    seen: (_, e) => askOldest([], e.open),
+    ruled: s => s,
+    putOff: s => s,
+    reopen: s => s,
+  },
+  asking: {
+    seen: (s, e) => ({ ...s, later: s.later.filter(id => e.open.includes(id)) }),
+    ruled: s => waiting(s.later),
+    putOff: s => waiting([...s.later, s.id]),
+    reopen: s => s,
+  },
+  deferred: {
+    seen: (s, e) => askOldest(s.ids, e.open),
+    ruled: s => s,
+    putOff: s => s,
+    reopen: (s, e) => (s.ids.includes(e.id) ? { at: 'asking', id: e.id, later: s.ids.filter(id => id !== e.id) } : s),
+  },
+};
+const samePrompt = (a: CoinPrompt, b: CoinPrompt): boolean => JSON.stringify(a) === JSON.stringify(b);
+/** The prompt after `e`; the same value when `e` changes nothing, so the view opens a window only on entering `asking`. */
+export function coinPromptStep(s: CoinPrompt, e: CoinPromptEvent): CoinPrompt {
+  const row = PROMPT_TABLE[s.at] as { readonly [T in CoinPromptEvent['type']]: (s: CoinPrompt, e: CoinPromptEvent) => CoinPrompt };
+  const next = row[e.type](s, e);
+  return samePrompt(next, s) ? s : next;
+}
+/** The calls the GM put off, in the order put off: the coin card offers each. */
+export const coinPromptPutOff = (s: CoinPrompt): readonly RollId[] => (s.at === 'asking' ? s.later : s.at === 'deferred' ? s.ids : []);
 
 // ── the boundary ──
 type Rec = Record<string, unknown>;

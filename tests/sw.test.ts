@@ -45,7 +45,7 @@ async function install(fails: ReadonlySet<string>): Promise<Installed> {
 
 /** What a refused tab's update machine makes of the messages, as src/edge/upgrade.ts feeds them. */
 function tabAfter(posted: readonly unknown[]): Update {
-  let u = updateStep(NO_UPDATE, { type: 'refused', decision: { to: 'reload', build: built.build } }).state;
+  let u = updateStep(updateStep(NO_UPDATE, { type: 'refused', decision: { to: 'reload', build: built.build } }).state, { type: 'noted', kept: true }).state;
   for (const m of posted) { const count = countOf(m); if (count) u = updateStep(u, { type: 'caching', count }).state; }
   return u;
 }

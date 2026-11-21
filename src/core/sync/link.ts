@@ -147,7 +147,7 @@ export type LinkEvent =
   /** A GM's poll answered that the key it sent is not the room's GM key: raised by the edge after the poll answer. */
   | { type: 'keyLost'; gen: Gen }
   | { type: 'failed'; gen: Gen; kind: FailKind }
-  /** A 426 from any request, current or not: it is about the build, not a room. `stuck` comes from `decideUpgrade`. */
+  /** A 426 from any request, current or not: it is about the build, not a room. `stuck` comes from the update machine (`decideUpgrade`, or a note it cannot keep). */
   | { type: 'upgrade'; stuck: boolean };
 export type LinkEventType = LinkEvent['type'];
 

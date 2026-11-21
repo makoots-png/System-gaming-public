@@ -7,6 +7,7 @@ import { bfs, machine } from '../statecharts.ts';
 /** What the tab shows or does in each state; the pill's words in brackets. */
 const LABEL: { readonly [S in UpdateState]: string } = {
   none: 'Runs its build',
+  noting: 'Notes that it reloads for the new build',
   installing: 'The new worker caches the app (Updating 40%)',
   ready: 'Every file cached, the new worker takes over (Updating 100%)',
   reloading: 'Reloads into the new build',
@@ -15,8 +16,11 @@ const LABEL: { readonly [S in UpdateState]: string } = {
 
 function step(e: UpdateEvent): string | null {
   switch (e.type) {
-    case 'refused': return e.decision.to === 'reload' ? 'the room server runs another build' : 'refused again for the build it reloaded for, or it cannot note the reload';
-    case 'looked': return e.installing ? null : 'no new worker installs (none, blocked, the same build, or it already took over)';
+    case 'refused': return e.decision.to === 'reload' ? 'the room server runs another build' : 'refused again for the build it reloaded for';
+    case 'noted': return e.kept ? 'the note is kept' : 'it cannot keep the note (storage blocked or full)';
+    case 'looked': return e.worker === 'installing' ? null
+      : e.worker === 'waiting' ? 'the new worker is found installed, waiting to take over'
+      : 'no new worker installs (none, blocked, the same build, or it already took over)';
     case 'caching': {
       const install = installOf(e.count);
       return install === 'failed' ? 'a file does not cache' : install === 'cached' ? 'the last file is cached' : null;
@@ -41,8 +45,8 @@ export const upgrade = machine<Update, UpdateEvent>({
   }],
   where: [
     ['The union', '`Update`, `UpdateEvent` and `UPDATE_STATES` in `src/core/upgrade.ts`; the worker\'s `Count`, `counted` and `installOf` beside them'],
-    ['What changes it', '`updateStep(update, event)` and its `TABLE`; `decideUpgrade` is the refusal\'s decision'],
-    ['Who calls it', '`src/edge/upgrade.ts` (`upgradeRefused`, called by `src/edge/sync.ts` on a 426), the one writer; `src/views/room-pill.ts` reads it; `src/sw.js` posts the count'],
+    ['What changes it', '`updateStep(update, event)` and its `TABLE`; `decideUpgrade` is the refusal\'s decision; the note that the tab reloads for a build is the `note` effect, written only on the way out of `none`'],
+    ['Who calls it', '`src/edge/upgrade.ts` (`upgradeRefused`, called by `src/edge/sync.ts` on a 426), the one writer, one step at a time (an event told while a step\'s effects run waits in its `queue`); `src/views/room-pill.ts` reads it; `src/sw.js` posts the count'],
     ['The test to copy', '`tests/upgrade.test.ts`, `tests/sw.test.ts`; the walk\'s events are in `tests/models/upgrade-events.ts`'],
     ['The recipe', 'docs/guide/hunters.md, "A state or event of the ... machine"'],
   ],
