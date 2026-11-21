@@ -423,14 +423,15 @@ describe('the bonus keys on a sheet (balance plan sections 9 and 10)', () => {
     expect([low.critFaces, low.critSize, low.costCut]).toEqual([1, RULES.fight.critSizeBase, 0]);
   });
 
-  test('lifesteal and ability haste come from bonuses alone, a hundredth a point: 0 with none (Control 1000 gives none), 12 points 0.12, 99 held at kit.drainMax (0.2) and kit.cooldownCutMax (0.25), never under 0', () => {
-    const K = RULES.fight.kit;
-    expect([plain({}, 1000).drain, plain({}, 1000).cooldownCut]).toEqual([0, 0]);
+  test('lifesteal comes from bonuses alone, a hundredth a point with no cap: 0 with none (Control 1000 gives none), 12 points 0.12, 150 points 1.5, never under 0', () => {
+    expect(plain({}, 1000).drain).toBe(0);
     expect(plain({ drain: 12 }).drain).toBeCloseTo(0.12, 9);
-    expect(plain({ cooldownCut: 12 }).cooldownCut).toBeCloseTo(0.12, 9);
-    expect([plain({ drain: 99, cooldownCut: 99 }).drain, plain({ drain: 99, cooldownCut: 99 }).cooldownCut]).toEqual([K.drainMax, K.cooldownCutMax]);
-    expect([plain({ drain: -50, cooldownCut: -50 }).drain, plain({ drain: -50, cooldownCut: -50 }).cooldownCut]).toEqual([0, 0]);
-    expect([K.drainMax, K.cooldownCutMax]).toEqual([0.2, 0.25]);
+    expect(plain({ drain: 150 }).drain).toBeCloseTo(1.5, 9);
+    expect(plain({ drain: -50 }).drain).toBe(0);
+  });
+
+  test('ability haste comes from bonuses alone, whole points with no cap: 0 with none (Control 1000 gives none), 12 points 12, 600 points 600, never under 0', () => {
+    expect([plain({}, 1000).haste, plain({ haste: 12 }).haste, plain({ haste: 600 }).haste, plain({ haste: -50 }).haste]).toEqual([0, 12, 600, 0]);
   });
 
   test('a bonus on a stat-fed number adds after the curve\'s cap: 30 on potency over Control 1000\'s near-50', () => {

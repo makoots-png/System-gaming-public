@@ -20,6 +20,7 @@ import { rowHp } from '../src/core/combat/row-hp.ts';
 import { heldDieId, LEVELS } from '../src/core/combat/standing.ts';
 import type { HideLevel, Level } from '../src/core/combat/standing.ts';
 import { landOps } from '../src/core/combat/land.ts';
+import { cooldownOf } from '../src/core/combat/charge.ts';
 import { atHp, lifeAt } from './fixtures/life.ts';
 import type { RowPatch } from './fixtures/life.ts';
 
@@ -325,23 +326,27 @@ describe('lifesteal, ability haste and shields received (balance plan section 10
     expect([hpAfter(hit(drinker(0)), 'u'), hit(drinker(0)).drained]).toEqual([50, 0]);
   });
 
-  test('lifesteal is held at kit.drainMax (20%): 99 points of it on a perk heal 8 of 40, as 20 points do', () => {
+  test('lifesteal has no cap: 150 points of it on a perk heal 60 of a hit that takes 40', () => {
     const base = hunterOrigin('bruiser');
-    const perked = (n: number): Body => body('u', { ...base, build: { ...(base as Extract<Origin, { kind: 'hunter' }>).build, perks: { drain: n } } } as Origin, place(5, 5), 'party', { hp: 50 });
-    expect([perked(99).sheet.drain, perked(20).sheet.drain]).toEqual([RULES.fight.kit.drainMax, 0.2]);
-    expect([hpAfter(hit(perked(99)), 'u'), hpAfter(hit(perked(20)), 'u')]).toEqual([58, 58]);
+    const perked = (n: number): Body => body('u', { ...base, build: { ...(base as Extract<Origin, { kind: 'hunter' }>).build, perks: { drain: n } } } as Origin, place(5, 5), 'party', { hp: 10 });
+    const r = hit(perked(150));
+    expect([rowHp(foe) - hpAfter(r, 't'), hpAfter(r, 'u'), r.drained]).toEqual([40, 70, 60]);
   });
 
-  test('ability haste takes its share off the cooldown a use sets: 25% makes 2000 ticks 1500', () => {
+  // League of Legends' formula: cooldown = base * 100 / (100 + haste), in ticks, rounded up to a whole tick.
+  const COOLDOWNS: readonly (readonly [base: number, haste: number, ticks: number])[] = [
+    [3000, 0, 3000], [3000, 100, 1500], [3000, 200, 1000], [3000, 50, 2000], [1000, 25, 800], [1000, 300, 250],
+    [1000, 7, 935], [1, 100, 1], [1, 1000, 1], [0, 0, 0], [0, 200, 0],
+  ];
+
+  test('a cooldown with ability haste is its base times 100 / (100 + haste): 100 halves it, 200 makes it a third, a part of a tick rounds up so a cooldown above 0 stays at least 1 tick, and 0 stays 0', () => {
+    for (const [base, haste, ticks] of COOLDOWNS) expect(cooldownOf(base, haste), `${base} at ${haste} haste`).toBe(ticks);
+  });
+
+  test('ability haste sets the cooldown a use sets: 100 haste makes 2000 ticks 1000', () => {
     const slam = { ...forty, cost: { ...forty.cost, cooldown: tick(2000) } };
-    const hasted = body('u', hunterOrigin('bruiser'), place(5, 5), 'party', {}, { cooldownCut: share(0.25) });
-    expect([find(hit(hasted, foe, slam).bodies, 'u').readyAt[slam.id], find(hit(drinker(0), foe, slam).bodies, 'u').readyAt[slam.id]]).toEqual([NOW + 1500, NOW + 2000]);
-  });
-
-  test('ability haste never takes a cooldown to 0: a cooldown of 1 tick stays 1, of 3 at a 25% cut is 3 rounded up, and a cooldown of 0 stays 0', () => {
-    const hasted = body('u', hunterOrigin('bruiser'), place(5, 5), 'party', {}, { cooldownCut: share(0.25) });
-    const ready = (cd: number) => find(hit(hasted, foe, { ...forty, cost: { ...forty.cost, cooldown: tick(cd) } }).bodies, 'u').readyAt[forty.id];
-    expect([ready(1), ready(3), ready(0)]).toEqual([NOW + 1, NOW + 3, NOW]);
+    const hasted = body('u', hunterOrigin('bruiser'), place(5, 5), 'party', {}, { haste: 100 });
+    expect([find(hit(hasted, foe, slam).bodies, 'u').readyAt[slam.id], find(hit(drinker(0), foe, slam).bodies, 'u').readyAt[slam.id]]).toEqual([NOW + 1000, NOW + 2000]);
   });
 
   test('a use\'s shield and its shield op on an ally whose shields received is +50% land half again, and what the use says is what landed', () => {

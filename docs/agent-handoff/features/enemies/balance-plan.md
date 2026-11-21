@@ -215,8 +215,8 @@ stat's curve cap, as perks do today, and never past a sheet clamp (speed's range
 | Crit chance, crit damage, tenacity, mana cost cut | crit faces, crit size, tenacity, cost cut | `critFaces`, `critSize`, `tenacity`, `costCut` |
 | The four penetrations | section 9 | four keys |
 | Shield granted (Sterak's), health regen | a worn status (`Item.worn`, today) with a `shield` op, or `regenerating` | none |
-| Lifesteal, omnivamp | **new**: a share of HP damage dealt healed back after rule 14 | `drain` |
-| Ability haste | **new**: a share off cooldowns, the twin of `costCut` | `cooldownCut` |
+| Lifesteal, omnivamp | **new**: a share of HP damage dealt healed back after rule 14, with no cap (the owner, Nov 21: "No cap on life steal") | `drain` |
+| Ability haste | **new**: whole points, League of Legends' formula, cooldown = base × 100 / (100 + haste): 100 halves a cooldown, 200 makes it a third, none reaches 0; no cap (the owner, Nov 21: "make haste work like it does in LoL now, where cdr adds in a way that's not purely additive. Look up their formula and use it.") | `haste` |
 | Shields received stronger | **new**: `shielded` beside `dealt`, `taken`, `healed` in `SHARE_ON` | worn status |
 | Mana regen, slow resist | not built: mana comes back on a clear by design; tenacity covers slows | none |
 
@@ -228,7 +228,7 @@ A key a stat feeds costs the stat points that make the same change on the sample
 (`1 / r.hpMax`): `threat` by Presence, `speed` and `move` by Agility,
 `critFaces` by Instinct, `critSize`, `costCut`, `potency` and `aim` by Control, `tenacity` by Strength and Discipline
 together, and every other key by the stat that feeds it in `derive`. The four penetrations cost by section 9's rule. A
-new key no stat feeds (`drain`, `cooldownCut`) costs its worth in standard actions over the reference fight, at the rate
+new key no stat feeds (`drain`, `haste`) costs its worth in standard actions over the reference fight, at the rate
 a worn status pays (`r.strike / r.phys`). `tests/item-budget.test.ts` works each expected cost from that rule, not from
 the code. A worn status's shield is weighed by `wornWorth`, as today.
 
@@ -263,7 +263,9 @@ Each can be answered in a line. The default is what is built if there is no answ
 4. **Not extractable: Construct, Ooze, Spirit, and every mythic?** *Default: yes, those four.*
 5. **Do monster types mean anything in a fight** (a weakness, a resistance)? *Default: no, for now. A type decides only
    extraction and the default icon.*
-6. **Lifesteal and ability haste as new item stats** (section 10)? *Default: yes to both, built as unit 1b, each capped
-   (`drain` 20%, `cooldownCut` 25% as `costCut` is).*
+6. **Lifesteal and ability haste as new item stats** (section 10)? *Built as unit 1b. The owner, Nov 21: "No cap on life
+   steal, no make haste work like it does in LoL now, where cdr adds in a way that's not purely additive. Look up their
+   formula and use it." So `drain` has no cap, and `haste` is whole points read by LoL's formula, base × 100 / (100 +
+   haste), with no cap: a point of haste gives the same extra uses at any haste, and its item cost is linear in points.*
 7. **Mana regen and slow resist left out** (mana comes back on a clear; tenacity covers slows)? *Default: left out.*
 8. **May an item's bonus pass a stat's curve cap**, as a perk's does today (never a sheet clamp)? *Default: yes.*

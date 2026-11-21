@@ -2139,16 +2139,16 @@ describe('a reaction (kits design 8.4, table 8.9.1)', () => {
     expect(m.sheet.hpMax - rowHp(m)).toBe(afterDefence(10, 'physical', body(r.fight, 'A').sheet, m.sheet, RULES));
   });
 
-  test('a reactor\'s lifesteal and ability haste count on a reaction as on a use: a riposte that takes 9 heals 20% of it back, 2, says so, and comes back 25% of its 2000 ticks sooner', () => {
+  test('a reactor\'s lifesteal and ability haste count on a reaction as on a use: a riposte that takes 9 heals 20% of it back, 2, says so, and with 100 haste comes back in 1000 of its 2000 ticks', () => {
     const thirsty = (perks: Perk): Origin => { const o = hunterOrigin(); return o.kind === 'hunter' ? { ...o, build: { ...o.build, perks } } : o; };
     const SLOW = { ...RIPOSTE, cost: { ...RIPOSTE.cost, cooldown: tick(2000) } };
     const fight = (perks: Perk) => play(add(row('A', 'party', { abilities: [HIT, SLOW], origin: thirsty(perks) }), row('M', 'foe')), start(['M', 20], ['A', 10]), armed('A', SLOW), hit('M', 'A'));
-    const r = fight({ drain: 20, cooldownCut: 25 }), plain = fight({});
+    const r = fight({ drain: 20, haste: 100 }), plain = fight({});
     const a = body(r.fight, 'A'), m = body(r.fight, 'M'), took = m.sheet.hpMax - rowHp(m);
     expect(took).toBe(9);
     expect(rowHp(a) - rowHp(body(plain.fight, 'A'))).toBe(Math.round(took * 0.2));
     expect(running(r).log.some(l => l.text.includes(`A drains ${Math.round(took * 0.2)}`))).toBe(true);
-    expect(body(plain.fight, 'A').readyAt[SLOW.id]! - a.readyAt[SLOW.id]!).toBe(2000 * 0.25);
+    expect(body(plain.fight, 'A').readyAt[SLOW.id]! - a.readyAt[SLOW.id]!).toBe(2000 - 2000 * 100 / (100 + 100));
   });
 
   test('a use by a hunter with lifesteal says in its line what it drained: a hit that takes 9 at 20% drains 2', () => {

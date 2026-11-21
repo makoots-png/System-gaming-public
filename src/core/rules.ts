@@ -207,10 +207,11 @@ const SPEC = {
     // the defence, so the foe is named; the elite sits between a pack's normal and a boss. One of `fight.kinds`
     // (overrides.ts refuses any other).
     penFoe: 'elite' as 'normal' | 'elite' | 'boss',
-    // The cooldown a point of `cooldownCut` (ability haste) is weighed on (balance plan section 10): an ability that comes
-    // back every this many rounds. 3 is the middle of the built-in skills' cooldowns (Dagger Rush and Marked Shot 2,
-    // Mutilation, Sprint and Shield Wall 3, Stealth and Mending Aura 4, Ruler's Authority 5).
-    cooldownRounds: real(3, 1, 20, 'rounds of the cooldown a cut is weighed on: under 1 an ability is back each turn, 20 is past any fight'),
+    // The cooldown a point of `haste` (ability haste) is weighed on (balance plan section 10): an ability that comes back
+    // every this many rounds, so a point of haste gives a hundredth of a use more every this many rounds. 3 is the middle
+    // of the built-in skills' cooldowns (Dagger Rush and Marked Shot 2, Mutilation, Sprint and Shield Wall 3, Stealth and
+    // Mending Aura 4, Ruler's Authority 5).
+    cooldownRounds: real(3, 1, 20, 'rounds of the cooldown haste is weighed on: under 1 an ability is back each turn, 20 is past any fight'),
   },
   shadow: {
     maxAttempts: whole(3, 1, 20, 'tries at one corpse: 0 would offer an Extract that cannot be tried'),
@@ -472,13 +473,6 @@ const SPEC = {
       // A cost cut stays at `costCutCap`'s 0.25: mana is the dungeon's brake on blasts (design 6). The paper's separate
       // fatigue cut of 0.5 needs a second sheet number; one cut on both is the stricter reading (notes-build-3.md).
       costCutMax: real(0.25, 0, 0.9, 'the most a status cuts a cost: at 1 every use is free'),
-      // Lifesteal and ability haste, an item's two keys no stat feeds (balance plan section 10, the owner's question 6 by
-      // its default). `drainMax` is the most of the HP a body's uses take that it heals back: a fifth, so a body that
-      // hits as hard as it is hit still loses four fifths of what it takes, and a healer stays the party's heal.
-      // `cooldownCutMax` is the most taken off a cooldown, the twin of `costCutMax` at its 0.25: an ability with a
-      // cooldown of 4 rounds comes back in 3.
-      drainMax: real(0.2, 0, 0.9, 'the most of the HP its uses take that a body heals back: at 1 every hit heals all it takes'),
-      cooldownCutMax: real(0.25, 0, 0.9, 'the most a cooldown is cut: at 1 every ability is back at once'),
       rangeAdd: whole(3, 0, 20, 'tiles a status adds to a range: 20 is half the largest map'), // tiles a status adds to its bearer's ranges of 2 or more: a curse's 8 to 11, still under a shot's 12
       wardRounds: whole(1, 0, 10, 'rounds a ward lasts: 10 is past any fight'), // untargetable, invulnerable and safeguard last a round at most, and the first two reach a body once a fight
       boostSides: whole(20, 2, 100, 'sides of a held die: a d100 is the largest a sheet names'), // a held die is at most a d20 (Expected Outcome)
@@ -633,14 +627,14 @@ export function rankForLevel(R: Rules, level: number): Rank {
 // No `phys`, `mag` or `sup`: the owner (Nov 21), "Idk about attack and ability power. I think that's hard to do." A bonus raises power through Strength, Power and Presence.
 export const BONUS_KEYS = [...STAT_KEYS, 'hpMax', 'manaMax', 'fatigueMax', 'carry', 'speed', 'move',
   'armorPen', 'resistPen', 'armorPenFlat', 'resistPenFlat', 'react', 'aim', 'will', 'critFaces', 'critSize', 'opening',
-  'tenacity', 'potency', 'threat', 'hold', 'costCut', 'drain', 'cooldownCut'] as const satisfies readonly (StatKey | SheetNumber)[];
+  'tenacity', 'potency', 'threat', 'hold', 'costCut', 'drain', 'haste'] as const satisfies readonly (StatKey | SheetNumber)[];
 export type BonusKey = (typeof BONUS_KEYS)[number];
 /**
  * The bonus keys whose sheet number is a share or a multiplier (crit size 1.5 to 2, the threat multiplier, the channel's
- * hold, the cost cut, lifesteal, ability haste): a bonus is a whole number, so a point of one of these is a hundredth of
- * the number (derive.ts).
+ * hold, the cost cut, lifesteal): a bonus is a whole number, so a point of one of these is a hundredth of the number
+ * (derive.ts). Ability haste is whole points, as in League of Legends, so it is not one of them.
  */
-export const BONUS_HUNDREDTHS: readonly BonusKey[] = ['critSize', 'threat', 'hold', 'costCut', 'drain', 'cooldownCut'];
+export const BONUS_HUNDREDTHS: readonly BonusKey[] = ['critSize', 'threat', 'hold', 'costCut', 'drain'];
 export type Perk = Partial<Record<BonusKey, number>>;
 export type Path = { name: string; alloc: Partial<Record<StatKey, number>>; tiers: Perk[][] };
 /**
@@ -652,7 +646,7 @@ export const BONUS_LABELS: Readonly<Record<BonusKey, string>> = {
   armorPen: '% Armor penetration', resistPen: '% Magic penetration',
   armorPenFlat: 'Lethality', resistPenFlat: 'Unravel', react: 'Reaction', aim: 'Accuracy', will: 'Will', critFaces: 'Crit faces',
   critSize: '% Crit size', opening: 'Opening', tenacity: 'Tenacity', potency: 'Potency', threat: '% Threat', hold: '% Channel hold', costCut: '% Cost cut',
-  drain: '% Lifesteal', cooldownCut: '% Ability haste',
+  drain: '% Lifesteal', haste: 'Ability haste',
 };
 export const pathOf = (R: Rules, id: unknown): Path | null => {
   const paths = (R.paths || {}) as Record<string, unknown>;

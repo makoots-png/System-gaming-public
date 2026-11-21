@@ -100,7 +100,7 @@ const dieMean = (text: string, body: Scope['user'], R: BudgetRules): number => m
 /** The four penetrations, which no stat feeds alone (Control feeds the percent pair of both): each is weighed by `penCost`. */
 type PenKey = 'armorPen' | 'resistPen' | 'armorPenFlat' | 'resistPenFlat';
 /** Lifesteal and ability haste, which no stat feeds: each is weighed by its worth a round (`drainCost`, `hasteCost`). */
-type UnfedKey = 'drain' | 'cooldownCut';
+type UnfedKey = 'drain' | 'haste';
 /**
  * The stat that feeds each other sheet key in `derive` (balance plan section 10): a bonus on the key costs the points of
  * that stat that make the same change on the sample wearer. Tenacity reads Strength and Discipline together, so its
@@ -150,13 +150,14 @@ function drainCost(r: Rates, R: BudgetRules): number {
   return unfedCost(unitOf('drain') * taken * hpRate(r.rank, R), r);
 }
 /**
- * A point of ability haste, `cooldownCut` (a hundredth): an ability that comes back every `itemBudget.cooldownRounds`
- * rounds is used a hundredth of `1 / cooldownRounds` more times a round, each extra use weighed as a whole standard
- * action. The bar weighs the built-ins with a cooldown at about their budget a use (worth.ts), and what a cooldown holds
+ * A point of ability haste, `haste` (whole points): a cooldown of C rounds becomes C * 100 / (100 + haste) (charge.ts
+ * `cooldownOf`), so the ability is used (100 + haste) / (100 * C) times a round, and each point adds a hundredth of a
+ * use every C rounds whatever the haste already is: the cost is linear in points. C is `itemBudget.cooldownRounds`;
+ * each extra use is weighed as a whole standard action. The bar weighs the built-ins with a cooldown at about their budget a use (worth.ts), and what a cooldown holds
  * back that the bar cannot weigh (a hide, a haste, a field) is why it has one, so a whole action is the reading that
  * does not undercharge it.
  */
-const hasteCost = (r: Rates, R: BudgetRules): number => unfedCost(unitOf('cooldownCut') / R.itemBudget.cooldownRounds, r);
+const hasteCost = (r: Rates, R: BudgetRules): number => unfedCost(0.01 / R.itemBudget.cooldownRounds, r);
 /** Each bonus key's cost in points: a stat point is the unit; every other key by the stat that feeds it, as a penetration, or by its worth a round. */
 const BONUS_COST: { readonly [K in BonusKey]: (r: Rates, R: BudgetRules) => number } = {
   str: () => 1, agi: () => 1, vit: () => 1, pow: () => 1, ins: () => 1, pre: () => 1, ctl: () => 1, dis: () => 1,
@@ -167,7 +168,7 @@ const BONUS_COST: { readonly [K in BonusKey]: (r: Rates, R: BudgetRules) => numb
   threat: r => fedCost('threat', r), hold: r => fedCost('hold', r), costCut: r => fedCost('costCut', r),
   armorPen: (r, R) => penCost('armorPen', r, R), resistPen: (r, R) => penCost('resistPen', r, R),
   armorPenFlat: (r, R) => penCost('armorPenFlat', r, R), resistPenFlat: (r, R) => penCost('resistPenFlat', r, R),
-  drain: drainCost, cooldownCut: hasteCost,
+  drain: drainCost, haste: hasteCost,
 };
 const isArmorSlot = (s: Spendable['slot']): s is ArmorSlot => s !== null && Object.hasOwn(KIT_SHARE, s);
 /**

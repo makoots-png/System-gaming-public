@@ -51,6 +51,17 @@ rest 1.
    penetration today), and a name for flat magic penetration. An item may hold each of the four. Measure it with
    Tenacity from Strength and Discipline: both move damage and control against a boss, which is tough only by
    HP, armor and resist.
+10. How League prices a stat (the owner, Nov 21: "let's look at how league does stats. Their balance system is pretty
+    good, but that's like for a tier"): League gives each stat a gold value from its cheapest item and calls an
+    item's stats over its price its gold efficiency. Ours is `BONUS_COST` in points against a tier's budget. Compare
+    the two tables stat by stat and name where ours differs and why.
+11. Variation inside a tier ("There should be some variation in how strong or weak an item is"): grades inside a
+    tier exist (Rare-, Rare, Rare+). Decide how wide the spread of spend is in one tier and how a drop picks it.
+12. The strongest stats, measured ("Let's also determine what the strongest stats are in that balance run, so we can
+    decide how rare to make them. Things like lifesteal are ok to be on the stronger side because they should be
+    rare to gain"): the simulation gives each bonus key's gain in win share and rounds to kill for one budget's
+    worth of it; the keys are ranked, and a key's rank sets the lowest rarity an item may hold it at and how often
+    a drop rolls it, in place of pricing a strong key up until it is fair. A rule each, in `itemBudget`.
 
 ## What the seed shape could not say
 

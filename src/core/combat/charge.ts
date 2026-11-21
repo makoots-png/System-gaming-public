@@ -31,14 +31,15 @@ const samePlace = (a: Place, b: Place): boolean => a.x === b.x && a.y === b.y;
 // Rule 3.
 export const onCooldown = (a: Ability, user: Body, now: Tick): boolean => now < (user.readyAt[a.id] ?? 0);
 /**
- * Rule 19's cooldown, the twin of rule 4's cost: an ability's cooldown in ticks cut by its user's `cooldownCut` (ability
- * haste), rounded up and never under 1 tick, so only a cooldown of 0 is none.
+ * Rule 19's cooldown with ability haste, League of Legends' formula (the owner, Nov 21: "make haste work like it does in
+ * LoL"): `base * 100 / (100 + haste)`, in ticks. `haste` is whole points, 0 or more (the sheet's `haste`): each point
+ * gives the same extra uses over time, so 100 halves a cooldown and 200 makes it a third, and no haste reaches 0. The
+ * result is rounded up to a whole tick, so a cooldown above 0 stays at least 1 tick and only a cooldown of 0 is none.
  */
-export const cooldownOf = (a: Pick<Ability, 'cost'>, cooldownCut: number): number =>
-  a.cost.cooldown === 0 ? 0 : Math.max(1, Math.ceil(a.cost.cooldown * (1 - cooldownCut)));
-/** A user that has just used `a` at `now`, with `a` ready again once its cut cooldown (`cooldownOf`) has passed: the one place a cooldown is set. */
+export const cooldownOf = (base: number, haste: number): number => Math.ceil(base * 100 / (100 + haste));
+/** A user that has just used `a` at `now`, with `a` ready again once its hasted cooldown (`cooldownOf`) has passed: the one place a cooldown is set. */
 export const cooled = (a: Ability, user: Body, now: Tick): Body =>
-  ({ ...user, readyAt: { ...user.readyAt, [a.id]: tick(now + cooldownOf(a, user.sheet.cooldownCut)) } });
+  ({ ...user, readyAt: { ...user.readyAt, [a.id]: tick(now + cooldownOf(a.cost.cooldown, user.sheet.haste)) } });
 
 /** The stacks of `key` a body holds: its count for a stacking status, 1 for a plain one, 0 for none. */
 export const stacksOn = (b: Body, key: StatusKey): number => { const s = live(b).find(x => x.key === key); return s ? countOn(s) : 0; };

@@ -167,7 +167,7 @@ const onePoint = (key: BonusKey, rank: Rank): number => itemSpend(gear(rarityOf(
  * the stat adds what ten of them add, over ten. The stat of each is the one its formula in derive reads (design 2.2);
  * tenacity reads Strength and Discipline as one score, so its points go half to each.
  */
-const FED: readonly (readonly [Exclude<BonusKey, StatKey | 'armorPen' | 'resistPen' | 'armorPenFlat' | 'resistPenFlat' | 'drain' | 'cooldownCut'>, Partial<Record<StatKey, number>>, number])[] = [
+const FED: readonly (readonly [Exclude<BonusKey, StatKey | 'armorPen' | 'resistPen' | 'armorPenFlat' | 'resistPenFlat' | 'drain' | 'haste'>, Partial<Record<StatKey, number>>, number])[] = [
   ['hpMax', { vit: 10 }, 1], ['manaMax', { pow: 10 }, 1], ['fatigueMax', { vit: 10 }, 1], ['carry', { str: 10 }, 1], ['speed', { agi: 10 }, 1],
   ['move', { agi: 10 }, 1], ['react', { ins: 10 }, 1],
   ['aim', { ctl: 10 }, 1], ['will', { dis: 10 }, 1], ['critFaces', { ins: 10 }, 1], ['critSize', { ctl: 10 }, 0.01], ['opening', { ins: 10 }, 1],
@@ -198,32 +198,41 @@ function penRate(key: 'armorPen' | 'resistPen' | 'armorPenFlat' | 'resistPenFlat
  * Section 10: a key no stat feeds costs its worth a round in standard actions times the tier's strike over a Strength
  * point's physical power, the rate a worn status pays. A percent of lifesteal heals a hundredth of the HP one strike a
  * round takes from a same-rank normal brute (rule 12 with the wearer's own armor percent), each HP worth 1 / (1.5 *
- * sup) of a standard action by a same-rank support (an HP's worth, worth.ts). A percent of ability haste gives an
- * ability that comes back every `itemBudget.cooldownRounds` rounds a hundredth of a use more each of those rounds,
- * each use a whole standard action.
+ * sup) of a standard action by a same-rank support (an HP's worth, worth.ts). A point of ability haste is League of
+ * Legends' formula, cooldown = base * 100 / (100 + haste): on an ability that comes back every
+ * `itemBudget.cooldownRounds` rounds it adds the uses a round one more point gives, the same at any haste, each use a
+ * whole standard action.
  */
-function unfedRate(key: 'drain' | 'cooldownCut', rank: Rank): number {
+function unfedRate(key: 'drain' | 'haste', rank: Rank): number {
   const F = RULES.fight, hit = 4.5 + KINDS.strike.power * referenceBody('bruiser', rank, RULES).sheet.phys;
   const power = (wearer(rank, { str: 10 }).phys - wearer(rank).phys) / 10;
-  if (key === 'cooldownCut') return 0.01 / RULES.itemBudget.cooldownRounds * hit / power;
+  if (key === 'haste') return (usesARound(1) - usesARound(0)) * hit / power;
   const left = monsterSheet(rank, 'brute', 'normal', RULES).armor * (1 - wearer(rank).armorPen / 100);
   const taken = Math.max(0, hit - F.armorFlat * left) * F.armorK / (F.armorK + left);
   const hpWorth = 1 / (1.5 * referenceBody('support', rank, RULES).sheet.sup);
   return 0.01 * taken * hpWorth * hit / power;
 }
 
+/** The uses a round of an ability that comes back every `itemBudget.cooldownRounds` rounds, at `haste`, by League of Legends' formula. */
+const usesARound = (haste: number): number => 1 / (RULES.itemBudget.cooldownRounds * 100 / (100 + haste));
+
 group('each bonus key\'s cost (balance plan sections 9 and 10)', () => {
-  test('a percent of lifesteal or of ability haste costs its worth a round at the rate a worn status pays, at every rank', () => {
-    for (const rank of RANKS) for (const key of ['drain', 'cooldownCut'] as const) expect(onePoint(key, rank), `${key} at ${rank}`).toBeCloseTo(unfedRate(key, rank), 9);
+  test('a percent of lifesteal or a point of ability haste costs its worth a round at the rate a worn status pays, at every rank', () => {
+    for (const rank of RANKS) for (const key of ['drain', 'haste'] as const) expect(onePoint(key, rank), `${key} at ${rank}`).toBeCloseTo(unfedRate(key, rank), 9);
   });
 
-  test('at C a percent of lifesteal spends 0.45 and of ability haste 0.28: a middle rare ring (3.45) holds about 7% of the one or 12% of the other', () => {
-    expect([Number(onePoint('drain', 'C').toFixed(2)), Number(onePoint('cooldownCut', 'C').toFixed(2))]).toEqual([0.45, 0.28]);
+  test('at C a percent of lifesteal spends 0.45 and a point of ability haste 0.28: a middle rare ring (3.45) holds about 7% of the one or 12 haste', () => {
+    expect([Number(onePoint('drain', 'C').toFixed(2)), Number(onePoint('haste', 'C').toFixed(2))]).toEqual([0.45, 0.28]);
   });
 
-  test('a cooldown weighed as longer makes a percent of ability haste cheaper: 6 rounds halve what 3 cost', () => {
+  test('ability haste costs the same a point however much there is: each point gives the same uses more, so 20 haste spend 20 times one', () => {
+    expect(usesARound(101) - usesARound(100)).toBeCloseTo(usesARound(1) - usesARound(0), 12);
+    expect(itemSpend(gear('rare', { bonus: { haste: 20 } }), RULES)!.points).toBeCloseTo(20 * onePoint('haste', 'C'), 9);
+  });
+
+  test('a cooldown weighed as longer makes a point of ability haste cheaper: 6 rounds halve what 3 cost', () => {
     const slower: Rules = { ...RULES, itemBudget: { ...RULES.itemBudget, cooldownRounds: 6 } };
-    expect(itemSpend(gear('rare', { bonus: { cooldownCut: 1 } }), slower)!.points).toBeCloseTo(onePoint('cooldownCut', 'C') / 2, 9);
+    expect(itemSpend(gear('rare', { bonus: { haste: 1 } }), slower)!.points).toBeCloseTo(onePoint('haste', 'C') / 2, 9);
   });
 
   test('a point on a key a stat feeds costs the points of that stat that make the same change, at every rank', () => {
