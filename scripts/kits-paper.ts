@@ -857,7 +857,7 @@ const MACHINES2: readonly { readonly name: string; readonly where: string; reado
   },
   {
     name: '8.9.3 A pushed or pulled body', where: 'resolve.ts rule 18 `shoved`, space.ts `shovePath`', cells: [
-      ['standing', 'a shove lands on it caught', 'moving k', 'k is the tiles, times the kind\'s control factor, rounded down; 0 if rooted'],
+      ['standing', 'a shove lands on it caught', 'moving k', 'k is the tiles, on a boss as on any body; 0 if rooted'],
       ['standing', 'the use missed it (out, ring, resisted)', 'standing', 'A dodge is not a push'],
       ['moving k', 'the next tile is free floor', 'moving k - 1', 'Rough ground costs its `enter`, as a walk'],
       ['moving k', 'the next tile is a wall, a pit, the edge or a body', 'landed', 'No damage for the stop'],
@@ -962,11 +962,11 @@ function part8c(): void {
   out('## 8.10 The budget of wave 2');
   out();
   out(`Table 8.10.1: the damage-taken loop. The party of table 6.2 with every use at the share cap (${1 + KIT2.shareCap} times) the whole fight, against a pack`);
-  out('of three and a boss, with and without the kind factor on the part above 1 (a boss 0.5), against design 6\'s floors (2 and 4 rounds).');
+  out('of three and a boss, which takes the share in full as any body (the owner, Nov 21), against design 6\'s floors (2 and 4 rounds).');
   out();
-  table(['Rank', 'Pack, plain', 'Pack at the cap', 'Boss, plain', 'Boss at the cap, no factor', 'Boss at the cap, with the factor'], SIM.map(r => {
-    const p = partyRounds(r, 'normal'), b = partyRounds(r, 'boss'), fb = F.kinds.boss.control;
-    return [r, p, p / (1 + KIT2.shareCap), b, b / (1 + KIT2.shareCap), b / (1 + KIT2.shareCap * fb)];
+  table(['Rank', 'Pack, plain', 'Pack at the cap', 'Boss, plain', 'Boss at the cap'], SIM.map(r => {
+    const p = partyRounds(r, 'normal'), b = partyRounds(r, 'boss');
+    return [r, p, p / (1 + KIT2.shareCap), b, b / (1 + KIT2.shareCap)];
   }));
   out('Table 8.10.2: one use with an edge, as a share of the same use with one die, on the triangle opponent that dodges or resists the');
   out('kind most (a tank for a strike, which nothing dodges). Attack: the target keeps the lower of two. Defend: it keeps the higher. A held');
@@ -1003,11 +1003,10 @@ function part8c(): void {
   out('builds\' 2.5 to the clamp (design 2.2); the extra action widens it by one turn a round, never more.');
   out();
   out('Table 8.10.5: forced movement and a blink in actions of time. A body pushed n tiles spends n / 6 of a standard action walking back');
-  out('(`moveCost`); a blink of r tiles saves the r / 6 actions a walk would take, less its own cost.');
+  out('(`moveCost`), an elite and a boss as any body (the owner, Nov 21); a blink of r tiles saves the r / 6 actions a walk would take, less its own cost.');
   out();
-  table(['Tiles', 'A push costs its target (actions)', 'On an elite (0.75)', 'On a boss (0.5)', 'A quick blink saves (actions)', 'A standard blink saves'], many(KIT2.blinkMax, i => i + 1).map(n => [
-    n, n <= KIT2.shoveMax ? n * F.moveCost / 100 : '', n <= KIT2.shoveMax ? Math.floor(n * F.kinds.elite.control) * F.moveCost / 100 : '',
-    n <= KIT2.shoveMax ? Math.floor(n * F.kinds.boss.control) * F.moveCost / 100 : '', n * F.moveCost / 100 - F.cost.quick / 100, n * F.moveCost / 100 - F.cost.standard / 100,
+  table(['Tiles', 'A push costs its target (actions)', 'A quick blink saves (actions)', 'A standard blink saves'], many(KIT2.blinkMax, i => i + 1).map(n => [
+    n, n <= KIT2.shoveMax ? n * F.moveCost / 100 : '', n * F.moveCost / 100 - F.cost.quick / 100, n * F.moveCost / 100 - F.cost.standard / 100,
   ]));
   out('Table 8.10.6: a ward is worth the hits it turns away: one round of being struck (table 3.3: about once a round by one brute), as');
   out('a share of the bearer\'s max HP at C. Once a fight, so this is its whole worth.');

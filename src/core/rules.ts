@@ -91,7 +91,6 @@ const KIT_WEIGHT = wholeIn(0, 200, 'a kit\'s weight: 200 is four times the heavi
 const KIT_GUARD = wholeIn(0, 1000, 'a kit\'s armor or resist: armor divides, so 1000 still lets a tenth of a hit through');
 const KIND_FACTOR = realIn(0.1, 20, 'a factor on a monster\'s HP or power: under 0.1 it is not there, past 20 no party scratches it');
 const KIND_STAGGER = realIn(0, 20, 'a stagger bar in same-rank hits: 0 is no bar, past 20 it never fills');
-const KIND_CONTROL = realIn(0, 5, 'a factor on a control status\'s length on the monster: 0 shrugs it off, 5 is five times');
 const KIND_XP = realIn(0, 100, 'a factor on the rank\'s XP: 0 pays none, 100 is a whole gate in one monster');
 const WINDUP = wholeIn(0, 10_000, 'ticks before a use lands: 0 is at once, ten rounds is past any fight\'s patience');
 const RANGE = wholeIn(0, 40, 'tiles a use reaches: 0 is the user\'s own tile, 40 is the largest map\'s side');
@@ -313,15 +312,16 @@ const SPEC = {
       // (sim-log.md, round four). It was 0 until round two.
       heavy: { weight: of(32, KIT_WEIGHT), armor: of(60, KIT_GUARD), resist: of(60, KIT_GUARD) },
     },
-    // Monster kinds (design 2.4, 4.2 and 4.3): factors on max HP and power, the stagger bar in same-rank hits (0 is no
-    // bar), and the factor on a control status's duration. A normal monster is a weaker body, so three hunters beat a
+    // Monster kinds (design 2.4, 4.2 and 4.3): factors on max HP and power, and the stagger bar in same-rank hits (0 is
+    // no bar). A kind shortens and weakens nothing that lands on it: a boss is tougher by its own numbers (here its HP), not
+    // by halving a stun, a push or a share (the owner, Nov 21). A normal monster is a weaker body, so three hunters beat a
     // pack of three. A boss has 3.2 bodies of HP with one turn: at 4 the S party needed 9.8 rounds (the simulation,
     // docs/agent-handoff/rw/sim-log.md), past the 8 a boss fight may last, because the tank spends its turns taunting.
     // `xp` is the factor on the rank's XP (`rankTable`), as the old boss (3) and elite (1.5) rules gave it.
     kinds: {
-      normal: { hp: of(0.6, KIND_FACTOR), power: of(0.7, KIND_FACTOR), stagger: of(0, KIND_STAGGER), control: of(1, KIND_CONTROL), xp: of(1, KIND_XP) },
-      elite: { hp: of(1.5, KIND_FACTOR), power: of(1, KIND_FACTOR), stagger: of(2.5, KIND_STAGGER), control: of(0.75, KIND_CONTROL), xp: of(1.5, KIND_XP) },
-      boss: { hp: of(3.2, KIND_FACTOR), power: of(1.2, KIND_FACTOR), stagger: of(4, KIND_STAGGER), control: of(0.5, KIND_CONTROL), xp: of(3, KIND_XP) },
+      normal: { hp: of(0.6, KIND_FACTOR), power: of(0.7, KIND_FACTOR), stagger: of(0, KIND_STAGGER), xp: of(1, KIND_XP) },
+      elite: { hp: of(1.5, KIND_FACTOR), power: of(1, KIND_FACTOR), stagger: of(2.5, KIND_STAGGER), xp: of(1.5, KIND_XP) },
+      boss: { hp: of(3.2, KIND_FACTOR), power: of(1.2, KIND_FACTOR), stagger: of(4, KIND_STAGGER), xp: of(3, KIND_XP) },
     },
     // Defence (design 3.1 rule 12)
     armorK: whole(100, 1, 10_000, 'the armor curve\'s divisor: 0 makes a hit on bare skin not a number'), // dealt = raw * 100 / (100 + def): 60 armor takes 37% off, and no amount of armor makes a body immune

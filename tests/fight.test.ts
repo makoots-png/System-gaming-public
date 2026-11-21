@@ -10,6 +10,7 @@ import { isRefused } from '../src/core/save-step.ts';
 import { baseStats } from '../src/core/stats.ts';
 import type { Stats } from '../src/core/stats.ts';
 import { kitGear } from '../src/core/hunter/derive.ts';
+import type { MonsterKind } from '../src/core/hunter/derive.ts';
 import { parseFormula } from '../src/core/formula.ts';
 import { dist, place, tiles } from '../src/core/combat/space.ts';
 import type { Place, Side, Terrain } from '../src/core/combat/space.ts';
@@ -1638,6 +1639,27 @@ describe('a limited use (kits design 1.4, table 2.3)', () => {
   });
 });
 
+describe('a monster\'s kind shortens nothing that lands on it (the owner, Nov 21: a boss is tougher by its HP, not by halving effects)', () => {
+  const ROUND = RULES.fight.round;
+  const STUN = ability('curse', 'stun', null, { ...FAR, effect: null, ops: [{ op: 'applyStatus', key: statusKey('stunned'), def: { label: 'Stunned', desc: '', ops: [{ op: 'hold' }] }, duration: tick(2 * ROUND) }] });
+  const SLOW = ability('curse', 'slow', null, { ...FAR, effect: null, ops: [{ op: 'applyStatus', key: statusKey('slowed'), def: { label: 'Slowed', desc: '', ops: [{ op: 'speed', pct: -30 }] }, duration: tick(2 * ROUND) }] });
+  const of = (kind: MonsterKind): Origin => ({ kind: 'monster', name: 'Monster', rank: 'C', archetype: 'brute', monsterKind: kind, tweak: { hp: 1, stats: {} } });
+  /** How long the status `a` puts on lasts on a monster of `kind` at rank C, from A's use. */
+  const lasts = (a: Ability, key: string, kind: MonsterKind): number => {
+    const m = body(play(add(row('A', 'party', { abilities: [a] }), row('M', 'foe', { origin: of(kind) })), start(['A', 20], ['M', 10]), hit('A', 'M', a)).fight, 'M');
+    const s = m.statuses.find(x => x.key === key)!;
+    return s.until! - s.since;
+  };
+
+  test('a stun or a slow on a boss or an elite lasts as long as on a normal monster of its rank', () => {
+    for (const [a, key] of [[STUN, 'stunned'], [SLOW, 'slowed']] as const) {
+      const normal = lasts(a, key, 'normal');
+      expect(normal, key).toBeGreaterThan(0);
+      expect([lasts(a, key, 'elite'), lasts(a, key, 'boss')], key).toEqual([normal, normal]);
+    }
+  });
+});
+
 describe('wards and stealth (kits design 8.1 and 8.7, tables 8.9.4 and 8.9.5)', () => {
   const ROUND = RULES.fight.round;
   const self = (name: string, ...ops: Op[]): Ability => ability('support', name, null, { aim: 'self', effect: null, shape: { kind: 'self' },
@@ -1793,8 +1815,9 @@ describe('wards and stealth (kits design 8.1 and 8.7, tables 8.9.4 and 8.9.5)', 
     expect([hurtOf(strike.fight, 'A') > 0, keys(strike.fight, 'A')]).toEqual([true, ['shade1']]);
   });
 
-  // Ruling 2 by the one rule of fight.ts `useStealth`: a use reveals each hidden body of the other side that it caught and
-  // did not pick. Eyes find a picked body, so hitting it shows nothing new; the ground finds a caught one, whatever the shape.
+  // Ruling 2 and the ruling of Nov 21 by the one rule of fight.ts `useStealth`: a use reveals each hidden body of the other
+  // side it hits but the one a single-target use picked by id. Eyes find a picked body, so hitting it shows nothing new;
+  // an area (a radius, a piercing line) or a use at a place finds every body on its tiles, the aimed one too.
   const aimed = (a: Ability, aim: Place | string): Command => ({ type: 'act', by: id('M'), ability: a.id, aim: typeof aim === 'string' ? id(aim) : aim, rolls: rolls({ A: 1 }, { A: [] }) });
 
   test('a foe\'s line at a place that catches a hidden body reveals it, as a strike at its tile does (the owner\'s ruling 2)', () => {
@@ -1810,6 +1833,21 @@ describe('wards and stealth (kits design 8.1 and 8.7, tables 8.9.4 and 8.9.5)', 
     expect([hurtOf(shot.fight, 'A') > 0, keys(shot.fight, 'A')]).toEqual([true, ['shade1']]);
     const blast = play(...shaded(1, [eye(1)]), aimed(NOVA, place(0, 2)));
     expect([hurtOf(blast.fight, 'A') > 0, keys(blast.fight, 'A')]).toEqual([true, []]);
+  });
+
+  test('a blast aimed by id at a hidden body its user sees reveals it: every area hit reveals (the owner, Nov 21)', () => {
+    const r = play(...shaded(1, [eye(1)]), aimed(NOVA, 'A'));
+    expect([hurtOf(r.fight, 'A') > 0, keys(r.fight, 'A')]).toEqual([true, []]);
+    expect(running(r).log.some(l => /A is seen\.$/.test(l.text))).toBe(true);
+  });
+
+  test('a piercing line aimed by id at a hidden body its user sees reveals it; one that stops at the first body does not', () => {
+    const PIKE = ability('shot', 'pike', '5', { range: tiles(20), shape: { kind: 'line', width: tiles(1), pierce: true } });
+    const STAB = ability('shot', 'stab', '5', { range: tiles(20), shape: { kind: 'line', width: tiles(1), pierce: false } });
+    const seen = (a: Ability) =>
+      play(add(row('A', 'party', { abilities: [HIT, shade(1)] }), row('M', 'foe', { abilities: [HIT, a], statuses: [eye(1)] })), start(['A', 20], ['M', 10]), use('A', shade(1)), aimed(a, 'A'));
+    expect([hurtOf(seen(PIKE).fight, 'A') > 0, keys(seen(PIKE).fight, 'A')]).toEqual([true, []]);
+    expect([hurtOf(seen(STAB).fight, 'A') > 0, keys(seen(STAB).fight, 'A')]).toEqual([true, ['shade1']]);
   });
 
   test('an untargetable body is neither picked nor caught by a foe\'s blast at its place', () => {
@@ -1898,10 +1936,10 @@ describe('forced movement: a shove, a blink, a swap (kits design 8.3, table 8.9.
     expect(at(play(placed([5, 2], [5, 4]), start(['A', 20], ['M', 10]), hit('A', 'M', GRASP)).fight, 'M')).toEqual(place(5, 3));
   });
 
-  test('a boss moves half the tiles rounded down, a rooted body none, and a dodge is not a push', () => {
+  test('a boss moves the whole push as any body does (the owner, Nov 21), a rooted body none, and a dodge is not a push', () => {
     const boss = { kind: 'monster', name: 'Monster', rank: 'E', archetype: 'brute', monsterKind: 'boss', tweak: { hp: 1, stats: {} } } as const;
     const r = play(add(row('A', 'party', { abilities: [P3], place: place(5, 2) }), row('M', 'foe', { place: place(5, 4), origin: boss })), start(['A', 20], ['M', 10]), hit('A', 'M', P3));
-    expect(at(r.fight, 'M')).toEqual(place(5, 4 + Math.floor(3 * RULES.fight.kinds.boss.control)));
+    expect(at(r.fight, 'M')).toEqual(place(5, 7));
     const held = play(placed([5, 2], [5, 4]), { type: 'status', id: id('M'), add: { key: statusKey('root'), def: { label: 'Root', desc: '', ops: [{ op: 'root' }] }, duration: null, tier: 0 } }, start(['A', 20], ['M', 10]), hit('A', 'M', P3));
     expect(at(held.fight, 'M')).toEqual(place(5, 4));
     const shot = ability('shot', 'push-shot', '1', { range: tiles(20), ops: [{ op: 'shove', dir: 'away', from: 'user', tiles: 3 }] });

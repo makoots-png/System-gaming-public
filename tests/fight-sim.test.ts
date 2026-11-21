@@ -263,7 +263,7 @@ const overPlain = (key: string, a: Archetype, first: (rank: Rank) => SimRow, b: 
 };
 const parrying = (rank: Rank) => withW2(hunter('speed', rank), { add: W2.parry });
 const bowExpert = (rank: Rank) => withW2(hunter('speed', rank), { worn: W2.bowExpert() });
-/** The mixed party against a boss that holds a damage-taken curse of +100% all fight: the cap of 1.5, which a boss takes at its control factor. */
+/** The mixed party against a boss that holds a damage-taken curse of +100% all fight: the cap of 1.5, which a boss takes in full as any body (the owner, Nov 21). */
 const vsCursedBoss = (rank: Rank) => (seed: number): FightRecord[] => {
   const boss = monster(rank, 'brute', 'boss', 'boss');
   return [playFight({ rows: [...party(MIXED, rank), { ...boss, row: { ...boss.row, statuses: [W2.exposed(100)] } }] }, seed)];
@@ -280,7 +280,7 @@ const W2_ROWS: readonly Row[] = [
   }))),
   ...(['C', 'S'] as const).map((rank): Row => ({
     name: `a party beats a same-rank boss that holds a damage-taken curse all fight in 4 to 8 rounds at ${rank}`, setup: `party v cursed boss ${rank}`, runs: RUNS.quarter,
-    measure: () => rounds(`party v cursed boss ${rank}`, vsCursedBoss(rank), RUNS.quarter), low: 4, high: 8, lever: 'kit.shareCap and kinds.boss.control',
+    measure: () => rounds(`party v cursed boss ${rank}`, vsCursedBoss(rank), RUNS.quarter), low: 4, high: 8, lever: 'kit.shareCap and kinds.boss.hp',
   })),
   ...(['C', 'S'] as const).map((rank): Row => ({
     name: `a party with Transfer and an extra action a round beats a same-rank boss in 4 to 8 rounds at ${rank}`, setup: `party with turns v boss ${rank}`, runs: RUNS.quarter,

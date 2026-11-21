@@ -10,7 +10,7 @@ import type { Rules } from '../rules.ts';
 import { diceOf } from '../formula.ts';
 import type { Dice } from '../formula.ts';
 import { defaultPlace, dist, GRID_SIDE, openGrid, pathCost, place, straightCost, TERRAIN } from './space.ts';
-import type { Place } from './space.ts';
+import type { Place, Shape } from './space.ts';
 import { acted, cost, interval, opening, paceCost, tick, walkCost } from './timeline.ts';
 import type { Tick } from './timeline.ts';
 import { isUp, rowHp } from './row-hp.ts';
@@ -350,17 +350,26 @@ function hideLands(a: Ability, u: Body, f: Running, R: Rules): boolean {
 /**
  * The stealth events a use raises (notes-7-stealth.md section 4, with the owner's rulings), on `bodies` as it left them:
  * `dealt` on its user when it dealt HP damage to a body of the other side (ruling 6: its own use; a zone or a status it
- * left is not), on each hide but one the use itself put on; and `revealed` on each body of the other side it caught
- * and did not pick (`aim`), ruling 2. Eyes found a picked body (resolve.ts `pickable`), so a hit on it shows nothing a
- * foe did not see; a shape found a caught one on its tile, whether a radius, a line or a strike at a place covered it.
+ * left is not), on each hide but one the use itself put on; and `revealed` on each body of the other side it hit,
+ * ruling 2 and the owner's ruling of Nov 21, but the one body a single-target use was aimed at by id. Eyes found that
+ * picked body (resolve.ts `pickable`), so a hit on it shows nothing a foe did not see; an area (`isArea`) finds every
+ * body it hits on its tile, the one it was aimed at too, and so does any use aimed at a place, a strike at a tile too.
  * A use that only slows or curses a foe gives its user away to nobody.
  */
 function useStealth(a: Ability, u: Body, aim: Aim, outcomes: readonly Outcome[], bodies: readonly Body[], now: Tick, R: Rules): Body[] {
   const side = (id: CombatantId) => bodies.find(b => b.id === id)?.side ?? u.side;
   const dealt = outcomes.some(o => (o.type === 'physical' || o.type === 'magical') && o.dealt > 0 && side(o.target) !== u.side);
-  const hit = new Set(outcomes.filter(o => o.avoid !== 'out' && o.target !== aim && side(o.target) !== u.side).map(o => o.target));
+  const picked = (id: CombatantId) => !isArea(a.shape) && id === aim;
+  const hit = new Set(outcomes.filter(o => o.avoid !== 'out' && !picked(o.target) && side(o.target) !== u.side).map(o => o.target));
   return bodies.map(b => b.id === u.id && dealt ? stealthAfter(b, { type: 'dealt' }, now, R, putBy(a.ops)) : hit.has(b.id) ? stealthAfter(b, { type: 'revealed' }, now, R) : b);
 }
+
+/**
+ * Whether a shape is an area, which reveals every hidden body it hits (the owner, Nov 21): a radius (of any size, its
+ * ring too) or a line that pierces covers tiles, whoever stands on them; a touch, a self and a line that stops at its
+ * first body land on one body.
+ */
+const isArea = (shape: Shape): boolean => shape.kind === 'radius' || (shape.kind === 'line' && shape.pierce);
 
 /** The `crit` effects of a use's outcomes: one per target a critical hit landed on. */
 const critsOf = (outcomes: readonly Outcome[]): Fx => outcomes.filter(o => o.crit).map(o => ({ type: 'crit', id: o.target }));

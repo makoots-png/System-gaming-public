@@ -167,29 +167,28 @@ export function shareOf(b: Pick<Body, 'statuses'>, on: ShareOn): number {
   const s = sharesOf(b, on);
   return s.up * s.down;
 }
-/** A product of shares held within `kit.shareCap` of 1, and on an elite or a boss the part above 1 times its kind's control factor (8.1). */
-function capped(x: number, target: Pick<Body, 'kind' | 'origin'>, R: StandingRules): number {
-  const c = R.fight.kit.shareCap, v = clamp(x, 1 - c, 1 + c);
-  const factor = target.kind === 'monster' && target.origin.kind === 'monster' ? R.fight.kinds[target.origin.monsterKind].control : 1;
-  return v > 1 ? 1 + (v - 1) * factor : v;
-}
+/**
+ * A product of shares held within `kit.shareCap` of 1 (8.1), on any body: a monster's kind weakens no share, so a boss
+ * takes a damage-taken curse or an ambush in full and is tougher by its HP (the owner, Nov 21).
+ */
+const capped = (x: number, R: StandingRules): number => clamp(x, 1 - R.fight.kit.shareCap, 1 + R.fight.kit.shareCap);
 /** Rule 11c: what a hit is multiplied by, from the dealt share of whoever deals it and `target`'s taken share. */
-const hitShare = (dealt: number, target: Pick<Body, 'statuses' | 'kind' | 'origin'>, R: StandingRules): number => capped(dealt * shareOf(target, 'taken'), target, R);
+const hitShare = (dealt: number, target: Pick<Body, 'statuses'>, R: StandingRules): number => capped(dealt * shareOf(target, 'taken'), R);
 /** Rule 11c: what a hit from `user` (null: a status's own per-round damage) on `target` is multiplied by. */
-export const damageShare = (user: Pick<Body, 'statuses'> | null, target: Pick<Body, 'statuses' | 'kind' | 'origin'>, R: StandingRules): number =>
+export const damageShare = (user: Pick<Body, 'statuses'> | null, target: Pick<Body, 'statuses'>, R: StandingRules): number =>
   hitShare(user ? shareOf(user, 'dealt') : 1, target, R);
 /**
  * Rule 11c for an ambush (resolve.ts `ambushes`): what a use's hit from hiding on a target that does not perceive its
  * user is multiplied by. The rules' `stealth.ambush` is one more of the user's dealt increases, of which only the
  * strongest applies (notes-7-stealth.md section 2), so a dealt buff and an ambush do not compound; the product stays
- * within `kit.shareCap`, and on an elite or a boss its part above 1 is times the kind's control factor, as every share's.
+ * within `kit.shareCap`, against a boss as against any body.
  */
-export const ambushShare = (user: Pick<Body, 'statuses'>, target: Pick<Body, 'statuses' | 'kind' | 'origin'>, R: StandingRules): number => {
+export const ambushShare = (user: Pick<Body, 'statuses'>, target: Pick<Body, 'statuses'>, R: StandingRules): number => {
   const s = sharesOf(user, 'dealt');
   return hitShare(Math.max(s.up, R.fight.stealth.ambush) * s.down, target, R);
 };
 /** Rule 11c: what a heal `target` gets is multiplied by, a per-round one too. */
-export const healShare = (target: Pick<Body, 'statuses' | 'kind' | 'origin'>, R: StandingRules): number => capped(shareOf(target, 'healed'), target, R);
+export const healShare = (target: Pick<Body, 'statuses'>, R: StandingRules): number => capped(shareOf(target, 'healed'), R);
 
 // ── the wards and stealth (kits design 8.1 and 8.7) ──
 /** The ops a body's standing reads by name: a ward, stealth, being alert. */

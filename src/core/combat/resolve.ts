@@ -17,7 +17,7 @@ import { acted, delayed, extraNow, extraStep, interval, refunded, stunned, tick 
 import type { Tick } from './timeline.ts';
 import type { Ability, Avoid, CombatantId, Outcome } from './ability-types.ts';
 import { isUp, rowHp } from './row-hp.ts';
-import { controlFactor, removeStatus, shielded, withStatuses } from './effect-ops.ts';
+import { removeStatus, shielded, withStatuses } from './effect-ops.ts';
 import { atTier, countOn, stacked } from './op-amount.ts';
 import { ambushShare, boostsOn, critFacesAgainst, damageShare, edgeOn, edgeStep, healShare, hides, rangeWith, warded, wardedDamage } from './standing.ts';
 import { eyesOf, figureOf, perceivedBy, perceives, watched } from './sight.ts';
@@ -251,7 +251,7 @@ function staggered(target: Body, damage: number, now: Tick, R: ResolveRules): { 
 
 // Rule 17: a channel breaks on a single hit of at least `hold * hpMax`, or on an op that breaks it, unless protected.
 
-// Rule 18: the ability's ops on a target it caught. A control status lasts less on a tenacious or a boss target. A
+// Rule 18: the ability's ops on a target it caught. A control status lasts less on a tenacious target, on a boss as on any. A
 // stacking status adds the op's stacks (kits design 1.1); rule 18a checks its threshold after each application. `seen`:
 // whether a foe that is up has the target in sight, which refuses a hide that starts out of sight (land.ts `landStatus`).
 function landOps(a: Ability, user: Body, target: Body, dice: readonly number[], seen: boolean, now: Tick, R: ResolveRules): { target: Body; keys: StatusKey[]; breaks: boolean; threat: number; fired: LandFired[]; detonated: Status[] } {
@@ -614,8 +614,8 @@ function swapped(a: Ability, userId: CombatantId, outcomes: readonly Outcome[], 
 /** A body moved by another breaks its channel, as one that moves itself drops it (kits design 8.3.4). */
 const moveBreaks = (b: Body, R: ResolveRules): Body => (b.channel?.state === 'holding' ? broken(b, R) : b);
 /**
- * Rule 18c (kits design 8.3, table 8.9.3): each shove of the ability moves each target it caught, `tiles` times the
- * target's control factor (rounded down; 0 for a rooted body), along `shovePath` from its anchor: the user or the aim.
+ * Rule 18c (kits design 8.3, table 8.9.3): each shove of the ability moves each target it caught its `tiles` (0 for a
+ * rooted body; a boss as far as any, the owner, Nov 21), along `shovePath` from its anchor: the user or the aim.
  * A push moves the farthest first, a pull the nearest; then by `y`, then `x`, so a crowd packs. A stop deals nothing.
  */
 function pushed(a: Ability, userId: CombatantId, at: Place, outcomes: readonly Outcome[], rows: Map<CombatantId, Body>, grid: Grid, R: ResolveRules): CombatantId[] {
@@ -626,7 +626,7 @@ function pushed(a: Ability, userId: CombatantId, at: Place, outcomes: readonly O
     const caught = outcomes.filter(o => o.avoid === 'caught' && o.target !== userId).map(o => rows.get(o.target)!).filter(b => b && isUp(b))
       .sort((p, q) => (op.dir === 'away' ? dist(anchor, q.place) - dist(anchor, p.place) : dist(anchor, p.place) - dist(anchor, q.place)) || p.place.y - q.place.y || p.place.x - q.place.x);
     for (const c of caught) {
-      const t = rows.get(c.id)!, k = rooted(t) ? 0 : Math.floor(op.tiles * controlFactor(t, R));
+      const t = rows.get(c.id)!, k = rooted(t) ? 0 : op.tiles;
       const others = [...rows.values()].filter(b => b.id !== t.id && alive(b)).map(b => b.place);
       const path = shovePath(anchor, t.place, op.dir, k, grid, others);
       if (!path.length) continue;

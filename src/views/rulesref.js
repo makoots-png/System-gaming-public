@@ -151,8 +151,8 @@ export function register(app) {
         ul(['A defeated monster\'s XP goes to the hunters who fought it: whole to each in a fight started from no gate, shared as the gate\'s pot in a fight started from a gate (see Gates).']),
       ] },
       { id: 'monsters', title: 'Monsters', body: [
-        p(`A monster is a hunter of its rank's first level with its points split 2 to 1 by its archetype: a brute Strength and Vitality in medium gear, a skirmisher Agility and Strength in light gear, a caster Power and Control in light gear. Its kind multiplies its max HP and power.`),
-        table(['Kind', 'Max HP', 'Power', 'Stagger bar (hits)', 'Control lasts', 'XP'], Object.entries(F.kinds).map(([k, v]) => [esc(k), `×${v.hp}`, `×${v.power}`, v.stagger ? esc(v.stagger) : '—', `×${v.control}`, `×${v.xp}`])),
+        p(`A monster is a hunter of its rank's first level with its points split 2 to 1 by its archetype: a brute Strength and Vitality in medium gear, a skirmisher Agility and Strength in light gear, a caster Power and Control in light gear. Its kind multiplies its max HP and power; a stun, a push or a curse lands on an elite or a boss as on any monster.`),
+        table(['Kind', 'Max HP', 'Power', 'Stagger bar (hits)', 'XP'], Object.entries(F.kinds).map(([k, v]) => [esc(k), `×${v.hp}`, `×${v.power}`, v.stagger ? esc(v.stagger) : '—', `×${v.xp}`])),
         p('Each monster attacks with its archetype\'s attack (a strike, a shot or a curse) and its own abilities. The monster maker shows the HP, armor, resist and speed its rank, archetype and kind give.'),
       ] },
       { id: 'daily', title: 'Daily quests and penalty', body: [

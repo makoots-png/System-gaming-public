@@ -494,16 +494,12 @@ export function isControl(def: StatusDef, tier: number): boolean {
   return def.ops.some(o => o.op === 'hold' || o.op === 'root' || o.op === 'taunt' || (o.op === 'speed' && atTier(o.pct, tier) < 0));
 }
 
-/** The kind factor on a control status's duration: a boss's flat resistance (design 4.2). A hunter and a shadow take it in full. */
-export const controlFactor = (body: Pick<Body, 'kind' | 'origin'>, R: OpRules): number =>
-  body.kind === 'monster' && body.origin.kind === 'monster' ? R.fight.kinds[body.origin.monsterKind].control : 1;
-
 /**
- * How long a status lasts on its target: a control status lasts `duration * (100 + potency) / (100 + tenacity)` times the
- * target's kind factor; any other status lasts `duration`.
+ * How long a status lasts on its target: a control status lasts `duration * (100 + potency) / (100 + tenacity)`; any
+ * other status lasts `duration`. A monster's kind does not shorten it: a boss is tougher by its HP (the owner, Nov 21).
  */
-export function lasting(def: StatusDef, duration: Tick, tier: number, potency: number, tenacity: number, factor: number): Tick {
-  return isControl(def, tier) ? tick(Math.round(duration * (100 + potency) / (100 + tenacity) * factor)) : duration;
+export function lasting(def: StatusDef, duration: Tick, tier: number, potency: number, tenacity: number): Tick {
+  return isControl(def, tier) ? tick(Math.round(duration * (100 + potency) / (100 + tenacity))) : duration;
 }
 
 /** The later of two ends (a body's tick, a sheet's rounds left); null, until removed, is the latest. */

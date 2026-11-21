@@ -538,7 +538,7 @@ stateDiagram-v2
   s4 --> s1 : zoneSync, its holds open and close
 ```
 
-A shove lands at rule 18 on a target the use caught: a dodge is not a push. It moves its tiles times the target's control factor, rounded down (none when rooted), tile by tile on the centre line from its anchor, and stops before a wall, a pit, the map's edge or a body; a pull stops next to its anchor. A stop deals nothing. Rough ground costs two of its steps. A forced entry into a zone pays no on-entry part.
+A shove lands at rule 18 on a target the use caught: a dodge is not a push. It moves its tiles, a boss as any body (none when rooted), tile by tile on the centre line from its anchor, and stops before a wall, a pit, the map's edge or a body; a pull stops next to its anchor. A stop deals nothing. Rough ground costs two of its steps. A forced entry into a zone pays no on-entry part.
 
 4 chart states, 10 arrows. Hidden: a push of 0 leaves the body standing and is not drawn (0 steps.)
 

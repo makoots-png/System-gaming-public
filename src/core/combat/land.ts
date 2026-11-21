@@ -15,7 +15,7 @@ import type { CombatantId, DamageType } from './ability-types.ts';
 import type { Sheet } from '../hunter/derive.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import { rowLifeAfter } from './row-life.ts';
-import { applyStatus, controlFactor, cureStatus, dispelled, lasting, removeStatus, shielded, stackOf, statusOn, statusShield, withStatuses, withThreat } from './effect-ops.ts';
+import { applyStatus, cureStatus, dispelled, lasting, removeStatus, shielded, stackOf, statusOn, statusShield, withStatuses, withThreat } from './effect-ops.ts';
 import { atTier, countOn, stacked } from './op-amount.ts';
 import { admitted, counting, damageShare, harmful, healShare, hideStarts, markWards, stealthOf, stealthStep, wardedDamage } from './standing.ts';
 import type { StealthEndEvent } from './standing.ts';
@@ -100,7 +100,7 @@ export const putBy = (ops: readonly UseOp[]): StatusKey[] => ops.flatMap(o => (o
 export type Put = { readonly target: Body; readonly put: boolean; readonly threat: number; readonly breaks: boolean; readonly fired: LandFired | null };
 /**
  * Rule 18's status on a body, one rule for a use's op (resolve.ts) and a land op (a trigger, a threshold, a delayed end,
- * a reaction): a control status lasts less on a tenacious or a boss target (`lasting`, `controlFactor`); a safeguard or
+ * a reaction): a control status lasts less on a tenacious target and as long on a boss as on any (`lasting`); a safeguard or
  * a ward may refuse it (`admitted`); a hide that starts out of sight is refused on a body a foe that is up watches
  * (`hideStarts`, whoever puts it on); with `cross` a stacking one checks its threshold (rule 18a, `crossed`); its shield
  * ops give a shield read with `by` as the user; a hold stuns; a taunt makes a threat burst for its source; a hold, a
@@ -109,7 +109,7 @@ export type Put = { readonly target: Body; readonly put: boolean; readonly threa
  * whether a foe that is up has `t` in sight (sight.ts `watched`, which needs the map: resolve.ts asks it for a use).
  */
 export function landStatus(t: Body, op: Extract<Op, { op: 'applyStatus' }>, by: Body, source: Source, side: Side | null, cross: boolean, watched: boolean, now: Tick, R: OpRules): Put {
-  const d = op.duration === null ? null : lasting(op.def, atTier(op.duration, source.tier), source.tier, by.sheet.potency, t.sheet.tenacity, controlFactor(t, R));
+  const d = op.duration === null ? null : lasting(op.def, atTier(op.duration, source.tier), source.tier, by.sheet.potency, t.sheet.tenacity);
   const door = admitted(t, op.def, side, d === null ? null : now + d, now, R);
   if (!door.ok || !hideStarts(t, op.key, op.def, source.tier, watched)) return { target: t, put: false, threat: 0, breaks: false, fired: null };
   const until = door.until === null ? null : tick(door.until), warded = markWards(t.warded, op.def);

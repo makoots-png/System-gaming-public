@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
 import { baseStats } from '../src/core/stats.ts';
 import type { Stats } from '../src/core/stats.ts';
-import { kitGear, NO_TWEAK } from '../src/core/hunter/derive.ts';
+import { kitGear } from '../src/core/hunter/derive.ts';
 import { parseFormula } from '../src/core/formula.ts';
 import type { Formula } from '../src/core/formula.ts';
 import { place, tiles } from '../src/core/combat/space.ts';
@@ -10,7 +10,7 @@ import { tick } from '../src/core/combat/timeline.ts';
 import type { Tick } from '../src/core/combat/timeline.ts';
 import { abilityId, combatantId } from '../src/core/combat/ability-types.ts';
 import {
-  addSheetStatus, applyStatus, controlFactor, cureStatus, describeStatus, dueAmount, FULL_HEAL, isControl, lasting, modified, modsOf, onSheet, opLines, removeStatus, settle,
+  addSheetStatus, applyStatus, cureStatus, describeStatus, dueAmount, FULL_HEAL, isControl, lasting, modified, modsOf, onSheet, opLines, removeStatus, settle,
   sheetStatuses, shielded, statusKey, statusOn, withStatuses,
 } from '../src/core/combat/effect-ops.ts';
 import { parseOp, parseStatusDef } from '../src/core/combat/fight-parse.ts';
@@ -154,33 +154,17 @@ describe('durations (design 3.1 rule 18 and table 4.4)', () => {
   const rounds = (t: Tick): number => t / RULES.fight.round;
 
   test('a taunt of 2 rounds holds 1.92, 1.71 and 1.52 rounds on the E, C and S support\'s tenacity', () => {
-    near([4.30, 17.14, 31.55].map(ten => rounds(lasting(taunt, tick(2000), 0, 0, ten, 1))), [1.92, 1.71, 1.52], 2);
-  });
-
-  test('on an elite it holds three quarters of that and on a boss half', () => {
-    const elite = body({ kind: 'monster', name: 'Monster', rank: 'C', archetype: 'brute', monsterKind: 'elite', tweak: NO_TWEAK });
-    const boss = body({ kind: 'monster', name: 'Monster', rank: 'C', archetype: 'brute', monsterKind: 'boss', tweak: NO_TWEAK });
-    expect([controlFactor(elite, RULES), controlFactor(boss, RULES)]).toEqual([0.75, 0.5]);
-    near([4.30, 17.14, 31.55].map(ten => rounds(lasting(taunt, tick(2000), 0, 0, ten, controlFactor(elite, RULES)))), [1.44, 1.28, 1.14], 2);
-    near([4.30, 17.14, 31.55].map(ten => rounds(lasting(taunt, tick(2000), 0, 0, ten, controlFactor(boss, RULES)))), [0.96, 0.85, 0.76], 2);
-  });
-
-  test('a boss takes a hold, a root and a slow at half as well; a hunter or a shadow in full', () => {
-    const boss = body({ kind: 'monster', name: 'Monster', rank: 'C', archetype: 'brute', monsterKind: 'boss', tweak: NO_TWEAK });
-    const shadow = { ...boss, kind: 'shadow' as const };
-    for (const op of [{ op: 'hold' }, { op: 'root' }, { op: 'speed', pct: -20 }] as Op[])
-      expect(lasting(def(op), tick(2000), 0, 0, 0, controlFactor(boss, RULES))).toBe(tick(1000));
-    expect([controlFactor(body(), RULES), controlFactor(shadow, RULES)]).toEqual([1, 1]);
+    near([4.30, 17.14, 31.55].map(ten => rounds(lasting(taunt, tick(2000), 0, 0, ten))), [1.92, 1.71, 1.52], 2);
   });
 
   test('potency lengthens a control status as tenacity shortens it, so equal amounts cancel', () => {
-    expect(lasting(taunt, tick(2000), 0, 50, 0, 1)).toBe(tick(3000));
-    expect(lasting(taunt, tick(2000), 0, 30, 30, 1)).toBe(tick(2000));
+    expect(lasting(taunt, tick(2000), 0, 50, 0)).toBe(tick(3000));
+    expect(lasting(taunt, tick(2000), 0, 30, 30)).toBe(tick(2000));
   });
 
   test('a status that controls nothing lasts its duration whatever the tenacity', () => {
     const burn = def({ op: 'damage', type: 'magical', amount: f('3') }), haste = def({ op: 'speed', pct: 20 });
-    expect([isControl(burn, 0), isControl(haste, 0), lasting(burn, tick(2000), 0, 0, 60, 0.5)]).toEqual([false, false, 2000]);
+    expect([isControl(burn, 0), isControl(haste, 0), lasting(burn, tick(2000), 0, 0, 60)]).toEqual([false, false, 2000]);
   });
 });
 

@@ -392,11 +392,11 @@ function part4(): void {
   out();
   out('Table 4.4: how long a taunt holds against the most disciplined build\'s tenacity, with the taunter\'s potency at 0.');
   out();
-  const { elite, boss } = F.kinds;
-  table(['Target', 'Tenacity', 'Taunt rounds', `On an elite (x${elite.control})`, `On a boss (x${boss.control})`], (['E', 'C', 'S'] as const).map(r => {
+  table(['Target', 'Tenacity', 'Taunt rounds'], (['E', 'C', 'S'] as const).map(r => {
     const sh = sheetOf(BUILDS[4]!, r), f = F.tauntRounds * 100 / (100 + sh.tenacity);
-    return [`${r} support (the most Discipline)`, sh.tenacity.toFixed(1), f.toFixed(2), (f * elite.control).toFixed(2), (f * boss.control).toFixed(2)];
+    return [`${r} support (the most Discipline)`, sh.tenacity.toFixed(1), f.toFixed(2)];
   }));
+  out('An elite and a boss take a taunt as long as any body: a monster\'s kind does not shorten what lands on it (the owner, Nov 21).');
 
   out('Table 4.5: the stagger bar, in same-rank hits. Weak hits (under a third of a same-rank hit) fill 1.5 times their share.');
   out();

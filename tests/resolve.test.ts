@@ -242,11 +242,11 @@ describe('each rule of design 3.1', () => {
     expect([at(11).outcomes[0]!.channelBroken, at(12).outcomes[0]!.channelBroken, find(at(12).bodies, 't').channel?.state]).toEqual([false, true, 'broken']);
   });
 
-  test('rule 18: a boss takes a control status at half its duration, a normal monster in full', () => {
+  test('rule 18: a boss takes a control status for its whole duration, as a normal monster does (the owner, Nov 21)', () => {
     const taunt = ability('strike', { ops: [statusOf('taunted', { op: 'taunt' })] }, '1');
     const until = (t: Body): number | null => find(hitFoe(taunt, user, t).bodies, 't').statuses[0]!.until;
     const boss = body('t', monsterOrigin('brute', 'boss'), place(6, 5), 'foe');
-    expect([until(foe), until(boss)]).toEqual([NOW + 2000, NOW + 1000]);
+    expect([until(foe), until(boss)]).toEqual([NOW + 2000, NOW + 2000]);
   });
 
   test('rule 18: a taunt adds twice the gap to the leader to the taunter\'s threat, after the hit\'s own threat', () => {
@@ -453,11 +453,10 @@ describe('wave 2\'s sheet and share ops in a use (kits design 8.1, rule 11c)', (
     expect(swing(withOps(u, marked('f', { op: 'share', on: 'dealt', pct: 100 })), most).raw).toBeCloseTo(20 * (1 + RULES.fight.kit.shareCap), 9);
   });
 
-  test('a boss takes half the part above 1, an elite three quarters (their control factors)', () => {
+  test('a boss and an elite take a damage-taken share of +40% in full, as any body (the owner, Nov 21): 20 raw is 28', () => {
     const u = body('u', hunterOrigin('bruiser'), place(5, 5), 'party'), up = marked('brittle', { op: 'share', on: 'taken', pct: 40 });
     const boss = withOps(body('t', monsterOrigin('brute', 'boss'), place(6, 5), 'foe'), up), elite = withOps(body('t', monsterOrigin('brute', 'elite'), place(6, 5), 'foe'), up);
-    expect(swing(u, boss).raw).toBeCloseTo(20 * (1 + 0.4 * RULES.fight.kinds.boss.control), 9);
-    expect(swing(u, elite).raw).toBeCloseTo(20 * (1 + 0.4 * RULES.fight.kinds.elite.control), 9);
+    expect([swing(u, boss).raw, swing(u, elite).raw]).toEqual([28, 28]);
   });
 
   test('a heal is multiplied by the healed share: Brutalize\'s -50% halves it', () => {
@@ -686,6 +685,14 @@ describe('the ambush: a hit from hiding, rule 11c (notes-7-stealth.md section 2,
     const half = worn('ward', { op: 'share', on: 'taken', pct: -50 }), t = foe(0, [half]);
     expect(swing(user(), t).raw).toBe(7.5);
     expect([20, 50].map(pct => swing(user(cloak(1), dealtUp(pct)), t).raw)).toEqual([7.5 * AMBUSH, 7.5 * AMBUSH]);
+  });
+
+  test('a hit from hiding on a boss or an elite deals 1.5 times, as on any body (the owner, Nov 21: a boss does not halve effects)', () => {
+    expect(AMBUSH).toBe(1.5);
+    for (const kind of ['normal', 'elite', 'boss'] as const) {
+      const t = body('t', monsterOrigin('brute', kind), place(6, 5), 'foe', {}, { sight: 0 });
+      expect([kind, swing(user(cloak(1)), t).raw]).toEqual([kind, 15 * 1.5]);
+    }
   });
 
   test('hiding gives the attacker no edge: a hidden user\'s use asks one d20 and lands with it, no second (ruling 3)', () => {
