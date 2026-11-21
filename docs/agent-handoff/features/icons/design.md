@@ -217,3 +217,4 @@ them from elsewhere so long as they look consistent."
 5. The lead's ruling on the fight doc: the unit that adds the field measures the worst doc again before anything
    else. If the margin under `DOC_MAX` is thinner than 2,000 characters, the doc carries only an icon a GM
    picked, and a player's phone works the default out from the enemy's type.
+6. The lead's ruling of Nov 21, which replaces ruling 5's last sentence (unit 4 measured it): the fight doc carries every row's picture as `ic`, worked out on the GM's phone by `rowIcon`, since the doc holds no type or archetype a player's phone could work a default from and sending those would cost more than the key. The worst doc is 54,167 of 55,111 characters with a key on every row (944 to spare, 644 at the longest key), and its test holds the cap.

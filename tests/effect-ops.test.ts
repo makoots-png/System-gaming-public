@@ -518,6 +518,14 @@ describe('the hidden op\'s fields and the stayHidden op (stealth design section 
       .toEqual(['Stays hidden when it is hurt', 'Stays hidden when it is revealed', 'Stays hidden when it deals damage']);
   });
 
+  test('a reveal is a land op with no fields: a trigger, a threshold or a delayed end lands it, and it says what it ends', () => {
+    expect(read({ op: 'reveal', level: 3 })).toEqual({ op: 'reveal' });
+    const flare: StatusDef = { label: 'Flare', desc: '', ops: [], triggers: [{ on: 'turnStart', to: { kind: 'area', radius: tiles(3), on: 'foes' }, limit: { kind: 'each' }, ops: [{ op: 'reveal' }] }],
+      end: { ops: [{ op: 'reveal' }], cleanse: 'cancel' } };
+    expect(parseStatusDef(JSON.parse(JSON.stringify(flare)), RULES)).toEqual(flare);
+    expect(line({ op: 'reveal' })).toBe('Reveals each body it lands on: a hide that ends when it is revealed ends');
+  });
+
   test('a sight op says the stealth it sees through, with no plus: sight levels do not add (ruling 8)', () => {
     expect(line({ op: 'sheet', key: 'sight', amount: 2 })).toBe('Sees foes hidden at stealth level 2 or under');
     expect(line({ op: 'sheet', key: 'sight', amount: [0, 1, 1, 2, 3, 4] })).toBe('Sees foes hidden at stealth level 0 / 1 / 1 / 2 / 3 / 4 or under, by rank E to S');

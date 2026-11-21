@@ -308,7 +308,7 @@ test('on a slow phone the hunter\'s sheet scrolls top to bottom and back with no
   judge('the sheet scrolling', feel, 'scroll');
 });
 
-test('on a slow phone the GM fights from the map with twenty tokens, a boss with a stagger bar, a shield and a channel, walls, two zones and the fog: a pan, a pinch, an ability picked and used, with no stutter past the fight\'s own redraw', async ({ device }) => {
+test('on a slow phone the GM fights from the map with twenty tokens each drawing its picture, a boss with a stagger bar, a shield and a channel, walls, two zones and the fog: a pan, a pinch, an ability picked and used, with no stutter past the fight\'s own redraw', async ({ device }) => {
   const page = (await device('gm', { viewport: PHONE })).page;
   await page.addInitScript(recorder);
   await onboardGM(page);
@@ -325,6 +325,8 @@ test('on a slow phone the GM fights from the map with twenty tokens, a boss with
     Object.defineProperty(crypto, 'getRandomValues', { configurable: true, value: (a: Uint32Array) => a.fill(0) });
     let out = { brakk: '', rat: '' };
     hunterApp.store.update((d: any) => {
+      // each hunter wears an emblem, so every token draws a picture from the sprite (icons design 5, ruling 1)
+      for (const h of d.hunters) h.emblem = 'crown';
       const f = d.fight, brakk = f.rows.find((r: any) => r.name === 'Brakk Ironhide'), rat = f.rows.find((r: any) => r.name === 'Cave Rat A');
       brakk.place = { x: 9, y: 6 }; rat.place = { x: 9, y: 7 }; brakk.at = f.now; brakk.tie = 0; f.currentId = brakk.id;
       // a boss as milestone 5 draws one: a stagger bar, a shield and a channel on its token, and its intent's line
@@ -344,6 +346,7 @@ test('on a slow phone the GM fights from the map with twenty tokens, a boss with
     }, 'test-setup');
     return out;
   });
+  await expect(map.locator('.mp-tok .mp-ic:not([hidden])'), 'every token draws its picture').toHaveCount(await map.locator('.mp-tok').count());
   const frame = map.locator('[data-frame]');
   await frame.scrollIntoViewIfNeeded();
   await frame.dblclick({ position: { x: 4, y: 4 } });

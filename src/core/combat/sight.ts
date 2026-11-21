@@ -4,14 +4,14 @@
 // and figures with `eyesOf` and `figureOf`, and its fight into a range with `rangeOf` or the whole map. Pure. The
 // geometry is space.ts `inSight`, the levels standing.ts `LEVELS`; a body's sight level is its sheet's (derive.ts,
 // raised by its sight ops in standing.ts `withSheetOps`). Each case is in tests/sight.test.ts.
-import { inSight } from './space.ts';
+import { inSight, tiles } from './space.ts';
 import type { Grid, Place, Side, Tiles } from './space.ts';
-import { asLevel, counting } from './standing.ts';
-import { atTier } from './op-amount.ts';
+import { stealthLevel, stealthOf } from './standing.ts';
 import type { Level } from './standing.ts';
 import { isUp } from './row-hp.ts';
 import type { Body } from './effect-ops.ts';
 import type { Fight } from './fight-types.ts';
+import type { Rules } from '../rules.ts';
 
 /** A body that looks: where it stands, its side, whether it is up (a body that is down perceives no foe), and its sight level. */
 export type Eyes = { readonly place: Place; readonly side: Side; readonly up: boolean; readonly sight: Level };
@@ -35,13 +35,17 @@ export function perceives(e: Eyes, f: Figure, grid: Grid, range: SightRange): bo
 export const eyesOf = (b: Body): Eyes => ({ place: b.place, side: b.side, up: isUp(b), sight: b.sheet.sight });
 
 /**
- * A fight body as eyes see it: its place, its side, and its stealth: the highest level of the hidden ops of its statuses
- * that count, each at its source's tier, or null with none (notes-7-stealth.md section 2, a body's stealth).
+ * A fight body as eyes see it: its place, its side, and its stealth: the level the stealth machine says it hides at
+ * (standing.ts `stealthOf`), or null when it is seen (notes-7-stealth.md section 2, a body's stealth).
  */
-export const figureOf = (b: Body): Figure => {
-  const levels = counting(b.statuses).flatMap(s => s.def.ops.flatMap(o => (o.op === 'hidden' ? [atTier(o.level, s.source.tier)] : [])));
-  return { place: b.place, side: b.side, stealth: levels.length ? asLevel(Math.max(...levels)) : null };
-};
+export const figureOf = (b: Body): Figure => ({ place: b.place, side: b.side, stealth: stealthLevel(stealthOf(b)) });
 
 /** How far a fight lets its bodies look: its fog's sight, or the whole map when it keeps no fog. */
 export const rangeOf = (f: Pick<Fight, 'fog'>): SightRange => (f.fog ? { kind: 'tiles', n: f.fog.sight } : { kind: 'whole' });
+/**
+ * Whether a foe that is up has `b`'s tile in its sight: the fog's, or `fight.sight` tiles with no fog kept, on a line a
+ * wall does not stop (section 3's hide row: the body is seen as if not hidden). A hide that starts `unseen` lands only
+ * when none does (standing.ts `stealthStep`).
+ */
+export const watched = (b: Body, f: Pick<Fight, 'rows' | 'grid' | 'fog'>, R: Pick<Rules, 'fight'>): boolean =>
+  f.rows.some(o => o.side !== b.side && perceives(eyesOf(o), { ...figureOf(b), stealth: null }, f.grid, { kind: 'tiles', n: f.fog?.sight ?? tiles(R.fight.sight) }));

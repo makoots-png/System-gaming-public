@@ -15,7 +15,7 @@ import type { Ability, CombatantId, ReactWhen } from './ability-types.ts';
 import { isUp } from './row-hp.ts';
 import { landsAlone } from './effect-ops.ts';
 import type { Body, LandOp } from './effect-ops.ts';
-import { alive, held, landOps, landThreshold } from './land.ts';
+import { alive, held, landOps, landThreshold, putBy, stealthAfter } from './land.ts';
 import type { Burst } from './land.ts';
 import { charged } from './charge.ts';
 import type { Answers, ResolveRules } from './resolve.ts';
@@ -142,6 +142,9 @@ export function react(rows: Map<CombatantId, Body>, reactor: CombatantId, aim: C
   ops.push(...a.ops.filter(landsAlone));
   const out = ops.length ? landOps(rows, ops, rows.get(b.id)!, [aim], { id: b.id, tier: b.tier }, now, R, { cross: true }) : { landed: [], fired: [] };
   const bursts = out.fired.map(x => landThreshold(rows, x, now, R));
+  // the stealth machine's `dealt` (the owner's ruling 6): a reaction of its own that deals HP damage to the other side ends
+  // each hide its reactor held that ends on it, but one this reaction put on
+  if (out.landed.some(l => l.dealt > 0 && rows.get(l.target)?.side !== b.side)) rows.set(b.id, stealthAfter(rows.get(b.id)!, { type: 'dealt' }, now, R, putBy(a.ops)));
   const guard = a.ops.reduce((n, o) => (o.op === 'guard' ? Math.max(n, o.share) : n), 0), negate = a.ops.some(o => o.op === 'negate');
   const name = (id: CombatantId): string => rows.get(id)?.name ?? id;
   const dealt = out.landed.filter(l => l.dealt).map(l => `${name(l.target)} ${l.dealt}`);

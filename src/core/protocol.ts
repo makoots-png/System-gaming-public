@@ -26,6 +26,8 @@ import { parseObjectiveCount } from './hunter/counts.ts';
 import { oneOf } from './one-of.ts';
 import type { Hunter, Objective, Quest, QuestKind, QuestStatus, Rank, Rewards } from './save.ts';
 import { isJobName } from './registry/jobs.ts';
+import { isIconKey } from './registry/icons.ts';
+import type { IconKey } from './registry/icons.ts';
 import type { JobName } from './registry/jobs.ts';
 import { abilityId, combatantId } from './combat/ability-types.ts';
 import type { AbilityId, CombatantId } from './combat/ability-types.ts';
@@ -663,7 +665,15 @@ export type { Band, DocRefusal, FightDoc, FightDocRow, TableRefusal } from './co
  * and 53,627 (measured by the test), 60,179 with the eighth, 1,821 to spare, so a player's phone keeps no copy of what it
  * armed (implicit audit 3, T1). A row's life went on the wire in place of its down flag (`d`, the state's index, absent
  * while up): a row that is not up is 3 characters shorter (`"d":1` for `"d":true`), one that is up the same, so the worst
- * case, every monster up, is unchanged at 45,818 and 53,627 (measured by the test).
+ * case, every monster up, is unchanged at 45,818 and 53,627 (measured by the test). The room's cap is eight ninths of
+ * `DOC_MAX` (55,111), so 53,627 left 1,484 to spare, not the 1,821 once written: that was 53,627 x 9 / 8 = 60,330, not
+ * 60,179, with the eighth. An icon on every row (`ic`, 18 characters with the longest key the registry holds, 540
+ * for `DOC_ROWS`) makes it 46,358 and 54,167 (measured by the test), 944 to spare. Ruling 5 (icons design) asked, under
+ * 2,000 to spare, for only a GM's pick on the wire and the default worked out on a player's phone from the enemy's type;
+ * but the row holds no type, and the type itself (up to `TYPE_MAX`, 40) would cost more than its picture. So the GM's
+ * phone sends each row's picture as it answers it (row-icon.ts `rowIcon`, a hunter's emblem too), which costs no more
+ * than a pick on every row did: the worst case is the same 54,167 with 944 to spare. The longest key a registry may hold
+ * is `ICON_KEY_MAX` (20), which would be 840 for the rows and 644 to spare.
  */
 export const DOC_MAX = 62000;
 /**
@@ -679,6 +689,8 @@ export type KickedDoc = { keys: Record<SheetKey, string>; names: Record<SheetKey
 /** A monster the GM's party has met, shared with the players' bestiary. */
 export type CodexDocEntry = {
   key: string; name: string; rank: Rank; hpMax: number; armor: number; resist: number; speed: number; abilities: string[]; kills: number; firstAt: string;
+  /** The monster's icon as the GM's phone resolved it (icon-defaults.ts `monsterIcon`), so a player's bestiary draws what the GM's does; absent, none was sent. */
+  icon?: IconKey;
 };
 export type CodexDoc = { at: string; entries: CodexDocEntry[] };
 /** How many entries the codex doc holds at most; the GM's phone builds it within this and `DOC_MAX` (bestiary.ts `codexDoc`). */
@@ -812,6 +824,8 @@ function docTaunt(v: unknown): DocTaunt {
   const o = obj(v);
   return { by: rowId(own(o, 'b')), left: opt(own(o, 'l'), num(0, MAX_TOTAL), null) };
 }
+/** A key of the icon registry, or null: a key this build lacks is no error, the row's default shows (icons design 3). */
+const iconOrNull = (v: unknown): IconKey | null => (isIconKey(v) ? v : null);
 /**
  * One row of the fight doc, by the wire's names (fight-doc.ts `rowWire`). Players never get a monster's HP; a hunter's or
  * shadow's is never past its maximum.
@@ -823,7 +837,7 @@ function fightRow(v: unknown, defs: Record<string, StatusDef>): FightDocRow {
     key: opt(own(o, 'k'), sheetKey, null), place: wirePlace(own(o, 'p')), at: time0(own(o, 'a')), speed: n('v'),
     band: bandAt(own(o, 'b')), statuses: opt(own(o, 'st'), x => listOf(x, DOC_STATUSES, s => docStatus(s, defs)), []),
     shield: opt(own(o, 'sh'), num(0, MAX_TOTAL), null), shieldLeft: opt(own(o, 'sl'), num(0, MAX_TOTAL), null), channel: opt(own(o, 'c'), docChannel, null),
-    taunt: opt(own(o, 't'), docTaunt, null),
+    taunt: opt(own(o, 't'), docTaunt, null), icon: opt(own(o, 'ic'), iconOrNull, null),
   };
   const kind = choiceOf(['monster', 'hunter', 'shadow', 'summon'] as const)(own(o, 'q'));
   if (kind === 'monster') {
@@ -935,12 +949,13 @@ function bySheetKey<T>(v: unknown, read: (v: unknown) => T): Record<SheetKey, T>
   return out;
 }
 function codexEntry(v: unknown): CodexDocEntry {
-  const o = obj(v), stat = (k: string): number => opt(own(o, k), int(0, MAX_TOTAL), 0);
+  const o = obj(v), stat = (k: string): number => opt(own(o, k), int(0, MAX_TOTAL), 0), icon = iconOrNull(own(o, 'icon'));
   return {
     key: filled(100)(own(o, 'key')), name: text(60)(own(o, 'name')), rank: opt(own(o, 'rank'), choiceOf(RANKS), 'E'), hpMax: stat('hpMax'),
     armor: stat('armor'), resist: stat('resist'), speed: stat('speed'), abilities: opt(own(o, 'abilities'), v => listOf(v, 4, text(70)), []),
     kills: opt(own(o, 'kills'), int(1, 1e9), 1),
     firstAt: opt(own(o, 'firstAt'), text(40), ''),
+    ...(icon ? { icon } : {}),
   };
 }
 function worldGate(v: unknown): WorldGate {

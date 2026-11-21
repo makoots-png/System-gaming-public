@@ -17,6 +17,10 @@ import type { Archetype } from '../src/core/hunter/derive.ts';
 import type { Formula } from '../src/core/formula.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 import type { ItemId } from '../src/core/ids.ts';
+import { rowIcon } from '../src/core/combat/row-icon.ts';
+import type { CombatantKind, Origin } from '../src/core/combat/effect-ops.ts';
+import { baseStats } from '../src/core/stats.ts';
+import { kitGear } from '../src/core/hunter/derive.ts';
 
 /** The twelve emblem keys a hunter could pick before the registry, in their order. A saved key is never renamed. */
 const EMBLEM_KEYS = ['star', 'crown', 'moon', 'flame', 'shield', 'blade', 'eye', 'bolt', 'skull', 'wing', 'diamond', 'fang'];
@@ -254,13 +258,13 @@ const SAMPLE: { readonly [K in OpKind]: Extract<Op, { readonly op: K }> } = {
   edge: { op: 'edge', side: 'attack', keep: 'better', tag: null, spend: false }, boost: { op: 'boost', side: 'attack', die: { kind: 'die', sides: 4 } },
   hidden: { op: 'hidden', level: 1, start: 'unseen', ends: { hurt: true, revealed: true, dealt: true } }, stayHidden: { op: 'stayHidden', on: 'hurt' }, alert: { op: 'alert' }, shove: { op: 'shove', dir: 'away', from: 'user', tiles: 1 },
   move: { op: 'move', key: 'harmful', take: 1, from: 'user', as: null }, hasten: { op: 'hasten', share: 0.5 }, extra: { op: 'extra' },
-  guard: { op: 'guard', share: 0.5 }, negate: { op: 'negate' }, dispel: { op: 'dispel', which: 'first' },
+  guard: { op: 'guard', share: 0.5 }, negate: { op: 'negate' }, dispel: { op: 'dispel', which: 'first' }, reveal: { op: 'reveal' },
 };
 /** The design's picture for each sample: the kinds it names, and `status` for the rest. */
 const OP_PICTURE: Readonly<Record<OpKind, IconKey>> = {
   damage: 'slash', heal: 'heal', mana: 'mana', fatigue: 'weary', speed: 'wing', stat: 'up', hold: 'dizzy', root: 'chain', shield: 'shield',
   hidden: 'hood', stayHidden: 'hood', spread: 'plague', cureStatus: 'cure', dispel: 'cure', taunt: 'taunt', threat: 'taunt', untargetable: 'ward',
-  invulnerable: 'ward', safeguard: 'ward', delay: 'timer', refund: 'timer', shove: 'push', move: 'push',
+  invulnerable: 'ward', safeguard: 'ward', delay: 'timer', refund: 'timer', shove: 'push', move: 'push', reveal: 'eye',
   applyStatus: 'status', note: 'status', channel: 'status', staggerRate: 'status', aura: 'status', sheet: 'status', share: 'status',
   edge: 'status', boost: 'status', alert: 'status', hasten: 'status', extra: 'status', guard: 'status', negate: 'status',
 };
@@ -320,4 +324,28 @@ describe('an ability\'s icon', () => {
     expect(abilityIcon({ kind: 'support', item: potion }, bag)).toBe('potion');
     expect(abilityIcon({ kind: 'support', item: 'i-gone' as ItemId }, bag)).toBe('aid');
   });
+});
+
+describe('a fight row\'s icon (row-icon.ts), the one answer the map token, the card, the turn order and the fight doc draw', () => {
+  const monster = (o: { icon?: IconKey; type?: string; archetype?: Archetype } = {}): Origin =>
+    ({ kind: 'monster', name: 'Rat', rank: 'E', archetype: o.archetype ?? 'brute', monsterKind: 'normal', tweak: { hp: 1, stats: {} }, ...(o.type ? { type: o.type } : {}), ...(o.icon ? { icon: o.icon } : {}) });
+  const build: Origin = { kind: 'hunter', build: { stats: baseStats(RULES.fight), level: 1, gear: kitGear('light', RULES), perks: {} } };
+  /** Each row as the design and ruling 1 say it is drawn: [what it is, its kind, its origin, the sheet behind it, its picture]. */
+  const TABLE: readonly (readonly [string, CombatantKind, Origin, { emblem: string } | null, IconKey | null])[] = [
+    ['a monster its GM gave a raven', 'monster', monster({ icon: 'raven', type: 'Beast' }), null, 'raven'],
+    ['a Beast', 'monster', monster({ type: 'Beast' }), null, 'wolf'],
+    ['an Undead, its type typed in any case with spaces around', 'monster', monster({ type: '  undead ' }), null, 'skull'],
+    ['a caster of a type the table lacks', 'monster', monster({ type: 'Swamp thing', archetype: 'caster' }), null, 'orb'],
+    ['a skirmisher with no type', 'monster', monster({ archetype: 'skirmisher' }), null, 'dagger'],
+    ['a shadow (its monster\'s archetype, no type)', 'shadow', monster({ archetype: 'brute' }), null, 'claw'],
+    ['a summon its maker gave a picture', 'summon', monster({ icon: 'bat' }), null, 'bat'],
+    ['a hunter with a crown', 'hunter', build, { emblem: 'crown' }, 'crown'],
+    ['a hunter who picked no emblem: its initials show', 'hunter', build, { emblem: '' }, null],
+    ['a hunter whose saved emblem this build lacks', 'hunter', build, { emblem: 'no-such-icon' }, null],
+    ['a hunter whose sheet is not on this phone', 'hunter', build, null, null],
+    ['a monster stood on a hunter\'s build (a test\'s row)', 'monster', build, null, null],
+  ];
+  for (const [what, kind, origin, hunter, icon] of TABLE) {
+    test(`${what}: ${icon ?? 'none'}`, () => expect(rowIcon({ kind, origin }, hunter)).toBe(icon));
+  }
 });

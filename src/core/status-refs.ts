@@ -88,7 +88,7 @@ function opWalk(o: Op | LandOp, f: KeyFn): Op | LandOp {
     case 'note': case 'speed': case 'delay': case 'hold': case 'root': case 'taunt': case 'threat': case 'channel': case 'staggerRate':
     case 'stat': case 'refund': case 'aura': case 'spread': case 'sheet': case 'share': case 'untargetable': case 'invulnerable':
     case 'safeguard': case 'edge': case 'boost': case 'hidden': case 'stayHidden': case 'alert': case 'shove': case 'hasten': case 'extra': case 'guard':
-    case 'negate': case 'dispel': return o;
+    case 'negate': case 'dispel': case 'reveal': return o;
     default: return o satisfies never;
   }
 }
@@ -130,7 +130,7 @@ const threshold = fields<Threshold>({ at: thresholdAt, to: none, ops, then: none
 const stackRule = fields<StackRule>({ cap: none, leave: none, keep: none, threshold });
 const end = fields<End>({ ops, cleanse: none });
 /** A status def: its ops, its triggers, its stack's threshold and its end. */
-export const statusDef: Walk<StatusDef> = fields<StatusDef>({ label: none, desc: none, color: none, ops, triggers: list(trigger), end, stack: stackRule });
+export const statusDef: Walk<StatusDef> = fields<StatusDef>({ label: none, desc: none, color: none, icon: none, ops, triggers: list(trigger), end, stack: stackRule });
 
 // ── an ability ──
 function effect(e: AbilityEffect, f: KeyFn): AbilityEffect {
@@ -165,7 +165,7 @@ const ability = fields<Ability>({
 /** An item: what its use does and the status it puts on while worn. */
 export const item: Walk<ItemTemplate> = fields<ItemTemplate>({
   name: none, rar: none, grade: none, type: none, slot: none, qty: none, dice: none, bonus: none, value: none, weight: none, desc: none, armor: none,
-  resist: none, attack: none, penFlat: none, effects: ops, target: none, tell: none, worn: statusDef, revive: none,
+  resist: none, attack: none, icon: none, penFlat: none, effects: ops, target: none, tell: none, worn: statusDef, revive: none,
 });
 const SKILL_PARTS = { name: none, level: none, label: none, desc: none, type: none } as const;
 const activeSkill = fields<Extract<SkillTemplate, { type: 'active' }>>({ ...SKILL_PARTS, ability });
@@ -190,7 +190,7 @@ const startStatus = fields<StartStatus>({ key: (k, f) => f(statusKey(k)), rounds
 const loot = fields<Loot>({ gold: none, items: list(item) });
 /** A monster: its abilities, its starting statuses and its loot. */
 export const monster: Walk<MonsterTemplate> = fields<MonsterTemplate>({
-  name: none, rank: none, type: none, archetype: none, kind: none, tweak: none, abilities: list(ability), notes: none, xp: none,
+  name: none, rank: none, type: none, archetype: none, kind: none, tweak: none, abilities: list(ability), notes: none, xp: none, icon: none,
   extractable: none, desc: none, statuses: list(startStatus), loot, auto: none, placeholder: none,
 });
 const mapZone = fields<MapZone>({

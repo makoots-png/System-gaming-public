@@ -14,12 +14,17 @@ import type { Ability, AbilityKind, CombatantId } from '../src/core/combat/abili
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { ATTACK_ID, itemAbilityId } from '../src/core/registry/abilities.ts';
 import { modified } from '../src/core/combat/effect-ops.ts';
-import type { CombatantKind, Origin } from '../src/core/combat/effect-ops.ts';
+import type { Body, CombatantKind, Origin } from '../src/core/combat/effect-ops.ts';
 import { fightId, reduce } from '../src/core/combat/fight.ts';
 import type { Fight, NewRow } from '../src/core/combat/fight.ts';
 import type { FightDocRow } from '../src/core/combat/fight-doc.ts';
 import { aims } from '../src/core/combat/fight-view.ts';
-import { NO_CHOICE, PINS, choose, docBodies, docGround, fightBodies, frameOf, hotbar, labelOf, mapScene, outline, shortOf, tapOn, turnWords } from '../src/core/combat/map-view.ts';
+import { NO_CHOICE, PINS, choose, docBodies, docGround, fightBodies, frameOf, hotbar, labelOf, mapScene, outline, packLetter, shortOf, tapOn, turnWords } from '../src/core/combat/map-view.ts';
+import { fightDoc, fightWire } from '../src/core/combat/fight-doc.ts';
+import type { FightDoc } from '../src/core/combat/fight-doc.ts';
+import { DOCS } from '../src/core/protocol.ts';
+import type { DeviceId } from '../src/core/ids.ts';
+import type { IconKey } from '../src/core/registry/icons.ts';
 import { iid } from './fixtures/ids.ts';
 import type { Choice, ChoiceEvent, ChoiceFx, HotbarKit, MapBody, MapScene, Selection } from '../src/core/combat/map-view.ts';
 import { rng } from './models/fight-play.ts';
@@ -52,7 +57,7 @@ function body(name: string, side: Side, x: number, y: number, o: { stride?: numb
   return {
     id: id(name), side, kind: o.kind ?? (side === 'party' ? 'hunter' : 'monster'), place: place(x, y), down: o.down ?? false, name,
     ring: { share: 1, band: null }, statuses: false, mine: o.mine ?? false, stride: tiles(o.stride ?? 0), dash: tiles(o.dash ?? 0), bars: null,
-    extras: { shield: null, stagger: null, channel: null, taunted: false, reacted: false }, aim: null, summon: null, stealth: false, word: null,
+    extras: { shield: null, stagger: null, channel: null, taunted: false, reacted: false }, aim: null, summon: null, stealth: false, word: null, icon: null,
   };
 }
 const scene = (d: Drawn, sel: Selection = { kind: 'none' }, actor: string | null = '@'): MapScene =>
@@ -340,7 +345,7 @@ describe('tokens', () => {
   });
 
   test('from the room doc a hunter\'s ring is exact and a monster\'s is its band; a monster down leaves the map and a hunter down lies there', () => {
-    const base = { key: null, at: tick(0), speed: 100, statuses: [], shield: null, shieldLeft: null, channel: null, taunt: null } as const;
+    const base = { key: null, at: tick(0), speed: 100, statuses: [], shield: null, shieldLeft: null, channel: null, taunt: null, icon: null } as const;
     const rows = [
       { ...base, id: id('k'), name: 'Kai', side: 'party', place: { x: 0, y: 0 }, band: 'wounded', life: { at: 'up' }, kind: 'hunter', hp: 15, hpMax: 20, stride: 3, move: 6 },
       { ...base, id: id('m'), name: 'Rat', side: 'foe', place: { x: 1, y: 0 }, band: 'bloodied', life: { at: 'up' }, kind: 'monster', intent: null, stagger: null, suggest: null },
@@ -367,6 +372,41 @@ describe('tokens', () => {
     const [a, m] = fightBodies(f, RULES, b => b.id === 'A');
     expect([a!.ring, a!.mine, a!.stride, a!.dash]).toEqual([{ share: 0.5, band: null }, true, Math.ceil(RULES.fight.moveBase * RULES.fight.strideShare), RULES.fight.moveBase]);
     expect(m!.ring.band).toBe('bloodied');
+  });
+
+  describe('a token\'s picture (icons design 5, ruling 1)', () => {
+    const build: Origin = { kind: 'hunter', build: { stats: baseStats(RULES.fight), level: 1, gear: kitGear('light', RULES), perks: {} } };
+    const beast = (o: { icon?: IconKey } = {}): Origin => ({ kind: 'monster', name: 'Rat', rank: 'E', archetype: 'brute', monsterKind: 'normal', tweak: { hp: 1, stats: {} }, type: 'Beast', ...o });
+    const row = (name: string, side: Side, origin: Origin, x: number): NewRow => ({
+      id: id(name), name, side, ...lifeAt(side === 'party' ? 'hunter' : 'monster', 20), origin, tier: 0, place: place(x, 0), mana: 0, fatigue: 0, shield: null, stagger: null,
+      channel: null, threat: side === 'foe' ? {} : null, statuses: [], readyAt: {}, abilities: [STRIKE], intent: null,
+      holder: side === 'party' ? { kind: 'remote', remote: `d-1:${name}` } : null, xp: 0,
+    } as NewRow);
+    /** Brakk wears a crown, Mira picked no emblem; a pack of two Beasts and a boss its GM gave a raven. */
+    const f = reduce(null, { type: 'add', fightId: fightId('f'), rows: [
+      row('Brakk', 'party', build, 0), row('Mira Vale', 'party', build, 1), row('Cave Rat A', 'foe', beast(), 3), row('Cave Rat B', 'foe', beast(), 4),
+      row('Old Crow', 'foe', beast({ icon: 'raven' }), 5),
+    ], openings: [] }, { rules: RULES }).fight as Fight;
+    const sheets: Record<string, { emblem: string }> = { Brakk: { emblem: 'crown' }, 'Mira Vale': { emblem: '' } };
+    const hunterOf = (b: Body) => sheets[b.name] ?? null;
+    const drawn = (bodies: readonly MapBody[]) => mapScene({ bodies, grid: openGrid(6, 1), currentId: null, actor: null }, { kind: 'none' }, RULES).tokens
+      .map(t => [t.name, t.icon, t.letter, t.label]);
+    const PICTURE = [
+      ['Brakk', 'crown', null, 'BR'], ['Mira Vale', null, null, 'MV'], ['Cave Rat A', 'wolf', 'A', 'CA'], ['Cave Rat B', 'wolf', 'B', 'CB'], ['Old Crow', 'raven', null, 'OC'],
+    ];
+
+    test('the GM\'s map draws a hunter\'s emblem, a monster\'s type\'s picture with its pack letter and a pick; a hunter with no emblem keeps its initials', () => {
+      expect(drawn(fightBodies(f, RULES, () => false, hunterOf))).toEqual(PICTURE);
+    });
+    test('a player\'s map, from the doc on the wire, draws every token with the GM\'s picture', () => {
+      const doc = fightDoc(f, RULES, { by: 'd-gm' as DeviceId, at: 'now', was: null, keyOf: () => null, hunterOf });
+      const read = DOCS.fight(JSON.parse(JSON.stringify(fightWire(doc!)))) as FightDoc;
+      if (read.ended) throw new Error('not a live doc');
+      expect(drawn(docBodies(read.rows, () => false, openGrid(6, 1)))).toEqual(PICTURE);
+    });
+    test('a pack\'s letter is the last word of two or more when it is one character', () => {
+      expect(['Cave Rat B', 'Rat C', 'Goblin', 'Ice Warden', 'Rat  D ', ''].map(packLetter)).toEqual(['B', 'C', null, null, 'D', null]);
+    });
   });
 });
 
@@ -409,6 +449,14 @@ describe('the hotbar', () => {
     expect(bar({ armed: { ability: 'other', spent: false } })[1]).toEqual(['parry', 'arm', null]);
     expect(bar({ left: { a: 0 } })[2]).toEqual(['a', null, 0]);
   });
+
+  test('each slot shows its kind\'s picture, and a bag item\'s use the item\'s from the user\'s bag, its kind\'s with no bag to look in', () => {
+    const shot = { ...ability('shot', 'Aimed Shot') }, hex = ability('curse', 'Hex'), aid = ability('support', 'Mend');
+    const h = (kit: HotbarKit) => hotbar([attack, skill('Nova'), shot, hex, aid, potion], {}, tick(0), 0, null, RULES, kit);
+    expect(h({}).bar.map(s => [s.name, s.icon])).toEqual([['Sword', 'strike'], ['Nova', 'burst'], ['Aimed Shot', 'arrow'], ['Hex', 'hex'], ['Mend', 'aid']]);
+    expect(h({ itemOf: i => (i === iid('i1') ? { type: 'consumable', slot: null, revive: true } : null) }).more.map(s => [s.name, s.icon])).toEqual([['Potion', 'crystal']]);
+    expect(h({}).more.map(s => [s.name, s.icon])).toEqual([['Potion', 'aid']]);
+  });
 });
 
 describe('a summon and a hidden foe on the map', () => {
@@ -425,7 +473,7 @@ describe('a summon and a hidden foe on the map', () => {
 });
 
 describe('lines from a monster: its intent, or the target its threat suggests', () => {
-  const base = { key: null, at: tick(0), speed: 100, statuses: [], shield: null, shieldLeft: null, channel: null, taunt: null, band: 'healthy', life: { at: 'up' } } as const;
+  const base = { key: null, at: tick(0), speed: 100, statuses: [], shield: null, shieldLeft: null, channel: null, taunt: null, icon: null, band: 'healthy', life: { at: 'up' } } as const;
   const kai = { ...base, id: id('k'), name: 'Kai', side: 'party', place: { x: 1, y: 1 }, kind: 'hunter', hp: 20, hpMax: 20, stride: 3, move: 6 } as const;
   const boss = (o: Partial<Extract<FightDocRow, { kind: 'monster' }>>): FightDocRow => ({ ...base, id: id('b'), name: 'Boss', side: 'foe', place: { x: 5, y: 1 }, kind: 'monster', intent: null, stagger: null, suggest: null, ...o });
   const lines = (b: FightDocRow) => mapScene({ bodies: docBodies([kai, b], () => false, openGrid(9, 5)), grid: openGrid(9, 5), currentId: null, actor: null }, { kind: 'none' }, RULES).lines;

@@ -153,6 +153,10 @@ group('a status def from outside data', () => {
   test('a def with an op that does not read is refused whole, as is one with no label', () => {
     expect(parseStatusDef({ label: 'Ok', desc: '', ops: [{ op: 'explode' }, { op: 'hold' }] }, RULES)).toBeNull();
     expect(parseStatusDef({ desc: 'no label', ops: [] }, RULES)).toBeNull();
+    expect(parseStatusDef({ label: 'Ok', desc: '', ops: [], icon: 'ward' }, RULES)!.icon, 'a key of the registry is read back, on any def').toBe('ward');
+    expect(parseStatusDef({ label: 'Ok', desc: '', ops: [], icon: 'wolf' }, RULES)!.icon, 'a GM may give any icon to anything').toBe('wolf');
+    for (const icon of ['nope', '', 7, null]) expect(parseStatusDef({ label: 'Ok', desc: '', ops: [], icon }, RULES), `${String(icon)} is dropped, the def is not refused`).not.toBeNull();
+    expect(parseStatusDef({ label: 'Ok', desc: '', ops: [], icon: 'nope' }, RULES)).not.toHaveProperty('icon');
     expect(parseStatusDef({ label: 'Old', desc: '', ops: [{ op: 'mod', stat: 'ac', value: -2 }] }, RULES)).toBeNull();
   });
 

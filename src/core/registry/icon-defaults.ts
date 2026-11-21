@@ -78,7 +78,7 @@ const OP_ICON: { readonly [K in OpKind]: OpCell<K> } = {
   speed: o => bySign(o.pct, 'wing', 'snail'), stat: o => bySign(o.amount, 'up', 'down'),
   hold: 'dizzy', root: 'chain', shield: 'shield', hidden: 'hood', stayHidden: 'hood', spread: 'plague', cureStatus: 'cure', dispel: 'cure',
   taunt: 'taunt', threat: 'taunt', untargetable: 'ward', invulnerable: 'ward', safeguard: 'ward', delay: 'timer', refund: 'timer',
-  shove: 'push', move: 'push',
+  shove: 'push', move: 'push', reveal: 'eye',
   applyStatus: 'status', note: 'status', channel: 'status', staggerRate: 'status', aura: 'status', sheet: 'status', share: 'status',
   edge: 'status', boost: 'status', alert: 'status', hasten: 'status', extra: 'status', guard: 'status', negate: 'status',
 };

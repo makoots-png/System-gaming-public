@@ -169,7 +169,7 @@ const UNWEIGHED_WORDS: { readonly [U in Unweighed]: string } = {
   spread: 'a spread', sheet: 'a sheet change', share: 'a damage share', untargetable: 'untargetable', invulnerable: 'invulnerable',
   safeguard: 'a safeguard', edge: 'advantage', boost: 'a held die', hidden: 'stealth', alert: 'alert', shove: 'a push or pull',
   move: 'moving stacks', hasten: 'a hasten', extra: 'an extra action', guard: 'a guard', negate: 'a negate', dispel: 'a dispel',
-  stayHidden: 'staying hidden',
+  stayHidden: 'staying hidden', reveal: 'a reveal',
 };
 
 /** Whether a formula reads a count of the fight the bar cannot know (stacks, a field, rounds held, hits, kills, stacks spent, HP lost). */

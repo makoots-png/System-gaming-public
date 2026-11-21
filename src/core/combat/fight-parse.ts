@@ -8,6 +8,7 @@
 import { RANKS } from '../rules.ts';
 import type { Rules } from '../rules.ts';
 import { oneOf } from '../one-of.ts';
+import { isIconKey } from '../registry/icons.ts';
 import { STAT_KEYS } from '../stats.ts';
 import { SHEET_LABELS } from '../hunter/derive.ts';
 import type { Archetype, Bonus, GearPiece, MonsterKind, SheetNumber, Tweak } from '../hunter/derive.ts';
@@ -299,7 +300,7 @@ function wave2Op(v: Rec, R: Rules): Op | null {
       return amount === null ? null : { op: 'sheet', key, amount };
     }
     case 'share': { const on = oneOf(v.on, SHARE_ON, null), pct = tiered(v.pct, x => within(x, -100, 100)); return on && pct !== null ? { op: 'share', on, pct } : null; }
-    case 'untargetable': case 'invulnerable': case 'safeguard': case 'alert': case 'extra': case 'negate': return { op: v.op };
+    case 'untargetable': case 'invulnerable': case 'safeguard': case 'alert': case 'extra': case 'negate': case 'reveal': return { op: v.op };
     case 'hidden': return { op: 'hidden', level: tiered(v.level, hideLevelOf) ?? HIDE_DEFAULT.level, start: oneOf(v.start, HIDE_STARTS, HIDE_DEFAULT.start), ends: stealthEndsOf(v.ends) };
     case 'stayHidden': { const on = oneOf(v.on, STEALTH_ENDS, null); return on && { op: 'stayHidden', on }; }
     case 'edge': {
@@ -349,7 +350,7 @@ function defOf(v: unknown, R: Rules, depth: number): StatusDef | null {
   const end = v.end === undefined ? undefined : endOf(v.end, R, depth);
   if (triggers === null || end === null) return null;
   const plain = {
-    label, desc, ops, ...(typeof v.color === 'string' ? { color: v.color.toLowerCase() } : {}), ...(triggers ? { triggers } : {}), ...(end ? { end } : {}),
+    label, desc, ops, ...(typeof v.color === 'string' ? { color: v.color.toLowerCase() } : {}), ...(isIconKey(v.icon) ? { icon: v.icon } : {}), ...(triggers ? { triggers } : {}), ...(end ? { end } : {}),
   };
   if (v.stack === undefined) return plain;
   const stack = stackRuleOf(v.stack, R, depth);
@@ -367,11 +368,11 @@ function reachOf(v: unknown, R: Rules): Reach | null {
   if (v.kind === 'most') return on && v.of === 'hp' ? { kind: 'most', of: 'hp', radius, on } : null;
   return v.kind === 'area' && on ? { kind: 'area', radius, on } : null;
 }
-/** What a threshold, a trigger or an end lands (effect-ops.ts `LandOp`): a use op that lands alone, a hit or a heal, or time back (`refund`, 1 to 100%). */
+/** What a threshold, a trigger or an end lands (effect-ops.ts `LandOp`): a use op that lands alone, a hit or a heal, a reveal, or time back (`refund`, 1 to 100%). */
 function landOpOf(v: unknown, R: Rules, depth: number): LandOp | null {
   if (isObj(v) && v.op === 'refund') { const pct = num(v.pct, 1, 100); return pct === null ? null : { op: 'refund', pct }; }
   const o = opOf(v, R, depth);
-  return o && (o.op === 'damage' || o.op === 'heal' || oneOf(o.op, LAND_USE_OPS, null)) ? o as LandOp : null;
+  return o && (o.op === 'damage' || o.op === 'heal' || o.op === 'reveal' || oneOf(o.op, LAND_USE_OPS, null)) ? o as LandOp : null;
 }
 const landOpsOf = (v: unknown, R: Rules, depth: number): LandOp[] | null =>
   Array.isArray(v) ? all(v.slice(0, R.fight.kit.triggerOps), R.fight.kit.triggerOps, x => landOpOf(x, R, depth)) : null;
@@ -667,7 +668,7 @@ function originOf(v: unknown, R: Rules): Origin | null {
     const rank = oneOf(v.rank, RANKS, null), archetype = oneOf(v.archetype, ARCHETYPE_LIST, null), monsterKind = oneOf(v.monsterKind, MONSTER_KINDS(R), null);
     const tweak = tweakOf(v.tweak), name = text(v.name, NAME_MAX);
     const type = typeof v.type === 'string' && v.type ? v.type.slice(0, TYPE_MAX) : null;
-    return name !== null && rank && archetype && monsterKind && tweak ? { kind: 'monster', name, rank, archetype, monsterKind, tweak, ...(type ? { type } : {}) } : null;
+    return name !== null && rank && archetype && monsterKind && tweak ? { kind: 'monster', name, rank, archetype, monsterKind, tweak, ...(type ? { type } : {}), ...(isIconKey(v.icon) ? { icon: v.icon } : {}) } : null;
   }
   if (v.kind !== 'hunter' || !isObj(v.build) || !isObj(v.build.stats) || !isObj(v.build.perks)) return null;
   const b = v.build, statsIn = b.stats as Rec, perksIn = b.perks as Rec;

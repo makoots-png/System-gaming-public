@@ -5,6 +5,7 @@
 
 import type { RowTally } from './row-tally.ts';
 import type { Rank } from '../rules.ts';
+import type { IconKey } from '../registry/icons.ts';
 import { STAT_KEYS, STAT_LABELS } from '../stats.ts';
 import type { StatKey, Stats } from '../stats.ts';
 import { average, evaluate, printFormula } from '../formula.ts';
@@ -56,12 +57,14 @@ export type When = 'use' | 'turn';
 
 /**
  * What every def has, as the rules or the GM write it: a label, a description, what it does, the chip's colour a GM may
- * pick, what it does when something happens to its bearer (`triggers`, at most `RULES.fight.kit.triggers`; triggers.ts),
+ * pick, its picture (`icon`), what it does when something happens to its bearer (`triggers`, at most `RULES.fight.kit.triggers`; triggers.ts),
  * and what lands when its time runs out (`end`: a delayed effect, kits design 1.6). An absent list or end is none, so a
  * status written before the kits reads as it was.
  */
 type DefBase = {
   readonly label: string; readonly desc: string; readonly ops: readonly Op[]; readonly color?: string;
+  /** The picture a GM picked, any key of the icon registry; absent, the default (icon-defaults.ts `statusIcon`). */
+  readonly icon?: IconKey;
   readonly triggers?: readonly Trigger[];
   readonly end?: End;
 };
@@ -101,11 +104,11 @@ export type Reach = { readonly kind: 'bearer' } | { readonly kind: 'area'; reado
 export type End = { readonly ops: readonly LandOp[]; readonly cleanse: 'cancel' | 'land' };
 /**
  * What a threshold, a trigger or an end lands: an ability's own ops that land on one body at a time (`LAND_USE_OPS`), a
- * hit or a heal (whose damage formula may carry the scalers of kits design 8.0; nothing kills outright), and time back on
- * the bearer's turn (`pct` of its last action). A push or pull needs the map and an anchor, an extra action is the user's
+ * hit or a heal (whose damage formula may carry the scalers of kits design 8.0; nothing kills outright), a reveal, and time
+ * back on the bearer's turn (`pct` of its last action). A push or pull needs the map and an anchor, an extra action is the user's
  * own turn, and a guard or a negate answers a use: a use's rules, which nothing lands outside one, so none is a land op.
  */
-export type LandOp = Extract<UseOp, { readonly op: (typeof LAND_USE_OPS)[number] }> | Extract<Op, { readonly op: 'damage' | 'heal' }> | { readonly op: 'refund'; readonly pct: number };
+export type LandOp = Extract<UseOp, { readonly op: (typeof LAND_USE_OPS)[number] }> | Extract<Op, { readonly op: 'damage' | 'heal' | 'reveal' }> | { readonly op: 'refund'; readonly pct: number };
 /** The use ops a land op may be (land.ts `landOne` lands each). */
 export const LAND_USE_OPS = ['applyStatus', 'cureStatus', 'delay', 'threat', 'shield', 'channel', 'note', 'mana', 'fatigue', 'move', 'hasten', 'dispel'] as const satisfies readonly UseOp['op'][];
 /** Whether a use op is one a land op may be. */
@@ -193,13 +196,18 @@ export type Op =
   /**
    * Stealth (docs/agent-handoff/features/notes-7-stealth.md section 2, with the owner's rulings): the bearer hides at
    * `level` (by its source's rank), from every viewer whose sight level is lower; `start` says whether it may hide in a
-   * foe's sight (`anywhere`) or only out of it (`unseen`); `ends` which of the three events end it. Its time and a cure
-   * end it as any status. Until stealth units 3 and 4 the fight reads none of the three: a foe cannot aim at the bearer
-   * nor catch it, a hidden foe is out of the room's doc (8.7), and acting, a foe beside it or a hurt reveals it.
+   * foe's sight (`anywhere`) or only out of it (`unseen`); `ends` which of the three events end it (the stealth machine,
+   * standing.ts `stealthStep`). Its time and a cure end it as any status. Until stealth unit 4 a foe cannot aim at the
+   * bearer nor catch it whatever its sight, and a hidden foe is out of the room's doc (8.7).
    */
   | { readonly op: 'hidden'; readonly level: Tiered<HideLevel>; readonly start: HideStart; readonly ends: StealthEnds }
   /** Worn by a class or a skill upgrade: while the bearer holds it, none of its hidden statuses ends on `on` (section 2). */
   | { readonly op: 'stayHidden'; readonly on: StealthEnd }
+  /**
+   * A land op (a trigger's, a threshold's, a delayed end's): the stealth machine's `revealed` on each body it lands on,
+   * which ends each of its hides that ends on a reveal (notes-7-stealth.md section 4, a Flare's). Nothing in a status.
+   */
+  | { readonly op: 'reveal' }
   /** The bearer is never surprised (8.7). */
   | { readonly op: 'alert' }
   /** A push or a pull of a caught target, 1 to `kit.shoveMax` tiles, away from or toward the user or the aim (8.3, rule 18). */
@@ -243,7 +251,7 @@ const OP_KIND_SET: { readonly [K in OpKind]: true } = {
   damage: true, heal: true, mana: true, fatigue: true, applyStatus: true, cureStatus: true, note: true, speed: true, delay: true,
   hold: true, root: true, taunt: true, threat: true, shield: true, channel: true, staggerRate: true, stat: true, refund: true, aura: true, spread: true,
   sheet: true, share: true, untargetable: true, invulnerable: true, safeguard: true, edge: true, boost: true, hidden: true, alert: true,
-  shove: true, move: true, hasten: true, extra: true, guard: true, negate: true, dispel: true, stayHidden: true,
+  shove: true, move: true, hasten: true, extra: true, guard: true, negate: true, dispel: true, stayHidden: true, reveal: true,
 };
 export const OP_KINDS = Object.keys(OP_KIND_SET) as readonly OpKind[];
 
@@ -321,7 +329,7 @@ export const TYPE_MAX = 40;
 export type Origin =
   | { readonly kind: 'hunter'; readonly build: SheetBasis }
   /** `name`: the monster's own name, the kind a pack's rows share (a row's `name` adds its letter, "Goblin B"). */
-  | { readonly kind: 'monster'; readonly name: string; readonly rank: Rank; readonly archetype: Archetype; readonly monsterKind: MonsterKind; readonly tweak: Tweak; /** The monster's type ("Beast"), for a kill's fact; absent on a shadow, a summon or a monster without one. */ readonly type?: string };
+  | { readonly kind: 'monster'; readonly name: string; readonly rank: Rank; readonly archetype: Archetype; readonly monsterKind: MonsterKind; readonly tweak: Tweak; /** The monster's type ("Beast"), for a kill's fact; absent on a shadow, a summon or a monster without one. */ readonly type?: string; /** The picture a GM picked for the monster (`Monster.icon`); absent, the default from `type` and `archetype` (icon-defaults.ts `monsterIcon`). */ readonly icon?: IconKey };
 
 /** A summon is a body called to its owner's side for a few rounds (kits design 1.9, summons.ts). */
 export type CombatantKind = 'hunter' | 'monster' | 'shadow' | 'summon';
@@ -671,7 +679,7 @@ export function modsOf(statuses: readonly Status[]): { mods: StatusMod[]; rooted
       case 'damage': case 'heal': case 'mana': case 'fatigue': case 'applyStatus': case 'cureStatus': case 'note': case 'delay':
       case 'hold': case 'taunt': case 'threat': case 'shield': case 'channel': case 'staggerRate': case 'refund': case 'aura': case 'spread':
       case 'sheet': case 'share': case 'untargetable': case 'invulnerable': case 'safeguard': case 'edge': case 'boost': case 'hidden': case 'alert':
-      case 'shove': case 'move': case 'hasten': case 'extra': case 'guard': case 'negate': case 'dispel': case 'stayHidden': break;
+      case 'shove': case 'move': case 'hasten': case 'extra': case 'guard': case 'negate': case 'dispel': case 'stayHidden': case 'reveal': break;
       default: o satisfies never;
     }
   }
@@ -824,6 +832,7 @@ function opLine(o: Op, tier: number | null, R: DescribeRules): string {
       return `Hidden at stealth level ${l.text}${rank(l)}: only a foe with that sight level or higher sees it. ${HIDE_START_TEXT[o.start]}. ${ended}`;
     }
     case 'stayHidden': return `Stays hidden when it ${STEALTH_END_TEXT[o.on]}`;
+    case 'reveal': return 'Reveals each body it lands on: a hide that ends when it is revealed ends';
     case 'alert': return 'Never surprised';
     case 'shove': return `${o.dir === 'away' ? 'Pushes' : 'Pulls'} each target ${o.tiles} tile${o.tiles === 1 ? '' : 's'} ${o.dir === 'away' ? 'away from' : 'toward'} ${o.from === 'user' ? 'you' : 'the center'}`;
     case 'move': {

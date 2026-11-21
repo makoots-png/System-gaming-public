@@ -23,6 +23,8 @@ import type { Outbox } from './sync/outbox.ts';
 import type { RoomEvent } from './protocol.ts';
 import { ITEM_TYPES, LOOT_ITEMS, RARITIES, SHOP_ITEMS, SLOTS, itemOf, parseItem } from './registry/items.ts';
 import { parseMonster } from './registry/monsters.ts';
+import { isIconKey } from './registry/icons.ts';
+import type { IconKey } from './registry/icons.ts';
 import { SKILL_SEEDS, SKILL_TYPES, skillOf } from './registry/skills.ts';
 import type { SkillType } from './registry/skills.ts';
 import type { ItemTemplate, ItemType, Rarity, Slot } from './registry/items.ts';
@@ -213,7 +215,7 @@ export type Save = {
 /** A monster kind this campaign has defeated. `room`: copied from the GM's codex doc, with the numbers it carried in `info`. */
 export type CodexEntry = { name: string; rank: Rank; kills: number; firstAt: string; lastAt: string; monsterId: MonsterId | null; room?: true; info?: CodexInfo };
 /** What the GM's codex doc tells a player about a defeated monster: its sheet's max HP, armor, resist and speed, and up to 4 ability names. */
-export type CodexInfo = { hpMax: number; armor: number; resist: number; speed: number; abilities: string[] };
+export type CodexInfo = { hpMax: number; armor: number; resist: number; speed: number; abilities: string[]; icon?: IconKey };
 export const CODEX_SEEN_MAX = 400;
 
 // ── defaults. Each factory is typed by its entity, so a field added to a type without a default does not compile. ──
@@ -287,6 +289,7 @@ function codexOf(v: Rec): Record<string, CodexEntry> {
       e.info = {
         hpMax: num(i.hpMax, 0, 0, VITAL_MAX), armor: num(i.armor, 0, 0, VITAL_MAX), resist: num(i.resist, 0, 0, VITAL_MAX), speed: num(i.speed, 0, 0, VITAL_MAX),
         abilities: (Array.isArray(i.abilities) ? i.abilities : []).filter(isStr).map(a => a.slice(0, 60)).slice(0, 4),
+        ...(isIconKey(i.icon) ? { icon: i.icon } : {}),
       };
     }
     out[key] = e;

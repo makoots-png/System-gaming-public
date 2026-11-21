@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { ICON_KEYS, ICON_KEY_MAX } from '../src/core/registry/icons.ts';
 import { DOCS, DOC_MAX, NOTED_MAX, EVENTS, EVENT_TYPES, newEvent, onTurn, parseDocName, parseEvent, parseRoomState, parseSheet, SHEET_MAX, sentAgain, speaksFor, stampTime, standsFor, useRoute } from '../src/core/protocol.ts';
 import { endEvent, isSealed } from '../src/core/protocol.ts';
 import { FACE_LINES, hunterFace, parseServedSheet, servedTo, sheetFor } from '../src/core/protocol.ts';
@@ -814,11 +815,11 @@ describe('the fight doc', () => {
   const st = (key: string, label = key) => ({ key, label, left: 2.5, tier: 0 });
   const KAI_ROW = {
     id: 'c1', name: 'Kai', side: 'party', key: KEY, place: { x: 2, y: 3 }, at: 1500, speed: 100, band: 'wounded', statuses: [st('burning', 'Burning')],
-    shield: 12, shieldLeft: 1.5, channel: null, taunt: null, life: { at: 'up' }, kind: 'hunter', hp: 20, hpMax: 30, stride: 3, move: 6,
+    shield: 12, shieldLeft: 1.5, channel: null, taunt: null, icon: null, life: { at: 'up' }, kind: 'hunter', hp: 20, hpMax: 30, stride: 3, move: 6,
   };
   const GOBLIN_ROW = {
     id: 'c2', name: 'Goblin', side: 'foe', key: null, place: { x: 2, y: 11 }, at: 1800, speed: 110, band: 'bloodied', statuses: [], shield: null, shieldLeft: null,
-    channel: { ability: 'hex-bolt', name: 'Hex Bolt', charge: 2, max: 5, state: 'holding', factor: 2.1 }, taunt: { by: 'c1', left: 1.2 }, life: { at: 'up' },
+    channel: { ability: 'hex-bolt', name: 'Hex Bolt', charge: 2, max: 5, state: 'holding', factor: 2.1 }, taunt: { by: 'c1', left: 1.2 }, icon: null, life: { at: 'up' },
     kind: 'monster', intent: { name: 'Shortbow', target: 'c1', reveal: null }, stagger: { fill: 3, max: 40, staggered: null }, suggest: 'c1',
   };
   /** A running fight as fightDoc (src/core/combat/fight-doc.ts) makes it; `parse` puts it on the wire (`fightWire`) and reads it back. */
@@ -976,9 +977,11 @@ describe('the fight doc', () => {
    * The worst case of the doc on the wire (protocol.ts `DOC_MAX`'s arithmetic), as the design sizes it: ${DOC_ROWS} monster
    * rows, each with a 60-character name, the six longest built-in statuses at tier S with their counts, a shield, a stagger
    * with its stagger, a taunt, a channel and a revealed intent of four 80-character lines; a full log, a 40 by 40 map with
-   * its fog, 16 zones, and every list of ids at its bound. `table` is the second shape it can take: the doc's table of defs
+   * its fog, 16 zones, and every list of ids at its bound; an icon on every row (the registry's longest key). `table` is the second shape it can take: the doc's table of defs
    * at `DOC_DEFS_MAX`, and every other status named inline because its def is not the table's.
    */
+  /** The longest key of the registry: an icon on every row is the worst the doc can carry (each row carries its picture, row-icon.ts `rowIcon`). */
+  const LONGEST_ICON = [...ICON_KEYS].sort((a, b) => b.length - a.length)[0]!;
   function worstDoc(table: boolean) {
     const six = Object.entries(BUILT_IN_STATUSES).sort((a, b) => b[1].label.length - a[1].label.length).slice(0, 6);
     const id = (i: number) => `m-${String(i).padStart(2, '0')}`;
@@ -992,7 +995,7 @@ describe('the fight doc', () => {
     const worst = (i: number) => ({
       ...GOBLIN_ROW, id: id(i), name: 'n'.repeat(60), place: { x: 63, y: 63 }, at: 1234567, speed: 123.45, band: 'critical',
       statuses: six.map(([key, def]) => ({ key, label: def.label, left: 12.3, stacks: RULES.fight.kit.stackCap, tier: 5, def: table && i === 0 ? big(def.label, fill) : def })),
-      shield: 99999, shieldLeft: 12.3,
+      shield: 99999, shieldLeft: 12.3, icon: LONGEST_ICON,
       channel: { ability: 'a'.repeat(40), name: 'c'.repeat(60), charge: 99, max: 99, state: 'holding', factor: 99999.99 }, taunt: { by: 'm-31', left: 12.3 },
       intent: { name: 'i'.repeat(60), target: { x: 63, y: 63 }, reveal: { lines: many(4, () => 'l'.repeat(80)), radius: 63, outer: 63 } },
       stagger: { fill: 12345, max: 99999, staggered: 1.5 }, suggest: 'm-31',
@@ -1029,6 +1032,7 @@ describe('the fight doc', () => {
       expect(JSON.stringify(wire.defs ?? {}).length).toBeLessThanOrEqual(DOC_DEFS_MAX);
       expect(JSON.stringify(wire).length).toBeLessThanOrEqual(DOC_MAX * 8 / 9);
     }
+    expect(LONGEST_ICON.length, 'the longest key the registry holds fits ICON_KEY_MAX').toBeLessThanOrEqual(ICON_KEY_MAX);
     const row = worstDoc(false).rows[0]!, wireRow = (r: Raw) => JSON.stringify((fightWire({ ...worstDoc(false), rows: [r] } as never) as Raw).rows[0]).length;
     const hunter = { ...row, kind: 'hunter', key: KEY, life: { at: 'stable' }, intent: undefined, stagger: undefined, suggest: undefined, hp: 99999, hpMax: 99999, stride: 64, move: 64 };
     expect(wireRow(hunter), 'a worst-case hunter row is no longer than the worst-case monster row').toBeLessThanOrEqual(wireRow(row));

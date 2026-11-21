@@ -44,6 +44,8 @@ import { untouched } from '../core/party.ts';
 import { postNews } from '../core/sync/connection.ts';
 import * as motion from './motion.ts';
 import { bind, keyed, prepended } from './patch.ts';
+import { icon, sprite } from './icons.ts';
+import { rowIcon } from '../core/combat/row-icon.ts';
 
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const int = (v, d = 0) => { v = Math.trunc(Number(v)); return Number.isFinite(v) ? v : d; };
@@ -60,6 +62,7 @@ export function register(app) {
   const { store, ui } = app;
   const { esc } = ui;
   const A = () => app.api;
+  sprite();
   const canRun = () => runsFight(app.seat()); // P01/F02: solo play runs its own fight; in a room only the GM does
   const inRoomAsGM = () => app.seat() === 'gm';
   /** @returns {Fight | null} */
@@ -565,7 +568,7 @@ export function register(app) {
   // ── the fight as the players' table shows it (the room's fight doc, kept by app.api.sync.publish) ──
   A().sync.publish('fight', () => {
     const S = A().sync;
-    const doc = fightDoc(fight(), rules(), { by: /** @type {import('../core/ids.ts').DeviceId} */ (store.get().settings.deviceId), at: new Date().toISOString(), was: S.doc('fight'), keyOf: hid => parseSheetKey(S.myKey(hid)), refused: tableRefusal, burst: lastBurst });
+    const doc = fightDoc(fight(), rules(), { by: /** @type {import('../core/ids.ts').DeviceId} */ (store.get().settings.deviceId), at: new Date().toISOString(), was: S.doc('fight'), keyOf: hid => parseSheetKey(S.myKey(hid)), refused: tableRefusal, burst: lastBurst, hunterOf: holderHunter });
     // the room takes the doc in its wire shape (fight-doc.ts `fightWire`), which `DOCS.fight` reads back
     return doc && fightWire(doc);
   });
@@ -630,6 +633,8 @@ export function register(app) {
 .cmb-row.down :is(.cmb-init,.cmb-nm,.cmb-cs,.cmb-mini){opacity:.6}.cmb-row.dead :is(.cmb-init,.cmb-nm,.cmb-cs,.cmb-mini){opacity:.45}.cmb-row.dead .cmb-nm{text-decoration:line-through}
 .cmb-init{font-family:var(--font-mono);font-weight:700;color:var(--cyan);flex:0 0 28px;text-align:right}
 .cmb-nm{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cmb-nm .ic{--ic:var(--icon-order);margin:0 5px 0 0;vertical-align:-3px}
+.cmb-card h3 .ic{--ic:var(--icon-card)}
 .cmb-mini{flex:0 0 76px;display:flex;flex-direction:column;gap:2px;font-family:var(--font-mono);font-size:12px;text-align:right}
 .cmb-mini .bar{height:6px}
 .cmb-cs{font-size:12px;color:var(--purple);flex:0 0 auto;max-width:34%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -766,7 +771,7 @@ export function register(app) {
     input: () => {
       const f = fight(); if (!f || f.phase === 'ended') return null;
       const R = rules(), c = cur(), actor = c && !isRemote(c) && !cardOf(f, c, R).down ? c.id : null;
-      return { fight: f.id, bodies: fightBodies(f, R, () => false), grid: f.grid, currentId: running(f) ? f.currentId : null, actor, ...fightGround(f, R) };
+      return { fight: f.id, bodies: fightBodies(f, R, () => false, holderHunter), grid: f.grid, currentId: running(f) ? f.currentId : null, actor, ...fightGround(f, R) };
     },
     order: () => { const f = fight(); return running(f) ? order(f, 6, rules()).map(t => ({ id: t.row.id, name: t.row.name })) : []; },
     kit: () => {
@@ -861,7 +866,7 @@ export function register(app) {
    * node in the template), the bars' shares, and the words and controls from this phone's state.
    */
   function cardDesc(f, r, ro) {
-    const R = rules(), k = cardOf(f, r, R), now = k.turn, h = localHunter(r), remote = isRemote(r);
+    const R = rules(), k = cardOf(f, r, R), now = k.turn, h = localHunter(r), remote = isRemote(r), pic = rowIcon(r, holderHunter(r));
     // the row holds the life of every body, a player's hunter's too: its word is the row's (row-life.ts `lifeWord`)
     const word = lifeWord(r);
     const tag = word ? `<span class="cmb-tag lw" data-life-at="${r.life.at}">${esc(word)}</span>` : '';
@@ -870,7 +875,7 @@ export function register(app) {
     const base = {
       ...Object.fromEntries(Object.entries(k).filter(([, v]) => v === null || typeof v !== 'object')),
       key: r.id, cls: `cmb-card${now ? ' turn' : ''}`,
-      head: `${esc(r.name)} ${ui.rankBadge(rankOf(r))}
+      head: `${pic ? icon(pic) : ''}${esc(r.name)} ${ui.rankBadge(rankOf(r))}
         ${now ? '<span class="cmb-tag now">Current turn</span>' : ''}<span class="cmb-tag">${esc(r.kind)}</span>${remote ? '<span class="cmb-tag now">remote</span>' : ''}${tag}`,
       staggerF: k.stagger ? share(k.stagger.fill, k.stagger.max) : null, staggerFill: k.stagger ? k.stagger.fill : 0, staggerMax: k.stagger ? k.stagger.max : 0,
       staggered: k.stagger ? k.stagger.staggered : null, shieldF: k.shield !== null ? share(k.shield, k.hpMax) : null,
@@ -972,11 +977,13 @@ export function register(app) {
     // the hunter the row holds, this phone's or a player's sheet as the room's parser read it (N8: no guard of its own); a
     // player's row whose sheet left the room draws no badge
     const who = r.kind === 'hunter' ? holderHunter(r) : null, badge = who ? A().identity.badge(who, 'sm') : '';
+    // a hunter's badge is its emblem in its colour; any other row's picture is its token's (row-icon.ts)
+    const pic = rowIcon(r, who);
     return {
       cls: `cmb-row${now ? ' cur' : ''}${fc && r.id === fc.id ? ' sel' : ''}${k.down ? ` down ${r.life.at}` : ''}`,
       label: `Select ${r.name}${now ? ', current turn' : ''}${word ? `, ${word}` : ''}`,
       init: running(f) && !k.down ? String(i + 1) : '',
-      lead: `<span class="cmb-nm">${now ? '▶ ' : ''}${badge}${esc(r.name)}${isRemote(r) ? ' <small>(remote)</small>' : ''}</span>${cs ? `<span class="cmb-cs">${esc(cs)}</span>` : ''}${word ? `<span class="cmb-dn lw" data-life-at="${r.life.at}">${esc(word)}</span>` : ''}`,
+      lead: `<span class="cmb-nm">${now ? '▶ ' : ''}${badge || (pic ? icon(pic) : '')}${esc(r.name)}${isRemote(r) ? ' <small>(remote)</small>' : ''}</span>${cs ? `<span class="cmb-cs">${esc(cs)}</span>` : ''}${word ? `<span class="cmb-dn lw" data-life-at="${r.life.at}">${esc(word)}</span>` : ''}`,
       hp: `${k.hp}/${k.hpMax}`, f: share(k.hp, k.hpMax),
     };
   }

@@ -9,7 +9,7 @@ import { tallied } from './row-tally.ts';
 import type { Rules } from '../rules.ts';
 import { diceOf } from '../formula.ts';
 import type { Dice } from '../formula.ts';
-import { defaultPlace, dist, GRID_SIDE, openGrid, pathCost, place, sees, straightCost, TERRAIN } from './space.ts';
+import { defaultPlace, dist, GRID_SIDE, openGrid, pathCost, place, straightCost, TERRAIN } from './space.ts';
 import type { Place } from './space.ts';
 import { acted, cost, interval, opening, paceCost, tick, walkCost } from './timeline.ts';
 import type { Tick } from './timeline.ts';
@@ -18,17 +18,18 @@ import { applyStatus, modified, removeStatus, statusOn, statusShield, withStatus
 import { atTier } from './op-amount.ts';
 import type { Body, Status, StatusKey } from './effect-ops.ts';
 import { landUse, leftZone, placeOf, ready, resolve } from './resolve.ts';
-import { alive } from './land.ts';
+import { alive, putBy, stealthAfter } from './land.ts';
 import type { Resolved } from './resolve.ts';
 import { react, reactorsFor, reactState, reactStep, withReact } from './fight-react.ts';
-import { holds, stealthStep } from './standing.ts';
+import { hideOf, holds, stealthOf, stealthState, stealthStep } from './standing.ts';
+import { watched } from './sight.ts';
 import { counted, usesGates } from './uses.ts';
 import type { Aim } from './resolve.ts';
 import { combatantId } from './ability-types.ts';
 import type { Ability, CombatantId, Outcome } from './ability-types.ts';
 import { channelCan, channelStep, released } from './fight-channel.ts';
 import { eventsOf, raised } from './triggers.ts';
-import { burstsOf, consequences, D20, ended, held, holdsSide, logged, marked, overIf, partyView, payDue, rowOf, sentAway, sheetBacks, spreadTo, startTurn, triggered, uncovered, withRow, zoneEnds } from './fight-turn.ts';
+import { burstsOf, consequences, D20, ended, held, holdsSide, logged, marked, overIf, partyView, payDue, rowOf, sentAway, sheetBacks, spreadTo, startTurn, triggered, unwarded, withRow, zoneEnds } from './fight-turn.ts';
 import { hpChange, lifeNews, SAVES_TO_END } from '../hunter/vitals.ts';
 import { refilledRow, rowLifeAfter, rowLifeTakes } from './row-life.ts';
 import { summonRow } from './rows.ts';
@@ -202,8 +203,9 @@ const act: Step<'running', 'act'> = (f, cmd, ctx) => {
   const at = placeOf(cmd.aim, rows)!, zonePrices = (a.prices ?? []).flatMap(p => (p.kind === 'zone' ? [p] : []));
   if (zonePrices.some(p => !pricedZones(f.zones, u.id, p, at, rows, f.grid, f.now, R).length)) return refused(f, 'zone');
   const taken = zonePrices.flatMap(p => pricedZones(f.zones, u.id, p, at, rows, f.grid, f.now, R));
-  // table 8.9.4: a hide while a foe that is up sees the tile leaves its user seen, refused; a channel's at its begin, since its release is never refused
-  if (hides(a) && stealthStep('seen', { type: 'hide', seen: seenByFoes(f, u, R) }) === 'seen') return refused(f, 'seen');
+  // the stealth machine (notes-7-stealth.md section 4): a hide that starts out of sight, while a foe that is up has its
+  // user in sight, leaves a seen user seen, refused; a channel's at its begin, since its release is never refused
+  if (!hideLands(a, u, f, R)) return refused(f, 'seen');
   // a channel's begin is a use's rules 2 to 5 (`ready`): it pays what a use pays, once, its zone price too; its release lands what was paid
   if (a.channel) {
     const ok = ready(a, u, rows, cmd.aim, f.grid, f.now, R);
@@ -236,16 +238,17 @@ type Landed = {
 };
 /**
  * What follows a use that landed, the one path of `act` and `release`, so a rule added here holds for both: acting on a
- * foe or a place ends its user's ward and hide (kits design 8.1, 8.7.3); one log line naming each target's outcome
- * (rule 20); the zones its price took end and its own goes down (rule 18b); a summon (18d); a zone act (kits 8.5.4),
+ * foe or a place ends its user's untargetable ward (kits design 8.1); its stealth events (`useStealth`); one log line
+ * naming each target's outcome (rule 20); the zones its price took end and its own goes down (rule 18b); a summon (18d); a zone act (kits 8.5.4),
  * whose bodies, as a shove's, pay no entry (8.3.4, 8.5.5); the tally; its triggers (19b); the `after` reactions (19c);
  * then the next turn.
  */
 function landed(f: Running, use: Landed, ctx: Ctx): Result {
   const R = ctx.rules, { a, u, rows, at, taken } = use, reacted = use.r.reacted;
-  // acting on a foe or a place ends the user's untargetable and hidden statuses, after the use (kits design 8.1, 8.7)
+  // acting on a foe or a place ends the user's untargetable ward, after the use (kits design 8.1)
   const ends = (a.aim === 'foe' || a.aim === 'place') && !hides(a);
-  const r = ends ? { ...use.r, bodies: use.r.bodies.map(b => b.id === u.id ? uncovered(b, f.now, R) : b) } : use.r;
+  const warded = ends ? use.r.bodies.map(b => b.id === u.id ? unwarded(b, f.now, R) : b) : use.r.bodies;
+  const r = { ...use.r, bodies: useStealth(a, u, use.r.outcomes, warded, f.now, R) };
   const said = [
     ...reacted.said, ...reacted.lethal,
     ...r.outcomes.map(o => `${rowOf(f, o.target)?.name ?? o.target} ${o.avoid === 'out' ? 'avoids it' : `${o.avoid}${o.crit ? ', crit' : ''}${o.dealt ? ` ${o.dealt}` : ''}`}`),
@@ -336,11 +339,28 @@ function arm<F extends Setup | Running>(f: F, cmd: Extract<Command, { type: 'arm
 /** Whether a use hides its user: it puts a status with `hidden` on (kits design 8.7). */
 const hides = (a: Ability): boolean => a.ops.some(o => o.op === 'applyStatus' && o.def.ops.some(x => x.op === 'hidden'));
 /**
- * Whether a foe that is up sees `u`'s tile (kits design 8.7.2): within the fog's sight, or `fight.sight` with no fog, and
- * nothing between that stops sight. Hiding is refused then: in the open arena nobody hides.
+ * Whether each hide a use of `a` puts on lands on its user `u` as it stands now: the stealth machine's `hide` on its
+ * stealth, from where each may start and whether a foe that is up has `u` in sight (sight.ts `watched`). A use that hides
+ * nobody lands.
  */
-const seenByFoes = (f: Running, u: Body, R: Rules): boolean =>
-  f.rows.some(o => o.side !== u.side && isUp(o) && dist(o.place, u.place) <= (f.fog?.sight ?? R.fight.sight) && sees(o.place, u.place, f.grid));
+function hideLands(a: Ability, u: Body, f: Running, R: Rules): boolean {
+  const puts = a.ops.flatMap(o => (o.op === 'applyStatus' ? o.def.ops.flatMap(x => (x.op === 'hidden' ? [{ key: o.key, def: o.def, start: x.start }] : [])) : []));
+  if (!puts.length) return true;
+  const s = stealthOf(u), seen = watched(u, f, R);
+  return puts.every(p => stealthState(stealthStep(s, { type: 'hide', hide: hideOf(p.key, p.def, u.tier)!, start: p.start, watched: seen })) === 'hidden');
+}
+/**
+ * The stealth events a use raises (notes-7-stealth.md section 4, with the owner's rulings), on `bodies` as it left them:
+ * `dealt` on its user when it dealt HP damage to a body of the other side (ruling 6: its own use; a zone or a status it
+ * left is not), on each hide but one the use itself put on; and `revealed` on each body of the other side an area of it
+ * hit (a radius, ruling 2). A use that only slows or curses a foe gives its user away to nobody.
+ */
+function useStealth(a: Ability, u: Body, outcomes: readonly Outcome[], bodies: readonly Body[], now: Tick, R: Rules): Body[] {
+  const side = (id: CombatantId) => bodies.find(b => b.id === id)?.side ?? u.side;
+  const dealt = outcomes.some(o => (o.type === 'physical' || o.type === 'magical') && o.dealt > 0 && side(o.target) !== u.side);
+  const area = a.shape.kind === 'radius', hit = new Set(outcomes.filter(o => area && o.avoid !== 'out' && side(o.target) !== u.side).map(o => o.target));
+  return bodies.map(b => b.id === u.id && dealt ? stealthAfter(b, { type: 'dealt' }, now, R, putBy(a.ops)) : hit.has(b.id) ? stealthAfter(b, { type: 'revealed' }, now, R) : b);
+}
 
 /** The `crit` effects of a use's outcomes: one per target a critical hit landed on. */
 const critsOf = (outcomes: readonly Outcome[]): Fx => outcomes.filter(o => o.crit).map(o => ({ type: 'crit', id: o.target }));

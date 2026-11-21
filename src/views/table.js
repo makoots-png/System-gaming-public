@@ -18,6 +18,7 @@ import { itemOfAbility } from '../core/registry/abilities.ts';
 import { TABLE_REFUSAL_WORDS } from '../core/combat/refusal-words.ts';
 import * as motion from './motion.ts';
 import { bind, keyed } from './patch.ts';
+import { icon, sprite } from './icons.ts';
 
 const FEED_MAX = 20;
 const BANDS = { healthy: 100, wounded: 70, bloodied: 45, critical: 20, down: 0 };
@@ -27,6 +28,7 @@ const BAND_LABEL = { healthy: 'Healthy', wounded: 'Wounded', bloodied: 'Bloodied
 export function register(app) {
   const { store, ui } = app;
   const { esc } = ui;
+  sprite();
   const sync = () => app.api.sync;
   const inRoomPlayer = () => app.seat() === 'player';
   const inRoomGM = () => app.seat() === 'gm';
@@ -57,6 +59,8 @@ export function register(app) {
     .tb-row.down{opacity:.7}.tb-row.dead{opacity:.5}
     .tb-name .lw{margin-left:6px}
     .tb-name{overflow-wrap:anywhere;font-weight:600;min-width:0}
+    .tb-name .ic{--ic:var(--icon-order);margin-right:5px;vertical-align:-3px}
+    .tb-sheet h3 .ic{--ic:var(--icon-card)}
     .tb-you{font-family:var(--font-mono);font-size:12px;color:var(--gold);border:1px solid var(--gold);padding:0 6px;margin-left:6px}
     .tb-turn{font-size:12px;color:var(--cyan);letter-spacing:.15em}
     .tb-band{grid-column:1/-1;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--cyan-dim)}
@@ -170,7 +174,7 @@ export function register(app) {
     const summon = r.kind === 'summon' ? ` (${esc(ownerName(e, r))}'s${r.left !== null ? `, ${r.left} round${r.left === 1 ? '' : 's'}` : ''})` : '';
     return {
       cls: `tb-row${cur ? ' cur' : ''}${word ? ` down ${r.life.at}` : ''}`, current: cur ? 'true' : false,
-      name: `${esc(r.name)}${summon}${mine ? '<span class="tb-you">YOU</span>' : ''}${word ? `<span class="lw" data-life-at="${r.life.at}">${esc(word)}</span>` : ''}`, turn: cur ? '▶ TURN' : '',
+      name: `${r.icon ? icon(r.icon) : ''}${esc(r.name)}${summon}${mine ? '<span class="tb-you">YOU</span>' : ''}${word ? `<span class="lw" data-life-at="${r.life.at}">${esc(word)}</span>` : ''}`, turn: cur ? '▶ TURN' : '',
       band, bandLabel: word ?? BAND_LABEL[band], w: exact ? share(r.hp, r.hpMax) : BANDS[band] / 100, hpText: shown,
       conds: `${conds.length ? `<span class="tb-conds">${conds.map(esc).join(' · ')}</span>` : ''}${extrasHtml(e, r)}`,
     };
@@ -427,7 +431,7 @@ export function register(app) {
     if (!r) { if (!box.hidden) { box.hidden = true; box.innerHTML = ''; box.dataset.sig = ''; } return; }
     const word = lifeWord(r), hp = r.kind === 'monster' ? (word ? '' : BAND_LABEL[r.band]) : `HP ${r.hp} / ${r.hpMax}`;
     const line = [hp && esc(hp), word && `<span class="lw" data-life-at="${r.life.at}">${esc(word)}</span>`, r.id === e.currentId && 'Their turn'].filter(Boolean).join(' · ');
-    const html = `<h3>${esc(r.name)}${isMine(r) ? '<span class="tb-you">YOU</span>' : ''}<button type="button" class="quiet" data-tbsheetx>Close</button></h3>
+    const html = `<h3>${r.icon ? icon(r.icon) : ''}${esc(r.name)}${isMine(r) ? '<span class="tb-you">YOU</span>' : ''}<button type="button" class="quiet" data-tbsheetx>Close</button></h3>
       <div>${line}</div>${extrasHtml(e, r)}
       ${r.statuses.length ? chipRow('tok-chips', r.id, r.statuses, `${r.name}'s statuses`) : '<div class="tb-conds">No statuses.</div>'}`;
     if (box.dataset.sig !== html) { box.dataset.sig = html; box.innerHTML = html; countStacks(box); }

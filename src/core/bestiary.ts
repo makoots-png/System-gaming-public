@@ -122,7 +122,7 @@ export function codexFromRoom<S extends BestiaryParts>(save: S, doc: CodexDoc): 
     const o = save.codex[e.key];
     if (o && !(o.room && o.kills !== e.kills)) continue;
     const r: CodexEntry = { name: e.name, rank: e.rank, kills: e.kills, firstAt: e.firstAt, lastAt: doc.at || e.firstAt, monsterId: null, room: true,
-      info: { hpMax: e.hpMax, armor: e.armor, resist: e.resist, speed: e.speed, abilities: e.abilities } };
+      info: { hpMax: e.hpMax, armor: e.armor, resist: e.resist, speed: e.speed, abilities: e.abilities, ...(e.icon ? { icon: e.icon } : {}) } };
     laid[e.key] = r;
     if (!o) fresh.push(r);
   }

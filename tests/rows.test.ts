@@ -178,6 +178,18 @@ describe('a monster', () => {
     expect(rowHp(r!)).toBeLessThan(monsterSheet('E', 'caster', 'normal', RULES).hpMax);
   });
 
+  test('a picture its GM picked rides on every row of its pack, and a saved fight reads it back; one never picked is not stored', () => {
+    const picked = monsterRows(monster({ icon: 'raven' }), [id('m1'), id('m2')], R);
+    expect(picked.map(r => r.origin.kind === 'monster' ? r.origin.icon : null)).toEqual(['raven', 'raven']);
+    expect(monsterRows(monster(), [id('m1')], R)[0]!.origin, 'the default is never stored').not.toHaveProperty('icon');
+    const f = reduce(null, { type: 'add', fightId: fightId('f'), rows: picked, openings: [] }, { rules: RULES }).fight!;
+    const read = parseFight(JSON.parse(JSON.stringify(f)), RULES)!;
+    expect(read.rows.map(r => r.origin.kind === 'monster' ? r.origin.icon : null)).toEqual(['raven', 'raven']);
+    const stale = JSON.parse(JSON.stringify(f));
+    stale.rows[0].origin.icon = 'no-such-icon';
+    expect(parseFight(stale, RULES)!.rows[0]!.origin, 'a key this build lacks is read as none').not.toHaveProperty('icon');
+  });
+
   test('attacks with its archetype\'s attack first, then its own; its own of the same id is left out', () => {
     const bite = skill('strike', 'Bite'), clash = { ...skill('shot', 'Clash'), id: ATTACK_ID };
     const names = (archetype: RowMonster['archetype']) =>

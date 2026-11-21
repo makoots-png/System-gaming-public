@@ -349,6 +349,83 @@ test('on a 360 px phone the Fight tools keep each map size stepper, its label, m
   }
 });
 
+test('on a 390 px phone a pack of rats and a boss on the map each show their picture in the disc, the pack\'s letter in its corner and the boss\'s inside its stagger ring; a hunter shows its emblem, or its initials with none; the card, the order and the hotbar show theirs beside the words', async ({ device }) => {
+  const gm = (await device('gm', { viewport: PHONE })).page;
+  await onboardGM(gm);
+  await chooseList(gm);
+  await startGoblinDenFight(gm);
+  const combat = gm.locator('#view-combat');
+  for (const line of ['Cave Rat x3, E, brute', 'Ash Drake, C, caster, boss']) {
+    await combat.locator('[data-qline]').fill(line);
+    await combat.locator('[data-qadd]').tap();
+  }
+  const ids = await gm.evaluate(() => {
+    let out = { rats: [] as string[], boss: '', brakk: '', mira: '' };
+    hunterApp.store.update((d: any) => {
+      d.hunters.find((h: any) => h.name === 'Brakk Ironhide').emblem = 'crown';
+      d.hunters.find((h: any) => h.name === 'Mira Vale').emblem = '';
+      const f = d.fight, rats = f.rows.filter((r: any) => r.name.startsWith('Cave Rat')), boss = f.rows.find((r: any) => r.name === 'Ash Drake');
+      const brakk = f.rows.find((r: any) => r.name === 'Brakk Ironhide'), mira = f.rows.find((r: any) => r.name === 'Mira Vale');
+      const others = f.rows.filter((r: any) => ![...rats, boss, brakk, mira].includes(r));
+      rats.forEach((r: any, i: number) => { r.place = { x: 2 + i, y: 2 }; });
+      boss.place = { x: 6, y: 2 }; boss.origin.type = 'Dragon'; boss.stagger = { fill: 40, max: 100, hit: 25 }; boss.shield = { amount: 20, until: f.now + 2000 };
+      brakk.place = { x: 3, y: 4 }; mira.place = { x: 4, y: 4 };
+      others.forEach((r: any, i: number) => { r.place = { x: 1 + 2 * i, y: 7 }; });
+      out = { rats: rats.map((r: any) => r.id), boss: boss.id, brakk: brakk.id, mira: mira.id };
+    }, 'test-setup');
+    return out;
+  });
+  await combat.locator('[data-fview="map"]').tap();
+  const map = combat.locator('[data-mapbox]'), tok = (id: string) => map.locator(`[data-tok="${id}"]`);
+  await map.locator('[data-frame]').dblclick({ position: { x: 4, y: 4 } });
+  /** What a token's disc shows: its picture's key and size, its letter and its initials, each only while shown. */
+  const disc = (id: string) => tok(id).evaluate(t => {
+    const shown = (el: Element | null) => !!el && getComputedStyle(el).display !== 'none' && !el.hasAttribute('hidden');
+    const ic = t.querySelector('.mp-ic'), pk = t.querySelector('.mp-pk'), lbl = t.querySelector('.mp-lbl');
+    return {
+      icon: shown(ic) ? ic!.querySelector('use')!.getAttribute('href') : null, size: shown(ic) ? getComputedStyle(ic!).width : null, hidden: ic?.getAttribute('aria-hidden') ?? null,
+      letter: shown(pk) ? pk!.textContent : null, letterPx: shown(pk) ? parseFloat(getComputedStyle(pk!).fontSize) : null, initials: shown(lbl) ? lbl!.textContent : null,
+    };
+  });
+
+  await test.step('each rat shows a Cave Rat\'s picture (a brute with no type: the claw) with its pack\'s letter, 12 px, inside its own tile', async () => {
+    for (const [i, id] of ids.rats.entries()) {
+      expect(await disc(id)).toEqual({ icon: '#i-claw', size: '22px', hidden: 'true', letter: 'ABC'[i], letterPx: 12, initials: null });
+      const inside = await tok(id).evaluate(t => { const a = t.getBoundingClientRect(), b = t.querySelector('.mp-pk')!.getBoundingClientRect(); return b.left >= a.left - 0.5 && b.right <= a.right + 0.5 && b.top >= a.top - 0.5 && b.bottom <= a.bottom + 0.5; });
+      expect(inside, `Rat ${'ABC'[i]}'s letter stays inside its tile`).toBe(true);
+      await expect(tok(id), 'the token still says its name').toHaveAttribute('aria-label', new RegExp(`^Cave Rat ${'ABC'[i]},`));
+    }
+  });
+  await test.step('the boss shows a Dragon\'s picture inside its stagger ring, its shield around it', async () => {
+    expect(await disc(ids.boss)).toEqual({ icon: '#i-dragon', size: '22px', hidden: 'true', letter: null, letterPx: null, initials: null });
+    const clear = await tok(ids.boss).evaluate(t => {
+      const ic = t.querySelector('.mp-ic')!.getBoundingClientRect(), st = t.querySelector('.mp-stag')!, r = st.getBoundingClientRect(), pad = parseFloat(getComputedStyle(st).paddingLeft) * (r.width / (st as HTMLElement).offsetWidth);
+      return ic.left >= r.left + pad - 0.5 && ic.right <= r.right - pad + 0.5 && ic.top >= r.top + pad - 0.5 && ic.bottom <= r.bottom - pad + 0.5;
+    });
+    expect(clear, 'the picture sits inside the stagger ring\'s inner edge').toBe(true);
+  });
+  await test.step('Brakk shows his crown; Mira, with no emblem, her initials', async () => {
+    await expect.poll(() => disc(ids.brakk)).toEqual({ icon: '#i-crown', size: '22px', hidden: 'true', letter: null, letterPx: null, initials: null });
+    expect(await disc(ids.mira)).toEqual({ icon: null, size: null, hidden: 'true', letter: null, letterPx: null, initials: 'MV' });
+  });
+  await test.step('the order shows each name after its picture at 16 px, the hotbar each ability\'s at 20 px above its name', async () => {
+    const order = await map.locator('.mp-order li').evaluateAll(lis => lis.map(li => { const ic = li.querySelector('.ic'); return ic && !ic.hasAttribute('hidden') ? getComputedStyle(ic).width : null; }));
+    expect(order.length).toBeGreaterThan(1);
+    expect(order.filter(Boolean).every(w => w === '16px'), `the order's pictures: ${order.join(', ')}`).toBe(true);
+    const slot = map.locator('[data-hot] [data-ab]').first();
+    const [ic, name] = await Promise.all([slot.locator('.ic').boundingBox(), slot.locator('span').boundingBox()]);
+    expect(await slot.locator('.ic').evaluate(el => [getComputedStyle(el).width, el.getAttribute('aria-hidden')])).toEqual(['20px', 'true']);
+    expect(ic!.y + ic!.height, 'the picture is above the name').toBeLessThanOrEqual(name!.y + 0.5);
+    expect((await slot.boundingBox())!.height, 'the slot is still a 44 px target').toBeGreaterThanOrEqual(44);
+  });
+  await test.step('the boss\'s card shows its picture at 24 px before its name', async () => {
+    await tok(ids.boss).tap();
+    const head = combat.locator('.cmb-card h3');
+    await expect(head).toContainText('Ash Drake');
+    expect(await head.locator('.ic').evaluate(el => [el.querySelector('use')!.getAttribute('href'), getComputedStyle(el).width, el.getAttribute('aria-hidden')])).toEqual(['#i-dragon', '24px', 'true']);
+  });
+});
+
 for (const width of [360, 390]) {
   test(`on a ${width} px phone in a melee of three on the map, every name is clear of the other tokens and the other names, aimed or not`, async ({ device }) => {
     const gm = (await device('gm', { viewport: { width, height: 800 } })).page;

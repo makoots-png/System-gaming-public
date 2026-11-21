@@ -81,7 +81,7 @@ const KIND_LABEL = {
   sheet: 'Armor, crit or range', share: 'Damage or healing %', untargetable: 'Cannot be aimed at', invulnerable: 'Cannot drop under 1 HP',
   safeguard: 'Blocks harmful statuses', edge: 'Rolls twice (advantage)', boost: 'Held die', hidden: 'Hidden (stealth)', alert: 'Never surprised',
   shove: 'Push or pull', move: 'Move stacks', hasten: 'Hasten their turn', extra: 'Another action', guard: 'Guard (reaction)',
-  negate: 'Negate (reaction)', dispel: 'Cure harmful', stayHidden: 'Stays hidden',
+  negate: 'Negate (reaction)', dispel: 'Cure harmful', stayHidden: 'Stays hidden', reveal: 'Reveal hidden',
 };
 /** Whom a status's aura reaches (effect-ops.ts `AURA_ON`). */
 const AURA_LABEL = [['all', 'Everyone'], ['allies', 'Allies'], ['foes', 'Foes']];
@@ -93,8 +93,8 @@ const ROW_KINDS = {
   status: OP_KINDS,
   item: ['damage', 'heal', 'mana', 'fatigue', 'applyStatus', 'cureStatus', 'note'],
   skill: ['applyStatus', 'cureStatus', 'delay', 'threat', 'shield', 'channel', 'mana', 'fatigue', 'note', 'shove', 'move', 'hasten', 'extra', 'guard', 'negate', 'dispel'],
-  /** What a threshold, a trigger or a delayed end lands (effect-ops.ts `LandOp`): a hit or a heal at once, and the ability ops that land alone (`LAND_USE_OPS`). */
-  land: ['damage', 'heal', 'applyStatus', 'cureStatus', 'shield', 'mana', 'fatigue', 'threat', 'delay', 'note', 'move', 'hasten', 'dispel'],
+  /** What a threshold, a trigger or a delayed end lands (effect-ops.ts `LandOp`): a hit or a heal at once, a reveal, and the ability ops that land alone (`LAND_USE_OPS`). */
+  land: ['damage', 'heal', 'applyStatus', 'cureStatus', 'shield', 'mana', 'fatigue', 'threat', 'delay', 'note', 'move', 'hasten', 'dispel', 'reveal'],
 };
 /** Ops whose amount is a formula (by rank), and the shield, whose amount is one formula. */
 const FORMULA_KINDS = ['damage', 'heal', 'mana', 'fatigue'];
@@ -117,7 +117,7 @@ function specOf(r) {
   const hi = { armor: K.armorOp, resist: K.armorOp, pen: F.penCap, critFaces: K.critFacesMax, exposed: K.critFacesMax, critSize: K.critSizeMax - F.critSizeBase, costCut: K.costCutMax, range: K.rangeAdd }[key] ?? K.armorOp;
   return { key: 'amount', lo: -hi, hi, decimal: key === 'pen' || key === 'critSize' || key === 'costCut' };
 }
-const PLAIN_KINDS = ['hold', 'root', 'taunt', 'untargetable', 'invulnerable', 'safeguard', 'alert', 'extra', 'negate'];
+const PLAIN_KINDS = ['hold', 'root', 'taunt', 'untargetable', 'invulnerable', 'safeguard', 'alert', 'extra', 'negate', 'reveal'];
 /** Where a hide may start (effect-ops.ts `HIDE_STARTS`), and the three events that may end it (`STEALTH_ENDS`), as the GM reads them. */
 const START_LABEL = [['unseen', 'Out of sight'], ['anywhere', 'Anywhere']];
 const STEALTH_END_LABEL = [['hurt', 'Hurt'], ['revealed', 'Revealed'], ['dealt', 'It deals damage']];

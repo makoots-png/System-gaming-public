@@ -21,6 +21,7 @@ import type { Command, Ctx, Fight, NewRow } from '../src/core/combat/fight.ts';
 import { DOC_ROWS, TABLE_REFUSALS, band, fightDoc, fightWire } from '../src/core/combat/fight-doc.ts';
 import type { DocContext, FightDoc, FightDocRow } from '../src/core/combat/fight-doc.ts';
 import type { DeviceId, SheetKey } from '../src/core/ids.ts';
+import type { IconKey } from '../src/core/registry/icons.ts';
 import { atHp, lifeAt } from './fixtures/life.ts';
 import type { RowPatch } from './fixtures/life.ts';
 const sheetKey = (s: string) => parseSheetKey(s) ?? (() => { throw new Error(`not a sheet key: ${s}`); })();
@@ -69,6 +70,35 @@ const withBody = (fight: Fight, name: string, change: RowPatch<Body>): Fight => 
   // a row's own fields beside its life: the patch holds neither its kind nor its life
   return { ...fight, rows: fight.rows.map(r => { const b = { ...r, ...rest } as Body; return r.id !== name ? r : hp === undefined ? b : atHp(b, hp); }) };
 };
+
+describe('each row\'s picture on the table\'s doc: the GM\'s phone answers it and the doc carries the answer (icons design 5, ruling 1)', () => {
+  const monsterOrigin = (o: { icon?: IconKey; type?: string } = {}): Origin =>
+    ({ kind: 'monster', name: 'Rat', rank: 'E', archetype: 'brute', monsterKind: 'normal', tweak: { hp: 1, stats: {} }, ...o });
+  /** A hunter with an emblem (A), one with none (B), a rat its GM gave a raven (M), a Beast (N), a type the table lacks (O). */
+  const fight = () => play(add(
+    row('A', 'party'), row('B', 'party'),
+    row('M', 'foe', { origin: monsterOrigin({ icon: 'raven', type: 'Beast' }) }), row('N', 'foe', { origin: monsterOrigin({ type: 'Beast' }) }),
+    row('O', 'foe', { origin: monsterOrigin({ type: 'Swamp thing' }) }),
+  ), start(['A', 20], ['B', 20], ['M', 10], ['N', 10], ['O', 10]));
+  const sheets: Record<string, { emblem: string }> = { A: { emblem: 'crown' }, B: { emblem: '' } };
+  const hunterOf = (b: Body) => sheets[b.id] ?? null;
+  const doc = () => live(fightDoc(fight(), RULES, docCtx({ hunterOf })));
+  const wire = () => fightWire(doc()) as { rows: { i: string; ic?: string }[] };
+  const read = (w: unknown) => live(DOCS.fight(JSON.parse(JSON.stringify(w))) as FightDoc);
+
+  test('a pick, a type\'s picture, an archetype\'s and a hunter\'s emblem each ride the row as ic; a hunter with no emblem carries none', () => {
+    expect(doc().rows.map(r => [r.id, r.icon])).toEqual([['A', 'crown'], ['B', null], ['M', 'raven'], ['N', 'wolf'], ['O', 'claw']]);
+    expect(wire().rows.map(r => [r.i, r.ic])).toEqual([['A', 'crown'], ['B', undefined], ['M', 'raven'], ['N', 'wolf'], ['O', 'claw']]);
+    expect(live(fightDoc(fight(), RULES, docCtx())).rows.map(r => r.icon), 'a phone that finds no sheet sends no emblem').toEqual([null, null, 'raven', 'wolf', 'claw']);
+  });
+  test('the reader gives each key back, and an unknown key or one that is no string reads as none, never refuses the doc', () => {
+    expect(read(wire()).rows.map(r => r.icon)).toEqual(['crown', null, 'raven', 'wolf', 'claw']);
+    for (const ic of ['gone', 7, {}]) {
+      const w = wire(); w.rows[2]!.ic = ic as never;
+      expect(read(w).rows.map(r => r.icon), String(ic)).toEqual(['crown', null, null, 'wolf', 'claw']);
+    }
+  });
+});
 
 describe('the band a player sees for HP they may not see', () => {
   test('above 75% is healthy, above 50% wounded, above 25% bloodied, any HP left critical, and 0 down', () => {

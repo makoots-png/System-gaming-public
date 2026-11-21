@@ -13,7 +13,7 @@ import type { Choice, ChoiceEvent, MapBody, MapInput, MapScene } from '../../src
 const body = (name: string, side: Side, at: Place, mine = false): MapBody => ({
   id: combatantId(name), side, kind: side === 'party' ? 'hunter' : 'monster', place: at, down: false, name,
   ring: { share: 1, band: null }, statuses: false, mine, stride: tiles(mine ? 3 : 0), dash: tiles(mine ? 6 : 0), bars: null,
-  extras: { shield: null, stagger: null, channel: null, taunted: false, reacted: false }, aim: null, summon: null, stealth: false, word: null,
+  extras: { shield: null, stagger: null, channel: null, taunted: false, reacted: false }, aim: null, summon: null, stealth: false, word: null, icon: null,
 });
 export const HUNTER: CombatantId = combatantId('@');
 /** A row of eight: `@` at 1, a foe `g` beside it at 2, a foe `h` at 5. */

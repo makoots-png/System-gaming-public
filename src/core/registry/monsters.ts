@@ -23,6 +23,8 @@ import { monsterAbility } from './abilities.ts';
 import type { MonsterSpec } from './abilities.ts';
 import type { BuiltInStatus } from './statuses.ts';
 import { oneOf } from '../one-of.ts';
+import { isIconKey } from './icons.ts';
+import type { IconKey } from './icons.ts';
 
 /**
  * A status a monster starts a fight with. `rounds: null` lasts until removed. Its def is the rules' for its key. `stacks`
@@ -43,6 +45,8 @@ export type Monster = {
   abilities: Ability[]; notes: string[];
   /** Its XP as the GM typed it; absent, the rule's for its rank and kind (`monsterXp`), so a change of the XP table reaches it. */
   xp?: number;
+  /** The picture a GM picked, any key of the registry; absent, the default (icon-defaults.ts `monsterIcon`: its type's, else its archetype's). */
+  icon?: IconKey;
   extractable: boolean; desc: string; statuses: StartStatus[]; loot: Loot;
   /** Added by the bestiary on the monster's first defeat. */
   auto?: boolean;
@@ -228,7 +232,7 @@ function tweakOf(v: unknown): MonsterTweak {
  * most 11). Notes are the non-blank lines of text, at most 20 of 500. A starting status is a status key (not a hunter's
  * state chip, each key once) with whole rounds 1 to 999 or null and a count of 1 to `kit.stackCap` (kept when above 1),
  * at most 8. Loot is gold and items read by `parseItem`
- * (at most 20). `auto` (added on its first defeat) and `placeholder` (made by a gate's spawn) are kept only when true.
+ * (at most 20). `icon` is kept only when it is a key of the icon registry (an unknown one is dropped, the default shows). `auto` (added on its first defeat) and `placeholder` (made by a gate's spawn) are kept only when true.
  * Every other key is dropped.
  */
 export function parseMonster(v: unknown): MonsterTemplate | null {
@@ -246,6 +250,7 @@ export function parseMonster(v: unknown): MonsterTemplate | null {
     statuses: startStatuses(v.statuses),
     loot: { gold: whole(loot.gold, 0, B.gold, 0), items: (Array.isArray(loot.items) ? loot.items : []).flatMap(i => parseItem(i) ?? []).slice(0, B.lootItems) },
   };
+  if (isIconKey(v.icon)) out.icon = v.icon;
   if (v.auto === true) out.auto = true;
   if (v.placeholder === true) out.placeholder = true;
   return out;

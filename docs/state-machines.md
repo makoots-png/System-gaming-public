@@ -554,39 +554,63 @@ Where it lives:
 
 ## Stealth
 
-Every state reachable from seen under the 7 events of tests/models/wave2-events.ts, breadth first. The walk found 3 states and 21 steps.
+Every state reachable from a body seen, wearing no Stays hidden and wearing it on damage dealt, under the 6 events of tests/models/wave2-events.ts (two hides: Stealth at level 1 out of sight, ended by each of the three; Invisible at level 3 anywhere, not ended by a hurt), breadth first. The walk found 8 states and 48 steps.
 
-### Stealth on its bearer
+### Stealth on its bearer, by each hide's own fields
 
 ```mermaid
 ---
-title: Stealth on its bearer
+title: Stealth on its bearer, by each hide's own fields
 ---
 stateDiagram-v2
-  state "Seen" as s1
-  state "Hidden" as s2
-  state "Revealed" as s3
+  state "Wears no Stays hidden" as s1 {
+    state "Seen" as s2
+    state "Hidden at 1 by Stealth" as s3
+    state "Hidden at 3 by Invisible" as s4
+    state "Hidden at 3 by both" as s5
+    s2 --> s3 : hides out of every foe's sight
+    s2 --> s4 : hides anywhere
+    s3 --> s5 : hides anywhere
+    s3 --> s2 : it loses HP
+    s3 --> s2 : its own use or reaction deals damage to a foe
+    s3 --> s2 : a reveal lands on it, or a foe's area hits it
+    s4 --> s5 : hides out of every foe's sight
+    s4 --> s2 : its own use or reaction deals damage to a foe
+    s4 --> s2 : a reveal lands on it, or a foe's area hits it
+    s5 --> s4 : it loses HP
+    s5 --> s2 : its own use or reaction deals damage to a foe
+    s5 --> s2 : a reveal lands on it, or a foe's area hits it
+  }
+  state "Wears Stays hidden when it deals damage" as s6 {
+    state "Seen" as s7
+    state "Hidden at 1 by Stealth" as s8
+    state "Hidden at 3 by Invisible" as s9
+    state "Hidden at 3 by both" as s10
+    s7 --> s8 : hides out of every foe's sight
+    s7 --> s9 : hides anywhere
+    s8 --> s10 : hides anywhere
+    s8 --> s7 : it loses HP
+    s8 --> s7 : a reveal lands on it, or a foe's area hits it
+    s9 --> s10 : hides out of every foe's sight
+    s9 --> s7 : a reveal lands on it, or a foe's area hits it
+    s10 --> s9 : it loses HP
+    s10 --> s7 : a reveal lands on it, or a foe's area hits it
+  }
   [*] --> s1
-  s1 --> s2 : hides, and no foe that is up sees its tile
-  s2 --> s3 : uses an ability on a foe or a place
-  s2 --> s3 : a foe that is up stands within 1 tile
-  s2 --> s3 : it takes HP damage
-  s2 --> s3 : its time ends
-  s3 --> s2 : hides, and no foe that is up sees its tile
-  s3 --> s1 : the status is gone
+  [*] --> s6
 ```
 
-Hiding is a use that puts a status with `hidden` on its user, refused (`seen`) while a foe that is up sees its tile. Hidden, the other side cannot aim at it nor catch it, and a hidden foe is not in the room's doc. Its next attack has the attacker's edge. A body seen again may hide again at once if no foe sees it.
+A hide is a status with a `hidden` op: its level (1 to 5, by its source's rank), where it may start (out of every foe's sight, or anywhere) and which of three events end it. A body hidden at a level is perceived only by eyes of that sight level or higher (sight.ts `perceives`). A hide out of sight while a foe that is up has the body in sight is refused (`seen`). A hurt is HP lost; damage dealt is a use or reaction of the body's own that deals HP damage to the other side (a zone or a status it left does not, the owner's ruling 6); a reveal is a `reveal` op landing on it or a foe's area hitting it (ruling 2). A foe beside a hidden body does not reveal it (ruling 4). A worn Stays hidden keeps every hide through its event. A hide's time and a cure end it as any status (its life is the status's own machine). A body seen again may hide again at once.
 
-3 chart states, 7 arrows. Hidden: a hide while seen is refused and is not drawn (0 steps.)
+8 chart states, 21 arrows. Hidden: an event that ends no hide, and a hide out of sight while watched (refused), change nothing and are not drawn (0 steps.)
 
 Where it lives:
 
 | What | Where |
 |---|---|
-| The union | `Stealth`, `StealthEvent` and `STEALTH_STATES` in `src/core/combat/standing.ts`; the op `hidden` in `effect-ops.ts` |
-| What changes it | `stealthStep` and its `STEALTH_TABLE` |
-| Who calls it | `act` in `src/core/combat/fight.ts` (the hide's `seen`, acting on a foe), `revealed` in `fight-turn.ts`, `catchable` in `resolve.ts`, `inView` in `fight-doc.ts` |
+| The union | `Stealth`, `StealthState`, `StealthEvent` and `STEALTH_STATES` in `src/core/combat/standing.ts`, read from a body by `stealthOf`; the ops `hidden`, `stayHidden` and `reveal` in `effect-ops.ts` |
+| What changes it | `stealthStep` and its `STEALTH_TABLE` (`endsOn`); `stealthAfter` in `land.ts` writes a body's hides by it |
+| Who calls it | `act` in `src/core/combat/fight.ts` (a hide's `seen`, `hideLands`), `landed` (`useStealth`: damage dealt, a foe's area), `react` in `fight-react.ts` (damage dealt), `consequences` in `fight-turn.ts` (a hurt), `landOne` in `land.ts` (a reveal); `figureOf` in `sight.ts` reads its level |
 | The test to copy | `tests/fight.test.ts` ("wards and stealth"), `tests/fight-doc.test.ts` ("a hidden foe") |
 | The recipe | docs/guide/combat.md, "A status op" |
 

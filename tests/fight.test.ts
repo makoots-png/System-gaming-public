@@ -24,7 +24,9 @@ import { CHANNEL_EVENTS, CHANNEL_STATES, channelState, channelStep, released } f
 import type { ChannelEvent } from '../src/core/combat/fight-channel.ts';
 import { REACT_STATES, reactStep } from '../src/core/combat/fight-react.ts';
 import type { ReactEvent, ReactState } from '../src/core/combat/fight-react.ts';
-import { REACT_WALK } from './models/wave2-events.ts';
+import { INVISIBLE_HIDE, REACT_WALK, STEALTH_HIDE, STEALTH_WALK } from './models/wave2-events.ts';
+import { stealthLevel, stealthStep } from '../src/core/combat/standing.ts';
+import type { Stealth, StealthEvent } from '../src/core/combat/standing.ts';
 import { tallyOf } from '../src/core/combat/row-tally.ts';
 import { REFUSAL_WORDS, TABLE_REFUSAL_WORDS } from '../src/core/combat/refusal-words.ts';
 import { abilityId, combatantId, hunterId } from '../src/core/combat/ability-types.ts';
@@ -1674,30 +1676,128 @@ describe('wards and stealth (kits design 8.1 and 8.7, tables 8.9.4 and 8.9.5)', 
     expect(keys(friend.fight, 'A')).toEqual(['guard', 'slowed']);
   });
 
-  test('nobody hides in the open: a hide is refused while a foe that is up sees the tile', () => {
-    refuses(play(...duel({ abilities: [HIT, HIDE] })).fight, use('A', HIDE), 'seen');
+  // A hide is played by its own fields (docs/agent-handoff/features/notes-7-stealth.md section 4, with the owner's rulings
+  // at its end): where it may start, and which of a hurt, a reveal and damage its bearer deals end it.
+  const wall: Command = { type: 'paint', tiles: Array.from({ length: 20 }, (_, x) => place(x, 6)), terrain: 'wall' };
+  const ends = (o: Partial<Record<'hurt' | 'revealed' | 'dealt', boolean>> = {}) => ({ hurt: true, revealed: true, dealt: true, ...o });
+  // a blast at a place reaches over the wall, where a touch would need to see its target
+  const BOOM = ability('blast', 'boom', '5', { range: tiles(20) });
+  const SLOWS = ability('blast', 'slows', null, { range: tiles(20), effect: null, ops: SLOW.ops });
+  /** A behind the wall from M, with these abilities besides HIT and HIDE and these statuses, hides on its first turn. */
+  const hiding = (abilities: Ability[], statuses: Status[] = []) =>
+    [add(row('A', 'party', { abilities: [HIT, HIDE, ...abilities], statuses }), row('M', 'foe')), wall, start(['A', 20], ['M', 10]), use('A', HIDE)] as const;
+  /** A use of `a` by `by` at a place, on `who` there; a use from hiding has the attacker's edge (kits design 8.7.4), so it asks a second d20. */
+  const atPlace = (by: string, a: Ability, to: Place, who: string): Command => ({ type: 'act', by: id(by), ability: a.id, aim: to, rolls: { ...rolls({ [who]: 10 }, { [who]: [] }), second: { [id(who)]: 3 } } });
+  /** The GM burns A, and its burn pays on A's next turn. */
+  const burnt: readonly Command[] = [
+    { type: 'status', id: id('A'), add: { key: statusKey('burn'), def: st('burn', null, { op: 'damage', type: 'magical', amount: f('3'), when: 'turn' }).def, duration: null, tier: 0 } },
+    pass('M'), pass('A'), pass('M'),
+  ];
+  const hurtOf = (fight: Fight | null, name: string) => body(fight, name).sheet.hpMax - rowHp(body(fight, name));
+
+  test('behind a wall a body hides, and a foe cannot aim at it', () => {
+    const hidden = play(...hiding([]));
+    expect(keys(hidden.fight, 'A')).toEqual(['hide']);
+    refuses(hidden.fight, hit('M', 'A'), 'noTarget');
+    refuses(play(...hiding([BOOM]), pass('M')).fight, { type: 'act', by: id('A'), ability: BOOM.id, aim: place(0, 10), rolls: rolls({ M: 10 }, { M: [] }) }, 'needsRoll');
   });
 
-  test('behind a wall a body hides; a foe cannot aim at it, and it is seen again when it acts on a foe, when a foe comes beside it, or when it is hurt', () => {
-    const wall: Command = { type: 'paint', tiles: Array.from({ length: 20 }, (_, x) => place(x, 6)), terrain: 'wall' };
-    const hidden = play(add(row('A', 'party', { abilities: [HIT, HIDE] }), row('M', 'foe')), wall, start(['A', 20], ['M', 10]), use('A', HIDE));
-    expect(keys(hidden.fight, 'A')).toContain('hide');
-    refuses(hidden.fight, hit('M', 'A'), 'noTarget');
-    // a blast at a place reaches over the wall, where a touch would need to see its target
-    const BOOM = ability('blast', 'boom', '5', { range: tiles(20) });
-    const acted = play(add(row('A', 'party', { abilities: [HIT, HIDE, BOOM] }), row('M', 'foe')), wall, start(['A', 20], ['M', 10]), use('A', HIDE), pass('M'),
-      { type: 'act', by: id('A'), ability: BOOM.id, aim: place(0, 10), rolls: { ...rolls({ M: 10 }, { M: [] }), second: { [id('M')]: 3 } } });
-    // the attack from hiding has the attacker's edge (kits design 8.7.4): without the second d20 it waits for its roll
-    refuses(play(add(row('A', 'party', { abilities: [HIT, HIDE, BOOM] }), row('M', 'foe')), wall, start(['A', 20], ['M', 10]), use('A', HIDE), pass('M')).fight,
-      { type: 'act', by: id('A'), ability: BOOM.id, aim: place(0, 10), rolls: rolls({ M: 10 }, { M: [] }) }, 'needsRoll');
-    expect(keys(acted.fight, 'A')).not.toContain('hide');
+  test('a hidden body that slows a foe stays hidden: a use that deals no damage does not give it away', () => {
+    const r = play(...hiding([SLOWS]), pass('M'), atPlace('A', SLOWS, place(0, 10), 'M'));
+    expect([keys(r.fight, 'A'), keys(r.fight, 'M')]).toEqual([['hide'], ['slowed']]);
+  });
+
+  test('a hidden body whose use deals damage to a foe is seen', () => {
+    const r = play(...hiding([BOOM]), pass('M'), atPlace('A', BOOM, place(0, 10), 'M'));
+    expect(hurtOf(r.fight, 'M')).toBeGreaterThan(0);
+    expect(keys(r.fight, 'A')).toEqual([]);
+    expect(running(r).log.some(l => /A is seen\.$/.test(l.text))).toBe(true);
+  });
+
+  test('a hidden body whose reaction deals damage to a foe is seen', () => {
+    const RIPOSTE = ability('strike', 'riposte', '10', { ...FAR, cost: { ...HIT.cost, fatigue: 0 }, react: { when: 'after', reach: tiles(1) } });
+    const MBOOM = ability('blast', 'mboom', '5', { range: tiles(20) });
+    const r = play(add(row('A', 'party', { abilities: [HIT, HIDE, RIPOSTE] }), row('B', 'party', { place: place(1, 2) }), row('M', 'foe', { abilities: [MBOOM] })), wall,
+      start(['A', 20], ['M', 10], ['B', 5]), use('A', HIDE), { type: 'arm', by: id('A'), ability: RIPOSTE.id },
+      { type: 'act', by: id('M'), ability: MBOOM.id, aim: place(1, 2), rolls: rolls({ B: 1 }, { B: [] }) });
+    expect([body(r.fight, 'A').armed?.spent, hurtOf(r.fight, 'M') > 0, keys(r.fight, 'A')]).toEqual([true, true, []]);
+  });
+
+  test('a body that wears stayHidden on dealing damage stays hidden through a hit it deals', () => {
+    const r = play(...hiding([BOOM], [st('unseen-blade', null, { op: 'stayHidden', on: 'dealt' })]), pass('M'), atPlace('A', BOOM, place(0, 10), 'M'));
+    expect(hurtOf(r.fight, 'M')).toBeGreaterThan(0);
+    expect(keys(r.fight, 'A')).toEqual(['unseen-blade', 'hide']);
+  });
+
+  test('a hide whose ends.hurt is false survives a hurt; one that ends on a hurt does not', () => {
+    const TOUGH = self('tough', { op: 'hidden', level: 1, start: 'unseen', ends: ends({ hurt: false }) });
+    const burning = (a: Ability) => play(add(row('A', 'party', { abilities: [HIT, a] }), row('M', 'foe')), wall, start(['A', 20], ['M', 10]), use('A', a), ...burnt);
+    const tough = burning(TOUGH), plain = burning(HIDE);
+    expect([hurtOf(tough.fight, 'A') > 0, keys(tough.fight, 'A')]).toEqual([true, ['tough', 'burn']]);
+    expect([hurtOf(plain.fight, 'A') > 0, keys(plain.fight, 'A')]).toEqual([true, ['burn']]);
+  });
+
+  test('a hide that starts out of sight is refused in a foe\'s sight; one that starts anywhere lands there', () => {
+    const VANISH = self('vanish', { op: 'hidden', level: 1, start: 'anywhere', ends: ends() });
+    refuses(play(...duel({ abilities: [HIT, HIDE, VANISH] })).fight, use('A', HIDE), 'seen');
+    expect(keys(play(...duel({ abilities: [HIT, HIDE, VANISH] }), use('A', VANISH)).fight, 'A')).toEqual(['vanish']);
+  });
+
+  test('a foe that steps next to a hidden body does not reveal it (the owner\'s ruling 4)', () => {
     const near = play(add(row('A', 'party', { abilities: [HIT, HIDE], place: place(5, 2) }), row('M', 'foe', { place: place(5, 8) })), wall, start(['A', 20], ['M', 10]), use('A', HIDE),
       { type: 'place', id: id('M'), to: place(5, 3) });
-    expect(keys(near.fight, 'A')).not.toContain('hide');
-    const burn = st('burn', null, { op: 'damage', type: 'magical', amount: f('3'), when: 'turn' });
-    const hurt = play(add(row('A', 'party', { abilities: [HIT, HIDE] }), row('M', 'foe')), wall, start(['A', 20], ['M', 10]), use('A', HIDE),
-      { type: 'status', id: id('A'), add: { key: statusKey('burn'), def: burn.def, duration: null, tier: 0 } }, pass('M'), pass('A'), pass('M'));
-    expect(keys(hurt.fight, 'A')).not.toContain('hide');
+    expect(keys(near.fight, 'A')).toEqual(['hide']);
+  });
+
+  test('a foe\'s area that hits a hidden body reveals it (the owner\'s ruling 2); a strike that hits it does not', () => {
+    // Until stealth unit 4 an area catches no hidden body, so the hide here goes on as the hit lands: a lethal reaction's
+    // Vanish, which a hurt does not end, with a Stone that holds A at 1 HP.
+    const VANISH = ability('support', 'vanish', null, { aim: 'self', effect: null, shape: { kind: 'self' }, cost: { ...HIT.cost, fatigue: 0 }, react: { when: 'lethal', reach: tiles(0) },
+      ops: [{ op: 'applyStatus', key: statusKey('stone'), def: { label: 'Stone', desc: '', ops: [{ op: 'invulnerable' }] }, duration: tick(ROUND) },
+        { op: 'applyStatus', key: statusKey('vanish'), def: { label: 'Vanish', desc: '', ops: [{ op: 'hidden', level: 1, start: 'anywhere', ends: ends({ hurt: false }) }] }, duration: tick(3 * ROUND) }] });
+    const NOVA = ability('blast', 'nova', '999', { range: tiles(20) });
+    const struck = (a: Ability, aim: Place | string) => play(add(row('A', 'party', { abilities: [VANISH] }), row('M', 'foe', { abilities: [BIG, NOVA] })),
+      start(['M', 20], ['A', 10]), { type: 'arm', by: id('A'), ability: VANISH.id }, { type: 'act', by: id('M'), ability: a.id, aim: typeof aim === 'string' ? id(aim) : aim, rolls: rolls({ A: 10 }, { A: [] }) });
+    const area = struck(NOVA, place(0, 2)), strike = struck(BIG, 'A');
+    expect([rowHp(body(area.fight, 'A')), keys(area.fight, 'A').includes(statusKey('vanish'))]).toEqual([1, false]);
+    expect([rowHp(body(strike.fight, 'A')), keys(strike.fight, 'A').includes(statusKey('vanish'))]).toEqual([1, true]);
+  });
+
+  test('a reveal that lands ends a hide that ends on being revealed, sight or none; one that does not stays (a Flare\'s)', () => {
+    // a reveal op lands from a trigger, a threshold or a delayed end; here M's flare at the start of each of its turns, on
+    // every foe within 20 tiles, which reaches over the wall as an area does
+    const flare = statusOn({ label: 'Flare', desc: '', ops: [], triggers: [{ on: 'turnStart', to: { kind: 'area', radius: tiles(20), on: 'foes' }, limit: { kind: 'each' }, ops: [{ op: 'reveal' }] }] },
+      { key: statusKey('flare'), source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0) });
+    const SHROUD = self('shroud', { op: 'hidden', level: 1, start: 'unseen', ends: ends({ revealed: false }) });
+    const flared = (a: Ability) => play(add(row('A', 'party', { abilities: [HIT, a] }), row('M', 'foe', { statuses: [flare] })), wall, start(['A', 20], ['M', 10]), use('A', a));
+    expect([keys(flared(HIDE).fight, 'A'), keys(flared(SHROUD).fight, 'A')]).toEqual([[], ['shroud']]);
+  });
+
+  test('the machine: every state of stealth under every event of tests/models/wave2-events.ts (notes-7-stealth.md section 4)', () => {
+    // A state is the hides a body holds (the Stealth hide S at level 1, ended by each of the three; the Invisible hide I at
+    // level 3, not ended by a hurt) and whether it wears stayHidden on dealt (+kept). Seen is no hide.
+    const named = (s: Stealth): string => `${s.hides.map(h => (h.key === 'stealth' ? 'S' : 'I')).sort().join('') || 'seen'}${s.kept.size ? '+kept' : ''}`;
+    const of = (name: string): Stealth => {
+      const [hides, kept] = name.split('+');
+      return { hides: [...(hides === 'seen' ? '' : hides!)].map(c => (c === 'S' ? STEALTH_HIDE : INVISIBLE_HIDE)), kept: new Set(kept ? ['dealt'] as const : []) };
+    };
+    const key = (e: StealthEvent): string => e.type === 'hide' ? `hide ${e.hide.key === 'stealth' ? 'S' : 'I'}${e.watched ? ' watched' : ''}` : e.type;
+    const expected: Record<string, Record<string, string>> = {
+      // seen: a hide out of sight is refused while watched; one anywhere lands; no end applies
+      seen: { 'hide S watched': 'seen', 'hide S': 'S', 'hide I watched': 'I', hurt: 'seen', dealt: 'seen', revealed: 'seen' },
+      S: { 'hide S watched': 'S', 'hide S': 'S', 'hide I watched': 'IS', hurt: 'seen', dealt: 'seen', revealed: 'seen' },
+      // a hurt does not end the Invisible hide
+      I: { 'hide S watched': 'IS', 'hide S': 'IS', 'hide I watched': 'I', hurt: 'I', dealt: 'seen', revealed: 'seen' },
+      IS: { 'hide S watched': 'IS', 'hide S': 'IS', 'hide I watched': 'IS', hurt: 'I', dealt: 'seen', revealed: 'seen' },
+      // stayHidden on dealt: damage dealt ends neither hide
+      'seen+kept': { 'hide S watched': 'seen+kept', 'hide S': 'S+kept', 'hide I watched': 'I+kept', hurt: 'seen+kept', dealt: 'seen+kept', revealed: 'seen+kept' },
+      'S+kept': { 'hide S watched': 'S+kept', 'hide S': 'S+kept', 'hide I watched': 'IS+kept', hurt: 'seen+kept', dealt: 'S+kept', revealed: 'seen+kept' },
+      'I+kept': { 'hide S watched': 'IS+kept', 'hide S': 'IS+kept', 'hide I watched': 'I+kept', hurt: 'I+kept', dealt: 'I+kept', revealed: 'seen+kept' },
+      'IS+kept': { 'hide S watched': 'IS+kept', 'hide S': 'IS+kept', 'hide I watched': 'IS+kept', hurt: 'I+kept', dealt: 'IS+kept', revealed: 'seen+kept' },
+    };
+    expect(STEALTH_WALK.map(key).sort()).toEqual(Object.keys(expected.seen!).sort());
+    for (const [from, to] of Object.entries(expected)) for (const e of STEALTH_WALK) expect(named(stealthStep(of(from), e)), `${from} × ${key(e)}`).toBe(to[key(e)]!);
+    expect([stealthLevel(of('IS')), stealthLevel(of('S')), stealthLevel(of('seen'))]).toEqual([3, 1, null]);
   });
 });
 

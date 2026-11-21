@@ -86,6 +86,15 @@ describe('the room\'s codex doc', () => {
   }));
   const at = '2026-11-15T00:00:00.000Z';
 
+  test('an entry carries the icon the GM\'s phone resolved; a player\'s phone reads a known key and drops an unknown one, and lays it in its codex', () => {
+    const doc = codexDoc({ 'orc|E': entry({ name: 'Orc' }) }, () => ({ ...info, icon: 'bear' }), at)!;
+    expect(doc.entries[0]!.icon).toBe('bear');
+    const read = (icon: unknown) => DOCS.codex(JSON.parse(JSON.stringify({ ...doc, entries: [{ ...doc.entries[0], icon }] })))!.entries[0]!;
+    expect(read('rat').icon).toBe('rat');
+    for (const icon of ['gone', 7, null]) expect(read(icon), String(icon)).not.toHaveProperty('icon');
+    const laid = codexFromRoom(parts(), DOCS.codex(JSON.parse(JSON.stringify(doc)))!);
+    expect(laid.save.codex['orc|E']!.info!.icon).toBe('bear');
+  });
   test('a campaign that has beaten nothing of its own publishes no doc; the entries read from the room are not sent back', () => {
     expect(codexDoc({}, () => info, at)).toBeNull();
     expect(codexDoc({ 'orc|E': entry({ name: 'Orc', room: true }) }, () => info, at)).toBeNull();

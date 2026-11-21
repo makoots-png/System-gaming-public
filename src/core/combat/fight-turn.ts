@@ -23,10 +23,10 @@ import { channelStep } from './fight-channel.ts';
 import { anchorOf, oldEnough, payUpkeep, zoneStep, zoneSync } from './zones.ts';
 import type { Zone } from './zones.ts';
 import { fire, raised } from './triggers.ts';
-import { alive, held, landEnd, landOps, throughShield } from './land.ts';
+import { alive, held, landEnd, landOps, stealthAfter, throughShield } from './land.ts';
 export { held };
 import { dismissed, isSummon, timeUp } from './summons.ts';
-import { damageShare, healShare, holds, statusLife, statusStep, stealthStep, wardedDamage } from './standing.ts';
+import { damageShare, healShare, statusLife, statusStep, stealthOf, stealthState, wardedDamage } from './standing.ts';
 import { reactState, reactStep, restored, turnReaction, withReact } from './fight-react.ts';
 import { restUsed } from './uses.ts';
 import { ARMED, endStep } from './delayed.ts';
@@ -171,29 +171,29 @@ export function consequences(before: readonly Body[], after: Running, ctx: Ctx, 
     }
     f = withRow(f, a);
   }
-  return revealed(before, f, ctx);
+  return hurtHides(before, f, ctx);
 }
 
 /**
- * Stealth's reveals after a change (kits design 8.7, table 8.9.4): a hidden body that lost HP, or that stands within
- * `kit.hideReveal` tiles of a foe that is up, is seen again; its hidden status goes.
+ * Stealth after a change (notes-7-stealth.md section 4): a hidden body that lost HP meets the stealth machine's `hurt`,
+ * which ends each of its hides that ends on a hurt (land.ts `stealthAfter`). A foe beside it reveals nothing (the owner's
+ * ruling 4). Then each body hidden before the command and seen after it, by whatever ended its last hide (a hurt, a
+ * reveal, damage it dealt, its time, a cure), is logged as seen.
  */
-function revealed(before: readonly Body[], f: Running, ctx: Ctx): Running {
+function hurtHides(before: readonly Body[], f: Running, ctx: Ctx): Running {
   let g = f;
-  for (const a of f.rows) {
-    if (!holds(a, 'hidden')) continue;
-    const b = before.find(x => x.id === a.id), hurt = b !== undefined && rowHp(a) < rowHp(b);
-    const near = f.rows.some(o => o.side !== a.side && isUp(o) && dist(o.place, a.place) <= ctx.rules.fight.kit.hideReveal);
-    const to = hurt ? stealthStep('hidden', { type: 'hurt' }) : near ? stealthStep('hidden', { type: 'foeNear' }) : 'hidden';
-    if (to === 'revealed') g = logged(withRow(g, unhidden(a, g.now, ctx.rules)), line(`${a.name} is seen.`, [a.id]), ctx.rules);
+  for (const b of before) {
+    const a = rowOf(g, b.id);
+    if (a && rowHp(a) < rowHp(b)) g = withRow(g, stealthAfter(a, { type: 'hurt' }, g.now, ctx.rules));
+  }
+  for (const b of before) {
+    const a = rowOf(g, b.id);
+    if (a && stealthState(stealthOf(b)) === 'hidden' && stealthState(stealthOf(a)) === 'seen') g = logged(g, line(`${a.name} is seen.`, [a.id]), ctx.rules);
   }
   return g;
 }
-/** `b` without its hidden statuses (kits design 8.7): what a reveal and acting on a foe take off. */
-export const unhidden = (b: Body, now: Tick, R: Rules): Body => withStatuses(b, b.statuses.filter(s => !s.def.ops.some(o => o.op === 'hidden')), now, R);
-/** `b` without its untargetable and hidden statuses: what using an ability against a foe or a place ends (kits design 8.1, 8.7). */
-export const uncovered = (b: Body, now: Tick, R: Rules): Body =>
-  withStatuses(b, b.statuses.filter(s => !s.def.ops.some(o => o.op === 'hidden' || o.op === 'untargetable')), now, R);
+/** `b` without its untargetable statuses: what using an ability against a foe or a place ends (kits design 8.1). */
+export const unwarded = (b: Body, now: Tick, R: Rules): Body => withStatuses(b, b.statuses.filter(s => !s.def.ops.some(o => o.op === 'untargetable')), now, R);
 
 /** Whether a sheet would see a change between two lists: a status put on, taken off, or changed in def, source, end or stacks. */
 const sameStatuses = (x: readonly Status[], y: readonly Status[]): boolean => x.length === y.length && x.every((s, i) => {

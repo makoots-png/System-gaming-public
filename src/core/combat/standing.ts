@@ -10,7 +10,7 @@ import type { Sheet } from '../hunter/derive.ts';
 import type { Rules } from '../rules.ts';
 import { atTier, countOn, SHEET_ADD_KEYS, SHEET_LEVEL_KEYS } from './op-amount.ts';
 import { rowHp } from './row-hp.ts';
-import type { Body, ShareOn, SheetOpKey, Status, StatusDef, StatusKey } from './effect-ops.ts';
+import type { Body, HideStart, ShareOn, SheetOpKey, Status, StatusDef, StatusKey, StealthEnd, StealthEnds } from './effect-ops.ts';
 import type { Ability, CombatantId } from './ability-types.ts';
 import type { Id } from '../ids.ts';
 
@@ -226,21 +226,74 @@ export function edgeStep(h: EdgeHold, e: EdgeEvent): EdgeHold {
   return step ? step(h, e as never) : h;
 }
 
-/** Stealth on its bearer (table 8.9.4): seen, hidden, or revealed (gone, and may hide again). */
-export const STEALTH_STATES = ['seen', 'hidden', 'revealed'] as const;
-export type Stealth = (typeof STEALTH_STATES)[number];
-/** A hide (refused while a foe that is up sees the tile), acting on a foe or a place, a foe within `hideReveal`, HP lost, its time; the reveal settling. */
-export type StealthEvent = { readonly type: 'hide'; readonly seen: boolean } | { readonly type: 'acts' } | { readonly type: 'foeNear' } | { readonly type: 'hurt' } | { readonly type: 'time' } | { readonly type: 'settles' };
-const reveal = (): Stealth => 'revealed';
-/** Table 8.9.4. `null`: nothing changes. */
-const STEALTH_TABLE: { readonly [S in Stealth]: { readonly [E in StealthEvent['type']]: ((e: Extract<StealthEvent, { type: E }>) => Stealth) | null } } = {
-  seen: { hide: e => (e.seen ? 'seen' : 'hidden'), acts: null, foeNear: null, hurt: null, time: null, settles: null },
-  hidden: { hide: null, acts: reveal, foeNear: reveal, hurt: reveal, time: reveal, settles: null },
-  revealed: { hide: e => (e.seen ? 'revealed' : 'hidden'), acts: null, foeNear: null, hurt: null, time: null, settles: () => 'seen' },
+// ── stealth on its bearer (docs/agent-handoff/features/notes-7-stealth.md section 4, with the owner's rulings) ──
+/** One hide: a hidden status that counts on its bearer, its level at its source's tier, and which events end it. */
+export type Hide = { readonly key: StatusKey; readonly level: HideLevel; readonly ends: StealthEnds };
+/**
+ * A body as the stealth machine reads it: its hides, and the events its `stayHidden` ops keep from ending any of them.
+ * Derived from its statuses (`stealthOf`) and never stored: the statuses are the machine's storage, so a hide's time, a
+ * cure or a dispel ends one with no stealth code.
+ */
+export type Stealth = { readonly hides: readonly Hide[]; readonly kept: ReadonlySet<StealthEnd> };
+/** Where a body's stealth is: seen (no hide), or hidden at the highest level of its hides (`stealthLevel`). */
+export const STEALTH_STATES = ['seen', 'hidden'] as const;
+export type StealthState = (typeof STEALTH_STATES)[number];
+export const stealthState = (s: Stealth): StealthState => (s.hides.length ? 'hidden' : 'seen');
+/** The level a body hides at: the highest of its hides, or null when it is seen. */
+export const stealthLevel = (s: Stealth): HideLevel | null => (s.hides.length ? Math.max(...s.hides.map(h => h.level)) as HideLevel : null);
+/**
+ * What moves it: a hide put on (`start` its op's, `watched` whether a foe that is up has the body's tile in sight; the
+ * fight raises it before a use that hides its user, fight.ts `act`), and the owner's three ends: its bearer loses HP
+ * (`hurt`, fight-turn.ts `consequences`), it is revealed (`revealed`: a `reveal` op lands on it, or a foe's area hits
+ * it, the owner's ruling 2; a foe beside it does not, ruling 4), or a use or a reaction of its own deals HP damage to the
+ * other side (`dealt`, fight.ts `landed` and fight-react.ts `react`, ruling 6).
+ */
+export type StealthEvent =
+  | { readonly type: 'hide'; readonly hide: Hide; readonly start: HideStart; readonly watched: boolean }
+  | { readonly type: 'hurt' } | { readonly type: 'revealed' } | { readonly type: 'dealt' };
+/** One of the three events that may end a hide. */
+export type StealthEndEvent = Extract<StealthEvent, { readonly type: StealthEnd }>;
+/** Whether event `e` ends a hide of `ends` on a bearer whose `stayHidden` ops keep `kept`. */
+export const endsOn = (ends: StealthEnds, kept: ReadonlySet<StealthEnd>, e: StealthEnd): boolean => ends[e] && !kept.has(e);
+type StealthStepFn<E extends StealthEvent['type']> = (s: Stealth, e: Extract<StealthEvent, { type: E }>) => Stealth;
+/** A hide put on: one instance a key (as effect-ops.ts `applyStatus` keeps), so the body hides at the higher level of the two. */
+const hidden: StealthStepFn<'hide'> = (s, e) => {
+  const was = s.hides.find(h => h.key === e.hide.key);
+  return was && was.level >= e.hide.level ? s : { ...s, hides: [...s.hides.filter(h => h !== was), e.hide] };
 };
+/** Each hide the event ends goes; the rest stay, and the body hides at the highest of them, or is seen with none. */
+const ended = (s: Stealth, e: StealthEndEvent): Stealth => {
+  const left = s.hides.filter(h => !endsOn(h.ends, s.kept, e.type));
+  return left.length === s.hides.length ? s : { ...s, hides: left };
+};
+/**
+ * The stealth machine. A body that is seen hides when its hide may start anywhere or no foe watches it; else it stays
+ * seen, and a use that hides its user is refused (`seen`). A body seen again may hide again at once. `null`: the event
+ * does not apply there, and nothing changes. A hide's time and a cure are the status's own life (`statusStep`).
+ */
+const STEALTH_TABLE: { readonly [S in StealthState]: { readonly [E in StealthEvent['type']]: StealthStepFn<E> | null } } = {
+  seen: { hide: (s, e) => (e.start === 'anywhere' || !e.watched ? hidden(s, e) : s), hurt: null, revealed: null, dealt: null },
+  hidden: { hide: hidden, hurt: ended, revealed: ended, dealt: ended },
+};
+/** Where a body's stealth is after `e`. Never changes its input. */
 export function stealthStep(s: Stealth, e: StealthEvent): Stealth {
-  const step = STEALTH_TABLE[s][e.type] as ((e: StealthEvent) => Stealth) | null;
-  return step ? step(e) : s;
+  const step = STEALTH_TABLE[stealthState(s)][e.type] as StealthStepFn<StealthEvent['type']> | null;
+  return step ? step(s, e as never) : s;
+}
+/** The hide a status of `def` under `key` makes at `tier`: its hidden ops' highest level, ended by an event any of them ends on; null when it has none. */
+export function hideOf(key: StatusKey, def: Pick<StatusDef, 'ops'>, tier: number): Hide | null {
+  const ops = def.ops.flatMap(o => (o.op === 'hidden' ? [o] : []));
+  if (!ops.length) return null;
+  const level = Math.max(...ops.map(o => atTier(o.level, tier))) as HideLevel;
+  return { key, level, ends: { hurt: ops.some(o => o.ends.hurt), revealed: ops.some(o => o.ends.revealed), dealt: ops.some(o => o.ends.dealt) } };
+}
+/** A body's stealth, read from its statuses that count (`counts`): their hides, and the ends their `stayHidden` ops keep. */
+export function stealthOf(b: Pick<Body, 'statuses'>): Stealth {
+  const live = counting(b.statuses);
+  return {
+    hides: live.flatMap(s => { const h = hideOf(s.key, s.def, s.source.tier); return h ? [h] : []; }),
+    kept: new Set(live.flatMap(s => s.def.ops.flatMap(o => (o.op === 'stayHidden' ? [o.on] : [])))),
+  };
 }
 
 /** A ward on its bearer (table 8.9.5): never had, held (warded), or spent for the fight. */

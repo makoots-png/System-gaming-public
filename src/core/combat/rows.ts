@@ -4,6 +4,7 @@
 // hunter comes from the save, a remote sheet from `parseSheetHunter`, a monster from `parseMonster`. The fight works out
 // the rest (its stats, sheet, speed and place). A new kind of row is a maker here with its cases in tests/rows.test.ts.
 
+import type { IconKey } from '../registry/icons.ts';
 import { rankIdx } from '../rules.ts';
 import type { Rules } from '../rules.ts';
 import type { Rank } from '../rules.ts';
@@ -77,6 +78,8 @@ export type RowMonster = {
   readonly kind: MonsterKind;
   /** Its type ("Beast"), which a kill's fact names; absent or empty: none. */
   readonly type?: string;
+  /** The picture a GM picked for it (`Monster.icon`); absent: its default (icon-defaults.ts `monsterIcon`). */
+  readonly icon?: IconKey;
   readonly tweak: { readonly hp?: number; readonly stats?: Partial<Readonly<Record<StatKey, number>>> };
   readonly abilities: readonly Ability[];
   /** Absent: the rule's for its rank and kind (`monsterXp`). */
@@ -222,7 +225,7 @@ export function staggerOf(rank: Rank, kind: MonsterKind, R: RowRules): Stagger |
  */
 export function monsterRows(m: RowMonster, ids: readonly CombatantId[], R: RowRules & Pick<Rules, 'rankTable'> & { readonly conditions: StatusDefs }): NewRow[] {
   const now = JOINS;
-  const origin: Origin = { kind: 'monster', name: cut(m.name), rank: m.rank, archetype: m.archetype, monsterKind: m.kind, tweak: { hp: m.tweak.hp ?? NO_TWEAK.hp, stats: m.tweak.stats ?? NO_TWEAK.stats }, ...(m.type ? { type: m.type.slice(0, TYPE_MAX) } : {}) };
+  const origin: Origin = { kind: 'monster', name: cut(m.name), rank: m.rank, archetype: m.archetype, monsterKind: m.kind, tweak: { hp: m.tweak.hp ?? NO_TWEAK.hp, stats: m.tweak.stats ?? NO_TWEAK.stats }, ...(m.type ? { type: m.type.slice(0, TYPE_MAX) } : {}), ...(m.icon ? { icon: m.icon } : {}) };
   const tier = rankIdx(m.rank), stagger = staggerOf(m.rank, m.kind, R), abilities = distinct([ARCHETYPE_ATTACKS[m.archetype](R), ...m.abilities]);
   return ids.map((id, i) => {
     const suffix = ids.length === 1 ? '' : ` ${letter(i)}`;

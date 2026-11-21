@@ -4,13 +4,13 @@
 // tests/models/wave2-events.ts.
 import { REACT_STATES, reactStep } from '../../src/core/combat/fight-react.ts';
 import type { ReactEvent, ReactState } from '../../src/core/combat/fight-react.ts';
-import { EDGE_STATES, edgeStep, STEALTH_STATES, stealthStep, WARD_STATES, wardStep } from '../../src/core/combat/standing.ts';
+import { EDGE_STATES, edgeStep, STEALTH_STATES, stealthLevel, stealthState, stealthStep, WARD_STATES, wardStep } from '../../src/core/combat/standing.ts';
 import type { EdgeEvent, EdgeHold, Stealth, StealthEvent, WardEvent, WardState } from '../../src/core/combat/standing.ts';
 import { SHOVE_STATES, shoveStep } from '../../src/core/combat/space.ts';
 import type { ShoveEvent, Shoved } from '../../src/core/combat/space.ts';
 import { EXTRA_STATES, extraStep, HASTE_STATES, hasteStep } from '../../src/core/combat/timeline.ts';
 import type { ExtraEvent, ExtraState, HasteEvent, HasteState } from '../../src/core/combat/timeline.ts';
-import { EDGE_WALK, EXTRA_WALK, HASTE_WALK, REACT_WALK, SHOVE_WALK, STEALTH_WALK, WARD_WALK } from '../../tests/models/wave2-events.ts';
+import { EDGE_WALK, EXTRA_WALK, HASTE_WALK, REACT_WALK, SHOVE_WALK, STEALTH_STARTS, STEALTH_WALK, WARD_WALK } from '../../tests/models/wave2-events.ts';
 import { bfs, machine } from '../statecharts.ts';
 
 const cap = (s: string): string => s[0]!.toUpperCase() + s.slice(1);
@@ -99,33 +99,35 @@ export const shove = machine<Shoved, ShoveEvent>({
   ],
 });
 
+/** A body's stealth as one key: its hides' keys and levels, and the ends it keeps. */
+const stealthKey = (s: Stealth): string => JSON.stringify([s.hides.map(h => `${h.key}@${h.level}`).sort(), [...s.kept].sort()]);
+const hiddenBy = (s: Stealth): string => (s.hides.length > 1 ? 'both' : s.hides[0]!.key === 'stealth' ? 'Stealth' : 'Invisible');
+
 export const stealth = machine<Stealth, StealthEvent>({
   name: 'Stealth',
-  walked: `Every state reachable from seen under the ${STEALTH_WALK.length} events of tests/models/wave2-events.ts, breadth first.`,
-  walk: () => bfs(['seen' as Stealth], s => STEALTH_WALK.map(event => ({ event, to: stealthStep(s, event) })), s => s),
+  walked: `Every state reachable from a body seen, wearing no Stays hidden and wearing it on damage dealt, under the ${STEALTH_WALK.length} events of tests/models/wave2-events.ts (two hides: Stealth at level 1 out of sight, ended by each of the three; Invisible at level 3 anywhere, not ended by a hurt), breadth first.`,
+  walk: () => bfs(STEALTH_STARTS, s => STEALTH_WALK.map(event => ({ event, to: stealthStep(s, event) })), stealthKey),
   kinds: STEALTH_STATES,
-  kindsOf: s => [s],
+  kindsOf: s => [stealthState(s)],
   views: [{
-    title: 'Stealth on its bearer',
-    note: 'Hiding is a use that puts a status with `hidden` on its user, refused (`seen`) while a foe that is up sees its tile. Hidden, the other side cannot aim at it nor catch it, and a hidden foe is not in the room\'s doc. Its next attack has the attacker\'s edge. A body seen again may hide again at once if no foe sees it.',
-    hides: 'a hide while seen is refused and is not drawn',
-    state: s => cap(s),
+    title: 'Stealth on its bearer, by each hide\'s own fields',
+    note: 'A hide is a status with a `hidden` op: its level (1 to 5, by its source\'s rank), where it may start (out of every foe\'s sight, or anywhere) and which of three events end it. A body hidden at a level is perceived only by eyes of that sight level or higher (sight.ts `perceives`). A hide out of sight while a foe that is up has the body in sight is refused (`seen`). A hurt is HP lost; damage dealt is a use or reaction of the body\'s own that deals HP damage to the other side (a zone or a status it left does not, the owner\'s ruling 6); a reveal is a `reveal` op landing on it or a foe\'s area hitting it (ruling 2). A foe beside a hidden body does not reveal it (ruling 4). A worn Stays hidden keeps every hide through its event. A hide\'s time and a cure end it as any status (its life is the status\'s own machine). A body seen again may hide again at once.',
+    hides: 'an event that ends no hide, and a hide out of sight while watched (refused), change nothing and are not drawn',
+    state: s => [s.kept.size ? 'Wears Stays hidden when it deals damage' : 'Wears no Stays hidden', stealthState(s) === 'seen' ? 'Seen' : `Hidden at ${stealthLevel(s)} by ${hiddenBy(s)}`],
     step: (e, from, to) => {
-      if (from === to) return null;
+      if (stealthKey(from) === stealthKey(to)) return null;
       switch (e.type) {
-        case 'hide': return 'hides, and no foe that is up sees its tile';
-        case 'acts': return 'uses an ability on a foe or a place';
-        case 'foeNear': return 'a foe that is up stands within 1 tile';
-        case 'hurt': return 'it takes HP damage';
-        case 'time': return 'its time ends';
-        case 'settles': return 'the status is gone';
+        case 'hide': return e.start === 'anywhere' ? 'hides anywhere' : 'hides out of every foe\'s sight';
+        case 'hurt': return 'it loses HP';
+        case 'dealt': return 'its own use or reaction deals damage to a foe';
+        case 'revealed': return 'a reveal lands on it, or a foe\'s area hits it';
       }
     },
   }],
   where: [
-    ['The union', '`Stealth`, `StealthEvent` and `STEALTH_STATES` in `src/core/combat/standing.ts`; the op `hidden` in `effect-ops.ts`'],
-    ['What changes it', '`stealthStep` and its `STEALTH_TABLE`'],
-    ['Who calls it', '`act` in `src/core/combat/fight.ts` (the hide\'s `seen`, acting on a foe), `revealed` in `fight-turn.ts`, `catchable` in `resolve.ts`, `inView` in `fight-doc.ts`'],
+    ['The union', '`Stealth`, `StealthState`, `StealthEvent` and `STEALTH_STATES` in `src/core/combat/standing.ts`, read from a body by `stealthOf`; the ops `hidden`, `stayHidden` and `reveal` in `effect-ops.ts`'],
+    ['What changes it', '`stealthStep` and its `STEALTH_TABLE` (`endsOn`); `stealthAfter` in `land.ts` writes a body\'s hides by it'],
+    ['Who calls it', '`act` in `src/core/combat/fight.ts` (a hide\'s `seen`, `hideLands`), `landed` (`useStealth`: damage dealt, a foe\'s area), `react` in `fight-react.ts` (damage dealt), `consequences` in `fight-turn.ts` (a hurt), `landOne` in `land.ts` (a reveal); `figureOf` in `sight.ts` reads its level'],
     ['The test to copy', '`tests/fight.test.ts` ("wards and stealth"), `tests/fight-doc.test.ts` ("a hidden foe")'],
     ['The recipe', 'docs/guide/combat.md, "A status op"'],
   ],

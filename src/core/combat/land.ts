@@ -17,8 +17,9 @@ import { isUp, rowHp } from './row-hp.ts';
 import { rowLifeAfter } from './row-life.ts';
 import { applyStatus, controlFactor, cureStatus, dispelled, lasting, removeStatus, shielded, stackOf, statusOn, statusShield, withStatuses, withThreat } from './effect-ops.ts';
 import { atTier, countOn, stacked } from './op-amount.ts';
-import { admitted, counting, damageShare, harmful, healShare, markWards, wardedDamage } from './standing.ts';
-import type { Body, LandOp, Op, OpRules, Reach, Source, Status, StatusKey, Threshold, Tiered } from './effect-ops.ts';
+import { admitted, counting, damageShare, harmful, healShare, markWards, stealthOf, stealthStep, wardedDamage } from './standing.ts';
+import type { StealthEndEvent } from './standing.ts';
+import type { Body, LandOp, Op, OpRules, Reach, Source, Status, StatusKey, Threshold, Tiered, UseOp } from './effect-ops.ts';
 import type { Side } from './space.ts';
 import { ARMED, endStep } from './delayed.ts';
 import { stackStep } from './stacks.ts';
@@ -79,6 +80,21 @@ export function channelBreaks(target: Body, damage: number, forced: boolean, _no
   if (opsOf(target).some(({ op }) => op.op === 'channel' && op.mode === 'protect')) return false;
   return forced || damage >= target.sheet.hold * target.sheet.hpMax;
 }
+
+/**
+ * The stealth machine on a body (standing.ts `stealthStep`, notes-7-stealth.md section 4), the one writer of its hides:
+ * `b` without each hidden status `e` ends; `b` itself when none ends. A hide of a key in `spare` meets no event: the use
+ * or reaction that raised it put that hide on (`putBy`). Every caller raises its event here: a hurt (fight-turn.ts
+ * `consequences`), damage its own use or reaction dealt (fight.ts `landed`, fight-react.ts `react`), a reveal (a
+ * `reveal` op, `landOne`; a foe's area, `landed`).
+ */
+export function stealthAfter<B extends Body>(b: B, e: StealthEndEvent, now: Tick, R: OpRules, spare: readonly StatusKey[] = []): B {
+  const s = stealthOf(b), met = { ...s, hides: s.hides.filter(h => !spare.includes(h.key)) };
+  const left = stealthStep(met, e).hides, gone = new Set(met.hides.filter(h => !left.includes(h)).map(h => h.key));
+  return gone.size ? withStatuses(b, b.statuses.filter(x => !gone.has(x.key)), now, R) : b;
+}
+/** The keys of the statuses a use's or a reaction's ops put on. */
+export const putBy = (ops: readonly UseOp[]): StatusKey[] => ops.flatMap(o => (o.op === 'applyStatus' ? [o.key] : []));
 
 /** What putting a status on a body did (`landStatus`). */
 export type Put = { readonly target: Body; readonly put: boolean; readonly threat: number; readonly breaks: boolean; readonly fired: LandFired | null };
@@ -327,6 +343,7 @@ function landOne(o: LandOp, user: Body, t: Body, source: Source, now: Tick, R: O
     case 'channel': return { target: o.mode === 'break' && channelBreaks(t, 0, true, now) ? broken(t, R) : t, dealt: 0, ...none };
     case 'note': case 'refund': return { target: t, dealt: 0, ...none };
     case 'hasten': return { target: hasteOn(user, t, o.share, now, R), dealt: 0, ...none };
+    case 'reveal': return { target: stealthAfter(t, { type: 'revealed' }, now, R), dealt: 0, ...none };
     // a move changes two bodies, so `landOps` lands it before it asks here
     case 'move': return { target: t, dealt: 0, ...none };
     default: return o satisfies never;

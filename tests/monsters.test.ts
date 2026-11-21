@@ -335,3 +335,16 @@ group('how many copies of one monster join at once (implicit audit 3, B5)', () =
       .toEqual([3, 26, 26, 26, 1, 1, 2, 1, 1, 1]);
   });
 });
+
+group('a monster\'s icon', () => {
+  test('a key of the registry is read back, whatever the monster (a GM may give any icon to anything)', () => {
+    expect(parseMonster({ name: 'Rat King', icon: 'rat' })!.icon).toBe('rat');
+    expect(parseMonster({ name: 'Rat King', type: 'Beast', icon: 'potion' })!.icon).toBe('potion');
+  });
+  test('a key the registry lacks, or no string at all, is dropped: the monster keeps no icon, so its default shows', () => {
+    for (const icon of ['nope', '', 'RAT', 7, null, {}]) expect(parseMonster({ name: 'Rat King', icon })!, String(icon)).not.toHaveProperty('icon');
+  });
+  test('a loot item keeps its icon through the monster\'s reader', () => {
+    expect(parseMonster({ name: 'Rat King', loot: { gold: 1, items: [{ name: 'Tail', icon: 'ore' }] } })!.loot.items[0]!.icon).toBe('ore');
+  });
+});

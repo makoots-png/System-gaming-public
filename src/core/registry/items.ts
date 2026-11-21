@@ -15,6 +15,8 @@ import type { DeriveRules, GearPiece, Kit } from '../hunter/derive.ts';
 import { PERK_KEYS, RULES, clearOf } from '../rules.ts';
 import type { PerkKey, Rules } from '../rules.ts';
 import { oneOf } from '../one-of.ts';
+import { isIconKey } from './icons.ts';
+import type { IconKey } from './icons.ts';
 import type { ItemId } from '../ids.ts';
 
 // The item enums live here, beside the one parser that reads them; save.ts re-exports them.
@@ -49,6 +51,8 @@ export type Item = {
   value?: number;
   /** Its place inside its tier, minus or plus; absent, the middle, so an item made before grades reads as one. Never 0. */
   grade?: Grade;
+  /** The picture a GM picked, any key of the registry; absent, the default (icon-defaults.ts `itemIcon`), so a change of the table reaches it. */
+  icon?: IconKey;
   /** Its weight as typed; absent, the rule's (`weightOf`: a weapon's by its dice), so a change of the dice reaches it. */
   weight?: number;
   desc: string; armor: number; resist: number;
@@ -73,7 +77,7 @@ export const KIT_SHARE = { chest: 35, legs: 20, offhand: 15, head: 10, hands: 10
 export type ArmorSlot = keyof typeof KIT_SHARE;
 
 /** Every item has these. Without `value` its price is the rule's (`valueOf`); with it, the price was set by hand. Without `grade`, the middle. */
-type Common = { name: string; rar: Rarity; desc: string; value?: number; grade?: Grade };
+type Common = { name: string; rar: Rarity; desc: string; value?: number; grade?: Grade; icon?: IconKey };
 /**
  * A built-in item. Its `type` decides what it must hold: a weapon has dice and how it attacks; armour has a slot and the
  * kit it is a piece of (`piece` works out its weight, armor and resist); an accessory a ring or neck slot and a bonus; a
@@ -240,7 +244,7 @@ export function weaponWeight(dice: string): number {
  * a grade only when it is a minus or a plus (the middle is none, as `parseItem` reads it).
  */
 export function itemOf(R: Rules, def: ItemDef): ItemTemplate {
-  const base = { name: def.name, rar: def.rar, type: def.type, desc: def.desc, qty: 1, ...(def.value ? { value: def.value } : {}), ...(def.grade ? { grade: def.grade } : {}), dice: '', weight: 0, armor: 0, resist: 0 };
+  const base = { name: def.name, rar: def.rar, type: def.type, desc: def.desc, qty: 1, ...(def.value ? { value: def.value } : {}), ...(def.grade ? { grade: def.grade } : {}), ...(def.icon ? { icon: def.icon } : {}), dice: '', weight: 0, armor: 0, resist: 0 };
   switch (def.type) {
     case 'weapon':
       const { weight: _byDice, ...unweighed } = base; // a weapon's weight is its dice's (`weightOf`)
@@ -268,7 +272,8 @@ const text = (v: unknown, n: number): string => (typeof v === 'string' ? v.slice
  * reader with the shipped rules' dice limits (as a reward is), one it refuses dropped, at most 12. `grade` is kept when it
  * is 1 or -1 (anything else is the middle, left out, so one item is never two stacks by a 0), `attack` when it is
  * strike or shot, `penFlat` when it is above 0, `target` only when it is `other`, `tell` only when it is true, `revive`
- * only when it is true on a consumable, and `worn` when the status reader takes it. Every other key is dropped. An item
+ * only when it is true on a consumable, `icon` only when it is a key of the icon registry (an unknown one is dropped, the
+ * default shows), and `worn` when the status reader takes it. Every other key is dropped. An item
  * past its size (size.ts `THING_MAX.item`), or whose worn status is past a status's, is refused whole: null.
  */
 export function parseItem(v: unknown): ItemTemplate | null {
@@ -289,6 +294,7 @@ export function parseItem(v: unknown): ItemTemplate | null {
   if (finite(v.value)) out.value = whole(v.value, 0, B.value, 0);
   if (finite(v.weight)) out.weight = whole(v.weight, 0, B.weight, 0);
   if (v.grade === 1 || v.grade === -1) out.grade = v.grade;
+  if (isIconKey(v.icon)) out.icon = v.icon;
   const attack = oneOf(v.attack, ATTACKS, null);
   if (attack) out.attack = attack;
   const penFlat = whole(v.penFlat, 0, B.penFlat, 0);

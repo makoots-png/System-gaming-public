@@ -18,6 +18,9 @@ import { stacked } from './op-amount.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import type { Body, StatusDef, StatusKey } from './effect-ops.ts';
 import type { FoeLifeState } from './row-life.ts';
+import type { IconKey } from '../registry/icons.ts';
+import { rowIcon } from './row-icon.ts';
+import type { HunterOf } from './row-icon.ts';
 import { LIFE_STATES } from '../hunter/vitals.ts';
 import type { LifeState } from '../hunter/vitals.ts';
 import { partyView } from './fight-turn.ts';
@@ -109,6 +112,13 @@ type DocRowBase = {
   readonly shieldLeft: number | null;
   readonly channel: DocChannel | null;
   readonly taunt: DocTaunt | null;
+  /**
+   * The row's picture as the GM's phone answers it (row-icon.ts `rowIcon`: a monster's pick, else its type's or its
+   * archetype's; a hunter's emblem), or null for a hunter with none, whose initials show. The doc carries the answer
+   * because a player's phone cannot work one out: the row holds no type, archetype or sheet. Every row may carry one, so
+   * the worst doc counts one on every row (`DOC_MAX`); off the wire at null (`ic`).
+   */
+  readonly icon: IconKey | null;
 };
 /** A body's HP, its maximum, its stride and `move`: what players see of a hunter, a shadow and a summon. */
 type DocBody = { readonly hp: number; readonly hpMax: number; readonly stride: number; readonly move: number };
@@ -221,6 +231,8 @@ export type DocContext = {
   readonly refused?: DocRefusal | null;
   /** The last command of this phone that set a threshold off (the fight's `burst` effects), if any. */
   readonly burst?: DocBurst | null;
+  /** The hunter sheet behind a row, for its emblem (row-icon.ts `HunterOf`); absent, no hunter's row carries one. */
+  readonly hunterOf?: HunterOf;
 };
 
 /** Whether the party sees `b`: one of its own, or a foe on a tile it sees that is not hidden (kits design 8.7). */
@@ -359,6 +371,7 @@ function docRow(f: Fight, b: Body, now: Tick, R: Rules, o: DocContext): FightDoc
     })),
     shield: b.shield && b.shield.until > now ? b.shield.amount : null, shieldLeft: b.shield && b.shield.until > now ? k.shieldLeft : null,
     channel: c && { ability: c.ability, name: c.name, charge: c.charge, max: c.max, state: c.state, factor: c.factor }, taunt: tauntOf(b, now, R),
+    icon: rowIcon(b, o.hunterOf ? o.hunterOf(b) : null),
   };
   const body: DocBody = { hp: rowHp(b), hpMax: b.sheet.hpMax, stride: b.sheet.stride, move: Math.floor(b.sheet.move) };
   if (b.kind === 'hunter') return { ...base, ...body, kind: 'hunter', life: { at: b.life.at } };
@@ -423,7 +436,7 @@ function statusWire(s: DocStatus, defs: Record<string, StatusDef>): Record<strin
 }
 /**
  * A row on the wire. Its names: i id, n name, s side, k sheet key, p place, a at, v speed, b band, st statuses, sh shield,
- * sl shield's rounds, c channel, t taunt, d life (its state's index in `LIFE_STATES`, absent while up: 1 dying, 2 stable,
+ * sl shield's rounds, c channel, t taunt, ic the row's icon, d life (its state's index in `LIFE_STATES`, absent while up: 1 dying, 2 stable,
  * 3 dead), q kind; a monster's in intent, g stagger, u suggested target; a body's h HP, hm max HP, r stride, m move; a
  * summon's o owner, l rounds left.
  */
@@ -433,7 +446,7 @@ function rowWire(r: FightDocRow, defs: Record<string, StatusDef>): Record<string
     i: r.id, n: r.name, s: r.side, ...unlessNull('k', r.key), p: [r.place.x, r.place.y], a: r.at, v: r.speed, b: BANDS.indexOf(r.band),
     ...(r.statuses.length ? { st: r.statuses.map(s => statusWire(s, defs)) } : {}), ...unlessNull('sh', r.shield), ...unlessNull('sl', r.shieldLeft),
     ...(c ? { c: { a: c.ability, n: c.name, c: c.charge, m: c.max, s: c.state, f: c.factor } } : {}),
-    ...(t ? { t: { b: t.by, ...unlessNull('l', t.left) } } : {}), ...(r.life.at !== 'up' ? { d: LIFE_STATES.indexOf(r.life.at) } : {}), q: r.kind,
+    ...(t ? { t: { b: t.by, ...unlessNull('l', t.left) } } : {}), ...unlessNull('ic', r.icon), ...(r.life.at !== 'up' ? { d: LIFE_STATES.indexOf(r.life.at) } : {}), q: r.kind,
   };
   if (r.kind === 'monster') {
     const i = r.intent, g = r.stagger, v = i?.reveal ?? null;

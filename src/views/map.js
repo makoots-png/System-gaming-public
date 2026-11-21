@@ -14,6 +14,7 @@ import { BLANK, mapMount } from '../core/combat/map-mount.ts';
 import { place } from '../core/combat/space.ts';
 import * as motion from './motion.ts';
 import { bind, keyed } from './patch.ts';
+import { iconHref, sprite } from './icons.ts';
 
 /** Pixels in a tile at zoom 1: a thumb's width at the zoom a fight opens at. */
 const TILE = 40;
@@ -34,13 +35,16 @@ export function register(app) {
   const { esc } = ui;
   const toast = msg => ui.news(msg, 'warning');
   const D = () => app.api.detail;
+  sprite();
   /** The count of maps mounted, for each one's own detail list (two maps on one page never share an open detail). */
   let mounts = 0;
 
   ui.css('map', `
 .mp{display:flex;flex-direction:column;gap:8px;min-width:0}
 .mp-order{list-style:none;margin:0;padding:0;display:flex;gap:6px;overflow:hidden;white-space:nowrap;font-size:13px;color:var(--cyan-dim);min-height:24px;align-items:center}
-.mp-order li{flex:0 0 auto;max-width:9em;overflow:hidden;text-overflow:ellipsis}
+.mp-order li{flex:0 0 auto;max-width:9em;display:flex;align-items:center;gap:3px;min-width:0}
+.mp-order li span{overflow:hidden;text-overflow:ellipsis}
+.mp-order .ic{--ic:var(--icon-order)}
 .mp-order li+li::before{content:"→ ";color:var(--muted)}
 .mp-order li.now{color:var(--cyan);font-weight:700}
 .mp-order li.stag{color:var(--gold)}
@@ -101,7 +105,10 @@ export function register(app) {
 .mp-tok.now .mp-name{background:var(--rc);color:var(--ground)}
 .mp-tok.marked .mp-name{display:none}
 .mp-tok.down .mp-disc{opacity:.45;transform:scaleY(.6)}
-.mp-tok.mine .mp-lbl{color:var(--gold)}
+.mp-tok.mine .mp-lbl,.mp-tok.mine .mp-ic{color:var(--gold)}
+.mp-ic{--ic:var(--icon-token)}
+/* a pack's letter in the disc's lower corner, over the picture's corner (a silhouette's corners are its emptiest) */
+.mp-pk{position:absolute;right:-3px;bottom:-3px;min-width:14px;height:15px;padding:0 2px;border-radius:4px;font:700 12px/15px var(--font-body);text-align:center;background:var(--ground);box-shadow:0 0 0 1px var(--rc);pointer-events:none}
 .mp-world{--tc:var(--warm)}.mp-world[data-tone=helpful]{--tc:var(--green)}
 .mp-tok.tgt .mp-disc{transform:translateY(-3px) scale(1.06);box-shadow:0 0 0 2px var(--tc),0 4px 12px color-mix(in srgb,var(--tc) 45%,transparent)}
 .mp-tok.dim{opacity:.38}
@@ -158,8 +165,9 @@ export function register(app) {
 .mp-hot,.mp-drawer{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
 .mp-dt:empty{display:none}
 .mp-dt .dt{margin:0;cursor:pointer}
-.mp-hb{flex:1 0 72px;width:72px;min-height:calc(var(--control-h) + 10px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:4px 6px;line-height:1.15;scroll-snap-align:start}
+.mp-hb{flex:1 0 72px;width:72px;min-height:calc(var(--control-h) + 10px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:3px 6px;line-height:1.15;scroll-snap-align:start}
 .mp-hb span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.mp-hb .ic{--ic:var(--icon-slot)}
 .mp-hb small{font-size:12px;color:var(--muted);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mp-hb[aria-pressed=true]{background:var(--cyan);border-color:var(--cyan);color:var(--ground);box-shadow:0 0 14px color-mix(in srgb,var(--cyan) 55%,transparent)}
 .mp-hb[aria-pressed=true] small{color:inherit}
@@ -517,14 +525,14 @@ export function register(app) {
     }
 
     // ── drawing ──
-    const tokTemplate = () => ui.h(`<button type="button" class="mp-tok" data-attr="class:cls aria-label:label data-tok:id data-x:x data-y:y"><span class="mp-disc"><span class="mp-shield" data-attr="style:shield hidden:noShield"></span><span class="mp-ring" data-attr="style:ring"></span><span class="mp-stag" data-attr="style:stag hidden:noStag"></span><span class="mp-lbl" data-text="lbl"></span><i class="mp-dot" data-attr="hidden:noDot"></i><span class="mp-taunt" data-attr="hidden:noTaunt" aria-hidden="true">!</span><span class="slot" data-part="pips"></span><span class="mp-sum" data-attr="hidden:noSum" data-text="sum" aria-hidden="true"></span></span><span data-attr="class:nameCls hidden:noName" data-text="name"></span><span data-attr="class:markCls hidden:noMark" data-text="mark"></span></button>`);
+    const tokTemplate = () => ui.h(`<button type="button" class="mp-tok" data-attr="class:cls aria-label:label data-tok:id data-x:x data-y:y"><span class="mp-disc"><span class="mp-shield" data-attr="style:shield hidden:noShield"></span><span class="mp-ring" data-attr="style:ring"></span><span class="mp-stag" data-attr="style:stag hidden:noStag"></span><span class="mp-lbl" data-text="lbl" data-attr="hidden:hasIcon"></span><svg class="ic mp-ic" aria-hidden="true" focusable="false" data-attr="hidden:noIcon"><use data-attr="href:href"></use></svg><b class="mp-pk" data-text="letter" data-attr="hidden:noLetter" aria-hidden="true"></b><i class="mp-dot" data-attr="hidden:noDot"></i><span class="mp-taunt" data-attr="hidden:noTaunt" aria-hidden="true">!</span><span class="slot" data-part="pips"></span><span class="mp-sum" data-attr="hidden:noSum" data-text="sum" aria-hidden="true"></span></span><span data-attr="class:nameCls hidden:noName" data-text="name"></span><span data-attr="class:markCls hidden:noMark" data-text="mark"></span></button>`);
     function tokDesc(t, f) {
       const aim = f.kind === 'aim' ? f : null, inHit = aim && aim.aim && aim.aim.hit.includes(t.id), inRing = aim && aim.aim && aim.aim.ringed.includes(t.id);
       const area = aim && aim.ability.aim === 'place', can = aim && !area && aim.targets.includes(t.id), dim = aim && !area && !can && t.id !== scene.actor;
       const mark = area && inHit ? 'Caught' : area && inRing ? 'Ring' : '', x = t.extras;
       const hp = t.ring.band ? t.ring.band : t.bars ? `HP ${t.bars.hp[0]} of ${t.bars.hp[1]}` : '';
       return {
-        id: t.id, x: t.place.x, y: t.place.y, lbl: t.label, name: t.plate ? t.plate.text : '', noName: !t.plate, nameCls: t.plate ? `mp-name ${t.plate.side}${t.plate.span === 3 ? ' wide' : ''}` : 'mp-name', noDot: !t.statuses, ring: `--f:${t.ring.share.toFixed(3)}`,
+        id: t.id, x: t.place.x, y: t.place.y, lbl: t.label, hasIcon: !!t.icon, noIcon: !t.icon, href: t.icon ? iconHref(t.icon) : null, letter: t.letter ?? '', noLetter: !t.letter, name: t.plate ? t.plate.text : '', noName: !t.plate, nameCls: t.plate ? `mp-name ${t.plate.side}${t.plate.span === 3 ? ' wide' : ''}` : 'mp-name', noDot: !t.statuses, ring: `--f:${t.ring.share.toFixed(3)}`,
         noSum: !(t.summon && t.summon.left !== null), sum: t.summon && t.summon.left !== null ? String(Math.ceil(t.summon.left)) : '',
         mark, noMark: !mark, markCls: `mp-mark${inRing && !inHit ? ' edge' : ''}${t.plate && t.plate.side === 'above' ? ' above' : ''}`,
         shield: x.shield === null ? '' : `--sh:${x.shield.toFixed(3)}`, noShield: x.shield === null,
@@ -687,14 +695,15 @@ export function register(app) {
         <span class="bar bar-mp" data-show="manaF" data-fill="manaF">${motion.fillMarkup(0)}</span><span class="bar bar-fat" data-show="fatF" data-fill="fatF">${motion.fillMarkup(0)}</span>`;
       bind(box, d);
     }
+    /** A name in the order ahead, after its token's picture. */
+    const orderTemplate = () => ui.h('<li data-attr="class:cls"><svg class="ic" aria-hidden="true" focusable="false" data-attr="hidden:noIcon"><use data-attr="href:href"></use></svg><span data-text="text"></span></li>');
     function drawOrder() {
       const list = src.order(), box = $('.mp-order');
-      const els = keyed(box, list.map((o, i) => `${i}`), () => document.createElement('li'));
-      // a staggered monster's turn is pushed back: it stands later in the line, marked
+      const els = keyed(box, list.map((o, i) => `${i}`), orderTemplate);
+      // a staggered monster's turn is pushed back: it stands later in the line, marked; each name after its token's picture
       list.forEach((o, i) => {
-        const tk = scene.tokens.find(t => t.id === o.id), st = !!(tk && tk.extras.stagger && tk.extras.stagger.staggered);
-        const c = `${i === 0 ? 'now' : ''}${st ? ' stag' : ''}`.trim(), text = st ? `${o.name} (staggered)` : o.name;
-        if (els[i].textContent !== text) els[i].textContent = text; if (els[i].className !== c) els[i].className = c;
+        const tk = scene.tokens.find(t => t.id === o.id), st = !!(tk && tk.extras.stagger && tk.extras.stagger.staggered), ic = tk ? tk.icon : null;
+        bind(els[i], { cls: `${i === 0 ? 'now' : ''}${st ? ' stag' : ''}`.trim() || null, text: st ? `${o.name} (staggered)` : o.name, noIcon: !ic, href: ic ? iconHref(ic) : null });
       });
     }
     function drawConfirm(f) {
@@ -719,16 +728,17 @@ export function register(app) {
     const costText = s => [s.fatigue ? `${s.fatigue} fatigue` : '', s.mana ? `${s.mana} mana` : ''].filter(Boolean).join(', ') || 'Free';
     const slotText = s => (s.wait > 0 ? `${s.wait} round${s.wait === 1 ? '' : 's'}` : costText(s));
     /** A hotbar button, drawn once per slot and updated in place (patch.ts), so a pick or a use writes only what changed. */
-    const hbTemplate = () => ui.h('<button type="button" data-attr="class:cls data-ab:ab data-arm:arm data-release:release data-more:more data-pass:pass aria-pressed:pressed aria-expanded:expanded aria-label:label disabled:wait"><span data-text="name"></span><small data-text="small"></small></button>');
-    const hbDesc = o => ({ cls: 'mp-hb', ab: null, arm: null, release: false, more: false, pass: false, pressed: null, expanded: null, label: null, wait: false, ...o });
+    const hbTemplate = () => ui.h('<button type="button" data-attr="class:cls data-ab:ab data-arm:arm data-release:release data-more:more data-pass:pass aria-pressed:pressed aria-expanded:expanded aria-label:label disabled:wait"><svg class="ic" aria-hidden="true" focusable="false" data-attr="hidden:noIcon"><use data-attr="href:href"></use></svg><span data-text="name"></span><small data-text="small"></small></button>');
+    /** A slot's description: an ability's slot names its picture (`href`); Release, More and End turn draw none. */
+    const hbDesc = o => ({ cls: 'mp-hb', ab: null, arm: null, release: false, more: false, pass: false, pressed: null, expanded: null, label: null, wait: false, noIcon: true, href: null, ...o });
     const REACT_WORD = { arm: 'Arm', armed: 'Armed', spent: 'Spent' };
     /** Whether the hotbar's last slot is cut by the edge: the bar then fades out there, to show it scrolls. */
     const cutSeen = new IntersectionObserver(es => { for (const e of es) $('[data-slots]').classList.toggle('cut', e.intersectionRatio < 0.98); }, { root: $('[data-slots]'), threshold: [0.98] });
     const leftText = s => (s.left === null ? '' : `${s.left} left`);
     /** A hotbar slot: a reaction arms (Arm, Armed, Spent); an ability with uses shows them and is off at 0. */
     const slotDesc = s => s.react
-      ? hbDesc({ cls: `mp-hb react ${s.react}`, arm: s.id, pressed: String(s.react !== 'arm'), label: `${s.name}, reaction: ${REACT_WORD[s.react]}`, name: s.name, small: REACT_WORD[s.react] })
-      : hbDesc({ ab: s.id, pressed: String(choice.now.kind === 'aim' && choice.now.ability.id === s.id), wait: s.wait > 0 || s.left === 0, label: `${s.name}, ${costText(s)}${s.left !== null ? `, ${leftText(s)}` : ''}${s.wait > 0 ? `, ready in ${slotText(s)}` : ''}`, name: s.name, small: s.wait > 0 || s.left === null ? slotText(s) : leftText(s) });
+      ? hbDesc({ cls: `mp-hb react ${s.react}`, arm: s.id, noIcon: false, href: iconHref(s.icon), pressed: String(s.react !== 'arm'), label: `${s.name}, reaction: ${REACT_WORD[s.react]}`, name: s.name, small: REACT_WORD[s.react] })
+      : hbDesc({ ab: s.id, noIcon: false, href: iconHref(s.icon), pressed: String(choice.now.kind === 'aim' && choice.now.ability.id === s.id), wait: s.wait > 0 || s.left === 0, label: `${s.name}, ${costText(s)}${s.left !== null ? `, ${leftText(s)}` : ''}${s.wait > 0 ? `, ready in ${slotText(s)}` : ''}`, name: s.name, small: s.wait > 0 || s.left === null ? slotText(s) : leftText(s) });
     function drawHotbar() {
       const k = src.kit(), hot = $('[data-slots]'), passBox = $('[data-passbox]'), dr = $('[data-drawer]');
       if (!k) { keyed(hot, [], hbTemplate); keyed(passBox, [], hbTemplate); dr.hidden = true; return; }

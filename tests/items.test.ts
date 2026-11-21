@@ -458,3 +458,18 @@ group('the Resurrection Crystal (notes-2b-crystal.md)', () => {
     expect(describeItem(RULES, crystal())).toEqual(['Brings its dead user back at 1 HP, outside a fight.']);
   });
 });
+
+group('an item\'s icon', () => {
+  test('a key of the registry is read back, whatever the item (a GM may give any icon to anything)', () => {
+    expect(parseItem({ name: 'Idol', icon: 'sword' })!.icon).toBe('sword');
+    expect(parseItem({ name: 'Idol', type: 'material', icon: 'wolf' })!.icon).toBe('wolf');
+  });
+  test('a key the registry lacks, or no string at all, is dropped: the item keeps no icon, so its default shows', () => {
+    for (const icon of ['nope', '', 'SWORD', 7, null, {}, 'sword '.repeat(10)]) expect(parseItem({ name: 'Idol', icon })!, String(icon)).not.toHaveProperty('icon');
+  });
+  test('a worn status keeps the icon it was given, and an unknown one is dropped from the def alone', () => {
+    const worn = (icon: unknown) => parseItem({ name: 'Charm', type: 'accessory', slot: 'neck', worn: { label: 'Warded', desc: '', ops: [], icon } })!.worn!;
+    expect(worn('ward').icon).toBe('ward');
+    expect(worn('nope')).not.toHaveProperty('icon');
+  });
+});

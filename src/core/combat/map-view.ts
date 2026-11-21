@@ -27,6 +27,12 @@ import type { ZoneId, ZoneTone } from './zones.ts';
 import { aims, cardOf, onMap, readyIn, spotOf } from './fight-view.ts';
 import type { Aiming, Spot } from './fight-view.ts';
 import type { Fight } from './fight-types.ts';
+import { rowIcon } from './row-icon.ts';
+import type { HunterOf } from './row-icon.ts';
+import type { IconKey } from '../registry/icons.ts';
+import { abilityIcon } from '../registry/icon-defaults.ts';
+import type { IconItem } from '../registry/icon-defaults.ts';
+import type { ItemId } from '../ids.ts';
 
 // ── what the map is drawn from ──
 
@@ -55,6 +61,8 @@ export type MapBody = Spot & {
   readonly stealth: boolean;
   /** The word for its life while it is not up (row-life.ts `lifeWord`: Dying, Stable, Dead, Defeated), else null. */
   readonly word: string | null;
+  /** Its picture (row-icon.ts `rowIcon`; on a player's phone the doc's, which is the GM's answer), or null: its initials show. */
+  readonly icon: IconKey | null;
 };
 /**
  * What a token draws of design 4: its shield as a share of its max HP (1 when the viewer sees only a band), its stagger
@@ -86,8 +94,11 @@ const ringOf = (exact: boolean, hp: number, hpMax: number): Ring => {
   return exact ? { share: hpMax > 0 ? Math.max(0, Math.min(1, hp / hpMax)) : 0, band: null } : { share: BAND_SHARE[b], band: b };
 };
 
-/** The GM's phone: every row of the fight. A party row's HP ring is exact, a foe's shows its band (as players see it). */
-export function fightBodies(f: Fight, R: OpRules & Pick<Rules, 'dice'>, mine: (b: Body) => boolean): MapBody[] {
+/**
+ * The GM's phone: every row of the fight. A party row's HP ring is exact, a foe's shows its band (as players see it).
+ * `hunterOf` finds the sheet behind a hunter's row, for its emblem (row-icon.ts); absent, a hunter's token shows its initials.
+ */
+export function fightBodies(f: Fight, R: OpRules & Pick<Rules, 'dice'>, mine: (b: Body) => boolean, hunterOf?: HunterOf): MapBody[] {
   const at = (aim: Place | CombatantId): Place | null => typeof aim === 'string' ? f.rows.find(r => r.id === aim)?.place ?? null : aim;
   return f.rows.map(b => {
     const k = cardOf(f, b, R), i = k.intent, to = i ? at(i.target) : k.threat?.suggest ? at(k.threat.suggest) : null;
@@ -105,7 +116,7 @@ export function fightBodies(f: Fight, R: OpRules & Pick<Rules, 'dice'>, mine: (b
       },
       aim: to ? { kind: i ? 'intent' : 'suggest', to, area, revealed: i ? i.revealed : false, words: i && i.revealed ? { name: i.name, what: i.lines[0] ?? null } : null } : null,
       summon: b.kind === 'summon' ? { owner: b.owner, left: k.summon } : null,
-      stealth: holds(b, 'hidden'), word: lifeWord(b),
+      stealth: holds(b, 'hidden'), word: lifeWord(b), icon: rowIcon(b, hunterOf ? hunterOf(b) : null),
     };
   });
 }
@@ -129,7 +140,7 @@ export function docBodies(rows: readonly FightDocRow[], mine: (r: FightDocRow) =
       channel: r.channel && { charge: r.channel.charge, max: r.channel.max, state: r.channel.state }, taunted: r.taunt !== null,
       reacted: spent.includes(r.id),
     };
-    const base = { id: r.id, side: r.side, kind: r.kind, place: from, down: !isUp(r), word: lifeWord(r), name: r.name, statuses: r.statuses.length > 0, mine: mine(r), extras, summon: r.kind === 'summon' ? { owner: r.owner, left: r.left } : null, stealth: false };
+    const base = { id: r.id, side: r.side, kind: r.kind, place: from, down: !isUp(r), word: lifeWord(r), name: r.name, statuses: r.statuses.length > 0, mine: mine(r), extras, summon: r.kind === 'summon' ? { owner: r.owner, left: r.left } : null, stealth: false, icon: r.icon };
     if (r.kind === 'monster') {
       const i = r.intent, to = i ? at(i.target) : r.suggest ? at(r.suggest) : null, v = i?.reveal ?? null;
       const shape: Shape | null = v && v.radius !== null ? { kind: 'radius', radius: tiles(v.radius), ring: v.outer === null ? null : { outer: tiles(v.outer), share: percent(50) } } : null;
@@ -155,12 +166,14 @@ export type Selection =
 // ── the scene ──
 
 /**
- * A token: a body on the map. `label` is the name's first letters (on the disc), `plate` where its name is written (`platesOf`);
+ * A token: a body on the map. On its disc, its picture (`icon`) with a pack's letter in the corner (`letter`, "B" of
+ * "Rat B"), or with no picture its name's first letters (`label`); `plate` where its name is written (`platesOf`);
  * `bars` what the viewer may see of its numbers.
  */
 export type MapToken = {
   readonly id: CombatantId; readonly place: Place; readonly side: MapBody['side']; readonly kind: MapBody['kind'];
-  readonly name: string; readonly label: string; readonly plate: Plate | null; readonly ring: Ring; readonly bars: Bars | null;
+  readonly name: string; readonly label: string; readonly icon: IconKey | null; readonly letter: string | null;
+  readonly plate: Plate | null; readonly ring: Ring; readonly bars: Bars | null;
   readonly current: boolean; readonly down: boolean; readonly statuses: boolean; readonly mine: boolean;
   /** `MapBody.word`: what its label says of its life while it is not up. */
   readonly word: string | null;
@@ -442,6 +455,12 @@ function middleOf(list: readonly Place[], covered: (p: Place) => boolean): Place
   return best;
 }
 
+/** A pack's letter: the last word of a name of two words or more when it is one character ("Cave Rat B" is B), else null. */
+export function packLetter(name: string): string | null {
+  const words = name.trim().split(/\s+/).filter(Boolean), last = words[words.length - 1];
+  return words.length > 1 && last !== undefined && [...last].length === 1 ? last : null;
+}
+
 /** A name's first letters: the first two words' initials, or a pack's letter after the first initial ("Cave Rat B" is CB). */
 export function labelOf(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
@@ -493,7 +512,8 @@ export function mapScene(input: MapInput, sel: Selection, R: MapRules): MapScene
   const aimedAt = focus.kind === 'aim' && focus.aim ? focus.aim.target : null;
   const plates = platesOf(shown, grid, aimedAt ? [aimedAt] : []);
   const tokens: MapToken[] = shown.map(b => ({
-    id: b.id, place: b.place, side: b.side, kind: b.kind, name: b.name, label: labelOf(b.name), plate: plates.get(b.id) ?? null, ring: b.ring, bars: b.bars,
+    id: b.id, place: b.place, side: b.side, kind: b.kind, name: b.name, label: labelOf(b.name), icon: b.icon, letter: b.icon && b.kind === 'monster' ? packLetter(b.name) : null,
+    plate: plates.get(b.id) ?? null, ring: b.ring, bars: b.bars,
     current: b.id === input.currentId, down: b.down, word: b.word, statuses: b.statuses, mine: b.mine, extras: b.extras,
     hidden: (b.side === 'foe' && b.stealth) || (!!sight && b.side === 'foe' && !sight.lit.has(idx(b.place))),
     summon: b.summon && { owner: bodies.find(x => x.id === b.summon!.owner)?.name ?? '', left: b.summon.left },
@@ -751,11 +771,19 @@ export const myPinKey = (hid: string): string => `hunter:${hid}`;
  */
 export type HotbarSlot = {
   readonly id: Ability['id']; readonly name: string; readonly fatigue: number; readonly mana: number;
+  /** Its picture (icon-defaults.ts `abilityIcon`): its kind's, or a bag item's use the item's. */
+  readonly icon: IconKey;
   readonly wait: number; readonly item: boolean; readonly pinned: boolean;
   readonly left: number | null; readonly react: 'arm' | 'armed' | 'spent' | null;
 };
-/** What the hotbar knows of a body's kits: its armed reaction (`Body.armed`, or what a player's phone armed) and its uses left (`usesLeft`, the doc's `left`). */
-export type HotbarKit = { readonly armed?: { readonly ability: string; readonly spent: boolean } | null; readonly left?: Readonly<Record<string, number>> };
+/**
+ * What the hotbar knows of a body's kits: its armed reaction (`Body.armed`, or what a player's phone armed) and its uses
+ * left (`usesLeft`, the doc's `left`); and the user's bag, for an item's picture (absent: an item's use shows its kind's).
+ */
+export type HotbarKit = {
+  readonly armed?: { readonly ability: string; readonly spent: boolean } | null; readonly left?: Readonly<Record<string, number>>;
+  readonly itemOf?: (id: ItemId) => IconItem | null;
+};
 /** The most abilities pinned beside the attack. */
 export const PINS = 4;
 /**
@@ -769,7 +797,7 @@ export function hotbar(abilities: readonly Ability[], readyAt: Readonly<Record<s
   const chosen = (pins === null ? own.slice(0, PINS).map(a => a.id as string) : pins.filter(id => own.some(a => a.id === id)).slice(0, PINS));
   const react = (a: Ability): HotbarSlot['react'] => !a.react ? null : kit.armed && kit.armed.ability === a.id ? (kit.armed.spent ? 'spent' : 'armed') : 'arm';
   const slot = (a: Ability): HotbarSlot => ({
-    id: a.id, name: a.name, ...costOf(a, costCut), wait: readyIn(readyAt, a.id, now, R), item: itemOfAbility(a) !== null, pinned: chosen.includes(a.id),
+    id: a.id, name: a.name, icon: abilityIcon(a, kit.itemOf ?? (() => null)), ...costOf(a, costCut), wait: readyIn(readyAt, a.id, now, R), item: itemOfAbility(a) !== null, pinned: chosen.includes(a.id),
     left: kit.left && Object.hasOwn(kit.left, a.id) ? kit.left[a.id]! : null, react: react(a),
   });
   const attack = abilities.filter(a => a.id === ATTACK_ID);

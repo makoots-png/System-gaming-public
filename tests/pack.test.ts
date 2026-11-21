@@ -92,6 +92,20 @@ describe('a pack made and read back', () => {
     expect(save.library.items[0]!.id).toBe(iid('i101'));
   });
 
+  test('an icon a GM picked travels on a monster, an item and a status, and one a build lacks is dropped on arrival', () => {
+    const from = gmSave();
+    from.monsters = [{ ...WARDEN, icon: 'bear' }];
+    from.library.items = [{ ...SHARD, icon: 'crystal' }];
+    from.library.statuses = { frostbite: { ...FROSTBITE, icon: 'ward' } };
+    const { save } = mergePack(target(newSave(dev('d2'))), read(packOf(from, AT)).pack, 'add');
+    expect([save.monsters[0]!.icon, save.library.items[0]!.icon, save.library.statuses.frostbite!.icon]).toEqual(['bear', 'crystal', 'ward']);
+    const wire = copy(packOf(from, AT)) as { monsters: { icon?: string }[]; library: { items: { icon?: string }[] } };
+    wire.monsters[0]!.icon = 'gone'; wire.library.items[0]!.icon = 'gone';
+    const later = mergePack(target(newSave(dev('d2'))), read(wire).pack, 'add').save;
+    expect(later.monsters[0]).not.toHaveProperty('icon');
+    expect(later.library.items[0]).not.toHaveProperty('icon');
+  });
+
   test('a pack holds the library and the monsters only: no hunter, no settings, no room key', () => {
     const from = gmSave();
     from.settings.sync = { ...from.settings.sync, room: room('ABCDEF'), gmKey: gmKey('secret-gm-key') };
