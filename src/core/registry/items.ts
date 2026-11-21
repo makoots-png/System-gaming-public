@@ -61,8 +61,9 @@ export type Item = {
   worn?: StatusDef;
   /**
    * Used, it brings its dead user back through the life machine's `revive` (src/core/hunter/use.ts `useItem`): refused
-   * while the user is not dead, and outside a fight only. Only a consumable holds it. The Association does not buy it
-   * back (inventory.ts `sellable`) and no loot roll drops it (`lootPool`): the GM decides how many exist.
+   * while the user is not dead, and outside a fight only. It raises a hunter of its rarity's rank or lower (`revives`),
+   * and its price is `reviveClears` Clears of that rank (`valueOf`). Only a consumable holds it. The Association does not
+   * buy it back (inventory.ts `sellable`) and no loot roll drops it (`lootPool`): the GM decides how many exist.
    */
   revive?: true;
 };
@@ -92,7 +93,7 @@ const heal = (hp: number): Op => ({ op: 'heal', amount: num(hp), when: 'use' });
 const mana = (n: number): Op => ({ op: 'mana', amount: num(n), when: 'use' });
 const rest = (fatigue: number): Op => ({ op: 'fatigue', amount: num(-fatigue), when: 'use' });
 
-/** The shop's stock until the GM edits the shop. Each is priced by the rule (`valueOf`) except the crystal, priced by hand. */
+/** The shop's stock until the GM edits the shop. Each is priced by the rule (`valueOf`). */
 export const SHOP_ITEMS: readonly ItemDef[] = [
   { name: 'Health Potion', rar: 'common', type: 'consumable', effects: [heal(30)], desc: 'Restores 30 HP.' },
   { name: 'Greater Health Potion', rar: 'uncommon', type: 'consumable', effects: [heal(150)], desc: 'Restores 150 HP.' },
@@ -106,9 +107,13 @@ export const SHOP_ITEMS: readonly ItemDef[] = [
   // armor ignored, which the budget cannot weigh, is what makes it Rare+ (design 2.5).
   { name: 'Knight Killer', rar: 'rare', grade: 1, type: 'weapon', slot: 'weapon', dice: '1d10', attack: 'strike', bonus: { str: 2 }, penFlat: 5, desc: 'A dagger whose hits ignore 5 points of armor.' },
   { name: 'Ring of Vitality', rar: 'epic', grade: -1, type: 'accessory', slot: 'ring1', bonus: { vit: 5 }, desc: 'A ring that adds 5 Vitality.' },
-  // 100,000 by hand (notes-2b-crystal.md section 3) until the tiered crystal prices each by its rank, `reviveClears`
-  // Clears of it (economy design section 5, unit 4). The GM tells the table how common they are; its use is told to the GM.
-  { name: 'Resurrection Crystal', rar: 'mythic', type: 'consumable', effects: [], revive: true, tell: true, value: 100000, desc: 'A dead hunter who uses it comes back to life.' },
+  // One Resurrection Crystal of each rank (economy design section 5, the owner's ruling 4): its rarity's rank is the rank it
+  // raises up to, and its price `reviveClears` Clears of that rank. The GM tells the table how common they are; its use
+  // is told to the GM. A crystal has no grade.
+  ...RARITIES.map((rar): ItemDef => ({
+    name: `Resurrection Crystal (${RULES.rarities[rar].rank})`, rar, type: 'consumable', effects: [], revive: true, tell: true,
+    desc: 'A dead hunter of its rank or lower who uses it comes back to life.',
+  })),
 ];
 
 // A piece of armour's kit is the old AC it gave: 0 or 1 light, 2 medium, 3 or more heavy (plan section 3.3). Old stats
@@ -153,20 +158,30 @@ export const STARTER_GEAR = {
 /** An item as a hunter would hold it, before it has an id. */
 export type ItemTemplate = Omit<Item, 'id'>;
 
-/** The rules a price reads: the loot table (the Clear, `clearOf`), each rarity's rank, a grade's factor, and the share a consumable costs. */
-export type PriceRules = Pick<Rules, 'loot' | 'rarities' | 'gradeStep' | 'usedUpShare'>;
-/** What a price reads of an item: its rarity, its type (a consumable is used up), its grade, and a price typed by hand. */
-export type Priced = Pick<Item, 'rar' | 'type'> & Partial<Pick<Item, 'value' | 'grade'>>;
+/**
+ * The rules a price reads: the loot table (the Clear, `clearOf`), each rarity's rank, a grade's factor, the share a
+ * consumable costs, and the Clears an item that revives costs.
+ */
+export type PriceRules = Pick<Rules, 'loot' | 'rarities' | 'gradeStep' | 'usedUpShare' | 'reviveClears'>;
+/** What a price reads of an item: its rarity, its type (a consumable is used up), its grade, whether it revives, and a price typed by hand. */
+export type Priced = Pick<Item, 'rar' | 'type'> & Partial<Pick<Item, 'value' | 'grade' | 'revive'>>;
 /** One Clear of the rarity's rank (`clearOf`) times `gradeStep` to the grade, before rounding. */
 const graded = (R: Pick<Rules, 'loot' | 'rarities' | 'gradeStep'>, rar: Rarity, grade: Grade): number => clearOf(R, R.rarities[rar].rank) * R.gradeStep ** grade;
 /**
+ * What an item's use does to its price, times its graded Clear: an item that revives costs `reviveClears` of it (economy
+ * design 5: a full set of its rank's middle gear), another consumable `usedUpShare` (2.2: one use is worth half), and
+ * anything kept the whole.
+ */
+const useFactor = (i: Pick<Priced, 'type' | 'revive'>, R: Pick<Rules, 'usedUpShare' | 'reviveClears'>): number =>
+  (i.type !== 'consumable' ? 1 : i.revive ? R.reviveClears : R.usedUpShare);
+/**
  * An item's price: the one it was given, else the rule's: one Clear of its rarity's rank times `gradeStep` to its grade
- * (`priceOf`), and for a consumable `usedUpShare` of that, rounded once (economy design 2.2: one use is worth half).
+ * (`priceOf`), times what its use makes it worth (`useFactor`), rounded once.
  * Implicit audit 3, L1: the rule's price was stored as a number when an item was made, so a change of the price rule
  * reached no item already made or held.
  */
 export const valueOf = (i: Priced, R: PriceRules): number =>
-  i.value ?? Math.round(graded(R, i.rar, i.grade ?? 0) * (i.type === 'consumable' ? R.usedUpShare : 1));
+  i.value ?? Math.round(graded(R, i.rar, i.grade ?? 0) * useFactor(i, R));
 /** An item's weight: the one it was given, else the rule's (a weapon's by its dice, `weaponWeight`; anything else 0). */
 export const weightOf = (i: { readonly weight?: number; readonly type?: string; readonly dice?: string }): number => i.weight ?? (i.type === 'weapon' ? weaponWeight(i.dice ?? '') : 0);
 /**

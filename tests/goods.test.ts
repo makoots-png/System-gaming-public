@@ -114,11 +114,11 @@ describe('a hand over between two hunters of one phone', () => {
     expect(handOver(save(), hid('h1'), hid('h2'), pick(999), { held: false }, counter(0))).toMatchObject({ ok: false, why: 'poor' });
   });
   test('Brakk gives dead Eldrin a Resurrection Crystal, and Eldrin uses it to come back (the owner, Nov 19: another player may give one in death)', () => {
-    const crystal = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Resurrection Crystal')!);
+    const crystal = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Resurrection Crystal (S)')!);
     const s0 = save(), withCrystal: Save = { ...s0, hunters: [putItem(s0.hunters[0]!, crystal, iid('i3')), { ...s0.hunters[1]!, life: { at: 'dead' } }] };
-    const s = ok(handOver(withCrystal, hid('h1'), hid('h2'), pick(0, ['i3', 1, 'Resurrection Crystal']), { held: false }, counter(60)));
+    const s = ok(handOver(withCrystal, hid('h1'), hid('h2'), pick(0, ['i3', 1, 'Resurrection Crystal (S)']), { held: false }, counter(60)));
     const eldrin = s.hunters[1]!;
-    expect(eldrin.items.map(i => [i.id, i.name, i.qty])).toEqual([['i61', 'Resurrection Crystal', 1]]);
+    expect(eldrin.items.map(i => [i.id, i.name, i.qty])).toEqual([['i61', 'Resurrection Crystal (S)', 1]]);
     expect(ok(useItem(eldrin, 'i61', [], RULES)).hunter.life).toEqual({ at: 'up', hp: REVIVE_HP });
   });
 });

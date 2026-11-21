@@ -30,7 +30,7 @@ const int = v => Math.trunc(Number(v)) || 0;
 const sgn = n => (n >= 0 ? '+' : '-') + Math.abs(n);
 const BKEYS = PERK_KEYS;
 /** The derived numbers the Derived panel shows, in its order (m2-plan section 4.4, W4). */
-const SHOWN = ['speed', 'armor', 'resist', 'react', 'aim', 'will', 'manaMax', 'fatigueMax', 'carry', 'weight'];
+const SHOWN = ['speed', 'armor', 'resist', 'react', 'aim', 'will', 'manaMax', 'fatigueMax', 'carry', 'weight', 'sight'];
 
 const CSS = `
 .id-read{display:flex;align-items:center;gap:10px;margin-bottom:12px}

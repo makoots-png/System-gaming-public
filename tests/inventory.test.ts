@@ -267,7 +267,7 @@ test('the GM\'s shop list is set as one step, a copy of the list given, and set 
 });
 
 describe('a Resurrection Crystal is not bought back (notes-2b-crystal.md section 3)', () => {
-  const crystal = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Resurrection Crystal')!);
+  const crystal = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Resurrection Crystal (S)')!);
 
   test('a sale is refused and changes nothing; its sell price is 0; any other item still sells for its share', () => {
     const h = putItem(hunter(0), crystal, iid('i1'));
@@ -275,12 +275,12 @@ describe('a Resurrection Crystal is not bought back (notes-2b-crystal.md section
     expect(sell(h, 'i1', 1, RULES)).toEqual({ ok: false, why: 'unsellable' });
     expect(sellPrice(crystal, RULES)).toBe(0);
     const { revive: _r, ...plain } = crystal;
-    expect(sellPrice(plain, RULES), 'the same price without the revive sells for its share').toBe(sale(100000));
+    expect(sellPrice({ ...plain, value: 750000 }, RULES), 'the same price without the revive sells for its share').toBe(sale(750000));
   });
 
   test('bought, it costs its price and joins the bag; a copy that does not revive is its own stack', () => {
-    const h = ok(buy(hunter(100000), crystal, iid('i1'), RULES));
-    expect([h.gold, h.items.map(i => [i.name, i.qty])]).toEqual([0, [['Resurrection Crystal', 1]]]);
+    const h = ok(buy(hunter(750000), crystal, iid('i1'), RULES));
+    expect([h.gold, h.items.map(i => [i.name, i.qty])]).toEqual([0, [['Resurrection Crystal (S)', 1]]]);
     const { revive: _r, ...plain } = crystal;
     expect(putItem(h, plain, iid('i2')).items.map(i => i.id)).toEqual(['i1', 'i2']);
     expect(putItem(h, crystal, iid('i3')).items.map(i => [i.id, i.qty])).toEqual([['i1', 2]]);
@@ -288,7 +288,7 @@ describe('a Resurrection Crystal is not bought back (notes-2b-crystal.md section
 });
 
 describe('the shop is closed to the dead (the owner, Nov 19: "Whole shop should be closed in death")', () => {
-  const crystal = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Resurrection Crystal')!);
+  const crystal = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Resurrection Crystal (S)')!);
   const rich = (life: Hunter['life']): Hunter => ({ ...putItem(hunter(200000), potion, iid('i1')), life });
 
   test('a dead hunter buys nothing, a Resurrection Crystal included, and sells nothing; the hunter is left as it was', () => {

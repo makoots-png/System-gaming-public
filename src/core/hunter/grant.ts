@@ -3,9 +3,10 @@
 // `grant` gives a reward whole: points, title, job, build, skills, boons, statuses, gold, items, XP and the level-up's
 // refill in one answer, so a reward is all given in one write or not at all (a reward used to be five or more writes,
 // and a throw part way left the rest ungiven). `sheetEdit` is the GM's change of HP, mana, fatigue, life or a status,
-// and the fight's totals. `levelled` is the one place a level change is told to the Job Change chain: every step that
-// may move a level runs it, so the chain's level step, and its completion when the level reaches it, are in the same
-// write as the level.
+// and the fight's totals; a raising from death through it costs levels (`reviveLevelShare`, the owner's ruling 9).
+// `levelled` is the one place a level change is told to the Job Change chain: every step that may move a level runs it
+// (a raising runs its first part, `levelMoved`), so the chain's level step, and its completion when the level reaches
+// it, are in the same write as the level.
 //
 // Where HP, mana, fatigue and statuses live is the caller's answer (`VitalsAt`, from hunter.js `fightOf`): while a fight
 // holds them, a step never writes them on the sheet (the fight's next totals would write over it); `grant` hands those
@@ -29,17 +30,17 @@ import { buildAward } from './build.ts';
 import { dropStatus, putStatus } from './conditions.ts';
 import type { StatusIn } from './conditions.ts';
 import { addGold, putItem, stackOf } from './inventory.ts';
-import { addXp, atLevel, gainXp, grantPoints } from './progress.ts';
+import { addXp, atLevel, gainXp, grantPoints, raisedLevels } from './progress.ts';
 import type { ChainEffect, ChainEvent, ChainRefusal } from './job-chain.ts';
 import { chained, completeQuest, failQuest, rollover } from './quests.ts';
-import type { Completed, QuestCompletedBy, QuestWhy, Rollover } from './quests.ts';
+import type { Completed, QuestCompletedBy, QuestWhy, Rollover, Told } from './quests.ts';
 import { reportsProgress } from './quest-rights.ts';
 import { newEvent } from '../protocol.ts';
 import { atOutbox, post } from '../sync/outbox.ts';
 import { giveBoons, giveTitle, holdsTitle, rankStep, setJob, titleNamed } from './record.ts';
 import { fitted, hunterSheet } from './sheet.ts';
 import { giveSkill } from './skills-held.ts';
-import { lifeNews, vitalStep } from './vitals.ts';
+import { REVIVE_HP, lifeNews, vitalStep } from './vitals.ts';
 import type { Life, LifeEvent, VitalEvent } from './vitals.ts';
 import { record } from './chronicle.ts';
 import type { LifeHow } from './facts.ts';
@@ -86,18 +87,26 @@ export function stepsReached(h: Hunter, effects: readonly ChainEffect[], day: Da
 }
 
 /**
- * Hunter `after`, a change of a hunter whose level was `from`, with the Job Change chain told of the level when it moved
- * (`levelChanged`: a level step's progress), and a level step it reached completed in the same step (`stepsReached`).
+ * Hunter `after`, a change of a hunter whose level was `from`, told of the level when it moved: its fact, the rank
+ * machine's `levelMoved`, and the Job Change chain's `levelChanged` (a level step's progress), with the chain's lines
+ * and its effects, among them the request to complete a level step the level reached, which `levelled` carries out.
  */
-export function levelled(from: number, after0: Hunter, day: Day, next: <P extends string>(prefix: P) => IdOf<P>): Levelled {
-  if (after0.level === from) return { hunter: after0, said: [], done: [] };
+function levelMoved(from: number, after0: Hunter, R: Rules): Told<ChainEffect> {
+  if (after0.level === from) return { hunter: after0, said: [], effects: [] };
   // the level's fact, recorded where every level change is told (chronicle.ts)
   const recorded = record(after0, { kind: 'level', level: after0.level });
   // the rank machine is told the level moved (record.ts `RANK_TABLE`); a row that refuses it keeps the rank
-  const stepped = rankStep(recorded, { type: 'levelMoved' }, day.R);
+  const stepped = rankStep(recorded, { type: 'levelMoved' }, R);
   const after = isRefused(stepped) ? recorded : stepped;
-  if (!after.jobChain) return { hunter: after, said: [], done: [] };
-  const t = chained(after, { type: 'levelChanged', level: after.level });
+  return after.jobChain ? chained(after, { type: 'levelChanged', level: after.level }) : { hunter: after, said: [], effects: [] };
+}
+
+/**
+ * Hunter `after`, a change of a hunter whose level was `from`, with the Job Change chain told of the level when it moved
+ * (`levelMoved`), and a level step it reached completed in the same step (`stepsReached`).
+ */
+export function levelled(from: number, after0: Hunter, day: Day, next: <P extends string>(prefix: P) => IdOf<P>): Levelled {
+  const t = levelMoved(from, after0, day.R);
   const r = stepsReached(t.hunter, t.effects, day, next);
   return { hunter: r.hunter, said: [...t.said, ...r.said], done: r.done };
 }
@@ -370,6 +379,32 @@ const howOf = (e: SheetEdit, before: Life, after: Life): LifeHow =>
 const failuresOf = (life: Life): number => (life.at === 'dying' ? life.failures : 0);
 
 /**
+ * Whether a change of life from `before` to `after` raised a hunter from death: the life table's `revive` (the GM's
+ * Revive, a Resurrection Crystal), or a fight's totals that stand up a hunter the sheet holds dead (the GM's Revive of
+ * the fight's row, written back). A heal or a natural 20 that stands a dying hunter up is no raising.
+ */
+const raisedFromDeath = (before: Life, after: Life): boolean => before.at === 'dead' && after.at !== 'dead';
+/**
+ * Hunter `h` just raised from death, its levels lost (progress.ts `raisedLevels`, `levelAfterRaising`), the maxima
+ * fitted to the level it is at, and the level told (`levelMoved`: its fact, the rank kept, the chain's level step's
+ * progress). A lower level completes no Job Change step: a level step is completed in the write that reaches its level
+ * (`levelled`), so the step a hunter is on asks for a level above the one it holds, and the chain's only effect is the
+ * step's progress, which `chained` has written. Its lines are only of a quest issued, which a level change never does.
+ */
+function raisedAt(h: Hunter, R: Rules): Hunter {
+  return levelMoved(h.level, fitted(raisedLevels(h, R), R), R).hunter;
+}
+/**
+ * What a raising says where it is told (a Resurrection Crystal's use, the GM's Revive): up at the life table's revive HP
+ * and, when it cost levels (`raisedAt`), the level it came back at and how many were lost: "Up at 1 HP at level 29, 2
+ * levels lost". `from` and `to` are the levels before and after.
+ */
+export function raisedLine(from: number, to: number): string {
+  const lost = from - to;
+  return lost > 0 ? `Up at ${REVIVE_HP} HP at level ${to}, ${lost} level${lost === 1 ? '' : 's'} lost` : `Up at ${REVIVE_HP} HP`;
+}
+
+/**
  * Whether a status put on or taken off fits the vitals to the maxima it leaves. SMX-rules-1.3 waits on the owner: whether
  * a status change brings HP, mana and fatigue down to the new maxima at once. Today it does not: the stored numbers stay
  * above a lowered maximum (the sheet shows at most the maximum, `hpOf`, `manaOf`) until the next change fits them.
@@ -380,7 +415,9 @@ const STATUS_FITS: { readonly put: boolean; readonly drop: boolean } = { put: fa
  * Hunter `h` after `e`, each with the maxima its sheet gives. A life event its state does not take (a heal on a dead
  * hunter) is refused (`cannot`), and so is a price of more mana than the hunter holds (`mana`); a status put on that changes nothing, or taken off that is not held, is refused
  * (`unchanged`), as `putStatus` and `dropStatus` answer. What the change did to the life (`lifeNews`) and a rest are
- * recorded as facts on the hunter in the same answer (chronicle.ts `record`).
+ * recorded as facts on the hunter in the same answer (chronicle.ts `record`). A change that raises the hunter from death
+ * (`raisedFromDeath`: the life's `revive` by the GM or an item, or a fight's totals) costs its levels in the same answer
+ * (`raisedAt`); the hunter it answers is up, so a second write of the same change costs nothing.
  */
 export function sheetEdit(h: Hunter, e: SheetEdit, R: Rules): Hunter | Refused<'cannot' | 'mana' | 'state-chip' | 'no-def' | 'unchanged'> {
   const next = edited(h, e, R);
@@ -388,7 +425,9 @@ export function sheetEdit(h: Hunter, e: SheetEdit, R: Rules): Hunter | Refused<'
   // what the change did to the life, and a rest, are facts (chronicle.ts), recorded in the edit's own write
   const news = lifeNews(h.life, next.life);
   const withLife = news ? record(next, { kind: 'life', news: news.kind, how: howOf(e, h.life, next.life), failures: failuresOf(h.life) }) : next;
-  return e.type === 'rest' ? record(withLife, { kind: 'rest', long: e.kind === 'long' }) : withLife;
+  // a raising from death costs levels (the owner's ruling 9), told after the life's fact
+  const raised = raisedFromDeath(h.life, next.life) ? raisedAt(withLife, R) : withLife;
+  return e.type === 'rest' ? record(raised, { kind: 'rest', long: e.kind === 'long' }) : raised;
 }
 function edited(h: Hunter, e: SheetEdit, R: Rules): Hunter | Refused<'cannot' | 'mana' | 'state-chip' | 'no-def' | 'unchanged'> {
   const step = (ev: VitalEvent): Hunter | Refused<'cannot' | 'mana'> => { const v = vitalStep(h, ev, sheetOf(h, R), R); return isRefused(v) ? v : { ...h, ...v }; };

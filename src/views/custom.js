@@ -1,7 +1,8 @@
 // custom.js: player customization. Device prefs (own localStorage key, never in a save/sheet/event; written by
 // store.setPrefs), hunter identity (emblem + color on the sheet, hunter/identity.ts), equipment loadouts
 // (hunter/loadouts.ts), build paths (hunter/build.ts over the rules.ts table, GM-overridable). This file draws and taps.
-import { EMBLEMS, HUNTER_COLORS, ACCENTS, TEXT_SCALES, RANKS, PERK_KEYS, PERK_LABELS, pathOf, perkOf, tiersOpen } from '../edge/rules.ts';
+import { iconDef, iconsOf, isIconKey } from '../core/registry/icons.ts';
+import { HUNTER_COLORS, ACCENTS, TEXT_SCALES, RANKS, PERK_KEYS, PERK_LABELS, pathOf, perkOf, tiersOpen } from '../edge/rules.ts';
 import * as ui from './ui.js';
 import { oneOf } from '../core/one-of.ts';
 import { available, raiseMany } from '../core/hunter/progress.ts';
@@ -64,9 +65,9 @@ export function register(app) {
   // sheets reach the GM raw, so every value is checked against the registries at render time (no free-form color/markup)
   const colorOf = h => { const o = isObj(h) ? h : {}; return oneOf(o.color, HUNTER_COLORS, null) || RANK_C[oneOf(o.rank, RANKS, 'E')]; };
   const badge = (h, size = '') => {
-    h = isObj(h) ? h : {}; const e = typeof h.emblem === 'string' && Object.hasOwn(EMBLEMS, h.emblem) ? h.emblem : '';
+    h = isObj(h) ? h : {}; const e = isIconKey(h.emblem) ? h.emblem : '';
     const ch = [...String(h.name || '?').trim()][0] || '?';
-    const inner = e ? `<path d="${EMBLEMS[e]}"/>` : `<text x="12" y="17" text-anchor="middle">${esc(ch.toUpperCase())}</text>`;
+    const inner = e ? `<path d="${iconDef(e).path}"/>` : `<text x="12" y="17" text-anchor="middle">${esc(ch.toUpperCase())}</text>`;
     return `<span class="hb${size ? ' hb-' + size : ''}" style="--hc:${colorOf(h)}" aria-hidden="true"><svg viewBox="0 0 24 24">${inner}</svg></span>`;
   };
   const pick = { e: '', c: '', hid: null }; // the open identity picker
@@ -75,7 +76,7 @@ export function register(app) {
       <div class="lbl">Emblem</div>
       <div class="cz-grid" role="group" aria-label="Emblem">
         <button type="button" data-pe="" aria-pressed="${!pick.e}" aria-label="Initial">${badge({ ...store.hunter(pick.hid), emblem: '', color: pick.c }, 'sm')}</button>
-        ${Object.keys(EMBLEMS).map(k => `<button type="button" data-pe="${k}" aria-pressed="${pick.e === k}" aria-label="${k}">${badge({ emblem: k, color: pick.c, rank: (store.hunter(pick.hid) || {}).rank }, 'sm')}</button>`).join('')}
+        ${iconsOf('emblem').map(k => `<button type="button" data-pe="${k}" aria-pressed="${pick.e === k}" aria-label="${k}">${badge({ emblem: k, color: pick.c, rank: (store.hunter(pick.hid) || {}).rank }, 'sm')}</button>`).join('')}
       </div>
       <div class="lbl">Color</div>
       <div class="cz-grid" role="group" aria-label="Color">

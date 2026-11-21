@@ -814,7 +814,7 @@ function opLine(o: Op, tier: number | null, R: DescribeRules): string {
 
 const SHEET_OP_TEXT: { readonly [K in SheetOpKey]: string } = {
   armor: 'Armor', resist: 'Resist', pen: 'Penetration (share)', critFaces: 'Crit faces', exposed: 'Faces a foe crits it on', critSize: 'Crit size',
-  costCut: 'Cost cut (share)', range: 'Range of 2 or more',
+  costCut: 'Cost cut (share)', range: 'Range of 2 or more', sight: 'Sight level',
 };
 const SHARE_TEXT: { readonly [K in ShareOn]: string } = { dealt: 'Damage dealt', taken: 'Damage taken', healed: 'Healing received' };
 

@@ -6,6 +6,7 @@ import { BUILT_IN_STATUSES } from './registry/statuses.ts';
 import { BUILT_IN_PATHS } from './registry/paths.ts';
 import { STAT_KEYS, STAT_SHORT } from './stats.ts';
 import { GRID_SIDE } from './combat/space.ts';
+import { LEVELS } from './combat/standing.ts';
 import { MAX_LEVEL, MIN_LEVEL } from './hunter/level.ts';
 import type { StatKey } from './stats.ts';
 import type { StatusDef } from './combat/effect-ops.ts';
@@ -402,6 +403,12 @@ const SPEC = {
     // The map (design 4.7 and 5.3)
     coverShare: of(0.25, SHARE), // a body in cover takes a quarter less from a use that travels to it: the d20's three-quarters cover, +5 to hit, is a quarter of the die
     sight: whole(25, 1, 128, 'tiles the party sees in a fog: a map\'s bounds (maps.ts MAP_BOUNDS.sight)'), // tiles the party sees in a fog of war: the whole default arena from its corner (19 + 13 / 2 = 25 by the 5-10-5 count); a GM lowers it for a dark gate
+    // Stealth and sight (docs/agent-handoff/features/notes-7-stealth.md section 2): the sight level every body has before
+    // a sight op raises it. 0, so a body with no sight content perceives no stealth above level 0, and sight is earned
+    // from a class, an item or a flare: a curve on Instinct would let any hunter who spends points see every hide.
+    stealth: {
+      sightBase: whole(0, Math.min(...LEVELS), Math.max(...LEVELS), 'a sight level, one per rank E to S (standing.ts LEVELS): a level past 5 cannot be written'),
+    },
     // Fields that move and spread (design 4.8)
     auraRadius: of(2, RADIUS), // an aura the maker starts: a blast's radius, so an aura and a blast read with the same ruler
     fieldRadiusMax: of(6, RADIUS), // the widest an aura or a growing field gets: 121 tiles, under half the default arena's 280, so there is somewhere to stand outside it
@@ -616,14 +623,7 @@ export function pathBonus(R: Rules, build: { path?: unknown; picks?: unknown } |
   return { p, out, n };
 }
 
-// ── cosmetic registries (not game rules, so not in RULES / rulesOverrides). Emblems are 24x24 SVG paths: no image files. ──
-export const EMBLEMS = {
-  star: 'M12 2l3 7h7l-5.5 4.5 2 7.5L12 17l-6.5 4 2-7.5L2 9h7z', crown: 'M3 19h18l-1-11-5 4-3-7-3 7-5-4z', moon: 'M15 3a9 9 0 1 0 6 15A7 7 0 0 1 15 3z',
-  flame: 'M12 2c1 4 6 6 6 12a6 6 0 0 1-12 0c0-3 2-5 3-6 0 2 1 3 2 3 0-4-1-6 1-9z', shield: 'M12 2l8 3v6c0 5-3.5 9-8 11-4.5-2-8-6-8-11V5z',
-  blade: 'M19 2l3 3-12 12-3-3zM6 15l3 3-3 3-3-3z', eye: 'M2 12c3-5 7-7 10-7s7 2 10 7c-3 5-7 7-10 7S5 17 2 12zm10-4a4 4 0 1 0 0 8 4 4 0 0 0 0-8z',
-  bolt: 'M13 2L4 14h7l-1 8 9-12h-7z', skull: 'M12 2a8 8 0 0 0-8 8c0 3 1.5 5 3 6v4h10v-4c1.5-1 3-3 3-6a8 8 0 0 0-8-8zM9 9a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm6 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4z',
-  wing: 'M2 6c6 0 10 3 10 9v6c-2-3-5-4-10-4 3-1 5-2 6-3-3 0-5-1-6-3 3 0 5 0 6-1-3-1-5-2-6-4z', diamond: 'M12 2l9 10-9 10-9-10z', fang: 'M4 3h16l-3 8-5 11-5-11z',
-};
+// ── cosmetic registries (not game rules, so not in RULES / rulesOverrides). The emblems are icons: src/core/registry/icons.ts ──
 export const HUNTER_COLORS = ['#4dd8ff', '#59e6a8', '#ffc94d', '#ff6b3d', '#ff4d5e', '#c79bff', '#4d8cff', '#ff7ad9', '#dff3ff', '#9fb6c9'];
 // device accent presets: the colors live once in app.css ([data-accent=…], read before first paint too); 'hunter' follows the active hunter's color
 export const ACCENTS = ['cyan', 'violet', 'gold', 'emerald', 'crimson', 'hunter'];

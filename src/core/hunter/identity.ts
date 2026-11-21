@@ -1,6 +1,6 @@
 // identity.ts: how a hunter looks to the table, the emblem and the colour, and the canon seed made neutral at
 // onboarding. The emblem picker (custom.js) and onboarding (onboard.js) change these only here, as `atHunter` steps
-// (save-step.ts). Pure. The save's repair checks an emblem and a colour against the tables in rules.ts. A name is
+// (save-step.ts). Pure. The save's repair checks an emblem against the icons (registry/icons.ts) and a colour against the table in rules.ts. A name is
 // `rename` (record.ts).
 import { newEquipped } from '../save.ts';
 import type { Hunter } from '../save.ts';

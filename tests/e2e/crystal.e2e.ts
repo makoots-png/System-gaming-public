@@ -1,19 +1,25 @@
-// The Resurrection Crystal (src/core/registry/items.ts, src/core/hunter/use.ts; docs/agent-handoff/features/notes-2b-crystal.md):
-// a dead hunter's way back that the screen names, used from the bag; sold in the shop at its price and never bought
-// back; given by the GM in any reward; the shop closed to the dead. Driven through the UI; the store sets up and reads.
+// The Resurrection Crystal (src/core/registry/items.ts, src/core/hunter/use.ts; docs/agent-handoff/features/notes-2b-crystal.md,
+// economy design section 5): a dead hunter's way back that the screen names, used from the bag; one of each rank, which
+// raises a hunter of its rank or lower, at a cost in levels; sold in the shop at its rank's price and never bought back;
+// given by the GM in any reward; the shop closed to the dead. Driven through the UI; the store sets up and reads.
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, type Page } from './helpers.ts';
 
 /**
- * The active hunter with `n` Resurrection Crystals in its bag and `life`; personal gates off, so no gate's window stands
- * over the bag when a revived hunter's clock would start again.
+ * The active hunter with `n` Resurrection Crystals of `rank` in its bag and `life`; personal gates off, so no gate's
+ * window stands over the bag when a revived hunter's clock would start again. A new hunter is rank E at level 1.
  */
-const holding = (page: Page, life: object, n: number, gold = 0) => page.evaluate(([life, n, gold]) => hunterApp.store.update((d: any) => {
+const holding = (page: Page, life: object, n: number, gold = 0, rank = 'E') => page.evaluate(([life, n, gold, rank]) => hunterApp.store.update((d: any) => {
   d.rulesOverrides.solo = { personal: false };
   const h = d.hunters.find((x: any) => x.id === d.settings.activeHunterId) ?? d.hunters[0];
-  const crystal = hunterApp.api.inventory.itemTemplates().find((i: any) => i.revive);
+  const crystal = hunterApp.api.inventory.itemTemplates().find((i: any) => i.name === `Resurrection Crystal (${rank})`);
   if (n > 0) h.items.push({ ...crystal, id: hunterApp.store.id('i'), qty: n });
   h.life = life; h.gold = gold;
-}, 'test-setup'), [life, n, gold] as const);
+}, 'test-setup'), [life, n, gold, rank] as const);
+/** The active hunter at `level` (the peak with it) and of `rank`, as the GM's edits would leave it. */
+const standing = (page: Page, level: number, rank: string) => page.evaluate(([level, rank]) => hunterApp.store.update((d: any) => {
+  const h = d.hunters.find((x: any) => x.id === d.settings.activeHunterId) ?? d.hunters[0];
+  h.level = level; h.peakLevel = level; h.xp = 0; h.rank = rank;
+}, 'test-setup'), [level, rank] as const);
 const crystalCard = (page: Page) => page.locator('#view-status [data-item]').filter({ hasText: 'Resurrection Crystal' });
 const crystals = (h: any): number => h.items.filter((i: any) => i.revive).reduce((n: number, i: any) => n + i.qty, 0);
 
@@ -28,13 +34,13 @@ test('a dead hunter alone reads the way back on the sheet, uses a Resurrection C
   await expect(death.locator('[data-wayback]')).toHaveText('The GM\'s Revive or a Resurrection Crystal brings you back.');
   await expect(crystalCard(page).locator('[data-sell]'), 'a crystal is not bought back').toHaveCount(0);
   await crystalCard(page).locator('[data-use]').tap();
-  await expect(page.locator('#toasts .toast').last()).toContainText('Resurrection Crystal used: Up at 1 HP.');
+  await expect(page.locator('#toasts .toast').last()).toContainText('Resurrection Crystal (E) used: Up at 1 HP.');
   const h = await activeHunter(page);
   expect([h.life, crystals(h)]).toEqual([{ at: 'up', hp: 1 }, 0]);
   await expect(death).toBeHidden();
   await expect(crystalCard(page)).toHaveCount(0);
   const s = await page.evaluate(() => hunterApp.store.get().log.filter((l: any) => l.kind === 'use').map((l: any) => l.title));
-  expect(s).toEqual(['Mira used Item: Resurrection Crystal']);
+  expect(s).toEqual(['Mira used Item: Resurrection Crystal (E)']);
 });
 
 test('a living hunter\'s use of a Resurrection Crystal is refused with the reason, and the crystal is kept', async ({ device }) => {
@@ -44,22 +50,50 @@ test('a living hunter\'s use of a Resurrection Crystal is refused with the reaso
   await holding(page, { at: 'up', hp: 3 }, 1);
   await go(page, 'status');
   await crystalCard(page).locator('[data-use]').tap();
-  await expect(page.locator('#toasts .toast').last()).toContainText('Resurrection Crystal only brings back a dead hunter. You still have it.');
+  await expect(page.locator('#toasts .toast').last()).toContainText('Resurrection Crystal (E) only brings back a dead hunter. You still have it.');
   const h = await activeHunter(page);
   expect([h.life, crystals(h)]).toEqual([{ at: 'up', hp: 3 }, 1]);
 });
 
-test('the shop sells the Resurrection Crystal for 100,000 gold, and a hunter with that much buys one', async ({ device }) => {
+test('a dead B-rank hunter\'s C crystal is refused, saying the crystal is kept, and the hunter stays dead', async ({ device }) => {
+  const { page } = await device('too-low');
+  await onboardPlayer(page, 'Mira');
+  await dismissAll(page);
+  await standing(page, 31, 'B');
+  await holding(page, { at: 'dead' }, 1, 0, 'C');
+  await go(page, 'status');
+  await crystalCard(page).locator('[data-use]').tap();
+  await expect(page.locator('#toasts .toast').last()).toContainText('Resurrection Crystal (C)');
+  await expect(page.locator('#toasts .toast').last()).toContainText('You still have it.');
+  const h = await activeHunter(page);
+  expect([h.life, h.level, crystals(h)]).toEqual([{ at: 'dead' }, 31, 1]);
+});
+
+test('a dead hunter at level 31 raised by a crystal of its rank stands at level 29, and the use says the levels lost', async ({ device }) => {
+  const { page } = await device('raised');
+  await onboardPlayer(page, 'Mira');
+  await dismissAll(page);
+  await standing(page, 31, 'B');
+  await holding(page, { at: 'dead' }, 1, 0, 'B');
+  await go(page, 'status');
+  await crystalCard(page).locator('[data-use]').tap();
+  await expect(page.locator('#toasts .toast').last()).toContainText('Resurrection Crystal (B) used: Up at 1 HP at level 29, 2 levels lost.');
+  const h = await activeHunter(page);
+  expect([h.life, h.level, h.rank, crystals(h)]).toEqual([{ at: 'up', hp: 1 }, 29, 'B', 0]);
+});
+
+test('the shop sells a C crystal for 12,500 gold, ten Clears of rank C, and a hunter with that much buys one', async ({ device }) => {
   const { page } = await device('shop');
   await onboardPlayer(page, 'Mira');
   await dismissAll(page);
-  await holding(page, { at: 'up', hp: 3 }, 0, 100000);
+  await holding(page, { at: 'up', hp: 3 }, 0, 12500);
   await go(page, 'status');
   await page.locator('#view-status [data-tab="shop"]').tap();
-  const item = page.locator('#view-status [data-shopitem="Resurrection Crystal"]');
-  await expect(item.locator('.inv-qty')).toHaveText('100,000 g');
+  await expect(page.locator('#view-status [data-shopitem^="Resurrection Crystal ("]')).toHaveCount(6);
+  const item = page.locator('#view-status [data-shopitem="Resurrection Crystal (C)"]');
+  await expect(item.locator('.inv-qty')).toHaveText('12,500 g');
   await item.locator('[data-buy]').tap();
-  await expect(page.locator('#toasts .toast').last()).toContainText('Purchased Resurrection Crystal.');
+  await expect(page.locator('#toasts .toast').last()).toContainText('Purchased Resurrection Crystal (C).');
   const h = await activeHunter(page);
   expect([h.gold, crystals(h)]).toEqual([0, 1]);
 });
@@ -78,7 +112,7 @@ test('a dead hunter opens the shop and reads that it is closed, with the ways ba
   await expect(page.locator('#view-status [data-sell]')).toHaveCount(0);
   await page.locator('#view-status [data-tab="shop"]').tap();
   await expect(page.locator('#view-status [data-shop-closed]')).toHaveText('The shop is closed while you are dead. You cannot buy or sell. The GM\'s Revive or a Resurrection Crystal brings you back. The GM or another hunter can give you a Resurrection Crystal.');
-  await expect(page.locator('#view-status [data-shopitem="Resurrection Crystal"]'), 'the list still shows what the shop sells').toBeVisible();
+  await expect(page.locator('#view-status [data-shopitem="Resurrection Crystal (E)"]'), 'the list still shows what the shop sells').toBeVisible();
   await expect(page.locator('#view-status [data-buy]')).toHaveCount(0);
   const h = await activeHunter(page);
   expect([h.gold, crystals(h)]).toEqual([100000, 0]);
@@ -99,26 +133,26 @@ test('a GM gives a player a title with a Resurrection Crystal in one award, and 
   await ed.locator('[data-add="title"]').tap();
   await ed.locator('[data-kind="title"] [data-f="name"]').fill('Twice Born');
   await ed.locator('[data-add="item"]').tap();
-  await ed.locator('[data-kind="item"] [data-f="pick"]').selectOption({ label: 'Resurrection Crystal (mythic)' });
-  await expect(ed.locator('.rw-preview li')).toHaveText(['Item acquired: Resurrection Crystal', 'Title acquired: Twice Born']);
+  await ed.locator('[data-kind="item"] [data-f="pick"]').selectOption({ label: 'Resurrection Crystal (S) (mythic)' });
+  await expect(ed.locator('.rw-preview li')).toHaveText(['Item acquired: Resurrection Crystal (S)', 'Title acquired: Twice Born']);
   await gm.locator('#gm-targets label', { hasText: 'Kai' }).tap();
   await gm.locator('#gm-award-go').tap();
   await expect(gm.locator('#gm-award-msg')).toHaveText('Sent to Kai.');
   const win = player.locator('.sys-overlay.show', { hasText: 'REWARD RECEIVED' });
   await expect(win).toBeVisible({ timeout: 15_000 });
-  await expect(win).toContainText('Item acquired: Resurrection Crystal');
+  await expect(win).toContainText('Item acquired: Resurrection Crystal (S)');
   await expect(win).toContainText('Title acquired: Twice Born');
   const h = await activeHunter(player);
   expect([crystals(h), h.items.find((i: any) => i.revive)?.tell, h.titles.map((t: any) => t.name)]).toEqual([1, true, ['Twice Born']]);
 });
 
-test('a GM who edits the shop\'s Resurrection Crystal to another price keeps it a crystal, and a GM can make an item that revives', async ({ device }) => {
+test('a GM who edits the shop\'s S Resurrection Crystal to another price keeps it a crystal, and a GM can make an item that revives', async ({ device }) => {
   const page = (await device('gm')).page;
   await onboardGM(page);
   await dismissAll(page);
   await go(page, 'status');
   await page.locator('#view-status [data-tab="shop"]').tap();
-  const item = page.locator('#view-status [data-shopitem="Resurrection Crystal"]');
+  const item = page.locator('#view-status [data-shopitem="Resurrection Crystal (S)"]');
   await item.locator('[data-shop-edit]').tap();
   const d = page.locator('.lf-overlay [role=dialog]');
   await expect(d.locator('#lf-revive')).toBeChecked();
@@ -127,7 +161,7 @@ test('a GM who edits the shop\'s Resurrection Crystal to another price keeps it 
   await d.locator('[data-apply]').tap();
   await expect(d).toHaveCount(0);
   await expect(item.locator('.inv-qty')).toHaveText('50,000 g');
-  const shop = await page.evaluate(() => hunterApp.store.get().shop.find((i: any) => i.name === 'Resurrection Crystal'));
+  const shop = await page.evaluate(() => hunterApp.store.get().shop.find((i: any) => i.name === 'Resurrection Crystal (S)'));
   expect([shop.value, shop.revive]).toEqual([50000, true]);
 
   await page.locator('#view-status [data-shop-add]').tap();

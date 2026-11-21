@@ -88,3 +88,11 @@ test('the Rules editor\'s words for a number out of its domain name its bounds a
   expect(words({ rankTable: { E: { dc: [10, 13, 160] } } })).toEqual(['rankTable.E.dc.2: must be a whole number from 1 to 100. A d20 check\'s DC: the S rank\'s hardest is 55, and past 100 no bonus reaches it.']);
   expect(words({ solo: { pack: [3, 2] }, luck: 1, levelUpRestore: 'yes' })).toEqual(['solo.pack: must go from low to high.', 'Unknown rule: luck', 'levelUpRestore: must be true or false.']);
 });
+
+test('a save whose GM set the sight base to 6 loads with 0: the base is a sight level, one of the six E to S, so a new hunter sees at 0', () => {
+  expect(domainOf('fight.stealth.sightBase')).toMatchObject({ least: 0, most: 5, whole: true });
+  const R = loaded({ fight: { stealth: { sightBase: 6 } } });
+  expect([R.fight.stealth.sightBase, hunterSheet(newHunter(R), R).sheet.sight]).toEqual([0, 0]);
+  const raised = loaded({ fight: { stealth: { sightBase: 2 } } });
+  expect(hunterSheet(newHunter(raised), raised).sheet.sight).toBe(2);
+});

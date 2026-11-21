@@ -1265,7 +1265,7 @@ Where it lives:
 
 ## A hunter's points and their allocation
 
-Every state reachable from a new hunter in four events or fewer, under every event of the allocation on one stat (+ and − by each role, Confirm, Auto with every point free, the GM's stat edit, a level up and down, a point given and taken), breadth first. The walk found 518 states and 1335 steps.
+Every state reachable from a new hunter in four events or fewer, under every event of the allocation on one stat (+ and − by each role, Confirm, Auto with every point free, the GM's stat edit, a level up and down, a point given and taken, a raising from death), breadth first. The walk found 518 states and 1388 steps.
 
 ### Points free, pending and confirmed
 
@@ -1296,22 +1296,24 @@ stateDiagram-v2
   s2 --> s3 : + on a stat
   s2 --> s3 : points taken (a quest's cost)
   s2 --> s3 : the level moves (XP, or the GM)
+  s2 --> s3 : a raising from death (levels lost)
   s1 --> s4 : the level moves (XP, or the GM)
+  s1 --> s4 : a raising from death (levels lost)
   s1 --> s3 : + on a stat
   s1 --> s4 : points taken (a quest's cost)
 ```
 
-A point put on a stat is pending, not spent: it leaves the points free while it waits, and Confirm moves it into the stat. A player's − takes back only a pending point (with none, it is refused); the GM's − with nothing pending, and the GM's + with no point free, edit the stat. The GM's edit of a stat confirms what was pending on it. A level lost keeps the points pending, so a hunter can hold fewer points than it spent (no point free), and a deduction takes only the points free (both wait on ruling SMX-rules-7.1). Every change of level, XP, points or stats is an event of `progressStep`; the chart leaves out the starting stats and the GM's points shown, which act as the GM's edits.
+A point put on a stat is pending, not spent: it leaves the points free while it waits, and Confirm moves it into the stat. A player's − takes back only a pending point (with none, it is refused); the GM's − with nothing pending, and the GM's + with no point free, edit the stat. The GM's edit of a stat confirms what was pending on it. A level lost, by the GM or by a raising from death, keeps the points pending, so a hunter can hold fewer points than it spent (no point free), and a deduction takes only the points free (both wait on ruling SMX-rules-7.1). Every change of level, XP, points or stats is an event of `progressStep`; the chart leaves out the starting stats and the GM's points shown, which act as the GM's edits.
 
-4 chart states, 20 arrows. No step is hidden.
+4 chart states, 22 arrows. No step is hidden.
 
 Where it lives:
 
 | What | Where |
 |---|---|
 | The union | `ProgressAllocation`, `ProgressEvent` and `ProgressRefusal` in `src/core/hunter/progress.ts` |
-| What changes it | `progressStep(h, event, R)` and its `PROGRESS_TABLE`, named by `raise`, `lower`, `confirm`, `raiseMany`, `setStat`, `startingStats`, `addXp`, `atLevel`, `grantPoints` and `setPoints` |
-| Who calls it | `src/core/hunter/grant.ts` (rewards, `levelEdit`), `src/views/hunter.js` (+, −, Confirm, Auto, the GM's edits) in `store.apply` |
+| What changes it | `progressStep(h, event, R)` and its `PROGRESS_TABLE`, named by `raise`, `lower`, `confirm`, `raiseMany`, `setStat`, `startingStats`, `addXp`, `atLevel`, `grantPoints`, `setPoints` and `raisedLevels` |
+| Who calls it | `src/core/hunter/grant.ts` (rewards, `levelEdit`, a raising in `sheetEdit`), `src/views/hunter.js` (+, −, Confirm, Auto, the GM's edits) in `store.apply` |
 | The test to copy | `tests/progress.test.ts`, "the allocation" |
 | The recipe | docs/guide/hunters.md, "A state or event of the ... machine" |
 

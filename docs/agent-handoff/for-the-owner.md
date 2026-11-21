@@ -34,6 +34,8 @@ Each machine is being built to behave as the app does today, with the row below 
 20. Does rule (d) mean that rewards the app pays by itself (a room solo clear, a counted quest, a feat, a Give… from the shelf) wait for the GM's edit and approval?
 21. How do the free first revive and the revive on debt (rule a) appear in the app: a System raise, or a GM button that spends the step?
 22. Does a Resurrection Crystal handed over by another hunter after death count as bought before the death?
+23. Stealth, the lead's ruling to confirm (built in unit 2): by your ruling 1 a body is hidden only from sight of a lower level, and everyone's sight starts at 0, so a hide at level 0 would hide from nobody. A hidden status with no level written is level 1, and level 0 is not offered. Say if a plain hide should be something else.
+24. Icons, to confirm: the first set is taken from one outside set (game-icons, CC BY 3.0), by your ruling that drawings may come from elsewhere if they look consistent. That licence asks for credit, so the Rules page's foot gets a credit line. Say if you would rather every icon were drawn here.
 
 ## Answered
 

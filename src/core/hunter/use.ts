@@ -7,23 +7,26 @@
 // In a fight the fight's row holds the hunter's HP, mana, fatigue and statuses, so a use there is the fight's `act`
 // (src/core/registry/abilities.ts `itemAbility`), never this: the caller asks `fightOf` first. An item that revives
 // (`Item.revive`, the Resurrection Crystal) has no ability and is refused in a fight (`USE_WORDS.fight`): a dead hunter's
-// row stays in the fight until it ends, and the GM's Revive is the way back inside one.
+// row stays in the fight until it ends, and the GM's Revive is the way back inside one. A crystal has a rank, its
+// rarity's (`rarities.*.rank`), and raises only a hunter of that rank or lower (`revives`; economy design section 5,
+// the owner's ruling 4); the raising costs levels wherever it happens (grant.ts `sheetEdit`, ruling 9).
 import { amountDice, amountOn } from '../effects.ts';
 import { healsFully } from '../combat/effect-ops.ts';
 import { atTier } from '../combat/op-amount.ts';
 import { roundsOf } from '../combat/timeline.ts';
 import type { Op, Source } from '../combat/effect-ops.ts';
 import type { Dice } from '../formula.ts';
-import type { Rules } from '../rules.ts';
+import { RANKS } from '../rules.ts';
+import type { Rank, Rules } from '../rules.ts';
 import type { Hunter } from '../save.ts';
 import { isRefused, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
-import { sheetEdit } from './grant.ts';
+import { raisedLine, sheetEdit } from './grant.ts';
 import { record } from './chronicle.ts';
 import type { SheetEdit } from './grant.ts';
 import { takeItems } from './inventory.ts';
 import { fitted, hunterSheet } from './sheet.ts';
-import { REVIVE_HP, hpOf, manaOf } from './vitals.ts';
+import { hpOf, manaOf } from './vitals.ts';
 import type { Item } from '../registry/items.ts';
 import { itemOps, itemSource } from '../effects.ts';
 
@@ -91,21 +94,53 @@ export function useOn(h: Hunter, ops: readonly Op[], source: Source, rolls: read
   return lines.length ? { hunter: x, lines } : refuse('nothing');
 }
 
-/** Why a use outside a fight is refused: the consumable is not held, nothing would change, it revives and the user is not dead, or a fight holds the user (the caller's). */
-export type ItemUseRefusal = 'no-item' | 'nothing' | 'not-dead' | 'fight';
-/** What a refused use says, with the item's name (copy-tasks.md: why, and the way out). */
-export const USE_WORDS: { readonly [W in ItemUseRefusal]: (name: string) => string } = {
+// ── the crystal's rank ──
+/** The rank an item that revives raises up to: its rarity's rank as the rules have it (`rarities.*.rank`, GM-editable). */
+const reachOf = (item: Pick<Item, 'rar'>, R: Pick<Rules, 'rarities'>): Rank => R.rarities[item.rar].rank;
+/**
+ * Whether `item` raises a dead hunter of `rank`: it revives, and `rank` is at or below the rank of its rarity (economy
+ * design 5: the crystal's rank is its rarity's, so no crystal can say one rank and cost another).
+ */
+export const revives = (item: Pick<Item, 'rar' | 'revive'>, rank: Rank, R: Pick<Rules, 'rarities'>): boolean =>
+  item.revive === true && RANKS.indexOf(rank) <= RANKS.indexOf(reachOf(item, R));
+
+/** A crystal too low for a hunter, for the words of its refusal: the rank it raises up to, the hunter's name and rank. */
+export type TooLow = { readonly upTo: Rank; readonly name: string; readonly rank: Rank };
+/** `item` too low for `h`, as `USE_WORDS['too-low']` says it. */
+export const tooLowOf = (item: Pick<Item, 'rar'>, h: Pick<Hunter, 'name' | 'rank'>, R: Pick<Rules, 'rarities'>): TooLow =>
+  ({ upTo: reachOf(item, R), name: h.name, rank: h.rank });
+/**
+ * What the giver of `item` reads when it goes to `to` and cannot raise them (`revives` false): "Resurrection Crystal (C)
+ * cannot bring back Mina (rank B)." Null when it can, or when it does not revive. A hand-over or an offer of a crystal
+ * says it and is never refused by it: the goods are the receiver's to keep or pass on (economy design 5). No screen
+ * confirms a trade yet, so no view reads it.
+ */
+export const tooLowLine = (item: Pick<Item, 'name' | 'rar' | 'revive'>, to: Pick<Hunter, 'name' | 'rank'>, R: Pick<Rules, 'rarities'>): string | null =>
+  (item.revive && !revives(item, to.rank, R) ? `${item.name} cannot bring back ${to.name} (rank ${to.rank}).` : null);
+
+/**
+ * Why a use outside a fight is refused: the consumable is not held, nothing would change, it revives and the user is not
+ * dead, it revives and the user's rank is above its own (`revives`), or a fight holds the user (the caller's).
+ */
+export type ItemUseRefusal = 'no-item' | 'nothing' | 'not-dead' | 'too-low' | 'fight';
+/**
+ * What a refused use says, with the item's name (copy-tasks.md: why, and the way out). A crystal too low names its rank
+ * and the hunter's from `low` (`tooLowOf`); said with the name alone, it names neither.
+ */
+export const USE_WORDS: { readonly [W in ItemUseRefusal]: (name: string, low?: TooLow) => string } = {
   'no-item': name => `${name} is no longer in the bag.`,
   nothing: name => `${name}: nothing to restore.`,
   'not-dead': name => `${name} only brings back a dead hunter. You still have it.`,
+  'too-low': (name, low) => (low
+    ? `${name} brings back a hunter of rank ${low.upTo} or lower. ${low.name} is rank ${low.rank}. You still have it. A ${low.rank}-rank crystal or higher, or the GM's Revive, brings ${low.name} back.`
+    : `${name} does not reach this hunter's rank. You still have it. A crystal of the hunter's rank or higher, or the GM's Revive, brings the hunter back.`),
   fight: name => `Use ${name} after the fight.`,
 };
-/** `USE_WORDS` said of `name`: the words of a refused use for `ui.wrote`. */
-export const useWords = (name: string): Readonly<Record<ItemUseRefusal, string>> => ({
-  'no-item': USE_WORDS['no-item'](name), nothing: USE_WORDS.nothing(name), 'not-dead': USE_WORDS['not-dead'](name), fight: USE_WORDS.fight(name),
+/** `USE_WORDS` said of `name` (and `low`, a crystal too low): the words of a refused use for `ui.wrote`. */
+export const useWords = (name: string, low?: TooLow): Readonly<Record<ItemUseRefusal, string>> => ({
+  'no-item': USE_WORDS['no-item'](name), nothing: USE_WORDS.nothing(name), 'not-dead': USE_WORDS['not-dead'](name),
+  'too-low': USE_WORDS['too-low'](name, low), fight: USE_WORDS.fight(name),
 });
-/** The line of a use that brought its dead user back (the life machine's `revive`). */
-export const REVIVED_LINE = `Up at ${REVIVE_HP} HP`;
 
 /** A consumable `h` holds that does something when used (not `no-item`). */
 export const usable = (h: Pick<Hunter, 'items'>, itemId: string): Item | null =>
@@ -124,18 +159,20 @@ export function spendItem(h: Hunter, itemId: string, R: Rules): Hunter | Refused
 /**
  * Consumable `itemId` used by `h` on itself, with the dice `useDice(itemOps(item, 'use'), itemSource(item).tier)` asked
  * for: an item that revives first brings `h` back through the life machine's `revive` (`sheetEdit`, as the GM's Revive
- * does), then its ops (`useOn`), and one of it spent (`spendItem`). Refused when `h` holds no such consumable
- * (`no-item`), when it revives and `h` is not dead (`not-dead`: the life table takes `revive` only from dead), or when
- * nothing would change (`nothing`). A refused use spends nothing.
+ * does, with the levels a raising costs), then its ops (`useOn`), and one of it spent (`spendItem`). Refused when `h`
+ * holds no such consumable (`no-item`), when it revives and `h` is not dead (`not-dead`: the life table takes `revive`
+ * only from dead), when it revives and `h`'s rank is above its own (`too-low`, `revives`), or when nothing would change
+ * (`nothing`). A refused use spends nothing.
  */
-export function useItem(h: Hunter, itemId: string, rolls: readonly (readonly number[])[], R: Rules): (Used & { readonly item: Item }) | Refused<'no-item' | 'nothing' | 'not-dead'> {
+export function useItem(h: Hunter, itemId: string, rolls: readonly (readonly number[])[], R: Rules): (Used & { readonly item: Item }) | Refused<'no-item' | 'nothing' | 'not-dead' | 'too-low'> {
   const item = usable(h, itemId); if (!item) return refuse('no-item');
   let from = h;
   const lines: string[] = [];
   if (item.revive) {
     const up = sheetEdit(h, { type: 'life', event: { type: 'revive' }, by: 'item' }, R);
     if (isRefused(up)) return refuse('not-dead');
-    from = up; lines.push(REVIVED_LINE);
+    if (!revives(item, h.rank, R)) return refuse('too-low');
+    from = up; lines.push(raisedLine(h.level, up.level));
   }
   const u = useOn(from, itemOps(item, 'use'), itemSource(item), rolls, R);
   if (isRefused(u) && !lines.length) return u;

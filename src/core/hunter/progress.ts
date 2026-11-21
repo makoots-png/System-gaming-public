@@ -9,7 +9,7 @@
 // (the old `statsLocked` was a second full list a view compared, with three writers and a GM branch: ab79803).
 // The allocation is settled or allocating (`ProgressAllocation`), and every change to these fields is an event of
 // `progressStep` through `PROGRESS_TABLE`: `raise`, `lower`, `confirm`, `raiseMany` (Auto), the GM's `setStat`, XP,
-// the GM's level, points and the GM's points are its named events.
+// the GM's level, points, the GM's points and a raising from death (`revived`) are its named events.
 //
 // A view changes these fields only through a function here, in `store.apply` (src/core/save-step.ts).
 // The save repair reads a stored hunter's fields in src/core/save.ts.
@@ -83,6 +83,16 @@ export function gainXp(p: Progress, amount: number, R: Rules): XpChange {
 const lifetimeXp = (R: Rules, level: number, xp: number): number => R.xpPerLevel * level * (level - 1) / 2 + xp;
 
 /**
+ * The level a hunter raised from death at `level` comes back at (the owner's ruling 9, economy design 7.1): the level less
+ * `reviveLevelShare` of it rounded up, so at least one level while the share is above 0, and never under `MIN_LEVEL`.
+ * The product is rounded to 9 decimal places before it is rounded up, so a product that is whole in decimal takes that
+ * many levels and not one more (a tenth of 30 is 3.0000000000000004 in binary); the price is that a product less than a
+ * billionth above a whole number counts as that number.
+ */
+export const levelAfterRaising = (level: number, R: Pick<Rules, 'reviveLevelShare'>): number =>
+  Math.max(MIN_LEVEL, level - Math.ceil(Math.round(level * R.reviveLevelShare * 1e9) / 1e9));
+
+/**
  * The GM's edit of the level and the XP inside it: the XP change that leads there, so the points and the peak follow
  * as they would from an award. The level is the nearest level (`levelOf`), the XP inside the level.
  */
@@ -123,6 +133,7 @@ const whole = (v: number | undefined): number => (Number.isFinite(v) ? Math.max(
 //   allocating --Confirm, starting stats, − [the last pending], the GM's edit of the last pending stat--> settled
 //   allocating --XP or level (a level may be lost)-----------> allocating, the pending kept (SMX-rules-7.1 waits)
 //   allocating --a deduction of points------------------------> only the points free taken (SMX-rules-7.1 waits)
+//   either     --a raising from death (`revived`)--------------> the same state, levels lost (`levelAfterRaising`)
 
 /** Where the allocation stands, read from `pending`: nothing waits for Confirm, or points sit on stats (never none). */
 export type ProgressAllocation = { readonly at: 'settled' } | { readonly at: 'allocating'; readonly pending: Pending };
@@ -131,7 +142,8 @@ export const allocationOf = (p: Pick<Progress, 'pending'>): ProgressAllocation =
 
 /**
  * What can happen to a hunter's progress: + and − on a stat (by role), Confirm, Auto's plan, the GM's edit of a stat,
- * a hunter's starting stats, XP given or taken, the GM's level and XP, points given or taken, the GM's points shown.
+ * a hunter's starting stats, XP given or taken, the GM's level and XP, points given or taken, the GM's points shown,
+ * and a raising from death, which costs levels (`levelAfterRaising`; the life machine's `revive`, grant.ts `sheetEdit`).
  */
 export type ProgressEvent =
   | { readonly type: 'raise'; readonly stat: StatKey; readonly role: Role }
@@ -143,12 +155,13 @@ export type ProgressEvent =
   | { readonly type: 'xp'; readonly amount: number }
   | { readonly type: 'level'; readonly level: number; readonly xp: number }
   | { readonly type: 'points'; readonly n: number }
-  | { readonly type: 'setPoints'; readonly n: number };
+  | { readonly type: 'setPoints'; readonly n: number }
+  | { readonly type: 'revived' };
 export type ProgressEventType = ProgressEvent['type'];
 type EventOf<T extends ProgressEventType> = Extract<ProgressEvent, { type: T }>;
 /** The events that read no rules, and the events that read only the progress (not the stats). */
 type NoRules = 'lower' | 'confirm' | 'setStat' | 'start';
-type OfProgress = 'xp' | 'level' | 'points' | 'setPoints';
+type OfProgress = 'xp' | 'level' | 'points' | 'setPoints' | 'revived';
 /** Why each event that can be refused is. */
 type Refusals = { readonly raise: 'no-points'; readonly lower: 'confirmed' | 'at-min'; readonly auto: 'no-points'; readonly setPoints: 'not-a-number' };
 export type ProgressRefusal = Refusals[keyof Refusals];
@@ -195,13 +208,20 @@ const setPointsCell: Cell<'setPoints'> = (p, e, R) => {
   if (!Number.isFinite(e.n)) return refuse('not-a-number');
   return { ...p, bonusPoints: Math.max(0, Math.trunc(e.n)) - levelPoints(R, p.level) + p.spent + pendingTotal(p) };
 };
+/**
+ * A raising from death: the level falls to `levelAfterRaising`, as the GM's level edit would take it (`setLevel`), so
+ * the XP inside the level is kept up to what the lower level holds, the peak stays (the levels regained do not refill)
+ * and the points free fall by the points of the levels lost (the owner's ruling 9: "the points of the lost levels go with
+ * them"). The points pending stay, as for any level lost (SMX-rules-7.1 waits).
+ */
+const revivedCell: Cell<'revived'> = (p, _e, R) => ({ ...p, ...setLevel(p, levelAfterRaising(p.level, R), p.xp, R).progress, pending: p.pending });
 const unchanged: Cell<'confirm'> = h => h;
 
 /** For each state of the allocation, what each event does. */
 export const PROGRESS_TABLE: { readonly [S in ProgressAllocation['at']]: ProgressRow } = {
   settled: {
     raise: raiseCell, lower: lowerConfirmed, confirm: unchanged, auto: autoCell, setStat: statCell, start: startCell,
-    xp: xpCell, level: levelCell, points: pointsCell, setPoints: setPointsCell,
+    xp: xpCell, level: levelCell, points: pointsCell, setPoints: setPointsCell, revived: revivedCell,
   },
   allocating: {
     raise: raiseCell, lower: lowerPending, confirm: confirmCell, auto: autoCell, setStat: statCell, start: startCell,
@@ -213,6 +233,8 @@ export const PROGRESS_TABLE: { readonly [S in ProgressAllocation['at']]: Progres
     // takes only the points free, and the pending points stay.
     points: pointsCell,
     setPoints: setPointsCell,
+    // SMX-rules-7.1 waits, as for `level`: the pending points stay when a raising takes levels
+    revived: revivedCell,
   },
 };
 
@@ -238,6 +260,8 @@ export const atLevel = <P extends Progress>(p: P, level: number, xp: number, R: 
 export const grantPoints = <P extends Progress>(p: P, n: number, R: Rules): P => progressStep(p, { type: 'points', n }, R);
 /** The GM's edit of the points shown: afterwards `available` is `n` cut to a whole number, or 0 below 0. Not a finite number is refused. */
 export const setPoints = <P extends Progress>(p: P, n: number, R: Rules): P | Refused<'not-a-number'> => progressStep(p, { type: 'setPoints', n }, R);
+/** A hunter raised from death, its levels lost (`levelAfterRaising`): what grant.ts `sheetEdit` writes with the life's `revive`. */
+export const raisedLevels = <P extends Progress>(p: P, R: Rules): P => progressStep(p, { type: 'revived' }, R);
 /** The GM's +1 point: one more than the points shown now. */
 export const plusPoint = <P extends Progress>(p: P, R: Rules): P | Refused<'not-a-number'> => setPoints(p, available(p, R) + 1, R);
 

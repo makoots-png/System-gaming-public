@@ -336,13 +336,14 @@ describe('mana paid as a price (the spend event)', () => {
 });
 
 describe('the way back from dead, named the same everywhere', () => {
-  test('the words name the GM\'s Revive and the shop\'s item that revives, by its own name; the Dead chip says them', async () => {
+  test('the words name the GM\'s Revive and the shop\'s items that revive, by the name they share before their rank; the Dead chip says them', async () => {
     const { WAYS_BACK } = await import('../src/core/hunter/vitals.ts');
     const { SHOP_ITEMS } = await import('../src/core/registry/items.ts');
     const { STATE_CHIP_DEFS } = await import('../src/core/registry/statuses.ts');
-    const crystal = SHOP_ITEMS.find(d => d.type === 'consumable' && d.revive);
-    expect(crystal?.name).toBe('Resurrection Crystal');
-    expect(WAYS_BACK).toBe(`The GM's Revive or a ${crystal!.name}`);
+    const crystals = SHOP_ITEMS.filter(d => d.type === 'consumable' && d.revive);
+    expect(crystals.length).toBeGreaterThan(0);
+    for (const c of crystals) expect(c.name).toMatch(/^Resurrection Crystal \([EDCBAS]\)$/);
+    expect(WAYS_BACK).toBe('The GM\'s Revive or a Resurrection Crystal');
     expect(STATE_CHIP_DEFS.dead.desc).toBe(`Three failed death saves. ${WAYS_BACK} brings the hunter back.`);
   });
 });

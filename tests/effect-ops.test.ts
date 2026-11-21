@@ -494,6 +494,19 @@ describe('wave 2\'s sheet and share ops (kits design 8.1)', () => {
     expect(withSheetOps(plain, [status('x', def({ op: 'share', on: 'taken', pct: 10 }), null)], RULES)).toBe(plain);
   });
 
+  test('sight ops do not add: the highest is the body\'s sight level, at most 5, and never under its own (ruling 8)', () => {
+    const sight = (...amounts: number[]): number =>
+      modified(hunterOf(), amounts.map((amount, i) => status(`eye${i}`, def({ op: 'sheet', key: 'sight', amount }), null)), RULES).sheet.sight;
+    expect([sight(), sight(2), sight(2, 3), sight(3, 2), sight(4, 7), sight(-2)]).toEqual([0, 2, 3, 3, 5, 0]);
+  });
+
+  test('a sight op is read at its source\'s tier, and adds nothing to the sheet numbers that add', () => {
+    const atA = status('eye', def({ op: 'sheet', key: 'sight', amount: [0, 1, 1, 2, 3, 4] }), null, { source: { id: null, tier: 4 } });
+    const plain = modified(hunterOf(), [], RULES).sheet;
+    expect(modified(hunterOf(), [atA], RULES).sheet).toEqual({ ...plain, sight: 3 });
+    expect(Object.keys(sheetAdds([atA]))).not.toContain('sight');
+  });
+
   test('a per-round damage reads its bearer\'s damage taken share at the settle: 10 a round on a body taking +50% is 15', () => {
     const b = body(hunterOf(), { statuses: [status('brittle', def({ op: 'share', on: 'taken', pct: 50 }), null)] });
     const due = { key: statusKey('burn'), op: { op: 'damage', type: 'magical', amount: f('10'), when: 'turn' } as const, tier: 0, before: 0, share: 1, stacks: 1 };

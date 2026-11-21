@@ -14,6 +14,7 @@ import type { Allocating } from '../src/core/hunter/progress.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import { FUMBLE_FAILURES, REVIVE_HP, SAVES_TO_END, SAVE_FUMBLE, SAVE_SUCCESS, SAVE_UP, SAVE_UP_HP, WAYS_BACK, lifeAfter } from '../src/core/hunter/vitals.ts';
 import { useItem } from '../src/core/hunter/use.ts';
+import { sheetEdit } from '../src/core/hunter/grant.ts';
 import { buy, putItem, sell } from '../src/core/hunter/inventory.ts';
 import { RARITIES, SHOP_ITEMS, itemOf, parseItem, priceOf, valueOf } from '../src/core/registry/items.ts';
 import { newHunter } from '../src/core/save.ts';
@@ -97,7 +98,7 @@ describe('the points line', () => {
 describe('the down line', () => {
   const dying = (successes: 0 | 1 | 2, failures: 0 | 1 | 2): Life => ({ at: 'dying', successes, failures });
   const save = (life: Life, roll: number): Life => lifeAfter(life, { type: 'deathSave', roll }, 20);
-  const line = downLine();
+  const line = downLine(RULES);
 
   test('its numbers are the ones the machine plays', () => {
     expect(line).toContain(`${SAVE_SUCCESS} or higher succeeds`);
@@ -124,10 +125,22 @@ describe('the down line', () => {
   });
 
   test('the Resurrection Crystal the line names raises the dead at the HP it states, as the GM\'s Revive does', () => {
-    const crystal = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Resurrection Crystal')!);
-    expect(WAYS_BACK).toContain(crystal.name);
+    const crystal = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Resurrection Crystal (E)')!);
+    expect(crystal.name.startsWith('Resurrection Crystal'), 'the shop\'s crystals carry the name the line says, and their rank').toBe(true);
+    expect(WAYS_BACK).toContain('Resurrection Crystal');
     const h = { ...putItem(newHunter(RULES), crystal, 'i1' as never), life: { at: 'dead' as const } }, u = useItem(h, 'i1', [], RULES);
     expect(refused(u) ? u : u.hunter.life).toEqual({ at: 'up', hp: REVIVE_HP });
+  });
+
+  test('a raising costs levels, as the machine plays it: 3.33% of the level, rounded up, so level 31 comes back at 29', () => {
+    expect(line).toContain('A raising costs levels: 3.33% of the hunter\'s level, rounded up, at least one and never below level 1, so a hunter who died at level 31 comes back at level 29.');
+    const at31 = { ...newHunter(RULES), level: 31, peakLevel: 31, life: { at: 'dead' as const } };
+    const up = sheetEdit(at31, { type: 'life', event: { type: 'revive' } }, RULES);
+    expect(refused(up) ? up : up.level).toBe(29);
+  });
+
+  test('the raising\'s line follows a GM\'s share: a tenth takes 4 of level 31', () => {
+    expect(downLine({ ...RULES, reviveLevelShare: 0.1 })).toContain('A raising costs levels: 10% of the hunter\'s level, rounded up, at least one and never below level 1, so a hunter who died at level 31 comes back at level 27.');
   });
 
   test('the shop is closed to the dead, as the line says: a dead hunter\'s purchase and sale are refused, a stable one\'s are not', () => {

@@ -377,13 +377,13 @@ describe('a Resurrection Crystal given in a reward, with no code of its own (not
   // Each way a GM gives an item is read through its own step, then the hunter it was given is killed and uses it from
   // the bag: the crystal arrived whole, its revive with it.
   const AT = '2026-11-18T12:00:00.000Z', DAY = { at: AT, today: day(AT.slice(0, 10)), R: RULES, vitals: 'sheet' as const };
-  const CRYSTAL: ItemTemplate = itemOf(RULES, SHOP_ITEMS.find(i => i.name === 'Resurrection Crystal')!);
+  const CRYSTAL: ItemTemplate = itemOf(RULES, SHOP_ITEMS.find(i => i.name === 'Resurrection Crystal (S)')!);
   const WITH: Rewards = { ...newRewards(), items: [CRYSTAL] };
   const fresh = (): Save => freshSave({ now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-test') }, { onboarded: true });
   /** Hunter h1 of `s` dies, then uses the crystal it holds: up at 1 HP with none left. */
   const raised = (s: Save): void => {
     const h = { ...s.hunters[0]!, life: { at: 'dead' as const } }, it = h.items.find(i => i.revive)!;
-    expect(it).toMatchObject({ name: 'Resurrection Crystal', revive: true });
+    expect(it).toMatchObject({ name: 'Resurrection Crystal (S)', revive: true });
     const u = useItem(h, it.id, [], RULES);
     if (isRefused(u)) throw new Error(u.why);
     expect([u.hunter.life, u.hunter.items.some(i => i.revive)]).toEqual([{ at: 'up', hp: 1 }, false]);
@@ -416,7 +416,7 @@ describe('a Resurrection Crystal given in a reward, with no code of its own (not
 
   test('a gate\'s Clear, with the crystal as the item the GM put in its share', () => {
     const s = { ...fresh(), gates: [den('raiding')] };
-    const out = settleClear(s, 'g-den', { due: 0, xp: 0, gold: 0, items: ['Resurrection Crystal'], payees: ['Hunter'] }, [{ hid: 'h1', rewards: parseRewards(copy(WITH))! }], null, DAY);
+    const out = settleClear(s, 'g-den', { due: 0, xp: 0, gold: 0, items: ['Resurrection Crystal (S)'], payees: ['Hunter'] }, [{ hid: 'h1', rewards: parseRewards(copy(WITH))! }], null, DAY);
     if (isRefused(out)) throw new Error(out.why);
     expect(out.save.gates[0]!.status).toBe('cleared');
     raised(out.save);

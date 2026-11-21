@@ -25,6 +25,7 @@ import { bounded } from '../registry/scalers.ts';
 import { isUp } from './row-hp.ts';
 import { amountOp, AURA_ON, isStatusKey, LAND_USE_OPS, reactionMayHold, modified, shadowId, SHARE_ON, statusKey, statusOn, TYPE_MAX, isUseOp } from './effect-ops.ts';
 import { isStacking, SHEET_OP_KEYS } from './op-amount.ts';
+import { LEVELS } from './standing.ts';
 import { parseLife } from '../hunter/vitals.ts';
 import { parseLevel } from '../hunter/level.ts';
 import type {
@@ -292,7 +293,7 @@ function wave2Op(v: Rec, R: Rules): Op | null {
     case 'sheet': {
       const key = oneOf(v.key, SHEET_OP_KEYS, null);
       if (!key) return null;
-      const cap = { armor: K.armorOp, resist: K.armorOp, pen: F.penCap, critFaces: K.critFacesMax, exposed: K.critFacesMax, critSize: K.critSizeMax - F.critSizeBase, costCut: K.costCutMax, range: K.rangeAdd }[key];
+      const cap = { armor: K.armorOp, resist: K.armorOp, pen: F.penCap, critFaces: K.critFacesMax, exposed: K.critFacesMax, critSize: K.critSizeMax - F.critSizeBase, costCut: K.costCutMax, range: K.rangeAdd, sight: Math.max(...LEVELS) }[key];
       const amount = tiered(v.amount, x => within(x, -cap, cap));
       return amount === null ? null : { op: 'sheet', key, amount };
     }

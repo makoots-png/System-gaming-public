@@ -85,13 +85,14 @@ for (const [list, defs] of LISTS) {
         expect(parseItem(copy(item))).toEqual(item);
       });
 
-      test('its price is the one it sets by hand, or the rule\'s: one Clear of its rarity\'s rank times gradeStep to its grade, a consumable usedUpShare of it, rounded', () => {
+      test('its price is the one it sets by hand, or the rule\'s: one Clear of its rarity\'s rank times gradeStep to its grade, an item that revives reviveClears of it, another consumable usedUpShare of it, rounded', () => {
         if (def.value !== undefined) {
           expect(Number.isInteger(def.value) && def.value > 0).toBe(true);
           expect(item.value).toBe(def.value);
         } else {
           expect(item.value, 'priced by the rule as it is read, not stored').toBeUndefined();
-          expect(valueOf(item, RULES)).toBe(Math.round(clear(RULES, RANK_OF[def.rar]) * RULES.gradeStep ** (def.grade ?? 0) * (def.type === 'consumable' ? RULES.usedUpShare : 1)));
+          const factor = def.type === 'consumable' ? (def.revive ? RULES.reviveClears : RULES.usedUpShare) : 1;
+          expect(valueOf(item, RULES)).toBe(Math.round(clear(RULES, RANK_OF[def.rar]) * RULES.gradeStep ** (def.grade ?? 0) * factor));
         }
       });
 
@@ -126,13 +127,39 @@ group('the price ladder (economy design 2.2, review E-1)', () => {
     expect(valueOf(parseItem({ name: 'Draught', rar: 'common', type: 'material' })!, RULES), 'a thing that is not used up costs the whole Clear').toBe(clear(RULES, 'E'));
   });
 
-  test('every built-in item but the Resurrection Crystal is priced by the ladder: none keeps a price set by hand', () => {
-    expect(ALL.filter(d => d.value !== undefined).map(d => d.name)).toEqual(['Resurrection Crystal']);
+  test('every built-in item is priced by the rule, the Resurrection Crystals too: none keeps a price set by hand', () => {
+    expect(ALL.filter(d => d.value !== undefined).map(d => d.name)).toEqual([]);
   });
 
   test('every rarity\'s price is above the one below it', () => {
     const prices = RARITIES.map(r => priceOf(RULES, r));
     expect(prices.every((p, i) => i === 0 || p > prices[i - 1]!)).toBe(true);
+  });
+});
+
+group('the Resurrection Crystal, tiered (economy design 5, the owner\'s ruling 4)', () => {
+  const crystal = (rar: Rarity) => parseItem({ name: 'Crystal', rar, type: 'consumable', revive: true })!;
+
+  test('an unpriced reviving item costs reviveClears of its rank\'s Clear: E 1,000, D 3,250, C 12,500, B 50,000, A 190,000, S 750,000 (block [5])', () => {
+    expect(RULES.reviveClears).toBe(10);
+    for (const rar of RARITIES) expect([rar, valueOf(crystal(rar), RULES)]).toEqual([rar, RULES.reviveClears * clear(RULES, RANK_OF[rar])]);
+    expect(RARITIES.map(rar => valueOf(crystal(rar), RULES))).toEqual([1000, 3250, 12500, 50000, 190000, 750000]);
+  });
+
+  test('it follows a GM\'s reviveClears and the loot gold of its rank; a price typed by hand still wins', () => {
+    expect(valueOf(crystal('rare'), { ...RULES, reviveClears: 20 })).toBe(25000);
+    expect(valueOf(crystal('rare'), rulesOf({ loot: { C: { gold: [1000, 3000] } } }))).toBe(20000);
+    expect(valueOf({ ...crystal('rare'), value: 9000 }, RULES)).toBe(9000);
+  });
+
+  test('the shop stocks one crystal of each rank, named by its rank, each of the rarity whose rank it reaches, with no grade and no price by hand', () => {
+    const crystals = SHOP_ITEMS.filter(d => d.type === 'consumable' && d.revive);
+    expect(crystals.map(d => [d.name, d.rar])).toEqual(RARITIES.map(rar => [`Resurrection Crystal (${RANK_OF[rar]})`, rar]));
+    for (const d of crystals) expect([d.name, d.grade, d.value]).toEqual([d.name, undefined, undefined]);
+  });
+
+  test('the shop\'s C crystal costs 12,500, its S crystal 750,000', () => {
+    expect([valueOf(of('Resurrection Crystal (C)'), RULES), valueOf(of('Resurrection Crystal (S)'), RULES)]).toEqual([12500, 750000]);
   });
 });
 
@@ -409,10 +436,10 @@ group('the built-in items, priced at each read (I1)', () => {
 group('the Resurrection Crystal (notes-2b-crystal.md)', () => {
   const crystal = (R = RULES) => defaultShop(R).find(i => i.revive)!;
 
-  test('the default shop sells it at the 100,000 gold it sets by hand, at any price rule, until it is priced by its rank (economy unit 4)', () => {
-    expect(crystal()).toMatchObject({ name: 'Resurrection Crystal', type: 'consumable', revive: true, tell: true });
-    expect(valueOf(crystal(), RULES)).toBe(100000);
-    expect(valueOf(crystal(lootTimes(3)), lootTimes(3)), 'its own price, not the rule\'s').toBe(100000);
+  test('the default shop sells the E crystal first, at reviveClears Clears of rank E, and a GM\'s loot gold moves its price (economy unit 4)', () => {
+    expect(crystal()).toMatchObject({ name: 'Resurrection Crystal (E)', type: 'consumable', revive: true, tell: true });
+    expect(valueOf(crystal(), RULES)).toBe(1000);
+    expect(valueOf(crystal(lootTimes(3)), lootTimes(3)), 'the rule\'s price, read each time').toBe(3000);
   });
 
   test('a reward, a room message or a form keeps its revive; on anything but a consumable, or not exactly true, it is dropped', () => {
@@ -423,8 +450,8 @@ group('the Resurrection Crystal (notes-2b-crystal.md)', () => {
 
   test('no loot roll can drop it: the GM decides how many exist, while the reward editor still offers it', () => {
     expect(builtInItems(RULES).some(i => i.revive)).toBe(true);
-    expect(lootPool(RULES).some(i => i.revive || i.name === 'Resurrection Crystal')).toBe(false);
-    expect(lootPool(RULES).length).toBe(builtInItems(RULES).length - 1);
+    expect(lootPool(RULES).some(i => i.revive || i.name.startsWith('Resurrection Crystal'))).toBe(false);
+    expect(lootPool(RULES).length, 'the six crystals left out').toBe(builtInItems(RULES).length - 6);
   });
 
   test('its card says what it does', () => {

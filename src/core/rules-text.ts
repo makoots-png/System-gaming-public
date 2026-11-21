@@ -1,6 +1,7 @@
 // rules-text.ts: the lines of the Rules page that state a rule the game plays elsewhere, worked out from the functions
 // that play it, so the page cannot drift from the game (tests/rules-text.test.ts pins each one). Pure. The page itself
 // is src/views/rulesref.js, which keeps its layout and calls these.
+import { RULES } from './rules.ts';
 import type { Rank, Rules } from './rules.ts';
 import { above } from './stats.ts';
 import { statBonus } from './hunter/sheet.ts';
@@ -12,6 +13,7 @@ import { RARITIES, priceOf } from './registry/items.ts';
 import type { PriceRules, Rarity } from './registry/items.ts';
 import { shareEach } from './gates/pay.ts';
 import { FUMBLE_FAILURES, REVIVE_HP, SAVES_TO_END, SAVE_FUMBLE, SAVE_SUCCESS, SAVE_UP, SAVE_UP_HP, WAYS_BACK } from './hunter/vitals.ts';
+import { levelAfterRaising } from './hunter/progress.ts';
 
 const sign = (n: number): string => (n >= 0 ? '+' : '') + n;
 
@@ -57,13 +59,21 @@ export function pointsLine(): string {
   return 'Spend points with + on a stat. − takes back a point you have not confirmed. Confirm locks the points in; until then they wait, also after you leave the Status view. The GM can edit any stat, and that edit is confirmed at once.';
 }
 
+/** The level of the down line's worked example of a raising: one where the share of the shipped rule takes two levels. */
+const RAISED_EXAMPLE = 31;
 /**
- * What happens at 0 HP, from the life machine's own numbers (vitals.ts), the ways back from dead (`WAYS_BACK`), and the
- * shop's door for the dead (inventory.ts `shopOpen`): the sentence is there only while the rule closes it.
+ * What happens at 0 HP, from the life machine's own numbers (vitals.ts), the ways back from dead (`WAYS_BACK`), what a
+ * raising costs (`reviveLevelShare`, worked by progress.ts `levelAfterRaising` at level 31), and the shop's door for the
+ * dead (inventory.ts `shopOpen`): the sentence is there only while the rule closes it. `R` is the rules the page plays
+ * by; left out, the shipped rules (src/views/rulesref.js does not pass its own yet, so a GM's share is not said there).
  */
-export function downLine(): string {
+export function downLine(R: Pick<Rules, 'reviveLevelShare'> = RULES): string {
   const shop = shopOpen({ life: { at: 'dead' } }) ? '' : ' The shop is closed to a dead hunter, who can neither buy nor sell. The GM or another hunter can still give a dead hunter a Resurrection Crystal.';
-  return `At 0 HP a hunter is down and makes death saves: a d20, ${SAVE_SUCCESS} or higher succeeds. ${SAVES_TO_END} successes make the hunter stable (still down, no more saves) and ${SAVES_TO_END} failures are fatal. A ${SAVE_UP} gets up at ${SAVE_UP_HP} HP, and a ${SAVE_FUMBLE} counts as ${FUMBLE_FAILURES} failures. The GM can stabilize a hunter. Healing and rest do not raise the dead: ${WAYS_BACK} from the bag does, at ${REVIVE_HP} HP, outside a fight.${shop}`;
+  const pct = Math.round(R.reviveLevelShare * 10000) / 100, back = levelAfterRaising(RAISED_EXAMPLE, R);
+  const cost = back < RAISED_EXAMPLE
+    ? ` A raising costs levels: ${pct}% of the hunter's level, rounded up, at least one and never below level 1, so a hunter who died at level ${RAISED_EXAMPLE} comes back at level ${back}.`
+    : ' A raising costs no levels.';
+  return `At 0 HP a hunter is down and makes death saves: a d20, ${SAVE_SUCCESS} or higher succeeds. ${SAVES_TO_END} successes make the hunter stable (still down, no more saves) and ${SAVES_TO_END} failures are fatal. A ${SAVE_UP} gets up at ${SAVE_UP_HP} HP, and a ${SAVE_FUMBLE} counts as ${FUMBLE_FAILURES} failures. The GM can stabilize a hunter. Healing and rest do not raise the dead: ${WAYS_BACK} from the bag does, at ${REVIVE_HP} HP, outside a fight.${cost}${shop}`;
 }
 
 /**

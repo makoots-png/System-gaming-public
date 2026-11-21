@@ -4,10 +4,11 @@
 // ranges gain, the shares of rule 11c (damage dealt and taken, heals received), and whether a status is harmful. Pure
 // reads: nothing here changes a body. resolve.ts, land.ts, fight-turn.ts and effect-ops.ts `modified` call it. A new
 // reading of a wave 2 op is a function here with a case in tests/effect-ops.test.ts ("wave 2's sheet and share ops").
+// The levels a sight or a stealth is read at (`LEVELS`) are here, below sight.ts, which asks this file what a body holds.
 
 import type { Sheet } from '../hunter/derive.ts';
 import type { Rules } from '../rules.ts';
-import { atTier, countOn, SHEET_OP_KEYS } from './op-amount.ts';
+import { atTier, countOn, SHEET_ADD_KEYS, SHEET_LEVEL_KEYS } from './op-amount.ts';
 import { rowHp } from './row-hp.ts';
 import type { Body, ShareOn, SheetOpKey, Status, StatusDef, StatusKey } from './effect-ops.ts';
 import type { Ability, CombatantId } from './ability-types.ts';
@@ -68,21 +69,52 @@ export const counts = (s: Pick<Status, 'owed'>): boolean => STATUS_COUNTS[status
 export const counting = <S extends Pick<Status, 'owed'>>(list: readonly S[]): S[] => list.filter(counts);
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
-/** The `sheet` ops of a body's statuses that count, summed by key at each source's tier and per stack (ops of one key add, as `stat` ops do). */
-export function sheetAdds(statuses: readonly Status[]): Readonly<Record<SheetOpKey, number>> {
-  const out = Object.fromEntries(SHEET_OP_KEYS.map(k => [k, 0])) as Record<SheetOpKey, number>;
-  for (const s of counting(statuses)) for (const o of s.def.ops) if (o.op === 'sheet') out[o.key] += atTier(o.amount, s.source.tier) * countOn(s);
+
+// ── levels: a body's sight and a hidden body's stealth (docs/agent-handoff/features/notes-7-stealth.md section 2) ──
+/**
+ * The levels of sight and stealth, one per rank E to S, so a level can follow its source's rank as every tiered number
+ * does. Not a hunter's level (hunter/level.ts). A level past 5 cannot be written.
+ */
+export const LEVELS = [0, 1, 2, 3, 4, 5] as const;
+/** A sight or stealth level, 0 to 5 (`LEVELS`). */
+export type Level = (typeof LEVELS)[number];
+/** A number read into a level: rounded down, under 0 is 0, past 5 is 5, not a number is 0. */
+export const asLevel = (n: number): Level => LEVELS[clamp(Math.floor(n), 0, LEVELS.length - 1)] ?? LEVELS[0];
+
+/** A sheet number a `sheet` op adds to (op-amount.ts `SHEET_ADD_KEYS`). */
+type SheetAddKey = (typeof SHEET_ADD_KEYS)[number];
+/** A sheet level a `sheet` op raises (op-amount.ts `SHEET_LEVEL_KEYS`). */
+type SheetLevelKey = (typeof SHEET_LEVEL_KEYS)[number];
+const isAddKey = (k: SheetOpKey): k is SheetAddKey => (SHEET_ADD_KEYS as readonly SheetOpKey[]).includes(k);
+/** The `sheet` ops of a body's statuses that count on a number that adds, summed by key at each source's tier and per stack (ops of one key add, as `stat` ops do). */
+export function sheetAdds(statuses: readonly Status[]): Readonly<Record<SheetAddKey, number>> {
+  const out = Object.fromEntries(SHEET_ADD_KEYS.map(k => [k, 0])) as Record<SheetAddKey, number>;
+  for (const s of counting(statuses)) for (const o of s.def.ops) if (o.op === 'sheet' && isAddKey(o.key)) out[o.key] += atTier(o.amount, s.source.tier) * countOn(s);
+  return out;
+}
+/**
+ * The `sheet` ops of a body's statuses that count on a level, by key: the highest of them at its source's tier, or null
+ * with none. Sources of a level do not add (the owner's ruling 8), so neither do a status's stacks: a level is not a
+ * per-stack amount.
+ */
+export function sheetLevels(statuses: readonly Status[]): Readonly<Record<SheetLevelKey, Level | null>> {
+  const out = Object.fromEntries(SHEET_LEVEL_KEYS.map(k => [k, null])) as Record<SheetLevelKey, Level | null>;
+  for (const s of counting(statuses)) for (const o of s.def.ops) if (o.op === 'sheet' && !isAddKey(o.key)) {
+    const level = asLevel(atTier(o.amount, s.source.tier)), was = out[o.key];
+    out[o.key] = was === null ? level : asLevel(Math.max(was, level));
+  }
   return out;
 }
 /**
  * A sheet after its statuses' `sheet` ops (kits design 8.1): armor and resist at 0 or more, pen to `penCap`, crit faces
  * to `kit.critFacesMax`, crit size within `critSizeBase` and `kit.critSizeMax`, the cost cut to `kit.costCutMax`. A cap
  * the body's own sheet already passes (a perk) holds it there: an op never lowers a number past what the body had.
+ * The sight level is the highest of the body's own and its sight ops (`sheetLevels`), so an op never lowers it either.
  * With no `sheet` op the sheet is the one `derive` made.
  */
 export function withSheetOps(sheet: Sheet, statuses: readonly Status[], R: StandingRules): Sheet {
   if (!counting(statuses).some(s => s.def.ops.some(o => o.op === 'sheet'))) return sheet;
-  const a = sheetAdds(statuses), F = R.fight, K = F.kit;
+  const a = sheetAdds(statuses), l = sheetLevels(statuses), F = R.fight, K = F.kit;
   const up = (v: number, add: number, lo: number, hi: number): number => (add === 0 ? v : clamp(v + add, Math.min(lo, v), Math.max(hi, v)));
   return {
     ...sheet,
@@ -91,6 +123,7 @@ export function withSheetOps(sheet: Sheet, statuses: readonly Status[], R: Stand
     critFaces: up(sheet.critFaces, Math.trunc(a.critFaces), 1, K.critFacesMax),
     critSize: up(sheet.critSize, a.critSize, F.critSizeBase, K.critSizeMax),
     costCut: up(sheet.costCut, a.costCut, 0, K.costCutMax) as Sheet['costCut'],
+    sight: l.sight === null ? sheet.sight : asLevel(Math.max(sheet.sight, l.sight)),
   };
 }
 /** The crit faces any attacker gains against `b`: its `exposed` ops summed, rounded down, at least 0 (Vision: 0.5 a stack). */

@@ -1,7 +1,7 @@
 // space.ts: where things are in a fight (docs/agent-handoff/rw/design.md sections 3.1 and 5). Square tiles, the 5-10-5
 // distance, the tiles an ability's shape covers, the default places of a fight with no map, a walk around bodies and walls
 // and the way it goes, a dash's line, and where a target steps to avoid a shape. Pure; the rule numbers come in as
-// `SpaceRules`. Sight (`sees`, `seenBy`) and every line read the terrain's `blocksLine`. A new shape is a member of `Shape`
+// `SpaceRules`. Sight (`sees`, `inSight`, `seenBy`) and every line read the terrain's `blocksLine`. A new shape is a member of `Shape`
 // and its case in `tilesOf`; a new terrain is a member of `Terrain` and its row in `TERRAIN` (the typecheck asks for
 // both), each with a case in tests/space.test.ts.
 import type { Brand } from '../ids.ts';
@@ -175,11 +175,17 @@ export function shoveStep(s: Shoved, e: ShoveEvent): Shoved {
   return step ? step(s, e as never) : s;
 }
 
+/**
+ * Whether a body at `a` has the tile `b` in sight `n` tiles far: within `n` by the 5-10-5 count, and `sees` it. The one
+ * geometry of sight: the fog's lit tiles (`seenBy`) and a single body's eyes (sight.ts `perceives`) both ask it.
+ */
+export const inSight = (a: Place, b: Place, grid: Grid, n: number): boolean => dist(a, b) <= n && sees(a, b, grid);
+
 /** A body that looks: where it stands, its side, and whether it is up (a body at 0 HP sees nothing). */
 export type Viewer = { readonly place: Place; readonly side: Side; readonly up: boolean };
 /**
- * The tiles `side` sees (design 5.3): every tile within `sight` of a body of that side that is up, and that body `sees`.
- * The union over the side, so the whole party shares one view. As indices `y * w + x`.
+ * The tiles `side` sees (design 5.3): every tile `inSight` of a body of that side that is up, `sight` tiles far. The
+ * union over the side, so the whole party shares one view. As indices `y * w + x`.
  */
 export function seenBy(side: Side, bodies: readonly Viewer[], grid: Grid, sight: number): Set<number> {
   const out = new Set<number>();
@@ -189,7 +195,7 @@ export function seenBy(side: Side, bodies: readonly Viewer[], grid: Grid, sight:
     for (let y = Math.max(0, p.y - sight); y <= Math.min(grid.h - 1, p.y + sight); y++) {
       for (let x = Math.max(0, p.x - sight); x <= Math.min(grid.w - 1, p.x + sight); x++) {
         const i = y * grid.w + x, t = place(x, y);
-        if (!out.has(i) && dist(p, t) <= sight && sees(p, t, grid)) out.add(i);
+        if (!out.has(i) && inSight(p, t, grid, sight)) out.add(i);
       }
     }
   }

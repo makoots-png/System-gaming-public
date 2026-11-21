@@ -10,6 +10,8 @@ import type { StatKey, Stats } from '../stats.ts';
 import { tiles } from '../combat/space.ts';
 import type { Tiles } from '../combat/space.ts';
 import type { Brand } from '../ids.ts';
+import { asLevel } from '../combat/standing.ts';
+import type { Level } from '../combat/standing.ts';
 
 /** A share from 0 to 1, such as the part of armor ignored. */
 export type Share = Brand<number, 'Share'>;
@@ -63,6 +65,11 @@ export type Sheet = {
   readonly costCut: Share;
   /** How many shadows this body can keep. */
   readonly shadows: number;
+  /**
+   * The level of stealth this body perceives (combat/sight.ts `perceives`): a hidden body at this level or under. The
+   * rules' `fight.stealth.sightBase` until a sight op raises it (notes-7-stealth.md section 2).
+   */
+  readonly sight: Level;
 };
 /** A number of a sheet (`hpMax`, `armor`, `speed`...). Not a room's `SheetKey` (src/core/ids.ts). */
 export type SheetNumber = keyof Sheet;
@@ -74,7 +81,7 @@ export const SHEET_LABELS: { readonly [K in SheetNumber]: string } = {
   pen: 'Penetration (share)', penFlat: 'Penetration (flat)', phys: 'Physical power', mag: 'Magical power', sup: 'Support power', react: 'Reaction',
   aim: 'Accuracy', will: 'Will', critFaces: 'Crit faces (of d20)', critSize: 'Crit size', opening: 'Opening bonus',
   tenacity: 'Tenacity', potency: 'Potency', threat: 'Threat multiplier', hold: 'Channel hold (share of max HP)',
-  costCut: 'Cost cut (share)', shadows: 'Shadow capacity',
+  costCut: 'Cost cut (share)', shadows: 'Shadow capacity', sight: 'Sight level',
 };
 
 /** What one worn item adds to the kit (design 2.3). Neck and rings weigh 0. `penFlat` is armor or resist the wearer's hits ignore. */
@@ -82,7 +89,8 @@ export type GearPiece = { readonly weight: number; readonly armor: number; reado
 
 /**
  * Bonuses from perks: a stat key adds to that stat before its curve, a `Sheet` key adds to that number where it is worked
- * out, before anything that reads it and before it is rounded or clamped.
+ * out, before anything that reads it and before it is rounded or clamped. The sight level is the one key that does not
+ * add: the higher of the base and the perk is the level (the owner's ruling 8, sources of sight do not add).
  */
 export type Bonus = Partial<Readonly<Record<StatKey | SheetNumber, number>>>;
 
@@ -189,6 +197,7 @@ function derive(stats: Stats, level: number, gear: readonly GearPiece[], perks: 
     hold: share(F.holdBase + c('dis', F.holdCap) + b('hold')),
     costCut: share(up('ctl', F.costCutCap) + b('costCut')),
     shadows: Math.floor(e('pre') * F.shadowPerEff + b('shadows')),
+    sight: asLevel(Math.max(F.stealth.sightBase, b('sight'))),
   };
 }
 

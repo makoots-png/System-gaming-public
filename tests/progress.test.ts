@@ -224,6 +224,39 @@ describe('the GM sets a level and XP', () => {
   });
 });
 
+describe('a raising from death costs levels (economy design 7.1 `reviveLevelShare`, the owner\'s ruling 9)', () => {
+  // The shipped share is 1/30: a raising at level L leaves level max(1, L − ceil(L / 30)).
+  const raised = (level: number, xp = 0, rules: Rules = R): Progress => progressStep(at({ level, xp, peakLevel: level }), { type: 'revived' }, rules);
+
+  test('the loss is the level times the share, rounded up, and the level never goes under 1: 1 stays 1, 2 goes to 1, 30 to 29, 31 to 29, 61 to 58', () => {
+    expect(R.reviveLevelShare).toBe(1 / 30);
+    const LEVELS: [from: number, to: number][] = [[1, 1], [2, 1], [29, 28], [30, 29], [31, 29], [60, 58], [61, 58], [90, 87]];
+    expect(LEVELS.map(([from]) => [from, raised(from).level])).toEqual(LEVELS);
+  });
+
+  test('the points free fall by the lost levels\' points: level 31 holds 90 and level 29 84', () => {
+    expect(available(at({ level: 31, peakLevel: 31 }), R)).toBe(90);
+    expect(available(raised(31), R)).toBe(84);
+  });
+
+  test('the XP inside the level is kept, up to what the level holds; the peak stays, so the levels regained do not refill', () => {
+    expect(raised(31, 500)).toMatchObject({ level: 29, xp: 500, peakLevel: 31 });
+    expect(raised(31, 3050)).toMatchObject({ level: 29, xp: 2899 });
+    expect(gainXp(raised(31), 2900 + 3000, R)).toMatchObject({ to: 31, refill: false });
+  });
+
+  test('a GM\'s share is read: a tenth takes 3 levels at 30 (exactly 3, not 4) and 4 at 31', () => {
+    const tenth: Rules = { ...R, reviveLevelShare: 0.1 };
+    expect([raised(30, 0, tenth).level, raised(31, 0, tenth).level]).toEqual([27, 27]);
+  });
+
+  test('the input is never changed', () => {
+    const p = at({ level: 31, peakLevel: 31 }), before = copy(p);
+    progressStep(p, { type: 'revived' }, R);
+    expect(p).toEqual(before);
+  });
+});
+
 describe('every short sequence keeps the rules', () => {
   // Each step is an XP change or spending every free point. The test tracks the highest level reached itself and
   // checks the result against the rule: XP inside the level, the peak is the highest level held, a refill exactly
@@ -450,6 +483,9 @@ describe('the allocation, a machine: settled, or allocating with points pending 
     ['allocating × −10 points: only the 4 free are taken, the pending points stay (SMX-rules-7.1 waits)', allocating, { type: 'points', n: -10 }, { at: 'allocating', pending: { str: 2 }, free: 0 }],
     ['allocating × the GM\'s points set to 9: the pending points stay', allocating, { type: 'setPoints', n: 9 }, { at: 'allocating', pending: { str: 2 }, free: 9 }],
     ['allocating × the GM\'s points set to no number: refused', allocating, { type: 'setPoints', n: Infinity }, no('not-a-number')],
+    // a raising at level 3 takes ceil(3 / 30) = 1 level, and level 3's 3 points with it (ruling 9)
+    ['settled × a raising (level 3): one level lost, its 3 points with it', settled, { type: 'revived' }, { at: 'settled', pending: {}, free: 3, level: 2 }],
+    ['allocating × a raising (level 3 to 2): the pending points stay, as for any level lost (SMX-rules-7.1 waits)', allocating, { type: 'revived' }, { at: 'allocating', pending: { str: 2 }, free: 1, level: 2 }],
   ];
 
   test('a hunter with no point pending is settled; with any, allocating, holding them', () => {
@@ -473,7 +509,7 @@ describe('the allocation, a machine: settled, or allocating with points pending 
 
   test('the table has a row for every state against every event', () => {
     const seen = new Set(ROWS.map(([, from, e]) => `${allocationOf(from()).at} ${e.type}`));
-    const types: ProgressEvent['type'][] = ['raise', 'lower', 'confirm', 'auto', 'setStat', 'start', 'xp', 'level', 'points', 'setPoints'];
+    const types: ProgressEvent['type'][] = ['raise', 'lower', 'confirm', 'auto', 'setStat', 'start', 'xp', 'level', 'points', 'setPoints', 'revived'];
     expect(types.flatMap(t => (['settled', 'allocating'] as const).map(s => `${s} ${t}`)).filter(k => !seen.has(k))).toEqual([]);
   });
 

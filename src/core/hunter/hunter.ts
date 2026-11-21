@@ -20,7 +20,8 @@ import type { Archetype } from './derive.ts';
 import { oneOf } from '../one-of.ts';
 import { STAT_KEYS, baseStats, statsBy } from '../stats.ts';
 import type { Stats } from '../stats.ts';
-import { EMBLEMS, HUNTER_COLORS, PERK_KEYS, RANKS, RULES as BASE_RULES, pathOf } from '../rules.ts';
+import { HUNTER_COLORS, PERK_KEYS, RANKS, RULES as BASE_RULES, pathOf } from '../rules.ts';
+import { isIconKey } from '../registry/icons.ts';
 import type { Perk, Rank, Rules } from '../rules.ts';
 import { REWARD_BOUNDS, newRewards, parseRewards } from '../rewards.ts';
 import type { Rewards } from '../rewards.ts';
@@ -244,7 +245,7 @@ export function fixHunter(saveRun: RepairRun, h: Hunter): void {
   h.chronicle = parseChronicle(h.chronicle);
   // Looks: an unknown emblem or color means "automatic". The build path must exist. A lowered loadoutCap or fewer
   // tiers keep the data. A loadout's slots are references: `fixRefs` reads them.
-  if (!Object.hasOwn(EMBLEMS, h.emblem)) h.emblem = '';
+  if (!isIconKey(h.emblem)) h.emblem = '';
   if (!HUNTER_COLORS.includes(h.color)) h.color = '';
   h.loadouts = list(run, h.loadouts, 'lo', newLoadout, l => { l.name = l.name.replace(/\s+/g, ' ').trim().slice(0, 24) || 'Set'; }).slice(0, LIMITS.loadouts);
   const b = h.build;
