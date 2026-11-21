@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { advanceDay, sessionStarted, clearGate, closeGate, deleteGate, editGate, encounterEnded, enterGate, gateFightStarted, gateNews, mergeWorld, parseGateTold, spawnGate, toldGate, worldDoc, worldEmptyWords } from '../src/core/gates/world.ts';
+import { BREAK_CHECK, advanceDay, checkBreaks, dayStep, sessionStarted, worldDocUnmerged, clearGate, closeGate, deleteGate, editGate, encounterEnded, enterGate, gateFightStarted, mergeWorld, spawnGate, worldDoc, worldEmptyWords } from '../src/core/gates/world.ts';
 import { DOCS, WORLD_GATES, WORLD_NAME_MAX } from '../src/core/protocol.ts';
-import type { WorldParts } from '../src/core/gates/world.ts';
+import type { WorldChange, WorldDayEvent, WorldParts } from '../src/core/gates/world.ts';
 import { newSave, newMonster } from '../src/core/save.ts';
 import { parseGate } from '../src/core/gates/gate.ts';
 import { isRefused } from '../src/core/save-step.ts';
@@ -59,6 +59,44 @@ describe('the world day', () => {
     const fwd = ok(advanceDay(world(), 2, stamp)).save, back = ok(advanceDay(fwd, -2, stamp)).save;
     expect(back.world.day).toBe(3);
     expect(back.gates[0]!.status).toBe('broken');
+  });
+});
+
+describe('the world day\'s moves (SMX-gates-7)', () => {
+  // Each move against day 3 (and day 1 for a move back): the day it reaches and the change it is, or null when the day stays.
+  const rows: [string, number, WorldDayEvent, { day: number; change: string } | null][] = [
+    ['forward 2 days', 3, { type: 'moved', by: 2 }, { day: 5, change: 'forward' }],
+    ['forward 2.7 days, a whole number of days', 3, { type: 'moved', by: 2.7 }, { day: 5, change: 'forward' }],
+    ['back 1 day', 3, { type: 'moved', by: -1 }, { day: 2, change: 'back' }],
+    ['back 30 days, never under day 1', 3, { type: 'moved', by: -30 }, { day: 1, change: 'back' }],
+    ['no days', 3, { type: 'moved', by: 0 }, null],
+    ['a number that is not one', 3, { type: 'moved', by: Number.NaN }, null],
+    ['back from day 1', 1, { type: 'moved', by: -1 }, null],
+    ['another GM phone\'s later day', 3, { type: 'merged', day: 7 }, { day: 7, change: 'merged' }],
+    ['another GM phone\'s same day', 3, { type: 'merged', day: 3 }, null],
+    ['another GM phone\'s earlier day, never back', 3, { type: 'merged', day: 1 }, null],
+  ];
+  for (const [what, day, e, to] of rows) test(`on day ${day}, ${what}: ${to ? `day ${to.day}, ${to.change}` : 'the day stays'}`, () => expect(dayStep(day, e)).toEqual(to));
+
+  // The den breaks on day 5; on day 6 it is open past its break day. Each change runs the one check.
+  const past = (): WorldParts => ({ ...world(), world: { day: 6, lastDailyKey: null, session: 0 } });
+  const checks: [WorldChange, string, 'broken' | 'detected'][] = [
+    ['forward', 'a move forward breaks it', 'broken'],
+    ['back', 'SMX-gates-7.1 waits on the owner: a move back leaves it as it is', 'detected'],
+    ['merged', 'SMX-gates-7.2 waits on the owner: a merged world leaves it open', 'detected'],
+    ['edited', 'SMX-gates-7.2 waits on the owner: the GM\'s edit leaves it open', 'detected'],
+  ];
+  for (const [change, what, status] of checks) {
+    test(`an open gate past its break day, ${change}: ${what}`, () => {
+      const r = checkBreaks(past(), change, stamp);
+      expect([BREAK_CHECK[change], r.save.gates[0]!.status, r.broke.length]).toEqual([status === 'broken' ? 'break' : 'keep', status, status === 'broken' ? 1 : 0]);
+    });
+  }
+  test('as built today: the GM\'s edit of a break day to today and a merged later day leave the gate open (SMX-gates-7.2 waits)', () => {
+    const edited = ok(editGate(world(), 'g-den', { name: 'Goblin Den', rank: 'E', type: 'normal', breakDay: 3, monsters: [], bossId: null, notes: '', mapId: null, status: 'detected', solo: false }, stamp));
+    expect(edited.gates[0]).toMatchObject({ breakDay: 3, status: 'detected' });
+    const merged = mergeWorld(world(), { day: 10, gates: [] }, () => null, stamp);
+    expect([merged.world.day, merged.gates[0]!.status]).toEqual([10, 'detected']);
   });
 });
 
@@ -145,17 +183,17 @@ describe('a Clear', () => {
 describe('the GM\'s edit', () => {
   const edit = { name: '  Den II ', rank: 'D' as const, type: 'red' as const, breakDay: 9, monsters: [{ monsterId: mid('m-goblin'), count: 2 }], bossId: null, notes: 'x', mapId: 'mp-none', status: 'raiding' as const, solo: true };
   test('writes the fields and the status; a map the library lacks is none', () => {
-    const g = ok(editGate(world(), 'g-den', edit)).gates[0]!;
+    const g = ok(editGate(world(), 'g-den', edit, stamp)).gates[0]!;
     expect(g).toMatchObject({ name: 'Den II', rank: 'D', type: 'red', breakDay: 9, bossId: null, notes: 'x', mapId: null, status: 'raiding', solo: true });
   });
   test('an empty name and a break day of 0 keep the old ones; a break day under 0 is day 1', () => {
-    const g = ok(editGate(world(), 'g-den', { ...edit, name: ' ', breakDay: 0 })).gates[0]!;
+    const g = ok(editGate(world(), 'g-den', { ...edit, name: ' ', breakDay: 0 }, stamp)).gates[0]!;
     expect(g).toMatchObject({ name: 'Goblin Den', breakDay: 5 });
-    expect(ok(editGate(world(), 'g-den', { ...edit, breakDay: -4 })).gates[0]!.breakDay).toBe(1);
+    expect(ok(editGate(world(), 'g-den', { ...edit, breakDay: -4 }, stamp)).gates[0]!.breakDay).toBe(1);
   });
   test('an edit to the same values leaves the gate as it was', () => {
     const d = den('detected'), same = { name: d.name, rank: d.rank, type: d.type, breakDay: d.breakDay, monsters: d.monsters, bossId: d.bossId, notes: d.notes, mapId: null, status: d.status, solo: d.solo };
-    expect(ok(editGate(world(), 'g-den', same)).gates).toEqual(world().gates);
+    expect(ok(editGate(world(), 'g-den', same, stamp)).gates).toEqual(world().gates);
   });
 });
 
@@ -164,10 +202,23 @@ describe('another GM phone\'s world', () => {
     const start = { ...world(), gates: [den('detected'), { ...den('detected'), id: gid('g-mine'), name: 'Mine' }] };
     const doc = { day: 7, gates: [{ id: 'g-den', name: 'Den', rank: 'E' as const, type: 'normal' as const, status: 'closed' as const, breakDay: 5 },
       { id: 'g-new', name: 'New', rank: 'C' as const, type: 'red' as const, status: 'detected' as const, breakDay: 9 }] };
-    const s = mergeWorld(start, doc, (g, day) => parseGate({ ...g, createdDay: day }));
+    const s = mergeWorld(start, doc, (g, day) => parseGate({ ...g, createdDay: day }), stamp);
     expect(s.world.day).toBe(7);
     expect(s.gates.map(g => [g.id, g.name, g.status])).toEqual([['g-den', 'Den', 'closed'], ['g-mine', 'Mine', 'detected'], ['g-new', 'New', 'detected']]);
-    expect(mergeWorld(start, { day: 1, gates: [] }, () => null).world.day).toBe(3);
+    expect(mergeWorld(start, { day: 1, gates: [] }, () => null, stamp).world.day).toBe(3);
+  });
+});
+
+describe('which world doc a GM phone merges (SMX-gates-7.3a)', () => {
+  const at = '2026-11-14T10:00:00.000Z', later = '2026-11-14T10:00:00.001Z';
+  test('the first doc of a room, and a doc written later, are merged; the doc merged last is not merged again', () => {
+    expect(worldDocUnmerged({ at, from: 'd-a' }, null)).toBe(true);
+    expect(worldDocUnmerged({ at: later, from: 'd-a' }, { at, from: 'd-a' })).toBe(true);
+    expect(worldDocUnmerged({ at, from: 'd-a' }, { at, from: 'd-a' })).toBe(false);
+    expect(worldDocUnmerged({ at, from: 'd-b' }, { at: later, from: 'd-a' })).toBe(false);
+  });
+  test('a second GM phone\'s doc written in the same millisecond as the one merged is merged too, not lost', () => {
+    expect(worldDocUnmerged({ at, from: 'd-b' }, { at, from: 'd-a' })).toBe(true);
   });
 });
 
@@ -179,32 +230,6 @@ describe('the room\'s world doc (implicit audit 3, G1)', () => {
     expect([d.gates.length, d.gates.every(g => g.status === 'detected'), d.gates[0]!.name.length]).toEqual([WORLD_GATES, true, WORLD_NAME_MAX]);
     expect(DOCS.world(JSON.parse(JSON.stringify(d)))).toEqual(d);
     expect(worldDoc({ gates: [done] }, 7, new Set(), 0).gates[0]).toMatchObject({ status: 'cleared', clearedDay: 2 });
-  });
-});
-
-describe('a player\'s gate news (implicit audit 2, N7)', () => {
-  const shown = (id: string, status: 'detected' | 'broken' = 'detected') => ({ id: gid(id), name: id, rank: 'E' as const, type: 'normal' as const, breakDay: 5, status });
-  test('a first sight of a room tells nothing and takes every gate as told, so joining replays no old gate', () => {
-    const r = gateNews(null, [shown('g1'), shown('g2', 'broken')]);
-    expect(r).toEqual({ told: { ids: ['g1', 'g2'], broken: ['g2'] }, news: [] });
-  });
-  test('a gate is news until the player answers its window: a doc read again before that tells it again, after it tells nothing', () => {
-    const told = { ids: ['g1'], broken: [] };
-    const first = gateNews(told, [shown('g1'), shown('g2')]);
-    expect(first.news.map(n => [n.kind, n.gate.id])).toEqual([['appeared', 'g2']]);
-    expect(gateNews(told, [shown('g1'), shown('g2')]).news).toHaveLength(1);
-    expect(gateNews(toldGate(told, first.news[0]!), [shown('g1'), shown('g2')]).news).toEqual([]);
-  });
-  test('at most 3 of each kind at once; the rest wait for a later look instead of being marked told unseen; a break tells once', () => {
-    const many = ['g1', 'g2', 'g3', 'g4'].map(id => shown(id));
-    const r = gateNews({ ids: [], broken: [] }, many);
-    expect(r.news.map(n => n.gate.id)).toEqual(['g1', 'g2', 'g3']);
-    const after = r.news.reduce(toldGate, r.told);
-    expect(gateNews(after, many).news.map(n => n.gate.id)).toEqual(['g4']);
-    const broke = gateNews(after, [shown('g1', 'broken')]);
-    expect(broke.news.map(n => n.kind)).toEqual(['broke']);
-    expect(gateNews(toldGate(after, broke.news[0]!), [shown('g1', 'broken')]).news).toEqual([]);
-    expect(parseGateTold({ ids: ['g1'], broken: 'x' })).toBeNull();
   });
 });
 

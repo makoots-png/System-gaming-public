@@ -785,7 +785,7 @@ for (const viewport of [SMALL_PHONE, PHONE]) {
         kills: 2, bosses: 0, turnKills: 1, items: 0, allies: 1, alliesDown: 0, sideUp: 2, foes: 3, foeTop: 0, bossTop: null, gate: 'The Drowned Cathedral of Saint Averno', names: '3 Goblins, Hobgoblin, Goblin Shaman, 2 Dire Wolves' };
       const facts = Array.from({ length: 40 }, (_, i) => ({ ...(i % 2 ? fight : { kind: 'level', level: i + 2 }), at: at(i), day: '2026-11-01', session: i < 4 ? 0 : 3 }));
       const told = ['threads-end', 'uphill', 'three-in-a-breath', 'payback'];
-      s.device('feat-told:' + s.active().id).write(told);
+      for (const id of told) s.tell({ type: 'answered', campaign: s.told().campaign, topic: { of: 'feat', hunter: s.active().id }, id });
       s.update(() => {
         const h = s.active();
         h.chronicle = { inbox: [], facts, tally: { ...h.chronicle.tally, won: 12, kills: 1048, gates: 5, fell: 3, feats: 4 },

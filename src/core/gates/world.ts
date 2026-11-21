@@ -1,14 +1,15 @@
 // world.ts: the world's day and the save's list of gates (`save.world`, `save.gates`), with the session log line each
 // change writes. A gate's status and its XP paid change only through `transition` (gate.ts); these steps find the gate,
-// run its event and log what happened. The gates view (gates.js) and the fight's end (combat.js) change the world only
+// run its event and log what happened. The world day moves only by `dayStep`, and every change of the day or of a
+// break day runs the one break check, `BREAK_CHECK` (SMX-gates-7). The gates view (gates.js) and the fight's end (combat.js) change the world only
 // through these, with `store.apply`. Pure: the caller passes the time (`Stamp`), the rolled gate and the monsters made
 // for it, the XP and loot already worked out. A step that changes nothing is refused (`missing`, `unchanged`).
 import { can, shownOf, transition } from './gate.ts';
-import type { ShownGate } from './gate.ts';
 import type { Gate, GateEvent, GateMonster, GateStatus, GateType, MonsterId } from './gate.ts';
 import { isRefused, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
 import { told } from '../session-log.ts';
+import { compareTimes } from '../day.ts';
 import { WORLD_GATES, WORLD_NAME_MAX } from '../protocol.ts';
 import type { WorldDoc } from '../protocol.ts';
 import type { Stamp } from '../session-log.ts';
@@ -37,26 +38,67 @@ export function spawnGate<S extends WorldParts>(save: S, gate: Gate, made: reado
   return told(next, stamp, gateLine('Gate detected', `${gate.rank}-rank ${gate.type} gate "${gate.name}" appeared. It breaks on day ${gate.breakDay}.`));
 }
 
+// ── the world day (SMX-gates-7): one number, moved only by `dayStep`, and the one break check every change runs ──
+/** What moves the world day: the GM moves it by `by` days (a session's start by one), or another GM phone's world doc says `day`. */
+export type WorldDayEvent = { readonly type: 'moved'; readonly by: number } | { readonly type: 'merged'; readonly day: number };
+/** What changed the world for its gates: the day moved forward or back, another GM phone's world merged in, the GM edited a gate. */
+export type WorldChange = 'forward' | 'back' | 'merged' | 'edited';
+/** What a change does to each gate still open (detected or raiding) on or past its break day: break it, or leave it as it is. */
+export type WorldBreakCheck = 'break' | 'keep';
+/** The break check of each change: the one table every writer of the day or a break day runs (`checkBreaks`). */
+export const BREAK_CHECK: { readonly [C in WorldChange]: WorldBreakCheck } = {
+  forward: 'break',
+  // SMX-gates-7.1 waits on the owner's ruling: "the world day only moves forward, or moving it back reconciles the gates".
+  // Built as the app is today: a move back is taken and leaves every gate as it is, one broken or cleared on a later day too.
+  back: 'keep',
+  // SMX-gates-7.2 waits on the owner's ruling: "a gate past its break day breaks, whatever edit put it there". Built as the
+  // app is today: a merged world or the GM's edit leaves an open gate past its break day open ("Breaks today").
+  merged: 'keep',
+  edited: 'keep',
+};
+
+/**
+ * The world day after `e` on day `day`, and the change it is; null when the day stays where it was (0 days, back from
+ * day 1, a doc's day not later than this phone's). A move never goes under day 1; a doc never moves the day back.
+ */
+export function dayStep(day: number, e: WorldDayEvent): { day: number; change: Exclude<WorldChange, 'edited'> } | null {
+  const next = e.type === 'moved' ? Math.max(1, day + (Math.trunc(e.by) || 0)) : Math.max(day, Math.trunc(e.day) || 0);
+  if (next === day) return null;
+  return { day: next, change: e.type === 'merged' ? 'merged' : next > day ? 'forward' : 'back' };
+}
+
+/**
+ * The gates after `change` on the save's world day: when its row of `BREAK_CHECK` breaks, each open gate on or past its
+ * break day is broken and logged. Answers the gates it broke.
+ */
+export function checkBreaks<S extends WorldParts>(save: S, change: WorldChange, stamp: Stamp): { save: S; broke: Gate[] } {
+  if (BREAK_CHECK[change] === 'keep') return { save, broke: [] };
+  const day = save.world.day, broke: Gate[] = [];
+  let next = save;
+  for (const g of save.gates) {
+    const r = onGate(next, g.id, { type: 'dayAdvanced', day }, stamp, x => ['DUNGEON BREAK', `${x.rank}-rank gate "${x.name}" has broken on day ${day}.`]);
+    if (isRefused(r)) continue;
+    next = r;
+    broke.push(next.gates.find(x => x.id === g.id)!);
+  }
+  return { save: next, broke };
+}
+
 /** What a move of the world day did: the save after it, the day it reached, the days it moved (never under day 1), the gates that broke. */
 export type DayMoved<S> = { save: S; day: number; by: number; broke: Gate[] };
 /** The "World day" line's words: what the move did. */
 export const dayMovedText = (by: number, day: number): string => (by > 0 ? `Day advanced by ${by} to ${day}.` : `Day moved back by ${-by} to ${day}.`);
 
 /**
- * The world day moved by `n` (never under day 1) and logged as it moved, then each gate whose break day it reaches
- * broken and logged. A move that leaves the day where it was (0 days, or back from day 1) is refused.
+ * The world day moved by `n` (`dayStep`) and logged as it moved, then its break check (`checkBreaks`). A move that
+ * leaves the day where it was (0 days, or back from day 1) is refused.
  */
 export function advanceDay<S extends WorldParts>(save: S, n: number, stamp: Stamp): Next<DayMoved<S>> {
-  const day = Math.max(1, save.world.day + (Math.trunc(n) || 0)), by = day - save.world.day, broke: Gate[] = [];
-  if (!by) return refuse('unchanged');
-  let next: S = told({ ...save, world: { ...save.world, day } }, stamp, gateLine('World day', dayMovedText(by, day)));
-  for (const g of save.gates) {
-    const r = onGate(next, g.id, { type: 'dayAdvanced', day }, stamp, x => ['DUNGEON BREAK', `${x.rank}-rank gate "${x.name}" has broken on day ${day}.`]);
-    if ('ok' in r) continue;
-    next = r;
-    broke.push(next.gates.find(x => x.id === g.id)!);
-  }
-  return { save: next, day, by, broke };
+  const moved = dayStep(save.world.day, { type: 'moved', by: n });
+  if (!moved) return refuse('unchanged');
+  const by = moved.day - save.world.day;
+  const logged = told({ ...save, world: { ...save.world, day: moved.day } }, stamp, gateLine('World day', dayMovedText(by, moved.day)));
+  return { ...checkBreaks(logged, moved.change, stamp), day: moved.day, by };
 }
 
 /**
@@ -102,8 +144,11 @@ export type GateEdit = {
   name: string; rank: Rank; type: GateType; breakDay: number; monsters: GateMonster[]; bossId: MonsterId | null; notes: string;
   mapId: string | null; status: GateStatus; solo: boolean;
 };
-/** The GM's edit of gate `id`: an empty name or a break day of 0 keeps the old one, a break day under 1 is day 1, a map the library lacks none. */
-export function editGate<S extends WorldParts>(save: S, id: string, edit: GateEdit): Next<S> {
+/**
+ * The GM's edit of gate `id`: an empty name or a break day of 0 keeps the old one, a break day under 1 is day 1, a map
+ * the library lacks none. Then the break check of an edit (`BREAK_CHECK.edited`).
+ */
+export function editGate<S extends WorldParts>(save: S, id: string, edit: GateEdit, stamp: Stamp): Next<S> {
   const at = save.gates.findIndex(g => g.id === id);
   if (at < 0) return refuse('missing');
   const old = save.gates[at]!;
@@ -113,7 +158,7 @@ export function editGate<S extends WorldParts>(save: S, id: string, edit: GateEd
     mapId: save.library.maps.find(m => m.id === edit.mapId)?.id ?? null, solo: edit.solo,
   };
   const set = transition(fields, { type: 'gmSet', status: edit.status, day: save.world.day });
-  return { ...save, gates: save.gates.map((g, i) => (i === at ? set : g)) };
+  return checkBreaks({ ...save, gates: save.gates.map((g, i) => (i === at ? set : g)) }, 'edited', stamp).save;
 }
 
 /** What a Clear pays, as gates.js worked it out: the XP and gold each payee gets, the items, the payees' names. */
@@ -142,11 +187,12 @@ export function encounterEnded<S extends WorldParts>(save: S, end: { gateId: str
 /** A gate of the room's world doc (protocol.ts `DOCS.world`): what another GM phone published. */
 export type WorldDocGate = { id: string; name: string; rank: Rank; type: GateType; status: GateStatus; breakDay: number };
 /**
- * Another GM phone's world merged in: the day is the later of the two, a gate both have takes the doc's name, rank,
- * type, break day and status, and a gate only the doc has is added (`fresh`, read by `parseGate`). Nothing is deleted.
+ * Another GM phone's world merged in: the day is the later of the two (`dayStep` `merged`), a gate both have takes the
+ * doc's name, rank, type, break day and status, and a gate only the doc has is added (`fresh`, read by `parseGate`).
+ * Nothing is deleted. Then the break check of a merge (`BREAK_CHECK.merged`).
  */
-export function mergeWorld<S extends WorldParts>(save: S, doc: { day: number; gates: readonly WorldDocGate[] }, fresh: (g: WorldDocGate, day: number) => Gate | null): S {
-  const day = Math.max(save.world.day, doc.day);
+export function mergeWorld<S extends WorldParts>(save: S, doc: { day: number; gates: readonly WorldDocGate[] }, fresh: (g: WorldDocGate, day: number) => Gate | null, stamp: Stamp): S {
+  const day = dayStep(save.world.day, { type: 'merged', day: doc.day })?.day ?? save.world.day;
   let gates = save.gates;
   for (const g of doc.gates) {
     const at = gates.findIndex(x => x.id === g.id);
@@ -155,7 +201,18 @@ export function mergeWorld<S extends WorldParts>(save: S, doc: { day: number; ga
     const set = transition(named, { type: 'gmSet', status: g.status, day });
     gates = gates.map((x, i) => (i === at ? set : x));
   }
-  return { ...save, world: { ...save.world, day }, gates };
+  return checkBreaks({ ...save, world: { ...save.world, day }, gates }, 'merged', stamp).save;
+}
+
+/** A room's world doc as a GM phone merged it: when it was written and by which phone. */
+export type WorldDocStamp = { readonly at: string; readonly from: string };
+/**
+ * Whether another GM phone's world doc is one this phone has not merged (`last`, null for none in this room): written
+ * later, or in the same millisecond by another phone, so two GM phones writing at once lose neither (SMX-gates-7.3a).
+ */
+export function worldDocUnmerged(doc: WorldDocStamp, last: WorldDocStamp | null): boolean {
+  const later = compareTimes(doc.at, last ? last.at : '');
+  return later > 0 || (later === 0 && last !== null && doc.from !== last.from);
 }
 
 // ── the room's world doc (implicit audit 3, G1) ──
@@ -172,36 +229,6 @@ export function worldDoc(save: Pick<Save, 'gates'>, day: number, solo: ReadonlyS
 export function worldOrder(gates: readonly Gate[]): Gate[] {
   const later = (g: Gate): number => (can(g, 'clear') ? 0 : 1);
   return gates.map((g, i) => ({ g, i })).sort((a, b) => later(a.g) - later(b.g) || a.i - b.i).slice(0, WORLD_GATES).map(({ g }) => g);
-}
-
-// ── a player's gate news (implicit audit 2, N7) ──
-/** The gates a player's phone has told of in a room, the ones that appeared and the ones that broke, newest last (at most `TOLD_MAX` each). */
-export type GateTold = { readonly ids: readonly string[]; readonly broken: readonly string[] };
-export const TOLD_MAX = 200;
-/** One piece of gate news: a gate appeared, or a gate broke. */
-export type GateNews = { readonly kind: 'appeared' | 'broke'; readonly gate: ShownGate };
-/** A stored told record, or null when it is not one (a first sight). */
-export function parseGateTold(v: unknown): GateTold | null {
-  if (typeof v !== 'object' || v === null) return null;
-  const o = v as { ids?: unknown; broken?: unknown }, list = (x: unknown): string[] | null => (Array.isArray(x) && x.every(i => typeof i === 'string') ? x : null);
-  const ids = list(o.ids), broken = list(o.broken);
-  return ids && broken ? { ids, broken } : null;
-}
-/**
- * What a player's phone has to tell of the room's gates (`told` as it stored it, null at a first sight): at most 3 gates
- * that appeared (not already broken) and 3 that broke, none told yet. A first sight takes every gate as told, so joining
- * a room replays nothing: it answers no news and the record to store.
- */
-export function gateNews(told: GateTold | null, gates: readonly ShownGate[]): { told: GateTold; news: GateNews[] } {
-  if (!told) return { told: { ids: gates.map(g => g.id).slice(-TOLD_MAX), broken: gates.filter(g => g.status === 'broken').map(g => g.id).slice(-TOLD_MAX) }, news: [] };
-  const appeared = gates.filter(g => g.status !== 'broken' && !told.ids.includes(g.id)).slice(0, 3).map((gate): GateNews => ({ kind: 'appeared', gate }));
-  const broke = gates.filter(g => g.status === 'broken' && !told.broken.includes(g.id)).slice(0, 3).map((gate): GateNews => ({ kind: 'broke', gate }));
-  return { told, news: [...appeared, ...broke] };
-}
-/** The record once `n` was shown and answered: its gate told as appeared, and as broken when it broke. */
-export function toldGate(told: GateTold, n: GateNews): GateTold {
-  const add = (list: readonly string[]) => [...list.filter(id => id !== n.gate.id), n.gate.id].slice(-TOLD_MAX);
-  return { ids: add(told.ids), broken: n.kind === 'broke' ? add(told.broken) : told.broken };
 }
 
 /**

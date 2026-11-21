@@ -48,13 +48,16 @@ describe('the party', () => {
     expect(removeHunter(party(), 'h1', null)).toEqual({ ok: false, why: 'last' });
   });
 
-  test('deleting the room\'s bound hunter binds the room to the hunter left active', () => {
+  test('deleting the room\'s bound hunter binds the room to the hunter left active, as a rebind: its tombstone goes and the join keeps its time (SMX-sync-2.1)', () => {
     const base = addHunter(party(), named('h2', 'Bo'));
     const owed = post(post([], 'ABCDEF' as RoomCode, { kind: 'tomb', hid: hid('h1') }).box, 'ABCDEF' as RoomCode, { kind: 'tomb', hid: hid('h3') }).box;
-    const bound = { ...base, settings: { ...base.settings, sync: { ...base.settings.sync, boundHunterId: hid('h2'), outbox: owed } } };
+    const joined = { room: 'ABCDEF' as RoomCode, at: '2026-11-14T09:00:00.000Z' };
+    const bound = { ...base, settings: { ...base.settings, sync: { ...base.settings.sync, room: 'ABCDEF' as RoomCode, boundHunterId: hid('h2'), outbox: owed, joined } } };
     const next = ok(removeHunter(bound, 'h2', null));
     expect(next.settings.sync.boundHunterId).toBe(hid('h1'));
     expect(next.settings.sync.outbox!.map(e => e.id)).toEqual(['tomb h3']);
+    expect(next.settings.sync.joined).toEqual(joined);
+    expect(ok(removeHunter(bound, 'h1', null)).settings.sync, 'deleting a hunter that is not bound leaves the bind').toEqual(bound.settings.sync);
   });
 });
 

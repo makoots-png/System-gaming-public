@@ -91,7 +91,7 @@ function campaign(): Save {
   save.codex = { 'goblin|E': { name: 'Goblin', rank: 'E', kills: 2, firstAt: 'a', lastAt: 'b', monsterId: null, room: true, info: { hpMax: 30, armor: 4, resist: 2, speed: 110, abilities: ['Shot'] } } };
   save.codexSeen = [cid('c2')];
   save.settings.sync = { room: room('ABCDEF'), cursor: 41, serverOk: true, gmKey: gmKey('k'.repeat(32)), gmKeys: { ABCDEF: gmKey('k'.repeat(32)) },
-    lastRoom: { code: room('GHJKLM'), why: 'gone' }, boundHunterId: hid('h1'), deviceToken: 't'.repeat(32), joinedAt: '2026-11-10T12:00:00.000Z',
+    lastRoom: { code: room('GHJKLM'), why: 'gone' }, boundHunterId: hid('h1'), deviceToken: 't'.repeat(32), joined: { room: room('ABCDEF'), at: '2026-11-10T12:00:00.000Z' },
     outbox: [{ id: 'tomb h111', room: 'ABCDEF' as RoomCode, letter: { kind: 'tomb', hid: hid('h111') }, key: null, at: 'refused', why: 'not your sheet' }], applied: ['d-gm1-mabc12xyz', 'd-gm1-mabc13xyz'] as EventId[] };
   save.seq = 160;
   return save;
@@ -781,7 +781,7 @@ describe('what a repair fixes', () => {
 
   test('an optional field of the wrong kind is removed and a nullable one becomes null', () => {
     const save = parseRaw({ schema: SCHEMA,
-      settings: { sync: { room: 7, gmKey: 5, gmKeys: { ABCDEF: 'key', GHJKLM: 9 }, lastRoom: 'ABCDEF', boundHunterId: 3, deviceToken: {}, joinedAt: 1,
+      settings: { sync: { room: 7, gmKey: 5, gmKeys: { ABCDEF: 'key', GHJKLM: 9 }, lastRoom: 'ABCDEF', boundHunterId: 3, deviceToken: {}, joined: 1,
         outbox: [{ room: 'ABCDEF', letter: { kind: 'tomb', hid: 'h1' }, at: 'sending' }, { room: 1 }, 'x', { room: 'ABCDEF', letter: { kind: 'event', event: { type: 'roll', payload: {} } } }], applied: 'd-gm1-e1' } },
       hunters: [{ id: 'h1', penalty: 'yes', titleId: 5, daily: { lastCheckedKey: 5 },
         quests: [{ id: 'q1', doneAt: 5, dueAt: {}, chainId: 1, rewards: { job: [], items: [{ name: 'Gem', effects: 'shiny' }, 3] } }],
@@ -1181,7 +1181,7 @@ describe('the phone\'s sync fields and the campaign\'s (audit BUG-sync-3)', () =
   const syncOf = (tag: string, at: RoomCode, keys: Record<string, GmKey>): SyncSettings => ({
     room: at, cursor: tag === 'mine' ? 40 : 7, serverOk: tag === 'mine', deviceToken: `${tag}-token-0123456789abcdefghij`,
     gmKey: keys[at] ?? null, gmKeys: keys, lastRoom: { code: at, why: 'left' }, boundHunterId: hid(tag === 'mine' ? 'h1' : 'h2'),
-    joinedAt: `${tag}-joined`, outbox: [`${tag}-letter`] as never, held: [`${tag}-held`] as never, applied: [`${tag}-applied`] as never,
+    joined: { room: at, at: `${tag}-joined` }, outbox: [`${tag}-letter`] as never, held: [`${tag}-held`] as never, applied: [`${tag}-applied`] as never,
     runs: [`${tag}-run`] as never, offers: [`${tag}-offer`] as never, seen: { [`${tag}`]: { seq: 1, at: 'then' } } as never,
   });
   const saveOf = (tag: string, sync: SyncSettings): Save => {
@@ -1191,7 +1191,7 @@ describe('the phone\'s sync fields and the campaign\'s (audit BUG-sync-3)', () =
   const mine = saveOf('mine', syncOf('mine', room('AAAAAA'), { AAAAAA: kA, BBBBBB: kB }));
   const theirs = saveOf('theirs', syncOf('theirs', room('CCCCCC'), { CCCCCC: kC, AAAAAA: kX }));
   const phoneFields = (tag: string) => ({
-    serverOk: tag === 'mine', deviceToken: `${tag}-token-0123456789abcdefghij`, joinedAt: `${tag}-joined`, outbox: [`${tag}-letter`], held: [`${tag}-held`],
+    serverOk: tag === 'mine', deviceToken: `${tag}-token-0123456789abcdefghij`, joined: { room: tag === 'mine' ? 'AAAAAA' : 'CCCCCC', at: `${tag}-joined` }, outbox: [`${tag}-letter`], held: [`${tag}-held`],
     applied: [`${tag}-applied`], runs: [`${tag}-run`], offers: [`${tag}-offer`], seen: { [tag]: { seq: 1, at: 'then' } },
   });
 

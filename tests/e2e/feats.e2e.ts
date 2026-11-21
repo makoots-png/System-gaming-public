@@ -44,7 +44,7 @@ test('a player who finishes the daily seven days running sees SEVEN DAYS once, a
     await expect(feat).toHaveCount(0);
     await page.reload();
     // the windows of what is earned and not told open on the app's `ready`; the told list says this one was told
-    await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem(`hunter-system-feat-told:${hunterApp.store.get().hunters[0].id}`) || '[]'))).toEqual(['early-riser']);
+    await expect.poll(() => page.evaluate(() => hunterApp.store.told().feat[hunterApp.store.get().hunters[0].id] ?? [])).toEqual(['early-riser']);
     await expect(page.locator('#view-quests')).toBeVisible();
     await expect(page.locator('.sys-overlay.show', { hasText: 'SEVEN DAYS' })).toHaveCount(0);
   });

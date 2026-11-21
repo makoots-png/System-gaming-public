@@ -14,6 +14,10 @@
 //   srvSkew         server clock minus this clock, from the last answer that carried the server's time
 //   lastOk          when the server last answered (the Room view's "Last sync")
 //   sheetText       the bound sheet as the push last sent it, to tell a sheet change from any other change
+//   boundSeen       the bound hunter as the push was last told of it, so another hunter bound by any write (a join,
+//                   "Play as", a delete of the bound one, a save swapped in) wakes the push as `rebound` (`bindHeard`)
+//   removal         the REMOVED FROM ROOM notice (src/core/sync/bind.ts `RemovedNotice`): told, or its Rejoin on its
+//                   way, tied to its room
 //   invited         the room of the invite link this tab was opened with, until it is joined, dropped, or spent by
 //                   the link being live in its room (`spendInvite`)
 //   running         effects are being carried out (events raised meanwhile wait in `queue`)
@@ -62,7 +66,8 @@ import { parseInvite } from '../core/sync/invite.ts';
 import type { TapKind } from '../core/sync/taps.ts';
 import { NOBODY, NO_ATTEMPT, attemptStep, joinBinds } from '../core/sync/attempt.ts';
 import type { Attempt, AttemptEvent, JoinBinds, JoinFor, RoomTap } from '../core/sync/attempt.ts';
-import { atSync, boundTo, linkSaved, ringGone, serverSeen } from '../core/sync/bind.ts';
+import { NO_REMOVAL, atSync, boundTo, joinedAt, linkSaved, playAs, playAsAnswered, removedStep, ringGone, serverSeen } from '../core/sync/bind.ts';
+import type { BindAnswer, BindAsked, RemovedEvent, RemovedNotice } from '../core/sync/bind.ts';
 import { refuse } from '../core/save-step.ts';
 import { READ_ONLY } from '../core/store-life.ts';
 import { runTaken, runsGone } from '../core/gates/solo-wait.ts';
@@ -241,6 +246,8 @@ export function register(app: SyncHost): void {
   let srvSkew = 0;
   let lastOk = 0;
   let sheetText = '';
+  let boundSeen: HunterId | null = bound()?.id ?? null;
+  let removal: RemovedNotice = NO_REMOVAL;
   /**
    * The invite survives a reload of the tab (iOS drops background tabs) in this tab's memory (`store.device('invite',
    * 'tab')`), never in the save or a backup; a write storage refuses is the store's banner, as any device memory's.
@@ -312,6 +319,7 @@ export function register(app: SyncHost): void {
           emitStatus(x.serverBack);
           const from = roomOf(before), to = room();
           if (from !== to) app.emit('sync:room', { from, to });
+          if (to) removalDo({ type: 'entered', room: to });
           break;
         }
         case 'apply': apply(data, cursor, before); cursor = null; break;
@@ -425,7 +433,7 @@ export function register(app: SyncHost): void {
           const fight = r.docs.fight?.data ?? null;
           const events: LinkEvent[] = [{ type: 'polled', gen, cursor: Math.max(r.next, after), more: r.more, pace: paceOf(fight, call.key !== null, deviceId()), fightAt: fight ? fight.at : null }];
           if (call.key && !r.gm) events.push({ type: 'keyLost', gen });
-          if (!call.key && removedSinceJoin(r)) events.push({ type: 'removed', gen });
+          if (!call.key && removedSinceJoin(r, call.code)) events.push({ type: 'removed', gen });
           return { events, data: { kind: 'poll', r, after } };
         }
       }
@@ -438,11 +446,11 @@ export function register(app: SyncHost): void {
     const t = Date.parse(r.docs.kicked?.data.keys[key as SheetKey] ?? ''), now = Date.parse(r.now) || Date.now();
     return Number.isFinite(t) && now - t < KICK_MS ? t : null;
   }
-  /** The bound hunter was removed after this phone joined (or rebound): a removal from before does not count. */
-  function removedSinceJoin(r: RoomState): boolean {
+  /** The bound hunter was removed from room `code` after this phone joined it: a removal from before does not count. */
+  function removedSinceJoin(r: RoomState, code: RoomCode): boolean {
     const h = bound(); if (!h) return false;
     const t = kickedAt(r, myKey(h.id));
-    return t !== null && t > (Date.parse(sy().joinedAt || '') || 0);
+    return t !== null && t > (joinedAt(sy(), code) ?? 0);
   }
 
   /** The only writer of the room fields of the save: the link's `save` effect as one step (src/core/sync/bind.ts `linkSaved`). */
@@ -457,7 +465,7 @@ export function register(app: SyncHost): void {
     switch (id) {
       case 'gone': if (code) { peeked.delete(code); boxDo('outbox-gone', b => roomGone(b, code), s => runsGone(s, code)); } ui.toast('Sync', 'This room no longer exists, so this phone left it.', { kind: 'warn' }); return;
       case 'keyLost': ui.toast('System', `The GM key for room ${code ?? ''} no longer works, so this phone left the room.`, { kind: 'warn' }); return;
-      case 'removed': if (code) showRemoved(code, bound()); return;
+      case 'removed': if (code) removalDo({ type: 'removed', room: code, hunter: bound()?.id ?? null }); return;
       case 'upgradeStuck': store.notify({ id: 'upgrade', text: STUCK_TEXT }); return;
       case 'notFound': if (code) peeked.delete(code); return;
       case 'readOnly': ui.toast('System', code ? `This tab cannot save, so it left room ${code}. The save keeps the room: reload to go back in.` : 'This tab cannot save, so it stopped opening the room.', { kind: 'warn' }); return;
@@ -471,21 +479,21 @@ export function register(app: SyncHost): void {
    */
   function apply(data: Data, cursor: SaveFields | null, before: Link): void {
     if (!data) return;
-    if (data.kind === 'head') { skewFrom(data.now); if (link.at === 'live' && link.key === null) bindJoin(); return; }
+    if (data.kind === 'head') { skewFrom(data.now); if (link.at === 'live' && link.key === null) bindJoin(link.code); return; }
     const { r, after } = data;
     skewFrom(r.now);
     const presenceOk = !!(r.gm && r.presence);
     shown = { gen: link.gen, sheets: r.sheets, docs: r.docs, presence: presenceOk ? r.presence ?? {} : {}, presenceOk };
     const player = link.at === 'live' && link.key === null, dev = deviceId();
     // a message the room took before this phone's join came while the phone was out of the room: it is told in one window
-    const joined = player ? Date.parse(sy().joinedAt || '') : NaN;
+    const joined = link.at === 'live' && link.key === null ? joinedAt(sy(), link.code) : null;
     const fresh: RoomEvent[] = [], away = new Set<RoomEvent>();
     for (const ev of r.events.filter(e => e.seq > after).sort((a, b) => a.seq - b.seq)) {
       if (ev.from === dev) continue; // our own sends echo back; never apply or re-announce them
       app.emit('sync:event', { event: ev });
       const e = { type: ev.type, payload: ev.payload } as RoomEvent;
       fresh.push(e);
-      if (Date.parse(ev.at) < joined) away.add(e);
+      if (joined !== null && Date.parse(ev.at) < joined) away.add(e);
     }
     landPage(player ? fresh : null, away, cursor, before);
     if (player) release();
@@ -580,19 +588,20 @@ export function register(app: SyncHost): void {
   const srvNow = (): string => new Date(Date.now() + srvSkew).toISOString(); // a skewed phone clock cannot defeat the removal stamp
   /**
    * The bound hunter, or none: never whichever is shown. A join binds one (`bindJoin`), "Play as" another (`switchTo`), a
-   * delete the first left (party.ts `removeHunter`), and a save read in a room binds its active one (save.ts).
+   * delete the first left (party.ts `removeHunter`), each through src/core/sync/bind.ts, and a save read in a room binds
+   * its active one (save.ts).
    */
   function bound(): Hunter | null { const id = sy().boundHunterId; return id ? store.hunter(id) : null; }
   /** What a join binds (attempt.ts `joinBinds`): the hunter picked, a new one of the typed name, or the active one. */
   const joinsFor = (): JoinBinds => joinBinds(attempt, id => store.hunter(id)?.id ?? null, store.get().settings.activeHunterId);
   /**
-   * A player joined: that hunter is active and bound, from the server's now (an older removal no longer applies). A new
-   * hunter of a typed name is made in the same write, so a join that failed made none.
+   * A player joined room `code`: that hunter is active and bound, and the join written at the server's now (an older
+   * removal no longer applies). A new hunter of a typed name is made in the same write, so a join that failed made none.
    */
-  function bindJoin(): void {
-    const binds = joinsFor();
-    if ('make' in binds) { const h = store.newHunter(binds.make.slice(0, 60)); store.apply('sync-join', s => boundTo(addHunter(s, h), h.id, srvNow())); }
-    else store.apply('sync-join', s => boundTo(s, binds.hunter, srvNow()));
+  function bindJoin(code: RoomCode): void {
+    const binds = joinsFor(), join = { room: code, at: srvNow() };
+    if ('make' in binds) { const h = store.newHunter(binds.make.slice(0, 60)); store.apply('sync-join', s => boundTo(addHunter(s, h), h.id, join)); }
+    else store.apply('sync-join', s => boundTo(s, binds.hunter, join));
     sheetText = '';
   }
 
@@ -634,22 +643,32 @@ export function register(app: SyncHost): void {
     await begin(joining(c, k as GmKey));
   }
 
-  // ── removed by the GM ──
-  /** The REMOVED FROM ROOM window. "Rejoin when the GM allows" joins again, which the head refuses until Allow back. */
-  function showRemoved(code: RoomCode, h: Hunter | null): void {
+  // ── removed by the GM (src/core/sync/bind.ts `removedStep`) ──
+  /** The only mover of `removal`: one step of the removed notice, then its effects. */
+  function removalDo(e: RemovedEvent): void {
+    const r = removedStep(removal, e);
+    removal = r.state;
+    for (const x of r.effects) {
+      switch (x.type) {
+        case 'show': showRemoved(x.room, x.hunter); break;
+        case 'tell': ui.toast('System', x.text, { kind: x.kind }); break;
+        case 'rejoin': {
+          const room = x.room;
+          void tapped(() => begin(joining(room, null), { hunterId: x.hunter, name: '' }))().then(
+            () => removalDo({ type: 'tapped', room, answer: { ok: true, value: '' } }),
+            (e: unknown) => removalDo({ type: 'tapped', room, answer: { ok: false, kind: e instanceof TapError ? e.kind : 'net' } }));
+          break;
+        }
+      }
+    }
+  }
+  /** The REMOVED FROM ROOM window of room `code`. Its answer goes to the notice, which acts only while it is that room's. */
+  function showRemoved(code: RoomCode, hid: HunterId | null): void {
+    const h = hid ? store.hunter(hid) : null;
     const body = `The GM removed ${h?.name || 'your hunter'} from room ${code}. Your hunter is safe on this device. Ask your GM before joining again.`;
     void ui.system({ tag: '! System', title: 'REMOVED FROM ROOM', kind: 'warning', body,
-      actions: [{ label: 'OK', value: false, cancel: true }, { label: 'Rejoin when the GM allows', value: true, primary: true }] }).then(async v => {
-      if (!v) return;
-      try {
-        await begin(joining(code, null), { hunterId: h?.id ?? null, name: '' });
-        ui.toast('System', `Rejoined room ${code}.`, { kind: 'info' });
-      } catch (e) {
-        if (!(e instanceof TapError)) reported('sync', e);
-        ui.toast('System', e instanceof TapError && e.kind === 'removed' ? 'Not allowed back yet. Ask your GM to press Allow back.' : 'Could not reach the server. Try again in a moment.', { kind: 'warning' });
-        showRemoved(code, h);
-      }
-    });
+      actions: [{ label: 'OK', value: false, cancel: true }, { label: 'Rejoin when the GM allows', value: true, primary: true }] })
+      .then(v => removalDo({ type: 'answered', room: code, rejoin: v === true }));
   }
 
   // ── the outbox: what this phone owes the room (src/core/sync/outbox.ts) ──
@@ -731,25 +750,34 @@ export function register(app: SyncHost): void {
   const forget = (hid: HunterId): void => { if (playerRoom()) postLetter({ kind: 'tomb', hid }, null); };
   /**
    * Change the active hunter. In a room as a player, ask whether the new hunter takes the room slot (the old card leaves
-   * the GM's board). Answers whether the hunter changed; a refused write is told (ui.js `wrote`) and changes nothing.
+   * the GM's board). The answer is read where the phone is once it comes (bind.ts `playAsAnswered`): a window answered
+   * after the phone left that room, or after another hunter was bound there, only shows the hunter. Answers whether the
+   * hunter changed; a refused write is told (ui.js `wrote`) and changes nothing.
    */
   async function switchTo(hid: string): Promise<boolean> {
     const to = store.hunter(hid); if (!to) return false;
-    const act = (): boolean => ui.wrote('System', store.apply('switch-hunter', s => setActive(s, to.id)));
-    const code = playerRoom(), b = bound();
-    if (!code || !b || b.id === hid) return act();
+    const show = (): boolean => ui.wrote('System', store.apply('switch-hunter', s => setActive(s, to.id)));
+    const asked = playing(), b = bound();
+    if (!asked || !b || asked.bound === to.id) return show();
     const v = await ui.system({ tag: '! System', title: `PLAY AS ${String(to.name).toUpperCase()}?`, kind: 'quest',
-      body: `Play as ${to.name} in room ${code}? ${b.name} leaves the GM's board.`,
-      actions: [{ label: 'Cancel', value: false, cancel: true }, { label: `Only view ${to.name}`, value: 'view' }, { label: `Play as ${to.name}`, value: 'bind', primary: true }] });
-    if (v === 'bind') {
-      if (!ui.wrote('System', store.apply('sync-rebind', s => boundTo(s, to.id, srvNow())))) return false;
-      pushDo({ type: 'rebound' });
-      forget(b.id);
-      return true;
+      body: `Play as ${to.name} in room ${asked.room}? ${b.name} leaves the GM's board.`,
+      actions: [{ label: 'Cancel', value: 'cancel', cancel: true }, { label: `Only view ${to.name}`, value: 'view' }, { label: `Play as ${to.name}`, value: 'bind', primary: true }] });
+    const answer: BindAnswer = v === 'bind' || v === 'view' ? v : 'cancel';
+    switch (playAsAnswered(asked, playing(), answer)) {
+      case 'none': return false;
+      case 'show': return show();
+      case 'showKept':
+        if (!show()) return false;
+        ui.toast('System', `${b.name} stays synced to room ${asked.room}.`, { kind: 'info' }); // the sheet still sends the bound hunter
+        return true;
+      case 'playAs':
+        if (!ui.wrote('System', store.apply('sync-rebind', s => playAs(s, to.id)))) return false;
+        forget(b.id);
+        return true;
     }
-    if (v === 'view') { if (!act()) return false; ui.toast('System', `${b.name} stays synced to room ${code}.`, { kind: 'info' }); return true; } // the sheet still sends the bound hunter
-    return false;
   }
+  /** Where this phone plays: the live room as a player and the hunter bound there, or null. */
+  const playing = (): BindAsked | null => { const code = playerRoom(), b = bound(); return code && b ? { room: code, bound: b.id } : null; };
 
   // ── the room as the views read it ──
   /** The room this phone is in: the live room, or the one a create or join started from. Upgrading, the saved room, which the reloaded app opens. */
@@ -897,9 +925,9 @@ export function register(app: SyncHost): void {
   }
   /** The GM frees a device's claim on its sheets, so the player's phone (or a new one) can claim them on its next write. */
   async function releaseSheet(key: string): Promise<Call> {
-    const gm = gmRoom(), m = /^(d-[a-z0-9]+):/.exec(key || '');
-    if (!gm || !m) return NOT_GM;
-    return call('POST', `/rooms/${encodeURIComponent(gm.code)}/release`, { device: m[1] }, gm.key);
+    const gm = gmRoom(), sheet = parseSheetKey(key);
+    if (!gm || !sheet) return NOT_GM;
+    return call('POST', `/rooms/${encodeURIComponent(gm.code)}/release`, { device: deviceOf(sheet) }, gm.key);
   }
   /** Forget the GM key of a room. Forgetting the key of the room this phone runs leaves that room. */
   function forgetKey(code: string): void {
@@ -984,9 +1012,20 @@ export function register(app: SyncHost): void {
   app.on('change', change => {
     if (store.readOnly) linkDo({ type: 'readOnly' });
     else if (change.replaced || (change.reason === 'storage' && otherRoom())) linkDo({ type: 'replaced', room: storedRoom(), last: storedLast(sy().lastRoom) });
-    if (push.at !== 'off') { const h = bound(); if (h && JSON.stringify(pushedSheet(h)) !== sheetText) pushDo({ type: 'changed' }); }
+    if (change.replaced) removalDo({ type: 'replaced' });
+    bindHeard();
     republish();
   });
+  /**
+   * Tells the push what a change did to the bound sheet: another hunter bound, by whichever write (a join, "Play as", a
+   * delete of the bound one, a save swapped in), is `rebound`, which wakes a push that is locked or backing off
+   * (SMX-sync-2.1); an edit of the same one is `changed`.
+   */
+  function bindHeard(): void {
+    const h = bound(), id = h?.id ?? null;
+    if (id !== boundSeen) { boundSeen = id; if (push.at !== 'off' && h) pushDo({ type: 'rebound' }); return; }
+    if (push.at !== 'off' && h && JSON.stringify(pushedSheet(h)) !== sheetText) pushDo({ type: 'changed' });
+  }
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') linkDo({ type: 'visible' }); });
   addEventListener('online', () => linkDo({ type: 'online' })); // the link polls at once, and a good poll sends what waits
   addEventListener('offline', () => linkDo({ type: 'offline' }));

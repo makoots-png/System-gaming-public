@@ -17,6 +17,7 @@ import { parseApplied, parseHeld } from './applied.ts';
 import { parseOutbox } from './sync/outbox.ts';
 import { parseSeen } from './sync/seen.ts';
 import { ringMerged } from './sync/bind.ts';
+import type { BindJoin } from './sync/bind.ts';
 import type { RoomPlaces } from './sync/seen.ts';
 import type { Outbox } from './sync/outbox.ts';
 import type { RoomEvent } from './protocol.ts';
@@ -140,7 +141,8 @@ export type SyncSettings = {
   gmKey?: GmKey | null; gmKeys?: Record<string, GmKey>; lastRoom?: LastRoom | null; boundHunterId?: HunterId;
   /** This phone's secret for the sheets it writes (the server keeps only its hash). Made at load beside `deviceId`. */
   deviceToken: string;
-  joinedAt?: string;
+  /** This phone's join of a room, which names its room (src/core/sync/bind.ts `BindJoin`); only a join writes it. */
+  joined?: BindJoin;
   /** What this phone still owes the room: room events and tombstones, each with its state (src/core/sync/outbox.ts). */
   outbox?: Outbox;
   /** Room events this phone could not apply yet, tried again after each good poll (src/core/applied.ts `hold`). */
@@ -164,7 +166,7 @@ export type SyncSettings = {
 export const SYNC_OWNER: { readonly [K in keyof SyncSettings]-?: 'campaign' | 'phone' | 'key' } = {
   room: 'campaign', cursor: 'campaign', lastRoom: 'campaign', boundHunterId: 'campaign',
   gmKey: 'key', gmKeys: 'key',
-  deviceToken: 'phone', serverOk: 'phone', joinedAt: 'phone', outbox: 'phone', held: 'phone', applied: 'phone', runs: 'phone', offers: 'phone', seen: 'phone',
+  deviceToken: 'phone', serverOk: 'phone', joined: 'phone', outbox: 'phone', held: 'phone', applied: 'phone', runs: 'phone', offers: 'phone', seen: 'phone',
 };
 /** The fields of `sync` that `owner` owns, as they are. */
 const ownedBy = (sync: SyncSettings, owner: (typeof SYNC_OWNER)[keyof SyncSettings]): Partial<SyncSettings> =>
@@ -358,7 +360,8 @@ function fixSync(sync: SyncSettings, now: number): void {
     if (isObj(last) && code) sync.lastRoom = { code, why: LAST_WHY.includes(last.why as LastWhy) ? (last.why as LastWhy) : last.gone === true ? 'gone' : 'left' };
     else if (last !== null) delete sync.lastRoom;
   }
-  optional(sync, 'boundHunterId', v => parseSaveId<'h'>(v) !== null); optional(sync, 'joinedAt', isStr);
+  optional(sync, 'boundHunterId', v => parseSaveId<'h'>(v) !== null);
+  optional(sync, 'joined', v => isObj(v) && parseRoomCode(v.room) !== null && isStr(v.at));
   if ('outbox' in sync) sync.outbox = parseOutbox(sync.outbox);
   if ('held' in sync) sync.held = parseHeld(sync.held);
   if ('runs' in sync) sync.runs = parseRuns(sync.runs);

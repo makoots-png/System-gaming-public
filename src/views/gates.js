@@ -9,8 +9,9 @@ import { isRefused } from '../core/save-step.ts';
 import { oneOf } from '../core/one-of.ts';
 import { placeholderName, rollGate } from '../core/gates/spawn.ts';
 import { MONSTER_BOUNDS, copiesOf, monsterSheetOf, monsterXp } from '../core/registry/monsters.ts';
-import { advanceDay as advanceWorld, closeGate, deleteGate, editGate, enterGate, gateNews, mergeWorld as mergeDoc, parseGateTold, sessionStarted, spawnGate, toldGate, worldDoc as worldDocOf, worldEmptyWords } from '../core/gates/world.ts';
-import { compareTimes, stepTime } from '../core/day.ts';
+import { advanceDay as advanceWorld, closeGate, deleteGate, editGate, enterGate, mergeWorld as mergeDoc, sessionStarted, spawnGate, worldDoc as worldDocOf, worldDocUnmerged, worldEmptyWords } from '../core/gates/world.ts';
+import { gateNews, gateTold, hunterNews } from '../core/told.ts';
+import { stepTime } from '../core/day.ts';
 import { OUTCOME_WORDS, SOLO_REFUSAL_WORDS, SOLO_WORDS, closesIn, personalNews, runCostLines, soloAnswerBody, soloConfirmLines, soloDoc, soloFight, soloKey, soloPlan, soloRan, soloReady, soloRoute, soloRuleSet, soloRunBody, soloTaken, soloTargets, soloTick, takenLine } from '../core/gates/solo.ts';
 import { byClosing } from '../core/gates/personal.ts';
 import { STOP_WAITING, mayDismiss, runDismissed, shownOf, waitWords, waitingGates } from '../core/gates/solo-wait.ts';
@@ -78,7 +79,8 @@ export function register(app) {
         const pick = await ui.system({ tag: '! Warning', kind: 'warning', title: 'Dungeon Break',
           body: `${g.rank}-rank gate has broken: ${g.name}`, lines: ['Its monsters are coming out of the gate.'],
           actions: [{ label: 'Later', value: null, cancel: true }, ...(app.isGM() ? [{ label: 'Start fight', value: 'start', primary: true }] : [{ label: 'Understood', value: null, primary: true }])] });
-        if (pick === 'start') startEncounter(g.id);
+        // the next break's window waits until this one's party picker is answered (SMX-gates-7.3b)
+        if (pick === 'start') await startEncounter(g.id);
       }
     })();
     return { ok: true, ...did, broke };
@@ -162,49 +164,47 @@ export function register(app) {
   const worldDoc = () => worldDocOf(store.get(), day(), new Set(soloShared().doc.gates.map(g => g.id)), store.get().world.session);
   sync().publish('world', worldDoc); // sync.ts puts it after a merge below, never before
   sync().publish('solo', () => soloShared().doc);
-  let merged = { code: null, at: '' }; // the room's world doc this GM phone merged last
+  let merged = { code: null, last: null }; // the room's world doc this GM phone merged last (world.ts `WorldDocStamp`)
   // S06: when another GM device wrote the room's world last, upsert it (never delete).
   function mergeWorld(docs) {
     const code = room(); if (app.seat() !== 'gm' || !code) return;
-    if (merged.code !== code) merged = { code, at: '' };
+    if (merged.code !== code) merged = { code, last: null };
     const raw = docs && docs.world, w = raw && raw.data;
-    if (w && raw.from !== store.get().settings.deviceId && compareTimes(raw.at, merged.at) > 0) {
+    if (w && raw.from !== store.get().settings.deviceId && worldDocUnmerged({ at: raw.at, from: raw.from }, merged.last)) {
       const remoteDay = w.day, local = new Map(store.get().gates.map(g => [g.id, g])), clean = w.gates;
       const same = (a, b) => a.name === b.name && a.rank === b.rank && a.type === b.type && a.status === b.status && a.breakDay === b.breakDay;
       const changes = clean.some(g => !local.has(g.id) || !same(local.get(g.id), g));
       // a world this tab could not write is merged again with the next doc: a read-only tab's banner says why
       if (changes || remoteDay > day()) {
-        if (!store.apply('gate-import', s => mergeDoc(s, { day: remoteDay, gates: clean }, (g, today) => parseGate({ ...g, createdDay: today }))).ok) return;
+        if (!store.apply('gate-import', s => mergeDoc(s, { day: remoteDay, gates: clean }, (g, today) => parseGate({ ...g, createdDay: today }), stamp())).ok) return;
         refreshView();
       }
-      merged = { code, at: raw.at };
+      merged = { code, last: { at: raw.at, from: raw.from } };
     }
   }
   app.on('sync:docs', ({ docs }) => { if (app.seat() === 'player') onWorld(); else mergeWorld(docs); });
 
   /** The room's world as the GM published it, on a player's phone. */
   const sharedWorld = () => (app.seat() === 'player' ? sync().doc('world') : null);
-  /** The gates this phone has told of, per room: device memory (store.device), never in the save. */
-  const seenMemory = code => store.device('gates-seen:' + code);
   /** The gate news windows asked for and not answered yet, by room, kind and gate: told when answered, asked once meanwhile. */
   const asking = new Set();
   /**
-   * The room's gates on a player's phone: what to tell (world.ts `gateNews`), each in a System window (ui.system shows them
-   * one at a time), marked told in device memory when the player answers it (`toldGate`), so a reload while it waits shows it.
+   * The room's gates on a player's phone: what to tell (told.ts `gateNews`, every piece at once), each in a System window
+   * (ui.system shows them one at a time), told in the campaign's told memory when the player answers it (`gateTold`),
+   * so a reload while it waits shows it. The room's first look takes its gates as told, so joining replays none.
    */
   function onWorld() {
     const code = room(), w = sharedWorld(); if (!code) return;
-    const memory = seenMemory(code), stored = parseGateTold(memory.read());
-    const r = gateNews(stored, w ? w.gates : []);
-    if (!stored) memory.write(r.told);
-    const ok = [{ label: 'Understood', value: null, primary: true }];
-    for (const n of r.news) {
+    const gates = w ? w.gates : [];
+    store.tell({ type: 'looked', room: code, gates });
+    const told = store.told(), ok = [{ label: 'Understood', value: null, primary: true }];
+    for (const n of gateNews(told, code, gates)) {
       const key = `${code}|${n.kind}|${n.gate.id}`, g = n.gate; if (asking.has(key)) continue;
       asking.add(key);
       const shown = n.kind === 'appeared'
         ? ui.system({ tag: '! Gate', kind: 'warning', title: 'A GATE HAS APPEARED', body: g.name, lines: [`Rank: ${g.rank}`, `Type: ${g.type} gate`, `Breaks on day ${g.breakDay}`], actions: ok })
         : ui.system({ tag: '! Warning', kind: 'warning', title: 'GATE BREAK', body: `${g.rank}-rank gate has broken: ${g.name}`, lines: ['Its monsters are coming out of the gate.'], actions: ok });
-      void shown.then(() => { asking.delete(key); memory.write(toldGate(parseGateTold(memory.read()) ?? r.told, n)); });
+      void shown.then(() => { asking.delete(key); store.tell(gateTold(told.campaign, code, n)); });
     }
     refreshView();
   }
@@ -217,18 +217,19 @@ export function register(app) {
   const refreshView = () => { if (mounted.render) mounted.render(); };
 
   // ── solo runs (src/core/gates/solo.ts, personal.ts, solo-wait.ts; notes-2-solo.md) ──
-  /** The gates this phone has told of as appeared, per hunter: device memory (store.device), never in the save. */
-  const toldMemory = hid => store.device('personal-told:' + hid);
-  /** Each personal gate not told yet gets its window ("A GATE HAS APPEARED"), marked told when answered, so a reload while it waits shows it. */
+  /**
+   * Each personal gate not told yet gets its window ("A GATE HAS APPEARED"), told in the campaign's told memory when
+   * answered (told.ts `hunterNews`), so a reload while it waits shows it.
+   */
   function tellPersonal() {
     const many = store.get().hunters.length > 1, ok = [{ label: 'Understood', value: null, primary: true }];
     for (const h of store.get().hunters) {
-      const memory = toldMemory(h.id), raw = memory.read(), told = Array.isArray(raw) ? raw.filter(x => typeof x === 'string') : [];
+      const told = store.told(), topic = { of: /** @type {const} */ ('personal'), hunter: h.id }, news = hunterNews(told, h, 'personal');
       for (const g of h.solo.gates) {
-        const key = `personal|${h.id}|${g.id}`; if (told.includes(g.id) || asking.has(key)) continue;
+        const key = `personal|${h.id}|${g.id}`; if (!news.includes(g.id) || asking.has(key)) continue;
         asking.add(key);
         void ui.system({ tag: '! Gate', kind: 'warning', title: 'A GATE HAS APPEARED', body: `${many ? `${h.name}: ` : ''}${g.name}`, lines: personalNews(g, Date.now()), actions: ok })
-          .then(() => { asking.delete(key); const now = memory.read(); memory.write([...(Array.isArray(now) ? now : []), g.id].slice(-50)); });
+          .then(() => { asking.delete(key); store.tell({ type: 'answered', campaign: told.campaign, topic, id: g.id }); });
       }
     }
   }
@@ -655,7 +656,7 @@ export function register(app) {
           const g = gate(id);
           // a refused edit keeps the panel open with what was typed: nothing redraws it
           if (g && !ui.wrote('! Gate', store.apply('gate-edit', s => editGate(s, id, { name: f.name.value, rank: oneOf(f.rank.value, RANKS, g.rank), type: oneOf(f.type.value, GATE_TYPES, g.type),
-            breakDay: Number(f.breakDay.value), monsters: rows, bossId: monsterId(f.boss.value), notes: f.notes.value, mapId: f.map.value || null, status: oneOf(f.status.value, GATE_STATUSES, g.status), solo: f.solo ? f.solo.checked : g.solo })))) { openPanel.set(id, 'edit'); return; }
+            breakDay: Number(f.breakDay.value), monsters: rows, bossId: monsterId(f.boss.value), notes: f.notes.value, mapId: f.map.value || null, status: oneOf(f.status.value, GATE_STATUSES, g.status), solo: f.solo ? f.solo.checked : g.solo }, stamp())))) { openPanel.set(id, 'edit'); return; }
         }
         refresh(id);
       });

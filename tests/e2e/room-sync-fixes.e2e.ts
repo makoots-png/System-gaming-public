@@ -653,3 +653,151 @@ test('a player\'s dead hunter is revived by the GM from the GM\'s phone and stan
     await expect(kaiCard(gm)).not.toContainText('Dead');
   });
 });
+
+/** The GM removes Kai Test from the Room view. */
+async function removeKai(gm: Page): Promise<void> {
+  await go(gm, 'room');
+  await expect(gm.locator(`${roomView} [data-roster]`)).toContainText('Kai Test');
+  await gm.locator(`${roomView} [data-manage]`).tap();
+  await gm.locator(`${roomView} [data-gmkick]`).tap();
+  await gm.locator('.sys-overlay.show button', { hasText: 'Remove from room' }).tap();
+  await expect(gm.locator(`${roomView} [data-kicks]`)).toContainText('Kai Test');
+}
+
+/** A player with Kai Test and Mia Test who joins room `code` from the Room view playing Kai Test. */
+async function playerWithTwo(device: (label: string, options?: any) => Promise<any>, code: string, options: any = {}) {
+  const player = (await device('player', options)).page as Page;
+  await onboardPlayer(player, 'Kai Test');
+  await player.evaluate(() => hunterApp.store.update((d: any) => { d.hunters.push(hunterApp.store.newHunter('Mia Test')); }, 'test-setup'));
+  await answerWindow(player, 'A GATE HAS APPEARED');
+  await go(player, 'room');
+  await player.locator(`${roomView} input[data-code]`).fill(code);
+  await expect(player.locator(`${roomView} [data-check]`)).toContainText('Room found');
+  await player.locator(`${roomView} [data-join]`).tap();
+  await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBe(code);
+  await dismissAll(player, 4);
+  const ids: Record<string, string> = await player.evaluate(() => Object.fromEntries(hunterApp.store.get().hunters.map((h: any) => [h.name, h.id])));
+  expect(await player.evaluate(() => hunterApp.store.get().settings.sync.boundHunterId)).toBe(ids['Kai Test']);
+  return { player, kai: ids['Kai Test']!, mia: ids['Mia Test']! };
+}
+
+test('a player who plays as another hunter is told an award the GM sent just before as received, not as sent while away', async ({ device }) => {
+  const { gm, code } = await gmWithRoom(device);
+  const { player, mia } = await playerWithTwo(device, code, { blockServiceWorker: true, allowConsole: [/ERR_INTERNET_DISCONNECTED|net::ERR|Failed to fetch/] });
+  await go(gm, 'gm');
+  await expect(kaiCard(gm)).toHaveCount(1);
+
+  await test.step('while the player\'s phone has not read the room, the GM awards Kai 25 gold and the room takes it', async () => {
+    await player.context().setOffline(true);
+    const toggle = gm.locator('[data-tog="award"]');
+    if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.tap();
+    await gm.locator('#gm-targets label', { hasText: 'Kai Test' }).locator('input').check();
+    await gm.fill('#gm-gold', '25');
+    await gm.locator('#gm-award-go').tap();
+    const events = async (): Promise<string[]> => ((await (await gm.request.get(`/api/rooms/${code}?after=0`, { headers: await gmRoomHeaders(gm, code) })).json()).events ?? []).map((e: any) => e.type);
+    await expect.poll(events).toContain('award');
+  });
+
+  await test.step('the player plays as Mia Test, then the phone reads the room again', async () => {
+    await player.locator('#hunter-sel').selectOption(mia);
+    await answerWindow(player, 'PLAY AS MIA TEST?', 'Play as Mia Test');
+    await player.context().setOffline(false);
+  });
+
+  await test.step('the award is told as a reward received, and no window says it came while the phone was away', async () => {
+    await answerWindow(player, 'REWARD RECEIVED');
+    await expect(player.locator('.sys-overlay.show')).toHaveCount(0);
+  });
+});
+
+test('a player whose hunter is locked to another device deletes it, and the GM sees the hunter left in its place at once', async ({ device }) => {
+  const { gm, code } = await gmWithRoom(device);
+  const { player } = await playerWithTwo(device, code, { blockServiceWorker: true, allowConsole: [/status of 403/] });
+  await go(gm, 'gm');
+  await expect(kaiCard(gm)).toHaveCount(1);
+  const sheets = (u: URL) => u.pathname.startsWith(`/api/rooms/${code}/sheets/`);
+
+  await test.step('the room says Kai Test is another device\'s', async () => {
+    await player.route(sheets, route => (route.request().method() === 'PUT'
+      ? route.fulfill({ status: 403, contentType: 'application/json', body: '{"error":"not your sheet"}' }) : route.continue()));
+    await go(player, 'status');
+    await player.locator('#view-status [data-hp="-5"]').first().tap();
+    await answerWindow(player, 'HUNTER LOCKED TO ANOTHER DEVICE');
+    await player.unroute(sheets);
+  });
+
+  await test.step('the player deletes Kai Test, and the GM sees Mia Test well before the locked sheet\'s 30 s retry', async () => {
+    await player.locator('#view-status [data-panel="party"] li', { hasText: 'Kai Test' }).locator('[data-pdel]').tap();
+    const win = player.locator('.sys-overlay.show');
+    await expect(win).toContainText('Delete Kai Test?');
+    await win.locator('input').fill('Kai Test');
+    await win.locator('.sys-actions button.primary').tap();
+    await expect(gm.locator('#gm-board .gm-card.remote', { hasText: 'Mia Test' })).toHaveCount(1, { timeout: 10_000 });
+    await expect(kaiCard(gm)).toHaveCount(0);
+  });
+});
+
+test('a "Play as" window answered after the player left the room shows that hunter and binds nothing', async ({ device }) => {
+  const { code } = await gmWithRoom(device);
+  const { player, kai, mia } = await playerWithTwo(device, code);
+  await player.locator('#hunter-sel').selectOption(mia);
+  const ask = player.locator('.sys-overlay.show', { hasText: 'PLAY AS MIA TEST?' });
+  await expect(ask).toBeVisible();
+  // setup: the phone leaves the room while the window is open (the window covers the Room view's Leave)
+  await player.evaluate(() => hunterApp.api.sync.leave());
+  await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBeNull();
+  await ask.locator('button', { hasText: 'Play as Mia Test' }).tap();
+  await expect.poll(async () => (await activeHunter(player)).name).toBe('Mia Test');
+  expect(await player.evaluate(() => hunterApp.store.get().settings.sync.boundHunterId)).toBe(kai);
+});
+
+test('a removed player whose room is gone meanwhile is told there is no such room, and the window does not come back', async ({ device }) => {
+  const { gm, code } = await gmWithRoom(device);
+  const player = await playerInRoom(device, code, { blockServiceWorker: true });
+  await removeKai(gm);
+  await expect(removedWindow(player)).toBeVisible();
+  await player.route(u => u.pathname === `/api/rooms/${code}` && u.searchParams.has('peek'), route => route.fulfill({ status: 200, contentType: 'application/json', body: '{"exists":false}' }));
+  await removedWindow(player).locator('button', { hasText: 'Rejoin when the GM allows' }).tap();
+  await expect(player.locator('#toasts .toast', { hasText: `There is no room ${code}.` })).toBeVisible();
+  await expect(removedWindow(player)).toHaveCount(0);
+  expect(await player.evaluate(() => hunterApp.api.sync.room())).toBeNull();
+});
+
+test('a removed player who has since joined another room stays there when the old window\'s Rejoin is tapped', async ({ device }) => {
+  const { gm, code } = await gmWithRoom(device);
+  const player = await playerInRoom(device, code);
+  const gmB = (await device('gm-b')).page;
+  await onboardGM(gmB);
+  const roomB = await createRoom(gmB);
+  await removeKai(gm);
+  await expect(removedWindow(player)).toBeVisible();
+  await gm.locator(`${roomView} [data-gmallow]`).tap();
+  await expect(gm.locator(`${roomView} [data-kicks]`)).not.toContainText('Kai Test');
+  // setup: the phone joins room B while the window is open (the window covers the Room view's Join)
+  await player.evaluate(c => hunterApp.api.sync.joinRoom(c), roomB);
+  await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBe(roomB);
+
+  await removedWindow(player).locator('button', { hasText: 'Rejoin when the GM allows' }).tap();
+  await expect(removedWindow(player)).toHaveCount(0);
+  for (let i = 0; i < 2; i++) await player.waitForRequest(r => r.method() === 'GET' && r.url().includes(`/api/rooms/${roomB}?after=`));
+  expect(await player.evaluate(() => hunterApp.api.sync.room())).toBe(roomB);
+  await expect(player.locator('#toasts .toast', { hasText: `Rejoined room ${code}` })).toHaveCount(0);
+});
+
+test('the GM releases a hunter whose phone\'s device id does not start with d-', async ({ device }) => {
+  const { gm, code } = await gmWithRoom(device);
+  const player = (await device('player')).page;
+  await onboardPlayer(player, 'Kai Test');
+  await player.evaluate(() => hunterApp.store.update((d: any) => { d.settings.deviceId = 'phone-7'; }, 'test-setup'));
+  await go(player, 'room');
+  await player.locator(`${roomView} input[data-code]`).fill(code);
+  await player.locator(`${roomView} [data-join]`).tap();
+  await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBe(code);
+
+  await go(gm, 'room');
+  await expect(gm.locator(`${roomView} [data-roster]`)).toContainText('Kai Test');
+  expect(await gm.evaluate(() => hunterApp.api.sync.remoteSheets().map((s: any) => s.deviceId))).toEqual(['phone-7']);
+  await gm.locator(`${roomView} [data-manage]`).tap();
+  await gm.locator(`${roomView} [data-gmrelease]`).tap();
+  await expect(gm.locator('#toasts .toast', { hasText: 'Released. That hunter can now be claimed by its player\'s device.' })).toBeVisible();
+});

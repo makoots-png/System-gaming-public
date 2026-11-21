@@ -21,6 +21,8 @@ import type { DeviceId, HunterId, IdOf } from '../core/ids.ts';
 import { noticed } from '../core/hunter/noticed.ts';
 import type { NoticeCtx } from '../core/hunter/noticed.ts';
 import { fightHold } from '../core/combat/fight-save.ts';
+import { NO_TOLD, parseTold, toldStep } from '../core/told.ts';
+import type { ToldEvent, ToldMemory } from '../core/told.ts';
 
 /** The save. The three old keys are read by `load()` while the save key is empty, and never written or removed. */
 const SAVE_KEY = 'hunter-system-v4', OLD_KEY_V3 = 'hunter-system-v3', OLD_KEY_V2 = 'hunter-system-v2', OLD_KEY_V1 = 'hunter-system-v1';
@@ -124,6 +126,23 @@ function keepDevice(key: string, value: unknown, where: Area): void {
 }
 /** A view's memory on this phone or in this tab: never in the save, a backup or a room. */
 export type Memory = { read(): unknown; write(value: unknown): void };
+
+// ── the campaign's told memory (src/core/told.ts): what this phone told its player, one record, a new one each campaign ──
+const TOLD_KEY = 'hunter-system-told';
+/** The views' own told memories from before the campaign's one record: dropped at load, read by nothing. */
+const OLD_TOLD = ['feat-told:', 'quest-told:', 'personal-told:', 'gates-seen:'].map(p => `hunter-system-${p}`);
+/** The record as stored; with none kept (storage blocked or full), the record of no campaign, which tells nothing. */
+const readTold = (): ToldMemory => parseTold(readJson(TOLD_KEY)) ?? NO_TOLD;
+/** The record after `event`, kept when the step changed it. Its one writer. */
+function tellStep(event: ToldEvent): void {
+  const was = readTold(), next = toldStep(was, event);
+  if (next !== was) keepDevice(TOLD_KEY, next, 'phone');
+}
+/**
+ * A campaign opened or replaced: a new record under a token no window asked before can answer into, with what the
+ * campaign's hunters hold told (src/core/told.ts).
+ */
+const newCampaignTold = (save: Save): void => tellStep({ type: 'replaced', campaign: randToken(), hunters: save.hunters });
 
 // ── backups: a ring of save texts, newest first ──
 type Backup = { at?: unknown; reason?: unknown; data: string };
@@ -253,6 +272,11 @@ function carry(first: StoreStep, theirs: Save | null = null, quiet = false): voi
 }
 const run = (e: StoreEvent, theirs: Save | null = null): void => carry(storeStep(life, e), theirs);
 carry(opened(loaded.opened), null, true);
+if (!parseTold(readJson(TOLD_KEY))) newCampaignTold(state);
+try {
+  const old = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i)).filter((k): k is string => k !== null && OLD_TOLD.some(p => k.startsWith(p)));
+  for (const k of old) localStorage.removeItem(k);
+} catch { /* no storage to tidy: the life opened noStorage and its banner says so */ }
 const newest = readBackups()[0];
 if (dailyBackupDue(typeof newest?.at === 'string' ? newest.at : null, new Date())) pushBackup('daily', currentText(), backupCap(state));
 
@@ -271,6 +295,7 @@ export type Replaced = 'replaced' | 'unkept';
 function replace(next: Save, backupReason: string, reason: string, anyway: boolean): Replaced {
   if (!pushBackup(backupReason, currentText(), backupCap(state)) && !anyway) return 'unkept';
   state = keepPhone(next, state);
+  newCampaignTold(state);
   carry(storeStep(life, { type: 'replaced' }), null, true);
   emit({ reason, replaced: true });
   return 'replaced';
@@ -373,6 +398,10 @@ export const store = {
     const key = `hunter-system-${name}`;
     return { read: () => readJson(key, where), write: value => keepDevice(key, value, where) };
   },
+  /** The campaign's told memory (src/core/told.ts): what this phone told its player of this campaign, a new one after a reset, an import or a restore. */
+  told: (): ToldMemory => readTold(),
+  /** The one writer of the told memory: an event of src/core/told.ts (`looked`, `answered`), kept when it changed the record. */
+  tell(event: Exclude<ToldEvent, { type: 'replaced' }>): void { tellStep(event); },
   /** The bytes this app's keys hold in this phone's storage (two a character), or null when storage cannot be read. */
   used(): number | null {
     try {

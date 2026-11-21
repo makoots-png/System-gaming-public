@@ -35,6 +35,12 @@ export function register(app) {
     const key = S.myKey(hid), me = doc.rows.find(r => r.key === key);
     return me ? { doc, me } : null;
   };
+  /** `tableOf(hid)` while it is that row's turn; else null, after the player reads why when the row is in the fight. */
+  const turnOf = hid => {
+    const t = tableOf(hid); if (!t) return null;
+    if (t.doc.currentId !== t.me.id) { ui.news('Not your turn.', 'warning'); return null; }
+    return t;
+  };
 
   /**
    * Where use `u` of hunter `h` is told on this phone (src/core/use-told.ts): a player's phone in a room posts `used`, any
@@ -66,8 +72,7 @@ export function register(app) {
     async report(hid, u) { return app.api.uses.told(hid, 'use-report', null, u); },
     onTable: hid => !!tableOf(hid),
     async cast(hid, abilityId, given) {
-      const h = store.hunter(hid), t = tableOf(hid); if (!h || !t) return null;
-      if (t.doc.currentId !== t.me.id) { ui.news('Not your turn.', 'warning'); return null; }
+      const h = store.hunter(hid), t = turnOf(hid); if (!h || !t) return null;
       const a = hunterAbilities(h, app.rules()).find(x => x.id === abilityId); if (!a) return null;
       /** @type {import('../core/protocol.ts').CastPayload['aim']} */
       let aim = t.me.id;
@@ -80,8 +85,10 @@ export function register(app) {
         const pick = id ? list.find(x => x.target.id === id) : null; if (!pick) return null;
         aim = a.aim === 'place' ? { x: pick.target.place.x, y: pick.target.place.y } : pick.target.id;
       }
+      // the window answers later, over a doc that may have moved on: the cast goes at the doc of this moment, on the turn then
+      const at = turnOf(hid); if (!at) return null;
       const S = app.api.sync, dice = diceFor(a, rankIdx(h.rank), app.rules()).map(d => rollDice(d));
-      return S.post(S.event('cast', { by: S.myKey(h.id), ability: a.id, aim, at: t.doc.now, dice }));
+      return S.post(S.event('cast', { by: S.myKey(h.id), ability: a.id, aim, at: at.doc.now, dice }));
     },
   };
 

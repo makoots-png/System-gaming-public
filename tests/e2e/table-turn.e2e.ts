@@ -5,6 +5,7 @@ import { RULES } from '../../src/core/rules.ts';
 import { tiles } from '../../src/core/combat/space.ts';
 import { abilityId } from '../../src/core/combat/ability-types.ts';
 import { abilityOf } from '../../src/core/registry/ability-kinds.ts';
+import { OUTBOX_MAX } from '../../src/core/sync/outbox.ts';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, answerWindow, fightRow, openFeed, chooseList, openApp, type DeviceOptions, setupDoc } from './helpers.ts';
 
 const HUNTER = 'Kai Test', MONSTER = 'Cave Rat';
@@ -14,8 +15,8 @@ const hudRow = (player: Page, name: string) => combat(player).locator('.tb-row',
 const lowestDice = (page: Page) => page.evaluate(() => Object.defineProperty(crypto, 'getRandomValues', { configurable: true, value: (a: Uint32Array) => a.fill(0) }));
 
 /** A GM and a player in one room, the player's card on the GM's party board. `carry` goes in the player's bag first (setup). */
-async function room(device: (label: string, o?: DeviceOptions) => Promise<{ page: Page }>, carry: Record<string, unknown>[] = [], gmOptions: DeviceOptions = {}): Promise<{ gm: Page; player: Page }> {
-  const gm = (await device('gm', gmOptions)).page, player = (await device('player')).page;
+async function room(device: (label: string, o?: DeviceOptions) => Promise<{ page: Page }>, carry: Record<string, unknown>[] = [], gmOptions: DeviceOptions = {}, playerOptions: DeviceOptions = {}): Promise<{ gm: Page; player: Page }> {
+  const gm = (await device('gm', gmOptions)).page, player = (await device('player', playerOptions)).page;
   await onboardGM(gm);
   await chooseList(gm);
   const code = await createRoom(gm);
@@ -416,6 +417,68 @@ test('a player taps End turn in the list on their turn and the rat\'s turn comes
   await expect(combat(gm).locator('.cmb-row.cur', { hasText: MONSTER })).toHaveCount(1);
   await expect(combat(player).locator('.tb-mine')).toHaveCount(0);
   await expect(combat(player).locator('[data-acts] [data-pass]')).toHaveCount(0);
+});
+
+const OFFLINE: DeviceOptions = { blockServiceWorker: true, allowConsole: [/ERR_INTERNET_DISCONNECTED|net::ERR|Failed to fetch/] };
+
+test('a player\'s End turn that a full outbox let go gives the turn back: End turn and the abilities come back on', async ({ device }) => {
+  // setOffline reaches the app's requests only past no service worker
+  const { gm, player } = await room(device, [], {}, OFFLINE);
+  await fight(gm, player, { x: 2, y: 10 });
+  const pass = combat(player).locator('[data-acts] [data-pass]'), strike = combat(player).locator('[data-cast="attack"]');
+
+  await test.step('offline, the player taps End turn: the turn waits on it, its buttons off', async () => {
+    await player.context().setOffline(true);
+    await expect.poll(() => player.evaluate(() => hunterApp.api.sync.status())).toBe('offline');
+    await pass.tap();
+    await expect(pass).toHaveCount(0);
+    await expect(strike).toBeDisabled();
+  });
+
+  await test.step('rolls fill the outbox past OUTBOX_MAX, the End turn waiting in it is let go, and the turn is the player\'s to take again', async () => {
+    await player.evaluate(n => { const hid = hunterApp.store.active().id; for (let i = 0; i < n; i++) hunterApp.api.dice.roll('1d20', { label: 'filler', hid }); }, OUTBOX_MAX - 1);
+    // A full box lets go its oldest message that waits; one on its way (each post sends the oldest again) is kept. So the
+    // last roll goes while the End turn waits between two tries.
+    await expect.poll(() => player.evaluate(() => {
+      const end = () => (hunterApp.store.get().settings.sync.outbox ?? []).find((e: any) => e.letter.event?.type === 'pass');
+      if (end()?.at === 'queued') hunterApp.api.dice.roll('1d20', { label: 'filler', hid: hunterApp.store.active().id });
+      return end()?.at ?? 'gone';
+    }), { timeout: 15_000 }).toBe('gone');
+    await expect(player.locator('.toast', { hasText: 'Too much is waiting for the room, so the oldest message was dropped.' })).toBeVisible();
+    await expect(pass).toBeVisible();
+    await expect(strike).toBeEnabled();
+    await expect(combat(player).locator('.tb-mine')).toContainText('YOUR TURN');
+  });
+});
+
+test('a target picked after the fight changed under the window keeps the turn held until the GM\'s phone takes the use', async ({ device }) => {
+  // setOffline reaches the app's requests only past no service worker
+  const { gm, player } = await room(device, [], OFFLINE);
+  await fight(gm, player, { x: 2, y: 3 });
+  await lowestDice(gm); await lowestDice(player);
+  const rat = await fightRow(gm, MONSTER), pass = combat(player).locator('[data-acts] [data-pass]');
+  const docAt = () => player.evaluate(() => hunterApp.api.sync.doc('fight').at as string);
+
+  await test.step('the player taps Use on the Strike and, while its window is open, the GM\'s phone changes the fight', async () => {
+    await combat(player).locator('[data-cast="attack"]').tap();
+    await expect(player.locator('.sys-overlay.show', { hasText: /Use .+ on…/ })).toBeVisible();
+    const before = await docAt();
+    await gm.evaluate(id => hunterApp.api.combat.adjust(id, { hp: -1 }), rat.id);
+    await expect.poll(docAt, { timeout: 15_000 }).not.toBe(before);
+  });
+
+  await test.step('with the GM\'s phone away, the player picks the rat: once the room has the use, the turn still waits on it', async () => {
+    await gm.context().setOffline(true);
+    await answerWindow(player, /Use .+ on…/, MONSTER);
+    await expect.poll(() => player.evaluate(() => hunterApp.api.sync.detail().waiting), { timeout: 15_000 }).toBe(0);
+    await expect(pass).toHaveCount(0);
+    await expect(combat(player).locator('[data-cast="attack"]')).toBeDisabled();
+  });
+
+  await test.step('the GM\'s phone back, it takes the use: the rat is hit', async () => {
+    await gm.context().setOffline(false);
+    await expect.poll(async () => (await fightRow(gm, MONSTER)).hp, { timeout: 20_000 }).toBeLessThan(rat.hp - 1);
+  });
 });
 
 test('the GM ends the fight while the GM\'s phone is offline: the player still gets the XP, once, when the GM\'s phone is back', async ({ device }) => {

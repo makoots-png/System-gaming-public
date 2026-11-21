@@ -1,18 +1,29 @@
-// bind.ts: what the room link writes in the save, as steps. Pure. src/edge/sync.ts is their one caller, each in one
-// `store.apply`; the room model (tests/models/room-world.ts) runs the same steps.
+// bind.ts: what the room link writes in the save, as steps, and the two small machines of a player's bind. Pure.
+// src/edge/sync.ts is their one caller, each in one `store.apply`; the room model (tests/models/room-world.ts) runs the
+// same steps.
 //
 // Before, sync.ts wrote these fields by hand inside `store.update`: the room fields the link's `save` effect names, the
 // ring of GM keys (its cap, a refused key dropped, a gone room's key dropped, a key forgotten, each written apart), that
 // the server answered once (`serverOk`), and the bind of a player's hunter to the room, written twice (a join and a
 // rebind) with one copy rebinding the outbox and the other too (implicit audit 2, N6). Now each is a named step with a
 // table test (tests/bind.test.ts).
-import { setActive } from '../party.ts';
+//
+// A player's bind (audit SMX-sync-2): the hunter this phone sends (`boundHunterId`) and this phone's join of its room
+// (`joined`). A join writes both (`boundTo`); "Play as" (`playAs`) and a delete of the bound hunter (party.ts
+// `removeHunter`) move the hunter through `rebindTo` and never the join, so a message the room took while the phone was
+// in it is never told as one sent while it was away. The "Play as" window's answer is read against the room and the
+// bind it was asked in (`playAsAnswered`), and the REMOVED FROM ROOM window is a machine tied to its room
+// (`removedStep`, audit SMX-sync-8).
 import type { GmKey, HunterId, RoomCode } from '../ids.ts';
 import { seenKept, seenWithout } from './seen.ts';
 import type { Save, SyncSettings } from '../save.ts';
-import { isRefused } from '../save-step.ts';
+import { refuse } from '../save-step.ts';
+import type { Refused } from '../save-step.ts';
 import { rebound } from './outbox.ts';
 import type { SaveFields } from './link.ts';
+import type { TapAnswer } from './attempt.ts';
+import { tapWords } from './taps.ts';
+import type { TapKind } from './taps.ts';
 
 /** How many rooms' GM keys a phone keeps: a new one past this lets the oldest go. */
 export const KEYS_MAX = 10;
@@ -81,12 +92,125 @@ export function linkSaved(save: Save, f: SaveFields, refused: GmKey | null, at: 
   return { ...save, settings: { ...save.settings, sync: s } };
 }
 
+// ── a player's bind ──
 /**
- * A player's hunter `hid` bound to the room from server time `at`: active when this phone holds it (else the active
- * hunter stays and is bound), bound, joined at `at` (a removal from before no longer counts), and a tombstone of it
- * waiting in the outbox dropped. A join and a rebind are this one step.
+ * This phone's join of a room: the room and the server's time it joined at. A message the room took before it came while
+ * the phone was out of the room, and a removal from before it does not count. It names its room, so a save swapped in
+ * with another room (an import) never reads this join as its own (SMX-sync-2.4): `joinedAt` answers only for its room.
  */
-export function boundTo(save: Save, hid: HunterId, at: string): Save {
-  const active = setActive(save, hid), s = isRefused(active) ? save : active, bound = s.settings.activeHunterId, sync = s.settings.sync;
-  return { ...s, settings: { ...s.settings, sync: { ...sync, boundHunterId: bound, joinedAt: at, ...(sync.outbox ? { outbox: rebound(sync.outbox, bound) } : {}) } } };
+export type BindJoin = { readonly room: RoomCode; readonly at: string };
+/** When this phone joined room `code`, in ms on the server's clock; null when the save holds no join of that room. */
+export function joinedAt(s: Pick<SyncSettings, 'joined'>, code: RoomCode): number | null {
+  const t = s.joined && s.joined.room === code ? Date.parse(s.joined.at) : NaN;
+  return Number.isFinite(t) ? t : null;
+}
+
+/** The sync settings with `hid` the hunter this phone sends; a tombstone of it waiting in the outbox goes. The join stays. */
+export const rebindTo = (s: SyncSettings, hid: HunterId): SyncSettings =>
+  ({ ...s, boundHunterId: hid, ...(s.outbox ? { outbox: rebound(s.outbox, hid) } : {}) });
+
+/** `hid` when the party holds it, else null. */
+const held = (save: Save, hid: HunterId): HunterId | null => save.hunters.find(h => h.id === hid)?.id ?? null;
+
+/**
+ * A player joined room `join.room` at `join.at` (the server's time) with hunter `hid`: active when this phone holds it
+ * (else the active hunter stays and is bound), bound, and the join written (a removal from before no longer counts).
+ */
+export function boundTo(save: Save, hid: HunterId, join: BindJoin): Save {
+  const bound = held(save, hid) ?? save.settings.activeHunterId;
+  return { ...save, settings: { ...save.settings, activeHunterId: bound, sync: { ...rebindTo(save.settings.sync, bound), joined: join } } };
+}
+/** "Play as": hunter `hid` is shown and sent in the room this phone is in. The join stays (SMX-sync-2.2). One not in the party is refused. */
+export function playAs(save: Save, hid: HunterId): Save | Refused<'no-hunter'> {
+  const to = held(save, hid);
+  return to ? { ...save, settings: { ...save.settings, activeHunterId: to, sync: rebindTo(save.settings.sync, to) } } : refuse('no-hunter');
+}
+
+// ── the "Play as" window (SMX-sync-2.3) ──
+/** Where a player's phone is: the room it plays in and the hunter bound there. */
+export type BindAsked = { readonly room: RoomCode; readonly bound: HunterId };
+/** What the player tapped in the "Play as" window. */
+export type BindAnswer = 'cancel' | 'view' | 'bind';
+/**
+ * What the answer does. `none`: nothing. `show`: the hunter is shown, nothing is bound. `showKept`: shown, and the player
+ * is told the bound hunter stays synced. `playAs`: shown and bound (`playAs`).
+ */
+export type BindSwitch = 'none' | 'show' | 'showKept' | 'playAs';
+/**
+ * The answer to a "Play as" window asked at `asked`, read where the phone is now (`now`: null out of a room as a
+ * player). The window speaks of one room and one bound hunter; once the phone has left that room, or another hunter is
+ * bound there, the answer only shows the hunter, as a switch out of a room does.
+ */
+export function playAsAnswered(asked: BindAsked, now: BindAsked | null, answer: BindAnswer): BindSwitch {
+  if (answer === 'cancel') return 'none';
+  const still = now !== null && now.room === asked.room && now.bound === asked.bound;
+  if (!still) return 'show';
+  return answer === 'bind' ? 'playAs' : 'showKept';
+}
+
+// ── the REMOVED FROM ROOM window (SMX-sync-8) ──
+/**
+ * The notice that the GM removed this phone from a room. `told`: the window is open (or waiting its turn); `rejoining`:
+ * its Rejoin is on its way. Each names its room and the hunter that was bound, so an answer of an old window never acts
+ * on another room.
+ */
+export type RemovedNotice =
+  | { readonly at: 'none' }
+  | { readonly at: 'told' | 'rejoining'; readonly room: RoomCode; readonly hunter: HunterId | null };
+export const REMOVED_STATES = ['none', 'told', 'rejoining'] as const satisfies readonly RemovedNotice['at'][];
+export const NO_REMOVAL: RemovedNotice = { at: 'none' };
+/**
+ * `removed`: the link put this phone out of `room` (the GM removed `hunter`). `answered`: the window of `room` was
+ * answered, Rejoin or OK. `tapped`: the Rejoin's join of `room` answered. `entered`: the phone is in room `room` now (a
+ * join from the Room view, an invite, another tab). `replaced`: an import, a restore or a reset replaced the campaign.
+ */
+export type RemovedEvent =
+  | { readonly type: 'removed'; readonly room: RoomCode; readonly hunter: HunterId | null }
+  | { readonly type: 'answered'; readonly room: RoomCode; readonly rejoin: boolean }
+  | { readonly type: 'tapped'; readonly room: RoomCode; readonly answer: TapAnswer }
+  | { readonly type: 'entered'; readonly room: RoomCode }
+  | { readonly type: 'replaced' };
+export const REMOVED_EVENTS = ['removed', 'answered', 'tapped', 'entered', 'replaced'] as const satisfies readonly RemovedEvent['type'][];
+/** `show`: open the REMOVED FROM ROOM window of `room`. `rejoin`: join `room` as a player with `hunter`. `tell`: a toast. */
+export type RemovedEffect =
+  | { readonly type: 'show'; readonly room: RoomCode; readonly hunter: HunterId | null }
+  | { readonly type: 'rejoin'; readonly room: RoomCode; readonly hunter: HunterId | null }
+  | { readonly type: 'tell'; readonly text: string; readonly kind: 'info' | 'warning' };
+export type RemovedResult = { readonly state: RemovedNotice; readonly effects: readonly RemovedEffect[] };
+
+/** The words of a Rejoin the GM has not allowed yet (today's words, which the window's own Rejoin button explains). */
+export const NOT_BACK_YET = 'Not allowed back yet. Ask your GM to press Allow back.';
+/**
+ * A Rejoin that failed as `kind`: whether the window comes back to try again. Today's behaviour: it does where a second
+ * try can work (the GM has not allowed the player back yet, or the server was not reached); a room that is gone, a
+ * campaign replaced, or another create or join under way ends the notice with its words.
+ */
+const AGAIN: { readonly [K in TapKind]: boolean } = {
+  removed: true, net: true, notfound: false, replaced: false, busy: false, badcode: false, keyRefused: false,
+};
+
+const told = (room: RoomCode, hunter: HunterId | null): RemovedResult =>
+  ({ state: { at: 'told', room, hunter }, effects: [{ type: 'show', room, hunter }] });
+const unchanged = (state: RemovedNotice): RemovedResult => ({ state, effects: [] });
+
+/** One event of the removed notice. An event for another room than the notice's, or one its state has no use for, changes nothing. */
+export function removedStep(n: RemovedNotice, e: RemovedEvent): RemovedResult {
+  if (e.type === 'removed') return told(e.room, e.hunter);
+  if (n.at === 'none') return unchanged(n);
+  if (e.type === 'replaced') return unchanged(NO_REMOVAL);
+  if (e.type === 'entered') return n.at === 'told' ? unchanged(NO_REMOVAL) : unchanged(n);
+  if (e.room !== n.room) return unchanged(n);
+  if (e.type === 'answered') {
+    if (n.at !== 'told') return unchanged(n);
+    if (!e.rejoin) return unchanged(NO_REMOVAL);
+    return { state: { ...n, at: 'rejoining' }, effects: [{ type: 'rejoin', room: n.room, hunter: n.hunter }] };
+  }
+  if (n.at !== 'rejoining') return unchanged(n);
+  const a = e.answer;
+  if (a.ok === true) return { state: NO_REMOVAL, effects: [{ type: 'tell', text: `Rejoined room ${n.room}.`, kind: 'info' }] };
+  const text = a.kind === 'removed' ? NOT_BACK_YET : tapWords(a.kind, n.room);
+  const tell: RemovedEffect[] = text ? [{ type: 'tell', text, kind: 'warning' }] : [];
+  if (!AGAIN[a.kind]) return { state: NO_REMOVAL, effects: tell };
+  const again = told(n.room, n.hunter);
+  return { state: again.state, effects: [...tell, ...again.effects] };
 }

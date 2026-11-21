@@ -1,13 +1,14 @@
 // party.ts: the hunters on this phone and which one is active. Pure. A view changes them only through a function
 // here, in `store.apply` (src/core/save-step.ts). A new hunter is made by the store (`store.newHunter`, which reserves
-// its ids) and handed in. The room's bound hunter follows a deleted one here; the room link's own fields are sync.ts's.
+// its ids) and handed in. The room's bound hunter follows a deleted one here, through bind.ts `rebindTo` as every rebind
+// does (the join's time stays); the room link's own fields are sync.ts's.
 import { newHunter } from './hunter/hunter.ts';
 import type { HunterRef, SheetKey } from './ids.ts';
 import type { Hunter, Save } from './save.ts';
 import type { Rules } from './rules.ts';
 import { refuse } from './save-step.ts';
 import type { Refused } from './save-step.ts';
-import { rebound } from './sync/outbox.ts';
+import { rebindTo } from './sync/bind.ts';
 
 /**
  * A hunter a picker offers: this phone's or a player's (by its sheet key), the id its control carries (a hunter id or a
@@ -45,11 +46,8 @@ export function removeHunter(save: Save, hid: string, fresh: Hunter | null): Sav
   if (!left.length && !fresh) return refuse('last');
   const hunters = left.length ? left : [fresh!];
   const active = hunters.some(h => h.id === save.settings.activeHunterId) ? save.settings.activeHunterId : hunters[0]!.id;
-  const sync = save.settings.sync;
-  const rebind = sync && sync.boundHunterId === hid
-    ? { ...sync, boundHunterId: active, ...(sync.outbox ? { outbox: rebound(sync.outbox, active) } : {}) }
-    : sync;
-  return { ...save, hunters, settings: { ...save.settings, activeHunterId: active, sync: rebind } };
+  const sync = save.settings.sync.boundHunterId === hid ? rebindTo(save.settings.sync, active) : save.settings.sync;
+  return { ...save, hunters, settings: { ...save.settings, activeHunterId: active, sync } };
 }
 
 /** Two plain values (what a save holds: numbers, strings, lists and objects) are the same, whatever the key order. */
