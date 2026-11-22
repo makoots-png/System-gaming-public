@@ -10,7 +10,7 @@ import { tick } from '../src/core/combat/timeline.ts';
 import type { Tick } from '../src/core/combat/timeline.ts';
 import { abilityId, combatantId, tag } from '../src/core/combat/ability-types.ts';
 import {
-  addSheetStatus, applyStatus, bareBody, cureStatus, describeStatus, dueAmount, FULL_HEAL, isControl, lasting, modified, modsOf, onSheet, opLines, removeStatus, settle,
+  OP_KINDS, addSheetStatus, applyStatus, bareBody, cureStatus, describeStatus, dueAmount, FULL_HEAL, isControl, lasting, modified, modsOf, onSheet, opLines, opsOffered, removeStatus, settle,
   sheetStatuses, shielded, shieldGrown, statusKey, statusOn, statusShield, withStatuses,
 } from '../src/core/combat/effect-ops.ts';
 import { parseAbility, parseOp, parseStatusDef } from '../src/core/combat/fight-parse.ts';
@@ -927,5 +927,13 @@ describe('the stagger op (keystones design A.7)', () => {
       'Fills 25% of the stagger bar of an elite or a boss it lands on',
       'Echoes the status gained: it also goes on the nearest other one on that side within 2 tiles who lacks it, for as long. An echo does not echo',
     ]);
+  });
+
+  test('echo is offered only in a trigger on a status gained or imposed', () => {
+    const kinds = ['damage', 'echo', 'heal'] as const;
+    expect(opsOffered(kinds, 'statusGained')).toEqual(['damage', 'echo', 'heal']);
+    expect(opsOffered(kinds, 'imposed')).toEqual(['damage', 'echo', 'heal']);
+    for (const event of [null, 'hitDealt', 'struck', 'turnStart', 'statusEnded', 'used']) expect(opsOffered(kinds, event)).toEqual(['damage', 'heal']);
+    expect(opsOffered(OP_KINDS, null)).toEqual(OP_KINDS.filter(k => k !== 'echo'));
   });
 });

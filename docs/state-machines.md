@@ -39,7 +39,7 @@ Where it lives:
 
 ## A fight
 
-The 2,500 random fights of tests/fight-model.test.ts, each of 10 to 49 commands from no fight. The walk found 37055 states and 73570 steps.
+The 2,500 random fights of tests/fight-model.test.ts, each of 10 to 49 commands from no fight. The walk found 36832 states and 73570 steps.
 
 ### A fight, from building it to its summary
 
@@ -56,8 +56,8 @@ stateDiagram-v2
   s1 --> s2 : the GM adds combatants
   s2 --> s3 : the GM starts it, everyone rolls an opening
   s2 --> s4 : the GM ends it before it starts
-  s3 --> s4 : the GM ends it
   s4 --> s1 : the GM closes it
+  s3 --> s4 : the GM ends it
   s3 --> s1 : the GM closes it
   s3 --> s4 : a side has nobody standing
 ```

@@ -311,11 +311,12 @@ export function randomCommand(g: Rng, fight: Fight | null, fresh: () => string):
   };
   // after the end, an extraction attempt on a fallen monster, as the GM's Extract button sits only on its card (any row
   // when none fell, which is refused). Its outcome follows the log's length, so a seed whose ended fights hold no fallen
-  // monster draws as it did. Aimed at any row, random play reached one extraction in 2,500 seeds, and lost it to drift
+  // monster draws as it did. Aimed at any row, random play reached one extraction in 2,500 seeds, and lost it to drift; now the GM fells a
+  // monster before most ends (case 'end' below) and tries its corpse in 7 of 10 ended fights that hold one (Nov 22: 80 seeds of 2,500)
   if (fight.phase === 'ended') {
     const fallen = fight.rows.filter(r => r.kind === 'monster' && !isUp(r)).map(r => r.id);
     const corpse = (): CombatantId => (fallen.length ? g.pick(fallen) : anyId());
-    return g.chance(0.8) ? { type: 'clear' } : g.pick<Command>([{ type: 'end' }, { type: 'extract', id: corpse(), by: fight.rows.find(r => r.kind === 'hunter')?.id ?? combatantId('c-ghost'), outcome: EXTRACTION_OUTCOMES[fight.log.length % EXTRACTION_OUTCOMES.length]! }]);
+    return g.chance(fallen.length ? 0.3 : 0.8) ? { type: 'clear' } : g.pick<Command>([{ type: 'end' }, { type: 'extract', id: corpse(), by: fight.rows.find(r => r.kind === 'hunter')?.id ?? combatantId('c-ghost'), outcome: EXTRACTION_OUTCOMES[fight.log.length % EXTRACTION_OUTCOMES.length]! }]);
   }
   if (fight.phase === 'setup') {
     const kind = g.pick(['start', 'start', 'start', 'add', 'remove', 'place', 'intent', 'reveal', 'end', 'act', 'adjust', 'refill', 'revive', 'status', 'ground', 'fudge'] as const);
@@ -377,7 +378,12 @@ export function randomCommand(g: Rng, fight: Fight | null, fresh: () => string):
     case 'place': return { type: 'place', id: anyId(), to: g.chance(0.5) ? near(g, fight.rows.find(r => r.id === anyId())?.place ?? place(0, 0), 2) : anyPlace(g) };
     case 'add': { const m = monster(); return { type: 'add', fightId: fightId(fresh()), rows: [m], openings: g.chance(0.9) ? openingsOf(g, [m]) : [] }; }
     case 'remove': return { type: 'remove', id: anyId() };
-    case 'end': return g.chance(0.5) ? { type: 'end' } : { type: 'clear' };
+    case 'end': {
+      // a monster falls before the GM ends the fight, as one did at a table; hits alone left one fallen in 43 of 2,500 seeds
+      const standing = fight.rows.find(r => r.kind === 'monster' && isUp(r));
+      if (standing && !fight.rows.some(r => r.kind === 'monster' && !isUp(r)) && g.chance(0.6)) return { type: 'adjust', id: standing.id, hp: -rowHp(standing) };
+      return g.chance(0.5) ? { type: 'end' } : { type: 'clear' };
+    }
     case 'adjust': return gmAdjust(g, anyId());
     case 'refill': return { type: 'refill', id: anyId() };
     case 'revive': return gmRevive(g, fight, anyId);

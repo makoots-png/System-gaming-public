@@ -44,7 +44,7 @@ export function triggerList(host, triggers, M, name, who) {
   const numIn = (attr, label, value) => `<label class="field"><span class="lbl">${esc(label)}</span><input type="number" inputmode="numeric" step="1" ${attr} value="${esc(value)}"></label>`;
   host.innerHTML = `<div class="mk-trigs" data-trigs></div><button type="button" class="mk-add" data-add-trig>Add a trigger</button>`;
   const raise = () => host.dispatchEvent(new Event('input', { bubbles: true }));
-  /** @type {{ el: HTMLElement; fx: any; id: string; need: any }[]} */
+  /** @type {{ el: HTMLElement; fx: any; id: string; need: any; event: string }[]} */
   const trigs = [];
   let made = 0;
   function addTrig(t) {
@@ -63,8 +63,8 @@ export function triggerList(host, triggers, M, name, who) {
       <div class="lbl">What lands</div><div data-tfx></div>
       <p class="mk-fx-err" data-terr role="alert"></p>`;
     host.querySelector('[data-trigs]').appendChild(el);
-    const fx = M.effects(el.querySelector('[data-tfx]'), { ops: t ? t.ops : [], kind: 'land' });
-    trigs.push({ el, fx, id, need: t && t.need ? t.need : null });
+    const fx = M.effects(el.querySelector('[data-tfx]'), { ops: t ? t.ops : [], kind: 'land', event: t ? t.on : 'hitDealt' });
+    trigs.push({ event: t ? t.on : 'hitDealt', el, fx, id, need: t && t.need ? t.need : null });
   }
   triggers.forEach(addTrig);
   /** A trigger as its box holds it, or the words of what is wrong. */
@@ -95,6 +95,7 @@ export function triggerList(host, triggers, M, name, who) {
   function draw() {
     for (const t of trigs) {
       const ev = t.el.querySelector('[data-tk="on"]').value, party = PARTY.includes(ev);
+      if (ev !== t.event) { t.event = ev; t.fx.setEvent(ev); }
       t.el.querySelector('[data-tf="tag"]').hidden = !(party || ev === 'used');
       t.el.querySelector('[data-tag-lbl]').textContent = ev === 'used' ? 'Its tag' : 'Only uses tagged (optional)';
       t.el.querySelector('[data-tf="key"]').hidden = !(ev === 'statusGained' || ev === 'statusEnded');

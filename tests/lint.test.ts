@@ -510,7 +510,7 @@ test('a view computes no fight number: from the modules that work one out it imp
     'src/core/combat/space.ts': ['place', 'tiles', 'percent', 'openGrid', 'TERRAIN', 'TERRAINS'],
     'src/core/combat/timeline.ts': ['tick', 'roundOf', 'roundsOf'],
     'src/core/stats.ts': ['STAT_KEYS', 'STAT_LABELS', 'STAT_SHORT', 'above'], // `above`: the rules reference draws the curve it explains
-    'src/core/combat/effect-ops.ts': ['healsFully', 'reactionMayHold', 'OP_KINDS', 'describeStatus', 'freeStatusKey', 'opLines'],
+    'src/core/combat/effect-ops.ts': ['healsFully', 'reactionMayHold', 'OP_KINDS', 'describeStatus', 'freeStatusKey', 'opLines', 'opsOffered'],
     'src/core/combat/fight-turn.ts': [],
     'src/core/combat/fight-channel.ts': [],
   };

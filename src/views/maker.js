@@ -16,7 +16,7 @@ import { RANKS } from '../core/rules.ts';
 import { STAT_KEYS, STAT_LABELS } from '../core/stats.ts';
 import { amountWords, bareRefusal, parseFormula, printFormula } from '../core/formula.ts';
 import { SHEET_LABELS } from '../core/hunter/derive.ts';
-import { OP_KINDS, opLines } from '../core/combat/effect-ops.ts';
+import { OP_KINDS, opLines, opsOffered } from '../core/combat/effect-ops.ts';
 import { LEVELS } from '../core/combat/sight-levels.ts';
 import { isFormulaKey } from '../core/combat/op-amount.ts';
 import { sheetOpCap } from '../core/combat/standing.ts';
@@ -416,10 +416,15 @@ function checkRow(r, item) {
 /**
  * The effects editor in `box`: one row per op. `kind` picks the ops a row may be and the quick chips; 'item' labels the
  * six values of "By rank" with the rarities. It raises an `input` event on `box` after each change of its own, so a shell redraws.
- * @param {HTMLElement} box @param {{ ops?: unknown; kind: 'status' | 'item' | 'skill' | 'land'; newStatus?: () => Promise<{ key: string; def?: unknown } | null> }} o
+ * @param {HTMLElement} box @param {{ ops?: unknown; kind: 'status' | 'item' | 'skill' | 'land'; event?: string | null; newStatus?: () => Promise<{ key: string; def?: unknown } | null> }} o
  */
 function effects(box, o) {
-  const item = o.kind === 'item', kinds = ROW_KINDS[o.kind], defaultWhen = item || o.kind === 'land' ? 'use' : null;
+  const item = o.kind === 'item', defaultWhen = item || o.kind === 'land' ? 'use' : null;
+  /** The ops a new row may be here (core's `opsOffered`): an echo only in a trigger on a status gained or imposed. */
+  const offered = () => opsOffered(ROW_KINDS[o.kind], o.event ?? null);
+  /** A row's own kind is always listed, so an echo kept after the trigger's event changed is shown, not dropped. */
+  const kindsOf = r => (offered().includes(r.kind) || !ROW_KINDS[o.kind].includes(r.kind) ? offered() : [...offered(), r.kind]);
+  const idle = r => r.kind === 'echo' && !offered().includes('echo');
   const rows = (Array.isArray(o.ops) ? o.ops : []).flatMap(x => parseOp(x, rules()) || []).map(rowOf);
   const tierLabels = item ? RARITIES.map(r => [RARITY_SHORT[r], r]) : RANKS.map(r => [r, `rank ${r}`]);
   const statuses = () => Object.entries(rules().conditions).filter(([k]) => !isStateChip(k)).map(([k, c]) => [k, String((c && c.label) || k)]);
@@ -480,7 +485,7 @@ function effects(box, o) {
         <div class="mk-two">${smallNum('q', 'Stacks', r.q, { aria: `Stacks effect ${i + 1} moves`, placeholder: 'All' })}<label class="field"><span class="lbl">Arrives as</span><select data-f="as" data-pick aria-label="Effect ${i + 1} arrives as">${opt('', 'The same status', r.as)}${list.map(([k, l]) => opt(k, l, r.as)).join('')}</select></label></div>`;
     } else if (r.kind === 'hasten' || r.kind === 'guard') body = smallNum('q', r.kind === 'hasten' ? 'Sooner by (% of your action)' : 'Takes off the strike (%)', r.q, { aria: `Percent of effect ${i + 1}`, decimal: true });
     else if (r.kind === 'stagger') body = `${smallNum('q', 'Of the bar (%)', r.q, { aria: `Share of the stagger bar, effect ${i + 1}`, decimal: true })}<p class="mk-avg">Only an elite or a boss has a bar. One effect fills at most ${Math.round(K.staggerOpMax * 100)}% of it.</p>`;
-    else if (r.kind === 'echo') body = `${smallNum('q', 'Out to (tiles)', r.q, { aria: `Reach of effect ${i + 1}` })}<p class="mk-avg">Only in a trigger set off when a status is gained: that status also goes on the nearest other one on that side who lacks it, for as long. It does not echo again.</p>`;
+    else if (r.kind === 'echo') body = `${smallNum('q', 'Out to (tiles)', r.q, { aria: `Reach of effect ${i + 1}` })}${idle(r) ? '<p class="mk-fx-err" role="note">Does nothing here: an echo acts only in a trigger on a status gained or imposed.</p>' : ''}<p class="mk-avg">Only in a trigger set off when a status is gained or imposed: that status also goes on the nearest other one on that side who lacks it, for as long. It does not echo again.</p>`;
     else if (r.kind === 'dispel') body = segF('which', `Which harmful statuses, effect ${i + 1}`, WHICH_LABEL, r.which);
     else if (r.kind === 'stayHidden') body = group('Stays hidden when', segF('stayOn', `What effect ${i + 1} keeps from ending a hide`, STEALTH_END_LABEL, r.stayOn));
     else if (r.kind === 'note') body = `<input type="text" maxlength="200" autocomplete="off" data-f="text" aria-label="Note of effect ${i + 1}" placeholder="What the GM rules on" value="${esc(r.text)}">`;
@@ -490,7 +495,7 @@ function effects(box, o) {
       body = r.kind === 'aura' ? `${seg('data-on', `Whom effect ${i + 1} reaches`, AURA_LABEL, r.on)}${tilesIn}` : tilesIn;
     }
     return `<div class="mk-fx" data-row="${i}">
-      <div class="mk-fx-top"><select data-f="kind" aria-label="Effect ${i + 1}">${kinds.map(k => `<option value="${k}"${k === r.kind ? ' selected' : ''}>${esc(KIND_LABEL[k])}</option>`).join('')}</select>
+      <div class="mk-fx-top"><select data-f="kind" aria-label="Effect ${i + 1}">${kindsOf(r).map(k => `<option value="${k}"${k === r.kind ? ' selected' : ''}>${esc(KIND_LABEL[k])}${idle(r) && k === r.kind ? ' (does nothing here)' : ''}</option>`).join('')}</select>
         ${r.kind === 'stat' ? `<select data-f="stat" aria-label="Stat of effect ${i + 1}">${STAT_KEYS.map(k => `<option value="${k}"${k === r.stat ? ' selected' : ''}>${esc(STAT_LABELS[k])}</option>`).join('')}</select>` : ''}
         ${r.kind === 'sheet' ? `<select data-f="sheetKey" aria-label="Number of effect ${i + 1}">${SHEET_KEY_LABEL.map(([k, l]) => `<option value="${k}"${k === r.sheetKey ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>` : ''}
         <button type="button" class="icon-btn" data-rm aria-label="Remove effect ${i + 1}">&times;</button></div>
@@ -570,7 +575,7 @@ function effects(box, o) {
       const r = op.op === 'applyStatus' || op.op === 'cureStatus' ? blank(op.op) : rowOf(op);
       r.mirror = mirrorOf(op); return add(r);
     }
-    if (b.hasAttribute('data-add')) return add(blank(kinds[0]));
+    if (b.hasAttribute('data-add')) return add(blank(offered()[0]));
     if (b.hasAttribute('data-rm')) { rows.splice(i, 1); render(); raise(); return; }
     if (b.dataset.type) { rows[i].type = b.dataset.type; render(); raise(); return; }
     if (b.dataset.when) { rows[i].when = b.dataset.when === 'use' ? 'use' : null; render(); raise(); return; }
@@ -622,6 +627,8 @@ function effects(box, o) {
     /** The ops the rows hold (a row with an error is left out; `blocked` is then true). */
     ops: () => rows.map(r => checkRow(r, item)).flatMap(c => (c.op ? [c.op] : [])),
     blocked: () => rows.some(r => !!checkRow(r, item).err),
+    /** The event of the trigger this list lands for changed: the list offers what that event allows, and keeps a row it no longer offers. */
+    setEvent(ev) { o.event = ev; render(); },
   };
 }
 

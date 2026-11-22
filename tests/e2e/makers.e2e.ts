@@ -1240,7 +1240,8 @@ test('every kind of op round-trips through the status maker and its parser, the 
   await onboardGM(page);
   const d = statusMaker(page);
   await go(page, 'workshop');
-  for (const kind of OP_KINDS) {
+  // A status's own list does not offer echo (it acts only in a trigger on a status gained or imposed): its test is the one below.
+  for (const kind of OP_KINDS.filter(k => k !== 'echo')) {
     await test.step(kind, async () => {
       await workshop(page, 'status').locator('[data-new]').tap();
       await d.locator('[data-name]').fill(`Op ${kind}`);
@@ -1272,6 +1273,38 @@ test('every kind of op round-trips through the status maker and its parser, the 
       if (tiered) expect(Object.values(ranked.ops[0] as object).some((v: unknown) => Array.isArray(v) && v.length === 6)).toBe(true);
     });
   }
+});
+
+test('the echo effect appears in a trigger\'s list only when the trigger is on a status gained or imposed', async ({ device }) => {
+  const page = (await device('gm')).page;
+  await onboardGM(page);
+  const d = statusMaker(page);
+  await go(page, 'workshop');
+  await workshop(page, 'status').locator('[data-new]').tap();
+  await d.locator('[data-name]').fill('Echo test');
+  const when = d.locator('[data-group="when"]');
+  await when.locator('> summary').tap();
+  await when.locator('[data-add-trig]').tap();
+  const on = when.locator('[data-tk="on"]'), kind = when.locator('[data-tfx] [data-row="0"] [data-f="kind"]');
+  const echo = when.locator('[data-tfx] [data-f="kind"] option[value="echo"]');
+  await when.locator('[data-tfx] [data-add]').tap();
+  await test.step('on a hit dealt the list has no echo', async () => {
+    await on.selectOption('hitDealt');
+    await expect(echo).toHaveCount(0);
+  });
+  for (const ev of ['statusGained', 'imposed']) {
+    await test.step(`on ${ev} it has one`, async () => {
+      await on.selectOption(ev);
+      await expect(echo).toHaveCount(1);
+    });
+  }
+  await test.step('an echo chosen and then left by the event stays, marked as doing nothing', async () => {
+    await kind.selectOption('echo');
+    await on.selectOption('struck');
+    await expect(kind).toHaveValue('echo');
+    await expect(echo).toHaveText(/does nothing here/);
+    await expect(when.locator('[data-tfx] [data-row="0"]')).toContainText('Does nothing here');
+  });
 });
 
 test('a GM makes a hide by rank that starts anywhere and that only damage it deals ends; the library holds those fields and Edit shows them as saved', async ({ device }) => {

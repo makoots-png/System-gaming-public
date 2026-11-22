@@ -288,6 +288,17 @@ const OP_KIND_SET: { readonly [K in OpKind]: true } = {
 };
 export const OP_KINDS = Object.keys(OP_KIND_SET) as readonly OpKind[];
 
+/** The trigger events an echo acts on: a status gained, or imposed (land.ts `echoed`). Anywhere else it does nothing. */
+const ECHO_EVENTS: readonly string[] = ['statusGained', 'imposed'];
+/**
+ * Which of `kinds` a list of effects offers, given where the list is: `event` is the event of the trigger it lands for, or
+ * null when it is not in a trigger (a status's own list, a threshold, an end, an item, an ability). An echo is offered only
+ * in a trigger on a status gained or imposed; every other kind is offered wherever `kinds` allows it.
+ */
+export function opsOffered<K extends string>(kinds: readonly K[], event: string | null): readonly K[] {
+  return kinds.filter(k => k !== 'echo' || (event !== null && ECHO_EVENTS.includes(event)));
+}
+
 /**
  * What an ability's own `ops` may do to each target it lands on; the rest act only from inside a status. `mana` and
  * `fatigue` change the target's at once (an item drunk in a fight: abilities.ts `itemAbility`).
