@@ -18,7 +18,7 @@ const holding = (page: Page, life: object, n: number, gold = 0, rank = 'E') => p
 /** The active hunter at `level` (the peak with it) and of `rank`, as the GM's edits would leave it. */
 const standing = (page: Page, level: number, rank: string) => page.evaluate(([level, rank]) => hunterApp.store.update((d: any) => {
   const h = d.hunters.find((x: any) => x.id === d.settings.activeHunterId) ?? d.hunters[0];
-  h.level = level; h.peakLevel = level; h.xp = 0; h.rank = rank;
+  h.level = level; h.peakLevel = level; h.xp = 0; h.rank = rank; h.rankBy = 'gm';
 }, 'test-setup'), [level, rank] as const);
 const crystalCard = (page: Page) => page.locator('#view-status [data-item]').filter({ hasText: 'Resurrection Crystal' });
 const crystals = (h: any): number => h.items.filter((i: any) => i.revive).reduce((n: number, i: any) => n + i.qty, 0);
