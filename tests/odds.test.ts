@@ -4,18 +4,22 @@
 // every run, and the same inputs answer the same odds.
 import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
-import { fightId, reduce } from '../src/core/combat/fight.ts';
+import { fightId, reduce, runningState } from '../src/core/combat/fight.ts';
 import type { Fight, NewRow, Running, Setup } from '../src/core/combat/fight.ts';
 import { IDLE, ODDS_EVENTS, ODDS_STATES, TABLE, fudgeOn, oddsDetail, oddsKey, oddsLine, oddsStep, progressOf, readOdds, weighable } from '../src/core/combat/odds.ts';
 import type { Odds, OddsRun, RowEnd, RunEnd } from '../src/core/combat/odds.ts';
 import { playBegin, playOver, playStep } from '../src/core/combat/play.ts';
 import type { Play } from '../src/core/combat/play.ts';
 import { sensible } from '../src/core/combat/policy.ts';
-import { hunter, monster } from './models/fight-sim.ts';
+import { hunter, monster, scriptsOn } from './models/fight-sim.ts';
+import { omenMove } from '../src/core/combat/fight-turn.ts';
+import { monsterRows } from '../src/core/combat/rows.ts';
+import { seedMonsters } from '../src/core/registry/monsters.ts';
+import { combatantId } from '../src/core/combat/ability-types.ts';
 import { GRID, ROSTER, ctx, randomCommand, rng } from './models/fight-play.ts';
 import { atHp } from './fixtures/life.ts';
 import { statusKey, statusOn } from '../src/core/combat/effect-ops.ts';
-import { tiles } from '../src/core/combat/space.ts';
+import { place, tiles } from '../src/core/combat/space.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 
 const setupOf = (rows: readonly NewRow[], grid = undefined as typeof GRID | undefined): Setup => {
@@ -200,6 +204,28 @@ describe('what a played fight spends (lead-look-6-odds.md, findings 2 and 3)', (
     const moves = counts.filter((c, i) => i === 0 || c !== counts[i - 1]);
     expect(moves.slice(0, 3)).toEqual([0, 1, 2]);
     expect(run.state === 'done' && run.odds.ends[0]!.commands).toBe(Math.max(...counts));
+  });
+});
+
+describe('a played fight and a mythic\'s script (notes-11-keystones.md, design B.3)', () => {
+  // The Fourth Rider's first phase announces Named in the Book on its second turn, aimed at the weakest hunter; the omen's
+  // move is no ability of its row, and it lands on the Rider's next turn.
+  test('a played fight lands a mythic\'s omen on its landing turn', () => {
+    const ON = scriptsOn(), X = combatantId('X');
+    const rider = { ...monsterRows(seedMonsters(ON).find(m => m.script === 'the-fourth-rider')!, [X], ON)[0]!, place: place(5, 5) };
+    const made = reduce(null, { type: 'add', fightId: fightId('f-landing'), rows: [rider, { ...hunter('tank', 'S', 'T', ON).row, place: place(7, 5) }, { ...hunter('cannon', 'S', 'C', ON).row, place: place(12, 5) }], openings: [] }, { rules: ON }).fight!;
+    if (made.phase !== 'setup') throw new Error('no setup');
+    let p: Play = playBegin(made, 7, ON).play;
+    for (let i = 0; i < 40 && !playOver(p) && runningState(p.fight as Running).at !== 'landing'; i++) p = playStep(p as Play & { fight: Running }, () => sensible, { capRounds: 40, endAtRounds: null }, ON).play;
+    if (playOver(p)) throw new Error('the fight ended before the Rider announced');
+    const f = p.fight as Running, x = f.rows.find(r => r.id === X)!;
+    expect(runningState(f)).toEqual({ at: 'landing', id: X });
+    const move = omenMove(x, ON)!;
+    expect(move.ability.name).toBe('Named in the Book');
+    const s = playStep(p as Play & { fight: Running }, () => sensible, { capRounds: 40, endAtRounds: null }, ON);
+    expect(s.choice?.type === 'act' && [s.choice.ability.id, s.choice.aim]).toEqual([move.ability.id, move.aim]);
+    expect(s.effects.some(e => e.type === 'refused')).toBe(false);
+    expect(s.play.fight.rows.find(r => r.id === X)!.mythic?.at, 'the omen is spent').toBe('calm');
   });
 });
 

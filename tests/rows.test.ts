@@ -28,6 +28,7 @@ import type { Command, Ctx, Fight } from '../src/core/combat/fight.ts';
 import type { NewRow } from '../src/core/combat/fight-types.ts';
 import type { Body } from '../src/core/combat/effect-ops.ts';
 import { mythicStep } from '../src/core/combat/mythic.ts';
+import { MYTHICS } from '../src/core/registry/mythics.ts';
 import type { OmenKey } from '../src/core/combat/mythic-types.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
@@ -380,6 +381,16 @@ describe('a mythic (notes-11-keystones.md, design B.3)', () => {
     expect(monsterRows(monster({ kind: 'boss' }), [id('m1')], ON)[0]!.mythic, 'a monster of another kind plays no script').toBeNull();
     const { script: _named, ...unnamed } = zaratan();
     expect(monsterRows(unnamed, [id('m1')], ON)[0]!.mythic, 'a mythic that names none plays plain').toMatchObject({ script: 'plain' });
+  });
+
+  // A script's `hp` is a factor on its seed's max HP (registry/mythics.ts); the Fourth Rider's is not 1.
+  test('a mythic row\'s max HP is its seed\'s times its script\'s hp, and its seed\'s with mythic phases off', () => {
+    const rider = monster({ name: 'The Fourth Rider', rank: 'S', archetype: 'caster', kind: 'mythic', script: 'the-fourth-rider', tweak: { hp: 1.5 } });
+    const factor = MYTHICS['the-fourth-rider'].hp;
+    expect(factor).not.toBe(1);
+    const hpOf = (tweakHp: number) => monsterSheet('S', 'caster', 'mythic', RULES, [], { ...NO_TWEAK, hp: tweakHp }).hpMax;
+    const [on] = monsterRows(rider, [id('m1')], ON), [off] = monsterRows(rider, [id('m1')], R);
+    expect([on!.life, off!.life]).toEqual([{ at: 'up', hp: hpOf(1.5 * factor) }, { at: 'up', hp: hpOf(1.5) }]);
   });
 
   test('a mythic joining a running fight counts its phase\'s clock from its joining', () => {

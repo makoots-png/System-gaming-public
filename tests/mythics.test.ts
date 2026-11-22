@@ -220,7 +220,7 @@ describe('each script\'s shape, played on the reducer (design B.6, "The test to 
     }
   }
 
-  test('Zaratan\'s Dive cannot be hurt and ends after 3 rounds', () => {
+  test('Zaratan\'s Dive cannot be hurt and ends after 4 rounds', () => {
     const f0 = go(started(mythic('zaratan-the-island-that-wakes', place(5, 5)), hunter('A', place(8, 5))), { type: 'mythic', by: id('X'), step: 'next' }).fight;
     const dive = MYTHICS['zaratan-the-island-that-wakes'].phases[1]!, since = standing(f0).since, hp = rowHp(body(f0, 'X'));
     expect(dive.name).toBe('The Dive');
@@ -228,7 +228,7 @@ describe('each script\'s shape, played on the reducer (design B.6, "The test to 
     let hits = 0;
     for (const t of turns(f0, () => false)) {
       if (t.said.includes('Zaratan, the Island That Wakes enters The Island Wakes.')) {
-        expect(t.fight.now, 'it surfaces at its first turn once 3 rounds have passed').toBeGreaterThanOrEqual(since + 3 * RULES.fight.round);
+        expect(t.fight.now, 'it surfaces at its first turn once 4 rounds have passed').toBeGreaterThanOrEqual(since + 4 * RULES.fight.round);
         expect(standing(t.fight)).toMatchObject({ phase: 2, at: 'calm' });
         expect(hits, 'the party struck it in the Dive').toBeGreaterThan(0);
         return;

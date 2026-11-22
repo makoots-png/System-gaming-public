@@ -2,7 +2,7 @@
 // notes-11-keystones.md, design B.3 and B.4). Every expected value is read from B.3's table and from the scripts' own
 // words in registry/mythics.ts: the Angel's First Breath begins at 65% of its max HP and its Note at 30%; its Trumpet
 // Raised has a clock of 5 rounds and the rotation act, Stars Fall, act, Weighed; Zaratan's Dive is a clock phase of
-// 3 rounds between the Shore and the Island Wakes, which begins at 55%.
+// 4 rounds between the Shore and the Island Wakes, which begins at 55%.
 import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
 import { isRefused } from '../src/core/save-step.ts';
@@ -102,14 +102,17 @@ describe('the readers', () => {
   });
 
   test('a gate phase past its clock is enraged and a clock phase is over', () => {
-    const raised = calm(ANGEL, 0, 0, 2000), at = (rounds: number): Tick => tick(2000 + rounds * ROUND);
+    const raised = calm(ANGEL, 0, 1, 2000), at = (rounds: number): Tick => tick(2000 + rounds * ROUND);
     expect([clockOut(raised, tick(at(5) - 1), RULES), enraged(raised, tick(at(5) - 1), RULES)]).toEqual([false, false]);
     expect([clockOut(raised, at(5), RULES), enraged(raised, at(5), RULES)]).toEqual([true, true]);
     // Enraged, a gate phase still ends only at its gate.
     expect(phaseOver(row(raised, 900), at(5), RULES)).toBe(false);
     expect(phaseOver(row(raised, 650), tick(2000), RULES)).toBe(true);
-    const dive = calm(ZARATAN, 1, 0, 2000);
-    expect([phaseOver(row(dive, 550), tick(at(3) - 1), RULES), phaseOver(row(dive, 550), at(3), RULES)]).toEqual([false, true]);
+    const dive = calm(ZARATAN, 1, 1, 2000);
+    expect([phaseOver(row(dive, 550), tick(at(4) - 1), RULES), phaseOver(row(dive, 550), at(4), RULES)]).toEqual([false, true]);
+    // Before its first turn in a phase (beat 0, no omen announced) neither its gate nor its clock ends it (row B2).
+    expect([phaseOver(row(calm(ANGEL, 0, 0, 2000), 650), at(9), RULES), phaseOver(row(calm(ZARATAN, 1, 0, 2000), 550), at(9), RULES)]).toEqual([false, false]);
+    expect(phaseOver(row(standing('omen', ANGEL, 0, 0, 2000), 650), at(9), RULES), 'an omen announced is a turn taken').toBe(true);
     expect(enraged(dive, at(10), RULES)).toBe(false);
     expect(phaseOver(row(null, 1), at(10), RULES)).toBe(false);
   });

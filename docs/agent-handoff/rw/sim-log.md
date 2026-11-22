@@ -1689,3 +1689,106 @@ The bold cells are in `OPEN` (tests/fight-sim.test.ts). What each would need, no
 - **B7**: the Dive's rising sea aims at the crowd's tile and every hunter steps out of it; the Rider's Pale Horse band
   (30% of its HP) falls in two or three of its turns, and The Book Opens takes the falls. A wider sea or the Pale Horse
   opening on Named would move them; not tried past one run each (rising hits 0.8: the Dive 0.040, 1.0: 0.043).
+
+## MY5, second pass: B3 and B5's measure, the misses in OPEN
+
+**Steps 1 and 2 moved no number.** play.ts plays the landing turn (`omenNeeds`) and `monsterRows` applies a script's
+`hp`; B1 read 0.072, 0.060, 0.077, 0.088 after each, the same fights seed by seed.
+
+### Step 3: what an answer costs (B3, B5)
+
+**The premise, measured per window** (an omen's announce to its landing; 150 fights a script; the party answering
+everything against the party answering nothing; HP taken in the window as a share of max HP):
+
+| Omen | windows (all / none) | HP taken p50, p90 (none) | answers met by hits, answering all | the same, answering none |
+|---|---|---|---|---|
+| the Rider's Named | 478 / 472 | 0.042, 0.084 | stagger 30, burst 99 | stagger 32, burst 109 |
+| the Angel's Breath | 136 / 128 | 0.074, 0.095 | stagger 27, burst 67 | stagger 10, burst 101 |
+| the Angel's Note | 284 / 252 | 0.046, 0.148 | stagger 81 | stagger 87 |
+| Zaratan's Trench | 89 / 49 | 0.047, 0.068 | stagger 13, burst 43 | stagger 7, burst 16, interrupt 15 |
+
+A party that aims no answer meets a stagger or a burst answer as often as one that does: the bar breaks in 10 to 25% of
+windows from the hits a party deals anyway, and the burst shares (5 to 8%) sit inside one round of ordinary damage
+(p50 4 to 7%). Zaratan's Trench was also cancelled 15 times by the tank's own taunt, which its policy casts whenever the
+mythic aims elsewhere.
+
+**Tried: answers no ordinary turn meets, and a hit saved for them** (all in memory, 200 fights each):
+- a stagger answer only by a break that takes at least 0.6 of the bar in one change (no ordinary hit; a crit of one
+  neither), every burst share 0.12 (over p90 of ordinary windows), one hit answer per omen, and a party that saves the
+  cannon's Focus for the window (begins it while calm, holds it, releases it when its average answers). The saving party
+  lost to the one that answered nothing: the Rider at hp 0.6 won 0.145 against 0.225, Zaratan at 0.8 0.170 against
+  0.270, the Angel at 0.7 0.405 against 0.375; saving for one kind alone was worse (the Rider without burst 0.085, the
+  Angel without stagger 0.110). The held Focus is about as much damage as the bolts it replaces, but it comes late, and
+  the clocks punish late damage: at hp 0.8 the Rider's saving party saw a doom in 87% of fights at a median of 7 rounds.
+- omens that answering avoids hit harder (Stars Fall 1.0, the First Breath 1.1, the Sinking 0.9, the Sea Rises 0.8,
+  Pale Wake 0.8): the Angel answering won 0.035, answering nothing 0.080. No separation.
+- a stacking Dread (+20% or +40% damage each) on every omen that lands whole: no more separation than without it (the
+  Rider 0.080 against 0.045, then 0.065 against 0.030; without it 0.088 against 0.053; the Angel 0.070 against 0.080).
+- clocks about 1.6 times as long (the Angel 8, 6, 5; Zaratan 9, 3, 10; the Rider 8, 8, 6) with hp 1.0 and 1.2: fewer
+  dooms (the Angel 23 to 72 of 200), still no separation (the Angel 0.035 against 0.050, Zaratan 0.125 against 0.075,
+  the Rider 0.010 against 0.005).
+
+**The cause.** In the rows' own fights 467 (plain) to 599 (the Angel, Zaratan) of B1's 600 fights reach an enraged turn,
+and a fight a doom lands in is lost (B6: at most 0.009 won). The clocks decide a mythic fight. An answer cancels or
+weakens a move, which saves HP; it buys no time, so a party that answers well and one that answers nothing lose the
+same race. B3's bound is the owner's ("a party that ignores its warnings loses") and stays; no number of the omens moves
+it while answers do not touch the clock.
+
+**What would** (a design call, outside this unit's files): an answer met moves its phase's clock back
+(`mythic.answerTime` rounds on the standing's `since`, carried by the `cancel` and `weaken` events), so answering buys
+the time the fight is lost for want of. It is the one lever that ties the answer to what decides the fight.
+
+**Kept:** Zaratan's Trench is no longer cancelled by a taunt (interrupt `hold`, `root`): the taunt answered it in
+ordinary play. B1 Zaratan 0.077 → 0.075, B3 0.042 → 0.032, B5 interrupt 0.98.
+
+| Row (600 fights) | Angel | Zaratan | Rider | Bound |
+|---|---|---|---|---|
+| B3 wins answering none | 0.078 | 0.032 | 0.053 | under 0.01 |
+| B5 without interrupt / stagger / burst, over B1 | 0.94 / 0.92 / 1.03 | 0.98 / 1.00 / 1.00 | 0.64 / 1.00 / 1.00 | at most 0.8 |
+
+### Step 4: the misses in OPEN
+
+**B2 with three cannons (5 and 199 skips): a reducer rule, not a number.** `phaseOver` (mythic.ts) ended a phase at the
+mythic's turn start whenever it was held at its gate or past a clock phase's clock, whether or not it had taken a turn
+in the phase. The phase change spends the turn it happens on, so three cannons that took a band between that turn and
+the next skipped the phase: the Angel's First Breath 5 times. In Zaratan's Dive their hits, held at the gate, still
+fill its bar; a stagger pushed its first Dive turn past the 3-round clock, and the Dive ended on the turn it began
+(199). The rule now: a phase ends only once the mythic has taken a turn in it (an act beat taken or an omen announced);
+until then its HP stays held at the gate. Test: "a mythic pushed to its gate before its first turn in a phase takes that
+turn before the next phase" (tests/fight.test.ts); without the rule the Angel goes from The First Breath to The Note
+with no beat. B2: 0 for every script and both parties.
+
+**B7, the Fourth Rider (The Book Opens 0.739 of first falls, the Pale Horse 0.064).** The Pale Horse's band was 30% of
+its HP, which the party takes in two or three of its turns, so Named in the Book landed in it at most once. Measured,
+600 fights at hp 0.8: The Book Opens from 0.6, falls 0.079 / 0.562 / 0.359 (B1 0.090); from 0.55, 0.226 / 0.539 /
+0.235 (B1 0.100, the edge). **The Book Opens 0.7 → 0.55**, and **hp 0.8 → 0.83** for B1: 0.082, falls 0.330 / 0.501 /
+0.169, B4 0.060 (three cannons now meet a Pale Horse long enough for Named to land on them).
+
+**B7, Zaratan (the Dive 0.007).** The Sea Rises aimed at the crowd's tile, and every hunter stepped out of it, so nobody
+was in danger in the Dive. Measured, 600 fights at hp 1: reach 3, 0.009; reach 4 and hits 0.6, 0.024; aimed at the
+weakest with hits 0.6, 0.038; at the weakest with hits 0.9, 0.050 (the floor exactly); at the weakest with hits 0.8 and
+the Dive's clock 4, 0.180 (B1 0.020). **The Sea Rises: crowd → weakest, hits 0.4 → 0.8; the Dive's clock 3 → 4; hp
+1 → 0.93** (0.95 won 0.055, 0.97 0.037, 0.93 0.067). B1 0.067, falls 0.268 / 0.287 / 0.445, B8 median 20.0 (the
+edge: the Dive's fourth round is a round more).
+
+**B4, three cannons (plain 0.380, the Angel 0.243, Zaratan 0.710; the Rider now 0.060).** Measured with no script, 200
+fights: today's brute mythic (M1's body) loses 0.435 to three cannons and 0.065 to the mixed party; Zaratan's brute
+body 0.525 and 0.070; the Angel's caster body 0.040 and 0.030; the Rider's skirmisher body 0.000 and 0.040. So against
+a brute body the miss is the body's, before any script: three cannons deal about a third more a round than the mixed
+party (arc bolt 50 against the tank's strike 24 and the bruiser's 40, on the Rider) and a brute's resist is low.
+Zaratan's Shell of armor and resist (30 each, then 20 each) at hp 0.8 to 1.0 still lost 0.42 to 0.80 to three cannons
+while the mixed party fell to 0.000 to 0.25, and clocks about 1.5 times as long left plain at 0.447 and Zaratan at
+0.660. The lever is the brute archetype or the mythic kind (`fight.archetypes`, `fight.kinds.mythic`), outside this
+unit. The Angel's three cannons reach a doom in 370 of 600 fights where the mixed party reaches one in nearly all: the
+clock race of step 3 again.
+
+| Row (600 fights) | plain | Angel | Zaratan | Rider | Bound |
+|---|---|---|---|---|---|
+| B1 wins | 0.072 | 0.060 | 0.067 | 0.082 | 0.05 to 0.10 |
+| B2 skips, mixed / three cannons | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 |
+| B3 wins answering none | none | **0.078** | **0.048** | **0.060** | under 0.01 |
+| B4 three cannons win | **0.380** | **0.243** | **0.710** | 0.060 | at most 0.15 |
+| B5 without interrupt / stagger / burst, over B1 | none | **0.95 / 0.92 / 1.03** | **1.09 / 1.00 / 1.00** | 0.63 / **0.98 / 1.00** | at most 0.8 |
+| B6 won after a doom | 0.002 | 0.006 | 0.004 | 0.000 | under 0.01 |
+| B7 most / least less its floor | one phase | 0.450 / 0.173 | 0.445 / 0.168 | 0.501 / 0.069 | at most 0.6 / at least 0 |
+| B8 median rounds | 15.3 | 13.9 | 20.0 | 14.4 | 10 to 20 |

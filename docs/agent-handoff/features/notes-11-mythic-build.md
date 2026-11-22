@@ -342,3 +342,58 @@ the rows turn it on in the sim's own rules (`scriptsOn`).
 - `principle-attack-the-premise`: B3 and B5 failing for every script, whatever the omens' hits, pointed at the measure
   (answers met by ordinary hits), not at another number.
 - `principle-test-behavior-not-implementation`: each policy test lands the omen after the choice and reads the HP.
+
+## MY5, second pass: play.ts lands an omen, `monsterRows` applies `hp`, B3 to B7
+
+Branch `mythic-5b`. The switch `fight.mythic.scripts` stays off. Every measure and move is in rw/sim-log.md, "MY5,
+second pass".
+
+### What exists
+
+- play.ts `rollsFor` asks fight-turn.ts `omenNeeds` on a landing turn, so the odds engine plays a scripted mythic; the
+  sim's own landing turn is gone (B1 read the same, seed by seed). Test in tests/odds.test.ts.
+- rows.ts `monsterRows` puts a script's `hp` on the row's tweak (max HP and bar), the one place; the sim's tweak is gone.
+  Test in tests/rows.test.ts.
+- mythic.ts `phaseOver`: a phase ends only once the mythic has taken a turn in it (`actedIn`: an act beat taken or an
+  omen announced). B2 is 0 everywhere. Tests: tests/fight.test.ts, and the reader's cases in tests/mythic.test.ts.
+- Script moves: Zaratan's Trench no longer answered by a taunt; the Sea Rises at the weakest, 0.8; the Dive 4 rounds;
+  Zaratan hp 0.93; the Rider's Book Opens from 0.55, hp 0.83. B1, B2, B4 (the Rider), B6, B7, B8 hold.
+- `OPEN`: B3 (three scripts), B5 (interrupt for the Angel and Zaratan, stagger and burst for all three), B4 (plain, the
+  Angel, Zaratan), B9.
+
+### Where the design did not hold
+
+- **The clocks decide a mythic fight.** 467 to 599 of B1's 600 fights reach an enraged turn, and a fight a doom lands in
+  is lost. An answer cancels or weakens a move, which saves HP, not time; so answering well and answering nothing lose
+  the same race (B3, B5), and a party with more damage a round wins it (B4, the Angel). Four ways tried in memory did
+  not separate them: answers no ordinary turn meets with the cannon's Focus saved for them (the saving party lost more),
+  deadlier move-answered omens, a Dread stack on each whole landing, clocks 1.5 times as long. The fix this needs is a
+  design call: an answer met moves its phase's clock back (`mythic.answerTime` rounds on `since`, carried by the
+  `cancel` and `weaken` events), so answering buys the time a fight is lost for want of. It moves `MythicEvent`, its
+  table tests and fight-turn.ts `answered`, outside this unit.
+- **Stagger and burst are not decisions for this party.** Its ordinary hits meet them as often as aimed ones; made
+  unreachable by ordinary hits (a break taking 0.6 of the bar in one change, burst 0.12), only a saved channel meets
+  them, and saving it cost more than it saved. B5's stagger and burst rows read about 1.0 for every script; the bound
+  stays, as no number of an omen moves it.
+- **B4 against a brute body is the body's.** Today's brute mythic with no script loses 0.435 to three cannons; Zaratan's
+  brute body 0.525. The lever is `fight.archetypes` or `fight.kinds.mythic`, outside `fight.mythic`.
+- **Two files outside the unit's list**: tests/mythic.test.ts, whose reader case asserted the old `phaseOver` (a phase
+  ends at its gate with no turn taken) and the Dive's 3 rounds; the rule lives in mythic.ts, so its own test follows.
+
+### Calls the owner might have made otherwise
+
+- A phase ends only after the mythic's first turn in it; the party's hits meanwhile are held at the gate. Undo: drop
+  `actedIn` from `phaseOver` (B2 returns to 5 and 199 skips with three cannons).
+- The Sea Rises names the weakest hunter (0.8) instead of the crowd's tile (0.4), and the Dive lasts 4 rounds. Undo: the
+  three numbers, and Zaratan's hp back to 1 (B7 for the Dive returns to 0.007).
+- The Fourth Rider's book opens at 55%, not 70%, so the Pale Horse lasts long enough to name someone. Undo: `from` and
+  hp 0.8.
+- The Trench is cancelled by a hold or a root, not a taunt. Undo: `'taunt'` back in its `by`.
+
+### Principles that changed a choice
+
+- `principle-attack-the-premise`: after three omen-number fixes failed B3 the same way, the premise "answers save the
+  fight" was tested directly (the share of fights reaching a doom), which named the clock as the cause.
+- `principle-fix-root-causes`: B2's skips were fixed in the phase-end rule, not by widening a clock or a band.
+- `principle-explain-the-number`: every B4 miss was compared with the same body played with no script before a number
+  moved; the brute body's 0.435 says the miss is not the script's.

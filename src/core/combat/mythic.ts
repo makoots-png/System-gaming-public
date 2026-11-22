@@ -152,10 +152,20 @@ export function clockOut(s: MythicStanding, now: Tick, R: RoundRules): boolean {
   const p = phaseOf(s);
   return p !== undefined && now >= s.since + p.clock * R.fight.round;
 }
-/** Its phase is over and its next turn starts the next: a gate phase held at its gate, a clock phase past its clock. */
+/**
+ * Whether it has taken a turn in its phase: an act beat taken (its `beat` moved on) or an omen announced. The phase
+ * change spends the turn it happens on, so a phase begins with none.
+ */
+const actedIn = (s: MythicStanding): boolean => s.at !== 'calm' || s.beat > 0;
+/**
+ * Its phase is over and its next turn starts the next: a gate phase held at its gate, a clock phase past its clock, once
+ * it has taken a turn in it (design B.8 row B2: a party sees every phase). A party that takes a phase's band before the
+ * mythic's first turn in it, or a stagger that pushes that turn past a clock phase's clock, still meets the phase's first
+ * beat, its HP held at the gate meanwhile.
+ */
 export function phaseOver(row: MythicRow, now: Tick, R: RoundRules): boolean {
   const s = row.mythic;
-  if (!s) return false;
+  if (!s || !actedIn(s)) return false;
   return phaseOf(s)?.ends === 'clock' ? clockOut(s, now, R) : heldAtGate(row);
 }
 /** A gate phase past its clock: it plays the script's enraged rotation, its doom, until the phase ends. */

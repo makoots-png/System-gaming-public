@@ -39,7 +39,7 @@ Where it lives:
 
 ## A fight
 
-The 2,500 random fights of tests/fight-model.test.ts, each of 10 to 49 commands from no fight. The walk found 36832 states and 73570 steps.
+The 2,500 random fights of tests/fight-model.test.ts, each of 10 to 49 commands from no fight. The walk found 36833 states and 73570 steps.
 
 ### A fight, from building it to its summary
 

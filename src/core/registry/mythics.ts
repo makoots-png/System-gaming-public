@@ -104,12 +104,14 @@ export const MYTHICS = {
 
   // "The hunters stand on it, so it should be able to end the fight by going under."
   'zaratan-the-island-that-wakes': mythicScript({
-    name: 'Zaratan, the Island That Wakes', hp: 1,
+    name: 'Zaratan, the Island That Wakes', hp: 0.93,
     shape: 'The ground: each Sinking floods tiles for the rest of the fight, and in the Dive it can only be survived.',
     moves: {
       'sinking': { name: 'Sinking of the Shore', kind: 'blast', type: 'physical', reach: 3, range: 10, hits: 0.5, sure: false,
         applies: { status: 'prone', rounds: 1 }, leaves: { name: 'Rising sea', rounds: 20, status: 'slowed' }, self: null },
-      'rising': { name: 'The Sea Rises', kind: 'blast', type: 'physical', reach: 2, range: 16, hits: 0.4, sure: false,
+      // 0.8 at the weakest, not 0.4 at the crowd: every hunter stepped out of the crowd's tile, and the Dive held 0.007 of
+      // the first falls (row B7, sim-log.md MY5 second pass)
+      'rising': { name: 'The Sea Rises', kind: 'blast', type: 'physical', reach: 2, range: 16, hits: 0.8, sure: false,
         applies: null, leaves: { name: 'Rising sea', rounds: 20, status: 'slowed' }, self: null },
       'trench': { name: 'Breath of the Deep Trench', kind: 'blast', type: 'magical', reach: 2, range: 16, hits: 0.75, sure: false,
         applies: { status: 'stunned', rounds: 1 }, leaves: null, self: null },
@@ -121,10 +123,10 @@ export const MYTHICS = {
     omens: {
       sinking: { name: 'Sinking of the Shore', full: 'sinking', weak: null, aim: 'crowd',
         interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: null },
-      rising: { name: 'The Sea Rises', full: 'rising', weak: null, aim: 'crowd',
+      rising: { name: 'The Sea Rises', full: 'rising', weak: null, aim: 'weakest',
         interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: null },
       trench: { name: 'Breath of the Deep Trench', full: 'trench', weak: 'spray', aim: 'farthest',
-        interrupt: { by: ['hold', 'root', 'taunt'], outcome: 'cancel' }, stagger: 'weaken', burst: { share: 0.06, outcome: 'weaken' } },
+        interrupt: { by: ['hold', 'root'], outcome: 'cancel' }, stagger: 'weaken', burst: { share: 0.06, outcome: 'weaken' } },
       under: { name: 'It Goes Under', full: 'go-under', weak: null, aim: 'all',
         interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: null },
     },
@@ -133,7 +135,7 @@ export const MYTHICS = {
         from: 1, ends: 'gate', clock: 6, bar: 1, worn: [SHELL],
         acts: ['Jaws Like a Harbour', 'Shell of a Thousand Years'], rotation: [act, act, omen('sinking')] },
       { name: 'The Dive', line: 'It dives. Damage does not reach it under the waves. Survive, and keep off the rising sea.',
-        ends: 'clock', clock: 3, worn: [], bar: 1,
+        ends: 'clock', clock: 4, worn: [], bar: 1,
         acts: [], rotation: [omen('rising')] },
       { name: 'The Island Wakes', line: 'It surfaces, awake. The shore is smaller now.',
         from: 0.55, ends: 'gate', clock: 7, bar: 1, worn: [SHELL, fury(20, 'Waking')],
@@ -144,7 +146,7 @@ export const MYTHICS = {
 
   // "A hunter he names should die unless something outside the rules prevents it."
   'the-fourth-rider': mythicScript({
-    name: 'The Fourth Rider', hp: 0.8,
+    name: 'The Fourth Rider', hp: 0.83,
     shape: 'The names: he marks one hunter at a time to die, and the party saves them or loses them.',
     moves: {
       'named': { name: 'Named in the Book', kind: 'curse', type: 'magical', reach: 0, range: 24, hits: 1.1, sure: true,
@@ -176,7 +178,7 @@ export const MYTHICS = {
         from: 1, ends: 'gate', clock: 5, worn: [], bar: 1,
         acts: ['Reaping Stroke', 'Not Yet'], rotation: [act, omen('named'), act] },
       { name: 'The Book Opens', line: 'He is never late, and he is faster now.',
-        from: 0.7, ends: 'gate', clock: 5, worn: [drawn(15, 'Never Late')], bar: 1,
+        from: 0.55, ends: 'gate', clock: 5, worn: [drawn(15, 'Never Late')], bar: 1,
         acts: ['Reaping Stroke', 'Not Yet'], rotation: [omen('named'), act, omen('wake')] },
       { name: 'All Things End', line: 'The last page. Every name is in it.',
         from: 0.35, ends: 'gate', clock: 4, worn: [drawn(15, 'Never Late'), fury(20, 'The Last Page')], bar: 0.75,

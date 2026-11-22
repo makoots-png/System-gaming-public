@@ -276,16 +276,18 @@ function monsterKeystones(m: RowMonster, R: RowRules): Keystone[] {
  * whose key `R.conditions` does not hold is left out.
  *
  * A mythic, while `fight.mythic.scripts` is on, plays its script (design B.3): it starts calm in its first phase
- * (`mythicStart`), its bar that phase's share of its kind's, wearing that phase's statuses after its start statuses (one
- * whose key a start status holds is left out). With the switch off, and on every other monster, its standing is null.
+ * (`mythicStart`), its max HP its seed's times the script's `hp` (the one place that factor is applied), its bar that
+ * phase's share of its kind's, wearing that phase's statuses after its start statuses (one whose key a start status holds
+ * is left out). With the switch off, and on every other monster, its standing is null and its HP its seed's.
  * A monster of a kind in `keystone.monsterKinds` also wears its keystones (`monsterKeystones`) after those, and takes
  * their actives after its own abilities, as a hunter's row does.
  */
 export function monsterRows(m: RowMonster, ids: readonly CombatantId[], R: RowRules & Pick<Rules, 'rankTable'> & { readonly conditions: StatusDefs }): NewRow[] {
   const now = JOINS;
-  const origin: Origin = { kind: 'monster', name: cut(m.name), rank: m.rank, archetype: m.archetype, monsterKind: m.kind, tweak: tweakOfMonster(m.tweak), ...(m.type ? { type: m.type.slice(0, TYPE_MAX) } : {}), ...(m.icon ? { icon: m.icon } : {}) };
   const script = R.fight.mythic.scripts ? monsterScript(m) : null, first = script === null ? null : mythicScriptOf(script).phases[0];
-  const bar = staggerOf({ rank: m.rank, archetype: m.archetype, kind: m.kind, tweak: tweakOfMonster(m.tweak) }, R);
+  const seeded = tweakOfMonster(m.tweak), tweak = script === null ? seeded : { ...seeded, hp: seeded.hp * mythicScriptOf(script).hp };
+  const origin: Origin = { kind: 'monster', name: cut(m.name), rank: m.rank, archetype: m.archetype, monsterKind: m.kind, tweak, ...(m.type ? { type: m.type.slice(0, TYPE_MAX) } : {}), ...(m.icon ? { icon: m.icon } : {}) };
+  const bar = staggerOf({ rank: m.rank, archetype: m.archetype, kind: m.kind, tweak }, R);
   const keystones = monsterKeystones(m, R);
   const tier = rankIdx(m.rank), stagger = bar && first ? { ...bar, max: bar.max * first.bar } : bar;
   const abilities = distinct([ARCHETYPE_ATTACKS[m.archetype](R), ...m.abilities, ...keystones.flatMap(({ active }) => active ? [{ ...active, id: wornAbilityId(active.id) }] : [])]);

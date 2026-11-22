@@ -519,22 +519,20 @@ const OPEN: Readonly<Record<string, string>> = {
   // Design B.8's rows a script's `hp` cannot hold and its words did not (sim-log.md, MY5, says what each would need).
   ...Object.fromEntries(MYTHIC_IDS.map(id => [`B9 no keystone pair of three Focused builds moves the share won against ${nameOf(id)} out of 5 to 10%`,
     'not measured: unit K4 puts keystones on a row and K5 builds the Focused parties and K5\'s own rows, which B9 shares'])),
-  [`B2 against three cannons ${MYTHICS['angel-of-the-last-trumpet'].name} enters every phase in order and takes a turn in each before the next`]:
-    '5 of 600 fights: three cannons push it to a gate before its first turn of a phase, so the phase holds no turn of its own; the gate holds HP, not turns',
-  [`B2 against three cannons ${MYTHICS['zaratan-the-island-that-wakes'].name} enters every phase in order and takes a turn in each before the next`]:
-    '199 of 600: the Shore is pushed to its gate before Zaratan acts, or the cannons\' hits held at the gate break its bar and push its turn past the Dive\'s 3-round clock',
+  // B3 and B5 (sim-log.md, MY5 second pass): 467 to 599 of B1's 600 fights reach an enraged turn and every one a doom
+  // lands in is lost, so the clocks decide a mythic fight; an answer saves HP, which is not what loses it.
   ...Object.fromEntries(OMENED.map(id => [`B3 three hunters who answer no omen win under 1% of fights against ${nameOf(id)}`,
-    ({ 'angel-of-the-last-trumpet': '0.078', 'zaratan-the-island-that-wakes': '0.042', 'the-fourth-rider': '0.053' } as Record<string, string>)[id]
-    + ' (se about 0.01): a stagger or a burst answer is met by the hits the party deals anyway, so a party that never aims an answer still meets most of them'])),
-  ...Object.fromEntries(MYTHIC_IDS.map(id => [`B4 three cannons at S meet every phase of ${nameOf(id)} and win at most 15%`,
-    `${({ plain: '0.380', 'angel-of-the-last-trumpet': '0.248', 'zaratan-the-island-that-wakes': '0.783', 'the-fourth-rider': '0.157' } as Record<string, string>)[id]} (se 0.015 to 0.020), with no keystones yet: three cannons beat the clocks the mixed party loses to`])),
+    ({ 'angel-of-the-last-trumpet': '0.078', 'zaratan-the-island-that-wakes': '0.048', 'the-fourth-rider': '0.060' } as Record<string, string>)[id]
+    + ' (se 0.009 to 0.011): the clocks decide the fight (nearly every fight reaches a doom), and an answer saves HP, not time'])),
   ...Object.fromEntries(OMENED.flatMap(id => answersOf(id).filter(k => !(id === 'the-fourth-rider' && k === 'interrupt')).map(k => [`B5 three hunters who never answer by ${k} win at most four fifths of B1's share against ${nameOf(id)}`,
-    k === 'interrupt' ? '0.94 and 0.98 of B1 (se 0.2): the stun that answers is resisted near half the time and has a 3-round cooldown'
-      : '0.92 to 1.03 of B1 (se 0.2): the hits that meet it are the ones the party deals anyway']))),
-  [`B7 every phase of ${MYTHICS['zaratan-the-island-that-wakes'].name} holds at least its floor of the first falls (10%, a clock phase 5%)`]:
-    'the Dive holds 0.007 of first falls: its rising sea aims at the crowd\'s tile, and every hunter steps out of it',
-  [`B7 no phase of ${MYTHICS['the-fourth-rider'].name} holds over 60% of the first falls in the fights the party loses`]: 'The Book Opens holds 0.739',
-  [`B7 every phase of ${MYTHICS['the-fourth-rider'].name} holds at least its floor of the first falls (10%, a clock phase 5%)`]: 'The Pale Horse holds 0.064: its 30% of HP falls in two or three of its turns',
+    k === 'interrupt' ? '0.95 (the Angel) and 1.09 (Zaratan) of B1 (se 0.2): a cancelled omen saves HP, and the clock, not HP, ends the fight'
+      : '0.92 to 1.03 of B1 (se 0.2): a party\'s ordinary hits meet it, and a hit saved for the window (the cannon\'s Focus) costs more against the clocks than the answer saves']))),
+  // B4 (sim-log.md, MY5 second pass): three cannons deal about a third more a round than the mixed party, so they beat the
+  // clocks it loses to; a brute body (plain's, Zaratan's) loses as many fights to them with no script at all.
+  ...Object.fromEntries((['plain', 'angel-of-the-last-trumpet', 'zaratan-the-island-that-wakes'] as const).map(id => [`B4 three cannons at S meet every phase of ${nameOf(id)} and win at most 15%`,
+    ({ plain: '0.380 (se 0.020): today\'s brute mythic with no script loses 0.435 to three cannons, so the miss is the body (fight.archetypes, fight.kinds.mythic), not the script',
+      'angel-of-the-last-trumpet': '0.243 (se 0.018): three cannons reach a doom in 370 of 600 fights, the mixed party in nearly every one (B6); the clock race again (B3)',
+      'zaratan-the-island-that-wakes': '0.710 (se 0.019): its brute body with no script loses 0.525 to three cannons; a Shell of armor and resist (30 each) still lost 0.42 to 0.80' } as Record<string, string>)[id]!])),
 };
 
 // ── one test per row: the row is measured inside its test, so a bun timeout or the per-test times name the row ──

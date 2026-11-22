@@ -36,19 +36,15 @@ import type { Aim, Rolls } from '../../src/core/combat/resolve.ts';
 import { fightId, reduce, runningState } from '../../src/core/combat/fight.ts';
 import type { Ctx, Effect, Ended, Fight, Fudge, FudgeSet, NewRow, Running } from '../../src/core/combat/fight.ts';
 import { CAP_ROUNDS, playBegin, playOver, playStep } from '../../src/core/combat/play.ts';
-import type { Limits, Play, Played } from '../../src/core/combat/play.ts';
+import type { Limits, Play } from '../../src/core/combat/play.ts';
 import { ANSWER_KINDS, answerChoice, beatUses, keptOut, sensible } from '../../src/core/combat/policy.ts';
 import type { AnswerKind, Policy as TurnPolicy, TurnChoice } from '../../src/core/combat/policy.ts';
-import { omenNeeds } from '../../src/core/combat/fight-turn.ts';
 import { enraged, scriptOf } from '../../src/core/combat/mythic.ts';
 import type { MythicStanding } from '../../src/core/combat/mythic-types.ts';
 import { monsterRows } from '../../src/core/combat/rows.ts';
 import type { RowMonster } from '../../src/core/combat/rows.ts';
 import { seedMonsters } from '../../src/core/registry/monsters.ts';
-import { MYTHICS } from '../../src/core/registry/mythics.ts';
 import type { MythicScriptId } from '../../src/core/registry/mythics.ts';
-import { drawNeeds, seededSource } from '../../src/core/draws.ts';
-import { weightsFor } from '../../src/core/combat/fudge.ts';
 import { rng } from './fight-play.ts';
 import { rowHp } from '../../src/core/combat/row-hp.ts';
 
@@ -503,13 +499,13 @@ export const scriptsOn = (R: Rules = RULES): Rules => ({ ...R, fight: { ...R.fig
 const PLAIN_BODY: RowMonster = { name: 'A Mythic', rank: 'S', archetype: 'brute', kind: 'mythic', tweak: {}, abilities: [], statuses: [], script: 'plain' };
 /**
  * The mythic of script `id` on its seed's body (`plain` on today's brute mythic), made as a fight makes it (rows.ts
- * `monsterRows`) under `R` with scripts on, its HP its seed's times the script's `hp` (design B.8's one lever). Played on
+ * `monsterRows`) under `R` with scripts on, which gives it its seed's HP times the script's `hp` (design B.8's one lever). Played on
  * `sensible`, which lands its omens and keeps its act beats to its phase's acts.
  */
 export function scripted(id: MythicScriptId, R: Rules = scriptsOn()): SimRow {
   const seed: RowMonster | undefined = id === 'plain' ? PLAIN_BODY : seedMonsters(R).find(m => m.script === id);
   if (!seed) throw new Error(`no seed plays ${id}`);
-  const row = monsterRows({ ...seed, tweak: { ...seed.tweak, hp: (seed.tweak.hp ?? 1) * MYTHICS[id].hp } }, [combatantId('mythic')], R)[0]!;
+  const row = monsterRows(seed, [combatantId('mythic')], R)[0]!;
   return { row, policy: mythicPolicy };
 }
 /**
@@ -676,9 +672,8 @@ export function playFight(setup: Setup, seed: number): FightRecord {
   let p: Play = begun.play;
   while (!playOver(p)) {
     const running = p as Play & { readonly fight: Running }, landing = runningState(running.fight);
-    const lands = landing.at === 'landing' && !capped(running, limits, R);
-    if (lands && trace && landing.id === mid && doom(running.fight.rows.find(r => r.id === mid)!.mythic!, running.fight.now, R)) trace.dooms++;
-    const s = lands ? landed(running, policyOf, R) : playStep(running, policyOf, limits, R), f = s.before, me = s.me, choice = s.choice;
+    if (landing.at === 'landing' && !capped(running, limits, R) && trace && landing.id === mid && doom(running.fight.rows.find(r => r.id === mid)!.mythic!, running.fight.now, R)) trace.dooms++;
+    const s = playStep(running, policyOf, limits, R), f = s.before, me = s.me, choice = s.choice;
     p = s.play;
     if (me && choice) {
       const t = tally[me.id] ??= emptyTally(me);
@@ -722,27 +717,6 @@ const doom = (s: MythicStanding, now: Tick, R: Rules): boolean =>
 /** Whether `playStep` ends the play at its next step (the GM's end or the cap), as play.ts reads `limits`. */
 const capped = (p: Play & { readonly fight: Running }, limits: Limits, R: Rules): boolean =>
   (limits.endAtRounds !== null && p.fight.now >= limits.endAtRounds * R.fight.round) || p.fight.now >= limits.capRounds * R.fight.round;
-/**
- * A mythic's landing turn, played as `playStep` plays a turn: its policy's choice, the dice its omen's move asks for
- * (fight-turn.ts `omenNeeds`: the move is not one of its row's abilities, and no taunt binds it) drawn from the play's
- * source with the fight's weights, the command, and the dice the fight then waits for, paid from the same source by
- * `playBegin` on the fight as it stands. play.ts's `rollsFor` looks the ability up on the row, so `playStep` cannot play
- * this turn (sim-log.md, MY5).
- */
-function landed(p: Play & { readonly fight: Running }, policyOf: (me: Body) => TurnPolicy, R: Rules): Played {
-  const f = p.fight, me = f.rows.find(r => r.id === f.currentId)!, choice = policyOf(me)(f, me, R);
-  if (choice.type !== 'act') throw new Error(`${me.name} chose ${choice.type} on its landing turn`);
-  const src = seededSource(p.source), n = omenNeeds(f, me, R);
-  if (!n) throw new Error(`${me.name} has no omen to land`);
-  const rolls = drawNeeds(n, src.random, weightsFor(f, me.id, n));
-  const r = reduce(f, { type: 'act', by: me.id, ability: choice.ability.id, aim: choice.aim, rolls }, { rules: R });
-  const no = r.effects.find(e => e.type === 'refused');
-  if (no || !r.fight || r.fight.phase === 'setup') throw new Error(`a played fight refused ${me.name}'s landing: ${no && 'reason' in no ? String(no.reason) : 'no fight'}`);
-  const next = r.fight.phase === 'running' ? playBegin(r.fight, src.state(), R) : { play: { ...p, fight: r.fight, source: src.state() }, effects: [] };
-  const down = [...p.down, ...next.play.fight.rows.filter(b => b.kind === 'hunter' && rowHp(b) === 0 && !p.down.includes(b.id)).map(b => b.id)];
-  return { play: { ...next.play, down, capped: false, steps: p.steps + 1, spent: p.spent }, before: f, me, choice, rolls, effects: [...r.effects, ...next.effects] };
-}
-
 /** Whether a use puts a hold on what it catches (a stun, design 3.1 rule 18). */
 const holds = (a: Ability): boolean => a.ops.some(o => o.op === 'applyStatus' && o.def.ops.some(x => x.op === 'hold'));
 

@@ -130,7 +130,7 @@ None.
 
 - Imports: `src/core/combat/delayed.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/fight-channel.ts`, `src/core/combat/fight-react.ts`, `src/core/combat/fight-types.ts`, `src/core/combat/land.ts`, `src/core/combat/mythic.ts`, `src/core/combat/op-amount.ts`, `src/core/combat/resolve.ts`, `src/core/combat/row-hp.ts`, `src/core/combat/row-life.ts`, `src/core/combat/row-tally.ts`, `src/core/combat/rows.ts`, `src/core/combat/space.ts`, `src/core/combat/standing.ts`, `src/core/combat/summons.ts`, `src/core/combat/timeline.ts`, `src/core/combat/triggers.ts`, `src/core/combat/uses.ts`, `src/core/combat/zones.ts`, `src/core/formula.ts`, `src/core/registry/mythic-moves.ts`, `src/core/registry/mythics.ts`, `src/core/save-step.ts`
 - Imports types from: `src/core/combat/ability-types.ts`, `src/core/combat/mythic-types.ts`, `src/core/ids.ts`, `src/core/rules.ts`
-- Imported by: `src/core/combat/fight-doc.ts`, `src/core/combat/fight.ts`, `src/core/combat/map-view.ts`, `src/core/combat/odds.ts`, `src/core/combat/policy.ts`
+- Imported by: `src/core/combat/fight-doc.ts`, `src/core/combat/fight.ts`, `src/core/combat/map-view.ts`, `src/core/combat/odds.ts`, `src/core/combat/play.ts`, `src/core/combat/policy.ts`
 
 ### `src/core/combat/fight-types.ts`
 
@@ -206,7 +206,7 @@ None.
 
 ### `src/core/combat/play.ts`
 
-- Imports: `src/core/combat/fight.ts`, `src/core/combat/fudge.ts`, `src/core/combat/resolve.ts`, `src/core/combat/row-hp.ts`, `src/core/draws.ts`, `src/core/registry/abilities.ts`
+- Imports: `src/core/combat/fight-turn.ts`, `src/core/combat/fight.ts`, `src/core/combat/fudge.ts`, `src/core/combat/resolve.ts`, `src/core/combat/row-hp.ts`, `src/core/draws.ts`, `src/core/registry/abilities.ts`
 - Imports types from: `src/core/combat/ability-types.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/fight-types.ts`, `src/core/combat/policy.ts`, `src/core/gates/spawn.ts`, `src/core/ids.ts`, `src/core/rules.ts`
 - Imported by: `src/core/combat/odds.ts`, `src/core/gates/solo.ts`, `src/core/protocol.ts`, `src/core/rules-text.ts`
 

@@ -2514,7 +2514,7 @@ describe('a status whose time ran out counts for no reader while its bearer\'s s
 
 describe('a mythic plays its script (notes-11-keystones.md, design B.3 and B.4)', () => {
   // Every number is the script's own (registry/mythics.ts): the Angel's First Breath begins at 65% of its max HP and its
-  // bar at 1.25 of its kind's; the Fourth Rider's book opens at 70%, its Named in the Book is a curse of range 24 aimed
+  // bar at 1.25 of its kind's; the Fourth Rider's book opens at 55%, its Named in the Book is a curse of range 24 aimed
   // at the hunter lowest on HP, cancelled by a stun and weakened by 5% of its max HP taken; the Angel's Note is its last
   // phase, whose Final Note a broken bar weakens.
   const ON: Rules = { ...RULES, fight: { ...RULES.fight, mythic: { ...RULES.fight.mythic, scripts: true } } };
@@ -2584,6 +2584,19 @@ describe('a mythic plays its script (notes-11-keystones.md, design B.3 and B.4)'
     expect(r.fight.currentId, 'the phase change spent its turn').not.toBe(id('X'));
     expect(body(r.fight, 'X').statuses.map(s => s.key), 'it wears Drawn Breath').toContain(statusKey('mythic-drawn-breath'));
     expect(body(r.fight, 'X').stagger!.max, 'its bar is 1.25 of its kind\'s, empty').toBe(x.stagger!.max * 1.25);
+  });
+
+  // The First Breath's first beat announces The First Breath; its band ends at 30% of max HP, The Note's start.
+  test('a mythic pushed to its gate before its first turn in a phase takes that turn before the next phase', () => {
+    const f0 = running(go(begun(mythic('angel-of-the-last-trumpet', place(5, 5)), hunter('A', place(6, 5))), gm('next')));
+    expect(standing(f0)).toMatchObject({ phase: 1, beat: 0, at: 'calm' });
+    const held = running(go(until(f0, turnOf('A')).fight, hit('A', 'X', KILL)));
+    expect(rowHp(body(held, 'X')), 'held at The Note\'s start').toBe(Math.ceil(0.3 * body(held, 'X').sheet.hpMax));
+    const told = until(held, f => omenUp(f) || standing(f).phase === 2);
+    expect(told.effects.some(e => e.type === 'phased'), 'no phase change before its first beat').toBe(false);
+    expect(standing(told.fight)).toMatchObject({ phase: 1, at: 'omen', omen: 'breath' });
+    const r = until(told.fight, f => standing(f).phase === 2);
+    expect(r.effects).toContainEqual({ type: 'phased', id: id('X'), phase: 2 });
   });
 
   test('an omen announced on its turn lands on its next', () => {
@@ -2701,7 +2714,7 @@ describe('a mythic plays its script (notes-11-keystones.md, design B.3 and B.4)'
   test('an omen standing at the gate is lost to the phase change', () => {
     const told = until(begun(mythic('the-fourth-rider', place(5, 5)), hunter('A', place(8, 5))), omenUp);
     const gated = running(go(until(told.fight, turnOf('A')).fight, hit('A', 'X', KILL)));
-    expect(rowHp(body(gated, 'X'))).toBe(Math.ceil(0.7 * body(gated, 'X').sheet.hpMax));
+    expect(rowHp(body(gated, 'X'))).toBe(Math.ceil(0.55 * body(gated, 'X').sheet.hpMax));
     const hp = rowHp(body(gated, 'A')), r = until(gated, f => standing(f).phase === 1);
     expect(standing(r.fight)).toMatchObject({ at: 'calm', phase: 1, beat: 0 });
     expect(logs(r.fight)).toContain('The Fourth Rider enters The Book Opens.');

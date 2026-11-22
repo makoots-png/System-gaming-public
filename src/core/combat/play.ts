@@ -11,10 +11,11 @@ import type { ItemId } from '../ids.ts';
 import { itemOfAbility } from '../registry/abilities.ts';
 import { rowHp } from './row-hp.ts';
 import type { Body } from './effect-ops.ts';
-import { owed, reduce } from './fight.ts';
+import { owed, reduce, runningState } from './fight.ts';
+import { omenNeeds } from './fight-turn.ts';
 import type { Command, Ctx, Effect, Ended, Fight, Refusal, Running, Setup } from './fight-types.ts';
 import { needs } from './resolve.ts';
-import type { Aim, Rolls } from './resolve.ts';
+import type { Aim, Needs, Rolls } from './resolve.ts';
 import { drawNeeds, drawOpenings, drawSettle, seededSource } from '../draws.ts';
 import { openingWeights, settleWeights, weightsFor } from './fudge.ts';
 import type { Random } from './../gates/spawn.ts';
@@ -54,9 +55,16 @@ function sent(f: Fight, cmd: Command, R: Rules): { fight: Fight; effects: readon
   if (!r.fight || r.fight.phase === 'setup') throw new Error(`a played fight left no fight after ${cmd.type}`);
   return { fight: r.fight, effects: r.effects };
 }
-/** The dice `me`'s use of `ability` at `aim` asks for, drawn with the fight's weights (fudge.ts `weightsFor`), as the GM's phone draws them. */
+/**
+ * The dice `me`'s use of `ability` at `aim` asks for, drawn with the fight's weights (fudge.ts `weightsFor`), as the GM's
+ * phone draws them. On a mythic's landing turn the use is its omen's move, which is not one of its row's abilities and
+ * no taunt binds: its dice are fight-turn.ts `omenNeeds`'s.
+ */
 function rollsFor(f: Running, me: Body, ability: string, aim: Aim, R: Rules, random: Random): Rolls {
-  const n = needs(me.abilities.find(a => a.id === ability)!, me, f.rows, aim, f.grid, f.now, R);
+  const state = runningState(f);
+  const n: Needs | null = state.at === 'landing' && state.id === me.id ? omenNeeds(f, me, R)
+    : needs(me.abilities.find(a => a.id === ability)!, me, f.rows, aim, f.grid, f.now, R);
+  if (!n) throw new Error(`${me.name} has no omen to land`);
   return drawNeeds(n, random, weightsFor(f, me.id, n));
 }
 
