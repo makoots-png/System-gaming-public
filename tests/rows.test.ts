@@ -373,11 +373,12 @@ describe('a mythic (notes-11-keystones.md, design B.3)', () => {
     expect(r!.mythic).toEqual({ at: 'calm', script: 'zaratan-the-island-that-wakes', phase: 0, beat: 0, since: tick(0) });
     expect(r!.statuses.map(s => [s.key, s.def.label, s.source, s.until])).toEqual([
       [statusKey('regenerating'), 'Regenerating', { id: id('m1'), tier: 5 }, null],
+      [statusKey('mythic-even-guard'), 'Even Guard', { id: id('m1'), tier: 5 }, null],
       [statusKey('mythic-shell'), 'Shell of a Thousand Years', { id: id('m1'), tier: 5 }, null],
     ]);
     const add = (rows: NewRow[]) => reduce(null, { type: 'add', fightId: fightId('f'), rows, openings: [] }, { rules: ON_RULES }).fight!.rows[0]!;
-    const off = add(monsterRows(zaratan(), [id('m1')], R));
-    expect(add([r!]).sheet.armor, 'the shell is 30 more armor').toBe(off.sheet.armor + 30);
+    const off = add(monsterRows(zaratan(), [id('m1')], R)), on = add([r!]), even = (off.sheet.armor + off.sheet.resist) / 2;
+    expect([on.sheet.armor, on.sheet.resist], 'the guard evened to the mean of the two, and the shell 30 more armor on top').toEqual([even + 30, even]);
     expect(monsterRows(monster({ kind: 'boss' }), [id('m1')], ON)[0]!.mythic, 'a monster of another kind plays no script').toBeNull();
     const { script: _named, ...unnamed } = zaratan();
     expect(monsterRows(unnamed, [id('m1')], ON)[0]!.mythic, 'a mythic that names none plays plain').toMatchObject({ script: 'plain' });

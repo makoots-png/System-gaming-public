@@ -2062,3 +2062,128 @@ B3 holds at every script and leaves `OPEN`. B5's stagger and burst rows are gone
 B5 row holds except Zaratan's interrupt (its Trench in its last phase, met 0.09 times a fight, as in pass 4). Four
 values sit within one standard error of their bound: the Rider's B1 (0.058) and B3 (0.008), the Angel's B5 step (0.780)
 and the Rider's B5 shield (0.771). B4 stays open for plain, the Angel and Zaratan.
+
+## Mythic balance: Zaratan's stun and B4
+
+**The rows asked for.** Zaratan's B5 interrupt row (1.08, se 0.23, against at most 0.8) and B4 (three cannons won
+0.380 of 600 fights against plain, 0.187 against the Angel, 0.657 against Zaratan; at most 0.15). Scripts stay off.
+Every number is the sim's own fights (seeds from 1, the setups of `tests/fight-sim.test.ts`); a script's data was
+changed in memory for a probe and only the kept change written.
+
+### Step 1: what three cannons do that the mixed party does not (measured before any change)
+
+| Today's mythic, no script (400 fights) | the mixed party | three cannons |
+|---|---|---|
+| brute body (armor 92, resist 10) | 0.063 (se 0.012), 14.4 rounds | 0.450 (se 0.025), 8.7 rounds |
+| caster body (armor 20, resist 30) | 0.075 (se 0.013) | 0.043 (se 0.010) |
+| skirmisher body (armor 20, resist 30) | 0.077 (se 0.013) | 0.000 |
+
+On the brute (200 fights): the party deals 79 a round (tank 4, bruiser 29, cannon 46) against three cannons' 148 (49,
+49, 50); the mythic deals each about 57. What the hits keep after defence (100 fights): the tank's 0.49, the bruiser's
+0.50, a cannon's 0.92. Three cannons with no blast (its mana cost made unpayable) won more, 0.840 against 0.447 (300
+fights): Arc Bolt is the damage, not the blast.
+
+**The bar.** A trace of Zaratan against three cannons (seed 1) broke its bar at rounds 0.4, 2.0, 4.0, 6.0, 8.0 and 9.9;
+it landed two Jaws in 12 rounds, and the Sea Rises it announced in the Dive never landed. A mythic's bar is four
+same-rank hits of a blade on its own armor (rows.ts `sameRankHit`), so on armor 92 it is small for a bolt that meets
+resist 10. With no bar at all (kinds.mythic.stagger 0, 200 fights) both parties won 0.000 against plain, the Angel and
+Zaratan: breaks are how any party beats a mythic, and on a brute body bolts get them cheap.
+
+| A brute mythic's guard evened, no script (400 fights) | the mixed party | three cannons |
+|---|---|---|
+| armor 92, resist 30 (resist x6), hp 4.6 | 0.115 | 0.307 |
+| armor 92, resist 50 (resist x10), hp 4.2 | 0.177 | 0.182 |
+| armor 51, resist 51 (same sum), hp 4.9 | 0.087 (se 0.014) | 0.007 (se 0.004) |
+
+**The cause on a brute body is one: its guard is split, and an all-magic party meets the small half twice**, in the
+damage it keeps and in the bar it fills. The Angel's caster body has no such gap; its B4 is its script's (step 3).
+
+### Step 2: where the fix goes
+
+`fight.kinds.mythic` holds one armor factor and one resist factor for every body: raising its resist factor so the
+brute's matches its armor would give a caster's and a skirmisher's resist 90 to 150 against armor 20, the same gap the
+other way. `fight.archetypes` holds HP and power only, and an armor and resist pair there is read by derive.ts
+(`monsterSheet`), which another unit holds. So the gap is closed in the script's data: `EVEN_GUARD`, a status every
+phase of plain and Zaratan wears, two `sheet` ops read on the bare body that move armor and resist each half the gap
+toward the other (92 and 10 become 51 and 51 on a brute; 20 and 30 become 25 and 25 on a caster). plain's body is any a
+GM makes, so the guard is there whatever the body.
+
+plain with the even guard (200 fights unless named): hp 0.95 B1 0.180, B4 0.025; 0.97 (600) 0.090 and 0.012; 1.0
+0.030 and 0.005; **0.98 (600) 0.072 (se 0.011) and 0.010 (se 0.004)**.
+
+### Step 3: the Angel (a caster body; B4 0.187)
+
+Three cannons deal 124 a round to the mixed party's 92 and break the bar of the Note phase (bar 0.75) before the Note
+is read (a trace, seed 3: the Angel took 7 turns in 12 rounds and never announced the Note in its last phase). They hold
+no shield, so Weighed (cancelled by a shield on the hunter it names) always lands on them, but at 0.35 it cost little.
+
+| The Angel (200 fights) | B1 | B4 |
+|---|---|---|
+| today | 0.075 | 0.170 |
+| the Note first in its phase | 0.000 | 0.065 |
+| the Note phase's bar 1 (was 0.75) | 0.025 | 0.090 |
+| Weighed hits 0.8 | 0.075 | 0.130 |
+| **Weighed hits 1.2** | **0.075** | **0.100** |
+
+The mixed party shields Weighed 1.16 times a fight of 1.33, so its hit does not move B1; it moves the parties that hold
+no shield: B4, B3 and B5 shield. Weighed's 1.2 is the same reasoning as the Sinking's 1.0 and the Trench's 1.2 (MY5 fifth
+pass): an answer's worth is the hit it saves.
+
+### Step 4: Zaratan (a brute body; B4 0.657, B5 interrupt 1.08)
+
+**B4.** The even guard alone (200 fights): hp 0.92 B1 0.015, B4 0.275; hp 0.85 0.065 and 0.360. The rest is the Dive: its
+HP does not move there, but its bar filled from each hit, so three cannons broke it under the waves. Its bar made
+unbreakable in the Dive, with the even guard, hp 0.92: B1 0.010, B4 0.040; the Shell as 15 armor and 15 resist (was 30
+armor) instead: 0.015 and 0.100. Kept: the Dive wears **Under the Waves**, one `staggerRate` op at -100 (land.ts
+`barRate`), so no hit fills its bar, as no hit reaches its HP. Even guard and Under the Waves, hp 0.85: B1 0.050, B4
+0.080, B3 0.000, B7 0.289 / 0.263 / 0.447, but B5 interrupt 1.10 (se 0.47).
+
+**B5 interrupt: the stun dies with the tank.** A trace of the mixed party (seed 1) had the tank at 0 HP before the Island
+Wakes, the one phase that announced the Trench. Every variant at 200 fights, with the even guard and Under the Waves:
+
+| The Trench (hp) | stun meets it a fight | B1 | B4 | B3 | B5 interrupt | B7 last phase | median |
+|---|---|---|---|---|---|---|---|
+| the Wakes only (0.85) | 0.08 | 0.050 | 0.080 | 0.000 | 1.10 | 0.447 | 19.0 |
+| also the Dive's second beat (0.85) | 0.22 | 0.025 | 0.020 | 0.000 | 1.20 | 0.462 | 18.9 |
+| the Wakes only, no step answer (0.85) | 0.10 | 0.030 | 0.075 | 0.000 | 0.33 | 0.459 | 17.9 |
+| the same (0.77) | | 0.075 | 0.125 | **0.025** | 0.60 | **0.622** | 18.6 |
+| also the Shore's last beat (0.85) | 0.35 | 0.040 | 0.130 | 0.005 | 0.63 | **0.667** | **20.4** |
+| also the Shore's second beat, clock 5 (0.92) | 0.56 | 0.065 | 0.095 | 0.000 | 0.31 | **0.658** | **20.9** |
+| **also the Shore's second beat, clock 4 (0.92)** | 0.6 | 0.070 | 0.100 | 0.000 | 0.29 | 0.543 | 19.8 |
+| the same, the Wakes' clock 4 (0.92) | | 0.045 | 0.050 | 0.000 | 0.22 | 0.555 | 19.4 |
+| the same, no Sinking in the Wakes (0.92, 600) | 0.61 | 0.035 | 0.088 | 0.002 | 0.14 | 0.563 | 19.1 |
+
+A stun-only Trench lands whole on the cannon whenever the tank is gone, so B1 fell and the `hp` that brought it back
+let the party that answers none win (B3) and won fights after a doom (B6, 7 of 146). On the Shore the tank is alive: an
+answered Trench there buys the Shore 3 rounds, so its clock goes from 5 to 4. A Sea Rises of 1.0 or 1.2 and a Waking
+fury of 10% (B4 0.298: the fury is what kills three cannons in the last phase) were worse.
+
+The Trench on the Shore's second beat, the Shore's clock 4, at 600 fights:
+
+| hp | B1 | B4 | B3 | B5 step | B5 interrupt | B7 | median |
+|---|---|---|---|---|---|---|---|
+| 0.90 | 0.065 | 0.102 | 0.003 | 0.256 | 0.385 | 0.257 / 0.144 / **0.599** | 19.7 |
+| 0.91 | 0.057 | 0.095 | 0.003 | 0.235 | 0.441 | 0.290 / 0.134 / 0.576 | 19.6 |
+| **0.92** | **0.055** | **0.092** | **0.002** | **0.273** | **0.424** | **0.316 / 0.131 / 0.554** | **19.5** |
+
+0.92, Zaratan's `hp` as it was: B7's last phase has the most room there. B1 (0.055, se 0.009) is within one standard
+error of its floor.
+
+### Step 5: every B row at 600 fights
+
+| Row (600 fights) | plain | Angel | Zaratan | Rider | Bound |
+|---|---|---|---|---|---|
+| B1 wins | 0.072 (se 0.011) | 0.067 (se 0.010) | 0.055 (se 0.009) near | 0.058 (se 0.010) near | 0.05 to 0.10 |
+| B2 skips, mixed / three cannons | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 |
+| B3 wins answering none | none | 0.000 | 0.002 (se 0.002) | 0.008 (se 0.004) near | under 0.01 |
+| B4 three cannons win | 0.010 (se 0.004) | 0.093 (se 0.012) | 0.092 (se 0.012) | 0.018 | at most 0.15 |
+| B5 without step, over B1 | none | 0.775 (se 0.180) near | 0.273 (se 0.101) | none | at most 0.8 |
+| B5 without interrupt, over B1 | none | 0.200 (se 0.077) | 0.424 (se 0.133) | 0.514 (se 0.146) | at most 0.8 |
+| B5 without shield, over B1 | none | 0.275 (se 0.092) | none | 0.771 (se 0.193) near | at most 0.8 |
+| B6 won after a doom | 0.000 | 0.000 | 0.000 | 0.000 | under 0.01 |
+| B7 most / least less its floor | one phase | 0.430 / 0.091 | 0.554 / 0.081 | 0.527 / 0.111 | at most 0.6 / at least 0 |
+| B8 median rounds | 15.2 | 15.2 | 19.5 | 13.5 | 10 to 20 |
+
+The Rider's rows are pass 5's: no change here touches its script or body. Every B row but B9 holds; `OPEN` keeps only
+B9. Today's brute mythic with no script (row M1's body) still loses 0.45 of its fights to three cannons: no row bounds
+it, and once `fight.mythic.scripts` is on every mythic plays a script, plain at the least, which wears the even guard.

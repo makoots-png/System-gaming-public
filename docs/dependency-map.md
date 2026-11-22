@@ -375,7 +375,7 @@ None.
 
 - Imports: `src/core/hunter/derive.ts`, `src/core/stats.ts`
 - Imports types from: `src/core/combat/effect-ops.ts`
-- Imported by: `src/core/combat/ability-types.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/fight-parse.ts`, `src/core/combat/fight-turn.ts`, `src/core/combat/fight-types.ts`, `src/core/combat/fight-view.ts`, `src/core/combat/fight.ts`, `src/core/combat/fudge.ts`, `src/core/combat/land.ts`, `src/core/combat/op-amount.ts`, `src/core/combat/policy.ts`, `src/core/combat/resolve.ts`, `src/core/combat/rows.ts`, `src/core/combat/standing.ts`, `src/core/draws.ts`, `src/core/effects.ts`, `src/core/hunter/use.ts`, `src/core/registry/abilities.ts`, `src/core/registry/ability-kinds.ts`, `src/core/registry/icon-defaults.ts`, `src/core/registry/item-budget.ts`, `src/core/registry/items.ts`, `src/core/registry/keystones.ts`, `src/core/registry/kit-examples.ts`, `src/core/registry/mythic-moves.ts`, `src/core/registry/scalers.ts`, `src/core/registry/statuses.ts`, `src/core/registry/worth.ts`, `src/core/status-refs.ts`, `src/core/table-weight.ts`, `src/core/title-card.ts`, `src/edge/roll.ts`, `src/views/dice.js`, `src/views/kit-parts.js`, `src/views/maker.js`, `src/views/skills.js`
+- Imported by: `src/core/combat/ability-types.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/fight-parse.ts`, `src/core/combat/fight-turn.ts`, `src/core/combat/fight-types.ts`, `src/core/combat/fight-view.ts`, `src/core/combat/fight.ts`, `src/core/combat/fudge.ts`, `src/core/combat/land.ts`, `src/core/combat/op-amount.ts`, `src/core/combat/policy.ts`, `src/core/combat/resolve.ts`, `src/core/combat/rows.ts`, `src/core/combat/standing.ts`, `src/core/draws.ts`, `src/core/effects.ts`, `src/core/hunter/use.ts`, `src/core/registry/abilities.ts`, `src/core/registry/ability-kinds.ts`, `src/core/registry/icon-defaults.ts`, `src/core/registry/item-budget.ts`, `src/core/registry/items.ts`, `src/core/registry/keystones.ts`, `src/core/registry/kit-examples.ts`, `src/core/registry/mythic-moves.ts`, `src/core/registry/mythics.ts`, `src/core/registry/scalers.ts`, `src/core/registry/statuses.ts`, `src/core/registry/worth.ts`, `src/core/status-refs.ts`, `src/core/table-weight.ts`, `src/core/title-card.ts`, `src/edge/roll.ts`, `src/views/dice.js`, `src/views/kit-parts.js`, `src/views/maker.js`, `src/views/skills.js`
 
 ### `src/core/gates/gate.ts`
 
@@ -761,7 +761,7 @@ None.
 
 ### `src/core/registry/mythics.ts`
 
-- Imports types from: `src/core/combat/effect-ops.ts`, `src/core/combat/mythic-types.ts`
+- Imports types from: `src/core/combat/effect-ops.ts`, `src/core/combat/mythic-types.ts`, `src/core/formula.ts`
 - Imported by: `src/core/combat/fight-parse.ts`, `src/core/combat/fight-turn.ts`, `src/core/combat/fight-view.ts`, `src/core/combat/mythic-types.ts`, `src/core/combat/mythic.ts`, `src/core/combat/rows.ts`, `src/core/protocol.ts`, `src/core/registry/monsters.ts`, `src/views/bestiary.js`, `src/views/combat.js`
 
 ### `src/core/registry/paths.ts`

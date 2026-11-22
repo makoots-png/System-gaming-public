@@ -721,3 +721,96 @@ hunter it is aimed at, or a stun, root or taunt on the mythic, never by a hit.
   omen differently; the answer lines loop over `ANSWERS` rather than name an omen.
 - `principle-test-behavior-not-implementation`: the banner tests loop over every script and compare the lines with the
   omen's own outcomes, so a moved omen or number moves the expectation.
+## Mythic balance: Zaratan's stun and B4
+
+Branch `mythic-balance`. The switch `fight.mythic.scripts` stays off. Every measure is in rw/sim-log.md, "Mythic balance".
+
+### B4: what three cannons do that the mixed party does not (measured before any change)
+
+- Today's brute mythic with no script, 400 fights: the mixed party wins 0.063, three cannons 0.450. A caster mythic's
+  body: 0.075 and 0.043; a skirmisher's: 0.077 and 0.000. Only the brute body loses to three cannons.
+- The brute mythic's guard is armor 92 and resist 10 (its medium kit and Vitality, times the kind's 2). Over 100 fights
+  the cannons' hits keep 0.92 of their damage after defence and the tank's and bruiser's 0.49 and 0.50. Three cannons
+  deal 148 a round, the mixed party 79; the mythic deals each party about 57 a round.
+- Not the blast: three cannons with no blast won more (0.84 on the brute, 0.61 on the Angel). Arc Bolt is the damage.
+- With the brute's guard evened to 51 and 51 (same sum) and hp 4.9 bodies: the mixed party 0.087, three cannons 0.007.
+- **The stagger bar.** A trace of Zaratan against three cannons (seed 1): broken at rounds 0.4, 2.0, 4.0, 6.0, 8.0 and
+  9.9, it landed two Jaws in 12 rounds, and its Sea Rises never landed. Its bar is four same-rank hits measured with a
+  blade on its armor 92 (rows.ts `sameRankHit`), so a bolt that meets resist 10 fills it about twice as fast as the
+  blade it was sized on. With no bar at all (200 fights) three cannons won 0.000 against plain, the Angel and Zaratan;
+  so did the mixed party, so a mythic is beaten through its breaks either way.
+- So the cause on a brute body is one: its guard is split (armor 92, resist 10), and an all-magic party meets the small
+  half of it twice, in the damage it keeps and in the bar it fills.
+
+### Trying the fixes (200 fights a variant, in memory; every row again at 600 below)
+
+- **An even guard** (`EVEN_GUARD`, a status a phase wears: armor and resist each moved half the gap toward the other,
+  read on the bare body, so the brute's 92 and 10 become 51 and 51 and the sum stays). On plain: hp 0.95 won B1 0.180 and
+  B4 0.025, hp 1.0 0.030 and 0.005. On Zaratan it was not enough alone: hp 0.92 0.015 and 0.275, hp 0.85 0.065 and 0.360.
+- **Zaratan's Dive.** Its HP does not move in the Dive, but its bar still fills from the hit, so three cannons broke it
+  under the waves and the Sea Rises never landed. A Dive bar of 50 (no break in four rounds) with the even guard: B1
+  0.010, B4 0.040 at hp 0.92. The Shell as 15 armor and 15 resist (was 30 armor) with the even guard: 0.015 and 0.100.
+- **The Angel** is a caster body (armor 20, resist 30): with no script three cannons win 0.043. Its script's B4 (0.170
+  at 200) comes from the clock race: three cannons deal 124 a round to the mixed party's 92, break its bar in the Note
+  phase before the Note is read, and cannot answer Weighed (a shield's) but lose little to it (hits 0.35). Weighed at
+  0.8: B1 0.075, B4 0.130; at 1.2: 0.075 and 0.100 (the mixed party shields it, so B1 does not move). Rejected: the
+  Note first in its phase (B1 0.000), the Note phase's bar 0.75 to 1 (B1 0.025, B4 0.090).
+- **Under the Waves.** The Dive now wears a status of one `staggerRate` op at -100 (land.ts `barRate`): no hit fills
+  its bar, as no damage reaches its HP. With the even guard, hp 0.85: B1 0.050, B4 0.080 (200 fights).
+- **Zaratan's stun.** The Trench on the Shore's second beat met the stun 0.56 times a fight (B5 interrupt 0.32) but
+  moved the first falls into the last phase (0.77, past B7's 0.6) and the median to 21.5 rounds: each answered Trench
+  buys the Shore 3 rounds. The Trench on its last beat: 0.35 a fight, B7 0.667. In the Dive (a clock phase, where an
+  answer buys no time): 0.22 a fight, B5 1.2. The stun meets few Trenches because the aimed cannon steps off first and
+  a weakened Trench is a Spray (0.35): the stun saves little on top of the step.
+- **Why the stun met the Trench 0.09 times a fight: the tank is dead by then.** A trace (seed 1, the mixed party) had the
+  tank at 0 HP before the Island Wakes; the stun is the tank's, and the Trench came only in the last phase. Taking the
+  Trench's step answer away (the stun alone cancels it) made it land whole on the cannon: B1 fell to 0.030 at hp 0.85,
+  and at hp 0.77 B3 (0.025) and B6 (7 wins after a doom) broke. So the omen moves to where the tank lives.
+- **The Trench on the Shore's second beat, the Shore's clock 5 to 4** (an answered Trench buys the Shore 3 rounds, so
+  the clock is a round shorter), with the even guard and Under the Waves (600 fights): hp 0.92 B1 0.055, B4 0.092, B3
+  0.002, B5 step 0.273, interrupt 0.424, B7 0.316 / 0.131 / 0.554, median 19.5; hp 0.9 B1 0.065, B4 0.102, B3 0.003,
+  B5 0.256 and 0.385, B7 0.257 / 0.144 / **0.599**, median 19.7. The last phase sits at B7's edge.
+
+### What exists
+
+- registry/mythics.ts: `EVEN_GUARD` (two `sheet` ops on a formula of the bare body, `halfGap`), worn by plain's phase and
+  every phase of Zaratan; `UNDER_THE_WAVES` (a `staggerRate` op at -100), worn by Zaratan's Dive. plain `hp` 1.03 → 0.98.
+  The Angel's Weighed hits 0.35 → 1.2. Zaratan's Shore: rotation `[act, trench, act, sinking]` (was `[act, act,
+  sinking]`), clock 5 → 4; its `hp` stays 0.92. No type, rule, reducer or policy changed.
+- tests/mythics.test.ts: "a mythic of any body plays plain with no gap in its guard" (each archetype's armor and resist
+  at their mean, Zaratan's resist too); Zaratan's Dive test also asks that no hit fills its bar.
+- tests/fight-sim.test.ts: `OPEN` holds only B9. Every B row at 600 fights is in rw/sim-log.md, step 5.
+
+### Where the design did not hold
+
+- **B4 was the body's, then the clock's, then the Dive's.** The brute's split guard was the cause for plain and
+  Zaratan; on Zaratan it took Under the Waves too. The Angel's (a caster) was its script: three cannons hold no shield,
+  and the omen only a shield answers cost them little.
+- **A stun answer comes too late in the fight to count.** The tank dies first in most lost fights, so an omen only the
+  tank's stun answers must come while the tank stands. Moving the Trench to the Shore pushed the first falls toward the
+  last phase (B7 0.554) and the median to 19.5: both inside, both with little room.
+- **Near rows now:** Zaratan's B1 (0.055, se 0.009) joins the Rider's B1 and B3, the Angel's B5 step and the Rider's B5
+  shield within one standard error of a bound. Zaratan's B7 (0.554 of 0.6) and B8 (19.5 of 20) print no standard error
+  but have little room.
+- **Not fixed: the unscripted brute mythic.** With scripts off (as shipped) row M1's brute still loses 0.45 to three
+  cannons. No row bounds it; MY7 turns scripts on and every mythic then plays one.
+
+### Calls the owner might have made otherwise
+
+- A mythic's guard has no gap, as a status its script wears, not a rule of the kind: `fight.kinds` holds one factor for
+  every body, and derive.ts (`monsterSheet`) is another unit's. Undo: "a mythic keeps its body's armor and resist" (take
+  `EVEN_GUARD` off plain and Zaratan, plain `hp` 1.03); or "make it the kind's rule" (a guard on `fight.kinds.mythic`
+  that `monsterSheet` reads, and the status gone).
+- Weighed and Found Wanting hits 1.2 of a hunter's HP, not 0.35. Undo: "Weighed hits as it did".
+- No hit fills Zaratan's bar in the Dive. Undo: "the Dive can be staggered" (`UNDER_THE_WAVES` off the Dive).
+- The Breath of the Deep Trench comes on the Shore as well as once the island wakes, and the Shore's clock is 4 rounds.
+  Undo: "the Trench only once it wakes" (the Shore `[act, act, sinking]`, clock 5); B5 interrupt is then out again.
+
+### Principles that changed a choice
+
+- `principle-explain-the-number`: B4 was taken apart before any number moved (damage kept after defence, the blast
+  taken away, the bar taken away, a trace), which found the bar where "a third more damage" had been the story.
+- `principle-fix-root-causes`: the brute's guard, not plain's `hp` or clock, and the tank's death, not the stun's
+  numbers; the fix site is the script data only because the kind's rule lives in another unit's file (said above).
+- `principle-test-behavior-not-implementation`: the guard test states the mean from the bare sheet, and the Dive's
+  assertion was checked to fail without the status.

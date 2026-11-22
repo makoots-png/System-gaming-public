@@ -519,16 +519,6 @@ const OPEN: Readonly<Record<string, string>> = {
   // Design B.8's rows a script's `hp` cannot hold and its words did not (sim-log.md, MY5, says what each would need).
   ...Object.fromEntries(MYTHIC_IDS.map(id => [`B9 no keystone pair of three Focused builds moves the share won against ${nameOf(id)} out of 5 to 10%`,
     'not measured: unit K4 puts keystones on a row and K5 builds the Focused parties and K5\'s own rows, which B9 shares'])),
-  // B5 (sim-log.md, MY5 fifth pass): Zaratan's one omen a stun answers, the Trench, comes in its last phase only, and
-  // its hunter's step off the aimed tile weakens it first.
-  [`B5 three hunters who never answer by interrupt win at most four fifths of B1's share against ${nameOf('zaratan-the-island-that-wakes')}`]:
-    '1.08 of B1 (se 0.23): its one omen a stun answers, the Trench, comes in its last phase only, and the stun meets it 0.09 times a fight',
-  // B4 (sim-log.md, MY5 second and third passes): three cannons deal about a third more a round than the mixed party, so they beat the
-  // clocks it loses to; a brute body (plain's, Zaratan's) loses as many fights to them with no script at all.
-  ...Object.fromEntries((['plain', 'angel-of-the-last-trumpet', 'zaratan-the-island-that-wakes'] as const).map(id => [`B4 three cannons at S meet every phase of ${nameOf(id)} and win at most 15%`,
-    ({ plain: '0.380 (se 0.020): today\'s brute mythic with no script loses 0.435 to three cannons, so the miss is the body (fight.archetypes, fight.kinds.mythic), not the script',
-      'angel-of-the-last-trumpet': '0.187 (se 0.016): three cannons deal about a third more a round than the mixed party, so they win on damage before the clock (MY5 third to fifth passes)',
-      'zaratan-the-island-that-wakes': '0.657 (se 0.019): its brute body with no script loses 0.525 to three cannons; a Shell of armor and resist (30 each) still lost 0.42 to 0.80' } as Record<string, string>)[id]!])),
 };
 
 // ── one test per row: the row is measured inside its test, so a bun timeout or the per-test times name the row ──

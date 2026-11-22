@@ -6,6 +6,7 @@
 // To add a mythic: a row of `MYTHICS` (its key is its id), its seed's `script` naming the key, and one test in
 // tests/mythics.test.ts that states its shape from its own words. Every other check loops over `MYTHICS`.
 import type { StatusKey } from '../combat/effect-ops.ts';
+import type { Formula } from '../formula.ts';
 import type { GatePhase, MoveKey, MythicMove, MythicScript, MythicStatus, Omen, OmenKey } from '../combat/mythic-types.ts';
 
 /**
@@ -35,15 +36,41 @@ const CRESCENDO: MythicStatus = {
     stack: { cap: 10, leave: { kind: 'never' }, keep: 'fight', threshold: null },
   },
 };
+/** Half of the gap from a body's `from` to its `to`, read on its bare sheet: the amount that moves `from` to their mean. */
+const halfGap = (from: 'armor' | 'resist', to: 'armor' | 'resist'): Formula => ({
+  kind: 'binary', op: '/', right: { kind: 'number', value: 2 },
+  left: { kind: 'binary', op: '-', left: { kind: 'sheet', whose: 'target', key: to }, right: { kind: 'sheet', whose: 'target', key: from } },
+});
+/**
+ * A mythic's guard has no gap: its armor and resist are each the mean of the two, the same sum. Worn by every phase of a
+ * script whose body splits its guard: a brute's medium kit and Vitality give a brute mythic armor 92 and resist 10 at S,
+ * so three cannons' bolts kept 0.92 of their damage where the mixed party's blades kept 0.50, and filled a stagger bar
+ * sized on a blade's hit (rows.ts `sameRankHit`) twice as fast: three cannons won 0.38 of their fights against plain and
+ * 0.66 against Zaratan, the mixed party 0.07 (row B4, sim-log.md "Mythic balance"). A caster's or a skirmisher's body
+ * (armor 20, resist 30) has no such gap.
+ */
+const EVEN_GUARD: MythicStatus = {
+  key: statusKey('mythic-even-guard'), def: {
+    label: 'Even Guard', desc: 'Its armor and resist are each the mean of the two: no one kind of harm finds a gap.',
+    ops: [{ op: 'sheet', key: 'armor', amount: halfGap('armor', 'resist') }, { op: 'sheet', key: 'resist', amount: halfGap('resist', 'armor') }],
+  },
+};
+/**
+ * Zaratan's Dive: no hit fills its bar, as no damage reaches its HP (a clock phase). Without it three cannons broke the
+ * bar under the waves every other round and the Sea Rises never landed on them (row B4, sim-log.md "Mythic balance").
+ */
+const UNDER_THE_WAVES: MythicStatus = { key: statusKey('mythic-under-the-waves'), def: { label: 'Under the Waves', desc: 'No hit fills its bar.', ops: [{ op: 'staggerRate', pct: -100 }] } };
 /** Zaratan's shell, worn on the Shore and again once the Island Wakes. */
 const SHELL: MythicStatus = { key: statusKey('mythic-shell'), def: { label: 'Shell of a Thousand Years', desc: '30 more armor.', ops: [{ op: 'sheet', key: 'armor', amount: { kind: 'number', value: 30 } }] } };
 
 /** Every script, by its id. `plain` is the script of a mythic that names none. */
 export const MYTHICS = {
   // Today's mythic with a clock: one phase from full HP, the 14 rounds row M1's fight lasts, then Overwhelm, which
-  // nothing answers, every other turn. So every mythic a GM makes plays a script and row B1 measures it.
+  // nothing answers, every other turn. So every mythic a GM makes plays a script and row B1 measures it. Its body is
+  // any a GM makes, so it wears the even guard: on a brute's its `hp` fell from 1.03 to 0.98 to keep B1 (sim-log.md,
+  // "Mythic balance").
   plain: mythicScript({
-    name: 'A Mythic', hp: 1.03,
+    name: 'A Mythic', hp: 0.98,
     shape: 'Its own fight with a clock: once the clock runs out it overwhelms the whole field every other turn, harder each time.',
     moves: {
       overwhelm: { name: 'Overwhelm', kind: 'blast', type: 'physical', reach: 'field', range: 0, hits: 1.2, sure: true, applies: null, leaves: null, self: CRESCENDO },
@@ -52,7 +79,7 @@ export const MYTHICS = {
       overwhelm: { name: 'Overwhelm', full: 'overwhelm', weak: null, aim: 'all', interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: 'none', shield: 'none', step: 'none' },
     },
     phases: [
-      { name: 'The Fight', line: 'It fights as it always has, and its clock is running.', from: 1, ends: 'gate', clock: 14, worn: [], bar: 1, acts: 'every', rotation: [act] },
+      { name: 'The Fight', line: 'It fights as it always has, and its clock is running.', from: 1, ends: 'gate', clock: 14, worn: [EVEN_GUARD], bar: 1, acts: 'every', rotation: [act] },
     ],
     enraged: [omen('overwhelm')],
   }),
@@ -66,7 +93,10 @@ export const MYTHICS = {
       // never stepped won 0.83 of the share of one that did (row B5, sim-log.md MY5 fifth pass)
       'stars-fall': { name: 'Stars Fall', kind: 'blast', type: 'magical', reach: 2, range: 12, hits: 1, sure: false,
         applies: { status: 'burning', rounds: 2 }, leaves: { name: 'Fallen stars', rounds: 2, status: 'burning' }, self: null },
-      'weighed': { name: 'Weighed and Found Wanting', kind: 'curse', type: 'magical', reach: 0, range: 24, hits: 0.35, sure: false,
+      // 1.2, not 0.35: a shield on the hunter it names cancels it, so its hit is the cost of no shield, as the Sinking's
+      // is of not stepping off. At 0.35 three cannons, who hold no shield, lost little to it and won 0.17 of their
+      // fights (row B4); at 1.2 0.093, and the mixed party, who shields it, as before (sim-log.md, "Mythic balance")
+      'weighed': { name: 'Weighed and Found Wanting', kind: 'curse', type: 'magical', reach: 0, range: 24, hits: 1.2, sure: false,
         applies: { status: 'paralyzed', rounds: 2 }, leaves: null, self: null },
       'found-wanting': { name: 'Found Wanting', kind: 'curse', type: 'magical', reach: 0, range: 24, hits: 0.2, sure: false,
         applies: { status: 'slowed', rounds: 2 }, leaves: null, self: null },
@@ -136,14 +166,17 @@ export const MYTHICS = {
         interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: 'none', shield: 'none', step: 'none' },
     },
     phases: [
+      // The Trench on the Shore's second beat, its clock 5 to 4: the stun is the tank's, and the tank is most often dead by
+      // the Island Wakes, so a Trench there met the stun 0.09 times a fight (row B5, 1.08 of B1); here 0.6. An answered
+      // Trench buys the Shore 3 rounds (`answerTime`), so its clock is a round shorter (sim-log.md, "Mythic balance").
       { name: 'The Shore', line: 'The island stirs. Where it sinks, the sea stays.',
-        from: 1, ends: 'gate', clock: 5, bar: 1, worn: [SHELL],
-        acts: ['Jaws Like a Harbour', 'Shell of a Thousand Years'], rotation: [act, act, omen('sinking')] },
+        from: 1, ends: 'gate', clock: 4, bar: 1, worn: [EVEN_GUARD, SHELL],
+        acts: ['Jaws Like a Harbour', 'Shell of a Thousand Years'], rotation: [act, omen('trench'), act, omen('sinking')] },
       { name: 'The Dive', line: 'It dives. Damage does not reach it under the waves. Survive, and keep off the rising sea.',
-        ends: 'clock', clock: 4, worn: [], bar: 1,
+        ends: 'clock', clock: 4, worn: [EVEN_GUARD, UNDER_THE_WAVES], bar: 1,
         acts: [], rotation: [omen('rising')] },
       { name: 'The Island Wakes', line: 'It surfaces, awake. The shore is smaller now.',
-        from: 0.55, ends: 'gate', clock: 5, bar: 1, worn: [SHELL, fury(20, 'Waking')],
+        from: 0.55, ends: 'gate', clock: 5, bar: 1, worn: [EVEN_GUARD, SHELL, fury(20, 'Waking')],
         acts: ['Jaws Like a Harbour', 'Shell of a Thousand Years'], rotation: [act, omen('trench'), act, omen('sinking')] },
     ],
     enraged: [omen('under')],

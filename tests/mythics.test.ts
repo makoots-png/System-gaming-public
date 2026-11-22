@@ -161,6 +161,21 @@ test('each move deals its share of an S hunter\'s HP', () => {
   }
 });
 
+test('a mythic of any body plays plain with no gap in its guard: its armor and resist are each the mean of the two', () => {
+  // A brute's medium kit and Vitality split its guard; a mythic's guard is one, so bolts and blades meet the same wall.
+  const ON: Rules = { ...RULES, fight: { ...RULES.fight, mythic: { ...RULES.fight.mythic, scripts: true } } };
+  for (const archetype of ['brute', 'caster', 'skirmisher'] as const) {
+    const bare = monsterSheet('S', archetype, 'mythic', RULES), mean = (bare.armor + bare.resist) / 2;
+    const row = monsterRows({ name: 'A Mythic', rank: 'S', archetype, kind: 'mythic', tweak: {}, abilities: [], statuses: [], script: 'plain' }, [combatantId('m')], ON)[0]!;
+    const { sheet } = modified(row.origin, row.statuses, ON);
+    expect([archetype, Math.abs(sheet.armor - mean) <= 0.5, Math.abs(sheet.resist - mean) <= 0.5], `armor ${sheet.armor}, resist ${sheet.resist}, bare ${bare.armor} and ${bare.resist}`).toEqual([archetype, true, true]);
+  }
+  // Zaratan, a brute, wears it under its Shell of armor: its resist is the mean of its body's two
+  const zaratan = SEEDS.find(m => m.script === 'zaratan-the-island-that-wakes')!, bare = monsterSheet('S', zaratan.archetype, 'mythic', RULES, [], tweakOfMonster(zaratan.tweak));
+  const row = monsterRows(zaratan, [combatantId('z')], ON)[0]!;
+  expect(Math.abs(modified(row.origin, row.statuses, ON).sheet.resist - (bare.armor + bare.resist) / 2)).toBeLessThanOrEqual(0.5);
+});
+
 test('a move\'s ability is named for its key, cannot be avoided when sure, never lands on its own side and applies its status', () => {
   const [body] = bodiesOf('angel-of-the-last-trumpet'), angel = mythicScriptOf('angel-of-the-last-trumpet');
   const note = mythicMove(...entryOf(angel, 'final-note')!, body!, RULES);
@@ -244,6 +259,7 @@ describe('each script\'s shape, played on the reducer (design B.6, "The test to 
       if (t.fight.currentId === 'A') {
         const hit = go(t.fight, { type: 'act', by: id('A'), ability: KILL.id, aim: id('X'), rolls: { dice: {}, react: {} } });
         expect(rowHp(body(hit.fight, 'X')), 'no damage reaches it under the waves').toBe(hp);
+        expect([body(hit.fight, 'X').stagger?.fill, hit.effects.some(e => e.type === 'staggered')], 'nor fills its bar').toEqual([0, false]);
         hits++;
       }
     }
