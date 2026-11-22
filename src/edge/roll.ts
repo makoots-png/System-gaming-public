@@ -4,11 +4,12 @@
 // `rollOpenings` gives `start` and `add` their `Opening`s; `rollSettle` gives `settle` its dice. Each takes a random
 // source (a number in [0, 1)) so a test can pass a seeded one; the default reads `crypto.getRandomValues`. A dice term
 // with Roll20's modifiers (src/core/formula.ts) is rolled face by face by `rollTerm`, which core reads; `rollFormula`
-// rolls a whole formula with its faces, for a view that shows them. Both take the GM's `Weight` (src/core/draws.ts), 0 by default.
+// rolls a whole formula with its faces, for a view that shows them. Both take the GM's `Weight` (src/core/draws.ts), 0 by default;
+// `rollNeeds`, `rollOpenings` and `rollSettle` take the fight's weights as src/core/combat/fudge.ts works them out, none by default.
 
 import { diceOf, rolled } from '../core/formula.ts';
 import { drawNeeds, drawOpenings, drawSettle, drawTerm, faceOf as face } from '../core/draws.ts';
-import type { Weight } from '../core/draws.ts';
+import type { NeedWeights, Weight } from '../core/draws.ts';
 import type { Dice, Formula, Rolled, Scope, TermRoll } from '../core/formula.ts';
 import type { CombatantId } from '../core/combat/ability-types.ts';
 import type { Needs, Rolls } from '../core/combat/resolve.ts';
@@ -50,11 +51,15 @@ export const rollDice = (d: Dice, random: Random = cryptoRandom): number => roll
 export const rollFormula = (formula: Formula, scope: Scope, random: Random = cryptoRandom, weight: Weight = 0): Rolled =>
   rolled(formula, scope, diceOf(formula).map(d => rollTerm(d, random, weight)));
 
-/** Every die a use needs: one total per dice term for each target, a d20 for each reaction, a d20 for a refund with a chance. */
-export const rollNeeds = (needs: Needs, random: Random = cryptoRandom): Rolls => drawNeeds(needs, random);
+/**
+ * Every die a use needs: one total per dice term for each target, a d20 for each reaction, a d20 for a refund with a
+ * chance; each weighed by the fight's `weights` (src/core/combat/fudge.ts `weightsFor`), none by default.
+ */
+export const rollNeeds = (needs: Needs, random: Random = cryptoRandom, weights?: NeedWeights): Rolls => drawNeeds(needs, random, weights);
 
-/** The opening of each row: a d20 and a d1000 for the tie. */
-export const rollOpenings = (ids: readonly CombatantId[], random: Random = cryptoRandom): Opening[] => drawOpenings(ids, random);
+/** The opening of each row: a d20 weighed by the fight's `weights` (fudge.ts `openingWeights`) and a d1000 for the tie. */
+export const rollOpenings = (ids: readonly CombatantId[], random: Random = cryptoRandom, weights?: Readonly<Record<CombatantId, Weight>>): Opening[] =>
+  drawOpenings(ids, random, weights);
 
-/** The dice a `rollSettle` effect asks for: one total per term, in order. */
-export const rollSettle = (dice: readonly Dice[], random: Random = cryptoRandom): number[] => drawSettle(dice, random);
+/** The dice a `rollSettle` effect asks for: one total per term, in order, each weighed by the fight's `weights` (fudge.ts `settleWeights`). */
+export const rollSettle = (dice: readonly Dice[], random: Random = cryptoRandom, weights?: readonly Weight[]): number[] => drawSettle(dice, random, weights);

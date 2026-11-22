@@ -13,11 +13,11 @@ import { baseStats } from '../../src/core/stats.ts';
 import type { StatKey, Stats } from '../../src/core/stats.ts';
 import { TIER_BUDGET } from '../../src/core/registry/paths.ts';
 import { kitGear, NO_TWEAK, pointsAt, split } from '../../src/core/hunter/derive.ts';
-import type { Archetype as MonsterArchetype, SheetBasis, Kit, MonsterKind } from '../../src/core/hunter/derive.ts';
+import type { Archetype as MonsterArchetype, SheetBasis, Kit, MonsterKind, MonsterTrait } from '../../src/core/hunter/derive.ts';
 import { diceOf, parseFormula } from '../../src/core/formula.ts';
 import { dist, inShape, openGrid, place, reachable, straightCost, tiles } from '../../src/core/combat/space.ts';
 import type { Place } from '../../src/core/combat/space.ts';
-import { tick, walkCost } from '../../src/core/combat/timeline.ts';
+import { interval, paceCost, tick, walkCost } from '../../src/core/combat/timeline.ts';
 import { abilityId, combatantId } from '../../src/core/combat/ability-types.ts';
 import type { Ability } from '../../src/core/combat/ability-types.ts';
 import { modified, statusKey } from '../../src/core/combat/effect-ops.ts';
@@ -284,14 +284,17 @@ const tankPolicy: Policy = (f, me, _plan, R) => {
   return usable(f, me, strike, target.place) ? { type: 'act', ability: strike, aim: target.id } : charge(f, me, strike, target, R) ?? toward(f, me, target);
 };
 /**
- * The tank with a control (row P3): taunts as the tank does; else stuns the foe with the most HP when it may and that
- * foe's next turn comes within a round (later, a hold of a round moves nothing); else the tank's play.
+ * The tank with a control (row P3): stuns the foe with the most HP when the stun is ready and that foe's turn comes
+ * before the tank's next one; else the tank's play, its taunt included. The stun goes before the taunt because a
+ * stun left ready is control lost (sim-log.md, balance unit 3: taunting first left it idle on 1.4 turns a fight, and
+ * the boss lost 0.032 of its time at C); it waits while the foe's turn is past the tank's next, as a hold is a floor
+ * on that turn and moves a nearer one further.
  */
 export const controlPolicy: Policy = (f, me, plan, R) => {
-  const choice = tankPolicy(f, me, plan, R), stun = me.abilities.find(a => a.id === 'stun');
-  if (!stun || (choice.type === 'act' && choice.ability.id === 'taunt')) return choice;
+  const stun = me.abilities.find(a => a.id === 'stun');
   const big = [...foesOf(f, me)].sort((a, b) => rowHp(b) - rowHp(a) || (a.id < b.id ? -1 : 1))[0];
-  return big && big.at < f.now + R.fight.round && usable(f, me, stun, big.place) ? { type: 'act', ability: stun, aim: big.id } : choice;
+  const mine = f.now + interval(me.speed, paceCost('standard', R.fight), R.fight);
+  return stun && big && big.at < mine && usable(f, me, stun, big.place) ? { type: 'act', ability: stun, aim: big.id } : tankPolicy(f, me, plan, R);
 };
 /** Bruiser: Mutilation on the nearest foe when it is ready, else a strike, walking up to it. */
 const bruiserPolicy: Policy = (f, me) => {
@@ -450,24 +453,24 @@ export function spending(a: PenBuild, rank: Rank, spend: PenSpend, id: string = 
  * A same-rank hit (design 4.3, the paper's `sameRankHit`): the bruiser's strike at its average dice on a same-rank monster
  * of `archetype` and `kind` (the body that holds the bar; a normal brute by default), worked out by `resolve` itself.
  */
-export function sameRankHit(rank: Rank, R: Rules = RULES, archetype: MonsterArchetype = 'brute', kind: MonsterKind = 'normal'): number {
+export function sameRankHit(rank: Rank, R: Rules = RULES, archetype: MonsterArchetype = 'brute', kind: MonsterKind = 'normal', traits: readonly MonsterTrait[] = []): number {
   const at = (s: SimRow, p: Place): Body => { const m = modified(s.row.origin, [], R); return { ...s.row, ...m, place: p, speed: m.sheet.speed, at: tick(0), tie: 0 }; };
-  const u = at(hunter('bruiser', rank, 'u', R), place(0, 0)), t = at({ row: unbarred(rank, archetype, kind, 't', R), policy: monsterPolicy }, place(1, 0));
+  const u = at(hunter('bruiser', rank, 'u', R), place(0, 0)), t = at({ row: unbarred(rank, archetype, kind, 't', R, traits), policy: monsterPolicy }, place(1, 0));
   const a = builtIns(R).strike, mean = diceOf(formulaOf(a, RULES)!).map(d => d.count * (d.sides + 1) / 2);
   const r = resolve(a, u, [u, t], t.id, openGrid(R.fight.grid.w, R.fight.grid.h), { dice: { [t.id]: mean }, react: { [t.id]: 20 } }, tick(0), R);
   if (!r.ok) throw new Error(r.reason);
   return r.outcomes[0]!.dealt;
 }
-/** A monster's row before its stagger bar. */
-function unbarred(rank: Rank, archetype: MonsterArchetype, kind: MonsterKind, id: string, R: Rules): NewRow {
-  const origin: Origin = { kind: 'monster', name: 'Monster', rank, archetype, monsterKind: kind, tweak: NO_TWEAK };
+/** A monster's row before its stagger bar, with `traits` (`RULES.fight.traits`) on its body. */
+function unbarred(rank: Rank, archetype: MonsterArchetype, kind: MonsterKind, id: string, R: Rules, traits: readonly MonsterTrait[] = []): NewRow {
+  const origin: Origin = { kind: 'monster', name: 'Monster', rank, archetype, monsterKind: kind, tweak: { ...NO_TWEAK, traits } };
   return newRow(id, id, 'foe', 'monster', origin, tierOf(rank), [MONSTER_ABILITY[archetype](R)], R);
 }
 /** A monster of the simulation; an elite's or a boss's stagger bar is its kind's number of same-rank hits on its own body. */
-export function monster(rank: Rank, archetype: MonsterArchetype, kind: MonsterKind, id: string, R: Rules = RULES): SimRow {
-  const base = unbarred(rank, archetype, kind, id, R);
+export function monster(rank: Rank, archetype: MonsterArchetype, kind: MonsterKind, id: string, R: Rules = RULES, traits: readonly MonsterTrait[] = []): SimRow {
+  const base = unbarred(rank, archetype, kind, id, R, traits);
   const bar = R.fight.kinds[kind].stagger;
-  const hit = bar > 0 ? sameRankHit(rank, R, archetype, kind) : 0;
+  const hit = bar > 0 ? sameRankHit(rank, R, archetype, kind, traits) : 0;
   return { row: bar > 0 ? { ...base, stagger: { fill: 0, max: bar * hit, hit } } : base, policy: monsterPolicy } as SimRow;
 }
 

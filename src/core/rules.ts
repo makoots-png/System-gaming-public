@@ -353,10 +353,19 @@ const SPEC = {
     // from HP into armor and resist: at 2.8 the fights are 5.9 and 7.3 rounds. At 4 bodies the S party needed 9.8 rounds,
     // because the tank spends its turns taunting. An elite (1.5 HP, 1.25 guard) stays between a normal and a boss in each.
     // `xp` is the factor on the rank's XP (`rankTable`), as the old boss (3) and elite (1.5) rules gave it.
+    // A mythic (balance plan section 4) is the fourth kind, "basically impossible to beat, like 5-10% odds for a party of
+    // 3" (the owner, Nov 21): the mixed party at S's first level wins 5 to 10 fights in 100 against one alone (row M1,
+    // tests/fight-sim.test.ts; sim-log.md, balance unit 3). Its armor and resist are the plan's 2, twice a normal's, and
+    // its power the same 2, so it is twice a normal body in everything but HP. Its HP is what M1 measured against a brute
+    // mythic, 600 fights each: 5.0 bodies won 0.167, 5.1 won 0.110, 5.2 won 0.068 (se 0.010), 5.3 won 0.042, so 5.2 is
+    // the middle of the bound. The band is that narrow because a 14-round fight between fixed builds averages its dice
+    // out. Its stagger bar is a boss's 4 same-rank hits. Its XP is about its HP factor, as an elite's (1.5 for 1.5) and
+    // a boss's (3 for 2.8) are.
     kinds: {
       normal: { hp: of(0.6, KIND_FACTOR), power: of(0.7, KIND_FACTOR), armor: of(1, KIND_GUARD), resist: of(1, KIND_GUARD), stagger: of(0, KIND_STAGGER), xp: of(1, KIND_XP) },
       elite: { hp: of(1.5, KIND_FACTOR), power: of(1, KIND_FACTOR), armor: of(1.25, KIND_GUARD), resist: of(1.25, KIND_GUARD), stagger: of(2.5, KIND_STAGGER), xp: of(1.5, KIND_XP) },
       boss: { hp: of(2.8, KIND_FACTOR), power: of(1.2, KIND_FACTOR), armor: of(1.5, KIND_GUARD), resist: of(1.5, KIND_GUARD), stagger: of(4, KIND_STAGGER), xp: of(3, KIND_XP) },
+      mythic: { hp: of(5.2, KIND_FACTOR), power: of(2, KIND_FACTOR), armor: of(2, KIND_GUARD), resist: of(2, KIND_GUARD), stagger: of(4, KIND_STAGGER), xp: of(5, KIND_XP) },
     },
     // Monster traits (balance plan section 1): named changes to a monster's body that a row's words ask for, each the
     // smallest set of pieces the body already has: a factor on max HP, on armor and on resist (after its kind's), a

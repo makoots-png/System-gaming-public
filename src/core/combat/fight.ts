@@ -35,7 +35,7 @@ import { refilledRow, rowLifeAfter, rowLifeTakes } from './row-life.ts';
 import { summonRow } from './rows.ts';
 import { crowded } from './summons.ts';
 import { FORCED_FACES, line, MAX_ROWS, MAX_STATUSES, pendingKey } from './fight-types.ts';
-import { fudgeStep, NO_FUDGE } from './fudge.ts';
+import { forcesRead, fudgeStep, NO_FUDGE } from './fudge.ts';
 import { attemptsLeft, extractionStep, UNTRIED } from './extraction.ts';
 import { entryKey, MAX_ZONE_TILES, MAX_ZONES, oldEnough, placeZone, pricedZones, zoneActed, zoneStep } from './zones.ts';
 import type { Zone } from './zones.ts';
@@ -759,9 +759,20 @@ function explored(f: Fight): Fight {
 }
 
 /**
+ * `g`, the fight command `cmd` left, with the forced faces its d20s read on `f` gone (fudge.ts `forcesRead`): a force
+ * is the one roll's that read it (notes-8-fudge.md section 2). A fight that ended holds no fudge to spend.
+ */
+function spent(f: Fight | null, g: Fight, cmd: Command): Fight {
+  if (!f || f.phase === 'ended' || g.phase === 'ended') return g;
+  const ids = forcesRead(f, cmd);
+  return ids.length ? { ...g, fudge: fudgeStep(g.fudge, { kind: 'spent', ids }) } : g;
+}
+
+/**
  * Every change to a fight goes through here. A command that does not apply in the fight's state is refused. What the
  * sheets of its rows hear (`sheetBacks`) is read here, once, from the fight the command found and the one it left, so
- * no step and no path inside one can change a row without its sheet hearing it.
+ * no step and no path inside one can change a row without its sheet hearing it. A command taken spends the forced
+ * faces its dice read (`spent`); a refused one leaves the fight as it was, so it spends none.
  */
 export function reduce(f: Fight | null, cmd: Command, ctx: Ctx): Result {
   // The table's type pairs each state with its fight and each key with the step for that command.
@@ -769,7 +780,7 @@ export function reduce(f: Fight | null, cmd: Command, ctx: Ctx): Result {
   if (!step) return refused(f, 'notNow');
   const r = step(f as never, cmd as never, ctx);
   if (!r.fight || r.fight === f) return r;
-  const g = marked(explored(r.fight));
+  const g = marked(explored(spent(f, r.fight, cmd)));
   return { fight: g, effects: [...sheetBacks(f, g, ctx), ...r.effects] };
 }
 

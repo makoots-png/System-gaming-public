@@ -7,10 +7,11 @@
 // sqrt(p * (1 - p) / n). It is largest at p = 0.5, where n = 400 gives sqrt(0.25 / 400) = 0.025, so every share whose
 // bound has an edge between 0.25 and 0.75 plays 400 fights. A share bounded near 0 is judged at its edge: at p = 0.10,
 // n = 150 gives sqrt(0.09 / 150) = 0.0245; at p = 0.25, n = 300 gives sqrt(0.1875 / 300) = 0.025; at p = 0.05, n = 100
-// gives 0.022. A mean (rounds, staggers, casts) prints its own standard error, sd / sqrt(n); a ratio of two means or
-// shares prints the delta-method error, r * sqrt((se_a / a)^2 + (se_b / b)^2). A row whose value is within one standard
-// error of its edge is printed as "near"; a change to a number is accepted only when it moves a row by more than twice
-// its standard error.
+// gives 0.022. A share bounded on both sides near 0 (M1, 0.05 to 0.10) plays 600 fights: sqrt(0.075 * 0.925 / 600) =
+// 0.011. A mean (rounds, staggers, casts) prints its own standard error, sd / sqrt(n); a ratio of two means or shares
+// prints the delta-method error, r * sqrt((se_a / a)^2 + (se_b / b)^2). A row whose value is within one standard error
+// of its edge is printed as "near"; a change to a number is accepted only when it moves a row by more than twice its
+// standard error.
 //
 // How each bound is read, where the design's words leave a choice (section 6 as the lead restated it after round one):
 // - "the favoured build wins 60 to 90%": the first build's share of the fights it wins, the mean of two openings played
@@ -27,6 +28,8 @@
 // - "no hunter dying in more than 1 run in 10": a hunter dies in at most 1 pack fight in 10.
 // - "at most one hunter down in more than 1 run in 4, a death in under 1 in 20": with down and death one event, the
 //   pair cannot both stand; the row keeps the design's bound on a hunter lost, a death in under 1 boss fight in 20.
+// - "A mythic should be basically impossible to beat, like 5-10% odds for a party of 3" (the owner, Nov 21; balance plan
+//   section 4, M1): the mixed party at S's first level wins 5 to 10% of fights against one brute mythic alone.
 // - "front hunter": the first hunter of the party's line, the one the pack reaches first; "goes down" is read as dies.
 // - "Fatigue over three fights of 6 rounds": a party of the five builds against two same-rank bosses, ended by the GM at
 //   6 rounds, three times, with HP back to full and 55 fatigue back between fights (`RULES.fight.fightRest`) and no mana
@@ -43,10 +46,12 @@
 // - Penetration's fairness (balance plan section 9, P1 and P2): one build of the mixed party spends one item of its tier's
 //   middle budget all on its main stat, on percent or on flat penetration of its pair (the bruiser armor, the cannon
 //   magic), the other build on its main stat (`spending`). Each pair is its own row, so a row names the pair that misses.
-//   P1 is the paired difference in rounds on the same seeds; "more than 25% faster" is the main stat's rounds over the
-//   variant's, the larger of the two variants.
+//   P1 is the paired difference in rounds on the same seeds, at the boss whose thick defence the pair counters: the
+//   brute boss (armor) for the armor pair, a warded caster boss (resist) for the magic pair. "More than 25% faster" is
+//   the main stat's rounds over the variant's, the larger of the two variants.
 // - The party's control (P3): the share of the fight's time the boss's turn was pushed by the tank's stun (a hold of a
-//   round, `abilities().stun`), a stagger's push apart. No built-in skill holds, so the stun is the plain one.
+//   round, `abilities().stun`), a stagger's push apart. No built-in skill holds, so the stun is the plain one. The tank
+//   uses it whenever it is ready and the boss acts before the tank's next turn (`controlPolicy`), before a taunt.
 import { describe, expect, test } from 'bun:test';
 import { formulaOf } from '../src/core/registry/ability-kinds.ts';
 import { RULES } from '../src/core/rules.ts';
@@ -176,7 +181,7 @@ function bestUse(rank: Rank, uses: number, builds: readonly Archetype[] = PLAIN_
 
 // ── the rows ──
 type Row = { name: string; setup: string; runs: number; measure: () => Measure; low: number; high: number; lever: string };
-const RUNS = { even: 400, tenth: 150, quarter: 300, twentieth: 100 } as const;
+const RUNS = { even: 400, tenth: 150, quarter: 300, twentieth: 100, mythic: 600 } as const;
 /** The triangle's three sides: who should win, against whom (decision 1). */
 const SIDES: readonly (readonly [Archetype, Archetype, string])[] = [
   ['speed', 'cannon', 'the builds, the policies, the blast (wind-up, radius, mana)'],
@@ -300,12 +305,22 @@ const W2_ROWS: readonly Row[] = [
 ];
 
 // ── penetration and control against a boss tough by its body (balance plan section 9, rows P1 to P3) ──
-/** Each build that spends an item on a penetration, and the pair it holds: the bruiser's armor, the cannon's magic. */
-const PAIRS: readonly (readonly [PenBuild, string])[] = [['bruiser', 'armor'], ['cannon', 'magic']];
-/** The fights P1 and P2 read: a same-rank pack of three normal brutes, and a same-rank brute boss. */
-type PenFight = 'pack' | 'boss';
-const PEN_FOES: { readonly [F in PenFight]: (rank: Rank) => SimRow[] } = { pack, boss: rank => [monster(rank, 'brute', 'boss', 'boss')] };
-const PEN_RUNS: { readonly [F in PenFight]: number } = { pack: RUNS.tenth, boss: RUNS.quarter };
+/**
+ * The fights P1 and P2 read: a same-rank pack of three normal brutes, a same-rank brute boss, and its mirror, a same-rank
+ * caster boss with the warded trait, whose thick defence is resist (34 against armor 15 at C and S, where the brute
+ * boss holds armor 58 and 69 against resist 8).
+ */
+type PenFight = 'pack' | 'boss' | 'warded';
+const PEN_FOES: { readonly [F in PenFight]: (rank: Rank) => SimRow[] } = {
+  pack, boss: rank => [monster(rank, 'brute', 'boss', 'boss')], warded: rank => [monster(rank, 'caster', 'boss', 'boss', RULES, ['warded'])],
+};
+const PEN_RUNS: { readonly [F in PenFight]: number } = { pack: RUNS.tenth, boss: RUNS.quarter, warded: RUNS.quarter };
+/**
+ * Each build that spends an item on a penetration, the pair it holds, and the boss P1 reads the pair on: the one whose
+ * thick defence the pair counters (the lead's ruling after balance unit 2), the brute for the bruiser's armor and the
+ * warded caster for the cannon's magic.
+ */
+const PAIRS: readonly (readonly [PenBuild, string, PenFight, string])[] = [['bruiser', 'armor', 'boss', 'boss'], ['cannon', 'magic', 'warded', 'warded caster boss']];
 /** The mixed party with `who` spending one item of its tier's middle budget `spend`'s way and the other build on its main stat. */
 const spendKey = (who: PenBuild, spend: PenSpend, fight: PenFight, rank: Rank): string => `spend ${spend === 'main' ? 'main' : `${who} ${spend}`} v ${fight} ${rank}`;
 const spendRuns = (who: PenBuild, spend: PenSpend, fight: PenFight, rank: Rank): FightRecord[][] => runsOf(spendKey(who, spend, fight, rank), (seed: number) => [playFight({
@@ -329,9 +344,9 @@ const vsBossControlled = (rank: Rank) => (seed: number): FightRecord[] => {
 };
 const PEN_LEVER = 'itemBudget.penFoe, fight.penMax, the kinds\' armor and resist';
 const PEN_ROWS: readonly Row[] = (['C', 'S'] as const).flatMap(rank => [
-  ...PAIRS.flatMap(([who, pair]): Row[] => [
-    { name: `against a same-rank boss the ${who}'s ${pair} penetration clears in fewer rounds as percent than as flat at ${rank}`, setup: spendKey(who, 'flat', 'boss', rank), runs: 2 * RUNS.quarter,
-      measure: () => roundsOver(spendRuns(who, 'flat', 'boss', rank), spendRuns(who, 'percent', 'boss', rank)), low: 0, high: Infinity, lever: PEN_LEVER },
+  ...PAIRS.flatMap(([who, pair, boss, bossWords]): Row[] => [
+    { name: `against a same-rank ${bossWords} the ${who}'s ${pair} penetration clears in fewer rounds as percent than as flat at ${rank}`, setup: spendKey(who, 'flat', boss, rank), runs: 2 * PEN_RUNS[boss],
+      measure: () => roundsOver(spendRuns(who, 'flat', boss, rank), spendRuns(who, 'percent', boss, rank)), low: 0, high: Infinity, lever: PEN_LEVER },
     { name: `against a same-rank pack the ${who}'s ${pair} penetration clears in fewer rounds as flat than as percent at ${rank}`, setup: spendKey(who, 'flat', 'pack', rank), runs: 2 * RUNS.tenth,
       measure: () => roundsOver(spendRuns(who, 'percent', 'pack', rank), spendRuns(who, 'flat', 'pack', rank)), low: 0, high: Infinity, lever: PEN_LEVER },
     ...(['pack', 'boss'] as const).map((fight): Row => ({
@@ -342,13 +357,19 @@ const PEN_ROWS: readonly Row[] = (['C', 'S'] as const).flatMap(rank => [
   { name: `the party's control takes 10 to 35% of a same-rank boss's turns, stagger counted apart, at ${rank}`, setup: `control v boss ${rank}`, runs: RUNS.quarter,
     measure: () => {
       const rs = runsOf(`control v boss ${rank}`, vsBossControlled(rank), RUNS.quarter).map(r => r[0]!);
-      return { ...avg(rs.map(r => (r.held.boss ?? 0) / r.ticks)), note: `${fmt(mean(rs.map(r => r.tally.tank!.acts.stun ?? 0)))} stuns a fight, ${fmt(mean(rs.map(r => r.rounds)))} rounds` };
+      const stuns = rs.reduce((n, r) => n + (r.tally.tank!.acts.stun ?? 0), 0), held = rs.reduce((n, r) => n + (r.held.boss ?? 0), 0);
+      return { ...avg(rs.map(r => (r.held.boss ?? 0) / r.ticks)), note: `${fmt(stuns / rs.length)} stuns a fight, each holding ${fmt(held / stuns / RULES.fight.round)} rounds, ${fmt(mean(rs.map(r => r.rounds)))} rounds` };
     }, low: 0.1, high: 0.35, lever: 'the party\'s control (abilities().stun) and Tenacity' },
 ]);
+
+/** The mixed party at S against one same-rank brute mythic (balance plan section 4, row M1). */
+const vsMythic = (seed: number): FightRecord[] => [playFight({ rows: [...party(MIXED, 'S'), monster('S', 'brute', 'mythic', 'mythic')] }, seed)];
 
 const ROWS: readonly Row[] = [
   ...triangle('C'), ...triangle('S'), ...atE,
   ...partyRows('C'), ...partyRows('S'),
+  { name: 'three hunters at S win 5 to 10% of fights against a same-rank mythic', setup: 'mixed v mythic S', runs: RUNS.mythic,
+    measure: () => wins('mixed v mythic S', vsMythic, RUNS.mythic), low: 0.05, high: 0.1, lever: 'kinds.mythic.hp' },
   { name: 'no build is at its fatigue capacity before the third fight at C', setup: 'dungeon C', runs: RUNS.twentieth,
     measure: () => share(runsOf('dungeon C', dungeon('C'), RUNS.twentieth).map(d => d.slice(0, 2).some(r => Object.values(r.tally).some(t => t.fatigueMax > 0 && t.fatigue >= t.fatigueMax)))), low: 0, high: 0.05, lever: 'fightRest' },
   { name: 'the speed build reaches its fatigue capacity in the third fight at C', setup: 'dungeon C', runs: RUNS.twentieth,
@@ -379,16 +400,13 @@ const ROWS: readonly Row[] = [
 
 /**
  * The rows outside their bound, with the value measured: each stays `todo` until a change in RULES.fight brings it inside
- * (docs/agent-handoff/rw/sim-log.md says why each misses, "Balance unit 2, step 2"). The rule calls are the lead's.
+ * (docs/agent-handoff/rw/sim-log.md says why each misses, "Balance unit 3, step 1"). The rule calls are the lead's.
  */
 const OPEN: Readonly<Record<string, string>> = {
-  'against a same-rank boss the cannon\'s magic penetration clears in fewer rounds as percent than as flat at C':
-    '-0.080 (se 0.015): a brute boss\'s resist is 8, so 28 more percent takes 2.2 off it and 5 flat takes 5; no price or cap moves that, only kinds.boss.resist or the boss P1 is read on',
-  'against a same-rank boss the cannon\'s magic penetration clears in fewer rounds as percent than as flat at S':
-    '-0.119 (se 0.015): resist 8, the percent at fight.penMax 60 takes 3.1 off it and 8 flat takes 8',
   'the party\'s control takes 10 to 35% of a same-rank boss\'s turns, stagger counted apart, at C':
-    '0.032 (se 0.003): the mixed party holds no control; with a plain stun of a round every 3 rounds the hold is a floor on a turn already coming, so a stun moves the boss about a fifth of a round',
-  'the party\'s control takes 10 to 35% of a same-rank boss\'s turns, stagger counted apart, at S': '0.025 (se 0.002): as at C',
+    '0.079 (se 0.004): the tank stuns 1.9 times a fight of 6.2 rounds, 0.93 of what its cooldown allows, but its Aim 10 against the boss\'s Will 10 is resisted 45% of tries, and a hold is a floor on a turn already 0.48 of a round away, so a landed stun of 0.89 rounds (Tenacity 12) moves it 0.45; resistDc 19 brings it in at both ranks and puts four triangle rows out (sim-log.md, balance unit 3)',
+  'the party\'s control takes 10 to 35% of a same-rank boss\'s turns, stagger counted apart, at S':
+    '0.061 (se 0.003): as at C, with 2.1 stuns in 7.6 rounds, 45% resisted, and Tenacity 20 cutting a landed stun to 0.81 rounds, which moves the turn 0.40',
 };
 
 // ── one test per row: the row is measured inside its test, so a bun timeout or the per-test times name the row ──

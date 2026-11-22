@@ -68,6 +68,27 @@ describe('the odds of a fight', () => {
     expect(oddsDetail(r, 'party')).toContain('No winner by round 40 in 100%.');
   });
 
+  test('a played fight draws with the fight\'s fudge: at party +19 every party reaction d20 reads 20 and every foe\'s reads 1', () => {
+    // a reaction d20 is weighed fudge(target) − fudge(user) and kept on its die (notes-8-fudge.md section 2), so +19 reads
+    // a d20's top face whatever fell, and −19 its bottom; the fight still plays to its end
+    const f: Setup = { ...small(), fudge: { sides: { party: 19, foe: 0 }, rows: {}, forced: {} } };
+    for (const seed of [1, 2, 3]) {
+      let p: Play = playBegin(f, seed, RULES).play, read = 0;
+      for (let k = 0; !playOver(p) && k < 6000; k++) {
+        const s = playStep(p as Play & { readonly fight: Running }, () => sensible, { capRounds: 40, endAtRounds: null }, RULES);
+        for (const [t, face] of Object.entries(s.rolls?.react ?? {})) {
+          const side = s.before.rows.find(r => r.id === t)!.side;
+          if (side === s.me!.side) continue;
+          expect(face).toBe(side === 'party' ? 20 : 1);
+          read++;
+        }
+        p = s.play;
+      }
+      expect(playOver(p)).toBe(true);
+      expect(read).toBeGreaterThan(0);
+    }
+  });
+
   test('a fight already running is played from where it stands', () => {
     let f: Fight = small();
     f = reduce(f, { type: 'start', openings: f.rows.map((r, i) => ({ id: r.id, d20: 10, tie: i })) }, ctx).fight!;

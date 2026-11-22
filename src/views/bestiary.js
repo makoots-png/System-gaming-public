@@ -171,7 +171,7 @@ export function register(app) {
   const f = { rank: '', type: '', q: '', enc: false }; const counts = new Map(); let lastHtml = '';
   const typeOptions = () => [...new Set(list().map(m => m.type).filter(Boolean))].sort();
 
-  const KIND_LABEL = { normal: 'Normal', elite: 'Elite', boss: 'Boss' };
+  const KIND_LABEL = { normal: 'Normal', elite: 'Elite', boss: 'Boss', mythic: 'Mythic' };
   const ARCH_LABEL = { brute: 'Brute', skirmisher: 'Skirmisher', caster: 'Caster' };
   const ABILITY_KIND = { strike: 'Strike', shot: 'Shot', blast: 'Blast', curse: 'Curse', support: 'Support' };
   /** A monster's traits by name ("Slow, Armored"), in the rules' order. */

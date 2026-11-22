@@ -2392,6 +2392,12 @@ describe('the fudge: the GM\'s hidden weight on the fight\'s dice (notes-8-fudge
     expect(fudgeOf(reduce(fight, add(row('B', 'party')), ctx).fight).rows).toEqual({ [id('A')]: 1 });
   });
 
+  test('a command spends the forces of the rows whose d20 it carries, and another row\'s force waits', () => {
+    const { fight } = play(add(row('A', 'party'), row('M', 'foe'), row('N', 'foe')), start(['A', 20], ['M', 10], ['N', 5]), force('A', 20), force('M', 1), force('N', 20));
+    expect(fudgeOf(reduce(fight, hit('A', 'M'), ctx).fight).forced).toEqual({ [id('N')]: 20 });
+    expect(fudgeOf(reduce(fight, pass('A'), ctx).fight).forced, 'a turn that rolls nothing spends nothing').toEqual({ [id('A')]: 20, [id('M')]: 1, [id('N')]: 20 });
+  });
+
   test('a fight read from a save without a fudge has all 0', () => {
     const { fudge: _, ...stored } = running(play(...duel(), weigh(side('party'), 2)));
     expect(fudgeOf(parseFight(JSON.parse(JSON.stringify(stored)), RULES))).toEqual({ sides: { party: 0, foe: 0 }, rows: {}, forced: {} });

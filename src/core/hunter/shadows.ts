@@ -52,8 +52,11 @@ export function shadowRises<S extends Pick<Save, 'hunters' | 'log' | 'seq'>>(sav
     { kind: 'system', hunterId: h.id, title: 'Shadow extraction', text: `${made.name} (${made.grade}) joins the shadow army.` });
 }
 
-/** The grade a fallen monster of each kind rises as (rows.ts `SHADOW_KINDS` gives each grade its body). */
-const RISES_AS: { readonly [K in MonsterKind]: ShadowGrade } = { boss: 'Knight', elite: 'Elite', normal: 'Normal' };
+/**
+ * The grade a fallen monster of each kind rises as (rows.ts `SHADOW_KINDS` gives each grade its body). A mythic, the
+ * highest kind, rises as the highest grade, on a boss's body.
+ */
+const RISES_AS: { readonly [K in MonsterKind]: ShadowGrade } = { mythic: 'Marshal', boss: 'Knight', elite: 'Elite', normal: 'Normal' };
 export const risesAs = (kind: MonsterKind): ShadowGrade => RISES_AS[kind];
 /** One extraction roll against `dc`: a natural 1 crumbles the corpse, a natural 20 or a total of `dc` or more raises the shadow, else it fails. */
 export const extractOutcome = (roll: { readonly natural: number; readonly total: number }, dc: number): ExtractionOutcome =>

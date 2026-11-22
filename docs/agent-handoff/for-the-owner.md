@@ -4,56 +4,17 @@ A running list of what needs your call. The lead adds to it and strikes a line w
 
 ## Open
 
-### 1. The economy on the live site (asked Nov 21)
+Numbers 1, 3, 4, 5, 6 and 7 are answered and are under Answered (the economy is live, the balance defaults stand, armor is package A, the coin shows no side, the fudge rulings).
 
-Grades and shared gate pay are on the working branch, not on `main`. The lead is holding the PR into `main` until the items lane lands, because a consumable still costs half there, which you have replaced. Say "merge now" if you want it live as it is.
+### 2. Five rule calls asked again in plain words (first asked Nov 20; he answered the other twenty on Nov 22, under Answered)
 
-### 2. Rule calls the state machines rest on (asked Nov 20)
+He wrote that these five were not clear. Each is asked again here as what a table would see; the app keeps today's behaviour until he answers.
 
-Each machine is being built to behave as the app does today, with the row below named in its table, so your answer is a one-row change. Each line is Neon's proposal; the lead recommends yes unless it says otherwise. Answer "yes to all" or by number.
-
-1. Does a dead hunter get nothing from a rest or a level-up (no mana, no Exhausted cleared, no uses back)?
-2. Does taking off a status clamp HP, mana and fatigue to the new maxima at once, and is max HP at least 1?
-3. Does a status stop counting the moment its time runs out, even when its last tick is still owed? (Built as yes, Nov 21: before, a hold, a taunt and the fight card stopped at once while wards and buffs lasted until the bearer's turn, so one answer had to be picked to make them agree. No is one word in `STATUS_COUNTS`, `src/core/combat/standing.ts`.)
-4. Does a broken channel released on its user's own turn cost the user that turn?
-5. Must the owed dice be rolled before a turn can end?
-6. May a hunter who is down arm a reaction, and do a reaction's kills count?
-7. Does lowering max fatigue to the current fatigue collapse the hunter at once, and is a hunter who reaches full fatigue in a fight collapsed in the fight too?
-8. Are pending (unconfirmed) points handed back when the level drops, and does rank follow level unless the GM marks it as set by hand?
-9. Does a day feat count a fact on the day it happened, not the day the fight ended?
-10. Does a feat set to never show stay hidden after it unlocks, and does a feat with an extra condition unlock when the condition becomes true later?
-11. Does a shadow at 0 HP leave the field and refuse to be summoned until healed?
-12. Does using a consumable in a fight take the player's turn?
-13. Does the Dice view's default DC follow the active hunter's rank?
-14. Does a gate the GM closes to solo runs refuse a run already in flight?
-15. When an urgent quest runs out on a player's phone, does the GM's room hear of it?
-16. Does a quest with any hand-ticked objective keep its Complete button?
-17. Does the world day only move forward, and does a gate past its break day break whatever edit put it there?
-18. Does a held Give… wait for its own two seconds even when other notices arrive?
-19. Is a System whisper to one hunter sealed from the other phones?
-20. Does rule (d) mean that rewards the app pays by itself (a room solo clear, a counted quest, a feat, a Give… from the shelf) wait for the GM's edit and approval?
-21. How do the free first revive and the revive on debt (rule a) appear in the app: a System raise, or a GM button that spends the step?
-22. Does a Resurrection Crystal handed over by another hunter after death count as bought before the death?
-23. Stealth, the lead's ruling to confirm (built in unit 2): by your ruling 1 a body is hidden only from sight of a lower level, and everyone's sight starts at 0, so a hide at level 0 would hide from nobody. A hidden status with no level written is level 1, and level 0 is not offered. Say if a plain hide should be something else.
-24. Icons, to confirm: the first set is taken from one outside set (game-icons, CC BY 3.0), by your ruling that drawings may come from elsewhere if they look consistent. That licence asks for credit, so the Rules page's foot gets a credit line. Say if you would rather every icon were drawn here.
-25. Tenacity (his idea of Nov 21, below under Answered): a true blend, the geometric mean of Strength and Discipline through today's curve and cap (the lead's default, built unless he says otherwise), or Discipline as the base with a smaller bonus from Strength? The blend lowers a pure-Discipline build's Tenacity against today.
-
-### 3. The enemy balance pass and item stats (asked Nov 21)
-
-Eight questions, each a line, in `features/enemies/balance-plan.md` under "Questions for the owner". The default is built if you do not answer: (1) flat magic penetration is named Unravel (or Spellbreak, Sever); (2) percent penetration comes from Control for armor and magic both, physical builds get theirs from items; (3) a mythic is beaten about half the time by four hunters at level 100, almost never at S's first level; (4) Construct, Ooze, Spirit and every mythic cannot be extracted; (5) a monster's type means nothing in a fight for now; (6) lifesteal and ability haste become new item stats, capped at 20% and 25%; (7) mana regen and slow resist are left out; (8) an item's bonus may pass a stat's curve cap.
-
-### 4. Enemy armor by rank: which of two ways (asked Nov 21)
-
-Making an enemy's body come from rules gave every body free armor and resist by its rank's gear tier (+30 at S for a full set) with nothing that hits harder beside it. An S boss then takes 10.9 rounds (the bound is 8) and 11 simulation rows are out, so the unit (`balance-2`) is not merged. No setting of the other numbers brings all rows back; the two that nearly do:
-
-- **A. Drop the free armor by rarity tier** (a written design rule goes), make the six armor pieces add up to the kit exactly, boss HP at 2.8 times: every row is back inside but one (the boss's channel being broken, 0.064 against its bound).
-- **B. Keep the tier's armor and slow HP growth by level** (`growthDiv` 24 to 31): the hits to fell a same-rank brute are as before at every rank, but every hunter's and monster's max HP drops, and five rows stay out (three duels, the blood kit's pack at S, the channel).
-
-The lead's pick if you say nothing: A. It moves one rule and leaves everyone's HP alone, and a boss is still tougher by HP, armor and resist through its kind, as you ruled. The numbers are in `rw/sim-log.md` on the branch `balance-2`.
-
-### 5. The coin: does the player see anything of the landing? (asked Nov 21)
-
-You typed (Nov 21): "Also with coin flips, the point is they call heads or tails, and I flip it.  Only I know the result, not them.  I should be able to pick the result based off the coinflip or my own discretion." Today: a natural 1 or 20 on a check outside a fight calls the coin; the player calls heads or tails; your phone gets a window with Right, Wrong, or let the coin decide; the player's phone then shows the coin land on a side that agrees with your ruling (never the true flip when you ruled by hand), so the player learns whether the call was right. Your second sentence is built. The first is the question: should the player's phone show (a) the side, as today, (b) only that the coin was flipped, with no side and no right or wrong, and you say the outcome at the table? Nothing changes until you answer.
+9. Some feats count things done in one day ("kill 10 monsters in a day"). If the day changes while a fight is still going, does a kill count for the day it happened on, or do all the fight's kills count for the day the fight ended? (Proposed: the day it happened on.)
+13. The dice roller has a box for the number to beat, filled in for you. Should that starting number be higher for a higher-rank hunter, or the same for everyone? (Proposed: it follows the hunter's rank.)
+14. A player starts a solo run on a world gate. Before your phone has answered it, you switch solo runs off for that gate. Does that run still count, or is it refused? (Proposed: refused; the player is told.)
+17. Two things about the world's day counter. Can you set the day backwards, or only forwards? And if you edit a gate so its break day is already past, does it break at once? (Proposed: forwards only; yes, it breaks at once.)
+18. When you tap Give…, the gift waits two seconds with an Undo before it is sent. If other notices pop up in those two seconds, should the Undo still stay for its full two seconds? (Proposed: yes. Before, two other notices pushed it off and sent the gift early.)
 
 ### 8. The coin's Chronicle fact in a room (asked Nov 21)
 
@@ -66,6 +27,10 @@ Say only what you want otherwise (`features/notes-8-fudge.md` section 6, numbers
 - b. The weight you set outside a fight does not carry into a fight, and a fight's does not carry out: a fight starts at 0, the table's weight stays until you set it to 0.
 - c. The shadow extraction's Presence check is not weighted while your phone rolls it.
 - d. +2 means 2 faces on every die, a d4's the same as a d20's.
+
+### 10. What a stun does to a boss's turn (asked Nov 22)
+
+Today a one-round stun stops its target acting until one round from now. A boss's next turn is on average half a round away, so a landed stun delays it by about half a round, and one landed just after the boss acted delays nothing. With the resist roll (a same-rank boss resists 45% of the time) and Tenacity, a tank stunning every three rounds takes 6 to 8% of a boss's turns; the target the plan set is 10 to 35%. The other way: a stun adds its whole length to the target's next turn, so a landed stun always costs a full round (about double today, for monsters stunning hunters too). Built default: today's rule stays and the row stays marked open. Say "full round" if a stun should always cost the turn.
 
 ## Answered
 
@@ -97,3 +62,4 @@ Say only what you want otherwise (`features/notes-8-fudge.md` section 6, numbers
 - Nov 21 (the result he wants from the stats): "The stats should be roughly equal in strength, with benefits to pushing towards a single or a few stats in particular as a class." Two bounds in item 13 of the balance pass's README. Today's curve (`effExp`) makes spread points worth about as much as stacked ones, so it is measured and then moved, or a class is rewarded another way.
 - Nov 21: "Specializing should pay off for sure." Item 13's second bound must hold.
 - Nov 21 (typed in the lead's session): "Also let's make auto runs 25% harder than optimal gameplay clears.  Have that factor into the odds given for the auto clears." So a solo run (one play of the odds engine, which plays each side as well as its policy can) is fought against foes 25% harder than the same gate fought at the table, and the odds a player is shown before entering are worked out on that harder fight, so the number shown is the chance the run has. The lead's reading of "25% harder", told to him: a fight's difficulty is the foes' HP times the damage they deal, so each is raised by the square root of 1.25 (about 11.8%) and their product is 1.25; one rule, `solo.autoHarder` 1.25, read in one place (`soloFight`), for a personal gate and a world gate opened to solo runs alike. A unit of its own, `auto-harder`, after `no-death-saves` (both change `src/core/gates/solo.ts`).
+- Nov 22 (typed into the Google Doc "Hunter System: for the owner", answering Open 2's rule calls by number; his words after each number): 1 "Uhh rests will give 25% of mana back, and 25% health back. exhausted will largely clear.  They should get 2x per dungeon, and after a dungeon clear they should get everything back." 2 "Yes" 3 "yes." 4 "Yes" 5 "Yes" 6 "No. Yes." 7 "Yes. Yes." 8 "Yes. Yes." 9 "The fuck does this mean, speak English" 10 "No, yes" 11 "Yes" 12 "Not a full turn, but should cost something" 13 "Uhh no idea what this means" 14 "What does this mean" 15 "Yes." 16 "Yes." 17 "What the fuck does this mean" 18 "What the fuck does this mean" 19 "Yes" 20 "Yes" 21 "System raise" 22 "Yes." 23 "Ehh let's do the other way around I guess.  Stealth beats sight at the same level." 24 "Sure idc if you give them credit." 25 "We will decide that in the balance phase." The lead's reading: 1 is a new rest rule, not an answer about the dead (a rest gives back 25% of max HP and 25% of max mana and clears most of Exhausted, a hunter has two rests a dungeon, and clearing the dungeon gives everything back; a dead hunter gets nothing from a rest, since only a resurrection brings it back). 6: a hunter who is down arms no reaction (moot now that 0 HP is dead), and a reaction's kills count. 10: a feat set to never show does show once it unlocks; a feat with an extra condition unlocks when the condition comes true later. 12: a consumable used in a fight costs less than a full turn but not nothing; the number is the lead's. 21: the free first revive and the revive on debt are a System raise, no GM button. 23: a body is hidden from sight of the same level or lower, so a plain hide is level 0 and hides from a plain sight of 0; level 0 is offered. 25: Tenacity's blend is settled in the balance pass. 9, 13, 14, 17 and 18 are asked again in plain words as Open 2. Built as the unit `rulings-1122`: each machine's row is checked against his answer and changed where the app does otherwise. Open 8 and 9 had no answer in the doc, so their built defaults stand.

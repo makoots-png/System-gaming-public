@@ -1,9 +1,10 @@
 // play.ts: the one loop that plays a fight to its end on the real reducer, a command at a time, with seeded dice. Its
 // callers are the odds engine (odds.ts, every row on `sensible`) and the balance simulator (tests/models/fight-sim.ts,
 // its archetype policies). Nothing here works out a rule: each turn the row's policy chooses, `needs` says what dice
-// the choice asks for, the seeded source rolls them (draws.ts), `reduce` decides, and every die the fight then waits for
-// (`owed`) is paid at once, as the GM's phone does. A refusal throws: a policy asks the rules' own checks first, so a
-// refusal is a bug in the policy. Pure: the whole state of a play, the dice source's included, is the `Play` value.
+// the choice asks for, the seeded source rolls them (draws.ts) with the fight's own weights (fudge.ts), `reduce`
+// decides, and every die the fight then waits for (`owed`) is paid at once, as the GM's phone does. A refusal throws: a
+// policy asks the rules' own checks first, so a refusal is a bug in the policy. Pure: the whole state of a play, the
+// dice source's included, is the `Play` value.
 import type { Rules } from '../rules.ts';
 import type { CombatantId } from './ability-types.ts';
 import type { ItemId } from '../ids.ts';
@@ -15,6 +16,7 @@ import type { Command, Ctx, Effect, Ended, Fight, Refusal, Running, Setup } from
 import { needs } from './resolve.ts';
 import type { Aim, Rolls } from './resolve.ts';
 import { drawNeeds, drawOpenings, drawSettle, seededSource } from '../draws.ts';
+import { openingWeights, settleWeights, weightsFor } from './fudge.ts';
 import type { Random } from './../gates/spawn.ts';
 import type { TurnChoice, Policy } from './policy.ts';
 
@@ -52,8 +54,11 @@ function sent(f: Fight, cmd: Command, R: Rules): { fight: Fight; effects: readon
   if (!r.fight || r.fight.phase === 'setup') throw new Error(`a played fight left no fight after ${cmd.type}`);
   return { fight: r.fight, effects: r.effects };
 }
-const rollsFor = (f: Running, me: Body, ability: string, aim: Aim, R: Rules, random: Random): Rolls =>
-  drawNeeds(needs(me.abilities.find(a => a.id === ability)!, me, f.rows, aim, f.grid, f.now, R), random);
+/** The dice `me`'s use of `ability` at `aim` asks for, drawn with the fight's weights (fudge.ts `weightsFor`), as the GM's phone draws them. */
+function rollsFor(f: Running, me: Body, ability: string, aim: Aim, R: Rules, random: Random): Rolls {
+  const n = needs(me.abilities.find(a => a.id === ability)!, me, f.rows, aim, f.grid, f.now, R);
+  return drawNeeds(n, random, weightsFor(f, me.id, n));
+}
 
 /** Pays every die `f` waits for (a per-round op, a sickness's pass, a broken channel's release), in `owed`'s order. */
 function paid(f: Running | Ended, R: Rules, random: Random): { fight: Running | Ended; effects: Effect[] } {
@@ -62,7 +67,7 @@ function paid(f: Running | Ended, R: Rules, random: Random): { fight: Running | 
   for (let o = owed(at)[0]; o && at.phase === 'running'; o = owed(at)[0]) {
     const now: Running = at;
     let cmd: Command;
-    if (o.kind === 'settle') cmd = { type: 'settle', id: o.id, key: o.key, dice: drawSettle(o.dice, random) };
+    if (o.kind === 'settle') cmd = { type: 'settle', id: o.id, key: o.key, dice: drawSettle(o.dice, random, settleWeights(now, o.id, o.key)) };
     else {
       const row = now.rows.find(r => r.id === o.id)!, c = row.channel!;
       cmd = { type: 'release', by: row.id, rolls: rollsFor(now, row, c.ability, c.aim, R, random) };
@@ -84,7 +89,7 @@ const downOf = (f: Fight, was: readonly CombatantId[]): readonly CombatantId[] =
  */
 export function playBegin(f: Setup | Running, seed: number, R: Rules): { readonly play: Play; readonly effects: readonly Effect[] } {
   const src = seededSource(seed);
-  const start = f.phase === 'setup' ? sent(f, { type: 'start', openings: drawOpenings(f.rows.map(r => r.id), src.random) }, R) : { fight: f, effects: [] };
+  const start = f.phase === 'setup' ? sent(f, { type: 'start', openings: drawOpenings(f.rows.map(r => r.id), src.random, openingWeights(f, f.rows)) }, R) : { fight: f, effects: [] };
   const p = paid(start.fight as Running | Ended, R, src.random);
   return { play: { fight: p.fight, source: src.state(), down: downOf(p.fight, []), capped: false, steps: 0, spent: [] }, effects: [...start.effects, ...p.effects] };
 }

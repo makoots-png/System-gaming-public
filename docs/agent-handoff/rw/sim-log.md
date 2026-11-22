@@ -1353,3 +1353,142 @@ down" shares because the play itself did not change: no policy heals or stabiliz
 changed is after the fight: the old death row counted only hunters whose death saves, rolled with nobody to help, ended
 at dead (0.000 at S); now each of those falls is a death, so the boss row at S reads the old down share, 0.013, five
 standard errors under its 0.05.
+
+## Balance unit 3, step 1: what takes P3's control away
+
+P3 reads the share of a boss fight's time by which the tank's stun pushed the boss's next turn. It was 0.032 at C and
+0.025 at S, where a one-round stun every three rounds would hold about a third. The counters below come from the row's
+own fights: the mixed party against a same-rank brute boss, seeds 1 to 300. Each stun was traced by reading `resolve` on
+the reducer's inputs and the boss's clock before and after it.
+
+| Counter, at C (S) | Before | Stun before taunt |
+|---|---|---|
+| tank turns a fight | 4.32 (5.28) | 4.57 (5.50) |
+| turns the stun was ready | 2.78 (3.59) | 1.96 (2.12) |
+| of them, a taunt taken instead | 1.40 (1.91) | 0.03 (0.01) |
+| of them, the boss's turn more than a round off | 0.40 (0.50) | 0 (0) |
+| stuns a fight (the cooldown allows about 2.1 in 6.2 rounds) | 0.99 (1.18) | 1.93 (2.11) |
+| stuns resisted (tank Aim 10 against boss Will 10, `resistDc` 12) | 0.46 (0.46) | 0.44 (0.45) |
+| a landed stun's length after Tenacity (12 at C, 20 at S) | 0.89 (0.81) rounds | 0.89 (0.81) |
+| the boss's turn already this far off when the stun landed | 0.54 (0.55) rounds | 0.48 (0.49) |
+| how far a landed stun moved that turn | 0.36 (0.30) rounds | 0.45 (0.40) |
+| P3 | 0.032 (0.025) | **0.079** (se 0.004) (**0.061**, se 0.003) |
+
+Ranked by the share of the ideal third each one takes:
+
+1. **The tank's turns went elsewhere** (the model). `controlPolicy` taunted first and stunned only when no taunt was
+   due, so the stun sat ready on 1.4 turns a fight at C. This was the policy, not a rule, so it is fixed in the model:
+   the tank now stuns when the stun is ready and the boss acts before the tank's next turn, and taunts otherwise.
+   A stun left ready is control lost. Waiting while the boss's turn is past the tank's next one is still right,
+   because a hold is a floor (below). Uses went from 0.99 to 1.93, 0.93 of what the cooldown allows. A death in the
+   fight went from 0.000 to 0.000 at C and from 0.003 to 0.020 at S (300 fights, no bound on this setup), because a
+   taunt goes later.
+2. **How a hold counts** (a rule of the timeline, not a number). `stunned` in `timeline.ts` sets the next turn to the
+   later of where it was and the stun's end, so a stun of a round on a boss whose turn is half a round off takes half
+   a round. At the tank's turns the boss's turn is on average 0.48 rounds off, which leaves 0.45 of a 0.89-round stun.
+   The counter (`held`, the push at the use) measures exactly that, so the counter is not the cause.
+3. **The stun's resist roll.** The tank has base Aim, so the boss's Will resists 45% of tries (a d20 of 12 or more).
+   A resisted stun lands nothing.
+4. **The boss's Tenacity** takes 11% of a landed stun at C and 19% at S. It is the smallest of the four.
+
+Check: 1.93 stuns × 0.56 landed × 0.45 rounds over 6.2 rounds ≈ 0.079.
+
+**No one rule number lands it.** Tenacity at 0 would give about 0.089 and 0.075. The resist roll is the only number
+large enough. Bringing S in needs a stun resisted about 10% of the time, which means `resistDc` 19. With `resistDc` 19
+(every row measured, seeds as the file has them) P3 is 0.132 (se 0.004) at C and 0.105 (se 0.003) at S, but four rows
+leave their bounds: speed beats cannon at C 0.476 (0.60 to 0.90), cannon beats tank at C 0.911 and at S 0.912 (at
+most 0.90), and cannon against tank at E 0.893 (at most 0.75). Every curse lands more often, and Arc Bolt is the
+cannon's main damage. `resistDc` stays at 12. The row stays in `OPEN` at its new values.
+
+**Measured, not applied: the cannon carries the stun.** The cannon's second stat is Control, which gives it Potency 14
+(26 at S) and Aim 26 (54). With the same rule (stun when ready and the boss acts first), its stun is resisted 26% of
+the time (14% at S), lasts 1.02 rounds (1.05), and moves the boss's turn 0.59 rounds (0.64). P3 comes out at 0.152 at
+C and 0.181 at S, both inside the bound. But each stun replaces a bolt, so the fight lasts 7.3 rounds at C and 8.9 at
+S, past the boss row's 8. Who carries the party's control is the lead's call: the ruling named the tank. The rule
+calls the row now waits on: whether a hold should add its length to a turn rather than set a floor (`stunned`), and
+who carries the stun.
+
+## Balance unit 3, step 2: P1's magic pair on a boss tough by resist
+
+The lead's ruling: P1's magic pair is read on a boss whose thick defence is resist, the mirror of the brute, the same
+way the armor pair is read on the brute. `kinds.boss.resist` does not change. The boss is built from pieces that
+already exist: the **caster** archetype (Power and Control, the light kit) as a boss, with the **warded** trait
+(`traits.warded`, resist 1.5). It is chosen as the most resist those pieces give a boss, and it was picked before
+anything was measured. The bodies, read from `monsterSheet`:
+
+| Boss at C (S) | Armor | Resist |
+|---|---|---|
+| brute (the armor pair's) | 58 (69) | 8 (8) |
+| caster | 15 (15) | 23 (23) |
+| caster, warded (the magic pair's) | 15 (15) | 34 (34) |
+
+Section 9's arithmetic: percent passes flat above a defence of 18 at C and 20 at S. Resist 34 is above both. The
+P1 row (`spendRuns`) is the cannon's flat rounds minus its percent rounds, paired on seeds 1 to 300, with the tank and
+the bruiser on their main stats:
+
+| P1 magic, boss: flat's rounds less percent's | Bound | C | S |
+|---|---|---|---|
+| on the brute boss (balance unit 2) | over 0 | -0.080 (se 0.015) | -0.119 (se 0.015) |
+| on the warded caster boss | over 0 | **0.076** (se 0.014; 4.865 over 4.789) | **0.141** (se 0.016; 4.939 over 4.798) |
+
+Both are inside, by 5 and 9 standard errors. The two rows leave `OPEN`. The magic pack row, P2, and the armor pair
+are not touched (P2's boss is still the brute) and stay inside. No number moved.
+
+## Balance unit 3, step 3: the mythic kind (M1)
+
+the owner, Nov 21: "A mythic should be basically impossible to beat, like 5-10% odds for a party of 3." The balance plan
+(section 4) makes it a fourth row of `fight.kinds`. Row M1 (`tests/fight-sim.test.ts`) plays the mixed party (tank,
+bruiser, cannon) at S's first level against one S brute mythic, on seeds 1 to 600, with no fight capped. A share bounded
+0.05 to 0.10 has se 0.011 at 600 fights.
+
+**The numbers and the reason for each.**
+
+| `kinds.mythic` | Value | Why |
+|---|---|---|
+| armor, resist | 2 | the plan's starting value: twice a normal, against the boss's 1.5 |
+| power | 2 | the same 2, so a mythic is twice a normal body in everything but HP. One number free, not two |
+| hp | 5.2 | measured by M1 (below): the middle of 5 to 10% |
+| stagger | 4 | a boss's bar in same-rank hits on its own body, a default (no row bounds a mythic's staggers) |
+| xp | 5 | about its HP factor, as the elite's (1.5 for HP 1.5) and the boss's (3 for 2.8) are |
+
+**M1 against the mythic's HP** (power 2, armor and resist 2, 600 fights each, seeds 1 to 600):
+
+| hp | Party wins | se | Rounds |
+|---|---|---|---|
+| 5.0 | 0.167 | 0.015 | 14.3 |
+| 5.1 | 0.110 | 0.013 | 14.4 |
+| **5.2** | **0.068** | 0.010 | 14.4 |
+| 5.3 | 0.042 | 0.008 | 14.4 |
+| 5.4 | 0.022 | 0.006 | 14.5 |
+| 5.6 | 0.005 | 0.003 | 14.5 |
+
+Power is a choice, so I measured other shapes at their fit as well, to see how wide each one's band is (600 fights
+a point, seeds 1 to 600):
+
+| Shape | Two points around the bound (hp: party wins) | The step in HP, and the wins it took away | Rounds | Hunters dead a fight |
+|---|---|---|---|---|
+| power 2 (chosen) | 5.1: 0.110, 5.3: 0.042 | 4%, 0.068 | 14.4 | 2.9 |
+| the boss scaled (hp:power 2.8:1.2) | 5.04: 0.113, 5.18: 0.048 (power 2.16, 2.22) | 3% on both, 0.065 | 14.2 | 2.9 |
+| power 3 | 4.4: 0.105, 4.6: 0.030 | 4.5%, 0.075 | 12.1 | 2.9 |
+| power 4 | 3.0: 0.077, 3.2: 0.040 | 6.7%, 0.037 | 8.5 | 2.9 |
+
+Every shape is steep. The cause is the fight's length against fixed builds: the dice average out over 8 to 14
+rounds, so the result follows the mean. Power 4 has the widest band, about three times the others for each percent of HP, but it is a
+mythic with only 3.0 bodies of HP against a boss's 2.8, hitting 3.3 times as hard as a boss. Power 2 keeps more HP,
+armor and resist than a boss on every factor, the way the owner described a boss's toughness ("more hp, armor, magic
+resist"). It is a default. Unit 6 or the lead can move it to power 4 if the narrow band costs more than the
+shape is worth.
+
+**What M1 measures, and what it does not.**
+- It is fitted to the brute. The same kind as a caster lets the party win 0.713 (se 0.023, 400 fights, 9.4 rounds), and
+  as a skirmisher 1.000 (10.2 rounds). The 23 mythic rows get their own tweaks in unit 6, and the sweep must hold
+  them to 5 to 10% one row at a time.
+- The band is narrow. Any rule that moves the party's damage by about 5% (a kit, a cap, the cost of an action) moves
+  M1 out. When that happens, `kinds.mythic.hp` is the lever: near 5.2, 0.1 of it moves the row by 0.03 to 0.04.
+- Every other row is unchanged. A mythic body appears in no other row, and the full unit pass is green with 88 rows
+  inside.
+
+**The tables the kind adds a row to** (the typecheck named them): the kill fact's kind (`facts.ts`); the shadow grade a
+mythic rises as (`shadows.ts`: Marshal, the highest grade, on a boss's body); the bestiary's kind label (`bestiary.js`,
+"Mythic"). Not changed: `fight-facts.ts` counts only kind `boss` as a boss defeated, so a mythic killed is not counted
+there (the lead's call, since feats are another helper's).

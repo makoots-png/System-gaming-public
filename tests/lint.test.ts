@@ -627,9 +627,9 @@ test('only withThreat in src/core/combat/effect-ops.ts writes a fight row\'s thr
 
 test('only the fight\'s fudge command writes a fight\'s fudge', async () => {
   // The GM's hidden weight on the fight's dice (docs/agent-handoff/features/notes-8-fudge.md section 2) is one piece of
-  // state with one writer: `fudgeStep` in src/core/combat/fudge.ts, which fight.ts calls for the `fudge` command and for a
-  // row that leaves. A second writer could set a weight no command sent, or carry one past the fight's end, where
-  // `Ended` holds none. fight-parse.ts makes whole new fights, which this rule does not see.
+  // state with one writer: `fudgeStep` in src/core/combat/fudge.ts, which fight.ts calls for the `fudge` command, for a
+  // row that leaves and for the forces a command's dice read (`spent`). A second writer could set a weight no command
+  // sent, or carry one past the fight's end, where `Ended` holds none. fight-parse.ts makes whole new fights, which this rule does not see.
   const owner = 'src/core/combat/fudge.ts', caller = 'src/core/combat/fight.ts';
   const copy = /\{\s*\.\.\.[^,{}]+,[^{}]*(?<![.\w$])fudge\s*[:,}]/;
   const assign = /[\w$)\]!]\.fudge(\.(sides|rows|forced))?(\[[^\]]*\])?\s*(?:[-+*/]?=(?![=>])|\?\?=|\|\|=|\+\+|--)/;
@@ -642,10 +642,25 @@ test('only the fight\'s fudge command writes a fight\'s fudge', async () => {
   const lines = (await sourceLines('src')).filter(line => !isComment(line.text));
   const hits = lines.filter(line => line.file !== owner && writes(line.text));
   const permitted = (line: Line) => line.file === caller && /(?<![.\w$])fudge:\s*fudgeStep\(/.test(line.text);
-  expect(hits.filter(permitted).length, 'the rule sees the fudge command\'s write and a leaving row\'s').toBe(2);
+  expect(hits.filter(permitted).length, 'the rule sees the fudge command\'s write, a leaving row\'s and the spent forces\'').toBe(3);
   expect(report(hits.filter(line => !permitted(line))), 'a fight\'s fudge changes only as `fudge: fudgeStep(f.fudge, event)` in src/core/combat/fight.ts. Send the GM\'s `fudge` command through send() in combat.js.').toEqual([]);
   const calls = lines.filter(line => /\bfudgeStep\s*\(/.test(line.text) && line.file !== owner);
   expect(report(calls.filter(line => line.file !== caller)), 'only fight.ts calls fudgeStep').toEqual([]);
+});
+
+test('nothing a player\'s phone receives in a fight names the fight\'s fudge', async () => {
+  // The GM's weight on a fight's dice stays on the GM's phone (docs/agent-handoff/features/notes-8-fudge.md section 3):
+  // a player's phone gets the fight as the doc (fight-doc.ts, read back by protocol.ts), the room's messages and their
+  // sync (protocol.ts, sync.ts), and draws it with table.js and uses.js. None of them may name the fudge, so nothing can
+  // carry a weight, a force or a word about one to a player's screen. The table weight outside a fight is named
+  // `weight`, never `fudge`, so this rule stays one word.
+  const RECEIVED = ['src/core/combat/fight-doc.ts', 'src/core/protocol.ts', 'src/edge/sync.ts', 'src/views/table.js', 'src/views/uses.js'];
+  const names = (text: string) => /fudge/i.test(text);
+  expect(names('const w = f.fudge.rows[id];') && names('// the Fudge block'), 'the rule sees a fudge in code and in words').toBe(true);
+  const lines: Line[] = [];
+  for (const file of RECEIVED) (await Bun.file(`${ROOT}/${file}`).text()).split('\n').forEach((text, i) => lines.push({ file, line: i + 1, text }));
+  expect(lines.length, 'every file the rule reads is there').toBeGreaterThan(RECEIVED.length);
+  expect(report(lines.filter(line => names(line.text))), 'what a player\'s phone receives carries outcomes only: read the fudge in src/core/combat/fudge.ts on the GM\'s phone (the draws), never in the doc, a room message or a player\'s view').toEqual([]);
 });
 
 test('nothing imports a module deleted with the old fight', async () => {

@@ -22,6 +22,11 @@ import { DOC_ROWS, TABLE_REFUSALS, band, fightDoc, fightWire } from '../src/core
 import type { DocContext, FightDoc, FightDocRow } from '../src/core/combat/fight-doc.ts';
 import type { DeviceId, SheetKey } from '../src/core/ids.ts';
 import type { IconKey } from '../src/core/registry/icons.ts';
+import { needs } from '../src/core/combat/resolve.ts';
+import { isUp } from '../src/core/combat/row-hp.ts';
+import { NO_FUDGE, weightsFor } from '../src/core/combat/fudge.ts';
+import { drawNeeds, seededSource } from '../src/core/draws.ts';
+import type { Effect, Running } from '../src/core/combat/fight.ts';
 import { atHp, lifeAt } from './fixtures/life.ts';
 import type { RowPatch } from './fixtures/life.ts';
 const sheetKey = (s: string) => parseSheetKey(s) ?? (() => { throw new Error(`not a sheet key: ${s}`); })();
@@ -471,5 +476,61 @@ describe('a threshold that went off (rule 18a)', () => {
     const fight = play(add(row('A', 'party'), row('M', 'foe')), start(['A', 20], ['M', 10]));
     expect(live(fightDoc(fight, RULES, { ...docCtx(), burst: { n: 4, ids: [id('M'), id('ghost')] } })).burst).toEqual({ n: 4, ids: ['M'] });
     expect(live(fightDoc(fight, RULES, docCtx())).burst).toBeUndefined();
+  });
+});
+
+describe('the fudge never reaches the table (notes-8-fudge.md section 3)', () => {
+  const remote = sheetKey('d-player:h-9');
+  /** P, a player's hunter on another phone, and Q, a hunter on this one, against M; the hunters at +2 and P forced to 20. */
+  const weighted = (): Fight => play(add(row('P', 'party', { holder: { kind: 'remote', remote } }), row('Q', 'party'), row('M', 'foe')),
+    start(['M', 20], ['P', 15], ['Q', 10]),
+    { type: 'fudge', set: { kind: 'weight', scope: { kind: 'side', side: 'party' }, n: 2 } }, { type: 'fudge', set: { kind: 'force', id: id('P'), face: 20 } });
+  const wire = (fight: Fight | null): string => JSON.stringify(fightWire(fightDoc(fight, RULES, docCtx())!));
+  const running = (fight: Fight | null): Running => { if (fight?.phase !== 'running') throw new Error('not running'); return fight; };
+
+  test('a weighted fight reaches the table byte for byte as the same fight unweighted with the shifted faces', () => {
+    // fight A is weighted and draws its dice with its weights; fight B is A at no fudge and is sent A's commands, the
+    // shifted faces in them. Whatever leaves the GM's phone (the doc on the wire, each effect: a remote hunter's
+    // sendRemote, a hunter's vitals) is the same for both, so no player can tell A from an honest fight.
+    const first = running(weighted()), src = seededSource(11);
+    let a: Fight = first, b: Fight = { ...first, fudge: NO_FUDGE }, moved = 0, told = 0, used = 0;
+    for (; a.phase === 'running' && used < 12; used++) {
+      const now: Running = a, me = now.rows.find(r => r.id === now.currentId)!, aim = now.rows.find(r => r.side !== me.side && isUp(r))!;
+      const n = needs(HIT, me, now.rows, aim.id, now.grid, now.now, RULES), w = weightsFor(now, me.id, n), at = src.state();
+      const rolls = drawNeeds(n, src.random, w);
+      if (JSON.stringify(rolls) !== JSON.stringify(drawNeeds(n, seededSource(at).random))) moved++;
+      const cmd: Command = { type: 'act', by: me.id, ability: HIT.id, aim: aim.id, rolls };
+      const ra = reduce(now, cmd, ctx), rb = reduce(b, cmd, ctx);
+      expect(ra.effects.some(e => e.type === 'refused'), `${me.id} uses Hit on ${aim.id}`).toBe(false);
+      expect(JSON.stringify(ra.effects)).toBe(JSON.stringify(rb.effects));
+      told += ra.effects.filter((e: Effect) => e.type === 'sendRemote' || e.type === 'vitals').length;
+      expect(wire(ra.fight)).toBe(wire(rb.fight));
+      if (ra.fight?.phase === 'running' && me.id === id('P')) expect(ra.fight.fudge.forced, 'P\'s forced face was read and spent').toEqual({});
+      a = ra.fight!; b = rb.fight!;
+    }
+    expect(used, 'the fight was played for several uses').toBeGreaterThan(2);
+    expect(moved, 'the weight moved the faces the fight read').toBeGreaterThan(0);
+    expect(told, 'the hunters\' sheets heard of the fight').toBeGreaterThan(0);
+  });
+
+  test('setting a fudge leaves the players\' doc equal', () => {
+    // sync.ts sends nothing for a doc that says the same as the last one put (`sameDoc`, which reads the doc whole but
+    // its time), so a doc equal to the letter before and after a tap betrays nothing: no put, no change of pace
+    let fight: Fight = running(weighted());
+    const sets: Command[] = [
+      { type: 'fudge', set: { kind: 'weight', scope: { kind: 'side', side: 'foe' }, n: -4 } },
+      { type: 'fudge', set: { kind: 'weight', scope: { kind: 'row', id: id('Q') }, n: 7 } },
+      { type: 'fudge', set: { kind: 'force', id: id('M'), face: 1 } },
+      { type: 'fudge', set: { kind: 'force', id: id('P'), face: null } },
+      { type: 'fudge', set: { kind: 'weight', scope: { kind: 'side', side: 'party' }, n: 0 } },
+    ];
+    for (const set of sets) {
+      const before = fightDoc(fight, RULES, docCtx()), r = reduce(fight, set, ctx);
+      expect(r.effects).toEqual([]);
+      expect(r.fight).not.toBe(fight);
+      expect(JSON.stringify(fightDoc(r.fight, RULES, docCtx()))).toBe(JSON.stringify(before));
+      expect(wire(r.fight)).toBe(JSON.stringify(fightWire(before!)));
+      fight = r.fight!;
+    }
   });
 });

@@ -27,7 +27,8 @@ import { MAX_ZONES, zoneId } from '../core/combat/zones.ts';
 import { statusGlance } from '../core/detail.ts';
 import { MAP_BOUNDS, fightMapOf, openArena } from '../core/registry/maps.ts';
 import { place } from '../core/combat/space.ts';
-import { rollNeeds, rollOpenings, rollSettle } from '../edge/roll.ts';
+import { cryptoRandom, rollNeeds, rollOpenings, rollSettle } from '../edge/roll.ts';
+import { openingWeights, settleWeights, weightsFor } from '../core/combat/fudge.ts';
 import { weighable } from '../core/combat/odds.ts';
 import { onTurn } from '../core/protocol.ts';
 import { parseSheetKey } from '../core/ids.ts';
@@ -167,7 +168,7 @@ export function register(app) {
     if (!canRun()) return;
     for (let o = owed(fight())[0]; o; o = owed(fight())[0]) {
       const row = rowOf(fight(), o.id), release = o.kind === 'release' && row ? releaseCommand(row) : null;
-      const fx = o.kind === 'settle' ? command([{ type: 'settle', id: o.id, key: o.key, dice: rollSettle(o.dice) }]) : release ? command([release]) : NOT_WRITTEN;
+      const fx = o.kind === 'settle' ? command([{ type: 'settle', id: o.id, key: o.key, dice: rollSettle(o.dice, cryptoRandom, settleWeights(fight(), o.id, o.key)) }]) : release ? command([release]) : NOT_WRITTEN;
       if (refused(fx)) return;
     }
   }
@@ -241,7 +242,7 @@ export function register(app) {
     const f = fight(), monsters = Object.fromEntries(joins.flatMap(j => (j.monsterId ? [[j.row.id, j.monsterId]] : [])));
     // a new fight is fought on its gate's map, or on the open arena: one path for both (src/core/registry/maps.ts)
     const m = f ? null : mapOf(gate), rows = joins.map(j => j.row);
-    const fx = send({ type: 'add', fightId: f ? f.id : fightId(store.id('f')), rows, openings: running(f) ? rollOpenings(rows.map(r => r.id)) : [], ...(m ? fightMapOf(m) : {}) },
+    const fx = send({ type: 'add', fightId: f ? f.id : fightId(store.id('f')), rows, openings: running(f) ? rollOpenings(rows.map(r => r.id), cryptoRandom, openingWeights(f, rows)) : [], ...(m ? fightMapOf(m) : {}) },
       { monsters, ...(gate ? { gate } : {}) });
     return refused(fx) ? 0 : rows.length;
   }
@@ -255,7 +256,7 @@ export function register(app) {
   /** Every row's opening roll, and the first turn. */
   function start() {
     const f = fight(); if (!f || f.phase !== 'setup') return;
-    send({ type: 'start', openings: rollOpenings(f.rows.map(r => r.id)), ...(surprised ? { surprised } : {}) });
+    send({ type: 'start', openings: rollOpenings(f.rows.map(r => r.id), cryptoRandom, openingWeights(f, f.rows)), ...(surprised ? { surprised } : {}) });
     surprised = null;
   }
   /**
@@ -327,10 +328,12 @@ export function register(app) {
     }
     useAt(row, a, aim);
   }
+  /** The dice `n` asks for a use by row `by` of fight `f`, drawn on this phone with the fight's weights (fudge.ts `weightsFor`). */
+  const drawnFor = (f, by, n) => rollNeeds(n, cryptoRandom, weightsFor(f, by, n));
   /** `row` uses `a` at `aim` (a row id or a tile): the dice `needs` asks for and the fight's `act` (an item leaves the bag in its write). */
   function useAt(row, a, aim) {
     const g = fight(), u = rowOf(g, row.id); if (!running(g) || !u) return;
-    const fx = send({ type: 'act', by: u.id, ability: a.id, aim, rolls: rollNeeds(needs(a, u, g.rows, aim, g.grid, g.now, rules())) });
+    const fx = send({ type: 'act', by: u.id, ability: a.id, aim, rolls: drawnFor(g, u.id, needs(a, u, g.rows, aim, g.grid, g.now, rules())) });
     if (refused(fx)) return;
     // the line the use logged, as the fight answers it, once the map or the card shows what it did
     for (const x of fx) if (x.type === 'used') { const said = x.line; afterFrame(() => toast(said)); }
@@ -344,7 +347,7 @@ export function register(app) {
   /** The `release` of `row`'s channel with the dice it asks for, or null when it holds none. @returns {Command | null} */
   function releaseCommand(row) {
     const g = fight(), u = rowOf(g, row.id), c = u && u.channel, a = c && u.abilities.find(x => x.id === c.ability);
-    return running(g) && a ? { type: 'release', by: u.id, rolls: rollNeeds(needs(a, u, g.rows, c.aim, g.grid, g.now, rules())) } : null;
+    return running(g) && a ? { type: 'release', by: u.id, rolls: drawnFor(g, u.id, needs(a, u, g.rows, c.aim, g.grid, g.now, rules())) } : null;
   }
 
   // ── a player's tap from another phone (`step` and `cast`): taken only on that hunter's turn at the fight's time ──
@@ -390,7 +393,7 @@ export function register(app) {
     // a player's tap on the ability their channel holds is its Release (the hotbar's), at the charge it has
     if (u.channel && u.channel.state === 'holding' && u.channel.ability === a.id) { told(releaseOf(u)); return; }
     const aim = typeof p.aim === 'string' ? p.aim : place(p.aim.x, p.aim.y);
-    const n = needs(a, u, f.rows, aim, f.grid, f.now, rules()), rolls = rollNeeds(n);
+    const rolls = drawnFor(f, id, needs(a, u, f.rows, aim, f.grid, f.now, rules()));
     told(send({ type: 'act', by: id, ability: a.id, aim, rolls }));
   });
 

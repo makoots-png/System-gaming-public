@@ -136,7 +136,7 @@ export const FACT_FIELDS: { readonly [K in FactKind]: FieldsOf<K> } = {
     gate: text('Gate'), names: text('Foes', 80),
   },
   kill: {
-    monster: text('Monster'), rank: rank('Monster rank'), type: text('Monster type', 40), mkind: pick('Kind', every<MonsterKind>()(['normal', 'elite', 'boss'])), above,
+    monster: text('Monster'), rank: rank('Monster rank'), type: text('Monster type', 40), mkind: pick('Kind', every<MonsterKind>()(['normal', 'elite', 'boss', 'mythic'])), above,
     hpPct: num('HP left (%)', 0, 100), payback: flag('It had put the hunter down'), where: pick('Where', every<'fight' | 'solo'>()(['fight', 'solo'])),
   },
   solo: {
