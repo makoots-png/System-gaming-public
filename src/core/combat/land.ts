@@ -9,7 +9,7 @@ import { tallyOf } from './row-tally.ts';
 import { average } from '../formula.ts';
 import type { Formula, KitScope, Scope } from '../formula.ts';
 import { dist } from './space.ts';
-import { delayed, hastened, hasteStep, interval, paceCost, stunned, tick } from './timeline.ts';
+import { delayed, hastened, hasteStep, interval, notBefore, paceCost, stunned, tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
 import type { CombatantId, DamageType } from './ability-types.ts';
 import type { Sheet } from '../hunter/derive.ts';
@@ -85,6 +85,33 @@ export const broken = (target: Body, R: Pick<OpRules, 'fight'>): Body =>
 export const live = (b: Body): Status[] => counting(b.statuses);
 /** Each op of a body's live statuses, at its source's tier, with the count a per-stack number is multiplied by (kits design 1.1). */
 export const opsOf = (b: Body) => live(b).flatMap(s => s.def.ops.map(op => ({ op, tier: s.source.tier, n: countOn(s) })));
+
+// Rule 16 (design 4.3): a full bar costs the target `staggerCost` rounds, empties and grows by `staggerRegrow`.
+/** What a body's stagger bar fills by: 1 plus its statuses' `staggerRate` percents (each per stack), never under 0. */
+export const barRate = (target: Body): number =>
+  Math.max(0, 1 + opsOf(target).reduce((sum, { op, tier, n }) => (op.op === 'staggerRate' ? sum + atTier(op.pct, tier) * n : sum), 0) / 100);
+/**
+ * `fill` more on `target`'s stagger bar, the one place a bar fills (a hit's, resolve.ts `staggered`; a `stagger` op's,
+ * `staggerOp`): a full bar stuns it for `staggerCost` rounds from `now`, empties and grows. A body with no bar (only an
+ * elite or a boss keeps one, rows.ts `staggerOf`) and a fill of 0 leave it as it was.
+ */
+export function barFilled(target: Body, fill: number, now: Tick, R: OpRules): { target: Body; staggered: boolean } {
+  if (target.kind !== 'monster' || !target.stagger || fill <= 0) return { target, staggered: false };
+  const bar = target.stagger;
+  if (bar.fill + fill < bar.max) return { target: { ...target, stagger: { ...bar, fill: bar.fill + fill } }, staggered: false };
+  const floor = notBefore(target, now, tick(R.fight.staggerCost * R.fight.round));
+  return { target: { ...floor, stagger: { ...bar, fill: 0, max: bar.max * (1 + R.fight.staggerRegrow), until: floor.at } }, staggered: true };
+}
+/**
+ * A `stagger` op on `t` (keystones A.7), one rule for a use's op (resolve.ts) and a land op (`landOne`): `share` of the
+ * bar's max times the bar's rate (`barRate`), held at `kit.staggerOpMax` of the bar, so no one op breaks a bar alone;
+ * then the bar fills as a hit's does (`barFilled`). A share is no hit, so a weak hit's weight does not reach it.
+ */
+export function staggerOp(t: Body, share: number, now: Tick, R: OpRules): { target: Body; fill: number; staggered: boolean } {
+  if (t.kind !== 'monster' || !t.stagger) return { target: t, fill: 0, staggered: false };
+  const fill = Math.min(R.fight.kit.staggerOpMax, share * barRate(t)) * t.stagger.max;
+  return { ...barFilled(t, fill, now, R), fill };
+}
 /**
  * Held: a live status holds it (a stun), so its turns are passed by rule and it fires no reaction. `_now` is not read
  * (a status's life holds its end); it goes when tests/effect-ops.test.ts stops passing it.
@@ -129,6 +156,10 @@ export type Put = { readonly target: Body; readonly put: boolean; readonly threa
  */
 export function landStatus(t: Body, op: Extract<Op, { op: 'applyStatus' }>, by: Body, source: Source, side: Side | null, cross: boolean, watched: boolean, now: Tick, R: OpRules): Put {
   const d = op.duration === null ? null : lasting(op.def, atTier(op.duration, source.tier), source.tier, by.sheet.potency, t.sheet.tenacity);
+  return putFor(t, op, d, by, source, side, cross, watched, now, R);
+}
+/** Rule 18's status on a body once its length `d` is known (null: until removed): the rest of `landStatus`, and an echo's (`echoed`). */
+function putFor(t: Body, op: Pick<Extract<Op, { op: 'applyStatus' }>, 'key' | 'def' | 'stacks'>, d: Tick | null, by: Body, source: Source, side: Side | null, cross: boolean, watched: boolean, now: Tick, R: OpRules): Put {
   const door = admitted(t, op.def, side, d === null ? null : now + d, now, R);
   if (!door.ok || !hideStarts(t, op.key, op.def, source.tier, watched)) return { target: t, put: false, threat: 0, breaks: false, fired: null };
   const until = door.until === null ? null : tick(door.until), warded = markWards(t.warded, op.def);
@@ -140,7 +171,7 @@ export function landStatus(t: Body, op: Extract<Op, { op: 'applyStatus' }>, by: 
   b = { ...b, shield: statusShield(op.def, b, { user: { stats: by.stats, sheet: by.sheet }, target: { stats: b.stats, sheet: b.sheet }, charge: 0 }, now, until, R) };
   let threat = 0, breaks = false;
   for (const o of op.def.ops) {
-    if (o.op === 'hold' && until !== null) b = stunned(b, now, tick(until - now));
+    if (o.op === 'hold' && until !== null) b = stunned(b, tick(until - now));
     if (o.op === 'taunt' && b.threat && source.id !== null) {
       const lead = Math.max(0, ...Object.values(b.threat)), mine = b.threat[source.id] ?? 0, burst = R.fight.tauntBurst * (lead - mine);
       b = threatened(b, source.id, burst);
@@ -204,7 +235,7 @@ export type Landed = { readonly target: CombatantId; readonly dealt: number; rea
  * move that takes from a target gives to the hitter, which then has an entry of its own in `landed`, after the targets'.
  */
 export function landOps(rows: Map<CombatantId, Body>, ops: readonly LandOp[], hitter: Body | null, targets: readonly CombatantId[], source: Source, now: Tick, R: OpRules,
-  o: { readonly times?: number; readonly cross?: boolean; readonly event?: StatusKey } = {}): { landed: Landed[]; fired: LandFired[] } {
+  o: { readonly times?: number; readonly cross?: boolean; readonly event?: StatusKey; readonly gained?: Gained } = {}): { landed: Landed[]; fired: LandFired[] } {
   const landed: Landed[] = [], fired: LandFired[] = [];
   // what a move from a target gave the body that took it (the hitter), told after the targets
   const taken: Record<CombatantId, StatusKey[]> = {};
@@ -237,7 +268,38 @@ export function landOps(rows: Map<CombatantId, Body>, ops: readonly LandOp[], hi
     landed.push({ target: t.id, dealt, down: before > 0 && rowHp(t) === 0, gained, cured });
   }
   for (const [id, keys] of Object.entries(taken) as [CombatantId, StatusKey[]][]) landed.push({ target: id, dealt: 0, down: false, gained: keys, cured: [] });
+  // an echo lands once, on a body of its own choosing, after the targets (keystones A.7)
+  if (o.gained) for (const op of ops) if (op.op === 'echo') {
+    const e = echoed(rows, op, o.gained, o.cross ?? false, now, R);
+    if (!e) continue;
+    if (e.fired) fired.push(e.fired);
+    landed.push({ target: e.target, dealt: 0, down: false, gained: [], cured: [] });
+  }
   return { landed, fired };
+}
+
+/** The status gained that set a trigger off: who gained it and its key (triggers.ts `fire`, the event `statusGained`). */
+export type Gained = { readonly holder: CombatantId; readonly key: StatusKey };
+/**
+ * An echo (keystones A.7): the status `g.holder` gained also goes on the nearest other body of the holder's side within
+ * `radius` tiles that is up and does not hold it (on a tie the first in the fight's order), from the same source, for the
+ * length it had when put on (its time left now, the moment it was put on; one until removed stays so), one stack, through rule 18's door as any
+ * status (`putFor`: a safeguard or a spent ward refuses it, a hold stuns, a taunt bursts, a channel breaks). It answers
+ * who took it and the threshold it set off, or null when no body took it. Its caller tells it as no status gained, so
+ * an echoed status raises no trigger and an echo never chains (as `auraOps` leaves out `aura` and `spread`).
+ */
+function echoed(rows: Map<CombatantId, Body>, op: Extract<LandOp, { op: 'echo' }>, g: Gained, cross: boolean, now: Tick, R: OpRules): { target: CombatantId; fired: LandFired | null } | null {
+  const holder = rows.get(g.holder), s = holder?.statuses.find(x => x.key === g.key && x.zone === undefined);
+  if (!holder || !s || (s.until !== null && s.until <= now)) return null;
+  const radius = Math.min(op.radius, R.fight.fieldRadiusMax);
+  const near = [...rows.values()].filter(b => b.id !== holder.id && b.side === holder.side && isUp(b) && !b.statuses.some(x => x.key === g.key) && dist(b.place, holder.place) <= radius);
+  const t = near.reduce<Body | null>((best, b) => (best === null || dist(b.place, holder.place) < dist(best.place, holder.place) ? b : best), null);
+  if (!t) return null;
+  const by = s.source.id === null ? holder : rows.get(s.source.id) ?? holder, side = s.source.id === null ? null : rows.get(s.source.id)?.side ?? null;
+  const p = putFor(t, { key: g.key, def: s.def }, s.until === null ? null : tick(s.until - now), by, s.source, side, cross, false, now, R);
+  if (!p.put) return null;
+  rows.set(t.id, p.breaks && channelBreaks(p.target, 0, true, now) ? broken(p.target, R) : p.target);
+  return { target: t.id, fired: p.fired };
 }
 
 /** Whether a cure that takes `s` whole sets its end off (table 2.2: its `cleanse` is `land`). */
@@ -366,8 +428,11 @@ function landOne(o: LandOp, user: Body, t: Body, source: Source, now: Tick, R: O
     case 'note': case 'refund': return { target: t, dealt: 0, ...none };
     case 'hasten': return { target: hasteOn(user, t, o.share, now, R), dealt: 0, ...none };
     case 'reveal': return { target: stealthAfter(t, { type: 'revealed' }, now, R), dealt: 0, ...none };
+    case 'stagger': return { target: staggerOp(t, o.share * times, now, R).target, dealt: 0, ...none };
     // a move changes two bodies, so `landOps` lands it before it asks here
     case 'move': return { target: t, dealt: 0, ...none };
+    // an echo picks its own body, so `landOps` lands it once after the targets
+    case 'echo': return { target: t, dealt: 0, ...none };
     default: return o satisfies never;
   }
 }

@@ -259,6 +259,7 @@ const SAMPLE: { readonly [K in OpKind]: Extract<Op, { readonly op: K }> } = {
   hidden: { op: 'hidden', level: 1, start: 'unseen', ends: { hurt: true, revealed: true, dealt: true } }, stayHidden: { op: 'stayHidden', on: 'hurt' }, alert: { op: 'alert' }, shove: { op: 'shove', dir: 'away', from: 'user', tiles: 1 },
   move: { op: 'move', key: 'harmful', take: 1, from: 'user', as: null }, hasten: { op: 'hasten', share: 0.5 }, extra: { op: 'extra' },
   guard: { op: 'guard', share: 0.5 }, negate: { op: 'negate' }, dispel: { op: 'dispel', which: 'first' }, reveal: { op: 'reveal' },
+  stagger: { op: 'stagger', share: 0.25 }, echo: { op: 'echo', radius: 2 },
 };
 /** The design's picture for each sample: the kinds it names, and `status` for the rest. */
 const OP_PICTURE: Readonly<Record<OpKind, IconKey>> = {
@@ -266,7 +267,7 @@ const OP_PICTURE: Readonly<Record<OpKind, IconKey>> = {
   hidden: 'hood', stayHidden: 'hood', spread: 'plague', cureStatus: 'cure', dispel: 'cure', taunt: 'taunt', threat: 'taunt', untargetable: 'ward',
   invulnerable: 'ward', safeguard: 'ward', delay: 'timer', refund: 'timer', shove: 'push', move: 'push', reveal: 'eye',
   applyStatus: 'status', note: 'status', channel: 'status', staggerRate: 'status', aura: 'status', sheet: 'status', share: 'status',
-  edge: 'status', boost: 'status', alert: 'status', hasten: 'status', extra: 'status', guard: 'status', negate: 'status',
+  edge: 'status', boost: 'status', alert: 'status', hasten: 'status', extra: 'status', guard: 'status', negate: 'status', stagger: 'status', echo: 'status',
 };
 
 describe('a status\'s default icon', () => {

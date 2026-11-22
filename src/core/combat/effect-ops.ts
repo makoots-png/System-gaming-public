@@ -106,12 +106,12 @@ export type End = { readonly ops: readonly LandOp[]; readonly cleanse: 'cancel' 
 /**
  * What a threshold, a trigger or an end lands: an ability's own ops that land on one body at a time (`LAND_USE_OPS`), a
  * hit or a heal (whose damage formula may carry the scalers of kits design 8.0; nothing kills outright; a reveal among them), and time
- * back on the bearer's turn (`pct` of its last action). A push or pull needs the map and an anchor, an extra action is the user's
+ * back on the bearer's turn (`pct` of its last action), and an echo of a status gained. A push or pull needs the map and an anchor, an extra action is the user's
  * own turn, and a guard or a negate answers a use: a use's rules, which nothing lands outside one, so none is a land op.
  */
-export type LandOp = Extract<UseOp, { readonly op: (typeof LAND_USE_OPS)[number] }> | Extract<Op, { readonly op: 'damage' | 'heal' }> | { readonly op: 'refund'; readonly pct: number };
+export type LandOp = Extract<UseOp, { readonly op: (typeof LAND_USE_OPS)[number] }> | Extract<Op, { readonly op: 'damage' | 'heal' | 'echo' }> | { readonly op: 'refund'; readonly pct: number };
 /** The use ops a land op may be (land.ts `landOne` lands each). */
-export const LAND_USE_OPS = ['applyStatus', 'cureStatus', 'delay', 'threat', 'shield', 'channel', 'note', 'mana', 'fatigue', 'move', 'hasten', 'dispel', 'reveal'] as const satisfies readonly UseOp['op'][];
+export const LAND_USE_OPS = ['applyStatus', 'cureStatus', 'delay', 'threat', 'shield', 'channel', 'note', 'mana', 'fatigue', 'move', 'hasten', 'dispel', 'reveal', 'stagger'] as const satisfies readonly UseOp['op'][];
 /** Whether a use op is one a land op may be. */
 export const landsAlone = (o: UseOp): o is Extract<UseOp, LandOp> => (LAND_USE_OPS as readonly string[]).includes(o.op);
 /**
@@ -237,7 +237,21 @@ export type Op =
   /** A `before` reaction's: the triggering use does nothing more to the one it protects (8.4). */
   | { readonly op: 'negate' }
   /** A cure of the first harmful status (the earliest put on), or of every one (8.1's Dispel and Purge). */
-  | { readonly op: 'dispel'; readonly which: 'first' | 'all' };
+  | { readonly op: 'dispel'; readonly which: 'first' | 'all' }
+  // ── keystones (docs/agent-handoff/features/notes-11-keystones.md A.7) ──
+  /**
+   * A use op and a land op: fills `share` of the stagger bar of each body it lands on (an elite's or a boss's; a body with
+   * no bar ignores it), as hits that fill as much would, so a full bar breaks (land.ts `barFilled`). `share` is 0 to
+   * `kit.staggerOpMax`, after the bearer's stagger rate too, so no one op breaks a bar alone. Nothing in a status.
+   */
+  | { readonly op: 'stagger'; readonly share: number }
+  /**
+   * A land op of a trigger a status gained sets off (land.ts `echoed`): that status also goes on the nearest other body of
+   * the side of the one that gained it, within `radius` tiles, that does not hold it, from the same source, for the length
+   * it had when put on. A status an echo puts raises no status gained, so an echo never chains. Anywhere else (another
+   * trigger, a threshold, an end) it does nothing.
+   */
+  | { readonly op: 'echo'; readonly radius: number };
 /** A sheet number a `sheet` op may change (op-amount.ts `SHEET_OP_KEYS`). */
 export type SheetOpKey = (typeof SHEET_OP_KEYS)[number];
 /** A sheet level a `sheet` op raises (op-amount.ts `SHEET_LEVEL_KEYS`), not adds to. */
@@ -269,7 +283,7 @@ const OP_KIND_SET: { readonly [K in OpKind]: true } = {
   damage: true, heal: true, mana: true, fatigue: true, applyStatus: true, cureStatus: true, note: true, speed: true, delay: true,
   hold: true, root: true, taunt: true, threat: true, shield: true, channel: true, staggerRate: true, stat: true, refund: true, aura: true, spread: true,
   sheet: true, share: true, untargetable: true, invulnerable: true, safeguard: true, edge: true, boost: true, hidden: true, alert: true,
-  shove: true, move: true, hasten: true, extra: true, guard: true, negate: true, dispel: true, stayHidden: true, reveal: true,
+  shove: true, move: true, hasten: true, extra: true, guard: true, negate: true, dispel: true, stayHidden: true, reveal: true, stagger: true, echo: true,
 };
 export const OP_KINDS = Object.keys(OP_KIND_SET) as readonly OpKind[];
 
@@ -278,11 +292,11 @@ export const OP_KINDS = Object.keys(OP_KIND_SET) as readonly OpKind[];
  * `fatigue` change the target's at once (an item drunk in a fight: abilities.ts `itemAbility`).
  */
 export type UseOp = Extract<Op, { readonly op: 'applyStatus' | 'cureStatus' | 'delay' | 'threat' | 'shield' | 'channel' | 'note' | 'mana' | 'fatigue'
-  | 'shove' | 'move' | 'hasten' | 'extra' | 'guard' | 'negate' | 'dispel' | 'reveal' }>;
+  | 'shove' | 'move' | 'hasten' | 'extra' | 'guard' | 'negate' | 'dispel' | 'reveal' | 'stagger' }>;
 /** Every use op, once: the typecheck asks for a new member of `UseOp` here, so no reader of the list can miss one. */
 const USE_OP_SET: { readonly [K in UseOp['op']]: true } = {
   applyStatus: true, cureStatus: true, delay: true, threat: true, shield: true, channel: true, note: true, mana: true, fatigue: true,
-  shove: true, move: true, hasten: true, extra: true, guard: true, negate: true, dispel: true, reveal: true,
+  shove: true, move: true, hasten: true, extra: true, guard: true, negate: true, dispel: true, reveal: true, stagger: true,
 };
 /**
  * Whether op `o` is one an ability carries to each target it lands on; the rest act only from inside a status. The one
@@ -694,7 +708,7 @@ export function modsOf(statuses: readonly Status[], bare: FormulaBody): { mods: 
       case 'damage': case 'heal': case 'mana': case 'fatigue': case 'applyStatus': case 'cureStatus': case 'note': case 'delay':
       case 'hold': case 'taunt': case 'threat': case 'shield': case 'channel': case 'staggerRate': case 'refund': case 'aura': case 'spread':
       case 'sheet': case 'share': case 'untargetable': case 'invulnerable': case 'safeguard': case 'edge': case 'boost': case 'hidden': case 'alert':
-      case 'shove': case 'move': case 'hasten': case 'extra': case 'guard': case 'negate': case 'dispel': case 'stayHidden': case 'reveal': break;
+      case 'shove': case 'move': case 'hasten': case 'extra': case 'guard': case 'negate': case 'dispel': case 'stayHidden': case 'reveal': case 'stagger': case 'echo': break;
       default: o satisfies never;
     }
   }
@@ -885,6 +899,8 @@ function opLine(o: Op, tier: number | null, R: DescribeRules, wearer: FormulaBod
     case 'guard': return `Takes ${Math.round(o.share * 100)}% off the strike it answers`;
     case 'negate': return 'The use it answers does nothing more';
     case 'dispel': return o.which === 'first' ? 'Cures the first harmful status' : 'Cures every harmful status';
+    case 'stagger': return `Fills ${Math.round(o.share * 100)}% of the stagger bar of an elite or a boss it lands on`;
+    case 'echo': return `Echoes the status gained: it also goes on the nearest other one on that side within ${o.radius} tile${o.radius === 1 ? '' : 's'} who lacks it, for as long. An echo does not echo`;
     default: return o satisfies never;
   }
 }

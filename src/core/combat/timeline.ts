@@ -76,8 +76,21 @@ export function ahead<T extends Clock>(rows: readonly T[], n: number, rules: Tim
 export const withSpeed = <T extends Clock>(row: T, now: Tick, speed: number): T =>
   ({ ...row, speed, at: tick(now + Math.round((row.at - now) * row.speed / speed)) });
 
-/** A stun of `duration` from `now`: no turn starts before it ends, and a second stun keeps the later end. */
-export const stunned = <T extends Clock>(row: T, now: Tick, duration: Tick): T =>
+/**
+ * A hold of `duration` landing on `row` (questionable decision 1, Nov 22): it adds its length to the row's next turn,
+ * so a landed stun always costs its target its full length. Before, a stun was a floor (no turn before its end) and a
+ * one-round stun on a boss whose turn was half a round away moved it half a round, and one past its end nothing.
+ *   the row's next turn              | after a hold of d
+ *   due before the hold would end    | its turn + d
+ *   due after the hold would end     | its turn + d
+ *   its own turn, now                | now + d (fight.ts `after` then ends the turn it held)
+ *   already pushed by an earlier hold | pushed again by d: each hold that lands costs its own length
+ * A hold with no end moves no turn: the turns it holds are lost one by one (fight.ts `after`, land.ts `held`).
+ */
+export const stunned = <T extends Clock>(row: T, duration: Tick): T => ({ ...row, at: tick(row.at + duration) });
+
+/** No turn of `row` before `now + duration`, a turn already later left where it is: a stagger's break (rule 16, `staggerCost`). */
+export const notBefore = <T extends Clock>(row: T, now: Tick, duration: Tick): T =>
   ({ ...row, at: tick(Math.max(row.at, now + duration)) });
 
 /** A turn pushed back by `ticks`, as a `delay` op does. */

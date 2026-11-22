@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { CHRONICLE_MAX, INBOX_MAX, PUSHED_FACTS, newChronicle, parseChronicle, pushedChronicle, record } from '../src/core/hunter/chronicle.ts';
+import { CHRONICLE_MAX, INBOX_MAX, PUSHED_FACTS, TALLY, newChronicle, parseChronicle, pushedChronicle, record } from '../src/core/hunter/chronicle.ts';
 import { FACT_FIELDS, FACT_KINDS, KEPT, parseFact } from '../src/core/hunter/facts.ts';
 import type { Fact, FactKind } from '../src/core/hunter/facts.ts';
 import { INBOX, noticed, released } from '../src/core/hunter/noticed.ts';
@@ -81,6 +81,11 @@ describe('the notice step', () => {
     expect(after.chronicle.tally.nat20).toBe(1);
     expect(released(noticed(more, () => ctx()), free), 'nothing waits: a repeat writes nothing').toEqual({ ok: false, why: 'unchanged' });
   });
+});
+
+test('the lifetime count of bosses defeated counts a mythic as it counts a boss, and not an elite', () => {
+  const kill = (mkind: 'elite' | 'boss' | 'mythic'): Fact => ({ kind: 'kill', monster: 'Elder', rank: 'S', type: 'Beast', mkind, above: 0, hpPct: 50, payback: false, where: 'fight' });
+  expect((['elite', 'boss', 'mythic'] as const).map(k => TALLY.bosses(kill(k)))).toEqual([0, 1, 1]);
 });
 
 describe('a fact in a hunter\'s inbox, a machine (noticed.ts `INBOX`)', () => {

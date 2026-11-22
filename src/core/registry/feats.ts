@@ -48,7 +48,7 @@ const ENTRIES: readonly (readonly [string, FeatDef])[] = [
   ['ratcatcher', feat('Ratcatcher', 'SOMEONE HAS TO', 'Fifty E-rank monsters defeated.', SHOWN, facts('kill', [is('rank', 'E')]), 50,
     title('Ratcatcher', 'Defeated fifty E-rank monsters.', { ins: 1 }))],
   // F19 (counted on the boss's fall, not on standing at the end)
-  ['red-ledger', feat('Red Ledger', 'TEN NAMES CROSSED OUT', 'Ten bosses defeated.', SHOWN, facts('kill', [is('mkind', 'boss')]), 10,
+  ['red-ledger', feat('Red Ledger', 'TEN NAMES CROSSED OUT', 'Ten bosses defeated.', SHOWN, facts('kill', [{ field: 'mkind', op: '>=', value: 'boss' }]), 10,
     title('Red Ledger', 'Defeated ten bosses.', { str: 3 }))],
   // F20
   ['sharp-eye', feat('Sharp Eye', 'YOU SEE WHERE IT IS SOFT', 'A hundred critical hits landed.', SHOWN, sum('fight', 'crits'), 100, title('Sharp Eye', 'Landed a hundred critical hits.', { ctl: 2 }))],

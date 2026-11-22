@@ -194,7 +194,9 @@ export function fire(bodies: readonly Body[], events: readonly Raised[], now: Ti
           const pct = t.ops.reduce((n, o) => (o.op === 'refund' ? Math.max(n, o.pct) : n), 0);
           if (pct > 0) bearer = refunded(bearer, now, tick(Math.max(0, bearer.at - now)), pct);
           rows.set(bearer.id, bearer);
-          const r = landOps(rows, t.ops, bearer, targetsOf(rows, bearer, t.to, e), s.source, now, R, { cross: true, event: e.key ?? s.key });
+          // an echo reads the status gained that set it off (land.ts `echoed`); what it puts on is no status gained, so it never chains
+          const gained = e.event === 'statusGained' && e.key !== null ? { gained: { holder: e.bearer, key: e.key } } : {};
+          const r = landOps(rows, t.ops, bearer, targetsOf(rows, bearer, t.to, e), s.source, now, R, { cross: true, event: e.key ?? s.key, ...gained });
           for (const f of r.fired) landThreshold(rows, f, now, R);
           about.push(bearer.id, ...r.landed.filter(l => l.dealt).map(l => l.target));
           said.push(`${bearer.name}'s ${s.def.label}${r.landed.some(l => l.dealt) ? ` (${r.landed.filter(l => l.dealt).map(l => `${rows.get(l.target)?.name ?? l.target} ${l.dealt}`).join(', ')})` : ''}`);

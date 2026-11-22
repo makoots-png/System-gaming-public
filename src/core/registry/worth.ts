@@ -187,7 +187,7 @@ const UNWEIGHED_WORDS: { readonly [U in Unweighed]: string } = {
   spread: 'a spread', sheet: 'a sheet change', share: 'a damage share', untargetable: 'untargetable', invulnerable: 'invulnerable',
   safeguard: 'a safeguard', edge: 'advantage', boost: 'a held die', hidden: 'stealth', alert: 'alert', shove: 'a push or pull',
   move: 'moving stacks', hasten: 'a hasten', extra: 'an extra action', guard: 'a guard', negate: 'a negate', dispel: 'a dispel',
-  stayHidden: 'staying hidden', reveal: 'a reveal',
+  stayHidden: 'staying hidden', reveal: 'a reveal', stagger: 'a stagger', echo: 'an echo',
 };
 
 /** Whether a formula reads a count of the fight the bar cannot know (stacks, a field, rounds held, hits, kills, stacks spent, HP lost). */
@@ -241,8 +241,9 @@ export function scalerWorth(scalers: readonly Scaler[], kind: AbilityKind, rank:
  * An op that lands outside a use's own roll (a threshold's, a trigger's, an end's, or an ability's own op), in SA: a hit
  * or a heal at its average, whole (`landed`); time as its share of a standard action, whoever gains or loses it (time
  * back to the user, an ally's turn sooner, a foe's turn later, an extra action whole), since a standard action is the
- * unit itself and a body at parity does as much with an action as the user; a status by `statusWorth`; a note nothing.
- * Any other kind has no rule: it is named in `miss` and adds nothing.
+ * unit itself and a body at parity does as much with an action as the user; a stagger its share of a break
+ * (`breakWorth`); a status by `statusWorth`; a note nothing. Any other kind has no rule (an echo among them): it is
+ * named in `miss` and adds nothing.
  */
 function landWorth(o: LandOp | Op, at: At, R: WorthRules): number {
   if (o.op === 'damage' || o.op === 'heal') return formulaWorth(atTier(o.amount, at.tier) as Formula, at, R) * at.landed;
@@ -250,10 +251,16 @@ function landWorth(o: LandOp | Op, at: At, R: WorthRules): number {
   if (o.op === 'hasten') return o.share;
   if (o.op === 'delay') return atTier(o.ticks, at.tier) / R.fight.cost.standard;
   if (o.op === 'extra') return 1;
+  if (o.op === 'stagger') return o.share * breakWorth(R);
   if (o.op === 'applyStatus') return statusWorth(o.def, o.stacks ?? 1, o.duration === null ? null : atTier(o.duration, at.tier) / R.fight.round, at, R);
   if (o.op !== 'note') at.miss.add(o.op);
   return 0;
 }
+/**
+ * What a stagger bar's break is worth (keystones A.7): the turn time it costs its monster, `staggerCost` rounds, as a
+ * delay's time is weighed (its share of a standard action). A `stagger` op is its share of this.
+ */
+export const breakWorth = (R: WorthRules): number => R.fight.staggerCost * R.fight.round / R.fight.cost.standard;
 const triggerWorth = (t: Trigger, at: At, R: WorthRules): number =>
   t.ops.reduce((n, o) => n + landWorth(o, at, R), 0) * R.fight.kit.eventRates[t.on];
 

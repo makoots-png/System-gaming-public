@@ -284,3 +284,40 @@ describe('a land op puts a status and hastens by a use\'s rules (rule 18, kits d
     for (const op of [{ op: 'shove', dir: 'away', from: 'user', tiles: 2 }, { op: 'extra' }, { op: 'guard', share: 0.5 }, { op: 'negate' }]) expect(def(op)?.triggers ?? []).toEqual([]);
   });
 });
+
+describe('an echo (keystones design A.7)', () => {
+  // Hex: a slow whose own trigger echoes it when its bearer gains it. A at (5,5) hexes M at (6,5); of M's side N is
+  // 2 tiles from M and O 3, both within the echo's 3; B, A's ally, stands 1 tile from M. O is 1 tile from N, so an
+  // echo that echoed again would put Hex on O.
+  const echo = (radius: number): Trigger => ({ on: 'statusGained', key: statusKey('hex'), to: 'self', limit: { kind: 'each' }, ops: [{ op: 'echo', radius }] });
+  const HEX: StatusDef = { label: 'Hex', desc: '', ops: [{ op: 'speed', pct: -20 }], triggers: [echo(3)] };
+  const hex = ability('hex', '1', { ops: [{ op: 'applyStatus', key: statusKey('hex'), def: HEX, duration: tick(4 * RULES.fight.round) }] });
+  const at = (x: number) => ({ place: place(x, 5) });
+  const table = (): Command[] => duel(row('A', 'party', [], { abilities: [hex], ...at(5) }), row('M', 'foe', [], at(6)), row('B', 'party', [], { place: place(6, 6) }),
+    row('N', 'foe', [], at(8)), row('O', 'foe', [], at(9)));
+  const hexOf = (fight: Fight, name: string): Status | undefined => body(fight, name).statuses.find(x => x.key === 'hex');
+
+  test('an echoed status lands on the nearest other foe and does not echo again', () => {
+    const fight = play(...table(), use('A', 'M', hex));
+    const m = hexOf(fight, 'M')!, n = hexOf(fight, 'N')!;
+    expect(['M', 'N', 'O', 'B'].map(k => hexOf(fight, k) !== undefined)).toEqual([true, true, false, false]);
+    expect([n.source, n.until! - n.since]).toEqual([m.source, m.until! - m.since]);
+  });
+
+  test('an echo passes over a foe that holds the status already, and reaches no further than its radius', () => {
+    const held = { key: statusKey('hex'), def: { ...HEX, triggers: [] }, source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0) } as Status;
+    const past = play(...duel(row('A', 'party', [], { abilities: [hex], ...at(5) }), row('M', 'foe', [], at(6)), row('N', 'foe', [held], at(8)), row('O', 'foe', [], at(9))), use('A', 'M', hex));
+    expect(['N', 'O'].map(k => hexOf(past, k)?.source.id ?? null)).toEqual([null, 'A']);
+    const short: StatusDef = { ...HEX, triggers: [echo(1)] };
+    const jab = ability('jab', '1', { ops: [{ op: 'applyStatus', key: statusKey('hex'), def: short, duration: tick(4 * RULES.fight.round) }] });
+    const far = play(...duel(row('A', 'party', [], { abilities: [jab], ...at(5) }), row('M', 'foe', [], at(6)), row('N', 'foe', [], at(8))), use('A', 'M', jab));
+    expect(hexOf(far, 'N')).toBeUndefined();
+  });
+
+  test('an echo outside a trigger a status gained sets off does nothing', () => {
+    const loud: StatusDef = { label: 'Loud', desc: '', ops: [], triggers: [{ on: 'hitDealt', tag: null, to: 'other', limit: { kind: 'each' }, ops: [{ op: 'echo', radius: 3 }] }] };
+    const slowed = { key: statusKey('slowed'), def: { label: 'Slowed', desc: '', ops: [{ op: 'speed', pct: -20 }] }, source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0) } as Status;
+    const fight = play(...duel(row('A', 'party', [on('loud', loud)], at(5)), row('M', 'foe', [slowed], at(6)), row('N', 'foe', [], at(8))), use('A', 'M'));
+    expect(body(fight, 'N').statuses).toEqual([]);
+  });
+});

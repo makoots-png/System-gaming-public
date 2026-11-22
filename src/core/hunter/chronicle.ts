@@ -9,7 +9,7 @@ import type { Counted } from './counts.ts';
 import { parseFeatKey } from '../ids.ts';
 import { dayKey, parseDayKey, timeOf } from '../day.ts';
 import type { DayKey } from '../day.ts';
-import { parseFact, parseKept } from './facts.ts';
+import { bossLike, parseFact, parseKept } from './facts.ts';
 import type { Fact, Kept } from './facts.ts';
 
 /**
@@ -35,7 +35,7 @@ export const TALLY: { readonly [K in TallyKey]: (f: Fact) => number } = {
   fights: f => (f.kind === 'fight' ? 1 : 0),
   won: f => (f.kind === 'fight' && f.outcome === 'won' ? 1 : 0),
   kills: f => (f.kind === 'kill' ? 1 : 0),
-  bosses: f => (f.kind === 'kill' && f.mkind === 'boss' ? 1 : 0),
+  bosses: f => (f.kind === 'kill' && bossLike(f.mkind) ? 1 : 0),
   crits: f => (f.kind === 'fight' ? f.crits : 0),
   struck: f => (f.kind === 'fight' ? f.struck : 0),
   avoided: f => (f.kind === 'fight' ? f.avoided : 0),

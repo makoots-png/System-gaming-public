@@ -1492,3 +1492,122 @@ shape is worth.
 mythic rises as (`shadows.ts`: Marshal, the highest grade, on a boss's body); the bestiary's kind label (`bestiary.js`,
 "Mythic"). Not changed: `fight-facts.ts` counts only kind `boss` as a boss defeated, so a mythic killed is not counted
 there (the lead's call, since feats are another helper's).
+
+## Balance unit 6, step 1: M1 for every archetype
+
+The mythic kind (step 3 above) was fitted on a brute. Measured again before any change (seeds 1 to 100, the mixed
+party at S against one S mythic): brute 0.06 of fights won in 14.5 rounds, caster 0.70 in 9.5, skirmisher 1.00 in
+10.3. A caster boss fell in 5.1 rounds and a skirmisher boss in 5.2 against the brute boss's 7.3, so the gap is in
+the body at every kind, not in the mythic row.
+
+**Why the bodies differ** (`monsterStats`, `derive`, at S as a mythic):
+
+| Body | HP | Armor | Resist | Power it hits with | Speed | Reaction |
+|---|---|---|---|---|---|---|
+| brute (Strength, Vitality, medium kit) | 1336 | 92 | 10 | phys 108 (strike) | 100 | 10 |
+| caster (Power, Control, light kit) | 907 | 20 | 30 | mag 108 (curse, never dodged; Accuracy 54) | 100 | 10 |
+| skirmisher (Agility, Strength, light kit) | 907 | 20 | 30 | phys 65 (shot, its quick share) | 160 | 90 |
+
+Only the brute's split buys toughness: Vitality is its second stat (1.47 times the HP) and its kit and Vitality give it
+armor. The skirmisher's main stat buys turns and dodges; its damage is its second stat's.
+
+**A second cause, in the simulation's monster.** A dead hunter still lies on the map (land.ts `alive`, kept so a
+crystal can revive it), and a shot is a line that does not pierce, so it stops at the first body. The sim's monster
+policy shot at its suggested target whatever lay between: a skirmisher mythic with 1.5 times HP and 1.8 times power
+killed the tank and the bruiser and then put its next 40 shots into the tank's body while the cannon, behind it, took
+none and won the fight in 26.5 rounds (seed 1). Every such fit won the party 1.00 of fights with exactly 2 hunters dead.
+A GM walks around a body. The policy now walks toward its target when a fallen hunter is first in its line
+(`clearLine`, tests/models/fight-sim.ts). The brute's strike (touch) and the caster's curse (direct) do not travel a
+line, so their rows did not move: brute 0.068 in 14.4 rounds at 600 fights, as before.
+
+**The fix: `fight.archetypes`**, a factor on max HP and on power for each archetype, after the kind's (derive.ts
+`monsterSheet`). The brute is 1 in both, as every kind was measured on it. Each other pair is fitted to two targets
+on row M1's 600 fights: the brute's win share (0.068) and about its length (14.4 rounds), so the kind means the same
+fight in odds and in length. HP moves the odds; power moves the length (a harder hitter ends the party sooner). The grid
+(200 fights a point unless marked):
+
+| Caster hp, power | Party wins | Rounds |
+|---|---|---|
+| 1.6, 0.8 | 0.180 (100 fights) | 13.4 |
+| 1.7, 0.75 | 0.160 | 14.5 |
+| 1.75, 0.75 | 0.105 | 14.5 |
+| 1.8, 0.7 | 0.120 | 15.2 |
+| **1.8, 0.75** | **0.078 (se 0.011, 600)** | **14.6** |
+| 1.8, 0.8 | 0.050 (100 fights) | 13.7 |
+| 1.9, 0.75 | 0.030 | 14.7 |
+
+| Skirmisher hp, power | Party wins | Rounds |
+|---|---|---|
+| 1.6, 1.0 | 0.185 | 13.8 |
+| 1.6, 1.1 | 0.055 | 12.8 |
+| 1.65, 1.0 | 0.140 (600) | 13.8 |
+| **1.7, 1.0** | **0.070 (se 0.010, 600)** | **13.9** |
+| 1.8, 1.0 | 0.010 | 14.0 |
+
+The caster needs less power than the brute: its curse cannot be dodged and its Control beats the party's Will. The
+skirmisher keeps power 1: at 1.1 its fights end in 12.8 rounds. Both are as steep as the brute's fit (0.1 of HP moves
+M1 by about 0.07), for the same reason: a 14-round fight between fixed builds averages its dice out.
+
+**M1, the row now one per archetype** (`bun run test`, 600 fights each, seeds 1 to 600):
+
+| Mythic | Party wins | se | Rounds |
+|---|---|---|---|
+| brute | 0.068 | 0.010 | 14.4 |
+| skirmisher | 0.070 | 0.010 | 13.9 |
+| caster | 0.078 | 0.011 | 14.6 |
+
+**What else the factors move.** They act at every kind, since the cause is the body. At S, 100 fights each:
+
+| Kind, S | brute | caster before, after | skirmisher before, after |
+|---|---|---|---|
+| boss, rounds | 7.3 | 5.1, 8.3 | 5.2, 7.8 |
+| elite, rounds | 4.0 | 3.1, 4.8 | 3.3, 4.7 |
+| normal, rounds | 1.8 | 2.3 (after) | 2.3 (after) |
+
+A caster or skirmisher boss now lasts about a round longer than the brute boss, where it lasted two rounds less. No
+row bounds those (design section 6's boss rows use the brute); the caster boss's 8.3 is past the brute row's 8, which
+the lead may want a row for. Every simulation row is inside after the change (128 pass, the two P3 rows still open);
+the warded caster boss of P1 now has 1.8 times the HP and 0.75 times the power and both its rows stay inside. Item
+prices do not move: the item budget reads only a caster's resist (`penCost`).
+
+Moved: `fight.archetypes` (new: skirmisher hp 1.7, caster hp 1.8 and power 0.75, brute 1 and 1). The design's table
+2.6 and worked example 3.A take the new HP (tests/derive.test.ts, tests/resolve.test.ts: a C skirmisher has 82 HP, not
+48). `kinds.mythic` is not moved.
+
+## Balance unit 6, steps 3 to 5: the stun's rule, P3, every row again
+
+**The stun (questionable decision 1) was not built.** `stunned` (timeline.ts) was a floor: no turn before `now + d`.
+It now adds `d` to the target's next turn wherever it was (`stunned(row, d)`, its table of four cases in
+tests/timeline.test.ts). A stagger's break keeps rule 16's floor (`notBefore`, `staggerCost`'s own words: "moves the
+monster's next turn to now + 1.5 rounds"). No row but P3 moved: in the simulation only the tank of P3 holds a stun.
+
+**P3, the party's control** (300 fights each, seeds 1 to 300; the tank stuns whenever it is ready, `controlPolicy`):
+
+| Rank | Before (a floor) | Now (adds its length) | Stuns a fight | Held a stun, rounds | Rounds |
+|---|---|---|---|---|---|
+| C | 0.079 (se 0.004) | **0.153** (se 0.006) | 1.94 | 0.49 | 6.2 |
+| S | 0.061 (se 0.003) | **0.128** (se 0.005) | 2.10 | 0.46 | 7.6 |
+
+Why not double: the turns held per stun went from 0.45 and 0.40 rounds a landed stun to the full 0.89 and 0.81
+(Tenacity 12 and 20 cut the one-round stun), which doubles the share; what keeps it from more is that 45% of the stuns
+are resisted (Aim 10 against Will 10, `resistDc` 12), so "held a stun" averages 0.49 over every stun cast. Both rows
+are inside 10 to 35% by 9 and 6 standard errors, and leave `OPEN`; the table is empty.
+
+**Every row, measured again** (`bun run test`, after steps 1 to 4): 130 rows pass, none out, none open. The three M1
+rows are 0.068, 0.070 and 0.078 (above). Rows near an edge (within one standard error):
+
+| Row | Value (se) | Note |
+|---|---|---|
+| speed beats cannon one on one at C | 0.606 (0.015) | not moved by this unit (no monster in it) |
+| the blood kit against tank within 0.08 of plain at C | 0.055 (0.027) | not moved (no monster) |
+| a channel under fire completes 10 to 25% at C | 0.214 (0.038) | the brute boss, not moved |
+| three speed builds clear a hurting pack no faster than the mixed party at C | 1.013 (0.021) | its two normal skirmishers now hold 1.7 times the HP: 7.07 over 6.98 rounds |
+
+On the last: a side measure of the same setup (every fight's mean rounds, 150 fights) gave 0.971 at C with every
+archetype at 1 and 1.005 with the factors, so the factors did not bring it to the edge; it sat there before. The
+skirmishers' HP does make the pack hurt more: the speed party's front hunter died in 0.41 of fights at C, against 0.17
+with the factors at 1 (the same side measure). That row (bound: twice the mixed party's) stays inside at 3.8.
+
+Not done here: a mythic is extracted at a boss's DC only if `kind === 'boss'` (shadows.ts `bossDc`), so a mythic of a
+type that may be extracted gets a normal's DC. The mythic rows' seeds will say not extractable (balance plan section
+5), so it matters only for a GM's own mythic; it is one token, left for the lead.

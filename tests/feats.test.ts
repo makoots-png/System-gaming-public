@@ -77,6 +77,12 @@ describe('a count and its window (table 5.6)', () => {
     expect(parseCount({ on: 'nope', where: [] })).toBeNull();
     expect(parseCount({ on: 'kill', measure: { of: 'sum', field: 'type' } })).toBeNull();
   });
+  test('a kill\'s kind is an ordered choice: "at least boss" holds of a boss and a mythic, not of an elite, and only an ordered choice takes an order', () => {
+    const atLeastBoss = parseCount({ on: 'kill', where: [{ field: 'mkind', op: '>=', value: 'boss' }] })!;
+    const of = (mkind: 'normal' | 'elite' | 'boss' | 'mythic'): Fact => ({ ...kill('Beast'), mkind } as Fact);
+    expect((['normal', 'elite', 'boss', 'mythic'] as const).map(k => countStep(NO_COUNT, of(k), atLeastBoss, '')!.to)).toEqual(['same', 'same', 'moved', 'moved']);
+    expect(parseCount({ on: 'kill', where: [{ field: 'where', op: '>=', value: 'fight' }] })).toBeNull();
+  });
   test('a kind with no number field takes each time and different values only; every measure a kind takes reads back with each field it offers', () => {
     const noNumber = ['closed', 'quest', 'life', 'rank', 'title', 'feat', 'given', 'chapter', 'coin', 'used', 'shadow'];
     const noField = ['rest'];
@@ -139,6 +145,12 @@ describe('the built-in feats', () => {
       for (const t of [d.name, d.window, d.desc]) expect(t, `${k}: no exclamation mark, em dash or semicolon`).not.toMatch(/[!—;]/);
     }
   });
+  test('Red Ledger counts a mythic defeated as it counts a boss, and not an elite', () => {
+    const ledger = BUILT_IN_FEATS.find(([k]) => k === 'red-ledger')![1].rule;
+    const of = (mkind: 'elite' | 'boss' | 'mythic'): Fact => ({ ...kill('Beast'), mkind } as Fact);
+    expect((['elite', 'boss', 'mythic'] as const).map(k => countStep(NO_COUNT, of(k), ledger, '')!.to)).toEqual(['same', 'moved', 'moved']);
+  });
+
   test('In and Out\'s title says its rule: a gate of the hunter\'s rank or higher, cleared alone in three rounds or fewer', () => {
     const d = BUILT_IN_FEATS.find(([k]) => k === 'in-and-out')![1];
     expect(d.rule.where).toEqual([{ field: 'outcome', op: '=', value: 'won' }, { field: 'rounds', op: '<=', value: 3 }, { field: 'above', op: '>=', value: 0 }]);

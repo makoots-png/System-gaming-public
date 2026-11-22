@@ -335,6 +335,9 @@ function wave2Op(v: Rec, R: Rules): Op | null {
     }
     case 'hasten': case 'guard': { const share = within(v.share, 0, 1); return share === null ? null : { op: v.op, share }; }
     case 'dispel': { const which = oneOf(v.which, ['first', 'all'] as const, null); return which && { op: 'dispel', which }; }
+    // keystones A.7: a share of a bar above 0, held at `staggerOpMax`; an echo's radius a whole number of tiles, held at the widest field
+    case 'stagger': { const share = isNum(v.share) && v.share > 0 ? Math.min(v.share, K.staggerOpMax) : null; return share === null ? null : { op: 'stagger', share }; }
+    case 'echo': { const radius = whole(v.radius, 1, BIG); return radius === null ? null : { op: 'echo', radius: Math.min(radius, F.fieldRadiusMax) }; }
     default: return null;
   }
 }
@@ -388,11 +391,11 @@ function reachOf(v: unknown, R: Rules): Reach | null {
   if (v.kind === 'most') return on && v.of === 'hp' ? { kind: 'most', of: 'hp', radius, on } : null;
   return v.kind === 'area' && on ? { kind: 'area', radius, on } : null;
 }
-/** What a threshold, a trigger or an end lands (effect-ops.ts `LandOp`): a use op that lands alone (a reveal among them), a hit or a heal, or time back (`refund`, 1 to 100%). */
+/** What a threshold, a trigger or an end lands (effect-ops.ts `LandOp`): a use op that lands alone (a reveal and a stagger among them), a hit or a heal, an echo, or time back (`refund`, 1 to 100%). */
 function landOpOf(v: unknown, R: Rules, depth: number): LandOp | null {
   if (isObj(v) && v.op === 'refund') { const pct = num(v.pct, 1, 100); return pct === null ? null : { op: 'refund', pct }; }
   const o = opOf(v, R, depth);
-  return o && (o.op === 'damage' || o.op === 'heal' || oneOf(o.op, LAND_USE_OPS, null)) ? o as LandOp : null;
+  return o && (o.op === 'damage' || o.op === 'heal' || o.op === 'echo' || oneOf(o.op, LAND_USE_OPS, null)) ? o as LandOp : null;
 }
 const landOpsOf = (v: unknown, R: Rules, depth: number): LandOp[] | null =>
   Array.isArray(v) ? all(v.slice(0, R.fight.kit.triggerOps), R.fight.kit.triggerOps, x => landOpOf(x, R, depth)) : null;

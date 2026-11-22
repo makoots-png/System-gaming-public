@@ -65,11 +65,11 @@ const FACES = Array.from({ length: 20 }, (_, i) => i + 1);
 
 describe('the worked examples of design 3.5', () => {
   // A C skirmisher wears the light kit, armor 10 (a rarer piece holds no more). Rule 12 on armor 10: (raw - 0.03 * 10) * 100 / 110.
-  test('3.A: a C bruiser\'s swing deals 29 of an adjacent C skirmisher\'s 48 HP, (32.16 - 0.3) * 100 / 110, and no face of its d20 gets it out', () => {
+  test('3.A: a C bruiser\'s swing deals 29 of an adjacent C skirmisher\'s 82 HP (its body\'s 48 times its archetype\'s 1.7), (32.16 - 0.3) * 100 / 110, and no face of its d20 gets it out', () => {
     const bruiser = body('u', hunterOrigin('bruiser'), place(5, 5), 'party'), skirm = body('t', monsterOrigin('skirmisher'), place(6, 5), 'foe');
     const r = run(ability('strike'), bruiser, [bruiser, skirm], skirm.id, rolls({ t: [6] }, { t: 9 }));
     const [o] = r.outcomes;
-    expect([o!.avoid, o!.crit, o!.dealt, rowHp(skirm), rowHp(find(r.bodies, 't'))]).toEqual(['caught', false, 29, 48, 19]);
+    expect([o!.avoid, o!.crit, o!.dealt, rowHp(skirm), rowHp(find(r.bodies, 't'))]).toEqual(['caught', false, 29, 82, 53]);
     expect(o!.raw).toBeCloseTo(32.16, 2);
     expect([find(r.bodies, 'u').at, find(r.bodies, 'u').fatigue]).toEqual([NOW + 1000, 8]);
     const best = run(ability('strike'), bruiser, [bruiser, skirm], skirm.id, rolls({ t: [6] }, { t: 20 }));

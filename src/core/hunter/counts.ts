@@ -13,7 +13,7 @@ export const WITHINS = ['ever', 'row', 'session', 'day', 'rest'] as const;
 export type Within = (typeof WITHINS)[number];
 export const TEST_OPS = ['>=', '<=', '='] as const;
 export type TestOp = (typeof TEST_OPS)[number];
-/** A test of one field of the counted kind: a number, a rank (compared E to S), a choice, a flag or text (compared whole, in any case). */
+/** A test of one field of the counted kind: a number, a rank (compared E to S), a choice (an ordered one compared in its order), a flag or text (compared whole, in any case). */
 export type Test = { readonly field: string; readonly op: TestOp; readonly value: number | string | boolean };
 export const MEASURES = ['facts', 'sum', 'distinct', 'max'] as const;
 /** Each passing fact counts 1; or a numeric field's sum; or the number of different values of a field; or a numeric field's highest value. */
@@ -46,7 +46,7 @@ function holds(f: Fact, t: Test): boolean {
     case 'num': return typeof v === 'number' && typeof t.value === 'number' && cmp(v, t.value);
     case 'rank': return cmp(rankIdx(v), rankIdx(t.value));
     case 'flag': return v === t.value;
-    case 'pick': return v === t.value;
+    case 'pick': return spec.ordered ? cmp(spec.of.indexOf(v as string), spec.of.indexOf(t.value as string)) : v === t.value;
     case 'text': return typeof v === 'string' && typeof t.value === 'string' && v.trim().toLowerCase() === t.value.trim().toLowerCase();
   }
 }
@@ -103,8 +103,8 @@ function valueOf(spec: FieldSpec, v: unknown): number | string | boolean | undef
     case 'text': return typeof v === 'string' && v.trim() ? v.trim().slice(0, spec.max) : undefined;
   }
 }
-/** The ops a field's spec may be compared with: an order for a number or a rank, equality for the rest. */
-export const opsFor = (spec: FieldSpec): readonly TestOp[] => (spec.t === 'num' || spec.t === 'rank' ? TEST_OPS : ['=']);
+/** The ops a field's spec may be compared with: an order for a number, a rank or an ordered choice, equality for the rest. */
+export const opsFor = (spec: FieldSpec): readonly TestOp[] => (spec.t === 'num' || spec.t === 'rank' || (spec.t === 'pick' && spec.ordered) ? TEST_OPS : ['=']);
 /** The fields of kind `kind` that measure `of` may read: a number field for a sum or a highest, any field for different values. */
 export function measureFields(kind: FactKind, of: Exclude<CountMeasure['of'], 'facts'>): readonly string[] {
   return (Object.entries(FACT_FIELDS[kind]) as [string, FieldSpec][]).filter(([, s]) => of === 'distinct' || s.t === 'num').map(([f]) => f);

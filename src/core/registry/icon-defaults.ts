@@ -2,21 +2,24 @@
 // 3), so "why does this thing have this picture" has one answer. Each answer is the thing's own key when it holds one,
 // else a cell of a table below. A table keyed by a union is a mapped type, so the typecheck asks for a cell when an
 // archetype, slot, item type, attack, op kind, damage type, ability kind or built-in status is added. The default is
-// never stored: a changed type or a better table reaches every thing that never picked. Pure; imports types, and the
-// one reading of an amount's sign (formula.ts `signOf`) with the one reading of a tier (op-amount.ts `atTier`).
+// never stored: a changed type or a better table reaches every thing that never picked. Pure; imports types, the one
+// reading of an amount's sign (formula.ts `signOf`), the one reading of a tier (op-amount.ts `atTier`) and the one
+// reading of a typed enemy type (monster-types.ts `monsterTypeOf`).
 // To change a default: change its cell, then `bun run test` (tests/icons.test.ts states each cell as the design does).
 import type { IconKey } from './icons.ts';
 import type { Attack, ItemType, Slot } from './items.ts';
 import type { BuiltInStatus } from './statuses.ts';
 import type { Archetype } from '../hunter/derive.ts';
+import { monsterTypeOf } from './monster-types.ts';
+import type { MonsterType } from './monster-types.ts';
 import type { AbilityKind, DamageType } from '../combat/ability-types.ts';
 import type { Op, OpKind, StatusDef, Tiered } from '../combat/effect-ops.ts';
 import { signOf } from '../formula.ts';
 import { atTier } from '../combat/op-amount.ts';
 import type { ItemId } from '../ids.ts';
 
-/** The sixteen enemy types (the enemy draft's), by their lowercase name, each with its picture. */
-const TYPE_ICON: Readonly<Record<string, IconKey>> = {
+/** The sixteen enemy types (monster-types.ts), each with its picture. */
+const TYPE_ICON: { readonly [T in MonsterType]: IconKey } = {
   beast: 'wolf', undead: 'skull', insect: 'beetle', construct: 'golem', demon: 'horns', spirit: 'ghost', humanoid: 'warrior',
   dragon: 'dragon', giant: 'giant', plant: 'vine', elemental: 'vortex', fey: 'butterfly', aquatic: 'fish', aberration: 'tentacle',
   ooze: 'slime', celestial: 'halo',
@@ -29,8 +32,8 @@ const ARCHETYPE_ICON: { readonly [A in Archetype]: IconKey } = { brute: 'claw', 
  * else its archetype's. A shadow's or a summon's body has no type, so it takes its archetype's.
  */
 export function monsterIcon(m: { readonly type?: string; readonly archetype: Archetype; readonly icon?: IconKey }): IconKey {
-  const type = (m.type ?? '').trim().toLowerCase();
-  return m.icon ?? (Object.hasOwn(TYPE_ICON, type) ? TYPE_ICON[type] : undefined) ?? ARCHETYPE_ICON[m.archetype];
+  const type = monsterTypeOf(m.type ?? '');
+  return m.icon ?? (type === null ? ARCHETYPE_ICON[m.archetype] : TYPE_ICON[type]);
 }
 
 /** A weapon's picture by how it attacks. */
@@ -83,7 +86,7 @@ const OP_ICON: { readonly [K in OpKind]: OpCell<K> } = {
   taunt: 'taunt', threat: 'taunt', untargetable: 'ward', invulnerable: 'ward', safeguard: 'ward', delay: 'timer', refund: 'timer',
   shove: 'push', move: 'push', reveal: 'eye',
   applyStatus: 'status', note: 'status', channel: 'status', staggerRate: 'status', aura: 'status', sheet: 'status', share: 'status',
-  edge: 'status', boost: 'status', alert: 'status', hasten: 'status', extra: 'status', guard: 'status', negate: 'status',
+  edge: 'status', boost: 'status', alert: 'status', hasten: 'status', extra: 'status', guard: 'status', negate: 'status', stagger: 'status', echo: 'status',
 };
 
 /** An op's picture: its kind's cell, or what the cell's rule picks from the op. */

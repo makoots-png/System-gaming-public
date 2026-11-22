@@ -29,7 +29,8 @@
 // - "at most one hunter down in more than 1 run in 4, a death in under 1 in 20": with down and death one event, the
 //   pair cannot both stand; the row keeps the design's bound on a hunter lost, a death in under 1 boss fight in 20.
 // - "A mythic should be basically impossible to beat, like 5-10% odds for a party of 3" (the owner, Nov 21; balance plan
-//   section 4, M1): the mixed party at S's first level wins 5 to 10% of fights against one brute mythic alone.
+//   section 4, M1): the mixed party at S's first level wins 5 to 10% of fights against one mythic alone, one row for
+//   each archetype, so the kind holds whatever the body.
 // - "front hunter": the first hunter of the party's line, the one the pack reaches first; "goes down" is read as dies.
 // - "Fatigue over three fights of 6 rounds": a party of the five builds against two same-rank bosses, ended by the GM at
 //   6 rounds, three times, with HP back to full and 55 fatigue back between fights (`RULES.fight.fightRest`) and no mana
@@ -50,7 +51,7 @@
 //   brute boss (armor) for the armor pair, a warded caster boss (resist) for the magic pair. "More than 25% faster" is
 //   the main stat's rounds over the variant's, the larger of the two variants.
 // - The party's control (P3): the share of the fight's time the boss's turn was pushed by the tank's stun (a hold of a
-//   round, `abilities().stun`), a stagger's push apart. No built-in skill holds, so the stun is the plain one. The tank
+//   round, `abilities().stun`, which adds its length to the boss's next turn: timeline.ts `stunned`), a stagger's push apart. No built-in skill holds, so the stun is the plain one. The tank
 //   uses it whenever it is ready and the boss acts before the tank's next turn (`controlPolicy`), before a taunt.
 import { describe, expect, test } from 'bun:test';
 import { formulaOf } from '../src/core/registry/ability-kinds.ts';
@@ -63,6 +64,7 @@ import { diceOf } from '../src/core/formula.ts';
 import type { Place } from '../src/core/combat/space.ts';
 import { BUILDS, KIT_BUILDS, MONSTER_ABILITY, PLAIN_OF, SIM_RANKS, abilities, blastsAllowed, controlPolicy, hunter, monster, playDungeon, playFight, rng, spending, turnsPolicy, wave2 } from './models/fight-sim.ts';
 import type { Archetype, FightRecord, KitBuild, PenBuild, PenSpend, Plan, SimRow } from './models/fight-sim.ts';
+import type { Archetype as MonsterArchetype } from '../src/core/hunter/derive.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
 
 // ── the setups ──
@@ -362,14 +364,17 @@ const PEN_ROWS: readonly Row[] = (['C', 'S'] as const).flatMap(rank => [
     }, low: 0.1, high: 0.35, lever: 'the party\'s control (abilities().stun) and Tenacity' },
 ]);
 
-/** The mixed party at S against one same-rank brute mythic (balance plan section 4, row M1). */
-const vsMythic = (seed: number): FightRecord[] => [playFight({ rows: [...party(MIXED, 'S'), monster('S', 'brute', 'mythic', 'mythic')] }, seed)];
+/** The mixed party at S against one same-rank mythic of `archetype` (balance plan section 4, row M1). */
+const vsMythic = (archetype: MonsterArchetype) => (seed: number): FightRecord[] => [playFight({ rows: [...party(MIXED, 'S'), monster('S', archetype, 'mythic', 'mythic')] }, seed)];
+const MONSTER_ARCHETYPES = Object.keys(RULES.fight.archetypes) as MonsterArchetype[];
 
 const ROWS: readonly Row[] = [
   ...triangle('C'), ...triangle('S'), ...atE,
   ...partyRows('C'), ...partyRows('S'),
-  { name: 'three hunters at S win 5 to 10% of fights against a same-rank mythic', setup: 'mixed v mythic S', runs: RUNS.mythic,
-    measure: () => wins('mixed v mythic S', vsMythic, RUNS.mythic), low: 0.05, high: 0.1, lever: 'kinds.mythic.hp' },
+  ...MONSTER_ARCHETYPES.map((a): Row => ({
+    name: `three hunters at S win 5 to 10% of fights against a same-rank ${a} mythic`, setup: `mixed v ${a} mythic S`, runs: RUNS.mythic,
+    measure: () => wins(`mixed v ${a} mythic S`, vsMythic(a), RUNS.mythic), low: 0.05, high: 0.1, lever: a === 'brute' ? 'kinds.mythic.hp' : `archetypes.${a} (hp, power)`,
+  })),
   { name: 'no build is at its fatigue capacity before the third fight at C', setup: 'dungeon C', runs: RUNS.twentieth,
     measure: () => share(runsOf('dungeon C', dungeon('C'), RUNS.twentieth).map(d => d.slice(0, 2).some(r => Object.values(r.tally).some(t => t.fatigueMax > 0 && t.fatigue >= t.fatigueMax)))), low: 0, high: 0.05, lever: 'fightRest' },
   { name: 'the speed build reaches its fatigue capacity in the third fight at C', setup: 'dungeon C', runs: RUNS.twentieth,
@@ -400,14 +405,10 @@ const ROWS: readonly Row[] = [
 
 /**
  * The rows outside their bound, with the value measured: each stays `todo` until a change in RULES.fight brings it inside
- * (docs/agent-handoff/rw/sim-log.md says why each misses, "Balance unit 3, step 1"). The rule calls are the lead's.
+ * (docs/agent-handoff/rw/sim-log.md says why each misses). The rule calls are the lead's. None today: P3 came inside when
+ * a stun began to add its length to the turn (sim-log.md, balance unit 6).
  */
-const OPEN: Readonly<Record<string, string>> = {
-  'the party\'s control takes 10 to 35% of a same-rank boss\'s turns, stagger counted apart, at C':
-    '0.079 (se 0.004): the tank stuns 1.9 times a fight of 6.2 rounds, 0.93 of what its cooldown allows, but its Aim 10 against the boss\'s Will 10 is resisted 45% of tries, and a hold is a floor on a turn already 0.48 of a round away, so a landed stun of 0.89 rounds (Tenacity 12) moves it 0.45; resistDc 19 brings it in at both ranks and puts four triangle rows out (sim-log.md, balance unit 3)',
-  'the party\'s control takes 10 to 35% of a same-rank boss\'s turns, stagger counted apart, at S':
-    '0.061 (se 0.003): as at C, with 2.1 stuns in 7.6 rounds, 45% resisted, and Tenacity 20 cutting a landed stun to 0.81 rounds, which moves the turn 0.40',
-};
+const OPEN: Readonly<Record<string, string>> = {};
 
 // ── one test per row: the row is measured inside its test, so a bun timeout or the per-test times name the row ──
 const inside = (r: Row, m: Measure): boolean => m.value >= r.low && m.value <= r.high;

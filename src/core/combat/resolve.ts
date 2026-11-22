@@ -13,7 +13,7 @@ import type { KindRules } from '../registry/ability-kinds.ts';
 import type { Rules } from '../rules.ts';
 import { dist, dodge, inShape, sees, shovePath, terrain, TERRAIN, tiles, tilesOf } from './space.ts';
 import type { Grid, Place, Side } from './space.ts';
-import { acted, delayed, extraNow, extraStep, interval, refunded, stunned, tick } from './timeline.ts';
+import { acted, delayed, extraNow, extraStep, interval, notBefore, refunded, tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
 import type { Ability, Avoid, CombatantId, Outcome } from './ability-types.ts';
 import { isUp, rowHp } from './row-hp.ts';
@@ -25,7 +25,7 @@ import type { Lookout } from './sight.ts';
 import type { Fog } from './fight-types.ts';
 import type { HeldDieId } from './standing.ts';
 import type { Body, OpRules, Status, StatusKey, UseOp } from './effect-ops.ts';
-import { afterDefence, alive, broken, channelBreaks, clamp, cleansed, drained, hasteOn, healed, hurt, landEnd, landMove, landThreshold, live, opsOf, landStatus, stealthAfter, threatened, throughShield } from './land.ts';
+import { afterDefence, alive, barFilled, barRate, broken, channelBreaks, clamp, cleansed, drained, hasteOn, healed, hurt, landEnd, landMove, landThreshold, live, opsOf, landStatus, staggerOp, stealthAfter, threatened, throughShield } from './land.ts';
 import type { Burst, LandFired } from './land.ts';
 import { freeZoneId, MAX_ZONES } from './zones.ts';
 import type { Ground, Zone } from './zones.ts';
@@ -239,16 +239,12 @@ function defended(raw: number, a: Ability, user: Body, target: Body, R: ResolveR
 const threatOfHit = (struck: number, dealt: number, R: ResolveRules): number =>
   R.fight.threatBeforeDefence * Math.max(0, struck) + (1 - R.fight.threatBeforeDefence) * dealt;
 
-// Rule 16: a weak hit fills the bar 1.5 times; a full bar costs the target 1.5 rounds, empties and grows 50%.
+// Rule 16: a weak hit fills the bar 1.5 times its damage, at the bar's rate; the bar fills where every fill does (land.ts `barFilled`).
 function staggered(target: Body, damage: number, now: Tick, R: ResolveRules): { target: Body; fill: number; staggered: boolean } {
   // only a monster keeps a bar (effect-ops.ts `Body`)
   if (target.kind !== 'monster' || !target.stagger || damage <= 0) return { target, fill: 0, staggered: false };
-  const bar = target.stagger;
-  const rate = 1 + opsOf(target).reduce((sum, { op, tier, n }) => op.op === 'staggerRate' ? sum + atTier(op.pct, tier) * n : sum, 0) / 100;
-  const fill = damage * (damage < R.fight.staggerWeakBelow * bar.hit ? R.fight.staggerWeak : 1) * Math.max(0, rate);
-  if (bar.fill + fill < bar.max) return { target: { ...target, stagger: { ...bar, fill: bar.fill + fill } }, fill, staggered: false };
-  const floor = stunned(target, now, tick(R.fight.staggerCost * R.fight.round));
-  return { target: { ...floor, stagger: { ...bar, fill: 0, max: bar.max * (1 + R.fight.staggerRegrow), until: floor.at } }, fill, staggered: true };
+  const fill = damage * (damage < R.fight.staggerWeakBelow * target.stagger.hit ? R.fight.staggerWeak : 1) * barRate(target);
+  return { ...barFilled(target, fill, now, R), fill };
 }
 
 // Rule 17: a channel breaks on a single hit of at least `hold * hpMax`, or on an op that breaks it, unless protected.
@@ -256,9 +252,9 @@ function staggered(target: Body, damage: number, now: Tick, R: ResolveRules): { 
 // Rule 18: the ability's ops on a target it caught. A control status lasts less on a tenacious target, on a boss as on any. A
 // stacking status adds the op's stacks (kits design 1.1); rule 18a checks its threshold after each application. `seen`:
 // whether a foe that is up has the target in sight, which refuses a hide that starts out of sight (land.ts `landStatus`).
-function landOps(a: Ability, user: Body, target: Body, dice: readonly number[], seen: boolean, now: Tick, R: ResolveRules): { target: Body; keys: StatusKey[]; breaks: boolean; threat: number; fired: LandFired[]; detonated: Status[] } {
+function landOps(a: Ability, user: Body, target: Body, dice: readonly number[], seen: boolean, now: Tick, R: ResolveRules): { target: Body; keys: StatusKey[]; breaks: boolean; threat: number; fill: number; staggers: boolean; fired: LandFired[]; detonated: Status[] } {
   const f = formulaOf(a, R);
-  let t = target, breaks = false, threat = 0, die = f ? diceOf(f).length : 0;
+  let t = target, breaks = false, threat = 0, fill = 0, staggers = false, die = f ? diceOf(f).length : 0;
   const keys: StatusKey[] = [], fired: LandFired[] = [], detonated: Status[] = [];
   for (const op of a.ops) {
     switch (op.op) {
@@ -297,12 +293,14 @@ function landOps(a: Ability, user: Body, target: Body, dice: readonly number[], 
       case 'hasten': t = hasteOn(user, t, op.share, now, R); break;
       // the stealth machine's `revealed` (a Flare's), as the land op lands it (land.ts `landOne`)
       case 'reveal': t = stealthAfter(t, { type: 'revealed' }, now, R); break;
+      // keystones A.7: a share of the bar, as the land op fills it (land.ts `staggerOp`); the outcome counts it with the hit's
+      case 'stagger': { const s = staggerOp(t, op.share, now, R); t = s.target; fill += s.fill; staggers ||= s.staggered; break; }
       // an extra action is the user's (`userTime`); a guard and a negate are a reaction's (fight-react.ts)
       case 'extra': case 'guard': case 'negate': break;
       default: op satisfies never;
     }
   }
-  return { target: t, keys, breaks, threat, fired, detonated };
+  return { target: t, keys, breaks, threat, fill, staggers, fired, detonated };
 }
 
 // Rule 18b: an ability that leaves a field puts its zone where it landed (around its centre for a radius, else on its
@@ -571,7 +569,7 @@ export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body
     const lands = end.avoid === 'caught';
     // a hide that starts out of sight is refused on a body a foe that is up watches, whoever casts it (land.ts `landStatus`)
     const seen = hiding && watched(t, { rows: [...rows.values()], grid, fog }, R);
-    const landed = lands ? landOps(a, u, t, dice, seen, now, R) : { target: t, keys: [], breaks: false, threat: 0, fired: [], detonated: [] };
+    const landed = lands ? landOps(a, u, t, dice, seen, now, R) : { target: t, keys: [], breaks: false, threat: 0, fill: 0, staggers: false, fired: [], detonated: [] };
     if (channelBreaks(t, hpDamage, landed.breaks, now)) { channelBroken = true; }
     t = channelBroken ? broken(landed.target, R) : landed.target;
     rows.set(t.id, t);
@@ -583,7 +581,7 @@ export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body
     if (t.id !== user.id) lost += Math.max(0, before - rowHp(t));
     outcomes.push({
       target: t.id, avoid: end.avoid, to: end.to, crit: isCrit, raw, dealt, absorbed, type, statuses: landed.keys,
-      threat: threat + landed.threat, stagger: fill, staggered: stag, channelBroken, down: before > 0 && rowHp(t) === 0,
+      threat: threat + landed.threat, stagger: fill + landed.fill, staggered: stag || landed.staggers, channelBroken, down: before > 0 && rowHp(t) === 0,
     });
     for (const f of landed.fired) bursts.push(landThreshold(rows, f, now, R));
     // a cure that sets a delayed effect off lands its end at once (kits table 2.2)

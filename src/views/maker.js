@@ -88,6 +88,7 @@ const KIND_LABEL = {
   safeguard: 'Blocks harmful statuses', edge: 'Rolls twice (advantage)', boost: 'Held die', hidden: 'Hidden (stealth)', alert: 'Never surprised',
   shove: 'Push or pull', move: 'Move stacks', hasten: 'Hasten their turn', extra: 'Another action', guard: 'Guard (reaction)',
   negate: 'Negate (reaction)', dispel: 'Cure harmful', stayHidden: 'Stays hidden', reveal: 'Reveal hidden',
+  stagger: 'Fill the stagger bar', echo: 'Echo to the nearest',
 };
 /** Whom a status's aura reaches (effect-ops.ts `AURA_ON`). */
 const AURA_LABEL = [['all', 'Everyone'], ['allies', 'Allies'], ['foes', 'Foes']];
@@ -98,9 +99,12 @@ const AURA_LABEL = [['all', 'Everyone'], ['allies', 'Allies'], ['foes', 'Foes']]
 const ROW_KINDS = {
   status: OP_KINDS,
   item: ['damage', 'heal', 'mana', 'fatigue', 'applyStatus', 'cureStatus', 'note'],
-  skill: ['applyStatus', 'cureStatus', 'delay', 'threat', 'shield', 'channel', 'mana', 'fatigue', 'note', 'shove', 'move', 'hasten', 'extra', 'guard', 'negate', 'dispel', 'reveal'],
-  /** What a threshold, a trigger or a delayed end lands (effect-ops.ts `LandOp`): a hit or a heal at once, and the ability ops that land alone (`LAND_USE_OPS`, a reveal among them). */
-  land: ['damage', 'heal', 'applyStatus', 'cureStatus', 'shield', 'mana', 'fatigue', 'threat', 'delay', 'note', 'move', 'hasten', 'dispel', 'reveal'],
+  skill: ['applyStatus', 'cureStatus', 'delay', 'threat', 'shield', 'channel', 'mana', 'fatigue', 'note', 'shove', 'move', 'hasten', 'extra', 'guard', 'negate', 'dispel', 'reveal', 'stagger'],
+  /**
+   * What a threshold, a trigger or a delayed end lands (effect-ops.ts `LandOp`): a hit or a heal at once, the ability ops
+   * that land alone (`LAND_USE_OPS`, a reveal and a stagger among them), and an echo, which acts in a trigger a status gained sets off.
+   */
+  land: ['damage', 'heal', 'applyStatus', 'cureStatus', 'shield', 'mana', 'fatigue', 'threat', 'delay', 'note', 'move', 'hasten', 'dispel', 'reveal', 'stagger', 'echo'],
 };
 /** Ops whose amount is a formula (by rank), and the shield, whose amount is one formula. */
 const FORMULA_KINDS = ['damage', 'heal', 'mana', 'fatigue'];
@@ -264,7 +268,8 @@ function rowOf(o) {
   else if (o.op === 'boost') r.q = String(o.die.kind === 'die' ? o.die.sides : o.die.n);
   else if (o.op === 'shove') r.q = String(o.tiles);
   else if (o.op === 'move') r.q = o.take === 'all' ? '' : String(o.take);
-  else if (o.op === 'hasten' || o.op === 'guard') r.q = String(Math.round(o.share * 1000) / 10);
+  else if (o.op === 'hasten' || o.op === 'guard' || o.op === 'stagger') r.q = String(Math.round(o.share * 1000) / 10);
+  else if (o.op === 'echo') r.q = String(o.radius);
   else if (!PLAIN_KINDS.includes(o.op) && o.op !== 'edge' && o.op !== 'dispel' && o.op !== 'stayHidden') return { ...r, kind: 'keep', keep: o };
   return r;
 }
@@ -367,6 +372,16 @@ function checkRow(r, item) {
     if (x === '' || !Number.isFinite(n) || n < 0 || n > 100) return fail('Write a percent from 0 to 100.');
     return ok({ op: r.kind, share: n / 100 });
   }
+  if (r.kind === 'stagger') {
+    // the most of a bar one op fills (keystones A.7)
+    const hi = Math.round(K.staggerOpMax * 1000) / 10, x = String(r.q).trim(), n = Number(x);
+    if (x === '' || !Number.isFinite(n) || n <= 0 || n > hi) return fail(`Write the share of the bar, a percent above 0 and at most ${hi}.`);
+    return ok({ op: 'stagger', share: n / 100 });
+  }
+  if (r.kind === 'echo') {
+    const n = wholeIn(r.q, 1, R.fight.fieldRadiusMax);
+    return n === null ? fail(`Write the tiles it reaches, a whole number from 1 to ${R.fight.fieldRadiusMax}.`) : ok({ op: 'echo', radius: n });
+  }
   if (r.kind === 'dispel') return ok({ op: 'dispel', which: r.which === 'all' ? 'all' : 'first' });
   if (r.kind === 'stayHidden') return ok({ op: 'stayHidden', on: r.stayOn });
   if (r.kind === 'channel') return ok({ op: 'channel', mode: r.chMode === 'break' ? 'break' : 'protect' });
@@ -464,6 +479,8 @@ function effects(box, o) {
         ${segF('moveFrom', `Which way, effect ${i + 1}`, MOVE_FROM_LABEL, r.moveFrom)}
         <div class="mk-two">${smallNum('q', 'Stacks', r.q, { aria: `Stacks effect ${i + 1} moves`, placeholder: 'All' })}<label class="field"><span class="lbl">Arrives as</span><select data-f="as" data-pick aria-label="Effect ${i + 1} arrives as">${opt('', 'The same status', r.as)}${list.map(([k, l]) => opt(k, l, r.as)).join('')}</select></label></div>`;
     } else if (r.kind === 'hasten' || r.kind === 'guard') body = smallNum('q', r.kind === 'hasten' ? 'Sooner by (% of your action)' : 'Takes off the strike (%)', r.q, { aria: `Percent of effect ${i + 1}`, decimal: true });
+    else if (r.kind === 'stagger') body = `${smallNum('q', 'Of the bar (%)', r.q, { aria: `Share of the stagger bar, effect ${i + 1}`, decimal: true })}<p class="mk-avg">Only an elite or a boss has a bar. One effect fills at most ${Math.round(K.staggerOpMax * 100)}% of it.</p>`;
+    else if (r.kind === 'echo') body = `${smallNum('q', 'Out to (tiles)', r.q, { aria: `Reach of effect ${i + 1}` })}<p class="mk-avg">Only in a trigger set off when a status is gained: that status also goes on the nearest other one on that side who lacks it, for as long. It does not echo again.</p>`;
     else if (r.kind === 'dispel') body = segF('which', `Which harmful statuses, effect ${i + 1}`, WHICH_LABEL, r.which);
     else if (r.kind === 'stayHidden') body = group('Stays hidden when', segF('stayOn', `What effect ${i + 1} keeps from ending a hide`, STEALTH_END_LABEL, r.stayOn));
     else if (r.kind === 'note') body = `<input type="text" maxlength="200" autocomplete="off" data-f="text" aria-label="Note of effect ${i + 1}" placeholder="What the GM rules on" value="${esc(r.text)}">`;
@@ -533,6 +550,8 @@ function effects(box, o) {
     if (kind === 'hasten') return rowOf({ op: 'hasten', share: 0.5 });
     if (kind === 'guard') return rowOf({ op: 'guard', share: K.parry });
     if (kind === 'dispel') return rowOf({ op: 'dispel', which: 'first' });
+    if (kind === 'stagger') return rowOf({ op: 'stagger', share: K.staggerOpMax / 2 });
+    if (kind === 'echo') return rowOf({ op: 'echo', radius: 2 });
     if (kind === 'hidden') return rowOf(parseOp({ op: 'hidden' }, R));
     if (kind === 'stayHidden') return rowOf({ op: 'stayHidden', on: STEALTH_END_LABEL[0][0] });
     return rowOf({ op: kind, type: 'physical', amount: dice(1, 6), ...when });

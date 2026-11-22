@@ -27,6 +27,10 @@ const every = <T extends string>() => <const L extends readonly T[]>(l: L & ([Ex
 /** How a hunter's life changed (the life machine's `lifeNews`): from a fight's totals, a revive by the GM or an item, or a hand edit. */
 export type LifeHow = 'fight' | 'gm' | 'item' | 'hand';
 export const LIFE_HOWS = every<LifeHow>()(['fight', 'gm', 'item', 'hand']);
+/** Monster kinds from the least to the most to beat: a kill's kind compares in this order, so "at least boss" holds of a mythic. */
+export const MONSTER_KINDS_RISING = every<MonsterKind>()(['normal', 'elite', 'boss', 'mythic']);
+/** Whether a monster of kind `k` counts where a boss counts (a record's, a feat's, a fight fact's bosses): a boss or a mythic. */
+export const bossLike = (k: MonsterKind): boolean => MONSTER_KINDS_RISING.indexOf(k) >= MONSTER_KINDS_RISING.indexOf('boss');
 
 /** How a fight ended for a hunter's side: won, lost, or the GM ended it with both sides up. */
 export type FightOutcome = 'won' | 'lost' | 'ended';
@@ -102,7 +106,8 @@ export type Kept = Fact & FactStamp;
 type Num = { readonly t: 'num'; readonly label: string; readonly min: number; readonly max: number; readonly none?: true };
 type Flag = { readonly t: 'flag'; readonly label: string };
 type RankS = { readonly t: 'rank'; readonly label: string };
-type PickS<V extends string> = { readonly t: 'pick'; readonly label: string; readonly of: readonly V[] };
+/** A choice of a list; `ordered`: the list runs from least to most, so a test may compare it as a rank compares. */
+type PickS<V extends string> = { readonly t: 'pick'; readonly label: string; readonly of: readonly V[]; readonly ordered?: true };
 type Text = { readonly t: 'text'; readonly label: string; readonly max: number };
 /** The spec a field's type takes: a number, a number or none, a flag, a rank (ordered), a choice of a list, or text. */
 type SpecOf<V> =
@@ -121,6 +126,7 @@ const flag = (label: string): Flag => ({ t: 'flag', label });
 const rank = (label: string): RankS => ({ t: 'rank', label });
 const text = (label: string, max = NAME): Text => ({ t: 'text', label, max });
 const pick = <V extends string>(label: string, of: readonly V[]): PickS<V> => ({ t: 'pick', label, of });
+const ordered = <V extends string>(label: string, of: readonly V[]): PickS<V> => ({ t: 'pick', label, of, ordered: true });
 const above = num('Ranks above the hunter\'s', -RANK_SPAN, RANK_SPAN);
 
 /** Each kind's fields: its spec and the words a maker and a rule's line use. */
@@ -136,7 +142,7 @@ export const FACT_FIELDS: { readonly [K in FactKind]: FieldsOf<K> } = {
     gate: text('Gate'), names: text('Foes', 80),
   },
   kill: {
-    monster: text('Monster'), rank: rank('Monster rank'), type: text('Monster type', 40), mkind: pick('Kind', every<MonsterKind>()(['normal', 'elite', 'boss', 'mythic'])), above,
+    monster: text('Monster'), rank: rank('Monster rank'), type: text('Monster type', 40), mkind: ordered('Kind', MONSTER_KINDS_RISING), above,
     hpPct: num('HP left (%)', 0, 100), payback: flag('It had put the hunter down'), where: pick('Where', every<'fight' | 'solo'>()(['fight', 'solo'])),
   },
   solo: {

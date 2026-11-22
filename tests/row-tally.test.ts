@@ -26,6 +26,8 @@ const id = combatantId;
 const HUNTER: Origin = { kind: 'hunter', build: { stats: baseStats(RULES.fight), level: 1, gear: kitGear('light', RULES), perks: {} } };
 const WOLF: Origin = { kind: 'monster', name: 'Wolf', rank: 'D', archetype: 'brute', monsterKind: 'normal', tweak: { hp: 1, dealt: 1, stats: {}, traits: [] }, type: 'Beast' };
 const ALPHA: Origin = { ...WOLF, name: 'Alpha', monsterKind: 'boss', rank: 'C' };
+const ELDER: Origin = { ...WOLF, name: 'Elder', monsterKind: 'mythic', rank: 'B' };
+const PACKLEAD: Origin = { ...WOLF, name: 'Packlead', monsterKind: 'elite', rank: 'C' };
 const FAR = { range: tiles(20), shape: { kind: 'touch', reach: tiles(20) } } as const;
 const ability = (name: string, text: string): Ability => ({ ...abilityOf('strike', { id: abilityId(name), name }, RULES), ...FAR, effect: { type: 'physical', by: 'hand', formula: f(text) } });
 const HIT = ability('hit', '10'), BIG = ability('big', '9999');
@@ -115,6 +117,11 @@ describe('a hunter row\'s facts at the fight\'s end', () => {
     ]);
     for (const x of facts) expect(parseFact(JSON.parse(JSON.stringify(x)))).toEqual(x);
     expect(rowFacts(fight, id('W'), 'D', '')).toEqual([]);
+  });
+
+  test('a mythic defeated counts among the fight\'s bosses and gives its boss rank, as a boss does; an elite does not', () => {
+    const fight = play(...begin(row('A', 'party'), row('E', 'foe', ELDER), row('P', 'foe', PACKLEAD)), use('A', 'E', BIG), use('A', 'P', BIG)) as Ended;
+    expect(rowFacts(fight, id('A'), 'D', '')[0]).toMatchObject({ outcome: 'won', kills: 2, bosses: 1, bossTop: 2 });
   });
 
   test('a kill of the monster that had put the hunter down is payback, and a pack is named once with its count', () => {

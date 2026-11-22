@@ -350,7 +350,17 @@ const statusPolicy: Policy = (f, me, _plan, R) => {
   return attackOr(f, me, own(me, 'arc-bolt'), target);
 };
 /** A monster: its archetype's attack on its suggested target, walking up when it is out of range. A summon plays so too. */
-const monsterPolicy: Policy = (f, me) => attackOr(f, me, me.abilities[0]!, suggested(f, me)!);
+/**
+ * Whether `a` aimed at `target` reaches it: a line that does not pierce stops at the first body lying in it, and a dead
+ * hunter still lies on the map (land.ts `alive`), so a shot at a hunter behind a fallen one hits the fallen one.
+ */
+const clearLine = (f: Running, me: Body, a: Ability, target: Body): boolean =>
+  a.shape.kind !== 'line' || a.shape.pierce || inShape(a.shape, me.place, target.place, f.grid, f.rows.filter(r => r.id !== me.id && (up(r) || r.kind === 'hunter'))).hit[0]?.id === target.id;
+/** A monster: its one attack on its suggested target, walking toward it when out of range or when a fallen hunter stands in its line. */
+const monsterPolicy: Policy = (f, me) => {
+  const a = me.abilities[0]!, target = suggested(f, me)!;
+  return clearLine(f, me, a, target) ? attackOr(f, me, a, target) : toward(f, me, target);
+};
 /** Pain: the bruiser's play, with Violence in place of the strike once it holds `spendAt` Pain (design 3.6: at 5). */
 const painPolicy: Policy = (f, me, _plan, R) => {
   const target = taunter(f, me) ?? nearest(me, foesOf(f, me))!, mut = own(me, 'mutilation'), violence = own(me, 'violence');

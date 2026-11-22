@@ -377,6 +377,22 @@ const SPEC = {
       boss: { hp: of(2.8, KIND_FACTOR), power: of(1.2, KIND_FACTOR), armor: of(1.5, KIND_GUARD), resist: of(1.5, KIND_GUARD), stagger: of(4, KIND_STAGGER), xp: of(3, KIND_XP) },
       mythic: { hp: of(5.2, KIND_FACTOR), power: of(2, KIND_FACTOR), armor: of(2, KIND_GUARD), resist: of(2, KIND_GUARD), stagger: of(4, KIND_STAGGER), xp: of(5, KIND_XP) },
     },
+    // Monster archetypes (derive.ts `ARCHETYPES`): factors on max HP and power, after the kind's. An archetype changes how
+    // a monster fights (a shot from range and a dodge, a curse no dodge escapes), not how hard it is to beat, so each kind
+    // means one fight whatever the body. Without them only the brute's 2:1 split buys toughness: Vitality is its second
+    // stat (1.47 times the HP of a body with none at S) and its medium kit and Vitality give it armor 46 at S against a
+    // light kit's 10; a skirmisher's main stat, Agility, buys turns and dodges, not damage. The mythic kind, fitted on a
+    // brute, was beaten 70% of the time as a caster and always as a skirmisher (sim-log.md, balance unit 6). The brute
+    // is 1, as the kinds were measured on it; each other pair is what row M1 measured (600 fights each): the HP that puts
+    // the mixed party's wins at the brute's (0.068) with the power that keeps the fight about the brute's 14.4 rounds.
+    // The caster's curse is never dodged and its Control finds Will, so it hits harder than a brute and needs less power:
+    // 1.8 and 0.75 won 0.078 in 14.6 rounds (1.8 and 0.8 won 0.05, 1.7 and 0.75 won 0.16 at 200 fights). The skirmisher at
+    // power 1 won 0.070 in 13.9 rounds at 1.7 (1.65 won 0.140; power 1.1 at 1.6 cut the fight to 12.8 rounds).
+    archetypes: {
+      brute: { hp: of(1, KIND_FACTOR), power: of(1, KIND_FACTOR) },
+      skirmisher: { hp: of(1.7, KIND_FACTOR), power: of(1, KIND_FACTOR) },
+      caster: { hp: of(1.8, KIND_FACTOR), power: of(0.75, KIND_FACTOR) },
+    },
     // Monster traits (balance plan section 1): named changes to a monster's body that a row's words ask for, each the
     // smallest set of pieces the body already has: a factor on max HP, on armor and on resist (after its kind's), a
     // percent on speed (a `speed` StatusMod, read as a status's), and a factor on XP. The draft's words name slow in 15
@@ -541,6 +557,8 @@ const SPEC = {
       wardRounds: whole(1, 0, 10, 'rounds a ward lasts: 10 is past any fight'), // untargetable, invulnerable and safeguard last a round at most, and the first two reach a body once a fight
       boostSides: whole(20, 2, 100, 'sides of a held die: a d100 is the largest a sheet names'), // a held die is at most a d20 (Expected Outcome)
       shoveMax: whole(3, 0, 40, 'tiles one push moves a body: 40 is the largest map\'s side'), // tiles one push or pull moves a body: half a round's walk at move 6
+      // The most of a stagger bar one `stagger` op fills (keystones design A.7): half a bar, so no one op breaks a bar alone.
+      staggerOpMax: real(0.5, 0, 1, 'the share of a stagger bar one op fills: at 1 one op breaks a bar alone'),
       blinkMax: of(8, RANGE), // the longest blink: a curse's range, the gap between the default lines
       reactionsPerUse: whole(4, 0, 20, 'reactions one use sets off: the bound of the loop that fires them'), // reactions one use may set off: four targets of an area, one each
       // Parry's guard, the share a `before` reaction takes off a strike (kits table 8.10.3): the largest in steps of 0.05

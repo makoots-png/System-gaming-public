@@ -130,12 +130,12 @@ describe('what moves a turn', () => {
       const isFirst = !first.has(actor.id);
       first.add(actor.id);
       if (isFirst && actor.id === 'Kai') change('Wolf', r => withSpeed(r, now, 84));
-      if (isFirst && actor.id === 'Mira') change('Ogre', r => stunned(r, now, tick(2000)));
+      if (isFirst && actor.id === 'Mira') change('Ogre', r => stunned(r, tick(2000)));
       change(actor.id, r => acted(r, now, isFirst && actor.id === 'Bram' ? HEAVY : STANDARD, R));
     }
     expect(seen).toEqual([
       [0, 'Bram'], [333, 'Wolf'], [459, 'Mira'], [673, 'Kai'], [1377, 'Wolf'], [1382, 'Kai'], [1479, 'Mira'],
-      [1744, 'Bram'], [2091, 'Kai'], [2459, 'Ogre'], [2499, 'Mira'], [2567, 'Wolf'], [2800, 'Kai'], [2907, 'Bram'],
+      [1744, 'Bram'], [2091, 'Kai'], [2476, 'Ogre'], [2499, 'Mira'], [2567, 'Wolf'], [2800, 'Kai'], [2907, 'Bram'],
     ]);
   });
 
@@ -147,18 +147,19 @@ describe('what moves a turn', () => {
     expect(withSpeed(row('w', 120, 1166), tick(673), 150)).toEqual(row('w', 150, 1067));
   });
 
-  test('a stun puts the next turn no earlier than its end', () => {
-    expect(stunned(row('o', 105, 1200), tick(500), tick(2000)).at).toEqual(2500);
-  });
-
-  test('a stun that ends before the next turn changes nothing', () => {
-    expect(stunned(row('o', 105, 1200), tick(500), tick(300)).at).toEqual(1200);
-  });
-
-  test('a second, shorter stun keeps the later end', () => {
-    const once = stunned(row('o', 105, 1200), tick(500), tick(2000));
-    expect(stunned(once, tick(600), tick(1000)).at).toEqual(2500);
-  });
+  // Questionable decision 1 (Nov 22): a hold adds its length to the target's next turn, wherever that turn was.
+  const HOLDS: readonly (readonly [string, Clock, number, number])[] = [
+    ['due before a 2000-tick hold landing at 500 would end', row('o', 105, 1200), 2000, 3200],
+    ['due after a 300-tick hold landing at 500 would end', row('o', 105, 1200), 300, 1500],
+    ['its own turn, now (500)', row('o', 105, 500), 1000, 1500],
+    ['already pushed to 3200 by a hold, then held 1000 more', row('o', 105, 3200), 1000, 4200],
+  ];
+  for (const [when, before, d, after] of HOLDS) {
+    test(`a stun of ${d} ticks on a turn ${when} puts that turn at ${after}`, () => {
+      expect(stunned(before, tick(d)).at).toEqual(after);
+      expect(after - before.at).toBe(d);
+    });
+  }
 
   test('a delay pushes the next turn back by its ticks', () => {
     expect(delayed(row('a', 100, 1500), tick(300)).at).toEqual(1800);

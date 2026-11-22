@@ -130,7 +130,7 @@ export type SheetBasis = {
 export type StatusMod = { readonly op: 'stat'; readonly key: StatKey; readonly amount: number } | { readonly op: 'speed'; readonly pct: number };
 
 /** A monster's 2:1 stat split and kit (design 2.4). */
-export type Archetype = 'brute' | 'skirmisher' | 'caster';
+export type Archetype = keyof Rules['fight']['archetypes'];
 export type Kit = keyof Rules['fight']['kits'];
 export type MonsterKind = keyof Rules['fight']['kinds'];
 /** A named change to a monster's body (`RULES.fight.traits`: frail, tough, slow, fast, armored, warded). */
@@ -265,15 +265,15 @@ export function monsterStats(rank: Rank, archetype: Archetype, R: DeriveRules, t
 
 /**
  * A monster's sheet (balance plan section 1): a hunter of its rank's first level with its points split 2:1 by its
- * archetype and its seed's tweak, no perks, in its archetype's kit (`kitGear`). Its max HP is times its
- * kind's factor, the tweak's and its traits'; its powers times its kind's; its armor and resist (the kit's and its
- * stat's share) times its kind's and its traits'; each trait's speed percent is a `speed` mod beside its statuses'. A
- * shadow's sheet is the sheet of the monster it was extracted from.
+ * archetype and its seed's tweak, no perks, in its archetype's kit (`kitGear`). Its max HP is times its kind's factor,
+ * its archetype's (`fight.archetypes`), the tweak's and its traits'; its powers times its kind's and its archetype's;
+ * its armor and resist (the kit's and its stat's share) times its kind's and its traits'; each trait's speed percent is
+ * a `speed` mod beside its statuses'. A shadow's sheet is the sheet of the monster it was extracted from.
  */
 export function monsterSheet(rank: Rank, archetype: Archetype, kind: MonsterKind, R: DeriveRules, mods: readonly StatusMod[] = [], tweak: Tweak = NO_TWEAK): Sheet {
-  const k = R.fight.kinds[kind], traits = tweak.traits.map(t => R.fight.traits[t]);
+  const k = R.fight.kinds[kind], a = R.fight.archetypes[archetype], traits = tweak.traits.map(t => R.fight.traits[t]);
   const times = (n: 'hp' | 'armor' | 'resist'): number => traits.reduce((p, t) => p * t[n], 1);
   const paces = traits.map((t): StatusMod => ({ op: 'speed', pct: t.speed }));
-  const f: Factors = { hp: k.hp * tweak.hp * times('hp'), power: k.power, armor: k.armor * times('armor'), resist: k.resist * times('resist') };
+  const f: Factors = { hp: k.hp * a.hp * tweak.hp * times('hp'), power: k.power * a.power, armor: k.armor * times('armor'), resist: k.resist * times('resist') };
   return derive(monsterStats(rank, archetype, R, tweak), R.rankLevels[rank], kitGear(ARCHETYPES[archetype].kit, R), {}, [...mods, ...paces], f, R);
 }

@@ -72,35 +72,37 @@ const TABLE_2_3: Record<Shown, Record<BuildId, readonly number[]>> = {
 // no more armor or resist, so the kit is the same at every rank), and its armor and resist (the kit's and its stat's
 // share, Vitality's 2, 9 and 16 for a brute at E, C and S, none for the others) are times its kind's factor, 1, 1.25 and
 // 1.5. Max HP is its kind's factor on the body (normal 0.6, elite 1.5, boss 2.8): a boss is 2.8 / 3.2 of the paper's
-// (the C brute boss 324 to 284); power is as the paper prints it.
+// (the C brute boss 324 to 284); power is as the paper prints it. Then its archetype's factors (`fight.archetypes`):
+// a skirmisher's HP times 1.7, a caster's HP times 1.8 and its power times 0.75, a brute's both 1 (the C caster's 48
+// HP to 87, its 16.66 power to 12.50).
 const TABLE_2_6: readonly (readonly [Shown, Archetype, MonsterKind, number, number, number, number, number])[] = [
   ['E', 'brute', 'normal', 29, 87, 32, 5, 6.72],
   ['E', 'brute', 'elite', 72, 87, 40, 6, 9.60],
   ['E', 'brute', 'boss', 134, 87, 48, 8, 11.52],
-  ['E', 'skirmisher', 'normal', 27, 112, 10, 15, 5.50],
-  ['E', 'skirmisher', 'elite', 68, 112, 13, 19, 7.85],
-  ['E', 'skirmisher', 'boss', 126, 112, 15, 23, 9.42],
-  ['E', 'caster', 'normal', 27, 100, 10, 15, 6.72],
-  ['E', 'caster', 'elite', 68, 100, 13, 19, 9.60],
-  ['E', 'caster', 'boss', 126, 100, 15, 23, 11.52],
+  ['E', 'skirmisher', 'normal', 46, 112, 10, 15, 5.50],
+  ['E', 'skirmisher', 'elite', 115, 112, 13, 19, 7.85],
+  ['E', 'skirmisher', 'boss', 214, 112, 15, 23, 9.42],
+  ['E', 'caster', 'normal', 49, 100, 10, 15, 5.04],
+  ['E', 'caster', 'elite', 122, 100, 13, 19, 7.20],
+  ['E', 'caster', 'boss', 227, 100, 15, 23, 8.64],
   ['C', 'brute', 'normal', 61, 100, 39, 5, 16.66],
   ['C', 'brute', 'elite', 152, 100, 48, 6, 23.81],
   ['C', 'brute', 'boss', 284, 100, 58, 8, 28.57],
-  ['C', 'skirmisher', 'normal', 48, 138, 10, 15, 10.92],
-  ['C', 'skirmisher', 'elite', 121, 138, 13, 19, 15.59],
-  ['C', 'skirmisher', 'boss', 226, 138, 15, 23, 18.71],
-  ['C', 'caster', 'normal', 48, 100, 10, 15, 16.66],
-  ['C', 'caster', 'elite', 121, 100, 13, 19, 23.81],
-  ['C', 'caster', 'boss', 226, 100, 15, 23, 28.57],
+  ['C', 'skirmisher', 'normal', 82, 138, 10, 15, 10.92],
+  ['C', 'skirmisher', 'elite', 206, 138, 13, 19, 15.59],
+  ['C', 'skirmisher', 'boss', 384, 138, 15, 23, 18.71],
+  ['C', 'caster', 'normal', 87, 100, 10, 15, 12.50],
+  ['C', 'caster', 'elite', 218, 100, 13, 19, 17.86],
+  ['C', 'caster', 'boss', 406, 100, 15, 23, 21.43],
   ['S', 'brute', 'normal', 154, 100, 46, 5, 37.82],
   ['S', 'brute', 'elite', 385, 100, 57, 6, 54.03],
   ['S', 'brute', 'boss', 719, 100, 69, 8, 64.84],
-  ['S', 'skirmisher', 'normal', 105, 160, 10, 15, 22.83],
-  ['S', 'skirmisher', 'elite', 262, 160, 13, 19, 32.61],
-  ['S', 'skirmisher', 'boss', 488, 160, 15, 23, 39.14],
-  ['S', 'caster', 'normal', 105, 100, 10, 15, 37.82],
-  ['S', 'caster', 'elite', 262, 100, 13, 19, 54.03],
-  ['S', 'caster', 'boss', 488, 100, 15, 23, 64.84],
+  ['S', 'skirmisher', 'normal', 178, 160, 10, 15, 22.83],
+  ['S', 'skirmisher', 'elite', 445, 160, 13, 19, 32.61],
+  ['S', 'skirmisher', 'boss', 830, 160, 15, 23, 39.14],
+  ['S', 'caster', 'normal', 188, 100, 10, 15, 28.37],
+  ['S', 'caster', 'elite', 471, 100, 13, 19, 40.52],
+  ['S', 'caster', 'boss', 879, 100, 15, 23, 48.63],
 ];
 
 describe('the five builds (tables 2.3.E, 2.3.C and 2.3.S)', () => {
@@ -145,6 +147,16 @@ describe('monsters (table 2.6)', () => {
     const scaled: SheetNumber[] = ['hpMax', 'phys', 'mag', 'sup', 'armor', 'resist'];
     expect(KEYS.filter(k => !scaled.includes(k) && boss[k] !== normal[k])).toEqual([]);
     expect(boss.mag / normal.mag).toBeCloseTo(1.2 / 0.7, 10);
+  });
+
+  test('an archetype scales max HP and power and nothing else: a C caster has 1.8 times the HP and 0.75 times the power of its bare body', () => {
+    const bare = { ...RULES, fight: { ...RULES.fight, archetypes: { ...RULES.fight.archetypes, caster: { hp: 1, power: 1 } } } };
+    const plain = monsterSheet('C', 'caster', 'normal', bare), m = monsterSheet('C', 'caster', 'normal', RULES);
+    const scaled: SheetNumber[] = ['hpMax', 'phys', 'mag', 'sup'];
+    expect(KEYS.filter(k => !scaled.includes(k) && m[k] !== plain[k])).toEqual([]);
+    expect(m.mag / plain.mag).toBeCloseTo(0.75, 10);
+    expect(Math.abs(m.hpMax - 1.8 * plain.hpMax)).toBeLessThanOrEqual(1);
+    expect(RULES.fight.archetypes.brute).toEqual({ hp: 1, power: 1 });
   });
 
   test('a boss is tougher by its kind\'s armor and resist (the owner, Nov 21): the C brute boss holds 1.5 times the normal\'s, rounded', () => {

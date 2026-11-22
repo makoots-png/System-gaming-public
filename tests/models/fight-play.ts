@@ -113,9 +113,13 @@ const VIOLENCE = make('strike', 'violence', { range: tiles(2), effect: { type: '
 /** Crimson Pact: a mode for a tenth of max HP, until removed. */
 const PACT = make('support', 'pact', { aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null, prices: [{ kind: 'hp', amount: { kind: 'share', share: 0.1 } }],
   ops: [addTo('crimson-pact', { label: 'Crimson Pact', desc: '', ops: [] }, 1)] });
-/** Hemoplague: a bleed and a delayed hit, only in the Pact, twice a fight. */
+/**
+ * Hemoplague: a bleed and a delayed hit, only in the Pact, twice a fight. It lasts 200 ticks, a sixth of a round: random
+ * play ends most fights inside their first round, and at 800 ticks its end landed in 4 of 2,500 seeds, then in none when
+ * the stun's rule moved the seeds (Nov 22: 126 put on, 51 lost to a cleared fight, 7 to a removed row, none reached its end).
+ */
 const HEMOPLAGUE = make('curse', 'hemoplague', { gates: [{ kind: 'holds', key: statusKey('crimson-pact'), on: 'self', atLeast: 1 }, { kind: 'uses', per: 'fight', n: 2 }],
-  ops: [addTo('hemoplague', { label: 'Hemoplague', desc: '', ops: [{ op: 'damage', type: 'magical', amount: f('1d4') }], end: { ops: [{ op: 'damage', type: 'magical', amount: f('1d8 + mag'), when: 'use' }], cleanse: 'cancel' } }, 1, 800)] });
+  ops: [addTo('hemoplague', { label: 'Hemoplague', desc: '', ops: [{ op: 'damage', type: 'magical', amount: f('1d4') }], end: { ops: [{ op: 'damage', type: 'magical', amount: f('1d8 + mag'), when: 'use' }], cleanse: 'cancel' } }, 1, 200)] });
 /** A boundary around Mira until removed that costs 5 fatigue a round and heals a little, and hits who stands in it when it ends. */
 const BOUNDARY = make('support', 'boundary', { aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null,
   zone: { name: 'Boundary', duration: null, ops: [{ op: 'heal', amount: f('1') }], endsWithOwner: true, around: tiles(1), grow: null, upkeep: { fatigue: 5, mana: 0 },

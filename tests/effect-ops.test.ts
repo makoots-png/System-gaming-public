@@ -2,10 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
 import { baseStats } from '../src/core/stats.ts';
 import type { Stats } from '../src/core/stats.ts';
-import { kitGear } from '../src/core/hunter/derive.ts';
+import { kitGear, NO_TWEAK } from '../src/core/hunter/derive.ts';
 import { parseFormula } from '../src/core/formula.ts';
 import type { Formula } from '../src/core/formula.ts';
-import { place, tiles } from '../src/core/combat/space.ts';
+import { openGrid, place, tiles } from '../src/core/combat/space.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 import type { Tick } from '../src/core/combat/timeline.ts';
 import { abilityId, combatantId } from '../src/core/combat/ability-types.ts';
@@ -13,7 +13,7 @@ import {
   addSheetStatus, applyStatus, bareBody, cureStatus, describeStatus, dueAmount, FULL_HEAL, isControl, lasting, modified, modsOf, onSheet, opLines, removeStatus, settle,
   sheetStatuses, shielded, statusKey, statusOn, statusShield, withStatuses,
 } from '../src/core/combat/effect-ops.ts';
-import { parseOp, parseStatusDef } from '../src/core/combat/fight-parse.ts';
+import { parseAbility, parseOp, parseStatusDef } from '../src/core/combat/fight-parse.ts';
 import type { Body, Op, Origin, StackDef, StackRule, Status, StatusDef, StatusFields } from '../src/core/combat/effect-ops.ts';
 import { stackStep } from '../src/core/combat/stacks.ts';
 import { admitted, boostsOn, counts, damageShare, edgeOn, harmful, holds, sheetAdds, STATUS_LIVES, statusStep, wardedDamage, withSheetOps } from '../src/core/combat/standing.ts';
@@ -21,6 +21,7 @@ import type { StatusLife } from '../src/core/combat/standing.ts';
 import { zoneTone } from '../src/core/combat/zones.ts';
 import { payDue } from '../src/core/combat/fight-turn.ts';
 import { channelBreaks, held, landOps } from '../src/core/combat/land.ts';
+import { resolve } from '../src/core/combat/resolve.ts';
 import type { Stack, StackCtx } from '../src/core/combat/stacks.ts';
 import { STATUS_WALK, WALK_EVENTS as STACK_WALK } from './models/stack-events.ts';
 import { fightId, reduce } from '../src/core/combat/fight.ts';
@@ -809,5 +810,63 @@ describe('a land op meets the rules a use meets (SMX-rules-2.3b)', () => {
     const put: Op = { op: 'applyStatus', key: statusKey('bomb'), def: bomb('land'), duration: tick(3000) };
     const r = landOn(body(), [put, { op: 'cureStatus', key: statusKey('bomb') }], body(hunterOf(), { id: combatantId('ally'), side: 'party' }));
     expect([r.landed.dealt > 0, r.landed.gained, r.landed.cured]).toEqual([true, ['bomb'], ['bomb']]);
+  });
+});
+
+describe('the stagger op (keystones design A.7)', () => {
+  const K = RULES.fight.kit, F = RULES.fight;
+  const BOSS: Origin = { kind: 'monster', name: 'Boss', rank: 'C', archetype: 'brute', monsterKind: 'boss', tweak: NO_TWEAK };
+  // an 88-point bar: four same-rank hits of 22
+  const bar = (fill: number) => ({ fill, max: 88, hit: 22 });
+  const boss = (fill = 0, statuses: Status[] = []): Body => body(BOSS, { id: combatantId('boss'), side: 'foe', kind: 'monster', place: place(3, 0), stagger: bar(fill), threat: {}, statuses, at: tick(1000) });
+  const user = body(hunterOf(), { id: combatantId('u') });
+  const landOn = (t: Body, share: number): Body => {
+    const rows = new Map([[t.id, t], [user.id, user]]);
+    landOps(rows, [{ op: 'stagger', share }], user, [t.id], { id: user.id, tier: 0 }, tick(0), RULES);
+    return rows.get(t.id)!;
+  };
+
+  test('the stagger op fills half a bar and no more', () => {
+    // the rule's words: half a bar, so no one op breaks a bar alone
+    expect(K.staggerOpMax).toBe(0.5);
+    expect(parseOp({ op: 'stagger', share: 0.8 }, RULES)).toEqual({ op: 'stagger', share: 0.5 });
+    expect(landOn(boss(), 0.5).stagger).toEqual(bar(44));
+    // a boss whose bar fills twice as fast still takes half a bar from one op
+    expect(landOn(boss(0, [status('cracked', def({ op: 'staggerRate', pct: 100 }), null)]), 0.5).stagger).toEqual(bar(44));
+    expect(landOn(boss(), 0.25).stagger).toEqual(bar(22));
+  });
+
+  test('a stagger op on a bar half full breaks it as a hit would: the boss loses 1.5 rounds, the bar empties and grows 75%', () => {
+    const broken = landOn(boss(44), 0.5);
+    expect([F.staggerCost, F.staggerRegrow]).toEqual([1.5, 0.75]);
+    expect([broken.at, broken.stagger]).toEqual([1500, { fill: 0, max: 154, hit: 22, until: 1500 }]);
+  });
+
+  test('a body with no bar ignores it', () => {
+    const hunter = body(hunterOf(), { id: combatantId('h'), side: 'foe' });
+    expect(landOn(hunter, 0.5)).toEqual(hunter);
+  });
+
+  test('an ability that staggers fills the bar of the boss it lands on, and its outcome says how much', () => {
+    const quake: Ability = { ...abilityOf('support', { id: abilityId('quake'), name: 'Quake' }, RULES), effect: null, aim: 'foe', range: tiles(20), shape: { kind: 'touch', reach: tiles(20) }, ops: [{ op: 'stagger', share: 0.25 }] };
+    const r = resolve(quake, user, [user, boss()], combatantId('boss'), openGrid(20, 14), { dice: {}, react: {} }, tick(0), RULES);
+    if (!r.ok) throw new Error(r.reason);
+    expect([r.outcomes.map(o => [o.target, o.stagger]), r.bodies.find(b => b.id === 'boss')!.stagger]).toEqual([[['boss', 22]], bar(22)]);
+  });
+
+  test('the parser refuses a stagger that fills nothing, an echo with no whole radius, and an echo among an ability\'s own ops', () => {
+    for (const bad of [{ op: 'stagger' }, { op: 'stagger', share: 0 }, { op: 'stagger', share: -0.25 }, { op: 'stagger', share: '0.25' },
+      { op: 'echo' }, { op: 'echo', radius: 0 }, { op: 'echo', radius: 1.5 }]) expect(parseOp(bad, RULES)).toBeNull();
+    expect(parseOp({ op: 'echo', radius: 99 }, RULES)).toEqual({ op: 'echo', radius: F.fieldRadiusMax });
+    const quake = { ...abilityOf('support', { id: abilityId('quake'), name: 'Quake' }, RULES), effect: null, ops: [{ op: 'stagger', share: 0.25 }] };
+    expect(parseAbility(JSON.parse(JSON.stringify(quake)), RULES)?.ops).toEqual([{ op: 'stagger', share: 0.25 }]);
+    expect(parseAbility(JSON.parse(JSON.stringify({ ...quake, ops: [{ op: 'echo', radius: 2 }] })), RULES)).toBeNull();
+  });
+
+  test('each says what it does', () => {
+    expect(describeStatus(def({ op: 'stagger', share: 0.25 }, { op: 'echo', radius: 2 }), 0, RULES)).toEqual([
+      'Fills 25% of the stagger bar of an elite or a boss it lands on',
+      'Echoes the status gained: it also goes on the nearest other one on that side within 2 tiles who lacks it, for as long. An echo does not echo',
+    ]);
   });
 });

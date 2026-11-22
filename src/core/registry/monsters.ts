@@ -25,6 +25,7 @@ import type { BuiltInStatus } from './statuses.ts';
 import { oneOf } from '../one-of.ts';
 import { isIconKey } from './icons.ts';
 import type { IconKey } from './icons.ts';
+import { typeExtractable } from './monster-types.ts';
 
 /**
  * A status a monster starts a fight with. `rounds: null` lasts until removed. Its def is the rules' for its key. `stacks`
@@ -199,7 +200,7 @@ export function statBlock(R: Rules, rank: Rank, o: { id?: string; name?: string;
   const kind = o.kind ?? 'normal';
   return {
     id: o.id || null, name: o.name || (kind === 'boss' ? `${rank}-rank Boss` : kind === 'elite' ? `Elite ${rank}-rank Monster` : `${rank}-rank Monster`),
-    rank, type: o.type || '', archetype: o.archetype ?? 'brute', kind, tweak: {}, abilities: [], notes: [], extractable: true,
+    rank, type: o.type || '', archetype: o.archetype ?? 'brute', kind, tweak: {}, abilities: [], notes: [], extractable: typeExtractable(o.type || ''),
     desc: '', statuses: [], loot: { gold: 0, items: [] },
   };
 }
@@ -209,7 +210,7 @@ export function seedMonsters(R: Rules): Monster[] {
   return SEEDS.map(([slug, name, rank, type, archetype, kind, t, specs, notes, desc]) => ({
     id: seedId<'m'>(slug), name, rank, type, archetype, kind,
     tweak: { ...(t.hp === undefined ? {} : { hp: t.hp }), ...(t.stats === undefined ? {} : { stats: { ...t.stats } }), ...(t.traits === undefined ? {} : { traits: [...t.traits] }) },
-    abilities: specs.map(s => monsterAbility(s, R)), notes: notes.slice(), xp: xpOf(R, rank, kind, t.traits, t.xp), extractable: t.extractable !== false, desc,
+    abilities: specs.map(s => monsterAbility(s, R)), notes: notes.slice(), xp: xpOf(R, rank, kind, t.traits, t.xp), extractable: t.extractable ?? typeExtractable(type), desc,
     statuses: (t.statuses ?? []).map(s => ({ ...s })), loot: { gold: 0, items: [] },
   }));
 }
@@ -243,7 +244,7 @@ function tweakOf(v: unknown): MonsterTweak {
 /**
  * A monster read from outside data, without its id, or null when it is not an object. Each field of the wrong type or
  * value takes the default a new monster has (a blank name is "Monster", a brute, normal); a number is cut to a whole one
- * inside `MONSTER_BOUNDS`. The tweak keeps an HP factor above 0 (at most 10), stat points from -999 to 999 that are
+ * inside `MONSTER_BOUNDS`. Extractable is the monster's own yes or no, else its type's (monster-types.ts `typeExtractable`). The tweak keeps an HP factor above 0 (at most 10), stat points from -999 to 999 that are
  * not 0, and the traits it names that `RULES.fight.traits` holds, each once, in `MONSTER_TRAITS`' order. Each ability
  * is read by the fight's ability reader with the shipped rules' limits, one it refuses dropped (at most 11). Notes are the non-blank lines of text, at most 20 of 500. A starting status is a status key (not a hunter's
  * state chip, each key once) with whole rounds 1 to 999 or null and a count of 1 to `kit.stackCap` (kept when above 1),
@@ -262,7 +263,7 @@ export function parseMonster(v: unknown): MonsterTemplate | null {
     notes: (Array.isArray(v.notes) ? v.notes : []).map(a => text(a, B.note)).filter(Boolean).slice(0, B.notes),
     // an XP that is not a number is the rule's (absent, `monsterXp`), a typed one kept inside its bound
     ...(typeof v.xp === 'number' && Number.isFinite(v.xp) ? { xp: whole(v.xp, 0, B.xp, 0) } : {}),
-    extractable: v.extractable !== false, desc: typeof v.desc === 'string' ? v.desc.slice(0, B.desc) : '',
+    extractable: typeof v.extractable === 'boolean' ? v.extractable : typeExtractable(text(v.type, B.type)), desc: typeof v.desc === 'string' ? v.desc.slice(0, B.desc) : '',
     statuses: startStatuses(v.statuses),
     loot: { gold: whole(loot.gold, 0, B.gold, 0), items: (Array.isArray(loot.items) ? loot.items : []).flatMap(i => parseItem(i) ?? []).slice(0, B.lootItems) },
   };

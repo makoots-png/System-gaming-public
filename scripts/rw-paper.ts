@@ -147,7 +147,7 @@ function part1(): void {
 
   out('Table 1.5: the same fight in (b) with three events. Bram uses a heavy ability (cost 150) on his first turn. On Kai\'s first');
   out('turn Kai slows the Wolf by 30%: its speed drops and its remaining wait is rescaled by old speed over new. On Mira\'s first');
-  out('turn Mira stuns the Ogre for 2 rounds: its `at` becomes at least now + 2.00. Nothing else in the loop knows about either.');
+  out('turn Mira stuns the Ogre for 2 rounds: its `at` moves 2.00 later. Nothing else in the loop knows about either.');
   out();
   const seen = new Set<string>();
   const ev = timelineB(rowsB, 100 * ROUND, N, (actor, now, rows) => {
@@ -155,7 +155,7 @@ function part1(): void {
     const other = (p: string): Row => rows.find(x => x.id.startsWith(p)) as Row;
     if (first && actor.id.startsWith('Bram')) return COST.heavy;
     if (first && actor.id.startsWith('Kai')) { const w = other('Wolf'); Object.assign(w, withSpeed(w, now, Math.round(w.speed * 0.7))); }
-    if (first && actor.id.startsWith('Mira')) { const o = other('Ogre'); Object.assign(o, stunned(o, now, tick(2 * ROUND))); }
+    if (first && actor.id.startsWith('Mira')) { const o = other('Ogre'); Object.assign(o, stunned(o, tick(2 * ROUND))); }
     return COST.standard;
   });
   table(['#', 'Time', 'Who'], ev.map((s, i) => [i + 1, fmtT(s[0]), s[1]]));
