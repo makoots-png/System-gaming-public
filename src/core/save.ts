@@ -40,8 +40,8 @@ import type { StoryRun } from './story/run.ts';
 import { oneOf } from './one-of.ts';
 import { parseCoins } from './coin.ts';
 import { parseCheck, parseRollKind } from './roll.ts';
-import { NO_TABLE_WEIGHT, parseTableWeight } from './table-weight.ts';
-import type { TableWeight } from './table-weight.ts';
+import { NO_TABLE_WEIGHT, parseHeldWeights, parseTableWeight } from './table-weight.ts';
+import type { HeldWeights, TableWeight } from './table-weight.ts';
 import type { Check, RollKind } from './roll.ts';
 import type { Coin } from './coin.ts';
 import { RANKS } from './rules.ts';
@@ -159,6 +159,8 @@ export type SyncSettings = {
   offers?: OfferRecord[];
   /** Where this phone stopped reading each room it went out of, so a join back reads on from there (src/core/sync/seen.ts). */
   seen?: RoomPlaces;
+  /** On a player's phone, the GM's weight on its hunters' rolls outside a fight, as the room's `weigh` set it (src/core/table-weight.ts). */
+  weights?: HeldWeights;
 };
 /**
  * Whose each field of the sync settings is (docs/agent-handoff/audit/notes-sync-3.md). `campaign`: the room the campaign
@@ -171,6 +173,7 @@ export const SYNC_OWNER: { readonly [K in keyof SyncSettings]-?: 'campaign' | 'p
   room: 'campaign', cursor: 'campaign', lastRoom: 'campaign', boundHunterId: 'campaign',
   gmKey: 'key', gmKeys: 'key',
   deviceToken: 'phone', serverOk: 'phone', joined: 'phone', outbox: 'phone', held: 'phone', applied: 'phone', runs: 'phone', offers: 'phone', seen: 'phone',
+  weights: 'phone',
 };
 /** The fields of `sync` that `owner` owns, as they are. */
 const ownedBy = (sync: SyncSettings, owner: (typeof SYNC_OWNER)[keyof SyncSettings]): Partial<SyncSettings> =>
@@ -375,6 +378,7 @@ function fixSync(sync: SyncSettings, now: number): void {
   if ('runs' in sync) sync.runs = parseRuns(sync.runs);
   if ('offers' in sync) sync.offers = parseOffers(sync.offers);
   if ('seen' in sync) sync.seen = parseSeen(sync.seen, now);
+  if ('weights' in sync) { const w = parseHeldWeights(sync.weights); if (w) sync.weights = w; else delete sync.weights; }
   if ('applied' in sync) {
     const ids: unknown = sync.applied;
     if (!Array.isArray(ids)) delete sync.applied;

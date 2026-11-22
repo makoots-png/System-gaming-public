@@ -15,7 +15,7 @@ import { BUILT_IN_STATUSES } from '../src/core/registry/statuses.ts';
 import { RULES } from '../src/core/rules.ts';
 import { applyRoomEvent, awayDeps, landAll } from '../src/edge/room-events.ts';
 import type { ApplyDeps } from '../src/edge/room-events.ts';
-import { day, dev } from './fixtures/ids.ts';
+import { day, dev, hid } from './fixtures/ids.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
 import type { WaitingRun } from '../src/core/gates/solo-wait.ts';
 import { REVIVE_HP } from '../src/core/hunter/vitals.ts';
@@ -25,6 +25,7 @@ import { soloAnswerBody, soloPlan, soloTaken } from '../src/core/gates/solo.ts';
 import type { SoloRunPayload } from '../src/core/protocol.ts';
 import { noticed } from '../src/core/hunter/noticed.ts';
 import { den } from './models/gate-events.ts';
+import { heldWeight, weightSpent } from '../src/core/table-weight.ts';
 
 const e = (n: number): EventId => `d-gm1-e${n}` as EventId;
 const ids = (from: number, to: number): EventId[] => Array.from({ length: to - from + 1 }, (_, i) => e(from + i));
@@ -85,10 +86,11 @@ const HELD = 'held by the GM\'s fight';
  * `once` as sync.ts runs it (`store.apply` of `appliedOnce`: the step is worked out first, then written whole, so a step
  * that throws writes nothing). `fight`: the GM's fight holds the hunter's vitals (`fightOf` answers `gm`).
  */
-function phone(o: { conditions?: SheetStatus[]; fight?: boolean; level?: number; runs?: WaitingRun[]; life?: Life; sheet?: Partial<Hunter> } = {}) {
+function phone(o: { conditions?: SheetStatus[]; fight?: boolean; level?: number; runs?: WaitingRun[]; life?: Life; sheet?: Partial<Hunter>; room?: RoomCode } = {}) {
   const fresh = freshSave({ now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-player1') }, { onboarded: true });
   let save: Save = { ...fresh, hunters: fresh.hunters.map(h => ({ ...h, ...setLevel(h, o.level ?? 1, 0, RULES).progress, conditions: [...(o.conditions ?? [])], life: o.life ?? h.life, ...o.sheet })) };
   if (o.runs) save = { ...save, settings: { ...save.settings, sync: { ...save.settings.sync, runs: o.runs } } };
+  if (o.room) save = { ...save, settings: { ...save.settings, sync: { ...save.settings.sync, room: o.room } } };
   let rules: Rules = RULES;
   const windows: { title: string; lines?: string[] }[] = [], toasts: string[] = [], shown: string[][] = [], completed: string[] = [], said: { title: string | undefined; body: string | undefined }[] = [];
   const deps: ApplyDeps = {
@@ -120,6 +122,8 @@ function phone(o: { conditions?: SheetStatus[]; fight?: boolean; level?: number;
   };
   return {
     page,
+    get save(): Save { return save; },
+    write: (step: (s: Save) => Save) => { save = step(save); },
     get hunter(): Hunter { return save.hunters[0]!; },
     get applied(): readonly EventId[] { return save.settings.sync.applied ?? []; },
     get runs(): readonly WaitingRun[] { return save.settings.sync.runs ?? []; },
@@ -132,6 +136,34 @@ const AT = '2026-11-14T12:00:00.000Z';
 const monster = (tier: number): Source => ({ id: combatantId(`c-${tier}`), tier });
 const BURNING = BUILT_IN_STATUSES.burning;
 const burning = (tier: number, rounds: number | null): SheetStatus => ({ key: 'burning' as SheetStatus['key'], def: BURNING, source: monster(tier), rounds });
+
+describe('the GM\'s table weight reaches a player\'s phone', () => {
+  const AB = 'ABCD23' as RoomCode, H1 = hid('h1');
+  const weigh = (total: number, force: 20 | 1 | null) => ({ to: ['d-player1:h1'], total, force });
+
+  test('a weigh sets the hunter\'s weight for the room it came in, and tells nothing', () => {
+    const p = phone({ room: AB });
+    p.receive(1, 'weigh', weigh(2, 20));
+    p.receive(2, 'weigh', weigh(-1, null));
+    expect(heldWeight(p.save.settings.sync.weights, AB, H1)).toEqual({ total: -1, force: null });
+    expect([p.windows, p.toasts]).toEqual([[], []]);
+  });
+
+  test('a weigh read again after a roll spent its force puts no force back: it lands once by its id', () => {
+    const p = phone({ room: AB });
+    p.receive(1, 'weigh', weigh(2, 20));
+    p.write(s => weightSpent(s, AB, H1, '1d20+3'));
+    p.receive(1, 'weigh', weigh(2, 20));
+    expect(heldWeight(p.save.settings.sync.weights, AB, H1)).toEqual({ total: 2, force: null });
+    expect(p.applied).toEqual([e(1)]);
+  });
+
+  test('a weigh for another phone\'s hunter writes nothing here', () => {
+    const p = phone({ room: AB });
+    p.receive(1, 'weigh', { to: ['d-player2:h1'], total: 3, force: null });
+    expect([p.save.settings.sync.weights, p.applied]).toEqual([undefined, []]);
+  });
+});
 
 describe('a status the GM sends to a player\'s phone', () => {
   test('a weaker Burning does not replace a stronger one: the hunter keeps the C-rank source', () => {

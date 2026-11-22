@@ -22,6 +22,7 @@ import { spendItem } from '../core/hunter/use.ts';
 import { shadowRises } from '../core/hunter/shadows.ts';
 import { record } from '../core/hunter/chronicle.ts';
 import { chapterLanded, whoseLine } from '../core/story/story.ts';
+import { weightHeard } from '../core/table-weight.ts';
 import type { ChapterGiven } from '../core/story/story.ts';
 import { deviceOf, hunterIdOf } from '../core/protocol.ts';
 import { rewardLines } from '../core/rewards.ts';
@@ -166,9 +167,13 @@ const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS }
   // windows. A gate's Clear among the facts gives the hunter everything back in the same write (grant.ts `noteFacts`)
   noted: { once: true, land: (p, hids, app) => save => forEach(save, hids, (s, h) => ({ save: withHunter(s, noteFacts(h, p.facts, app.rules())), tell: nothing })) },
   chapter: { once: true, land: landChapter },
-  // the GM's table weight on this phone's hunter (core/table-weight.ts): kept on the phone from unit 9 of
-  // docs/agent-handoff/features/notes-8-fudge.md section 5; until then a player's phone does nothing with it
-  weigh: null,
+  // the GM's table weight on this phone's hunter (core/table-weight.ts `weightHeard`): kept for the room it came in, set
+  // and not added, once by its id so a page read again never puts back a force a roll spent since. It tells nothing:
+  // the player's page names no weight
+  weigh: { once: true, land: (p, hids) => save => {
+    const room = save.settings.sync.room;
+    return room ? forEach(save, hids, (s, h) => ({ save: weightHeard(s, room, h.id, p), tell: nothing })) : refuse('nothing');
+  } },
 };
 
 /**

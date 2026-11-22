@@ -1183,6 +1183,7 @@ describe('the phone\'s sync fields and the campaign\'s (audit BUG-sync-3)', () =
     gmKey: keys[at] ?? null, gmKeys: keys, lastRoom: { code: at, why: 'left' }, boundHunterId: hid(tag === 'mine' ? 'h1' : 'h2'),
     joined: { room: at, at: `${tag}-joined` }, outbox: [`${tag}-letter`] as never, held: [`${tag}-held`] as never, applied: [`${tag}-applied`] as never,
     runs: [`${tag}-run`] as never, offers: [`${tag}-offer`] as never, seen: { [`${tag}`]: { seq: 1, at: 'then' } } as never,
+    weights: { room: at, hunters: { [hid(tag === 'mine' ? 'h1' : 'h2')]: { total: tag === 'mine' ? 3 : -2, force: 20 } } },
   });
   const saveOf = (tag: string, sync: SyncSettings): Save => {
     const s = freshSave({ now: NOW, newDeviceToken: () => sync.deviceToken, newDeviceId: () => dev(`d-${tag}`) }, { onboarded: true });
@@ -1193,6 +1194,7 @@ describe('the phone\'s sync fields and the campaign\'s (audit BUG-sync-3)', () =
   const phoneFields = (tag: string) => ({
     serverOk: tag === 'mine', deviceToken: `${tag}-token-0123456789abcdefghij`, joined: { room: tag === 'mine' ? 'AAAAAA' : 'CCCCCC', at: `${tag}-joined` }, outbox: [`${tag}-letter`], held: [`${tag}-held`],
     applied: [`${tag}-applied`], runs: [`${tag}-run`], offers: [`${tag}-offer`], seen: { [tag]: { seq: 1, at: 'then' } },
+    weights: { room: tag === 'mine' ? 'AAAAAA' : 'CCCCCC', hunters: { [tag === 'mine' ? 'h1' : 'h2']: { total: tag === 'mine' ? 3 : -2, force: 20 } } },
   });
 
   test('a campaign file holds its room, its place there and its bound hunter, and nothing of this phone\'s dealings with rooms', () => {
@@ -1200,6 +1202,16 @@ describe('the phone\'s sync fields and the campaign\'s (audit BUG-sync-3)', () =
     expect(file.settings.sync).toEqual({ room: 'AAAAAA', cursor: 40, lastRoom: { code: 'AAAAAA', why: 'left' }, boundHunterId: 'h1' });
     const keyed = JSON.parse(JSON.stringify(exportedSave(mine, true)));
     expect(keyed.settings.sync).toEqual({ room: 'AAAAAA', cursor: 40, lastRoom: { code: 'AAAAAA', why: 'left' }, boundHunterId: 'h1', gmKey: kA, gmKeys: { AAAAAA: kA, BBBBBB: kB } });
+  });
+
+  test('no file holds the table weight: a player\'s weights are in no campaign file, with or without keys, nor in a hunter\'s file, and stay on the phone through a swap', () => {
+    for (const withKeys of [false, true]) {
+      const text = JSON.stringify(exportedSave(mine, withKeys));
+      expect([text.includes('"weights"'), JSON.parse(text).tableWeight], `exported ${withKeys ? 'with' : 'without'} keys`).toEqual([false, mine.tableWeight]);
+    }
+    const hunterFile = JSON.stringify({ schema: SCHEMA, kind: 'hunter', savedAt: NOW.toISOString(), hunters: [mine.hunters[0]] });
+    expect(hunterFile.includes('"weights"') || hunterFile.includes('"total"'), 'the Data view\'s hunter file holds the hunter alone').toBe(false);
+    expect(keepPhone(theirs, mine).settings.sync.weights).toEqual(mine.settings.sync.weights);
   });
 
   test('a save swapped in keeps every one of this phone\'s sync fields and takes the campaign\'s room, place and bound hunter', () => {

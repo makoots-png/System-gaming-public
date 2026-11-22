@@ -8,7 +8,7 @@ import { playerHeld } from '../core/combat/fight-save.ts';
 import { parseSheetKey, sheetKeyOf } from '../core/ids.ts';
 import { oneOf } from '../core/one-of.ts';
 import { standsFor } from '../core/protocol.ts';
-import { weighed, weighsFor, weightOf, weightOn, weightStep } from '../core/table-weight.ts';
+import { weighed, weighsFor, weightOf, weightOn, weightStep, weightsJoined } from '../core/table-weight.ts';
 import { cheatSheet } from './rulesref.js';
 import { bundleMaker } from './reward-editor.js';
 import { UNFINISHED_ROWS, isEmptyReward, newRewards, rewardLines } from '../core/rewards.ts';
@@ -295,15 +295,32 @@ export function register(app) {
     if (on) { tog.insertAdjacentHTML('beforeend', '<i class="gm-wdot" aria-hidden="true"></i>'); tog.setAttribute('aria-label', 'Party board, weight on'); }
     else { dot.remove(); tog.removeAttribute('aria-label'); }
   }
+  /** The `weigh` messages of `bodies` (table-weight.ts `Weigh`), each under its hunter's key so a newer one takes the place of one still waiting. */
+  const weighEvents = bodies => bodies.flatMap(body => { const ev = A().sync.event('weigh', body); return ev ? [{ key: standsFor(ev), event: ev }] : []; });
   /**
-   * A tap on the table weight: `e` on the GM's save, and a `weigh` to each player's hunter in the room whose weight it
-   * changes (`weighsFor`), each under its hunter's key so a newer one takes the place of one still waiting, in one write.
-   * The board says so when they wait for the room.
+   * `e` on the GM's table weight, and a `weigh` to each player's hunter in the room whose weight it changes (`weighsFor`),
+   * in one write. A tap comes here (`tap`: the board says so when what it sent waits for the room), and so does a
+   * player's roll that spends a force, so the player's phone hears every change the GM's phone makes.
    */
-  function weigh(e) {
-    const tw = S().tableWeight, keys = remotes().map(r => r.key);
-    const events = weighsFor(tw, weightStep(tw, e), keys).flatMap(body => { const ev = A().sync.event('weigh', body); return ev ? [{ key: standsFor(ev), event: ev }] : []; });
-    if (gmWrite('gm-weight', s => weighed(s, e), events, []) && events.length && !goesNow()) say('#gm-board-msg', 'The weight reaches the players\' phones when the room answers.');
+  function weigh(e, tap) {
+    const tw = S().tableWeight, after = weightStep(tw, e);
+    if (after === tw) return;
+    const events = weighEvents(weighsFor(tw, after, remotes().map(r => r.key)));
+    if (gmWrite('gm-weight', s => weighed(s, e), events, []) && tap && events.length && !goesNow()) say('#gm-board-msg', 'The weight reaches the players\' phones when the room answers.');
+  }
+  const weighTap = e => weigh(e, true);
+  /** The players' hunters this phone has sent their weight to since each joined the room (table-weight.ts `WeightsTold`). */
+  const toldMemory = store.device('weights-told');
+  /**
+   * The room's sheets changed: each player's hunter that joined since is sent its whole weight (`weightsJoined`), in one
+   * write; the hunters told are kept only once that write is made, so a refused one is tried with the next sheets.
+   */
+  function weighJoined() {
+    const code = room();
+    if (!code || app.seat() !== 'gm') return;
+    const was = toldMemory.read(), r = weightsJoined(was, code, remotes().map(x => x.key), S().tableWeight);
+    if (r.weighs.length && !gmWrite('gm-weight', null, weighEvents(r.weighs), [])) return;
+    if (JSON.stringify(r.told) !== JSON.stringify(was)) toldMemory.write(r.told);
   }
 
   // the GM tab's room strip: state at a glance; the Room view (#/room) has the QR, link and the player list
@@ -869,13 +886,13 @@ export function register(app) {
         if (t.dataset.make) { make(t.dataset.make); return; }
         if (t.dataset.weighScope) {
           const n = Number(t.dataset.weighTo), k = parseSheetKey(t.dataset.weighKey);
-          if (Number.isInteger(n) && t.dataset.weighScope === 'hunters') weigh({ kind: 'hunters', n });
-          else if (Number.isInteger(n) && k) weigh({ kind: 'own', key: k, n });
+          if (Number.isInteger(n) && t.dataset.weighScope === 'hunters') weighTap({ kind: 'hunters', n });
+          else if (Number.isInteger(n) && k) weighTap({ kind: 'own', key: k, n });
           return;
         }
         if (t.dataset.weighForce !== undefined) {
           const k = parseSheetKey(t.dataset.weighForce), face = oneOf(t.dataset.face, ['20', '1', ''], '');
-          if (k) weigh({ kind: 'force', key: k, face: face === '' ? null : /** @type {20 | 1} */ (Number(face)) });
+          if (k) weighTap({ kind: 'force', key: k, face: face === '' ? null : /** @type {20 | 1} */ (Number(face)) });
           return;
         }
         if (t.dataset.tog) {
@@ -949,11 +966,11 @@ export function register(app) {
   setInterval(() => { if (root && root.isConnected && !root.closest('[hidden]') && document.visibilityState === 'visible') renderRoom(); }, 5000); // presence ages
   app.on('sync:status', () => { if (root && root.isConnected && !root.closest('[hidden]')) renderRoom(); });
   app.on('sync:sheets', () => { if (root && root.isConnected && !root.closest('[hidden]')) { renderBoard(); renderTargets(); } });
-  // a player's roll reached the Table feed: a d20 roll spends the force the GM set on that hunter's next roll (table-weight.ts)
+  app.on('sync:sheets', weighJoined);
+  // a player's roll reached the Table feed: one that shows the forced face spends the force the GM set on that hunter's
+  // next roll, and the spend goes to the player's phone like any change (table-weight.ts `showsForced`)
   app.on('sync:event', ({ event }) => {
     if (event.type !== 'roll' || app.seat() !== 'gm') return;
-    /** @type {import('../core/table-weight.ts').WeightEvent} */
-    const e = { kind: 'rolled', key: event.payload.by, expr: event.payload.expr }, tw = S().tableWeight;
-    if (weightStep(tw, e) !== tw) ui.wrote('GM', store.apply('gm-weight', s => weighed(s, e)));
+    weigh({ kind: 'rolled', key: event.payload.by, expr: event.payload.expr, rolls: event.payload.rolls }, false);
   });
 }

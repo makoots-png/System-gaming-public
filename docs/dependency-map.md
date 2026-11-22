@@ -352,7 +352,7 @@ None.
 
 - Imports: `src/core/combat/ability-types.ts`, `src/core/formula.ts`
 - Imports types from: `src/core/combat/fight-types.ts`, `src/core/combat/resolve.ts`, `src/core/gates/spawn.ts`
-- Imported by: `src/core/combat/fudge.ts`, `src/core/combat/play.ts`, `src/core/gates/solo.ts`, `src/edge/roll.ts`
+- Imported by: `src/core/combat/fudge.ts`, `src/core/combat/play.ts`, `src/core/gates/solo.ts`, `src/core/table-weight.ts`, `src/edge/roll.ts`
 
 ### `src/core/effects.ts`
 
@@ -829,7 +829,7 @@ None.
 ### `src/core/save-step.ts`
 
 - Imports types from: `src/core/save.ts`
-- Imported by: `src/app.js`, `src/core/api.ts`, `src/core/applied.ts`, `src/core/award.ts`, `src/core/bestiary.ts`, `src/core/coin.ts`, `src/core/combat/fight-save.ts`, `src/core/combat/mythic.ts`, `src/core/gates/pay.ts`, `src/core/gates/solo-wait.ts`, `src/core/gates/solo.ts`, `src/core/gates/world.ts`, `src/core/hunter/build.ts`, `src/core/hunter/conditions.ts`, `src/core/hunter/grant.ts`, `src/core/hunter/inventory.ts`, `src/core/hunter/loadouts.ts`, `src/core/hunter/noticed.ts`, `src/core/hunter/progress.ts`, `src/core/hunter/quests.ts`, `src/core/hunter/record.ts`, `src/core/hunter/rests.ts`, `src/core/hunter/shadows.ts`, `src/core/hunter/skills-held.ts`, `src/core/hunter/use.ts`, `src/core/hunter/vitals.ts`, `src/core/library.ts`, `src/core/pack.ts`, `src/core/party.ts`, `src/core/rewards.ts`, `src/core/session-log.ts`, `src/core/starter.ts`, `src/core/story/run.ts`, `src/core/story/story.ts`, `src/core/sync/bind.ts`, `src/core/trade/goods.ts`, `src/core/trade/offer.ts`, `src/core/use-told.ts`, `src/edge/room-events.ts`, `src/edge/store.ts`, `src/edge/sync.ts`, `src/views/bestiary.js`, `src/views/combat.js`, `src/views/custom.js`, `src/views/effects.js`, `src/views/feat-maker.js`, `src/views/forge.js`, `src/views/gates.js`, `src/views/gm.js`, `src/views/hunter.js`, `src/views/inventory.js`, `src/views/io.js`, `src/views/loot.js`, `src/views/map-maker.js`, `src/views/onboard.js`, `src/views/quests.js`, `src/views/shadows.js`, `src/views/skills.js`, `src/views/stories.js`, `src/views/story-maker.js`, `src/views/ui.js`, `src/views/uses.js`, `src/views/workshop.js`
+- Imported by: `src/app.js`, `src/core/api.ts`, `src/core/applied.ts`, `src/core/award.ts`, `src/core/bestiary.ts`, `src/core/coin.ts`, `src/core/combat/fight-save.ts`, `src/core/combat/mythic.ts`, `src/core/gates/pay.ts`, `src/core/gates/solo-wait.ts`, `src/core/gates/solo.ts`, `src/core/gates/world.ts`, `src/core/hunter/build.ts`, `src/core/hunter/conditions.ts`, `src/core/hunter/grant.ts`, `src/core/hunter/inventory.ts`, `src/core/hunter/loadouts.ts`, `src/core/hunter/noticed.ts`, `src/core/hunter/progress.ts`, `src/core/hunter/quests.ts`, `src/core/hunter/record.ts`, `src/core/hunter/rests.ts`, `src/core/hunter/shadows.ts`, `src/core/hunter/skills-held.ts`, `src/core/hunter/use.ts`, `src/core/hunter/vitals.ts`, `src/core/library.ts`, `src/core/pack.ts`, `src/core/party.ts`, `src/core/rewards.ts`, `src/core/session-log.ts`, `src/core/starter.ts`, `src/core/story/run.ts`, `src/core/story/story.ts`, `src/core/sync/bind.ts`, `src/core/table-weight.ts`, `src/core/trade/goods.ts`, `src/core/trade/offer.ts`, `src/core/use-told.ts`, `src/edge/room-events.ts`, `src/edge/store.ts`, `src/edge/sync.ts`, `src/views/bestiary.js`, `src/views/combat.js`, `src/views/custom.js`, `src/views/effects.js`, `src/views/feat-maker.js`, `src/views/forge.js`, `src/views/gates.js`, `src/views/gm.js`, `src/views/hunter.js`, `src/views/inventory.js`, `src/views/io.js`, `src/views/loot.js`, `src/views/map-maker.js`, `src/views/onboard.js`, `src/views/quests.js`, `src/views/shadows.js`, `src/views/skills.js`, `src/views/stories.js`, `src/views/story-maker.js`, `src/views/ui.js`, `src/views/uses.js`, `src/views/workshop.js`
 
 ### `src/core/save.ts`
 
@@ -952,9 +952,9 @@ None.
 
 ### `src/core/table-weight.ts`
 
-- Imports: `src/core/combat/fight-types.ts`, `src/core/formula.ts`, `src/core/ids.ts`, `src/core/one-of.ts`, `src/core/rules.ts`
-- Imports types from: `src/core/save.ts`
-- Imported by: `src/core/protocol.ts`, `src/core/save.ts`, `src/views/gm.js`
+- Imports: `src/core/combat/fight-types.ts`, `src/core/formula.ts`, `src/core/ids.ts`, `src/core/one-of.ts`, `src/core/rules.ts`, `src/core/save-step.ts`
+- Imports types from: `src/core/draws.ts`, `src/core/save.ts`
+- Imported by: `src/core/protocol.ts`, `src/core/save.ts`, `src/edge/room-events.ts`, `src/views/dice.js`, `src/views/gm.js`
 
 ### `src/core/told.ts`
 
@@ -1035,7 +1035,7 @@ None.
 
 ### `src/edge/room-events.ts`
 
-- Imports: `src/core/applied.ts`, `src/core/combat/effect-ops.ts`, `src/core/gates/solo-wait.ts`, `src/core/gates/solo.ts`, `src/core/hunter/chronicle.ts`, `src/core/hunter/grant.ts`, `src/core/hunter/quests.ts`, `src/core/hunter/shadows.ts`, `src/core/hunter/use.ts`, `src/core/hunter/vitals.ts`, `src/core/protocol.ts`, `src/core/rewards.ts`, `src/core/save-step.ts`, `src/core/session-log.ts`, `src/core/story/story.ts`
+- Imports: `src/core/applied.ts`, `src/core/combat/effect-ops.ts`, `src/core/gates/solo-wait.ts`, `src/core/gates/solo.ts`, `src/core/hunter/chronicle.ts`, `src/core/hunter/grant.ts`, `src/core/hunter/quests.ts`, `src/core/hunter/shadows.ts`, `src/core/hunter/use.ts`, `src/core/hunter/vitals.ts`, `src/core/protocol.ts`, `src/core/rewards.ts`, `src/core/save-step.ts`, `src/core/session-log.ts`, `src/core/story/story.ts`, `src/core/table-weight.ts`
 - Imports types from: `src/core/api.ts`, `src/core/coin.ts`, `src/core/day.ts`, `src/core/hunter/job-chain.ts`, `src/core/save.ts`, `src/edge/store.ts`
 - Imported by: `src/edge/sync.ts`
 
@@ -1059,7 +1059,7 @@ None.
 - Imported by: `src/app.js`
 - Provides: `app.api.sync`: `allowBack`, `bound`, `check`, `conn`, `create`, `detail`, `doc`, `dropInvite`, `event`, `faces`, `flush`, `forget`, `forgetKey`, `forgetLast`, `gmRooms`, `invite`, `inviteLink`, `joinRoom`, `kick`, `lastRoom`, `leave`, `myKey`, `once`, `parseInvite`, `post`, `publish`, `recentKicks`, `rejoinGM`, `release`, `remoteSheets`, `retry`, `room`, `roster`, `stamp`, `status`, `switchTo`
 - Uses: `app.api.coin` (ruled) from `src/views/coin.js`; `app.api.hunter` (fightOf, gmHolds, granted) from `src/views/hunter.js`; `app.api.quests` (stepsDone) from `src/views/quests.js`
-- Used by: `app.api.sync`: `src/app.js`, `src/views/bestiary.js`, `src/views/chronicle.js`, `src/views/coin.js`, `src/views/combat.js`, `src/views/custom.js`, `src/views/feats.js`, `src/views/gates.js`, `src/views/gm.js`, `src/views/hunter.js`, `src/views/inventory.js`, `src/views/onboard.js`, `src/views/quests.js`, `src/views/room-pill.ts`, `src/views/room.js`, `src/views/shadows.js`, `src/views/skills.js`, `src/views/stories.js`, `src/views/table.js`, `src/views/trade.js`, `src/views/uses.js`
+- Used by: `app.api.sync`: `src/app.js`, `src/views/bestiary.js`, `src/views/chronicle.js`, `src/views/coin.js`, `src/views/combat.js`, `src/views/custom.js`, `src/views/dice.js`, `src/views/feats.js`, `src/views/gates.js`, `src/views/gm.js`, `src/views/hunter.js`, `src/views/inventory.js`, `src/views/onboard.js`, `src/views/quests.js`, `src/views/room-pill.ts`, `src/views/room.js`, `src/views/shadows.js`, `src/views/skills.js`, `src/views/stories.js`, `src/views/table.js`, `src/views/trade.js`, `src/views/uses.js`
 - Emits: `sync:docs` (heard by `src/app.js`, `src/views/bestiary.js`, `src/views/gates.js`, `src/views/room.js`, `src/views/table.js`, `src/views/uses.js`), `sync:event` (heard by `src/views/coin.js`, `src/views/combat.js`, `src/views/gates.js`, `src/views/gm.js`, `src/views/quests.js`, `src/views/table.js`, `src/views/uses.js`), `sync:outbox` (heard by `src/views/uses.js`), `sync:room` (heard by `src/views/onboard.js`, `src/views/room.js`, `src/views/uses.js`), `sync:sheets` (heard by `src/views/gm.js`, `src/views/quests.js`, `src/views/room.js`, `src/views/table.js`), `sync:status` (heard by `src/app.js`, `src/views/gm.js`, `src/views/onboard.js`, `src/views/room-pill.ts`, `src/views/room.js`)
 - Hears: `change` (emitted by `src/app.js`)
 
@@ -1142,10 +1142,10 @@ None.
 
 ### `src/views/dice.js`
 
-- Imports: `src/core/coin.ts`, `src/core/dc-pick.ts`, `src/core/formula.ts`, `src/core/one-of.ts`, `src/core/roll.ts`, `src/core/session-log.ts`, `src/core/stats.ts`, `src/edge/roll.ts`, `src/edge/rules.ts`, `src/views/motion.ts`
+- Imports: `src/core/coin.ts`, `src/core/dc-pick.ts`, `src/core/formula.ts`, `src/core/one-of.ts`, `src/core/roll.ts`, `src/core/session-log.ts`, `src/core/stats.ts`, `src/core/table-weight.ts`, `src/edge/roll.ts`, `src/edge/rules.ts`, `src/views/motion.ts`
 - Imported by: `src/app.js`
 - Provides: `app.api.dice`: `check`, `roll`
-- Uses: `app.api.coin` (of, rolled) from `src/views/coin.js`; `app.api.hunter` (sheet) from `src/views/hunter.js`
+- Uses: `app.api.coin` (of, rolled) from `src/views/coin.js`; `app.api.hunter` (sheet) from `src/views/hunter.js`; `app.api.sync` (room) from `src/edge/sync.ts`
 - Used by: `app.api.dice`: `src/views/hunter.js`, `src/views/shadows.js`, `src/views/table.js`
 - Emits: `roll` (heard by `src/views/table.js`)
 - Hears: `change` (emitted by `src/app.js`)
@@ -1766,7 +1766,7 @@ Registered in `src/edge/sync.ts`. Type: `SyncApi`.
 | `release` | `(key: string): Promise<Call>` | `src/views/room.js` |
 | `remoteSheets` | `(): RemoteSheet[]` | `src/views/chronicle.js`, `src/views/combat.js`, `src/views/gates.js`, `src/views/gm.js`, `src/views/onboard.js`, `src/views/quests.js`, `src/views/shadows.js`, `src/views/skills.js`, `src/views/stories.js`, `src/views/table.js` |
 | `retry` | `(): Promise<void>` | `src/views/room.js` |
-| `room` | `(): RoomCode \| null` | `src/app.js`, `src/views/combat.js`, `src/views/gates.js`, `src/views/gm.js`, `src/views/onboard.js`, `src/views/quests.js`, `src/views/room-pill.ts`, `src/views/room.js`, `src/views/stories.js`, `src/views/uses.js` |
+| `room` | `(): RoomCode \| null` | `src/app.js`, `src/views/combat.js`, `src/views/dice.js`, `src/views/gates.js`, `src/views/gm.js`, `src/views/onboard.js`, `src/views/quests.js`, `src/views/room-pill.ts`, `src/views/room.js`, `src/views/stories.js`, `src/views/uses.js` |
 | `roster` | `(): { key: string; name: string; level: number; job: string; state: 'online' \| 'away' \| 'unknown'; seen: string }[]` | `src/views/gm.js`, `src/views/room.js` |
 | `stamp` | `(): EventStamp` | `src/views/trade.js` |
 | `status` | `(): 'off' \| 'offline' \| 'connected'` | `src/views/gm.js`, `src/views/onboard.js`, `src/views/uses.js` |

@@ -28,6 +28,7 @@ Every call a lead made that he might have made otherwise, newest last. Each says
 33. **Blasts and curses both count as a "spell"** for a keystone or status that triggers on a kind of ability, beside their own kind. Undo: "no spell tag"; it is `SPELL_KINDS` in `src/core/registry/ability-kinds.ts`.
 34. **On the GM's Party board the hidden dice weight is called "Weight"; in a fight it is called "Fudge".** Undo: "call it Fudge everywhere" (the words in `src/views/gm.js` `weightTable`, `weightCard`).
 35. **A mythic held at a phase's HP line takes no damage below it until its next phase starts**, a stagger effect fills half as much of a mythic's bar, and the statuses a phase gives a mythic can be removed like any other. Undo each by name: `heldAt` in `row-life.ts`, `staggerTaken` in the rules, the `worn` line in `monsterRows`.
+36. **A forced next roll (20 or 1) is used up by the hunter's next d20 roll that shows that face.** The GM's phone cannot see which roll a player's phone made with the force, so it counts the first roll showing the forced face. One case in twenty is off: a roll made just before the force arrived that lands on that face by luck uses the force up. A forced face changes only d20s; the plus or minus weight moves every die. A hunter who joins late is sent its weight on joining. Undo: say what should use a force up instead.
 
 ## Decided earlier in this session (Nov 21 to 22), told to him in chat
 

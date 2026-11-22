@@ -1,6 +1,8 @@
 // dice.js (U06): the roller, Dice view, quick checks, floating d20 roll sheet. Publishes app.api.dice. Every roll is a
 // formula read by `parseFormula` (src/core/formula.ts: Roll20's dice, a leading `/r` optional) and rolled with its faces
 // by `rollFormula` (src/edge/roll.ts); the view shows each face's fate as core gives it and computes no total itself.
+// A player's hunter in a room rolls with the weight its phone heard (src/core/table-weight.ts `heldWeight`): the faces
+// it shows are the weighted ones, and nothing on the page says so.
 import { clearRolls, rolled } from '../core/session-log.ts';
 import { rules } from '../edge/rules.ts';
 import * as motion from './motion.ts';
@@ -11,6 +13,7 @@ import { coinWords } from '../core/coin.ts';
 import { checkResult } from '../core/roll.ts';
 import { DC_GROUPS, DC_KEYS, DC_START, dcKeyOf, dcOf, dcPickStep, dcWords } from '../core/dc-pick.ts';
 import { oneOf } from '../core/one-of.ts';
+import { NO_WEIGHT, drawnWith, heldWeight, rolledWith } from '../core/table-weight.ts';
 
 const DICE = [4, 6, 8, 10, 12, 20, 100];
 /** The typed rolls this device keeps, newest first, to roll again with a tap. */
@@ -28,6 +31,7 @@ const CSS = `
 .dx-faces s{color:var(--muted)}
 .dx-faces .x{color:var(--gold)}
 .dx-faces .ok{color:var(--green);font-weight:700}
+.dx-sum{font-family:var(--font-mono);font-size:16px;color:var(--ice);margin-bottom:2px}
 .dx-flag{font-size:12px;letter-spacing:.3em;text-transform:uppercase;min-height:16px;margin-top:4px}
 .dx-flag.crit{color:var(--gold)}.dx-flag.fail{color:var(--red)}.dx-flag.ok{color:var(--green)}
 .roll-out{text-align:center}
@@ -67,6 +71,12 @@ const CSS = `
   .dx-sheet header button{min-height:44px;min-width:44px}
 }`;
 
+/** A roll with one kept d20 as its face, the rest and the total: "14 + 3 = 17". None for a roll without one. */
+const sumLine = r => {
+  if (r.natural === null) return '';
+  const rest = Math.round((r.total - r.natural) * 100) / 100;
+  return `${r.natural} ${rest < 0 ? '−' : '+'} ${Math.abs(rest)} = ${r.total}`;
+};
 const pad = n => String(n).padStart(2, '0');
 const clock = iso => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? '' : `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 
@@ -95,9 +105,12 @@ export function register(app) {
     // the hunter who rolls; the GM's own roll has none, and a formula that names a stat reads the GM's active hunter
     const who = o.hid ? store.hunter(o.hid) : app.isGM() ? null : store.active();
     const h = who || store.active(), b = app.api.hunter.sheet(h), body = { stats: b.stats, sheet: b.sheet };
-    const r = rollFormula(edged, { user: body, target: body, charge: 0 }, trayRandom);
     // the text logged is the formula as typed, before an edge: what the coin's rule reads (src/core/coin.ts `isCoinRoll`)
-    const clean = printFormula(f), natural = naturalOf(r), total = Math.round(r.total * 100) / 100, rolls = r.terms.flatMap(t => t.faces.map(x => x.face));
+    const clean = printFormula(f);
+    // the GM's weight on this hunter, heard while a player in this room; a roll that is not logged spends nothing, so it draws with none
+    const room = app.seat() === 'player' ? app.api.sync.room() : null, weight = who && !o.silent ? heldWeight(store.get().settings.sync.weights, room, who.id) : NO_WEIGHT;
+    const r = rollFormula(edged, { user: body, target: body, charge: 0 }, trayRandom, drawnWith(weight, clean));
+    const natural = naturalOf(r), total = Math.round(r.total * 100) / 100, rolls = r.terms.flatMap(t => t.faces.map(x => x.face));
     const kind = o.kind || 'other', check = kind === 'check' && typeof o.dc === 'number' ? checkResult(natural, total, o.dc) : null;
     const res = { expr: clean, total, rolls, kept: natural, natural, crit: natural === 20, fumble: natural === 1, adv: edged !== f && !o.dis, dis: edged !== f && !!o.dis, check };
     res.text = `${clean} [${rolls.join(', ')}] = ${total}`;
@@ -106,7 +119,8 @@ export function register(app) {
       res.id = store.id('r');
       shown.set(res.id, res.faces); if (shown.size > 20) shown.delete(shown.keys().next().value);
       // a roll the log refused is still shown; it is not posted and calls no coin, both of which read the logged roll
-      if (ui.wrote('! Dice', store.apply('roll', rolled({ id: res.id, at: new Date().toISOString(), hid: who ? who.id : null, who: who ? who.name : 'GM', kind, label: o.label || '', expr: clean, rolls, total, natural, crit: res.crit, fumble: res.fumble, adv: res.adv, dis: res.dis, check }, rules())))) {
+      const logged = rolled({ id: res.id, at: new Date().toISOString(), hid: who ? who.id : null, who: who ? who.name : 'GM', kind, label: o.label || '', expr: clean, rolls, total, natural, crit: res.crit, fumble: res.fumble, adv: res.adv, dis: res.dis, check }, rules());
+      if (ui.wrote('! Dice', store.apply('roll', rolledWith(logged, room, who ? who.id : null, clean)))) {
         app.emit('roll', { roll: res });
         res.coin = !!who && app.api.coin.rolled({ hid: who.id, roll: res.id, kind, expr: clean, natural, label: o.label || clean });
       }
@@ -201,7 +215,8 @@ export function register(app) {
       // a new roll tumbles its numerals and lands on the total already rolled above; anything else is drawn at once
       // the faces it rolled (the detail line) show when the total lands, not while it tumbles
       const detail = q('[data-detail]'), tail = last ? `${last.adv ? ' · advantage' : last.dis ? ' · disadvantage' : ''}${last.label ? ' · ' + esc(last.label) : ''}` : '';
-      const words = last ? `${esc(last.expr)} <span class="dx-faces">${shown.get(last.id) ?? `[${esc(last.rolls.join(', '))}]`}</span>${tail}` : 'Choose a die to roll';
+      const sum = last ? sumLine(last) : '';
+      const words = last ? `${sum ? `<div class="dx-sum" data-sum>${esc(sum)}</div>` : ''}${esc(last.expr)} <span class="dx-faces">${shown.get(last.id) ?? `[${esc(last.rolls.join(', '))}]`}</span>${tail}` : 'Choose a die to roll';
       if (last && t.dataset.rid !== last.id && t.dataset.rid !== undefined && last.total >= 1) {
         detail.textContent = '';
         void motion.tumble(t, last.total, highest(last.expr, last.total)).then(() => { if (t.dataset.rid === last.id) { detail.innerHTML = words; void motion.enter(detail, 'fade'); } });
