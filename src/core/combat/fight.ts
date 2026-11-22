@@ -30,7 +30,6 @@ import type { Ability, CombatantId, Outcome } from './ability-types.ts';
 import { channelCan, channelStep, released } from './fight-channel.ts';
 import { eventsOf, raised } from './triggers.ts';
 import { burstsOf, consequences, D20, ended, held, holdsSide, logged, marked, overIf, partyView, giverOf, payDue, rowOf, sentAway, sheetBacks, spreadTo, startTurn, triggered, unwarded, withRow, zoneEnds } from './fight-turn.ts';
-import { hpChange } from '../hunter/vitals.ts';
 import { refilledRow, rowLifeAfter, rowLifeTakes } from './row-life.ts';
 import { summonRow } from './rows.ts';
 import { crowded } from './summons.ts';
@@ -179,8 +178,10 @@ function actor(f: Running, by: string, force: boolean): Body | Refusal {
  */
 function after(before: Running, g: Running, by: string, said: LogLine | null, ctx: Ctx, fx: Fx, forced?: ReadonlySet<string>): Result {
   let x = said ? logged(g, said, ctx.rules) : g;
-  // a turn's action spent: its bearer's turn ends (rule 19b's turnEnd, kits design 1.3)
-  if (by && by === g.currentId) x = triggered(x, [raised(g.currentId, 'turnEnd')], ctx);
+  // a turn's action spent: its bearer's turn ends (rule 19b's turnEnd, kits design 1.3); and the batch always fires, so
+  // the damage no batch has read yet (an `after` reaction's, a settled roll's, a zone price's end) meets the triggers
+  // before the command ends: a fall under the low share (triggers.ts `readHurt`)
+  x = triggered(x, by && by === g.currentId ? [raised(g.currentId, 'turnEnd')] : [], ctx);
   const h = consequences(before.rows, x, ctx, fx, forced);
   const over = overIf(h, fx, ctx.rules);
   if (over) return done(over, fx);
@@ -493,8 +494,9 @@ function gmChange<F extends Setup | Running>(f: F, row: Body, said: LogLine, ctx
 
 const signed = (n: number): string => n < 0 ? `${n}` : `+${n}`;
 /**
- * The GM's hand edit: HP through the row's life (row-life.ts: damage or a heal by the sign, so a dead row stays dead and
- * a defeated monster comes back only by Revive), mana and fatigue each added and kept within 0 and its maximum. Nothing
+ * The GM's hand edit: HP set through the row's life to its HP plus the change (row-life.ts, `setHp`: a dead row stays
+ * dead and a defeated monster comes back only by Revive; a set is no damage of the fight, so it fires no `lowHp`), mana
+ * and fatigue each added and kept within 0 and its maximum. Nothing
  * to change is refused, and so is a price (`pay`) of more mana than the row holds.
  */
 function adjust<F extends Setup | Running>(f: F, cmd: Extract<Command, { type: 'adjust' }>, ctx: Ctx): Result {
@@ -506,7 +508,7 @@ function adjust<F extends Setup | Running>(f: F, cmd: Extract<Command, { type: '
   if (cmd.used && !limited) return refused(f, 'unknownAbility');
   const spent = limited ? Math.max(0, Math.min(ctx.rules.fight.kit.fightUses, Math.round(cmd.used!.spent))) : 0;
   const used = limited && spent !== (u.used?.[limited.id] ?? 0) ? { used: { ...u.used, [limited.id]: spent } } : {};
-  const lived = cmd.hp ? rowLifeAfter(u, hpChange(cmd.hp)) : u;
+  const lived = cmd.hp ? rowLifeAfter(u, { type: 'setHp', hp: rowHp(u) + cmd.hp }) : u;
   const row = { ...lived, mana: to(u.mana, cmd.mana, u.sheet.manaMax), fatigue: to(u.fatigue, cmd.fatigue, u.sheet.fatigueMax), ...used };
   const said = ([['HP', rowHp(u), rowHp(row)], ['mana', u.mana, row.mana], ['fatigue', u.fatigue, row.fatigue]] as const).filter(([, a, b]) => a !== b).map(([k, a, b]) => `${k} ${signed(b - a)}`);
   if (limited && 'used' in used) said.push(`${limited.name} uses spent ${spent}`);

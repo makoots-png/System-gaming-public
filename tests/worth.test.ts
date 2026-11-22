@@ -174,6 +174,16 @@ describe('the example kits sit inside the tolerance, and a GM\'s overreach is wa
     expect(wornWorth(echo, RULES).over).toBe(true);
   });
 
+  test('a Lifeline is weighed at its event\'s rate: a heal on falling under 30% HP is 0.17 of the same heal at each turn\'s start, one on a status imposed all of it', () => {
+    const heal = (on: 'lowHp' | 'turnStart'): StatusDef => ({ label: 'Lifeline', desc: '', ops: [], triggers: [{ on, to: 'self', limit: { kind: 'fight', n: 1 }, ops: [{ op: 'heal', amount: f('20'), when: 'use' }] }] });
+    const rates = RULES.fight.kit.eventRates, each = wornWorth(heal('turnStart'), RULES).worth;
+    expect(each).toBeGreaterThan(0);
+    expect(wornWorth(heal('lowHp'), RULES).worth).toBeCloseTo(each * rates.lowHp / rates.turnStart, 9);
+    expect(rates.lowHp).toBe(0.17);
+    const strings: StatusDef = { label: 'Strings', desc: '', ops: [], triggers: [{ on: 'imposed', tag: null, to: 'self', limit: { kind: 'each' }, ops: [{ op: 'heal', amount: f('20'), when: 'use' }] }] };
+    expect(wornWorth(strings, RULES).worth).toBeCloseTo(each * rates.imposed / rates.turnStart, 9);
+  });
+
   test('the worth line says the worth and the budget, and past the tolerance by how much', () => {
     expect(worthLine({ worth: 1.04, budget: 1, over: false, unweighed: [] })).toBe('Worth 1.04 of a standard action (budget 1.00).');
     expect(worthLine({ worth: 1.12, budget: 1, over: true, unweighed: [] })).toBe('Worth 1.12 of a standard action (budget 1.00). Stronger than its pace allows by 12%.');

@@ -390,7 +390,8 @@ export function grounded(f: Running, ctx: Ctx, fx: Fx, forced?: ReadonlySet<stri
   for (const z of f.zones) if (!s.zones.some(x => x.id === z.id)) g = logged(g, line(`${z.name} is gone.`, [], [z.id]), ctx.rules);
   for (const z of s.zones) if (!f.zones.some(x => x.id === z.id)) g = logged(g, line(`${z.name} is now around ${rowOf(g, anchorOf(z) ?? '')?.name ?? 'it'}.`, [...(anchorOf(z) === null ? [] : [anchorOf(z)!])], [z.id]), ctx.rules);
   for (const e of s.entries) g = owe(g, rowOf(g, e.id)!, [e.due], fx, ctx.rules, []);
-  return g;
+  // what the ground paid (an entry's hit, an end's) meets the triggers as it lands: a fall under the low share
+  return s.entries.length || timed.length ? triggered(g, [], ctx) : g;
 }
 
 /**
@@ -438,7 +439,8 @@ export function startTurn(f: Running, ctx: Ctx, fx: Fx): Running | Ended {
     const first = next(g.rows.filter(isUp))!;
     // a `turn` reaction armed on the body whose turn comes next moves its reactor's turn before it (kits design 8.6.3)
     const map = new Map(g.rows.map(b => [b.id, b] as const)), jumped = turnReaction(map, first, g.now, R);
-    if (jumped) { fx.push(...burstsOf(jumped.bursts)); g = consequences(g.rows, logged({ ...g, rows: g.rows.map(b => map.get(b.id)!) }, line(`${jumped.said}.`, [...jumped.about]), R), ctx, fx); continue; }
+    // what it cost or dealt meets the triggers as it lands: a fall under the low share
+    if (jumped) { fx.push(...burstsOf(jumped.bursts)); g = consequences(g.rows, triggered(logged({ ...g, rows: g.rows.map(b => map.get(b.id)!) }, line(`${jumped.said}.`, [...jumped.about]), R), [], ctx), ctx, fx); continue; }
     // Taken before time moves, so a status that ends for anyone reaches its sheet.
     const before = g.rows, time = advance(g, tick(Math.max(g.now, first.at)), R);
     g = grounded(time.fight, ctx, fx);

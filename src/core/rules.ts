@@ -568,6 +568,9 @@ const SPEC = {
       // The most of a stagger bar one `stagger` op fills (keystones design A.7): half a bar, so no one op breaks a bar alone.
       staggerOpMax: real(0.5, 0, 1, 'the share of a stagger bar one op fills: at 1 one op breaks a bar alone'),
       blinkMax: of(8, RANGE), // the longest blink: a curse's range, the gap between the default lines
+      // The share of max HP under which a body is low (the Lifeline items' "under 30%"; item-stats design 3.1): a third of
+      // a bar, about one same-rank hit from down, so a shield given there buys a turn.
+      lowHpAt: real(0.3, 0.05, 0.9, 'the share of max HP under which a body is low: at 0.9 one scratch'),
       reactionsPerUse: whole(4, 0, 20, 'reactions one use sets off: the bound of the loop that fires them'), // reactions one use may set off: four targets of an area, one each
       // Parry's guard, the share a `before` reaction takes off a strike (kits table 8.10.3): the largest in steps of 0.05
       // with which no build armed with it all fight improves a duel against a striker by more than the tolerance. The
@@ -597,6 +600,8 @@ const SPEC = {
         avoided: of(0.45, EVENT_RATE), turnStart: of(1, EVENT_RATE), turnEnd: of(1, EVENT_RATE), moved: of(1, EVENT_RATE),
         down: of(0.17, EVENT_RATE), // a body goes down once a fight: of design 6's reference fight of 6 rounds, a round's share
         statusGained: of(1, EVENT_RATE), statusEnded: of(1, EVENT_RATE), used: of(1, EVENT_RATE),
+        lowHp: of(0.17, EVENT_RATE), // once a fight, as `down`
+        imposed: of(1, EVENT_RATE), // `statusGained`'s, of which it is the user's side: a curse build puts a status on every action
       },
       // The conditional scalers that replace the execute (design 8.0): the owner, Nov 14, "execute just does more dmg the lower
       // health people are". A scaler's bonus is 0 at its start and its scale at its end, linear between.

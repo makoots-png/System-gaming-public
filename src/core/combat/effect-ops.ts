@@ -444,6 +444,12 @@ type BodyCommon = Clock & {
   /** Hastened by another since its turn began (kits table 8.9.6): a second hasten does nothing. Absent when not. */
   readonly hastened?: true;
   /**
+   * The HP it had before the fight's damage that no batch of triggers has read yet: set by its life's one writer at the
+   * first such damage (row-life.ts `rowLifeAfter`), read into a fall under the low share and taken off by the next batch
+   * (triggers.ts `fire`, `lowHp`). Every command fires a batch after its last damage, so a stored fight never holds it.
+   */
+  readonly hurtFrom?: number;
+  /**
    * Its armed reaction (kits design 8.4, fight-react.ts): the ability, the body a `turn` reaction names (null for the
    * rest), and whether it fired since it was last restored. Absent when it holds none.
    */
@@ -804,7 +810,7 @@ export function statusShield(def: StatusDef, bearer: Pick<Body, 'shield' | 'stat
 // ── what a status or an item's ops do, in words ──
 
 /** What the words read: a round's length, to show a duration in rounds, and the statuses a `cureStatus` names. */
-export type DescribeRules = { readonly fight: { readonly round: number }; readonly conditions: Readonly<Record<string, StatusDef>> };
+export type DescribeRules = { readonly fight: { readonly round: number; readonly kit: { readonly lowHpAt: number } }; readonly conditions: Readonly<Record<string, StatusDef>> };
 
 const BY_RANK = ', by rank E to S';
 const signed = (n: number): string => `${n < 0 ? '−' : '+'}${Math.abs(n)}`;
@@ -948,14 +954,20 @@ export function describeStatus(def: StatusDef, tier: number | null, R: DescribeR
 const landLine = (o: LandOp, tier: number | null, R: DescribeRules): string => (o.op === 'refund' ? `${o.pct}% of an action's time back` : opLine(o, tier, R));
 const reachText = (to: Reach): string => (to.kind === 'bearer' ? ''
   : `${to.kind === 'most' ? ' on the one with the most HP of' : ' on'} ${to.on === 'all' ? 'everyone' : to.on} within ${to.radius} tile${to.radius === 1 ? '' : 's'}`);
-const EVENT_TEXT: { readonly [K in Trigger['on']]: string } = {
+/** The event `lowHp` in words, its share read off the rule (`kit.lowHpAt`): "falls under 30% HP". */
+const lowHpText = (R: DescribeRules): string => `falls under ${Math.round(R.fight.kit.lowHpAt * 100)}% HP`;
+/** Words that read a rule: a string, or what makes it from the rules. */
+type Words = string | ((R: DescribeRules) => string);
+const worded = (w: Words, R: DescribeRules): string => (typeof w === 'string' ? w : w(R));
+const EVENT_TEXT: { readonly [K in Trigger['on']]: Words } = {
   hitDealt: 'deals a hit', struck: 'is struck', critDealt: 'crits', critTaken: 'takes a crit', kill: 'kills', avoided: 'avoids a use', down: 'goes down',
   turnStart: 'starts its turn', turnEnd: 'ends its turn', moved: 'moves', statusGained: 'gains', statusEnded: 'loses', used: 'uses an ability tagged',
+  lowHp: lowHpText, imposed: 'puts a harmful status on a foe',
 };
 /** A trigger in words (kits design 5.1): "When its bearer deals a hit with a sword: Applies Corruption on the other, every time." */
 function triggerLine(t: Trigger, tier: number | null, R: DescribeRules): string {
-  const what = t.on === 'statusGained' || t.on === 'statusEnded' ? `${EVENT_TEXT[t.on]} ${R.conditions[t.key]?.label ?? t.key}`
-    : t.on === 'used' ? `${EVENT_TEXT.used} ${t.tag}` : `${EVENT_TEXT[t.on]}${'tag' in t && t.tag ? ` with a ${t.tag}` : ''}`;
+  const what = t.on === 'statusGained' || t.on === 'statusEnded' ? `${worded(EVENT_TEXT[t.on], R)} ${R.conditions[t.key]?.label ?? t.key}`
+    : t.on === 'used' ? `${worded(EVENT_TEXT.used, R)} ${t.tag}` : `${worded(EVENT_TEXT[t.on], R)}${'tag' in t && t.tag ? ` with a ${t.tag}` : ''}`;
   const where = t.to === 'self' ? '' : t.to === 'other' ? ' on the other' : reachText(t.to);
   const often = t.limit.kind === 'each' ? 'every time' : t.limit.kind === 'round' ? 'once a round' : `${t.limit.n} time${t.limit.n === 1 ? '' : 's'} a fight`;
   const need = !t.need ? '' : t.need.kind === 'holds' ? ` Only while it holds ${R.conditions[t.need.key]?.label ?? t.need.key}.` : ` Only inside ${t.need.zone}.`;
@@ -967,7 +979,7 @@ const endLine = (e: End, tier: number | null, R: DescribeRules): string =>
 /** What a status does apart from its triggers and end: its ops, and a stacking one's count and threshold. */
 function describeStack(def: StatusDef, tier: number | null, R: DescribeRules): string[] {
   if (!isStacking(def)) return opLines(def.ops, tier, R);
-  const st = def.stack, t = st.threshold, out = [`Stacks to ${st.cap}.${LEAVE_TEXT[st.leave.kind === 'event' ? st.leave.event : st.leave.kind]}`];
+  const st = def.stack, t = st.threshold, out = [`Stacks to ${st.cap}.${worded(LEAVE_TEXT[st.leave.kind === 'event' ? st.leave.event : st.leave.kind], R)}`];
   out.push(...opLines(def.ops, tier, R).map(l => `Each stack: ${l}`));
   if (t) {
     const at = t.at.kind === 'count' ? `${t.at.n} stack${t.at.n === 1 ? '' : 's'}` : `${printFormula(t.at.formula)} stacks`;
@@ -978,9 +990,10 @@ function describeStack(def: StatusDef, tier: number | null, R: DescribeRules): s
   if (st.keep === 'fight') out.push('Gone when the fight ends.');
   return out;
 }
-const LEAVE_TEXT: { readonly [K in 'never' | 'round' | BearerEvent]: string } = {
+const LEAVE_TEXT: { readonly [K in 'never' | 'round' | BearerEvent]: Words } = {
   never: '', round: ' One leaves each round.', hitDealt: ' All leave when its bearer deals a hit.', struck: ' All leave when its bearer is struck.',
   critDealt: ' All leave when its bearer crits.', critTaken: ' All leave when its bearer takes a crit.', kill: ' All leave when its bearer kills.',
   avoided: ' All leave when its bearer avoids a use.', turnStart: ' All leave at its bearer\'s turn start.', turnEnd: ' All leave at its bearer\'s turn end.',
   moved: ' All leave when its bearer moves.', down: ' All leave when its bearer goes down.',
+  lowHp: R => ` All leave when its bearer ${lowHpText(R)}.`, imposed: ' All leave when its bearer puts a harmful status on a foe.',
 };

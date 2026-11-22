@@ -13,18 +13,18 @@ import type { Side } from '../src/core/combat/space.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 import { abilityId, combatantId, tag } from '../src/core/combat/ability-types.ts';
 import type { Ability, Outcome } from '../src/core/combat/ability-types.ts';
-import { modified, statusKey } from '../src/core/combat/effect-ops.ts';
+import { describeStatus, modified, statusKey } from '../src/core/combat/effect-ops.ts';
 import type { Body, LandOp, Origin, StackDef, Status, StatusDef } from '../src/core/combat/effect-ops.ts';
 import { afterDefence } from '../src/core/combat/land.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { parseStatusDef } from '../src/core/combat/fight-parse.ts';
-import { eventsOf, READY, tripStep } from '../src/core/combat/triggers.ts';
+import { eventsOf, fellLow, READY, tripStep } from '../src/core/combat/triggers.ts';
 import type { Limit, Trigger, Trip } from '../src/core/combat/triggers.ts';
 import { fightId, reduce } from '../src/core/combat/fight.ts';
 import type { Command, Ctx, Fight, NewRow } from '../src/core/combat/fight.ts';
 import { LIMITS, WALK_EVENTS } from './models/trip-events.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
-import { lifeAt } from './fixtures/life.ts';
+import { atHp, lifeAt } from './fixtures/life.ts';
 import type { RowPatch } from './fixtures/life.ts';
 
 const ctx: Ctx = { rules: RULES };
@@ -314,10 +314,119 @@ describe('an echo (keystones design A.7)', () => {
     expect(hexOf(far, 'N')).toBeUndefined();
   });
 
-  test('an echo outside a trigger a status gained sets off does nothing', () => {
+  test('a status a hunter imposes echoes to the nearest other foe and does not echo again', () => {
+    const PLAIN_HEX: StatusDef = { ...HEX, triggers: [] };
+    const curse = ability('curse', '1', { ops: [{ op: 'applyStatus', key: statusKey('hex'), def: PLAIN_HEX, duration: tick(4 * RULES.fight.round) }] });
+    const puppeteer = worn('Puppeteer', { on: 'imposed', tag: null, to: 'self', limit: { kind: 'each' }, ops: [{ op: 'echo', radius: 3 }] });
+    const fight = play(...duel(row('A', 'party', [on('puppeteer', puppeteer)], { abilities: [curse], ...at(5) }), row('M', 'foe', [], at(6)), row('B', 'party', [], { place: place(6, 6) }),
+      row('N', 'foe', [], at(8)), row('O', 'foe', [], at(9))), use('A', 'M', curse));
+    const m = hexOf(fight, 'M')!, n = hexOf(fight, 'N')!;
+    expect(['M', 'N', 'O', 'B'].map(k => hexOf(fight, k) !== undefined)).toEqual([true, true, false, false]);
+    expect([n.source, n.until! - n.since]).toEqual([m.source, m.until! - m.since]);
+  });
+
+  test('an echo outside a trigger a status gained or imposed sets off does nothing', () => {
     const loud: StatusDef = { label: 'Loud', desc: '', ops: [], triggers: [{ on: 'hitDealt', tag: null, to: 'other', limit: { kind: 'each' }, ops: [{ op: 'echo', radius: 3 }] }] };
     const slowed = { key: statusKey('slowed'), def: { label: 'Slowed', desc: '', ops: [{ op: 'speed', pct: -20 }] }, source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0) } as Status;
     const fight = play(...duel(row('A', 'party', [on('loud', loud)], at(5)), row('M', 'foe', [slowed], at(6)), row('N', 'foe', [], at(8))), use('A', 'M'));
     expect(body(fight, 'N').statuses).toEqual([]);
+  });
+});
+
+describe('a fall under the low share and a status imposed (item-stats design 3)', () => {
+  // A light-kit body's max HP and the hit A's 10 deals it through armor; the Lifeline marks each firing with a stack of
+  // Pain on its bearer, every time, so "once" is the event's and not the limit's.
+  const H = modified(origin, [], RULES).sheet.hpMax, d = through(10), low = RULES.fight.kit.lowHpAt * H;
+  const lifeline = worn('Lifeline', { on: 'lowHp', to: 'self', limit: { kind: 'each' }, ops: [addPain()] });
+  const lifelineOn = (name: string, side: Side, hp: number, more: Status[] = []): NewRow => row(name, side, [on('lifeline', lifeline), ...more], { hp });
+  const thorns = worn('Thorns', { on: 'struck', tag: null, to: 'other', limit: { kind: 'each' }, ops: [{ op: 'damage', type: 'physical', amount: f('10'), when: 'use' }] });
+
+  test('a Lifeline fires when a hit takes its bearer under 30% of its max HP, and not on a hit that leaves it at 30%', () => {
+    const at30 = Math.ceil(low);
+    expect(at30 - d).toBeGreaterThan(0);
+    const under = play(...duel(row('A', 'party'), lifelineOn('M', 'foe', at30)), use('A', 'M'));
+    expect(stacksOf(body(under, 'M'), 'pain')).toBe(1);
+    const stays = play(...duel(row('A', 'party'), lifelineOn('M', 'foe', at30 + d)), use('A', 'M'));
+    expect([rowHp(body(stays, 'M')), stacksOf(body(stays, 'M'), 'pain')]).toEqual([at30, 0]);
+  });
+
+  test('a Lifeline fires once: a second hit while its bearer is under 30% does not fire it again', () => {
+    const tap = ability('tap', '1');
+    const fight = play(...duel(row('A', 'party', [], { abilities: [tap] }), lifelineOn('M', 'foe', Math.ceil(low))), use('A', 'M', tap), use('A', 'M', tap));
+    expect([rowHp(body(fight, 'M')), stacksOf(body(fight, 'M'), 'pain')]).toEqual([Math.ceil(low) - 2 * through(1), 1]);
+  });
+
+  test('a hit that takes a body from 30% to 0 is its going down, not a fall under 30%', () => {
+    const m = body(play(...duel(row('A', 'party'), row('M', 'foe', [], { hp: Math.ceil(low) }))), 'M');
+    expect([fellLow(Math.ceil(low), atHp(m, 0), RULES), fellLow(Math.ceil(low), atHp(m, 1), RULES)]).toEqual([false, true]);
+  });
+
+  test('a trigger\'s hit that takes its target under 30% fires the target\'s Lifeline', () => {
+    const fight = play(...duel(lifelineOn('A', 'party', Math.ceil(low)), row('M', 'foe', [on('thorns', thorns)])), use('A', 'M'));
+    expect([rowHp(body(fight, 'A')), stacksOf(body(fight, 'A'), 'pain')]).toEqual([Math.ceil(low) - d, 1]);
+  });
+
+  test('a status\'s end that takes its bearer under 30% fires the Lifeline', () => {
+    const doom = { ...on('doom', { label: 'Doom', desc: '', ops: [], end: { ops: [{ op: 'damage', type: 'physical', amount: f('10'), when: 'use' }], cleanse: 'cancel' } }), until: tick(500) } as Status;
+    const fight = play(...duel(lifelineOn('A', 'party', Math.ceil(low), [doom]), row('M', 'foe')), { type: 'endTurn', by: id('A') }, { type: 'endTurn', by: id('M') });
+    expect([rowHp(body(fight, 'A')), stacksOf(body(fight, 'A'), 'pain')]).toEqual([Math.ceil(low) - d, 1]);
+  });
+
+  // A burn of `rate` a round that lasts half a round from the fight's start: A's next turn comes after it ends (the end
+  // above lands by then), so it pays `rate` times half a round (effect-ops.ts `dueAmount`), with no defence.
+  const burn = (rate: string): Status => ({ ...on('burn', { label: 'Burn', desc: '', ops: [{ op: 'damage', type: 'magical', amount: f(rate), when: 'turn' }] }), until: tick(RULES.fight.round / 2) } as Status);
+  const aRound = (): Command[] => [{ type: 'endTurn', by: id('A') }, { type: 'endTurn', by: id('M') }];
+
+  test('a burn that takes a hunter under 30% HP fires its Lifeline', () => {
+    const fight = play(...duel(lifelineOn('A', 'party', Math.ceil(low), [burn('10')]), row('M', 'foe')), ...aRound());
+    expect([rowHp(body(fight, 'A')), stacksOf(body(fight, 'A'), 'pain')]).toEqual([Math.ceil(low) - 5, 1]);
+  });
+
+  test('a hunter already under is not fired again by its burn', () => {
+    const fight = play(...duel(lifelineOn('A', 'party', Math.ceil(low) - 1, [burn('10')]), row('M', 'foe')), ...aRound());
+    expect([rowHp(body(fight, 'A')), stacksOf(body(fight, 'A'), 'pain')]).toEqual([Math.ceil(low) - 6, 0]);
+  });
+
+  test('a settled damage roll that takes a hunter under fires it', () => {
+    const fight = play(...duel(lifelineOn('A', 'party', Math.ceil(low), [burn('1d6')]), row('M', 'foe')), ...aRound(), { type: 'settle', id: id('A'), key: statusKey('burn'), dice: [6] });
+    expect([rowHp(body(fight, 'A')), stacksOf(body(fight, 'A'), 'pain')]).toEqual([Math.ceil(low) - 3, 1]);
+  });
+
+  test('an HP price that takes its payer under fires it', () => {
+    const priced = ability('priced', '10', { prices: [{ kind: 'hp', amount: { kind: 'flat', n: 1 } }] });
+    const fight = play(...duel(row('A', 'party', [on('lifeline', lifeline)], { hp: Math.ceil(low), abilities: [priced] }), row('M', 'foe')), use('A', 'M', priced));
+    expect([rowHp(body(fight, 'A')), stacksOf(body(fight, 'A'), 'pain')]).toEqual([Math.ceil(low) - 1, 1]);
+  });
+
+  test('the GM\'s HP edit under the line fires nothing', () => {
+    const fight = play(...duel(lifelineOn('A', 'party', Math.ceil(low)), row('M', 'foe')), { type: 'adjust', id: id('A'), hp: -1 });
+    expect([rowHp(body(fight, 'A')), stacksOf(body(fight, 'A'), 'pain')]).toEqual([Math.ceil(low) - 1, 0]);
+  });
+
+  test('a curse\'s harmful status on a foe is imposed by its user; a blessing on an ally and a slow on an ally are not', () => {
+    const SLOW: StatusDef = { label: 'Slowed', desc: '', ops: [{ op: 'speed', pct: -20 }] };
+    const QUICK: StatusDef = { label: 'Quick', desc: '', ops: [{ op: 'speed', pct: 20 }] };
+    const put = (key: string, def: StatusDef): LandOp & Ability['ops'][number] => ({ op: 'applyStatus', key: statusKey(key), def, duration: tick(4 * RULES.fight.round) });
+    const curse = ability('curse', '1', { ops: [put('slowed', SLOW)] });
+    const aid = (name: string, key: string, def: StatusDef): Ability => ({ ...abilityOf('support', { id: abilityId(name), name }, RULES), ...FAR, effect: null, ops: [put(key, def)] });
+    const bless = aid('bless', 'quick', QUICK), drag = aid('drag', 'slowed', SLOW);
+    const strings = worn('Strings', { on: 'imposed', tag: null, to: 'self', limit: { kind: 'each' }, ops: [addPain()] });
+    const start = duel(row('A', 'party', [on('strings', strings)], { abilities: [curse, bless, drag] }), row('M', 'foe'), row('B', 'party'));
+    expect(stacksOf(body(play(...start, use('A', 'M', curse)), 'A'), 'pain')).toBe(1);
+    const allies = play(...start, use('A', 'B', bless), use('A', 'B', drag));
+    expect([body(allies, 'B').statuses.map(x => x.key).sort(), stacksOf(body(allies, 'A'), 'pain')]).toEqual([['quick', 'slowed'], 0]);
+  });
+
+  test('the parser reads both events, and only a status imposed may land on the other body', () => {
+    const def = (t: Record<string, unknown>) => parseStatusDef({ label: 'X', desc: '', ops: [], triggers: [{ limit: { kind: 'fight', n: 1 }, ops: [{ op: 'shield', amount: f('0.3 * hpmax') }], ...t }] }, RULES)?.triggers ?? [];
+    expect(def({ on: 'lowHp', to: 'self' }).map(t => [t.on, t.to])).toEqual([['lowHp', 'self']]);
+    expect(def({ on: 'lowHp', to: 'other' })).toEqual([]);
+    expect(def({ on: 'imposed', tag: 'curse', to: 'other' }).map(t => [t.on, 'tag' in t ? t.tag : null, t.to])).toEqual([['imposed', 'curse', 'other']]);
+  });
+
+  test('a Lifeline reads as its rule\'s share: "When its bearer falls under 30% HP"', () => {
+    const shield = parseStatusDef({ label: 'Lifeline', desc: '', ops: [], triggers: [{ on: 'lowHp', to: 'self', limit: { kind: 'fight', n: 1 }, ops: [{ op: 'shield', amount: f('0.3 * hpmax') }] }] }, RULES)!;
+    expect(describeStatus(shield, 0, RULES)[0]?.startsWith(`When its bearer falls under ${Math.round(RULES.fight.kit.lowHpAt * 100)}% HP: `)).toBe(true);
+    expect(describeStatus(worn('Strings', { on: 'imposed', tag: null, to: 'other', limit: { kind: 'round' }, ops: [addPain()] }), 0, RULES)[0]?.startsWith('When its bearer puts a harmful status on a foe: ')).toBe(true);
   });
 });

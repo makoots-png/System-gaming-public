@@ -35,7 +35,7 @@ import type {
   StatusDef, StatusKey, StealthEnds, SummonRow, ThreatTable, Threshold, Tiered, UseOp,
 } from './effect-ops.ts';
 import type { FoeLife } from './row-life.ts';
-import { BEARER_EVENTS, PARTY_EVENTS } from './triggers.ts';
+import { ALONE_EVENTS, BEARER_EVENTS, PARTY_EVENTS } from './triggers.ts';
 import type { Limit, Need, Trigger, Trip } from './triggers.ts';
 import { fightId, FORCED_FACES, LOG_CAP, LOG_LINE_MAX, MAX_ABILITIES, MAX_PENDING, MAX_ROWS, MAX_SPREAD, MAX_STATUSES, NAME_MAX, PHASES } from './fight-types.ts';
 import type { Fight, Fog, DueTurn, ForcedFace, Fudge, LogLine, Summary } from './fight-types.ts';
@@ -444,7 +444,7 @@ function triggerOn(v: Rec, on: (typeof TRIGGER_ONS)[number], to: Trigger['to'], 
   if (to === 'other') return null;
   if (on === 'statusGained' || on === 'statusEnded') return isStatusKey(v.key) ? { on, key: v.key, to, limit, ops } : null;
   if (on === 'used') { const t = tagOf(v.tag, R); return t ? { on, tag: t, to, limit, ops } : null; }
-  const self = oneOf(on, ['turnStart', 'turnEnd', 'moved', 'down'] as const, null);
+  const self = oneOf(on, ALONE_EVENTS, null);
   return self && { on: self, to, limit, ops };
 }
 

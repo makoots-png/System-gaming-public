@@ -162,6 +162,14 @@ new rule.
 `eventsOf` (a use's hit, from its `before` and `after` rows), `fire` (a trigger's hit, line 204) and `fight-turn.ts`
 line 296 (a status's tick).
 
+**Since unit 2 (item-stats-2, the fix).** Raised from `struck`'s places, a burn, a bleed, a settled roll, a zone's hit and
+an HP price never fired it. `lowHp` is about HP crossing the line, whatever lowered it, so it is read from the life's one
+writer: `rowLifeAfter` (row-life.ts) keeps on a row the HP it had before the fight's damage no batch has read
+(`Body.hurtFrom`), and `readHurt` in `fire` reads each fall with `fellLow(from, after, R)` and clears it, at the batch's
+start (depth 1) and after each trigger's landing (one deeper, within `kit.depth`). `after` (fight.ts) always fires a batch,
+as do `grounded` when the ground paid and a `turn` reaction, so no command ends holding unread damage (the fight model's
+invariant). The GM's hand edit sets HP (`setHp`) and fires nothing: a correction is not an event of the fight.
+
 ### 3.2 `imposed`: the user put a harmful status on a foe
 
 **Shape.** Raised on the user of a use for each harmful status (standing.ts `harmful`) the use put on a target of the

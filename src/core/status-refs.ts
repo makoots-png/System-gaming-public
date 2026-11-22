@@ -112,8 +112,8 @@ const statusTrigger = fields<On<'statusGained' | 'statusEnded'>>({ ...TRIGGER_PA
 const usedTrigger = fields<On<'used'>>({ ...TRIGGER_PARTS, tag: none });
 function trigger(t: Trigger, f: KeyFn): Trigger {
   switch (t.on) {
-    case 'hitDealt': case 'struck': case 'critDealt': case 'critTaken': case 'kill': case 'avoided': return partyTrigger(t, f);
-    case 'turnStart': case 'turnEnd': case 'moved': case 'down': return aloneTrigger(t, f);
+    case 'hitDealt': case 'struck': case 'critDealt': case 'critTaken': case 'kill': case 'avoided': case 'imposed': return partyTrigger(t, f);
+    case 'turnStart': case 'turnEnd': case 'moved': case 'down': case 'lowHp': return aloneTrigger(t, f);
     case 'statusGained': case 'statusEnded': return statusTrigger(t, f);
     case 'used': return usedTrigger(t, f);
     default: return t satisfies never;

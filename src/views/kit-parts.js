@@ -10,12 +10,13 @@ import { BEARER_EVENTS, PARTY_EVENTS } from '../core/combat/triggers.ts';
 import { isStateChip } from '../core/hunter/chips.ts';
 import { MAX_STATUSES } from '../core/combat/fight-types.ts';
 
-/** A bearer's event as the GM reads it, after "When its bearer". */
-const EVENT_LABEL = {
+/** Each bearer event as the GM reads it, after "When its bearer"; the low share is the rule's (`kit.lowHpAt`). */
+const eventLabels = () => ({
   hitDealt: 'deals a hit', struck: 'is struck', critDealt: 'crits', critTaken: 'takes a crit', kill: 'kills a foe', avoided: 'avoids a use',
   turnStart: 'starts its turn', turnEnd: 'ends its turn', moved: 'moves', down: 'goes down',
+  lowHp: `falls under ${Math.round(rules().fight.kit.lowHpAt * 100)}% HP`, imposed: 'puts a harmful status on a foe',
   statusGained: 'gains a status', statusEnded: 'loses a status', used: 'uses an ability tagged',
-};
+});
 const TRIGGER_EVENTS = [...BEARER_EVENTS, 'statusGained', 'statusEnded', 'used'];
 const LEAVE_LABEL = [['never', 'Never'], ['round', 'One a round'], ['event', 'On an event']];
 const KEEP_LABEL = [['fight', 'Gone'], ['sheet', 'Kept on the sheet']];
@@ -50,7 +51,7 @@ export function triggerList(host, triggers, M, name, who) {
     const id = `${name}${made++}`, el = document.createElement('div');
     const to = t ? t.to : 'self', limit = t ? t.limit : { kind: 'each' };
     el.className = 'mk-fx mk-trig';
-    el.innerHTML = `<div class="mk-fx-top"><select data-tk="on" aria-label="When">${TRIGGER_EVENTS.map(e => opt(e, `When ${who} ${EVENT_LABEL[e]}`, t ? t.on : 'hitDealt')).join('')}</select>
+    el.innerHTML = `<div class="mk-fx-top"><select data-tk="on" aria-label="When">${TRIGGER_EVENTS.map(e => opt(e, `When ${who} ${eventLabels()[e]}`, t ? t.on : 'hitDealt')).join('')}</select>
         <button type="button" class="icon-btn" data-rm-trig aria-label="Remove trigger">&times;</button></div>
       <label class="field" data-tf="tag"><span class="lbl" data-tag-lbl>Only uses tagged (optional)</span><input type="text" maxlength="${K.tagLength}" autocomplete="off" spellcheck="false" data-tk="tag" aria-label="Tag" placeholder="sword" value="${esc(t && t.tag ? t.tag : '')}"></label>
       <label class="field" data-tf="key"><span class="lbl">Which status</span><select data-tk="key" data-pick aria-label="Which status">${statuses().map(([k, l]) => opt(k, l, t && t.key)).join('')}</select></label>
@@ -73,7 +74,7 @@ export function triggerList(host, triggers, M, name, who) {
     const n = Math.trunc(Number(q('[data-tk="n"]').value)), radius = Math.trunc(Number(q('[data-tk="radius"]').value));
     if (lk === 'fight' && !(n >= 1 && n <= K.fightUses)) return { err: `Times a fight go from 1 to ${K.fightUses}.` };
     if (toK === 'area' && !(radius >= 1 && radius <= R.fight.fieldRadiusMax)) return { err: `An area reaches 1 to ${R.fight.fieldRadiusMax} tiles.` };
-    if (toK === 'other' && !party) return { err: 'Only a hit, a crit, a kill or an avoid has another body. Pick that body or an area.' };
+    if (toK === 'other' && !party) return { err: 'Only a hit, a crit, a kill, an avoid or a status put on a foe has another body. Pick that body or an area.' };
     const tag = q('[data-tk="tag"]').value.trim().toLowerCase();
     if (tag && !(TAG_RE.test(tag) && tag.length <= K.tagLength)) return { err: `A tag is one word or words joined by hyphens, at most ${K.tagLength} letters.` };
     if (ev === 'used' && !tag) return { err: 'Write the tag of the abilities it answers.' };
@@ -149,7 +150,7 @@ export function statusBlocks(box, def, M, name) {
       <div data-stack-f>
         ${numIn(`data-k="cap" min="1" max="${K.stackCap}" aria-label="Most stacks"`, `Most stacks (1 to ${K.stackCap})`, st ? st.cap : 5)}
         <div class="lbl">Stacks leave</div>${M.chips(c('leave'), LEAVE_LABEL, st ? st.leave.kind : 'never', { label: 'Stacks leave' })}
-        <label class="field" data-leave-ev><span class="lbl">All leave when its bearer</span><select data-k="leaveEvent" aria-label="Event the stacks leave on">${BEARER_EVENTS.map(e => opt(e, EVENT_LABEL[e], st && st.leave.kind === 'event' ? st.leave.event : 'struck')).join('')}</select></label>
+        <label class="field" data-leave-ev><span class="lbl">All leave when its bearer</span><select data-k="leaveEvent" aria-label="Event the stacks leave on">${BEARER_EVENTS.map(e => opt(e, eventLabels()[e], st && st.leave.kind === 'event' ? st.leave.event : 'struck')).join('')}</select></label>
         <div class="lbl">When the fight ends, the stacks are</div>${M.chips(c('keep'), KEEP_LABEL, st ? st.keep : 'fight', { label: 'When the fight ends' })}
         <label class="mk-check"><input type="checkbox" data-k="th"${th ? ' checked' : ''}><span>Something happens at a count</span></label>
         <div data-th-f>
@@ -235,7 +236,7 @@ export function statusBlocks(box, def, M, name) {
     $('[data-end-f]').hidden = !on('end');
     const { fields } = read(), s = fields.stack, nt = trigList.count();
     $('[data-sum="stacks"]').textContent = !s ? 'Stacks: no'
-      : `Stacks to ${s.cap}${s.leave.kind === 'round' ? ', one leaves a round' : s.leave.kind === 'event' ? `, all leave when its bearer ${EVENT_LABEL[s.leave.event]}` : ''}${s.threshold ? `; at ${s.threshold.at.kind === 'count' ? s.threshold.at.n : printFormula(s.threshold.at.formula)}: ${s.threshold.then === 'spend' ? 'spent' : 'kept'}` : ''}`;
+      : `Stacks to ${s.cap}${s.leave.kind === 'round' ? ', one leaves a round' : s.leave.kind === 'event' ? `, all leave when its bearer ${eventLabels()[s.leave.event]}` : ''}${s.threshold ? `; at ${s.threshold.at.kind === 'count' ? s.threshold.at.n : printFormula(s.threshold.at.formula)}: ${s.threshold.then === 'spend' ? 'spent' : 'kept'}` : ''}`;
     $('[data-sum="when"]').textContent = nt ? `When: ${nt} trigger${nt === 1 ? '' : 's'}` : 'When something happens: nothing';
     $('[data-sum="end"]').textContent = fields.end ? `When it ends: ${fields.end.ops.length} effect${fields.end.ops.length === 1 ? '' : 's'}, a cure ${fields.end.cleanse === 'cancel' ? 'cancels it' : 'makes it happen at once'}` : 'When it ends: nothing';
   }

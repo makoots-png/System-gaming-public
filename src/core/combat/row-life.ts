@@ -7,6 +7,7 @@
 import { can, lifeAfter, refilled, REVIVE_HP } from '../hunter/vitals.ts';
 import type { Life, LifeEvent, LifeEventType, LifeState } from '../hunter/vitals.ts';
 import type { Body, CombatantKind, HunterRow } from './effect-ops.ts';
+import { rowHp } from './row-hp.ts';
 
 // ── a foe's life ──
 export const FOE_LIFE_STATES = ['up', 'dead'] as const;
@@ -79,11 +80,17 @@ export function sameLife(a: Life | FoeLife, b: Life | FoeLife): boolean {
  * Row `b` after `event`, through its kind's table at the row's maximum HP: the life machine for a hunter, `FOE_TABLE` for
  * anything else. The same row when the event does not apply or changes nothing (a heal of a dead hunter, damage to a
  * dead foe, a heal at full HP), so a caller tells a change by identity. The one writer of a row's life.
+ *
+ * Damage is the fight's (a use's or a trigger's hit, a status's end or round damage, a settled roll, a zone's hit, an
+ * HP price): the row keeps the HP it had before the first damage no batch of triggers has read (`hurtFrom`), and the
+ * next batch reads its fall under the low share from it (triggers.ts `fire`, `lowHp`). The GM's hand edit sets HP
+ * (`setHp`, fight.ts `adjust`): a correction is not an event of the fight, so it keeps nothing.
  */
 export function rowLifeAfter<T extends Body>(b: T, event: LifeEvent): T {
   const row: Body = b, max = row.sheet.hpMax;
   const life = row.kind === 'hunter' ? lifeAfter(row.life, event, max) : foeLifeAfter(row.life, event, max);
-  return sameLife(row.life, life) ? b : { ...b, life };
+  if (sameLife(row.life, life)) return b;
+  return event.type === 'damage' ? { ...b, life, hurtFrom: row.hurtFrom ?? rowHp(row) } : { ...b, life };
 }
 /** Whether event `type` applies to row `b`'s life now: what the `revive` command asks before it changes anything. */
 export const rowLifeTakes = (b: Body, type: LifeEventType): boolean => (b.kind === 'hunter' ? can(b.life, type) : foeCan(b.life, type));

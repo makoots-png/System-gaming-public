@@ -293,7 +293,10 @@ export function landOps(rows: Map<CombatantId, Body>, ops: readonly LandOp[], hi
   return { landed, fired };
 }
 
-/** The status gained that set a trigger off: who gained it and its key (triggers.ts `fire`, the event `statusGained`). */
+/**
+ * The status put on that set a trigger off: who holds it and its key (triggers.ts `gainedOf`): the bearer of a
+ * `statusGained`, or the foe of an `imposed`, so an echo of a status a hunter imposes goes to that foe's nearest other.
+ */
 export type Gained = { readonly holder: CombatantId; readonly key: StatusKey };
 /**
  * An echo (keystones A.7): the status `g.holder` gained also goes on the nearest other body of the holder's side within
@@ -301,7 +304,7 @@ export type Gained = { readonly holder: CombatantId; readonly key: StatusKey };
  * length it had when put on (its time left now, the moment it was put on; one until removed stays so), one stack, through rule 18's door as any
  * status (`putFor`: a safeguard or a spent ward refuses it, a hold stuns, a taunt bursts, a channel breaks). It answers
  * who took it and the threshold it set off, or null when no body took it. Its caller tells it as no status gained, so
- * an echoed status raises no trigger and an echo never chains (as `auraOps` leaves out `aura` and `spread`).
+ * an echoed status raises no `statusGained` and no `imposed`, and an echo never chains (as `auraOps` leaves out `aura` and `spread`).
  */
 function echoed(rows: Map<CombatantId, Body>, op: Extract<LandOp, { op: 'echo' }>, g: Gained, cross: boolean, now: Tick, R: OpRules): { target: CombatantId; fired: LandFired | null } | null {
   const holder = rows.get(g.holder), s = holder?.statuses.find(x => x.key === g.key && x.zone === undefined);
