@@ -28,7 +28,7 @@ const SHIELD_UP = abilityOf('support', { id: abilityId('shield-up'), name: 'Shie
 
 describe('a reward opened in the editor and saved unchanged', () => {
   test('every built-in feat\'s reward comes back as it shipped, and saving the feat leaves the library without an entry for it', () => {
-    expect(BUILT_IN_FEATS.some(([, d]) => d.rewards.title?.band && d.rewards.title.band !== 'E'), 'a built-in title has a band past E, which the editor does not edit').toBe(true);
+    expect(BUILT_IN_FEATS.some(([, d]) => d.rewards.title?.band && d.rewards.title.band !== 'E'), 'a built-in title has a band past E').toBe(true);
     const lib = newSave(dev('d')).library;
     for (const [key, def] of BUILT_IN_FEATS) {
       const rewards = roundTrip(def.rewards);
@@ -38,7 +38,7 @@ describe('a reward opened in the editor and saved unchanged', () => {
     }
   });
 
-  test('a title keeps its band and its active, which the editor has no field for', () => {
+  test('a title keeps its band and its active', () => {
     const rw = parseRewards({ title: { name: 'Last Light', desc: 'Held the door.', bonus: { vit: 2 }, band: 'C', active: SHIELD_UP } })!;
     expect(rw.title?.active, 'the title reads with its active').toBeDefined();
     expect(roundTrip(rw)).toEqual(rw);
@@ -62,5 +62,13 @@ describe('a title row the GM changes', () => {
       .toEqual({ name: seed.name, desc: seed.desc, bonus: seed.bonus, key: seed.key, band: seed.band });
     const fresh = { ...pickTitle(picked, RULES, ''), name: 'Odd' };
     expect(parseRewards(rewardOfForm({ nums: { xp: 0, gold: 0, points: 0 }, rows: [fresh] }, RULES))!.title).toEqual({ name: 'Odd', desc: '', bonus: {} });
+  });
+
+  test('a band and an active set on a new title row are written, and E and none leave them out', () => {
+    const row = { ...titleOf([blankRow('title', [])]), name: 'Last Light', band: 'C' as const, active: SHIELD_UP };
+    const out = parseRewards(rewardOfForm({ nums: { xp: 0, gold: 0, points: 0 }, rows: [row] }, RULES))!;
+    expect(out.title, 'the band and the active the GM chose').toEqual({ name: 'Last Light', desc: '', bonus: {}, band: 'C', active: SHIELD_UP });
+    const plain = parseRewards(rewardOfForm({ nums: { xp: 0, gold: 0, points: 0 }, rows: [{ ...row, band: null, active: null }] }, RULES))!;
+    expect(plain.title, 'cleared, the title has neither').toEqual({ name: 'Last Light', desc: '', bonus: {} });
   });
 });

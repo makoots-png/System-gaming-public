@@ -6,6 +6,7 @@ import { STAT_KEYS, STAT_LABELS, STAT_SHORT } from '../core/stats.ts';
 import { SHEET_LABELS } from '../core/hunter/derive.ts';
 import { fightHold, heldLines } from '../core/combat/fight-save.ts';
 import { combatantId, hunterId } from '../core/combat/ability-types.ts';
+import { titlePowerLines } from '../core/title-card.ts';
 import { checksOf, fitted, hunterSheet, setAdjust, setMaximum } from '../core/hunter/sheet.ts';
 import { ALLOCATION_WORDS, allocated, available, confirm, hasPending, lower, plusPoint, raise, setPoints, setStat } from '../core/hunter/progress.ts';
 import { TOLD, atHunter, atLibrary, both, isRefused, orKeep, refuse } from '../core/save-step.ts';
@@ -85,6 +86,8 @@ button.dv{display:block;width:100%;min-height:var(--control-h);color:inherit;fon
 .row-li .r-name{font-weight:600}
 .row-li .r-sub{font-size:13px;color:var(--cyan-dim)}
 .row-li .r-acts{display:flex;gap:6px;flex-wrap:wrap}
+.row-li .t-powers{list-style:none;margin:4px 0 0;padding:0 0 0 8px;border-left:2px solid var(--line);font-size:13px;color:var(--muted)}
+.row-li.on .t-powers{border-left-color:var(--gold);color:var(--ice)}
 .tag-on{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);border:1px solid rgba(255,201,77,.5);padding:1px 7px}
 .t-form{border:1px solid var(--line);padding:10px;margin-top:10px;display:grid;gap:8px}
 .t-form[hidden]{display:none}
@@ -721,9 +724,11 @@ export function register(app) {
     update(el) {
       const h = store.active(), gm = app.isGM();
       if (h.id !== lastHid) { lastHid = h.id; editingTitle = null; el.querySelector('[data-tform]').hidden = true; }
+      const R = rules(), holder = hunterSheet(h, R);
+      const powers = t => { const lines = titlePowerLines(t, h.rank, holder, R); return lines.length ? `<ul class="t-powers" aria-label="${esc(t.name)} in a fight">${lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>` : ''; };
       setHTML(el.querySelector('[data-tlist]'), h.titles.length ? h.titles.map(t => `<li class="row-li${t.id === h.titleId ? ' on' : ''}" data-title="${esc(t.id)}">
           <div class="r-main"><div class="r-name">${esc(t.name)} ${t.id === h.titleId ? '<span class="tag-on">Active</span>' : ''}</div>
-          <div class="r-sub">${esc(bonusText(t.bonus))}${t.desc ? ` &middot; ${esc(t.desc)}` : ''}</div></div>
+          <div class="r-sub">${esc(bonusText(t.bonus))}${t.desc ? ` &middot; ${esc(t.desc)}` : ''}</div>${powers(t)}</div>
           <div class="r-acts"><button type="button" data-tset="${esc(t.id)}">${t.id === h.titleId ? 'Unset' : 'Set active'}</button>
           ${gm ? `<button type="button" data-tedit="${esc(t.id)}" aria-label="Edit title ${esc(t.name)}">Edit</button><button type="button" class="danger" data-tdel="${esc(t.id)}" aria-label="Delete title ${esc(t.name)}">&times;</button>` : ''}</div></li>`).join('')
         : '<li class="empty">No titles earned yet.</li>');

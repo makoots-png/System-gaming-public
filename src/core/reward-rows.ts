@@ -1,25 +1,23 @@
 // reward-rows.ts: the reward editor's form (src/views/reward-editor.js) as data: a reward opened into its number fields
 // and one row per part, and the rows written back as the raw reward `parseRewards` reads. A row holds the fields the
-// editor edits and, for a title, the rest of the title it was opened from, so what the editor does not edit (a title's
-// band, its active) is written back as it came: a reward opened and saved unchanged is the reward it was.
+// editor edits; a title row holds all of a title (its band and its active too), so a reward opened and saved unchanged
+// is the reward it was.
+import type { Ability } from './combat/ability-types.ts';
 import type { StatusDef } from './combat/effect-ops.ts';
 import type { ItemTemplate } from './registry/items.ts';
 import type { SkillTemplate } from './registry/skills.ts';
 import { REWARD_BOUNDS, titleReward } from './rewards.ts';
 import type { RewardRules, RewardTitle, Rewards } from './rewards.ts';
-import type { Rules } from './rules.ts';
+import type { Rank, Rules } from './rules.ts';
 
-/** What of a title the editor's row edits; the rest of a title (`TitleRest`) goes back as it came. */
-type TitleEdited = 'name' | 'desc' | 'bonus' | 'key' | 'replaces' | 'worn';
-/** The fields of a title the editor does not edit (its band, its active): kept from the title the row was opened from. */
-export type TitleRest = Omit<RewardTitle, TitleEdited>;
 /**
  * One row of the editor. A title's `pick` is the key of the rule title it copies ('' for a written one), `replaces` and
- * a status's `rounds` the text of their fields ('' for none), `worn` its worn status or null, `rest` what it does not edit.
+ * a status's `rounds` the text of their fields ('' for none), `worn` its worn status or null, `band` the rank whose budget
+ * it fits (null: none written, which reads as E) and `active` the ability its holder may use in a fight, or null.
  */
 export type RewardRow =
   | { kind: 'item'; item: ItemTemplate | null }
-  | { kind: 'title'; pick: string; name: string; desc: string; replaces: string; bonus: Record<string, number>; worn: StatusDef | null; rest: TitleRest }
+  | { kind: 'title'; pick: string; name: string; desc: string; replaces: string; bonus: Record<string, number>; worn: StatusDef | null; band: Rank | null; active: Ability | null }
   | { kind: 'skill'; skill: SkillTemplate | null }
   | { kind: 'status'; key: string; rounds: string; def: StatusDef | null }
   | { kind: 'boon'; name: string; text: string }
@@ -33,8 +31,7 @@ export type RewardForm = { nums: { xp: number; gold: number; points: number }; r
 
 /** A title opened into its row. */
 function titleRow(t: RewardTitle): TitleRow {
-  const { name, desc, bonus, key, replaces, worn, ...rest } = t;
-  return { kind: 'title', pick: key ?? '', name, desc, replaces: replaces ?? '', bonus: { ...bonus }, worn: worn ?? null, rest };
+  return { kind: 'title', pick: t.key ?? '', name: t.name, desc: t.desc, replaces: t.replaces ?? '', bonus: { ...t.bonus }, worn: t.worn ?? null, band: t.band ?? null, active: t.active ?? null };
 }
 
 /** A parsed reward opened into the editor's form. */
@@ -55,7 +52,7 @@ export function rewardForm(rw: Rewards): RewardForm {
 /** An empty row of `kind`, as the editor's Add chip gives it; a status row names the first of `statusKeys`. */
 export function blankRow(kind: RewardRowKind, statusKeys: readonly string[]): RewardRow {
   if (kind === 'item') return { kind, item: null };
-  if (kind === 'title') return { kind, pick: '', name: '', desc: '', replaces: '', bonus: {}, worn: null, rest: {} };
+  if (kind === 'title') return { kind, pick: '', name: '', desc: '', replaces: '', bonus: {}, worn: null, band: null, active: null };
   if (kind === 'skill') return { kind, skill: null };
   if (kind === 'status') return { kind, key: statusKeys[0] ?? '', rounds: '3', def: null };
   if (kind === 'boon') return { kind, name: '', text: '' };
@@ -63,21 +60,20 @@ export function blankRow(kind: RewardRowKind, statusKeys: readonly string[]): Re
 }
 
 /**
- * The title row with the rule title `key` picked: its name, words, bonus and the rest (its band) taken from the rule
- * title; a key no rule title has is a new title, written from nothing. What it replaces and its worn status stay.
+ * The title row with the rule title `key` picked: its name, words, bonus, band and active taken from the rule title; a
+ * key no rule title has is a new title, written from nothing. What it replaces and its worn status stay.
  */
 export function pickTitle(r: TitleRow, R: Pick<Rules, 'titles'>, key: string): TitleRow {
   const seed = R.titles.find(t => t.key === key), t = seed ? titleReward(R, seed.name) : null;
-  if (!seed || !t) return { ...r, pick: '', name: '', desc: '', bonus: {}, rest: {} };
-  const { rest } = titleRow(t);
-  return { ...r, pick: seed.key, name: t.name, desc: t.desc, bonus: { ...t.bonus }, rest };
+  if (!seed || !t) return { ...r, pick: '', name: '', desc: '', bonus: {}, band: null, active: null };
+  return { ...r, pick: seed.key, name: t.name, desc: t.desc, bonus: { ...t.bonus }, band: t.band ?? null, active: t.active ?? null };
 }
 
 const whole = (v: string): number => { const n = Math.trunc(Number(v)); return Number.isFinite(n) ? n : 0; };
 
 /**
- * The form written back as the raw reward the parser reads: rows not filled in left out, a title its rest under what the
- * row edits, a status without its own def given the def `R` names. `floor` keeps the numbers at 0 or more (a quest's).
+ * The form written back as the raw reward the parser reads: rows not filled in left out, a status without its own def
+ * given the def `R` names. `floor` keeps the numbers at 0 or more (a quest's).
  */
 export function rewardOfForm(f: RewardForm, R: RewardRules, floor = false) {
   const n = (x: number) => (floor ? Math.max(0, x) : x);
@@ -93,7 +89,7 @@ export function rewardOfForm(f: RewardForm, R: RewardRules, floor = false) {
   return {
     xp: n(f.nums.xp), points: n(f.nums.points), gold: n(f.nums.gold), items,
     // a title in place of itself is that title (rewards.ts `title`)
-    title: title && name ? { ...title.rest, name, desc: title.desc, bonus: title.bonus, ...(title.pick ? { key: title.pick } : {}), ...(replaces && replaces !== name ? { replaces } : {}), ...(title.worn ? { worn: title.worn } : {}) } : null,
+    title: title && name ? { name, desc: title.desc, bonus: title.bonus, ...(title.pick ? { key: title.pick } : {}), ...(replaces && replaces !== name ? { replaces } : {}), ...(title.worn ? { worn: title.worn } : {}), ...(title.band ? { band: title.band } : {}), ...(title.active ? { active: title.active } : {}) } : null,
     job: job?.kind === 'job' && job.job.trim() ? job.job.trim() : null,
     skills, statuses, boons,
   };

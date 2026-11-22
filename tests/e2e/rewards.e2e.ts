@@ -1,3 +1,6 @@
+import { RULES } from '../../src/core/rules.ts';
+import { abilityId } from '../../src/core/combat/ability-types.ts';
+import { abilityOf } from '../../src/core/registry/ability-kinds.ts';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, answerWindow, startGoblinDenFight, chooseList, fightRow, type Page } from './helpers.ts';
 
 /** A GM and a player in one room, the player's card on the GM's party board. Answers both pages and the player's sheet key. */
@@ -246,6 +249,57 @@ test('the GM awards the title Steady Hand worn in fights as Hasted: once it is t
     const others = await gm.evaluate(n => hunterApp.store.get().fight.rows.filter((r: any) => r.kind === 'hunter' && r.name !== n).map((r: any) => r.statuses.filter((s: any) => s.def.label === 'Hasted').length), name);
     expect(others.length).toBeGreaterThan(0);
     expect(others.every((n: number) => n === 0)).toBe(true);
+  });
+});
+
+test('the GM awards a title of band C usable in fights as Second Wind: its card names the power, and once it is the active title the hunter has Second Wind in the fight', async ({ device }) => {
+  const gm = (await device('gm')).page;
+  await onboardGM(gm);
+  await gm.evaluate(() => hunterApp.store.update((d: any) => { d.rulesOverrides.feats = { on: false }; d.rulesOverrides.solo = { personal: false }; }, 'test-setup'));
+  const wind = abilityOf('support', { id: abilityId('second-wind'), name: 'Second Wind', aim: 'self' }, RULES);
+  await gm.evaluate(a => hunterApp.store.update((d: any) => { d.library.skills.push({ id: 's-second-wind', name: 'Second Wind', type: 'active', level: 1, label: null, desc: '', ability: a }); }, 'test-setup'), wind);
+  const name = (await activeHunter(gm)).name as string;
+  await go(gm, 'gm');
+  const toggle = gm.locator('[data-tog="award"]');
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.tap();
+  const ed = gm.locator('#gm-rw'), row = ed.locator('[data-kind="title"]');
+
+  await test.step('the title row has Band chips and Usable in fights, and a spend line against the band\'s budget', async () => {
+    await ed.locator('[data-add="title"]').tap();
+    await row.locator('[data-f="name"]').fill('Last Light');
+    await expect(row.locator('[data-band="E"]')).toHaveAttribute('aria-pressed', 'true');
+    await row.locator('[data-band="C"]').tap();
+    await expect(row.locator('[data-band="C"]')).toHaveAttribute('aria-pressed', 'true');
+    await expect(row.locator('[data-band="E"]')).toHaveAttribute('aria-pressed', 'false');
+    await row.locator('[data-f="tactive"]').selectOption({ label: 'Second Wind' });
+    await expect(row.locator('[data-tinfo]')).toContainText('Can use in a fight: Second Wind');
+    await expect(row.locator('[data-tspend]')).toContainText(`of a rank C title's ${RULES.titleBudget.C} points`);
+  });
+
+  await test.step('the award is sent and the hunter holds a title of band C with the ability', async () => {
+    await gm.locator('#gm-targets label', { hasText: name }).locator('input').check();
+    await gm.locator('#gm-award-go').tap();
+    await dismissAll(gm, 4);
+    const t = (await activeHunter(gm)).titles.find((x: any) => x.name === 'Last Light');
+    expect(t).toMatchObject({ band: 'C', active: { name: 'Second Wind' } });
+  });
+
+  await test.step('the title\'s card names its power and fits a 390 px phone', async () => {
+    await go(gm, 'status');
+    const li = gm.locator('[data-panel="titles"] [data-tlist] li', { hasText: 'Last Light' });
+    await expect(li.locator('.t-powers')).toContainText('Can use in a fight: Second Wind');
+    await li.locator('[data-tset]').tap();
+    await expect(li.locator('[data-tset]')).toHaveText('Unset');
+    await li.scrollIntoViewIfNeeded();
+    const box = await li.evaluate(el => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+    expect(box.scroll).toBeLessThanOrEqual(box.client);
+  });
+
+  await test.step('in the Goblin Den fight the hunter\'s row has Second Wind as a worn ability', async () => {
+    await chooseList(gm);
+    await startGoblinDenFight(gm, [name]);
+    const row = await fightRow(gm, name);
+    expect(row.abilities.map((a: any) => a.id)).toContain('worn-second-wind');
   });
 });
 

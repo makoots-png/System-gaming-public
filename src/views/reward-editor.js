@@ -5,13 +5,16 @@
 // window's lines (`grantLines`). Its answer is what `parseRewards` reads, so it passes the parser unchanged.
 import { esc, field } from './ui.js';
 import { rewardJobs, rules } from '../edge/rules.ts';
-import { REPLACES_WORDS, REWARD_BOUNDS, WORN_WORDS, WORDS_BOUNDS, grantLines, isEmptyReward, newRewards, parseRewards, parseWords } from '../core/rewards.ts';
+import { ACTIVE_WORDS, REPLACES_WORDS, REWARD_BOUNDS, WORN_WORDS, bandOf, WORDS_BOUNDS, grantLines, isEmptyReward, newRewards, parseRewards, parseWords } from '../core/rewards.ts';
 import { savedWords } from '../core/library.ts';
 import { ITEM_BOUNDS, parseItem } from '../core/registry/items.ts';
 import { SKILL_SEEDS, parseSkill, skillOf } from '../core/registry/skills.ts';
 import { isStateChip } from '../core/hunter/chips.ts';
 import { ROW_KINDS, blankRow, pickTitle, rewardForm, rewardOfForm, rowError } from '../core/reward-rows.ts';
 import { oneOf } from '../core/one-of.ts';
+import { titleLine } from '../core/registry/item-budget.ts';
+import { titlePowerLines } from '../core/title-card.ts';
+import { RANKS } from '../core/rules.ts';
 
 const ADD = [['item', 'Item'], ['title', 'Title'], ['skill', 'Skill'], ['status', 'Status'], ['boon', 'Boon'], ['job', 'Job']];
 const CAP = { item: REWARD_BOUNDS.items, skill: REWARD_BOUNDS.skills, status: REWARD_BOUNDS.statuses, boon: REWARD_BOUNDS.boons, title: 1, job: 1 };
@@ -44,6 +47,10 @@ export function rewardEditor(app, box, o = {}) {
   /** The status key whose def a title's worn status is, by its words and ops; '' when none is. */
   const wornKey = def => statusKeys().find(k => JSON.stringify(rules().conditions[k]) === JSON.stringify(def)) || '';
   const bundleList = () => app.api.bundles.list();
+  /** The library's skills a title's active may be copied from, with their place in the library's list. */
+  const activeSkills = () => libSkills().flatMap((s, n) => (s.type === 'active' && s.ability ? [{ n, s }] : []));
+  /** The library choice (`L:n`) whose ability is `a`, or '' when the title keeps an ability the library no longer holds. */
+  const activeKey = a => { const hit = activeSkills().find(x => canon(x.s.ability) === canon(a)); return hit ? `L:${hit.n}` : ''; };
   const opt = (v, l, on = false) => `<option value="${esc(v)}"${on ? ' selected' : ''}>${esc(l)}</option>`;
   const group = (label, list) => (list.length ? `<optgroup label="${esc(label)}">${list.join('')}</optgroup>` : '');
 
@@ -83,7 +90,12 @@ export function rewardEditor(app, box, o = {}) {
         <p class="rw-hint">${esc(REPLACES_WORDS.hint)}</p>
         <div class="lbl">Bonus while the title is active</div><div data-tbonus>${app.api.maker.bonus(r.bonus)}</div>
         ${field(WORN_WORDS.label, `<select data-f="tworn">${opt('', WORN_WORDS.none, !r.worn)}${r.worn && !wornKey(r.worn) ? opt('=', r.worn.label, true) : ''}${statusKeys().map(k => opt(k, rules().conditions[k].label || k, !!r.worn && wornKey(r.worn) === k)).join('')}</select>`)}
-        <p class="rw-hint">${esc(WORN_WORDS.hint)}</p>`;
+        <p class="rw-hint">${esc(WORN_WORDS.hint)}</p>
+        ${field(ACTIVE_WORDS.label, `<select data-f="tactive">${opt('', ACTIVE_WORDS.none, !r.active)}${r.active && !activeKey(r.active) ? opt('=', r.active.name, true) : ''}${activeSkills().map(({ n, s }) => opt(`L:${n}`, s.name, !!r.active && activeKey(r.active) === `L:${n}`)).join('')}</select>`)}
+        <p class="rw-hint">${esc(ACTIVE_WORDS.hint)}</p>
+        <div class="lbl" id="${esc(id)}-band">Band</div>
+        <div class="mk-chips seg" role="group" aria-labelledby="${esc(id)}-band">${RANKS.map(k => `<button type="button" class="mk-chip" data-band="${k}" aria-pressed="${(r.band ?? 'E') === k}">${k}</button>`).join('')}</div>
+        <div data-tinfo></div>`;
     } else if (r.kind === 'status') {
       const keys = statusKeys(); if (r.key && !keys.includes(r.key)) keys.push(r.key);
       const label = k => String((rules().conditions[k] && rules().conditions[k].label) || (r.def && r.key === k && r.def.label) || k);
@@ -136,6 +148,11 @@ export function rewardEditor(app, box, o = {}) {
   function paint() {
     const lines = grantLines(rules(), parseRewards(raw()) || newRewards()), p = box.querySelector('.rw-preview');
     if (p) p.innerHTML = `<div class="lbl">The player sees</div>${lines.length ? `<ul class="mk-lines">${lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>` : '<p class="mk-none">Nothing yet.</p>'}`;
+    const info = box.querySelector('[data-tinfo]');
+    if (info) {
+      const t = parseRewards(raw())?.title ?? null;
+      info.innerHTML = t ? `${titlePowerLines(t, bandOf(t), null, rules()).map(l => `<p class="rw-meta">${esc(l)}</p>`).join('')}<p class="rw-spend${titleLine(t, rules()).over ? ' over' : ''}" data-tspend>${esc(titleLine(t, rules()).words)}</p>` : '';
+    }
     const s = box.querySelector('[data-rw-say]'); if (s) { s.textContent = say.text; s.classList.toggle('bad', say.bad); }
   }
   const raise = () => box.dispatchEvent(new Event('input', { bubbles: true }));
@@ -190,6 +207,12 @@ export function rewardEditor(app, box, o = {}) {
     const b = e.target.closest('button'); if (!b || !box.contains(b)) return;
     const rowEl = b.closest('[data-row]'), i = rowEl ? Number(rowEl.dataset.row) : -1;
     if (b.dataset.add) { const k = oneOf(b.dataset.add, ROW_KINDS, null); if (!k || count(k) >= CAP[k]) return; rows.push(blankRow(k, statusKeys())); say = { text: '', bad: false }; render(rows.length - 1); raise(); return; }
+    if (b.dataset.band) {
+      const k = oneOf(b.dataset.band, RANKS, 'E'), row = rows[i]; if (!row || row.kind !== 'title') return;
+      row.band = k === 'E' ? null : k;
+      rowEl.querySelectorAll('[data-band]').forEach(c => c.setAttribute('aria-pressed', String(c.dataset.band === k)));
+      paint(); raise(); return;
+    }
     if (b.hasAttribute('data-rm')) { rows.splice(i, 1); render(); raise(); return; }
     if (b.hasAttribute('data-rw-save')) void saveBundle();
   });
@@ -207,6 +230,10 @@ export function rewardEditor(app, box, o = {}) {
     if (t.dataset.f === 'key') { r.key = t.value; r.def = null; }
     // a title's worn status is its def by value, as a reward's status travels (`=` keeps the one it came with)
     if (t.dataset.f === 'tworn' && t.value !== '=') r.worn = t.value ? { ...rules().conditions[t.value] } : null;
+    if (t.dataset.f === 'tactive' && t.value !== '=') {
+      const src = t.value ? libSkills()[int(t.value.split(':')[1])] : null;
+      r.active = src && src.type === 'active' && src.ability ? src.ability : null;
+    }
     if (t.dataset.f === 'tell') { if (t.checked) r.item.tell = true; else delete r.item.tell; }
     mark(i); paint();
   });
@@ -267,6 +294,8 @@ export function rewardEditorCss(css) {
 .rw-two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:8px;align-items:end}
 .rw-chk{display:flex;align-items:center;gap:8px;min-height:44px;padding:0 10px;border:1px solid var(--line);cursor:pointer}
 .rw-chk input{width:20px;height:20px;flex:0 0 auto;margin:0}
+.rw-spend{margin:0;font-size:13px;color:var(--green);overflow-wrap:anywhere}.rw-spend.over{color:var(--gold)}
+.rw-row .mk-chips{display:flex;gap:6px}.rw-row .mk-chips .mk-chip{flex:1 1 0;min-width:0;min-height:44px;padding:0}
 .rw-err{margin:0;font-size:13px;color:#ff8a96}.rw-err:empty{display:none}
 .rw-add{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.rw-add .lbl{margin-right:4px}
 .rw-preview{border:1px solid var(--line);background:rgba(10,26,46,.55);padding:6px 10px}

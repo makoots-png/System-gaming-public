@@ -422,3 +422,24 @@ reward title's walk names `band`), `tests/overrides.test.ts`, `tests/record.test
   title's 3 points: fits rank D."). To undo: "a title within its band's budget fits its band; name another band only when over".
 - A title's actives are weighed on the item's scale, so they barely fit. To undo: "a title's budget for its active is
   its own number, not the stat points" (a rule for `titleBudget` per part, or a factor on `powersSpend` for titles).
+
+## Build note: unit 12, the title editor's rows (Nov 22)
+
+**What exists.** The reward editor's title row (`views/reward-editor.js`) gains "Usable in fights" (a select: None, or a
+library active skill whose ability is copied in; a kept ability the library no longer holds shows by name), six Band
+chips E to S, the title's powers in words and the spend line (`titleLine`), redrawn on every change; over shows gold.
+`core/reward-rows.ts`: a title row holds `band` and `active` as fields (the old `rest` is gone, since nothing is left
+over), written back only when set. `core/title-card.ts` (`titlePowerLines`) is the one place a title's powers become
+lines: the worn status, then the active's name, its amount through `amountWords` on the holder ("Shields: 10 + 20% of max
+HP (now 34)"), its ops, its wait and gates. The hunter's title card (`views/hunter.js`) lists them under the bonus, the
+lines gold-edged on the active title. `ACTIVE_WORDS` in `rewards.ts`; `gateLine` exported from `ability-kinds.ts`.
+
+**Proof.** `tests/title-card.test.ts`, `tests/reward-rows.test.ts` (a band and an active written, E and none left out),
+`tests/e2e/rewards.e2e.ts` (a band C title with Second Wind saves through the Award form, shows on the card at 390 px,
+and its ability is on the hunter's fight row as `worn-second-wind`); `bun run test` green, `rewards`, `makers`,
+`reward-room` browser files green. Looked at at 390 px: both screens fit, nothing clipped.
+
+**Calls the owner might have made otherwise.**
+- The editor's preview ("The player sees") and the reward window do not name the active; only the card and the row do.
+- Only library skills are offered as an active, not the built-in seeds.
+- The card shows the active even when its title is not the active one (dim), so a player sees what Set active gives.

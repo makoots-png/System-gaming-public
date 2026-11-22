@@ -235,7 +235,8 @@ const priceLine = (p: Price): string => {
   if (p.kind === 'stacks') return `Costs ${p.take.kind === 'all' ? 'all' : p.take.n} ${p.key} ${p.from === 'self' ? 'of yours' : 'from each target'}.`;
   return `Ends ${p.take === 'one' ? 'one' : 'all'} of your ${p.name ?? 'fields'}.`;
 };
-const gateLine = (g: AbilityGate): string => g.kind === 'uses' ? `${g.n} use${g.n === 1 ? '' : 's'} a ${g.per}.` : g.kind === 'inside' ? `Only inside your ${g.zone}.`
+/** One gate of an ability in words: "1 use a fight." */
+export const gateLine = (g: AbilityGate): string => g.kind === 'uses' ? `${g.n} use${g.n === 1 ? '' : 's'} a ${g.per}.` : g.kind === 'inside' ? `Only inside your ${g.zone}.`
   : `Only while ${g.on === 'self' ? 'you hold' : 'the target holds'} ${g.atLeast > 1 ? `${g.atLeast} ` : ''}${g.key}.`;
 const WHEN_TEXT: { readonly [W in NonNullable<Ability['react']>['when']]: string } = {
   before: 'before a foe\'s use lands on you', lethal: 'before a hit would take you to 0', after: 'after a foe\'s use lands on you', turn: 'before the turn of the body you name',

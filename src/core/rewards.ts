@@ -208,6 +208,11 @@ export const WORN_WORDS = {
   hint: 'While this is the hunter\'s active title, the status is on the hunter in every fight.',
   line: (status: string): string => `worn in fights: ${status}`,
 } as const;
+/** The reward editor's words for a title's active: an ability of the library the hunter may use in a fight. */
+export const ACTIVE_WORDS = {
+  label: 'Usable in fights', none: 'None',
+  hint: 'While this is the hunter\'s active title, the hunter can use this ability in a fight. The title keeps its own copy.',
+} as const;
 /** The reward editor's words for a title given in another's place. */
 export const REPLACES_WORDS = {
   label: 'In place of',
