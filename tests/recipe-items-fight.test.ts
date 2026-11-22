@@ -41,7 +41,7 @@ function row(name: string, side: Side, statuses: Status[] = [], o: RowPatch<NewR
   const hpMax = modified(rest.origin ?? origin, statuses, RULES).sheet.hpMax;
   return {
     id: id(name), name, side, ...lifeAt(kind ?? (side === 'party' ? 'hunter' : 'monster'), hp ?? hpMax), origin, tier: 0, place: null, mana: 10, fatigue: 0, shield: null, stagger: null,
-    channel: null, threat: side === 'foe' ? {} : null, statuses, readyAt: {}, abilities: [HIT, SPELL, BIG], intent: null, holder: null, xp: 0, ...rest,
+    channel: null, threat: side === 'foe' ? {} : null, statuses, readyAt: {}, abilities: [HIT, SPELL, BIG], intent: null, holder: null, xp: 0, mythic: null, ...rest,
   } as NewRow;
 }
 function step(fight: Fight | null, cmd: Command): { fight: Fight; refused: string | null } {

@@ -980,7 +980,7 @@ function newRow(name: string, side: 'party' | 'foe', origin: Origin, at: Place, 
   const { sheet } = modified(origin, [], RULES);
   return {
     id: combatantId(name), name, side, kind: side === 'party' ? 'hunter' : 'monster', origin, tier: 2, place: at, life: { at: 'up', hp: sheet.hpMax }, mana: sheet.manaMax, fatigue: 0,
-    shield: null, stagger: null, channel: null, threat: side === 'foe' ? {} : null, statuses: [], readyAt: {}, abilities, intent: null, holder: null, xp: 0,
+    shield: null, stagger: null, channel: null, threat: side === 'foe' ? {} : null, statuses: [], readyAt: {}, abilities, intent: null, holder: null, xp: 0, mythic: null,
   } as NewRow;
 }
 const ctx: Ctx = { rules: RULES };

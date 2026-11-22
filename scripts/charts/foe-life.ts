@@ -27,7 +27,7 @@ export const foeLife = machine<Foe, LifeEvent>({
   walked: `Every life reachable from a foe up at ${WALK_MAX} of ${WALK_MAX} HP under the ${WALK_EVENTS.length} events of the hunter's life walk (tests/models/life-events.ts), breadth first.`,
   walk: () => bfs(
     [{ life: { at: 'up', hp: WALK_MAX }, hpMax: WALK_MAX } as Foe],
-    f => WALK_EVENTS.map(event => { const hpMax = maxAfter(event, f.hpMax); return { event, to: { life: foeLifeAfter(f.life, event, hpMax), hpMax } }; }),
+    f => WALK_EVENTS.map(event => { const hpMax = maxAfter(event, f.hpMax); return { event, to: { life: foeLifeAfter(f.life, event, hpMax, 0), hpMax } }; }),
     f => JSON.stringify(f),
   ),
   kinds: FOE_LIFE_STATES,
@@ -41,7 +41,7 @@ export const foeLife = machine<Foe, LifeEvent>({
   }],
   where: [
     ['The union', '`FoeLife` and `FOE_LIFE_STATES` in `src/core/combat/row-life.ts`; a row holds it by its kind (`BodyLife` in `src/core/combat/effect-ops.ts`)'],
-    ['What changes it', '`foeLifeAfter(life, event, hpMax)` and its `FOE_TABLE`; `rowLifeAfter(row, event)`, the one writer of a row\'s life, picks this table or the hunter\'s by the row\'s kind'],
+    ['What changes it', '`foeLifeAfter(life, event, hpMax, floor)` and its `FOE_TABLE` (the floor a mythic\'s gate, 0 on every other row); `rowLifeAfter(row, event)`, the one writer of a row\'s life, picks this table or the hunter\'s by the row\'s kind'],
     ['Who calls it', 'every HP change of the fight through `rowLifeAfter` (`hurt` and `healed` in `land.ts`, `payDue` in `fight-turn.ts`, an HP price in `charge.ts`, `withStatuses` in `effect-ops.ts`, `adjust` and the `revive` command in `fight.ts`)'],
     ['The test to copy', '`tests/fight.test.ts`, "a row\'s life"'],
     ['The recipe', 'docs/guide/combat.md, "Where a fight row\'s life changes"'],

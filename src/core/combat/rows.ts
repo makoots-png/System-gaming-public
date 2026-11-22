@@ -20,7 +20,9 @@ import type { Life } from '../hunter/vitals.ts';
 import { TIER_BUDGET } from '../registry/paths.ts';
 import { ARCHETYPE_ATTACKS, itemAbility, weaponAttack, wornAbilityId } from '../registry/abilities.ts';
 import type { Powers } from '../registry/powers.ts';
-import { monsterXp, tweakOfMonster } from '../registry/monsters.ts';
+import { monsterScript, monsterXp, tweakOfMonster } from '../registry/monsters.ts';
+import { mythicScriptOf } from '../registry/mythics.ts';
+import type { MythicScriptId } from '../registry/mythics.ts';
 import type { Weapon } from '../registry/abilities.ts';
 import { formulaOf } from '../registry/ability-kinds.ts';
 import type { KindRules } from '../registry/ability-kinds.ts';
@@ -38,6 +40,7 @@ import { itemSource } from '../effects.ts';
 import type { Body, Op, Origin, SheetStatus, Shield, Stagger, Status, StatusDef } from './effect-ops.ts';
 import { resolve } from './resolve.ts';
 import { usesGates } from './uses.ts';
+import { mythicStart } from './mythic.ts';
 import { MAX_ABILITIES, MAX_STATUSES, NAME_MAX } from './fight-types.ts';
 import type { NewRow } from './fight-types.ts';
 
@@ -86,6 +89,8 @@ export type RowMonster = {
   /** Absent: the rule's for its rank and kind (`monsterXp`). */
   readonly xp?: number;
   readonly statuses: readonly { readonly key: string; readonly rounds: number | null; readonly stacks?: number }[];
+  /** A mythic's script (`Monster.script`); a mythic without one plays `plain` (`monsterScript`). */
+  readonly script?: MythicScriptId;
 };
 /** The fields of a schema 4 shadow a row reads. */
 export type RowShadow = { readonly id: string; readonly name: string; readonly rank: Rank; readonly archetype: Archetype; readonly grade: ShadowGrade; readonly hp: number };
@@ -187,7 +192,7 @@ function partyRow(h: RowHunter, id: CombatantId, holder: HunterRef, R: RowRules)
   return {
     id, name: cut(h.name), side: 'party', kind: 'hunter', origin, tier: rankIdx(h.rank), place: null,
     life: lifeAfter(h.life, { type: 'maxChanged' }, sheet.hpMax), mana: clamp(h.mana, 0, sheet.manaMax), fatigue: clamp(h.fatigue, 0, sheet.fatigueMax),
-    shield, stagger: null, channel: null, threat: null, statuses, readyAt: {}, abilities, intent: null, holder, xp: 0,
+    shield, stagger: null, channel: null, threat: null, statuses, readyAt: {}, abilities, intent: null, holder, xp: 0, mythic: null,
     ...(Object.keys(used).length ? { used } : {}),
   };
 }
@@ -229,8 +234,8 @@ export function sameRankHit(on: BarBody, R: RowRules): number {
       fatigue: 0, shield: null, stagger: null, channel: null, statuses: [], readyAt: {}, abilities: [strike], intent: null, holder: null, at: tick(0), speed: sheet.speed, tie: 0,
     };
   };
-  const u: Body = { ...standing('u', 'party', { kind: 'hunter', build }, place(0, 0)), kind: 'hunter', threat: null, xp: 0 };
-  const t: Body = { ...standing('t', 'foe', { kind: 'monster', name: 't', rank, archetype: on.archetype, monsterKind: on.kind, tweak: on.tweak }, place(1, 0)), kind: 'monster', threat: {}, xp: 0 };
+  const u: Body = { ...standing('u', 'party', { kind: 'hunter', build }, place(0, 0)), kind: 'hunter', threat: null, xp: 0, mythic: null };
+  const t: Body = { ...standing('t', 'foe', { kind: 'monster', name: 't', rank, archetype: on.archetype, monsterKind: on.kind, tweak: on.tweak }, place(1, 0)), kind: 'monster', threat: {}, xp: 0, mythic: null };
   const mean = diceOf(formulaOf(strike, R)!).map(meanOf);
   const r = resolve(strike, u, [u, t], t.id, openGrid(R.fight.grid.w, R.fight.grid.h), { dice: { [t.id]: mean }, react: { [t.id]: NO_CRIT } }, tick(0), R);
   return r.ok ? r.outcomes[0]?.dealt ?? 0 : 0;
@@ -249,22 +254,30 @@ export function staggerOf(on: BarBody, R: RowRules): Stagger | null {
  * archetype's attack first and then its own abilities, full HP and mana for its sheet, its XP, a threat table, its
  * kind's stagger bar, and its start statuses from its joining (as a hunter's), the row itself the source at its rank's tier. A start status
  * whose key `R.conditions` does not hold is left out.
+ *
+ * A mythic, while `fight.mythic.scripts` is on, plays its script (design B.3): it starts calm in its first phase
+ * (`mythicStart`), its bar that phase's share of its kind's, wearing that phase's statuses after its start statuses (one
+ * whose key a start status holds is left out). With the switch off, and on every other monster, its standing is null.
  */
 export function monsterRows(m: RowMonster, ids: readonly CombatantId[], R: RowRules & Pick<Rules, 'rankTable'> & { readonly conditions: StatusDefs }): NewRow[] {
   const now = JOINS;
   const origin: Origin = { kind: 'monster', name: cut(m.name), rank: m.rank, archetype: m.archetype, monsterKind: m.kind, tweak: tweakOfMonster(m.tweak), ...(m.type ? { type: m.type.slice(0, TYPE_MAX) } : {}), ...(m.icon ? { icon: m.icon } : {}) };
-  const tier = rankIdx(m.rank), stagger = staggerOf({ rank: m.rank, archetype: m.archetype, kind: m.kind, tweak: tweakOfMonster(m.tweak) }, R), abilities = distinct([ARCHETYPE_ATTACKS[m.archetype](R), ...m.abilities]);
+  const script = R.fight.mythic.scripts ? monsterScript(m) : null, first = script === null ? null : mythicScriptOf(script).phases[0];
+  const bar = staggerOf({ rank: m.rank, archetype: m.archetype, kind: m.kind, tweak: tweakOfMonster(m.tweak) }, R);
+  const tier = rankIdx(m.rank), stagger = bar && first ? { ...bar, max: bar.max * first.bar } : bar, abilities = distinct([ARCHETYPE_ATTACKS[m.archetype](R), ...m.abilities]);
   return ids.map((id, i) => {
     const suffix = ids.length === 1 ? '' : ` ${letter(i)}`;
-    const statuses = m.statuses.flatMap(s => {
+    const own = m.statuses.flatMap(s => {
       const def = Object.hasOwn(R.conditions, s.key) ? R.conditions[s.key] : undefined;
       return def ? [starting(s.key, def, { id, tier }, s.rounds, now, R, s.stacks)] : [];
-    }).slice(0, MAX_STATUSES);
+    });
+    const worn = (first?.worn ?? []).filter(w => !own.some(s => s.key === w.key)).map(w => starting(w.key, w.def, { id, tier }, null, now, R));
+    const statuses = [...own, ...worn].slice(0, MAX_STATUSES);
     const { sheet } = modified(origin, statuses, R);
     return {
       id, name: m.name.slice(0, NAME_MAX - suffix.length) + suffix, side: 'foe', kind: 'monster', origin, tier, place: null,
       life: { at: 'up', hp: sheet.hpMax }, mana: sheet.manaMax, fatigue: 0, shield: null, stagger, channel: null, threat: {}, statuses, readyAt: {}, abilities,
-      intent: null, holder: null, xp: monsterXp(m, R),
+      intent: null, holder: null, xp: monsterXp(m, R), mythic: mythicStart(script, now),
     };
   });
 }
@@ -288,7 +301,7 @@ export function shadowRow(s: RowShadow, owner: string, id: CombatantId, R: RowRu
   return {
     id, name: cut(s.name), side: 'party', kind: 'shadow', origin, tier: rankIdx(s.rank), place: null,
     life: s.hp >= 1 ? { at: 'up', hp: clamp(s.hp, 1, sheet.hpMax) } : { at: 'dead' }, mana: sheet.manaMax, fatigue: 0, shield: null, stagger: null, channel: null, threat: null, statuses: [],
-    readyAt: {}, abilities: distinct([ARCHETYPE_ATTACKS[s.archetype](R)]), intent: null, holder: { kind: 'shadow', hunterId: hunterId(owner), shadowId: shadowId(s.id) }, xp: 0,
+    readyAt: {}, abilities: distinct([ARCHETYPE_ATTACKS[s.archetype](R)]), intent: null, holder: { kind: 'shadow', hunterId: hunterId(owner), shadowId: shadowId(s.id) }, xp: 0, mythic: null,
   };
 }
 
@@ -313,6 +326,6 @@ export function summonRow(user: Pick<Body, 'id' | 'side' | 'tier'>, s: Summon, i
   return {
     id, name: cut(s.name), side: user.side, kind: 'summon', origin, tier: user.tier, place: null, life: { at: 'up', hp: sheet.hpMax }, mana: sheet.manaMax, fatigue: 0,
     shield: null, stagger: null, channel: null, threat: user.side === 'foe' ? {} : null, statuses, readyAt: {}, abilities: distinct([ARCHETYPE_ATTACKS[s.archetype](R)]),
-    intent: null, holder: null, xp: 0, owner: user.id, until: tick(now + Math.round(rounds * R.fight.round)),
+    intent: null, holder: null, xp: 0, mythic: null, owner: user.id, until: tick(now + Math.round(rounds * R.fight.round)),
   };
 }

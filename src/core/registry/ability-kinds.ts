@@ -17,7 +17,8 @@ import { percent, tiles } from '../combat/space.ts';
 import type { Shape, Tiles } from '../combat/space.ts';
 import { paceCost, roundsOf, tick } from '../combat/timeline.ts';
 import type { Cost, Pace, Tick } from '../combat/timeline.ts';
-import type { Ability, AbilityEffect, AbilityId, AbilityKind, Delivery, AbilityGate, AbilityEffectType, Gap, Price, RuleTicks } from '../combat/ability-types.ts';
+import { tag } from '../combat/ability-types.ts';
+import type { Ability, AbilityEffect, AbilityId, AbilityKind, Delivery, AbilityGate, AbilityEffectType, Gap, Price, RuleTicks, Tag } from '../combat/ability-types.ts';
 import { baseOf, bounded, FAMILY, scalerLine, scalersOf, scalerText, suggestScaler } from './scalers.ts';
 import type { Scaler, ScalerName } from './scalers.ts';
 
@@ -308,4 +309,23 @@ export function abilityOf(kind: AbilityKind, input: AbilityInput, R: KindRules):
     channel: ticks.channel === null ? null : { growth: ticks.channel, max: R.fight.channelMax },
     ...(input.zone ? { zone: input.zone } : {}),
   };
+}
+
+// ── what an ability is, as tags (keystones K0) ──
+/** Each kind's own tag: a trigger or an edge that names `strike` answers every strike, with no tag the GM typed. */
+export const KIND_TAG: { readonly [K in AbilityKind]: Tag } = { strike: tag('strike'), shot: tag('shot'), blast: tag('blast'), curse: tag('curse'), support: tag('support') };
+/** A blast's and a curse's: the two kinds a spell is (keystones design A.6), so "after a spell" is one trigger. */
+export const SPELL_TAG: Tag = tag('spell');
+/** A channelled ability's (its `channel` is set): "a channelled spell" names it. */
+export const CHANNEL_TAG: Tag = tag('channel');
+const SPELL_KINDS: readonly AbilityKind[] = ['blast', 'curse'];
+/**
+ * Every tag an ability answers to, the one list a trigger and an edge read: what it is (its kind, `spell` for a blast or
+ * a curse, `channel` when channelled), then the GM's own tags (`Ability.tags`) that are not among them. Worked out where
+ * it is read, never stored, so the GM's limit of `kit.tags` counts only the GM's words, and a kind changed in the maker
+ * changes its tags with it.
+ */
+export function tagsOf(a: Pick<Ability, 'kind' | 'channel' | 'tags'>): readonly Tag[] {
+  const what = [KIND_TAG[a.kind], ...(SPELL_KINDS.includes(a.kind) ? [SPELL_TAG] : []), ...(a.channel ? [CHANNEL_TAG] : [])];
+  return [...what, ...(a.tags ?? []).filter(t => !what.includes(t))];
 }

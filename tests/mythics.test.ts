@@ -9,8 +9,10 @@ import { kitGear, monsterSheet, monsterStats, pointsAt, sheetOf, split } from '.
 import { isStatusKey } from '../src/core/combat/effect-ops.ts';
 import { formulaOf } from '../src/core/registry/ability-kinds.ts';
 import { SAMPLE_WEARER } from '../src/core/registry/items.ts';
-import { MYTHICS, MYTHIC_IDS, bandOf, movesOf, mythicMove, mythicScriptOf, omensOf } from '../src/core/registry/mythics.ts';
-import type { MythicBody, MythicScriptId } from '../src/core/registry/mythics.ts';
+import { MYTHICS, MYTHIC_IDS, bandOf, movesOf, mythicScriptOf, omensOf } from '../src/core/registry/mythics.ts';
+import type { MythicScriptId } from '../src/core/registry/mythics.ts';
+import { mythicMove } from '../src/core/registry/mythic-moves.ts';
+import type { MythicBody } from '../src/core/registry/mythic-moves.ts';
 import { monsterScript, seedMonsters, statBlock, tweakOfMonster } from '../src/core/registry/monsters.ts';
 import type { MoveKey, Omen, MythicMove, MythicScript, MythicStatus, OmenKey } from '../src/core/combat/mythic-types.ts';
 

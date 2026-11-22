@@ -122,7 +122,7 @@ const bodyOf = (id: string, origin: Origin, at: ReturnType<typeof place>, side: 
   return {
     id: combatantId(id), name: id, side, kind: origin.kind === 'hunter' ? 'hunter' : 'monster', origin, tier: RANKS.indexOf(rank), stats: m.stats, sheet: m.sheet,
     place: at, life: { at: 'up', hp: m.sheet.hpMax }, mana: m.sheet.manaMax, fatigue: 0, shield: null, stagger: null, channel: null, threat: origin.kind === 'monster' ? {} : null,
-    statuses: [], readyAt: {}, abilities: [], intent: null, holder: null, at: NOW, speed: m.sheet.speed, tie: 0, xp: 0,
+    statuses: [], readyAt: {}, abilities: [], intent: null, holder: null, at: NOW, speed: m.sheet.speed, tie: 0, xp: 0, mythic: null,
   } as Body;
 };
 type Hit = { readonly worst: number; readonly by: string; readonly refused: readonly string[] };

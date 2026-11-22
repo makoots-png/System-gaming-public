@@ -1,25 +1,28 @@
 // mythic.ts: where a mythic row stands in its script, as a machine (notes-11-keystones.md, design B.3), and the pure
-// readers of what follows from it. `mythicStep` is the one writer of a row's `MythicStanding`; the table `MYTHIC_TABLE`
-// says what each event does in each state. What is not stored is read here: the gate's HP, whether it is held there,
-// whether its clock ran out, whether it is enraged, which beat comes next, which move lands, where an omen aims and
-// which answers a change met. Nothing calls it until unit MY3 (the fight's turn start, `consequences` and the gate in
-// row-life.ts) and MY4 (the landing).
+// readers of what follows from it. This module is the one writer of a row's `MythicStanding` (a lint test): `mythicStep`
+// moves it, the table `MYTHIC_TABLE` saying what each event does in each state; `mythicStart` makes a new row's and
+// `mythicJoined` moves a joining row's clock to the fight's now. What is not stored is read here: the gate's HP (which
+// row-life.ts, the one writer of a row's life, holds it at), whether it is held there, whether its clock ran out,
+// whether it is enraged, which beat comes next, which move lands, where an omen aims and which answers a change met.
+// The reducer raises its events from unit MY4.
 // A new event is a member of `MythicEvent` and its cell in every row of `MYTHIC_TABLE` (the typecheck asks), with its
 // row in tests/mythic.test.ts and its arrow in scripts/charts/mythic.ts.
 import type { Rules } from '../rules.ts';
 import { refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
 import { bandOf, mythicScriptOf } from '../registry/mythics.ts';
+import type { MythicScriptId } from '../registry/mythics.ts';
 import type { CombatantId } from './ability-types.ts';
 import type { Body } from './effect-ops.ts';
 import type { Running } from './fight-types.ts';
-import { threatOf } from './fight-view.ts';
 import type { AnswerOutcome, Beat, MoveKey, MythicMove, MythicScript, MythicStanding, Omen, OmenAim, OmenKey } from './mythic-types.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import { perceivedBy } from './sight.ts';
 import { dist, inShape, tiles } from './space.ts';
 import type { Place } from './space.ts';
 import { warded } from './standing.ts';
+import { threatOf } from './threat.ts';
+import { tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
 
 /** The rules the readers read: a round's length in fight time, which a phase's clock counts in. */
@@ -80,6 +83,16 @@ const MYTHIC_TABLE: { readonly calm: TableRow<Calm>; readonly omen: TableRow<Ome
     cancel: onward, weaken: 'weakened', land: onward, fizzle: onward, drop: onward,
   },
 };
+/**
+ * The standing a monster row of script `id` starts with: calm at the first beat of its first phase, its clock counting
+ * from `since` (the row's joining, rows.ts; the fight's `add` moves it with `mythicJoined`). Null for a row with no script.
+ */
+export const mythicStart = (id: MythicScriptId | null, since: Tick): MythicStanding | null =>
+  id === null ? null : { at: 'calm', script: id, phase: 0, beat: 0, since };
+/** Row `r` joining a fight at `now`: its phase's clock moved on by `now`, as `joined` (fight.ts) moves its statuses. */
+export function mythicJoined<R extends { readonly mythic: MythicStanding | null }>(r: R, now: Tick): R {
+  return r.mythic === null ? r : { ...r, mythic: { ...r.mythic, since: tick(r.mythic.since + now) } };
+}
 /** Every state of a standing, from the table's rows. */
 export const MYTHIC_STATES = Object.keys(MYTHIC_TABLE) as readonly MythicState[];
 /** Every type of event, from the table's columns. */
@@ -164,19 +177,19 @@ export function landingMove(s: MythicStanding): { readonly key: MoveKey; readonl
  * the body, so going out of its range makes it fizzle. `self` and `all` aim at its own tile, and so does any aim with no
  * foe to pick (the move lands on no one).
  */
-export function omenAim(aim: OmenAim, move: MythicMove, me: Body, f: Running, R: RoundRules): Place | CombatantId {
+export function omenAim(aim: OmenAim, move: MythicMove, me: Body, f: Running): Place | CombatantId {
   const foes = f.rows.filter(r => r.side !== me.side && isUp(r) && !warded(r, me.side) && perceivedBy(me.side, r, f));
-  const chosen = aim === 'self' || aim === 'all' ? undefined : picked(aim, move, me, foes, f, R);
+  const chosen = aim === 'self' || aim === 'all' ? undefined : picked(aim, move, me, foes, f);
   if (!chosen) return me.place;
   return move.kind === 'blast' ? chosen.place : chosen.id;
 }
 /** The first of `foes` with the highest `score`. */
 const best = (foes: readonly Body[], score: (b: Body) => number): Body | undefined =>
   foes.reduce<Body | undefined>((top, b) => (top === undefined || score(b) > score(top) ? b : top), undefined);
-function picked(aim: Exclude<OmenAim, 'self' | 'all'>, move: MythicMove, me: Body, foes: readonly Body[], f: Running, R: RoundRules): Body | undefined {
+function picked(aim: Exclude<OmenAim, 'self' | 'all'>, move: MythicMove, me: Body, foes: readonly Body[], f: Running): Body | undefined {
   switch (aim) {
     case 'threat': {
-      const suggest = threatOf(f, me, R)?.suggest;
+      const suggest = threatOf(f, me)?.suggest;
       return foes.find(b => b.id === suggest) ?? foes[0];
     }
     case 'weakest': return best(foes, b => -rowHp(b) / b.sheet.hpMax);

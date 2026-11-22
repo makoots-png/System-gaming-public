@@ -14,7 +14,7 @@ import { rowHp } from './row-hp.ts';
 import { asLevel, LEVELS } from './sight-levels.ts';
 import type { Level } from './sight-levels.ts';
 import type { Body, HideStart, ShareOn, SheetFormulaKey, SheetOpKey, Status, StatusDef, StatusKey, StealthEnd, StealthEnds, Tiered } from './effect-ops.ts';
-import type { Ability, CombatantId } from './ability-types.ts';
+import type { Ability, CombatantId, Tag } from './ability-types.ts';
 import type { Id } from '../ids.ts';
 
 /** The rule numbers this file reads. */
@@ -376,17 +376,17 @@ export const wardStep = (s: WardState, e: WardEvent): WardState => WARD_TABLE[s]
 /** A status that reached a die and spends a stack for it: its bearer and key. */
 export type Spent = { readonly id: CombatantId; readonly key: StatusKey };
 /**
- * The edge on `target`'s reaction d20 against `user`'s use of `a` (rule 7b): `kh` keeps the higher of two (the defender's
+ * The edge on `target`'s reaction d20 against `user`'s use of an ability whose tags are `tags` (ability-kinds.ts `tagsOf`: its kind and channel among them; rule 7b): `kh` keeps the higher of two (the defender's
  * advantage), `kl` the lower (the attacker's), null one die. The user's attack edges (only one whose tag the ability
  * has, when it names one) and the target's defend edges; an edge and its opposite cancel, and two of one kind do not
  * add. Hiding gives none: a hit from hiding is an ambush, rule 11c (the owner's ruling 3, `ambushShare`). `spent`: every
  * edge with `spend` that reached the die, cancelled or not.
  */
-export function edgeOn(a: Pick<Ability, 'tags'>, user: Pick<Body, 'id' | 'statuses'>, target: Pick<Body, 'id' | 'statuses'>): { readonly cut: 'kh' | 'kl' | null; readonly spent: readonly Spent[] } {
+export function edgeOn(tags: readonly Tag[], user: Pick<Body, 'id' | 'statuses'>, target: Pick<Body, 'id' | 'statuses'>): { readonly cut: 'kh' | 'kl' | null; readonly spent: readonly Spent[] } {
   const ways = new Set<'kh' | 'kl'>(), spent: Spent[] = [];
   const reach = (b: Pick<Body, 'id' | 'statuses'>, side: 'attack' | 'defend') => {
     for (const s of counting(b.statuses)) for (const o of s.def.ops) {
-      if (o.op !== 'edge' || o.side !== side || (side === 'attack' && o.tag !== null && !(a.tags ?? []).includes(o.tag))) continue;
+      if (o.op !== 'edge' || o.side !== side || (side === 'attack' && o.tag !== null && !tags.includes(o.tag))) continue;
       // better for its bearer: the attacker's target keeps the lower face, the defender keeps the higher
       ways.add((o.keep === 'better') === (side === 'defend') ? 'kh' : 'kl');
       if (o.spend && !spent.some(x => x.id === b.id && x.key === s.key)) spent.push({ id: b.id, key: s.key });

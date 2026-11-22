@@ -35,7 +35,7 @@ function row(name: string, side: Side, origin: Origin = side === 'party' ? HUNTE
   const hpMax = modified(origin, [], RULES).sheet.hpMax;
   return {
     id: id(name), name, side, kind: side === 'party' ? 'hunter' : 'monster', origin, tier: 0, place: null, life: { at: 'up', hp: hpMax }, mana: 10, fatigue: 0, shield: null, stagger: null,
-    channel: null, threat: side === 'foe' ? {} : null, statuses: [], readyAt: {}, abilities: [HIT, BIG], intent: null, holder: null, xp: 0,
+    channel: null, threat: side === 'foe' ? {} : null, statuses: [], readyAt: {}, abilities: [HIT, BIG], intent: null, holder: null, xp: 0, mythic: null,
   } as NewRow;
 }
 function play(...commands: Command[]): Fight {

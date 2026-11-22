@@ -635,6 +635,32 @@ test('only withThreat in src/core/combat/effect-ops.ts writes a fight row\'s thr
   expect(report(hits), 'change a row\'s threat table with withThreat(row, change) (src/core/combat/effect-ops.ts), which writes it only on a row whose kind holds one').toEqual([]);
 });
 
+test('a mythic\'s standing has one writer', async () => {
+  // A mythic row's place in its script (`Body.mythic`, notes-11-keystones.md design B.3) moves only by its machine, so no
+  // rule can skip a phase, stand a second omen or move a clock its table does not name. src/core/combat/mythic.ts is the
+  // one writer: `mythicStep` moves a standing, `mythicStart` makes a new row's (rows.ts) and `mythicJoined` moves a
+  // joining row's clock (fight.ts `joined`). Elsewhere a row's `mythic` is null or one of those two's answer. fight-parse.ts
+  // reads a stored standing field by field (shorthand), which this rule does not see.
+  const owner = 'src/core/combat/mythic.ts';
+  const assign = /[\w$)\]!]\.mythic(\.\w+)?\s*(?:[-+*/]?=(?![=>])|\?\?=|\|\|=|\+\+|--)/;
+  const built = /(?<!readonly\s+)\bat:\s*'(calm|omen|faltering)'/;
+  const put = /(?<![.\w$'"-])mythic\s*:(?!\s*(null\b|(mythicStart|mythicJoined)\())/;
+  const copy = /\{\s*\.\.\.[^,{}]+,[^{}]*(?<![.\w$'"-])mythic\s*:/;
+  const isType = /\breadonly\s+mythic\s*\??:/;
+  // A row is built and copied only in src/core (a view sends commands), and a key `mythic` elsewhere names a kind or a rarity.
+  const writes = (line: Line) => assign.test(line.text) || built.test(line.text) || copy.test(line.text)
+    || (line.file.startsWith('src/core/combat/') && put.test(line.text) && !isType.test(line.text));
+  const at = (text: string): Line => ({ file: 'src/core/combat/fight.ts', line: 0, text });
+  for (const text of ['return { ...b, mythic: next };', 'b.mythic = s;', "const s = { at: 'omen', script, phase, beat, since, omen, aim, hpAt };", 'mythic: { ...nr.mythic, since: now },']) {
+    expect(writes(at(text)), `the rule sees ${text}`).toBe(true);
+  }
+  for (const text of ['mythic: null,', 'mythic: mythicStart(script, now),', 'const g = r.mythic && gateOf(r);', "type Calm = Extract<MythicStanding, { readonly at: 'calm' }>;"]) {
+    expect(writes(at(text)), `and not ${text}`).toBe(false);
+  }
+  const hits = (await sourceLines('src')).filter(line => line.file !== owner && !isComment(line.text) && writes(line));
+  expect(report(hits), 'a mythic\'s standing changes only in src/core/combat/mythic.ts: move it with mythicStep, make a new row\'s with mythicStart, move a joining row\'s clock with mythicJoined; a row of no mythic holds `mythic: null`').toEqual([]);
+});
+
 test('only the fight\'s fudge command writes a fight\'s fudge', async () => {
   // The GM's hidden weight on the fight's dice (docs/agent-handoff/features/notes-8-fudge.md section 2) is one piece of
   // state with one writer: `fudgeStep` in src/core/combat/fudge.ts, which fight.ts calls for the `fudge` command, for a

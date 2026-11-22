@@ -164,29 +164,29 @@ describe('where an omen aims', () => {
   test('each omen aim picks its body, ties to row order', () => {
     const { f: hurt, me: m1 } = fight([body('A', 'party', place(10, 4)), body('B', 'party', place(4, 10), 30), body('C', 'party', place(16, 10), 30)]);
     // weakest: B and C each at 30 of 100, B first.
-    expect(omenAim('weakest', CURSE, m1, hurt, RULES)).toBe(combatantId('B'));
+    expect(omenAim('weakest', CURSE, m1, hurt)).toBe(combatantId('B'));
     // farthest: A 3 tiles away, B and C 8; B first. A blast aims at the tile, so stepping off it answers.
     const { f: far, me: m2 } = fight([body('A', 'party', place(10, 7)), body('B', 'party', place(10, 18)), body('C', 'party', place(18, 10))]);
-    expect(omenAim('farthest', CURSE, m2, far, RULES)).toBe(combatantId('B'));
-    expect(omenAim('farthest', TRENCH, m2, far, RULES)).toEqual(place(10, 18));
+    expect(omenAim('farthest', CURSE, m2, far)).toBe(combatantId('B'));
+    expect(omenAim('farthest', TRENCH, m2, far)).toEqual(place(10, 18));
     // threat: the table's highest; with no entry every foe ties, so the first.
     const trio = [body('A', 'party', place(10, 4)), body('B', 'party', place(4, 10)), body('C', 'party', place(16, 10))];
     const { f: hated, me: m3 } = fight(trio, { C: 5, B: 9 });
-    expect(omenAim('threat', CURSE, m3, hated, RULES)).toBe(combatantId('B'));
+    expect(omenAim('threat', CURSE, m3, hated)).toBe(combatantId('B'));
     const { f: cold, me: m4 } = fight(trio);
-    expect(omenAim('threat', CURSE, m4, cold, RULES)).toBe(combatantId('A'));
+    expect(omenAim('threat', CURSE, m4, cold)).toBe(combatantId('A'));
     // crowd: A alone; B and C two tiles apart, each one's tile catches both in a reach of 2; B first.
     const { f: crowd, me: m5 } = fight([body('A', 'party', place(2, 2)), body('B', 'party', place(15, 15)), body('C', 'party', place(17, 15))]);
-    expect(omenAim('crowd', BLAST, m5, crowd, RULES)).toEqual(place(15, 15));
+    expect(omenAim('crowd', BLAST, m5, crowd)).toEqual(place(15, 15));
     // self and all: its own tile.
-    expect(omenAim('self', BLAST, m5, crowd, RULES)).toEqual(place(10, 10));
-    expect(omenAim('all', BLAST, m5, crowd, RULES)).toEqual(place(10, 10));
+    expect(omenAim('self', BLAST, m5, crowd)).toEqual(place(10, 10));
+    expect(omenAim('all', BLAST, m5, crowd)).toEqual(place(10, 10));
   });
 
   test('with no foe up to pick, an omen aims at its own tile', () => {
     const { f, me } = fight([body('A', 'party', place(10, 4))]);
     const down: Running = { ...f, rows: f.rows.map(b => (b.id === 'A' ? { ...b, ...lifeAt('hunter', 0) } as Body : b)) };
-    expect(omenAim('weakest', CURSE, me, down, RULES)).toEqual(place(10, 10));
+    expect(omenAim('weakest', CURSE, me, down)).toEqual(place(10, 10));
   });
 });
 

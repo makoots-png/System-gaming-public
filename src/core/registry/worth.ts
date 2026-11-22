@@ -24,6 +24,7 @@ import type { SampleRules } from './ability-kinds.ts';
 import { scalerMean, scalersOf } from './scalers.ts';
 import type { Scaler } from './scalers.ts';
 import { atTier, isStacking } from '../combat/op-amount.ts';
+import { interval, paceCost } from '../combat/timeline.ts';
 import type { End, LandOp, Op, OpKind, StatusDef } from '../combat/effect-ops.ts';
 import type { Trigger } from '../combat/triggers.ts';
 import type { Ability, AbilityKind, Delivery, Price } from '../combat/ability-types.ts';
@@ -249,7 +250,7 @@ function landWorth(o: LandOp | Op, at: At, R: WorthRules): number {
   if (o.op === 'damage' || o.op === 'heal') return formulaWorth(atTier(o.amount, at.tier) as Formula, at, R) * at.landed;
   if (o.op === 'refund') return atTier(o.pct, at.tier) / 100;
   if (o.op === 'hasten') return o.share;
-  if (o.op === 'delay') return atTier(o.ticks, at.tier) / R.fight.cost.standard;
+  if (o.op === 'delay') return atTier(o.ticks, at.tier) / actionTicks(R);
   if (o.op === 'extra') return 1;
   if (o.op === 'stagger') return o.share * breakWorth(R);
   if (o.op === 'applyStatus') return statusWorth(o.def, o.stacks ?? 1, o.duration === null ? null : atTier(o.duration, at.tier) / R.fight.round, at, R);
@@ -257,10 +258,17 @@ function landWorth(o: LandOp | Op, at: At, R: WorthRules): number {
   return 0;
 }
 /**
- * What a stagger bar's break is worth (keystones A.7): the turn time it costs its monster, `staggerCost` rounds, as a
- * delay's time is weighed (its share of a standard action). A `stagger` op is its share of this.
+ * The ticks one standard action takes a body of base speed (timeline.ts `interval`): `round` ticks at today's rules. A
+ * turn's time (a delay's ticks, a break's rounds) is its share of this, never of `cost.standard`, which is the action's
+ * cost in hundredths of a standard action and not a span of time.
  */
-export const breakWorth = (R: WorthRules): number => R.fight.staggerCost * R.fight.round / R.fight.cost.standard;
+const actionTicks = (R: WorthRules): number => interval(R.fight.speedBase, paceCost('standard', R.fight), R.fight);
+/**
+ * What a stagger bar's break is worth (keystones A.7): the turn time it costs its monster, `staggerCost` rounds, as a
+ * delay's time is weighed (its share of a standard action, `actionTicks`): 1.5 SA at today's rules. A `stagger` op is its
+ * share of this.
+ */
+export const breakWorth = (R: WorthRules): number => R.fight.staggerCost * R.fight.round / actionTicks(R);
 const triggerWorth = (t: Trigger, at: At, R: WorthRules): number =>
   t.ops.reduce((n, o) => n + landWorth(o, at, R), 0) * R.fight.kit.eventRates[t.on];
 

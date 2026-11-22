@@ -4,6 +4,7 @@
 // speed `speedBase` 100. The same-rank hit is the simulation's own, from tests/models/fight-sim.ts.
 import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
+import type { Rules } from '../src/core/rules.ts';
 import { SHADOW_GRADES } from '../src/core/save.ts';
 import type { ShadowGrade } from '../src/core/save.ts';
 import type { Stats } from '../src/core/stats.ts';
@@ -24,6 +25,11 @@ import type { Rolls } from '../src/core/combat/resolve.ts';
 import { parseFight } from '../src/core/combat/fight-parse.ts';
 import { fightId, reduce } from '../src/core/combat/fight.ts';
 import type { Command, Ctx, Fight } from '../src/core/combat/fight.ts';
+import type { NewRow } from '../src/core/combat/fight-types.ts';
+import type { Body } from '../src/core/combat/effect-ops.ts';
+import { mythicStep } from '../src/core/combat/mythic.ts';
+import type { OmenKey } from '../src/core/combat/mythic-types.ts';
+import { isRefused } from '../src/core/save-step.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { ARCHETYPE_ATTACKS, ATTACK_ID, itemAbility, itemOfAbility, weaponAttack, wornAbilityId } from '../src/core/registry/abilities.ts';
 import { hunterAbilities, hunterRow, monsterRows, remoteRow, sameRankHit, shadowRow, shadowSheet, staggerOf, summonRow } from '../src/core/combat/rows.ts';
@@ -344,6 +350,67 @@ describe('a monster', () => {
     }
     const hit = simHit('C', RULES, 'caster', 'boss');
     expect(monsterRows(monster({ rank: 'C', archetype: 'caster', kind: 'boss' }), [id('m1')], R)[0]!.stagger).toEqual({ fill: 0, max: 4 * hit, hit });
+  });
+});
+
+describe('a mythic (notes-11-keystones.md, design B.3)', () => {
+  // Zaratan's words (registry/mythics.ts): on the Shore, its first phase, it wears the Shell of a Thousand Years.
+  const ON_RULES: Rules = { ...RULES, fight: { ...RULES.fight, mythic: { ...RULES.fight.mythic, scripts: true } } };
+  const ON = { ...ON_RULES, conditions: R.conditions };
+  const zaratan = (o: Partial<RowMonster> = {}) => monster({ name: 'Zaratan', rank: 'S', archetype: 'brute', kind: 'mythic', script: 'zaratan-the-island-that-wakes', ...o });
+  const angelWeighed = (f: Fight): Fight => {
+    const s = mythicStep(f.rows[1]!.mythic!, { type: 'announce', omen: 'weighed' as OmenKey, aim: f.rows[0]!.id, hpAt: rowHp(f.rows[1]!) });
+    if (isRefused(s)) throw new Error(s.why);
+    return { ...f, rows: f.rows.map((r, i) => (i === 1 ? { ...r, mythic: s } as Body : r)) };
+  };
+
+  test('a mythic row starts calm in its first phase wearing its statuses', () => {
+    const [r] = monsterRows(zaratan({ statuses: [{ key: 'regenerating', rounds: null }] }), [id('m1')], ON);
+    expect(r!.mythic).toEqual({ at: 'calm', script: 'zaratan-the-island-that-wakes', phase: 0, beat: 0, since: tick(0) });
+    expect(r!.statuses.map(s => [s.key, s.def.label, s.source, s.until])).toEqual([
+      [statusKey('regenerating'), 'Regenerating', { id: id('m1'), tier: 5 }, null],
+      [statusKey('mythic-shell'), 'Shell of a Thousand Years', { id: id('m1'), tier: 5 }, null],
+    ]);
+    const add = (rows: NewRow[]) => reduce(null, { type: 'add', fightId: fightId('f'), rows, openings: [] }, { rules: ON_RULES }).fight!.rows[0]!;
+    const off = add(monsterRows(zaratan(), [id('m1')], R));
+    expect(add([r!]).sheet.armor, 'the shell is 30 more armor').toBe(off.sheet.armor + 30);
+    expect(monsterRows(monster({ kind: 'boss' }), [id('m1')], ON)[0]!.mythic, 'a monster of another kind plays no script').toBeNull();
+    const { script: _named, ...unnamed } = zaratan();
+    expect(monsterRows(unnamed, [id('m1')], ON)[0]!.mythic, 'a mythic that names none plays plain').toMatchObject({ script: 'plain' });
+  });
+
+  test('a mythic joining a running fight counts its phase\'s clock from its joining', () => {
+    const ctx: Ctx = { rules: ON_RULES };
+    const rows = [hunterRow(hunter(), id('c1'), RULES), ...monsterRows(monster(), [id('g1')], R)];
+    const setup = reduce(null, { type: 'add', fightId: fightId('f'), rows, openings: [] }, ctx).fight;
+    const running = reduce(setup, { type: 'start', openings: rows.map((r, i) => ({ id: r.id, d20: 10, tie: i })) }, ctx).fight!;
+    expect(running.phase).toBe('running');
+    const later = { ...running, now: tick(4000) } as Fight;
+    const joined = reduce(later, { type: 'add', fightId: fightId('f'), rows: monsterRows(zaratan(), [id('m1')], ON), openings: [{ id: id('m1'), d20: 10, tie: 2 }] }, ctx).fight!;
+    expect(joined.rows.find(r => r.id === id('m1'))!.mythic?.since).toBe(tick(4000));
+  });
+
+  test('with mythic phases off a mythic row holds no standing', () => {
+    const [r] = monsterRows(zaratan(), [id('m1')], R);
+    expect([r!.mythic, r!.statuses]).toEqual([null, []]);
+    expect([hunterRow(hunter(), id('c1'), RULES).mythic, shadowRow(shadow(), 'h1', id('x1'), RULES).mythic]).toEqual([null, null]);
+  });
+
+  test('a stored mythic row reads back', () => {
+    const ctx: Ctx = { rules: ON_RULES };
+    const rows = [hunterRow(hunter(), id('c1'), RULES), ...monsterRows(monster({ name: 'Angel', rank: 'S', kind: 'mythic', script: 'angel-of-the-last-trumpet' }), [id('m1')], ON)];
+    const f = angelWeighed(reduce(null, { type: 'add', fightId: fightId('f'), rows, openings: [] }, ctx).fight!);
+    expect(f.rows[1]!.mythic).toMatchObject({ at: 'omen', omen: 'weighed', aim: id('c1') });
+    const stored = JSON.parse(JSON.stringify(f));
+    expect(parseFight(stored, RULES), 'it reads back with the switch off too: the switch makes rows, it does not read them').toEqual(f);
+    const broken = (change: (m: Record<string, unknown>) => void) => { const v = JSON.parse(JSON.stringify(f)); change(v.rows[1].mythic); return parseFight(v, RULES); };
+    expect(broken(m => { m.script = 'no-such-script'; }), 'a script the registry lacks').toBeNull();
+    expect(broken(m => { m.phase = 3; }), 'a phase past its script\'s last').toBeNull();
+    expect(broken(m => { m.omen = 'note-of-another'; }), 'an omen its script lacks').toBeNull();
+    expect(broken(m => { m.omen = 'stars'; m.at = 'faltering'; }), 'a faltering omen that cannot be weakened').toBeNull();
+    const hunterWithOne = JSON.parse(JSON.stringify(f));
+    hunterWithOne.rows[0].mythic = hunterWithOne.rows[1].mythic;
+    expect(parseFight(hunterWithOne, RULES), 'a hunter holds none').toBeNull();
   });
 });
 

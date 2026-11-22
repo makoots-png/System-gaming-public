@@ -17,7 +17,7 @@ const setRules = (p: Page, o: Record<string, unknown>) => p.evaluate(x => hunter
 async function startLocalFight(p: Page, holds = true): Promise<void> {
   await p.evaluate(holds => hunterApp.store.update((d: any) => {
     const h = d.hunters.find((x: any) => x.id === d.settings.activeHunterId) ?? d.hunters[0];
-    const blank = { tier: 0, tie: 0, xp: 0, mana: 0, fatigue: 0, statuses: [], abilities: [], readyAt: {}, threat: {}, shield: null, stagger: null, channel: null, intent: null };
+    const blank = { tier: 0, tie: 0, xp: 0, mana: 0, fatigue: 0, statuses: [], abilities: [], readyAt: {}, threat: {}, shield: null, stagger: null, channel: null, intent: null, mythic: null };
     const goblin = { ...blank, id: 'c900', name: 'Goblin', side: 'foe', kind: 'monster', at: 0, place: { x: 0, y: 0 }, holder: null, life: { at: 'up', hp: 7 },
       origin: { kind: 'monster', name: 'Monster', rank: 'E', archetype: 'skirmisher', monsterKind: 'normal', tweak: { hp: 1, stats: {}, traits: [] } } };
     const hunter = { ...blank, id: 'c901', name: h.name, side: 'party', kind: 'hunter', at: 1, place: { x: 1, y: 0 }, holder: { kind: 'local', hunterId: h.id }, life: { at: 'up', hp: 10 },

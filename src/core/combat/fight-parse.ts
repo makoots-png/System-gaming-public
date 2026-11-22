@@ -41,6 +41,8 @@ import { fightId, FORCED_FACES, LOG_CAP, LOG_LINE_MAX, MAX_ABILITIES, MAX_PENDIN
 import type { Fight, Fog, DueTurn, ForcedFace, Fudge, LogLine, Summary } from './fight-types.ts';
 import { NO_FUDGE } from './fudge.ts';
 import type { Extraction } from './extraction.ts';
+import { isMythicScriptId, mythicScriptOf } from '../registry/mythics.ts';
+import type { MythicStanding, OmenKey } from './mythic-types.ts';
 import { NO_TALLY } from './row-tally.ts';
 import type { Kill, RowTally } from './row-tally.ts';
 import { MAX_ZONE_TILES, MAX_ZONES, ZONE_NAME_MAX, zoneId } from './zones.ts';
@@ -757,16 +759,34 @@ function intentOf(v: unknown, grid: Grid): Intent | null | undefined {
   const i = isObj(v) ? v : {}, ability = idText(i.ability), aim = aimOn(i.aim, grid);
   return ability && aim ? { ability: abilityId(ability), aim, revealed: i.revealed === true } : undefined;
 }
+const MYTHIC_AT = ['calm', 'omen', 'faltering'] as const;
+/**
+ * A stored mythic standing (design B.3), or null for none; undefined when it does not read: its script is one the
+ * registry holds, its phase one of the script's, an omen standing one of the script's (a faltering one an omen that can
+ * be weakened) aimed at a row or a tile of the grid.
+ */
+function mythicOf(v: unknown, grid: Grid): MythicStanding | null | undefined {
+  if (v === null) return null;
+  const m = isObj(v) ? v : {}, at = oneOf(m.at, MYTHIC_AT, null), script = isMythicScriptId(m.script) ? m.script : null;
+  if (!at || !script) return undefined;
+  const s = mythicScriptOf(script), phase = whole(m.phase, 0, s.phases.length - 1), beat = whole(m.beat, 0, BIG), since = tickOf(m.since);
+  if (phase === null || beat === null || since === null) return undefined;
+  if (at === 'calm') return { at, script, phase, beat, since };
+  const key = typeof m.omen === 'string' && Object.hasOwn(s.omens, m.omen) ? m.omen as OmenKey : null;
+  const aim = aimOn(m.aim, grid), hpAt = whole(m.hpAt, 0, BIG);
+  if (!key || !aim || hpAt === null || (at === 'faltering' && s.omens[key]!.weak === null)) return undefined;
+  return { at, script, phase, beat, since, omen: key, aim, hpAt };
+}
 /** A stored threat table, or null for none; undefined when it does not read. */
 const threatOf = (v: unknown): ThreatTable | null | undefined => v === null ? null : idRecord<CombatantId, number>(v, MAX_ROWS, x => num(x, 0, BIG), combatantId) ?? undefined;
 /** What a row's own fields read against: the stored row, its grid and its maximum HP. */
 type OwnIn = { readonly v: Rec; readonly grid: Grid; readonly hpMax: number };
 /** The fields of another kind a kind holds as null (`HunterRow` and the rest, effect-ops.ts): each must be stored as null. */
-const NULLS = (v: Rec, keys: readonly ('holder' | 'threat' | 'stagger' | 'intent')[]): boolean => keys.every(k => v[k] === null);
+const NULLS = (v: Rec, keys: readonly ('holder' | 'threat' | 'stagger' | 'intent' | 'mythic')[]): boolean => keys.every(k => v[k] === null);
 /** The fields of another kind a kind holds absent: each must be absent from the stored row. */
 const ABSENT = (v: Rec, keys: readonly ('owner' | 'until' | 'extraction')[]): boolean => keys.every(k => v[k] === undefined);
 /** The fields a row's kind decides (effect-ops.ts `HunterRow` and the rest), one kind's at a time. */
-type OwnKey = 'kind' | 'life' | 'holder' | 'threat' | 'stagger' | 'intent' | 'xp' | 'owner' | 'until' | 'extraction';
+type OwnKey = 'kind' | 'life' | 'holder' | 'threat' | 'stagger' | 'intent' | 'xp' | 'mythic' | 'owner' | 'until' | 'extraction';
 type OwnOf = Pick<HunterRow, OwnKey> | Pick<MonsterRow, OwnKey> | Pick<ShadowRow, OwnKey> | Pick<SummonRow, OwnKey>;
 /**
  * A row's own fields, read by its kind (SMX-rules-8): each kind reads its own and requires another kind's to be null or
@@ -778,27 +798,28 @@ const OWN: { readonly [K in CombatantKind]: (o: OwnIn) => OwnOf | null } = {
   hunter: ({ v, hpMax }) => {
     const holder = holderOf(v.holder), life = parseLife(v.life, Math.max(1, hpMax));
     if (holder === undefined || holder?.kind === 'shadow' || !life || v.xp !== 0) return null;
-    if (!NULLS(v, ['threat', 'stagger', 'intent']) || !ABSENT(v, ['owner', 'until', 'extraction'])) return null;
-    return { kind: 'hunter', life, holder, threat: null, stagger: null, intent: null, xp: 0 };
+    if (!NULLS(v, ['threat', 'stagger', 'intent', 'mythic']) || !ABSENT(v, ['owner', 'until', 'extraction'])) return null;
+    return { kind: 'hunter', life, holder, threat: null, stagger: null, intent: null, xp: 0, mythic: null };
   },
   monster: ({ v, grid, hpMax }) => {
     const life = foeLifeOf(v.life, hpMax), threat = threatOf(v.threat), stagger = staggerOf(v.stagger);
     const intent = intentOf(v.intent, grid), xp = whole(v.xp, 0, BIG), extraction = v.extraction === undefined ? undefined : extractionOf(v.extraction);
-    if (!life || !threat || stagger === undefined || intent === undefined || xp === null || extraction === null) return null;
+    const mythic = mythicOf(v.mythic, grid);
+    if (!life || !threat || stagger === undefined || intent === undefined || xp === null || extraction === null || mythic === undefined) return null;
     if (!NULLS(v, ['holder']) || !ABSENT(v, ['owner', 'until'])) return null;
-    return { kind: 'monster', life, holder: null, threat, stagger, intent, xp, ...(extraction === undefined ? {} : { extraction }) };
+    return { kind: 'monster', life, holder: null, threat, stagger, intent, xp, mythic, ...(extraction === undefined ? {} : { extraction }) };
   },
   shadow: ({ v, hpMax }) => {
     const life = foeLifeOf(v.life, hpMax), read = holderOf(v.holder), holder = read === null ? null : read?.kind === 'shadow' ? read : undefined;
     if (!life || holder === undefined || v.xp !== 0) return null;
-    if (!NULLS(v, ['threat', 'stagger', 'intent']) || !ABSENT(v, ['owner', 'until', 'extraction'])) return null;
-    return { kind: 'shadow', life, holder, threat: null, stagger: null, intent: null, xp: 0 };
+    if (!NULLS(v, ['threat', 'stagger', 'intent', 'mythic']) || !ABSENT(v, ['owner', 'until', 'extraction'])) return null;
+    return { kind: 'shadow', life, holder, threat: null, stagger: null, intent: null, xp: 0, mythic: null };
   },
   summon: ({ v, hpMax }) => {
     const life = foeLifeOf(v.life, hpMax), threat = threatOf(v.threat), owner = idText(v.owner), until = tickOf(v.until);
     if (!life || threat === undefined || !owner || until === null || v.xp !== 0) return null;
-    if (!NULLS(v, ['holder', 'stagger', 'intent']) || !ABSENT(v, ['extraction'])) return null;
-    return { kind: 'summon', life, holder: null, threat, stagger: null, intent: null, xp: 0, owner: combatantId(owner), until };
+    if (!NULLS(v, ['holder', 'stagger', 'intent', 'mythic']) || !ABSENT(v, ['extraction'])) return null;
+    return { kind: 'summon', life, holder: null, threat, stagger: null, intent: null, xp: 0, mythic: null, owner: combatantId(owner), until };
   },
 };
 function rowOf(v: unknown, grid: Grid, R: Rules): Body | null {

@@ -3,10 +3,12 @@
 // heal never lifts a dead hunter; a monster's, a shadow's or a summon's row holds a `FoeLife` and moves only by
 // `FOE_TABLE` below. `rowLifeAfter` is the one function that changes a row's life: every HP change of the fight (a hit,
 // a heal, an HP price, a paid op, the GM's hand edit, a lower maximum, the `revive` command) asks it, and `refilledRow` is
-// a level-up's refill. tests/lint.test.ts keeps every other module from writing `life` on a row.
+// a level-up's refill. tests/lint.test.ts keeps every other module from writing `life` on a row. A mythic's gate is here
+// and nowhere else (notes-11-keystones.md, design B.3): no path of damage takes a mythic below the HP its phase holds.
 import { can, lifeAfter, refilled, REVIVE_HP } from '../hunter/vitals.ts';
 import type { Life, LifeEvent, LifeEventType, LifeState } from '../hunter/vitals.ts';
 import type { Body, CombatantKind, HunterRow } from './effect-ops.ts';
+import { gateOf } from './mythic.ts';
 import { rowHp } from './row-hp.ts';
 
 // ── a foe's life ──
@@ -15,7 +17,7 @@ export type FoeLifeState = (typeof FOE_LIFE_STATES)[number];
 /** A monster's, shadow's or summon's life: up with its HP (at least 1), or dead, which is defeated. */
 export type FoeLife = { readonly at: 'up'; readonly hp: number } | { readonly at: 'dead' };
 
-type FoeStep<T extends LifeEventType> = (life: FoeLife, event: Extract<LifeEvent, { type: T }>, hpMax: number) => FoeLife;
+type FoeStep<T extends LifeEventType> = (life: FoeLife, event: Extract<LifeEvent, { type: T }>, hpMax: number, floor: number) => FoeLife;
 /** For one state: what each event does there. `null` means the event does not apply, and the life stays as it is. */
 type FoeRow = { readonly [T in LifeEventType]: FoeStep<T> | null };
 
@@ -24,27 +26,36 @@ const amountOf = (n: number): number | null => (Number.isFinite(n) && Math.trunc
 /** Up at `hp`, capped at the maximum; 0 or less is dead. */
 const foeAt = (hp: number, hpMax: number): FoeLife => (hp >= 1 ? { at: 'up', hp: Math.min(hp, Math.max(1, hpMax)) } : { at: 'dead' });
 const hpIn = (life: FoeLife): number => (life.at === 'up' ? life.hp : 0);
+/**
+ * HP pushed down to `hp` lands no lower than `floor` (a mythic's gate), nor lower than it already is when it stands at or
+ * under the floor: the damage past the gate is lost and never carries into the next phase. A floor of 0 is no gate.
+ */
+const heldAt = (life: FoeLife, hp: number, floor: number): number => Math.max(hp, Math.min(floor, hpIn(life)));
 
-const damage: FoeStep<'damage'> = (life, e, max) => { const n = amountOf(e.amount); return n === null ? life : foeAt(hpIn(life) - n, max); };
+const damage: FoeStep<'damage'> = (life, e, max, floor) => { const n = amountOf(e.amount); return n === null ? life : foeAt(heldAt(life, hpIn(life) - n, floor), max); };
 const heal: FoeStep<'heal'> = (life, e, max) => { const n = amountOf(e.amount); return n === null ? life : foeAt(hpIn(life) + n, max); };
-const setHp: FoeStep<'setHp'> = (life, e, max) => (Number.isFinite(e.hp) ? foeAt(Math.trunc(e.hp), max) : life);
+const setHp: FoeStep<'setHp'> = (life, e, max, floor) => (Number.isFinite(e.hp) ? foeAt(heldAt(life, Math.trunc(e.hp), floor), max) : life);
 const revive: FoeStep<'revive'> = () => ({ at: 'up', hp: REVIVE_HP });
 const maxChanged: FoeStep<'maxChanged'> = (life, _e, max) => (life.at === 'up' && life.hp > max ? foeAt(max, max) : life);
 
 /**
  * A foe's life, the small table beside the hunter's: up takes damage, a heal, the GM's set and a lower maximum, and goes
- * dead at 0 HP; dead takes only `revive` (the GM's Revive), back up at `REVIVE_HP`.
+ * dead at 0 HP; dead takes only `revive` (the GM's Revive), back up at `REVIVE_HP`. Damage and the GM's set stop at the
+ * floor; a heal, a revive and a lower maximum do not read it.
  */
 const FOE_TABLE: { readonly [S in FoeLifeState]: FoeRow } = {
   up: { damage, heal, setHp, revive: null, maxChanged },
   dead: { damage: null, heal: null, setHp: null, revive, maxChanged: null },
 };
 
-/** The foe life after `event`, at `hpMax` maximum HP. The same life when the event does not apply. */
-export function foeLifeAfter(life: FoeLife, event: LifeEvent, hpMax: number): FoeLife {
+/**
+ * The foe life after `event`, at `hpMax` maximum HP, never pushed under `floor` (a mythic's gate, mythic.ts `gateOf`; 0
+ * for every other row). The same life when the event does not apply.
+ */
+export function foeLifeAfter(life: FoeLife, event: LifeEvent, hpMax: number, floor: number): FoeLife {
   // The table's type pairs each key with the step for that event, so the step for `event.type` takes `event`.
   const step = FOE_TABLE[life.at][event.type] as FoeStep<LifeEventType> | null;
-  return step ? step(life, event as never, hpMax) : life;
+  return step ? step(life, event as never, hpMax, floor) : life;
 }
 /** Whether `type` applies to a foe in this state. */
 export const foeCan = (life: { at: FoeLifeState }, type: LifeEventType): boolean => FOE_TABLE[life.at][type] !== null;
@@ -85,10 +96,13 @@ export function sameLife(a: Life | FoeLife, b: Life | FoeLife): boolean {
  * HP price): the row keeps the HP it had before the first damage no batch of triggers has read (`hurtFrom`), and the
  * next batch reads its fall under the low share from it (triggers.ts `fire`, `lowHp`). The GM's hand edit sets HP
  * (`setHp`, fight.ts `adjust`): a correction is not an event of the fight, so it keeps nothing.
+ *
+ * A mythic's damage and the GM's set stop at its gate (`gateOf`, the HP its phase holds; 0 in its last phase and on every
+ * other row). A row at its gate takes no damage, so what follows from the HP lost (lifesteal) gets nothing.
  */
 export function rowLifeAfter<T extends Body>(b: T, event: LifeEvent): T {
   const row: Body = b, max = row.sheet.hpMax;
-  const life = row.kind === 'hunter' ? lifeAfter(row.life, event, max) : foeLifeAfter(row.life, event, max);
+  const life = row.kind === 'hunter' ? lifeAfter(row.life, event, max) : foeLifeAfter(row.life, event, max, gateOf(row));
   if (sameLife(row.life, life)) return b;
   return event.type === 'damage' ? { ...b, life, hurtFrom: row.hurtFrom ?? rowHp(row) } : { ...b, life };
 }

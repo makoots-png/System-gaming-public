@@ -45,7 +45,7 @@ function body(id: string, origin: Origin, at: Place, side: Side, o: RowPatch<Bod
   return {
     id: combatantId(id), side, ...lifeAt(kind ?? (origin.kind === 'hunter' ? 'hunter' : 'monster'), hp ?? s.hpMax), origin, tier: 2, stats: m.stats, sheet: s, place: at,
     mana: s.manaMax, fatigue: 0, shield: null, stagger: null, channel: null, threat: origin.kind === 'monster' ? {} : null,
-    statuses: [], readyAt: {}, abilities: [], intent: null, holder: null, xp: 0, name: 'Body', at: NOW, speed: s.speed, tie: 0, ...rest,
+    statuses: [], readyAt: {}, abilities: [], intent: null, holder: null, xp: 0, mythic: null, name: 'Body', at: NOW, speed: s.speed, tie: 0, ...rest,
   } as Body;
 }
 const ability = (kind: AbilityKind, o: Partial<Ability> = {}, text?: string): Ability => {

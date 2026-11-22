@@ -20,7 +20,8 @@ import { dist } from './space.ts';
 import type { Place } from './space.ts';
 import { usable, whoIsIn } from './resolve.ts';
 import type { Aim } from './resolve.ts';
-import { spotOf, stepToward, tauntOf, threatOf } from './fight-view.ts';
+import { spotOf, stepToward, tauntOf } from './fight-view.ts';
+import { threatOf } from './threat.ts';
 
 /** What a row does on its turn: a use, a move (a dash when `dash`), End turn, or a holding channel's release. */
 export type TurnChoice =
@@ -101,7 +102,7 @@ const step = (f: Running, me: Body, t: Body): TurnChoice => {
 function monsterChoice(f: Running, me: Body, uses: readonly Ability[], foes: readonly Body[], R: Rules): TurnChoice {
   const i = me.intent, intended = i && uses.find(a => a.id === i.ability);
   if (intended && i && fits(f, me, intended, i.aim, R)) return { type: 'act', ability: intended, aim: i.aim };
-  const suggest = threatOf(f, me, R)?.suggest, target = foes.find(b => b.id === suggest) ?? nearest(me, foes)!;
+  const suggest = threatOf(f, me)?.suggest, target = foes.find(b => b.id === suggest) ?? nearest(me, foes)!;
   return strongest(f, me, uses, [target], R) ?? strongest(f, me, uses, foes, R) ?? step(f, me, target);
 }
 

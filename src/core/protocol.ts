@@ -34,8 +34,8 @@ import type { AbilityId, CombatantId } from './combat/ability-types.ts';
 import { statusKey } from './combat/effect-ops.ts';
 import type { SheetStatus, StatusDef, StatusKey } from './combat/effect-ops.ts';
 import { parseSheetStatus, parseStatusDef } from './combat/fight-parse.ts';
-import { LOG_LINE_MAX, MAX_STATUSES, NAME_MAX, fightId } from './combat/fight-types.ts';
-import type { Fight } from './combat/fight-types.ts';
+import { FORCED_FACES, LOG_LINE_MAX, MAX_STATUSES, NAME_MAX, fightId } from './combat/fight-types.ts';
+import type { Fight, ForcedFace } from './combat/fight-types.ts';
 import { tick } from './combat/timeline.ts';
 import { FOE_LIFE_STATES } from './combat/row-life.ts';
 import type { Tick } from './combat/timeline.ts';
@@ -56,6 +56,8 @@ import { ITEM_BOUNDS, RARITIES } from './registry/items.ts';
 import type { Rarity } from './registry/items.ts';
 import { parseLevel } from './hunter/level.ts';
 import type { ChapterBody } from './story/story.ts';
+import { WEIGHT_MAX } from './table-weight.ts';
+import type { HunterWeight } from './table-weight.ts';
 
 // The ids (src/core/ids.ts) are made only by their parsers, so ids of different things do not mix.
 export { deviceOf, hunterIdOf, parseDeviceId, parseEventId, parseRoomCode, parseSheetKey };
@@ -138,6 +140,8 @@ const time = (v: unknown): string => { const s = text(40)(v); return Number.isFi
 /** A coin's roll id: refused when malformed or too long, never cut (a cut id names another roll). */
 const roll = (v: unknown): RollId => need(rollId(v));
 const side = choiceOf(SIDES);
+/** A forced face of a d20: 1 or 20, anything else refused. */
+const forcedFace = (v: unknown): ForcedFace => oneOf(v, FORCED_FACES, null) ?? refuse();
 
 // ── shared shapes ──
 /** A build change the GM sends: clear the path and perks, set a path, or pick the perk of the next open tier. */
@@ -355,12 +359,18 @@ export type OfferStopPayload = Base & { to: [SheetKey, SheetKey]; offer: OfferId
  * (`CHAPTER_MAX`, 48 KiB, so the body with 24 sheet keys stays under the server's 64 KiB). Sealed.
  */
 export type ChapterPayload = Base & { to: SheetKey[] } & ChapterBody;
+/**
+ * The GM's table weight on the player's hunter of `to` (src/core/table-weight.ts `weightOf`): its total in faces, the
+ * hunters' plus its own, and its forced next d20 roll or none. A total, so a copy sets the same value; a newer one stands
+ * for an older one of its hunter. Sealed to the GM and that hunter's phone.
+ */
+export type WeighPayload = Base & { to: [SheetKey] } & HunterWeight;
 type Payloads = {
   offer: OfferPayload; offerEnd: OfferEndPayload; offerStop: OfferStopPayload;
   system: SystemPayload; award: AwardPayload; quest: QuestPayload; hp: HpPayload; vitals: VitalsPayload; spent: SpentPayload; status: StatusPayload; revive: RevivePayload;
   roll: RollPayload; questUpdate: QuestUpdatePayload; used: UsedPayload; step: StepPayload; cast: CastPayload; pass: PassPayload; chain: ChainPayload;
   coinCall: CoinCallPayload; coinLand: CoinLandPayload; arm: ArmPayload; shadow: ShadowPayload; soloRun: SoloRunPayload; soloAnswer: SoloAnswerPayload; noted: NotedPayload;
-  chapter: ChapterPayload;
+  chapter: ChapterPayload; weigh: WeighPayload;
 };
 export type EventType = keyof Payloads;
 export type PayloadOf<K extends EventType> = Payloads[K];
@@ -515,6 +525,10 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
     const q = own(o, 'quest');
     return { ...base(o), to: toList(own(o, 'to')), words: need(parseWords(own(o, 'words'))), rewards: rewards(own(o, 'rewards')), quest: q === null || q === undefined ? null : questOffer(q) };
   } },
+  weigh: { gmOnly: true, ownSheet: false, sealed: always, standsFor: p => `weigh ${p.to[0]}`, read: o => {
+    const to = toList(own(o, 'to'));
+    return { ...base(o), to: to.length === 1 ? [to[0]!] : refuse(), total: int(-WEIGHT_MAX, WEIGHT_MAX)(own(o, 'total')), force: nullOr(forcedFace)(own(o, 'force')) };
+  } },
 };
 
 type EventEntry<K extends EventType> = {
@@ -531,7 +545,7 @@ export const EVENTS: { readonly [K in EventType]: EventEntry<K> } = {
   revive: entry('revive'), roll: entry('roll'), questUpdate: entry('questUpdate'), used: entry('used'), step: entry('step'), cast: entry('cast'), pass: entry('pass'),
   chain: entry('chain'), coinCall: entry('coinCall'), coinLand: entry('coinLand'), arm: entry('arm'), shadow: entry('shadow'),
   soloRun: entry('soloRun'), soloAnswer: entry('soloAnswer'), noted: entry('noted'),
-  chapter: entry('chapter'),
+  chapter: entry('chapter'), weigh: entry('weigh'),
 };
 function entry<K extends EventType>(type: K): EventEntry<K> {
   const def: EventDef<K> = DEFS[type];

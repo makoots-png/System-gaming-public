@@ -126,3 +126,76 @@ the moves.
   event's payload, so a cell cannot read an omen field in `calm`.
 - `principle-test-behavior-not-implementation`: every expected value is worked from B.3's table and the scripts'
   words (65%, 30%, 55%, clocks of 5 and 3 rounds), not from running the readers.
+
+## MY3: the standing on the row, the gate, a mythic's row, the one-writer lint
+
+Branch `mythic-3`. A first helper moved `threatOf` and stopped; the lead ruled on its three questions (split the
+registry; the row's field required; the one line in `joined`) and a second helper built the rest. The switch
+`fight.mythic.scripts` stays off, so no table sees any of it.
+
+### What exists
+
+- `threatOf` and `taunter` in `src/core/combat/threat.ts`, under fight-view.ts, policy.ts and mythic.ts (first helper).
+- `src/core/registry/mythics.ts` imports types only: its status keys are branded by a local `statusKey` cast, as
+  `mythicScript` brands the move keys. `sampleHp`, `MythicBody`, `MythicRules` and `mythicMove` moved to
+  `src/core/registry/mythic-moves.ts`. `src/core` still has no value import cycle (checked with a walk of every file's
+  value imports after the change).
+- `Body.mythic`: `MythicStanding | null` on a monster row, `null` on a hunter's, shadow's and summon's, required on
+  every kind and said at every place a row is built (rows.ts, fight-parse.ts, every test fixture and model that builds a
+  row, `tests/e2e/customization.e2e.ts`'s stored fight, `docs/agent-handoff/features/enemies/measure.ts`).
+- mythic.ts is the standing's one writer: `mythicStep` (MY2), `mythicStart(id, since)` (a new row's: calm, phase 0,
+  beat 0; null with no script) and `mythicJoined(row, now)` (moves `since` by the fight's now). `joined` in fight.ts
+  wraps its row in `mythicJoined` (ruling 3).
+- `monsterRows`: with the switch on, a mythic's row starts with `mythicStart(monsterScript(m), 0)`, its stagger bar
+  times its first phase's `bar`, and its first phase's `worn` statuses after its start statuses (one whose key a start
+  status holds is left out; source the row at its rank's tier; until removed). With the switch off, and on every other
+  kind, `mythic: null`. `RowMonster` gains `script?`.
+- The gate: `foeLifeAfter(life, event, hpMax, floor)`; `rowLifeAfter` passes `gateOf(row)`. `damage` and `setHp` land
+  at `max(hp, min(floor, current HP))`: never under the gate, and never lower than it already is when it stands at or
+  under the gate (a status that raises max HP can lift the gate above its HP). `heal`, `revive` and `maxChanged` do not
+  read the floor. The foe-life chart passes 0.
+- `staggerOp` (land.ts): a row with a standing takes `mythic.staggerTaken` of the fill, after the `staggerOpMax` cap.
+- `fight-parse.ts` reads `mythic` by kind: a monster's through `mythicOf` (a script the registry holds, a phase of
+  it, an omen of it, a faltering omen one that can be weakened, an aim on the grid); every other kind must store null.
+  A stored fight with no `mythic` on a row no longer reads (old fights need not).
+- Tests: `tests/mythic-gate.test.ts` (B.10's six, plus "every other row's life is as it was" and the stagger op's
+  share), `tests/rows.test.ts` ("a mythic": B.10's three, plus "a mythic joining a running fight counts its phase's
+  clock from its joining"), `tests/lint.test.ts` "a mythic's standing has one writer".
+
+### Proof
+
+- `bun run test`: `Ran 6064 tests across 138 files.` (6060 pass, 0 fail).
+- With `rowLifeAfter`'s floor set to 0, five of tests/mythic-gate.test.ts's eight fail (the last phase, every other row
+  and the stagger op's share pass, as they should).
+- Browser files that write a fight's rows straight into the store or build rows: `customization`, `kits`, `makers`,
+  `maps` (`92 passed`).
+
+### Where the design did not hold, and what was built instead
+
+- **"Only `mythicStep` writes it"** cannot hold with a row maker and `joined` moving `since` (B.3 itself names
+  `joined`). The one writer is the module: the lint permits `mythic: null` and the answers of `mythicStart` and
+  `mythicJoined` outside mythic.ts, and sees any `.mythic =`, any copy of a row with a new `mythic`, and any standing
+  literal (`at: 'calm' | 'omen' | 'faltering'`). fight-parse.ts builds its standing from shorthand fields, which the
+  rule does not see (as the life and threat rules leave the row makers alone).
+- **`joined` changes two lines, not one**: a spread of the `NewRow` union with one `mythic` value does not typecheck
+  (a hunter's `mythic` is `null`), so `joined` wraps its copy in the generic `mythicJoined(row, now)`.
+- **The log line "held at the gate"** (B.3) is not written: `rowLifeAfter` returns a row, and its callers are in
+  fight.ts, resolve.ts, land.ts and fight-turn.ts. MY4 (the reducer) writes it where it reads the change.
+- **A floor under a standing HP**: B.3 says "while the life is up and above the floor"; the built rule also keeps a
+  row under its floor from going lower (no damage, a hand edit only upward), so no path ever lowers it past the gate.
+
+### Calls the owner might have made otherwise
+
+- A mythic's first-phase statuses are plain statuses that last until removed, the row their source; not `worn: true`
+  (that flag means a hunter's never-written-back status). MY4 takes them off by key at the phase change. Undo: the
+  `worn` line in `monsterRows`.
+- The stagger op's mythic share applies after `staggerOpMax`'s cap. The other way: before it. Undo: the factor's place
+  in `staggerOp`.
+- The parse does not check that a row holding a standing is a mythic by its origin. Undo: one line in `OWN.monster`.
+
+### Principles that changed a choice
+
+- `principle-type-system-discipline`: `mythic` required on every kind, `null` typed as the only value on three of them,
+  so a fixture that forgets it does not compile; the parse checks script, phase and omen against the registry once.
+- `principle-model-the-domain`: the gate is a parameter of the foe table's steps, not a clamp at each caller.
+- `principle-test-behavior-not-implementation`: every expected HP is the Angel's own share (65%, 30%) of its max HP.

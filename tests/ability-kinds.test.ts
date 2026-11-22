@@ -5,11 +5,11 @@ import { baseStats } from '../src/core/stats.ts';
 import { kitGear, sheetOf } from '../src/core/hunter/derive.ts';
 import { average, printFormula } from '../src/core/formula.ts';
 import type { Scope } from '../src/core/formula.ts';
-import { formulaOf, abilityOf, averages, checkGap, defaultTicks, describeAbility, gapOf, KINDS, paceOf, recommended, sampleBody, ticksOf } from '../src/core/registry/ability-kinds.ts';
+import { formulaOf, abilityOf, averages, checkGap, defaultTicks, describeAbility, gapOf, KINDS, paceOf, recommended, sampleBody, tagsOf, ticksOf } from '../src/core/registry/ability-kinds.ts';
 import { cost } from '../src/core/combat/timeline.ts';
 import type { Ticks } from '../src/core/registry/ability-kinds.ts';
 import { abilityId, tag } from '../src/core/combat/ability-types.ts';
-import type { AbilityEffect, AbilityKind } from '../src/core/combat/ability-types.ts';
+import type { Ability, AbilityEffect, AbilityKind } from '../src/core/combat/ability-types.ts';
 import { againstEach, scalerMean, SCALER_NAMES, suggestScaler } from '../src/core/registry/scalers.ts';
 import type { Scaler, ScalerName } from '../src/core/registry/scalers.ts';
 import { parseAbility } from '../src/core/combat/fight-parse.ts';
@@ -200,6 +200,30 @@ describe('each kind\'s defaults (design 3.3)', () => {
 
   test('ticking a channel makes a channel that grows to the rules\' cap of 5', () => {
     expect(abilityOf('blast', { id: abilityId('m'), name: 'Meteor', ticks: { channel: 'exponential' } }, RULES).channel).toEqual({ growth: 'exponential', max: 5 });
+  });
+});
+
+describe('what an ability is, as tags (keystones K0)', () => {
+  const of = (kind: AbilityKind, o: Partial<Ability> = {}): Ability => ({ ...abilityOf(kind, { id: abilityId(kind), name: kind }, RULES), ...o });
+
+  test('an ability\'s kind is one of its tags', () => {
+    for (const kind of Object.keys(KINDS) as AbilityKind[]) expect([kind, tagsOf(of(kind)).includes(tag(kind))]).toEqual([kind, true]);
+  });
+
+  test('a blast and a curse are spells; a strike, a shot and a support are not', () => {
+    const spells = (Object.keys(KINDS) as AbilityKind[]).filter(k => tagsOf(of(k)).includes(tag('spell')));
+    expect(spells).toEqual(['blast', 'curse']);
+  });
+
+  test('a channelled ability is a channel; the same ability unchannelled is not', () => {
+    const meteor = abilityOf('blast', { id: abilityId('m'), name: 'Meteor', ticks: { channel: 'linear' } }, RULES);
+    expect([tagsOf(meteor).includes(tag('channel')), tagsOf({ ...meteor, channel: null }).includes(tag('channel'))]).toEqual([true, false]);
+  });
+
+  test('the GM\'s own tags follow what the ability is, each once, and none is stored on the ability', () => {
+    const a = of('strike', { tags: [tag('sword'), tag('strike')] });
+    expect([tagsOf(a), a.tags]).toEqual([[tag('strike'), tag('sword')], [tag('sword'), tag('strike')]]);
+    expect(of('strike').tags).toBeUndefined();
   });
 });
 

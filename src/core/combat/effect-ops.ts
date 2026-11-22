@@ -19,6 +19,7 @@ import type { Clock, Tick } from './timeline.ts';
 import type { Ability, AbilityId, CombatantId, DamageType, HunterId, Tag } from './ability-types.ts';
 import type { ZoneId } from './zones.ts';
 import type { Extraction } from './extraction.ts';
+import type { MythicStanding } from './mythic-types.ts';
 import type { BearerEvent, Trigger, Trip } from './triggers.ts';
 import { stackStep } from './stacks.ts';
 import { SHEET_FORMULA_KEYS, SHEET_LEVEL_KEYS, SHEET_OP_KEYS, atTier, bareAmount, countOn, isFormulaSheetOp, isLevelKey, isStacking, isTiers, stacked } from './op-amount.ts';
@@ -465,25 +466,27 @@ type BodyCommon = Clock & {
  * - `xp`: what the party earns when a monster goes down; 0 for every other kind.
  * - `owner` and `until`: a summon's caller, whose phone commands it, and when it leaves (table 2.4).
  * - `extraction`: a fallen monster's shadow extraction (extraction.ts); absent before the first attempt.
+ * - `mythic`: a mythic monster's standing in its script (mythic-types.ts, design B.3), written only by mythic.ts; null on
+ *   every other row, and on every row while `fight.mythic.scripts` is off.
  */
 type HunterOwn = {
   readonly kind: 'hunter'; readonly life: Life; readonly holder: HunterRef | null;
-  readonly threat: null; readonly stagger: null; readonly intent: null; readonly xp: 0;
+  readonly threat: null; readonly stagger: null; readonly intent: null; readonly xp: 0; readonly mythic: null;
   readonly owner?: never; readonly until?: never; readonly extraction?: never;
 };
 type MonsterOwn = {
   readonly kind: 'monster'; readonly life: FoeLife; readonly holder: null;
   readonly threat: ThreatTable; readonly stagger: Stagger | null; readonly intent: Intent | null; readonly xp: number;
-  readonly owner?: never; readonly until?: never; readonly extraction?: Extraction;
+  readonly mythic: MythicStanding | null; readonly owner?: never; readonly until?: never; readonly extraction?: Extraction;
 };
 type ShadowOwn = {
   readonly kind: 'shadow'; readonly life: FoeLife; readonly holder: ShadowHolder | null;
-  readonly threat: null; readonly stagger: null; readonly intent: null; readonly xp: 0;
+  readonly threat: null; readonly stagger: null; readonly intent: null; readonly xp: 0; readonly mythic: null;
   readonly owner?: never; readonly until?: never; readonly extraction?: never;
 };
 type SummonOwn = {
   readonly kind: 'summon'; readonly life: FoeLife; readonly holder: null;
-  readonly threat: ThreatTable | null; readonly stagger: null; readonly intent: null; readonly xp: 0;
+  readonly threat: ThreatTable | null; readonly stagger: null; readonly intent: null; readonly xp: 0; readonly mythic: null;
   readonly owner: CombatantId; readonly until: Tick; readonly extraction?: never;
 };
 /** A hunter's row: its life is the life machine's (vitals.ts). */

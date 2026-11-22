@@ -20,9 +20,10 @@ import type { LifeState } from '../hunter/vitals.ts';
 import { sheetStatuses, statusKey } from './effect-ops.ts';
 import type { Body, Channel, CombatantKind, OpRules, SheetStatus, StatusDef } from './effect-ops.ts';
 import { usesOf } from './uses.ts';
-import { counting } from './standing.ts';
 import type { Fight, ForcedFace, StatusGrant } from './fight-types.ts';
 import { fudgeOf } from './fudge.ts';
+import { taunter, threatOf } from './threat.ts';
+import type { ThreatView } from './threat.ts';
 
 // ── the order ahead ──
 
@@ -104,7 +105,7 @@ export function cardOf(f: Fight, row: Body, R: OpRules & KindRules): Card {
     down: !isUp(row),
     channel: channelView(row, R),
     intent: intentOf(row, R),
-    threat: threatOf(f, row, R),
+    threat: threatOf(f, row),
     taunt: tauntOf(row, timeOf(f), R),
     summon: row.kind === 'summon' ? roundsLeft(row.until, timeOf(f), R) : null,
     fudge: f.phase === 'ended' ? 0 : fudgeOf(f.fudge, row),
@@ -175,27 +176,11 @@ export function intentOf(row: Body, R: KindRules): IntentView | null {
   return { name: a?.name ?? i.ability, target: i.aim, revealed, lines: revealed && a ? abilityLines(a, R) : [], area, channel: c && channelView(row, R) };
 }
 
-/**
- * A monster's threat table as its card shows it (design 4.2): each body still up with an entry, highest first, with its
- * share of the table in whole percent, and the target it suggests: its taunter while a taunt holds, else the highest
- * entry. Null for a body that keeps no table. The GM may target anyone.
- */
-export type ThreatView = { readonly suggest: CombatantId | null; readonly shares: readonly { readonly id: CombatantId; readonly share: number }[] };
-export function threatOf(f: Fight, row: Body, R: { readonly fight: { readonly round: number } }): ThreatView | null {
-  if (!row.threat) return null;
-  const up = new Set(f.rows.filter(isUp).map(r => r.id as string));
-  const entries = (Object.entries(row.threat) as [CombatantId, number][]).filter(([id, t]) => up.has(id) && t > 0).sort((a, b) => b[1] - a[1]);
-  const total = entries.reduce((n, [, t]) => n + t, 0);
-  const taunt = tauntOf(row, timeOf(f), R);
-  const suggest = taunt && up.has(taunt.by) ? taunt.by : entries[0]?.[0] ?? null;
-  return { suggest, shares: entries.map(([id, t]) => ({ id, share: Math.round(100 * t / total) })) };
-}
-
 /** A taunt on a body: who taunted it and the rounds it has left (null until removed). */
 export type TauntView = { readonly by: CombatantId; readonly left: number | null };
 export function tauntOf(row: Body, now: Tick, R: { readonly fight: { readonly round: number } }): TauntView | null {
-  const s = counting(row.statuses).find(x => x.source.id !== null && x.def.ops.some(o => o.op === 'taunt'));
-  return s && s.source.id !== null ? { by: s.source.id, left: s.until === null ? null : roundsLeft(s.until, now, R) } : null;
+  const t = taunter(row);
+  return t && { by: t.by, left: t.until === null ? null : roundsLeft(t.until, now, R) };
 }
 
 // ── a cooldown ──

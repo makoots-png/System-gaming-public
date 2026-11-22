@@ -9,7 +9,7 @@ import type { Formula } from '../src/core/formula.ts';
 import { abilityOf, defaultTicks, recommended } from '../src/core/registry/ability-kinds.ts';
 import type { AbilityInput } from '../src/core/registry/ability-kinds.ts';
 import { suggestScaler } from '../src/core/registry/scalers.ts';
-import { abilityWorth, bestScope, defWorth, delayedShare, deliveredShare, firings, gateCredit, lapseAfter, hpPriceWorth, hpRate, modeCredit, referenceBody, thresholdWorth, wornWorth, worthLine } from '../src/core/registry/worth.ts';
+import { abilityWorth, bestScope, breakWorth, defWorth, delayedShare, deliveredShare, firings, gateCredit, lapseAfter, hpPriceWorth, hpRate, modeCredit, referenceBody, thresholdWorth, wornWorth, worthLine } from '../src/core/registry/worth.ts';
 import type { Rules } from '../src/core/rules.ts';
 import { exampleSkills } from '../src/core/registry/kit-examples.ts';
 import { place } from '../src/core/combat/space.ts';
@@ -229,14 +229,21 @@ describe('an amount that grows with its holder is weighed on the build that gets
 describe('time is weighed as a share of a standard action, whoever gains or loses it', () => {
   // A standard action is the unit (1 SA); a body at parity does as much with an action as the user, so time an ally
   // gains or a foe loses is worth its share of one, as time back to the user (refund) already was.
-  const STD = RULES.fight.cost.standard, landsOnFoe = (RULES.fight.resistDc - 1) / 20;
+  // A standard action takes a body of base speed (100) `round` ticks (rules.ts: "the time a speed-100 combatant needs
+  // for one standard action"); `cost.standard` is the action's cost in hundredths, not its ticks.
+  const ACTION = RULES.fight.round, landsOnFoe = (RULES.fight.resistDc - 1) / 20;
   test('a support that brings an ally\'s next turn half an action sooner is worth 0.5, named nowhere as unweighed', () => {
     const w = abilityWorth(of('support', { effect: null, ops: [{ op: 'hasten', share: 0.5 }] }), RULES);
     expect([Number(w.worth.toFixed(6)), w.unweighed]).toEqual([0.5, []]);
   });
   test('a curse that puts a foe\'s next turn one standard action later is worth one action of the foe, at the share a curse lands', () => {
-    const w = abilityWorth(of('curse', { effect: null, ops: [{ op: 'delay', ticks: tick(STD) }] }), RULES);
+    const w = abilityWorth(of('curse', { effect: null, ops: [{ op: 'delay', ticks: tick(ACTION) }] }), RULES);
     expect([Number(w.worth.toFixed(6)), w.unweighed]).toEqual([Number(landsOnFoe.toFixed(6)), []]);
+  });
+  test('a stagger bar\'s break is worth the rounds it pushes its monster\'s turn, a round being one standard action', () => {
+    expect(breakWorth(RULES)).toBeCloseTo(RULES.fight.staggerCost, 10);
+    const w = abilityWorth(of('curse', { effect: null, ops: [{ op: 'stagger', share: 0.5 }] }), RULES);
+    expect([Number(w.worth.toFixed(6)), w.unweighed]).toEqual([Number((0.5 * RULES.fight.staggerCost * landsOnFoe).toFixed(6)), []]);
   });
   test('an extra action is worth one whole action', () => {
     const w = abilityWorth(of('support', { effect: null, aim: 'self', ops: [{ op: 'extra' }] }), RULES);

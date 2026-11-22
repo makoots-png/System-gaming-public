@@ -8,7 +8,7 @@ import type { Formula } from '../src/core/formula.ts';
 import { openGrid, place, tiles } from '../src/core/combat/space.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 import type { Tick } from '../src/core/combat/timeline.ts';
-import { abilityId, combatantId } from '../src/core/combat/ability-types.ts';
+import { abilityId, combatantId, tag } from '../src/core/combat/ability-types.ts';
 import {
   addSheetStatus, applyStatus, bareBody, cureStatus, describeStatus, dueAmount, FULL_HEAL, isControl, lasting, modified, modsOf, onSheet, opLines, removeStatus, settle,
   sheetStatuses, shielded, shieldGrown, statusKey, statusOn, statusShield, withStatuses,
@@ -26,7 +26,7 @@ import type { Stack, StackCtx } from '../src/core/combat/stacks.ts';
 import { STATUS_WALK, WALK_EVENTS as STACK_WALK } from './models/stack-events.ts';
 import { fightId, reduce } from '../src/core/combat/fight.ts';
 import type { Command, Fight, NewRow } from '../src/core/combat/fight.ts';
-import { abilityOf } from '../src/core/registry/ability-kinds.ts';
+import { abilityOf, tagsOf } from '../src/core/registry/ability-kinds.ts';
 import type { Ability, CombatantId } from '../src/core/combat/ability-types.ts';
 import { rng } from './models/fight-play.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
@@ -44,7 +44,7 @@ function body(origin: Origin = hunterOf(), o: RowPatch<Body> = {}): Body {
   return {
     id: combatantId('b'), side: 'party', ...lifeAt(kind ?? (origin.kind === 'hunter' ? 'hunter' : 'monster'), hp ?? sheet.hpMax), origin, tier: 0, stats: st, sheet,
     place: place(0, 0), mana: sheet.manaMax, fatigue: 0, shield: null, stagger: null, channel: null, threat: null,
-    statuses: [], readyAt: {}, abilities: [], intent: null, holder: null, xp: 0, name: 'Body', at: tick(1000), speed: sheet.speed, tie: 0, ...rest,
+    statuses: [], readyAt: {}, abilities: [], intent: null, holder: null, xp: 0, mythic: null, name: 'Body', at: tick(1000), speed: sheet.speed, tie: 0, ...rest,
   } as Body;
 }
 const near = (actual: readonly number[], expected: readonly number[], digits: number): void => {
@@ -767,6 +767,12 @@ describe('a status\'s own life on its bearer (SMX-rules-2)', () => {
     for (const life of STATUS_LIVES) expect(STATUS_WALK.map(e => statusStep(life, e)), life).toEqual([...EXPECTED[life]]);
   });
 
+  test('an attack edge that names a kind reaches a use of that kind and no other', () => {
+    const keen = def({ op: 'edge', side: 'attack', keep: 'better', tag: tag('strike'), spend: false });
+    const user = withStatuses(body(), [status('k', keen, 100)], tick(0), RULES), target = body(hunterOf(), { id: combatantId('f'), side: 'foe' });
+    expect(edgeOn(tagsOf({ kind: 'strike', channel: null, tags: [] }), user, target).cut).toBe('kl');
+    expect(edgeOn(tagsOf({ kind: 'blast', channel: null, tags: [] }), user, target).cut).toBeNull();
+  });
   test('an active status counts; an owed one counts for nothing on any reader, as if it were gone', () => {
     const ward = def({ op: 'invulnerable' }, { op: 'safeguard' }, { op: 'hidden', level: 1, start: 'unseen', ends: { hurt: true, revealed: true, dealt: true } }, { op: 'hold' }, { op: 'channel', mode: 'protect' }, { op: 'stat', key: 'str', amount: { kind: 'number', value: 10 } },
       { op: 'share', on: 'taken', pct: -50 }, { op: 'sheet', key: 'armor', amount: { kind: 'number', value: 20 } }, { op: 'edge', side: 'defend', keep: 'better', tag: null, spend: false },
@@ -776,7 +782,7 @@ describe('a status\'s own life on its bearer (SMX-rules-2)', () => {
     const live = withStatuses({ ...body(), channel }, [status('w', ward, 100)], tick(0), RULES), gone = withStatuses({ ...body(), channel }, [owedOn('w', ward)], tick(0), RULES);
     const foe = body(hunterOf(), { id: combatantId('f'), side: 'foe' }), poison = def({ op: 'damage', type: 'magical', amount: f('2') });
     const reads = (b: Body) => [holds(b, 'invulnerable'), holds(b, 'hidden'), wardedDamage(b, 999) < 999, held(b, tick(0)), channelBreaks(b, 0, true, tick(0)),
-      b.stats.str, b.sheet.armor, damageShare(foe, b, RULES), sheetAdds(b.statuses, b, RULES).armor, edgeOn({ tags: [] }, foe, b).cut, boostsOn(foe, b).length,
+      b.stats.str, b.sheet.armor, damageShare(foe, b, RULES), sheetAdds(b.statuses, b, RULES).armor, edgeOn([], foe, b).cut, boostsOn(foe, b).length,
       admitted(b, poison, 'foe', 1000, 0, RULES).ok];
     expect(reads(live)).toEqual([true, true, true, true, false, plain.stats.str + 10, plain.sheet.armor + 20, 0.5, 20, 'kh', 1, false]);
     expect(reads(gone)).toEqual(reads({ ...plain, channel }));
@@ -794,7 +800,7 @@ describe('a status\'s own life on its bearer (SMX-rules-2)', () => {
     const row = (name: string, side: 'party' | 'foe', statuses: Status[] = []): NewRow => {
       const kind = side === 'party' ? 'hunter' : 'monster', hp = modified(hunterOf(), [], RULES).sheet.hpMax;
       return { id: combatantId(name), name, side, ...lifeAt(kind, hp), origin: hunterOf(), tier: 0, place: null, mana: 10, fatigue: 0, shield: null, stagger: null, channel: null,
-        threat: kind === 'monster' ? {} : null, statuses, readyAt: {}, abilities: [BIG], intent: null, holder: null, xp: 0 } as NewRow;
+        threat: kind === 'monster' ? {} : null, statuses, readyAt: {}, abilities: [BIG], intent: null, holder: null, xp: 0, mythic: null } as NewRow;
     };
     const play = (...cmds: Command[]): Fight => cmds.reduce<Fight | null>((fight, cmd) => {
       const r = reduce(fight, cmd, { rules: RULES });

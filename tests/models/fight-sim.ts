@@ -422,7 +422,7 @@ function newRow(id: string, name: string, side: NewRow['side'], kind: NewRow['ki
   const sheet = modified(origin, [], R).sheet;
   return {
     id: combatantId(id), name, side, kind, origin, tier, place: null, life: { at: 'up', hp: sheet.hpMax }, mana: sheet.manaMax, fatigue: 0, shield: null,
-    stagger: null, channel: null, threat: kind === 'monster' ? {} : null, statuses: [], readyAt: {}, abilities: uses, intent: null, holder: null, xp: 0,
+    stagger: null, channel: null, threat: kind === 'monster' ? {} : null, statuses: [], readyAt: {}, abilities: uses, intent: null, holder: null, xp: 0, mythic: null,
   } as NewRow;
 }
 export const hunter = (a: Archetype, rank: Rank, id: string = a, R: Rules = RULES): SimRow => hunterOn(a, rank, id, buildOf(a, rank, R), R);

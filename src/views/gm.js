@@ -5,7 +5,10 @@ import { can, vitalChipsOf } from '../core/hunter/vitals.ts';
 import { chipDef, ofLife } from '../core/hunter/chips.ts';
 import { gmSource } from '../core/effects.ts';
 import { playerHeld } from '../core/combat/fight-save.ts';
-import { parseSheetKey } from '../core/ids.ts';
+import { parseSheetKey, sheetKeyOf } from '../core/ids.ts';
+import { oneOf } from '../core/one-of.ts';
+import { standsFor } from '../core/protocol.ts';
+import { weighed, weighsFor, weightOf, weightOn, weightStep } from '../core/table-weight.ts';
 import { cheatSheet } from './rulesref.js';
 import { bundleMaker } from './reward-editor.js';
 import { UNFINISHED_ROWS, isEmptyReward, newRewards, rewardLines } from '../core/rewards.ts';
@@ -197,6 +200,13 @@ export function register(app) {
 .gm-uses-n{min-width:26px;padding:1px 8px;border-radius:13px;background:var(--gold);color:#000;font-weight:700}
 .gm-day{font-family:var(--font-display);font-weight:700;font-size:28px;color:var(--ice);text-shadow:0 0 14px rgba(77,216,255,.6)}
 .gm-room{margin:0 0 12px}.gm-room:empty{display:none}
+.gm-wtable{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin:0 0 12px}
+.gm-weight{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-top:8px}
+.gm-wstep{display:flex;flex-wrap:nowrap;align-items:center;gap:6px}.gm-wstep b{min-width:2.2em;text-align:center}
+.gm-wstep button{min-width:44px;min-height:44px;padding:0}
+.gm-wnext{display:flex;flex-wrap:nowrap;align-items:center;gap:6px}.gm-wnext .seg{margin:0}.gm-wnext .seg button{min-height:44px;min-width:44px}
+.gm-wline{display:flex;gap:10px;font-size:13px;color:var(--gold);margin:4px 0 0}
+.gm-wdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--gold);box-shadow:0 0 6px rgba(255,201,77,.7);margin-left:4px}
 .gm-rm-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px}
 .gm-rm-code{display:flex;gap:.7em;font-family:var(--font-mono);font-size:24px;letter-spacing:.15em;color:var(--gold);line-height:1.1}
 .gm-rm-st{font-size:13px;color:var(--cyan-dim);white-space:nowrap}.gm-rm-st[data-conn=reconnecting]{color:#ffb02e}
@@ -222,7 +232,7 @@ export function register(app) {
   // a condition carries its def (a SheetStatus): its label is the one the hunter's own sheet shows
   const condLabel = c => String(c.def.label).slice(0, 40);
   const cardHtml = (h, remote, key) => {
-    const v = vitalsOf(h), ft = clamp(num(h.fatigue), 0, v.fatigueMax);
+    const v = vitalsOf(h), ft = clamp(num(h.fatigue), 0, v.fatigueMax), wkey = remote ? key : sheetKeyOf(S().settings.deviceId, h.id);
     const rank = RANKS.includes(h.rank) ? h.rank : 'E';
     // the vitals' chips; the penalty's chip is `pen` below, with its days. While this phone's fight holds the hunter its row
     // holds the life (row-life.ts), so the chips and the life's button read the row's, as the combat card does
@@ -246,7 +256,7 @@ export function register(app) {
       <h3>${ui.rankBadge(rank)}${A().identity.badge(h, 'sm')}<span>${esc(h.name)}</span></h3>
       <div class="tagline">Lv ${esc(int(h.level) || 1)}${h.job ? ' · ' + esc(h.job) : ''}${path ? ` · <span data-gmpath>${esc(path)}</span>` : ''}${remote ? ' · remote' : ''}</div>
       ${bar('hp', 'HP', v.hp, v.hpMax)}${bar('mana', 'Mana', v.mana, v.manaMax)}${bar('ft', 'Fatigue', ft, v.fatigueMax)}
-      <div class="gm-chips">${pen}${activeChip}${dailyChip}${streak}${cond}</div>
+      <div class="gm-chips">${pen}${activeChip}${dailyChip}${streak}${cond}</div>${weightCard(h.name, wkey)}
       ${h.chronicle ? `<button type="button" class="gm-chron" data-gchron aria-label="${esc(CHRONICLE_WORDS.title)} of ${esc(h.name)}">${esc(boardLine(h.chronicle))}</button>` : ''}
       <div class="gm-hp" role="group" aria-label="Quick HP for ${esc(h.name)}">
         <button type="button" data-hp="-5" aria-label="Damage 5 to ${esc(h.name)}" title="Damage 5 to ${esc(h.name)}">−5</button><button type="button" data-hp="-1" aria-label="Damage 1 to ${esc(h.name)}" title="Damage 1 to ${esc(h.name)}">−1</button>
@@ -257,6 +267,45 @@ export function register(app) {
         <button type="button" class="danger" data-gmdmg aria-label="Damage ${esc(h.name)}">Damage</button><button type="button" data-gmheal aria-label="Heal ${esc(h.name)}">Heal</button></div>
     </article>`;
   };
+  // ── the table weight (core/table-weight.ts): the GM's hidden weight on the hunters' dice outside a fight ──
+  /** The sheet keys of the hunters at the table: this phone's, made from its device, then the players' in the room. */
+  const tableKeys = () => S().hunters.map(h => sheetKeyOf(S().settings.deviceId, h.id)).concat(remotes().map(r => r.key));
+  const signed = n => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '0');
+  /** A stepper of the table weight: `attrs` names what it sets, each tap sets the value it shows plus or minus one. */
+  const weightStepper = (label, n, attrs, name) => `<span class="gm-wstep"><span class="lbl">${esc(label)}</span>`
+    + `<button type="button" ${attrs} data-weigh-to="${n - 1}" aria-label="Lower the weight on ${esc(name)}">−</button><b>${signed(n)}</b>`
+    + `<button type="button" ${attrs} data-weigh-to="${n + 1}" aria-label="Raise the weight on ${esc(name)}">+</button></span>`;
+  /** The Party board's line for every hunter's weight. */
+  const weightTable = () => `<span class="lbl">Dice weight</span>${weightStepper('Hunters', S().tableWeight.hunters, 'data-weigh-scope="hunters"', 'the hunters\' dice')}`;
+  /**
+   * A card's weight: the line that says what its hunter's dice read while any is on, the hunters' and its own added
+   * ("Weight +2", "Next roll 20"), then the stepper of its own and its Next roll choice.
+   */
+  function weightCard(name, wkey) {
+    const tw = S().tableWeight, w = weightOf(tw, wkey), face = [[20, '20'], [1, '1'], [null, 'Off']];
+    const line = w.total !== 0 || w.force !== null ? `<div class="gm-wline" data-weightline>${w.total !== 0 ? `<b>Weight ${signed(w.total)}</b>` : ''}${w.force !== null ? `<b>Next roll ${w.force}</b>` : ''}</div>` : '';
+    return `${line}<div class="gm-weight" role="group" aria-label="Weight on ${esc(name)}'s dice">${weightStepper('Own', tw.own[wkey] ?? 0, `data-weigh-scope="own" data-weigh-key="${esc(wkey)}"`, `${name}'s dice`)}`
+      + `<span class="gm-wnext"><span class="lbl">Next roll</span><span class="seg" role="group" aria-label="Next roll of ${esc(name)}">${face.map(([f, l]) =>
+        `<button type="button" data-weigh-force="${esc(wkey)}" data-face="${f ?? ''}" aria-pressed="${w.force === f}">${l}</button>`).join('')}</span></span></div>`;
+  }
+  /** The Party board's heading carries the gold dot while a hunter at the table has a weight or a forced roll. */
+  function paintWeightDot() {
+    const tog = root.querySelector('[data-tog="party"]'), on = weightOn(S().tableWeight, tableKeys()), dot = tog.querySelector('.gm-wdot');
+    if (on === !!dot) return;
+    if (on) { tog.insertAdjacentHTML('beforeend', '<i class="gm-wdot" aria-hidden="true"></i>'); tog.setAttribute('aria-label', 'Party board, weight on'); }
+    else { dot.remove(); tog.removeAttribute('aria-label'); }
+  }
+  /**
+   * A tap on the table weight: `e` on the GM's save, and a `weigh` to each player's hunter in the room whose weight it
+   * changes (`weighsFor`), each under its hunter's key so a newer one takes the place of one still waiting, in one write.
+   * The board says so when they wait for the room.
+   */
+  function weigh(e) {
+    const tw = S().tableWeight, keys = remotes().map(r => r.key);
+    const events = weighsFor(tw, weightStep(tw, e), keys).flatMap(body => { const ev = A().sync.event('weigh', body); return ev ? [{ key: standsFor(ev), event: ev }] : []; });
+    if (gmWrite('gm-weight', s => weighed(s, e), events, []) && events.length && !goesNow()) say('#gm-board-msg', 'The weight reaches the players\' phones when the room answers.');
+  }
+
   // the GM tab's room strip: state at a glance; the Room view (#/room) has the QR, link and the player list
   const MARK = { live: '● live', connecting: '○ connecting', reconnecting: '! reconnecting' };
   function renderRoom() {
@@ -279,6 +328,9 @@ export function register(app) {
   }
   function renderBoard() {
     renderRoom();
+    paintWeightDot();
+    const wt = $('#gm-weight'), wsig = weightTable();
+    if (wt.dataset.sig !== wsig) { wt.dataset.sig = wsig; wt.innerHTML = wsig; }
     const s = S(), rs = remotes();
     const cards = s.hunters.map(h => cardHtml(h, false)).concat(rs.map(r => cardHtml(r.data, true, r.key)));
     const html = cards.join('') || '<p class="empty">No hunters yet.</p>';
@@ -702,7 +754,7 @@ export function register(app) {
         section('cheat', 'GM cheat-sheet', `
           <div class="gm-row"><button type="button" class="primary" id="gm-s-go">Start session</button></div>
           <div class="gm-msg" id="gm-s-msg" role="status"></div><div id="gm-cheat"></div>`),
-        section('party', 'Party board', `<div class="gm-room" id="gm-room"></div><div class="gm-cards" id="gm-board" aria-live="polite"></div><div class="gm-msg" id="gm-board-msg" role="status"></div>`),
+        section('party', 'Party board', `<div class="gm-room" id="gm-room"></div><div class="gm-wtable" id="gm-weight" role="group" aria-label="Dice weight"></div><div class="gm-cards" id="gm-board" aria-live="polite"></div><div class="gm-msg" id="gm-board-msg" role="status"></div>`),
         section('trade', 'Trades and stash', '<div id="gm-trade"></div>', false, true),
         section('stories', 'Stories', '<div id="gm-stories"></div>', false, true),
         section('award', 'Award', `
@@ -815,6 +867,17 @@ export function register(app) {
         }
         if (t.hasAttribute('data-gmdmg') || t.hasAttribute('data-gmheal')) { typedHp(t.closest('[data-hid]'), t.hasAttribute('data-gmheal'), false); return; }
         if (t.dataset.make) { make(t.dataset.make); return; }
+        if (t.dataset.weighScope) {
+          const n = Number(t.dataset.weighTo), k = parseSheetKey(t.dataset.weighKey);
+          if (Number.isInteger(n) && t.dataset.weighScope === 'hunters') weigh({ kind: 'hunters', n });
+          else if (Number.isInteger(n) && k) weigh({ kind: 'own', key: k, n });
+          return;
+        }
+        if (t.dataset.weighForce !== undefined) {
+          const k = parseSheetKey(t.dataset.weighForce), face = oneOf(t.dataset.face, ['20', '1', ''], '');
+          if (k) weigh({ kind: 'force', key: k, face: face === '' ? null : /** @type {20 | 1} */ (Number(face)) });
+          return;
+        }
         if (t.dataset.tog) {
           open[t.dataset.tog] = !(open[t.dataset.tog] ?? false); applyOpen();
           // folding Award puts the loot it holds off, as Later: the form is emptied and the loot waits
@@ -886,4 +949,11 @@ export function register(app) {
   setInterval(() => { if (root && root.isConnected && !root.closest('[hidden]') && document.visibilityState === 'visible') renderRoom(); }, 5000); // presence ages
   app.on('sync:status', () => { if (root && root.isConnected && !root.closest('[hidden]')) renderRoom(); });
   app.on('sync:sheets', () => { if (root && root.isConnected && !root.closest('[hidden]')) { renderBoard(); renderTargets(); } });
+  // a player's roll reached the Table feed: a d20 roll spends the force the GM set on that hunter's next roll (table-weight.ts)
+  app.on('sync:event', ({ event }) => {
+    if (event.type !== 'roll' || app.seat() !== 'gm') return;
+    /** @type {import('../core/table-weight.ts').WeightEvent} */
+    const e = { kind: 'rolled', key: event.payload.by, expr: event.payload.expr }, tw = S().tableWeight;
+    if (weightStep(tw, e) !== tw) ui.wrote('GM', store.apply('gm-weight', s => weighed(s, e)));
+  });
 }

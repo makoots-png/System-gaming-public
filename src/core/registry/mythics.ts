@@ -1,32 +1,23 @@
 // mythics.ts: every mythic's script, one row of `MYTHICS` each (notes-11-keystones.md, design B.6), and the pure readers
-// of a script that need no fight: a phase's band of HP (`bandOf`), which of its acts a monster lacks (`scriptFits`) and
-// an omen's move as an ability (`mythicMove`). A mythic monster names its script (`Monster.script`, monsters.ts); one
-// that names none plays `plain`. Nothing here is read by a fight until unit MY3, and `RULES.fight.mythic.scripts` is
-// off until MY5.
+// of a script that need no fight: a phase's band of HP (`bandOf`) and which of its acts a monster lacks (`scriptFits`).
+// It imports types only, so any module of a fight may read it (row-life.ts reads a gate, fight-parse.ts a stored
+// standing); an omen's move as an ability is registry/mythic-moves.ts. A mythic monster names its script
+// (`Monster.script`, monsters.ts); one that names none plays `plain`. `RULES.fight.mythic.scripts` is off until MY5.
 // To add a mythic: a row of `MYTHICS` (its key is its id), its seed's `script` naming the key, and one test in
 // tests/mythics.test.ts that states its shape from its own words. Every other check loops over `MYTHICS`.
-import type { Rank } from '../rules.ts';
-import { average } from '../formula.ts';
-import type { Formula } from '../formula.ts';
-import { kitGear, monsterSheet, monsterStats, pointsAt, sheetOf, split } from '../hunter/derive.ts';
-import type { Archetype, DeriveRules, MonsterKind, Tweak } from '../hunter/derive.ts';
-import { abilityId } from '../combat/ability-types.ts';
-import type { Ability, AbilityEffect } from '../combat/ability-types.ts';
-import { statusKey } from '../combat/effect-ops.ts';
-import type { UseOp } from '../combat/effect-ops.ts';
-import { GRID_SIDE, percent, tiles } from '../combat/space.ts';
-import type { Shape } from '../combat/space.ts';
-import { paceCost, tick } from '../combat/timeline.ts';
+import type { StatusKey } from '../combat/effect-ops.ts';
 import type { GatePhase, MoveKey, MythicMove, MythicScript, MythicStatus, Omen, OmenKey } from '../combat/mythic-types.ts';
-import { abilityOf, defaultTicks, kindDefaults, recommended } from './ability-kinds.ts';
-import type { MonsterRules } from './abilities.ts';
-import { SAMPLE_WEARER } from './items.ts';
 
 /**
  * A script as written, its move and omen keys plain words the compiler checks against each other, as the registry
  * stores it: the one place the keys become `MoveKey` and `OmenKey`.
  */
 const mythicScript = <M extends string, O extends string>(s: MythicScript<M, O>): MythicScript => s as unknown as MythicScript;
+/**
+ * A phase's or a move's status key, branded here as `mythicScript` brands the move keys, so this data module imports no
+ * value and sits under every module of a fight that reads it (combat/row-life.ts reads a gate through it).
+ */
+const statusKey = (s: string): StatusKey => s as StatusKey;
 /** A normal turn of a rotation. */
 const act = { kind: 'act' } as const;
 /** A rotation's beat that announces omen `o`. */
@@ -227,57 +218,4 @@ export function scriptFits(s: MythicScript, monster: { readonly abilities: reado
   const held = new Set(monster.abilities.map(a => a.name));
   const named = s.phases.flatMap(p => (p.acts === 'every' ? [] : p.acts));
   return [...new Set(named)].filter(n => !held.has(n));
-}
-
-/**
- * The max HP of the sample hunter (the item maker's `SAMPLE_WEARER` build, in its kit) at the first level of `rank`:
- * what a move's `hits` is a share of, at rank S.
- */
-export function sampleHp(rank: Rank, R: DeriveRules): number {
-  const level = R.rankLevels[rank], stats = split(SAMPLE_WEARER.main, SAMPLE_WEARER.second, pointsAt(level, R), R);
-  return sheetOf({ stats, level, gear: kitGear(SAMPLE_WEARER.kit, R), perks: {} }, R).hpMax;
-}
-
-/** The body a move is sized on: the mythic that lands it, as its rank, archetype, kind and tweak make it. */
-export type MythicBody = { readonly rank: Rank; readonly archetype: Archetype; readonly kind: MonsterKind; readonly tweak: Tweak };
-/** The rules a move reads: its kind's numbers, the built-in statuses it applies, and the mythic's sheet. */
-export type MythicRules = MonsterRules & DeriveRules;
-/**
- * The reach of a `field` move: the farthest apart two tiles of the largest map are (space.ts `dist` on a side of
- * `GRID_SIDE`'s most), so it covers every tile from wherever the mythic stands.
- */
-const FIELD_REACH = tiles(GRID_SIDE[1] + Math.floor(GRID_SIDE[1] / 2));
-/** Three significant figures: a move's factor as a GM reads it in its formula, within half a percent of the rule's. */
-const FIGURES = 3;
-
-/**
- * The move under key `key` as the ability `body` lands it (design B.3, "Why `hits` and not a formula"): its kind's
- * recommended formula for its damage type, times `hits × sampleHp(S) / kindHit`, where `kindHit` is that formula's mean
- * on `body`; so at mean dice it deals `hits` of the sample S hunter's max HP before armor and resist. Its id is
- * `mythic-<key>`. Its time is `mythic.turnPace` (the landing takes the mythic's turn); it costs no fatigue or mana and
- * has no cooldown, since the omen already said when it comes. It never lands on its own side. A `sure` move cannot be
- * avoided; any other is dodged or resisted as its kind is. Its `self` status is the landing's, not the ability's (MY4).
- */
-export function mythicMove(key: MoveKey, move: MythicMove, body: MythicBody, R: MythicRules): Ability {
-  const k = kindDefaults(move.kind, R), own = recommended(move.kind, defaultTicks(move.kind, move.type), R).formula;
-  const self = { stats: monsterStats(body.rank, body.archetype, R, body.tweak), sheet: monsterSheet(body.rank, body.archetype, body.kind, R, [], body.tweak) };
-  const kindHit = average(own, { user: self, target: self, charge: 0 });
-  const factor = Number((move.hits * sampleHp('S', R) / kindHit).toPrecision(FIGURES));
-  const formula: Formula = { kind: 'binary', op: '*', left: { kind: 'number', value: factor }, right: own };
-  const effect: AbilityEffect | null = move.hits > 0 ? { type: move.type, by: 'hand', formula } : null;
-  const ops: UseOp[] = move.applies
-    ? [{ op: 'applyStatus', key: statusKey(move.applies.status), def: R.conditions[move.applies.status], duration: tick(move.applies.rounds * R.fight.round) }]
-    : [];
-  const n = R.fight.abilityKinds.blast;
-  const shape: Shape = move.kind === 'shot' ? k.shape
-    : move.kind !== 'blast' ? { kind: 'touch', reach: tiles(move.range) }
-    : move.reach === 'field' ? { kind: 'radius', radius: FIELD_REACH, ring: null }
-    : { kind: 'radius', radius: tiles(move.reach), ring: { outer: tiles(move.reach + n.ring - n.radius), share: percent(R.fight.ringShare * 100) } };
-  const zone = move.leaves && { name: move.leaves.name, duration: tick(move.leaves.rounds * R.fight.round), ops: R.conditions[move.leaves.status].ops, endsWithOwner: false, around: null, grow: null };
-  return abilityOf(move.kind, {
-    id: abilityId(`mythic-${key}`), name: move.name, effect, ops, shape, range: tiles(move.range),
-    delivery: move.sure ? { kind: 'sure' } : k.delivery, foesOnly: true,
-    cost: { fatigue: 0, mana: 0, time: paceCost(R.fight.mythic.turnPace, R.fight), cooldown: tick(0) },
-    ...(zone ? { zone } : {}),
-  }, R);
 }

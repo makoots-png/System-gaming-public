@@ -120,11 +120,12 @@ export function barFilled(target: Body, fill: number, now: Tick, R: OpRules): { 
 /**
  * A `stagger` op on `t` (keystones A.7), one rule for a use's op (resolve.ts) and a land op (`landOne`): `share` of the
  * bar's max times the bar's rate (`barRate`), held at `kit.staggerOpMax` of the bar, so no one op breaks a bar alone;
- * then the bar fills as a hit's does (`barFilled`). A share is no hit, so a weak hit's weight does not reach it.
+ * a mythic playing its script takes `mythic.staggerTaken` of that (so a stagger answer to an omen needs the party's hits
+ * too); then the bar fills as a hit's does (`barFilled`). A share is no hit, so a weak hit's weight does not reach it.
  */
 export function staggerOp(t: Body, share: number, now: Tick, R: OpRules): { target: Body; fill: number; staggered: boolean } {
   if (t.kind !== 'monster' || !t.stagger) return { target: t, fill: 0, staggered: false };
-  const fill = Math.min(R.fight.kit.staggerOpMax, share * barRate(t)) * t.stagger.max;
+  const fill = Math.min(R.fight.kit.staggerOpMax, share * barRate(t)) * t.stagger.max * (t.mythic ? R.fight.mythic.staggerTaken : 1);
   return { ...barFilled(t, fill, now, R), fill };
 }
 /**

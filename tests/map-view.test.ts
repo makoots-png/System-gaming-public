@@ -366,7 +366,7 @@ describe('tokens', () => {
     const row = (name: string, side: Side, hp: number): NewRow => ({
       id: id(name), name, side, ...lifeAt(side === 'party' ? 'hunter' : 'monster', hp), origin, tier: 0, place: null, mana: 0, fatigue: 0, shield: null, stagger: null,
       channel: null, threat: side === 'foe' ? {} : null, statuses: [], readyAt: {}, abilities: [STRIKE], intent: null,
-      holder: side === 'party' ? { kind: 'local', hunterId: hunterId(name) } : null, xp: 0,
+      holder: side === 'party' ? { kind: 'local', hunterId: hunterId(name) } : null, xp: 0, mythic: null,
     } as NewRow);
     const f = reduce(null, { type: 'add', fightId: fightId('f'), rows: [row('A', 'party', hpMax / 2), row('M', 'foe', hpMax / 2)], openings: [] }, { rules: RULES }).fight as Fight;
     const [a, m] = fightBodies(f, RULES, b => b.id === 'A', EVERYTHING);
@@ -380,7 +380,7 @@ describe('tokens', () => {
     const row = (name: string, side: Side, origin: Origin, x: number): NewRow => ({
       id: id(name), name, side, ...lifeAt(side === 'party' ? 'hunter' : 'monster', 20), origin, tier: 0, place: place(x, 0), mana: 0, fatigue: 0, shield: null, stagger: null,
       channel: null, threat: side === 'foe' ? {} : null, statuses: [], readyAt: {}, abilities: [STRIKE], intent: null,
-      holder: side === 'party' ? { kind: 'remote', remote: `d-1:${name}` } : null, xp: 0,
+      holder: side === 'party' ? { kind: 'remote', remote: `d-1:${name}` } : null, xp: 0, mythic: null,
     } as NewRow);
     /** Brakk wears a crown, Mira picked no emblem; a pack of two Beasts and a boss its GM gave a raven. */
     const f = reduce(null, { type: 'add', fightId: fightId('f'), rows: [
@@ -482,7 +482,7 @@ describe('seen through one foe\'s eyes (notes-7-stealth.md section 6)', () => {
   const row = (name: string, side: Side, x: number, o: { statuses?: Status[]; hp?: number } = {}): NewRow => ({
     id: id(name), name, side, ...lifeAt(side === 'party' ? 'hunter' : 'monster', o.hp ?? 20), origin, tier: 0, place: place(x, 0), mana: 0, fatigue: 0, shield: null, stagger: null,
     channel: null, threat: side === 'foe' ? {} : null, statuses: o.statuses ?? [], readyAt: {}, abilities: [STRIKE], intent: null,
-    holder: side === 'party' ? { kind: 'local', hunterId: hunterId(name) } : null, xp: 0,
+    holder: side === 'party' ? { kind: 'local', hunterId: hunterId(name) } : null, xp: 0, mythic: null,
   } as NewRow);
   const grid: Grid = { w: 10, h: 1, tiles: [...'..#.......'].map(c => (c === '#' ? 'wall' : 'floor')) };
   const room = (goblinHp = 20): Fight => reduce(null, {

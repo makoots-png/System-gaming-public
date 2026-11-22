@@ -13,6 +13,7 @@ import { isStacking } from './op-amount.ts';
 import { stackStep } from './stacks.ts';
 import { counting, harmful } from './standing.ts';
 import type { Ability, CombatantId, Outcome, Tag } from './ability-types.ts';
+import { tagsOf } from '../registry/ability-kinds.ts';
 import { alive, landOps, landThreshold, reached } from './land.ts';
 import type { Gained } from './land.ts';
 import { refunded, tick } from './timeline.ts';
@@ -136,10 +137,11 @@ const imposes = (user: Body | undefined, target: Body | undefined, key: StatusKe
  * hit, the target is struck; a crit adds a crit dealt and taken; a target taken to 0 is the user's kill; a target out of
  * the shape or that resisted avoided the use; each status the use put on is gained, and imposed by the user when the
  * target is a foe and the status harmful; each a cure took whole has ended (from the rows `before` and `after` the use).
- * Last, the use itself, when the ability has tags. A fall under the low share is the batch's to read (`fire`).
+ * Last, the use itself. Each event carries the ability's tags as `tagsOf` reads them: its kind, `spell`, `channel` and
+ * the GM's own. A fall under the low share is the batch's to read (`fire`).
  */
-export function eventsOf(a: Pick<Ability, 'ops' | 'tags'>, by: CombatantId, outcomes: readonly Outcome[], before: readonly Body[], after: readonly Body[]): Raised[] {
-  const tags = a.tags ?? [], out: Raised[] = [];
+export function eventsOf(a: Pick<Ability, 'ops' | 'kind' | 'channel' | 'tags'>, by: CombatantId, outcomes: readonly Outcome[], before: readonly Body[], after: readonly Body[]): Raised[] {
+  const tags = tagsOf(a), out: Raised[] = [];
   const rowIn = (rows: readonly Body[], id: CombatantId): Body | undefined => rows.find(r => r.id === id);
   const held = (rows: readonly Body[], id: CombatantId, key: StatusKey): boolean => rows.some(r => r.id === id && r.statuses.some(s => s.key === key));
   const user = rowIn(after, by);
@@ -158,7 +160,7 @@ export function eventsOf(a: Pick<Ability, 'ops' | 'tags'>, by: CombatantId, outc
     for (const op of a.ops) if (op.op === 'cureStatus' && held(before, o.target, op.key) && !held(after, o.target, op.key)) theirs.push(raised(o.target, 'statusEnded', by, tags, op.key));
     out.push(...mine, ...theirs);
   }
-  if (tags.length) out.push(raised(by, 'used', null, tags));
+  out.push(raised(by, 'used', null, tags));
   return out;
 }
 

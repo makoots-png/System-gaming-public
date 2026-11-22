@@ -37,6 +37,7 @@ import { NAME_MAX } from '../src/core/combat/fight-types.ts';
 import { BURN, BURNING, EID, END, KEY, OFFER, OTHER, POTION, SOURCE, VALID, WOLF } from './fixtures/payloads.ts';
 import { worstBody, worstChapter } from './fixtures/worst-chapter.ts';
 import { CHAPTER_MAX, chapterSize } from '../src/core/story/story.ts';
+import { WEIGHT_MAX } from '../src/core/table-weight.ts';
 
 type Raw = Record<string, any>;
 
@@ -110,12 +111,12 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
 
 describe('every event type', () => {
   test('the table has an entry for each room message, and for nothing else', () => {
-    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'cast', 'chain', 'chapter', 'coinCall', 'coinLand', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'revive', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'status', 'step', 'system', 'used', 'vitals']);
+    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'cast', 'chain', 'chapter', 'coinCall', 'coinLand', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'revive', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'status', 'step', 'system', 'used', 'vitals', 'weigh']);
   });
 
-  test('only the GM may send what changes a hunter, speaks for the System or lands a coin; a player sends rolls, quest progress, uses, steps, casts, passes and coin calls', () => {
+  test('only the GM may send what changes a hunter, speaks for the System, lands a coin or weighs a hunter\'s dice; a player sends rolls, quest progress, uses, steps, casts, passes and coin calls', () => {
     const gmOnly = EVENT_TYPES.filter(t => EVENTS[t].gmOnly).sort();
-    expect(gmOnly).toEqual(['award', 'chain', 'chapter', 'coinLand', 'hp', 'noted', 'offerStop', 'quest', 'revive', 'shadow', 'soloAnswer', 'spent', 'status', 'system', 'vitals']);
+    expect(gmOnly).toEqual(['award', 'chain', 'chapter', 'coinLand', 'hp', 'noted', 'offerStop', 'quest', 'revive', 'shadow', 'soloAnswer', 'spent', 'status', 'system', 'vitals', 'weigh']);
   });
 
   test('what a player sends speaks for one hunter: only that hunter\'s phone may send it', () => {
@@ -474,6 +475,38 @@ describe('the fight\'s totals for a hunter', () => {
   test(`at most ${MAX_STATUSES} statuses, the fight row's own cap; one that does not read, or a chip the hunter's state draws, is dropped`, () => {
     expect(vitals({ statuses: many(100, i => ({ ...BURN, key: `s${i}` })) })!.statuses).toHaveLength(MAX_STATUSES);
     expect(vitals({ statuses: [{ ...BURN, def: null }, { ...BURN, key: 'dead' }, { ...BURN, rounds: -1 }, BURN] })!.statuses).toEqual([BURN]);
+  });
+});
+
+describe('the GM\'s table weight on a player\'s hunter', () => {
+  const weigh = (fields: Raw) => payload('weigh', { ...valid('weigh'), ...fields });
+
+  test('a weight is a whole number of faces within one less than the largest die\'s sides, clamped; a fraction is cut', () => {
+    expect(WEIGHT_MAX).toBe(RULES.dice.maxSides - 1);
+    expect([weigh({ total: 5000 })!.total, weigh({ total: -5000 })!.total, weigh({ total: 2.7 })!.total, weigh({ total: -3 })!.total]).toEqual([WEIGHT_MAX, -WEIGHT_MAX, 2, -3]);
+  });
+
+  test('a weight left out, or not a number, is refused: a total is never guessed', () => {
+    const { total: _, ...without } = valid('weigh');
+    expect([payload('weigh', without), weigh({ total: '2' }), weigh({ total: null }), weigh({ total: Infinity })]).toEqual([null, null, null, null]);
+  });
+
+  test('a force is 20, 1 or none; any other face, or a force left out, is refused', () => {
+    expect([weigh({ force: 20 })!.force, weigh({ force: 1 })!.force, weigh({ force: null })!.force]).toEqual([20, 1, null]);
+    const { force: _, ...without } = valid('weigh');
+    expect([payload('weigh', without), weigh({ force: 19 }), weigh({ force: '20' }), weigh({ force: 0 })]).toEqual([null, null, null, null]);
+  });
+
+  test('is for exactly one hunter', () => {
+    expect([weigh({ to: [] }), weigh({ to: [KEY, OTHER] }), weigh({ to: KEY })]).toEqual([null, null, null]);
+  });
+
+  test('reaches only the GM and that hunter\'s phone, and a later weight for the same hunter stands for an earlier one; another hunter\'s does not', () => {
+    const at = (to: string, total: number) => parseEvent('weigh', { ...valid('weigh'), to: [to], total })!;
+    const phone = (key: string): RoomViewer => ({ kind: 'phone', device: key.split(':')[0] as never });
+    expect([servedTo(at(KEY, 2), { kind: 'gm' }), servedTo(at(KEY, 2), phone(KEY)), servedTo(at(KEY, 2), phone(OTHER)), servedTo(at(KEY, 2), { kind: 'anyone' })]).toEqual([true, true, false, false]);
+    expect(standsFor(at(KEY, 2))).toBe(standsFor(at(KEY, -1)));
+    expect(standsFor(at(KEY, 2))).not.toBe(standsFor(at(OTHER, 2)));
   });
 });
 
@@ -1330,9 +1363,9 @@ describe('an offer between two hunters, and its one end', () => {
     for (const to of [[KEY], [KEY, KEY], [KEY, OTHER, 'd-x:h1'], [KEY, 'bad key']]) expect(payload('offerStop', { ...valid('offerStop'), to })).toBeNull();
   });
 
-  test('an offer, its end and the GM\'s stop are sealed to the GM and the two hunters (the lead\'s ruling 1), and a story\'s chapter to the GM and the hunters it is for; nothing else is (a System message to the room is not; one to named hunters is, above)', () => {
+  test('an offer, its end and the GM\'s stop are sealed to the GM and the two hunters (the lead\'s ruling 1), a story\'s chapter to the GM and the hunters it is for, and a table weight to the GM and its hunter; nothing else is (a System message to the room is not; one to named hunters is, above)', () => {
     const sealed = EVENT_TYPES.filter(t => isSealed(parseEvent(t, valid(t))!)).sort();
-    expect(sealed).toEqual(['chapter', 'offer', 'offerEnd', 'offerStop']);
+    expect(sealed).toEqual(['chapter', 'offer', 'offerEnd', 'offerStop', 'weigh']);
   });
 
   /**

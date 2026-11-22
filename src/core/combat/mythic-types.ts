@@ -1,6 +1,6 @@
 // mythic-types.ts: what a mythic's script is, and where a mythic row stands in it (notes-11-keystones.md, design B.3).
 // Types only. A script is one row of `MYTHICS` (src/core/registry/mythics.ts); the machine that moves a row through it
-// is combat/mythic.ts (unit MY2). The script is written with its own move and omen keys as plain words, and the
+// is combat/mythic.ts. The script is written with its own move and omen keys as plain words, and the
 // compiler checks each omen lands a move the script holds and each beat names an omen it holds (`MythicScript<M, O>`);
 // the registry's `mythicScript` brands the keys once, so a stored script reads `MoveKey` and `OmenKey`.
 import type { Id } from '../ids.ts';
@@ -120,7 +120,7 @@ type MoveCommon = {
   readonly self: MythicStatus | null;
 };
 /**
- * A move an omen lands. Built into an `Ability` when it is needed (registry/mythics.ts `mythicMove`), never saved as
+ * A move an omen lands. Built into an `Ability` when it is needed (registry/mythic-moves.ts `mythicMove`), never saved as
  * one. A blast reaches tiles around its aim (`field`: every tile, with aim `all`); a strike, shot or curse lands on one
  * body, so its reach is 0.
  */
@@ -130,8 +130,8 @@ export type MythicMove = MoveCommon & (
 );
 
 /**
- * Where a mythic row stands in its script; null on any other row (unit MY3 puts it on the row). Only `mythicStep`
- * (combat/mythic.ts, MY2) writes it. `phase` and `beat` index the script's phases and the phase's rotation (modulo its
+ * Where a mythic row stands in its script (`Body.mythic`); null on any other row. Only combat/mythic.ts writes it
+ * (`mythicStep`, and `mythicStart` and `mythicJoined` for a new row). `phase` and `beat` index the script's phases and the phase's rotation (modulo its
  * length); `since` is when the phase began, which its clock counts from. While an omen stands, `aim` is where it was
  * aimed and `hpAt` the mythic's HP then (the burst answer counts from it).
  */

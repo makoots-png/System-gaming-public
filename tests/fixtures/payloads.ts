@@ -140,4 +140,8 @@ export const VALID: Record<EventType, [Raw, Raw]> = {
         rewards: { xp: 0, points: 0, gold: 100, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, dueAt: '2026-11-21T10:00:00.000Z', penaltyText: 'The Deep collects.',
         onFail: { xp: 0, points: 0, gold: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] } } },
   ],
+  weigh: [
+    { eid: EID, to: [KEY], total: 2, force: 20 },
+    { eid: EID, to: [KEY], total: 2, force: 20 },
+  ],
 };

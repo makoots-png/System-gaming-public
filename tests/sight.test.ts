@@ -110,7 +110,7 @@ describe('a fight body\'s eyes and figure', () => {
     return {
       id: combatantId('b'), side: o.side ?? 'party', ...lifeAt('hunter', o.hp ?? sheet.hpMax), origin: hunter, tier: 0, stats, sheet,
       place: o.at ?? place(2, 3), mana: sheet.manaMax, fatigue: 0, shield: null, stagger: null, channel: null, threat: null,
-      statuses, readyAt: {}, abilities: [], intent: null, holder: null, xp: 0, name: 'Body', at: tick(1000), speed: sheet.speed, tie: 0,
+      statuses, readyAt: {}, abilities: [], intent: null, holder: null, xp: 0, mythic: null, name: 'Body', at: tick(1000), speed: sheet.speed, tie: 0,
     } as Body;
   }
 

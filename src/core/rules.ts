@@ -661,10 +661,15 @@ const SPEC = {
       // A normal monster stays quick to run at the table; elites and up carry keystones (design A.5). Each one of
       // `fight.kinds` (overrides.ts refuses any other).
       monsterKinds: ['elite', 'boss', 'mythic'] as readonly ('normal' | 'elite' | 'boss' | 'mythic')[],
-      // What one keystone may spend, in points on the sample wearer of its rank (item-budget.ts `powersSpend`), as a
-      // title's band of its rank: a mark a rank D title's 2, a confluence a rank C title's 3, an apex a rank A title's 4.
+      // What one keystone may spend, in points on the sample wearer of its rank (item-budget.ts `powersSpend`; a point is
+      // a stat point's worth, a rank gives 30). A keystone is what a build earns for specialising, so it is set from what
+      // design A.6's keystones of the tier weigh as written, not from a title's 2 to 4 points (at 4 Worldbreaker kept 3%
+      // of a strike): the marks Follow Through 10.2, Rally 8.7 and Lockdown 11.6 sit about 10; the confluences
+      // Executioner 17.8, Vanguard and Conduit 16.7, Riposte 12.8 and Endless Stride 12.4 about 15; the apexes Undying 24.3
+      // and Cataclysm 29.9 about 25. An apex is two and a half marks, as A.8 asks (a mark's gain 3 to 8 points of win
+      // share, an apex's 8 to 15). A keystone far from its tier moves, not this (notes-11-keystones-build.md, K2).
       budget: {
-        mark: of(2, KEYSTONE_SPEND), confluence: of(3, KEYSTONE_SPEND), apex: of(4, KEYSTONE_SPEND),
+        mark: of(10, KEYSTONE_SPEND), confluence: of(15, KEYSTONE_SPEND), apex: of(25, KEYSTONE_SPEND),
       },
     },
     // Mythic scripts (docs/agent-handoff/features/notes-11-keystones.md, design B): a mythic's fight in phases, with

@@ -54,7 +54,7 @@ function row(name: string, side: Side, o: Partial<NewRow> = {}): NewRow {
   return {
     id: id(name), name, side, ...lifeAt(kind, hpMax), origin, tier: 0, place: null, mana: 50, fatigue: 0, shield: null, stagger: null, channel: null,
     threat: kind === 'monster' ? {} : null, statuses: [], readyAt: {}, abilities: [HIT, CUT, HEX, MEND], intent: null,
-    holder: kind === 'hunter' ? { kind: 'local', hunterId: hunterId(`h-${name}`) } : null, xp: 0, ...o,
+    holder: kind === 'hunter' ? { kind: 'local', hunterId: hunterId(`h-${name}`) } : null, xp: 0, mythic: null, ...o,
   } as NewRow;
 }
 function play(...commands: Command[]): Fight {

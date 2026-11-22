@@ -10,8 +10,15 @@ import type { SheetCondition, SheetHunter } from '../src/core/hunter/sheet.ts';
 import { statusKey } from '../src/core/combat/effect-ops.ts';
 import { stepQuest } from '../src/core/hunter/job-chain.ts';
 import { BUILT_IN_JOBS, JOB_NAMES } from '../src/core/registry/jobs.ts';
-import { RULES } from '../src/core/rules.ts';
-import type { Rank } from '../src/core/rules.ts';
+import { BONUS_KEYS, RULES } from '../src/core/rules.ts';
+import type { BonusKey, Rank } from '../src/core/rules.ts';
+import { KEYSTONES, keystoneOf } from '../src/core/registry/keystones.ts';
+import type { Keystone } from '../src/core/registry/keystones.ts';
+import { parsePowers } from '../src/core/registry/powers.ts';
+import type { Powers } from '../src/core/registry/powers.ts';
+import { itemSpend } from '../src/core/registry/item-budget.ts';
+import type { Rarity } from '../src/core/registry/items.ts';
+import type { Bonus } from '../src/core/hunter/derive.ts';
 import { STAT_KEYS, statsBy } from '../src/core/stats.ts';
 import type { StatKey, Stats } from '../src/core/stats.ts';
 import { jcid, qid } from './fixtures/ids.ts';
@@ -162,4 +169,56 @@ test('a hunter\'s job gives its pair, and a finished Job Change awakens it', () 
   expect(keystoneBasis({ ...mage, quests: [lastStep] }).awakened).toBe(true);
   expect(keystoneBasis({ ...mage, job: 'Fighter', quests: [lastStep] })).toMatchObject({ pair: 'str+vit', awakened: false });
   expect(keystoneBasis({ ...mage, job: 'Shadow Monarch' })).toMatchObject({ pair: null, awakened: false });
+});
+
+// ── the registry (unit K2): what each keystone does ──
+/** Every keystone the registry holds, with its key and the rank its tier is earned at (`RULES.fight.keystone`). */
+const EVERY: readonly { readonly key: KeystoneKey; readonly rank: Rank; readonly keystone: Keystone }[] = [
+  ...STAT_KEYS.map(stat => ({ key: mark(stat), rank: F.keystone.markRank })),
+  ...STAT_PAIRS.map(pair => ({ key: { tier: 'confluence', pair } as const, rank: F.keystone.pairRank })),
+  ...STAT_KEYS.map(stat => ({ key: apex(stat), rank: F.keystone.apexRank })),
+].map(k => ({ ...k, keystone: keystoneOf(k.key, RULES) }));
+const powersOf = (p: Powers): Powers => ({ ...(p.worn ? { worn: p.worn } : {}), ...(p.active ? { active: p.active } : {}) });
+
+describe('the registry of keystones (design A.6)', () => {
+  test('every keystone parses as Powers', () => {
+    expect(EVERY).toHaveLength(44);
+    expect(Object.keys(KEYSTONES.confluence)).toEqual([...STAT_PAIRS]);
+    for (const { keystone: k } of EVERY) {
+      expect([k.name, parsePowers(k)]).toEqual([k.name, powersOf(k)]);
+      if (k.awakened) expect([k.name, parsePowers(k.awakened)]).toEqual([k.name, powersOf(k.awakened)]);
+    }
+  });
+
+  // Design A.8: a keystone is weighed at its tier's rank and held within its budget, 20% either way. A part worth.ts has
+  // no rule for is named, never counted, so a keystone with one is held only from above (the sim, unit K5, holds the
+  // rest). The bonus is weighed as an item's (item-budget.ts `itemSpend`, an accessory of the rarity of the tier's rank,
+  // whose powers it weighs with `powersSpend`); a bonus on a number no item carries (a shadow) is named too.
+  const BAND = 0.2;
+  const rarityOf = (rank: Rank): Rarity => (Object.keys(RULES.rarities) as Rarity[]).find(r => RULES.rarities[r].rank === rank)!;
+  const isBonusKey = (k: string): k is BonusKey => (BONUS_KEYS as readonly string[]).includes(k);
+  function spendOf(p: Powers, bonus: Bonus, rank: Rank): { readonly points: number; readonly unweighed: readonly string[] } {
+    const carried = Object.fromEntries(Object.entries(bonus).filter(([k]) => isBonusKey(k)));
+    const s = itemSpend({ rar: rarityOf(rank), type: 'accessory', slot: null, dice: '', bonus: carried, armor: 0, resist: 0, ...powersOf(p) }, RULES)!;
+    return { points: s.points, unweighed: [...s.unweighed, ...Object.keys(bonus).filter(k => !isBonusKey(k))] };
+  }
+
+  test('every keystone spends within its tier\'s budget', () => {
+    const rows = EVERY.flatMap(({ key, rank, keystone: k }) => {
+      const budget = F.keystone.budget[key.tier];
+      const own = { name: k.name, budget, ...spendOf(k, k.bonus, rank) };
+      // An awakened confluence adds at most a second confluence: its powers are held to the confluence's budget.
+      return k.awakened ? [own, { name: `${k.name}, awakened`, budget, ...spendOf(k.awakened, {}, rank) }] : [own];
+    });
+    expect(rows.filter(r => r.points > r.budget * (1 + BAND)).map(r => [r.name, r.points])).toEqual([]);
+    expect(rows.filter(r => !r.unweighed.length && r.points < r.budget * (1 - BAND)).map(r => [r.name, r.points])).toEqual([]);
+  });
+
+  test('every pair a job names is awakened, and no other keystone is', () => {
+    const named = new Set(JOB_NAMES.map(j => BUILT_IN_JOBS[j].pair));
+    for (const { key, keystone: k } of EVERY) {
+      const awakens = key.tier === 'confluence' && named.has(key.pair);
+      expect([k.name, k.awakened !== null]).toEqual([k.name, awakens]);
+    }
+  });
 });

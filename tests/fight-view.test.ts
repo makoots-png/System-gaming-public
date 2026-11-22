@@ -43,7 +43,7 @@ function row(name: string, side: Side, o: RowPatch<NewRow> = {}): NewRow {
   return {
     id: id(name), name, side, ...lifeAt(kind, hp ?? hpMax), origin: hunterOrigin, tier: 0, place: null, mana: 10, fatigue: 0, shield: null, stagger: null,
     channel: null, threat: kind === 'monster' ? {} : null, statuses: [], readyAt: {}, abilities: [HIT, STRIKE], intent: null,
-    holder: kind === 'hunter' ? { kind: 'local', hunterId: hunterId(`h-${name}`) } : null, xp: 0, ...rest,
+    holder: kind === 'hunter' ? { kind: 'local', hunterId: hunterId(`h-${name}`) } : null, xp: 0, mythic: null, ...rest,
   } as NewRow;
 }
 

@@ -27,7 +27,7 @@ function row(name: string, side: Side): NewRow {
   return {
     id: id(name), name, side, kind, origin, tier: 0, place: null, life: { at: 'up', hp: modified(origin, [], RULES).sheet.hpMax }, mana: 10, fatigue: 0, shield: null, stagger: null,
     channel: null, threat: kind === 'monster' ? {} : null, statuses: [], readyAt: {}, abilities: [HIT], intent: null,
-    holder: kind === 'hunter' ? { kind: 'local', hunterId: hunterId(`h-${name}`) } : null, xp: 0,
+    holder: kind === 'hunter' ? { kind: 'local', hunterId: hunterId(`h-${name}`) } : null, xp: 0, mythic: null,
   } as NewRow;
 }
 function play(fight: Fight | null, ...commands: Command[]): { fight: Fight | null; effects: Effect[] } {

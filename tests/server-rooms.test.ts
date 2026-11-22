@@ -166,7 +166,7 @@ describe('events', () => {
     expect(later.body.events.map((e: any) => e.seq)).toEqual([2]);
   });
 
-  for (const type of ['system', 'award', 'quest', 'hp', 'vitals', 'spent', 'status', 'revive', 'chain', 'coinLand', 'shadow', 'soloAnswer', 'chapter']) {
+  for (const type of ['system', 'award', 'quest', 'hp', 'vitals', 'spent', 'status', 'revive', 'chain', 'coinLand', 'shadow', 'soloAnswer', 'chapter', 'weigh']) {
     test(`a player cannot send a ${type} event`, async () => {
       const { code } = await newRoom();
       const r = await call('POST', `/api/rooms/${code}/events`, { body: { from: PLAYER, type, payload: {} } });
@@ -445,6 +445,20 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
   test('a third player\'s phone gets neither an offer between two others nor its end', async () => {
     const { poll } = await tradeRoom();
     expect(eids(await poll(THIRD))).toEqual(['d-gm-w1']);
+  });
+
+  test('a weigh reaches only its hunter\'s phone: the GM\'s poll and Kai\'s carry it, Mira\'s, a third player\'s and an unproven poll do not', async () => {
+    const { gm, post, poll } = await tradeRoom();
+    expect((await post('gm', 'weigh', { eid: 'd-gm-wt1', to: [A], total: 2, force: 20 }, gm)).body).toEqual({ seq: 4 });
+    expect(eids(await poll(null, gm))).toContain('d-gm-wt1');
+    expect(eids(await poll(PLAYER))).toContain('d-gm-wt1');
+    for (const r of [await poll(OTHER), await poll(THIRD), await poll(null), await poll(PLAYER, token('thief'))]) expect(eids(r)).not.toContain('d-gm-wt1');
+  });
+
+  test('a player cannot weigh their own hunter\'s dice, and the room is unchanged', async () => {
+    const { post, poll, gm } = await tradeRoom();
+    expect(await post(PLAYER, 'weigh', { eid: 'd-player1-wt1', to: [A], total: 5, force: 20 })).toEqual({ status: 403, body: { error: 'gm only' } });
+    expect(eids(await poll(null, gm))).not.toContain('d-player1-wt1');
   });
 
   test('a poll without a proven device gets faces and no sealed message, and so does one with another phone\'s token', async () => {

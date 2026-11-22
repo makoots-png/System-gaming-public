@@ -166,6 +166,9 @@ const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS }
   // windows. A gate's Clear among the facts gives the hunter everything back in the same write (grant.ts `noteFacts`)
   noted: { once: true, land: (p, hids, app) => save => forEach(save, hids, (s, h) => ({ save: withHunter(s, noteFacts(h, p.facts, app.rules())), tell: nothing })) },
   chapter: { once: true, land: landChapter },
+  // the GM's table weight on this phone's hunter (core/table-weight.ts): kept on the phone from unit 9 of
+  // docs/agent-handoff/features/notes-8-fudge.md section 5; until then a player's phone does nothing with it
+  weigh: null,
 };
 
 /**

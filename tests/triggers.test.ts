@@ -97,18 +97,18 @@ describe('the events a use raises, in rule 19b\'s order', () => {
   const o = (target: string, x: Partial<Outcome>): Outcome => ({
     target: id(target), avoid: 'caught', to: null, crit: false, raw: 10, dealt: 9, absorbed: 0, type: 'physical', statuses: [], threat: 0, stagger: 0, staggered: false, channelBroken: false, down: false, ...x,
   });
-  test('by outcome, the user\'s events before the target\'s; then the use itself when the ability has tags', () => {
-    const list = eventsOf({ ops: [], tags: [tag('sword')] }, id('A'), [o('M', { crit: true, down: true, statuses: [statusKey('pain')] }), o('N', { avoid: 'out', dealt: 0 })], [], []);
+  test('by outcome, the user\'s events before the target\'s; then the use itself', () => {
+    const list = eventsOf({ ops: [], kind: 'strike', channel: null, tags: [tag('sword')] }, id('A'), [o('M', { crit: true, down: true, statuses: [statusKey('pain')] }), o('N', { avoid: 'out', dealt: 0 })], [], []);
     expect(list.map(e => `${e.bearer} ${e.event}${e.key ? ` ${e.key}` : ''}`)).toEqual([
       'A hitDealt', 'A critDealt', 'A kill', 'M struck', 'M critTaken', 'M down', 'M statusGained pain', 'N avoided', 'A used',
     ]);
     expect(list.every(e => e.tags.includes(tag('sword')))).toBe(true);
   });
   test('a heal is no hit, a resisted curse is avoided, and a cure that takes a status whole ends it', () => {
-    const cure = { ops: [{ op: 'cureStatus', key: statusKey('burn') }] as Ability['ops'] };
+    const cure = { ops: [{ op: 'cureStatus', key: statusKey('burn') }] as Ability['ops'], kind: 'support', channel: null } as const;
     const before = [{ ...row('M', 'foe'), statuses: [on('burn', worn('Burn'))] }] as unknown as Body[], after = [{ ...row('M', 'foe') }] as unknown as Body[];
-    expect(eventsOf(cure, id('A'), [o('M', { type: 'heal' })], before, after).map(e => e.event)).toEqual(['statusEnded']);
-    expect(eventsOf({ ops: [] }, id('A'), [o('M', { avoid: 'resisted', type: 'magical' })], [], []).map(e => e.event)).toEqual(['hitDealt', 'struck', 'avoided']);
+    expect(eventsOf(cure, id('A'), [o('M', { type: 'heal' })], before, after).map(e => e.event)).toEqual(['statusEnded', 'used']);
+    expect(eventsOf({ ops: [], kind: 'curse', channel: null }, id('A'), [o('M', { avoid: 'resisted', type: 'magical' })], [], []).map(e => e.event)).toEqual(['hitDealt', 'struck', 'avoided', 'used']);
   });
 });
 
@@ -123,6 +123,19 @@ describe('firing (rule 19b)', () => {
     const voidKnight = worn('Void Knight', { on: 'hitDealt', tag: tag('sword'), to: 'other', limit: { kind: 'each' }, ops: [addPain()] });
     const fight = play(...duel(row('A', 'party', [on('vk', voidKnight)]), row('M', 'foe')), use('A', 'M'), use('A', 'M', SWORD));
     expect(stacksOf(body(fight, 'M'), 'pain')).toBe(1);
+  });
+  test('a trigger tagged with a kind fires on every ability of that kind, with no tag the GM typed', () => {
+    const edge = worn('Edge', { on: 'hitDealt', tag: tag('strike'), to: 'other', limit: { kind: 'each' }, ops: [addPain()] },
+      { on: 'hitDealt', tag: tag('curse'), to: 'self', limit: { kind: 'each' }, ops: [addPain()] });
+    const bolt = ability('bolt', '10', { kind: 'curse' });
+    const fight = play(...duel(row('A', 'party', [on('edge', edge)], { abilities: [HIT, bolt] }), row('M', 'foe')), use('A', 'M'), use('A', 'M', bolt, 1));
+    expect([HIT.tags, bolt.tags, stacksOf(body(fight, 'M'), 'pain'), stacksOf(body(fight, 'A'), 'pain')]).toEqual([undefined, undefined, 1, 1]);
+  });
+  test('a spell is a blast or a curse, and a channelled ability is a channel: a trigger may name either', () => {
+    const tagsOfUse = (a: Pick<Ability, 'ops' | 'kind' | 'channel' | 'tags'>) => eventsOf(a, id('A'), [], [], [])[0]!.tags;
+    expect(tagsOfUse({ ops: [], kind: 'curse', channel: null })).toEqual([tag('curse'), tag('spell')]);
+    expect(tagsOfUse({ ops: [], kind: 'blast', channel: { growth: 'linear', max: 5 }, tags: [tag('fire'), tag('blast')] })).toEqual([tag('blast'), tag('spell'), tag('channel'), tag('fire')]);
+    expect(tagsOfUse({ ops: [], kind: 'strike', channel: null })).toEqual([tag('strike')]);
   });
   test('Retribution: a foe that avoids a use hits the user back, at its average through the user\'s armor', () => {
     const retribution = worn('Retribution', { on: 'avoided', tag: null, to: 'other', limit: { kind: 'each' }, ops: [{ op: 'damage', type: 'physical', amount: f('2d6'), when: 'use' }] });

@@ -40,6 +40,8 @@ import type { StoryRun } from './story/run.ts';
 import { oneOf } from './one-of.ts';
 import { parseCoins } from './coin.ts';
 import { parseCheck, parseRollKind } from './roll.ts';
+import { NO_TABLE_WEIGHT, parseTableWeight } from './table-weight.ts';
+import type { TableWeight } from './table-weight.ts';
 import type { Check, RollKind } from './roll.ts';
 import type { Coin } from './coin.ts';
 import { RANKS } from './rules.ts';
@@ -211,6 +213,8 @@ export type Save = {
   coins: readonly Coin[]; calls: readonly Coin[];
   /** The GM's stories on the table (story/run.ts), written only by that file's `storyMove`: running ones and the newest ended. */
   storyRuns: StoryRun[];
+  /** The GM's weight on the hunters' dice outside a fight (src/core/table-weight.ts), written only by its `weightStep`. */
+  tableWeight: TableWeight;
 };
 /** A monster kind this campaign has defeated. `room`: copied from the GM's codex doc, with the numbers it carried in `info`. */
 export type CodexEntry = { name: string; rank: Rank; kills: number; firstAt: string; lastAt: string; monsterId: MonsterId | null; room?: true; info?: CodexInfo };
@@ -244,6 +248,7 @@ export const newRollEntry = (): RollEntry => ({
 export const newSave = (deviceId: DeviceId): Save => ({
   schema: SCHEMA, savedAt: '', seq: 100, settings: newSettings(deviceId), rulesOverrides: {}, world: newWorld(), hunters: [], gates: [],
   monsters: [], library: { items: [], statuses: {}, skills: [], rewards: [], maps: [], feats: {}, stories: [] }, shop: null, fight: null, loot: { at: 'none' }, log: [], rolls: [], codex: {}, codexSeen: [], coins: [], calls: [], storyRuns: [],
+  tableWeight: NO_TABLE_WEIGHT,
 });
 
 // ── parser ──
@@ -413,6 +418,7 @@ function repair(s: Rec, env: ParseEnv, fight: FightRepair = 'read'): Save {
   save.codex = codexOf(save.codex);
   save.codexSeen = save.codexSeen.flatMap(v => parseCombatantId(v) ?? []).slice(-CODEX_SEEN_MAX);
   save.coins = parseCoins(save.coins); save.calls = parseCoins(save.calls);
+  save.tableWeight = parseTableWeight(save.tableWeight);
   save.monsters = monsters(run, save.monsters);
   // A fight the fight's parser does not read as one is dropped. One its reducer stored in this app is kept.
   if (fight === 'read') save.fight = parseFight(save.fight, R);

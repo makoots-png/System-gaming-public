@@ -8,7 +8,7 @@
 import { tallyOf } from './row-tally.ts';
 import { diceOf, evaluate, rollOf, withEdge } from '../formula.ts';
 import type { Dice, Env, Formula, KitScope, Scope } from '../formula.ts';
-import { formulaOf } from '../registry/ability-kinds.ts';
+import { formulaOf, tagsOf } from '../registry/ability-kinds.ts';
 import type { KindRules } from '../registry/ability-kinds.ts';
 import type { Rules } from '../rules.ts';
 import { dist, dodge, inShape, sees, shovePath, terrain, TERRAIN, tiles, tilesOf } from './space.ts';
@@ -380,7 +380,7 @@ const channelReady = (user: Body, bodies: readonly Body[], aim: Aim): Ready | nu
 function asked(a: Ability, f: Field, now: Tick, R: KindRules): Needs {
   const inside = [...f.hit, ...f.ring], user = f.from;
   const dice = diceFor(a, user.tier, R), reacting = rollsReaction(a) ? inside : [];
-  const second = reacting.filter(t => edgeOn(a, user, t).cut !== null).map(t => t.id);
+  const second = reacting.filter(t => edgeOn(tagsOf(a), user, t).cut !== null).map(t => t.id);
   const boost: { id: HeldDieId; sides: number }[] = [];
   for (const t of reacting) for (const b of boostsOn(user, t)) if (b.die.kind === 'die' && !boost.some(x => x.id === b.held)) boost.push({ id: b.held, sides: b.die.sides });
   return {
@@ -417,7 +417,7 @@ function field(a: Ability, user: Body, paid: Body, bodies: readonly Body[], at: 
 function keptFace(a: Ability, user: Body, target: Body, rolls: Rolls): number | undefined {
   const d20 = rolls.react[target.id];
   if (d20 === undefined) return undefined;
-  const { cut } = edgeOn(a, user, target), second = rolls.second?.[target.id];
+  const { cut } = edgeOn(tagsOf(a), user, target), second = rolls.second?.[target.id];
   const term = cut && second !== undefined ? withEdge(ONE_D20, cut) : ONE_D20;
   const read = rollOf(term as Dice, term === ONE_D20 ? [d20] : [d20, second!]);
   let face = 'total' in read ? read.total : d20;
@@ -436,7 +436,7 @@ const ONE_D20: Formula = { kind: 'dice', count: 1, sides: D20_FACES };
 function spendEdges(a: Ability, user: Body, targets: readonly Body[], rows: Map<CombatantId, Body>, now: Tick, R: ResolveRules): void {
   const gone: { id: CombatantId; key: StatusKey }[] = [];
   for (const t of targets) {
-    for (const s of edgeOn(a, user, t).spent) if (!gone.some(x => x.id === s.id && x.key === s.key)) gone.push(s);
+    for (const s of edgeOn(tagsOf(a), user, t).spent) if (!gone.some(x => x.id === s.id && x.key === s.key)) gone.push(s);
     for (const b of boostsOn(user, t)) if (!gone.some(x => x.id === b.id && x.key === b.key)) gone.push({ id: b.id, key: b.key });
   }
   for (const g of gone) {
