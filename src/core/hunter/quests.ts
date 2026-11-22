@@ -132,7 +132,7 @@ export function chained(h: Hunter, event: ChainEvent): Told<ChainEffect> {
   for (const fx of effects) {
     if (fx.type === 'issueQuest') { next = { ...next, quests: [...next.quests, fx.quest] }; said.push(questLine(h, 'Quest issued', fx.quest.title)); }
     if (fx.type === 'progress') next = { ...next, quests: next.quests.map(q => (q.id === fx.questId && q.objectives[0] ? { ...q, objectives: [{ ...q.objectives[0], progress: fx.value }, ...q.objectives.slice(1)] } : q)) };
-    if (fx.type === 'grantJob') next = { ...next, job: fx.job };
+    if (fx.type === 'grantJob') next = { ...next, job: fx.job, jobDone: fx.job };
   }
   return { hunter: next, said, effects };
 }

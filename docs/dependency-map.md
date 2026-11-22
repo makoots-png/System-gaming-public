@@ -252,7 +252,7 @@ None.
 
 ### `src/core/combat/rows.ts`
 
-- Imports: `src/core/combat/ability-types.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/fight-types.ts`, `src/core/combat/mythic.ts`, `src/core/combat/resolve.ts`, `src/core/combat/space.ts`, `src/core/combat/timeline.ts`, `src/core/combat/uses.ts`, `src/core/effects.ts`, `src/core/formula.ts`, `src/core/hunter/derive.ts`, `src/core/hunter/sheet.ts`, `src/core/hunter/vitals.ts`, `src/core/ids.ts`, `src/core/registry/abilities.ts`, `src/core/registry/ability-kinds.ts`, `src/core/registry/monsters.ts`, `src/core/registry/mythics.ts`, `src/core/registry/paths.ts`, `src/core/rules.ts`
+- Imports: `src/core/combat/ability-types.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/fight-types.ts`, `src/core/combat/mythic.ts`, `src/core/combat/resolve.ts`, `src/core/combat/space.ts`, `src/core/combat/timeline.ts`, `src/core/combat/uses.ts`, `src/core/effects.ts`, `src/core/formula.ts`, `src/core/hunter/derive.ts`, `src/core/hunter/keystones.ts`, `src/core/hunter/sheet.ts`, `src/core/hunter/vitals.ts`, `src/core/ids.ts`, `src/core/registry/abilities.ts`, `src/core/registry/ability-kinds.ts`, `src/core/registry/keystones.ts`, `src/core/registry/monsters.ts`, `src/core/registry/mythics.ts`, `src/core/registry/paths.ts`, `src/core/rules.ts`
 - Imports types from: `src/core/registry/icons.ts`, `src/core/registry/powers.ts`, `src/core/save.ts`, `src/core/stats.ts`
 - Imported by: `src/core/combat/fight-turn.ts`, `src/core/combat/fight.ts`, `src/core/gates/solo.ts`, `src/core/hunter/shadows.ts`, `src/views/bestiary.js`, `src/views/combat.js`, `src/views/shadows.js`, `src/views/table.js`, `src/views/uses.js`
 
@@ -490,7 +490,7 @@ None.
 
 - Imports: `src/core/combat/fight-parse.ts`, `src/core/combat/fight-types.ts`, `src/core/day.ts`, `src/core/gates/personal.ts`, `src/core/hunter/chips.ts`, `src/core/hunter/chronicle.ts`, `src/core/hunter/counts.ts`, `src/core/hunter/inventory.ts`, `src/core/hunter/job-chain.ts`, `src/core/hunter/level.ts`, `src/core/hunter/penalty.ts`, `src/core/hunter/progress.ts`, `src/core/hunter/sheet.ts`, `src/core/hunter/vitals.ts`, `src/core/ids.ts`, `src/core/one-of.ts`, `src/core/registry/icons.ts`, `src/core/registry/items.ts`, `src/core/registry/monsters.ts`, `src/core/registry/powers.ts`, `src/core/repair.ts`, `src/core/rewards.ts`, `src/core/rules.ts`, `src/core/stats.ts`
 - Imports types from: `src/core/combat/effect-ops.ts`, `src/core/hunter/derive.ts`, `src/core/registry/skills.ts`
-- Imported by: `src/core/hunter/keystones.ts`, `src/core/hunter/quests.ts`, `src/core/hunter/record.ts`, `src/core/party.ts`, `src/core/protocol.ts`, `src/core/repair.ts`, `src/core/save.ts`, `src/core/told.ts`
+- Imported by: `src/core/hunter/quests.ts`, `src/core/hunter/record.ts`, `src/core/hunter/sheet.ts`, `src/core/party.ts`, `src/core/protocol.ts`, `src/core/repair.ts`, `src/core/save.ts`, `src/core/told.ts`
 
 ### `src/core/hunter/identity.ts`
 
@@ -518,8 +518,7 @@ None.
 ### `src/core/hunter/keystones.ts`
 
 - Imports: `src/core/hunter/progress.ts`, `src/core/registry/jobs.ts`, `src/core/rules.ts`, `src/core/stats.ts`
-- Imports types from: `src/core/hunter/hunter.ts`
-- Imported by: `src/core/registry/jobs.ts`, `src/core/registry/keystones.ts`
+- Imported by: `src/core/combat/rows.ts`, `src/core/hunter/sheet.ts`, `src/core/registry/jobs.ts`, `src/core/registry/keystones.ts`
 
 ### `src/core/hunter/level.ts`
 
@@ -584,7 +583,8 @@ None.
 
 ### `src/core/hunter/sheet.ts`
 
-- Imports: `src/core/combat/effect-ops.ts`, `src/core/combat/timeline.ts`, `src/core/hunter/derive.ts`, `src/core/hunter/penalty.ts`, `src/core/hunter/progress.ts`, `src/core/hunter/vitals.ts`, `src/core/registry/items.ts`, `src/core/rules.ts`, `src/core/stats.ts`
+- Imports: `src/core/combat/effect-ops.ts`, `src/core/combat/timeline.ts`, `src/core/hunter/derive.ts`, `src/core/hunter/keystones.ts`, `src/core/hunter/penalty.ts`, `src/core/hunter/progress.ts`, `src/core/hunter/vitals.ts`, `src/core/registry/items.ts`, `src/core/registry/keystones.ts`, `src/core/rules.ts`, `src/core/stats.ts`
+- Imports types from: `src/core/hunter/hunter.ts`, `src/core/registry/powers.ts`
 - Imported by: `src/core/api.ts`, `src/core/combat/rows.ts`, `src/core/detail.ts`, `src/core/gates/solo.ts`, `src/core/hunter/grant.ts`, `src/core/hunter/hunter.ts`, `src/core/hunter/shadows.ts`, `src/core/hunter/use.ts`, `src/core/rules-text.ts`, `src/core/starter.ts`, `src/views/custom.js`, `src/views/hunter.js`, `src/views/inventory.js`, `src/views/skills.js`
 
 ### `src/core/hunter/skills-held.ts`
@@ -714,6 +714,7 @@ None.
 
 - Imports: `src/core/combat/ability-types.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/space.ts`, `src/core/combat/timeline.ts`, `src/core/formula.ts`, `src/core/registry/ability-kinds.ts`
 - Imports types from: `src/core/combat/triggers.ts`, `src/core/hunter/derive.ts`, `src/core/hunter/keystones.ts`, `src/core/registry/powers.ts`, `src/core/rules.ts`, `src/core/stats.ts`
+- Imported by: `src/core/combat/rows.ts`, `src/core/hunter/sheet.ts`
 
 ### `src/core/registry/kit-examples.ts`
 
@@ -758,7 +759,7 @@ None.
 
 - Imports: `src/core/combat/fight-parse.ts`, `src/core/rules.ts`
 - Imports types from: `src/core/combat/ability-types.ts`, `src/core/combat/effect-ops.ts`
-- Imported by: `src/core/combat/rows.ts`, `src/core/hunter/hunter.ts`, `src/core/hunter/record.ts`, `src/core/registry/item-budget.ts`, `src/core/registry/items.ts`, `src/core/registry/keystones.ts`, `src/core/rewards.ts`
+- Imported by: `src/core/combat/rows.ts`, `src/core/hunter/hunter.ts`, `src/core/hunter/record.ts`, `src/core/hunter/sheet.ts`, `src/core/registry/item-budget.ts`, `src/core/registry/items.ts`, `src/core/registry/keystones.ts`, `src/core/rewards.ts`
 
 ### `src/core/registry/scalers.ts`
 

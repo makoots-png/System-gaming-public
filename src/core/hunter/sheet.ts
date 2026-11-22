@@ -1,7 +1,7 @@
 // sheet.ts: what a hunter's sheet is built from, a check's bonus and Auto's placement of free points
 // (docs/agent-handoff/rw/m2-plan.md section 4.2, unit P2; design.md sections 2.2 and 2.3). Pure. `buildOf` is the one
-// place that sums a hunter's bonuses: the active title, the worn gear, the open path perks, the passive skills and the
-// GM's `hpAdj` and `manaAdj`. A new source of bonuses is a field of `SheetHunter` and a line in `buildOf`, with a case
+// place that sums a hunter's bonuses: the active title, the worn gear, the open path perks, the passive skills, the keystones
+// (the `keystone` source) and the GM's `hpAdj` and `manaAdj`. A new source of bonuses is a field of `SheetHunter` and a line in `buildOf`, with a case
 // in tests/sheet.test.ts. The numbers themselves are derive.ts's.
 
 import { rankIdx } from '../rules.ts';
@@ -15,6 +15,11 @@ import type { Source, Status, StatusDef, StatusKey } from '../combat/effect-ops.
 import { tick } from '../combat/timeline.ts';
 import { checkPenalty } from './penalty.ts';
 import { weightOf } from '../registry/items.ts';
+import { keystoneOf } from '../registry/keystones.ts';
+import type { Keystone } from '../registry/keystones.ts';
+import type { Powers } from '../registry/powers.ts';
+import { keystoneBasis, keystonesOf } from './keystones.ts';
+import type { Quest } from './hunter.ts';
 import type { Penalty } from './penalty.ts';
 import { allocated, available } from './progress.ts';
 import { fatiguePast, vitalStep } from './vitals.ts';
@@ -28,7 +33,7 @@ export type SheetPath = {
 };
 
 /** The rules this file reads. */
-export type SheetRules = DeriveRules & Pick<Rules, 'rankBonus' | 'fatigue' | 'rest' | 'penaltyCheck'> & {
+export type SheetRules = DeriveRules & Pick<Rules, 'rankBonus' | 'fatigue' | 'rest' | 'penaltyCheck' | 'dice'> & {
   readonly build: { readonly enabled: boolean };
   readonly paths: Readonly<Record<string, SheetPath>>;
 };
@@ -67,7 +72,27 @@ export type SheetHunter = {
   readonly build: { readonly path: string | null; readonly picks: readonly number[] };
   readonly skills: readonly SheetSkill[];
   readonly conditions: readonly SheetCondition[];
+  /**
+   * What the hunter's keystones are read from besides its points and rank (keystones.ts `keystoneBasis`): its job, and the job
+   * whose Job Change it finished. Absent: no job and none finished, so no confluence leans to a job and none awakens.
+   */
+  readonly job?: string | null;
+  readonly jobDone?: string | null;
 };
+
+/** A keystone a hunter holds, and the powers its job's Job Change adds to it (a confluence's `awakened`, once the chain is done); null for none. */
+export type HeldKeystone = { readonly keystone: Keystone; readonly awakened: Powers | null };
+/**
+ * The keystones a hunter holds, in `keystonesOf`'s order, each made under the rules the fight is read with. Its
+ * allocated stats, rank, job and finished Job Change are the only things read; none held while `RULES.fight.keystone.on` is off.
+ */
+export function heldKeystones(h: SheetHunter, R: SheetRules): HeldKeystone[] {
+  const basis = keystoneBasis({ stats: h.stats, ...(h.pending ? { pending: h.pending } : {}), rank: h.rank, job: h.job ?? null, jobDone: h.jobDone ?? null });
+  return keystonesOf(basis, R.fight).map(key => {
+    const keystone = keystoneOf(key, R);
+    return { keystone, awakened: key.tier === 'confluence' && basis.awakened ? keystone.awakened : null };
+  });
+}
 
 /** Every key `sum` adds up: a stat or any number of the sheet. */
 const SUMMED: readonly (StatKey | SheetNumber)[] = [...STAT_KEYS, ...(Object.keys(SHEET_LABELS) as SheetNumber[])];
@@ -113,6 +138,7 @@ export function buildOf(h: SheetHunter, R: SheetRules): SheetBasis {
       ...gear.map(i => i.bonus ?? {}),
       ...pathPerks(h, R),
       ...h.skills.map(s => s.type === 'passive' ? s.bonus : {}),
+      ...heldKeystones(h, R).map(k => k.keystone.bonus),
       { hpMax: h.hpAdj, manaMax: h.manaAdj },
     ]),
   };
@@ -126,10 +152,10 @@ export const hunterSheet = (h: SheetHunter, R: SheetRules): { stats: Stats; shee
   modified({ kind: 'hunter', build: buildOf(h, R) }, h.conditions.map(asStatus), R);
 
 /** Where a part of a sheet number comes from, in the order `explain` adds them. */
-export const SOURCES = ['base', 'level', 'stats', 'gear', 'title', 'path', 'skills', 'gm', 'statuses'] as const;
+export const SOURCES = ['base', 'level', 'stats', 'gear', 'title', 'path', 'skills', 'keystone', 'gm', 'statuses'] as const;
 export type SheetSource = (typeof SOURCES)[number];
 export const SOURCE_LABELS: { readonly [K in SheetSource]: string } = {
-  base: 'Base', level: 'Level', stats: 'Stats', gear: 'Gear', title: 'Title', path: 'Path', skills: 'Passive skills', gm: 'GM\'s change', statuses: 'Statuses',
+  base: 'Base', level: 'Level', stats: 'Stats', gear: 'Gear', title: 'Title', path: 'Path', skills: 'Passive skills', keystone: 'Keystones', gm: 'GM\'s change', statuses: 'Statuses',
 };
 /** One part of a sheet number: where it comes from and how much it adds. */
 export type Part = { readonly from: SheetSource; readonly amount: number };
@@ -150,9 +176,10 @@ export function explain(h: SheetHunter, key: SheetNumber, R: SheetRules): { tota
   const title = add(geared, h.titles.find(t => t.id === h.titleId)?.bonus ?? {});
   const path = add(title, sum(pathPerks(h, R)));
   const skills = add(path, sum(h.skills.map(s => s.type === 'passive' ? s.bonus : {})));
+  const keys = add(skills, sum(heldKeystones(h, R).map(k => k.keystone.bonus)));
   const steps: readonly (readonly [SheetSource, SheetBasis, readonly Status[]])[] = [
     ['base', base, []], ['level', level, []], ['stats', stats, []], ['gear', geared, []], ['title', title, []], ['path', path, []],
-    ['skills', skills, []], ['gm', full, []], ['statuses', full, h.conditions.map(asStatus)],
+    ['skills', skills, []], ['keystone', keys, []], ['gm', full, []], ['statuses', full, h.conditions.map(asStatus)],
   ];
   const values = steps.map(([, b, s]) => modified({ kind: 'hunter', build: b }, s, R).sheet[key]);
   return { total: values[values.length - 1]!, parts: steps.map(([from], i) => ({ from, amount: i === 0 ? values[0]! : values[i]! - values[i - 1]! })) };

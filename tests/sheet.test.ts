@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { autoSpend, buildOf, checkBonus, checksOf, hunterSheet, setMaximum } from '../src/core/hunter/sheet.ts';
+import { autoSpend, buildOf, checkBonus, checksOf, explain, hunterSheet, setMaximum } from '../src/core/hunter/sheet.ts';
 import { newHunter } from '../src/core/save.ts';
 import type { SheetCondition, SheetHunter, SheetItem, SheetPath, SheetRules } from '../src/core/hunter/sheet.ts';
 import { statusKey } from '../src/core/combat/effect-ops.ts';
@@ -7,8 +7,10 @@ import type { StatusDef } from '../src/core/combat/effect-ops.ts';
 import { levelPoints } from '../src/core/hunter/progress.ts';
 import type { Progress } from '../src/core/hunter/progress.ts';
 import { RULES } from '../src/core/rules.ts';
+import { keystoneOf } from '../src/core/registry/keystones.ts';
 import type { Stats } from '../src/core/stats.ts';
 import { qid } from './fixtures/ids.ts';
+import { withKeystones } from './fixtures/keystone-rules.ts';
 
 // Curve values are worked by hand from design 2.1: eff(s) = 10 * (s / 10) ^ 0.8, x(s) = eff(s) - 10,
 // capped(x, cap) = cap * x / (x + 40). Rule numbers are read from RULES by name.
@@ -216,5 +218,28 @@ describe('the GM\'s edit of max HP and max mana', () => {
     const once = setMaximum(h, 'manaMax', -5, RULES);
     expect([once.manaAdj, hunterSheet(once, RULES).sheet.manaMax, once.mana]).toEqual([-max, 0, 0]);
     expect(setMaximum(once, 'manaMax', -5, RULES)).toEqual(once);
+  });
+});
+
+describe('keystones on the sheet (notes-11-keystones.md, design A.3)', () => {
+  const focused = hunter({ rank: 'D', level: 12, stats: stats({ dis: 30, vit: 15 }) });
+  const mark = keystoneOf({ tier: 'mark', stat: 'dis' }, RULES);
+  const on: SheetRules = withKeystones(R);
+
+  test('a keystone\'s bonus is on the sheet', () => {
+    expect(mark.bonus.tenacity, 'the registry gives Dis\'s mark a tenacity bonus').toBeGreaterThan(0);
+    expect(buildOf(focused, on).perks).toEqual(mark.bonus);
+    const gain = hunterSheet(focused, on).sheet.tenacity - hunterSheet(focused, R).sheet.tenacity;
+    expect(gain).toBeGreaterThan(0);
+    expect(explain(focused, 'tenacity', on).parts.find(p => p.from === 'keystone')!.amount).toBe(gain);
+  });
+
+  test('the keystone is earned from points, not from gear: a ring of Discipline adds its bonus and no mark', () => {
+    const ringed = hunter({ rank: 'D', level: 12, stats: stats({ vit: 15 }), items: [{ id: 'r', bonus: { dis: 20 } }], equipped: { ring1: 'r' } });
+    expect(buildOf(ringed, on).perks).toEqual({ dis: 20 });
+  });
+
+  test('with the room\'s switch off the sheet holds no keystone bonus', () => {
+    expect(buildOf(focused, R).perks).toEqual({});
   });
 });

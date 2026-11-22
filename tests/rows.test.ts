@@ -37,7 +37,10 @@ import { pinKeyOf } from '../src/core/combat/map-view.ts';
 import { codexKey } from '../src/core/bestiary.ts';
 import type { RowHunter, RowMonster, RowShadow } from '../src/core/combat/rows.ts';
 import { sameRankHit as simHit } from './models/fight-sim.ts';
-import { iid } from './fixtures/ids.ts';
+import { iid, jcid, qid } from './fixtures/ids.ts';
+import { withKeystones } from './fixtures/keystone-rules.ts';
+import { keystoneOf } from '../src/core/registry/keystones.ts';
+import { stepQuest } from '../src/core/hunter/job-chain.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
 const sheetKey = (s: string) => parseSheetKey(s) ?? (() => { throw new Error(`not a sheet key: ${s}`); })();
 
@@ -515,5 +518,70 @@ describe('a row knows its monster by a field, not by its name (implicit audit 3,
     expect([pinKeyOf(a!), pinKeyOf(b!)]).toEqual(['monster:Unit X', 'monster:Unit X']);
     const one = hunterRow(hunter({ id: 'h1', name: 'Kai' }), id('c1'), RULES), two = hunterRow(hunter({ id: 'h2', name: 'Kai' }), id('c2'), RULES);
     expect([pinKeyOf(one), pinKeyOf(two)]).toEqual(['hunter:h1', 'hunter:h2']);
+  });
+});
+
+describe('keystones on a fight\'s rows (notes-11-keystones.md, design A.5)', () => {
+  const on = withKeystones(R), off = R;
+  const labels = (r: NewRow) => r.statuses.filter(s => s.worn).map(s => s.def.label);
+  const markOf = keystoneOf({ tier: 'mark', stat: 'str' }, RULES), apexOf = keystoneOf({ tier: 'apex', stat: 'str' }, RULES);
+
+  test('a hunter\'s row wears its keystones: the worn status of each, the active of each after the hunter\'s own', () => {
+    const focused = hunter({ rank: 'B', level: 20, stats: stats({ str: 50, vit: 12 }) });
+    const r = hunterRow(focused, id('c1'), on);
+    expect(labels(r)).toEqual([markOf.worn!.label]);
+    expect(r.abilities.map(a => a.id)).toEqual([ATTACK_ID, wornAbilityId(apexOf.active!.id)]);
+    expect(r.statuses.every(s => s.source.tier === 3 && s.until === null), 'at the hunter\'s rank, until removed').toBe(true);
+    expect(labels(remoteRow(focused, sheetKey('room:h1'), id('c2'), on)), 'a hunter on another phone is read the same').toEqual([markOf.worn!.label]);
+  });
+
+  test('with keystones off no row wears one', () => {
+    const focused = hunter({ rank: 'B', level: 20, stats: stats({ str: 50, vit: 12 }) });
+    expect(RULES.fight.keystone.on, 'the shipped rules').toBe(false);
+    expect(labels(hunterRow(focused, id('c1'), R))).toEqual([]);
+    expect(labels(monsterRows(monster({ rank: 'B', archetype: 'brute', kind: 'boss' }), [id('m1')], R)[0]!)).toEqual([]);
+  });
+
+  test('a hunter under the share, a hunter below the rank and a room with the switch off hold none', () => {
+    expect(labels(hunterRow(hunter({ rank: 'B', level: 20, stats: stats({ str: 14, agi: 14, vit: 14, ins: 14, dis: 14, pre: 14, pow: 14, ctl: 14 }) }), id('c1'), on)), 'an even spread').toEqual([]);
+    expect(labels(hunterRow(hunter({ rank: 'E', stats: stats({ str: 40 }) }), id('c1'), on)), 'rank E').toEqual([]);
+    const [r] = [hunterRow(hunter({ rank: 'B', level: 20, stats: stats({ str: 50, vit: 12 }) }), id('c1'), off)];
+    expect([labels(r!), r!.abilities.length]).toEqual([[], 1]);
+  });
+
+  test('a gear bonus never earns one, and a fight status never takes one away', () => {
+    const plain = hunter({ rank: 'B', level: 20, items: [{ id: 'g', name: 'Belt', bonus: { str: 40 } }], equipped: { belt: 'g' } });
+    expect(labels(hunterRow(plain, id('c1'), on))).toEqual([]);
+    const fear: StatusDef = { label: 'Frightened', desc: '', ops: [{ op: 'stat', key: 'str', amount: { kind: 'number', value: -20 } }] };
+    const marked = hunter({ rank: 'D', level: 12, stats: stats({ str: 30, vit: 15 }), conditions: [condition('frightened', fear, null)] });
+    expect(labels(hunterRow(marked, id('c1'), on))).toEqual([markOf.worn!.label]);
+  });
+
+  test('a finished Job Change adds the confluence\'s awakened powers after it, and only then', () => {
+    const last = { ...stepQuest('Mage', 3, { chainId: jcid('jc1'), questId: qid('q3'), at: '2026-01-01', level: 10 }), status: 'done' as const, doneAt: '2026-01-01', told: true };
+    const mage = hunter({ rank: 'C', level: 14, stats: stats({ pow: 30, ctl: 24 }), job: 'Mage' });
+    const confluence = keystoneOf({ tier: 'confluence', pair: 'pow+ctl' }, RULES);
+    const before = hunterRow(mage, id('c1'), on), after = hunterRow({ ...mage, jobDone: 'Mage' }, id('c1'), on);
+    expect(labels(before)).toContain(confluence.worn!.label);
+    expect(labels(before)).not.toContain(confluence.awakened!.worn!.label);
+    expect(labels(after)).toContain(confluence.awakened!.worn!.label);
+    expect(labels(after).indexOf(confluence.worn!.label)).toBeLessThan(labels(after).indexOf(confluence.awakened!.worn!.label));
+  });
+
+  test('a normal monster holds none; an elite, a boss and a mythic hold what their stats earn', () => {
+    const rank = 'B' as const, archetype = 'brute' as const;
+    const stand = (kind: RowMonster['kind']) => monsterRows(monster({ rank, archetype, kind }), [id('m1')], on)[0]!;
+    expect(labels(stand('normal'))).toEqual([]);
+    expect(stand('normal').abilities.map(a => a.id)).toEqual([ATTACK_ID]);
+    for (const kind of ['elite', 'boss', 'mythic'] as const) {
+      expect(labels(stand(kind)), kind).toContain(markOf.worn!.label);
+      expect(stand(kind).abilities.map(a => a.id), kind).toContain(wornAbilityId(apexOf.active!.id));
+    }
+    expect(labels(monsterRows(monster({ rank, archetype, kind: 'boss' }), [id('m1')], off)[0]!), 'switch off').toEqual([]);
+  });
+
+  test('a monster below rank D holds none, and a shadow holds none at any kind', () => {
+    expect(labels(monsterRows(monster({ rank: 'E', archetype: 'brute', kind: 'boss' }), [id('m1')], on)[0]!)).toEqual([]);
+    expect(labels(shadowRow(shadow({ rank: 'S', grade: 'Marshal' }), 'h1', id('s1'), on))).toEqual([]);
   });
 });

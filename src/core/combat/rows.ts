@@ -11,15 +11,18 @@ import type { Rank } from '../rules.ts';
 import type { ShadowGrade } from '../save.ts';
 import type { StatKey } from '../stats.ts';
 import { diceOf, mean as meanOf } from '../formula.ts';
-import { ARCHETYPES, kitGear, NO_TWEAK, pointsAt, split } from '../hunter/derive.ts';
+import { ARCHETYPES, kitGear, monsterStats, NO_TWEAK, pointsAt, split } from '../hunter/derive.ts';
 import type { Archetype, Bonus, SheetBasis, MonsterKind, MonsterTrait, Sheet, Tweak } from '../hunter/derive.ts';
-import { buildOf } from '../hunter/sheet.ts';
+import { buildOf, heldKeystones } from '../hunter/sheet.ts';
 import type { SheetHunter, SheetItem, SheetRules } from '../hunter/sheet.ts';
 import { lifeAfter } from '../hunter/vitals.ts';
 import type { Life } from '../hunter/vitals.ts';
 import { TIER_BUDGET } from '../registry/paths.ts';
 import { ARCHETYPE_ATTACKS, itemAbility, weaponAttack, wornAbilityId } from '../registry/abilities.ts';
 import type { Powers } from '../registry/powers.ts';
+import type { Keystone } from '../registry/keystones.ts';
+import { keystoneOf } from '../registry/keystones.ts';
+import { keystonesOf } from '../hunter/keystones.ts';
 import { monsterScript, monsterXp, tweakOfMonster } from '../registry/monsters.ts';
 import { mythicScriptOf } from '../registry/mythics.ts';
 import type { MythicScriptId } from '../registry/mythics.ts';
@@ -123,13 +126,16 @@ function distinct(list: readonly Ability[]): Ability[] {
 type Held = { readonly powers: Readonly<Powers>; readonly tier: number };
 /**
  * The one place a row reads what a hunter's held things give in a fight (item-stats 6.1): the active title's powers at
- * the hunter's rank, then each worn item's (in a slot) at its rarity's tier, in the slots' order. Another title and an
- * item in the bag give none.
+ * the hunter's rank, then each worn item's (in a slot) at its rarity's tier, in the slots' order, then each keystone it
+ * holds (`heldKeystones`) at the hunter's rank, a confluence's awakened powers after it. Another title and an item in
+ * the bag give none.
  */
-export function heldPowers(h: Pick<RowHunter, 'titles' | 'titleId' | 'items' | 'equipped' | 'rank'>): Held[] {
+export function heldPowers(h: RowHunter, R: RowRules): Held[] {
   const title = h.titles.find(t => t.id === h.titleId);
   const worn = Object.values(h.equipped).flatMap(id => h.items.find(i => i.id === id) ?? []);
-  return [...(title ? [{ powers: title, tier: rankIdx(h.rank) }] : []), ...worn.map(i => ({ powers: i, tier: itemSource({ rar: i.rar ?? 'common' }).tier }))];
+  const tier = rankIdx(h.rank);
+  const keystones = heldKeystones(h, R).flatMap(({ keystone, awakened }) => [{ powers: keystone, tier }, ...(awakened ? [{ powers: awakened, tier }] : [])]);
+  return [...(title ? [{ powers: title, tier }] : []), ...worn.map(i => ({ powers: i, tier: itemSource({ rar: i.rar ?? 'common' }).tier })), ...keystones];
 }
 
 /**
@@ -138,7 +144,7 @@ export function heldPowers(h: Pick<RowHunter, 'titles' | 'titleId' | 'items' | '
  * (`itemAbility`), on its user or on another, in the bag's order. A held thing's active is its holder's at the holder's
  * rank, as a skill's is, with its own cooldown and gates; it is never a bag item's use, so it spends nothing held.
  */
-export function hunterAbilities(h: Pick<RowHunter, 'items' | 'equipped' | 'skills' | 'titles' | 'titleId' | 'rank'>, R: KindRules): Ability[] {
+export function hunterAbilities(h: RowHunter, R: RowRules): Ability[] {
   const w = h.items.find(i => i.id === h.equipped['weapon']);
   const weapon: Weapon | null = w?.attack !== undefined && w.dice !== undefined ? { name: w.name, dice: w.dice, attack: w.attack } : null;
   const thrown = h.items.flatMap(i => {
@@ -147,7 +153,7 @@ export function hunterAbilities(h: Pick<RowHunter, 'items' | 'equipped' | 'skill
     const a = id !== null && i.type === 'consumable' && (i.qty ?? 0) > 0 ? itemAbility({ id, name: i.name, rar: i.rar ?? 'common', target: i.target === 'other' ? 'other' : 'self', effects: i.effects ?? [] }, R) : null;
     return a ? [a] : [];
   });
-  const held = heldPowers(h).flatMap(({ powers: { active } }): Ability[] => {
+  const held = heldPowers(h, R).flatMap(({ powers: { active } }): Ability[] => {
     if (!active) return [];
     const { item: _never, ...own } = active;
     return [{ ...own, id: wornAbilityId(active.id) }];
@@ -155,22 +161,25 @@ export function hunterAbilities(h: Pick<RowHunter, 'items' | 'equipped' | 'skill
   return distinct([weaponAttack(weapon, R), ...h.skills.flatMap(s => (s.type === 'active' && s.ability ? [s.ability] : [])), ...held, ...thrown]);
 }
 
+/** A worn status of `def` from `source`, under a key made from its label that `keys` does not hold, which then holds it. */
+function wornOn(def: StatusDef, source: Status['source'], keys: Set<string>, now: Tick): Status {
+  const key = freeStatusKey(def.label, k => keys.has(k));
+  keys.add(key);
+  return statusOn(def, { key, source, until: null, since: now, settledAt: now, worn: true });
+}
+
 /**
  * The worn statuses of a hunter (kits design 1.3.2): each passive skill's, at the hunter's rank with the row as its
  * source, then each held thing's `worn` (`heldPowers`: the active title's at the hunter's rank, feature 1's notes 17.14,
- * then each worn item's at the item's rarity), the row its source (item-stats 6.3: its threshold and end read the
+ * then each worn item's at the item's rarity, then its keystones), the row its source (item-stats 6.3: its threshold and end read the
  * wearer, and it is the wearer's act). Each lasts until removed, under a
  * key made from its label that no condition and no other worn status holds, and is never written back (`worn`).
  */
 function wornStatuses(h: RowHunter, id: CombatantId, taken: readonly string[], now: Tick, R: RowRules): Status[] {
   const keys = new Set(taken), out: Status[] = [];
-  const put = (def: StatusDef, source: Status['source']): void => {
-    const key = freeStatusKey(def.label, k => keys.has(k));
-    keys.add(key);
-    out.push(statusOn(def, { key, source, until: null, since: now, settledAt: now, worn: true }));
-  };
+  const put = (def: StatusDef, source: Status['source']): void => { out.push(wornOn(def, source, keys, now)); };
   for (const s of h.skills) if (s.type === 'passive' && s.worn) put(s.worn, { id, tier: rankIdx(h.rank) });
-  for (const { powers, tier } of heldPowers(h)) if (powers.worn) put(powers.worn, { id, tier });
+  for (const { powers, tier } of heldPowers(h, R)) if (powers.worn) put(powers.worn, { id, tier });
   return out;
 }
 
@@ -250,6 +259,17 @@ export function staggerOf(on: BarBody, R: RowRules): Stagger | null {
 }
 
 /**
+ * The keystones a monster of `m`'s kind holds (design A.5): from its own stats, which its rank's points split 2:1 by its
+ * archetype and its seed's tweak, at its rank, with no job and no awakening. Only a kind in `keystone.monsterKinds`
+ * holds any, and none while the switch is off.
+ */
+function monsterKeystones(m: RowMonster, R: RowRules): Keystone[] {
+  if (!R.fight.keystone.monsterKinds.includes(m.kind)) return [];
+  const stats = monsterStats(m.rank, m.archetype, R, tweakOfMonster(m.tweak));
+  return keystonesOf({ stats, rank: m.rank, pair: null, awakened: false }, R.fight).map(k => keystoneOf(k, R));
+}
+
+/**
  * One row of monster `m` for each id: named `m.name` alone, or with a letter each in a pack ("Goblin A"). Each has the
  * archetype's attack first and then its own abilities, full HP and mana for its sheet, its XP, a threat table, its
  * kind's stagger bar, and its start statuses from its joining (as a hunter's), the row itself the source at its rank's tier. A start status
@@ -258,13 +278,17 @@ export function staggerOf(on: BarBody, R: RowRules): Stagger | null {
  * A mythic, while `fight.mythic.scripts` is on, plays its script (design B.3): it starts calm in its first phase
  * (`mythicStart`), its bar that phase's share of its kind's, wearing that phase's statuses after its start statuses (one
  * whose key a start status holds is left out). With the switch off, and on every other monster, its standing is null.
+ * A monster of a kind in `keystone.monsterKinds` also wears its keystones (`monsterKeystones`) after those, and takes
+ * their actives after its own abilities, as a hunter's row does.
  */
 export function monsterRows(m: RowMonster, ids: readonly CombatantId[], R: RowRules & Pick<Rules, 'rankTable'> & { readonly conditions: StatusDefs }): NewRow[] {
   const now = JOINS;
   const origin: Origin = { kind: 'monster', name: cut(m.name), rank: m.rank, archetype: m.archetype, monsterKind: m.kind, tweak: tweakOfMonster(m.tweak), ...(m.type ? { type: m.type.slice(0, TYPE_MAX) } : {}), ...(m.icon ? { icon: m.icon } : {}) };
   const script = R.fight.mythic.scripts ? monsterScript(m) : null, first = script === null ? null : mythicScriptOf(script).phases[0];
   const bar = staggerOf({ rank: m.rank, archetype: m.archetype, kind: m.kind, tweak: tweakOfMonster(m.tweak) }, R);
-  const tier = rankIdx(m.rank), stagger = bar && first ? { ...bar, max: bar.max * first.bar } : bar, abilities = distinct([ARCHETYPE_ATTACKS[m.archetype](R), ...m.abilities]);
+  const keystones = monsterKeystones(m, R);
+  const tier = rankIdx(m.rank), stagger = bar && first ? { ...bar, max: bar.max * first.bar } : bar;
+  const abilities = distinct([ARCHETYPE_ATTACKS[m.archetype](R), ...m.abilities, ...keystones.flatMap(({ active }) => active ? [{ ...active, id: wornAbilityId(active.id) }] : [])]);
   return ids.map((id, i) => {
     const suffix = ids.length === 1 ? '' : ` ${letter(i)}`;
     const own = m.statuses.flatMap(s => {
@@ -272,7 +296,9 @@ export function monsterRows(m: RowMonster, ids: readonly CombatantId[], R: RowRu
       return def ? [starting(s.key, def, { id, tier }, s.rounds, now, R, s.stacks)] : [];
     });
     const worn = (first?.worn ?? []).filter(w => !own.some(s => s.key === w.key)).map(w => starting(w.key, w.def, { id, tier }, null, now, R));
-    const statuses = [...own, ...worn].slice(0, MAX_STATUSES);
+    const keys = new Set([...own, ...worn].map(x => x.key));
+    const kept = keystones.flatMap(({ worn: def }) => def ? [wornOn(def, { id, tier }, keys, now)] : []);
+    const statuses = [...own, ...worn, ...kept].slice(0, MAX_STATUSES);
     const { sheet } = modified(origin, statuses, R);
     return {
       id, name: m.name.slice(0, NAME_MAX - suffix.length) + suffix, side: 'foe', kind: 'monster', origin, tier, place: null,

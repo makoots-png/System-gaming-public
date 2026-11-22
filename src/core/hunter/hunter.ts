@@ -113,7 +113,9 @@ export type RankBy = (typeof RANK_BY)[number];
  * src/core/hunter/sheet.ts `hunterSheet`. `hpAdj` and `manaAdj` are the GM's edits of max HP and max mana.
  */
 export type Hunter = Progress & Vitals & {
-  id: HunterId; name: string; /** The hunter's job, or null for none. */ job: string | null; rank: Rank;
+  id: HunterId; name: string; /** The hunter's job, or null for none. */ job: string | null;
+  /** The job whose Job Change this hunter finished: what its keystones' awakened powers read, so deleting the done quest takes none. */
+  jobDone: string | null; rank: Rank;
   /** Who set the rank: a rank set by the GM by hand stays when levels are lost (SMX-rules-7.2). */
   rankBy: RankBy; gold: number; stats: Stats;
   hpAdj: number; manaAdj: number; conditions: Condition[];
@@ -149,7 +151,7 @@ export const newShadow = (): Shadow => ({
 export const newHunter = (R: Rules = BASE_RULES): Hunter => {
   const stats = newStats(R);
   const h: Hunter = {
-    ...newProgress(), ...newVitals({ hpMax: 1, manaMax: 0, fatigueMax: 0 }), id: saveId('h', 1), name: 'Hunter', job: null, rank: 'E', rankBy: 'level',
+    ...newProgress(), ...newVitals({ hpMax: 1, manaMax: 0, fatigueMax: 0 }), id: saveId('h', 1), name: 'Hunter', job: null, jobDone: null, rank: 'E', rankBy: 'level',
     gold: 0, stats, hpAdj: 0, manaAdj: 0, conditions: [], titleId: null, titles: [],
     quests: [], skills: [], items: [], equipped: newEquipped(), shadows: [],
     daily: { streak: 0, lastCompleteKey: null, lastCheckedKey: null }, penalty: null, jobChain: null, notes: '', updatedAt: '',
@@ -195,7 +197,7 @@ export const hunterExample = (R: Rules): Hunter => newHunter(R);
 export function fixHunter(saveRun: RepairRun, h: Hunter): void {
   const run: RepairRun = { ...saveRun, owner: h };
   const { R } = run;
-  h.name = h.name.slice(0, 60) || 'Hunter'; h.job = jobOf(h.job);
+  h.name = h.name.slice(0, 60) || 'Hunter'; h.job = jobOf(h.job); h.jobDone = jobOf(h.jobDone);
   h.rank = oneOf(h.rank, RANKS, 'E'); h.rankBy = oneOf(h.rankBy, RANK_BY, 'level');
   h.level = levelOf(h.level); h.xp = Math.max(0, h.xp); h.gold = Math.max(0, h.gold);
   h.peakLevel = Math.max(h.level, levelOf(h.peakLevel));

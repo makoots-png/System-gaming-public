@@ -337,3 +337,45 @@ half its turn back when a spell kills, once a round (14.6, one trigger now that 
   untagged strike and not on a curse.
 - principle-explain-the-number: each budget is named with the keystones that set it, and each moved keystone with what
   it weighed before and after.
+
+# K4
+
+The rows and the sheet. Branch `keystones-4`.
+
+## What was built
+
+- `heldKeystones(h, R)` in `src/core/hunter/sheet.ts`: a hunter's keystones, made under the rules (`keystoneOf`), each with
+  its confluence's `awakened` powers when the job's chain is done. `SheetHunter` gains optional `job` and `quests` (the
+  fields `keystoneBasis` reads; absent: no job, none done). `SheetRules` gains `dice` (a keystone's formulas need it).
+- The sheet: `buildOf` sums each keystone's `bonus` into the perks; `explain` has a `keystone` source (`SOURCES`, labelled
+  "Keystones") between passive skills and the GM's change.
+- `heldPowers(h, R)` in `rows.ts` adds each keystone, then its awakened powers, after the title and the worn items, at the
+  hunter's rank. Its worn status and active reach the row through the same two readers a title's do. Last, so a row that
+  held nothing before keeps its order and, if the status list ever fills, the earned powers go before the gear's.
+- `monsterKeystones`: a monster whose kind is in `monsterKinds` reads `keystonesOf` over `monsterStats` (rank, archetype
+  and seed's tweak), no job, no awakening. Its statuses go after its own and a mythic phase's, `worn: true`, so no dispel
+  or write-back takes them; its actives follow its own abilities as `wornAbilityId`. A shadow and a summon hold none.
+- A room's switch: `keystonesOf` returns none when `keystone.on` is false, so every reader above is empty with no check of
+  its own (tested on a hunter's row and a boss's).
+
+## Decision: where "the chain is done" lives
+
+A stored field, `Hunter.jobDone: string | null` (the job whose Job Change the hunter finished), as the lead ruled after
+K4 first read it from the done quest (a hunter who deleted that quest lost its awakened powers). It is set where the
+chain's `grantJob` effect is applied (`chained` in `src/core/hunter/quests.ts`, beside `job`), parsed in `fixHunter`
+(`jobOf`, default null) and read by `keystoneBasis` as `awakened = job !== null && h.jobDone === job`. A hunter whose
+job changes by hand keeps no awakening for the new job. `SheetHunter` and `KeystoneHunter` carry `jobDone` where they
+carried `quests`. Test: "a hunter who finished its Job Change keeps its awakened powers when the quest is deleted".
+
+## Keystones ship off
+
+`RULES.fight.keystone.on` is false until K5's rows hold and K6's screens exist. A test that needs keystones builds its
+rules with `withKeystones` / `KEYSTONES_ON` (`tests/fixtures/keystone-rules.ts`), the one place.
+
+## What did not hold
+
+- `src/core/registry/keystones.ts` line 50 (outside K4's list, one token): `if (!p.ok)` became `if ('error' in p)`, the idiom
+  `kit-examples.ts` uses. Views are checked with `strictNullChecks` off, where `!p.ok` does not narrow; the views reach this
+  file now that `rows.ts` imports it.
+- A monster's keystone `bonus` is not applied: `monsterSheet` takes no perks, and A.5 asks for the powers only. K5 may
+  decide otherwise.

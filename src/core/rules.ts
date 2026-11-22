@@ -648,7 +648,9 @@ const SPEC = {
     // statuses never count.
     keystone: {
       // A room's switch: off, no body holds a keystone and the fights of before keystones hold.
-      on: true,
+      // It ships off until unit K5's rows (the fight simulation of a keystone's win share) hold and K6's screens explain
+      // a keystone, then on, as `mythic.scripts` does.
+      on: false,
       // At most three stats can hold 30% (30% times 3 is 90%), so a mark names one of the hunter's few stats, never one of many.
       markShare: real(0.3, 0.2, 0.5, 'the share of spent points that earns a stat its mark: under 0.2 five stats hold one, past 0.5 one stat at most'),
       // A quarter each: two stats holding half the points. Four even stats still earn their top pair.

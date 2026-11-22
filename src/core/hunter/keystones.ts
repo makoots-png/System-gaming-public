@@ -10,7 +10,6 @@ import type { FightRules, Rank } from '../rules.ts';
 import { BUILT_IN_JOBS, isJobName } from '../registry/jobs.ts';
 import { allocated } from './progress.ts';
 import type { Pending } from './progress.ts';
-import type { Quest } from './hunter.ts';
 
 /** Every unordered pair of a list, each written `first+second` in the list's order. */
 type PairOf<K extends readonly string[]> = K extends readonly [infer H extends string, ...infer T extends readonly string[]]
@@ -124,19 +123,19 @@ export function keystoneReach(b: KeystoneBasis, R: KeystoneRules): readonly Stat
   });
 }
 
-/** What a hunter's keystones are read from: its points, rank and job, and its quests for the Job Change it finished. */
+/** What a hunter's keystones are read from: its points, rank and job, and the job whose Job Change it finished (`Hunter.jobDone`). */
 export type KeystoneHunter = {
   readonly stats: Stats; readonly pending?: Pending; readonly rank: Rank; readonly job: string | null;
-  readonly quests: readonly Pick<Quest, 'kind' | 'status' | 'chainId' | 'rewards'>[];
+  readonly jobDone: string | null;
 };
 /**
  * A hunter's basis: its allocated stats (confirmed and pending, so the allocation screen previews a keystone before
  * Confirm), its rank, its job's pair (a job of `registry/jobs.ts`; any other job leans to none) and whether that job's
- * Job Change chain is done: the chain's third step's quest, which gives the job, is done. Its gear, titles, perks and
+ * Job Change chain is done (`jobDone` is that job). Its gear, titles, perks and
  * statuses are not read.
  */
 export function keystoneBasis(h: KeystoneHunter): KeystoneBasis {
   const job = isJobName(h.job) ? h.job : null;
-  const awakened = job !== null && h.quests.some(q => q.kind === 'job' && q.chainId !== undefined && q.status === 'done' && q.rewards.job === job);
+  const awakened = job !== null && h.jobDone === job;
   return { stats: allocated(h), rank: h.rank, pair: job ? BUILT_IN_JOBS[job].pair : null, awakened };
 }

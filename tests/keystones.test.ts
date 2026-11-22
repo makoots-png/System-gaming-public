@@ -9,6 +9,9 @@ import { hunterSheet } from '../src/core/hunter/sheet.ts';
 import type { SheetCondition, SheetHunter } from '../src/core/hunter/sheet.ts';
 import { statusKey } from '../src/core/combat/effect-ops.ts';
 import { stepQuest } from '../src/core/hunter/job-chain.ts';
+import { chained, deleteQuest } from '../src/core/hunter/quests.ts';
+import { isRefused } from '../src/core/save-step.ts';
+import { newHunter } from '../src/core/save.ts';
 import { BUILT_IN_JOBS, JOB_NAMES } from '../src/core/registry/jobs.ts';
 import { BONUS_KEYS, RULES } from '../src/core/rules.ts';
 import type { BonusKey, Rank } from '../src/core/rules.ts';
@@ -22,8 +25,9 @@ import type { Bonus } from '../src/core/hunter/derive.ts';
 import { STAT_KEYS, statsBy } from '../src/core/stats.ts';
 import type { StatKey, Stats } from '../src/core/stats.ts';
 import { jcid, qid } from './fixtures/ids.ts';
+import { KEYSTONES_ON } from './fixtures/keystone-rules.ts';
 
-const F = RULES.fight;
+const F = KEYSTONES_ON.fight;
 /** The stats of a body that put `points` above the base. */
 const built = (points: Partial<Record<StatKey, number>>): Stats => statsBy(k => F.statBase + (points[k] ?? 0));
 const body = (points: Partial<Record<StatKey, number>>, rank: Rank, pair: StatPair | null = null): KeystoneBasis =>
@@ -133,7 +137,7 @@ const AT = '2026-11-22T12:00:00.000Z';
 type Hunter = SheetHunter & KeystoneHunter;
 const hunter = (o: Partial<Hunter> = {}): Hunter => ({
   stats: built({}), level: 10, rank: 'D', fatigue: 0, penalty: null, hpAdj: 0, manaAdj: 0, titleId: null, titles: [],
-  items: [], equipped: {}, build: { path: null, picks: [] }, skills: [], conditions: [], job: null, quests: [], ...o,
+  items: [], equipped: {}, build: { path: null, picks: [] }, skills: [], conditions: [], job: null, jobDone: null, ...o,
 });
 const keys = (h: Hunter): readonly KeystoneKey[] => keystonesOf(keystoneBasis(h), F);
 
@@ -162,13 +166,26 @@ test('a fight status never changes one', () => {
 });
 
 test('a hunter\'s job gives its pair, and a finished Job Change awakens it', () => {
-  const lastStep = { ...stepQuest('Mage', 3, { chainId: jcid('jc1'), questId: qid('q3'), at: AT, level: 10 }), status: 'done' as const, doneAt: AT, told: true };
   const mage = hunter({ job: 'Mage', rank: 'C' });
   expect(keystoneBasis(mage)).toMatchObject({ pair: 'pow+ctl', awakened: false });
-  expect(keystoneBasis({ ...mage, quests: [{ ...lastStep, status: 'active' }] }).awakened).toBe(false);
-  expect(keystoneBasis({ ...mage, quests: [lastStep] }).awakened).toBe(true);
-  expect(keystoneBasis({ ...mage, job: 'Fighter', quests: [lastStep] })).toMatchObject({ pair: 'str+vit', awakened: false });
+  expect(keystoneBasis({ ...mage, jobDone: 'Mage' }).awakened).toBe(true);
+  expect(keystoneBasis({ ...mage, jobDone: 'Fighter' }).awakened, 'another job\'s chain').toBe(false);
+  expect(keystoneBasis({ ...mage, job: 'Fighter', jobDone: 'Mage' })).toMatchObject({ pair: 'str+vit', awakened: false });
   expect(keystoneBasis({ ...mage, job: 'Shadow Monarch' })).toMatchObject({ pair: null, awakened: false });
+});
+
+test('a hunter who finished its Job Change keeps its awakened powers when the quest is deleted', () => {
+  const lastStep = { ...stepQuest('Mage', 3, { chainId: jcid('jc1'), questId: qid('q3'), at: AT, level: 10 }), status: 'done' as const, doneAt: AT, told: true };
+  const chain = { id: jcid('jc1'), job: 'Mage' as const, step: 3 as const, status: 'active' as const, questId: qid('q3') };
+  const running = { ...newHunter(RULES), rank: 'C' as const, quests: [lastStep], jobChain: chain };
+  expect(keystoneBasis(running).awakened, 'a chain still running').toBe(false);
+  const finished = chained(running, { type: 'stepCompleted', questId: qid('q3'), level: 10, nextQuestId: qid('q4'), at: AT }).hunter;
+  expect([finished.job, finished.jobDone, finished.jobChain]).toEqual(['Mage', 'Mage', null]);
+  expect(keystoneBasis(finished).awakened).toBe(true);
+  const deleted = deleteQuest(finished, 'q3', 'gm');
+  if (isRefused(deleted)) throw new Error('the quest was not deleted');
+  expect(deleted.hunter.quests).toEqual([]);
+  expect(keystoneBasis(deleted.hunter).awakened).toBe(true);
 });
 
 // ── the registry (unit K2): what each keystone does ──

@@ -47,7 +47,7 @@ export type KeystoneMaker = (R: KeystoneRegistryRules) => Keystone;
 // ── the parts every row is written with ──
 const formula = (text: string, R: KeystoneRegistryRules): Formula => {
   const p = parseFormula(text, R);
-  if (!p.ok) throw new Error(`A keystone's formula does not parse: ${text}: ${p.error}`);
+  if ('error' in p) throw new Error(`A keystone's formula does not parse: ${text}: ${p.error}`);
   return p.formula;
 };
 const rounds = (n: number, R: KeystoneRegistryRules): Tick => tick(n * R.fight.round);

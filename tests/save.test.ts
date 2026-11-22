@@ -408,6 +408,12 @@ describe('a damaged or hostile save', () => {
     expect(Object.hasOwn(Object.prototype, 'polluted')).toBe(false);
   });
 
+  test('a hunter saved before the Job Change was remembered has finished none', () => {
+    expect(onlyHunter(parseRaw(withHunter({ job: 'Mage' }))).jobDone).toBeNull();
+    expect(onlyHunter(parseRaw(withHunter({ job: 'Mage', jobDone: 'Mage' }))).jobDone).toBe('Mage');
+    expect(onlyHunter(parseRaw(withHunter({ jobDone: 7 }))).jobDone).toBeNull();
+  });
+
   test('a name of 100,000 characters is cut to 60, and long notes and quest titles are cut too', () => {
     const long = 'n'.repeat(100_000);
     const h = onlyHunter(parseRaw(withHunter({ name: long, job: long, notes: long, quests: [{ title: long, desc: long, penaltyText: long }], items: [{ name: long }] })));
