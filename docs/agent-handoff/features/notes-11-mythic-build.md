@@ -71,3 +71,58 @@ Branch `mythic-1`.
   mythic seeds took it from about 32,700 to 35,858 characters (57.8%). Item-stats 6.2 moved the same bound from 50%
   to 55% the same way. The other way out is a call for the lead: no mythic in a solo gate (a lone hunter against a
   fight built for 5 to 10% wins for three), which would drop them from the solo doc and keep 55%.
+
+## MY2: the machine and its readers, the chart
+
+Branch `mythic-2`. Nothing calls any of it yet: MY3 puts the standing on the row and raises the events, MY4 lands
+the moves.
+
+### What exists
+
+- `src/core/combat/mythic.ts`: `MYTHIC_TABLE` (B.3's table cell for cell), `mythicStep`, `mythicCan`,
+  `MYTHIC_STATES` and `MYTHIC_EVENTS` (both read from the table's keys, so neither list can miss a state or an event
+  the typecheck holds), `MythicEvent`, `MythicRefusal`, `Answer`; the readers `scriptOf`, `gateOf`, `heldAtGate`,
+  `clockOut`, `phaseOver`, `enraged`, `beatOf`, `landingMove`, `omenAim`, `answerMet`.
+- `tests/mythic.test.ts`: the seven named tests, plus the landing move, an omen with no foe to aim at, and three of
+  `answerMet`.
+- `scripts/charts/mythic.ts`, its entry in `MACHINES`, its line in `docs/guide/machines.md`.
+
+### Where B.3 did not hold against the code, and what was built
+
+- **The row has no `mythic` field yet** (MY3 adds it to `MonsterOwn`). The readers that B.3 gives a `row` take a
+  `MythicRow`: `Pick<Body, 'life' | 'sheet'> & { mythic: MythicStanding | null }`, which a `Body` will satisfy once
+  MY3 adds the field. The readers that need no HP take the standing alone: `clockOut(s, now, R)`, `enraged(s, now, R)`,
+  `beatOf(s, now, R)`, `landingMove(s)`. Each reader that reads a clock takes the rules (a round's length).
+- **`gateOf` reads `bandOf(script, phase).gate`**, as MY1 asked: a clock phase's gate is the next gate phase's
+  `from`, the HP it began at, so no damage moves it in the Dive. Rounded up (65% of 999 holds at 650).
+- **The chart walks the Angel's three phases, not a two-phase script.** `MythicStanding.script` is a key of
+  `MYTHICS` and the registry holds no two-phase script; adding one for a chart would put a fight in the codex. The
+  chart draws one box per phase (its name) with the three card states inside, so the `next` arrows and the last
+  phase's lack of one show. Standings that differ only by beat or `since` are one state of the walk (`at/phase`).
+- **`omenAim(aim, move, me, f, R)` takes the move.** `crowd` needs the move's reach, and the aim's form needs its kind:
+  a blast aims at the chosen body's tile (B.4: stepping out of the marked tiles answers it), any other move at the
+  body (going out of range makes it fizzle). The foes it picks among are `policy.ts`'s `foesOf`: up, not warded from
+  it, perceived by its side. `threat` with no entry ties every foe, so the first in row order. `crowd` counts the foes
+  each foe's tile catches in a radius of the reach (walls stop it, `inShape`); a `field` reach takes the first foe.
+  With no foe to pick, every aim is its own tile (the move then lands on no one or fizzles); B.3 left that case open.
+- **`answerMet(omen, hpAt, before, after)`** returns only the answers whose outcome does something, cancels first;
+  B.3 had `consequences` filter `none`. A weaken of an omen with no `weak` move is not met (tests/mythics.test.ts
+  already holds that an omen that weakens has one), so `landingMove` in `faltering` always finds a weak move.
+- **`omenAim` imports `threatOf` from fight-view.ts.** When MY3 makes fight-view's `intentOf` read `landingMove`,
+  the two modules import each other. Bun resolves it (only functions cross), and no lint forbids it; MY3 may move
+  `threatOf` and `tauntOf` down if it wants the cycle gone.
+
+### Calls the owner might have made otherwise
+
+- With no foe to aim at, an omen aims at its own tile. The other way: return null and have MY3's turn start skip the
+  announce (an act beat instead). Undo: `omenAim`'s last two lines and its test "with no foe up to pick".
+- A hidden or untargetable body is never an omen's aim (the same foes the policy picks among). The other way: aim at
+  any foe up. Undo: the `foes` filter in `omenAim`.
+
+### Principles that changed a choice
+
+- `principle-model-the-domain`: the state and event lists are the table's keys, not lists beside it.
+- `principle-type-system-discipline`: each table cell is typed by its state (`Calm` or an omen standing) and its
+  event's payload, so a cell cannot read an omen field in `calm`.
+- `principle-test-behavior-not-implementation`: every expected value is worked from B.3's table and the scripts'
+  words (65%, 30%, 55%, clocks of 5 and 3 rounds), not from running the readers.

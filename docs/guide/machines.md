@@ -7,6 +7,7 @@
 The fight:
 
 - the fight and a channel (`fight.ts`, `fight-channel.ts`)
+- a mythic's standing in its script (`combat/mythic.ts` `mythicStep`, `MYTHIC_TABLE`)
 - a stacking status's count (`stacks.ts`), and a status's own life, active, owed or gone (`standing.ts` `statusStep`, chart in `scripts/charts/stacks.ts`)
 - a trigger's limit (`triggers.ts`), a delayed effect (`delayed.ts`), a zone of the kits (`zones.ts`), a timed summon (`summons.ts`), a limited use (`uses.ts`)
 - wave 2's reaction, edge, push, stealth, ward and turn extras (`fight-react.ts`, `standing.ts`, `space.ts`, `timeline.ts`; one file of views, `scripts/charts/wave2.ts`)

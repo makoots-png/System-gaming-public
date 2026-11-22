@@ -603,7 +603,7 @@ describe('the words of a solo run name the way back and speak to one hunter', ()
 
   test('the card\'s odds line and the confirm read one hunter\'s chance from the same numbers', () => {
     const end = (outcome: RunEnd['outcome'], life: RowEnd['life']): RunEnd => ({ outcome, rounds: 3, commands: 9, spent: [], party: { [ME]: { hp: 0, mana: 0, fatigue: 0, statuses: [], used: {}, life, lifeLeft: null, kills: [] } } });
-    const r = readOdds({ of: 4, rows: [{ id: ME, name: 'Mira', hpMax: 40, manaMax: 10, fatigueMax: 100 }], ends: [end('won', 'up'), end('lost', 'dead'), end('lost', 'dead'), end('lost', 'up')] });
+    const r = readOdds({ of: 4, fudge: false, rows: [{ id: ME, name: 'Mira', hpMax: 40, manaMax: 10, fatigueMax: 100 }], ends: [end('won', 'up'), end('lost', 'dead'), end('lost', 'dead'), end('lost', 'up')] });
     const line = oddsLine(r, 'alone'), confirm = soloConfirmLines(r);
     expect(line.startsWith(confirm[0]!)).toBe(true);
     expect(confirm[0]).toBe('You clear it in 25% of 4 plays.');

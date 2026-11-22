@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
 import { fightId, reduce } from '../src/core/combat/fight.ts';
 import type { Fight, NewRow, Running, Setup } from '../src/core/combat/fight.ts';
-import { IDLE, ODDS_EVENTS, ODDS_STATES, TABLE, oddsDetail, oddsKey, oddsLine, oddsStep, progressOf, readOdds, weighable } from '../src/core/combat/odds.ts';
+import { IDLE, ODDS_EVENTS, ODDS_STATES, TABLE, fudgeOn, oddsDetail, oddsKey, oddsLine, oddsStep, progressOf, readOdds, weighable } from '../src/core/combat/odds.ts';
 import type { Odds, OddsRun, RowEnd, RunEnd } from '../src/core/combat/odds.ts';
 import { playBegin, playOver, playStep } from '../src/core/combat/play.ts';
 import type { Play } from '../src/core/combat/play.ts';
@@ -89,6 +89,32 @@ describe('the odds of a fight', () => {
     }
   });
 
+  const fudged = (f: Setup): Setup => {
+    const r = reduce(f, { type: 'fudge', set: { kind: 'weight', scope: { kind: 'side', side: 'party' }, n: 2 } }, ctx);
+    if (r.fight?.phase !== 'setup') throw new Error('the fudge did not take');
+    return r.fight;
+  };
+
+  test('a changed fudge makes a finished answer stale', () => {
+    const f = small(), weighted = fudged(f);
+    const done = { state: 'done', from: oddsKey(f), odds: oddsOf(f, 1, 2) } as const;
+    expect(oddsKey(weighted)).not.toBe(oddsKey(f));
+    expect(oddsStep(done, { type: 'changed', from: oddsKey(weighted) }, RULES)).toEqual({ state: 'stale', odds: done.odds });
+    const back = reduce(weighted, { type: 'fudge', set: { kind: 'weight', scope: { kind: 'side', side: 'party' }, n: 0 } }, ctx).fight!;
+    expect(oddsKey(back)).toBe(oddsKey(f));
+  });
+
+  test('the line says with your fudge only while one is on', () => {
+    const f = small(), weighted = fudged(f);
+    expect([fudgeOn(f), fudgeOn(weighted)]).toEqual([false, true]);
+    const off = readOdds(oddsOf(f, 1, 4)), on = readOdds(oddsOf(weighted, 1, 4));
+    expect([off.fudge, on.fudge]).toEqual([false, true]);
+    expect(oddsLine(off, 'party')).not.toContain('fudge');
+    expect(oddsLine(on, 'party')).toContain(`The party wins ${Math.round(100 * on.won)}% of 4 fights (with your fudge).`);
+    expect(oddsDetail(on, 'party').join(' ')).not.toContain('fudge');
+    expect(oddsLine({ ...on, fudge: false }, 'party')).not.toContain('fudge');
+  });
+
   test('a fight already running is played from where it stands', () => {
     let f: Fight = small();
     f = reduce(f, { type: 'start', openings: f.rows.map((r, i) => ({ id: r.id, d20: 10, tie: i })) }, ctx).fight!;
@@ -99,7 +125,7 @@ describe('the odds of a fight', () => {
   });
 
   test('the line says the chance, who dies most and the rounds; the detail each hunter\'s end', () => {
-    const r = readOdds({
+    const r = readOdds({ fudge: false,
       of: 4, rows: [{ id: 'a' as never, name: 'Mira', hpMax: 40, manaMax: 20, fatigueMax: 100 }],
       ends: [
         end('won', 5, { hp: 30, mana: 10 }),
@@ -117,7 +143,7 @@ describe('the odds of a fight', () => {
   });
 
   test('a hunter alone reads the same numbers as its own chance: to clear and to die, never "the party"', () => {
-    const r = readOdds({
+    const r = readOdds({ fudge: false,
       of: 4, rows: [{ id: 'a' as never, name: 'Mira', hpMax: 40, manaMax: 20, fatigueMax: 100 }],
       ends: [
         end('won', 5, { hp: 30, mana: 10 }),
@@ -129,7 +155,7 @@ describe('the odds of a fight', () => {
     expect(oddsLine(r, 'alone')).toBe('You clear it in 25% of 4 plays. Dead in 75%. About 7 rounds.');
     expect(oddsDetail(r, 'alone')[1]).toBe('The run fails in 75%.');
     expect([oddsLine(r, 'alone'), ...oddsDetail(r, 'alone')].join(' ')).not.toContain('party');
-    const never = readOdds({ of: 1, rows: r.party, ends: [end('won', 3, { hp: 30, mana: 20 })] });
+    const never = readOdds({ of: 1, fudge: false, rows: r.party, ends: [end('won', 3, { hp: 30, mana: 20 })] });
     expect(oddsLine(never, 'alone')).toBe('You clear it in 100% of 1 plays. Never dead in these plays. About 3 rounds.');
   });
 });
@@ -154,7 +180,7 @@ describe('who dies in a played fight (lead-look-6-odds.md, finding 1)', () => {
 
 describe('what a played fight spends (lead-look-6-odds.md, findings 2 and 3)', () => {
   test('the detail gives fatigue of its capacity, as the sheet does', () => {
-    const r = readOdds({ of: 1, rows: [{ id: 'a' as never, name: 'Mira', hpMax: 40, manaMax: 20, fatigueMax: 60 }], ends: [end('won', 3, { hp: 30, mana: 20, fatigue: 30 })] });
+    const r = readOdds({ of: 1, fudge: false, rows: [{ id: 'a' as never, name: 'Mira', hpMax: 40, manaMax: 20, fatigueMax: 60 }], ends: [end('won', 3, { hp: 30, mana: 20, fatigue: 30 })] });
     expect(oddsDetail(r, 'party').at(-1)).toBe('Mira: never dead. Ends with 30 of 40 HP, 20 of 20 mana, 30 of 60 fatigue.');
   });
 

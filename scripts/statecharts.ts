@@ -5,6 +5,7 @@
 // words of the GM or player. A view follows .claude/skills/statechart: `state()` gives a string (a flat chart), a list
 // (parent states) or an object (parallel regions), `step()` the arrow's label or null to hide the step.
 import { channel } from './charts/channel.ts';
+import { mythic } from './charts/mythic.ts';
 import { coin, coinPrompt } from './charts/coin.ts';
 import { choiceChart } from './charts/choice.ts';
 import { gestureChart } from './charts/gesture.ts';
@@ -90,7 +91,7 @@ export type Machine<S, E> = {
 export function machine<S, E>(m: Machine<S, E>): Machine<unknown, unknown> { return m as unknown as Machine<unknown, unknown>; }
 
 export const MACHINES: readonly Machine<unknown, unknown>[] = [
-  inbox, fight, channel, stacks, statusLifeChart, trips, delayed, zone, summon, uses, reaction, edge, shove, stealth, ward, extras, turnHold,
+  inbox, fight, channel, mythic, stacks, statusLifeChart, trips, delayed, zone, summon, uses, reaction, edge, shove, stealth, ward, extras, turnHold,
   gate, link, bind, removedNotice, lobbyCheck, lobbySeat, life, collapse, rests, foeLife, penalty, jobChain, progress, rank, gear, coin, coinPrompt, dcPick, iconPick,
   onboarding, gestureChart, choiceChart, shadow, extraction, quest, questForm, db, upgrade, outbox, publish, attempt, store, odds,
   soloClock, soloWait, runPhaseChart, soloPlanChart, feat, told, offerRoom, offerGiver, offerTaker, offerWatch, story, draft, detailOpen,

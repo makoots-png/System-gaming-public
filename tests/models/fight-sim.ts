@@ -33,7 +33,7 @@ import { onCooldown, payCost } from '../../src/core/combat/charge.ts';
 import { inRange, resolve, taunted } from '../../src/core/combat/resolve.ts';
 import type { Aim, Rolls } from '../../src/core/combat/resolve.ts';
 import { fightId, reduce } from '../../src/core/combat/fight.ts';
-import type { Ctx, Effect, Ended, NewRow, Running } from '../../src/core/combat/fight.ts';
+import type { Ctx, Effect, Ended, Fight, Fudge, FudgeSet, NewRow, Running } from '../../src/core/combat/fight.ts';
 import { CAP_ROUNDS, playBegin, playOver, playStep } from '../../src/core/combat/play.ts';
 import type { Limits, Play } from '../../src/core/combat/play.ts';
 import type { Policy as TurnPolicy, TurnChoice } from '../../src/core/combat/policy.ts';
@@ -520,7 +520,22 @@ export type Setup = {
   /** Fatigue and mana each row starts with (a dungeon's earlier fights). */
   readonly carry?: Readonly<Record<string, { fatigue: number; mana: number }>>;
   readonly rules?: Rules;
+  /** The GM's weight on the fight's dice (fudge.ts), set on the fight before it begins; its draws read it as the reducer's do. Absent: none. */
+  readonly fudge?: Fudge;
 };
+
+/** `f` with the weight `w` set by the GM's own `fudge` command, one set for each side, row and forced roll (the reducer is its one writer). */
+function weighted(f: Fight & { readonly phase: 'setup' }, w: Fudge, ctx: Ctx): Fight & { readonly phase: 'setup' } {
+  const sets: FudgeSet[] = [
+    ...(['party', 'foe'] as const).map((side): FudgeSet => ({ kind: 'weight', scope: { kind: 'side', side }, n: w.sides[side] })),
+    ...Object.entries(w.rows).map(([id, n]): FudgeSet => ({ kind: 'weight', scope: { kind: 'row', id: combatantId(id) }, n })),
+    ...Object.entries(w.forced).map(([id, face]): FudgeSet => ({ kind: 'force', id: combatantId(id), face })),
+  ];
+  let g: Fight = f;
+  for (const set of sets) g = reduce(g, { type: 'fudge', set }, ctx).fight ?? g;
+  if (g.phase !== 'setup') throw new Error('the fudge did not leave the fight in setup');
+  return g;
+}
 
 /**
  * Plays one fight on the engine's loop (src/core/combat/play.ts, the one loop that plays a fight): the openings, then
@@ -573,8 +588,9 @@ export function playFight(setup: Setup, seed: number): FightRecord {
     }
   };
 
-  const added = reduce(null, { type: 'add', fightId: fightId(`sim-${seed}`), rows, openings: [] }, ctx).fight;
-  if (added?.phase !== 'setup') throw new Error(`seed ${seed}: the rows did not make a fight`);
+  const made = reduce(null, { type: 'add', fightId: fightId(`sim-${seed}`), rows, openings: [] }, ctx).fight;
+  if (made?.phase !== 'setup') throw new Error(`seed ${seed}: the rows did not make a fight`);
+  const added = setup.fudge ? weighted(made, setup.fudge, ctx) : made;
   for (const r of added.rows) tally[r.id] = emptyTally(r);
   const begun = playBegin(added, seed, R);
   heard(begun.effects);

@@ -74,7 +74,7 @@ describe('detailOf', () => {
 
 describe('detailOf the odds', () => {
   test('the odds\' detail is titled and says the rounds, a loss and each hunter\'s end', () => {
-    const odds = readOdds({
+    const odds = readOdds({ fudge: false,
       of: 2, rows: [{ id: 'a' as never, name: 'Brakk', hpMax: 50, manaMax: 10, fatigueMax: 100 }],
       ends: [
         { outcome: 'won', rounds: 4, commands: 20, spent: [], party: { ['a' as never]: { hp: 50, mana: 10, fatigue: 0, statuses: [], used: {}, life: 'up', lifeLeft: null, kills: [] } } },

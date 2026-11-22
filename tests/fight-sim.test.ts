@@ -458,3 +458,27 @@ describe('every build and monster plays a fight to its end', () => {
     }
   }
 });
+
+// ── what the GM's fudge does to a mythic (notes-8-fudge.md section 4) ──
+/**
+ * The mixed party at S against a same-rank brute mythic, the hunters weighted +0 to +5 (the table stops at +5, not a
+ * bound), 600 fights each from the seeds of row M1. Printed so the GM's question "what does +2 do to a mythic" has a row.
+ * Asserted: the win rate does not fall as the weight rises (a higher face is never worse for the hunters), and at 0 it is
+ * the ruling's 5 to 10%. A weight moves a d20 by a tenth of its faces at +2, so a step of +1 is 5 points of every hit and
+ * crit roll, far over the noise of 600 fights (se 0.011 at p = 0.075).
+ */
+const FUDGE_STEPS = [0, 1, 2, 3, 4, 5] as const;
+const weightedMythic = (n: number) => (seed: number): FightRecord[] => [playFight({
+  rows: [...party(MIXED, 'S'), monster('S', 'brute', 'mythic', 'mythic')],
+  fudge: { sides: { party: n, foe: 0 }, rows: {}, forced: {} },
+}, seed)];
+
+describe('the GM\'s fudge on a party of 3 against a mythic', () => {
+  test('the win rate does not fall as the hunters\' weight rises, and at 0 it is 5 to 10%', () => {
+    const rates = FUDGE_STEPS.map(n => ({ n, m: wins(`mixed v brute mythic S fudge +${n}`, weightedMythic(n), RUNS.mythic) }));
+    console.log(['  hunters  win rate (se)', ...rates.map(({ n, m }) => `  +${n}       ${(100 * m.value).toFixed(1)}% (${(100 * m.se).toFixed(1)})  ${m.note}`)].join('\n'));
+    expect(rates[0]!.m.value).toBeGreaterThanOrEqual(0.05);
+    expect(rates[0]!.m.value).toBeLessThanOrEqual(0.1);
+    for (let i = 1; i < rates.length; i++) expect(rates[i]!.m.value, `+${rates[i]!.n} against +${rates[i - 1]!.n}`).toBeGreaterThanOrEqual(rates[i - 1]!.m.value);
+  }, 6 * BUDGET_MS);
+});

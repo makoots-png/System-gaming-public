@@ -17,6 +17,7 @@ import type { Limits, Play, UsedUp } from './play.ts';
 import type { Life, LifeState } from '../hunter/vitals.ts';
 import { sensible } from './policy.ts';
 import { isUp } from './row-hp.ts';
+import { fudgeShown } from './fight-view.ts';
 
 /** How one played fight ended for the party: it won, it lost (the fight ended without its win), or the cap (a stalemate). */
 export const RUN_OUTCOMES = ['won', 'lost', 'stalled'] as const;
@@ -37,8 +38,11 @@ export type RunEnd = {
 };
 /** A party row the odds tell of: its id, its name and its maxima at the start. */
 export type OddsRow = { readonly id: CombatantId; readonly name: string; readonly hpMax: number; readonly manaMax: number; readonly fatigueMax: number };
-/** The engine's answer: how many fights it played, the party's rows, and every fight's end. */
-export type Odds = { readonly of: number; readonly rows: readonly OddsRow[]; readonly ends: readonly RunEnd[] };
+/**
+ * The engine's answer: how many fights it played, the party's rows, every fight's end, and whether the GM's fudge was
+ * on in the fight it played (`fudge`: the line says so, so an answer shown stale still names what it was worked out with).
+ */
+export type Odds = { readonly of: number; readonly rows: readonly OddsRow[]; readonly ends: readonly RunEnd[]; readonly fudge: boolean };
 
 /** The fights a run plays: a share over 100 runs has a standard error of at most 5 points (notes-6-odds.md). */
 export const ODDS_RUNS = 100;
@@ -49,6 +53,8 @@ const LIMITS: Limits = { capRounds: CAP_ROUNDS, endAtRounds: null };
 /** A fight the engine can weigh: in setup or running, with a row up on each side. */
 export const weighable = (f: Fight | null): f is Setup | Running =>
   f !== null && f.phase !== 'ended' && f.rows.some(r => r.side === 'party' && isUp(r)) && f.rows.some(r => r.side === 'foe' && isUp(r));
+/** Whether the GM's fudge is on in a fight the engine weighs (any side's or row's weight, or a forced roll): the line's clause. */
+export const fudgeOn = (f: Setup | Running): boolean => fudgeShown(f);
 /** What the odds were worked out from, as one string: the fight without its log. Another string means another fight. */
 export const oddsKey = (f: Fight): string => JSON.stringify({ ...f, log: null });
 /** The seed of fight `i` of a run of seed `seed`. */
@@ -118,7 +124,7 @@ function stepped(r: In<'running'>, e: Extract<OddsEvent, { readonly type: 'step'
     if (play === null) play = playBegin(r.fight, seedOf(r.seed, ends.length), R).play;
     else if (playOver(play)) {
       ends = [...ends, endOf(play, r.rows, R)];
-      if (ends.length >= r.of) return { state: 'done', from: r.from, odds: { of: r.of, rows: r.rows, ends } };
+      if (ends.length >= r.of) return { state: 'done', from: r.from, odds: { of: r.of, rows: r.rows, ends, fudge: fudgeOn(r.fight) } };
       play = null;
     } else play = playStep(play as Play & { readonly fight: Running }, () => sensible, LIMITS, R).play;
   }
@@ -153,8 +159,8 @@ export const progressOf = (r: OddsRun, R: Rules): { readonly done: number; reado
 export type Percentiles = { readonly low: number; readonly mid: number; readonly high: number };
 /** A party row's spread: `dead` the share of runs it ended dead (a shadow defeated). */
 export type RowRead = OddsRow & { readonly dead: number; readonly hp: Percentiles; readonly mana: Percentiles; readonly fatigue: Percentiles };
-/** The odds read: the share of runs won, lost and stalled, the rounds, and each party row's spread. */
-export type OddsRead = { readonly of: number; readonly won: number; readonly lost: number; readonly stalled: number; readonly rounds: Percentiles; readonly party: readonly RowRead[] };
+/** The odds read: the share of runs won, lost and stalled, the rounds, each party row's spread, and whether the fudge was on (`fudge`). */
+export type OddsRead = { readonly of: number; readonly fudge: boolean; readonly won: number; readonly lost: number; readonly stalled: number; readonly rounds: Percentiles; readonly party: readonly RowRead[] };
 
 /** The nearest-rank percentiles: the smallest value with at least that share of the runs at or below it. */
 export function spreadOf(values: readonly number[]): Percentiles {
@@ -165,7 +171,7 @@ export function readOdds(o: Odds): OddsRead {
   const n = o.ends.length || 1, share = (k: number): number => k / n;
   const count = (p: (e: RunEnd) => boolean): number => o.ends.filter(p).length;
   return {
-    of: o.ends.length,
+    of: o.ends.length, fudge: o.fudge,
     won: share(count(e => e.outcome === 'won')), lost: share(count(e => e.outcome === 'lost')), stalled: share(count(e => e.outcome === 'stalled')),
     rounds: spreadOf(o.ends.map(e => e.rounds)),
     party: o.rows.map(row => {
@@ -192,10 +198,12 @@ const mostDead = (r: OddsRead): RowRead | null => [...r.party].sort((a, b) => b.
  * (`alone`; lead-look-2-solo.md, finding 3: one hunter is not a party). The numbers are the same read either way.
  */
 export type OddsVoice = 'party' | 'alone';
+/** What the GM's line adds while the fudge was on: the number is the fight's as weighted, not the fight's as dealt. */
+const FUDGE_CLAUSE = ' (with your fudge)';
 /** The words that differ by voice: the share won, the share lost, and the control's hint. */
 const VOICE: { readonly [V in OddsVoice]: { readonly won: (r: OddsRead) => string; readonly lost: (share: number) => string; readonly hint: string } } = {
   party: {
-    won: r => `The party wins ${pct(r.won)} of ${r.of} fights.`,
+    won: r => `The party wins ${pct(r.won)} of ${r.of} fights${r.fudge ? FUDGE_CLAUSE : ''}.`,
     lost: share => `The party loses ${pct(share)}.`,
     hint: `Plays this fight to the end ${ODDS_RUNS} times by the rules and shows how often the party wins.`,
   },

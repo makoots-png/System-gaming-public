@@ -115,6 +115,84 @@ Where it lives:
 | The test to copy | `tests/fight.test.ts`, "a channel (4.1)" |
 | The recipe | A new event is a member of `ChannelEvent` and its cell in every row of `TABLE` |
 
+## A mythic's standing in its script
+
+Every standing reachable from the first phase's first beat under the 9 events (the next phase by its turn and by the GM), with the Angel of the Last Trumpet's 3 phases, breadth first; standings that differ only in their beat or the time their phase began are one. The walk found 9 states and 45 steps.
+
+### A mythic in its phases, its omens and their answers
+
+```mermaid
+---
+title: A mythic in its phases, its omens and their answers
+---
+stateDiagram-v2
+  state "The Trumpet Raised" as s1 {
+    state "In its phase" as s2
+    state "Omen announced" as s3
+    state "Omen weakened" as s4
+    s2 --> s3 : its turn starts on an omen beat, it announces the omen
+    s3 --> s2 : an answer that cancels it, nothing lands
+    s3 --> s4 : an answer that weakens it
+    s3 --> s2 : its next turn, the move lands
+    s3 --> s2 : its next turn, its aim is gone or out of range
+    s3 --> s2 : the GM drops the omen
+    s4 --> s2 : an answer that cancels it, nothing lands
+    s4 --> s2 : its next turn, the move lands
+    s4 --> s2 : its next turn, its aim is gone or out of range
+    s4 --> s2 : the GM drops the omen
+  }
+  state "The First Breath" as s5 {
+    state "In its phase" as s6
+    state "Omen announced" as s7
+    state "Omen weakened" as s8
+    s6 --> s7 : its turn starts on an omen beat, it announces the omen
+    s7 --> s6 : an answer that cancels it, nothing lands
+    s7 --> s8 : an answer that weakens it
+    s7 --> s6 : its next turn, the move lands
+    s7 --> s6 : its next turn, its aim is gone or out of range
+    s7 --> s6 : the GM drops the omen
+    s8 --> s6 : an answer that cancels it, nothing lands
+    s8 --> s6 : its next turn, the move lands
+    s8 --> s6 : its next turn, its aim is gone or out of range
+    s8 --> s6 : the GM drops the omen
+  }
+  state "The Note" as s9 {
+    state "In its phase" as s10
+    state "Omen announced" as s11
+    state "Omen weakened" as s12
+    s10 --> s11 : its turn starts on an omen beat, it announces the omen
+    s11 --> s10 : an answer that cancels it, nothing lands
+    s11 --> s12 : an answer that weakens it
+    s11 --> s10 : its next turn, the move lands
+    s11 --> s10 : its next turn, its aim is gone or out of range
+    s11 --> s10 : the GM drops the omen
+    s12 --> s10 : an answer that cancels it, nothing lands
+    s12 --> s10 : its next turn, the move lands
+    s12 --> s10 : its next turn, its aim is gone or out of range
+    s12 --> s10 : the GM drops the omen
+  }
+  [*] --> s1
+  s1 --> s5 : its turn starts held at its gate, or past a clock phase's clock
+  s1 --> s5 : the GM's Next phase
+  s5 --> s9 : its turn starts held at its gate, or past a clock phase's clock
+  s5 --> s9 : the GM's Next phase
+```
+
+One box for each of the Angel's phases, with the mythic's card inside. Its turn start raises the event: in its phase, the next phase when the phase is over (held at its gate, or a clock phase past its clock), else an omen beat announces and an act beat plays as any monster's turn. A standing omen lands on its next turn, or fizzles when its aim is gone or out of range. Between the two the party answers: an answer's outcome, read from the omen, cancels it or weakens it, and a second weaken does nothing. The next phase from a standing omen loses the omen, so pushing it to its gate is an answer too. The last phase has no next phase: it ends at 0 HP, which is its life's (row-life.ts), not the script's. Whether it is held at its gate or enraged past a gate phase's clock is read from the standing, the script, its HP and the time (mythic.ts), never stored.
+
+9 chart states, 34 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `MythicStanding` in `src/core/combat/mythic-types.ts`; `MythicState`, `MythicEvent` and `MythicRefusal` in `src/core/combat/mythic.ts` |
+| What changes it | `mythicStep(standing, event)` and its `MYTHIC_TABLE`; `mythicCan` answers a view before it shows a button |
+| What is read from it | `gateOf`, `heldAtGate`, `clockOut`, `phaseOver`, `enraged`, `beatOf`, `landingMove`, `omenAim` and `answerMet` in `src/core/combat/mythic.ts` |
+| Who calls it | Nothing yet: the fight's turn start, `consequences` and the gate in `row-life.ts` (unit MY3) and the landing (MY4) |
+| The test to copy | `tests/mythic.test.ts`, "a mythic's standing as a machine: every state against every event" |
+| The recipe | A new event is a member of `MythicEvent` and its cell in every row of `MYTHIC_TABLE`; a new mythic is a row of `MYTHICS` (`src/core/registry/mythics.ts`) |
+
 ## A stacking status
 
 Every count reachable from none under the 9 events of tests/models/stack-events.ts, on a rule with a cap of 5, one stack leaving a round, a fight's count and a threshold at 3 that spends, breadth first. The walk found 3 states and 27 steps.
