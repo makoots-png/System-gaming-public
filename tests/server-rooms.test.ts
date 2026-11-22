@@ -421,6 +421,15 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
     expect(sheets[`${THIRD}:h1`].data).toEqual({ face: { name: 'Eldrin', level: 1, job: null, bag: [] } });
   });
 
+  test('with the GM\'s trading switch off, a player\'s faces carry no bag lines; turned on again, they do', async () => {
+    const { code, gm, poll } = await tradeRoom();
+    const rules = (on: boolean) => call('PUT', `/api/rooms/${code}/sheets/_rules`, { headers: gm, body: { from: 'gm', data: { ...RULES_DOC, trade: { on } } } });
+    expect((await rules(false)).status).toBe(200);
+    expect((await poll(PLAYER)).body.sheets[B].data).toEqual({ face: { name: 'Mira', level: 4, job: 'Healer', bag: null } });
+    expect((await rules(true)).status).toBe(200);
+    expect((await poll(PLAYER)).body.sheets[B].data.face.bag).toEqual([{ id: 'i2', name: 'Healing Potion', qty: 3, rar: 'common' }]);
+  });
+
   test('the GM\'s poll carries every sheet whole and every message, sealed ones too', async () => {
     const { gm, poll } = await tradeRoom();
     const r = await poll(null, gm);

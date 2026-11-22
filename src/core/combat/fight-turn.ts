@@ -26,7 +26,7 @@ import { fire, raised } from './triggers.ts';
 import { alive, held, landEnd, landOps, stealthAfter, throughShield } from './land.ts';
 export { held };
 import { dismissed, isSummon, timeUp } from './summons.ts';
-import { damageShare, healShare, statusLife, statusStep, stealthOf, stealthState, wardedDamage } from './standing.ts';
+import { damageShare, given, healShare, statusLife, statusStep, stealthOf, stealthState, wardedDamage } from './standing.ts';
 import { reactState, reactStep, restored, turnReaction, withReact } from './fight-react.ts';
 import { gateUsed } from './uses.ts';
 import { ARMED, endStep } from './delayed.ts';
@@ -54,8 +54,22 @@ export function logged<F extends Fight>(f: F, l: LogLine, R: Rules): F {
 
 const scopeOf = (b: Body): Scope => ({ user: { stats: b.stats, sheet: b.sheet }, target: { stats: b.stats, sheet: b.sheet }, charge: 0 });
 
-/** What a paid per-round op does to its bearer at `now`: damage takes the shield first (rule 13, `throughShield`), then HP; a heal, mana and fatigue stay in their bounds. */
-export function payDue(b: Body, due: Due, dice: readonly number[], now: Tick, R: Rules): Body {
+/**
+ * Who gives a per-round heal of the status `key` among `statuses` (item-stats 2.1): the body that put it on, as its row
+ * is in `f` when the heal settles. None for a worn status (an item's or a passive's), a status no body put on (the GM's,
+ * a zone's) or one not in `statuses`.
+ */
+export function giverOf(f: Pick<Fight, 'rows'>, statuses: readonly Status[], key: StatusKey): Body | null {
+  const s = statuses.find(x => x.key === key);
+  return s && !s.worn && s.source.id !== null ? f.rows.find(r => r.id === s.source.id) ?? null : null;
+}
+
+/**
+ * What a paid per-round op does to its bearer at `now`: damage takes the shield first (rule 13, `throughShield`), then
+ * HP; a heal is `giver`'s to give (standing.ts `given`, `giverOf`) and the bearer's healed share; a heal, mana and
+ * fatigue stay in their bounds.
+ */
+export function payDue(b: Body, due: Due, dice: readonly number[], now: Tick, R: Rules, giver: Pick<Body, 'sheet'> | null): Body {
   if (!alive(b)) return b;
   const n = dueAmount(due, scopeOf(b), dice);
   switch (due.op.op) {
@@ -64,7 +78,7 @@ export function payDue(b: Body, due: Due, dice: readonly number[], now: Tick, R:
       const hit = Math.max(0, Math.round(n * damageShare(null, b, R))), s = throughShield(b, hit, now);
       return rowLifeAfter(s.target, { type: 'damage', amount: wardedDamage(s.target, hit - s.absorbed) });
     }
-    case 'heal': return rowLifeAfter(b, { type: 'heal', amount: Math.max(0, Math.round(n * healShare(b, R))) });
+    case 'heal': return rowLifeAfter(b, { type: 'heal', amount: Math.max(0, Math.round(given(n, giver) * healShare(b, R))) });
     case 'mana': return { ...b, mana: Math.max(0, Math.min(b.sheet.manaMax, b.mana + n)) };
     case 'fatigue': return { ...b, fatigue: Math.max(0, Math.min(b.sheet.fatigueMax, b.fatigue + n)) };
     // A shield op is not per-round: `settle` never makes it due.
@@ -261,15 +275,16 @@ export const sheetTotals = (a: Body, now: Tick, R: Rules): SheetTotals =>
 
 /**
  * Pays what is due on `row`: each due op at once when its formula has no dice, and otherwise it waits in `pending` for
- * the dice a `rollSettle` effect asks for (the `settle` command pays it).
+ * the dice a `rollSettle` effect asks for (the `settle` command pays it). `from` are the statuses the dues came from,
+ * as they were before the settle, which name each heal's giver (`giverOf`).
  */
-function owe(f: Running, row: Body, dues: readonly Due[], fx: Fx, R: Rules): Running {
+function owe(f: Running, row: Body, dues: readonly Due[], fx: Fx, R: Rules, from: readonly Status[]): Running {
   let x = row;
   const pending = [...f.pending];
   for (const due of dues) {
     const dice = diceOf(atTier(due.op.amount, due.tier));
     fx.push({ type: 'rollSettle', id: x.id, key: due.key, dice, share: due.share });
-    if (!dice.length) x = payDue(x, due, [], f.now, R);
+    if (!dice.length) x = payDue(x, due, [], f.now, R, giverOf(f, from, due.key));
     else if (pending.length < MAX_PENDING) pending.push({ id: x.id, due });
   }
   return { ...withRow(f, x), pending };
@@ -285,7 +300,7 @@ function settleRow(f: Running, row: Body, ctx: Ctx, fx: Fx): { fight: Running; e
   let g = f;
   for (const gone of s.expired) g = logged(g, line(`${row.name}: ${gone.def.label} ends.`, [row.id]), R);
   for (const gone of s.spent) g = logged(g, line(`${row.name}: the last ${gone.def.label} wears off.`, [row.id]), R);
-  g = owe(g, withStatuses(row, s.statuses, f.now, R), s.due, fx, R);
+  g = owe(g, withStatuses(row, s.statuses, f.now, R), s.due, fx, R, row.statuses);
   // the settle's S2 (kits design 1.6, table 2.2): a delayed effect whose time ran out lands its end on its bearer
   const due = s.expired.filter(x => x.def.end !== undefined && x.zone === undefined && endStep(ARMED, { type: 'due' }, x.def.end).lands);
   if (due.length && isUp(rowOf(g, row.id)!)) {
@@ -374,7 +389,7 @@ export function grounded(f: Running, ctx: Ctx, fx: Fx, forced?: ReadonlySet<stri
   let g: Running = zoneEnds({ ...f, rows: s.rows, zones: s.zones }, timed, f.rows, ctx);
   for (const z of f.zones) if (!s.zones.some(x => x.id === z.id)) g = logged(g, line(`${z.name} is gone.`, [], [z.id]), ctx.rules);
   for (const z of s.zones) if (!f.zones.some(x => x.id === z.id)) g = logged(g, line(`${z.name} is now around ${rowOf(g, anchorOf(z) ?? '')?.name ?? 'it'}.`, [...(anchorOf(z) === null ? [] : [anchorOf(z)!])], [z.id]), ctx.rules);
-  for (const e of s.entries) g = owe(g, rowOf(g, e.id)!, [e.due], fx, ctx.rules);
+  for (const e of s.entries) g = owe(g, rowOf(g, e.id)!, [e.due], fx, ctx.rules, []);
   return g;
 }
 

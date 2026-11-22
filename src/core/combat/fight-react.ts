@@ -15,7 +15,7 @@ import type { Ability, CombatantId, ReactWhen } from './ability-types.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import { landsAlone } from './effect-ops.ts';
 import type { Body, LandOp } from './effect-ops.ts';
-import { alive, drained, held, landOps, landThreshold, putBy, stealthAfter } from './land.ts';
+import { alive, drained, drainWords, held, landOps, landThreshold, putBy, stealthAfter } from './land.ts';
 import type { Burst } from './land.ts';
 import { charged, cooled } from './charge.ts';
 import type { Answers, ResolveRules } from './resolve.ts';
@@ -128,8 +128,9 @@ export type ReactionFired = { readonly guard: number; readonly negate: boolean; 
  * reaction, which moves its turn itself), its cooldown and use counted, and its use resolves, which spends it. Null,
  * changing nothing, when it does not fire (an earlier reaction of the same use changed what it asks). Its effect and
  * its ops land on `aim` at their averages from its reactor at its tier, as a trigger's do, a status put on checking its
- * threshold, and the reactor's lifesteal heals it a share of the HP they took (land.ts `drained`); a foe they take down
- * is the reactor's kill (row-tally.ts); a `guard` and a `negate` are given back for the use it answers. Changes `rows`.
+ * threshold, and the reactor's lifesteal heals it and its damage to shield shields it a share of the HP they took
+ * (land.ts `drained`); a foe they take down is the reactor's kill (row-tally.ts); a `guard` and a `negate` are given
+ * back for the use it answers. Changes `rows`.
  */
 export function react(rows: Map<CombatantId, Body>, reactor: CombatantId, aim: CombatantId, now: Tick, R: ResolveRules): ReactionFired | null {
   const r = rows.get(reactor), a = r && armedAbility(r), m = r && atMoment(rows, r, aim, now, R);
@@ -145,10 +146,10 @@ export function react(rows: Map<CombatantId, Body>, reactor: CombatantId, aim: C
   ops.push(...a.ops.filter(landsAlone));
   const hpOf = (id: CombatantId): number => { const x = rows.get(id); return x ? rowHp(x) : 0; }, aimHp = hpOf(aim);
   const out = ops.length ? landOps(rows, ops, rows.get(b.id)!, [aim], { id: b.id, tier: b.tier }, now, R, { cross: true }) : { landed: [], fired: [] };
-  // lifesteal (land.ts `drained`) reads the HP the reaction took from its aim, when that is another body
-  const ownHp = hpOf(b.id), stole = drained(rows.get(b.id)!, aim === b.id ? 0 : Math.max(0, aimHp - hpOf(aim)), R);
-  rows.set(b.id, stole);
-  const drank = rowHp(stole) - ownHp;
+  // lifesteal and damage to shield (land.ts `drained`) read the HP the reaction took from its aim, when that is another body
+  const stole = drained(rows.get(b.id)!, aim === b.id ? 0 : Math.max(0, aimHp - hpOf(aim)), now, R);
+  rows.set(b.id, stole.user);
+  const drank = drainWords(stole);
   const bursts = out.fired.map(x => landThreshold(rows, x, now, R));
   // a foe the reaction's ops took down is its reactor's kill, counted as a use's or a trigger's is (a burst's is its
   // bearer's status's, as in a use) (rules-4.2, the owner, Nov 22: "Yes")
@@ -163,7 +164,7 @@ export function react(rows: Map<CombatantId, Body>, reactor: CombatantId, aim: C
   const went = bursts.map(x => `${name(x.bearer)}'s ${x.label} goes off${x.landed.some(l => l.dealt) ? ` (${x.landed.map(l => `${name(l.target)} ${l.dealt}`).join(', ')})` : ''}`);
   return {
     guard, negate, bursts,
-    said: `${b.name} reacts with ${a.name}${dealt.length ? ` (${dealt.join(', ')})` : ''}${drank > 0 ? `; ${b.name} drains ${drank}` : ''}${went.length ? `; ${went.join('; ')}` : ''}`,
+    said: `${b.name} reacts with ${a.name}${dealt.length ? ` (${dealt.join(', ')})` : ''}${drank ? `; ${b.name} ${drank}` : ''}${went.length ? `; ${went.join('; ')}` : ''}`,
     about: [b.id, ...out.landed.filter(l => l.dealt).map(l => l.target), ...bursts.flatMap(x => [x.bearer, ...x.landed.map(l => l.target)])],
   };
 }

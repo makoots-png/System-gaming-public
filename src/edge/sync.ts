@@ -47,9 +47,9 @@ import { fightHold } from '../core/combat/fight-save.ts';
 import type { Bus } from './bus.ts';
 import type { Rules } from '../core/rules.ts';
 import type { Seat } from '../core/role.ts';
-import type { AppApi, RemoteSheet, SyncApi } from '../core/api.ts';
+import type { AppApi, RemoteSheet, RoomFace, SyncApi } from '../core/api.ts';
 import { DOCS, DOC_MAX, REMOVED_MS, SHEET_MAX, newEvent, parseRoomCode, parseRoomState, stampTime } from '../core/protocol.ts';
-import type { DeviceId, DocName, DocOf, EventBody, EventType, RoomCode, RoomDocs, RoomEvent, RoomState, ServedSheet, SheetKey, Stored, StoredEvent } from '../core/protocol.ts';
+import type { DeviceId, DocName, DocOf, EventBody, EventStamp, EventType, RoomCode, RoomDocs, RoomEvent, RoomState, ServedSheet, SheetKey, Stored, StoredEvent } from '../core/protocol.ts';
 import { deviceOf, endIdOf, hunterIdOf, parseSheetKey, sheetKeyOf } from '../core/ids.ts';
 import type { HunterId } from '../core/ids.ts';
 import { appliedOnce } from '../core/applied.ts';
@@ -842,17 +842,24 @@ export function register(app: SyncHost): void {
     const deviceId = deviceOf(key);
     return [{ key, polledAt: view().presence[deviceId] || null, deviceId, hunterId: hunterIdOf(key), at: s.at, from: s.from, data: s.data.hunter }];
   }));
+  /** The other players' hunters as this player's phone gets them (protocol.ts `HunterFace`), for the Give window; none on the GM's phone or alone. */
+  const faces = (): RoomFace[] => (!playerRoom() ? [] : Object.entries(view().sheets).flatMap(([text, s]) => {
+    const key = parseSheetKey(text);
+    return key && 'face' in s.data ? [{ key, ...s.data.face }] : [];
+  }));
 
   // ── what a GM sends: events, docs, removals ──
   let stamped = 0;
   /**
-   * A room event with its id (newEvent in src/core/protocol.ts), for `post`. The id's time is later than that of the
-   * last id this page made (`stamped`), so two of this page's ids differ whatever the clock and `Math.random` answer.
+   * The parts of a new event id (newEvent in src/core/protocol.ts): this phone, a time later than that of the last id this
+   * page made (`stamped`) and a random part, so two of this page's ids differ whatever the clock and `Math.random` answer.
    */
-  const event = <K extends EventType>(type: K, body: EventBody<K>): RoomEvent | null => {
+  const stamp = (): EventStamp => {
     stamped = stampTime(stamped, Date.now());
-    return newEvent(type, body, { device: deviceId(), now: stamped, rand: Math.random() });
+    return { device: deviceId(), now: stamped, rand: Math.random() };
   };
+  /** A room event with its id, for `post`. */
+  const event = <K extends EventType>(type: K, body: EventBody<K>): RoomEvent | null => newEvent(type, body, stamp());
   /**
    * Puts a room doc in the room of stretch `gen`, and nowhere once the link has left it. The GM's phone then shows the doc
    * as `DOCS` reads it, as every other phone will. `tooBig`: longer than `DOC_MAX`, counted here before it is sent or by
@@ -1024,7 +1031,7 @@ export function register(app: SyncHost): void {
 
   // ── public API: the names the views use ──
   app.api.sync = { // checked against SyncApi in src/core/api.ts
-    status, conn, detail, room, event, once, remoteSheets, myKey, doc, inviteLink,
+    status, conn, detail, room, event, stamp, once, remoteSheets, faces, myKey, doc, inviteLink,
     post: (ev, o) => (ev ? postLetter({ kind: 'event', event: ev }, o?.key ?? null) : { ok: false, why: 'notEvent' }),
     flush: (): void => { flush(); },
     publish: (name, build) => { publishers.set(name, build); },

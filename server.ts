@@ -461,10 +461,11 @@ async function mayWriteFor(req: Request, st: Store, code: RoomCode, dev: DeviceI
   return hash !== null && ownedBy(await st.moveOwner(code, dev, { type: 'write', hash }), hash);
 }
 /**
- * What the faces of a poll carry: every table shows its bags until the trading switch lands with unit 4, which reads it
- * here from the rules doc (notes-5-trade.md 10, ruling 4: a table with trading off sends faces without bag lines).
+ * Whether the faces of a poll carry their bag lines: while the GM's trading switch in the room's rules doc is on, and in a
+ * room with no rules doc yet (a doc without the switch reads as on). Ruling 4 of notes-5-trade.md 10: a table with trading
+ * off sends faces without bag lines.
  */
-const FACE_BAGS = { bags: true } as const;
+const faceBags = (docs: RoomDocs): { readonly bags: boolean } => ({ bags: docs.rules?.data.trade.on !== false });
 
 async function readJson(req: Request): Promise<Record<string, unknown> | Response> {
   const len = Number(req.headers.get('content-length') || 0);
@@ -517,8 +518,8 @@ async function api(req: Request, parts: string[], database: Database): Promise<R
     // but never a sealed message for the device the poll names while it is not proven
     const viewer: RoomViewer = gm ? { kind: 'gm' } : dev && (await proven(req, st, code, dev)) ? { kind: 'phone', device: dev } : { kind: 'anyone' };
     const [page, board] = await Promise.all([st.events(code, after), st.board(code)]);
-    const sheets: Record<SheetKey, Stored<ServedSheet>> = {};
-    for (const [key, s] of Object.entries(board.sheets) as [SheetKey, Stored<RoomSheet>][]) sheets[key] = { ...s, data: sheetFor(key, s.data, viewer, FACE_BAGS) };
+    const sheets: Record<SheetKey, Stored<ServedSheet>> = {}, bags = faceBags(board.docs);
+    for (const [key, s] of Object.entries(board.sheets) as [SheetKey, Stored<RoomSheet>][]) sheets[key] = { ...s, data: sheetFor(key, s.data, viewer, bags) };
     const answer: RoomState = {
       gm,
       now: iso(now), // S11: server clock for everyone (joinedAt / kick stamps); presence stays GM-only

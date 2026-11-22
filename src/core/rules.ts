@@ -12,6 +12,7 @@ import type { StatKey } from './stats.ts';
 import type { StatusDef } from './combat/effect-ops.ts';
 import type { SheetNumber } from './hunter/derive.ts';
 import type { Rewards } from './rewards.ts';
+import type { Pace } from './combat/timeline.ts';
 
 const deepFreeze = <T>(o: T): T => { if (o && typeof o === 'object' && !Object.isFrozen(o)) { Object.freeze(o); Object.values(o as object).forEach(deepFreeze); } return o; };
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -272,6 +273,10 @@ const SPEC = {
   },
   // feats (hunter/feats.ts): `on` is the GM's one switch for every feat the System notices; the room's `rules` doc carries it to the players
   feats: { on: true },
+  // trading (trade/offer.ts, views/trade.js): `on` is the GM's switch for the table's offers between hunters in a room; the
+  // room's `rules` doc carries it to the players. Off refuses a new offer and an accept at the tap, never a refuse, a take
+  // back, a stop or the read of an end (notes-5-trade.md 2.2)
+  trade: { on: true },
   build: { enabled: true, playerPick: true, respecGold: whole(5, 0, 1_000_000, 'a respec costs this times the level squared in gold: 0 is free') }, // respecGold: a player's own respec costs respecGold * level * level gold (GM mode is free)
   paths: BUILT_IN_PATHS, // the build paths and their perks: src/core/registry/paths.ts; each `alloc` number in PATH_ALLOC (OPEN_DOMAINS), each perk in PERK_POINTS
   // The reworked fight's numbers (docs/agent-handoff/rw/design.md; scripts/rw-paper.ts prints the tables they make).
@@ -547,6 +552,9 @@ const SPEC = {
       hits: whole(16, 1, 100, 'bodies `hits` reads: 100 is past any crowd'), // `hits` reads at most this many bodies: every zone's worth of a crowd
       // Wave 2 (kits design 8.1 to 8.7, kits-paper `KIT2`, table 8.1). Each bounds one block; the reason is beside it.
       shareCap: real(0.5, 0, 0.9, 'how far a dealt or taken share moves from 1: at 1 a share of 0 makes a body immune'), // a use's dealt times taken share stays in 0.5 to 1.5: Brutalize's -50% healing is the sheet's largest share
+      // The most shield a body holds from its own damage dealt (shieldDrain), a share of its max HP: a fifth, so a hard
+      // hitter holds at most one fifth of a bar more, about one same-rank hit, and the ceiling, not the share, bounds it.
+      shieldDrainMax: real(0.2, 0, 1, 'the most shield a body holds from its own damage: at 1 a second full bar'),
       armorOp: of(60, KIT_GUARD), // a status moves armor or resist by at most a suit of plate's 60 (`kits.heavy`)
       critFacesMax: whole(6, 0, 10, 'crit faces with a target\'s exposed ones: past 10 half of every use is a crit'), // crit faces plus a target's exposed faces stay at most 6: design 2.2's 30%, never the 1 in 3
       critSizeMax: real(2, 1, 5, 'the largest crit size: under 1 a crit hurts less than a hit'), // crit size stays at most 2: design 2.2's "never more than double the dice"
@@ -654,6 +662,36 @@ const SPEC = {
         mark: of(2, KEYSTONE_SPEND), confluence: of(3, KEYSTONE_SPEND), apex: of(4, KEYSTONE_SPEND),
       },
     },
+    // Mythic scripts (docs/agent-handoff/features/notes-11-keystones.md, design B): a mythic's fight in phases, with
+    // omens announced a turn ahead and the party's answers, one row of `MYTHICS` each (src/core/registry/mythics.ts).
+    mythic: {
+      // A room's switch, as `keystone.on`: off, no row holds a standing, every mythic is today's body and row M1 is
+      // today's. It ships off until unit MY5's rows (design B.8) hold, then on.
+      scripts: false,
+      // Keystones A's promise: the share of a `stagger` op (A.7) a mythic's bar takes. Half: Worldbreaker's half bar is
+      // then a quarter of a mythic's, so a stagger answer needs the party's hits too, never one ability.
+      staggerTaken: real(0.5, 0, 1, 'the share of a stagger op a mythic\'s bar takes: at 1 one op answers an omen alone'),
+      // An omen's announce and a phase change each take the mythic's turn: a standard action's time (timeline.ts
+      // `paceCost`). The party gets about one turn each to answer, and the mythic does nothing else on that turn. One
+      // of the paces (overrides.ts reads it).
+      turnPace: 'standard' as Pace,
+      // The bounds every script is checked against (tests/mythics.test.ts), each a least and a most.
+      bounds: {
+        // One phase (`plain`) to four. Row M1's fight is about 14 rounds; four phases leave each about 3, one omen
+        // announced and landed and a turn to see the phase. A fifth would be over before the party read it.
+        phases: each([1, 4], wholeIn(1, 10, 'phases a script may hold: none is no fight, past 10 a phase is over before its first omen lands')),
+        // An omen takes a round to announce and land, so a clock under 2 rounds enrages a phase before its first omen
+        // can be answered. Design B.8 bounds a mythic fight at 20 rounds: a clock past it never runs out in a fight.
+        clock: each([2, 20], wholeIn(1, 40, 'rounds a phase\'s clock may hold: 0 enrages it as it begins, 40 is a played fight\'s cap (play.ts CAP_ROUNDS)')),
+        // A burst answer is dealt in the party's one turn each between the announce and the landing. Row M1's party
+        // takes a mythic's HP in about 14 rounds of 3 turns, about 2.4% a turn: under 2% one hunter's hit meets the
+        // answer by chance; past 20% (8 turns) the party's three turns never do.
+        burst: each([0.02, 0.2], realIn(0, 1, 'a share of a mythic\'s max HP an omen\'s burst answer asks: 1 is the whole of it')),
+        // A move's hit in sample S hunters' max HP: 0 is a move of statuses only; past 4 a move kills every hunter
+        // many times over, so a larger number says nothing more.
+        hits: each([0, 4], realIn(0, 10, 'a move\'s hit in sample S hunters\' max HP: 10 is a party of three thrice over')),
+      },
+    },
   },
 };
 
@@ -734,14 +772,23 @@ export function rankForLevel(R: Rules, level: number): Rank {
 // No `phys`, `mag` or `sup`: the owner (Nov 21), "Idk about attack and ability power. I think that's hard to do." A bonus raises power through Strength, Power and Presence.
 export const BONUS_KEYS = [...STAT_KEYS, 'hpMax', 'manaMax', 'fatigueMax', 'carry', 'speed', 'move',
   'armorPen', 'resistPen', 'armorPenFlat', 'resistPenFlat', 'react', 'aim', 'will', 'critFaces', 'critSize', 'opening',
-  'tenacity', 'potency', 'threat', 'hold', 'costCut', 'drain', 'haste'] as const satisfies readonly (StatKey | SheetNumber)[];
+  'tenacity', 'potency', 'threat', 'hold', 'costCut', 'drain', 'haste', 'healPower', 'shieldDrain'] as const satisfies readonly (StatKey | SheetNumber)[];
 export type BonusKey = (typeof BONUS_KEYS)[number];
 /**
- * The bonus keys whose sheet number is a share or a multiplier (crit size 1.5 to 2, the threat multiplier, the channel's
- * hold, the cost cut, lifesteal): a bonus is a whole number, so a point of one of these is a hundredth of the number
- * (derive.ts). Ability haste is whole points, as in League of Legends, so it is not one of them.
+ * What a point of each bonus key adds to its number. A bonus is a whole number, so a point on a share or a multiplier
+ * (crit size 1.5 to 2, the threat multiplier, the channel's hold, the cost cut, lifesteal, heal and shield power, damage
+ * to shield) is a hundredth of it (derive.ts); every other key adds whole points. Ability haste is whole points, as in
+ * League of Legends. A table of every key, so a new key must say which (the typecheck asks).
  */
-export const BONUS_HUNDREDTHS: readonly BonusKey[] = ['critSize', 'threat', 'hold', 'costCut', 'drain'];
+const BONUS_STEP: { readonly [K in BonusKey]: 'whole' | 'hundredth' } = {
+  str: 'whole', agi: 'whole', vit: 'whole', pow: 'whole', ins: 'whole', pre: 'whole', ctl: 'whole', dis: 'whole',
+  hpMax: 'whole', manaMax: 'whole', fatigueMax: 'whole', carry: 'whole', speed: 'whole', move: 'whole',
+  armorPen: 'whole', resistPen: 'whole', armorPenFlat: 'whole', resistPenFlat: 'whole', react: 'whole', aim: 'whole', will: 'whole',
+  critFaces: 'whole', critSize: 'hundredth', opening: 'whole', tenacity: 'whole', potency: 'whole', threat: 'hundredth',
+  hold: 'hundredth', costCut: 'hundredth', drain: 'hundredth', haste: 'whole', healPower: 'hundredth', shieldDrain: 'hundredth',
+};
+/** The bonus keys a point of which is a hundredth of their number (`BONUS_STEP`). */
+export const BONUS_HUNDREDTHS: readonly BonusKey[] = BONUS_KEYS.filter(k => BONUS_STEP[k] === 'hundredth');
 export type Perk = Partial<Record<BonusKey, number>>;
 export type Path = { name: string; alloc: Partial<Record<StatKey, number>>; tiers: Perk[][] };
 /**
@@ -753,7 +800,7 @@ export const BONUS_LABELS: Readonly<Record<BonusKey, string>> = {
   armorPen: '% Armor penetration', resistPen: '% Magic penetration',
   armorPenFlat: 'Lethality', resistPenFlat: 'Unravel', react: 'Reaction', aim: 'Accuracy', will: 'Will', critFaces: 'Crit faces',
   critSize: '% Crit size', opening: 'Opening', tenacity: 'Tenacity', potency: 'Potency', threat: '% Threat', hold: '% Channel hold', costCut: '% Cost cut',
-  drain: '% Lifesteal', haste: 'Ability haste',
+  drain: '% Lifesteal', haste: 'Ability haste', healPower: '% Heal and shield power', shieldDrain: '% Damage to shield',
 };
 export const pathOf = (R: Rules, id: unknown): Path | null => {
   const paths = (R.paths || {}) as Record<string, unknown>;
@@ -792,6 +839,11 @@ export function saveRuleNumbers(ov: Overrides, parsed: Overrides): Overrides {
 }
 /** The GM's switch for every feat (`feats.on`) set to `on`, the other overrides kept: the GM view's control beside the rules editor. */
 export const featsSwitched = (ov: Overrides, on: boolean): Overrides => ({ ...ov, feats: { ...recOf(ov.feats), on } });
+/** The save with the GM's trading switch (`trade.on`) set to `on`, the other overrides kept: the switch in the GM view's Trades section (trade.js). */
+export const tradeRuleSet = <S extends { readonly rulesOverrides: unknown }>(save: S, on: boolean): S => {
+  const ov = recOf(save.rulesOverrides);
+  return { ...save, rulesOverrides: { ...ov, trade: { ...recOf(ov.trade), on } } };
+};
 /** Every rule number back to its default; the GM's roll tables are kept. */
 export const resetRuleNumbers = (ov: Overrides): Overrides => ('gmTables' in ov ? { gmTables: ov.gmTables } : {});
 /**

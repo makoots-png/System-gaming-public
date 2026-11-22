@@ -1,9 +1,13 @@
-// A write the GM holds back under Undo (src/core/held.ts): Give…'s award and End story, from the pick to its end. Every
+// A write held back under Undo (src/core/held.ts): Give…'s award, End story, an exchange's Accept and the GM's Stop, from the pick to its end. Every
 // state against every event, the refused cells too, and the rows that wait on a ruling named as the app behaves today.
 import { describe, expect, test } from 'bun:test';
 import { HELD_EVENTS, HELD_STATES, heldKey, heldStep } from '../src/core/held.ts';
 import type { HeldEvent, HeldWrite } from '../src/core/held.ts';
 import { srid } from './fixtures/ids.ts';
+import { parseOfferId } from '../src/core/ids.ts';
+import type { OfferId } from '../src/core/ids.ts';
+
+const offer = (s: string): OfferId => parseOfferId(s)!;
 
 const PICK: HeldEvent = { type: 'pick', at: 1_000, ms: 2_000 };
 const EVENTS: { readonly [E in HeldEvent['type']]: Extract<HeldEvent, { type: E }> } = {
@@ -31,14 +35,17 @@ describe('a held write', () => {
     expect(heldStep(heldStep(first, { type: 'undo' })!, { type: 'due' })).toBeNull();
   });
 
-  test('one write is one key: the end of another run, another award or another hunter is a write of its own', () => {
+  test('one write is one key: the end of another run, another award or another hunter, an accept or a stop of an offer, is a write of its own', () => {
     const keys = [
+      heldKey({ kind: 'accept', offer: offer('d-p1-1abc-wxyz') }), heldKey({ kind: 'stop', offer: offer('d-p1-1abc-wxyz') }),
+      heldKey({ kind: 'accept', offer: offer('d-p1-1abd-wxyz') }),
       heldKey({ kind: 'end', run: srid('sr1') }), heldKey({ kind: 'end', run: srid('sr2') }),
       heldKey({ kind: 'give', to: 'h1', bundle: 'seed-mask' }), heldKey({ kind: 'give', to: 'h1', bundle: 'seed-face' }),
       heldKey({ kind: 'give', to: 'd-p1:h1', bundle: 'seed-mask' }),
     ];
     expect(new Set(keys).size).toBe(keys.length);
-    expect(heldKey({ kind: 'give', to: 'h1', bundle: 'seed-mask' })).toBe(keys[2]!);
+    expect(heldKey({ kind: 'give', to: 'h1', bundle: 'seed-mask' })).toBe(keys[5]!);
+    expect(heldKey({ kind: 'stop', offer: offer('d-p1-1abc-wxyz') })).toBe(keys[1]!);
   });
 
   test('waits on the ruling SMX-gates-5.2: today a bundle picked on the shelf is held as it is, with no step to edit it first', () => {

@@ -199,7 +199,7 @@ export function register(app) {
       else if (x.type === 'clearTimer') clearTimeout(pause);
       else if (x.type === 'ask') Y().check(x.code).then(answer => lobbyDo({ type: 'answered', of: x.of, code: x.code, answer }));
       else if (x.type === 'confirm') {
-        ui.confirm({ title: `Remove ${x.name}?`, body: `${x.name} leaves the party board and any fight. Their device keeps the hunter and stops syncing with this room.`, danger: true, confirmLabel: 'Remove from room' })
+        ui.confirm({ title: `Remove ${x.name}?`, body: [`${x.name} leaves the party board and any fight. Their device keeps the hunter and stops syncing with this room.`, app.api.trade.removeLine(x.key, x.name)].filter(Boolean).join(' '), danger: true, confirmLabel: 'Remove from room' })
           .then(yes => lobbyDo({ type: 'confirmed', key: x.key, room: x.room, yes: !!yes }));
       } else if (x.type === 'send') {
         // the room first: a removal the server did not take leaves the hunter in the fight as in the room

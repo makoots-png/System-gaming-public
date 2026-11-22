@@ -105,8 +105,11 @@ const dieMean = (text: string, body: Scope['user'], R: BudgetRules): number => m
 
 /** The four penetrations, which no stat feeds alone (Control feeds the percent pair of both): each is weighed by `penCost`. */
 type PenKey = 'armorPen' | 'resistPen' | 'armorPenFlat' | 'resistPenFlat';
-/** Lifesteal and ability haste, which no stat feeds: each is weighed by its worth a round (`drainCost`, `hasteCost`). */
-type UnfedKey = 'drain' | 'haste';
+/**
+ * Lifesteal, ability haste, heal and shield power and damage to shield, which no stat feeds: each is weighed by its
+ * worth a round (`drainCost`, `hasteCost`, `healPowerCost`).
+ */
+type UnfedKey = 'drain' | 'haste' | 'healPower' | 'shieldDrain';
 /**
  * The stat that feeds each other sheet key in `derive` (balance plan section 10): a bonus on the key costs the points of
  * that stat that make the same change on the sample wearer. Tenacity reads Strength and Discipline together, so its
@@ -148,13 +151,21 @@ const unfedCost = (saPerRound: number, r: Rates): number => saPerRound * r.strik
 /**
  * A point of lifesteal, `drain` (a hundredth): a hundredth of the HP one standard action a round takes, healed back. The
  * action is the tier's strike (`strike`) on a same-rank normal brute, worth.ts's target, through its armor by rule 12
- * with the wearer's penetration; an HP healed is worth what a support's standard heal makes it (`hpRate`).
+ * with the wearer's penetration; an HP healed is worth what a support's standard heal makes it (`hpRate`). A point of
+ * damage to shield, `shieldDrain`, by the same rule (item-stats 2.2): an HP of shield is weighed as an HP healed, and
+ * its ceiling (`kit.shieldDrainMax`) is not read, so the cost never undercharges.
  */
-function drainCost(r: Rates, R: BudgetRules): number {
+const drainCost = (k: 'drain' | 'shieldDrain') => (r: Rates, R: BudgetRules): number => {
   const wearer = r.sheet({}), brute = monsterSheet(r.rank, 'brute', 'normal', R);
   const taken = throughDefence(r.strike, defenceLeft('physical', wearer, brute), R);
-  return unfedCost(unitOf('drain') * taken * hpRate(r.rank, R), r);
-}
+  return unfedCost(unitOf(k) * taken * hpRate(r.rank, R), r);
+};
+/**
+ * A point of heal and shield power, `healPower` (a hundredth, item-stats 2.1): a support's standard heal a round is
+ * about one standard action (`hpRate` reads 1.5 times `sup` HP as one), so a hundredth more of it is a hundredth of a
+ * standard action a round. The wearer is weighed as healing every round, the reading that never undercharges.
+ */
+const healPowerCost = (r: Rates): number => unfedCost(unitOf('healPower'), r);
 /**
  * A point of ability haste, `haste` (whole points): a cooldown of C rounds becomes C * 100 / (100 + haste) (charge.ts
  * `cooldownOf`), so the ability is used (100 + haste) / (100 * C) times a round, and each point adds a hundredth of a
@@ -174,7 +185,7 @@ const BONUS_COST: { readonly [K in BonusKey]: (r: Rates, R: BudgetRules) => numb
   threat: r => fedCost('threat', r), hold: r => fedCost('hold', r), costCut: r => fedCost('costCut', r),
   armorPen: (r, R) => penCost('armorPen', r, R), resistPen: (r, R) => penCost('resistPen', r, R),
   armorPenFlat: (r, R) => penCost('armorPenFlat', r, R), resistPenFlat: (r, R) => penCost('resistPenFlat', r, R),
-  drain: drainCost, haste: hasteCost,
+  drain: drainCost('drain'), haste: hasteCost, healPower: healPowerCost, shieldDrain: drainCost('shieldDrain'),
 };
 /** What bonus key `k` costs for one of its sheet number: a `sheet` op adds to the number itself, a bonus point `unitOf` of it. */
 const perNumber = (k: BonusKey) => (r: Rates, R: BudgetRules): number => BONUS_COST[k](r, R) / unitOf(k);

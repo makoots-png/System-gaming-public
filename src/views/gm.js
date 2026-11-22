@@ -703,6 +703,7 @@ export function register(app) {
           <div class="gm-row"><button type="button" class="primary" id="gm-s-go">Start session</button></div>
           <div class="gm-msg" id="gm-s-msg" role="status"></div><div id="gm-cheat"></div>`),
         section('party', 'Party board', `<div class="gm-room" id="gm-room"></div><div class="gm-cards" id="gm-board" aria-live="polite"></div><div class="gm-msg" id="gm-board-msg" role="status"></div>`),
+        section('trade', 'Trades and stash', '<div id="gm-trade"></div>', false, true),
         section('stories', 'Stories', '<div id="gm-stories"></div>', false, true),
         section('award', 'Award', `
           <div class="lbl">Hunters <span id="gm-sel-sum-a" class="gm-sum"></span></div>
@@ -755,10 +756,10 @@ export function register(app) {
       ].join('');
 
       // D04: desktop columns. Sections move into column wrappers at >=1100 (2 cols) / >=1500 (3 cols); phone/tablet keep the original single stack
-      const ORDER = ['cheat', 'party', 'stories', 'award', 'bcast', 'quest', 'gate', 'tables', 'rules', 'log'];
+      const ORDER = ['cheat', 'party', 'trade', 'stories', 'award', 'bcast', 'quest', 'gate', 'tables', 'rules', 'log'];
       // A20: the Award form is a full-width row under the columns, its reward rows two to a line
-      const PLAN2 = [['party', 'stories', 'quest'], ['cheat', 'bcast', 'gate', 'tables', 'rules', 'log']];
-      const PLAN3 = [['party', 'stories'], ['quest', 'bcast'], ['cheat', 'gate', 'tables', 'rules', 'log']];
+      const PLAN2 = [['party', 'trade', 'stories', 'quest'], ['cheat', 'bcast', 'gate', 'tables', 'rules', 'log']];
+      const PLAN3 = [['party', 'trade', 'stories'], ['quest', 'bcast'], ['cheat', 'gate', 'tables', 'rules', 'log']];
       let planSig = '';
       const arrange = () => {
         const L = app.layout || { desktop: () => false, wide: () => false };
@@ -870,6 +871,7 @@ export function register(app) {
       showTie();
       const csig = JSON.stringify(ov()), cs = $('#gm-cheat'); if (cs.dataset.sig !== csig) { cs.dataset.sig = csig; cs.innerHTML = cheatSheet(); }
       renderBoard(); renderTargets();
+      $('#gm-hsum-trade').textContent = A().trade.paint($('#gm-trade'));
       $('#gm-hsum-stories').textContent = A().stories.paint($('#gm-stories'));
       editor.refresh();
       $('#gm-day').textContent = `Day ${S().world.day}`;

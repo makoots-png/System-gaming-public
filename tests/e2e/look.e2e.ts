@@ -1,4 +1,4 @@
-import { test, expect, openApp, onboardGM, onboardPlayer, go, dismissAll, startGoblinDenFight, chooseList, answerWindow, PHONE, SMALL_PHONE } from './helpers.ts';
+import { test, expect, openApp, onboardGM, onboardPlayer, go, dismissAll, startGoblinDenFight, chooseList, answerWindow, createRoom, PHONE, SMALL_PHONE } from './helpers.ts';
 import { EXAMPLE_STORIES } from '../../src/core/registry/stories.ts';
 import type { Locator } from '@playwright/test';
 
@@ -942,3 +942,50 @@ for (const viewport of [SMALL_PHONE, PHONE]) {
     expect(audit).toEqual({ short: [], wide: false, out: [], page: 0 });
   });
 }
+
+test('on 360 and 390 px phones the Bag\'s three tabs and an item\'s row with Give keep one line each, and every control is at least 44 px tall', async ({ device }) => {
+  for (const viewport of [SMALL_PHONE, PHONE]) {
+    const player = (await device(`player ${viewport.width}`, { viewport })).page;
+    await onboardPlayer(player, 'Mira Test');
+    await player.evaluate(() => {
+      const hid = hunterApp.store.active().id;
+      hunterApp.api.inventory.addItem(hid, { name: 'Greater Health Potion', rar: 'rare', type: 'consumable', qty: 2 });
+      hunterApp.api.inventory.addItem(hid, { name: 'Iron Shield', rar: 'uncommon', type: 'armor', slot: 'offhand' });
+      hunterApp.api.inventory.addGold(hid, 50);
+    });
+    await go(player, 'status');
+    const bag = player.locator('[data-panel="inventory"]');
+    await expect(bag.getByRole('button', { name: 'Give Iron Shield' })).toBeVisible();
+    const lines = await bag.evaluate(el => [el.querySelector('[role=tablist]')!, ...el.querySelectorAll('.inv-card .acts')].map(row => {
+      const boxes = [...row.querySelectorAll('button')].map(b => b.getBoundingClientRect());
+      return { lines: new Set(boxes.map(b => Math.round(b.top))).size, least: Math.min(...boxes.map(b => b.height)) };
+    }));
+    expect(lines.length, `${viewport.width}: the tabs and two rows`).toBe(3);
+    for (const l of lines) expect(l, `${viewport.width}: one line of 44 px controls`).toEqual({ lines: 1, least: expect.any(Number) });
+    expect(Math.min(...lines.map(l => l.least)), `${viewport.width}: every control 44 px`).toBeGreaterThanOrEqual(44);
+    expect(await player.evaluate(() => document.documentElement.scrollWidth), `${viewport.width}: no sideways scroll`).toBe(viewport.width);
+  }
+});
+
+test('on a 390 px phone the Give window with Ask in return open fits the width, and its chips and Ask in return are at least 44 px tall', async ({ device }) => {
+  const gm = (await device('gm')).page, brakk = (await device('brakk', { viewport: PHONE })).page, mira = (await device('mira')).page;
+  await onboardGM(gm);
+  const code = await createRoom(gm);
+  await onboardPlayer(brakk, 'Brakk', code);
+  await onboardPlayer(mira, 'Mira', code);
+  await dismissAll(brakk, 4);
+  await brakk.evaluate(() => hunterApp.api.inventory.addItem(hunterApp.store.active().id, { name: 'Healing Potion', rar: 'common', type: 'consumable', qty: 3 }));
+  await mira.evaluate(() => hunterApp.api.inventory.addItem(hunterApp.store.active().id, { name: 'Greater Health Potion of the Long Night', rar: 'rare', type: 'consumable', qty: 2 }));
+  await expect.poll(() => brakk.evaluate(() => hunterApp.api.sync.faces().flatMap((f: any) => (f.bag ?? []).map((l: any) => l.name))), { timeout: 20_000 }).toContain('Greater Health Potion of the Long Night');
+  await go(brakk, 'status');
+  await brakk.locator('[data-panel="inventory"]').getByRole('button', { name: 'Give Healing Potion' }).tap();
+  const win = brakk.locator('.sys-overlay.show .sys-window');
+  await win.locator('[data-tr-to]', { hasText: 'Mira' }).tap();
+  await win.locator('.tr-ask summary').tap();
+  await expect(win.locator('[data-tr-ask]')).toBeVisible();
+  const box = await win.boundingBox();
+  expect(box && box.x >= 0 && box.x + box.width <= PHONE.width, 'the window fits the width').toBe(true);
+  const least = await win.evaluate(w => Math.min(...[...w.querySelectorAll('.tr-give button, .tr-give summary')].map(b => (b as HTMLElement).offsetHeight)));
+  expect(least, 'the layout height: a chip just tapped is drawn 3% smaller while pressed').toBeGreaterThanOrEqual(44);
+  expect(await brakk.evaluate(() => document.documentElement.scrollWidth)).toBe(PHONE.width);
+});

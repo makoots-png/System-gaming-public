@@ -181,7 +181,7 @@ function partyRow(h: RowHunter, id: CombatantId, holder: HunterRef, R: RowRules)
   const kept = h.conditions.slice(0, MAX_STATUSES).map(c => starting(c.key, c.def, c.source, c.rounds, now, R, c.stacks));
   const statuses = [...kept, ...wornStatuses(h, id, kept.map(s => s.key), now, R)].slice(0, MAX_STATUSES);
   const { stats, sheet } = modified(origin, statuses, R), abilities = hunterAbilities(h, R), self = { stats, sheet };
-  const shield = statuses.filter(s => s.worn).reduce<Shield | null>((held, s) => statusShield(s.def, { shield: held, statuses }, { user: self, target: self, charge: 0 }, now, null, R), null);
+  const shield = statuses.filter(s => s.worn).reduce<Shield | null>((held, s) => statusShield(s.def, { shield: held, statuses }, { user: self, target: self, charge: 0 }, null, now, null, R), null);
   // an ability limited a gate starts the fight with the uses its sheet has spent since the last Clear (table 2.3)
   const used = Object.fromEntries(abilities.filter(a => usesGates(a).some(g => g.per === 'gate') && (h.used?.[a.id] ?? 0) > 0).map(a => [a.id, h.used![a.id]!]));
   return {

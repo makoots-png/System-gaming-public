@@ -3,7 +3,9 @@
 // or magical and there are no elements, so a type is never a weakness. Its picture is icon-defaults.ts's, keyed by
 // `MonsterType`. A monster's type is text the GM types; `monsterTypeOf` reads it (any case, spaces around it trimmed).
 // To add a type: a member of `MonsterType`, its row here (the typecheck then asks icon-defaults.ts for its picture),
-// and its case in tests/monster-types.test.ts.
+// and its case in tests/monster-types.test.ts. Whether one monster may be extracted is `extractableOf`: its kind first
+// (never a mythic), then its own choice, then its type.
+import type { MonsterKind } from '../hunter/derive.ts';
 
 /** An enemy type the rules know, by its lowercase name. */
 export type MonsterType =
@@ -35,4 +37,13 @@ export function monsterTypeOf(typed: string): MonsterType | null {
 export function typeExtractable(typed: string): boolean {
   const t = monsterTypeOf(typed);
   return t === null || MONSTER_TYPES[t].extractable;
+}
+
+/**
+ * Whether a monster may be extracted: never a mythic (the balance plan's call: a fight built to be won 5 to 10 times in
+ * 100 does not hand its body to the party as a shadow); else its own yes or no where it has one (a seed's or the GM's),
+ * else its type's (`typeExtractable`).
+ */
+export function extractableOf(kind: MonsterKind, typed: string, own: boolean | null): boolean {
+  return kind !== 'mythic' && (own ?? typeExtractable(typed));
 }

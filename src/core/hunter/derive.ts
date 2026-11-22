@@ -83,6 +83,19 @@ export type Sheet = {
    * 100 / (100 + haste) (charge.ts `cooldownOf`, League of Legends' formula), so 100 halves it.
    */
   readonly haste: number;
+  /**
+   * Heal and shield power, the giver's side (item-stats 2.1): a heal or a shield this body gives lands times 1 plus this
+   * (combat/standing.ts `given`), before the receiver's healed or shielded share. From bonuses only, never under 0 and
+   * with no cap of its own, as lifesteal: the item budget prices it. Its own lifesteal, its own damage to shield and a
+   * worn status's per-round heal are not raised.
+   */
+  readonly healPower: Share;
+  /**
+   * Damage to shield (item-stats 2.2): the part of the HP its own uses take from other bodies (lifesteal's `lost`) that
+   * becomes a shield on this body, up to `kit.shieldDrainMax` of its max HP (land.ts `drained`, effect-ops.ts
+   * `shieldGrown`). From bonuses only, never under 0, with no cap of its own: the ceiling bounds it.
+   */
+  readonly shieldDrain: Share;
   /** How many shadows this body can keep. */
   readonly shadows: number;
   /**
@@ -101,7 +114,8 @@ export const SHEET_LABELS: { readonly [K in SheetNumber]: string } = {
   armorPen: 'Armor penetration (%)', resistPen: 'Magic penetration (%)', armorPenFlat: 'Lethality', resistPenFlat: 'Unravel', phys: 'Physical power', mag: 'Magical power', sup: 'Support power', react: 'Reaction',
   aim: 'Accuracy', will: 'Will', critFaces: 'Crit faces (of d20)', critSize: 'Crit size', opening: 'Opening bonus',
   tenacity: 'Tenacity', potency: 'Potency', threat: 'Threat multiplier', hold: 'Channel hold (share of max HP)',
-  costCut: 'Cost cut (share)', drain: 'Lifesteal (share)', haste: 'Ability haste', shadows: 'Shadow capacity', sight: 'Sight level',
+  costCut: 'Cost cut (share)', drain: 'Lifesteal (share)', haste: 'Ability haste',
+  healPower: 'Heal and shield power (share)', shieldDrain: 'Damage to shield (share)', shadows: 'Shadow capacity', sight: 'Sight level',
 };
 
 /** What one worn item adds to the kit (design 2.3). Neck and rings weigh 0. */
@@ -179,8 +193,8 @@ const HUNDREDTHS: ReadonlySet<StatKey | SheetNumber> = new Set(BONUS_HUNDREDTHS)
 // one with no capacity would be collapsed at rest. A bonus passes a stat's curve cap but never a sheet clamp (balance
 // plan section 10): the speed range, the opening's cap, the percent penetration's `penMax`, and the crit faces, crit size
 // and cost cut a status may reach (`kit.critFacesMax`, `kit.critSizeMax`, `kit.costCutMax`), which no stat alone reaches;
-// crit faces, crit size and the cost cut never fall below their base. Lifesteal and ability haste come from bonuses
-// alone, never under 0 and with no cap.
+// crit faces, crit size and the cost cut never fall below their base. Lifesteal, ability haste, heal and shield power
+// and damage to shield come from bonuses alone, never under 0 and with no cap of their own.
 function derive(stats: Stats, level: number, gear: readonly GearPiece[], perks: Bonus, mods: readonly StatusMod[], f: Factors, R: DeriveRules): Sheet {
   const F = R.fight, K = F.kit;
   const b = (k: StatKey | SheetNumber): number => (perks[k] ?? 0) / (HUNDREDTHS.has(k) ? 100 : 1);
@@ -236,6 +250,8 @@ function derive(stats: Stats, level: number, gear: readonly GearPiece[], perks: 
     costCut: share(clamp(up('ctl', F.costCutCap) + b('costCut'), 0, K.costCutMax)),
     drain: Math.max(0, b('drain')),
     haste: Math.max(0, b('haste')),
+    healPower: share(Math.max(0, b('healPower'))),
+    shieldDrain: share(Math.max(0, b('shieldDrain'))),
     shadows: Math.floor(e('pre') * F.shadowPerEff + b('shadows')),
     sight: asLevel(Math.max(F.stealth.sightBase, b('sight'))),
   };

@@ -19,7 +19,8 @@ import type { RowMonster } from '../src/core/combat/rows.ts';
 import { BUILT_IN_STATUSES } from '../src/core/registry/statuses.ts';
 import { TIER_BUDGET } from '../src/core/registry/paths.ts';
 import { ARCHETYPE_ATTACKS, ATTACK_ID } from '../src/core/registry/abilities.ts';
-import { ARCHETYPE_LIST, MONSTER_BOUNDS, MONSTER_KINDS, MONSTER_TRAITS, SEEDS, copiesOf, lootOf, monsterSheetOf, parseMonster, seedMonsters, statBlock, monsterXp, xpOf } from '../src/core/registry/monsters.ts';
+import { ARCHETYPE_LIST, MONSTER_BOUNDS, MONSTER_KINDS, MONSTER_TRAITS, SEEDS, copiesOf, lootOf, monsterScript, monsterSheetOf, parseMonster, seedMonsters, statBlock, monsterXp, xpOf } from '../src/core/registry/monsters.ts';
+import { mythicScriptOf, scriptFits } from '../src/core/registry/mythics.ts';
 import type { Monster, MonsterTemplate } from '../src/core/registry/monsters.ts';
 import type { MonsterTrait, StatusMod } from '../src/core/hunter/derive.ts';
 import { parseItem } from '../src/core/registry/items.ts';
@@ -401,5 +402,37 @@ group('a monster\'s icon', () => {
   });
   test('a loot item keeps its icon through the monster\'s reader', () => {
     expect(parseMonster({ name: 'Rat King', loot: { gold: 1, items: [{ name: 'Tail', icon: 'ore' }] } })!.loot.items[0]!.icon).toBe('ore');
+  });
+});
+
+group('a mythic and its script (notes-11-keystones.md, design B.3 and B.6)', () => {
+  const mythics = MONSTERS.filter(m => m.kind === 'mythic');
+
+  test('every mythic seed\'s script fits it', () => {
+    expect(mythics.map(m => [m.name, monsterScript(m)])).toEqual([
+      ['The Angel of the Last Trumpet', 'angel-of-the-last-trumpet'], ['Zaratan, the Island That Wakes', 'zaratan-the-island-that-wakes'], ['The Fourth Rider', 'the-fourth-rider'],
+    ]);
+    for (const m of mythics) expect([m.name, scriptFits(mythicScriptOf(monsterScript(m)!), m)], 'every act its phases name is one of its abilities').toEqual([m.name, []]);
+    expect(scriptFits(mythicScriptOf('the-fourth-rider'), seed('beru')), 'a monster without the Rider\'s abilities lacks both, each once').toEqual(['Reaping Stroke', 'Not Yet']);
+  });
+
+  test('a mythic made with no script plays plain', () => {
+    expect(parseMonster({ name: 'Leviathan', kind: 'mythic' })!.script).toBe('plain');
+    expect(parseMonster({ name: 'Leviathan', kind: 'mythic', script: 'the-fifth-rider' })!.script, 'a script the registry lacks').toBe('plain');
+    expect(parseMonster({ name: 'Leviathan', kind: 'mythic', script: 'the-fourth-rider' })!.script).toBe('the-fourth-rider');
+    expect(statBlock(RULES, 'S', { kind: 'mythic' }).script).toBe('plain');
+    expect(monsterScript({ kind: 'mythic' }), 'an old mythic that names none').toBe('plain');
+  });
+
+  test('a monster of any other kind plays no script, whatever it names', () => {
+    expect(parseMonster({ name: 'Wolf', kind: 'boss', script: 'the-fourth-rider' })).not.toHaveProperty('script');
+    expect(monsterScript(seed('beru'))).toBeNull();
+  });
+
+  test('a mythic cannot be extracted', () => {
+    expect(mythics.map(m => [m.type, m.extractable]), 'not the Celestial or the Aquatic one, whose types may be').toEqual([['Celestial', false], ['Aquatic', false], ['Spirit', false]]);
+    expect(parseMonster({ name: 'Leviathan', kind: 'mythic', type: 'Beast', extractable: true })!.extractable).toBe(false);
+    expect(statBlock(RULES, 'S', { kind: 'mythic', type: 'Beast' }).extractable).toBe(false);
+    expect(parseMonster({ name: 'Wolf', kind: 'boss', type: 'Beast', extractable: true })!.extractable, 'a boss still may').toBe(true);
   });
 });

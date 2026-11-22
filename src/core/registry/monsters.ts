@@ -25,7 +25,9 @@ import type { BuiltInStatus } from './statuses.ts';
 import { oneOf } from '../one-of.ts';
 import { isIconKey } from './icons.ts';
 import type { IconKey } from './icons.ts';
-import { typeExtractable } from './monster-types.ts';
+import { extractableOf } from './monster-types.ts';
+import { isMythicScriptId, PLAIN } from './mythics.ts';
+import type { MythicScriptId } from './mythics.ts';
 
 /**
  * A status a monster starts a fight with. `rounds: null` lasts until removed. Its def is the rules' for its key. `stacks`
@@ -53,6 +55,11 @@ export type Monster = {
   /** The picture a GM picked, any key of the registry; absent, the default (icon-defaults.ts `monsterIcon`: its type's, else its archetype's). */
   icon?: IconKey;
   extractable: boolean; desc: string; statuses: StartStatus[]; loot: Loot;
+  /**
+   * The fight a mythic plays (registry/mythics.ts), on a mythic only; a mythic read or made without one plays `plain`
+   * (`parseMonster`, `statBlock`). Read it with `monsterScript`.
+   */
+  script?: MythicScriptId;
   /** Added by the bestiary on the monster's first defeat. */
   auto?: boolean;
   /** Made by a gate's spawn for a rank the bestiary had no monster of (gates.js); not one of the GM's own (spawn.ts). */
@@ -72,14 +79,16 @@ export const TRAIT_LABEL: { readonly [T in MonsterTrait]: string } = { frail: 'F
 
 /**
  * How a seed differs from its rank, archetype and kind: its tweak, a factor on its XP, whether a Necromancer may extract
- * it (yes unless it says no), and the statuses it starts a fight with.
+ * it (its type's unless it says; never a mythic), and the statuses it starts a fight with. A mythic names its script.
  */
-export type SeedTweak = MonsterTweak & { xp?: number; extractable?: boolean; statuses?: readonly StartStatus[] };
-/** One row of the bestiary. The slug makes its id (`seed:<slug>`). */
-export type MonsterSeed = readonly [
-  slug: string, name: string, rank: Rank, type: string, archetype: Archetype, kind: MonsterKind, tweak: SeedTweak,
+export type SeedTweak = MonsterTweak & { xp?: number; extractable?: boolean; statuses?: readonly StartStatus[]; script?: never };
+/** A row of the bestiary of kind `K`, whose tweak is `T`. */
+type SeedRow<K extends MonsterKind, T extends object> = readonly [
+  slug: string, name: string, rank: Rank, type: string, archetype: Archetype, kind: K, tweak: T,
   abilities: readonly MonsterSpec[], notes: readonly string[], desc: string,
 ];
+/** One row of the bestiary. The slug makes its id (`seed:<slug>`). A mythic's row names its script, so one that names none does not compile. */
+export type MonsterSeed = SeedRow<Exclude<MonsterKind, 'mythic'>, SeedTweak> | SeedRow<'mythic', Omit<SeedTweak, 'script'> & { readonly script: MythicScriptId }>;
 
 // The old seeds restated by docs/agent-handoff/rw/m2-plan.md section 3.2. The archetype is the largest of the old
 // Strength (brute), Dexterity (skirmisher) and Intelligence (caster), a tie a brute; the kind is the old boss or elite
@@ -171,6 +180,20 @@ export const SEEDS: readonly MonsterSeed[] = [
   ['baran', 'Baran', 'S', 'Demon', 'brute', 'boss', { hp: 0.9, xp: 1.2 }, [{ kind: 'curse', name: 'Demon Monarch\'s Presence', applies: status('frightened') }],
     ['Ice Domain: 30 ft cold aura, 3d10 per round', 'Dark Command: calls 1d4 Demon Knights', 'Blink: teleport 30 ft as a bonus action'],
     'Demon king of the frozen castle.'],
+  // The mythics of design B.6, each playing its script (registry/mythics.ts). An ability of the draft's row that is one
+  // of its script's moves is the script's and is not listed here.
+  ['angel-of-the-last-trumpet', 'The Angel of the Last Trumpet', 'S', 'Celestial', 'caster', 'mythic', { script: 'angel-of-the-last-trumpet' },
+    [{ kind: 'curse', name: 'Roll Up the Sky', feet: 120, applies: status('blinded') }, { kind: 'shield', name: 'Appointed Hour' }],
+    ['It has held the trumpet to its lips since the beginning and waits for the word.'],
+    'A figure whose feet stand on the earth and whose head is above the sky, with a great horn raised. When it blows, everything is over.'],
+  ['zaratan-the-island-that-wakes', 'Zaratan, the Island That Wakes', 'S', 'Aquatic', 'brute', 'mythic', { script: 'zaratan-the-island-that-wakes' },
+    [{ kind: 'strike', name: 'Jaws Like a Harbour', feet: 30, heavy: true, applies: status('restrained') }, { kind: 'shield', name: 'Shell of a Thousand Years' }],
+    ['The fight takes place on its back, and it can dive.'],
+    'A sea turtle so large that forests and ruins stand on its shell. Sailors land on it and light fires, and then it remembers the deep.'],
+  ['the-fourth-rider', 'The Fourth Rider', 'S', 'Spirit', 'skirmisher', 'mythic', { script: 'the-fourth-rider' },
+    [{ kind: 'strike', name: 'Reaping Stroke', feet: 20, heavy: true }, { kind: 'shield', name: 'Not Yet' }],
+    ['He comes for everyone in the end and has never been late.'],
+    'A thin rider on a horse the colour of a corpse, with the grave following behind him. He does not hurry.'],
 ];
 
 /**
@@ -190,6 +213,9 @@ export const monsterXp = (m: { readonly xp?: number; readonly rank: Rank; readon
 export const tweakOfMonster = (t: { readonly hp?: number; readonly dealt?: number; readonly stats?: Partial<Readonly<Record<StatKey, number>>>; readonly traits?: readonly MonsterTrait[] }): Tweak =>
   ({ hp: t.hp ?? NO_TWEAK.hp, dealt: t.dealt ?? NO_TWEAK.dealt, stats: t.stats ?? NO_TWEAK.stats, traits: t.traits ?? NO_TWEAK.traits });
 
+/** The script a monster plays: a mythic's own, `plain` when it names none; null for any other kind. */
+export const monsterScript = (m: Pick<Monster, 'kind' | 'script'>): MythicScriptId | null => (m.kind === 'mythic' ? m.script ?? PLAIN : null);
+
 /** A monster's sheet: its rank, archetype and kind through `derive`, with its tweak. */
 export const monsterSheetOf = (m: Pick<Monster, 'rank' | 'archetype' | 'kind' | 'tweak'>, R: DeriveRules): Sheet =>
   monsterSheet(m.rank, m.archetype, m.kind, R, [], tweakOfMonster(m.tweak));
@@ -200,8 +226,8 @@ export function statBlock(R: Rules, rank: Rank, o: { id?: string; name?: string;
   const kind = o.kind ?? 'normal';
   return {
     id: o.id || null, name: o.name || (kind === 'boss' ? `${rank}-rank Boss` : kind === 'elite' ? `Elite ${rank}-rank Monster` : `${rank}-rank Monster`),
-    rank, type: o.type || '', archetype: o.archetype ?? 'brute', kind, tweak: {}, abilities: [], notes: [], extractable: typeExtractable(o.type || ''),
-    desc: '', statuses: [], loot: { gold: 0, items: [] },
+    rank, type: o.type || '', archetype: o.archetype ?? 'brute', kind, tweak: {}, abilities: [], notes: [], extractable: extractableOf(kind, o.type || '', null),
+    desc: '', statuses: [], loot: { gold: 0, items: [] }, ...(kind === 'mythic' ? { script: PLAIN } : {}),
   };
 }
 
@@ -210,8 +236,8 @@ export function seedMonsters(R: Rules): Monster[] {
   return SEEDS.map(([slug, name, rank, type, archetype, kind, t, specs, notes, desc]) => ({
     id: seedId<'m'>(slug), name, rank, type, archetype, kind,
     tweak: { ...(t.hp === undefined ? {} : { hp: t.hp }), ...(t.stats === undefined ? {} : { stats: { ...t.stats } }), ...(t.traits === undefined ? {} : { traits: [...t.traits] }) },
-    abilities: specs.map(s => monsterAbility(s, R)), notes: notes.slice(), xp: xpOf(R, rank, kind, t.traits, t.xp), extractable: t.extractable ?? typeExtractable(type), desc,
-    statuses: (t.statuses ?? []).map(s => ({ ...s })), loot: { gold: 0, items: [] },
+    abilities: specs.map(s => monsterAbility(s, R)), notes: notes.slice(), xp: xpOf(R, rank, kind, t.traits, t.xp), extractable: extractableOf(kind, type, t.extractable ?? null), desc,
+    statuses: (t.statuses ?? []).map(s => ({ ...s })), loot: { gold: 0, items: [] }, ...(kind === 'mythic' ? { script: t.script ?? PLAIN } : {}),
   }));
 }
 
@@ -244,7 +270,8 @@ function tweakOf(v: unknown): MonsterTweak {
 /**
  * A monster read from outside data, without its id, or null when it is not an object. Each field of the wrong type or
  * value takes the default a new monster has (a blank name is "Monster", a brute, normal); a number is cut to a whole one
- * inside `MONSTER_BOUNDS`. Extractable is the monster's own yes or no, else its type's (monster-types.ts `typeExtractable`). The tweak keeps an HP factor above 0 (at most 10), stat points from -999 to 999 that are
+ * inside `MONSTER_BOUNDS`. Extractable is never for a mythic, else the monster's own yes or no, else its type's (monster-types.ts `extractableOf`). A mythic keeps
+ * the script it names when the registry holds it, else plays `plain`; any other kind has none. The tweak keeps an HP factor above 0 (at most 10), stat points from -999 to 999 that are
  * not 0, and the traits it names that `RULES.fight.traits` holds, each once, in `MONSTER_TRAITS`' order. Each ability
  * is read by the fight's ability reader with the shipped rules' limits, one it refuses dropped (at most 11). Notes are the non-blank lines of text, at most 20 of 500. A starting status is a status key (not a hunter's
  * state chip, each key once) with whole rounds 1 to 999 or null and a count of 1 to `kit.stackCap` (kept when above 1),
@@ -255,19 +282,20 @@ function tweakOf(v: unknown): MonsterTweak {
 export function parseMonster(v: unknown): MonsterTemplate | null {
   if (!isObj(v)) return null;
   const B = MONSTER_BOUNDS;
-  const loot = isObj(v.loot) ? v.loot : {};
+  const loot = isObj(v.loot) ? v.loot : {}, kind = oneOf(v.kind, MONSTER_KINDS, 'normal');
   const out: MonsterTemplate = {
     name: text(v.name, B.name) || 'Monster', rank: oneOf(v.rank, RANKS, 'E'), type: text(v.type, B.type),
-    archetype: oneOf(v.archetype, ARCHETYPE_LIST, 'brute'), kind: oneOf(v.kind, MONSTER_KINDS, 'normal'), tweak: tweakOf(v.tweak),
+    archetype: oneOf(v.archetype, ARCHETYPE_LIST, 'brute'), kind, tweak: tweakOf(v.tweak),
     abilities: (Array.isArray(v.abilities) ? v.abilities : []).flatMap(a => parseAbility(a, RULES) ?? []).slice(0, B.abilities),
     notes: (Array.isArray(v.notes) ? v.notes : []).map(a => text(a, B.note)).filter(Boolean).slice(0, B.notes),
     // an XP that is not a number is the rule's (absent, `monsterXp`), a typed one kept inside its bound
     ...(typeof v.xp === 'number' && Number.isFinite(v.xp) ? { xp: whole(v.xp, 0, B.xp, 0) } : {}),
-    extractable: typeof v.extractable === 'boolean' ? v.extractable : typeExtractable(text(v.type, B.type)), desc: typeof v.desc === 'string' ? v.desc.slice(0, B.desc) : '',
+    extractable: extractableOf(kind, text(v.type, B.type), typeof v.extractable === 'boolean' ? v.extractable : null), desc: typeof v.desc === 'string' ? v.desc.slice(0, B.desc) : '',
     statuses: startStatuses(v.statuses),
     loot: { gold: whole(loot.gold, 0, B.gold, 0), items: (Array.isArray(loot.items) ? loot.items : []).flatMap(i => parseItem(i) ?? []).slice(0, B.lootItems) },
   };
   if (isIconKey(v.icon)) out.icon = v.icon;
+  if (kind === 'mythic') out.script = isMythicScriptId(v.script) ? v.script : PLAIN;
   if (v.auto === true) out.auto = true;
   if (v.placeholder === true) out.placeholder = true;
   return out;

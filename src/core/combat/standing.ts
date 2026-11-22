@@ -213,6 +213,13 @@ export const ambushShare = (user: Pick<Body, 'statuses'>, target: Pick<Body, 'st
 export const healShare = (target: Pick<Body, 'statuses'>, R: StandingRules): number => capped(shareOf(target, 'healed'), R);
 /** Rule 11c: what a shield `target` gets is multiplied by (its `shielded` share), whoever or whatever gives it. */
 export const shieldShare = (target: Pick<Body, 'statuses'>, R: StandingRules): number => capped(shareOf(target, 'shielded'), R);
+/**
+ * A heal or a shield `giver` puts out (item-stats 2.1), before the receiver's share: `raw` times 1 plus its sheet's heal
+ * and shield power. The giver's factor is outside `kit.shareCap`, which bounds only what a receiver's statuses do; a
+ * null giver (a status with no body for a source, or a worn one) gives `raw`. Every heal and shield a body gives passes
+ * here: resolve.ts `shared`, land.ts `landOne`, effect-ops.ts `statusShield` and fight-turn.ts `payDue`.
+ */
+export const given = (raw: number, giver: Pick<Body, 'sheet'> | null): number => (giver ? raw * (1 + giver.sheet.healPower) : raw);
 
 // ── the wards and stealth (kits design 8.1 and 8.7) ──
 /** The ops a body's standing reads by name: a ward, stealth, being alert. */

@@ -15,9 +15,9 @@ import type { CombatantId, DamageType } from './ability-types.ts';
 import type { Sheet } from '../hunter/derive.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import { rowLifeAfter } from './row-life.ts';
-import { applyStatus, cureStatus, dispelled, lasting, removeStatus, shieldOn, stackOf, statusOn, statusShield, withStatuses, withThreat } from './effect-ops.ts';
+import { applyStatus, cureStatus, dispelled, lasting, liveShield, removeStatus, shieldGrown, shieldOn, stackOf, statusOn, statusShield, withStatuses, withThreat } from './effect-ops.ts';
 import { atTier, countOn, stacked } from './op-amount.ts';
-import { admitted, counting, damageShare, dealtBy, harmful, healShare, hideStarts, markWards, stealthOf, stealthStep, wardedDamage } from './standing.ts';
+import { admitted, counting, damageShare, dealtBy, given, harmful, healShare, hideStarts, markWards, stealthOf, stealthStep, wardedDamage } from './standing.ts';
 import type { StealthEndEvent } from './standing.ts';
 import type { Body, LandOp, Op, OpRules, Reach, Source, Status, StatusKey, Threshold, Tiered, UseOp } from './effect-ops.ts';
 import type { Side } from './space.ts';
@@ -58,15 +58,30 @@ export function throughShield(target: Body, dealt: number, now: Tick): { target:
 // dead row.
 export const hurt = (target: Body, damage: number): Body => rowLifeAfter(target, { type: 'damage', amount: damage });
 export const healed = (target: Body, amount: number): Body => rowLifeAfter(target, { type: 'heal', amount });
+/** What a body's own damage gave it back (`drained`): the body after, the HP its lifesteal healed and the shield its damage to shield added. */
+export type Drained = { readonly user: Body; readonly healed: number; readonly stored: number };
 /**
  * Lifesteal (balance plan section 10), after rule 14: `user` heals back its sheet's `drain` share of `lost`, the HP its
  * use took from other bodies (what rule 14 took: never a shield's part, nothing past 0), times its healing received
- * share (rule 11c, so a cut to healing cuts a drain), rounded, through its life (`healed`). A user that is not up
- * drains nothing: a drain is no revive.
+ * share (rule 11c, so a cut to healing cuts a drain), rounded, through its life (`healed`). Then damage to shield
+ * (item-stats 2.2): its `shieldDrain` share of the same `lost` grows its shield (effect-ops.ts `shieldGrown`) up to
+ * `kit.shieldDrainMax` of its max HP, lasting the rules' shield life from now. Its own heal and shield power raise
+ * neither. A user that is not up drains nothing: a drain is no revive.
  */
-export function drained(user: Body, lost: number, R: OpRules): Body {
-  if (!isUp(user) || lost <= 0 || user.sheet.drain <= 0) return user;
-  return healed(user, Math.round(lost * user.sheet.drain * healShare(user, R)));
+export function drained(user: Body, lost: number, now: Tick, R: OpRules): Drained {
+  if (!isUp(user) || lost <= 0) return { user, healed: 0, stored: 0 };
+  const hp = rowHp(user), live = liveShield(user, now);
+  let b = user.sheet.drain > 0 ? healed(user, Math.round(lost * user.sheet.drain * healShare(user, R))) : user;
+  if (b.sheet.shieldDrain > 0) {
+    const ceiling = Math.round(R.fight.kit.shieldDrainMax * b.sheet.hpMax), until = tick(now + R.fight.shieldLife * R.fight.round);
+    b = { ...b, shield: shieldGrown(b, lost * b.sheet.shieldDrain, ceiling, until, now, R) };
+  }
+  return { user: b, healed: rowHp(b) - hp, stored: liveShield(b, now) - live };
+}
+/** What a drain says after its user's name in a fight's log: "drains 4", "stores 6", "drains 4 and stores 6"; null for nothing. */
+export function drainWords(d: Pick<Drained, 'healed' | 'stored'>): string | null {
+  const parts = [...(d.healed > 0 ? [`drains ${d.healed}`] : []), ...(d.stored > 0 ? [`stores ${d.stored}`] : [])];
+  return parts.length ? parts.join(' and ') : null;
 }
 
 // Rule 15: a monster's threat table.
@@ -168,7 +183,7 @@ function putFor(t: Body, op: Pick<Extract<Op, { op: 'applyStatus' }>, 'key' | 'd
   b = withStatuses(b, applyStatus(b.statuses, statusOn(op.def, { key: op.key, source, until, since: now, settledAt: now }, op.stacks ?? 1)), now, R);
   const c = cross ? crossed(b, op.key, before, op.stacks ?? 1, now, R) : { target: b, fired: null };
   b = c.target;
-  b = { ...b, shield: statusShield(op.def, b, { user: { stats: by.stats, sheet: by.sheet }, target: { stats: b.stats, sheet: b.sheet }, charge: 0 }, now, until, R) };
+  b = { ...b, shield: statusShield(op.def, b, { user: { stats: by.stats, sheet: by.sheet }, target: { stats: b.stats, sheet: b.sheet }, charge: 0 }, by, now, until, R) };
   let threat = 0, breaks = false;
   for (const o of op.def.ops) {
     if (o.op === 'hold' && until !== null) b = stunned(b, tick(until - now));
@@ -256,7 +271,7 @@ export function landOps(rows: Map<CombatantId, Body>, ops: readonly LandOp[], hi
         if (m) (m.holder === t.id ? gained : (taken[m.holder] ??= [])).push(m.key);
         continue;
       }
-      const r = landOne(op, user, t, source, now, R, o.times ?? 1, source.id === null ? null : rows.get(source.id)?.side ?? null, o.cross ?? false);
+      const r = landOne(op, user, hitter ? user : null, t, source, now, R, o.times ?? 1, source.id === null ? null : rows.get(source.id)?.side ?? null, o.cross ?? false);
       t = r.target; dealt += r.dealt;
       if (r.fired) fired.push(r.fired);
       if (r.gained) gained.push(r.gained);
@@ -393,10 +408,11 @@ export function landMove(rows: Map<CombatantId, Body>, op: Extract<LandOp, { op:
 }
 
 /**
- * One land op on `t` at its average from `source`'s tier, read with `user` as the user, every amount times `times`. A
- * refund is time back on the bearer's own turn, which the caller gives (triggers.ts); here it changes nothing.
+ * One land op on `t` at its average from `source`'s tier, read with `user` as the user, every amount times `times`; a
+ * heal or a shield is `giver`'s to give (standing.ts `given`): the hitter, or null when no body lands it. A refund is time back on the bearer's own turn, which the
+ * caller gives (triggers.ts); here it changes nothing.
  */
-function landOne(o: LandOp, user: Body, t: Body, source: Source, now: Tick, R: OpRules, times: number, from: Side | null, cross: boolean):
+function landOne(o: LandOp, user: Body, giver: Body | null, t: Body, source: Source, now: Tick, R: OpRules, times: number, from: Side | null, cross: boolean):
   { target: Body; dealt: number; fired: LandFired | null; gained: StatusKey | null; cured: StatusKey | null; lands: readonly Status[] } {
   const scope: Scope = { user: { stats: user.stats, sheet: user.sheet }, target: { stats: t.stats, sheet: t.sheet }, charge: 0, kit: kitOf(user, t, R) };
   const at = (f: Tiered<Formula>) => average(atTier(f, source.tier), scope) * times;
@@ -407,7 +423,7 @@ function landOne(o: LandOp, user: Body, t: Body, source: Source, now: Tick, R: O
       const s = throughShield(t, dealt, now);
       return { target: hurt(s.target, wardedDamage(s.target, dealt - s.absorbed)), dealt, ...none };
     }
-    case 'heal': { const n = Math.max(0, Math.round(at(o.amount) * healShare(t, R))); return { target: healed(t, n), dealt: 0, ...none }; }
+    case 'heal': { const n = Math.max(0, Math.round(given(at(o.amount), giver) * healShare(t, R))); return { target: healed(t, n), dealt: 0, ...none }; }
     case 'applyStatus': {
       // a status a safeguard or a spent ward refuses is not put on, and so not gained. A land op has no map, so a hide it
       // puts on is not asked whether a foe watches its body (triggers.ts, fight-turn.ts and fight-react.ts hold no grid here)
@@ -420,7 +436,7 @@ function landOne(o: LandOp, user: Body, t: Body, source: Source, now: Tick, R: O
     }
     case 'delay': return { target: delayed(t, atTier(o.ticks, source.tier)), dealt: 0, ...none };
     case 'threat': return { target: source.id === null ? t : threatened(t, source.id, atTier(o.amount, source.tier)), dealt: 0, ...none };
-    case 'shield': return { target: { ...t, shield: shieldOn(t, average(o.amount, scope) * times, tick(now + R.fight.shieldLife * R.fight.round), now, R) }, dealt: 0, ...none };
+    case 'shield': return { target: { ...t, shield: shieldOn(t, given(average(o.amount, scope) * times, giver), tick(now + R.fight.shieldLife * R.fight.round), now, R) }, dealt: 0, ...none };
     case 'mana': return { target: { ...t, mana: clamp(t.mana + Math.round(at(o.amount)), 0, t.sheet.manaMax) }, dealt: 0, ...none };
     case 'fatigue': return { target: { ...t, fatigue: clamp(t.fatigue + Math.round(at(o.amount)), 0, t.sheet.fatigueMax) }, dealt: 0, ...none };
     // rule 17: a break meets a protection as a use's does

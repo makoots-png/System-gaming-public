@@ -193,7 +193,7 @@ const loot = fields<Loot>({ gold: none, items: list(item) });
 /** A monster: its abilities, its starting statuses and its loot. */
 export const monster: Walk<MonsterTemplate> = fields<MonsterTemplate>({
   name: none, rank: none, type: none, archetype: none, kind: none, tweak: none, abilities: list(ability), notes: none, xp: none, icon: none,
-  extractable: none, desc: none, statuses: list(startStatus), loot, auto: none, placeholder: none,
+  extractable: none, desc: none, statuses: list(startStatus), loot, script: none, auto: none, placeholder: none,
 });
 const mapZone = fields<MapZone>({
   id: none, name: none, ground: none, owner: none, spares: none, tier: none, until: none, endsWithOwner: none, ops, upkeep: none, end: ops,

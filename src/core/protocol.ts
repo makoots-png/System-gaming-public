@@ -690,12 +690,14 @@ export const CODEX_DOC_ENTRIES = 200;
  * the personal gates' switch, hours and share of the loot (`RULES.solo`), and the economy (each rule's reason in
  * economy design 7.1), so a GM's edit prices an item the same on every phone. Laid over the player's own rules, never
  * written to its save. `feats.on`: the GM's switch for the feats the System notices (hunter/feats.ts); a doc without it
- * reads as on. Every other field is required: each number is read in its rule's domain (`ruleNumber`).
+ * reads as on, and so does one without `trade.on`, the GM's trading switch. Every other field is required: each number is read in its rule's domain (`ruleNumber`).
  */
 export type RoomRules = {
   build: { enabled: boolean; playerPick: boolean };
   solo: { personal: boolean; hours: number; lootShare: number };
   feats: { on: boolean };
+  /** The GM's trading switch (`RULES.trade`): a doc without it reads as on. */
+  trade: { on: boolean };
   /** The rank whose Clear prices each rarity an item can carry (`RARITIES`); its color stays the phone's own. */
   rarities: RoomRarities;
   gradeStep: number;
@@ -1000,7 +1002,7 @@ function lootRank<K extends Rank>(v: unknown, rank: K): Rules['loot'][K] {
   const weights = Object.fromEntries(Object.keys(shipped).map(k => [k, ruleNumber(`loot.${rank}.weights.${k}`)(own(w, k))]));
   return { gold: goldRange(own(o, 'gold'), `loot.${rank}.gold`), weights } as Rules['loot'][K]; // the shipped table's keys, each read
 }
-/** The room's rules doc: every field required but the feats switch (on when absent). */
+/** The room's rules doc: every field required but the feats and trading switches (on when absent). */
 function roomRulesDoc(o: Rec): RoomRules {
   const b = obj(own(o, 'build')), so = obj(own(o, 'solo')), ra = obj(own(o, 'rarities')), lo = obj(own(o, 'loot'));
   const rule = (k: 'gradeStep' | 'saleShare' | 'usedUpShare' | 'reviveClears' | 'reviveLevelShare' | 'gateParty'): number => ruleNumber(k)(own(o, k));
@@ -1008,6 +1010,7 @@ function roomRulesDoc(o: Rec): RoomRules {
     build: { enabled: bool(own(b, 'enabled')), playerPick: bool(own(b, 'playerPick')) },
     solo: { personal: bool(own(so, 'personal')), hours: int(1, SOLO_BOUNDS.hours)(own(so, 'hours')), lootShare: ruleNumber('solo.lootShare')(own(so, 'lootShare')) },
     feats: { on: own(obj(opt(own(o, 'feats'), v => v, {})), 'on') !== false },
+    trade: { on: own(obj(opt(own(o, 'trade'), v => v, {})), 'on') !== false },
     rarities: eachRarity(r => ({ rank: choiceOf(RANKS)(own(obj(own(ra, r)), 'rank')) })),
     gradeStep: rule('gradeStep'),
     saleShare: rule('saleShare'),

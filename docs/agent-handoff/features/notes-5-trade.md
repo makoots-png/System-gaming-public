@@ -1604,6 +1604,68 @@ mode and `offersHeard`'s `tried` went, no new API); `principle-make-operations-i
 that ends its record; the model reads every page twice through its reloads); `principle-test-behavior-not-implementation`
 (the model's rules are what the players hold, checked against what the real server stored).
 
+### 12.12 Unit 4: trading on screen (what was built, what was decided)
+
+Built over three commits by two helpers (the first stopped by a usage limit after "Work in progress"; the second read
+and ran all of it before going on):
+
+- The switch: `RULES.trade` (`{ on: true }`) and `tradeRuleSet` (rules.ts), its override read like the feats switch
+  (overrides.ts reads it through `SPEC`), `RoomRules.trade` (protocol.ts, a doc without it reads as on), laid over by
+  `withRoomRules` and carried by `roomRulesOf` (build.ts). Off refuses a new offer and an accept at the tap (core's
+  gate, `{ on, held }`), never a refuse, a take back, a stop or a fold.
+- The server: a poll's faces carry their bag lines only while the rules doc's switch is on (`faceBags` in server.ts,
+  ruling 4 of section 10). Test: "with the GM's trading switch off, a player's faces carry no bag lines".
+- `src/views/trade.js` (`app.api.trade`: `give`, `offers`, `waiting`, `paint`, `removeLine`), in `MODULES` after
+  inventory. It keeps no record: Accept and Refuse show where `TAKER[row].accept` is a cell, Take back where
+  `GIVER[row].takeBack` or `TAKER[row].takeBack` is, Stop where `WATCH[row].stop` is. Its writes are `offerPosted`,
+  `offerAnswered`, `offerTakenBack`, `offerStopped`, `handOver` and `tradeRuleSet` through `store.apply`, then
+  `sync.flush()`. An exchange's Accept and the GM's Stop are held two seconds under Undo (`HeldWhat` kinds `accept`
+  and `stop`, held.ts); a gift's Accept is written at once.
+- `sync.faces()` (unit 3's point 7) and `sync.stamp()` (an offer's id parts, so the core step makes its own event).
+- The Bag: Give on each unworn item's row, Give gold on the gold line (hidden at 0 gold), the tabs Items, Offers (with
+  its waiting count), Shop, read through `oneOf`; New item… is hidden on Offers. The GM view: "Trades and stash" in
+  `ORDER`, `PLAN2`, `PLAN3`, its head summary "1 open". The GM's Remove window: the open offers' line.
+- Words: `src/core/trade/words.ts` (`TRADE_WORDS`), the lines the notes did not give listed in `copy-tasks.md` with
+  the four glossary rows.
+
+Decided:
+
+1. **Three tabs, not four.** The Stash tab is unit 5's; it adds the fourth tab and its look case.
+2. **An ask of a bag line asks one.** "From Mira's bag" chips each ask 1 of the line; a count per chip is a later
+   change if players want it. Listed in copy-tasks.
+3. **The words the notes had that the code says otherwise** (copy-tasks, for the lead's reading): the taker's line
+   reads "for your 20 gold." (offer.ts `STATE_WORDS`, unit 1's), the stranded giver's window names the hunter twice
+   instead of "she" (the app knows no pronoun).
+4. **The offline case waits on what shows, not a fixed time**: Mira's phone reads `offline` before the Accept, and the
+   room (read with the GM's key) holds no answer until she is back, then one.
+5. **The look case measures layout height** (`offsetHeight`): a chip just tapped is drawn at 97% while pressed
+   (app.css `:active` scale), which read as 42.7 px on a 44 px chip.
+
+Not shot by `scripts/ui-shots.ts`: the Give window with Ask in return open needs a second player in the room, and the
+script has one; its step shoots the window as a lone player sees it, and `look.e2e.ts` checks the open one at 390 px.
+Seen at 390 px by the helper (screenshots read, not committed): the Bag's rows and tabs, the Give window with Ask in
+return open, Give gold, both sides of the Offers tab, the held Accept's toast, the GM's section. Seen in passing, not
+this unit's: on the GM's party board at 390 px the hunter card's "Status" and "Build" buttons overlap.
+
+For `for-the-owner.md` (the lead writes it): the bullets of section 8 "For for-the-owner.md" that unit 4 lands are the
+first two (trading without the GM's phone, with Stop and the log; the On and Off switch) and the stranded Take back.
+
+Proving it (a third helper, Nov 22):
+
+- Merged `origin/lead-backlog` (29 commits). The one conflict was `docs/dependency-map.md`, redrawn by
+  `bun run deps -- --write`; `bun run charts` redrawn too.
+- `bun run test` with four workers timed out three long model tests (`fight-sim`, `sync-model`,
+  `room-system-model`) while other helpers loaded the box (4 cores, load 6 to 8). The three files alone: 161 pass,
+  0 fail. Run again at load 0.7: 5873 pass, 0 fail.
+- Browser files run one at a time, each that opens the Bag (`grep -il bag|inventory`) or the GM view (`go(.., 'gm')`).
+  One failure, run twice to the same end: `feats.e2e.ts` found the feats switch by the class `.gm-switch`, which the
+  trading switch in "Trades and stash" also carries. The test now finds the switch that holds `[data-feats]`. The
+  trading switch keeps the class, since it is the same control and takes the same look.
+- All 32 files pass: trade, look, battle-map, character, coin, crystal, custom-skills, customization, feats-room,
+  feats (after the fix), feel, fight-vitals, gates-quests-dailies, icons-lists, layout, makers, map-extras, maps, phone,
+  refused-writes, reward-room, rewards, room-onboarding, room-sync-fixes, room-sync, room-view, save, stories-room,
+  stories, table-turn (one skip, already there), upgrade, used. No words or rule numbers moved.
+
 ## 13. The lead's rulings after units 1 and 3 (Nov 19)
 
 1. **Unit 0's design (section 11) is approved**: the save keeps the cursor a phone had when it left a room (`seen[code]`, 30 days), a join goes live at that cursor through the normal appliers, a page's lands and its cursor are one write, and the model's rule is that every message lands exactly once from a phone's first join. It replaces unit 2's separate fold of a join's history: unit 2 is built on it. A room never visited still starts at its end. The messages a phone caught up on are told in one window; its words are the lead's to read before the push.

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
 import { baseStats } from '../src/core/stats.ts';
 import type { Stats } from '../src/core/stats.ts';
-import { kitGear, NO_TWEAK } from '../src/core/hunter/derive.ts';
+import { kitGear, NO_TWEAK, share } from '../src/core/hunter/derive.ts';
 import { parseFormula } from '../src/core/formula.ts';
 import type { Formula } from '../src/core/formula.ts';
 import { openGrid, place, tiles } from '../src/core/combat/space.ts';
@@ -11,7 +11,7 @@ import type { Tick } from '../src/core/combat/timeline.ts';
 import { abilityId, combatantId } from '../src/core/combat/ability-types.ts';
 import {
   addSheetStatus, applyStatus, bareBody, cureStatus, describeStatus, dueAmount, FULL_HEAL, isControl, lasting, modified, modsOf, onSheet, opLines, removeStatus, settle,
-  sheetStatuses, shielded, statusKey, statusOn, statusShield, withStatuses,
+  sheetStatuses, shielded, shieldGrown, statusKey, statusOn, statusShield, withStatuses,
 } from '../src/core/combat/effect-ops.ts';
 import { parseAbility, parseOp, parseStatusDef } from '../src/core/combat/fight-parse.ts';
 import type { Body, Op, Origin, StackDef, StackRule, Status, StatusDef, StatusFields } from '../src/core/combat/effect-ops.ts';
@@ -19,7 +19,7 @@ import { stackStep } from '../src/core/combat/stacks.ts';
 import { admitted, boostsOn, counts, damageShare, edgeOn, harmful, holds, sheetAdds, STATUS_LIVES, statusStep, wardedDamage, withSheetOps } from '../src/core/combat/standing.ts';
 import type { StatusLife } from '../src/core/combat/standing.ts';
 import { zoneTone } from '../src/core/combat/zones.ts';
-import { payDue } from '../src/core/combat/fight-turn.ts';
+import { giverOf, payDue } from '../src/core/combat/fight-turn.ts';
 import { channelBreaks, held, landOps } from '../src/core/combat/land.ts';
 import { resolve } from '../src/core/combat/resolve.ts';
 import type { Stack, StackCtx } from '../src/core/combat/stacks.ts';
@@ -273,20 +273,73 @@ describe('shields received, the `shielded` share (balance plan section 10, rule 
 
   test('a status\'s shield of 20 lands as 30 on a bearer whose shields received is +50%, and as 20 on one with none', () => {
     const plain = body(), warded = body(hunterOf(), { statuses: [more(50)] });
-    expect(statusShield(giver('20'), plain, self(plain), tick(0), tick(2000), RULES)).toEqual({ amount: 20, until: 2000 });
-    expect(statusShield(giver('20'), warded, self(warded), tick(0), tick(2000), RULES)).toEqual({ amount: 30, until: 2000 });
+    expect(statusShield(giver('20'), plain, self(plain), null, tick(0), tick(2000), RULES)).toEqual({ amount: 20, until: 2000 });
+    expect(statusShield(giver('20'), warded, self(warded), null, tick(0), tick(2000), RULES)).toEqual({ amount: 30, until: 2000 });
   });
 
   test('the share stays within kit.shareCap of 1: +100% lands a shield of 20 as 20 times 1.5, -100% as 20 times 0.5', () => {
     const cap = RULES.fight.kit.shareCap, up = body(hunterOf(), { statuses: [more(100)] }), down = body(hunterOf(), { statuses: [more(-100)] });
-    expect(statusShield(giver('20'), up, self(up), tick(0), tick(2000), RULES)!.amount).toBe(Math.round(20 * (1 + cap)));
-    expect(statusShield(giver('20'), down, self(down), tick(0), tick(2000), RULES)!.amount).toBe(Math.round(20 * (1 - cap)));
+    expect(statusShield(giver('20'), up, self(up), null, tick(0), tick(2000), RULES)!.amount).toBe(Math.round(20 * (1 + cap)));
+    expect(statusShield(giver('20'), down, self(down), null, tick(0), tick(2000), RULES)!.amount).toBe(Math.round(20 * (1 - cap)));
   });
 
   test('a land op\'s shield of 20 lands as 30 on a bearer whose shields received is +50%', () => {
     const t = body(hunterOf(), { statuses: [more(50)] }), rows = new Map([[t.id, t]]);
     landOps(rows, [{ op: 'shield', amount: f('20') }], null, [t.id], { id: null, tier: 0 }, tick(0), RULES);
     expect(rows.get(t.id)!.shield!.amount).toBe(30);
+  });
+});
+
+describe('a giver\'s heal and shield power, and damage to shield (item-stats 2)', () => {
+  const END = tick(2000), NOW = tick(0), CEILING = 40;
+  const shieldOf = (amount: number, until: number) => ({ amount, until: tick(until) });
+  const grow = (b: Body, gain: number) => shieldGrown(b, gain, CEILING, END, NOW, RULES);
+  const powered = (power: number, o: RowPatch<Body> = {}): Body => { const b = body(hunterOf(), o); return { ...b, sheet: { ...b.sheet, healPower: share(power) } }; };
+  const self = (b: Body) => ({ user: { stats: b.stats, sheet: b.sheet }, target: { stats: b.stats, sheet: b.sheet }, charge: 0 });
+
+  test('a gain of 20 on a body with no shield is a shield of 20 to the end given', () => {
+    expect(grow(body(), 20)).toEqual(shieldOf(20, END));
+  });
+
+  test('a gain adds to the shield held now and moves its end: 15 held and 10 gained is 25', () => {
+    expect(grow(body(hunterOf(), { shield: shieldOf(15, 1500) }), 10)).toEqual(shieldOf(25, END));
+  });
+
+  test('the ceiling holds: 35 held and 10 gained is the ceiling of 40', () => {
+    expect(grow(body(hunterOf(), { shield: shieldOf(35, 1500) }), 10)).toEqual(shieldOf(CEILING, END));
+  });
+
+  test('a shield past its end counts as none: 30 that ended and 10 gained is 10', () => {
+    expect(grow(body(hunterOf(), { shield: shieldOf(30, 0) }), 10)).toEqual(shieldOf(10, END));
+  });
+
+  test('a larger shield from elsewhere is kept: 60 held and 10 gained stays 60, with the later end of the two', () => {
+    expect(grow(body(hunterOf(), { shield: shieldOf(60, 1500) }), 10)).toEqual(shieldOf(60, END));
+  });
+
+  test('the gain is times the bearer\'s shields received share: 10 at +50% is 15', () => {
+    expect(grow(body(hunterOf(), { statuses: [status('warded', def({ op: 'share', on: 'shielded', pct: 50 }), null)] }), 10)).toEqual(shieldOf(10 * 1.5, END));
+  });
+
+  test('a gain that rounds to nothing leaves the shield as it is, its end too', () => {
+    const held = shieldOf(15, 1500);
+    expect([grow(body(), 0.4), grow(body(hunterOf(), { shield: held }), 0.4)]).toEqual([null, held]);
+  });
+
+  test('a status\'s shield of 20 put on by a giver at 20% power lands 24; with no giver (the GM\'s Status window, a worn status) 20', () => {
+    const shield = def({ op: 'shield', amount: f('20') }), b = body();
+    expect([statusShield(shield, b, self(b), powered(0.2), NOW, END, RULES)!.amount, statusShield(shield, b, self(b), null, NOW, END, RULES)!.amount]).toEqual([20 * 1.2, 20]);
+  });
+
+  test('a per-round heal of 10 a healer at 20% put on heals 12 as it settles; a worn one, one no body put on and one whose giver left the fight heal 10', () => {
+    const healer = powered(0.2, { id: combatantId('h') }), regen = def({ op: 'heal', amount: f('10'), when: 'turn' });
+    const from = (id: string | null, o: Partial<StatusFields> = {}) => status('regen', regen, null, { source: { id: id === null ? null : combatantId(id), tier: 0 }, ...o });
+    const due = { key: statusKey('regen'), op: { op: 'heal', amount: f('10'), when: 'turn' } as const, tier: 0, before: 0, share: 1, stacks: 1 };
+    const healed = (s: Status, rows: Body[]): number => {
+      const b = body(hunterOf(), { hp: 1, statuses: [s] });
+      return rowHp(payDue(b, due, [], NOW, RULES, giverOf({ rows: [...rows, b] }, b.statuses, due.key))) - rowHp(b);
+    };
+    expect([healed(from('h'), [healer]), healed(from('h', { worn: true }), [healer]), healed(from(null), [healer]), healed(from('h'), [])]).toEqual([10 * 1.2, 10, 10, 10]);
   });
 });
 
@@ -613,7 +666,7 @@ describe('wave 2\'s sheet and share ops (kits design 8.1)', () => {
   test('a per-round damage reads its bearer\'s damage taken share at the settle: 10 a round on a body taking +50% is 15', () => {
     const b = body(hunterOf(), { statuses: [status('brittle', def({ op: 'share', on: 'taken', pct: 50 }), null)] });
     const due = { key: statusKey('burn'), op: { op: 'damage', type: 'magical', amount: f('10'), when: 'turn' } as const, tier: 0, before: 0, share: 1, stacks: 1 };
-    expect(rowHp(b) - rowHp(payDue(b, due, [], tick(0), RULES))).toBe(15);
+    expect(rowHp(b) - rowHp(payDue(b, due, [], tick(0), RULES, null))).toBe(15);
   });
 
   test('a heal of the target\'s max HP reads "Heals fully" and fills any body; a heal that only reaches a big number is that number', () => {
@@ -626,7 +679,7 @@ describe('wave 2\'s sheet and share ops (kits design 8.1)', () => {
   test('a burn meets a shield as a hit does (rule 13): a live shield takes it first, one past its end takes nothing', () => {
     const due = { key: statusKey('burn'), op: { op: 'damage', type: 'magical', amount: f('10'), when: 'turn' } as const, tier: 0, before: 0, share: 1, stacks: 1 };
     const shielded = body(hunterOf(), { shield: { amount: 4, until: tick(50) } });
-    const live = payDue(shielded, due, [], tick(40), RULES), past = payDue(shielded, due, [], tick(60), RULES);
+    const live = payDue(shielded, due, [], tick(40), RULES, null), past = payDue(shielded, due, [], tick(60), RULES, null);
     expect([rowHp(shielded) - rowHp(live), live.shield]).toEqual([6, null]);
     expect(rowHp(shielded) - rowHp(past)).toBe(10);
   });

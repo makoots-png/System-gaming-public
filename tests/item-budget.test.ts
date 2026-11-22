@@ -177,7 +177,7 @@ const onePoint = (key: BonusKey, rank: Rank): number => itemSpend(gear(rarityOf(
  * the stat adds what ten of them add, over ten. The stat of each is the one its formula in derive reads (design 2.2);
  * tenacity reads Strength and Discipline as one score, so its points go half to each.
  */
-const FED: readonly (readonly [Exclude<BonusKey, StatKey | 'armorPen' | 'resistPen' | 'armorPenFlat' | 'resistPenFlat' | 'drain' | 'haste'>, Partial<Record<StatKey, number>>, number])[] = [
+const FED: readonly (readonly [Exclude<BonusKey, StatKey | 'armorPen' | 'resistPen' | 'armorPenFlat' | 'resistPenFlat' | 'drain' | 'haste' | 'healPower' | 'shieldDrain'>, Partial<Record<StatKey, number>>, number])[] = [
   ['hpMax', { vit: 10 }, 1], ['manaMax', { pow: 10 }, 1], ['fatigueMax', { vit: 10 }, 1], ['carry', { str: 10 }, 1], ['speed', { agi: 10 }, 1],
   ['move', { agi: 10 }, 1], ['react', { ins: 10 }, 1],
   ['aim', { ctl: 10 }, 1], ['will', { dis: 10 }, 1], ['critFaces', { ins: 10 }, 1], ['critSize', { ctl: 10 }, 0.01], ['opening', { ins: 10 }, 1],
@@ -211,12 +211,15 @@ function penRate(key: 'armorPen' | 'resistPen' | 'armorPenFlat' | 'resistPenFlat
  * sup) of a standard action by a same-rank support (an HP's worth, worth.ts). A point of ability haste is League of
  * Legends' formula, cooldown = base * 100 / (100 + haste): on an ability that comes back every
  * `itemBudget.cooldownRounds` rounds it adds the uses a round one more point gives, the same at any haste, each use a
- * whole standard action.
+ * whole standard action. Item-stats 2: a percent of heal and shield power is a hundredth of a support's standard heal a
+ * round, which is one standard action (an HP's worth is 1 / (1.5 * sup), and that heal is 1.5 * sup HP), the wearer
+ * healing every round; a percent of damage to shield is lifesteal's rule, an HP of shield weighed as an HP healed.
  */
-function unfedRate(key: 'drain' | 'haste', rank: Rank): number {
+function unfedRate(key: 'drain' | 'haste' | 'healPower' | 'shieldDrain', rank: Rank): number {
   const F = RULES.fight, hit = 4.5 + KINDS.strike.power * referenceBody('bruiser', rank, RULES).sheet.phys;
   const power = (wearer(rank, { str: 10 }).phys - wearer(rank).phys) / 10;
   if (key === 'haste') return (usesARound(1) - usesARound(0)) * hit / power;
+  if (key === 'healPower') return 0.01 * hit / power;
   const left = monsterSheet(rank, 'brute', 'normal', RULES).armor * (1 - wearer(rank).armorPen / 100);
   const taken = Math.max(0, hit - F.armorFlat * left) * F.armorK / (F.armorK + left);
   const hpWorth = 1 / (1.5 * referenceBody('support', rank, RULES).sheet.sup);
@@ -229,6 +232,15 @@ const usesARound = (haste: number): number => 1 / (RULES.itemBudget.cooldownRoun
 group('each bonus key\'s cost (balance plan sections 9 and 10)', () => {
   test('a percent of lifesteal or a point of ability haste costs its worth a round at the rate a worn status pays, at every rank', () => {
     for (const rank of RANKS) for (const key of ['drain', 'haste'] as const) expect(onePoint(key, rank), `${key} at ${rank}`).toBeCloseTo(unfedRate(key, rank), 9);
+  });
+
+  test('a percent of heal and shield power or of damage to shield costs its worth a round at the rate a worn status pays, at every rank', () => {
+    for (const rank of RANKS) for (const key of ['healPower', 'shieldDrain'] as const) expect(onePoint(key, rank), `${key} at ${rank}`).toBeCloseTo(unfedRate(key, rank), 9);
+  });
+
+  test('a percent of damage to shield costs what a percent of lifesteal does, and 30 of it on a ring spend 30 times one: the ceiling is not read', () => {
+    for (const rank of RANKS) expect(onePoint('shieldDrain', rank), rank).toBeCloseTo(onePoint('drain', rank), 9);
+    expect(itemSpend(gear('rare', { bonus: { shieldDrain: 30 } }), RULES)!.points).toBeCloseTo(30 * onePoint('shieldDrain', 'C'), 9);
   });
 
   test('at C a percent of lifesteal spends 0.45 and a point of ability haste 0.28: a middle rare ring (3.45) holds about 8% of the one or 12 haste', () => {

@@ -1033,6 +1033,9 @@ describe('the other room docs', () => {
     expect(DOCS.rules(copy(rules))).toEqual(rules);
     const { feats: _none, ...older } = rules;
     expect(DOCS.rules(older)!.feats, 'a doc without the feats switch reads as on').toEqual({ on: true });
+    const { trade: _no, ...noTrade } = { ...rules, trade: { on: false } };
+    expect(DOCS.rules(copy({ ...rules, trade: { on: false } }))!.trade, 'the trading switch comes through').toEqual({ on: false });
+    expect(DOCS.rules(noTrade)!.trade, 'a doc without the trading switch reads as on').toEqual({ on: true });
     expect(DOCS.rules({ ...rules, build: { enabled: 'no', playerPick: true } })).toBeNull();
     expect(DOCS.rules({ ...rules, solo: { ...rules.solo, personal: 'yes' } })).toBeNull();
     expect(DOCS.rules({ ...rules, solo: { ...rules.solo, hours: 0 } })!.solo.hours).toBe(1);
@@ -1049,7 +1052,7 @@ describe('the other room docs', () => {
 
     test('the shipped economy comes through as it went', () => {
       expect(DOCS.rules(copy(doc))).toEqual(doc);
-      expect(Object.keys(doc).sort()).toEqual(['build', 'feats', 'gateParty', 'gradeStep', 'loot', 'rarities', 'reviveClears', 'reviveLevelShare', 'saleShare', 'solo', 'usedUpShare']);
+      expect(Object.keys(doc).sort()).toEqual(['build', 'feats', 'gateParty', 'gradeStep', 'loot', 'rarities', 'reviveClears', 'reviveLevelShare', 'saleShare', 'solo', 'trade', 'usedUpShare']);
     });
 
     test('a rule number past its domain is read at the domain\'s end, and a whole rule whole', () => {
@@ -1135,7 +1138,7 @@ describe('the other room docs', () => {
     const built = soloDoc({ gates, monsters: [] }, RULES, DOC_MAX), wire = JSON.stringify(built.doc);
     console.log(`the worst-case solo doc of built-in monsters: ${wire.length} characters (gates ${JSON.stringify(built.doc.gates).length}, monsters ${JSON.stringify(built.doc.monsters).length}, ${Object.keys(built.doc.monsters).length} of them; the largest ${Math.max(...Object.values(built.doc.monsters).map(m => JSON.stringify(m).length))})`);
     expect(built.left).toEqual([]);
-    expect(wire.length, 'the built-in monsters leave the GM\'s monsters most of the room: 55% of DOC_MAX at most (a stat op\'s amount is a formula since item-stats 6.2, 25 characters a value more than a number)').toBeLessThanOrEqual(DOC_MAX * 0.55);
+    expect(wire.length, 'the built-in monsters leave the GM\'s monsters most of the room: 60% of DOC_MAX at most (a stat op\'s amount is a formula since item-stats 6.2, 25 characters a value more than a number; the three mythic seeds of notes-11 B.6 add about 1,000 characters each)').toBeLessThanOrEqual(DOC_MAX * 0.6);
     expect(DOCS.solo(JSON.parse(wire))).toEqual(built.doc);
     const hex = seeds.find(m => m.abilities.length)!.abilities[0]!;
     const heavy = (i: number): Monster => ({ ...seeds[0]!, id: `m${i + 1}` as never, name: 'H'.repeat(60), abilities: many(11, k => ({ ...hex, id: `a${k}` as never, name: 'A'.repeat(60) })) });

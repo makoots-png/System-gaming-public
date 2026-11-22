@@ -22,7 +22,7 @@ import type { Extraction } from './extraction.ts';
 import type { BearerEvent, Trigger, Trip } from './triggers.ts';
 import { stackStep } from './stacks.ts';
 import { SHEET_FORMULA_KEYS, SHEET_LEVEL_KEYS, SHEET_OP_KEYS, atTier, bareAmount, countOn, isFormulaSheetOp, isLevelKey, isStacking, isTiers, stacked } from './op-amount.ts';
-import { counting, harmful, shieldShare, statusLife, statusStep, withSheetOps } from './standing.ts';
+import { counting, given, harmful, shieldShare, statusLife, statusStep, withSheetOps } from './standing.ts';
 import { asLevel } from './sight-levels.ts';
 import type { Level } from './sight-levels.ts';
 import { rowLifeAfter } from './row-life.ts';
@@ -770,17 +770,32 @@ export function shielded(current: Shield | null, incoming: Shield, now: Tick): S
  */
 export const shieldOn = (bearer: Pick<Body, 'shield' | 'statuses'>, amount: number, until: Tick, now: Tick, R: OpRules): Shield =>
   shielded(bearer.shield, { amount: Math.max(0, Math.round(amount * shieldShare(bearer, R))), until }, now);
+/** The amount of the shield `bearer` holds at `now`: 0 when it has none or its shield has ended. */
+export const liveShield = (bearer: Pick<Body, 'shield'>, now: Tick): number => (bearer.shield && bearer.shield.until > now ? bearer.shield.amount : 0);
+/**
+ * The shield `bearer` holds once its damage to shield grows it by `gain` (item-stats 2.2, land.ts `drained`): the gain
+ * times its shields received share, rounded, added to the shield it holds now (`liveShield`), at most `ceiling`, lasting
+ * to `until`; then held with the shield it has (`shielded`), so a larger shield from elsewhere is kept. A gain that
+ * rounds to nothing, or a ceiling of 0, leaves the shield as it is: its life runs from the last gain.
+ */
+export function shieldGrown(bearer: Pick<Body, 'shield' | 'statuses'>, gain: number, ceiling: number, until: Tick, now: Tick, R: OpRules): Shield | null {
+  const n = Math.max(0, Math.round(gain * shieldShare(bearer, R)));
+  if (n === 0 || ceiling <= 0) return bearer.shield;
+  return shielded(bearer.shield, { amount: Math.min(ceiling, liveShield(bearer, now) + n), until }, now);
+}
 
 /**
  * The shield a status gives its bearer as it lands: each `shield` op of its def at its formula's average, read with
- * `scope` (the one who applied it as the user, the bearer as the target), lasting as long as the status, or the rules'
- * shield life for a status that lasts until removed; it lands as any shield (`shieldOn`, the bearer's shields received
- * share). The average, because the GM's Status window rolls no dice; two shields do not add (`shielded`).
+ * `scope` (the one who applied it as the user, the bearer as the target), times the heal and shield power of `giver`,
+ * the body that put it on (standing.ts `given`; null for the GM's Status window and a worn status, which no body gives),
+ * lasting as long as the status, or the rules' shield life for a status that lasts until removed; it lands as any
+ * shield (`shieldOn`, the bearer's shields received share). The average, because the GM's Status window rolls no dice;
+ * two shields do not add (`shielded`).
  */
-export function statusShield(def: StatusDef, bearer: Pick<Body, 'shield' | 'statuses'>, scope: Scope, now: Tick, until: Tick | null, R: OpRules): Shield | null {
+export function statusShield(def: StatusDef, bearer: Pick<Body, 'shield' | 'statuses'>, scope: Scope, giver: Pick<Body, 'sheet'> | null, now: Tick, until: Tick | null, R: OpRules): Shield | null {
   let out = bearer.shield;
   for (const o of def.ops) if (o.op === 'shield') {
-    const amount = Math.max(0, Math.round(average(o.amount, scope)));
+    const amount = Math.max(0, Math.round(given(average(o.amount, scope), giver)));
     if (amount > 0) out = shieldOn({ shield: out, statuses: bearer.statuses }, amount, until ?? tick(now + R.fight.shieldLife * R.fight.round), now, R);
   }
   return out;

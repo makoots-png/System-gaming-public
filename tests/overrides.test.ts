@@ -91,4 +91,11 @@ describe('an override of a list rule', () => {
     expect(kept.refused).toEqual([]);
     expect(rulesOf(kept.overrides).solo).toEqual({ ...RULES.solo, hours: 4, held: 6, stays: 48, pack: [2, 4] });
   });
+  test('the trading switch is true or false: anything else is refused and trading stays on', () => {
+    expect(parseOverrides({ trade: { on: false } })).toEqual({ overrides: { trade: { on: false } }, refused: [] });
+    expect(rulesOf(parseOverrides({ trade: { on: false } }).overrides).trade.on).toBe(false);
+    const bad = parseOverrides({ trade: { on: 'no', limit: 3 } });
+    expect(bad.refused.map(r => [r.path, r.reason])).toEqual([['trade.on', 'boolean'], ['trade.limit', 'unknown']]);
+    expect(rulesOf(bad.overrides).trade.on).toBe(true);
+  });
 });

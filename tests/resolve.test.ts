@@ -20,7 +20,7 @@ import { rowHp } from '../src/core/combat/row-hp.ts';
 import { heldDieId } from '../src/core/combat/standing.ts';
 import { LEVELS } from '../src/core/combat/sight-levels.ts';
 import type { Level } from '../src/core/combat/sight-levels.ts';
-import { landOps } from '../src/core/combat/land.ts';
+import { drainWords, landOps } from '../src/core/combat/land.ts';
 import { cooldownOf } from '../src/core/combat/charge.ts';
 import { atHp, lifeAt } from './fixtures/life.ts';
 import type { RowPatch } from './fixtures/life.ts';
@@ -815,5 +815,90 @@ describe('the ambush: a hit from hiding, rule 11c (notes-7-stealth.md section 2,
     const u = user(cloak(1)), t = foe();
     expect(needs(strike, u, [u, t], t.id, GRID, NOW, RULES)).toEqual({ dice: { t: [{ count: 1, sides: 8 }] }, react: ['t'], refund: false });
     expect(resolve(strike, u, [u, t], t.id, GRID, rolls({ t: [5] }, { t: 10 }), NOW, RULES).ok).toBe(true);
+  });
+});
+
+describe('heal and shield power, and damage to shield (item-stats 2)', () => {
+  const K = RULES.fight.kit, life = RULES.fight.shieldLife * RULES.fight.round;
+  const mark = (key: string, ...ops: Op[]): Status => statusOn({ label: key, desc: '', ops }, { key: statusKey(key), source: { id: null, tier: 2 }, until: null, since: NOW, settledAt: NOW });
+  /** A C support whose sheet's heal and shield power is `power`, as 20 points of the bonus give 0.20. */
+  const healer = (power: number) => body('u', hunterOrigin('support'), place(5, 5), 'party', {}, { healPower: share(power) });
+  const ally = (...statuses: Status[]) => body('a', hunterOrigin('tank'), place(6, 5), 'party', { hp: 1, statuses });
+  const mend = (amount: number) => ability('support', { effect: { type: 'heal', by: 'hand', formula: formula(String(amount)) } });
+  const ward = (amount: number) => ability('support', { effect: { type: 'shield', by: 'hand', formula: formula(String(amount)) } });
+  const cast = (a: Ability, u: Body, t: Body) => run(a, u, [u, t], t.id, rolls({ a: [] }));
+  const cut = mark('brutal', { op: 'share', on: 'healed', pct: -50 }), thin = mark('thin', { op: 'share', on: 'shielded', pct: -50 });
+
+  test('an item of +20% heal and shield power on a support makes its heal of 10 land 12', () => {
+    const base = hunterOrigin('support') as Extract<Origin, { kind: 'hunter' }>;
+    const worn = body('u', { ...base, build: { ...base.build, perks: { healPower: 20 } } }, place(5, 5), 'party');
+    expect(cast(mend(10), worn, ally()).outcomes[0]!.dealt).toBe(10 * (1 + 20 / 100));
+  });
+
+  test('a heal and a shield of 10 from a giver at 20% power land 12, and 6 on a receiver whose healing or shields received is cut by 50%: the two factors multiply', () => {
+    const u = healer(0.2);
+    expect([cast(mend(10), u, ally()).outcomes[0]!.dealt, find(cast(ward(10), u, ally()).bodies, 'a').shield!.amount]).toEqual([12, 12]);
+    expect([cast(mend(10), u, ally(cut)).outcomes[0]!.dealt, find(cast(ward(10), u, ally(thin)).bodies, 'a').shield!.amount]).toEqual([10 * 1.2 * 0.5, 10 * 1.2 * 0.5]);
+  });
+
+  test('the giver\'s power is outside kit.shareCap: at 100% power a heal of 10 on a receiver at the cap\'s largest share lands 10 times 2 times 1.5', () => {
+    const boosted = ally(mark('blessed', { op: 'share', on: 'healed', pct: 200 }));
+    expect(cast(mend(10), healer(1), boosted).outcomes[0]!.dealt).toBe(10 * 2 * (1 + K.shareCap));
+  });
+
+  test('a use\'s shield op, a status\'s shield it puts on, and a land op\'s heal and shield from a giver at 20% each land 12 of 10', () => {
+    const u = healer(0.2);
+    const op = ability('support', { effect: null, ops: [{ op: 'shield', amount: formula('10') }] });
+    const status = ability('support', { effect: null, ops: [statusOf('aegis', { op: 'shield', amount: formula('10') })] });
+    expect([find(cast(op, u, ally()).bodies, 'a').shield!.amount, find(cast(status, u, ally()).bodies, 'a').shield!.amount]).toEqual([12, 12]);
+    const t = ally(), rows = new Map([[u.id, u], [t.id, t]]);
+    landOps(rows, [{ op: 'heal', amount: formula('10'), when: 'use' }, { op: 'shield', amount: formula('10') }], u, [t.id], { id: u.id, tier: 2 }, NOW, RULES);
+    expect([rowHp(rows.get(t.id)!) - rowHp(t), rows.get(t.id)!.shield!.amount]).toEqual([12, 12]);
+  });
+
+  test('a land op no body lands is not raised: a heal and a shield of 10 with no hitter land 10 on a bearer at 100% power', () => {
+    const t = body('a', hunterOrigin('support'), place(6, 5), 'party', { hp: 1 }, { healPower: share(1) }), rows = new Map([[t.id, t]]);
+    landOps(rows, [{ op: 'heal', amount: formula('10'), when: 'use' }, { op: 'shield', amount: formula('10') }], null, [t.id], { id: null, tier: 2 }, NOW, RULES);
+    expect([rowHp(rows.get(t.id)!) - rowHp(t), rows.get(t.id)!.shield!.amount]).toEqual([10, 10]);
+  });
+
+  /** A C bruiser of 200 max HP at 50 HP, its sheet's lifesteal, damage to shield and heal power as given. */
+  const hitter = (o: Partial<Sheet>, row: RowPatch<Body> = {}) => body('u', hunterOrigin('bruiser'), place(5, 5), 'party', { hp: 50, ...row }, { hpMax: 200, ...o });
+  const foe = body('t', monsterOrigin('brute'), place(6, 5), 'foe', {}, { armor: 0, hpMax: 400 });
+  const forty = ability('strike', {}, '40');
+  const strikeAt = (u: Body, t: Body, now: number) => ok(resolve(forty, u, [u, t], t.id, GRID, rolls({ t: [] }, { t: 10 }), tick(now), RULES));
+  const ceiling = Math.round(K.shieldDrainMax * 200);
+
+  test('heal and shield power raises neither its own lifesteal nor its own damage to shield: at 100% power a hit taking 40 drains 10% of it, 4, and stores 50%, 20', () => {
+    const r = strikeAt(hitter({ drain: share(0.1), shieldDrain: share(0.5), healPower: share(1) }), foe, NOW);
+    expect([r.drained, r.stored, find(r.bodies, 'u').shield!.amount]).toEqual([40 * 0.1, 40 * 0.5, 40 * 0.5]);
+  });
+
+  test('a strike that takes 40 HP from a foe stores half of it as a shield at 50% damage to shield; a second grows it to the ceiling, a fifth of max HP, which a third does not pass', () => {
+    const u = hitter({ shieldDrain: share(0.5) });
+    const one = strikeAt(u, foe, NOW), two = strikeAt(find(one.bodies, 'u'), find(one.bodies, 't'), NOW + 100), three = strikeAt(find(two.bodies, 'u'), find(two.bodies, 't'), NOW + 200);
+    expect(ceiling).toBe(200 / 5);
+    expect([one.stored, two.stored, three.stored]).toEqual([20, Math.min(ceiling, 40) - 20, 0]);
+    expect([find(one.bodies, 'u').shield!.amount, find(two.bodies, 'u').shield!.amount, find(three.bodies, 'u').shield!.amount]).toEqual([20, ceiling, ceiling]);
+  });
+
+  test('the stored shield ends the rules\' shield life after the last gain', () => {
+    const one = strikeAt(hitter({ shieldDrain: share(0.5) }), foe, NOW), two = strikeAt(find(one.bodies, 'u'), find(one.bodies, 't'), NOW + 300);
+    expect([find(one.bodies, 'u').shield!.until, find(two.bodies, 'u').shield!.until]).toEqual([NOW + life, NOW + 300 + life]);
+  });
+
+  test('a larger shield from a support is kept: a shield of 60 stays 60 and the hit stores nothing', () => {
+    const r = strikeAt(hitter({ shieldDrain: share(0.5) }, { shield: { amount: 60, until: tick(NOW + 1000) } }), foe, NOW);
+    expect([find(r.bodies, 'u').shield!.amount, r.stored]).toEqual([60, 0]);
+  });
+
+  test('a shield\'s part and HP past 0 are not counted, as for lifesteal: a hit of 40 on a foe at 10 HP stores half of 10', () => {
+    const r = strikeAt(hitter({ shieldDrain: share(0.5) }), atHp(foe, 10), NOW);
+    expect(r.stored).toBe(10 * 0.5);
+  });
+
+  test('the fight\'s line says what came back: "drains 4", "stores 6", "drains 4 and stores 6", nothing for none', () => {
+    expect([drainWords({ healed: 4, stored: 0 }), drainWords({ healed: 0, stored: 6 }), drainWords({ healed: 4, stored: 6 }), drainWords({ healed: 0, stored: 0 })])
+      .toEqual(['drains 4', 'stores 6', 'drains 4 and stores 6', null]);
   });
 });

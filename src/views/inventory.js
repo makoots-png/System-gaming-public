@@ -15,6 +15,8 @@ import { cryptoRandom, rollSettle } from '../edge/roll.ts';
 import { rollLoot } from '../core/gates/spawn.ts';
 import { postNews, reportWords } from '../core/sync/connection.ts';
 
+/** The Bag's tabs: its items, the offers to and from its hunter (trade.js), the shop. */
+const BAG_TABS = ['items', 'offers', 'shop'];
 const SLOT_LABEL = { weapon: 'Weapon', offhand: 'Off-hand', head: 'Head', chest: 'Chest', hands: 'Hands', legs: 'Legs', feet: 'Feet', neck: 'Neck', ring1: 'Ring 1', ring2: 'Ring 2' };
 const cap = s => s[0].toUpperCase() + s.slice(1);
 
@@ -148,6 +150,7 @@ export function register(app) {
   ui.css('inventory', `
 .inv-gold{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px}
 .inv-gold .g{font-family:var(--font-mono);font-size:20px;color:var(--gold)}
+.inv-gold-acts{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
 .inv-tabs{margin-bottom:10px}
 .inv-bar{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px}
 .inv-card{border:1px solid var(--line);background:rgba(10,26,46,.55);padding:9px 12px;display:flex;flex-direction:column;gap:6px}
@@ -160,6 +163,8 @@ export function register(app) {
 .inv-card .acts{display:flex;gap:6px;flex-wrap:wrap}
 .inv-card.eq{border-color:var(--line-bright)}
 .inv-qty{font-family:var(--font-mono);font-size:13px;color:var(--ice)}
+/* at 360 a row's five controls (Use or Equip, Edit, Sell, Give and the remove mark) keep one line */
+@media (max-width:400px){.inv-card{padding:9px 10px}.inv-card .acts{gap:4px}.inv-card .acts button{padding:4px 8px;letter-spacing:.02em}}
 .eq-slot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;border:1px solid var(--line);background:rgba(10,26,46,.55);padding:8px 12px}
 .eq-slot .sl{flex:0 0 74px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--cyan-dim)}
 .eq-slot .nm{flex:1 1 130px;min-width:0;overflow-wrap:anywhere}
@@ -198,15 +203,16 @@ export function register(app) {
     },
   });
 
-  // Inventory panel (Items | Shop)
+  // Inventory panel (Items | Offers | Shop)
   let tab = 'items';
   app.registerPanel({
     view: 'status', id: 'inventory', order: 50, title: 'Bag', jump: 'Bag',
     mount(el) {
       el.innerHTML = `
-        <div class="inv-gold"><span class="lbl">Gold</span><span class="g" data-gold>0</span><button type="button" class="gm-only" data-gold-adj hidden>Adjust gold</button></div>
+        <div class="inv-gold"><span class="lbl">Gold</span><span class="g" data-gold>0</span><span class="inv-gold-acts"><button type="button" data-give-gold>Give gold</button><button type="button" class="gm-only" data-gold-adj hidden>Adjust gold</button></span></div>
         <div class="inv-tabs seg" role="tablist" aria-label="Bag sections">
           <button type="button" role="tab" data-tab="items" aria-selected="true">Items</button>
+          <button type="button" role="tab" data-tab="offers" aria-selected="false">Offers</button>
           <button type="button" role="tab" data-tab="shop" aria-selected="false">Shop</button>
         </div>
         <div data-pane="items">
@@ -218,6 +224,7 @@ export function register(app) {
             <button type="submit" class="primary">Store</button>
           </form>
         </div>
+        <div data-pane="offers" hidden><div data-offers></div></div>
         <div data-pane="shop" hidden>
           <div class="inv-bar"><button type="button" class="gm-only" data-shop-add hidden>Add shop item</button><button type="button" class="gm-only" data-shop-reset hidden>Reset shop</button></div>
           <p class="empty" role="note" data-shop-closed hidden></p>
@@ -242,7 +249,7 @@ export function register(app) {
         renderInvBody(el);
       };
       app.api.detail.wire(el, () => renderInvBody(el));
-      el.querySelector('[role=tablist]').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) setTab(b.dataset.tab); });
+      el.querySelector('[role=tablist]').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) setTab(oneOf(b.dataset.tab, BAG_TABS, 'items')); });
       el.querySelector('[name=filter]').addEventListener('change', () => renderInvBody(el));
 
       $q('[data-form]').addEventListener('submit', e => {
@@ -258,7 +265,9 @@ export function register(app) {
         if (b.hasAttribute('data-gold-adj')) {
           const n = await ui.promptNum({ title: 'Adjust gold', label: `Add or remove gold (current ${fmt(h.gold)})`, value: 0, min: -1e9, max: 1e9 });
           if (n) api.addGold(id, n);
-        } else if (d.use) api.use(id, d.use);
+        } else if (b.hasAttribute('data-give-gold')) void app.api.trade.give(id, null);
+        else if (d.give) void app.api.trade.give(id, d.give);
+        else if (d.use) api.use(id, d.use);
         else if (d.equip) api.equip(id, d.equip);
         else if (d.unequipItem) { const s = SLOTS.find(k => h.equipped[k] === d.unequipItem); if (s) api.unequip(id, s); }
         else if (d.sell) {
@@ -293,6 +302,10 @@ export function register(app) {
   function renderInvBody(el) {
       const h = store.active(), gm = app.isGM(), open = shopOpen(h);
       el.querySelector('[data-gold]').textContent = fmt(h.gold);
+      el.querySelector('[data-give-gold]').hidden = h.gold <= 0;
+      el.querySelector('[data-additem]').hidden = tab === 'offers';
+      const waiting = app.api.trade.waiting(h.id);
+      el.querySelector('[data-tab="offers"]').textContent = waiting ? `Offers (${waiting})` : 'Offers';
       el.querySelectorAll('.gm-only').forEach(b => { b.hidden = !gm || (b.hasAttribute('data-shop-add') || b.hasAttribute('data-shop-reset') ? tab !== 'shop' : false); });
       const equippedIds = new Set(Object.values(h.equipped).filter(Boolean));
       const filter = el.querySelector('[name=filter]').value;
@@ -307,10 +320,12 @@ export function register(app) {
               ${i.slot ? (eq ? `<button type="button" data-unequip-item="${esc(i.id)}" aria-label="Unequip ${esc(i.name)}">Unequip</button>` : `<button type="button" data-equip="${esc(i.id)}" aria-label="Equip ${esc(i.name)}">Equip</button>`) : ''}
               <button type="button" data-edit-item="${esc(i.id)}" aria-label="Edit ${esc(i.name)}">Edit</button>
               ${sellable(i) && open ? `<button type="button" data-sell="${esc(i.id)}" aria-label="Sell ${esc(i.name)}">Sell ${fmt(sellPrice(i))}g</button>` : ''}
+              ${eq ? '' : `<button type="button" data-give="${esc(i.id)}" aria-label="Give ${esc(i.name)}">Give</button>`}
               <button type="button" class="icon-btn danger" data-del="${esc(i.id)}" aria-label="Remove item ${esc(i.name)}">&times;</button>
             </div></li>`;
         }).join('') : `<li class="empty">${h.items.length ? 'No items of that type.' : 'Inventory is empty.'}</li>`;
-      } else {
+      } else if (tab === 'offers') app.api.trade.offers(el.querySelector('[data-offers]'), h.id);
+      else {
         const closed = el.querySelector('[data-shop-closed]');
         closed.hidden = open;
         closed.textContent = open ? '' : SHOP_CLOSED;

@@ -633,6 +633,13 @@ async function gmRest(g: Phone, p: Phone | null) {
       await answer(p, /Redeem One free reroll/, 'Redeem');
     });
   }
+  await step(g, 1, 'trades section', async () => {
+    await go(g, 'gm');
+    const toggle = page.locator('[data-tog="trade"]');
+    if ((await toggle.getAttribute('aria-expanded')) !== 'true') await press(g, toggle);
+    await show(page.locator('.gm-sec[data-sec="trade"]'), 'start');
+    await shot(g, 'gm-trades');
+  });
   await step(g, 2, 'reward uses and log', async () => {
     if (p) await page.locator('#toasts .toast', { hasText: 'used Boon' }).waitFor({ timeout: 20_000 });
     await go(g, 'gm');
@@ -731,6 +738,18 @@ async function playerScreens(p: Phone) {
     await page.locator('.sys-overlay.show, #toasts .toast').first().waitFor();
     await shot(p, 'inventory-use-window');
     await closeWindows(p, 3);
+  });
+  await step(p, 2, 'bag offers and give', async () => {
+    await go(p, 'status');
+    const bag = status.locator('[data-panel="inventory"]');
+    await press(p, bag.locator('[data-tab="offers"]'));
+    await show(bag, 'start');
+    await shot(p, 'inventory-offers');
+    await press(p, bag.locator('[data-tab="items"]'));
+    await press(p, bag.locator('[data-give]').first());
+    await page.locator('.sys-overlay.show', { hasText: 'Trade' }).waitFor();
+    await shot(p, 'give-window');
+    await closeWindows(p, 2);
   });
   await step(p, 2, 'quests', async () => {
     await go(p, 'quests');

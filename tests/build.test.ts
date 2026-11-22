@@ -128,6 +128,13 @@ describe('the GM\'s build switches', () => {
     expect(roomRulesOf(rulesOf({ feats: { on: false } })).feats).toEqual({ on: false });
     expect(withRoomRules(own, { ...roomRulesOf(own), feats: { on: false } }).feats.on).toBe(false);
   });
+  test('in a room a player\'s trading follows the GM\'s switch, whatever its own', () => {
+    expect(roomRulesOf(rulesOf({ trade: { on: false } })).trade).toEqual({ on: false });
+    expect(withRoomRules(rulesOf({}), { ...roomRulesOf(rulesOf({})), trade: { on: false } }).trade.on, 'the GM turned it off').toBe(false);
+    const own = rulesOf({ trade: { on: false } });
+    expect(withRoomRules(own, roomRulesOf(rulesOf({}))).trade.on, 'the GM\'s on over a player\'s own off').toBe(true);
+    expect(withRoomRules(own, null).trade.on, 'out of the room: the player\'s own').toBe(false);
+  });
 });
 
 describe('the room carries the economy', () => {

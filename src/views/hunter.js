@@ -33,8 +33,8 @@ const int = v => Math.trunc(Number(v)) || 0;
 const sgn = n => (n >= 0 ? '+' : '-') + Math.abs(n);
 /** The derived numbers the Derived panel shows, in its order (m2-plan section 4.4, W4). */
 const SHOWN = ['speed', 'armor', 'resist', 'react', 'aim', 'will', 'manaMax', 'fatigueMax', 'carry', 'weight', 'sight'];
-/** The numbers only a bonus gives, each shown on the sheet only while it is above 0: the four penetrations (rule 12), lifesteal and ability haste. */
-const FROM_BONUSES = ['armorPen', 'resistPen', 'armorPenFlat', 'resistPenFlat', 'drain', 'haste'];
+/** The numbers only a bonus gives, each shown on the sheet only while it is above 0: the four penetrations (rule 12), lifesteal, ability haste, heal and shield power and damage to shield. */
+const FROM_BONUSES = ['armorPen', 'resistPen', 'armorPenFlat', 'resistPenFlat', 'drain', 'haste', 'healPower', 'shieldDrain'];
 
 const CSS = `
 .id-read{display:flex;align-items:center;gap:10px;margin-bottom:12px}

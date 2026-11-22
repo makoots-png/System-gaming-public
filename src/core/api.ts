@@ -8,7 +8,7 @@ import type { FeatBook } from './hunter/feats.ts';
 import type { End, Op, SheetStatus, Source, StackRule, StatusDef } from './combat/effect-ops.ts';
 import type { Trigger } from './combat/triggers.ts';
 import type { LootDrop } from './gates/spawn.ts';
-import type { BuildChange, DocName, DocOf, EventBody, EventId, EventType, QuestOffer, RoomCode, RoomEvent, UsedWhat } from './protocol.ts';
+import type { BuildChange, DocName, DocOf, EventBody, EventId, EventStamp, EventType, HunterFace, QuestOffer, RoomCode, RoomEvent, UsedWhat } from './protocol.ts';
 import type { Hunter, Item, Monster, Objective, QuestKind, Rank, Rewards, Save, Skill, Slot } from './save.ts';
 import type { Stats } from './stats.ts';
 import type { Applied, Refused, Step, TOLD } from './save-step.ts';
@@ -618,6 +618,9 @@ export type SkillsApi = {
  */
 export type RemoteSheet = { key: SheetKey; polledAt: string | null; deviceId: DeviceId; hunterId: HunterId; at: string; from: string; data: Hunter };
 
+/** Another player's hunter in the room as this phone gets it: its sheet key and its face (protocol.ts `HunterFace`), for the Give window. */
+export type RoomFace = { key: SheetKey } & HunterFace['face'];
+
 /** What `sync.post` answers: the outbox entry's id and how many older messages a full outbox let go, or why nothing was posted. */
 export type Posting = { ok: true; id: string; dropped: number } | { ok: false; why: 'noRoom' | 'notEvent' };
 export type SyncApi = {
@@ -632,6 +635,8 @@ export type SyncApi = {
   room(): RoomCode | null;
   /** A room event of `type` with its id (newEvent in src/core/protocol.ts), or null for a body the server would refuse. */
   event<K extends EventType>(type: K, body: EventBody<K>): RoomEvent | null;
+  /** The parts of a new event id, for a core step that makes its own event (trade/offer.ts `offerPosted`). */
+  stamp(): EventStamp;
   /**
    * Puts the event in the outbox for the room this phone is in (src/core/sync/outbox.ts): kept in the save and sent after
    * each good poll until the room takes it, once. `key`: a queued message of that room with the same key stands for the
@@ -650,6 +655,8 @@ export type SyncApi = {
   once(eid: EventId, write: Step<Save>): boolean;
   /** The players' sheets, on the room's GM phone; none on any other phone. */
   remoteSheets(): RemoteSheet[];
+  /** The other players' hunters as faces (protocol.ts `HunterFace`), on a player's phone in a room; none on any other phone. */
+  faces(): RoomFace[];
   myKey(hid: HunterId): SheetKey;
   /** A room doc as `DOCS` in protocol.ts parsed it: the GM's own last put too. */
   doc<K extends DocName>(name: K): DocOf<K> | null;
@@ -769,6 +776,23 @@ export type StoriesApi = {
   turnOn(id: StoryId | null): Promise<void>;
 };
 
+/** Trading on screen (src/views/trade.js; notes-5-trade.md sections 6 and 7): the Give window, the Bag's Offers tab, the GM's section. */
+export type TradeApi = {
+  /**
+   * Opens the Give window for hunter `hid`'s item `item`, or its gold when null: to another player's hunter in the room
+   * (an offer, trade/offer.ts `offerPosted`) or to another hunter of this phone (goods.ts `handOver`).
+   */
+  give(hid: HunterId, item: string | null): Promise<void>;
+  /** Draws hunter `hid`'s offers in `box` (the Bag's Offers tab): the offers to it with Accept and Refuse, and its own with Take back. */
+  offers(box: HTMLElement, hid: HunterId): void;
+  /** How many offers to hunter `hid` wait for its answer: the count on the Bag's Offers tab. */
+  waiting(hid: HunterId): number;
+  /** Draws the GM view's "Trades and stash" section in `box` (the switch, the open offers with Stop); answers its head summary. */
+  paint(box: HTMLElement): string;
+  /** The line the GM's Remove window adds for the player's sheet `key` (named `name`) while it has open offers; '' when it has none. */
+  removeLine(key: string, name: string): string;
+};
+
 /** What the System remembers of a hunter, on screen (src/views/chronicle.js, feature 1's notes 17.12). */
 export type ChronicleApi = {
   /** The feats that apply on this phone: a player in a room reads the GM's from the room's feats doc, any other phone its own library. */
@@ -807,6 +831,7 @@ export type AppApi = {
   skills: SkillsApi;
   stories: StoriesApi;
   sync: SyncApi;
+  trade: TradeApi;
   uses: UsesApi;
 };
 export type ApiName = keyof AppApi;

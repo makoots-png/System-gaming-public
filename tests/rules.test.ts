@@ -2,7 +2,7 @@
 // in one table and forgotten in another fails, and so does a column that stops rising with rank.
 import { describe, expect, test } from 'bun:test';
 import { parseOverrides } from '../src/core/overrides.ts';
-import { canExtract, rewardJobs, BONUS_KEYS, BONUS_LABELS, RANKS, RULES, rulesOf, TIERS, featsSwitched, resetRuleNumbers, resetTable, saveRuleNumbers, writeTable } from '../src/core/rules.ts';
+import { canExtract, rewardJobs, BONUS_HUNDREDTHS, BONUS_KEYS, BONUS_LABELS, RANKS, RULES, rulesOf, TIERS, featsSwitched, resetRuleNumbers, tradeRuleSet, resetTable, saveRuleNumbers, writeTable } from '../src/core/rules.ts';
 import { RANKS as SAVE_RANKS, RARITIES, SLOTS } from '../src/core/save.ts';
 import { JOB_NAMES } from '../src/core/registry/jobs.ts';
 import { STAT_KEYS } from '../src/core/stats.ts';
@@ -51,6 +51,8 @@ test('a bonus adds to a stat or to a sheet number derive adds it to, never to we
   expect(sheetKeys.filter(k => !(BONUS_KEYS as readonly string[]).includes(k)).sort()).toEqual(['armor', 'mag', 'phys', 'resist', 'shadows', 'sight', 'stride', 'sup', 'weight']);
   expect(Object.keys(BONUS_LABELS).sort()).toEqual([...BONUS_KEYS].sort());
   expect([BONUS_LABELS.armorPenFlat, BONUS_LABELS.resistPenFlat]).toEqual(['Lethality', 'Unravel']);
+  expect([BONUS_LABELS.healPower, BONUS_LABELS.shieldDrain]).toEqual(['% Heal and shield power', '% Damage to shield']);
+  expect([...BONUS_HUNDREDTHS].sort()).toEqual(['costCut', 'critSize', 'drain', 'healPower', 'hold', 'shieldDrain', 'threat']);
   for (const t of RULES.titles) for (const k of Object.keys(t.bonus)) expect([t.name, (BONUS_KEYS as readonly string[]).includes(k)]).toEqual([t.name, true]);
 });
 
@@ -247,6 +249,12 @@ describe('the kits\' rules (kits design 1.11, 3 and 8.0)', () => {
     for (const n of [K.boostSides, K.shoveMax, K.blinkMax, K.reactionsPerUse, K.zoneMove, K.zoneGrow, K.extraPerRound, K.surprise]) expect(Number.isInteger(n) && n >= 1).toBe(true);
   });
 
+  test('damage to shield holds at most a fifth of max HP: on a C bruiser (101 HP, table 2.3.C) 20, under one of its swings on a C skirmisher, 29 (design 3.A)', () => {
+    expect(K.shieldDrainMax).toBe(1 / 5);
+    expect(Math.round(K.shieldDrainMax * 101)).toBe(20);
+    expect(Math.round(K.shieldDrainMax * 101)).toBeLessThanOrEqual(29);
+  });
+
   test('a GM\'s override of a kit number passes and the fight reads it; a kit rule that does not exist is refused', () => {
     const { overrides, refused } = parseOverrides({ fight: { kit: { zonesPerOwner: 5, tolerance: 0.15, luck: 1 } } });
     expect(overrides).toEqual({ fight: { kit: { zonesPerOwner: 5, tolerance: 0.15 } } });
@@ -287,5 +295,14 @@ describe('the GM\'s edits of the overrides', () => {
     expect(rulesOf(featsSwitched(off, true)).feats.on).toBe(true);
     expect(RULES.feats.on, 'feats are on until the GM turns them off').toBe(true);
     expect(parseOverrides(off).refused, 'the rules editor reads what the switch wrote').toEqual([]);
+  });
+  test('the GM\'s switch for trading turns it off and on, and keeps every other override', () => {
+    const save = { rulesOverrides: { gmTables: { loot: ['x'] }, xpPerLevel: 120 }, other: 1 };
+    const off = tradeRuleSet(save, false);
+    expect(off).toEqual({ rulesOverrides: { gmTables: { loot: ['x'] }, xpPerLevel: 120, trade: { on: false } }, other: 1 });
+    expect(rulesOf(off.rulesOverrides).trade.on, 'the rules read the switch off').toBe(false);
+    expect(rulesOf(tradeRuleSet(off, true).rulesOverrides).trade.on).toBe(true);
+    expect(RULES.trade.on, 'trading is on until the GM turns it off').toBe(true);
+    expect(parseOverrides(off.rulesOverrides).refused, 'the rules editor reads what the switch wrote').toEqual([]);
   });
 });

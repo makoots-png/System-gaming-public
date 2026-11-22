@@ -19,7 +19,7 @@ import type { Ability, Avoid, CombatantId, Outcome } from './ability-types.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import { removeStatus, shielded, shieldOn, withStatuses } from './effect-ops.ts';
 import { atTier, countOn, stacked } from './op-amount.ts';
-import { ambushShare, boostsOn, critFacesAgainst, damageShare, dealtBy, edgeOn, edgeStep, healShare, hides, shieldShare, rangeWith, warded, wardedDamage } from './standing.ts';
+import { ambushShare, boostsOn, critFacesAgainst, damageShare, dealtBy, edgeOn, edgeStep, given, healShare, hides, shieldShare, rangeWith, warded, wardedDamage } from './standing.ts';
 import { eyesOf, figureOf, perceivedBy, perceives, watched } from './sight.ts';
 import type { Lookout } from './sight.ts';
 import type { Fog } from './fight-types.ts';
@@ -77,6 +77,8 @@ export type Resolved =
     readonly ok: true; readonly outcomes: readonly Outcome[]; readonly bodies: readonly Body[]; readonly bursts: readonly Burst[]; readonly shoved: readonly CombatantId[]; readonly reacted: Reacted;
     /** The HP the user's lifesteal healed it (land.ts `drained`), 0 for none. */
     readonly drained: number;
+    /** The shield the user's damage to shield added to what it held (land.ts `drained`), 0 for none. */
+    readonly stored: number;
   };
 export type ResolveRules = OpRules & Pick<Rules, 'dice'>;
 
@@ -210,13 +212,14 @@ const covered = (raw: number, a: Ability, target: Body, grid: Grid, R: ResolveRu
   inCover(a, target.place, grid) ? raw * (1 - R.fight.coverShare) : raw;
 
 // Rule 11c (kits design 8.1): a damaging use is multiplied by the user's dealt share and the target's taken share, a heal
-// by the target's healed share and a shield by its shielded share, each product within `kit.shareCap` of 1 (standing.ts). A hit on a target that does not
+// by the user's heal and shield power (standing.ts `given`, outside the cap) and the target's healed share, a shield by
+// that power and its shielded share, each share within `kit.shareCap` of 1 (standing.ts). A hit on a target that does not
 // perceive its hidden user is an ambush (`ambushes`): the rules' `stealth.ambush` joins the user's dealt increases. A
 // damaging use is then multiplied by its user's `dealtBy` (a solo run's foe's tweak), outside the cap.
 function shared(raw: number, a: Ability, user: Body, target: Body, grid: Grid, R: ResolveRules): number {
   const type = a.effect?.type;
-  if (type === 'heal') return raw * healShare(target, R);
-  if (type === 'shield') return raw * shieldShare(target, R);
+  if (type === 'heal') return given(raw, user) * healShare(target, R);
+  if (type === 'shield') return given(raw, user) * shieldShare(target, R);
   if (type !== 'physical' && type !== 'magical') return raw;
   return raw * (ambushes(user, target, grid) ? ambushShare(user, target, R) : damageShare(user, target, R)) * dealtBy(user);
 }
@@ -279,7 +282,7 @@ function landOps(a: Ability, user: Body, target: Body, dice: readonly number[], 
         const f = rolled(op, user.tier)!, n = diceOf(f).length, roll = dice.slice(die, die + n);
         die += n;
         const v = Math.round(evaluate(f, { user: { stats: user.stats, sheet: user.sheet }, target: { stats: t.stats, sheet: t.sheet }, charge: 0, dice: roll }));
-        if (op.op === 'shield') t = { ...t, shield: shieldOn(t, v, tick(now + R.fight.shieldLife * R.fight.round), now, R) };
+        if (op.op === 'shield') t = { ...t, shield: shieldOn(t, given(v, user), tick(now + R.fight.shieldLife * R.fight.round), now, R) };
         else if (op.op === 'mana') t = { ...t, mana: clamp(t.mana + v, 0, t.sheet.manaMax) };
         else t = { ...t, fatigue: clamp(t.fatigue + v, 0, t.sheet.fatigueMax) };
         break;
@@ -589,9 +592,9 @@ export function landUse(a: Ability, user: Body, ok: Ready, bodies: readonly Body
   }
   if (rollsReaction(a)) spendEdges(a, rows.get(user.id)!, [...hit, ...ring].map(b => rows.get(b.id)!), rows, now, R);
   const shoved = [...swapped(a, user.id, outcomes, rows, grid, R), ...pushed(a, user.id, at, outcomes, rows, grid, R)];
-  const hpBefore = rowHp(rows.get(user.id)!), stole = drained(rows.get(user.id)!, lost, R);
-  rows.set(user.id, userTime(a, stole, now, rolls.refund, R));
-  return { ok: true, outcomes, bodies: bodies.map(b => rows.get(b.id)!), bursts, shoved, reacted: f.reacted, drained: rowHp(stole) - hpBefore };
+  const stole = drained(rows.get(user.id)!, lost, now, R);
+  rows.set(user.id, userTime(a, stole.user, now, rolls.refund, R));
+  return { ok: true, outcomes, bodies: bodies.map(b => rows.get(b.id)!), bursts, shoved, reacted: f.reacted, drained: stole.healed, stored: stole.stored };
 }
 
 /** Rule 5b: the user on the tile a blink aims at, or why not: rooted, or a tile it does not see, may not stand on, or is taken. */

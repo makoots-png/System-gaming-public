@@ -18,7 +18,7 @@ import { applyStatus, modified, removeStatus, statusOn, statusShield, withStatus
 import { atTier } from './op-amount.ts';
 import type { Body, Status, StatusKey } from './effect-ops.ts';
 import { landUse, leftZone, placeOf, ready, resolve } from './resolve.ts';
-import { alive, putBy, stealthAfter } from './land.ts';
+import { alive, drainWords, putBy, stealthAfter } from './land.ts';
 import type { Resolved } from './resolve.ts';
 import { react, reactorsFor, reactState, reactStep, withReact } from './fight-react.ts';
 import { hides, hideStarts, holds } from './standing.ts';
@@ -29,7 +29,7 @@ import { combatantId } from './ability-types.ts';
 import type { Ability, CombatantId, Outcome } from './ability-types.ts';
 import { channelCan, channelStep, released } from './fight-channel.ts';
 import { eventsOf, raised } from './triggers.ts';
-import { burstsOf, consequences, D20, ended, held, holdsSide, logged, marked, overIf, partyView, payDue, rowOf, sentAway, sheetBacks, spreadTo, startTurn, triggered, unwarded, withRow, zoneEnds } from './fight-turn.ts';
+import { burstsOf, consequences, D20, ended, held, holdsSide, logged, marked, overIf, partyView, giverOf, payDue, rowOf, sentAway, sheetBacks, spreadTo, startTurn, triggered, unwarded, withRow, zoneEnds } from './fight-turn.ts';
 import { hpChange } from '../hunter/vitals.ts';
 import { refilledRow, rowLifeAfter, rowLifeTakes } from './row-life.ts';
 import { summonRow } from './rows.ts';
@@ -241,7 +241,7 @@ type Landed = {
 /**
  * What follows a use that landed, the one path of `act` and `release`, so a rule added here holds for both: acting on a
  * foe or a place ends its user's untargetable ward (kits design 8.1); its stealth events (`useStealth`); one log line
- * naming each target's outcome and the user's lifesteal (rule 20); the zones its price took end and its own goes down (rule 18b); a summon (18d); a zone act (kits 8.5.4),
+ * naming each target's outcome and what the user's lifesteal and damage to shield gave it (rule 20, `drainWords`); the zones its price took end and its own goes down (rule 18b); a summon (18d); a zone act (kits 8.5.4),
  * whose bodies, as a shove's, pay no entry (8.3.4, 8.5.5); the tally; its triggers (19b); the `after` reactions (19c);
  * then the next turn.
  */
@@ -251,10 +251,11 @@ function landed(f: Running, use: Landed, ctx: Ctx): Result {
   const ends = (a.aim === 'foe' || a.aim === 'place') && !hides(a);
   const warded = ends ? use.r.bodies.map(b => b.id === u.id ? unwarded(b, f.now, R) : b) : use.r.bodies;
   const r = { ...use.r, bodies: useStealth(a, u, aim, use.r.outcomes, warded, f.now, R) };
+  const drank = drainWords({ healed: r.drained, stored: r.stored });
   const said = [
     ...reacted.said, ...reacted.lethal,
     ...r.outcomes.map(o => `${rowOf(f, o.target)?.name ?? o.target} ${o.avoid === 'out' ? 'avoids it' : `${o.avoid}${o.crit ? ', crit' : ''}${o.dealt ? ` ${o.dealt}` : ''}`}`),
-    ...(r.drained > 0 ? [`${u.name} drains ${r.drained}`] : []),
+    ...(drank ? [`${u.name} ${drank}`] : []),
     ...r.bursts.map(b => `${rowOf(f, b.bearer)?.name ?? b.bearer}'s ${b.label} goes off${b.landed.some(l => l.dealt) ? ` (${b.landed.map(l => `${rowOf(f, l.target)?.name ?? l.target} ${l.dealt}`).join(', ')})` : ''}`),
   ];
   // the zones its price ends land their ends when old enough (table 2.6), then its own zone goes down (rule 18b, the cap per owner)
@@ -559,7 +560,7 @@ function status<F extends Setup | Running>(f: F, cmd: Extract<Command, { type: '
   let row = withStatuses(u, list, now, ctx.rules);
   if (cmd.add) {
     const until = cmd.add.duration === null ? null : tick(now + cmd.add.duration), self = { stats: row.stats, sheet: row.sheet };
-    row = { ...row, shield: statusShield(cmd.add.def, row, { user: self, target: self, charge: 0 }, now, until, ctx.rules) };
+    row = { ...row, shield: statusShield(cmd.add.def, row, { user: self, target: self, charge: 0 }, null, now, until, ctx.rules) };
   }
   return gmChange(f, row, line(`${u.name}: ${said.join(', ')} (GM).`, [u.id]), ctx);
 }
@@ -576,7 +577,7 @@ const settleDue: Step<'running', 'settle'> = (f, cmd, ctx) => {
   }
   if (cmd.dice.length !== diceOf(atTier(p.due.op.amount, p.due.tier)).length) return refused(f, 'needsRoll');
   const row = rowOf(f, cmd.id)!;
-  const g = { ...withRow(f, payDue(row, p.due, cmd.dice, f.now, ctx.rules)), pending: rest };
+  const g = { ...withRow(f, payDue(row, p.due, cmd.dice, f.now, ctx.rules, giverOf(f, row.statuses, p.due.key))), pending: rest };
   const what = row.statuses.find(s => s.key === cmd.key || entryKey(s.key) === cmd.key)?.def.label ?? cmd.key;
   return after(f, g, '', line(`${row.name}: ${what} settles.`, [row.id]), ctx, []);
 };
