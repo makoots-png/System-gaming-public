@@ -4,13 +4,14 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { RULES, rulesOf } from '../src/core/rules.ts';
 import type { StatusDef } from '../src/core/combat/effect-ops.ts';
+import { statusKey } from '../src/core/combat/effect-ops.ts';
 import { seedMonsters } from '../src/core/registry/monsters.ts';
 import type { Rules } from '../src/core/rules.ts';
 import { freshSave, newHunter } from '../src/core/save.ts';
 import type { Hunter, ParseEnv, Save } from '../src/core/save.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import type { Refused } from '../src/core/save-step.ts';
-import { combatantId } from '../src/core/combat/ability-types.ts';
+import { abilityId, combatantId } from '../src/core/combat/ability-types.ts';
 import { IDLE, ODDS_RUNS, oddsLine, oddsStep, readOdds } from '../src/core/combat/odds.ts';
 import type { CombatantId } from '../src/core/combat/ability-types.ts';
 import type { Body } from '../src/core/combat/effect-ops.ts';
@@ -18,11 +19,12 @@ import { fightId, reduce } from '../src/core/combat/fight.ts';
 import { hunterRow, monsterRows } from '../src/core/combat/rows.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
 import { resolve } from '../src/core/combat/resolve.ts';
-import { openGrid, place } from '../src/core/combat/space.ts';
+import { openGrid, place, tiles } from '../src/core/combat/space.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 import { diceOf, mean } from '../src/core/formula.ts';
-import { formulaOf } from '../src/core/registry/ability-kinds.ts';
-import type { OddsRun, RowEnd, RunEnd } from '../src/core/combat/odds.ts';
+import { abilityOf, formulaOf } from '../src/core/registry/ability-kinds.ts';
+import type { OddsRun, RowEnd, RunEnd, Weighed } from '../src/core/combat/odds.ts';
+import type { OddsApi } from '../src/core/api.ts';
 import { SOLO_REFUSAL_WORDS, pooled, runCostLines, soloConfirmLines, soloAnswerBody, soloDoc, soloFight, soloKey, soloPlan, soloRan, soloReady, soloRoute, soloRunBody, soloTaken, soloTargets, soloTick } from '../src/core/gates/solo.ts';
 import { worldDoc } from '../src/core/gates/world.ts';
 import { DOCS, DOC_MAX, newEvent } from '../src/core/protocol.ts';
@@ -38,7 +40,7 @@ import { putItem } from '../src/core/hunter/inventory.ts';
 import { seedId } from '../src/core/ids.ts';
 import type { GateId, HunterId, MonsterId } from '../src/core/ids.ts';
 import { den } from './models/gate-events.ts';
-import { dev, hid, iid, room } from './fixtures/ids.ts';
+import { dev, hid, iid, room, skid } from './fixtures/ids.ts';
 import { lifeAt } from './fixtures/life.ts';
 import type { Life } from '../src/core/hunter/vitals.ts';
 
@@ -185,8 +187,8 @@ describe('who may enter, and the words of each refusal', () => {
 });
 
 /** The engine asked for one play of `s`'s hunter against `gate`, as the Gates view asks it, then the run to write. */
-function played(s: Save, gate: SoloGate, seed: number, R: Rules = RULES): SoloRun {
-  const ready = ok(soloReady(s, H1, gate, ctx({ R })));
+function played(s: Save, gate: SoloGate, seed: number, R: Rules = RULES, at: ReadyCtx = ctx({ R })): SoloRun {
+  const ready = ok(soloReady(s, H1, gate, at));
   const f = soloFight(ready.h, ready.target, R)!;
   let run: OddsRun = oddsStep(IDLE, { type: 'ask', fight: f.fight, seed, of: 1 }, f.R);
   while (run.state === 'running') run = oddsStep(run, { type: 'step', commands: 25 }, f.R);
@@ -468,6 +470,53 @@ describe('a world gate open to solo runs, in a room', () => {
     const asBuilt = runOn({}), asEdited = runOn({ stunned: dazed });
     expect(asBuilt.hp, 'built-in Stunned holds the goblins, so they never strike').toBe(asBuilt.start);
     expect(asEdited.hp, 'the GM\'s Stunned holds nothing, so the goblins strike').toBeLessThan(asEdited.start);
+  });
+
+  // The goblins of the gate start the fight stunned for good, and the Sprite Mira calls starts stunned too. The goblins'
+  // Stunned is built into their rows; the Sprite's is read from the rules as the fight calls it, so only odds played by
+  // the rules soloFight gave the fight (the room's statuses over the phone's) play the GM's Stunned on it.
+  test('the odds of a solo run in a room whose GM edited a status are played with the edited status', () => {
+    const dazed = { label: 'Stunned', desc: 'Only dazed.', ops: [] };
+    const sleeper = { ...seedMonsters(RULES).find(m => m.id === goblin)!, id: 'm-sleeper' as MonsterId, statuses: [{ key: 'stunned', rounds: null }] };
+    const gate = { ...worldGate, monsters: [{ monsterId: sleeper.id, count: 2 }] };
+    const call = {
+      ...abilityOf('support', { id: abilityId('call-sprite'), name: 'Call Sprite' }, RULES),
+      aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null, summon: { name: 'Sprite', archetype: 'brute', rounds: 9, statuses: [{ key: statusKey('stunned'), rounds: 9 }] },
+    } as const;
+    const caller: Hunter['skills'][number] = { id: skid('s1'), name: 'Call Sprite', type: 'active', level: 1, label: null, desc: '', ability: call };
+    /** What a player's card hands its odds box when the GM's library is `library`, and its odds as the box plays them. */
+    const oddsOn = (library: Record<string, StatusDef>) => {
+      const built = soloDoc({ ...gmSave([gate]), monsters: [sleeper] }, rulesOf({}, library), DOC_MAX).doc;
+      const world = worldDoc(gmSave([gate]), 1, new Set(built.gates.map(g => g.id)), 0);
+      const targets = soloTargets(DOCS.world(JSON.parse(JSON.stringify(world))), DOCS.solo(JSON.parse(JSON.stringify(built))));
+      const p = { ...alone({ skills: [caller] }), gates: [] }, at = ctx({ route: IN_ROOM, bound: H1, room: { targets, waiting: [] } });
+      const ready = ok(soloReady(p, H1, WORLD, at)), card: Weighed = soloFight(ready.h, ready.target, RULES)!;
+      const playedBy = (R: Rules) => {
+        let odds: OddsRun = oddsStep(IDLE, { type: 'ask', fight: card.fight, seed: 42, of: ODDS_RUNS }, R);
+        while (odds.state === 'running') odds = oddsStep(odds, { type: 'step', commands: 500 }, R);
+        if (odds.state !== 'done') throw new Error('no answer');
+        return odds.odds;
+      };
+      return { odds: playedBy(card.R), byPhone: () => playedBy(RULES), start: ready.h.life.at === 'up' ? ready.h.life.hp : 0, run: () => played(p, WORLD, 42, RULES, at) };
+    };
+    const asBuilt = oddsOn({}), asEdited = oddsOn({ stunned: dazed });
+    expect(readOdds(asBuilt.odds).won, 'built-in Stunned holds both goblins for good, so every play is won').toBe(1);
+    expect(asBuilt.odds.ends.every(e => e.party[ME]!.hp === asBuilt.start), 'and no held goblin ever strikes').toBe(true);
+    expect(readOdds(asEdited.odds).won, 'the GM\'s Stunned holds nothing, so the odds fall').toBeLessThan(1);
+    expect(asEdited.odds.ends.some(e => e.party[ME]!.hp < asEdited.start), 'the goblins strike in the odds\' plays').toBe(true);
+    expect(asEdited.byPhone().ends, 'the phone\'s built-in Stunned would hold the Sprite the GM\'s lets act: these odds are not the run\'s').not.toEqual(asEdited.odds.ends);
+    expect(asEdited.run().end, 'a run with the odds\' seed is the odds\' first play under the edit').toEqual(asEdited.odds.ends[0]);
+  });
+
+  test('a solo gate\'s odds box takes soloFight\'s answer and no rules beside it', () => {
+    const asked: unknown[][] = [], odds: Pick<OddsApi, 'paintSolo'> = { paintSolo: (...a) => { asked.push(a); } };
+    const ready = ok(soloReady(alone(), H1, PERSONAL, ctx())), made = soloFight(ready.h, ready.target, RULES)!, el = {} as HTMLElement;
+    odds.paintSolo(el, 'k', made);
+    // @ts-expect-error the box plays the rules soloFight gave the fight, so it takes no other rules
+    odds.paintSolo(el, 'k', made, RULES);
+    // @ts-expect-error nor a fight without the rules it plays by
+    odds.paintSolo(el, 'k', made.fight);
+    expect(asked).toHaveLength(3);
   });
 
   test('a lost run enters a detected gate and needs no answer; a plan that no longer holds writes nothing', () => {

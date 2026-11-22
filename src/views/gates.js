@@ -528,7 +528,7 @@ export function register(app) {
         const line = waiting ? waitWords(waiting, sy.outbox || []) : isRefused(ready) ? SOLO_REFUSAL_WORDS[ready.why] : '';
         const acts = away ? `<button type="button" data-solo-dismiss="${esc(waiting.run)}">${esc(SOLO_WORDS.dismiss)}</button>`
           : target ? `<button type="button" class="primary" data-solo-enter${mayEnter(runPhase) ? '' : ' disabled'}>${esc(SOLO_WORDS.enter)}</button>` : '';
-        return { key: oddsKeyOf(gate, h.id), fight: made ? made.fight : null, html: `<article class="gate solo" data-solo="${esc(gate.kind)}:${esc(gate.id)}" aria-label="${esc(rank)}-rank solo gate ${esc(name)}">
+        return { key: oddsKeyOf(gate, h.id), made, html: `<article class="gate solo" data-solo="${esc(gate.kind)}:${esc(gate.id)}" aria-label="${esc(rank)}-rank solo gate ${esc(name)}">
           <div class="gt-head">${ui.rankBadge(rank)}<span class="gt-name">${esc(name)}</span><span class="gt-chip st-detected">${esc(gate.kind === 'personal' ? 'Personal' : 'Solo')}</span></div>
           ${sub ? `<div class="gt-timer">${esc(sub)}</div>` : ''}
           ${mons ? `<ul class="gt-mons" aria-label="Monsters">${mons}</ul>` : ''}
@@ -548,7 +548,7 @@ export function register(app) {
         box.hidden = !html;
         if (box.dataset.sig !== html) { box.dataset.sig = html; box.innerHTML = html; }
         const all = [...personal, ...world], boxes = box.querySelectorAll('[data-odds]');
-        all.forEach((c, i) => { if (boxes[i]) api.odds.paint(/** @type {HTMLElement} */ (boxes[i]), c.key, c.fight, 'alone'); });
+        all.forEach((c, i) => { if (boxes[i]) api.odds.paintSolo(/** @type {HTMLElement} */ (boxes[i]), c.key, c.made); });
         paintRun();
         return !box.hidden;
       }

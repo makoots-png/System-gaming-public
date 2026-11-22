@@ -87,6 +87,12 @@ export type OddsEvent =
   | { readonly type: 'step'; readonly commands: number }
   | { readonly type: 'changed'; readonly from: string }
   | { readonly type: 'cancel' };
+/**
+ * A fight and the rules it is played by, as one value: what a caller hands the engine (the odds box, a solo run). A
+ * solo fight's rules are not the phone's (gates/solo.ts `soloFight` lays the room's statuses over them), so the two
+ * travel together and the odds of a fight cannot be played by rules other than its run's.
+ */
+export type Weighed = { readonly fight: Setup | Running; readonly R: Rules };
 export const ODDS_STATES: readonly OddsState[] = ['idle', 'running', 'done', 'stale'];
 export const ODDS_EVENTS: readonly OddsEvent['type'][] = ['ask', 'step', 'changed', 'cancel'];
 

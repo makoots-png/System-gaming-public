@@ -30,6 +30,7 @@ import type { Gate, GateType } from './gates/gate.ts';
 import type { WorldWhy } from './gates/world.ts';
 import type { FightId, NewRow, Running, Setup } from './combat/fight-types.ts';
 import type { OddsRead, OddsVoice } from './combat/odds.ts';
+import type { SoloFight } from './gates/solo.ts';
 import type { ExtractionOutcome } from './combat/extraction.ts';
 import type { MapInput, ViewAs } from './combat/map-view.ts';
 import type { Ability, AbilityId, AbilityKind, CombatantId } from './combat/ability-types.ts';
@@ -254,8 +255,16 @@ export type GatesApi = {
 };
 /** The odds control (src/views/odds-box.js): one box per key, the engine's run of it page memory only. */
 export type OddsApi = {
-  /** Draws the box `el` for `fight` under `key` (null hides it), its words in `voice`; a fight that changed marks its answer stale. */
+  /**
+   * Draws the box `el` for the table's `fight` under `key` (null hides it), played by this phone's rules, its words in
+   * `voice`; a fight or rules that changed mark its answer stale.
+   */
   paint(el: HTMLElement, key: string, fight: Setup | Running | null, voice: OddsVoice): void;
+  /**
+   * Draws the box `el` for a solo run's fight under `key` (null hides it), played by the rules `soloFight` gave it and no
+   * others, so the odds are of the fight the run plays; its words speak to one hunter.
+   */
+  paintSolo(el: HTMLElement, key: string, made: SoloFight | null): void;
   /** The box's answer: at once when it is done for the fight it shows, else played out first; null when stopped or the fight changed. */
   ask(key: string): Promise<OddsRead | null>;
 };

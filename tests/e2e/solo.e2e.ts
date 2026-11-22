@@ -4,6 +4,7 @@
 // hunter who dies alone and is revived.
 import { shareEach } from '../../src/core/gates/pay.ts';
 import { RULES } from '../../src/core/rules.ts';
+import { seedMonsters } from '../../src/core/registry/monsters.ts';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, save, type Page } from './helpers.ts';
 
 /** The hunter on `page` made strong enough to clear any E or D gate alone: every stat at 60, its HP full. */
@@ -337,6 +338,31 @@ test('a redraw of the solo panel while a run plays keeps its round and moves on 
   await expect(page.locator('.sys-overlay.show', { hasText: /GATE CLEARED|RUN FAILED|RETREAT/ })).toBeVisible({ timeout: 120_000 });
   await dismissAll(page);
   expect((await save(page)).log.filter((l: any) => l.title === 'Solo run'), 'one run, one write').toHaveLength(1);
+});
+
+// The den's two goblins start the fight stunned for good. The player's phone has only the built-in Stunned; the GM's
+// edit reaches it in the room's solo doc. The odds play the fight with the rules its run plays (gates/solo.ts
+// `soloFight`), so they move with the GM's edit.
+test('a player\'s odds of a room\'s solo gate play a status as the GM edited it, and are played again when the GM edits it', async ({ device }) => {
+  const { gm, code } = await roomWithSoloDen(device, []);
+  const sleeper = { ...seedMonsters(RULES).find(m => m.id === 'seed:goblin')!, id: 'm900', name: 'Sleeper', statuses: [{ key: 'stunned', rounds: null }] };
+  await gm.page.evaluate(m => hunterApp.store.update((d: any) => { d.monsters.push(m); d.gates.find((g: any) => g.name === 'Goblin Den').monsters = [{ monsterId: m.id, count: 2 }]; }, 'test-setup'), sleeper);
+  const kai = await device('Kai', { blockServiceWorker: true });
+  await onboardPlayer(kai.page, 'Kai', code);
+  await dismissAll(kai.page);
+  await go(kai.page, 'gates');
+  const card = worldCard(kai.page, 'Goblin Den');
+  await expect(card).toContainText('Sleeper', { timeout: 30_000 });
+  await test.step('with the built-in Stunned the goblins never act, so the hunter clears the gate in every play', async () => {
+    await card.locator('[data-odds-ask]').tap();
+    await expect(card.locator('[data-oddsline]')).toHaveText(/^You clear it in 100% of 100 plays\. Never dead in these plays\./, { timeout: 60_000 });
+  });
+  await test.step('the GM makes Stunned hold nothing: the odds are marked stale, and played again the goblins strike', async () => {
+    await gm.page.evaluate(() => hunterApp.store.update((d: any) => { d.library.statuses.stunned = { label: 'Stunned', desc: 'Only dazed.', ops: [] }; }, 'test-setup'));
+    await expect(card.locator('.odds-stale')).toBeVisible({ timeout: 30_000 });
+    await card.locator('[data-odds-ask]').tap();
+    await expect(card.locator('[data-oddsline]:not(.stale)')).toHaveText(/^You clear it in \d{1,2}% of 100 plays\./, { timeout: 60_000 });
+  });
 });
 
 test('the GM turns personal gates off for the room: a player\'s gates stop, and the player\'s own switch is left as it was', async ({ device }) => {

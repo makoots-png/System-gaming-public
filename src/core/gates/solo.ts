@@ -42,7 +42,7 @@ import { hunterRow, monsterRows, shadowRow } from '../combat/rows.ts';
 import type { RowMonster } from '../combat/rows.ts';
 import { CAP_ROUNDS } from '../combat/play.ts';
 import { fateLine, wonLine } from '../combat/odds.ts';
-import type { OddsRead, RunEnd, RunOutcome } from '../combat/odds.ts';
+import type { OddsRead, RunEnd, RunOutcome, Weighed } from '../combat/odds.ts';
 import { seededSource } from '../draws.ts';
 import { can, gateXp, xpDue } from './gate.ts';
 import type { Gate, GateMonster } from './gate.ts';
@@ -236,8 +236,8 @@ export function soloReady(save: Pick<Save, 'hunters' | 'gates' | 'monsters'>, hi
 /** The parts of a hunter a row is built from, as one string: another string means the hunter changed since a run began. */
 export const soloKey = (h: Hunter): string => JSON.stringify([h.life, h.mana, h.fatigue, h.collapsed, h.used, h.conditions, h.items, h.equipped, h.skills, h.stats, h.pending, h.level, h.rank, h.shadows, h.titleId, h.build]);
 
-/** The fight a run plays, and how its rows map back to the sheet. */
-export type SoloFight = { readonly fight: Setup; readonly hunter: CombatantId; readonly shadows: Readonly<Record<CombatantId, ShadowId>>; readonly R: Rules };
+/** The fight a run plays with the rules it plays by (`Weighed`: the card's odds take this value too), and how its rows map back to the sheet. */
+export type SoloFight = Weighed & { readonly fight: Setup; readonly hunter: CombatantId; readonly shadows: Readonly<Record<CombatantId, ShadowId>> };
 /**
  * Monster `m` as a solo run meets it (`RULES.solo.autoHarder`, whose comment has the reason): its tweak's HP factor and
  * the damage of each hit it deals (`Tweak.dealt`) each times the rule's square root, so their product, the fight's
@@ -251,8 +251,8 @@ const harder = (m: RowMonster, R: Pick<Rules, 'solo'>): RowMonster => {
  * The fight of hunter `h` against `t`, in setup, made by the reducer's own `add` on the open arena: the hunter's row
  * (`hunterRow`), a row for each summoned shadow, then each roster line's monsters (`monsterRows`) made harder by the
  * rule (`harder`), with the target's statuses over the rules' for this fight only (`R` of the answer: the run plays by
- * it). The one builder of a solo fight: the odds a gate's card shows play this fight, and so does the run. Null when
- * the reducer refuses it.
+ * it). The one builder of a solo fight: the odds a gate's card shows play this value, the fight with its rules
+ * (`OddsApi.paintSolo` takes no other rules), and so does the run. Null when the reducer refuses it.
  */
 export function soloFight(h: Hunter, t: SoloTarget, R0: Rules): SoloFight | null {
   const R = withStatuses(R0, t.statuses);

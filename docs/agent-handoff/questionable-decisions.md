@@ -1,0 +1,29 @@
+# Questionable decisions
+
+the owner, Nov 22: "Nothing waits on me for tonight keep working, be bold my friend, unreasonably ambitious in your game design. write up questionable decisions in a .md and a google doc."
+
+Every call a lead made that he might have made otherwise, newest last. Each says what was decided, why, and the one thing to tell a lead to undo it. The same list is the Google Doc "Hunter System: questionable decisions" (id `1Bg6o4g2n_CtvoxHB9ey0tgdYoyN8H-29P_n95yo2GWg`; add a row there with the Docs connector, read it with Drive `read_file_content` when he says he answered in it); a lead adds a row to both in the turn it decides.
+
+## Decided while he was away (Nov 22, night)
+
+1. **A landed stun always costs its target a full round.** Before, a one-round stun only stopped the target acting until one round from now, so it delayed a boss by about half a round and sometimes by nothing; a party's control took 6 to 8% of a boss's turns against a target of 10 to 35%. Now a hold adds its length to the target's next turn. It also makes a monster's stun on a hunter cost a full turn. Undo: "a stun is a floor again". Status: to build, in the balance unit after the mythic fix, with every simulation row measured again.
+2. **A consumable used in a fight costs half a standard action.** His words: "Not a full turn, but should cost something". Undo: give another share; it is one rule, `fight.consumableTime`.
+3. **A rest clears 75% of current fatigue.** His word was "largely". Undo: give another share; it is one rule, `rest.fatigue`.
+4. **A dungeon is a gate, for "two rests per dungeon".** The count is per hunter per gate and starts again at the next gate. Undo: say what else a dungeon is (a session, a day).
+5. **The dice roller gets no difficulty table.** Its starting number to beat is one number for every rank; he sets the number for the thing being tried. Undo: "build difficulty presets" (Easy 10, Hard 15, Heroic 20, or his own).
+
+## Decided earlier in this session (Nov 21 to 22), told to him in chat
+
+6. **"25% harder" auto runs: HP and damage each up by the square root of 1.25 (about 11.8%).** A fight's difficulty is read as the foes' HP times the damage they deal. A same-rank hunter's win chance on a same-rank personal gate went E 45 to 37%, C 43 to 35%, S 59 to 50%. Undo: give the win chance he wants; it is one rule, `solo.autoHarder`.
+7. **A monster picks its target by damage thrown at it before its own armor or resist.** So a boss's armor no longer turns it from the tank to the caster. Undo: `fight.threatBeforeDefence` to 0.
+8. **With death saves gone, the target "a hunter goes down in at most 1 boss fight in 4" was dropped.** Down and dead are one thing now. What stands: a death in under 1 boss fight in 20 (measured 0 at C, about 1% at S). Boss fights may now be too safe. Undo: give the share of boss fights in which he wants a hunter to die.
+9. **A hunter revived in a fight stands at 1 HP with no statuses.** Undo: give the HP (a share of max).
+10. **The feat On Your Feet was removed.** Nothing brings an ally up in a fight any more. Undo: say what it should count (revives by a crystal he hands over, for one).
+11. **A coin he rules in a room records nothing in the player's Chronicle.** Recording "called it right" would tell the player the outcome. Undo: "record it when I reveal it".
+12. **The fudge factor's defaults.** His own tray roll outside a fight is not weighted. The weight set outside a fight and a fight's weight do not carry into each other. The shadow extraction's check is not weighted. +2 means 2 faces on every die, a d4's the same as a d20's. On damage dice the weight moves each die's face, never the total, so every face shown is one the die can roll. Two forced rolls that ask opposite faces of one die cancel. Undo: name the one to change.
+13. **Example items are far weaker than the plan's amounts.** The plan's Bulwark shield (10 + 20% of max HP every 3 rounds) spent five times a Rare+ item's budget; the built one is 10 + 5% every 8 rounds. Undo: "let example items break the budget", or raise the budget for items with actives.
+14. **The Lifeline item and Thornmail's healing cut are held back.** The first needs an "under 30% HP" trigger that is not built; the second cannot be priced yet. Both return when those exist.
+15. **Percent magic penetration is judged against a boss with high resist, not by raising every boss's resist.** Raising it would make magic worse against all bosses. Undo: "bosses should all resist magic more".
+16. **The mythic's numbers.** Twice a normal body's armor, resist and power, 5.2 bodies of HP, 5 times the XP. Fitted to a brute so far.
+17. **A save with a dying hunter in it loads that hunter up at full HP.** Old saves need not work (his rule), so nothing was built to turn them dead.
+18. **A dead ally can still be picked as the target of an ally ability, which then does nothing.** Scored 3, under his rule of 6, so not built.

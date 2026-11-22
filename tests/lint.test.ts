@@ -1979,3 +1979,21 @@ test('the Gates view makes a solo fight only by soloFight: the odds a card shows
   const built = lines.filter(line => /\b(hunterRow|monsterRows|shadowRow|remoteRow)\s*\(|(?<![.\w$])reduce\s*\(|type:\s*'add'/.test(line.text));
   expect(report(built), 'build a solo run\'s fight with soloFight in src/core/gates/solo.ts, for the odds box and for the run').toEqual([]);
 });
+
+test('a solo run\'s odds and its run are played by the rules soloFight gave its fight, never by other rules', async () => {
+  // soloFight answers the fight with its rules (`made.R`: the phone's with the room's statuses laid over them). The odds
+  // box once played a solo gate by the phone's own rules and the run by `made.R`: a status on a row at the start rides in
+  // the fight, but one read as the fight plays (a summon's) split them on a world gate whose GM edited it. The card hands the box
+  // soloFight's answer whole (`OddsApi.paintSolo`, which takes no rules), and the run plays every step by `made.R`.
+  const lines = (await sourceLines('src/views')).filter(line => line.file === 'src/views/gates.js' && !isComment(line.text));
+  const count = (text: string, re: RegExp): number => (text.match(re) ?? []).length;
+  const table = lines.filter(line => /\.odds\.paint\s*\(/.test(line.text));
+  expect(report(table), 'give a solo gate\'s odds box soloFight\'s answer by app.api.odds.paintSolo: paint plays by the phone\'s rules').toEqual([]);
+  const solo = lines.filter(line => /\.odds\.paintSolo\s*\(/.test(line.text));
+  expect(solo.length, 'the rule sees the card\'s paintSolo').toBe(1);
+  expect(report(solo.filter(line => !/\.odds\.paintSolo\s*\([^;]*,\s*[\w.]*\bmade\s*\)/.test(line.text))), 'hand paintSolo the card\'s soloFight answer as it came').toEqual([]);
+  const plays = lines.filter(line => /\b(oddsStep|progressOf)\s*\(/.test(line.text));
+  expect(plays.length, 'the rule sees the run\'s play').toBeGreaterThan(0);
+  const other = plays.filter(line => count(line.text, /\b(oddsStep|progressOf)\s*\(/g) !== count(line.text, /,\s*made\.R\s*\)/g));
+  expect(report(other), 'play a solo run by made.R, the rules soloFight gave its fight').toEqual([]);
+});
