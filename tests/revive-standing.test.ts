@@ -64,7 +64,7 @@ describe('the System raise: the life, the standing and the debt in one write', (
     const burning = { key: statusKey('burning'), def: RULES.conditions.burning!, rounds: 3, source: gmSource(rank) };
     return { ...s, hunters: [{ ...s.hunters[0]!, id: H, rank, rankBy: 'gm', level: 31, peakLevel: 31, life: { at: 'dead' }, reviveLeft: left, conditions: [burning] }] };
   }
-  const raise = (s: Save, room: RoomCode | null = null) => systemRaise(s, H, { at: AT, room, R: RULES });
+  const raise = (s: Save, room: RoomCode | null = null, held = false) => systemRaise(s, H, { at: AT, room, R: RULES, held });
   const hunterOf = (s: Save): Hunter => s.hunters[0]!;
   const die = (s: Save): Save => ({ ...s, hunters: s.hunters.map(h => ({ ...h, life: { at: 'dead' as const } })) });
 
@@ -92,7 +92,22 @@ describe('the System raise: the life, the standing and the debt in one write', (
   test('a hunter who is up is not raised, nor one this save does not hold', () => {
     const s = deadSave(), up = { ...s, hunters: [{ ...hunterOf(s), life: { at: 'up' as const, hp: 5 } }] };
     expect(raise(up)).toEqual({ ok: false, why: 'cannot' });
-    expect(systemRaise(s, 'h9', { at: AT, room: null, R: RULES })).toEqual({ ok: false, why: 'no-hunter' });
+    expect(systemRaise(s, 'h9', { at: AT, room: null, R: RULES, held: false })).toEqual({ ok: false, why: 'no-hunter' });
+  });
+
+  // section 21: the System's raise is offered only once no fight holds the hunter; a fight's dead row is the GM's to revive
+  test('while a fight holds the hunter the System does not raise it: refused held, in a room or alone, and the save stays as it was', () => {
+    const TABLE: readonly (readonly [ReviveStanding, 'dead' | 'up', string])[] = [
+      ['free', 'dead', 'held'],
+      ['debt', 'dead', 'held'],
+      ['none', 'dead', 'spent'],
+      ['free', 'up', 'cannot'],
+    ];
+    for (const [left, life, why] of TABLE) {
+      const s = deadSave(left), at = life === 'up' ? { ...s, hunters: [{ ...hunterOf(s), life: { at: 'up' as const, hp: 5 } }] } : s;
+      expect(raise(at, null, true), `${left}, ${life}`).toEqual({ ok: false, why });
+      expect(raise(at, ROOM, true), `${left}, ${life}, in a room`).toEqual({ ok: false, why });
+    }
   });
 
   test('the GM\'s Revive and a Resurrection Crystal raise the hunter and leave the System\'s raises as they were', () => {

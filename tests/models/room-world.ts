@@ -784,7 +784,7 @@ const AWARD = { rewards: { xp: 10 } };
 const USED = { who: 'Mira', what: 'item', name: 'Flash Bomb', text: 'Blinds a foe.', target: 'self', tell: true };
 const STATUS = { add: [{ key: 'marked', rounds: 3, def: { label: 'Marked', desc: '', ops: [] }, source: { id: null, tier: 0 } }], remove: [], reason: '' };
 /** The fight's totals for a player's hunter (combat.js carries out the fight's `sendRemote` effect as a `vitals` message). */
-const VITALS = { life: { at: 'up', hp: 12 }, mana: 3, fatigue: 20, statuses: [] };
+const VITALS = { fight: 'f1', life: { at: 'up', hp: 12 }, mana: 3, fatigue: 20, statuses: [] };
 /** A story's chapter as the GM's phone opens it for a player's hunter: a window, a point, and a quest from the GM. */
 const CHAPTER = { words: { title: 'THE DEEP HAS NOTICED YOU', line: '' }, rewards: { xp: 0, points: 1, gold: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] },
   quest: { kind: 'side', title: 'Find it', desc: '', objectives: [], rewards: { xp: 0, points: 0, gold: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, dueAt: null, penaltyText: '' } };

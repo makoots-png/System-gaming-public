@@ -16,6 +16,8 @@ import type { Gate, GateMonster, GateStatus, GateType } from './gates/gate.ts';
 import { parseApplied, parseHeld } from './applied.ts';
 import { parseOutbox } from './sync/outbox.ts';
 import { parseSeen } from './sync/seen.ts';
+import { parseFightHeard } from './sync/fight-heard.ts';
+import type { FightHeard } from './sync/fight-heard.ts';
 import { ringMerged } from './sync/bind.ts';
 import type { BindJoin } from './sync/bind.ts';
 import type { RoomPlaces } from './sync/seen.ts';
@@ -159,6 +161,8 @@ export type SyncSettings = {
   held?: RoomEvent[];
   /** Ids of the room events that changed a hunter on this phone, newest last (src/core/applied.ts). */
   applied?: EventId[];
+  /** On a player's phone, the GM's fight's last `vitals` message to a hunter of it (src/core/sync/fight-heard.ts): it holds the hunter until the room's fight doc answers it. */
+  heard?: FightHeard;
   /** A player's letters to the GM's phone until it answers each: won runs of a room's solo gates, stash asks (src/core/sync/asked.ts). */
   asked?: Asked[];
   /** This phone's records of the room's offers: its hunters' (with their goods aside), offers to them, and on the GM's phone every one (src/core/trade/offer.ts). */
@@ -182,7 +186,7 @@ export type SyncSettings = {
 export const SYNC_OWNER: { readonly [K in keyof SyncSettings]-?: 'campaign' | 'phone' | 'key' } = {
   room: 'campaign', cursor: 'campaign', lastRoom: 'campaign', boundHunterId: 'campaign',
   gmKey: 'key', gmKeys: 'key',
-  deviceToken: 'phone', serverOk: 'phone', joined: 'phone', outbox: 'phone', held: 'phone', applied: 'phone', asked: 'phone', offers: 'phone', seen: 'phone',
+  deviceToken: 'phone', serverOk: 'phone', joined: 'phone', outbox: 'phone', held: 'phone', applied: 'phone', heard: 'phone', asked: 'phone', offers: 'phone', seen: 'phone',
   weights: 'phone', words: 'phone', pending: 'phone',
 };
 /** The fields of `sync` that `owner` owns, as they are. */
@@ -387,6 +391,7 @@ function fixSync(sync: SyncSettings, now: number): void {
   optional(sync, 'joined', v => isObj(v) && parseRoomCode(v.room) !== null && isStr(v.at));
   if ('outbox' in sync) sync.outbox = parseOutbox(sync.outbox);
   if ('held' in sync) sync.held = parseHeld(sync.held);
+  if ('heard' in sync) { const h = parseFightHeard(sync.heard); if (h) sync.heard = h; else delete sync.heard; }
   if ('asked' in sync) sync.asked = parseAsked(sync.asked);
   if ('offers' in sync) sync.offers = parseOffers(sync.offers);
   if ('words' in sync) sync.words = parseWords(sync.words);

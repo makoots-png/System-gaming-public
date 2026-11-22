@@ -56,7 +56,7 @@ const arm = { eid: 'd-player1-e8', by: `${PLAYER}:h1`, ability: 'parry', on: nul
 const coinCall = { eid: 'd-player1-e6', by: `${PLAYER}:h1`, roll: `${PLAYER}:r12`, who: 'Kai', what: 'STR check', face: 20, call: 'heads' };
 const coinLand = { eid: 'd-player1-e7', roll: `${PLAYER}:r12`, side: 'heads' };
 /** The fight's totals for a player's hunter, as the GM's phone sends them. */
-const vitals = { eid: 'd-gm-e5', to: [`${PLAYER}:h1`], life: { at: 'up', hp: 12 }, mana: 3, fatigue: 20, statuses: [] };
+const vitals = { eid: 'd-gm-e5', to: [`${PLAYER}:h1`], fight: 'f3', life: { at: 'up', hp: 12 }, mana: 3, fatigue: 20, statuses: [] };
 /** A hunter sheet for `dev`'s hunter h1. */
 /** A sheet as a player's phone pushes it: its hunter. */
 const sheetOf = (dev: string, name: string, fields: Record<string, unknown> = {}) => ({ from: dev, data: { hunter: { id: 'h1', name, ...fields } } });

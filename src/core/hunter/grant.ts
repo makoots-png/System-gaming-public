@@ -425,10 +425,11 @@ export type SystemRaised = { save: Save; raise: Raise; owes: number; from: numbe
  * revive standing stepped (revive-standing.ts `standingStep`), the life's revive by the System through `sheetEdit` (up
  * at the revive HP, every status off, its levels lost), and from `debt` the gold it owes added to its debt (`raiseOwes`,
  * at the rank it died at). In a room the GM's phone hears it in the same write (the `systemRaise` message). Refused
- * `spent` past the ladder, `cannot` when the hunter is up. Where the life lives is the caller's: the raise is offered
- * only once no fight holds the hunter (section 21's default), and a crystal or the GM's Revive leaves the standing.
+ * `spent` past the ladder, `cannot` when the hunter is up, `held` while a fight holds it (`o.held`, the caller's
+ * `fightHold` of this save: section 21's default, a fight's dead row is the GM's to revive). A crystal or the GM's
+ * Revive leaves the standing.
  */
-export function systemRaise(save: Save, hid: string, o: { at: string; room: RoomCode | null; R: Rules }): SystemRaised | Refused<'no-hunter' | 'spent' | 'cannot'> {
+export function systemRaise(save: Save, hid: string, o: { at: string; room: RoomCode | null; R: Rules; held: boolean }): SystemRaised | Refused<'no-hunter' | 'spent' | 'cannot' | 'held'> {
   const h = save.hunters.find(x => x.id === hid);
   if (!h) return refuse('no-hunter');
   const raise = h.reviveLeft, left = standingStep(raise, { type: 'raise' });
@@ -436,6 +437,7 @@ export function systemRaise(save: Save, hid: string, o: { at: string; room: Room
   const up = sheetEdit(h, { type: 'life', event: { type: 'revive' }, by: 'system' }, o.R);
   // a revive is refused only where the life table does not take it: the hunter is up
   if (isRefused(up)) return refuse('cannot');
+  if (o.held) return refuse('held');
   const owes = raiseOwes(raise, h.rank, o.R);
   const raised: Save = { ...save, hunters: save.hunters.map(x => (x.id === hid ? { ...up, reviveLeft: left, debt: up.debt + owes } : x)) };
   const device = save.settings.deviceId;

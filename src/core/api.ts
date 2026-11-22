@@ -10,6 +10,7 @@ import type { Trigger } from './combat/triggers.ts';
 import type { LootDrop } from './gates/spawn.ts';
 import type { BuildChange, DocName, DocOf, EventBody, EventId, EventStamp, EventType, HunterFace, QuestOffer, RoomCode, RoomEvent, UsedWhat } from './protocol.ts';
 import type { Hunter, Item, Monster, Objective, QuestKind, Rank, Rewards, Save, Skill, Slot } from './save.ts';
+import type { TableSeen } from './sync/fight-heard.ts';
 import type { Stats } from './stats.ts';
 import type { Applied, Refused, Step, TOLD } from './save-step.ts';
 import type { Granted, StepDone, SystemRaised } from './hunter/grant.ts';
@@ -671,6 +672,8 @@ export type SyncApi = {
    * time of what `doc` answers, so a view can say how old it is ("As of 21:04."). Null where `doc` is.
    */
   docAt(name: DocName): string | null;
+  /** What this phone knows of the GM's fight: its doc, when the room stored it, and its last message as `save` keeps it (fight-heard.ts), for `fightHold`. */
+  table(save: Save): TableSeen;
   /** On a GM's phone in a room, keeps the doc what `build` answers (null: leave it). Register once; sync.ts calls it after each change. */
   publish(name: Exclude<DocName, 'kicked'>, build: () => unknown): void;
   inviteLink(code?: string | null): string;

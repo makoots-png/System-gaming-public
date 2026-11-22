@@ -25,6 +25,7 @@ import type { NoticeCtx } from '../core/hunter/noticed.ts';
 import { ALONE } from '../core/hunter/pending.ts';
 import { seatOf } from '../core/role.ts';
 import { fightHold } from '../core/combat/fight-save.ts';
+import { NO_TABLE } from '../core/sync/fight-heard.ts';
 import { NO_TOLD, parseTold, toldStep } from '../core/told.ts';
 import type { ToldEvent, ToldMemory } from '../core/told.ts';
 
@@ -194,7 +195,7 @@ type RoomNotice = NoticeAt & { readonly library: Readonly<Record<string, FeatDef
 /** Alone or the GM: the save's own session count and its own fight (`fightHold`). */
 const savedNotice = (save: Save): NoticeAt => ({
   session: save.world.session,
-  held: (s: Save, hid: HunterId) => fightHold(s.fight, { hid }, { seat: 'alone', doc: null, key: null }) !== null,
+  held: (s: Save, hid: HunterId) => fightHold(s.fight, { hid }, { seat: 'alone', key: null, ...NO_TABLE }) !== null,
 });
 /** A player's room's answer (its session, its fight doc), or null for the save's own: bound by sync.ts (`bindNotice`). */
 let noticeOf: (save: Save) => RoomNotice | null = () => null;

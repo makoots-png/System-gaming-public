@@ -85,6 +85,50 @@ test('a player\'s hunter killed in the GM\'s fight is offered the System raise o
   });
 });
 
+test('a death from the GM\'s fight that reaches the player\'s phone before the fight\'s doc offers no raise until that fight ends', async ({ device }) => {
+  const gm = (await device('gm', { blockServiceWorker: true })).page, player = (await device('player')).page;
+  await onboardGM(gm);
+  await chooseList(gm);
+  const code = await createRoom(gm);
+  await onboardPlayer(player, HUNTER, code);
+  await chooseList(player);
+  await expect.poll(() => player.evaluate(() => hunterApp.api.sync.room())).toBe(code);
+  await dismissAll(player, 4);
+  await go(gm, 'gm');
+  await expect(gm.locator('#gm-board .gm-card.remote', { hasText: HUNTER })).toHaveCount(1);
+  let letGo = (): void => {};
+  const docs = new Promise<void>(r => { letGo = r; });
+  await gm.route(u => u.pathname === `/api/rooms/${code}/sheets/_fight`, async route => { await docs; await route.continue(); });
+
+  await test.step('the GM\'s fight kills the hunter while the room holds no doc of it: no raise is offered, and none can be taken', async () => {
+    await go(gm, 'combat');
+    for (const label of [`${HUNTER} (remote)`, await gm.evaluate(() => hunterApp.store.active().name as string)]) {
+      await combat(gm).locator('[data-hsel]').selectOption({ label });
+      await combat(gm).locator('[data-addh]').tap();
+    }
+    await combat(gm).locator('[data-qline]').fill(`${MONSTER}, E, brute`);
+    await combat(gm).locator('[data-qadd]').tap();
+    await combat(gm).locator('[data-start]').tap();
+    await gm.evaluate(n => { const r = hunterApp.store.get().fight.rows.find((x: any) => x.name === n); hunterApp.api.combat.adjust(r.id, { hp: -9999 }); }, HUNTER);
+    await expect.poll(async () => (await hunter(player)).life, { timeout: 15_000 }).toEqual({ at: 'dead' });
+    expect(await player.evaluate(() => hunterApp.api.sync.doc('fight'))).toBeNull();
+    await go(player, 'status');
+    await expect(player.locator('#view-status [data-raise-line]')).toHaveText('Once the fight ends, the System can raise you once for free.');
+    await expect(player.locator('#view-status [data-raise]')).toBeHidden();
+    await expect(raiseWindow(player)).toHaveCount(0);
+    expect(await player.evaluate(() => hunterApp.api.hunter.systemRaise(hunterApp.store.active().id))).toMatchObject({ ok: false, why: 'held' });
+  });
+
+  await test.step('the fight\'s doc reaches the room and the GM ends the fight: then the raise is offered', async () => {
+    letGo();
+    await expect.poll(() => player.evaluate(() => hunterApp.api.sync.doc('fight')?.active ?? false), { timeout: 15_000 }).toBe(true);
+    await expect(raiseWindow(player)).toHaveCount(0);
+    await combat(gm).locator('[data-end]').tap();
+    await dismissAll(gm);
+    await expect(raiseWindow(player)).toBeVisible({ timeout: 15_000 });
+  });
+});
+
 test('Not now leaves the hunter dead, and Rise on the sheet opens the window again', async ({ device }) => {
   const player = (await device('alone')).page;
   await onboardPlayer(player, HUNTER);

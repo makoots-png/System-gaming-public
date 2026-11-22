@@ -72,7 +72,7 @@ type Part = (typeof PARTS)[number];
 function write(p: Phone, cmd: Command, links: Beside['links'] = null): Result {
   const r = reduce(p.save.fight, cmd, ctxOf(p.save));
   const totals = r.effects.flatMap(fx => fx.type === 'sendRemote'
-    ? [newEvent('vitals', { to: [parseSheetKey(fx.remote)!], life: fx.life, mana: fx.mana, fatigue: fx.fatigue, statuses: [...fx.statuses], reason: 'Fight' }, { device: 'd-gm', now: 1, rand: ++p.events / 1000 })!] : []);
+    ? [newEvent('vitals', { to: [parseSheetKey(fx.remote)!], fight: r.fight!.id, life: fx.life, mana: fx.mana, fatigue: fx.fatigue, statuses: [...fx.statuses], reason: 'Fight' }, { device: 'd-gm', now: 1, rand: ++p.events / 1000 })!] : []);
   const next = fought(p.save, r, { links, room: ROOM, totals, stamp: STAMP }, RULES);
   if (!isRefused(next)) p.save = next;
   return r;
@@ -198,7 +198,7 @@ describe('a reload between any two parts of a command', () => {
 describe('who a fight holds (fightHold): one answer for the sheet, the gear, a respec and a coin', () => {
   const s = gmSave(), h = s.hunters[0]!;
   const setup = reduce(null, { type: 'add', fightId: fightId('f-1'), rows: rowsOf(s), openings: [] }, ctxOf(s)).fight!;
-  const alone = { seat: 'gm' as const, doc: null, key: null };
+  const alone = { seat: 'gm' as const, code: null, doc: null, docAt: null, heard: null, key: null };
   test('a hunter of this phone with a row is held by that row, set up or running; a player\'s by its sheet key', () => {
     expect(fightHold(setup, { hid: h.id }, alone)).toEqual({ at: 'row', cid: id('c1') });
     expect(fightHold(setup, { key: KAI }, alone)).toEqual({ at: 'row', cid: id('c2') });
@@ -207,10 +207,11 @@ describe('who a fight holds (fightHold): one answer for the sheet, the gear, a r
     expect(fightHold(setup, { hid: 'h-other' }, alone)).toBeNull();
   });
   test('on a player\'s phone the GM\'s running fight holds the hunter whose sheet key it has a row for, and no other', () => {
-    const doc = { ended: false, active: true, rows: [{ key: 'dev-a:h1' }] };
-    expect(fightHold(null, { hid: 'h1' }, { seat: 'player', doc, key: 'dev-a:h1' })).toEqual({ at: 'gm' });
-    expect(fightHold(null, { hid: 'h2' }, { seat: 'player', doc, key: 'dev-a:h2' })).toBeNull();
-    expect(fightHold(null, { hid: 'h1' }, { seat: 'player', doc: { ...doc, active: false }, key: 'dev-a:h1' })).toBeNull();
+    const doc = { ended: false, active: true, id: fightId('f-1'), rows: [{ key: 'dev-a:h1' }] };
+    const seen = (d: typeof doc, key: string) => ({ seat: 'player' as const, code: ROOM, doc: d, docAt: '2026-11-22T10:00:00.000Z', heard: null, key: parseSheetKey(key)! });
+    expect(fightHold(null, { hid: 'h1' }, seen(doc, 'dev-a:h1'))).toEqual({ at: 'gm' });
+    expect(fightHold(null, { hid: 'h2' }, seen(doc, 'dev-a:h2'))).toBeNull();
+    expect(fightHold(null, { hid: 'h1' }, seen({ ...doc, active: false }, 'dev-a:h1'))).toBeNull();
   });
 });
 
@@ -320,7 +321,7 @@ describe('an award to hunters this phone\'s fight holds is one write: the award,
     ];
     const r = reduceAll(p.save.fight, heldCommands(parts, RULES), ctxOf(p.save));
     const totals = r.effects.flatMap(fx => fx.type === 'sendRemote'
-      ? [newEvent('vitals', { to: [parseSheetKey(fx.remote)!], life: fx.life, mana: fx.mana, fatigue: fx.fatigue, statuses: [...fx.statuses], reason: 'Fight' }, { device: 'd-gm', now: 1, rand: ++p.events / 1000 })!] : []);
+      ? [newEvent('vitals', { to: [parseSheetKey(fx.remote)!], fight: r.fight!.id, life: fx.life, mana: fx.mana, fatigue: fx.fatigue, statuses: [...fx.statuses], reason: 'Fight' }, { device: 'd-gm', now: 1, rand: ++p.events / 1000 })!] : []);
     const next = fought(p.save, r, { links: null, room: ROOM, totals, stamp: STAMP, also: sv => gmAward(sv, locals, reward, sends, DAY).save }, RULES);
     if (!isRefused(next)) p.save = next;
     if (crash !== 'write') flush(p);

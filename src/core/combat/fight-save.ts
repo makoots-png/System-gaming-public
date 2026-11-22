@@ -29,6 +29,8 @@ import { isStateChip } from '../hunter/chips.ts';
 import type { Seat } from '../role.ts';
 import { standsFor } from '../protocol.ts';
 import type { RoomCode, RoomEvent } from '../protocol.ts';
+import { gmHolds } from '../sync/fight-heard.ts';
+import type { TableSeen } from '../sync/fight-heard.ts';
 import type { Stamp } from '../session-log.ts';
 import { atHunter, isRefused, refuse } from '../save-step.ts';
 import type { Refused, Step } from '../save-step.ts';
@@ -168,19 +170,17 @@ export type HeldFor = { readonly who: Held; readonly statuses: readonly StatusIn
  */
 export const playerHeld = (sheets: readonly { readonly key: SheetKey; readonly data: { readonly rank: Rank } }[], keys: readonly SheetKey[], statuses: Rewards['statuses']): HeldFor[] =>
   keys.map(key => ({ who: { key }, statuses: statuses.map(s => statusGiven(s, rankSeen(sheets.find(x => x.key === key)?.data.rank ?? null))), refill: false }));
-/** What a player's phone reads of the GM's fight: the room's fight doc, as `DOCS.fight` parsed it. */
-export type TableDoc = { readonly ended: boolean; readonly active?: boolean; readonly rows?: readonly { readonly key?: string | null }[] };
 /**
  * Where a hunter's HP, mana, fatigue and statuses live while a fight holds it, the one answer to "is this hunter in a
- * fight": a row of this phone's fight, set up or running (`row`, its id), a row of the GM's running fight read on a
- * player's phone (`gm`: the room's fight doc has a row under `key`, this phone's sheet key for the hunter), or its
- * sheet (null). A hunter of this phone that no row holds is not in a fight, whoever else this phone's fight holds.
+ * fight": a row of this phone's fight, set up or running (`row`, its id), the GM's fight on a player's phone (`gm`:
+ * fight-heard.ts `gmHolds` of `key`, this phone's sheet key for the hunter, by the room's fight doc or the fight's last
+ * message), or its sheet (null). A hunter of this phone that no row holds is not in a fight, whoever else this phone's
+ * fight holds.
  */
-export function fightHold(fight: Fight | null, who: Held, room: { readonly seat: Seat; readonly doc: TableDoc | null; readonly key: string | null }): { readonly at: 'row'; readonly cid: CombatantId } | { readonly at: 'gm' } | null {
+export function fightHold(fight: Fight | null, who: Held, room: TableSeen & { readonly seat: Seat; readonly key: SheetKey | null }): { readonly at: 'row'; readonly cid: CombatantId } | { readonly at: 'gm' } | null {
   if (fight && fight.phase !== 'ended') {
     const r = fight.rows.find(x => ('key' in who ? x.holder?.kind === 'remote' && x.holder.remote === who.key : x.holder?.kind === 'local' && x.holder.hunterId === who.hid));
     if (r) return { at: 'row', cid: r.id };
   }
-  const d = room.doc;
-  return 'hid' in who && room.seat === 'player' && room.key !== null && d && !d.ended && d.active && d.rows?.some(r => r.key === room.key) ? { at: 'gm' } : null;
+  return 'hid' in who && room.seat === 'player' && room.key !== null && gmHolds(room, room.key) ? { at: 'gm' } : null;
 }

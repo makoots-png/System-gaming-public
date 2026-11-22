@@ -205,9 +205,11 @@ export function register(app) {
    * on a player's phone (no message carries a player's change); null: the sheet.
    * @type {import('../core/api.ts').HunterApi['fightOf']}
    */
-  const fightOf = who => {
+  const fightOf = who => heldIn(store.get(), who);
+  /** `fightOf` as save `s` answers it: what a step asks of the save it is handed. */
+  const heldIn = (s, who) => {
     const S = app.api.sync;
-    return fightHold(store.get().fight, who, { seat: app.seat(), doc: S.doc('fight'), key: 'hid' in who ? S.myKey(hunterId(who.hid)) : null });
+    return fightHold(s.fight, who, { seat: app.seat(), key: 'hid' in who ? S.myKey(hunterId(who.hid)) : null, ...S.table(s) });
   };
   const gmHolds = () => { ui.toast('System', 'During the GM\'s fight, the GM changes your HP, mana, fatigue and statuses.', { kind: 'warning' }); return refuse(TOLD); };
   /**
@@ -316,15 +318,14 @@ export function register(app) {
      */
     revive(hid) { return vitalsEdit(hid, 'life-revive', h => lifeEvent(h, { type: 'revive' }), cid => app.api.combat.revive(cid)); },
     /**
-     * The System raise (grant.ts `systemRaise`): offered only once no fight holds the hunter (section 21's default: a
+     * The System raise (grant.ts `systemRaise`): refused `held` while a fight holds the hunter (section 21's default: a
      * fight's dead row is the GM's to revive), so it never writes beside a fight's row. The ladder, the life and the
      * debt in one write, with the GM's `systemRaise` message in a room.
      */
     systemRaise(hid) {
-      if (fightOf({ hid })) return refuse('held');
       /** @type {import('../core/hunter/grant.ts').SystemRaised | null} */
       let out = null;
-      const w = store.apply('system-raise', s => { const r = systemRaise(s, hid, { at: new Date().toISOString(), room: app.api.sync.room(), R: rules() }); if (isRefused(r)) return r; out = r; return r.save; });
+      const w = store.apply('system-raise', s => { const r = systemRaise(s, hid, { at: new Date().toISOString(), room: app.api.sync.room(), R: rules(), held: heldIn(s, { hid }) !== null }); if (isRefused(r)) return r; out = r; return r.save; });
       if (isRefused(w)) return w;
       return out ?? refuse('no-hunter'); // a write that took the step holds its answer
     },

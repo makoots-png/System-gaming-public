@@ -211,7 +211,7 @@ describe('a status the GM sends to a player\'s phone', () => {
 });
 
 describe('what the GM\'s fight sends a player\'s phone', () => {
-  const VITALS = { to: ['d-player1:h1'], life: { at: 'up', hp: 12 }, mana: 3, fatigue: 20, statuses: [burning(2, 1.5)] };
+  const VITALS = { to: ['d-player1:h1'], fight: 'f1', life: { at: 'up', hp: 12 }, mana: 3, fatigue: 20, statuses: [burning(2, 1.5)] };
 
   test('the fight\'s totals are set on the hunter once, with its statuses as the fight holds them', () => {
     const p = phone({ conditions: [burning(0, 9)] });
@@ -280,7 +280,7 @@ describe('what the GM\'s fight sends a player\'s phone', () => {
 });
 
 describe('a hunter\'s life in the GM\'s fight reaches its sheet in the fight\'s totals', () => {
-  const totals = (life: Life) => ({ to: ['d-player1:h1'], life, mana: 3, fatigue: 0, statuses: [] });
+  const totals = (life: Life) => ({ to: ['d-player1:h1'], fight: 'f1', life, mana: 3, fatigue: 0, statuses: [] });
   const fresh = phone().hunter;
   /** The life facts the sheet recorded (chronicle.ts), as the Chronicle reads them. */
   const lifeFacts = (h: Hunter) => h.chronicle.inbox.flatMap(f => (f.kind === 'life' ? [{ news: f.news, how: f.how }] : []));

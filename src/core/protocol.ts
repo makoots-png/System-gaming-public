@@ -38,7 +38,7 @@ import { statusKey } from './combat/effect-ops.ts';
 import type { SheetStatus, StatusDef, StatusKey } from './combat/effect-ops.ts';
 import { parseSheetStatus, parseStatusDef } from './combat/fight-parse.ts';
 import { FORCED_FACES, LOG_LINE_MAX, MAX_STATUSES, NAME_MAX, fightId } from './combat/fight-types.ts';
-import type { Fight, ForcedFace } from './combat/fight-types.ts';
+import type { Fight, FightId, ForcedFace } from './combat/fight-types.ts';
 import { tick } from './combat/timeline.ts';
 import { FOE_LIFE_STATES } from './combat/row-life.ts';
 import type { Tick } from './combat/timeline.ts';
@@ -266,9 +266,10 @@ export type HpPayload = Base & { to: SheetKey[]; hp: number; mana: number; fatig
  * The fight's write-back of a hunter on another phone (the `sendRemote` effect of src/core/combat/fight-types.ts): its
  * life (its HP with it), mana, fatigue and statuses as the fight's row holds them. The row is the one writer of that
  * life while the fight holds the hunter, so the player's sheet takes it as it is (grant.ts `totals`): a death and the
- * GM's Revive all reach the sheet here. Totals, so a repeat changes nothing. For one hunter.
+ * GM's Revive all reach the sheet here. Totals, so a repeat changes nothing. For one hunter. `fight`: the fight that
+ * holds the row, which the player's phone keeps (fight-heard.ts `FightHeard`) until the room's fight doc answers it.
  */
-export type VitalsPayload = Base & { to: [SheetKey]; life: Life; mana: number; fatigue: number; statuses: SheetStatus[]; reason: string };
+export type VitalsPayload = Base & { to: [SheetKey]; fight: FightId; life: Life; mana: number; fatigue: number; statuses: SheetStatus[]; reason: string };
 /**
  * The GM's fight took a use of item `item` by the player's hunter of `to` (src/core/combat/fight-save.ts `itemSpent`):
  * one leaves that hunter's bag now. Sent once per use the fight took, never for one it refused, so a refused cast keeps
@@ -531,7 +532,7 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
   vitals: { gmOnly: true, ownSheet: false, standsFor: p => `vitals ${p.to[0]}`, read: o => {
     const to = toList(own(o, 'to')), total = (k: string): number => int(0, MAX_TOTAL)(own(o, k));
     return {
-      ...base(o), to: to.length === 1 ? [to[0]!] : refuse(), life: need(parseLife(own(o, 'life'), MAX_TOTAL)), mana: total('mana'), fatigue: total('fatigue'),
+      ...base(o), to: to.length === 1 ? [to[0]!] : refuse(), fight: fightId(id(own(o, 'fight'))), life: need(parseLife(own(o, 'life'), MAX_TOTAL)), mana: total('mana'), fatigue: total('fatigue'),
       statuses: listOf(own(o, 'statuses'), MAX_STATUSES, sheetStatus), reason: reason(o),
     };
   } },

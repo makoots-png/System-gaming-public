@@ -44,6 +44,8 @@ import type { store as Store } from './store.ts';
 import { bindNotice } from './store.ts';
 import { released } from '../core/hunter/noticed.ts';
 import { fightHold } from '../core/combat/fight-save.ts';
+import { fightHeard } from '../core/sync/fight-heard.ts';
+import type { TableSeen } from '../core/sync/fight-heard.ts';
 import type { Bus } from './bus.ts';
 import type { Rules } from '../core/rules.ts';
 import type { Seat } from '../core/role.ts';
@@ -534,7 +536,9 @@ export function register(app: SyncHost): void {
     const wrote = store.apply('sync-page', s => {
       const at = cursor ? linkWritten(s, cursor, before) : s;
       const landed = events ? did.page = landAll(at, at.settings.sync.held ?? [], events, deps, ev => (away.has(ev) ? awayApp : deps)) : null;
-      const next = landed ? { ...landed.save, settings: { ...landed.save.settings, sync: { ...landed.save.settings.sync, held: landed.held } } } : at;
+      // the GM's fight's last message to this phone's hunter, kept in the write that lands it (fight-heard.ts): it holds the hunter before the fight's doc does
+      const heard = landed && me ? fightHeard(landed.save.settings.sync.heard ?? null, me.room, page, deviceId()) : null;
+      const next = landed ? { ...landed.save, settings: { ...landed.save.settings, sync: { ...landed.save.settings.sync, held: landed.held, ...(heard ? { heard } : {}) } } } : at;
       if (!me) return next;
       const seen = offersSeen(next, page, me);
       did.news = seen.news;
@@ -830,8 +834,10 @@ export function register(app: SyncHost): void {
   const docAt = (name: DocName): string | null => view().docs[name]?.at ?? null;
   // a player's phone plays by the room's build switches while in it (src/edge/rules.ts); the GM's phone by its own
   bindRoom(() => (playerRoom() ? doc('rules') : null));
-  /** Whether the GM's fight holds a hunter of this player's phone (its row in the room's fight doc), for the notice step. */
-  const noticeHeld = (s: Save, hid: HunterId): boolean => fightHold(s.fight, { hid }, { seat: app.seat(), doc: doc('fight'), key: myKey(hid) }) !== null;
+  /** What this phone knows of the GM's fight, with the fight's last message as `s` keeps it (fight-heard.ts `gmHolds` reads both). */
+  const table = (s: Save): TableSeen => ({ code: room(), doc: doc('fight'), docAt: docAt('fight'), heard: s.settings.sync.heard ?? null });
+  /** Whether the GM's fight holds a hunter of this player's phone (`fightHold`), for the notice step. */
+  const noticeHeld = (s: Save, hid: HunterId): boolean => fightHold(s.fight, { hid }, { seat: app.seat(), key: myKey(hid), ...table(s) }) !== null;
   // a player's facts belong to the room's session (its world doc) and wait while the GM's fight holds the hunter (noticed.ts)
   bindNotice(() => (playerRoom() ? { session: doc('world')?.session ?? 0, held: noticeHeld, library: doc('feats')?.feats ?? {} } : null));
   /** The release write: once the room's fight doc lets a hunter with waiting facts go, they are noticed (noticed.ts `released`). */
@@ -1035,7 +1041,7 @@ export function register(app: SyncHost): void {
 
   // ── public API: the names the views use ──
   app.api.sync = { // checked against SyncApi in src/core/api.ts
-    status, conn, detail, room, event, stamp, once, remoteSheets, faces, myKey, doc, docAt, inviteLink,
+    status, conn, detail, room, event, stamp, once, remoteSheets, faces, myKey, doc, docAt, table, inviteLink,
     post: (ev, o) => (ev ? postLetter({ kind: 'event', event: ev }, o?.key ?? null) : { ok: false, why: 'notEvent' }),
     flush: (): void => { flush(); },
     publish: (name, build) => { publishers.set(name, build); },

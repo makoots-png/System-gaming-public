@@ -69,8 +69,8 @@ export const VALID: Record<EventType, [Raw, Raw]> = {
     { eid: EID, to: [KEY], hp: -7, mana: 0, fatigue: 0, reason: 'GM' },
   ],
   vitals: [
-    { eid: EID, to: [KEY], life: { at: 'up', hp: 12 }, mana: 5, fatigue: 30, statuses: [BURN] },
-    { eid: EID, to: [KEY], life: { at: 'up', hp: 12 }, mana: 5, fatigue: 30, statuses: [BURN], reason: '' },
+    { eid: EID, to: [KEY], fight: 'f12', life: { at: 'up', hp: 12 }, mana: 5, fatigue: 30, statuses: [BURN] },
+    { eid: EID, to: [KEY], fight: 'f12', life: { at: 'up', hp: 12 }, mana: 5, fatigue: 30, statuses: [BURN], reason: '' },
   ],
   spent: [
     { eid: EID, to: [KEY], item: 'i12' },

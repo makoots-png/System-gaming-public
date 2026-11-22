@@ -2050,3 +2050,25 @@ test('a solo run\'s odds and its run are played by the rules soloFight gave its 
   const other = plays.filter(line => count(line.text, /\b(oddsStep|progressOf)\s*\(/g) !== count(line.text, /,\s*made\.R\s*\)/g));
   expect(report(other), 'play a solo run by made.R, the rules soloFight gave its fight').toEqual([]);
 });
+
+// A rule that a fight forbids an act (the System's raise, a crystal's revive, a trade) held only by a view's own check
+// is past the first time two room messages arrive in the other order: on Nov 22 the System's raise window opened, and
+// Rise raised the hunter, while the GM's fight held it (public run 45072456140), because only src/views/hunter.js asked
+// `fightOf` and the step `systemRaise` did not. So the step in core refuses (`held`), with its table test, and a view
+// asks `fightOf` only to draw or to pick a route. Each file's count of calls is listed; a change that adds a call fails
+// here until the refusal is in the step and the number is raised in the same commit, naming the step's test.
+const FIGHT_ASKS: Readonly<Record<string, number>> = {
+  'src/views/quests.js': 3, 'src/views/custom.js': 1, 'src/views/coin.js': 1, 'src/views/trade.js': 1, 'src/views/effects.js': 1,
+  'src/views/hunter.js': 6, 'src/views/stories.js': 2, 'src/views/gates.js': 1, 'src/views/inventory.js': 2, 'src/views/gm.js': 3,
+};
+test('a view adds no new question of whether a fight holds a hunter: the step in core refuses, and the view only draws it', async () => {
+  const counts: Record<string, number> = {};
+  for (const line of await sourceLines('src/views')) {
+    if (isComment(line.text)) continue;
+    const n = line.text.split('fightOf(').length - 1;
+    if (n) counts[line.file] = (counts[line.file] ?? 0) + n;
+  }
+  const over = Object.entries(counts).filter(([file, n]) => n > (FIGHT_ASKS[file] ?? 0))
+    .map(([file, n]) => `${file}: ${n} calls of fightOf, ${FIGHT_ASKS[file] ?? 0} listed. If the new call allows or refuses a write, put the refusal in the core step it guards (as grant.ts systemRaise refuses 'held', tested in tests/revive-standing.test.ts) and then raise this file's number in FIGHT_ASKS.`);
+  expect(over).toEqual([]);
+});
