@@ -49,7 +49,7 @@ export const MYTHICS = {
       overwhelm: { name: 'Overwhelm', kind: 'blast', type: 'physical', reach: 'field', range: 0, hits: 1.2, sure: true, applies: null, leaves: null, self: CRESCENDO },
     },
     omens: {
-      overwhelm: { name: 'Overwhelm', full: 'overwhelm', weak: null, aim: 'all', interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: null },
+      overwhelm: { name: 'Overwhelm', full: 'overwhelm', weak: null, aim: 'all', interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: 'none' },
     },
     phases: [
       { name: 'The Fight', line: 'It fights as it always has, and its clock is running.', from: 1, ends: 'gate', clock: 14, worn: [], bar: 1, acts: 'every', rotation: [act] },
@@ -59,7 +59,7 @@ export const MYTHICS = {
 
   // "The fight should be a countdown to one note that ends it, with no way to survive the note."
   'angel-of-the-last-trumpet': mythicScript({
-    name: 'The Angel of the Last Trumpet', hp: 0.9,
+    name: 'The Angel of the Last Trumpet', hp: 0.93,
     shape: 'A countdown: every phase is short, and when a clock runs out the Final Note comes every other turn.',
     moves: {
       'stars-fall': { name: 'Stars Fall', kind: 'blast', type: 'magical', reach: 2, range: 12, hits: 0.55, sure: false,
@@ -80,13 +80,13 @@ export const MYTHICS = {
     },
     omens: {
       stars: { name: 'Stars Fall', full: 'stars-fall', weak: null, aim: 'crowd',
-        interrupt: { by: [], outcome: 'none' }, stagger: 'cancel', burst: null },
+        interrupt: { by: [], outcome: 'none' }, stagger: 'cancel', burst: 'none' },
       weighed: { name: 'Weighed and Found Wanting', full: 'weighed', weak: 'found-wanting', aim: 'threat',
-        interrupt: { by: ['hold', 'root'], outcome: 'cancel' }, stagger: 'none', burst: { share: 0.05, outcome: 'weaken' } },
+        interrupt: { by: ['hold', 'root'], outcome: 'cancel' }, stagger: 'none', burst: 'weaken' },
       breath: { name: 'The First Breath', full: 'first-breath', weak: 'half-breath', aim: 'self',
-        interrupt: { by: ['hold'], outcome: 'weaken' }, stagger: 'cancel', burst: { share: 0.06, outcome: 'weaken' } },
+        interrupt: { by: ['hold'], outcome: 'weaken' }, stagger: 'cancel', burst: 'weaken' },
       note: { name: 'The Final Note', full: 'final-note', weak: 'broken-note', aim: 'all',
-        interrupt: { by: [], outcome: 'none' }, stagger: 'weaken', burst: null },
+        interrupt: { by: [], outcome: 'none' }, stagger: 'weaken', burst: 'none' },
     },
     phases: [
       { name: 'The Trumpet Raised', line: 'It lifts the trumpet. Each phase is short: when a clock runs out, the Final Note begins.',
@@ -104,7 +104,7 @@ export const MYTHICS = {
 
   // "The hunters stand on it, so it should be able to end the fight by going under."
   'zaratan-the-island-that-wakes': mythicScript({
-    name: 'Zaratan, the Island That Wakes', hp: 0.97,
+    name: 'Zaratan, the Island That Wakes', hp: 0.92,
     shape: 'The ground: each Sinking floods tiles for the rest of the fight, and in the Dive it can only be survived.',
     moves: {
       'sinking': { name: 'Sinking of the Shore', kind: 'blast', type: 'physical', reach: 3, range: 10, hits: 0.5, sure: false,
@@ -122,13 +122,13 @@ export const MYTHICS = {
     },
     omens: {
       sinking: { name: 'Sinking of the Shore', full: 'sinking', weak: null, aim: 'crowd',
-        interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: null },
+        interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: 'none' },
       rising: { name: 'The Sea Rises', full: 'rising', weak: null, aim: 'weakest',
-        interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: null },
+        interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: 'none' },
       trench: { name: 'Breath of the Deep Trench', full: 'trench', weak: 'spray', aim: 'farthest',
-        interrupt: { by: ['hold', 'root'], outcome: 'cancel' }, stagger: 'weaken', burst: { share: 0.06, outcome: 'weaken' } },
+        interrupt: { by: ['hold', 'root'], outcome: 'cancel' }, stagger: 'weaken', burst: 'weaken' },
       under: { name: 'It Goes Under', full: 'go-under', weak: null, aim: 'all',
-        interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: null },
+        interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: 'none' },
     },
     phases: [
       { name: 'The Shore', line: 'The island stirs. Where it sinks, the sea stays.',
@@ -146,7 +146,7 @@ export const MYTHICS = {
 
   // "A hunter he names should die unless something outside the rules prevents it."
   'the-fourth-rider': mythicScript({
-    name: 'The Fourth Rider', hp: 0.89,
+    name: 'The Fourth Rider', hp: 0.82,
     shape: 'The names: he marks one hunter at a time to die, and the party saves them or loses them.',
     moves: {
       'named': { name: 'Named in the Book', kind: 'curse', type: 'magical', reach: 0, range: 24, hits: 1.1, sure: true,
@@ -165,13 +165,13 @@ export const MYTHICS = {
     },
     omens: {
       named: { name: 'Named in the Book', full: 'named', weak: 'struck', aim: 'weakest',
-        interrupt: { by: ['hold', 'root'], outcome: 'cancel' }, stagger: 'cancel', burst: { share: 0.05, outcome: 'weaken' } },
+        interrupt: { by: ['hold', 'root'], outcome: 'cancel' }, stagger: 'cancel', burst: 'weaken' },
       wake: { name: 'Pale Wake', full: 'pale-wake', weak: null, aim: 'crowd',
-        interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: null },
+        interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: 'none' },
       allEnd: { name: 'All Things End', full: 'all-end', weak: 'not-all', aim: 'all',
-        interrupt: { by: ['hold'], outcome: 'cancel' }, stagger: 'weaken', burst: { share: 0.08, outcome: 'weaken' } },
+        interrupt: { by: ['hold'], outcome: 'cancel' }, stagger: 'weaken', burst: 'weaken' },
       reaping: { name: 'The Reaping', full: 'reaping', weak: null, aim: 'all',
-        interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: null },
+        interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: 'none' },
     },
     phases: [
       { name: 'The Pale Horse', line: 'He opens the book. The one he names will die unless the party stops him.',

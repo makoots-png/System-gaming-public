@@ -466,6 +466,32 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
     }
   });
 
+  test('a secret quest and its progress reach only its hunter and the GM: Mira\'s quest, her progress and her sheet holding it reach the GM\'s poll and hers; Kai\'s, a third player\'s and an unproven poll get neither message and her sheet as a face', async () => {
+    const { code, gm, post, poll } = await tradeRoom();
+    const quest = { kind: 'side', title: 'Unmask the traitor', objectives: [{ label: 'Clues', target: 2, progress: 0 }], secret: true };
+    expect((await post('gm', 'quest', { eid: 'd-gm-q1', to: [B], quest }, gm)).body).toEqual({ seq: 4 });
+    const held = { ...quest, id: 'q4', from: 'gm', status: 'active', issuedAt: '2026-11-22T10:00:00.000Z' };
+    expect((await call('PUT', `/api/rooms/${code}/sheets/${B}`, { headers: token(OTHER), body: { from: OTHER, data: { hunter: { ...mira.data.hunter, quests: [held] } } } })).status).toBe(200);
+    const update = { eid: 'd-player2-qu1', by: B, name: 'Mira', questId: 'q4', title: 'Unmask the traitor', kind: 'side', status: 'active', objectives: [{ label: 'Clues', target: 2, progress: 1 }], secret: true };
+    expect((await post(OTHER, 'questUpdate', update)).body).toEqual({ seq: 5 });
+    for (const r of [await poll(null, gm), await poll(OTHER)]) {
+      expect(eids(r).slice(-2)).toEqual(['d-gm-q1', 'd-player2-qu1']);
+      expect(r.body.sheets[B].data.hunter.quests.map((q: any) => [q.title, q.secret])).toEqual([['Unmask the traitor', true]]);
+    }
+    for (const r of [await poll(PLAYER), await poll(THIRD), await poll(null), await poll(PLAYER, token('thief'))]) {
+      expect(eids(r)).not.toContain('d-gm-q1');
+      expect(eids(r)).not.toContain('d-player2-qu1');
+      expect(JSON.stringify(r.body)).not.toContain('Unmask the traitor');
+    }
+  });
+
+  test('a secret quest to two hunters is refused, and the room is unchanged', async () => {
+    const { gm, post, poll } = await tradeRoom();
+    const r = await post('gm', 'quest', { eid: 'd-gm-q2', to: [A, B], quest: { kind: 'side', title: 'Unmask the traitor', secret: true } }, gm);
+    expect(r).toEqual({ status: 400, body: { error: 'bad event', reason: 'payload' } });
+    expect(eids(await poll(null, gm))).toEqual(['d-gm-w1', 'd-player1-mo1', 'd-player1-mo1-e']);
+  });
+
   test('a player cannot send another\'s word nor answer one, and the room is unchanged', async () => {
     const { post, poll, gm } = await tradeRoom();
     expect((await post(OTHER, 'word', { eid: 'd-player2-wd1', by: A, name: 'Kai', text: 'Not me' })).status).toBe(403);

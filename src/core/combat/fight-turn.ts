@@ -214,28 +214,28 @@ function answered(f: Running, b: Body, a: Body, R: Rules, fx: Fx): { fight: Runn
   if (b.mythic?.at !== 'omen' && b.mythic?.at !== 'faltering') return { fight: f, row: a };
   const s = a.mythic, script = scriptOf(s), omen = script.omens[s.omen]!;
   let g = f, row: Body = a;
-  for (const m of answerMet(omen, s.hpAt, b, a)) {
+  for (const m of answerMet(omen, s, b, a, R)) {
     if (!playsScript(row) || !mythicCan(row.mythic, m.outcome)) continue;
     const next = mythicStepped<Body>(row, { type: m.outcome, how: m.how, back: answerBack(row.mythic, m.outcome, f.now, R) });
     if (isRefused(next)) continue;
     row = next;
     const weak = omen.weak === null ? null : script.moves[omen.weak]!;
     const then = m.outcome === 'cancel' || !weak ? `${omen.name} is cancelled` : `${omen.name} will land as ${weak.name}`;
-    g = logged(g, line(`${answerWords(g, b, a, omen, m)}: ${then}.`, [a.id]), R);
+    g = logged(g, line(`${answerWords(g, b, a, omen, m, R)}: ${then}.`, [a.id]), R);
     fx.push({ type: 'answered', id: a.id, how: m.how, outcome: m.outcome });
   }
   return { fight: g, row };
 }
 /** What answered an omen, read from the change and the omen: "The Fourth Rider is stunned by Brakk". */
-function answerWords(f: Running, b: Body, a: Body, omen: Omen, m: MetAnswer): string {
+function answerWords(f: Running, b: Body, a: Body, omen: Omen, m: MetAnswer, R: Rules): string {
   switch (m.how) {
     case 'interrupt': {
       const s = a.statuses.find(x => !b.statuses.some(y => y.key === x.key) && x.def.ops.some(o => (omen.interrupt.by as readonly string[]).includes(o.op)));
       const by = s?.source.id ? rowOf(f, s.source.id)?.name : undefined;
       return `${a.name} is ${(s?.def.label ?? 'held').toLowerCase()}${by && by !== a.name ? ` by ${by}` : ''}`;
     }
-    case 'stagger': return `${a.name}'s stagger bar breaks`;
-    case 'burst': return `${a.name} loses ${Math.round((omen.burst?.share ?? 0) * 100)}% of its HP`;
+    case 'stagger': return `${a.name} reels under the blows`;
+    case 'burst': return `${a.name} loses ${Math.round(R.fight.mythic.answerReach.burst * 100)}% of its HP`;
     default: return m.how satisfies never;
   }
 }
@@ -551,7 +551,8 @@ function scriptTurn(f: Running, row: Scripted<Body>, ctx: Ctx, fx: Fx): { fight:
     return { fight: isRefused(x) ? f : withRow(f, x), spent: false };
   }
   const omen = script.omens[beat.omen]!, full = script.moves[omen.full]!;
-  const x = mythicStepped<Body>(row, { type: 'announce', omen: beat.omen, aim: omenAim(omen.aim, full, row, f), hpAt: rowHp(row) });
+  const bar = row.stagger && { fill: row.stagger.fill, max: row.stagger.max };
+  const x = mythicStepped<Body>(row, { type: 'announce', omen: beat.omen, aim: omenAim(omen.aim, full, row, f), hpAt: rowHp(row), barAt: bar });
   if (isRefused(x)) return { fight: f, spent: false };
   fx.push({ type: 'omen', id: row.id, omen: beat.omen });
   const said = enraged(s, f.now, R) ? `${row.name} is enraged: it readies ${omen.name}, which lands on its next turn.` : `${row.name} readies ${omen.name}: it lands on its next turn.`;

@@ -12,6 +12,7 @@ import { WAIT_WORDS, aims, docSpots, readyIn, stepAway, stepToward, waitChoices 
 import { docBodies, docGround, myPinKey } from '../core/combat/map-view.ts';
 import { parseTold, toldAfter } from '../core/combat/table-news.ts';
 import { featsSeen } from '../core/hunter/chronicle-view.ts';
+import { SECRET_WORDS } from '../core/hunter/quest-secret.ts';
 import { hunterAbilities } from '../core/combat/rows.ts';
 import { roundOf } from '../core/combat/timeline.ts';
 import { itemOfAbility } from '../core/registry/abilities.ts';
@@ -601,7 +602,7 @@ export function register(app) {
     if (type === 'used') {
       feed.unshift({ id, type, name: p.who || 'Player', what: p.what, thing: p.name, text: p.text, by: p.by, target: p.target });
     } else if (type === 'roll') feed.unshift({ id, type, name: p.name || 'Player', label: p.label, expr: p.expr, total: p.total, crit: p.crit, fumble: p.fumble });
-    else feed.unshift({ id, type, name: p.name || 'Player', title: p.title.slice(0, 80), status: p.status, obj: p.objectives.slice(0, 5).map(o => `${o.label.slice(0, 60)} ${o.progress}/${o.target}`) });
+    else feed.unshift({ id, type, name: p.name || 'Player', title: p.title.slice(0, 80), secret: p.secret, status: p.status, obj: p.objectives.slice(0, 5).map(o => `${o.label.slice(0, 60)} ${o.progress}/${o.target}`) });
     feed = feed.slice(0, FEED_MAX); feedMemory.write(feed); markSeen(); paintFeed();
   });
 
@@ -630,7 +631,7 @@ export function register(app) {
   };
   const feedLine = f => f.type === 'feat' ? f.text : f.type === 'roll'
     ? `${f.name} · ${f.label ? `${f.label} ` : ''}${f.expr} = ${f.total}${f.crit ? ' (CRIT)' : f.fumble ? ' (FUMBLE)' : ''}`
-    : `${f.name} · Quest "${f.title}" ${f.status}${f.obj.length ? ` (${f.obj.join(', ')})` : ''}`;
+    : `${f.name} · Quest "${f.title}"${f.secret ? ` ${SECRET_WORDS.mark}` : ''} ${f.status}${f.obj.length ? ` (${f.obj.join(', ')})` : ''}`;
   // A2: under 1100 px the feed is one line with a count of rows the GM has not seen; a tap opens it. It sticks to the
   // bottom of the screen only while it is shut and has something new. At 1100 px and up it is a column, always open.
   let feedEl = null, feedSig = '', feedOpen = false;

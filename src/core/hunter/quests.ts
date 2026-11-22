@@ -96,11 +96,12 @@ export function cleanObjectives(list: unknown): Objective[] {
   }).filter(o => o.label);
 }
 /** What the quest form or the Issue to... button gives: any field may be missing or wrong. */
-export type QuestDraft = { kind?: unknown; title?: unknown; desc?: unknown; objectives?: unknown; rewards?: unknown; onFail?: unknown; dueAt?: unknown; penaltyText?: unknown; from?: unknown };
+export type QuestDraft = { kind?: unknown; title?: unknown; desc?: unknown; objectives?: unknown; rewards?: unknown; onFail?: unknown; dueAt?: unknown; penaltyText?: unknown; from?: unknown; secret?: unknown };
 /**
  * The quest a draft makes, active from `at`, with id `id`. A kind it does not know is a side quest, a source it does not
  * know is the GM's; a due time is kept only for an urgent quest or one from the GM, and only when it reads as a time.
- * A player's own quest (`self`) carries no reward, no cost and no penalty: only the GM gives those.
+ * A player's own quest (`self`) carries no reward, no cost and no penalty: only the GM gives those. Only a quest from the
+ * GM is secret, and only when the draft says `true`.
  */
 export function questOf(d: QuestDraft, id: QuestId, at: string): Quest {
   const kind: QuestKind = oneOf(d.kind, QUEST_KINDS, 'side'), from: QuestSource = oneOf(d.from, QUEST_SOURCES, 'gm');
@@ -109,7 +110,7 @@ export function questOf(d: QuestDraft, id: QuestId, at: string): Quest {
     id, kind, title: String(d.title || 'Quest').slice(0, 120), desc: String(d.desc || '').slice(0, 500), objectives: cleanObjectives(d.objectives),
     rewards: from === 'self' ? newRewards() : parseRewards(d.rewards) ?? newRewards(), ...questState('active', at), issuedAt: at, dueAt: due,
     penaltyText: from === 'self' ? '' : String(d.penaltyText || '').slice(0, 300), from,
-    onFail: from === 'self' ? newRewards() : parseRewards(d.onFail) ?? newRewards(),
+    onFail: from === 'self' ? newRewards() : parseRewards(d.onFail) ?? newRewards(), secret: from === 'gm' && d.secret === true,
   };
 }
 /**
@@ -118,7 +119,7 @@ export function questOf(d: QuestDraft, id: QuestId, at: string): Quest {
  */
 export function questOffer(d: QuestDraft, dueAt: string | null): QuestOffer {
   const q = questOf({ ...d, from: 'gm', dueAt }, saveId('q', 0), '');
-  return { kind: q.kind, title: q.title, desc: q.desc, objectives: q.objectives.map(o => ({ ...o, progress: 0 })), rewards: q.rewards, onFail: q.onFail, dueAt: q.dueAt, penaltyText: q.penaltyText };
+  return { kind: q.kind, title: q.title, desc: q.desc, objectives: q.objectives.map(o => ({ ...o, progress: 0 })), rewards: q.rewards, onFail: q.onFail, dueAt: q.dueAt, penaltyText: q.penaltyText, secret: q.secret };
 }
 
 // ── the chain and the penalty, applied ──

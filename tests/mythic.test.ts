@@ -33,12 +33,12 @@ const omenKey = (k: string): OmenKey => k as OmenKey;
 const AIM = place(3, 3);
 const calm = (script: MythicScriptId, phase: number, beat = 0, since = 0): MythicStanding => ({ at: 'calm', script, phase, beat, since: tick(since) });
 const standing = (at: MythicState, script: MythicScriptId = ANGEL, phase = 0, beat = 1, since = 100): MythicStanding =>
-  at === 'calm' ? calm(script, phase, beat, since) : { at, script, phase, beat, since: tick(since), omen: omenKey('stars'), aim: AIM, hpAt: 900 };
+  at === 'calm' ? calm(script, phase, beat, since) : { at, script, phase, beat, since: tick(since), omen: omenKey('stars'), aim: AIM, hpAt: 900, barAt: { fill: 20, max: 100 } };
 /** A mythic row of 1000 max HP at `hp` HP. */
 const row = (mythic: MythicStanding | null, hp: number, hpMax = 1000): MythicRow => ({ mythic, ...lifeAt('monster', hp), sheet: { hpMax } });
 
 const EVENT: { readonly [T in MythicEventType]: Extract<MythicEvent, { type: T }> } = {
-  next: { type: 'next', now: tick(500), by: 'gm' }, announce: { type: 'announce', omen: omenKey('weighed'), aim: combatantId('A'), hpAt: 700 },
+  next: { type: 'next', now: tick(500), by: 'gm' }, announce: { type: 'announce', omen: omenKey('weighed'), aim: combatantId('A'), hpAt: 700, barAt: { fill: 40, max: 100 } },
   beat: { type: 'beat' }, cancel: { type: 'cancel', how: 'interrupt', back: tick(30) }, weaken: { type: 'weaken', how: 'burst', back: tick(30) },
   land: { type: 'land' }, fizzle: { type: 'fizzle' }, drop: { type: 'drop' },
 };
@@ -51,7 +51,7 @@ describe('the machine', () => {
     // as begun at 130 (decision 40); a landing, a fizzle and a drop leave the clock as it was.
     const nextPhase = calm(ANGEL, 1, 0, 500), onward = calm(ANGEL, 0, 2, 100), answered = calm(ANGEL, 0, 2, 130);
     const faltering: MythicStanding = { ...standing('faltering'), since: tick(130) };
-    const announced: MythicStanding = { at: 'omen', script: ANGEL, phase: 0, beat: 1, since: tick(100), omen: omenKey('weighed'), aim: combatantId('A'), hpAt: 700 };
+    const announced: MythicStanding = { at: 'omen', script: ANGEL, phase: 0, beat: 1, since: tick(100), omen: omenKey('weighed'), aim: combatantId('A'), hpAt: 700, barAt: { fill: 40, max: 100 } };
     const EXPECTED: { readonly [S in MythicState]: { readonly [T in MythicEventType]: MythicStanding | MythicRefusal } } = {
       calm: { next: nextPhase, announce: announced, beat: onward, cancel: 'noOmen', weaken: 'noOmen', land: 'noOmen', fizzle: 'noOmen', drop: 'noOmen' },
       omen: { next: nextPhase, announce: 'omenStands', beat: 'omenStands', cancel: answered, weaken: faltering, land: onward, fizzle: onward, drop: onward },
@@ -212,27 +212,57 @@ describe('where an omen aims', () => {
 
 describe('the answers a change met', () => {
   const ANGEL_OMENS = mythicScriptOf(ANGEL).omens as Readonly<Record<string, Omen>>;
-  /** Weighed: a hold or root cancels; 5% of max HP taken weakens. The Breath: a hold weakens, its bar broken cancels. */
+  /** Weighed: a hold or root cancels; its burst weakens. The Breath: a hold weakens, its stagger answer cancels. Stars: no interrupt. */
   const WEIGHED = ANGEL_OMENS['weighed']!, BREATH = ANGEL_OMENS['breath']!, STARS = ANGEL_OMENS['stars']!;
   const STUN: StatusDef = { label: 'Stunned', desc: '', ops: [{ op: 'hold' }] };
   const stunned: Status = { key: statusKey('stunned'), def: STUN, source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0) } as Status;
-  const at = (hp: number, o: { statuses?: Status[]; bar?: number } = {}) =>
-    ({ ...lifeAt('monster', hp), sheet: { hpMax: 1000 }, statuses: o.statuses ?? [], stagger: { fill: 0, max: o.bar ?? 100, hit: 0 } }) as AnswerRow;
+  /** A bar of 100 whose same-rank hit is 10. */
+  const HIT = 10;
+  const at = (hp: number, o: { statuses?: Status[]; fill?: number; max?: number } = {}) =>
+    ({ ...lifeAt('monster', hp), sheet: { hpMax: 1000 }, statuses: o.statuses ?? [], stagger: { fill: o.fill ?? 0, max: o.max ?? 100, hit: HIT } }) as AnswerRow;
+  /** Decision 42, read from the rule: the HP of 1000 a burst answer asks after the announce, and the bar's fill a stagger answer asks. */
+  const REACH = RULES.fight.mythic.answerReach, BURST = Math.ceil(REACH.burst * 1000), STAGGER = REACH.stagger * HIT;
+  const found = (hpAt: number, fill = 0, max = 100) => ({ hpAt, barAt: { fill, max } });
 
-  test('a stun and 50 HP taken on Weighed: the cancel comes first, then the weaken', () => {
-    expect(answerMet(WEIGHED, 900, at(900), at(850, { statuses: [stunned] }))).toEqual([
+  test('a stun and the burst\'s HP taken on Weighed: the cancel comes first, then the weaken', () => {
+    expect(answerMet(WEIGHED, found(900), at(900), at(900 - BURST, { statuses: [stunned] }), RULES)).toEqual([
       { how: 'interrupt', outcome: 'cancel' }, { how: 'burst', outcome: 'weaken' },
     ]);
   });
 
-  test('49 HP is short of Weighed\'s 5%, a heal counts against it, and a stun it already had is no answer', () => {
-    expect(answerMet(WEIGHED, 900, at(900), at(851))).toEqual([]);
-    expect(answerMet(WEIGHED, 900, at(900, { statuses: [stunned] }), at(900, { statuses: [stunned] }))).toEqual([]);
-    expect(answerMet(WEIGHED, 900, at(820), at(860))).toEqual([]);
+  test('one HP short of the burst is no answer, a heal counts against it, and a stun it already had is no answer', () => {
+    expect(answerMet(WEIGHED, found(900), at(900), at(901 - BURST), RULES)).toEqual([]);
+    expect(answerMet(WEIGHED, found(900), at(900, { statuses: [stunned] }), at(900, { statuses: [stunned] }), RULES)).toEqual([]);
+    expect(answerMet(WEIGHED, found(900), at(800), at(960 - BURST), RULES)).toEqual([]);
   });
 
-  test('a bar broken on the Breath cancels it, and an answer whose outcome is none is not met', () => {
-    expect(answerMet(BREATH, 900, at(900), at(900, { bar: 150 }))).toEqual([{ how: 'stagger', outcome: 'cancel' }]);
-    expect(answerMet(STARS, 900, at(900), at(400, { statuses: [stunned] }))).toEqual([]);
+  test('at a reach of 0 any hit after the announce answers, and a change that lands nothing does not', () => {
+    // decision 42's undo, "ordinary hits answer a warning": the rule at 0
+    const ZERO = { fight: { mythic: { answerReach: { stagger: 0, burst: 0 } } } };
+    expect(answerMet(BREATH, found(900, 10), at(900, { fill: 10 }), at(899, { fill: 11 }), ZERO)).toEqual([{ how: 'stagger', outcome: 'cancel' }, { how: 'burst', outcome: 'weaken' }]);
+    expect(answerMet(BREATH, found(900, 10), at(900, { fill: 10 }), at(900, { fill: 10 }), ZERO)).toEqual([]);
+  });
+
+  test('HP lost before the announce is no burst answer: only what lands after it counts', () => {
+    // the mythic lost the burst's HP and more before the omen, and nothing since
+    expect(answerMet(WEIGHED, found(900 - 2 * BURST), at(900 - 2 * BURST), at(900 - 2 * BURST), RULES)).toEqual([]);
+  });
+
+  test('the stagger answer\'s fill landed after the announce cancels the Breath, and its outcome none on Stars is not met', () => {
+    expect(answerMet(BREATH, found(900, 0), at(900), at(900, { fill: STAGGER }), RULES)).toEqual([{ how: 'stagger', outcome: 'cancel' }]);
+    expect(answerMet(BREATH, found(900, 0), at(900), at(900, { fill: STAGGER - 1 }), RULES)).toEqual([]);
+    expect(answerMet(STARS, found(900), at(900), at(400, { statuses: [stunned] }), RULES)).toEqual([]);
+  });
+
+  test('a bar nearly full at the announce and broken by one hit after it is no stagger answer', () => {
+    // 95 of 100 at the announce: the break takes 5 of fill, and the bar is 175 after it, empty
+    expect(answerMet(BREATH, found(900, 95), at(900, { fill: 95 }), at(900, { fill: 0, max: 175 }), RULES)).toEqual([]);
+  });
+
+  test('a break counts the whole bar it emptied: the fill to the break and the fill after it', () => {
+    // half the answer's fill to the break, then the other half on the new bar of 175
+    const before = 100 - STAGGER / 2, after = STAGGER / 2;
+    expect(answerMet(BREATH, found(900, before), at(900, { fill: before }), at(900, { fill: after, max: 175 }), RULES)).toEqual([{ how: 'stagger', outcome: 'cancel' }]);
+    expect(answerMet(BREATH, found(900, before), at(900, { fill: before }), at(900, { fill: after - 1, max: 175 }), RULES)).toEqual([]);
   });
 });

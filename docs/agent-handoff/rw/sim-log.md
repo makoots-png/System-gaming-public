@@ -1869,3 +1869,115 @@ B3 and B5 stay in `OPEN` with these values. What would separate them is not a nu
 that only a chosen turn meets (MY5b tried stagger and burst out of ordinary reach, and the saving party lost more), or
 an answering party whose answers cost it less than the HP race they lose it. Both are design calls (notes-11-mythic-build.md,
 MY5 third pass).
+
+## MY5, fourth pass: an omen is answered only by a turn the party chooses (decision 42)
+
+**The rule.** A stagger or a burst answer counts only what lands after the omen's announce: `fight.mythic.answerReach`
+same-rank hits of fill on its bar (`stagger`, counted from the bar the standing keeps as `barAt`, a break counting the
+bar it emptied) or a share of its max HP (`burst`, from `hpAt`), one rule for every omen in place of each omen's burst
+share. The party's policy (`answerChoice`) saves a damaging channel while the mythic's rotation holds an omen such an
+answer meets, and releases it when that omen stands. Scripts stay off.
+
+### Step 1: what ordinary play lands in an omen's window (100 fights a party, at MY5c's rules; a window is announce to landing or answer)
+
+| | party turns p50 / p90 | its HP lost, p50 / p75 / p90 / p99 | its bar's fill as a share of the bar, p50 / p75 / p90 / p99 |
+|---|---|---|---|
+| the Angel, all / none | 3 / 5 | 0.054 / 0.073 / 0.119 / 0.170, none 0.060 / 0.074 / 0.112 / 0.178 | 0.29 / 0.48 / 0.69 / 1.51, none 0.34 / 0.50 / 0.85 / 1.59 |
+| Zaratan, all / none | 3 / 5, none 2 / 4 | 0.022 / 0.065 / 0.072 / 0.151, none 0.044 / 0.069 / 0.090 / 0.151 | 0.22 / 0.41 / 0.98 / 1.37, none 0.25 / 0.41 / 0.76 / 1.31 |
+| the Rider, all / none | 1 / 4 | 0.036 / 0.042 / 0.077 / 0.120, none 0.037 / 0.057 / 0.078 / 0.112 | 0.14 / 0.28 / 0.50 / 0.86, none 0.21 / 0.34 / 0.51 / 0.75 |
+
+The bar held about 0.45 of itself at the announce (median), so ordinary windows broke it often. The burst shares of the
+data (0.05 to 0.08) sit at the median of what ordinary play lands: half the windows met them with no choice made. Each use
+of the mixed party at its average on each body (resolve.ts, middle dice): the bruiser's strike and Mutilation 2.1 to 3.9%
+of max HP and 0.84 to 1.04 same-rank hits on the bar, the cannon's Arc Bolt 1.8 to 2.3% (0.48 to 0.94 hits; the Angel and
+the Rider resist magic), the tank's strike 1.2 to 2.2%. Mutilation is no burst: 1.04 strikes. The one use a party can
+save into a window is the cannon's Focus, a channel of 1.45 times a bolt for each turn held (6.4 at 5): 11 to 14% of
+max HP held full.
+
+### Step 2: the reach past ordinary play, the cannon saving Focus (300 fights a party, `answerReach` 4 hits and 0.13, MY5c's `hp`)
+
+The reach is set at about the 90th centile of step 1's ordinary windows: 0.13 of max HP (p90 0.08 to 0.12) and 4
+same-rank hits on the bar (a whole bar at the phase's start; ordinary windows land 1 to 2 hits at the median).
+
+| | wins | fights with no doom | median rounds | answers met a fight |
+|---|---|---|---|---|
+| the Angel, all | 0.030 | 73 | 13 | stagger 0.74, interrupt 0.29, burst 0.19 |
+| the Angel, none | 0.040 | 56 | 13.4 | stagger 0.24, burst 0.02 |
+| the Angel, all but interrupt / stagger / burst | 0.000 / 0.003 / 0.037 | 51 / 9 / 63 | 12.4 / 8.1 / 13.3 | |
+| Zaratan, all | 0.007 | 32 | 20.7 | burst 0.19, stagger 0.18, interrupt 0.08 |
+| Zaratan, none | 0.027 | 52 | 13.6 | stagger 0.01 |
+| Zaratan, all but interrupt / stagger / burst | 0.027 / 0.007 / 0.007 | | | the same answers without stagger or burst |
+| the Rider, all | 0.007 | 84 | 8.5 | interrupt 0.50, stagger 0.28, burst 0.10 |
+| the Rider, none | 0.013 | 143 | 14.2 | stagger 0.07, burst 0.02 |
+| the Rider, all but interrupt / stagger / burst | 0.003 / 0.010 / 0.007 | | 7.4 / 8.5 / 8.5 | |
+
+**The reach does what it was meant to:** the party that answers none meets a stagger or burst answer 0.03 to 0.26 times a
+fight, against 0.37 to 0.93 for the party that saves Focus. **And the saving loses the fights:** the answering party wins
+less than the one that answers none at every script, and against the Rider it is enraged in its first phase (8.5 rounds
+against 14.2). Focus pays only at a high charge (1.45 times a bolt a turn held), so a cannon that holds it from one
+omen to the next passes about every other turn, and the clocks, fitted to the party's whole damage, run out. Without
+stagger in the policy the Angel's fights end at 8.1 rounds: the cannon holds for the burst omens it rarely meets.
+
+### Step 3: is it the saving? (200 fights a party; `nosave` answers as `all` and never begins a channel to save it)
+
+| `answerTime` | | all (saving Focus) | nosave | none |
+|---|---|---|---|---|
+| 1 | the Angel | 0.035 | **0.110** | 0.055 |
+| 1 | Zaratan | 0.010 | **0.035** | 0.020 |
+| 1 | the Rider | 0.010 (7.7 rounds) | **0.065** (14.7) | 0.015 (14.2) |
+| 3 | the Angel | 0.040 | 0.110 | 0.055 |
+| 3 | Zaratan | 0.010 | 0.045 | 0.020 |
+| 3 | the Rider | 0.015 | 0.070 | 0.015 |
+
+Answers met a fight without the saving: the Angel interrupt 0.32, stagger 0.37, burst 0.02; Zaratan interrupt 0.07,
+stagger 0.03; the Rider interrupt 0.57, stagger 0.02. **With the reach out of ordinary play, a party that plays its turns
+and answers with the ones it chooses (the stun, the step out of an area, the shield, the hits aimed while an omen
+stands) wins two to four times as often as the party that answers none**, and saving Focus for the windows costs more
+than every answer it meets, at 1 or 3 rounds bought. The stagger answers the answering party still meets come in
+windows its stun lengthened (a held mythic lands later, so the party gets more turns in the window). `answerTime` 3
+moves nothing past the noise (se about 0.017): **`answerTime` stays 1 / 1**, and **the policy saves no channel** (the
+held use is the tank's stun, which only an answer spends).
+
+### Step 4: `hp` for B1, and the omens a chosen step leaves (300 fights a party, no saving)
+
+| | all | none | first falls of the losses, by phase (all) |
+|---|---|---|---|
+| the Angel, hp 0.9 | 0.090 | 0.040 | 0.30 / 0.26 / 0.44 |
+| the Angel, hp 0.95 | 0.063 | 0.020 | 0.37 / 0.29 / 0.34 |
+| the Angel, hp 0.9, its area moves' hits times 1.5 | 0.063 | 0.023 | 0.33 / 0.33 / 0.33 |
+| Zaratan, hp 0.92 | 0.107 | 0.057 | 0.22 / 0.28 / 0.49 |
+| Zaratan, hp 0.97, area hits times 1.5 | 0.013 | 0.007 | 0.38 / 0.26 / 0.36 |
+| the Rider, hp 0.89 | 0.050 | 0.013 | 0.44 / 0.46 / 0.10 |
+| the Rider, hp 0.89, area hits times 1.5 | 0.050 | 0.013 | the same |
+
+The Rider at hp 0.89 without interrupt / stagger / burst: 0.013 / 0.050 / 0.050 (0.27 / 1.00 / 1.00 of all). Its
+answering party met stagger and burst answers 0.01 times a fight.
+
+**Harder area moves do not separate the parties more than more HP does** (the Angel 0.063 against 0.023 either way):
+the party that answers none steps out of an area as rarely as the hits it takes are deadly, and the answering party
+takes the same hits when the step cannot get it out. **The interrupt separates (the Rider's B5 0.27); the stagger and
+burst answers, out of ordinary reach, are met by no turn this party chooses**, so taking them out of the policy changes
+no fight. What would meet them is a use a party can hold for a window at no cost to the clock race: this kit has none
+(Mutilation is a strike, the blast catches the melee allies beside the mythic, Focus pays only at a charge the windows
+do not leave time for).
+
+### Step 5: the rows at 600 fights (`hp` the Angel 0.9 → 0.93, Zaratan 0.97 → 0.92, the Rider 0.89 → 0.82)
+
+Zaratan at 0.94 won 0.050 and the Rider at 0.86 won 0.047 (600 fights); the values below are at the final `hp`, except
+where a cell names another.
+
+| Row (600 fights) | plain | Angel | Zaratan | Rider | Bound |
+|---|---|---|---|---|---|
+| B1 wins | 0.072 | 0.065 | 0.082 | 0.060 | 0.05 to 0.10 |
+| B2 skips, mixed / three cannons | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 |
+| B3 wins answering none | none | **0.028** | **0.042** | **0.018** | under 0.01 |
+| B4 three cannons win | **0.380** | **0.152** | **0.697** (hp 0.94) | 0.022 | at most 0.15 |
+| B5 without interrupt / stagger / burst, over B1 | none | 0.46 / **1.03** / **1.00** | **0.98** / **1.00** / **1.00** (stagger and burst at hp 0.94) | 0.31 / **1.00** / **1.00** (stagger and burst at hp 0.86) | at most 0.8 |
+| B6 won after a doom | 0.002 | 0.000 | 0.000 | 0.000 | under 0.01 |
+| B7 most / least less its floor | one phase | 0.396 / 0.164 | 0.448 / 0.145 | 0.504 / 0.024 | at most 0.6 / at least 0 |
+| B8 median rounds | 15.3 | 13.9 | 20.0 | 14.3 | 10 to 20 |
+
+B3 falls at every script (0.082 → 0.028, 0.040 → 0.042 at a lower `hp`, 0.033 → 0.018), and B5's interrupt row now
+holds for the Angel (1.04 → 0.46) and the Rider: with the stagger and burst answers out of ordinary reach, the stun is
+the answer that separates. B3, B5's stagger and burst rows and Zaratan's interrupt row stay in `OPEN` with these values;
+B4 stays open as before. Zaratan's median is at B8's edge (20.0).

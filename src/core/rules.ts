@@ -702,6 +702,16 @@ const SPEC = {
         cancel: whole(1, 0, 20, 'rounds a cancelling answer winds a phase\'s clock back: 20 is the longest clock a script may hold'),
         weaken: whole(1, 0, 20, 'rounds a weakening answer winds a phase\'s clock back: 20 is the longest clock a script may hold'),
       },
+      // Decision 42: what a stagger or a burst answer asks, counted only from the omen's announce (mythic.ts
+      // `answerMet`): `stagger` same-rank hits on its bar (its `hit`, so a bar grown by a break asks no more), `burst` a
+      // share of its max HP. Past what ordinary turns land in an omen's window (sim-log.md, MY5 fourth pass): the mixed
+      // party's three turns or so land 2 to 6% of a mythic's max HP at the median and 8 to 12% at the 90th centile, and
+      // 1 to 2 same-rank hits on its bar. At 0.13 and 4 (a whole bar of a first phase) the party that answers none meets
+      // them 0.03 to 0.26 times a fight; at the omens' old shares (0.05 to 0.08) half its windows met the burst.
+      answerReach: {
+        stagger: real(4, 0, 20, 'same-rank hits on its bar after an omen\'s announce a stagger answer asks: 0 is any hit after it, 20 is past anything a party lands in a window'),
+        burst: real(0.13, 0, 1, 'a share of its max HP lost after an omen\'s announce a burst answer asks: 0 is any hit after it, 1 is the whole of it'),
+      },
       // The bounds every script is checked against (tests/mythics.test.ts), each a least and a most.
       bounds: {
         // One phase (`plain`) to four. Row M1's fight is about 14 rounds; four phases leave each about 3, one omen
@@ -710,10 +720,6 @@ const SPEC = {
         // An omen takes a round to announce and land, so a clock under 2 rounds enrages a phase before its first omen
         // can be answered. Design B.8 bounds a mythic fight at 20 rounds: a clock past it never runs out in a fight.
         clock: each([2, 20], wholeIn(1, 40, 'rounds a phase\'s clock may hold: 0 enrages it as it begins, 40 is a played fight\'s cap (play.ts CAP_ROUNDS)')),
-        // A burst answer is dealt in the party's one turn each between the announce and the landing. Row M1's party
-        // takes a mythic's HP in about 14 rounds of 3 turns, about 2.4% a turn: under 2% one hunter's hit meets the
-        // answer by chance; past 20% (8 turns) the party's three turns never do.
-        burst: each([0.02, 0.2], realIn(0, 1, 'a share of a mythic\'s max HP an omen\'s burst answer asks: 1 is the whole of it')),
         // A move's hit in sample S hunters' max HP: 0 is a move of statuses only; past 4 a move kills every hunter
         // many times over, so a larger number says nothing more.
         hits: each([0, 4], realIn(0, 10, 'a move\'s hit in sample S hunters\' max HP: 10 is a party of three thrice over')),

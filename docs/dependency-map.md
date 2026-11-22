@@ -484,7 +484,7 @@ None.
 
 - Imports: `src/core/combat/fight-parse.ts`, `src/core/combat/fight-types.ts`, `src/core/day.ts`, `src/core/gates/personal.ts`, `src/core/hunter/chips.ts`, `src/core/hunter/chronicle.ts`, `src/core/hunter/counts.ts`, `src/core/hunter/inventory.ts`, `src/core/hunter/job-chain.ts`, `src/core/hunter/level.ts`, `src/core/hunter/penalty.ts`, `src/core/hunter/progress.ts`, `src/core/hunter/sheet.ts`, `src/core/hunter/vitals.ts`, `src/core/ids.ts`, `src/core/one-of.ts`, `src/core/registry/icons.ts`, `src/core/registry/items.ts`, `src/core/registry/monsters.ts`, `src/core/registry/powers.ts`, `src/core/repair.ts`, `src/core/rewards.ts`, `src/core/rules.ts`, `src/core/stats.ts`
 - Imports types from: `src/core/combat/effect-ops.ts`, `src/core/hunter/derive.ts`, `src/core/registry/skills.ts`
-- Imported by: `src/core/hunter/quests.ts`, `src/core/hunter/record.ts`, `src/core/hunter/sheet.ts`, `src/core/party.ts`, `src/core/protocol.ts`, `src/core/repair.ts`, `src/core/save.ts`, `src/core/told.ts`, `src/core/trade/stash.ts`
+- Imported by: `src/core/hunter/quest-secret.ts`, `src/core/hunter/quests.ts`, `src/core/hunter/record.ts`, `src/core/hunter/sheet.ts`, `src/core/party.ts`, `src/core/protocol.ts`, `src/core/repair.ts`, `src/core/save.ts`, `src/core/told.ts`, `src/core/trade/stash.ts`
 
 ### `src/core/hunter/identity.ts`
 
@@ -550,6 +550,11 @@ None.
 - Imports: `src/core/registry/jobs.ts`
 - Imports types from: `src/core/hunter/job-chain.ts`, `src/core/role.ts`, `src/core/save.ts`
 - Imported by: `src/core/hunter/grant.ts`, `src/core/hunter/noticed.ts`, `src/core/hunter/quests.ts`, `src/core/story/story.ts`, `src/views/quest-fields.js`, `src/views/quests.js`
+
+### `src/core/hunter/quest-secret.ts`
+
+- Imports types from: `src/core/hunter/hunter.ts`
+- Imported by: `src/core/protocol.ts`, `src/core/session-log.ts`, `src/edge/room-events.ts`, `src/views/gm.js`, `src/views/quests.js`, `src/views/table.js`
 
 ### `src/core/hunter/quests.ts`
 
@@ -646,7 +651,7 @@ None.
 
 ### `src/core/protocol.ts`
 
-- Imports: `src/core/coin.ts`, `src/core/combat/ability-types.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/fight-doc.ts`, `src/core/combat/fight-parse.ts`, `src/core/combat/fight-types.ts`, `src/core/combat/mythic.ts`, `src/core/combat/odds.ts`, `src/core/combat/play.ts`, `src/core/combat/row-life.ts`, `src/core/combat/space.ts`, `src/core/combat/timeline.ts`, `src/core/combat/zones.ts`, `src/core/gates/gate.ts`, `src/core/hunter/chips.ts`, `src/core/hunter/counts.ts`, `src/core/hunter/facts.ts`, `src/core/hunter/feats.ts`, `src/core/hunter/hunter.ts`, `src/core/hunter/level.ts`, `src/core/hunter/vitals.ts`, `src/core/ids.ts`, `src/core/one-of.ts`, `src/core/registry/icons.ts`, `src/core/registry/items.ts`, `src/core/registry/jobs.ts`, `src/core/registry/monsters.ts`, `src/core/registry/mythics.ts`, `src/core/rewards.ts`, `src/core/rules.ts`, `src/core/sync/asked.ts`, `src/core/table-weight.ts`, `src/core/trade/goods.ts`
+- Imports: `src/core/coin.ts`, `src/core/combat/ability-types.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/fight-doc.ts`, `src/core/combat/fight-parse.ts`, `src/core/combat/fight-types.ts`, `src/core/combat/mythic.ts`, `src/core/combat/odds.ts`, `src/core/combat/play.ts`, `src/core/combat/row-life.ts`, `src/core/combat/space.ts`, `src/core/combat/timeline.ts`, `src/core/combat/zones.ts`, `src/core/gates/gate.ts`, `src/core/hunter/chips.ts`, `src/core/hunter/counts.ts`, `src/core/hunter/facts.ts`, `src/core/hunter/feats.ts`, `src/core/hunter/hunter.ts`, `src/core/hunter/level.ts`, `src/core/hunter/quest-secret.ts`, `src/core/hunter/vitals.ts`, `src/core/ids.ts`, `src/core/one-of.ts`, `src/core/registry/icons.ts`, `src/core/registry/items.ts`, `src/core/registry/jobs.ts`, `src/core/registry/monsters.ts`, `src/core/registry/mythics.ts`, `src/core/rewards.ts`, `src/core/rules.ts`, `src/core/sync/asked.ts`, `src/core/table-weight.ts`, `src/core/trade/goods.ts`
 - Imports types from: `src/core/hunter/shadows.ts`, `src/core/role.ts`, `src/core/save.ts`, `src/core/story/story.ts`
 - Imported by: `server.ts`, `src/core/api.ts`, `src/core/applied.ts`, `src/core/award.ts`, `src/core/bestiary.ts`, `src/core/combat/fight-save.ts`, `src/core/events.ts`, `src/core/gates/pay.ts`, `src/core/gates/solo.ts`, `src/core/gates/world.ts`, `src/core/hunter/build.ts`, `src/core/hunter/grant.ts`, `src/core/hunter/quests.ts`, `src/core/room-server.ts`, `src/core/save.ts`, `src/core/session-log.ts`, `src/core/story/run.ts`, `src/core/story/story.ts`, `src/core/sync/invite.ts`, `src/core/sync/link.ts`, `src/core/sync/outbox.ts`, `src/core/sync/word.ts`, `src/core/trade/offer.ts`, `src/core/trade/stash.ts`, `src/core/use-told.ts`, `src/edge/room-events.ts`, `src/edge/rules.ts`, `src/edge/sync.ts`, `src/views/combat.js`, `src/views/feats.js`, `src/views/gates.js`, `src/views/gm.js`, `src/views/uses.js`, `src/views/words.js`, `src/views/workshop.js`
 
@@ -841,7 +846,7 @@ None.
 
 ### `src/core/session-log.ts`
 
-- Imports: `src/core/hunter/chronicle.ts`, `src/core/ids.ts`
+- Imports: `src/core/hunter/chronicle.ts`, `src/core/hunter/quest-secret.ts`, `src/core/ids.ts`
 - Imports types from: `src/core/protocol.ts`, `src/core/save-step.ts`, `src/core/save.ts`
 - Imported by: `src/core/award.ts`, `src/core/coin.ts`, `src/core/combat/fight-save.ts`, `src/core/gates/solo.ts`, `src/core/gates/world.ts`, `src/core/hunter/grant.ts`, `src/core/hunter/quests.ts`, `src/core/hunter/shadows.ts`, `src/core/starter.ts`, `src/core/story/run.ts`, `src/core/sync/word.ts`, `src/core/trade/stash.ts`, `src/core/use-told.ts`, `src/edge/room-events.ts`, `src/edge/sync.ts`, `src/views/dice.js`, `src/views/hunter.js`, `src/views/quests.js`, `src/views/uses.js`
 
@@ -1055,7 +1060,7 @@ None.
 
 ### `src/edge/room-events.ts`
 
-- Imports: `src/core/applied.ts`, `src/core/combat/effect-ops.ts`, `src/core/gates/solo.ts`, `src/core/hunter/chronicle.ts`, `src/core/hunter/grant.ts`, `src/core/hunter/quests.ts`, `src/core/hunter/shadows.ts`, `src/core/hunter/use.ts`, `src/core/hunter/vitals.ts`, `src/core/protocol.ts`, `src/core/rewards.ts`, `src/core/save-step.ts`, `src/core/session-log.ts`, `src/core/story/story.ts`, `src/core/sync/asked.ts`, `src/core/sync/word.ts`, `src/core/table-weight.ts`, `src/core/trade/stash.ts`
+- Imports: `src/core/applied.ts`, `src/core/combat/effect-ops.ts`, `src/core/gates/solo.ts`, `src/core/hunter/chronicle.ts`, `src/core/hunter/grant.ts`, `src/core/hunter/quest-secret.ts`, `src/core/hunter/quests.ts`, `src/core/hunter/shadows.ts`, `src/core/hunter/use.ts`, `src/core/hunter/vitals.ts`, `src/core/protocol.ts`, `src/core/rewards.ts`, `src/core/save-step.ts`, `src/core/session-log.ts`, `src/core/story/story.ts`, `src/core/sync/asked.ts`, `src/core/sync/word.ts`, `src/core/table-weight.ts`, `src/core/trade/stash.ts`
 - Imports types from: `src/core/api.ts`, `src/core/coin.ts`, `src/core/day.ts`, `src/core/hunter/job-chain.ts`, `src/core/save.ts`, `src/edge/store.ts`
 - Imported by: `src/edge/sync.ts`
 
@@ -1215,7 +1220,7 @@ None.
 
 ### `src/views/gm.js`
 
-- Imports: `src/core/award.ts`, `src/core/combat/fight-save.ts`, `src/core/day.ts`, `src/core/effects.ts`, `src/core/gates/gate.ts`, `src/core/gates/pay.ts`, `src/core/hunter/chips.ts`, `src/core/hunter/chronicle-view.ts`, `src/core/hunter/grant.ts`, `src/core/hunter/quests.ts`, `src/core/hunter/vitals.ts`, `src/core/ids.ts`, `src/core/one-of.ts`, `src/core/party.ts`, `src/core/protocol.ts`, `src/core/registry/bundles.ts`, `src/core/rewards.ts`, `src/core/rules.ts`, `src/core/save-step.ts`, `src/core/save.ts`, `src/core/story/run.ts`, `src/core/sync/connection.ts`, `src/core/sync/taps.ts`, `src/core/sync/word.ts`, `src/core/table-weight.ts`, `src/edge/notify.ts`, `src/edge/roll.ts`, `src/edge/rules.ts`, `src/views/give-shelf.js`, `src/views/motion.ts`, `src/views/reward-editor.js`, `src/views/rulesref.js`
+- Imports: `src/core/award.ts`, `src/core/combat/fight-save.ts`, `src/core/day.ts`, `src/core/effects.ts`, `src/core/gates/gate.ts`, `src/core/gates/pay.ts`, `src/core/hunter/chips.ts`, `src/core/hunter/chronicle-view.ts`, `src/core/hunter/grant.ts`, `src/core/hunter/quest-secret.ts`, `src/core/hunter/quests.ts`, `src/core/hunter/vitals.ts`, `src/core/ids.ts`, `src/core/one-of.ts`, `src/core/party.ts`, `src/core/protocol.ts`, `src/core/registry/bundles.ts`, `src/core/rewards.ts`, `src/core/rules.ts`, `src/core/save-step.ts`, `src/core/save.ts`, `src/core/story/run.ts`, `src/core/sync/connection.ts`, `src/core/sync/taps.ts`, `src/core/sync/word.ts`, `src/core/table-weight.ts`, `src/edge/notify.ts`, `src/edge/roll.ts`, `src/edge/rules.ts`, `src/views/give-shelf.js`, `src/views/motion.ts`, `src/views/reward-editor.js`, `src/views/rulesref.js`
 - Imported by: `src/app.js`
 - Provides: `app.api.award`: `open`
 - Uses: `app.api.bestiary` (make) from `src/views/bestiary.js`; `app.api.build` (gmMenu, label) from `src/views/custom.js`; `app.api.bundles` (list) from `src/views/hunter.js`; `app.api.chronicle` (open) from `src/views/chronicle.js`; `app.api.combat` (adjust, revive, status) from `src/views/combat.js`; `app.api.forge` (status) from `src/views/forge.js`; `app.api.gates` (advanceDay, spawn, startSession) from `src/views/gates.js`; `app.api.hunter` (amountFromKey, amountMsg, damage, fightOf, grantWrite, granted, heal, parseAmount, revive, sheet) from `src/views/hunter.js`; `app.api.identity` (badge) from `src/views/custom.js`; `app.api.inventory` (rollLoot) from `src/views/inventory.js`; `app.api.loot` (item) from `src/views/loot.js`; `app.api.maker` (rewards) from `src/views/maker.js`; `app.api.quests` (fields, issue) from `src/views/quests.js`; `app.api.skills` (make) from `src/views/skills.js`; `app.api.stories` (paint) from `src/views/stories.js`; `app.api.sync` (conn, create, event, flush, gmRooms, lastRoom, post, rejoinGM, remoteSheets, room, roster, status) from `src/edge/sync.ts`; `app.api.trade` (paint) from `src/views/trade.js`; `app.api.words` (paint, seen, unseen) from `src/views/words.js`
@@ -1322,7 +1327,7 @@ None.
 
 ### `src/views/quests.js`
 
-- Imports: `src/core/award.ts`, `src/core/day.ts`, `src/core/hunter/grant.ts`, `src/core/hunter/job-chain.ts`, `src/core/hunter/penalty.ts`, `src/core/hunter/quest-form.ts`, `src/core/hunter/quest-rights.ts`, `src/core/hunter/quests.ts`, `src/core/party.ts`, `src/core/registry/jobs.ts`, `src/core/rewards.ts`, `src/core/save-step.ts`, `src/core/session-log.ts`, `src/core/sync/connection.ts`, `src/edge/rules.ts`, `src/views/motion.ts`, `src/views/quest-fields.js`
+- Imports: `src/core/award.ts`, `src/core/day.ts`, `src/core/hunter/grant.ts`, `src/core/hunter/job-chain.ts`, `src/core/hunter/penalty.ts`, `src/core/hunter/quest-form.ts`, `src/core/hunter/quest-rights.ts`, `src/core/hunter/quest-secret.ts`, `src/core/hunter/quests.ts`, `src/core/party.ts`, `src/core/registry/jobs.ts`, `src/core/rewards.ts`, `src/core/save-step.ts`, `src/core/session-log.ts`, `src/core/sync/connection.ts`, `src/edge/rules.ts`, `src/views/motion.ts`, `src/views/quest-fields.js`
 - Imported by: `src/app.js`
 - Provides: `app.api.quests`: `complete`, `fields`, `issue`, `issueJobChain`, `stepsDone`
 - Uses: `app.api.gates` (tick) from `src/views/gates.js`; `app.api.hunter` (fightOf, grantWrite, granted) from `src/views/hunter.js`; `app.api.sync` (conn, event, flush, myKey, once, post, remoteSheets, room) from `src/edge/sync.ts`
@@ -1394,7 +1399,7 @@ None.
 
 ### `src/views/table.js`
 
-- Imports: `src/core/combat/fight-view.ts`, `src/core/combat/map-view.ts`, `src/core/combat/refusal-words.ts`, `src/core/combat/row-hp.ts`, `src/core/combat/row-life.ts`, `src/core/combat/rows.ts`, `src/core/combat/table-news.ts`, `src/core/combat/timeline.ts`, `src/core/hunter/chronicle-view.ts`, `src/core/hunter/vitals.ts`, `src/core/registry/abilities.ts`, `src/core/registry/icon-defaults.ts`, `src/views/icons.ts`, `src/views/motion.ts`, `src/views/patch.ts`
+- Imports: `src/core/combat/fight-view.ts`, `src/core/combat/map-view.ts`, `src/core/combat/refusal-words.ts`, `src/core/combat/row-hp.ts`, `src/core/combat/row-life.ts`, `src/core/combat/rows.ts`, `src/core/combat/table-news.ts`, `src/core/combat/timeline.ts`, `src/core/hunter/chronicle-view.ts`, `src/core/hunter/quest-secret.ts`, `src/core/hunter/vitals.ts`, `src/core/registry/abilities.ts`, `src/core/registry/icon-defaults.ts`, `src/views/icons.ts`, `src/views/motion.ts`, `src/views/patch.ts`
 - Imported by: `src/app.js`
 - Uses: `app.api.combat` (isActive) from `src/views/combat.js`; `app.api.detail` (control, panel, wire) from `src/views/detail.js`; `app.api.dice` (roll) from `src/views/dice.js`; `app.api.effects` (statusDef) from `src/views/effects.js`; `app.api.hunter` (amountFromKey, amountMsg, damage, heal, parseAmount, sheet) from `src/views/hunter.js`; `app.api.inventory` (use) from `src/views/inventory.js`; `app.api.map` (mount) from `src/views/map.js`; `app.api.sync` (doc, event, myKey, post, remoteSheets) from `src/edge/sync.ts`; `app.api.uses` (cast, command, hold) from `src/views/uses.js`
 - Emits: `combat:turn` (heard by `src/views/custom.js`)

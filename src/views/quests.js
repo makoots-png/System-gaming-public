@@ -3,6 +3,7 @@ import { dueAt as dueIn, nextReset } from '../edge/rules.ts';
 import { canDeleteQuest } from '../core/hunter/penalty.ts';
 import { CHAIN_WORDS, canReissue } from '../core/hunter/job-chain.ts';
 import { COMPLETER, completerOf, mayChangeQuest, reportsProgress, systemCounts } from '../core/hunter/quest-rights.ts';
+import { SECRET_WORDS } from '../core/hunter/quest-secret.ts';
 import { pickables, pickedRef } from '../core/party.ts';
 import { JOB_NAMES, isJobName } from '../core/registry/jobs.ts';
 import { newRewards, rewardLines as linesOf } from '../core/rewards.ts';
@@ -43,6 +44,8 @@ const STYLE = `
 .qk.k-urgent{color:var(--gold);border-color:rgba(255,201,77,.6)}
 .qk.k-job{color:#c79bff;border-color:rgba(199,155,255,.6)}
 .qk.k-main{color:#fff;border-color:#9fb6c9}
+.qk.qs{color:#c79bff;border-style:dashed;border-color:rgba(199,155,255,.6)}
+.qc-secret{margin:0;font-size:13px;color:#c79bff;overflow-wrap:anywhere}
 .qc-st{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
 .qc-desc{margin:0;color:var(--muted);font-size:14px;overflow-wrap:anywhere}
 .qo{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 8px;align-items:center}
@@ -83,6 +86,7 @@ const STYLE = `
 .pq li.done{border-color:rgba(89,230,168,.35)}
 .pq li.failed{border-color:rgba(255,77,94,.4)}
 .pq .who{color:var(--cyan)}
+.pq .sec{color:#c79bff}
 .pq .st{font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
 @media (pointer:coarse),(max-width:720px){.qf .chk{min-height:44px}}
 `;
@@ -182,7 +186,7 @@ export function register(app) {
     const h = store.hunter(hid), S = app.api.sync; if (!h) return null;
     // the room's reader (protocol.ts) cuts each field to its bound: the view sends the quest as it is
     const event = S.event('questUpdate', { by: S.myKey(hid), name: h.name, questId: q.id, title: q.title, kind: q.kind, status,
-      objectives: q.objectives.map(o => ({ label: o.label, progress: o.progress, target: o.target })) });
+      objectives: q.objectives.map(o => ({ label: o.label, progress: o.progress, target: o.target })), secret: q.secret });
     return event ? { key: `quest ${hid} ${q.id}`, event } : null;
   }
   /**
@@ -357,7 +361,8 @@ export function register(app) {
     const id = esc(q.id), blocks = q.from === 'gm', lock = !mayChange(q), counted = systemCounts(q, h.jobChain);
     const del = !lock && canDeleteQuest(h.penalty, q.id, role());
     return `<li class="qc kind-${esc(q.kind)} ${esc(q.status)}${q.status === 'done' ? ' done' : ''}" data-qid="${id}" data-st="${esc(q.status)}">
-      <div class="qc-head"><span class="qk k-${esc(q.kind)}">${esc(KIND_LABEL[q.kind] || q.kind)}</span><h3 class="qc-title">${esc(q.title)}</h3>${st ? `<span class="qc-st">${st}</span>` : ''}</div>
+      <div class="qc-head"><span class="qk k-${esc(q.kind)}">${esc(KIND_LABEL[q.kind] || q.kind)}</span>${q.secret ? `<span class="qk qs" data-secret>${esc(SECRET_WORDS.chip)}</span>` : ''}<h3 class="qc-title">${esc(q.title)}</h3>${st ? `<span class="qc-st">${st}</span>` : ''}</div>
+      ${q.secret ? `<p class="qc-secret">${esc(SECRET_WORDS.line)}</p>` : ''}
       ${blocks ? `${q.desc ? `<div class="qb"><h4>Goal</h4><p>${esc(q.desc)}</p></div>` : ''}
         ${q.objectives.length ? `<div class="qb"><h4>Objectives</h4>${q.objectives.map((o, i) => objHtml(q, i, o, counted)).join('')}</div>` : ''}
         ${due}${rw.length ? `<div class="qb"><h4>Reward</h4><div class="qr" aria-label="Rewards">${rw.map(r => `<span>${esc(r)}</span>`).join('')}</div></div>` : ''}
@@ -502,7 +507,7 @@ export function register(app) {
       for (const q of [...qs.filter(q => q.status === 'active'), ...fin]) {
         const os = q.objectives;
         const st = q.status === 'done' ? 'done' : q.status === 'failed' ? 'failed' : 'active';
-        rows.push(`<li class="${st}"><span><span class="who">${esc(r.name)}</span> · ${esc(q.title.slice(0, 120))}</span><span class="st">${st === 'done' ? 'Done' : st === 'failed' ? 'Failed' : os.length ? esc(objectivesSum(os)) : 'Active'}</span></li>`);
+        rows.push(`<li class="${st}"><span><span class="who">${esc(r.name)}</span> · ${esc(q.title.slice(0, 120))}${q.secret ? ` <span class="sec">${esc(SECRET_WORDS.mark)}</span>` : ''}</span><span class="st">${st === 'done' ? 'Done' : st === 'failed' ? 'Failed' : os.length ? esc(objectivesSum(os)) : 'Active'}</span></li>`);
       }
       // a player's failed Job Change: the GM reissues or abandons it with the `chain` message
       const c = sh && sh.data.jobChain;

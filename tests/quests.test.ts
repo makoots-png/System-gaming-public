@@ -148,6 +148,22 @@ describe('a quest from a form', () => {
     expect(questOf({ kind: 'side', from: 'self', dueAt: '2026-11-15T10:00:00Z' }, qid('q1'), AT).dueAt).toBeNull();
     expect(questOf({ kind: 'side', from: 'gm', dueAt: 'soon' }, qid('q1'), AT).dueAt).toBeNull();
   });
+  test('a quest is secret only when the GM gave it and the draft says true: a player\'s own or the System\'s never is', () => {
+    expect(questOf({ from: 'gm', secret: true }, qid('q1'), AT).secret).toBe(true);
+    expect(questOf({ from: 'gm' }, qid('q1'), AT).secret).toBe(false);
+    expect(questOf({ from: 'gm', secret: 'yes' }, qid('q1'), AT).secret).toBe(false);
+    expect(questOf({ from: 'self', secret: true }, qid('q1'), AT).secret).toBe(false);
+    expect(questOf({ from: 'system', secret: true }, qid('q1'), AT).secret).toBe(false);
+  });
+  test('a secret quest stays secret through the room\'s offer, its landing on the player\'s phone, an edit and its end', () => {
+    const offer = questOffer({ title: 'The traitor', secret: true }, null);
+    expect(offer.secret).toBe(true);
+    const landed = issueQuest(hunterWith(), { ...offer, from: 'gm' }, qid('q5'), AT).hunter.quests[0]!;
+    expect(landed.secret).toBe(true);
+    const h = hunterWith(landed), edit = { kind: landed.kind, title: 'Renamed', desc: '', objectives: [], rewards: landed.rewards, onFail: landed.onFail, dueAt: null, penaltyText: '' };
+    expect(ok(editQuest(h, 'q5', edit, 'gm')).quests[0]!.secret).toBe(true);
+    expect(ok(questStep(landed, 'complete', AT)).secret).toBe(true);
+  });
   test('objectives: no label dropped, a target from 1 to 99999, progress at most the target', () => {
     expect(cleanObjectives([{ label: 'A', target: 0, progress: 5 }, { label: '', target: 3 }, { label: 'B', target: 1e9, progress: -2 }]))
       .toEqual([{ label: 'A', target: 1, progress: 1 }, { label: 'B', target: 99999, progress: 0 }]);
@@ -476,6 +492,17 @@ describe('a quest that counts by itself, and what failing costs (feature 1\'s no
     expect(e.event.type).toBe('questUpdate');
     expect(e.event.payload).toMatchObject({ status: 'failed', questId: 'q7', objectives: [{ label: 'Goblins', progress: 1, target: 3 }] });
     expect(questEnded(s, hid('h1'), failed, { at: AT, room }).settings.sync.outbox, 'posted again it replaces itself').toHaveLength(1);
+  });
+  test('the end of a secret quest is posted secret, so the room seals it to the GM; an open quest\'s end is not', () => {
+    const room = parseRoomCode('ABC234')!;
+    const secretOf = (secret: boolean): unknown => {
+      const failed = ok(questStep({ ...questIn('active'), id: qid('q7'), from: 'gm', secret }, 'fail', AT));
+      if (failed.status === 'active') throw new Error('not ended');
+      const letter = (questEnded(saveWith(failed), hid('h1'), failed, { at: AT, room }).settings.sync.outbox ?? [])[0]!.letter as { kind: 'event'; event: { payload: { secret: unknown } } };
+      return letter.event.payload.secret;
+    };
+    expect(secretOf(true)).toBe(true);
+    expect(secretOf(false)).toBe(false);
   });
   test('the count and the cost survive the save\'s repair and the room\'s quest message; a count that does not read leaves a row moved by taps', () => {
     const q = counted({ onFail: { ...newRewards(), xp: -20 } });

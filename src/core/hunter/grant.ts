@@ -315,7 +315,7 @@ export function questEnded(save: Save, hid: HunterId, q: Quest & { status: 'done
   if (!h) return save;
   const event = newEvent('questUpdate', {
     by: sheetKeyOf(device, hid), name: h.name, questId: q.id, title: q.title, kind: q.kind, status: q.status,
-    objectives: q.objectives.map(o => ({ label: o.label, progress: o.progress, target: o.target })),
+    objectives: q.objectives.map(o => ({ label: o.label, progress: o.progress, target: o.target })), secret: q.secret,
   }, { device, now: Date.parse(o.at), rand: idShare(q.id) });
   return event ? atOutbox(box => post(box, o.room, { kind: 'event', event }, `quest ${hid} ${q.id}`).box)(save) : save;
 }

@@ -2525,14 +2525,10 @@ describe('a mythic plays its script (notes-11-keystones.md, design B.3 and B.4)'
   const PLATE = st('plate', null, { op: 'sheet', key: 'armor', amount: { kind: 'number', value: 5000 } }, { op: 'sheet', key: 'resist', amount: { kind: 'number', value: 5000 } });
   const sure = (name: string, text: string | null, o: Partial<Ability> = {}) => ability('strike', name, text, { ...FAR, delivery: { kind: 'sure' }, ...o });
   const KILL = sure('kill', '99999');
-  /** A hit of 300 before armor: more than the Angel's Note bar holds, and less than the HP it holds then. */
-  const HEAVY = sure('heavy', '300');
-  /** A hit of 150 before armor: over 5% of the Fourth Rider's max HP, under what its stagger bar holds. */
-  const BURST = sure('burst', '150');
   const STUN = sure('stun', null, { effect: null, ops: [{ op: 'applyStatus', key: statusKey('stunned'), def: { label: 'Stunned', desc: '', ops: [{ op: 'hold' }] }, duration: tick(800) }] });
   const TAUNT = sure('taunt', null, { effect: null, ops: [{ op: 'applyStatus', key: statusKey('taunted'), def: { label: 'Taunted', desc: '', ops: [{ op: 'taunt' }] }, duration: tick(3000) }] });
   /** A hunter of the party at `at`, plated, quick enough to act between a mythic's turns. */
-  const hunter = (name: string, at: Place, o: RowPatch<NewRow> = {}) => row(name, 'party', { place: at, statuses: [PLATE, haste(100)], abilities: [HIT, KILL, HEAVY, BURST, STUN, TAUNT], ...o });
+  const hunter = (name: string, at: Place, o: RowPatch<NewRow> = {}) => row(name, 'party', { place: at, statuses: [PLATE, haste(100)], abilities: [HIT, KILL, STUN, TAUNT], ...o });
 
   function go(fight: Fight | null, ...commands: Command[]): { fight: Fight | null; effects: Effect[] } {
     let at = fight;
@@ -2634,32 +2630,57 @@ describe('a mythic plays its script (notes-11-keystones.md, design B.3 and B.4)'
     expect(standing(go(due, landing(due)).fight).since).toBe(before);
   });
 
-  test('a broken stagger bar weakens an omen whose stagger weakens', () => {
-    const f0 = running(go(begun(mythic('angel-of-the-last-trumpet', place(5, 5)), hunter('A', place(8, 5))), gm('next'), gm('next')));
-    const told = until(f0, omenUp);
-    expect(standing(told.fight)).toMatchObject({ omen: 'note' });
-    const f1 = until(told.fight, turnOf('A')).fight, bar = body(f1, 'X').stagger!, hp = rowHp(body(f1, 'X'));
-    const r = go(f1, hit('A', 'X', HEAVY));
-    expect(hp - rowHp(body(r.fight, 'X')), 'the hit was more than its bar holds').toBeGreaterThan(bar.max - bar.fill);
-    expect(r.effects).toContainEqual({ type: 'staggered', id: id('X') });
-    expect(standing(r.fight).at).toBe('faltering');
-    expect(r.effects).toContainEqual({ type: 'answered', id: id('X'), how: 'stagger', outcome: 'weaken' });
-    expect(logs(r.fight)).toContain('The Angel of the Last Trumpet\'s stagger bar breaks: The Final Note will land as The Broken Note.');
-    expect(omenMove(body(r.fight, 'X'), ON)!.ability.id).toBe(abilityId('mythic-broken-note'));
+  /** A sure hit by A whose damage after X's armor in fight `f` is at least `dealt` (land.ts `afterDefence`), and the hit one point under it. */
+  function sized(name: string, dealt: number, f: Running): { readonly hit: Ability; readonly short: Ability } {
+    const a = body(f, 'A').sheet, x = body(f, 'X').sheet;
+    let lo = 1, hi = 1_000_000;
+    while (lo < hi) { const mid = Math.floor((lo + hi) / 2); if (afterDefence(mid, 'physical', a, x, ON) >= dealt) hi = mid; else lo = mid + 1; }
+    return { hit: sure(name, String(lo)), short: sure(`${name}-short`, String(lo - 1)) };
+  }
+
+  // Decision 42: the First Breath's stagger answer cancels it, and asks `answerReach.stagger` same-rank hits of fill on
+  // its bar after the announce. The phase begins with its bar empty.
+  test('the stagger answer counts the fill landed on its bar after the announce, not a bar filled before it', () => {
+    const angel = () => running(go(begun(mythic('angel-of-the-last-trumpet', place(5, 5)), hunter('A', place(8, 5), { abilities: [HIT, ...hits] })), gm('next')));
+    let hits: Ability[] = [];
+    const probe = angel(), bar = body(probe, 'X').stagger!, need = RULES.fight.mythic.answerReach.stagger * bar.hit;
+    expect(need, 'the answer fits in the Breath\'s bar, and is more than one hit').toBeLessThan(bar.max);
+    expect(need).toBeGreaterThan(2 * bar.hit);
+    const answer = sized('answer', need, probe), fill = sized('fill', bar.max - bar.hit, probe), one = sized('one', bar.hit, probe);
+    hits = [answer.hit, answer.short, fill.hit, one.hit];
+
+    const empty = until(angel(), omenUp);
+    expect(standing(empty.fight)).toMatchObject({ omen: 'breath', barAt: { fill: 0 } });
+    const f1 = until(empty.fight, turnOf('A')).fight;
+    const short = go(f1, hit('A', 'X', answer.short));
+    expect(short.effects.some(e => e.type === 'answered' && e.how === 'stagger'), 'one point short of the answer').toBe(false);
+    const r = go(f1, hit('A', 'X', answer.hit));
+    expect(standing(r.fight).at).toBe('calm');
+    expect(r.effects).toContainEqual({ type: 'answered', id: id('X'), how: 'stagger', outcome: 'cancel' });
+    expect(logs(r.fight)).toContain('The Angel of the Last Trumpet reels under the blows: The First Breath is cancelled.');
+
+    const f0 = until(angel(), turnOf('A')).fight;
+    expect(standing(f0), 'A acts before its first beat in the Breath').toMatchObject({ at: 'calm', beat: 0 });
+    const told = until(running(go(f0, hit('A', 'X', fill.hit))), omenUp);
+    const f2 = until(told.fight, turnOf('A')).fight, broke = go(f2, hit('A', 'X', one.hit));
+    expect(broke.effects, 'one hit breaks the bar filled before the omen').toContainEqual({ type: 'staggered', id: id('X') });
+    expect(broke.effects.some(e => e.type === 'answered'), 'and answers nothing').toBe(false);
+    expect(standing(broke.fight).at).toBe('omen');
   });
 
-  test('enough damage weakens an omen', () => {
-    const told = until(begun(mythic('the-fourth-rider', place(5, 5)), hunter('A', place(8, 5))), omenUp);
-    const f1 = until(told.fight, turnOf('A')).fight, x = body(f1, 'X');
-    const small = go(f1, hit('A', 'X'));
-    expect(x.sheet.hpMax * 0.05, 'a hit under 5% of its max HP').toBeGreaterThan(rowHp(x) - rowHp(body(small.fight, 'X')));
-    expect(standing(small.fight).at).toBe('omen');
-    const r = go(f1, hit('A', 'X', BURST));
-    expect(rowHp(x) - rowHp(body(r.fight, 'X'))).toBeGreaterThanOrEqual(x.sheet.hpMax * 0.05);
-    expect(r.effects.some(e => e.type === 'staggered'), 'the hit left its bar whole').toBe(false);
+  test('the burst answer weakens an omen once the HP lost since the announce reaches the rule\'s share', () => {
+    const rider = () => begun(mythic('the-fourth-rider', place(5, 5)), hunter('A', place(8, 5), { abilities: [HIT, ...hits] }));
+    let hits: Ability[] = [];
+    const probe = rider(), x = body(probe, 'X'), need = Math.ceil(RULES.fight.mythic.answerReach.burst * x.sheet.hpMax);
+    expect(need, 'its fill is short of the stagger answer, which would cancel Named in the Book first').toBeLessThan(RULES.fight.mythic.answerReach.stagger * x.stagger!.hit);
+    const burst = sized('burst', need, probe);
+    hits = [burst.hit, burst.short];
+    const told = until(rider(), omenUp), f1 = until(told.fight, turnOf('A')).fight;
+    expect(standing(go(f1, hit('A', 'X', burst.short)).fight).at, 'one point short of the share').toBe('omen');
+    const r = go(f1, hit('A', 'X', burst.hit));
     expect(standing(r.fight).at).toBe('faltering');
     expect(r.effects).toContainEqual({ type: 'answered', id: id('X'), how: 'burst', outcome: 'weaken' });
-    expect(logs(r.fight)).toContain('The Fourth Rider loses 5% of its HP: Named in the Book will land as Struck from the Book.');
+    expect(logs(r.fight)).toContain(`The Fourth Rider loses ${Math.round(RULES.fight.mythic.answerReach.burst * 100)}% of its HP: Named in the Book will land as Struck from the Book.`);
   });
 
   test('an omen aimed at a body out of range finds no one', () => {

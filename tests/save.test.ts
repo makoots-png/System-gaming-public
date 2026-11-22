@@ -773,6 +773,15 @@ describe('what a repair fixes', () => {
     expect(q.rewards.skills.map(s => s.name)).toEqual(['S0', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7']);
   });
 
+  test('a quest is read back secret only when it is from the GM and says true; a save from before the field reads not secret', () => {
+    const quests = [
+      { id: 'q1', from: 'gm', secret: true }, { id: 'q2', from: 'self', secret: true }, { id: 'q3', from: 'system', secret: true },
+      { id: 'q4', from: 'gm', secret: 'yes' }, { id: 'q5', from: 'gm' },
+    ];
+    const h = onlyHunter(parseRaw({ schema: SCHEMA, hunters: [{ id: 'h1', quests }] }));
+    expect(h.quests.map(q => [q.id, q.secret])).toEqual([['q1', true], ['q2', false], ['q3', false], ['q4', false], ['q5', false]]);
+  });
+
   test('the offers a phone keeps are read back whole; one that does not read is dropped, and a giver\'s is never dropped for a count', () => {
     const offer = { id: 'd-p1-mabc12xyz', room: 'ABCDEF', at: '2026-11-12T12:00:00.000Z', by: 'd-p1:h1', to: 'd-p2:h3', names: { by: 'Brakk', to: 'Mira' },
       gives: { gold: 5, items: [] }, asks: { gold: 0, items: [{ id: 'i4', qty: 1, name: 'Iron Shield' }] } };

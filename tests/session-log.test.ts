@@ -18,7 +18,12 @@ test('a line goes on top of the session log, and the oldest falls off past the c
 describe('a player\'s quest progress in the GM\'s log', () => {
   test('names no hunter of the GM\'s phone, and says who and how far', () => {
     const objectives = [{ label: 'Wolves', progress: 2, target: 3 }, { label: 'Den', progress: 0, target: 1 }];
-    expect(questUpdateSaid({ name: 'Mira', title: 'Wolf Hunt', status: 'active', objectives })).toEqual({ kind: 'quest', hunterId: null, title: 'Quest progress', text: 'Mira · Wolf Hunt 2/4' });
-    expect(questUpdateSaid({ name: 'Mira', title: 'Wolf Hunt', status: 'done', objectives })).toEqual({ kind: 'quest', hunterId: null, title: 'Quest completed', text: 'Mira COMPLETED Wolf Hunt' });
+    expect(questUpdateSaid({ name: 'Mira', title: 'Wolf Hunt', status: 'active', objectives, secret: false })).toEqual({ kind: 'quest', hunterId: null, title: 'Quest progress', text: 'Mira · Wolf Hunt 2/4' });
+    expect(questUpdateSaid({ name: 'Mira', title: 'Wolf Hunt', status: 'done', objectives, secret: false })).toEqual({ kind: 'quest', hunterId: null, title: 'Quest completed', text: 'Mira COMPLETED Wolf Hunt' });
+  });
+  test('marks a secret quest\'s progress and end "(secret)", so the GM knows not to say it aloud', () => {
+    const objectives = [{ label: 'Find the traitor', progress: 1, target: 2 }];
+    expect(questUpdateSaid({ name: 'Mira', title: 'The traitor', status: 'active', objectives, secret: true }).text).toBe('Mira · The traitor (secret) 1/2');
+    expect(questUpdateSaid({ name: 'Mira', title: 'The traitor', status: 'failed', objectives, secret: true }).text).toBe('Mira FAILED The traitor (secret)');
   });
 });

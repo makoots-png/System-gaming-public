@@ -42,7 +42,7 @@ import type { Fight, Fog, DueTurn, ForcedFace, Fudge, LogLine, Summary } from '.
 import { NO_FUDGE } from './fudge.ts';
 import type { Extraction } from './extraction.ts';
 import { isMythicScriptId, mythicScriptOf } from '../registry/mythics.ts';
-import type { MythicStanding, OmenKey } from './mythic-types.ts';
+import type { BarAt, MythicStanding, OmenKey } from './mythic-types.ts';
 import { NO_TALLY } from './row-tally.ts';
 import type { Kill, RowTally } from './row-tally.ts';
 import { MAX_ZONE_TILES, MAX_ZONES, ZONE_NAME_MAX, zoneId } from './zones.ts';
@@ -773,9 +773,15 @@ function mythicOf(v: unknown, grid: Grid): MythicStanding | null | undefined {
   if (phase === null || beat === null || since === null) return undefined;
   if (at === 'calm') return { at, script, phase, beat, since };
   const key = typeof m.omen === 'string' && Object.hasOwn(s.omens, m.omen) ? m.omen as OmenKey : null;
-  const aim = aimOn(m.aim, grid), hpAt = whole(m.hpAt, 0, BIG);
-  if (!key || !aim || hpAt === null || (at === 'faltering' && s.omens[key]!.weak === null)) return undefined;
-  return { at, script, phase, beat, since, omen: key, aim, hpAt };
+  const aim = aimOn(m.aim, grid), hpAt = whole(m.hpAt, 0, BIG), barAt = barAtOf(m.barAt);
+  if (!key || !aim || hpAt === null || barAt === undefined || (at === 'faltering' && s.omens[key]!.weak === null)) return undefined;
+  return { at, script, phase, beat, since, omen: key, aim, hpAt, barAt };
+}
+/** A stored omen's bar as it found it (decision 42), or null for none; undefined when it does not read. */
+function barAtOf(v: unknown): BarAt | null | undefined {
+  if (v === null) return null;
+  const b = isObj(v) ? v : {}, fill = num(b.fill, 0, BIG), max = num(b.max, 0, BIG);
+  return fill === null || max === null ? undefined : { fill, max };
 }
 /** A stored threat table, or null for none; undefined when it does not read. */
 const threatOf = (v: unknown): ThreatTable | null | undefined => v === null ? null : idRecord<CombatantId, number>(v, MAX_ROWS, x => num(x, 0, BIG), combatantId) ?? undefined;

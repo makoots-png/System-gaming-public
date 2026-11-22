@@ -513,3 +513,79 @@ third pass".
   value of the clock moves it (the none party meets stagger and burst answers as often).
 - `principle-test-behavior-not-implementation`: the reducer test reads the clock's start from the fight and the expected
   wind-back from the rule; with the cell dropping `back` it fails.
+
+## MY5, fourth pass: an omen is answered only by a turn the party chooses (decision 42)
+
+Branch `mythic-5d`. The switch `fight.mythic.scripts` stays off. Every measure is in rw/sim-log.md, "MY5, fourth pass".
+
+### What exists
+
+- rules.ts `fight.mythic.answerReach`: `stagger` 4 same-rank hits of fill on the bar, `burst` 0.13 of max HP, both counted
+  from the omen's announce. One rule for every omen: an omen's `burst` is now an outcome like its `stagger`, and the
+  shares each omen held (0.05 to 0.08) and their bound `mythic.bounds.burst` are gone (the rule's own domain bounds it).
+- mythic-types.ts: an omen standing keeps `barAt` (the bar's fill and max at the announce, null with no bar) beside
+  `hpAt`; the `announce` event carries it (fight-turn.ts `scriptTurn` reads it off the row). mythic.ts `barLanded` reads
+  the fill since then, a break counting the bar it emptied; `answerMet` takes the standing's `hpAt` and `barAt` and the
+  rules. The stagger answer no longer asks a break: a bar full at the announce and broken by one hit after it answers
+  nothing, and 4 hits landed after it answer whether or not the bar broke. Its log line reads "reels under the blows".
+- fight-parse.ts reads a stored `barAt`; fight-doc.ts sends none (fight-doc.test.ts: `barAt` is not on the wire), so
+  protocol.ts is untouched.
+- The policy saves nothing new: `answerChoice` is MY5c's, its burst read from the new outcome. A first build saved the
+  cannon's Focus for the windows; it lost more fights than its answers won (sim-log.md step 3) and is gone.
+- Tests: tests/mythic.test.ts "the answers a change met" (HP and fill before the announce answer nothing; a break counts
+  the bar it emptied; sizes read from the rule); tests/fight.test.ts "the stagger answer counts the fill landed on its
+  bar after the announce, not a bar filled before it" and "the burst answer weakens an omen once the HP lost since the
+  announce reaches the rule's share", their hits sized from the rule through `afterDefence`. The chart's note says it.
+- registry/mythics.ts `hp`: the Angel 0.9 → 0.93, Zaratan 0.97 → 0.92, the Rider 0.89 → 0.82, for B1 (answers out of
+  ordinary reach lowered the answering party's wins at Zaratan and the Rider and raised them at the Angel).
+- B1, B2, B5's interrupt row for the Angel (0.46) and the Rider (0.31), B6, B7, B8 hold. `OPEN` keeps B3 (the Angel
+  0.028, Zaratan 0.042, the Rider 0.018), B5's stagger and burst rows (1.00 to 1.03) and Zaratan's interrupt row (0.98),
+  B4 (plain 0.380, the Angel 0.152, Zaratan 0.697 at hp 0.94), B9, with this pass's values. The table is sim-log.md
+  step 5.
+
+### Where the design did not hold
+
+- **Saving a use for the omen loses the fights it is saved for.** The one use of the mixed party that lands more in a
+  window when saved is the cannon's Focus (a channel, 1.45 times a bolt for each turn held). Saved from one omen to the
+  next, it met 0.4 to 0.9 stagger and burst answers a fight, against 0.03 to 0.26 for the party that answers none, and
+  the party won less than that one at every script; against the Rider it was enraged in its first phase (8.5 rounds,
+  against 14.2). The cannon passes about every other turn, and the clocks are fitted to the party's whole damage. At 3
+  rounds of `answerTime` the same. Mutilation is a strike (1.04 of one), and the blast catches the melee allies beside
+  the mythic. So for this party "spend now or save for the omen" is always "spend now", and the policy saves nothing.
+- **The reach separates the parties, and not to 1%.** With the stagger and burst answers out of ordinary reach, the
+  party that answers none meets them 0.01 to 0.2 times a fight, and the answering party wins two to four times its
+  share with the turns it chose: the stun, the step out of an area, the shield. B3 fell from 0.082 / 0.040 / 0.033 to
+  0.028 / 0.042 / 0.018. Under 1% asks about seven times. Harder area moves (their hits times 1.5) moved both parties
+  alike (sim-log.md step 4).
+- **No chosen turn meets the stagger and burst answers**, so B5's rows for them read 1.00: the answering party meets them
+  only in windows its stun lengthened (a held mythic lands later). Zaratan's interrupt row reads 0.98: its one omen a stun
+  answers, the Trench, comes in its last phase, and the stun meets it 0.1 times a fight.
+- **What would separate them, each a design call:** a party that holds a burst it can save at no cost to the clocks (a
+  kit's cooldown finisher, or the stagger ops of keystones A.7, which `answerReach.stagger` would then be sized against;
+  B5 measures the mixed party, which holds none); answers that ask a turn off the best hit, written in the omen's data (a
+  shield on the aimed body, or the aimed tile left empty, that cancels or weakens it, where today the step and the shield
+  only spare HP); or more omens a stun answers, since the stun is the chosen answer that separates now (Zaratan's B3 and
+  B5).
+
+### Calls the owner might have made otherwise
+
+- One reach for every omen, a rule (`answerReach`: 4 same-rank hits on the bar, 0.13 of max HP), in place of each omen's
+  burst share (0.05 to 0.08) and its bound. Undo: "each omen sizes its burst" (`burst: { share, outcome }` and
+  `bounds.burst` back), or "ordinary hits answer a warning" (`answerReach` at 0: any hit after the announce answers).
+- A stagger answer is fill landed after the announce, not a break: a bar nearly full at the announce and broken by one
+  hit answers nothing, and 4 hits landed answer with or without a break. Undo: "a break answers" (`answerMet` asks a
+  break, as before, and the reach only for the fill before it).
+- The policy saves no channel for an omen (measured to lose). Undo: "a cannon saves Focus for the omen" (step 2's
+  policy, in sim-log.md).
+- A stagger answer's log line reads "reels under the blows", with no number. Undo: "say the share of its bar".
+- `hp` the Angel 0.93, Zaratan 0.92, the Rider 0.82, for B1. Undo: the three numbers.
+
+### Principles that changed a choice
+
+- `principle-explain-the-number`: the reach was read off what ordinary windows land (step 1), and each B3 value beside
+  the answers each party met, which named why saving lost (the clocks) and why the stagger and burst rows read 1.00 (no
+  chosen turn meets them).
+- `principle-model-the-domain`: the HP and the bar the omen found are one place, the standing (`hpAt`, `barAt`), written
+  by the machine at the announce, and one rule sizes both answers.
+- `principle-test-behavior-not-implementation`: the reducer tests size their hits from the rule through `afterDefence`,
+  and fail when a bar filled before the announce answers (the old break) or when a reach is not read.

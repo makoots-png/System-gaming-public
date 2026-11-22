@@ -85,3 +85,52 @@ What a table sees: Mira sends the GM a word from the Room view and the GM answer
 3. **The notification leaves the word off the lock screen** ("Mira sent you a word." / "Open the GM view to read it."). Undo: "Show the word in the notification" (`notifyBody` becomes the word).
 4. **A lost word stays in the thread, with no Send again.** Undo: "Let a player send a lost word again".
 5. **The thread shows the words of the room the phone is in;** words of a room left stay in the save until the caps push them out. Undo: "Drop a room's words when the phone leaves it".
+
+# Unit 7, a secret quest (helper on `trade-7`, Nov 22)
+
+What a table sees: the GM ticks Secret under Issue quest and sends a quest to Mira alone. Mira's phone shows it marked Secret, the GM reads her progress and its end, and Brakk's phone never gets the quest, its progress or its end.
+
+Notes read: notes-5-trade.md section 5, its lines in 6, 7 and 8, rulings 10 and 13 (none on unit 7); this file's "Unit 6"; the guide rows on sealed messages, "A room message" and quests.
+
+## What exists (commits 50b3ee4, e129ecc and the notes commit)
+
+- `Quest.secret: boolean` (`src/core/hunter/hunter.ts`, where `Quest` lives; save.ts re-exports it): false in `newQuest`, and the repair keeps true only on a quest from the GM (`q.from === 'gm' && q.secret === true`), so a save from before the field reads not secret. The System's quests (`stepQuest`, `penaltyQuest`) say false.
+- `questOf` keeps `secret` only from the GM and only when the draft says `true`; `questOffer` carries it; `editQuest` and `questStep` keep it (`src/core/hunter/quests.ts`).
+- New `src/core/hunter/quest-secret.ts`: `questReaches(q, n)` (a secret quest goes to one hunter) and `SECRET_WORDS` (the box, the refusal, the chip, the line, the GM's mark). It is its own module so that protocol.ts, session-log.ts and the views read one rule and one set of words without importing quests.ts, which imports session-log.ts.
+- `src/core/protocol.ts`: `QuestOffer.secret` (read as false when absent, a non-boolean refuses the quest); `quest` is sealed by `p => p.quest.secret` and its reader refuses a secret quest whose `to` names more than one hunter (`questTo`); `QuestUpdatePayload.secret`, sealed by `p => p.secret`. The `chapter` reader applies the same one-hunter rule to its quest. Its quest is always false today (story.ts `chapterBody`), and the chapter is sealed already.
+- A player's progress (quests.js `progressPost`) and a quest's end posted in its write (grant.ts `questEnded`) copy `secret`, so both are sealed.
+- On screen: the box "Secret: only this hunter and you see it" under Issue quest (`#gm-q-secret`, gm.js), and `doIssue` refuses more than one picked hunter with "A secret quest goes to one hunter." before anything is written or sent. The quest card shows a "Secret" chip after the kind and the line "Only you and the GM see this quest." The quest's window on the player's phone gains "SECRET: Only you and the GM see this quest." (room-events.ts `questWindow`). On the GM's phone, Party quests marks the row "(secret)", and so do the log line and toast (`questUpdateSaid`) and the Table feed line (table.js).
+- Guide: a row in `docs/guide/hunters.md`; `docs/guide/room-sync.md`'s view-per-phone row and the "A room message" recipe name a seal made from the payload. `docs/dependency-map.md` regenerated. A copy note in `copy-tasks.md`.
+
+## Where every quest reaches another phone, checked
+
+- The `quest` message and every `questUpdate` (progress, a tapped end, the rollover's overdue failure): sealed when secret.
+- The hunter's pushed sheet: every other player gets it only as a face (name, level, job, bag), with no quests. The server test reads it.
+- A chapter's quest: the chapter is sealed to the hunters it names already; its quest is never secret today.
+- A feat counted from the quest's end: counted on the hunter's own phone. The feat reaches the GM in the sheet, and other players get only the face. The feats doc holds definitions, not who earned them.
+- The session log and the toasts: a quest's lines are written on the hunter's own phone and on the GM's. No player sees another phone's log.
+
+## Proof
+
+- `tests/quests.test.ts`: secret only from the GM; kept through the offer, the landing, an edit and an end; the posted end carries it. `tests/save.test.ts`: the repair. `tests/protocol.test.ts`: who gets a secret quest and its progress (`servedTo`), "a secret quest to two hunters is refused", the update's flag, a chapter's secret quest to two refused. `tests/session-log.test.ts`: the "(secret)" mark. `tests/server-rooms.test.ts`: "a secret quest and its progress reach only its hunter and the GM" (her sheet holding it is a face to the others), and a secret quest to two refused with the room unchanged. With the seal on `quest` removed, the server test fails (run once, then put back).
+- `tests/e2e/quest-secret.e2e.ts`: "the GM gives Mira a secret quest: Mira sees it marked Secret, Brakk's phone never receives it, and the GM reads Mira's progress". Mira's progress and her completion are driven by taps. The test reads Brakk's save and the body of every room answer his page got. With both seals removed it fails on Brakk's answers (run once, then put back).
+- `bun run test`: 6288 pass, 0 fail ("Ran 6310 tests across 142 files."). Browser, one run of `quest-secret` and the files that issue a quest, write one into the store or draw one (`gates-quests-dailies`, `refused-writes`, `rewards`, `used`, `room-sync`, `stories-room`, `story-maker`, `look`, `feats`, `makers`, `room-view`): 193 passed, 1 failed. The failure is makers.e2e.ts "a GM who opens a feat and saves it unchanged keeps when it is shown" (Four Figures, saved unchanged, gets a library entry). It failed again when run alone. That feat carries a title reward and no quest, and this unit changes nothing the feat maker reads. It is in the feat maker and title band area that item-stats-11b holds (commit 06784b2, "a title's band and budget"), so I left it alone.
+- Looked at, 390 px (/tmp/pw-t7-shots, not committed): the Issue quest form with the box ticked under "If it fails" and the refusal line under Issue quest; Mira's quest window with the SECRET line; her card with the dashed violet "SECRET" chip beside "SIDE" and the violet line under the title; the GM's Party quests row "Mira · Unmask the traitor (secret) 1/2" and its toast. Nothing clipped.
+- Principles that changed a choice: boundary discipline (the one-hunter rule is in the room's reader, so no phone stores a secret quest named to two hunters; the view asks the same `questReaches` only to refuse before a write); model the domain (secret is kept only on a quest from the GM, in the factory and the repair, so a player's own quest cannot be secret); test behaviour (the server and browser tests read what another phone receives, and each fails with the seal removed).
+
+## Where the design did not hold (the code wins)
+
+1. `Quest.secret` is in `src/core/hunter/hunter.ts`, not save.ts: the quest type, its default and its repair moved there before this unit. save.ts re-exports it.
+2. "Ticked, the hunter picker takes one hunter": Issue quest has no picker of its own. It issues to the hunters picked in the Award section, which Award also uses. Issue quest instead refuses more than one picked hunter, local and remote counted together, with the design's refusal words. Undo: a picker on Issue quest that becomes single-choice while the box is ticked.
+3. The GM's toast and Table feed line are marked "(secret)" as the log lines are; the design named only Party quests and the log.
+4. The quest's window shows the Secret line too. The design put it only on the card.
+5. The chapter's reader applies the one-hunter rule, which the design did not name. A chapter's quest is never secret today.
+6. Files outside the brief's list: `src/core/hunter/hunter.ts`, `src/core/hunter/quest-secret.ts` (new), `src/core/hunter/grant.ts`, `job-chain.ts`, `penalty.ts`, `src/core/session-log.ts`, `src/core/story/story.ts`, `src/edge/room-events.ts`, `src/views/table.js`, `tests/fixtures/payloads.ts`, `tests/penalty.test.ts`, `tests/run.test.ts`, `tests/session-log.test.ts`, `docs/agent-handoff/copy-tasks.md`.
+
+## Calls the owner might have made otherwise
+
+1. **Nobody else at the table is told when a secret quest ends** (question 4's default). Undo: "Tell the table when a secret quest ends" (a System message to the room on the GM's phone when it hears the sealed end).
+2. **The GM's own screens show the secret quest by name, marked "(secret)"**: the toast, the Table feed, Party quests and the log. Notes 4.5 hold that what is on the GM's screen is the GM's. Undo: "Keep a secret quest's name off the GM's toast and Table feed" (they would say "Mira's secret quest moved").
+3. **The GM's own hunters can get a secret quest**; it is marked as any other, though no other phone would see it anyway. Undo: "Secret only for players' hunters" (refuse a local pick in `doIssue`).
+4. **"Issue to…" of a secret quest on the GM's own hunter gives a copy that is not secret.** Undo: "A copy keeps Secret" (pass `secret` in quests.js `issueTo`).
+5. **The Secret box stays ticked after a quest is issued**, as the rest of the form keeps what was typed. Undo: clear `#gm-q-secret` in `doIssue` after a send.

@@ -59,10 +59,10 @@ export const VALID: Record<EventType, [Raw, Raw]> = {
   quest: [
     { eid: EID, to: [KEY, OTHER], quest: { kind: 'main', title: 'Clear the den', desc: 'Goblins.', objectives: [{ label: 'Goblins', target: 3, progress: 0 }],
       rewards: { xp: 100, points: 0, gold: 5, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, dueAt: '2026-11-13T12:00:00.000Z', penaltyText: 'Lose a day.',
-      onFail: { xp: 0, points: 0, gold: -10, items: [], title: null, job: null, skills: [], statuses: [], boons: [] } } },
+      onFail: { xp: 0, points: 0, gold: -10, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, secret: false } },
     { eid: EID, to: [KEY, OTHER], quest: { kind: 'main', title: 'Clear the den', desc: 'Goblins.', objectives: [{ label: 'Goblins', target: 3, progress: 0 }],
       rewards: { xp: 100, points: 0, gold: 5, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, dueAt: '2026-11-13T12:00:00.000Z', penaltyText: 'Lose a day.',
-      onFail: { xp: 0, points: 0, gold: -10, items: [], title: null, job: null, skills: [], statuses: [], boons: [] } } },
+      onFail: { xp: 0, points: 0, gold: -10, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, secret: false } },
   ],
   hp: [
     { eid: EID, to: [KEY], hp: -7, reason: 'GM' },
@@ -89,8 +89,8 @@ export const VALID: Record<EventType, [Raw, Raw]> = {
     { eid: EID, by: KEY, name: 'Kai', label: 'Strike', expr: '1d20+3', total: 17, rolls: [14], crit: false, fumble: false },
   ],
   questUpdate: [
-    { eid: EID, by: KEY, name: 'Kai', questId: 'q7', title: 'Clear the den', kind: 'main', status: 'active', objectives: [{ label: 'Goblins', progress: 2, target: 3 }] },
-    { eid: EID, by: KEY, name: 'Kai', questId: 'q7', title: 'Clear the den', kind: 'main', status: 'active', objectives: [{ label: 'Goblins', progress: 2, target: 3 }] },
+    { eid: EID, by: KEY, name: 'Kai', questId: 'q7', title: 'Clear the den', kind: 'main', status: 'active', objectives: [{ label: 'Goblins', progress: 2, target: 3 }], secret: false },
+    { eid: EID, by: KEY, name: 'Kai', questId: 'q7', title: 'Clear the den', kind: 'main', status: 'active', objectives: [{ label: 'Goblins', progress: 2, target: 3 }], secret: false },
   ],
   chain: [
     { eid: EID, to: [KEY], job: 'Ranger', kind: 'issue' },
@@ -142,11 +142,11 @@ export const VALID: Record<EventType, [Raw, Raw]> = {
   ],
   chapter: [
     { eid: EID, to: [KEY, OTHER], words: { title: 'the deep asks for a gate', line: 'Any gate of your rank.' }, rewards: { points: -1 },
-      quest: { kind: 'urgent', title: 'Clear a gate for the Deep', desc: '', objectives: [{ label: 'Gate cleared', target: 1, progress: 0 }], rewards: { gold: 100 }, dueAt: '2026-11-21T10:00:00.000Z', penaltyText: 'The Deep collects.' } },
+      quest: { kind: 'urgent', title: 'Clear a gate for the Deep', desc: '', objectives: [{ label: 'Gate cleared', target: 1, progress: 0 }], rewards: { gold: 100 }, dueAt: '2026-11-21T10:00:00.000Z', penaltyText: 'The Deep collects.', secret: false } },
     { eid: EID, to: [KEY, OTHER], words: { title: 'THE DEEP ASKS FOR A GATE', line: 'Any gate of your rank.' }, rewards: { xp: 0, points: -1, gold: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] },
       quest: { kind: 'urgent', title: 'Clear a gate for the Deep', desc: '', objectives: [{ label: 'Gate cleared', target: 1, progress: 0 }],
         rewards: { xp: 0, points: 0, gold: 100, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, dueAt: '2026-11-21T10:00:00.000Z', penaltyText: 'The Deep collects.',
-        onFail: { xp: 0, points: 0, gold: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] } } },
+        onFail: { xp: 0, points: 0, gold: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, secret: false } },
   ],
   weigh: [
     { eid: EID, to: [KEY], total: 2, force: 20 },

@@ -363,7 +363,7 @@ describe('a mythic (notes-11-keystones.md, design B.3)', () => {
   const ON = { ...ON_RULES, conditions: R.conditions };
   const zaratan = (o: Partial<RowMonster> = {}) => monster({ name: 'Zaratan', rank: 'S', archetype: 'brute', kind: 'mythic', script: 'zaratan-the-island-that-wakes', ...o });
   const angelWeighed = (f: Fight): Fight => {
-    const s = mythicStep(f.rows[1]!.mythic!, { type: 'announce', omen: 'weighed' as OmenKey, aim: f.rows[0]!.id, hpAt: rowHp(f.rows[1]!) });
+    const s = mythicStep(f.rows[1]!.mythic!, { type: 'announce', omen: 'weighed' as OmenKey, aim: f.rows[0]!.id, hpAt: rowHp(f.rows[1]!), barAt: null });
     if (isRefused(s)) throw new Error(s.why);
     return { ...f, rows: f.rows.map((r, i) => (i === 1 ? { ...r, mythic: s } as Body : r)) };
   };

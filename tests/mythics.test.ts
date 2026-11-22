@@ -46,7 +46,7 @@ const moveOf = (s: MythicScript, key: string): MythicMove | undefined => entryOf
  */
 function answerable(s: MythicScript, o: Omen): boolean {
   const full = moveOf(s, o.full)!;
-  return (o.interrupt.by.length > 0 && o.interrupt.outcome !== 'none') || o.stagger !== 'none' || (o.burst !== null && o.burst.outcome !== 'none')
+  return (o.interrupt.by.length > 0 && o.interrupt.outcome !== 'none') || o.stagger !== 'none' || o.burst !== 'none'
     || full.reach !== 'field' || !full.sure;
 }
 
@@ -98,7 +98,7 @@ test('every omen lands moves its script holds', () => {
 
 test('an omen that can be weakened has a weak move', () => {
   for (const [id, s] of SCRIPTS) for (const [key, o] of omensOf(s)) {
-    const weakens = o.interrupt.outcome === 'weaken' || o.stagger === 'weaken' || o.burst?.outcome === 'weaken';
+    const weakens = o.interrupt.outcome === 'weaken' || o.stagger === 'weaken' || o.burst === 'weaken';
     if (weakens) expect([id, key, o.weak !== null]).toEqual([id, key, true]);
   }
 });
@@ -134,7 +134,6 @@ test('every script is within the mythic bounds', () => {
   for (const [id, s] of SCRIPTS) {
     expect([id, 'phases', within(s.phases.length, B.phases)]).toEqual([id, 'phases', true]);
     for (const p of s.phases) expect([id, p.name, 'clock', within(p.clock, B.clock), p.bar > 0]).toEqual([id, p.name, 'clock', true, true]);
-    for (const [key, o] of omensOf(s)) if (o.burst) expect([id, key, 'burst', within(o.burst.share, B.burst)]).toEqual([id, key, 'burst', true]);
     for (const [key, m] of movesOf(s)) expect([id, key, 'hits', within(m.hits, B.hits)]).toEqual([id, key, 'hits', true]);
     expect([id, s.hp > 0]).toEqual([id, true]);
     for (const st of statuses(s)) expect([id, st.key, isStatusKey(st.key) && st.key.startsWith('mythic-')], 'a status of a script has a key no hunter\'s cure names by chance').toEqual([id, st.key, true]);

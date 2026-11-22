@@ -542,7 +542,7 @@ describe('a mythic on the table (notes-11-keystones.md, design B.3 and B.10, uni
   const RIDER = 'the-fourth-rider' as const, NAMED = 'named' as OmenKey;
   const calm = { at: 'calm', script: RIDER, phase: 1, beat: 2, since: tick(800) } as const;
   const calmDoc = { state: 'calm', script: RIDER, phase: 1, beat: 2, since: tick(800) };
-  const omen = (aim: CombatantId | Place, hpAt: number) => ({ ...calm, at: 'omen', omen: NAMED, aim, hpAt }) as const;
+  const omen = (aim: CombatantId | Place, hpAt: number) => ({ ...calm, at: 'omen', omen: NAMED, aim, hpAt, barAt: { fill: 10, max: 100 } }) as const;
   const veil: Status = { key: statusKey('hide'), def: { label: 'Hidden', desc: '', ops: [{ op: 'hidden', level: 1, start: 'unseen', ends: { hurt: true, revealed: true, dealt: true } }] }, source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0) };
   const fight = play(add(row('A', 'party'), row('Rider', 'foe'), row('Sly', 'foe'), row('Rat', 'foe')), start(['A', 20], ['Rider', 10], ['Sly', 5], ['Rat', 4]));
   const through = (d: FightDoc | null) => (DOCS.fight(JSON.parse(JSON.stringify(fightWire(live(d)))) as never) as FightDoc & { ended: false }).rows;
@@ -563,6 +563,7 @@ describe('a mythic on the table (notes-11-keystones.md, design B.3 and B.10, uni
     const wire = JSON.stringify(fightWire(live(doc)));
     expect(wire).not.toContain('123456');
     expect(wire).not.toContain('hpAt');
+    expect(wire).not.toContain('barAt');
     const shown = rowIn(doc, 'Rider');
     expect(shown.kind === 'monster' && shown.standing).toMatchObject({ aim: { x: 4, y: 5 }, band: 'healthy' });
     expect(through(doc).find(r => r.id === 'Rider'), 'a tile aim comes back as a tile').toEqual(shown);

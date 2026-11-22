@@ -11,6 +11,7 @@ import { saveId } from './ids.ts';
 import type { HunterId, LogId } from './ids.ts';
 import type { QuestUpdatePayload } from './protocol.ts';
 import { record } from './hunter/chronicle.ts';
+import { SECRET_WORDS } from './hunter/quest-secret.ts';
 
 /** How long a line's title and text may be (the save's repair cuts them the same). */
 export const LOG_TITLE_MAX = 120, LOG_TEXT_MAX = 500;
@@ -57,10 +58,10 @@ export const objectivesSum = (os: readonly { readonly progress: number; readonly
 /**
  * The GM's log line for a player's quest progress (the room's `questUpdate`): who, which quest and how far, as done,
  * failed or the objectives' sum. It is about a hunter of another phone, so it names no hunter of this one (implicit
- * audit 2, N14: it was written under the GM's own active hunter).
+ * audit 2, N14: it was written under the GM's own active hunter). A secret quest's title carries the mark "(secret)".
  */
-export function questUpdateSaid(p: Pick<QuestUpdatePayload, 'name' | 'title' | 'status' | 'objectives'>): Said {
-  const name = p.name || 'Hunter', title = p.title || 'Quest';
+export function questUpdateSaid(p: Pick<QuestUpdatePayload, 'name' | 'title' | 'status' | 'objectives' | 'secret'>): Said {
+  const name = p.name || 'Hunter', title = `${p.title || 'Quest'}${p.secret ? ` ${SECRET_WORDS.mark}` : ''}`;
   const text = p.status === 'done' ? `${name} COMPLETED ${title}` : p.status === 'failed' ? `${name} FAILED ${title}` : `${name} · ${title}${p.objectives.length ? ` ${objectivesSum(p.objectives)}` : ''}`;
   return { kind: 'quest', hunterId: null, title: p.status === 'done' ? 'Quest completed' : p.status === 'failed' ? 'Quest failed' : 'Quest progress', text };
 }

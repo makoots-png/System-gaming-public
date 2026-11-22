@@ -15,7 +15,7 @@ import type { MythicScriptId } from '../registry/mythics.ts';
 import type { CombatantId } from './ability-types.ts';
 import type { Body } from './effect-ops.ts';
 import type { Running } from './fight-types.ts';
-import type { AnswerOutcome, Beat, MoveKey, MythicMove, MythicScript, MythicStanding, Omen, OmenAim, OmenKey } from './mythic-types.ts';
+import type { AnswerOutcome, BarAt, Beat, MoveKey, MythicMove, MythicScript, MythicStanding, Omen, OmenAim, OmenKey } from './mythic-types.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import { perceivedBy } from './sight.ts';
 import { dist, inShape, tiles } from './space.ts';
@@ -29,6 +29,8 @@ import type { Tick } from './timeline.ts';
 type RoundRules = { readonly fight: Pick<Rules['fight'], 'round'> };
 /** The rules `answerBack` reads besides: the rounds an answer winds its phase's clock back (decision 40). */
 type AnswerRules = { readonly fight: Pick<Rules['fight'], 'round'> & { readonly mythic: Pick<Rules['fight']['mythic'], 'answerTime'> } };
+/** The rules `answerMet` reads: what a stagger and a burst answer ask after the announce (decision 42). */
+type ReachRules = { readonly fight: { readonly mythic: Pick<Rules['fight']['mythic'], 'answerReach'> } };
 
 // ── the machine ──
 /** `calm`: in its phase, no omen standing. `omen`: an omen stands and lands whole on its next turn. `faltering`: it stands weakened. */
@@ -37,14 +39,15 @@ export type MythicState = MythicStanding['at'];
 export type Answer = 'interrupt' | 'stagger' | 'burst';
 /**
  * What moves a standing (design B.3, "Events"). `next`: its phase ends, at its turn start (`turn`) or by the GM's Next
- * phase (`gm`), at fight time `now`. `announce`: its turn starts in `calm` on an omen beat, aimed at `aim` with `hpAt` HP.
+ * phase (`gm`), at fight time `now`. `announce`: its turn starts in `calm` on an omen beat, aimed at `aim`, with `hpAt`
+ * HP and its stagger bar `barAt`.
  * `beat`: its turn starts in `calm` on an act beat. `cancel` and `weaken`: a change met an answer of that outcome, which
  * winds its phase's clock back by `back` (`answerBack`, decision 40: answering buys the party time). `land`: the
  * landing move went off. `fizzle`: it could not reach its aim. `drop`: the GM dropped the omen.
  */
 export type MythicEvent =
   | { readonly type: 'next'; readonly now: Tick; readonly by: 'turn' | 'gm' }
-  | { readonly type: 'announce'; readonly omen: OmenKey; readonly aim: Place | CombatantId; readonly hpAt: number }
+  | { readonly type: 'announce'; readonly omen: OmenKey; readonly aim: Place | CombatantId; readonly hpAt: number; readonly barAt: BarAt | null }
   | { readonly type: 'beat' }
   | { readonly type: 'cancel'; readonly how: Answer; readonly back: Tick }
   | { readonly type: 'weaken'; readonly how: Answer; readonly back: Tick }
@@ -78,7 +81,7 @@ const weakened = (s: Omened, e: EventOf<'weaken'>): Omened => ({ ...s, at: 'falt
 /** For each state, what each event does there (design B.3's table, cell for cell). */
 const MYTHIC_TABLE: { readonly calm: TableRow<Calm>; readonly omen: TableRow<Omened>; readonly faltering: TableRow<Omened> } = {
   calm: {
-    next: nextPhase, announce: (s, e) => ({ ...s, at: 'omen', omen: e.omen, aim: e.aim, hpAt: e.hpAt }), beat: onward,
+    next: nextPhase, announce: (s, e) => ({ ...s, at: 'omen', omen: e.omen, aim: e.aim, hpAt: e.hpAt, barAt: e.barAt }), beat: onward,
     cancel: 'noOmen', weaken: 'noOmen', land: 'noOmen', fizzle: 'noOmen', drop: 'noOmen',
   },
   omen: {
@@ -243,22 +246,35 @@ function picked(aim: Exclude<OmenAim, 'self' | 'all'>, move: MythicMove, me: Bod
 export type MetAnswer = { readonly how: Answer; readonly outcome: Exclude<AnswerOutcome, 'none'> };
 /** What `answerMet` reads of the mythic's row before and after a change. */
 export type AnswerRow = Pick<Body, 'life' | 'statuses' | 'stagger'> & { readonly sheet: { readonly hpMax: number } };
+/** What an omen standing found when it was announced: the mythic's HP and its stagger bar (`MythicStanding`'s `hpAt`, `barAt`). */
+export type OmenFound = { readonly hpAt: number; readonly barAt: BarAt | null };
+/**
+ * The fill its bar has taken since it was `at`: what it holds now less what it held, and the whole of the bar it held
+ * when a break emptied it since (a bar breaks at most once in an omen's window: the next is 1.75 times as long).
+ */
+export function barLanded(at: BarAt, now: BarAt): number {
+  return now.fill - at.fill + (now.max > at.max ? at.max : 0);
+}
 /**
  * The answers to `omen` a change of the mythic's row from `before` to `after` met (design B.4), cancels first, each
- * whose outcome does something: a status new on it with an op the omen's interrupt names; its stagger bar broken (its
- * max grew, the test `consequences` makes for the `staggered` effect); its HP down at least the burst share of its max
- * HP from `hpAt`, its HP when the omen was announced (a heal since counts against it). A weaken of an omen with no weak
- * move does nothing, so it is not met.
+ * whose outcome does something: a status new on it with an op the omen's interrupt names; its bar's fill since the
+ * announce (`barLanded`) at least `answerReach.stagger` same-rank hits (the bar's `hit`); its HP down at least
+ * `answerReach.burst` of its max HP from `hpAt` (a heal since counts against it); some fill or HP, so a reach of 0 is any
+ * hit after the announce. Decision 42: the stagger and burst
+ * answers count only what landed after the announce, and ask more than a party's ordinary turns land in an omen's
+ * window, so a party meets them with a use it saved for the omen. A weaken of an omen with no weak move does nothing,
+ * so it is not met.
  */
-export function answerMet(omen: Omen, hpAt: number, before: AnswerRow, after: AnswerRow): readonly MetAnswer[] {
-  const had = new Set(before.statuses.map(s => s.key as string));
+export function answerMet(omen: Omen, found: OmenFound, before: AnswerRow, after: AnswerRow, R: ReachRules): readonly MetAnswer[] {
+  const reach = R.fight.mythic.answerReach, had = new Set(before.statuses.map(s => s.key as string));
   const interrupted = after.statuses.some(s => !had.has(s.key) && s.def.ops.some(o => (omen.interrupt.by as readonly string[]).includes(o.op)));
-  const broken = after.stagger !== null && before.stagger !== null && after.stagger.max > before.stagger.max;
-  const burst = omen.burst !== null && hpAt - rowHp(after) >= omen.burst.share * after.sheet.hpMax;
+  const landed = found.barAt !== null && after.stagger !== null ? barLanded(found.barAt, after.stagger) : 0, lost = found.hpAt - rowHp(after);
+  const staggered = landed > 0 && landed >= reach.stagger * (after.stagger?.hit ?? 0);
+  const burst = lost > 0 && lost >= reach.burst * after.sheet.hpMax;
   const met: [Answer, AnswerOutcome][] = [];
   if (interrupted) met.push(['interrupt', omen.interrupt.outcome]);
-  if (broken) met.push(['stagger', omen.stagger]);
-  if (burst && omen.burst) met.push(['burst', omen.burst.outcome]);
+  if (staggered) met.push(['stagger', omen.stagger]);
+  if (burst) met.push(['burst', omen.burst]);
   return met
     .flatMap(([how, outcome]): MetAnswer[] => (outcome === 'cancel' || (outcome === 'weaken' && omen.weak !== null) ? [{ how, outcome }] : []))
     .sort((a, b) => (a.outcome === b.outcome ? 0 : a.outcome === 'cancel' ? -1 : 1));

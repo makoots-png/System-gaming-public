@@ -238,7 +238,7 @@ export function answerChoice(f: Running, me: Body, R: Rules, kinds: readonly Ans
   for (const w of ws) { const s = on('shield') ? shieldFrom(f, me, uses, w, R) : null; if (s) return s; }
   for (const w of ws) {
     const bar = w.m.stagger, stagger = on('stagger') && changes(w, w.omen.stagger) && bar !== null && bar.fill >= bar.max / 2;
-    const burst = on('burst') && w.omen.burst !== null && changes(w, w.omen.burst.outcome);
+    const burst = on('burst') && changes(w, w.omen.burst);
     const hit = stagger || burst ? strongest(f, me, uses, [w.m], R) : null;
     if (hit) return hit;
   }

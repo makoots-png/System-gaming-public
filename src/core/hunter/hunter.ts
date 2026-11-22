@@ -84,6 +84,11 @@ export type Quest = QuestState & {
   chainId?: ChainId;
   /** What failing costs: given by `grant` in the write that fails it (grant.ts `questFailed`). Empty gives nothing. */
   onFail: Rewards;
+  /**
+   * A secret quest: the GM gave it to this one hunter, and no other player's phone gets it or its progress (the room
+   * seals its `quest` and `questUpdate`, protocol.ts). Only a quest from the GM is secret (quests.ts `questOf`).
+   */
+  secret: boolean;
 };
 export type Loadout = { id: LoadoutId; name: string; slots: Partial<Record<Slot, ItemId>> };
 /**
@@ -140,7 +145,7 @@ export const newEquipped = (): Record<Slot, ItemId | null> => ({
 });
 export const newQuest = (): Quest => ({
   id: saveId('q', 0), kind: 'side', title: '', desc: '', objectives: [], rewards: newRewards(), status: 'active', issuedAt: '', doneAt: null,
-  dueAt: null, from: 'self', penaltyText: '', onFail: newRewards(),
+  dueAt: null, from: 'self', penaltyText: '', onFail: newRewards(), secret: false,
 });
 export const newLoadout = (): Loadout => ({ id: saveId('lo', 0), name: '', slots: {} });
 export const newTitle = (): Title => ({ id: saveId('t', 0), name: '', desc: '', bonus: {} });
@@ -244,6 +249,7 @@ export function fixHunter(saveRun: RepairRun, h: Hunter): void {
     const told = !('told' in q && q.told === false); Reflect.deleteProperty(q, 'told');
     Object.assign(q, questState(oneOf(q.status, QUEST_STATUSES, 'active'), strOrNull(q.doneAt) ?? q.issuedAt, told)); q.dueAt = timeOf(q.dueAt);
     optional(q, 'chainId', isStr);
+    q.secret = q.from === 'gm' && q.secret === true;
   });
   h.skills = skills(run, h.skills);
   h.items = items(run, h.items);

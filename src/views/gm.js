@@ -16,6 +16,7 @@ import { GIVE_HOLD_MS, SHELF_WORDS, readRecent, recentGives } from '../core/regi
 import { giveShelf } from './give-shelf.js';
 import { LOG_KINDS } from '../core/save.ts';
 import { questOffer } from '../core/hunter/quests.ts';
+import { SECRET_WORDS, questReaches } from '../core/hunter/quest-secret.ts';
 import { pickables, sheetName } from '../core/party.ts';
 import { tapWords } from '../core/sync/taps.ts';
 import { featsSwitched, resetRuleNumbers, resetTable, saveRuleNumbers, writeTable } from '../core/rules.ts';
@@ -593,11 +594,12 @@ export function register(app) {
   function doIssue() {
     const why = questForm.check();
     if (why) return say('#gm-q-msg', why, true);
-    const { local, remote } = picked();
+    const { local, remote } = picked(), secret = $('#gm-q-secret').checked;
     if (!local.length && !remote.length) return say('#gm-q-msg', 'Select at least one hunter (Award section).', true);
+    if (!questReaches({ secret }, local.length + remote.length)) return say('#gm-q-msg', SECRET_WORDS.oneHunter, true);
     const v = questForm.value();
     // the offer the room carries and the draft a hunter here is issued are the same quest (quests.ts `questOffer`)
-    const quest = questOffer(v, v.dueHours !== null ? dueIn(v.dueHours, new Date()) : null), partial = { ...quest, from: /** @type {const} */ ('gm') };
+    const quest = questOffer({ ...v, secret }, v.dueHours !== null ? dueIn(v.dueHours, new Date()) : null), partial = { ...quest, from: /** @type {const} */ ('gm') };
     let msg = '';
     if (local.length) { const ids = A().quests.issue(local, partial); msg = Array.isArray(ids) && ids.length ? `Issued to ${local.length} hunter${local.length === 1 ? '' : 's'}.` : 'The quest module did not accept the quest yet.'; }
     if (remote.length) {
@@ -799,6 +801,7 @@ export function register(app) {
         section('quest', 'Issue quest', `
           <p class="empty">Issues to the hunters selected in Award: <span id="gm-sel-sum-q"></span></p>
           <div id="gm-qf"></div>
+          <label class="gm-chk"><input type="checkbox" id="gm-q-secret"><span>${esc(SECRET_WORDS.box)}</span></label>
           <div class="gm-row"><button type="button" class="primary" id="gm-q-go">Issue quest</button></div>
           <div class="gm-msg" id="gm-q-msg" role="status"></div>`, false, true),
         section('gate', 'Gates and world day', `

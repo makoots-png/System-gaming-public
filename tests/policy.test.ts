@@ -44,7 +44,7 @@ function begun(first: string, ...rows: NewRow[]): Running {
 /** `f` with the mythic's omen `omen` announced at `aim`, by its machine. */
 function omened(f: Running, omen: string, aim: Place | string): Running {
   const x = body(f, 'X') as Body & { mythic: NonNullable<Body['mythic']> };
-  const next = mythicStepped<Body>(x, { type: 'announce', omen: omen as OmenKey, aim: typeof aim === 'string' ? combatantId(aim) : aim, hpAt: rowHp(x) });
+  const next = mythicStepped<Body>(x, { type: 'announce', omen: omen as OmenKey, aim: typeof aim === 'string' ? combatantId(aim) : aim, hpAt: rowHp(x), barAt: x.stagger && { fill: x.stagger.fill, max: x.stagger.max } });
   if (isRefused(next)) throw new Error(next.why);
   return { ...f, rows: f.rows.map(r => (r.id === X ? next : r)) };
 }

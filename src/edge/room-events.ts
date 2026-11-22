@@ -11,6 +11,7 @@ import type { SheetStatus } from '../core/combat/effect-ops.ts';
 import { chainStep, grant, idsFrom, noteFacts, raisedLine, sheetEdit } from '../core/hunter/grant.ts';
 import type { Granted, SheetEdit, StepDone } from '../core/hunter/grant.ts';
 import { chained, issueQuest, withTold } from '../core/hunter/quests.ts';
+import { SECRET_WORDS } from '../core/hunter/quest-secret.ts';
 import { told } from '../core/session-log.ts';
 import { appliedOnce, hold, replaced, unhold } from '../core/applied.ts';
 import { askAnswered } from '../core/sync/asked.ts';
@@ -360,6 +361,7 @@ function questWindow(R: Rules, q: QuestOffer): { lines: string[]; rewards: strin
   rewards.push(...rewardLines(R, rw));
   if (q.penaltyText) lines.push(`PENALTY FOR FAILURE: ${q.penaltyText}`);
   if (q.dueAt) lines.push(`DUE: ${new Date(q.dueAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`);
+  if (q.secret) lines.push(`${SECRET_WORDS.chip.toUpperCase()}: ${SECRET_WORDS.line}`);
   return { lines, rewards };
 }
 

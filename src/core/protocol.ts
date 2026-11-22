@@ -23,6 +23,7 @@ import type { Fact } from './hunter/facts.ts';
 import { parseFeats } from './hunter/feats.ts';
 import type { FeatDef } from './hunter/feats.ts';
 import { parseObjectiveCount } from './hunter/counts.ts';
+import { questReaches } from './hunter/quest-secret.ts';
 import { oneOf } from './one-of.ts';
 import type { Hunter, Objective, Quest, QuestKind, QuestStatus, Rank, Rewards } from './save.ts';
 import { isJobName } from './registry/jobs.ts';
@@ -151,7 +152,7 @@ const forcedFace = (v: unknown): ForcedFace => oneOf(v, FORCED_FACES, null) ?? r
 /** A build change the GM sends: clear the path and perks, set a path, or pick the perk of the next open tier. */
 export type BuildChange = 'respec' | { path: string } | { tier: number; pick: 0 | 1 };
 /** A quest the GM issues to another phone. That phone gives it an id and the times it keeps. */
-export type QuestOffer = Pick<Quest, 'kind' | 'title' | 'desc' | 'objectives' | 'dueAt' | 'penaltyText'> & { rewards: Rewards; onFail: Rewards };
+export type QuestOffer = Pick<Quest, 'kind' | 'title' | 'desc' | 'objectives' | 'dueAt' | 'penaltyText' | 'secret'> & { rewards: Rewards; onFail: Rewards };
 export const SYSTEM_KINDS = ['info', 'quest', 'warning', 'penalty', 'levelup', 'arise'] as const;
 export type SystemKind = (typeof SYSTEM_KINDS)[number];
 /** What a player used: an item, a skill or a boon. */
@@ -214,8 +215,13 @@ function questOffer(v: unknown): QuestOffer {
     kind: choiceOf(QUEST_KINDS)(own(o, 'kind')), title: filled(120)(own(o, 'title')), desc: opt(own(o, 'desc'), text(500), ''),
     objectives: opt(own(o, 'objectives'), v => listOf(v, MAX_OBJECTIVES, objective), []), rewards: opt(own(o, 'rewards'), rewards, newRewards()),
     onFail: opt(own(o, 'onFail'), rewards, newRewards()),
-    dueAt: opt(own(o, 'dueAt'), nullOr(time), null), penaltyText: opt(own(o, 'penaltyText'), text(300), ''),
+    dueAt: opt(own(o, 'dueAt'), nullOr(time), null), penaltyText: opt(own(o, 'penaltyText'), text(300), ''), secret: opt(own(o, 'secret'), bool, false),
   };
+}
+/** A quest message's `to` and quest: a secret quest named to more than one hunter is refused (`questReaches`). */
+function questTo(o: Rec): { to: SheetKey[]; quest: QuestOffer } {
+  const to = toList(own(o, 'to')), quest = questOffer(own(o, 'quest'));
+  return questReaches(quest, to.length) ? { to, quest } : refuse();
 }
 
 // ── the events ──
@@ -230,6 +236,7 @@ export type GivenBundle = { key: string; name: string; window: SystemWords | nul
 /** The longest bundle key an award names: a library id or a built-in's `seed-` key. */
 const BUNDLE_KEY_MAX = 80;
 export type AwardPayload = Base & { to: SheetKey[]; rewards: Rewards & { build?: BuildChange }; bundle?: GivenBundle };
+/** A quest the GM issues to the hunters of `to`. Sealed when the quest is secret: then `to` names one hunter. */
 export type QuestPayload = Base & { to: SheetKey[]; quest: QuestOffer };
 /** HP, mana and fatigue changes the GM taps on the board: negative is damage (or rest, for fatigue). */
 export type HpPayload = Base & { to: SheetKey[]; hp: number; mana: number; fatigue: number; reason: string };
@@ -267,9 +274,9 @@ export type RevivePayload = Base & { to: SheetKey[] };
 export type RollPayload = Base & {
   by: SheetKey; name: string; label: string; expr: string; total: number; rolls: number[]; crit: boolean; fumble: boolean;
 };
-/** A player's progress on a quest the GM issued. */
+/** A player's progress on a quest the GM issued. `secret`, copied from the quest: sealed, so only the GM gets it. */
 export type QuestUpdatePayload = Base & {
-  by: SheetKey; name: string; questId: string; title: string; kind: QuestKind; status: QuestStatus; objectives: Objective[];
+  by: SheetKey; name: string; questId: string; title: string; kind: QuestKind; status: QuestStatus; objectives: Objective[]; secret: boolean;
 };
 /**
  * A player's report that one of their hunters used a thing. `who` is the hunter's name, `name` the thing's, `text` its
@@ -479,7 +486,7 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
     const r = obj(own(o, 'rewards')), build = own(r, 'build'), given = own(o, 'bundle');
     return { ...base(o), to: toList(own(o, 'to')), rewards: { ...rewards(r), ...(build === undefined ? {} : { build: buildChange(build) }) }, ...(given === undefined ? {} : { bundle: givenBundle(given) }) };
   } },
-  quest: { gmOnly: true, ownSheet: false, read: o => ({ ...base(o), to: toList(own(o, 'to')), quest: questOffer(own(o, 'quest')) }) },
+  quest: { gmOnly: true, ownSheet: false, sealed: p => p.quest.secret, read: o => ({ ...base(o), ...questTo(o) }) },
   hp: { gmOnly: true, ownSheet: false, read: o => ({ ...base(o), to: toList(own(o, 'to')), hp: hpDelta(o, 'hp'), mana: hpDelta(o, 'mana'), fatigue: hpDelta(o, 'fatigue'), reason: reason(o) }) },
   vitals: { gmOnly: true, ownSheet: false, standsFor: p => `vitals ${p.to[0]}`, read: o => {
     const to = toList(own(o, 'to')), total = (k: string): number => int(0, MAX_TOTAL)(own(o, k));
@@ -503,10 +510,10 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
     rolls: opt(own(o, 'rolls'), v => listOf(v, MAX_ROLLS, int(-MAX_ROLL, MAX_ROLL)), []), crit: opt(own(o, 'crit'), bool, false),
     fumble: opt(own(o, 'fumble'), bool, false),
   }) },
-  questUpdate: { gmOnly: false, ownSheet: true, read: o => ({
+  questUpdate: { gmOnly: false, ownSheet: true, sealed: p => p.secret, read: o => ({
     ...base(o), by: sheetKey(own(o, 'by')), name: opt(own(o, 'name'), text(60), ''), questId: id(own(o, 'questId')), title: opt(own(o, 'title'), text(120), ''),
     kind: choiceOf(QUEST_KINDS)(own(o, 'kind')), status: choiceOf(QUEST_STATUSES)(own(o, 'status')),
-    objectives: opt(own(o, 'objectives'), v => listOf(v, MAX_OBJECTIVES, objective), []),
+    objectives: opt(own(o, 'objectives'), v => listOf(v, MAX_OBJECTIVES, objective), []), secret: opt(own(o, 'secret'), bool, false),
   }) },
   chain: { gmOnly: true, ownSheet: false, read: o => {
     const job = own(o, 'job');
@@ -560,8 +567,8 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
       : { ...b, verdict: 'refused' as const, why: choiceOf(SOLO_REFUSED)(own(o, 'why')) };
   } },
   chapter: { gmOnly: true, ownSheet: false, sealed: always, read: o => {
-    const q = own(o, 'quest');
-    return { ...base(o), to: toList(own(o, 'to')), words: need(parseWords(own(o, 'words'))), rewards: rewards(own(o, 'rewards')), quest: q === null || q === undefined ? null : questOffer(q) };
+    const q = own(o, 'quest'), to = toList(own(o, 'to')), quest = q === null || q === undefined ? null : questOffer(q);
+    return quest && !questReaches(quest, to.length) ? refuse() : { ...base(o), to, words: need(parseWords(own(o, 'words'))), rewards: rewards(own(o, 'rewards')), quest };
   } },
   word: { gmOnly: false, ownSheet: true, sealed: always, read: o => ({
     ...base(o), by: sheetKey(own(o, 'by')), name: opt(own(o, 'name'), text(NAME_MAX), ''), text: filled(WORD_MAX)(own(o, 'text')),

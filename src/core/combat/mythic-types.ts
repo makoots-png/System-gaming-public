@@ -97,10 +97,13 @@ export type Omen<M extends string = MoveKey> = {
   readonly aim: OmenAim;
   /** A status with one of these ops landing on it while the omen stands. */
   readonly interrupt: { readonly by: readonly Interrupt[]; readonly outcome: AnswerOutcome };
-  /** Its stagger bar breaking while the omen stands. */
+  /**
+   * Its stagger bar taking `mythic.answerReach.stagger` same-rank hits after the announce (decision 42: a bar filled
+   * before the omen answers nothing).
+   */
   readonly stagger: AnswerOutcome;
-  /** This share of its max HP taken from it while the omen stands (HP it healed counts against it). */
-  readonly burst: { readonly share: number; readonly outcome: AnswerOutcome } | null;
+  /** `mythic.answerReach.burst` of its max HP taken from it after the announce (HP it healed counts against it). */
+  readonly burst: AnswerOutcome;
 };
 
 /** What every move has, whatever its kind. */
@@ -134,11 +137,14 @@ export type MythicMove = MoveCommon & (
  * (`mythicStep`, and `mythicStart` and `mythicJoined` for a new row). `phase` and `beat` index the script's phases and the phase's rotation (modulo its
  * length); `since` is when its phase's clock began counting: the phase's start, moved later by each answer met
  * (mythic.ts `answerBack`, decision 40), never past the fight's now. While an omen stands, `aim` is where it was
- * aimed and `hpAt` the mythic's HP then (the burst answer counts from it).
+ * aimed, and `hpAt` and `barAt` the mythic's HP and stagger bar then (null: it has none), which the burst and the
+ * stagger answers count from (decision 42).
  */
 export type MythicStanding =
   | { readonly at: 'calm'; readonly script: MythicScriptId; readonly phase: number; readonly beat: number; readonly since: Tick }
   | {
     readonly at: 'omen' | 'faltering'; readonly script: MythicScriptId; readonly phase: number; readonly beat: number; readonly since: Tick;
-    readonly omen: OmenKey; readonly aim: Place | CombatantId; readonly hpAt: number;
+    readonly omen: OmenKey; readonly aim: Place | CombatantId; readonly hpAt: number; readonly barAt: BarAt | null;
   };
+/** A stagger bar as an omen found it: its fill and its max. */
+export type BarAt = { readonly fill: number; readonly max: number };

@@ -171,7 +171,7 @@ export function chapterBody(c: Pick<Chapter, 'words' | 'rewards' | 'quest'>, at:
   const q = c.quest;
   return {
     words: c.words, rewards: c.rewards,
-    quest: q && { kind: q.kind, title: q.title, desc: q.desc, objectives: [...q.objectives], rewards: q.rewards, onFail: q.onFail, penaltyText: q.penaltyText, dueAt: q.dueHours === null ? null : dueAt(q.dueHours, new Date(at)) },
+    quest: q && { kind: q.kind, title: q.title, desc: q.desc, objectives: [...q.objectives], rewards: q.rewards, onFail: q.onFail, penaltyText: q.penaltyText, dueAt: q.dueHours === null ? null : dueAt(q.dueHours, new Date(at)), secret: false },
   };
 }
 

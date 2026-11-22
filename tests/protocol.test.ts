@@ -83,6 +83,13 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
     expect([GM, phone('d-kai'), phone('d-mira'), phone('d-eldrin'), ANYONE].map(v => servedTo(broadcast, v))).toEqual([true, true, true, true, true]);
   });
 
+  test('a secret quest and its progress reach the GM and its hunter\'s phone only; a quest that is not secret, and its progress, reach every phone', () => {
+    const quest = (secret: boolean) => event('quest', { eid: 'd-gm-q1', to: [MIRA], quest: { kind: 'side', title: 'The traitor', secret } });
+    const update = (secret: boolean) => event('questUpdate', { eid: 'd-mira-qu1', by: MIRA, name: 'Mira', questId: 'q4', title: 'The traitor', kind: 'side', status: 'active', objectives: [], secret });
+    for (const ev of [quest(true), update(true)]) expect([GM, phone('d-kai'), phone('d-mira'), phone('d-eldrin'), ANYONE].map(v => servedTo(ev, v))).toEqual([true, false, true, false, false]);
+    for (const ev of [quest(false), update(false)]) expect([GM, phone('d-kai'), phone('d-mira'), phone('d-eldrin'), ANYONE].map(v => servedTo(ev, v))).toEqual([true, true, true, true, true]);
+  });
+
   const items = Array.from({ length: FACE_LINES + 2 }, (_, i) => ({ ...itemOf(RULES, SHOP_ITEMS[0]!), id: `i${i + 1}` as never, name: `Thing ${i + 1}`, qty: i + 1 }));
   const mira = { ...newHunter(), id: 'h3' as never, name: 'Mira', level: 4, job: 'Healer', items, equipped: { ...newHunter().equipped, weapon: 'i1' as never } };
 
@@ -362,6 +369,20 @@ describe('a quest', () => {
     expect(quest({ rewards: 'junk' })).toBeNull();
   });
 
+  test('a secret quest to two hunters is refused: a secret quest is one hunter\'s; to one it reads secret, and a quest that does not say reads not secret', () => {
+    expect(quest({ secret: true }), 'the valid quest names two hunters').toBeNull();
+    expect(payload('quest', { ...valid('quest'), to: [valid('quest').to[0]], quest: { ...valid('quest').quest, secret: true } })!.quest.secret).toBe(true);
+    const { secret: _, ...unsaid } = valid('quest').quest;
+    expect(payload('quest', { ...valid('quest'), quest: unsaid })!.quest.secret).toBe(false);
+    expect(quest({ secret: 'yes' }), 'a secret that is not true or false refuses the quest').toBeNull();
+  });
+
+  test('a player\'s progress on a secret quest says so; progress that does not say is not secret', () => {
+    expect(payload('questUpdate', { ...valid('questUpdate'), secret: true })!.secret).toBe(true);
+    const { secret: _, ...unsaid } = valid('questUpdate');
+    expect(payload('questUpdate', unsaid)!.secret).toBe(false);
+  });
+
   test('the GM screen leaves out the penalty and the due time: they read as none', () => {
     const { penaltyText: _, dueAt: __, ...gmQuest } = valid('quest').quest;
     expect(payload('quest', { ...valid('quest'), quest: { ...gmQuest, from: 'gm' } })!.quest).toMatchObject({ penaltyText: '', dueAt: null });
@@ -391,6 +412,11 @@ describe('a story\'s chapter', () => {
     expect(payload('chapter', words)!.quest).toBeNull();
     expect(chapter({ quest: { ...valid('chapter').quest, title: '' } })).toBeNull();
     expect(chapter({ quest: { ...valid('chapter').quest, objectives: many(50, i => ({ label: `o${i}`, target: 1 })) } })!.quest.objectives).toHaveLength(10);
+  });
+
+  test('a chapter whose quest is secret is refused when it names two hunters, as a quest is', () => {
+    expect(chapter({ quest: { ...valid('chapter').quest, secret: true } })).toBeNull();
+    expect(chapter({ to: [valid('chapter').to[0]], quest: { ...valid('chapter').quest, secret: true } })!.quest.secret).toBe(true);
   });
 
   test('a chapter names no story, run or chapter number: only what the GM wrote for players reaches their phones', () => {
@@ -1415,7 +1441,7 @@ describe('an offer between two hunters, and its one end', () => {
     for (const to of [[KEY], [KEY, KEY], [KEY, OTHER, 'd-x:h1'], [KEY, 'bad key']]) expect(payload('offerStop', { ...valid('offerStop'), to })).toBeNull();
   });
 
-  test('an offer, its end and the GM\'s stop are sealed to the GM and the two hunters (the lead\'s ruling 1), a stash ask and its answer to the GM and the asking hunter, a story\'s chapter to the GM and the hunters it is for, and a table weight to the GM and its hunter; nothing else is (a System message to the room is not; one to named hunters is, above)', () => {
+  test('an offer, its end and the GM\'s stop are sealed to the GM and the two hunters (the lead\'s ruling 1), a stash ask and its answer to the GM and the asking hunter, a story\'s chapter to the GM and the hunters it is for, and a table weight to the GM and its hunter; nothing else is (a System message to the room is not; one to named hunters is, and a secret quest and its progress are, above)', () => {
     const sealed = EVENT_TYPES.filter(t => isSealed(parseEvent(t, valid(t))!)).sort();
     expect(sealed).toEqual(['chapter', 'offer', 'offerEnd', 'offerStop', 'stashAnswer', 'stashAsk', 'weigh', 'word', 'wordBack']);
   });

@@ -284,7 +284,7 @@ describe('only the GM\'s tap moves a story', () => {
     expect(n.hunters[0]!.gold, 'the feat was earned').toBe(base.hunters[0]!.gold + 5);
     same(n);
 
-    const quest = { id: qid('q50'), kind: 'urgent' as const, title: 'Hold the bridge', desc: '', objectives: [], rewards: newRewards(), status: 'active' as const, issuedAt: AT, doneAt: null, dueAt: '2026-11-19T09:00:00.000Z', from: 'gm' as const, penaltyText: '', onFail: newRewards() };
+    const quest = { id: qid('q50'), kind: 'urgent' as const, title: 'Hold the bridge', desc: '', objectives: [], rewards: newRewards(), status: 'active' as const, issuedAt: AT, doneAt: null, dueAt: '2026-11-19T09:00:00.000Z', from: 'gm' as const, penaltyText: '', onFail: newRewards(), secret: false };
     const withQuest = { ...base, hunters: base.hunters.map(h => (h.id === 'h2' ? { ...h, quests: [...h.quests, quest] } : h)) };
     same(ok(finishQuest(withQuest, 'h2', 'q50', { ...DAY, vitals: 'sheet' })).save);
     const failed = rollover(withQuest, { today: TODAY, at: AT, nowMs: Date.parse(AT), gm: true });
