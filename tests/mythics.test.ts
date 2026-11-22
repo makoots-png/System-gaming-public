@@ -16,6 +16,7 @@ import { mythicMove } from '../src/core/registry/mythic-moves.ts';
 import type { MythicBody } from '../src/core/registry/mythic-moves.ts';
 import { monsterScript, seedMonsters, statBlock, tweakOfMonster } from '../src/core/registry/monsters.ts';
 import type { MoveKey, Omen, MythicMove, MythicScript, MythicStatus, OmenKey } from '../src/core/combat/mythic-types.ts';
+import { ANSWERS, answerOutcome } from '../src/core/combat/mythic.ts';
 import { abilityId, combatantId, hunterId } from '../src/core/combat/ability-types.ts';
 import { modified, statusKey } from '../src/core/combat/effect-ops.ts';
 import type { Body, Origin, Status } from '../src/core/combat/effect-ops.ts';
@@ -46,7 +47,7 @@ const moveOf = (s: MythicScript, key: string): MythicMove | undefined => entryOf
  */
 function answerable(s: MythicScript, o: Omen): boolean {
   const full = moveOf(s, o.full)!;
-  return (o.interrupt.by.length > 0 && o.interrupt.outcome !== 'none') || o.stagger !== 'none' || o.burst !== 'none'
+  return ANSWERS.some(how => answerOutcome(o, how) !== 'none' && (how !== 'interrupt' || o.interrupt.by.length > 0))
     || full.reach !== 'field' || !full.sure;
 }
 
@@ -98,8 +99,15 @@ test('every omen lands moves its script holds', () => {
 
 test('an omen that can be weakened has a weak move', () => {
   for (const [id, s] of SCRIPTS) for (const [key, o] of omensOf(s)) {
-    const weakens = o.interrupt.outcome === 'weaken' || o.stagger === 'weaken' || o.burst === 'weaken';
+    const weakens = ANSWERS.some(how => answerOutcome(o, how) === 'weaken');
     if (weakens) expect([id, key, o.weak !== null]).toEqual([id, key, true]);
+  }
+});
+
+test('only an omen that lands a blast at a hunter\'s tile is answered by leaving the tile (decision 43)', () => {
+  // a curse aims at its hunter, not the tile it stood on; an omen aimed at the mythic itself the type holds at none
+  for (const [id, s] of SCRIPTS) for (const [key, o] of omensOf(s)) {
+    if (o.step !== 'none') expect([id, key, moveOf(s, o.full)!.kind]).toEqual([id, key, 'blast']);
   }
 });
 

@@ -589,3 +589,84 @@ Branch `mythic-5d`. The switch `fight.mythic.scripts` stays off. Every measure i
   by the machine at the announce, and one rule sizes both answers.
 - `principle-test-behavior-not-implementation`: the reducer tests size their hits from the rule through `afterDefence`,
   and fail when a bar filled before the announce answers (the old break) or when a reach is not read.
+
+## MY5, fifth pass: an omen answered by a turn that is not an attack (decision 43)
+
+Branch `mythic-5e`. The switch `fight.mythic.scripts` stays off. Every measure is in rw/sim-log.md, "MY5, fifth pass".
+
+### What exists
+
+- mythic-types.ts `Omen`: every omen writes five answers' outcomes, `none` included: `interrupt`, `stagger`, `burst`,
+  and decision 43's `shield` (a shield landing on the hunter it aims at) and `step` (the tile it aims at left with no
+  hunter on it, standing or fallen). An omen aimed at the mythic itself (`self`, `all`) is typed with `shield` and `step`
+  at `none`; tests/mythics.test.ts asks that only a blast's omen writes a step answer.
+- mythic.ts: `ANSWERS`, the kinds in the order a party tries them (`Answer` is its member, and the policy's kinds: the old
+  `ANSWER_KINDS` and `AnswerKind` of policy.ts are gone, and the policy's `move` is `step`); `answerOutcome`;
+  `aimedBody`; `answerMet` reads an `AnswerScene` before and after a change (the mythic's row and every row) and the
+  time, so a shield on the aimed hunter or a step off the aimed tile is met by that hunter's own change.
+- fight-turn.ts `answered` passes the rows before and after; the log reads "Brakk is shielded: Named in the Book is
+  cancelled." and "No one stands where Stars Fall was aimed: Stars Fall is cancelled."
+- policy.ts `answerChoice`: the hunter on an aimed tile steps off it by the nearest tile (out of the area on a tie); a
+  hunter steps out of an area only when the move would drop it (`drops`, the shield's rule too); the tank shields the
+  aimed hunter while the shield answer changes the omen.
+- No omen keeps a stagger or burst answer. The rule and its tests stay (tests/mythic.test.ts reads it on an omen of its
+  own), for keystones' stagger ops (K5). The reducer tests of those two answers are gone with the data that held them.
+- rules.ts `answerTime` 1 → 3 rounds, both outcomes. registry/mythics.ts: see sim-log.md step 4 for every number.
+- Tests: tests/mythic.test.ts (the shield and the step in `answerMet`), tests/fight.test.ts ("a shield landing on the
+  hunter an omen names cancels it...", "the hunter on the tile Stars Fall aims at cancels it by stepping off..."),
+  tests/policy.test.ts (the step off the aimed tile, the tank's shield on the named hunter), tests/mythics.test.ts.
+- Rows at 600 fights: B1 0.068 / 0.062 / 0.058 (the Angel, Zaratan, the Rider); **B3 0.000 / 0.002 / 0.008, all inside,
+  out of `OPEN`**; B5's stagger and burst rows are gone (no omen answers by a hit); the new B5 rows hold (step 0.780 and
+  0.135, shield 0.561 and 0.771, interrupt 0.195 and 0.514) except Zaratan's interrupt (1.08, se 0.23, in `OPEN`); B4
+  stays open (0.380 / 0.187 / 0.657, the Rider 0.018); B2, B6, B7, B8 hold.
+
+### Where the design did not hold
+
+- **The walk in answers a step omen.** Stars Fall at the crowd, announced on the Angel's second beat, was answered by the
+  party walking up (0.74 a fight for the party that answers none). It now comes after Weighed and aims at the farthest
+  hunter, the cannon, who stands; the none party leaves its tile 0.00 times a fight.
+- **The omens' hits do not move the party that answers none.** Its wins (2 to 5%) come from fights it wins on damage
+  before omens add up: heavier Stars Fall and Pale Wake (1.6) left them as they were. What moved it is the clock: once
+  only chosen turns answer, the none party buys no time, so shorter clocks with 3 rounds an answer separate the parties
+  (sim-log.md step 2). The fight is now a clock the party extends by answering.
+- **An answer only the tank holds covers about one omen in two.** The stun and Shield Wall are the tank's, each back
+  every 3 rounds; the Rider names 3.5 hunters a fight and the party answers 0.8 of them. Its B1 (0.058) and B3 (0.008)
+  are each inside by less than one standard error, and so are the Angel's B5 step (0.780) and the Rider's B5 shield
+  (0.771): a move of the data or a policy can push one out.
+- **Two decision-43 answers were words and are gone:** Zaratan's Trench shield (its hunter is the farthest, past Shield
+  Wall's 6 tiles: met 0.00 times) and the Rider's Pale Wake step (B5 1.02 to 1.06: the Wake decides no fight).
+- **Zaratan's interrupt row stays out (1.08):** its one omen a stun answers is in its last phase, met 0.09 times.
+- **No guard.** A guard is a reaction armed ahead that fires at the landing, after the window; the mixed party holds
+  none. Only a shield answers for the aimed hunter.
+
+### Calls the owner might have made otherwise
+
+- No omen is answered by a hit any more; the stagger and burst rule stays for keystones. Undo: "every warning is answered
+  by hitting it" (the omens' old `stagger` and `burst` outcomes).
+- The Angel's Final Note is made smaller by a stun, not by breaking its bar, and its phase line says so ("Hold it still
+  before the note to make the note smaller."). Undo: "break its bar to make the note smaller" (Note `stagger: 'weaken'`,
+  `interrupt` none, the old line).
+- An answer buys 3 rounds, and the clocks are shorter: the Angel 4 / 4 / 2 (was 5 / 4 / 3), Zaratan 5 / 4 / 5 (6 / 4 / 7),
+  the Rider 5 / 3 / 3 (5 / 5 / 4). Undo: "answers buy one round" (`answerTime` 1 and the old clocks).
+- Weighed and Found Wanting is cancelled by a shield on the hunter it names, and no longer by a stun. Undo: "a stun
+  cancels Weighed" (`interrupt: { by: ['hold', 'root'], outcome: 'cancel' }`).
+- Stars Fall comes after Weighed, aims at the farthest hunter, and hits for 1.0 of a hunter's HP (0.55). Undo: "the stars
+  fall on the crowd" (aim `crowd`, rotation act, Stars, act, Weighed, hits 0.55).
+- Named in the Book is cancelled by a shield on the named hunter, as by a stun. Undo: "a shield only weakens the naming".
+- Zaratan's Sinking hits 1.0 (0.5) and its Trench 1.2 (0.75), so not stepping off costs a hunter. Undo: the two numbers.
+- A hunter fallen on the aimed tile still holds it, so a hunter killed there answers nothing. Undo: "a fallen hunter
+  leaves the tile".
+- The policy steps out of an area only when the move would drop the hunter (it cost the Angel's party 0.103 against
+  0.147). Undo: "a hunter always steps out of an omen's area".
+- `hp`: the Angel 0.93 → 1.0, the Rider 0.82 → 0.78, Zaratan 0.92 as it was. Undo: the numbers.
+
+### Principles that changed a choice
+
+- `principle-attack-the-premise`: "a heavier unanswered omen separates the parties" was tested directly (step 2) and
+  failed; the parties' wins were read for what decides them, the clock, before any number moved.
+- `principle-explain-the-number`: each B5 row was read beside the answers each party met, which found two answers that
+  were words (met 0.00 times, or changing no fight) and the walk in that answered Stars Fall.
+- `principle-model-the-domain`: one list of answer kinds, `ANSWERS`, shared by the data, the reducer, the policy and the
+  rows; the type, not a check, keeps a self-aimed omen from a shield or step answer.
+- `principle-test-behavior-not-implementation`: the reducer tests drive the shield and the step by commands and read the
+  standing and the log; the stagger and burst rule is read on a test omen, not on a script's data.

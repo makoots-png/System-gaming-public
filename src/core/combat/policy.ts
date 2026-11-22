@@ -26,8 +26,9 @@ import type { Aim } from './resolve.ts';
 import { spotOf, stepToward, tauntOf } from './fight-view.ts';
 import { threatOf } from './threat.ts';
 import { omenMove } from './fight-turn.ts';
-import { scriptOf } from './mythic.ts';
-import type { AnswerOutcome, MythicStanding, Omen } from './mythic-types.ts';
+import { ANSWERS, aimedBody, answerOutcome, scriptOf } from './mythic.ts';
+import type { Answer } from './mythic.ts';
+import type { MythicStanding, Omen } from './mythic-types.ts';
 
 /** What a row does on its turn: a use, a move (a dash when `dash`), End turn, or a holding channel's release. */
 export type TurnChoice =
@@ -146,12 +147,6 @@ function partyChoice(f: Running, me: Body, uses: readonly Ability[], foes: reado
 }
 
 // ── a mythic's omen and the party's answers (design B.4) ──
-/**
- * The answers a party row makes to a standing omen, in the order `answerChoice` tries them: step out of its tiles, land
- * a status whose op its interrupt names, shield a body it would drop, break its stagger bar, take its burst share of HP.
- */
-export const ANSWER_KINDS = ['move', 'interrupt', 'shield', 'stagger', 'burst'] as const;
-export type AnswerKind = (typeof ANSWER_KINDS)[number];
 /** A foe mythic whose omen stands: the row, its standing, the omen, and the move that lands on its next turn with its aim. */
 type Facing = {
   readonly m: Body; readonly s: Extract<MythicStanding, { readonly at: 'omen' | 'faltering' }>; readonly omen: Omen;
@@ -165,9 +160,11 @@ function facing(f: Running, me: Body, R: Rules): Facing[] {
     return omen && land ? [{ m, s, omen, land }] : [];
   });
 }
-/** Whether an answer of `outcome` still changes the omen: a cancel always, a weaken while it stands whole and has a weak move. */
-const changes = (w: Facing, outcome: AnswerOutcome): boolean =>
-  outcome === 'cancel' || (outcome === 'weaken' && w.omen.weak !== null && w.s.at === 'omen');
+/** Whether an answer of kind `how` still changes the omen: a cancel always, a weaken while it stands whole and has a weak move. */
+function changes(w: Facing, how: Answer): boolean {
+  const outcome = answerOutcome(w.omen, how);
+  return outcome === 'cancel' || (outcome === 'weaken' && w.omen.weak !== null && w.s.at === 'omen');
+}
 /** Whether the omen's move is an area that tile `p` stands in (its ring included). A single-target move and a field have none to leave. */
 function inArea(f: Running, w: Facing, side: Body['side'], p: Place): boolean {
   if (w.land.move.kind !== 'blast' || w.land.move.reach === 'field') return false;
@@ -176,13 +173,20 @@ function inArea(f: Running, w: Facing, side: Body['side'], p: Place): boolean {
   const { hit, ring } = whoIsIn(w.land.ability, { side: w.m.side, place: w.m.place }, [{ side, place: p }], at, f.grid);
   return hit.length + ring.length > 0;
 }
-/** The nearest tile within a stride out of every standing omen's area, nearer the mythic on a tie; null when none is. */
-function stepOut(f: Running, me: Body, ws: readonly Facing[]): TurnChoice | null {
+/** Whether tile `p` is the one the omen aims at (a blast at a hunter's tile; decision 43's step answer). */
+const aimTile = (w: Facing, p: Place): boolean => typeof w.s.aim !== 'string' && w.s.aim.x === p.x && w.s.aim.y === p.y;
+/**
+ * A step within a stride for `me`, onto no tile an omen aims at: when `off` (it stands on the tile an omen whose step
+ * answer changes it aims at), the nearest such tile, out of every area on a tie, so a hunter in reach of the mythic
+ * stays in reach; else the nearest tile out of every area. Nearer the mythic on a tie. Null when none is.
+ */
+function stepOut(f: Running, me: Body, ws: readonly Facing[], off: boolean): TurnChoice | null {
   const others = f.rows.filter(r => r.id !== me.id && (isUp(r) || r.kind === 'hunter')).map(r => r.place), m = ws[0]!.m;
-  const out = reachable(me.place, me.sheet.stride, f.grid, others)
-    .filter(r => r.steps > 0 && !ws.some(w => inArea(f, w, me.side, r.place)))
-    .sort((a, b) => a.steps - b.steps || dist(a.place, m.place) - dist(b.place, m.place))[0];
-  return out ? { type: 'move', to: out.place } : null;
+  const out = (p: Place): boolean => !ws.some(w => inArea(f, w, me.side, p));
+  const to = reachable(me.place, me.sheet.stride, f.grid, others)
+    .filter(r => r.steps > 0 && !ws.some(w => aimTile(w, r.place)) && (off || out(r.place)))
+    .sort((a, b) => a.steps - b.steps || Number(out(b.place)) - Number(out(a.place)) || dist(a.place, m.place) - dist(b.place, m.place))[0];
+  return to ? { type: 'move', to: to.place } : null;
 }
 /** A use of `me`'s that lands on `w`'s mythic a status it lacks holding an op the omen's interrupt names. */
 function interrupt(f: Running, me: Body, uses: readonly Ability[], w: Facing, R: Rules): TurnChoice | null {
@@ -194,23 +198,16 @@ function interrupt(f: Running, me: Body, uses: readonly Ability[], w: Facing, R:
   }
   return null;
 }
-/**
- * A shield from `me` on a body the omen would drop: the one it names, or the most hurt its area catches (every body of the
- * side for a field) whose HP its move's average, before armor, would take. A shield on a body the move leaves standing
- * is a turn not spent on the fight (the mixed party's tank won 0.215 of the Angel's fights shielding every body it hit,
- * 0.44 never shielding: sim-log.md, MY5).
- */
-function shieldFrom(f: Running, me: Body, uses: readonly Ability[], w: Facing, R: Rules): TurnChoice | null {
-  const shields = uses.filter(a => a.aim !== 'foe' && (a.effect?.type === 'shield' || a.ops.some(o => o.op === 'shield')));
+/** Whether the omen's move, at its average before armor, would take `b`'s HP (`shieldFrom` and the step out of an area ask it). */
+function drops(w: Facing, b: Body, R: Rules): boolean {
   const formula = formulaOf(w.land.ability, R);
-  if (!shields.length || !formula) return null;
-  const bare = (b: Body): boolean => !(b.shield && b.shield.until > f.now);
-  const falls = (b: Body): boolean => average(formula, { user: w.m, target: b, charge: 0 }) >= rowHp(b);
-  const move = w.land.move, hits = (b: Body): boolean =>
-    move.kind !== 'blast' ? b.id === w.land.aim : move.reach === 'field' || inArea(f, w, b.side, b.place);
-  const hit = alliesOf(f, me).filter(b => bare(b) && hits(b) && falls(b))
-    .sort((a, b) => rowHp(a) / a.sheet.hpMax - rowHp(b) / b.sheet.hpMax || byId(a, b));
-  for (const b of hit) for (const a of shields) {
+  return !!formula && average(formula, { user: w.m, target: b, charge: 0 }) >= rowHp(b);
+}
+/** `me`'s uses that put a shield on a body of its side. */
+const shieldsOf = (uses: readonly Ability[]): Ability[] => uses.filter(a => a.aim !== 'foe' && (a.effect?.type === 'shield' || a.ops.some(o => o.op === 'shield')));
+/** The first of `shields` `me` may put on `b`, as a choice. */
+function shieldOn(f: Running, me: Body, shields: readonly Ability[], b: Body, R: Rules): TurnChoice | null {
+  for (const a of shields) {
     if (a.aim === 'self' && b.id !== me.id) continue;
     const aim = aimAt(a, me, b);
     if (fits(f, me, a, aim, R)) return { type: 'act', ability: a, aim };
@@ -218,35 +215,63 @@ function shieldFrom(f: Running, me: Body, uses: readonly Ability[], w: Facing, R
   return null;
 }
 /**
- * A party row's answer to a foe mythic's standing omen (design B.4), the first that applies among `kinds`: step out of
- * the omen's tiles when it stands in them and can; a status whose op the omen's interrupt names, while that outcome
- * still changes the omen; a shield on a body the omen would drop (`shieldFrom`); while its stagger outcome changes the
- * omen and its bar is at least half full, the strongest hit on it; while its burst outcome does, the strongest hit on it.
- * The shield comes before the hits, not last as B.4 lists it: a weaken leaves most of the move, and a body it drops is a
- * hunter lost. Null when no omen stands or none applies, and the row plays as it would.
+ * A shield from `me` against the omen: on the hunter it is aimed at, when its shield answer changes it (decision 43);
+ * else on a body it would drop, the one it names or the most hurt its area catches (every body of the side for a field)
+ * whose HP its move's average, before armor, would take. A shield on a body the move leaves standing and the omen does
+ * not answer to is a turn not spent on the fight (the mixed party's tank won 0.215 of the Angel's fights shielding every
+ * body it hit, 0.44 never shielding: sim-log.md, MY5).
  */
-export function answerChoice(f: Running, me: Body, R: Rules, kinds: readonly AnswerKind[] = ANSWER_KINDS): TurnChoice | null {
+function shieldFrom(f: Running, me: Body, uses: readonly Ability[], w: Facing, R: Rules): TurnChoice | null {
+  const shields = shieldsOf(uses);
+  if (!shields.length) return null;
+  const aimed = changes(w, 'shield') ? aimedBody(w.s.aim, w.m.side, alliesOf(f, me)) : undefined;
+  const answer = aimed && shieldOn(f, me, shields, aimed, R);
+  if (answer) return answer;
+  const bare = (b: Body): boolean => !(b.shield && b.shield.until > f.now);
+  const move = w.land.move, hits = (b: Body): boolean =>
+    move.kind !== 'blast' ? b.id === w.land.aim : move.reach === 'field' || inArea(f, w, b.side, b.place);
+  const hit = alliesOf(f, me).filter(b => bare(b) && hits(b) && drops(w, b, R))
+    .sort((a, b) => rowHp(a) / a.sheet.hpMax - rowHp(b) / b.sheet.hpMax || byId(a, b));
+  for (const b of hit) { const c = shieldOn(f, me, shields, b, R); if (c) return c; }
+  return null;
+}
+/**
+ * A party row's answer to a foe mythic's standing omen (design B.4), the first that applies among `kinds`, in the order
+ * of `ANSWERS`: a step off the tile it aims at when it stands there and the step answer changes the omen (decision 43),
+ * or out of its tiles when it stands in them, its move would drop it, and it can (a step out of a hit it would stand
+ * cost the Angel's answering party 0.103 of its wins against 0.147 without: sim-log.md, MY5 fifth pass); a status whose op the omen's interrupt names, while that outcome
+ * still changes the omen; a shield on the hunter it aims at while the shield answer changes it, else on a body the omen
+ * would drop (`shieldFrom`); while its stagger outcome changes the omen and its bar is at least half full, the strongest
+ * hit on it; while its burst outcome does, the strongest hit on it. The shield comes before the hits, not last as B.4
+ * lists it: a weaken leaves most of the move, and a body it drops is a hunter lost. Null when no omen stands or none
+ * applies, and the row plays as it would.
+ */
+export function answerChoice(f: Running, me: Body, R: Rules, kinds: readonly Answer[] = ANSWERS): TurnChoice | null {
   if (me.threat) return null;
   const ws = facing(f, me, R);
   if (!ws.length) return null;
-  const uses = me.abilities.filter(playable), on = (k: AnswerKind): boolean => kinds.includes(k);
-  if (on('move') && ws.some(w => inArea(f, w, me.side, me.place))) { const out = stepOut(f, me, ws); if (out) return out; }
+  const uses = me.abilities.filter(playable), on = (k: Answer): boolean => kinds.includes(k);
+  if (on('step')) {
+    const off = ws.some(w => changes(w, 'step') && aimTile(w, me.place));
+    const out = off || ws.some(w => inArea(f, w, me.side, me.place) && drops(w, me, R)) ? stepOut(f, me, ws, off) : null;
+    if (out) return out;
+  }
   for (const w of ws) {
-    const i = on('interrupt') && changes(w, w.omen.interrupt.outcome) ? interrupt(f, me, uses, w, R) : null;
+    const i = on('interrupt') && changes(w, 'interrupt') ? interrupt(f, me, uses, w, R) : null;
     if (i) return i;
   }
   for (const w of ws) { const s = on('shield') ? shieldFrom(f, me, uses, w, R) : null; if (s) return s; }
   for (const w of ws) {
-    const bar = w.m.stagger, stagger = on('stagger') && changes(w, w.omen.stagger) && bar !== null && bar.fill >= bar.max / 2;
-    const burst = on('burst') && changes(w, w.omen.burst);
+    const bar = w.m.stagger, stagger = on('stagger') && changes(w, 'stagger') && bar !== null && bar.fill >= bar.max / 2;
+    const burst = on('burst') && changes(w, 'burst');
     const hit = stagger || burst ? strongest(f, me, uses, [w.m], R) : null;
     if (hit) return hit;
   }
   return null;
 }
 /** `choice`, unless it walks `me` from outside a standing omen's tiles into them: then the turn is waited out. */
-export function keptOut(f: Running, me: Body, R: Rules, choice: TurnChoice, kinds: readonly AnswerKind[] = ANSWER_KINDS): TurnChoice {
-  if (choice.type !== 'move' || !kinds.includes('move') || me.threat) return choice;
+export function keptOut(f: Running, me: Body, R: Rules, choice: TurnChoice, kinds: readonly Answer[] = ANSWERS): TurnChoice {
+  if (choice.type !== 'move' || !kinds.includes('step') || me.threat) return choice;
   const ws = facing(f, me, R);
   return ws.some(w => inArea(f, w, me.side, choice.to) && !inArea(f, w, me.side, me.place)) ? PASS : choice;
 }

@@ -701,9 +701,12 @@ const SPEC = {
       // Decision 40: an answer met winds its gate phase's clock back by these rounds (mythic.ts `answerBack`), never past
       // the phase's start. Without it a party that answered every omen and one that answered none lost the same race to
       // the clocks (sim-log.md, MY5 second pass): an answer saved HP, and the clocks, not HP, decided the fight.
+      // 3 rounds, about one omen's cycle, with the scripts' clocks shortened to match (sim-log.md, MY5 fifth pass): once
+      // decision 43's answers are turns a party plays only to answer, the party that answers none buys no time, and a
+      // clock it cannot beat is one the answering party beats by answering. At 1 round the time bought moved no fight.
       answerTime: {
-        cancel: whole(1, 0, 20, 'rounds a cancelling answer winds a phase\'s clock back: 20 is the longest clock a script may hold'),
-        weaken: whole(1, 0, 20, 'rounds a weakening answer winds a phase\'s clock back: 20 is the longest clock a script may hold'),
+        cancel: whole(3, 0, 20, 'rounds a cancelling answer winds a phase\'s clock back: 20 is the longest clock a script may hold'),
+        weaken: whole(3, 0, 20, 'rounds a weakening answer winds a phase\'s clock back: 20 is the longest clock a script may hold'),
       },
       // Decision 42: what a stagger or a burst answer asks, counted only from the omen's announce (mythic.ts
       // `answerMet`): `stagger` same-rank hits on its bar (its `hit`, so a bar grown by a break asks no more), `burst` a
@@ -711,6 +714,8 @@ const SPEC = {
       // party's three turns or so land 2 to 6% of a mythic's max HP at the median and 8 to 12% at the 90th centile, and
       // 1 to 2 same-rank hits on its bar. At 0.13 and 4 (a whole bar of a first phase) the party that answers none meets
       // them 0.03 to 0.26 times a fight; at the omens' old shares (0.05 to 0.08) half its windows met the burst.
+      // Decision 43 left no script's omen answered by a hit (a hit is the turn a party plays anyway, so the answer was a
+      // word); the rule stays for a party that holds a hit it can save (keystones' stagger ops, unit K5).
       answerReach: {
         stagger: real(4, 0, 20, 'same-rank hits on its bar after an omen\'s announce a stagger answer asks: 0 is any hit after it, 20 is past anything a party lands in a window'),
         burst: real(0.13, 0, 1, 'a share of its max HP lost after an omen\'s announce a burst answer asks: 0 is any hit after it, 1 is the whole of it'),

@@ -66,8 +66,8 @@ import { BUILDS, KIT_BUILDS, MONSTER_ABILITY, PLAIN_OF, SIM_RANKS, abilities, an
 import type { Archetype, FightRecord, KitBuild, PenBuild, PenSpend, Plan, SimRow } from './models/fight-sim.ts';
 import { MYTHICS, MYTHIC_IDS, omensOf } from '../src/core/registry/mythics.ts';
 import type { MythicScriptId } from '../src/core/registry/mythics.ts';
-import { ANSWER_KINDS } from '../src/core/combat/policy.ts';
-import type { AnswerKind } from '../src/core/combat/policy.ts';
+import { ANSWERS, answerOutcome } from '../src/core/combat/mythic.ts';
+import type { Answer } from '../src/core/combat/mythic.ts';
 import { monsterRows } from '../src/core/combat/rows.ts';
 import { seedMonsters } from '../src/core/registry/monsters.ts';
 import { combatantId } from '../src/core/combat/ability-types.ts';
@@ -383,21 +383,21 @@ const MONSTER_ARCHETYPES = Object.keys(RULES.fight.archetypes) as MonsterArchety
 // Each script plays on its seed's body under scripts on (`scripted`, its HP times the script's `hp`). A row's fights are
 // 600 a script, M1's number. Why each bound is what it is: design B.8's table.
 const SCRIPTED = scriptsOn();
-const answeringParty = (ids: readonly Archetype[], kinds: readonly AnswerKind[]): SimRow[] => party(ids, 'S').map(s =>
+const answeringParty = (ids: readonly Archetype[], kinds: readonly Answer[]): SimRow[] => party(ids, 'S').map(s =>
   answering(s.row.id === 'tank' ? { ...s, row: { ...s.row, abilities: [...s.row.abilities, abilities().stun] } } : s, kinds));
-const vsScript = (id: MythicScriptId, kinds: readonly AnswerKind[] = ANSWER_KINDS, ids: readonly Archetype[] = MIXED) => (seed: number): FightRecord[] =>
+const vsScript = (id: MythicScriptId, kinds: readonly Answer[] = ANSWERS, ids: readonly Archetype[] = MIXED) => (seed: number): FightRecord[] =>
   [playFight({ rows: [...answeringParty(ids, kinds), scripted(id, SCRIPTED)], rules: SCRIPTED }, seed)];
 const nameOf = (id: MythicScriptId): string => MYTHICS[id].name;
 const B1_KEY = (id: MythicScriptId) => `mixed v ${id} S`;
 const b1 = (id: MythicScriptId): FightRecord[] => runsOf(B1_KEY(id), vsScript(id), RUNS.mythic).map(r => r[0]!);
 const B4_KEY = (id: MythicScriptId) => `three cannons v ${id} S`;
 const THREE_CANNONS: readonly Archetype[] = ['cannon', 'cannon', 'cannon'];
-const b4 = (id: MythicScriptId): FightRecord[] => runsOf(B4_KEY(id), vsScript(id, ANSWER_KINDS, THREE_CANNONS), RUNS.mythic).map(r => r[0]!);
+const b4 = (id: MythicScriptId): FightRecord[] => runsOf(B4_KEY(id), vsScript(id, ANSWERS, THREE_CANNONS), RUNS.mythic).map(r => r[0]!);
 /** The answer kinds an outcome of the script's data names (B5 bounds each): those of an omen in a phase's rotation whose outcome is not `none`. */
-function answersOf(id: MythicScriptId): AnswerKind[] {
+function answersOf(id: MythicScriptId): Answer[] {
   const s = MYTHICS[id], rotated = new Set(s.phases.flatMap(p => p.rotation.flatMap(b => (b.kind === 'omen' ? [b.omen as string] : []))));
   const omens = omensOf(s).filter(([k]) => rotated.has(k)).map(([, o]) => o);
-  return (['interrupt', 'stagger', 'burst'] as const).filter(k => omens.some(o => (k === 'interrupt' ? o.interrupt.outcome : k === 'stagger' ? o.stagger : o.burst) !== 'none'));
+  return ANSWERS.filter(k => omens.some(o => answerOutcome(o, k) !== 'none'));
 }
 /** The scripts whose phases announce an omen: `plain` announces only its doom, so B3 and B5 skip it. */
 const OMENED = MYTHIC_IDS.filter(id => answersOf(id).length > 0);
@@ -440,11 +440,11 @@ const SCRIPT_ROWS: readonly Row[] = [
   })),
   ...MYTHIC_IDS.map((id): Row => ({
     name: `B4 three cannons at S meet every phase of ${nameOf(id)} and win at most 15%`, setup: B4_KEY(id), runs: RUNS.mythic,
-    measure: () => wins(B4_KEY(id), vsScript(id, ANSWER_KINDS, THREE_CANNONS), RUNS.mythic), low: 0, high: 0.15, lever: `MYTHICS['${id}'] (its bands and clocks)`,
+    measure: () => wins(B4_KEY(id), vsScript(id, ANSWERS, THREE_CANNONS), RUNS.mythic), low: 0, high: 0.15, lever: `MYTHICS['${id}'] (its bands and clocks)`,
   })),
   ...OMENED.flatMap(id => answersOf(id).map((kind): Row => ({
     name: `B5 three hunters who never answer by ${kind} win at most four fifths of B1's share against ${nameOf(id)}`, setup: `${B1_KEY(id)} without ${kind}`, runs: RUNS.mythic,
-    measure: () => ratio(wins(`${B1_KEY(id)} without ${kind}`, vsScript(id, ANSWER_KINDS.filter(k => k !== kind)), RUNS.mythic), wins(B1_KEY(id), vsScript(id), RUNS.mythic)),
+    measure: () => ratio(wins(`${B1_KEY(id)} without ${kind}`, vsScript(id, ANSWERS.filter(k => k !== kind)), RUNS.mythic), wins(B1_KEY(id), vsScript(id), RUNS.mythic)),
     low: 0, high: 0.8, lever: `the ${kind} answers of ${id}'s omens`,
   }))),
   ...MYTHIC_IDS.map((id): Row => ({
@@ -519,23 +519,16 @@ const OPEN: Readonly<Record<string, string>> = {
   // Design B.8's rows a script's `hp` cannot hold and its words did not (sim-log.md, MY5, says what each would need).
   ...Object.fromEntries(MYTHIC_IDS.map(id => [`B9 no keystone pair of three Focused builds moves the share won against ${nameOf(id)} out of 5 to 10%`,
     'not measured: unit K4 puts keystones on a row and K5 builds the Focused parties and K5\'s own rows, which B9 shares'])),
-  // B3 and B5 (sim-log.md, MY5 fourth pass): a stagger or burst answer now counts only what lands after the announce,
-  // past what ordinary turns land (decision 42). The party that answers none meets them 0.01 to 0.2 times a fight, and
-  // the answering party wins two to four times its share with the turns it chose (the stun, the step out, the shield);
-  // under 1% asks about seven. No turn the mixed party chooses meets the stagger and burst answers: it holds no use it
-  // can save for a window at no cost to the clocks (saving Focus lost more fights than its answers won).
-  ...Object.fromEntries(OMENED.map(id => [`B3 three hunters who answer no omen win under 1% of fights against ${nameOf(id)}`,
-    ({ 'angel-of-the-last-trumpet': '0.028 (se 0.007)', 'zaratan-the-island-that-wakes': '0.042 (se 0.008)', 'the-fourth-rider': '0.018 (se 0.005)' } as Record<string, string>)[id]
-    + ': the stagger and burst answers are out of its ordinary reach, and the answering party wins two to four times its share; under 1% asks a chosen answer worth about seven'])),
-  ...Object.fromEntries(OMENED.flatMap(id => answersOf(id).filter(k => k !== 'interrupt' || id === 'zaratan-the-island-that-wakes').map(k => [`B5 three hunters who never answer by ${k} win at most four fifths of B1's share against ${nameOf(id)}`,
-    k === 'interrupt' ? '0.98 of B1 (se 0.19): its one omen a stun answers, the Trench, comes in its last phase only, and the stun meets it 0.1 times a fight'
-      : '1.00 to 1.03 of B1 (se 0.2 to 0.26): out of ordinary reach (decision 42), and no turn this party chooses meets it, so taking it out of the policy changes no fight']))),
+  // B5 (sim-log.md, MY5 fifth pass): Zaratan's one omen a stun answers, the Trench, comes in its last phase only, and
+  // its hunter's step off the aimed tile weakens it first.
+  [`B5 three hunters who never answer by interrupt win at most four fifths of B1's share against ${nameOf('zaratan-the-island-that-wakes')}`]:
+    '1.08 of B1 (se 0.23): its one omen a stun answers, the Trench, comes in its last phase only, and the stun meets it 0.09 times a fight',
   // B4 (sim-log.md, MY5 second and third passes): three cannons deal about a third more a round than the mixed party, so they beat the
   // clocks it loses to; a brute body (plain's, Zaratan's) loses as many fights to them with no script at all.
   ...Object.fromEntries((['plain', 'angel-of-the-last-trumpet', 'zaratan-the-island-that-wakes'] as const).map(id => [`B4 three cannons at S meet every phase of ${nameOf(id)} and win at most 15%`,
     ({ plain: '0.380 (se 0.020): today\'s brute mythic with no script loses 0.435 to three cannons, so the miss is the body (fight.archetypes, fight.kinds.mythic), not the script',
-      'angel-of-the-last-trumpet': '0.152 (se 0.015): three cannons deal about a third more a round than the mixed party, so they win on damage before the clock (MY5 third and fourth passes)',
-      'zaratan-the-island-that-wakes': '0.697 (se 0.019) at hp 0.94: its brute body with no script loses 0.525 to three cannons; a Shell of armor and resist (30 each) still lost 0.42 to 0.80' } as Record<string, string>)[id]!])),
+      'angel-of-the-last-trumpet': '0.187 (se 0.016): three cannons deal about a third more a round than the mixed party, so they win on damage before the clock (MY5 third to fifth passes)',
+      'zaratan-the-island-that-wakes': '0.657 (se 0.019): its brute body with no script loses 0.525 to three cannons; a Shell of armor and resist (30 each) still lost 0.42 to 0.80' } as Record<string, string>)[id]!])),
 };
 
 // ── one test per row: the row is measured inside its test, so a bun timeout or the per-test times name the row ──

@@ -87,14 +87,18 @@ export type OmenAim =
 export type AnswerOutcome = 'cancel' | 'weaken' | 'none';
 /** The status ops that answer an omen when a status holding one lands on the mythic (a stun holds, a root roots). */
 export type Interrupt = Extract<Op['op'], 'hold' | 'root' | 'taunt'>;
-/** An announced move and the answers that change it (design B.4). */
-export type Omen<M extends string = MoveKey> = {
+/**
+ * An announced move and the answers that change it (design B.4), each answer's outcome written for every omen, `none`
+ * included. Decision 43: an omen aimed at a hunter or its tile may be answered by a turn that is not an attack (`shield`,
+ * `step`); one aimed at the mythic itself has no hunter or tile to answer for, so the type holds those two at `none`.
+ */
+export type Omen<M extends string = MoveKey> = OmenAnswers<M> & (AimedOmen | SelfOmen);
+type OmenAnswers<M extends string> = {
   /** The banner's name: "Stars Fall". */
   readonly name: string;
   /** The move that lands when nothing answered it, and the one that lands when it was weakened (null: none can weaken it). */
   readonly full: NoInfer<M>;
   readonly weak: NoInfer<M> | null;
-  readonly aim: OmenAim;
   /** A status with one of these ops landing on it while the omen stands. */
   readonly interrupt: { readonly by: readonly Interrupt[]; readonly outcome: AnswerOutcome };
   /**
@@ -105,6 +109,19 @@ export type Omen<M extends string = MoveKey> = {
   /** `mythic.answerReach.burst` of its max HP taken from it after the announce (HP it healed counts against it). */
   readonly burst: AnswerOutcome;
 };
+/** An omen aimed at one hunter (a curse) or at a hunter's tile (a blast). */
+type AimedOmen = {
+  readonly aim: Exclude<OmenAim, 'self' | 'all'>;
+  /** A shield landing on the hunter it is aimed at (on a blast, the one standing on its tile) after the announce. */
+  readonly shield: AnswerOutcome;
+  /**
+   * The tile it is aimed at left with no hunter on it, standing or fallen, after the announce. Only a blast aims at a
+   * tile (a curse follows its hunter), so only a blast's omen writes one (tests/mythics.test.ts).
+   */
+  readonly step: AnswerOutcome;
+};
+/** An omen aimed at the mythic itself: an area around it (`self`) or the whole field (`all`). */
+type SelfOmen = { readonly aim: 'self' | 'all'; readonly shield: 'none'; readonly step: 'none' };
 
 /** What every move has, whatever its kind. */
 type MoveCommon = {

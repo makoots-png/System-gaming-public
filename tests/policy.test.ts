@@ -63,8 +63,9 @@ function landing(f: Running): Command {
 }
 
 describe('the policy answers a mythic\'s omen (design B.4)', () => {
-  test('a hunter in an omen\'s tiles steps out', () => {
-    const f = omened(begun('A', mythic('angel-of-the-last-trumpet', place(5, 5)), party('bruiser', 'A', place(10, 5))), 'stars', place(11, 5));
+  test('a hunter in an omen\'s tiles that the omen would drop steps out', () => {
+    // at 1 HP Stars Fall drops it; the cannon far off keeps the party in the fight
+    const f = omened(begun('A', mythic('angel-of-the-last-trumpet', place(5, 5)), atHp(party('bruiser', 'A', place(10, 5)), 1), party('cannon', 'C', place(20, 5))), 'stars', place(11, 5));
     const stood = toLanding(f), hp = rowHp(body(stood, 'A'));
     expect(rowHp(body(sent(stood, landing(stood)), 'A')), 'Stars Fall lands on a hunter who stays').toBeLessThan(hp);
     const choice = sensible(f, body(f, 'A'), ON);
@@ -88,6 +89,26 @@ describe('the policy answers a mythic\'s omen (design B.4)', () => {
     const f = omened(begun('S', mythic('the-fourth-rider', place(5, 5)), party('support', 'S', place(12, 6)), atHp(cannon, 1)), 'named', 'C');
     const choice = sensible(f, body(f, 'S'), ON);
     expect(choice.type === 'act' && [choice.ability.id, choice.aim]).toEqual(['shield-wall', combatantId('C')]);
+  });
+
+  test('the hunter on the tile an omen aims at steps off it, when leaving the tile answers the omen (decision 43)', () => {
+    // Stars Fall's step answer cancels it: the bruiser on its aimed tile steps one tile and nothing lands
+    const f = omened(begun('A', mythic('angel-of-the-last-trumpet', place(5, 5)), party('bruiser', 'A', place(6, 5))), 'stars', place(6, 5));
+    const choice = sensible(f, body(f, 'A'), ON);
+    if (choice.type !== 'move') throw new Error(`the hunter chose ${choice.type}`);
+    expect(choice.to, 'off the aimed tile').not.toEqual(place(6, 5));
+    const off = sent(f, { type: 'move', by: combatantId('A'), to: choice.to });
+    expect(body(off, 'X').mythic?.at, 'Stars Fall is cancelled').toBe('calm');
+  });
+
+  test('a tank shields the hunter an omen names when a shield on that hunter answers the omen (decision 43)', () => {
+    // Named in the Book's shield answer cancels it; the cannon it names is at full HP, so no shield would spare its HP
+    const f = omened(begun('T', mythic('the-fourth-rider', place(5, 5)), party('tank', 'T', place(6, 5)), party('cannon', 'C', place(9, 5))), 'named', 'C');
+    const choice = sensible(f, body(f, 'T'), ON);
+    expect(choice.type === 'act' && [choice.ability.id, choice.aim]).toEqual(['shield-wall', combatantId('C')]);
+    if (choice.type !== 'act') return;
+    const r = reduce(f, { type: 'act', by: combatantId('T'), ability: choice.ability.id, aim: choice.aim, rolls: { dice: {}, react: {} } }, ctx);
+    expect(r.effects, 'Named in the Book is cancelled').toContainEqual({ type: 'answered', id: X, how: 'shield', outcome: 'cancel' });
   });
 
   test('a mythic with an omen standing lands it', () => {

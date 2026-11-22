@@ -688,3 +688,8 @@ ts	phase	decision	why	evidence	result
 2026-11-22T18:08Z	ops	Helper started: items-small (opus): decision 41 (Last Light) and questionable-decisions row 14 (Lifeline, Thornmail's healing cut).
 2026-11-22T18:41Z	features	items-small merged on lead-backlog (opus): the Lifeline Locket, a trigger's shield priced as HP healed, Second Wind 25 to 35%, Thornmail's cut left out; unit pass 6,315 green on its branch. Questionable decisions 44 to 46.
 2026-11-22T19:04Z	features	rulings-21 merged on lead-backlog (opus): the revive ladder as a machine, systemRaise, the window; unit pass 6,349 green on its branch, eight browser files green. Questionable decisions 47, 48. Open: nothing pays the debt off.
+2026-11-22T19:05Z	ops	Public run started for b11da631, which holds session-e2e, items-small, rulings-21 and the push hook's browser default: when green in every job push b11da631 by id through the hook, PR into main, merge.
+2026-11-22T19:05Z	ops	Helper started: rulings-20 (opus), rewards the app pays by itself wait for the GM (notes-9 section 20, its defaults taken; outside a room a reward pays at once).
+2026-11-22T19:18Z	ops	landed on the working branch (b11da631, public run 45058723676 green in every job): session-e2e, items-small, rulings-21, the push hook's browser default. PR 72 into main merged. Nothing is in flight; mythic-5e and rulings-20 run.
+2026-11-22T19:20Z	features	mythic-5e merged on lead-backlog (opus): no warning is answered by a hit; B3 0.000 to 0.008 and out of OPEN, B1 0.058 to 0.068, B5 step, shield and interrupt rows hold but Zaratan's interrupt (1.08); unit pass 6,309 green on its branch. Questionable decisions 49, 50.
+2026-11-22T19:20Z	ops	Helpers started: mythic-balance (opus), mythic-7 (sonnet).

@@ -1981,3 +1981,84 @@ B3 falls at every script (0.082 → 0.028, 0.040 → 0.042 at a lower `hp`, 0.03
 holds for the Angel (1.04 → 0.46) and the Rider: with the stagger and burst answers out of ordinary reach, the stun is
 the answer that separates. B3, B5's stagger and burst rows and Zaratan's interrupt row stay in `OPEN` with these values;
 B4 stays open as before. Zaratan's median is at B8's edge (20.0).
+
+## MY5, fifth pass: an omen answered by a turn that is not an attack (decision 43)
+
+**The rule.** Each omen writes the outcome of five answer kinds (`ANSWERS` in mythic.ts): `step`, the tile it aims at
+left with no hunter on it; `interrupt`; `shield`, a shield landing on the hunter it aims at; `stagger`; `burst`. The
+type holds `shield` and `step` at `none` on an omen aimed at the mythic itself. No script's omen keeps a stagger or a
+burst answer: decision 42's measure showed a hit is the turn a party plays anyway. The policy steps off the aimed tile
+and shields the aimed hunter (`answerChoice`). Scripts stay off. Every number below is the mixed party at S, seeds 1 to
+N, the same fights `tests/fight-sim.test.ts` plays; "all" answers every kind, "none" none, "-k" all but `k`.
+
+### Step 1: the answers in the data, nothing else moved (200 and 300 fights, `answerTime` 1, the clocks of pass 4)
+
+| | all | none | answers met a fight, all / none |
+|---|---|---|---|
+| the Angel (Stars Fall at the crowd, its first omen) | 0.120 | 0.060 | step 0.86, interrupt 0.85, shield 0.01 / step **0.74** |
+| the Angel, Weighed first, Stars Fall second | 0.103 | 0.047 | step 0.44 / step 0.02 |
+| Zaratan | 0.040 | 0.045 | step 1.46, interrupt 0.07 / step 0.26 |
+| the Rider | 0.077 | 0.023 | interrupt 0.59, step 0.42, shield 0.16 / step 0.16 |
+
+**The walk in answers a step omen announced before the party stands.** Stars Fall came at the Angel's second beat, while
+the party walked up: the party that answered none left the aimed tile 0.74 times a fight. Announced after Weighed it
+left it 0.02 times. The Angel at 300 fights without the step answer won 0.147 against 0.103 with it: the policy also
+stepped out of every area it stood in, losing hits; it now steps out of an area only when the move would drop it (as the
+shield rule asks), and off the aimed tile by the nearest tile, so a hunter in reach stays in reach.
+
+### Step 2: what moves the party that answers none (300 fights)
+
+- The omens' hits do not: Stars Fall 0.55 → 1.6, Pale Wake 0.3 → 1.6 left the none party's wins at 0.047 and 0.023.
+  Its winning fights (the Rider, 7 of 300 traced) pass the Book Opens in 2 or 3 of the Rider's turns and see 3 or 4
+  omens in all: they win on damage before the omens add up.
+- `answerTime` at the old clocks does not: 1, 2 and 3 rounds left both parties' wins within 0.01 (Zaratan's dooms fell
+  from 114 to 37 of 300, and its party died to its hits instead).
+- **The clock with `answerTime` 3 does.** Decision 43's answers are turns the party plays only to answer, so the party
+  that answers none buys no time (it met 0.00 to 0.17 answers a fight). With shorter clocks it runs out, and the
+  answering party buys them back:
+
+| `answerTime` 3, clocks | all | none |
+|---|---|---|
+| the Angel 4 / 4 / 2, hp 1.0 | 0.080 | 0.000 |
+| Zaratan 4 / 4 / 5, hp 0.85 | 0.077 | 0.017 |
+| Zaratan 5 / 4 / 5, hp 0.92, Sinking 1.0 and Trench 1.2 | 0.067 | 0.003 |
+| the Rider 5 / 4 / 3, hp 0.75 | 0.073 | 0.023 |
+| the Rider 5 / 3 / 3, hp 0.78 (600 fights) | 0.052 | 0.008 |
+| the Rider 4 / 4 / 3, hp 0.82, no cap at the phase's start | 0.033 | 0.007 |
+
+Dropping the cap at the phase's start moved nothing past the noise; it stays.
+
+### Step 3: each kind's worth (B5), and the answers that were words (300 and 600 fights)
+
+- The Angel's Weighed, answered by a stun or a shield, was met by the stun first: the shield 0.11 times a fight, B5
+  shield 0.96. Weighed now answers to a shield alone (cancel), and the stun keeps the Breath and the Note: B5 shield 0.53.
+- Stars Fall at the crowd: a party with no step answer still left the tile by walking (B5 step 0.90 at 300). At the
+  farthest hunter (the cannon, who stands) and 1.0 of a hunter's HP: 0.54 at 300, 0.780 at 600.
+- Zaratan's Trench shield answer was met 0.00 times a fight (its hunter is the farthest, past Shield Wall's 6 tiles);
+  it is gone. Its step answer weakens it (0.58 a fight).
+- The Rider's Pale Wake step answer changed no fight (B5 step 1.02 to 1.06, Pale Wake 0.3 or 0.9): it is gone, and the
+  Wake is as before. Named in the Book's shield answer cancels, not weakens: B5 shield 0.771.
+
+### Step 4: the rows at 600 fights (`answerTime` 3 and 3)
+
+The scripts: the Angel `hp` 0.93 → 1.0, clocks 5 / 4 / 3 → 4 / 4 / 2, Weighed before Stars Fall, Stars Fall at the
+farthest with hits 0.55 → 1.0; Zaratan clocks 6 / 4 / 7 → 5 / 4 / 5, Sinking 0.5 → 1.0, Trench 0.75 → 1.2; the Rider
+`hp` 0.82 → 0.78, clocks 5 / 5 / 4 → 5 / 3 / 3.
+
+| Row (600 fights) | plain | Angel | Zaratan | Rider | Bound |
+|---|---|---|---|---|---|
+| B1 wins | 0.072 | 0.068 (se 0.010) | 0.062 (se 0.010) | 0.058 (se 0.010) | 0.05 to 0.10 |
+| B2 skips, mixed / three cannons | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 |
+| B3 wins answering none | none | **0.000** | **0.002** (se 0.002) | **0.008** (se 0.004) | under 0.01 |
+| B4 three cannons win | 0.380 | 0.187 (se 0.016) | 0.657 (se 0.019) | 0.018 | at most 0.15 |
+| B5 without step, over B1 | none | 0.780 (se 0.179) | 0.135 (se 0.064) | none | at most 0.8 |
+| B5 without interrupt, over B1 | none | 0.195 (se 0.075) | **1.08** (se 0.23) | 0.514 (se 0.146) | at most 0.8 |
+| B5 without shield, over B1 | none | 0.561 (se 0.143) | none | 0.771 (se 0.193) | at most 0.8 |
+| B6 won after a doom | 0.002 | 0.000 | 0.000 | 0.000 | under 0.01 |
+| B7 most / least less its floor | one phase | 0.429 / 0.091 | 0.451 / 0.191 | 0.527 / 0.111 | at most 0.6 / at least 0 |
+| B8 median rounds | 15.3 | 15.3 | 19.6 | 13.5 | 10 to 20 |
+
+B3 holds at every script and leaves `OPEN`. B5's stagger and burst rows are gone: no omen answers by a hit. Every new
+B5 row holds except Zaratan's interrupt (its Trench in its last phase, met 0.09 times a fight, as in pass 4). Four
+values sit within one standard error of their bound: the Rider's B1 (0.058) and B3 (0.008), the Angel's B5 step (0.780)
+and the Rider's B5 shield (0.771). B4 stays open for plain, the Angel and Zaratan.

@@ -24,7 +24,7 @@ import type { Ability, AbilityId, CombatantId } from './ability-types.ts';
 import { needs, resists } from './resolve.ts';
 import type { Aim, Needs } from './resolve.ts';
 import { channelCan } from './fight-channel.ts';
-import { answerBack, answerMet, beatOf, enraged, heldAtGate, mythicCan, mythicStepped, omenAim, phaseOver, playsScript, scriptOf } from './mythic.ts';
+import { aimedBody, answerBack, answerMet, beatOf, enraged, heldAtGate, mythicCan, mythicStepped, omenAim, phaseOver, playsScript, scriptOf } from './mythic.ts';
 import type { MetAnswer, MythicRefusal, Scripted } from './mythic.ts';
 import type { MythicMove, Omen } from './mythic-types.ts';
 import { bandOf } from '../registry/mythics.ts';
@@ -198,23 +198,25 @@ export function consequences(before: readonly Body[], after: Running, ctx: Ctx, 
       f = logged(f, line(`${a.name} is staggered.`, [a.id]), ctx.rules);
     }
     if (!heldAtGate(b) && heldAtGate(a)) f = logged(f, line(`${a.name} is held at the gate.`, [a.id]), ctx.rules);
-    const met = answered(f, b, a, ctx.rules, fx);
+    const met = answered(f, before, a, ctx.rules, fx);
     f = withRow(met.fight, met.row);
   }
   return hurtHides(before, f, ctx);
 }
 
 /**
- * The answers a change of mythic row `b` to `a` met while an omen stood before and after it (design B.4, mythic.ts
- * `answerMet`): each its state takes, cancels first, moves the standing, with a line and an `answered` effect. A cancel
- * leaves nothing standing, so a weaken met with it is not taken.
+ * The answers mythic row `a`'s standing omen met in the change from rows `before` to fight `f` (design B.4, mythic.ts
+ * `answerMet`: its own row's change, and the hunter and the tile it aims at), while an omen stood before and after it:
+ * each its state takes, cancels first, moves the standing, with a line and an `answered` effect. A cancel leaves nothing
+ * standing, so a weaken met with it is not taken.
  */
-function answered(f: Running, b: Body, a: Body, R: Rules, fx: Fx): { fight: Running; row: Body } {
+function answered(f: Running, before: readonly Body[], a: Body, R: Rules, fx: Fx): { fight: Running; row: Body } {
+  const b = before.find(r => r.id === a.id);
   if (a.mythic?.at !== 'omen' && a.mythic?.at !== 'faltering') return { fight: f, row: a };
-  if (b.mythic?.at !== 'omen' && b.mythic?.at !== 'faltering') return { fight: f, row: a };
+  if (!b || (b.mythic?.at !== 'omen' && b.mythic?.at !== 'faltering')) return { fight: f, row: a };
   const s = a.mythic, script = scriptOf(s), omen = script.omens[s.omen]!;
   let g = f, row: Body = a;
-  for (const m of answerMet(omen, s, b, a, R)) {
+  for (const m of answerMet(omen, s, { row: b, rows: before }, { row: a, rows: f.rows }, f.now, R)) {
     if (!playsScript(row) || !mythicCan(row.mythic, m.outcome)) continue;
     const next = mythicStepped<Body>(row, { type: m.outcome, how: m.how, back: answerBack(row.mythic, m.outcome, f.now, R) });
     if (isRefused(next)) continue;
@@ -228,14 +230,17 @@ function answered(f: Running, b: Body, a: Body, R: Rules, fx: Fx): { fight: Runn
 }
 /** What answered an omen, read from the change and the omen: "The Fourth Rider is stunned by Brakk". */
 function answerWords(f: Running, b: Body, a: Body, omen: Omen, m: MetAnswer, R: Rules): string {
+  const s = a.mythic;
   switch (m.how) {
     case 'interrupt': {
-      const s = a.statuses.find(x => !b.statuses.some(y => y.key === x.key) && x.def.ops.some(o => (omen.interrupt.by as readonly string[]).includes(o.op)));
-      const by = s?.source.id ? rowOf(f, s.source.id)?.name : undefined;
-      return `${a.name} is ${(s?.def.label ?? 'held').toLowerCase()}${by && by !== a.name ? ` by ${by}` : ''}`;
+      const st = a.statuses.find(x => !b.statuses.some(y => y.key === x.key) && x.def.ops.some(o => (omen.interrupt.by as readonly string[]).includes(o.op)));
+      const by = st?.source.id ? rowOf(f, st.source.id)?.name : undefined;
+      return `${a.name} is ${(st?.def.label ?? 'held').toLowerCase()}${by && by !== a.name ? ` by ${by}` : ''}`;
     }
     case 'stagger': return `${a.name} reels under the blows`;
     case 'burst': return `${a.name} loses ${Math.round(R.fight.mythic.answerReach.burst * 100)}% of its HP`;
+    case 'shield': return `${(s && s.at !== 'calm' ? aimedBody(s.aim, a.side, f.rows)?.name : undefined) ?? 'Its mark'} is shielded`;
+    case 'step': return `No one stands where ${omen.name} was aimed`;
     default: return m.how satisfies never;
   }
 }

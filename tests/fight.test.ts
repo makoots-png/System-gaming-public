@@ -2515,8 +2515,8 @@ describe('a status whose time ran out counts for no reader while its bearer\'s s
 describe('a mythic plays its script (notes-11-keystones.md, design B.3 and B.4)', () => {
   // Every number is the script's own (registry/mythics.ts): the Angel's First Breath begins at 65% of its max HP and its
   // bar at 1.25 of its kind's; the Fourth Rider's book opens at 55%, its Named in the Book is a curse of range 24 aimed
-  // at the hunter lowest on HP, cancelled by a stun and weakened by 5% of its max HP taken; the Angel's Note is its last
-  // phase, whose Final Note a broken bar weakens.
+  // at the hunter lowest on HP, cancelled by a stun or a shield on that hunter; the Angel's Stars Fall is
+  // cancelled by leaving the tile it aims at, and its Note is its last phase, whose Final Note a stun weakens.
   const ON: Rules = { ...RULES, fight: { ...RULES.fight, mythic: { ...RULES.fight.mythic, scripts: true } } };
   const on: Ctx = { rules: ON };
   const seed = (script: string) => seedMonsters(RULES).find(m => m.script === script)!;
@@ -2598,16 +2598,17 @@ describe('a mythic plays its script (notes-11-keystones.md, design B.3 and B.4)'
   test('an omen announced on its turn lands on its next', () => {
     const f0 = begun(mythic('angel-of-the-last-trumpet', place(5, 5)), hunter('A', place(8, 5)));
     const told = until(f0, omenUp);
-    expect(told.effects).toContainEqual({ type: 'omen', id: id('X'), omen: 'stars' });
-    expect(logs(told.fight)).toContain('The Angel of the Last Trumpet readies Stars Fall: it lands on its next turn.');
-    expect(standing(told.fight)).toMatchObject({ at: 'omen', omen: 'stars', aim: place(8, 5), beat: 1 });
+    expect(told.effects).toContainEqual({ type: 'omen', id: id('X'), omen: 'weighed' });
+    expect(logs(told.fight)).toContain('The Angel of the Last Trumpet readies Weighed and Found Wanting: it lands on its next turn.');
+    expect(standing(told.fight)).toMatchObject({ at: 'omen', omen: 'weighed', aim: id('A'), beat: 1 });
     expect(told.fight.currentId, 'announcing spent its turn').not.toBe(id('X'));
     const due = until(told.fight, turnOf('X')).fight;
     expect(runningState(due)).toEqual({ at: 'landing', id: id('X') });
     const hp = rowHp(body(due, 'A')), r = go(due, landing(due));
-    expect(rowHp(body(r.fight, 'A')), 'Stars Fall lands on the tile it was aimed at').toBeLessThan(hp);
-    expect(standing(r.fight)).toMatchObject({ at: 'calm', beat: 2 });
-    expect(r.effects.some(e => e.type === 'used' && e.by === 'X' && e.ability === 'mythic-stars-fall')).toBe(true);
+    expect(rowHp(body(r.fight, 'A')), 'Weighed lands on the hunter it was aimed at').toBeLessThan(hp);
+    expect(standing(r.fight).at).toBe('calm');
+    expect(standing(r.fight).beat, 'past the omen\'s beat (a paralyzed A passes, and the Angel\'s next turn begins)').toBeGreaterThan(1);
+    expect(r.effects.some(e => e.type === 'used' && e.by === 'X' && e.ability === 'mythic-weighed')).toBe(true);
   });
 
   test('a stun on a mythic cancels an omen whose interrupt cancels', () => {
@@ -2630,57 +2631,38 @@ describe('a mythic plays its script (notes-11-keystones.md, design B.3 and B.4)'
     expect(standing(go(due, landing(due)).fight).since).toBe(before);
   });
 
-  /** A sure hit by A whose damage after X's armor in fight `f` is at least `dealt` (land.ts `afterDefence`), and the hit one point under it. */
-  function sized(name: string, dealt: number, f: Running): { readonly hit: Ability; readonly short: Ability } {
-    const a = body(f, 'A').sheet, x = body(f, 'X').sheet;
-    let lo = 1, hi = 1_000_000;
-    while (lo < hi) { const mid = Math.floor((lo + hi) / 2); if (afterDefence(mid, 'physical', a, x, ON) >= dealt) hi = mid; else lo = mid + 1; }
-    return { hit: sure(name, String(lo)), short: sure(`${name}-short`, String(lo - 1)) };
-  }
+  /** A shield of 20 on an ally, no dice. */
+  const GUARD = { ...ability('support', 'guard', null, FAR), effect: { type: 'shield', by: 'hand', formula: f('20') } } as Ability;
 
-  // Decision 42: the First Breath's stagger answer cancels it, and asks `answerReach.stagger` same-rank hits of fill on
-  // its bar after the announce. The phase begins with its bar empty.
-  test('the stagger answer counts the fill landed on its bar after the announce, not a bar filled before it', () => {
-    const angel = () => running(go(begun(mythic('angel-of-the-last-trumpet', place(5, 5)), hunter('A', place(8, 5), { abilities: [HIT, ...hits] })), gm('next')));
-    let hits: Ability[] = [];
-    const probe = angel(), bar = body(probe, 'X').stagger!, need = RULES.fight.mythic.answerReach.stagger * bar.hit;
-    expect(need, 'the answer fits in the Breath\'s bar, and is more than one hit').toBeLessThan(bar.max);
-    expect(need).toBeGreaterThan(2 * bar.hit);
-    const answer = sized('answer', need, probe), fill = sized('fill', bar.max - bar.hit, probe), one = sized('one', bar.hit, probe);
-    hits = [answer.hit, answer.short, fill.hit, one.hit];
-
-    const empty = until(angel(), omenUp);
-    expect(standing(empty.fight)).toMatchObject({ omen: 'breath', barAt: { fill: 0 } });
-    const f1 = until(empty.fight, turnOf('A')).fight;
-    const short = go(f1, hit('A', 'X', answer.short));
-    expect(short.effects.some(e => e.type === 'answered' && e.how === 'stagger'), 'one point short of the answer').toBe(false);
-    const r = go(f1, hit('A', 'X', answer.hit));
+  // Decision 43: Named in the Book names the hunter lowest on HP (ties to row order: A), and a shield landing on that
+  // hunter after the announce cancels it.
+  test('a shield landing on the hunter an omen names cancels it, and one on another hunter does not', () => {
+    const told = until(begun(mythic('the-fourth-rider', place(5, 5)), hunter('A', place(8, 5)), hunter('B', place(8, 7), { abilities: [HIT, GUARD] })), omenUp);
+    expect(standing(told.fight)).toMatchObject({ omen: 'named', aim: id('A') });
+    const f1 = until(told.fight, turnOf('B')).fight;
+    expect(standing(go(f1, hit('B', 'B', GUARD)).fight).at, 'B shields itself, not the one named').toBe('omen');
+    const r = go(f1, hit('B', 'A', GUARD));
     expect(standing(r.fight).at).toBe('calm');
-    expect(r.effects).toContainEqual({ type: 'answered', id: id('X'), how: 'stagger', outcome: 'cancel' });
-    expect(logs(r.fight)).toContain('The Angel of the Last Trumpet reels under the blows: The First Breath is cancelled.');
-
-    const f0 = until(angel(), turnOf('A')).fight;
-    expect(standing(f0), 'A acts before its first beat in the Breath').toMatchObject({ at: 'calm', beat: 0 });
-    const told = until(running(go(f0, hit('A', 'X', fill.hit))), omenUp);
-    const f2 = until(told.fight, turnOf('A')).fight, broke = go(f2, hit('A', 'X', one.hit));
-    expect(broke.effects, 'one hit breaks the bar filled before the omen').toContainEqual({ type: 'staggered', id: id('X') });
-    expect(broke.effects.some(e => e.type === 'answered'), 'and answers nothing').toBe(false);
-    expect(standing(broke.fight).at).toBe('omen');
+    expect(r.effects).toContainEqual({ type: 'answered', id: id('X'), how: 'shield', outcome: 'cancel' });
+    expect(logs(r.fight)).toContain('A is shielded: Named in the Book is cancelled.');
   });
 
-  test('the burst answer weakens an omen once the HP lost since the announce reaches the rule\'s share', () => {
-    const rider = () => begun(mythic('the-fourth-rider', place(5, 5)), hunter('A', place(8, 5), { abilities: [HIT, ...hits] }));
-    let hits: Ability[] = [];
-    const probe = rider(), x = body(probe, 'X'), need = Math.ceil(RULES.fight.mythic.answerReach.burst * x.sheet.hpMax);
-    expect(need, 'its fill is short of the stagger answer, which would cancel Named in the Book first').toBeLessThan(RULES.fight.mythic.answerReach.stagger * x.stagger!.hit);
-    const burst = sized('burst', need, probe);
-    hits = [burst.hit, burst.short];
-    const told = until(rider(), omenUp), f1 = until(told.fight, turnOf('A')).fight;
-    expect(standing(go(f1, hit('A', 'X', burst.short)).fight).at, 'one point short of the share').toBe('omen');
-    const r = go(f1, hit('A', 'X', burst.hit));
-    expect(standing(r.fight).at).toBe('faltering');
-    expect(r.effects).toContainEqual({ type: 'answered', id: id('X'), how: 'burst', outcome: 'weaken' });
-    expect(logs(r.fight)).toContain(`The Fourth Rider loses ${Math.round(RULES.fight.mythic.answerReach.burst * 100)}% of its HP: Named in the Book will land as Struck from the Book.`);
+  // Decision 43: Stars Fall aims at the tile of the hunter farthest from it, and leaving that tile cancels it. The
+  // Trumpet Raised announces Weighed first and Stars Fall on its fourth turn, as its 4-round clock runs out, so A first
+  // answers Weighed with a shield on itself, which winds the clock back.
+  test('the hunter on the tile Stars Fall aims at cancels it by stepping off, and not by staying', () => {
+    const weighed = until(begun(mythic('angel-of-the-last-trumpet', place(5, 5)), hunter('A', place(8, 5), { abilities: [HIT, GUARD] })), omenUp);
+    expect(standing(weighed.fight)).toMatchObject({ omen: 'weighed', aim: id('A') });
+    const shielded = running(go(until(weighed.fight, turnOf('A')).fight, hit('A', 'A', GUARD)));
+    expect(standing(shielded).at, 'a shield on the hunter Weighed names cancels it').toBe('calm');
+    const told = until(shielded, f => { const s = standing(f); return s.at !== 'calm' && s.omen === 'stars'; });
+    expect(standing(told.fight)).toMatchObject({ omen: 'stars', aim: place(8, 5) });
+    const f1 = until(told.fight, turnOf('A')).fight;
+    expect(standing(go(f1, hit('A', 'X')).fight).at, 'a hit from the tile answers nothing').toBe('omen');
+    const r = go(f1, { type: 'move', by: id('A'), to: place(9, 5) });
+    expect(standing(r.fight).at).toBe('calm');
+    expect(r.effects).toContainEqual({ type: 'answered', id: id('X'), how: 'step', outcome: 'cancel' });
+    expect(logs(r.fight)).toContain('No one stands where Stars Fall was aimed: Stars Fall is cancelled.');
   });
 
   test('an omen aimed at a body out of range finds no one', () => {

@@ -37,9 +37,10 @@ import { fightId, reduce, runningState } from '../../src/core/combat/fight.ts';
 import type { Ctx, Effect, Ended, Fight, Fudge, FudgeSet, NewRow, Running } from '../../src/core/combat/fight.ts';
 import { CAP_ROUNDS, playBegin, playOver, playStep } from '../../src/core/combat/play.ts';
 import type { Limits, Play } from '../../src/core/combat/play.ts';
-import { ANSWER_KINDS, answerChoice, beatUses, keptOut, sensible } from '../../src/core/combat/policy.ts';
-import type { AnswerKind, Policy as TurnPolicy, TurnChoice } from '../../src/core/combat/policy.ts';
-import { enraged, scriptOf } from '../../src/core/combat/mythic.ts';
+import { answerChoice, beatUses, keptOut, sensible } from '../../src/core/combat/policy.ts';
+import type { Policy as TurnPolicy, TurnChoice } from '../../src/core/combat/policy.ts';
+import { ANSWERS, enraged, scriptOf } from '../../src/core/combat/mythic.ts';
+import type { Answer } from '../../src/core/combat/mythic.ts';
 import type { MythicStanding } from '../../src/core/combat/mythic-types.ts';
 import { monsterRows } from '../../src/core/combat/rows.ts';
 import type { RowMonster } from '../../src/core/combat/rows.ts';
@@ -524,7 +525,7 @@ const mythicPolicy: Policy = (f, me, plan, R) => {
  * `s` answering a standing omen first (policy.ts `answerChoice`, with the answers `kinds`), and kept out of its tiles
  * after (`keptOut`); with no omen standing it plays as it did.
  */
-export const answering = (s: SimRow, kinds: readonly AnswerKind[] = ANSWER_KINDS): SimRow => ({
+export const answering = (s: SimRow, kinds: readonly Answer[] = ANSWERS): SimRow => ({
   ...s, policy: (f, me, plan, R) => answerChoice(f, me, R, kinds) ?? keptOut(f, me, R, s.policy(f, me, plan, R), kinds),
 });
 

@@ -1,7 +1,7 @@
 // A mythic's standing in its script as a machine, and the readers of what follows from it (src/core/combat/mythic.ts;
 // notes-11-keystones.md, design B.3 and B.4). Every expected value is read from B.3's table and from the scripts' own
 // words in registry/mythics.ts: the Angel's First Breath begins at 65% of its max HP and its Note at 30%; its Trumpet
-// Raised has a clock of 5 rounds and the rotation act, Stars Fall, act, Weighed; Zaratan's Dive is a clock phase of
+// Raised has a clock of 4 rounds and the rotation act, Weighed, act, Stars Fall; Zaratan's Dive is a clock phase of
 // 4 rounds between the Shore and the Island Wakes, which begins at 55%.
 import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
@@ -24,7 +24,7 @@ import type { MythicScriptId } from '../src/core/registry/mythics.ts';
 import {
   MYTHIC_EVENTS, MYTHIC_STATES, answerBack, answerMet, beatOf, clockOut, enraged, gateOf, heldAtGate, landingMove, mythicCan, mythicStep, omenAim, phaseOver,
 } from '../src/core/combat/mythic.ts';
-import type { AnswerRow, MythicEvent, MythicEventType, MythicRefusal, MythicRow, MythicState } from '../src/core/combat/mythic.ts';
+import type { AimRow, AnswerRow, AnswerScene, MythicEvent, MythicEventType, MythicRefusal, MythicRow, MythicState } from '../src/core/combat/mythic.ts';
 import { lifeAt } from './fixtures/life.ts';
 
 const ROUND = RULES.fight.round;
@@ -106,10 +106,10 @@ describe('the readers', () => {
 
   test('a gate phase past its clock is enraged and a clock phase is over', () => {
     const raised = calm(ANGEL, 0, 1, 2000), at = (rounds: number): Tick => tick(2000 + rounds * ROUND);
-    expect([clockOut(raised, tick(at(5) - 1), RULES), enraged(raised, tick(at(5) - 1), RULES)]).toEqual([false, false]);
-    expect([clockOut(raised, at(5), RULES), enraged(raised, at(5), RULES)]).toEqual([true, true]);
+    expect([clockOut(raised, tick(at(4) - 1), RULES), enraged(raised, tick(at(4) - 1), RULES)]).toEqual([false, false]);
+    expect([clockOut(raised, at(4), RULES), enraged(raised, at(4), RULES)]).toEqual([true, true]);
     // Enraged, a gate phase still ends only at its gate.
-    expect(phaseOver(row(raised, 900), at(5), RULES)).toBe(false);
+    expect(phaseOver(row(raised, 900), at(4), RULES)).toBe(false);
     expect(phaseOver(row(raised, 650), tick(2000), RULES)).toBe(true);
     const dive = calm(ZARATAN, 1, 1, 2000);
     expect([phaseOver(row(dive, 550), tick(at(4) - 1), RULES), phaseOver(row(dive, 550), at(4), RULES)]).toEqual([false, true]);
@@ -124,11 +124,11 @@ describe('the readers', () => {
     // Decision 40, read from the rule: a cancel winds it back `answerTime.cancel` rounds, a weaken `answerTime.weaken`.
     const T = RULES.fight.mythic.answerTime, raised = calm(ANGEL, 0, 1, 2000), late = tick(2000 + 9 * ROUND);
     expect([answerBack(raised, 'cancel', late, RULES), answerBack(raised, 'weaken', late, RULES)]).toEqual([tick(T.cancel * ROUND), tick(T.weaken * ROUND)]);
-    // Half a round into the phase, the clock is wound back to the phase's start and no further: it never holds more than its 5 rounds.
+    // Half a round into the phase, the clock is wound back to the phase's start and no further: it never holds more than its 4 rounds.
     const early = tick(2000 + ROUND / 2);
     expect(answerBack(raised, 'cancel', early, RULES)).toBe(tick(Math.min(T.cancel * ROUND, ROUND / 2)));
     // An enraged phase answered is no longer past its clock once its clock is wound back past now.
-    const enragedAt = tick(2000 + 5 * ROUND), back = answerBack(raised, 'cancel', enragedAt, RULES);
+    const enragedAt = tick(2000 + 4 * ROUND), back = answerBack(raised, 'cancel', enragedAt, RULES);
     expect([enraged(raised, enragedAt, RULES), enraged({ ...raised, since: tick(raised.since + back) }, enragedAt, RULES)]).toEqual([true, T.cancel === 0]);
     // Zaratan's Dive is a clock to survive: an answer there buys no time.
     expect(answerBack(calm(ZARATAN, 1, 1, 2000), 'cancel', late, RULES)).toBe(tick(0));
@@ -136,13 +136,13 @@ describe('the readers', () => {
 
   test('a beat is read modulo its rotation', () => {
     const act = { kind: 'act' }, omen = (k: string) => ({ kind: 'omen', omen: k });
-    // The Trumpet Raised: act, Stars Fall, act, Weighed.
+    // The Trumpet Raised: act, Weighed, act, Stars Fall.
     expect([0, 1, 2, 3, 5, 7, 8].map(b => beatOf(calm(ANGEL, 0, b), tick(0), RULES)))
-      .toEqual([act, omen('stars'), act, omen('weighed'), omen('stars'), omen('weighed'), act]);
+      .toEqual([act, omen('weighed'), act, omen('stars'), omen('weighed'), omen('stars'), act]);
     // The First Breath opens on its omen: Breath, act, Weighed, act.
     expect([0, 4, 6].map(b => beatOf(calm(ANGEL, 1, b), tick(0), RULES))).toEqual([omen('breath'), omen('breath'), omen('weighed')]);
-    // Past its 5 rounds the enraged rotation, the Final Note alone, at any beat.
-    expect([0, 1, 5].map(b => beatOf(calm(ANGEL, 0, b), tick(5 * ROUND), RULES))).toEqual([omen('note'), omen('note'), omen('note')]);
+    // Past its 4 rounds the enraged rotation, the Final Note alone, at any beat.
+    expect([0, 1, 5].map(b => beatOf(calm(ANGEL, 0, b), tick(4 * ROUND), RULES))).toEqual([omen('note'), omen('note'), omen('note')]);
   });
 
   test('the landing move is the omen\'s whole move, its weak one while it falters, none when calm', () => {
@@ -212,57 +212,84 @@ describe('where an omen aims', () => {
 
 describe('the answers a change met', () => {
   const ANGEL_OMENS = mythicScriptOf(ANGEL).omens as Readonly<Record<string, Omen>>;
-  /** Weighed: a hold or root cancels; its burst weakens. The Breath: a hold weakens, its stagger answer cancels. Stars: no interrupt. */
-  const WEIGHED = ANGEL_OMENS['weighed']!, BREATH = ANGEL_OMENS['breath']!, STARS = ANGEL_OMENS['stars']!;
+  /** Weighed: a shield on the hunter it names cancels it. Stars: leaving its tile cancels it. */
+  const WEIGHED = ANGEL_OMENS['weighed']!, STARS = ANGEL_OMENS['stars']!;
+  /**
+   * Decision 43 left no script's omen answered by a hit, so the stagger and burst rule is read on an omen of its own:
+   * Weighed with a hold or root cancelling it, its stagger answer cancelling it and its burst weakening it.
+   */
+  const HITS: Omen = { ...WEIGHED, interrupt: { by: ['hold', 'root'], outcome: 'cancel' }, stagger: 'cancel', burst: 'weaken' };
   const STUN: StatusDef = { label: 'Stunned', desc: '', ops: [{ op: 'hold' }] };
   const stunned: Status = { key: statusKey('stunned'), def: STUN, source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0) } as Status;
   /** A bar of 100 whose same-rank hit is 10. */
   const HIT = 10;
-  const at = (hp: number, o: { statuses?: Status[]; fill?: number; max?: number } = {}) =>
-    ({ ...lifeAt('monster', hp), sheet: { hpMax: 1000 }, statuses: o.statuses ?? [], stagger: { fill: o.fill ?? 0, max: o.max ?? 100, hit: HIT } }) as AnswerRow;
+  const NOW = tick(500), A = combatantId('A');
+  /** The mythic at `hp` of 1000, with `rows` of the party (none by default). */
+  const at = (hp: number, o: { statuses?: Status[]; fill?: number; max?: number } = {}, rows: readonly AimRow[] = []): AnswerScene =>
+    ({ row: { ...lifeAt('monster', hp), side: 'foe', sheet: { hpMax: 1000 }, statuses: o.statuses ?? [], stagger: { fill: o.fill ?? 0, max: o.max ?? 100, hit: HIT } } as AnswerRow, rows });
   /** Decision 42, read from the rule: the HP of 1000 a burst answer asks after the announce, and the bar's fill a stagger answer asks. */
   const REACH = RULES.fight.mythic.answerReach, BURST = Math.ceil(REACH.burst * 1000), STAGGER = REACH.stagger * HIT;
-  const found = (hpAt: number, fill = 0, max = 100) => ({ hpAt, barAt: { fill, max } });
+  const found = (hpAt: number, fill = 0, max = 100, aim: Place | CombatantId = A) => ({ hpAt, barAt: { fill, max }, aim });
+  /** Hunter A at `p`, with a shield of `amount` to `until` (none at 0). */
+  const hunterAt = (p: Place, amount = 0, until = 900): AimRow => ({ id: A, side: 'party', place: p, shield: amount ? { amount, until: tick(until) } : null });
 
-  test('a stun and the burst\'s HP taken on Weighed: the cancel comes first, then the weaken', () => {
-    expect(answerMet(WEIGHED, found(900), at(900), at(900 - BURST, { statuses: [stunned] }), RULES)).toEqual([
+  test('a stun and the burst\'s HP taken: the cancel comes first, then the weaken', () => {
+    expect(answerMet(HITS, found(900), at(900), at(900 - BURST, { statuses: [stunned] }), NOW, RULES)).toEqual([
       { how: 'interrupt', outcome: 'cancel' }, { how: 'burst', outcome: 'weaken' },
     ]);
   });
 
   test('one HP short of the burst is no answer, a heal counts against it, and a stun it already had is no answer', () => {
-    expect(answerMet(WEIGHED, found(900), at(900), at(901 - BURST), RULES)).toEqual([]);
-    expect(answerMet(WEIGHED, found(900), at(900, { statuses: [stunned] }), at(900, { statuses: [stunned] }), RULES)).toEqual([]);
-    expect(answerMet(WEIGHED, found(900), at(800), at(960 - BURST), RULES)).toEqual([]);
+    expect(answerMet(HITS, found(900), at(900), at(901 - BURST), NOW, RULES)).toEqual([]);
+    expect(answerMet(HITS, found(900), at(900, { statuses: [stunned] }), at(900, { statuses: [stunned] }), NOW, RULES)).toEqual([]);
+    expect(answerMet(HITS, found(900), at(800), at(960 - BURST), NOW, RULES)).toEqual([]);
   });
 
   test('at a reach of 0 any hit after the announce answers, and a change that lands nothing does not', () => {
     // decision 42's undo, "ordinary hits answer a warning": the rule at 0
     const ZERO = { fight: { mythic: { answerReach: { stagger: 0, burst: 0 } } } };
-    expect(answerMet(BREATH, found(900, 10), at(900, { fill: 10 }), at(899, { fill: 11 }), ZERO)).toEqual([{ how: 'stagger', outcome: 'cancel' }, { how: 'burst', outcome: 'weaken' }]);
-    expect(answerMet(BREATH, found(900, 10), at(900, { fill: 10 }), at(900, { fill: 10 }), ZERO)).toEqual([]);
+    expect(answerMet(HITS, found(900, 10), at(900, { fill: 10 }), at(899, { fill: 11 }), NOW, ZERO)).toEqual([{ how: 'stagger', outcome: 'cancel' }, { how: 'burst', outcome: 'weaken' }]);
+    expect(answerMet(HITS, found(900, 10), at(900, { fill: 10 }), at(900, { fill: 10 }), NOW, ZERO)).toEqual([]);
   });
 
   test('HP lost before the announce is no burst answer: only what lands after it counts', () => {
     // the mythic lost the burst's HP and more before the omen, and nothing since
-    expect(answerMet(WEIGHED, found(900 - 2 * BURST), at(900 - 2 * BURST), at(900 - 2 * BURST), RULES)).toEqual([]);
+    expect(answerMet(HITS, found(900 - 2 * BURST), at(900 - 2 * BURST), at(900 - 2 * BURST), NOW, RULES)).toEqual([]);
   });
 
-  test('the stagger answer\'s fill landed after the announce cancels the Breath, and its outcome none on Stars is not met', () => {
-    expect(answerMet(BREATH, found(900, 0), at(900), at(900, { fill: STAGGER }), RULES)).toEqual([{ how: 'stagger', outcome: 'cancel' }]);
-    expect(answerMet(BREATH, found(900, 0), at(900), at(900, { fill: STAGGER - 1 }), RULES)).toEqual([]);
-    expect(answerMet(STARS, found(900), at(900), at(400, { statuses: [stunned] }), RULES)).toEqual([]);
+  test('the stagger answer\'s fill landed after the announce cancels, and no script\'s omen today is answered by a hit', () => {
+    expect(answerMet(HITS, found(900, 0), at(900), at(900, { fill: STAGGER }), NOW, RULES)).toEqual([{ how: 'stagger', outcome: 'cancel' }]);
+    expect(answerMet(HITS, found(900, 0), at(900), at(900, { fill: STAGGER - 1 }), NOW, RULES)).toEqual([]);
+    expect(answerMet(WEIGHED, found(900, 0), at(900), at(900 - BURST, { fill: STAGGER }), NOW, RULES)).toEqual([]);
   });
 
   test('a bar nearly full at the announce and broken by one hit after it is no stagger answer', () => {
     // 95 of 100 at the announce: the break takes 5 of fill, and the bar is 175 after it, empty
-    expect(answerMet(BREATH, found(900, 95), at(900, { fill: 95 }), at(900, { fill: 0, max: 175 }), RULES)).toEqual([]);
+    expect(answerMet(HITS, found(900, 95), at(900, { fill: 95 }), at(900, { fill: 0, max: 175 }), NOW, RULES)).toEqual([]);
   });
 
   test('a break counts the whole bar it emptied: the fill to the break and the fill after it', () => {
     // half the answer's fill to the break, then the other half on the new bar of 175
     const before = 100 - STAGGER / 2, after = STAGGER / 2;
-    expect(answerMet(BREATH, found(900, before), at(900, { fill: before }), at(900, { fill: after, max: 175 }), RULES)).toEqual([{ how: 'stagger', outcome: 'cancel' }]);
-    expect(answerMet(BREATH, found(900, before), at(900, { fill: before }), at(900, { fill: after - 1, max: 175 }), RULES)).toEqual([]);
+    expect(answerMet(HITS, found(900, before), at(900, { fill: before }), at(900, { fill: after, max: 175 }), NOW, RULES)).toEqual([{ how: 'stagger', outcome: 'cancel' }]);
+    expect(answerMet(HITS, found(900, before), at(900, { fill: before }), at(900, { fill: after - 1, max: 175 }), NOW, RULES)).toEqual([]);
+  });
+
+  test('a shield landing on the hunter Weighed names cancels it; one it already held, or one on another hunter, does not', () => {
+    const here = place(4, 4);
+    expect(answerMet(WEIGHED, found(900), at(900, {}, [hunterAt(here)]), at(900, {}, [hunterAt(here, 9)]), NOW, RULES)).toEqual([{ how: 'shield', outcome: 'cancel' }]);
+    expect(answerMet(WEIGHED, found(900), at(900, {}, [hunterAt(here, 9)]), at(900, {}, [hunterAt(here, 9)]), NOW, RULES)).toEqual([]);
+    expect(answerMet(WEIGHED, found(900, 0, 100, combatantId('B')), at(900, {}, [hunterAt(here)]), at(900, {}, [hunterAt(here, 9)]), NOW, RULES)).toEqual([]);
+    // a shield past its end is none, so one put on again is new
+    expect(answerMet(WEIGHED, found(900), at(900, {}, [hunterAt(here, 9, 400)]), at(900, {}, [hunterAt(here, 9)]), NOW, RULES)).toEqual([{ how: 'shield', outcome: 'cancel' }]);
+  });
+
+  test('Stars Fall\'s tile left by the hunter on it cancels it; a hunter that stays, or a tile it does not aim at, is no answer', () => {
+    const tile = place(4, 4), off = place(5, 4);
+    expect(answerMet(STARS, found(900, 0, 100, tile), at(900, {}, [hunterAt(tile)]), at(900, {}, [hunterAt(off)]), NOW, RULES)).toEqual([{ how: 'step', outcome: 'cancel' }]);
+    expect(answerMet(STARS, found(900, 0, 100, tile), at(900, {}, [hunterAt(tile)]), at(900, {}, [hunterAt(tile)]), NOW, RULES)).toEqual([]);
+    expect(answerMet(STARS, found(900, 0, 100, off), at(900, {}, [hunterAt(tile)]), at(900, {}, [hunterAt(place(3, 4))]), NOW, RULES)).toEqual([]);
+    // Weighed names a hunter, not a tile: its step outcome is none, so a hunter walking off is no answer
+    expect(answerMet(WEIGHED, found(900), at(900, {}, [hunterAt(tile)]), at(900, {}, [hunterAt(off)]), NOW, RULES)).toEqual([]);
   });
 });

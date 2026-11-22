@@ -49,7 +49,7 @@ export const MYTHICS = {
       overwhelm: { name: 'Overwhelm', kind: 'blast', type: 'physical', reach: 'field', range: 0, hits: 1.2, sure: true, applies: null, leaves: null, self: CRESCENDO },
     },
     omens: {
-      overwhelm: { name: 'Overwhelm', full: 'overwhelm', weak: null, aim: 'all', interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: 'none' },
+      overwhelm: { name: 'Overwhelm', full: 'overwhelm', weak: null, aim: 'all', interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: 'none', shield: 'none', step: 'none' },
     },
     phases: [
       { name: 'The Fight', line: 'It fights as it always has, and its clock is running.', from: 1, ends: 'gate', clock: 14, worn: [], bar: 1, acts: 'every', rotation: [act] },
@@ -59,10 +59,12 @@ export const MYTHICS = {
 
   // "The fight should be a countdown to one note that ends it, with no way to survive the note."
   'angel-of-the-last-trumpet': mythicScript({
-    name: 'The Angel of the Last Trumpet', hp: 0.93,
+    name: 'The Angel of the Last Trumpet', hp: 1,
     shape: 'A countdown: every phase is short, and when a clock runs out the Final Note comes every other turn.',
     moves: {
-      'stars-fall': { name: 'Stars Fall', kind: 'blast', type: 'magical', reach: 2, range: 12, hits: 0.55, sure: false,
+      // 1.0 at the farthest, not 0.55 at the crowd: the walk in stepped off the crowd's tile, and at 0.55 a party that
+      // never stepped won 0.83 of the share of one that did (row B5, sim-log.md MY5 fifth pass)
+      'stars-fall': { name: 'Stars Fall', kind: 'blast', type: 'magical', reach: 2, range: 12, hits: 1, sure: false,
         applies: { status: 'burning', rounds: 2 }, leaves: { name: 'Fallen stars', rounds: 2, status: 'burning' }, self: null },
       'weighed': { name: 'Weighed and Found Wanting', kind: 'curse', type: 'magical', reach: 0, range: 24, hits: 0.35, sure: false,
         applies: { status: 'paralyzed', rounds: 2 }, leaves: null, self: null },
@@ -79,24 +81,24 @@ export const MYTHICS = {
         applies: null, leaves: null, self: CRESCENDO },
     },
     omens: {
-      stars: { name: 'Stars Fall', full: 'stars-fall', weak: null, aim: 'crowd',
-        interrupt: { by: [], outcome: 'none' }, stagger: 'cancel', burst: 'none' },
+      stars: { name: 'Stars Fall', full: 'stars-fall', weak: null, aim: 'farthest',
+        interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: 'none', shield: 'none', step: 'cancel' },
       weighed: { name: 'Weighed and Found Wanting', full: 'weighed', weak: 'found-wanting', aim: 'threat',
-        interrupt: { by: ['hold', 'root'], outcome: 'cancel' }, stagger: 'none', burst: 'weaken' },
+        interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: 'none', shield: 'cancel', step: 'none' },
       breath: { name: 'The First Breath', full: 'first-breath', weak: 'half-breath', aim: 'self',
-        interrupt: { by: ['hold'], outcome: 'weaken' }, stagger: 'cancel', burst: 'weaken' },
+        interrupt: { by: ['hold'], outcome: 'weaken' }, stagger: 'none', burst: 'none', shield: 'none', step: 'none' },
       note: { name: 'The Final Note', full: 'final-note', weak: 'broken-note', aim: 'all',
-        interrupt: { by: [], outcome: 'none' }, stagger: 'weaken', burst: 'none' },
+        interrupt: { by: ['hold'], outcome: 'weaken' }, stagger: 'none', burst: 'none', shield: 'none', step: 'none' },
     },
     phases: [
       { name: 'The Trumpet Raised', line: 'It lifts the trumpet. Each phase is short: when a clock runs out, the Final Note begins.',
-        from: 1, ends: 'gate', clock: 5, worn: [], bar: 1,
-        acts: ['Roll Up the Sky', 'Appointed Hour'], rotation: [act, omen('stars'), act, omen('weighed')] },
+        from: 1, ends: 'gate', clock: 4, worn: [], bar: 1,
+        acts: ['Roll Up the Sky', 'Appointed Hour'], rotation: [act, omen('weighed'), act, omen('stars')] },
       { name: 'The First Breath', line: 'It draws breath. It is faster, and the note is closer.',
         from: 0.65, ends: 'gate', clock: 4, worn: [drawn(20, 'Drawn Breath')], bar: 1.25,
         acts: ['Roll Up the Sky', 'Appointed Hour'], rotation: [omen('breath'), act, omen('weighed'), act] },
-      { name: 'The Note', line: 'The trumpet sounds. Break its stagger bar to make the note smaller.',
-        from: 0.3, ends: 'gate', clock: 3, worn: [drawn(20, 'Drawn Breath'), fury(25, 'Last Hour')], bar: 0.75,
+      { name: 'The Note', line: 'The trumpet sounds. Hold it still before the note to make the note smaller.',
+        from: 0.3, ends: 'gate', clock: 2, worn: [drawn(20, 'Drawn Breath'), fury(25, 'Last Hour')], bar: 0.75,
         acts: ['Roll Up the Sky'], rotation: [act, omen('note')] },
     ],
     enraged: [omen('note')],
@@ -107,13 +109,16 @@ export const MYTHICS = {
     name: 'Zaratan, the Island That Wakes', hp: 0.92,
     shape: 'The ground: each Sinking floods tiles for the rest of the fight, and in the Dive it can only be survived.',
     moves: {
-      'sinking': { name: 'Sinking of the Shore', kind: 'blast', type: 'physical', reach: 3, range: 10, hits: 0.5, sure: false,
+      // 1.0, not 0.5: leaving the tile it aims at cancels it (decision 43), so it is the cost of not answering, and at 0.5
+      // the party that answered no omen won 0.027 of its fights against 0.070 (sim-log.md, MY5 fifth pass)
+      'sinking': { name: 'Sinking of the Shore', kind: 'blast', type: 'physical', reach: 3, range: 10, hits: 1, sure: false,
         applies: { status: 'prone', rounds: 1 }, leaves: { name: 'Rising sea', rounds: 20, status: 'slowed' }, self: null },
       // 0.8 at the weakest, not 0.4 at the crowd: every hunter stepped out of the crowd's tile, and the Dive held 0.007 of
       // the first falls (row B7, sim-log.md MY5 second pass)
       'rising': { name: 'The Sea Rises', kind: 'blast', type: 'physical', reach: 2, range: 16, hits: 0.8, sure: false,
         applies: null, leaves: { name: 'Rising sea', rounds: 20, status: 'slowed' }, self: null },
-      'trench': { name: 'Breath of the Deep Trench', kind: 'blast', type: 'magical', reach: 2, range: 16, hits: 0.75, sure: false,
+      // 1.2, not 0.75, for the same reason as the Sinking: a step off its tile weakens it, and a stun cancels it
+      'trench': { name: 'Breath of the Deep Trench', kind: 'blast', type: 'magical', reach: 2, range: 16, hits: 1.2, sure: false,
         applies: { status: 'stunned', rounds: 1 }, leaves: null, self: null },
       'spray': { name: 'Spray of the Trench', kind: 'blast', type: 'magical', reach: 2, range: 16, hits: 0.35, sure: false,
         applies: null, leaves: null, self: null },
@@ -122,23 +127,23 @@ export const MYTHICS = {
     },
     omens: {
       sinking: { name: 'Sinking of the Shore', full: 'sinking', weak: null, aim: 'crowd',
-        interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: 'none' },
+        interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: 'none', shield: 'none', step: 'cancel' },
       rising: { name: 'The Sea Rises', full: 'rising', weak: null, aim: 'weakest',
-        interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: 'none' },
+        interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: 'none', shield: 'none', step: 'none' },
       trench: { name: 'Breath of the Deep Trench', full: 'trench', weak: 'spray', aim: 'farthest',
-        interrupt: { by: ['hold', 'root'], outcome: 'cancel' }, stagger: 'weaken', burst: 'weaken' },
+        interrupt: { by: ['hold', 'root'], outcome: 'cancel' }, stagger: 'none', burst: 'none', shield: 'none', step: 'weaken' },
       under: { name: 'It Goes Under', full: 'go-under', weak: null, aim: 'all',
-        interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: 'none' },
+        interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: 'none', shield: 'none', step: 'none' },
     },
     phases: [
       { name: 'The Shore', line: 'The island stirs. Where it sinks, the sea stays.',
-        from: 1, ends: 'gate', clock: 6, bar: 1, worn: [SHELL],
+        from: 1, ends: 'gate', clock: 5, bar: 1, worn: [SHELL],
         acts: ['Jaws Like a Harbour', 'Shell of a Thousand Years'], rotation: [act, act, omen('sinking')] },
       { name: 'The Dive', line: 'It dives. Damage does not reach it under the waves. Survive, and keep off the rising sea.',
         ends: 'clock', clock: 4, worn: [], bar: 1,
         acts: [], rotation: [omen('rising')] },
       { name: 'The Island Wakes', line: 'It surfaces, awake. The shore is smaller now.',
-        from: 0.55, ends: 'gate', clock: 7, bar: 1, worn: [SHELL, fury(20, 'Waking')],
+        from: 0.55, ends: 'gate', clock: 5, bar: 1, worn: [SHELL, fury(20, 'Waking')],
         acts: ['Jaws Like a Harbour', 'Shell of a Thousand Years'], rotation: [act, omen('trench'), act, omen('sinking')] },
     ],
     enraged: [omen('under')],
@@ -146,7 +151,7 @@ export const MYTHICS = {
 
   // "A hunter he names should die unless something outside the rules prevents it."
   'the-fourth-rider': mythicScript({
-    name: 'The Fourth Rider', hp: 0.82,
+    name: 'The Fourth Rider', hp: 0.78,
     shape: 'The names: he marks one hunter at a time to die, and the party saves them or loses them.',
     moves: {
       'named': { name: 'Named in the Book', kind: 'curse', type: 'magical', reach: 0, range: 24, hits: 1.1, sure: true,
@@ -165,23 +170,23 @@ export const MYTHICS = {
     },
     omens: {
       named: { name: 'Named in the Book', full: 'named', weak: 'struck', aim: 'weakest',
-        interrupt: { by: ['hold', 'root'], outcome: 'cancel' }, stagger: 'cancel', burst: 'weaken' },
+        interrupt: { by: ['hold', 'root'], outcome: 'cancel' }, stagger: 'none', burst: 'none', shield: 'cancel', step: 'none' },
       wake: { name: 'Pale Wake', full: 'pale-wake', weak: null, aim: 'crowd',
-        interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: 'none' },
+        interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: 'none', shield: 'none', step: 'none' },
       allEnd: { name: 'All Things End', full: 'all-end', weak: 'not-all', aim: 'all',
-        interrupt: { by: ['hold'], outcome: 'cancel' }, stagger: 'weaken', burst: 'weaken' },
+        interrupt: { by: ['hold'], outcome: 'cancel' }, stagger: 'none', burst: 'none', shield: 'none', step: 'none' },
       reaping: { name: 'The Reaping', full: 'reaping', weak: null, aim: 'all',
-        interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: 'none' },
+        interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: 'none', shield: 'none', step: 'none' },
     },
     phases: [
       { name: 'The Pale Horse', line: 'He opens the book. The one he names will die unless the party stops him.',
         from: 1, ends: 'gate', clock: 5, worn: [], bar: 1,
         acts: ['Reaping Stroke', 'Not Yet'], rotation: [act, omen('named'), act] },
       { name: 'The Book Opens', line: 'He is never late, and he is faster now.',
-        from: 0.55, ends: 'gate', clock: 5, worn: [drawn(15, 'Never Late')], bar: 1,
+        from: 0.55, ends: 'gate', clock: 3, worn: [drawn(15, 'Never Late')], bar: 1,
         acts: ['Reaping Stroke', 'Not Yet'], rotation: [omen('named'), act, omen('wake')] },
       { name: 'All Things End', line: 'The last page. Every name is in it.',
-        from: 0.35, ends: 'gate', clock: 4, worn: [drawn(15, 'Never Late'), fury(20, 'The Last Page')], bar: 0.75,
+        from: 0.35, ends: 'gate', clock: 3, worn: [drawn(15, 'Never Late'), fury(20, 'The Last Page')], bar: 0.75,
         acts: ['Reaping Stroke'], rotation: [omen('named'), omen('allEnd')] },
     ],
     enraged: [omen('reaping')],
