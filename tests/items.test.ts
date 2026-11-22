@@ -509,8 +509,8 @@ group('the recipe items: each is read back whole and spends inside its grade', (
   const holds = (name: string): ItemTemplate => of(name);
   const formulaOf = (text: string) => { const p = parseFormula(text, RULES); if (!p.ok) throw new Error(p.error); return p.formula; };
   const spendOf = (name: string) => itemSpend(holds(name), RULES)!;
-  test('there are five: a Thornmail, a Spellblade, a healer\'s charm, a Bulwark and a Warden\'s Plate', () => {
-    expect(RECIPE_ITEMS.map(d => d.name)).toEqual(['Thornmail', 'Spellblade', "Healer's Charm", 'Bulwark Ring', "Warden's Plate"]);
+  test('there are six: a Thornmail, a Spellblade, a healer\'s charm, a Bulwark, a Lifeline and a Warden\'s Plate', () => {
+    expect(RECIPE_ITEMS.map(d => d.name)).toEqual(['Thornmail', 'Spellblade', "Healer's Charm", 'Bulwark Ring', 'Lifeline Locket', "Warden's Plate"]);
     for (const d of RECIPE_ITEMS) expect(LOOT_ITEMS, d.name).toContain(d);
   });
   for (const d of RECIPE_ITEMS) {
@@ -549,6 +549,10 @@ group('the recipe items: each is read back whole and spends inside its grade', (
     expect(a.effect).toMatchObject({ type: 'shield', formula: formulaOf('10 + 0.05 * hpmax') });
     expect(a.cost.cooldown).toBe(tick(8 * RULES.fight.round));
     expect(spendOf('Bulwark Ring').unweighed).toEqual([]);
+  });
+  test('Lifeline Locket shields its wearer for 10% of max HP once a fight, when it falls under the low share, and prices whole', () => {
+    expect(holds('Lifeline Locket').worn!.triggers).toEqual([{ on: 'lowHp', to: 'self', limit: { kind: 'fight', n: 1 }, ops: [{ op: 'shield', amount: formulaOf('0.1 * hpmax') }] }]);
+    expect(spendOf('Lifeline Locket').unweighed).toEqual([]);
   });
   test('Warden\'s Plate adds armor equal to a share of max HP, and is a heavy chest piece', () => {
     const p = holds("Warden's Plate");

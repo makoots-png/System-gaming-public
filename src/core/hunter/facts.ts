@@ -24,9 +24,9 @@ import type { MonsterKind } from './derive.ts';
  */
 const every = <T extends string>() => <const L extends readonly T[]>(l: L & ([Exclude<T, L[number]>] extends [never] ? unknown : never)): L => l;
 
-/** How a hunter's life changed (the life machine's `lifeNews`): from a fight's totals, a revive by the GM or an item, or a hand edit. */
-export type LifeHow = 'fight' | 'gm' | 'item' | 'hand';
-export const LIFE_HOWS = every<LifeHow>()(['fight', 'gm', 'item', 'hand']);
+/** How a hunter's life changed (the life machine's `lifeNews`): from a fight's totals, a revive by the GM, an item or the System, or a hand edit. */
+export type LifeHow = 'fight' | 'gm' | 'item' | 'system' | 'hand';
+export const LIFE_HOWS = every<LifeHow>()(['fight', 'gm', 'item', 'system', 'hand']);
 /** Monster kinds from the least to the most to beat: a kill's kind compares in this order, so "at least boss" holds of a mythic. */
 export const MONSTER_KINDS_RISING = every<MonsterKind>()(['normal', 'elite', 'boss', 'mythic']);
 /** Whether a monster of kind `k` counts where a boss counts (a record's, a feat's, a fight fact's bosses): a boss or a mythic. */

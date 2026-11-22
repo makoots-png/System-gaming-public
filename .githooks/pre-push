@@ -31,4 +31,11 @@ else
 fi
 # The tree a green run on the public repository is compared with is the pushed commit's, not the checkout's.
 if [ -n "$pushed" ]; then CI_PUSHED="$pushed"; export CI_PUSHED; else unset CI_PUSHED; fi
+# A cloud box ships its own Chrome and not the browser Playwright installs, so a push with E2E_CHROMIUM unset failed
+# every lag test at launch (Nov 22). The hook names the box's browser itself when it is there and none was named.
+if [ -z "$E2E_CHROMIUM" ] && [ -x /opt/google/chrome/chrome ]; then
+  E2E_CHROMIUM=/opt/google/chrome/chrome
+  export E2E_CHROMIUM
+  echo "pre-push: E2E_CHROMIUM was not set; using /opt/google/chrome/chrome." >&2
+fi
 exec bun run ci

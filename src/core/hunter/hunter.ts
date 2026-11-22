@@ -33,6 +33,8 @@ import type { Pending, Progress } from './progress.ts';
 import { newVitals, parseLife, parseUsed } from './vitals.ts';
 import { parseWorn } from './inventory.ts';
 import type { Vitals } from './vitals.ts';
+import { REVIVE_STANDINGS } from './revive-standing.ts';
+import type { ReviveStanding } from './revive-standing.ts';
 import { hunterSheet } from './sheet.ts';
 import { isStateChip } from './chips.ts';
 import { parsePenalty } from './penalty.ts';
@@ -130,6 +132,10 @@ export type Hunter = Progress & Vitals & {
   emblem: string; color: string; loadouts: Loadout[]; build: Build; boons: Boon[];
   /** The rests taken since a gate last ended for it: src/core/hunter/rests.ts. Only grant.ts `sheetEdit` changes it. */
   restsTaken: number;
+  /** What is left of its revive ladder (src/core/hunter/revive-standing.ts): `free`, `debt` or `none`. Only a System raise moves it. */
+  reviveLeft: ReviveStanding;
+  /** The gold it owes the System for its raise on debt (revive-standing.ts `raiseOwes`). Only grant.ts `systemRaise` adds to it. */
+  debt: number;
   /** Its personal gates, the System's, and their clock: src/core/gates/personal.ts and solo.ts. Only their functions change them. */
   solo: Solo;
   /** What the System remembers of it (its facts, kept and waiting, and its lifetime numbers): src/core/hunter/chronicle.ts. Only `record` and `noticed` change it. */
@@ -161,7 +167,7 @@ export const newHunter = (R: Rules = BASE_RULES): Hunter => {
     gold: 0, stats, hpAdj: 0, manaAdj: 0, conditions: [], titleId: null, titles: [],
     quests: [], skills: [], items: [], equipped: newEquipped(), shadows: [],
     daily: { streak: 0, lastCompleteKey: null, lastCheckedKey: null }, penalty: null, jobChain: null, notes: '', updatedAt: '',
-    emblem: '', color: '', loadouts: [], build: { path: null, picks: [] }, boons: [], restsTaken: 0, solo: newSolo(), chronicle: newChronicle(),
+    emblem: '', color: '', loadouts: [], build: { path: null, picks: [] }, boons: [], restsTaken: 0, reviveLeft: 'free', debt: 0, solo: newSolo(), chronicle: newChronicle(),
   };
   return Object.assign(h, newVitals(hunterSheet(h, R).sheet));
 };
@@ -180,10 +186,12 @@ function fixBonus(bonus: Rec): void {
 /** A hunter's conditions, each read by `parseSheetStatus`; one that does not read, or a chip the hunter's state draws, is dropped. At most `MAX_STATUSES`, as on a fight row. */
 const conditions = (R: Rules, value: unknown[]): Condition[] =>
   value.flatMap(c => parseSheetStatus(c, R) ?? []).filter(c => !isStateChip(c.key)).slice(0, MAX_STATUSES);
+/** Bound for junk only: a hunter's debt is a few S-rank Clears (an S Clear is 75,000 gold). */
+const DEBT_MAX = 1e9;
 /** Bound for junk only: a level holds `pointsPerLevel` points, 3 by default, so MAX_LEVEL holds 30,006 with the creation points. */
 const POINTS_MAX = 1e6;
 /**
- * Life, mana, fatigue, collapse, the uses spent this gate and the rests taken in it, within bounds for junk only: the maxima come from the sheet,
+ * Life, mana, fatigue, collapse, the uses spent this gate, the rests taken in it, the revive standing and the debt, within bounds for junk only: the maxima come from the sheet,
  * and a GM's rule change never prunes a hunter. A life that does not read is up at the full HP of the hunter's sheet, so
  * this runs last. A `used` that does not read is none spent (`parseUsed`).
  */
@@ -192,6 +200,8 @@ function fixVitals(h: Hunter, R: Rules): void {
   h.mana = int(h.mana, 0, 0, VITAL_MAX); h.fatigue = int(h.fatigue, 0, 0, VITAL_MAX);
   h.used = parseUsed(h.used, R);
   h.restsTaken = int(h.restsTaken, 0, 0, VITAL_MAX);
+  // a hunter stored before the ladder has never been raised by the System: its free raise is left
+  h.reviveLeft = oneOf(h.reviveLeft, REVIVE_STANDINGS, 'free'); h.debt = int(h.debt, 0, 0, DEBT_MAX);
 }
 
 /** The default a stored hunter is filled from. */

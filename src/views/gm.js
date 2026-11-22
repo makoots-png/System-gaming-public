@@ -3,6 +3,7 @@
 import { RANKS, dueAt as dueIn, parseOverrides, refusalWords } from '../edge/rules.ts';
 import { can, vitalChipsOf } from '../core/hunter/vitals.ts';
 import { chipDef, ofLife } from '../core/hunter/chips.ts';
+import { RAISE_CHIPS } from '../core/hunter/revive-standing.ts';
 import { gmSource } from '../core/effects.ts';
 import { playerHeld } from '../core/combat/fight-save.ts';
 import { parseSheetKey, sheetKeyOf } from '../core/ids.ts';
@@ -240,6 +241,8 @@ export function register(app) {
     // holds the life (row-life.ts), so the chips and the life's button read the row's, as the combat card does
     const row = heldRow(remote ? { key } : { hid: h.id }), life = row ? row.life : h.life;
     const drawn = life ? vitalChipsOf({ life, collapsed: h.collapsed }).map(k => `<span class="gm-chip pen"${ofLife(k) ? ` data-life-at="${life.at}"` : ''}>${esc(chipDef(k).label)}</span>`).join('') : '';
+    // a dead hunter's revive ladder: whether the System can still raise it (the GM applies the hour, world rule 3)
+    const ladder = life && life.at === 'dead' && RAISE_CHIPS[h.reviveLeft] ? `<span class="gm-chip" data-raise-chip>${esc(RAISE_CHIPS[h.reviveLeft])}</span>` : '';
     const revive = life && can(life, 'revive') ? `<button type="button" class="primary" data-grevive aria-label="Revive ${esc(h.name)}">Revive</button>` : '';
     const cond = drawn + (Array.isArray(h.conditions) ? h.conditions : []).filter(c => c && typeof c.key === 'string')
       .map(c => remote
@@ -258,7 +261,7 @@ export function register(app) {
       <h3>${ui.rankBadge(rank)}${A().identity.badge(h, 'sm')}<span>${esc(h.name)}</span></h3>
       <div class="tagline">Lv ${esc(int(h.level) || 1)}${h.job ? ' · ' + esc(h.job) : ''}${path ? ` · <span data-gmpath>${esc(path)}</span>` : ''}${remote ? ' · remote' : ''}</div>
       ${bar('hp', 'HP', v.hp, v.hpMax)}${bar('mana', 'Mana', v.mana, v.manaMax)}${bar('ft', 'Fatigue', ft, v.fatigueMax)}
-      <div class="gm-chips">${pen}${activeChip}${dailyChip}${streak}${cond}</div>${weightCard(h.name, wkey)}
+      <div class="gm-chips">${ladder}${pen}${activeChip}${dailyChip}${streak}${cond}</div>${weightCard(h.name, wkey)}
       ${h.chronicle ? `<button type="button" class="gm-chron" data-gchron aria-label="${esc(CHRONICLE_WORDS.title)} of ${esc(h.name)}">${esc(boardLine(h.chronicle))}</button>` : ''}
       <div class="gm-hp" role="group" aria-label="Quick HP for ${esc(h.name)}">
         <button type="button" data-hp="-5" aria-label="Damage 5 to ${esc(h.name)}" title="Damage 5 to ${esc(h.name)}">−5</button><button type="button" data-hp="-1" aria-label="Damage 1 to ${esc(h.name)}" title="Damage 1 to ${esc(h.name)}">−1</button>

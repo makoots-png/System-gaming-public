@@ -272,6 +272,18 @@ test('only grant.ts sheetEdit changes a hunter\'s rests taken in a gate, through
   expect(report(hits), 'change a hunter\'s rests only through sheetEdit (grant.ts) with a rest, a Clear or a gate left (rests.ts restStep).').toEqual([]);
 });
 
+test('only grant.ts systemRaise changes a hunter\'s revive standing and debt, through revive-standing.ts standingStep', async () => {
+  // World rule 6 and the owner's System raise (Nov 22): the standing, the life and the debt move in one write. A second
+  // writer could spend a raise the hunter never took, or raise it without the debt (notes-9-rulings-1122.md, section 21).
+  const writes = /\.(reviveLeft|debt)\s*([-+*/]?=(?![=>])|\+\+|--)|\b(reviveLeft|debt)\s*:(?!\s*(?:number|ReviveStanding)\b)/;
+  expect(writes.test('h.reviveLeft = \'debt\';') && writes.test('({ ...h, debt: h.debt + 1000 })'), 'the rule sees a write').toBe(true);
+  expect(writes.test('  debt: number;'), 'and not the type').toBe(false);
+  // revive-standing.ts keys its tables by the standing, whose name `debt` is the field's
+  const owners = ['src/core/hunter/grant.ts', 'src/core/hunter/hunter.ts', 'src/core/hunter/revive-standing.ts'];
+  const hits = (await sourceLines('src')).filter(line => !owners.includes(line.file) && !isComment(line.text) && writes.test(line.text));
+  expect(report(hits), 'change a hunter\'s revive standing and debt only through systemRaise (grant.ts), which steps revive-standing.ts standingStep.').toEqual([]);
+});
+
 test('only src/core/hunter/penalty.ts changes a hunter\'s penalty, and nothing else names the Penalized chip', async () => {
   // A missed daily was stored three ways (the penalty, a Penalized condition and an active quest of kind penalty) and
   // three writers kept them in step by hand, so a cure, a combat card or a GM edit left them disagreeing. Now the
@@ -1349,7 +1361,7 @@ test('a view keeps no machine in flags: its closure state is counted per file, a
     'src/views/dice.js': { count: 4, why: 'the last typed rolls, the quick check\'s DC (src/core/dc-pick.ts, moved only by dcPickStep), the view\'s handle, whether the tray is open' },
     'src/views/ui.js': { count: 5, why: 'the audio context, a style element and the toast box (locals of two functions), the windows (src/core/windows.ts, moved only by `move`), the count of windows made, for their ids' },
     'src/views/reward-editor.js': { count: 4, why: 'the reward editor\'s rows, the numbers typed and the line it says, and a draw\'s locals (body, head)' },
-    'src/views/hunter.js': { count: 3, why: 'the hunter and level the sheet drew last, the title being edited and the hunter it was for, and a function\'s local (grantWrite\'s out)' },
+    'src/views/hunter.js': { count: 4, why: 'the hunter and level the sheet drew last, the title being edited and the hunter it was for, the hunter the System raise window last opened for, and a function\'s local (grantWrite\'s out)' },
     'src/views/io.js': { count: 3, why: 'the Data view\'s redraw (refresh), set by its mount, and locals of two functions (report, raw)' },
     'src/views/bestiary.js': { count: 2, why: 'the enemy maker\'s rank, archetype and kind on screen, and a draw\'s locals (pool, unknown)' },
     'src/views/forge.js': { count: 2, why: 'the app, set by register for the module\'s helpers; the status maker\'s colour and whether it lasts until removed' },
@@ -1548,6 +1560,7 @@ test('every let a view keeps for the page is named here with what it holds, and 
     'gm.js awardDraft': 'the Award form\'s draft (award.ts AwardDraft), stepped only by draftStep', 'gm.js questForm': what.handle,
     'hunter.js shownHunter': what.drawn, 'hunter.js shownLevel': 'the level drawn last, so a rise is drawn as a level-up',
     'hunter.js editingTitle': what.shown, 'hunter.js lastHid': what.drawn,
+    'hunter.js raiseOffered': 'the hunter the System raise window last opened for by itself, so one death opens it once; lost on a reload by design, which offers it again',
     'inventory.js tab': what.shown,
     'io.js refresh': 'the Data view\'s redraw, set by its mount',
     'motion.ts tokens': 'the motion tokens read once from the page\'s CSS', 'motion.ts osReduce': what.handle,

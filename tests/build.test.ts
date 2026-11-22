@@ -168,6 +168,7 @@ describe('the room carries the economy', () => {
     ['the sale share', { saleShare: 0.5 }, R => R.saleShare, 0.5],
     ['a used-up item\'s share', { usedUpShare: 0.3 }, R => R.usedUpShare, 0.3],
     ['the Clears a reviving item costs', { reviveClears: 20 }, R => R.reviveClears, 20],
+    ['the Clears a System raise on debt owes', { reviveDebtClears: 5 }, R => R.reviveDebtClears, 5],
     ['the share of the level a raising takes', { reviveLevelShare: 0.1 }, R => R.reviveLevelShare, 0.1],
     ['a personal gate\'s share of the loot', { solo: { lootShare: 0.5 } }, R => R.solo.lootShare, 0.5],
     ['the party a world gate is made for', { gateParty: 6 }, R => R.gateParty, 6],

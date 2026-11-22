@@ -160,4 +160,8 @@ export const VALID: Record<EventType, [Raw, Raw]> = {
     { eid: EID, to: [KEY], re: OFFER, text: 'Yes. Roll Perception when it comes back.' },
     { eid: EID, to: [KEY], re: OFFER, text: 'Yes. Roll Perception when it comes back.' },
   ],
+  systemRaise: [
+    { eid: EID, by: KEY, name: 'Mira', raise: 'debt', owes: 1000 },
+    { eid: EID, by: KEY, name: 'Mira', raise: 'debt', owes: 1000 },
+  ],
 };

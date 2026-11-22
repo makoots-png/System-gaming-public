@@ -1179,10 +1179,10 @@ stateDiagram-v2
   [*] --> s1
   s1 --> s2 : damage takes HP to 0
   s1 --> s2 : HP set to 0 on the bar
-  s2 --> s1 : the GM taps Revive or a Resurrection Crystal is used, up at 1 HP, every status gone
+  s2 --> s1 : the GM taps Revive, the System raises the hunter, or a Resurrection Crystal is used, up at 1 HP, every status gone
 ```
 
-The chart shows what the sheet, the GM board and a combat card say of a hunter. Everything that keeps the hunter up stays in Up: damage that leaves HP above 0, a heal, a lower maximum. At 0 HP the hunter is dead: there are no death saves. Only a revive leaves Dead, the GM's Revive or a Resurrection Crystal used from the bag outside a fight, and it takes off every status the hunter holds, so a poison does not kill it again: healing, a rest, a Clear and a refill do not. MP, fatigue and a collapse are kept beside the life and are not drawn.
+The chart shows what the sheet, the GM board and a combat card say of a hunter. Everything that keeps the hunter up stays in Up: damage that leaves HP above 0, a heal, a lower maximum. At 0 HP the hunter is dead: there are no death saves. Only a revive leaves Dead, the GM's Revive, the System's raise (on the revive ladder, once no fight holds the hunter) or a Resurrection Crystal used from the bag outside a fight, and it takes off every status the hunter holds, so a poison does not kill it again: healing, a rest, a Clear and a refill do not. MP, fatigue and a collapse are kept beside the life and are not drawn.
 
 2 chart states, 3 arrows. No step is hidden.
 
@@ -1192,7 +1192,7 @@ Where it lives:
 |---|---|
 | The union | `Life`, `LifeEvent` and `LIFE_STATES` in `src/core/hunter/vitals.ts` |
 | What changes it | `lifeAfter(life, event, hpMax)` and its `TABLE`; on a sheet `vitalStep` and its `VITAL_TABLE` (the life's events through `TABLE`), called by `sheetEdit` in `src/core/hunter/grant.ts`; `can(life, eventType)` for a button |
-| Who calls it | `lifeEvent` and `api.revive` in `src/views/hunter.js`, through `sheetEdit` (the sheet; the GM board's Revive in `src/views/gm.js` calls `api.revive`), `useItem` in `src/core/hunter/use.ts` (a Resurrection Crystal, through `sheetEdit`), and in a fight `rowLifeAfter` in `src/core/combat/row-life.ts`, the one writer of a hunter row's life, which the `vitals` write-back carries to the sheet |
+| Who calls it | `lifeEvent` and `api.revive` in `src/views/hunter.js`, through `sheetEdit`, `systemRaise` in `src/core/hunter/grant.ts` (the System raise, `api.systemRaise`) (the sheet; the GM board's Revive in `src/views/gm.js` calls `api.revive`), `useItem` in `src/core/hunter/use.ts` (a Resurrection Crystal, through `sheetEdit`), and in a fight `rowLifeAfter` in `src/core/combat/row-life.ts`, the one writer of a hunter row's life, which the `vitals` write-back carries to the sheet |
 | The test to copy | `tests/vitals.test.ts`; the walk's events are in `tests/models/life-events.ts` |
 | The recipe | docs/guide/hunters.md, "To add a field to a hunter" (a new life state or event) |
 
@@ -1275,6 +1275,39 @@ Where it lives:
 | Who calls it | `sheetEdit` in `src/core/hunter/grant.ts`, its one writer: a rest (with the vitals' `rest`), a Clear (`cleared`, with the vitals' `cleared`, through `noteFacts`: `settleClear` in `src/core/gates/pay.ts`, `soloRan` in `src/core/gates/solo.ts`, the `noted` applier in `src/edge/room-events.ts`), a solo run's end (`gateLeft`, `soloRan`); the Rest button is `api.hunter.rest` in `src/views/hunter.js` |
 | The test to copy | `tests/rests.test.ts` |
 | The recipe | docs/guide/hunters.md, "To add a field to a hunter" |
+
+## A hunter's revive ladder
+
+Every standing reachable from a new hunter's (`free`) under the events of `STANDING_EVENT_TYPES` (raise), breadth first. The walk found 3 states and 2 steps.
+
+### The System raises a dead hunter twice: once free, once on debt
+
+```mermaid
+---
+title: The System raises a dead hunter twice: once free, once on debt
+---
+stateDiagram-v2
+  state "Free revive left" as s1
+  state "Debt revive left" as s2
+  state "Crystal or GM only" as s3
+  [*] --> s1
+  s1 --> s2 : the System raises the dead hunter for free
+  s2 --> s3 : the System raises the dead hunter on debt
+```
+
+World rule 6: "the first revive is free; after that, one revive on debt; after that none, unless the GM grants one or the hunter uses a revive item bought before death." The owner, Nov 22: the free revive and the revive on debt are a "System raise", with no GM button. Only a System raise moves the standing; the GM's Revive and a Resurrection Crystal raise the hunter and leave the standing as it is. In Crystal or GM only a raise is refused (`spent`).
+
+3 chart states, 2 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `ReviveStanding`, `StandingEvent` and `REVIVE_STANDINGS` in `src/core/hunter/revive-standing.ts`; the standing is `Hunter.reviveLeft`, repaired to `free` |
+| What changes it | `standingStep(standing, event)` and its `TABLE`; `canRaise(standing)` for a view |
+| Who calls it | `systemRaise` in `src/core/hunter/grant.ts`, its one writer, which steps the standing, the life (`sheetEdit`, a revive by the System) and the debt (`raiseOwes`, `RULES.reviveDebtClears` Clears of the rank) in one write; `api.systemRaise` and `offerRaise` in `src/views/hunter.js`, the window THE SYSTEM CAN RAISE YOU on the dead hunter's own phone once no fight holds it |
+| The test to copy | `tests/revive-standing.test.ts` |
+| The recipe | docs/guide/save-store.md, "A field of a saved thing" |
 
 ## A foe's life in a fight
 

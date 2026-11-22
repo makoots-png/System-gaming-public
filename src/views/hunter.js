@@ -11,7 +11,8 @@ import { checksOf, fitted, hunterSheet, setAdjust, setMaximum } from '../core/hu
 import { ALLOCATION_WORDS, allocated, available, confirm, hasPending, lower, plusPoint, raise, setPoints, setStat } from '../core/hunter/progress.ts';
 import { TOLD, atHunter, atLibrary, both, isRefused, orKeep, refuse } from '../core/save-step.ts';
 import { dropBoon, giveTitle, nameActiveTitle, rankStanding, reevaluate as reevaluated, removeTitle, rename, setJob, setRank, toggleTitle, writeTitle, cleanName } from '../core/hunter/record.ts';
-import { grant, levelEdit, raisedLine, sheetEdit } from '../core/hunter/grant.ts';
+import { grant, levelEdit, raisedLine, sheetEdit, systemRaise } from '../core/hunter/grant.ts';
+import { RAISE_REFUSED, RAISE_TITLE, canRaise, raiseLine, raiseOffer, raisedSaid } from '../core/hunter/revive-standing.ts';
 import { setGold } from '../core/hunter/inventory.ts';
 import { addHunter, removeHunter } from '../core/party.ts';
 import { logLine, logged } from '../core/session-log.ts';
@@ -314,6 +315,19 @@ export function register(app) {
      * fight's `revive` command, and the sheet hears the row's new life in the same write. In the GM's fight it is the GM's.
      */
     revive(hid) { return vitalsEdit(hid, 'life-revive', h => lifeEvent(h, { type: 'revive' }), cid => app.api.combat.revive(cid)); },
+    /**
+     * The System raise (grant.ts `systemRaise`): offered only once no fight holds the hunter (section 21's default: a
+     * fight's dead row is the GM's to revive), so it never writes beside a fight's row. The ladder, the life and the
+     * debt in one write, with the GM's `systemRaise` message in a room.
+     */
+    systemRaise(hid) {
+      if (fightOf({ hid })) return refuse('held');
+      /** @type {import('../core/hunter/grant.ts').SystemRaised | null} */
+      let out = null;
+      const w = store.apply('system-raise', s => { const r = systemRaise(s, hid, { at: new Date().toISOString(), room: app.api.sync.room(), R: rules() }); if (isRefused(r)) return r; out = r; return r.save; });
+      if (isRefused(w)) return w;
+      return out ?? refuse('no-hunter'); // a write that took the step holds its answer
+    },
     /** HP and mana to their maxima: in a fight the row's (`combat.refill`), refused in the GM's fight. */
     fightOf,
     // the price is checked where the mana lives: the row refuses a paid adjust it cannot cover, the sheet's `spend` the same
@@ -330,6 +344,48 @@ export function register(app) {
     addCondition(hid, status) { return vitalsEdit(hid, 'condition', h => addC(h, status), cid => statusToRow(cid, status)); },
     removeCondition(hid, key) { return vitalsEdit(hid, 'condition', h => delC(h, key), cid => app.api.combat.status(cid, { remove: key })); },
   };
+
+  // ── the System raise: a dead hunter's own phone offers it (the owner, Nov 22: "System raise", no GM button) ──
+  /**
+   * Whether this phone offers the System raise to hunter `h` now: a player's dead hunter with a raise left on its ladder,
+   * once no fight holds it. The GM's phone has its Revive, and offers none.
+   */
+  const raiseOpen = h => !app.isGM() && h.life.at === 'dead' && canRaise(h.reviveLeft) && !fightOf({ hid: h.id });
+  let raiseOffered = null; // the hunter the window last opened for by itself, so a death opens it once; a reload opens it again
+  /** The System's window for hunter `hid`: Rise raises it (`api.systemRaise`) and tells how it came back; Not now leaves it dead. */
+  async function offerRaise(hid) {
+    const h = store.hunter(hid), offer = h && raiseOpen(h) ? raiseOffer(h, rules()) : null;
+    if (!offer) return;
+    const rise = await ui.system({ tag: '! System', title: RAISE_TITLE, kind: 'warning', body: offer.body, lines: [...offer.lines],
+      actions: [{ label: 'Not now', value: false, cancel: true }, { label: offer.rise, value: true, primary: true }] });
+    // the hunter may have been raised another way while the window stood open (the GM's Revive): then it says nothing
+    if (rise !== true || store.hunter(hid)?.life.at !== 'dead') return;
+    const w = api.systemRaise(hid);
+    if (!ui.wrote('System', w, RAISE_REFUSED)) return;
+    ui.toast('System', `The System has raised you. ${raisedLine(w.from, w.to)}.`, { kind: 'good' });
+  }
+  /**
+   * Opens the window by itself when this phone's active hunter is first offered the raise: at a death outside a fight, or
+   * as the fight that held it ends. Asked after the write that killed the hunter has asked its own window (a solo run's
+   * RUN FAILED), so the offer stands behind what told the death.
+   */
+  const offerOnce = () => queueMicrotask(() => {
+    const h = store.active();
+    if (!h || !raiseOpen(h)) { raiseOffered = null; return; }
+    if (raiseOffered === h.id) return;
+    raiseOffered = h.id;
+    void offerRaise(h.id);
+  });
+  app.on('change', offerOnce);
+  app.on('sync:docs', offerOnce);
+  app.on('ready', offerOnce);
+  // the GM's phone: a player's report of the System's raise goes in the session log once per event id, with a toast
+  app.on('sync:event', ({ event: ev }) => {
+    if (!app.isGM() || ev.type !== 'systemRaise') return;
+    const p = ev.payload, said = raisedSaid(p.name, p.raise, p.owes);
+    if (!app.api.sync.once(p.eid, logStep('system', null, said.title, said.text))) return;
+    ui.toast('! System', said.text, { kind: 'info' });
+  });
 
   // ── reward bundles: a reward the GM saved under a name (library.rewards) ──
   /** @type {import('../core/api.ts').BundlesApi} */
@@ -420,7 +476,9 @@ export function register(app) {
         <div class="death" data-death hidden>
           <b data-life></b>
           <button type="button" class="primary" data-revive hidden>Revive</button>
+          <button type="button" class="primary" data-raise hidden>Rise</button>
           <p class="note" data-wayback></p>
+          <p class="note" data-raise-line></p>
         </div>
         <div class="lbl dv-sub">Statuses</div>
         <div class="chips" data-chips></div>
@@ -492,6 +550,7 @@ export function register(app) {
           ui.wrote('System', api.addCondition(h.id, { key, def: rules().conditions[key], rounds: null, source: gmSource(h.rank) }), PUT_WORDS); return;
         }
         if (d.condDel) { ui.wrote('System', api.removeCondition(h.id, d.condDel)); return; }
+        if ('raise' in d) { void offerRaise(h.id); return; }
         if ('revive' in d && app.isGM()) {
           const was = h.level; // the store writes into the hunter a view holds, so the level before is read before the write
           if (ui.wrote('System', api.revive(h.id))) return ui.toast('System', `${h.name} is revived. ${raisedLine(was, store.hunter(h.id).level)}.`);
@@ -546,6 +605,8 @@ export function register(app) {
       q('[data-life]').textContent = lifeWord({ kind: 'hunter', life });
       q('[data-revive]').hidden = !gm || !can(life, 'revive');
       q('[data-wayback]').textContent = `${WAYS_BACK} brings you back, with every status gone.`;
+      q('[data-raise-line]').textContent = raiseLine(h, r, !!fightOf({ hid: h.id }));
+      q('[data-raise]').hidden = !raiseOpen(h);
     }
     q('[data-rests-left]').textContent = restsLeftLine(h.restsTaken, r);
     const sel = q('[data-cond-sel]'), opts = Object.entries(r.conditions).filter(([k]) => !isStateChip(k)).map(([k, c]) => `<option value="${esc(k)}">${esc(c.label)}</option>`).join('');

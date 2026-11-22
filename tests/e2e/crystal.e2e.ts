@@ -6,14 +6,15 @@ import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, act
 
 /**
  * The active hunter with `n` Resurrection Crystals of `rank` in its bag and `life`; personal gates off, so no gate's
- * window stands over the bag when a revived hunter's clock would start again. A new hunter is rank E at level 1.
+ * window stands over the bag when a revived hunter's clock would start again; both System raises spent, so a dead
+ * hunter's way back is the crystal and the System's window does not stand over the bag. A new hunter is rank E at level 1.
  */
 const holding = (page: Page, life: object, n: number, gold = 0, rank = 'E') => page.evaluate(([life, n, gold, rank]) => hunterApp.store.update((d: any) => {
   d.rulesOverrides.solo = { personal: false };
   const h = d.hunters.find((x: any) => x.id === d.settings.activeHunterId) ?? d.hunters[0];
   const crystal = hunterApp.api.inventory.itemTemplates().find((i: any) => i.name === `Resurrection Crystal (${rank})`);
   if (n > 0) h.items.push({ ...crystal, id: hunterApp.store.id('i'), qty: n });
-  h.life = life; h.gold = gold;
+  h.life = life; h.gold = gold; h.reviveLeft = 'none';
 }, 'test-setup'), [life, n, gold, rank] as const);
 /** The active hunter at `level` (the peak with it) and of `rank`, as the GM's edits would leave it. */
 const standing = (page: Page, level: number, rank: string) => page.evaluate(([level, rank]) => hunterApp.store.update((d: any) => {

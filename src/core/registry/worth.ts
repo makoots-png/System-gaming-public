@@ -227,10 +227,14 @@ const scopeFor = (f: Formula, at: At, R: WorthRules): Scope => (at.on === 'best'
  * than a scaler's HP share) is read as 0 and named in `miss`.
  */
 function formulaWorth(f: Formula, at: At, R: WorthRules): number {
+  return formulaAmount(f, at, R) / at.sa;
+}
+/** A formula's average in its own unit (HP), read as `formulaWorth` reads it, before the standard action divides it. */
+function formulaAmount(f: Formula, at: At, R: WorthRules): number {
   const sc = scalersOf(f, R);
   if (readsCounts(sc ? sc.core : f)) at.miss.add('count');
-  if (!sc) return average(f, scopeFor(f, at, R)) / at.sa;
-  return average(sc.core, scopeFor(sc.core, at, R)) / at.sa * sc.base * scalerWorth(sc.scalers, at.kind, at.rank, R).worst;
+  if (!sc) return average(f, scopeFor(f, at, R));
+  return average(sc.core, scopeFor(sc.core, at, R)) * sc.base * scalerWorth(sc.scalers, at.kind, at.rank, R).worst;
 }
 /** The scalers' bonus over the plain use against a pack's normal brute alone and a boss alone (`1 +` the sum of the means), and the larger. */
 export function scalerWorth(scalers: readonly Scaler[], kind: AbilityKind, rank: Rank, R: WorthRules): { readonly packs: number; readonly boss: number; readonly worst: number } {
@@ -240,7 +244,8 @@ export function scalerWorth(scalers: readonly Scaler[], kind: AbilityKind, rank:
 }
 /**
  * An op that lands outside a use's own roll (a threshold's, a trigger's, an end's, or an ability's own op), in SA: a hit
- * or a heal at its average, whole (`landed`); time as its share of a standard action, whoever gains or loses it (time
+ * or a heal at its average, whole (`landed`); a shield its HP at `hpRate`, as an active's shield is weighed against the
+ * support's standard shield (1.5 times `sup`, the heal's), since an HP of shield is weighed as an HP healed; time as its share of a standard action, whoever gains or loses it (time
  * back to the user, an ally's turn sooner, a foe's turn later, an extra action whole), since a standard action is the
  * unit itself and a body at parity does as much with an action as the user; a stagger its share of a break
  * (`breakWorth`); a status by `statusWorth`; a note nothing. Any other kind has no rule (an echo among them): it is
@@ -248,6 +253,7 @@ export function scalerWorth(scalers: readonly Scaler[], kind: AbilityKind, rank:
  */
 function landWorth(o: LandOp | Op, at: At, R: WorthRules): number {
   if (o.op === 'damage' || o.op === 'heal') return formulaWorth(atTier(o.amount, at.tier) as Formula, at, R) * at.landed;
+  if (o.op === 'shield') return formulaAmount(o.amount, at, R) * hpRate(at.rank, R);
   if (o.op === 'refund') return atTier(o.pct, at.tier) / 100;
   if (o.op === 'hasten') return o.share;
   if (o.op === 'delay') return atTier(o.ticks, at.tier) / actionTicks(R);

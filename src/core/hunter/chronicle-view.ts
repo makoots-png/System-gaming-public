@@ -24,7 +24,7 @@ const count = (v: number, one: string, many = `${one}s`): string => `${n(v)} ${v
 const QUEST_WORDS: { readonly [K in QuestKind]: string } = { daily: 'daily', main: 'main', side: 'side', job: 'Job Change', urgent: 'urgent', penalty: 'penalty' };
 /** How a change of life came about, after its verb. */
 const HOW_WORDS: { readonly [H in LifeHow]: string } = {
-  fight: ' in a fight', gm: ' by the GM', item: ' with an item', hand: ' after a change by hand',
+  fight: ' in a fight', gm: ' by the GM', item: ' with an item', system: ' by the System', hand: ' after a change by hand',
 };
 /** How a hunter came out of a lost solo run. */
 const AFTER_WORDS: { readonly [L in LifeState]: string } = { up: 'was up at its end', dead: 'died' };

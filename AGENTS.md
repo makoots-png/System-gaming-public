@@ -87,6 +87,7 @@ When a mistake is made, apply `.claude/skills/correct/SKILL.md` (the owner's sta
 | A helper that moves a rule's number or a screen's words runs the browser files that hold them (Nov 21: two public runs went red on typed copies in `makers.e2e.ts` and `crystal.e2e.ts`) | the public run's browser parts, which stop the push; a browser test reads a number from `RULES`, and a brief says to `grep -rl` the old words in `tests/e2e` and run those files |
 | A brief names the files other helpers hold, not a closed list of the helper's own (Nov 22: five helpers stopped or built around the design for a file off the lead's list) | a judgment call, so a written rule: the bullet of that name in the Now block of `docs/agent-handoff/handoff.md`, which every lead reads before it briefs |
 | A merge leaves no generated doc stale (Nov 22: two merges that each rewrote `docs/dependency-map.md` joined without a conflict into a stale file, and the public run for fa3ff675 was red in its unit job) | `.githooks/post-merge`, which rewrites the dependency map and the charts after every merge and says which changed and the commit to make |
+| A push on a cloud box uses the box's browser (Nov 22: a lead pushed with `E2E_CHROMIUM` unset and every lag test failed at launch) | `.githooks/pre-push`, which sets `E2E_CHROMIUM` to `/opt/google/chrome/chrome` when it is unset and that browser is there, and says so |
 | Every other rule of the code | its test in `tests/lint.test.ts`, named for the rule |
 
 ## Rules

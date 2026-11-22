@@ -184,6 +184,18 @@ describe('the example kits sit inside the tolerance, and a GM\'s overreach is wa
     expect(wornWorth(strings, RULES).worth).toBeCloseTo(each * rates.imposed / rates.turnStart, 9);
   });
 
+  test('a trigger\'s shield is weighed as an HP healed: its HP at the rate a support\'s standard heal makes one action, once a fight at `lowHp`\'s rate', () => {
+    const shield = (text: string): StatusDef => ({ label: 'Lifeline', desc: '', ops: [], triggers: [{ on: 'lowHp', to: 'self', limit: { kind: 'fight', n: 1 }, ops: [{ op: 'shield', amount: f(text) }] }] });
+    for (const rank of ['E', 'C', 'S'] as const) {
+      const w = wornWorth(shield('30'), RULES, rank);
+      expect(w.unweighed, rank).toEqual([]);
+      expect(w.worth, rank).toBeCloseTo(30 / (1.5 * referenceBody('support', rank, RULES).sheet.sup) * RULES.fight.kit.eventRates.lowHp, 9);
+    }
+    const tank = referenceBody('tank', 'C', RULES).sheet.hpMax;
+    expect(tank, 'the tank has the most max HP of the paper builds').toBe(Math.max(...(['speed', 'tank', 'cannon', 'bruiser', 'support'] as const).map(b => referenceBody(b, 'C', RULES).sheet.hpMax)));
+    expect(wornWorth(shield('0.1 * hpmax'), RULES, 'C', { on: 'best' }).worth).toBeCloseTo(wornWorth(shield(String(0.1 * tank)), RULES, 'C').worth, 9);
+  });
+
   test('the worth line says the worth and the budget, and past the tolerance by how much', () => {
     expect(worthLine({ worth: 1.04, budget: 1, over: false, unweighed: [] })).toBe('Worth 1.04 of a standard action (budget 1.00).');
     expect(worthLine({ worth: 1.12, budget: 1, over: true, unweighed: [] })).toBe('Worth 1.12 of a standard action (budget 1.00). Stronger than its pace allows by 12%.');

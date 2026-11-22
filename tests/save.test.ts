@@ -569,6 +569,14 @@ describe('what a repair fixes', () => {
     expect(onlyHunter(parseRaw({ schema: SCHEMA, hunters: [newHunter()] })).used).toEqual({});
   });
 
+  test('a hunter stored before the revive ladder, or with a standing that is none of the three, has its free System raise left', () => {
+    const left = (v: unknown) => onlyHunter(parseRaw(withHunter({ reviveLeft: v }))).reviveLeft;
+    expect([left('debt'), left('none'), left('free')]).toEqual(['debt', 'none', 'free']);
+    expect([left('twice'), left(2), left(null)]).toEqual(['free', 'free', 'free']);
+    const { reviveLeft: _, ...before } = newHunter();
+    expect(onlyHunter(parseRaw({ schema: SCHEMA, hunters: [before] })).reviveLeft).toBe('free');
+  });
+
   test('the peak level is never below the level, and spent points never below 0', () => {
     const h = onlyHunter(parseRaw(withHunter({ level: 5, peakLevel: 2, spent: -4, bonusPoints: -2 })));
     expect(h).toMatchObject({ level: 5, peakLevel: 5, spent: 0, bonusPoints: -2 });

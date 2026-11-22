@@ -123,14 +123,14 @@ export const fatigueState = (v: Pick<Vitals, 'fatigue' | 'collapsed'>, m: Pick<M
 
 /**
  * What can happen to a hunter's vitals. The life's events go to the life table (`lifeAfter`); a revive says who raised:
- * the GM's Revive or an item (a Resurrection Crystal, use.ts). `mana` and `fatigue` are signed changes, `spend` a price
+ * the GM's Revive, an item (a Resurrection Crystal, use.ts) or the System (grant.ts `systemRaise`). `mana` and `fatigue` are signed changes, `spend` a price
  * in mana, `refill` a level-up's, `rest` a rest (`R.rest`), `cleared` a gate's Clear the hunter was paid for (everything
  * back), `maxChanged` sent after every change to a maximum, `fightTotals` the fight row's life, mana, fatigue and spent
  * uses written back while the fight holds the hunter.
  */
 export type VitalEvent =
   | Exclude<LifeEvent, { type: 'revive' | 'maxChanged' }>
-  | { type: 'revive'; by: 'gm' | 'item' }
+  | { type: 'revive'; by: 'gm' | 'item' | 'system' }
   | { type: 'mana'; delta: number }
   | { type: 'spend'; mana: number }
   | { type: 'fatigue'; delta: number }

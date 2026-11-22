@@ -111,6 +111,15 @@ describe('the recipe items in a fight', () => {
     expect(step(first.fight, use('A', 'A', bulwark)).refused).toBe('cooldown');
   });
 
+  test('Lifeline Locket: a hit that takes its wearer under 30% HP gives it a shield of 10% of its max HP, and a hit that leaves it at 30% does not', () => {
+    const locket = wornOf('Lifeline Locket');
+    const hpMax = sheetOf([locket]).hpMax, at30 = Math.ceil(RULES.fight.kit.lowHpAt * hpMax), d = afterDefence(10, 'physical', sheetOf([]), sheetOf([locket]), RULES);
+    const under = body(play(...duel(row('A', 'party'), row('M', 'foe', [locket], { hp: at30 })), use('A', 'M')), 'M');
+    expect([rowHp(under), under.shield?.amount]).toEqual([at30 - d, Math.round(0.1 * hpMax)]);
+    const stays = body(play(...duel(row('A', 'party'), row('M', 'foe', [locket], { hp: at30 + d })), use('A', 'M')), 'M');
+    expect([rowHp(stays), stays.shield]).toEqual([at30, null]);
+  });
+
   test('Warden\'s Plate: its wearer has 1.5% of max HP more armor', () => {
     const plate = wornOf("Warden's Plate");
     const without = sheetOf([]), within = sheetOf([plate]);

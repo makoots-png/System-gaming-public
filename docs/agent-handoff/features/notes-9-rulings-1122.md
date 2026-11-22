@@ -172,7 +172,7 @@ reviewable commit with its machine's table test and chart:
 Open for the owner or the lead: whether a reward the GM approves may be raised above what the rule pays (default: the
 GM edits freely, as the Award form does).
 
-## 21. The free revive and the revive on debt are a System raise: written, not built
+## 21. The free revive and the revive on debt are a System raise: built
 
 the owner: "System raise" (no GM button). World rule 6 and the machine "Revive standing" (`docs/world/machines.md`):
 first revive free, then one on debt (ten Clears owed), then only a crystal or the GM. Rule 3: the GM applies the
@@ -193,6 +193,16 @@ hour; the app does not. Units:
 Open: rule 8 says every System message waits for the GM's approval, and the raise is a System message; the owner's
 "System raise, no GM button" is read as an exception (default). Also open: whether the raise is offered at once or
 only after the fight ends (default: after the fight, since a fight's dead row is the GM's to revive).
+
+Built (branch `rulings-21`, three commits): both Open defaults taken as decided. The ladder is `Hunter.reviveLeft`
+(`src/core/hunter/revive-standing.ts`, `standingStep`, chart "A hunter's revive ladder"); `systemRaise` in grant.ts
+writes the standing, the life (a revive `by: 'system'`, levels lost as any raising) and `Hunter.debt` (a second new
+field: the gold owed, `RULES.reviveDebtClears` Clears of the rank, threaded through the room's rules) in one write that
+also posts the room's new `systemRaise` message. `offerRaise` in hunter.js opens the window by itself once per death,
+once no fight holds the hunter, and the dead sheet's Rise opens it again after Not now; the GM's phone logs the message
+and its card shows a dead hunter's ladder; the bag shows the debt. Nothing pays the debt off yet. Tests:
+`tests/revive-standing.test.ts`, `tests/e2e/raise.e2e.ts`; `crystal.e2e.ts` now starts its dead hunters past the
+ladder, and `character.e2e.ts` answers Not now.
 
 ## Principles and proof
 

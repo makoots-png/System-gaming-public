@@ -4,6 +4,7 @@
 // refill in one answer, so a reward is all given in one write or not at all (a reward used to be five or more writes,
 // and a throw part way left the rest ungiven). `sheetEdit` is the GM's change of HP, mana, fatigue, life or a status,
 // and the fight's totals; a raising from death through it costs levels (`reviveLevelShare`, the owner's ruling 9).
+// `systemRaise` is the System's raise of a dead hunter on its revive ladder, the standing, the life and the debt in one write.
 // `levelled` is the one place a level change is told to the Job Change chain: every step that may move a level runs it
 // (a raising runs its first part, `levelMoved`), so the chain's level step, and its completion when the level reaches
 // it, are in the same write as the level.
@@ -45,6 +46,8 @@ import type { Life, LifeEvent, VitalEvent } from './vitals.ts';
 import { record } from './chronicle.ts';
 import type { Fact, LifeHow } from './facts.ts';
 import { restStep } from './rests.ts';
+import { canRaise, raiseOwes, standingStep } from './revive-standing.ts';
+import type { Raise } from './revive-standing.ts';
 import { saveId, sheetKeyOf } from '../ids.ts';
 import type { HunterId, IdOf, RoomCode } from '../ids.ts';
 import type { DayKey } from '../day.ts';
@@ -346,8 +349,8 @@ export function rolledOver(save: Save, o: Day & { nowMs: number; gm: boolean; vi
 
 /** A change the GM or the fight makes to a hunter's HP, mana, fatigue, life or statuses on its sheet. */
 export type SheetEdit =
-  /** `by`: who revives (the GM's Revive, or an item: a Resurrection Crystal); absent is the GM's. */
-  | { type: 'life'; event: LifeEvent; by?: 'gm' | 'item' }
+  /** `by`: who revives (the GM's Revive, an item: a Resurrection Crystal, or the System: `systemRaise`); absent is the GM's. */
+  | { type: 'life'; event: LifeEvent; by?: 'gm' | 'item' | 'system' }
   | { type: 'mana'; delta: number }
   /** Mana paid as a price: refused when the hunter holds less (`spendMana`). */
   | { type: 'spend'; mana: number }
@@ -400,6 +403,36 @@ function raisedAt(h: Hunter, R: Rules): Hunter {
 export function raisedLine(from: number, to: number): string {
   const lost = from - to;
   return lost > 0 ? `Up at ${REVIVE_HP} HP at level ${to}, ${lost} level${lost === 1 ? '' : 's'} lost` : `Up at ${REVIVE_HP} HP`;
+}
+
+// ── the System raise ──
+/** What a System raise did: the save after it, the raise taken, the gold it owes, and the levels before and after (`raisedLine`). */
+export type SystemRaised = { save: Save; raise: Raise; owes: number; from: number; to: number };
+/**
+ * The System raise of dead hunter `hid` (world rule 6; the owner, Nov 22: "System raise", no GM button), in one write: its
+ * revive standing stepped (revive-standing.ts `standingStep`), the life's revive by the System through `sheetEdit` (up
+ * at the revive HP, every status off, its levels lost), and from `debt` the gold it owes added to its debt (`raiseOwes`,
+ * at the rank it died at). In a room the GM's phone hears it in the same write (the `systemRaise` message). Refused
+ * `spent` past the ladder, `cannot` when the hunter is up. Where the life lives is the caller's: the raise is offered
+ * only once no fight holds the hunter (section 21's default), and a crystal or the GM's Revive leaves the standing.
+ */
+export function systemRaise(save: Save, hid: string, o: { at: string; room: RoomCode | null; R: Rules }): SystemRaised | Refused<'no-hunter' | 'spent' | 'cannot'> {
+  const h = save.hunters.find(x => x.id === hid);
+  if (!h) return refuse('no-hunter');
+  const raise = h.reviveLeft, left = standingStep(raise, { type: 'raise' });
+  if (isRefused(left) || !canRaise(raise)) return refuse('spent');
+  const up = sheetEdit(h, { type: 'life', event: { type: 'revive' }, by: 'system' }, o.R);
+  // a revive is refused only where the life table does not take it: the hunter is up
+  if (isRefused(up)) return refuse('cannot');
+  const owes = raiseOwes(raise, h.rank, o.R);
+  const raised: Save = { ...save, hunters: save.hunters.map(x => (x.id === hid ? { ...up, reviveLeft: left, debt: up.debt + owes } : x)) };
+  const device = save.settings.deviceId;
+  const event = o.room ? newEvent('systemRaise', { by: sheetKeyOf(device, h.id), name: h.name, raise, owes }, { device, now: Date.parse(o.at), rand: idShare(`raise ${hid} ${raise}`) }) : null;
+  const room = o.room;
+  return {
+    save: event && room ? atOutbox(box => post(box, room, { kind: 'event', event }, `raise ${hid}`).box)(raised) : raised,
+    raise, owes, from: h.level, to: up.level,
+  };
 }
 
 /**

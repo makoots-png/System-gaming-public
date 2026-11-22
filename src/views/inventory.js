@@ -9,6 +9,7 @@ import { itemIcon } from '../core/registry/icon-defaults.ts';
 import { icon, sprite } from './icons.ts';
 import { BUY_REFUSALS, BUY_WORDS, GEAR_WORDS, SHOP_CLOSED, addGold, buy, editItem, equip, putItem, removeItem, removeShopItem, sell, sellable, sellPrice as sellPriceOf, sellTotal, shopOpen, stackOf, unequip, wearMove, withShop, writeShopItem } from '../core/hunter/inventory.ts';
 import { fitted } from '../core/hunter/sheet.ts';
+import { debtLine } from '../core/hunter/revive-standing.ts';
 import { USE_WORDS, spendItem, tooLowOf, usable, useDice, useItem, useWords } from '../core/hunter/use.ts';
 import { atHunter, both, isRefused, refuse } from '../core/save-step.ts';
 import { cryptoRandom, rollSettle } from '../edge/roll.ts';
@@ -210,6 +211,7 @@ export function register(app) {
     mount(el) {
       el.innerHTML = `
         <div class="inv-gold"><span class="lbl">Gold</span><span class="g" data-gold>0</span><span class="inv-gold-acts"><button type="button" data-give-gold>Give gold</button><button type="button" class="gm-only" data-gold-adj hidden>Adjust gold</button></span></div>
+        <p class="note" data-debt hidden></p>
         <div class="inv-tabs seg" role="tablist" aria-label="Bag sections">
           <button type="button" role="tab" data-tab="items" aria-selected="true">Items</button>
           <button type="button" role="tab" data-tab="offers" aria-selected="false">Offers</button>
@@ -305,6 +307,8 @@ export function register(app) {
       const h = store.active(), gm = app.isGM(), open = shopOpen(h);
       el.querySelector('[data-gold]').textContent = fmt(h.gold);
       el.querySelector('[data-give-gold]').hidden = h.gold <= 0;
+      const owed = debtLine(h.debt), debt = el.querySelector('[data-debt]');
+      debt.hidden = !owed; debt.textContent = owed ?? '';
       el.querySelector('[data-additem]').hidden = tab === 'offers' || tab === 'stash';
       const waiting = app.api.trade.waiting(h.id);
       el.querySelector('[data-tab="offers"]').textContent = waiting ? `Offers (${waiting})` : 'Offers';

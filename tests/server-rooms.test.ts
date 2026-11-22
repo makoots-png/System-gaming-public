@@ -51,6 +51,7 @@ const step = { eid: 'd-player1-e4', by: `${PLAYER}:h1`, place: { x: 3, y: 4 }, a
 const cast = { eid: 'd-player1-e5', by: `${PLAYER}:h1`, ability: 'strike', aim: 'c2', at: 2500 };
 /** A player's solo run of the room's gate g1, as gates/solo.ts `soloRunBody` writes it. */
 const soloRun = { eid: 'd-player1-e8', by: `${PLAYER}:h1`, gate: 'g1', name: 'Kai', outcome: 'won', rounds: 4, life: 'up' };
+const systemRaise = { eid: 'd-player1-e9', by: `${PLAYER}:h1`, name: 'Kai', raise: 'free', owes: 0 };
 const arm = { eid: 'd-player1-e8', by: `${PLAYER}:h1`, ability: 'parry', on: null };
 const coinCall = { eid: 'd-player1-e6', by: `${PLAYER}:h1`, roll: `${PLAYER}:r12`, who: 'Kai', what: 'STR check', face: 20, call: 'heads' };
 const coinLand = { eid: 'd-player1-e7', roll: `${PLAYER}:r12`, side: 'heads' };
@@ -254,7 +255,7 @@ describe('events', () => {
     expect((await call('POST', `/api/rooms/${code}/events`, { headers: gm, body: { from: 'gm', type: 'soloAnswer', payload: answer } })).status).toBe(200);
   });
 
-  for (const [type, payload] of [['roll', roll], ['questUpdate', questUpdate], ['used', used], ['step', step], ['cast', cast], ['coinCall', coinCall], ['arm', arm], ['soloRun', soloRun]] as const) {
+  for (const [type, payload] of [['roll', roll], ['questUpdate', questUpdate], ['used', used], ['step', step], ['cast', cast], ['coinCall', coinCall], ['arm', arm], ['soloRun', soloRun], ['systemRaise', systemRaise]] as const) {
     test(`a player can send a ${type} event`, async () => {
       const { code } = await newRoom();
       const r = await call('POST', `/api/rooms/${code}/events`, { headers: token('p1'), body: { from: PLAYER, type, payload } });
@@ -262,7 +263,7 @@ describe('events', () => {
     });
   }
 
-  for (const [type, payload] of [['roll', roll], ['questUpdate', questUpdate], ['used', used], ['step', step], ['cast', cast], ['coinCall', coinCall], ['arm', arm], ['soloRun', soloRun]] as const) {
+  for (const [type, payload] of [['roll', roll], ['questUpdate', questUpdate], ['used', used], ['step', step], ['cast', cast], ['coinCall', coinCall], ['arm', arm], ['soloRun', soloRun], ['systemRaise', systemRaise]] as const) {
     test(`a player cannot post a ${type} in another player's name, and the room is unchanged`, async () => {
       const { code } = await newRoom();
       const r = await call('POST', `/api/rooms/${code}/events`, { headers: token('p2'), body: { from: OTHER, type, payload } });

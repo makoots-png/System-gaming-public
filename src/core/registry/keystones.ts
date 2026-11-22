@@ -82,9 +82,10 @@ const MARK: { readonly [S in StatKey]: KeystoneMaker } = {
     ]) });
   },
   vit: R => {
-    const line = 'The first time you fall under 30% HP in a fight, you gain a shield of 25% of your max HP.';
+    const line = 'The first time you fall under 30% HP in a fight, you gain a shield of 35% of your max HP.';
+    // A.6's 25% weighs 7.3 since a shield op is weighed (an HP of shield as an HP healed), under the band: 35%, 10.2.
     return plain('Second Wind', line, { worn: worn('Second Wind', line, [], [
-      { on: 'lowHp', to: 'self', limit: ONCE, ops: [{ op: 'shield', amount: formula('0.25 * hpmax', R) }] },
+      { on: 'lowHp', to: 'self', limit: ONCE, ops: [{ op: 'shield', amount: formula('0.35 * hpmax', R) }] },
     ]) });
   },
   ins: R => {

@@ -185,6 +185,9 @@ const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS }
   // the GM's answer to this phone's word (sync/word.ts `wordLanded`): lands once, only while the word waits for an
   // answer; its window is words.js's, which opens it while the save owes it (`owedAnswer`), so a reload still shows it
   wordBack: { once: true, land: (p, _hids, app) => save => { const r = wordLanded(save, p, app.now()); return isRefused(r) ? r : { save: r, tell: nothing }; } },
+  // a player's report of the System's raise of their hunter, written on their own phone (grant.ts `systemRaise`): the GM's
+  // phone logs it (hunter.js)
+  systemRaise: GM_ONLY_READS,
 };
 
 /**

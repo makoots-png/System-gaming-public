@@ -12,7 +12,7 @@ import type { BuildChange, DocName, DocOf, EventBody, EventId, EventStamp, Event
 import type { Hunter, Item, Monster, Objective, QuestKind, Rank, Rewards, Save, Skill, Slot } from './save.ts';
 import type { Stats } from './stats.ts';
 import type { Applied, Refused, Step, TOLD } from './save-step.ts';
-import type { Granted, StepDone } from './hunter/grant.ts';
+import type { Granted, StepDone, SystemRaised } from './hunter/grant.ts';
 import type { StatusIn } from './hunter/conditions.ts';
 import type { HeldParts } from './combat/fight-save.ts';
 import type { Archetype, MonsterKind, Sheet } from './hunter/derive.ts';
@@ -317,6 +317,12 @@ export type HunterApi = {
    * fight's `revive` command on its row (the row holds the life). Refused in the GM's fight on a player's phone.
    */
   revive(hid: string): Applied;
+  /**
+   * The System raise of this phone's dead hunter (grant.ts `systemRaise`, no GM button): refused `held` while a fight
+   * holds it, `spent` past the ladder, `cannot` when it is up; else the ladder, the life and the debt in one write, with
+   * the GM's `systemRaise` message in a room.
+   */
+  systemRaise(hid: string): SystemRaised | Refused;
   /**
    * The one answer to "where do this hunter's HP, mana, fatigue, life and statuses live now": a row of this phone's fight
    * (`cid`), the GM's fight on a player's phone (`gm`, where a change is refused), or the sheet (null). Every writer asks it.

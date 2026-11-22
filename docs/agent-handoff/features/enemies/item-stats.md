@@ -443,3 +443,35 @@ and its ability is on the hunter's fight row as `worn-second-wind`); `bun run te
 - The editor's preview ("The player sees") and the reward window do not name the active; only the card and the row do.
 - Only library skills are offered as an active, not the built-in seeds.
 - The card shows the active even when its title is not the active one (dim), so a player sees what Set active gives.
+
+## Build note: items-small, Last Light, the Lifeline and Thornmail's healing cut (Nov 22)
+
+**Last Light (decision 41).** No title the app ships has a heal, so none was at 20 HP: Last Light is only a case in
+`tests/item-budget.test.ts` (8 HP once a fight, band C, 2.8 of C's 3 points) and the name a browser test types. The
+pricing stands at about 0.354 points an HP once a fight at C; `titleBudget` is not moved. "Every built-in title has a
+band and spends no more than its band's budget" already holds every seeded title. Nothing changed.
+
+**A shield op is weighed.** `landWorth` (worth.ts) weighed a trigger's, a threshold's or an end's `shield` op as nothing
+and named it. It is now its HP at `hpRate`, an HP of shield as an HP healed: the support's standard shield and heal are
+both 1.5 times `sup`, an active's shield is weighed against it, and `shieldDrain` already reads a shield's HP so. Its
+case: `tests/worth.test.ts` ("a trigger's shield is weighed as an HP healed").
+
+**Second Wind (keystone, VIT mark) moved.** Unweighed, it was held only from above; weighed, A.6's 25% of max HP spends
+7.3 against the mark's 10, under the 20% band the keystone test holds. It is 35% now (10.2): "a keystone far from its
+tier moves" (rules.ts, `keystone.budget`). Danger Sense's 20% shield is weighed too and stays inside its band.
+
+**The Lifeline Locket** (`RECIPE_ITEMS`, Rare+, neck): once a fight, when its wearer falls under 30% HP (`lowHp`), a
+shield of `0.1 * hpmax`. Read on the tank (the most max HP), 0.1 × 114 HP at C's `hpRate` times `lowHp`'s 0.17 a
+round times C's 83.4 points a standard action: 4.12 against Rare+'s 3.71 to 4.43. League's 30% spends 12.4, near three
+times Rare+'s top; 15% spends 6.2. Proof: `tests/items.test.ts`, `tests/recipe-items-fight.test.ts` (a hit
+under 30% gives a shield of round(10% of max HP); a hit that leaves it at 30% gives none).
+
+**Thornmail's healing cut: left out, priced.** Heal power's cost reads a giver's whole heal a round as one standard
+action, so a hundredth more is a hundredth of an action a round (`healPowerCost`, the reading that never undercharges).
+The cut is its mirror on the receiver: a body that takes a support's standard heal a round loses `s` of an action a
+round while it holds a cut of `s`. A `struck` trigger (1 a round) that puts a one-round cut on the striker holds it all
+fight, so a cut of `s` spends `s` × B's 119.6 points a standard action: League's 40% is 47.8 points, past every grade
+of every rarity. Thornmail has 0.59 points left in Epic+ (6.15 of 6.73), which holds a cut of 0.5%; with no reflect at
+all, 4.8%. Neither is a cut a table feels, so it stays out. The honest price is lower (a monster seldom heals), but
+what a foe heals a round has no rule: the fight simulation would have to measure it first. `statusWorth` still names a
+`share` op as not weighed.

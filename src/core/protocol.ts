@@ -14,6 +14,8 @@ import { CAP_ROUNDS } from './combat/play.ts';
 import { LIFE_STATES, parseLife } from './hunter/vitals.ts';
 import type { Life, LifeState } from './hunter/vitals.ts';
 import type { ShadowOrigin } from './hunter/shadows.ts';
+import { RAISES } from './hunter/revive-standing.ts';
+import type { Raise } from './hunter/revive-standing.ts';
 import { BUNDLE_NAME, newRewards, parseRewards, parseWords } from './rewards.ts';
 import type { SystemWords } from './rewards.ts';
 import { RANKS, RULES, SOLO_BOUNDS, domainOf } from './rules.ts';
@@ -287,6 +289,14 @@ export type UsedPayload = Base & {
   by: SheetKey; who: string; what: UsedWhat; name: string; text: string; target: (typeof USED_TARGETS)[number]; tell: boolean;
 };
 /**
+ * A player's report that the System raised their dead hunter `name` (grant.ts `systemRaise`, the owner, Nov 22: "System
+ * raise", no GM button): the free raise or the one on debt (`raise`), and the gold that raise owes (`owes`, 0 when
+ * free). Posted in the raise's own write; the GM's phone logs it. A report: it changes nothing on any phone.
+ */
+export type SystemRaisePayload = Base & { by: SheetKey; name: string; raise: Raise; owes: number };
+/** The most gold a System raise reports owed: past any rank's ten Clears of the shipped table. */
+export const RAISE_OWES_MAX = 1e9;
+/**
  * A player's step in the GM's fight: the hunter of `by` moves to `place` on its turn (`to` names whom a message is
  * for), a dash when `dash` (the move command's). `at` is the fight's `now` the player's phone drew, so the GM's phone
  * takes it only on that turn (`onTurn`): a replay or a stale tap changes nothing.
@@ -405,6 +415,7 @@ type Payloads = {
   roll: RollPayload; questUpdate: QuestUpdatePayload; used: UsedPayload; step: StepPayload; cast: CastPayload; pass: PassPayload; chain: ChainPayload;
   coinCall: CoinCallPayload; coinLand: CoinLandPayload; arm: ArmPayload; shadow: ShadowPayload; soloRun: SoloRunPayload; soloAnswer: SoloAnswerPayload; noted: NotedPayload;
   chapter: ChapterPayload; weigh: WeighPayload; word: WordPayload; wordBack: WordBackPayload;
+  systemRaise: SystemRaisePayload;
 };
 export type EventType = keyof Payloads;
 export type PayloadOf<K extends EventType> = Payloads[K];
@@ -523,6 +534,9 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
     ...base(o), by: sheetKey(own(o, 'by')), who: opt(own(o, 'who'), text(60), ''), what: choiceOf(USED_WHAT)(own(o, 'what')), name: filled(60)(own(o, 'name')),
     text: opt(own(o, 'text'), text(200), ''), target: opt(own(o, 'target'), choiceOf(USED_TARGETS), 'self'), tell: opt(own(o, 'tell'), bool, false),
   }) },
+  systemRaise: { gmOnly: false, ownSheet: true, read: o => ({
+    ...base(o), by: sheetKey(own(o, 'by')), name: filled(60)(own(o, 'name')), raise: choiceOf(RAISES)(own(o, 'raise')), owes: int(0, RAISE_OWES_MAX)(own(o, 'owes')),
+  }) },
   step: { gmOnly: false, ownSheet: true, read: o => ({ ...base(o), by: sheetKey(own(o, 'by')), place: tile(own(o, 'place')), at: time0(own(o, 'at')), dash: opt(own(o, 'dash'), bool, false) }) },
   cast: { gmOnly: false, ownSheet: true, read: o => {
     const ability = own(o, 'ability');
@@ -598,6 +612,7 @@ export const EVENTS: { readonly [K in EventType]: EventEntry<K> } = {
   chain: entry('chain'), coinCall: entry('coinCall'), coinLand: entry('coinLand'), arm: entry('arm'), shadow: entry('shadow'),
   soloRun: entry('soloRun'), soloAnswer: entry('soloAnswer'), noted: entry('noted'),
   chapter: entry('chapter'), weigh: entry('weigh'), word: entry('word'), wordBack: entry('wordBack'),
+  systemRaise: entry('systemRaise'),
 };
 function entry<K extends EventType>(type: K): EventEntry<K> {
   const def: EventDef<K> = DEFS[type];
@@ -775,6 +790,7 @@ export type RoomRules = {
   saleShare: number;
   usedUpShare: number;
   reviveClears: number;
+  reviveDebtClears: number;
   reviveLevelShare: number;
   gateParty: number;
   loot: Rules['loot'];
@@ -1121,7 +1137,7 @@ function lootRank<K extends Rank>(v: unknown, rank: K): Rules['loot'][K] {
 /** The room's rules doc: every field required but the feats and trading switches (on when absent) and the mythic switch (off when absent). */
 function roomRulesDoc(o: Rec): RoomRules {
   const b = obj(own(o, 'build')), so = obj(own(o, 'solo')), ra = obj(own(o, 'rarities')), lo = obj(own(o, 'loot'));
-  const rule = (k: 'gradeStep' | 'saleShare' | 'usedUpShare' | 'reviveClears' | 'reviveLevelShare' | 'gateParty'): number => ruleNumber(k)(own(o, k));
+  const rule = (k: 'gradeStep' | 'saleShare' | 'usedUpShare' | 'reviveClears' | 'reviveDebtClears' | 'reviveLevelShare' | 'gateParty'): number => ruleNumber(k)(own(o, k));
   return {
     build: { enabled: bool(own(b, 'enabled')), playerPick: bool(own(b, 'playerPick')) },
     solo: { personal: bool(own(so, 'personal')), hours: int(1, SOLO_BOUNDS.hours)(own(so, 'hours')), lootShare: ruleNumber('solo.lootShare')(own(so, 'lootShare')) },
@@ -1133,6 +1149,7 @@ function roomRulesDoc(o: Rec): RoomRules {
     saleShare: rule('saleShare'),
     usedUpShare: rule('usedUpShare'),
     reviveClears: rule('reviveClears'),
+    reviveDebtClears: rule('reviveDebtClears'),
     reviveLevelShare: rule('reviveLevelShare'),
     gateParty: rule('gateParty'),
     loot: { E: lootRank(own(lo, 'E'), 'E'), D: lootRank(own(lo, 'D'), 'D'), C: lootRank(own(lo, 'C'), 'C'), B: lootRank(own(lo, 'B'), 'B'), A: lootRank(own(lo, 'A'), 'A'), S: lootRank(own(lo, 'S'), 'S') },

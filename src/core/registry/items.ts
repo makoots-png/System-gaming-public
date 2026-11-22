@@ -137,7 +137,7 @@ export const SHOP_ITEMS: readonly ItemDef[] = [
 
 // ── the recipes: items built only from shapes that exist (item-stats units 3 and 10) ──
 // Each is sized to its grade by `itemSpend` (item-budget.ts), and each comment says how its spend adds up. A recipe part
-// that needs a shape not built yet (`healPower`, `shieldDrain`, `lowHp`, `imposed`) is left out and said in its comment.
+// that needs a shape not built yet is left out and said in its comment.
 /** A formula from its text. A built-in's text is checked here, once, at load: a wrong one stops the app and its test. */
 const formula = (text: string): Formula => {
   const p = parseFormula(text, RULES);
@@ -162,7 +162,8 @@ const BULWARK: Ability = abilityOf('support', {
 export const RECIPE_ITEMS: readonly ItemDef[] = [
   // Thornmail, Epic+: Vitality 1 costs 1.00, a struck trigger's reflect `1 + 0.01 * armor` 5.15 (read on the build with the
   // most armor, one strike a round), so it spends 6.15 against Epic+'s 5.86 to 6.73. The plan's `3 + 0.1 * armor` spends 32
-  // here. Its healing cut (a `share` op on `healed`) is left out: `itemSpend` cannot price it yet.
+  // here. Its healing cut is left out: priced as heal power's mirror, a cut of s is s of B's 119.6 points a standard
+  // action, so League's 40% spends 47.8 and the 0.59 points left hold 0.5% (item-stats.md, build note items-small).
   {
     name: 'Thornmail', rar: 'epic', grade: 1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { vit: 1 },
     desc: 'Heavy chest armor that adds 1 Vitality. A foe that strikes its wearer takes magic damage of 1 + 1% of the wearer\'s armor.',
@@ -206,6 +207,17 @@ export const RECIPE_ITEMS: readonly ItemDef[] = [
     name: 'Bulwark Ring', rar: 'rare', grade: 1, type: 'accessory', slot: 'ring1', bonus: {},
     desc: 'Its wearer can use Bulwark in a fight: a shield of 10 + 5% of max HP, ready again after 8 rounds.',
     active: BULWARK,
+  },
+  // Lifeline Locket, Rare+: no bonus; a shield of `0.1 * hpmax` once a fight, when its wearer falls under 30% HP (the
+  // `lowHp` event, `kit.lowHpAt`). Read on the build with the most max HP, an HP of shield weighed as an HP healed
+  // (`hpRate`), at `lowHp`'s rate of once a fight: 4.12 against Rare+'s 3.71 to 4.43. League's 30% of max HP spends 12.4.
+  {
+    name: 'Lifeline Locket', rar: 'rare', grade: 1, type: 'accessory', slot: 'neck', bonus: {},
+    desc: 'The first time in a fight its wearer falls under 30% HP, it gains a shield of 10% of its max HP.',
+    worn: {
+      label: 'Lifeline Locket', desc: 'A shield when its wearer falls low.', ops: [],
+      triggers: [{ on: 'lowHp', to: 'self', limit: { kind: 'fight', n: 1 }, ops: [{ op: 'shield', amount: formula('0.1 * hpmax') }] }],
+    },
   },
   // Warden's Plate, Epic−: the heavy chest piece is free; the `sheet` armor op `0.015 * hpmax` is read on the build with the
   // most max HP and costs the Vitality whose armor it is (item-budget.ts `SHEET_OP_COST`): 4.92 against Epic−'s top 5.10.

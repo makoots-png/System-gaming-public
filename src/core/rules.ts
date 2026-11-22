@@ -209,6 +209,9 @@ const SPEC = {
   saleShare: of(0.25, SHARE), // design 3: the Association buys an item back at a quarter of its price (the owner: "A quarter.")
   usedUpShare: of(0.5, SHARE), // design 2.2: a consumable is one use, so a Clear buys two of its rank
   reviveClears: whole(10, 1, 1000, 'Clears of its rank a Resurrection Crystal costs: under 1 it costs less than a middle item of its rank, 1000 is out of any table\'s reach'), // design 5: a full set of its rank's middle gear
+  // economy.md section 13 and world rule 6: the one System raise on debt owes ten Clears of the hunter's rank, what a
+  // Resurrection Crystal of that rank costs, so a hunter past the free raise pays for a return as a crystal's buyer does
+  reviveDebtClears: whole(10, 1, 1000, 'Clears of its rank a System raise on debt owes: under 1 it owes less than a middle item of its rank, 1000 is out of any table\'s reach'),
   reviveLevelShare: of(1 / 30, SHARE), // design 4.4, ruling 9: a raising takes this share of the level, rounded up, never below level 1 ("maybe 3.33% of your total level")
   gateParty: whole(4, 1, 12, 'the hunters a world gate is made for: at least one, past 12 no table seats them'), // design 4.1: the session model's party; its gold and XP are a pot of this many shares
   // design 2.3: the points an item may spend beyond its slot's free numbers

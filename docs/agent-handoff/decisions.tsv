@@ -681,3 +681,10 @@ ts	phase	decision	why	evidence	result
 2026-11-22T17:01Z	ops	Lead session_01XcvNgUunTQwqAairii5SeX took over. The public repository attached with push access (allowed on the start prompt). Helpers started: mythic-5e (opus), item-stats-12 (sonnet).
 2026-11-22T17:01Z	ops	Helper started: session-e2e (sonnet), one browser test that plays a whole session.
 2026-11-22T17:28Z	features	item-stats-12 merged on lead-backlog (sonnet): the Award form's title row (Usable in fights, Band chips, spend line) and the title card's powers; unit pass 6,321 green on its branch; looked at both screens at 390 px.
+2026-11-22T17:29Z	ops	Public run started for 8f3311b4 (tree 888b6cd7), which holds item-stats-12: when green in every job push 8f3311b4 by id through the hook, PR into main, merge.
+2026-11-22T17:45Z	ops	landed on the working branch (8f3311b4, public run 45049701825 green in every job): item-stats-12. PR 71 into main merged. The first two pushes failed at the lag test's launch because E2E_CHROMIUM was unset: the push hook now names the box's browser itself (AGENTS.md row).
+2026-11-22T17:45Z	features	session-e2e merged on lead-backlog (sonnet): tests/e2e/session-whole.e2e.ts, seven steps, 51 s, three green runs.
+2026-11-22T17:45Z	ops	Helper started: rulings-21 (opus), the System raise (notes-9 section 21, units 1 to 3, its defaults taken).
+2026-11-22T18:08Z	ops	Helper started: items-small (opus): decision 41 (Last Light) and questionable-decisions row 14 (Lifeline, Thornmail's healing cut).
+2026-11-22T18:41Z	features	items-small merged on lead-backlog (opus): the Lifeline Locket, a trigger's shield priced as HP healed, Second Wind 25 to 35%, Thornmail's cut left out; unit pass 6,315 green on its branch. Questionable decisions 44 to 46.
+2026-11-22T19:04Z	features	rulings-21 merged on lead-backlog (opus): the revive ladder as a machine, systemRaise, the window; unit pass 6,349 green on its branch, eight browser files green. Questionable decisions 47, 48. Open: nothing pays the debt off.

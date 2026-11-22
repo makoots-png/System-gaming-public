@@ -91,6 +91,7 @@ test('At 0 HP the hunter is dead: the chip says the same word as the death panel
 
   await test.step('at 0 HP the chip and the death panel both read Dead, without a remove button', async () => {
     await hpTo0(p);
+    await answerWindow(p, 'THE SYSTEM CAN RAISE YOU', 'Not now');
     await expect(p.locator('#view-status [data-chips] [data-chip="dead"]')).toHaveText(/^\s*Dead/);
     await expect(lifeWord(p)).toHaveText('Dead');
     await expect(p.locator('#view-status [data-chips] [data-cond-del="dead"]')).toHaveCount(0);

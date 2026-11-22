@@ -122,7 +122,7 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
 
 describe('every event type', () => {
   test('the table has an entry for each room message, and for nothing else', () => {
-    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'cast', 'chain', 'chapter', 'coinCall', 'coinLand', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'revive', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'stashAnswer', 'stashAsk', 'status', 'step', 'system', 'used', 'vitals', 'weigh', 'word', 'wordBack']);
+    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'cast', 'chain', 'chapter', 'coinCall', 'coinLand', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'revive', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'stashAnswer', 'stashAsk', 'status', 'step', 'system', 'systemRaise', 'used', 'vitals', 'weigh', 'word', 'wordBack']);
   });
 
   test('only the GM may send what changes a hunter, speaks for the System, lands a coin or weighs a hunter\'s dice; a player sends rolls, quest progress, uses, steps, casts, passes and coin calls', () => {
@@ -131,8 +131,8 @@ describe('every event type', () => {
   });
 
   test('what a player sends speaks for one hunter: only that hunter\'s phone may send it', () => {
-    expect(EVENT_TYPES.filter(t => EVENTS[t].ownSheet).sort()).toEqual(['arm', 'cast', 'coinCall', 'offer', 'offerEnd', 'pass', 'questUpdate', 'roll', 'soloRun', 'stashAsk', 'step', 'used', 'word']);
-    for (const t of ['roll', 'questUpdate', 'used', 'step', 'cast', 'pass', 'coinCall', 'arm', 'soloRun', 'offer', 'offerEnd'] as const) expect(speaksFor(parseEvent(t, valid(t))!)).toBe(KEY as SheetKey);
+    expect(EVENT_TYPES.filter(t => EVENTS[t].ownSheet).sort()).toEqual(['arm', 'cast', 'coinCall', 'offer', 'offerEnd', 'pass', 'questUpdate', 'roll', 'soloRun', 'stashAsk', 'step', 'systemRaise', 'used', 'word']);
+    for (const t of ['roll', 'questUpdate', 'used', 'step', 'cast', 'pass', 'coinCall', 'arm', 'soloRun', 'offer', 'offerEnd', 'systemRaise'] as const) expect(speaksFor(parseEvent(t, valid(t))!)).toBe(KEY as SheetKey);
     expect(speaksFor(parseEvent('award', valid('award'))!)).toBeNull();
   });
 
@@ -1163,7 +1163,7 @@ describe('the other room docs', () => {
 
     test('the shipped economy comes through as it went', () => {
       expect(DOCS.rules(copy(doc))).toEqual(doc);
-      expect(Object.keys(doc).sort()).toEqual(['build', 'feats', 'gateParty', 'gradeStep', 'loot', 'mythic', 'rarities', 'reviveClears', 'reviveLevelShare', 'saleShare', 'solo', 'trade', 'usedUpShare']);
+      expect(Object.keys(doc).sort()).toEqual(['build', 'feats', 'gateParty', 'gradeStep', 'loot', 'mythic', 'rarities', 'reviveClears', 'reviveDebtClears', 'reviveLevelShare', 'saleShare', 'solo', 'trade', 'usedUpShare']);
     });
 
     test('a rule number past its domain is read at the domain\'s end, and a whole rule whole', () => {
@@ -1171,6 +1171,7 @@ describe('the other room docs', () => {
       for (const k of SHARES) expect([read({ [k]: -1 })![k], read({ [k]: 2 })![k]], k).toEqual([domainOf(k)!.least, domainOf(k)!.most]);
       expect([read({ gradeStep: 0.5 })!.gradeStep, read({ gradeStep: 9 })!.gradeStep]).toEqual([domainOf('gradeStep')!.least, domainOf('gradeStep')!.most]);
       expect([read({ reviveClears: 0 })!.reviveClears, read({ reviveClears: 1e9 })!.reviveClears]).toEqual([domainOf('reviveClears')!.least, domainOf('reviveClears')!.most]);
+      expect([read({ reviveDebtClears: 0 })!.reviveDebtClears, read({ reviveDebtClears: 1e9 })!.reviveDebtClears]).toEqual([domainOf('reviveDebtClears')!.least, domainOf('reviveDebtClears')!.most]);
       expect([read({ gateParty: 0 })!.gateParty, read({ gateParty: 99 })!.gateParty, read({ gateParty: 4.7 })!.gateParty]).toEqual([domainOf('gateParty')!.least, domainOf('gateParty')!.most, 4]);
       expect(read({ solo: { ...doc.solo, lootShare: 3 } })!.solo.lootShare).toBe(domainOf('solo.lootShare')!.most);
       expect(loot('C', { gold: [-5, 2e9] })!.loot.C.gold).toEqual([domainOf('loot.C.gold')!.least, domainOf('loot.C.gold')!.most]);
@@ -1183,6 +1184,7 @@ describe('the other room docs', () => {
         ['no grade step', () => read({ gradeStep: undefined })],
         ['no used-up share', () => read({ usedUpShare: undefined })],
         ['no revive Clears', () => read({ reviveClears: undefined })],
+        ['no Clears a raise on debt owes', () => read({ reviveDebtClears: undefined })],
         ['no level share of a raising', () => read({ reviveLevelShare: undefined })],
         ['no world gate party', () => read({ gateParty: undefined })],
         ['the solo rules without the loot share', () => read({ solo: { personal: true, hours: 8 } })],
