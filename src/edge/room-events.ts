@@ -15,6 +15,7 @@ import { told } from '../core/session-log.ts';
 import { appliedOnce, hold, replaced, unhold } from '../core/applied.ts';
 import { askAnswered } from '../core/sync/asked.ts';
 import { stashLanded } from '../core/trade/stash.ts';
+import { wordLanded } from '../core/sync/word.ts';
 import { REFUSED_WORDS } from '../core/gates/solo.ts';
 import type { ChainEvent } from '../core/hunter/job-chain.ts';
 import { WAYS_BACK, hpChange, lifeNews } from '../core/hunter/vitals.ts';
@@ -178,6 +179,11 @@ const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS }
     const room = save.settings.sync.room;
     return room ? forEach(save, hids, (s, h) => ({ save: weightHeard(s, room, h.id, p), tell: nothing })) : refuse('nothing');
   } },
+  // a word is the GM's: the player's phone that sent it keeps its own in its thread (sync/word.ts `wordSent`)
+  word: GM_ONLY_READS,
+  // the GM's answer to this phone's word (sync/word.ts `wordLanded`): lands once, only while the word waits for an
+  // answer; its window is words.js's, which opens it while the save owes it (`owedAnswer`), so a reload still shows it
+  wordBack: { once: true, land: (p, _hids, app) => save => { const r = wordLanded(save, p, app.now()); return isRefused(r) ? r : { save: r, tell: nothing }; } },
 };
 
 /**

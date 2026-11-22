@@ -152,4 +152,12 @@ export const VALID: Record<EventType, [Raw, Raw]> = {
     { eid: EID, to: [KEY], total: 2, force: 20 },
     { eid: EID, to: [KEY], total: 2, force: 20 },
   ],
+  word: [
+    { eid: OFFER, by: KEY, name: 'Mira', text: 'Can my shadow scout the gate before we go in?' },
+    { eid: OFFER, by: KEY, name: 'Mira', text: 'Can my shadow scout the gate before we go in?' },
+  ],
+  wordBack: [
+    { eid: EID, to: [KEY], re: OFFER, text: 'Yes. Roll Perception when it comes back.' },
+    { eid: EID, to: [KEY], re: OFFER, text: 'Yes. Roll Perception when it comes back.' },
+  ],
 };

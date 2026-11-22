@@ -2622,6 +2622,18 @@ describe('a mythic plays its script (notes-11-keystones.md, design B.3 and B.4)'
     expect(logs(r.fight)).toContain('The Fourth Rider is stunned by A: Named in the Book is cancelled.');
   });
 
+  test('an answered omen winds its phase\'s clock back by the rule\'s rounds, and a landed one does not', () => {
+    // Decision 40: the Fourth Rider's Pale Horse is a gate phase; a cancel winds its clock back `answerTime.cancel`
+    // rounds, never past the phase's start, so the party is enraged later.
+    const told = until(begun(mythic('the-fourth-rider', place(5, 5)), hunter('A', place(8, 5))), omenUp);
+    const f1 = until(told.fight, turnOf('A')).fight, before = standing(f1).since;
+    const back = Math.min(RULES.fight.mythic.answerTime.cancel * RULES.fight.round, f1.now - before);
+    expect(back, 'the omen came after the phase began').toBeGreaterThan(0);
+    expect(standing(go(f1, hit('A', 'X', STUN)).fight).since).toBe(tick(before + back));
+    const due = until(told.fight, turnOf('X')).fight;
+    expect(standing(go(due, landing(due)).fight).since).toBe(before);
+  });
+
   test('a broken stagger bar weakens an omen whose stagger weakens', () => {
     const f0 = running(go(begun(mythic('angel-of-the-last-trumpet', place(5, 5)), hunter('A', place(8, 5))), gm('next'), gm('next')));
     const told = until(f0, omenUp);

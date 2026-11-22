@@ -519,20 +519,22 @@ const OPEN: Readonly<Record<string, string>> = {
   // Design B.8's rows a script's `hp` cannot hold and its words did not (sim-log.md, MY5, says what each would need).
   ...Object.fromEntries(MYTHIC_IDS.map(id => [`B9 no keystone pair of three Focused builds moves the share won against ${nameOf(id)} out of 5 to 10%`,
     'not measured: unit K4 puts keystones on a row and K5 builds the Focused parties and K5\'s own rows, which B9 shares'])),
-  // B3 and B5 (sim-log.md, MY5 second pass): 467 to 599 of B1's 600 fights reach an enraged turn and every one a doom
-  // lands in is lost, so the clocks decide a mythic fight; an answer saves HP, which is not what loses it.
+  // B3 and B5 (sim-log.md, MY5 third pass): an answer now winds its phase's clock back (decision 40), and it still does
+  // not separate them. A party that answers none meets the stagger and burst answers with its ordinary hits as often as
+  // one that answers all, so it is given the same time; and the time bought ends in the last phase, where the mythic's
+  // own hits take the party with the mythic at about a tenth of its HP.
   ...Object.fromEntries(OMENED.map(id => [`B3 three hunters who answer no omen win under 1% of fights against ${nameOf(id)}`,
-    ({ 'angel-of-the-last-trumpet': '0.078', 'zaratan-the-island-that-wakes': '0.048', 'the-fourth-rider': '0.060' } as Record<string, string>)[id]
-    + ' (se 0.009 to 0.011): the clocks decide the fight (nearly every fight reaches a doom), and an answer saves HP, not time'])),
+    ({ 'angel-of-the-last-trumpet': '0.082 (se 0.011)', 'zaratan-the-island-that-wakes': '0.040 (se 0.008)', 'the-fourth-rider': '0.033 (se 0.007)' } as Record<string, string>)[id]
+    + ': its ordinary hits meet the stagger and burst answers as often as aimed ones, so the clock goes back for it too, and the time an answer buys runs out in the last phase'])),
   ...Object.fromEntries(OMENED.flatMap(id => answersOf(id).filter(k => !(id === 'the-fourth-rider' && k === 'interrupt')).map(k => [`B5 three hunters who never answer by ${k} win at most four fifths of B1's share against ${nameOf(id)}`,
-    k === 'interrupt' ? '0.95 (the Angel) and 1.09 (Zaratan) of B1 (se 0.2): a cancelled omen saves HP, and the clock, not HP, ends the fight'
-      : '0.92 to 1.03 of B1 (se 0.2): a party\'s ordinary hits meet it, and a hit saved for the window (the cannon\'s Focus) costs more against the clocks than the answer saves']))),
-  // B4 (sim-log.md, MY5 second pass): three cannons deal about a third more a round than the mixed party, so they beat the
+    k === 'interrupt' ? '1.04 (the Angel) and 1.00 (Zaratan) of B1 (se 0.2): its stun answers 0.34 (the Angel) and 0.07 (Zaratan) omens a fight, and the round it buys runs out in the last phase'
+      : '0.87 to 1.02 of B1 (se 0.2): a party\'s ordinary hits meet it as often as aimed ones, so taking the answer out of the policy changes few fights, seed by seed']))),
+  // B4 (sim-log.md, MY5 second and third passes): three cannons deal about a third more a round than the mixed party, so they beat the
   // clocks it loses to; a brute body (plain's, Zaratan's) loses as many fights to them with no script at all.
   ...Object.fromEntries((['plain', 'angel-of-the-last-trumpet', 'zaratan-the-island-that-wakes'] as const).map(id => [`B4 three cannons at S meet every phase of ${nameOf(id)} and win at most 15%`,
     ({ plain: '0.380 (se 0.020): today\'s brute mythic with no script loses 0.435 to three cannons, so the miss is the body (fight.archetypes, fight.kinds.mythic), not the script',
-      'angel-of-the-last-trumpet': '0.243 (se 0.018): three cannons reach a doom in 370 of 600 fights, the mixed party in nearly every one (B6); the clock race again (B3)',
-      'zaratan-the-island-that-wakes': '0.710 (se 0.019): its brute body with no script loses 0.525 to three cannons; a Shell of armor and resist (30 each) still lost 0.42 to 0.80' } as Record<string, string>)[id]!])),
+      'angel-of-the-last-trumpet': '0.242 (se 0.017): three cannons reach a doom in 266 of 600 fights and the mixed party in 291 (B6), so the cannons win on damage before the clock (MY5 third pass)',
+      'zaratan-the-island-that-wakes': '0.685 (se 0.019): its brute body with no script loses 0.525 to three cannons; a Shell of armor and resist (30 each) still lost 0.42 to 0.80' } as Record<string, string>)[id]!])),
 };
 
 // ── one test per row: the row is measured inside its test, so a bun timeout or the per-test times name the row ──

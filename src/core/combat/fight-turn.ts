@@ -24,7 +24,7 @@ import type { Ability, AbilityId, CombatantId } from './ability-types.ts';
 import { needs, resists } from './resolve.ts';
 import type { Aim, Needs } from './resolve.ts';
 import { channelCan } from './fight-channel.ts';
-import { answerMet, beatOf, enraged, heldAtGate, mythicCan, mythicStepped, omenAim, phaseOver, playsScript, scriptOf } from './mythic.ts';
+import { answerBack, answerMet, beatOf, enraged, heldAtGate, mythicCan, mythicStepped, omenAim, phaseOver, playsScript, scriptOf } from './mythic.ts';
 import type { MetAnswer, MythicRefusal, Scripted } from './mythic.ts';
 import type { MythicMove, Omen } from './mythic-types.ts';
 import { bandOf } from '../registry/mythics.ts';
@@ -216,7 +216,7 @@ function answered(f: Running, b: Body, a: Body, R: Rules, fx: Fx): { fight: Runn
   let g = f, row: Body = a;
   for (const m of answerMet(omen, s.hpAt, b, a)) {
     if (!playsScript(row) || !mythicCan(row.mythic, m.outcome)) continue;
-    const next = mythicStepped<Body>(row, { type: m.outcome, how: m.how });
+    const next = mythicStepped<Body>(row, { type: m.outcome, how: m.how, back: answerBack(row.mythic, m.outcome, f.now, R) });
     if (isRefused(next)) continue;
     row = next;
     const weak = omen.weak === null ? null : script.moves[omen.weak]!;

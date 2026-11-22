@@ -16,7 +16,7 @@ const ANGEL: MythicScriptId = 'angel-of-the-last-trumpet';
 const EVENTS: readonly MythicEvent[] = [
   { type: 'next', now: tick(RULES.fight.round), by: 'turn' }, { type: 'next', now: tick(RULES.fight.round), by: 'gm' },
   { type: 'announce', omen: 'weighed' as OmenKey, aim: combatantId('c-hunter'), hpAt: 1 }, { type: 'beat' },
-  { type: 'cancel', how: 'interrupt' }, { type: 'weaken', how: 'burst' }, { type: 'land' }, { type: 'fizzle' }, { type: 'drop' },
+  { type: 'cancel', how: 'interrupt', back: tick(RULES.fight.round) }, { type: 'weaken', how: 'burst', back: tick(RULES.fight.round) }, { type: 'land' }, { type: 'fizzle' }, { type: 'drop' },
 ];
 /** The words of the mythic's card. */
 const LABEL: { readonly [S in MythicState]: string } = { calm: 'In its phase', omen: 'Omen announced', faltering: 'Omen weakened' };
@@ -25,8 +25,8 @@ const STEP: { readonly [T in MythicEventType]: (e: Extract<MythicEvent, { type: 
   next: e => (e.by === 'turn' ? 'its turn starts held at its gate, or past a clock phase\'s clock' : 'the GM\'s Next phase'),
   announce: () => 'its turn starts on an omen beat: it announces the omen',
   beat: () => 'its turn starts on an act beat',
-  cancel: () => 'an answer that cancels it: nothing lands',
-  weaken: () => 'an answer that weakens it',
+  cancel: () => 'an answer that cancels it: nothing lands, and its phase\'s clock goes back',
+  weaken: () => 'an answer that weakens it: its phase\'s clock goes back',
   land: () => 'its next turn: the move lands',
   fizzle: () => 'its next turn: its aim is gone or out of range',
   drop: () => 'the GM drops the omen',
@@ -45,7 +45,7 @@ export const mythic = machine<MythicStanding, MythicEvent>({
   kindsOf: s => [s.at],
   views: [{
     title: 'A mythic in its phases, its omens and their answers',
-    note: 'One box for each of the Angel\'s phases, with the mythic\'s card inside. Its turn start raises the event: in its phase, the next phase when the phase is over (held at its gate, or a clock phase past its clock), else an omen beat announces and an act beat plays as any monster\'s turn. A standing omen lands on its next turn, or fizzles when its aim is gone or out of range. Between the two the party answers: an answer\'s outcome, read from the omen, cancels it or weakens it, and a second weaken does nothing. The next phase from a standing omen loses the omen, so pushing it to its gate is an answer too. The last phase has no next phase: it ends at 0 HP, which is its life\'s (row-life.ts), not the script\'s. Whether it is held at its gate or enraged past a gate phase\'s clock is read from the standing, the script, its HP and the time (mythic.ts), never stored.',
+    note: 'One box for each of the Angel\'s phases, with the mythic\'s card inside. Its turn start raises the event: in its phase, the next phase when the phase is over (held at its gate, or a clock phase past its clock), else an omen beat announces and an act beat plays as any monster\'s turn. A standing omen lands on its next turn, or fizzles when its aim is gone or out of range. Between the two the party answers: an answer\'s outcome, read from the omen, cancels it or weakens it, and a second weaken does nothing; either winds a gate phase\'s clock back (`answerBack`: `mythic.answerTime` rounds, never past the phase\'s start), so answering buys the party time. The next phase from a standing omen loses the omen, so pushing it to its gate is an answer too. The last phase has no next phase: it ends at 0 HP, which is its life\'s (row-life.ts), not the script\'s. Whether it is held at its gate or enraged past a gate phase\'s clock is read from the standing, the script, its HP and the time (mythic.ts), never stored.',
     hides: '',
     state: s => [scriptOf(s).phases[s.phase]?.name ?? `Phase ${s.phase + 1}`, LABEL[s.at]],
     step: stepWords,
@@ -53,7 +53,7 @@ export const mythic = machine<MythicStanding, MythicEvent>({
   where: [
     ['The union', '`MythicStanding` in `src/core/combat/mythic-types.ts`; `MythicState`, `MythicEvent` and `MythicRefusal` in `src/core/combat/mythic.ts`'],
     ['What changes it', '`mythicStep(standing, event)` and its `MYTHIC_TABLE`; `mythicCan` answers a view before it shows a button'],
-    ['What is read from it', '`gateOf`, `heldAtGate`, `clockOut`, `phaseOver`, `enraged`, `beatOf`, `landingMove`, `omenAim` and `answerMet` in `src/core/combat/mythic.ts`'],
+    ['What is read from it', '`gateOf`, `heldAtGate`, `clockOut`, `answerBack`, `phaseOver`, `enraged`, `beatOf`, `landingMove`, `omenAim` and `answerMet` in `src/core/combat/mythic.ts`'],
     ['Who calls it', 'Nothing yet: the fight\'s turn start, `consequences` and the gate in `row-life.ts` (unit MY3) and the landing (MY4)'],
     ['The test to copy', '`tests/mythic.test.ts`, "a mythic\'s standing as a machine: every state against every event"'],
     ['The recipe', 'A new event is a member of `MythicEvent` and its cell in every row of `MYTHIC_TABLE`; a new mythic is a row of `MYTHICS` (`src/core/registry/mythics.ts`)'],

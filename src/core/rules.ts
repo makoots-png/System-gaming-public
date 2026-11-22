@@ -695,6 +695,13 @@ const SPEC = {
       // `paceCost`). The party gets about one turn each to answer, and the mythic does nothing else on that turn. One
       // of the paces (overrides.ts reads it).
       turnPace: 'standard' as Pace,
+      // Decision 40: an answer met winds its gate phase's clock back by these rounds (mythic.ts `answerBack`), never past
+      // the phase's start. Without it a party that answered every omen and one that answered none lost the same race to
+      // the clocks (sim-log.md, MY5 second pass): an answer saved HP, and the clocks, not HP, decided the fight.
+      answerTime: {
+        cancel: whole(1, 0, 20, 'rounds a cancelling answer winds a phase\'s clock back: 20 is the longest clock a script may hold'),
+        weaken: whole(1, 0, 20, 'rounds a weakening answer winds a phase\'s clock back: 20 is the longest clock a script may hold'),
+      },
       // The bounds every script is checked against (tests/mythics.test.ts), each a least and a most.
       bounds: {
         // One phase (`plain`) to four. Row M1's fight is about 14 rounds; four phases leave each about 3, one omen

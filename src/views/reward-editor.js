@@ -10,6 +10,8 @@ import { savedWords } from '../core/library.ts';
 import { ITEM_BOUNDS, parseItem } from '../core/registry/items.ts';
 import { SKILL_SEEDS, parseSkill, skillOf } from '../core/registry/skills.ts';
 import { isStateChip } from '../core/hunter/chips.ts';
+import { ROW_KINDS, blankRow, pickTitle, rewardForm, rewardOfForm, rowError } from '../core/reward-rows.ts';
+import { oneOf } from '../core/one-of.ts';
 
 const ADD = [['item', 'Item'], ['title', 'Title'], ['skill', 'Skill'], ['status', 'Status'], ['boon', 'Boon'], ['job', 'Job']];
 const CAP = { item: REWARD_BOUNDS.items, skill: REWARD_BOUNDS.skills, status: REWARD_BOUNDS.statuses, boon: REWARD_BOUNDS.boons, title: 1, job: 1 };
@@ -45,52 +47,8 @@ export function rewardEditor(app, box, o = {}) {
   const opt = (v, l, on = false) => `<option value="${esc(v)}"${on ? ' selected' : ''}>${esc(l)}</option>`;
   const group = (label, list) => (list.length ? `<optgroup label="${esc(label)}">${list.join('')}</optgroup>` : '');
 
-  // ── a row from a part of a reward, and back ──
-  const rowsOf = rw => [
-    ...rw.items.map(item => ({ kind: 'item', item })),
-    ...(rw.title ? [{ kind: 'title', pick: rw.title.key || '', name: rw.title.name, desc: rw.title.desc, replaces: rw.title.replaces || '', bonus: { ...rw.title.bonus }, worn: rw.title.worn || null }] : []),
-    ...rw.skills.map(skill => ({ kind: 'skill', skill })),
-    ...rw.statuses.map(s => ({ kind: 'status', key: s.key, rounds: s.rounds ? String(s.rounds) : '', def: s.def || null })),
-    ...rw.boons.map(b => ({ kind: 'boon', name: b.name, text: b.text })),
-    ...(rw.job ? [{ kind: 'job', job: rw.job }] : []),
-  ];
-  function blank(kind) {
-    if (kind === 'item') return { kind, item: null };
-    if (kind === 'title') return { kind, pick: '', name: '', desc: '', replaces: '', bonus: {}, worn: null };
-    if (kind === 'skill') return { kind, skill: null };
-    if (kind === 'status') { const k = statusKeys()[0] || ''; return { kind, key: k, rounds: '3', def: null }; }
-    if (kind === 'boon') return { kind, name: '', text: '' };
-    return { kind, job: '' };
-  }
   /** What the editor holds, before the parser reads it. */
-  function raw() {
-    const floor = n => (o.floor ? Math.max(0, n) : n);
-    const by = k => rows.filter(r => r.kind === k);
-    const t = by('title')[0], j = by('job')[0];
-    return {
-      xp: floor(nums.xp), points: floor(nums.points), gold: floor(nums.gold),
-      items: by('item').filter(r => r.item).map(r => r.item),
-      // a title in place of itself is that title (rewards.ts `title`)
-      title: t && t.name.trim() ? { name: t.name.trim(), desc: t.desc, bonus: t.bonus, ...(t.pick ? { key: t.pick } : {}), ...(t.replaces.trim() && t.replaces.trim() !== t.name.trim() ? { replaces: t.replaces.trim() } : {}), ...(t.worn ? { worn: t.worn } : {}) } : null,
-      job: j && j.job.trim() ? j.job.trim() : null,
-      skills: by('skill').filter(r => r.skill).map(r => r.skill),
-      statuses: by('status').filter(r => r.key).map(r => {
-        const n = int(r.rounds);
-        return { key: r.key, rounds: n > 0 ? n : null, def: r.def || rules().conditions[r.key] };
-      }),
-      boons: by('boon').filter(r => r.name.trim()).map(r => ({ name: r.name.trim(), text: r.text })),
-    };
-  }
-  /** Why a row cannot be saved yet, or ''. */
-  function rowErr(r) {
-    if (r.kind === 'item' && !r.item) return 'Pick an item, or remove the row.';
-    if (r.kind === 'skill' && !r.skill) return 'Pick a skill, or remove the row.';
-    if (r.kind === 'title' && !r.name.trim()) return 'Name the title, or remove the row.';
-    if (r.kind === 'boon' && !r.name.trim()) return 'Name the boon, or remove the row.';
-    if (r.kind === 'job' && !r.job.trim()) return 'Name the job, or remove the row.';
-    if (r.kind === 'status' && r.rounds.trim() !== '' && !(int(r.rounds) >= 1 && int(r.rounds) <= REWARD_BOUNDS.rounds)) return `Rounds go from 1 to ${REWARD_BOUNDS.rounds}. Leave it empty for until removed.`;
-    return '';
-  }
+  const raw = () => rewardOfForm({ nums, rows }, rules(), !!o.floor);
   function value() {
     const r = raw(), rw = parseRewards(r) || newRewards();
     if (canon(rw) !== canon(r)) console.error('reward editor: the form holds a reward the parser reads differently', r, rw);
@@ -171,7 +129,7 @@ export function rewardEditor(app, box, o = {}) {
   }
   function mark(i) {
     const el = box.querySelector(`[data-row="${i}"]`); if (!el) return;
-    const e = rowErr(rows[i]);
+    const e = rowError(rows[i]);
     el.querySelector('[data-err]').textContent = e; el.classList.toggle('bad', !!e);
   }
   /** The preview and the message line, redrawn on every change. */
@@ -222,7 +180,7 @@ export function rewardEditor(app, box, o = {}) {
   }
   function set(rw, bundleId) {
     const r = parseRewards(rw) || newRewards();
-    nums = { xp: r.xp, gold: r.gold, points: r.points }; rows = rowsOf(r); say = { text: '', bad: false };
+    ({ nums, rows } = rewardForm(r)); say = { text: '', bad: false };
     render();
     const s = box.querySelector('[data-rw-bundle]'); if (s) s.value = bundleId && bundleList().some(b => b.id === bundleId) ? bundleId : '';
     raise();
@@ -231,7 +189,7 @@ export function rewardEditor(app, box, o = {}) {
   box.addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b || !box.contains(b)) return;
     const rowEl = b.closest('[data-row]'), i = rowEl ? Number(rowEl.dataset.row) : -1;
-    if (b.dataset.add) { const k = b.dataset.add; if (count(k) >= CAP[k]) return; rows.push(blank(k)); say = { text: '', bad: false }; render(rows.length - 1); raise(); return; }
+    if (b.dataset.add) { const k = oneOf(b.dataset.add, ROW_KINDS, null); if (!k || count(k) >= CAP[k]) return; rows.push(blankRow(k, statusKeys())); say = { text: '', bad: false }; render(rows.length - 1); raise(); return; }
     if (b.hasAttribute('data-rm')) { rows.splice(i, 1); render(); raise(); return; }
     if (b.hasAttribute('data-rw-save')) void saveBundle();
   });
@@ -243,8 +201,7 @@ export function rewardEditor(app, box, o = {}) {
     if (t.dataset.f === 'pick' && t.value) { void (r.kind === 'item' ? pickItem(i, t.value) : pickSkill(i, t.value)); return; }
     if (t.dataset.f === 'tpick') {
       // a rule title is picked by its key, which the reward carries so the hunter's title records it
-      const seed = rules().titles.find(x => x.key === t.value);
-      Object.assign(r, seed ? { pick: seed.key, name: seed.name, desc: seed.desc || '', bonus: { ...(seed.bonus || {}) } } : { pick: '', name: '', desc: '', bonus: {} });
+      rows[i] = pickTitle(r, rules(), t.value);
       render(); raise(); return;
     }
     if (t.dataset.f === 'key') { r.key = t.value; r.def = null; }
@@ -267,13 +224,13 @@ export function rewardEditor(app, box, o = {}) {
   });
 
   const start = parseRewards(o.initial);
-  if (start) { nums = { xp: start.xp, gold: start.gold, points: start.points }; rows = rowsOf(start); }
+  if (start) ({ nums, rows } = rewardForm(start));
   render();
 
   return {
     value,
     set,
-    blocked: () => rows.some(r => !!rowErr(r)),
+    blocked: () => rows.some(r => !!rowError(r)),
     /** Draws the bundle select again when the bundles changed; nothing else moves. */
     refresh() {
       const s = box.querySelector('[data-rw-bundle]'); if (!s) return;
@@ -286,7 +243,7 @@ export function rewardEditor(app, box, o = {}) {
     /** Adds an empty row of `kind` when there is none, and puts the cursor in it (the quest form's Job Change). */
     ensure(kind) {
       let i = rows.findIndex(r => r.kind === kind);
-      if (i < 0) { rows.push(blank(kind)); i = rows.length - 1; render(i); raise(); }
+      if (i < 0) { rows.push(blankRow(kind, statusKeys())); i = rows.length - 1; render(i); raise(); }
       else { const f = box.querySelector(`[data-row="${i}"] input, [data-row="${i}"] select`); if (f) f.focus(); }
     },
     message: tell,

@@ -23,6 +23,7 @@ The room:
 - the Room view's code check and a GM's seat action (`sync/lobby.ts` `checkStep`, `seatStep`, through `lobbyStep`)
 - the room server's database (`room-server.ts`)
 - an offer in the room with the giver's, taker's and GM's records of it (`trade/offer.ts`)
+- a word to the GM on the player's phone and the GM's record of it (`sync/word.ts` `wordStep`, `MINE`, `GM`)
 
 Hunters:
 

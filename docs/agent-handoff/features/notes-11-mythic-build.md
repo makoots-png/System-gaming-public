@@ -448,3 +448,68 @@ Branch `mythic-6`. The switch `fight.mythic.scripts` stays off. No screen reads 
 - `principle-boundary-discipline`: a standing the reader cannot place is dropped at the boundary, the row stays plain.
 - `principle-type-system-discipline`: `DocStanding` is derived from the standing's type so a new field cannot be missed.
 - `principle-test-behavior-not-implementation`: the hidden-aim test failed when the guard was removed.
+
+## MY5, third pass: an answer winds its phase's clock back (decision 40)
+
+Branch `mythic-5c`. The switch `fight.mythic.scripts` stays off. Every measure and move is in rw/sim-log.md, "MY5,
+third pass".
+
+### What exists
+
+- mythic.ts: the `cancel` and `weaken` events carry `back`, and their cells move the standing's `since` later by it (the
+  clock is the standing's `since`, written only by the machine). `answerBack` reads it: `fight.mythic.answerTime`
+  rounds for the outcome (1 for a cancel, 1 for a weaken), never past the phase's start (`since` stays at most now, so
+  a clock never holds more than its length), 0 in a clock phase. fight-turn.ts `answered` passes it. Tests: the table
+  test and "an answer winds a gate phase's clock back..." in tests/mythic.test.ts; "an answered omen winds its phase's
+  clock back by the rule's rounds, and a landed one does not" in tests/fight.test.ts (fails when the cell drops `back`).
+  The chart's answer arrows say the clock goes back.
+- Zaratan's `hp` 0.93 → 0.97, the Rider's 0.83 → 0.89: answers buying time raised their B1 to 0.140 and 0.107.
+- B1, B2, B4 (the Rider), B5 (the Rider's interrupt, 0.38), B6, B7, B8 hold. `OPEN` keeps B3 (Angel 0.082, Zaratan
+  0.040, Rider 0.033), B5 (interrupt 1.04 and 1.00, stagger 0.87 to 1.00, burst 1.00 to 1.02), B4 (plain 0.380, the Angel
+  0.242, Zaratan 0.685), B9, with this pass's values.
+
+### Where the design did not hold
+
+- **Time bought is lost again in the last phase.** With answers winding the clock back, the Angel's B1 fights with no
+  doom went from 56 to 309 of 600 and its wins from 36 to 45: the fights the clock no longer ends are lost a few rounds
+  later to its ordinary hits in the Note, the Angel at a median 9% of its HP. MY5b's "the clocks decide the fight" was
+  half of it; the HP race decides the same fights once the clock is gone.
+- **The party that answers none is given the time too.** Its ordinary hits meet the stagger and burst answers as often
+  as the answering party's (the Angel 1.76 a fight against 1.65), and each now winds the clock back for it. It reaches
+  as many fights with no doom (the Angel 336, the Rider 352) as the party that answers all (309, 325). No value of
+  `answerTime`, 1 to 4 rounds, with or without the cap at the phase's start, moved B3 near 0.01.
+- **B5's stagger and burst rows measure the same fights.** Taken out of `answerChoice`, the stagger or burst answer is
+  met in the same numbers and the fights end the same (Zaratan and the Rider 1.00): the policy's choice for both, the
+  strongest hit on the mythic, is the turn the party plays anyway. No number of the clock moves a row whose two parties
+  play the same turns.
+- **What would separate B3 and B5 is a design call**, outside `fight.mythic`: an answer only a chosen turn meets (a
+  stagger or burst answer that counts only hits landed after the omen by a use the party aims as an answer, or answers
+  out of ordinary reach with a party that saves a use for them; MY5b's saving party lost more, but then an answer
+  bought no time); or a clock wound back only by the answers ordinary play does not meet (the interrupt), which would
+  make B3 a question of the tank's stun alone.
+
+### Calls the owner might have made otherwise
+
+- An answer winds the clock back 1 round, a cancel and a weaken alike. Undo: "answers do not move the clock"
+  (`answerTime` 0 and 0), or a cancel more than a weaken (`answerTime.cancel` 2).
+- The clock is never wound past the phase's start: an answer in a phase's first round buys only the time already
+  spent. Undo: "an answer may bank time past the clock's length" (drop the `now - since` cap in `answerBack`); measured
+  the same (sim-log.md step 1).
+- An answer in a clock phase (Zaratan's Dive) moves nothing, as its clock is the time the party must survive; today no
+  omen of a clock phase has an answer. Undo: "an answer in the Dive shortens it" (`answerBack` winding the other way).
+- An answer to a doom winds the enraged phase's clock back too, so a party that breaks the Angel's bar on the Final
+  Note less than a round after its clock ran out takes it back out of its enraged rotation. Undo: "a doom's answer buys no time" (`answerBack` 0 while `enraged`).
+  B6 holds either way today (0.000 to 0.004).
+- The log line of an answer still reads "Named in the Book is cancelled." and does not say the clock went back; the
+  card's clock is mythic-6's. Undo: "say the round bought" (a clause in fight-turn.ts `answered`'s line).
+- Zaratan's `hp` 0.97 and the Rider's 0.89 to hold B1 under the rule. Undo: the two numbers, with `answerTime` 0.
+
+### Principles that changed a choice
+
+- `principle-attack-the-premise`: before fitting `answerTime` for B3, the premise "answering buys the time the fight is
+  lost for want of" was tested directly (fights with no doom, and how those were lost), which showed the time is spent
+  in the last phase and given to the party that answers none.
+- `principle-explain-the-number`: each B3 value was read beside the answers met by each party, which named why no
+  value of the clock moves it (the none party meets stagger and burst answers as often).
+- `principle-test-behavior-not-implementation`: the reducer test reads the clock's start from the fight and the expected
+  wind-back from the rule; with the cell dropping `back` it fails.

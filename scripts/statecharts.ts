@@ -19,6 +19,7 @@ import { odds } from './charts/odds.ts';
 import { soloClock, soloWait } from './charts/solo.ts';
 import { runPhaseChart } from './charts/solo-run.ts';
 import { offerGiver, offerRoom, offerTaker, offerWatch } from './charts/trade.ts';
+import { wordGm, wordMine } from './charts/word.ts';
 import { store } from './charts/store.ts';
 import { fight } from './charts/fight.ts';
 import { gate } from './charts/gate.ts';
@@ -94,7 +95,7 @@ export const MACHINES: readonly Machine<unknown, unknown>[] = [
   inbox, fight, channel, mythic, stacks, statusLifeChart, trips, delayed, zone, summon, uses, reaction, edge, shove, stealth, ward, extras, turnHold,
   gate, link, bind, removedNotice, lobbyCheck, lobbySeat, life, collapse, rests, foeLife, penalty, jobChain, progress, rank, gear, coin, coinPrompt, dcPick, iconPick,
   onboarding, gestureChart, choiceChart, shadow, extraction, quest, questForm, db, upgrade, outbox, publish, attempt, store, odds,
-  soloClock, soloWait, runPhaseChart, soloPlanChart, feat, told, offerRoom, offerGiver, offerTaker, offerWatch, story, draft, detailOpen,
+  soloClock, soloWait, runPhaseChart, soloPlanChart, feat, told, offerRoom, offerGiver, offerTaker, offerWatch, wordMine, wordGm, story, draft, detailOpen,
   mapMountChart, mapSlotChart, buildDrawerChart, windowsChart, panel,
 ];
 

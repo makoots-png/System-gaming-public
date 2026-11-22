@@ -58,6 +58,8 @@ import { NO_STASH, parseStash } from './trade/stash.ts';
 import type { Stash } from './trade/stash.ts';
 import type { Asked } from './sync/asked.ts';
 import { parseOffers } from './trade/offer.ts';
+import { parseWords } from './sync/word.ts';
+import type { Word } from './sync/word.ts';
 import type { OfferRecord } from './trade/offer.ts';
 import type { Penalty } from './hunter/penalty.ts';
 import type { JobChain } from './hunter/job-chain.ts';
@@ -94,7 +96,7 @@ export { ITEM_TYPES, RARITIES, SLOTS };
 export type { ItemTemplate, ItemType, Rarity, Slot };
 /** A skill, an item and a monster live in the registry that owns each (src/core/registry/). */
 export type { Item, Loot, Monster, Skill, StartStatus };
-export const LOG_KINDS = ['system', 'award', 'quest', 'gate', 'combat', 'rank', 'use', 'story', 'trade'] as const;
+export const LOG_KINDS = ['system', 'award', 'quest', 'gate', 'combat', 'rank', 'use', 'story', 'trade', 'word', 'answer'] as const;
 
 export type Mode = (typeof MODES)[number];
 export type LogKind = (typeof LOG_KINDS)[number];
@@ -163,6 +165,8 @@ export type SyncSettings = {
   seen?: RoomPlaces;
   /** On a player's phone, the GM's weight on its hunters' rolls outside a fight, as the room's `weigh` set it (src/core/table-weight.ts). */
   weights?: HeldWeights;
+  /** Words to the GM: a player's own with the GM's answers, and on the GM's phone each it heard (src/core/sync/word.ts). */
+  words?: Word[];
 };
 /**
  * Whose each field of the sync settings is (docs/agent-handoff/audit/notes-sync-3.md). `campaign`: the room the campaign
@@ -175,7 +179,7 @@ export const SYNC_OWNER: { readonly [K in keyof SyncSettings]-?: 'campaign' | 'p
   room: 'campaign', cursor: 'campaign', lastRoom: 'campaign', boundHunterId: 'campaign',
   gmKey: 'key', gmKeys: 'key',
   deviceToken: 'phone', serverOk: 'phone', joined: 'phone', outbox: 'phone', held: 'phone', applied: 'phone', asked: 'phone', offers: 'phone', seen: 'phone',
-  weights: 'phone',
+  weights: 'phone', words: 'phone',
 };
 /** The fields of `sync` that `owner` owns, as they are. */
 const ownedBy = (sync: SyncSettings, owner: (typeof SYNC_OWNER)[keyof SyncSettings]): Partial<SyncSettings> =>
@@ -381,6 +385,7 @@ function fixSync(sync: SyncSettings, now: number): void {
   if ('held' in sync) sync.held = parseHeld(sync.held);
   if ('asked' in sync) sync.asked = parseAsked(sync.asked);
   if ('offers' in sync) sync.offers = parseOffers(sync.offers);
+  if ('words' in sync) sync.words = parseWords(sync.words);
   if ('seen' in sync) sync.seen = parseSeen(sync.seen, now);
   if ('weights' in sync) { const w = parseHeldWeights(sync.weights); if (w) sync.weights = w; else delete sync.weights; }
   if ('applied' in sync) {

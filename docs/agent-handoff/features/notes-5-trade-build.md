@@ -46,3 +46,42 @@ The lead widened the file list; each of the four is its own commit.
 - Looked at, 390 px: the player's Bag shows Items, Offers, Stash, Shop on one row; Stash shows "Party stash", "As of 12:25.", the order line, "Gold: 0", each line with Take beside a wrapped long name. The GM's "Trades and stash" lists "Party stash", "Gold: 0", each line with a red Remove beside it; the head reads "stash: 2 kinds". A finding outside this unit: on the GM's player card the row "−5 −1 +1 +5 Status Build" overflows at 390 px ("Status" runs into "Build").
 - Checks for step 3: `bun run test` 6151 pass, 0 fail (140 files). Browser, one run: `stash`, `trade`, `solo`, `look`, `save`, and those that hold the Bag's tabs, Undo or the Offers tab (`crystal`, `feats`, `gates-quests-dailies`, `phone`, `refused-writes`, `reward-room`, `stories`): 164 passed.
 - Principles that changed a choice: fix root causes (the lost put comes back in the write that lets its letter go, the store's every-write step, not in a tap the player must find); subtract before you add (the `sent` mark in `flush` and the removal's question window and words are gone, not kept beside the new paths); test behaviour (the tests drive a real outbox step and read the bag, the list and the screen).
+
+# Unit 6, a private word to the GM (helper on `trade-6`, Nov 22)
+
+What a table sees: Mira sends the GM a word from the Room view and the GM answers; Brakk's phone never holds either.
+
+## What exists (commit db8b6e0 and the one after it)
+
+- `src/core/protocol.ts`: `word` (`WordPayload`: `by`, `name`, `text`; `ownSheet`, sealed) and `wordBack` (`WordBackPayload`: one `to`, `re` the word's id, `text`; `gmOnly`, sealed); `WORD_MAX` 500, a text past it is cut, an empty one refused.
+- `src/core/sync/word.ts`: the word's life as two tables with every cell. The player's (`MINE`, by what it sees): waiting and lost (read from the outbox, as an ask's), landed, answered (the answer's window owed), read. The GM's (`GM`): new, seen, answered. `wordStep`; the taps `wordSent` (letter and record, one write) and `wordAnswered` (letter, record, session log line of kind `answer`, one write); `wordTaken` (sync.ts `answered`, in the write that takes the letter out of the box); `wordLanded` (the `wordBack` applier); `wordRead`; `wordHeard` (the GM's record and its log line of kind `word`, through `sync.once`); `wordBackHeard` (another GM phone's answer); `wordsSeen`; `owedAnswer`; `parseWords`; `WORD_WORDS`. Caps: `WORD_THREAD` 20 words a thread (a hunter in a room), `WORDS_KEPT` 100 a phone (five threads full).
+- `src/core/save.ts`: `settings.sync.words` (owner `phone`, read by `parseWords`); `LOG_KINDS` gains `word` and `answer`.
+- `src/edge/room-events.ts`: `word` null, `wordBack` once with no tell. `src/edge/sync.ts`: `wordTaken` beside `askTaken` and `letterTaken`; `WHAT_SENT` names both.
+- `src/views/words.js` (in `MODULES`), `app.api.words` (`WordsApi` in api.ts): the Room view's "Word to the GM" (a player's phone in a room; the field is drawn once and never replaced while typed in), the answer's window, the GM view's "Words from players" (each word with Answer, a field and Send answer, "Sent to Mira."), the GM's `sync:event` handler (a toast "Mira sent you a word." and `notifyHidden`). `room.js` and `gm.js` hold the shells; gm.js opens the section with the page while a word is new and calls `words.seen` on its toggle.
+- Charts: "A word to the GM" and "The GM's record of a word" (`scripts/charts/word.ts`), walked with the real `wordStep`.
+
+## Proof
+
+- `tests/word.test.ts`: every cell of both tables, the taps' one write, the caps, an answer that lands once, the reader. `tests/protocol.test.ts` ("a private word to the GM and its answer": bounds, sealed to the GM and the named phone). `tests/server-rooms.test.ts` ("a word reaches the GM and not the other player", and a player can neither send another's word nor answer one). `tests/applied.test.ts` ("an answer lands once in the thread": a replay, a page read again and a second GM phone's answer add nothing).
+- `tests/e2e/words.e2e.ts`: "Mira sends the GM a word and the GM answers; Brakk's phone never holds either", read from Brakk's save and from the body of every room request his page made. With `word` unsealed the test fails on Brakk's requests (run once, then put back).
+- `bun run test`: 6275 pass, 0 fail ("Ran 6297 tests across 142 files."). Browser, one run of the files that hold the Room view or the GM view's sections: `room-view`, `room-sync`, `room-sync-fixes`, `room-onboarding`, `customization`, `refused-writes`, `upgrade`, `layout`, `look`, `phone`, `trade`, `stash`, `used`, `stories-room`, `feats-room`, `fudge-table`: "182 passed (26.4m)"; `words`: 2 passed.
+- Looked at, 390 px: the player's "Word to the GM" (the privacy line, the field, Send to the GM, two words, one "Sent.", the GM's answer under its word; a 70-letter word with no spaces wraps inside its box) and the answer's window ("! GM", FROM THE GM, Close); the GM's "Words from players" closed ("2 new" on its head), with a field open under a word, and answered ("Sent to Mira Longname-Silverbrook.", "You, 12:08" and the answer in place of Answer). Nothing clipped. The answer's field had the GM view's monospace textarea font (`.gm-sec textarea`, for JSON): words.js sets the body font on its fields.
+- Principles that changed a choice: model the domain (the answer inside the answered state, so an answered word without one cannot be stored); boundary discipline (`parseWords` reads a stored word whole or drops it; the room's reader cuts at `WORD_MAX`); make operations idempotent (an answer lands only on a word not yet answered, a word is heard once by its id and by the record); test behaviour (the e2e reads Brakk's save and his requests, and fails with the word unsealed).
+
+## Where the design did not hold (the code wins)
+
+1. **The GM's list is a record, not the log read after `wordsSeen` (4.3).** A log line holds no word id and no hunter key, so the GM could not answer from it. The GM's phone keeps each word it heard in `settings.sync.words` (side `gm`), and "new" is that record's state, not the device pref `wordsSeen`. The log lines are still written, in the same writes.
+2. **A word holds its answer (4.4).** The design's lines with `from: 'me' | 'gm'` are one record a word with its answer inside the answered state, so an answer without its word, or an answered word without an answer, cannot be stored.
+3. **The answer's window is the view's, opened while the save owes it (4.2 "Applier: once, a land into the thread, and a window").** The applier lands the answer and tells nothing; words.js opens the window on any change of the save while a word is answered and not read, and its close writes read. A page closed before the window showed opens it at the next load.
+4. **"Sent." is the machine's landed, not `postNews` (4.4).** `postNews` says only whether the link would send now. The word is landed when the room took its letter, heard in sync.ts's write; a letter refused or let go shows "The room did not take this word." (a lost state the design did not name).
+5. **A refused tap is a toast** (`ui.wrote` with `WORD_WORDS.refusals`), not a line in the section.
+6. **The section opens with the page only** (as Stories does): a word heard while the GM view is up shows "1 new" on the closed head.
+7. **Files outside the brief's list:** `src/edge/sync.ts`, `src/core/api.ts`, `src/app.js`, `scripts/statecharts.ts`, `tests/fixtures/payloads.ts`, `tests/lint.test.ts` (the two lets of words.js named), `docs/guide/machines.md`.
+
+## Calls the owner might have made otherwise
+
+1. **A word takes one answer.** A second (another GM phone's, the same one again) is refused on the GM's phone and lands nothing on the player's. Undo: "Let the GM answer a word more than once" (each word holds a list of answers, the answered cells take another).
+2. **A word is seen when the GM opens or closes the section**, so "1 new" goes then. Undo: "A word is new until the GM answers it" (drop `seen` from `GM`).
+3. **The notification leaves the word off the lock screen** ("Mira sent you a word." / "Open the GM view to read it."). Undo: "Show the word in the notification" (`notifyBody` becomes the word).
+4. **A lost word stays in the thread, with no Send again.** Undo: "Let a player send a lost word again".
+5. **The thread shows the words of the room the phone is in;** words of a room left stay in the save until the caps push them out. Undo: "Drop a room's words when the phone leaves it".

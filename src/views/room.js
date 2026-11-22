@@ -138,6 +138,7 @@ export function register(app) {
         <p class="rm-sub" data-count></p><ul class="rm-list" data-roster></ul>
         <div class="rm-sec" data-kickbox hidden><h3>Recently removed</h3><ul class="rm-list" data-kicks></ul></div>
       </section>
+      <section class="win" data-wordsec hidden><span class="cb"></span><h2>Word to the GM</h2><div data-words></div></section>
       <section class="win" data-conncard><span class="cb"></span><h2>Connection</h2>
         <p data-conntext></p><p class="rm-sub" data-ago></p>
         <p class="rm-sub" data-cl="off" hidden>This device is offline.</p><p class="rm-sub" data-cl="kept" hidden>Your changes are kept on this device and sent when it is back online.</p>
@@ -407,6 +408,8 @@ export function register(app) {
     const link = A.inviteLink();
     set(q.link, link); q.local.hidden = !/^(localhost|127\.|\[::1\])/.test(location.hostname); q.share.hidden = !navigator.share;
     drawQr(link);
+    // a player's word to the GM (src/views/words.js): the section shows while this phone plays a hunter in the room
+    q.wordsec.hidden = gm; if (!gm) { app.api.words.player(q.words); q.wordsec.hidden = q.words.hidden; }
     if (!gm) return;
     // roster
     const rs = A.roster(), on = rs.filter(r => r.state === 'online').length, away = rs.filter(r => r.state === 'away').length;

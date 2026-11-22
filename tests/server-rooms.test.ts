@@ -455,6 +455,24 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
     for (const r of [await poll(OTHER), await poll(THIRD), await poll(null), await poll(PLAYER, token('thief'))]) expect(eids(r)).not.toContain('d-gm-wt1');
   });
 
+  test('a word reaches the GM and not the other player: Kai\'s word and the GM\'s answer reach the GM\'s poll and Kai\'s, never Mira\'s, a third player\'s or an unproven poll', async () => {
+    const { gm, post, poll } = await tradeRoom();
+    expect((await post(PLAYER, 'word', { eid: 'd-player1-wd1', by: A, name: 'Kai', text: 'Can my shadow scout the gate?' })).body).toEqual({ seq: 4 });
+    expect((await post('gm', 'wordBack', { eid: 'd-gm-wb1', to: [A], re: 'd-player1-wd1', text: 'Yes.' }, gm)).body).toEqual({ seq: 5 });
+    for (const r of [await poll(null, gm), await poll(PLAYER)]) expect(eids(r).slice(-2)).toEqual(['d-player1-wd1', 'd-gm-wb1']);
+    for (const r of [await poll(OTHER), await poll(THIRD), await poll(null), await poll(OTHER, token('thief'))]) {
+      expect(eids(r)).not.toContain('d-player1-wd1');
+      expect(eids(r)).not.toContain('d-gm-wb1');
+    }
+  });
+
+  test('a player cannot send another\'s word nor answer one, and the room is unchanged', async () => {
+    const { post, poll, gm } = await tradeRoom();
+    expect((await post(OTHER, 'word', { eid: 'd-player2-wd1', by: A, name: 'Kai', text: 'Not me' })).status).toBe(403);
+    expect(await post(PLAYER, 'wordBack', { eid: 'd-player1-wb1', to: [A], re: 'd-player1-wd1', text: 'Yes.' })).toEqual({ status: 403, body: { error: 'gm only' } });
+    expect(eids(await poll(null, gm))).toEqual(['d-gm-w1', 'd-player1-mo1', 'd-player1-mo1-e']);
+  });
+
   test('a player cannot weigh their own hunter\'s dice, and the room is unchanged', async () => {
     const { post, poll, gm } = await tradeRoom();
     expect(await post(PLAYER, 'weigh', { eid: 'd-player1-wt1', to: [A], total: 5, force: 20 })).toEqual({ status: 403, body: { error: 'gm only' } });

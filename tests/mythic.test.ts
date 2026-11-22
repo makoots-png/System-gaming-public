@@ -22,7 +22,7 @@ import type { MoveKey, MythicMove, MythicStanding, Omen, OmenKey } from '../src/
 import { mythicScriptOf } from '../src/core/registry/mythics.ts';
 import type { MythicScriptId } from '../src/core/registry/mythics.ts';
 import {
-  MYTHIC_EVENTS, MYTHIC_STATES, answerMet, beatOf, clockOut, enraged, gateOf, heldAtGate, landingMove, mythicCan, mythicStep, omenAim, phaseOver,
+  MYTHIC_EVENTS, MYTHIC_STATES, answerBack, answerMet, beatOf, clockOut, enraged, gateOf, heldAtGate, landingMove, mythicCan, mythicStep, omenAim, phaseOver,
 } from '../src/core/combat/mythic.ts';
 import type { AnswerRow, MythicEvent, MythicEventType, MythicRefusal, MythicRow, MythicState } from '../src/core/combat/mythic.ts';
 import { lifeAt } from './fixtures/life.ts';
@@ -39,7 +39,7 @@ const row = (mythic: MythicStanding | null, hp: number, hpMax = 1000): MythicRow
 
 const EVENT: { readonly [T in MythicEventType]: Extract<MythicEvent, { type: T }> } = {
   next: { type: 'next', now: tick(500), by: 'gm' }, announce: { type: 'announce', omen: omenKey('weighed'), aim: combatantId('A'), hpAt: 700 },
-  beat: { type: 'beat' }, cancel: { type: 'cancel', how: 'interrupt' }, weaken: { type: 'weaken', how: 'burst' },
+  beat: { type: 'beat' }, cancel: { type: 'cancel', how: 'interrupt', back: tick(30) }, weaken: { type: 'weaken', how: 'burst', back: tick(30) },
   land: { type: 'land' }, fizzle: { type: 'fizzle' }, drop: { type: 'drop' },
 };
 
@@ -47,12 +47,15 @@ describe('the machine', () => {
   test('a mythic\'s standing as a machine: every state against every event', () => {
     // From phase 0 at beat 1, its phase begun at 100: the next phase starts at beat 0 with its clock from the event's
     // 500; an answer, a landing, a fizzle or a drop ends the omen and goes on to beat 2; a weaken keeps the omen weakened.
-    const nextPhase = calm(ANGEL, 1, 0, 500), onward = calm(ANGEL, 0, 2, 100);
+    // An answer (a cancel or a weaken) winds the phase's clock back by its event's 30, so the phase begun at 100 reads
+    // as begun at 130 (decision 40); a landing, a fizzle and a drop leave the clock as it was.
+    const nextPhase = calm(ANGEL, 1, 0, 500), onward = calm(ANGEL, 0, 2, 100), answered = calm(ANGEL, 0, 2, 130);
+    const faltering: MythicStanding = { ...standing('faltering'), since: tick(130) };
     const announced: MythicStanding = { at: 'omen', script: ANGEL, phase: 0, beat: 1, since: tick(100), omen: omenKey('weighed'), aim: combatantId('A'), hpAt: 700 };
     const EXPECTED: { readonly [S in MythicState]: { readonly [T in MythicEventType]: MythicStanding | MythicRefusal } } = {
       calm: { next: nextPhase, announce: announced, beat: onward, cancel: 'noOmen', weaken: 'noOmen', land: 'noOmen', fizzle: 'noOmen', drop: 'noOmen' },
-      omen: { next: nextPhase, announce: 'omenStands', beat: 'omenStands', cancel: onward, weaken: standing('faltering'), land: onward, fizzle: onward, drop: onward },
-      faltering: { next: nextPhase, announce: 'omenStands', beat: 'omenStands', cancel: onward, weaken: 'weakened', land: onward, fizzle: onward, drop: onward },
+      omen: { next: nextPhase, announce: 'omenStands', beat: 'omenStands', cancel: answered, weaken: faltering, land: onward, fizzle: onward, drop: onward },
+      faltering: { next: nextPhase, announce: 'omenStands', beat: 'omenStands', cancel: answered, weaken: 'weakened', land: onward, fizzle: onward, drop: onward },
     };
     expect([...MYTHIC_STATES].sort()).toEqual(['calm', 'faltering', 'omen']);
     expect([...MYTHIC_EVENTS].sort()).toEqual(['announce', 'beat', 'cancel', 'drop', 'fizzle', 'land', 'next', 'weaken']);
@@ -76,12 +79,12 @@ describe('the machine', () => {
   });
 
   test('a weakened omen takes no second weaken', () => {
-    const weakened = mythicStep(standing('omen'), EVENT.weaken);
+    const weakened = mythicStep(standing('omen'), { ...EVENT.weaken, back: tick(0) });
     expect(weakened).toEqual(standing('faltering'));
-    const again = mythicStep(standing('faltering'), { type: 'weaken', how: 'stagger' });
+    const again = mythicStep(standing('faltering'), { type: 'weaken', how: 'stagger', back: tick(0) });
     expect(isRefused(again) && again.why).toBe('weakened');
     expect(mythicCan(standing('faltering'), 'weaken')).toBe(false);
-    expect(mythicStep(standing('faltering'), { type: 'cancel', how: 'stagger' })).toEqual(calm(ANGEL, 0, 2, 100));
+    expect(mythicStep(standing('faltering'), { type: 'cancel', how: 'stagger', back: tick(0) })).toEqual(calm(ANGEL, 0, 2, 100));
   });
 });
 
@@ -115,6 +118,20 @@ describe('the readers', () => {
     expect(phaseOver(row(standing('omen', ANGEL, 0, 0, 2000), 650), at(9), RULES), 'an omen announced is a turn taken').toBe(true);
     expect(enraged(dive, at(10), RULES)).toBe(false);
     expect(phaseOver(row(null, 1), at(10), RULES)).toBe(false);
+  });
+
+  test('an answer winds a gate phase\'s clock back by its rounds, never past the phase\'s start, and a clock phase\'s not at all', () => {
+    // Decision 40, read from the rule: a cancel winds it back `answerTime.cancel` rounds, a weaken `answerTime.weaken`.
+    const T = RULES.fight.mythic.answerTime, raised = calm(ANGEL, 0, 1, 2000), late = tick(2000 + 9 * ROUND);
+    expect([answerBack(raised, 'cancel', late, RULES), answerBack(raised, 'weaken', late, RULES)]).toEqual([tick(T.cancel * ROUND), tick(T.weaken * ROUND)]);
+    // Half a round into the phase, the clock is wound back to the phase's start and no further: it never holds more than its 5 rounds.
+    const early = tick(2000 + ROUND / 2);
+    expect(answerBack(raised, 'cancel', early, RULES)).toBe(tick(Math.min(T.cancel * ROUND, ROUND / 2)));
+    // An enraged phase answered is no longer past its clock once its clock is wound back past now.
+    const enragedAt = tick(2000 + 5 * ROUND), back = answerBack(raised, 'cancel', enragedAt, RULES);
+    expect([enraged(raised, enragedAt, RULES), enraged({ ...raised, since: tick(raised.since + back) }, enragedAt, RULES)]).toEqual([true, T.cancel === 0]);
+    // Zaratan's Dive is a clock to survive: an answer there buys no time.
+    expect(answerBack(calm(ZARATAN, 1, 1, 2000), 'cancel', late, RULES)).toBe(tick(0));
   });
 
   test('a beat is read modulo its rotation', () => {

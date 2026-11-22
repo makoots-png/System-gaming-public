@@ -1792,3 +1792,80 @@ clock race of step 3 again.
 | B6 won after a doom | 0.002 | 0.006 | 0.004 | 0.000 | under 0.01 |
 | B7 most / least less its floor | one phase | 0.450 / 0.173 | 0.445 / 0.168 | 0.501 / 0.069 | at most 0.6 / at least 0 |
 | B8 median rounds | 15.3 | 13.9 | 20.0 | 14.4 | 10 to 20 |
+
+## MY5, third pass: an answer winds its phase's clock back (decision 40); B3 and B5 measured
+
+**The rule.** An answer met (a cancel or a weaken) winds its gate phase's clock back `fight.mythic.answerTime` rounds
+(mythic.ts `answerBack`, carried by the `cancel` and `weaken` events), never past the phase's start and never in a clock
+phase (the Dive's clock is the time the party must survive). Scripts stay off.
+
+### Step 1: how far back (300 fights a script, before any `hp` moved; the party answering all / answering none)
+
+| `answerTime` cancel / weaken | the Angel | Zaratan (hp 0.93) | the Rider (hp 0.83) |
+|---|---|---|---|
+| 0 / 0 (MY5b) | 0.070 / 0.070 | 0.093 / 0.057 | 0.083 / 0.060 |
+| 1 / 1 | 0.083 / 0.073 | 0.140 / 0.067 | 0.107 / 0.063 |
+| 2 / 2 | 0.080 / 0.073 | 0.143 / 0.067 | 0.113 / 0.063 |
+| 4 / 4 | 0.080 / 0.073 | 0.167 / 0.083 | 0.113 / 0.063 |
+| 2 / 2, no cap at the phase's start | 0.080 / 0.073 | 0.143 / 0.063 | 0.113 / 0.063 |
+| 4 / 4, no cap | 0.080 / 0.073 | 0.167 / 0.080 | 0.113 / 0.063 |
+| 4 / 0, no cap | 0.087 / 0.073 | 0.107 / 0.057 | 0.100 / 0.063 |
+
+The effect is whole at 1 round and grows little past it, with or without the cap. The answering party gains 1 to 5
+points, the party that answers none 0 to 2: no value takes it near B3's 0.01. **`answerTime` 1 / 1**, the least that
+does all it does.
+
+### Step 2: where the bought time goes (600 fights, the hp of step 3)
+
+| | fights with no doom (won) | lost with no doom: the mythic's HP left, p10 / p50 / p90 |
+|---|---|---|
+| the Angel, `answerTime` 0 | 56 (33) | 0.19 / 0.21 / 0.23 |
+| the Angel, 1 | 309 (45) | 0.06 / 0.09 / 0.19 |
+| the Angel, 1, answering none | 336 (49) | 0.04 / 0.08 / 0.21 |
+| Zaratan, 0 | 83 (19) | 0.34 / 0.46 / 0.50 |
+| Zaratan, 1 | 112 (42) | 0.30 / 0.46 / 0.50 |
+| Zaratan, 1, answering none | 106 (24) | 0.30 / 0.46 / 0.50 |
+| the Rider, 0 | 191 (35) | 0.12 / 0.27 / 0.35 |
+| the Rider, 1 | 325 (50) | 0.12 / 0.26 / 0.35 |
+| the Rider, 1, answering none | 352 (20) | 0.12 / 0.25 / 0.31 |
+
+The Angel's fights with no doom go from 56 to 309, and 12 more are won: a fight the clock no longer ends is lost in the
+Note to its ordinary hits, the Angel at a tenth of its HP. **The premise of decision 40, "the clocks decide a mythic
+fight", is half of it:** with the doom gone the same fights are lost a few rounds later to the HP race. And the party
+that answers none is given as much time: it has as many fights with no doom as the party that answers all, or more.
+
+### Step 3: why the party that answers none is given the time (answers met a fight, 600 fights)
+
+| | interrupt | stagger | burst |
+|---|---|---|---|
+| the Angel, all / none | 0.34 / 0 | 0.98 / 0.91 | 0.67 / 0.85 |
+| Zaratan, all / none | 0.07 / 0 | 0.09 / 0.12 | 0.20 / 0.07 |
+| the Rider, all / none | 0.55 / 0 | 0.49 / 0.47 | 0.62 / 0.72 |
+
+Its ordinary hits meet the stagger and burst answers as often as the answering party's aimed ones (MY5b's finding), and
+each now winds the clock back for it too. Only the interrupt is the answering party's alone (the tank's stun, cast only
+as an answer), and only the Rider's interrupt separates (B5 0.38). With the stagger or the burst answer taken out of the
+policy, Zaratan's and the Rider's fights meet the same answers in the same numbers and end the same (B5 1.00): the
+policy's stagger and burst choice, the strongest hit on the mythic, is the turn the party plays anyway.
+
+### Step 4: B1 back inside
+
+With answers buying time B1 rose for Zaratan (0.140) and the Rider (0.107). 600 fights: Zaratan hp 0.97 won 0.073, 1.0
+won 0.048; the Rider 0.86 won 0.093, 0.89 won 0.083. **Zaratan hp 0.93 → 0.97, the Rider 0.83 → 0.89.** The Angel at
+0.9 won 0.075 and `plain` has no answers; neither moved.
+
+| Row (600 fights) | plain | Angel | Zaratan | Rider | Bound |
+|---|---|---|---|---|---|
+| B1 wins | 0.072 | 0.075 | 0.073 | 0.083 | 0.05 to 0.10 |
+| B2 skips, mixed / three cannons | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 |
+| B3 wins answering none | none | **0.082** | **0.040** | **0.033** | under 0.01 |
+| B4 three cannons win | **0.380** | **0.242** | **0.685** | 0.032 | at most 0.15 |
+| B5 without interrupt / stagger / burst, over B1 | none | **1.04 / 0.87 / 1.02** | **1.00 / 1.00 / 1.00** | 0.38 / **1.00 / 1.00** | at most 0.8 |
+| B6 won after a doom | 0.002 | 0.000 | 0.004 | 0.000 | under 0.01 |
+| B7 most / least less its floor | one phase | 0.526 / 0.102 | 0.399 / 0.184 | 0.580 / 0.029 | at most 0.6 / at least 0 |
+| B8 median rounds | 15.3 | 14.4 | 19.9 | 15.3 | 10 to 20 |
+
+B3 and B5 stay in `OPEN` with these values. What would separate them is not a number of `fight.mythic`: an answer
+that only a chosen turn meets (MY5b tried stagger and burst out of ordinary reach, and the saving party lost more), or
+an answering party whose answers cost it less than the HP race they lose it. Both are design calls (notes-11-mythic-build.md,
+MY5 third pass).

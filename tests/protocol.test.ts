@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { ICON_KEYS, ICON_KEY_MAX } from '../src/core/registry/icons.ts';
 import { DOCS, DOC_MAX, NOTED_MAX, STASH_LINES, EVENTS, EVENT_TYPES, newEvent, onTurn, parseDocName, parseEvent, parseRoomState, parseSheet, SHEET_MAX, sentAgain, speaksFor, stampTime, standsFor, useRoute } from '../src/core/protocol.ts';
 import { endEvent, isSealed } from '../src/core/protocol.ts';
-import { FACE_LINES, hunterFace, parseServedSheet, servedTo, sheetFor } from '../src/core/protocol.ts';
+import { FACE_LINES, WORD_MAX, hunterFace, parseServedSheet, servedTo, sheetFor } from '../src/core/protocol.ts';
 import type { RoomEvent, RoomViewer } from '../src/core/protocol.ts';
 import { GOODS_GOLD_MAX, GOODS_LINES, OFFER_MAX, goodsSize } from '../src/core/trade/goods.ts';
 import { stashDoc, stashFits } from '../src/core/trade/stash.ts';
@@ -115,16 +115,16 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
 
 describe('every event type', () => {
   test('the table has an entry for each room message, and for nothing else', () => {
-    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'cast', 'chain', 'chapter', 'coinCall', 'coinLand', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'revive', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'stashAnswer', 'stashAsk', 'status', 'step', 'system', 'used', 'vitals', 'weigh']);
+    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'cast', 'chain', 'chapter', 'coinCall', 'coinLand', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'revive', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'stashAnswer', 'stashAsk', 'status', 'step', 'system', 'used', 'vitals', 'weigh', 'word', 'wordBack']);
   });
 
   test('only the GM may send what changes a hunter, speaks for the System, lands a coin or weighs a hunter\'s dice; a player sends rolls, quest progress, uses, steps, casts, passes and coin calls', () => {
     const gmOnly = EVENT_TYPES.filter(t => EVENTS[t].gmOnly).sort();
-    expect(gmOnly).toEqual(['award', 'chain', 'chapter', 'coinLand', 'hp', 'noted', 'offerStop', 'quest', 'revive', 'shadow', 'soloAnswer', 'spent', 'stashAnswer', 'status', 'system', 'vitals', 'weigh']);
+    expect(gmOnly).toEqual(['award', 'chain', 'chapter', 'coinLand', 'hp', 'noted', 'offerStop', 'quest', 'revive', 'shadow', 'soloAnswer', 'spent', 'stashAnswer', 'status', 'system', 'vitals', 'weigh', 'wordBack']);
   });
 
   test('what a player sends speaks for one hunter: only that hunter\'s phone may send it', () => {
-    expect(EVENT_TYPES.filter(t => EVENTS[t].ownSheet).sort()).toEqual(['arm', 'cast', 'coinCall', 'offer', 'offerEnd', 'pass', 'questUpdate', 'roll', 'soloRun', 'stashAsk', 'step', 'used']);
+    expect(EVENT_TYPES.filter(t => EVENTS[t].ownSheet).sort()).toEqual(['arm', 'cast', 'coinCall', 'offer', 'offerEnd', 'pass', 'questUpdate', 'roll', 'soloRun', 'stashAsk', 'step', 'used', 'word']);
     for (const t of ['roll', 'questUpdate', 'used', 'step', 'cast', 'pass', 'coinCall', 'arm', 'soloRun', 'offer', 'offerEnd'] as const) expect(speaksFor(parseEvent(t, valid(t))!)).toBe(KEY as SheetKey);
     expect(speaksFor(parseEvent('award', valid('award'))!)).toBeNull();
   });
@@ -511,6 +511,31 @@ describe('the GM\'s table weight on a player\'s hunter', () => {
     expect([servedTo(at(KEY, 2), { kind: 'gm' }), servedTo(at(KEY, 2), phone(KEY)), servedTo(at(KEY, 2), phone(OTHER)), servedTo(at(KEY, 2), { kind: 'anyone' })]).toEqual([true, true, false, false]);
     expect(standsFor(at(KEY, 2))).toBe(standsFor(at(KEY, -1)));
     expect(standsFor(at(KEY, 2))).not.toBe(standsFor(at(OTHER, 2)));
+  });
+});
+
+describe('a private word to the GM and its answer (notes-5-trade.md 4.2)', () => {
+  const word = (fields: Raw) => payload('word', { ...valid('word'), ...fields });
+  const back = (fields: Raw) => payload('wordBack', { ...valid('wordBack'), ...fields });
+
+  test('a word or an answer holds at most WORD_MAX characters, a few sentences: a longer one is cut there', () => {
+    expect(WORD_MAX).toBe(500);
+    expect([word({ text: 'x'.repeat(WORD_MAX + 40) })!.text.length, back({ text: 'y'.repeat(WORD_MAX + 1) })!.text.length]).toEqual([WORD_MAX, WORD_MAX]);
+  });
+
+  test('a word or an answer with nothing written is refused', () => {
+    expect([word({ text: '' }), word({ text: '   ' }), word({ text: 7 }), back({ text: '' }), back({ text: '\n' })]).toEqual([null, null, null, null, null]);
+  });
+
+  test('an answer is for exactly one hunter and names the word it answers by its id', () => {
+    expect([back({ to: [] }), back({ to: [KEY, OTHER] }), back({ re: 'not an id!' }), back({ re: `${OFFER}-e` })]).toEqual([null, null, null, null]);
+  });
+
+  test('a word reaches the GM and the sender\'s phone, an answer the GM and the hunter it is for; no other phone gets either', () => {
+    const phone = (key: string): RoomViewer => ({ kind: 'phone', device: key.split(':')[0] as never });
+    for (const ev of [parseEvent('word', valid('word'))!, parseEvent('wordBack', valid('wordBack'))!]) {
+      expect([servedTo(ev, { kind: 'gm' }), servedTo(ev, phone(KEY)), servedTo(ev, phone(OTHER)), servedTo(ev, { kind: 'anyone' })]).toEqual([true, true, false, false]);
+    }
   });
 });
 
@@ -1392,7 +1417,7 @@ describe('an offer between two hunters, and its one end', () => {
 
   test('an offer, its end and the GM\'s stop are sealed to the GM and the two hunters (the lead\'s ruling 1), a stash ask and its answer to the GM and the asking hunter, a story\'s chapter to the GM and the hunters it is for, and a table weight to the GM and its hunter; nothing else is (a System message to the room is not; one to named hunters is, above)', () => {
     const sealed = EVENT_TYPES.filter(t => isSealed(parseEvent(t, valid(t))!)).sort();
-    expect(sealed).toEqual(['chapter', 'offer', 'offerEnd', 'offerStop', 'stashAnswer', 'stashAsk', 'weigh']);
+    expect(sealed).toEqual(['chapter', 'offer', 'offerEnd', 'offerStop', 'stashAnswer', 'stashAsk', 'weigh', 'word', 'wordBack']);
   });
 
   /**

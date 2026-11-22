@@ -807,6 +807,21 @@ export type TradeApi = {
   removeLine(key: string, name: string): string;
 };
 
+/**
+ * A private word to the GM on screen (src/views/words.js; notes-5-trade.md section 4): the Room view's "Word to the GM"
+ * on a player's phone and the GM view's "Words from players".
+ */
+export type WordsApi = {
+  /** Draws the player's section in `box` (the field, Send to the GM, the thread of the hunter it plays in the room); hides it on any other phone. */
+  player(box: HTMLElement): void;
+  /** Draws the GM view's "Words from players" in `box` (each word with Answer); answers its head summary ("2 new"). */
+  paint(box: HTMLElement): string;
+  /** The GM opened or closed the section: its new words are seen (sync/word.ts `wordsSeen`). */
+  seen(): void;
+  /** How many words of the GM's room the GM has not seen: the section opens with the page while any is. */
+  unseen(): number;
+};
+
 /** What the System remembers of a hunter, on screen (src/views/chronicle.js, feature 1's notes 17.12). */
 export type ChronicleApi = {
   /** The feats that apply on this phone: a player in a room reads the GM's from the room's feats doc, any other phone its own library. */
@@ -847,6 +862,7 @@ export type AppApi = {
   sync: SyncApi;
   trade: TradeApi;
   uses: UsesApi;
+  words: WordsApi;
 };
 export type ApiName = keyof AppApi;
 

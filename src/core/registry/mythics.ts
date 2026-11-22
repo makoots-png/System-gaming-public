@@ -104,7 +104,7 @@ export const MYTHICS = {
 
   // "The hunters stand on it, so it should be able to end the fight by going under."
   'zaratan-the-island-that-wakes': mythicScript({
-    name: 'Zaratan, the Island That Wakes', hp: 0.93,
+    name: 'Zaratan, the Island That Wakes', hp: 0.97,
     shape: 'The ground: each Sinking floods tiles for the rest of the fight, and in the Dive it can only be survived.',
     moves: {
       'sinking': { name: 'Sinking of the Shore', kind: 'blast', type: 'physical', reach: 3, range: 10, hits: 0.5, sure: false,
@@ -146,7 +146,7 @@ export const MYTHICS = {
 
   // "A hunter he names should die unless something outside the rules prevents it."
   'the-fourth-rider': mythicScript({
-    name: 'The Fourth Rider', hp: 0.83,
+    name: 'The Fourth Rider', hp: 0.89,
     shape: 'The names: he marks one hunter at a time to die, and the party saves them or loses them.',
     moves: {
       'named': { name: 'Named in the Book', kind: 'curse', type: 'magical', reach: 0, range: 24, hits: 1.1, sure: true,

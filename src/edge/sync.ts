@@ -72,6 +72,7 @@ import type { BindAnswer, BindAsked, RemovedEvent, RemovedNotice } from '../core
 import { refuse } from '../core/save-step.ts';
 import { READ_ONLY } from '../core/store-life.ts';
 import { askTaken, askedGone } from '../core/sync/asked.ts';
+import { wordTaken } from '../core/sync/word.ts';
 import { closeNews, letterTaken, offersGone, offersSeen } from '../core/trade/offer.ts';
 import type { OfferNews } from '../core/trade/offer.ts';
 import { told } from '../core/session-log.ts';
@@ -744,10 +745,10 @@ export function register(app: SyncHost): void {
     if (link.gen !== gen) return;
     const ev: EntryEvent = sentEvent(c);
     if (ev.type === 'failed') boxDo('outbox-failed', b => outStep(b, e.id, ev));
-    // a solo run's message, or an offer's letter, the room took is heard taken in the same write as its letter leaves the
-    // box (sync/asked.ts `askTaken`, trade/offer.ts `letterTaken`); one on its way was heard tried or sent in the write that
-    // sent it (the store's `lettersKept` and `asksKept`)
-    else flush(`outbox-${ev.type}`, b => outStep(b, e.id, ev), ev.type === 'sent' ? s => letterTaken(askTaken(s, e.id), e.id) : null);
+    // a solo run's message, an offer's letter or a word to the GM the room took is heard taken in the same write as its
+    // letter leaves the box (sync/asked.ts `askTaken`, trade/offer.ts `letterTaken`, sync/word.ts `wordTaken`); one on its
+    // way was heard tried or sent in the write that sent it (the store's `lettersKept` and `asksKept`)
+    else flush(`outbox-${ev.type}`, b => outStep(b, e.id, ev), ev.type === 'sent' ? s => wordTaken(letterTaken(askTaken(s, e.id), e.id), e.id) : null);
     // a player's own fight move: the link polls quickly until the fight doc it was sent from changes
     if (c.ok && e.letter.kind === 'event' && FIGHT_MOVES.has(e.letter.event.type)) linkDo({ type: 'sent', from: view().docs.fight?.data.at ?? null });
     if (ev.type === 'sent') app.emit('sync:outbox', { id: e.id, at: 'sent', seq: c.ok && isObj(c.data) && typeof c.data.seq === 'number' ? c.data.seq : null });
@@ -775,6 +776,7 @@ export function register(app: SyncHost): void {
     used: 'a use you told the GM of', roll: 'a roll', questUpdate: 'a quest\'s progress', coinCall: 'a coin call', coinLand: 'a coin\'s ruling',
     step: 'a step', cast: 'a use in the fight', pass: 'the end of a turn', arm: 'a reaction', award: 'an award', quest: 'a quest', chain: 'a Job Change',
     soloRun: 'a solo run', soloAnswer: 'the answer to a solo run', stashAsk: 'a stash ask', stashAnswer: 'the answer to a stash ask',
+    word: 'your word to the GM', wordBack: 'your answer to a word',
   };
   /** A hunter deleted on this phone leaves the GM's board: its sheet is replaced by a tombstone, through the outbox. */
   const forget = (hid: HunterId): void => { if (playerRoom()) postLetter({ kind: 'tomb', hid }, null); };

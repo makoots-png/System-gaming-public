@@ -383,12 +383,21 @@ export type ChapterPayload = Base & { to: SheetKey[] } & ChapterBody;
  * for an older one of its hunter. Sealed to the GM and that hunter's phone.
  */
 export type WeighPayload = Base & { to: [SheetKey] } & HunterWeight;
+/** The longest word to the GM or answer: a few sentences typed on a phone, as long as a quest's description. */
+export const WORD_MAX = 500;
+/**
+ * Hunter `by` (`name`) sends the GM a private word, `text` (sync/word.ts). Sealed: only the GM's phones and the sender's
+ * phone get it (notes-5-trade.md 4.2).
+ */
+export type WordPayload = Base & { by: SheetKey; name: string; text: string };
+/** The GM's answer `text` to word `re`, for the hunter of `to` only. Sealed; landed once, only while that word waits for one. */
+export type WordBackPayload = Base & { to: [SheetKey]; re: EventId; text: string };
 type Payloads = {
   offer: OfferPayload; offerEnd: OfferEndPayload; offerStop: OfferStopPayload; stashAsk: StashAskPayload; stashAnswer: StashAnswerPayload;
   system: SystemPayload; award: AwardPayload; quest: QuestPayload; hp: HpPayload; vitals: VitalsPayload; spent: SpentPayload; status: StatusPayload; revive: RevivePayload;
   roll: RollPayload; questUpdate: QuestUpdatePayload; used: UsedPayload; step: StepPayload; cast: CastPayload; pass: PassPayload; chain: ChainPayload;
   coinCall: CoinCallPayload; coinLand: CoinLandPayload; arm: ArmPayload; shadow: ShadowPayload; soloRun: SoloRunPayload; soloAnswer: SoloAnswerPayload; noted: NotedPayload;
-  chapter: ChapterPayload; weigh: WeighPayload;
+  chapter: ChapterPayload; weigh: WeighPayload; word: WordPayload; wordBack: WordBackPayload;
 };
 export type EventType = keyof Payloads;
 export type PayloadOf<K extends EventType> = Payloads[K];
@@ -554,6 +563,13 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
     const q = own(o, 'quest');
     return { ...base(o), to: toList(own(o, 'to')), words: need(parseWords(own(o, 'words'))), rewards: rewards(own(o, 'rewards')), quest: q === null || q === undefined ? null : questOffer(q) };
   } },
+  word: { gmOnly: false, ownSheet: true, sealed: always, read: o => ({
+    ...base(o), by: sheetKey(own(o, 'by')), name: opt(own(o, 'name'), text(NAME_MAX), ''), text: filled(WORD_MAX)(own(o, 'text')),
+  }) },
+  wordBack: { gmOnly: true, ownSheet: false, sealed: always, read: o => {
+    const to = toList(own(o, 'to'));
+    return { ...base(o), to: to.length === 1 ? [to[0]!] : refuse(), re: plainEid(own(o, 're')), text: filled(WORD_MAX)(own(o, 'text')) };
+  } },
   weigh: { gmOnly: true, ownSheet: false, sealed: always, standsFor: p => `weigh ${p.to[0]}`, read: o => {
     const to = toList(own(o, 'to'));
     return { ...base(o), to: to.length === 1 ? [to[0]!] : refuse(), total: int(-WEIGHT_MAX, WEIGHT_MAX)(own(o, 'total')), force: nullOr(forcedFace)(own(o, 'force')) };
@@ -574,7 +590,7 @@ export const EVENTS: { readonly [K in EventType]: EventEntry<K> } = {
   revive: entry('revive'), roll: entry('roll'), questUpdate: entry('questUpdate'), used: entry('used'), step: entry('step'), cast: entry('cast'), pass: entry('pass'),
   chain: entry('chain'), coinCall: entry('coinCall'), coinLand: entry('coinLand'), arm: entry('arm'), shadow: entry('shadow'),
   soloRun: entry('soloRun'), soloAnswer: entry('soloAnswer'), noted: entry('noted'),
-  chapter: entry('chapter'), weigh: entry('weigh'),
+  chapter: entry('chapter'), weigh: entry('weigh'), word: entry('word'), wordBack: entry('wordBack'),
 };
 function entry<K extends EventType>(type: K): EventEntry<K> {
   const def: EventDef<K> = DEFS[type];

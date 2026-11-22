@@ -31,6 +31,7 @@ import * as motion from './motion.ts';
 import { compareTimes } from '../core/day.ts';
 import { postNews } from '../core/sync/connection.ts';
 import { running } from '../core/story/run.ts';
+import { WORD_WORDS } from '../core/sync/word.ts';
 import { raisedLine } from '../core/hunter/grant.ts';
 
 /** The Make row at the top of the GM view: a kind the Workshop makes and its button. */
@@ -762,6 +763,8 @@ export function register(app) {
       root = el;
       // the Stories section opens with the page while a story runs; after that it keeps the GM's choice, as each section does
       if (!('stories' in open) && running(S().storyRuns).length) open.stories = true;
+      // Words from players opens with the page while a word is new; after that it keeps the GM's choice
+      if (!('words' in open) && A().words.unseen()) open.words = true;
       const rankOpts = RANKS.map(r => opt(r, `${r}-rank`)).join('');
       el.innerHTML = `<nav class="gm-make" id="gm-make" aria-label="Make"><div class="gm-make-h"><span class="lbl">Make</span><button type="button" class="quiet" data-make="workshop">Workshop →</button></div>
           <div class="gm-make-row">${MAKE.map(([k, l]) => `<button type="button" data-make="${k}" aria-label="Make ${l.toLowerCase()}">${l}</button>`).join('')}</div></nav>
@@ -772,6 +775,7 @@ export function register(app) {
           <div class="gm-row"><button type="button" class="primary" id="gm-s-go">Start session</button></div>
           <div class="gm-msg" id="gm-s-msg" role="status"></div><div id="gm-cheat"></div>`),
         section('party', 'Party board', `<div class="gm-room" id="gm-room"></div><div class="gm-wtable" id="gm-weight" role="group" aria-label="Dice weight"></div><div class="gm-cards" id="gm-board" aria-live="polite"></div><div class="gm-msg" id="gm-board-msg" role="status"></div>`),
+        section('words', WORD_WORDS.gm.title, '<div id="gm-words"></div>', false, true),
         section('trade', 'Trades and stash', '<div id="gm-trade"></div>', false, true),
         section('stories', 'Stories', '<div id="gm-stories"></div>', false, true),
         section('award', 'Award', `
@@ -825,10 +829,10 @@ export function register(app) {
       ].join('');
 
       // D04: desktop columns. Sections move into column wrappers at >=1100 (2 cols) / >=1500 (3 cols); phone/tablet keep the original single stack
-      const ORDER = ['cheat', 'party', 'trade', 'stories', 'award', 'bcast', 'quest', 'gate', 'tables', 'rules', 'log'];
+      const ORDER = ['cheat', 'party', 'words', 'trade', 'stories', 'award', 'bcast', 'quest', 'gate', 'tables', 'rules', 'log'];
       // A20: the Award form is a full-width row under the columns, its reward rows two to a line
-      const PLAN2 = [['party', 'trade', 'stories', 'quest'], ['cheat', 'bcast', 'gate', 'tables', 'rules', 'log']];
-      const PLAN3 = [['party', 'trade', 'stories'], ['quest', 'bcast'], ['cheat', 'gate', 'tables', 'rules', 'log']];
+      const PLAN2 = [['party', 'words', 'trade', 'stories', 'quest'], ['cheat', 'bcast', 'gate', 'tables', 'rules', 'log']];
+      const PLAN3 = [['party', 'words', 'trade', 'stories'], ['quest', 'bcast'], ['cheat', 'gate', 'tables', 'rules', 'log']];
       let planSig = '';
       const arrange = () => {
         const L = app.layout || { desktop: () => false, wide: () => false };
@@ -897,6 +901,7 @@ export function register(app) {
         }
         if (t.dataset.tog) {
           open[t.dataset.tog] = !(open[t.dataset.tog] ?? false); applyOpen();
+          if (t.dataset.tog === 'words') A().words.seen();
           // folding Award puts the loot it holds off, as Later: the form is emptied and the loot waits
           if (t.dataset.tog === 'award' && !open.award) draft({ type: 'fold' });
           return;
@@ -951,6 +956,7 @@ export function register(app) {
       showTie();
       const csig = JSON.stringify(ov()), cs = $('#gm-cheat'); if (cs.dataset.sig !== csig) { cs.dataset.sig = csig; cs.innerHTML = cheatSheet(); }
       renderBoard(); renderTargets();
+      $('#gm-hsum-words').textContent = A().words.paint($('#gm-words'));
       $('#gm-hsum-trade').textContent = A().trade.paint($('#gm-trade'));
       $('#gm-hsum-stories').textContent = A().stories.paint($('#gm-stories'));
       editor.refresh();

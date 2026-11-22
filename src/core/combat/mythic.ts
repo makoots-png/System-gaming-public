@@ -27,6 +27,8 @@ import type { Tick } from './timeline.ts';
 
 /** The rules the readers read: a round's length in fight time, which a phase's clock counts in. */
 type RoundRules = { readonly fight: Pick<Rules['fight'], 'round'> };
+/** The rules `answerBack` reads besides: the rounds an answer winds its phase's clock back (decision 40). */
+type AnswerRules = { readonly fight: Pick<Rules['fight'], 'round'> & { readonly mythic: Pick<Rules['fight']['mythic'], 'answerTime'> } };
 
 // ── the machine ──
 /** `calm`: in its phase, no omen standing. `omen`: an omen stands and lands whole on its next turn. `faltering`: it stands weakened. */
@@ -36,15 +38,16 @@ export type Answer = 'interrupt' | 'stagger' | 'burst';
 /**
  * What moves a standing (design B.3, "Events"). `next`: its phase ends, at its turn start (`turn`) or by the GM's Next
  * phase (`gm`), at fight time `now`. `announce`: its turn starts in `calm` on an omen beat, aimed at `aim` with `hpAt` HP.
- * `beat`: its turn starts in `calm` on an act beat. `cancel` and `weaken`: a change met an answer of that outcome.
- * `land`: the landing move went off. `fizzle`: it could not reach its aim. `drop`: the GM dropped the omen.
+ * `beat`: its turn starts in `calm` on an act beat. `cancel` and `weaken`: a change met an answer of that outcome, which
+ * winds its phase's clock back by `back` (`answerBack`, decision 40: answering buys the party time). `land`: the
+ * landing move went off. `fizzle`: it could not reach its aim. `drop`: the GM dropped the omen.
  */
 export type MythicEvent =
   | { readonly type: 'next'; readonly now: Tick; readonly by: 'turn' | 'gm' }
   | { readonly type: 'announce'; readonly omen: OmenKey; readonly aim: Place | CombatantId; readonly hpAt: number }
   | { readonly type: 'beat' }
-  | { readonly type: 'cancel'; readonly how: Answer }
-  | { readonly type: 'weaken'; readonly how: Answer }
+  | { readonly type: 'cancel'; readonly how: Answer; readonly back: Tick }
+  | { readonly type: 'weaken'; readonly how: Answer; readonly back: Tick }
   | { readonly type: 'land' }
   | { readonly type: 'fizzle' }
   | { readonly type: 'drop' };
@@ -67,6 +70,10 @@ type TableRow<S> = { readonly [T in MythicEventType]: Cell<S, T> };
 const nextPhase = (s: MythicStanding, e: EventOf<'next'>): Calm => ({ at: 'calm', script: s.script, phase: s.phase + 1, beat: 0, since: e.now });
 /** The beat after this one, in the same phase, with no omen standing. */
 const onward = (s: MythicStanding): Calm => ({ at: 'calm', script: s.script, phase: s.phase, beat: s.beat + 1, since: s.since });
+/** The omen cancelled: the beat after this one, its phase's clock wound back by the event's `back`. */
+const cancelled = (s: MythicStanding, e: EventOf<'cancel'>): Calm => ({ ...onward(s), since: tick(s.since + e.back) });
+/** The omen weakened: it stands faltering, its phase's clock wound back by the event's `back`. */
+const weakened = (s: Omened, e: EventOf<'weaken'>): Omened => ({ ...s, at: 'faltering', since: tick(s.since + e.back) });
 
 /** For each state, what each event does there (design B.3's table, cell for cell). */
 const MYTHIC_TABLE: { readonly calm: TableRow<Calm>; readonly omen: TableRow<Omened>; readonly faltering: TableRow<Omened> } = {
@@ -76,11 +83,11 @@ const MYTHIC_TABLE: { readonly calm: TableRow<Calm>; readonly omen: TableRow<Ome
   },
   omen: {
     next: nextPhase, announce: 'omenStands', beat: 'omenStands',
-    cancel: onward, weaken: s => ({ ...s, at: 'faltering' }), land: onward, fizzle: onward, drop: onward,
+    cancel: cancelled, weaken: weakened, land: onward, fizzle: onward, drop: onward,
   },
   faltering: {
     next: nextPhase, announce: 'omenStands', beat: 'omenStands',
-    cancel: onward, weaken: 'weakened', land: onward, fizzle: onward, drop: onward,
+    cancel: cancelled, weaken: 'weakened', land: onward, fizzle: onward, drop: onward,
   },
 };
 /**
@@ -167,6 +174,15 @@ export function phaseOver(row: MythicRow, now: Tick, R: RoundRules): boolean {
   const s = row.mythic;
   if (!s || !actedIn(s)) return false;
   return phaseOf(s)?.ends === 'clock' ? clockOut(s, now, R) : heldAtGate(row);
+}
+/**
+ * How far an answer of `outcome` met at `now` winds standing `s`'s phase's clock back (decision 40): `mythic.answerTime`
+ * rounds for that outcome, never past the phase's start (`since` stays at most `now`, so the clock never holds more than
+ * its length), and none in a clock phase, whose clock is the time the party must survive, not the time it has.
+ */
+export function answerBack(s: MythicStanding, outcome: Exclude<AnswerOutcome, 'none'>, now: Tick, R: AnswerRules): Tick {
+  if (phaseOf(s)?.ends !== 'gate') return tick(0);
+  return tick(Math.max(0, Math.min(R.fight.mythic.answerTime[outcome] * R.fight.round, now - s.since)));
 }
 /** A gate phase past its clock: it plays the script's enraged rotation, its doom, until the phase ends. */
 export const enraged = (s: MythicStanding, now: Tick, R: RoundRules): boolean => phaseOf(s)?.ends === 'gate' && clockOut(s, now, R);

@@ -18,6 +18,8 @@ import type { ApplyDeps } from '../src/edge/room-events.ts';
 import { day, dev, hid } from './fixtures/ids.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
 import type { Asked, StashAsk } from '../src/core/sync/asked.ts';
+import { owedAnswer, wordsOf } from '../src/core/sync/word.ts';
+import type { MineWord } from '../src/core/sync/word.ts';
 import { parseItem } from '../src/core/registry/items.ts';
 import { REVIVE_HP } from '../src/core/hunter/vitals.ts';
 import type { Life } from '../src/core/hunter/vitals.ts';
@@ -618,6 +620,31 @@ describe('the GM\'s answer to a stash ask lands once, only while its ask waits (
     q.receive(1, 'stashAnswer', { to: ['d-player1:h1'], ask: ASK, verdict: 'refused', why: 'full', have: 40 });
     expect([count(q.hunter) - before, q.asked]).toEqual([2, []]);
     expect(q.toasts).toEqual(['The stash is full. Take something out of it first. Back in your bag: Healing Potion × 2.']);
+  });
+});
+
+describe('the GM\'s answer to a word lands once in the thread (notes-5-trade.md 4.4)', () => {
+  const WORD = 'd-player1-word1' as EventId;
+  const sent: MineWord = { side: 'mine', id: WORD, room: 'ABCD23' as never, hid: 'h1' as never, at: AT, text: 'Can my shadow scout the gate?', state: { is: 'landed' } };
+  const BACK = { to: ['d-player1:h1'], re: WORD, text: 'Yes. Roll Perception when it comes back.' };
+
+  test('an answer lands once in the thread: a replay, a page read again or a second GM phone\'s answer adds nothing, and its window is owed once', () => {
+    const p = phone();
+    p.write(s => ({ ...s, settings: { ...s.settings, sync: { ...s.settings.sync, words: [sent] } } }));
+    p.receive(1, 'wordBack', BACK);
+    const thread = () => wordsOf(p.save).map(w => (w.side === 'mine' ? [w.text, w.state.is, 'answer' in w.state ? w.state.answer.text : null] : null));
+    expect([thread(), p.applied, owedAnswer(p.save)?.id]).toEqual([[[sent.text, 'answered', BACK.text]], [e(1)], WORD]);
+    p.receive(1, 'wordBack', BACK);
+    p.page([], [parseEvent('wordBack', { eid: e(1), ...BACK })!]);
+    p.receive(2, 'wordBack', { ...BACK, text: 'No.' });
+    expect(thread()).toEqual([[sent.text, 'answered', BACK.text]]);
+    expect([p.toasts, p.windows], 'the window is the Room view\'s, opened while the save owes it').toEqual([[], []]);
+  });
+
+  test('an answer to a word this phone never sent lands nothing', () => {
+    const p = phone(), before = p.save;
+    p.receive(1, 'wordBack', BACK);
+    expect([wordsOf(p.save), p.save.hunters]).toEqual([[], before.hunters]);
   });
 });
 

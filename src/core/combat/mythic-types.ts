@@ -132,7 +132,8 @@ export type MythicMove = MoveCommon & (
 /**
  * Where a mythic row stands in its script (`Body.mythic`); null on any other row. Only combat/mythic.ts writes it
  * (`mythicStep`, and `mythicStart` and `mythicJoined` for a new row). `phase` and `beat` index the script's phases and the phase's rotation (modulo its
- * length); `since` is when the phase began, which its clock counts from. While an omen stands, `aim` is where it was
+ * length); `since` is when its phase's clock began counting: the phase's start, moved later by each answer met
+ * (mythic.ts `answerBack`, decision 40), never past the fight's now. While an omen stands, `aim` is where it was
  * aimed and `hpAt` the mythic's HP then (the burst answer counts from it).
  */
 export type MythicStanding =

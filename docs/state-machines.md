@@ -131,12 +131,12 @@ stateDiagram-v2
     state "Omen announced" as s3
     state "Omen weakened" as s4
     s2 --> s3 : its turn starts on an omen beat, it announces the omen
-    s3 --> s2 : an answer that cancels it, nothing lands
-    s3 --> s4 : an answer that weakens it
+    s3 --> s2 : an answer that cancels it, nothing lands, and its phase's clock goes back
+    s3 --> s4 : an answer that weakens it, its phase's clock goes back
     s3 --> s2 : its next turn, the move lands
     s3 --> s2 : its next turn, its aim is gone or out of range
     s3 --> s2 : the GM drops the omen
-    s4 --> s2 : an answer that cancels it, nothing lands
+    s4 --> s2 : an answer that cancels it, nothing lands, and its phase's clock goes back
     s4 --> s2 : its next turn, the move lands
     s4 --> s2 : its next turn, its aim is gone or out of range
     s4 --> s2 : the GM drops the omen
@@ -146,12 +146,12 @@ stateDiagram-v2
     state "Omen announced" as s7
     state "Omen weakened" as s8
     s6 --> s7 : its turn starts on an omen beat, it announces the omen
-    s7 --> s6 : an answer that cancels it, nothing lands
-    s7 --> s8 : an answer that weakens it
+    s7 --> s6 : an answer that cancels it, nothing lands, and its phase's clock goes back
+    s7 --> s8 : an answer that weakens it, its phase's clock goes back
     s7 --> s6 : its next turn, the move lands
     s7 --> s6 : its next turn, its aim is gone or out of range
     s7 --> s6 : the GM drops the omen
-    s8 --> s6 : an answer that cancels it, nothing lands
+    s8 --> s6 : an answer that cancels it, nothing lands, and its phase's clock goes back
     s8 --> s6 : its next turn, the move lands
     s8 --> s6 : its next turn, its aim is gone or out of range
     s8 --> s6 : the GM drops the omen
@@ -161,12 +161,12 @@ stateDiagram-v2
     state "Omen announced" as s11
     state "Omen weakened" as s12
     s10 --> s11 : its turn starts on an omen beat, it announces the omen
-    s11 --> s10 : an answer that cancels it, nothing lands
-    s11 --> s12 : an answer that weakens it
+    s11 --> s10 : an answer that cancels it, nothing lands, and its phase's clock goes back
+    s11 --> s12 : an answer that weakens it, its phase's clock goes back
     s11 --> s10 : its next turn, the move lands
     s11 --> s10 : its next turn, its aim is gone or out of range
     s11 --> s10 : the GM drops the omen
-    s12 --> s10 : an answer that cancels it, nothing lands
+    s12 --> s10 : an answer that cancels it, nothing lands, and its phase's clock goes back
     s12 --> s10 : its next turn, the move lands
     s12 --> s10 : its next turn, its aim is gone or out of range
     s12 --> s10 : the GM drops the omen
@@ -178,7 +178,7 @@ stateDiagram-v2
   s5 --> s9 : the GM's Next phase
 ```
 
-One box for each of the Angel's phases, with the mythic's card inside. Its turn start raises the event: in its phase, the next phase when the phase is over (held at its gate, or a clock phase past its clock), else an omen beat announces and an act beat plays as any monster's turn. A standing omen lands on its next turn, or fizzles when its aim is gone or out of range. Between the two the party answers: an answer's outcome, read from the omen, cancels it or weakens it, and a second weaken does nothing. The next phase from a standing omen loses the omen, so pushing it to its gate is an answer too. The last phase has no next phase: it ends at 0 HP, which is its life's (row-life.ts), not the script's. Whether it is held at its gate or enraged past a gate phase's clock is read from the standing, the script, its HP and the time (mythic.ts), never stored.
+One box for each of the Angel's phases, with the mythic's card inside. Its turn start raises the event: in its phase, the next phase when the phase is over (held at its gate, or a clock phase past its clock), else an omen beat announces and an act beat plays as any monster's turn. A standing omen lands on its next turn, or fizzles when its aim is gone or out of range. Between the two the party answers: an answer's outcome, read from the omen, cancels it or weakens it, and a second weaken does nothing; either winds a gate phase's clock back (`answerBack`: `mythic.answerTime` rounds, never past the phase's start), so answering buys the party time. The next phase from a standing omen loses the omen, so pushing it to its gate is an answer too. The last phase has no next phase: it ends at 0 HP, which is its life's (row-life.ts), not the script's. Whether it is held at its gate or enraged past a gate phase's clock is read from the standing, the script, its HP and the time (mythic.ts), never stored.
 
 9 chart states, 34 arrows. No step is hidden.
 
@@ -188,7 +188,7 @@ Where it lives:
 |---|---|
 | The union | `MythicStanding` in `src/core/combat/mythic-types.ts`; `MythicState`, `MythicEvent` and `MythicRefusal` in `src/core/combat/mythic.ts` |
 | What changes it | `mythicStep(standing, event)` and its `MYTHIC_TABLE`; `mythicCan` answers a view before it shows a button |
-| What is read from it | `gateOf`, `heldAtGate`, `clockOut`, `phaseOver`, `enraged`, `beatOf`, `landingMove`, `omenAim` and `answerMet` in `src/core/combat/mythic.ts` |
+| What is read from it | `gateOf`, `heldAtGate`, `clockOut`, `answerBack`, `phaseOver`, `enraged`, `beatOf`, `landingMove`, `omenAim` and `answerMet` in `src/core/combat/mythic.ts` |
 | Who calls it | Nothing yet: the fight's turn start, `consequences` and the gate in `row-life.ts` (unit MY3) and the landing (MY4) |
 | The test to copy | `tests/mythic.test.ts`, "a mythic's standing as a machine: every state against every event" |
 | The recipe | A new event is a member of `MythicEvent` and its cell in every row of `MYTHIC_TABLE`; a new mythic is a row of `MYTHICS` (`src/core/registry/mythics.ts`) |
@@ -3095,6 +3095,80 @@ Where it lives:
 | Who calls it | The trade view (unit 4) for the taps; sync.ts (unit 2) for what the box heard, the fold of each page and a join's history, and the room gone; the store runs `lettersKept` after every step (unit 2) |
 | The test to copy | `tests/offer.test.ts` ("every cell of the three records", the walk of two players and the GM); the walk's events are in `tests/models/trade-events.ts` |
 | The recipe | docs/guide/room-sync.md, "A room message"; notes-5-trade.md 1.6 and 12.1 |
+
+## A word to the GM
+
+Every state reachable from a word just sent, under the 5 events of this chart (the room takes or refuses its letter, the box lets it go, an answer, the window closed), breadth first. The walk found 10 states and 50 steps.
+
+### A player's word to the GM, on its phone, until the answer is read
+
+```mermaid
+---
+title: A player's word to the GM, on its phone, until the answer is read
+---
+stateDiagram-v2
+  state "Waiting for the room (its letter in the outbox)" as s1
+  state "Sent: the room has it" as s2
+  state "Lost: the room refused it or the box let it go" as s3
+  state "Answered: the window owed" as s4
+  state "Read: the window closed" as s5
+  [*] --> s1
+  s1 --> s2 : the room takes its letter
+  s1 --> s3 : the room refuses its letter
+  s1 --> s3 : the box lets its letter go
+  s1 --> s4 : the GM's answer lands
+  s2 --> s4 : the GM's answer lands
+  s3 --> s4 : the GM's answer lands
+  s4 --> s5 : the player closes the answer's window
+```
+
+Waiting and lost are read from the outbox (the letter queued or on its way; refused or let go), the rest are stored. The room taking the letter is heard in the write that takes it out of the box (sync.ts `wordTaken`). An answer lands once, by its id and only on a word not yet answered, so a second GM phone's answer or a replay adds nothing; an answer to a lost word lands too, since it proves the room had it. The answer's window is owed while the word is answered: src/views/words.js opens it on any change of the save, a reload too, and its close writes read.
+
+5 chart states, 7 arrows. Hidden: The letter's own sends and failed sends (they stay in Waiting for the room), and each event that does not apply. (0 steps.)
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `MineWord`, `MineStored`, `MineShown`, `WordEvent`, `MINE_SHOWN` and `WORD_EVENTS` in `src/core/sync/word.ts`; the list is the save's `settings.sync.words` |
+| What changes it | `wordStep` and its `MINE` table; `wordSent`, `wordTaken`, `wordLanded`, `wordRead` |
+| Who calls it | `src/views/words.js` (Send to the GM, the answer's window); `answered` in `src/edge/sync.ts` (`wordTaken`); the `wordBack` applier in `src/edge/room-events.ts` (`wordLanded`) |
+| The test to copy | `tests/word.test.ts` ("every cell of the player's word and the GM's"), `tests/applied.test.ts` ("an answer lands once in the thread"), `tests/e2e/words.e2e.ts` |
+| The recipe | docs/guide/room-sync.md, "A room message" |
+
+## The GM's record of a word
+
+Every state reachable from a word the GM's phone just heard, under the 2 events of this chart, breadth first. The walk found 3 states and 6 steps.
+
+### A word on the GM's phone, from heard to answered
+
+```mermaid
+---
+title: A word on the GM's phone, from heard to answered
+---
+stateDiagram-v2
+  state "New: counted in the head's '1 new'" as s1
+  state "Seen" as s2
+  state "Answered: no Answer button" as s3
+  [*] --> s1
+  s1 --> s2 : the GM opens or closes the section
+  s1 --> s3 : the GM answers it (on this phone or another)
+  s2 --> s3 : the GM answers it (on this phone or another)
+```
+
+Heard once by its id (`wordHeard` through `sync.once`), in the write of its session log line of kind `word`. Opening or closing the GM view's "Words from players" sees every new word of the room. An answer is the `wordBack` letter, the record and a log line of kind `answer` in one write (`wordAnswered`); another GM phone's answer heard from the room marks it answered too (`wordBackHeard`), so the word takes one answer.
+
+3 chart states, 3 arrows. Hidden: Each event that does not apply. (0 steps.)
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `GmWord`, `GmStored`, `GM_STATES` in `src/core/sync/word.ts`; the save's `settings.sync.words` |
+| What changes it | `wordStep` and its `GM` table; `wordHeard`, `wordsSeen`, `wordAnswered`, `wordBackHeard` |
+| Who calls it | `src/views/words.js`: its `sync:event` handler, the section's Answer and Send answer, and gm.js's section toggle (`words.seen`) |
+| The test to copy | `tests/word.test.ts` ("the GM hears a word and answers it") |
+| The recipe | docs/guide/room-sync.md, "A room message" |
 
 ## A story on the table
 
