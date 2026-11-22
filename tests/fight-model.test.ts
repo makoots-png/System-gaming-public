@@ -21,7 +21,9 @@ import { alive } from '../src/core/combat/land.ts';
 import { warded } from '../src/core/combat/standing.ts';
 import { perceivedBy } from '../src/core/combat/sight.ts';
 import { parseFight } from '../src/core/combat/fight-parse.ts';
-import { MAX_SPREAD, reduce } from '../src/core/combat/fight.ts';
+import { MAX_SPREAD, reduce, runningState } from '../src/core/combat/fight.ts';
+import { omenMove, omenNeeds } from '../src/core/combat/fight-turn.ts';
+import { gateOf, scriptOf } from '../src/core/combat/mythic.ts';
 import type { Command, Effect, Fight } from '../src/core/combat/fight.ts';
 import { place } from '../src/core/combat/space.ts';
 import { abilityId, combatantId } from '../src/core/combat/ability-types.ts';
@@ -154,6 +156,8 @@ function check(before: Fight | null, cmd: Command, after: Fight | null, effects:
   if (wave2) return wave2;
   const asked = askedWrong(before, cmd, effects);
   if (asked) return asked;
+  const scripted = mythicWrong(before, cmd, after, effects);
+  if (scripted) return scripted;
   if (after.phase === 'running') {
     for (const side of ['party', 'foe'] as const) if (!after.rows.some(r => r.side === side && isUp(r) && r.kind !== 'summon')) return `the ${side} side has only summons up, or none, and the fight runs on`;
     const cur = after.rows.find(r => r.id === after.currentId);
@@ -237,7 +241,8 @@ function wave2Wrong(before: Fight | null, cmd: Command, after: Fight, effects: r
     const n = line.split(`${r.name} reacts with `).length - 1;
     if (n > 0) { const k = (mem.reacted.get(r.id) ?? 0) + n; mem.reacted.set(r.id, k); if (k > 1) return `${r.id} reacted ${k} times between two of its turns`; }
   }
-  if (cmd.type === 'act' && before && !refused && typeof cmd.aim === 'string') {
+  // a landing that fizzled is no use (design B.3): an omen aimed at a body that is now warded or hidden finds no one
+  if (cmd.type === 'act' && before && !refused && effects.some(e => e.type === 'used' && e.by === cmd.by) && typeof cmd.aim === 'string') {
     const u = before.rows.find(r => r.id === cmd.by), t = before.rows.find(r => r.id === cmd.aim);
     if (u && t && (warded(t, u.side) || !perceivedBy(u.side, t, before))) return `${u.id} used ${cmd.ability} on ${t.id}, which is untargetable to it or which its side does not perceive`;
   }
@@ -262,12 +267,44 @@ function wave2Wrong(before: Fight | null, cmd: Command, after: Fight, effects: r
 function askedWrong(before: Fight | null, cmd: Command, effects: readonly Effect[]): string | null {
   if (before?.phase !== 'running' || (cmd.type !== 'act' && cmd.type !== 'release') || !effects.some(e => e.type === 'refused' && e.reason === 'needsRoll')) return null;
   const u = before.rows.find(r => r.id === cmd.by), c = u?.channel;
-  const a = u?.abilities.find(x => x.id === (cmd.type === 'act' ? cmd.ability : c?.ability)), aim = cmd.type === 'act' ? cmd.aim : c?.aim;
+  // a mythic's landing asks the dice of its omen's move, which is not on its row (`omenMove`, `omenNeeds`)
+  const omen = u && cmd.type === 'act' ? omenMove(u, RULES) : null, lands = omen?.ability.id === (cmd.type === 'act' ? cmd.ability : null);
+  const a = lands ? omen!.ability : u?.abilities.find(x => x.id === (cmd.type === 'act' ? cmd.ability : c?.ability)), aim = cmd.type === 'act' ? cmd.aim : c?.aim;
   if (!u || !a || aim === undefined) return null;
-  const n = needs(a, u, before.rows, aim, before.grid, before.now, RULES), r = cmd.rolls;
+  const n = lands ? omenNeeds(before, u, RULES)! : needs(a, u, before.rows, aim, before.grid, before.now, RULES), r = cmd.rolls;
   const brought = n.react.every(id => r.react[id] !== undefined) && Object.entries(n.dice).every(([id, ds]) => (r.dice[id as CombatantId]?.length ?? 0) >= ds.length)
     && (!n.refund || r.refund !== undefined) && (n.second ?? []).every(id => r.second?.[id] !== undefined) && (n.boost ?? []).every(b => r.boost?.[b.id] !== undefined);
   return brought ? `${cmd.by}'s ${cmd.type} brought every die needs asked for and was refused for a roll` : null;
+}
+
+/**
+ * A mythic's invariants (notes-11-keystones.md, design B.3 and B.4): a standing (only a monster's row holds one, which
+ * the types keep) is at a phase of its script, an omen standing being one of its script's and a weakened one one that can weaken; while an omen stands it
+ * announces no intent of its own; its phase never goes back; no command takes its HP below its gate (the life's writer
+ * holds it there; a GM's Next phase brings it to its new phase's start, which is above the new gate); and a fight in
+ * `landing` is on the turn of the mythic whose omen stands.
+ */
+function mythicWrong(before: Fight | null, cmd: Command, after: Fight, effects: readonly Effect[]): string | null {
+  for (const r of after.rows) {
+    const s = r.mythic, was = before?.rows.find(x => x.id === r.id);
+    if (!s) { if (was?.mythic) return `${r.id} lost its standing to ${cmd.type}`; continue; }
+    const script = scriptOf(s);
+    if (!script.phases[s.phase]) return `${r.id} stands in phase ${s.phase} of a script of ${script.phases.length}`;
+    if (s.at !== 'calm') {
+      const o = script.omens[s.omen];
+      if (!o || (s.at === 'faltering' && o.weak === null)) return `${r.id} stands ${s.at} on ${s.omen}`;
+      if (r.intent) return `${r.id} announces an intent while its omen stands`;
+    }
+    if (was?.mythic && s.phase < was.mythic.phase) return `${r.id} went back from phase ${was.mythic.phase} to ${s.phase}`;
+    if (was && rowHp(r) < rowHp(was) && rowHp(r) < gateOf(r)) return `${cmd.type} took ${r.id} to ${rowHp(r)} HP, under its gate of ${gateOf(r)}`;
+  }
+  if (after.phase === 'running') {
+    const st = runningState(after), cur = after.rows.find(r => r.id === after.currentId);
+    const due = !!cur?.mythic && cur.mythic.at !== 'calm' && st.at !== 'owing';
+    if (due !== (st.at === 'landing')) return `the fight is ${st.at} on ${after.currentId}'s turn, whose standing is ${cur?.mythic?.at ?? 'none'}`;
+  }
+  if (effects.some(e => e.type === 'answered') && !before?.rows.some(r => r.mythic && r.mythic.at !== 'calm')) return 'an omen was answered while none stood';
+  return null;
 }
 
 type Failure = { seed: number; at: number; problem: string; commands: Command[] };
@@ -400,7 +437,8 @@ describe('the reworked fight under random play', () => {
       if (r) failures.push(`seed ${r.seed}, command ${r.at + 1}: ${r.problem}\n${r.commands.slice(-6).map(c => json(c).slice(0, 300)).join('\n')}`);
     }
     expect(failures).toEqual([]);
-    for (const seen of ['turnStarted', 'rollSettle', 'vitals', 'sendRemote', 'shadowHp', 'moved', 'channel', 'staggered', 'crit', 'defeated', 'ended', 'refused',
+    // a mythic's phase change and omen (Nov 22: 98 and 38 in the 2,500 seeds; an answer met once and a landing a few times, too rare to count on)
+    for (const seen of ['turnStarted', 'rollSettle', 'vitals', 'sendRemote', 'shadowHp', 'moved', 'channel', 'staggered', 'crit', 'defeated', 'ended', 'refused', 'phased', 'omen',
       'none>setup', 'setup>running', 'running>ended', 'ended>none', 'spread', ...KIT_LINES.map(([k]) => k)]) {
       expect(tally.get(seen) ?? 0, `random play reaches ${seen}`).toBeGreaterThan(0);
     }

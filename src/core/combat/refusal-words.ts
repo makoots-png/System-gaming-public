@@ -21,6 +21,9 @@ export const REFUSAL_WORDS: { readonly [R in Refusal]: string } = {
   notHunter: 'Only a hunter\'s row can be refilled.',
   lifeCannot: 'Not in this state: Revive is for the dead.',
   fudgeValue: 'A fudge is a whole number of faces, and a forced roll is a 1 or a 20.',
+  notMythic: 'Only a mythic playing its script has phases and omens.', noOmen: 'No omen stands.',
+  omenStands: 'Its omen stands: it lands, is answered or is dropped first.', omenDue: 'Its omen is due: it lands its omen\'s move where it was aimed.',
+  lastPhase: 'This is its last phase: it ends when its HP reaches 0.', weakened: 'The omen is weakened already.',
 };
 
 /** What a player reads when the GM's phone turned down their tap (table.js). */

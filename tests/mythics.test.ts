@@ -1,8 +1,9 @@
 // The mythics' scripts (src/core/registry/mythics.ts; notes-11-keystones.md, design B.3, B.4 and B.6). Every test here
 // but the per-script ones loops over `MYTHICS`, so a new script is checked with no edit. A new mythic copies one of the
-// per-script tests (unit MY4 adds them) to state its own shape from its own words.
-import { expect, test } from 'bun:test';
+// per-script tests (at the end) to state its own shape from its own words, played on the reducer.
+import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
+import type { Rules } from '../src/core/rules.ts';
 import { parseOverrides } from '../src/core/overrides.ts';
 import { average } from '../src/core/formula.ts';
 import { kitGear, monsterSheet, monsterStats, pointsAt, sheetOf, split } from '../src/core/hunter/derive.ts';
@@ -15,6 +16,20 @@ import { mythicMove } from '../src/core/registry/mythic-moves.ts';
 import type { MythicBody } from '../src/core/registry/mythic-moves.ts';
 import { monsterScript, seedMonsters, statBlock, tweakOfMonster } from '../src/core/registry/monsters.ts';
 import type { MoveKey, Omen, MythicMove, MythicScript, MythicStatus, OmenKey } from '../src/core/combat/mythic-types.ts';
+import { abilityId, combatantId, hunterId } from '../src/core/combat/ability-types.ts';
+import { modified, statusKey } from '../src/core/combat/effect-ops.ts';
+import type { Body, Origin, Status } from '../src/core/combat/effect-ops.ts';
+import { fightId, reduce, runningState } from '../src/core/combat/fight.ts';
+import type { Command, Ctx, Effect, Fight, NewRow, Running } from '../src/core/combat/fight.ts';
+import { omenMove, omenNeeds } from '../src/core/combat/fight-turn.ts';
+import type { Rolls } from '../src/core/combat/resolve.ts';
+import { isUp, rowHp } from '../src/core/combat/row-hp.ts';
+import { monsterRows } from '../src/core/combat/rows.ts';
+import { openGrid, place, tiles } from '../src/core/combat/space.ts';
+import type { Place } from '../src/core/combat/space.ts';
+import { tick } from '../src/core/combat/timeline.ts';
+import { abilityOf } from '../src/core/registry/ability-kinds.ts';
+import { baseStats } from '../src/core/stats.ts';
 
 const SCRIPTS = MYTHIC_IDS.map(id => [id, mythicScriptOf(id)] as const);
 const SEEDS = seedMonsters(RULES);
@@ -153,4 +168,106 @@ test('a GM\'s turn pace for a mythic is one of the paces, and a script bound run
   expect(parseOverrides({ fight: { mythic: { turnPace: 'slow', bounds: { clock: [12, 3] } } } }).refused).toEqual([
     { path: 'fight.mythic.turnPace', reason: 'entry' }, { path: 'fight.mythic.bounds.clock', reason: 'order' },
   ]);
+});
+
+describe('each script\'s shape, played on the reducer (design B.6, "The test to copy")', () => {
+  // A new mythic copies one of these: its seed in a fight with the switch on, played turn by turn, and its shape stated
+  // from its own words in registry/mythics.ts.
+  const ON: Rules = { ...RULES, fight: { ...RULES.fight, mythic: { ...RULES.fight.mythic, scripts: true } } };
+  const ctx: Ctx = { rules: ON };
+  const id = combatantId;
+  const seedOf = (script: MythicScriptId) => SEEDS.find(m => m.script === script)!;
+  const mythic = (script: MythicScriptId, at: Place): NewRow => ({ ...monsterRows(seedOf(script), [id('X')], ON)[0]!, place: at });
+  const plate = (n: number): Status => ({ key: statusKey('plate'), def: { label: 'Plate', desc: '', ops: [{ op: 'sheet', key: 'armor', amount: { kind: 'number', value: n } }, { op: 'sheet', key: 'resist', amount: { kind: 'number', value: n } }] }, source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0) });
+  const KILL = { ...abilityOf('strike', { id: abilityId('kill'), name: 'Kill' }, RULES), range: tiles(40), shape: { kind: 'touch', reach: tiles(40) }, delivery: { kind: 'sure' }, effect: { type: 'physical', by: 'hand', formula: { kind: 'number', value: 99999 } } } as const;
+  /** A hunter of base stats in a light kit at `at`, at `share` of its max HP, behind plate of `armor` armor and resist and a shield of `shield`. */
+  function hunter(name: string, at: Place, share = 1, armor = 5000, shield = 0): NewRow {
+    const origin: Origin = { kind: 'hunter', build: { stats: baseStats(RULES.fight), level: 1, gear: kitGear('light', RULES), perks: {} } };
+    const statuses = [plate(armor)], hpMax = modified(origin, statuses, RULES).sheet.hpMax;
+    return {
+      id: id(name), name, side: 'party', kind: 'hunter', life: { at: 'up', hp: Math.round(hpMax * share) }, origin, tier: 0, place: at, mana: 10, fatigue: 0,
+      shield: shield ? { amount: shield, until: tick(100 * RULES.fight.round) } : null,
+      stagger: null, channel: null, threat: null, statuses, readyAt: {}, abilities: [KILL], intent: null, holder: { kind: 'local', hunterId: hunterId(`h-${name}`) }, xp: 0, mythic: null,
+    } as NewRow;
+  }
+  function go(fight: Fight | null, cmd: Command): { fight: Running; effects: readonly Effect[] } {
+    const r = reduce(fight, cmd, ctx), no = r.effects.find(e => e.type === 'refused');
+    if (no || r.fight?.phase !== 'running') throw new Error(`${cmd.type}: ${JSON.stringify(no ?? r.fight?.phase)}; ${r.fight?.log.slice(0, 8).map(l => l.text).reverse().join(' | ')}`);
+    return { fight: r.fight, effects: r.effects };
+  }
+  function started(...rows: NewRow[]): Running {
+    const set = reduce(null, { type: 'add', fightId: fightId('f-s'), rows, openings: [], grid: openGrid(30, 12) }, ctx).fight;
+    return go(set, { type: 'start', openings: rows.map(r => ({ id: r.id, d20: r.id === 'X' ? 20 : 1, tie: 0 })) }).fight;
+  }
+  const standing = (f: Fight) => f.rows.find(r => r.id === 'X')!.mythic!;
+  const body = (f: Fight, name: string): Body => f.rows.find(r => r.id === name)!;
+  /** The landing of X's omen with every die it asks for at its middle face. */
+  function landing(f: Running): Command {
+    const u = body(f, 'X'), m = omenMove(u, ON)!, n = omenNeeds(f, u, ON)!;
+    const dice = Object.fromEntries(Object.entries(n.dice).map(([k, ds]) => [k, ds.map(d => Math.ceil(d.sides / 2))]));
+    return { type: 'act', by: id('X'), ability: m.ability.id, aim: m.aim, rolls: { dice, react: Object.fromEntries(n.react.map(r => [r, 10])) } as Rolls };
+  }
+  /** The fight's turns played from `f`: each of X's landing turns landed when `land` holds of the fight, else dropped by the GM, every other turn passed; the lines each command logged. */
+  function* turns(f0: Running, land: (f: Running) => boolean): Generator<{ fight: Running; said: string[]; effects: readonly Effect[] }> {
+    let f = f0;
+    for (let i = 0; i < 200; i++) {
+      const cmd: Command = runningState(f).at === 'landing' ? (land(f) ? landing(f) : { type: 'mythic', by: id('X'), step: 'drop' }) : { type: 'endTurn', by: f.currentId };
+      // the lines above the last command's newest (the log keeps its last 100, so its length stops growing)
+      const r = go(f, cmd), top = f.log[0] ? r.fight.log.indexOf(f.log[0]) : r.fight.log.length;
+      const said = r.fight.log.slice(0, top < 0 ? r.fight.log.length : top).map(l => l.text.replace(/^R\d+: /, '')).reverse();
+      f = r.fight;
+      yield { fight: f, said, effects: r.effects };
+    }
+  }
+
+  test('Zaratan\'s Dive cannot be hurt and ends after 3 rounds', () => {
+    const f0 = go(started(mythic('zaratan-the-island-that-wakes', place(5, 5)), hunter('A', place(8, 5))), { type: 'mythic', by: id('X'), step: 'next' }).fight;
+    const dive = MYTHICS['zaratan-the-island-that-wakes'].phases[1]!, since = standing(f0).since, hp = rowHp(body(f0, 'X'));
+    expect(dive.name).toBe('The Dive');
+    expect(hp, 'it dives at 55% of its max HP').toBe(Math.ceil(0.55 * body(f0, 'X').sheet.hpMax));
+    let hits = 0;
+    for (const t of turns(f0, () => false)) {
+      if (t.said.includes('Zaratan, the Island That Wakes enters The Island Wakes.')) {
+        expect(t.fight.now, 'it surfaces at its first turn once 3 rounds have passed').toBeGreaterThanOrEqual(since + 3 * RULES.fight.round);
+        expect(standing(t.fight)).toMatchObject({ phase: 2, at: 'calm' });
+        expect(hits, 'the party struck it in the Dive').toBeGreaterThan(0);
+        return;
+      }
+      expect(standing(t.fight).phase, `still diving at ${t.fight.now}`).toBe(1);
+      if (t.fight.currentId === 'A') {
+        const hit = go(t.fight, { type: 'act', by: id('A'), ability: KILL.id, aim: id('X'), rolls: { dice: {}, react: {} } });
+        expect(rowHp(body(hit.fight, 'X')), 'no damage reaches it under the waves').toBe(hp);
+        hits++;
+      }
+    }
+    throw new Error('it never surfaced');
+  });
+
+  test('the Angel\'s Final Note comes every other turn once a clock runs out', () => {
+    // shields no Note breaks, so the party stands to hear it again
+    const f0 = started(mythic('angel-of-the-last-trumpet', place(5, 5)), hunter('A', place(8, 5), 1, 5000, 1e6), hunter('B', place(9, 7), 1, 5000, 1e6));
+    const clock = MYTHICS['angel-of-the-last-trumpet'].phases[0].clock * RULES.fight.round, mine: string[] = [];
+    for (const t of turns(f0, f => f.now >= clock)) {
+      for (const l of t.said.filter(x => x.includes('The Final Note') && t.fight.now >= clock)) {
+        mine.push(l.startsWith('The Angel of the Last Trumpet is enraged: it readies The Final Note') ? 'readies' : l.startsWith('The Angel of the Last Trumpet uses The Final Note') ? 'lands' : l);
+      }
+      if (mine.length >= 4) break;
+    }
+    expect(mine.slice(0, 4)).toEqual(['readies', 'lands', 'readies', 'lands']);
+  });
+
+  test('the Fourth Rider names the hunter lowest on HP', () => {
+    const f0 = started(mythic('the-fourth-rider', place(5, 5)), hunter('A', place(8, 5), 0.9, 0), hunter('B', place(9, 7), 0.3, 0));
+    for (const t of turns(f0, () => true)) {
+      if (t.said.includes('The Fourth Rider readies Named in the Book: it lands on its next turn.')) {
+        expect(standing(t.fight)).toMatchObject({ omen: 'named', aim: id('B') });
+      }
+      if (t.effects.some(e => e.type === 'used' && e.by === 'X' && e.ability === 'mythic-named')) {
+        expect(isUp(body(t.fight, 'B')), 'the one he names dies').toBe(false);
+        expect(isUp(body(t.fight, 'A'))).toBe(true);
+        return;
+      }
+    }
+    throw new Error('no name was ever read');
+  });
 });

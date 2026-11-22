@@ -141,7 +141,7 @@ function body(name: string, side: Side, at: Place, hp?: number): NewRow {
   return {
     id: combatantId(name), name, side, ...lifeAt(kind, hp ?? 100), origin, tier: 0, place: at, mana: 10, fatigue: 0, shield: null, stagger: null, channel: null,
     threat: kind === 'monster' ? {} : null, statuses: [], readyAt: {}, abilities: [], intent: null,
-    holder: kind === 'hunter' ? { kind: 'local', hunterId: hunterId(`h-${name}`) } : null, xp: 0,
+    holder: kind === 'hunter' ? { kind: 'local', hunterId: hunterId(`h-${name}`) } : null, xp: 0, mythic: null,
   } as unknown as NewRow;
 }
 /** A running fight of M and the party `rows`, with M's threat table `threat`. */
@@ -178,15 +178,15 @@ describe('where an omen aims', () => {
     // crowd: A alone; B and C two tiles apart, each one's tile catches both in a reach of 2; B first.
     const { f: crowd, me: m5 } = fight([body('A', 'party', place(2, 2)), body('B', 'party', place(15, 15)), body('C', 'party', place(17, 15))]);
     expect(omenAim('crowd', BLAST, m5, crowd)).toEqual(place(15, 15));
-    // self and all: its own tile.
-    expect(omenAim('self', BLAST, m5, crowd)).toEqual(place(10, 10));
-    expect(omenAim('all', BLAST, m5, crowd)).toEqual(place(10, 10));
+    // self and all: itself, so the area moves with it.
+    expect(omenAim('self', BLAST, m5, crowd)).toBe(m5.id);
+    expect(omenAim('all', BLAST, m5, crowd)).toBe(m5.id);
   });
 
-  test('with no foe up to pick, an omen aims at its own tile', () => {
+  test('with no foe up to pick, an omen aims at itself', () => {
     const { f, me } = fight([body('A', 'party', place(10, 4))]);
     const down: Running = { ...f, rows: f.rows.map(b => (b.id === 'A' ? { ...b, ...lifeAt('hunter', 0) } as Body : b)) };
-    expect(omenAim('weakest', CURSE, me, down)).toEqual(place(10, 10));
+    expect(omenAim('weakest', CURSE, me, down)).toBe(me.id);
   });
 });
 

@@ -13,6 +13,8 @@ import type { Aim, UseRefusal as UseRefusal, Rolls } from './resolve.ts';
 import type { Zone, ZoneId } from './zones.ts';
 import type { ExtractionOutcome } from './extraction.ts';
 import type { Id } from '../ids.ts';
+import type { Answer, MythicRefusal } from './mythic.ts';
+import type { AnswerOutcome, OmenKey } from './mythic-types.ts';
 
 export type FightId = Id<'FightId'>;
 export const fightId = (s: string): FightId => s as FightId;
@@ -209,6 +211,12 @@ export type Command =
    * sets, never adds. No time passes and nothing is logged.
    */
   | { readonly type: 'fudge'; readonly set: FudgeSet }
+  /**
+   * The GM's hand on mythic `by`'s script (notes-11-keystones.md, design B.4, "The GM's hand"): `drop`, the omen standing
+   * is dropped and nothing lands; `next`, it enters its next phase now, its HP brought down to that phase's start. Both
+   * are the events its turns raise (mythic.ts `MythicEvent`), logged; no time passes.
+   */
+  | { readonly type: 'mythic'; readonly by: CombatantId; readonly step: 'drop' | 'next' }
   /** The GM ends the fight now. */
   | { readonly type: 'end' }
   /** The ended fight's screen is closed: no fight. */
@@ -237,7 +245,13 @@ export type Refusal = UseRefusal
   /** A `revive` of a row that is not dead. */
   | 'lifeCannot'
   /** A `fudge` whose weight is not a whole number, or whose forced face is not 1 or 20. */
-  | 'fudgeValue';
+  | 'fudgeValue'
+  /** A mythic's machine refused the event (mythic.ts `MythicRefusal`): no omen to drop, one standing, its last phase. */
+  | MythicRefusal
+  /** A `mythic` command on a row that plays no script. */
+  | 'notMythic'
+  /** On a mythic's landing turn, any use but its omen's move at the omen's aim. */
+  | 'omenDue';
 // `extra` (a second extra action in a round, kits design 8.6.1) is a use's refusal, in `UseRefusal`.
 
 export type Effect =
@@ -279,6 +293,12 @@ export type Effect =
   | { readonly type: 'burst'; readonly id: CombatantId }
   /** Row `by` used `ability`: the line the use logged, without its round (the GM's toast of what it did). */
   | { readonly type: 'used'; readonly by: CombatantId; readonly ability: AbilityId; readonly line: string }
+  /** Mythic `id` entered phase `phase` of its script (an index), at its turn or by the GM's hand: the screens mark it. */
+  | { readonly type: 'phased'; readonly id: CombatantId; readonly phase: number }
+  /** Mythic `id` announced omen `omen` of its script: it lands on its next turn unless answered. */
+  | { readonly type: 'omen'; readonly id: CombatantId; readonly omen: OmenKey }
+  /** A change met an answer (`how`) to mythic `id`'s omen, which it cancelled or weakened. */
+  | { readonly type: 'answered'; readonly id: CombatantId; readonly how: Answer; readonly outcome: Exclude<AnswerOutcome, 'none'> }
   | { readonly type: 'ended'; readonly summary: Summary }
   | { readonly type: 'refused'; readonly reason: Refusal };
 export type EffectType = Effect['type'];

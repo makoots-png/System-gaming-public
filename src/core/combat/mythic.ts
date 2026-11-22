@@ -4,7 +4,7 @@
 // `mythicJoined` moves a joining row's clock to the fight's now. What is not stored is read here: the gate's HP (which
 // row-life.ts, the one writer of a row's life, holds it at), whether it is held there, whether its clock ran out,
 // whether it is enraged, which beat comes next, which move lands, where an omen aims and which answers a change met.
-// The reducer raises its events from unit MY4.
+// The reducer raises its events (fight-turn.ts `startTurn` and `consequences`, fight.ts's landing and the GM's `mythic`).
 // A new event is a member of `MythicEvent` and its cell in every row of `MYTHIC_TABLE` (the typecheck asks), with its
 // row in tests/mythic.test.ts and its arrow in scripts/charts/mythic.ts.
 import type { Rules } from '../rules.ts';
@@ -118,6 +118,15 @@ export function mythicStep(s: MythicStanding, e: MythicEvent): MythicStanding | 
   const cell = (MYTHIC_TABLE[s.at] as TableRow<MythicStanding>)[e.type] as (s: MythicStanding, e: MythicEvent) => MythicStanding;
   return cell(s, e);
 }
+/** A row that plays a script: its standing is not null. */
+export type Scripted<R> = R & { readonly mythic: MythicStanding };
+/** Whether row `r` plays a script (a mythic's row while `fight.mythic.scripts` is on). */
+export const playsScript = <R extends { readonly mythic: MythicStanding | null }>(r: R): r is Scripted<R> => !!r.mythic;
+/** Row `r` with its standing moved by `e` (`mythicStep`), or why `e` is refused: how the reducer moves a row's standing. */
+export function mythicStepped<R extends { readonly mythic: MythicStanding | null }>(r: Scripted<R>, e: MythicEvent): R | Refused<MythicRefusal> {
+  const next = mythicStep(r.mythic, e);
+  return 'ok' in next ? next : { ...r, mythic: next };
+}
 
 // ── the derived readers ──
 /** What the readers read of a row: its standing (null on any row that is no mythic), its life and its max HP. */
@@ -136,7 +145,7 @@ export function gateOf(row: MythicRow): number {
 /** Its phase ends by its gate, is not the last, and its HP is held at the gate (or under it). */
 export function heldAtGate(row: MythicRow): boolean {
   const s = row.mythic;
-  return s !== null && phaseOf(s)?.ends === 'gate' && !inLastPhase(s) && rowHp(row) <= gateOf(row);
+  return !!s && phaseOf(s)?.ends === 'gate' && !inLastPhase(s) && rowHp(row) <= gateOf(row);
 }
 /** Its phase's clock ran out: `clock` rounds have passed since the phase began. */
 export function clockOut(s: MythicStanding, now: Tick, R: RoundRules): boolean {
@@ -174,13 +183,14 @@ export function landingMove(s: MythicStanding): { readonly key: MoveKey; readonl
  * its threat table suggests (its taunter while a taunt holds; with no entry every foe ties, so the first); `weakest`, the
  * lowest share of its max HP; `farthest`, the farthest from it; `crowd`, the body whose tile, as the move's centre,
  * catches the most foes. A blast aims at that body's tile, so stepping out of its area answers it; any other move at
- * the body, so going out of its range makes it fizzle. `self` and `all` aim at its own tile, and so does any aim with no
- * foe to pick (the move lands on no one).
+ * the body, so going out of its range makes it fizzle. `self` and `all` aim at itself, so the area moves with it (a
+ * shove one tile does not take it out of its own range of 0), and so does any aim with no foe to pick: the move then
+ * catches no one and finds no one.
  */
 export function omenAim(aim: OmenAim, move: MythicMove, me: Body, f: Running): Place | CombatantId {
   const foes = f.rows.filter(r => r.side !== me.side && isUp(r) && !warded(r, me.side) && perceivedBy(me.side, r, f));
   const chosen = aim === 'self' || aim === 'all' ? undefined : picked(aim, move, me, foes, f);
-  if (!chosen) return me.place;
+  if (!chosen) return me.id;
   return move.kind === 'blast' ? chosen.place : chosen.id;
 }
 /** The first of `foes` with the highest `score`. */

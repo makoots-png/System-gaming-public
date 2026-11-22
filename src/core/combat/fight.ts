@@ -29,9 +29,10 @@ import { combatantId } from './ability-types.ts';
 import type { Ability, CombatantId, Outcome } from './ability-types.ts';
 import { channelCan, channelStep, released } from './fight-channel.ts';
 import { eventsOf, raised } from './triggers.ts';
-import { burstsOf, consequences, D20, ended, held, holdsSide, logged, marked, overIf, partyView, giverOf, payDue, rowOf, sentAway, sheetBacks, spreadTo, startTurn, triggered, unwarded, withRow, zoneEnds } from './fight-turn.ts';
+import { burstsOf, consequences, D20, ended, held, holdsSide, logged, marked, omenMove, overIf, partyView, phasedRow, giverOf, payDue, retaunted, rowOf, sentAway, sheetBacks, spreadTo, startTurn, triggered, untaunted, unwarded, withRow, zoneEnds } from './fight-turn.ts';
 import { refilledRow, rowLifeAfter, rowLifeTakes } from './row-life.ts';
-import { mythicJoined } from './mythic.ts';
+import { mythicJoined, mythicStepped, playsScript, scriptOf } from './mythic.ts';
+import { isRefused } from '../save-step.ts';
 import { summonRow } from './rows.ts';
 import { crowded } from './summons.ts';
 import { FORCED_FACES, line, MAX_ROWS, MAX_STATUSES, pendingKey } from './fight-types.ts';
@@ -451,6 +452,8 @@ function setIntent<F extends Setup | Running>(f: F, cmd: Extract<Command, { type
   if (!u) return refused(f, 'unknown');
   if (u.kind !== 'monster') return refused(f, 'notMonster');
   if (!isUp(u)) return refused(f, 'down');
+  // a mythic's omen is its intent while it stands (fight-view.ts reads it from the standing), so the GM announces no other
+  if (u.mythic && u.mythic.at !== 'calm') return refused(f, 'omenStands');
   const a = u.abilities.find(x => x.id === cmd.ability);
   if (!a) return refused(f, 'unknownAbility');
   const badAim = aimRefusal(f, cmd.aim);
@@ -600,6 +603,63 @@ function fudge<F extends Setup | Running>(f: F, cmd: Extract<Command, { type: 'f
   return done(next.fudge === f.fudge ? f : next, []);
 }
 
+// ── a mythic's script (notes-11-keystones.md, design B.3 and B.4) ──
+const sameAim = (x: Aim, y: Aim): boolean => typeof x === 'string' || typeof y === 'string' ? x === y : x.x === y.x && x.y === y.y;
+/**
+ * The `act` of the fight's `landing` state (design B.3, "The fight's own table gains a running state"): the mythic whose
+ * omen stands lands it, taking only its landing move (`omenMove`) at the aim it was announced at; any other ability or
+ * aim is refused `omenDue`. No taunt binds it (`untaunted`): a taunt answers an omen only where the omen names it. A
+ * move that cannot reach its aim (its body gone, down, hidden, or out of range: `noTarget`, `range`) fizzles: nothing
+ * lands, the turn is spent. A move that lands puts its `self` status on the mythic (a doom's Crescendo), and what follows
+ * is any use's (`landed`). A forced act of another row is `act`'s.
+ */
+const landOmen: Step<'running', 'act'> = (f, cmd, ctx) => {
+  const state = runningState(f);
+  if (state.at !== 'landing' || cmd.by !== state.id) return act(f, cmd, ctx);
+  const R = ctx.rules, u = rowOf(f, state.id)!, m = omenMove(u, R);
+  if (!m) return act(f, cmd, ctx);
+  if (cmd.ability !== m.ability.id || !sameAim(cmd.aim, m.aim)) return refused(f, 'omenDue');
+  const free = untaunted(u), rows = f.rows.map(r => r.id === u.id ? free : r);
+  const r = resolve(m.ability, free, rows, m.aim, f.grid, cmd.rolls, f.now, R, f.fog);
+  if (r.ok === false && r.reason !== 'noTarget' && r.reason !== 'range') return refused(f, r.reason);
+  const used = r.ok ? retaunted(r.bodies.find(b => b.id === u.id)!, u, f.now, R) : u;
+  if (!playsScript(used)) return refused(f, 'notMythic');
+  const stood = mythicStepped<Body>({ ...used, intent: null }, { type: r.ok ? 'land' : 'fizzle' });
+  if (isRefused(stood)) return refused(f, stood.why);
+  if (r.ok === false) {
+    const spent = acted(stood, f.now, m.ability.cost.time, R.fight);
+    return after(f, withRow(f, spent), u.id, line(`${m.ability.name} finds no one.`, [u.id]), ctx, []);
+  }
+  const self = m.move.self;
+  const me = self ? withStatuses(stood, applyStatus(stood.statuses, statusOn(self.def, { key: self.key, source: { id: u.id, tier: u.tier }, until: null, since: f.now, settledAt: f.now })), f.now, R) : stood;
+  const at = placeOf(m.aim, f.rows)!;
+  return landed(f, { a: m.ability, u, rows: f.rows, aim: m.aim, at, r: { ...r, bodies: r.bodies.map(b => b.id === u.id ? me : b) }, taken: [], head: `${u.name} uses ${m.ability.name}`, by: u.id }, ctx);
+};
+
+/**
+ * The GM's hand on a mythic's script (design B.4, "The GM's hand"), the same events its turns raise: `drop`, the omen
+ * standing goes and nothing lands; `next`, it enters its next phase now (`phasedRow`, its HP brought down to the phase's
+ * start). Refused on a row that plays no script (`notMythic`) or is down, and with the machine's reasons (`noOmen`,
+ * `lastPhase`). No time passes; both are logged.
+ */
+function mythic(f: Running, cmd: Extract<Command, { type: 'mythic' }>, ctx: Ctx): Result {
+  const u = rowOf(f, cmd.by);
+  if (!u) return refused(f, 'unknown');
+  if (!playsScript(u)) return refused(f, 'notMythic');
+  if (!isUp(u)) return refused(f, 'down');
+  const s = u.mythic, script = scriptOf(s);
+  if (cmd.step === 'drop') {
+    const x = mythicStepped<Body>(u, { type: 'drop' });
+    if (isRefused(x)) return refused(f, x.why);
+    const omen = s.at === 'calm' ? '' : script.omens[s.omen]?.name ?? '';
+    return gmChange(f, x, line(`The GM drops ${omen}: ${u.name} lands nothing.`, [u.id]), ctx);
+  }
+  const x = phasedRow(u, 'gm', f.now, ctx.rules);
+  if (isRefused(x)) return refused(f, x.why);
+  const r = gmChange(f, x, line(`${u.name} enters ${script.phases[s.phase + 1]!.name} (GM).`, [u.id]), ctx);
+  return { ...r, effects: [...r.effects, { type: 'phased', id: u.id, phase: s.phase + 1 }] };
+}
+
 // ── the ground ──
 /** A GM's change to the map or its zones, which takes no time: while running it follows as any change does. */
 function groundChange<F extends Setup | Running>(f: F, g: F, said: LogLine, ctx: Ctx): Result {
@@ -687,29 +747,32 @@ function extract<F extends Fight>(f: F, cmd: Extract<Command, { type: 'extract' 
 // ── the table ──
 const ACTING: Row<'running'> = {
   add: addTo, remove: removeRunning, start: null, act, move, endTurn, release, setIntent, reveal, place: placeRow, adjust, refill, revive, status, settle: settleDue,
-  paint, zoneAdd, zoneRemove, resize, arm, extract, fudge, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
+  paint, zoneAdd, zoneRemove, resize, arm, extract, fudge, mythic, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
 };
 const TABLE: { readonly [S in Exclude<FightState, 'running'>]: Row<S> } & { readonly running: { readonly [S in RunningState['at']]: Row<'running'> } } = {
   none: {
     add: create, remove: null, start: null, act: null, move: null, endTurn: null, release: null, setIntent: null, reveal: null, place: null, adjust: null, refill: null,
-    revive: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract: null, fudge: null, end: null, clear: null,
+    revive: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract: null, fudge: null, mythic: null, end: null, clear: null,
   },
   setup: {
     add: addTo, remove: removeInSetup, start, act: null, move: null, endTurn: null, release: null, setIntent, reveal, place: placeRow, adjust, refill, revive, status,
-    settle: null, paint, zoneAdd, zoneRemove, resize, arm, extract, fudge, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
+    // a mythic's script starts when the fight does, so the GM's hand on it waits for the start
+    settle: null, paint, zoneAdd, zoneRemove, resize, arm, extract, fudge, mythic: null, end: (f, _cmd, ctx) => end(f, ctx), clear: () => done(null, []),
   },
-  // a running fight's two states (`runningState`): its turn's actor acts, or the fight owes dice first
+  // a running fight's three states (`runningState`): its turn's actor acts, the fight owes dice first, or a mythic lands its omen
   running: {
     acting: ACTING,
     // rules-3.2: the owed dice are rolled before a turn can end (the owner, Nov 22: "Yes"). Act, move and endTurn each
     // end the turn (`after`), so all three wait here until the dice are paid (`owed`: a settle or a broken channel's release).
     owing: { ...ACTING, act: null, move: null, endTurn: null },
+    // design B.3: the turn of a mythic whose omen stands is the omen's: it lands (or fizzles), and nothing else ends it
+    landing: { ...ACTING, act: landOmen, move: null, endTurn: null, release: null, setIntent: null },
   },
   // The rows of an ended fight are the summary's record: the GM edits the hunters' sheets from here on, and may still
   // extract a shadow from a fallen monster. It holds no weight to set: the GM's fudge ended with the fight.
   ended: {
     add: null, remove: null, start: null, act: null, move: null, endTurn: null, release: null, setIntent: null, reveal: null, place: null, adjust: null, refill: null,
-    revive: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract, fudge: null, end: null, clear: () => done(null, []),
+    revive: null, status: null, settle: null, paint: null, zoneAdd: null, zoneRemove: null, resize: null, arm: null, extract, fudge: null, mythic: null, end: null, clear: () => done(null, []),
   },
 };
 
@@ -739,15 +802,18 @@ export function owed(f: Fight | null): Owed[] {
 }
 
 /**
- * A running fight's state: `acting`, its turn's actor may act; or `owing`, it waits on dice first (`owed`, in the order
- * they are paid). Read from the fight as it stands, so it has no writer of its own: a pending entry paid or a broken
- * channel gone off leaves `owing` by itself.
+ * A running fight's state: `acting`, its turn's actor may act; `owing`, it waits on dice first (`owed`, in the order
+ * they are paid); `landing`, its turn's actor is mythic `id`, whose omen stands and lands now (design B.3). Read from the
+ * fight as it stands, in that order, so it has no writer of its own: a pending entry paid, a broken channel gone off or
+ * an omen landed leaves its state by itself.
  */
-export type RunningState = { readonly at: 'acting' } | { readonly at: 'owing'; readonly owed: readonly [Owed, ...Owed[]] };
-export const RUNNING_STATES = ['acting', 'owing'] as const satisfies readonly RunningState['at'][];
+export type RunningState = { readonly at: 'acting' } | { readonly at: 'owing'; readonly owed: readonly [Owed, ...Owed[]] } | { readonly at: 'landing'; readonly id: CombatantId };
+export const RUNNING_STATES = ['acting', 'owing', 'landing'] as const satisfies readonly RunningState['at'][];
 export function runningState(f: Running): RunningState {
   const o = owed(f);
-  return o.length ? { at: 'owing', owed: o as [Owed, ...Owed[]] } : { at: 'acting' };
+  if (o.length) return { at: 'owing', owed: o as [Owed, ...Owed[]] };
+  const cur = rowOf(f, f.currentId);
+  return cur && isUp(cur) && cur.mythic && cur.mythic.at !== 'calm' ? { at: 'landing', id: cur.id } : { at: 'acting' };
 }
 
 /**

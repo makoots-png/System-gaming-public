@@ -22,8 +22,12 @@ import type { Trigger } from '../../src/core/combat/triggers.ts';
 import { abilityOf } from '../../src/core/registry/ability-kinds.ts';
 import { needs } from '../../src/core/combat/resolve.ts';
 import type { Aim, Rolls } from '../../src/core/combat/resolve.ts';
-import { fightId, pendingKey } from '../../src/core/combat/fight.ts';
-import type { Command, Ctx, Fight, NewRow, Opening } from '../../src/core/combat/fight.ts';
+import { fightId, pendingKey, runningState } from '../../src/core/combat/fight.ts';
+import { omenMove, omenNeeds } from '../../src/core/combat/fight-turn.ts';
+import { monsterRows } from '../../src/core/combat/rows.ts';
+import { seedMonsters } from '../../src/core/registry/monsters.ts';
+import type { Command, Ctx, Fight, NewRow, Opening, Running } from '../../src/core/combat/fight.ts';
+import type { Body } from '../../src/core/combat/effect-ops.ts';
 import { zoneId } from '../../src/core/combat/zones.ts';
 import { EXTRACTION_OUTCOMES } from '../../src/core/combat/extraction.ts';
 import type { Zone } from '../../src/core/combat/zones.ts';
@@ -192,14 +196,26 @@ export const ROSTER: readonly NewRow[] = [
     { stagger: { fill: 0, max: 30, hit: 25 }, xp: 300, statuses: [THORNS, holding('resonance', RESONANCE, 1)] }),
 ];
 
+/**
+ * A mythic playing the Fourth Rider's script (design B.6), at rank D so it fits the roster's fights: its second turn
+ * names a hunter, its third lands the name; Brakk's stun and Mira's snare cancel it, a hit of 5% of its HP weakens it.
+ * Made with the switch on, as a table that turned it on makes it; the reducer plays any row that holds a standing. It is
+ * not in `ROSTER` (the odds' random fights play `sensible`, which lands no omen until unit MY5), and joins a third of the
+ * random fights, chosen by the fight's id so the seeds of the others draw as they did.
+ */
+export const MYTHIC: NewRow = monsterRows({ ...seedMonsters(RULES).find(m => m.script === 'the-fourth-rider')!, rank: 'D' }, [combatantId('c-rider')],
+  { ...RULES, fight: { ...RULES.fight, mythic: { ...RULES.fight.mythic, scripts: true } } })[0]!;
+/** Whether the random fight of id `id` holds the mythic: a third of them, by the id's characters. */
+const holdsMythic = (id: string): boolean => [...id].reduce((n, c) => n + c.charCodeAt(0), 0) % 3 === 0;
+
 // ── dice from the seed ──
 const roll = (g: Rng, d: Dice): number => Array.from({ length: d.count }, () => g.int(1, d.sides)).reduce((a, b) => a + b, 0);
-/** The dice `needs` asks for, rolled; now and then one is left out, so the reducer must refuse. */
-function rollsFor(g: Rng, fight: Fight, by: CombatantId, a: Ability, aim: Aim): Rolls {
+/** The dice `needs` asks for (`asked`, when given: a landing's), rolled; now and then one is left out, so the reducer must refuse. */
+function rollsFor(g: Rng, fight: Fight, by: CombatantId, a: Ability, aim: Aim, asked?: ReturnType<typeof needs>): Rolls {
   if (fight.phase !== 'running') return { dice: {}, react: {} };
   const user = fight.rows.find(r => r.id === by);
   if (!user) return { dice: {}, react: {} };
-  const n = needs(a, user, fight.rows, aim, fight.grid, fight.now, RULES);
+  const n = asked ?? needs(a, user, fight.rows, aim, fight.grid, fight.now, RULES);
   const dice = Object.fromEntries(Object.entries(n.dice).map(([id, ds]) => [id, (ds as readonly Dice[]).map(d => roll(g, d))]));
   const react = Object.fromEntries(n.react.map(id => [id, g.int(1, 20)]));
   const second = n.second?.length ? Object.fromEntries(n.second.map(id => [id, g.int(1, 20)])) : null;
@@ -228,6 +244,13 @@ function gmFudge(g: Rng, id: CombatantId): Command {
   if (g.chance(0.3)) return { type: 'fudge', set: { kind: 'force', id, face: g.pick([1, 20, null] as const) } };
   const scope = g.chance(0.5) ? { kind: 'side', side: g.pick(['party', 'foe'] as const) } as const : { kind: 'row', id } as const;
   return { type: 'fudge', set: { kind: 'weight', scope, n: g.chance(0.05) ? 1.5 : g.int(-3, 3) } };
+}
+/** The GM's hand on the mythic's script (design B.4): mostly on the mythic, now and then on another row, which is refused. */
+const gmMythic = (g: Rng, mythic: Body, anyId: () => CombatantId): Command => ({ type: 'mythic', by: g.chance(0.9) ? mythic.id : anyId(), step: g.pick(['drop', 'next'] as const) });
+/** The mythic's landing turn: its omen's move at its aim (fight-turn.ts `omenMove`), with the dice it asks for. */
+function landing(g: Rng, fight: Running, u: Body): Command | null {
+  const m = omenMove(u, RULES), n = omenNeeds(fight, u, RULES);
+  return m && n && { type: 'act', by: u.id, ability: m.ability.id, aim: m.aim, rolls: rollsFor(g, fight, u.id, m.ability, m.aim, n) };
 }
 const gmAdjust = (g: Rng, id: CombatantId): Command => ({
   type: 'adjust', id, ...(g.chance(0.8) ? { hp: g.int(-60, 30) } : {}), ...(g.chance(0.3) ? { mana: g.int(-5, 5) } : {}),
@@ -273,13 +296,15 @@ export function randomCommand(g: Rng, fight: Fight | null, fresh: () => string):
       const rows = g.chance(0.2) ? ROSTER.filter(() => g.chance(0.5)) : ROSTER;
       const fog = g.chance(0.3) ? { sight: tiles(g.int(3, 25)), seen: '0'.repeat(GRID.w * GRID.h) } : null;
       // Kai comes in holding a Boundary (kits design 1.8), so its zone price meets one as often as the blocks of eleven rows allow
-      const zones = rows.some(r => r.id === 'c-kai') ? [KAI_BOUNDARY] : [];
-      return { type: 'add', fightId: fightId(fresh()), rows, openings: [], grid: GRID, fog, zones };
+      const zones = rows.some(r => r.id === 'c-kai') ? [KAI_BOUNDARY] : [], id = fresh();
+      return { type: 'add', fightId: fightId(id), rows: holdsMythic(id) ? [...rows, MYTHIC] : rows, openings: [], grid: GRID, fog, zones };
     }
     return g.pick<Command>([{ type: 'end' }, { type: 'clear' }, { type: 'start', openings: [] }]);
   }
   const ids = fight.rows.map(r => r.id);
   const anyId = (): CombatantId => ids.length && !g.chance(0.05) ? g.pick(ids) : combatantId('c-ghost');
+  // the GM's hand on a mythic takes every other fudge of a fight that holds one, by its log's length, so no draw moves elsewhere
+  const mythic = fight.rows.find(r => r.mythic), fudge = (): Command => (mythic && fight.log.length % 2 === 0 ? gmMythic(g, mythic, anyId) : gmFudge(g, anyId()));
   const monster = (): NewRow => {
     const id = fresh();
     return row(id, `Wolf ${id}`, 'foe', 'monster', mon('D', 'skirmisher', 'normal'), [BITE], { xp: 50, ...(g.chance(0.3) ? { place: anyPlace(g) } : {}) });
@@ -308,7 +333,7 @@ export function randomCommand(g: Rng, fight: Fight | null, fresh: () => string):
       case 'revive': return gmRevive(g, fight, anyId);
       case 'status': return gmStatus(g, anyId());
       case 'ground': return ground(g, fight, () => fight.rows.length ? g.pick(fight.rows).place : anyPlace(g));
-      case 'fudge': return gmFudge(g, anyId());
+      case 'fudge': return fudge();
     }
   }
   const cur = fight.rows.find(r => r.id === fight.currentId)!;
@@ -320,6 +345,9 @@ export function randomCommand(g: Rng, fight: Fight | null, fresh: () => string):
   ] as const);
   switch (kind) {
     case 'act': case 'force': {
+      // a mythic's landing turn takes only its omen's move (design B.3): mostly that, now and then any of its abilities
+      const lands = runningState(fight).at === 'landing' && by === cur.id && g.chance(0.85) ? landing(g, fight, cur) : null;
+      if (lands) return lands;
       const a = user.abilities.length && !g.chance(0.03) ? g.pick(user.abilities) : STRIKE;
       const foes = fight.rows.filter(r => r.side !== user.side && rowHp(r) > 0), allies = fight.rows.filter(r => r.side === user.side && rowHp(r) > 0);
       const aim: Aim = a.aim === 'place' ? (foes.length && g.chance(0.8) ? near(g, g.pick(foes).place, 1) : anyPlace(g))
@@ -355,7 +383,7 @@ export function randomCommand(g: Rng, fight: Fight | null, fresh: () => string):
     case 'revive': return gmRevive(g, fight, anyId);
     case 'status': return gmStatus(g, g.chance(0.3) ? cur.id : anyId());
     case 'ground': return ground(g, fight, () => g.pick(fight.rows).place);
-    case 'fudge': return gmFudge(g, anyId());
+    case 'fudge': return fudge();
     // the GM's arm, or a player's through the room (kits design 8.4.2): one of the row's reactions, another ability, or none
     case 'arm': {
       const who = g.chance(0.9) ? g.pick(fight.rows) : user, mine = who.abilities.filter(a => a.react);

@@ -3,7 +3,7 @@
 // the walking cost of 4.6 and the default lines of 5.2. Random play is tests/fight-model.test.ts.
 import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
-import type { Perk } from '../src/core/rules.ts';
+import type { Perk, Rules } from '../src/core/rules.ts';
 import { newHunter } from '../src/core/save.ts';
 import { sheetEdit } from '../src/core/hunter/grant.ts';
 import { REVIVE_HP } from '../src/core/hunter/vitals.ts';
@@ -13,7 +13,7 @@ import type { Stats } from '../src/core/stats.ts';
 import { kitGear } from '../src/core/hunter/derive.ts';
 import type { MonsterKind } from '../src/core/hunter/derive.ts';
 import { parseFormula } from '../src/core/formula.ts';
-import { dist, place, tiles } from '../src/core/combat/space.ts';
+import { dist, openGrid, place, tiles } from '../src/core/combat/space.ts';
 import type { Place, Side, Terrain } from '../src/core/combat/space.ts';
 import { MAX_ZONES, zoneId, zoneStep, zoneTiles } from '../src/core/combat/zones.ts';
 import { ZONE_WALK } from './models/zone-events.ts';
@@ -54,6 +54,9 @@ import type { Command, CommandType, Ctx, Effect, Fight, ForcedFace, Fudge, Fudge
 import { needs } from '../src/core/combat/resolve.ts';
 import type { Rolls } from '../src/core/combat/resolve.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
+import { omenMove, omenNeeds } from '../src/core/combat/fight-turn.ts';
+import { monsterRows } from '../src/core/combat/rows.ts';
+import { seedMonsters } from '../src/core/registry/monsters.ts';
 import { lifeAt } from './fixtures/life.ts';
 import type { RowPatch } from './fixtures/life.ts';
 const sheetKey = (s: string) => parseSheetKey(s) ?? (() => { throw new Error(`not a sheet key: ${s}`); })();
@@ -2426,7 +2429,7 @@ describe('the fudge: the GM\'s hidden weight on the fight\'s dice (notes-8-fudge
 describe('the fight\'s table: every state under every command (SMX-rules-3)', () => {
   const ALL: Record<CommandType, true> = {
     add: true, remove: true, start: true, act: true, move: true, endTurn: true, release: true, setIntent: true, reveal: true, place: true, adjust: true, refill: true,
-    revive: true, status: true, settle: true, paint: true, zoneAdd: true, zoneRemove: true, resize: true, arm: true, extract: true, fudge: true, end: true, clear: true,
+    revive: true, status: true, settle: true, paint: true, zoneAdd: true, zoneRemove: true, resize: true, arm: true, extract: true, fudge: true, mythic: true, end: true, clear: true,
   };
   const SETUP: CommandType[] = ['add', 'remove', 'start', 'setIntent', 'reveal', 'place', 'adjust', 'refill', 'revive', 'status', 'paint', 'zoneAdd', 'zoneRemove', 'resize', 'arm', 'extract', 'fudge', 'end', 'clear'];
   const RUNNING = (Object.keys(ALL) as CommandType[]).filter(t => t !== 'start');
@@ -2506,5 +2509,203 @@ describe('a status whose time ran out counts for no reader while its bearer\'s s
     const MARKED = ability('strike', 'marked', '10', { ...FAR, gates: [{ kind: 'holds', key: statusKey('mark'), on: 'target', atLeast: 1 }] });
     const use = (until: number) => reduce(running(play(...atA({ abilities: [MARKED] }, owing('mark', until)))), hit('A', 'M', MARKED), ctx).effects.find(e => e.type === 'refused');
     expect([use(500), use(2000)]).toEqual([{ type: 'refused', reason: 'gated' }, undefined]);
+  });
+});
+
+describe('a mythic plays its script (notes-11-keystones.md, design B.3 and B.4)', () => {
+  // Every number is the script's own (registry/mythics.ts): the Angel's First Breath begins at 65% of its max HP and its
+  // bar at 1.25 of its kind's; the Fourth Rider's book opens at 70%, its Named in the Book is a curse of range 24 aimed
+  // at the hunter lowest on HP, cancelled by a stun and weakened by 5% of its max HP taken; the Angel's Note is its last
+  // phase, whose Final Note a broken bar weakens.
+  const ON: Rules = { ...RULES, fight: { ...RULES.fight, mythic: { ...RULES.fight.mythic, scripts: true } } };
+  const on: Ctx = { rules: ON };
+  const seed = (script: string) => seedMonsters(RULES).find(m => m.script === script)!;
+  const mythic = (script: string, at: Place): NewRow => ({ ...monsterRows(seed(script), [id('X')], ON)[0]!, place: at });
+  /** Armor and resist so high an omen leaves a hunter standing, and still takes HP from it (rule 12). */
+  const PLATE = st('plate', null, { op: 'sheet', key: 'armor', amount: { kind: 'number', value: 5000 } }, { op: 'sheet', key: 'resist', amount: { kind: 'number', value: 5000 } });
+  const sure = (name: string, text: string | null, o: Partial<Ability> = {}) => ability('strike', name, text, { ...FAR, delivery: { kind: 'sure' }, ...o });
+  const KILL = sure('kill', '99999');
+  /** A hit of 300 before armor: more than the Angel's Note bar holds, and less than the HP it holds then. */
+  const HEAVY = sure('heavy', '300');
+  /** A hit of 150 before armor: over 5% of the Fourth Rider's max HP, under what its stagger bar holds. */
+  const BURST = sure('burst', '150');
+  const STUN = sure('stun', null, { effect: null, ops: [{ op: 'applyStatus', key: statusKey('stunned'), def: { label: 'Stunned', desc: '', ops: [{ op: 'hold' }] }, duration: tick(800) }] });
+  const TAUNT = sure('taunt', null, { effect: null, ops: [{ op: 'applyStatus', key: statusKey('taunted'), def: { label: 'Taunted', desc: '', ops: [{ op: 'taunt' }] }, duration: tick(3000) }] });
+  /** A hunter of the party at `at`, plated, quick enough to act between a mythic's turns. */
+  const hunter = (name: string, at: Place, o: RowPatch<NewRow> = {}) => row(name, 'party', { place: at, statuses: [PLATE, haste(100)], abilities: [HIT, KILL, HEAVY, BURST, STUN, TAUNT], ...o });
+
+  function go(fight: Fight | null, ...commands: Command[]): { fight: Fight | null; effects: Effect[] } {
+    let at = fight;
+    const effects: Effect[] = [];
+    for (const cmd of commands) {
+      const r = reduce(at, cmd, on);
+      const no = r.effects.find(e => e.type === 'refused');
+      if (no) throw new Error(`${cmd.type} refused: ${JSON.stringify(no)}`);
+      effects.push(...r.effects);
+      at = r.fight;
+    }
+    return { fight: at, effects };
+  }
+  /** A fight under way with `rows`, the mythic X first. */
+  const begun = (...rows: NewRow[]) => running(go(null, { type: 'add', fightId: fightId('f-m'), rows, openings: [], grid: openGrid(40, 12) }, start(['X', 20], ...rows.filter(r => r.id !== 'X').map((r): [string, number] => [r.id, 1]))));
+  const gm = (step: 'drop' | 'next'): Command => ({ type: 'mythic', by: id('X'), step });
+  /** Each turn passed (the mythic's landing turns dropped by the GM) until `done` holds of the fight. */
+  function until(fight: Running, done: (f: Running) => boolean): { fight: Running; effects: Effect[] } {
+    let f = fight;
+    const effects: Effect[] = [];
+    for (let i = 0; i < 60 && !done(f); i++) {
+      const r = go(f, runningState(f).at === 'landing' ? gm('drop') : pass(f.currentId));
+      effects.push(...r.effects);
+      f = running(r);
+    }
+    if (!done(f)) throw new Error('never reached');
+    return { fight: f, effects };
+  }
+  const standing = (f: Fight | null) => body(f, 'X').mythic!;
+  const omenUp = (f: Running) => standing(f).at !== 'calm';
+  const turnOf = (who: string) => (f: Running) => f.currentId === who;
+  /** The landing of X's omen with every die it asks for at its middle face. */
+  function landing(f: Running): Command {
+    const u = body(f, 'X'), m = omenMove(u, ON)!, n = omenNeeds(f, u, ON)!;
+    const dice = Object.fromEntries(Object.entries(n.dice).map(([k, ds]) => [k, ds.map(d => Math.ceil(d.sides / 2))]));
+    return { type: 'act', by: id('X'), ability: m.ability.id, aim: m.aim, rolls: { dice, react: Object.fromEntries(n.react.map(r => [r, 10])) } as Rolls };
+  }
+  const logs = (f: Fight | null) => f!.log.map(l => l.text.replace(/^R\d+: /, ''));
+
+  test('a mythic held at its gate enters its next phase on its next turn', () => {
+    const f0 = until(begun(mythic('angel-of-the-last-trumpet', place(5, 5)), hunter('A', place(6, 5))), turnOf('A')).fight;
+    const x = body(f0, 'X'), gate = Math.ceil(0.65 * x.sheet.hpMax);
+    const held = running(go(f0, hit('A', 'X', KILL)));
+    expect(rowHp(body(held, 'X')), 'a hit of any size leaves it at 65%').toBe(gate);
+    expect(logs(held)).toContain('The Angel of the Last Trumpet is held at the gate.');
+    const r = until(held, f => standing(f).phase === 1);
+    expect(r.effects).toContainEqual({ type: 'phased', id: id('X'), phase: 1 });
+    expect(logs(r.fight)).toContain('The Angel of the Last Trumpet enters The First Breath.');
+    expect(r.fight.currentId, 'the phase change spent its turn').not.toBe(id('X'));
+    expect(body(r.fight, 'X').statuses.map(s => s.key), 'it wears Drawn Breath').toContain(statusKey('mythic-drawn-breath'));
+    expect(body(r.fight, 'X').stagger!.max, 'its bar is 1.25 of its kind\'s, empty').toBe(x.stagger!.max * 1.25);
+  });
+
+  test('an omen announced on its turn lands on its next', () => {
+    const f0 = begun(mythic('angel-of-the-last-trumpet', place(5, 5)), hunter('A', place(8, 5)));
+    const told = until(f0, omenUp);
+    expect(told.effects).toContainEqual({ type: 'omen', id: id('X'), omen: 'stars' });
+    expect(logs(told.fight)).toContain('The Angel of the Last Trumpet readies Stars Fall: it lands on its next turn.');
+    expect(standing(told.fight)).toMatchObject({ at: 'omen', omen: 'stars', aim: place(8, 5), beat: 1 });
+    expect(told.fight.currentId, 'announcing spent its turn').not.toBe(id('X'));
+    const due = until(told.fight, turnOf('X')).fight;
+    expect(runningState(due)).toEqual({ at: 'landing', id: id('X') });
+    const hp = rowHp(body(due, 'A')), r = go(due, landing(due));
+    expect(rowHp(body(r.fight, 'A')), 'Stars Fall lands on the tile it was aimed at').toBeLessThan(hp);
+    expect(standing(r.fight)).toMatchObject({ at: 'calm', beat: 2 });
+    expect(r.effects.some(e => e.type === 'used' && e.by === 'X' && e.ability === 'mythic-stars-fall')).toBe(true);
+  });
+
+  test('a stun on a mythic cancels an omen whose interrupt cancels', () => {
+    const told = until(begun(mythic('the-fourth-rider', place(5, 5)), hunter('A', place(8, 5))), omenUp);
+    const r = go(until(told.fight, turnOf('A')).fight, hit('A', 'X', STUN));
+    expect(standing(r.fight).at).toBe('calm');
+    expect(r.effects).toContainEqual({ type: 'answered', id: id('X'), how: 'interrupt', outcome: 'cancel' });
+    expect(logs(r.fight)).toContain('The Fourth Rider is stunned by A: Named in the Book is cancelled.');
+  });
+
+  test('a broken stagger bar weakens an omen whose stagger weakens', () => {
+    const f0 = running(go(begun(mythic('angel-of-the-last-trumpet', place(5, 5)), hunter('A', place(8, 5))), gm('next'), gm('next')));
+    const told = until(f0, omenUp);
+    expect(standing(told.fight)).toMatchObject({ omen: 'note' });
+    const f1 = until(told.fight, turnOf('A')).fight, bar = body(f1, 'X').stagger!, hp = rowHp(body(f1, 'X'));
+    const r = go(f1, hit('A', 'X', HEAVY));
+    expect(hp - rowHp(body(r.fight, 'X')), 'the hit was more than its bar holds').toBeGreaterThan(bar.max - bar.fill);
+    expect(r.effects).toContainEqual({ type: 'staggered', id: id('X') });
+    expect(standing(r.fight).at).toBe('faltering');
+    expect(r.effects).toContainEqual({ type: 'answered', id: id('X'), how: 'stagger', outcome: 'weaken' });
+    expect(logs(r.fight)).toContain('The Angel of the Last Trumpet\'s stagger bar breaks: The Final Note will land as The Broken Note.');
+    expect(omenMove(body(r.fight, 'X'), ON)!.ability.id).toBe(abilityId('mythic-broken-note'));
+  });
+
+  test('enough damage weakens an omen', () => {
+    const told = until(begun(mythic('the-fourth-rider', place(5, 5)), hunter('A', place(8, 5))), omenUp);
+    const f1 = until(told.fight, turnOf('A')).fight, x = body(f1, 'X');
+    const small = go(f1, hit('A', 'X'));
+    expect(x.sheet.hpMax * 0.05, 'a hit under 5% of its max HP').toBeGreaterThan(rowHp(x) - rowHp(body(small.fight, 'X')));
+    expect(standing(small.fight).at).toBe('omen');
+    const r = go(f1, hit('A', 'X', BURST));
+    expect(rowHp(x) - rowHp(body(r.fight, 'X'))).toBeGreaterThanOrEqual(x.sheet.hpMax * 0.05);
+    expect(r.effects.some(e => e.type === 'staggered'), 'the hit left its bar whole').toBe(false);
+    expect(standing(r.fight).at).toBe('faltering');
+    expect(r.effects).toContainEqual({ type: 'answered', id: id('X'), how: 'burst', outcome: 'weaken' });
+    expect(logs(r.fight)).toContain('The Fourth Rider loses 5% of its HP: Named in the Book will land as Struck from the Book.');
+  });
+
+  test('an omen aimed at a body out of range finds no one', () => {
+    const told = until(begun(mythic('the-fourth-rider', place(1, 5)), hunter('A', place(3, 5))), omenUp);
+    expect(standing(told.fight)).toMatchObject({ omen: 'named', aim: id('A') });
+    const away = running(go(told.fight, { type: 'place', id: id('A'), to: place(30, 5) }));
+    const due = until(away, turnOf('X')).fight, hp = rowHp(body(due, 'A'));
+    const r = go(due, landing(due));
+    expect(logs(r.fight)).toContain('Named in the Book finds no one.');
+    expect(rowHp(body(r.fight, 'A'))).toBe(hp);
+    expect(standing(r.fight).at).toBe('calm');
+    expect(running(r).currentId, 'the fizzle spent its turn').not.toBe(id('X'));
+  });
+
+  test('the landing turn takes only the omen\'s move', () => {
+    const told = until(begun(mythic('the-fourth-rider', place(5, 5)), hunter('A', place(8, 5))), omenUp);
+    const due = until(told.fight, turnOf('X')).fight, x = body(due, 'X'), omen = landing(due) as Extract<Command, { type: 'act' }>;
+    expect(runningState(due)).toEqual({ at: 'landing', id: id('X') });
+    refuses(due, { ...omen, ability: x.abilities[0]!.id }, 'omenDue');
+    refuses(due, { ...omen, aim: body(due, 'A').place }, 'omenDue');
+    for (const cmd of [pass('X'), { type: 'move', by: id('X'), to: place(5, 6) } as Command, { type: 'setIntent', by: id('X'), ability: x.abilities[0]!.id, aim: id('A') } as Command]) {
+      expect(can(due, cmd.type)).toBe(false);
+      refuses(due, cmd, 'notNow');
+    }
+    expect(go(due, omen).effects.some(e => e.type === 'refused')).toBe(false);
+  });
+
+  test('a taunt does not move an omen\'s aim', () => {
+    const told = until(begun(mythic('the-fourth-rider', place(5, 5)), hunter('A', place(8, 5), { hp: 20 }), hunter('B', place(9, 6))), omenUp);
+    expect(standing(told.fight), 'Named in the Book names the hunter lowest on HP').toMatchObject({ aim: id('A') });
+    const taunted = running(go(until(told.fight, turnOf('B')).fight, hit('B', 'X', TAUNT)));
+    expect(body(taunted, 'X').statuses.map(s => s.key)).toContain(statusKey('taunted'));
+    expect(standing(taunted)).toMatchObject({ at: 'omen', aim: id('A') });
+    const due = until(taunted, turnOf('X')).fight, hpA = rowHp(body(due, 'A')), hpB = rowHp(body(due, 'B'));
+    const r = go(due, landing(due));
+    expect(rowHp(body(r.fight, 'A'))).toBeLessThan(hpA);
+    expect(rowHp(body(r.fight, 'B'))).toBe(hpB);
+    expect(body(r.fight, 'X').statuses.map(s => s.key), 'the taunt still holds after the landing').toContain(statusKey('taunted'));
+  });
+
+  test('the GM\'s Next phase brings its HP to the phase\'s start', () => {
+    const f0 = begun(mythic('angel-of-the-last-trumpet', place(5, 5)), hunter('A', place(8, 5))), x = body(f0, 'X');
+    refuses(go(null, { type: 'add', fightId: fightId('f-m'), rows: [mythic('angel-of-the-last-trumpet', place(5, 5))], openings: [] }).fight, gm('next'), 'notNow');
+    const r = go(f0, gm('next'));
+    expect(rowHp(body(r.fight, 'X'))).toBe(Math.ceil(0.65 * x.sheet.hpMax));
+    expect(standing(r.fight)).toMatchObject({ at: 'calm', phase: 1, beat: 0, since: f0.now });
+    expect(r.effects).toContainEqual({ type: 'phased', id: id('X'), phase: 1 });
+    expect(logs(r.fight)).toContain('The Angel of the Last Trumpet enters The First Breath (GM).');
+    const note = go(r.fight, gm('next')).fight;
+    expect(rowHp(body(note, 'X'))).toBe(Math.ceil(0.3 * x.sheet.hpMax));
+    refuses(note, gm('next'), 'lastPhase');
+    refuses(note, { type: 'mythic', by: id('A'), step: 'next' }, 'notMythic');
+  });
+
+  test('the GM drops an omen', () => {
+    const told = until(begun(mythic('the-fourth-rider', place(5, 5)), hunter('A', place(8, 5))), omenUp);
+    const beat = standing(told.fight).beat, r = go(told.fight, gm('drop'));
+    expect(standing(r.fight)).toMatchObject({ at: 'calm', beat: beat + 1 });
+    expect(logs(r.fight)).toContain('The GM drops Named in the Book: The Fourth Rider lands nothing.');
+    refuses(r.fight, gm('drop'), 'noOmen');
+    expect(runningState(until(running(r), turnOf('X')).fight).at, 'its next turn is an act beat').toBe('acting');
+  });
+
+  test('an omen standing at the gate is lost to the phase change', () => {
+    const told = until(begun(mythic('the-fourth-rider', place(5, 5)), hunter('A', place(8, 5))), omenUp);
+    const gated = running(go(until(told.fight, turnOf('A')).fight, hit('A', 'X', KILL)));
+    expect(rowHp(body(gated, 'X'))).toBe(Math.ceil(0.7 * body(gated, 'X').sheet.hpMax));
+    const hp = rowHp(body(gated, 'A')), r = until(gated, f => standing(f).phase === 1);
+    expect(standing(r.fight)).toMatchObject({ at: 'calm', phase: 1, beat: 0 });
+    expect(logs(r.fight)).toContain('The Fourth Rider enters The Book Opens.');
+    expect(r.effects.some(e => e.type === 'used' && e.by === 'X'), 'the omen never landed').toBe(false);
+    expect(rowHp(body(r.fight, 'A'))).toBe(hp);
   });
 });

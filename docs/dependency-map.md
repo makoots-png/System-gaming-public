@@ -128,13 +128,13 @@ None.
 
 ### `src/core/combat/fight-turn.ts`
 
-- Imports: `src/core/combat/delayed.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/fight-channel.ts`, `src/core/combat/fight-react.ts`, `src/core/combat/fight-types.ts`, `src/core/combat/land.ts`, `src/core/combat/op-amount.ts`, `src/core/combat/resolve.ts`, `src/core/combat/row-hp.ts`, `src/core/combat/row-life.ts`, `src/core/combat/row-tally.ts`, `src/core/combat/space.ts`, `src/core/combat/standing.ts`, `src/core/combat/summons.ts`, `src/core/combat/timeline.ts`, `src/core/combat/triggers.ts`, `src/core/combat/uses.ts`, `src/core/combat/zones.ts`, `src/core/formula.ts`
-- Imports types from: `src/core/combat/ability-types.ts`, `src/core/ids.ts`, `src/core/rules.ts`
+- Imports: `src/core/combat/delayed.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/fight-channel.ts`, `src/core/combat/fight-react.ts`, `src/core/combat/fight-types.ts`, `src/core/combat/land.ts`, `src/core/combat/mythic.ts`, `src/core/combat/op-amount.ts`, `src/core/combat/resolve.ts`, `src/core/combat/row-hp.ts`, `src/core/combat/row-life.ts`, `src/core/combat/row-tally.ts`, `src/core/combat/rows.ts`, `src/core/combat/space.ts`, `src/core/combat/standing.ts`, `src/core/combat/summons.ts`, `src/core/combat/timeline.ts`, `src/core/combat/triggers.ts`, `src/core/combat/uses.ts`, `src/core/combat/zones.ts`, `src/core/formula.ts`, `src/core/registry/mythic-moves.ts`, `src/core/registry/mythics.ts`, `src/core/save-step.ts`
+- Imports types from: `src/core/combat/ability-types.ts`, `src/core/combat/mythic-types.ts`, `src/core/ids.ts`, `src/core/rules.ts`
 - Imported by: `src/core/combat/fight-doc.ts`, `src/core/combat/fight.ts`, `src/core/combat/map-view.ts`, `src/core/combat/odds.ts`
 
 ### `src/core/combat/fight-types.ts`
 
-- Imports types from: `src/core/combat/ability-types.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/extraction.ts`, `src/core/combat/resolve.ts`, `src/core/combat/space.ts`, `src/core/combat/timeline.ts`, `src/core/combat/zones.ts`, `src/core/formula.ts`, `src/core/hunter/vitals.ts`, `src/core/ids.ts`, `src/core/rules.ts`
+- Imports types from: `src/core/combat/ability-types.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/extraction.ts`, `src/core/combat/mythic-types.ts`, `src/core/combat/mythic.ts`, `src/core/combat/resolve.ts`, `src/core/combat/space.ts`, `src/core/combat/timeline.ts`, `src/core/combat/zones.ts`, `src/core/formula.ts`, `src/core/hunter/vitals.ts`, `src/core/ids.ts`, `src/core/rules.ts`
 - Imported by: `src/core/api.ts`, `src/core/award.ts`, `src/core/combat/fight-doc.ts`, `src/core/combat/fight-facts.ts`, `src/core/combat/fight-parse.ts`, `src/core/combat/fight-save.ts`, `src/core/combat/fight-turn.ts`, `src/core/combat/fight-view.ts`, `src/core/combat/fight.ts`, `src/core/combat/fudge.ts`, `src/core/combat/map-mount.ts`, `src/core/combat/map-view.ts`, `src/core/combat/mythic.ts`, `src/core/combat/odds.ts`, `src/core/combat/play.ts`, `src/core/combat/policy.ts`, `src/core/combat/refusal-words.ts`, `src/core/combat/resolve.ts`, `src/core/combat/rows.ts`, `src/core/combat/sight.ts`, `src/core/combat/table-news.ts`, `src/core/combat/threat.ts`, `src/core/draws.ts`, `src/core/events.ts`, `src/core/gates/pay.ts`, `src/core/gates/solo.ts`, `src/core/hunter/hunter.ts`, `src/core/protocol.ts`, `src/core/registry/maps.ts`, `src/core/registry/monsters.ts`, `src/core/save.ts`, `src/core/table-weight.ts`, `src/edge/roll.ts`, `src/views/kit-parts.js`
 
 ### `src/core/combat/fight-view.ts`
@@ -145,7 +145,7 @@ None.
 
 ### `src/core/combat/fight.ts`
 
-- Imports: `src/core/combat/ability-types.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/extraction.ts`, `src/core/combat/fight-channel.ts`, `src/core/combat/fight-react.ts`, `src/core/combat/fight-turn.ts`, `src/core/combat/fight-types.ts`, `src/core/combat/fudge.ts`, `src/core/combat/land.ts`, `src/core/combat/mythic.ts`, `src/core/combat/op-amount.ts`, `src/core/combat/resolve.ts`, `src/core/combat/row-hp.ts`, `src/core/combat/row-life.ts`, `src/core/combat/row-tally.ts`, `src/core/combat/rows.ts`, `src/core/combat/sight.ts`, `src/core/combat/space.ts`, `src/core/combat/standing.ts`, `src/core/combat/summons.ts`, `src/core/combat/timeline.ts`, `src/core/combat/triggers.ts`, `src/core/combat/uses.ts`, `src/core/combat/zones.ts`, `src/core/formula.ts`
+- Imports: `src/core/combat/ability-types.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/extraction.ts`, `src/core/combat/fight-channel.ts`, `src/core/combat/fight-react.ts`, `src/core/combat/fight-turn.ts`, `src/core/combat/fight-types.ts`, `src/core/combat/fudge.ts`, `src/core/combat/land.ts`, `src/core/combat/mythic.ts`, `src/core/combat/op-amount.ts`, `src/core/combat/resolve.ts`, `src/core/combat/row-hp.ts`, `src/core/combat/row-life.ts`, `src/core/combat/row-tally.ts`, `src/core/combat/rows.ts`, `src/core/combat/sight.ts`, `src/core/combat/space.ts`, `src/core/combat/standing.ts`, `src/core/combat/summons.ts`, `src/core/combat/timeline.ts`, `src/core/combat/triggers.ts`, `src/core/combat/uses.ts`, `src/core/combat/zones.ts`, `src/core/formula.ts`, `src/core/save-step.ts`
 - Imports types from: `src/core/rules.ts`
 - Imported by: `src/core/combat/play.ts`, `src/core/gates/pay.ts`, `src/core/gates/solo.ts`, `src/views/combat.js`
 
@@ -184,13 +184,13 @@ None.
 ### `src/core/combat/mythic-types.ts`
 
 - Imports types from: `src/core/combat/ability-types.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/space.ts`, `src/core/combat/timeline.ts`, `src/core/ids.ts`, `src/core/registry/mythics.ts`, `src/core/registry/statuses.ts`
-- Imported by: `src/core/combat/effect-ops.ts`, `src/core/combat/fight-parse.ts`, `src/core/combat/mythic.ts`, `src/core/registry/mythic-moves.ts`, `src/core/registry/mythics.ts`
+- Imported by: `src/core/combat/effect-ops.ts`, `src/core/combat/fight-parse.ts`, `src/core/combat/fight-turn.ts`, `src/core/combat/fight-types.ts`, `src/core/combat/mythic.ts`, `src/core/registry/mythic-moves.ts`, `src/core/registry/mythics.ts`
 
 ### `src/core/combat/mythic.ts`
 
 - Imports: `src/core/combat/row-hp.ts`, `src/core/combat/sight.ts`, `src/core/combat/space.ts`, `src/core/combat/standing.ts`, `src/core/combat/threat.ts`, `src/core/combat/timeline.ts`, `src/core/registry/mythics.ts`, `src/core/save-step.ts`
 - Imports types from: `src/core/combat/ability-types.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/fight-types.ts`, `src/core/combat/mythic-types.ts`, `src/core/rules.ts`
-- Imported by: `src/core/combat/fight.ts`, `src/core/combat/row-life.ts`, `src/core/combat/rows.ts`
+- Imported by: `src/core/combat/fight-turn.ts`, `src/core/combat/fight-types.ts`, `src/core/combat/fight.ts`, `src/core/combat/row-life.ts`, `src/core/combat/rows.ts`
 
 ### `src/core/combat/odds.ts`
 
@@ -254,7 +254,7 @@ None.
 
 - Imports: `src/core/combat/ability-types.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/fight-types.ts`, `src/core/combat/mythic.ts`, `src/core/combat/resolve.ts`, `src/core/combat/space.ts`, `src/core/combat/timeline.ts`, `src/core/combat/uses.ts`, `src/core/effects.ts`, `src/core/formula.ts`, `src/core/hunter/derive.ts`, `src/core/hunter/sheet.ts`, `src/core/hunter/vitals.ts`, `src/core/ids.ts`, `src/core/registry/abilities.ts`, `src/core/registry/ability-kinds.ts`, `src/core/registry/monsters.ts`, `src/core/registry/mythics.ts`, `src/core/registry/paths.ts`, `src/core/rules.ts`
 - Imports types from: `src/core/registry/icons.ts`, `src/core/registry/powers.ts`, `src/core/save.ts`, `src/core/stats.ts`
-- Imported by: `src/core/combat/fight.ts`, `src/core/gates/solo.ts`, `src/core/hunter/shadows.ts`, `src/views/bestiary.js`, `src/views/combat.js`, `src/views/shadows.js`, `src/views/table.js`, `src/views/uses.js`
+- Imported by: `src/core/combat/fight-turn.ts`, `src/core/combat/fight.ts`, `src/core/gates/solo.ts`, `src/core/hunter/shadows.ts`, `src/views/bestiary.js`, `src/views/combat.js`, `src/views/shadows.js`, `src/views/table.js`, `src/views/uses.js`
 
 ### `src/core/combat/sight-levels.ts`
 
@@ -742,11 +742,12 @@ None.
 
 - Imports: `src/core/combat/ability-types.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/space.ts`, `src/core/combat/timeline.ts`, `src/core/formula.ts`, `src/core/hunter/derive.ts`, `src/core/registry/ability-kinds.ts`, `src/core/registry/items.ts`
 - Imports types from: `src/core/combat/mythic-types.ts`, `src/core/registry/abilities.ts`, `src/core/rules.ts`
+- Imported by: `src/core/combat/fight-turn.ts`
 
 ### `src/core/registry/mythics.ts`
 
 - Imports types from: `src/core/combat/effect-ops.ts`, `src/core/combat/mythic-types.ts`
-- Imported by: `src/core/combat/fight-parse.ts`, `src/core/combat/mythic-types.ts`, `src/core/combat/mythic.ts`, `src/core/combat/rows.ts`, `src/core/registry/monsters.ts`
+- Imported by: `src/core/combat/fight-parse.ts`, `src/core/combat/fight-turn.ts`, `src/core/combat/mythic-types.ts`, `src/core/combat/mythic.ts`, `src/core/combat/rows.ts`, `src/core/registry/monsters.ts`
 
 ### `src/core/registry/paths.ts`
 
@@ -829,7 +830,7 @@ None.
 ### `src/core/save-step.ts`
 
 - Imports types from: `src/core/save.ts`
-- Imported by: `src/app.js`, `src/core/api.ts`, `src/core/applied.ts`, `src/core/award.ts`, `src/core/bestiary.ts`, `src/core/coin.ts`, `src/core/combat/fight-save.ts`, `src/core/combat/mythic.ts`, `src/core/gates/pay.ts`, `src/core/gates/solo-wait.ts`, `src/core/gates/solo.ts`, `src/core/gates/world.ts`, `src/core/hunter/build.ts`, `src/core/hunter/conditions.ts`, `src/core/hunter/grant.ts`, `src/core/hunter/inventory.ts`, `src/core/hunter/loadouts.ts`, `src/core/hunter/noticed.ts`, `src/core/hunter/progress.ts`, `src/core/hunter/quests.ts`, `src/core/hunter/record.ts`, `src/core/hunter/rests.ts`, `src/core/hunter/shadows.ts`, `src/core/hunter/skills-held.ts`, `src/core/hunter/use.ts`, `src/core/hunter/vitals.ts`, `src/core/library.ts`, `src/core/pack.ts`, `src/core/party.ts`, `src/core/rewards.ts`, `src/core/session-log.ts`, `src/core/starter.ts`, `src/core/story/run.ts`, `src/core/story/story.ts`, `src/core/sync/bind.ts`, `src/core/table-weight.ts`, `src/core/trade/goods.ts`, `src/core/trade/offer.ts`, `src/core/use-told.ts`, `src/edge/room-events.ts`, `src/edge/store.ts`, `src/edge/sync.ts`, `src/views/bestiary.js`, `src/views/combat.js`, `src/views/custom.js`, `src/views/effects.js`, `src/views/feat-maker.js`, `src/views/forge.js`, `src/views/gates.js`, `src/views/gm.js`, `src/views/hunter.js`, `src/views/inventory.js`, `src/views/io.js`, `src/views/loot.js`, `src/views/map-maker.js`, `src/views/onboard.js`, `src/views/quests.js`, `src/views/shadows.js`, `src/views/skills.js`, `src/views/stories.js`, `src/views/story-maker.js`, `src/views/ui.js`, `src/views/uses.js`, `src/views/workshop.js`
+- Imported by: `src/app.js`, `src/core/api.ts`, `src/core/applied.ts`, `src/core/award.ts`, `src/core/bestiary.ts`, `src/core/coin.ts`, `src/core/combat/fight-save.ts`, `src/core/combat/fight-turn.ts`, `src/core/combat/fight.ts`, `src/core/combat/mythic.ts`, `src/core/gates/pay.ts`, `src/core/gates/solo-wait.ts`, `src/core/gates/solo.ts`, `src/core/gates/world.ts`, `src/core/hunter/build.ts`, `src/core/hunter/conditions.ts`, `src/core/hunter/grant.ts`, `src/core/hunter/inventory.ts`, `src/core/hunter/loadouts.ts`, `src/core/hunter/noticed.ts`, `src/core/hunter/progress.ts`, `src/core/hunter/quests.ts`, `src/core/hunter/record.ts`, `src/core/hunter/rests.ts`, `src/core/hunter/shadows.ts`, `src/core/hunter/skills-held.ts`, `src/core/hunter/use.ts`, `src/core/hunter/vitals.ts`, `src/core/library.ts`, `src/core/pack.ts`, `src/core/party.ts`, `src/core/rewards.ts`, `src/core/session-log.ts`, `src/core/starter.ts`, `src/core/story/run.ts`, `src/core/story/story.ts`, `src/core/sync/bind.ts`, `src/core/table-weight.ts`, `src/core/trade/goods.ts`, `src/core/trade/offer.ts`, `src/core/use-told.ts`, `src/edge/room-events.ts`, `src/edge/store.ts`, `src/edge/sync.ts`, `src/views/bestiary.js`, `src/views/combat.js`, `src/views/custom.js`, `src/views/effects.js`, `src/views/feat-maker.js`, `src/views/forge.js`, `src/views/gates.js`, `src/views/gm.js`, `src/views/hunter.js`, `src/views/inventory.js`, `src/views/io.js`, `src/views/loot.js`, `src/views/map-maker.js`, `src/views/onboard.js`, `src/views/quests.js`, `src/views/shadows.js`, `src/views/skills.js`, `src/views/stories.js`, `src/views/story-maker.js`, `src/views/ui.js`, `src/views/uses.js`, `src/views/workshop.js`
 
 ### `src/core/save.ts`
 

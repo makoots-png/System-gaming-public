@@ -39,7 +39,7 @@ Where it lives:
 
 ## A fight
 
-The 2,500 random fights of tests/fight-model.test.ts, each of 10 to 49 commands from no fight. The walk found 37135 states and 73570 steps.
+The 2,500 random fights of tests/fight-model.test.ts, each of 10 to 49 commands from no fight. The walk found 37055 states and 73570 steps.
 
 ### A fight, from building it to its summary
 
@@ -62,7 +62,7 @@ stateDiagram-v2
   s3 --> s4 : a side has nobody standing
 ```
 
-The chart shows the phase of the fight on the GM's screen. Everything inside a running fight stays in Fighting: turns and time, uses, walks, channels, statuses settling, staggers, shields, threat, intents, combatants who join or leave, the GM's hand edits, Status window and fudge. The fudge goes with the fight when it ends. A fight ends by itself when one side has nobody up, after a use, a status, a channel going off, a hand edit or the last of a side leaving; the summary stays on screen until the GM closes it. A command the fight refuses changes nothing.
+The chart shows the phase of the fight on the GM's screen. Everything inside a running fight stays in Fighting: turns and time, uses, walks, channels, statuses settling, staggers, shields, threat, intents, combatants who join or leave, the GM's hand edits, Status window and fudge, and a mythic's phases, its omens, the party's answers and the GM's Drop the omen and Next phase (its own chart, a mythic's standing in its script). The fudge goes with the fight when it ends. A fight ends by itself when one side has nobody up, after a use, a status, a channel going off, a hand edit or the last of a side leaving; the summary stays on screen until the GM closes it. A command the fight refuses changes nothing.
 
 4 chart states, 7 arrows. No step is hidden.
 

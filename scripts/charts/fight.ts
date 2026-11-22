@@ -16,7 +16,7 @@ function step(cmd: Command, from: State, to: State): string | null {
     case 'start': return 'the GM starts it, everyone rolls an opening';
     case 'end': return from?.phase === 'running' ? 'the GM ends it' : 'the GM ends it before it starts';
     case 'clear': return 'the GM closes it';
-    case 'act': case 'move': case 'endTurn': case 'release': case 'settle': case 'remove': case 'adjust': case 'refill': case 'revive': case 'status': case 'paint': case 'zoneAdd': case 'zoneRemove': case 'resize': case 'arm': case 'extract':
+    case 'act': case 'move': case 'endTurn': case 'release': case 'settle': case 'remove': case 'adjust': case 'refill': case 'revive': case 'status': case 'paint': case 'zoneAdd': case 'zoneRemove': case 'resize': case 'arm': case 'extract': case 'mythic':
       if (to?.phase === 'ended') return 'a side has nobody standing';
       throw new Error(`${cmd.type} moved the fight from ${stateOf(from)} to ${stateOf(to)} with no label`);
     default: throw new Error(`${cmd.type} moved the fight from ${stateOf(from)} to ${stateOf(to)} with no label`);
@@ -47,7 +47,7 @@ export const fight = machine<State, Command>({
   kindsOf: f => [stateOf(f)],
   views: [{
     title: 'A fight, from building it to its summary',
-    note: 'The chart shows the phase of the fight on the GM\'s screen. Everything inside a running fight stays in Fighting: turns and time, uses, walks, channels, statuses settling, staggers, shields, threat, intents, combatants who join or leave, the GM\'s hand edits, Status window and fudge. The fudge goes with the fight when it ends. A fight ends by itself when one side has nobody up, after a use, a status, a channel going off, a hand edit or the last of a side leaving; the summary stays on screen until the GM closes it. A command the fight refuses changes nothing.',
+    note: 'The chart shows the phase of the fight on the GM\'s screen. Everything inside a running fight stays in Fighting: turns and time, uses, walks, channels, statuses settling, staggers, shields, threat, intents, combatants who join or leave, the GM\'s hand edits, Status window and fudge, and a mythic\'s phases, its omens, the party\'s answers and the GM\'s Drop the omen and Next phase (its own chart, a mythic\'s standing in its script). The fudge goes with the fight when it ends. A fight ends by itself when one side has nobody up, after a use, a status, a channel going off, a hand edit or the last of a side leaving; the summary stays on screen until the GM closes it. A command the fight refuses changes nothing.',
     hides: '',
     state: f => LABEL[stateOf(f)],
     step,

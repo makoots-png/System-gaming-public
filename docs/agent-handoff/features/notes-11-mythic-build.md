@@ -199,3 +199,92 @@ registry; the row's field required; the one line in `joined`) and a second helpe
   so a fixture that forgets it does not compile; the parse checks script, phase and omen against the registry once.
 - `principle-model-the-domain`: the gate is a parameter of the foe table's steps, not a clamp at each caller.
 - `principle-test-behavior-not-implementation`: every expected HP is the Angel's own share (65%, 30%) of its max HP.
+
+## MY4: the reducer (beats, omens, answers, landing, the GM's command, the phase change)
+
+Branch `mythic-4`. The switch `fight.mythic.scripts` stays off, so no table sees any of it; the tests turn it on, and
+the reducer plays any row that holds a standing whatever the switch says (the switch only decides whether `monsterRows`
+gives a mythic one).
+
+### What exists
+
+- `fight-types.ts`: the GM's `{ type: 'mythic'; by; step: 'drop' | 'next' }`; `Refusal` gains `MythicRefusal` (`noOmen`,
+  `omenStands`, `weakened`, `lastPhase`), `notMythic` and `omenDue`; effects `phased`, `omen`, `answered`.
+- `fight-turn.ts`: `scriptTurn` at a turn start (after a held turn is passed): its phase over, `phasedRow` (the one
+  place a phase begins: worn statuses swapped by key, bar emptied at its kind's bar times the phase's `bar`, channel
+  dropped; by the GM its HP brought to the phase's start, at its turn the turn spent) logged "X enters <phase>."; an
+  omen standing, nothing; an omen beat, `announce` at `omenAim` with its HP, the turn spent, "X readies <omen>: it lands
+  on its next turn." (enraged: "X is enraged: it readies <omen>, which lands on its next turn."); an act beat, `beat`.
+  `consequences` logs "X is held at the gate." once when a change takes it there, and `answered` turns each answer
+  `answerMet` finds into `cancel` or `weaken` (cancel first, each only when the state takes it) with a line and an
+  effect. `omenMove` (the landing move, built by `mythicMove` when needed, never on the row), `omenNeeds` (its dice),
+  `untaunted` and `retaunted`.
+- `fight.ts`: `RunningState` gains `{ at: 'landing'; id }` after `owing`; its row of `TABLE` is acting's with `act:
+  landOmen` and `move`, `endTurn`, `release`, `setIntent` null. `landOmen` takes only the omen's move at its aim
+  (`omenDue` else), reads it on the untaunted row, fizzles on `noTarget` or `range` ("<move> finds no one.", the turn
+  spent), and on a landing puts the move's `self` status (Crescendo) on the mythic and hands on to `landed`. The GM's
+  `mythic` step (`mythic`) in every running row, null in setup, none and ended. `setIntent` on a mythic whose omen
+  stands is refused `omenStands`.
+- `mythic.ts`: `playsScript` (a guard) and `mythicStepped` (a row's standing moved by an event), so fight.ts and
+  fight-turn.ts move a standing without writing one (the one-writer lint holds).
+- Tests: the eleven of B.10 in `tests/fight.test.ts` ("a mythic plays its script"), the three per-script tests in
+  `tests/mythics.test.ts`, the table test with `mythic` and the landing row; random play holds a rank D Fourth Rider in a
+  third of the fights (`MYTHIC` in `tests/models/fight-play.ts`), sends its landing and the GM's hand, and
+  `mythicWrong` (tests/fight-model.test.ts) checks the standing after every command.
+
+### Proof
+
+- `bun run test`: `Ran 6120 tests across 139 files.` (6116 pass, 0 fail).
+- With `answered` (fight-turn.ts) returning at once, the three answer tests fail ("a stun ... cancels", "a broken
+  stagger bar weakens", "enough damage weakens").
+- Random play (2,500 seeds) reaches 98 phase changes and 38 omens announced; an answer met once and a landing a few
+  times, too rare for the model test to count on, so it asserts only the first two.
+- Browser files that store a fight's rows straight into the save: `customization`, `kits` (`19 passed`).
+- `bun run charts` redrew docs/state-machines.md (the fight's walk with the mythic's fights).
+
+### Where the design did not hold, and what was built instead
+
+- **A `self` or `all` omen aims at the mythic itself, not its tile** (`omenAim`, changed from MY2). Aimed at the tile,
+  a shove of one tile between the announce and the landing put its own tile out of a range of 0, and The First Breath
+  fizzled. Aimed at its id, the area moves with it, and with nobody in it the landing finds no one. So does an omen with
+  no foe to pick (MY2's call 1 now reads "aims at itself").
+- **Every write of a standing goes through `mythicStepped`.** The lint flags `{ ...row, mythic: next }` outside
+  mythic.ts, which is what B.3's cells would have written in fight-turn.ts.
+- **A break of the bar is a growth of its max within one phase.** `phasedRow` sets the bar to the new phase's size,
+  which grows it when `bar` rises (the Angel's 1 to 1.25), and `consequences` read a growth as a break: it now also
+  asks that the phase did not change.
+- **A taunt is set aside by reading the landing on the row without its taunts** (`untaunted`): `ready`'s rule 2 is in
+  resolve.ts, which MY4 does not hold. `retaunted` puts them back on the row the use left, and `omenNeeds` asks the dice
+  the same way (resolve.ts `needs` on a taunted row asks none).
+- **The answer lines are read from the change, not from a template** (B.3's "Mira's stun answers ..."): "The Fourth
+  Rider is stunned by Brakk: Named in the Book is cancelled.", "The Angel of the Last Trumpet's stagger bar breaks: The
+  Final Note will land as The Broken Note.", "The Fourth Rider loses 5% of its HP: Named in the Book will land as Struck
+  from the Book." The status's label and source, the omen's name, its weak move and its burst share are the data's.
+- **A forced `act` of another row during a landing turn is `act`'s**, so the GM's out-of-turn hand still works there.
+- **A row stored with no `mythic` field reads as one with none** (`heldAtGate`, `playsScript` test it as `gateOf` does,
+  by truth): fixtures of tests/triggers.test.ts and others cast a row without the field, and `consequences` now asks
+  every row whether it is held at its gate.
+- **The model's ward invariant reads a use**: an omen aimed at a body that went untargetable fizzles, which is no use
+  on it (`wave2Wrong` now asks for a `used` effect).
+
+### Calls the owner might have made otherwise
+
+- A self or all omen follows the mythic (above). Undo: `omenAim`'s two `me.id` back to `me.place`, and its two tests.
+- A landing that cannot reach spends the mythic's turn (a standard action), as B.3 says; the omen's `beat` moves on.
+- The GM's Drop the omen during a landing turn leaves the mythic a normal turn (calm, its next beat taken later). The
+  other way: the drop spends the turn. Undo: an `acted` in `mythic`'s drop branch.
+- The GM's Next phase brings HP to the phase's start rounded up, as the gate rounds. Undo: `Math.ceil` in `phasedRow`.
+- A worn status both phases name stays as it was across the change (its `since` too). The other way: off and on again.
+- **A gap until MY7**: a GM who turns the switch on in Custom rules now reaches a landing turn with no button for the
+  omen's move or Drop the omen (combat.js has neither), and End turn is refused there. The log reads every announce,
+  answer and landing; to free the turn the GM removes the mythic, stuns it or ends the fight. MY7's screens add both
+  buttons; the switch ships off until then.
+
+### Principles that changed a choice
+
+- `principle-model-the-domain`: the landing is a running state of `TABLE` read from the fight, not a flag; the omen
+  move is built from the script when needed, never stored.
+- `principle-type-system-discipline`: `playsScript` narrows a row to one with a standing, so no cast reaches
+  `mythicStepped` or `phasedRow`.
+- `principle-test-behavior-not-implementation`: each expected number is the script's (65%, 70%, 30%, 55%, 1.25, 5%,
+  range 24, clocks of 3 and 5 rounds); the tests drive the reducer turn by turn as a table would.

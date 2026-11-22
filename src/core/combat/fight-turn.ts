@@ -3,8 +3,11 @@
 // turns a change of a row into effects (a defeat, a move, a channel, a stagger); `sheetBacks` is the one place that turns
 // a command's change of the rows into what their sheets hear (HP, mana, fatigue, statuses, uses), read once by `reduce`
 // from the fight the command found and the one it left; `grounded` keeps the zones' holds (zones.ts); `overIf` ends a
-// fight whose side has nobody up; `spreadsOf`, `spreadTo` and `marked` pass a spreading status on (design 4.8). Called
-// only by the reducer in fight.ts.
+// fight whose side has nobody up; `spreadsOf`, `spreadTo` and `marked` pass a spreading status on (design 4.8). A
+// mythic's script (notes-11-keystones.md, design B.3 and B.4) moves here at its turn start (a phase change, an omen
+// announced, an act beat) and in `consequences` (an answer to its omen, its arrival at its gate); `phasedRow` is the one
+// place a phase begins, and `omenMove` and `omenNeeds` the landing move and its dice. Called only by the reducer in
+// fight.ts.
 import { tallied } from './row-tally.ts';
 import { diceOf } from '../formula.ts';
 import type { Dice, Scope } from '../formula.ts';
@@ -17,8 +20,18 @@ import { applyStatus, dueAmount, onSheet, owedOf, perRound, settle, sheetStatuse
 import { atTier } from './op-amount.ts';
 import type { Body, Due, HunterRow, SheetStatus, Status, StatusKey } from './effect-ops.ts';
 import type { SheetKey } from '../ids.ts';
-import type { AbilityId, CombatantId } from './ability-types.ts';
-import { resists } from './resolve.ts';
+import type { Ability, AbilityId, CombatantId } from './ability-types.ts';
+import { needs, resists } from './resolve.ts';
+import type { Aim, Needs } from './resolve.ts';
+import { channelCan } from './fight-channel.ts';
+import { answerMet, beatOf, enraged, heldAtGate, mythicCan, mythicStepped, omenAim, phaseOver, playsScript, scriptOf } from './mythic.ts';
+import type { MetAnswer, MythicRefusal, Scripted } from './mythic.ts';
+import type { MythicMove, Omen } from './mythic-types.ts';
+import { bandOf } from '../registry/mythics.ts';
+import { mythicMove } from '../registry/mythic-moves.ts';
+import { isRefused } from '../save-step.ts';
+import type { Refused } from '../save-step.ts';
+import { staggerOf } from './rows.ts';
 import { channelStep } from './fight-channel.ts';
 import { anchorOf, oldEnough, payUpkeep, zoneStep, zoneSync } from './zones.ts';
 import type { Zone } from './zones.ts';
@@ -179,13 +192,108 @@ export function consequences(before: readonly Body[], after: Running, ctx: Ctx, 
     if (a.channel?.state !== b.channel?.state || a.channel?.charge !== b.channel?.charge) {
       fx.push({ type: 'channel', id: a.id, state: a.channel?.state ?? null, charge: a.channel?.charge ?? 0 });
     }
-    if (a.stagger && b.stagger && a.stagger.max > b.stagger.max) {
+    // a break grows the bar within a phase; a mythic's new phase sets its bar to that phase's size (`phasedRow`)
+    if (a.stagger && b.stagger && a.stagger.max > b.stagger.max && a.mythic?.phase === b.mythic?.phase) {
       fx.push({ type: 'staggered', id: a.id });
       f = logged(f, line(`${a.name} is staggered.`, [a.id]), ctx.rules);
     }
-    f = withRow(f, a);
+    if (!heldAtGate(b) && heldAtGate(a)) f = logged(f, line(`${a.name} is held at the gate.`, [a.id]), ctx.rules);
+    const met = answered(f, b, a, ctx.rules, fx);
+    f = withRow(met.fight, met.row);
   }
   return hurtHides(before, f, ctx);
+}
+
+/**
+ * The answers a change of mythic row `b` to `a` met while an omen stood before and after it (design B.4, mythic.ts
+ * `answerMet`): each its state takes, cancels first, moves the standing, with a line and an `answered` effect. A cancel
+ * leaves nothing standing, so a weaken met with it is not taken.
+ */
+function answered(f: Running, b: Body, a: Body, R: Rules, fx: Fx): { fight: Running; row: Body } {
+  if (a.mythic?.at !== 'omen' && a.mythic?.at !== 'faltering') return { fight: f, row: a };
+  if (b.mythic?.at !== 'omen' && b.mythic?.at !== 'faltering') return { fight: f, row: a };
+  const s = a.mythic, script = scriptOf(s), omen = script.omens[s.omen]!;
+  let g = f, row: Body = a;
+  for (const m of answerMet(omen, s.hpAt, b, a)) {
+    if (!playsScript(row) || !mythicCan(row.mythic, m.outcome)) continue;
+    const next = mythicStepped<Body>(row, { type: m.outcome, how: m.how });
+    if (isRefused(next)) continue;
+    row = next;
+    const weak = omen.weak === null ? null : script.moves[omen.weak]!;
+    const then = m.outcome === 'cancel' || !weak ? `${omen.name} is cancelled` : `${omen.name} will land as ${weak.name}`;
+    g = logged(g, line(`${answerWords(g, b, a, omen, m)}: ${then}.`, [a.id]), R);
+    fx.push({ type: 'answered', id: a.id, how: m.how, outcome: m.outcome });
+  }
+  return { fight: g, row };
+}
+/** What answered an omen, read from the change and the omen: "The Fourth Rider is stunned by Brakk". */
+function answerWords(f: Running, b: Body, a: Body, omen: Omen, m: MetAnswer): string {
+  switch (m.how) {
+    case 'interrupt': {
+      const s = a.statuses.find(x => !b.statuses.some(y => y.key === x.key) && x.def.ops.some(o => (omen.interrupt.by as readonly string[]).includes(o.op)));
+      const by = s?.source.id ? rowOf(f, s.source.id)?.name : undefined;
+      return `${a.name} is ${(s?.def.label ?? 'held').toLowerCase()}${by && by !== a.name ? ` by ${by}` : ''}`;
+    }
+    case 'stagger': return `${a.name}'s stagger bar breaks`;
+    case 'burst': return `${a.name} loses ${Math.round((omen.burst?.share ?? 0) * 100)}% of its HP`;
+    default: return m.how satisfies never;
+  }
+}
+
+/**
+ * Mythic row `row` entering its next phase at `now` (design B.3, "What `next` does besides the standing"), the one place
+ * a phase begins, for its turn and for the GM's hand: the old phase's worn statuses come off by key and the new phase's
+ * go on, from the row at its tier until removed (a status that is not the script's, its keystones among them, is never
+ * touched; one worn by both phases stays as it was); its stagger bar empties at its kind's bar times the new phase's
+ * `bar`; its channel drops. By the GM, its HP comes down to the new phase's start if it is higher (the life's `setHp`,
+ * whose floor is now the new gate); at its turn, the turn is spent (`mythic.turnPace`). Refused in its last phase.
+ */
+export function phasedRow(row: Scripted<Body>, by: 'turn' | 'gm', now: Tick, R: Rules): Body | Refused<MythicRefusal> {
+  const s = row.mythic, next = mythicStepped<Body>(row, { type: 'next', now, by });
+  if (isRefused(next)) return next;
+  const script = scriptOf(s), was = script.phases[s.phase]!, to = script.phases[s.phase + 1]!;
+  const off = new Set<string>(was.worn.filter(w => !to.worn.some(x => x.key === w.key)).map(w => w.key));
+  let list: Status[] = next.statuses.filter(x => !off.has(x.key));
+  for (const w of to.worn) {
+    if (list.some(x => x.key === w.key) || list.length >= MAX_STATUSES) continue;
+    list = applyStatus(list, statusOn(w.def, { key: w.key, source: { id: row.id, tier: row.tier }, until: null, since: now, settledAt: now }));
+  }
+  const o = row.origin, bar = o.kind === 'monster' ? staggerOf({ rank: o.rank, archetype: o.archetype, kind: o.monsterKind, tweak: o.tweak }, R) : null;
+  const y = withStatuses(next, list, now, R);
+  // only a monster's row holds a standing (effect-ops.ts `MonsterOwn`) and a stagger bar
+  if (y.kind !== 'monster') return y;
+  const x: Body = { ...y, stagger: bar ? { fill: 0, max: bar.max * to.bar, hit: bar.hit } : y.stagger, channel: y.channel && channelCan(y.channel, 'drop') ? channelStep(y.channel, { type: 'drop' }) : y.channel };
+  if (by === 'turn') return acted(x, now, paceCost(R.fight.mythic.turnPace, R.fight), R.fight);
+  const top = Math.ceil(bandOf(script, s.phase + 1).from * x.sheet.hpMax);
+  return rowHp(x) > top ? rowLifeAfter(x, { type: 'setHp', hp: top }) : x;
+}
+
+/**
+ * The move mythic row `u` must land on its turn while an omen stands (design B.3, "The omen moves are not on the row"):
+ * the standing's landing move (mythic.ts `landingMove`, its weak one while it falters) as `mythicMove` builds it on
+ * `u`'s body, the aim it was announced at, and the move as its script writes it. Null when no omen stands.
+ */
+export function omenMove(u: Body, R: Rules): { readonly ability: Ability; readonly aim: Aim; readonly move: MythicMove } | null {
+  const s = u.mythic, o = u.origin;
+  if (!s || s.at === 'calm' || o.kind !== 'monster') return null;
+  const omen = scriptOf(s).omens[s.omen], key = omen && (s.at === 'faltering' && omen.weak !== null ? omen.weak : omen.full), move = key && scriptOf(s).moves[key];
+  if (!key || !move) return null;
+  return { ability: mythicMove(key, move, { rank: o.rank, archetype: o.archetype, kind: o.monsterKind, tweak: o.tweak }, R), aim: s.aim, move };
+}
+/**
+ * `u` as no taunt binds it: an omen lands where it was announced (design B.3), so the landing is read on the row without
+ * its taunts (`ready`'s rule 2 then finds none). Its sheet is the row's own; the reducer puts the taunts back (`retaunted`).
+ */
+export const untaunted = (u: Body): Body => ({ ...u, statuses: u.statuses.filter(s => !s.def.ops.some(o => o.op === 'taunt')) });
+/** `b`, the landing's user as the use left it, holding again the taunts `u` held before it (`untaunted`). */
+export function retaunted(b: Body, u: Body, now: Tick, R: Rules): Body {
+  const taunts = u.statuses.filter(s => s.def.ops.some(o => o.op === 'taunt') && !b.statuses.some(x => x.key === s.key));
+  return taunts.length ? withStatuses(b, [...b.statuses, ...taunts], now, R) : b;
+}
+/** The dice the landing of `u`'s omen asks for (resolve.ts `needs` on the untaunted row); null when no omen stands. */
+export function omenNeeds(f: Running, u: Body, R: Rules): Needs | null {
+  const m = omenMove(u, R), free = untaunted(u);
+  return m && needs(m.ability, free, f.rows.map(r => r.id === u.id ? free : r), m.aim, f.grid, f.now, R);
 }
 
 /**
@@ -421,6 +529,35 @@ export function sentAway(f: Running, gone: readonly Body[], why: string, ctx: Ct
   return g;
 }
 
+/**
+ * Mythic row `row`'s turn start (design B.3, "Its turn start, in order"), the first that applies: its phase over and not
+ * its last, it enters the next (`phasedRow`), the turn spent; an omen standing, nothing (the fight is `landing` until
+ * the move goes off); an omen beat, the omen is announced at its aim (`omenAim`) with its HP now, the turn spent; else
+ * an act beat, and the turn goes on as any monster's. `spent` says the turn is over.
+ */
+function scriptTurn(f: Running, row: Scripted<Body>, ctx: Ctx, fx: Fx): { fight: Running; spent: boolean } {
+  const R = ctx.rules, s = row.mythic, script = scriptOf(s);
+  if (phaseOver(row, f.now, R)) {
+    const x = phasedRow(row, 'turn', f.now, R);
+    if (isRefused(x)) return { fight: f, spent: false };
+    fx.push({ type: 'phased', id: row.id, phase: s.phase + 1 });
+    const g = logged(withRow(f, x), line(`${row.name} enters ${script.phases[s.phase + 1]!.name}.`, [row.id]), R);
+    return { fight: consequences(f.rows, g, ctx, fx), spent: true };
+  }
+  if (s.at !== 'calm') return { fight: f, spent: false };
+  const beat = beatOf(s, f.now, R);
+  if (beat.kind === 'act') {
+    const x = mythicStepped<Body>(row, { type: 'beat' });
+    return { fight: isRefused(x) ? f : withRow(f, x), spent: false };
+  }
+  const omen = script.omens[beat.omen]!, full = script.moves[omen.full]!;
+  const x = mythicStepped<Body>(row, { type: 'announce', omen: beat.omen, aim: omenAim(omen.aim, full, row, f), hpAt: rowHp(row) });
+  if (isRefused(x)) return { fight: f, spent: false };
+  fx.push({ type: 'omen', id: row.id, omen: beat.omen });
+  const said = enraged(s, f.now, R) ? `${row.name} is enraged: it readies ${omen.name}, which lands on its next turn.` : `${row.name} readies ${omen.name}: it lands on its next turn.`;
+  return { fight: logged(withRow(f, acted({ ...x, intent: null }, f.now, paceCost(R.fight.mythic.turnPace, R.fight), R.fight)), line(said, [row.id]), R), spent: true };
+}
+
 /** A guard on `startTurn`'s loop, not a rule: the passes it may take for each row (and one row more). */
 const PASSES_PER_ROW = 4;
 
@@ -473,6 +610,12 @@ export function startTurn(f: Running, ctx: Ctx, fx: Fx): Running | Ended {
     if (held(row, g.now)) {
       g = logged(withRow(g, acted(row, g.now, paceCost('standard', R.fight), R.fight)), line(`${row.name} is held and loses the turn.`, [row.id]), R);
       continue;
+    }
+    // a mythic's script at its turn start (design B.3): its phase change or an announce spends the turn; an act beat goes on
+    if (playsScript(row)) {
+      const m = scriptTurn(g, row, ctx, fx);
+      if (m.spent) { g = m.fight; continue; }
+      g = m.fight; row = rowOf(g, row.id)!;
     }
     if (row.channel?.state === 'holding') {
       const a = row.abilities.find(x => x.id === row.channel!.ability);
