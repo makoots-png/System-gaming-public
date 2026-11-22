@@ -247,9 +247,9 @@ describe('events', () => {
     expect((await call('GET', `/api/rooms/${code}`)).body.events).toEqual([]);
   });
 
-  test('a player cannot pay its own solo run, and the room is unchanged; the GM\'s phone can', async () => {
+  test('a player cannot answer its own solo run, and the room is unchanged; the GM\'s phone can', async () => {
     const { code, gm } = await newRoom();
-    const answer = { eid: 'd-gm-e11', to: [`${PLAYER}:h1`], run: 'd-player1-e8', gate: 'g1', name: 'Den', verdict: 'paid', rewards: { xp: 9999 } };
+    const answer = { eid: 'd-gm-e11', to: [`${PLAYER}:h1`], run: 'd-player1-e8', gate: 'g1', name: 'Den', verdict: 'cleared' };
     expect(await call('POST', `/api/rooms/${code}/events`, { headers: token('p1'), body: { from: PLAYER, type: 'soloAnswer', payload: answer } })).toEqual({ status: 403, body: { error: 'gm only' } });
     expect((await call('GET', `/api/rooms/${code}`)).body.events).toEqual([]);
     expect((await call('POST', `/api/rooms/${code}/events`, { headers: gm, body: { from: 'gm', type: 'soloAnswer', payload: answer } })).status).toBe(200);

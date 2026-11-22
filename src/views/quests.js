@@ -6,7 +6,8 @@ import { COMPLETER, completerOf, mayChangeQuest, reportsProgress, systemCounts }
 import { SECRET_WORDS } from '../core/hunter/quest-secret.ts';
 import { pickables, pickedRef } from '../core/party.ts';
 import { JOB_NAMES, isJobName } from '../core/registry/jobs.ts';
-import { newRewards, rewardLines as linesOf } from '../core/rewards.ts';
+import { isEmptyReward, newRewards, rewardLines as linesOf } from '../core/rewards.ts';
+import { PENDING_WORDS, rewardWaits } from '../core/hunter/pending.ts';
 import { atHunter } from '../core/save-step.ts';
 import { objectivesSum, questUpdateSaid, told } from '../core/session-log.ts';
 import { chained, completeQuest, deleteQuest as questDeleted, editQuest, issueQuest, nextWake, overdue, questNews, questOffer, questTold, reopenQuest, rolloverDue, rolloverRetry, setProgress as progressSet, tracked as penalizable, withTold } from '../core/hunter/quests.ts';
@@ -288,7 +289,9 @@ export function register(app) {
       if (telling.has(id)) continue;
       telling.add(id);
       app.emit('quest:done', { hunterId: h.id, quest: q });
-      void ui.system({ tag: '! Quest', kind: 'quest', title: q.kind === 'urgent' ? 'URGENT QUEST COMPLETE' : 'QUEST COMPLETE', body: `${many ? `${h.name}: ` : ''}${q.title}`, rewards: rewardLines(q.rewards) })
+      // in a room the System's completion pays nothing by itself: the reward waits for the GM (ruling 20, hunter/pending.ts)
+      const lines = rewardWaits(app.seat()) && !isEmptyReward(q.rewards) ? [PENDING_WORDS.waits] : rewardLines(q.rewards);
+      void ui.system({ tag: '! Quest', kind: 'quest', title: q.kind === 'urgent' ? 'URGENT QUEST COMPLETE' : 'QUEST COMPLETE', body: `${many ? `${h.name}: ` : ''}${q.title}`, rewards: lines })
         .then(() => { telling.delete(id); ui.wrote('! Quest', store.apply('quest-told', atHunter(h.id, x => questTold(x, q.id)))); });
     }
   }

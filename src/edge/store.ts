@@ -22,6 +22,8 @@ import { noticed } from '../core/hunter/noticed.ts';
 import { lettersKept } from '../core/trade/offer.ts';
 import { asksKept } from '../core/trade/stash.ts';
 import type { NoticeCtx } from '../core/hunter/noticed.ts';
+import { ALONE } from '../core/hunter/pending.ts';
+import { seatOf } from '../core/role.ts';
 import { fightHold } from '../core/combat/fight-save.ts';
 import { NO_TOLD, parseTold, toldStep } from '../core/told.ts';
 import type { ToldEvent, ToldMemory } from '../core/told.ts';
@@ -348,8 +350,10 @@ export const store = {
     const done = noticed(next, () => {
       const room = noticeOf(next), R = rules();
       const at = room ? { session: room.session, held: room.held } : savedNotice(next);
-      // a player in a room reports the end of a quest the GM issued; the room is the one the save's link fields name
-      return { ...stepTime(next, new Date()), ...at, R, feats: featsFor(R, BUILT_IN_FEATS, room ? room.library : next.library.feats), room: room ? next.settings.sync.room : null };
+      // where the phone sits by the save's room fields: in a room a reward earned by itself waits for the GM (ruling 20),
+      // and a player reports the end of a quest the GM issued
+      const code = next.settings.sync.room, seat = seatOf(next.settings, code);
+      return { ...stepTime(next, new Date()), ...at, R, feats: featsFor(R, BUILT_IN_FEATS, room ? room.library : next.library.feats), seat: code && seat !== 'alone' ? { seat, room: code } : ALONE };
     });
     store.update(s => { writeInto(s, done); }, reason);
     return { ok: true };

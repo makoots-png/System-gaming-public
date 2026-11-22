@@ -693,3 +693,7 @@ ts	phase	decision	why	evidence	result
 2026-11-22T19:18Z	ops	landed on the working branch (b11da631, public run 45058723676 green in every job): session-e2e, items-small, rulings-21, the push hook's browser default. PR 72 into main merged. Nothing is in flight; mythic-5e and rulings-20 run.
 2026-11-22T19:20Z	features	mythic-5e merged on lead-backlog (opus): no warning is answered by a hit; B3 0.000 to 0.008 and out of OPEN, B1 0.058 to 0.068, B5 step, shield and interrupt rows hold but Zaratan's interrupt (1.08); unit pass 6,309 green on its branch. Questionable decisions 49, 50.
 2026-11-22T19:20Z	ops	Helpers started: mythic-balance (opus), mythic-7 (sonnet).
+2026-11-22T19:21Z	ops	Public run started for a16b015c, which holds mythic-5e: when green in every job push a16b015c by id through the hook, PR into main, merge.
+2026-11-22T19:35Z	ops	landed on the working branch (a16b015c, public run 45060296330 green in every job): mythic-5e. PR 73 into main merged. Nothing is in flight; mythic-balance, mythic-7 and rulings-20 run.
+2026-11-22T19:38Z	ops	the owner: finish the three running units, pause the wake, hand off to GrokBot (who runs Gemini Neon); Claude reviews later. Nothing new is started.
+2026-11-22T20:26Z	features	rulings-20 merged on lead-backlog (opus): pending rewards as a machine, the GM's Waiting for you list, the player's waiting windows; unit pass 6,383 green on its branch, 20 browser files green. Questionable decision 51.

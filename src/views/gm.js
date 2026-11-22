@@ -22,7 +22,8 @@ import { pickables, sheetName } from '../core/party.ts';
 import { tapWords } from '../core/sync/taps.ts';
 import { featsSwitched, resetRuleNumbers, resetTable, saveRuleNumbers, writeTable } from '../core/rules.ts';
 import { CHRONICLE_WORDS, FEATS_SWITCH_WORDS, boardLine } from '../core/hunter/chronicle-view.ts';
-import { BLANK_DRAFT, draftStep, gmAward, sendDeals, sent } from '../core/award.ts';
+import { BLANK_DRAFT, draftStep, gmAward, sendApproves, sendDeals, sendGives, sent } from '../core/award.ts';
+import { PENDING_WORDS, localHunter, pendingApproved, pendingHeard, pendingOf, pendingRefused, rewardWaits, waitingIn } from '../core/hunter/pending.ts';
 import { LOOT_WORDS, dropDealt, dropLine, dropWaiting, lootOffered } from '../core/gates/pay.ts';
 import { SPAWN_TYPES } from '../core/gates/gate.ts';
 import { stepTime } from '../core/day.ts';
@@ -177,6 +178,10 @@ export function register(app) {
 .gm-msg{min-height:20px;font-size:13px;color:var(--green);margin:4px 0}
 .gm-msg.bad{color:#ff8a96}
 .gm-tie{margin:6px 0;padding:6px 8px;border-left:3px solid var(--gold);font-size:13px;overflow-wrap:anywhere}
+.gm-pw{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:8px}
+.gm-pw-row{border:1px solid var(--line);border-left:3px solid var(--gold);background:rgba(10,26,46,.45);padding:8px 10px;overflow-wrap:anywhere}
+.gm-pw-what{color:var(--cyan);font-size:13px}
+.gm-pw-lines{font-size:13px;margin:4px 0 6px}
 .dlg-actions .gm-msg{flex:1 1 0;min-width:0;margin:0;align-self:center}
 .gm-prev{position:relative;margin:8px 0 12px;padding:18px 16px;text-align:center;border:1px solid var(--line-bright);background:var(--panel-solid);box-shadow:0 0 24px rgba(63,192,255,.35)}
 .gm-prev .n-tag{font-size:12px;letter-spacing:.3em;text-transform:uppercase;color:var(--cyan);margin-bottom:8px;overflow-wrap:anywhere}
@@ -475,69 +480,91 @@ export function register(app) {
     return true;
   }
   /** The drop the Award form holds while it waits; null for a form tied to none, or once the drop was dealt with. */
-  const tiedDrop = () => (awardDraft.at === 'fromDrop' ? dropWaiting(S().loot, awardDraft.fight) : null);
-  /** The line over the reward that says the form holds a fight's loot, and how to keep it for later. */
+  const tiedDrop = () => (awardDraft.at === 'tied' && awardDraft.tie.kind === 'drop' ? dropWaiting(S().loot, awardDraft.tie.fight) : null);
+  /** The waiting reward a send from `form` approves, while it still waits; null for a form tied to none. */
+  const waitingOf = (form = awardDraft) => { const id = sendApproves(form); return id ? pendingOf(S()).find(p => p.id === id && p.at === 'waiting') || null : null; };
+  /** The line over the reward that says what the form is tied to (a fight's loot, a waiting reward), and the send's words. */
   function showTie() {
-    const p = root && root.querySelector('#gm-award-tie'), d = tiedDrop(); if (!p) return;
-    p.hidden = !d; p.textContent = d ? `Fight loot: ${dropLine(d, ui.fmt)}. Send award gives it; fold Award to keep it for later.` : '';
+    const p = root && root.querySelector('#gm-award-tie'), d = tiedDrop(), w = waitingOf(), g = sendGives(awardDraft); if (!p) return;
+    p.hidden = !d && !w && !g;
+    p.textContent = d ? `Fight loot: ${dropLine(d, ui.fmt)}. Send award gives it; fold Award to keep it for later.` : w ? PENDING_WORDS.tie(w.name, w.from, w.what)
+      : g ? SHELF_WORDS.tie(g.given.name, whoName(g.to)) : '';
+    const go = root.querySelector('#gm-award-go'); if (go) go.textContent = w ? PENDING_WORDS.approve : g ? SHELF_WORDS.send : 'Send award';
   }
   // Award loot… opens the drop the Loot dropped window offered, the oldest waiting (combat.js `offerDrop`)
   app.api.award = { open(rewards, bundleId, drop) {
     const d = drop ? lootOffered(S().loot) : null;
-    draft({ type: 'open', rewards, bundle: bundleId || null, drop: d ? d.fight : null }); app.go('gm');
+    draft({ type: 'open', rewards, bundle: bundleId || null, tie: d ? { kind: 'drop', fight: d.fight } : null }); app.go('gm');
   } };
   function openDraft() {
     if (!draft({ type: 'drawn' })) return;
     open.award = true; applyOpen();
-    say('#gm-award-msg', 'Pick who gets it, then Send award.');
+    say('#gm-award-msg', waitingOf() ? '' : 'Pick who gets it, then Send award.');
     // after the view is shown (routing scrolls a newly shown view to its top)
     requestAnimationFrame(() => { const sec = root.querySelector('.gm-sec[data-sec="award"]'); if (sec) sec.scrollIntoView({ block: 'start' }); });
   }
   function doAward() {
-    const { local, remote } = picked();
+    const g = sendGives(awardDraft);
+    if (g) {
+      if (editor.blocked()) return say('#gm-award-msg', UNFINISHED_ROWS, true);
+      const tied = awardDraft;
+      holdGive(g.to, editor.value(), g.given, '#gm-award-msg', () => { if (awardDraft === tied) draft({ type: 'sent' }); });
+      return;
+    }
+    const w = waitingOf(), { local, remote } = w ? recipient(w) : picked();
     if (!local.length && !remote.length) return say('#gm-award-msg', 'Select at least one hunter.', true);
     if (editor.blocked()) return say('#gm-award-msg', UNFINISHED_ROWS, true);
     const rw = editor.value();
     if (isEmptyReward(rw)) return say('#gm-award-msg', 'Add something to the reward: XP, gold, points or a row.', true);
     if (sendAward(local, remote, rw, null, '#gm-award-msg', awardDraft)) draft({ type: 'sent' });
   }
+  /** Who a waiting reward is for, as Send award takes it: this phone's hunter by id, a player's by sheet key. */
+  const recipient = w => { const hid = localHunter(S(), w); return hid ? { local: [hid], remote: [] } : { local: [], remote: [w.to] }; };
   /**
    * `rw` given to this phone's hunters `local` and posted to the players' `remote`, in one write with its log line (and,
    * from the Award form, the drop its draft holds dealt with, award.ts `sendDeals`: a loot send that would miss a picked
    * player is not made). `bundle`: the bundle it was given from by hand (the GM's awards for roleplay), recorded in each
-   * hunter's chronicle and shown in its window's words. Says what it did under `msg`; answers whether it wrote.
+   * hunter's chronicle and shown in its window's words. From a form tied to a reward waiting for the GM, the send is its
+   * approval: the record approved in the same write (hunter/pending.ts `pendingApproved`), so a second approve, from the
+   * list or another tab, writes and posts nothing. Says what it did under `msg`; answers whether it wrote.
    * @param {string[]} local @param {import('../core/ids.ts').SheetKey[]} remote @param {import('../core/rewards.ts').Rewards} rw
    * @param {import('../core/protocol.ts').GivenBundle | null} bundle @param {string} msg @param {import('../core/award.ts').AwardDraft} [form]
    */
   function sendAward(local, remote, rw, bundle, msg, form = BLANK_DRAFT) {
-    const bits = bundle ? bundle.name : [...rewardLines(app.rules(), rw)].join(', ');
+    const bits = bundle ? bundle.name : [...rewardLines(app.rules(), rw)].join(', '), approves = sendApproves(form), w = waitingOf(form);
+    if (approves && !w) { say(msg, PENDING_WORDS.refusals.answered, true); return false; }
+    const earned = w ? { from: w.from, what: w.what } : null;
     // a player's hunter in this phone's fight: the row holds its statuses, so the reward's go on the row (in the award's write) and the award posted holds the rest
     const held = remote.length && rw.statuses.length ? remote.filter(k => fightRowOf(k) !== null) : [], free = remote.filter(k => !held.includes(k));
     const { statuses: _onRow, ...kept } = rw, rest = { ...newRewards(), ...kept };
     const awards = [{ to: free, rewards: rw }, { to: held, rewards: rest }].filter(a => a.to.length && (bundle || !isEmptyReward(a.rewards)))
-      .map(a => ({ to: a.to, p: postable('award', bundle ? { ...a, bundle } : a) }));
+      .map(a => ({ to: a.to, p: postable('award', { ...a, ...(bundle ? { bundle } : {}), ...(earned ? { earned } : {}) }) }));
     const lost = remote.filter(k => awards.some(a => !a.p.ev && a.to.includes(k))), posted = remote.filter(k => !lost.includes(k));
     const failed = !lost.length ? '' : awards.some(a => a.p.why === 'noRoom') ? `${andList(lost.map(remoteName))} need${lost.length === 1 ? 's' : ''} a room: open one with the room button at the top.` : `Not sent to ${andList(lost.map(remoteName))}: the room would not take this award.`;
     const deal = sendDeals(form, lost.length);
     if (isRefused(deal)) { say(msg, `${failed} Nothing was sent, and the loot waits.`, true); return false; }
+    // a waiting reward is approved only with its award: one the room would not take stays waiting, never lost
+    if (approves && lost.length) { say(msg, `${failed} Nothing was sent, and the reward waits.`, true); return false; }
     const here = local.map(nameOf), away = posted.map(remoteName);
-    const said = here.length || away.length ? [line('award', bundle ? 'GM gave' : 'GM award', `${bits} → ${[...here, ...away].join(', ')}`, local[0] || null)] : [];
+    const said = here.length || away.length ? [line('award', bundle ? 'GM gave' : earned ? 'GM approved' : 'GM award', `${earned ? `${PENDING_WORDS.earned(earned.from, earned.what)}: ` : ''}${bits} → ${[...here, ...away].join(', ')}`, local[0] || null)] : [];
     // every hunter of this phone granted, every player's award posted, the log line, and what this phone's fight holds
     // (each local hunter's fight parts, a held player's statuses) on the rows: one write (src/core/award.ts, hunter.grantWrite)
     const locals = local.map(hid => ({ hid, vitals: /** @type {import('../core/hunter/grant.ts').VitalsAt} */ (A().hunter.fightOf({ hid }) ? 'fight' : 'sheet') }));
     const day = { ...stepTime(S(), new Date()), R: app.rules() }, events = awards.flatMap(a => (a.p.ev ? [a.p.ev] : [])), code = room();
     const players = playerHeld(remotes(), posted.filter(k => held.includes(k)), rw.statuses);
     const out = A().hunter.grantWrite(bundle ? 'gm-give' : 'gm-award', sv => {
-      const a = gmAward(sv, locals, rw, { room: code, events, said }, day, bundle), save = deal.deals ? dropDealt(a.save, deal.deals) : a.save;
+      const a = gmAward(sv, locals, rw, { room: code, events, said }, day, bundle), dealt = deal.deals ? dropDealt(a.save, deal.deals) : a.save;
+      const save = approves && !isRefused(dealt) ? pendingApproved(dealt, approves, rw) : dealt;
       if (isRefused(save)) return save;
       return { ...a, save, held: [...a.granted.map(({ hid, g }) => ({ who: { hid }, ...g.fight })), ...players] };
     });
-    if (isRefused(out)) { say(msg, out.why === 'no-drop' ? `${LOOT_WORDS['no-drop']} Nothing was sent.` : 'Not saved: nothing was sent.', true); return false; }
+    if (isRefused(out)) { say(msg, out.why === 'no-drop' ? `${LOOT_WORDS['no-drop']} Nothing was sent.` : out.why === 'answered' || out.why === 'no-reward' ? PENDING_WORDS.refusals[out.why] : 'Not saved: nothing was sent.', true); return false; }
     if (events.length) A().sync.flush();
     // one System popup per hunter, queued by ui.system; a bundle's in its own words
-    const words = bundle && bundle.window ? { title: bundle.window.title, body: bundle.window.line || bundle.name, tag: '! Reward', kind: 'quest' } : undefined;
+    const words = bundle && bundle.window ? { title: bundle.window.title, body: bundle.window.line || bundle.name, tag: '! Reward', kind: 'quest' }
+      : earned ? { title: 'REWARD RECEIVED', body: PENDING_WORDS.approvedBody(earned.from, earned.what), tag: '! Reward', kind: 'quest' } : undefined;
     for (const { hid, g } of out.granted) A().hunter.granted(hid, g, words);
-    const sentTo = names => (names.length ? `${bundle ? `Gave ${bundle.name} to` : 'Sent to'} ${andList(names)}.` : '');
+    const sentTo = names => (names.length ? (earned ? PENDING_WORDS.approved(andList(names)) : `${bundle ? `Gave ${bundle.name} to` : 'Sent to'} ${andList(names)}.`) : '');
     const waiting = away.length && !goesNow() ? `${andList(away)} get${away.length === 1 ? 's' : ''} it when the room answers.` : '';
     say(msg, [waiting ? sentTo(here) : sentTo([...here, ...away]), waiting, failed].filter(Boolean).join(' '), !!lost.length);
     return true;
@@ -546,23 +573,69 @@ export function register(app) {
   const recentMemory = store.device('give-recent');
   /**
    * The GM's awards for roleplay (src/core/registry/bundles.ts): Give… opens the shelf (give-shelf.js) for one hunter of
-   * the board, and the award tapped is held back for `GIVE_HOLD_MS` under a toast with Undo, then given by the one path
-   * an award takes (`sendAward`, with the bundle's key, name and window). Undo drops it; nothing was written. `id`: this
-   * phone's hunter id or a player's sheet key.
+   * the board. In a room the award tapped opens in the Award form, tied to its bundle and hunter, and the form's Give is
+   * held (`holdGive`); alone the award tapped is held at once. `id`: this phone's hunter id or a player's sheet key.
    * @param {string} id
    */
   async function giveFrom(id) {
-    const key = parseSheetKey(id), remote = key !== null, name = remote ? remoteName(id) : nameOf(id);
     const own = A().bundles.list().map(b => ({ key: b.id, name: b.name, rewards: b.rewards, window: b.window || null }));
-    const b = await giveShelf({ name, own, recent: readRecent(recentMemory.read()), R: app.rules() });
+    const b = await giveShelf({ name: whoName(id), own, recent: readRecent(recentMemory.read()), R: app.rules() });
     if (!b) return;
-    const heldIn = room();
+    const given = { key: b.key, name: b.name, window: b.window };
+    // ruling 20 (SMX-gates-5.2): in a room every reward is editable before a player sees it, so the pick opens the Award
+    // form with the award filled in and only its Give is held; alone it is held as picked (hunter/pending.ts `ROUTE`)
+    if (!rewardWaits(app.seat())) return holdGive(id, b.rewards, given, '#gm-board-msg');
+    sel.clear(); sel.add(id);
+    draft({ type: 'open', rewards: b.rewards, bundle: null, tie: { kind: 'shelf', given, to: id } }); openDraft(); renderTargets();
+  }
+  /** The name of hunter `id`: this phone's by hunter id, a player's by sheet key. */
+  const whoName = id => (parseSheetKey(id) ? remoteName(id) : nameOf(id));
+  /**
+   * Award `rw` given as bundle `given` to hunter `id` (this phone's hunter id or a player's sheet key), held back for
+   * `GIVE_HOLD_MS` under a toast with Undo (held.ts), then given by the one path an award takes (`sendAward`). Undo drops
+   * it; nothing was written. `then` runs once it is given.
+   */
+  function holdGive(id, rw, given, msg, then = () => {}) {
+    const key = parseSheetKey(id), heldIn = room();
     const give = () => {
       // a player's award goes to the room it was picked in, or not at all (SMX-gates-5.3b)
-      if (key && room() !== heldIn) return say('#gm-board-msg', `Not given: the room changed while ${b.name} was held.`, true);
-      if (sendAward(key ? [] : [id], key ? [key] : [], b.rewards, { key: b.key, name: b.name, window: b.window }, '#gm-board-msg')) recentMemory.write(recentGives(recentMemory.read(), b.key));
+      if (key && room() !== heldIn) return say(msg, `Not given: the room changed while ${given.name} was held.`, true);
+      if (!sendAward(key ? [] : [id], key ? [key] : [], rw, given, msg)) return;
+      recentMemory.write(recentGives(recentMemory.read(), given.key));
+      then();
     };
-    ui.toast(SHELF_WORDS.toastTag, SHELF_WORDS.given(b.name, name), { hold: { what: { kind: 'give', to: id, bundle: b.key }, ms: GIVE_HOLD_MS, act: give, undo: SHELF_WORDS.undo } });
+    ui.toast(SHELF_WORDS.toastTag, SHELF_WORDS.given(given.name, whoName(id)), { hold: { what: { kind: 'give', to: id, bundle: given.key }, ms: GIVE_HOLD_MS, act: give, undo: SHELF_WORDS.undo } });
+  }
+  // ── Waiting for you: the rewards the app would have paid by itself, until the GM answers each (hunter/pending.ts) ──
+  /** The rewards waiting in this phone's room, oldest first; none out of a room. */
+  const waitingHere = () => { const code = room(); return code ? waitingIn(S(), code) : []; };
+  /** Draws the list and its head summary ("2 waiting"). */
+  function renderWaiting() {
+    const list = waitingHere(), R = app.rules(), W = PENDING_WORDS;
+    const html = list.length ? list.map(w => `<li class="gm-pw-row" data-pw="${esc(w.id)}"><div><b>${esc(w.name)}</b> <span class="gm-pw-what">${esc(W.earned(w.from, w.what))}</span></div>`
+      + `<div class="gm-pw-lines">${esc(rewardLines(R, w.rewards).join(', '))}</div>`
+      + `<div class="gm-row"><button type="button" class="primary" data-pw-approve>${esc(W.approve)}</button><button type="button" data-pw-edit>${esc(W.edit)}</button><button type="button" class="danger" data-pw-refuse>${esc(W.refuse)}</button></div></li>`).join('')
+      : `<li class="empty">${esc(W.none)}</li>`;
+    const ul = $('#gm-pw'); if (ul.dataset.sig !== html) { ul.dataset.sig = html; ul.innerHTML = html; }
+    $('#gm-hsum-waiting').textContent = W.summary(list.length);
+  }
+  /**
+   * The GM's answer to waiting reward `id`: approved as it stands (Send award's one path, tied to the record), opened in
+   * the Award form's fields to edit first, or refused (its record and the player's window, one write).
+   * @param {string} id @param {'approve' | 'edit' | 'refuse'} how
+   */
+  function answerWaiting(id, how) {
+    const w = waitingHere().find(p => p.id === id); if (!w) return say('#gm-pw-msg', PENDING_WORDS.refusals['no-reward'], true);
+    const to = recipient(w);
+    if (how === 'approve') { sendAward(to.local, to.remote, w.rewards, null, '#gm-pw-msg', { at: 'tied', tie: { kind: 'pending', id: w.id } }); return; }
+    if (how === 'edit') {
+      sel.clear(); sel.add(to.local[0] || w.to);
+      draft({ type: 'open', rewards: w.rewards, bundle: null, tie: { kind: 'pending', id: w.id } }); openDraft(); renderTargets(); return;
+    }
+    const log = { at: new Date().toISOString(), cap: app.rules().logCap };
+    if (!ui.wrote('GM', store.apply('gm-refuse', s => pendingRefused(s, w.id, { stamp: A().sync.stamp(), log })))) return;
+    A().sync.flush();
+    say('#gm-pw-msg', PENDING_WORDS.refused(w.name));
   }
   /** "Mira", "Mira and Brakk", "Mira, Brakk and Eldrin". */
   const andList = names => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`);
@@ -770,6 +843,8 @@ export function register(app) {
       if (!('stories' in open) && running(S().storyRuns).length) open.stories = true;
       // Words from players opens with the page while a word is new; after that it keeps the GM's choice
       if (!('words' in open) && A().words.unseen()) open.words = true;
+      // Waiting for you opens with the page while a reward waits
+      if (!('waiting' in open) && waitingHere().length) open.waiting = true;
       const rankOpts = RANKS.map(r => opt(r, `${r}-rank`)).join('');
       el.innerHTML = `<nav class="gm-make" id="gm-make" aria-label="Make"><div class="gm-make-h"><span class="lbl">Make</span><button type="button" class="quiet" data-make="workshop">Workshop →</button></div>
           <div class="gm-make-row">${MAKE.map(([k, l]) => `<button type="button" data-make="${k}" aria-label="Make ${l.toLowerCase()}">${l}</button>`).join('')}</div></nav>
@@ -780,6 +855,7 @@ export function register(app) {
           <div class="gm-row"><button type="button" class="primary" id="gm-s-go">Start session</button></div>
           <div class="gm-msg" id="gm-s-msg" role="status"></div><div id="gm-cheat"></div>`),
         section('party', 'Party board', `<div class="gm-room" id="gm-room"></div><div class="gm-wtable" id="gm-weight" role="group" aria-label="Dice weight"></div><div class="gm-cards" id="gm-board" aria-live="polite"></div><div class="gm-msg" id="gm-board-msg" role="status"></div>`),
+        section('waiting', PENDING_WORDS.title, '<div class="gm-msg" id="gm-pw-msg" role="status"></div><ol class="gm-pw" id="gm-pw"></ol>', false, true),
         section('words', WORD_WORDS.gm.title, '<div id="gm-words"></div>', false, true),
         section('trade', 'Trades and stash', '<div id="gm-trade"></div>', false, true),
         section('stories', 'Stories', '<div id="gm-stories"></div>', false, true),
@@ -835,10 +911,10 @@ export function register(app) {
       ].join('');
 
       // D04: desktop columns. Sections move into column wrappers at >=1100 (2 cols) / >=1500 (3 cols); phone/tablet keep the original single stack
-      const ORDER = ['cheat', 'party', 'words', 'trade', 'stories', 'award', 'bcast', 'quest', 'gate', 'tables', 'rules', 'log'];
+      const ORDER = ['cheat', 'party', 'waiting', 'words', 'trade', 'stories', 'award', 'bcast', 'quest', 'gate', 'tables', 'rules', 'log'];
       // A20: the Award form is a full-width row under the columns, its reward rows two to a line
-      const PLAN2 = [['party', 'words', 'trade', 'stories', 'quest'], ['cheat', 'bcast', 'gate', 'tables', 'rules', 'log']];
-      const PLAN3 = [['party', 'words', 'trade', 'stories'], ['quest', 'bcast'], ['cheat', 'gate', 'tables', 'rules', 'log']];
+      const PLAN2 = [['party', 'waiting', 'words', 'trade', 'stories', 'quest'], ['cheat', 'bcast', 'gate', 'tables', 'rules', 'log']];
+      const PLAN3 = [['party', 'waiting', 'words', 'trade', 'stories'], ['quest', 'bcast'], ['cheat', 'gate', 'tables', 'rules', 'log']];
       let planSig = '';
       const arrange = () => {
         const L = app.layout || { desktop: () => false, wide: () => false };
@@ -917,6 +993,8 @@ export function register(app) {
           sendStatus(key, { remove: sk }, n => `Removed ${c ? condLabel(c) : sk} from ${n}`); return; }
         if (t.dataset.rstatus !== undefined) { addRemoteStatus(t.closest('[data-hid]').dataset.hid); return; }
         if (t.dataset.hbuild !== undefined) { const c = t.closest('[data-hid]'), r = c.classList.contains('remote') && remotes().find(x => x.key === c.dataset.hid); const h = r ? null : store.hunter(c.dataset.hid); if (r) A().build.gmMenu({ kind: 'remote', remote: r.key }, r.data); else if (h) A().build.gmMenu({ kind: 'local', hunterId: h.id }, null); return; }
+        const pw = t.closest('[data-pw]');
+        if (pw) { answerWaiting(pw.dataset.pw, t.hasAttribute('data-pw-approve') ? 'approve' : t.hasAttribute('data-pw-edit') ? 'edit' : 'refuse'); return; }
         if (t.dataset.ggive !== undefined) { void giveFrom(t.closest('[data-hid]').dataset.hid); return; }
         if (t.dataset.gchron !== undefined) { A().chronicle.open(t.closest('[data-hid]').dataset.hid); return; }
         if (t.dataset.feats) { switchFeats(t.dataset.feats === 'on'); return; }
@@ -957,11 +1035,11 @@ export function register(app) {
     update(el) {
       root = el;
       if (awardDraft.at === 'opening') openDraft();
-      // the drop the form holds was set aside or given elsewhere: the form lets it go
-      if (awardDraft.at === 'fromDrop' && !tiedDrop()) draft({ type: 'gone' });
+      // the drop the form holds was set aside or given elsewhere, or its waiting reward was answered: the form lets it go
+      if (awardDraft.at === 'tied' && !tiedDrop() && !waitingOf()) draft({ type: 'gone' });
       showTie();
       const csig = JSON.stringify(ov()), cs = $('#gm-cheat'); if (cs.dataset.sig !== csig) { cs.dataset.sig = csig; cs.innerHTML = cheatSheet(); }
-      renderBoard(); renderTargets();
+      renderBoard(); renderTargets(); renderWaiting();
       $('#gm-hsum-words').textContent = A().words.paint($('#gm-words'));
       $('#gm-hsum-trade').textContent = A().trade.paint($('#gm-trade'));
       $('#gm-hsum-stories').textContent = A().stories.paint($('#gm-stories'));
@@ -979,6 +1057,14 @@ export function register(app) {
   app.on('sync:status', () => { if (root && root.isConnected && !root.closest('[hidden]')) renderRoom(); });
   app.on('sync:sheets', () => { if (root && root.isConnected && !root.closest('[hidden]')) { renderBoard(); renderTargets(); } });
   app.on('sync:sheets', weighJoined);
+  // a player's reward asked of the GM (hunter/pending.ts): kept waiting once by its id, with its log line
+  app.on('sync:event', ({ event: ev }) => {
+    const code = room();
+    if (ev.type !== 'rewardAsk' || app.seat() !== 'gm' || !code) return;
+    const p = ev.payload, log = { at: new Date().toISOString(), cap: app.rules().logCap };
+    if (!A().sync.once(p.eid, s => pendingHeard(s, p, code, log))) return;
+    ui.toast('GM', PENDING_WORDS.notify(p.name || 'a hunter'), { kind: 'info' });
+  });
   // a player's roll reached the Table feed: one that shows the forced face spends the force the GM set on that hunter's
   // next roll, and the spend goes to the player's phone like any change (table-weight.ts `showsForced`)
   app.on('sync:event', ({ event }) => {

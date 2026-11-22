@@ -5,7 +5,7 @@
 import { shareEach } from '../../src/core/gates/pay.ts';
 import { RULES } from '../../src/core/rules.ts';
 import { seedMonsters } from '../../src/core/registry/monsters.ts';
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, save, type Page } from './helpers.ts';
+import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, save, approveWaiting, type Page } from './helpers.ts';
 
 /** The hunter on `page` made strong enough to clear any E or D gate alone: every stat at 60, its HP full. */
 const strong = (page: Page) => page.evaluate(() => hunterApp.store.update((d: any) => {
@@ -111,22 +111,30 @@ async function runDen(page: Page): Promise<void> {
 }
 const lifetime = (h: any): number => h.xp + Array.from({ length: h.level - 1 }, (_, i) => 100 * (i + 1)).reduce((a, b) => a + b, 0);
 
-test('in a room, the GM opens a gate to solo runs; a player clears it alone and the GM\'s phone pays it once', async ({ device }) => {
+test('in a room, the GM opens a gate to solo runs; a player clears it alone, its reward waits for the GM, and the GM\'s approval pays it once', async ({ device }) => {
   const { gm, den, players: [kai] } = await roomWithSoloDen(device, ['Kai']);
   const xp0 = lifetime(hunterOf(await save(kai!.page)));
   const due = await gm.page.evaluate(id => { const g = hunterApp.store.get().gates.find((x: any) => x.id === id); return g; }, den);
   await runDen(kai!.page);
-  const paid = kai!.page.locator('.sys-overlay.show', { hasText: 'paid your solo run' });
-  await expect(paid).toBeVisible({ timeout: 30_000 });
-  await paid.locator('.sys-actions button').first().tap();
+  const cleared = kai!.page.locator('.sys-overlay.show', { hasText: 'your solo run cleared it' });
+  await expect(cleared).toBeVisible({ timeout: 30_000 });
+  await expect(cleared).toContainText('Waiting for the GM');
+  await cleared.locator('.sys-actions button').first().tap();
   await expect.poll(async () => (await gm.page.evaluate(id => hunterApp.store.get().gates.find((x: any) => x.id === id).status, den))).toBe('cleared');
+  expect(lifetime(hunterOf(await save(kai!.page))), 'nothing paid before the GM approves').toBe(xp0);
+  await approveWaiting(gm.page, 'Kai');
+  const paid = kai!.page.locator('.sys-overlay.show', { hasText: 'REWARD RECEIVED' });
+  await expect(paid).toBeVisible({ timeout: 30_000 });
+  await expect(paid).toContainText('Solo clear: Goblin Den. The GM approved your reward.');
+  await paid.locator('.sys-actions button').first().tap();
+  await dismissAll(kai!.page);
   const gained = lifetime(hunterOf(await save(kai!.page))) - xp0, paidXp = await gm.page.evaluate(id => hunterApp.store.get().gates.find((x: any) => x.id === id).xpPaid, den);
   expect(gained, 'one hunter\'s share of the gate\'s XP still due, once').toBe(shareEach(paidXp - due.xpPaid, 1, RULES.gateParty));
   expect((await save(kai!.page)).settings.sync.asked ?? []).toEqual([]);
   expect((await save(gm.page)).log.some((l: any) => l.title === 'Solo run' && l.text.startsWith('Kai cleared "Goblin Den"'))).toBe(true);
 });
 
-test('with the GM\'s phone offline, the run waits for it and is paid once when it is back', async ({ device }) => {
+test('with the GM\'s phone offline, the run waits for it, is answered when it is back, and the GM\'s approval pays it once', async ({ device }) => {
   const { gm, players: [kai] } = await roomWithSoloDen(device, ['Kai'], { allowConsole: [/ERR_INTERNET_DISCONNECTED/] });
   await gm.ctx.setOffline(true);
   const xp0 = lifetime(hunterOf(await save(kai!.page)));
@@ -135,9 +143,15 @@ test('with the GM\'s phone offline, the run waits for it and is paid once when i
   expect(lifetime(hunterOf(await save(kai!.page))), 'nothing paid while the GM\'s phone is away').toBe(xp0);
   await kai!.page.reload();
   await gm.ctx.setOffline(false);
-  const paid = kai!.page.locator('.sys-overlay.show', { hasText: 'paid your solo run' });
+  const cleared = kai!.page.locator('.sys-overlay.show', { hasText: 'your solo run cleared it' });
+  await expect(cleared).toBeVisible({ timeout: 60_000 });
+  await cleared.locator('.sys-actions button').first().tap();
+  await gm.page.reload();
+  await approveWaiting(gm.page, 'Kai');
+  const paid = kai!.page.locator('.sys-overlay.show', { hasText: 'REWARD RECEIVED' });
   await expect(paid).toBeVisible({ timeout: 60_000 });
   await paid.locator('.sys-actions button').first().tap();
+  await dismissAll(kai!.page);
   const once = lifetime(hunterOf(await save(kai!.page)));
   expect(once).toBeGreaterThan(xp0);
   await kai!.page.reload();
@@ -172,7 +186,7 @@ test('a run the room took and the GM\'s phone has not paid can be put away after
   expect((await save(kai!.page)).settings.sync.asked ?? []).toEqual([]);
 });
 
-test('two players clear one gate: the first is paid, the second is told it was taken and keeps its cost', async ({ device }) => {
+test('two players clear one gate: the first clears it, the second is told it was taken and keeps its cost', async ({ device }) => {
   const { code, players: [kai, rei] } = await roomWithSoloDen(device, ['Kai', 'Rei']);
   const reiXp = lifetime(hunterOf(await save(rei!.page)));
   // setup: Rei's phone hears nothing more of the room until its own run is played, so the den it enters is the one it
@@ -186,8 +200,8 @@ test('two players clear one gate: the first is paid, the second is told it was t
     await route.continue().catch(() => {});
   });
   await runDen(kai!.page);
-  const paid = kai!.page.locator('.sys-overlay.show', { hasText: 'paid your solo run' });
-  await expect(paid).toBeVisible({ timeout: 30_000 });
+  const cleared = kai!.page.locator('.sys-overlay.show', { hasText: 'your solo run cleared it' });
+  await expect(cleared).toBeVisible({ timeout: 30_000 });
   await runDen(rei!.page);
   hear();
   const taken = rei!.page.locator('.sys-overlay.show', { hasText: 'GATE TAKEN' });

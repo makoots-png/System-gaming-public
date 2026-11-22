@@ -1,6 +1,6 @@
 // held.ts: a write the GM holds back under Undo, from the pick to its end. Pure.
 //
-// Five writes are held two seconds under a toast with Undo: an award given from Give…'s shelf (gm.js `giveFrom`), End
+// Five writes are held two seconds under a toast with Undo: an award given from Give…'s shelf (gm.js `holdGive`), End
 // story (stories.js `endStory`), a taker's Accept of an offer that asks something back, the GM's Stop of an offer and
 // the GM's Remove of a line of the party stash (trade.js). Before, each lived only as a closure in ui.js's toast list: End story tapped twice held
 // two ends of one run, and Undo on one left the other to end the story (SMX-gates-5.3a). Now each held write is a value
@@ -10,9 +10,10 @@
 // A held write runs only when its own window ends, its Undo is tapped, or the page is hidden: newer toasts do not push
 // it off (SMX-gates-5.1, the owner, Nov 22: "the undo sticks around after I mess with the other notifications until its
 // duration is done"). Before, two newer toasts wrote it at once (an event `crowded`, gone).
-// One row waits on a unit written, not built (notes-9-rulings-1122.md, ruling 20):
-// - `absent × pick → holding` (SMX-gates-5.2): a bundle picked on the shelf is held as it is, with no edit step. Ruled
-//   "every reward is editable first", the pick opens a draft (the Award form's, award.ts) and only its send is held.
+// SMX-gates-5.2, ruled (the owner, Nov 22, rule d: every reward is editable first; notes-9-rulings-1122.md, ruling 20): in a
+// room a bundle picked on the shelf opens the Award form's draft (award.ts, its `shelf` tie) with the award filled in,
+// and the `pick` of `absent × pick → holding` is that draft's Give, the award as the GM left it. Alone, with no player
+// to see it first, the shelf's tap is the pick, as before (hunter/pending.ts `ROUTE`).
 import type { ItemId, OfferId, StoryRunId } from './ids.ts';
 
 /**
@@ -51,7 +52,7 @@ const COMMITTED: HeldWrite = { at: 'committed' }, UNDONE: HeldWrite = { at: 'und
 type HeldFn<E extends HeldEvent['type']> = (h: HeldWrite, e: Extract<HeldEvent, { type: E }>) => HeldWrite;
 /** Every state against every event; null: refused, nothing changes. Written and undone are ends: the write leaves the list. */
 const HELD_TABLE: { readonly [S in HeldWrite['at']]: { readonly [E in HeldEvent['type']]: HeldFn<E> | null } } = {
-  // ruling SMX-gates-5.2 waits: a shelf's bundle is held as picked, with no edit step
+  // SMX-gates-5.2: in a room the pick is the Award form's Give of an award from the shelf, edited first (ruling 20)
   absent: { pick: (_h, e) => ({ at: 'holding', until: e.at + e.ms }), undo: null, due: null, hidden: null },
   // a second pick of the same write is refused (5.3a)
   holding: { pick: null, undo: () => UNDONE, due: () => COMMITTED, hidden: () => COMMITTED },

@@ -217,7 +217,7 @@ async function answerWindowFill(page: Page, title: string, text: string) {
   await win.locator('.sys-actions button.primary').tap();
 }
 
-test('the GM gives an award for roleplay from a player\'s card in two taps: it is held two seconds under Undo, then the player\'s phone opens it in its own words, and both hunters\' chronicles remember it', async ({ device }) => {
+test('in a room the GM gives an award for roleplay from a player\'s card in three taps: the award opens in the Award form to edit first, its Give is held two seconds under Undo, then the player\'s phone opens it in its own words, and both hunters\' chronicles remember it', async ({ device }) => {
   const gm = (await device('gm')).page, player = (await device('player')).page;
   const shelf = gm.locator('.sys-overlay.show.gs-ov');
   const heldToast = (award: string) => gm.locator('#toasts .toast[data-held]', { hasText: `Given: ${award} to` });
@@ -232,7 +232,7 @@ test('the GM gives an award for roleplay from a player\'s card in two taps: it i
     await expect(gm.locator('#gm-board .gm-card.remote', { hasText: HUNTER })).toHaveCount(1);
   });
 
-  await test.step('Give… on the player\'s card, then Held the Mask, the first award of the first moment: two taps, and a toast holds it with Undo', async () => {
+  await test.step('Give… on the player\'s card, then Held the Mask, the first award of the first moment: it opens in the Award form\'s fields (ruling 20), and its Give holds it under Undo: three taps', async () => {
     const taps = tapCounter();
     await taps.tap(gm.locator('#gm-board .gm-card.remote', { hasText: HUNTER }).locator('[data-ggive]'));
     await expect(shelf).toContainText(`GIVE TO ${HUNTER.toUpperCase()}`);
@@ -241,11 +241,15 @@ test('the GM gives an award for roleplay from a player\'s card in two taps: it i
     await expect(row).toContainText('+1 ability point');
     await taps.tap(row);
     await expect(shelf).toHaveCount(0);
-    expect(taps.count).toBe(2);
+    await expect(gm.locator('#gm-pts')).toHaveValue('1');
+    await expect(gm.locator('#gm-award-tie')).toContainText(`Held the Mask for ${HUNTER}, from the shelf.`);
+    await expect(heldToast('Held the Mask'), 'nothing is held before the Give').toHaveCount(0);
+    await taps.tap(gm.locator('#gm-award-go', { hasText: 'Give' }));
+    expect(taps.count).toBe(3);
     await expect(heldToast('Held the Mask').getByRole('button', { name: 'Undo' })).toBeVisible();
-    // the write waits for the toast to end: the message under the board comes when it goes
+    // the write waits for the toast to end: the message under the form comes when it goes
     await expect(heldToast('Held the Mask')).toHaveCount(0);
-    await expect(gm.locator('#gm-board-msg')).toContainText(`Gave Held the Mask to ${HUNTER}.`);
+    await expect(gm.locator('#gm-award-msg')).toContainText(`Gave Held the Mask to ${HUNTER}.`);
   });
 
   await test.step('the player\'s phone opens it in its own words, and the chronicle holds it once', async () => {
@@ -266,6 +270,7 @@ test('the GM gives an award for roleplay from a player\'s card in two taps: it i
     await expect(shelf.locator('.gs-h')).toHaveText(['Told a good lie']);
     await expect(shelf.locator('[data-give]')).toHaveCount(7);
     await shelf.locator('[data-give="seed-straight-face"]').tap();
+    await gm.locator('#gm-award-go', { hasText: 'Give' }).tap();
     await heldToast('Straight Face').getByRole('button', { name: 'Undo' }).tap();
     await expect(heldToast('Straight Face')).toHaveCount(0);
   });
@@ -278,6 +283,7 @@ test('the GM gives an award for roleplay from a player\'s card in two taps: it i
     await expect(recent.locator('[data-give]')).toHaveCount(1);
     await expect(recent.locator('[data-give="seed-held-the-mask"]')).toBeVisible();
     await shelf.locator('[data-group="lie"] [data-give="seed-straight-face"]').tap();
+    await gm.locator('#gm-award-go', { hasText: 'Give' }).tap();
     const win = gm.locator('.sys-overlay.show', { hasText: 'THE SYSTEM BELIEVED YOU TOO' });
     await expect(win).toBeVisible();
     await answerWindow(gm, 'THE SYSTEM BELIEVED YOU TOO');

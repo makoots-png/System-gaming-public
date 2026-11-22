@@ -334,13 +334,13 @@ export function register(app) {
     if (ran.granted) api.hunter.granted(hid, ran.granted, { popup: false });
   }
 
-  // the GM's phone takes a player's run of the room's solo gate once by its id: pays a won run as the gate's Clear for
-  // that hunter, or answers it taken, closed or gone; a lost run enters the gate (gates/solo.ts `soloTaken`)
+  // the GM's phone takes a player's run of the room's solo gate once by its id: clears the gate for a won run, its
+  // reward waiting for the GM's approval, or answers it taken, closed or gone; a lost run enters the gate (gates/solo.ts `soloTaken`)
   app.on('sync:event', ({ event: ev }) => {
     if (app.seat() !== 'gm' || ev.type !== 'soloRun') return;
     const p = ev.payload, s = store.get(), plan = soloPlan(s, p, app.rules()), g = gate(p.gate);
     const loot = plan.kind === 'paid' && g ? lootOf(g.rank, true, 'world') : { gold: 0, items: [] };
-    const body = soloAnswerBody(s, p.eid, p, plan, loot), answer = body ? sync().event('soloAnswer', body) : null;
+    const body = soloAnswerBody(s, p.eid, p, plan), answer = body ? sync().event('soloAnswer', body) : null;
     const code = room(), rank = sync().remoteSheets().find(r => r.key === p.by)?.data.rank ?? null;
     if (!sync().once(p.eid, x => soloTaken(x, p, plan, answer, loot, { day: dayNow(), room: code ? { code, stamp: stampNow() } : null, rank }))) return;
     sync().flush();

@@ -30,6 +30,7 @@ import { setShadowHp } from '../hunter/shadows.ts';
 import { WAYS_BACK, hpOf, manaOf } from '../hunter/vitals.ts';
 import type { LifeState, Maxima, Vitals } from '../hunter/vitals.ts';
 import { newRewards } from '../rewards.ts';
+import type { Rewards } from '../rewards.ts';
 import type { ItemTemplate } from '../registry/items.ts';
 import { monsterXp, parseMonster, seedMonsters, tweakOfMonster } from '../registry/monsters.ts';
 import type { Monster, MonsterTemplate } from '../registry/monsters.ts';
@@ -51,7 +52,8 @@ import type { SpawnMonster } from './spawn.ts';
 import { enteredAlone, worldOrder } from './world.ts';
 import { gateFact, settleClear, shareEach } from './pay.ts';
 import type { Seat } from '../role.ts';
-import { WORLD_NAME_MAX } from '../protocol.ts';
+import { EARNED_WHAT_MAX, WORLD_NAME_MAX } from '../protocol.ts';
+import { pendingHeard } from '../hunter/pending.ts';
 import type { EventBody, EventId, EventStamp, RoomCode, RoomEvent, SheetKey, SoloDoc, SoloRefused, SoloRunPayload, WorldDoc } from '../protocol.ts';
 import { atOutbox, post } from '../sync/outbox.ts';
 import { askPosted } from '../sync/asked.ts';
@@ -452,8 +454,8 @@ export const PLAN_TABLE: { readonly [G in SoloGateFound]: { readonly [O in RunOu
   // SMX-gates-2.2: a run a player started before the GM took the gate out of solo runs still counts (the owner, Nov 22:
   // "Yes that run still counts"): a won run is paid, and a lost or stalled run enters it (`soloTaken`).
   notSolo: { won: 'pay', lost: 'report', stalled: 'report' },
-  // SMX-gates-2.3: ruled yes (the owner, Nov 22, rule d: a solo clear's rewards wait for the GM's edit and approval); written
-  // as a unit, not built (notes-9-rulings-1122.md, ruling 20), so `pay` still pays at once.
+  // SMX-gates-2.3: a solo clear's rewards wait for the GM's edit and approval (the owner, Nov 22, rule d, ruling 20): `pay`
+  // clears the gate at once and keeps its reward waiting on the GM's phone (`soloTaken`, hunter/pending.ts)
   open: { won: 'pay', lost: 'report', stalled: 'report' },
 };
 const gateFound = (g: Gate | undefined): SoloGateFound =>
@@ -467,13 +469,16 @@ export function soloPlan(save: Pick<Save, 'gates' | 'monsters'>, p: SoloRunPaylo
   const all = [...seedMonsters(R), ...save.monsters], due = xpDue(g!, id => { const m = all.find(x => x.id === id); return m ? monsterXp(m, R) : 0; });
   return { kind: 'paid', due, xp: shareEach(due, 1, R.gateParty), party: R.gateParty };
 }
-/** The `soloAnswer` body for run `p` under `plan` with the loot rolled: null for a report, which needs none. */
-export function soloAnswerBody(save: Pick<Save, 'gates'>, run: EventId, p: SoloRunPayload, plan: SoloPlan, loot: SoloLoot): EventBody<'soloAnswer'> | null {
+/** The `soloAnswer` body for run `p` under `plan`: cleared, refused, or null for a report, which needs none. */
+export function soloAnswerBody(save: Pick<Save, 'gates'>, run: EventId, p: SoloRunPayload, plan: SoloPlan): EventBody<'soloAnswer'> | null {
   const name = save.gates.find(x => x.id === p.gate)?.name.slice(0, WORLD_NAME_MAX) ?? '';
   const base = { to: [p.by] as [SheetKey], run, gate: p.gate, name };
-  if (plan.kind === 'paid') return { ...base, verdict: 'paid', rewards: { ...newRewards(), xp: plan.xp, gold: shareEach(loot.gold, 1, plan.party), items: [...loot.items] } };
+  if (plan.kind === 'paid') return { ...base, verdict: 'cleared' };
   return plan.kind === 'refused' ? { ...base, verdict: 'refused', why: plan.why } : null;
 }
+/** What a paid run's hunter is owed, the gate's Clear for a party of one with the loot rolled: it waits for the GM's approval. */
+export const soloOwed = (plan: Extract<SoloPlan, { kind: 'paid' }>, loot: SoloLoot): Rewards =>
+  ({ ...newRewards(), xp: plan.xp, gold: shareEach(loot.gold, 1, plan.party), items: [...loot.items] });
 
 /**
  * What `soloTaken` reads besides the save: the moment; the room it answers in, with the stamp of the messages it makes;
@@ -483,7 +488,8 @@ export type TakenCtx = { readonly day: Day; readonly room: { readonly code: Room
 /**
  * A player's run `p` taken on the GM's phone, in one write (once by its event id, sync.ts `once`): the run's line; a
  * won run whose gate can still be cleared is that gate's Clear for that one hunter (`settleClear`: its answer posted
- * with the reward, then its gate fact); one it cannot clear is answered refused; a lost or stalled run enters a detected
+ * cleared, then its gate fact), and its reward kept waiting for the GM's approval under the answer's id
+ * (hunter/pending.ts, ruling 20); one it cannot clear is answered refused; a lost or stalled run enters a detected
  * gate. Refused (`changed`) when the plan the answer was made from no longer holds, and (`no-room`) with no room to answer in.
  */
 export function soloTaken(save: Save, p: SoloRunPayload, plan: SoloPlan, answer: RoomEvent | null, loot: SoloLoot, c: TakenCtx): Save | Refused<'changed' | 'no-room' | 'missing' | 'unchanged'> {
@@ -496,7 +502,9 @@ export function soloTaken(save: Save, p: SoloRunPayload, plan: SoloPlan, answer:
   if (plan.kind === 'refused') return atOutbox(b => post(b, room.code, { kind: 'event', event: answer }).box)(s);
   const pay = { due: plan.due, xp: plan.xp, gold: shareEach(loot.gold, 1, plan.party), items: loot.items.map(i => i.name), payees: [p.name || 'A hunter'] };
   const settled = settleClear(s, p.gate, pay, [], { ...room, players: [{ key: p.by, rank: c.rank, pays: answer }] }, c.day);
-  return isRefused(settled) ? settled : settled.save;
+  if (isRefused(settled)) return settled;
+  const what = save.gates.find(x => x.id === p.gate)?.name.slice(0, EARNED_WHAT_MAX) ?? '';
+  return pendingHeard(settled.save, { eid: answer.payload.eid, by: p.by, name: p.name, from: 'solo', what, rewards: soloOwed(plan, loot) }, room.code, stamp);
 }
 /** The GM's log line (and toast) of a player's run: the run's line, and why a won run was not paid. */
 export function takenLine(save: Pick<Save, 'gates'>, p: SoloRunPayload, plan: SoloPlan): Said {

@@ -257,6 +257,20 @@ export type Finished = {
  * hunter is not there (`no-hunter`).
  */
 export function finishQuest(save: Save, hid: string, qid: string, o: Day & { vitals: VitalsAt; by?: QuestCompletedBy }): Finished | Refused<'no-hunter' | 'belowLevel' | QuestWhy> {
+  const d = questDone(save, hid, qid, o);
+  if (isRefused(d)) return d;
+  const g = grant(d.save, hid, d.rewards, null, o);
+  if (isRefused(g)) return g;
+  return { save: g.save, quest: d.quest, completed: d.completed, granted: g, job: d.job, done: [...d.done, ...g.done] };
+}
+/** What completing a quest did before its reward is given: as `Finished`, with the reward it earned in place of the reward given. */
+export type QuestDone = Omit<Finished, 'granted'> & { rewards: Rewards };
+/**
+ * `finishQuest` up to its reward: the quest done with everything but its reward, and the reward it earned (the quest's,
+ * with the streak's bonus points). The System's completion of a counted quest (noticed.ts `countQuests`) routes that
+ * reward by the seat (hunter/pending.ts `selfPaid`): in a room it waits for the GM (ruling 20).
+ */
+export function questDone(save: Save, hid: string, qid: string, o: Day & { by?: QuestCompletedBy }): QuestDone | Refused<'no-hunter' | 'belowLevel' | QuestWhy> {
   const at = save.hunters.findIndex(h => h.id === hid);
   if (at < 0) return refuse('no-hunter');
   const h = save.hunters[at]!, quest = h.quests.find(q => q.id === qid), ids = idsFrom(save.seq), R = o.R;
@@ -267,10 +281,8 @@ export function finishQuest(save: Save, hid: string, qid: string, o: Day & { vit
   const r = stepsReached(c.hunter, chain, o, ids.next);
   const done = told({ ...save, seq: ids.seq(), hunters: save.hunters.map((x, i) => (i === at ? r.hunter : x)) }, { at: o.at, cap: R.logCap }, ...c.said, ...r.said);
   const rewards: Rewards = { ...quest.rewards, job: quest.chainId ? null : quest.rewards.job, points: quest.rewards.points + (c.bonus ? STREAK_BONUS_POINTS : 0) };
-  const g = grant(done, hid, rewards, null, o);
-  if (isRefused(g)) return g;
   const job: string | null = chain.find(fx => fx.type === 'grantJob')?.job ?? (quest.kind === 'job' ? rewards.job : null);
-  return { save: g.save, quest, completed: c, granted: g, job, done: [...r.done, ...g.done] };
+  return { save: done, quest, completed: c, rewards, job, done: r.done };
 }
 
 /** What failing a quest did: the next save, the quest as it was, its cost as given (`grant`), and the chain's effects. */
@@ -304,7 +316,7 @@ export const ROOM_HEARS: { readonly [How in 'counted' | 'overdue']: boolean } = 
   overdue: true,
 };
 /** A fraction made from a quest's id, so the same quest's end is the same room event however often it is posted. */
-function idShare(id: string): number {
+export function idShare(id: string): number {
   let x = 2166136261;
   for (let i = 0; i < id.length; i++) x = Math.imul(x ^ id.charCodeAt(i), 16777619) >>> 0;
   return x / 2 ** 32;

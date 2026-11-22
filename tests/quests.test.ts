@@ -19,6 +19,7 @@ import type { DayKey } from '../src/core/day.ts';
 import { STREAK_BONUS_POINTS, chainStep, finishQuest, questEnded, questFailed, rolledOver } from '../src/core/hunter/grant.ts';
 import { COMPLETER, GM_QUEST_KINDS, PLAYER_QUEST_KINDS, completerOf, questKindsFor } from '../src/core/hunter/quest-rights.ts';
 import { noticed } from '../src/core/hunter/noticed.ts';
+import { waitingIn } from '../src/core/hunter/pending.ts';
 import type { NoticeCtx } from '../src/core/hunter/noticed.ts';
 import { record } from '../src/core/hunter/chronicle.ts';
 import type { Fact } from '../src/core/hunter/facts.ts';
@@ -436,15 +437,21 @@ describe('a quest that counts by itself, and what failing costs (feature 1\'s no
     expect(COMPLETER[completerOf(byHand)].counted).toBe(false);
     expect(quest(write(saveWith(byHand), [kill('Beast')])).status).toBe('active');
   });
-  test('a GM\'s counted quest on a player\'s phone in a room posts its end once, in the write that completes it', () => {
+  test('a GM\'s counted quest on a player\'s phone in a room posts its end and asks the GM for its reward, once, in the write that completes it; the reward is not paid there (ruling 20)', () => {
     const room = parseRoomCode('ABC234')!;
-    const s = write(saveWith(counted({ objectives: [beasts(1)] })), [kill('Beast')], ctx({ room }));
-    const box = s.settings.sync.outbox ?? [];
-    expect(box).toHaveLength(1);
-    const e = box[0]!.letter as { kind: 'event'; event: { type: string; payload: { status: string; questId: string } } };
-    expect(e.event.type).toBe('questUpdate');
-    expect(e.event.payload).toMatchObject({ status: 'done', questId: 'q7' });
-    expect(write(saveWith(counted({ objectives: [beasts(1)] })), [kill('Beast')]).settings.sync.outbox ?? [], 'alone or the GM: nothing posted').toEqual([]);
+    const s = write(saveWith(counted({ objectives: [beasts(1)] })), [kill('Beast')], ctx({ seat: { seat: 'player', room } }));
+    const box = (s.settings.sync.outbox ?? []).map(x => x.letter as { kind: 'event'; event: { type: string; payload: Record<string, unknown> } });
+    expect(box.map(e => e.event.type)).toEqual(['questUpdate', 'rewardAsk']);
+    expect(box[0]!.event.payload).toMatchObject({ status: 'done', questId: 'q7' });
+    expect(box[1]!.event.payload).toMatchObject({ from: 'quest', what: 'Ten Beasts', rewards: { gold: 40 } });
+    expect([quest(s).status, s.hunters[0]!.gold]).toEqual(['done', 100]);
+    expect(write(saveWith(counted({ objectives: [beasts(1)] })), [kill('Beast')]).settings.sync.outbox ?? [], 'alone: nothing posted, the reward paid').toEqual([]);
+  });
+  test('on the GM\'s own phone in a room a counted quest\'s reward waits in the GM\'s list, unpaid (ruling 20)', () => {
+    const room = parseRoomCode('ABC234')!;
+    const s = write(saveWith(counted({ objectives: [beasts(1)] })), [kill('Beast')], ctx({ seat: { seat: 'gm', room } }));
+    expect([quest(s).status, s.hunters[0]!.gold, s.settings.sync.outbox ?? []]).toEqual(['done', 100, []]);
+    expect(waitingIn(s, room).map(p => [p.from, p.what, p.rewards.gold])).toEqual([['quest', 'Ten Beasts', 40]]);
   });
   test('a failed quest pays its cost in the failing write; the rollover pays an overdue quest\'s cost the same way', () => {
     const cost = { ...newRewards(), gold: -30 };

@@ -651,28 +651,27 @@ describe('the GM\'s answer to a word lands once in the thread (notes-5-trade.md 
 describe('the GM\'s answer to a solo run lands whole, once a run (notes-2-solo.md section 5)', () => {
   const RUN = 'd-player1-run1' as EventId;
   const waiting = (): Extract<Asked, { kind: 'solo' }> => ({ id: RUN, room: 'ABCD23' as never, hid: 'h1' as never, kind: 'solo', gate: 'g12' as never, name: 'Goblin Den', at: AT, state: 'taken', sent: true });
-  const PAID = { to: ['d-player1:h1'], run: RUN, gate: 'g12', name: 'Goblin Den', verdict: 'paid', rewards: { xp: 50, gold: 120 } };
+  const PAID = { to: ['d-player1:h1'], run: RUN, gate: 'g12', name: 'Goblin Den', verdict: 'cleared' };
 
-  test('a paid answer closes the waiting run and gives its reward in the same write, with the GATE CLEARED window', () => {
+  test('a cleared answer closes the waiting run in its write and tells GATE CLEARED at once; its reward waits for the GM and is not given here (ruling 20)', () => {
     const p = phone({ asked: [waiting()] }), before = p.hunter;
     p.receive(1, 'soloAnswer', PAID);
-    expect([p.hunter.xp - before.xp, p.hunter.gold - before.gold]).toEqual([50, 120]);
+    expect([p.hunter.xp, p.hunter.gold]).toEqual([before.xp, before.gold]);
     expect([p.asked, p.applied]).toEqual([[], [e(1)]]);
-    expect(p.shown).toEqual([['+50 XP', '+120 gold']]);
+    expect(p.windows.map(w => [w.title, w.lines])).toEqual([['GATE CLEARED', ['Waiting for the GM']]]);
   });
 
   test('a second answer to the same run (a second GM phone, or the same one again) gives nothing', () => {
     const p = phone({ asked: [waiting()] });
     p.receive(1, 'soloAnswer', PAID);
-    const once = { xp: p.hunter.xp, gold: p.hunter.gold };
     p.receive(2, 'soloAnswer', PAID);
     p.receive(1, 'soloAnswer', PAID);
-    expect([{ xp: p.hunter.xp, gold: p.hunter.gold }, p.shown.length, p.asked]).toEqual([once, 1, []]);
+    expect([p.windows.length, p.asked]).toEqual([1, []]);
   });
 
   test('a refused answer closes the run with its words and gives nothing; an answer for no waiting run changes nothing', () => {
     const p = phone({ asked: [waiting()] }), xp = p.hunter.xp;
-    p.receive(1, 'soloAnswer', { ...PAID, verdict: 'refused', why: 'taken', rewards: undefined });
+    p.receive(1, 'soloAnswer', { ...PAID, verdict: 'refused', why: 'taken' });
     expect([p.asked, p.hunter.xp]).toEqual([[], xp]);
     expect(p.windows.map(w => [w.title, w.lines])).toEqual([['GATE TAKEN', ['Another hunter cleared this gate first. Your run\'s cost stays.']]]);
     const q = phone();
@@ -687,7 +686,7 @@ describe('the GM\'s answer to a solo run lands whole, once a run (notes-2-solo.m
     const room = 'ABCD23' as never, fresh = freshSave({ now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-gm1') }, { onboarded: true });
     const gm: Save = { ...fresh, gates: [{ ...den('detected'), solo: true }] };
     const run: SoloRunPayload = { eid: RUN, by: 'd-player1:h1' as never, gate: 'g-den' as never, name: 'Mira', outcome: 'won', rounds: 4, life: 'up' };
-    const plan = soloPlan(gm, run, RULES), loot = { gold: 0, items: [] }, body = soloAnswerBody(gm, RUN, run, plan, loot)!;
+    const plan = soloPlan(gm, run, RULES), loot = { gold: 0, items: [] }, body = soloAnswerBody(gm, RUN, run, plan)!;
     const at = { at: AT, today: day(AT.slice(0, 10)), R: RULES };
     const taken = soloTaken(gm, run, plan, parseEvent('soloAnswer', { ...body, eid: e(1) }), loot, { day: at, room: { code: room, stamp: { device: 'd-gm1', now: Date.parse(AT), rand: 0.5 } }, rank: null });
     if (isRefused(taken)) throw new Error(`refused: ${taken.why}`);

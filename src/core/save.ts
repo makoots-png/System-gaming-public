@@ -60,6 +60,8 @@ import type { Asked } from './sync/asked.ts';
 import { parseOffers } from './trade/offer.ts';
 import { parseWords } from './sync/word.ts';
 import type { Word } from './sync/word.ts';
+import { parsePending } from './hunter/pending.ts';
+import type { PendingReward } from './hunter/pending.ts';
 import type { OfferRecord } from './trade/offer.ts';
 import type { Penalty } from './hunter/penalty.ts';
 import type { JobChain } from './hunter/job-chain.ts';
@@ -167,6 +169,8 @@ export type SyncSettings = {
   weights?: HeldWeights;
   /** Words to the GM: a player's own with the GM's answers, and on the GM's phone each it heard (src/core/sync/word.ts). */
   words?: Word[];
+  /** On the GM's phone, the rewards the app would have paid by itself, waiting for the GM's approval (src/core/hunter/pending.ts). */
+  pending?: PendingReward[];
 };
 /**
  * Whose each field of the sync settings is (docs/agent-handoff/audit/notes-sync-3.md). `campaign`: the room the campaign
@@ -179,7 +183,7 @@ export const SYNC_OWNER: { readonly [K in keyof SyncSettings]-?: 'campaign' | 'p
   room: 'campaign', cursor: 'campaign', lastRoom: 'campaign', boundHunterId: 'campaign',
   gmKey: 'key', gmKeys: 'key',
   deviceToken: 'phone', serverOk: 'phone', joined: 'phone', outbox: 'phone', held: 'phone', applied: 'phone', asked: 'phone', offers: 'phone', seen: 'phone',
-  weights: 'phone', words: 'phone',
+  weights: 'phone', words: 'phone', pending: 'phone',
 };
 /** The fields of `sync` that `owner` owns, as they are. */
 const ownedBy = (sync: SyncSettings, owner: (typeof SYNC_OWNER)[keyof SyncSettings]): Partial<SyncSettings> =>
@@ -386,6 +390,7 @@ function fixSync(sync: SyncSettings, now: number): void {
   if ('asked' in sync) sync.asked = parseAsked(sync.asked);
   if ('offers' in sync) sync.offers = parseOffers(sync.offers);
   if ('words' in sync) sync.words = parseWords(sync.words);
+  if ('pending' in sync) sync.pending = parsePending(sync.pending);
   if ('seen' in sync) sync.seen = parseSeen(sync.seen, now);
   if ('weights' in sync) { const w = parseHeldWeights(sync.weights); if (w) sync.weights = w; else delete sync.weights; }
   if ('applied' in sync) {

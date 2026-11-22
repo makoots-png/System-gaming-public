@@ -237,7 +237,27 @@ export type SystemPayload = Base & { to?: SheetKey[]; tag: string; title: string
 export type GivenBundle = { key: string; name: string; window: SystemWords | null };
 /** The longest bundle key an award names: a library id or a built-in's `seed-` key. */
 const BUNDLE_KEY_MAX = 80;
-export type AwardPayload = Base & { to: SheetKey[]; rewards: Rewards & { build?: BuildChange }; bundle?: GivenBundle };
+/**
+ * Where a reward the app would pay by itself came from (hunter/pending.ts): a won solo run of a room's gate, a quest the
+ * System completed, a feat earned. In a room each waits for the GM's edit and approval (World rule 8).
+ */
+export const REWARD_FROM = ['solo', 'quest', 'feat'] as const;
+export type RewardFrom = (typeof REWARD_FROM)[number];
+/** The longest words of what earned a waiting reward: a quest's title, a feat's or a gate's name. */
+export const EARNED_WHAT_MAX = 120;
+/** What earned a reward the GM approved: where it came from and its words, for the player's window. */
+export type EarnedBy = { from: RewardFrom; what: string };
+/**
+ * `earned`: the reward waited for the GM's approval (hunter/pending.ts) and was earned so; the player's window says what
+ * earned it.
+ */
+export type AwardPayload = Base & { to: SheetKey[]; rewards: Rewards & { build?: BuildChange }; bundle?: GivenBundle; earned?: EarnedBy };
+/**
+ * Hunter `by` (`name`) earned `rewards` by itself (`from`, `what`): on a player's phone in a room the reward is not paid
+ * but asked of the GM, whose phone keeps it waiting until the GM approves or refuses it (hunter/pending.ts). Sealed to
+ * the GM and that hunter's phone.
+ */
+export type RewardAskPayload = Base & { by: SheetKey; name: string } & EarnedBy & { rewards: Rewards };
 /** A quest the GM issues to the hunters of `to`. Sealed when the quest is secret: then `to` names one hunter. */
 export type QuestPayload = Base & { to: SheetKey[]; quest: QuestOffer };
 /** HP, mana and fatigue changes the GM taps on the board: negative is damage (or rest, for fatigue). */
@@ -353,11 +373,12 @@ export const NOTED_MAX = 1 + 60 + 20;
  */
 export type NotedPayload = Base & { to: [SheetKey]; facts: Fact[] };
 /**
- * The GM's phone's answer to the won run `run` of gate `gate` (`name`): paid with `rewards` (the gate's Clear for that
- * hunter), or refused with why. Landed once, and only while that run waits on the player's phone (sync/asked.ts).
+ * The GM's phone's answer to the won run `run` of gate `gate` (`name`): cleared (the gate's Clear for that hunter, whose
+ * reward waits for the GM's approval and comes as an `award`: ruling 20, SMX-gates-2.3), or refused with why. Landed once,
+ * and only while that run waits on the player's phone (sync/asked.ts).
  */
 export type SoloAnswerPayload = Base & { to: [SheetKey]; run: EventId; gate: GateId; name: string }
-  & ({ verdict: 'paid'; rewards: Rewards } | { verdict: 'refused'; why: SoloRefused });
+  & ({ verdict: 'cleared' } | { verdict: 'refused'; why: SoloRefused });
 /**
  * Hunter `by` offers hunter `to[0]` the goods `gives`, asking `asks` back (gold, and items of its bag by id). Its id is the
  * offer's (`parseOfferId`); `names` are the two hunters' names as the giving phone showed them. The giver's goods wait aside
@@ -415,7 +436,7 @@ type Payloads = {
   roll: RollPayload; questUpdate: QuestUpdatePayload; used: UsedPayload; step: StepPayload; cast: CastPayload; pass: PassPayload; chain: ChainPayload;
   coinCall: CoinCallPayload; coinLand: CoinLandPayload; arm: ArmPayload; shadow: ShadowPayload; soloRun: SoloRunPayload; soloAnswer: SoloAnswerPayload; noted: NotedPayload;
   chapter: ChapterPayload; weigh: WeighPayload; word: WordPayload; wordBack: WordBackPayload;
-  systemRaise: SystemRaisePayload;
+  systemRaise: SystemRaisePayload; rewardAsk: RewardAskPayload;
 };
 export type EventType = keyof Payloads;
 export type PayloadOf<K extends EventType> = Payloads[K];
@@ -438,6 +459,8 @@ const withinOffer = <T>(p: T): T => (goodsSize(p) > OFFER_MAX ? refuse() : p);
 const always = (): boolean => true;
 const reason = (o: Rec): string => opt(own(o, 'reason'), text(120), '');
 const hpDelta = (o: Rec, k: string): number => opt(own(o, k), int(-MAX_HP, MAX_HP), 0);
+/** Where a waiting reward came from and its words. */
+const earned = (o: Rec): EarnedBy => ({ from: choiceOf(REWARD_FROM)(own(o, 'from')), what: opt(own(o, 'what'), text(EARNED_WHAT_MAX), '') });
 /**
  * One event type: who may send it, and its payload's reader. `gmOnly`: only the room's GM key may send it. `ownSheet`: it
  * speaks for the hunter in its `by`, so the server takes it only from the phone that hunter belongs to.
@@ -494,9 +517,15 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
       title: filled(120)(own(o, 'title')), body: opt(own(o, 'body'), text(1000), ''), kind: opt(own(o, 'kind'), choiceOf(SYSTEM_KINDS), 'info') };
   } },
   award: { gmOnly: true, ownSheet: false, read: o => {
-    const r = obj(own(o, 'rewards')), build = own(r, 'build'), given = own(o, 'bundle');
-    return { ...base(o), to: toList(own(o, 'to')), rewards: { ...rewards(r), ...(build === undefined ? {} : { build: buildChange(build) }) }, ...(given === undefined ? {} : { bundle: givenBundle(given) }) };
+    const r = obj(own(o, 'rewards')), build = own(r, 'build'), given = own(o, 'bundle'), why = own(o, 'earned');
+    return {
+      ...base(o), to: toList(own(o, 'to')), rewards: { ...rewards(r), ...(build === undefined ? {} : { build: buildChange(build) }) }, ...(given === undefined ? {} : { bundle: givenBundle(given) }),
+      ...(why === undefined ? {} : { earned: earned(obj(why)) }),
+    };
   } },
+  rewardAsk: { gmOnly: false, ownSheet: true, sealed: always, read: o => ({
+    ...base(o), by: sheetKey(own(o, 'by')), name: opt(own(o, 'name'), text(NAME_MAX), ''), ...earned(o), rewards: rewards(own(o, 'rewards')),
+  }) },
   quest: { gmOnly: true, ownSheet: false, sealed: p => p.quest.secret, read: o => ({ ...base(o), ...questTo(o) }) },
   hp: { gmOnly: true, ownSheet: false, read: o => ({ ...base(o), to: toList(own(o, 'to')), hp: hpDelta(o, 'hp'), mana: hpDelta(o, 'mana'), fatigue: hpDelta(o, 'fatigue'), reason: reason(o) }) },
   vitals: { gmOnly: true, ownSheet: false, standsFor: p => `vitals ${p.to[0]}`, read: o => {
@@ -576,8 +605,8 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
   soloAnswer: { gmOnly: true, ownSheet: false, read: o => {
     const to = toList(own(o, 'to'));
     const b = { ...base(o), to: to.length === 1 ? [to[0]!] as [SheetKey] : refuse(), run: need(parseEventId(own(o, 'run'))), gate: need(parseGateId(own(o, 'gate'))), name: opt(own(o, 'name'), text(WORLD_NAME_MAX), '') };
-    return choiceOf(['paid', 'refused'] as const)(own(o, 'verdict')) === 'paid'
-      ? { ...b, verdict: 'paid' as const, rewards: rewards(own(o, 'rewards')) }
+    return choiceOf(['cleared', 'refused'] as const)(own(o, 'verdict')) === 'cleared'
+      ? { ...b, verdict: 'cleared' as const }
       : { ...b, verdict: 'refused' as const, why: choiceOf(SOLO_REFUSED)(own(o, 'why')) };
   } },
   chapter: { gmOnly: true, ownSheet: false, sealed: always, read: o => {
@@ -612,7 +641,7 @@ export const EVENTS: { readonly [K in EventType]: EventEntry<K> } = {
   chain: entry('chain'), coinCall: entry('coinCall'), coinLand: entry('coinLand'), arm: entry('arm'), shadow: entry('shadow'),
   soloRun: entry('soloRun'), soloAnswer: entry('soloAnswer'), noted: entry('noted'),
   chapter: entry('chapter'), weigh: entry('weigh'), word: entry('word'), wordBack: entry('wordBack'),
-  systemRaise: entry('systemRaise'),
+  systemRaise: entry('systemRaise'), rewardAsk: entry('rewardAsk'),
 };
 function entry<K extends EventType>(type: K): EventEntry<K> {
   const def: EventDef<K> = DEFS[type];

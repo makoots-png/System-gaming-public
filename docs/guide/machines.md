@@ -24,6 +24,7 @@ The room:
 - the room server's database (`room-server.ts`)
 - an offer in the room with the giver's, taker's and GM's records of it (`trade/offer.ts`)
 - a word to the GM on the player's phone and the GM's record of it (`sync/word.ts` `wordStep`, `MINE`, `GM`)
+- a reward the app would pay by itself, waiting for the GM's edit and approval, and where each seat sends it (`hunter/pending.ts` `pendingStep`, `ROUTE`)
 
 Hunters:
 

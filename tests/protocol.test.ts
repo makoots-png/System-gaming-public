@@ -122,7 +122,7 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
 
 describe('every event type', () => {
   test('the table has an entry for each room message, and for nothing else', () => {
-    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'cast', 'chain', 'chapter', 'coinCall', 'coinLand', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'revive', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'stashAnswer', 'stashAsk', 'status', 'step', 'system', 'systemRaise', 'used', 'vitals', 'weigh', 'word', 'wordBack']);
+    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'cast', 'chain', 'chapter', 'coinCall', 'coinLand', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'revive', 'rewardAsk', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'stashAnswer', 'stashAsk', 'status', 'step', 'system', 'systemRaise', 'used', 'vitals', 'weigh', 'word', 'wordBack']);
   });
 
   test('only the GM may send what changes a hunter, speaks for the System, lands a coin or weighs a hunter\'s dice; a player sends rolls, quest progress, uses, steps, casts, passes and coin calls', () => {
@@ -131,7 +131,7 @@ describe('every event type', () => {
   });
 
   test('what a player sends speaks for one hunter: only that hunter\'s phone may send it', () => {
-    expect(EVENT_TYPES.filter(t => EVENTS[t].ownSheet).sort()).toEqual(['arm', 'cast', 'coinCall', 'offer', 'offerEnd', 'pass', 'questUpdate', 'roll', 'soloRun', 'stashAsk', 'step', 'systemRaise', 'used', 'word']);
+    expect(EVENT_TYPES.filter(t => EVENTS[t].ownSheet).sort()).toEqual(['arm', 'cast', 'coinCall', 'offer', 'offerEnd', 'pass', 'questUpdate', 'rewardAsk', 'roll', 'soloRun', 'stashAsk', 'step', 'systemRaise', 'used', 'word']);
     for (const t of ['roll', 'questUpdate', 'used', 'step', 'cast', 'pass', 'coinCall', 'arm', 'soloRun', 'offer', 'offerEnd', 'systemRaise'] as const) expect(speaksFor(parseEvent(t, valid(t))!)).toBe(KEY as SheetKey);
     expect(speaksFor(parseEvent('award', valid('award'))!)).toBeNull();
   });
@@ -586,14 +586,14 @@ describe('a solo run and its answer', () => {
     expect(payload('soloRun', { ...valid('soloRun'), name: BIG })!.name).toHaveLength(NAME_MAX);
   });
 
-  test('an answer is for exactly one hunter, names its run, and is paid with a reward or refused with why', () => {
+  test('an answer is for exactly one hunter, names its run, and is cleared (its reward waits for the GM, ruling 20) or refused with why', () => {
     expect(payload('soloAnswer', { ...valid('soloAnswer'), to: [KEY, OTHER] })).toBeNull();
     expect(payload('soloAnswer', { ...valid('soloAnswer'), run: 'has space' })).toBeNull();
     expect(payload('soloAnswer', { ...valid('soloAnswer'), verdict: 'maybe' })).toBeNull();
     const refused = { ...valid('soloAnswer'), verdict: 'refused', why: 'taken' };
     expect(payload('soloAnswer', refused)).toEqual({ eid: EID, to: [KEY], run: 'd-p1-run1', gate: 'g12', name: 'Goblin Den', verdict: 'refused', why: 'taken' });
     expect(payload('soloAnswer', { ...refused, why: 'bored' })).toBeNull();
-    expect(payload('soloAnswer', { ...valid('soloAnswer'), rewards: 'lots' })).toBeNull();
+    expect(payload('soloAnswer', { ...valid('soloAnswer'), verdict: 'paid' }), 'an answer no longer pays').toBeNull();
   });
   test('noted: facts for exactly one hunter, at most NOTED_MAX, each read by the fact parser and a fact that does not read left out', () => {
     expect(payload('noted', { ...valid('noted'), to: [KEY, OTHER] })).toBeNull();
@@ -1443,9 +1443,9 @@ describe('an offer between two hunters, and its one end', () => {
     for (const to of [[KEY], [KEY, KEY], [KEY, OTHER, 'd-x:h1'], [KEY, 'bad key']]) expect(payload('offerStop', { ...valid('offerStop'), to })).toBeNull();
   });
 
-  test('an offer, its end and the GM\'s stop are sealed to the GM and the two hunters (the lead\'s ruling 1), a stash ask and its answer to the GM and the asking hunter, a story\'s chapter to the GM and the hunters it is for, and a table weight to the GM and its hunter; nothing else is (a System message to the room is not; one to named hunters is, and a secret quest and its progress are, above)', () => {
+  test('an offer, its end and the GM\'s stop are sealed to the GM and the two hunters (the lead\'s ruling 1), a stash ask and its answer to the GM and the asking hunter, a story\'s chapter to the GM and the hunters it is for, a table weight to the GM and its hunter, and a reward asked of the GM to the GM and its hunter; nothing else is (a System message to the room is not; one to named hunters is, and a secret quest and its progress are, above)', () => {
     const sealed = EVENT_TYPES.filter(t => isSealed(parseEvent(t, valid(t))!)).sort();
-    expect(sealed).toEqual(['chapter', 'offer', 'offerEnd', 'offerStop', 'stashAnswer', 'stashAsk', 'weigh', 'word', 'wordBack']);
+    expect(sealed).toEqual(['chapter', 'offer', 'offerEnd', 'offerStop', 'rewardAsk', 'stashAnswer', 'stashAsk', 'weigh', 'word', 'wordBack']);
   });
 
   /**

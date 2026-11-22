@@ -490,11 +490,11 @@ function applyOne(w: World, p: Phone, ev: RoomEvent): void {
   };
   applyRoomEvent(ev, deps);
   if (took) { p.ledger[ev.payload.eid] = (p.ledger[ev.payload.eid] ?? 0) + 1; bump(w, p); }
-  // room-events.ts `landSoloAnswer`: the answer closes its waiting run in the write that lands it, and pays it when paid
+  // room-events.ts `landSoloAnswer`: the answer closes its waiting run in the write that lands it (a cleared run's reward waits for the GM)
   if (took && ev.type === 'soloAnswer') {
     const run = ev.payload.run;
     write(w, p, s => { s.asked = s.asked.filter(x => x.id !== run); });
-    if (ev.payload.verdict === 'paid') p.paid[run] = (p.paid[run] ?? 0) + 1;
+    if (ev.payload.verdict === 'cleared') p.paid[run] = (p.paid[run] ?? 0) + 1;
   }
   // room-events.ts `stashAnswer`: the answer closes its waiting ask and moves its goods in the write that lands it
   if (took && ev.type === 'stashAnswer') { const r = stashLanded(tradeSave(p), ev.payload); if (!isRefused(r)) write(w, p, () => tradeBack(p, r.save)); }
@@ -522,7 +522,7 @@ function soloRun(w: World, p: Phone): void {
 }
 /**
  * gates.js's `sync:event` handler for a player's `soloRun` on the GM's phone, with sync.ts `once`: the first won run of
- * its one solo gate clears it and is answered paid, a later one is answered taken (gates/solo.ts `soloTaken`), each in
+ * its one solo gate clears it and is answered cleared, a later one is answered taken (gates/solo.ts `soloTaken`), each in
  * one write with the run's id, so a run delivered again is answered once.
  */
 function soloOne(w: World, p: Phone, ev: RoomEvent): void {
@@ -532,7 +532,7 @@ function soloOne(w: World, p: Phone, ev: RoomEvent): void {
   const open = p.save.soloGate === 'open';
   write(w, p, s => { s.applied = ring; s.soloGate = 'cleared'; });
   const base = { to: [ev.payload.by], run: ev.payload.eid, gate: 'g1', name: 'Den' };
-  post(w, p, 'soloAnswer', open ? { ...base, verdict: 'paid', rewards: AWARD.rewards } : { ...base, verdict: 'refused', why: 'taken' });
+  post(w, p, 'soloAnswer', open ? { ...base, verdict: 'cleared' } : { ...base, verdict: 'refused', why: 'taken' });
 }
 
 /**

@@ -18,6 +18,7 @@ import { askAnswered } from '../core/sync/asked.ts';
 import { stashLanded } from '../core/trade/stash.ts';
 import { wordLanded } from '../core/sync/word.ts';
 import { REFUSED_WORDS } from '../core/gates/solo.ts';
+import { PENDING_WORDS } from '../core/hunter/pending.ts';
 import type { ChainEvent } from '../core/hunter/job-chain.ts';
 import { WAYS_BACK, hpChange, lifeNews } from '../core/hunter/vitals.ts';
 import type { Life } from '../core/hunter/vitals.ts';
@@ -188,6 +189,9 @@ const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS }
   // a player's report of the System's raise of their hunter, written on their own phone (grant.ts `systemRaise`): the GM's
   // phone logs it (hunter.js)
   systemRaise: GM_ONLY_READS,
+  // a reward this phone's hunter earned by itself, asked of the GM (hunter/pending.ts): the GM's phone keeps it waiting
+  // (gm.js); an approved one comes back as an `award`
+  rewardAsk: GM_ONLY_READS,
 };
 
 /**
@@ -215,23 +219,16 @@ function landChapter(p: PayloadOf<'chapter'>, hids: string[], app: ApplyDeps): L
 
 /**
  * The GM's phone's answer to this phone's won run of a room's solo gate (sync/asked.ts): the waiting run leaves the
- * list and, when paid, its hunter is given the gate's reward (`grant`), in one write with the event's id. With no run of
- * that id waiting (a second GM phone's answer, one already landed) nothing is given: the land is refused.
+ * list, in one write with the event's id, and its window tells the verdict at once. A cleared run's reward waits for
+ * the GM's approval and comes as an `award` (ruling 20, SMX-gates-2.3). With no run of that id waiting (a second GM
+ * phone's answer, one already landed) nothing is told: the land is refused.
  */
-function landSoloAnswer(p: PayloadOf<'soloAnswer'>, hids: string[], app: ApplyDeps): Land {
+function landSoloAnswer(p: PayloadOf<'soloAnswer'>, _hids: string[], app: ApplyDeps): Land {
   return save => {
     const closed = askAnswered(save, p.run);
     if (isRefused(closed)) return closed;
-    const hid = hids[0];
-    if (p.verdict === 'refused' || !hid) {
-      const why = p.verdict === 'refused' ? REFUSED_WORDS[p.why] : '';
-      return { save: closed, tell: () => { app.system({ tag: '! Gate', title: 'GATE TAKEN', kind: 'warning', body: p.name, lines: why ? [why] : [] }); } };
-    }
-    const at = app.hunter.fightOf({ hid });
-    const g = grant(closed, hid, p.rewards, null, { at: app.now(), today: app.today(), R: app.rules(), vitals: at ? 'fight' : 'sheet' });
-    if (isRefused(g)) return { save: closed, tell: nothing };
-    const off = at?.at === 'row' && (g.fight.statuses.length > 0 || g.fight.refill), given = off ? { ...g, fight: { statuses: [], refill: false } } : g;
-    return { save: g.save, tell: () => { app.hunter.granted(hid, given, { title: 'GATE CLEARED', tag: '! Gate', kind: 'quest', body: `${p.name}: the GM's phone paid your solo run.` }); if (off) app.hunter.gmHolds(); } };
+    if (p.verdict === 'refused') return { save: closed, tell: () => { app.system({ tag: '! Gate', title: 'GATE TAKEN', kind: 'warning', body: p.name, lines: [REFUSED_WORDS[p.why]] }); } };
+    return { save: closed, tell: () => { app.system({ tag: '! Gate', title: 'GATE CLEARED', kind: 'quest', body: `${p.name}: your solo run cleared it.`, lines: [PENDING_WORDS.waits] }); } };
   };
 }
 
@@ -255,8 +252,10 @@ function landAward(p: PayloadOf<'award'>, hids: string[], app: ApplyDeps): Land 
       s = b ? { ...g.save, hunters: g.save.hunters.map(h => (h.id === hid ? record(h, { kind: 'given', key: b.key, name: b.name }) : h)) } : g.save;
       given.push([hid, off ? { ...g, fight: { statuses: [], refill: false } } : g, off]);
     }
-    // one window a hunter, in the bundle's words when it has them, else "REWARD RECEIVED"; a level-up window may follow
-    const words = b?.window ? { title: b.window.title, body: b.window.line || b.name } : { title: 'REWARD RECEIVED', body: 'The System has delivered a reward.' };
+    // one window a hunter, in the bundle's words when it has them, else "REWARD RECEIVED" (saying what earned it when the
+    // reward waited for the GM's approval); a level-up window may follow
+    const words = b?.window ? { title: b.window.title, body: b.window.line || b.name }
+      : { title: 'REWARD RECEIVED', body: p.earned ? PENDING_WORDS.approvedBody(p.earned.from, p.earned.what) : 'The System has delivered a reward.' };
     return { save: s, tell: () => { for (const [hid, g, off] of given) { app.hunter.granted(hid, g, { ...words, tag: '! Reward', kind: 'quest' }); if (off) app.hunter.gmHolds(); } } };
   };
 }

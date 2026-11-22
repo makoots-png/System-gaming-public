@@ -11,7 +11,7 @@ import type { Fact, FactStamp } from '../src/core/hunter/facts.ts';
 import { NO_COUNT, countStep, markOf, measureFields, measuresFor, parseCount } from '../src/core/hunter/counts.ts';
 import type { FactCount, Counted } from '../src/core/hunter/counts.ts';
 import { FEAT_STATES, TABLE, afterChoices, featNews, featStep, featsDoc, featsFor, freeFeatKey, parseFeat, progressLine, startOf } from '../src/core/hunter/feats.ts';
-import { parseFeatKey } from '../src/core/ids.ts';
+import { parseFeatKey, parseRoomCode } from '../src/core/ids.ts';
 import { seededSource } from '../src/core/draws.ts';
 import { DOCS, DOC_MAX } from '../src/core/protocol.ts';
 import type { FeatBook, FeatDef, FeatKey, FeatState } from '../src/core/hunter/feats.ts';
@@ -19,6 +19,7 @@ import { noticed } from '../src/core/hunter/noticed.ts';
 import type { NoticeCtx } from '../src/core/hunter/noticed.ts';
 import { BUILT_IN_FEATS } from '../src/core/registry/feats.ts';
 import { newRewards } from '../src/core/rewards.ts';
+import { waitingIn } from '../src/core/hunter/pending.ts';
 import { FEAT_WALK } from './models/feat-events.ts';
 import { dev, hid } from './fixtures/ids.ts';
 
@@ -208,6 +209,20 @@ describe('the System notices, in the write of the fact', () => {
     expect(me(s).chronicle.facts.map(f => f.kind)).toEqual(['fight', 'feat', 'title']);
     expect(me(s).chronicle.tally.feats).toBe(1);
     expect(me(s).chronicle.inbox).toEqual([]);
+  });
+  test('in a room a feat is earned at once, its fact kept, but its reward waits for the GM: a player\'s phone asks once, the GM\'s phone keeps it in its list (ruling 20)', () => {
+    const room = parseRoomCode('ABC234')!;
+    const player = write(saveOf(mira()), [fight({ endPct: 4 })], ctx(book('threads-end'), { seat: { seat: 'player', room } }));
+    expect(state(player, 'threads-end')).toEqual({ at: 'earned', on: AT, day: TODAY, name: 'Thread\'s End' });
+    expect(me(player).chronicle.facts.map(f => f.kind), 'no title fact: the title is not given').toEqual(['fight', 'feat']);
+    expect(me(player).titles.map(t => t.name)).not.toContain('Still Standing');
+    const asks = (player.settings.sync.outbox ?? []).flatMap(x => (x.letter.kind === 'event' ? [x.letter.event] : []));
+    expect(asks.map(e => [e.type, 'what' in e.payload ? e.payload.what : null])).toEqual([['rewardAsk', 'Thread\'s End']]);
+    expect(write(player, [fight({ endPct: 4 })], ctx(book('threads-end'), { seat: { seat: 'player', room } })).settings.sync.outbox, 'earned once, asked once').toEqual(player.settings.sync.outbox);
+
+    const gm = write(saveOf(mira()), [fight({ endPct: 4 })], ctx(book('threads-end'), { seat: { seat: 'gm', room } }));
+    expect(me(gm).titles.map(t => t.name)).not.toContain('Still Standing');
+    expect(waitingIn(gm, room).map(p => [p.from, p.what, p.rewards.title?.name])).toEqual([['feat', 'Thread\'s End', 'Still Standing']]);
   });
   test('Clean Sheet counts won fights in a row: a fight it went down in starts the row again', () => {
     let s = saveOf(mira());

@@ -142,7 +142,7 @@ show), so a held toast stays beside them. New e2e in `tests/e2e/reward-room.e2e.
 Undo is still there and undoes it. It taps Undo inside the two seconds, as the test above it does; a box pause could
 fail it once.
 
-## 20. Rewards the app pays by itself wait for the GM (rule d): written, not built
+## 20. Rewards the app pays by itself wait for the GM (rule d): built
 
 the owner: "Yes" to "rewards the app pays by itself (a room solo clear, a counted quest, a feat, a Give… from the shelf)
 wait for the GM's edit and approval". World rule 8 (`docs/world/README.md`): every System message and every reward is
@@ -171,6 +171,22 @@ reviewable commit with its machine's table test and chart:
 
 Open for the owner or the lead: whether a reward the GM approves may be raised above what the rule pays (default: the
 GM edits freely, as the Award form does).
+
+Built (branch `rulings-20`, six commits, one a unit): both defaults taken as decided (the GM edits freely, above the
+rule too; a feat's window shows "Waiting for the GM" in place of its lines). Where a reward goes is `ROUTE` by the seat
+(`src/core/hunter/pending.ts`): alone it is paid at once, since no GM is there to ask; a player's phone posts the new
+sealed `rewardAsk`; the GM's phone keeps a `PendingReward` in `settings.sync.pending` (chart "A reward waiting for the
+GM", `pendingStep`). The record has no `from: 'shelf'` and no `window`: the shelf opens the Award form instead of making
+a record (unit 6), and an approved reward opens REWARD RECEIVED saying what earned it (`AwardPayload.earned`). Approve
+is the Award form's send tied to the record (award.ts `DraftTie`, the old `fromDrop` state is now `tied`), the record
+approved in the award's one write, so a second approve pays nothing; the row's Approve sends it as it stands, Edit
+opens it in the form. Refuse posts a `system` window sealed to the player. The `soloAnswer` verdict `paid` became
+`cleared`, with no reward. A counted quest completes through `questDone` (`finishQuest` up to its reward). The notice
+step's seat is read from the save's room fields, so a player offline in a room still asks. The GM's own hunters' feats
+and counted quests in a room wait in the list too. Not changed: a personal gate's run and the GM's own solo run pay at
+once; alone a Give… is held at its tap as before. Tests: `tests/pending.test.ts`, cases in `award.test.ts`,
+`feats.test.ts`, `quests.test.ts`, `solo.test.ts`, `applied.test.ts`; new `tests/e2e/rewards-wait.e2e.ts`;
+`solo.e2e.ts`, `feats-room.e2e.ts` and `reward-room.e2e.ts` changed to approve or to Give from the form.
 
 ## 21. The free revive and the revive on debt are a System raise: built
 

@@ -15,6 +15,7 @@ import type { Save } from './save.ts';
 import { isRefused, refuse } from './save-step.ts';
 import type { Refused } from './save-step.ts';
 import type { FightId } from './combat/fight-types.ts';
+import type { EventId } from './ids.ts';
 import { told } from './session-log.ts';
 import type { Said, Stamp } from './session-log.ts';
 import { atOutbox, post } from './sync/outbox.ts';
@@ -56,39 +57,48 @@ export function gmAward(save: Save, locals: readonly { readonly hid: string; rea
   return { save: sent(next, s, { at: day.at, cap: day.R.logCap }), granted };
 }
 
-// ── the Award form's tie to a fight's drop ──
+// ── the Award form's tie to what its send settles ──
 // Before, the form's tie to the loot was a flag on its section (`dataset.drop`) and the reward it would open with a
 // `let` of gm.js (`pendingAward`). The flag stayed set when the GM folded the form or replaced the loot, so a later
 // unrelated award dealt the loot as if it were given (SMX-gates-1, SMX-views-11.1). Now the tie is this machine: gm.js
-// keeps its one value and steps it only through `draftStep`, and a send deals only the drop its draft names.
-export const AWARD_DRAFT_STATES = ['blank', 'opening', 'fromDrop'] as const;
+// keeps its one value and steps it only through `draftStep`, and a send settles only what its draft names: the drop of
+// a fight; a reward waiting for the GM (hunter/pending.ts), which the send approves; or an award picked on Give…'s
+// shelf in a room, which the send gives as that bundle, held under Undo (ruling 20, SMX-gates-5.2: held.ts).
 /**
- * The Award form: tied to nothing (whatever the GM typed); asked to open with `rewards` (a bundle's, or drop `drop`'s)
- * when the GM view next draws it; holding the drop of fight `fight`, whose send deals it.
+ * What a send of the form settles beside its award: fight `fight`'s drop, dealt; waiting reward `id`, approved; or bundle
+ * `given` from the shelf, given to `to` (this phone's hunter id or a player's sheet key).
+ */
+export type DraftTie =
+  | { readonly kind: 'drop'; readonly fight: FightId } | { readonly kind: 'pending'; readonly id: EventId }
+  | { readonly kind: 'shelf'; readonly given: GivenBundle; readonly to: string };
+export const AWARD_DRAFT_STATES = ['blank', 'opening', 'tied'] as const;
+/**
+ * The Award form: tied to nothing (whatever the GM typed); asked to open with `rewards` (a bundle's, a drop's, a waiting
+ * reward's) when the GM view next draws it, tied then to `tie`; holding `tie`, whose send settles it.
  */
 export type AwardDraft =
   | { readonly at: 'blank' }
-  | { readonly at: 'opening'; readonly rewards: Rewards; readonly bundle: string | null; readonly drop: FightId | null }
-  | { readonly at: 'fromDrop'; readonly fight: FightId };
+  | { readonly at: 'opening'; readonly rewards: Rewards; readonly bundle: string | null; readonly tie: DraftTie | null }
+  | { readonly at: 'tied'; readonly tie: DraftTie };
 export const BLANK_DRAFT: Extract<AwardDraft, { at: 'blank' }> = { at: 'blank' };
 export const AWARD_DRAFT_EVENTS = ['open', 'drawn', 'bundle', 'fold', 'gone', 'sent'] as const;
 /**
- * `award.open` (Award loot… with its drop, a bundle's Award… from the Workshop); the GM view drew the form; the GM
- * picked a bundle in the form; the GM folded Award; the drop the form holds no longer waits (set aside, or given from
- * another tab); the form's send wrote.
+ * `award.open` (Award loot… with its drop, a bundle's Award… from the Workshop, a waiting reward's Edit); the GM view drew
+ * the form; the GM picked a bundle in the form; the GM folded Award; what the form is tied to no longer waits (the drop
+ * set aside or given from another tab, the reward answered); the form's send wrote.
  */
 export type AwardDraftEvent =
-  | { readonly type: 'open'; readonly rewards: Rewards; readonly bundle: string | null; readonly drop: FightId | null }
+  | { readonly type: 'open'; readonly rewards: Rewards; readonly bundle: string | null; readonly tie: DraftTie | null }
   | { readonly type: 'drawn' } | { readonly type: 'bundle' } | { readonly type: 'fold' } | { readonly type: 'gone' } | { readonly type: 'sent' };
 /** What the form does beside the step: stays as it is, is filled with `rewards` (its bundle shown picked), or is emptied. */
 export type DraftForm = { readonly do: 'keep' } | { readonly do: 'fill'; readonly rewards: Rewards; readonly bundle: string | null } | { readonly do: 'clear' };
 export type AwardDraftStep = { readonly draft: AwardDraft; readonly form: DraftForm };
 type DraftFn<E extends AwardDraftEvent['type']> = (d: AwardDraft, e: Extract<AwardDraftEvent, { type: E }>) => AwardDraftStep;
 const KEEP: DraftForm = { do: 'keep' }, untied = (form: DraftForm): AwardDraftStep => ({ draft: BLANK_DRAFT, form });
-const opened: DraftFn<'open'> = (_d, e) => ({ draft: { at: 'opening', rewards: e.rewards, bundle: e.bundle, drop: e.drop }, form: KEEP });
+const opened: DraftFn<'open'> = (_d, e) => ({ draft: { at: 'opening', rewards: e.rewards, bundle: e.bundle, tie: e.tie }, form: KEEP });
 /**
- * Every state against every event; null: refused, nothing changes. A drop's form folded, or whose drop left, is emptied
- * as it is untied: the loot still waits, offered again, and the form no longer gives it a second time.
+ * Every state against every event; null: refused, nothing changes. A tied form folded, or whose tie left, is emptied as
+ * it is untied: the loot or the reward still waits, offered again, and the form no longer settles it a second time.
  */
 const DRAFT_TABLE: { readonly [S in AwardDraft['at']]: { readonly [E in AwardDraftEvent['type']]: DraftFn<E> | null } } = {
   blank: { open: opened, drawn: null, bundle: () => untied(KEEP), fold: () => untied(KEEP), gone: null, sent: () => untied(KEEP) },
@@ -97,11 +107,11 @@ const DRAFT_TABLE: { readonly [S in AwardDraft['at']]: { readonly [E in AwardDra
     drawn: d => {
       if (d.at !== 'opening') return untied(KEEP);
       const form: DraftForm = { do: 'fill', rewards: d.rewards, bundle: d.bundle };
-      return { draft: d.drop ? { at: 'fromDrop', fight: d.drop } : BLANK_DRAFT, form };
+      return { draft: d.tie ? { at: 'tied', tie: d.tie } : BLANK_DRAFT, form };
     },
     bundle: null, fold: null, gone: null, sent: null,
   },
-  fromDrop: { open: opened, drawn: null, bundle: () => untied(KEEP), fold: () => untied({ do: 'clear' }), gone: () => untied({ do: 'clear' }), sent: () => untied(KEEP) },
+  tied: { open: opened, drawn: null, bundle: () => untied(KEEP), fold: () => untied({ do: 'clear' }), gone: () => untied({ do: 'clear' }), sent: () => untied(KEEP) },
 };
 /** `d` after `e`, with what the form does, or null where the table refuses it. */
 export function draftStep(d: AwardDraft, e: AwardDraftEvent): AwardDraftStep | null {
@@ -109,11 +119,15 @@ export function draftStep(d: AwardDraft, e: AwardDraftEvent): AwardDraftStep | n
   return step ? step(d, e) : null;
 }
 /**
- * The drop a send from `draft` deals in its write: the one the form holds, none from a blank form. A send of the loot
+ * The drop a send from `draft` deals in its write: the one the form holds, none from a form tied to no drop. A send of the loot
  * that would leave `unreached` picked hunters without it (a player's, with no room) is refused whole (`unreached`), so
  * nothing is written and the loot waits: loot leaves only by being given or by the GM's Set aside (SMX-gates-1.1).
  */
 export function sendDeals(draft: AwardDraft, unreached: number): { readonly deals: FightId | null } | Refused<'unreached'> {
-  if (draft.at !== 'fromDrop') return { deals: null };
-  return unreached > 0 ? refuse('unreached') : { deals: draft.fight };
+  if (draft.at !== 'tied' || draft.tie.kind !== 'drop') return { deals: null };
+  return unreached > 0 ? refuse('unreached') : { deals: draft.tie.fight };
 }
+/** The bundle a send from `draft` gives from the shelf, and to whom (held under Undo: held.ts), or null. */
+export const sendGives = (draft: AwardDraft): Extract<DraftTie, { kind: 'shelf' }> | null => (draft.at === 'tied' && draft.tie.kind === 'shelf' ? draft.tie : null);
+/** The waiting reward a send from `draft` approves in its write (hunter/pending.ts `pendingApproved`), or null. */
+export const sendApproves = (draft: AwardDraft): EventId | null => (draft.at === 'tied' && draft.tie.kind === 'pending' ? draft.tie.id : null);

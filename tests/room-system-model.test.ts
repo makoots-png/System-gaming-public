@@ -111,7 +111,7 @@ function coinRule(w: World): string | null {
  */
 function soloRule(w: World): string | null {
   let paid = 0;
-  for (const p of w.phones.slice(1)) for (const [run, n] of Object.entries(p.paid)) { if (n > 1) return `${p.name}'s solo run ${run} was paid ${n} times`; paid += n; }
+  for (const p of w.phones.slice(1)) for (const [run, n] of Object.entries(p.paid)) { if (n > 1) return `${p.name}'s solo run ${run} was answered cleared ${n} times`; paid += n; }
   if (paid > 1) return `the GM's one solo gate paid ${paid} runs`;
   if (paid === 1 && w.phones[0]!.save.soloGate !== 'cleared') return 'a solo run was paid for a gate the GM\'s phone has not cleared';
   return null;

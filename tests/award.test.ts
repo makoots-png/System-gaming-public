@@ -1,6 +1,6 @@
 // What one of the GM view's actions writes (src/core/award.ts): its change, its posts and its log line in one answer.
 import { describe, expect, test } from 'bun:test';
-import { AWARD_DRAFT_EVENTS, AWARD_DRAFT_STATES, BLANK_DRAFT, draftStep, gmAward, sendDeals, sent } from '../src/core/award.ts';
+import { AWARD_DRAFT_EVENTS, AWARD_DRAFT_STATES, BLANK_DRAFT, draftStep, gmAward, sendApproves, sendDeals, sendGives, sent } from '../src/core/award.ts';
 import type { AwardDraft, AwardDraftEvent } from '../src/core/award.ts';
 import { dropDealt } from '../src/core/gates/pay.ts';
 import { fightId } from '../src/core/combat/fight-types.ts';
@@ -11,6 +11,7 @@ import { freshSave, newHunter } from '../src/core/save.ts';
 import type { ParseEnv, Save } from '../src/core/save.ts';
 import { newEvent } from '../src/core/protocol.ts';
 import { dev, day, hid, room } from './fixtures/ids.ts';
+import { parseEventId } from '../src/core/ids.ts';
 
 const AT = '2026-11-15T10:00:00.000Z', ROOM = room('ABCD23');
 const ENV: ParseEnv = { now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-gm') };
@@ -57,14 +58,14 @@ describe('the GM\'s Send award is one write', () => {
 describe('the Award form\'s tie to a fight\'s drop (SMX-gates-1, SMX-views-11)', () => {
   const F = fightId('f-a'), LOOT = { ...newRewards(), gold: 900 }, XP = { ...newRewards(), xp: 25 };
   const STATES: { readonly [S in AwardDraft['at']]: Extract<AwardDraft, { at: S }> } = {
-    blank: BLANK_DRAFT, opening: { at: 'opening', rewards: LOOT, bundle: null, drop: F }, fromDrop: { at: 'fromDrop', fight: F },
+    blank: BLANK_DRAFT, opening: { at: 'opening', rewards: LOOT, bundle: null, tie: { kind: 'drop', fight: F } }, tied: { at: 'tied', tie: { kind: 'drop', fight: F } },
   };
   const EVENTS: { readonly [E in AwardDraftEvent['type']]: Extract<AwardDraftEvent, { type: E }> } = {
-    open: { type: 'open', rewards: XP, bundle: 'rb1', drop: null }, drawn: { type: 'drawn' }, bundle: { type: 'bundle' },
+    open: { type: 'open', rewards: XP, bundle: 'rb1', tie: null }, drawn: { type: 'drawn' }, bundle: { type: 'bundle' },
     fold: { type: 'fold' }, gone: { type: 'gone' }, sent: { type: 'sent' },
   };
   const keep = { do: 'keep' } as const, clear = { do: 'clear' } as const;
-  const opened = { draft: { at: 'opening', rewards: XP, bundle: 'rb1', drop: null }, form: keep };
+  const opened = { draft: { at: 'opening', rewards: XP, bundle: 'rb1', tie: null }, form: keep };
   /** The GM's save with drop F of 900 gold waiting. */
   const waiting = (): Save => ({ ...gm(), loot: { at: 'waiting', drops: [{ fight: F, gold: 900, items: [] }] } });
 
@@ -72,15 +73,15 @@ describe('the Award form\'s tie to a fight\'s drop (SMX-gates-1, SMX-views-11)',
     const table = Object.fromEntries(AWARD_DRAFT_STATES.map(s => [s, Object.fromEntries(AWARD_DRAFT_EVENTS.map(e => [e, draftStep(STATES[s], EVENTS[e])]))]));
     expect(table).toEqual({
       blank: { open: opened, drawn: null, bundle: { draft: BLANK_DRAFT, form: keep }, fold: { draft: BLANK_DRAFT, form: keep }, gone: null, sent: { draft: BLANK_DRAFT, form: keep } },
-      opening: { open: opened, drawn: { draft: STATES.fromDrop, form: { do: 'fill', rewards: LOOT, bundle: null } }, bundle: null, fold: null, gone: null, sent: null },
-      fromDrop: { open: opened, drawn: null, bundle: { draft: BLANK_DRAFT, form: keep }, fold: { draft: BLANK_DRAFT, form: clear }, gone: { draft: BLANK_DRAFT, form: clear }, sent: { draft: BLANK_DRAFT, form: keep } },
+      opening: { open: opened, drawn: { draft: STATES.tied, form: { do: 'fill', rewards: LOOT, bundle: null } }, bundle: null, fold: null, gone: null, sent: null },
+      tied: { open: opened, drawn: null, bundle: { draft: BLANK_DRAFT, form: keep }, fold: { draft: BLANK_DRAFT, form: clear }, gone: { draft: BLANK_DRAFT, form: clear }, sent: { draft: BLANK_DRAFT, form: keep } },
     });
     expect(draftStep(opened.draft as AwardDraft, EVENTS.drawn), 'a bundle from the Workshop fills the form tied to nothing')
       .toEqual({ draft: BLANK_DRAFT, form: { do: 'fill', rewards: XP, bundle: 'rb1' } });
   });
 
   test('a send from the loot\'s form deals that drop, in the award\'s write; a send from a blank form deals none', () => {
-    expect(sendDeals(STATES.fromDrop, 0)).toEqual({ deals: F });
+    expect(sendDeals(STATES.tied, 0)).toEqual({ deals: F });
     expect(sendDeals(BLANK_DRAFT, 0)).toEqual({ deals: null });
     const dealt = dropDealt(waiting(), F);
     expect(isRefused(dealt) ? dealt : dealt.loot).toEqual({ at: 'none' });
@@ -93,11 +94,31 @@ describe('the Award form\'s tie to a fight\'s drop (SMX-gates-1, SMX-views-11)',
   });
 
   test('the GM opens the loot in the form and picks another bundle there: its send deals no loot (SMX-gates-1.2)', () => {
-    expect(sendDeals(draftStep(STATES.fromDrop, EVENTS.bundle)!.draft, 0)).toEqual({ deals: null });
+    expect(sendDeals(draftStep(STATES.tied, EVENTS.bundle)!.draft, 0)).toEqual({ deals: null });
+  });
+
+  test('the GM opens a waiting reward with Edit: its send approves that reward and deals no loot; folded, the reward still waits (ruling 20)', () => {
+    const ID = parseEventId('d-p1-1abc-wxyz')!;
+    const tied = draftStep(draftStep(BLANK_DRAFT, { type: 'open', rewards: LOOT, bundle: null, tie: { kind: 'pending', id: ID } })!.draft, EVENTS.drawn)!;
+    expect(tied).toEqual({ draft: { at: 'tied', tie: { kind: 'pending', id: ID } }, form: { do: 'fill', rewards: LOOT, bundle: null } });
+    expect(sendApproves(tied.draft)).toBe(ID);
+    expect(sendDeals(tied.draft, 1), 'a reward reaches whom it reaches').toEqual({ deals: null });
+    expect(sendApproves(draftStep(tied.draft, EVENTS.fold)!.draft)).toBeNull();
+    expect(sendApproves(STATES.tied), 'the loot\'s form approves nothing').toBeNull();
+  });
+
+  test('in a room an award picked on Give…\'s shelf opens in the form tied to its bundle and hunter: its send gives it as that bundle; folded, nothing is given (ruling 20, SMX-gates-5.2)', () => {
+    const given = { key: 'seed-held-the-mask', name: 'Held the Mask', window: null }, tie = { kind: 'shelf', given, to: 'd-p1:h1' } as const;
+    const tied = draftStep(draftStep(BLANK_DRAFT, { type: 'open', rewards: XP, bundle: null, tie })!.draft, EVENTS.drawn)!;
+    expect(tied).toEqual({ draft: { at: 'tied', tie }, form: { do: 'fill', rewards: XP, bundle: null } });
+    expect(sendGives(tied.draft)).toEqual(tie);
+    expect([sendApproves(tied.draft), sendDeals(tied.draft, 1)]).toEqual([null, { deals: null }]);
+    expect(sendGives(draftStep(tied.draft, EVENTS.fold)!.draft)).toBeNull();
+    expect(sendGives(draftStep(tied.draft, EVENTS.bundle)!.draft), 'another bundle picked in the form is an award of its own').toBeNull();
   });
 
   test('a send of the loot that would leave a picked player without it (no room) is refused whole, so nothing is written and the loot waits (SMX-gates-1.1)', () => {
-    expect(sendDeals(STATES.fromDrop, 1)).toEqual({ ok: false, why: 'unreached' });
+    expect(sendDeals(STATES.tied, 1)).toEqual({ ok: false, why: 'unreached' });
     expect(sendDeals(BLANK_DRAFT, 1), 'an award that is not the loot goes to whom it reaches, as before').toEqual({ deals: null });
   });
 });

@@ -15,7 +15,7 @@
 // (`released`).
 import type { Hunter, Quest, Save } from '../save.ts';
 import type { DayKey } from '../day.ts';
-import type { HunterId, RoomCode } from '../ids.ts';
+import type { HunterId } from '../ids.ts';
 import type { Rules } from '../rules.ts';
 import { isRefused, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
@@ -27,7 +27,9 @@ import { countStep, markOf, objectiveStep } from './counts.ts';
 import type { Counted } from './counts.ts';
 import { featStep, startOf, stateHolds } from './feats.ts';
 import type { FeatBook, FeatDef, FeatEvent } from './feats.ts';
-import { ROOM_HEARS, finishQuest, grant, questEnded } from './grant.ts';
+import { ROOM_HEARS, questDone, questEnded } from './grant.ts';
+import { ALONE, selfPaid } from './pending.ts';
+import type { RewardSeat } from './pending.ts';
 import { COMPLETER, completerOf, reportsProgress } from './quest-rights.ts';
 import { record } from './chronicle.ts';
 
@@ -39,8 +41,11 @@ import { record } from './chronicle.ts';
 export type NoticeCtx = {
   readonly at: string; readonly today: DayKey; readonly session: number; readonly held: (save: Save, hid: HunterId) => boolean;
   readonly R: Rules; readonly feats: FeatBook;
-  /** The room this phone is a player in, where a quest the GM issued reports its end; null alone or on the GM's phone. */
-  readonly room?: RoomCode | null;
+  /**
+   * Where the phone sits (alone when not given): in a room a reward earned by itself waits for the GM (hunter/pending.ts
+   * `ROUTE`), and a player's phone reports the end of a quest the GM issued there.
+   */
+  readonly seat?: RewardSeat;
 };
 /** A feat a write earned, for the window the view shows (and the level-up its reward may have given). */
 export type Earned = { readonly hid: HunterId; readonly key: string };
@@ -132,8 +137,8 @@ function noticeHunter(save: Save, hid: HunterId, c: NoticeCtx, now: FactStamp): 
         if (st) feats = { ...feats, [k]: st.state };
       }
       put(record({ ...now, chronicle: { ...now.chronicle, feats } }, { kind: 'feat', key, name: def.name, hidden: def.show.at === 'never' }));
-      const g = grant(s, hid, def.rewards, null, { at: c.at, today: c.today, R: c.R, vitals: 'sheet' });
-      if (!isRefused(g)) s = g.save;
+      // ruling 20: in a room the feat's reward waits for the GM; it is earned at once all the same
+      s = selfPaid(s, hid, { from: 'feat', what: def.name, seed: `feat ${hid} ${key}`, rewards: def.rewards }, { ...c, seat: c.seat ?? ALONE });
     }
   }
   return s;
@@ -142,7 +147,8 @@ function noticeHunter(save: Save, hid: HunterId, c: NoticeCtx, now: FactStamp): 
 /**
  * Fact `f` counted by hunter `hid`'s active quests (feature 1's notes 17.14): each counted objective not yet full moves
  * (`objectiveStep`), and a quest the System completes (`COMPLETER`, `counted`) whose objectives are all full is completed
- * through `finishQuest` in this write, its end reported when the GM issued it and this phone is a player in a room.
+ * through `questDone` in this write, its end reported when the GM issued it and this phone is a player in a room, and
+ * its reward routed by the seat (`selfPaid`: in a room it waits for the GM, ruling 20).
  */
 function countQuests(save: Save, hid: HunterId, f: Fact, stamp: FactStamp, c: NoticeCtx): Save {
   const h = save.hunters.find(x => x.id === hid);
@@ -166,13 +172,14 @@ function countQuests(save: Save, hid: HunterId, f: Fact, stamp: FactStamp, c: No
   let s: Save = { ...save, hunters: save.hunters.map(x => (x.id === hid ? { ...x, quests } : x)) };
   for (const q of quests) {
     if (q.status !== 'active' || !COMPLETER[completerOf(q)].counted || !q.objectives.every(o => o.progress >= o.target)) continue;
-    // SMX-gates-4.3 waits on the owner's ruling (rule d: a quest's rewards and System window wait for the GM): as today the
-    // System pays the reward here, and its window shows the quest's rewards (quests.js `tellDone`)
-    const done = finishQuest(s, hid, q.id, { at: c.at, today: c.today, R: c.R, vitals: 'sheet', by: 'system' });
+    // SMX-gates-4.3, ruled (the owner, Nov 22, rule d): the quest is done at once, the System's; its reward waits for the GM in
+    // a room, and its window says so in place of the reward's lines (quests.js `tellDone`)
+    const done = questDone(s, hid, q.id, { at: c.at, today: c.today, R: c.R, by: 'system' });
     if (isRefused(done)) continue;
     s = done.save;
-    const ended = s.hunters.find(x => x.id === hid)?.quests.find(x => x.id === q.id);
-    if (ROOM_HEARS.counted && c.room && reportsProgress(q, 'player') && ended?.status === 'done') s = questEnded(s, hid, ended, { at: c.at, room: c.room });
+    const ended = s.hunters.find(x => x.id === hid)?.quests.find(x => x.id === q.id), seat = c.seat ?? ALONE;
+    if (ROOM_HEARS.counted && seat.seat === 'player' && reportsProgress(q, 'player') && ended?.status === 'done') s = questEnded(s, hid, ended, { at: c.at, room: seat.room });
+    s = selfPaid(s, hid, { from: 'quest', what: q.title, seed: `quest ${hid} ${q.id}`, rewards: done.rewards }, { ...c, seat });
   }
   return s;
 }

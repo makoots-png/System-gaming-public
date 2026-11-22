@@ -1,11 +1,14 @@
 // feats.js: the window of a feat a hunter on this phone earned (src/core/hunter/feats.ts; feature 1's notes 5.7). The
 // notice step earns it in the write of the fact that earned it; this module only tells it: each earned feat not yet
-// told (told.ts `hunterNews`) opens a System window in the feat's words with its reward's lines, and is marked told in the
+// told (told.ts `hunterNews`) opens a System window in the feat's words with its reward's lines (in a room, "Waiting for
+// the GM" in their place: ruling 20), and is marked told in the
 // campaign's told memory when answered (src/core/told.ts, `store.tell`), so a reload while it waits shows it again.
 // Writes nothing to the save. It publishes the GM's feats as the room's feats doc (`featsDoc`); a player's phone reads them from it.
 import { featWindow, featsDoc } from '../core/hunter/feats.ts';
 import { hunterNews } from '../core/told.ts';
 import { DOC_MAX } from '../core/protocol.ts';
+import { PENDING_WORDS, rewardWaits } from '../core/hunter/pending.ts';
+import { isEmptyReward } from '../core/rewards.ts';
 
 /** @param {import('./app.ts').App} app */
 export function register(app) {
@@ -26,7 +29,9 @@ export function register(app) {
         asking.add(id);
         const def = book.find(([k]) => k === key)?.[1], st = h.chronicle.feats[key];
         const w = def ? featWindow(def, app.rules()) : { title: st && st.at === 'earned' ? st.name.toUpperCase() : 'FEAT EARNED', body: '', lines: [] };
-        void ui.system({ tag: '! Feat', kind: 'levelup', title: w.title, body: `${many ? `${h.name}: ` : ''}${w.body}`, rewards: w.lines, actions: [{ label: 'Understood', value: null, primary: true }] })
+        // in a room the feat's reward waits for the GM (ruling 20, hunter/pending.ts): the window says so in place of its lines
+        const lines = def && rewardWaits(app.seat()) && !isEmptyReward(def.rewards) ? [PENDING_WORDS.waits] : w.lines;
+        void ui.system({ tag: '! Feat', kind: 'levelup', title: w.title, body: `${many ? `${h.name}: ` : ''}${w.body}`, rewards: lines, actions: [{ label: 'Understood', value: null, primary: true }] })
           .then(() => { asking.delete(id); store.tell({ type: 'answered', campaign: told.campaign, topic, id: key }); });
       }
     }

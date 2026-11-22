@@ -1,5 +1,5 @@
 import { writeFile } from 'node:fs/promises';
-import { test as base, expect, type BrowserContext, type Page } from '@playwright/test';
+import { test as base, expect, type BrowserContext, type Locator, type Page } from '@playwright/test';
 
 export { expect };
 export type { Page, BrowserContext };
@@ -178,6 +178,25 @@ export async function onboardPlayer(page: Page, name: string, roomCode = ''): Pr
 export async function go(page: Page, view: string): Promise<void> {
   await page.evaluate(v => hunterApp.go(v), view);
   await page.waitForTimeout(300);
+}
+
+/**
+ * The GM's "Waiting for you" row of a reward for `name` (gm.js, hunter/pending.ts): the GM view shown and its section
+ * opened, the row there once the GM's phone has heard of the reward.
+ */
+export async function waitingRow(gm: Page, name: string): Promise<Locator> {
+  await go(gm, 'gm');
+  const tog = gm.locator('[data-tog="waiting"]');
+  if ((await tog.getAttribute('aria-expanded')) !== 'true') await tog.tap();
+  const row = gm.locator('#gm-pw [data-pw]', { hasText: name }).first();
+  await expect(row).toBeVisible({ timeout: 30_000 });
+  return row;
+}
+/** The GM approves the reward waiting for `name` as it stands (its row's Approve). */
+export async function approveWaiting(gm: Page, name: string): Promise<void> {
+  const row = await waitingRow(gm, name), id = await row.getAttribute('data-pw');
+  await row.locator('[data-pw-approve]').tap();
+  await expect(gm.locator(`#gm-pw [data-pw="${id}"]`), 'an approved reward leaves the list').toHaveCount(0);
 }
 
 /** The sheet shows name, job and title as text: Edit opens the inputs, a change saves, Done closes them. */

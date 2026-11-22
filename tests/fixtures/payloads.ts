@@ -133,8 +133,8 @@ export const VALID: Record<EventType, [Raw, Raw]> = {
     { eid: EID, by: KEY, gate: 'g12', name: 'Kai', outcome: 'won', rounds: 4.5, life: 'up' },
   ],
   soloAnswer: [
-    { eid: EID, to: [KEY], run: 'd-p1-run1', gate: 'g12', name: 'Goblin Den', verdict: 'paid', rewards: { xp: 50, gold: 120 } },
-    { eid: EID, to: [KEY], run: 'd-p1-run1', gate: 'g12', name: 'Goblin Den', verdict: 'paid', rewards: { xp: 50, gold: 120, points: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] } },
+    { eid: EID, to: [KEY], run: 'd-p1-run1', gate: 'g12', name: 'Goblin Den', verdict: 'cleared', rewards: { xp: 50, gold: 120 } },
+    { eid: EID, to: [KEY], run: 'd-p1-run1', gate: 'g12', name: 'Goblin Den', verdict: 'cleared' },
   ],
   noted: [
     { eid: EID, to: [KEY], facts: [{ kind: 'gate', name: 'Goblin Den', rank: 'E', above: 0, toBreak: 3 }, { kind: 'junk' }] },
@@ -163,5 +163,9 @@ export const VALID: Record<EventType, [Raw, Raw]> = {
   systemRaise: [
     { eid: EID, by: KEY, name: 'Mira', raise: 'debt', owes: 1000 },
     { eid: EID, by: KEY, name: 'Mira', raise: 'debt', owes: 1000 },
+  ],
+  rewardAsk: [
+    { eid: EID, by: KEY, name: 'Mira', from: 'quest', what: 'Clear the den', rewards: { gold: 40 } },
+    { eid: EID, by: KEY, name: 'Mira', from: 'quest', what: 'Clear the den', rewards: { xp: 0, points: 0, gold: 40, items: [], title: null, job: null, skills: [], statuses: [], boons: [] } },
   ],
 };

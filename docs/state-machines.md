@@ -3203,6 +3203,39 @@ Where it lives:
 | The test to copy | `tests/word.test.ts` ("the GM hears a word and answers it") |
 | The recipe | docs/guide/room-sync.md, "A room message" |
 
+## A reward waiting for the GM
+
+Every state reachable from a reward heard (`waiting`) under the events of `PENDING_EVENTS` (edit, approve, refuse), breadth first. The walk found 3 states and 3 steps.
+
+### A reward the app would pay by itself waits for the GM's edit and approval
+
+```mermaid
+---
+title: A reward the app would pay by itself waits for the GM's edit and approval
+---
+stateDiagram-v2
+  state "Waiting for you" as s1
+  state "Approved, given once" as s2
+  state "Refused, the player told" as s3
+  [*] --> s1
+  s1 --> s2 : the GM approves, the award is given in the same write
+  s1 --> s3 : the GM refuses, the player's window says so
+```
+
+World rule 8: "every System message and every reward must be editable and approved by the GM before players see it." The owner, Nov 22, rule d: "Yes" to a room solo clear, a counted quest, a feat and a Give… from the shelf. Where a reward goes is by the phone's seat (`ROUTE`): alone pay (no GM to ask, so it is paid at once), a player's phone ask (the `rewardAsk` message), the GM's phone wait (this record in its save). The GM edits freely, above what the rule pays too. Approved and refused are ends: a second approve pays nothing.
+
+3 chart states, 2 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `PendingReward`, `PendingEvent` and `PENDING_STATES` in `src/core/hunter/pending.ts`; the records are `settings.sync.pending` in the GM's save |
+| What changes it | `pendingStep(record, event)` and its `TABLE`; `pendingHeard`, `pendingApproved`, `pendingRefused` on the save; `selfPaid` routes a reward by `ROUTE` |
+| Who calls it | `noticed.ts` (a feat, a counted quest), `soloTaken` in `src/core/gates/solo.ts` (a won run), the GM view's "Waiting for you" list and its Approve through Send award (`src/views/gm.js`) |
+| The test to copy | `tests/pending.test.ts` |
+| The recipe | docs/guide/room-sync.md, "A room message" |
+
 ## A story on the table
 
 Every run reachable from no run, for a story of three chapters, under the 8 events of tests/models/story-events.ts, breadth first; a run is the same state at the same chapter whatever its count of opens. The walk found 7 states and 10 steps.

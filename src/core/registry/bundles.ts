@@ -312,6 +312,9 @@ export const SHELF_WORDS = {
   toastTag: 'Award',
   given: (award: string, name: string): string => `Given: ${award} to ${name}.`,
   undo: 'Undo',
+  /** The Award form's line and its send while it holds an award picked on the shelf in a room (ruling 20). */
+  tie: (award: string, name: string): string => `${award} for ${name}, from the shelf. Edit it here; Give holds it under Undo.`,
+  send: 'Give',
 } as const;
 
 /**

@@ -1,6 +1,7 @@
 // A solo run and a hunter's personal gates (src/core/gates/solo.ts, personal.ts; notes-2-solo.md). A run's write is
 // checked against an end written by hand, so the expected sheet comes from the end itself: what the play left is what
 // the sheet holds, through the life machine for the death saves. The engine's own play is checked once end to end.
+import { pendingOf } from '../src/core/hunter/pending.ts';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { RULES, rulesOf } from '../src/core/rules.ts';
 import type { StatusDef } from '../src/core/combat/effect-ops.ts';
@@ -431,21 +432,23 @@ describe('a world gate open to solo runs, in a room', () => {
 
   const paidRun = { eid: 'd-me-run1' as never, by: KEY, gate: WORLD.id as GateId, name: 'Mira', outcome: 'won' as const, rounds: 4, life: 'up' as const };
   const answerOf = (s: Save, plan: ReturnType<typeof soloPlan>) => {
-    const body = soloAnswerBody(s, paidRun.eid, paidRun, plan, { gold: 30, items: [] });
+    const body = soloAnswerBody(s, paidRun.eid, paidRun, plan);
     return body ? newEvent('soloAnswer', body, { device: 'd-gm', now: NOW, rand: 0.25 }) : null;
   };
 
-  test('the GM\'s phone pays the first won run of a gate as its Clear for a party of one (four times the XP due and the gold rolled), and answers the second as taken; its cost stays the player\'s', () => {
-    const s = gmSave(), plan = soloPlan(s, paidRun, RULES);
+  test('the GM\'s phone clears the gate for the first won run, its reward (the Clear for a party of one: four times the XP due and the gold rolled) waiting for the GM\'s approval, and answers the second as taken; its cost stays the player\'s', () => {
+    const s = gmSave(), plan = soloPlan(s, paidRun, RULES), answer0 = answerOf(s, plan)!;
     expect(plan).toEqual({ kind: 'paid', due: 50, xp: 200, party: 4 });
-    const first = ok(soloTaken(s, paidRun, plan, answerOf(s, plan), { gold: 30, items: [] }, TAKEN));
+    const first = ok(soloTaken(s, paidRun, plan, answer0, { gold: 30, items: [] }, TAKEN));
     expect(first.gates[0]).toMatchObject({ status: 'cleared', xpPaid: 50 });
     const answer = first.settings.sync.outbox![0]!.letter;
-    expect(answer.kind === 'event' && answer.event.payload).toMatchObject({ to: [KEY], run: paidRun.eid, verdict: 'paid', rewards: { xp: 200, gold: 120 } });
+    expect(answer.kind === 'event' && answer.event.payload).toMatchObject({ to: [KEY], run: paidRun.eid, verdict: 'cleared' });
+    expect(answer.kind === 'event' && 'rewards' in answer.event.payload, 'the answer pays nothing').toBe(false);
+    expect(pendingOf(first).map(p => [p.id, p.to, p.from, p.what, p.rewards.xp, p.rewards.gold, p.at])).toEqual([[answer0.payload.eid, KEY, 'solo', worldGate.name, 200, 120, 'waiting']]);
     expect(first.log.some(l => l.title === 'Solo run')).toBe(true);
     const second = { ...paidRun, eid: 'd-other-run2' as never, by: 'd-other:h5' as never }, plan2 = soloPlan(first, second, RULES);
     expect(plan2).toEqual({ kind: 'refused', why: 'taken' });
-    const body2 = soloAnswerBody(first, second.eid, second, plan2, NO_LOOT)!;
+    const body2 = soloAnswerBody(first, second.eid, second, plan2)!;
     const after = ok(soloTaken(first, second, plan2, newEvent('soloAnswer', body2, { device: 'd-gm', now: NOW + 1, rand: 0.5 }), NO_LOOT, TAKEN));
     const refused = after.settings.sync.outbox!.at(-1)!.letter;
     expect(refused.kind === 'event' && refused.event.payload).toMatchObject({ verdict: 'refused', why: 'taken', to: ['d-other:h5'] });

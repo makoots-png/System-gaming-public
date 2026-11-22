@@ -1,7 +1,7 @@
 // Feats in a room (feature 1's notes sections 2.3 and 3.2): the GM's own feats reach the players' phones in the room's
 // feats doc, and what the GM's phone saw of a player's hunter (a gate's Clear it was paid in) reaches its phone as the
 // room's `noted`, where the player's phone counts it and opens the feat's window once.
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, answerWindow } from './helpers.ts';
+import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, answerWindow, approveWaiting } from './helpers.ts';
 
 const FIRST_CLEAR = {
   name: 'First Clear', window: 'FIRST CLEAR', desc: 'A gate cleared.', show: { at: 'never' },
@@ -40,18 +40,31 @@ test('the GM\'s own feat reaches a player\'s phone, and the gate the GM clears f
     await expect(form).toBeHidden();
   });
 
-  await test.step('the player\'s phone takes the award, then counts the gate and opens the feat\'s window, once', async () => {
+  await test.step('the player\'s phone takes the award, then counts the gate and opens the feat\'s window, once, its reward waiting for the GM', async () => {
     await answerWindow(player, 'REWARD RECEIVED');
     // the gate's XP takes a level 1 hunter to level 2, and that window comes before the feat's
     await answerWindow(player, 'LEVEL UP!');
     const feat = player.locator('.sys-overlay.show', { hasText: 'FIRST CLEAR' });
     await expect(feat).toBeVisible();
     await expect(feat).toContainText('A gate cleared.');
-    await expect(feat).toContainText('+1 ability point');
+    await expect(feat).toContainText('Waiting for the GM');
+    await expect(feat).not.toContainText('+1 ability point');
     await feat.locator('.sys-actions button', { hasText: 'Understood' }).tap();
     const h = await activeHunter(player);
     expect(h.chronicle.feats['first-clear'].at).toBe('earned');
     expect(h.chronicle.facts.filter((f: any) => f.kind === 'gate').map((f: any) => f.name)).toEqual(['Goblin Den']);
+  });
+
+  await test.step('the GM approves the feat\'s reward from Waiting for you, and the player gets its point once (ruling 20)', async () => {
+    const points = (await activeHunter(player)).bonusPoints;
+    await dismissAll(gm, 4);
+    await approveWaiting(gm, 'First Clear');
+    const win = player.locator('.sys-overlay.show', { hasText: 'REWARD RECEIVED' });
+    await expect(win).toBeVisible({ timeout: 30_000 });
+    await expect(win).toContainText('Feat: First Clear. The GM approved your reward.');
+    await expect(win).toContainText('+1 ability point');
+    await dismissAll(player, 4);
+    expect((await activeHunter(player)).bonusPoints).toBe(points + 1);
   });
 
   await test.step('the GM\'s phone tells the player\'s feat once, in the Table feed, and not again after a reload', async () => {
