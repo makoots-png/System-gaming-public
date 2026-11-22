@@ -18,6 +18,7 @@ import { diceOf, parseFormula } from '../../src/core/formula.ts';
 import { dist, inShape, openGrid, place, reachable, straightCost, tiles } from '../../src/core/combat/space.ts';
 import type { Place } from '../../src/core/combat/space.ts';
 import { interval, paceCost, tick, walkCost } from '../../src/core/combat/timeline.ts';
+import type { Tick } from '../../src/core/combat/timeline.ts';
 import { abilityId, combatantId } from '../../src/core/combat/ability-types.ts';
 import type { Ability } from '../../src/core/combat/ability-types.ts';
 import { modified, statusKey } from '../../src/core/combat/effect-ops.ts';
@@ -32,11 +33,22 @@ import type { AbilityInput } from '../../src/core/registry/ability-kinds.ts';
 import { onCooldown, payCost } from '../../src/core/combat/charge.ts';
 import { inRange, resolve, taunted } from '../../src/core/combat/resolve.ts';
 import type { Aim, Rolls } from '../../src/core/combat/resolve.ts';
-import { fightId, reduce } from '../../src/core/combat/fight.ts';
+import { fightId, reduce, runningState } from '../../src/core/combat/fight.ts';
 import type { Ctx, Effect, Ended, Fight, Fudge, FudgeSet, NewRow, Running } from '../../src/core/combat/fight.ts';
 import { CAP_ROUNDS, playBegin, playOver, playStep } from '../../src/core/combat/play.ts';
-import type { Limits, Play } from '../../src/core/combat/play.ts';
-import type { Policy as TurnPolicy, TurnChoice } from '../../src/core/combat/policy.ts';
+import type { Limits, Play, Played } from '../../src/core/combat/play.ts';
+import { ANSWER_KINDS, answerChoice, beatUses, keptOut, sensible } from '../../src/core/combat/policy.ts';
+import type { AnswerKind, Policy as TurnPolicy, TurnChoice } from '../../src/core/combat/policy.ts';
+import { omenNeeds } from '../../src/core/combat/fight-turn.ts';
+import { enraged, scriptOf } from '../../src/core/combat/mythic.ts';
+import type { MythicStanding } from '../../src/core/combat/mythic-types.ts';
+import { monsterRows } from '../../src/core/combat/rows.ts';
+import type { RowMonster } from '../../src/core/combat/rows.ts';
+import { seedMonsters } from '../../src/core/registry/monsters.ts';
+import { MYTHICS } from '../../src/core/registry/mythics.ts';
+import type { MythicScriptId } from '../../src/core/registry/mythics.ts';
+import { drawNeeds, seededSource } from '../../src/core/draws.ts';
+import { weightsFor } from '../../src/core/combat/fudge.ts';
 import { rng } from './fight-play.ts';
 import { rowHp } from '../../src/core/combat/row-hp.ts';
 
@@ -484,6 +496,42 @@ export function monster(rank: Rank, archetype: MonsterArchetype, kind: MonsterKi
   return { row: bar > 0 ? { ...base, stagger: { fill: 0, max: bar * hit, hit } } : base, policy: monsterPolicy } as SimRow;
 }
 
+// ── a mythic that plays its script (notes-11-keystones.md, design B.8) ──
+/** The rules a scripted mythic's row is made under: today's, `fight.mythic.scripts` on (the switch ships off until MY7). */
+export const scriptsOn = (R: Rules = RULES): Rules => ({ ...R, fight: { ...R.fight, mythic: { ...R.fight.mythic, scripts: true } } });
+/** `plain`'s body: today's mythic of row M1, a brute at S with its archetype's attack alone. */
+const PLAIN_BODY: RowMonster = { name: 'A Mythic', rank: 'S', archetype: 'brute', kind: 'mythic', tweak: {}, abilities: [], statuses: [], script: 'plain' };
+/**
+ * The mythic of script `id` on its seed's body (`plain` on today's brute mythic), made as a fight makes it (rows.ts
+ * `monsterRows`) under `R` with scripts on, its HP its seed's times the script's `hp` (design B.8's one lever). Played on
+ * `sensible`, which lands its omens and keeps its act beats to its phase's acts.
+ */
+export function scripted(id: MythicScriptId, R: Rules = scriptsOn()): SimRow {
+  const seed: RowMonster | undefined = id === 'plain' ? PLAIN_BODY : seedMonsters(R).find(m => m.script === id);
+  if (!seed) throw new Error(`no seed plays ${id}`);
+  const row = monsterRows({ ...seed, tweak: { ...seed.tweak, hp: (seed.tweak.hp ?? 1) * MYTHICS[id].hp } }, [combatantId('mythic')], R)[0]!;
+  return { row, policy: mythicPolicy };
+}
+/**
+ * A scripted mythic: its omen's move on its landing turn (policy.ts `sensible`); on an act beat row M1's monster play
+ * (`monsterPolicy`) with the first damaging use its phase's acts name (policy.ts `beatUses`): it walks to its suggested
+ * target and hits it. `sensible`'s own monster hits whoever is in reach when its target is not, and the mixed party won
+ * 0.245 of 200 fights against M1's body on it, against 0.065 on `monsterPolicy` (sim-log.md, MY5).
+ */
+const mythicPolicy: Policy = (f, me, plan, R) => {
+  if (me.mythic && me.mythic.at !== 'calm') return sensible(f, me, R);
+  const target = suggested(f, me)!, uses = beatUses(me, me.abilities).filter(a => a.effect?.type === 'physical' || a.effect?.type === 'magical');
+  const a = uses.find(x => usable(f, me, x, target.place) && clearLine(f, me, x, target)) ?? uses[0];
+  return a ? (clearLine(f, me, a, target) ? attackOr(f, me, a, target) : toward(f, me, target)) : monsterPolicy(f, me, plan, R);
+};
+/**
+ * `s` answering a standing omen first (policy.ts `answerChoice`, with the answers `kinds`), and kept out of its tiles
+ * after (`keptOut`); with no omen standing it plays as it did.
+ */
+export const answering = (s: SimRow, kinds: readonly AnswerKind[] = ANSWER_KINDS): SimRow => ({
+  ...s, policy: (f, me, plan, R) => answerChoice(f, me, R, kinds) ?? keptOut(f, me, R, s.policy(f, me, plan, R), kinds),
+});
+
 // ── what a fight leaves for the rows to measure ──
 /** One combatant's counts over a fight. Damage is after defence; `reduced` is what armor or resist took off. */
 export type Tally = {
@@ -505,6 +553,22 @@ export type FightRecord = {
   readonly tally: Readonly<Record<string, Tally>>;
   /** HP, fatigue and mana of every row at the end, for a dungeon's next fight. */
   readonly end: Readonly<Record<string, { hp: number; fatigue: number; mana: number }>>;
+  /** The script a mythic of the fight played, from what its effects said; null in a fight with none. */
+  readonly mythic: MythicTrace | null;
+};
+/** What a scripted mythic did in one fight (design B.8 rows B2, B6 and B7). */
+export type MythicTrace = {
+  /** The phases it entered, in order, its first included, each with the turns it took in it (an announce, an act or a landing). */
+  readonly phases: readonly { readonly phase: number; turns: number }[];
+  /** The round of its first turn taken enraged (a gate phase past its clock); null when it never was. */
+  enraged: number | null;
+  /** Its omens that landed while it was enraged: its dooms. */
+  dooms: number;
+  /** The phase it stood in when the first hunter fell; null when none fell. */
+  firstFall: number | null;
+  /** Each omen it announced, by key, and each answer the party met, by how and outcome ("stagger cancel"). */
+  readonly omens: Record<string, number>;
+  readonly answers: Record<string, number>;
 };
 const emptyTally = (b: Body): Tally => ({
   turns: 0, moves: 0, passes: 0, acts: {}, byAct: {}, dealt: 0, raw: 0, absorbed: 0, caught: 0, ring: 0, out: 0, resisted: 0, crits: 0,
@@ -559,12 +623,25 @@ export function playFight(setup: Setup, seed: number): FightRecord {
   const channels = { begun: 0, completed: 0, broken: 0, dropped: 0, aimed: { begun: 0, completed: 0 } };
   /** Channelers whose channel began while its target aimed at them. */
   const underFire = new Set<string>();
-  const heard = (effects: readonly Effect[]): void => {
+  const mid = rows.find(r => r.mythic)?.id, trace: MythicTrace | null = mid ? { phases: [{ phase: rows.find(r => r.id === mid)!.mythic!.phase, turns: 0 }], enraged: null, dooms: 0, firstFall: null, omens: {}, answers: {} } : null;
+  const phases = trace?.phases as { phase: number; turns: number }[] | undefined;
+  const heard = (effects: readonly Effect[], after: Running | Ended): void => {
+    const m = after.rows.find(r => r.id === mid);
     for (const e of effects) {
       if (e.type === 'staggered') staggers++;
       if (e.type === 'channel' && e.state === 'broken') channels.broken++;
       if (e.type === 'turnStarted') { const t = tally[e.id]; if (t) t.turns++; }
+      if (!trace || !phases || !('id' in e) || e.id !== mid) continue;
+      if (e.type === 'phased') phases.push({ phase: e.phase, turns: 0 });
+      if (e.type === 'omen') trace.omens[e.omen] = (trace.omens[e.omen] ?? 0) + 1;
+      if (e.type === 'answered') trace.answers[`${e.how} ${e.outcome}`] = (trace.answers[`${e.how} ${e.outcome}`] ?? 0) + 1;
+      if (e.type === 'omen' || e.type === 'turnStarted') {
+        phases[phases.length - 1]!.turns++;
+        const now = e.type === 'turnStarted' ? e.now : after.now;
+        if (trace.enraged === null && m?.mythic && enraged(m.mythic, now, R)) trace.enraged = Math.floor(now / R.fight.round);
+      }
     }
+    if (trace && trace.firstFall === null && m?.mythic && after.rows.some(r => r.kind === 'hunter' && rowHp(r) === 0)) trace.firstFall = m.mythic.phase;
   };
   /** Counts what a use does to each target, from `resolve` on the reducer's own inputs. */
   const count = (f: Running, user: Body, a: Ability, aim: Aim, rolls: Rolls): void => {
@@ -593,12 +670,15 @@ export function playFight(setup: Setup, seed: number): FightRecord {
   const added = setup.fudge ? weighted(made, setup.fudge, ctx) : made;
   for (const r of added.rows) tally[r.id] = emptyTally(r);
   const begun = playBegin(added, seed, R);
-  heard(begun.effects);
+  heard(begun.effects, begun.play.fight);
   // a summon plays as a monster does (kits design 1.9: its owner's phone commands it)
   const policyOf = (me: Body): TurnPolicy => (f, m, rules) => (policies.get(me.id) ?? monsterPolicy)(f, m, plan, rules);
   let p: Play = begun.play;
   while (!playOver(p)) {
-    const s = playStep(p as Play & { readonly fight: Running }, policyOf, limits, R), f = s.before, me = s.me, choice = s.choice;
+    const running = p as Play & { readonly fight: Running }, landing = runningState(running.fight);
+    const lands = landing.at === 'landing' && !capped(running, limits, R);
+    if (lands && trace && landing.id === mid && doom(running.fight.rows.find(r => r.id === mid)!.mythic!, running.fight.now, R)) trace.dooms++;
+    const s = lands ? landed(running, policyOf, R) : playStep(running, policyOf, limits, R), f = s.before, me = s.me, choice = s.choice;
     p = s.play;
     if (me && choice) {
       const t = tally[me.id] ??= emptyTally(me);
@@ -624,7 +704,7 @@ export function playFight(setup: Setup, seed: number): FightRecord {
         if (underFire.has(me.id)) channels.aimed.completed++;
       }
     }
-    heard(s.effects);
+    heard(s.effects, p.fight);
   }
   const ended = p as Play & { readonly fight: Ended }, f = ended.fight;
   for (const r of f.rows) { const t = tally[r.id]!; t.fatigue = r.fatigue; t.mana = r.mana; }
@@ -632,7 +712,35 @@ export function playFight(setup: Setup, seed: number): FightRecord {
   return {
     winner: f.summary.winner, rounds: f.summary.rounds, capped: ended.capped, dead: [...ended.down], staggers, held, ticks: f.now, channels, tally,
     end: Object.fromEntries(f.rows.map(r => [r.id, { hp: rowHp(r), fatigue: r.fatigue, mana: r.mana }])),
+    mythic: trace,
   };
+}
+
+/** Whether the omen standing is a doom: one of its script's enraged rotation, landing while it is enraged. */
+const doom = (s: MythicStanding, now: Tick, R: Rules): boolean =>
+  s.at !== 'calm' && enraged(s, now, R) && scriptOf(s).enraged.some(b => b.kind === 'omen' && b.omen === s.omen);
+/** Whether `playStep` ends the play at its next step (the GM's end or the cap), as play.ts reads `limits`. */
+const capped = (p: Play & { readonly fight: Running }, limits: Limits, R: Rules): boolean =>
+  (limits.endAtRounds !== null && p.fight.now >= limits.endAtRounds * R.fight.round) || p.fight.now >= limits.capRounds * R.fight.round;
+/**
+ * A mythic's landing turn, played as `playStep` plays a turn: its policy's choice, the dice its omen's move asks for
+ * (fight-turn.ts `omenNeeds`: the move is not one of its row's abilities, and no taunt binds it) drawn from the play's
+ * source with the fight's weights, the command, and the dice the fight then waits for, paid from the same source by
+ * `playBegin` on the fight as it stands. play.ts's `rollsFor` looks the ability up on the row, so `playStep` cannot play
+ * this turn (sim-log.md, MY5).
+ */
+function landed(p: Play & { readonly fight: Running }, policyOf: (me: Body) => TurnPolicy, R: Rules): Played {
+  const f = p.fight, me = f.rows.find(r => r.id === f.currentId)!, choice = policyOf(me)(f, me, R);
+  if (choice.type !== 'act') throw new Error(`${me.name} chose ${choice.type} on its landing turn`);
+  const src = seededSource(p.source), n = omenNeeds(f, me, R);
+  if (!n) throw new Error(`${me.name} has no omen to land`);
+  const rolls = drawNeeds(n, src.random, weightsFor(f, me.id, n));
+  const r = reduce(f, { type: 'act', by: me.id, ability: choice.ability.id, aim: choice.aim, rolls }, { rules: R });
+  const no = r.effects.find(e => e.type === 'refused');
+  if (no || !r.fight || r.fight.phase === 'setup') throw new Error(`a played fight refused ${me.name}'s landing: ${no && 'reason' in no ? String(no.reason) : 'no fight'}`);
+  const next = r.fight.phase === 'running' ? playBegin(r.fight, src.state(), R) : { play: { ...p, fight: r.fight, source: src.state() }, effects: [] };
+  const down = [...p.down, ...next.play.fight.rows.filter(b => b.kind === 'hunter' && rowHp(b) === 0 && !p.down.includes(b.id)).map(b => b.id)];
+  return { play: { ...next.play, down, capped: false, steps: p.steps + 1, spent: p.spent }, before: f, me, choice, rolls, effects: [...r.effects, ...next.effects] };
 }
 
 /** Whether a use puts a hold on what it catches (a stun, design 3.1 rule 18). */

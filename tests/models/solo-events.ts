@@ -1,7 +1,7 @@
 // The System's clock for one hunter (src/core/gates/solo.ts `soloTick`, personal.ts) and a player's won run waiting for
-// the GM's answer (src/core/gates/solo-wait.ts), each with every event of its life, walked by the state charts
+// the GM's answer (src/core/sync/asked.ts), each with every event of its life, walked by the state charts
 // (scripts/charts/solo.ts); tests/statecharts.test.ts checks each walk reaches every state. tests/solo.test.ts and
-// tests/solo-wait.test.ts check the cells.
+// tests/asked.test.ts check the cells.
 import { RULES } from '../../src/core/rules.ts';
 import type { Rules } from '../../src/core/rules.ts';
 import { freshSave, newHunter } from '../../src/core/save.ts';
@@ -12,7 +12,7 @@ import { newEvent } from '../../src/core/protocol.ts';
 import type { RoomCode } from '../../src/core/protocol.ts';
 import { post, step } from '../../src/core/sync/outbox.ts';
 import type { Outbox } from '../../src/core/sync/outbox.ts';
-import { runAnswered, runDismissed, runPosted, runTaken, runsGone } from '../../src/core/gates/solo-wait.ts';
+import { askAnswered, askDismissed, askPosted, askTaken, askedGone } from '../../src/core/sync/asked.ts';
 
 const T0 = Date.parse('2026-11-18T10:00:00.000Z'), HOUR = 3600e3;
 const fresh = (): Save => freshSave({ now: new Date(T0), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => 'd-chart' as never }, { onboarded: true });
@@ -51,8 +51,8 @@ export type WaitWorld = Save;
 export type WaitModelEvent = { readonly type: 'send' | 'sent' | 'failed' | 'refused' | 'drop' | 'answered' | 'roomGone' | 'dismiss' };
 const withBox = (s: Save, f: (b: Outbox) => Outbox): Save => ({ ...s, settings: { ...s.settings, sync: { ...s.settings.sync, outbox: f(s.settings.sync.outbox ?? []) } } });
 /** The run just written by `soloRan`: its letter queued in the outbox, the run posted. */
-export const WAIT_START: WaitWorld = runPosted(withBox(fresh(), b => post(b, ROOM, { kind: 'event', event: EVENT }).box),
-  { run: RUN, room: ROOM, hid: 'h1' as never, gate: 'g1' as never, name: 'Den', at: new Date(T0).toISOString(), state: 'posted' });
+export const WAIT_START: WaitWorld = askPosted(withBox(fresh(), b => post(b, ROOM, { kind: 'event', event: EVENT }).box),
+  { id: RUN, room: ROOM, hid: 'h1' as never, kind: 'solo', gate: 'g1' as never, name: 'Den', at: new Date(T0).toISOString(), state: 'posted', sent: false });
 export const WAIT_EVENTS: readonly WaitModelEvent[] = ['send', 'sent', 'failed', 'refused', 'drop', 'answered', 'roomGone', 'dismiss'].map(type => ({ type } as WaitModelEvent));
 /** The save after `e`, as sync.ts and the appliers write it: the room's `sent` heard as the run taken before the letter leaves. */
 export function waitModelStep(s: WaitWorld, e: WaitModelEvent): WaitWorld {
@@ -61,9 +61,9 @@ export function waitModelStep(s: WaitWorld, e: WaitModelEvent): WaitWorld {
   switch (t) {
     case 'send': case 'failed': case 'drop': return withBox(s, b => step(b, RUN, { type: t }));
     case 'refused': return withBox(s, b => step(b, RUN, { type: 'refused', why: 'bad event' }));
-    case 'sent': return (s.settings.sync.outbox ?? []).some(x => x.id === RUN && x.at === 'sending') ? withBox(runTaken(s, RUN), b => step(b, RUN, { type: 'sent' })) : s;
-    case 'answered': return keep(runAnswered(s, RUN));
-    case 'roomGone': return runsGone(s, ROOM);
-    case 'dismiss': return keep(runDismissed(s, RUN));
+    case 'sent': return (s.settings.sync.outbox ?? []).some(x => x.id === RUN && x.at === 'sending') ? withBox(askTaken(s, RUN), b => step(b, RUN, { type: 'sent' })) : s;
+    case 'answered': return keep(askAnswered(s, RUN));
+    case 'roomGone': return askedGone(s, ROOM);
+    case 'dismiss': return keep(askDismissed(s, RUN));
   }
 }

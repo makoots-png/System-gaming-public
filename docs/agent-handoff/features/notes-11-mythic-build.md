@@ -288,3 +288,57 @@ gives a mythic one).
   `mythicStepped` or `phasedRow`.
 - `principle-test-behavior-not-implementation`: each expected number is the script's (65%, 70%, 30%, 55%, 1.25, 5%,
   range 24, clocks of 3 and 5 rounds); the tests drive the reducer turn by turn as a table would.
+
+## MY5: the play and the numbers (`answerChoice`, the landing, rows B1 to B9, each script's `hp`)
+
+Branch `mythic-5`. The switch `fight.mythic.scripts` stays off (the lead's ruling: MY7 turns it on with its screens);
+the rows turn it on in the sim's own rules (`scriptsOn`).
+
+### What exists
+
+- `policy.ts`: `ANSWER_KINDS`, `answerChoice` (step out of the omen's tiles, a status whose op its interrupt names, a
+  shield on a body it would drop, the strongest hit while its stagger or burst outcome still changes it), `keptOut` (a
+  walk from outside the tiles into them becomes a pass), `beatUses` (an act beat takes its phase's acts) and the landing
+  first in `sensible`.
+- `tests/policy.test.ts`: the four named tests, each on the reducer with a seed mythic made as the table makes it.
+- `tests/models/fight-sim.ts`: `scriptsOn`, `scripted`, `mythicPolicy`, `answering`, `landed` (the landing turn) and
+  `MythicTrace` on each record.
+- `tests/fight-sim.test.ts`: rows B1 to B9 by name (`SCRIPT_ROWS`) and "with mythic phases off the old rows are
+  unchanged"; the misses are in `OPEN` with their values.
+- `registry/mythics.ts`: `hp` plain 1 → 1.03, the Angel 0.85 → 0.9, Zaratan 0.9 → 1, the Rider 0.85 → 0.8; the Broken
+  Note's hits 0.7 → 1.2 and the Reaping on every name (both for B6). Every move is in rw/sim-log.md, "MY5".
+
+### Where the design did not hold
+
+- **A script's `hp` is read by nothing** in src. The sim puts it on the seed's tweak; rows.ts `monsterRows` needs that
+  one factor before scripts go on.
+- **play.ts cannot play a landing turn** (its `rollsFor` looks the omen's move up on the row, and asks `needs` on the
+  taunted row). The sim plays it (`landed`). My edit of play.ts was refused as outside the unit's files; the odds engine
+  throws on a scripted mythic's first landing until play.ts asks `omenNeeds` on a landing turn (the change:
+  `rollsFor` takes the `Ability` and reads `omenNeeds(f, me, R)` when `runningState(f)` is `landing` for `me`).
+- **`sensible` plays a mythic badly**: 0.245 against M1's body where `monsterPolicy` gives 0.065. The rows play the
+  mythic's act beats as M1's monster; the odds engine reads `sensible`, so its mythic odds are rosy (a gap from before).
+- **B3 and B5's stagger and burst test a premise that does not hold**: those answers are met by ordinary hits, so
+  taking them out of `answerChoice` leaves them met. B3 measured 0.078, 0.042, 0.053 against under 0.01.
+- **The gate holds HP, not turns** (B2 and B4 with three cannons): a burst party takes a phase before the mythic acts in
+  it, and its hits held at the gate break the bar during Zaratan's Dive. A reducer rule would hold it.
+- **B4 and B9 have no keystones**: K4 and K5 have not landed. B4 plays three plain cannons; B9 is `todo`.
+- **B6 read from the first doom's landing**: an enraged omen is announced a turn ahead, so every party gets a round past
+  the clock.
+- **The shield answer comes before the hits**, and only on a body the move would drop: shielding every body it hit
+  cost the Angel's party half its wins (0.215 against 0.44).
+
+### Calls the owner might have made otherwise
+
+- The B rows' tank holds a stun. Undo: drop `abilities().stun` from `answeringParty`.
+- The Reaping takes every name. Undo: the Reaping back to a curse aimed at `weakest`.
+- The Broken Note is 1.2, not 0.7. Undo: its hits.
+- A mythic's act beats play as M1's monster, not `sensible`'s. Undo: `scripted`'s policy to `sensible`.
+
+### Principles that changed a choice
+
+- `principle-explain-the-number`: plain's 0.175 against M1's 0.065 was traced to its clock (clock 40 gives 0.065
+  exactly) before any `hp` moved, and `sensible` against `monsterPolicy` was measured on one body before choosing.
+- `principle-attack-the-premise`: B3 and B5 failing for every script, whatever the omens' hits, pointed at the measure
+  (answers met by ordinary hits), not at another number.
+- `principle-test-behavior-not-implementation`: each policy test lands the omen after the choice and reads the HP.

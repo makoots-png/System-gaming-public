@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { ICON_KEYS, ICON_KEY_MAX } from '../src/core/registry/icons.ts';
-import { DOCS, DOC_MAX, NOTED_MAX, EVENTS, EVENT_TYPES, newEvent, onTurn, parseDocName, parseEvent, parseRoomState, parseSheet, SHEET_MAX, sentAgain, speaksFor, stampTime, standsFor, useRoute } from '../src/core/protocol.ts';
+import { DOCS, DOC_MAX, NOTED_MAX, STASH_LINES, EVENTS, EVENT_TYPES, newEvent, onTurn, parseDocName, parseEvent, parseRoomState, parseSheet, SHEET_MAX, sentAgain, speaksFor, stampTime, standsFor, useRoute } from '../src/core/protocol.ts';
 import { endEvent, isSealed } from '../src/core/protocol.ts';
 import { FACE_LINES, hunterFace, parseServedSheet, servedTo, sheetFor } from '../src/core/protocol.ts';
 import type { RoomEvent, RoomViewer } from '../src/core/protocol.ts';
-import { GOODS_LINES, OFFER_MAX, goodsSize } from '../src/core/trade/goods.ts';
+import { GOODS_GOLD_MAX, GOODS_LINES, OFFER_MAX, goodsSize } from '../src/core/trade/goods.ts';
+import { stashDoc, stashFits } from '../src/core/trade/stash.ts';
+import type { Item } from '../src/core/registry/items.ts';
 import { ITEM_BOUNDS, LOOT_ITEMS, itemOf } from '../src/core/registry/items.ts';
 import { BONUS_KEYS } from '../src/core/rules.ts';
 import type { EventType, SheetKey } from '../src/core/protocol.ts';
@@ -111,16 +113,16 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
 
 describe('every event type', () => {
   test('the table has an entry for each room message, and for nothing else', () => {
-    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'cast', 'chain', 'chapter', 'coinCall', 'coinLand', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'revive', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'status', 'step', 'system', 'used', 'vitals', 'weigh']);
+    expect([...EVENT_TYPES].sort()).toEqual(['arm', 'award', 'cast', 'chain', 'chapter', 'coinCall', 'coinLand', 'hp', 'noted', 'offer', 'offerEnd', 'offerStop', 'pass', 'quest', 'questUpdate', 'revive', 'roll', 'shadow', 'soloAnswer', 'soloRun', 'spent', 'stashAnswer', 'stashAsk', 'status', 'step', 'system', 'used', 'vitals', 'weigh']);
   });
 
   test('only the GM may send what changes a hunter, speaks for the System, lands a coin or weighs a hunter\'s dice; a player sends rolls, quest progress, uses, steps, casts, passes and coin calls', () => {
     const gmOnly = EVENT_TYPES.filter(t => EVENTS[t].gmOnly).sort();
-    expect(gmOnly).toEqual(['award', 'chain', 'chapter', 'coinLand', 'hp', 'noted', 'offerStop', 'quest', 'revive', 'shadow', 'soloAnswer', 'spent', 'status', 'system', 'vitals', 'weigh']);
+    expect(gmOnly).toEqual(['award', 'chain', 'chapter', 'coinLand', 'hp', 'noted', 'offerStop', 'quest', 'revive', 'shadow', 'soloAnswer', 'spent', 'stashAnswer', 'status', 'system', 'vitals', 'weigh']);
   });
 
   test('what a player sends speaks for one hunter: only that hunter\'s phone may send it', () => {
-    expect(EVENT_TYPES.filter(t => EVENTS[t].ownSheet).sort()).toEqual(['arm', 'cast', 'coinCall', 'offer', 'offerEnd', 'pass', 'questUpdate', 'roll', 'soloRun', 'step', 'used']);
+    expect(EVENT_TYPES.filter(t => EVENTS[t].ownSheet).sort()).toEqual(['arm', 'cast', 'coinCall', 'offer', 'offerEnd', 'pass', 'questUpdate', 'roll', 'soloRun', 'stashAsk', 'step', 'used']);
     for (const t of ['roll', 'questUpdate', 'used', 'step', 'cast', 'pass', 'coinCall', 'arm', 'soloRun', 'offer', 'offerEnd'] as const) expect(speaksFor(parseEvent(t, valid(t))!)).toBe(KEY as SheetKey);
     expect(speaksFor(parseEvent('award', valid('award'))!)).toBeNull();
   });
@@ -1052,7 +1054,7 @@ describe('the fight doc', () => {
 
 describe('the other room docs', () => {
   test('every doc the GM publishes has a parser, and no other name does', () => {
-    expect(Object.keys(DOCS).sort()).toEqual(['codex', 'feats', 'fight', 'kicked', 'rules', 'solo', 'world']);
+    expect(Object.keys(DOCS).sort()).toEqual(['codex', 'feats', 'fight', 'kicked', 'rules', 'solo', 'stash', 'world']);
     for (const name of ['nope', '__proto__', 'toString']) expect(parseDocName(name)).toBeNull();
   });
 
@@ -1363,9 +1365,9 @@ describe('an offer between two hunters, and its one end', () => {
     for (const to of [[KEY], [KEY, KEY], [KEY, OTHER, 'd-x:h1'], [KEY, 'bad key']]) expect(payload('offerStop', { ...valid('offerStop'), to })).toBeNull();
   });
 
-  test('an offer, its end and the GM\'s stop are sealed to the GM and the two hunters (the lead\'s ruling 1), a story\'s chapter to the GM and the hunters it is for, and a table weight to the GM and its hunter; nothing else is (a System message to the room is not; one to named hunters is, above)', () => {
+  test('an offer, its end and the GM\'s stop are sealed to the GM and the two hunters (the lead\'s ruling 1), a stash ask and its answer to the GM and the asking hunter, a story\'s chapter to the GM and the hunters it is for, and a table weight to the GM and its hunter; nothing else is (a System message to the room is not; one to named hunters is, above)', () => {
     const sealed = EVENT_TYPES.filter(t => isSealed(parseEvent(t, valid(t))!)).sort();
-    expect(sealed).toEqual(['chapter', 'offer', 'offerEnd', 'offerStop', 'weigh']);
+    expect(sealed).toEqual(['chapter', 'offer', 'offerEnd', 'offerStop', 'stashAnswer', 'stashAsk', 'weigh']);
   });
 
   /**
@@ -1435,5 +1437,55 @@ describe('an offer between two hunters, and its one end', () => {
     expect(JSON.stringify(five).length).toBeGreaterThan(SHEET_MAX);
     const read = parseSheet(sk(KEY), copy(four));
     expect(read && 'hunter' in read ? read.hunter.items : null, 'the four items read back as they were').toEqual(four.hunter.items as never);
+  });
+});
+
+describe('the party stash on the wire (notes-5-trade.md 3.2)', () => {
+  const ASK = 'd-player1-mabc13xyz';
+  test('a stash ask reads a put\'s goods, a take\'s line and gold; nothing else, and no empty put', () => {
+    expect(payload('stashAsk', { ...valid('stashAsk'), ask: { kind: 'take', item: 'i9', qty: 2, name: 'Health Potion' } })!.ask).toEqual({ kind: 'take', item: 'i9', qty: 2, name: 'Health Potion' });
+    expect(payload('stashAsk', { ...valid('stashAsk'), ask: { kind: 'gold', gold: 30 } })!.ask).toEqual({ kind: 'gold', gold: 30 });
+    for (const ask of [{ kind: 'put', goods: { gold: 0, items: [] } }, { kind: 'take', item: 'i9', qty: 0, name: 'x' }, { kind: 'gold', gold: 0 }, { kind: 'steal', gold: 5 }, null]) {
+      expect(payload('stashAsk', { ...valid('stashAsk'), ask }), JSON.stringify(ask)).toBeNull();
+    }
+  });
+
+  test('a stash answer is kept, given goods, or refused with why; a given answer with no goods is refused', () => {
+    expect(payload('stashAnswer', { eid: EID, to: [KEY], ask: ASK, verdict: 'kept' })).toEqual({ eid: EID, to: [KEY], ask: ASK, verdict: 'kept' });
+    const goods = { gold: 0, items: [{ from: 'i3', item: POTION }] };
+    expect(payload('stashAnswer', { eid: EID, to: [KEY], ask: ASK, verdict: 'given', goods })).toEqual({ eid: EID, to: [KEY], ask: ASK, verdict: 'given', goods });
+    expect(payload('stashAnswer', { eid: EID, to: [KEY], ask: ASK, verdict: 'given', goods: { gold: 0, items: [] } })).toBeNull();
+    expect(payload('stashAnswer', { eid: EID, to: [KEY], ask: ASK, verdict: 'refused', why: 'lost' })).toBeNull();
+    expect(payload('stashAnswer', { eid: EID, to: [KEY, OTHER], ask: ASK, verdict: 'kept' }), 'an answer is for one hunter').toBeNull();
+  });
+
+  /**
+   * The measurement of notes-5-trade.md 3.2, before the cap is trusted: `STASH_LINES` lines of the largest item the readers
+   * take do not fit `DOC_MAX`, so the count alone cannot bound the doc. A put is refused `full` when the doc would pass
+   * `DOC_MAX` (stash.ts `stashFits`), so the worst doc is `DOC_MAX` by construction; the count bounds a stash of ordinary items.
+   */
+  test('the worst-case stash doc on the wire: forty lines of a large item are far over DOC_MAX, so a put is refused by the doc\'s size; forty of the largest shop or loot item fit', () => {
+    const note = (n: number) => ({ op: 'note', text: 'x'.repeat(n) });
+    /** A large item the reader takes: full names, twelve effects and ten worn ops of full notes, every character one byte. At most `THING_MAX.item` bytes, so no item has more characters. */
+    const atCap = parseItem({ name: 'n'.repeat(ITEM_BOUNDS.name), desc: 'd'.repeat(ITEM_BOUNDS.desc), rar: 'mythic', type: 'accessory', effects: Array(12).fill(note(200)), worn: { label: 'w', desc: 'x'.repeat(500), ops: Array(10).fill(note(200)) } })!;
+    expect(JSON.stringify(atCap).length, 'it reads, within an item\'s size').toBeLessThanOrEqual(THING_MAX.item);
+    const doc = (item: object, lines: number) => stashDoc({ gold: GOODS_GOLD_MAX, items: Array.from({ length: lines }, (_, i) => ({ ...item, id: `i${900000 + i}` }) as Item) });
+    const size = (d: unknown) => JSON.stringify(d).length;
+    const rest = size(doc(atCap, 0)), line = (size(doc(atCap, 2)) - size(doc(atCap, 1)));
+    const fit = Math.floor((DOC_MAX - rest + 1) / line);
+    const ordinary = [...SHOP_ITEMS, ...LOOT_ITEMS.map(d => itemOf(RULES, d))].map(t => parseItem(t)!).sort((a, b) => size(b) - size(a))[0]!;
+    const forty = size(doc(ordinary, STASH_LINES));
+    console.info([
+      `the stash doc's rest (gold ${GOODS_GOLD_MAX}, the list): ${rest} characters; a line of the large item (${JSON.stringify(atCap).length} characters; an item's size is ${THING_MAX.item} bytes) with its id: ${line}`,
+      `${STASH_LINES} lines of it: ${size(doc(atCap, STASH_LINES))} characters, ${(size(doc(atCap, STASH_LINES)) / DOC_MAX).toFixed(1)} times DOC_MAX ${DOC_MAX}; lines of it that fit: ${fit}`,
+      `the largest shop or loot item (${ordinary.name}): ${size(ordinary)} characters; ${STASH_LINES} lines of it: ${forty}, ${Math.round((100 * forty) / DOC_MAX)}% of DOC_MAX`,
+    ].join('\n'));
+    expect(size(doc(atCap, STASH_LINES)), 'the count alone does not bound the doc').toBeGreaterThan(DOC_MAX);
+    expect(stashFits({ gold: GOODS_GOLD_MAX, items: doc(atCap, fit).items }), 'the most lines of it fit').toBe(true);
+    expect(stashFits({ gold: GOODS_GOLD_MAX, items: doc(atCap, fit + 1).items }), 'one more does not: the put is refused full').toBe(false);
+    expect(DOCS.stash(doc(atCap, fit)), 'the reader takes the worst doc a put allows').not.toBeNull();
+    expect(DOCS.stash(doc(atCap, fit + 1)), 'and refuses a longer one').toBeNull();
+    expect(forty, 'forty lines of the largest item the game ships fit').toBeLessThanOrEqual(DOC_MAX);
+    expect(stashFits({ gold: 0, items: doc(ordinary, STASH_LINES + 1).items }), 'past STASH_LINES lines the stash is full').toBe(false);
   });
 });

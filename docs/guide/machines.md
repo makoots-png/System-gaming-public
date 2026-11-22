@@ -38,7 +38,7 @@ Hunters:
 Gates, feats and stories:
 
 - a gate (`gates/gate.ts`), a hunter's personal gates (`gates/solo.ts` `soloTick`)
-- a solo run on this phone from the tap to its window (`gates/solo-run.ts`), a solo run waiting for the GM (`gates/solo-wait.ts`), and what the GM's phone does with a run (`gates/solo.ts` `PLAN_TABLE`)
+- a solo run on this phone from the tap to its window (`gates/solo-run.ts`), an ask waiting for the GM's phone, a solo run's or a stash ask's (`sync/asked.ts`), and what the GM's phone does with a run (`gates/solo.ts` `PLAN_TABLE`)
 - a feat (`hunter/feats.ts`) and a hunter's inbox of facts (`chronicle.ts`, `noticed.ts`)
 - the campaign's told memory, a feat, a personal gate or a room's gate from its window to told (`told.ts` `toldStep`, through `store.tell`)
 - a story on the table (`story/run.ts`)

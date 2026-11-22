@@ -1,8 +1,8 @@
-// The charts of a hunter's personal gates (src/core/gates/solo.ts `soloTick`, personal.ts) and of a player's won run of a
-// room's solo gate until the GM's phone answers it (src/core/gates/solo-wait.ts), each walked with the events of
-// tests/models/solo-events.ts.
-import { shownOf, WAIT_STATES } from '../../src/core/gates/solo-wait.ts';
-import type { WaitState } from '../../src/core/gates/solo-wait.ts';
+// The charts of a hunter's personal gates (src/core/gates/solo.ts `soloTick`, personal.ts) and of a player's ask that waits
+// for the GM's phone's answer (src/core/sync/asked.ts), walked with a won run of a room's solo gate; each with the events
+// of tests/models/solo-events.ts.
+import { ASKED_STATES, askedOf, shownOf } from '../../src/core/sync/asked.ts';
+import type { AskedState } from '../../src/core/sync/asked.ts';
 import { CLOCK_EVENTS, CLOCK_START, WAIT_EVENTS, WAIT_START, clockKey, clockStep, waitModelStep } from '../../tests/models/solo-events.ts';
 import type { ClockEvent, ClockWorld, WaitModelEvent, WaitWorld } from '../../tests/models/solo-events.ts';
 import { bfs, machine } from '../statecharts.ts';
@@ -44,9 +44,9 @@ export const soloClock = machine<ClockWorld, ClockEvent>({
   ],
 });
 
-const waitingOf = (s: WaitWorld) => (s.settings.sync.runs ?? [])[0] ?? null;
-const shownState = (s: WaitWorld): WaitState | 'end' => { const w = waitingOf(s); return w ? shownOf(w, s.settings.sync.outbox ?? []).state : 'end'; };
-const WAIT_LABEL: { readonly [K in WaitState | 'end']: string } = {
+const waitingOf = (s: WaitWorld) => askedOf(s)[0] ?? null;
+const shownState = (s: WaitWorld): AskedState | 'end' => { const w = waitingOf(s); return w ? shownOf(w, s.settings.sync.outbox ?? []).state : 'end'; };
+const WAIT_LABEL: { readonly [K in AskedState | 'end']: string } = {
   posted: 'Cleared. Waiting for the room',
   taken: 'Cleared. Waiting for the GM\'s phone',
   lost: 'Lost: the cost stays, nothing paid',
@@ -65,23 +65,23 @@ function waitArrow(e: WaitModelEvent, from: WaitWorld, to: WaitWorld): string | 
   }
 }
 export const soloWait = machine<WaitWorld, WaitModelEvent>({
-  name: 'A solo run waiting for the GM',
+  name: 'An ask waiting for the GM\'s phone',
   walked: `Every state reachable from a player's won run just written, under the ${WAIT_EVENTS.length} events of tests/models/solo-events.ts (the outbox's steps of its letter, the GM's answer, the room gone, a dismissal), breadth first.`,
   walk: () => bfs<WaitWorld, WaitModelEvent>([WAIT_START], s => WAIT_EVENTS.map(event => ({ event, to: waitModelStep(s, event) })), s => JSON.stringify([shownState(s), (s.settings.sync.outbox ?? []).map(x => x.at), waitingOf(s)?.state ?? null])),
-  kinds: [...WAIT_STATES, 'end'],
+  kinds: [...ASKED_STATES, 'end'],
   kindsOf: s => [shownState(s)],
   views: [{
-    title: 'A player\'s won run of a room\'s solo gate, until the GM\'s phone answers',
-    note: 'The gate is the GM\'s phone\'s alone: the player\'s phone keeps only its claim, by the run\'s event id, and pays the answer only while the run waits, so a second answer pays nothing. Its cost was written with the run. Posted and lost are read from the outbox (the letter queued or on its way; refused or let go), taken and gone are stored; a reload changes nothing, and leaving the room only makes it wait. A run the room took can be put away after a question (a GM\'s phone that missed it would hold it and its gate for good); an answer after that pays nothing.',
+    title: 'A player\'s ask, walked as a won run of a room\'s solo gate, until the GM\'s phone answers',
+    note: 'The gate is the GM\'s phone\'s alone: the player\'s phone keeps only its claim, by the run\'s event id, and pays the answer only while the run waits, so a second answer pays nothing. Its cost was written with the run. Posted and lost are read from the outbox (the letter queued or on its way; refused or let go), taken and gone are stored; a reload changes nothing, and leaving the room only makes it wait. A run the room took can be put away after a question (a GM\'s phone that missed it would hold it and its gate for good); an answer after that pays nothing. A stash ask (kind `stash`) has the same states and cells, but one the room took is not put away (`TABLES.stash`): the GM\'s phone holds the stash and answers it.',
     hides: 'The letter\'s own sends and failed sends (they stay in Waiting for the room), and each event that does not apply.',
     state: s => WAIT_LABEL[shownState(s)],
     step: waitArrow,
   }],
   where: [
-    ['The union', '`WaitingRun`, `WaitState`, `WaitEvent`, `WAIT_STATES` and `WAIT_EVENTS` in `src/core/gates/solo-wait.ts`; the list is the save\'s `settings.sync.runs`'],
-    ['What changes it', '`waitStep` and its `TABLE`; `runPosted`, `runTaken`, `runsGone`, `runAnswered`, `runDismissed`'],
+    ['The union', '`Asked` (its kinds `solo` and `stash`), `AskedState`, `AskedEvent`, `ASKED_STATES` and `ASKED_EVENTS` in `src/core/sync/asked.ts`; the list is the save\'s `settings.sync.asked`'],
+    ['What changes it', '`askedStep` and its `TABLE`; `askPosted`, `askTaken`, `askedGone`, `askAnswered`, `askDismissed`'],
     ['Who calls it', '`soloRan` (gates/solo.ts) writes it; `boxDo` in `src/edge/sync.ts` hears the room take it or the room gone; `landSoloAnswer` in `src/edge/room-events.ts` answers it; `src/views/gates.js` puts a lost or taken one away (`mayDismiss`)'],
-    ['The test to copy', '`tests/solo-wait.test.ts`; the walk\'s events are in `tests/models/solo-events.ts`; two players in `tests/room-system-model.test.ts`'],
+    ['The test to copy', '`tests/asked.test.ts`; the walk\'s events are in `tests/models/solo-events.ts`; two players in `tests/room-system-model.test.ts`'],
     ['The recipe', 'docs/guide/room-sync.md, "A room message"'],
   ],
 });

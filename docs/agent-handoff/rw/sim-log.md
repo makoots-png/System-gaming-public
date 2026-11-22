@@ -1611,3 +1611,81 @@ with the factors at 1 (the same side measure). That row (bound: twice the mixed 
 Not done here: a mythic is extracted at a boss's DC only if `kind === 'boss'` (shadows.ts `bossDc`), so a mythic of a
 type that may be extracted gets a normal's DC. The mythic rows' seeds will say not extractable (balance plan section
 5), so it matters only for a GM's own mythic; it is one token, left for the lead.
+
+## MY5: a mythic's script, rows B1 to B9 (notes-11-keystones.md, design B.8)
+
+**Setup.** Each script on its seed's body (`plain` on row M1's brute mythic), made by `monsterRows` under scripts on
+(`scriptsOn`; the shipped switch stays off until MY7), its HP its seed's times the script's `hp`. The party is M1's
+mixed party at S, its tank holding P3's plain stun, which only an answer spends; every hunter answers first
+(`answering`: `answerChoice`, then `keptOut`). 600 fights a row, seeds 1 to 600. The mythic plays `mythicPolicy`: the
+landing from `sensible`, an act beat as M1's `monsterPolicy` with the first damaging use its phase names.
+
+**Why not `sensible` for the mythic, as B.8 says.** On M1's own body and party (200 fights, today's rules) the party won
+0.065 against `monsterPolicy` and 0.245 against `sensible`: `sensible`'s monster hits whoever is in reach when its
+suggested target is not, so it spreads its damage (the cannon took 171 a fight against 203). The odds engine plays every
+row on `sensible`, so the GM's odds of a mythic read rosier than the sim; that gap was there before MY5 and is the lead's.
+
+**Why the tank holds a stun.** Six of the nine answerable omens are cancelled or weakened by a hold or a root, and no
+build of the mixed party has one. Without it the interrupt answer is words.
+
+**Two things the code does not do yet, worked around in the sim (both the lead's):**
+- A script's `hp` is read by nothing in src (`MythicScript.hp` says it is a factor on the kind's HP). The sim puts it on
+  the seed's tweak; `monsterRows` (rows.ts) needs the same one factor before MY7 turns scripts on.
+- play.ts cannot play a landing turn: its `rollsFor` finds the ability on the row (the omen's move is not there) and asks
+  `needs` on the taunted row (which asks no dice). The sim plays that turn itself (`landed`, fight-sim.ts); play.ts needs
+  `omenNeeds` there, or the odds engine throws on a scripted mythic's first landing.
+
+**`plain` alone, hp 1** (200 fights): 0.175, against M1's 0.065 on the same body. With its clock set to 40 it is 0.065,
+M1 exactly, so the gap is the clock: past 14 rounds every other turn of the mythic announces, and its one doom lands on a
+party that its focused strikes would have finished. With a hard clock the share is a cliff in HP: 600 fights each,
+hp 1.00 won 0.147, 1.02 won 0.090, 1.03 won 0.072. **hp 1 → 1.03.**
+
+**B6 read from the first doom's landing, not the first enraged turn.** An enraged omen is announced a turn ahead like any
+other (B.4), so a party always has a round after the clock: `plain` at hp 1 won 25 of its 159 enraged fights in that
+round. B6's risk is a party that outlives a doom; the row reads the fights in which one landed (`MythicTrace.dooms`: an
+omen of the enraged rotation landing while enraged).
+
+**Words moved for B6** (300 fights each at the hp that held B1):
+- The Angel's Broken Note, **hits 0.7 → 1.2**: a party that broke the bar at every note outlived it, 14 wins of 300 after
+  a doom; at 1.2, 1 of 299. Still smaller than the Final Note's 1.6.
+- The Fourth Rider's Reaping, **one name → every name** (a field blast aimed at all, hits 2.5): taking one hunter a
+  landing left the other two time to win, 9 of 286 after a doom; on every name, 0 of 286. The phase's line already reads
+  "Every name is in it."
+- Zaratan's It Goes Under held B6 as written (2 of 299).
+
+**hp moved for B1** (300 fights each, then the 600 of the rows): the Angel 0.85 (0.395, the Broken Note at 0.7), 0.95
+(0.110), 1.05 (0.050), with the Broken Note at 1.2: 0.9 (0.097); **0.85 → 0.9**. Zaratan 0.9 (0.385), 1.0 (0.083), 1.1
+(0.013); **0.9 → 1**. The Rider with the Reaping on all: 0.8 (0.087), 0.9 (0.017); **0.85 → 0.8**.
+
+**The rows** (`bun test tests/fight-sim.test.ts`, 600 fights each):
+
+| Row | plain | Angel | Zaratan | Rider | Bound |
+|---|---|---|---|---|---|
+| B1 wins | 0.072 | 0.060 | 0.077 | 0.088 | 0.05 to 0.10 |
+| B2 skips, mixed party | 0 | 0 | 0 | 0 | 0 |
+| B2 skips, three cannons | 0 | **5** | **199** | 0 | 0 |
+| B3 wins answering none | none | **0.078** | **0.042** | **0.053** | under 0.01 |
+| B4 three cannons win | **0.380** | **0.248** | **0.783** | **0.157** | at most 0.15 |
+| B5 without interrupt / stagger / burst, over B1 | none | **0.94 / 0.92 / 1.03** | **0.98 / 1.00 / 1.00** | 0.64 / **1.00 / 1.00** | at most 0.8 |
+| B6 capped | 0 | 0 | 0 | 0 | 0 |
+| B6 won after a doom | 0.002 | 0.006 | 0.006 | 0.000 | under 0.01 |
+| B7 most first falls in one phase | one phase | 0.450 | 0.545 | **0.739** | at most 0.6 |
+| B7 least, less its floor | one phase | 0.173 | **−0.043** (the Dive 0.007) | **−0.036** (the Pale Horse 0.064) | at least 0 |
+| B8 median rounds | 15.3 | 13.9 | 16.1 | 12.3 | 10 to 20 |
+| B9 | not measured | | | | |
+
+The bold cells are in `OPEN` (tests/fight-sim.test.ts). What each would need, none of it a script's `hp`:
+- **B3 and B5's stagger and burst** test a premise that does not hold: a stagger or a burst answer is met by the hits a
+  party deals anyway, so taking it out of `answerChoice` leaves it met. Only an answer no ordinary turn makes (a hold, a
+  step out of the tiles, a shield) is a decision. To hold B3, an omen's answers would be those, and an unanswered omen
+  would drop a hunter. A one-script check: the Rider with Named at 2.5 and All Things End at 1.2 (hp 0.6) won 0.203
+  answering and 0.237 not, so lethal omens alone do not make the answers count.
+- **B5 interrupt** (the Angel, Zaratan): the stun is resisted near half the time (P3: 45%) and is back every 3 rounds, so
+  most omens find it spent or shrugged off. The Rider's holds (0.64).
+- **B2 and B4 with three cannons**: the gate holds HP, not turns. Three cannons push the Shore to its gate before Zaratan
+  acts, and their hits held at the gate break its bar during the Dive and push its turn past the Dive's clock. A rule
+  would bring it inside (a phase does not end before its mythic took a turn in it), in the reducer, which MY5 does not
+  hold. B4 is played with no keystones: K4 and K5 have not landed.
+- **B7**: the Dive's rising sea aims at the crowd's tile and every hunter steps out of it; the Rider's Pale Horse band
+  (30% of its HP) falls in two or three of its turns, and The Book Opens takes the falls. A wider sea or the Pale Horse
+  opening on Named would move them; not tried past one run each (rising hits 0.8: the Dive 0.040, 1.0: 0.043).

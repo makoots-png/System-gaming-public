@@ -402,7 +402,7 @@ describe('a world gate open to solo runs, in a room', () => {
     expect(body).toEqual({ by: KEY, gate: WORLD.id, name: 'Mira', outcome: 'won', rounds: 4, life: 'up' });
     expect(hunter(r.save).mana).toBe(3);
     expect(r.save.settings.sync.outbox!.map(e => e.id)).toEqual([event.payload.eid]);
-    expect(r.save.settings.sync.runs!.map(w => [w.run, w.room, w.gate, w.state])).toEqual([[event.payload.eid, ROOM, WORLD.id, 'posted']]);
+    expect(r.save.settings.sync.asked!.map(w => [w.id, w.room, w.kind === 'solo' ? w.gate : null, w.state])).toEqual([[event.payload.eid, ROOM, WORLD.id, 'posted']]);
     expect([hunter(r.save).xp, r.save.gates]).toEqual([0, []]);
     expect(soloReady(r.save, H1, WORLD, ctx({ ...ready, room: { targets, waiting: [WORLD.id as GateId] } })), 'no second run before the answer').toEqual({ ok: false, why: 'waiting' });
     expect(soloRan(p, H1, WORLD, run, NO_LOOT, { day, ready: ctx(ready) }), 'no message, no write').toEqual({ ok: false, why: 'no-room' });

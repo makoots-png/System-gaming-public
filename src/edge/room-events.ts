@@ -13,7 +13,8 @@ import type { Granted, SheetEdit, StepDone } from '../core/hunter/grant.ts';
 import { chained, issueQuest, withTold } from '../core/hunter/quests.ts';
 import { told } from '../core/session-log.ts';
 import { appliedOnce, hold, replaced, unhold } from '../core/applied.ts';
-import { runAnswered } from '../core/gates/solo-wait.ts';
+import { askAnswered } from '../core/sync/asked.ts';
+import { stashLanded } from '../core/trade/stash.ts';
 import { REFUSED_WORDS } from '../core/gates/solo.ts';
 import type { ChainEvent } from '../core/hunter/job-chain.ts';
 import { WAYS_BACK, hpChange, lifeNews } from '../core/hunter/vitals.ts';
@@ -95,6 +96,9 @@ const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS }
   offer: OFFER_FOLD_READS,
   offerEnd: OFFER_FOLD_READS,
   offerStop: OFFER_FOLD_READS,
+  stashAsk: GM_ONLY_READS,
+  // the GM's phone's answer to this phone's stash ask (trade/stash.ts `stashLanded`): lands once, only while the ask waits
+  stashAnswer: { once: true, land: (p, _hids, app) => save => { const r = stashLanded(save, p); return isRefused(r) ? r : { save: r.save, tell: () => { app.toast('Trade', r.text); } }; } },
   system: { once: false, apply: (p, _hids, app) => { app.system({ tag: p.tag, title: p.title, body: p.body || undefined, kind: p.kind }); } },
   award: { once: true, land: landAward },
   quest: { once: true, land: (p, hids, app) => save => {
@@ -200,13 +204,13 @@ function landChapter(p: PayloadOf<'chapter'>, hids: string[], app: ApplyDeps): L
 }
 
 /**
- * The GM's phone's answer to this phone's won run of a room's solo gate (gates/solo-wait.ts): the waiting run leaves the
+ * The GM's phone's answer to this phone's won run of a room's solo gate (sync/asked.ts): the waiting run leaves the
  * list and, when paid, its hunter is given the gate's reward (`grant`), in one write with the event's id. With no run of
  * that id waiting (a second GM phone's answer, one already landed) nothing is given: the land is refused.
  */
 function landSoloAnswer(p: PayloadOf<'soloAnswer'>, hids: string[], app: ApplyDeps): Land {
   return save => {
-    const closed = runAnswered(save, p.run);
+    const closed = askAnswered(save, p.run);
     if (isRefused(closed)) return closed;
     const hid = hids[0];
     if (p.verdict === 'refused' || !hid) {

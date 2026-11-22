@@ -62,8 +62,15 @@ import { reduce, fightId } from '../src/core/combat/fight.ts';
 import type { Fight } from '../src/core/combat/fight.ts';
 import { diceOf } from '../src/core/formula.ts';
 import type { Place } from '../src/core/combat/space.ts';
-import { BUILDS, KIT_BUILDS, MONSTER_ABILITY, PLAIN_OF, SIM_RANKS, abilities, blastsAllowed, controlPolicy, hunter, monster, playDungeon, playFight, rng, spending, turnsPolicy, wave2 } from './models/fight-sim.ts';
+import { BUILDS, KIT_BUILDS, MONSTER_ABILITY, PLAIN_OF, SIM_RANKS, abilities, answering, blastsAllowed, controlPolicy, hunter, monster, playDungeon, playFight, rng, scripted, scriptsOn, spending, turnsPolicy, wave2 } from './models/fight-sim.ts';
 import type { Archetype, FightRecord, KitBuild, PenBuild, PenSpend, Plan, SimRow } from './models/fight-sim.ts';
+import { MYTHICS, MYTHIC_IDS, omensOf } from '../src/core/registry/mythics.ts';
+import type { MythicScriptId } from '../src/core/registry/mythics.ts';
+import { ANSWER_KINDS } from '../src/core/combat/policy.ts';
+import type { AnswerKind } from '../src/core/combat/policy.ts';
+import { monsterRows } from '../src/core/combat/rows.ts';
+import { seedMonsters } from '../src/core/registry/monsters.ts';
+import { combatantId } from '../src/core/combat/ability-types.ts';
 import type { Archetype as MonsterArchetype } from '../src/core/hunter/derive.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
 
@@ -368,6 +375,104 @@ const PEN_ROWS: readonly Row[] = (['C', 'S'] as const).flatMap(rank => [
 const vsMythic = (archetype: MonsterArchetype) => (seed: number): FightRecord[] => [playFight({ rows: [...party(MIXED, 'S'), monster('S', archetype, 'mythic', 'mythic')] }, seed)];
 const MONSTER_ARCHETYPES = Object.keys(RULES.fight.archetypes) as MonsterArchetype[];
 
+
+// ── a mythic's script (notes-11-keystones.md, design B.8): rows B1 to B9 ──
+// The party is row M1's mixed party at S, its tank holding P3's plain stun (`abilities().stun`, which only an omen's
+// answer spends: tankPolicy never casts it), each hunter answering a standing omen first (`answering`). Without the stun
+// no hunter of the party could land a hold or a root, and the interrupt answer of six omens out of nine would be words.
+// Each script plays on its seed's body under scripts on (`scripted`, its HP times the script's `hp`). A row's fights are
+// 600 a script, M1's number. Why each bound is what it is: design B.8's table.
+const SCRIPTED = scriptsOn();
+const answeringParty = (ids: readonly Archetype[], kinds: readonly AnswerKind[]): SimRow[] => party(ids, 'S').map(s =>
+  answering(s.row.id === 'tank' ? { ...s, row: { ...s.row, abilities: [...s.row.abilities, abilities().stun] } } : s, kinds));
+const vsScript = (id: MythicScriptId, kinds: readonly AnswerKind[] = ANSWER_KINDS, ids: readonly Archetype[] = MIXED) => (seed: number): FightRecord[] =>
+  [playFight({ rows: [...answeringParty(ids, kinds), scripted(id, SCRIPTED)], rules: SCRIPTED }, seed)];
+const nameOf = (id: MythicScriptId): string => MYTHICS[id].name;
+const B1_KEY = (id: MythicScriptId) => `mixed v ${id} S`;
+const b1 = (id: MythicScriptId): FightRecord[] => runsOf(B1_KEY(id), vsScript(id), RUNS.mythic).map(r => r[0]!);
+const B4_KEY = (id: MythicScriptId) => `three cannons v ${id} S`;
+const THREE_CANNONS: readonly Archetype[] = ['cannon', 'cannon', 'cannon'];
+const b4 = (id: MythicScriptId): FightRecord[] => runsOf(B4_KEY(id), vsScript(id, ANSWER_KINDS, THREE_CANNONS), RUNS.mythic).map(r => r[0]!);
+/** The answer kinds an outcome of the script's data names (B5 bounds each): those of an omen in a phase's rotation whose outcome is not `none`. */
+function answersOf(id: MythicScriptId): AnswerKind[] {
+  const s = MYTHICS[id], rotated = new Set(s.phases.flatMap(p => p.rotation.flatMap(b => (b.kind === 'omen' ? [b.omen as string] : []))));
+  const omens = omensOf(s).filter(([k]) => rotated.has(k)).map(([, o]) => o);
+  return (['interrupt', 'stagger', 'burst'] as const).filter(k => omens.some(o => (k === 'interrupt' ? o.interrupt.outcome : k === 'stagger' ? o.stagger : o.burst?.outcome ?? 'none') !== 'none'));
+}
+/** The scripts whose phases announce an omen: `plain` announces only its doom, so B3 and B5 skip it. */
+const OMENED = MYTHIC_IDS.filter(id => answersOf(id).length > 0);
+/**
+ * The fights of `rs` in which no phase was skipped (row B2): each phase entered is the one after the last, and every phase
+ * before the one the fight ended in had a turn of the mythic's (an announce, an act or a landing). The value is the count
+ * of fights that break it.
+ */
+const skipped = (rs: readonly FightRecord[]): Measure => {
+  const bad = rs.filter(r => { const p = r.mythic!.phases; return p.some((x, i) => x.phase !== i || (i < p.length - 1 && x.turns === 0)); });
+  return { value: bad.length, se: 0, note: `${rs.length} fights; phases reached ${JSON.stringify(countBy(rs, r => String(r.mythic!.phases.length - 1)))}` };
+};
+const countBy = <T,>(xs: readonly T[], key: (x: T) => string): Record<string, number> => xs.reduce<Record<string, number>>((o, x) => { const k = key(x); o[k] = (o[k] ?? 0) + 1; return o; }, {});
+const median = (xs: readonly number[]): number => { const s = [...xs].sort((a, b) => a - b), m = Math.floor(s.length / 2); return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2; };
+/**
+ * Row B7: of the fights the party lost, the share whose first fall came in each phase. The value is the largest share;
+ * `floor` reads the least, against its phase's floor (10%, a clock phase 5%), as the share less the floor.
+ */
+const fallsBy = (id: MythicScriptId): { shares: number[]; n: number } => {
+  const lost = b1(id).filter(r => r.winner !== 'party' && r.mythic!.firstFall !== null), n = lost.length;
+  return { shares: MYTHICS[id].phases.map((_, i) => lost.filter(r => r.mythic!.firstFall === i).length / n), n };
+};
+const FALL_FLOOR = (id: MythicScriptId, i: number): number => (MYTHICS[id].phases[i]!.ends === 'clock' ? 0.05 : 0.1);
+const fallNote = (id: MythicScriptId): string => { const { shares, n } = fallsBy(id); return `${n} lost fights with a fall; by phase ${shares.map(fmt).join(', ')}`; };
+const MULTI = MYTHIC_IDS.filter(id => MYTHICS[id].phases.length > 1);
+const HP_LEVER = (id: MythicScriptId) => `MYTHICS['${id}'].hp`;
+
+const SCRIPT_ROWS: readonly Row[] = [
+  ...MYTHIC_IDS.map((id): Row => ({
+    name: `B1 three hunters at S win 5 to 10% of fights against ${nameOf(id)}`, setup: B1_KEY(id), runs: RUNS.mythic,
+    measure: () => wins(B1_KEY(id), vsScript(id), RUNS.mythic), low: 0.05, high: 0.1, lever: HP_LEVER(id),
+  })),
+  ...MYTHIC_IDS.flatMap((id): Row[] => ([['the mixed party', B1_KEY(id), b1], ['three cannons', B4_KEY(id), b4]] as const).map(([who, key, rs]): Row => ({
+    name: `B2 against ${who} ${nameOf(id)} enters every phase in order and takes a turn in each before the next`, setup: key, runs: RUNS.mythic,
+    measure: () => skipped(rs(id)), low: 0, high: 0, lever: 'the gate (row-life.ts) and the turn start (fight-turn.ts scriptTurn): a number does not move it',
+  }))),
+  ...OMENED.map((id): Row => ({
+    name: `B3 three hunters who answer no omen win under 1% of fights against ${nameOf(id)}`, setup: `${B1_KEY(id)} answering none`, runs: RUNS.mythic,
+    measure: () => wins(`${B1_KEY(id)} answering none`, vsScript(id, []), RUNS.mythic), low: 0, high: 0.01, lever: `the omens' hits and answers of ${id}`,
+  })),
+  ...MYTHIC_IDS.map((id): Row => ({
+    name: `B4 three cannons at S meet every phase of ${nameOf(id)} and win at most 15%`, setup: B4_KEY(id), runs: RUNS.mythic,
+    measure: () => wins(B4_KEY(id), vsScript(id, ANSWER_KINDS, THREE_CANNONS), RUNS.mythic), low: 0, high: 0.15, lever: `MYTHICS['${id}'] (its bands and clocks)`,
+  })),
+  ...OMENED.flatMap(id => answersOf(id).map((kind): Row => ({
+    name: `B5 three hunters who never answer by ${kind} win at most four fifths of B1's share against ${nameOf(id)}`, setup: `${B1_KEY(id)} without ${kind}`, runs: RUNS.mythic,
+    measure: () => ratio(wins(`${B1_KEY(id)} without ${kind}`, vsScript(id, ANSWER_KINDS.filter(k => k !== kind)), RUNS.mythic), wins(B1_KEY(id), vsScript(id), RUNS.mythic)),
+    low: 0, high: 0.8, lever: `the ${kind} answers of ${id}'s omens`,
+  }))),
+  ...MYTHIC_IDS.map((id): Row => ({
+    name: `B6 no fight against ${nameOf(id)} reaches the 40-round cap`, setup: B1_KEY(id), runs: RUNS.mythic,
+    measure: () => ({ value: b1(id).filter(r => r.capped).length, se: 0, note: `${b1(id).filter(r => r.mythic!.enraged !== null).length} of ${RUNS.mythic} reached an enraged turn` }),
+    low: 0, high: 0, lever: `${id}'s enraged rotation`,
+  })),
+  ...MYTHIC_IDS.map((id): Row => ({
+    name: `B6 the party wins under 1 in 100 of its fights against ${nameOf(id)} once a doom has landed`, setup: B1_KEY(id), runs: RUNS.mythic,
+    measure: () => { const doomed = b1(id).filter(r => r.mythic!.dooms > 0); return { ...share(doomed.map(r => r.winner === 'party')), note: `${doomed.length} of ${RUNS.mythic} fights had a doom land` }; },
+    low: 0, high: 0.01, lever: `${id}'s doom (its enraged omen's move)`,
+  })),
+  ...MULTI.flatMap((id): Row[] => [
+    { name: `B7 no phase of ${nameOf(id)} holds over 60% of the first falls in the fights the party loses`, setup: B1_KEY(id), runs: RUNS.mythic,
+      measure: () => ({ value: Math.max(...fallsBy(id).shares), se: 0, note: fallNote(id) }), low: 0, high: 0.6, lever: `${id}'s phases (their omens and clocks)` },
+    { name: `B7 every phase of ${nameOf(id)} holds at least its floor of the first falls (10%, a clock phase 5%)`, setup: B1_KEY(id), runs: RUNS.mythic,
+      measure: () => ({ value: Math.min(...fallsBy(id).shares.map((x, i) => x - FALL_FLOOR(id, i))), se: 0, note: `the least share less its floor; ${fallNote(id)}` }), low: 0, high: Infinity, lever: `${id}'s phases (their omens and clocks)` },
+  ]),
+  ...MYTHIC_IDS.map((id): Row => ({
+    name: `B8 a fight against ${nameOf(id)} lasts 10 to 20 rounds at the median`, setup: B1_KEY(id), runs: RUNS.mythic,
+    measure: () => ({ value: median(b1(id).map(r => r.rounds)), se: 0, note: `mean ${fmt(mean(b1(id).map(r => r.rounds)))}` }), low: 10, high: 20, lever: `${id}'s clocks`,
+  })),
+  ...MYTHIC_IDS.map((id): Row => ({
+    name: `B9 no keystone pair of three Focused builds moves the share won against ${nameOf(id)} out of 5 to 10%`, setup: `keystones v ${id}`, runs: 0,
+    measure: () => { throw new Error('B9 waits for unit K5'); }, low: 0.05, high: 0.1, lever: 'keystone amounts (registry/keystones.ts)',
+  })),
+];
+
 const ROWS: readonly Row[] = [
   ...triangle('C'), ...triangle('S'), ...atE,
   ...partyRows('C'), ...partyRows('S'),
@@ -401,14 +506,36 @@ const ROWS: readonly Row[] = [
   ...KIT_ROWS,
   ...W2_ROWS,
   ...PEN_ROWS,
+  ...SCRIPT_ROWS,
 ];
 
 /**
  * The rows outside their bound, with the value measured: each stays `todo` until a change in RULES.fight brings it inside
- * (docs/agent-handoff/rw/sim-log.md says why each misses). The rule calls are the lead's. None today: P3 came inside when
- * a stun began to add its length to the turn (sim-log.md, balance unit 6).
+ * (docs/agent-handoff/rw/sim-log.md says why each misses). The rule calls are the lead's. Before MY5 there were none: P3
+ * came inside when a stun began to add its length to the turn (sim-log.md, balance unit 6). MY5's are design B.8's rows
+ * that a reducer rule or a party with keystones must bring inside.
  */
-const OPEN: Readonly<Record<string, string>> = {};
+const OPEN: Readonly<Record<string, string>> = {
+  // Design B.8's rows a script's `hp` cannot hold and its words did not (sim-log.md, MY5, says what each would need).
+  ...Object.fromEntries(MYTHIC_IDS.map(id => [`B9 no keystone pair of three Focused builds moves the share won against ${nameOf(id)} out of 5 to 10%`,
+    'not measured: unit K4 puts keystones on a row and K5 builds the Focused parties and K5\'s own rows, which B9 shares'])),
+  [`B2 against three cannons ${MYTHICS['angel-of-the-last-trumpet'].name} enters every phase in order and takes a turn in each before the next`]:
+    '5 of 600 fights: three cannons push it to a gate before its first turn of a phase, so the phase holds no turn of its own; the gate holds HP, not turns',
+  [`B2 against three cannons ${MYTHICS['zaratan-the-island-that-wakes'].name} enters every phase in order and takes a turn in each before the next`]:
+    '199 of 600: the Shore is pushed to its gate before Zaratan acts, or the cannons\' hits held at the gate break its bar and push its turn past the Dive\'s 3-round clock',
+  ...Object.fromEntries(OMENED.map(id => [`B3 three hunters who answer no omen win under 1% of fights against ${nameOf(id)}`,
+    ({ 'angel-of-the-last-trumpet': '0.078', 'zaratan-the-island-that-wakes': '0.042', 'the-fourth-rider': '0.053' } as Record<string, string>)[id]
+    + ' (se about 0.01): a stagger or a burst answer is met by the hits the party deals anyway, so a party that never aims an answer still meets most of them'])),
+  ...Object.fromEntries(MYTHIC_IDS.map(id => [`B4 three cannons at S meet every phase of ${nameOf(id)} and win at most 15%`,
+    `${({ plain: '0.380', 'angel-of-the-last-trumpet': '0.248', 'zaratan-the-island-that-wakes': '0.783', 'the-fourth-rider': '0.157' } as Record<string, string>)[id]} (se 0.015 to 0.020), with no keystones yet: three cannons beat the clocks the mixed party loses to`])),
+  ...Object.fromEntries(OMENED.flatMap(id => answersOf(id).filter(k => !(id === 'the-fourth-rider' && k === 'interrupt')).map(k => [`B5 three hunters who never answer by ${k} win at most four fifths of B1's share against ${nameOf(id)}`,
+    k === 'interrupt' ? '0.94 and 0.98 of B1 (se 0.2): the stun that answers is resisted near half the time and has a 3-round cooldown'
+      : '0.92 to 1.03 of B1 (se 0.2): the hits that meet it are the ones the party deals anyway']))),
+  [`B7 every phase of ${MYTHICS['zaratan-the-island-that-wakes'].name} holds at least its floor of the first falls (10%, a clock phase 5%)`]:
+    'the Dive holds 0.007 of first falls: its rising sea aims at the crowd\'s tile, and every hunter steps out of it',
+  [`B7 no phase of ${MYTHICS['the-fourth-rider'].name} holds over 60% of the first falls in the fights the party loses`]: 'The Book Opens holds 0.739',
+  [`B7 every phase of ${MYTHICS['the-fourth-rider'].name} holds at least its floor of the first falls (10%, a clock phase 5%)`]: 'The Pale Horse holds 0.064: its 30% of HP falls in two or three of its turns',
+};
 
 // ── one test per row: the row is measured inside its test, so a bun timeout or the per-test times name the row ──
 const inside = (r: Row, m: Measure): boolean => m.value >= r.low && m.value <= r.high;
@@ -457,6 +584,19 @@ describe('every build and monster plays a fight to its end', () => {
       });
     }
   }
+});
+
+describe('a mythic\'s script stays out of the fights it is not in (design B.8)', () => {
+  /**
+   * The rules as shipped hold scripts off (the lead's ruling: MY7 turns them on with its screens), so every row above M1
+   * included plays as before: no seed mythic made under them holds a standing, and row M1's fight, every hunter answering
+   * omens, is the same fight seed by seed, since with no standing there is no omen to answer.
+   */
+  test('with mythic phases off the old rows are unchanged', () => {
+    for (const m of seedMonsters(RULES).filter(x => x.kind === 'mythic')) expect([m.name, monsterRows(m, [combatantId('m')], RULES)[0]!.mythic]).toEqual([m.name, null]);
+    const m1 = (answer: boolean) => (seed: number): FightRecord => playFight({ rows: [...party(MIXED, 'S').map(s => (answer ? answering(s) : s)), monster('S', 'brute', 'mythic', 'mythic')] }, seed);
+    for (let seed = 1; seed <= 40; seed++) expect(m1(true)(seed), `seed ${seed}`).toEqual(m1(false)(seed));
+  });
 });
 
 // ── what the GM's fudge does to a mythic (notes-8-fudge.md section 4) ──

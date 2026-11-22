@@ -53,8 +53,10 @@ import { newRewards, parseBundle } from './rewards.ts';
 import type { RewardBundle, Rewards } from './rewards.ts';
 import type { Progress } from './hunter/progress.ts';
 import { isStateChip } from './hunter/chips.ts';
-import { parseRuns } from './gates/solo-wait.ts';
-import type { WaitingRun } from './gates/solo-wait.ts';
+import { parseAsked } from './sync/asked.ts';
+import { NO_STASH, parseStash } from './trade/stash.ts';
+import type { Stash } from './trade/stash.ts';
+import type { Asked } from './sync/asked.ts';
 import { parseOffers } from './trade/offer.ts';
 import type { OfferRecord } from './trade/offer.ts';
 import type { Penalty } from './hunter/penalty.ts';
@@ -153,8 +155,8 @@ export type SyncSettings = {
   held?: RoomEvent[];
   /** Ids of the room events that changed a hunter on this phone, newest last (src/core/applied.ts). */
   applied?: EventId[];
-  /** A player's won runs of a room's solo gates until the GM's phone answers each (src/core/gates/solo-wait.ts). */
-  runs?: WaitingRun[];
+  /** A player's letters to the GM's phone until it answers each: won runs of a room's solo gates, stash asks (src/core/sync/asked.ts). */
+  asked?: Asked[];
   /** This phone's records of the room's offers: its hunters' (with their goods aside), offers to them, and on the GM's phone every one (src/core/trade/offer.ts). */
   offers?: OfferRecord[];
   /** Where this phone stopped reading each room it went out of, so a join back reads on from there (src/core/sync/seen.ts). */
@@ -172,7 +174,7 @@ export type SyncSettings = {
 export const SYNC_OWNER: { readonly [K in keyof SyncSettings]-?: 'campaign' | 'phone' | 'key' } = {
   room: 'campaign', cursor: 'campaign', lastRoom: 'campaign', boundHunterId: 'campaign',
   gmKey: 'key', gmKeys: 'key',
-  deviceToken: 'phone', serverOk: 'phone', joined: 'phone', outbox: 'phone', held: 'phone', applied: 'phone', runs: 'phone', offers: 'phone', seen: 'phone',
+  deviceToken: 'phone', serverOk: 'phone', joined: 'phone', outbox: 'phone', held: 'phone', applied: 'phone', asked: 'phone', offers: 'phone', seen: 'phone',
   weights: 'phone',
 };
 /** The fields of `sync` that `owner` owns, as they are. */
@@ -218,6 +220,8 @@ export type Save = {
   storyRuns: StoryRun[];
   /** The GM's weight on the hunters' dice outside a fight (src/core/table-weight.ts), written only by its `weightStep`. */
   tableWeight: TableWeight;
+  /** The party stash (src/core/trade/stash.ts): on the GM's save, published to the room as the `stash` doc; written only by that file's steps. */
+  stash: Stash;
 };
 /** A monster kind this campaign has defeated. `room`: copied from the GM's codex doc, with the numbers it carried in `info`. */
 export type CodexEntry = { name: string; rank: Rank; kills: number; firstAt: string; lastAt: string; monsterId: MonsterId | null; room?: true; info?: CodexInfo };
@@ -251,7 +255,7 @@ export const newRollEntry = (): RollEntry => ({
 export const newSave = (deviceId: DeviceId): Save => ({
   schema: SCHEMA, savedAt: '', seq: 100, settings: newSettings(deviceId), rulesOverrides: {}, world: newWorld(), hunters: [], gates: [],
   monsters: [], library: { items: [], statuses: {}, skills: [], rewards: [], maps: [], feats: {}, stories: [] }, shop: null, fight: null, loot: { at: 'none' }, log: [], rolls: [], codex: {}, codexSeen: [], coins: [], calls: [], storyRuns: [],
-  tableWeight: NO_TABLE_WEIGHT,
+  tableWeight: NO_TABLE_WEIGHT, stash: NO_STASH,
 });
 
 // ── parser ──
@@ -375,7 +379,7 @@ function fixSync(sync: SyncSettings, now: number): void {
   optional(sync, 'joined', v => isObj(v) && parseRoomCode(v.room) !== null && isStr(v.at));
   if ('outbox' in sync) sync.outbox = parseOutbox(sync.outbox);
   if ('held' in sync) sync.held = parseHeld(sync.held);
-  if ('runs' in sync) sync.runs = parseRuns(sync.runs);
+  if ('asked' in sync) sync.asked = parseAsked(sync.asked);
   if ('offers' in sync) sync.offers = parseOffers(sync.offers);
   if ('seen' in sync) sync.seen = parseSeen(sync.seen, now);
   if ('weights' in sync) { const w = parseHeldWeights(sync.weights); if (w) sync.weights = w; else delete sync.weights; }
@@ -422,6 +426,7 @@ function repair(s: Rec, env: ParseEnv, fight: FightRepair = 'read'): Save {
   save.codex = codexOf(save.codex);
   save.codexSeen = save.codexSeen.flatMap(v => parseCombatantId(v) ?? []).slice(-CODEX_SEEN_MAX);
   save.coins = parseCoins(save.coins); save.calls = parseCoins(save.calls);
+  save.stash = parseStash(save.stash);
   save.tableWeight = parseTableWeight(save.tableWeight);
   save.monsters = monsters(run, save.monsters);
   // A fight the fight's parser does not read as one is dropped. One its reducer stored in this app is kept.

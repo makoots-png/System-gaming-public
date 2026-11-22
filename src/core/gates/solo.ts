@@ -54,7 +54,7 @@ import type { Seat } from '../role.ts';
 import { WORLD_NAME_MAX } from '../protocol.ts';
 import type { EventBody, EventId, EventStamp, RoomCode, RoomEvent, SheetKey, SoloDoc, SoloRefused, SoloRunPayload, WorldDoc } from '../protocol.ts';
 import { atOutbox, post } from '../sync/outbox.ts';
-import { runPosted } from './solo-wait.ts';
+import { askPosted } from '../sync/asked.ts';
 import { soloTracked } from './personal.ts';
 import type { PersonalGate } from './personal.ts';
 
@@ -370,11 +370,11 @@ export function soloRan(save: Save, hid: string, gate: SoloGate, run: SoloRun, l
       if (!isRefused(entered)) s = entered;
     }
   } else {
-    // a player's run of a room's gate: its message to the GM's phone, and a won run waits for the answer (solo-wait.ts)
+    // a player's run of a room's gate: its message to the GM's phone, and a won run waits for the answer (sync/asked.ts)
     const code = run.route.room, ev = c.event;
     if (!ev || ev.type !== 'soloRun' || ev.payload.gate !== gate.id || ev.payload.outcome !== outcome) return refuse('no-room');
     s = atOutbox(b => post(b, code, { kind: 'event', event: ev }).box)(s);
-    if (outcome === 'won') s = runPosted(s, { run: ev.payload.eid, room: code, hid: h.id, gate: gate.id, name: target.name, at: c.day.at, state: 'posted' });
+    if (outcome === 'won') s = askPosted(s, { id: ev.payload.eid, room: code, hid: h.id, kind: 'solo', gate: gate.id, name: target.name, at: c.day.at, state: 'posted', sent: false });
   }
   return { save: s, outcome, before: vitalsOf(h), after: vitalsOf(s.hunters.find(x => x.id === h.id) ?? after), granted, xp };
 }

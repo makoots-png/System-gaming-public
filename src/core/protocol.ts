@@ -49,11 +49,13 @@ import type { CoinNatural, LandingBody, RollId, CoinSide } from './coin.ts';
 import type { DeviceId, EventId, ItemId, RoomCode, SheetKey } from './ids.ts';
 import { OFFER_ID_MAX, endIdOf, isEndId, parseOfferId } from './ids.ts';
 import type { OfferId } from './ids.ts';
-import { OFFER_MAX, goodsSize, noGoods, parseBagPick, parseGoods } from './trade/goods.ts';
+import { GOODS_GOLD_MAX, OFFER_MAX, goodsSize, noGoods, parseBagPick, parseGoods } from './trade/goods.ts';
 import type { BagPick, Goods } from './trade/goods.ts';
 import type { Seat } from './role.ts';
-import { ITEM_BOUNDS, RARITIES } from './registry/items.ts';
-import type { Rarity } from './registry/items.ts';
+import { ITEM_BOUNDS, RARITIES, parseItem } from './registry/items.ts';
+import type { Item, Rarity } from './registry/items.ts';
+import { parseStashAsk } from './sync/asked.ts';
+import type { StashAsk } from './sync/asked.ts';
 import { parseLevel } from './hunter/level.ts';
 import type { ChapterBody } from './story/story.ts';
 import { WEIGHT_MAX } from './table-weight.ts';
@@ -333,7 +335,7 @@ export const NOTED_MAX = 1 + 60 + 20;
 export type NotedPayload = Base & { to: [SheetKey]; facts: Fact[] };
 /**
  * The GM's phone's answer to the won run `run` of gate `gate` (`name`): paid with `rewards` (the gate's Clear for that
- * hunter), or refused with why. Landed once, and only while that run waits on the player's phone (gates/solo-wait.ts).
+ * hunter), or refused with why. Landed once, and only while that run waits on the player's phone (sync/asked.ts).
  */
 export type SoloAnswerPayload = Base & { to: [SheetKey]; run: EventId; gate: GateId; name: string }
   & ({ verdict: 'paid'; rewards: Rewards } | { verdict: 'refused'; why: SoloRefused });
@@ -353,6 +355,20 @@ export type OfferEndPayload = Base & { by: SheetKey; to: [SheetKey]; offer: Offe
 /** The GM stops offer `offer` between the two hunters of `to`. Its id is the offer's end id, so it races an accept and a take back. Sealed. */
 export type OfferStopPayload = Base & { to: [SheetKey, SheetKey]; offer: OfferId };
 /**
+ * Hunter `by` (`name`) asks the GM's phone, which holds the party stash (trade/stash.ts), to keep the goods of a put (set
+ * aside on its phone until the answer) or to give it a line or gold. Sealed to the GM and the asking hunter's phone.
+ */
+export type StashAskPayload = Base & { by: SheetKey; name: string; ask: StashAsk };
+/** Why the GM's phone refused a stash ask: the line is gone, the stash holds fewer than asked, the stash is full, trading is off. */
+export const STASH_REFUSALS = ['gone', 'short', 'full', 'off'] as const;
+export type StashRefusal = (typeof STASH_REFUSALS)[number];
+/**
+ * The GM's phone's answer to stash ask `ask`: a put kept, a take given (the goods by value), or refused with why and how
+ * many of the line or how much gold the stash held (`have`). Landed once, and only while that ask waits (sync/asked.ts).
+ */
+export type StashAnswerPayload = Base & { to: [SheetKey]; ask: EventId }
+  & ({ verdict: 'kept' } | { verdict: 'given'; goods: Goods } | { verdict: 'refused'; why: StashRefusal; have: number });
+/**
  * A chapter of a story the GM opened for the hunters of `to` (story/story.ts `chapterLanded`): its window's words, its
  * reward and its quest, its due time made when it opened. No story name, run or chapter number: a player sees what the
  * GM wrote for players. Landed once by its id. Its size is bounded where the chapter is made and at the open
@@ -366,7 +382,7 @@ export type ChapterPayload = Base & { to: SheetKey[] } & ChapterBody;
  */
 export type WeighPayload = Base & { to: [SheetKey] } & HunterWeight;
 type Payloads = {
-  offer: OfferPayload; offerEnd: OfferEndPayload; offerStop: OfferStopPayload;
+  offer: OfferPayload; offerEnd: OfferEndPayload; offerStop: OfferStopPayload; stashAsk: StashAskPayload; stashAnswer: StashAnswerPayload;
   system: SystemPayload; award: AwardPayload; quest: QuestPayload; hp: HpPayload; vitals: VitalsPayload; spent: SpentPayload; status: StatusPayload; revive: RevivePayload;
   roll: RollPayload; questUpdate: QuestUpdatePayload; used: UsedPayload; step: StepPayload; cast: CastPayload; pass: PassPayload; chain: ChainPayload;
   coinCall: CoinCallPayload; coinLand: CoinLandPayload; arm: ArmPayload; shadow: ShadowPayload; soloRun: SoloRunPayload; soloAnswer: SoloAnswerPayload; noted: NotedPayload;
@@ -429,6 +445,17 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
   offerStop: { gmOnly: true, ownSheet: false, sealed: always, read: o => {
     const b = endBase(o), raw = own(o, 'to'), to = Array.isArray(raw) && raw.length === 2 ? raw.map(sheetKey) : refuse();
     return to[0] === to[1] ? refuse() : { ...b, to: [to[0]!, to[1]!] };
+  } },
+  stashAsk: { gmOnly: false, ownSheet: true, sealed: always, read: o => withinOffer({
+    ...base(o), by: sheetKey(own(o, 'by')), name: opt(own(o, 'name'), text(NAME_MAX), ''), ask: need(parseStashAsk(own(o, 'ask'))),
+  }) },
+  stashAnswer: { gmOnly: true, ownSheet: false, sealed: always, read: o => {
+    const to = toList(own(o, 'to')), b = { ...base(o), to: to.length === 1 ? [to[0]!] as [SheetKey] : refuse(), ask: need(parseEventId(own(o, 'ask'))) };
+    switch (choiceOf(['kept', 'given', 'refused'] as const)(own(o, 'verdict'))) {
+      case 'kept': return { ...b, verdict: 'kept' as const };
+      case 'given': { const goods = need(parseGoods(own(o, 'goods'))); return noGoods(goods) ? refuse() : withinOffer({ ...b, verdict: 'given' as const, goods }); }
+      case 'refused': return { ...b, verdict: 'refused' as const, why: choiceOf(STASH_REFUSALS)(own(o, 'why')), have: opt(own(o, 'have'), int(0, GOODS_GOLD_MAX), 0) };
+    }
   } },
   // SMX-sync-5.2: a System whisper (one with `to`) is sealed to the GM and the hunters it names (the owner, Nov 22: "Yes");
   // a broadcast to the room is not
@@ -540,7 +567,7 @@ type EventEntry<K extends EventType> = {
  * its payload parser (unknown in, the payload or null out).
  */
 export const EVENTS: { readonly [K in EventType]: EventEntry<K> } = {
-  offer: entry('offer'), offerEnd: entry('offerEnd'), offerStop: entry('offerStop'),
+  offer: entry('offer'), offerEnd: entry('offerEnd'), offerStop: entry('offerStop'), stashAsk: entry('stashAsk'), stashAnswer: entry('stashAnswer'),
   system: entry('system'), award: entry('award'), quest: entry('quest'), hp: entry('hp'), vitals: entry('vitals'), spent: entry('spent'), status: entry('status'),
   revive: entry('revive'), roll: entry('roll'), questUpdate: entry('questUpdate'), used: entry('used'), step: entry('step'), cast: entry('cast'), pass: entry('pass'),
   chain: entry('chain'), coinCall: entry('coinCall'), coinLand: entry('coinLand'), arm: entry('arm'), shadow: entry('shadow'),
@@ -763,7 +790,19 @@ export type WorldDoc = { day: number; session: number; gates: WorldGate[] };
 export type FeatsDoc = { feats: Record<string, FeatDef> };
 /** The most feats the doc holds: the library's cap. */
 export const FEATS_DOC_MAX = 100;
-type Docs = { fight: FightDoc; kicked: KickedDoc; codex: CodexDoc; rules: RoomRules; world: WorldDoc; solo: SoloDoc; feats: FeatsDoc };
+/**
+ * The item lines the party stash holds at most (trade/stash.ts): a put past them is refused `full`. What bounds the doc
+ * is its size: a put that would make the doc's JSON longer than `DOC_MAX` is refused `full` too, so the doc is never
+ * longer by construction. Measured (tests/protocol.test.ts, "the worst-case stash doc on the wire"): forty lines of the
+ * largest item the game ships (the Spellblade, 1,027 characters) are 41,749 characters, 67% of `DOC_MAX`; forty lines
+ * of a large item the readers take (6,156 characters; an item is at most `THING_MAX.item`, 7,168 bytes) are 246,909,
+ * four times `DOC_MAX`, and ten of those fill the doc. So the count bounds a stash of the game's items, and the size
+ * check what a GM's own large items can fill.
+ */
+export const STASH_LINES = 40;
+/** The party stash as the GM's phone publishes it (trade/stash.ts `stashDoc`): its gold and its lines, each item whole with its id. */
+export type StashDoc = { gold: number; items: Item[] };
+type Docs = { fight: FightDoc; kicked: KickedDoc; codex: CodexDoc; rules: RoomRules; world: WorldDoc; solo: SoloDoc; feats: FeatsDoc; stash: StashDoc };
 export type DocName = keyof Docs;
 export type DocOf<K extends DocName> = Docs[K];
 
@@ -965,6 +1004,11 @@ function codexEntry(v: unknown): CodexDocEntry {
     ...(icon ? { icon } : {}),
   };
 }
+/** A line of the stash doc: an item as `parseItem` reads it, with its id in the stash. */
+function stashLine(v: unknown): Item {
+  const o = obj(v), id = need(parseSaveId<'i'>(own(o, 'id')));
+  return { ...need(parseItem(o)), id };
+}
 function worldGate(v: unknown): WorldGate {
   const o = obj(v);
   const base = { id: id(own(o, 'id')) as GateId, name: text(WORLD_NAME_MAX)(own(o, 'name')), rank: choiceOf(RANKS)(own(o, 'rank')), type: choiceOf(GATE_TYPES)(own(o, 'type')), breakDay: int(0, 1e6)(own(o, 'breakDay')) };
@@ -1045,13 +1089,18 @@ export const DOCS: { readonly [K in DocName]: (data: unknown) => Docs[K] | null 
   world: data => attempt(() => { const o = obj(data); return { day: int(1, 1e6)(own(o, 'day')), session: opt(own(o, 'session'), int(0, 1e6), 0), gates: listOf(own(o, 'gates'), WORLD_GATES, worldGate) }; }),
   solo: data => attempt(() => soloDocOf(data)),
   feats: data => attempt(() => ({ feats: parseFeats(own(obj(data), 'feats'), FEATS_DOC_MAX) })),
+  stash: data => attempt(() => {
+    if (JSON.stringify(data).length > DOC_MAX) return refuse();
+    const o = obj(data);
+    return { gold: int(0, GOODS_GOLD_MAX)(own(o, 'gold')), items: listOf(own(o, 'items'), STASH_LINES, stashLine) };
+  }),
 };
 /**
  * Each doc as it goes on the wire, which `DOCS` reads back: the fight's shorter shape (fight-doc.ts `fightWire`), the rest as
  * they are. The server stores and serves a doc in this shape, after `DOCS` read it.
  */
 export const WIRES: { readonly [K in DocName]: (doc: Docs[K]) => object } = {
-  fight: fightWire, kicked: d => d, codex: d => d, rules: d => d, world: d => d, solo: d => d, feats: d => d,
+  fight: fightWire, kicked: d => d, codex: d => d, rules: d => d, world: d => d, solo: d => d, feats: d => d, stash: d => d,
 };
 /** A room's docs as they go on the wire (`WIRES`), each with when and from whom. */
 export function wireDocs(docs: RoomDocs): Partial<Record<DocName, Stored<unknown>>> {

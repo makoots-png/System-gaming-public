@@ -2,7 +2,7 @@
 // of a script that need no fight: a phase's band of HP (`bandOf`) and which of its acts a monster lacks (`scriptFits`).
 // It imports types only, so any module of a fight may read it (row-life.ts reads a gate, fight-parse.ts a stored
 // standing); an omen's move as an ability is registry/mythic-moves.ts. A mythic monster names its script
-// (`Monster.script`, monsters.ts); one that names none plays `plain`. `RULES.fight.mythic.scripts` is off until MY5.
+// (`Monster.script`, monsters.ts); one that names none plays `plain`. `RULES.fight.mythic.scripts` is off until MY7.
 // To add a mythic: a row of `MYTHICS` (its key is its id), its seed's `script` naming the key, and one test in
 // tests/mythics.test.ts that states its shape from its own words. Every other check loops over `MYTHICS`.
 import type { StatusKey } from '../combat/effect-ops.ts';
@@ -43,7 +43,7 @@ export const MYTHICS = {
   // Today's mythic with a clock: one phase from full HP, the 14 rounds row M1's fight lasts, then Overwhelm, which
   // nothing answers, every other turn. So every mythic a GM makes plays a script and row B1 measures it.
   plain: mythicScript({
-    name: 'A Mythic', hp: 1,
+    name: 'A Mythic', hp: 1.03,
     shape: 'Its own fight with a clock: once the clock runs out it overwhelms the whole field every other turn, harder each time.',
     moves: {
       overwhelm: { name: 'Overwhelm', kind: 'blast', type: 'physical', reach: 'field', range: 0, hits: 1.2, sure: true, applies: null, leaves: null, self: CRESCENDO },
@@ -59,7 +59,7 @@ export const MYTHICS = {
 
   // "The fight should be a countdown to one note that ends it, with no way to survive the note."
   'angel-of-the-last-trumpet': mythicScript({
-    name: 'The Angel of the Last Trumpet', hp: 0.85,
+    name: 'The Angel of the Last Trumpet', hp: 0.9,
     shape: 'A countdown: every phase is short, and when a clock runs out the Final Note comes every other turn.',
     moves: {
       'stars-fall': { name: 'Stars Fall', kind: 'blast', type: 'magical', reach: 2, range: 12, hits: 0.55, sure: false,
@@ -74,7 +74,8 @@ export const MYTHICS = {
         applies: null, leaves: null, self: null },
       'final-note': { name: 'The Final Note', kind: 'blast', type: 'magical', reach: 'field', range: 0, hits: 1.6, sure: true,
         applies: { status: 'stunned', rounds: 1 }, leaves: null, self: CRESCENDO },
-      'broken-note': { name: 'The Broken Note', kind: 'blast', type: 'magical', reach: 'field', range: 0, hits: 0.7, sure: true,
+      // 1.2, not B.6's 0.7: a party that broke the bar at every note outlived the clock (row B6, sim-log.md MY5)
+      'broken-note': { name: 'The Broken Note', kind: 'blast', type: 'magical', reach: 'field', range: 0, hits: 1.2, sure: true,
         applies: null, leaves: null, self: CRESCENDO },
     },
     omens: {
@@ -103,7 +104,7 @@ export const MYTHICS = {
 
   // "The hunters stand on it, so it should be able to end the fight by going under."
   'zaratan-the-island-that-wakes': mythicScript({
-    name: 'Zaratan, the Island That Wakes', hp: 0.9,
+    name: 'Zaratan, the Island That Wakes', hp: 1,
     shape: 'The ground: each Sinking floods tiles for the rest of the fight, and in the Dive it can only be survived.',
     moves: {
       'sinking': { name: 'Sinking of the Shore', kind: 'blast', type: 'physical', reach: 3, range: 10, hits: 0.5, sure: false,
@@ -143,7 +144,7 @@ export const MYTHICS = {
 
   // "A hunter he names should die unless something outside the rules prevents it."
   'the-fourth-rider': mythicScript({
-    name: 'The Fourth Rider', hp: 0.85,
+    name: 'The Fourth Rider', hp: 0.8,
     shape: 'The names: he marks one hunter at a time to die, and the party saves them or loses them.',
     moves: {
       'named': { name: 'Named in the Book', kind: 'curse', type: 'magical', reach: 0, range: 24, hits: 1.1, sure: true,
@@ -156,7 +157,8 @@ export const MYTHICS = {
         applies: { status: 'frightened', rounds: 2 }, leaves: null, self: null },
       'not-all': { name: 'Not Yet, Not All', kind: 'blast', type: 'magical', reach: 'field', range: 0, hits: 0.25, sure: true,
         applies: null, leaves: null, self: null },
-      'reaping': { name: 'The Reaping', kind: 'curse', type: 'magical', reach: 0, range: 24, hits: 2.5, sure: true,
+      // Every name, not B.6's one: a doom that took one hunter a landing left the other two time to win (row B6, sim-log.md MY5)
+      'reaping': { name: 'The Reaping', kind: 'blast', type: 'magical', reach: 'field', range: 0, hits: 2.5, sure: true,
         applies: null, leaves: null, self: CRESCENDO },
     },
     omens: {
@@ -166,7 +168,7 @@ export const MYTHICS = {
         interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: null },
       allEnd: { name: 'All Things End', full: 'all-end', weak: 'not-all', aim: 'all',
         interrupt: { by: ['hold'], outcome: 'cancel' }, stagger: 'weaken', burst: { share: 0.08, outcome: 'weaken' } },
-      reaping: { name: 'The Reaping', full: 'reaping', weak: null, aim: 'weakest',
+      reaping: { name: 'The Reaping', full: 'reaping', weak: null, aim: 'all',
         interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: null },
     },
     phases: [

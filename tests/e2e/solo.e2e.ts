@@ -122,7 +122,7 @@ test('in a room, the GM opens a gate to solo runs; a player clears it alone and 
   await expect.poll(async () => (await gm.page.evaluate(id => hunterApp.store.get().gates.find((x: any) => x.id === id).status, den))).toBe('cleared');
   const gained = lifetime(hunterOf(await save(kai!.page))) - xp0, paidXp = await gm.page.evaluate(id => hunterApp.store.get().gates.find((x: any) => x.id === id).xpPaid, den);
   expect(gained, 'one hunter\'s share of the gate\'s XP still due, once').toBe(shareEach(paidXp - due.xpPaid, 1, RULES.gateParty));
-  expect((await save(kai!.page)).settings.sync.runs ?? []).toEqual([]);
+  expect((await save(kai!.page)).settings.sync.asked ?? []).toEqual([]);
   expect((await save(gm.page)).log.some((l: any) => l.title === 'Solo run' && l.text.startsWith('Kai cleared "Goblin Den"'))).toBe(true);
 });
 
@@ -169,7 +169,7 @@ test('a run the room took and the GM\'s phone has not paid can be put away after
   await kai!.page.locator('.sys-overlay.show .sys-actions button', { hasText: 'Stop waiting' }).tap();
   await expect(card.locator('[data-solo-enter]')).toBeVisible();
   await expect(card).not.toContainText('Waiting for the GM');
-  expect((await save(kai!.page)).settings.sync.runs ?? []).toEqual([]);
+  expect((await save(kai!.page)).settings.sync.asked ?? []).toEqual([]);
 });
 
 test('two players clear one gate: the first is paid, the second is told it was taken and keeps its cost', async ({ device }) => {
@@ -194,7 +194,7 @@ test('two players clear one gate: the first is paid, the second is told it was t
   await expect(taken).toBeVisible({ timeout: 30_000 });
   await expect(taken).toContainText('Another hunter cleared this gate first. Your run\'s cost stays.');
   expect(lifetime(hunterOf(await save(rei!.page))), 'the second run is paid nothing').toBe(reiXp);
-  expect((await save(rei!.page)).settings.sync.runs ?? []).toEqual([]);
+  expect((await save(rei!.page)).settings.sync.asked ?? []).toEqual([]);
 });
 
 /**

@@ -2472,15 +2472,15 @@ Where it lives:
 | The test to copy | `tests/solo.test.ts`; the walk's events are in `tests/models/solo-events.ts` |
 | The recipe | docs/guide/hunters.md, "A rule of the day's time"; docs/guide/save-store.md, "A field of a saved thing" |
 
-## A solo run waiting for the GM
+## An ask waiting for the GM's phone
 
 Every state reachable from a player's won run just written, under the 8 events of tests/models/solo-events.ts (the outbox's steps of its letter, the GM's answer, the room gone, a dismissal), breadth first. The walk found 13 states and 104 steps.
 
-### A player's won run of a room's solo gate, until the GM's phone answers
+### A player's ask, walked as a won run of a room's solo gate, until the GM's phone answers
 
 ```mermaid
 ---
-title: A player's won run of a room's solo gate, until the GM's phone answers
+title: A player's ask, walked as a won run of a room's solo gate, until the GM's phone answers
 ---
 stateDiagram-v2
   state "Cleared. Waiting for the room" as s1
@@ -2499,7 +2499,7 @@ stateDiagram-v2
   s4 --> s3 : the player stops waiting
 ```
 
-The gate is the GM's phone's alone: the player's phone keeps only its claim, by the run's event id, and pays the answer only while the run waits, so a second answer pays nothing. Its cost was written with the run. Posted and lost are read from the outbox (the letter queued or on its way; refused or let go), taken and gone are stored; a reload changes nothing, and leaving the room only makes it wait. A run the room took can be put away after a question (a GM's phone that missed it would hold it and its gate for good); an answer after that pays nothing.
+The gate is the GM's phone's alone: the player's phone keeps only its claim, by the run's event id, and pays the answer only while the run waits, so a second answer pays nothing. Its cost was written with the run. Posted and lost are read from the outbox (the letter queued or on its way; refused or let go), taken and gone are stored; a reload changes nothing, and leaving the room only makes it wait. A run the room took can be put away after a question (a GM's phone that missed it would hold it and its gate for good); an answer after that pays nothing. A stash ask (kind `stash`) has the same states and cells, but one the room took is not put away (`TABLES.stash`): the GM's phone holds the stash and answers it.
 
 4 chart states, 9 arrows. Hidden: The letter's own sends and failed sends (they stay in Waiting for the room), and each event that does not apply. (0 steps.)
 
@@ -2507,10 +2507,10 @@ Where it lives:
 
 | What | Where |
 |---|---|
-| The union | `WaitingRun`, `WaitState`, `WaitEvent`, `WAIT_STATES` and `WAIT_EVENTS` in `src/core/gates/solo-wait.ts`; the list is the save's `settings.sync.runs` |
-| What changes it | `waitStep` and its `TABLE`; `runPosted`, `runTaken`, `runsGone`, `runAnswered`, `runDismissed` |
+| The union | `Asked` (its kinds `solo` and `stash`), `AskedState`, `AskedEvent`, `ASKED_STATES` and `ASKED_EVENTS` in `src/core/sync/asked.ts`; the list is the save's `settings.sync.asked` |
+| What changes it | `askedStep` and its `TABLE`; `askPosted`, `askTaken`, `askedGone`, `askAnswered`, `askDismissed` |
 | Who calls it | `soloRan` (gates/solo.ts) writes it; `boxDo` in `src/edge/sync.ts` hears the room take it or the room gone; `landSoloAnswer` in `src/edge/room-events.ts` answers it; `src/views/gates.js` puts a lost or taken one away (`mayDismiss`) |
-| The test to copy | `tests/solo-wait.test.ts`; the walk's events are in `tests/models/solo-events.ts`; two players in `tests/room-system-model.test.ts` |
+| The test to copy | `tests/asked.test.ts`; the walk's events are in `tests/models/solo-events.ts`; two players in `tests/room-system-model.test.ts` |
 | The recipe | docs/guide/room-sync.md, "A room message" |
 
 ## A solo run on this phone

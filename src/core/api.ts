@@ -660,6 +660,11 @@ export type SyncApi = {
   myKey(hid: HunterId): SheetKey;
   /** A room doc as `DOCS` in protocol.ts parsed it: the GM's own last put too. */
   doc<K extends DocName>(name: K): DocOf<K> | null;
+  /**
+   * When the room stored doc `name` (its `Stored.at`, an ISO time on the server's clock; the GM's own last put too): the
+   * time of what `doc` answers, so a view can say how old it is ("As of 21:04."). Null where `doc` is.
+   */
+  docAt(name: DocName): string | null;
   /** On a GM's phone in a room, keeps the doc what `build` answers (null: leave it). Register once; sync.ts calls it after each change. */
   publish(name: Exclude<DocName, 'kicked'>, build: () => unknown): void;
   inviteLink(code?: string | null): string;
@@ -776,18 +781,27 @@ export type StoriesApi = {
   turnOn(id: StoryId | null): Promise<void>;
 };
 
-/** Trading on screen (src/views/trade.js; notes-5-trade.md sections 6 and 7): the Give window, the Bag's Offers tab, the GM's section. */
+/**
+ * Trading on screen (src/views/trade.js; notes-5-trade.md sections 3, 6 and 7): the Give window, the Bag's Offers and
+ * Stash tabs, the GM's section.
+ */
 export type TradeApi = {
   /**
    * Opens the Give window for hunter `hid`'s item `item`, or its gold when null: to another player's hunter in the room
-   * (an offer, trade/offer.ts `offerPosted`) or to another hunter of this phone (goods.ts `handOver`).
+   * (an offer, trade/offer.ts `offerPosted`), to another hunter of this phone (goods.ts `handOver`) or into the party
+   * stash (trade/stash.ts).
    */
   give(hid: HunterId, item: string | null): Promise<void>;
   /** Draws hunter `hid`'s offers in `box` (the Bag's Offers tab): the offers to it with Accept and Refuse, and its own with Take back. */
   offers(box: HTMLElement, hid: HunterId): void;
+  /**
+   * Draws the party stash in `box` for hunter `hid` (the Bag's Stash tab): its gold and lines with Take and Take gold, and
+   * the hunter's waiting asks, with Take back or Put away once the room did not take one (trade/stash.ts).
+   */
+  stash(box: HTMLElement, hid: HunterId): void;
   /** How many offers to hunter `hid` wait for its answer: the count on the Bag's Offers tab. */
   waiting(hid: HunterId): number;
-  /** Draws the GM view's "Trades and stash" section in `box` (the switch, the open offers with Stop); answers its head summary. */
+  /** Draws the GM view's "Trades and stash" section in `box` (the switch, the open offers with Stop, the stash with Remove); answers its head summary. */
   paint(box: HTMLElement): string;
   /** The line the GM's Remove window adds for the player's sheet `key` (named `name`) while it has open offers; '' when it has none. */
   removeLine(key: string, name: string): string;

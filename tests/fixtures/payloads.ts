@@ -40,6 +40,14 @@ export const VALID: Record<EventType, [Raw, Raw]> = {
     { eid: END, to: [KEY, OTHER], offer: OFFER },
     { eid: END, to: [KEY, OTHER], offer: OFFER },
   ],
+  stashAsk: [
+    { eid: 'd-player1-mabc13xyz', by: KEY, name: 'Mira', ask: { kind: 'put', goods: { gold: 5, items: [{ from: 'i3', item: POTION }] } } },
+    { eid: 'd-player1-mabc13xyz', by: KEY, name: 'Mira', ask: { kind: 'put', goods: { gold: 5, items: [{ from: 'i3', item: POTION }] } } },
+  ],
+  stashAnswer: [
+    { eid: EID, to: [KEY], ask: 'd-player1-mabc13xyz', verdict: 'refused', why: 'short' },
+    { eid: EID, to: [KEY], ask: 'd-player1-mabc13xyz', verdict: 'refused', why: 'short', have: 0 },
+  ],
   system: [
     { eid: EID, tag: '! Notification', title: 'A gate opens', body: 'Gather at the station.', kind: 'warning' },
     { eid: EID, tag: '! Notification', title: 'A gate opens', body: 'Gather at the station.', kind: 'warning' },

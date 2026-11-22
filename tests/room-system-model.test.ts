@@ -7,7 +7,7 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { buildApp } from '../scripts/build.ts';
 import { deadEnd } from './models/dead-ends.ts';
-import { START_BAGS, enabled, isGm, keyOf, newWorld, play, probe, quiet, roster } from './models/room-world.ts';
+import { START_BAGS, START_STASH, enabled, isGm, keyOf, newWorld, play, probe, quiet, roster } from './models/room-world.ts';
 import type { Move, Phone, World } from './models/room-world.ts';
 import { coinOf } from '../src/core/coin.ts';
 import { endOf, outcomeOf } from '../src/core/trade/offer.ts';
@@ -107,7 +107,7 @@ function coinRule(w: World): string | null {
 
 /**
  * A solo run is paid at most once, and only a run whose gate the GM's phone cleared for it: across every player, the
- * GM's one solo gate pays one run at most (gates/solo.ts `soloTaken`, solo-wait.ts `runAnswered`).
+ * GM's one solo gate pays one run at most (gates/solo.ts `soloTaken`, sync/asked.ts `askAnswered`).
  */
 function soloRule(w: World): string | null {
   let paid = 0;
@@ -123,28 +123,42 @@ function settledInRoom(w: World, r: OfferRecord): boolean {
   const end = w.stored[endIdOf(r.offer.id)], e = end ? endOf(end) : null;
   return !!e && outcomeOf(r.offer, e) === 'settled';
 }
-/** The goods a player's phone holds: its hunter's bag and gold, and the asides of its records that no settled end in the room gave away. */
+/** Whether the GM's phone kept stash ask `id` (its `kept` answer in the room, or in that phone's outbox): the put's goods are then the stash's. */
+const keptInRoom = (w: World, id: string): boolean =>
+  [...Object.values(w.stored), ...w.phones[0]!.save.outbox.flatMap(e => (e.letter.kind === 'event' ? [e.letter.event] : []))]
+    .some(e => e.type === 'stashAnswer' && e.payload.ask === id && e.payload.verdict === 'kept');
+/**
+ * The goods a player's phone holds: its hunter's bag and gold, the asides of its records that no settled end in the room
+ * gave away, and the goods of its stash puts that the GM's phone has not kept.
+ */
 function heldBy(w: World, p: Phone): { tokens: string[]; gold: number } {
-  const asides: Goods[] = p.save.offers.flatMap(r => ('aside' in r && !settledInRoom(w, r) ? [r.aside] : []));
+  const puts: Goods[] = p.save.asked.flatMap(a => (a.kind === 'stash' && a.ask.kind === 'put' && !keptInRoom(w, a.id) ? [a.ask.goods] : []));
+  const asides: Goods[] = [...p.save.offers.flatMap(r => ('aside' in r && !settledInRoom(w, r) ? [r.aside] : [])), ...puts];
   return {
     tokens: [...p.save.hunter.items.map(i => i.name), ...asides.flatMap(g => g.items.map(l => l.item.name))],
     gold: p.save.hunter.gold + asides.reduce((n, g) => n + g.gold, 0),
   };
 }
 const START_GOLD = START_BAGS.reduce((n, b) => n + b.gold, 0);
+/** The tokens in the GM's party stash (trade/stash.ts). */
+const stashed = (w: World): string[] => w.phones[0]!.save.stash.items.map(i => i.name);
 /**
  * After every move: no token in two places among the players' bags and asides (never doubled); the gold never more than
  * the start; both sides of an offer that read its end read one outcome; a token a settled trade took from player 1 is
- * never in its bag again; the GM's session log has each trade once. Goods a player took back from a stranded record
- * after the room was gone are left out (1.10: the window says they may be in two places).
+ * never in its bag again; the GM's session log has each trade once; a stash line is given at most once, and no token is
+ * both in the stash and with a player. Goods a player took back from a stranded record after the room was gone are left
+ * out (1.10: the window says they may be in two places).
  */
 function tradeRule(w: World): string | null {
   const players = w.phones.slice(1);
   if (players.length < 2) return null;
   const twice = new Set(w.reclaimed.flatMap(g => g.items.map(l => l.item.name))), extra = w.reclaimed.reduce((n, g) => n + g.gold, 0);
-  const held = players.map(p => heldBy(w, p)), tokens = held.flatMap(h => h.tokens).filter(t => !twice.has(t));
+  const held = players.map(p => heldBy(w, p)), tokens = [...held.flatMap(h => h.tokens), ...stashed(w)].filter(t => !twice.has(t));
   const doubled = tokens.find((t, i) => tokens.indexOf(t) !== i);
-  if (doubled) return `${doubled} is in two places among the players' bags and asides`;
+  if (doubled) return `${doubled} is in two places among the players' bags and asides and the stash`;
+  const given = Object.values(w.stored).flatMap(e => (e.type === 'stashAnswer' && e.payload.verdict === 'given' ? e.payload.goods.items.map(l => l.from) : []));
+  const twiceGiven = given.find((id, i) => given.indexOf(id) !== i);
+  if (twiceGiven) return `the stash line ${twiceGiven} was given twice`;
   const gold = held.reduce((n, h) => n + h.gold, 0);
   if (gold > START_GOLD + extra) return `the players hold ${gold} gold, more than the ${START_GOLD + extra} they started with`;
   for (const [id, by] of Object.entries(w.outcomes)) if (new Set(Object.values(by)).size > 1) return `the phones read offer ${id} as ${JSON.stringify(by)}`;
@@ -171,7 +185,7 @@ async function tradeRest(w: World, code: string): Promise<string | null> {
   if (twiceEnded) return `offer ${twiceEnded} has two ends in the room`;
   for (const p of w.phones) for (const r of p.save.offers) if (r.offer.room === code && ends.includes(r.offer.id)) return `${p.name} is caught up and still keeps its ${r.side} record of offer ${r.offer.id}, whose end is in the room`;
   if (w.reclaimed.length || w.phones.some(p => p.save.offers.some(r => r.state === 'stranded'))) return null;
-  const tokens = players.flatMap(p => heldBy(w, p).tokens).sort(), start = START_BAGS.flatMap(b => b.tokens.map(n => `Token ${n}`)).sort();
+  const tokens = [...players.flatMap(p => heldBy(w, p).tokens), ...stashed(w)].sort(), start = [...START_BAGS.flatMap(b => b.tokens), ...START_STASH].map(n => `Token ${n}`).sort();
   if (JSON.stringify(tokens) !== JSON.stringify(start)) return `at rest the players hold ${tokens.join(', ')}, not each of ${start.join(', ')} once`;
   const gold = players.reduce((n, p) => n + heldBy(w, p).gold, 0);
   return gold === START_GOLD ? null : `at rest the players hold ${gold} gold of the ${START_GOLD} they started with`;
@@ -431,7 +445,7 @@ describe('the fight\'s totals for a player\'s hunter', () => {
   });
 });
 
-describe('a solo run of the room\'s gate (gates/solo.ts, solo-wait.ts)', () => {
+describe('a solo run of the room\'s gate (gates/solo.ts, sync/asked.ts)', () => {
   test('two players clear the GM\'s one solo gate: the first run is paid once and the second answered taken, through a lost answer and a reload', async () => {
     const w = fresh(2), [gm, p1, p2] = w.phones as [typeof w.phones[0], typeof w.phones[0], typeof w.phones[0]];
     try {
@@ -439,14 +453,14 @@ describe('a solo run of the room\'s gate (gates/solo.ts, solo-wait.ts)', () => {
       await play(w, 'p1 join'); await play(w, 'p2 join'); await quiet(w, 3);
       expect([p1.link.at, p2.link.at]).toEqual(['live', 'live']);
       await play(w, 'p1 solo');
-      expect(p1.save.runs.map(r => r.state)).toEqual(['posted']);
+      expect(p1.save.asked.map(r => r.state)).toEqual(['posted']);
       await play(w, 'p2 solo');
       await play(w, 'p1 serve box'); await play(w, 'p1 drop box'); // the room took p1's run; its answer is lost
       await play(w, 'p1 reload');
       await quiet(w, QUIET_ROUNDS);
       expect(safety(w)).toBeNull();
       expect([p1.paid, p2.paid]).toEqual([{ [p1.save.posted[0]!.eid]: 1 }, {}]);
-      expect([p1.save.runs, p2.save.runs, gm.save.soloGate]).toEqual([[], [], 'cleared']);
+      expect([p1.save.asked, p2.save.asked, gm.save.soloGate]).toEqual([[], [], 'cleared']);
     } finally { done(w); }
   });
 });
@@ -497,10 +511,10 @@ describe('what a phone missed while it was out of the room (notes-5-trade.md 11.
     try {
       await play(w, 'gm leave');
       await play(w, 'p1 solo'); await play(w, 'p1 serve box'); await play(w, 'p1 answer box');
-      expect(p1.save.runs.map(r => r.state), 'the room took the run; nobody answered it').toEqual(['taken']);
+      expect(p1.save.asked.map(r => r.state), 'the room took the run; nobody answered it').toEqual(['taken']);
       await play(w, 'gm rejoin');
       await quiet(w, QUIET_ROUNDS);
-      expect([gm.link.at, Object.values(p1.paid), p1.save.runs]).toEqual(['live', [1], []]);
+      expect([gm.link.at, Object.values(p1.paid), p1.save.asked]).toEqual(['live', [1], []]);
       expect(safety(w) ?? (await converged(w))).toBeNull();
     } finally { done(w); }
   });
@@ -592,13 +606,29 @@ describe('a trade between two players (notes-5-trade.md 1.8, unit 2)', () => {
     } finally { done(w); }
   });
 
+  test('two players take the stash\'s last token: the GM\'s phone gives it to the first ask it reads and refuses the other; each answer lands once', async () => {
+    const w = await threeLive(), [gm, p1, p2] = w.phones as [Phone, Phone, Phone];
+    try {
+      expect(await play(w, 'p1 take')).toBe(true);
+      expect(await play(w, 'p2 take')).toBe(true);
+      await play(w, 'p2 serve box'); await play(w, 'p1 serve box'); await play(w, 'p1 reload');
+      await quiet(w, QUIET_ROUNDS);
+      expect([bagOf(p1).includes('Token 21'), bagOf(p2).includes('Token 21'), gm.save.stash.items]).toEqual([false, true, []]);
+      expect([p1.save.asked, p2.save.asked]).toEqual([[], []]);
+      expect(await play(w, 'p1 put')).toBe(true);
+      await quiet(w, QUIET_ROUNDS);
+      expect([gm.save.stash.items.map(i => i.name), bagOf(p1)]).toEqual([['Token 1'], ['Token 2', 'Token 3']]);
+      expect(safety(w) ?? (await converged(w))).toBeNull();
+    } finally { done(w); }
+  });
+
   test('random walks of a trade keep every rule, and settle, refuse, withdraw and stop offers', async () => {
     const t0 = performance.now(), mine = current, seen = new Set<string>();
     let moves = 0;
     for (let seed = 1; seed <= TRADE_WALKS; seed++) {
       still(mine);
       const next = rng(seed * 7919);
-      const answering = (m: Move): boolean => / (offer|accept|refuse)$/.test(m), ending = (m: Move): boolean => / (withdraw|stop)$/.test(m);
+      const answering = (m: Move): boolean => / (offer|accept|refuse|put|take)$/.test(m), ending = (m: Move): boolean => / (withdraw|stop)$/.test(m);
       // no removal here: a sheet a trade changed, pushed after the server's 20 s removal window by a phone that has not yet
       // heard its removal, puts the removed player back on the GM's roster (seed 76; a finding of the removal's window, in
       // notes-5-trade.md 12.11, not of a trade). The removal of a giver is the named test above.
@@ -609,11 +639,14 @@ describe('a trade between two players (notes-5-trade.md 1.8, unit 2)', () => {
         // its taker reads it: they get a small share; an offer or an answer, and a poll or a send carried, a third each
         const from = a.length && roll < 0.33 ? a : e.length && roll < 0.38 ? e : carry.length && roll < 0.7 ? carry : options.filter(m => !ending(m));
         return from[Math.floor(next() * from.length)]!;
-      }, w => { for (const by of Object.values(w.outcomes)) for (const o of Object.values(by)) seen.add(o); }, TRADE_MOVES);
+      }, w => {
+        for (const by of Object.values(w.outcomes)) for (const o of Object.values(by)) seen.add(o);
+        for (const e of Object.values(w.stored)) if (e.type === 'stashAnswer') seen.add(`stash ${e.payload.verdict}`);
+      }, TRADE_MOVES);
       moves += r.played.length;
       if (r.failure) throw new Error(report(`trade seed ${seed}`, await shrink(2, r.played, r.failure)));
     }
-    expect([...seen].sort()).toEqual(['refused', 'settled', 'stopped', 'withdrawn']);
+    expect([...seen].sort()).toEqual(['refused', 'settled', 'stash given', 'stash kept', 'stash refused', 'stopped', 'withdrawn']);
     console.log(`room model: ${TRADE_WALKS} trade walks, ${moves} moves, ${Math.round(performance.now() - t0)} ms`);
   }, 60_000);
 });

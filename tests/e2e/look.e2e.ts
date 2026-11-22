@@ -943,7 +943,7 @@ for (const viewport of [SMALL_PHONE, PHONE]) {
   });
 }
 
-test('on 360 and 390 px phones the Bag\'s three tabs and an item\'s row with Give keep one line each, and every control is at least 44 px tall', async ({ device }) => {
+test('on 360 and 390 px phones the Bag\'s four tabs and an item\'s row with Give keep one line each, and every control is at least 44 px tall', async ({ device }) => {
   for (const viewport of [SMALL_PHONE, PHONE]) {
     const player = (await device(`player ${viewport.width}`, { viewport })).page;
     await onboardPlayer(player, 'Mira Test');
@@ -988,4 +988,47 @@ test('on a 390 px phone the Give window with Ask in return open fits the width, 
   const least = await win.evaluate(w => Math.min(...[...w.querySelectorAll('.tr-give button, .tr-give summary')].map(b => (b as HTMLElement).offsetHeight)));
   expect(least, 'the layout height: a chip just tapped is drawn 3% smaller while pressed').toBeGreaterThanOrEqual(44);
   expect(await brakk.evaluate(() => document.documentElement.scrollWidth)).toBe(PHONE.width);
+});
+
+test('on a 390 px phone a player\'s Stash tab and the GM\'s stash list fit the width, each line\'s name beside its 44 px button', async ({ device }) => {
+  const gm = (await device('gm', { viewport: PHONE })).page, mira = (await device('mira', { viewport: PHONE })).page;
+  await onboardGM(gm);
+  const code = await createRoom(gm);
+  await onboardPlayer(mira, 'Mira', code);
+  await dismissAll(mira, 4);
+  await gm.evaluate(() => {
+    const hid = hunterApp.store.active().id;
+    hunterApp.api.inventory.addItem(hid, { name: 'Healing Potion', rar: 'common', type: 'consumable', qty: 3 });
+    hunterApp.api.inventory.addItem(hid, { name: 'Greater Health Potion of the Long Night', rar: 'rare', type: 'consumable', qty: 1 });
+    hunterApp.api.inventory.addGold(hid, 40);
+  });
+  await go(gm, 'status');
+  for (const name of ['Healing Potion', 'Greater Health Potion of the Long Night']) {
+    await gm.locator('[data-panel="inventory"]').getByRole('button', { name: `Give ${name}`, exact: true }).tap();
+    const win = gm.locator('.sys-overlay.show');
+    await win.locator('[data-tr-to]', { hasText: 'Party stash' }).tap();
+    await win.getByRole('button', { name: 'Put in the stash' }).tap();
+    await expect(win).toHaveCount(0);
+  }
+  const rows = (root: Locator, list: string) => root.evaluate((el, list) => [...el.querySelectorAll(`[data-tr-list="${list}"] .tr-offer`)].map(row => {
+    const name = row.querySelector('span')!.getBoundingClientRect(), b = row.querySelector('button')!.getBoundingClientRect();
+    return { beside: b.left >= name.right - 1 && b.top < name.bottom, tall: b.height >= 44, inside: b.right <= innerWidth };
+  }), list);
+  const fits = { beside: true, tall: true, inside: true };
+
+  await go(mira, 'status');
+  const bag = mira.locator('[data-panel="inventory"]');
+  await bag.locator('[role=tab]', { hasText: 'Stash' }).tap();
+  await expect(bag.locator('[data-tr-list="stash"] .tr-line')).toHaveCount(2, { timeout: 20_000 });
+  await expect(bag.locator('[data-tr-asof]')).toHaveText(/^As of \d\d:\d\d\.$/);
+  expect(await rows(bag, 'stash'), 'the player\'s lines').toEqual([fits, fits]);
+  expect(await mira.evaluate(() => document.documentElement.scrollWidth), 'no sideways scroll on the player\'s phone').toBe(PHONE.width);
+
+  await go(gm, 'gm');
+  const toggle = gm.locator('[data-tog="trade"]');
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.tap();
+  const sec = gm.locator('#gm-trade');
+  await expect(sec.locator('[data-tr-list="gm-stash"] .tr-offer')).toHaveCount(2);
+  expect(await rows(sec, 'gm-stash'), 'the GM\'s lines').toEqual([fits, fits]);
+  expect(await gm.evaluate(() => document.documentElement.scrollWidth), 'no sideways scroll on the GM\'s phone').toBe(PHONE.width);
 });

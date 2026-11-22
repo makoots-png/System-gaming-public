@@ -1188,7 +1188,7 @@ describe('the phone\'s sync fields and the campaign\'s (audit BUG-sync-3)', () =
     room: at, cursor: tag === 'mine' ? 40 : 7, serverOk: tag === 'mine', deviceToken: `${tag}-token-0123456789abcdefghij`,
     gmKey: keys[at] ?? null, gmKeys: keys, lastRoom: { code: at, why: 'left' }, boundHunterId: hid(tag === 'mine' ? 'h1' : 'h2'),
     joined: { room: at, at: `${tag}-joined` }, outbox: [`${tag}-letter`] as never, held: [`${tag}-held`] as never, applied: [`${tag}-applied`] as never,
-    runs: [`${tag}-run`] as never, offers: [`${tag}-offer`] as never, seen: { [`${tag}`]: { seq: 1, at: 'then' } } as never,
+    asked: [`${tag}-run`] as never, offers: [`${tag}-offer`] as never, seen: { [`${tag}`]: { seq: 1, at: 'then' } } as never,
     weights: { room: at, hunters: { [hid(tag === 'mine' ? 'h1' : 'h2')]: { total: tag === 'mine' ? 3 : -2, force: 20 } } },
   });
   const saveOf = (tag: string, sync: SyncSettings): Save => {
@@ -1199,7 +1199,7 @@ describe('the phone\'s sync fields and the campaign\'s (audit BUG-sync-3)', () =
   const theirs = saveOf('theirs', syncOf('theirs', room('CCCCCC'), { CCCCCC: kC, AAAAAA: kX }));
   const phoneFields = (tag: string) => ({
     serverOk: tag === 'mine', deviceToken: `${tag}-token-0123456789abcdefghij`, joined: { room: tag === 'mine' ? 'AAAAAA' : 'CCCCCC', at: `${tag}-joined` }, outbox: [`${tag}-letter`], held: [`${tag}-held`],
-    applied: [`${tag}-applied`], runs: [`${tag}-run`], offers: [`${tag}-offer`], seen: { [tag]: { seq: 1, at: 'then' } },
+    applied: [`${tag}-applied`], asked: [`${tag}-run`], offers: [`${tag}-offer`], seen: { [tag]: { seq: 1, at: 'then' } },
     weights: { room: tag === 'mine' ? 'AAAAAA' : 'CCCCCC', hunters: { [tag === 'mine' ? 'h1' : 'h2']: { total: tag === 'mine' ? 3 : -2, force: 20 } } },
   });
 

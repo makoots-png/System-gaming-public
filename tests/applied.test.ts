@@ -17,7 +17,8 @@ import { applyRoomEvent, awayDeps, landAll } from '../src/edge/room-events.ts';
 import type { ApplyDeps } from '../src/edge/room-events.ts';
 import { day, dev, hid } from './fixtures/ids.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
-import type { WaitingRun } from '../src/core/gates/solo-wait.ts';
+import type { Asked, StashAsk } from '../src/core/sync/asked.ts';
+import { parseItem } from '../src/core/registry/items.ts';
 import { REVIVE_HP } from '../src/core/hunter/vitals.ts';
 import type { Life } from '../src/core/hunter/vitals.ts';
 import { useItem } from '../src/core/hunter/use.ts';
@@ -86,10 +87,10 @@ const HELD = 'held by the GM\'s fight';
  * `once` as sync.ts runs it (`store.apply` of `appliedOnce`: the step is worked out first, then written whole, so a step
  * that throws writes nothing). `fight`: the GM's fight holds the hunter's vitals (`fightOf` answers `gm`).
  */
-function phone(o: { conditions?: SheetStatus[]; fight?: boolean; level?: number; runs?: WaitingRun[]; life?: Life; sheet?: Partial<Hunter>; room?: RoomCode } = {}) {
+function phone(o: { conditions?: SheetStatus[]; fight?: boolean; level?: number; asked?: Asked[]; life?: Life; sheet?: Partial<Hunter>; room?: RoomCode } = {}) {
   const fresh = freshSave({ now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-player1') }, { onboarded: true });
   let save: Save = { ...fresh, hunters: fresh.hunters.map(h => ({ ...h, ...setLevel(h, o.level ?? 1, 0, RULES).progress, conditions: [...(o.conditions ?? [])], life: o.life ?? h.life, ...o.sheet })) };
-  if (o.runs) save = { ...save, settings: { ...save.settings, sync: { ...save.settings.sync, runs: o.runs } } };
+  if (o.asked) save = { ...save, settings: { ...save.settings, sync: { ...save.settings.sync, asked: o.asked } } };
   if (o.room) save = { ...save, settings: { ...save.settings, sync: { ...save.settings.sync, room: o.room } } };
   let rules: Rules = RULES;
   const windows: { title: string; lines?: string[] }[] = [], toasts: string[] = [], shown: string[][] = [], completed: string[] = [], said: { title: string | undefined; body: string | undefined }[] = [];
@@ -126,7 +127,7 @@ function phone(o: { conditions?: SheetStatus[]; fight?: boolean; level?: number;
     write: (step: (s: Save) => Save) => { save = step(save); },
     get hunter(): Hunter { return save.hunters[0]!; },
     get applied(): readonly EventId[] { return save.settings.sync.applied ?? []; },
-    get runs(): readonly WaitingRun[] { return save.settings.sync.runs ?? []; },
+    get asked(): readonly Asked[] { return save.settings.sync.asked ?? []; },
     useRules: (R: Rules) => { rules = R; },
     windows, toasts, shown, completed, said, receive, status, deps,
   };
@@ -590,32 +591,62 @@ describe('a chapter the GM opened lands whole, once (notes-1-stories.md 4.2)', (
   });
 });
 
+describe('the GM\'s answer to a stash ask lands once, only while its ask waits (notes-5-trade.md 3.3)', () => {
+  const ASK = 'd-player1-ask1' as EventId;
+  const potions = (n: number) => ({ gold: 0, items: [{ from: 'i3' as never, item: { ...parseItem({ name: 'Healing Potion', type: 'consumable' })!, qty: n } }] });
+  const asked = (ask: StashAsk): Asked => ({ id: ASK, room: 'ABCD23' as never, hid: 'h1' as never, kind: 'stash', ask, at: AT, state: 'taken', sent: true });
+  const count = (h: Hunter) => h.items.filter(i => i.name === 'Healing Potion').reduce((n, i) => n + i.qty, 0);
+
+  test('a stash answer lands once, only while its ask waits: given goods reach the bag once; a replay or a second GM phone\'s answer gives nothing', () => {
+    const p = phone({ asked: [asked({ kind: 'take', item: 'i50' as never, qty: 1, name: 'Healing Potion' })] }), before = count(p.hunter);
+    const GIVEN = { to: ['d-player1:h1'], ask: ASK, verdict: 'given', goods: potions(1) };
+    p.receive(1, 'stashAnswer', GIVEN);
+    expect([count(p.hunter) - before, p.asked, p.toasts]).toEqual([1, [], ['From the stash: 1 Healing Potion.']]);
+    p.receive(1, 'stashAnswer', GIVEN);
+    p.receive(2, 'stashAnswer', GIVEN);
+    expect([count(p.hunter) - before, p.toasts.length]).toEqual([1, 1]);
+    const q = phone(), none = count(q.hunter);
+    q.receive(1, 'stashAnswer', GIVEN);
+    expect([count(q.hunter), q.toasts], 'no ask waits on this phone: nothing lands').toEqual([none, []]);
+  });
+
+  test('a kept put leaves the ask and moves nothing more; a refused put brings its goods back with why', () => {
+    const p = phone({ asked: [asked({ kind: 'put', goods: potions(2) })] }), before = count(p.hunter);
+    p.receive(1, 'stashAnswer', { to: ['d-player1:h1'], ask: ASK, verdict: 'kept' });
+    expect([count(p.hunter), p.asked, p.toasts]).toEqual([before, [], ['In the stash: Healing Potion × 2.']]);
+    const q = phone({ asked: [asked({ kind: 'put', goods: potions(2) })] });
+    q.receive(1, 'stashAnswer', { to: ['d-player1:h1'], ask: ASK, verdict: 'refused', why: 'full', have: 40 });
+    expect([count(q.hunter) - before, q.asked]).toEqual([2, []]);
+    expect(q.toasts).toEqual(['The stash is full. Take something out of it first. Back in your bag: Healing Potion × 2.']);
+  });
+});
+
 describe('the GM\'s answer to a solo run lands whole, once a run (notes-2-solo.md section 5)', () => {
   const RUN = 'd-player1-run1' as EventId;
-  const waiting = (): WaitingRun => ({ run: RUN, room: 'ABCD23' as never, hid: 'h1' as never, gate: 'g12' as never, name: 'Goblin Den', at: AT, state: 'taken' });
+  const waiting = (): Extract<Asked, { kind: 'solo' }> => ({ id: RUN, room: 'ABCD23' as never, hid: 'h1' as never, kind: 'solo', gate: 'g12' as never, name: 'Goblin Den', at: AT, state: 'taken', sent: true });
   const PAID = { to: ['d-player1:h1'], run: RUN, gate: 'g12', name: 'Goblin Den', verdict: 'paid', rewards: { xp: 50, gold: 120 } };
 
   test('a paid answer closes the waiting run and gives its reward in the same write, with the GATE CLEARED window', () => {
-    const p = phone({ runs: [waiting()] }), before = p.hunter;
+    const p = phone({ asked: [waiting()] }), before = p.hunter;
     p.receive(1, 'soloAnswer', PAID);
     expect([p.hunter.xp - before.xp, p.hunter.gold - before.gold]).toEqual([50, 120]);
-    expect([p.runs, p.applied]).toEqual([[], [e(1)]]);
+    expect([p.asked, p.applied]).toEqual([[], [e(1)]]);
     expect(p.shown).toEqual([['+50 XP', '+120 gold']]);
   });
 
   test('a second answer to the same run (a second GM phone, or the same one again) gives nothing', () => {
-    const p = phone({ runs: [waiting()] });
+    const p = phone({ asked: [waiting()] });
     p.receive(1, 'soloAnswer', PAID);
     const once = { xp: p.hunter.xp, gold: p.hunter.gold };
     p.receive(2, 'soloAnswer', PAID);
     p.receive(1, 'soloAnswer', PAID);
-    expect([{ xp: p.hunter.xp, gold: p.hunter.gold }, p.shown.length, p.runs]).toEqual([once, 1, []]);
+    expect([{ xp: p.hunter.xp, gold: p.hunter.gold }, p.shown.length, p.asked]).toEqual([once, 1, []]);
   });
 
   test('a refused answer closes the run with its words and gives nothing; an answer for no waiting run changes nothing', () => {
-    const p = phone({ runs: [waiting()] }), xp = p.hunter.xp;
+    const p = phone({ asked: [waiting()] }), xp = p.hunter.xp;
     p.receive(1, 'soloAnswer', { ...PAID, verdict: 'refused', why: 'taken', rewards: undefined });
-    expect([p.runs, p.hunter.xp]).toEqual([[], xp]);
+    expect([p.asked, p.hunter.xp]).toEqual([[], xp]);
     expect(p.windows.map(w => [w.title, w.lines])).toEqual([['GATE TAKEN', ['Another hunter cleared this gate first. Your run\'s cost stays.']]]);
     const q = phone();
     q.receive(1, 'soloAnswer', PAID);
@@ -634,7 +665,7 @@ describe('the GM\'s answer to a solo run lands whole, once a run (notes-2-solo.m
     const taken = soloTaken(gm, run, plan, parseEvent('soloAnswer', { ...body, eid: e(1) }), loot, { day: at, room: { code: room, stamp: { device: 'd-gm1', now: Date.parse(AT), rand: 0.5 } }, rank: null });
     if (isRefused(taken)) throw new Error(`refused: ${taken.why}`);
     const posted = (taken.settings.sync.outbox ?? []).flatMap(x => (x.letter.kind === 'event' ? [x.letter.event] : []));
-    const p = phone({ runs: [{ ...waiting(), gate: 'g-den' as never }] });
+    const p = phone({ asked: [{ ...waiting(), gate: 'g-den' as never }] });
     p.page([], posted);
     const after = noticed(p.deps.store.get(), () => ({ ...at, session: 1, held: () => false, feats: [] }));
     expect(after.hunters[0]!.chronicle.facts.filter(f => f.kind === 'gate')).toMatchObject([{ kind: 'gate', name: 'Goblin Den', rank: 'E', above: 0, toBreak: 4 }]);

@@ -14,7 +14,7 @@ import { gateNews, gateTold, hunterNews } from '../core/told.ts';
 import { stepTime } from '../core/day.ts';
 import { OUTCOME_WORDS, SOLO_REFUSAL_WORDS, SOLO_WORDS, closesIn, personalNews, runCostLines, soloAnswerBody, soloConfirmLines, soloDoc, soloFight, soloKey, soloPlan, soloRan, soloReady, soloRoute, soloRuleSet, soloRunBody, soloTaken, soloTargets, soloTick, takenLine } from '../core/gates/solo.ts';
 import { byClosing } from '../core/gates/personal.ts';
-import { STOP_WAITING, mayDismiss, runDismissed, shownOf, waitWords, waitingGates } from '../core/gates/solo-wait.ts';
+import { STOP_WAITING, askDismissed, mayDismiss, shownOf, waitWords, waitingGates } from '../core/sync/asked.ts';
 import { NO_RUN, mayEnter, playingOn, runPhaseStep } from '../core/gates/solo-run.ts';
 import { IDLE, ODDS_FRAME_MS, oddsStep, progressOf } from '../core/combat/odds.ts';
 import { oddsSeed } from '../edge/roll.ts';
@@ -216,7 +216,7 @@ export function register(app) {
   const mounted = { render: null, paintRun: null, asked: null };
   const refreshView = () => { if (mounted.render) mounted.render(); };
 
-  // ── solo runs (src/core/gates/solo.ts, personal.ts, solo-wait.ts; notes-2-solo.md) ──
+  // ── solo runs (src/core/gates/solo.ts, personal.ts, sync/asked.ts; notes-2-solo.md) ──
   /**
    * Each personal gate not told yet gets its window ("A GATE HAS APPEARED"), told in the campaign's told memory when
    * answered (told.ts `hunterNews`), so a reload while it waits shows it.
@@ -327,7 +327,7 @@ export function register(app) {
     if (toRoom) sync().flush();
     runMoved({ type: 'wrote' });
     const h = store.hunter(hid), m = h ? api.hunter.sheet(h).sheet : { hpMax: 0, manaMax: 0, fatigueMax: 0 };
-    const sy = store.get().settings.sync, waiting = event && (sy.runs || []).find(x => x.run === event.payload.eid);
+    const sy = store.get().settings.sync, waiting = event && (sy.asked || []).find(x => x.id === event.payload.eid);
     await ui.system({ tag: '! Gate', kind: ran.outcome === 'won' ? 'quest' : 'warning', title: OUTCOME_WORDS[ran.outcome].title,
       body: waiting ? `${ready.target.name}. ${waitWords(waiting, sy.outbox || [])}` : ready.target.name,
       lines: runCostLines(ran.before, ran.after, m), rewards: ran.granted ? ran.granted.lines : [] });
@@ -522,11 +522,11 @@ export function register(app) {
         const ready = soloReady(store.get(), h.id, gate, readyCtx(h.id)), R = app.rules();
         const target = isRefused(ready) ? null : ready.target, made = isRefused(ready) ? null : soloFight(ready.h, ready.target, R);
         const sy = store.get().settings.sync, code = room();
-        const waiting = gate.kind === 'world' && code ? (sy.runs || []).find(x => x.room === code && x.hid === h.id && x.gate === gate.id) : null;
+        const waiting = gate.kind === 'world' && code ? (sy.asked || []).find(x => x.kind === 'solo' && x.room === code && x.hid === h.id && x.gate === gate.id) : null;
         const away = waiting && mayDismiss(waiting, sy.outbox || []);
         const mons = target ? target.monsters.map(m => `<li><span class="cnt">×${esc(m.count)}</span><span>${esc(m.monster.name)}</span></li>`).join('') : '';
         const line = waiting ? waitWords(waiting, sy.outbox || []) : isRefused(ready) ? SOLO_REFUSAL_WORDS[ready.why] : '';
-        const acts = away ? `<button type="button" data-solo-dismiss="${esc(waiting.run)}">${esc(SOLO_WORDS.dismiss)}</button>`
+        const acts = away ? `<button type="button" data-solo-dismiss="${esc(waiting.id)}">${esc(SOLO_WORDS.dismiss)}</button>`
           : target ? `<button type="button" class="primary" data-solo-enter${mayEnter(runPhase) ? '' : ' disabled'}>${esc(SOLO_WORDS.enter)}</button>` : '';
         return { key: oddsKeyOf(gate, h.id), made, html: `<article class="gate solo" data-solo="${esc(gate.kind)}:${esc(gate.id)}" aria-label="${esc(rank)}-rank solo gate ${esc(name)}">
           <div class="gt-head">${ui.rankBadge(rank)}<span class="gt-name">${esc(name)}</span><span class="gt-chip st-detected">${esc(gate.kind === 'personal' ? 'Personal' : 'Solo')}</span></div>
@@ -598,12 +598,12 @@ export function register(app) {
       mounted.render = render;
       mounted.paintRun = paintRun;
 
-      /** Run `id` put away: a taken one only after the question, since it gives up the GM's pay (gates/solo-wait.ts `STOP_WAITING`). */
+      /** Run `id` put away: a taken one only after the question, since it gives up the GM's pay (sync/asked.ts `STOP_WAITING`). */
       async function dismissRun(id) {
-        const sy = store.get().settings.sync, w = (sy.runs || []).find(x => x.run === id);
+        const sy = store.get().settings.sync, w = (sy.asked || []).find(x => x.id === id);
         if (w && shownOf(w, sy.outbox || []).state === 'taken'
           && !await ui.confirm({ title: STOP_WAITING.title, body: STOP_WAITING.body, danger: true, confirmLabel: STOP_WAITING.confirm })) return;
-        if (ui.wrote('! Gate', store.apply('solo-dismiss', s => runDismissed(s, id)))) render();
+        if (ui.wrote('! Gate', store.apply('solo-dismiss', s => askDismissed(s, id)))) render();
       }
 
       el.addEventListener('click', async e => {

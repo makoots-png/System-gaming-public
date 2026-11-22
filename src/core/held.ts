@@ -1,8 +1,8 @@
 // held.ts: a write the GM holds back under Undo, from the pick to its end. Pure.
 //
-// Four writes are held two seconds under a toast with Undo: an award given from Give…'s shelf (gm.js `giveFrom`), End
-// story (stories.js `endStory`), a taker's Accept of an offer that asks something back and the GM's Stop of an offer
-// (trade.js). Before, each lived only as a closure in ui.js's toast list: End story tapped twice held
+// Five writes are held two seconds under a toast with Undo: an award given from Give…'s shelf (gm.js `giveFrom`), End
+// story (stories.js `endStory`), a taker's Accept of an offer that asks something back, the GM's Stop of an offer and
+// the GM's Remove of a line of the party stash (trade.js). Before, each lived only as a closure in ui.js's toast list: End story tapped twice held
 // two ends of one run, and Undo on one left the other to end the story (SMX-gates-5.3a). Now each held write is a value
 // of this machine, under its key (`heldKey`: what it writes and to what), and ui.js keeps it with its toast and steps it
 // only through `heldStep`. A second pick of a write already held is refused, so one run holds one end.
@@ -13,23 +13,25 @@
 // One row waits on a unit written, not built (notes-9-rulings-1122.md, ruling 20):
 // - `absent × pick → holding` (SMX-gates-5.2): a bundle picked on the shelf is held as it is, with no edit step. Ruled
 //   "every reward is editable first", the pick opens a draft (the Award form's, award.ts) and only its send is held.
-import type { OfferId, StoryRunId } from './ids.ts';
+import type { ItemId, OfferId, StoryRunId } from './ids.ts';
 
 /**
  * What a held write writes, and to what: an award from the shelf (its bundle's key) to a hunter here or a player's (its id
- * or sheet key), the end of a story's run, a taker's accept of an offer that asks something back, or the GM's stop of an
- * offer (trade.js).
+ * or sheet key), the end of a story's run, a taker's accept of an offer that asks something back, the GM's stop of an
+ * offer, or the GM's removal of a party stash line (its item id; trade.js).
  */
 export type HeldWhat =
   | { readonly kind: 'give'; readonly to: string; readonly bundle: string }
   | { readonly kind: 'end'; readonly run: StoryRunId }
-  | { readonly kind: 'accept' | 'stop'; readonly offer: OfferId };
+  | { readonly kind: 'accept' | 'stop'; readonly offer: OfferId }
+  | { readonly kind: 'stashRemove'; readonly line: ItemId };
 /** One key for each write: two picks of one write share it, so the second is refused while the first is held. */
 export function heldKey(w: HeldWhat): string {
   switch (w.kind) {
     case 'give': return `give ${w.to} ${w.bundle}`;
     case 'end': return `end ${w.run}`;
     case 'accept': case 'stop': return `${w.kind} ${w.offer}`;
+    case 'stashRemove': return `stashRemove ${w.line}`;
   }
 }
 

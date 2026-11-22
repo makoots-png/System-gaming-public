@@ -71,7 +71,7 @@ import { NO_REMOVAL, atSync, boundTo, joinedAt, linkSaved, playAs, playAsAnswere
 import type { BindAnswer, BindAsked, RemovedEvent, RemovedNotice } from '../core/sync/bind.ts';
 import { refuse } from '../core/save-step.ts';
 import { READ_ONLY } from '../core/store-life.ts';
-import { runTaken, runsGone } from '../core/gates/solo-wait.ts';
+import { askTaken, askedGone } from '../core/sync/asked.ts';
 import { closeNews, letterTaken, offersGone, offersSeen } from '../core/trade/offer.ts';
 import type { OfferNews } from '../core/trade/offer.ts';
 import { told } from '../core/session-log.ts';
@@ -107,6 +107,7 @@ const SAME: { [K in PublishedDoc]: (d: DocOf<K>) => unknown } = {
   world: d => ({ ...d, gates: [...d.gates].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)) }),
   solo: d => d,
   feats: d => d,
+  stash: d => d,
 };
 const sameDoc = <K extends PublishedDoc>(name: K, a: DocOf<K>, b: DocOf<K>): boolean => {
   const same = SAME[name] as (d: DocOf<K>) => unknown;
@@ -473,7 +474,7 @@ export function register(app: SyncHost): void {
         peeked.delete(code);
         // the room's offers step `roomGone` in the write that refuses its letters: a never-sent one gives its goods back
         const ended: { news: OfferNews[] } = { news: [] };
-        boxDo('outbox-gone', b => roomGone(b, code), s => { const g = offersGone(runsGone(s, code), code); ended.news = g.closed.flatMap(c => closeNews(c) ?? []); return g.save; });
+        boxDo('outbox-gone', b => roomGone(b, code), s => { const g = offersGone(askedGone(s, code), code); ended.news = g.closed.flatMap(c => closeNews(c) ?? []); return g.save; });
         for (const n of ended.news) if (n.kind === 'toast') ui.toast('Trade', n.text);
         return;
       }
@@ -702,8 +703,8 @@ export function register(app: SyncHost): void {
   const box = (): Outbox => sy().outbox ?? [];
   /**
    * The one writer of the save's outbox outside a bind. Answers whether the step was written. `heard`: what the same
-   * write tells beside the box, before the box changes (a solo run whose message the room took, or whose room is gone,
-   * gates/solo-wait.ts): it reads the letter while it is still in the box.
+   * write tells beside the box, before the box changes (an ask whose message the room took, or whose room is gone,
+   * sync/asked.ts): it reads the letter while it is still in the box.
    */
   const boxDo = (reason: string, f: (b: Outbox) => Outbox, heard: ((s: Save) => Save) | null = null): boolean =>
     store.apply(reason, s => atOutbox(f)(heard ? heard(s) : s)).ok;
@@ -744,9 +745,9 @@ export function register(app: SyncHost): void {
     const ev: EntryEvent = sentEvent(c);
     if (ev.type === 'failed') boxDo('outbox-failed', b => outStep(b, e.id, ev));
     // a solo run's message, or an offer's letter, the room took is heard taken in the same write as its letter leaves the
-    // box (solo-wait.ts `runTaken`, trade/offer.ts `letterTaken`); one on its way was heard tried in the write that sent it
-    // (the store's `lettersKept`)
-    else flush(`outbox-${ev.type}`, b => outStep(b, e.id, ev), ev.type === 'sent' ? s => letterTaken(runTaken(s, e.id), e.id) : null);
+    // box (sync/asked.ts `askTaken`, trade/offer.ts `letterTaken`); one on its way was heard tried or sent in the write that
+    // sent it (the store's `lettersKept` and `asksKept`)
+    else flush(`outbox-${ev.type}`, b => outStep(b, e.id, ev), ev.type === 'sent' ? s => letterTaken(askTaken(s, e.id), e.id) : null);
     // a player's own fight move: the link polls quickly until the fight doc it was sent from changes
     if (c.ok && e.letter.kind === 'event' && FIGHT_MOVES.has(e.letter.event.type)) linkDo({ type: 'sent', from: view().docs.fight?.data.at ?? null });
     if (ev.type === 'sent') app.emit('sync:outbox', { id: e.id, at: 'sent', seq: c.ok && isObj(c.data) && typeof c.data.seq === 'number' ? c.data.seq : null });
@@ -773,7 +774,7 @@ export function register(app: SyncHost): void {
   const WHAT_SENT: Partial<Record<RoomEvent['type'], string>> = {
     used: 'a use you told the GM of', roll: 'a roll', questUpdate: 'a quest\'s progress', coinCall: 'a coin call', coinLand: 'a coin\'s ruling',
     step: 'a step', cast: 'a use in the fight', pass: 'the end of a turn', arm: 'a reaction', award: 'an award', quest: 'a quest', chain: 'a Job Change',
-    soloRun: 'a solo run', soloAnswer: 'the answer to a solo run',
+    soloRun: 'a solo run', soloAnswer: 'the answer to a solo run', stashAsk: 'a stash ask', stashAnswer: 'the answer to a stash ask',
   };
   /** A hunter deleted on this phone leaves the GM's board: its sheet is replaced by a tombstone, through the outbox. */
   const forget = (hid: HunterId): void => { if (playerRoom()) postLetter({ kind: 'tomb', hid }, null); };
@@ -824,6 +825,7 @@ export function register(app: SyncHost): void {
   /** The data of the last poll of this stretch of the link: never another room's, nor this room's from before a leave. */
   const view = (): Shown => (link.at === 'live' && shown.gen === link.gen ? shown : NOTHING_SHOWN);
   const doc = <K extends DocName>(name: K): DocOf<K> | null => (view().docs[name]?.data as DocOf<K> | undefined) ?? null;
+  const docAt = (name: DocName): string | null => view().docs[name]?.at ?? null;
   // a player's phone plays by the room's build switches while in it (src/edge/rules.ts); the GM's phone by its own
   bindRoom(() => (playerRoom() ? doc('rules') : null));
   /** Whether the GM's fight holds a hunter of this player's phone (its row in the room's fight doc), for the notice step. */
@@ -1031,7 +1033,7 @@ export function register(app: SyncHost): void {
 
   // ── public API: the names the views use ──
   app.api.sync = { // checked against SyncApi in src/core/api.ts
-    status, conn, detail, room, event, stamp, once, remoteSheets, faces, myKey, doc, inviteLink,
+    status, conn, detail, room, event, stamp, once, remoteSheets, faces, myKey, doc, docAt, inviteLink,
     post: (ev, o) => (ev ? postLetter({ kind: 'event', event: ev }, o?.key ?? null) : { ok: false, why: 'notEvent' }),
     flush: (): void => { flush(); },
     publish: (name, build) => { publishers.set(name, build); },

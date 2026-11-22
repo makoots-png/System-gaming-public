@@ -1,9 +1,9 @@
-// A write held back under Undo (src/core/held.ts): Give…'s award, End story, an exchange's Accept and the GM's Stop, from the pick to its end. Every
+// A write held back under Undo (src/core/held.ts): Give…'s award, End story, an exchange's Accept, the GM's Stop and the GM's Remove of a stash line, from the pick to its end. Every
 // state against every event, the refused cells too, and the rows that wait on a ruling named as the app behaves today.
 import { describe, expect, test } from 'bun:test';
 import { HELD_EVENTS, HELD_STATES, heldKey, heldStep } from '../src/core/held.ts';
 import type { HeldEvent, HeldWrite } from '../src/core/held.ts';
-import { srid } from './fixtures/ids.ts';
+import { iid, srid } from './fixtures/ids.ts';
 import { parseOfferId } from '../src/core/ids.ts';
 import type { OfferId } from '../src/core/ids.ts';
 
@@ -35,17 +35,19 @@ describe('a held write', () => {
     expect(heldStep(heldStep(first, { type: 'undo' })!, { type: 'due' })).toBeNull();
   });
 
-  test('one write is one key: the end of another run, another award or another hunter, an accept or a stop of an offer, is a write of its own', () => {
+  test('one write is one key: the end of another run, another award or another hunter, an accept or a stop of an offer, the removal of a stash line, is a write of its own', () => {
     const keys = [
       heldKey({ kind: 'accept', offer: offer('d-p1-1abc-wxyz') }), heldKey({ kind: 'stop', offer: offer('d-p1-1abc-wxyz') }),
       heldKey({ kind: 'accept', offer: offer('d-p1-1abd-wxyz') }),
       heldKey({ kind: 'end', run: srid('sr1') }), heldKey({ kind: 'end', run: srid('sr2') }),
       heldKey({ kind: 'give', to: 'h1', bundle: 'seed-mask' }), heldKey({ kind: 'give', to: 'h1', bundle: 'seed-face' }),
       heldKey({ kind: 'give', to: 'd-p1:h1', bundle: 'seed-mask' }),
+      heldKey({ kind: 'stashRemove', line: iid('i900') }), heldKey({ kind: 'stashRemove', line: iid('i901') }),
     ];
     expect(new Set(keys).size).toBe(keys.length);
     expect(heldKey({ kind: 'give', to: 'h1', bundle: 'seed-mask' })).toBe(keys[5]!);
     expect(heldKey({ kind: 'stop', offer: offer('d-p1-1abc-wxyz') })).toBe(keys[1]!);
+    expect(heldKey({ kind: 'stashRemove', line: iid('i900') }), 'a second Remove of one line is the same write').toBe(keys[8]!);
   });
 
   test('waits on the ruling SMX-gates-5.2: today a bundle picked on the shelf is held as it is, with no step to edit it first', () => {

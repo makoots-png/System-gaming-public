@@ -85,6 +85,7 @@ When a mistake is made, apply `.claude/skills/correct/SKILL.md` (the owner's sta
 | A row of the trail carries the machine's time, not a typed one (Nov 21: a lead's rows ran 90 minutes ahead, twice) | `scripts/trail.sh <area> "<text>"`, which stamps the row with `date -u`; a lead appends rows only through it |
 | A running helper's branch is always named in the handoff's Now block (Nov 21: a lead's edit cut three helpers' lines) | `scripts/trail.sh`, which at every row names each worktree branch that `handoff.md` does not |
 | A helper that moves a rule's number or a screen's words runs the browser files that hold them (Nov 21: two public runs went red on typed copies in `makers.e2e.ts` and `crystal.e2e.ts`) | the public run's browser parts, which stop the push; a browser test reads a number from `RULES`, and a brief says to `grep -rl` the old words in `tests/e2e` and run those files |
+| A brief names the files other helpers hold, not a closed list of the helper's own (Nov 22: five helpers stopped or built around the design for a file off the lead's list) | a judgment call, so a written rule: the bullet of that name in the Now block of `docs/agent-handoff/handoff.md`, which every lead reads before it briefs |
 | Every other rule of the code | its test in `tests/lint.test.ts`, named for the rule |
 
 ## Rules

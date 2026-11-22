@@ -15,8 +15,8 @@ import { cryptoRandom, rollSettle } from '../edge/roll.ts';
 import { rollLoot } from '../core/gates/spawn.ts';
 import { postNews, reportWords } from '../core/sync/connection.ts';
 
-/** The Bag's tabs: its items, the offers to and from its hunter (trade.js), the shop. */
-const BAG_TABS = ['items', 'offers', 'shop'];
+/** The Bag's tabs: its items, the offers to and from its hunter and the party stash (both trade.js), the shop. */
+const BAG_TABS = ['items', 'offers', 'stash', 'shop'];
 const SLOT_LABEL = { weapon: 'Weapon', offhand: 'Off-hand', head: 'Head', chest: 'Chest', hands: 'Hands', legs: 'Legs', feet: 'Feet', neck: 'Neck', ring1: 'Ring 1', ring2: 'Ring 2' };
 const cap = s => s[0].toUpperCase() + s.slice(1);
 
@@ -203,7 +203,7 @@ export function register(app) {
     },
   });
 
-  // Inventory panel (Items | Offers | Shop)
+  // Inventory panel (Items | Offers | Stash | Shop)
   let tab = 'items';
   app.registerPanel({
     view: 'status', id: 'inventory', order: 50, title: 'Bag', jump: 'Bag',
@@ -213,6 +213,7 @@ export function register(app) {
         <div class="inv-tabs seg" role="tablist" aria-label="Bag sections">
           <button type="button" role="tab" data-tab="items" aria-selected="true">Items</button>
           <button type="button" role="tab" data-tab="offers" aria-selected="false">Offers</button>
+          <button type="button" role="tab" data-tab="stash" aria-selected="false">Stash</button>
           <button type="button" role="tab" data-tab="shop" aria-selected="false">Shop</button>
         </div>
         <div data-pane="items">
@@ -225,6 +226,7 @@ export function register(app) {
           </form>
         </div>
         <div data-pane="offers" hidden><div data-offers></div></div>
+        <div data-pane="stash" hidden><div data-stash></div></div>
         <div data-pane="shop" hidden>
           <div class="inv-bar"><button type="button" class="gm-only" data-shop-add hidden>Add shop item</button><button type="button" class="gm-only" data-shop-reset hidden>Reset shop</button></div>
           <p class="empty" role="note" data-shop-closed hidden></p>
@@ -303,7 +305,7 @@ export function register(app) {
       const h = store.active(), gm = app.isGM(), open = shopOpen(h);
       el.querySelector('[data-gold]').textContent = fmt(h.gold);
       el.querySelector('[data-give-gold]').hidden = h.gold <= 0;
-      el.querySelector('[data-additem]').hidden = tab === 'offers';
+      el.querySelector('[data-additem]').hidden = tab === 'offers' || tab === 'stash';
       const waiting = app.api.trade.waiting(h.id);
       el.querySelector('[data-tab="offers"]').textContent = waiting ? `Offers (${waiting})` : 'Offers';
       el.querySelectorAll('.gm-only').forEach(b => { b.hidden = !gm || (b.hasAttribute('data-shop-add') || b.hasAttribute('data-shop-reset') ? tab !== 'shop' : false); });
@@ -325,6 +327,7 @@ export function register(app) {
             </div></li>`;
         }).join('') : `<li class="empty">${h.items.length ? 'No items of that type.' : 'Inventory is empty.'}</li>`;
       } else if (tab === 'offers') app.api.trade.offers(el.querySelector('[data-offers]'), h.id);
+      else if (tab === 'stash') app.api.trade.stash(el.querySelector('[data-stash]'), h.id);
       else {
         const closed = el.querySelector('[data-shop-closed]');
         closed.hidden = open;
