@@ -1,6 +1,6 @@
 // What a reward may hold (src/core/rewards.ts): one reader for a save's quest, a bundle, a room's award and a form.
 import { describe, expect, test } from 'bun:test';
-import { grantLines, newRewards, parseRewards, rewardLines, saveBundle, titleReward } from '../src/core/rewards.ts';
+import { bandOf, grantLines, newRewards, parseRewards, rewardLines, saveBundle, titleReward } from '../src/core/rewards.ts';
 import type { Rewards } from '../src/core/rewards.ts';
 import { RULES } from '../src/core/rules.ts';
 import { SHOP_ITEMS, itemOf } from '../src/core/registry/items.ts';
@@ -171,10 +171,22 @@ describe('a title\'s worn status in a reward', () => {
   });
 });
 
+describe('a title\'s band (item-stats 6.7)', () => {
+  test('the band is read when it is a rank, E to S, and is none when it is not', () => {
+    for (const band of ['E', 'D', 'C', 'B', 'A', 'S']) expect(parseRewards({ title: { name: 'Last Light', band } })!.title, band).toEqual({ name: 'Last Light', desc: '', bonus: {}, band });
+    for (const band of ['c', 'SS', ' C', 7, null, ['C']]) expect(parseRewards({ title: { name: 'Last Light', band } })!.title, String(band)).toEqual({ name: 'Last Light', desc: '', bonus: {} });
+  });
+
+  test('a title with no band is weighed as an E title, one with a band as that band', () => {
+    expect(bandOf(parseRewards({ title: { name: 'Last Light' } })!.title!)).toBe('E');
+    expect(bandOf(parseRewards({ title: { name: 'Last Light', band: 'C' } })!.title!)).toBe('C');
+  });
+});
+
 describe('a title by name', () => {
-  test('a built-in title brings its description and bonus from the sender\'s rules', () => {
+  test('a built-in title brings its description, bonus and band from the sender\'s rules', () => {
     const wolf = RULES.titles.find(t => t.name === 'Wolf Slayer')!;
-    expect(titleReward(RULES, ' Wolf Slayer ')).toEqual({ name: 'Wolf Slayer', desc: wolf.desc, bonus: { ...wolf.bonus }, key: 'wolf-slayer' });
+    expect(titleReward(RULES, ' Wolf Slayer ')).toEqual({ name: 'Wolf Slayer', desc: wolf.desc, bonus: { ...wolf.bonus }, key: 'wolf-slayer', band: 'D' });
   });
 
   test('another name is a title without a bonus; a blank name is none', () => {

@@ -7,8 +7,8 @@
 // module because the readers of a reward's parts (rewards.ts) import the rules.
 import { titleKey } from './ids.ts';
 import { OBJECTIVE_TARGET, BONUS_KEYS, PERK_POINTS, RANKS, RULES, domainOf, inDomain } from './rules.ts';
-import type { Domain, Perk } from './rules.ts';
-import { REWARD_ENTRY } from './rewards.ts';
+import type { Domain, Perk, Rank } from './rules.ts';
+import { REWARD_ENTRY, parseBand } from './rewards.ts';
 
 /**
  * Why an override was refused. `statuses`: a status is made in the Status dialog and kept in the library, not here.
@@ -54,13 +54,14 @@ function objective(v: unknown): { label: string; target: number; progress: numbe
   const progress = v.progress === undefined ? 0 : v.progress;
   return finite(progress) && progress >= 0 ? { label: v.label, target: v.target, progress } : null;
 }
-/** A title: a name, and when given a description and a bonus (a perk). */
-function title(v: unknown): { key: string; name: string; desc: string; bonus: Perk; gmOnly?: true } | null {
+/** A title: a name, and when given a description, a bonus (a perk) and a band (a rank; none is E, the rule titles' type holds one). */
+function title(v: unknown): { key: string; name: string; desc: string; bonus: Perk; band: Rank; gmOnly?: true } | null {
   if (!isObj(v) || typeof v.name !== 'string' || !v.name.trim()) return null;
   const desc = v.desc === undefined ? '' : v.desc, bonus = v.bonus === undefined ? {} : perk(v.bonus);
   // its key as written, else one made from its name (an override that renames a title keeps the key it gives)
   const key = titleKey(v.key) ?? titleKey(v.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''));
-  return typeof desc === 'string' && bonus && key ? { key, name: v.name, desc, bonus, ...(v.gmOnly === true ? { gmOnly: true } : {}) } : null;
+  const band = parseBand(v.band) ?? 'E';
+  return typeof desc === 'string' && bonus && key ? { key, name: v.name, desc, bonus, band, ...(v.gmOnly === true ? { gmOnly: true } : {}) } : null;
 }
 /** A path's tier: a list of perks. */
 const tier: Entry = v => (Array.isArray(v) && v.every(p => perk(p) !== null) ? v.map(perk) : null);

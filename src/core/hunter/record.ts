@@ -100,9 +100,9 @@ export const reevaluate = <H extends Named & Chronicled>(h: H, R: Rules): H | Re
  * What a title is given from: a rule title by its key (`{ key }`), a title written out (a reward's; with the key of the
  * rule title it copies, when it does, and the name of a title it takes the place of, `replaces`), or a bare name.
  */
-export type TitleSpec = string | { key: string } | { name: string; desc?: string; bonus?: Title['bonus']; key?: string; replaces?: string } & Powers;
+export type TitleSpec = string | { key: string } | { name: string; desc?: string; bonus?: Title['bonus']; key?: string; replaces?: string; band?: Title['band'] } & Powers;
 /** A title of the rules (`R.titles`): its key is what a hunter's title records (`Title.seedKey`), never its name. */
-export type SeedTitle = { key: string; name: string; desc?: string; bonus?: Title['bonus'] };
+export type SeedTitle = { key: string; name: string; desc?: string; bonus?: Title['bonus']; band?: Title['band'] };
 /** The rule title a spec names by its key, or null. */
 const seedOf = (spec: TitleSpec, seeds: readonly SeedTitle[]): SeedTitle | null =>
   (typeof spec === 'object' && spec.key ? seeds.find(s => s.key === spec.key) : undefined) ?? null;
@@ -134,12 +134,12 @@ export function giveTitle<H extends Titled & Chronicled>(h: H, spec: TitleSpec, 
   const seed = seedOf(spec, seeds), written = typeof spec === 'object' && 'name' in spec ? spec : null;
   const name = written || !seed ? specName(spec) : seed.name;
   if (!name || holdsTitle(h, spec, seeds)) return h;
-  // a reward's title keeps the words it was sent with; a rule title by its key alone takes the rule's
-  const src: { desc?: string; bonus?: Title['bonus'] } = written ?? seed ?? {};
+  // a reward's title keeps the words and band it was sent with; a rule title by its key alone takes the rule's
+  const src: { desc?: string; bonus?: Title['bonus']; band?: Title['band'] } = written ?? seed ?? {};
   const old = written?.replaces ? titleNamed(h, written.replaces, seeds) : undefined;
   // a written title's powers (powers.ts: its worn status and its active) go with it, also in another's place (the old
   // one's go with the old title)
-  const made = (at: string) => ({ id: at, name, desc: String(src.desc ?? '').slice(0, 500), bonus: { ...(src.bonus ?? {}) }, ...(seed ? { seedKey: seed.key } : {}), ...(written?.worn ? { worn: written.worn } : {}), ...(written?.active ? { active: written.active } : {}) });
+  const made = (at: string) => ({ id: at, name, desc: String(src.desc ?? '').slice(0, 500), bonus: { ...(src.bonus ?? {}) }, ...(seed ? { seedKey: seed.key } : {}), ...(src.band ? { band: src.band } : {}), ...(written?.worn ? { worn: written.worn } : {}), ...(written?.active ? { active: written.active } : {}) });
   return record({ ...h, titles: old ? h.titles.map(t => (t === old ? made(old.id) : t)) : [...h.titles, made(id)] }, { kind: 'title', name });
 }
 /** Set active, or unset when it is the active one. A title the hunter does not hold is refused (`no-title`). */

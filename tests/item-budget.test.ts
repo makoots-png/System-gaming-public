@@ -21,7 +21,9 @@ import { tiles } from '../src/core/combat/space.ts';
 import { LOOT_ITEMS, RARITIES, RECIPE_ITEMS, SAMPLE_WEARER, SHOP_ITEMS, STARTER_GEAR, itemOf, piece, valueOf } from '../src/core/registry/items.ts';
 import type { Grade, ItemDef, ItemTemplate, Rarity } from '../src/core/registry/items.ts';
 import type { StatusDef } from '../src/core/combat/effect-ops.ts';
-import { gradeBand, gradeOfSpend, itemSpend, middleBudget, powersSpend, spendLine, tierSpan } from '../src/core/registry/item-budget.ts';
+import { gradeBand, gradeOfSpend, itemSpend, middleBudget, powersSpend, spendLine, tierSpan, titleFit, titleLine, titleSpend } from '../src/core/registry/item-budget.ts';
+import type { TitleSpendable } from '../src/core/registry/item-budget.ts';
+import { BUILT_IN_FEATS } from '../src/core/registry/feats.ts';
 
 const ALL: readonly ItemDef[] = [...SHOP_ITEMS, ...LOOT_ITEMS, ...Object.values(STARTER_GEAR)];
 /** The recipe items hold their own spends and grades (tests/items.test.ts, "the recipe items"); the figures below are the older built-ins'. */
@@ -462,5 +464,92 @@ group('what a held thing\'s powers spend (item-stats 6.5)', () => {
       words: 'Spends 0.0 points. Rare− holds up to 3.1. Without what its active does that its worth line cannot weigh, which the budget cannot weigh: test it in a fight.',
       over: false,
     });
+  });
+});
+
+// ── what a title spends (item-stats 6.7), worked from the rules ──
+/** A title's active of the support kind, used once a fight: a heal of `text` on its holder. */
+const onceHeal = (text: string): Ability => ({
+  ...abilityOf('support', {
+    id: abilityId('last-light'), name: 'Last Light', aim: 'self', shape: { kind: 'self' }, range: tiles(0), delivery: { kind: 'sure' },
+    effect: { type: 'heal', by: 'hand', formula: f(text) },
+  }, RULES),
+  gates: [{ kind: 'uses', per: 'fight', n: 1 }],
+});
+/** What a flat heal once a fight spends at `rank`: its HP over the support's standard heal (1.5 * sup), one use in the reference fight, at the rate a worn worth pays. */
+const onceHealPoints = (hp: number, rank: Rank): number =>
+  hp / (1.5 * referenceBody('support', rank, RULES).sheet.sup) / RULES.fight.kit.referenceRounds * perAction(rank);
+/** Every title the app ships: each built-in feat's, and the rule titles. */
+const BUILT_IN_TITLES: readonly (TitleSpendable & { readonly name: string })[] = [
+  ...BUILT_IN_FEATS.flatMap(([, d]) => (d.rewards.title ? [d.rewards.title] : [])),
+  ...RULES.titles,
+];
+
+group('what a title spends (item-stats 6.7)', () => {
+  test('Still Standing, an E title of +1 Vitality, spends 1 of its band\'s 1 point; +10 max HP in its place would spend what the Vitality giving 10 max HP at E does, 16.7', () => {
+    const still = BUILT_IN_TITLES.find(t => t.name === 'Still Standing')!;
+    expect([still.band, still.bonus]).toEqual(['E', { vit: 1 }]);
+    expect(titleSpend(still, RULES)).toEqual({ points: 1, unweighed: [] });
+    const hpPerVit = (wearer('E', { vit: 10 }).hpMax - wearer('E').hpMax) / 10;
+    expect(hpPerVit).toBeCloseTo(0.6, 9);
+    expect(titleSpend({ bonus: { hpMax: 10 }, band: 'E' }, RULES).points).toBeCloseTo(10 / hpPerVit, 9);
+  });
+
+  test('a title with no band is weighed as an E title', () => {
+    expect(titleSpend({ bonus: { hpMax: 10 } }, RULES)).toEqual(titleSpend({ bonus: { hpMax: 10 }, band: 'E' }, RULES));
+    expect(titleLine({ bonus: { str: 1 } }, RULES).words).toBe('Spends 1.0 of a rank E title\'s 1 point: fits rank E.');
+  });
+
+  test('a D title of +1 Strength and a 30 HP shield once a fight spends the point and the shield\'s worth a use over the reference fight at D\'s rates', () => {
+    const shield = { ...shieldActive('30', { rounds: 0 }), gates: [{ kind: 'uses' as const, per: 'fight' as const, n: 1 }] };
+    const worth = 30 / (1.5 * referenceBody('support', 'D', RULES).sheet.sup);
+    const s = titleSpend({ bonus: { str: 1 }, band: 'D', active: shield }, RULES);
+    expect(s.points).toBeCloseTo(1 + worth / RULES.fight.kit.referenceRounds * perAction('D'), 9);
+    expect(s.unweighed).toEqual([]);
+  });
+
+  test('a title\'s powers spend at its band what a held thing\'s do at that rank: the band, not the holder, sets the rates', () => {
+    const p = { active: shieldActive('10 + 0.2 * hpmax') };
+    for (const band of RANKS) expect(titleSpend({ bonus: {}, band, ...p }, RULES), band).toEqual(powersSpend(p, band, RULES));
+  });
+
+  test('Last Light, a C title whose active heals 8 HP once a fight, spends 2.8 and its line says it fits rank C', () => {
+    const lastLight: TitleSpendable = { bonus: {}, band: 'C', active: onceHeal('8') };
+    expect(onceHealPoints(8, 'C')).toBeGreaterThan(RULES.titleBudget.D);
+    expect(onceHealPoints(8, 'C')).toBeLessThanOrEqual(RULES.titleBudget.C);
+    expect(titleSpend(lastLight, RULES).points).toBeCloseTo(onceHealPoints(8, 'C'), 9);
+    expect(titleFit(lastLight, RULES)).toBe('C');
+    expect(titleLine(lastLight, RULES)).toEqual({ words: `Spends ${onceHealPoints(8, 'C').toFixed(1)} of a rank C title's 3 points: fits rank C.`, over: false });
+  });
+
+  test('over its band\'s budget is said, never refused: the line names the band it fits, or says no band holds it', () => {
+    const hp = titleSpend({ bonus: { hpMax: 10 }, band: 'E' }, RULES).points;
+    // 10 max HP weighs less on a higher rank's wearer: S's 2.5 HP a Vitality point make it 4, inside S's 5
+    expect(titleFit({ bonus: { hpMax: 10 } }, RULES)).toBe('S');
+    expect(titleLine({ bonus: { hpMax: 10 } }, RULES)).toEqual({ words: `Spends ${hp.toFixed(1)} of a rank E title's 1 point: over, it fits rank S.`, over: true });
+    expect(titleLine({ bonus: { pre: 6 }, band: 'S' }, RULES)).toEqual({ words: 'Spends 6.0 of a rank S title\'s 5 points: over, past every band, rank S\'s 5 points too.', over: true });
+  });
+
+  test('a title spending less than its band holds fits its band and names the lowest band that holds it', () => {
+    expect(titleLine({ bonus: { str: 2 }, band: 'D' }, RULES)).toEqual({ words: 'Spends 2.0 of a rank D title\'s 2 points: fits rank D.', over: false });
+    expect(titleLine({ bonus: { str: 2 }, band: 'B' }, RULES)).toEqual({ words: 'Spends 2.0 of a rank B title\'s 3 points: fits rank D.', over: false });
+  });
+
+  test('the title\'s line names an active it cannot weigh, with the words to test it in a fight', () => {
+    const taunting = abilityOf('support', { id: abilityId('roar'), name: 'Roar', effect: null, ops: [{ op: 'threat', amount: 5 }] }, RULES);
+    expect(titleLine({ bonus: { pre: 1 }, band: 'E', active: taunting }, RULES).words)
+      .toBe('Spends 1.0 of a rank E title\'s 1 point: fits rank E. Without what its active does that its worth line cannot weigh, which the budget cannot weigh: test it in a fight.');
+  });
+
+  test('every built-in title has a band and spends no more than its band\'s budget', () => {
+    expect(BUILT_IN_TITLES.length).toBe(BUILT_IN_FEATS.filter(([, d]) => d.rewards.title).length + RULES.titles.length);
+    for (const t of BUILT_IN_TITLES) {
+      expect(t.band, t.name).toBeDefined();
+      expect(titleSpend(t, RULES).points, t.name).toBeLessThanOrEqual(RULES.titleBudget[t.band!]);
+    }
+  });
+
+  test('the check fails a title past its band: the old Still Standing, +10 max HP at E', () => {
+    expect(titleSpend({ bonus: { hpMax: 10 }, band: 'E' }, RULES).points).toBeGreaterThan(RULES.titleBudget.E);
   });
 });

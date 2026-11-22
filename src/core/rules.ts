@@ -107,6 +107,7 @@ const REF_HP = realIn(0.05, 20, 'a monster\'s max HP over the user\'s: 20 is pas
 const TIER_SHARE = realIn(0, 2, 'a share of the ability a kit replaces: 2 is twice it');
 const BURST = realIn(0, 10, 'bolts or curses a burst is worth: 10 is a fight in one go');
 const KEYSTONE_SPEND = realIn(0, 30, 'points one keystone may spend on its rank\'s sample wearer: 0 is a keystone that does nothing, 30 is every point a rank of ten levels gives');
+const TITLE_SPEND = realIn(0, 30, 'points a title may spend on its band\'s sample wearer: 0 says every title with a bonus is over, 30 is every point a rank of ten levels gives');
 /** The points a build path's main and second stat take of each level's points (registry/paths.ts `alloc`). */
 export const PATH_ALLOC = wholeIn(0, 10, 'points a path puts in a stat for each the level gives: 0 is none, 10 is past every build');
 /** A perk's points on a bonus key (a title's bonus, a path tier's perk): the bound of every flat bonus a parser reads. */
@@ -173,13 +174,17 @@ const SPEC = {
   },
   jobs: ['Fighter', 'Assassin', 'Mage', 'Tanker', 'Healer', 'Ranger', 'Necromancer'],
   extractJobs: ['Necromancer', 'Shadow Monarch'],
-  // each rule title has a key a granted title records (`Title.seedKey`), so a rename keeps it and a GM title of the same name is another
+  // Each rule title has a key a granted title records (`Title.seedKey`), so a rename keeps it and a GM title of the same
+  // name is another. Its band is the rank whose `titleBudget` it fits (item-stats 6.7): +2 on a stat spends 2, a rank D
+  // title's budget, and the GM-only +5 an S title's. The One Who Overcame Adversity was +20 max HP: 33 points at E and
+  // still 8 at S (item-budget.ts `BONUS_COST`, a Vitality point gives 0.6 max HP at E and 2.5 at S), past every band, so
+  // it is +2 Vitality, as its three neighbours are +2 on a stat.
   titles: [
-    { key: 'wolf-slayer', name: 'Wolf Slayer', desc: 'Killed the leader of a wolf pack.', bonus: { str: 2 } },
-    { key: 'overcame-adversity', name: 'One Who Overcame Adversity', desc: 'Survived a fight you were expected to lose.', bonus: { hpMax: 20 } },
-    { key: 'demon-hunter', name: 'Demon Hunter', desc: 'Defeated a demon in a low-rank gate.', bonus: { pre: 2 } },
-    { key: 'hunts-alone', name: 'The One Who Hunts Alone', desc: 'Cleared a gate without a party.', bonus: { agi: 2 } },
-    { key: 'king-of-shadows', name: 'King of Shadows', desc: 'Leads a shadow army.', bonus: { pow: 5 }, gmOnly: true },
+    { key: 'wolf-slayer', name: 'Wolf Slayer', desc: 'Killed the leader of a wolf pack.', bonus: { str: 2 }, band: 'D' as Rank },
+    { key: 'overcame-adversity', name: 'One Who Overcame Adversity', desc: 'Survived a fight you were expected to lose.', bonus: { vit: 2 }, band: 'D' as Rank },
+    { key: 'demon-hunter', name: 'Demon Hunter', desc: 'Defeated a demon in a low-rank gate.', bonus: { pre: 2 }, band: 'D' as Rank },
+    { key: 'hunts-alone', name: 'The One Who Hunts Alone', desc: 'Cleared a gate without a party.', bonus: { agi: 2 }, band: 'D' as Rank },
+    { key: 'king-of-shadows', name: 'King of Shadows', desc: 'Leads a shadow army.', bonus: { pow: 5 }, band: 'S' as Rank, gmOnly: true },
   ],
   conditions: BUILT_IN_STATUSES, // the built-in statuses: src/core/registry/statuses.ts
   // Each rarity's color and the rank whose Clear prices it (`clearOf`; economy design 2.2): a price is computed from the
@@ -221,6 +226,9 @@ const SPEC = {
     // Mending Aura 4, Ruler's Authority 5).
     cooldownRounds: real(3, 1, 20, 'rounds of the cooldown haste is weighed on: under 1 an ability is back each turn, 20 is past any fight'),
   },
+  // What a title may spend, in points on the sample wearer of its band (item-budget.ts `titleSpend`): the top of each
+  // band of the ideas file (features/ideas-feats-titles-rewards.md section 4: E 1, D 2, C 2 to 3, B 3, A 4, S 5 and more).
+  titleBudget: { E: of(1, TITLE_SPEND), D: of(2, TITLE_SPEND), C: of(3, TITLE_SPEND), B: of(3, TITLE_SPEND), A: of(4, TITLE_SPEND), S: of(5, TITLE_SPEND) },
   shadow: {
     maxAttempts: whole(3, 1, 20, 'tries at one corpse: 0 would offer an Extract that cannot be tried'),
     dcBase: of(10, DC), dcPerRank: whole(3, 0, 20, 'DC added for each rank the foe is above the hunter: 20 is the whole d20'),

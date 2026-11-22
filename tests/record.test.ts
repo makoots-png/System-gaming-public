@@ -11,6 +11,7 @@ import { day } from './fixtures/ids.ts';
 import type { Rank } from '../src/core/rules.ts';
 import { RULES, rankForLevel } from '../src/core/rules.ts';
 import { newHunter } from '../src/core/save.ts';
+import { parseSheetHunter } from '../src/core/hunter/hunter.ts';
 import type { Hunter } from '../src/core/save.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import type { Refused } from '../src/core/save-step.ts';
@@ -129,6 +130,22 @@ describe('a title\'s worn status (feature 1\'s notes 17.14)', () => {
     const h = giveTitle(hunter(), { name: 'Last Light', desc: '', active: ACTIVE }, 't1', SEEDS);
     expect(h.titles[0]!.active).toEqual(ACTIVE);
     expect(ok(writeTitle(h, 't1', { name: 'Renamed', desc: '', bonus: {} })).titles[0]!.active).toEqual(ACTIVE);
+  });
+});
+
+describe('a title\'s band (item-stats 6.7)', () => {
+  test('a written title keeps its band, in another\'s place too; a rule title by its key takes the rule\'s', () => {
+    const h = giveTitle(hunter(), { name: 'Last Light', desc: '', band: 'C' }, 't1', SEEDS);
+    expect(h.titles[0]!.band).toBe('C');
+    expect(giveTitle(h, { name: 'Last Light II', band: 'B', replaces: 'Last Light' }, 't2', SEEDS).titles.map(t => [t.id, t.band])).toEqual([['t1', 'B']]);
+    expect(giveTitle(hunter(), { key: 'wolf-slayer' }, 't1', [{ ...SEEDS[0]!, band: 'D' as Rank }]).titles[0]!.band).toBe('D');
+    expect(giveTitle(hunter(), { name: 'Plain' }, 't1', SEEDS).titles[0], 'none given, none held: read as E').not.toHaveProperty('band');
+  });
+
+  test('a held title keeps a band that is a rank through the hunter\'s repair, and loses one that is not', () => {
+    const held = (band: unknown) => parseSheetHunter(JSON.parse(JSON.stringify({ ...hunter(), id: 'h1', titles: [{ id: 't1', name: 'Last Light', desc: '', bonus: {}, band }] })))!.titles[0]!;
+    expect(held('C').band).toBe('C');
+    for (const band of ['c', 'X', 3, null]) expect(held(band), String(band)).not.toHaveProperty('band');
   });
 });
 

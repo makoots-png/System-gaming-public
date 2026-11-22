@@ -13,8 +13,8 @@ import type { Powers } from './registry/powers.ts';
 import type { ItemTemplate } from './registry/items.ts';
 import { parseSkill } from './registry/skills.ts';
 import type { SkillTemplate } from './registry/skills.ts';
-import { BONUS_KEYS, RULES } from './rules.ts';
-import type { Rules } from './rules.ts';
+import { BONUS_KEYS, RANKS, RULES } from './rules.ts';
+import type { Rank, Rules } from './rules.ts';
 import { refuse } from './save-step.ts';
 import type { Refused } from './save-step.ts';
 import type { BundleId } from './ids.ts';
@@ -25,8 +25,13 @@ import type { BundleId } from './ids.ts';
  * `replaces`: the name of a title the hunter may hold that this one takes the place of (record.ts `giveTitle`: that title
  * becomes this one, its id and whether it is active kept); a hunter who does not hold it gets this title as a new one.
  * Its `Powers` (registry/powers.ts) are the held title's (hunter.ts `Title`): given in fights while it is the active title.
+ * `band`: the rank whose budget it fits (`RULES.titleBudget`, item-budget.ts `titleSpend`); absent reads E (`bandOf`).
  */
-export type RewardTitle = { name: string; desc: string; bonus: Record<string, number>; key?: string; replaces?: string } & Powers;
+export type RewardTitle = { name: string; desc: string; bonus: Record<string, number>; key?: string; replaces?: string; band?: Rank } & Powers;
+/** A title's band read from outside data: a rank, or undefined (absent, or not a rank), which `bandOf` reads as E. */
+export const parseBand = (v: unknown): Rank | undefined => RANKS.find(r => r === v);
+/** The rank whose budget a title is weighed against: its band, E when it has none (item-stats 6.7). */
+export const bandOf = (t: { readonly band?: Rank }): Rank => t.band ?? 'E';
 /**
  * A status a reward puts on the hunter. `rounds: null` lasts until removed. `def` for a status the receiver may not know;
  * without it the receiver's rules name the key.
@@ -73,8 +78,8 @@ function listOf<T>(v: unknown, n: number, read: (x: unknown) => T | null): T[] {
 }
 
 /**
- * A title read from outside data: a name, or null; its bonus keys inside the bound; its powers by `parsePowers`, a title
- * whose worn status or active is past its size refused whole (null), as a skill is.
+ * A title read from outside data: a name, or null; its bonus keys inside the bound; its band a rank or none; its powers
+ * by `parsePowers`, a title whose worn status or active is past its size refused whole (null), as a skill is.
  */
 function title(v: unknown): RewardTitle | null {
   if (!isObj(v)) return null;
@@ -82,9 +87,9 @@ function title(v: unknown): RewardTitle | null {
   if (!name || powers === null) return null;
   const raw = isObj(v.bonus) ? v.bonus : {}, bonus: Record<string, number> = {};
   for (const k of BONUS_KEYS) { const n = whole(Object.hasOwn(raw, k) ? raw[k] : 0, -B.bonus, B.bonus, 0); if (n) bonus[k] = n; }
-  const key = titleKey(v.key), replaces = line(v.replaces, B.title);
+  const key = titleKey(v.key), replaces = line(v.replaces, B.title), band = parseBand(v.band);
   // a title in place of itself is that title
-  return { name, desc: typeof v.desc === 'string' ? v.desc.slice(0, B.titleDesc) : '', bonus, ...(key ? { key } : {}), ...(replaces && replaces !== name ? { replaces } : {}), ...powers };
+  return { name, desc: typeof v.desc === 'string' ? v.desc.slice(0, B.titleDesc) : '', bonus, ...(key ? { key } : {}), ...(replaces && replaces !== name ? { replaces } : {}), ...(band ? { band } : {}), ...powers };
 }
 /**
  * A status a reward gives: a key a status may have that is not a chip drawn from a hunter's state. Its def is read by
@@ -125,14 +130,14 @@ export function parseRewards(v: unknown): Rewards | null {
 }
 
 /**
- * The title named `name` as a reward carries it: a built-in title of the sender's rules brings its description and
- * bonus, any other name is a title without a bonus. Null for a blank name.
+ * The title named `name` as a reward carries it: a built-in title of the sender's rules brings its description, bonus
+ * and band, any other name is a title without a bonus. Null for a blank name.
  */
 export function titleReward(R: Pick<Rules, 'titles'>, name: string): RewardTitle | null {
   const n = name.trim().slice(0, REWARD_BOUNDS.title);
   if (!n) return null;
   const seed = R.titles.find(t => t.name === n);
-  return title({ name: n, desc: seed?.desc ?? '', bonus: seed?.bonus ?? {}, key: seed?.key });
+  return title({ name: n, desc: seed?.desc ?? '', bonus: seed?.bonus ?? {}, key: seed?.key, band: seed?.band });
 }
 
 /**

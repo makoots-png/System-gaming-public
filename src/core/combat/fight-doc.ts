@@ -29,6 +29,8 @@ import { counting } from './standing.ts';
 import { perceivedBy } from './sight.ts';
 import { cardOf, channelView, intentOf, tauntOf, usesLeft } from './fight-view.ts';
 import type { Fight, FightId, Refusal } from './fight-types.ts';
+import { MYTHIC_STATES } from './mythic.ts';
+import type { MythicStanding } from './mythic-types.ts';
 
 // ── bounds (the doc's reader uses the same numbers) ──
 /**
@@ -51,6 +53,12 @@ export const DOC_INTENT_LINES = 4, INTENT_LINE_MAX = 80;
 export const DOC_ZONE_RUNS = 200;
 /** The most tiles a doc's tile text and lit line describe: a 40 by 40 map, the largest a saved map is (registry/maps.ts). */
 export const DOC_TILES_MAX = 1600;
+/**
+ * Mythic standings the doc carries, the first rows' in the doc's order (a row past them shows as a plain monster). A
+ * standing is at most about 120 characters on the wire, so four fit in what the worst-case doc has to spare (protocol.ts
+ * `DOC_MAX`); a fight holds one mythic or two.
+ */
+export const DOC_MYTHICS = 4;
 /** The character of a tile the party has never seen, in the doc's tile text. */
 export const UNSEEN = '?';
 
@@ -97,6 +105,19 @@ export type DocIntent = {
 export type DocChannel = { readonly ability: AbilityId; readonly name: string; readonly charge: number; readonly max: number; readonly state: 'holding' | 'broken' | 'fired'; readonly factor: number };
 /** A taunt on a row: who taunted it and the rounds left (null until removed). */
 export type DocTaunt = { readonly by: CombatantId; readonly left: number | null };
+/**
+ * Where a mythic stands in its script, as the table shows it: the standing's own fields (combat/mythic-types.ts
+ * `MythicStanding`), except what a player may not see. While an omen stands `aim` is the row or tile it was aimed at, null
+ * when that row is one the party does not perceive (its place is not the party's to know), and `band` is how the mythic
+ * looked when it was announced, never its HP (`hpAt`): a monster's HP is a band on every phone.
+ */
+type StandingCommon = Omit<Extract<MythicStanding, { readonly at: 'calm' }>, 'at'>;
+export type DocStanding =
+  | (StandingCommon & { readonly state: 'calm' })
+  | (StandingCommon & {
+    readonly state: 'omen' | 'faltering'; readonly omen: Extract<MythicStanding, { readonly omen: unknown }>['omen'];
+    readonly aim: CombatantId | DocPlace | null; readonly band: Band;
+  });
 type DocRowBase = {
   readonly id: CombatantId;
   readonly name: string;
@@ -138,6 +159,8 @@ export type FightDocRow = DocRowBase & (
     readonly stagger: { readonly fill: number; readonly max: number; readonly staggered: number | null } | null;
     /** The target its threat table suggests (fight-view.ts `threatOf`); the table itself stays on the GM's phone. */
     readonly suggest: CombatantId | null;
+    /** The standing of a mythic's row in its script (`DocStanding`); absent on a row that plays no script (and on the wire). */
+    readonly standing?: DocStanding;
   }
   | (DocBody & { readonly kind: 'hunter'; readonly life: { readonly at: LifeState } })
   | (DocBody & { readonly kind: 'shadow'; readonly life: { readonly at: FoeLifeState } })
@@ -253,11 +276,12 @@ export function fightDoc(f: Fight | null, R: Rules, o: DocContext): FightDoc | n
   const zones = docZones(f, lit, ids, now, R), shownZones = new Set(zones.map(z => z.id as string));
   const hiddenRows = new Set(f.rows.filter(b => !ids.has(b.id)).map(b => b.id)), hiddenZones = new Set(f.zones.filter(z => !shownZones.has(z.id)).map(z => z.id));
   const currentId = f.phase === 'running' && ids.has(f.currentId) ? f.currentId : null;
+  const carried = shown(seen, currentId), scripted = new Set(carried.filter(b => b.mythic).slice(0, DOC_MYTHICS).map(b => b.id));
   return {
     ended: false, active: f.phase === 'running', by: o.by, id: f.id, at: o.at, now, currentId,
     ahead: f.phase === 'running' ? ahead(f.rows.filter(isUp), DOC_AHEAD + hiddenRows.size, R.fight).map(r => r.id).filter(id => ids.has(id)).slice(0, DOC_AHEAD) : [],
     grid: docGrid(f, lit), zones,
-    rows: shown(seen, currentId).map(b => docRow(f, b, now, R, o)),
+    rows: carried.map(b => docRow(f, b, now, R, o, ids, scripted)),
     log: f.log.filter(l => !l.rows.some(x => hiddenRows.has(x)) && !l.zones.some(x => hiddenZones.has(x))).map(l => l.text).slice(0, DOC_LOG),
     refused: f.phase === 'running' && o.refused && o.refused.at === now ? o.refused : null,
     ready: readyOf(f.rows.find(b => b.id === currentId), now), ...leftOf(f.rows.find(b => b.id === currentId)), ...armedOf(seen, R),
@@ -358,7 +382,7 @@ function keyOf(b: Body, o: DocContext): SheetKey | null {
   }
 }
 
-function docRow(f: Fight, b: Body, now: Tick, R: Rules, o: DocContext): FightDocRow {
+function docRow(f: Fight, b: Body, now: Tick, R: Rules, o: DocContext, shownIds: ReadonlySet<string>, scripted: ReadonlySet<CombatantId>): FightDocRow {
   const live = counting(b.statuses), k = cardOf(f, b, R), c = channelView(b, R);
   const base: DocRowBase = {
     id: b.id, name: b.name, side: b.side, key: keyOf(b, o), place: { x: b.place.x, y: b.place.y }, at: b.at, speed: b.speed,
@@ -382,7 +406,13 @@ function docRow(f: Fight, b: Body, now: Tick, R: Rules, o: DocContext): FightDoc
     name: i.name, target: aimOf(i.target),
     reveal: i.revealed ? { lines: i.lines.map(l => l.slice(0, INTENT_LINE_MAX)).slice(0, DOC_INTENT_LINES), radius: i.area?.radius ?? null, outer: i.area?.outer ?? null } : null,
   };
-  return { ...base, kind: 'monster', life, intent, stagger: k.stagger, suggest: k.threat?.suggest ?? null };
+  return { ...base, kind: 'monster', life, intent, stagger: k.stagger, suggest: k.threat?.suggest ?? null, ...(b.mythic && scripted.has(b.id) ? { standing: docStanding(b.mythic, b.sheet.hpMax, shownIds) } : {}) };
+}
+/** A mythic's standing for the party: an omen's aim on a row the doc does not carry is left out, and its HP at the announce is a band. */
+function docStanding(s: MythicStanding, hpMax: number, shownIds: ReadonlySet<string>): DocStanding {
+  if (s.at === 'calm') return { state: 'calm', script: s.script, phase: s.phase, beat: s.beat, since: s.since };
+  const aim = typeof s.aim === 'string' ? (shownIds.has(s.aim) ? s.aim : null) : { x: s.aim.x, y: s.aim.y };
+  return { state: s.at, script: s.script, phase: s.phase, beat: s.beat, since: s.since, omen: s.omen, aim, band: band(s.hpAt, hpMax) };
 }
 
 const aimOf = (aim: Place | CombatantId): CombatantId | DocPlace => typeof aim === 'string' ? aim : { x: aim.x, y: aim.y };
@@ -436,7 +466,7 @@ function statusWire(s: DocStatus, defs: Record<string, StatusDef>): Record<strin
 /**
  * A row on the wire. Its names: i id, n name, s side, k sheet key, p place, a at, v speed, b band, st statuses, sh shield,
  * sl shield's rounds, c channel, t taunt, ic the row's icon, d life (its state's index in `LIFE_STATES`, absent while up: 1 dead), q
- * kind; a monster's in intent, g stagger, u suggested target; a body's h HP, hm max HP, r stride, m move; a
+ * kind; a monster's in intent, g stagger, u suggested target, my a mythic's standing (`standingWire`); a body's h HP, hm max HP, r stride, m move; a
  * summon's o owner, l rounds left.
  */
 function rowWire(r: FightDocRow, defs: Record<string, StatusDef>): Record<string, unknown> {
@@ -451,12 +481,23 @@ function rowWire(r: FightDocRow, defs: Record<string, StatusDef>): Record<string
     const i = r.intent, g = r.stagger, v = i?.reveal ?? null;
     return {
       ...base, ...unlessNull('u', r.suggest),
+      ...(r.standing ? { my: standingWire(r.standing) } : {}),
       ...(g ? { g: { f: g.fill, m: g.max, ...unlessNull('s', g.staggered) } } : {}),
       ...(i ? { in: { n: i.name, t: typeof i.target === 'string' ? i.target : [i.target.x, i.target.y], ...(v ? { r: { l: v.lines, ...unlessNull('r', v.radius), ...unlessNull('o', v.outer) } } : {}) } } : {}),
     };
   }
   const body = { ...base, h: r.hp, hm: r.hpMax, r: r.stride, m: r.move };
   return r.kind === 'summon' ? { ...body, o: r.owner, ...unlessNull('l', r.left) } : body;
+}
+/**
+ * A mythic's standing on the wire: s script, p phase, b beat, t since; while an omen stands also z its state's index in
+ * `MYTHIC_STATES`, o the omen, a its aim (a row id or `[x, y]`, absent when the doc leaves it out) and h the band's index.
+ */
+function standingWire(m: DocStanding): Record<string, unknown> {
+  const base = { s: m.script, p: m.phase, b: m.beat, t: m.since };
+  if (m.state === 'calm') return base;
+  const a = m.aim;
+  return { ...base, z: MYTHIC_STATES.indexOf(m.state), o: m.omen, ...(a === null ? {} : { a: typeof a === 'string' ? a : [a.x, a.y] }), h: BANDS.indexOf(m.band) };
 }
 /** A zone on the wire: i id, n name, t its runs of tiles, o tone, l rounds left, a the row it moves with. */
 const zoneWire = (z: DocZone): Record<string, unknown> => ({ i: z.id, n: z.name, t: z.tiles, o: z.tone, ...unlessNull('l', z.left), ...unlessNull('a', z.anchor) });

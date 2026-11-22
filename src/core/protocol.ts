@@ -39,9 +39,11 @@ import type { Fight, ForcedFace } from './combat/fight-types.ts';
 import { tick } from './combat/timeline.ts';
 import { FOE_LIFE_STATES } from './combat/row-life.ts';
 import type { Tick } from './combat/timeline.ts';
-import { BANDS, DOC_AHEAD, DOC_DEFS_MAX, DOC_INTENT_LINES, DOC_LOG, DOC_READY, DOC_ROWS, DOC_STATUSES, DOC_TILES_MAX, DOC_ZONE_RUNS, INTENT_LINE_MAX, TABLE_REFUSALS, UNSEEN, fightWire, unpackBits } from './combat/fight-doc.ts';
-import type { Band, DocBurst, DocChannel, DocGrid, DocIntent, DocPlace, DocTaunt, DocRefusal, DocStatus, DocZone, FightDoc, FightDocRow } from './combat/fight-doc.ts';
+import { BANDS, DOC_AHEAD, DOC_DEFS_MAX, DOC_INTENT_LINES, DOC_LOG, DOC_MYTHICS, DOC_READY, DOC_ROWS, DOC_STATUSES, DOC_TILES_MAX, DOC_ZONE_RUNS, INTENT_LINE_MAX, TABLE_REFUSALS, UNSEEN, fightWire, unpackBits } from './combat/fight-doc.ts';
+import type { Band, DocBurst, DocChannel, DocGrid, DocIntent, DocStanding, DocPlace, DocTaunt, DocRefusal, DocStatus, DocZone, FightDoc, FightDocRow } from './combat/fight-doc.ts';
 import { TERRAIN, TERRAINS } from './combat/space.ts';
+import { MYTHIC_STATES } from './combat/mythic.ts';
+import { isMythicScriptId, mythicScriptOf, omensOf } from './registry/mythics.ts';
 import { MAX_ZONES, ZONE_NAME_MAX, zoneId } from './combat/zones.ts';
 import { deviceOf, hunterIdOf, parseDeviceId, parseEventId, parseRoomCode, parseSaveId, parseSheetKey } from './ids.ts';
 import { COIN_TEXT_MAX, SIDES, faceOf, rollId } from './coin.ts';
@@ -704,7 +706,10 @@ export type { Band, DocRefusal, FightDoc, FightDocRow, TableRefusal } from './co
  * but the row holds no type, and the type itself (up to `TYPE_MAX`, 40) would cost more than its picture. So the GM's
  * phone sends each row's picture as it answers it (row-icon.ts `rowIcon`, a hunter's emblem too), which costs no more
  * than a pick on every row did: the worst case is the same 54,167 with 944 to spare. The longest key a registry may hold
- * is `ICON_KEY_MAX` (20), which would be 840 for the rows and 644 to spare.
+ * is `ICON_KEY_MAX` (20), which would be 840 for the rows and 644 to spare. A mythic's standing in an omen (`my`, fight-doc.ts
+ * `standingWire`: the longest script id and omen key, an aim at a tile, a beat and a time of seven digits) is 105 characters:
+ * the doc carries at most `DOC_MYTHICS` (4) of them, 420 more, so the worst case is 54,611 (measured by the test), 500 to
+ * spare under the eight ninths. One standing a row for all 18 monsters would be 1,890: over.
  */
 export const DOC_MAX = 62000;
 /**
@@ -731,7 +736,7 @@ export const CODEX_DOC_ENTRIES = 200;
  * the personal gates' switch, hours and share of the loot (`RULES.solo`), and the economy (each rule's reason in
  * economy design 7.1), so a GM's edit prices an item the same on every phone. Laid over the player's own rules, never
  * written to its save. `feats.on`: the GM's switch for the feats the System notices (hunter/feats.ts); a doc without it
- * reads as on, and so does one without `trade.on`, the GM's trading switch. Every other field is required: each number is read in its rule's domain (`ruleNumber`).
+ * reads as on, and so does one without `trade.on`, the GM's trading switch; one without `mythic.scripts` reads as off. Every other field is required: each number is read in its rule's domain (`ruleNumber`).
  */
 export type RoomRules = {
   build: { enabled: boolean; playerPick: boolean };
@@ -739,6 +744,8 @@ export type RoomRules = {
   feats: { on: boolean };
   /** The GM's trading switch (`RULES.trade`): a doc without it reads as on. */
   trade: { on: boolean };
+  /** The GM's mythic switch (`RULES.fight.mythic.scripts`): a doc without it reads as off, so a room from before scripts plays none. */
+  mythic: { scripts: boolean };
   /** The rank whose Clear prices each rarity an item can carry (`RARITIES`); its color stays the phone's own. */
   rarities: RoomRarities;
   gradeStep: number;
@@ -870,6 +877,24 @@ function docTaunt(v: unknown): DocTaunt {
   const o = obj(v);
   return { by: rowId(own(o, 'b')), left: opt(own(o, 'l'), num(0, MAX_TOTAL), null) };
 }
+/**
+ * A mythic's standing on the wire (fight-doc.ts `standingWire`), or null when this build cannot read it: a script, a phase
+ * or an omen it lacks, or an omen that cannot be weakened standing as faltering. A row with none shows as a plain monster
+ * (as an icon key this build lacks shows its default), never refuses the doc.
+ */
+function docStanding(v: unknown): DocStanding | null {
+  return attempt(() => {
+    const o = obj(v), script = own(o, 's');
+    if (!isMythicScriptId(script)) return refuse();
+    const sc = mythicScriptOf(script), phase = int(0, sc.phases.length - 1)(own(o, 'p')), beat = int(0, MAX_TOTAL)(own(o, 'b')), since = time0(own(o, 't'));
+    const z = own(o, 'z');
+    if (z === undefined) return { state: 'calm', script, phase, beat, since };
+    const at = typeof z === 'number' && Number.isInteger(z) ? MYTHIC_STATES[z] : undefined;
+    const key = omensOf(sc).find(([k]) => k === own(o, 'o')), a = own(o, 'a');
+    if (!at || at === 'calm' || !key || (at === 'faltering' && key[1].weak === null)) return refuse();
+    return { state: at, script, phase, beat, since, omen: key[0], aim: a === undefined ? null : typeof a === 'string' ? rowId(a) : wirePlace(a), band: bandAt(own(o, 'h')) };
+  });
+}
 /** A key of the icon registry, or null: a key this build lacks is no error, the row's default shows (icons design 3). */
 const iconOrNull = (v: unknown): IconKey | null => (isIconKey(v) ? v : null);
 /**
@@ -891,7 +916,8 @@ function fightRow(v: unknown, defs: Record<string, StatusDef>): FightDocRow {
     const st = own(o, 'g'), stagger = st === undefined ? null : {
       fill: int(0, MAX_TOTAL)(own(obj(st), 'f')), max: int(0, MAX_TOTAL)(own(obj(st), 'm')), staggered: opt(own(obj(st), 's'), num(0, MAX_TOTAL), null),
     };
-    return { ...row, kind, life, intent: opt(own(o, 'in'), docIntent, null), stagger, suggest: opt(own(o, 'u'), rowId, null) };
+    const standing = opt(own(o, 'my'), docStanding, null);
+    return { ...row, kind, life, intent: opt(own(o, 'in'), docIntent, null), stagger, suggest: opt(own(o, 'u'), rowId, null), ...(standing ? { standing } : {}) };
   }
   const hpMax = int(1, MAX_TOTAL)(own(o, 'hm'));
   const body = { hp: int(0, hpMax)(own(o, 'h')), hpMax, stride: int(0, MAX_TILE + 1)(own(o, 'r')), move: int(0, MAX_TILE + 1)(own(o, 'm')) };
@@ -924,6 +950,15 @@ function docZone(v: unknown): DocZone {
     left: opt(own(o, 'l'), num(0, MAX_TOTAL), null), anchor: opt(own(o, 'a'), rowId, null),
   };
 }
+/** The rows with the standings past `DOC_MYTHICS` taken off, as the doc's builder leaves them out. */
+function withinMythics(rows: FightDocRow[]): FightDocRow[] {
+  let n = 0;
+  return rows.map(r => {
+    if (r.kind !== 'monster' || !r.standing || ++n <= DOC_MYTHICS) return r;
+    const { standing: _out, ...plain } = r;
+    return plain;
+  });
+}
 /** The fight doc as `fightWire` (src/core/combat/fight-doc.ts) puts it on the wire, with its bounds. */
 function fightDocOf(o: Rec): FightDoc {
   const docId = fightId(id(own(o, 'id'))), at = text(40)(own(o, 'at'));
@@ -933,7 +968,7 @@ function fightDocOf(o: Rec): FightDoc {
     ended: false, active: bool(own(o, 'active')), by: deviceId(own(o, 'by')), id: docId, at, now: time0(own(o, 'now')),
     currentId: nullOr(rowId)(own(o, 'currentId')), ahead: listOf(own(o, 'ahead'), DOC_AHEAD, rowId), grid: docGrid(own(o, 'grid')),
     zones: opt(own(o, 'zones'), v => listOf(v, MAX_ZONES, docZone), []),
-    rows: listOf(own(o, 'rows'), DOC_ROWS, v => fightRow(v, defs)), log: listOf(own(o, 'log'), DOC_LOG, text(LOG_LINE_MAX)),
+    rows: withinMythics(listOf(own(o, 'rows'), DOC_ROWS, v => fightRow(v, defs))), log: listOf(own(o, 'log'), DOC_LOG, text(LOG_LINE_MAX)),
     refused: attempt(() => opt(own(o, 'refused'), nullOr(docRefusal), null)),
     ready: docReady(own(o, 'ready')), ...docLeft(own(o, 'left')), ...docIds('armed', own(o, 'armed')), ...docIds('spent', own(o, 'spent')), ...docReacts(own(o, 'reacts')),
     ...docBurst(own(o, 'burst')),
@@ -1060,7 +1095,7 @@ function lootRank<K extends Rank>(v: unknown, rank: K): Rules['loot'][K] {
   const weights = Object.fromEntries(Object.keys(shipped).map(k => [k, ruleNumber(`loot.${rank}.weights.${k}`)(own(w, k))]));
   return { gold: goldRange(own(o, 'gold'), `loot.${rank}.gold`), weights } as Rules['loot'][K]; // the shipped table's keys, each read
 }
-/** The room's rules doc: every field required but the feats and trading switches (on when absent). */
+/** The room's rules doc: every field required but the feats and trading switches (on when absent) and the mythic switch (off when absent). */
 function roomRulesDoc(o: Rec): RoomRules {
   const b = obj(own(o, 'build')), so = obj(own(o, 'solo')), ra = obj(own(o, 'rarities')), lo = obj(own(o, 'loot'));
   const rule = (k: 'gradeStep' | 'saleShare' | 'usedUpShare' | 'reviveClears' | 'reviveLevelShare' | 'gateParty'): number => ruleNumber(k)(own(o, k));
@@ -1069,6 +1104,7 @@ function roomRulesDoc(o: Rec): RoomRules {
     solo: { personal: bool(own(so, 'personal')), hours: int(1, SOLO_BOUNDS.hours)(own(so, 'hours')), lootShare: ruleNumber('solo.lootShare')(own(so, 'lootShare')) },
     feats: { on: own(obj(opt(own(o, 'feats'), v => v, {})), 'on') !== false },
     trade: { on: own(obj(opt(own(o, 'trade'), v => v, {})), 'on') !== false },
+    mythic: { scripts: own(obj(opt(own(o, 'mythic'), v => v, {})), 'scripts') === true },
     rarities: eachRarity(r => ({ rank: choiceOf(RANKS)(own(obj(own(ra, r)), 'rank')) })),
     gradeStep: rule('gradeStep'),
     saleShare: rule('saleShare'),

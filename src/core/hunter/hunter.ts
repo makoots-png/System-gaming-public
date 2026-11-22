@@ -25,7 +25,7 @@ import type { Stats } from '../stats.ts';
 import { HUNTER_COLORS, BONUS_KEYS, RANKS, RULES as BASE_RULES, pathOf } from '../rules.ts';
 import { isIconKey } from '../registry/icons.ts';
 import type { Perk, Rank, Rules } from '../rules.ts';
-import { REWARD_BOUNDS, newRewards, parseRewards } from '../rewards.ts';
+import { REWARD_BOUNDS, newRewards, parseBand, parseRewards } from '../rewards.ts';
 import type { Rewards } from '../rewards.ts';
 import { newProgress, pendingTotal } from './progress.ts';
 import { levelOf } from './level.ts';
@@ -89,10 +89,11 @@ export type Loadout = { id: LoadoutId; name: string; slots: Partial<Record<Slot,
 /**
  * A title a hunter holds. `bonus`: while it is the active one, points on any bonus key (`BONUS_KEYS`).
  * `seedKey`: the key of the rule title it was given from (src/core/hunter/record.ts `giveTitle`), kept through a rename.
+ * `band`: the rank whose budget it fits (item-budget.ts `titleSpend`); absent reads E (rewards.ts `bandOf`).
  * Its `Powers` (registry/powers.ts), while it is the active title, are its hunter's in every fight at the hunter's rank:
  * its `worn` status on the row, its `active` an ability (rows.ts `heldPowers`).
  */
-export type Title = { id: TitleId; name: string; desc: string; bonus: Perk; seedKey?: string } & Powers;
+export type Title = { id: TitleId; name: string; desc: string; bonus: Perk; seedKey?: string; band?: Rank } & Powers;
 /** A text reward the GM honours at the table, held until the player redeems it. `at`: when it was given. */
 export type Boon = { id: BoonId; name: string; text: string; at: string };
 /**
@@ -223,6 +224,7 @@ export function fixHunter(saveRun: RepairRun, h: Hunter): void {
   h.conditions = conditions(R, h.conditions);
   h.titles = list(run, h.titles, 't', newTitle, t => {
     t.name = t.name.slice(0, 60); fixBonus(t.bonus); if (t.seedKey !== undefined && !titleKey(t.seedKey)) delete t.seedKey;
+    if (t.band !== undefined && !parseBand(t.band)) delete t.band;
     // its powers by their one parser; a part refused, or both when one is past its size, leave the title without them
     const powers = parsePowers(t) ?? {}; delete t.worn; delete t.active; Object.assign(t, powers);
   });

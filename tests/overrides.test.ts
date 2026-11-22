@@ -25,19 +25,24 @@ describe('every list rule has a reader', () => {
 describe('an override of a list rule', () => {
   test('a title that is not a title is refused by its index, and the GM\'s titles around it are kept', () => {
     const { overrides, refused } = parseOverrides({ titles: [{ name: 'Gatebreaker', desc: 'Broke a red gate.', bonus: { str: 3 } }, { desc: 'no name' }, 'Slayer', { name: 'Odd', bonus: { luck: 2 } }] });
-    expect(overrides).toEqual({ titles: [{ key: 'gatebreaker', name: 'Gatebreaker', desc: 'Broke a red gate.', bonus: { str: 3 } }] });
+    expect(overrides).toEqual({ titles: [{ key: 'gatebreaker', name: 'Gatebreaker', desc: 'Broke a red gate.', bonus: { str: 3 }, band: 'E' }] });
     expect(refused).toEqual([{ path: 'titles.1', reason: 'entry' }, { path: 'titles.2', reason: 'entry' }, { path: 'titles.3', reason: 'entry' }]);
+  });
+
+  test('a title\'s band is read when it is a rank; a title with none, or not a rank, is an E title', () => {
+    const { overrides } = parseOverrides({ titles: [{ name: 'Gatebreaker', band: 'C' }, { name: 'Slayer', band: 'Z' }] });
+    expect(overrides.titles).toEqual([{ key: 'gatebreaker', name: 'Gatebreaker', desc: '', bonus: {}, band: 'C' }, { key: 'slayer', name: 'Slayer', desc: '', bonus: {}, band: 'E' }]);
   });
 
   test('a title renamed by an override keeps the key it gives, and a GM-only title stays GM-only', () => {
     const { overrides } = parseOverrides({ titles: [{ key: 'wolf-slayer', name: 'Pack Breaker', gmOnly: true }] });
-    expect(overrides.titles).toEqual([{ key: 'wolf-slayer', name: 'Pack Breaker', desc: '', bonus: {}, gmOnly: true }]);
+    expect(overrides.titles).toEqual([{ key: 'wolf-slayer', name: 'Pack Breaker', desc: '', bonus: {}, band: 'E', gmOnly: true }]);
   });
 
   test('a GM\'s title without a description or a bonus, and an objective without its progress, still load', () => {
     const { overrides, refused } = parseOverrides({ titles: [{ name: 'Survivor' }], dailyTemplate: { objectives: [{ label: 'Laps', target: 5 }] } });
     expect(refused).toEqual([]);
-    expect(overrides).toEqual({ titles: [{ key: 'survivor', name: 'Survivor', desc: '', bonus: {} }], dailyTemplate: { objectives: [{ label: 'Laps', target: 5, progress: 0 }] } });
+    expect(overrides).toEqual({ titles: [{ key: 'survivor', name: 'Survivor', desc: '', bonus: {}, band: 'E' }], dailyTemplate: { objectives: [{ label: 'Laps', target: 5, progress: 0 }] } });
     expect(rulesOf(overrides).dailyTemplate.objectives).toEqual([{ label: 'Laps', target: 5, progress: 0 }]);
   });
 

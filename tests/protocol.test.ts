@@ -12,7 +12,9 @@ import { BONUS_KEYS } from '../src/core/rules.ts';
 import type { EventType, SheetKey } from '../src/core/protocol.ts';
 import { newHunter } from '../src/core/save.ts';
 import { RULES, domainOf } from '../src/core/rules.ts';
-import { roomRulesOf } from '../src/core/hunter/build.ts';
+import { MYTHIC_IDS, mythicScriptOf, omensOf } from '../src/core/registry/mythics.ts';
+import { roomRulesOf, withRoomRules } from '../src/core/hunter/build.ts';
+import type { Rules } from '../src/core/rules.ts';
 import { RARITIES } from '../src/core/registry/items.ts';
 import { SHOP_ITEMS, parseItem } from '../src/core/registry/items.ts';
 import { parseMonster, seedMonsters } from '../src/core/registry/monsters.ts';
@@ -22,7 +24,7 @@ import { newGate } from '../src/core/gates/gate.ts';
 import type { Gate, GateId } from '../src/core/gates/gate.ts';
 import type { Monster } from '../src/core/registry/monsters.ts';
 import { BUILT_IN_STATUSES } from '../src/core/registry/statuses.ts';
-import { DOC_AHEAD, DOC_DEFS_MAX, DOC_LOG, DOC_ROWS, DOC_STATUSES, DOC_TILES_MAX, DOC_ZONE_RUNS, fightWire, packBits } from '../src/core/combat/fight-doc.ts';
+import { DOC_AHEAD, DOC_DEFS_MAX, DOC_MYTHICS, DOC_LOG, DOC_ROWS, DOC_STATUSES, DOC_TILES_MAX, DOC_ZONE_RUNS, fightWire, packBits } from '../src/core/combat/fight-doc.ts';
 import { MAX_ZONES } from '../src/core/combat/zones.ts';
 import { LOG_LINE_MAX, MAX_STATUSES } from '../src/core/combat/fight-types.ts';
 import type { Fight } from '../src/core/combat/fight-types.ts';
@@ -1010,11 +1012,15 @@ describe('the fight doc', () => {
       intent: { name: 'i'.repeat(60), target: { x: 63, y: 63 }, reveal: { lines: many(4, () => 'l'.repeat(80)), radius: 63, outer: 63 } },
       stagger: { fill: 12345, max: 99999, staggered: 1.5 }, suggest: 'm-31',
     });
+    /** A mythic in an omen: the longest script id and omen key the registry holds, the phase it ends in, an aim at a tile, a beat and a time of seven digits. */
+    const longest = MYTHIC_IDS.map(sid => omensOf(mythicScriptOf(sid)).map(([k]) => ({ sid, k }))).flat().sort((a, b) => b.sid.length + b.k.length - a.sid.length - a.k.length)[0]!;
+    const standing = { state: 'omen', script: longest.sid, phase: mythicScriptOf(longest.sid).phases.length - 1, beat: 1234567, since: 1234567, omen: longest.k, aim: { x: 63, y: 63 }, band: 'critical' };
+    const rows = many(DOC_ROWS, worst).map((r, i) => i < DOC_MYTHICS ? { ...r, standing } : r);
     return {
       ...LIVE, by: `d-${'a'.repeat(37)}`, id: `f-${'x'.repeat(20)}`, now: 1234567, currentId: 'm-00', ahead: many(DOC_AHEAD, id),
       grid: { w: 40, h: 40, tiles: '#'.repeat(DOC_TILES_MAX), lit: '1'.repeat(DOC_TILES_MAX) },
       zones: many(MAX_ZONES, i => ({ id: `z${String(i).padStart(39, '0')}`, name: 'z'.repeat(40), tiles: '1599+1,'.repeat(40).slice(0, DOC_ZONE_RUNS - 1) + '1', tone: 'hinder', left: 12345.6, anchor: id(i) })),
-      rows: many(DOC_ROWS, worst), log: many(DOC_LOG, () => 'y'.repeat(LOG_LINE_MAX)),
+      rows, log: many(DOC_LOG, () => 'y'.repeat(LOG_LINE_MAX)),
       refused: { id: 'm-00', at: 1234567, reason: 'unknownAbility', n: 999999999 },
       ready: Object.fromEntries(many(12, i => [`${'r'.repeat(38)}${String(i).padStart(2, '0')}`, 1234567])),
       left: Object.fromEntries(many(12, i => [`${'r'.repeat(38)}${String(i).padStart(2, '0')}`, RULES.fight.kit.fightUses])),
@@ -1042,6 +1048,8 @@ describe('the fight doc', () => {
       expect(JSON.stringify(wire.defs ?? {}).length).toBeLessThanOrEqual(DOC_DEFS_MAX);
       expect(JSON.stringify(wire).length).toBeLessThanOrEqual(DOC_MAX * 8 / 9);
     }
+    const mine = (read: Raw) => read.rows.filter((r: Raw) => r.standing).length;
+    expect(mine(DOCS.fight(copy(fightWire(worstDoc(false) as never))) as Raw), 'the worst doc holds its mythics in an omen and they come back').toBe(DOC_MYTHICS);
     expect(LONGEST_ICON.length, 'the longest key the registry holds fits ICON_KEY_MAX').toBeLessThanOrEqual(ICON_KEY_MAX);
     const row = worstDoc(false).rows[0]!, wireRow = (r: Raw) => JSON.stringify((fightWire({ ...worstDoc(false), rows: [r] } as never) as Raw).rows[0]).length;
     const hunter = { ...row, kind: 'hunter', key: KEY, life: { at: 'dead' }, intent: undefined, stagger: undefined, suggest: undefined, hp: 99999, hpMax: 99999, stride: 64, move: 64 };
@@ -1078,6 +1086,23 @@ describe('the other room docs', () => {
     expect(DOCS.rules({ enabled: true, playerPick: true }), 'the old build doc is not read').toBeNull();
   });
 
+  test('the room carries the mythic switch: a doc without it reads as off, and a player\'s rules follow the GM\'s', () => {
+    const rules = roomRulesOf(RULES);
+    expect(rules.mythic, 'the shipped switch is off').toEqual({ scripts: false });
+    const on = { ...rules, mythic: { scripts: true } };
+    expect(DOCS.rules(copy(on))!.mythic).toEqual({ scripts: true });
+    expect(DOCS.rules(copy(rules))!.mythic).toEqual({ scripts: false });
+    const { mythic: _none, ...older } = on;
+    expect(DOCS.rules(copy(older))!.mythic, 'a doc without the switch reads as off').toEqual({ scripts: false });
+    for (const bad of [{ scripts: 'yes' }, { scripts: 1 }, {}]) expect(DOCS.rules(copy({ ...on, mythic: bad }))!.mythic, JSON.stringify(bad)).toEqual({ scripts: false });
+    for (const bad of [null, 'on']) expect(DOCS.rules(copy({ ...on, mythic: bad })), `a switch that is ${JSON.stringify(bad)} is no room's rules, as the trading switch's`).toBeNull();
+    const ownOn: Rules = { ...RULES, fight: { ...RULES.fight, mythic: { ...RULES.fight.mythic, scripts: true } } };
+    expect(roomRulesOf(ownOn).mythic, 'the GM\'s phone publishes its own switch').toEqual({ scripts: true });
+    expect(withRoomRules(RULES, on).fight.mythic.scripts, 'a player\'s phone plays by the room\'s switch').toBe(true);
+    expect(withRoomRules(ownOn, rules).fight.mythic.scripts, 'and a room with it off turns the player\'s own off').toBe(false);
+    expect(withRoomRules(RULES, on).fight.mythic.staggerTaken, 'the rest of the mythic rules stay the phone\'s').toBe(RULES.fight.mythic.staggerTaken);
+  });
+
   describe('the room\'s rules carry the economy, each number read in its rule\'s domain', () => {
     const doc = roomRulesOf(RULES);
     /** The doc with `patch` over it, through JSON as the wire carries it: a field set to undefined is not there. */
@@ -1087,7 +1112,7 @@ describe('the other room docs', () => {
 
     test('the shipped economy comes through as it went', () => {
       expect(DOCS.rules(copy(doc))).toEqual(doc);
-      expect(Object.keys(doc).sort()).toEqual(['build', 'feats', 'gateParty', 'gradeStep', 'loot', 'rarities', 'reviveClears', 'reviveLevelShare', 'saleShare', 'solo', 'trade', 'usedUpShare']);
+      expect(Object.keys(doc).sort()).toEqual(['build', 'feats', 'gateParty', 'gradeStep', 'loot', 'mythic', 'rarities', 'reviveClears', 'reviveLevelShare', 'saleShare', 'solo', 'trade', 'usedUpShare']);
     });
 
     test('a rule number past its domain is read at the domain\'s end, and a whole rule whole', () => {

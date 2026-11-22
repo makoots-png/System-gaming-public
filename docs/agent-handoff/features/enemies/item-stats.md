@@ -386,3 +386,39 @@ spend line. The title's card lists its powers, the active's amounts through `amo
 - **`missing` in a per-round op**: reads 0 there (no kit snapshot); a regen that grows as HP falls is a later unit.
 - **A passive skill's `worn` as `Powers`**: a skill is one of the two already (`type`); folding it in moves every skill.
 - **Charges of an active** (League's refillable potion): a `uses` gate per fight or per rest is the charge.
+
+## Build note: unit 11, a title's band and budget (Nov 22)
+
+**What exists.** `band?: Rank` on `Title` (hunter.ts) and `RewardTitle` (rewards.ts), read by `parseBand` in the
+reward's reader, the hunter's repair and a rule override's title reader (overrides.ts, where an absent band is E so the
+rule titles' type keeps one), and copied by `giveTitle` (record.ts: a written title's, or the rule's by its key);
+`bandOf` reads absent as E. `RULES.titleBudget` as designed (E 1, D 2, C 3, B 3, A 4, S 5). In
+`registry/item-budget.ts`: `titleSpend` (the bonus at `BONUS_COST` plus `powersSpend`, both at the band's rank),
+`titleFit` (the lowest band whose budget holds the title weighed at that band) and `titleLine` ("Spends 2.8 of a rank C
+title's 3 points: fits rank C.", "...: over, it fits rank S.", "...: over, past every band, rank S's 5 points too.").
+Every built-in title has a band from the ideas file's section 4 (Commended, the brief's own, E; the rule titles D, King
+of Shadows S). No screen shows the line yet: unit 12 draws it.
+
+**Proof.** `tests/item-budget.test.ts` ("what a title spends"), `tests/rewards.test.ts` ("a title's band"),
+`tests/record.test.ts` ("a title's band"), `tests/overrides.test.ts` (a rule title's band); `bun run test` green at
+`06784b2` (6233 pass, 0 fail). Files past the brief's list: `overrides.ts`, `hunter/record.ts`, `status-refs.ts` (the
+reward title's walk names `band`), `tests/overrides.test.ts`, `tests/record.test.ts`, `docs/dependency-map.md`.
+
+**Where the design did not hold.**
+- The ideas file reads 10 max HP as a point. `BONUS_COST` weighs it at what the Vitality giving it costs: a Vitality
+  point gives the sample wearer 0.6 max HP at E, 2.5 at S, so 10 max HP spends 16.7 at E and 4 at S. Still Standing
+  (+10 max HP, E) was 16.7 against 1, Marathoner (+2 Vitality, +10 max HP, C) 11.1 against 3, and The One Who Overcame
+  Adversity (+20 max HP) 33.3 at E and 8 at S, past every band. Each became the Vitality its band holds: Still Standing
+  +1 Vitality, Marathoner +3 Vitality, Overcame Adversity +2 Vitality (its three neighbours are +2 on a stat, band D).
+- "Last Light gives a once-a-fight heal and fits rank C" holds only for a small heal: a flat heal once a fight spends
+  about 0.354 points an HP at C (its HP over the support's standard heal, 1.5 × 26.2, over the 6-round reference fight,
+  times 83.4 points a standard action), so C's 3 points hold 8 HP (2.8 points) and 20 HP spends 7.1, past S's 5. Any
+  title active a table would call strong is over; the line says so and refuses nothing.
+
+**Calls the owner might have made otherwise.**
+- Max HP titles moved to Vitality rather than kept and named as over. To undo: "keep the ideas file's max HP on Still
+  Standing, Marathoner and Overcame Adversity and let their line say over".
+- The line names the lowest band that holds the title, also when that is below its own band ("Spends 2.0 of a rank B
+  title's 3 points: fits rank D."). To undo: "a title within its band's budget fits its band; name another band only when over".
+- A title's actives are weighed on the item's scale, so they barely fit. To undo: "a title's budget for its active is
+  its own number, not the stat points" (a rule for `titleBudget` per part, or a factor on `powersSpend` for titles).

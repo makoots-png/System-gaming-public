@@ -18,9 +18,12 @@ import type { Body, Origin, StackDef, Status } from '../src/core/combat/effect-o
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { fightId, line, reduce } from '../src/core/combat/fight.ts';
 import type { Command, Ctx, Fight, NewRow } from '../src/core/combat/fight.ts';
-import { DOC_ROWS, TABLE_REFUSALS, band, fightDoc, fightWire } from '../src/core/combat/fight-doc.ts';
+import { DOC_MYTHICS, DOC_ROWS, TABLE_REFUSALS, band, fightDoc, fightWire } from '../src/core/combat/fight-doc.ts';
 import type { DocContext, FightDoc, FightDocRow } from '../src/core/combat/fight-doc.ts';
 import type { DeviceId, SheetKey } from '../src/core/ids.ts';
+import type { OmenKey } from '../src/core/combat/mythic-types.ts';
+import type { CombatantId } from '../src/core/combat/ability-types.ts';
+import type { Place } from '../src/core/combat/space.ts';
 import type { IconKey } from '../src/core/registry/icons.ts';
 import { needs } from '../src/core/combat/resolve.ts';
 import { isUp } from '../src/core/combat/row-hp.ts';
@@ -531,6 +534,68 @@ describe('the fudge never reaches the table (notes-8-fudge.md section 3)', () =>
       expect(JSON.stringify(fightDoc(r.fight, RULES, docCtx()))).toBe(JSON.stringify(before));
       expect(wire(r.fight)).toBe(JSON.stringify(fightWire(before!)));
       fight = r.fight!;
+    }
+  });
+});
+
+describe('a mythic on the table (notes-11-keystones.md, design B.3 and B.10, unit MY6)', () => {
+  const RIDER = 'the-fourth-rider' as const, NAMED = 'named' as OmenKey;
+  const calm = { at: 'calm', script: RIDER, phase: 1, beat: 2, since: tick(800) } as const;
+  const calmDoc = { state: 'calm', script: RIDER, phase: 1, beat: 2, since: tick(800) };
+  const omen = (aim: CombatantId | Place, hpAt: number) => ({ ...calm, at: 'omen', omen: NAMED, aim, hpAt }) as const;
+  const veil: Status = { key: statusKey('hide'), def: { label: 'Hidden', desc: '', ops: [{ op: 'hidden', level: 1, start: 'unseen', ends: { hurt: true, revealed: true, dealt: true } }] }, source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0) };
+  const fight = play(add(row('A', 'party'), row('Rider', 'foe'), row('Sly', 'foe'), row('Rat', 'foe')), start(['A', 20], ['Rider', 10], ['Sly', 5], ['Rat', 4]));
+  const through = (d: FightDoc | null) => (DOCS.fight(JSON.parse(JSON.stringify(fightWire(live(d)))) as never) as FightDoc & { ended: false }).rows;
+
+  test('a player\'s doc carries a mythic\'s phase and its omen', () => {
+    const standing = omen(id('A'), Math.floor(HP_MAX * 0.4));
+    const doc = fightDoc(withBody(fight, 'Rider', { mythic: standing }), RULES, docCtx());
+    const shown = rowIn(doc, 'Rider');
+    expect(shown.kind === 'monster' && shown.standing).toEqual({ state: 'omen', script: RIDER, phase: 1, beat: 2, since: tick(800), omen: NAMED, aim: id('A'), band: 'bloodied' });
+    expect(through(doc).find(r => r.id === 'Rider'), 'the party\'s phone reads the same standing off the wire').toEqual(shown);
+    const resting = through(fightDoc(withBody(fight, 'Rider', { mythic: calm }), RULES, docCtx())).find(r => r.id === 'Rider');
+    expect(resting && resting.kind === 'monster' && resting.standing).toEqual(calmDoc);
+    expect(rowIn(doc, 'Rat'), 'a row that plays no script carries none').not.toHaveProperty('standing');
+  });
+
+  test('a mythic\'s HP stays off the table: the omen carries the band it was announced at, a tile aim stays a tile', () => {
+    const doc = fightDoc(withBody(fight, 'Rider', { mythic: omen(place(4, 5), 123456) }), RULES, docCtx());
+    const wire = JSON.stringify(fightWire(live(doc)));
+    expect(wire).not.toContain('123456');
+    expect(wire).not.toContain('hpAt');
+    const shown = rowIn(doc, 'Rider');
+    expect(shown.kind === 'monster' && shown.standing).toMatchObject({ aim: { x: 4, y: 5 }, band: 'healthy' });
+    expect(through(doc).find(r => r.id === 'Rider'), 'a tile aim comes back as a tile').toEqual(shown);
+  });
+
+  test('an omen\'s aim on a hidden body stays off the party\'s doc', () => {
+    const aimed = (sly: Fight) => withBody(sly, 'Rider', { mythic: omen(id('Sly'), HP_MAX) });
+    const hid = aimed(withBody(fight, 'Sly', { statuses: [veil] }));
+    const doc = fightDoc(hid, RULES, docCtx());
+    expect(doc && live(doc).rows.map(r => r.id)).toEqual(['A', 'Rider', 'Rat']);
+    const shown = rowIn(doc, 'Rider');
+    expect(shown.kind === 'monster' && shown.standing).toMatchObject({ state: 'omen', omen: NAMED, aim: null });
+    expect(JSON.stringify(fightWire(live(doc)))).not.toContain('Sly');
+    const seen = rowIn(fightDoc(aimed(fight), RULES, docCtx()), 'Rider');
+    expect(seen.kind === 'monster' && seen.standing).toMatchObject({ aim: id('Sly') });
+  });
+
+  test(`the doc carries at most ${DOC_MYTHICS} standings; a row past them shows as a plain monster, on the GM's phone and the player's`, () => {
+    const crowd = play(add(row('A', 'party'), ...Array.from({ length: DOC_MYTHICS + 2 }, (_, i) => row(`R${i}`, 'foe', { mythic: calm }))), start(['A', 20], ...Array.from({ length: DOC_MYTHICS + 2 }, (_, i): [string, number] => [`R${i}`, 10])));
+    const rows = through(fightDoc(crowd, RULES, docCtx()));
+    expect(rows.filter(r => r.kind === 'monster' && r.standing).map(r => r.id)).toEqual(Array.from({ length: DOC_MYTHICS }, (_, i) => `R${i}`));
+    const direct = live(fightDoc(crowd, RULES, docCtx())).rows;
+    expect(direct.filter(r => r.kind === 'monster' && r.standing)).toHaveLength(DOC_MYTHICS);
+  });
+
+  test('a standing this build cannot read shows the row as a plain monster and the doc still reads', () => {
+    const wire = JSON.parse(JSON.stringify(fightWire(live(fightDoc(withBody(fight, 'Rider', { mythic: omen(id('A'), HP_MAX) }), RULES, docCtx()))))) as { rows: { i: string; my?: Record<string, unknown> }[] };
+    const mine = wire.rows.find(r => r.i === 'Rider')!;
+    for (const bad of [{ ...mine.my, s: 'the-fifth-rider' }, { ...mine.my, o: 'nope' }, { ...mine.my, p: 'one' }, { ...mine.my, z: 9 }, { ...mine.my, z: 0 }, { ...mine.my, h: 9 }, { ...mine.my, a: 7 }, 'omen']) {
+      const read = DOCS.fight({ ...wire, rows: wire.rows.map(r => r === mine ? { ...r, my: bad } : r) } as never) as FightDoc | null;
+      const rider = read && live(read).rows.find(r => r.id === 'Rider');
+      expect(rider, JSON.stringify(bad)).toBeDefined();
+      expect(rider, JSON.stringify(bad)).not.toHaveProperty('standing');
     }
   });
 });

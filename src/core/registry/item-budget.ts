@@ -4,7 +4,8 @@
 // level of its rarity's rank, and the amounts of its powers (a passive and an active, `powersSpend`) are read on the
 // paper build each favours (worth.ts `bestScope`, item-stats 6.5). A tier's budget is a span of points cut in three
 // grades; the price reads the grade the maker picked (items.ts `valueOf`), never the spend, so the spend line only tells
-// the maker whether they agree. A block with no measure is named in `Spend.unweighed`, never counted as 0, as worth.ts does. Tests: tests/item-budget.test.ts.
+// the maker whether they agree. A block with no measure is named in `Spend.unweighed`, never counted as 0, as worth.ts does.
+// A title is weighed the same way at its band (item-stats 6.7, `titleSpend`), against `titleBudget`. Tests: tests/item-budget.test.ts.
 import { BONUS_HUNDREDTHS, RANKS } from '../rules.ts';
 import type { BonusKey, Perk, Rank, Rules } from '../rules.ts';
 import type { StatKey } from '../stats.ts';
@@ -24,6 +25,7 @@ import { KINDS } from './ability-kinds.ts';
 import { abilityWorth, bestScope, BUILD_OF, hpRate, referenceBody, usesPerRound, wornWorth } from './worth.ts';
 import type { WorthRules } from './worth.ts';
 import type { Powers } from './powers.ts';
+import { bandOf } from '../rewards.ts';
 
 /** The rule numbers the budget reads: the body and the fight's yardstick (worth.ts), each rarity's rank, the budget's share and the slots. */
 export type BudgetRules = WorthRules & Pick<Rules, 'rarities' | 'itemBudget' | 'slots'>;
@@ -187,6 +189,9 @@ const BONUS_COST: { readonly [K in BonusKey]: (r: Rates, R: BudgetRules) => numb
   armorPenFlat: (r, R) => penCost('armorPenFlat', r, R), resistPenFlat: (r, R) => penCost('resistPenFlat', r, R),
   drain: drainCost('drain'), haste: hasteCost, healPower: healPowerCost, shieldDrain: drainCost('shieldDrain'),
 };
+/** A bonus's points at the rank of `r`: each bonus key's points times its cost (`BONUS_COST`); any other key costs nothing, as the sheet reads nothing of it. */
+const bonusPoints = (bonus: Readonly<Partial<Record<BonusKey, number>>>, r: Rates, R: BudgetRules): number =>
+  (Object.keys(BONUS_COST) as BonusKey[]).reduce((n, k) => n + (bonus[k] ? bonus[k] * BONUS_COST[k](r, R) : 0), 0);
 /** What bonus key `k` costs for one of its sheet number: a `sheet` op adds to the number itself, a bonus point `unitOf` of it. */
 const perNumber = (k: BonusKey) => (r: Rates, R: BudgetRules): number => BONUS_COST[k](r, R) / unitOf(k);
 /**
@@ -275,7 +280,7 @@ function freeGuard(it: Spendable, R: BudgetRules): { readonly armor: number; rea
 export function itemSpend(it: Spendable, R: BudgetRules): Spend | null {
   if (it.type !== 'weapon' && it.type !== 'armor' && it.type !== 'accessory') return null;
   const rank = R.rarities[it.rar].rank, r = ratesAt(rank, R);
-  let points = (Object.keys(BONUS_COST) as BonusKey[]).reduce((n, k) => n + (it.bonus[k] ? it.bonus[k] * BONUS_COST[k](r, R) : 0), 0);
+  let points = bonusPoints(it.bonus, r, R);
   if (it.type === 'weapon') {
     const free = strikeDie(r.body, R) + R.itemBudget.weaponStep * RANKS.indexOf(rank);
     points += (dieMean(it.dice, r.body, R) - free) / r.phys;
@@ -286,8 +291,48 @@ export function itemSpend(it: Spendable, R: BudgetRules): Spend | null {
   return { points: points + powers.points, unweighed: powers.unweighed };
 }
 
-// ── the item maker's line (design 2.4) ──
+// ── what a title spends (item-stats 6.7) ──
+/** What a title's spend reads of it: its bonus, its band (absent is E) and its powers; a held title and a reward's both are one. */
+export type TitleSpendable = { readonly bonus: Readonly<Partial<Record<BonusKey, number>>>; readonly band?: Rank } & Powers;
+/** The rules a title's line reads: the budget's, and what a title of each band may spend. */
+export type TitleRules = BudgetRules & Pick<Rules, 'titleBudget'>;
+/**
+ * What a title spends, in points on the sample wearer at the first level of its band (`bandOf`: absent is E), weighed as
+ * an item at that rank is: its bonus at `BONUS_COST`, its powers by `powersSpend`. A title has no slot, weight or dice,
+ * so nothing of it is free. What the budget cannot weigh is named, as an item's is.
+ */
+export function titleSpend(t: TitleSpendable, R: BudgetRules): Spend {
+  const rank = bandOf(t), powers = powersSpend(t, rank, R);
+  return { points: bonusPoints(t.bonus, ratesAt(rank, R), R) + powers.points, unweighed: powers.unweighed };
+}
+/**
+ * The lowest band a title fits: the first rank, E up, whose `titleBudget` holds the title weighed at that rank (a scaling
+ * amount or a max HP bonus weighs less on a higher rank's wearer); null when it is past every band's, S's included.
+ */
+export const titleFit = (t: TitleSpendable, R: TitleRules): Rank | null =>
+  RANKS.find(at => titleSpend({ ...t, band: at }, R).points <= R.titleBudget[at] + 1e-9) ?? null;
+
+// ── the item maker's and the title's lines (design 2.4, item-stats 6.7) ──
 const one = (n: number): string => { const t = Math.abs(n).toFixed(1); return n < 0 && t !== '0.0' ? `−${t}` : t; };
+/** What a spend cannot weigh, in a sentence that leads with a space, or nothing when it weighs all of it. */
+function withoutWords(s: Spend): string {
+  const missing = s.unweighed.map(u => UNBUDGETED_WORDS[u]);
+  return missing.length ? ` Without ${missing.join(' and ')}, which the budget cannot weigh: test ${missing.length > 1 ? 'them' : 'it'} in a fight.` : '';
+}
+/** A budget's points in words: "1 point", "2.5 points". */
+const pointsWords = (n: number): string => `${Number(n.toFixed(1))} point${n === 1 ? '' : 's'}`;
+/**
+ * A title's spend line (item-stats 6.7): its spend against its band's budget, and the lowest band it fits (`titleFit`).
+ * `over` when the spend is past its band's budget: said, never refused, as an item's line does, so an S title "and
+ * more" is the GM's call. "Spends 1.2 of a rank E title's 1 point: over, it fits rank D."
+ */
+export function titleLine(t: TitleSpendable, R: TitleRules): { readonly words: string; readonly over: boolean } {
+  const band = bandOf(t), s = titleSpend(t, R), budget = R.titleBudget[band], fit = titleFit(t, R);
+  const spent = `Spends ${one(s.points)} of a rank ${band} title's ${pointsWords(budget)}`, without = withoutWords(s);
+  if (s.points <= budget + 1e-9) return { words: `${spent}: fits rank ${fit ?? band}.${without}`, over: false };
+  const where = fit === null ? `past every band, rank S's ${pointsWords(R.titleBudget.S)} too` : `it fits rank ${fit}`;
+  return { words: `${spent}: over, ${where}.${without}`, over: true };
+}
 const held = (b: GradeBand): string => (b.low === null ? `up to ${one(b.high)}` : `${one(b.low)} to ${one(b.high)}`);
 /**
  * The spend line under the item maker's preview: the points, what the chosen grade holds, the grade that holds the spend
@@ -296,9 +341,7 @@ const held = (b: GradeBand): string => (b.low === null ? `up to ${one(b.high)}` 
  */
 export function spendLine(s: Spend, R: BudgetRules, rar: Rarity, grade: Grade): { readonly words: string; readonly over: boolean } {
   const chosen = gradeBand(R, rar, grade), fit = gradeOfSpend(R, rar, s.points), label = (g: Grade): string => gradeLabel(rar, g);
-  const missing = s.unweighed.map(u => UNBUDGETED_WORDS[u]);
-  const without = missing.length ? ` Without ${missing.join(' and ')}, which the budget cannot weigh: test ${missing.length > 1 ? 'them' : 'it'} in a fight.` : '';
-  const spent = `Spends ${one(s.points)} points`;
+  const without = withoutWords(s), spent = `Spends ${one(s.points)} points`;
   if (fit === null) return { words: `${spent}, past the top of ${label(1)} (${one(gradeBand(R, rar, 1).high)}): stronger than any grade of ${label(0)}.${without}`, over: true };
   if (fit > grade) return { words: `${spent}, more than ${label(grade)} holds (${held(chosen)}): this is ${label(fit)} (${held(gradeBand(R, rar, fit))}).${without}`, over: true };
   if (fit < grade) return { words: `${spent}. ${label(grade)} holds ${held(chosen)}; this is ${label(fit)} (${held(gradeBand(R, rar, fit))}).${without}`, over: false };

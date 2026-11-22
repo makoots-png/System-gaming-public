@@ -397,3 +397,54 @@ second pass".
 - `principle-fix-root-causes`: B2's skips were fixed in the phase-end rule, not by widening a clock or a band.
 - `principle-explain-the-number`: every B4 miss was compared with the same body played with no script before a number
   moved; the brute body's 0.435 says the miss is not the script's.
+
+## MY6: the room doc (a mythic row's standing, the room's switch)
+
+Branch `mythic-6`. The switch `fight.mythic.scripts` stays off. No screen reads the doc yet (MY7).
+
+### What exists
+
+- `fight-doc.ts`: `DocStanding` (a monster row's `standing?`, absent on a row with none and off the wire): `state`,
+  `script`, `phase`, `beat`, `since`, and while an omen stands `omen`, `aim` and `band`. It is derived from
+  `MythicStanding` (`Omit<Extract<..., 'calm'>, 'at'>`), so a field MY5c adds to the standing is a compile error in
+  `docStanding` until the doc says whether it travels. `DOC_MYTHICS` (4): the doc carries the standings of the first four
+  mythic rows; later ones show as plain monsters. On the wire a row's `my`: `s p b t`, and in an omen `z` (index in
+  `MYTHIC_STATES`), `o`, `a` (row id or `[x, y]`, absent when left out), `h` (band index). 105 characters at worst.
+- `protocol.ts`: `docStanding` reads `my`; one that does not read (a script, phase or omen this build lacks, an omen that
+  cannot weaken standing as faltering, a bad band or aim) is no standing, the row shows plain and the doc still reads, as
+  an icon key this build lacks. `withinMythics` drops standings past `DOC_MYTHICS`. `RoomRules.mythic.scripts`, read
+  off when absent; `roomRulesOf` publishes it, `withRoomRules` lays it over a player's rules (`hunter/build.ts`).
+- Tests: `tests/fight-doc.test.ts` "a mythic on the table" (the two of B.10, plus HP off the table, the cap of four, an
+  unreadable standing); `tests/protocol.test.ts` "the worst-case doc on the wire" (four mythics in an omen, the longest
+  script id and omen key, a tile aim: 54,611 of the 55,111 cap, 500 to spare) and "the room carries the mythic switch".
+
+### Proof
+
+- With the hidden-aim guard taken out of `docStanding`, "an omen's aim on a hidden body" fails.
+- `bun run test`: `Ran 6246 tests across 141 files.` (0 fail). Browser files that write a fight straight into the store: `table-turn` (20 passed, 1 skipped), `map-extras` (11), `maps` (12), `kits` (10).
+
+### Where the design did not hold, and what was built instead
+
+- `hpAt` does not travel. A monster's HP is a band on every phone and `hpAt` is its exact HP when announced (with the
+  band it gives hpMax away). The doc carries the band the mythic had then. The burst answer is the GM's phone's to judge.
+- The doc field is `standing` and the state `state`, not `mythic` and `at`: the lint "a mythic's standing has one writer"
+  reads those words as a write to a row, and a doc's copy is not one.
+- `withRoomRules` builds `mythic` through `mythicOver` for the same lint (a `{ ...R.fight, mythic: ... }` line reads as a
+  copy of a row).
+- "A hidden body" is a row the party does not perceive: its id never reaches a player's phone. In play the aims are the
+  party's own rows or tiles, so it is a guard for a standing a GM edit or a later script could make, tested by hand.
+- Seven fields a row would not fit: 18 mythic rows in a worst doc are 1,890 characters, over the 944 the doc had to spare.
+  Hence the cap of four.
+
+### Calls the owner might have made otherwise
+
+- The cap of four standings (`DOC_MYTHICS`). Undo: raise it and `DOC_MAX`'s arithmetic fails first; or drop `beat`/`since`
+  from the wire if a screen does not need them (MY7 decides).
+- A doc without `mythic.scripts` reads as off (`trade` and `feats` read as on). A room made before scripts plays none.
+- The band stands in place of `hpAt`; a screen that wanted the burst meter would need a share instead.
+
+### Principles that changed a choice
+
+- `principle-boundary-discipline`: a standing the reader cannot place is dropped at the boundary, the row stays plain.
+- `principle-type-system-discipline`: `DocStanding` is derived from the standing's type so a new field cannot be missed.
+- `principle-test-behavior-not-implementation`: the hidden-aim test failed when the guard was removed.
