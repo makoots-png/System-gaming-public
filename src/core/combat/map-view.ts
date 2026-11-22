@@ -24,7 +24,8 @@ import { isUp } from './row-hp.ts';
 import { lifeWord } from './row-life.ts';
 import { anchorOf, zoneTiles, zoneTone } from './zones.ts';
 import type { ZoneId, ZoneTone } from './zones.ts';
-import { aims, cardOf, onMap, readyIn, spotOf } from './fight-view.ts';
+import { aims, cardOf, mythicSeenOf, mythicSeenOfDoc, omenMoveOf, onMap, readyIn, spotOf } from './fight-view.ts';
+import type { MythicSeen } from './fight-view.ts';
 import type { Aiming, Spot } from './fight-view.ts';
 import type { Fight, FightId } from './fight-types.ts';
 import { rowIcon } from './row-icon.ts';
@@ -84,10 +85,23 @@ export type Extras = {
  * viewer may know them), or, quieter, the target its threat suggests while no intent is set.
  */
 export type MapAimLine = {
-  readonly kind: 'intent' | 'suggest'; readonly to: Place; readonly area: readonly Place[] | null; readonly revealed: boolean;
+  readonly kind: 'intent' | 'suggest' | 'omen'; readonly to: Place; readonly area: readonly Place[] | null; readonly revealed: boolean;
   /** What is coming, said at the line's end once revealed: the ability's name and what it does (null before, and for a suggestion). */
   readonly words: { readonly name: string; readonly what: string | null } | null;
 };
+/**
+ * A mythic's standing omen as a line from its token (B.5, "The map"): to the body or tile it is aimed at, with the tiles of
+ * an area move's reach around it, its name and when it lands said at the end. A move on the whole field, or an aim the
+ * phone may not know (the doc left it out), draws none.
+ */
+function omenLine(m: MythicSeen | null, from: Place, at: (aim: CombatantId | Place) => Place | null, grid: Grid): MapAimLine | null {
+  const aimed = m?.omen?.aim, found = m && omenMoveOf(m);
+  if (!m || !found || !aimed || found.move.reach === 'field') return null;
+  const to = at(typeof aimed === 'string' ? aimed : place(aimed.x, aimed.y));
+  if (!to) return null;
+  const area = found.move.kind === 'blast' ? (({ hit, ring }) => [...hit, ...ring])(tilesOf({ kind: 'radius', radius: tiles(found.move.reach), ring: null }, from, to, grid)) : null;
+  return { kind: 'omen', to, area, revealed: true, words: { name: found.omen.name, what: m.omen!.faltering ? 'Weakened: lands on its next turn' : 'Lands on its next turn' } };
+}
 const NO_EXTRAS: Extras = { shield: null, stagger: null, channel: null, taunted: false, reacted: false };
 
 /** The band's share of a ring: the middle of the band (fight-doc.ts `band`), so a ring never claims more than a player may know. */
@@ -151,7 +165,7 @@ export function fightBodies(f: Fight, R: OpRules & Pick<Rules, 'dice'>, mine: (b
         channel: k.channel && { charge: k.channel.charge, max: k.channel.max, state: k.channel.state }, taunted: k.taunt !== null,
         reacted: b.armed?.spent === true,
       },
-      aim: to ? { kind: i ? 'intent' : 'suggest', to, area, revealed: i ? i.revealed : false, words: i && i.revealed ? { name: i.name, what: i.lines[0] ?? null } : null } : null,
+      aim: omenLine(mythicSeenOf(b), b.place, at, f.grid) ?? (to ? { kind: i ? 'intent' : 'suggest', to, area, revealed: i ? i.revealed : false, words: i && i.revealed ? { name: i.name, what: i.lines[0] ?? null } : null } : null),
       summon: b.kind === 'summon' ? { owner: b.owner, left: k.summon } : null,
       unseen: unseen(b), word: lifeWord(b), icon: rowIcon(b, hunterOf ? hunterOf(b) : null),
     };
@@ -182,7 +196,7 @@ export function docBodies(rows: readonly FightDocRow[], mine: (r: FightDocRow) =
       const i = r.intent, to = i ? at(i.target) : r.suggest ? at(r.suggest) : null, v = i?.reveal ?? null;
       const shape: Shape | null = v && v.radius !== null ? { kind: 'radius', radius: tiles(v.radius), ring: v.outer === null ? null : { outer: tiles(v.outer), share: percent(50) } } : null;
       const area = shape && to ? (({ hit, ring }) => [...hit, ...ring])(tilesOf(shape, from, to, grid)) : null;
-      const aim: MapAimLine | null = to ? { kind: i ? 'intent' : 'suggest', to, area, revealed: v !== null, words: i && v ? { name: i.name, what: v.lines[0] ?? null } : null } : null;
+      const aim: MapAimLine | null = omenLine(mythicSeenOfDoc(r, {}), from, at, grid) ?? (to ? { kind: i ? 'intent' : 'suggest', to, area, revealed: v !== null, words: i && v ? { name: i.name, what: v.lines[0] ?? null } : null } : null);
       return { ...base, ring: { share: BAND_SHARE[r.band], band: r.band }, stride: tiles(0), dash: tiles(0), bars: null, aim };
     }
     return { ...base, ring: ringOf(true, r.hp, r.hpMax), stride: tiles(r.stride), dash: tiles(r.move), bars: { hp: [r.hp, r.hpMax], mana: null, fatigue: null }, aim: null };
@@ -821,6 +835,8 @@ export type HotbarSlot = {
   readonly icon: IconKey;
   readonly wait: number; readonly item: boolean; readonly pinned: boolean;
   readonly left: number | null; readonly react: 'arm' | 'armed' | 'spent' | null;
+  /** What it does to the omen standing ("cancels it", "weakens it", fight-view.ts `answersBy`); null when it answers none. */
+  readonly answers: string | null;
 };
 /**
  * What the hotbar knows of a body's kits: its armed reaction (`Body.armed`, or what a player's phone armed) and its uses
@@ -829,6 +845,8 @@ export type HotbarSlot = {
 export type HotbarKit = {
   readonly armed?: { readonly ability: string; readonly spent: boolean } | null; readonly left?: Readonly<Record<string, number>>;
   readonly itemOf?: (id: ItemId) => IconItem | null;
+  /** What each ability does to the omen standing, by ability id (`answersBy`); absent: none answers. */
+  readonly answers?: Readonly<Record<string, string>>;
 };
 /** The most abilities pinned beside the attack. */
 export const PINS = 4;
@@ -844,7 +862,7 @@ export function hotbar(abilities: readonly Ability[], readyAt: Readonly<Record<s
   const react = (a: Ability): HotbarSlot['react'] => !a.react ? null : kit.armed && kit.armed.ability === a.id ? (kit.armed.spent ? 'spent' : 'armed') : 'arm';
   const slot = (a: Ability): HotbarSlot => ({
     id: a.id, name: a.name, icon: abilityIcon(a, kit.itemOf ?? (() => null)), ...costOf(a, costCut), wait: readyIn(readyAt, a.id, now, R), item: itemOfAbility(a) !== null, pinned: chosen.includes(a.id),
-    left: kit.left && Object.hasOwn(kit.left, a.id) ? kit.left[a.id]! : null, react: react(a),
+    left: kit.left && Object.hasOwn(kit.left, a.id) ? kit.left[a.id]! : null, react: react(a), answers: kit.answers?.[a.id] ?? null,
   });
   const attack = abilities.filter(a => a.id === ATTACK_ID);
   return {

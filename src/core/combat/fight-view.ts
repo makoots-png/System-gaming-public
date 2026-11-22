@@ -7,6 +7,11 @@
 
 import type { Rules } from '../rules.ts';
 import { dist, place, reachable } from './space.ts';
+import { bandOf, mythicScriptOf } from '../registry/mythics.ts';
+import { clockOut, enraged, heldAtGate } from './mythic.ts';
+import type { MythicState } from './mythic.ts';
+import type { AnswerOutcome, Interrupt, MythicMove, MythicScript, MythicScriptId, MythicStanding, Omen, OmenAim, OmenKey } from './mythic-types.ts';
+import type { DocStanding } from './fight-doc.ts';
 import { inRange, whoIsIn } from './resolve.ts';
 import type { Grid, Place, MoveReach, Side, Tiles } from './space.ts';
 import { acted, ahead, paceCost, roundOf, roundsOf, tick } from './timeline.ts';
@@ -295,3 +300,211 @@ export const stepToward = (spots: readonly Spot[], by: CombatantId, target: Comb
 /** Away: the reachable tile farthest from the target, with the same ties. Null when no tile is farther than where `by` stands. */
 export const stepAway = (spots: readonly Spot[], by: CombatantId, target: CombatantId, stride: Tiles, grid: Grid): MoveReach | null =>
   stepBy(spots, by, target, stride, grid, (d, best) => d > best);
+
+// ── a mythic's strip and omen banner (notes-11-keystones.md B.5, unit MY7) ──
+
+/** A tile as the doc carries it: plain numbers. */
+type Spot2 = { readonly x: number; readonly y: number };
+/**
+ * A mythic row as a screen reads it, from the GM's fight (`mythicSeenOf`) or from the room doc (`mythicSeenOfDoc`), so both
+ * phones say the same words. `omen` is the standing omen with its aim (null: the doc left it out, a row the party does not
+ * perceive). The GM's phone also knows its exact HP and whether it is held at its gate; a table knows only the band the doc says.
+ */
+export type MythicSeen = {
+  readonly id: CombatantId; readonly name: string;
+  readonly script: MythicScriptId; readonly phase: number; readonly beat: number; readonly since: Tick;
+  readonly omen: { readonly key: OmenKey; readonly faltering: boolean; readonly aim: Spot2 | CombatantId | null } | null;
+  readonly hp: { readonly hp: number; readonly hpMax: number } | null;
+  readonly bandWord: string | null;
+  readonly held: boolean | null;
+};
+/** The rows an omen's words name: their ids, names and sides. */
+export type Named = { readonly id: CombatantId; readonly name: string };
+
+/** The GM's row of a mythic as a screen reads it; null for a row that plays no script. */
+export function mythicSeenOf(b: Body): MythicSeen | null {
+  const s = b.mythic;
+  if (!s) return null;
+  const omen = s.at === 'calm' ? null : { key: s.omen, faltering: s.at === 'faltering', aim: typeof s.aim === 'string' ? s.aim : { x: s.aim.x, y: s.aim.y } };
+  return { id: b.id, name: b.name, script: s.script, phase: s.phase, beat: s.beat, since: s.since, omen, hp: { hp: rowHp(b), hpMax: b.sheet.hpMax }, bandWord: null, held: heldAtGate(b) };
+}
+/** A mythic's standing in the room doc as a screen reads it; null when the row carries none. `words` says each band. */
+export function mythicSeenOfDoc(r: { readonly id: CombatantId; readonly name: string; readonly band: string; readonly standing?: DocStanding }, words: Readonly<Record<string, string>>): MythicSeen | null {
+  const s = r.standing;
+  if (!s) return null;
+  const omen = s.state === 'calm' ? null : { key: s.omen, faltering: s.state === 'faltering', aim: s.aim };
+  return { id: r.id, name: r.name, script: s.script, phase: s.phase, beat: s.beat, since: s.since, omen, hp: null, bandWord: words[r.band] ?? r.band, held: null };
+}
+
+const plural = (n: number, w: string): string => `${n} ${w}${n === 1 ? '' : 's'}`;
+/** The state `standOf` gives: the readers of mythic.ts read only a standing's script, phase and clock, never its state. */
+const CALM: MythicState = 'calm';
+/** A standing of `m` as the readers of mythic.ts take it. It is read here and never put on a row (mythic.ts is the one writer). */
+const standOf = (m: MythicSeen): MythicStanding => ({ at: CALM, script: m.script, phase: m.phase, beat: m.beat, since: m.since });
+/** Whole rounds from `now` to the end of `m`'s phase's clock, at least 1 while it has not run out. */
+const clockLeft = (m: MythicSeen, now: Tick, R: { readonly fight: Pick<Rules['fight'], 'round'> }): number => {
+  const p = mythicScriptOf(m.script).phases[m.phase]!;
+  return Math.max(0, Math.ceil((m.since + p.clock * R.fight.round - now) / R.fight.round));
+};
+/** How often the script's enraged rotation lands its doom: "every turn", "every other turn" or "N turns in M". */
+function doomRate(script: MythicScript): string {
+  const r = script.enraged, k = r.filter(b => b.kind === 'omen').length;
+  return k === r.length ? 'every turn' : k * 2 === r.length ? 'every other turn' : `${k} turns in ${r.length}`;
+}
+/** The names of the doom omens of the enraged rotation, in order, once each. */
+const doomNames = (script: MythicScript): string => [...new Set(script.enraged.flatMap(b => b.kind === 'omen' ? [script.omens[b.omen]!.name] : []))].join(' and ');
+
+/**
+ * The mythic strip's four lines (B.5): the name, the phase, its HP and where its gate is, and its clock. `share` and `gate`
+ * (0 to 1) draw the HP bar and its notch, null where the phone does not know the HP. `note` is the phase's own line, shown
+ * until the mythic's next turn. `now` is the fight's time.
+ */
+export type MythicStrip = {
+  readonly name: string; readonly phase: string; readonly hp: string; readonly clock: string;
+  readonly share: number | null; readonly gate: number | null; readonly note: string | null;
+  /** The GM's line on an act beat: the next omen and when ("Next omen: Stars Fall, in 2 turns."); null with an omen standing or none in the rotation. */
+  readonly ahead: string | null;
+  readonly mark: 'gate' | 'held' | 'enraged' | 'clock' | 'last';
+};
+export function mythicStrip(m: MythicSeen, now: Tick, R: { readonly fight: Pick<Rules['fight'], 'round'> }): MythicStrip {
+  const script = mythicScriptOf(m.script), p = script.phases[m.phase]!, last = m.phase >= script.phases.length - 1;
+  const stand = standOf(m), gate = bandOf(script, m.phase).gate, out = clockOut(stand, now, R), left = clockLeft(m, now, R);
+  const next = last ? null : script.phases[m.phase + 1]!;
+  const acted = m.omen !== null || m.beat > 0;
+  const hpWord = m.hp ? `HP ${Math.round(m.hp.hp / m.hp.hpMax * 100)}%` : m.bandWord ?? 'HP unknown';
+  let mark: MythicStrip['mark'], hp: string, clock: string;
+  if (p.ends === 'clock') {
+    mark = 'clock'; hp = `${hpWord} · damage does not reach it`;
+    clock = out && next ? `Its next turn starts phase ${m.phase + 2}: ${next.name}.` : `Survive ${plural(Math.max(1, left), 'more round')}.`;
+  } else if (m.held === true) {
+    mark = 'held'; hp = `${hpWord} · held at the gate`;
+    clock = acted && next ? `Its next turn starts phase ${m.phase + 2}: ${next.name}.` : `Clock: ${plural(left, 'round')} left`;
+  } else if (out) {
+    mark = 'enraged'; hp = last ? `${hpWord} · last phase` : `${hpWord} · gate at ${Math.round(gate * 100)}%`;
+    clock = `Enraged: ${doomNames(script)} ${doomRate(script)}.`;
+  } else {
+    mark = last ? 'last' : 'gate'; hp = last ? `${hpWord} · last phase` : `${hpWord} · gate at ${Math.round(gate * 100)}%`;
+    clock = `Clock: ${plural(left, 'round')} left`;
+  }
+  return {
+    name: script.name, phase: `Phase ${m.phase + 1} of ${script.phases.length}: ${p.name}`, hp, clock, mark,
+    share: m.hp ? m.hp.hp / m.hp.hpMax : null, gate: p.ends === 'gate' && !last ? gate : null,
+    note: m.omen === null && m.beat === 0 ? p.line : null, ahead: m.omen === null ? omenAhead(m, now, R) : null,
+  };
+}
+/** The next omen beat of the rotation it plays, from the beat its next turn takes: "Next omen: Stars Fall, on its next turn." */
+function omenAhead(m: MythicSeen, now: Tick, R: { readonly fight: Pick<Rules['fight'], 'round'> }): string | null {
+  const script = mythicScriptOf(m.script), rotation = enraged(standOf(m), now, R) ? script.enraged : script.phases[m.phase]!.rotation;
+  for (let d = 0; d < rotation.length; d++) {
+    const beat = rotation[(m.beat + d) % rotation.length]!;
+    if (beat.kind === 'omen') return `Next omen: ${script.omens[beat.omen]!.name}, ${d === 0 ? 'on its next turn' : `in ${plural(d + 1, 'turn')}`}.`;
+  }
+  return null;
+}
+
+/**
+ * The GM's hand on a mythic, in words (B.5): the landing turn's title and the two buttons it offers while an omen stands,
+ * and Next phase with the question it asks. `next` is null in the last phase; `hp` is the share its HP drops to when the
+ * next phase is a gate phase, null for a clock phase (whose HP stays).
+ */
+export type MythicHand = {
+  readonly landTitle: string | null; readonly land: string | null; readonly drop: string | null;
+  readonly next: { readonly label: string; readonly ask: string; readonly yes: string; readonly no: string } | null;
+};
+export function mythicHand(m: MythicSeen): MythicHand {
+  const script = mythicScriptOf(m.script), omen = m.omen && script.omens[m.omen.key], next = script.phases[m.phase + 1];
+  const to = next && next.ends === 'gate' ? ` Its HP drops to ${Math.round(next.from * 100)}%.` : '';
+  return {
+    landTitle: omen ? `${script.name}'s turn: the omen lands.` : null, land: omen ? `Land ${omen.name}` : null, drop: omen ? 'Drop the omen' : null,
+    next: next ? { label: 'Next phase', ask: `Move ${script.name} to ${next.name} now?${to}`, yes: 'Move it', no: 'Cancel' } : null,
+  };
+}
+
+/** The ops of a status that answer an omen, in the words of the answer line. */
+const INTERRUPT_WORDS: Readonly<Record<Interrupt, string>> = { hold: 'Stun', root: 'Root', taunt: 'Taunt' };
+const OUTCOME_WORDS: Readonly<Record<Exclude<AnswerOutcome, 'none'>, string>> = { cancel: 'cancels it', weaken: 'weakens it' };
+const listed = (xs: readonly string[]): string => xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} or ${xs[xs.length - 1]}`;
+
+/**
+ * The omen standing as the banner says it (B.5): `title` ("OMEN: Stars Fall", "OMEN, WEAKENED: ..." or "DOOM: ..."),
+ * `when` (what lands, where, and when), and each way to answer it, one plain line each, written from the omen's data and the
+ * rules so a changed script or number changes the words. `answers` holds only answers that do something to the omen as it
+ * stands (a weakened omen cannot be weakened again).
+ */
+export type OmenBanner = {
+  readonly title: string; readonly when: string; readonly answerHead: string; readonly answers: readonly string[];
+  readonly doom: boolean; readonly weakened: boolean;
+};
+export function omenBanner(m: MythicSeen, rows: readonly Named[], now: Tick, R: Pick<Rules, 'fight'>): OmenBanner | null {
+  if (!m.omen) return null;
+  const script = mythicScriptOf(m.script), omen = script.omens[m.omen.key];
+  if (!omen) return null;
+  const move = script.moves[m.omen.faltering && omen.weak !== null ? omen.weak : omen.full]!;
+  const inPhase = script.phases[m.phase]!.rotation.some(b => b.kind === 'omen' && b.omen === m.omen!.key);
+  const inDoom = script.enraged.some(b => b.kind === 'omen' && b.omen === m.omen!.key);
+  const doom = inDoom && (!inPhase || enraged(standOf(m), now, R));
+  const aim = m.omen.aim, whom = aimWords(aim, m.id, rows, omen.aim);
+  const weakened = m.omen.faltering;
+  const lands = weakened ? `Lands as ${move.name} on its next turn, ${whom}.` : `Lands on its next turn, ${whom}.`;
+  const lines: string[] = [];
+  const reach = R.fight.mythic.answerReach;
+  const say = (outcome: AnswerOutcome, text: string): void => {
+    if (outcome === 'none' || (outcome === 'weaken' && (omen.weak === null || weakened))) return;
+    lines.push(`${text}: ${OUTCOME_WORDS[outcome]}`);
+  };
+  const by = omen.interrupt.by;
+  if (by.length) say(omen.interrupt.outcome, `${listed(by.map(o => INTERRUPT_WORDS[o]))} it`);
+  say(omen.shield, aimedAtHunter(aim, m.id) ? 'Put a shield on the hunter it is aimed at' : 'Put a shield on a hunter standing on its centre tile');
+  say(omen.step, 'Leave its centre tile empty, so no hunter stands on it');
+  say(omen.stagger, `Land ${plural(reach.stagger, 'same-rank hit')} on its stagger bar`);
+  say(omen.burst, `Take ${Math.round(reach.burst * 100)}% of its HP before it lands`);
+  lines.push(move.sure ? 'Nothing dodges it.' : move.kind === 'blast' ? 'Step out of the marked tiles to dodge it.' : 'Dodge it or resist it, like any attack.');
+  return { title: `${doom ? 'DOOM' : weakened ? 'OMEN, WEAKENED' : 'OMEN'}: ${omen.name}`, when: lands, answerHead: 'Answer it:', answers: lines, doom, weakened };
+}
+/** Whether an omen's aim names a hunter (a row), rather than a tile or the mythic itself. */
+const aimedAtHunter = (aim: Spot2 | CombatantId | null, self: CombatantId): boolean => typeof aim === 'string' && aim !== self;
+/** Where an omen lands in words: on a hunter by name, on the marked tiles, around the mythic, on everyone. */
+function aimWords(aim: Spot2 | CombatantId | null, self: CombatantId, rows: readonly Named[], kind: OmenAim): string {
+  if (aim === null) return 'on someone you cannot see';
+  if (typeof aim !== 'string') return 'on the marked tiles';
+  if (aim === self) return kind === 'all' ? 'on everyone' : 'on the tiles around it';
+  return `on ${rows.find(r => r.id === aim)?.name ?? 'a hunter'}`;
+}
+
+/**
+ * What a player's own card adds while an omen stands (B.5): "You are in the marked tiles." for an area on tiles that
+ * reach the hunter, "<Omen> is aimed at you." for an omen on this hunter, "<Omen> lands on everyone." for one on all,
+ * else null. `me` is the hunter's row id and `at` its tile.
+ */
+export function omenOnYou(m: MythicSeen, me: CombatantId, at: Spot2, R: Pick<Rules, 'fight'>): string | null {
+  if (!m.omen) return null;
+  const script = mythicScriptOf(m.script), omen = script.omens[m.omen.key];
+  if (!omen) return null;
+  const move = script.moves[m.omen.faltering && omen.weak !== null ? omen.weak : omen.full]!, aim = m.omen.aim;
+  if (aim === me) return `${omen.name} is aimed at you.`;
+  if (aim === m.id) return omen.aim === 'all' ? `${omen.name} lands on everyone.` : null;
+  if (aim === null || typeof aim === 'string' || move.kind !== 'blast') return null;
+  return move.reach === 'field' || dist(place(aim.x, aim.y), place(at.x, at.y)) <= move.reach ? 'You are in the marked tiles.' : null;
+}
+
+/**
+ * The omen's own words for what an ability does to it (B.5, a hotbar tag): "cancels it" or "weakens it" when the ability
+ * lands a status holding an op the omen's interrupt names, or shields (the aimed hunter's shield answers it), else null.
+ */
+export function answersBy(a: Pick<Ability, 'ops' | 'effect'>, m: MythicSeen): string | null {
+  if (!m.omen) return null;
+  const script = mythicScriptOf(m.script), omen = script.omens[m.omen.key];
+  if (!omen) return null;
+  const outcomes: Exclude<AnswerOutcome, 'none'>[] = [];
+  const add = (o: AnswerOutcome): void => { if (o === 'cancel' || (o === 'weaken' && omen.weak !== null && !m.omen!.faltering)) outcomes.push(o); };
+  if (a.ops.some(o => o.op === 'applyStatus' && o.def.ops.some(x => (omen.interrupt.by as readonly string[]).includes(x.op)))) add(omen.interrupt.outcome);
+  if (a.effect?.type === 'shield' || a.ops.some(o => o.op === 'shield')) add(omen.shield);
+  return outcomes.includes('cancel') ? OUTCOME_WORDS.cancel : outcomes.includes('weaken') ? OUTCOME_WORDS.weaken : null;
+}
+
+/** The omen standing and the move it lands (its weak one while it falters): what the map draws and the banner says. */
+export function omenMoveOf(m: MythicSeen): { readonly omen: Omen; readonly move: MythicMove } | null {
+  if (!m.omen) return null;
+  const script = mythicScriptOf(m.script), omen = script.omens[m.omen.key];
+  return omen ? { omen, move: script.moves[m.omen.faltering && omen.weak !== null ? omen.weak : omen.full]! } : null;
+}

@@ -697,3 +697,7 @@ ts	phase	decision	why	evidence	result
 2026-11-22T19:35Z	ops	landed on the working branch (a16b015c, public run 45060296330 green in every job): mythic-5e. PR 73 into main merged. Nothing is in flight; mythic-balance, mythic-7 and rulings-20 run.
 2026-11-22T19:38Z	ops	the owner: finish the three running units, pause the wake, hand off to GrokBot (who runs Gemini Neon); Claude reviews later. Nothing new is started.
 2026-11-22T20:26Z	features	rulings-20 merged on lead-backlog (opus): pending rewards as a machine, the GM's Waiting for you list, the player's waiting windows; unit pass 6,383 green on its branch, 20 browser files green. Questionable decision 51.
+2026-11-22T20:27Z	ops	Public run started for 1d7023b4, which holds rulings-20: when green in every job push 1d7023b4 by id through the hook, PR into main, merge.
+2026-11-22T20:29Z	features	the owner asked for a GM's preset of a dungeon clear's reward with a recommended, checkable item set; recorded in for-the-owner Answered, not started, first on GrokBot's list.
+2026-11-22T20:45Z	ops	landed on the working branch (1d7023b4, public run 45066515030 green in every job): rulings-20. PR 74 into main merged. Nothing is in flight; mythic-balance and mythic-7 run.
+2026-11-22T20:53Z	features	mythic-7 merged on lead-backlog (sonnet): the mythic strip, omen banner, GM's Land, Drop and Next phase, the map's aimed tiles, a GM switch; unit pass 6,392 green on its branch, mythic.e2e.ts and five more browser files green. Questionable decision 52.

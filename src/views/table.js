@@ -8,7 +8,8 @@
 import { WAYS_BACK } from '../core/hunter/vitals.ts';
 import { lifeWord } from '../core/combat/row-life.ts';
 import { isUp } from '../core/combat/row-hp.ts';
-import { WAIT_WORDS, aims, docSpots, readyIn, stepAway, stepToward, waitChoices } from '../core/combat/fight-view.ts';
+import { WAIT_WORDS, aims, answersBy, docSpots, mythicSeenOfDoc, mythicStrip, omenBanner, omenOnYou, readyIn, stepAway, stepToward, waitChoices } from '../core/combat/fight-view.ts';
+import { MYTHIC_CSS, mythicBox } from './mythic-html.js';
 import { docBodies, docGround, myPinKey } from '../core/combat/map-view.ts';
 import { parseTold, toldAfter } from '../core/combat/table-news.ts';
 import { featsSeen } from '../core/hunter/chronicle-view.ts';
@@ -49,6 +50,7 @@ export function register(app) {
   const myKeys = () => store.get().hunters.map(h => ({ hid: h.id, key: sync().myKey(h.id) }));
   const isMine = r => !!r.key && myKeys().some(k => k.key === r.key);
 
+  ui.css('mythic', MYTHIC_CSS);
   ui.css('table', `
     #view-combat:not([hidden]){display:flex;flex-direction:column}
     #view-combat:has([data-panel="table-hud"]) .panels{order:-1}
@@ -184,9 +186,9 @@ export function register(app) {
   const VIEWS = /** @type {const} */ (['map', 'list']);
   const segHtml = () => `<div class="seg tb-view" role="group" aria-label="Fight view">${VIEWS.map(v => `<button type="button" data-fview="${v}" aria-pressed="${store.prefs().fightView === v}">${v === 'map' ? 'Map' : 'List'}</button>`).join('')}</div>`;
   /** The HUD with the map: "Your turn", the Map and List choice, the death line, the map, and a token's card when one is open. */
-  const mapTemplate = () => `<div class="slot"><div class="slot" data-part="mine"></div><div class="slot" data-part="seg"></div><div class="slot" data-part="death"></div><div class="slot" data-part="chips"></div><div data-mapbox></div><div class="tb-sheet" data-tbsheet hidden></div></div>`;
+  const mapTemplate = () => `<div class="slot"><div class="slot" data-part="mine"></div><div class="slot" data-part="seg"></div><div class="myth slot" data-part="mythic"></div><div class="slot" data-part="death"></div><div class="slot" data-part="chips"></div><div data-mapbox></div><div class="tb-sheet" data-tbsheet hidden></div></div>`;
   const hudTemplate = kit => {
-    const main = `<div class="slot" data-part="mine"></div><div class="slot" data-part="seg"></div><div class="tb-round" role="status" data-text="round"></div>
+    const main = `<div class="slot" data-part="mine"></div><div class="slot" data-part="seg"></div><div class="myth slot" data-part="mythic"></div><div class="tb-round" role="status" data-text="round"></div>
       <ol class="tb-rows" aria-label="Turn order"></ol>
       <div class="slot" data-part="death"></div>
       <div class="tb-me" data-attr="hidden:noMe"><div class="bar-row"><div class="bar-head"><span class="lbl">HP</span><span class="bar-nums" data-text="hp"></span></div><div class="bar bar-hp" role="img" data-attr="aria-label:hpLabel" data-fill="hpF">${motion.fillMarkup(0)}</div></div>
@@ -204,8 +206,22 @@ export function register(app) {
     const me = e && !e.ended ? meRow(e) : null;
     return me ? chipRow('hud-chips', me.id, me.statuses, 'Your statuses') : chipRow('hud-chips', h.id, (h.conditions || []).filter(c => c && c.key), 'Your statuses');
   }
+  /** The doc's mythics as a screen reads them (fight-view.ts `mythicSeenOfDoc`): those with a standing, in the doc's order. */
+  const mythicsOf = e => rowsOf(e).flatMap(r => { const m = r.kind === 'monster' && isUp(r) ? mythicSeenOfDoc(r, BAND_LABEL) : null; return m ? [m] : []; });
+  /** The strip and omen banner of each mythic on the table, and on this hunter's own row what the omen means for it. */
+  function mythicMarkup(e) {
+    if (e.ended) return '';
+    const R = app.rules(), me = meRow(e);
+    return mythicsOf(e).map(m => mythicBox({ id: m.id, strip: mythicStrip(m, e.now, R), banner: omenBanner(m, e.rows, e.now, R), you: me && isUp(me) ? omenOnYou(m, me.id, me.place, R) : null, hand: null, turn: false })).join('');
+  }
+  /** What each of the hunter's abilities does to the omen standing: by ability id, the words of `answersBy`. */
+  function answersOf(e, list) {
+    const out = {};
+    for (const m of e.ended ? [] : mythicsOf(e)) for (const a of list) { const w = answersBy(a, m); if (w && !out[a.id]) out[a.id] = w; }
+    return out;
+  }
   function hudDesc(e, h, kit) {
-    const out = { seg: segHtml(), mine: myTurn(e) ? '<div class="tb-mine" role="status">\u25b6 YOUR TURN</div>' : '', round: `ROUND ${roundIn(e)}`, noMe: !h, death: '', hp: '', hpLabel: '', hpF: 0, mana: '', manaLabel: '', manaF: 0, chips: '' };
+    const out = { mythic: mythicMarkup(e), seg: segHtml(), mine: myTurn(e) ? '<div class="tb-mine" role="status">\u25b6 YOUR TURN</div>' : '', round: `ROUND ${roundIn(e)}`, noMe: !h, death: '', hp: '', hpLabel: '', hpF: 0, mana: '', manaLabel: '', manaF: 0, chips: '' };
     if (h) {
       const s = app.api.hunter.sheet(h), d = { hp: int(s.hp), hpMax: int(s.sheet.hpMax), mana: int(s.mana), manaMax: int(s.sheet.manaMax) };
       Object.assign(out, {
@@ -245,15 +261,15 @@ export function register(app) {
     const t = table(e, h), mine = canAct(e), off = mine ? '' : ' disabled title="Not your turn"';
     if (!t.me) return '';
     const step = dir => (mine && t.foe && t.me.kind !== 'monster' ? (dir > 0 ? stepToward : stepAway)(t.spots, t.me.id, t.foe.id, t.me.stride, t.grid) : null);
-    const armed = armedOf(e);
+    const armed = armedOf(e), answers = answersOf(e, t.list);
     const abil = t.list.map(a => {
       if (a.react) {
         const st = armed && armed.ability === a.id ? (armed.spent ? 'Spent' : 'Armed') : 'Arm';
         return `<li><span class="tb-kn">${esc(a.name)}<small>Reaction</small></span><button type="button" data-arm="${esc(a.id)}" aria-pressed="${st !== 'Arm'}">${st}</button></li>`;
       }
-      const left = mine ? readyIn(e.ready, a.id, e.now, app.rules()) : 0;
+      const left = mine ? readyIn(e.ready, a.id, e.now, app.rules()) : 0, ans = answers[a.id];
       const wait = left > 0 ? ` disabled title="Ready in ${left} round${left === 1 ? '' : 's'}"` : '';
-      return `<li><span class="tb-kn">${esc(a.name)}${left > 0 ? `<small data-wait>Ready in ${left} round${left === 1 ? '' : 's'}</small>` : ''}</span><button type="button" data-cast="${esc(a.id)}"${off || wait}${mine && !wait ? ` title="Use ${esc(a.name)}"` : ''}>Use</button></li>`;
+      return `<li><span class="tb-kn">${esc(a.name)}${left > 0 ? `<small data-wait>Ready in ${left} round${left === 1 ? '' : 's'}</small>` : ''}${ans ? `<small class="myth-tag">Answers the omen: ${esc(ans)}</small>` : ''}</span><button type="button" data-cast="${esc(a.id)}"${off || wait}${mine && !wait ? ` title="Use ${esc(a.name)}"` : ''}>Use</button></li>`;
     }).join('');
     const mv = t.foe ? `<div class="tb-kact"><button type="button" data-step="1"${step(1) ? '' : ' disabled'}>Toward ${esc(t.foe.name)}</button><button type="button" data-step="-1"${step(-1) ? '' : ' disabled'}>Away</button></div>` : '';
     const pass = mine && !t.me.down ? '<div class="tb-kact"><button type="button" data-pass>End turn</button></div>' : '';
@@ -375,7 +391,7 @@ export function register(app) {
     over: () => {
       const e = encounter(); if (!e) return '';
       const d = hudDesc(e, meHunter(e), false);
-      return `${d.mine ? 1 : 0}|${d.death ? 1 : 0}|${d.chips.split('class="chip').length - 1}`;
+      return `${d.mine ? 1 : 0}|${d.death ? 1 : 0}|${d.chips.split('class="chip').length - 1}|${d.mythic.length}`;
     },
     input: () => {
       const e = encounter(); if (!e || e.ended !== false) return null;
@@ -392,7 +408,7 @@ export function register(app) {
       const ch = meRow(e).channel;
       return {
         list: hunterAbilities(h, app.rules()), readyAt: myTurn(e) ? e.ready : {}, now: e.now, costCut: app.api.hunter.sheet(h).sheet.costCut, pinKey: myPinKey(h.id), channel: ch && ch.state === 'holding' ? ch : null,
-        armed: armedOf(e), left: myTurn(e) ? e.left ?? {} : {},
+        armed: armedOf(e), left: myTurn(e) ? e.left ?? {} : {}, answers: answersOf(e, hunterAbilities(h, app.rules())),
         itemOf: id => h.items.find(i => i.id === id) ?? null,
       };
     },
@@ -497,7 +513,7 @@ export function register(app) {
     hud.on = true;
     if (onMap) {
       const mineWasOn = !!el.querySelector('.tb-mine'), d = hudDesc(e, h, false);
-      bind(el.firstElementChild, { mine: d.mine, seg: d.seg, death: d.death, chips: d.chips });
+      bind(el.firstElementChild, { mine: d.mine, seg: d.seg, mythic: d.mythic, death: d.death, chips: d.chips });
       countStacks(el.firstElementChild);
       mapView.draw();
       drawSheet(el.querySelector('[data-tbsheet]'), e);

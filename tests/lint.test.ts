@@ -523,7 +523,8 @@ test('a view computes no fight number: from the modules that work one out it imp
     'src/core/combat/timeline.ts': ['tick', 'roundOf', 'roundsOf'],
     'src/core/stats.ts': ['STAT_KEYS', 'STAT_LABELS', 'STAT_SHORT', 'above'], // `above`: the rules reference draws the curve it explains
     'src/core/combat/effect-ops.ts': ['healsFully', 'reactionMayHold', 'OP_KINDS', 'describeStatus', 'freeStatusKey', 'opLines', 'opsOffered'],
-    'src/core/combat/fight-turn.ts': [],
+    // the move an omen lands and the dice it asks for: the GM's Land button rolls them as any use's (`needs` above)
+    'src/core/combat/fight-turn.ts': ['omenMove', 'omenNeeds'],
     'src/core/combat/fight-channel.ts': [],
   };
   const named = /\bimport\s*\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]/g;

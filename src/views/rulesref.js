@@ -3,7 +3,7 @@
 import { RANKS, RULES, rules } from '../edge/rules.ts';
 import { xpToNext as xpToNextOf } from '../core/rules.ts';
 import { STAT_KEYS, STAT_LABELS, STAT_SHORT } from '../core/stats.ts';
-import { ICON_CREDIT, armorCutPct, checkExample, deathLine, gatePayLines, restLines, iconCreditLine, naturalLines, pointsLine, saleLine, saleRows, dailyPointsLine, soloLines, statBonusLine, stealthLines } from '../core/rules-text.ts';
+import { ICON_CREDIT, armorCutPct, checkExample, deathLine, gatePayLines, restLines, iconCreditLine, mythicLines, naturalLines, pointsLine, saleLine, saleRows, dailyPointsLine, soloLines, statBonusLine, stealthLines } from '../core/rules-text.ts';
 import { describeStatus } from '../core/combat/effect-ops.ts';
 
 const STAT_USE = {
@@ -182,6 +182,7 @@ export function register(app) {
           `A strike, a shot or a blast travels: the target\'s d20 plus its Reaction against your Accuracy decides whether it gets out of the way. A curse does not travel: the target\'s Will resists it on ${F.resistDc} or more.`,
           'Timed statuses run in fight time: their per-round effects are paid at the start of the bearer\'s turn, for the time since they were last paid, and a status ends when its rounds have passed.']),
       ] },
+      ...(R.fight.mythic.scripts ? [{ id: 'mythic', title: 'How a mythic fights', body: mythicLines(R).map(l => p(esc(l))) }] : []),
       { id: 'skills', title: 'Skills and abilities', body: [
         ul([`<b>Active</b> skills are abilities of five kinds: a strike (reach ${F.abilityKinds.strike.range} tile), a shot (range ${F.abilityKinds.shot.range}), a blast (a radius at range ${F.abilityKinds.blast.range}), a curse (range ${F.abilityKinds.curse.range}) and a support (range ${F.abilityKinds.support.range}, on an ally or the user).`,
           'Each kind has its cost in fatigue and mana, its pace and a formula for its damage, heal or shield. A cooldown is in rounds.',

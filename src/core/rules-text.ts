@@ -19,6 +19,7 @@ import type { Level } from './combat/sight-levels.ts';
 import { perceives } from './combat/sight.ts';
 import { openGrid, place } from './combat/space.ts';
 import { STEALTH_ENDS } from './combat/effect-ops.ts';
+import type { MythicScript } from './combat/mythic-types.ts';
 import type { StealthEnd } from './combat/effect-ops.ts';
 
 const sign = (n: number): string => (n >= 0 ? '+' : '') + n;
@@ -193,3 +194,29 @@ export const ICON_CREDIT = {
 /** The line at the Rules page's foot that credits the icons, as plain words. */
 export const iconCreditLine = (): string =>
   `Icons made by ${ICON_CREDIT.authors.join(' and ')}, from ${ICON_CREDIT.site.text}, under ${ICON_CREDIT.licence.text}.`;
+
+/**
+ * How a mythic fights, as the Rules page states it (notes-11-keystones.md B.5, unit MY7): phases that each hold part of its
+ * HP, the omen it announces a turn ahead, the three answers that are not a hit (a stun or root, a shield on the hunter it
+ * names, a step off the tile it marks) and what an answer buys, and the enraged phase past its clock. Each number is a rule.
+ */
+export function mythicLines(R: Pick<Rules, 'fight'>): readonly string[] {
+  const M = R.fight.mythic, t = M.answerTime, rounds = (n: number): string => `${n} round${n === 1 ? '' : 's'}`;
+  return [
+    'A mythic fights in phases. Each phase holds part of its HP: damage past it is lost, and the next phase starts on the mythic\'s next turn. A Dive phase holds none, and ends when its clock runs out.',
+    'Before its biggest moves it announces an omen one turn ahead. The banner says what is coming, at whom or which tiles, and each way to answer it.',
+    `A hit does not answer an omen. A stun or a root on the mythic, a shield on the hunter it is aimed at, or a step off the tile it is aimed at, so no hunter stands on it, can cancel it or make it smaller. An answer winds a phase's clock back ${rounds(t.cancel)} when it cancels and ${rounds(t.weaken)} when it makes the move smaller, never past the phase's start.`,
+    'A phase that runs past its clock makes the mythic enraged: its doom comes on the turns the strip names.',
+  ];
+}
+
+/** The line a mythic's codex entry adds: what kind of fight it is, then each phase by number, name and line. */
+export function mythicCodexLines(script: MythicScript): readonly string[] {
+  return [`The fight: ${script.shape}`, ...script.phases.map((p, i) => `Phase ${i + 1}: ${p.name}. ${p.line}`)];
+}
+
+/** The GM's switch for mythic scripts, its words, and the session log's line when it moves. */
+export const MYTHIC_SWITCH_WORDS = {
+  label: 'Mythics fight in phases', on: 'On', off: 'Off',
+  hint: 'While this is off, a mythic fights like any other monster. A fight already running keeps the way it began.',
+} as const;

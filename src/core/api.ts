@@ -732,6 +732,8 @@ export type MapKit = {
   left?: Readonly<Record<string, number>>;
   /** The actor's bag, for an item's use's picture (map-view.ts `HotbarKit`): the item with this id, or null when the bag holds none. */
   itemOf?: (id: ItemId) => IconItem | null;
+  /** What each ability does to the omen standing, by ability id (map-view.ts `HotbarKit`, fight-view.ts `answersBy`). */
+  answers?: Readonly<Record<string, string>>;
 };
 /**
  * What a phone gives its battle map (src/views/map.js): the scene's input, the order ahead by name, the actor's kit (null

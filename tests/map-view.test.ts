@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
 import { baseStats } from '../src/core/stats.ts';
 import { kitGear } from '../src/core/hunter/derive.ts';
-import { TERRAIN, openGrid, percent, place, tiles } from '../src/core/combat/space.ts';
+import { TERRAIN, dist, openGrid, percent, place, tiles } from '../src/core/combat/space.ts';
 import type { Grid, Place, Side, Terrain } from '../src/core/combat/space.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 import { abilityId, combatantId, hunterId } from '../src/core/combat/ability-types.ts';
@@ -19,6 +19,8 @@ import { fightId, reduce } from '../src/core/combat/fight.ts';
 import type { Fight, NewRow } from '../src/core/combat/fight.ts';
 import type { FightDocRow } from '../src/core/combat/fight-doc.ts';
 import { aims } from '../src/core/combat/fight-view.ts';
+import { mythicScriptOf } from '../src/core/registry/mythics.ts';
+import type { MythicScriptId, OmenKey } from '../src/core/combat/mythic-types.ts';
 import { EVERYTHING, NO_CHOICE, PINS, choose, docBodies, docGround, eyesChoices, fightBodies, fightGround, frameOf, hotbar, labelOf, mapScene, outline, packLetter, shortOf, tapOn, turnWords, viewAsOf } from '../src/core/combat/map-view.ts';
 import { fightDoc, fightWire } from '../src/core/combat/fight-doc.ts';
 import type { FightDoc } from '../src/core/combat/fight-doc.ts';
@@ -548,6 +550,34 @@ describe('lines from a monster: its intent, or the target its threat suggests', 
     const [l] = lines(boss({ intent: { name: 'Breath', target: { x: 1, y: 1 }, reveal: { lines: [], radius: 1, outer: null } } }));
     // radius 1 by 5-10-5 is the 3 by 3 square round (1, 1)
     expect([l!.revealed, l!.loops]).toEqual([true, [[{ x: 0, y: 0 }, { x: 3, y: 0 }, { x: 3, y: 3 }, { x: 0, y: 3 }]]]);
+  });
+  describe('a mythic\'s omen (unit MY7)', () => {
+    const script = mythicScriptOf('angel-of-the-last-trumpet');
+    const standing = (key: string, aim: CombatantId | { x: number; y: number } | null, state: 'omen' | 'faltering' = 'omen') =>
+      ({ state, script: 'angel-of-the-last-trumpet' as MythicScriptId, phase: 0, beat: 2, since: tick(0), omen: key as OmenKey, aim, band: 'healthy' as const });
+    test('an area omen marks the tiles round its aim in the danger kind, and says its name and when it lands', () => {
+      const move = script.moves[script.omens['stars' as OmenKey]!.full]!;
+      if (move.kind !== 'blast' || move.reach === 'field') throw new Error('Stars Fall is a blast with a reach');
+      const [l] = lines(boss({ standing: standing('stars', { x: 3, y: 2 }) }));
+      expect(l!.kind).toBe('omen');
+      expect(l!.words).toEqual({ name: script.omens['stars' as OmenKey]!.name, what: 'Lands on its next turn' });
+      // the tiles are the reach's square round the aimed tile (5-10-5 distance), as an intent's splash is
+      const r = move.reach;
+      const inReach = Array.from({ length: 45 }, (_, i) => place(i % 9, Math.floor(i / 9))).filter(t => dist(place(3, 2), t) <= r);
+      expect(l!.loops).toEqual(outline(inReach));
+    });
+    test('an omen on a hunter draws a line to its token and no tiles', () => {
+      const [l] = lines(boss({ standing: standing('weighed', id('k')) }));
+      expect([l!.kind, l!.to, l!.loops]).toEqual(['omen', place(1, 1), []]);
+    });
+    test('a weakened omen says so', () => {
+      expect(lines(boss({ standing: standing('breath', id('b'), 'faltering') }))[0]!.words!.what).toBe('Weakened: lands on its next turn');
+    });
+    test('a move on the whole field, an aim the doc left out, and a calm mythic draw no line', () => {
+      expect(lines(boss({ standing: standing('note', id('b')) }))).toEqual([]);
+      expect(lines(boss({ standing: standing('stars', null) }))).toEqual([]);
+      expect(lines(boss({ standing: { state: 'calm', script: 'angel-of-the-last-trumpet' as MythicScriptId, phase: 0, beat: 1, since: tick(0) } }))).toEqual([]);
+    });
   });
   test('with no intent the suggested target is a quieter line, and a channel, a shield, a stagger bar and a taunt reach the token', () => {
     expect(lines(boss({ suggest: id('k') })).map(l => l.kind)).toEqual(['suggest']);

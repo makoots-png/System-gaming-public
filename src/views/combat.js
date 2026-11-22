@@ -15,7 +15,13 @@ import { fightGateName, fought, heldCommands, itemSpent } from '../core/combat/f
 import { remoteFacts } from '../core/combat/fight-facts.ts';
 import { attemptsLeft, UNTRIED } from '../core/combat/extraction.ts';
 import { needs } from '../core/combat/resolve.ts';
-import { WAIT_WORDS, aims, cardOf, channelView, fudgeShown, order, readyIn, spotOf, statusGrant, stepAway, stepToward, timeOf, usesLeft, waitChoices } from '../core/combat/fight-view.ts';
+import { WAIT_WORDS, aims, answersBy, cardOf, channelView, fudgeShown, mythicHand, mythicSeenOf, mythicStrip, omenBanner, order, readyIn, spotOf, statusGrant, stepAway, stepToward, timeOf, usesLeft, waitChoices } from '../core/combat/fight-view.ts';
+import { omenMove, omenNeeds } from '../core/combat/fight-turn.ts';
+import { runningState } from '../core/combat/fight.ts';
+import { mythicScriptOf } from '../core/registry/mythics.ts';
+import { mythicSwitched } from '../core/mythic-switch.ts';
+import { MYTHIC_SWITCH_WORDS } from '../core/rules-text.ts';
+import { MYTHIC_CSS, mythicBox } from './mythic-html.js';
 import { EVERYTHING, eyesChoices, fightBodies, fightGround, pinKeyOf, viewAsOf } from '../core/combat/map-view.ts';
 import { SCREEN, buildDrawer, mapSlot } from '../core/combat/map-mount.ts';
 import { hunterRow, monsterRows, remoteRow, shadowRow } from '../core/combat/rows.ts';
@@ -144,6 +150,9 @@ export function register(app) {
     for (const fx of of('turnStarted')) app.emit('combat:turn', { hunterId: fx.hunterId });
     for (const fx of of('defeated')) { const b = rowOf(fight(), fx.id); if (b) app.emit('combat:defeated', { body: b }); }
     for (const fx of of('staggered')) { const b = rowOf(fight(), fx.id); if (b) toast(`${b.name} is staggered and loses the next turn.`, 'warning'); }
+    for (const fx of of('omen')) { const b = rowOf(fight(), fx.id), o = b && b.mythic && mythicScriptOf(b.mythic.script).omens[fx.omen]; if (b && o) toast(`${b.name} readies ${o.name}.`, 'warning'); }
+    for (const fx of of('phased')) { const b = rowOf(fight(), fx.id), p = b && b.mythic && mythicScriptOf(b.mythic.script).phases[fx.phase]; if (p) toast(`Phase ${fx.phase + 1}: ${p.name}.`); }
+    for (const fx of of('answered')) { const said = (fight() ? fight().log : []).slice(0, 4).find(l => /is cancelled\.$|will land as /.test(l.text)); if (said && rowOf(fight(), fx.id)) toast(said.text); }
     for (const fx of asked ? [] : of('refused')) toast(REFUSAL_WORDS[fx.reason], 'warning');
     if (of('burst').length) lastBurst = { n: (lastBurst ? lastBurst.n : 0) + 1, ids: of('burst').map(x => x.id) };
     showEffects(effects, hpWas, readyWas);
@@ -591,6 +600,7 @@ export function register(app) {
   };
 
   // ── UI ──
+  ui.css('mythic', MYTHIC_CSS);
   ui.css('combat', `
 .cmb-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
 .cmb-head{font-family:var(--font-display);font-weight:700;font-size:18px;color:var(--ice);margin-right:auto;min-width:0;overflow-wrap:anywhere}
@@ -784,6 +794,7 @@ export function register(app) {
         list: shownAbilities(c).map(x => x.a), readyAt: c.readyAt, now: f.now, costCut: c.sheet.costCut, pinKey: pinKeyOf(c), channel: ch && ch.state === 'holding' ? ch : null,
         armed: c.armed ? { ability: c.armed.ability, spent: c.armed.spent } : null, left: usesLeft(c, c.abilities.length),
         itemOf: id => (holderHunter(c)?.items ?? []).find(i => i.id === id) ?? null,
+        answers: answersOn(f, shownAbilities(c).map(x => x.a)),
       };
     },
     arm: ability => { const c = cur(); if (c) armRow(c, ability); },
@@ -995,9 +1006,11 @@ export function register(app) {
     el.innerHTML = `<section class="win" aria-label="Combat tracker"><span class="cb"></span><h2>Combat</h2>
       <div class="cmb-bar" data-bar><div class="slot" data-part="head"></div><div class="slot" data-part="acts"></div></div>
       <p class="hp-amt-msg" data-amtlive role="status" aria-live="polite"></p>
+      <div class="myth" data-mythic aria-label="Mythic"></div>
       <div data-main></div>
       <div class="cmb-tools" data-tools aria-label="Fight tools"><div class="cmb-toolshead"><b>Fight tools</b><span class="slot" data-toolacts></span><button type="button" class="quiet" data-toolsx>Close</button></div>
       <div class="cmb-fudge" data-fudge hidden></div>
+      <div class="cmb-mythsw" data-mythsw hidden></div>
       <div class="cmb-eyes" data-eyesrow hidden><span class="lbl" aria-hidden="true">See as</span><div class="seg" role="group" aria-label="See as" data-eyesseg></div></div>
       <div data-buildwrap><details class="cmb-build" data-build open><summary>Add to the fight</summary><div class="cmb-bgrid">
         <fieldset><legend>Party hunters</legend><div class="add-row flush">
@@ -1073,6 +1086,15 @@ export function register(app) {
       if (b.dataset.fudgeForce !== undefined) {
         const row = rowOf(f, b.dataset.fudgeForce), face = oneOf(b.dataset.face, ['20', '1', ''], '');
         if (row) send({ type: 'fudge', set: { kind: 'force', id: row.id, face: face === '' ? null : /** @type {20 | 1} */ (Number(face)) } });
+        return;
+      }
+      if (b.hasAttribute('data-mythsw-btn')) { ui.wrote('GM', store.apply('gm-rules', st => mythicSwitched(st, !rules().fight.mythic.scripts))); return; }
+      const mid = b.dataset.myland || b.dataset.mydrop || b.dataset.mynext, mrow = mid && rowOf(f, mid);
+      if (mrow) {
+        if (b.dataset.myland) return landOmenOf(mrow);
+        if (b.dataset.mydrop) { send({ type: 'mythic', by: mrow.id, step: 'drop' }); return; }
+        const nx = mythicHand(mythicSeenOf(mrow)).next;
+        if (nx && await ui.confirm({ title: nx.label, body: nx.ask, confirmLabel: nx.yes })) send({ type: 'mythic', by: mrow.id, step: 'next' });
         return;
       }
       if (b.hasAttribute('data-start')) return start();
@@ -1244,6 +1266,36 @@ export function register(app) {
     };
   }
 
+  /** The strip and omen banner of each mythic still up in the fight, as markup (mythic-html.js); the GM's phone adds its hand. */
+  function mythicMarkup(f, gm) {
+    if (!f || f.phase === 'ended') return '';
+    const R = rules(), now = timeOf(f), state = f.phase === 'running' ? runningState(f) : null;
+    return f.rows.filter(r => r.mythic && isUp(r)).map(r => {
+      const m = mythicSeenOf(r);
+      return mythicBox({ id: r.id, strip: mythicStrip(m, now, R), banner: omenBanner(m, f.rows, now, R), you: null, hand: gm ? mythicHand(m) : null, turn: !!state && state.at === 'landing' && state.id === r.id });
+    }).join('');
+  }
+  /** What each of `list` does to the omen standing in `f`, by ability id (fight-view.ts `answersBy`). */
+  function answersOn(f, list) {
+    const out = {};
+    for (const r of f.rows) { const m = r.mythic && isUp(r) ? mythicSeenOf(r) : null; if (m) for (const a of list) { const w = answersBy(a, m); if (w && !out[a.id]) out[a.id] = w; } }
+    return out;
+  }
+  /** The GM lands the standing omen of mythic `row`: its move at its aim, with the dice any use asks for. */
+  function landOmenOf(row) {
+    const g = fight(), u = rowOf(g, row.id);
+    if (!g || g.phase !== 'running' || !u) return;
+    const m = omenMove(u, rules()), n = omenNeeds(g, u, rules());
+    if (!m || !n) return;
+    const fx = send({ type: 'act', by: u.id, ability: m.ability.id, aim: m.aim, rolls: drawnFor(g, u.id, n) });
+    for (const x of fx) if (x.type === 'used') { const said = x.line; afterFrame(() => toast(said)); }
+  }
+  /** The GM's switch for mythic scripts, drawn in the Fight tools. */
+  function mythicSwitchMarkup() {
+    const on = rules().fight.mythic.scripts, W = MYTHIC_SWITCH_WORDS;
+    return `<span class="lbl">${esc(W.label)}</span><button type="button" data-mythsw-btn aria-pressed="${on}">${on ? W.on : W.off}</button><p class="cmb-hint">${esc(W.hint)}</p>`;
+  }
+
   /** The log, newest first: a line the fight added goes in at the top, and only a shorter log is drawn again (patch.ts `prepended`). */
   function drawLog(box, lines) {
     // the shown lines are a copy: the fight's log is written into in place (save-step.ts `writeInto`)
@@ -1296,6 +1348,15 @@ export function register(app) {
     const ta = $q('[data-toolacts]'); if (ta.innerHTML !== bd.tools) ta.innerHTML = bd.tools;
     const fz = $q('[data-fudge]'), fh = gm ? fudgeBlock(f) : '';
     fz.hidden = !fh; if (fz.innerHTML !== fh) fz.innerHTML = fh;
+    const sw = $q('[data-mythsw]'), swh = gm ? mythicSwitchMarkup() : '';
+    sw.hidden = !swh; if (sw.innerHTML !== swh) sw.innerHTML = swh;
+    const my = $q('[data-mythic]'), mh = mythicMarkup(f, gm);
+    if (my.dataset.sig !== mh) {
+      const omens = (html => [...html.querySelectorAll('[data-omen]')].map(x => x.dataset.omen).join('|'))(ui.h(`<div>${mh}</div>`));
+      my.dataset.sig = mh; my.innerHTML = mh;
+      if (omens && my.dataset.omens !== omens) { const o = my.querySelector('.myth-omen'); if (o) motion.pop(o); }
+      my.dataset.omens = omens;
+    }
     const er = $q('[data-eyesrow]'), eh = mapMode ? eyesRow() : '', es = $q('[data-eyesseg]');
     er.hidden = !mapMode; if (es.dataset.sig !== eh) { es.dataset.sig = eh; es.innerHTML = eh; }
     $q('.win').classList.toggle('cmb-mapmode', mapMode);

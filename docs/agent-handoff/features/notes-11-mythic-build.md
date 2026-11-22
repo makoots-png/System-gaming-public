@@ -670,3 +670,54 @@ Branch `mythic-5e`. The switch `fight.mythic.scripts` stays off. Every measure i
   rows; the type, not a check, keeps a self-aimed omen from a shield or step answer.
 - `principle-test-behavior-not-implementation`: the reducer tests drive the shield and the step by commands and read the
   standing and the log; the stagger and burst rule is read on a test omen, not on a script's data.
+
+## MY7: the words and screens (the strip, the omen banner, the GM's hand)
+
+Branch `mythic-7`. The switch `fight.mythic.scripts` stays off in `rules.ts`; the GM's new switch in Fight tools and the
+tests turn it on. Written from B.5 with decision 43 over it: an omen is answered by a step off its tile, a shield on the
+hunter it is aimed at, or a stun, root or taunt on the mythic, never by a hit.
+
+### What exists
+
+- `fight-view.ts`: `MythicSeen` (a mythic row as a screen reads it; `mythicSeenOf` from the GM's body, `mythicSeenOfDoc` from
+  the room doc's row, so both phones say the same words), `mythicStrip` (name, phase, HP and gate, clock, the phase's own
+  line until its next turn, the GM's "Next omen" line), `omenBanner` (title, when and at whom, one line for each answer
+  the omen's data gives an outcome, read from `answerOutcome` and `RULES`), `omenOnYou` (a player's own line), `answersBy`
+  (a hotbar tag), `mythicHand` (the GM's Land, Drop and Next phase words), `omenMoveOf`.
+- `map-view.ts`: a mythic's omen is a `MapAimLine` of kind `omen` (to the aimed body or tile, the tiles of an area move's
+  reach, its name and when it lands); `HotbarSlot.answers`. `map.js` draws the danger tint and dashed edge.
+- `rules-text.ts`: `mythicLines`, `mythicCodexLines`, `MYTHIC_SWITCH_WORDS`; `src/core/mythic-switch.ts` `mythicSwitched`.
+- Views: `src/views/mythic-html.js` (the markup and look, shared); `combat.js` (the strip over the fight, Land, Drop, Next
+  phase with its question, the switch, toasts for an omen, a phase and an answer); `table.js` (the strip on a player's HUD,
+  the line on the hunter's own card, a tag under an answering ability); `map.js` (the tag on a hotbar slot);
+  `bestiary.js` (the fight and its phases on a mythic's card while scripts are on); `rulesref.js` ("How a mythic fights",
+  while scripts are on).
+- Tests: `tests/fight-view.test.ts` ("a mythic on the table", "the GM's hand on a mythic"), `tests/map-view.test.ts` ("a
+  mythic's omen"), `tests/rules-text.test.ts` ("how a mythic fights"), `tests/e2e/mythic.e2e.ts`.
+
+### Where the design did not hold, and what was built instead
+
+- The doc carries a mythic's HP only as a band, so a player's strip says the band ("Bloodied · gate at 30%"), not "HP 58%",
+  and cannot say "held at the gate" (the GM's phone does). Nothing was added to the doc (`protocol.ts` is rulings-20's).
+- B.5's "Cancelled: Mira's stun stopped ..." line under the banner is not drawn: a cancelled omen leaves no state to read
+  once the standing is calm. The GM's toast and the log carry the words.
+- B.5's stagger and burst lines exist (read from the omen's data) but no script writes either today.
+- The switch is in Fight tools of the GM's fight screen, not on the Custom panel (that panel is the hunters' Build panel).
+- B.5's first example banner text had the stun line first; the lines now go in the order of `ANSWERS` (step, interrupt,
+  shield, stagger, burst), then how to dodge it.
+- A player's own stun cannot be driven through a UI tap in the browser test cheaply; the test puts the stun on the mythic
+  with the GM's Status API, which is the same command.
+
+### Calls the owner might have made otherwise
+
+- A hotbar tag reads "Cancels the omen" or "Weakens the omen" (the list view reads "Answers the omen: cancels it"), short
+  for a 390 px slot. Undo: "write Answers the omen in full on the hotbar".
+- The Rules page and the bestiary's fight lines show only while scripts are on. Undo: "show them always".
+- The GM's Next phase is a plain button in the strip, not under a More button. Undo: "put Next phase under More".
+
+### Principles that changed a choice
+
+- `principle-model-the-domain`: one `MythicSeen` read from the GM's row or the doc's row, so two screens cannot word an
+  omen differently; the answer lines loop over `ANSWERS` rather than name an omen.
+- `principle-test-behavior-not-implementation`: the banner tests loop over every script and compare the lines with the
+  omen's own outcomes, so a moved omen or number moves the expectation.

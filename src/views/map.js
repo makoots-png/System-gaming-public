@@ -131,6 +131,10 @@ export function register(app) {
 .mp-ln.suggest{stroke:color-mix(in srgb,var(--muted) 70%,transparent);stroke-width:1.5px;stroke-dasharray:2 6}
 .mp-ln.area{fill:none;stroke:color-mix(in srgb,var(--warm) 75%,transparent);stroke-width:1.5px;stroke-dasharray:6 5}
 .mp-ln.end{fill:var(--warm);stroke:var(--ground);stroke-width:1.5px}
+.mp-hb .ans{color:var(--warm);font-weight:700;white-space:nowrap}
+.mp-ln.omen{stroke:var(--red);stroke-width:2.5px;stroke-dasharray:3 5;opacity:.95}
+[data-kind=omen] .mp-ln.area{fill:color-mix(in srgb,var(--red) 22%,transparent);stroke:var(--red);stroke-width:2px;stroke-dasharray:7 5}
+[data-kind=omen] .mp-ln.end{fill:var(--red)}
 .mp-says{position:absolute;left:0;top:0;width:0;height:0;pointer-events:none}
 .mp-say{position:absolute;left:0;top:0;transform:translate(-50%,-100%);display:flex;flex-direction:column;align-items:center;max-width:150px;padding:2px 6px;border-radius:5px;border:1px solid color-mix(in srgb,var(--warm) 70%,transparent);background:color-mix(in srgb,var(--ground) 90%,transparent);font:600 12px/15px var(--font-body);color:var(--ice);white-space:nowrap}
 .mp-say b{color:var(--warm);max-width:138px;overflow:hidden;text-overflow:ellipsis}
@@ -616,7 +620,7 @@ export function register(app) {
         const x1 = c(l.at.x), y1 = c(l.at.y), dx = c(l.to.x) - x1, dy = c(l.to.y) - y1, len = Math.hypot(dx, dy) || 1, ux = dx / len, uy = dy / len;
         const side = (l.nth - (l.of - 1) / 2) * 7, back = Math.min(len, TILE * 0.45);
         const x2 = x1 + dx - ux * back - uy * side, y2 = y1 + dy - uy * back + ux * side;
-        const end = l.kind === 'intent' ? `<circle class="mp-ln end" cx="${x2.toFixed(1)}" cy="${y2.toFixed(1)}" r="4"/>` : '';
+        const end = l.kind !== 'suggest' ? `<circle class="mp-ln end" cx="${x2.toFixed(1)}" cy="${y2.toFixed(1)}" r="4"/>` : '';
         // the words sit on the line a tile back from its end, inside the grid; two that meet on one body stack back along it
         const say = Math.min(len - TILE * 0.2, TILE * (1.2 + l.nth * 0.9)), sx = Math.min(Math.max(x1 + ux * (len - say), Math.min(SAY_HALF, w / 2)), Math.max(w - SAY_HALF, w / 2)), sy = Math.min(Math.max(y1 + uy * (len - say), 18), h - 18);
         if (l.words) words += `<div class="mp-say" data-say="${esc(l.from)}" style="transform:translate(${sx.toFixed(1)}px,${sy.toFixed(1)}px) translate(-50%,-50%)"><b>${esc(l.words.name)}</b>${l.words.what ? `<span>${esc(l.words.what)}</span>` : ''}</div>`;
@@ -736,22 +740,24 @@ export function register(app) {
     const costText = s => [s.fatigue ? `${s.fatigue} fatigue` : '', s.mana ? `${s.mana} mana` : ''].filter(Boolean).join(', ') || 'Free';
     const slotText = s => (s.wait > 0 ? `${s.wait} round${s.wait === 1 ? '' : 's'}` : costText(s));
     /** A hotbar button, drawn once per slot and updated in place (patch.ts), so a pick or a use writes only what changed. */
-    const hbTemplate = () => ui.h('<button type="button" data-attr="class:cls data-ab:ab data-arm:arm data-release:release data-more:more data-pass:pass aria-pressed:pressed aria-expanded:expanded aria-label:label disabled:wait"><svg class="ic" aria-hidden="true" focusable="false" data-attr="hidden:noIcon"><use data-attr="href:href"></use></svg><span data-text="name"></span><small data-text="small"></small></button>');
+    const hbTemplate = () => ui.h('<button type="button" data-attr="class:cls data-ab:ab data-arm:arm data-release:release data-more:more data-pass:pass aria-pressed:pressed aria-expanded:expanded aria-label:label disabled:wait"><svg class="ic" aria-hidden="true" focusable="false" data-attr="hidden:noIcon"><use data-attr="href:href"></use></svg><span data-text="name"></span><small data-text="small"></small><small class="ans" data-text="ans" data-attr="hidden:noAns"></small></button>');
     /** A slot's description: an ability's slot names its picture (`href`); Release, More and End turn draw none. */
-    const hbDesc = o => ({ cls: 'mp-hb', ab: null, arm: null, release: false, more: false, pass: false, pressed: null, expanded: null, label: null, wait: false, noIcon: true, href: null, ...o });
+    const hbDesc = o => ({ cls: 'mp-hb', ab: null, arm: null, release: false, more: false, pass: false, pressed: null, expanded: null, label: null, wait: false, noIcon: true, href: null, ans: '', noAns: true, ...o });
     const REACT_WORD = { arm: 'Arm', armed: 'Armed', spent: 'Spent' };
     /** Whether the hotbar's last slot is cut by the edge: the bar then fades out there, to show it scrolls. */
     const cutSeen = new IntersectionObserver(es => { for (const e of es) $('[data-slots]').classList.toggle('cut', e.intersectionRatio < 0.98); }, { root: $('[data-slots]'), threshold: [0.98] });
+    /** A slot that answers the omen standing says so under its cost, in plain words, and its label does too. */
+    const answerDesc = s => (s.answers ? { ans: `${s.answers[0].toUpperCase()}${s.answers.slice(1).replace(/ it$/, ' the omen')}`, noAns: false } : {});
     const leftText = s => (s.left === null ? '' : `${s.left} left`);
     /** A hotbar slot: a reaction arms (Arm, Armed, Spent); an ability with uses shows them and is off at 0. */
     const slotDesc = s => s.react
       ? hbDesc({ cls: `mp-hb react ${s.react}`, arm: s.id, noIcon: false, href: iconHref(s.icon), pressed: String(s.react !== 'arm'), label: `${s.name}, reaction: ${REACT_WORD[s.react]}`, name: s.name, small: REACT_WORD[s.react] })
-      : hbDesc({ ab: s.id, noIcon: false, href: iconHref(s.icon), pressed: String(choice.now.kind === 'aim' && choice.now.ability.id === s.id), wait: s.wait > 0 || s.left === 0, label: `${s.name}, ${costText(s)}${s.left !== null ? `, ${leftText(s)}` : ''}${s.wait > 0 ? `, ready in ${slotText(s)}` : ''}`, name: s.name, small: s.wait > 0 || s.left === null ? slotText(s) : leftText(s) });
+      : hbDesc({ ab: s.id, noIcon: false, href: iconHref(s.icon), pressed: String(choice.now.kind === 'aim' && choice.now.ability.id === s.id), wait: s.wait > 0 || s.left === 0, label: `${s.name}, ${costText(s)}${s.answers ? `, answers the omen: ${s.answers}` : ''}${s.left !== null ? `, ${leftText(s)}` : ''}${s.wait > 0 ? `, ready in ${slotText(s)}` : ''}`, name: s.name, small: s.wait > 0 || s.left === null ? slotText(s) : leftText(s), ...answerDesc(s) });
     function drawHotbar() {
       const k = src.kit(), hot = $('[data-slots]'), passBox = $('[data-passbox]'), dr = $('[data-drawer]');
       if (!k) { keyed(hot, [], hbTemplate); keyed(passBox, [], hbTemplate); dr.hidden = true; return; }
-      const h = hotbar(k.list, k.readyAt, k.now, k.costCut, store.prefs().pins[k.pinKey] ?? null, app.rules(), { armed: k.armed ?? null, left: k.left ?? {}, itemOf: k.itemOf });
-      const btn = s => { const d = slotDesc(s); return `<button type="button" class="${d.cls}"${d.ab ? ` data-ab="${esc(d.ab)}"` : ''}${d.arm ? ` data-arm="${esc(d.arm)}"` : ''} aria-pressed="${d.pressed}"${d.wait ? ' disabled' : ''} aria-label="${esc(d.label)}">${icon(s.icon)}<span>${esc(d.name)}</span><small>${esc(d.small)}</small></button>`; };
+      const h = hotbar(k.list, k.readyAt, k.now, k.costCut, store.prefs().pins[k.pinKey] ?? null, app.rules(), { armed: k.armed ?? null, left: k.left ?? {}, itemOf: k.itemOf, answers: k.answers ?? {} });
+      const btn = s => { const d = slotDesc(s); return `<button type="button" class="${d.cls}"${d.ab ? ` data-ab="${esc(d.ab)}"` : ''}${d.arm ? ` data-arm="${esc(d.arm)}"` : ''} aria-pressed="${d.pressed}"${d.wait ? ' disabled' : ''} aria-label="${esc(d.label)}">${icon(s.icon)}<span>${esc(d.name)}</span><small>${esc(d.small)}</small>${d.ans ? `<small class="ans">${esc(d.ans)}</small>` : ''}</button>`; };
       const ch = k.channel, slots = [
         ...(ch ? [['release', hbDesc({ cls: 'mp-hb release', release: true, label: `Release ${ch.name}: charge ${ch.charge} of ${ch.max}, ${ch.factor} times its power`, name: `Release ${ch.name}`, small: `${ch.charge} of ${ch.max} · ×${ch.factor}` })]] : []),
         ...h.bar.map(s => [`ab:${s.id}`, slotDesc(s)]),

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { armorCutPct, checkExample, dailyPointsLine, deathLine, gatePayLines, iconCreditLine, ICON_CREDIT, naturalLines, pointsLine, saleLine, saleRows, soloLines, statBonusLine, stealthLines } from '../src/core/rules-text.ts';
+import { mythicLines, mythicCodexLines, armorCutPct, checkExample, dailyPointsLine, deathLine, gatePayLines, iconCreditLine, ICON_CREDIT, naturalLines, pointsLine, saleLine, saleRows, soloLines, statBonusLine, stealthLines } from '../src/core/rules-text.ts';
 import { afterDefence } from '../src/core/combat/land.ts';
 import { sellPrice } from '../src/core/hunter/inventory.ts';
 import { CAP_ROUNDS } from '../src/core/combat/play.ts';
@@ -24,6 +24,7 @@ import { RULES } from '../src/core/rules.ts';
 import type { Rules } from '../src/core/rules.ts';
 import { STAT_KEYS } from '../src/core/stats.ts';
 import type { Stats } from '../src/core/stats.ts';
+import { MYTHICS } from '../src/core/registry/mythics.ts';
 
 const BASE = Object.fromEntries(STAT_KEYS.map(k => [k, 10])) as Stats;
 const striker = (R: Rules, str: number): SheetHunter => ({
@@ -265,5 +266,29 @@ describe('the icons\' credit', () => {
     const credit = await Bun.file(`${import.meta.dir}/../src/core/registry/icons-credit.md`).text();
     const named = new Set([...credit.matchAll(/^\| \S+ \| (\S+) \|/gm)].map(m => m[1]).filter(a => a !== 'Author' && a !== 'drawn'));
     expect([...named].sort()).toEqual([...ICON_CREDIT.authors].sort());
+  });
+});
+
+describe('how a mythic fights (unit MY7)', () => {
+  test('the Rules page states how a mythic fights, with the rounds an answer buys read from the rules', () => {
+    const text = mythicLines(RULES).join(' ');
+    for (const word of ['phases', 'omen', 'A hit does not answer an omen', 'stun', 'shield', 'step off', 'enraged']) expect(text).toContain(word);
+    expect(text).toContain(`winds a phase's clock back ${RULES.fight.mythic.answerTime.cancel} rounds when it cancels`);
+    const slower = { fight: { ...RULES.fight, mythic: { ...RULES.fight.mythic, answerTime: { cancel: 1, weaken: 2 } } } };
+    expect(mythicLines(slower).join(' ')).toContain('back 1 round when it cancels and 2 rounds when it makes the move smaller');
+  });
+  test('a mythic\'s codex entry gives its shape and each phase by number', () => {
+    const script = MYTHICS['angel-of-the-last-trumpet'];
+    const lines = mythicCodexLines(script);
+    expect(lines[0]).toBe(`The fight: ${script.shape}`);
+    expect(lines).toHaveLength(1 + script.phases.length);
+    expect(lines[1]).toBe(`Phase 1: ${script.phases[0]!.name}. ${script.phases[0]!.line}`);
+  });
+  test('the GM\'s switch writes fight.mythic.scripts and keeps the other overrides', async () => {
+    const { mythicSwitched } = await import('../src/core/mythic-switch.ts');
+    const { parseOverrides } = await import('../src/core/overrides.ts');
+    const saved = mythicSwitched({ rulesOverrides: { trade: { on: false }, fight: { mythic: { answerTime: { cancel: 2 } } } } }, true).rulesOverrides;
+    expect(parseOverrides(saved).refused).toEqual([]);
+    expect(saved).toEqual({ trade: { on: false }, fight: { mythic: { answerTime: { cancel: 2 }, scripts: true } } });
   });
 });

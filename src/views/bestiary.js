@@ -3,7 +3,7 @@
 import { isRefused } from '../core/save-step.ts';
 import { RANKS, rankIdx } from '../edge/rules.ts';
 import {
-  ARCHETYPE_LIST, MONSTER_BOUNDS, MONSTER_KINDS, MONSTER_TRAITS, TRAIT_LABEL, copiesOf, monsterSheetOf, parseMonster, seedMonsters, statBlock as statBlockOf, xpOf, monsterXp,
+  ARCHETYPE_LIST, MONSTER_BOUNDS, MONSTER_KINDS, MONSTER_TRAITS, TRAIT_LABEL, copiesOf, monsterScript, monsterSheetOf, parseMonster, seedMonsters, statBlock as statBlockOf, xpOf, monsterXp,
 } from '../core/registry/monsters.ts';
 import { ARCHETYPE_ATTACKS, ATTACK_ID } from '../core/registry/abilities.ts';
 import { oneOf } from '../core/one-of.ts';
@@ -17,6 +17,8 @@ import { newMonster } from '../core/save.ts';
 import { codexDoc as codexDocOf, codexFromRoom, codexKey, mergeMonsters, monsterOfKind, playerShelf, recordDefeat as recordDefeatStep, recordKeyOf, recordOf, removeMonster, saveMonster as monsterSaved } from '../core/bestiary.ts';
 import { runsFight } from '../core/role.ts';
 import { monsterIcon } from '../core/registry/icon-defaults.ts';
+import { mythicCodexLines } from '../core/rules-text.ts';
+import { mythicScriptOf } from '../core/registry/mythics.ts';
 import * as motion from './motion.ts';
 import { icon, sprite } from './icons.ts';
 import { iconField } from './maker.js';
@@ -163,6 +165,7 @@ export function register(app) {
 .enm-list .unit{font-size:13px;color:var(--cyan-dim)}
 .enm-list .enm-rounds{flex:1 1 100%;order:3;display:flex;align-items:center;gap:8px}  /* under the name, so the × stays on the name's row */
 .bst-gen{margin:0 0 14px}
+.bst-fight{margin:6px 0 2px;font-size:14px;color:var(--ice);overflow-wrap:anywhere}.bst-phases{margin:0 0 6px;padding-left:18px;font-size:13px;color:var(--cyan-dim);overflow-wrap:anywhere}
 .bst-enc{flex-direction:row;align-items:center;gap:8px;min-height:40px}.bst-tag.cdx{color:var(--rarity-ok,#59e6a8);border-color:rgba(89,230,168,.5)}
 @media (max-width:720px){.bst-grid{grid-template-columns:minmax(0,1fr)}.bst-vit{grid-template-columns:repeat(5,minmax(0,1fr))}.bst-st{grid-template-columns:repeat(3,1fr)}}
 @media (pointer:coarse),(max-width:720px){.bst-form .chk{min-height:44px}label.field[style*="min-height:40px"]{min-height:44px!important}}
@@ -181,6 +184,12 @@ export function register(app) {
   /** An ability as a skill, so its lines are the skill maker's, read at the monster's rank. */
   const abilityLines = (a, rank) => app.api.skills.lines({ name: a.name, level: 1, label: null, desc: '', type: 'active', ability: a }, { id: null, tier: rankIdx(rank) });
 
+  /** A mythic's fight in words while mythic scripts are on: what kind of fight it is, then each phase (rules-text.ts `mythicCodexLines`). */
+  const scriptLines = m => {
+    if (m.synthetic || m.kind !== 'mythic' || !app.rules().fight.mythic.scripts) return '';
+    const [shape, ...phases] = mythicCodexLines(mythicScriptOf(monsterScript(m)));
+    return `<p class="bst-fight">${esc(shape)}</p><ol class="bst-phases">${phases.map(l => `<li>${esc(l)}</li>`).join('')}</ol>`;
+  };
   const card = (m, gm, canAdd) => {
     const n = counts.get(m.id) || 1, id = esc(m.id), rec = recFor(m), i = m.synthetic ? m.info : infoOf(m);
     const badge = !rec ? (gm ? '<span class="bst-tag">Not encountered</span>' : '') : `<span class="bst-tag cdx">Defeated ×${rec.kills} · first ${esc(dateOf(rec.firstAt))}</span>`;
@@ -196,6 +205,7 @@ export function register(app) {
       ${!m.synthetic && m.notes.length ? `<ul class="bst-notes">${m.notes.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
       ${m.synthetic ? '' : `<div class="bst-meta"><span class="${m.extractable ? 'y' : 'n'}">${m.extractable ? 'Extractable' : 'Not extractable'}</span></div>`}
       ${m.desc ? `<p class="bst-desc">${esc(m.desc)}</p>` : ''}
+      ${scriptLines(m)}
       <div class="bst-acts">
         ${m.synthetic || !canAdd ? '' : `<span class="cnt">${ui.field('Count', `<input type="number" min="1" max="${MONSTER_BOUNDS.copies}" value="${n}" data-count="${id}" aria-label="Count of ${esc(m.name)} to add">`)}</span>
         <button type="button" class="primary" data-addc="${id}">Add to fight ×${n}</button>`}
