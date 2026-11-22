@@ -178,8 +178,8 @@ describe('a crystal of a rank (economy design 5, the owner\'s ruling 4: "You hav
 
 describe('a raising costs levels (economy design 7.1 `reviveLevelShare`, the owner\'s ruling 9: "maybe 3.33% of your total level")', () => {
   const S = shop('Resurrection Crystal (S)');
-  /** A dead hunter at `level` holding an S crystal; its rank is kept as it was (record.ts `RANK_TABLE`, `levelMoved`). */
-  const deadAt = (level: number): Hunter => ({ ...holding(S, 1), rank: 'A', level, peakLevel: level, life: { at: 'dead' } });
+  /** A dead hunter at `level` holding an S crystal; its rank A the GM's, set by hand, so it is kept as it was (record.ts `RANK_TABLE`, `levelMoved`, SMX-rules-7.2). */
+  const deadAt = (level: number): Hunter => ({ ...holding(S, 1), rank: 'A', rankBy: 'gm', level, peakLevel: level, life: { at: 'dead' } });
   const levelFacts = (h: Hunter) => h.chronicle.inbox.filter(f => f.kind === 'level');
 
   test('a raising at level 31 by a crystal leaves level 29, and the use says so', () => {

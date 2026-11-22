@@ -66,7 +66,7 @@ export const FACT_LINES: { readonly [K in FactKind]: (f: FactOf<K>) => string } 
   roll: f => `Rolled a natural ${n(f.natural)} on a check.`,
   coin: f => `Called the coin ${f.won ? 'right' : 'wrong'}.`,
   shop: f => `${f.act === 'buy' ? 'Bought' : 'Sold'} ${f.item} for ${n(f.price)} gold, with ${n(f.goldAfter)} gold left.`,
-  rest: f => `Took a ${f.long ? 'long' : 'short'} rest.`,
+  rest: () => 'Took a rest.',
   used: f => `Used ${f.item}.`,
   shadow: f => `The shadow ${f.name} joined the army.`,
 };

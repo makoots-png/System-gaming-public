@@ -1,8 +1,9 @@
 // row-tally.ts: what happened to a row in this fight, kept on the row while the fight runs (it is stored and played over
 // many commands and reloads) for its facts at the end (fight-facts.ts `rowFacts`, feature 1's notes section 2.2) and the
-// formula's `kills`. Pure. Written only by `tallied`, which the reducer calls at four places: a use's outcomes (`act`
-// and `release` in fight.ts), every change (`consequences` in fight-turn.ts), a turn's start (`startTurn`) and a foe
-// taken down at any depth of a use or a trigger (`fire` in triggers.ts). A hunter row keeps the whole tally; any other
+// formula's `kills`. Pure. Written only by `tallied`, which the reducer calls at five places: a use's outcomes (`act`
+// and `release` in fight.ts), every change (`consequences` in fight-turn.ts), a turn's start (`startTurn`), a foe
+// taken down at any depth of a use or a trigger (`fire` in triggers.ts) and a foe a reaction took down (`react` in
+// fight-react.ts). A hunter row keeps the whole tally; any other
 // row keeps only its kills, which the formula's `kills` reads, so a fight of sixty monsters stays small in the save.
 // Stored sparse: a field that never moved is absent, and `tallyOf` reads absent as zero.
 import { isUp, rowHp } from './row-hp.ts';

@@ -37,7 +37,7 @@ export const feat = machine<S, FeatEvent>({
   kindsOf: s => [s.f.at],
   views: [{
     title: 'A feat, earned at 2, by when it is shown',
-    note: 'The notice step (src/core/hunter/noticed.ts) moves a feat by each fact its count takes. Earned is final: nothing moves it, so a feat is earned once and the notice loop ends. A hidden feat is shown by its count or by another feat earned; one hidden until earned is never shown before. A count in a row starts again at 0, with no values seen, when a fact of its kind fails its tests. Two rows wait on a ruling and are drawn as the app behaves today: a fact that leaves a full count as it was moves nothing, even when its state tests now hold (SMX-gates-6.1, `AGAIN`), and the feat it waits on earned shows a feat hidden until earned (SMX-gates-6.2, `UNLOCKED_TO`; the notice step sends that event only to a feat shown after another).',
+    note: 'The notice step (src/core/hunter/noticed.ts) moves a feat by each fact its count takes. Earned is final: nothing moves it, so a feat is earned once and the notice loop ends. A hidden feat is shown by its count or by another feat earned; one hidden until earned is never shown before. A count in a row starts again at 0, with no values seen, when a fact of its kind fails its tests. By the owner\'s rulings of Nov 22, a fact that leaves a full count as it was earns the feat once its state tests hold (SMX-gates-6.1, `AGAIN`), and the feat it waits on earned shows a feat hidden until earned (SMX-gates-6.2, `UNLOCKED_TO`; the notice step sends that event only to a feat shown after another).',
     hides: '',
     state: s => [SHOW_WORDS(s.show), s.f.at === 'earned' ? 'Earned' : `${s.f.at === 'shown' ? 'Shown' : 'Hidden'}, ${s.f.n} of 2`],
     step,
@@ -68,7 +68,7 @@ export const inbox = machine<Save, InboxWrite>({
   kindsOf: s => [inboxOf(s)],
   views: [{
     title: 'A hunter\'s inbox, between two writes',
-    note: 'A fact is recorded in the write of the thing it tells and moved at that write\'s end. A fight holding the hunter keeps it waiting, stamped with that write\'s moment; a write in which no fight holds the hunter takes every fact, oldest first. A waiting fact is taken with the stamp of the write that frees it, as the app does today: whether it keeps its own day waits on the owner\'s ruling (SMX-rules-9.1), and that ruling is the cell `INBOX.waiting.free`.',
+    note: 'A fact is recorded in the write of the thing it tells and moved at that write\'s end. A fight holding the hunter keeps it waiting, stamped with that write\'s moment; a write in which no fight holds the hunter takes every fact, oldest first. A waiting fact is taken with the stamp of the write that frees it, so a fight\'s facts count on the day the fight ended (the owner\'s ruling of Nov 22, SMX-rules-9.1; the cell `INBOX.waiting.free`).',
     hides: '',
     state: s => INBOX_WORDS[inboxOf(s)],
     step: e => `a write${e.records ? ' records a fact' : ''}${e.held ? ', a fight holding the hunter' : ', no fight holding the hunter'}`,

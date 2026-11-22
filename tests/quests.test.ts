@@ -16,7 +16,7 @@ const NO_GATES = { personal: false, gm: false };
 import { day, dev, hid, jcid, qid } from './fixtures/ids.ts';
 import type { QuestId } from '../src/core/ids.ts';
 import type { DayKey } from '../src/core/day.ts';
-import { ROOM_HEARS, STREAK_BONUS_POINTS, chainStep, finishQuest, questEnded, questFailed, rolledOver } from '../src/core/hunter/grant.ts';
+import { STREAK_BONUS_POINTS, chainStep, finishQuest, questEnded, questFailed, rolledOver } from '../src/core/hunter/grant.ts';
 import { COMPLETER, GM_QUEST_KINDS, PLAYER_QUEST_KINDS, completerOf, questKindsFor } from '../src/core/hunter/quest-rights.ts';
 import { noticed } from '../src/core/hunter/noticed.ts';
 import type { NoticeCtx } from '../src/core/hunter/noticed.ts';
@@ -452,13 +452,18 @@ describe('a quest that counts by itself, and what failing costs (feature 1\'s no
     expect(r.failed.map(f => [f.title, f.granted.lines])).toEqual([['Hold the bridge', ['Loses 30 gold']], ['Guard the gate', ['Loses 5 gold']]]);
     expect(r.save.hunters[0]!.gold).toBe(65);
   });
-  test('a GM\'s urgent quest that runs out on a player\'s phone in a room is not posted to the room, as today (SMX-gates-3.3 waits on its ruling)', () => {
+  test('a GM\'s urgent quest that runs out on a player\'s phone in a room fails with its cost and is posted to the room as failed (SMX-gates-3.3)', () => {
     const room = parseRoomCode('ABC234')!;
-    const urgent = counted({ kind: 'urgent', dueAt: '2026-11-14T09:00:00.000Z' });
+    const urgent = counted({ kind: 'urgent', dueAt: '2026-11-14T09:00:00.000Z', onFail: { ...newRewards(), gold: -30 } });
     const r = rolledOver(saveWith(urgent), { at: AT, today: day('2026-11-14'), R: RULES, vitals: () => 'sheet', nowMs: Date.parse(AT), gm: false, room });
-    expect(ROOM_HEARS).toEqual({ counted: true, overdue: false });
     expect(quest(r.save).status).toBe('failed');
-    expect(r.save.settings.sync.outbox ?? []).toEqual([]);
+    expect(r.save.hunters[0]!.gold).toBe(70);
+    const box = r.save.settings.sync.outbox ?? [];
+    expect(box).toHaveLength(1);
+    const e = box[0]!.letter as { kind: 'event'; event: { type: string; payload: { status: string; questId: string } } };
+    expect([e.event.type, e.event.payload.status, e.event.payload.questId]).toEqual(['questUpdate', 'failed', 'q7']);
+    const alone = rolledOver(saveWith(urgent), { at: AT, today: day('2026-11-14'), R: RULES, vitals: () => 'sheet', nowMs: Date.parse(AT), gm: false, room: null });
+    expect(alone.save.settings.sync.outbox ?? [], 'alone: nothing posted').toEqual([]);
   });
   test('the post a quest\'s end makes, done or failed, carries the quest as it ended, so the ruling is one row', () => {
     const room = parseRoomCode('ABC234')!;

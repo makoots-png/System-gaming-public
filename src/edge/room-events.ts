@@ -8,7 +8,7 @@
 // of it landed, and a repeat changes nothing. Each change is a core step (src/core/hunter/grant.ts, quests.ts).
 import { describeStatus } from '../core/combat/effect-ops.ts';
 import type { SheetStatus } from '../core/combat/effect-ops.ts';
-import { chainStep, grant, idsFrom, raisedLine, sheetEdit } from '../core/hunter/grant.ts';
+import { chainStep, grant, idsFrom, noteFacts, raisedLine, sheetEdit } from '../core/hunter/grant.ts';
 import type { Granted, SheetEdit, StepDone } from '../core/hunter/grant.ts';
 import { chained, issueQuest, withTold } from '../core/hunter/quests.ts';
 import { told } from '../core/session-log.ts';
@@ -162,8 +162,9 @@ const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS }
   soloRun: GM_ONLY_READS,
   soloAnswer: { once: true, land: landSoloAnswer },
   // the facts the GM's phone saw of this phone's hunter (a fight's end, a Clear it was paid in): recorded in one write
-  // with the event's id, where the store's notice step takes them (feature 1's notes 2.3); its feats tell their own windows
-  noted: { once: true, land: (p, hids) => save => forEach(save, hids, (s, h) => ({ save: withHunter(s, record(h, ...p.facts)), tell: nothing })) },
+  // with the event's id, where the store's notice step takes them (feature 1's notes 2.3); its feats tell their own
+  // windows. A gate's Clear among the facts gives the hunter everything back in the same write (grant.ts `noteFacts`)
+  noted: { once: true, land: (p, hids, app) => save => forEach(save, hids, (s, h) => ({ save: withHunter(s, noteFacts(h, p.facts, app.rules())), tell: nothing })) },
   chapter: { once: true, land: landChapter },
 };
 

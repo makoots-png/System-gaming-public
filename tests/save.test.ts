@@ -805,8 +805,8 @@ describe('what a repair fixes', () => {
   });
 
   test('a damaged rule override is dropped at load and a good one kept, so rulesOf never reads the damaged one', () => {
-    const save = parseRaw({ schema: SCHEMA, hunters: [], rulesOverrides: { xpPerLevel: 'lots', logCap: 50, luck: 3, rest: { short: { hpPct: 30, fatigue: null } } } });
-    expect(save.rulesOverrides).toEqual({ logCap: 50, rest: { short: { hpPct: 30 } } });
+    const save = parseRaw({ schema: SCHEMA, hunters: [], rulesOverrides: { xpPerLevel: 'lots', logCap: 50, luck: 3, rest: { hp: 0.3, fatigue: null } } });
+    expect(save.rulesOverrides).toEqual({ logCap: 50, rest: { hp: 0.3 } });
   });
 
   test('the status library drops a bad key, a hunter\'s state chip, a def without a name and what is not a def', () => {

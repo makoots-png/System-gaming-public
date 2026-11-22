@@ -420,7 +420,9 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
     const b = endBase(o), raw = own(o, 'to'), to = Array.isArray(raw) && raw.length === 2 ? raw.map(sheetKey) : refuse();
     return to[0] === to[1] ? refuse() : { ...b, to: [to[0]!, to[1]!] };
   } },
-  system: { gmOnly: true, ownSheet: false, read: o => {
+  // SMX-sync-5.2: a System whisper (one with `to`) is sealed to the GM and the hunters it names (the owner, Nov 22: "Yes");
+  // a broadcast to the room is not
+  system: { gmOnly: true, ownSheet: false, sealed: p => p.to !== undefined, read: o => {
     const to = own(o, 'to');
     return { ...base(o), ...(to === undefined ? {} : { to: toList(to) }), tag: opt(own(o, 'tag'), text(40), '! Notification'),
       title: filled(120)(own(o, 'title')), body: opt(own(o, 'body'), text(1000), ''), kind: opt(own(o, 'kind'), choiceOf(SYSTEM_KINDS), 'info') };

@@ -514,15 +514,15 @@ describe('the hidden op\'s fields and the stayHidden op (stealth design section 
     for (const o of ops) expect(read(JSON.parse(JSON.stringify(o)))).toEqual(o);
   });
 
-  test('a hidden op with no field written is the kits\' Stealth: level 1, it hides only out of sight, and a hurt, a reveal or damage it deals ends it', () => {
-    expect(read({ op: 'hidden' })).toEqual({ op: 'hidden', level: 1, start: 'unseen', ends: ALL });
+  test('a hidden op with no field written is the kits\' Stealth: level 0 (stealth beats sight at the same level, the owner, Nov 22), it hides only out of sight, and a hurt, a reveal or damage it deals ends it', () => {
+    expect(read({ op: 'hidden' })).toEqual({ op: 'hidden', level: 0, start: 'unseen', ends: ALL });
   });
 
-  test('a level of 0 reads as 1, the lowest that hides from anyone; under 0 is 1, past 5 is 5, a fraction rounds down, and a level that is not one is 1', () => {
+  test('a level of 0 is kept, since a hide at 0 hides from a plain sight of 0; under 0 is 0, past 5 is 5, a fraction rounds down, and a level that is not one is 0', () => {
     const level = (v: unknown) => { const o = read({ op: 'hidden', level: v }); return o?.op === 'hidden' ? o.level : null; };
-    expect([0, -3, 2.7, 5, 9, 'two', null].map(level)).toEqual([1, 1, 2, 5, 5, 1, 1]);
-    expect(level([0, 1, 2, 3, 4, 9])).toEqual([1, 1, 2, 3, 4, 5]);
-    expect(level([1, 2, 3])).toBe(1);
+    expect([0, -3, 2.7, 5, 9, 'two', null].map(level)).toEqual([0, 0, 2, 5, 5, 0, 0]);
+    expect(level([0, 1, 2, 3, 4, 9])).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(level([1, 2, 3])).toBe(0);
   });
 
   test('a wrong start reads as out of sight, a wrong or missing end as true, and an end other than the three is dropped', () => {

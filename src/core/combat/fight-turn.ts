@@ -28,7 +28,7 @@ export { held };
 import { dismissed, isSummon, timeUp } from './summons.ts';
 import { damageShare, healShare, statusLife, statusStep, stealthOf, stealthState, wardedDamage } from './standing.ts';
 import { reactState, reactStep, restored, turnReaction, withReact } from './fight-react.ts';
-import { restUsed } from './uses.ts';
+import { gateUsed } from './uses.ts';
 import { ARMED, endStep } from './delayed.ts';
 import type { Raised } from './triggers.ts';
 import { dist, sees, seenBy } from './space.ts';
@@ -257,7 +257,7 @@ export type SheetTotals = {
 };
 /** The one answer to what a row writes back to its sheet: the fight's write-back and a played fight's end (odds.ts) both read it. */
 export const sheetTotals = (a: Body, now: Tick, R: Rules): SheetTotals =>
-  ({ hp: rowHp(a), mana: a.mana, fatigue: a.fatigue, statuses: sheetStatuses(a.statuses.filter(onSheet), now, R), used: restUsed(a) });
+  ({ hp: rowHp(a), mana: a.mana, fatigue: a.fatigue, statuses: sheetStatuses(a.statuses.filter(onSheet), now, R), used: gateUsed(a) });
 
 /**
  * Pays what is due on `row`: each due op at once when its formula has no dice, and otherwise it waits in `pending` for

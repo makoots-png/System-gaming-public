@@ -58,7 +58,7 @@ export function exampleStatuses(R: Rules): Record<string, StatusDef> {
     // Hidden even in a foe's sight, at a level that follows the user's rank E to S (section 5, example 1).
     vanished: {
       label: 'Vanished', desc: 'Hidden even in plain view. Being hurt, being revealed or dealing damage ends it.',
-      ops: [{ op: 'hidden', level: [1, 1, 2, 2, 3, 3], start: 'anywhere', ends: { hurt: true, revealed: true, dealt: true } }],
+      ops: [{ op: 'hidden', level: [0, 0, 1, 1, 2, 2], start: 'anywhere', ends: { hurt: true, revealed: true, dealt: true } }],
     },
   };
 }
@@ -98,7 +98,7 @@ export function exampleSkills(R: Rules): SkillTemplate[] {
     active('Vanish', 'You become Vanished for 2 rounds: hidden even in a foe\'s sight, at a stealth level that rises with your rank.', { ...vanish, cost: { ...vanish.cost, cooldown: rounds(5, R) } }),
     { name: 'Unseen Blade', level: 1, label: null, desc: 'Dealing damage does not end your hiding, so each hit from hiding is an ambush until you are hurt or revealed.', type: 'passive', bonus: {},
       worn: { label: 'Unseen Blade', desc: '', ops: [{ op: 'stayHidden', on: 'dealt' }] } },
-    { name: 'Hunter\'s Eye', level: 1, label: null, desc: 'Your sight level is 2: you see a foe hidden at stealth level 2 or lower.', type: 'passive', bonus: {},
+    { name: 'Hunter\'s Eye', level: 1, label: null, desc: 'Your sight level is 2: you see a foe hidden at stealth level 1 or lower.', type: 'passive', bonus: {},
       worn: { label: 'Hunter\'s Eye', desc: '', ops: [{ op: 'sheet', key: 'sight', amount: 2 }] } },
     active('Flare', 'A blast at a place that reveals each body it catches: a hide that ends when it is revealed ends, whatever your sight.',
       make('blast', 'Flare', { effect: null, ops: [{ op: 'reveal' }] }, R)),

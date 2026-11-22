@@ -56,7 +56,7 @@ export function completerOf(q: Pick<Quest, 'objectives'>): QuestCompleter {
 export const COMPLETER: { readonly [C in QuestCompleter]: { readonly button: boolean; readonly counted: boolean } } = {
   system: { button: false, counted: true },
   hand: { button: true, counted: false },
-  // as today: SMX-gates-4.1 waits on the owner's ruling, proposed "a quest with any hand-ticked objective keeps its
-  // Complete button" (button: true); until then a cancelled "Complete quest?" is left by a minus and a plus
-  mixed: { button: false, counted: true },
+  // SMX-gates-4.1: a quest with any hand-ticked objective keeps its Complete button (the owner, Nov 22: "Yes."), so a
+  // cancelled "Complete quest?" is not left to a minus and a plus
+  mixed: { button: true, counted: true },
 };

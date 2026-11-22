@@ -85,9 +85,9 @@ const HELD = 'held by the GM\'s fight';
  * `once` as sync.ts runs it (`store.apply` of `appliedOnce`: the step is worked out first, then written whole, so a step
  * that throws writes nothing). `fight`: the GM's fight holds the hunter's vitals (`fightOf` answers `gm`).
  */
-function phone(o: { conditions?: SheetStatus[]; fight?: boolean; level?: number; runs?: WaitingRun[]; life?: Life } = {}) {
+function phone(o: { conditions?: SheetStatus[]; fight?: boolean; level?: number; runs?: WaitingRun[]; life?: Life; sheet?: Partial<Hunter> } = {}) {
   const fresh = freshSave({ now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-player1') }, { onboarded: true });
-  let save: Save = { ...fresh, hunters: fresh.hunters.map(h => ({ ...h, ...setLevel(h, o.level ?? 1, 0, RULES).progress, conditions: [...(o.conditions ?? [])], life: o.life ?? h.life })) };
+  let save: Save = { ...fresh, hunters: fresh.hunters.map(h => ({ ...h, ...setLevel(h, o.level ?? 1, 0, RULES).progress, conditions: [...(o.conditions ?? [])], life: o.life ?? h.life, ...o.sheet })) };
   if (o.runs) save = { ...save, settings: { ...save.settings, sync: { ...save.settings.sync, runs: o.runs } } };
   let rules: Rules = RULES;
   const windows: { title: string; lines?: string[] }[] = [], toasts: string[] = [], shown: string[][] = [], completed: string[] = [], said: { title: string | undefined; body: string | undefined }[] = [];
@@ -353,6 +353,17 @@ describe('a reward the GM sends lands whole', () => {
     p.receive(1, 'noted', { to: ['d-player1:h1'], facts });
     expect(p.hunter.chronicle.inbox).toEqual(facts);
     expect(p.applied).toEqual([e(1)]);
+  });
+
+  test('a gate\'s Clear the GM\'s phone noted gives the player\'s hunter everything back and its rests, once', () => {
+    const tired = phone({ life: { at: 'up', hp: 1 }, sheet: { mana: 0, fatigue: 40, restsTaken: RULES.rest.perGate } }), max = hunterSheet(tired.hunter, RULES).sheet;
+    const gate = { kind: 'gate', name: 'Goblin Den', rank: 'E', above: 0, toBreak: 3 };
+    tired.receive(1, 'noted', { to: ['d-player1:h1'], facts: [gate] });
+    const h = tired.hunter;
+    expect([h.life, h.mana, h.fatigue, h.restsTaken]).toEqual([{ at: 'up', hp: max.hpMax }, max.manaMax, 0, 0]);
+    const kills = phone({ sheet: { restsTaken: 1 } });
+    kills.receive(1, 'noted', { to: ['d-player1:h1'], facts: [{ kind: 'roll', natural: 20 }] });
+    expect(kills.hunter.restsTaken, 'facts with no gate cleared give nothing back').toBe(1);
   });
 
   test('the same award delivered twice is given once', () => {

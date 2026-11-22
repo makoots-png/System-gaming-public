@@ -43,7 +43,8 @@ import { giveSkill } from './skills-held.ts';
 import { REVIVE_HP, lifeNews, vitalStep } from './vitals.ts';
 import type { Life, LifeEvent, VitalEvent } from './vitals.ts';
 import { record } from './chronicle.ts';
-import type { LifeHow } from './facts.ts';
+import type { Fact, LifeHow } from './facts.ts';
+import { restStep } from './rests.ts';
 import { saveId, sheetKeyOf } from '../ids.ts';
 import type { HunterId, IdOf, RoomCode } from '../ids.ts';
 import type { DayKey } from '../day.ts';
@@ -296,9 +297,8 @@ export function questFailed(save: Save, hid: string, qid: string, o: Day & { vit
  */
 export const ROOM_HEARS: { readonly [How in 'counted' | 'overdue']: boolean } = {
   counted: true,
-  // as today: SMX-gates-3.3 waits on the owner's ruling, proposed "an urgent quest that runs out fails with its cost, and
-  // the room hears of it" (true)
-  overdue: false,
+  // SMX-gates-3.3: an urgent quest that runs out fails with its cost, and the room hears of it (the owner, Nov 22: "Yes.")
+  overdue: true,
 };
 /** A fraction made from a quest's id, so the same quest's end is the same room event however often it is posted. */
 function idShare(id: string): number {
@@ -354,15 +354,19 @@ export type SheetEdit =
   | { type: 'fatigue'; delta: number }
   /**
    * The fight's totals for the hunter: its mana, fatigue and the statuses as its row holds them, and with `used` the uses
-   * spent of its abilities limited a long rest (the row holds all of them, so they replace the sheet's; without it the
+   * spent of its abilities limited a gate (the row holds all of them, so they replace the sheet's; without it the
    * sheet keeps its own). With them the row's `life` (its HP with it), the one writer's while the fight holds the hunter:
    * this phone's fight's write-back, or the room's `vitals` message for a player's hunter in the GM's fight.
    */
   | { type: 'totals'; life: Life; mana: number; fatigue: number; statuses: readonly SheetStatus[]; used?: Readonly<Record<AbilityId, number>> }
   | { type: 'put'; status: StatusIn }
   | { type: 'drop'; key: string }
-  /** A short or long rest (vitals.ts `rest`). */
-  | { type: 'rest'; kind: 'short' | 'long' };
+  /** A rest (vitals.ts `rest`), counted against the rests a gate (rests.ts): refused `spent` when none is left, `cannot` when dead. */
+  | { type: 'rest' }
+  /** A gate the hunter was paid for cleared: everything back and the rests a gate with it (vitals.ts `cleared`, rests.ts); the dead get only the rests' count. */
+  | { type: 'cleared' }
+  /** A gate left without its Clear (a solo run lost or retreated from): the rests a gate start again (rests.ts), nothing else. */
+  | { type: 'gateLeft' };
 
 /**
  * How edit `e` changed a life from `before`, for its fact (facts.ts `LifeHow`): a fight's totals that stand a dead
@@ -399,11 +403,10 @@ export function raisedLine(from: number, to: number): string {
 }
 
 /**
- * Whether a status put on or taken off fits the vitals to the maxima it leaves. SMX-rules-1.3 waits on the owner: whether
- * a status change brings HP, mana and fatigue down to the new maxima at once. Today it does not: the stored numbers stay
- * above a lowered maximum (the sheet shows at most the maximum, `hpOf`, `manaOf`) until the next change fits them.
+ * Whether a status put on or taken off fits the vitals to the maxima it leaves. Both do (SMX-rules-1.3, the owner, Nov 22:
+ * "Yes"): HP, mana and fatigue come down to the new maxima at once, and max HP is at least 1 (derive.ts `hpMax`).
  */
-const STATUS_FITS: { readonly put: boolean; readonly drop: boolean } = { put: false, drop: false };
+const STATUS_FITS: { readonly put: boolean; readonly drop: boolean } = { put: true, drop: true };
 
 /**
  * Hunter `h` after `e`, each with the maxima its sheet gives. A life event its state does not take (a heal on a dead
@@ -414,7 +417,7 @@ const STATUS_FITS: { readonly put: boolean; readonly drop: boolean } = { put: fa
  * (`raisedAt`); the hunter it answers is up, so a second write of the same change costs nothing. A revive takes off
  * every status the hunter holds.
  */
-export function sheetEdit(h: Hunter, e: SheetEdit, R: Rules): Hunter | Refused<'cannot' | 'mana' | 'state-chip' | 'no-def' | 'unchanged'> {
+export function sheetEdit(h: Hunter, e: SheetEdit, R: Rules): Hunter | Refused<'cannot' | 'mana' | 'spent' | 'state-chip' | 'no-def' | 'unchanged'> {
   const next = edited(h, e, R);
   if (isRefused(next)) return next;
   // what the change did to the life, and a rest, are facts (chronicle.ts), recorded in the edit's own write
@@ -422,15 +425,41 @@ export function sheetEdit(h: Hunter, e: SheetEdit, R: Rules): Hunter | Refused<'
   const withLife = news ? record(next, { kind: 'life', news: news.kind, how: howOf(e, h.life) }) : next;
   // a raising from death costs levels (the owner's ruling 9), told after the life's fact
   const raised = raisedFromDeath(h.life, next.life) ? raisedAt(withLife, R) : withLife;
-  return e.type === 'rest' ? record(raised, { kind: 'rest', long: e.kind === 'long' }) : raised;
+  return e.type === 'rest' ? record(raised, { kind: 'rest' }) : raised;
 }
-function edited(h: Hunter, e: SheetEdit, R: Rules): Hunter | Refused<'cannot' | 'mana' | 'state-chip' | 'no-def' | 'unchanged'> {
+/**
+ * Hunter `h` with `facts` recorded (chronicle.ts `record`); a gate's Clear among them (a `gate` fact, pay.ts `gateFact`)
+ * gives it everything back in the same answer (`cleared`). Every place a Clear reaches a hunter records its fact here:
+ * `settleClear` on the clearing phone, `soloRan` for a personal gate won alone, and the `noted` message on a player's phone.
+ */
+export function noteFacts(h: Hunter, facts: readonly Fact[], R: Rules): Hunter {
+  const noted = record(h, ...facts);
+  if (!facts.some(f => f.kind === 'gate')) return noted;
+  const back = sheetEdit(noted, { type: 'cleared' }, R);
+  return isRefused(back) ? noted : back;
+}
+function edited(h: Hunter, e: SheetEdit, R: Rules): Hunter | Refused<'cannot' | 'mana' | 'spent' | 'state-chip' | 'no-def' | 'unchanged'> {
   const step = (ev: VitalEvent): Hunter | Refused<'cannot' | 'mana'> => { const v = vitalStep(h, ev, sheetOf(h, R), R); return isRefused(v) ? v : { ...h, ...v }; };
+  // a rest moves the vitals and the count of rests together, or neither (a dead hunter's rest is refused first)
+  const rested = (): Hunter | Refused<'cannot' | 'mana' | 'spent'> => {
+    const x = step({ type: 'rest' }); if (isRefused(x)) return x;
+    const restsTaken = restStep(h.restsTaken, { type: 'rest' }, R);
+    return isRefused(restsTaken) ? restsTaken : { ...x, restsTaken };
+  };
+  // a gate's end starts the count again for every hunter it ends for; a Clear gives everything back too, except to the
+  // dead, who get nothing else (vitals.ts `VITAL_TABLE`)
+  const ended = (ev: 'cleared' | 'gateLeft'): Hunter | Refused<'spent'> => {
+    const x = ev === 'cleared' ? step({ type: 'cleared' }) : h, base = isRefused(x) ? h : x;
+    const restsTaken = restStep(h.restsTaken, { type: ev }, R);
+    return isRefused(restsTaken) ? restsTaken : { ...base, restsTaken };
+  };
   const fits = (x: Hunter | Refused<'state-chip' | 'no-def' | 'unchanged'>, edit: 'put' | 'drop') => (isRefused(x) || !STATUS_FITS[edit] ? x : fitted(x, R));
   switch (e.type) {
     // a revive takes off every status, so a poison does not kill the hunter again (the owner, Nov 21)
     case 'life': { const x = step(e.event.type === 'revive' ? { type: 'revive', by: e.by ?? 'gm' } : e.event); return isRefused(x) || e.event.type !== 'revive' ? x : { ...x, conditions: [] }; }
-    case 'mana': case 'spend': case 'fatigue': case 'rest': return step(e);
+    case 'mana': case 'spend': case 'fatigue': return step(e);
+    case 'rest': return rested();
+    case 'cleared': case 'gateLeft': return ended(e.type);
     // the life, mana and fatigue fitted to the maxima the sheet gave before the fight's statuses replace its own
     case 'totals': { const x = step({ type: 'fightTotals', life: e.life, mana: e.mana, fatigue: e.fatigue, ...(e.used ? { used: e.used } : {}) }); return isRefused(x) ? x : { ...x, conditions: e.statuses.map(s => ({ ...s })) }; }
     case 'put': return fits(putStatus(h, e.status, R.conditions), 'put');

@@ -23,13 +23,14 @@ export type SightRange = { readonly kind: 'whole' } | { readonly kind: 'tiles'; 
 
 /**
  * Whether eyes `e` perceive figure `f`: its own side always; else `e` is up, `f` is in its range, and its sight is at
- * `f`'s stealth level or above. A body is hidden only from sight of a lower level (the owner's ruling 1).
+ * above `f`'s stealth level. A body is hidden from sight of its own level or lower: stealth beats sight at the same
+ * level (the owner, Nov 22, turning his ruling 1 the other way), so a plain hide at 0 hides from a plain sight of 0.
  */
 export function perceives(e: Eyes, f: Figure, grid: Grid, range: SightRange): boolean {
   if (e.side === f.side) return true;
   if (!e.up) return false;
   if (range.kind === 'tiles' && !inSight(e.place, f.place, grid, range.n)) return false;
-  return f.stealth === null || e.sight >= f.stealth;
+  return f.stealth === null || e.sight > f.stealth;
 }
 
 /** A fight body's eyes: its place, its side, whether it is up, and its sheet's sight level (after its sight ops). */

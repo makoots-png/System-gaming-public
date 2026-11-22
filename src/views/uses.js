@@ -90,7 +90,6 @@ export function register(app) {
     async command(post, via = 'turn') {
       const send = holdTo({ kind: 'tap', via });
       if (send === 'none') { ui.news('Your last move waits for the GM.', 'warning'); return null; }
-      if (send === 'unheld') return post();
       /** @type {import('../core/api.ts').Posting | null} */
       let r = null;
       try { r = await post(); } finally {

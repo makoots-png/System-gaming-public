@@ -223,7 +223,7 @@ function shared(raw: number, a: Ability, user: Body, target: Body, grid: Grid, R
 /**
  * Rule 11c's ambush (notes-7-stealth.md section 3's table, the owner's rulings 3 and 5): `target`'s own eyes do not
  * perceive `user` over the whole map (sight.ts `perceives`), which only a hidden user's stealth can cause. A target that
- * sees the user, at its stealth level or above, saw it coming; its allies' eyes do not warn it.
+ * sees the user, with a sight above its stealth level, saw it coming; its allies' eyes do not warn it.
  */
 const ambushes = (user: Body, target: Body, grid: Grid): boolean => !perceives(eyesOf(target), figureOf(user), grid, { kind: 'whole' });
 
@@ -486,8 +486,8 @@ export function ready(a: Ability, user: Body, bodies: readonly Body[], aim: Aim,
 
 /**
  * Rule 2: whether `user` may pick `t` as its target: `t` is not warded from it (standing.ts `warded`, the untargetable
- * ward), and the user's side perceives it in `seen` (sight.ts `perceivedBy`: a hidden body only by a sight at its level
- * or above; in a fog only within the fog's sight of a body of the side, the owner's rulings 1 and 7).
+ * ward), and the user's side perceives it in `seen` (sight.ts `perceivedBy`: a hidden body only by a sight above its
+ * level; in a fog only within the fog's sight of a body of the side, the owner's rulings 1 and 7).
  */
 const pickable = (t: Body, user: Body, seen: Lookout): boolean => !warded(t, user.side) && perceivedBy(user.side, t, seen);
 

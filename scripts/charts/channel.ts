@@ -32,7 +32,7 @@ export const channel = machine<Channel | null, ChannelEvent>({
   kindsOf: c => [channelState(c)],
   views: [{
     title: 'A channel, from its start to going off',
-    note: 'The chart shows the channel on its user\'s card. Its charge grows one a turn to its max and stays in Channeling. At its max the user releases it or loses it on a pass. A broken channel waits for the GM\'s release, which resolves it at once at its halved charge and costs its user no time out of its turn. What a release costs is read from the state it went off from (`released`); a channel broken as its user\'s own turn starts costs that turn today, a row that waits on a ruling (rules-3.1).',
+    note: 'The chart shows the channel on its user\'s card. Its charge grows one a turn to its max and stays in Channeling. At its max the user releases it or loses it on a pass. A broken channel waits for the GM\'s release, which resolves it at once at its halved charge and costs its user no time out of its turn. What a release costs is read from the state it went off from (`released`); a channel broken as its user\'s own turn starts costs that turn (rules-3.1, the owner, Nov 22).',
     hides: '',
     state: c => LABEL[channelState(c)],
     step,

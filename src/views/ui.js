@@ -65,8 +65,8 @@ function toastBox() {
 }
 /**
  * A toast that holds a write (`what`, src/core/held.ts): `act` runs as the held write is committed, never after its Undo.
- * It is committed after `ms`, or sooner when a third toast pushes it off (the row ruling SMX-gates-5.1 waits on) or the
- * page is hidden or left (`heldNow`), so a give held back is never lost. The write it holds is the one the action makes
+ * It is committed after `ms`, or sooner when the page is hidden or left (`heldNow`); newer toasts never push it off
+ * (SMX-gates-5.1, the owner, Nov 22), so a give held back is never lost. The write it holds is the one the action makes
  * at once without it (gm.js's Give…, stories.js's End story): only later. A second hold of a write already held is
  * refused: no toast, and `toast` answers null. A held toast takes no `key`: it holds its one write, so it never adds up.
  * @typedef {{ what: import('../core/held.ts').HeldWhat; ms: number; act: () => void; undo: string }} Hold
@@ -74,8 +74,8 @@ function toastBox() {
 /**
  * Each toast on screen by its element, oldest first, until it goes: the timer that ends it and, for a held toast, its
  * held write (its key, its state of src/core/held.ts, stepped only by `heldStep`, and `act`, the write it makes). A toast
- * leaves as it ends, as its Undo or × is tapped, or as a third toast pushes it off, so its write runs at most once and no
- * timer outlives it.
+ * leaves as it ends, as its Undo or × is tapped, or (a plain one) as a third plain toast pushes it off, so its write runs
+ * at most once and no timer outlives it.
  * @type {Map<HTMLElement, { timer: ReturnType<typeof setTimeout>; held: { key: string; write: import('../core/held.ts').HeldWrite; act: () => void } | null }>}
  */
 const toasts = new Map();
@@ -87,7 +87,7 @@ function off(t) {
   return kept;
 }
 /**
- * Toast `t` goes by `e` (its time, Undo or ×, a third toast, the page hidden): its held write, if it holds one, is
+ * Toast `t` goes by `e` (its time, Undo or ×, the page hidden): its held write, if it holds one, is
  * stepped by `e` and made when that commits it.
  * @param {HTMLElement} t @param {import('../core/held.ts').HeldEvent} e
  */
@@ -127,7 +127,8 @@ export function toast(tag, msg, opts = {}) {
   box.appendChild(t);
   enter(t, 'toast');
   toasts.set(t, { timer: setTimeout(() => ended(t, { type: 'due' }), hold ? hold.ms : TOAST_MS), held: held && write ? { ...held, write } : null });
-  for (const old of [...toasts.keys()].slice(0, -2)) ended(old, { type: 'crowded' });
+  // at most two plain toasts show: a third pushes the oldest off; a held one stays its whole window (SMX-gates-5.1)
+  for (const old of [...toasts.keys()].filter(x => !toasts.get(x).held).slice(0, -2)) off(old);
   return t;
 }
 /** The tag of the fight's news (`news`): a refused write told under it is said in the fight's news, as the fight's own refusals are. */

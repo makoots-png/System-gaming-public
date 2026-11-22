@@ -46,16 +46,15 @@ describe('a shadow\'s life: resting or summoned with its HP, or released', () =>
     const rows = SHADOW_CASES.map(c => [c, Object.fromEntries(SHADOW_COLUMNS.map(e => [e, shadowMove(c, e)]))]);
     expect(Object.fromEntries(rows)).toEqual({
       resting: { summon: 'summoned', dismiss: null, release: 'released', fought: 'resting', fell: 'resting', heal: 'resting' },
-      restingFallen: { summon: 'summoned', dismiss: null, release: 'released', fought: 'resting', fell: 'resting', heal: 'resting' },
-      summoned: { summon: null, dismiss: 'resting', release: 'released', fought: 'summoned', fell: 'summoned', heal: 'summoned' },
-      summonedFallen: { summon: null, dismiss: 'resting', release: 'released', fought: 'summoned', fell: 'summoned', heal: 'summoned' },
+      restingFallen: { summon: null, dismiss: null, release: 'released', fought: 'resting', fell: 'resting', heal: 'resting' },
+      summoned: { summon: null, dismiss: 'resting', release: 'released', fought: 'summoned', fell: 'resting', heal: 'summoned' },
       released: { summon: null, dismiss: null, release: null, fought: null, fell: null, heal: null },
     });
   });
 
-  test('a shadow\'s case is where it is, and in the army whether its HP is 0; a fight that leaves it at 0 or below is the fell column', () => {
+  test('a shadow\'s case is where it is, and resting whether its HP is 0 (a summoned one at 0 HP is one stored before rules-10.1); a fight that leaves it at 0 or below is the fell column', () => {
     expect([{ at: 'resting', hp: 4 }, { at: 'resting', hp: 0 }, { at: 'summoned', hp: 4 }, { at: 'summoned', hp: 0 }, { at: 'released' }].map(s => shadowCase(s as ShadowState)))
-      .toEqual(['resting', 'restingFallen', 'summoned', 'summonedFallen', 'released']);
+      .toEqual(['resting', 'restingFallen', 'summoned', 'summoned', 'released']);
     expect([SUMMON, DISMISS, RELEASE, { kind: 'fought', hp: 3 }, { kind: 'fought', hp: 0 }, { kind: 'fought', hp: -2 }, { kind: 'heal', hpMax: 9 }].map(e => shadowColumn(e as ShadowEvent)))
       .toEqual(['summon', 'dismiss', 'release', 'fought', 'fell', 'fell', 'heal']);
   });
@@ -71,17 +70,19 @@ describe('a shadow\'s life: resting or summoned with its HP, or released', () =>
     expect(h.shadows[0]).toEqual({ ...shade, summoned: true, hp: 3 });
   });
 
-  test('rules-10.1 waits on the owner: a shadow that falls to 0 HP in a fight stays summoned today, at 0 HP', () => {
-    expect(ok(setShadowHp(army({ summoned: true }), 'sh1', 0)).shadows[0]).toEqual({ ...shade, summoned: true, hp: 0 });
+  test('a shadow that falls to 0 HP in a fight leaves the field: it is dismissed, at 0 HP (rules-10.1)', () => {
+    expect(ok(setShadowHp(army({ summoned: true }), 'sh1', 0)).shadows[0]).toEqual({ ...shade, summoned: false, hp: 0 });
   });
 
   test('a fight that leaves a shadow below 0 stores 0, never a negative HP', () => {
     expect(ok(setShadowHp(army({ summoned: true }), 'sh1', -4)).shadows[0]!.hp).toBe(0);
   });
 
-  test('rules-10.1 waits on the owner: a resting shadow at 0 HP may be summoned today, still at 0 HP', () => {
-    expect(can(army({ hp: 0 }), 'sh1', SUMMON)).toBe(true);
-    expect(ok(stepShadow(army({ hp: 0 }), 'sh1', SUMMON)).shadows[0]).toEqual({ ...shade, summoned: true, hp: 0 });
+  test('a resting shadow at 0 HP cannot be summoned until it is healed; after Full HP it can (rules-10.1)', () => {
+    expect(can(army({ hp: 0 }), 'sh1', SUMMON)).toBe(false);
+    expect(stepShadow(army({ hp: 0 }), 'sh1', SUMMON)).toEqual({ ok: false, why: 'not-now' });
+    const healed = ok(healShadow(army({ hp: 0 }), 'sh1', RULES));
+    expect(ok(stepShadow(healed, 'sh1', SUMMON)).shadows[0]).toEqual({ ...shade, summoned: true });
   });
 
   test('Full HP brings a fallen shadow back to the full HP its body gives, summoned or resting as it was', () => {

@@ -70,8 +70,8 @@ describe('who completes a quest (SMX-gates-4)', () => {
   const rows: [typeof QUEST_COMPLETERS[number], { button: boolean; counted: boolean }][] = [
     ['system', { button: false, counted: true }],
     ['hand', { button: true, counted: false }],
-    // as today: SMX-gates-4.1 waits on the owner's ruling (proposed: a quest with any hand-ticked objective keeps its Complete button)
-    ['mixed', { button: false, counted: true }],
+    // SMX-gates-4.1: a quest with any hand-ticked objective keeps its Complete button (the owner, Nov 22)
+    ['mixed', { button: true, counted: true }],
   ];
   for (const [who, gives] of rows) test(`a ${who} quest: Complete button ${gives.button ? 'shown' : 'hidden'}, ${gives.counted ? '' : 'never '}completed by the System`, () => {
     expect(COMPLETER[who]).toEqual(gives);

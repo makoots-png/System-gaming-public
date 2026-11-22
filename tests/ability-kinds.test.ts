@@ -226,10 +226,10 @@ describe('an ability in sentences (the ability maker\'s preview)', () => {
     const pact = statusKey('crimson-pact'), pain = statusKey('pain');
     const a = { ...of('curse'), tags: [tag('blood'), tag('ultimate')],
       prices: [{ kind: 'hp', amount: { kind: 'share', share: 0.1 } }, { kind: 'stacks', key: pain, from: 'self', take: { kind: 'all' } }] as const,
-      gates: [{ kind: 'holds', key: pact, on: 'self', atLeast: 1 }, { kind: 'uses', per: 'rest', n: 1 }] as const,
+      gates: [{ kind: 'holds', key: pact, on: 'self', atLeast: 1 }, { kind: 'uses', per: 'gate', n: 1 }] as const,
       summon: { name: 'Sprite', archetype: 'skirmisher', rounds: 2, statuses: [] } as const };
     expect(describeAbility(a, RULES).slice(2)).toEqual([
-      'Costs 10% of your max HP. Refused at that HP or less.', 'Costs all pain of yours.', 'Only while you hold crimson-pact.', '1 use a rest.',
+      'Costs 10% of your max HP. Refused at that HP or less.', 'Costs all pain of yours.', 'Only while you hold crimson-pact.', '1 use a gate.',
       'Tags: blood, ultimate.', `Summons a Sprite (skirmisher, your rank) for 2 rounds. ${RULES.fight.kit.summons} at most.`,
     ]);
   });

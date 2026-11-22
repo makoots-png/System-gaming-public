@@ -73,7 +73,7 @@ import {
   newQuest, newShadow, newStats, newTitle, parseSheetHunter, questState,
 } from './hunter/hunter.ts';
 import type {
-  Boon, Build, Condition, Daily, Hunter, Loadout, Objective, Quest, QuestKind, QuestSource, QuestState, QuestStatus, Shadow, ShadowGrade, Title,
+  Boon, Build, Condition, Daily, Hunter, Loadout, Objective, Quest, QuestKind, QuestSource, QuestState, QuestStatus, RankBy, Shadow, ShadowGrade, Title,
 } from './hunter/hunter.ts';
 export { rulesOf };
 export type { Rules };
@@ -102,7 +102,7 @@ export {
   QUEST_KINDS, QUEST_SOURCES, QUEST_STATUSES, SHADOW_GRADES, jobOf, newBoon, newEquipped, newHunter, newLoadout, newQuest, newShadow, newStats,
   newTitle, parseSheetHunter, questState,
 };
-export type { Boon, Build, Condition, Daily, Hunter, Loadout, Objective, Quest, QuestKind, QuestSource, QuestState, QuestStatus, Shadow, ShadowGrade, Title };
+export type { Boon, Build, Condition, Daily, Hunter, Loadout, Objective, Quest, QuestKind, QuestSource, QuestState, QuestStatus, RankBy, Shadow, ShadowGrade, Title };
 /** What a reward may hold and its one reader: src/core/rewards.ts. */
 export { newRewards };
 export type { RewardBundle, Rewards };

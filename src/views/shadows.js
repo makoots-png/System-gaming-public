@@ -119,7 +119,7 @@ export function register(app) {
     const cards = h.shadows.map(s => `<li class="sh-card${on(s) ? ' on' : ''}" data-sid="${esc(s.id)}">
       <h3>${esc(s.name)}</h3>
       <div class="sh-meta">${ui.rankBadge(s.rank)}<span>${esc(s.grade)}</span><span>${esc(s.archetype)}</span><span>HP ${int(s.hp)} / ${hpMaxOf(s)}</span><span>Summon ${summonCost(s)} mana</span></div>
-      <div class="sh-row"><button type="button" class="${on(s) ? '' : 'primary'}" data-act="summon" aria-pressed="${on(s)}">${on(s) ? 'Unsummon' : 'Summon'}</button>
+      <div class="sh-row"><button type="button" class="${on(s) ? '' : 'primary'}" data-act="summon" aria-pressed="${on(s)}"${!on(s) && !can(h, s.id, { kind: 'summon' }) ? ' disabled title="At 0 HP it cannot be summoned: Full HP first"' : ''}>${on(s) ? 'Unsummon' : 'Summon'}</button>
         <button type="button" data-act="rename">Rename</button><button type="button" data-act="heal">Full HP</button></div>
       <div class="sh-row"><button type="button" class="danger grow" data-act="release">Release</button></div>
       <label class="field"><span class="lbl">Notes</span><textarea data-notes maxlength="500">${esc(s.notes)}</textarea></label></li>`).join('');

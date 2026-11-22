@@ -19,7 +19,7 @@ import { rng } from './models/fight-play.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
 import { heldDieId } from '../src/core/combat/standing.ts';
 import { LEVELS } from '../src/core/combat/sight-levels.ts';
-import type { HideLevel, Level } from '../src/core/combat/sight-levels.ts';
+import type { Level } from '../src/core/combat/sight-levels.ts';
 import { landOps } from '../src/core/combat/land.ts';
 import { cooldownOf } from '../src/core/combat/charge.ts';
 import { atHp, lifeAt } from './fixtures/life.ts';
@@ -725,22 +725,22 @@ describe('advantage and held dice: rule 7b, the kept face (kits design 8.2, tabl
 
 describe('who a use may pick and who it catches: the one sight rule (notes-7-stealth.md section 3, stealth unit 4)', () => {
   // A picked target (rule 2) is refused `noTarget` when no body of the user's side perceives it (sight.ts `perceivedBy`):
-  // a hidden body is seen by a sight at its level or above (the owner's ruling 1). A shape at a place catches it whatever
+  // a hidden body is seen by a sight above its level (stealth beats sight at the same level: the owner, Nov 22). A shape at a place catches it whatever
   // the sight; only the untargetable ward keeps a foe out of a shape.
   const curse = ability('curse', {}, '10'), blast = ability('blast', {}, '10');
   const worn = (key: string, ...ops: Op[]): Status => statusOn({ label: key, desc: '', ops }, { key: statusKey(key), source: { id: null, tier: 0 }, until: null, since: NOW, settledAt: NOW });
-  const cloak = (level: HideLevel): Status => worn('cloak', { op: 'hidden', level, start: 'anywhere', ends: { hurt: true, revealed: true, dealt: true } });
+  const cloak = (level: Level): Status => worn('cloak', { op: 'hidden', level, start: 'anywhere', ends: { hurt: true, revealed: true, dealt: true } });
   const user = (sight: Level = 0, at = place(2, 5)) => body('u', hunterOrigin('cannon'), at, 'party', {}, { sight });
   const foe = (...statuses: Status[]) => body('t', monsterOrigin('brute'), place(8, 5), 'foe', { statuses });
   const picked = (u: Body, bodies: Body[]) => resolve(curse, u, bodies, combatantId('t'), GRID, rolls({ t: [] }, { t: 1 }), NOW, RULES);
 
-  test('a foe hidden at 3 is picked by a sight of 3 or more and refused noTarget under it', () => {
+  test('a foe hidden at 3 is picked by a sight of 4 or more and refused noTarget at 3 or under', () => {
     const t = foe(cloak(3));
-    expect(LEVELS.map(sight => { const u = user(sight); const r = picked(u, [u, t]); return r.ok || r.reason; })).toEqual(['noTarget', 'noTarget', 'noTarget', true, true, true]);
+    expect(LEVELS.map(sight => { const u = user(sight); const r = picked(u, [u, t]); return r.ok || r.reason; })).toEqual(['noTarget', 'noTarget', 'noTarget', 'noTarget', true, true]);
   });
 
   test('an ally whose sight reaches a hidden foe lets the user pick it; a foe with no stealth is picked by any sight', () => {
-    const u = user(0), t = foe(cloak(2)), ally = body('a', hunterOrigin('tank'), place(2, 7), 'party', {}, { sight: 2 });
+    const u = user(0), t = foe(cloak(1)), ally = body('a', hunterOrigin('tank'), place(2, 7), 'party', {}, { sight: 2 });
     expect(picked(u, [u, t, ally]).ok).toBe(true);
     expect(picked(u, [u, foe()]).ok).toBe(true);
   });
@@ -771,7 +771,7 @@ describe('the ambush: a hit from hiding, rule 11c (notes-7-stealth.md section 2,
   // perceive it; of the user's dealt increases only the strongest applies. It replaces the attacker's edge hiding gave.
   const AMBUSH = RULES.fight.stealth.ambush;
   const worn = (key: string, ...ops: Op[]): Status => statusOn({ label: key, desc: '', ops }, { key: statusKey(key), source: { id: null, tier: 0 }, until: null, since: NOW, settledAt: NOW });
-  const cloak = (level: HideLevel): Status => worn('cloak', { op: 'hidden', level, start: 'anywhere', ends: { hurt: true, revealed: true, dealt: true } });
+  const cloak = (level: Level): Status => worn('cloak', { op: 'hidden', level, start: 'anywhere', ends: { hurt: true, revealed: true, dealt: true } });
   const dealtUp = (pct: number): Status => worn(`fury${pct}`, { op: 'share', on: 'dealt', pct });
   // 1d8 + 10 at a die of 5 is 15 before any share
   const strike = ability('strike', {}, '1d8 + 10');
@@ -785,13 +785,13 @@ describe('the ambush: a hit from hiding, rule 11c (notes-7-stealth.md section 2,
     expect(hidden.dealt).toBeGreaterThan(plain.dealt);
   });
 
-  test('no ambush against a target that perceives the user: a sight at its stealth level or above saw it coming (ruling 5)', () => {
-    expect(LEVELS.map(sight => swing(user(cloak(2)), foe(sight)).raw)).toEqual([15 * AMBUSH, 15 * AMBUSH, 15, 15, 15, 15]);
+  test('no ambush against a target that perceives the user: a sight above its stealth level saw it coming (ruling 5; at the same level stealth wins, the owner, Nov 22)', () => {
+    expect(LEVELS.map(sight => swing(user(cloak(2)), foe(sight)).raw)).toEqual([15 * AMBUSH, 15 * AMBUSH, 15 * AMBUSH, 15, 15, 15]);
   });
 
   test('a blast from hiding ambushes each target its eyes miss and not one that sees the user', () => {
     const blast = ability('blast', { delivery: { kind: 'sure' }, foesOnly: true }, '20');
-    const u = user(cloak(2)), blind = foe(0, [], place(8, 5), 'b'), seer = foe(2, [], place(9, 5), 's');
+    const u = user(cloak(2)), blind = foe(2, [], place(8, 5), 'b'), seer = foe(3, [], place(9, 5), 's');
     const r = run(blast, u, [u, blind, seer], blind.place, rolls({ b: [], s: [] }));
     expect(r.outcomes.map(o => [o.target, o.raw])).toEqual([['b', 20 * AMBUSH], ['s', 20]]);
   });

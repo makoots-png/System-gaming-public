@@ -7,20 +7,20 @@ import { srid } from './fixtures/ids.ts';
 
 const PICK: HeldEvent = { type: 'pick', at: 1_000, ms: 2_000 };
 const EVENTS: { readonly [E in HeldEvent['type']]: Extract<HeldEvent, { type: E }> } = {
-  pick: PICK, undo: { type: 'undo' }, due: { type: 'due' }, crowded: { type: 'crowded' }, hidden: { type: 'hidden' },
+  pick: PICK, undo: { type: 'undo' }, due: { type: 'due' }, hidden: { type: 'hidden' },
 };
 const STATES: { readonly [S in HeldWrite['at']]: Extract<HeldWrite, { at: S }> } = {
   absent: { at: 'absent' }, holding: { at: 'holding', until: 3_000 }, committed: { at: 'committed' }, undone: { at: 'undone' },
 };
 
 describe('a held write', () => {
-  test('every state answers every event: a pick holds it for its own window; Undo drops it; its window\'s end, two newer toasts or the page hidden write it', () => {
+  test('every state answers every event: a pick holds it for its own window; Undo drops it; its window\'s end or the page hidden write it, and nothing else does (newer toasts are not an event of it: SMX-gates-5.1)', () => {
     const table = Object.fromEntries(HELD_STATES.map(s => [s, Object.fromEntries(HELD_EVENTS.map(e => [e, heldStep(STATES[s], EVENTS[e])]))]));
     expect(table).toEqual({
-      absent: { pick: { at: 'holding', until: 3_000 }, undo: null, due: null, crowded: null, hidden: null },
-      holding: { pick: null, undo: { at: 'undone' }, due: { at: 'committed' }, crowded: { at: 'committed' }, hidden: { at: 'committed' } },
-      committed: { pick: null, undo: null, due: null, crowded: null, hidden: null },
-      undone: { pick: null, undo: null, due: null, crowded: null, hidden: null },
+      absent: { pick: { at: 'holding', until: 3_000 }, undo: null, due: null, hidden: null },
+      holding: { pick: null, undo: { at: 'undone' }, due: { at: 'committed' }, hidden: { at: 'committed' } },
+      committed: { pick: null, undo: null, due: null, hidden: null },
+      undone: { pick: null, undo: null, due: null, hidden: null },
     });
   });
 
@@ -39,10 +39,6 @@ describe('a held write', () => {
     ];
     expect(new Set(keys).size).toBe(keys.length);
     expect(heldKey({ kind: 'give', to: 'h1', bundle: 'seed-mask' })).toBe(keys[2]!);
-  });
-
-  test('waits on the ruling SMX-gates-5.1: today two newer toasts write a held award before its Undo window ends', () => {
-    expect(heldStep(STATES.holding, { type: 'crowded' })).toEqual({ at: 'committed' });
   });
 
   test('waits on the ruling SMX-gates-5.2: today a bundle picked on the shelf is held as it is, with no step to edit it first', () => {

@@ -9,7 +9,7 @@ import { bfs, machine } from '../statecharts.ts';
 /** The words of the Shadows panel, and its HP line at 0. */
 const LABEL: { readonly [C in ShadowCase]: string } = {
   resting: 'In the army', restingFallen: 'In the army at 0 HP',
-  summoned: 'Summoned', summonedFallen: 'Summoned at 0 HP',
+  summoned: 'Summoned',
   released: 'Released (gone)',
 };
 
@@ -32,7 +32,7 @@ export const shadow = machine<Hunter, ShadowEvent>({
   kindsOf: h => [caseOf(h)],
   views: [{
     title: 'A shadow, from its extraction to its release',
-    note: 'The chart starts when a shadow has joined the army (an extraction that passed, or the GM\'s grant). Its HP is in its state, and a box is drawn for a shadow at 0 HP; a fight that leaves it hurt but above 0, and Full HP on a shadow above 0, stay in their box. Two cells wait on the owner (rules-10.1): a shadow that falls stays Summoned, and one at 0 HP may be summoned. A summon the hunter has not the mana for is refused before the event; its name and notes do not move the state.',
+    note: 'The chart starts when a shadow has joined the army (an extraction that passed, or the GM\'s grant). Its HP is in its state, and a box is drawn for a shadow in the army at 0 HP; a fight that leaves it hurt but above 0, and Full HP on a shadow above 0, stay in their box. By the owner\'s ruling of Nov 22 (rules-10.1), a shadow that falls leaves the field (it is dismissed), and one at 0 HP is not summoned until Full HP. A summon the hunter has not the mana for is refused before the event; its name and notes do not move the state.',
     hides: '',
     state: h => LABEL[caseOf(h)],
     step: e => WORDS[shadowColumn(e)],

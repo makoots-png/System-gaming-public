@@ -71,6 +71,13 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
     expect([GM, phone('d-kai'), phone('d-mira'), phone('d-eldrin'), ANYONE].map(v => servedTo(award, v))).toEqual([true, true, true, true, true]);
   });
 
+  test('a System whisper to one hunter reaches the GM and that hunter\'s phone only; a System message to the room reaches every phone (SMX-sync-5.2)', () => {
+    const whisper = event('system', { eid: 'd-gm-s1', to: [MIRA], tag: '! Notification', title: 'You are watched', body: '', kind: 'info' });
+    const broadcast = event('system', { eid: 'd-gm-s2', tag: '! Notification', title: 'A gate opens', body: '', kind: 'info' });
+    expect([GM, phone('d-kai'), phone('d-mira'), phone('d-eldrin'), ANYONE].map(v => servedTo(whisper, v))).toEqual([true, false, true, false, false]);
+    expect([GM, phone('d-kai'), phone('d-mira'), phone('d-eldrin'), ANYONE].map(v => servedTo(broadcast, v))).toEqual([true, true, true, true, true]);
+  });
+
   const items = Array.from({ length: FACE_LINES + 2 }, (_, i) => ({ ...itemOf(RULES, SHOP_ITEMS[0]!), id: `i${i + 1}` as never, name: `Thing ${i + 1}`, qty: i + 1 }));
   const mira = { ...newHunter(), id: 'h3' as never, name: 'Mira', level: 4, job: 'Healer', items, equipped: { ...newHunter().equipped, weapon: 'i1' as never } };
 
@@ -1320,7 +1327,7 @@ describe('an offer between two hunters, and its one end', () => {
     for (const to of [[KEY], [KEY, KEY], [KEY, OTHER, 'd-x:h1'], [KEY, 'bad key']]) expect(payload('offerStop', { ...valid('offerStop'), to })).toBeNull();
   });
 
-  test('an offer, its end and the GM\'s stop are sealed to the GM and the two hunters (the lead\'s ruling 1), and a story\'s chapter to the GM and the hunters it is for; nothing else is', () => {
+  test('an offer, its end and the GM\'s stop are sealed to the GM and the two hunters (the lead\'s ruling 1), and a story\'s chapter to the GM and the hunters it is for; nothing else is (a System message to the room is not; one to named hunters is, above)', () => {
     const sealed = EVENT_TYPES.filter(t => isSealed(parseEvent(t, valid(t))!)).sort();
     expect(sealed).toEqual(['chapter', 'offer', 'offerEnd', 'offerStop']);
   });

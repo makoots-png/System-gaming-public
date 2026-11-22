@@ -19,6 +19,7 @@ import { DIED_WORDS, WAYS_BACK, can, fatigueNews, hpOf, lifeNews, manaOf } from 
 import { lifeWord } from '../core/combat/row-life.ts';
 import { chipDef, chipsOf, isStateChip } from '../core/hunter/chips.ts';
 import { PUT_WORDS } from '../core/hunter/conditions.ts';
+import { restRefusalWords, restsLeftLine } from '../core/hunter/rests.ts';
 import { oneOf } from '../core/one-of.ts';
 import { gmSource } from '../core/effects.ts';
 import { BUNDLE_NAME, newRewards, parseRewards, parseWords } from '../core/rewards.ts';
@@ -56,7 +57,8 @@ const CSS = `
 .chip .c-ic .ic{--ic:var(--icon-chip)}
 .cond-add{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:6px}
 .cond-add .field{flex:1 1 150px}
-.rest-row{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 4px}
+.rest-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:14px 0 4px}
+.rest-row [data-rests-left]{margin:0}
 .reeval{display:flex;flex-direction:column;align-items:flex-end;gap:4px;font-size:13px;color:var(--gold);text-align:right}
 .reeval[hidden]{display:none}
 .death{border:1px solid var(--red);background:rgba(255,77,94,.08);padding:8px 12px;margin:8px 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -319,8 +321,8 @@ export function register(app) {
       return vitalsEdit(hid, 'mana', also ? both(x => sheetEdit(x, { type: 'spend', mana: n }, rules()), also) : x => sheetEdit(x, { type: 'spend', mana: n }, rules()),
         cid => app.api.combat.spend(cid, n, also ? atHunter(hid, also) : null));
     },
-    rest(kind, hid = store.active().id) {
-      return vitalsEdit(hid, 'rest', h => sheetEdit(h, { type: 'rest', kind: kind === 'long' ? 'long' : 'short' }, rules()), restRefused, restRefused);
+    rest(hid = store.active().id) {
+      return vitalsEdit(hid, 'rest', h => sheetEdit(h, { type: 'rest' }, rules()), restRefused, restRefused);
     },
     addCondition(hid, status) { return vitalsEdit(hid, 'condition', h => addC(h, status), cid => statusToRow(cid, status)); },
     removeCondition(hid, key) { return vitalsEdit(hid, 'condition', h => delC(h, key), cid => app.api.combat.status(cid, { remove: key })); },
@@ -376,7 +378,7 @@ export function register(app) {
   const setHTML = (el, html) => { if (el._h !== html) { el._h = html; el.innerHTML = html; } };
   const setVal = (i, v) => { if (i && document.activeElement !== i && i.value !== String(v)) i.value = v; };
   const bonusText = b => { const o = BONUS_KEYS.filter(k => b && Number(b[k])).map(k => `${sgn(Number(b[k]))} ${BONUS_LABELS[k]}`); return o.length ? o.join(', ') : 'No bonus'; };
-  const stepBtns = (attr, vals) => vals.map(v => v === 'full' ? `<button type="button" data-${attr}="full">Full</button>` : v === 'rest' ? `<button type="button" data-${attr}="rest">Rest</button>`
+  const stepBtns = (attr, vals) => vals.map(v => v === 'full' ? `<button type="button" data-${attr}="full">Full</button>` : v === 'none' ? `<button type="button" data-${attr}="none">None</button>`
     : `<button type="button" data-${attr}="${v}" aria-label="${v < 0 ? 'Decrease' : 'Increase'} by ${Math.abs(v)}">${v < 0 ? '&minus;' : '+'}${Math.abs(v)}</button>`).join('');
   const bar = (key, label, ctl) => `<div class="bar-row" data-bar="${key}">
       <div class="bar-head"><span class="lbl">${label}</span><span class="bar-nums"><span data-cur>0</span> / <span data-maxtxt>0</span>${key === 'ft' ? '' : `<button type="button" class="linkish" data-edit="${key}" aria-label="Edit max ${label}" hidden>0</button>`}</span></div>
@@ -421,8 +423,8 @@ export function register(app) {
         <div class="chips" data-chips></div>
         <div class="cond-add">${ui.field('Add status', `<select data-cond-sel>${Object.entries(rules().conditions).filter(([k]) => !isStateChip(k)).map(([k, c]) => `<option value="${esc(k)}">${esc(c.label)}</option>`).join('')}</select>`)}<button type="button" data-cond-add>Add</button></div>
         ${bar('mana', 'Mana', stepBtns('mana', [-5, -1, 1, 5, 'full']))}
-        ${bar('ft', 'Fatigue', stepBtns('ft', [-10, -5, 5, 10, 'rest', 'full']))}
-        <div class="rest-row"><button type="button" data-rest="short">Short rest</button><button type="button" data-rest="long">Long rest</button></div>
+        ${bar('ft', 'Fatigue', stepBtns('ft', [-10, -5, 5, 10, 'none', 'full']))}
+        <div class="rest-row"><button type="button" data-rest>Rest</button><p class="note" data-rests-left></p></div>
 `;
 
       el.addEventListener('change', e => {
@@ -457,14 +459,14 @@ export function register(app) {
         if ('reevalBtn' in d) return reevaluate(h.id);
         if ('emblem' in d) return app.api.identity.edit(h.id);
         if ('idedit' in d || 'iddone' in d) return showIdForm(el, 'idedit' in d);
-        if (d.rest) {
-          if (!ui.wrote('System', api.rest(d.rest, h.id))) return;
-          return ui.toast('System', d.rest === 'long' ? 'Long rest complete. Fully restored.' : 'Short rest complete.');
+        if ('rest' in d) {
+          if (!ui.wrote('System', api.rest(h.id), restRefusalWords(rules()))) return;
+          return ui.toast('System', `Rest complete. ${restsLeftLine(store.hunter(h.id).restsTaken, rules())}`);
         }
         if (d.hp || d.mana || d.ft) {
           const key = d.hp ? 'hp' : d.mana ? 'mana' : 'ft', val = d[key], n = Number(val), m = maxima(h), R = rules(), tired = { fatigue: h.fatigue, collapsed: h.collapsed };
-          // 'full' and 'rest' as amounts: the fight's adjust keeps each within 0 and its maximum
-          const delta = key === 'hp' ? { hp: val === 'full' ? m.hpMax : n } : key === 'mana' ? { mana: val === 'full' ? m.manaMax : n } : { fatigue: val === 'full' ? m.fatigueMax : val === 'rest' ? -m.fatigueMax : n };
+          // 'full' and 'none' as amounts: the fight's adjust keeps each within 0 and its maximum
+          const delta = key === 'hp' ? { hp: val === 'full' ? m.hpMax : n } : key === 'mana' ? { mana: val === 'full' ? m.manaMax : n } : { fatigue: val === 'full' ? m.fatigueMax : val === 'none' ? -m.fatigueMax : n };
           const w = lifeWrite(h.id, () => handEdit(h.id, delta, x => {
             if (key === 'hp') return lifeEvent(x, val === 'full' ? { type: 'setHp', hp: m.hpMax } : n < 0 ? { type: 'damage', amount: -n } : { type: 'heal', amount: n });
             return key === 'mana' ? sheetEdit(x, { type: 'mana', delta: delta.mana }, R) : sheetEdit(x, { type: 'fatigue', delta: delta.fatigue }, R);
@@ -542,6 +544,7 @@ export function register(app) {
       q('[data-revive]').hidden = !gm || !can(life, 'revive');
       q('[data-wayback]').textContent = `${WAYS_BACK} brings you back, with every status gone.`;
     }
+    q('[data-rests-left]').textContent = restsLeftLine(h.restsTaken, r);
     const sel = q('[data-cond-sel]'), opts = Object.entries(r.conditions).filter(([k]) => !isStateChip(k)).map(([k, c]) => `<option value="${esc(k)}">${esc(c.label)}</option>`).join('');
     if (sel._h !== opts) { const keep = sel.value; sel._h = opts; sel.innerHTML = opts; if (keep) sel.value = keep; } // library statuses show up without a reload
     // the chips drawn from the hunter's state (src/core/hunter/chips.ts) have no x: nothing removes them by hand

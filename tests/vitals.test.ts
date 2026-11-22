@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   LIFE_STATES, LIFE_EVENT_TYPES, FATIGUE_STATES, VITAL_EVENT_TYPES, VITAL_TABLE, can, fatiguePast, fatigueState, vitalChipsOf, hpOf, lifeAfter, manaOf, newVitals, parseUsed,
-  refill, rest, usedOf, fatigueNews, lifeNews, vitalStep,
+  refill, usedOf, fatigueNews, lifeNews, vitalStep,
 } from '../src/core/hunter/vitals.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import { abilityId } from '../src/core/combat/ability-types.ts';
@@ -12,13 +12,13 @@ import type { Rules } from '../src/core/rules.ts';
 
 /**
  * The rules these tests are worked out with, pinned here so a change to the shipped numbers does not move them:
- * fatigue collapses at 100% of the capacity, its penalty starts at 50% and disadvantage at 80%; a short rest gives back
- * 25% of max HP, 50% of max mana and takes 25% of the capacity off; a long rest gives back 100% of all three.
+ * fatigue collapses at 100% of the capacity, its penalty starts at 50% and disadvantage at 80%; a rest gives back 25%
+ * of max HP and 25% of max mana, rounded up, and takes 75% of the fatigue held off, rounded up; two rests a gate.
  */
 const R: Rules = {
   ...RULES,
   fatigue: { penaltyAt: 50, penalty: 2, disAt: 80, collapseAt: 100 },
-  rest: { short: { hpPct: 25, mpPct: 50, fatigue: 25 }, long: { hpPct: 100, mpPct: 100, fatigue: 100 } },
+  rest: { hp: 0.25, mana: 0.25, fatigue: 0.75, perGate: 2 },
 };
 /** The hunter in these tests has 20 max HP, 10 max mana and a fatigue capacity of 100; `BIG` is the same with a capacity of 120. */
 const MAX = 20;
@@ -131,21 +131,24 @@ describe('vitals: mana, fatigue, rests and the refill', () => {
     expect([fatiguePast(59, BIG, R.fatigue.penaltyAt), fatiguePast(60, BIG, R.fatigue.penaltyAt)]).toEqual([false, true]);
     expect([fatiguePast(95, BIG, R.fatigue.disAt), fatiguePast(96, BIG, R.fatigue.disAt)]).toEqual([false, true]);
   });
-  test('a short rest: +25% of 20 HP is 5, +50% of 10 mana is 5, -25 fatigue, and a collapse stays', () => {
-    const after = rest(v({ life: up(4), mana: 2, fatigue: 100, collapsed: true }), 'short', M, R);
-    expect(after).toEqual({ life: up(9), mana: 7, fatigue: 75, collapsed: true, used: {} });
+  test('a rest: +25% of 20 HP is 5, +25% of 10 mana is 3 rounded up, 75 of 100 fatigue off, and Exhausted lifts', () => {
+    const rest = { type: 'rest' } as const;
+    expect(step(v({ life: up(4), mana: 2, fatigue: 100, collapsed: true }), rest)).toEqual({ life: up(9), mana: 5, fatigue: 25, collapsed: false, used: {} });
   });
-  test('a short rest takes 25% of the capacity off: 30 of 120', () => {
-    expect(rest(v({ fatigue: 100 }), 'short', BIG, R).fatigue).toBe(70);
+  test('a rest takes 75% of the fatigue held off, rounded up: 31 of 41 leaves 10', () => {
+    expect(step(v({ fatigue: 41 }), { type: 'rest' }, BIG).fatigue).toBe(10);
   });
-  test('a long rest restores HP and mana, takes all fatigue off and ends a collapse', () => {
-    const after = rest(v({ life: up(4), mana: 2, fatigue: 100, collapsed: true }), 'long', M, R);
+  test('a rest never gives HP or mana past the maximum', () => {
+    expect(step(v({ life: up(19), mana: 9 }), { type: 'rest' })).toMatchObject({ life: up(20), mana: 10 });
+  });
+  test('a gate\'s Clear gives everything back: HP and mana full, no fatigue, no collapse, every use', () => {
+    const after = step(v({ life: up(4), mana: 2, fatigue: 100, collapsed: true, used: { [abilityId('dash')]: 1 } }), { type: 'cleared' });
     expect(after).toEqual({ life: up(20), mana: 10, fatigue: 0, collapsed: false, used: {} });
-    expect(rest(v({ fatigue: 120, collapsed: true }), 'long', BIG, R)).toMatchObject({ fatigue: 0, collapsed: false });
   });
-  test('a rest does not raise the dead', () => {
-    expect(rest(v({ life: DEAD }), 'short', M, R).life).toEqual(DEAD);
-    expect(rest(v({ life: DEAD }), 'long', M, R).life).toEqual(DEAD);
+  test('a dead hunter gets nothing: its rest and its Clear are refused', () => {
+    const dead = v({ life: DEAD, mana: 1 });
+    expect(vitalStep(dead, { type: 'rest' }, M, R)).toEqual({ ok: false, why: 'cannot' });
+    expect(vitalStep(dead, { type: 'cleared' }, M, R)).toEqual({ ok: false, why: 'cannot' });
   });
   test('the level-up refill fills HP and mana, but does not raise the dead', () => {
     expect(refill(v({ life: up(3), mana: 1 }), M)).toMatchObject({ life: up(20), mana: 10 });
@@ -189,7 +192,7 @@ describe('every sequence of up to 5 events keeps the invariants', () => {
   });
 });
 
-describe('uses spent this rest (kits design 1.4, table 2.3)', () => {
+describe('uses spent this gate (kits design 1.4, table 2.3)', () => {
   const spent = (): Vitals => ({ ...newVitals(M), used: { [abilityId('stormfront')]: 1, [abilityId('celestial-sea')]: 2 } });
 
   test('a new hunter has spent none, and every change of life, mana or fatigue keeps what was spent', () => {
@@ -200,9 +203,9 @@ describe('uses spent this rest (kits design 1.4, table 2.3)', () => {
     }
   });
 
-  test('a long rest gives every use back; a short rest gives none back', () => {
-    expect(rest(spent(), 'long', M, R).used).toEqual({});
-    expect(rest(spent(), 'short', M, R).used).toEqual(spent().used);
+  test('a gate\'s Clear gives every use back; a rest gives none back', () => {
+    expect(step(spent(), { type: 'cleared' }).used).toEqual({});
+    expect(step(spent(), { type: 'rest' }).used).toEqual(spent().used);
     expect([usedOf(spent(), abilityId('celestial-sea')), usedOf(spent(), abilityId('dash'))]).toEqual([2, 0]);
   });
 
@@ -271,8 +274,9 @@ describe('the way back from dead, named the same everywhere', () => {
 
 describe('the vitals machine: every life state against every event (vitalStep)', () => {
   // Each state starts with 4 of 10 mana, fatigue 90 of 100, not collapsed, one use spent. Worked from the rules above:
-  // a short rest gives back ceil(25% of 20) = 5 HP, ceil(50% of 10) = 5 mana and takes 25 fatigue off; a long rest
-  // gives back all of them and the uses. A heal of the dead and a revive of the living are the life table's refusals.
+  // a rest gives back ceil(25% of 20) = 5 HP, ceil(25% of 10) = 3 mana and takes ceil(75% of 90) = 68 fatigue off; a
+  // gate's Clear gives back all of them and the uses. A heal of the dead, a revive of the living, and a rest or a Clear
+  // of the dead are the tables' refusals.
   const USED = { [abilityId('dash')]: 1 };
   const start = (life: Life): Vitals => ({ life, mana: 4, fatigue: 90, collapsed: false, used: USED });
   /** The lower maxima `maxChanged` is played with: 10 HP, 3 mana, a capacity of 80. */
@@ -282,7 +286,7 @@ describe('the vitals machine: every life state against every event (vitalStep)',
     'the GM\'s revive': { type: 'revive', by: 'gm' }, 'a crystal\'s revive': { type: 'revive', by: 'item' },
     '+3 mana': { type: 'mana', delta: 3 }, 'a price of 3 mana': { type: 'spend', mana: 3 }, 'a price of 5 mana': { type: 'spend', mana: 5 },
     '+10 fatigue': { type: 'fatigue', delta: 10 }, 'a refill': { type: 'refill' },
-    'a short rest': { type: 'rest', kind: 'short' }, 'a long rest': { type: 'rest', kind: 'long' }, 'lower maxima': { type: 'maxChanged' },
+    'a rest': { type: 'rest' }, 'a gate\'s Clear': { type: 'cleared' }, 'lower maxima': { type: 'maxChanged' },
     'the fight\'s totals': { type: 'fightTotals', life: up(30), mana: 50, fatigue: 100, used: {} },
   };
   type Out = Vitals | 'cannot' | 'mana';
@@ -294,16 +298,18 @@ describe('the vitals machine: every life state against every event (vitalStep)',
       'damage 5': was(up(7)), 'heal 6': was(up(18)), 'HP set to 9': was(up(9)),
       'the GM\'s revive': 'cannot', 'a crystal\'s revive': 'cannot', '+3 mana': was(L.up, { mana: 7 }), 'a price of 3 mana': was(L.up, { mana: 1 }),
       'a price of 5 mana': 'mana', '+10 fatigue': was(L.up, { fatigue: 100, collapsed: true }), 'a refill': was(up(20), { mana: 10 }),
-      'a short rest': was(up(17), { mana: 9, fatigue: 65 }), 'a long rest': was(up(20), { mana: 10, fatigue: 0, used: {} }),
-      'lower maxima': was(up(10), { mana: 3, fatigue: 80 }), 'the fight\'s totals': TOTALS(),
+      'a rest': was(up(17), { mana: 7, fatigue: 22 }), 'a gate\'s Clear': was(up(20), { mana: 10, fatigue: 0, used: {} }),
+      // SMX-rules-6.1: 90 fitted to a capacity of 80 is 80 of 80, at the collapse share (100%), and collapses at once
+      'lower maxima': was(up(10), { mana: 3, fatigue: 80, collapsed: true }), 'the fight\'s totals': TOTALS(),
     },
-    // SMX-rules-1.2 waits on the owner: a dead hunter's refill and rests are taken today, the life staying dead.
+    // the owner, Nov 21: "Youre dead. You need to be ressed.": a dead hunter gets nothing from a rest or a Clear (the lead's
+    // ruling, Nov 22). SMX-rules-1.2 waits on the owner for the refill, taken today with the life staying dead.
     dead: {
       'damage 5': 'cannot', 'heal 6': 'cannot', 'HP set to 9': 'cannot',
       'the GM\'s revive': was(up(1)), 'a crystal\'s revive': was(up(1)), '+3 mana': was(DEAD, { mana: 7 }), 'a price of 3 mana': was(DEAD, { mana: 1 }),
       'a price of 5 mana': 'mana', '+10 fatigue': was(DEAD, { fatigue: 100, collapsed: true }), 'a refill': was(DEAD, { mana: 10 }),
-      'a short rest': was(DEAD, { mana: 9, fatigue: 65 }), 'a long rest': was(DEAD, { mana: 10, fatigue: 0, used: {} }),
-      'lower maxima': was(DEAD, { mana: 3, fatigue: 80 }), 'the fight\'s totals': TOTALS(),
+      'a rest': 'cannot', 'a gate\'s Clear': 'cannot',
+      'lower maxima': was(DEAD, { mana: 3, fatigue: 80, collapsed: true }), 'the fight\'s totals': TOTALS(),
     },
   };
 
@@ -336,8 +342,8 @@ describe('the vitals machine: every life state against every event (vitalStep)',
 });
 
 describe('the collapse: fresh, tired and collapsed against every fatigue move', () => {
-  // Tired from 50% of the capacity, collapsed from 100% and until a long rest. Fresh starts at 10, tired at 60, the
-  // collapsed hunter at 60 with the latch set. A short rest takes 25 off.
+  // Tired from 50% of the capacity, collapsed from 100% and until a rest or a Clear leaves fatigue under it. Fresh starts
+  // at 10, tired at 60, the collapsed hunter at 60 with the latch set. A rest takes 75% of it off: 60 leaves 15.
   const START: Record<FatigueState, Vitals> = {
     fresh: { ...newVitals(M), fatigue: 10 }, tired: { ...newVitals(M), fatigue: 60 }, collapsed: { ...newVitals(M), fatigue: 60, collapsed: true },
   };
@@ -347,12 +353,12 @@ describe('the collapse: fresh, tired and collapsed against every fatigue move', 
   const MOVES: [string, VitalEvent, Maxima, Record<FatigueState, FatigueState>][] = [
     ['+50 fatigue', { type: 'fatigue', delta: 50 }, M, { fresh: 'tired', tired: 'collapsed', collapsed: 'collapsed' }],
     ['-40 fatigue: lowering it keeps a collapse', { type: 'fatigue', delta: -40 }, M, { fresh: 'fresh', tired: 'fresh', collapsed: 'collapsed' }],
-    ['a short rest keeps a collapse', { type: 'rest', kind: 'short' }, M, { fresh: 'fresh', tired: 'fresh', collapsed: 'collapsed' }],
-    ['a long rest ends it', { type: 'rest', kind: 'long' }, M, { fresh: 'fresh', tired: 'fresh', collapsed: 'fresh' }],
-    // SMX-rules-6.1 waits on the owner: 60 fitted to a capacity of 50 is 50 of 50, past the collapse share, and does not collapse today.
-    ['the capacity lowered to 50', { type: 'maxChanged' }, HALF, { fresh: 'fresh', tired: 'tired', collapsed: 'collapsed' }],
+    ['a rest ends it', { type: 'rest' }, M, { fresh: 'fresh', tired: 'fresh', collapsed: 'fresh' }],
+    ['a gate\'s Clear ends it', { type: 'cleared' }, M, { fresh: 'fresh', tired: 'fresh', collapsed: 'fresh' }],
+    // SMX-rules-6.1: 60 fitted to a capacity of 50 is 50 of 50, at the collapse share, and collapses at once; 10 of 50 stays fresh.
+    ['the capacity lowered to 50', { type: 'maxChanged' }, HALF, { fresh: 'fresh', tired: 'collapsed', collapsed: 'collapsed' }],
     ['the fight\'s totals at 100', totals(100), M, { fresh: 'collapsed', tired: 'collapsed', collapsed: 'collapsed' }],
-    // SMX-rules-6.2 waits on the owner: a collapse reached in the fight's totals holds after the fight brings fatigue to 70.
+    // SMX-rules-6.2: a collapse reached in the fight's totals holds after the fight brings fatigue to 70.
     ['the fight\'s totals at 70', totals(70), M, { fresh: 'tired', tired: 'tired', collapsed: 'collapsed' }],
     ['a refill keeps it', { type: 'refill' }, M, { fresh: 'fresh', tired: 'tired', collapsed: 'collapsed' }],
     ['+3 mana keeps it', { type: 'mana', delta: 3 }, M, { fresh: 'fresh', tired: 'tired', collapsed: 'collapsed' }],
@@ -367,7 +373,7 @@ describe('the collapse: fresh, tired and collapsed against every fatigue move', 
       });
     }
   }
-  test('fatigue at 100 in the fight, brought to 70 before its end, leaves the sheet collapsed (SMX-rules-6.2, today)', () => {
+  test('fatigue at 100 in the fight, brought to 70 before its end, leaves the sheet collapsed (SMX-rules-6.2)', () => {
     const mid = step(START.fresh, totals(100));
     expect(step(mid, totals(70))).toMatchObject({ fatigue: 70, collapsed: true });
   });

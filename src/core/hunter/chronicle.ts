@@ -24,7 +24,7 @@ export type InboxFact = Fact | Kept;
  */
 export const TALLY_KEYS = [
   'fights', 'won', 'kills', 'bosses', 'crits', 'struck', 'avoided', 'healed', 'gates', 'soloWon', 'soloLost', 'retreats', 'quests', 'questsFailed', 'dailies', 'streaksLost', 'penalties', 'penaltyDays',
-  'died', 'revived', 'levels', 'titles', 'feats', 'hiddenFeats', 'given', 'shadows', 'coinsWon', 'coinsLost', 'nat20', 'nat1', 'longRests',
+  'died', 'revived', 'levels', 'titles', 'feats', 'hiddenFeats', 'given', 'shadows', 'coinsWon', 'coinsLost', 'nat20', 'nat1', 'rests',
   'bought', 'sold', 'used',
 ] as const;
 export type TallyKey = (typeof TALLY_KEYS)[number];
@@ -62,7 +62,7 @@ export const TALLY: { readonly [K in TallyKey]: (f: Fact) => number } = {
   coinsLost: f => (f.kind === 'coin' && !f.won ? 1 : 0),
   nat20: f => (f.kind === 'roll' && f.natural === 20 ? 1 : 0),
   nat1: f => (f.kind === 'roll' && f.natural === 1 ? 1 : 0),
-  longRests: f => (f.kind === 'rest' && f.long ? 1 : 0),
+  rests: f => (f.kind === 'rest' ? 1 : 0),
   bought: f => (f.kind === 'shop' && f.act === 'buy' ? 1 : 0),
   sold: f => (f.kind === 'shop' && f.act === 'sell' ? 1 : 0),
   used: f => (f.kind === 'used' ? 1 : 0),

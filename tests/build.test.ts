@@ -38,7 +38,7 @@ describe('a build path', () => {
     expect(pickPerk(h, 3, 0, R, 'player')).toEqual({ ok: false, why: 'locked' });
     expect(pickPerk(h, 3, 2, R, 'player')).toEqual({ ok: false, why: 'not-next' });
   });
-  test('SMX-rules-7.2 waits: a rank A hunter at level 1 picks every tier rank A opens, as today (the rank, not the level, opens tiers)', () => {
+  test('a rank A hunter at level 1 (a rank the GM set by hand, SMX-rules-7.2) picks every tier rank A opens: the rank, not the level, opens tiers', () => {
     let h = ok(choosePath(hunter({ rank: 'A', level: 1 }), 'vanguard', R));
     for (let t = 0; t < 5; t++) h = ok(pickPerk(h, t, 0, R, 'player'));
     expect(h.build.picks).toHaveLength(5);

@@ -238,12 +238,12 @@ describe('the world gate\'s lines', () => {
 describe('the lines on hiding', () => {
   const withStealth = (o: Partial<Rules['fight']['stealth']>): Rules => ({ ...RULES, fight: { ...RULES.fight, stealth: { ...RULES.fight.stealth, ...o } } });
 
-  test('say that a foe with no sight content sees no hide, and that sight 2 sees a hide at 2: the owner\'s ruling 1, equal sight sees', () => {
-    expect(stealthLines(RULES)[0]).toBe('A hidden body is hidden from each foe whose sight level is lower than its stealth level. Everyone\'s sight level starts at 0, so a foe with no sight from a skill, an item or a status sees no hidden body; a foe with sight level 2 sees a body hidden at level 2 or lower. Its own side always sees it.');
+  test('say that a foe with no sight content sees no hide, and that sight 2 sees a hide at 1 and not at 2: stealth beats sight at the same level (the owner, Nov 22)', () => {
+    expect(stealthLines(RULES)[0]).toBe('A hidden body is hidden from each foe whose sight level is at its stealth level or lower. Everyone\'s sight level starts at 0, so a foe with no sight from a skill, an item or a status sees no hidden body; a foe with sight level 2 sees a body hidden at level 1 or lower. Its own side always sees it.');
   });
 
   test('follow a GM\'s change of everyone\'s sight', () => {
-    expect(stealthLines(withStealth({ sightBase: 1 }))[0]).toContain('starts at 1, so a foe with no sight from a skill, an item or a status sees a body hidden at level 1 or lower');
+    expect(stealthLines(withStealth({ sightBase: 1 }))[0]).toContain('starts at 1, so a foe with no sight from a skill, an item or a status sees a body hidden at level 0 or lower');
   });
 
   test('say the ambush\'s share of the rules, and follow a GM\'s change of it', () => {

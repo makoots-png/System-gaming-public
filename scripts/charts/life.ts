@@ -34,7 +34,7 @@ export const life = machine<Hunter, LifeEvent>({
   kindsOf: h => [h.life.at],
   views: [{
     title: 'A hunter\'s life, from up to dead and back',
-    note: 'The chart shows what the sheet, the GM board and a combat card say of a hunter. Everything that keeps the hunter up stays in Up: damage that leaves HP above 0, a heal, a lower maximum. At 0 HP the hunter is dead: there are no death saves. Only a revive leaves Dead, the GM\'s Revive or a Resurrection Crystal used from the bag outside a fight, and it takes off every status the hunter holds, so a poison does not kill it again: healing, a rest and a refill do not. MP, fatigue and a collapse are kept beside the life and are not drawn.',
+    note: 'The chart shows what the sheet, the GM board and a combat card say of a hunter. Everything that keeps the hunter up stays in Up: damage that leaves HP above 0, a heal, a lower maximum. At 0 HP the hunter is dead: there are no death saves. Only a revive leaves Dead, the GM\'s Revive or a Resurrection Crystal used from the bag outside a fight, and it takes off every status the hunter holds, so a poison does not kill it again: healing, a rest, a Clear and a refill do not. MP, fatigue and a collapse are kept beside the life and are not drawn.',
     hides: '',
     state: h => LABEL[h.life.at],
     step,
@@ -57,8 +57,9 @@ function collapseStep(e: VitalEvent, from: Tired, to: Tired): string | null {
   const into = fatigueState(to.v, to.m, RULES);
   switch (e.type) {
     case 'fatigue': return e.delta > 0 ? (into === 'collapsed' ? 'fatigue reaches the collapse share' : 'fatigue rises') : 'fatigue falls';
-    case 'rest': return e.kind === 'long' ? 'a long rest' : 'a short rest';
-    case 'maxChanged': return 'the capacity is lowered (today it collapses no one)';
+    case 'rest': return into === 'collapsed' ? 'a rest that leaves fatigue at the collapse share' : 'a rest';
+    case 'cleared': return 'a gate\'s Clear: no fatigue';
+    case 'maxChanged': return into === 'collapsed' && !from.v.collapsed ? 'the capacity is lowered to the fatigue' : 'the capacity is lowered';
     case 'fightTotals': return into === 'collapsed' && !from.v.collapsed ? 'the fight writes back fatigue at the collapse share' : 'the fight writes back its fatigue';
     case 'refill': return 'a level-up\'s refill';
     default: throw new Error(`${e.type} moved fatigue from ${fatigueState(from.v, from.m, RULES)} to ${into}, which the chart has no label for`);
@@ -80,15 +81,15 @@ export const collapse = machine<Tired, VitalEvent>({
   kindsOf: t => [fatigueState(t.v, t.m, RULES)],
   views: [{
     title: 'A hunter\'s fatigue, from fresh to collapsed and back',
-    note: 'Tired is the rules\' check penalty share of the capacity and above; Collapsed is the latch, set when fatigue reaches the collapse share and ended only by a long rest, whatever fatigue does after. Two rows wait on the owner and are drawn as the app behaves today: a capacity lowered under the fatigue does not collapse the hunter (SMX-rules-6.1), and a collapse the fight\'s totals reached stays after the fight brings fatigue back down (SMX-rules-6.2). The life is not drawn (the chart above); a refill changes no fatigue.',
+    note: 'Tired is the rules\' check penalty share of the capacity and above; Collapsed is the latch, set when fatigue reaches the collapse share and lifted only by a rest or a gate\'s Clear that leaves fatigue under it, whatever fatigue does after. By the owner\'s rulings of Nov 22, a capacity lowered to the fatigue collapses the hunter at once (SMX-rules-6.1), and a collapse the fight\'s totals reached stays after the fight brings fatigue back down (SMX-rules-6.2). The life is not drawn (the chart above); a refill changes no fatigue.',
     hides: '',
     state: t => FATIGUE_LABEL[fatigueState(t.v, t.m, RULES)],
     step: collapseStep,
   }],
   where: [
     ['The union', '`FatigueState` and `FATIGUE_STATES` in `src/core/hunter/vitals.ts`; the stored latch is `Vitals.collapsed`'],
-    ['What changes it', '`vitalStep` and its `COLLAPSE_MOVES` (rise, keep, or a long rest\'s recount)'],
-    ['Who calls it', '`sheetEdit` in `src/core/hunter/grant.ts` (a hand edit, a rest, the fight\'s totals); `fitted` in `src/core/hunter/sheet.ts` (a lowered capacity)'],
+    ['What changes it', '`vitalStep` and its `COLLAPSE_MOVES` (rise, keep, or the recount of a rest and a Clear)'],
+    ['Who calls it', '`sheetEdit` in `src/core/hunter/grant.ts` (a hand edit, a rest, a Clear, the fight\'s totals); `fitted` in `src/core/hunter/sheet.ts` (a lowered capacity)'],
     ['The test to copy', '`tests/vitals.test.ts`, "the collapse"; the walk\'s events are in `tests/models/life-events.ts`'],
     ['The recipe', 'docs/guide/hunters.md, "To add a field to a hunter"'],
   ],

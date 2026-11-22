@@ -25,7 +25,7 @@ The room:
 
 Hunters:
 
-- a hunter's life, up or dead (`hunter/vitals.ts`) and its collapse, the penalty (`hunter/penalty.ts`), the Job Change chain (`hunter/job-chain.ts`), a shadow (`hunter/shadows.ts`)
+- a hunter's life, up or dead (`hunter/vitals.ts`) and its collapse, its rests in a gate (`hunter/rests.ts`), the penalty (`hunter/penalty.ts`), the Job Change chain (`hunter/job-chain.ts`), a shadow (`hunter/shadows.ts`)
 - a hunter's points and their allocation (`hunter/progress.ts` `progressStep`, `PROGRESS_TABLE`) and its rank against its level (`hunter/record.ts` `rankStep`, `RANK_TABLE`)
 - one item's wear, in the bag, worn or gone (gear: `hunter/inventory.ts` `TABLE`, `wearMove`)
 - a quest (`hunter/quests.ts`) and the Quests view's quest form (`hunter/quest-form.ts`)

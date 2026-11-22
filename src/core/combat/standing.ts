@@ -12,7 +12,7 @@ import { signOf } from '../formula.ts';
 import type { Formula, FormulaBody } from '../formula.ts';
 import { rowHp } from './row-hp.ts';
 import { asLevel, LEVELS } from './sight-levels.ts';
-import type { HideLevel, Level } from './sight-levels.ts';
+import type { Level } from './sight-levels.ts';
 import type { Body, HideStart, ShareOn, SheetFormulaKey, SheetOpKey, Status, StatusDef, StatusKey, StealthEnd, StealthEnds, Tiered } from './effect-ops.ts';
 import type { Ability, CombatantId } from './ability-types.ts';
 import type { Id } from '../ids.ts';
@@ -61,9 +61,9 @@ export const statusLife = (s: Pick<Status, 'owed'>): Exclude<StatusLife, 'gone'>
 /** Whether a status on a row counts for every reader of its ops (its standing, its sheet, its wards and dice), by its life. */
 const STATUS_COUNTS: { readonly [L in Exclude<StatusLife, 'gone'>]: boolean } = {
   active: true,
-  // SMX-rules-2.1 waits on the owner's ruling: whether a status whose time ran out still counts on other bodies' turns until
-  // its bearer's settle. Built as the hunt proposes and as the readers that checked its time did (a hold, a channel's
-  // protection, a taunt, the formulas' stacks, the fight's card): it does not. A ruling that it does is `owed: true`.
+  // SMX-rules-2.1: a status whose time ran out stops counting at once, even while its last tick is still owed at its
+  // bearer's settle (the owner, Nov 22: "yes."). Every reader of its ops (a hold, a channel's protection, a taunt, the
+  // formulas' stacks, the fight's card) reads it as gone.
   owed: false,
 };
 /** Whether status `s` counts for every reader of its ops. */
@@ -271,7 +271,7 @@ export function edgeStep(h: EdgeHold, e: EdgeEvent): EdgeHold {
 
 // ── stealth on its bearer (docs/agent-handoff/features/notes-7-stealth.md section 4, with the owner's rulings) ──
 /** One hide: a hidden status that counts on its bearer, its level at its source's tier, and which events end it. */
-export type Hide = { readonly key: StatusKey; readonly level: HideLevel; readonly ends: StealthEnds };
+export type Hide = { readonly key: StatusKey; readonly level: Level; readonly ends: StealthEnds };
 /**
  * A body as the stealth machine reads it: its hides, and the events its `stayHidden` ops keep from ending any of them.
  * Derived from its statuses (`stealthOf`) and never stored: the statuses are the machine's storage, so a hide's time, a
@@ -283,7 +283,7 @@ export const STEALTH_STATES = ['seen', 'hidden'] as const;
 export type StealthState = (typeof STEALTH_STATES)[number];
 export const stealthState = (s: Stealth): StealthState => (s.hides.length ? 'hidden' : 'seen');
 /** The level a body hides at: the highest of its hides, or null when it is seen. */
-export const stealthLevel = (s: Stealth): HideLevel | null => (s.hides.length ? Math.max(...s.hides.map(h => h.level)) as HideLevel : null);
+export const stealthLevel = (s: Stealth): Level | null => (s.hides.length ? Math.max(...s.hides.map(h => h.level)) as Level : null);
 /**
  * What moves it: a hide put on (`start` its op's, `watched` whether a foe that is up has the body's tile in sight; the
  * fight raises it before a use that hides its user, fight.ts `act`), and the owner's three ends: its bearer loses HP
@@ -327,7 +327,7 @@ export function stealthStep(s: Stealth, e: StealthEvent): Stealth {
 export function hideOf(key: StatusKey, def: Pick<StatusDef, 'ops'>, tier: number): Hide | null {
   const ops = def.ops.flatMap(o => (o.op === 'hidden' ? [o] : []));
   if (!ops.length) return null;
-  const level = Math.max(...ops.map(o => atTier(o.level, tier))) as HideLevel;
+  const level = Math.max(...ops.map(o => atTier(o.level, tier))) as Level;
   return { key, level, ends: { hurt: ops.some(o => o.ends.hurt), revealed: ops.some(o => o.ends.revealed), dealt: ops.some(o => o.ends.dealt) } };
 }
 /** Whether a use of `a` hides a body: it puts a status with a `hidden` op on (kits design 8.7). */

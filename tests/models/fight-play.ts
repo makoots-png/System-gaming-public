@@ -121,10 +121,10 @@ const BOUNDARY = make('support', 'boundary', { aim: 'self', shape: { kind: 'self
   zone: { name: 'Boundary', duration: null, ops: [{ op: 'heal', amount: f('1') }], endsWithOwner: true, around: tiles(1), grow: null, upkeep: { fatigue: 5, mana: 0 },
     end: [{ op: 'damage', type: 'magical', amount: f('1d6'), when: 'use' }] } });
 const SHATTER = make('support', 'shatter', { aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null, prices: [{ kind: 'zone', name: 'Boundary', take: 'all' }] });
-/** A sprite for 2 rounds, once a rest. */
+/** A sprite for 2 rounds, once a gate. */
 /** A stacking status already on a body as the fight starts, from the GM. */
 const holding = (key: string, def: StackDef, stacks: number): Status => ({ key: statusKey(key), def, source: { id: null, tier: 1 }, until: null, since: tick(0), settledAt: tick(0), stacks } as Status);
-const SPRITE = make('support', 'sprite', { aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null, gates: [{ kind: 'uses', per: 'rest', n: 1 }],
+const SPRITE = make('support', 'sprite', { aim: 'self', shape: { kind: 'self' }, range: tiles(0), effect: null, gates: [{ kind: 'uses', per: 'gate', n: 1 }],
   summon: { name: 'Sprite', archetype: 'skirmisher', rounds: 2, statuses: [] } });
 
 // ── wave 2's blocks (kits design 8.1 to 8.7): a reaction of each moment, an edge, a held die, a push and a pull, a blink,

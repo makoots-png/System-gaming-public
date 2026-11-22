@@ -831,7 +831,7 @@ test('Start session counts on from the campaign\'s last session after its log ha
   expect(after.log).toEqual([['Session 42 began', 'A backup was saved. World day 8.'], ['World day', 'Day advanced by 1 to 8.']]);
 });
 
-test('a GM makes a quest the System counts: two short rests complete it with its window, and a quest that fails costs what If it fails says', async ({ device }) => {
+test('a GM makes a quest the System counts: two rests complete it with its window, and a quest that fails costs what If it fails says', async ({ device }) => {
   const page = (await device('gm')).page;
   await onboardGM(page);
   await dismissAll(page, 6);
@@ -839,33 +839,31 @@ test('a GM makes a quest the System counts: two short rests complete it with its
   const form = page.locator('#view-quests form[data-form]');
   const card = (title: string) => page.locator('#view-quests .qc', { hasText: title });
 
-  await test.step('the GM writes "Catch your breath": two short rests, counted by the System', async () => {
+  await test.step('the GM writes "Catch your breath": two rests, counted by the System', async () => {
     await go(page, 'quests');
     await page.locator('#view-quests [data-new]').tap();
     await form.locator('[name=title]').fill('Catch your breath');
-    await form.locator('[name=olabel]').fill('Short rests');
+    await form.locator('[name=olabel]').fill('Rests');
     await form.locator('[name=otarget]').fill('2');
     await form.locator('[data-ocb]').selectOption('system');
     await form.locator('[data-ocount] [data-ck]').selectOption('rest');
-    await form.locator('[data-ocount] [data-tadd]').tap();
-    await form.locator('[data-ocount] [data-test] [data-tv]').selectOption('false');
     await form.locator('button[type=submit]').tap();
     await expect(card('Catch your breath').locator('[data-counted]')).toHaveText('Counted by the System');
     await expect(card('Catch your breath').locator('[data-done]'), 'the System completes it, so no tap does').toHaveCount(0);
   });
 
-  await test.step('two short rests on the sheet complete it, and its window opens once', async () => {
+  await test.step('two rests on the sheet complete it, and its window opens once', async () => {
     await go(page, 'status');
-    await page.locator('#view-status [data-rest="short"]').tap();
+    await page.locator('#view-status [data-rest]').tap();
     const q = () => page.evaluate(() => hunterApp.store.active().quests.find((x: any) => x.title === 'Catch your breath'));
     await expect.poll(async () => (await q()).objectives[0].progress).toBe(1);
-    await page.locator('#view-status [data-rest="short"]').tap();
+    await page.locator('#view-status [data-rest]').tap();
     await answerWindow(page, 'QUEST COMPLETE');
     const done = await q();
     expect(done.status).toBe('done');
     await expect.poll(async () => (await q()).told, 'the window answered is told in the quest').toBe(true);
     await page.reload();
-    await expect(page.locator('#view-status [data-rest="short"]')).toBeVisible();
+    await expect(page.locator('#view-status [data-rest]')).toBeVisible();
   });
 
   await test.step('a hunter with 80 gold, on a quest that costs 50 gold if it fails, has 30 when the GM taps Fail', async () => {
@@ -1041,26 +1039,26 @@ test('a New quest form opened as a player closes when the phone switches to GM m
 test('a GM\'s daily the System counts opens QUEST COMPLETE on the second day as on the first', async ({ device }) => {
   const page = await quietGM(device, '2026-11-10T12:00:00-05:00');
   const form = page.locator('#view-quests form[data-form]');
-  const rest = async () => { await go(page, 'status'); await page.locator('#view-status [data-rest="short"]').tap(); };
+  const rest = async () => { await go(page, 'status'); await page.locator('#view-status [data-rest]').tap(); };
 
-  await test.step('the GM writes a daily of one short rest, counted by the System', async () => {
+  await test.step('the GM writes a daily of one rest, counted by the System', async () => {
     await go(page, 'quests');
     await page.locator('#view-quests [data-new]').tap();
     await form.locator('[name=kind]').selectOption('daily');
     await form.locator('[name=title]').fill('Catch your breath');
-    await form.locator('[name=olabel]').fill('Short rests');
+    await form.locator('[name=olabel]').fill('Rests');
     await form.locator('[data-ocb]').selectOption('system');
     await form.locator('[data-ocount] [data-ck]').selectOption('rest');
     await form.locator('button[type=submit]').tap();
     await expect(form).toBeHidden();
   });
 
-  await test.step('day 1: a short rest completes it and its window opens', async () => {
+  await test.step('day 1: a rest completes it and its window opens', async () => {
     await rest();
     await answerWindow(page, 'QUEST COMPLETE');
   });
 
-  await test.step('day 2: the daily is active again, and a short rest opens its window again', async () => {
+  await test.step('day 2: the daily is active again, and a rest opens its window again', async () => {
     await passMinutePast(page, '2026-11-11T12:00:00-05:00');
     await dismissAll(page);
     await go(page, 'quests');

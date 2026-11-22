@@ -123,13 +123,13 @@ group('the old statuses restated (plan 3.1)', () => {
   });
 
   test('Stealth hides out of sight and Invisible in the open, each ended by a hurt, a reveal or damage dealt', () => {
-    // one level per rank E to S (notes-7-stealth.md section 5), with rank E at 1: everyone's sight starts at 0 and a body
-    // is hidden only from a lower sight (the owner's ruling 1), so a hide at 0 would hide from nobody
+    // a level that rises with the rank (notes-7-stealth.md section 5), ranks E and D at 0: stealth beats sight at the same
+    // level (the owner, Nov 22), so a hide at 0 hides from everyone's starting sight of 0, and rank C hides from a sight of 1
     const ALL_ENDS = { hurt: true, revealed: true, dealt: true };
-    expect(BUILT_IN_STATUSES.stealth.ops).toEqual([{ op: 'hidden', level: [1, 1, 2, 3, 4, 5], start: 'unseen', ends: ALL_ENDS }]);
-    expect(BUILT_IN_STATUSES.invisible.ops).toEqual([{ op: 'hidden', level: [1, 1, 2, 3, 4, 5], start: 'anywhere', ends: ALL_ENDS }]);
+    expect(BUILT_IN_STATUSES.stealth.ops).toEqual([{ op: 'hidden', level: [0, 0, 1, 2, 3, 4], start: 'unseen', ends: ALL_ENDS }]);
+    expect(BUILT_IN_STATUSES.invisible.ops).toEqual([{ op: 'hidden', level: [0, 0, 1, 2, 3, 4], start: 'anywhere', ends: ALL_ENDS }]);
     const hideAt = (key: BuiltInStatus, t: number) => hideOf(statusKey(key), BUILT_IN_STATUSES[key], t)!.level;
-    expect(TIERS.map(t => hideAt('stealth', t))).toEqual(TIERS.map(t => Math.max(1, t)));
+    expect(TIERS.map(t => hideAt('stealth', t))).toEqual(TIERS.map(t => Math.max(0, t - 1)));
     expect(TIERS.map(t => hideAt('invisible', t))).toEqual(TIERS.map(t => hideAt('stealth', t)));
   });
 

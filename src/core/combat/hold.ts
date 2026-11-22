@@ -18,7 +18,7 @@ export const TURN_HOLD_STATES = ['free', 'picking', 'sent'] as const satisfies r
 export const TURN_FREE: TurnHold = { at: 'free' };
 const PICKING: TurnHold = { at: 'picking' };
 
-/** How a tapped command came: `turn` for a step, a use, End turn or a Release; `bag` for a consumable's use (inventory.js `use`). */
+/** How a tapped command came: `turn` for a step, a use, End turn or a Release; `bag` for a consumable's use (inventory.js `use`). Both are held alike (SMX-views-5.1). */
 export type TurnHoldVia = 'turn' | 'bag';
 /**
  * What moves the hold. `tap`: a command of the turn tapped, from the table, the Skills panel or the Bag, `via` as it came. `posted`: the command tapped went to the outbox
@@ -39,10 +39,10 @@ export type TurnHoldEventKind = TurnHoldEvent['kind'];
 export const TURN_HOLD_EVENTS = ['tap', 'posted', 'unposted', 'doc', 'refused', 'dropped', 'left'] as const satisfies readonly TurnHoldEventKind[];
 
 /**
- * How a tap's command goes out: `held`, posted under the hold, its answer fed back as `posted` or `unposted`; `unheld`,
- * sent with nothing held (the bag's own use); `none`, not sent (the hold is not free). Every other event sends nothing.
+ * How a tap's command goes out: `held`, posted under the hold, its answer fed back as `posted` or `unposted`; `none`, not
+ * sent (the hold is not free). Every other event sends nothing.
  */
-export type TurnHoldSend = 'held' | 'unheld' | 'none';
+export type TurnHoldSend = 'held' | 'none';
 export type TurnHoldMoved = { readonly hold: TurnHold; readonly send: TurnHoldSend };
 
 /** A move that sends nothing. */
@@ -54,11 +54,11 @@ type Cell<S extends TurnHoldState, K extends TurnHoldEventKind> = (s: Extract<Tu
 /** What each event does in each state; a cell that answers its state with `none` is a move that changes nothing. */
 const TABLE: { readonly [S in TurnHoldState]: { readonly [K in TurnHoldEventKind]: Cell<S, K> } } = {
   free: {
-    // SMX-views-5.1 waits on the owner's ruling ("using a consumable in a fight takes the player's turn", proposed by the
-    // hunt). Built as the app behaves today: a consumable goes through the bag and holds nothing, so the turn's buttons
-    // stay on. The ruling is this one cell: `{ hold: PICKING, send: 'held' }` sends it as a use, held like the map's.
-    tap: (s, e) => (e.via === 'bag' ? { hold: s, send: 'unheld' } : { hold: PICKING, send: 'held' }),
-    // the answer of a command the hold does not wait on: the bag's, or one tapped before the phone left its room
+    // SMX-views-5.1: a consumable from the Bag is held like any use (the owner, Nov 22: "Not a full turn, but should cost
+    // something"). Its use costs `fight.consumableTime` and ends the turn in the GM's fight, as every use does, so the
+    // turn's buttons wait on the GM's answer; the hunter's next turn comes after half a standard action.
+    tap: () => ({ hold: PICKING, send: 'held' }),
+    // the answer of a command the hold does not wait on: one tapped before the phone left its room
     posted: s => to(s),
     unposted: s => to(s),
     doc: s => to(s),

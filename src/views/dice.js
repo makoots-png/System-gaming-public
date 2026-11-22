@@ -9,7 +9,7 @@ import { rollFormula, trayRandom } from '../edge/roll.ts';
 import { naturalOf, parseFormula, printFormula, withEdge } from '../core/formula.ts';
 import { coinWords } from '../core/coin.ts';
 import { checkResult } from '../core/roll.ts';
-import { DC_GROUPS, DC_KEYS, dcKeyOf, dcOf, dcPickStep, dcStart, dcWords } from '../core/dc-pick.ts';
+import { DC_GROUPS, DC_KEYS, DC_START, dcKeyOf, dcOf, dcPickStep, dcWords } from '../core/dc-pick.ts';
 import { oneOf } from '../core/one-of.ts';
 
 const DICE = [4, 6, 8, 10, 12, 20, 100];
@@ -194,7 +194,7 @@ export function register(app) {
     // a bad formula says what is wrong under the field as it is typed
     q('[data-expr]').addEventListener('input', e => { const t = e.target.value.trim(), p = t ? parseFormula(t.replace(/[−–]/g, '-'), rules()) : null; setErr(p && 'error' in p ? p.error : ''); });
     /** The quick check's DC (src/core/dc-pick.ts), moved only by `dcPickStep`; the sheet has no quick check. */
-    let dc = quickChecks ? dcStart(store.active().rank) : null;
+    let dc = quickChecks ? DC_START : null;
     inst.update = () => {
       const rs = store.get().rolls, last = rs[0], t = q('[data-total]'), f = q('[data-flag]');
       t.className = `roll-total${last && last.crit ? ' crit' : last && last.fumble ? ' fail' : ''}`;
@@ -214,7 +214,6 @@ export function register(app) {
       f.textContent = coin ? coinWords(coin) : last && last.crit ? 'Critical hit' : last && last.fumble ? 'Critical failure' : v ? `${v.success ? 'Success' : 'Failure'} vs DC ${v.dc}` : '';
       if (!quickChecks) return;
       const h = store.active(), rt = rules().rankTable, sel = q('[data-dc]');
-      dc = dcPickStep(dc, { kind: 'hunterRank', rank: h.rank });
       // the options are drawn again only when the rank table's numbers change, so an open select is left alone
       const opts = `<option value="none">${esc(dcWords('none', rt))}</option>` + DC_GROUPS.map(g => `<optgroup label="${esc(g.rank)}-rank">${g.keys.map(k => `<option value="${esc(k)}">${esc(dcWords(k, rt))}</option>`).join('')}</optgroup>`).join('');
       if (sel.dataset.sig !== opts) { sel.dataset.sig = opts; sel.innerHTML = opts; }

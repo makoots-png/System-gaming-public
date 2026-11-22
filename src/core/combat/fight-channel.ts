@@ -67,8 +67,8 @@ export type Released = { readonly channel: Channel; readonly costs: ReleaseCost 
  */
 const RELEASE: { readonly [S in 'holding' | 'broken']: { readonly [T in ReleaseTurn]: ReleaseCost | null } } = {
   holding: { own: 'turn', other: null },
-  // rules-3.1 waits on the owner's ruling on whether a broken channel costs its user's turn when it breaks as that turn
-  // starts. Today it does (the code's own words say a broken release costs no time; that holds only out of its turn).
+  // SMX-rules-3.1: a broken channel released on its user's own turn costs that turn (the owner, Nov 22: "Yes"); out of
+  // its user's turn it costs no time.
   broken: { own: 'turn', other: 'free' },
 };
 /** `c` released on `turn`: the fired channel and what it cost, read from the state it was released from. Null when it may not go off. */

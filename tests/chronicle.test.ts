@@ -92,13 +92,13 @@ describe('a fact in a hunter\'s inbox, a machine (noticed.ts `INBOX`)', () => {
     expect(INBOX.recorded.held(level, then), 'recorded, held: waits, stamped by this write').toEqual({ ...level, ...then });
     expect(INBOX.recorded.free(level, then), 'recorded, free: taken with this write\'s stamp').toEqual(then);
     expect(INBOX.waiting.held(waiting, then), 'waiting, still held: as it was').toBe(waiting);
-    expect(INBOX.waiting.free(waiting, then), 'waiting, freed: taken with the stamp of the write that frees it, as today (SMX-rules-9.1 waits on the day ruling)').toEqual(then);
+    expect(INBOX.waiting.free(waiting, then), 'waiting, freed: taken with the stamp of the write that frees it, the day the fight ended (SMX-rules-9.1)').toEqual(then);
   });
   test('a held write that records nothing leaves the save as it was', () => {
     const s = noticed(saveOf(record(mira(), level)), () => ctx({ held }));
     expect(noticed(s, () => ctx({ held, at: NEXT, today: then.day, session: 5 }))).toBe(s);
   });
-  test('freed on a later day, a waiting fact is kept with the day of the write that frees it, as today (SMX-rules-9.1 waits)', () => {
+  test('freed on a later day, a waiting fact is kept with the day of the write that frees it: the day the fight ended (SMX-rules-9.1, the owner, Nov 22)', () => {
     const s = noticed(saveOf(record(mira(), level)), () => ctx({ held }));
     const after = noticed(s, () => ctx({ at: NEXT, today: then.day, session: 5 })).hunters[0]!.chronicle;
     expect(after.inbox).toEqual([]);
@@ -127,10 +127,10 @@ describe('each fact is recorded by its one writer, in that thing\'s write', () =
     expect(inbox(ok(sheetEdit(h, { type: 'totals', life: { at: 'dead' }, mana: h.mana, fatigue: 0, statuses: [] }, RULES)))).toEqual([{ kind: 'life', news: 'died', how: 'fight' }]);
   });
 
-  test('a rest, short or long; a rest of a dead hunter raises nobody', () => {
-    expect(inbox(ok(sheetEdit(mira(), { type: 'rest', kind: 'short' }, RULES)))).toEqual([{ kind: 'rest', long: false }]);
+  test('a rest is a fact; a dead hunter\'s rest is refused and records nothing', () => {
+    expect(inbox(ok(sheetEdit(mira(), { type: 'rest' }, RULES)))).toEqual([{ kind: 'rest' }]);
     const dead: Hunter = { ...mira(), life: { at: 'dead' } };
-    expect(inbox(ok(sheetEdit(dead, { type: 'rest', kind: 'long' }, RULES)))).toEqual([{ kind: 'rest', long: true }]);
+    expect(sheetEdit(dead, { type: 'rest' }, RULES)).toEqual({ ok: false, why: 'cannot' });
   });
 
   test('a new level, a new rank and a title given', () => {

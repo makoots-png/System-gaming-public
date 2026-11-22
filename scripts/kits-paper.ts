@@ -99,7 +99,7 @@ function part1(): void {
     ['triggerOps', KIT.triggerOps, 'A trigger, a threshold or an end keeps its first 6 ops'],
     ['depth', KIT.depth, 'Not a parser bound: the reducer fires nothing past depth 2'],
     ['fires', KIT.fires, 'Not a parser bound: the reducer fires at most 16 triggers a command'],
-    ['fightUses', KIT.fightUses, 'A limit of "n a fight" or "n a rest" is clamped to 1 to 10'],
+    ['fightUses', KIT.fightUses, 'A limit of "n a fight" or "n a gate" is clamped to 1 to 10'],
     ['prices', KIT.prices, 'An ability keeps its first 2 prices'],
     ['gates', KIT.gates, 'An ability keeps its first 3 gates'],
     ['hpShare', KIT.hpShare, 'An HP price as a share is clamped to 0.01 to 0.5'],
@@ -169,12 +169,12 @@ const MACHINES: readonly { readonly name: string; readonly where: string; readon
     ],
   },
   {
-    name: '2.3 A limited use (an ability with uses a fight or a rest)', where: 'resolve.ts rule 3b, the row\'s `used`', cells: [
+    name: '2.3 A limited use (an ability with uses a fight or a gate)', where: 'resolve.ts rule 3b, the row\'s `used`', cells: [
       ['ready k left', 'used', 'ready k - 1, or spent at 0', 'Counted when the use resolves, not when it is refused'],
       ['spent', 'used', 'spent', 'Refused: `noUses`'],
       ['ready or spent (per fight)', 'the fight ends', 'ready n', 'The row is gone; the next fight\'s row starts at n'],
-      ['ready or spent (per rest)', 'the fight ends', 'the sheet keeps k', 'Written back with `vitals` (`Vitals.used`)'],
-      ['ready or spent (per rest)', 'a long rest', 'ready n', 'vitals.ts `rest` clears `used`'],
+      ['ready or spent (per gate)', 'the fight ends', 'the sheet keeps k', 'Written back with `vitals` (`Vitals.used`)'],
+      ['ready or spent (per gate)', 'the gate\'s Clear', 'ready n', 'vitals.ts `cleared` clears `used`'],
       ['any', 'the GM sets it', 'ready k', 'The fight\'s `adjust` gains `used`'],
     ],
   },

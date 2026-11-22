@@ -1,6 +1,7 @@
 // The one sight rule (docs/agent-handoff/features/notes-7-stealth.md section 3, with the owner's rulings 1 and 8): whether
 // a body's eyes perceive another body. Every expected value is read off the rule: its own side always; else the viewer
-// is up, the body is within the range on a clear line, and the viewer's sight is at the body's stealth level or above.
+// is up, the body is within the range on a clear line, and the viewer's sight is above the body's stealth level
+// (stealth beats sight at the same level: the owner, Nov 22).
 import { describe, expect, test } from 'bun:test';
 import { RULES } from '../src/core/rules.ts';
 import { baseStats } from '../src/core/stats.ts';
@@ -14,7 +15,7 @@ import { modified, statusKey, statusOn } from '../src/core/combat/effect-ops.ts'
 import type { Body, Op, Origin, Status, StatusFields } from '../src/core/combat/effect-ops.ts';
 import { combatantId } from '../src/core/combat/ability-types.ts';
 import { parseOp } from '../src/core/combat/fight-parse.ts';
-import type { HideLevel } from '../src/core/combat/sight-levels.ts';
+import type { Level } from '../src/core/combat/sight-levels.ts';
 import type { Tiered } from '../src/core/combat/effect-ops.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 import { lifeAt } from './fixtures/life.ts';
@@ -35,16 +36,16 @@ const eyes = (o: Partial<Eyes> = {}): Eyes => ({ place: place(0, 0), side: 'part
 const figure = (o: Partial<Figure> = {}): Figure => ({ place: place(3, 0), side: 'foe', stealth: null, ...o });
 
 describe('one sight rule (perceives)', () => {
-  test('a body perceives its own side, a foe in sight with no stealth, and a hidden foe only with a sight at its level or above', () => {
+  test('a body perceives its own side, a foe in sight with no stealth, and a hidden foe only with a sight above its level', () => {
     expect(perceives(eyes(), figure({ side: 'party', stealth: 5 }), OPEN, WHOLE)).toBe(true);
     expect(perceives(eyes(), figure(), OPEN, WHOLE)).toBe(true);
-    expect(LEVELS.map(sight => perceives(eyes({ sight }), figure({ stealth: 3 }), OPEN, WHOLE))).toEqual([false, false, false, true, true, true]);
+    expect(LEVELS.map(sight => perceives(eyes({ sight }), figure({ stealth: 3 }), OPEN, WHOLE))).toEqual([false, false, false, false, true, true]);
   });
 
-  test('a viewer whose sight equals the stealth level perceives it, one a level under does not (ruling 1)', () => {
-    expect(perceives(eyes({ sight: 2 }), figure({ stealth: 2 }), OPEN, WHOLE)).toBe(true);
-    expect(perceives(eyes({ sight: 1 }), figure({ stealth: 2 }), OPEN, WHOLE)).toBe(false);
-    expect(perceives(eyes({ sight: 0 }), figure({ stealth: 0 }), OPEN, WHOLE)).toBe(true);
+  test('stealth beats sight at the same level: a viewer whose sight equals the stealth level does not perceive it, one a level above does (the owner, Nov 22)', () => {
+    expect(perceives(eyes({ sight: 2 }), figure({ stealth: 2 }), OPEN, WHOLE)).toBe(false);
+    expect(perceives(eyes({ sight: 3 }), figure({ stealth: 2 }), OPEN, WHOLE)).toBe(true);
+    expect(perceives(eyes({ sight: 0 }), figure({ stealth: 0 }), OPEN, WHOLE)).toBe(false);
   });
 
   test('a down viewer perceives no foe, even next to it with no stealth, and still knows its own side', () => {
@@ -66,7 +67,7 @@ describe('one sight rule (perceives)', () => {
 
   test('a foe of the viewer is the other side, whichever side the viewer is on', () => {
     const e = eyes({ side: 'foe', sight: 1 });
-    expect([perceives(e, figure({ side: 'party', stealth: 2 }), OPEN, WHOLE), perceives(e, figure({ side: 'party', stealth: 1 }), OPEN, WHOLE)]).toEqual([false, true]);
+    expect([perceives(e, figure({ side: 'party', stealth: 1 }), OPEN, WHOLE), perceives(e, figure({ side: 'party', stealth: 0 }), OPEN, WHOLE)]).toEqual([false, true]);
   });
 });
 
@@ -102,7 +103,7 @@ describe('a fight body\'s eyes and figure', () => {
   const status = (key: string, ...ops: Op[]): Status => statusAt(0, key, ...ops);
   const statusAt = (tier: number, key: string, ...ops: Op[]): Status =>
     statusOn({ label: key, desc: '', ops }, { key: statusKey(key), source: { id: null, tier }, until: tick(100), since: tick(0), settledAt: tick(0) });
-  const hide = (level: Tiered<HideLevel>): Op => ({ op: 'hidden', level, start: 'unseen', ends: { hurt: true, revealed: true, dealt: true } });
+  const hide = (level: Tiered<Level>): Op => ({ op: 'hidden', level, start: 'unseen', ends: { hurt: true, revealed: true, dealt: true } });
   const owed = (s: Status): Status => statusOn(s.def, { ...(s as StatusFields), owed: true });
   function body(statuses: readonly Status[], o: { side?: 'party' | 'foe'; hp?: number; at?: Place } = {}): Body {
     const { stats, sheet } = modified(hunter, statuses, RULES);
@@ -128,7 +129,7 @@ describe('a fight body\'s eyes and figure', () => {
     expect(figureOf(body([status('stealth', hide(2)), status('cloak', hide(4)), status('veil', hide(3))])).stealth).toBe(4);
   });
 
-  test('a hide with no level written hides from a body with no sight content, and a sight op of 1 sees it (the default level is 1, ruling 1)', () => {
+  test('a hide with no level written hides from a body with no sight content, and a sight op of 1 sees it (the default level is 0, which a plain sight of 0 does not see: the owner, Nov 22)', () => {
     const plain = parseOp({ op: 'hidden' }, RULES)!, foe = figureOf(body([status('stealth', plain)], { side: 'foe' }));
     expect<number>(eyesOf(body([])).sight).toBe(RULES.fight.stealth.sightBase);
     expect(perceives(eyesOf(body([])), foe, OPEN, WHOLE)).toBe(false);

@@ -12,7 +12,7 @@ import { isRefused } from '../../src/core/save-step.ts';
 import { bfs, machine } from '../statecharts.ts';
 
 const R = RULES;
-const fieldsKey = (h: Hunter): string => JSON.stringify([h.level, h.xp, h.peakLevel, h.bonusPoints, h.spent, h.pending, h.stats, h.rank]);
+const fieldsKey = (h: Hunter): string => JSON.stringify([h.level, h.xp, h.peakLevel, h.bonusPoints, h.spent, h.pending, h.stats, h.rank, h.rankBy]);
 
 // ── the allocation ──
 /** Every event of the allocation on Strength, from hunter `h`: Auto puts every point free on it. */
@@ -48,10 +48,10 @@ function progressArrow(e: ProgressEvent, from: Hunter): string {
     case 'setStat': return 'the GM edits the stat';
     case 'start': return 'starting stats';
     case 'xp': return 'XP given or taken';
-    case 'level': return 'the level moves (XP, or the GM)';
+    case 'level': return e.level < from.level && allocationOf(from).at === 'allocating' ? 'the level falls (XP, or the GM): the points pending handed back' : 'the level moves (XP, or the GM)';
     case 'points': return e.n >= 0 ? 'points given' : 'points taken (a quest\'s cost)';
     case 'setPoints': return 'the GM sets the points shown';
-    case 'revived': return 'a raising from death (levels lost)';
+    case 'revived': return allocationOf(from).at === 'allocating' ? 'a raising from death (levels lost): the points pending handed back' : 'a raising from death (levels lost)';
   }
 }
 
@@ -63,7 +63,7 @@ export const progress = machine<Hunter, ProgressEvent>({
   kindsOf: h => [allocationOf(h).at],
   views: [{
     title: 'Points free, pending and confirmed',
-    note: 'A point put on a stat is pending, not spent: it leaves the points free while it waits, and Confirm moves it into the stat. A player\'s − takes back only a pending point (with none, it is refused); the GM\'s − with nothing pending, and the GM\'s + with no point free, edit the stat. The GM\'s edit of a stat confirms what was pending on it. A level lost, by the GM or by a raising from death, keeps the points pending, so a hunter can hold fewer points than it spent (no point free), and a deduction takes only the points free (both wait on ruling SMX-rules-7.1). Every change of level, XP, points or stats is an event of `progressStep`; the chart leaves out the starting stats and the GM\'s points shown, which act as the GM\'s edits.',
+    note: 'A point put on a stat is pending, not spent: it leaves the points free while it waits, and Confirm moves it into the stat. A player\'s − takes back only a pending point (with none, it is refused); the GM\'s − with nothing pending, and the GM\'s + with no point free, edit the stat. The GM\'s edit of a stat confirms what was pending on it. A level lost, by the GM, by XP or by a raising from death, hands the points pending back (SMX-rules-7.1, the owner, Nov 22), so a hunter never owes a point it had not confirmed; a deduction takes only the points free (unruled). Every change of level, XP, points or stats is an event of `progressStep`; the chart leaves out the starting stats and the GM\'s points shown, which act as the GM\'s edits.',
     hides: '',
     state: progressWords,
     step: progressArrow,
@@ -95,7 +95,7 @@ const RANK_KINDS = ['follows', 'behind', 'above'] as const satisfies readonly Pr
 const RANK_WORDS: { readonly [S in ProgressRank['at']]: string } = {
   follows: 'The rank the level earns',
   behind: 'Below the level\'s rank (Re-evaluate offered)',
-  above: 'Above the level\'s rank (the GM\'s, or kept after levels lost)',
+  above: 'Above the level\'s rank (the GM\'s, set by hand)',
 };
 function rankArrow(e: RankMove): string {
   switch (e.type) {
@@ -113,7 +113,7 @@ export const rank = machine<Hunter, RankMove>({
   kindsOf: h => [rankStanding(h, R).at],
   views: [{
     title: 'Where a hunter\'s rank stands against its level',
-    note: 'Only the rank is stored; where it stands is read with the level (`rankStanding`). A level moved keeps the rank: a rank behind waits for the GM\'s Re-evaluate, and a rank above stays, with its check bonus and the path tiers it opened (ruling SMX-rules-7.2 waits; it needs a GM\'s mark stored beside the rank). Re-evaluate is refused (`not-eligible`) unless the rank is behind. A new rank is a fact of the chronicle.',
+    note: 'Only the rank and who set it are stored; where it stands is read with the level (`rankStanding`). A level risen keeps the rank: a rank behind waits for the GM\'s Re-evaluate. A level lost below the rank takes the rank down to the level\'s, unless the GM set the rank by hand (`rankBy`), when it stays with its check bonus and the path tiers it opened (SMX-rules-7.2, the owner, Nov 22). Re-evaluate is refused (`not-eligible`) unless the rank is behind. A new rank is a fact of the chronicle.',
     hides: '',
     state: h => RANK_WORDS[rankStanding(h, R).at],
     step: rankArrow,

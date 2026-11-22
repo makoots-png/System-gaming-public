@@ -68,18 +68,18 @@ group('the stealth examples (notes-7-stealth.md section 5)', () => {
   const HUNTER: Origin = { kind: 'hunter', build: { stats: baseStats(RULES.fight), level: 1, gear: [], perks: {} } };
   const vanished = exampleStatuses(RULES).vanished!;
 
-  test('Vanish puts Vanished on its user for 2 rounds, ready again 5 rounds later, and hides it in the open at 1, 1, 2, 2, 3, 3 by rank', () => {
+  test('Vanish puts Vanished on its user for 2 rounds, ready again 5 rounds later, and hides it in the open at 0, 0, 1, 1, 2, 2 by rank', () => {
     const a = ability('Vanish');
     expect([a.aim, a.effect, a.cost.cooldown]).toEqual(['self', null, 5 * RULES.fight.round]);
     expect(a.ops).toEqual([{ op: 'applyStatus', key: statusKey('vanished'), def: vanished, duration: 2 * RULES.fight.round }]);
-    expect(vanished.ops).toEqual([{ op: 'hidden', level: [1, 1, 2, 2, 3, 3], start: 'anywhere', ends: { hurt: true, revealed: true, dealt: true } }]);
+    expect(vanished.ops).toEqual([{ op: 'hidden', level: [0, 0, 1, 1, 2, 2], start: 'anywhere', ends: { hurt: true, revealed: true, dealt: true } }]);
   });
 
   test('Unseen Blade keeps its bearer hidden when it deals damage, and only then', () => {
     expect([...stealthOf({ statuses: [on('unseen-blade', worn('Unseen Blade'))] }).kept]).toEqual(['dealt']);
   });
 
-  test('a foe with Hunter\'s Eye sees a Vanished hunter of rank E to B (level 1 or 2) and not one of rank A or S (level 3)', () => {
+  test('a foe with Hunter\'s Eye sees a Vanished hunter of rank E to B (level 0 or 1) and not one of rank A or S (level 2: stealth beats sight at the same level)', () => {
     const sight = modified(HUNTER, [on('hunters-eye', worn('Hunter\'s Eye'))], RULES).sheet.sight;
     expect(sight).toBe(2);
     const sees = RANKS.map((_, t) => perceives({ place: place(0, 0), side: 'foe', up: true, sight }, { place: place(5, 0), side: 'party', stealth: hideOf(statusKey('vanished'), vanished, t)!.level },

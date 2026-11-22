@@ -405,7 +405,7 @@ group('what a held thing\'s powers spend (item-stats 6.5)', () => {
   test('an active with no cooldown is used as often as its time lets the support; a once-a-fight gate holds it to one use in the reference fight', () => {
     const support = C('support').sheet, flat = shieldActive('30', { rounds: 0 }), worth = 30 / (1.5 * support.sup);
     expect(itemSpend(gear('rare', { active: flat }), RULES)!.points).toBeCloseTo(worth * support.speed / RULES.fight.speedBase * perAction('C'), 9);
-    for (const per of ['fight', 'rest'] as const) {
+    for (const per of ['fight', 'gate'] as const) {
       const once = { ...shieldActive('30', { rounds: 2 }), gates: [{ kind: 'uses' as const, per, n: 1 }] };
       expect(itemSpend(gear('rare', { active: once }), RULES)!.points, per).toBeCloseTo(worth / RULES.fight.kit.referenceRounds * perAction('C'), 9);
     }

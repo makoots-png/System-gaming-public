@@ -69,7 +69,7 @@ export const statusLifeChart = machine<StatusLife, StatusEvent>({
   kindsOf: s => [s],
   views: [{
     title: 'A status on one bearer, from put on to gone',
-    note: 'A status counts for every reader of its ops (its wards, shares, stats, dice, a hold) only while it is active: `counts` reads the row `STATUS_COUNTS`, whose `owed` cell is SMX-rules-2.1\'s ruling, built as not counting. Once fight time passes its end it is owed while its bearer\'s next settle still has a per-round share to pay or an end to land, and it is gone at that settle; with nothing owed it is gone as time moves. Its count, when it stacks, is the stack machine\'s, and whether its end lands at a cure is the delayed effect\'s.',
+    note: 'A status counts for every reader of its ops (its wards, shares, stats, dice, a hold) only while it is active: `counts` reads the row `STATUS_COUNTS`, whose `owed` cell is SMX-rules-2.1\'s ruling: it does not count (the owner, Nov 22). Once fight time passes its end it is owed while its bearer\'s next settle still has a per-round share to pay or an end to land, and it is gone at that settle; with nothing owed it is gone as time moves. Its count, when it stacks, is the stack machine\'s, and whether its end lands at a cure is the delayed effect\'s.',
     hides: '',
     state: s => LIFE_LABEL[s],
     step: lifeStep,

@@ -262,6 +262,16 @@ test('only src/core/hunter/vitals.ts changes a hunter\'s HP, mana, fatigue, life
   expect(report(hits), 'HP, mana, fatigue, life and collapse change only through src/core/hunter/vitals.ts (hit, changeMana, setMana, changeFatigue, setFatigue, rest, refill, fitMaxima). Assign what it answers; draw the chips with chipsOf.').toEqual([]);
 });
 
+test('only grant.ts sheetEdit changes a hunter\'s rests taken in a gate, through rests.ts restStep', async () => {
+  // the owner, Nov 22: two rests a gate, and everything back at its Clear. The count moves with the rest's vitals or the
+  // Clear's in one answer (grant.ts `edited`); a second writer could count a rest whose vitals were never given.
+  const writes = /\.restsTaken\s*([-+*/]?=(?![=>])|\+\+|--)|\brestsTaken\s*:/;
+  expect(writes.test('h.restsTaken += 1;') && writes.test('({ ...h, restsTaken: 0 })'), 'the rule sees a write').toBe(true);
+  const owners = ['src/core/hunter/grant.ts', 'src/core/hunter/hunter.ts'];
+  const hits = (await sourceLines('src')).filter(line => !owners.includes(line.file) && !isComment(line.text) && writes.test(line.text));
+  expect(report(hits), 'change a hunter\'s rests only through sheetEdit (grant.ts) with a rest, a Clear or a gate left (rests.ts restStep).').toEqual([]);
+});
+
 test('only src/core/hunter/penalty.ts changes a hunter\'s penalty, and nothing else names the Penalized chip', async () => {
   // A missed daily was stored three ways (the penalty, a Penalized condition and an active quest of kind penalty) and
   // three writers kept them in step by hand, so a cure, a combat card or a GM edit left them disagreeing. Now the
@@ -345,18 +355,18 @@ test('only src/core/hunter/record.ts changes a hunter\'s rank', async () => {
 });
 
 test('only src/views/dice.js moves the quick check\'s DC, and only by dcPickStep', async () => {
-  // The Dice view's quick check DC is one machine (src/core/dc-pick.ts, SMX-views-13): it opens on the hunter's rank
-  // (`dcStart`) and a pick makes it the player's (`dcPickStep`). The view keeps one `dc`; a second value or a write
+  // The Dice view's quick check DC is one machine (src/core/dc-pick.ts, SMX-views-13): it opens on one default for every
+  // hunter (`DC_START`) and a pick makes it the player's (`dcPickStep`). The view keeps one `dc`; a second value or a write
   // that is not a step would drop the player's pick at a redraw, or hold a number the GM's rank table no longer gives.
   const owners = ['src/core/dc-pick.ts', 'src/views/dice.js'];
-  const names = /\b(dcPickStep|dcStart)\b/;
+  const names = /\b(dcPickStep|DC_START)\b/;
   const lines = (await sourceLines('src')).filter(line => !isComment(line.text));
   expect(report(lines.filter(line => !owners.includes(line.file) && names.test(line.text))), 'the quick check\'s DC is the Dice view\'s: move it in src/views/dice.js through dcPickStep').toEqual([]);
-  const assign = /(?<![\w$.])dc\s*=(?![=>])/, stepped = /=\s*(quickChecks \? )?(dcPickStep|dcStart)\(/;
+  const assign = /(?<![\w$.])dc\s*=(?![=>])/, stepped = /=\s*(quickChecks \? )?(dcPickStep\(|DC_START\b)/;
   expect(assign.test('dc = { at: \'chosen\', key };') && !stepped.test('dc = { at: \'chosen\', key };'), 'the rule sees a write by hand').toBe(true);
   const dice = lines.filter(line => line.file === 'src/views/dice.js' && assign.test(line.text));
   expect(dice.length, 'the rule finds dice.js\'s dc').toBeGreaterThan(0);
-  expect(report(dice.filter(line => !stepped.test(line.text))), 'set the DC only to what dcPickStep (or dcStart, as the view opens) answers').toEqual([]);
+  expect(report(dice.filter(line => !stepped.test(line.text))), 'set the DC only to what dcPickStep answers (or DC_START, as the view opens)').toEqual([]);
 });
 
 test('a choice from a list is read with the one oneOf in src/core/one-of.ts', async () => {

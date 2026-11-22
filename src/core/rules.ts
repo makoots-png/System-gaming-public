@@ -79,7 +79,6 @@ const CHECK_BONUS = wholeIn(0, 30, 'a bonus on a d20 check: past 30 the die deci
 const DC = wholeIn(1, 100, 'a d20 check\'s DC: the S rank\'s hardest is 55, and past 100 no bonus reaches it');
 const MONSTER_XP = wholeIn(0, 1_000_000, 'XP a monster gives: a million is about the next level of a level 9999 hunter');
 const BREAK_DAYS = wholeIn(1, 365, 'days a gate stays open: under a day it breaks as it opens, a year is the longest a table plans');
-const PERCENT = wholeIn(0, 100, 'a percent of the bar a rest gives back or takes off');
 const GOLD = wholeIn(0, 1_000_000_000, 'gold: a billion is the bound of every gold a reward or a monster\'s loot reads');
 const WEIGHT = wholeIn(0, 1000, 'a chance weight against the others of its table: 0 never draws it, 1000 is 1000 times the smallest');
 const SUMMON_MANA = wholeIn(0, 1000, 'mana a summon costs: past every body\'s mana it cannot be paid, which a GM may want');
@@ -146,9 +145,14 @@ const SPEC = {
     disAt: whole(80, 0, 1000, 'fatigue from which checks roll at a disadvantage: past the largest bar (150) never'),
     collapseAt: whole(100, 0, 1000, 'fatigue at which a body collapses: past the largest bar (150) never'),
   },
+  // A rest (the owner, Nov 22: "rests will give 25% of mana back, and 25% health back. exhausted will largely clear. They
+  // should get 2x per dungeon"): `hp` and `mana` the share of the maximum given back, `fatigue` the share of the fatigue
+  // held taken off ("largely" is the owner's word, 0.75 the lead's number: a rest from full fatigue leaves a quarter, under
+  // the collapse share, so Exhausted lifts), `perGate` the rests a hunter has in a gate, counted again from 0 when a gate
+  // ends for it (src/core/hunter/rests.ts). A Clear gives everything back (vitals.ts `cleared`).
   rest: {
-    short: { hpPct: of(25, PERCENT), mpPct: of(50, PERCENT), fatigue: of(25, PERCENT) },
-    long: { hpPct: of(100, PERCENT), mpPct: of(100, PERCENT), fatigue: of(100, PERCENT) },
+    hp: of(0.25, SHARE), mana: of(0.25, SHARE), fatigue: of(0.75, SHARE),
+    perGate: whole(2, 0, 10, 'rests a hunter has in a gate: 0 is none, 10 is a rest after every fight of a long gate'),
   },
   penaltyCheck: whole(2, 0, 20, 'taken off every check while Penalized: 20 is the whole d20'),
   dailyTemplate: {
@@ -282,6 +286,11 @@ const SPEC = {
     // on an archer, and it costs breath. A walk already covers 6 tiles in a standard action's time at any speed, so at
     // 100 a dash is quicker than walking only for a body over speed 100 (sim-log.md, round three).
     dashTime: of(100, COST), dashFatigue: of(16, USE_FATIGUE),
+    // A consumable used in a fight (registry/abilities.ts `itemAbility`) takes `consumableTime` hundredths of a standard
+    // action, whatever its kind: the owner (Nov 22), "not a full turn, but should cost something". At half a standard
+    // action a hunter who drinks a potion acts again before a foe of the same speed acts twice; under a tenth a bag of
+    // potions is a free heal every tick, and a whole action is the full turn he ruled out.
+    consumableTime: of(50, COST),
     // at 40 a combatant still acts every 2.5 rounds, at 250 it acts 2.5 times a round
     speedMin: whole(40, 10, 100, 'the slowest speed: 0 never acts, and above 100 the base speed is slowed'),
     speedMax: whole(250, 100, 1000, 'the fastest speed: under 100 the base speed is cut, 1000 is ten turns a round'),

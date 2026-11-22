@@ -218,7 +218,7 @@ const act: Step<'running', 'act'> = (f, cmd, ctx) => {
   }
   const resolved = resolve(a, u, rows, cmd.aim, f.grid, cmd.rolls, f.now, R, f.fog);
   if (resolved.ok === false) return refused(f, resolved.reason);
-  // table 2.3: a use that resolved is one more spent of an ability limited a fight or a rest
+  // table 2.3: a use that resolved is one more spent of an ability limited a fight or a gate
   const r = { ...resolved, bodies: resolved.bodies.map(b => b.id === u.id ? counted(b, a, R) : b) };
   const forced = cmd.force && cmd.by !== f.currentId ? ' (GM)' : '';
   return landed(f, { a, u, rows, aim: cmd.aim, at, r, taken, head: `${u.name} uses ${a.name}${forced}`, by: u.id }, ctx);
@@ -697,9 +697,9 @@ const TABLE: { readonly [S in Exclude<FightState, 'running'>]: Row<S> } & { read
   // a running fight's two states (`runningState`): its turn's actor acts, or the fight owes dice first
   running: {
     acting: ACTING,
-    // rules-3.2 waits on the owner's ruling on whether a turn may end while dice are owed. Today it may: act, move and
-    // endTurn apply here as in `acting`, and the dice stay owed.
-    owing: { ...ACTING, act, move, endTurn },
+    // rules-3.2: the owed dice are rolled before a turn can end (the owner, Nov 22: "Yes"). Act, move and endTurn each
+    // end the turn (`after`), so all three wait here until the dice are paid (`owed`: a settle or a broken channel's release).
+    owing: { ...ACTING, act: null, move: null, endTurn: null },
   },
   // The rows of an ended fight are the summary's record: the GM edits the hunters' sheets from here on, and may still
   // extract a shadow from a fallen monster. It holds no weight to set: the GM's fudge ended with the fight.

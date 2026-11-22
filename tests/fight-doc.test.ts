@@ -393,10 +393,10 @@ describe('a hidden foe (kits design 8.7)', () => {
     expect(live(fightDoc(hid, RULES, docCtx())).log).toEqual(['Ratatoskr swings.']);
   });
 
-  // The fog's room: a Ghoul behind the wall hides at stealth level 2. Kai has no sight content (sight 0, the rules'
+  // The fog's room: a Ghoul behind the wall hides at stealth level 1. Kai has no sight content (sight 0, the rules'
   // `sightBase`); Eye holds a sight op of 2. A body that is up perceives a foe only with the foe in its own sight and its
-  // own sight at the foe's level or above (sight.ts `perceives`, the owner's ruling 1), so one hunter must do both.
-  const veil2: Status = { key: statusKey('veil'), def: { label: 'Veiled', desc: '', ops: [{ op: 'hidden', level: 2, start: 'anywhere', ends: { hurt: true, revealed: true, dealt: true } }] }, source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0) };
+  // own sight above the foe's level (sight.ts `perceives`, the owner, Nov 22), so one hunter must do both.
+  const veil2: Status = { key: statusKey('veil'), def: { label: 'Veiled', desc: '', ops: [{ op: 'hidden', level: 1, start: 'anywhere', ends: { hurt: true, revealed: true, dealt: true } }] }, source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0) };
   const eye: Status = { key: statusKey('eye'), def: { label: 'Hunter\'s Eye', desc: '', ops: [{ op: 'sheet', key: 'sight', amount: 2 }] }, source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0) };
   const GAP = place(5, 4), BEHIND = place(1, 1);
   const hiddenGhoul = (kai: ReturnType<typeof place> | null, eyeAt: ReturnType<typeof place> | null, ...more: Command[]) => play({

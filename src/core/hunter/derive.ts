@@ -86,7 +86,7 @@ export type Sheet = {
   /** How many shadows this body can keep. */
   readonly shadows: number;
   /**
-   * The level of stealth this body perceives (combat/sight.ts `perceives`): a hidden body at this level or under. The
+   * The sight level of this body (combat/sight.ts `perceives`): it perceives a hidden body under this level. The
    * rules' `fight.stealth.sightBase` until a sight op raises it (notes-7-stealth.md section 2).
    */
   readonly sight: Level;

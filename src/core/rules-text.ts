@@ -14,7 +14,7 @@ import { shareEach } from './gates/pay.ts';
 import { REVIVE_HP, WAYS_BACK } from './hunter/vitals.ts';
 import { levelAfterRaising } from './hunter/progress.ts';
 import { ambushShare } from './combat/standing.ts';
-import { HIDE_LEVELS, asLevel } from './combat/sight-levels.ts';
+import { LEVELS, asLevel } from './combat/sight-levels.ts';
 import type { Level } from './combat/sight-levels.ts';
 import { perceives } from './combat/sight.ts';
 import { openGrid, place } from './combat/space.ts';
@@ -68,6 +68,18 @@ export function pointsLine(): string {
 /** The level of the death line's worked example of a raising: one where the share of the shipped rule takes two levels. */
 const RAISED_EXAMPLE = 31;
 /**
+ * The Rules page's lines about a rest (rests.ts, vitals.ts `rest` and `cleared`), from the room's rules: what a rest
+ * gives back, how many a gate, what a Clear gives back, and that the dead and a fight take none.
+ */
+export function restLines(R: Pick<Rules, 'rest' | 'fatigue'>): string[] {
+  const pct = (share: number): string => `${Math.round(share * 10000) / 100}%`, n = R.rest.perGate;
+  return [
+    `A rest gives back ${pct(R.rest.hp)} of your max HP and ${pct(R.rest.mana)} of your max mana, never past the maximum, and takes ${pct(R.rest.fatigue)} of your fatigue off. Exhausted lifts when the fatigue left is under ${R.fatigue.collapseAt}% of your capacity.`,
+    `You have ${n} rest${n === 1 ? '' : 's'} a gate. Clearing the gate gives everything back: full HP and mana, no fatigue, every use limited a gate, and your rests. A solo run's end starts your rests again.`,
+    `A dead hunter cannot rest and gets nothing back from a Clear: ${WAYS_BACK} brings you back. No one rests during a fight.`,
+  ];
+}
+/**
  * What happens at 0 HP, from the life machine's own numbers (vitals.ts), the ways back from dead (`WAYS_BACK`), what a
  * raising costs (`reviveLevelShare`, worked by progress.ts `levelAfterRaising` at level 31), and the shop's door for the
  * dead (inventory.ts `shopOpen`): the sentence is there only while the rule closes it. `R` is the rules the page plays
@@ -110,7 +122,7 @@ const HIDE_END_WORDS: { readonly [E in StealthEnd]: string } = {
 /** The highest stealth level a foe of `sight` sees, by the one sight rule (sight.ts `perceives`), or null when it sees no hide. */
 const seenUpTo = (sight: Level): Level | null => {
   const sees = (level: Level) => perceives({ place: place(0, 0), side: 'foe', up: true, sight }, { place: place(1, 0), side: 'party', stealth: level }, openGrid(2, 1), { kind: 'whole' });
-  return HIDE_LEVELS.filter(sees).at(-1) ?? null;
+  return LEVELS.filter(sees).at(-1) ?? null;
 };
 /** The sight level of the line's example of a foe that sees some hides (Hunter's Eye's, kit-examples.ts). */
 const SIGHT_EXAMPLE: Level = 2;
@@ -123,7 +135,7 @@ export function stealthLines(R: Pick<Rules, 'fight'>): readonly string[] {
   const ambush = Math.round(ambushShare({ statuses: [] }, { statuses: [] }, R) * 100) / 100;
   const ends = STEALTH_ENDS.map(e => HIDE_END_WORDS[e]);
   return [
-    `A hidden body is hidden from each foe whose sight level is lower than its stealth level. Everyone's sight level starts at ${base}, so a foe with no sight from a skill, an item or a status sees ${atBase === null ? 'no hidden body' : `a body hidden at level ${atBase} or lower`}; a foe with sight level ${SIGHT_EXAMPLE} sees ${atExample === null ? 'no hidden body' : `a body hidden at level ${atExample} or lower`}. Its own side always sees it.`,
+    `A hidden body is hidden from each foe whose sight level is at its stealth level or lower. Everyone's sight level starts at ${base}, so a foe with no sight from a skill, an item or a status sees ${atBase === null ? 'no hidden body' : `a body hidden at level ${atBase} or lower`}; a foe with sight level ${SIGHT_EXAMPLE} sees ${atExample === null ? 'no hidden body' : `a body hidden at level ${atExample} or lower`}. Its own side always sees it.`,
     'A foe cannot aim at a hidden body it does not see. An area, or a use aimed at a place, still catches it, and that hit reveals it.',
     `A hit from hiding on a foe that does not see you deals ×${ambush} damage. It does not add to another damage increase: only the larger counts.`,
     `A hide ends when its time runs out, when a cure removes it, or on any of these its status names: ${ends.slice(0, -1).join('; ')}; or ${ends.at(-1)}.`,

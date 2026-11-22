@@ -9,7 +9,7 @@
 import { parseFormula, printFormula } from '../formula.ts';
 import type { Formula } from '../formula.ts';
 import { percent, tiles } from '../combat/space.ts';
-import { paceCost, tick } from '../combat/timeline.ts';
+import { cost, paceCost, tick } from '../combat/timeline.ts';
 import type { Pace } from '../combat/timeline.ts';
 import { abilityId } from '../combat/ability-types.ts';
 import type { Ability, AbilityEffect, AbilityId, AbilityKind, DamageType } from '../combat/ability-types.ts';
@@ -207,8 +207,9 @@ export const itemOfAbility = (a: Pick<Ability, 'item'>): ItemId | null => a.item
 /**
  * A consumable as the ability its user takes into a fight (m2-plan 4.4, W6). In a fight the row holds its user's HP,
  * mana and fatigue, so a potion drunk there is a use of this ability like any other, never a write to the sheet beside
- * the fight. An item does what it says, so nothing avoids it (`sure`), it costs no fatigue or mana, and it is ready again
- * at once (the bag holds the count). One for its user is a support on itself; one for another has its first damage op as
+ * the fight. An item does what it says, so nothing avoids it (`sure`), it costs no fatigue or mana, its time is
+ * `RULES.fight.consumableTime` (half a standard action: not a full turn, the owner, Nov 22), and it is ready again at once (the
+ * bag holds the count). One for its user is a support on itself; one for another has its first damage op as
  * its effect (a curse's reach on a foe), else its first heal op (a support's reach on an ally). Each amount is at the
  * item's rarity tier, and its other ops (statuses, cures, notes) land on the target. Mana and fatigue ops are the
  * user's own, so only an item for its user carries them. Null when nothing is left to do.
@@ -222,5 +223,5 @@ export function itemAbility(item: ThrownItem, R: KindRules): Ability | null {
   if (effect === null && ops.length === 0) return null;
   const kind = self || effect?.type === 'heal' ? 'support' : 'curse';
   const base = abilityOf(kind, { id: itemAbilityId(item.id), name: item.name, effect, ops, delivery: { kind: 'sure' }, ...(self ? { aim: 'self', shape: { kind: 'self' }, range: tiles(0) } : {}) }, R);
-  return { ...base, item: item.id, cost: { ...base.cost, fatigue: 0, mana: 0, cooldown: tick(0) } };
+  return { ...base, item: item.id, cost: { fatigue: 0, mana: 0, time: cost(R.fight.consumableTime), cooldown: tick(0) } };
 }

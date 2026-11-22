@@ -19,7 +19,7 @@ import { stackStep } from './stacks.ts';
 import { usesOf } from './uses.ts';
 
 /**
- * Why rules 3 to 4 refuse a use. `gated`: a gate of rule 3b does not hold; `noUses`: its uses a fight or a rest are
+ * Why rules 3 to 4 refuse a use. `gated`: a gate of rule 3b does not hold; `noUses`: its uses a fight or a gate are
  * spent (table 2.3); `hp`: an HP price would take the user to 0 or less; `stacks`: the user holds fewer stacks than a
  * price asks (kits design 1.4).
  */
@@ -44,7 +44,7 @@ export const cooled = (a: Ability, user: Body, now: Tick): Body =>
 /** The stacks of `key` a body holds: its count for a stacking status, 1 for a plain one, 0 for none. */
 export const stacksOn = (b: Body, key: StatusKey): number => { const s = live(b).find(x => x.key === key); return s ? countOn(s) : 0; };
 // Rule 3b (kits design 1.4): every `holds` gate holds: the user, or the body at the aim, has at least `atLeast` stacks of
-// the status (1 for a plain one: a mode); and an ability limited to n uses a fight or a rest has one left on the user's
+// the status (1 for a plain one: a mode); and an ability limited to n uses a fight or a gate has one left on the user's
 // row (uses.ts, table 2.3).
 export function gated(a: Ability, user: Body, bodies: readonly Body[], at: Place): 'gated' | 'noUses' | null {
   const target = bodies.find(b => alive(b) && samePlace(b.place, at));

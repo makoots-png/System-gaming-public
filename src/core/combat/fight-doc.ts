@@ -192,7 +192,7 @@ export type FightDoc =
     /** When each ability of the current row on cooldown is ready again, by ability id: the player's phone draws its wait. */
     readonly ready: Readonly<Record<string, Tick>>;
     /**
-     * The uses left of each ability of the current row limited a fight or a rest (kits table 2.3), by ability id, 0 for a
+     * The uses left of each ability of the current row limited a fight or a gate (kits table 2.3), by ability id, 0 for a
      * spent one; absent when it has none.
      */
     readonly left?: Readonly<Record<string, number>>;
@@ -273,7 +273,7 @@ function armedOf(rows: readonly Body[], R: Rules): { armed?: CombatantId[]; spen
   const armed = of(false), spent = of(true), reacts = Object.fromEntries([...armed, ...spent].map(b => [b.id, b.armed!.ability])) as Record<CombatantId, AbilityId>;
   return { ...(armed.length ? { armed: armed.map(b => b.id) } : {}), ...(spent.length ? { spent: spent.map(b => b.id) } : {}), ...(armed.length + spent.length ? { reacts } : {}) };
 }
-/** The uses left of the abilities of `b` limited a fight or a rest, in its ability order, at most `DOC_READY`; none, nothing. */
+/** The uses left of the abilities of `b` limited a fight or a gate, in its ability order, at most `DOC_READY`; none, nothing. */
 function leftOf(b: Body | undefined): { left?: Record<string, number> } {
   const out = b ? usesLeft(b, DOC_READY) : {};
   return Object.keys(out).length ? { left: out } : {};

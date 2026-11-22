@@ -18,9 +18,9 @@ export const maxAfter = (event: LifeEvent, max: number): number => (event.type =
 export const COLLAPSE_MAX: Maxima = { hpMax: WALK_MAX, manaMax: 0, fatigueMax: 100 };
 export const COLLAPSE_LOWERED: Maxima = { ...COLLAPSE_MAX, fatigueMax: 80 };
 
-/** 8 events: fatigue up 30 and down 30, a short and a long rest, the capacity lowered, the fight's totals at 100 and at 70, and a refill. */
+/** 8 events: fatigue up 30 and down 30, a rest, a gate's Clear, the capacity lowered, the fight's totals at 100 and at 70, and a refill. */
 export const COLLAPSE_EVENTS: VitalEvent[] = [
-  { type: 'fatigue', delta: 30 }, { type: 'fatigue', delta: -30 }, { type: 'rest', kind: 'short' }, { type: 'rest', kind: 'long' },
+  { type: 'fatigue', delta: 30 }, { type: 'fatigue', delta: -30 }, { type: 'rest' }, { type: 'cleared' },
   { type: 'maxChanged' }, { type: 'fightTotals', life: { at: 'up', hp: WALK_MAX }, mana: 0, fatigue: 100 },
   { type: 'fightTotals', life: { at: 'up', hp: WALK_MAX }, mana: 0, fatigue: 70 }, { type: 'refill' },
 ];

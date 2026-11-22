@@ -23,7 +23,7 @@ import { isRefused, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
 import { told } from '../session-log.ts';
 import type { Said, Stamp } from '../session-log.ts';
-import { grant, idsFrom, sheetEdit } from '../hunter/grant.ts';
+import { grant, idsFrom, noteFacts, sheetEdit } from '../hunter/grant.ts';
 import type { Day, Granted } from '../hunter/grant.ts';
 import { spendItem } from '../hunter/use.ts';
 import { setShadowHp } from '../hunter/shadows.ts';
@@ -160,7 +160,7 @@ export const SOLO_REFUSAL_WORDS: { readonly [R in SoloRefusal]: string } = {
   'no-hunter': 'This hunter is no longer on this phone.',
   fight: 'A fight holds this hunter. Finish it first.',
   dead: `This hunter is dead. ${WAYS_BACK} brings it back.`,
-  collapsed: 'This hunter has collapsed from fatigue. Take a long rest first.',
+  collapsed: 'This hunter has collapsed from fatigue. Rest first.',
   gone: 'This gate is gone.',
   closed: 'This gate has closed.',
   'not-solo': 'The GM has not opened this gate to solo runs.',
@@ -332,14 +332,16 @@ export function soloRan(save: Save, hid: string, gate: SoloGate, run: SoloRun, l
   const { h, target } = ready;
   if (soloKey(h) !== run.from) return refuse('changed');
   const outcome = run.end.outcome, stamp: Stamp = { at: c.day.at, cap: R.logCap };
-  const ran = ranOn(h, run, R), max = hunterSheet(ran, R).sheet.hpMax, above = rankIdx(target.rank) - rankIdx(h.rank);
-  // the run's end is a fact of the chronicle (chronicle.ts), and a personal gate cleared a gate's (a world gate's is its
-  // Clear's, settleClear in pay.ts)
-  const after = record(ran, {
+  // the run's end ends the gate for the hunter, cleared or not: its rests a gate start again (rests.ts `gateLeft`)
+  const ended = ranOn(h, run, R), left = sheetEdit(ended, { type: 'gateLeft' }, R), ran = isRefused(left) ? ended : left;
+  const max = hunterSheet(ran, R).sheet.hpMax, above = rankIdx(target.rank) - rankIdx(h.rank);
+  // the run's end is a fact of the chronicle (chronicle.ts), and a personal gate cleared a gate's, which gives everything
+  // back (grant.ts `noteFacts`; a world gate's is its Clear's, settleClear in pay.ts)
+  const after = noteFacts(ran, [{
     kind: 'solo', outcome, name: target.name, rank: target.rank, above, rounds: Math.round(run.end.rounds),
     endPct: max > 0 ? Math.round(100 * hpOf(ran.life, max) / max) : 0, life: ran.life.at, personal: gate.kind === 'personal',
   }, ...killFacts(run.end.party[run.hunter]?.kills ?? [], h.rank, 'solo'),
-  ...(gate.kind === 'personal' && outcome === 'won' ? [gateFact(target, h.rank, null)] : []));
+  ...(gate.kind === 'personal' && outcome === 'won' ? [gateFact(target, h.rank, null)] : [])], R);
   let s: Save = told({ ...save, hunters: save.hunters.map(x => (x.id === h.id ? after : x)) }, stamp,
     runLine(h.name, target, outcome, run.end.rounds, after.life.at, h.id));
   const rewards = (xp: number, gold: number) => ({ ...newRewards(), xp, gold, items: [...loot.items] });
@@ -447,11 +449,11 @@ export const PLAN_TABLE: { readonly [G in SoloGateFound]: { readonly [O in RunOu
   gone: { won: 'gone', lost: 'report', stalled: 'report' },
   cleared: { won: 'taken', lost: 'report', stalled: 'report' },
   closed: { won: 'closed', lost: 'report', stalled: 'report' },
-  // SMX-gates-2.2 waits on the owner's ruling (proposed: a gate not open to solo runs refuses a solo run, which makes the
-  // won cell a refusal). As the app behaves today, a gate the GM took out of solo runs while a run played is paid, and a
-  // lost or stalled run enters it (`soloTaken`).
+  // SMX-gates-2.2: a run a player started before the GM took the gate out of solo runs still counts (the owner, Nov 22:
+  // "Yes that run still counts"): a won run is paid, and a lost or stalled run enters it (`soloTaken`).
   notSolo: { won: 'pay', lost: 'report', stalled: 'report' },
-  // SMX-gates-2.3 waits on its ruling (a solo clear's rewards and System text wait for the GM): today `pay` pays at once.
+  // SMX-gates-2.3: ruled yes (the owner, Nov 22, rule d: a solo clear's rewards wait for the GM's edit and approval); written
+  // as a unit, not built (notes-9-rulings-1122.md, ruling 20), so `pay` still pays at once.
   open: { won: 'pay', lost: 'report', stalled: 'report' },
 };
 const gateFound = (g: Gate | undefined): SoloGateFound =>

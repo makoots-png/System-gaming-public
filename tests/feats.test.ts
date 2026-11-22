@@ -78,9 +78,10 @@ describe('a count and its window (table 5.6)', () => {
     expect(parseCount({ on: 'kill', measure: { of: 'sum', field: 'type' } })).toBeNull();
   });
   test('a kind with no number field takes each time and different values only; every measure a kind takes reads back with each field it offers', () => {
-    const noNumber = ['closed', 'quest', 'life', 'rank', 'title', 'feat', 'given', 'chapter', 'coin', 'rest', 'used', 'shadow'];
+    const noNumber = ['closed', 'quest', 'life', 'rank', 'title', 'feat', 'given', 'chapter', 'coin', 'used', 'shadow'];
+    const noField = ['rest'];
     for (const kind of FACT_KINDS) {
-      expect([kind, measuresFor(kind)]).toEqual([kind, noNumber.includes(kind) ? ['facts', 'distinct'] : ['facts', 'sum', 'distinct', 'max']]);
+      expect([kind, measuresFor(kind)]).toEqual([kind, noField.includes(kind) ? ['facts'] : noNumber.includes(kind) ? ['facts', 'distinct'] : ['facts', 'sum', 'distinct', 'max']]);
       for (const of of measuresFor(kind)) {
         if (of === 'facts') continue;
         const fields = measureFields(kind, of);
@@ -102,18 +103,19 @@ describe('a feat on a hunter, cell by cell', () => {
     const earned = { state: { at: 'earned', on: AT, day: TODAY, name: 'F' }, fx: 'earned' };
     const expected: { readonly [S in (typeof FEAT_STATES)[number]]: readonly unknown[] } = {
       // counted 1, counted 2 with its state tests, counted 2 without, broke, unlocked, a fact that left a full count as it was
-      hidden: [{ state: { at: 'hidden', n: 1, mark: '' }, fx: null }, earned, { state: { at: 'hidden', n: 2, mark: '' }, fx: null }, { state: { at: 'hidden', n: 0, mark: '' }, fx: null }, { state: { at: 'shown', n: 1, mark: '' }, fx: 'shown' }, null],
-      shown: [{ state: { at: 'shown', n: 1, mark: '' }, fx: null }, earned, { state: { at: 'shown', n: 2, mark: '' }, fx: null }, { state: { at: 'shown', n: 0, mark: '' }, fx: null }, { state: { at: 'shown', n: 1, mark: '' }, fx: null }, null],
+      hidden: [{ state: { at: 'hidden', n: 1, mark: '' }, fx: null }, earned, { state: { at: 'hidden', n: 2, mark: '' }, fx: null }, { state: { at: 'hidden', n: 0, mark: '' }, fx: null }, { state: { at: 'shown', n: 1, mark: '' }, fx: 'shown' }, earned],
+      shown: [{ state: { at: 'shown', n: 1, mark: '' }, fx: null }, earned, { state: { at: 'shown', n: 2, mark: '' }, fx: null }, { state: { at: 'shown', n: 0, mark: '' }, fx: null }, { state: { at: 'shown', n: 1, mark: '' }, fx: null }, earned],
       earned: [null, null, null, null, null, null],
     };
     expect(FEAT_WALK.map(e => e.type)).toEqual(['counted', 'counted', 'counted', 'broke', 'unlocked', 'again']);
     for (const s of FEAT_STATES) expect([s, FEAT_WALK.map(e => featStep(from[s], e, after, NOW))]).toEqual([s, expected[s]]);
   });
-  test('a full count whose state tests now hold is left as it is by a fact that does not move it, as the app does today (SMX-gates-6.1 waits on its ruling)', () => {
-    expect(TABLE.hidden.again).toBeNull();
-    expect(TABLE.shown.again).toBeNull();
+  test('a full count whose state tests did not hold is earned by a fact that leaves it as it was, once they hold; not while they fail (SMX-gates-6.1)', () => {
+    const full: FeatState = { at: 'shown', n: 2, mark: '' };
+    expect(featStep(full, { type: 'again', count: { n: 2, mark: '' }, also: true }, def({ at: 'start' }), NOW)?.state.at).toBe('earned');
+    expect(featStep(full, { type: 'again', count: { n: 2, mark: '' }, also: false }, def({ at: 'start' }), NOW)).toEqual({ state: full, fx: null });
   });
-  test('a feat hidden until earned is shown when it is unlocked, as the app does today (SMX-gates-6.2 waits on the "never show" ruling)', () => {
+  test('a feat hidden until earned is shown when it is unlocked (SMX-gates-6.2)', () => {
     const never = def({ at: 'never' });
     expect(featStep(startOf(never), { type: 'unlocked' }, never, NOW)).toEqual({ state: { at: 'shown', n: 0, mark: '' }, fx: 'shown' });
   });
@@ -203,9 +205,9 @@ describe('the System notices, in the write of the fact', () => {
     for (let i = 0; i < 10; i++) s = write(s, [fight()], ctx(book('clean-sheet')));
     expect(state(s, 'clean-sheet')?.at).toBe('earned');
   });
-  test('Marathoner counts runs won between two long rests; The Dice Are Watching counts 1s in one session', () => {
+  test('Marathoner counts runs won between two rests; The Dice Are Watching counts 1s in one session', () => {
     let s = saveOf(mira());
-    s = write(s, [solo(), solo(), { kind: 'rest', long: true }, solo()], ctx(book('marathoner')));
+    s = write(s, [solo(), solo(), { kind: 'rest' }, solo()], ctx(book('marathoner')));
     expect(state(s, 'marathoner')).toEqual({ at: 'hidden', n: 1, mark: 'r1' });
     s = write(s, [solo(), solo()], ctx(book('marathoner')));
     expect(state(s, 'marathoner')?.at).toBe('earned');
@@ -240,18 +242,18 @@ describe('the System notices, in the write of the fact', () => {
     s = write(s, [killOf('Wolf', 'E')], ctx(b));
     expect(state(s, 'variety')?.at).toBe('earned');
   });
-  test('a full different-values count whose state test comes to hold is not earned by a value it saw, as today; a new value earns it (SMX-gates-6.1 waits)', () => {
+  test('a full different-values count whose state test comes to hold is earned by the next value it takes, one it saw too (SMX-gates-6.1)', () => {
     const rich: FeatDef = { name: 'Rich Hunter', window: 'R', desc: '', show: { at: 'never' }, rule: { on: 'kill', where: [], measure: { of: 'distinct', field: 'monster' }, within: 'ever', reach: 1, also: [{ of: 'gold', op: '>=', value: 500 }] }, rewards: newRewards() };
     const b: FeatBook = [['rich-hunter' as FeatKey, rich]];
     let s = write(saveOf(mira({ gold: 0 })), [killOf('Goblin', 'E')], ctx(b));
     expect(state(s, 'rich-hunter')).toEqual({ at: 'hidden', n: 1, mark: '', vals: ['goblin'] });
+    s = write(s, [killOf('Goblin', 'E')], ctx(b));
+    expect(state(s, 'rich-hunter'), 'its test still failing, a value it saw moves nothing').toEqual({ at: 'hidden', n: 1, mark: '', vals: ['goblin'] });
     s = { ...s, hunters: [{ ...me(s), gold: 1000 }] };
     s = write(s, [killOf('Goblin', 'E')], ctx(b));
-    expect(state(s, 'rich-hunter'), 'the row full × its test now holding moves nothing today').toEqual({ at: 'hidden', n: 1, mark: '', vals: ['goblin'] });
-    s = write(s, [killOf('Wolf', 'E')], ctx(b));
     expect(state(s, 'rich-hunter')?.at).toBe('earned');
   });
-  test('a kill a fight held over midnight counts in the day of the write that frees it, as today (SMX-rules-9.1 waits on the day ruling)', () => {
+  test('a kill a fight held over midnight counts in the day the fight ended, the write that frees it (SMX-rules-9.1, the owner, Nov 22)', () => {
     const twice: FeatDef = { name: 'Two Today', window: 'T', desc: '', show: { at: 'never' }, rule: { on: 'kill', where: [], measure: { of: 'facts' }, within: 'day', reach: 2, also: [] }, rewards: newRewards() };
     const b: FeatBook = [['two-today' as FeatKey, twice]];
     const late = '2026-11-18T12:00:00.000Z', next = '2026-11-19T12:00:00.000Z', day1 = dayKey(new Date(late), 0), day2 = dayKey(new Date(next), 0);

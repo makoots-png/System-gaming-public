@@ -24,7 +24,7 @@ import { stackStep } from './stacks.ts';
 import { SHEET_FORMULA_KEYS, SHEET_LEVEL_KEYS, SHEET_OP_KEYS, atTier, bareAmount, countOn, isFormulaSheetOp, isLevelKey, isStacking, isTiers, stacked } from './op-amount.ts';
 import { counting, harmful, shieldShare, statusLife, statusStep, withSheetOps } from './standing.ts';
 import { asLevel } from './sight-levels.ts';
-import type { HideLevel } from './sight-levels.ts';
+import type { Level } from './sight-levels.ts';
 import { rowLifeAfter } from './row-life.ts';
 import type { FoeLife } from './row-life.ts';
 import type { Life } from '../hunter/vitals.ts';
@@ -210,7 +210,7 @@ export type Op =
    * perceives it (sight.ts `perceivedBy`); a shape at a place catches it. Until stealth unit 6 a hidden foe is out of the
    * room's doc (8.7).
    */
-  | { readonly op: 'hidden'; readonly level: Tiered<HideLevel>; readonly start: HideStart; readonly ends: StealthEnds }
+  | { readonly op: 'hidden'; readonly level: Tiered<Level>; readonly start: HideStart; readonly ends: StealthEnds }
   /** Worn by a class or a skill upgrade: while the bearer holds it, none of its hidden statuses ends on `on` (section 2). */
   | { readonly op: 'stayHidden'; readonly on: StealthEnd }
   /**
@@ -419,8 +419,8 @@ type BodyCommon = Clock & {
    */
   readonly tally?: Partial<RowTally>;
   /**
-   * The uses spent of each ability limited to n a fight or a rest (kits table 2.3, uses.ts): this fight's, and for one
-   * limited a rest also the rest's before the fight. Absent when none.
+   * The uses spent of each ability limited to n a fight or a gate (kits table 2.3, uses.ts): this fight's, and for one
+   * limited a gate also the gate's before the fight. Absent when none.
    */
   readonly used?: Readonly<Record<AbilityId, number>>;
   /** The wards it has had this fight (kits design 8.1, table 8.9.5): each reaches a body once a fight. Absent when none. */

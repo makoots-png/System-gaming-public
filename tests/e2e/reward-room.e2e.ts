@@ -286,6 +286,29 @@ test('the GM gives an award for roleplay from a player\'s card in two taps: it i
   });
 });
 
+test('a held Give\'s Undo stays its whole two seconds while other notices come: the GM taps it after two more notices and nothing is given (the owner, Nov 22)', async ({ device }) => {
+  const gm = (await device('gm')).page;
+  const shelf = gm.locator('.sys-overlay.show.gs-ov'), held = gm.locator('#toasts .toast[data-held]', { hasText: 'Given: Straight Face to' });
+  await onboardGM(gm);
+  await go(gm, 'gm');
+  await test.step('Give… on the GM\'s own hunter, then Straight Face: a toast holds it with Undo', async () => {
+    await gm.locator('#gm-board .gm-card:not(.remote)').first().locator('[data-ggive]').tap();
+    await shelf.locator('[data-give="seed-straight-face"]').first().tap();
+    await expect(held.getByRole('button', { name: 'Undo' })).toBeVisible();
+  });
+  await test.step('two other notices arrive, and the held toast and its Undo are still there', async () => {
+    await gm.evaluate(() => ['First', 'Second'].forEach(m => hunterApp.ui.toast('System', `${m} notice.`)));
+    await expect(gm.locator('#toasts .toast', { hasText: 'Second notice.' })).toBeVisible();
+    await expect(held.getByRole('button', { name: 'Undo' })).toBeVisible();
+  });
+  await test.step('Undo: the toast goes and the hunter is given nothing', async () => {
+    await held.getByRole('button', { name: 'Undo' }).tap();
+    await expect(held).toHaveCount(0);
+    const facts = await gm.evaluate(() => hunterApp.store.get().hunters.flatMap((h: any) => h.chronicle.facts.filter((f: any) => f.kind === 'given')));
+    expect(facts).toEqual([]);
+  });
+});
+
 test('a GM alone takes 50 gold and more points than the hunter holds: the preview says what the reward takes, the window says what was lost, and neither goes below 0', async ({ device }) => {
   const gm = (await device('gm-cost')).page;
   const ed = gm.locator('#gm-rw');

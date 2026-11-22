@@ -1285,7 +1285,7 @@ test('a GM makes a hide by rank that starts anywhere and that only damage it dea
   await fx.locator('[data-f="kind"]').selectOption('hidden');
 
   await test.step('the row offers a stealth level, Out of sight or Anywhere, and the three ends, each on', async () => {
-    await expect(fx.locator('[data-f="q"]')).toHaveValue('1');
+    await expect(fx.locator('[data-f="q"]')).toHaveValue('0');
     await expect(fx.locator('[data-set="start"]')).toHaveText(['Out of sight', 'Anywhere']);
     await expect(fx.locator('[data-set="start"][aria-pressed="true"]')).toHaveText('Out of sight');
     await expect(fx.locator('[data-end]')).toHaveText(['Hurt', 'Revealed', 'It deals damage']);
@@ -1300,7 +1300,7 @@ test('a GM makes a hide by rank that starts anywhere and that only damage it dea
     await fx.locator('[data-end="hurt"]').tap();
     await fx.locator('[data-end="revealed"]').tap();
     await expect(fx.locator('[data-err]')).toHaveText('');
-    await expect(d.locator('.mk-preview')).toContainText('Hidden at stealth level 1 / 1 / 1 / 1 / 1 / 3, by rank E to S');
+    await expect(d.locator('.mk-preview')).toContainText('Hidden at stealth level 0 / 0 / 0 / 0 / 0 / 3, by rank E to S');
     await expect(d.locator('.mk-preview')).toContainText('It hides even in a foe\'s sight. It ends when it deals damage');
     await d.getByRole('button', { name: 'Save status' }).tap();
     await expect(d).toHaveCount(0);
@@ -1308,14 +1308,14 @@ test('a GM makes a hide by rank that starts anywhere and that only damage it dea
 
   await test.step('the library holds the op the form said, and the parser reads it back the same', async () => {
     const [, def] = await libraryStatus(page, 'Veil');
-    expect(def.ops).toEqual([{ op: 'hidden', level: [1, 1, 1, 1, 1, 3], start: 'anywhere', ends: { hurt: false, revealed: false, dealt: true } }]);
+    expect(def.ops).toEqual([{ op: 'hidden', level: [0, 0, 0, 0, 0, 3], start: 'anywhere', ends: { hurt: false, revealed: false, dealt: true } }]);
     expect(parseOp(def.ops[0], RULES)).toEqual(def.ops[0]);
   });
 
   await test.step('Edit shows the level by rank, Anywhere, and only It deals damage on', async () => {
     await workshop(page, 'status').locator('li', { hasText: 'Veil' }).locator('.nm').tap();
     await expect(fx.locator('[data-t]')).toHaveCount(6);
-    expect(await fx.locator('[data-t]').evaluateAll(els => els.map(e => (e as HTMLInputElement).value))).toEqual(['1', '1', '1', '1', '1', '3']);
+    expect(await fx.locator('[data-t]').evaluateAll(els => els.map(e => (e as HTMLInputElement).value))).toEqual(['0', '0', '0', '0', '0', '3']);
     await expect(fx.locator('[data-set="start"][aria-pressed="true"]')).toHaveText('Anywhere');
     await expect(fx.locator('[data-end][aria-pressed="true"]')).toHaveText(['It deals damage']);
     await d.locator('[data-cancel]').tap();

@@ -67,7 +67,7 @@ export type RowHunter = Omit<SheetHunter, 'skills' | 'items' | 'conditions' | 't
   readonly skills: readonly RowSkill[];
   readonly items: readonly RowItem[];
   readonly conditions: readonly SheetStatus[];
-  /** The uses spent this long rest of each ability limited a rest (`Vitals.used`, kits table 2.3); absent, none. */
+  /** The uses spent this gate of each ability limited a gate (`Vitals.used`, kits table 2.3); absent, none. */
   readonly used?: Readonly<Record<string, number>>;
 };
 /** The fields of a schema 4 monster a row reads. A start status's def is looked up by its key. */
@@ -182,8 +182,8 @@ function partyRow(h: RowHunter, id: CombatantId, holder: HunterRef, R: RowRules)
   const statuses = [...kept, ...wornStatuses(h, id, kept.map(s => s.key), now, R)].slice(0, MAX_STATUSES);
   const { stats, sheet } = modified(origin, statuses, R), abilities = hunterAbilities(h, R), self = { stats, sheet };
   const shield = statuses.filter(s => s.worn).reduce<Shield | null>((held, s) => statusShield(s.def, { shield: held, statuses }, { user: self, target: self, charge: 0 }, now, null, R), null);
-  // an ability limited a rest starts the fight with the uses its sheet has spent since the last long rest (table 2.3)
-  const used = Object.fromEntries(abilities.filter(a => usesGates(a).some(g => g.per === 'rest') && (h.used?.[a.id] ?? 0) > 0).map(a => [a.id, h.used![a.id]!]));
+  // an ability limited a gate starts the fight with the uses its sheet has spent since the last Clear (table 2.3)
+  const used = Object.fromEntries(abilities.filter(a => usesGates(a).some(g => g.per === 'gate') && (h.used?.[a.id] ?? 0) > 0).map(a => [a.id, h.used![a.id]!]));
   return {
     id, name: cut(h.name), side: 'party', kind: 'hunter', origin, tier: rankIdx(h.rank), place: null,
     life: lifeAfter(h.life, { type: 'maxChanged' }, sheet.hpMax), mana: clamp(h.mana, 0, sheet.manaMax), fatigue: clamp(h.fatigue, 0, sheet.fatigueMax),

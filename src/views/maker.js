@@ -17,7 +17,7 @@ import { STAT_KEYS, STAT_LABELS } from '../core/stats.ts';
 import { amountWords, bareRefusal, parseFormula, printFormula } from '../core/formula.ts';
 import { SHEET_LABELS } from '../core/hunter/derive.ts';
 import { OP_KINDS, opLines } from '../core/combat/effect-ops.ts';
-import { HIDE_LEVELS } from '../core/combat/sight-levels.ts';
+import { LEVELS } from '../core/combat/sight-levels.ts';
 import { isFormulaKey } from '../core/combat/op-amount.ts';
 import { sheetOpCap } from '../core/combat/standing.ts';
 import { parseOp } from '../core/combat/fight-parse.ts';
@@ -113,7 +113,7 @@ const NUMBERS = {
   speed: { key: 'pct', lo: -100, hi: 1000 }, threat: { key: 'amount', lo: -9999, hi: 9999 },
   staggerRate: { key: 'pct', lo: -100, hi: 1000 }, refund: { key: 'pct', lo: 1, hi: 100 }, delay: { key: 'ticks', lo: 0.1, hi: 10, decimal: true, rounds: true },
   share: { key: 'pct', lo: -100, hi: 100 }, sheet: { key: 'amount', lo: -60, hi: 60 },
-  hidden: { key: 'level', lo: HIDE_LEVELS[0], hi: HIDE_LEVELS[HIDE_LEVELS.length - 1], placeholder: '1', label: 'Stealth level' },
+  hidden: { key: 'level', lo: LEVELS[0], hi: LEVELS[LEVELS.length - 1], placeholder: '0', label: 'Stealth level', zero: true }, // a hide at 0 hides from a plain sight of 0 (sight.ts `perceives`)
 };
 const NUMBER_KINDS = Object.keys(NUMBERS);
 /** The bounds a stat op's flat amount is typed within: what its number row held before it took a formula. */
@@ -324,12 +324,12 @@ function checkRow(r, item) {
     if (r.mode === 'rank') {
       const all = r.tiers.map(read), bad = all.flatMap((n, i) => (n === null ? [i] : []));
       if (bad.length) return fail(`At ${tierName(bad[0], item)}: ${words}`, bad);
-      if (all.every(n => n === 0)) return fail('Not 0 at every rank.');
+      if (!spec.zero && all.every(n => n === 0)) return fail('Not 0 at every rank.');
       v = all;
     } else {
       v = read(r.q);
       if (v === null) return fail(words);
-      if (v === 0) return fail('Not 0.');
+      if (v === 0 && !spec.zero) return fail('Not 0.');
     }
     if (r.kind === 'sheet') return ok({ op: 'sheet', key: r.sheetKey, amount: v });
     if (r.kind === 'share') return ok({ op: 'share', on: r.shareOn, pct: v });

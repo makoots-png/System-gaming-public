@@ -6,7 +6,7 @@ import { RULES } from '../src/core/rules.ts';
 import type { Perk } from '../src/core/rules.ts';
 import { newHunter } from '../src/core/save.ts';
 import { sheetEdit } from '../src/core/hunter/grant.ts';
-import { REVIVE_HP, rest } from '../src/core/hunter/vitals.ts';
+import { REVIVE_HP } from '../src/core/hunter/vitals.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import { baseStats } from '../src/core/stats.ts';
 import type { Stats } from '../src/core/stats.ts';
@@ -29,7 +29,7 @@ import type { ReactEvent, ReactState } from '../src/core/combat/fight-react.ts';
 import { INVISIBLE_HIDE, REACT_WALK, STEALTH_HIDE, STEALTH_WALK } from './models/wave2-events.ts';
 import { stealthLevel, stealthStep } from '../src/core/combat/standing.ts';
 import type { Stealth, StealthEvent } from '../src/core/combat/standing.ts';
-import type { HideLevel } from '../src/core/combat/sight-levels.ts';
+import type { Level } from '../src/core/combat/sight-levels.ts';
 import { tallyOf } from '../src/core/combat/row-tally.ts';
 import { REFUSAL_WORDS, TABLE_REFUSAL_WORDS } from '../src/core/combat/refusal-words.ts';
 import { abilityId, combatantId, hunterId } from '../src/core/combat/ability-types.ts';
@@ -388,7 +388,7 @@ describe('a channel (4.1)', () => {
     const expected = {
       none: { own: null, other: null }, fired: { own: null, other: null },
       holding: { own: 'turn', other: null },
-      // rules-3.1 waits on the owner: today a broken channel released on its user's own turn costs that turn
+      // rules-3.1: a broken channel released on its user's own turn costs that turn (the owner, Nov 22)
       broken: { own: 'turn', other: 'free' },
     } as const;
     for (const s of CHANNEL_STATES) for (const turn of ['own', 'other'] as const) {
@@ -398,7 +398,7 @@ describe('a channel (4.1)', () => {
     }
   });
 
-  test('a channel broken as its user\'s own turn starts costs that turn when it goes off (rules-3.1, as the app does today)', () => {
+  test('a channel broken as its user\'s own turn starts costs that turn when it goes off (rules-3.1)', () => {
     const r = play(add(caster(), row('M', 'foe')), start(['A', 20], ['M', 1]), begin('A', 'M'), pass('M'));
     const g = running(r), a = body(g, 'A');
     expect(g.currentId).toBe(id('A'));
@@ -416,12 +416,14 @@ describe('a channel (4.1)', () => {
     expect(runningState(running(out))).toEqual({ at: 'acting' });
   });
 
-  test('a turn may end while dice are owed, and the dice stay owed (rules-3.2, as the app does today)', () => {
+  test('a turn cannot end while dice are owed: a pass, a use and a step are refused until the broken channel goes off (rules-3.2)', () => {
     const r = play(add(caster({ statuses: [haste(-50)] }), row('M', 'foe')), start(['A', 20], ['M', 1]), begin('A', 'M'), hit('M', 'A'));
     expect(running(r).currentId).toBe(id('M'));
-    const out = reduce(r.fight, pass('M'), ctx);
-    expect(out.effects.find(e => e.type === 'refused')).toBeUndefined();
-    expect(runningState(running(out))).toEqual({ at: 'owing', owed: [{ kind: 'release', id: id('A') }] });
+    for (const cmd of [pass('M'), hit('M', 'A'), { type: 'move', by: id('M'), to: place(body(r.fight, 'M').place.x, body(r.fight, 'M').place.y + 1) } as Command]) {
+      refuses(r.fight, cmd, 'notNow');
+    }
+    const paidOff = reduce(r.fight, { type: 'release', by: id('A'), rolls: rolls({ M: 10 }) }, ctx);
+    expect(reduce(paidOff.fight, pass(running(paidOff).currentId!), ctx).effects.find(e => e.type === 'refused')).toBeUndefined();
   });
 
   test('while it holds, a foe\'s threat for the channeler does not fade and grows with the payoff: 100 is 200 at charge 2 of a linear channel, 210.25 of an exponential one', () => {
@@ -1579,17 +1581,17 @@ describe('a timed summon (kits design 1.9, table 2.4)', () => {
 
 describe('a limited use (kits design 1.4, table 2.3)', () => {
   const twice = ability('strike', 'twice', '10', { ...FAR, gates: [{ kind: 'uses', per: 'fight', n: 2 }] });
-  const daily = ability('strike', 'daily', '10', { ...FAR, gates: [{ kind: 'uses', per: 'rest', n: 1 }] });
-  const fightGate = { kind: 'uses', per: 'fight', n: 2 } as const, restGate = { kind: 'uses', per: 'rest', n: 2 } as const;
+  const daily = ability('strike', 'daily', '10', { ...FAR, gates: [{ kind: 'uses', per: 'gate', n: 1 }] });
+  const fightGate = { kind: 'uses', per: 'fight', n: 2 } as const, perGate = { kind: 'uses', per: 'gate', n: 2 } as const;
 
-  test('the machine, cell by cell: a use counts down to spent, a spent one is refused, the fight\'s end or a long rest gives its own kind back, the GM sets it', () => {
+  test('the machine, cell by cell: a use counts down to spent, a spent one is refused, the fight\'s end or a gate\'s Clear gives its own kind back, the GM sets it', () => {
     expect(usesStep({ at: 'ready', left: 2 }, { type: 'used' }, fightGate)).toEqual({ at: 'ready', left: 1 });
     expect(usesStep({ at: 'ready', left: 1 }, { type: 'used' }, fightGate)).toEqual({ at: 'spent' });
     expect(usesStep({ at: 'spent' }, { type: 'used' }, fightGate)).toEqual({ at: 'spent' });
-    expect([usesStep({ at: 'spent' }, { type: 'fightEnds' }, fightGate), usesStep({ at: 'spent' }, { type: 'fightEnds' }, restGate)]).toEqual([{ at: 'ready', left: 2 }, { at: 'spent' }]);
-    expect([usesStep({ at: 'spent' }, { type: 'longRest' }, restGate), usesStep({ at: 'spent' }, { type: 'longRest' }, fightGate)]).toEqual([{ at: 'ready', left: 2 }, { at: 'spent' }]);
+    expect([usesStep({ at: 'spent' }, { type: 'fightEnds' }, fightGate), usesStep({ at: 'spent' }, { type: 'fightEnds' }, perGate)]).toEqual([{ at: 'ready', left: 2 }, { at: 'spent' }]);
+    expect([usesStep({ at: 'spent' }, { type: 'cleared' }, perGate), usesStep({ at: 'spent' }, { type: 'cleared' }, fightGate)]).toEqual([{ at: 'ready', left: 2 }, { at: 'spent' }]);
     for (const u of [{ at: 'spent' }, { at: 'ready', left: 2 }] as const) expect(usesStep(u, { type: 'gmSets', spent: 1 }, fightGate)).toEqual({ at: 'ready', left: 1 });
-    for (const e of USES_WALK) expect(['ready', 'spent']).toContain(usesStep({ at: 'ready', left: 1 }, e, restGate).at);
+    for (const e of USES_WALK) expect(['ready', 'spent']).toContain(usesStep({ at: 'ready', left: 1 }, e, perGate).at);
   });
 
   test('two uses a fight: each that resolves is counted on the row, the third is refused and changes nothing', () => {
@@ -1619,14 +1621,14 @@ describe('a limited use (kits design 1.4, table 2.3)', () => {
     refuses(r.fight, { type: 'adjust', id: id('A'), used: { ability: HIT.id, spent: 0 } }, 'unknownAbility');
   });
 
-  test('one a rest is written back with the hunter\'s vitals, and a row that starts with it spent refuses it', () => {
+  test('one a gate is written back with the hunter\'s vitals, and a row that starts with it spent refuses it', () => {
     const r = play(...duel({ abilities: [daily] }), hit('A', 'M', daily));
     const v = r.effects.filter(e => e.type === 'vitals').at(-1);
     expect(v?.type === 'vitals' && v.used).toEqual({ [daily.id]: 1 });
     refuses(play(...duel({ abilities: [daily], used: { [daily.id]: 1 } })).fight, hit('A', 'M', daily), 'noUses');
   });
 
-  test('round trip: a use a rest spent in a fight is still spent on the sheet after it, and a long rest gives it back', () => {
+  test('round trip: a use a gate spent in a fight is still spent on the sheet after it, and the gate\'s Clear gives it back', () => {
     const r = play(...duel({ abilities: [daily] }), hit('A', 'M', daily));
     const v = r.effects.filter(e => e.type === 'vitals').at(-1);
     if (v?.type !== 'vitals') throw new Error('no vitals effect');
@@ -1635,7 +1637,8 @@ describe('a limited use (kits design 1.4, table 2.3)', () => {
     if (isRefused(after)) throw new Error(after.why);
     expect(after.used).toEqual({ [daily.id]: 1 });
     refuses(play(...duel({ abilities: [daily], used: after.used })).fight, hit('A', 'M', daily), 'noUses');
-    const rested = rest(after, 'long', { hpMax: 100, manaMax: 100, fatigueMax: 100 }, RULES);
+    const rested = sheetEdit(after, { type: 'cleared' }, RULES);
+    if (isRefused(rested)) throw new Error(rested.why);
     expect(rested.used).toEqual({});
     expect(play(...duel({ abilities: [daily], used: rested.used }), hit('A', 'M', daily)).effects.some(e => e.type === 'refused')).toBe(false);
     const kept = sheetEdit(after, { type: 'totals', life: v.life, mana: v.mana, fatigue: v.fatigue, statuses: v.statuses }, RULES);
@@ -1809,26 +1812,26 @@ describe('wards and stealth (kits design 8.1 and 8.7, tables 8.9.4 and 8.9.5)', 
   // target is refused when no body of the user's side perceives it; an area at a place catches a hidden body whatever
   // the sight, and only the untargetable ward keeps a body out of a shape.
   /** A hide put on in the open at `level`, which a hurt does not end, so a hit on its bearer shows only what picking, catching and a reveal do. */
-  const shade = (level: HideLevel) => self(`shade${level}`, { op: 'hidden', level, start: 'anywhere', ends: ends({ hurt: false }) });
+  const shade = (level: Level) => self(`shade${level}`, { op: 'hidden', level, start: 'anywhere', ends: ends({ hurt: false }) });
   /** A worn status that raises its bearer's sight level to `n`. */
   const eye = (n: number): Status => st(`eye${n}`, null, { op: 'sheet', key: 'sight', amount: n });
   const NOVA = ability('blast', 'nova', '5', { range: tiles(20) }), LANCE = ability('shot', 'lance', '5', { range: tiles(20) });
   /** A, on the party's line at (0, 2), hides at `level` on its first turn; then it is M's turn, M wearing `sight`. */
-  const shaded = (level: HideLevel, sight: Status[] = []) =>
+  const shaded = (level: Level, sight: Status[] = []) =>
     [add(row('A', 'party', { abilities: [HIT, shade(level)] }), row('M', 'foe', { abilities: [HIT, NOVA, LANCE], statuses: sight })), start(['A', 20], ['M', 10]), use('A', shade(level))] as const;
   const blasts = (by: string, at: Place, who: string): Command => ({ type: 'act', by: id(by), ability: NOVA.id, aim: at, rolls: rolls({ [who]: 1 }, { [who]: [] }) });
 
-  test('a foe cannot pick a hidden body with a sight under its level, and can at its level or above (the owner\'s ruling 1)', () => {
+  test('a foe cannot pick a hidden body with a sight at its level or under, and can above it (stealth beats sight at the same level: the owner, Nov 22)', () => {
     refuses(play(...shaded(2)).fight, hit('M', 'A'), 'noTarget');
-    refuses(play(...shaded(2, [eye(1)])).fight, hit('M', 'A'), 'noTarget');
-    for (const n of [2, 3]) expect(hurtOf(play(...shaded(2, [eye(n)]), hit('M', 'A')).fight, 'A'), `sight ${n}`).toBeGreaterThan(0);
+    refuses(play(...shaded(2, [eye(2)])).fight, hit('M', 'A'), 'noTarget');
+    for (const n of [3, 4]) expect(hurtOf(play(...shaded(2, [eye(n)]), hit('M', 'A')).fight, 'A'), `sight ${n}`).toBeGreaterThan(0);
   });
 
   test('a foe\'s blast at a place catches a hidden body it cannot pick and reveals it (the owner\'s ruling 2); a strike from a foe that sees it does not reveal it', () => {
     const area = play(...shaded(1), blasts('M', place(0, 2), 'A'));
     expect([hurtOf(area.fight, 'A') > 0, keys(area.fight, 'A')]).toEqual([true, []]);
     expect(running(area).log.some(l => /A is seen\.$/.test(l.text))).toBe(true);
-    const strike = play(...shaded(1, [eye(1)]), hit('M', 'A'));
+    const strike = play(...shaded(1, [eye(2)]), hit('M', 'A'));
     expect([hurtOf(strike.fight, 'A') > 0, keys(strike.fight, 'A')]).toEqual([true, ['shade1']]);
   });
 
@@ -1846,14 +1849,14 @@ describe('wards and stealth (kits design 8.1 and 8.7, tables 8.9.4 and 8.9.5)', 
   });
 
   test('an aimed shot at a hidden body its user sees does not reveal it; a blast at its place from the same foe does', () => {
-    const shot = play(...shaded(1, [eye(1)]), aimed(LANCE, 'A'));
+    const shot = play(...shaded(1, [eye(2)]), aimed(LANCE, 'A'));
     expect([hurtOf(shot.fight, 'A') > 0, keys(shot.fight, 'A')]).toEqual([true, ['shade1']]);
-    const blast = play(...shaded(1, [eye(1)]), aimed(NOVA, place(0, 2)));
+    const blast = play(...shaded(1, [eye(2)]), aimed(NOVA, place(0, 2)));
     expect([hurtOf(blast.fight, 'A') > 0, keys(blast.fight, 'A')]).toEqual([true, []]);
   });
 
   test('a blast aimed by id at a hidden body its user sees reveals it: every area hit reveals (the owner, Nov 21)', () => {
-    const r = play(...shaded(1, [eye(1)]), aimed(NOVA, 'A'));
+    const r = play(...shaded(1, [eye(2)]), aimed(NOVA, 'A'));
     expect([hurtOf(r.fight, 'A') > 0, keys(r.fight, 'A')]).toEqual([true, []]);
     expect(running(r).log.some(l => /A is seen\.$/.test(l.text))).toBe(true);
   });
@@ -1862,7 +1865,7 @@ describe('wards and stealth (kits design 8.1 and 8.7, tables 8.9.4 and 8.9.5)', 
     const PIKE = ability('shot', 'pike', '5', { range: tiles(20), shape: { kind: 'line', width: tiles(1), pierce: true } });
     const STAB = ability('shot', 'stab', '5', { range: tiles(20), shape: { kind: 'line', width: tiles(1), pierce: false } });
     const seen = (a: Ability) =>
-      play(add(row('A', 'party', { abilities: [HIT, shade(1)] }), row('M', 'foe', { abilities: [HIT, a], statuses: [eye(1)] })), start(['A', 20], ['M', 10]), use('A', shade(1)), aimed(a, 'A'));
+      play(add(row('A', 'party', { abilities: [HIT, shade(1)] }), row('M', 'foe', { abilities: [HIT, a], statuses: [eye(2)] })), start(['A', 20], ['M', 10]), use('A', shade(1)), aimed(a, 'A'));
     expect([hurtOf(seen(PIKE).fight, 'A') > 0, keys(seen(PIKE).fight, 'A')]).toEqual([true, []]);
     expect([hurtOf(seen(STAB).fight, 'A') > 0, keys(seen(STAB).fight, 'A')]).toEqual([true, ['shade1']]);
   });
@@ -1881,7 +1884,7 @@ describe('wards and stealth (kits design 8.1 and 8.7, tables 8.9.4 and 8.9.5)', 
     const FLARE = ability('shot', 'flare', null, { effect: null, range: tiles(20), ops: [{ op: 'reveal' }] });
     expect(parseAbility(JSON.parse(JSON.stringify(FLARE)), RULES)).toEqual(FLARE);
     const MIST = self('mist', { op: 'hidden', level: 1, start: 'anywhere', ends: ends({ hurt: false, revealed: false }) });
-    const flared = (hide: Ability) => play(add(row('A', 'party', { abilities: [HIT, hide] }), row('M', 'foe', { abilities: [HIT, FLARE], statuses: [eye(1)] })), start(['A', 20], ['M', 10]), use('A', hide),
+    const flared = (hide: Ability) => play(add(row('A', 'party', { abilities: [HIT, hide] }), row('M', 'foe', { abilities: [HIT, FLARE], statuses: [eye(2)] })), start(['A', 20], ['M', 10]), use('A', hide),
       { type: 'act', by: id('M'), ability: FLARE.id, aim: id('A'), rolls: rolls({ A: 1 }) });
     expect([keys(flared(shade(1)).fight, 'A'), keys(flared(MIST).fight, 'A')]).toEqual([[], ['mist']]);
   });
@@ -1889,12 +1892,12 @@ describe('wards and stealth (kits design 8.1 and 8.7, tables 8.9.4 and 8.9.5)', 
   test('in fog a body picks a foe it cannot itself see when an ally sees it, by that one ally\'s own eyes (the owner\'s ruling 7)', () => {
     // fog sight 4: A at (0, 2) is 8 tiles from M at (0, 10); an ally at (0, 8) is 2 from it, one at (10, 2) is 10
     const fog = { sight: tiles(4), seen: '0'.repeat(RULES.fight.grid.w * RULES.fight.grid.h) };
-    const near = place(0, 8), far = place(10, 2), CLOAK = st('cloak', null, { op: 'hidden', level: 2, start: 'anywhere', ends: ends() });
+    const near = place(0, 8), far = place(10, 2), CLOAK = st('cloak', null, { op: 'hidden', level: 1, start: 'anywhere', ends: ends() });
     const fogged = (ally: Place, foe: Status[], a: Status[] = [], b: Status[] = []) =>
       [{ ...add(row('A', 'party', { statuses: a }), row('B', 'party', { place: ally, statuses: b }), row('M', 'foe', { statuses: foe })), fog }, start(['A', 20], ['B', 15], ['M', 10])] as const;
     refuses(play(...fogged(far, [])).fight, hit('A', 'M'), 'noTarget');
     expect(hurtOf(play(...fogged(near, []), hit('A', 'M')).fight, 'M')).toBeGreaterThan(0);
-    // hidden at 2: A sees at 2 but out of the fog's reach, the ally in reach at 0; the ally with sight 2 brings it in
+    // hidden at 1: A's sight 2 sees it but out of the fog's reach, the ally in reach at 0 does not; the ally with sight 2 brings it in
     refuses(play(...fogged(near, [CLOAK], [eye(2)])).fight, hit('A', 'M'), 'noTarget');
     expect(hurtOf(play(...fogged(near, [CLOAK], [], [eye(2)]), hit('A', 'M')).fight, 'M')).toBeGreaterThan(0);
   });
@@ -2201,10 +2204,10 @@ describe('a reaction (kits design 8.4, table 8.9.1)', () => {
   test('the machine: every state of a reaction under every event of tests/models/wave2-events.ts (table 8.9.1)', () => {
     const key = (e: ReactEvent): string => e.type === 'arm' ? `arm ${e.up ? 'up' : 'down'}` : e.type === 'moment' ? `moment ${e.may ? 'may' : 'may not'} at ${e.aim}` : e.type;
     const expected: Record<ReactState, Record<string, ReactState>> = {
-      // rules-4.3a waits on the owner: today a reactor who is down arms
-      unarmed: { 'arm up': 'armed', 'arm down': 'armed', disarm: 'unarmed', 'moment may at up': 'unarmed', 'moment may at down': 'unarmed', 'moment may not at up': 'unarmed', resolves: 'unarmed', turnStart: 'unarmed', down: 'unarmed' },
+      // rules-4.3a: a reactor who is down arms none
+      unarmed: { 'arm up': 'armed', 'arm down': 'unarmed', disarm: 'unarmed', 'moment may at up': 'unarmed', 'moment may at down': 'unarmed', 'moment may not at up': 'unarmed', resolves: 'unarmed', turnStart: 'unarmed', down: 'unarmed' },
       // rules-4.2 waits on the owner: today a reaction fires at an aim already down
-      armed: { 'arm up': 'armed', 'arm down': 'armed', disarm: 'unarmed', 'moment may at up': 'fired', 'moment may at down': 'fired', 'moment may not at up': 'armed', resolves: 'armed', turnStart: 'armed', down: 'unarmed' },
+      armed: { 'arm up': 'armed', 'arm down': 'unarmed', disarm: 'unarmed', 'moment may at up': 'fired', 'moment may at down': 'fired', 'moment may not at up': 'armed', resolves: 'armed', turnStart: 'armed', down: 'unarmed' },
       fired: { 'arm up': 'fired', 'arm down': 'fired', disarm: 'fired', 'moment may at up': 'fired', 'moment may at down': 'fired', 'moment may not at up': 'fired', resolves: 'spent', turnStart: 'fired', down: 'unarmed' },
       spent: { 'arm up': 'spent', 'arm down': 'spent', disarm: 'unarmed', 'moment may at up': 'spent', 'moment may at down': 'spent', 'moment may not at up': 'spent', resolves: 'spent', turnStart: 'armed', down: 'unarmed' },
     };
@@ -2212,14 +2215,14 @@ describe('a reaction (kits design 8.4, table 8.9.1)', () => {
     for (const s of REACT_STATES) for (const e of REACT_WALK) expect(reactStep(s, e), `${s} × ${key(e)}`).toBe(expected[s][key(e)]!);
   });
 
-  test('a hunter who is down may arm a reaction (rules-4.3a, as the app does today)', () => {
+  test('a hunter who is down cannot arm a reaction: the arm is refused and nothing is armed (rules-4.3a)', () => {
     const r = play(add(row('A', 'party', { abilities: [HIT, PARRY] }), row('B', 'party'), row('M', 'foe')), start(['M', 20], ['A', 10], ['B', 5]), hit('M', 'A', BIG));
     expect(rowHp(body(r.fight, 'A'))).toBe(0);
-    const out = reduce(r.fight, armed('A', PARRY), ctx);
-    expect([out.effects, body(out.fight, 'A').armed]).toEqual([[], { ability: PARRY.id, on: null, spent: false }]);
+    refuses(r.fight, armed('A', PARRY), 'down');
+    expect(body(r.fight, 'A').armed).toBeUndefined();
   });
 
-  test('a second ally\'s after reaction still fires at an attacker the first one\'s took down, and that kill is not counted (rules-4.2, as the app does today)', () => {
+  test('an after reaction\'s kill is its reactor\'s, counted as any kill; a second ally\'s still fires at the attacker already down, and counts none (rules-4.2)', () => {
     const KILL = reaction('kill', 'after', { effect: { type: 'physical', by: 'hand', formula: f('999') } });
     const wide = ability('blast', 'quake', '5', { range: tiles(20), foesOnly: true, cost: { ...HIT.cost, mana: 0 } });
     const r = play(add(row('A', 'party', { abilities: [KILL], place: place(5, 5) }), row('B', 'party', { abilities: [KILL], place: place(6, 5) }), row('C', 'party'), row('M', 'foe', { abilities: [wide] })),
@@ -2227,7 +2230,8 @@ describe('a reaction (kits design 8.4, table 8.9.1)', () => {
       { type: 'act', by: id('M'), ability: wide.id, aim: place(5, 5), rolls: rolls({ A: 1, B: 1 }, { A: [], B: [] }) });
     expect(r.fight!.phase).toBe('ended');
     expect([rowHp(body(r.fight, 'M')), body(r.fight, 'A').armed?.spent, body(r.fight, 'B').armed?.spent]).toEqual([0, true, true]);
-    expect(tallyOf(body(r.fight, 'A')).kills).toEqual([]);
+    expect(tallyOf(body(r.fight, 'A')).kills.map(k => k.row)).toEqual([id('M')]);
+    expect(tallyOf(body(r.fight, 'B')).kills).toEqual([]);
   });
 
   test('a reaction that pushes its aim past a threshold sets it off for all to see: its burst lands, is logged and is told (rules-4.3b)', () => {
@@ -2433,8 +2437,8 @@ describe('the fight\'s table: every state under every command (SMX-rules-3)', ()
     ['none', null, ['add']],
     ['setup', play(add(row('A', 'party'), row('M', 'foe'))).fight, SETUP],
     ['running, acting', play(...duel()).fight, RUNNING],
-    // rules-3.2 waits on the owner: today a turn may be taken and ended (act, move, endTurn) while dice are owed
-    ['running, owing', owing, RUNNING],
+    // rules-3.2: a turn is neither taken nor ended (act, move, endTurn) while dice are owed
+    ['running, owing', owing, RUNNING.filter(t => t !== 'act' && t !== 'move' && t !== 'endTurn')],
     ['ended', play(...duel(), { type: 'end' }).fight, ['extract', 'clear']],
   ];
 

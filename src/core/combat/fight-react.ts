@@ -22,6 +22,8 @@ import type { Answers, ResolveRules } from './resolve.ts';
 import { formulaOf } from '../registry/ability-kinds.ts';
 import { dist } from './space.ts';
 import { counted } from './uses.ts';
+import { tallied } from './row-tally.ts';
+import { raised } from './triggers.ts';
 
 /** What a row holds armed (`Body.armed`): the reaction's ability, the body a `turn` reaction names (null for the rest), and whether it fired since it was last restored. */
 export type Armed = NonNullable<Body['armed']>;
@@ -30,7 +32,7 @@ export type Armed = NonNullable<Body['armed']>;
 export const REACT_STATES = ['unarmed', 'armed', 'fired', 'spent'] as const;
 export type ReactState = (typeof REACT_STATES)[number];
 /**
- * What changes a reaction: armed (by a reactor up or down) or disarmed; its moment, when it may fire or not, at an aim
+ * What changes a reaction: armed (by a reactor up or down: down arms none) or disarmed; its moment, when it may fire or not, at an aim
  * up or down; its use resolving; its restoring turn starting (its reactor's own; for a `turn` reaction, the named
  * body's); its reactor down or the fight's end.
  */
@@ -44,8 +46,8 @@ const to = (s: ReactState) => (): ReactState => s;
 /** Arming, by whether its reactor is up. */
 const ARMS: { readonly [K in 'up' | 'down']: ReactState } = {
   up: 'armed',
-  // rules-4.3a waits on the owner's ruling on whether a hunter who is down may arm a reaction. Today one does.
-  down: 'armed',
+  // rules-4.3a: a row that is down arms none (the owner, Nov 22: "No"; a hunter at 0 HP is dead). The fight's `arm` refuses it (`down`).
+  down: 'unarmed',
 };
 const arm: ReactStepFn<'arm'> = (_s, e) => ARMS[e.up ? 'up' : 'down'];
 /** A moment it may fire at (up, not held, ready, paid), by whether its aim is up. */
@@ -126,8 +128,8 @@ export type ReactionFired = { readonly guard: number; readonly negate: boolean; 
  * reaction, which moves its turn itself), its cooldown and use counted, and its use resolves, which spends it. Null,
  * changing nothing, when it does not fire (an earlier reaction of the same use changed what it asks). Its effect and
  * its ops land on `aim` at their averages from its reactor at its tier, as a trigger's do, a status put on checking its
- * threshold, and the reactor's lifesteal heals it a share of the HP they took (land.ts `drained`); a `guard` and a
- * `negate` are given back for the use it answers. Changes `rows`.
+ * threshold, and the reactor's lifesteal heals it a share of the HP they took (land.ts `drained`); a foe they take down
+ * is the reactor's kill (row-tally.ts); a `guard` and a `negate` are given back for the use it answers. Changes `rows`.
  */
 export function react(rows: Map<CombatantId, Body>, reactor: CombatantId, aim: CombatantId, now: Tick, R: ResolveRules): ReactionFired | null {
   const r = rows.get(reactor), a = r && armedAbility(r), m = r && atMoment(rows, r, aim, now, R);
@@ -148,6 +150,10 @@ export function react(rows: Map<CombatantId, Body>, reactor: CombatantId, aim: C
   rows.set(b.id, stole);
   const drank = rowHp(stole) - ownHp;
   const bursts = out.fired.map(x => landThreshold(rows, x, now, R));
+  // a foe the reaction's ops took down is its reactor's kill, counted as a use's or a trigger's is (a burst's is its
+  // bearer's status's, as in a use) (rules-4.2, the owner, Nov 22: "Yes")
+  const kills = out.landed.filter(l => l.down).map(l => raised(b.id, 'kill', l.target));
+  if (kills.length) for (const x of tallied([...rows.values()], { type: 'raised', events: kills })) rows.set(x.id, x);
   // the stealth machine's `dealt` (the owner's ruling 6): a reaction of its own that deals HP damage to the other side ends
   // each hide its reactor held that ends on it, but one this reaction put on
   if (out.landed.some(l => l.dealt > 0 && rows.get(l.target)?.side !== b.side)) rows.set(b.id, stealthAfter(rows.get(b.id)!, { type: 'dealt' }, now, R, putBy(a.ops)));

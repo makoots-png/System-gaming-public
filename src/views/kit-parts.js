@@ -315,7 +315,7 @@ export function abilityBlocks(box, a, M) {
   const gateHtml = (g, i) => `<div class="mk-fx" data-gate="${i}"><div class="mk-fx-top"><select data-f="kind" data-i="${i}" data-list="gate" aria-label="Condition ${i + 1}">${GATE_LABEL.map(([v, l]) => opt(v, l, g.kind)).join('')}</select>
       <button type="button" class="icon-btn" data-rm="gate" data-i="${i}" aria-label="Remove condition ${i + 1}">&times;</button></div>
     ${g.kind === 'holds' ? `${statusSel('key', i, 'The status', g.key)}${seg('on', i, `On whom, condition ${i + 1}`, [['self', 'On you'], ['target', 'On the target']], g.on)}${numF('n', i, 'At least (stacks)', g.n)}`
-      : g.kind === 'uses' ? `${numF('n', i, `Uses (1 to ${K.fightUses})`, g.n)}${seg('per', i, `Uses per, condition ${i + 1}`, [['fight', 'A fight'], ['rest', 'A long rest']], g.per)}`
+      : g.kind === 'uses' ? `${numF('n', i, `Uses (1 to ${K.fightUses})`, g.n)}${seg('per', i, `Uses per, condition ${i + 1}`, [['fight', 'A fight'], ['gate', 'A gate']], g.per)}`
       : textF('zone', i, 'Field name', g.zone, { placeholder: 'Aura' })}
     <p class="mk-fx-err" data-err role="alert"></p></div>`;
 

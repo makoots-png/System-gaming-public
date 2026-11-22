@@ -328,8 +328,11 @@ export type HunterApi = {
    * (`mana` on the sheet; the fight's news on a row) or `also` refuses, and on a player's phone in the GM's fight.
    */
   spendMana(hid: string, n: number, also?: Step<Hunter> | null): Applied;
-  /** Refused with a toast (`TOLD`) while the hunter is in a fight: the fight's row holds its HP, mana and fatigue. */
-  rest(kind: 'short' | 'long', hid?: string): Applied;
+  /**
+   * A rest (grant.ts `sheetEdit`, rests.ts): refused `spent` with no rest left in this gate, `cannot` for a dead hunter
+   * (rests.ts `restRefusalWords`), and with a toast (`TOLD`) while the hunter is in a fight: the fight's row holds its HP, mana and fatigue.
+   */
+  rest(hid?: string): Applied;
   /**
    * Adds a status: one instance per key, the stronger source and the longer duration stay. In a fight it goes to the
    * row as `damage` does (the fight's `status` command), or is refused on a player's phone.
@@ -558,7 +561,7 @@ export type UsesApi = {
   hold(): import('./combat/hold.ts').TurnHold;
   /**
    * A command of the turn tapped on any screen (a step, a use, End turn, a Release; `via` `bag` for a consumable's use),
-   * the one way one goes out: `post` runs only when the hold lets it, under the hold for `turn` and unheld for `bag`
+   * the one way one goes out: `post` runs only when the hold lets it, under the hold for `turn` and `bag` alike
    * (SMX-views-5.1), and the hold hears its answer. Answers the post's answer, or null when nothing was posted (the turn
    * held, after a word to the player, or `post` sent nothing).
    */

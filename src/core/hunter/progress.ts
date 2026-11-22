@@ -131,8 +131,9 @@ const whole = (v: number | undefined): number => (Number.isFinite(v) ? Math.max(
 //   settled    --− (player)----------------------------------------------------------> refused `confirmed`
 //   allocating --+ or Auto [a point free], − [more pending], the GM's edit of another stat--> allocating
 //   allocating --Confirm, starting stats, − [the last pending], the GM's edit of the last pending stat--> settled
-//   allocating --XP or level (a level may be lost)-----------> allocating, the pending kept (SMX-rules-7.1 waits)
-//   allocating --a deduction of points------------------------> only the points free taken (SMX-rules-7.1 waits)
+//   allocating --XP or level, the level kept or gained--------> allocating, the pending kept
+//   allocating --XP, level or a raising that loses a level-----> settled, the pending handed back (SMX-rules-7.1)
+//   allocating --a deduction of points------------------------> only the points free taken (unruled: SMX-rules-7.1)
 //   either     --a raising from death (`revived`)--------------> the same state, levels lost (`levelAfterRaising`)
 
 /** Where the allocation stands, read from `pending`: nothing waits for Confirm, or points sit on stats (never none). */
@@ -212,10 +213,18 @@ const setPointsCell: Cell<'setPoints'> = (p, e, R) => {
  * A raising from death: the level falls to `levelAfterRaising`, as the GM's level edit would take it (`setLevel`), so
  * the XP inside the level is kept up to what the lower level holds, the peak stays (the levels regained do not refill)
  * and the points free fall by the points of the levels lost (the owner's ruling 9: "the points of the lost levels go with
- * them"). The points pending stay, as for any level lost (SMX-rules-7.1 waits).
+ * them"). In `allocating` the points pending are handed back, as for any level lost (`handingBack`).
  */
 const revivedCell: Cell<'revived'> = (p, _e, R) => ({ ...p, ...setLevel(p, levelAfterRaising(p.level, R), p.xp, R).progress, pending: p.pending });
 const unchanged: Cell<'confirm'> = h => h;
+/**
+ * A cell of the level whose points pending are handed back when it leaves the level lower (SMX-rules-7.1, the owner, Nov 22:
+ * "Yes"): what they were raised from is free again, so a hunter never owes points it has not confirmed.
+ */
+const handingBack = <T extends 'xp' | 'level' | 'revived'>(cell: Cell<T>): Cell<T> => ((h, e, R) => {
+  const next = cell(h, e, R) as typeof h;
+  return next.level < h.level ? { ...next, pending: {} } : next;
+}) as Cell<T>;
 
 /** For each state of the allocation, what each event does. */
 export const PROGRESS_TABLE: { readonly [S in ProgressAllocation['at']]: ProgressRow } = {
@@ -225,16 +234,14 @@ export const PROGRESS_TABLE: { readonly [S in ProgressAllocation['at']]: Progres
   },
   allocating: {
     raise: raiseCell, lower: lowerPending, confirm: confirmCell, auto: autoCell, setStat: statCell, start: startCell,
-    // SMX-rules-7.1 waits on the owner: whether the points pending are handed back when the level drops. Today they stay
-    // pending, so a hunter that now holds fewer points than it spent and has pending owes them (`available` is 0).
-    xp: xpCell,
-    level: levelCell,
-    // SMX-rules-7.1 waits on the owner: whether a deduction (a quest's point cost) reaches the points pending. Today it
-    // takes only the points free, and the pending points stay.
+    // SMX-rules-7.1: the points pending are handed back when the level drops (the owner, Nov 22: "Yes")
+    xp: handingBack(xpCell),
+    level: handingBack(levelCell),
+    // Unruled (SMX-rules-7.1's second half): whether a deduction (a quest's point cost) reaches the points pending.
+    // Today it takes only the points free, and the pending points stay.
     points: pointsCell,
     setPoints: setPointsCell,
-    // SMX-rules-7.1 waits, as for `level`: the pending points stay when a raising takes levels
-    revived: revivedCell,
+    revived: handingBack(revivedCell),
   },
 };
 

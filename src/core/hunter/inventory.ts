@@ -15,7 +15,8 @@
 // The shop is closed to a dead hunter (`shopOpen`): it buys nothing and sells nothing. The owner, Nov 19: "When a
 // player/party dies, they should only be able to be revived by the gm or through resurrection crystals. They can not buy
 // it in death", then "Whole shop should be closed in death." A crystal still reaches a dead hunter from the GM (an award)
-// or from another hunter (goods.ts `handOver`, offer.ts), and the dead hunter may use it (use.ts `useItem`).
+// or from another hunter (goods.ts `handOver`, offer.ts), and the dead hunter may use it (use.ts `useItem`): the owner,
+// Nov 22, a crystal handed over after the death counts as bought before it.
 import { SLOTS, valueOf } from '../registry/items.ts';
 import type { Item, ItemTemplate, PriceRules, Priced, Slot } from '../registry/items.ts';
 import type { Rules } from '../rules.ts';

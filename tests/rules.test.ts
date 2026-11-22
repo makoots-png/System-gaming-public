@@ -75,10 +75,11 @@ test('loot names only rarities that exist, and a higher rank drops more gold', (
   expect(rising(RANKS.map(r => RULES.loot[r].gold[1]!))).toBe(true);
 });
 
-test('fatigue gives its penalty, then disadvantage, then collapse, and a long rest clears at least what a short one does', () => {
+test('fatigue gives its penalty, then disadvantage, then collapse, and a rest from a collapse leaves fatigue under the collapse share', () => {
   const f = RULES.fatigue;
   expect(0 < f.penaltyAt && f.penaltyAt < f.disAt && f.disAt < f.collapseAt).toBe(true);
-  for (const k of ['hpPct', 'mpPct', 'fatigue'] as const) expect(RULES.rest.short[k]).toBeLessThanOrEqual(RULES.rest.long[k]);
+  // "exhausted will largely clear" (the owner, Nov 22): fatigue at the collapse share, less the rest's share of it, is under the share
+  expect(f.collapseAt * (1 - RULES.rest.fatigue)).toBeLessThan(f.collapseAt);
 });
 
 test('a higher-ranked shadow costs more MP to summon', () => {

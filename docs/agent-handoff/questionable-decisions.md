@@ -11,6 +11,12 @@ Every call a lead made that he might have made otherwise, newest last. Each says
 3. **A rest clears 75% of current fatigue.** His word was "largely". Undo: give another share; it is one rule, `rest.fatigue`.
 4. **A dungeon is a gate, for "two rests per dungeon".** The count is per hunter per gate and starts again at the next gate. Undo: say what else a dungeon is (a session, a day).
 5. **The dice roller gets no difficulty table.** Its starting number to beat is one number for every rank; he sets the number for the thing being tried. Undo: "build difficulty presets" (Easy 10, Hard 15, Heroic 20, or his own).
+19. **A solo run's end, won, lost or retreated, gives a hunter its two rests back.** A solo run is a gate of its own, so its end starts the count again; only a win gives HP, mana and fatigue back. Undo: "a lost run keeps the rests spent".
+20. **A dead hunter's rest count also starts again at a Clear.** It gets no HP, mana or uses back (his rule), but the count belongs to the gate, so the next gate starts with two. Undo: "a dead hunter keeps its rests spent".
+21. **The keystones design is accepted as written** (`features/notes-11-keystones.md`, design A): a stat holding 30% of the points a hunter spent earns a Mark at rank D, the two highest stats at 25% each a Confluence at rank C, a stat over 55% an Apex at rank B; 44 powers; earned by the points with no tap; gear never counts; elites, bosses and mythics earn them too, shadows never. This is how "specialising must pay" is built. Undo: "no keystones", or name the part to change (the shares, the ranks, monsters holding them).
+22. **The dice roller starts every hunter on 13 to beat** (the old E rank "Standard"). His ruling: the number is the same for every rank, and he sets it for the thing tried. Undo: give the starting number.
+23. **A gate kept open because a party was in it when the day passed its break day does not break when the party leaves.** His words covered only "it doesn't break if someone is in it". Undo: "it breaks when they leave".
+24. **Stealth beats sight at the same level, and every built-in hide is one level lower** (Stealth and Invisible are 0, 0, 1, 2, 3, 4 by rank), so each hides from the same sights as before and no balance number moved. Undo: "keep the old levels" (hides then get one step stronger).
 
 ## Decided earlier in this session (Nov 21 to 22), told to him in chat
 

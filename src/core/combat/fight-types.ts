@@ -158,7 +158,7 @@ export type Command =
    */
   | {
     readonly type: 'adjust'; readonly id: CombatantId; readonly hp?: number; readonly mana?: number; readonly fatigue?: number;
-    /** The uses spent of one of its abilities limited a fight or a rest (kits table 2.3, "the GM sets it"), 0 to `fightUses`. */
+    /** The uses spent of one of its abilities limited a fight or a gate (kits table 2.3, "the GM sets it"), 0 to `fightUses`. */
     readonly used?: { readonly ability: AbilityId; readonly spent: number };
     /** The mana taken is a price paid outside the fight (a shadow summoned): refused (`mana`) when the row holds less. */
     readonly pay?: boolean;
@@ -252,7 +252,7 @@ export type Effect =
   | {
     readonly type: 'vitals'; readonly hunterId: HunterId; readonly life: Life; readonly mana: number; readonly fatigue: number;
     readonly statuses: readonly SheetStatus[];
-    /** The uses spent of its abilities limited a long rest (`Vitals.used`, kits table 2.3); absent when it has none. */
+    /** The uses spent of its abilities limited a gate (`Vitals.used`, kits table 2.3); absent when it has none. */
     readonly used?: Readonly<Record<AbilityId, number>>;
   }
   /** The same for a hunter on another phone: the room's `vitals` message (protocol.ts), whose life the player's sheet takes. */

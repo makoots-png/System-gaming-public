@@ -428,9 +428,9 @@ describe('a summon (kits design 1.9)', () => {
   });
 });
 
-describe('uses spent this rest (kits table 2.3)', () => {
-  test('a hunter\'s row starts with the uses its sheet spent of an ability limited a rest, and none of any other', () => {
-    const daily = { ...skill('strike', 'Daily'), gates: [{ kind: 'uses', per: 'rest', n: 1 }] } as Ability;
+describe('uses spent this gate (kits table 2.3)', () => {
+  test('a hunter\'s row starts with the uses its sheet spent of an ability limited a gate, and none of any other', () => {
+    const daily = { ...skill('strike', 'Daily'), gates: [{ kind: 'uses', per: 'gate', n: 1 }] } as Ability;
     const row = hunterRow(hunter({ skills: [active(daily), active(skill('shot', 'Plain'))], used: { daily: 1, plain: 3 } }), id('c1'), RULES);
     expect(row.used).toEqual({ daily: 1 });
     expect(hunterRow(hunter(), id('c1'), RULES).used).toBeUndefined();

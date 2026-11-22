@@ -23,13 +23,13 @@ export const reaction = machine<ReactState, ReactEvent>({
   kindsOf: s => [s],
   views: [{
     title: 'A reaction on its reactor, from armed to spent',
-    note: 'A player arms one of its hunter\'s reactions with the room\'s `arm`, the GM anyone\'s with the fight\'s. It fires by rule at its moment: before a foe\'s use lands on its reactor or an ally within reach, before a hit takes one of them to 0, after a foe\'s use landed on one, or before a named body\'s turn. It fires when its reactor is up, not held, its ability ready and paid for; otherwise it stays armed and says nothing. Its time comes off its reactor\'s next turn. A use sets off at most 4. Never written to a sheet. Two rows wait on a ruling and are drawn as the app behaves today: a reactor who is down arms (rules-4.3a), and a reaction fires at an aim already down (rules-4.2).',
+    note: 'A player arms one of its hunter\'s reactions with the room\'s `arm`, the GM anyone\'s with the fight\'s. It fires by rule at its moment: before a foe\'s use lands on its reactor or an ally within reach, before a hit takes one of them to 0, after a foe\'s use landed on one, or before a named body\'s turn. It fires when its reactor is up, not held, its ability ready and paid for; otherwise it stays armed and says nothing. Its time comes off its reactor\'s next turn. A use sets off at most 4. Never written to a sheet. A foe its ops take down is its reactor\'s kill, counted as any kill (rules-4.2, the owner, Nov 22). A reactor who is down arms none: the fight refuses it (rules-4.3a, the owner, Nov 22: a hunter at 0 HP is dead). One row waits on a ruling and is drawn as the app behaves today: a reaction fires at an aim already down (rules-4.2).',
     hides: 'arming another while armed, and a moment while spent, change nothing and are not drawn',
     state: s => (s === 'unarmed' ? 'Unarmed' : s === 'armed' ? 'Armed' : s === 'fired' ? 'Firing' : 'Spent'),
     step: (e, from, to) => {
       if (from === to) return null;
       switch (e.type) {
-        case 'arm': return 'armed (the room\'s arm, the GM\'s arm; by a reactor down too, today)';
+        case 'arm': return 'armed by its reactor, up (the room\'s arm, the GM\'s arm)';
         case 'disarm': return 'disarmed';
         case 'moment': return 'its moment, and it may fire (at an aim down too, today)';
         case 'resolves': return 'its use resolves: its time comes off its next turn';

@@ -86,14 +86,14 @@ export const can = (life: { at: LifeState }, type: LifeEventType): boolean => TA
 // ── vitals: life, mana, fatigue and collapse, one machine ──
 /**
  * What a hunter stores of its condition. `collapsed` is the collapse's latch: set when fatigue reaches the rules'
- * collapse share, ended only by a long rest; `vitalStep` is its one writer, and `fatigueState` reads it with the number.
- * `used` counts the uses of each ability limited to n a long rest (kits design 1.4 and table 2.3): the fight writes it
- * back with `vitals`, and a long rest clears it. An ability it does not name has none spent.
+ * collapse share, lifted by a rest or a Clear that leaves fatigue under it; `vitalStep` is its one writer, and
+ * `fatigueState` reads it with the number. `used` counts the uses of each ability limited to n a gate (kits design 1.4
+ * and table 2.3): the fight writes it back with `vitals`, and a gate's Clear clears it. An ability it does not name has none spent.
  */
 export type Vitals = { life: Life; mana: number; fatigue: number; collapsed: boolean; used: Readonly<Record<AbilityId, number>> };
 /** The hunter's maxima, from its sheet (src/core/hunter/sheet.ts `hunterSheet`): the caller passes them in. */
 export type Maxima = { hpMax: number; manaMax: number; fatigueMax: number };
-/** The rules the vitals read: the fatigue shares and the rests. */
+/** The rules the vitals read: the fatigue shares and the rest's. */
 export type VitalRules = Pick<Rules, 'fatigue' | 'rest'>;
 
 export const newVitals = (m: Maxima): Vitals => ({ life: at(Math.max(1, m.hpMax), m.hpMax), mana: Math.max(0, m.manaMax), fatigue: 0, collapsed: false, used: {} });
@@ -113,7 +113,7 @@ export const manaOf = (v: Pick<Vitals, 'mana'>, m: Pick<Maxima, 'manaMax'>): num
 export const fatiguePast = (fatigue: number, m: Pick<Maxima, 'fatigueMax'>, pct: number): boolean => fatigue >= pct * m.fatigueMax / 100;
 
 /**
- * Where fatigue stands: `collapsed` while the latch holds (until a long rest), `tired` from the check penalty's share of
+ * Where fatigue stands: `collapsed` while the latch holds (until a rest or a Clear lifts it), `tired` from the check penalty's share of
  * the capacity (`R.fatigue.penaltyAt`), else `fresh`. Only the latch is stored; tired and fresh are read from the number.
  */
 export const FATIGUE_STATES = ['fresh', 'tired', 'collapsed'] as const;
@@ -124,8 +124,9 @@ export const fatigueState = (v: Pick<Vitals, 'fatigue' | 'collapsed'>, m: Pick<M
 /**
  * What can happen to a hunter's vitals. The life's events go to the life table (`lifeAfter`); a revive says who raised:
  * the GM's Revive or an item (a Resurrection Crystal, use.ts). `mana` and `fatigue` are signed changes, `spend` a price
- * in mana, `refill` a level-up's, `maxChanged` sent after every change to a maximum, `fightTotals` the fight row's
- * life, mana, fatigue and spent uses written back while the fight holds the hunter.
+ * in mana, `refill` a level-up's, `rest` a rest (`R.rest`), `cleared` a gate's Clear the hunter was paid for (everything
+ * back), `maxChanged` sent after every change to a maximum, `fightTotals` the fight row's life, mana, fatigue and spent
+ * uses written back while the fight holds the hunter.
  */
 export type VitalEvent =
   | Exclude<LifeEvent, { type: 'revive' | 'maxChanged' }>
@@ -134,13 +135,14 @@ export type VitalEvent =
   | { type: 'spend'; mana: number }
   | { type: 'fatigue'; delta: number }
   | { type: 'refill' }
-  | { type: 'rest'; kind: 'short' | 'long' }
+  | { type: 'rest' }
+  | { type: 'cleared' }
   | { type: 'maxChanged' }
   | { type: 'fightTotals'; life: Life; mana: number; fatigue: number; used?: Readonly<Record<AbilityId, number>> };
 export type VitalEventType = VitalEvent['type'];
 /** The events beside the life's own: the vitals table's columns. */
 type OwnType = Exclude<VitalEventType, Exclude<LifeEventType, 'maxChanged'>>;
-export const VITAL_EVENT_TYPES = ['damage', 'heal', 'setHp', 'revive', 'mana', 'spend', 'fatigue', 'refill', 'rest', 'maxChanged', 'fightTotals'] as const satisfies readonly VitalEventType[];
+export const VITAL_EVENT_TYPES = ['damage', 'heal', 'setHp', 'revive', 'mana', 'spend', 'fatigue', 'refill', 'rest', 'cleared', 'maxChanged', 'fightTotals'] as const satisfies readonly VitalEventType[];
 /** Why `vitalStep` refused: the hunter's state does not take the event (`cannot`), or a price is more mana than held (`mana`). */
 export type VitalRefusal = 'cannot' | 'mana';
 /** The events every state takes: a maximum fitted and the fight's totals. */
@@ -151,31 +153,36 @@ type Always = 'maxChanged' | 'fightTotals';
  * `Always` is `true` in every row by its type, so `vitalStep` answers vitals for those without a refusal.
  */
 type VitalRow = { readonly [T in OwnType]: T extends Always ? true : boolean };
-const TAKES = { mana: true, spend: true, fatigue: true, refill: true, rest: true, maxChanged: true, fightTotals: true } as const satisfies VitalRow;
+const TAKES = { mana: true, spend: true, fatigue: true, refill: true, rest: true, cleared: true, maxChanged: true, fightTotals: true } as const satisfies VitalRow;
 export const VITAL_TABLE: { readonly [S in LifeState]: VitalRow } = {
   up: TAKES,
-  // SMX-rules-1.2 waits on the owner: whether a dead hunter may rest and is refilled on a level-up. Today both are taken:
-  // mana fills, a long rest ends a collapse and gives back the uses, and the life stays dead (the life table's heal).
-  dead: { ...TAKES, refill: true, rest: true },
+  // A dead hunter gets nothing from a rest or a Clear (the owner, Nov 21: "Youre dead. You need to be ressed."; the lead's
+  // ruling of Nov 22): both refused, nothing changes. Whether a dead hunter is refilled on a level-up still waits on
+  // the owner (SMX-rules-1.2); taken today, the life staying dead.
+  dead: { ...TAKES, refill: true, rest: false, cleared: false },
 };
 
-/** What an event does to the collapse's latch: `rise` sets it when fatigue reaches the collapse share, `keep` leaves it, `longRest` sets it to whether fatigue is still past the share. */
-export type CollapseMove = 'rise' | 'keep' | 'longRest';
+/** What an event does to the collapse's latch: `rise` sets it when fatigue reaches the collapse share, `keep` leaves it, `recount` sets it to whether fatigue is still past the share. */
+export type CollapseMove = 'rise' | 'keep' | 'recount';
 export const COLLAPSE_MOVES: { readonly [T in OwnType]: (e: Extract<VitalEvent, { type: T }>) => CollapseMove } = {
   mana: () => 'keep',
   spend: () => 'keep',
   fatigue: () => 'rise',
   refill: () => 'keep',
-  rest: e => (e.kind === 'long' ? 'longRest' : 'keep'),
-  // SMX-rules-6.1 waits on the owner: whether fatigue fitted to a lower maximum, at or past the collapse share, collapses
-  // the hunter at once. Today it does not.
-  maxChanged: () => 'keep',
-  // SMX-rules-6.2 waits on the owner: whether a collapse reached in a fight holds once the fight brings fatigue back down
-  // (the fight's row has no collapse). Today every totals that reaches the share latches it.
+  // "exhausted will largely clear" (the owner, Nov 22): a rest lifts Exhausted when the fatigue it leaves is under the share
+  rest: () => 'recount',
+  cleared: () => 'recount',
+  // SMX-rules-6.1: fatigue fitted to a lower maximum, at or past the collapse share, collapses the hunter at once
+  // (the owner, Nov 22: "Yes").
+  maxChanged: () => 'rise',
+  // SMX-rules-6.2: a hunter who reaches the collapse share in a fight is collapsed (the owner, Nov 22: "Yes"), and stays
+  // so when the fight brings fatigue back down. The fight's own row has no collapse yet (notes-9-rulings-1122.md).
   fightTotals: () => 'rise',
 };
 const collapsedAfter = (move: CollapseMove, was: boolean, fatigue: number, m: Maxima, R: Pick<Rules, 'fatigue'>): boolean =>
   move === 'keep' ? was : move === 'rise' ? was || fatiguePast(fatigue, m, R.fatigue.collapseAt) : fatiguePast(fatigue, m, R.fatigue.collapseAt);
+/** The share `share` of `n`, rounded up: what a rest gives back or takes off. */
+const shareOf = (n: number, share: number): number => Math.ceil(n * share);
 
 /**
  * The life and mana a refill leaves: HP healed to the maximum through the life machine (the dead stay dead), mana
@@ -191,18 +198,17 @@ const CELLS: { readonly [T in OwnType]: Cell<T> } = {
   spend: (v, e, m) => { const n = Math.max(0, whole(e.mana)); return manaOf(v, m) < n ? refuse('mana') : { ...v, mana: manaOf(v, m) - n }; },
   fatigue: (v, e, m) => ({ ...v, fatigue: clamp(v.fatigue + whole(e.delta), 0, fatigueCap(m)) }),
   refill: (v, _e, m) => ({ ...v, ...refilled(v, m) }),
-  // A short or long rest: the rules' share of max HP and mana back, and the rules' share of the fatigue capacity off.
-  // Only a long rest gives back the uses of what is limited to n a rest (a "per day" in the sheet is per long rest).
-  rest: (v, e, m, R) => {
-    const r = R.rest[e.kind];
-    return {
-      ...v,
-      life: lifeAfter(v.life, { type: 'heal', amount: Math.ceil(m.hpMax * r.hpPct / 100) }, m.hpMax),
-      mana: clamp(manaOf(v, m) + Math.ceil(m.manaMax * r.mpPct / 100), 0, manaCap(m)),
-      fatigue: clamp(v.fatigue - Math.ceil(m.fatigueMax * r.fatigue / 100), 0, fatigueCap(m)),
-      used: e.kind === 'long' ? {} : v.used,
-    };
-  },
+  // A rest: the rules' share of max HP and of max mana back, never past the maximum, and the rules' share of the fatigue
+  // held off. The uses limited to n a gate stay spent: a Clear gives them back.
+  rest: (v, _e, m, R) => ({
+    ...v,
+    life: lifeAfter(v.life, { type: 'heal', amount: shareOf(m.hpMax, R.rest.hp) }, m.hpMax),
+    mana: clamp(manaOf(v, m) + shareOf(m.manaMax, R.rest.mana), 0, manaCap(m)),
+    fatigue: clamp(v.fatigue - shareOf(v.fatigue, R.rest.fatigue), 0, fatigueCap(m)),
+  }),
+  // A gate's Clear (the owner, Nov 22: "after a dungeon clear they should get everything back"): HP and mana full, no
+  // fatigue, every use limited to n a gate back. The dead get nothing (`VITAL_TABLE`).
+  cleared: (v, _e, m) => ({ ...v, ...refilled(v, m), fatigue: 0, used: {} }),
   maxChanged: (v, _e, m) => ({ ...v, life: lifeAfter(v.life, { type: 'maxChanged' }, m.hpMax), mana: manaOf(v, m), fatigue: clamp(v.fatigue, 0, fatigueCap(m)) }),
   fightTotals: (v, e, m) => ({
     ...v, life: lifeAfter(e.life, { type: 'maxChanged' }, m.hpMax), mana: clamp(whole(e.mana), 0, manaCap(m)), fatigue: clamp(whole(e.fatigue), 0, fatigueCap(m)),
@@ -235,8 +241,6 @@ export function vitalStep(v: Vitals, e: VitalEvent, m: Maxima, R: VitalRules): V
  * starter.ts's pregens, which hold no rules here. Unchanged where the table refuses. tests/vitals.test.ts holds it equal.
  */
 export const refill = (v: Vitals, m: Maxima): Vitals => (VITAL_TABLE[v.life.at].refill ? { ...fieldsOf(v), ...refilled(v, m) } : fieldsOf(v));
-/** A short or long rest (`vitalStep`'s `rest`); unchanged where the table refuses. */
-export const rest = (v: Vitals, kind: 'short' | 'long', m: Maxima, R: VitalRules): Vitals => { const x = vitalStep(v, { type: 'rest', kind }, m, R); return isRefused(x) ? fieldsOf(v) : x; };
 
 /**
  * What a change of fatigue crossed, for the words a player reads: `collapsed` when it collapsed the hunter, `high` when
@@ -267,7 +271,7 @@ export const WAYS_BACK = 'The GM\'s Revive or a Resurrection Crystal';
 /** The toast when a change takes a hunter's HP to 0. */
 export const DIED_WORDS = `HP has reached 0. You are dead. ${WAYS_BACK} brings you back.`;
 
-/** The uses of `id` spent this rest: the count the fight writes back (`vitals`), after each limited use resolves. */
+/** The uses of `id` spent this gate: the count the fight writes back (`vitals`), after each limited use resolves. */
 export const usedOf = (v: Pick<Vitals, 'used'>, id: AbilityId): number => v.used[id] ?? 0;
 
 // ── the boundary ──

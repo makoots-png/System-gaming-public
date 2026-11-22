@@ -1,7 +1,7 @@
 // counts.ts: what a feat counts, and the one step that moves a count by a fact (feature 1's notes section 5.6). Pure.
 // A count is one fact kind, up to `TESTS_MAX` tests of its fields (all must hold), what it measures (each fact, the sum
 // of a numeric field, the different values of a field, a field's highest value) and its window: ever, in a row (a fact
-// of its kind that fails its tests starts it again), one session, one day, or between two long rests (a new window
+// of its kind that fails its tests starts it again), one session, one day, or between two rests (a new window
 // starts the count again). The tests name a kind's fields as `FACT_FIELDS` lists them, so the parser refuses a test of a
 // field its kind lacks: dropping it would widen what the count counts ("beasts" becoming "any foe").
 import { RANKS, rankIdx } from '../rules.ts';
@@ -9,7 +9,7 @@ import { FACT_FIELDS } from './facts.ts';
 import type { Fact, FactKind, FactStamp, FieldSpec } from './facts.ts';
 
 export const WITHINS = ['ever', 'row', 'session', 'day', 'rest'] as const;
-/** A count's window: its whole life, an unbroken row, one session, one day, between two long rests. */
+/** A count's window: its whole life, an unbroken row, one session, one day, between two rests. */
 export type Within = (typeof WITHINS)[number];
 export const TEST_OPS = ['>=', '<=', '='] as const;
 export type TestOp = (typeof TEST_OPS)[number];
@@ -25,13 +25,13 @@ export const NO_COUNT: Counted = { n: 0, mark: '' };
 /** At most this many tests a count; a count's number past this is junk. */
 export const TESTS_MAX = 4, COUNT_MAX = 1e9, VALS_MAX = 200;
 
-/** The mark of the window a fact counts in: none for ever and a row, else its session, its day, or the long rests before it. */
-export function markOf(within: Within, stamp: FactStamp, longRests: number): string {
+/** The mark of the window a fact counts in: none for ever and a row, else its session, its day, or the rests before it. */
+export function markOf(within: Within, stamp: FactStamp, rests: number): string {
   switch (within) {
     case 'ever': case 'row': return '';
     case 'session': return `s${stamp.session}`;
     case 'day': return stamp.day;
-    case 'rest': return `r${longRests}`;
+    case 'rest': return `r${rests}`;
   }
 }
 

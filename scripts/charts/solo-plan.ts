@@ -36,7 +36,7 @@ export const soloPlanChart = machine<Run, SoloGateFound>({
   kindsOf: s => [s.at === 'arrived' ? 'arrived' : s.cell],
   views: [{
     title: 'What the GM\'s phone does with a run',
-    note: 'The table is asked when the run arrives and again inside its one write (`soloTaken`), which is refused (`changed`) when the plan no longer holds. A paid run is the gate\'s Clear for a party of one, paid at once (ruling SMX-gates-2.3 waits). A gate the GM took out of solo runs while the run played still pays a won run (ruling SMX-gates-2.2 waits; ruled the other way, its won cell is a refusal). A lost or stalled run is noted whatever the gate. The player\'s phone hears the answer as `soloAnswer`; a run nobody answers waits (`soloWait`).',
+    note: 'The table is asked when the run arrives and again inside its one write (`soloTaken`), which is refused (`changed`) when the plan no longer holds. A paid run is the gate\'s Clear for a party of one, paid at once (ruling SMX-gates-2.3 waits). A gate the GM took out of solo runs while the run played still pays a won run: the run counts (the owner\'s ruling of Nov 22, SMX-gates-2.2). A lost or stalled run is noted whatever the gate. The player\'s phone hears the answer as `soloAnswer`; a run nobody answers waits (`soloWait`).',
     hides: '',
     state: s => (s.at === 'arrived' ? `A ${s.outcome} run arrives` : CELL_WORDS[s.cell]),
     step: (e, _from, to) => (to.at === 'planned' && to.cell === 'report' ? 'whatever its gate' : FOUND_WORDS[e]),

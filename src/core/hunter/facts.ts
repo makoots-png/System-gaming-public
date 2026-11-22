@@ -85,7 +85,7 @@ export type Fact =
   /** A purchase or a sale at the shop (inventory.ts `buy`, `sell`): the item, its rarity, the gold paid or taken, the gold after. */
   | { readonly kind: 'shop'; readonly act: 'buy' | 'sell'; readonly item: string; readonly rar: Rarity; readonly price: number; readonly goldAfter: number }
   /** A rest (grant.ts `sheetEdit`). */
-  | { readonly kind: 'rest'; readonly long: boolean }
+  | { readonly kind: 'rest' }
   /** A consumable used up outside a fight (use.ts `useItem`). */
   | { readonly kind: 'used'; readonly item: string; readonly rar: Rarity }
   /** A shadow joined this hunter's army (shadows.ts `shadowRises`). */
@@ -167,7 +167,7 @@ export const FACT_FIELDS: { readonly [K in FactKind]: FieldsOf<K> } = {
   shop: {
     act: pick('Act', every<'buy' | 'sell'>()(['buy', 'sell'])), item: text('Item'), rar: pick('Rarity', RARITIES), price: num('Gold', 0, N), goldAfter: num('Gold after', 0, N),
   },
-  rest: { long: flag('A long rest') },
+  rest: {},
   used: { item: text('Item'), rar: pick('Rarity', RARITIES) },
   shadow: { name: text('Shadow') },
 };

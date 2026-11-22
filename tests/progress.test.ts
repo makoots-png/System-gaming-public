@@ -475,17 +475,18 @@ describe('the allocation, a machine: settled, or allocating with points pending 
     ['allocating × the GM\'s edit of the pending stat: confirmed, settled', allocating, { type: 'setStat', stat: 'str', value: 15 }, { at: 'settled', pending: {}, free: 4, spent: 2, stats: { str: 15 } }],
     ['allocating × the GM\'s edit of another stat: the pending points stay', allocating, { type: 'setStat', stat: 'agi', value: 15 }, { at: 'allocating', pending: { str: 2 }, free: 4, stats: { agi: 15 } }],
     ['allocating × starting stats: the pending points are dropped, free again', allocating, { type: 'start', stats: { vit: 14 } }, { at: 'settled', pending: {}, free: 6, stats: { str: 10, vit: 14 } }],
-    // SMX-rules-7.1 waits on the owner: whether points pending are handed back when the level drops. Today they stay.
-    ['allocating × −200 XP (level 3 to 2): the pending points stay (SMX-rules-7.1 waits)', allocating, { type: 'xp', amount: -200 }, { at: 'allocating', pending: { str: 2 }, free: 1, level: 2 }],
-    ['allocating × the GM\'s level 1: the pending points stay, none free (SMX-rules-7.1 waits)', allocating, { type: 'level', level: 1, xp: 0 }, { at: 'allocating', pending: { str: 2 }, free: 0, level: 1 }],
+    // SMX-rules-7.1: the points pending are handed back when the level drops; level 2 holds 3 points, level 1 none
+    ['allocating × −200 XP (level 3 to 2): the pending points are handed back, settled with level 2\'s 3 free (SMX-rules-7.1)', allocating, { type: 'xp', amount: -200 }, { at: 'settled', pending: {}, free: 3, level: 2 }],
+    ['allocating × the GM\'s level 1: the pending points are handed back, none free (SMX-rules-7.1)', allocating, { type: 'level', level: 1, xp: 0 }, { at: 'settled', pending: {}, free: 0, level: 1 }],
+    ['allocating × +300 XP (level 3 to 4): the pending points stay, 3 more free', allocating, { type: 'xp', amount: 300 }, { at: 'allocating', pending: { str: 2 }, free: 7, level: 4 }],
     ['allocating × −3 points: taken from the 4 free', allocating, { type: 'points', n: -3 }, { at: 'allocating', pending: { str: 2 }, free: 1 }],
-    // SMX-rules-7.1 waits on the owner: whether a deduction reaches the points pending. Today it takes only the points free.
-    ['allocating × −10 points: only the 4 free are taken, the pending points stay (SMX-rules-7.1 waits)', allocating, { type: 'points', n: -10 }, { at: 'allocating', pending: { str: 2 }, free: 0 }],
+    // unruled (SMX-rules-7.1's second half): whether a deduction reaches the points pending. Today it takes only the points free.
+    ['allocating × −10 points: only the 4 free are taken, the pending points stay', allocating, { type: 'points', n: -10 }, { at: 'allocating', pending: { str: 2 }, free: 0 }],
     ['allocating × the GM\'s points set to 9: the pending points stay', allocating, { type: 'setPoints', n: 9 }, { at: 'allocating', pending: { str: 2 }, free: 9 }],
     ['allocating × the GM\'s points set to no number: refused', allocating, { type: 'setPoints', n: Infinity }, no('not-a-number')],
     // a raising at level 3 takes ceil(3 / 30) = 1 level, and level 3's 3 points with it (ruling 9)
     ['settled × a raising (level 3): one level lost, its 3 points with it', settled, { type: 'revived' }, { at: 'settled', pending: {}, free: 3, level: 2 }],
-    ['allocating × a raising (level 3 to 2): the pending points stay, as for any level lost (SMX-rules-7.1 waits)', allocating, { type: 'revived' }, { at: 'allocating', pending: { str: 2 }, free: 1, level: 2 }],
+    ['allocating × a raising (level 3 to 2): the pending points are handed back, as for any level lost (SMX-rules-7.1)', allocating, { type: 'revived' }, { at: 'settled', pending: {}, free: 3, level: 2 }],
   ];
 
   test('a hunter with no point pending is settled; with any, allocating, holding them', () => {
@@ -513,14 +514,12 @@ describe('the allocation, a machine: settled, or allocating with points pending 
     expect(types.flatMap(t => (['settled', 'allocating'] as const).map(s => `${s} ${t}`)).filter(k => !seen.has(k))).toEqual([]);
   });
 
-  test('SMX-rules-7.1 waits: after a level drop, a pending point taken back pays what is owed and does not show as free', () => {
-    // Level 2 holds 3; all 3 pending on Strength. At level 1 the hunter holds 0 and owes the 3 pending.
+  test('SMX-rules-7.1: after a level drop the hunter owes no point it had not confirmed, and Strength is back to its confirmed 10', () => {
+    // Level 2 holds 3; all 3 pending on Strength. At level 1 the hunter holds 0, and the 3 pending are handed back.
     const h: Allocating = { ...at({ level: 2, peakLevel: 2 }), stats: { ...BASE }, pending: { str: 3 } };
     const dropped = atLevel(h, 1, 0, R);
-    expect(dropped.pending).toEqual({ str: 3 });
-    const back = ok(lower(dropped, 'str', 'player'));
-    expect(back.pending).toEqual({ str: 2 });
-    expect(available(back, R)).toBe(0);
+    expect([dropped.pending, available(dropped, R), allocated(dropped).str]).toEqual([{}, 0, BASE.str]);
+    expect(lower(dropped, 'str', 'player')).toEqual({ ok: false, why: 'confirmed' });
   });
 });
 

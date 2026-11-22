@@ -9,7 +9,7 @@
 //   recorded --held--> waiting  (stamped with this write's moment: the moment it happened)
 //   recorded --free--> taken    (with this write's stamp)
 //   waiting  --held--> waiting  (as it was)
-//   waiting  --free--> taken    (with the stamp of the write that frees it, as today: SMX-rules-9.1 waits on the day ruling)
+//   waiting  --free--> taken    (with the stamp of the write that frees it: the day the fight ended, SMX-rules-9.1)
 // A taken fact is folded, kept and counted, oldest first. On a player's phone the GM's fight holds a hunter through the
 // room's fight doc, which is not in the save: sync.ts runs one write when that doc lets a hunter with a waiting inbox go
 // (`released`).
@@ -68,9 +68,8 @@ export const INBOX: { readonly [S in InboxAt]: InboxRow<S extends 'waiting' ? Ke
   },
   waiting: {
     held: f => f,
-    // SMX-rules-9.1 waits on the owner's day ruling: today a waiting fact is taken with the write that frees it, so a fight
-    // held over midnight counts its facts in the next day. The ruling "the day it happened" is
-    // `f => ({ at: f.at, day: f.day, session: f.session })` here.
+    // SMX-rules-9.1: a waiting fact is taken with the write that frees it, so a fight held over midnight counts its facts
+    // in the day the fight ended (the owner, Nov 22: "Count for the day the fight ended.")
     free: (_f, now) => now,
   },
 };
@@ -111,7 +110,7 @@ function noticeHunter(save: Save, hid: HunterId, c: NoticeCtx, now: FactStamp): 
       const was = (feats ?? ch.feats)[key] ?? startOf(def);
       if (was.at === 'earned') continue;
       const from: Counted = { n: was.n, mark: was.mark, ...(was.vals ? { vals: was.vals } : {}) };
-      const move = countStep(from, f, def.rule, markOf(def.rule.within, stamp, ch.tally.longRests));
+      const move = countStep(from, f, def.rule, markOf(def.rule.within, stamp, ch.tally.rests));
       if (!move) continue;
       const also = (): boolean => def.rule.also.every(t => stateHolds(t, { ...h, chronicle: ch }));
       const ev: FeatEvent = move.to === 'broke' ? { type: 'broke', count: move.count } : move.to === 'moved' ? { type: 'counted', count: move.count, also: also() } : { type: 'again', count: from, also: also() };
@@ -154,7 +153,7 @@ function countQuests(save: Save, hid: HunterId, f: Fact, stamp: FactStamp, c: No
     let changed = false;
     const objectives = q.objectives.map(o => {
       if (!o.count) return o;
-      const r = objectiveStep({ target: o.target, progress: o.progress, count: o.count }, f, markOf(o.count.rule.within, stamp, h.chronicle.tally.longRests));
+      const r = objectiveStep({ target: o.target, progress: o.progress, count: o.count }, f, markOf(o.count.rule.within, stamp, h.chronicle.tally.rests));
       if (!r) return o;
       changed = true;
       return { ...o, progress: r.progress, count: r.count };

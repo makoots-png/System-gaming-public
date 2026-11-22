@@ -51,22 +51,25 @@ describe('the rank, a machine: where it stands against the rank the level earns 
   // The shipped rules: rank D from level 10, A from level 50 (RULES.rankLevels), read here so a change to them moves
   // the cases with it.
   const D = RULES.rankLevels.D, A = RULES.rankLevels.A;
-  const ranked = (rank: Rank, level: number): Hunter => ({ ...hunter(), rank, level });
-  const follows = () => ranked('E', 1), behind = () => ranked('E', D), above = () => ranked('A', 1);
+  const ranked = (rank: Rank, level: number, rankBy: Hunter['rankBy'] = 'level'): Hunter => ({ ...hunter(), rank, level, rankBy });
+  // `above` is a rank kept from levels now lost (the level's); `aboveByHand` the GM's, set by hand
+  const follows = () => ranked('E', 1), behind = () => ranked('E', D), above = () => ranked('A', 1), aboveByHand = () => ranked('A', 1, 'gm');
   const facts = (h: Hunter) => h.chronicle.inbox.filter(f => f.kind === 'rank');
-  type Row = [name: string, from: () => Hunter, event: ProgressRankEvent, after: { rank: Rank; at: ProgressRank['at'] } | Refused];
+  type Row = [name: string, from: () => Hunter, event: ProgressRankEvent, after: { rank: Rank; at: ProgressRank['at']; by: Hunter['rankBy'] } | Refused];
 
   const ROWS: Row[] = [
     ['follows × re-evaluate: refused, the level earns no higher rank', follows, { type: 'reevaluate' }, { ok: false, why: 'not-eligible' }],
-    ['follows × the GM sets B: rank B, above its level', follows, { type: 'set', rank: 'B' }, { rank: 'B', at: 'above' }],
-    ['follows × the level moved: the rank stays', follows, { type: 'levelMoved' }, { rank: 'E', at: 'follows' }],
-    ['behind × re-evaluate: the rank its level earns', behind, { type: 'reevaluate' }, { rank: 'D', at: 'follows' }],
-    ['behind × the GM sets C: rank C', behind, { type: 'set', rank: 'C' }, { rank: 'C', at: 'above' }],
-    ['behind × the level moved: the rank stays, re-evaluation still offered', behind, { type: 'levelMoved' }, { rank: 'E', at: 'behind' }],
+    ['follows × the GM sets B: rank B, above its level, set by hand', follows, { type: 'set', rank: 'B' }, { rank: 'B', at: 'above', by: 'gm' }],
+    ['follows × the level moved: the rank stays', follows, { type: 'levelMoved' }, { rank: 'E', at: 'follows', by: 'level' }],
+    ['behind × re-evaluate: the rank its level earns', behind, { type: 'reevaluate' }, { rank: 'D', at: 'follows', by: 'level' }],
+    ['behind × the GM sets C: rank C, set by hand', behind, { type: 'set', rank: 'C' }, { rank: 'C', at: 'above', by: 'gm' }],
+    ['behind × the level moved: the rank stays, re-evaluation still offered', behind, { type: 'levelMoved' }, { rank: 'E', at: 'behind', by: 'level' }],
     ['above × re-evaluate: refused, the level earns a lower rank', above, { type: 'reevaluate' }, { ok: false, why: 'not-eligible' }],
-    ['above × the GM sets E: the rank its level earns', above, { type: 'set', rank: 'E' }, { rank: 'E', at: 'follows' }],
-    // SMX-rules-7.2 waits on the owner: whether the rank follows a level lost unless the GM marked it. Today it stays.
-    ['above × the level moved: the rank stays (SMX-rules-7.2 waits)', above, { type: 'levelMoved' }, { rank: 'A', at: 'above' }],
+    ['above × the GM sets E: the rank its level earns, set by hand', above, { type: 'set', rank: 'E' }, { rank: 'E', at: 'follows', by: 'gm' }],
+    // SMX-rules-7.2: the rank follows a level lost unless the GM set it by hand (the owner, Nov 22: "Yes")
+    ['above, the level\'s × the level moved: the rank its level earns (SMX-rules-7.2)', above, { type: 'levelMoved' }, { rank: 'E', at: 'follows', by: 'level' }],
+    ['above, set by hand × the level moved: the rank stays (SMX-rules-7.2)', aboveByHand, { type: 'levelMoved' }, { rank: 'A', at: 'above', by: 'gm' }],
+    ['above, set by hand × re-evaluate: refused', aboveByHand, { type: 'reevaluate' }, { ok: false, why: 'not-eligible' }],
   ];
 
   test('the standing is read from the rank and the level: follows, behind (with the rank it earns) or above', () => {
@@ -82,6 +85,7 @@ describe('the rank, a machine: where it stands against the rank the level earns 
       const next = ok(got);
       expect(next.rank).toBe(after.rank);
       expect(rankStanding(next, RULES).at).toBe(after.at);
+      expect(next.rankBy).toBe(after.by);
       expect(facts(next), 'a new rank is a fact of the chronicle, an unmoved one is not').toEqual(after.rank === h.rank ? [] : [{ kind: 'rank', rank: after.rank }]);
     });
   }
@@ -99,12 +103,12 @@ describe('the rank, a machine: where it stands against the rank the level earns 
     for (const from of [follows, behind, above]) expect(ok(rankStep(from(), { type: 'set', rank: 'Z' }, RULES))).toEqual(from());
   });
 
-  test('SMX-rules-7.2 waits: a rank A hunter set from level 50 to 1 keeps rank A, and re-evaluation is refused', () => {
-    const h = atLevel(ranked('A', A), 1, 0, RULES);
-    expect(h.level).toBe(1);
-    expect(h.rank).toBe('A');
-    expect(rankStanding(h, RULES)).toEqual({ at: 'above', earns: 'E' });
-    expect(reevaluate(h, RULES)).toEqual({ ok: false, why: 'not-eligible' });
+  test('SMX-rules-7.2: a rank A hunter taken from level 50 to 1 by the GM\'s level edit is rank E; one whose rank the GM set by hand keeps rank A', () => {
+    const lost = levelled(A, atLevel(ranked('A', A), 1, 0, RULES), { at: '2026-01-01T00:00:00.000Z', today: day('2026-01-01'), R: RULES }, p => saveId(p, 1)).hunter;
+    expect([lost.level, lost.rank, rankStanding(lost, RULES)]).toEqual([1, 'E', { at: 'follows' }]);
+    const kept = levelled(A, atLevel(setRank(ranked('A', A), 'A'), 1, 0, RULES), { at: '2026-01-01T00:00:00.000Z', today: day('2026-01-01'), R: RULES }, p => saveId(p, 1)).hunter;
+    expect([kept.level, kept.rank, rankStanding(kept, RULES)]).toEqual([1, 'A', { at: 'above', earns: 'E' }]);
+    expect(reevaluate(kept, RULES)).toEqual({ ok: false, why: 'not-eligible' });
   });
 });
 

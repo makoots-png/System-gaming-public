@@ -105,16 +105,23 @@ export type Shadow = {
 };
 export type Daily = { streak: number; lastCompleteKey: DayKey | null; lastCheckedKey: DayKey | null };
 export type Build = { path: string | null; picks: (0 | 1)[] };
+/** Who set a hunter's rank: its level (`level`: at the start, or by Re-evaluate) or the GM by hand (`gm`). record.ts `rankStep` writes it. */
+export const RANK_BY = ['level', 'gm'] as const;
+export type RankBy = (typeof RANK_BY)[number];
 /**
  * A hunter. Its sheet (max HP, mana, speed, armor and the rest) is worked out from these fields by
  * src/core/hunter/sheet.ts `hunterSheet`. `hpAdj` and `manaAdj` are the GM's edits of max HP and max mana.
  */
 export type Hunter = Progress & Vitals & {
-  id: HunterId; name: string; /** The hunter's job, or null for none. */ job: string | null; rank: Rank; gold: number; stats: Stats;
+  id: HunterId; name: string; /** The hunter's job, or null for none. */ job: string | null; rank: Rank;
+  /** Who set the rank: a rank set by the GM by hand stays when levels are lost (SMX-rules-7.2). */
+  rankBy: RankBy; gold: number; stats: Stats;
   hpAdj: number; manaAdj: number; conditions: Condition[];
   titleId: TitleId | null; titles: Title[]; quests: Quest[]; skills: Skill[]; items: Item[]; equipped: Record<Slot, ItemId | null>;
   shadows: Shadow[]; daily: Daily; penalty: Penalty | null; jobChain: JobChain | null; notes: string; updatedAt: string;
   emblem: string; color: string; loadouts: Loadout[]; build: Build; boons: Boon[];
+  /** The rests taken since a gate last ended for it: src/core/hunter/rests.ts. Only grant.ts `sheetEdit` changes it. */
+  restsTaken: number;
   /** Its personal gates, the System's, and their clock: src/core/gates/personal.ts and solo.ts. Only their functions change them. */
   solo: Solo;
   /** What the System remembers of it (its facts, kept and waiting, and its lifetime numbers): src/core/hunter/chronicle.ts. Only `record` and `noticed` change it. */
@@ -142,11 +149,11 @@ export const newShadow = (): Shadow => ({
 export const newHunter = (R: Rules = BASE_RULES): Hunter => {
   const stats = newStats(R);
   const h: Hunter = {
-    ...newProgress(), ...newVitals({ hpMax: 1, manaMax: 0, fatigueMax: 0 }), id: saveId('h', 1), name: 'Hunter', job: null, rank: 'E',
+    ...newProgress(), ...newVitals({ hpMax: 1, manaMax: 0, fatigueMax: 0 }), id: saveId('h', 1), name: 'Hunter', job: null, rank: 'E', rankBy: 'level',
     gold: 0, stats, hpAdj: 0, manaAdj: 0, conditions: [], titleId: null, titles: [],
     quests: [], skills: [], items: [], equipped: newEquipped(), shadows: [],
     daily: { streak: 0, lastCompleteKey: null, lastCheckedKey: null }, penalty: null, jobChain: null, notes: '', updatedAt: '',
-    emblem: '', color: '', loadouts: [], build: { path: null, picks: [] }, boons: [], solo: newSolo(), chronicle: newChronicle(),
+    emblem: '', color: '', loadouts: [], build: { path: null, picks: [] }, boons: [], restsTaken: 0, solo: newSolo(), chronicle: newChronicle(),
   };
   return Object.assign(h, newVitals(hunterSheet(h, R).sheet));
 };
@@ -168,7 +175,7 @@ const conditions = (R: Rules, value: unknown[]): Condition[] =>
 /** Bound for junk only: a level holds `pointsPerLevel` points, 3 by default, so MAX_LEVEL holds 30,006 with the creation points. */
 const POINTS_MAX = 1e6;
 /**
- * Life, mana, fatigue, collapse and the uses spent this rest, within bounds for junk only: the maxima come from the sheet,
+ * Life, mana, fatigue, collapse, the uses spent this gate and the rests taken in it, within bounds for junk only: the maxima come from the sheet,
  * and a GM's rule change never prunes a hunter. A life that does not read is up at the full HP of the hunter's sheet, so
  * this runs last. A `used` that does not read is none spent (`parseUsed`).
  */
@@ -176,6 +183,7 @@ function fixVitals(h: Hunter, R: Rules): void {
   h.life = parseLife(h.life, VITAL_MAX) ?? newVitals(hunterSheet(h, R).sheet).life;
   h.mana = int(h.mana, 0, 0, VITAL_MAX); h.fatigue = int(h.fatigue, 0, 0, VITAL_MAX);
   h.used = parseUsed(h.used, R);
+  h.restsTaken = int(h.restsTaken, 0, 0, VITAL_MAX);
 }
 
 /** The default a stored hunter is filled from. */
@@ -188,7 +196,7 @@ export function fixHunter(saveRun: RepairRun, h: Hunter): void {
   const run: RepairRun = { ...saveRun, owner: h };
   const { R } = run;
   h.name = h.name.slice(0, 60) || 'Hunter'; h.job = jobOf(h.job);
-  h.rank = oneOf(h.rank, RANKS, 'E');
+  h.rank = oneOf(h.rank, RANKS, 'E'); h.rankBy = oneOf(h.rankBy, RANK_BY, 'level');
   h.level = levelOf(h.level); h.xp = Math.max(0, h.xp); h.gold = Math.max(0, h.gold);
   h.peakLevel = Math.max(h.level, levelOf(h.peakLevel));
   h.bonusPoints = int(h.bonusPoints, 0, -POINTS_MAX, POINTS_MAX); h.spent = int(h.spent, 0, 0, POINTS_MAX);

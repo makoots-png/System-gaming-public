@@ -3,7 +3,7 @@
 // A change to the active title or a title's bonus changes the sheet: chain `fitted` (sheet.ts) after it.
 // Ids and times are arguments: the store reserves an id (`store.id('t')`), the view reads the clock.
 import { jobOf } from './hunter.ts';
-import type { Boon, Rank, Title } from '../save.ts';
+import type { Boon, Rank, RankBy, Title } from '../save.ts';
 import type { Powers } from '../registry/powers.ts';
 import { oneOf } from '../one-of.ts';
 import { titleKey } from '../ids.ts';
@@ -14,13 +14,16 @@ import type { Refused } from '../save-step.ts';
 import { record } from './chronicle.ts';
 import type { Chronicle } from './chronicle.ts';
 
-type Named = { name: string; job: string | null; rank: Rank; level: number };
+type Named = { name: string; job: string | null; rank: Rank; rankBy: RankBy; level: number };
 type Titled = { titles: Title[]; titleId: string | null };
 type Boons = { boons: Boon[] };
 /** A hunter's chronicle: a new rank and a title given are facts of it (chronicle.ts `record`). */
 type Chronicled = { readonly chronicle: Chronicle };
-/** `h` with its rank set to `rank`, and the rank's fact when it moved. */
-const ranked = <H extends Named & Chronicled>(h: H, rank: Rank): H => (rank === h.rank ? h : record({ ...h, rank }, { kind: 'rank', rank }));
+/** `h` with its rank set to `rank` by `by`, and the rank's fact when it moved. */
+const ranked = <H extends Named & Chronicled>(h: H, rank: Rank, by: RankBy): H => {
+  const marked = by === h.rankBy ? h : { ...h, rankBy: by };
+  return rank === h.rank ? marked : record({ ...marked, rank }, { kind: 'rank', rank });
+};
 
 /** A name as stored: spaces run together, at most 60 characters. */
 export const cleanName = (v: unknown): string => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, 60);
@@ -35,15 +38,18 @@ export function setJob<H extends Named>(h: H, job: string | null): H {
   return { ...h, job: jobOf(job) };
 }
 
-// ── the rank, a machine (`RANK_TABLE`, `rankStep`). Only the rank is stored; where it stands is read with the level:
+// ── the rank, a machine (`RANK_TABLE`, `rankStep`). Only the rank and who set it (`rankBy`) are stored; where it stands
+// is read with the level:
 //
-//   follows --the GM sets another rank--------------> above or behind
+//   follows --the GM sets another rank--------------> above or behind, set by hand
 //   follows --re-evaluate------------------------------> refused `not-eligible`
 //   behind  --re-evaluate------------------------------> follows (the rank the level earns, a fact of the chronicle)
-//   behind  --the GM sets a rank-----------------------> where that rank stands
+//   behind  --the GM sets a rank-----------------------> where that rank stands, set by hand
 //   above   --re-evaluate------------------------------> refused `not-eligible`
-//   above   --the GM sets a rank-----------------------> where that rank stands
-//   any     --the level moved--------------------------> the rank kept (SMX-rules-7.2 waits for `above`)
+//   above   --the GM sets a rank-----------------------> where that rank stands, set by hand
+//   above   --the level moved, the rank the level's----> follows (SMX-rules-7.2)
+//   above   --the level moved, the rank set by hand----> the rank kept
+//   follows, behind --the level moved------------------> the rank kept (a rank behind waits for Re-evaluate)
 
 /**
  * Where a hunter's rank stands against the rank its level earns (rules.ts `rankForLevel`): the same (`follows`), below
@@ -58,31 +64,31 @@ export const rankStanding = (h: Pick<Named, 'rank' | 'level'>, R: Rules): Progre
 export type ProgressRankEvent = { readonly type: 'reevaluate' } | { readonly type: 'set'; readonly rank: unknown } | { readonly type: 'levelMoved' };
 /**
  * What an event does to the rank: to the rank the level earns, to the GM's choice, kept, or refused (null). Every state
- * takes the GM's choice (`set` is `chosen` in each row by its type), so a GM's set reads no rules.
+ * takes the GM's choice (`set` is `chosen` in each row by its type), so a GM's set reads no rules. A moved level's move
+ * is read by who set the rank (`rankBy`).
  */
 type RankMove = 'earned' | 'kept' | null;
-type RankRow = { readonly reevaluate: RankMove; readonly levelMoved: RankMove; readonly set: 'chosen' };
+type RankRow = { readonly reevaluate: RankMove; readonly levelMoved: { readonly [B in RankBy]: RankMove }; readonly set: 'chosen' };
 export const RANK_TABLE: { readonly [S in ProgressRank['at']]: RankRow } = {
-  follows: { reevaluate: null, set: 'chosen', levelMoved: 'kept' },
-  behind: { reevaluate: 'earned', set: 'chosen', levelMoved: 'kept' },
-  // SMX-rules-7.2 waits on the owner: whether the rank follows a level lost below its rank's unless the GM marked the rank
-  // as set. Today it is kept, with its check bonus and the path tiers it opened. The ruling needs the GM's mark stored
-  // beside the rank (hunter.ts), since a rank above its level's is today either the GM's or kept after levels lost.
-  above: { reevaluate: null, set: 'chosen', levelMoved: 'kept' },
+  follows: { reevaluate: null, set: 'chosen', levelMoved: { level: 'kept', gm: 'kept' } },
+  behind: { reevaluate: 'earned', set: 'chosen', levelMoved: { level: 'kept', gm: 'kept' } },
+  // SMX-rules-7.2: a level lost below the rank's takes the rank down with it unless the GM set the rank by hand (the owner,
+  // Nov 22: "Yes"). The GM's set is the mark; Re-evaluate gives the rank back to the level.
+  above: { reevaluate: null, set: 'chosen', levelMoved: { level: 'earned', gm: 'kept' } },
 };
 
 /**
- * The hunter after `e` to its rank: the one writer of a hunter's rank. A new rank is a fact of the chronicle; a GM's
- * word that is not a rank keeps the rank. Refused (`not-eligible`) where the table refuses.
+ * The hunter after `e` to its rank: the one writer of a hunter's rank and of who set it. A new rank is a fact of the
+ * chronicle; the GM's choice of a rank marks it set by hand, and a word that is not a rank keeps the rank and the mark. Refused (`not-eligible`) where the table refuses.
  */
 export function rankStep<H extends Named & Chronicled>(h: H, e: Extract<ProgressRankEvent, { type: 'set' }>): H;
 export function rankStep<H extends Named & Chronicled>(h: H, e: ProgressRankEvent, R: Rules): H | Refused<'not-eligible'>;
 export function rankStep<H extends Named & Chronicled>(h: H, e: ProgressRankEvent, R?: Rules): H | Refused<'not-eligible'> {
-  if (e.type === 'set') return ranked(h, oneOf(e.rank, RANKS, h.rank));
+  if (e.type === 'set') { const rank = oneOf(e.rank, RANKS, null); return rank === null ? h : ranked(h, rank, 'gm'); }
   // The overloads pass the rules with every event but `set`.
-  const move = RANK_TABLE[rankStanding(h, R!).at][e.type];
+  const row = RANK_TABLE[rankStanding(h, R!).at], move = e.type === 'levelMoved' ? row.levelMoved[h.rankBy] : row.reevaluate;
   if (move === null) return refuse('not-eligible');
-  return move === 'kept' ? h : ranked(h, rankForLevel(R!, h.level));
+  return move === 'kept' ? h : ranked(h, rankForLevel(R!, h.level), 'level');
 }
 /** The GM's choice of rank; a word that is not a rank keeps the rank. */
 export const setRank = <H extends Named & Chronicled>(h: H, rank: unknown): H => rankStep(h, { type: 'set', rank });

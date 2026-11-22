@@ -77,9 +77,9 @@ const ENTRIES: readonly (readonly [string, FeatDef])[] = [
     { ...newRewards(), title: { ...RULES.titles.find(t => t.key === 'hunts-alone')!, key: 'hunts-alone' } as RewardTitle })],
   // F34
   ['quiet-entry', feat('Quiet Entry', 'NOBODY SAW YOU GO IN', 'Three gates cleared alone.', SHOWN, facts('solo', [WON]), 3, title('Quiet Entry', 'Cleared three gates alone.', { ins: 2 }))],
-  // F35: three won runs between two long rests
-  ['marathoner', feat('Marathoner', 'THREE GATES, NO SLEEP', 'Three gates cleared alone with no long rest between them.', HIDDEN, facts('solo', [WON], 'rest'), 3,
-    title('Marathoner', 'Cleared three gates alone without a long rest.', { vit: 2, hpMax: 10 }))],
+  // F35: three won runs between two rests
+  ['marathoner', feat('Marathoner', 'THREE GATES, NO SLEEP', 'Three gates cleared alone with no rest between them.', HIDDEN, facts('solo', [WON], 'rest'), 3,
+    title('Marathoner', 'Cleared three gates alone without a rest.', { vit: 2, hpMax: 10 }))],
   // F37
   ['in-and-out', feat('In and Out', 'THE GATE BARELY OPENED', 'A gate of your rank or higher cleared alone in three rounds or fewer.', HIDDEN,
     facts('solo', [WON, atMost('rounds', 3), atLeast('above', 0)]), 1, title('In and Out', 'Cleared a gate of your rank or higher alone in three rounds or fewer.', { agi: 2 }))],

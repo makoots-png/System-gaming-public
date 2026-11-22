@@ -43,18 +43,23 @@ export function spawnGate<S extends WorldParts>(save: S, gate: Gate, made: reado
 export type WorldDayEvent = { readonly type: 'moved'; readonly by: number } | { readonly type: 'merged'; readonly day: number };
 /** What changed the world for its gates: the day moved forward or back, another GM phone's world merged in, the GM edited a gate. */
 export type WorldChange = 'forward' | 'back' | 'merged' | 'edited';
-/** What a change does to each gate still open (detected or raiding) on or past its break day: break it, or leave it as it is. */
+/** What a change does to a gate still open on or past its break day: break it, or leave it as it is. */
 export type WorldBreakCheck = 'break' | 'keep';
-/** The break check of each change: the one table every writer of the day or a break day runs (`checkBreaks`). */
-export const BREAK_CHECK: { readonly [C in WorldChange]: WorldBreakCheck } = {
-  forward: 'break',
-  // SMX-gates-7.1 waits on the owner's ruling: "the world day only moves forward, or moving it back reconciles the gates".
-  // Built as the app is today: a move back is taken and leaves every gate as it is, one broken or cleared on a later day too.
-  back: 'keep',
-  // SMX-gates-7.2 waits on the owner's ruling: "a gate past its break day breaks, whatever edit put it there". Built as the
-  // app is today: a merged world or the GM's edit leaves an open gate past its break day open ("Breaks today").
-  merged: 'keep',
-  edited: 'keep',
+/** An open gate: nobody in it (`detected`), or a party in it (`raiding`, entered or fighting). */
+export type OpenGate = Extract<GateStatus, 'detected' | 'raiding'>;
+/**
+ * The break check of each change, by whether anybody is in the gate: the one table every writer of the day or a break
+ * day runs (`checkBreaks`). The owner, Nov 22 (SMX-gates-7.1, 7.2): "Yes can see a worlds day backwards, and no it doesn't
+ * break if someone is in it. If not, yes."
+ */
+export const BREAK_CHECK: { readonly [C in WorldChange]: { readonly [S in OpenGate]: WorldBreakCheck } } = {
+  forward: { detected: 'break', raiding: 'break' },
+  // 7.1: the GM may set the day back; a move back leaves every gate as it is, one broken or cleared on a later day too
+  back: { detected: 'keep', raiding: 'keep' },
+  // 7.2: an edit (the GM's, or another GM phone's world merged in) that leaves a gate past its break day breaks it at
+  // once when nobody is in it, and not while a party is
+  merged: { detected: 'break', raiding: 'keep' },
+  edited: { detected: 'break', raiding: 'keep' },
 };
 
 /**
@@ -68,14 +73,14 @@ export function dayStep(day: number, e: WorldDayEvent): { day: number; change: E
 }
 
 /**
- * The gates after `change` on the save's world day: when its row of `BREAK_CHECK` breaks, each open gate on or past its
- * break day is broken and logged. Answers the gates it broke.
+ * The gates after `change` on the save's world day: each open gate on or past its break day whose cell of `BREAK_CHECK`
+ * (its change, whether anybody is in it) breaks is broken and logged. Answers the gates it broke.
  */
 export function checkBreaks<S extends WorldParts>(save: S, change: WorldChange, stamp: Stamp): { save: S; broke: Gate[] } {
-  if (BREAK_CHECK[change] === 'keep') return { save, broke: [] };
   const day = save.world.day, broke: Gate[] = [];
   let next = save;
   for (const g of save.gates) {
+    if ((g.status !== 'detected' && g.status !== 'raiding') || BREAK_CHECK[change][g.status] === 'keep') continue;
     const r = onGate(next, g.id, { type: 'dayAdvanced', day }, stamp, x => ['DUNGEON BREAK', `${x.rank}-rank gate "${x.name}" has broken on day ${day}.`]);
     if (isRefused(r)) continue;
     next = r;

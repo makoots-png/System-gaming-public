@@ -43,7 +43,7 @@ const SAMPLES: { readonly [K in FactKind]: readonly [FactOf<K>, string] } = {
   roll: [{ kind: 'roll', natural: 20 }, 'Rolled a natural 20 on a check.'],
   coin: [{ kind: 'coin', won: true }, 'Called the coin right.'],
   shop: [{ kind: 'shop', act: 'buy', item: 'Health Potion', rar: 'common', price: 40, goldAfter: 110 }, 'Bought Health Potion for 40 gold, with 110 gold left.'],
-  rest: [{ kind: 'rest', long: true }, 'Took a long rest.'],
+  rest: [{ kind: 'rest' }, 'Took a rest.'],
   used: [{ kind: 'used', item: 'Health Potion', rar: 'common' }, 'Used Health Potion.'],
   shadow: [{ kind: 'shadow', name: 'Wolf' }, 'The shadow Wolf joined the army.'],
 };
@@ -91,7 +91,6 @@ describe('one sentence a kind of fact', () => {
     expect(factLine({ kind: 'chapter', title: 'IT WILL REMEMBER YOUR FACE', line: '' }), 'a window with no line').toBe('A story window: IT WILL REMEMBER YOUR FACE.');
     expect(factLine({ kind: 'coin', won: false })).toBe('Called the coin wrong.');
     expect(factLine({ kind: 'shop', act: 'sell', item: 'Iron Sword', rar: 'common', price: 60, goldAfter: 1170 })).toBe('Sold Iron Sword for 60 gold, with 1,170 gold left.');
-    expect(factLine({ kind: 'rest', long: false })).toBe('Took a short rest.');
   });
 
   test('no line is written for effect: no dash, no semicolon, no exclamation mark, and each ends as a sentence', () => {

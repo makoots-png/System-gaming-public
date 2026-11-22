@@ -15,7 +15,6 @@ import { questIn } from './models/quest-events.ts';
 import { den } from './models/gate-events.ts';
 import type { Granted } from '../src/core/hunter/grant.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
-import { hpOf } from '../src/core/hunter/vitals.ts';
 import { available, levelPoints, pendingTotal } from '../src/core/hunter/progress.ts';
 import { freshSave } from '../src/core/save.ts';
 import type { Hunter, Save } from '../src/core/save.ts';
@@ -425,15 +424,29 @@ describe('a Resurrection Crystal given in a reward, with no code of its own (not
 
 describe('a status put on or taken off the sheet (grant.ts sheetEdit)', () => {
   const WEAK: StatusDef = { label: 'Weakened', desc: '', ops: [{ op: 'stat', key: 'vit', amount: { kind: 'number', value: -20 } }] };
-  test('a status that lowers max HP leaves the stored HP above it, which the sheet shows at the maximum (SMX-rules-1.3, today)', () => {
+  test('a status that lowers max HP brings the stored HP down to the new maximum at once (SMX-rules-1.3)', () => {
     const h = freshSave({ now: new Date(0), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-test') }, { onboarded: true }).hunters[0]!;
     const full = hunterSheet(h, RULES).sheet.hpMax;
     const put = sheetEdit(h, { type: 'put', status: { key: statusKey('weakened'), def: WEAK, rounds: null, source: { id: null, tier: 0 } } }, RULES);
     if (isRefused(put)) throw new Error(put.why);
     const lower = hunterSheet(put, RULES).sheet.hpMax;
     expect(lower).toBeLessThan(full);
-    // whether a status change fits HP to the new maximum at once waits on the owner; today it does not
-    expect(put.life).toEqual({ at: 'up', hp: full });
-    expect(hpOf(put.life, lower), 'the sheet shows the maximum').toBe(lower);
+    expect(put.life).toEqual({ at: 'up', hp: lower });
+    const dropped = sheetEdit(put, { type: 'drop', key: statusKey('weakened') }, RULES);
+    if (isRefused(dropped)) throw new Error(dropped.why);
+    expect(dropped.life, 'taking it off raises the maximum, not the HP').toEqual({ at: 'up', hp: lower });
+  });
+  test('taking off a status that raised max HP brings the HP of a hunter at full down to the old maximum at once (SMX-rules-1.3)', () => {
+    const STRONG: StatusDef = { label: 'Hardy', desc: '', ops: [{ op: 'stat', key: 'vit', amount: { kind: 'number', value: 20 } }] };
+    const h = freshSave({ now: new Date(0), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-test') }, { onboarded: true }).hunters[0]!;
+    const base = hunterSheet(h, RULES).sheet.hpMax;
+    const put = sheetEdit(h, { type: 'put', status: { key: statusKey('hardy'), def: STRONG, rounds: null, source: { id: null, tier: 0 } } }, RULES);
+    if (isRefused(put)) throw new Error(put.why);
+    const high = hunterSheet(put, RULES).sheet.hpMax;
+    expect(high).toBeGreaterThan(base);
+    const full = { ...put, life: { at: 'up' as const, hp: high } };
+    const dropped = sheetEdit(full, { type: 'drop', key: statusKey('hardy') }, RULES);
+    if (isRefused(dropped)) throw new Error(dropped.why);
+    expect(dropped.life).toEqual({ at: 'up', hp: base });
   });
 });

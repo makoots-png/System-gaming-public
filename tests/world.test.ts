@@ -78,25 +78,35 @@ describe('the world day\'s moves (SMX-gates-7)', () => {
   ];
   for (const [what, day, e, to] of rows) test(`on day ${day}, ${what}: ${to ? `day ${to.day}, ${to.change}` : 'the day stays'}`, () => expect(dayStep(day, e)).toEqual(to));
 
-  // The den breaks on day 5; on day 6 it is open past its break day. Each change runs the one check.
-  const past = (): WorldParts => ({ ...world(), world: { day: 6, lastDailyKey: null, session: 0 } });
-  const checks: [WorldChange, string, 'broken' | 'detected'][] = [
-    ['forward', 'a move forward breaks it', 'broken'],
-    ['back', 'SMX-gates-7.1 waits on the owner: a move back leaves it as it is', 'detected'],
-    ['merged', 'SMX-gates-7.2 waits on the owner: a merged world leaves it open', 'detected'],
-    ['edited', 'SMX-gates-7.2 waits on the owner: the GM\'s edit leaves it open', 'detected'],
+  // The den breaks on day 5; on day 6 it is open past its break day, with nobody in it (detected) or a party in it
+  // (raiding). Each change runs the one check. The owner, Nov 22 (SMX-gates-7.1, 7.2): the day may go back, and a gate an
+  // edit leaves past its break day does not break while someone is in it, and breaks at once when nobody is.
+  const past = (status: 'detected' | 'raiding'): WorldParts => ({ ...world(), world: { day: 6, lastDailyKey: null, session: 0 }, gates: [den(status)] });
+  const checks: [WorldChange, 'detected' | 'raiding', string, 'broken' | 'detected' | 'raiding'][] = [
+    ['forward', 'detected', 'a move forward breaks it', 'broken'],
+    ['forward', 'raiding', 'a move forward breaks it', 'broken'],
+    ['back', 'detected', 'a move back leaves it as it is', 'detected'],
+    ['back', 'raiding', 'a move back leaves it as it is', 'raiding'],
+    ['merged', 'detected', 'a merged world breaks it, nobody being in it', 'broken'],
+    ['merged', 'raiding', 'a merged world leaves it open while a party is in it', 'raiding'],
+    ['edited', 'detected', 'the GM\'s edit breaks it, nobody being in it', 'broken'],
+    ['edited', 'raiding', 'the GM\'s edit leaves it open while a party is in it', 'raiding'],
   ];
-  for (const [change, what, status] of checks) {
-    test(`an open gate past its break day, ${change}: ${what}`, () => {
-      const r = checkBreaks(past(), change, stamp);
-      expect([BREAK_CHECK[change], r.save.gates[0]!.status, r.broke.length]).toEqual([status === 'broken' ? 'break' : 'keep', status, status === 'broken' ? 1 : 0]);
+  for (const [change, before, what, status] of checks) {
+    test(`an open gate past its break day, ${before}, ${change}: ${what}`, () => {
+      const r = checkBreaks(past(before), change, stamp);
+      expect([BREAK_CHECK[change][before], r.save.gates[0]!.status, r.broke.length]).toEqual([status === 'broken' ? 'break' : 'keep', status, status === 'broken' ? 1 : 0]);
     });
   }
-  test('as built today: the GM\'s edit of a break day to today and a merged later day leave the gate open (SMX-gates-7.2 waits)', () => {
+  test('the GM\'s edit of a break day to today breaks a gate nobody is in, and a merged later day breaks it too (SMX-gates-7.2)', () => {
     const edited = ok(editGate(world(), 'g-den', { name: 'Goblin Den', rank: 'E', type: 'normal', breakDay: 3, monsters: [], bossId: null, notes: '', mapId: null, status: 'detected', solo: false }, stamp));
-    expect(edited.gates[0]).toMatchObject({ breakDay: 3, status: 'detected' });
+    expect(edited.gates[0]).toMatchObject({ breakDay: 3, status: 'broken' });
     const merged = mergeWorld(world(), { day: 10, gates: [] }, () => null, stamp);
-    expect([merged.world.day, merged.gates[0]!.status]).toEqual([10, 'detected']);
+    expect([merged.world.day, merged.gates[0]!.status]).toEqual([10, 'broken']);
+  });
+  test('the GM\'s edit of a break day to today leaves a gate a party is in open (SMX-gates-7.2)', () => {
+    const edited = ok(editGate({ ...world(), gates: [den('raiding')] }, 'g-den', { name: 'Goblin Den', rank: 'E', type: 'normal', breakDay: 3, monsters: [], bossId: null, notes: '', mapId: null, status: 'raiding', solo: false }, stamp));
+    expect(edited.gates[0]).toMatchObject({ breakDay: 3, status: 'raiding' });
   });
 });
 
@@ -204,7 +214,8 @@ describe('another GM phone\'s world', () => {
       { id: 'g-new', name: 'New', rank: 'C' as const, type: 'red' as const, status: 'detected' as const, breakDay: 9 }] };
     const s = mergeWorld(start, doc, (g, day) => parseGate({ ...g, createdDay: day }), stamp);
     expect(s.world.day).toBe(7);
-    expect(s.gates.map(g => [g.id, g.name, g.status])).toEqual([['g-den', 'Den', 'closed'], ['g-mine', 'Mine', 'detected'], ['g-new', 'New', 'detected']]);
+    // Mine breaks on day 5 and nobody is in it, so the merge that takes the day to 7 breaks it (SMX-gates-7.2)
+    expect(s.gates.map(g => [g.id, g.name, g.status])).toEqual([['g-den', 'Den', 'closed'], ['g-mine', 'Mine', 'broken'], ['g-new', 'New', 'detected']]);
     expect(mergeWorld(start, { day: 1, gates: [] }, () => null, stamp).world.day).toBe(3);
   });
 });

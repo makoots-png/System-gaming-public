@@ -416,11 +416,14 @@ test('A hunter at 0 HP is dead, a heal and a rest do not raise them, and the GM 
     await expect(p.locator('#view-status [data-chips] [data-chip="dead"]')).toHaveCount(1);
   });
 
-  await test.step('healing 5 and a long rest leave the hunter dead at 0 HP', async () => {
+  await test.step('healing 5 leaves the hunter dead at 0 HP, and a rest is refused with the ways back', async () => {
+    const said = await recordToasts(p);
     await p.locator('#view-status [data-hp="5"]').first().tap();
-    await p.locator('#view-status [data-rest="long"]').tap();
+    await p.locator('#view-status [data-rest]').tap();
+    await expect.poll(said).toContain('A dead hunter cannot rest. The GM\'s Revive or a Resurrection Crystal brings you back.');
     await expect(p.locator('#view-status [data-bar="hp"] [data-cur]')).toHaveText('0');
     await expect(panel.locator('[data-life]')).toHaveText('Dead');
+    await expect(p.locator('#view-status [data-rests-left]')).toHaveText(`Rests left this gate: ${RULES.rest.perGate} of ${RULES.rest.perGate}.`);
   });
 
   await test.step('the GM board shows Dead with a Revive button, and Revive brings the hunter up at 1 HP with no status left', async () => {
@@ -437,13 +440,14 @@ test('A hunter at 0 HP is dead, a heal and a rest do not raise them, and the GM 
   });
 });
 
-test('A collapsed hunter stays Exhausted when fatigue drops and after a short rest, until a long rest', async ({ device }) => {
+test('A collapsed hunter stays Exhausted when fatigue drops by hand; a rest takes most of the fatigue off and lifts it, twice a gate', async ({ device }) => {
   const p = (await device('collapsed')).page;
   await onboardGM(p);
   await switchToPlayerMode(p);
   await go(p, 'status');
   const exhausted = p.locator('#view-status [data-chips] [data-chip="exhausted"]');
   const fatigue = p.locator('#view-status [data-bar="ft"] [data-cur]');
+  const left = p.locator('#view-status [data-rests-left]'), n = RULES.rest.perGate;
 
   // Brakk's Vitality is 18 and Iron Skin's 2, so 20: x(20) = 7.41 and the fatigue capacity is 100 + 50 * 7.41 / 47.41
   // = 107.8, 108 (`fatigueBase` 100, `fatigueCap` 50, `half` 40). Collapse is at 100 percent of it (`collapseAt`).
@@ -453,18 +457,30 @@ test('A collapsed hunter stays Exhausted when fatigue drops and after a short re
     await expect(p.locator('#view-status [data-bar="ft"] [data-maxtxt]')).toHaveText('108');
     await expect(exhausted).toHaveCount(1);
     await expect(p.locator('#view-status [data-cond-del="exhausted"]')).toHaveCount(0);
+    await expect(left).toHaveText(`Rests left this gate: ${n} of ${n}.`);
   });
 
-  await test.step('the fatigue Rest button takes fatigue to 0 and a short rest passes, and Exhausted stays', async () => {
-    await p.locator('#view-status [data-ft="rest"]').tap();
-    await expect(fatigue).toHaveText('0');
-    await p.locator('#view-status [data-rest="short"]').tap();
+  await test.step('fatigue down 10 by hand, and Exhausted stays', async () => {
+    await p.locator('#view-status [data-ft="-10"]').tap();
+    await expect(fatigue).toHaveText('98');
     await expect(exhausted).toHaveCount(1);
   });
 
-  await test.step('a long rest ends the collapse', async () => {
-    await p.locator('#view-status [data-rest="long"]').tap();
+  // "exhausted will largely clear" (the owner, Nov 22): a rest takes `RULES.rest.fatigue` of the 98 held off, rounded up
+  await test.step('a rest takes its share of the fatigue off and ends the collapse', async () => {
+    await p.locator('#view-status [data-rest]').tap();
+    await expect(fatigue).toHaveText(String(98 - Math.ceil(98 * RULES.rest.fatigue)));
     await expect(exhausted).toHaveCount(0);
+    await expect(left).toHaveText(`Rests left this gate: ${n - 1} of ${n}.`);
+  });
+
+  await test.step('the rests a gate spent, the next rest is refused with the words that say why', async () => {
+    const said = await recordToasts(p);
+    for (let i = 1; i < n; i++) await p.locator('#view-status [data-rest]').tap();
+    await expect(left).toHaveText(`Rests left this gate: 0 of ${n}.`);
+    await p.locator('#view-status [data-rest]').tap();
+    await expect.poll(said).toContain(`No rest left: a hunter rests ${n} times a gate. Clearing the gate gives everything back.`);
+    await expect(left).toHaveText(`Rests left this gate: 0 of ${n}.`);
   });
 });
 

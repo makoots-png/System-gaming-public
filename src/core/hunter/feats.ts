@@ -11,10 +11,11 @@
 //   hidden --counted [shown at a count, n >= that count]----> shown
 //   hidden --counted [otherwise]----------------------------> hidden (the count kept)
 //   hidden --broke (a row's fact failed its tests)----------> hidden (n 0, no values)
-//   hidden --unlocked (the feat it waits on was earned)-----> `UNLOCKED_TO` by its show rule: shown today
+//   hidden --unlocked (the feat it waits on was earned)-----> `UNLOCKED_TO` by its show rule: shown (SMX-gates-6.2)
 //   shown  --counted [n >= reach and its state tests hold]--> earned
 //   shown  --counted [otherwise], broke, unlocked-----------> shown
-//   hidden, shown --again (a fact that left the count as it was)--> nothing today (`AGAIN`, SMX-gates-6.1)
+//   hidden, shown --again [n >= reach and its state tests hold now]--> earned (`AGAIN`, SMX-gates-6.1)
+//   hidden, shown --again [otherwise]------------------------> as `counted` with the count as it was
 //   earned --anything---------------------------------------> earned (nothing: null in the table)
 import { RANKS, rankIdx } from '../rules.ts';
 import type { Rules } from '../rules.ts';
@@ -77,17 +78,17 @@ const earnedOr = (s: { at: 'hidden' | 'shown' }, e: Extract<FeatEvent, { type: '
 };
 /**
  * Where `unlocked` takes a hidden feat, by its show rule. The notice step sends it only to a feat shown after another
- * (noticed.ts), but each row is named: a feat hidden until earned is shown too, as the app does today. Whether it stays
- * hidden waits on the owner's "never show" ruling (SMX-gates-6.2), and that ruling is the `never` row.
+ * (noticed.ts), but each row is named: a feat hidden until earned is shown too once it is unlocked (SMX-gates-6.2,
+ * The owner, Nov 22: a feat set to never show does not stay hidden after it unlocks).
  */
 export const UNLOCKED_TO: { readonly [A in Show['at']]: 'hidden' | 'shown' } = { start: 'shown', count: 'shown', feat: 'shown', never: 'shown' };
 const unlocked: Cell<'unlocked'> = (s, _e, c) => (UNLOCKED_TO[c.def.show.at] === 'shown' ? { state: { ...s, at: 'shown' }, fx: 'shown' } : { state: s, fx: null });
 /**
- * A fact that left a hidden or shown feat's count as it was moves nothing today, even when the count is full and the
- * feat's state tests now hold (the row full × its tests holding). Whether that fact earns the feat waits on the owner's
- * ruling (SMX-gates-6.1): the ruling is this cell, `earnedOr` in place of null.
+ * A fact that left a hidden or shown feat's count as it was (a value a different-values count saw) earns the feat when
+ * the count is full and its state tests hold now, as a fact that moved it would (SMX-gates-6.1, the owner, Nov 22: a feat
+ * with an extra condition unlocks when the condition becomes true later).
  */
-const AGAIN: Cell<'again'> = null;
+const AGAIN: Cell<'again'> = earnedOr;
 /** Every cell of a feat's machine: a state by an event. */
 export const TABLE: { readonly [S in (typeof FEAT_STATES)[number]]: { readonly [E in FeatEvent['type']]: Cell<E> } } = {
   hidden: {
@@ -246,7 +247,7 @@ export function freeFeatKey(name: string, taken: (k: string) => boolean): FeatKe
 }
 
 /** Each window's words, for the maker's choice and a feat's rule line. */
-export const WITHIN_WORDS: { readonly [W in Within]: string } = { ever: 'Ever', row: 'In a row', session: 'In one session', day: 'In one day', rest: 'Between long rests' };
+export const WITHIN_WORDS: { readonly [W in Within]: string } = { ever: 'Ever', row: 'In a row', session: 'In one session', day: 'In one day', rest: 'Between rests' };
 /** What a measure counts, for the maker's choice. */
 export const MEASURE_WORDS: { readonly [M in CountMeasure['of']]: string } = { facts: 'Each time', sum: 'The total of', distinct: 'Different values of', max: 'The highest' };
 /** Each kind of fact a feat can count, in the maker's words. */

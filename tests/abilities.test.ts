@@ -302,6 +302,16 @@ describe('a consumable used in a fight', () => {
     expect([a.cost.fatigue, a.cost.mana, a.cost.cooldown]).toEqual([0, 0, 0]);
   });
 
+  test('a consumable used in a fight costs time, less than a full turn: half a standard action (the owner, Nov 22)', () => {
+    const potion = itemAbility({ id: iid('p2'), name: 'Health Potion', rar: 'common', effects: [{ op: 'heal', amount: num(30), when: 'use' }] }, RULES)!;
+    const bomb = itemAbility({ id: iid('p3'), name: 'Frost Bomb', rar: 'rare', target: 'other', effects: [{ op: 'damage', type: 'physical', amount: num(6), when: 'use' }] }, RULES)!;
+    for (const a of [potion, bomb]) {
+      expect(a.cost.time).toBeGreaterThan(0);
+      expect(a.cost.time).toBeLessThan(RULES.fight.cost.standard);
+      expect(a.cost.time as number).toBe(RULES.fight.cost.standard / 2);
+    }
+  });
+
   test('drunk in a fight, the shop\'s potions do what their text says to the drinker\'s row', () => {
     const me = hunterBody(10, 0, 40);
     // "Restores 30 HP", "Restores 4 mana", "Removes 25 fatigue" (items.ts), each within the row's maximum

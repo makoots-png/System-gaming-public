@@ -23,7 +23,7 @@ stateDiagram-v2
   s2 --> s1 : a write, no fight holding the hunter
 ```
 
-A fact is recorded in the write of the thing it tells and moved at that write's end. A fight holding the hunter keeps it waiting, stamped with that write's moment; a write in which no fight holds the hunter takes every fact, oldest first. A waiting fact is taken with the stamp of the write that frees it, as the app does today: whether it keeps its own day waits on the owner's ruling (SMX-rules-9.1), and that ruling is the cell `INBOX.waiting.free`.
+A fact is recorded in the write of the thing it tells and moved at that write's end. A fight holding the hunter keeps it waiting, stamped with that write's moment; a write in which no fight holds the hunter takes every fact, oldest first. A waiting fact is taken with the stamp of the write that frees it, so a fight's facts count on the day the fight ended (the owner's ruling of Nov 22, SMX-rules-9.1; the cell `INBOX.waiting.free`).
 
 2 chart states, 3 arrows. No step is hidden.
 
@@ -39,7 +39,7 @@ Where it lives:
 
 ## A fight
 
-The 2,500 random fights of tests/fight-model.test.ts, each of 10 to 49 commands from no fight. The walk found 37531 states and 73570 steps.
+The 2,500 random fights of tests/fight-model.test.ts, each of 10 to 49 commands from no fight. The walk found 37155 states and 73570 steps.
 
 ### A fight, from building it to its summary
 
@@ -101,7 +101,7 @@ stateDiagram-v2
   s4 --> s1 : it acts, moves or goes down
 ```
 
-The chart shows the channel on its user's card. Its charge grows one a turn to its max and stays in Channeling. At its max the user releases it or loses it on a pass. A broken channel waits for the GM's release, which resolves it at once at its halved charge and costs its user no time out of its turn. What a release costs is read from the state it went off from (`released`); a channel broken as its user's own turn starts costs that turn today, a row that waits on a ruling (rules-3.1).
+The chart shows the channel on its user's card. Its charge grows one a turn to its max and stays in Channeling. At its max the user releases it or loses it on a pass. A broken channel waits for the GM's release, which resolves it at once at its halved charge and costs its user no time out of its turn. What a release costs is read from the state it went off from (`released`); a channel broken as its user's own turn starts costs that turn (rules-3.1, the owner, Nov 22).
 
 4 chart states, 7 arrows. No step is hidden.
 
@@ -190,7 +190,7 @@ stateDiagram-v2
   s3 --> s1 : a cure, a dispel or a spend of its last stack takes it whole
 ```
 
-A status counts for every reader of its ops (its wards, shares, stats, dice, a hold) only while it is active: `counts` reads the row `STATUS_COUNTS`, whose `owed` cell is SMX-rules-2.1's ruling, built as not counting. Once fight time passes its end it is owed while its bearer's next settle still has a per-round share to pay or an end to land, and it is gone at that settle; with nothing owed it is gone as time moves. Its count, when it stacks, is the stack machine's, and whether its end lands at a cure is the delayed effect's.
+A status counts for every reader of its ops (its wards, shares, stats, dice, a hold) only while it is active: `counts` reads the row `STATUS_COUNTS`, whose `owed` cell is SMX-rules-2.1's ruling: it does not count (the owner, Nov 22). Once fight time passes its end it is owed while its bearer's next settle still has a per-round share to pay or an end to land, and it is gone at that settle; with nothing owed it is gone as time moves. Its count, when it stacks, is the stack machine's, and whether its end lands at a cure is the delayed effect's.
 
 3 chart states, 10 arrows. No step is hidden.
 
@@ -383,13 +383,13 @@ Where it lives:
 
 ## A limited use
 
-Every state reachable from all uses left, for an ability of 2 uses a fight and one of 2 a long rest, under the 4 events of tests/models/uses-events.ts, breadth first. The walk found 6 states and 24 steps.
+Every state reachable from all uses left, for an ability of 2 uses a fight and one of 2 a gate, under the 4 events of tests/models/uses-events.ts, breadth first. The walk found 6 states and 24 steps.
 
-### An ability with uses a fight or a long rest
+### An ability with uses a fight or a gate
 
 ```mermaid
 ---
-title: An ability with uses a fight or a long rest
+title: An ability with uses a fight or a gate
 ---
 stateDiagram-v2
   state "Two a fight" as s1 {
@@ -403,22 +403,22 @@ stateDiagram-v2
     s4 --> s2 : the fight ends, the next fight starts with all
     s4 --> s2 : the GM sets the uses spent
   }
-  state "Two a long rest" as s5 {
+  state "Two a gate" as s5 {
     state "2 left" as s6
     state "1 left" as s7
     state "Spent" as s8
     s6 --> s7 : a use resolves
     s7 --> s8 : a use resolves
-    s7 --> s6 : a long rest
+    s7 --> s6 : a gate the hunter was paid for is cleared
     s7 --> s6 : the GM sets the uses spent
-    s8 --> s6 : a long rest
+    s8 --> s6 : a gate the hunter was paid for is cleared
     s8 --> s6 : the GM sets the uses spent
   }
   [*] --> s1
   [*] --> s5
 ```
 
-A use counts when it resolves, not when it is refused; a spent one is refused (`noUses`) and changes nothing. One limited a fight starts every fight with all its uses (its row is new). One limited a long rest starts the fight with what its hunter's sheet has spent since the last long rest, and the fight writes its count back with the hunter's vitals; a long rest gives them all back. A "per day" in the sheet reads as per long rest. The GM sets the uses spent with the fight's Adjust.
+A use counts when it resolves, not when it is refused; a spent one is refused (`noUses`) and changes nothing. One limited a fight starts every fight with all its uses (its row is new). One limited a gate starts the fight with what its hunter's sheet has spent since the last Clear it was paid for, and the fight writes its count back with the hunter's vitals; that gate's Clear gives them all back. A rest does not. The GM sets the uses spent with the fight's Adjust.
 
 6 chart states, 12 arrows. No step is hidden.
 
@@ -428,7 +428,7 @@ Where it lives:
 |---|---|
 | The union | `Uses`, `UsesEvent` and `USES_STATES` in `src/core/combat/uses.ts`; the row's count is `Body.used`, the sheet's `Vitals.used` |
 | What changes it | `usesStep(uses, event, gate)` and its `TABLE`; `usesOf` reads a row, `counted` counts a use |
-| Who calls it | rule 3b (`gated`) in `src/core/combat/resolve.ts`; `act` and `adjust` in `src/core/combat/fight.ts`; `writeBack` in `src/core/combat/fight-turn.ts`; a long rest in `src/core/hunter/vitals.ts` |
+| Who calls it | rule 3b (`gated`) in `src/core/combat/resolve.ts`; `act` and `adjust` in `src/core/combat/fight.ts`; `writeBack` in `src/core/combat/fight-turn.ts`; a gate's Clear (`cleared`) in `src/core/hunter/vitals.ts` |
 | The test to copy | `tests/fight.test.ts` ("a limited use"); the walk's events are in `tests/models/uses-events.ts` |
 | The recipe | docs/guide/combat.md, "A price or a gate kind" |
 
@@ -448,7 +448,8 @@ stateDiagram-v2
   state "Firing" as s3
   state "Spent" as s4
   [*] --> s1
-  s1 --> s2 : armed (the room's arm, the GM's arm, by a reactor down too, today)
+  s1 --> s2 : armed by its reactor, up (the room's arm, the GM's arm)
+  s2 --> s1 : armed by its reactor, up (the room's arm, the GM's arm)
   s2 --> s1 : disarmed
   s2 --> s3 : its moment, and it may fire (at an aim down too, today)
   s2 --> s1 : its reactor goes down, or the fight ends
@@ -459,9 +460,9 @@ stateDiagram-v2
   s4 --> s1 : its reactor goes down, or the fight ends
 ```
 
-A player arms one of its hunter's reactions with the room's `arm`, the GM anyone's with the fight's. It fires by rule at its moment: before a foe's use lands on its reactor or an ally within reach, before a hit takes one of them to 0, after a foe's use landed on one, or before a named body's turn. It fires when its reactor is up, not held, its ability ready and paid for; otherwise it stays armed and says nothing. Its time comes off its reactor's next turn. A use sets off at most 4. Never written to a sheet. Two rows wait on a ruling and are drawn as the app behaves today: a reactor who is down arms (rules-4.3a), and a reaction fires at an aim already down (rules-4.2).
+A player arms one of its hunter's reactions with the room's `arm`, the GM anyone's with the fight's. It fires by rule at its moment: before a foe's use lands on its reactor or an ally within reach, before a hit takes one of them to 0, after a foe's use landed on one, or before a named body's turn. It fires when its reactor is up, not held, its ability ready and paid for; otherwise it stays armed and says nothing. Its time comes off its reactor's next turn. A use sets off at most 4. Never written to a sheet. A foe its ops take down is its reactor's kill, counted as any kill (rules-4.2, the owner, Nov 22). A reactor who is down arms none: the fight refuses it (rules-4.3a, the owner, Nov 22: a hunter at 0 HP is dead). One row waits on a ruling and is drawn as the app behaves today: a reaction fires at an aim already down (rules-4.2).
 
-4 chart states, 9 arrows. Hidden: arming another while armed, and a moment while spent, change nothing and are not drawn (0 steps.)
+4 chart states, 10 arrows. Hidden: arming another while armed, and a moment while spent, change nothing and are not drawn (0 steps.)
 
 Where it lives:
 
@@ -694,7 +695,7 @@ Where it lives:
 
 ## A player's held turn
 
-Every state reachable from a free turn, under the 11 events of the hold (one command's entry and doc, and another's), breadth first. The walk found 3 states and 8 steps.
+Every state reachable from a free turn, under the 11 events of the hold (one command's entry and doc, and another's), breadth first. The walk found 3 states and 9 steps.
 
 ### A player's turn, held from the tap to the GM's answer
 
@@ -707,7 +708,7 @@ stateDiagram-v2
   state "A command being picked or posted (buttons off)" as s2
   state "A command sent, waiting on the GM (buttons off)" as s3
   [*] --> s1
-  s1 --> s2 : a step, a use, End turn or a Release is tapped (the table or the Skills panel)
+  s1 --> s2 : a step, a use, End turn or a Release is tapped (the table, the Skills panel or the Bag)
   s2 --> s3 : the command goes to the outbox
   s2 --> s1 : nothing is posted (the window cancelled, nobody in reach, not the turn by then)
   s2 --> s1 : the phone's room changes
@@ -717,7 +718,7 @@ stateDiagram-v2
   s3 --> s1 : the phone's room changes
 ```
 
-src/views/uses.js keeps the one hold for the phone (`hold`, `command`), so a command tapped on the table or in the Skills panel waits under it whichever screen is up, and the table reads it to turn its buttons off. A sent command lets go only on a doc of another `at`, or on its own outbox entry refused or dropped; a doc, a refusal or a drop of another entry moves nothing. A consumable thrown from the Bag (`via: 'bag'`) goes through the same `command` but posts unheld and leaves the turn free (ruling SMX-views-5.1; ruled the other way, it holds like a use from the map).
+src/views/uses.js keeps the one hold for the phone (`hold`, `command`), so a command tapped on the table or in the Skills panel waits under it whichever screen is up, and the table reads it to turn its buttons off. A sent command lets go only on a doc of another `at`, or on its own outbox entry refused or dropped; a doc, a refusal or a drop of another entry moves nothing. A consumable thrown from the Bag (`via: 'bag'`) is held like a use from the map: by the owner's ruling of Nov 22 (SMX-views-5.1) it costs half a standard action (`fight.consumableTime`), not a full turn, and ends the turn in the GM's fight as every use does.
 
 3 chart states, 8 arrows. No step is hidden.
 
@@ -1103,7 +1104,7 @@ stateDiagram-v2
   s2 --> s1 : the GM taps Revive or a Resurrection Crystal is used, up at 1 HP, every status gone
 ```
 
-The chart shows what the sheet, the GM board and a combat card say of a hunter. Everything that keeps the hunter up stays in Up: damage that leaves HP above 0, a heal, a lower maximum. At 0 HP the hunter is dead: there are no death saves. Only a revive leaves Dead, the GM's Revive or a Resurrection Crystal used from the bag outside a fight, and it takes off every status the hunter holds, so a poison does not kill it again: healing, a rest and a refill do not. MP, fatigue and a collapse are kept beside the life and are not drawn.
+The chart shows what the sheet, the GM board and a combat card say of a hunter. Everything that keeps the hunter up stays in Up: damage that leaves HP above 0, a heal, a lower maximum. At 0 HP the hunter is dead: there are no death saves. Only a revive leaves Dead, the GM's Revive or a Resurrection Crystal used from the bag outside a fight, and it takes off every status the hunter holds, so a poison does not kill it again: healing, a rest, a Clear and a refill do not. MP, fatigue and a collapse are kept beside the life and are not drawn.
 
 2 chart states, 3 arrows. No step is hidden.
 
@@ -1119,7 +1120,7 @@ Where it lives:
 
 ## A hunter's fatigue and collapse
 
-Every fatigue and collapse reachable from a rested hunter (fatigue 0 of 100) under the 8 events of tests/models/life-events.ts (`COLLAPSE_EVENTS`), with the shipped rules, breadth first. The walk found 75 states and 600 steps.
+Every fatigue and collapse reachable from a rested hunter (fatigue 0 of 100) under the 8 events of tests/models/life-events.ts (`COLLAPSE_EVENTS`), with the shipped rules, breadth first. The walk found 171 states and 1368 steps.
 
 ### A hunter's fatigue, from fresh to collapsed and back
 
@@ -1135,27 +1136,66 @@ stateDiagram-v2
   s1 --> s2 : the fight writes back fatigue at the collapse share
   s1 --> s3 : the fight writes back its fatigue
   s1 --> s3 : fatigue rises
-  s2 --> s1 : a long rest
+  s2 --> s1 : a rest
+  s2 --> s1 : a gate's Clear, no fatigue
   s3 --> s2 : fatigue reaches the collapse share
   s3 --> s1 : fatigue falls
-  s3 --> s1 : a short rest
-  s3 --> s1 : a long rest
+  s3 --> s1 : a rest
+  s3 --> s1 : a gate's Clear, no fatigue
   s3 --> s2 : the fight writes back fatigue at the collapse share
-  s1 --> s3 : the capacity is lowered (today it collapses no one)
+  s1 --> s3 : the capacity is lowered
+  s3 --> s2 : the capacity is lowered to the fatigue
 ```
 
-Tired is the rules' check penalty share of the capacity and above; Collapsed is the latch, set when fatigue reaches the collapse share and ended only by a long rest, whatever fatigue does after. Two rows wait on the owner and are drawn as the app behaves today: a capacity lowered under the fatigue does not collapse the hunter (SMX-rules-6.1), and a collapse the fight's totals reached stays after the fight brings fatigue back down (SMX-rules-6.2). The life is not drawn (the chart above); a refill changes no fatigue.
+Tired is the rules' check penalty share of the capacity and above; Collapsed is the latch, set when fatigue reaches the collapse share and lifted only by a rest or a gate's Clear that leaves fatigue under it, whatever fatigue does after. By the owner's rulings of Nov 22, a capacity lowered to the fatigue collapses the hunter at once (SMX-rules-6.1), and a collapse the fight's totals reached stays after the fight brings fatigue back down (SMX-rules-6.2). The life is not drawn (the chart above); a refill changes no fatigue.
 
-3 chart states, 10 arrows. No step is hidden.
+3 chart states, 12 arrows. No step is hidden.
 
 Where it lives:
 
 | What | Where |
 |---|---|
 | The union | `FatigueState` and `FATIGUE_STATES` in `src/core/hunter/vitals.ts`; the stored latch is `Vitals.collapsed` |
-| What changes it | `vitalStep` and its `COLLAPSE_MOVES` (rise, keep, or a long rest's recount) |
-| Who calls it | `sheetEdit` in `src/core/hunter/grant.ts` (a hand edit, a rest, the fight's totals); `fitted` in `src/core/hunter/sheet.ts` (a lowered capacity) |
+| What changes it | `vitalStep` and its `COLLAPSE_MOVES` (rise, keep, or the recount of a rest and a Clear) |
+| Who calls it | `sheetEdit` in `src/core/hunter/grant.ts` (a hand edit, a rest, a Clear, the fight's totals); `fitted` in `src/core/hunter/sheet.ts` (a lowered capacity) |
 | The test to copy | `tests/vitals.test.ts`, "the collapse"; the walk's events are in `tests/models/life-events.ts` |
+| The recipe | docs/guide/hunters.md, "To add a field to a hunter" |
+
+## A hunter's rests
+
+Every count reachable from no rest taken under the 3 events of `REST_EVENT_TYPES`, with the shipped rules (2 rests a gate), breadth first. The walk found 3 states and 8 steps.
+
+### Rests taken in a gate, and the gate's end that gives them back
+
+```mermaid
+---
+title: Rests taken in a gate, and the gate's end that gives them back
+---
+stateDiagram-v2
+  state "0 of 2 taken" as s1
+  state "1 of 2 taken" as s2
+  state "2 of 2 taken" as s3
+  [*] --> s1
+  s1 --> s2 : a rest, 25% of max HP and 25% of max mana back, 75% of the fatigue off
+  s2 --> s3 : a rest, 25% of max HP and 25% of max mana back, 75% of the fatigue off
+  s2 --> s1 : a gate the hunter was paid for is cleared, everything back
+  s2 --> s1 : a solo run lost or retreated from, the gate ends, nothing back
+  s3 --> s1 : a gate the hunter was paid for is cleared, everything back
+  s3 --> s1 : a solo run lost or retreated from, the gate ends, nothing back
+```
+
+the owner, Nov 22: "They should get 2x per dungeon, and after a dungeon clear they should get everything back." A dungeon is a gate. A player's phone cannot know which gate its hunter is in; what reaches it is a gate's Clear (its `gate` fact) and its own solo run's end, so the count is the rests since a gate last ended for the hunter: a rest outside a gate counts toward the next. With none left a rest is refused (`spent`) and changes nothing. A dead hunter's rest is refused before the count, and a Clear gives the dead nothing but the count started again (vitals.ts `VITAL_TABLE`). The shares and the rests a gate are `RULES.rest`.
+
+3 chart states, 6 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `RestState`, `RestEvent` and `REST_STATES` in `src/core/hunter/rests.ts`; the count is `Hunter.restsTaken` |
+| What changes it | `restStep(taken, event, R)` and its `TABLE` |
+| Who calls it | `sheetEdit` in `src/core/hunter/grant.ts`, its one writer: a rest (with the vitals' `rest`), a Clear (`cleared`, with the vitals' `cleared`, through `noteFacts`: `settleClear` in `src/core/gates/pay.ts`, `soloRan` in `src/core/gates/solo.ts`, the `noted` applier in `src/edge/room-events.ts`), a solo run's end (`gateLeft`, `soloRan`); the Rest button is `api.hunter.rest` in `src/views/hunter.js` |
+| The test to copy | `tests/rests.test.ts` |
 | The recipe | docs/guide/hunters.md, "To add a field to a hunter" |
 
 ## A foe's life in a fight
@@ -1279,7 +1319,7 @@ Where it lives:
 
 ## A hunter's points and their allocation
 
-Every state reachable from a new hunter in four events or fewer, under every event of the allocation on one stat (+ and − by each role, Confirm, Auto with every point free, the GM's stat edit, a level up and down, a point given and taken, a raising from death), breadth first. The walk found 518 states and 1388 steps.
+Every state reachable from a new hunter in four events or fewer, under every event of the allocation on one stat (+ and − by each role, Confirm, Auto with every point free, the GM's stat edit, a level up and down, a point given and taken, a raising from death), breadth first. The walk found 507 states and 1381 steps.
 
 ### Points free, pending and confirmed
 
@@ -1305,21 +1345,23 @@ stateDiagram-v2
   s3 --> s4 : the GM edits the stat
   s3 --> s2 : the level moves (XP, or the GM)
   s3 --> s2 : points given
+  s2 --> s1 : the level falls (XP, or the GM), the points pending handed back
+  s2 --> s1 : a raising from death (levels lost), the points pending handed back
   s4 --> s1 : the level moves (XP, or the GM)
   s4 --> s1 : points given
   s2 --> s3 : + on a stat
   s2 --> s3 : points taken (a quest's cost)
-  s2 --> s3 : the level moves (XP, or the GM)
-  s2 --> s3 : a raising from death (levels lost)
+  s3 --> s1 : the level falls (XP, or the GM), the points pending handed back
+  s3 --> s1 : a raising from death (levels lost), the points pending handed back
   s1 --> s4 : the level moves (XP, or the GM)
   s1 --> s4 : a raising from death (levels lost)
   s1 --> s3 : + on a stat
   s1 --> s4 : points taken (a quest's cost)
 ```
 
-A point put on a stat is pending, not spent: it leaves the points free while it waits, and Confirm moves it into the stat. A player's − takes back only a pending point (with none, it is refused); the GM's − with nothing pending, and the GM's + with no point free, edit the stat. The GM's edit of a stat confirms what was pending on it. A level lost, by the GM or by a raising from death, keeps the points pending, so a hunter can hold fewer points than it spent (no point free), and a deduction takes only the points free (both wait on ruling SMX-rules-7.1). Every change of level, XP, points or stats is an event of `progressStep`; the chart leaves out the starting stats and the GM's points shown, which act as the GM's edits.
+A point put on a stat is pending, not spent: it leaves the points free while it waits, and Confirm moves it into the stat. A player's − takes back only a pending point (with none, it is refused); the GM's − with nothing pending, and the GM's + with no point free, edit the stat. The GM's edit of a stat confirms what was pending on it. A level lost, by the GM, by XP or by a raising from death, hands the points pending back (SMX-rules-7.1, the owner, Nov 22), so a hunter never owes a point it had not confirmed; a deduction takes only the points free (unruled). Every change of level, XP, points or stats is an event of `progressStep`; the chart leaves out the starting stats and the GM's points shown, which act as the GM's edits.
 
-4 chart states, 22 arrows. No step is hidden.
+4 chart states, 24 arrows. No step is hidden.
 
 Where it lives:
 
@@ -1333,7 +1375,7 @@ Where it lives:
 
 ## A hunter's rank
 
-Every state reachable from a new hunter, under the 5 moves of the level between the first levels of ranks E and D, Re-evaluate and the GM's choice of E or D, breadth first. The walk found 6 states and 13 steps.
+Every state reachable from a new hunter, under the 5 moves of the level between the first levels of ranks E and D, Re-evaluate and the GM's choice of E or D, breadth first. The walk found 10 states and 26 steps.
 
 ### Where a hunter's rank stands against its level
 
@@ -1344,7 +1386,7 @@ title: Where a hunter's rank stands against its level
 stateDiagram-v2
   state "The rank the level earns" as s1
   state "Below the level's rank (Re-evaluate offered)" as s2
-  state "Above the level's rank (the GM's, or kept after levels lost)" as s3
+  state "Above the level's rank (the GM's, set by hand)" as s3
   [*] --> s1
   s1 --> s2 : the level rises past a rank's first level
   s1 --> s3 : the GM sets a rank
@@ -1353,11 +1395,11 @@ stateDiagram-v2
   s2 --> s1 : the GM sets a rank
   s3 --> s1 : the level rises past a rank's first level
   s3 --> s1 : the GM sets a rank
-  s1 --> s3 : the level drops below it
   s1 --> s2 : the GM sets a rank
+  s1 --> s3 : the level drops below it
 ```
 
-Only the rank is stored; where it stands is read with the level (`rankStanding`). A level moved keeps the rank: a rank behind waits for the GM's Re-evaluate, and a rank above stays, with its check bonus and the path tiers it opened (ruling SMX-rules-7.2 waits; it needs a GM's mark stored beside the rank). Re-evaluate is refused (`not-eligible`) unless the rank is behind. A new rank is a fact of the chronicle.
+Only the rank and who set it are stored; where it stands is read with the level (`rankStanding`). A level risen keeps the rank: a rank behind waits for the GM's Re-evaluate. A level lost below the rank takes the rank down to the level's, unless the GM set the rank by hand (`rankBy`), when it stays with its check bonus and the path tiers it opened (SMX-rules-7.2, the owner, Nov 22). Re-evaluate is refused (`not-eligible`) unless the rank is behind. A new rank is a fact of the chronicle.
 
 3 chart states, 9 arrows. No step is hidden.
 
@@ -1494,7 +1536,7 @@ Where it lives:
 
 ## The quick check's DC
 
-Every state reachable from a Dice view opened on a hunter of rank E, under the 3 events of each kind, breadth first. The walk found 3 states and 4 steps.
+Every state reachable from a Dice view as it opens, under the 2 events of each kind, breadth first. The walk found 3 states and 4 steps.
 
 ### The Dice view's quick check DC
 
@@ -1503,13 +1545,13 @@ Every state reachable from a Dice view opened on a hunter of rank E, under the 3
 title: The Dice view's quick check DC
 ---
 stateDiagram-v2
-  state "The hunter's rank, Standard" as s1
+  state "E Standard, the same for everyone" as s1
   state "The player's pick" as s2
   [*] --> s1
   s1 --> s2 : the player picks a DC in the select (the one shown too)
 ```
 
-The view opens on the active hunter's rank at Standard. A pick in the select, the option shown included, makes the DC the player's until the view is drawn anew from its start (another visit to Dice). A pick is a rank and a level, or no DC, never a number: the roll reads its number from the rules' rank table then, so a GM's change to the table moves the number and keeps the pick. The hunter's rank read at a draw moves nothing today (ruling SMX-views-13.1; ruled yes, a defaulted DC follows it).
+The view opens on E Standard for every hunter: by the owner's ruling of Nov 22 (SMX-views-13.1) the number to beat is the same for everyone, set by how hard the thing is, and a hunter's rank does not move it. A pick in the select, the option shown included, makes the DC the player's until the view is drawn anew from its start (another visit to Dice). A pick is a rank and a level, or no DC, never a number: the roll reads its number from the rules' rank table then, so a GM's change to the table moves the number and keeps the pick.
 
 2 chart states, 1 arrows. No step is hidden.
 
@@ -1519,7 +1561,7 @@ Where it lives:
 |---|---|
 | The union | `DcPick`, `DcPickEvent`, `DC_PICK_STATES` and `DC_PICK_EVENTS` in `src/core/dc-pick.ts` |
 | What changes it | `dcPickStep(dc, event)` and its `TABLE` in `src/core/dc-pick.ts` |
-| Who calls it | `src/views/dice.js`, which keeps one `dc` and moves it only by `dcPickStep` (the select's change, each draw) |
+| Who calls it | `src/views/dice.js`, which keeps one `dc` and moves it only by `dcPickStep` (the select's change) |
 | The test to copy | `tests/dc-pick.test.ts`, "every state against every event" |
 | The recipe | docs/guide/hunters.md, "A state or event of the ... machine" |
 
@@ -1793,7 +1835,7 @@ Where it lives:
 
 ## A shadow
 
-Every state of one shadow reachable from a hunter with that shadow resting at full HP (tests/models/shadow-events.ts) under the 6 events of its life, breadth first. The walk found 7 states and 30 steps.
+Every state of one shadow reachable from a hunter with that shadow resting at full HP (tests/models/shadow-events.ts) under the 6 events of its life, breadth first. The walk found 6 states and 24 steps.
 
 ### A shadow, from its extraction to its release
 
@@ -1806,27 +1848,21 @@ stateDiagram-v2
   state "Summoned" as s2
   state "Released (gone)" as s3
   state "In the army at 0 HP" as s4
-  state "Summoned at 0 HP" as s5
   [*] --> s1
   s1 --> s2 : Summon (pays its rank's summon mana)
   s1 --> s3 : Release, after a confirm
   s1 --> s4 : it falls to 0 HP in a fight
   s2 --> s1 : Dismiss (no mana back)
   s2 --> s3 : Release, after a confirm
-  s2 --> s5 : it falls to 0 HP in a fight
-  s4 --> s5 : Summon (pays its rank's summon mana)
+  s2 --> s4 : it falls to 0 HP in a fight
   s4 --> s3 : Release, after a confirm
   s4 --> s1 : a fight leaves it above 0 HP
   s4 --> s1 : Full HP
-  s5 --> s4 : Dismiss (no mana back)
-  s5 --> s3 : Release, after a confirm
-  s5 --> s2 : a fight leaves it above 0 HP
-  s5 --> s2 : Full HP
 ```
 
-The chart starts when a shadow has joined the army (an extraction that passed, or the GM's grant). Its HP is in its state, and a box is drawn for a shadow at 0 HP; a fight that leaves it hurt but above 0, and Full HP on a shadow above 0, stay in their box. Two cells wait on the owner (rules-10.1): a shadow that falls stays Summoned, and one at 0 HP may be summoned. A summon the hunter has not the mana for is refused before the event; its name and notes do not move the state.
+The chart starts when a shadow has joined the army (an extraction that passed, or the GM's grant). Its HP is in its state, and a box is drawn for a shadow in the army at 0 HP; a fight that leaves it hurt but above 0, and Full HP on a shadow above 0, stay in their box. By the owner's ruling of Nov 22 (rules-10.1), a shadow that falls leaves the field (it is dismissed), and one at 0 HP is not summoned until Full HP. A summon the hunter has not the mana for is refused before the event; its name and notes do not move the state.
 
-5 chart states, 14 arrows. No step is hidden.
+4 chart states, 9 arrows. No step is hidden.
 
 Where it lives:
 
@@ -2468,7 +2504,7 @@ stateDiagram-v2
   s3 --> s8 : whatever its gate
 ```
 
-The table is asked when the run arrives and again inside its one write (`soloTaken`), which is refused (`changed`) when the plan no longer holds. A paid run is the gate's Clear for a party of one, paid at once (ruling SMX-gates-2.3 waits). A gate the GM took out of solo runs while the run played still pays a won run (ruling SMX-gates-2.2 waits; ruled the other way, its won cell is a refusal). A lost or stalled run is noted whatever the gate. The player's phone hears the answer as `soloAnswer`; a run nobody answers waits (`soloWait`).
+The table is asked when the run arrives and again inside its one write (`soloTaken`), which is refused (`changed`) when the plan no longer holds. A paid run is the gate's Clear for a party of one, paid at once (ruling SMX-gates-2.3 waits). A gate the GM took out of solo runs while the run played still pays a won run: the run counts (the owner's ruling of Nov 22, SMX-gates-2.2). A lost or stalled run is noted whatever the gate. The player's phone hears the answer as `soloAnswer`; a run nobody answers waits (`soloWait`).
 
 8 chart states, 6 arrows. No step is hidden.
 
@@ -2484,7 +2520,7 @@ Where it lives:
 
 ## A feat on a hunter
 
-Every state reachable from each feat's start, for a feat earned at a count of 2 under each of its 4 rules of when it is shown, under the 6 events of tests/models/feat-events.ts, breadth first. The walk found 23 states and 95 steps.
+Every state reachable from each feat's start, for a feat earned at a count of 2 under each of its 4 rules of when it is shown, under the 6 events of tests/models/feat-events.ts, breadth first. The walk found 23 states and 114 steps.
 
 ### A feat, earned at 2, by when it is shown
 
@@ -2501,12 +2537,15 @@ stateDiagram-v2
     s2 --> s3 : a fact counts it to 1
     s2 --> s4 : a fact counts it to 2
     s2 --> s5 : a fact counts it to 2, its state tests failing
+    s2 --> s4 : a fact leaves its count at 2, its state tests now holding
     s3 --> s4 : a fact counts it to 2
     s3 --> s5 : a fact counts it to 2, its state tests failing
     s3 --> s2 : a fact breaks its row
+    s3 --> s4 : a fact leaves its count at 2, its state tests now holding
     s5 --> s3 : a fact counts it to 1
     s5 --> s4 : a fact counts it to 2
     s5 --> s2 : a fact breaks its row
+    s5 --> s4 : a fact leaves its count at 2, its state tests now holding
   }
   state "Shown at a count of 1" as s6 {
     state "Hidden, 0 of 2" as s7
@@ -2518,15 +2557,19 @@ stateDiagram-v2
     s7 --> s9 : a fact counts it to 2
     s7 --> s10 : a fact counts it to 2, its state tests failing
     s7 --> s11 : the feat it waits on is earned
+    s7 --> s9 : a fact leaves its count at 2, its state tests now holding
     s8 --> s9 : a fact counts it to 2
     s8 --> s10 : a fact counts it to 2, its state tests failing
     s8 --> s11 : a fact breaks its row
+    s8 --> s9 : a fact leaves its count at 2, its state tests now holding
     s10 --> s8 : a fact counts it to 1
     s10 --> s9 : a fact counts it to 2
     s10 --> s11 : a fact breaks its row
+    s10 --> s9 : a fact leaves its count at 2, its state tests now holding
     s11 --> s8 : a fact counts it to 1
     s11 --> s9 : a fact counts it to 2
     s11 --> s10 : a fact counts it to 2, its state tests failing
+    s11 --> s9 : a fact leaves its count at 2, its state tests now holding
   }
   state "Shown after another feat" as s12 {
     state "Hidden, 0 of 2" as s13
@@ -2540,23 +2583,29 @@ stateDiagram-v2
     s13 --> s15 : a fact counts it to 2
     s13 --> s16 : a fact counts it to 2, its state tests failing
     s13 --> s17 : the feat it waits on is earned
+    s13 --> s15 : a fact leaves its count at 2, its state tests now holding
     s14 --> s15 : a fact counts it to 2
     s14 --> s16 : a fact counts it to 2, its state tests failing
     s14 --> s13 : a fact breaks its row
     s14 --> s18 : the feat it waits on is earned
+    s14 --> s15 : a fact leaves its count at 2, its state tests now holding
     s16 --> s14 : a fact counts it to 1
     s16 --> s15 : a fact counts it to 2
     s16 --> s13 : a fact breaks its row
     s16 --> s19 : the feat it waits on is earned
+    s16 --> s15 : a fact leaves its count at 2, its state tests now holding
     s17 --> s18 : a fact counts it to 1
     s17 --> s15 : a fact counts it to 2
     s17 --> s19 : a fact counts it to 2, its state tests failing
+    s17 --> s15 : a fact leaves its count at 2, its state tests now holding
     s18 --> s15 : a fact counts it to 2
     s18 --> s19 : a fact counts it to 2, its state tests failing
     s18 --> s17 : a fact breaks its row
+    s18 --> s15 : a fact leaves its count at 2, its state tests now holding
     s19 --> s18 : a fact counts it to 1
     s19 --> s15 : a fact counts it to 2
     s19 --> s17 : a fact breaks its row
+    s19 --> s15 : a fact leaves its count at 2, its state tests now holding
   }
   state "Hidden until earned" as s20 {
     state "Hidden, 0 of 2" as s21
@@ -2570,23 +2619,29 @@ stateDiagram-v2
     s21 --> s23 : a fact counts it to 2
     s21 --> s24 : a fact counts it to 2, its state tests failing
     s21 --> s25 : the feat it waits on is earned
+    s21 --> s23 : a fact leaves its count at 2, its state tests now holding
     s22 --> s23 : a fact counts it to 2
     s22 --> s24 : a fact counts it to 2, its state tests failing
     s22 --> s21 : a fact breaks its row
     s22 --> s26 : the feat it waits on is earned
+    s22 --> s23 : a fact leaves its count at 2, its state tests now holding
     s24 --> s22 : a fact counts it to 1
     s24 --> s23 : a fact counts it to 2
     s24 --> s21 : a fact breaks its row
     s24 --> s27 : the feat it waits on is earned
+    s24 --> s23 : a fact leaves its count at 2, its state tests now holding
     s25 --> s26 : a fact counts it to 1
     s25 --> s23 : a fact counts it to 2
     s25 --> s27 : a fact counts it to 2, its state tests failing
+    s25 --> s23 : a fact leaves its count at 2, its state tests now holding
     s26 --> s23 : a fact counts it to 2
     s26 --> s27 : a fact counts it to 2, its state tests failing
     s26 --> s25 : a fact breaks its row
+    s26 --> s23 : a fact leaves its count at 2, its state tests now holding
     s27 --> s26 : a fact counts it to 1
     s27 --> s23 : a fact counts it to 2
     s27 --> s25 : a fact breaks its row
+    s27 --> s23 : a fact leaves its count at 2, its state tests now holding
   }
   [*] --> s1
   [*] --> s6
@@ -2594,9 +2649,9 @@ stateDiagram-v2
   [*] --> s20
 ```
 
-The notice step (src/core/hunter/noticed.ts) moves a feat by each fact its count takes. Earned is final: nothing moves it, so a feat is earned once and the notice loop ends. A hidden feat is shown by its count or by another feat earned; one hidden until earned is never shown before. A count in a row starts again at 0, with no values seen, when a fact of its kind fails its tests. Two rows wait on a ruling and are drawn as the app behaves today: a fact that leaves a full count as it was moves nothing, even when its state tests now hold (SMX-gates-6.1, `AGAIN`), and the feat it waits on earned shows a feat hidden until earned (SMX-gates-6.2, `UNLOCKED_TO`; the notice step sends that event only to a feat shown after another).
+The notice step (src/core/hunter/noticed.ts) moves a feat by each fact its count takes. Earned is final: nothing moves it, so a feat is earned once and the notice loop ends. A hidden feat is shown by its count or by another feat earned; one hidden until earned is never shown before. A count in a row starts again at 0, with no values seen, when a fact of its kind fails its tests. By the owner's rulings of Nov 22, a fact that leaves a full count as it was earns the feat once its state tests hold (SMX-gates-6.1, `AGAIN`), and the feat it waits on earned shows a feat hidden until earned (SMX-gates-6.2, `UNLOCKED_TO`; the notice step sends that event only to a feat shown after another).
 
-23 chart states, 64 arrows. No step is hidden.
+23 chart states, 83 arrows. No step is hidden.
 
 Where it lives:
 

@@ -22,7 +22,7 @@ const WALK: readonly TurnHoldEvent[] = [
 
 function step(e: TurnHoldEvent): string {
   switch (e.kind) {
-    case 'tap': return 'a step, a use, End turn or a Release is tapped (the table or the Skills panel)';
+    case 'tap': return 'a step, a use, End turn or a Release is tapped (the table, the Skills panel or the Bag)';
     case 'posted': return 'the command goes to the outbox';
     case 'unposted': return 'nothing is posted (the window cancelled, nobody in reach, not the turn by then)';
     case 'doc': return 'a fight doc after it arrives (the GM\'s phone answered)';
@@ -46,7 +46,7 @@ export const turnHold = machine<TurnHold, TurnHoldEvent>({
   kindsOf: s => [s.at],
   views: [{
     title: 'A player\'s turn, held from the tap to the GM\'s answer',
-    note: 'src/views/uses.js keeps the one hold for the phone (`hold`, `command`), so a command tapped on the table or in the Skills panel waits under it whichever screen is up, and the table reads it to turn its buttons off. A sent command lets go only on a doc of another `at`, or on its own outbox entry refused or dropped; a doc, a refusal or a drop of another entry moves nothing. A consumable thrown from the Bag (`via: \'bag\'`) goes through the same `command` but posts unheld and leaves the turn free (ruling SMX-views-5.1; ruled the other way, it holds like a use from the map).',
+    note: 'src/views/uses.js keeps the one hold for the phone (`hold`, `command`), so a command tapped on the table or in the Skills panel waits under it whichever screen is up, and the table reads it to turn its buttons off. A sent command lets go only on a doc of another `at`, or on its own outbox entry refused or dropped; a doc, a refusal or a drop of another entry moves nothing. A consumable thrown from the Bag (`via: \'bag\'`) is held like a use from the map: by the owner\'s ruling of Nov 22 (SMX-views-5.1) it costs half a standard action (`fight.consumableTime`), not a full turn, and ends the turn in the GM\'s fight as every use does.',
     hides: '',
     state: s => WORDS[s.at],
     step,

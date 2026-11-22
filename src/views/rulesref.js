@@ -3,7 +3,7 @@
 import { RANKS, RULES, rules } from '../edge/rules.ts';
 import { xpToNext as xpToNextOf } from '../core/rules.ts';
 import { STAT_KEYS, STAT_LABELS, STAT_SHORT } from '../core/stats.ts';
-import { ICON_CREDIT, armorCutPct, checkExample, deathLine, gatePayLines, iconCreditLine, naturalLines, pointsLine, saleLine, saleRows, dailyPointsLine, soloLines, statBonusLine, stealthLines } from '../core/rules-text.ts';
+import { ICON_CREDIT, armorCutPct, checkExample, deathLine, gatePayLines, restLines, iconCreditLine, naturalLines, pointsLine, saleLine, saleRows, dailyPointsLine, soloLines, statBonusLine, stealthLines } from '../core/rules-text.ts';
 import { describeStatus } from '../core/combat/effect-ops.ts';
 
 const STAT_USE = {
@@ -70,11 +70,10 @@ export function cheatSheet() {
     return `<li><b>${esc(r)}</b> ${Object.entries(w).map(([k, v]) => `${esc(k.slice(0, 4))} ${Math.round(100 * v / tot)}%`).join(' · ')}</li>`; }).join('');
   const cond = Object.entries(R.conditions).map(([k, c]) => { const fx = describeStatus(c, null, R).join('; ');
     return `<li><b>${esc((c && c.label) || k)}</b> ${esc((c && c.desc) || '')}${fx ? ` <span class="cs-fx">${esc(fx)}</span>` : ''}</li>`; }).join('');
-  const rs = R.rest.short, rl = R.rest.long;
   return `<div class="cs">
     <table class="cs-t"><caption>DC, monster XP and rank bonus by rank</caption><thead><tr><th scope="col">Rank</th><th scope="col">Easy</th><th scope="col">Std</th><th scope="col">Hard</th><th scope="col">XP</th><th scope="col">Bonus</th></tr></thead><tbody>${rows}</tbody></table>
     <h3>Loot odds by gate rank</h3><ul class="cs-l">${loot}</ul>
-    <h3>Rests</h3><p>Short: +${esc(rs.hpPct)}% HP, +${esc(rs.mpPct)}% mana, −${esc(rs.fatigue)}% fatigue. Long: +${esc(rl.hpPct)}% HP and mana, −${esc(rl.fatigue)}% fatigue.</p>
+    <h3>Rests</h3><p>${esc(restLines(R).slice(0, 2).join(' '))}</p>
     <h3>Statuses</h3><ul class="cs-l">${cond}</ul></div>`;
 }
 
@@ -166,9 +165,8 @@ export function register(app) {
           `The Penalty Zone quest ("Survive for 4 hours") must be completed to clear the penalty. While penalized: −${R.penaltyCheck} to all checks.`]),
       ] },
       { id: 'rest', title: 'Fatigue and rests', body: [
-        ul([`Fatigue runs from 0 to your fatigue capacity. At ${R.fatigue.penaltyAt}% of it: −${R.fatigue.penalty} to all checks. At ${R.fatigue.disAt}%: disadvantage on checks. At ${R.fatigue.collapseAt}%: collapse (Exhausted, cannot act until a long rest).`,
-          `<b>Short rest</b>: +${R.rest.short.hpPct}% max HP, +${R.rest.short.mpPct}% max mana, −${R.rest.short.fatigue}% of your fatigue capacity.`,
-          `<b>Long rest</b>: +${R.rest.long.hpPct}% max HP and mana, −${R.rest.long.fatigue}% of your fatigue capacity, Exhausted cleared (only a long rest clears it).`,
+        ul([`Fatigue runs from 0 to your fatigue capacity. At ${R.fatigue.penaltyAt}% of it: −${R.fatigue.penalty} to all checks. At ${R.fatigue.disAt}%: disadvantage on checks. At ${R.fatigue.collapseAt}%: collapse (Exhausted, cannot act until a rest or a gate's Clear lifts it).`,
+          ...restLines(R).map(l => esc(l)),
           esc(deathLine(R))]),
       ] },
       { id: 'conditions', title: 'Statuses', body: [

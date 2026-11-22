@@ -33,6 +33,7 @@ import { newSolo, parseSolo, personalGateId, soloTracked, soloWake } from '../sr
 import type { PersonalGate } from '../src/core/gates/personal.ts';
 import { soloRank } from '../src/core/gates/spawn.ts';
 import { WAYS_BACK } from '../src/core/hunter/vitals.ts';
+import { hunterSheet } from '../src/core/hunter/sheet.ts';
 import { nextWake } from '../src/core/hunter/quests.ts';
 import { dayKey } from '../src/core/day.ts';
 import { SHOP_ITEMS, itemOf } from '../src/core/registry/items.ts';
@@ -76,11 +77,12 @@ const hunter = (s: Save): Hunter => s.hunters[0]!;
 const lifetimeXp = (h: Hunter): number => h.xp + Array.from({ length: h.level - 1 }, (_, i) => RULES.xpPerLevel * (i + 1)).reduce((a, b) => a + b, 0);
 
 describe('a run writes what the play left, in one write', () => {
-  test('a cleared personal gate: the play\'s HP, mana and fatigue, the gate gone, its roster\'s XP and the loot given, a log line', () => {
-    const s = alone(), loot = { gold: 120, items: [itemOf(RULES, SHOP_ITEMS[0]!)] };
+  test('a cleared personal gate: everything back, the gate gone, its roster\'s XP and the loot given, a log line', () => {
+    const s = alone({ restsTaken: RULES.rest.perGate }), loot = { gold: 120, items: [itemOf(RULES, SHOP_ITEMS[0]!)] };
     const r = ok(soloRan(s, H1, PERSONAL, runOf(s, endOf('won', {})), loot, { day, ready: ctx() }));
-    const h = hunter(r.save);
-    expect([h.life, h.mana, h.fatigue]).toEqual([{ at: 'up', hp: 7 }, 3, 22]);
+    const h = hunter(r.save), max = hunterSheet(h, RULES).sheet;
+    // the owner, Nov 22: "after a dungeon clear they should get everything back"
+    expect([h.life, h.mana, h.fatigue, h.restsTaken]).toEqual([{ at: 'up', hp: max.hpMax }, max.manaMax, 0, 0]);
     expect(h.solo.gates).toEqual([]);
     expect(r.xp, 'one goblin of 25 XP').toBe(25);
     expect(h.xp).toBe(25);
@@ -112,8 +114,9 @@ describe('a run writes what the play left, in one write', () => {
   });
 
   test('a retreat pays its cost and leaves the gate open', () => {
-    const s = alone(), r = ok(soloRan(s, H1, PERSONAL, runOf(s, { ...endOf('stalled', { hp: 2, fatigue: 60 }), rounds: 40 }), NO_LOOT, { day, ready: ctx() }));
+    const s = alone({ restsTaken: RULES.rest.perGate }), r = ok(soloRan(s, H1, PERSONAL, runOf(s, { ...endOf('stalled', { hp: 2, fatigue: 60 }), rounds: 40 }), NO_LOOT, { day, ready: ctx() }));
     expect([hunter(r.save).life, hunter(r.save).fatigue]).toEqual([{ at: 'up', hp: 2 }, 60]);
+    expect(hunter(r.save).restsTaken, 'the gate ended for the hunter: its rests start again').toBe(0);
     expect(hunter(r.save).solo.gates).toHaveLength(1);
     expect(r.save.log[0]!.text).toBe('Mira retreated from "Goblin Warren" (E-rank) alone after 40 rounds.');
   });
@@ -543,8 +546,8 @@ describe('a world gate open to solo runs, in a room', () => {
       gone: { won: { kind: 'refused', why: 'gone' }, lost: REPORT, stalled: REPORT },
       cleared: { won: { kind: 'refused', why: 'taken' }, lost: REPORT, stalled: REPORT },
       closed: { won: { kind: 'refused', why: 'closed' }, lost: REPORT, stalled: REPORT },
-      // SMX-gates-2.2 waits on the owner's ruling (proposed: a gate not open to solo runs refuses a solo run). Today a
-      // gate the GM unticked "Open to solo runs" on while the run played is paid, and a lost run enters it.
+      // SMX-gates-2.2: a run started before the GM unticked "Open to solo runs" still counts (the owner, Nov 22): a won
+      // run is paid, and a lost run enters it.
       notSolo: { won: PAID, lost: REPORT, stalled: REPORT },
       // SMX-gates-2.3 waits on its ruling (a solo clear's rewards wait for the GM): today the pay goes at once.
       open: { won: PAID, lost: REPORT, stalled: REPORT },
@@ -555,7 +558,7 @@ describe('a world gate open to solo runs, in a room', () => {
     }
   });
 
-  test('today a lost run of a gate the GM took out of solo runs still enters it (SMX-gates-2.2, as the app behaves until the ruling)', () => {
+  test('a lost run of a gate the GM took out of solo runs while it played still enters it: the run counts (SMX-gates-2.2, the owner, Nov 22)', () => {
     const s = gmSave([{ ...worldGate, solo: false }]), lost = { ...paidRun, outcome: 'lost' as const, life: 'dead' as const };
     expect(ok(soloTaken(s, lost, soloPlan(s, lost, RULES), null, NO_LOOT, TAKEN)).gates[0]!.status).toBe('raiding');
   });

@@ -28,7 +28,6 @@ import { amountOp, AURA_ON, HIDE_STARTS, STEALTH_ENDS, isStatusKey, LAND_USE_OPS
 import { isFormulaKey, isStacking, SHEET_OP_KEYS } from './op-amount.ts';
 import { sheetOpCap } from './standing.ts';
 import { asLevel } from './sight-levels.ts';
-import type { HideLevel } from './sight-levels.ts';
 import { parseLife } from '../hunter/vitals.ts';
 import { parseLevel } from '../hunter/level.ts';
 import type {
@@ -314,7 +313,7 @@ function wave2Op(v: Rec, R: Rules): Op | null {
     }
     case 'share': { const on = oneOf(v.on, SHARE_ON, null), pct = tiered(v.pct, x => within(x, -100, 100)); return on && pct !== null ? { op: 'share', on, pct } : null; }
     case 'untargetable': case 'invulnerable': case 'safeguard': case 'alert': case 'extra': case 'negate': case 'reveal': return { op: v.op };
-    case 'hidden': return { op: 'hidden', level: tiered(v.level, hideLevelOf) ?? HIDE_DEFAULT.level, start: oneOf(v.start, HIDE_STARTS, HIDE_DEFAULT.start), ends: stealthEndsOf(v.ends) };
+    case 'hidden': return { op: 'hidden', level: tiered(v.level, x => (isNum(x) ? asLevel(x) : null)) ?? HIDE_DEFAULT.level, start: oneOf(v.start, HIDE_STARTS, HIDE_DEFAULT.start), ends: stealthEndsOf(v.ends) };
     case 'stayHidden': { const on = oneOf(v.on, STEALTH_ENDS, null); return on && { op: 'stayHidden', on }; }
     case 'edge': {
       const side = oneOf(v.side, EDGE_SIDES, null), keep = oneOf(v.keep, ['better', 'worse'] as const, null), t = v.tag === null ? null : tagOf(v.tag, R), spend = bool(v.spend);
@@ -341,11 +340,9 @@ function wave2Op(v: Rec, R: Rules): Op | null {
 }
 /**
  * A hidden op's fields when none is written, or one is wrong (docs/agent-handoff/features/notes-7-stealth.md section 2):
- * the kits' Stealth as built. Level 1, the lowest a hide may hold (standing.ts `HideLevel`); only out of sight; every end.
+ * the kits' Stealth as built. Level 0, which hides from a plain sight of 0 (sight.ts `perceives`); only out of sight; every end.
  */
-const HIDE_DEFAULT = { level: 1, start: 'unseen', ends: { hurt: true, revealed: true, dealt: true } } as const satisfies Pick<Extract<Op, { op: 'hidden' }>, 'level' | 'start' | 'ends'>;
-/** A number read into a hide's level as `asLevel` reads a level, with 0 (a hide that hides from nobody) read as 1; null when it is not a number. */
-const hideLevelOf = (x: unknown): HideLevel | null => { if (!isNum(x)) return null; const l = asLevel(x); return l === 0 ? HIDE_DEFAULT.level : l; };
+const HIDE_DEFAULT = { level: 0, start: 'unseen', ends: { hurt: true, revealed: true, dealt: true } } as const satisfies Pick<Extract<Op, { op: 'hidden' }>, 'level' | 'start' | 'ends'>;
 /** Which of the three events end a hide: each one written true or false as written, any other its default (true); a key not of the three is dropped. */
 const stealthEndsOf = (v: unknown): StealthEnds => {
   const o = isObj(v) ? v : {};
@@ -644,12 +641,12 @@ function priceOf(v: unknown, R: Rules): Price | null {
   }
   return null;
 }
-/** A condition (kits design 1.4): a status key held on the user or the target, at least 1 to `stackCap` stacks; or uses, 1 to `fightUses` a fight or a rest. */
+/** A condition (kits design 1.4): a status key held on the user or the target, at least 1 to `stackCap` stacks; or uses, 1 to `fightUses` a fight or a gate. */
 function gateOf(v: unknown, R: Rules): AbilityGate | null {
   if (!isObj(v)) return null;
   const K = R.fight.kit;
   if (v.kind === 'holds') { const on = oneOf(v.on, ['self', 'target'] as const, null); return isStatusKey(v.key) && on ? { kind: 'holds', key: v.key, on, atLeast: clamped(v.atLeast, 1, K.stackCap) } : null; }
-  if (v.kind === 'uses') { const per = oneOf(v.per, ['fight', 'rest'] as const, null); return per ? { kind: 'uses', per, n: clamped(v.n, 1, K.fightUses) } : null; }
+  if (v.kind === 'uses') { const per = oneOf(v.per, ['fight', 'gate'] as const, null); return per ? { kind: 'uses', per, n: clamped(v.n, 1, K.fightUses) } : null; }
   if (v.kind === 'inside') { const zone = text(v.zone, ZONE_NAME_MAX); return zone ? { kind: 'inside', zone } : null; }
   return null;
 }

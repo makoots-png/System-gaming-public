@@ -79,14 +79,18 @@ export type ShadowEvent =
   | { readonly kind: 'summon' } | { readonly kind: 'dismiss' } | { readonly kind: 'release' }
   | { readonly kind: 'fought'; readonly hp: number } | { readonly kind: 'heal'; readonly hpMax: number };
 
-/** The table's rows: each state, a shadow in the army split by whether its HP is 0 (fallen). */
-export const SHADOW_CASES = ['resting', 'restingFallen', 'summoned', 'summonedFallen', 'released'] as const;
+/**
+ * The table's rows: each state, a resting shadow split by whether its HP is 0 (fallen). A summoned one is not: one that
+ * falls is dismissed and one at 0 HP is not summoned (rules-10.1), so a summoned shadow at 0 HP is only one stored so
+ * before the ruling, and takes every event as a summoned one does.
+ */
+export const SHADOW_CASES = ['resting', 'restingFallen', 'summoned', 'released'] as const;
 export type ShadowCase = (typeof SHADOW_CASES)[number];
 /** The table's columns: each event, a fight's split by whether it left the shadow above 0 HP (`fought`) or at 0 (`fell`). */
 export const SHADOW_COLUMNS = ['summon', 'dismiss', 'release', 'fought', 'fell', 'heal'] as const;
 export type ShadowColumn = (typeof SHADOW_COLUMNS)[number];
 export const shadowCase = (s: ShadowState): ShadowCase =>
-  s.at === 'released' ? 'released' : s.hp > 0 ? s.at : s.at === 'resting' ? 'restingFallen' : 'summonedFallen';
+  s.at === 'released' ? 'released' : s.at === 'resting' && s.hp <= 0 ? 'restingFallen' : s.at;
 export const shadowColumn = (e: ShadowEvent): ShadowColumn => (e.kind === 'fought' && e.hp <= 0 ? 'fell' : e.kind);
 
 /**
@@ -95,13 +99,10 @@ export const shadowColumn = (e: ShadowEvent): ShadowColumn => (e.kind === 'fough
  */
 const TABLE: { readonly [C in ShadowCase]: { readonly [E in ShadowColumn]: ShadowAt | null } } = {
   resting: { summon: 'summoned', dismiss: null, release: 'released', fought: 'resting', fell: 'resting', heal: 'resting' },
-  // rules-10.1 waits on the owner: a resting shadow at 0 HP is summoned for its full mana today, and enters a fight dead.
-  // The ruling "not until it is healed" makes `summon` here null.
-  restingFallen: { summon: 'summoned', dismiss: null, release: 'released', fought: 'resting', fell: 'resting', heal: 'resting' },
-  // rules-10.1 waits on the owner: a shadow that falls in a fight stays summoned today. The ruling "a shadow at 0 HP is
-  // dismissed" makes `fell` here 'resting' (and the row below then holds only what a summon above leads to).
-  summoned: { summon: null, dismiss: 'resting', release: 'released', fought: 'summoned', fell: 'summoned', heal: 'summoned' },
-  summonedFallen: { summon: null, dismiss: 'resting', release: 'released', fought: 'summoned', fell: 'summoned', heal: 'summoned' },
+  // rules-10.1: a shadow at 0 HP is not summoned until it is healed (the owner, Nov 22: "Yes")
+  restingFallen: { summon: null, dismiss: null, release: 'released', fought: 'resting', fell: 'resting', heal: 'resting' },
+  // rules-10.1: a shadow that falls to 0 HP in a fight leaves the field: it is dismissed (the owner, Nov 22: "Yes")
+  summoned: { summon: null, dismiss: 'resting', release: 'released', fought: 'summoned', fell: 'resting', heal: 'summoned' },
   released: { summon: null, dismiss: null, release: null, fought: null, fell: null, heal: null },
 };
 /** Where `column` takes a shadow of `kase`, or null: one cell of the table. */

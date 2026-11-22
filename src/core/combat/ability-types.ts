@@ -118,11 +118,11 @@ export type Price =
   | { readonly kind: 'zone'; readonly name: string | null; readonly take: 'one' | 'all' };
 /**
  * What must hold for a use (kits design 1.4, rule 3b): a status on the user or the aimed target with at least `atLeast`
- * stacks (1 for a plain status: a mode), or uses left of `n` a fight or `n` a long rest.
+ * stacks (1 for a plain status: a mode), or uses left of `n` a fight or `n` a gate (back at the gate's Clear).
  */
 export type AbilityGate =
   | { readonly kind: 'holds'; readonly key: StatusKey; readonly on: 'self' | 'target'; readonly atLeast: number }
-  | { readonly kind: 'uses'; readonly per: 'fight' | 'rest'; readonly n: number }
+  | { readonly kind: 'uses'; readonly per: 'fight' | 'gate'; readonly n: number }
   /** The user stands in a zone of this name (kits design 8.8): "only inside your Aura". */
   | { readonly kind: 'inside'; readonly zone: string };
 /**

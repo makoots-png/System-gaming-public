@@ -89,11 +89,11 @@ describe('a player\'s turn held on this phone', () => {
     }
   });
 
-  // SMX-views-5.1 waits on the owner's ruling: whether a consumable used in a fight takes the turn. Today the List sends it
-  // through the bag with nothing held, and its answer does not hold the turn either.
-  test('a consumable tapped in the List goes through the bag and leaves the turn free (today, until the ruling)', () => {
+  test('a consumable tapped in the Bag holds the turn as a use does until the GM\'s phone answers: it costs something (SMX-views-5.1)', () => {
     const tapped = turnHoldStep(TURN_FREE, { kind: 'tap', via: 'bag' });
-    expect(tapped).toEqual({ hold: TURN_FREE, send: 'unheld' });
-    expect(turnHoldStep(tapped.hold, { kind: 'posted', from: 'doc-1', id: 'e-potion' })).toEqual(none(TURN_FREE));
+    expect(tapped).toEqual({ hold: PICKING, send: 'held' });
+    const sent = turnHoldStep(tapped.hold, { kind: 'posted', from: 'doc-1', id: 'e-potion' });
+    expect(sent).toEqual(none({ at: 'sent', from: 'doc-1', id: 'e-potion' }));
+    expect(turnHoldStep(sent.hold, { kind: 'doc', at: 'doc-2' })).toEqual(none(TURN_FREE));
   });
 });
