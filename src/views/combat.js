@@ -15,7 +15,7 @@ import { fightGateName, fought, heldCommands, itemSpent } from '../core/combat/f
 import { remoteFacts } from '../core/combat/fight-facts.ts';
 import { attemptsLeft, UNTRIED } from '../core/combat/extraction.ts';
 import { needs } from '../core/combat/resolve.ts';
-import { WAIT_WORDS, aims, cardOf, channelView, order, readyIn, spotOf, statusGrant, stepAway, stepToward, timeOf, usesLeft, waitChoices } from '../core/combat/fight-view.ts';
+import { WAIT_WORDS, aims, cardOf, channelView, fudgeShown, order, readyIn, spotOf, statusGrant, stepAway, stepToward, timeOf, usesLeft, waitChoices } from '../core/combat/fight-view.ts';
 import { EVERYTHING, eyesChoices, fightBodies, fightGround, pinKeyOf, viewAsOf } from '../core/combat/map-view.ts';
 import { SCREEN, buildDrawer, mapSlot } from '../core/combat/map-mount.ts';
 import { hunterRow, monsterRows, remoteRow, shadowRow } from '../core/combat/rows.ts';
@@ -686,8 +686,11 @@ export function register(app) {
 .win.cmb-mapmode .cmb-tools.open > *{flex:0 0 auto}
 .win.cmb-mapmode .cmb-tools.open .cmb-toolshead{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .cmb-toolshead b{font-family:var(--font-display);letter-spacing:.14em;text-transform:uppercase;color:var(--cyan);margin-right:auto}
-.cmb-size{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center}.cmb-step{display:flex;flex-wrap:nowrap;gap:6px;align-items:center}.cmb-size b{font-family:inherit;letter-spacing:0;color:inherit;margin:0;min-width:2.2em;text-align:center}
-.cmb-size .icon-btn{min-width:var(--control-h);min-height:var(--control-h)}
+.cmb-size,.cmb-fgroup{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center}.cmb-step{display:flex;flex-wrap:nowrap;gap:6px;align-items:center}.cmb-size b,.cmb-fgroup b{font-family:inherit;letter-spacing:0;color:inherit;margin:0;min-width:2.2em;text-align:center}
+.cmb-size .icon-btn,.cmb-fgroup .icon-btn{min-width:var(--control-h);min-height:var(--control-h)}
+.cmb-fudge{display:flex;flex-direction:column;gap:6px}.cmb-fudge[hidden]{display:none}.cmb-fudge .cmb-step{justify-content:space-between}.cmb-fudge .cmb-step .lbl{flex:1 1 auto;min-width:0}
+.cmb-fdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--gold);box-shadow:0 0 6px rgba(255,201,77,.7);margin-left:6px;vertical-align:middle}
+.cmb-fz{display:flex;flex-direction:column;gap:6px}.cmb-fz .seg>button{min-width:0}
 .cmb-eyes{display:flex;flex-direction:column;gap:4px}.cmb-eyes .seg>button{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .win.cmb-mapmode .cmb-log{max-height:none}
 @media (min-width:900px){.win.cmb-mapmode .cmb-tools.open{left:auto;top:0;bottom:0;width:min(520px,100vw);max-height:none;border-top:none;border-left:1px solid var(--line-bright)}}
@@ -829,6 +832,7 @@ export function register(app) {
   const cardTemplate = ro => `<div data-attr="class:cls data-cid:key">
       <h3 data-part="head"></h3>
       <div class="cmb-stats"><span>Speed <span data-text="speed"></span></span><span data-armor>Armor <span data-text="armor"></span></span><span>Resist <span data-text="resist"></span></span><span>Stride <span data-text="stride"></span></span><span data-show="shield">Shield <span data-text="shield"></span> · <span data-text="shieldLeft"></span> rounds</span></div>
+      ${ro ? '' : '<div class="slot" data-part="fudgeLine"></div>'}
       <div class="bar-row"><div class="bar-head"><span class="lbl">HP</span><span class="bar-nums"><span data-num="hp"></span> / <span data-text="hpMax"></span></span></div>
         <div class="cmb-hpwrap"><div class="bar bar-hp" data-fill="hpF">${motion.fillMarkup(0)}</div><div class="bar bar-shield" data-show="shieldF" data-fill="shieldF" aria-hidden="true">${motion.fillMarkup(0)}</div></div></div>
       <div class="bar-row" data-show="staggerF"><div class="bar-head"><span class="lbl">Stagger</span><span class="bar-nums"><b class="cmb-stg" data-show="staggered">Staggered · loses <span data-text="staggered"></span> rounds</b><span data-num="staggerFill"></span> / <span data-text="staggerMax"></span></span></div><div class="bar bar-stagger" data-fill="staggerF">${motion.fillMarkup(0)}</div></div>
@@ -844,6 +848,7 @@ export function register(app) {
       <div class="slot" data-part="actions"></div>
       <div class="lbl">Statuses</div><div class="cmb-conds" data-part="conds"></div><ul class="cmb-fx" data-part="fx" data-attr="hidden:noFx"></ul>
       <div class="cmb-line"><button type="button" data-fk="cforge" data-cforge title="Add status (S)" aria-keyshortcuts="s">+ Status</button></div>
+      <div class="slot cmb-fz" data-part="fudgeBox"></div>
       <div class="cmb-line"><span class="slot" data-part="lifeAct"></span>
         <span class="slot" data-part="extract"></span>
         <button type="button" class="danger" data-fk="remove" data-remove data-attr="aria-label:removeLabel">Remove</button></div>`}
@@ -910,6 +915,7 @@ export function register(app) {
       lifeAct: lifeActHtml(r),
       extract: extractors.map(x => `<button type="button" data-fk="extract-${esc(x.row.id)}" data-extract="${esc(x.row.id)}">${extractors.length > 1 ? `Extract (${esc(x.h.name)})` : 'Extract'}</button>`).join(''),
       removeLabel: `Remove ${r.name} from the fight`,
+      fudgeLine: fudgeLine(k), fudgeBox: fudgeCard(r, k),
     };
   }
 
@@ -991,6 +997,7 @@ export function register(app) {
       <p class="hp-amt-msg" data-amtlive role="status" aria-live="polite"></p>
       <div data-main></div>
       <div class="cmb-tools" data-tools aria-label="Fight tools"><div class="cmb-toolshead"><b>Fight tools</b><span class="slot" data-toolacts></span><button type="button" class="quiet" data-toolsx>Close</button></div>
+      <div class="cmb-fudge" data-fudge hidden></div>
       <div class="cmb-eyes" data-eyesrow hidden><span class="lbl" aria-hidden="true">See as</span><div class="seg" role="group" aria-label="See as" data-eyesseg></div></div>
       <div data-buildwrap><details class="cmb-build" data-build open><summary>Add to the fight</summary><div class="cmb-bgrid">
         <fieldset><legend>Party hunters</legend><div class="add-row flush">
@@ -1058,6 +1065,16 @@ export function register(app) {
         return;
       }
       if (b.matches('[data-addh],[data-addparty],[data-addm],[data-adds]') && otherGMLive() && !(await confirmReplace())) return;
+      if (b.dataset.fudgeSide !== undefined || b.dataset.fudgeRow !== undefined) {
+        const to = Number(b.dataset.to), id = b.dataset.fudgeRow, side = oneOf(b.dataset.fudgeSide, ['party', 'foe'], null);
+        if (Number.isInteger(to) && (side || rowOf(f, id))) send({ type: 'fudge', set: { kind: 'weight', scope: side ? { kind: 'side', side } : { kind: 'row', id: rowOf(f, id).id }, n: to } });
+        return;
+      }
+      if (b.dataset.fudgeForce !== undefined) {
+        const row = rowOf(f, b.dataset.fudgeForce), face = oneOf(b.dataset.face, ['20', '1', ''], '');
+        if (row) send({ type: 'fudge', set: { kind: 'force', id: row.id, face: face === '' ? null : /** @type {20 | 1} */ (Number(face)) } });
+        return;
+      }
       if (b.hasAttribute('data-start')) return start();
       if (b.dataset.eyes !== undefined) {
         const id = oneOf(b.dataset.eyes, mapSource.eyes.choices().map(c => c.id), null);
@@ -1166,6 +1183,31 @@ export function register(app) {
     + `<button type="button" class="icon-btn" data-resize="${k}" data-d="-1" aria-label="Fewer ${k === 'w' ? 'columns' : 'rows'}">−</button><b data-mapsize="${k}">${f.grid[k]}</b>`
     + `<button type="button" class="icon-btn" data-resize="${k}" data-d="1" aria-label="More ${k === 'w' ? 'columns' : 'rows'}">+</button></span>`).join('')}</span>`;
 
+  const signed = n => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '0');
+  /** A stepper of the GM's weight: `attrs` names what it sets, each tap sends the value it shows plus or minus one. */
+  const weightStepper = (label, n, attrs, name) => `<span class="cmb-step"><span class="lbl">${esc(label)}</span>`
+    + `<button type="button" class="icon-btn" ${attrs} data-to="${n - 1}" aria-label="Lower the fudge for ${esc(name)}">−</button><b>${signed(n)}</b>`
+    + `<button type="button" class="icon-btn" ${attrs} data-to="${n + 1}" aria-label="Raise the fudge for ${esc(name)}">+</button></span>`;
+  /**
+   * The Fight tools' Fudge block (notes-8-fudge.md section 2): the hunters' weight and the foes', each `− n +`, with the gold
+   * dot while any weight or forced roll is on. Read from the fight; a tap sends the `fudge` command. Empty where nobody sees it.
+   */
+  function fudgeBlock(f) {
+    if (!f || f.phase === 'ended' || !f.rows.length) return '';
+    return `<span class="lbl">Fudge${fudgeShown(f) ? '<i class="cmb-fdot" aria-hidden="true"></i><span class="sr-only"> on</span>' : ''}</span>`
+      + `<div class="cmb-fgroup" role="group" aria-label="Fudge">${weightStepper('Hunters', f.fudge.sides.party, 'data-fudge-side="party"', 'the hunters')}${weightStepper('Foes', f.fudge.sides.foe, 'data-fudge-side="foe"', 'the foes')}</div>`;
+  }
+  /** The line at the top of a card while its row has a weight or a forced next roll: "Fudge +2", "Next roll 20". */
+  const fudgeLine = k => (k.fudge !== 0 || k.forced !== null
+    ? `<div class="cmb-x" data-fudgeline>${k.fudge !== 0 ? `<b>Fudge ${signed(k.fudge)}</b>` : ''}${k.forced !== null ? `<b>Next roll ${k.forced}</b>` : ''}</div>` : '');
+  /** A card's own controls: the row's stepper and its Next roll choice. */
+  function fudgeCard(r, k) {
+    const face = [[20, '20'], [1, '1'], [null, 'Off']];
+    return `<div class="cmb-fgroup">${weightStepper('Fudge', k.fudgeOwn, `data-fudge-row="${esc(r.id)}"`, r.name)}</div>`
+      + `<div class="cmb-x"><span>Next roll</span><div class="seg" role="group" aria-label="Next roll of ${esc(r.name)}">${face.map(([v, l]) =>
+        `<button type="button" data-fk="fz-${l}" data-fudge-force="${esc(r.id)}" data-face="${v ?? ''}" aria-pressed="${k.forced === v}">${l}</button>`).join('')}</div></div>`;
+  }
+
   /**
    * The Fight tools' See as row (notes-7-stealth.md section 6): Everything, then each foe row whose eyes the map may show,
    * the one the map shows pressed (`mapSource.eyes`).
@@ -1187,7 +1229,7 @@ export function register(app) {
     if (mapMode) {
       return {
         head: `${elsewhere}<div class="cmb-head">Round ${turn.length ? turn[0].round : 1}</div>`,
-        acts: `${seg}<button type="button" data-fk="tools" data-tools-open aria-expanded="${tools}">Fight tools</button>
+        acts: `${seg}<button type="button" data-fk="tools" data-tools-open aria-expanded="${tools}"${fudgeShown(f) ? ' aria-label="Fight tools, fudge on"' : ''}>Fight tools${fudgeShown(f) ? '<i class="cmb-fdot" aria-hidden="true"></i>' : ''}</button>
         <button type="button" class="primary" data-fk="next" data-next aria-label="Next turn" title="Next turn (N)" aria-keyshortcuts="n">Next ▶</button>`,
         tools: `${sizeSteps(f)}<button type="button" data-fk="end" data-end>End fight</button><button type="button" class="danger" data-fk="clear" data-clear aria-label="Clear the fight">Clear</button>`,
       };
@@ -1252,6 +1294,8 @@ export function register(app) {
     const bd = barDesc(f, gm, elsewhere, mapMode, tools);
     bind($q('[data-bar]'), { head: bd.head, acts: bd.acts });
     const ta = $q('[data-toolacts]'); if (ta.innerHTML !== bd.tools) ta.innerHTML = bd.tools;
+    const fz = $q('[data-fudge]'), fh = gm ? fudgeBlock(f) : '';
+    fz.hidden = !fh; if (fz.innerHTML !== fh) fz.innerHTML = fh;
     const er = $q('[data-eyesrow]'), eh = mapMode ? eyesRow() : '', es = $q('[data-eyesseg]');
     er.hidden = !mapMode; if (es.dataset.sig !== eh) { es.dataset.sig = eh; es.innerHTML = eh; }
     $q('.win').classList.toggle('cmb-mapmode', mapMode);

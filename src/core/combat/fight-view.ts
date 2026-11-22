@@ -21,7 +21,8 @@ import { sheetStatuses, statusKey } from './effect-ops.ts';
 import type { Body, Channel, CombatantKind, OpRules, SheetStatus, StatusDef } from './effect-ops.ts';
 import { usesOf } from './uses.ts';
 import { counting } from './standing.ts';
-import type { Fight, StatusGrant } from './fight-types.ts';
+import type { Fight, ForcedFace, StatusGrant } from './fight-types.ts';
+import { fudgeOf } from './fudge.ts';
 
 // ── the order ahead ──
 
@@ -72,7 +73,17 @@ export type Card = {
   readonly down: boolean;
   /** A summon's rounds left, one decimal, rounded up (kits design 1.9); null for any other body and for a summon that stays. */
   readonly summon: number | null;
+  /** The GM's weight on this row's dice: its side's and its own (fudge.ts `fudgeOf`). 0 in a fight that holds none. GM's screen only. */
+  readonly fudge: number;
+  /** The weight set on this row alone, for its own stepper. */
+  readonly fudgeOwn: number;
+  /** The face this row's next d20 roll is forced to, or null. */
+  readonly forced: ForcedFace | null;
 };
+
+/** Whether the GM has any weight or forced roll on in `f` (the gold dot on the Fight tools). A fight with no fudge field has none. */
+export const fudgeShown = (f: Fight): boolean =>
+  f.phase !== 'ended' && (f.fudge.sides.party !== 0 || f.fudge.sides.foe !== 0 || Object.keys(f.fudge.rows).length > 0 || Object.keys(f.fudge.forced).length > 0);
 
 /** The time a fight's numbers are read at: its `now`, or 0 in setup, which has no time yet and where every status starts. */
 export const timeOf = (f: Fight): Tick => f.phase === 'setup' ? tick(0) : f.now;
@@ -96,6 +107,9 @@ export function cardOf(f: Fight, row: Body, R: OpRules & KindRules): Card {
     threat: threatOf(f, row, R),
     taunt: tauntOf(row, timeOf(f), R),
     summon: row.kind === 'summon' ? roundsLeft(row.until, timeOf(f), R) : null,
+    fudge: f.phase === 'ended' ? 0 : fudgeOf(f.fudge, row),
+    fudgeOwn: f.phase === 'ended' ? 0 : f.fudge.rows[row.id] ?? 0,
+    forced: f.phase === 'ended' ? null : f.fudge.forced[row.id] ?? null,
   };
 }
 

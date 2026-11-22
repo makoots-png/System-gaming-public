@@ -17,6 +17,7 @@ Every call a lead made that he might have made otherwise, newest last. Each says
 22. **The dice roller starts every hunter on 13 to beat** (the old E rank "Standard"). His ruling: the number is the same for every rank, and he sets it for the thing tried. Undo: give the starting number.
 23. **A gate kept open because a party was in it when the day passed its break day does not break when the party leaves.** His words covered only "it doesn't break if someone is in it". Undo: "it breaks when they leave".
 24. **Stealth beats sight at the same level, and every built-in hide is one level lower** (Stealth and Invisible are 0, 0, 1, 2, 3, 4 by rank), so each hides from the same sights as before and no balance number moved. Undo: "keep the old levels" (hides then get one step stronger).
+25. **Each job leans to one pair of stats, the lead's choice**: Fighter Strength and Vitality, Assassin Agility and Insight, Ranger Agility and Control, Mage Power and Control, Tanker Vitality and Discipline, Healer Discipline and Presence, Necromancer Presence and Power. A job's pair is the hunter's Confluence when both stats hold a quarter of the points. Undo: name the pair for a job.
 
 ## Decided earlier in this session (Nov 21 to 22), told to him in chat
 

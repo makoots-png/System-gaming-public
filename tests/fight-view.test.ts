@@ -166,6 +166,23 @@ describe('cardOf: what a combatant\'s card shows', () => {
       start(['A', 20], ['B', 20], ['M1', 20], ['M2', 20]), adjust('B', -999), adjust('M2', -999));
     expect(['A', 'B', 'M1', 'M2'].map(n => cardOf(fight, body(fight, n), RULES).down)).toEqual([false, true, false, true]);
   });
+
+  test('a card shows its side\'s weight plus its own, and the row\'s forced next roll', () => {
+    const side = (n: number): Command => ({ type: 'fudge', set: { kind: 'weight', scope: { kind: 'side', side: 'party' }, n } });
+    const own = (who: string, n: number): Command => ({ type: 'fudge', set: { kind: 'weight', scope: { kind: 'row', id: id(who) }, n } });
+    const fight = play(add(row('A', 'party'), row('B', 'party'), row('M', 'foe')), start(['A', 20], ['B', 19], ['M', 1]), side(2), own('B', 1), { type: 'fudge', set: { kind: 'force', id: id('M'), face: 20 } });
+    const [a, b, m] = ['A', 'B', 'M'].map(n => cardOf(fight, body(fight, n), RULES));
+    expect([a!.fudge, b!.fudge, m!.fudge]).toEqual([2, 3, 0]);
+    expect([a!.fudgeOwn, b!.fudgeOwn, m!.fudgeOwn]).toEqual([0, 1, 0]);
+    expect([a!.forced, m!.forced]).toEqual([null, 20]);
+  });
+
+  test('a fight that is over, or one with no weight set, shows no weight and no forced roll', () => {
+    const fresh = play(add(row('A', 'party'), row('M', 'foe')), start(['A', 20], ['M', 1]));
+    expect(cardOf(fresh, body(fresh, 'A'), RULES)).toMatchObject({ fudge: 0, fudgeOwn: 0, forced: null });
+    const over = play(add(row('A', 'party'), row('M', 'foe')), start(['A', 20], ['M', 1]), { type: 'fudge', set: { kind: 'force', id: id('A'), face: 1 } }, { type: 'end' });
+    expect(cardOf(over, body(over, 'A'), RULES)).toMatchObject({ fudge: 0, fudgeOwn: 0, forced: null });
+  });
 });
 
 describe('aims: whom an ability can aim at', () => {

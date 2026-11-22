@@ -115,6 +115,9 @@ const rarities: Reader = (v, path, no) => {
   return out;
 };
 
+/** A rank: one of `RANKS`, as written. */
+const oneRank: Reader = (v, path, no) => RANKS.find(r => r === v) ?? no(path, 'entry');
+
 /**
  * The reader of each rule `against` cannot read from its shipped value: every list, every null and every open map. A
  * `*` stands for any one key (a rank, a path's id). tests/overrides.test.ts walks RULES and fails on such a rule with no
@@ -141,6 +144,12 @@ export const READERS: Readonly<Record<string, Reader>> = {
   'solo.pack': lowToHigh,
   // text, but only a kind of `fight.kinds`: item-budget.ts weighs a penetration against a same-rank monster of this kind
   'itemBudget.penFoe': (v, path, no) => (typeof v === 'string' && Object.hasOwn(RULES.fight.kinds, v) ? v : no(path, 'entry')),
+  // the rank each keystone tier opens at: text, but only a rank, which keystones.ts compares by its place in RANKS
+  'fight.keystone.markRank': oneRank,
+  'fight.keystone.pairRank': oneRank,
+  'fight.keystone.apexRank': oneRank,
+  // the monster kinds that hold keystones: each a kind of `fight.kinds`, so a kind no monster has is refused
+  'fight.keystone.monsterKinds': entries(v => (typeof v === 'string' && Object.hasOwn(RULES.fight.kinds, v) ? v : null)),
 };
 const PATTERNS = Object.keys(READERS).map(k => ({ re: new RegExp(`^${k.replace(/\./g, '\\.').replace(/\*/g, '[^.]+')}$`), read: READERS[k]! }));
 /** The reader of the rule at `path`, or null when its shipped value reads it. */

@@ -10,6 +10,7 @@ import type { ParseEnv } from '../src/core/save.ts';
 import { addXp } from '../src/core/hunter/progress.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
 import { parseFormula } from '../src/core/formula.ts';
+import { keystonesOf } from '../src/core/hunter/keystones.ts';
 import { RARITIES, priceOf } from '../src/core/registry/items.ts';
 import { dev } from './fixtures/ids.ts';
 import { ruleNumbers } from './fixtures/rule-numbers.ts';
@@ -106,4 +107,29 @@ test('a save whose GM set the foe penetration is weighed against to a kind that 
 test('a percent penetration\'s cap is a whole percent from 0 to 100: a GM\'s 150 is refused and the cap stays at 60', () => {
   expect(loaded({ fight: { penMax: 150 } }).fight.penMax).toBe(60);
   expect(loaded({ fight: { penMax: 45 } }).fight.penMax).toBe(45);
+});
+
+test('a save whose GM set the apex share to 0.5 loads with 0.55, so a body with half its points in each of two stats holds no apex', () => {
+  const R = loaded({ fight: { keystone: { apexShare: 0.5 } } });
+  expect(R.fight.keystone.apexShare).toBe(RULES.fight.keystone.apexShare);
+  const half = { stats: { str: 60, agi: 60, vit: 10, ins: 10, dis: 10, pre: 10, pow: 10, ctl: 10 }, rank: 'S' as const, pair: null, awakened: false };
+  expect(keystonesOf(half, R.fight).filter(k => k.tier === 'apex')).toEqual([]);
+  expect(parseOverrides({ fight: { keystone: { apexShare: 0.5 } } }).refused.map(refusalWords)).toEqual([
+    'fight.keystone.apexShare: must be a number from 0.51 to 0.9. The share a stat must be over for its apex: at 0.5 two stats could hold one each, past 0.9 a build with any second stat holds none.',
+  ]);
+});
+
+test('a save whose GM set a keystone tier to open at a rank that is not one loads with the shipped rank; rank A is kept', () => {
+  expect(parseOverrides({ fight: { keystone: { markRank: 'Z', pairRank: 'A' } } })).toEqual({
+    overrides: { fight: { keystone: { pairRank: 'A' } } }, refused: [{ path: 'fight.keystone.markRank', reason: 'entry' }],
+  });
+  const R = loaded({ fight: { keystone: { markRank: 'Z', apexRank: 'A' } } });
+  expect([R.fight.keystone.markRank, R.fight.keystone.apexRank]).toEqual([RULES.fight.keystone.markRank, 'A']);
+});
+
+test('a save whose GM named a monster kind that is not one among those holding keystones keeps the kinds that are', () => {
+  expect(parseOverrides({ fight: { keystone: { monsterKinds: ['normal', 'dragon'] } } })).toEqual({
+    overrides: { fight: { keystone: { monsterKinds: ['normal'] } } }, refused: [{ path: 'fight.keystone.monsterKinds.1', reason: 'entry' }],
+  });
+  expect(loaded({ fight: { keystone: { monsterKinds: ['boss', 7] } } }).fight.keystone.monsterKinds).toEqual(['boss']);
 });

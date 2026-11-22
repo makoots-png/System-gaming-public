@@ -105,6 +105,7 @@ const REF_ROUNDS = realIn(0.5, 50, 'rounds the reference party takes: a fight is
 const REF_HP = realIn(0.05, 20, 'a monster\'s max HP over the user\'s: 20 is past any boss');
 const TIER_SHARE = realIn(0, 2, 'a share of the ability a kit replaces: 2 is twice it');
 const BURST = realIn(0, 10, 'bolts or curses a burst is worth: 10 is a fight in one go');
+const KEYSTONE_SPEND = realIn(0, 30, 'points one keystone may spend on its rank\'s sample wearer: 0 is a keystone that does nothing, 30 is every point a rank of ten levels gives');
 /** The points a build path's main and second stat take of each level's points (registry/paths.ts `alloc`). */
 export const PATH_ALLOC = wholeIn(0, 10, 'points a path puts in a stat for each the level gives: 0 is none, 10 is past every build');
 /** A perk's points on a bonus key (a title's bonus, a path tier's perk): the bound of every flat bonus a parser reads. */
@@ -608,6 +609,31 @@ const SPEC = {
         // build plays the Pact yet (notes-worth.md); the bar weighs it at 0.50 SA at C, inside its budget with the Pact's
         // credit. It was 0.6 while worth.ts weighed a curse with no formula against a physical one.
         hemo: { end: of(1.4, BURST) },
+      },
+    },
+    // Keystones (docs/agent-handoff/features/notes-11-keystones.md, design A): a power a body earns when one stat, or two
+    // together, hold a large share of the points it spent (src/core/hunter/keystones.ts `keystonesOf`). A share is a
+    // stat's points above `statBase` over all of them, read from the allocated stats only: gear, titles, perks and fight
+    // statuses never count.
+    keystone: {
+      // A room's switch: off, no body holds a keystone and the fights of before keystones hold.
+      on: true,
+      // At most three stats can hold 30% (30% times 3 is 90%), so a mark names one of the hunter's few stats, never one of many.
+      markShare: real(0.3, 0.2, 0.5, 'the share of spent points that earns a stat its mark: under 0.2 five stats hold one, past 0.5 one stat at most'),
+      // A quarter each: two stats holding half the points. Four even stats still earn their top pair.
+      pairShare: real(0.25, 0.15, 0.5, 'the share each of two stats needs for their confluence: under 0.15 six stats hold it, past 0.5 no two stats can'),
+      // Over half, so one stat at most: two stats at 50% earn no apex.
+      apexShare: real(0.55, 0.51, 0.9, 'the share a stat must be over for its apex: at 0.5 two stats could hold one each, past 0.9 a build with any second stat holds none'),
+      // One tier for each rank step after E: the first sessions teach the sheet before keystones arrive, and the words
+      // are plain ("at rank D", not "at 240 points"). Each is one of RANKS (overrides.ts reads it).
+      markRank: 'D' as Rank, pairRank: 'C' as Rank, apexRank: 'B' as Rank,
+      // A normal monster stays quick to run at the table; elites and up carry keystones (design A.5). Each one of
+      // `fight.kinds` (overrides.ts refuses any other).
+      monsterKinds: ['elite', 'boss', 'mythic'] as readonly ('normal' | 'elite' | 'boss' | 'mythic')[],
+      // What one keystone may spend, in points on the sample wearer of its rank (item-budget.ts `powersSpend`), as a
+      // title's band of its rank: a mark a rank D title's 2, a confluence a rank C title's 3, an apex a rank A title's 4.
+      budget: {
+        mark: of(2, KEYSTONE_SPEND), confluence: of(3, KEYSTONE_SPEND), apex: of(4, KEYSTONE_SPEND),
       },
     },
   },
