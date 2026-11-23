@@ -3,9 +3,14 @@
 // death." The owner, Nov 22: the free revive and the revive on debt are a "System raise". Every expected standing is read
 // from those words: a raise from free leaves the one on debt, a raise on debt leaves none, and none is raised no more.
 import { describe, expect, test } from 'bun:test';
-import { REVIVE_STANDINGS, STANDING_EVENT_TYPES, canRaise, debtLine, raiseLine, raiseOffer, raisedSaid, standingStep } from '../src/core/hunter/revive-standing.ts';
-import type { ReviveStanding, StandingEventType } from '../src/core/hunter/revive-standing.ts';
-import { raisedLine, sheetEdit, systemRaise } from '../src/core/hunter/grant.ts';
+import { DEBT_EVENT_TYPES, DEBT_STATES, REVIVE_STANDINGS, STANDING_EVENT_TYPES, canRaise, debtChip, debtLine, debtPaidLine, debtPaidLog, debtPreviewLine, debtState, debtStep, paysDebt, raiseLine, raiseOffer, raisedSaid, standingStep } from '../src/core/hunter/revive-standing.ts';
+import type { DebtEvent, DebtEventType, DebtState, ReviveStanding, StandingEventType } from '../src/core/hunter/revive-standing.ts';
+import { grant, raisedLine, sheetEdit, systemRaise } from '../src/core/hunter/grant.ts';
+import { putItem, sell } from '../src/core/hunter/inventory.ts';
+import { received } from '../src/core/trade/goods.ts';
+import { REWARD_FROM } from '../src/core/protocol.ts';
+import { newRewards } from '../src/core/rewards.ts';
+import { parseItem } from '../src/core/registry/items.ts';
 import { REVIVE_HP } from '../src/core/hunter/vitals.ts';
 import { gmSource } from '../src/core/effects.ts';
 import { statusKey } from '../src/core/combat/effect-ops.ts';
@@ -16,7 +21,7 @@ import type { Hunter, ParseEnv, Save } from '../src/core/save.ts';
 import type { RoomCode } from '../src/core/protocol.ts';
 import { isRefused } from '../src/core/save-step.ts';
 import type { Refused } from '../src/core/save-step.ts';
-import { dev, hid, room } from './fixtures/ids.ts';
+import { day, dev, hid, iid, room } from './fixtures/ids.ts';
 
 describe('the revive ladder, as a machine: every standing against every event', () => {
   const EXPECTED: Record<ReviveStanding, Record<StandingEventType, ReviveStanding | 'spent'>> = {
@@ -158,5 +163,107 @@ describe('what the System says of its raise', () => {
   test('the GM\'s log and the bag say who was raised and what is owed', () => {
     expect(raisedSaid('Mira', 'debt', 1000)).toEqual({ title: 'System revive: Mira', text: 'The System revived Mira for 1,000 gold debt. No System revives left.' });
     expect([debtLine(0), debtLine(1000)]).toEqual([null, 'Debt owed to the System for reviving: 1,000 gold.']);
+    expect([debtPaidLine(0, 0), debtPaidLine(50, 950), debtPaidLine(30, 0)]).toEqual([
+      null,
+      '50 gold went to System revive debt (950 gold left).',
+      '30 gold paid off System revive debt.',
+    ]);
+    expect([debtPreviewLine(0, 0), debtPreviewLine(50, 950), debtPreviewLine(30, 0)]).toEqual([
+      null,
+      '50 gold goes to System revive debt (950 gold left).',
+      '30 gold pays off System revive debt.',
+    ]);
+    expect([debtChip(0), debtChip(950)]).toEqual([null, 'System debt: 950 gold']);
+    expect(debtPaidLog('Mira', 0, 0)).toBeNull();
+    expect(debtPaidLog('Mira', 50, 950)).toEqual({ kind: 'award', hunterId: null, title: 'Debt payment: Mira', text: 'Mira paid 50 gold toward System revive debt (950 gold left).' });
+    expect(debtPaidLog('Mira', 30, 0)).toEqual({ kind: 'award', hunterId: null, title: 'Debt payment: Mira', text: 'Mira paid 30 gold and cleared their System revive debt.' });
+  });
+});
+
+describe('the revive debt machine: every state against every event, rounding, bounds, and eligible sources', () => {
+  const START: { readonly [S in DebtState]: number } = { clear: 0, owing: 100 };
+  const EVENTS: { readonly [E in DebtEventType]: Extract<DebtEvent, { type: E }> } = {
+    incur: { type: 'incur', amount: 250 },
+    clearGold: { type: 'clearGold', gold: 80 },
+  };
+  const EXPECTED: { readonly [S in DebtState]: { readonly [E in DebtEventType]: { debt: number; paid: number; kept: number; state: DebtState } } } = {
+    clear: {
+      incur: { debt: 250, paid: 0, kept: 0, state: 'owing' },
+      clearGold: { debt: 0, paid: 0, kept: 80, state: 'clear' },
+    },
+    owing: {
+      incur: { debt: 350, paid: 0, kept: 0, state: 'owing' },
+      clearGold: { debt: 60, paid: 40, kept: 40, state: 'owing' },
+    },
+  };
+  for (const s of DEBT_STATES) {
+    for (const e of DEBT_EVENT_TYPES) {
+      test(`${s} + ${e} -> ${EXPECTED[s][e].state}`, () => {
+        const res = debtStep(START[s], EVENTS[e], RULES);
+        expect({ ...res, state: debtState(res.debt) }).toEqual(EXPECTED[s][e]);
+      });
+    }
+  }
+
+  test('Math.round rounding, 0% and 100% shares, overpayment clamping, 0 debt, and negative gold', () => {
+    expect(debtStep(1000, { type: 'clearGold', gold: 101 }, RULES), 'half of 101 rounds up to 51').toEqual({ debt: 949, paid: 51, kept: 50 });
+    expect(debtStep(1000, { type: 'clearGold', gold: 1 }, RULES), 'half of 1 rounds up to 1').toEqual({ debt: 999, paid: 1, kept: 0 });
+    expect(debtStep(1000, { type: 'clearGold', gold: 1 }, { reviveDebtShare: 0.25 }), 'quarter of 1 rounds down to 0').toEqual({ debt: 1000, paid: 0, kept: 1 });
+    expect(debtStep(1000, { type: 'clearGold', gold: 100 }, { reviveDebtShare: 0 }), '0% share takes nothing').toEqual({ debt: 1000, paid: 0, kept: 100 });
+    expect(debtStep(1000, { type: 'clearGold', gold: 100 }, { reviveDebtShare: 1 }), '100% share takes all gold').toEqual({ debt: 900, paid: 100, kept: 0 });
+    expect(debtStep(30, { type: 'clearGold', gold: 100 }, RULES), 'never takes more than remaining debt; excess stays with hunter').toEqual({ debt: 0, paid: 30, kept: 70 });
+    expect(debtStep(50, { type: 'clearGold', gold: 100 }, RULES), 'exact payoff transitions to clear').toEqual({ debt: 0, paid: 50, kept: 50 });
+    expect(debtStep(1000, { type: 'clearGold', gold: -50 }, RULES), 'negative gold is untouched').toEqual({ debt: 1000, paid: 0, kept: -50 });
+    expect(debtStep(0, { type: 'incur', amount: 0 }, RULES), 'incurring 0 stays clear').toEqual({ debt: 0, paid: 0, kept: 0 });
+  });
+
+  test('only gate clear and solo clear reward sources pay down debt', () => {
+    expect(REWARD_FROM.map(f => [f, paysDebt(f)])).toEqual([['solo', true], ['quest', false], ['feat', false], ['clear', true]]);
+    expect([paysDebt(null), paysDebt(undefined)]).toEqual([false, false]);
+  });
+
+  test('grant collects debt only on clear and solo rewards, leaves reviveLeft at none at 0 debt, and ignores quests, feats, GM gifts, trades, and shop sales', () => {
+    const AT = '2026-11-23T12:00:00.000Z';
+    const ENV: ParseEnv = { now: new Date(AT), newDeviceToken: () => 'test-device-token-0123456789abcd', newDeviceId: () => dev('d-player1') };
+    const H = hid('h1'), DAY = { at: AT, today: day('2026-11-23'), R: RULES, vitals: 'sheet' as const };
+    const base0 = freshSave(ENV, { onboarded: true });
+    const withDebt = (debt: number, gold = 10): Save => ({
+      ...base0,
+      hunters: [{ ...base0.hunters[0]!, id: H, name: 'Mira', gold, debt, reviveLeft: 'none' }],
+    });
+    const ok = <T>(r: T | Refused): T => { if (isRefused(r)) throw new Error(`refused: ${r.why}`); return r as T; };
+
+    // clear reward: partial payoff
+    const partial = ok(grant(withDebt(100), H, { ...newRewards(), gold: 60 }, null, { ...DAY, from: 'clear' }));
+    expect([partial.save.hunters[0]!.gold, partial.save.hunters[0]!.debt, partial.save.hunters[0]!.reviveLeft]).toEqual([40, 70, 'none']);
+    expect(partial.debtPaid).toEqual({ paid: 30, left: 70 });
+    expect(partial.lines).toEqual(['+30 gold', '30 gold went to System revive debt (70 gold left).']);
+    expect(partial.save.log[0]).toMatchObject({ title: 'Debt payment: Mira', text: 'Mira paid 30 gold toward System revive debt (70 gold left).' });
+
+    // solo clear: final payoff leaves reviveLeft at none and keeps excess gold
+    const paidOff = ok(grant(withDebt(30), H, { ...newRewards(), gold: 100 }, null, { ...DAY, from: 'solo' }));
+    expect([paidOff.save.hunters[0]!.gold, paidOff.save.hunters[0]!.debt, paidOff.save.hunters[0]!.reviveLeft]).toEqual([80, 0, 'none']);
+    expect(paidOff.debtPaid).toEqual({ paid: 30, left: 0 });
+    expect(paidOff.lines).toEqual(['+70 gold', '30 gold paid off System revive debt.']);
+
+    // 100% share omits "+0 gold" line
+    const allDebt = ok(grant(withDebt(500), H, { ...newRewards(), gold: 100 }, null, { ...DAY, R: { ...RULES, reviveDebtShare: 1 }, from: 'clear' }));
+    expect([allDebt.save.hunters[0]!.gold, allDebt.save.hunters[0]!.debt]).toEqual([10, 400]);
+    expect(allDebt.lines).toEqual(['100 gold went to System revive debt (400 gold left).']);
+
+    // non-clear rewards leave debt untouched
+    for (const from of ['quest', 'feat', null, undefined] as const) {
+      const g = ok(grant(withDebt(100), H, { ...newRewards(), gold: 60 }, null, { ...DAY, from }));
+      expect([g.save.hunters[0]!.gold, g.save.hunters[0]!.debt, g.debtPaid], `from=${String(from)}`).toEqual([70, 100, null]);
+      expect(g.lines).toEqual(['+60 gold']);
+    }
+
+    // trade and shop sell leave debt untouched
+    const h0 = withDebt(100).hunters[0]!;
+    const traded = received(h0, { gold: 80, items: [] }, () => iid('i99'));
+    expect([traded.gold, traded.debt]).toEqual([90, 100]);
+    const potion = parseItem({ name: 'Health Potion', rar: 'common', type: 'consumable', value: 40 })!;
+    const sold = ok(sell(putItem(h0, potion, iid('i1')), iid('i1'), 1, RULES));
+    expect([sold.gold, sold.debt]).toEqual([20, 100]);
   });
 });

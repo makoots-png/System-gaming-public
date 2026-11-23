@@ -7,6 +7,7 @@ import { isStatusKey } from './combat/effect-ops.ts';
 import type { StatusDef, StatusKey } from './combat/effect-ops.ts';
 import { parseStatusDef, statusTooLarge } from './combat/fight-parse.ts';
 import { isStateChip } from './hunter/chips.ts';
+import { debtPaidLine } from './hunter/revive-standing.ts';
 import { parseItem } from './registry/items.ts';
 import { parsePowers } from './registry/powers.ts';
 import type { Powers } from './registry/powers.ts';
@@ -235,15 +236,19 @@ export function rewardLines(R: RewardRules, r: Rewards): string[] {
   return out;
 }
 
-/** What a grant did beside the reward's own parts: a build change's line, and the level before and after its XP. */
-export type GrantMore = { readonly build?: string; readonly level?: { readonly from: number; readonly to: number } };
+/** What a grant did beside the reward's own parts: a build change's line, the level before and after its XP, and any gold that went toward System revive debt. */
+export type GrantMore = {
+  readonly build?: string;
+  readonly level?: { readonly from: number; readonly to: number };
+  readonly debt?: { readonly paid: number; readonly left: number };
+};
 
 /**
  * The reward window's lines, as the player sees them when a reward arrives (`applyRewards` in src/views/hunter.js shows
  * them; the reward editor's preview draws them): "+100 XP", "+50 gold", "Loses 1 ability point", "Item acquired: Potion
  * ×2", "Title acquired: ...", "Skill acquired: ...", "Status: Hasted (3 rounds)", "Boon: ...". `more.build` is a build
  * change's line, shown after the items. A level lost to an XP cost is said after the XP ("Loses 1 level: now level 2");
- * a level gained has a window of its own (`levelup`).
+ * a level gained has a window of its own (`levelup`). `more.debt` adds the debt payment line after the kept gold.
  */
 export function grantLines(R: RewardRules, r: Rewards, more: GrantMore = {}): string[] {
   const out: string[] = [];
@@ -251,6 +256,8 @@ export function grantLines(R: RewardRules, r: Rewards, more: GrantMore = {}): st
   const lost = more.level ? more.level.from - more.level.to : 0;
   if (more.level && lost > 0) out.push(`Loses ${lost} level${lost === 1 ? '' : 's'} (now level ${more.level.to})`);
   if (r.gold) out.push(amount(r.gold, 'gold'));
+  const paid = more.debt ? debtPaidLine(more.debt.paid, more.debt.left) : null;
+  if (paid) out.push(paid);
   if (r.points) out.push(amount(r.points, points(r.points)));
   for (const i of r.items) out.push(`Item acquired: ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`);
   if (more.build) out.push(more.build);

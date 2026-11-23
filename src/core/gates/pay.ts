@@ -18,7 +18,7 @@ import type { PendingReward } from '../hunter/pending.ts';
 import { isEmptyReward, newRewards } from '../rewards.ts';
 import type { Rewards } from '../rewards.ts';
 import { EARNED_WHAT_MAX, newEvent, newEventId, parseSheetKey } from '../protocol.ts';
-import type { EventBody, EventStamp, RoomCode, RoomEvent, SheetKey } from '../protocol.ts';
+import type { EventBody, EventStamp, RewardFrom, RoomCode, RoomEvent, SheetKey } from '../protocol.ts';
 import { sheetKeyOf } from '../ids.ts';
 import type { GateId, HunterId } from '../ids.ts';
 import type { ItemTemplate } from '../registry/items.ts';
@@ -94,11 +94,11 @@ export type Posts = { readonly room: RoomCode | null; readonly events: readonly 
 export type Settled = { readonly save: Save; readonly granted: readonly { readonly hid: string; readonly g: Granted }[] };
 
 /** The local payees given `rewardsOf`, then the posts put in the outbox: one save. */
-function payAll(save: Save, locals: readonly { hid: string; rewards: Rewards }[], posts: Posts, day: Day): Settled {
+function payAll(save: Save, locals: readonly { hid: string; rewards: Rewards }[], posts: Posts, day: Day, from: RewardFrom | null = null): Settled {
   let s = save;
   const granted: { hid: string; g: Granted }[] = [];
   for (const { hid, rewards } of locals) {
-    const g = grant(s, hid, rewards, null, { ...day, vitals: 'sheet' });
+    const g = grant(s, hid, rewards, null, { ...day, vitals: 'sheet', from });
     if (isRefused(g)) continue;
     s = g.save; granted.push({ hid, g });
   }
@@ -222,7 +222,7 @@ export function settleClear(save: Save, gateId: string, pay: ClearPay, locals: r
     if (!noted) throw new Error('the room would refuse the fact of a gate the save holds');
     return [p.pays, noted];
   });
-  return payAll(facts, effectiveLocals, { room: room ? room.code : null, events }, day);
+  return payAll(facts, effectiveLocals, { room: room ? room.code : null, events }, day, 'clear');
 }
 
 /** Room details for a clear preset settlement: the room code, the event stamp, and each remote payee's rank (for its gate fact). */
@@ -304,6 +304,6 @@ export function settleClearPreset(
   const locals = payees.flatMap(p => (p.kind === 'local'
     ? [{ hid: p.hid, rewards: { ...newRewards(), xp: preset.xp, gold: preset.gold, items: [...(byPayee.get(p.hid) ?? [])] } }]
     : []));
-  const out = payAll(next, locals, { room: null, events: [] }, day);
+  const out = payAll(next, locals, { room: null, events: [] }, day, 'clear');
   return { save: out.save, granted: out.granted, pending: [], stashed: stash };
 }

@@ -179,7 +179,7 @@ export function selfPay(s: Save, hid: HunterId, r: SelfReward, c: SelfPayCtx): S
   if (isEmptyReward(r.rewards)) return { save: s, granted: null };
   const route = ROUTE[c.seat.seat], room = c.seat.seat === 'alone' ? null : c.seat.room;
   if (route === 'pay') {
-    const g = (c.grant ?? grant)(s, hid, r.rewards, null, { at: c.at, today: c.today, R: c.R, vitals: 'sheet' });
+    const g = (c.grant ?? grant)(s, hid, r.rewards, null, { at: c.at, today: c.today, R: c.R, vitals: 'sheet', from: r.from });
     return isRefused(g) ? g : { save: g.save, granted: g };
   }
   if (!s.hunters.some(x => x.id === hid)) return refuse('no-hunter');

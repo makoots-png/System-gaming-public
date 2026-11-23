@@ -844,6 +844,7 @@ export type RoomRules = {
   usedUpShare: number;
   reviveClears: number;
   reviveDebtClears: number;
+  reviveDebtShare: number;
   reviveLevelShare: number;
   gateParty: number;
   loot: Rules['loot'];
@@ -1199,7 +1200,7 @@ function lootRank<K extends Rank>(v: unknown, rank: K): Rules['loot'][K] {
 /** The room's rules doc: every field required but the feats and trading switches (on when absent) and the mythic switch (off when absent). */
 function roomRulesDoc(o: Rec): RoomRules {
   const b = obj(own(o, 'build')), so = obj(own(o, 'solo')), ra = obj(own(o, 'rarities')), lo = obj(own(o, 'loot'));
-  const rule = (k: 'gradeStep' | 'saleShare' | 'usedUpShare' | 'reviveClears' | 'reviveDebtClears' | 'reviveLevelShare' | 'gateParty'): number => ruleNumber(k)(own(o, k));
+  const rule = (k: 'gradeStep' | 'saleShare' | 'usedUpShare' | 'reviveClears' | 'reviveDebtClears' | 'reviveDebtShare' | 'reviveLevelShare' | 'gateParty'): number => ruleNumber(k)(own(o, k));
   return {
     build: { enabled: bool(own(b, 'enabled')), playerPick: bool(own(b, 'playerPick')) },
     solo: { personal: bool(own(so, 'personal')), hours: int(1, SOLO_BOUNDS.hours)(own(so, 'hours')), lootShare: ruleNumber('solo.lootShare')(own(so, 'lootShare')) },
@@ -1212,6 +1213,7 @@ function roomRulesDoc(o: Rec): RoomRules {
     usedUpShare: rule('usedUpShare'),
     reviveClears: rule('reviveClears'),
     reviveDebtClears: rule('reviveDebtClears'),
+    reviveDebtShare: rule('reviveDebtShare'),
     reviveLevelShare: rule('reviveLevelShare'),
     gateParty: rule('gateParty'),
     loot: { E: lootRank(own(lo, 'E'), 'E'), D: lootRank(own(lo, 'D'), 'D'), C: lootRank(own(lo, 'C'), 'C'), B: lootRank(own(lo, 'B'), 'B'), A: lootRank(own(lo, 'A'), 'A'), S: lootRank(own(lo, 'S'), 'S') },

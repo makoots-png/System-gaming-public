@@ -8,7 +8,7 @@
 // running fight holds (a status on a row) is the fight's command, after this write, as a grant's fight parts are.
 import { grant } from './hunter/grant.ts';
 import type { Day, Granted, VitalsAt } from './hunter/grant.ts';
-import type { GivenBundle, RoomCode, RoomEvent } from './protocol.ts';
+import type { GivenBundle, RewardFrom, RoomCode, RoomEvent } from './protocol.ts';
 import { record } from './hunter/chronicle.ts';
 import type { Rewards } from './rewards.ts';
 import type { Save } from './save.ts';
@@ -45,11 +45,11 @@ export type Awarded = { readonly save: Save; readonly granted: readonly { readon
  * An award given from a bundle by hand (`given`, the GM's awards for roleplay) is a fact of each local hunter's chronicle,
  * in the same write; a player's phone records it when its award lands (room-events.ts).
  */
-export function gmAward(save: Save, locals: readonly { readonly hid: string; readonly vitals: VitalsAt }[], rewards: Rewards, s: Sends, day: Day, given: GivenBundle | null = null): Awarded {
+export function gmAward(save: Save, locals: readonly { readonly hid: string; readonly vitals: VitalsAt }[], rewards: Rewards, s: Sends, day: Day, given: GivenBundle | null = null, from: RewardFrom | null = null): Awarded {
   let next = save;
   const granted: { hid: string; g: Granted }[] = [];
   for (const { hid, vitals } of locals) {
-    const g = grant(next, hid, rewards, null, { ...day, vitals });
+    const g = grant(next, hid, rewards, null, { ...day, vitals, from });
     if (isRefused(g)) continue;
     next = given ? { ...g.save, hunters: g.save.hunters.map(h => (h.id === hid ? record(h, { kind: 'given', key: given.key, name: given.name }) : h)) } : g.save;
     granted.push({ hid, g: { ...g, save: next } });

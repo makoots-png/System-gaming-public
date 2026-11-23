@@ -302,16 +302,17 @@ test('only grant.ts sheetEdit changes a hunter\'s rests taken in a gate, through
   expect(report(hits), 'change a hunter\'s rests only through sheetEdit (grant.ts) with a rest, a Clear or a gate left (rests.ts restStep).').toEqual([]);
 });
 
-test('only grant.ts systemRaise changes a hunter\'s revive standing and debt, through revive-standing.ts standingStep', async () => {
-  // World rule 6 and the owner's System raise (Nov 22): the standing, the life and the debt move in one write. A second
-  // writer could spend a raise the hunter never took, or raise it without the debt (notes-9-rulings-1122.md, section 21).
+test('only grant.ts changes a hunter\'s revive standing and debt, through revive-standing.ts standingStep and debtStep', async () => {
+  // World rule 6 and the owner's System raise (Nov 22): the standing, the life and the debt move in one write in
+  // `systemRaise`, and gate clear gold pays down the debt in `grant` through `debtStep`. A second writer could spend a
+  // raise the hunter never took, raise without debt, or collect debt on non-clear gold.
   const writes = /\.(reviveLeft|debt)\s*([-+*/]?=(?![=>])|\+\+|--)|\b(reviveLeft|debt)\s*:(?!\s*(?:number|ReviveStanding)\b)/;
   expect(writes.test('h.reviveLeft = \'debt\';') && writes.test('({ ...h, debt: h.debt + 1000 })'), 'the rule sees a write').toBe(true);
   expect(writes.test('  debt: number;'), 'and not the type').toBe(false);
   // revive-standing.ts keys its tables by the standing, whose name `debt` is the field's
   const owners = ['src/core/hunter/grant.ts', 'src/core/hunter/hunter.ts', 'src/core/hunter/revive-standing.ts'];
   const hits = (await sourceLines('src')).filter(line => !owners.includes(line.file) && !isComment(line.text) && writes.test(line.text));
-  expect(report(hits), 'change a hunter\'s revive standing and debt only through systemRaise (grant.ts), which steps revive-standing.ts standingStep.').toEqual([]);
+  expect(report(hits), 'change a hunter\'s revive standing and debt only through grant.ts (`systemRaise` and `grant`), which step revive-standing.ts `standingStep` and `debtStep`.').toEqual([]);
 });
 
 test('only src/core/hunter/penalty.ts changes a hunter\'s penalty, and nothing else names the Penalized chip', async () => {

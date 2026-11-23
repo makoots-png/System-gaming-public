@@ -216,6 +216,8 @@ const SPEC = {
   // economy.md section 13 and world rule 6: the one System raise on debt owes ten Clears of the hunter's rank, what a
   // Resurrection Crystal of that rank costs, so a hunter past the free raise pays for a return as a crystal's buyer does
   reviveDebtClears: whole(10, 1, 1000, 'debt for a System revive in same-rank gate clears, from 1 to 1000'),
+  // Default payoff share (qd row 72): half of each gate clear's gold goes toward System revive debt until it reaches 0.
+  reviveDebtShare: of(0.5, SHARE),
   reviveLevelShare: of(1 / 30, SHARE), // design 4.4, ruling 9: a raising takes this share of the level, rounded up, never below level 1 ("maybe 3.33% of your total level")
   gateParty: whole(4, 1, 12, 'number of hunters a world gate payout is balanced for, from 1 to 12'), // design 4.1: the session model's party; its gold and XP are a pot of this many shares
   // design 2.3: the points an item may spend beyond its slot's free numbers

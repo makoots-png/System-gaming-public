@@ -15,7 +15,7 @@
 // `told` takes them (src/core/session-log.ts), so a step needs no id reserved outside it.
 import { gmSource } from '../effects.ts';
 import type { LevelUp } from '../events.ts';
-import type { BuildChange } from '../protocol.ts';
+import type { BuildChange, RewardFrom } from '../protocol.ts';
 import { grantLines } from '../rewards.ts';
 import type { RewardStatus, RewardTitle, Rewards } from '../rewards.ts';
 import type { Rank, Rules } from '../rules.ts';
@@ -46,7 +46,7 @@ import type { Life, LifeEvent, VitalEvent } from './vitals.ts';
 import { record } from './chronicle.ts';
 import type { Fact, LifeHow } from './facts.ts';
 import { restStep } from './rests.ts';
-import { canRaise, raiseOwes, standingStep } from './revive-standing.ts';
+import { canRaise, debtPaidLog, debtStep, paysDebt, raiseOwes, standingStep } from './revive-standing.ts';
 import type { Raise } from './revive-standing.ts';
 import { saveId, sheetKeyOf } from '../ids.ts';
 import type { HunterId, IdOf, RoomCode } from '../ids.ts';
@@ -128,6 +128,9 @@ export function levelEdit(save: Save, hid: string, level: number, xp: number, da
   return { save: told(next, { at: day.at, cap: day.R.logCap }, ...l.said), done: l.done };
 }
 
+/** Gold collected toward System revive debt in one grant, and the remaining balance after it. */
+export type DebtPaid = { readonly paid: number; readonly left: number };
+
 /** What one reward did to one hunter. */
 export type Granted = {
   save: Save;
@@ -141,6 +144,8 @@ export type Granted = {
   fight: { statuses: StatusIn[]; refill: boolean };
   /** The Job Change steps the level change completed in the same step (`levelled`), for their windows. */
   done: StepDone[];
+  /** Gold applied toward System revive debt in this grant, or null when nothing went to debt. */
+  debtPaid: DebtPaid | null;
 };
 
 const sheetOf = (h: Hunter, R: Rules) => hunterSheet(h, R).sheet;
@@ -162,7 +167,7 @@ export const statusGiven = (s: RewardStatus, rank: Rank): StatusIn => ({ key: s.
  * title, job, build, skills, boons, then the sheet's maxima fitted; statuses; gold and items, fitted again (gear weighs);
  * XP last, so a level-up's refill fills the maxima the rest of the reward gave. A hunter that is not there is refused.
  */
-export function grant(save: Save, hid: string, r: Rewards, build: BuildChange | null, o: Day & { vitals: VitalsAt }): Granted | Refused<'no-hunter'> {
+export function grant(save: Save, hid: string, r: Rewards, build: BuildChange | null, o: Day & { vitals: VitalsAt; from?: RewardFrom | null | undefined }): Granted | Refused<'no-hunter'> {
   const at = save.hunters.findIndex(h => h.id === hid);
   if (at < 0) return refuse('no-hunter');
   const { R } = o, ids = idsFrom(save.seq), h0 = save.hunters[at]!;
@@ -188,9 +193,15 @@ export function grant(save: Save, hid: string, r: Rewards, build: BuildChange | 
     if (!isRefused(next)) { h = next; took.push(s); }
   }
 
+  const pay = r.gold > 0 && paysDebt(o.from)
+    ? debtStep(h.debt, { type: 'clearGold', gold: r.gold }, R)
+    : { debt: h.debt, paid: 0, kept: r.gold };
   const goldBefore = h.gold;
-  if (r.gold) h = addGold(h, r.gold);
+  if (pay.kept) h = addGold(h, pay.kept);
   const gold = h.gold - goldBefore;
+  if (pay.debt !== h.debt) h = { ...h, debt: pay.debt };
+  const debtPaid: DebtPaid | null = pay.paid > 0 ? { paid: pay.paid, left: pay.debt } : null;
+  const debtLog = debtPaid ? debtPaidLog(h.name, debtPaid.paid, debtPaid.left) : null;
   for (const it of r.items) h = putItem(h, it, stackOf(h, it)?.id ?? ids.next('i'));
   h = fitted(h, R);
 
@@ -210,10 +221,10 @@ export function grant(save: Save, hid: string, r: Rewards, build: BuildChange | 
     h = l.hunter; done = l.done; said = l.said;
   }
 
-  const lines = grantLines(R, { ...r, xp, gold, points, title: r.title && titleNew ? titleGiven(r.title, replaced?.name) : null, statuses: took }, { build: buildLine, level: { from: h0.level, to: h.level } });
+  const lines = grantLines(R, { ...r, xp, gold, points, title: r.title && titleNew ? titleGiven(r.title, replaced?.name) : null, statuses: took }, { build: buildLine, level: { from: h0.level, to: h.level }, ...(debtPaid ? { debt: debtPaid } : {}) });
   const hunters = save.hunters.map((x, i) => (i === at ? h : x));
-  const next = told({ ...save, seq: ids.seq(), hunters }, { at: o.at, cap: R.logCap }, ...said);
-  return { save: next, lines, levelup, fight: { statuses: toFight, refill: refillLeft }, done };
+  const next = told({ ...save, seq: ids.seq(), hunters }, { at: o.at, cap: R.logCap }, ...(debtLog ? [debtLog] : []), ...said);
+  return { save: next, lines, levelup, fight: { statuses: toFight, refill: refillLeft }, done, debtPaid };
 }
 
 // ── a Job Change chain event ──
@@ -439,7 +450,7 @@ export function systemRaise(save: Save, hid: string, o: { at: string; room: Room
   if (isRefused(up)) return refuse('cannot');
   if (o.held) return refuse('held');
   const owes = raiseOwes(raise, h.rank, o.R);
-  const raised: Save = { ...save, hunters: save.hunters.map(x => (x.id === hid ? { ...up, reviveLeft: left, debt: up.debt + owes } : x)) };
+  const raised: Save = { ...save, hunters: save.hunters.map(x => (x.id === hid ? { ...up, reviveLeft: left, debt: debtStep(up.debt, { type: 'incur', amount: owes }, o.R).debt } : x)) };
   const device = save.settings.deviceId;
   const event = o.room ? newEvent('systemRaise', { by: sheetKeyOf(device, h.id), name: h.name, raise, owes }, { device, now: Date.parse(o.at), rand: idShare(`raise ${hid} ${raise}`) }) : null;
   const room = o.room;

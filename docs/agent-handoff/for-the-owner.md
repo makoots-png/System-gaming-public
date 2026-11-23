@@ -6,7 +6,7 @@ A running list of what needs your call. The lead adds to it and strikes a line w
 
 Numbers 1 to 7 are answered and are under Answered (the economy is live, the balance defaults stand, armor is package A, the coin shows no side, the fudge rulings).
 
-Nothing is open: by the owner's word of Nov 22 the lead decided what was (8, 9 and 10) and wrote each in `questionable-decisions.md`.
+- **System revive debt payoff rule (qd row 72).** How do you want hunters to pay off the gold debt from a System revive on debt? Built default: `reviveDebtShare` (default `0.5`, 0 to 1, synced in the room's rules) sends 50% of each gate clear's gold (table clears and solo clears, including personal gates, rounded with `Math.round`) toward `Hunter.debt` until it reaches 0, while trades, stash withdrawals, shop sales, quests, feats, and manual GM gifts are untouched, and clearing the debt leaves `reviveLeft` at `none`. Tell us if you want a different share, a manual Pay debt button, penalties while in debt, or a ladder reset when debt hits 0.
 
 ## Answered
 

@@ -1393,6 +1393,38 @@ Where it lives:
 | The test to copy | `tests/revive-standing.test.ts` |
 | The recipe | docs/guide/save-store.md, "A field of a saved thing" |
 
+## A hunter's revive debt
+
+Both debt states (`clear` at 0 and `owing` above 0) walked from 0 under `incur` and `clearGold` (partial and full payoff) with the shipped rules, breadth first. The walk found 2 states and 6 steps.
+
+### A System revive on debt creates debt, and gate clear gold pays it off
+
+```mermaid
+---
+title: A System revive on debt creates debt, and gate clear gold pays it off
+---
+stateDiagram-v2
+  state "No debt" as s1
+  state "Owing debt" as s2
+  [*] --> s1
+  s1 --> s2 : System revive on debt adds gold owed
+  s2 --> s1 : gate clear gold pays off the rest of the debt
+```
+
+A System revive from the debt standing adds `raiseOwes` gold to `Hunter.debt`. While `Hunter.debt` is above 0, `reviveDebtShare` (50% by default, rounded with Math.round and capped at the remaining debt and gold) of each gate clear's gold goes toward the debt until it reaches 0. Non-clear rewards, trades, stash withdrawals, shop sales, and manual GM gold edits do not touch the debt. Paying the debt to 0 leaves `Hunter.reviveLeft` at `none`.
+
+2 chart states, 2 arrows. No step is hidden.
+
+Where it lives:
+
+| What | Where |
+|---|---|
+| The union | `DebtState`, `DebtEvent`, `DebtStep`, and `DEBT_STATES` in `src/core/hunter/revive-standing.ts`; the balance is `Hunter.debt`, repaired to 0 or above |
+| What changes it | `debtStep(debt, event, R)`, `DEBT_TABLE`, and `paysDebt(from)` |
+| Who calls it | `systemRaise` (`incur`) and `grant` (`clearGold` when `paysDebt(from)` holds) in `src/core/hunter/grant.ts`, the sole writer of `Hunter.debt`; `settleClear`, `settleClearPreset`, `selfPay`, `gmAward`, and `landAward` pass `from` |
+| The test to copy | `tests/revive-standing.test.ts` |
+| The recipe | docs/guide/save-store.md, "A field of a saved thing" |
+
 ## A foe's life in a fight
 
 Every life reachable from a foe up at 20 of 20 HP under the 7 events of the hunter's life walk (tests/models/life-events.ts), breadth first. The walk found 34 states and 238 steps.

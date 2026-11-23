@@ -3,6 +3,7 @@
 import { describe, expect, test } from 'bun:test';
 import { ALONE, ENDED_KEPT, PENDING_EVENTS, PENDING_STATES, PENDING_WORDS, ROUTE, askOf, parsePending, pendingApproved, pendingHeard, pendingOf, pendingRefused, pendingStep, rewardSeatOf, selfPaid, selfPay, waitingIn } from '../src/core/hunter/pending.ts';
 import type { PendingEvent, PendingReward, PendingState, RewardSeat, SelfReward } from '../src/core/hunter/pending.ts';
+import { gmAward } from '../src/core/award.ts';
 import { freshSave, newHunter, newRewards } from '../src/core/save.ts';
 import type { Save } from '../src/core/save.ts';
 import { RULES } from '../src/core/rules.ts';
@@ -161,5 +162,37 @@ describe('a reward waiting for the GM', () => {
     }
     const refusedGrant = selfPay(save(), H1, QUEST, { ...ctx(ALONE), grant: () => refuse('no-hunter') });
     expect(refusedGrant).toEqual({ ok: false, why: 'no-hunter' });
+  });
+
+  test('solo clear selfPay collects debt alone, waits untouched in a room, and gmAward collects debt on edited clear approval but not on quest or manual awards', () => {
+    const owing: Save = { ...save(), hunters: save().hunters.map(h => ({ ...h, gold: 100, debt: 200, reviveLeft: 'none' as const })) };
+    const solo: SelfReward = { from: 'solo', what: 'Goblin Warren', seed: 'personal h1 p1', rewards: { ...newRewards(), gold: 60 } };
+
+    // Alone: solo clear collects 50% (30 gold) toward debt
+    const soloAlone = ok(selfPay(owing, H1, solo, ctx(ALONE)));
+    expect([soloAlone.save.hunters[0]!.gold, soloAlone.save.hunters[0]!.debt]).toEqual([130, 170]);
+    expect(soloAlone.granted?.debtPaid).toEqual({ paid: 30, left: 170 });
+
+    // Alone: quest does not collect debt
+    const questAlone = ok(selfPay(owing, H1, QUEST, ctx(ALONE)));
+    expect([questAlone.save.hunters[0]!.gold, questAlone.save.hunters[0]!.debt]).toEqual([140, 200]);
+
+    // In a room as GM: pending waits without touching debt; refusing keeps debt; approving edited gold collects on the edited amount
+    const waiting = ok(selfPay(owing, H1, solo, ctx({ seat: 'gm', room: ROOM }))).save;
+    expect([waiting.hunters[0]!.gold, waiting.hunters[0]!.debt]).toEqual([100, 200]);
+    const rec = waitingIn(waiting, ROOM)[0]!;
+
+    const refused = ok(pendingRefused(waiting, rec.id, { stamp: { device: ME, now: Date.parse(AT), rand: 0.5 }, log: LOG }));
+    expect(refused.hunters[0]!.debt).toBe(200);
+
+    const editedGold = { ...newRewards(), gold: 120 };
+    const awarded = gmAward(waiting, [{ hid: H1, vitals: 'sheet' }], editedGold, { room: ROOM, events: [], said: [] }, { at: AT, today: day('2026-11-22'), R: RULES }, null, rec.from);
+    const approved = ok(pendingApproved(awarded.save, rec.id, editedGold));
+    expect([approved.hunters[0]!.gold, approved.hunters[0]!.debt]).toEqual([160, 140]);
+    expect(awarded.granted[0]!.g.debtPaid).toEqual({ paid: 60, left: 140 });
+
+    // Manual GM award (from = null) leaves debt untouched
+    const manual = gmAward(owing, [{ hid: H1, vitals: 'sheet' }], editedGold, { room: ROOM, events: [], said: [] }, { at: AT, today: day('2026-11-22'), R: RULES });
+    expect([manual.save.hunters[0]!.gold, manual.save.hunters[0]!.debt]).toEqual([220, 200]);
   });
 });

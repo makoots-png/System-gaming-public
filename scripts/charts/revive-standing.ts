@@ -1,6 +1,7 @@
-// The chart of a hunter's revive ladder (src/core/hunter/revive-standing.ts `standingStep`), walked with its one event.
-import { REVIVE_STANDINGS, STANDING_EVENT_TYPES, standingStep } from '../../src/core/hunter/revive-standing.ts';
-import type { ReviveStanding, StandingEvent } from '../../src/core/hunter/revive-standing.ts';
+// The charts of a hunter's revive ladder and System revive debt (src/core/hunter/revive-standing.ts `standingStep`, `debtStep`).
+import { DEBT_STATES, REVIVE_STANDINGS, STANDING_EVENT_TYPES, debtState, debtStep, standingStep } from '../../src/core/hunter/revive-standing.ts';
+import type { DebtEvent, DebtState, ReviveStanding, StandingEvent } from '../../src/core/hunter/revive-standing.ts';
+import { RULES } from '../../src/core/rules.ts';
 import { isRefused } from '../../src/core/save-step.ts';
 import { bfs, machine } from '../statecharts.ts';
 
@@ -30,6 +31,44 @@ export const reviveStanding = machine<ReviveStanding, StandingEvent>({
     ['The union', '`ReviveStanding`, `StandingEvent` and `REVIVE_STANDINGS` in `src/core/hunter/revive-standing.ts`; the standing is `Hunter.reviveLeft`, repaired to `free`'],
     ['What changes it', '`standingStep(standing, event)` and its `TABLE`; `canRaise(standing)` for a view'],
     ['Who calls it', '`systemRaise` in `src/core/hunter/grant.ts`, its one writer, which steps the standing, the life (`sheetEdit`, a revive by the System) and the debt (`raiseOwes`, `RULES.reviveDebtClears` Clears of the rank) in one write; `api.systemRaise` and `offerRaise` in `src/views/hunter.js`, the window THE SYSTEM CAN RAISE YOU on the dead hunter\'s own phone once no fight holds it'],
+    ['The test to copy', '`tests/revive-standing.test.ts`'],
+    ['The recipe', 'docs/guide/save-store.md, "A field of a saved thing"'],
+  ],
+});
+
+const DEBT_EVENTS: readonly DebtEvent[] = [
+  { type: 'incur', amount: 100 },
+  { type: 'clearGold', gold: 100 },
+  { type: 'clearGold', gold: 200 },
+];
+const DEBT_LABEL: { readonly [S in DebtState]: string } = { clear: 'No debt', owing: 'Owing debt' };
+const debtPct = `${Math.round(RULES.reviveDebtShare * 100)}%`;
+
+export const reviveDebt = machine<number, DebtEvent>({
+  name: 'A hunter\'s revive debt',
+  walked: 'Both debt states (`clear` at 0 and `owing` above 0) walked from 0 under `incur` and `clearGold` (partial and full payoff) with the shipped rules, breadth first.',
+  walk: () => bfs<number, DebtEvent>(
+    [0],
+    d => DEBT_EVENTS.map(event => ({ event, to: debtStep(d, event, RULES).debt })),
+    d => debtState(d),
+  ),
+  kinds: DEBT_STATES,
+  kindsOf: d => [debtState(d)],
+  views: [{
+    title: 'A System revive on debt creates debt, and gate clear gold pays it off',
+    note: `A System revive from the debt standing adds \`raiseOwes\` gold to \`Hunter.debt\`. While \`Hunter.debt\` is above 0, \`reviveDebtShare\` (${debtPct} by default, rounded with Math.round and capped at the remaining debt and gold) of each gate clear's gold goes toward the debt until it reaches 0. Non-clear rewards, trades, stash withdrawals, shop sales, and manual GM gold edits do not touch the debt. Paying the debt to 0 leaves \`Hunter.reviveLeft\` at \`none\`.`,
+    hides: '',
+    state: d => DEBT_LABEL[debtState(d)],
+    step: (e, from, to) => {
+      if (e.type === 'incur') return from === 0 ? 'System revive on debt adds gold owed' : 'more debt added';
+      if (from === 0) return 'gate clear gold kept in full (no debt)';
+      return to === 0 ? 'gate clear gold pays off the rest of the debt' : `${debtPct} of gate clear gold pays down the debt`;
+    },
+  }],
+  where: [
+    ['The union', '`DebtState`, `DebtEvent`, `DebtStep`, and `DEBT_STATES` in `src/core/hunter/revive-standing.ts`; the balance is `Hunter.debt`, repaired to 0 or above'],
+    ['What changes it', '`debtStep(debt, event, R)`, `DEBT_TABLE`, and `paysDebt(from)`'],
+    ['Who calls it', '`systemRaise` (`incur`) and `grant` (`clearGold` when `paysDebt(from)` holds) in `src/core/hunter/grant.ts`, the sole writer of `Hunter.debt`; `settleClear`, `settleClearPreset`, `selfPay`, `gmAward`, and `landAward` pass `from`'],
     ['The test to copy', '`tests/revive-standing.test.ts`'],
     ['The recipe', 'docs/guide/save-store.md, "A field of a saved thing"'],
   ],

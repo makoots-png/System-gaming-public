@@ -245,7 +245,7 @@ function landAward(p: PayloadOf<'award'>, hids: string[], app: ApplyDeps): Land 
     const b = p.bundle;
     for (const hid of hids) {
       const at = app.hunter.fightOf({ hid });
-      const g = grant(s, hid, p.rewards, p.rewards.build ?? null, { at: app.now(), today: app.today(), R: app.rules(), vitals: at ? 'fight' : 'sheet' });
+      const g = grant(s, hid, p.rewards, p.rewards.build ?? null, { at: app.now(), today: app.today(), R: app.rules(), vitals: at ? 'fight' : 'sheet', from: p.earned?.from ?? null });
       if (isRefused(g)) continue;
       const off = at?.at === 'row' && (g.fight.statuses.length > 0 || g.fight.refill);
       // a bundle the GM gave by hand is a fact of the hunter's chronicle, in the award's write

@@ -86,13 +86,17 @@ export function restLines(R: Pick<Rules, 'rest' | 'fatigue'>): string[] {
  * dead (inventory.ts `shopOpen`): the sentence is there only while the rule closes it. `R` is the rules the page plays
  * by.
  */
-export function deathLine(R: Pick<Rules, 'reviveLevelShare'>): string {
+export function deathLine(R: Pick<Rules, 'reviveLevelShare' | 'reviveDebtClears' | 'reviveDebtShare'>): string {
   const shop = shopOpen({ life: { at: 'dead' } }) ? '' : ' A dead hunter cannot buy or sell in the shop. The GM or another hunter can still give a dead hunter a Resurrection Crystal.';
   const pct = Math.round(R.reviveLevelShare * 10000) / 100, back = levelAfterRaising(RAISED_EXAMPLE, R);
   const cost = back < RAISED_EXAMPLE
     ? ` Reviving costs ${pct}% of the hunter's level, rounded up (at least 1 level, never below level 1). For example, a hunter who died at level ${RAISED_EXAMPLE} comes back at level ${back}.`
     : ' Reviving costs no levels.';
-  return `At 0 HP, a hunter is dead. Healing and resting cannot revive a dead hunter. ${WAYS_BACK} revives them with ${REVIVE_HP} HP and removes every status, so poison does not kill them again. Use a Resurrection Crystal from your bag outside a fight.${cost}${shop}`;
+  const debtPct = Math.round(R.reviveDebtShare * 10000) / 100;
+  const debt = R.reviveDebtShare > 0
+    ? ` A System revive on debt costs ${R.reviveDebtClears} same-rank gate clears. ${debtPct}% of your gate clear gold goes toward that debt until it is paid off.`
+    : ` A System revive on debt costs ${R.reviveDebtClears} same-rank gate clears.`;
+  return `At 0 HP, a hunter is dead. Healing and resting cannot revive a dead hunter. ${WAYS_BACK} revives them with ${REVIVE_HP} HP and removes every status, so poison does not kill them again. Use a Resurrection Crystal from your bag outside a fight.${cost}${debt}${shop}`;
 }
 
 /**

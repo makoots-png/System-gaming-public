@@ -3,7 +3,7 @@
 import { RANKS, dueAt as dueIn, parseOverrides, refusalWords } from '../edge/rules.ts';
 import { can, vitalChipsOf } from '../core/hunter/vitals.ts';
 import { chipDef, ofLife } from '../core/hunter/chips.ts';
-import { RAISE_CHIPS } from '../core/hunter/revive-standing.ts';
+import { RAISE_CHIPS, debtChip, debtPreviewLine, debtStep, paysDebt } from '../core/hunter/revive-standing.ts';
 import { gmSource } from '../core/effects.ts';
 import { playerHeld } from '../core/combat/fight-save.ts';
 import { parseSheetKey, sheetKeyOf } from '../core/ids.ts';
@@ -254,6 +254,7 @@ export function register(app) {
     const drawn = life ? vitalChipsOf({ life, collapsed: h.collapsed }).map(k => `<span class="gm-chip pen"${ofLife(k) ? ` data-life-at="${life.at}"` : ''}>${esc(chipDef(k).label)}</span>`).join('') : '';
     // a dead hunter's revive ladder: whether the System can still raise it (the GM applies the hour, world rule 3)
     const ladder = life && life.at === 'dead' && RAISE_CHIPS[h.reviveLeft] ? `<span class="gm-chip" data-raise-chip>${esc(RAISE_CHIPS[h.reviveLeft])}</span>` : '';
+    const debtTag = debtChip(h.debt), debt = debtTag ? `<span class="gm-chip pen" data-debt-chip>${esc(debtTag)}</span>` : '';
     const revive = life && can(life, 'revive') ? `<button type="button" class="primary" data-grevive aria-label="Revive ${esc(h.name)}">Revive</button>` : '';
     const cond = drawn + (Array.isArray(h.conditions) ? h.conditions : []).filter(c => c && typeof c.key === 'string')
       .map(c => remote
@@ -272,7 +273,7 @@ export function register(app) {
       <h3>${ui.rankBadge(rank)}${A().identity.badge(h, 'sm')}<span>${esc(h.name)}</span></h3>
       <div class="tagline">Lv ${esc(int(h.level) || 1)}${h.job ? ' · ' + esc(h.job) : ''}${path ? ` · <span data-gmpath>${esc(path)}</span>` : ''}${remote ? ' · player phone' : ''}</div>
       ${bar('hp', 'HP', v.hp, v.hpMax)}${bar('mana', 'Mana', v.mana, v.manaMax)}${bar('ft', 'Fatigue', ft, v.fatigueMax)}
-      <div class="gm-chips">${ladder}${pen}${activeChip}${dailyChip}${streak}${cond}</div>${weightCard(h.name, wkey)}
+      <div class="gm-chips">${ladder}${debt}${pen}${activeChip}${dailyChip}${streak}${cond}</div>${weightCard(h.name, wkey)}
       ${h.chronicle ? `<button type="button" class="gm-chron" data-gchron aria-label="${esc(CHRONICLE_WORDS.title)} of ${esc(h.name)}">${esc(boardLine(h.chronicle))}</button>` : ''}
       <div class="gm-hp" role="group" aria-label="Quick HP for ${esc(h.name)}">
         <span class="lbl gm-hp-lbl">Quick HP</span>
@@ -560,7 +561,7 @@ export function register(app) {
     const day = { ...stepTime(S(), new Date()), R: app.rules() }, events = awards.flatMap(a => (a.p.ev ? [a.p.ev] : [])), code = room();
     const players = playerHeld(remotes(), posted.filter(k => held.includes(k)), rw.statuses);
     const out = A().hunter.grantWrite(bundle ? 'gm-give' : 'gm-award', sv => {
-      const a = gmAward(sv, locals, rw, { room: code, events, said }, day, bundle), dealt = deal.deals ? dropDealt(a.save, deal.deals) : a.save;
+      const a = gmAward(sv, locals, rw, { room: code, events, said }, day, bundle, earned ? earned.from : null), dealt = deal.deals ? dropDealt(a.save, deal.deals) : a.save;
       const save = approves && !isRefused(dealt) ? pendingApproved(dealt, approves, rw) : dealt;
       if (isRefused(save)) return save;
       return { ...a, save, held: [...a.granted.map(({ hid, g }) => ({ who: { hid }, ...g.fight })), ...players] };
@@ -618,10 +619,16 @@ export function register(app) {
   const waitingHere = () => { const code = room(); return code ? waitingIn(S(), code) : []; };
   /** Draws the list and its head summary ("2 waiting"). */
   function renderWaiting() {
-    const list = waitingHere(), R = app.rules(), W = PENDING_WORDS;
-    const html = list.length ? list.map(w => `<li class="gm-pw-row" data-pw="${esc(w.id)}"><div><b>${esc(w.name)}</b> <span class="gm-pw-what">${esc(W.earned(w.from, w.what))}</span></div>`
-      + `<div class="gm-pw-lines">${esc(rewardLines(R, w.rewards).join(', '))}</div>`
-      + `<div class="gm-row"><button type="button" class="primary" data-pw-approve>${esc(W.approve)}</button><button type="button" data-pw-edit>${esc(W.edit)}</button><button type="button" class="danger" data-pw-refuse>${esc(W.refuse)}</button></div></li>`).join('')
+    const list = waitingHere(), R = app.rules(), W = PENDING_WORDS, rs = remotes();
+    const debtOf = w => { const hid = localHunter(S(), w); return hid ? (store.hunter(hid)?.debt ?? 0) : (rs.find(r => r.key === w.to)?.data.debt ?? 0); };
+    const html = list.length ? list.map(w => {
+      const preview = paysDebt(w.from) && w.rewards.gold > 0 ? debtStep(debtOf(w), { type: 'clearGold', gold: w.rewards.gold }, R) : null;
+      const dline = preview ? debtPreviewLine(preview.paid, preview.debt) : null;
+      return `<li class="gm-pw-row" data-pw="${esc(w.id)}"><div><b>${esc(w.name)}</b> <span class="gm-pw-what">${esc(W.earned(w.from, w.what))}</span></div>`
+        + `<div class="gm-pw-lines">${esc(rewardLines(R, w.rewards).join(', '))}</div>`
+        + (dline ? `<div class="gm-pw-lines" data-pw-debt>${esc(dline)}</div>` : '')
+        + `<div class="gm-row"><button type="button" class="primary" data-pw-approve>${esc(W.approve)}</button><button type="button" data-pw-edit>${esc(W.edit)}</button><button type="button" class="danger" data-pw-refuse>${esc(W.refuse)}</button></div></li>`;
+    }).join('')
       : `<li class="empty">${esc(W.none)}</li>`;
     const ul = $('#gm-pw'); if (ul.dataset.sig !== html) { ul.dataset.sig = html; ul.innerHTML = html; }
     $('#gm-hsum-waiting').textContent = W.summary(list.length);

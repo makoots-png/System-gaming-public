@@ -1,11 +1,13 @@
-// revive-standing.ts: what is left of a hunter's revive ladder, as a machine. Pure.
+// revive-standing.ts: what is left of a hunter's revive ladder and System revive debt, each as a machine. Pure.
 // World rule 6 (docs/world/README.md) and the machine "Revive standing" (docs/world/machines.md): the first revive is
 // free, then one revive on debt, then none, unless the GM grants one or the hunter uses a crystal bought before death.
 // the owner, Nov 22: the free revive and the revive on debt are a "System raise" (no GM button). Only a System raise moves
 // the standing; a crystal or the GM's Revive raises the hunter and leaves it as it is. `Hunter.reviveLeft` holds it, and
-// `Hunter.debt` the gold a raise on debt owes. grant.ts `systemRaise` is the one writer of both.
+// `Hunter.debt` the gold a raise on debt owes. grant.ts (`systemRaise` and `grant`) is the one writer of both.
 import { clearOf } from '../rules.ts';
 import type { Rank, Rules } from '../rules.ts';
+import type { RewardFrom } from '../protocol.ts';
+import type { Said } from '../session-log.ts';
 import { refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
 import { levelAfterRaising } from './progress.ts';
@@ -49,6 +51,48 @@ const OWED: { readonly [S in ReviveStanding]: (rank: Rank, R: Pick<Rules, 'loot'
  */
 export const raiseOwes = (s: ReviveStanding, rank: Rank, R: Pick<Rules, 'loot' | 'reviveDebtClears'>): number => OWED[s](rank, R);
 
+// ── debt payoff machine ──
+export const DEBT_STATES = ['clear', 'owing'] as const;
+/** `clear`: owes 0 gold; `owing`: owes gold to the System from a raise on debt. */
+export type DebtState = (typeof DEBT_STATES)[number];
+/** `incur`: debt added by a System raise on debt; `clearGold`: gold from a gate clear that pays down debt. */
+export type DebtEvent =
+  | { readonly type: 'incur'; readonly amount: number }
+  | { readonly type: 'clearGold'; readonly gold: number };
+export type DebtEventType = DebtEvent['type'];
+export const DEBT_EVENT_TYPES = ['incur', 'clearGold'] as const satisfies readonly DebtEventType[];
+/** Result of one debt step: remaining debt after the step, gold applied to debt, and gold kept by the hunter. */
+export type DebtStep = { readonly debt: number; readonly paid: number; readonly kept: number };
+
+/** Whether a hunter currently owes System revive debt. */
+export const debtState = (debt: number): DebtState => (debt > 0 ? 'owing' : 'clear');
+/** Reward sources whose gold pays down System revive debt: table gate clears and solo gate clears only. */
+export const paysDebt = (from: RewardFrom | null | undefined): boolean => from === 'clear' || from === 'solo';
+
+type DebtFn<E extends DebtEventType> = (debt: number, e: Extract<DebtEvent, { type: E }>, R: Pick<Rules, 'reviveDebtShare'>) => DebtStep;
+const addDebt = (debt: number, amount: number): number => debt + Math.max(0, Math.trunc(amount) || 0);
+/** For each debt state, what each event does to the balance and clear gold. */
+const DEBT_TABLE: { readonly [S in DebtState]: { readonly [E in DebtEventType]: DebtFn<E> } } = {
+  clear: {
+    incur: (_d, e) => ({ debt: addDebt(0, e.amount), paid: 0, kept: 0 }),
+    clearGold: (_d, e) => ({ debt: 0, paid: 0, kept: e.gold }),
+  },
+  owing: {
+    incur: (d, e) => ({ debt: addDebt(d, e.amount), paid: 0, kept: 0 }),
+    clearGold: (d, e, R) => {
+      if (e.gold <= 0 || R.reviveDebtShare <= 0) return { debt: d, paid: 0, kept: e.gold };
+      const paid = Math.min(d, e.gold, Math.round(e.gold * R.reviveDebtShare));
+      return { debt: d - paid, paid, kept: e.gold - paid };
+    },
+  },
+};
+/** Steps `debt` on `e` under `R.reviveDebtShare`, rounding with Math.round and never taking more than the debt or the gold. */
+export function debtStep(debt: number, e: DebtEvent, R: Pick<Rules, 'reviveDebtShare'>): DebtStep {
+  const clean = Math.max(0, Math.trunc(debt) || 0);
+  const fn = DEBT_TABLE[debtState(clean)][e.type] as DebtFn<DebtEventType>;
+  return fn(clean, e, R);
+}
+
 // ── the words ──
 const gold = (n: number): string => `${n.toLocaleString('en-US')} gold`;
 /** The title of the System's window that offers the raise. */
@@ -89,6 +133,24 @@ export function raisedSaid(name: string, raise: Raise, owes: number): { readonly
 }
 /** The bag's line of what a hunter owes the System, or null when it owes nothing. */
 export const debtLine = (debt: number): string | null => (debt > 0 ? `Debt owed to the System for reviving: ${gold(debt)}.` : null);
+/** What a reward window says when gate clear gold paid toward System revive debt, or null when nothing went to debt. */
+export const debtPaidLine = (paid: number, left: number): string | null =>
+  paid <= 0 ? null : left > 0 ? `${gold(paid)} went to System revive debt (${gold(left)} left).` : `${gold(paid)} paid off System revive debt.`;
+/** What a GM Pending rewards card previews when approving a clear reward will pay toward System revive debt. */
+export const debtPreviewLine = (paid: number, left: number): string | null =>
+  paid <= 0 ? null : left > 0 ? `${gold(paid)} goes to System revive debt (${gold(left)} left).` : `${gold(paid)} pays off System revive debt.`;
+/** The GM board's chip of a hunter's System revive debt, or null at 0 debt. */
+export const debtChip = (debt: number): string | null => (debt > 0 ? `System debt: ${gold(debt)}` : null);
+/** The session log line when a hunter pays toward System revive debt, or null when nothing was paid. */
+export const debtPaidLog = (name: string, paid: number, left: number): Said | null =>
+  paid <= 0 ? null : {
+    kind: 'award',
+    hunterId: null,
+    title: `Debt payment: ${name}`,
+    text: left > 0
+      ? `${name} paid ${gold(paid)} toward System revive debt (${gold(left)} left).`
+      : `${name} paid ${gold(paid)} and cleared their System revive debt.`,
+  };
 /** A refused System raise, in the words a player reads. */
 export const RAISE_REFUSED: { readonly [Why in 'spent' | 'cannot' | 'held']: string } = {
   spent: 'You have used all your System revives. Only a Resurrection Crystal or the GM can revive you now.',

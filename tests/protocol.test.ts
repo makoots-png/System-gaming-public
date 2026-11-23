@@ -1224,11 +1224,11 @@ describe('the other room docs', () => {
 
     test('the shipped economy comes through as it went', () => {
       expect(DOCS.rules(copy(doc))).toEqual(doc);
-      expect(Object.keys(doc).sort()).toEqual(['build', 'feats', 'gateParty', 'gradeStep', 'loot', 'mythic', 'rarities', 'reviveClears', 'reviveDebtClears', 'reviveLevelShare', 'saleShare', 'solo', 'trade', 'usedUpShare']);
+      expect(Object.keys(doc).sort()).toEqual(['build', 'feats', 'gateParty', 'gradeStep', 'loot', 'mythic', 'rarities', 'reviveClears', 'reviveDebtClears', 'reviveDebtShare', 'reviveLevelShare', 'saleShare', 'solo', 'trade', 'usedUpShare']);
     });
 
     test('a rule number past its domain is read at the domain\'s end, and a whole rule whole', () => {
-      const SHARES = ['saleShare', 'usedUpShare', 'reviveLevelShare'] as const;
+      const SHARES = ['saleShare', 'usedUpShare', 'reviveDebtShare', 'reviveLevelShare'] as const;
       for (const k of SHARES) expect([read({ [k]: -1 })![k], read({ [k]: 2 })![k]], k).toEqual([domainOf(k)!.least, domainOf(k)!.most]);
       expect([read({ gradeStep: 0.5 })!.gradeStep, read({ gradeStep: 9 })!.gradeStep]).toEqual([domainOf('gradeStep')!.least, domainOf('gradeStep')!.most]);
       expect([read({ reviveClears: 0 })!.reviveClears, read({ reviveClears: 1e9 })!.reviveClears]).toEqual([domainOf('reviveClears')!.least, domainOf('reviveClears')!.most]);
@@ -1246,6 +1246,7 @@ describe('the other room docs', () => {
         ['no used-up share', () => read({ usedUpShare: undefined })],
         ['no revive Clears', () => read({ reviveClears: undefined })],
         ['no Clears a raise on debt owes', () => read({ reviveDebtClears: undefined })],
+        ['no share of clear gold paid toward debt', () => read({ reviveDebtShare: undefined })],
         ['no level share of a raising', () => read({ reviveLevelShare: undefined })],
         ['no world gate party', () => read({ gateParty: undefined })],
         ['the solo rules without the loot share', () => read({ solo: { personal: true, hours: 8 } })],

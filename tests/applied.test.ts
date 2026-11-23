@@ -410,6 +410,31 @@ describe('a reward the GM sends lands whole', () => {
     expect([parts(p.hunter), p.shown.length]).toEqual([once, 1]);
   });
 
+  test('a clear or solo award landing on a player phone collects reviveDebtShare once under the room rules, while plain and quest awards leave debt alone', () => {
+    const p = phone({ sheet: { debt: 100, reviveLeft: 'none' } });
+    p.useRules({ ...RULES, reviveDebtShare: 0.25 });
+
+    // Plain GM award leaves debt untouched
+    p.receive(1, 'award', { to: ['d-player1:h1'], rewards: { gold: 80 } });
+    expect([p.hunter.gold, p.hunter.debt]).toEqual([80, 100]);
+
+    // Quest award leaves debt untouched
+    p.receive(2, 'award', { to: ['d-player1:h1'], rewards: { gold: 40 }, earned: { from: 'quest', what: 'Hunt' } });
+    expect([p.hunter.gold, p.hunter.debt]).toEqual([120, 100]);
+
+    // Gate clear award collects 25% (20 of 80), and a duplicate delivery changes nothing
+    p.receive(3, 'award', { to: ['d-player1:h1'], rewards: { gold: 80 }, earned: { from: 'clear', what: 'Goblin Den' } });
+    p.receive(3, 'award', { to: ['d-player1:h1'], rewards: { gold: 80 }, earned: { from: 'clear', what: 'Goblin Den' } });
+    expect([p.hunter.gold, p.hunter.debt]).toEqual([180, 80]);
+    expect(p.shown.at(-1)).toEqual(['+60 gold', '20 gold went to System revive debt (80 gold left).']);
+
+    // Solo clear award at 100% pays off remaining 80 debt and leaves excess gold
+    p.useRules({ ...RULES, reviveDebtShare: 1 });
+    p.receive(4, 'award', { to: ['d-player1:h1'], rewards: { gold: 100 }, earned: { from: 'solo', what: 'Crypt' } });
+    expect([p.hunter.gold, p.hunter.debt, p.hunter.reviveLeft]).toEqual([200, 0, 'none']);
+    expect(p.shown.at(-1)).toEqual(['+20 gold', '80 gold paid off System revive debt.']);
+  });
+
   test('an award that fails part way gives nothing and is not marked applied, so its next delivery gives it whole', () => {
     const p = phone(), before = parts(p.hunter);
     // the rules break after the points are worked out, before the title: the old applier had written the points by then

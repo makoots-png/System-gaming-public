@@ -184,7 +184,7 @@ export function register(app) {
     // each player paid: its award, and its rank as its pushed sheet says, which its gate fact is measured against (pay.ts `settleClear`)
     const players = plan.shares.flatMap(x => {
       if (x.payee.kind !== 'remote') return [];
-      const key = x.payee.key, pays = S.event('award', { to: [key], rewards: { ...newRewards(), xp: x.xp, gold: x.gold, items: bare(x.items) } });
+      const key = x.payee.key, pays = S.event('award', { to: [key], rewards: { ...newRewards(), xp: x.xp, gold: x.gold, items: bare(x.items) }, earned: { from: 'clear', what: g.name } });
       return pays ? [{ key, rank: rem.find(r => r.key === key)?.data.rank ?? null, pays }] : [];
     });
     const inRoom = code ? { code, stamp: stampNow(), players } : null;
