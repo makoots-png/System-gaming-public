@@ -35,7 +35,7 @@ export function rewardEditor(app, box, o = {}) {
   const id = o.id || 'rw' + Math.random().toString(36).slice(2, 7), withBundles = o.bundles !== false;
   /** @type {any[]} the part rows, in the order the GM added them */
   let rows = [];
-  let nums = { xp: 0, gold: 0, points: 0 };
+  let nums = { xp: 0, gold: 0, crystal: 0, points: 0 };
   let say = { text: '', bad: false };
 
   // ── the lists a row picks from ──
@@ -128,6 +128,7 @@ export function rewardEditor(app, box, o = {}) {
     box.innerHTML = `<div class="rw">${bundleRow()}
       <div class="rw-nums">${field('XP', `<input type="number" step="1" inputmode="numeric" id="${esc(id)}-xp" data-n="xp" placeholder="0" value="${nums.xp || ''}">`)}
         ${field('Gold', `<input type="number" step="1" inputmode="numeric" id="${esc(id)}-gold" data-n="gold" placeholder="0" value="${nums.gold || ''}">`)}
+        ${field('Mana crystal', `<input type="number" step="1" inputmode="numeric" id="${esc(id)}-crystal" data-n="crystal" placeholder="0" value="${nums.crystal || ''}">`)}
         ${field('Ability points', `<input type="number" step="1" inputmode="numeric" id="${esc(id)}-pts" data-n="points" placeholder="0" value="${nums.points || ''}">`)}</div>
       <div class="rw-rows">${rows.map(rowHtml).join('')}</div>
       <div class="rw-add" role="group" aria-label="Add to the reward"><span class="lbl">Add reward</span>${ADD.map(([k, l]) => `<button type="button" class="mk-chip" data-add="${k}"${count(k) >= CAP[k] ? ` disabled title="${esc(full(k, l))}"` : ''}>${l}</button>`).join('')}</div>
@@ -285,7 +286,7 @@ export function rewardEditorCss(css) {
 .rw input[type=text],.rw input[type=number],.rw select,.rw textarea{width:100%;box-sizing:border-box;min-height:44px}
 .rw-bundle{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:end}
 .rw-bundle button{min-height:44px}
-.rw-nums{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.rw-nums{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 .rw-rows{display:flex;flex-direction:column;gap:8px}
 .rw-row{display:flex;flex-direction:column;gap:6px;border:1px solid var(--line);background:rgba(10,26,46,.55);padding:8px;min-width:0}
 .rw-row.bad{border-color:var(--red)}

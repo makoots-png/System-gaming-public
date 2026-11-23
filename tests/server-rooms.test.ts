@@ -303,7 +303,7 @@ describe('events', () => {
     const { code, gm } = await newRoom();
     await call('POST', `/api/rooms/${code}/events`, { headers: gm, body: { from: 'gm', type: 'award', payload: { ...award(50), v: 2, junk: 'x'.repeat(1000) } } });
     const [ev] = (await call('GET', `/api/rooms/${code}`)).body.events;
-    expect(ev.payload).toEqual({ eid: 'd-gm-e2', to: [`${PLAYER}:h1`], rewards: { xp: 50, points: 0, gold: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] } });
+    expect(ev.payload).toEqual({ eid: 'd-gm-e2', to: [`${PLAYER}:h1`], rewards: { xp: 50, points: 0, gold: 0, crystal: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] } });
   });
 
   test('an event sent again with its id (an answer that was lost) is one event: the room answers its first seq', async () => {

@@ -1969,6 +1969,18 @@ test('only chronicle.ts\'s record writes a hunter\'s inbox of facts, and only th
   expect(report(hits), 'record a fact with chronicle.ts `record`; the store\'s `noticed` takes it').toEqual([]);
 });
 
+test('only src/core/hunter/crystal.ts writes a hunter\'s mana crystal balance', async () => {
+  // Single writer for Hunter.crystal (economy unit 3): every live balance change goes through crystal.ts (`addCrystal`,
+  // `setCrystal`, `sellCrystal`). hunter.ts holds the default (`newHunter`) and boundary repair (`fixHunter`).
+  const owners = ['src/core/hunter/crystal.ts', 'src/core/hunter/hunter.ts'];
+  const write = /\bh\.crystal\s*[-+]?=(?!=)|\{\s*\.\.\.(?:h|x|hunter)\b[^}]*\bcrystal\s*:/;
+  expect(write.test('h.crystal = 50;'), 'the rule sees a direct write on h.crystal').toBe(true);
+  expect(write.test('return { ...h, crystal: h.crystal + 10 };'), 'the rule sees a spread write on h.crystal').toBe(true);
+  expect(write.test('if (h.crystal > 0) return h.crystal;'), 'and ignores reads').toBe(false);
+  const hits = (await sourceLines('src')).filter(line => !owners.includes(line.file) && !isComment(line.text) && write.test(line.text));
+  expect(report(hits), 'change a hunter\'s mana crystal only through src/core/hunter/crystal.ts (addCrystal, setCrystal, sellCrystal)').toEqual([]);
+});
+
 test('only src/core/story/run.ts writes a story run', async () => {
   // A story moves only when the GM taps (notes-1-stories.md 3.4): its run on the GM's save has one writer, the machine's
   // `storyMove` in run.ts, so no notice step, quest, timer, room message or view can move it. save.ts holds the field's

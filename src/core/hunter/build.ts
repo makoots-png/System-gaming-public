@@ -145,6 +145,7 @@ export function withRoomRules(R: Rules, room: RoomRules | null): Rules {
     borrowCapPrices: room.borrowCapPrices,
     reviveLevelShare: room.reviveLevelShare,
     gateParty: room.gateParty,
+    crystal: room.crystal,
     loot: room.loot,
   };
 }
@@ -178,5 +179,6 @@ export const roomRulesOf = (R: Rules): RoomRules => ({
   borrowCapPrices: R.borrowCapPrices,
   reviveLevelShare: R.reviveLevelShare,
   gateParty: R.gateParty,
+  crystal: R.crystal,
   loot: R.loot,
 });

@@ -3,7 +3,7 @@
 import { RANKS, RULES, rules } from '../edge/rules.ts';
 import { xpToNext as xpToNextOf } from '../core/rules.ts';
 import { STAT_KEYS, STAT_LABELS, STAT_SHORT } from '../core/stats.ts';
-import { ICON_CREDIT, KEYSTONE_WORDS, armorCutPct, borrowLine, checkExample, deathLine, gatePayLines, restLines, iconCreditLine, keystoneLines, mythicLines, naturalLines, pointsLine, saleLine, saleRows, dailyPointsLine, soloLines, statBonusLine, stealthLines } from '../core/rules-text.ts';
+import { ICON_CREDIT, KEYSTONE_WORDS, armorCutPct, borrowLine, checkExample, crystalLines, crystalRows, deathLine, gatePayLines, restLines, iconCreditLine, keystoneLines, mythicLines, naturalLines, pointsLine, saleLine, saleRows, dailyPointsLine, soloLines, statBonusLine, stealthLines } from '../core/rules-text.ts';
 import { describeStatus } from '../core/combat/effect-ops.ts';
 
 const STAT_USE = {
@@ -210,6 +210,11 @@ export function register(app) {
         p(esc(borrowLine(R))),
         p(`Clearing a gate awards gold plus one weighted item roll, and a boss adds one extra item roll. Gold is rolled once per clear and split using the Gates rules, so each hunter in a party of ${esc(R.gateParty)} gets the full rolled amount.`),
         table(['Rank', 'Gold', 'Item odds'], lootRows),
+      ] },
+      { id: 'crystal', title: 'Mana crystal', body: [
+        ...crystalLines(R).map(l => p(esc(l))),
+        table(['Rank', 'World pool', `Normal (of ${R.gateParty})`, `Red / Double (of ${R.gateParty})`, 'Personal (solo)'],
+          crystalRows(R).map(r => [esc(r.rank), fmt(r.pool), fmt(r.normal), fmt(r.special), fmt(r.personal)])),
       ] },
       { id: 'gm', title: 'GM cheat-sheet', body: [
         ul([`<b>Setting a DC:</b> use the rank table. E-rank uses Easy ${rt.E.dc[0]}, Standard ${rt.E.dc[1]}, and Hard ${rt.E.dc[2]}. Scale up for the party's rank.`,

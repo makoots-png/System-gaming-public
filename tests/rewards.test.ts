@@ -28,7 +28,7 @@ const POTION: ItemTemplate = { ...itemOf(RULES, SHOP_ITEMS.find(i => i.name === 
 const SLASH = { ...skillOf(SKILL_SEEDS.find(k => k.name === 'Mutilation')!, RULES), name: 'Slash' };
 /** A reward that uses every field, as a GM would build one. */
 const FULL: Rewards = {
-  xp: 250, points: 2, gold: -40, items: [POTION], title: { name: 'Gatebreaker', desc: 'Broke a red gate.', bonus: { str: 2, hpMax: 10 } }, job: 'Ranger',
+  xp: 250, points: 2, gold: -40, crystal: 15, items: [POTION], title: { name: 'Gatebreaker', desc: 'Broke a red gate.', bonus: { str: 2, hpMax: 10 } }, job: 'Ranger',
   skills: [SLASH], statuses: [{ key: statusKey('hasted'), rounds: 3 }, { key: statusKey('blessed-by-gm'), rounds: null, def: { label: 'Blessed', desc: 'The GM smiles.', ops: [] } }],
   boons: [{ name: 'Free resurrection', text: 'Once, the GM brings you back at 1 HP.' }],
 };
@@ -198,13 +198,13 @@ describe('a title by name', () => {
 describe('a reward in words', () => {
   test('one line a part, a gain with a plus and a cost in words, a status by its label and how long it lasts', () => {
     expect(rewardLines(RULES, FULL)).toEqual([
-      '+250 XP', '+2 ability points', 'Loses 40 gold', 'Item: Health Potion (E) ×2', 'Title: Gatebreaker', 'Job: Ranger', 'Skill: Slash',
+      '+250 XP', '+2 ability points', 'Loses 40 gold', '+15 mana crystal', 'Item: Health Potion (E) ×2', 'Title: Gatebreaker', 'Job: Ranger', 'Skill: Slash',
       'Status: Hasted (3 rounds)', 'Status: Blessed', 'Boon: Free resurrection',
     ]);
   });
   test('the reward window says what was acquired, with a build change after the items', () => {
     expect(grantLines(RULES, { ...FULL, xp: 1500 }, { build: 'Path: Vanguard' })).toEqual([
-      '+1,500 XP', 'Loses 40 gold', '+2 ability points', 'Item acquired: Health Potion (E) ×2', 'Path: Vanguard', 'Title acquired: Gatebreaker', 'Job: Ranger',
+      '+1,500 XP', 'Loses 40 gold', '+15 mana crystal', '+2 ability points', 'Item acquired: Health Potion (E) ×2', 'Path: Vanguard', 'Title acquired: Gatebreaker', 'Job: Ranger',
       'Skill acquired: Slash', 'Status: Hasted (3 rounds)', 'Status: Blessed', 'Boon: Free resurrection',
     ]);
     expect(grantLines(RULES, { ...newRewards(), points: 1, statuses: [{ key: statusKey('hasted'), rounds: 1 }] })).toEqual(['+1 ability point', 'Status: Hasted (1 round)']);

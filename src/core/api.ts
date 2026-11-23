@@ -364,6 +364,7 @@ export type InventoryApi = {
   /** Answers the item as the hunter now holds it, or null when there is no such hunter. */
   addItem(hid: string, item: Partial<Item>): Item | null;
   addGold(hid: string, n: number): void;
+  addCrystal(hid: string, n: number): void;
   /**
    * A loot roll of `rank`'s table over the loot pool, the built-in items without a Resurrection Crystal (items.ts
    * `lootPool`, spawn.ts `rollLoot`): a boss's when `boss`, at the `share` a gate of its kind pays (spawn.ts

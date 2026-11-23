@@ -729,7 +729,7 @@ describe('what a repair fixes', () => {
     expect(kept.map(b => b.name)).toEqual(['Boss loot', 'Same id']);
     expect(kept[0]).toMatchObject({ id: 'rb1', rewards: { xp: 500, boons: [{ name: 'Favor', text: '' }] } });
     expect(kept[0]!.rewards).not.toHaveProperty('fame');
-    expect(kept[1]!.rewards).toEqual({ xp: 0, points: 0, gold: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] });
+    expect(kept[1]!.rewards).toEqual({ xp: 0, points: 0, gold: 0, crystal: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] });
     expect(kept[1]!.id).not.toBe(rbid('rb1'));
     const many = Array.from({ length: 250 }, (_, i) => ({ id: `rb${i + 1}`, name: `B${i}`, rewards: {} }));
     expect(parseRaw({ schema: SCHEMA, hunters: [], library: { rewards: many } }).library.rewards).toHaveLength(200);

@@ -161,7 +161,7 @@ test('GM pre-sets a room gate clear, players never see it early, and clearing ro
   const doneDetails = gm.locator('#gt-done');
   if (!(await doneDetails.evaluate((el: any) => el.open))) await doneDetails.locator('summary').tap();
   const paidCard = gateCard(gm, gate.id);
-  const paidSummaryPrefix = PRESET_WORDS.summary({ xp: customXp, gold: customGold, items: [] }, true, n => n.toLocaleString('en-US'));
+  const paidSummaryPrefix = PRESET_WORDS.summary({ xp: customXp, gold: customGold, crystal: 0, items: [] }, true, n => n.toLocaleString('en-US'));
   await expect(paidCard.locator('[data-preset-summary]')).toContainText(paidSummaryPrefix);
   await expect(paidCard.locator('[data-preset-paid]')).toContainText(PRESET_WORDS.itemWentTo('Kai Preset'));
   await expect(paidCard.locator('[data-preset-paid]')).toContainText(PRESET_WORDS.itemWentTo(PRESET_WORDS.stash));

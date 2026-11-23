@@ -19,6 +19,7 @@ import { dropBoon, giveTitle, nameActiveTitle, rankStanding, reevaluate as reeva
 import { grant, levelEdit, raisedLine, sheetEdit, systemRaise } from '../core/hunter/grant.ts';
 import { RAISE_REFUSED, RAISE_TITLE, canRaise, debtXpLine, raiseLine, raiseOffer, raisedSaid } from '../core/hunter/revive-standing.ts';
 import { setGold } from '../core/hunter/inventory.ts';
+import { setCrystal } from '../core/hunter/crystal.ts';
 import { addHunter, removeHunter } from '../core/party.ts';
 import { logLine, logged } from '../core/session-log.ts';
 import { removeBundle, saveBundle } from '../core/rewards.ts';
@@ -925,7 +926,7 @@ export function register(app) {
   });
 
   // ═══ Panel: GM raw edits ═══
-  const RAW = [['level', 'Level', 1], ['xp', 'Current XP', 0], ['points', 'Ability points', 0], ['hpAdj', 'Max HP bonus', null], ['manaAdj', 'Max mana bonus', null], ['gold', 'Gold', 0]];
+  const RAW = [['level', 'Level', 1], ['xp', 'Current XP', 0], ['points', 'Ability points', 0], ['hpAdj', 'Max HP bonus', null], ['manaAdj', 'Max mana bonus', null], ['gold', 'Gold', 0], ['crystal', 'Mana crystal', 0]];
   function rawRefresh(el) {
     const h = store.active();
     for (const [k] of RAW) setVal(el.querySelector(`[data-raw="${k}"]`), k === 'points' ? available(h, rules()) : h[k]);
@@ -957,7 +958,7 @@ export function register(app) {
           if (done.length) app.api.quests.stepsDone(h.id, done);
           return;
         }
-        const edit = k === 'points' ? x => setPoints(x, v, R) : k === 'gold' ? x => setGold(x, v) : k === 'hpAdj' || k === 'manaAdj' ? x => setAdjust(x, k, v, R) : null;
+        const edit = k === 'points' ? x => setPoints(x, v, R) : k === 'gold' ? x => setGold(x, v) : k === 'crystal' ? x => setCrystal(x, v) : k === 'hpAdj' || k === 'manaAdj' ? x => setAdjust(x, k, v, R) : null;
         if (edit) written(onHunter(h.id, 'gm-edit', both(edit, fit)));
       });
     },

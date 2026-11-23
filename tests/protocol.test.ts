@@ -294,7 +294,7 @@ describe('an award', () => {
   });
 
   test('missing amounts are 0 and missing lists are empty', () => {
-    expect(award({})!.rewards).toEqual({ xp: 0, points: 0, gold: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] });
+    expect(award({})!.rewards).toEqual({ xp: 0, points: 0, gold: 0, crystal: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] });
   });
 
   test('at most 20 items; an item is read by parseItem: a wrong field takes its default, and one without a name is dropped', () => {
@@ -1259,7 +1259,7 @@ describe('the other room docs', () => {
 
     test('the shipped economy comes through as it went', () => {
       expect(DOCS.rules(copy(doc))).toEqual(doc);
-      expect(Object.keys(doc).sort()).toEqual(['borrowCapPrices', 'build', 'elixirPrices', 'feats', 'gateParty', 'gradeStep', 'keystone', 'loot', 'mythic', 'priceBase', 'rarities', 'reviveDebtBurn', 'reviveDebtPrices', 'reviveDebtShare', 'reviveDebtXpRate', 'reviveLevelShare', 'revivePrices', 'saleShare', 'solo', 'trade', 'usedUpShare']);
+      expect(Object.keys(doc).sort()).toEqual(['borrowCapPrices', 'build', 'crystal', 'elixirPrices', 'feats', 'gateParty', 'gradeStep', 'keystone', 'loot', 'mythic', 'priceBase', 'rarities', 'reviveDebtBurn', 'reviveDebtPrices', 'reviveDebtShare', 'reviveDebtXpRate', 'reviveLevelShare', 'revivePrices', 'saleShare', 'solo', 'trade', 'usedUpShare']);
     });
 
     test('a rule number past its domain is read at the domain\'s end, and a whole rule whole', () => {
@@ -1687,7 +1687,7 @@ describe('the party stash on the wire (notes-5-trade.md 3.2)', () => {
   test('award.earned accepts from: clear and newEventId mints a valid event id', () => {
     const eid = newEventId({ device: 'd-gm', now: 1700000000000, rand: 0.25 });
     expect(eid).not.toBeNull();
-    const ev = newEvent('award', { to: ['d-p1:h1' as never], rewards: { xp: 100, points: 0, gold: 50, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, earned: { from: 'clear', what: 'Goblin Den' } }, { device: 'd-gm', now: 1700000000001, rand: 0.5 });
+    const ev = newEvent('award', { to: ['d-p1:h1' as never], rewards: { xp: 100, points: 0, gold: 50, crystal: 12, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, earned: { from: 'clear', what: 'Goblin Den' } }, { device: 'd-gm', now: 1700000000001, rand: 0.5 });
     expect(ev?.type).toBe('award');
     expect(ev?.type === 'award' && ev.payload.earned).toEqual({ from: 'clear', what: 'Goblin Den' });
   });

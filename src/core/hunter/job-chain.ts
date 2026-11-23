@@ -64,9 +64,9 @@ export function stepQuest(job: JobName, step: ChainStep, o: { chainId: ChainId; 
     : def.objectives.map(x => ({ label: x.label, target: x.target, progress: 0 }));
   return {
     id: o.questId, kind: 'job', title: def.title, desc: def.desc, objectives,
-    rewards: { xp: 0, points: 0, gold: 0, items: [], title: null, job: step === 3 ? job : null, skills: [], statuses: [], boons: [] },
+    rewards: { xp: 0, points: 0, gold: 0, crystal: 0, items: [], title: null, job: step === 3 ? job : null, skills: [], statuses: [], boons: [] },
     status: 'active', issuedAt: o.at, doneAt: null, dueAt: null, from: 'system', penaltyText: '', chainId: o.chainId, secret: false,
-    onFail: { xp: 0, points: 0, gold: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] },
+    onFail: { xp: 0, points: 0, gold: 0, crystal: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] },
   };
 }
 

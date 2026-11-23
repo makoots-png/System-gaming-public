@@ -1,11 +1,12 @@
 // spawn.ts: the roll that makes a new gate: its rank and type (by the rules' `gateSpawn` weights), its name, its pack
 // of regular monsters and its boss. Pure: the caller passes the rules, the bestiary's monsters of the rank and the
 // random numbers, and src/views/gates.js turns the answer into a gate (making a monster where the roll asks for one).
-import { RANKS } from '../rules.ts';
+import { RANKS, RULES } from '../rules.ts';
 import { oneOf } from '../one-of.ts';
 import type { Rank, Rules } from '../rules.ts';
 import { presetLineId } from '../ids.ts';
 import type { ItemTemplate } from '../registry/items.ts';
+import { clearCrystalEach } from '../hunter/crystal.ts';
 import { GATE_TYPES, xpDue } from './gate.ts';
 import type { Gate, GateType, XpOf } from './gate.ts';
 import { PRESET_ITEMS_MAX } from './preset.ts';
@@ -144,7 +145,7 @@ export function recommendPreset(
   gate: Gate,
   partySize: number,
   xpOf: XpOf,
-  R: Pick<Rules, 'loot' | 'gateParty'>,
+  R: Pick<Rules, 'loot' | 'gateParty'> & Partial<Pick<Rules, 'priceBase' | 'crystal'>>,
   pool: readonly ItemTemplate[],
   rand: Random,
 ): Extract<PresetEvent, { type: 'recommend' }> {
@@ -154,10 +155,11 @@ export function recommendPreset(
   const drops = rollLoot(R, gate.rank, { boss: true, share: 1 }, pool, rand);
   const rolledGold = drops.reduce((sum, d) => sum + (d.kind === 'gold' ? d.gold : 0), 0);
   const gold = shareEach(rolledGold, n, R.gateParty);
+  const crystal = clearCrystalEach(gate, n, { gateParty: R.gateParty, priceBase: R.priceBase ?? RULES.priceBase, crystal: R.crystal ?? RULES.crystal });
   const items: PresetItem[] = [];
   for (const d of drops) {
     if (d.kind !== 'item' || items.length >= PRESET_ITEMS_MAX) continue;
     items.push({ id: presetLineId(items.length + 1), item: { ...d.item }, checked: true, to: null });
   }
-  return { type: 'recommend', xp, gold, items };
+  return { type: 'recommend', xp, gold, crystal, items };
 }

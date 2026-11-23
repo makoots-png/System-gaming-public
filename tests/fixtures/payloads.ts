@@ -54,15 +54,15 @@ export const VALID: Record<EventType, [Raw, Raw]> = {
   ],
   award: [
     { eid: EID, to: [KEY], rewards: { xp: 50, gold: 10, points: 1, items: [POTION], title: WOLF }, bundle: { key: 'seed-held-the-mask', name: 'Held the Mask', window: { title: 'the mask held', line: 'You stayed.' } } },
-    { eid: EID, to: [KEY], rewards: { xp: 50, gold: 10, points: 1, items: [POTION], title: WOLF, job: null, skills: [], statuses: [], boons: [] }, bundle: { key: 'seed-held-the-mask', name: 'Held the Mask', window: { title: 'THE MASK HELD', line: 'You stayed.' } } },
+    { eid: EID, to: [KEY], rewards: { xp: 50, gold: 10, crystal: 0, points: 1, items: [POTION], title: WOLF, job: null, skills: [], statuses: [], boons: [] }, bundle: { key: 'seed-held-the-mask', name: 'Held the Mask', window: { title: 'THE MASK HELD', line: 'You stayed.' } } },
   ],
   quest: [
     { eid: EID, to: [KEY, OTHER], quest: { kind: 'main', title: 'Clear the den', desc: 'Goblins.', objectives: [{ label: 'Goblins', target: 3, progress: 0 }],
-      rewards: { xp: 100, points: 0, gold: 5, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, dueAt: '2026-11-13T12:00:00.000Z', penaltyText: 'Lose a day.',
-      onFail: { xp: 0, points: 0, gold: -10, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, secret: false } },
+      rewards: { xp: 100, points: 0, gold: 5, crystal: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, dueAt: '2026-11-13T12:00:00.000Z', penaltyText: 'Lose a day.',
+      onFail: { xp: 0, points: 0, gold: -10, crystal: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, secret: false } },
     { eid: EID, to: [KEY, OTHER], quest: { kind: 'main', title: 'Clear the den', desc: 'Goblins.', objectives: [{ label: 'Goblins', target: 3, progress: 0 }],
-      rewards: { xp: 100, points: 0, gold: 5, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, dueAt: '2026-11-13T12:00:00.000Z', penaltyText: 'Lose a day.',
-      onFail: { xp: 0, points: 0, gold: -10, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, secret: false } },
+      rewards: { xp: 100, points: 0, gold: 5, crystal: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, dueAt: '2026-11-13T12:00:00.000Z', penaltyText: 'Lose a day.',
+      onFail: { xp: 0, points: 0, gold: -10, crystal: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, secret: false } },
   ],
   hp: [
     { eid: EID, to: [KEY], hp: -7, reason: 'GM' },
@@ -143,10 +143,10 @@ export const VALID: Record<EventType, [Raw, Raw]> = {
   chapter: [
     { eid: EID, to: [KEY, OTHER], words: { title: 'the deep asks for a gate', line: 'Any gate of your rank.' }, rewards: { points: -1 },
       quest: { kind: 'urgent', title: 'Clear a gate for the Deep', desc: '', objectives: [{ label: 'Gate cleared', target: 1, progress: 0 }], rewards: { gold: 100 }, dueAt: '2026-11-21T10:00:00.000Z', penaltyText: 'The Deep collects.', secret: false } },
-    { eid: EID, to: [KEY, OTHER], words: { title: 'THE DEEP ASKS FOR A GATE', line: 'Any gate of your rank.' }, rewards: { xp: 0, points: -1, gold: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] },
+    { eid: EID, to: [KEY, OTHER], words: { title: 'THE DEEP ASKS FOR A GATE', line: 'Any gate of your rank.' }, rewards: { xp: 0, points: -1, gold: 0, crystal: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] },
       quest: { kind: 'urgent', title: 'Clear a gate for the Deep', desc: '', objectives: [{ label: 'Gate cleared', target: 1, progress: 0 }],
-        rewards: { xp: 0, points: 0, gold: 100, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, dueAt: '2026-11-21T10:00:00.000Z', penaltyText: 'The Deep collects.',
-        onFail: { xp: 0, points: 0, gold: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, secret: false } },
+        rewards: { xp: 0, points: 0, gold: 100, crystal: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, dueAt: '2026-11-21T10:00:00.000Z', penaltyText: 'The Deep collects.',
+        onFail: { xp: 0, points: 0, gold: 0, crystal: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] }, secret: false } },
   ],
   weigh: [
     { eid: EID, to: [KEY], total: 2, force: 20 },
@@ -166,6 +166,6 @@ export const VALID: Record<EventType, [Raw, Raw]> = {
   ],
   rewardAsk: [
     { eid: EID, by: KEY, name: 'Mira', from: 'quest', what: 'Clear the den', rewards: { gold: 40 } },
-    { eid: EID, by: KEY, name: 'Mira', from: 'quest', what: 'Clear the den', rewards: { xp: 0, points: 0, gold: 40, items: [], title: null, job: null, skills: [], statuses: [], boons: [] } },
+    { eid: EID, by: KEY, name: 'Mira', from: 'quest', what: 'Clear the den', rewards: { xp: 0, points: 0, gold: 40, crystal: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] } },
   ],
 };

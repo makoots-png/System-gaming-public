@@ -16,6 +16,7 @@ import { VERDICT_WORDS, verdict } from './coin.ts';
 import { CAP_ROUNDS } from './combat/play.ts';
 import { ODDS_RUNS } from './combat/odds.ts';
 import { sellPrice, shopOpen } from './hunter/inventory.ts';
+import { clearCrystalEach, gateCrystalPool, personalCrystal } from './hunter/crystal.ts';
 import { borrowCap, debtPayoffClears, debtTermsLine, raiseOwes } from './hunter/revive-standing.ts';
 import { RARITIES, priceOf } from './registry/items.ts';
 import type { PriceRules, Rarity } from './registry/items.ts';
@@ -198,6 +199,35 @@ export function borrowLine(R: Pick<Rules, 'borrowCapPrices' | 'priceBase' | 'loo
   if (R.reviveDebtShare <= 0) return `Shop borrowing limits are set (${goldByRank(capOf)}), but borrowing is paused while debt payments from gate clears are at 0%.`;
   const terms = debtTermsLine(R);
   return `You can borrow in the shop when short of gold, up to your rank's borrow limit (${goldByRank(capOf)}${payoffClearsPhrase(capOf, R)}). You spend your gold first, and the rest adds to your System debt.${terms ? ` ${terms}` : ''} A System revive ignores the borrow limit.`;
+}
+
+/** One rank row of the mana crystal Rules table. */
+export interface CrystalRow {
+  readonly rank: Rank;
+  readonly pool: number;
+  readonly normal: number;
+  readonly special: number;
+  readonly personal: number;
+}
+/** Mana crystal pool and per-hunter clear shares by rank (for a party of `gateParty` hunters). */
+export function crystalRows(R: Pick<Rules, 'priceBase' | 'gateParty' | 'crystal'>): readonly CrystalRow[] {
+  return RANKS.map(rank => ({
+    rank,
+    pool: gateCrystalPool(rank, 'normal', R),
+    normal: clearCrystalEach({ rank, type: 'normal' }, R.gateParty, R),
+    special: clearCrystalEach({ rank, type: 'red' }, R.gateParty, R),
+    personal: personalCrystal(rank, R),
+  }));
+}
+/** How mana crystal works (crystal.ts): valuation, selling buyers, gate drops, and gold-only System debt. */
+export function crystalLines(R: Pick<Rules, 'priceBase' | 'gateParty' | 'crystal'>): readonly string[] {
+  const C = R.crystal;
+  return [
+    '1 mana crystal equals 1 gold at Bureau assay. Mana crystal is a currency balance in your bag, separate from Resurrection Crystals.',
+    `Right now, you can only sell mana crystal for gold. Sell at Bureau exchange (${pct(C.rates.bureau)}) when you have no System debt, or at a Stair fence (${pct(C.rates.stair)}) off the record even while you owe System debt. Helix clerks (${pct(C.rates.helix)}) serve guild hunters only and are not open yet.`,
+    `Clearing a world gate yields a mana crystal pool of ${C.poolBase}x the rank's base value (${C.specialMult}x for Red and Double gates). Without a guild contract, your party keeps ${pct(C.unsignedShare)} salvage, split evenly across the party. Clearing a personal gate yields ${pct(C.personalShare)} of the rank's base value in mana crystal to you alone.`,
+    'System debt is gold only. Mana crystal never pays System debt automatically, and you cannot borrow mana crystal.',
+  ];
 }
 
 /** What completing every daily gives: the daily quest's own points (the template a new hunter's daily is made from), and the streak's. */

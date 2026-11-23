@@ -126,7 +126,7 @@ const OPEN_DOMAINS: ReadonlyArray<{ readonly re: RegExp; readonly domain: Domain
 ];
 
 /** What the daily quest gives besides its numbers, typed as a reward's parts so a GM's override of its items, skills or title is one (overrides.ts). */
-const DAILY_REWARD_PARTS: Omit<Rewards, 'xp' | 'points' | 'gold'> = { items: [], title: null, job: null, skills: [], statuses: [], boons: [] };
+const DAILY_REWARD_PARTS: Omit<Rewards, 'xp' | 'points' | 'gold' | 'crystal'> = { items: [], title: null, job: null, skills: [], statuses: [], boons: [] };
 
 const SPEC = {
   xpPerLevel: whole(100, 1, 1_000_000, 'XP needed per level (multiplied by current level). At 0, a single XP point would reach max level'),
@@ -173,6 +173,7 @@ const SPEC = {
       xp: whole(25, 0, 1_000_000, 'XP rewarded for completing the daily quest, up to 1,000,000'),
       points: whole(1, 0, 20, 'ability points rewarded for completing the daily quest, from 0 to 20'),
       gold: of(0, GOLD),
+      crystal: of(0, GOLD),
       ...DAILY_REWARD_PARTS,
     },
   },
@@ -231,6 +232,20 @@ const SPEC = {
   borrowCapPrices: real(1.5, 0, 5, 'maximum shop borrowing debt in multiples of priceBase. 0 turns borrowing off, up to 5'),
   reviveLevelShare: of(1 / 30, SHARE), // design 4.4, ruling 9: a raising takes this share of the level, rounded up, never below level 1 ("maybe 3.33% of your total level")
   gateParty: whole(4, 1, 12, 'number of hunters a world gate payout is balanced for, from 1 to 12'), // design 4.1: the session model's party; its gold and XP are a pot of this many shares
+  // Mana crystal economy (unit 3, the owner Nov 23): 1 mana crystal = 1 gold at Bureau assay. World gate pool is
+  // poolBase * priceBase (4x), multiplied by specialMult (1.5x) for Red and Double gates; unsigned parties keep
+  // unsignedShare (12% salvage). Personal gates drop personalShare * priceBase (10%) to the solo hunter.
+  crystal: {
+    poolBase: real(4, 0, 20, 'world gate mana crystal pool in multiples of priceBase, from 0 to 20'),
+    specialMult: real(1.5, 1, 5, 'Red and Double gate mana crystal pool multiplier, from 1 to 5'),
+    unsignedShare: of(0.12, SHARE),
+    personalShare: of(0.1, SHARE),
+    rates: {
+      helix: of(0.9, SHARE),
+      bureau: of(0.85, SHARE),
+      stair: of(0.7, SHARE),
+    },
+  },
   // design 2.3: the points an item may spend beyond its slot's free numbers
   itemBudget: {
     share: real(0.5, 0, 2, 'share of a hunter\'s ability points that a full set of gear can add. 0 gives items no bonus budget, up to 2'), // half of what a hunter of the tier's rank holds at its first level, over the 10 slots

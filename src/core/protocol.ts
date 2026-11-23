@@ -854,6 +854,7 @@ export type RoomRules = {
   borrowCapPrices: number;
   reviveLevelShare: number;
   gateParty: number;
+  crystal: Rules['crystal'];
   loot: Rules['loot'];
 };
 /** Each rarity an item can carry, with the rank whose Clear prices it. */
@@ -1220,7 +1221,23 @@ function roomKeystone(v: unknown): RoomRules['keystone'] {
     apexRank: opt(own(ks, 'apexRank'), choiceOf(RANKS), d.apexRank),
   };
 }
-/** The room's rules doc: every field required but the feats and trading switches (on when absent) and the mythic and keystone switches (off when absent). */
+/** The room's mana crystal economy rules: absent reads as the shipped defaults. */
+function roomCrystal(v: unknown): Rules['crystal'] {
+  const c = obj(opt(v, x => x, {})), d = RULES.crystal;
+  const r = obj(opt(own(c, 'rates'), x => x, {}));
+  return {
+    poolBase: opt(own(c, 'poolBase'), ruleNumber('crystal.poolBase'), d.poolBase),
+    specialMult: opt(own(c, 'specialMult'), ruleNumber('crystal.specialMult'), d.specialMult),
+    unsignedShare: opt(own(c, 'unsignedShare'), ruleNumber('crystal.unsignedShare'), d.unsignedShare),
+    personalShare: opt(own(c, 'personalShare'), ruleNumber('crystal.personalShare'), d.personalShare),
+    rates: {
+      helix: opt(own(r, 'helix'), ruleNumber('crystal.rates.helix'), d.rates.helix),
+      bureau: opt(own(r, 'bureau'), ruleNumber('crystal.rates.bureau'), d.rates.bureau),
+      stair: opt(own(r, 'stair'), ruleNumber('crystal.rates.stair'), d.rates.stair),
+    },
+  };
+}
+/** The room's rules doc: every field required but the feats and trading switches (on when absent), the mythic and keystone switches (off when absent), and crystal (shipped defaults when absent). */
 function roomRulesDoc(o: Rec): RoomRules {
   const b = obj(own(o, 'build')), so = obj(own(o, 'solo')), ra = obj(own(o, 'rarities')), pb = obj(own(o, 'priceBase')), lo = obj(own(o, 'loot'));
   const rule = (k: 'gradeStep' | 'saleShare' | 'usedUpShare' | 'elixirPrices' | 'revivePrices' | 'reviveDebtPrices' | 'reviveDebtShare' | 'reviveDebtBurn' | 'reviveDebtXpRate' | 'borrowCapPrices' | 'reviveLevelShare' | 'gateParty'): number => ruleNumber(k)(own(o, k));
@@ -1247,6 +1264,7 @@ function roomRulesDoc(o: Rec): RoomRules {
     borrowCapPrices: rule('borrowCapPrices'),
     reviveLevelShare: rule('reviveLevelShare'),
     gateParty: rule('gateParty'),
+    crystal: roomCrystal(own(o, 'crystal')),
     loot: { E: lootRank(own(lo, 'E'), 'E'), D: lootRank(own(lo, 'D'), 'D'), C: lootRank(own(lo, 'C'), 'C'), B: lootRank(own(lo, 'B'), 'B'), A: lootRank(own(lo, 'A'), 'A'), S: lootRank(own(lo, 'S'), 'S') },
   };
 }

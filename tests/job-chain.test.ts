@@ -203,7 +203,7 @@ describe('the step quests', () => {
     for (const s of [1, 2, 3] as const) {
       const q = stepQuest('Ranger', s, { chainId: jcid('jc1'), questId: qid('q1'), at: AT, level: 1 });
       expect(q).toMatchObject({ kind: 'job', from: 'system', status: 'active', issuedAt: AT, doneAt: null, dueAt: null, chainId: jcid('jc1') });
-      expect(q.rewards).toEqual({ xp: 0, points: 0, gold: 0, items: [], title: null, job: s === 3 ? 'Ranger' : null, skills: [], statuses: [], boons: [] });
+      expect(q.rewards).toEqual({ xp: 0, points: 0, gold: 0, crystal: 0, items: [], title: null, job: s === 3 ? 'Ranger' : null, skills: [], statuses: [], boons: [] });
     }
   });
 });

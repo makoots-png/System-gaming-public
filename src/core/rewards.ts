@@ -48,18 +48,18 @@ export type BoonGrant = { name: string; text: string };
  * or skill has no id until the hunter holds it.
  */
 export type Rewards = {
-  xp: number; points: number; gold: number; items: ItemTemplate[]; title: RewardTitle | null; job: string | null;
+  xp: number; points: number; gold: number; crystal: number; items: ItemTemplate[]; title: RewardTitle | null; job: string | null;
   skills: SkillTemplate[]; statuses: RewardStatus[]; boons: BoonGrant[];
 };
 
-export const newRewards = (): Rewards => ({ xp: 0, points: 0, gold: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] });
+export const newRewards = (): Rewards => ({ xp: 0, points: 0, gold: 0, crystal: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] });
 
 /**
- * The bounds of every reward, wherever it comes from. XP and gold a billion either way, points 999 either way (a
+ * The bounds of every reward, wherever it comes from. XP, gold and mana crystal a billion either way, points 999 either way (a
  * level holds 3); 20 items as a room award has carried; 8 skills, statuses and boons, as the design gives them.
  */
 export const REWARD_BOUNDS = {
-  xp: 1e9, gold: 1e9, points: 999, items: 20, skills: 8, statuses: 8, boons: 8, rounds: 999,
+  xp: 1e9, gold: 1e9, crystal: 1e9, points: 999, items: 20, skills: 8, statuses: 8, boons: 8, rounds: 999,
   title: 60, titleDesc: 200, bonus: 999, job: 60, boonName: 60, boonText: 200,
 } as const;
 
@@ -126,6 +126,7 @@ export function parseRewards(v: unknown): Rewards | null {
   const B = REWARD_BOUNDS;
   return {
     xp: whole(v.xp, -B.xp, B.xp, 0), points: whole(v.points, -B.points, B.points, 0), gold: whole(v.gold, -B.gold, B.gold, 0),
+    crystal: whole(v.crystal, -B.crystal, B.crystal, 0),
     items: listOf(v.items, B.items, parseItem), title: title(v.title), job: line(v.job, B.job) || null,
     skills: listOf(v.skills, B.skills, parseSkill), statuses: listOf(v.statuses, B.statuses, status), boons: listOf(v.boons, B.boons, boon),
   };
@@ -193,7 +194,7 @@ export const UNFINISHED_ROWS = 'Finish or remove the reward rows marked in red.'
 
 /** Whether a reward gives anything at all. */
 export const isEmptyReward = (r: Rewards): boolean =>
-  !r.xp && !r.points && !r.gold && !r.items.length && !r.title && !r.job && !r.skills.length && !r.statuses.length && !r.boons.length;
+  !r.xp && !r.points && !r.gold && !r.crystal && !r.items.length && !r.title && !r.job && !r.skills.length && !r.statuses.length && !r.boons.length;
 
 /**
  * An amount of XP, gold or points in words, the one rule for how a reward says a gain and a cost, on the quest card, in
@@ -228,6 +229,7 @@ export function rewardLines(R: RewardRules, r: Rewards): string[] {
   if (r.xp) out.push(amount(r.xp, 'XP'));
   if (r.points) out.push(amount(r.points, points(r.points)));
   if (r.gold) out.push(amount(r.gold, 'gold'));
+  if (r.crystal) out.push(amount(r.crystal, 'mana crystal'));
   for (const i of r.items) out.push(`Item: ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`);
   if (r.title) out.push(`Title: ${titleWords(r.title)}`);
   if (r.job) out.push(`Job: ${r.job}`);
@@ -263,6 +265,7 @@ export function grantLines(R: RewardRules, r: Rewards, more: GrantMore = {}): st
   const paid = more.debt ? debtPaidLine(more.debt) : null;
   if (paid) out.push(paid);
   else if (r.gold) out.push(amount(r.gold, 'gold'));
+  if (r.crystal) out.push(amount(r.crystal, 'mana crystal'));
   if (r.points) out.push(amount(r.points, points(r.points)));
   for (const i of r.items) out.push(`Item acquired: ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`);
   if (more.build) out.push(more.build);

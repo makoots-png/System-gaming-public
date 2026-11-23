@@ -6,7 +6,7 @@ import { DIFFICULTY_WORDS, difficultyFactor, effectiveBossLevel, effectiveGateLe
 import { bossDifficultyHtml, difficultySliderHtml, readEditDifficultyEvents, wireDifficultyLive } from './difficulty-control.js';
 import { RANKS } from '../core/save.ts';
 import { cryptoRandom } from '../edge/roll.ts';
-import { clearGoldEach, clearShares, settleClear, settleClearPreset, shareEach } from '../core/gates/pay.ts';
+import { clearCrystalEach, clearGoldEach, clearShares, settleClear, settleClearPreset, shareEach } from '../core/gates/pay.ts';
 import { REWARD_BOUNDS, newRewards, parseRewards } from '../core/rewards.ts';
 import { isRefused } from '../core/save-step.ts';
 import { oneOf } from '../core/one-of.ts';
@@ -169,7 +169,7 @@ export function register(app) {
       return true;
     }
     if (g.preset.at === 'paid') {
-      const pay = { due: 0, xp: 0, gold: 0, items: [], payees: [] };
+      const pay = { due: 0, xp: 0, gold: 0, crystal: 0, items: [], payees: [] };
       if (!ui.wrote('! Gate', store.apply('gate-clear', s => { const r = settleClear(s, id, pay, [], null, dayNow()); return isRefused(r) ? r : r.save; }))) return false;
       S.flush();
       await ui.system({ tag: '! Notification', kind: 'quest', title: PRESET_WORDS.clearedTitle, body: PRESET_WORDS.clearedBody(g.rank, g.name), lines: [PRESET_WORDS.paidClearedLine] });
@@ -177,28 +177,29 @@ export function register(app) {
     }
     const dropped = api.inventory.rollLoot(g.rank, { boss: true }) || [];
     const gold = dropped.reduce((n, e) => n + (e.kind === 'gold' ? e.gold : 0), 0), items = dropped.flatMap(e => (e.kind === 'item' ? [e.item] : []));
-    const plan = clearShares(store.get(), id, xpOf, gold, items, payees, toId ?? null, app.rules().gateParty); if (!plan) return false;
-    const share = plan.shares[0] || { xp: plan.due, gold, items: [] }, taker = plan.shares.find(x => x.items.length);
+    const plan = clearShares(store.get(), id, xpOf, gold, items, payees, toId ?? null, app.rules().gateParty, app.rules()); if (!plan) return false;
+    const share = plan.shares[0] || { xp: plan.due, gold, crystal: 0, items: [] }, taker = plan.shares.find(x => x.items.length);
     // the player's device assigns its own item ids
     const bare = list => list.map(i => { const c = { ...i }; delete c.id; return c; });
     // each player paid: its award, and its rank as its pushed sheet says, which its gate fact is measured against (pay.ts `settleClear`)
     const players = plan.shares.flatMap(x => {
       if (x.payee.kind !== 'remote') return [];
-      const key = x.payee.key, pays = S.event('award', { to: [key], rewards: { ...newRewards(), xp: x.xp, gold: x.gold, items: bare(x.items) }, earned: { from: 'clear', what: g.name } });
+      const key = x.payee.key, pays = S.event('award', { to: [key], rewards: { ...newRewards(), xp: x.xp, gold: x.gold, crystal: x.crystal, items: bare(x.items) }, earned: { from: 'clear', what: g.name } });
       return pays ? [{ key, rank: rem.find(r => r.key === key)?.data.rank ?? null, pays }] : [];
     });
     const inRoom = code ? { code, stamp: stampNow(), players } : null;
-    const locals = plan.shares.flatMap(x => (x.payee.kind === 'local' ? [{ hid: x.payee.hid, rewards: parseRewards({ xp: x.xp, gold: x.gold, items: x.items }) ?? newRewards() }] : []));
-    const pay = { due: plan.due, xp: share.xp, gold: share.gold, items: items.map(i => i.name), payees: payees.map(p => p.name) };
+    const locals = plan.shares.flatMap(x => (x.payee.kind === 'local' ? [{ hid: x.payee.hid, rewards: parseRewards({ xp: x.xp, gold: x.gold, crystal: x.crystal, items: x.items }) ?? newRewards() }] : []));
+    const pay = { due: plan.due, xp: share.xp, gold: share.gold, crystal: share.crystal, items: items.map(i => i.name), payees: payees.map(p => p.name) };
     const done = { settled: null };
     if (!ui.wrote('! Gate', store.apply('gate-clear', s => { const r = settleClear(s, id, pay, locals, inRoom, dayNow()); if (isRefused(r)) return r; done.settled = r; return r.save; }))) return false;
     const settled = done.settled;
     S.flush();
     const all = plan.shares.length > 1, rewards = [`${ui.fmt(share.xp)} XP${all ? ' each' : ''}`];
     if (share.gold) rewards.push(`${ui.fmt(share.gold)} gold${all ? ' each' : ''}`);
+    if (share.crystal) rewards.push(`${ui.fmt(share.crystal)} mana crystal${all ? ' each' : ''}`);
     for (const it of items) rewards.push(`${it.name} (to ${taker ? taker.payee.name : 'nobody'})`);
     const body = PRESET_WORDS.clearedBody(g.rank, g.name);
-    const rlines = plan.shares.filter(x => x.payee.kind === 'remote').map(x => `${x.payee.name}: ${[x.xp && `+${ui.fmt(x.xp)} XP`, x.gold && `${ui.fmt(x.gold)} gold`, ...x.items.map(i => i.name)].filter(Boolean).join(', ') || 'no rewards'}`);
+    const rlines = plan.shares.filter(x => x.payee.kind === 'remote').map(x => `${x.payee.name}: ${[x.xp && `+${ui.fmt(x.xp)} XP`, x.gold && `${ui.fmt(x.gold)} gold`, x.crystal && `${ui.fmt(x.crystal)} mana crystal`, ...x.items.map(i => i.name)].filter(Boolean).join(', ') || 'no rewards'}`);
     if (settled.granted.length) { await api.combat.showParty(settled.granted, { title: PRESET_WORDS.clearedTitle, body, lines: rlines }); return true; }
     await ui.system({ tag: '! Notification', kind: 'quest', title: PRESET_WORDS.clearedTitle, body,
       lines: payees.length ? [PRESET_WORDS.rewardedLine(payees.map(p => p.name))] : [PRESET_WORDS.nobodyGotRewards], rewards });
@@ -575,7 +576,8 @@ export function register(app) {
           <div class="lbl">${esc(PRESET_WORDS.title)}</div>
           <div class="grid2">
             ${ui.field(PRESET_WORDS.xpLabel, `<input type="number" name="xp" min="0" max="${REWARD_BOUNDS.xp}" step="1" inputmode="numeric" value="${esc(p.xp)}">`)}
-            ${ui.field(PRESET_WORDS.goldLabel, `<input type="number" name="gold" min="0" max="${REWARD_BOUNDS.gold}" step="1" inputmode="numeric" value="${esc(p.gold)}">`)}</div>
+            ${ui.field(PRESET_WORDS.goldLabel, `<input type="number" name="gold" min="0" max="${REWARD_BOUNDS.gold}" step="1" inputmode="numeric" value="${esc(p.gold)}">`)}
+            ${ui.field(PRESET_WORDS.crystalLabel, `<input type="number" name="crystal" min="0" max="${REWARD_BOUNDS.crystal}" step="1" inputmode="numeric" value="${esc(p.crystal)}">`)}</div>
           <div class="lbl">${esc(PRESET_WORDS.itemsLabel)}</div>
           <div class="gt-pitems">${rows}</div>
           ${add}
@@ -602,6 +604,7 @@ export function register(app) {
       // the shares that pay (pay.ts `shareEach`, read by `clearShares`): no hunter picked gets nothing
       const xpEach = (g, n) => ui.fmt(shareEach(dueXp(g), n, app.rules().gateParty));
       const goldEach = (g, n) => { const e = clearGoldEach(app.rules(), g.rank, n); return e.low === e.high ? ui.fmt(e.low) : `${ui.fmt(e.low)} to ${ui.fmt(e.high)}`; };
+      const crystalEach = (g, n) => ui.fmt(clearCrystalEach(g, n, app.rules()));
       function clearPanel(g) {
         const on = fighters(g), list = payees(), n = list.filter(h => on.has(h.id)).length;
         if (isActivePreset(g.preset)) {
@@ -609,7 +612,7 @@ export function register(app) {
           return `<form class="gt-panel" data-form="clear" aria-label="Clear gate">
             <div class="lbl">Award to</div>
             <div class="grid2">${list.map(h => `<label class="gt-chk"><input type="checkbox" name="hid" value="${esc(h.id)}"${on.has(h.id) ? ' checked' : ''}><span>${esc(h.name)}</span></label>`).join('')}</div>
-            <div class="gt-notes">${esc(PRESET_WORDS.clearNoteHead)}<span data-clearxp>${ui.fmt(n ? p.xp : 0)}</span>${esc(PRESET_WORDS.clearNoteMid)}<span data-cleargold>${ui.fmt(n ? p.gold : 0)}</span>${esc(PRESET_WORDS.clearNoteTail(app.seat() === 'gm'))}</div>
+            <div class="gt-notes">${esc(PRESET_WORDS.clearNoteHead)}<span data-clearxp>${ui.fmt(n ? p.xp : 0)}</span>${esc(PRESET_WORDS.clearNoteMid)}<span data-cleargold>${ui.fmt(n ? p.gold : 0)}</span> gold<span data-clearcrystal>${esc(PRESET_WORDS.clearNoteCrystal(n ? p.crystal : 0, ui.fmt))}</span>${esc(PRESET_WORDS.clearNoteTailCrystal(app.seat() === 'gm'))}</div>
             ${itemsHtml ? `<ul class="gt-mons" data-clearitems aria-label="${esc(PRESET_WORDS.clearItemsLabel)}">${itemsHtml}</ul>` : '<ul class="gt-mons" data-clearitems hidden></ul>'}
             <div class="gt-acts"><button type="button" data-act="cancel-panel">${esc(PRESET_WORDS.cancelClear)}</button><button type="button" data-act="preset">${esc(PRESET_WORDS.edit)}</button><button type="submit" class="primary">Confirm clear</button></div></form>`;
         }
@@ -622,7 +625,7 @@ export function register(app) {
           <div class="lbl">Award to</div>
           <div class="grid2">${list.map(h => `<label class="gt-chk"><input type="checkbox" name="hid" value="${esc(h.id)}"${on.has(h.id) ? ' checked' : ''}><span>${esc(h.name)}</span></label>`).join('')}</div>
           ${ui.field('Loot item goes to', `<select name="to"><option value="">First selected hunter</option>${hunterOpts('')}</select>`)}
-          <div class="gt-notes">Each selected hunter gets <span data-clearxp>${xpEach(g, n)}</span> XP and <span data-cleargold>${goldEach(g, n)}</span> gold. Fewer hunters get a larger share.${g.xpPaid > 0 ? ` Earlier fights in this gate already awarded ${ui.fmt(g.xpPaid)} XP.` : ''} Rolls ${esc(g.rank)}-rank boss loot (two item rolls).</div>
+          <div class="gt-notes">Each selected hunter gets <span data-clearxp>${xpEach(g, n)}</span> XP, <span data-cleargold>${goldEach(g, n)}</span> gold, and <span data-clearcrystal>${crystalEach(g, n)}</span> mana crystal. Fewer hunters get a larger share.${g.xpPaid > 0 ? ` Earlier fights in this gate already awarded ${ui.fmt(g.xpPaid)} XP.` : ''} Rolls ${esc(g.rank)}-rank boss loot (two item rolls).</div>
           <div class="gt-acts"><button type="button" data-act="cancel-panel">Cancel</button><button type="submit" class="primary">Confirm clear</button></div></form>`;
       }
       function editPanel(g) {
@@ -814,9 +817,9 @@ export function register(app) {
         if (pf && app.isGM()) {
           const id = pf.closest('.gate').dataset.id, g = gate(id), t = e.target; if (!g) return;
           const syncSummary = () => { const g2 = gate(id), sEl = cards.get(id)?.querySelector('[data-preset-summary]'); if (g2 && sEl && g2.preset.at !== 'none') sEl.textContent = PRESET_WORDS.summary(g2.preset, g2.preset.at === 'paid', ui.fmt); };
-          if (t.name === 'xp' || t.name === 'gold') {
+          if (t.name === 'xp' || t.name === 'gold' || t.name === 'crystal') {
             const n = Number(t.value);
-            if (ui.wrote('! Gate', store.apply('gate-preset', s => gatePreset(s, g.id, t.name === 'xp' ? { type: 'setXp', xp: n } : { type: 'setGold', gold: n })), PRESET_WORDS.refusals)) syncSummary();
+            if (ui.wrote('! Gate', store.apply('gate-preset', s => gatePreset(s, g.id, t.name === 'xp' ? { type: 'setXp', xp: n } : t.name === 'gold' ? { type: 'setGold', gold: n } : { type: 'setCrystal', crystal: n })), PRESET_WORDS.refusals)) syncSummary();
             return;
           }
           if (t.dataset.pchk) {
@@ -831,15 +834,16 @@ export function register(app) {
           }
           return;
         }
-        const f = e.target.closest('form[data-form=clear]'), x = f && f.querySelector('[data-clearxp]'), gd = f && f.querySelector('[data-cleargold]'), g = f && gate(f.closest('.gate').dataset.id);
+        const f = e.target.closest('form[data-form=clear]'), x = f && f.querySelector('[data-clearxp]'), gd = f && f.querySelector('[data-cleargold]'), cr = f && f.querySelector('[data-clearcrystal]'), g = f && gate(f.closest('.gate').dataset.id);
         if (x && gd && g) {
           const pickedIds = new Set([...f.querySelectorAll('input[name=hid]:checked')].map(i => i.value)), n = pickedIds.size;
           if (isActivePreset(g.preset)) {
             x.textContent = ui.fmt(n ? g.preset.xp : 0);
             gd.textContent = ui.fmt(n ? g.preset.gold : 0);
+            if (cr) cr.textContent = PRESET_WORDS.clearNoteCrystal(n ? g.preset.crystal : 0, ui.fmt);
             const ul = f.querySelector('[data-clearitems]');
             if (ul) { const html = presetClearItems(g, pickedIds); ul.innerHTML = html; ul.hidden = !html; }
-          } else { x.textContent = xpEach(g, n); gd.textContent = goldEach(g, n); }
+          } else { x.textContent = xpEach(g, n); gd.textContent = goldEach(g, n); if (cr) cr.textContent = crystalEach(g, n); }
         }
       });
       el.addEventListener('submit', async e => {

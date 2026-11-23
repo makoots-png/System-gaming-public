@@ -35,6 +35,7 @@ import { parseWorn } from './inventory.ts';
 import type { Vitals } from './vitals.ts';
 import { REVIVE_STANDINGS } from './revive-standing.ts';
 import type { ReviveStanding } from './revive-standing.ts';
+import { CRYSTAL_MAX } from './crystal.ts';
 import { hunterSheet } from './sheet.ts';
 import { isStateChip } from './chips.ts';
 import { parsePenalty } from './penalty.ts';
@@ -125,7 +126,10 @@ export type Hunter = Progress & Vitals & {
   /** The job whose Job Change this hunter finished: what its keystones' awakened powers read, so deleting the done quest takes none. */
   jobDone: string | null; rank: Rank;
   /** Who set the rank: a rank set by the GM by hand stays when levels are lost (SMX-rules-7.2). */
-  rankBy: RankBy; gold: number; stats: Stats;
+  rankBy: RankBy; gold: number;
+  /** Whole-number mana crystal balance, distinct from Resurrection Crystals. Changed only through crystal.ts. */
+  crystal: number;
+  stats: Stats;
   hpAdj: number; manaAdj: number; conditions: Condition[];
   titleId: TitleId | null; titles: Title[]; quests: Quest[]; skills: Skill[]; items: Item[]; equipped: Record<Slot, ItemId | null>;
   shadows: Shadow[]; daily: Daily; penalty: Penalty | null; jobChain: JobChain | null; notes: string; updatedAt: string;
@@ -164,7 +168,7 @@ export const newHunter = (R: Rules = BASE_RULES): Hunter => {
   const stats = newStats(R);
   const h: Hunter = {
     ...newProgress(), ...newVitals({ hpMax: 1, manaMax: 0, fatigueMax: 0 }), id: saveId('h', 1), name: 'Hunter', job: null, jobDone: null, rank: 'E', rankBy: 'level',
-    gold: 0, stats, hpAdj: 0, manaAdj: 0, conditions: [], titleId: null, titles: [],
+    gold: 0, crystal: 0, stats, hpAdj: 0, manaAdj: 0, conditions: [], titleId: null, titles: [],
     quests: [], skills: [], items: [], equipped: newEquipped(), shadows: [],
     daily: { streak: 0, lastCompleteKey: null, lastCheckedKey: null }, penalty: null, jobChain: null, notes: '', updatedAt: '',
     emblem: '', color: '', loadouts: [], build: { path: null, picks: [] }, boons: [], restsTaken: 0, reviveLeft: 'free', debt: 0, solo: newSolo(), chronicle: newChronicle(),
@@ -215,7 +219,7 @@ export function fixHunter(saveRun: RepairRun, h: Hunter): void {
   const { R } = run;
   h.name = h.name.slice(0, 60) || 'Hunter'; h.job = jobOf(h.job); h.jobDone = jobOf(h.jobDone);
   h.rank = oneOf(h.rank, RANKS, 'E'); h.rankBy = oneOf(h.rankBy, RANK_BY, 'level');
-  h.level = levelOf(h.level); h.xp = Math.max(0, h.xp); h.gold = Math.max(0, h.gold);
+  h.level = levelOf(h.level); h.xp = Math.max(0, h.xp); h.gold = Math.max(0, h.gold); h.crystal = int(h.crystal, 0, 0, CRYSTAL_MAX);
   h.peakLevel = Math.max(h.level, levelOf(h.peakLevel));
   h.bonusPoints = int(h.bonusPoints, 0, -POINTS_MAX, POINTS_MAX); h.spent = int(h.spent, 0, 0, POINTS_MAX);
   h.hpAdj = int(h.hpAdj, 0, -VITAL_MAX, VITAL_MAX); h.manaAdj = int(h.manaAdj, 0, -VITAL_MAX, VITAL_MAX);

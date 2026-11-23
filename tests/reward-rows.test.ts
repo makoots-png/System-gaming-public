@@ -58,17 +58,17 @@ describe('a title row the GM changes', () => {
   test('picking a rule title takes its words, bonus and band; picking a new title starts from nothing, with no band', () => {
     const seed = RULES.titles.find(t => t.key === 'king-of-shadows')!;
     const picked = pickTitle(titleOf([blankRow('title', [])]), RULES, seed.key);
-    expect(parseRewards(rewardOfForm({ nums: { xp: 0, gold: 0, points: 0 }, rows: [picked] }, RULES))!.title)
+    expect(parseRewards(rewardOfForm({ nums: { xp: 0, gold: 0, crystal: 0, points: 0 }, rows: [picked] }, RULES))!.title)
       .toEqual({ name: seed.name, desc: seed.desc, bonus: seed.bonus, key: seed.key, band: seed.band });
     const fresh = { ...pickTitle(picked, RULES, ''), name: 'Odd' };
-    expect(parseRewards(rewardOfForm({ nums: { xp: 0, gold: 0, points: 0 }, rows: [fresh] }, RULES))!.title).toEqual({ name: 'Odd', desc: '', bonus: {} });
+    expect(parseRewards(rewardOfForm({ nums: { xp: 0, gold: 0, crystal: 0, points: 0 }, rows: [fresh] }, RULES))!.title).toEqual({ name: 'Odd', desc: '', bonus: {} });
   });
 
   test('a band and an active set on a new title row are written, and E and none leave them out', () => {
     const row = { ...titleOf([blankRow('title', [])]), name: 'Last Light', band: 'C' as const, active: SHIELD_UP };
-    const out = parseRewards(rewardOfForm({ nums: { xp: 0, gold: 0, points: 0 }, rows: [row] }, RULES))!;
+    const out = parseRewards(rewardOfForm({ nums: { xp: 0, gold: 0, crystal: 0, points: 0 }, rows: [row] }, RULES))!;
     expect(out.title, 'the band and the active the GM chose').toEqual({ name: 'Last Light', desc: '', bonus: {}, band: 'C', active: SHIELD_UP });
-    const plain = parseRewards(rewardOfForm({ nums: { xp: 0, gold: 0, points: 0 }, rows: [{ ...row, band: null, active: null }] }, RULES))!;
+    const plain = parseRewards(rewardOfForm({ nums: { xp: 0, gold: 0, crystal: 0, points: 0 }, rows: [{ ...row, band: null, active: null }] }, RULES))!;
     expect(plain.title, 'cleared, the title has neither').toEqual({ name: 'Last Light', desc: '', bonus: {} });
   });
 });

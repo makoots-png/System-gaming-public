@@ -31,6 +31,7 @@ import { buildAward } from './build.ts';
 import { dropStatus, putStatus } from './conditions.ts';
 import type { StatusIn } from './conditions.ts';
 import { addGold, putItem, stackOf } from './inventory.ts';
+import { addCrystal } from './crystal.ts';
 import { addXp, atLevel, gainXp, grantPoints, raisedLevels } from './progress.ts';
 import type { ChainEffect, ChainEvent, ChainRefusal } from './job-chain.ts';
 import { chained, completeQuest, failQuest, rollover } from './quests.ts';
@@ -198,6 +199,10 @@ export function grant(save: Save, hid: string, r: Rewards, build: BuildChange | 
   const goldBefore = h.gold;
   if (pay.kept) h = addGold(h, pay.kept);
   const gold = h.gold - goldBefore;
+  // Mana crystal never pays System debt automatically; grant applies it directly through crystal.ts.
+  const crystalBefore = h.crystal;
+  if (r.crystal) h = addCrystal(h, r.crystal);
+  const crystal = h.crystal - crystalBefore;
   if (pay.debt !== h.debt) h = { ...h, debt: pay.debt };
   const debtPaid: DebtPaid | null = pay.paid > 0 || pay.burn > 0
     ? { total: r.gold, paid: pay.paid, burn: pay.burn, kept: pay.kept, left: pay.debt }
@@ -235,7 +240,7 @@ export function grant(save: Save, hid: string, r: Rewards, build: BuildChange | 
   const debtLog = debtPaidLog(h.name, debtPaid, debtXp, debtXpCleared ? xp : 0);
   const lines = grantLines(
     R,
-    { ...r, xp, gold, points, title: r.title && titleNew ? titleGiven(r.title, replaced?.name) : null, statuses: took },
+    { ...r, xp, gold, crystal, points, title: r.title && titleNew ? titleGiven(r.title, replaced?.name) : null, statuses: took },
     {
       build: buildLine,
       level: { from: h0.level, to: h.level },

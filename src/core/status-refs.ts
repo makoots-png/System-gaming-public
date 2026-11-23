@@ -183,7 +183,7 @@ export function skill(k: SkillTemplate, f: KeyFn): SkillTemplate {
 const rewardStatus = fields<RewardStatus>({ key, rounds: none, def: statusDef });
 const rewardTitle = fields<RewardTitle>({ name: none, desc: none, bonus: none, key: none, replaces: none, band: none, ...POWERS });
 const rewards = fields<Rewards>({
-  xp: none, points: none, gold: none, items: list(item), title: rewardTitle, job: none, skills: list(skill), statuses: list(rewardStatus), boons: none,
+  xp: none, points: none, gold: none, crystal: none, items: list(item), title: rewardTitle, job: none, skills: list(skill), statuses: list(rewardStatus), boons: none,
 });
 /** A reward bundle without its id. */
 export const bundle: Walk<Omit<RewardBundle, 'id'>> = fields<Omit<RewardBundle, 'id'>>({ name: none, rewards, window: none });

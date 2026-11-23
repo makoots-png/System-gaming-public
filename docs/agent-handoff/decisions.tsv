@@ -755,3 +755,5 @@ ts	phase	decision	why	evidence	result
 2026-11-23T19:39Z	ops	(neon) Merged PR 94 (clear-gold) to main (7fc51dac).
 2026-11-23T20:09Z	ops	(neon) the owner's from-scratch rulings (Nov 23 18:08): slug ids build, fight-rule lock no, generated docs untracked.
 2026-11-23T21:16Z	features	(neon) Landed potion-prices on lead-backlog: rank-tiered potions 0.35x, Elixir 1.0x priceBase.
+2026-11-23T21:31Z	ops	(neon) Merged PR 95 (potion-prices) to main (0da99122).
+2026-11-23T22:24Z	economy	crystal-balance landed on lead-backlog: mana crystal balance, gate drops (12% unsigned salvage), Bureau/Stair/Helix exchange; full unit 6822 and browser 590 green

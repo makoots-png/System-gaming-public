@@ -8,6 +8,8 @@ import { itemAbilityId } from '../core/registry/abilities.ts';
 import { itemIcon } from '../core/registry/icon-defaults.ts';
 import { icon, sprite } from './icons.ts';
 import { BORROW_WORDS, GEAR_WORDS, SHOP_CLOSED, addGold, borrowConfirm, buy, buyPlan, buyWords, editItem, equip, putItem, removeItem, removeShopItem, sell, sellable, sellPrice as sellPriceOf, sellTotal, shopCreditLine, shopOpen, stackOf, unequip, wearMove, withShop, writeShopItem } from '../core/hunter/inventory.ts';
+import { CRYSTAL_BUYERS, CRYSTAL_WORDS, addCrystal, buyerStatus, defaultBuyer, sellCrystalStep, sellPlan } from '../core/hunter/crystal.ts';
+import { stepTime } from '../core/day.ts';
 import { fitted } from '../core/hunter/sheet.ts';
 import { debtLine } from '../core/hunter/revive-standing.ts';
 import { USE_WORDS, spendItem, tooLowOf, usable, useDice, useItem, useWords } from '../core/hunter/use.ts';
@@ -112,6 +114,7 @@ export function register(app) {
       return added ? { ...added } : null;
     },
     addGold(hid, n) { ui.wrote('System', onBag(hid, 'gold', x => addGold(x, n))); },
+    addCrystal(hid, n) { ui.wrote('System', onBag(hid, 'crystal', x => addCrystal(x, n))); },
     rollLoot: (rank, { boss = false, share = 1 } = {}) => rollLoot(rules(), rank, { boss, share }, lootPool(rules()), cryptoRandom),
     equip(hid, itemId) {
       const h = store.hunter(hid), it = h?.items.find(i => i.id === itemId);
@@ -151,7 +154,20 @@ export function register(app) {
   ui.css('inventory', `
 .inv-gold{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px}
 .inv-gold .g{font-family:var(--font-mono);font-size:20px;color:var(--gold)}
+.inv-gold .c{font-family:var(--font-mono);font-size:20px;color:var(--cyan)}
 .inv-gold-acts{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
+.cx-form{display:flex;flex-direction:column;gap:10px;text-align:left}
+.cx-quick{display:flex;gap:6px;flex-wrap:wrap}
+.cx-buyers{display:flex;flex-direction:column;gap:6px}
+.cx-buyer{display:flex;align-items:flex-start;gap:8px;border:1px solid var(--line);background:rgba(10,26,46,.55);padding:8px 10px;cursor:pointer}
+.cx-buyer.off{opacity:.65;cursor:not-allowed}
+.cx-buyer input{margin-top:3px;flex:0 0 auto}
+.cx-buyer .cx-bmain{display:flex;flex-direction:column;gap:2px;min-width:0}
+.cx-buyer .cx-btop{font-weight:600;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.cx-buyer .cx-tag{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);padding:1px 5px}
+.cx-buyer .cx-bnote{font-size:13px;color:var(--cyan-dim)}
+.cx-preview{margin:0;font-size:14px;color:var(--ice)}
+.cx-preview.bad{color:#ff8a96}
 .inv-tabs{margin-bottom:10px}
 .inv-bar{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px}
 .inv-card{border:1px solid var(--line);background:rgba(10,26,46,.55);padding:9px 12px;display:flex;flex-direction:column;gap:6px}
@@ -211,6 +227,7 @@ export function register(app) {
     mount(el) {
       el.innerHTML = `
         <div class="inv-gold"><span class="lbl">Gold</span><span class="g" data-gold>0</span><span class="inv-gold-acts"><button type="button" data-give-gold>Give gold</button><button type="button" class="gm-only" data-gold-adj hidden>Adjust gold</button></span></div>
+        <div class="inv-gold inv-crystal"><span class="lbl">${esc(CRYSTAL_WORDS.label)}</span><span class="c" data-crystal>0</span><span class="inv-gold-acts"><button type="button" data-sell-crystal hidden>${esc(CRYSTAL_WORDS.sellButton)}</button><button type="button" class="gm-only" data-crystal-adj hidden>${esc(CRYSTAL_WORDS.adjustButton)}</button></span></div>
         <p class="note" data-debt hidden></p>
         <div class="inv-tabs seg" role="tablist" aria-label="Bag sections">
           <button type="button" role="tab" data-tab="items" aria-selected="true">Items</button>
@@ -268,12 +285,88 @@ export function register(app) {
         f.name.value = '';
       });
 
+      const openSellCrystal = async hid => {
+        const h = store.hunter(hid), R = rules(); if (!h) return;
+        if (!shopOpen(h)) { ui.toast('System', CRYSTAL_WORDS.refusals.dead, { kind: 'warning' }); return; }
+        if (inFight(hid)) { ui.toast('System', CRYSTAL_WORDS.refusals['in-fight'], { kind: 'warning' }); return; }
+        const pick = { amount: h.crystal, buyer: defaultBuyer(h) };
+        const pct = r => `${Math.round(r * 1000) / 10}%`;
+        const buyerRows = CRYSTAL_BUYERS.map(b => {
+          const st = buyerStatus(h, b), rate = R.crystal.rates[b], info = CRYSTAL_WORDS.buyers[b];
+          const note = st.open === false ? CRYSTAL_WORDS.buyerLocked[st.why] : info.note;
+          return `<label class="cx-buyer${st.open ? '' : ' off'}" data-cx-row="${b}">
+            <input type="radio" name="cx-buyer" value="${b}"${b === pick.buyer ? ' checked' : ''}${st.open ? '' : ' disabled'}>
+            <span class="cx-bmain"><span class="cx-btop"><span>${esc(info.name)} (${esc(pct(rate))})</span>${st.open ? '' : `<span class="cx-tag">${esc(CRYSTAL_WORDS.unavailableTag)}</span>`}</span>
+            <span class="cx-bnote">${esc(note)}</span></span></label>`;
+        }).join('');
+        const html = `<div class="cx-form">
+          ${ui.field(CRYSTAL_WORDS.amountLabel, `<input type="number" min="1" max="${h.crystal}" step="1" inputmode="numeric" data-cx-amt value="${h.crystal}">`)}
+          <div class="cx-quick">
+            <button type="button" data-cx-frac="0.25">25%</button>
+            <button type="button" data-cx-frac="0.5">50%</button>
+            <button type="button" data-cx-frac="1">All</button>
+          </div>
+          <div class="lbl">${esc(CRYSTAL_WORDS.buyerLabel)}</div>
+          <div class="cx-buyers" role="radiogroup" aria-label="${esc(CRYSTAL_WORDS.buyerLabel)}">${buyerRows}</div>
+          <p class="cx-preview" data-cx-preview aria-live="polite"></p>
+          ${h.debt > 0 ? `<p class="note">${esc(CRYSTAL_WORDS.debtNote)}</p>` : ''}
+        </div>`;
+        const yes = await ui.system({
+          tag: '! Exchange', title: CRYSTAL_WORDS.modalTitle, body: CRYSTAL_WORDS.balanceLine(h.crystal), html, size: 'form',
+          actions: [{ label: CRYSTAL_WORDS.cancel, value: false, cancel: true }, { label: CRYSTAL_WORDS.confirmDisabled, value: true, primary: true }],
+          drawn(win) {
+            const amtEl = win.querySelector('[data-cx-amt]'), prevEl = win.querySelector('[data-cx-preview]'), okBtn = win.querySelector('.sys-actions button.primary');
+            const sync = () => {
+              pick.amount = Math.trunc(Number(amtEl.value));
+              const checked = win.querySelector('input[name=cx-buyer]:checked');
+              if (checked) pick.buyer = oneOf(checked.value, CRYSTAL_BUYERS, pick.buyer);
+              const plan = sellPlan(h, pick.amount, pick.buyer, R, false);
+              if (isRefused(plan)) {
+                prevEl.textContent = CRYSTAL_WORDS.refusals[plan.why];
+                prevEl.classList.add('bad');
+                okBtn.disabled = true;
+                okBtn.textContent = CRYSTAL_WORDS.confirmDisabled;
+              } else {
+                prevEl.textContent = CRYSTAL_WORDS.preview(plan.amount, plan.buyer, plan.rate, plan.gold);
+                prevEl.classList.remove('bad');
+                okBtn.disabled = false;
+                okBtn.textContent = CRYSTAL_WORDS.confirmBtn(plan.gold);
+              }
+            };
+            amtEl.addEventListener('input', sync);
+            win.querySelectorAll('input[name=cx-buyer]').forEach(r => r.addEventListener('change', sync));
+            win.querySelectorAll('[data-cx-frac]').forEach(btn => btn.addEventListener('click', () => {
+              const frac = Number(btn.dataset.cxFrac);
+              amtEl.value = String(frac >= 1 ? h.crystal : Math.max(1, Math.floor(h.crystal * frac)));
+              sync();
+            }));
+            sync();
+          },
+        });
+        if (yes !== true) return;
+        const done = { sold: null }, day = stepTime(store.get(), new Date());
+        const w = store.apply('crystal-sell', s => {
+          const r = sellCrystalStep(s, hid, pick.amount, pick.buyer, { at: day.at, R: rules(), inFight: inFight(hid) });
+          if (isRefused(r)) return r;
+          done.sold = r.sold;
+          return r.save;
+        });
+        if (ui.wrote('System', w, CRYSTAL_WORDS.refusals) && done.sold) {
+          ui.toast('System', CRYSTAL_WORDS.soldToast(done.sold.amount, done.sold.buyer, done.sold.gold));
+        }
+      };
+
       el.addEventListener('click', async e => {
         const b = e.target.closest('button'); if (!b) return;
         const h = store.active(), id = h.id, d = b.dataset;
         if (b.hasAttribute('data-gold-adj')) {
           const n = await ui.promptNum({ title: 'Adjust gold', label: `Add or remove gold (current ${fmt(h.gold)})`, value: 0, min: -1e9, max: 1e9 });
           if (n) api.addGold(id, n);
+        } else if (b.hasAttribute('data-crystal-adj')) {
+          const n = await ui.promptNum({ title: CRYSTAL_WORDS.adjustTitle, label: CRYSTAL_WORDS.adjustLabel(h.crystal), value: 0, min: -1e9, max: 1e9 });
+          if (n) api.addCrystal(id, n);
+        } else if (b.hasAttribute('data-sell-crystal')) {
+          await openSellCrystal(id);
         } else if (b.hasAttribute('data-give-gold')) void app.api.trade.give(id, null);
         else if (d.give) void app.api.trade.give(id, d.give);
         else if (d.use) api.use(id, d.use);
@@ -324,6 +417,8 @@ export function register(app) {
       const h = store.active(), gm = app.isGM(), open = shopOpen(h);
       el.querySelector('[data-gold]').textContent = fmt(h.gold);
       el.querySelector('[data-give-gold]').hidden = h.gold <= 0;
+      el.querySelector('[data-crystal]').textContent = fmt(h.crystal);
+      el.querySelector('[data-sell-crystal]').hidden = h.crystal <= 0;
       const owed = debtLine(h.debt), debt = el.querySelector('[data-debt]');
       debt.hidden = !owed; debt.textContent = owed ?? '';
       el.querySelector('[data-additem]').hidden = tab === 'offers' || tab === 'stash';

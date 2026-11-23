@@ -12,8 +12,9 @@ const LINE: PresetItem = { id: presetLineId(1), item: POTION, checked: true, to:
 const AT = '2026-11-22T20:00:00.000Z';
 
 const EVENTS: readonly PresetEvent[] = [
-  { type: 'recommend', xp: 150, gold: 100, items: [LINE] },
+  { type: 'recommend', xp: 150, gold: 100, crystal: 12, items: [LINE] },
   { type: 'setGold', gold: 200 },
+  { type: 'setCrystal', crystal: 24 },
   { type: 'setXp', xp: 250 },
   { type: 'toggleItem', id: presetLineId(1), checked: false },
   { type: 'assignItem', id: presetLineId(1), to: { kind: 'local', hunterId: 'h1' as HunterId } },
@@ -33,8 +34,8 @@ const LABEL: { readonly [S in PresetState]: string } = {
 function stepLabel(e: PresetEvent): string {
   switch (e.type) {
     case 'recommend': return 'the GM opens or resets What this clear pays';
-    case 'setGold': case 'setXp': case 'toggleItem': case 'assignItem': case 'addItem': case 'removeItem':
-      return 'the GM edits gold, XP, or items';
+    case 'setGold': case 'setCrystal': case 'setXp': case 'toggleItem': case 'assignItem': case 'addItem': case 'removeItem':
+      return 'the GM edits gold, mana crystal, XP, or items';
     case 'clear': return 'the GM removes the clear preset';
     case 'pay': return 'the gate is cleared: clear preset paid once';
   }
@@ -42,7 +43,7 @@ function stepLabel(e: PresetEvent): string {
 
 export const clearPreset = machine<ClearPreset, PresetEvent>({
   name: 'A gate\'s clear preset',
-  walked: 'Every state reachable from a gate with no preset (`none`) under the 9 events of `PRESET_EVENTS`, breadth first.',
+  walked: 'Every state reachable from a gate with no preset (`none`) under the 10 events of `PRESET_EVENTS`, breadth first.',
   walk: () => bfs<ClearPreset, PresetEvent>([NO_PRESET], s => EVENTS.flatMap(event => {
     const to = presetStep(s, event);
     return to ? [{ event, to }] : [];

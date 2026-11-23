@@ -26,8 +26,8 @@ export type RewardRowKind = RewardRow['kind'];
 /** Every kind of row, in the order the editor's Add chips offer them. */
 export const ROW_KINDS = ['item', 'title', 'skill', 'status', 'boon', 'job'] as const satisfies readonly RewardRowKind[];
 type TitleRow = Extract<RewardRow, { kind: 'title' }>;
-/** The editor's whole form: the three number fields and the part rows, in the order the GM added them. */
-export type RewardForm = { nums: { xp: number; gold: number; points: number }; rows: RewardRow[] };
+/** The editor's whole form: the four number fields and the part rows, in the order the GM added them. */
+export type RewardForm = { nums: { xp: number; gold: number; crystal: number; points: number }; rows: RewardRow[] };
 
 /** A title opened into its row. */
 function titleRow(t: RewardTitle): TitleRow {
@@ -37,7 +37,7 @@ function titleRow(t: RewardTitle): TitleRow {
 /** A parsed reward opened into the editor's form. */
 export function rewardForm(rw: Rewards): RewardForm {
   return {
-    nums: { xp: rw.xp, gold: rw.gold, points: rw.points },
+    nums: { xp: rw.xp, gold: rw.gold, crystal: rw.crystal, points: rw.points },
     rows: [
       ...rw.items.map((item): RewardRow => ({ kind: 'item', item })),
       ...(rw.title ? [titleRow(rw.title)] : []),
@@ -87,7 +87,7 @@ export function rewardOfForm(f: RewardForm, R: RewardRules, floor = false) {
   }
   const name = title?.name.trim(), replaces = title?.replaces.trim();
   return {
-    xp: n(f.nums.xp), points: n(f.nums.points), gold: n(f.nums.gold), items,
+    xp: n(f.nums.xp), points: n(f.nums.points), gold: n(f.nums.gold), crystal: n(f.nums.crystal), items,
     // a title in place of itself is that title (rewards.ts `title`)
     title: title && name ? { name, desc: title.desc, bonus: title.bonus, ...(title.pick ? { key: title.pick } : {}), ...(replaces && replaces !== name ? { replaces } : {}), ...(title.worn ? { worn: title.worn } : {}), ...(title.band ? { band: title.band } : {}), ...(title.active ? { active: title.active } : {}) } : null,
     job: job?.kind === 'job' && job.job.trim() ? job.job.trim() : null,

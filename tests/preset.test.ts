@@ -28,15 +28,16 @@ const REMOTE_REF: HunterRef = { kind: 'remote', remote: REMOTE_KEY };
 const L1: PresetItem = { id: presetLineId(1), item: POTION, checked: true, to: null };
 const L2: PresetItem = { id: presetLineId(2), item: SWORD, checked: true, to: LOCAL_REF };
 
-const REC_STATE: ClearPreset = { at: 'recommended', xp: 150, gold: 100, items: [L1] };
-const EDITED_STATE: ClearPreset = { at: 'edited', xp: 150, gold: 100, items: [L1] };
-const PAID_STATE: ClearPreset = { at: 'paid', xp: 150, gold: 100, items: [L1], paidAt: AT };
+const REC_STATE: ClearPreset = { at: 'recommended', xp: 150, gold: 100, crystal: 12, items: [L1] };
+const EDITED_STATE: ClearPreset = { at: 'edited', xp: 150, gold: 100, crystal: 12, items: [L1] };
+const PAID_STATE: ClearPreset = { at: 'paid', xp: 150, gold: 100, crystal: 12, items: [L1], paidAt: AT };
 const STATES: { readonly [S in PresetState]: ClearPreset } = { none: NO_PRESET, recommended: REC_STATE, edited: EDITED_STATE, paid: PAID_STATE };
 
-const NEW_REC = { type: 'recommend' as const, xp: 200, gold: 120, items: [L1] };
+const NEW_REC = { type: 'recommend' as const, xp: 200, gold: 120, crystal: 18, items: [L1] };
 const EVENTS: { readonly [E in PresetEvent['type']]: Extract<PresetEvent, { type: E }> } = {
   recommend: NEW_REC,
   setGold: { type: 'setGold', gold: 250 },
+  setCrystal: { type: 'setCrystal', crystal: 30 },
   setXp: { type: 'setXp', xp: 300 },
   toggleItem: { type: 'toggleItem', id: presetLineId(1), checked: false },
   assignItem: { type: 'assignItem', id: presetLineId(1), to: LOCAL_REF },
@@ -57,19 +58,20 @@ describe('a gate\'s clear preset machine', () => {
   test('every state answers every event: none takes recommend, active states take all edits/clear/pay, paid is terminal', () => {
     const table = Object.fromEntries(PRESET_STATES.map(s => [s, Object.fromEntries(PRESET_EVENTS.map(e => [e, presetStep(STATES[s], EVENTS[e])]))]));
     const activeExpected = {
-      recommend: { at: 'recommended', xp: 200, gold: 120, items: [L1] },
-      setGold: { at: 'edited', xp: 150, gold: 250, items: [L1] },
-      setXp: { at: 'edited', xp: 300, gold: 100, items: [L1] },
-      toggleItem: { at: 'edited', xp: 150, gold: 100, items: [{ ...L1, checked: false }] },
-      assignItem: { at: 'edited', xp: 150, gold: 100, items: [{ ...L1, to: LOCAL_REF }] },
-      addItem: { at: 'edited', xp: 150, gold: 100, items: [L1, { id: presetLineId(2), item: SWORD, checked: true, to: REMOTE_REF }] },
-      removeItem: { at: 'edited', xp: 150, gold: 100, items: [] },
+      recommend: { at: 'recommended', xp: 200, gold: 120, crystal: 18, items: [L1] },
+      setGold: { at: 'edited', xp: 150, gold: 250, crystal: 12, items: [L1] },
+      setCrystal: { at: 'edited', xp: 150, gold: 100, crystal: 30, items: [L1] },
+      setXp: { at: 'edited', xp: 300, gold: 100, crystal: 12, items: [L1] },
+      toggleItem: { at: 'edited', xp: 150, gold: 100, crystal: 12, items: [{ ...L1, checked: false }] },
+      assignItem: { at: 'edited', xp: 150, gold: 100, crystal: 12, items: [{ ...L1, to: LOCAL_REF }] },
+      addItem: { at: 'edited', xp: 150, gold: 100, crystal: 12, items: [L1, { id: presetLineId(2), item: SWORD, checked: true, to: REMOTE_REF }] },
+      removeItem: { at: 'edited', xp: 150, gold: 100, crystal: 12, items: [] },
       clear: NO_PRESET,
-      pay: { at: 'paid', xp: 150, gold: 100, items: [L1], paidAt: AT },
+      pay: { at: 'paid', xp: 150, gold: 100, crystal: 12, items: [L1], paidAt: AT },
     };
     const nulls = Object.fromEntries(PRESET_EVENTS.map(e => [e, null]));
     expect(table).toEqual({
-      none: { ...nulls, recommend: { at: 'recommended', xp: 200, gold: 120, items: [L1] } },
+      none: { ...nulls, recommend: { at: 'recommended', xp: 200, gold: 120, crystal: 18, items: [L1] } },
       recommended: activeExpected,
       edited: activeExpected,
       paid: nulls,
@@ -130,6 +132,7 @@ describe('recommendPreset and item partitioning', () => {
       at: 'edited',
       xp: 100,
       gold: 50,
+      crystal: 12,
       items: [
         L1, // checked, to: null -> stash
         L2, // checked, to: LOCAL_REF -> h1
@@ -168,7 +171,7 @@ describe('boundary parsing and player isolation', () => {
       ],
     });
     expect(repaired).toEqual({
-      at: 'edited', xp: 0, gold: REWARD_BOUNDS.gold,
+      at: 'edited', xp: 0, gold: REWARD_BOUNDS.gold, crystal: 0,
       items: [
         { id: presetLineId(1), item: POTION, checked: true, to: null },
         { id: presetLineId(2), item: SWORD, checked: true, to: LOCAL_REF },

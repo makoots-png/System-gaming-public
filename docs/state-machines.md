@@ -856,7 +856,7 @@ Where it lives:
 
 ## A gate's clear preset
 
-Every state reachable from a gate with no preset (`none`) under the 9 events of `PRESET_EVENTS`, breadth first. The walk found 4 states and 19 steps.
+Every state reachable from a gate with no preset (`none`) under the 10 events of `PRESET_EVENTS`, breadth first. The walk found 4 states and 21 steps.
 
 ### A gate's clear preset, from none to paid
 
@@ -871,7 +871,7 @@ stateDiagram-v2
   state "Paid at the clear" as s4
   [*] --> s1
   s1 --> s2 : the GM opens or resets What this clear pays
-  s2 --> s3 : the GM edits gold, XP, or items
+  s2 --> s3 : the GM edits gold, mana crystal, XP, or items
   s2 --> s1 : the GM removes the clear preset
   s2 --> s4 : the gate is cleared, clear preset paid once
   s3 --> s2 : the GM opens or resets What this clear pays

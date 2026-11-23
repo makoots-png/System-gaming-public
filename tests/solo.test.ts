@@ -167,7 +167,7 @@ describe('a run writes what the play left, in one write', () => {
     expect(g.xpPaid, 'the gate owed its 50 XP and owes nothing now').toBe(50);
     expect([r.xp, lifetimeXp(hunter(r.save)), hunter(r.save).gold]).toEqual([200, 200, 160]);
     expect(r.save.log.map(l => l.title).filter(t => t === 'Solo run' || t === 'GATE CLEARED').sort()).toEqual(['GATE CLEARED', 'Solo run']);
-    expect(r.save.log.find(l => l.title === 'GATE CLEARED')!.text).toContain('Mira rewarded: +200 XP, 160 gold.');
+    expect(r.save.log.find(l => l.title === 'GATE CLEARED')!.text).toContain('Mira rewarded: +200 XP, 160 gold, 48 mana crystal.');
   });
 
   test('a world gate the hunter fell in is entered, and pays nothing', () => {
@@ -582,7 +582,7 @@ describe('a world gate open to solo runs, in a room', () => {
 
   test('the GM\'s phone clears the gate for the first won run, its reward (the Clear for a party of one: four times the XP due and the gold rolled) waiting for the GM\'s approval, and answers the second as taken; its cost stays the player\'s', () => {
     const s = gmSave(), plan = soloPlan(s, paidRun, RULES), answer0 = answerOf(s, plan)!;
-    expect(plan).toEqual({ kind: 'paid', due: 50, xp: 200, party: 4 });
+    expect(plan).toEqual({ kind: 'paid', due: 50, xp: 200, crystal: 48, party: 4 });
     const first = ok(soloTaken(s, paidRun, plan, answer0, { gold: 30, items: [] }, TAKEN));
     expect(first.gates[0]).toMatchObject({ status: 'cleared', xpPaid: 50 });
     const answer = first.settings.sync.outbox![0]!.letter;
@@ -674,7 +674,7 @@ describe('a world gate open to solo runs, in a room', () => {
     const r = ok(soloTaken(s, lost, soloPlan(s, lost, RULES), null, NO_LOOT, TAKEN));
     expect([r.gates[0]!.status, r.settings.sync.outbox ?? []]).toEqual(['raiding', []]);
     expect(r.log[0]!.text).toBe('Mira failed to clear "Goblin Den" (E-rank) alone in 4 rounds and died.');
-    const stale = { kind: 'paid', due: 50, xp: 999, party: 4 } as const;
+    const stale = { kind: 'paid', due: 50, xp: 999, crystal: 0, party: 4 } as const;
     expect(soloTaken(s, paidRun, stale, answerOf(s, stale), NO_LOOT, TAKEN)).toEqual({ ok: false, why: 'changed' });
     expect(soloPlan({ ...s, gates: [{ ...worldGate, status: 'closed' }] }, paidRun, RULES)).toEqual({ kind: 'refused', why: 'closed' });
     expect(soloPlan({ ...s, gates: [] }, paidRun, RULES)).toEqual({ kind: 'refused', why: 'gone' });
@@ -715,7 +715,7 @@ describe('a world gate open to solo runs, in a room', () => {
   // gate it can clear is that gate's Clear for one hunter (50 XP due, a party of 4: 200 XP); one it cannot clear is
   // answered with why; a lost or stalled run needs no answer.
   test('every gate the GM\'s phone holds against every outcome of a run', () => {
-    const PAID = { kind: 'paid', due: 50, xp: 200, party: 4 } as const, REPORT = { kind: 'report' } as const;
+    const PAID = { kind: 'paid', due: 50, xp: 200, crystal: 48, party: 4 } as const, REPORT = { kind: 'report' } as const;
     const gates = {
       gone: [], cleared: [{ ...worldGate, status: 'cleared' as const, clearedDay: 1 }], closed: [{ ...worldGate, status: 'closed' as const }],
       notSolo: [{ ...worldGate, solo: false }], open: [worldGate],

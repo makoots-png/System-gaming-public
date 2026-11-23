@@ -32,13 +32,15 @@ import type { XpOf } from './gate.ts';
 import { isActivePreset, partitionPresetItems, payGatePreset } from './preset.ts';
 import { shareEach } from './spawn.ts';
 import { clearGate, encounterEnded } from './world.ts';
-import { rankIdx } from '../rules.ts';
+import { clearCrystalEach } from '../hunter/crystal.ts';
+import type { CrystalDropRules } from '../hunter/crystal.ts';
+import { rankIdx, RULES } from '../rules.ts';
 import type { Rank, Rules } from '../rules.ts';
 import type { Fact } from '../hunter/facts.ts';
 import type { Gate } from './gate.ts';
 import type { ClearPay } from './world.ts';
 
-export { shareEach };
+export { clearCrystalEach, shareEach };
 /** What each of `n` payees takes of a Clear's gold roll at rank `rank`: the share of the rank's lowest and highest roll. */
 export function clearGoldEach(R: Pick<Rules, 'loot' | 'gateParty'>, rank: Rank, n: number): { readonly low: number; readonly high: number } {
   const [lo = 0, hi = lo] = (R.loot[rank] ?? R.loot.E).gold;
@@ -174,18 +176,29 @@ export const dropLine = (d: Pick<Dropped, 'gold' | 'items'>, fmt: (n: number) =>
   [d.gold ? `${fmt(d.gold)} gold` : '', ...d.items.map(i => `${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`)].filter(Boolean).join(', ');
 
 // ── a gate's Clear ──
-/** What one payee of a Clear gets: its share of the XP and the gold, and the gate's items to the one taker. */
-export type ClearShare<I> = { readonly payee: Payee; readonly xp: number; readonly gold: number; readonly items: readonly I[] };
+/** What one payee of a Clear gets: its share of the XP, gold, and mana crystal, and the gate's items to the one taker. */
+export type ClearShare<I> = { readonly payee: Payee; readonly xp: number; readonly gold: number; readonly crystal: number; readonly items: readonly I[] };
 /**
- * The shares of a Clear: the gate's XP still due (`due`, what the gate owes and then counts as paid) and the rolled gold,
- * each the gate's pot shared among the payees (`shareEach`, the gate made for `party`); the items to the payee picked
- * (`taker`), else the first.
+ * The shares of a Clear: the gate's XP still due (`due`, what the gate owes and then counts as paid), the rolled gold,
+ * and the mana crystal salvage, each the gate's pot shared among the payees (the gate made for `party`); the items to
+ * the payee picked (`taker`), else the first.
  */
-export function clearShares<I>(save: Pick<Save, 'gates'>, gateId: string, xpOf: XpOf, gold: number, items: readonly I[], payees: readonly Payee[], taker: string | null, party: number): { due: number; shares: ClearShare<I>[] } | null {
+export function clearShares<I>(
+  save: Pick<Save, 'gates'>,
+  gateId: string,
+  xpOf: XpOf,
+  gold: number,
+  items: readonly I[],
+  payees: readonly Payee[],
+  taker: string | null,
+  party: number,
+  crystalRules?: Pick<CrystalDropRules, 'priceBase' | 'crystal'>,
+): { due: number; shares: ClearShare<I>[] } | null {
   const gate = save.gates.find(g => g.id === gateId); if (!gate) return null;
   const due = xpDue(gate, xpOf), n = payees.length;
+  const crystal = clearCrystalEach(gate, n, { gateParty: party, priceBase: crystalRules?.priceBase ?? RULES.priceBase, crystal: crystalRules?.crystal ?? RULES.crystal });
   const idOf = (p: Payee) => (p.kind === 'local' ? p.hid : p.key), first = payees.find(p => idOf(p) === taker) ?? payees[0] ?? null;
-  return { due, shares: payees.map(p => ({ payee: p, xp: shareEach(due, n, party), gold: shareEach(gold, n, party), items: first && idOf(first) === idOf(p) ? items : [] })) };
+  return { due, shares: payees.map(p => ({ payee: p, xp: shareEach(due, n, party), gold: shareEach(gold, n, party), crystal, items: first && idOf(first) === idOf(p) ? items : [] })) };
 }
 /**
  * The fact of gate `g` cleared by a hunter of rank `rank`, `toBreak` days before it would have broken (null for a
@@ -211,7 +224,7 @@ export function settleClear(save: Save, gateId: string, pay: ClearPay, locals: r
   const g = save.gates.find(x => x.id === gateId);
   if (!g) return refuse('missing');
   const alreadyPaid = g.preset.at === 'paid';
-  const effectivePay: ClearPay = alreadyPaid ? { due: 0, xp: 0, gold: 0, items: [], payees: [] } : pay;
+  const effectivePay: ClearPay = alreadyPaid ? { due: 0, xp: 0, gold: 0, crystal: 0, items: [], payees: [] } : pay;
   const effectiveLocals = alreadyPaid ? [] : locals;
   const effectivePlayers = !room ? [] : alreadyPaid ? room.players.filter(p => p.pays.type !== 'award') : room.players;
   const cleared = clearGate(save, gateId, effectivePay, { at: day.at, cap: day.R.logCap });
@@ -262,7 +275,7 @@ export function settleClearPreset(
   const { byPayee, stash } = partitionPresetItems(preset, payees);
   const due = xpDue(g, xpOf);
   const pay: ClearPay = {
-    due, xp: payees.length ? preset.xp : 0, gold: payees.length ? preset.gold : 0,
+    due, xp: payees.length ? preset.xp : 0, gold: payees.length ? preset.gold : 0, crystal: payees.length ? preset.crystal : 0,
     items: preset.items.filter(i => i.checked).map(i => i.item.name),
     payees: payees.map(p => p.name),
   };
@@ -291,7 +304,7 @@ export function settleClearPreset(
     for (let i = 0; i < payees.length; i++) {
       const p = payees[i]!;
       const key = p.kind === 'local' ? p.hid : p.key;
-      const rw: Rewards = { ...newRewards(), xp: preset.xp, gold: preset.gold, items: [...(byPayee.get(key) ?? [])] };
+      const rw: Rewards = { ...newRewards(), xp: preset.xp, gold: preset.gold, crystal: preset.crystal, items: [...(byPayee.get(key) ?? [])] };
       if (isEmptyReward(rw)) continue;
       const to: SheetKey = p.kind === 'local' ? sheetKeyOf(save.settings.deviceId, p.hid as HunterId) : p.key;
       const eid = newEventId({ ...room.stamp, seq: payees.length + i });
@@ -304,7 +317,7 @@ export function settleClearPreset(
   }
 
   const locals = payees.flatMap(p => (p.kind === 'local'
-    ? [{ hid: p.hid, rewards: { ...newRewards(), xp: preset.xp, gold: preset.gold, items: [...(byPayee.get(p.hid) ?? [])] } }]
+    ? [{ hid: p.hid, rewards: { ...newRewards(), xp: preset.xp, gold: preset.gold, crystal: preset.crystal, items: [...(byPayee.get(p.hid) ?? [])] } }]
     : []));
   const out = payAll(next, locals, { room: null, events: [] }, day, 'clear');
   return { save: out.save, granted: out.granted, pending: [], stashed: stash };
