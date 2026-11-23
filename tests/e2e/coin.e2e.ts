@@ -46,7 +46,7 @@ async function call(player: Page, side: 'Heads' | 'Tails'): Promise<void> {
 }
 
 /** The GM's toast after a ruling: the side the coin landed on and what it means, for the GM to say at the table. */
-const gmTold = (gm: Page) => gm.locator('#toasts .toast', { hasText: 'It landed' });
+const gmTold = (gm: Page) => gm.locator('#toasts .toast', { hasText: 'Landed' });
 
 /**
  * The player's coin after the GM ruled it in a room: its words, and whether anything on the card names a side it landed
@@ -55,7 +55,7 @@ const gmTold = (gm: Page) => gm.locator('#toasts .toast', { hasText: 'It landed'
 async function flipped(player: Page, called: 'Heads' | 'Tails'): Promise<void> {
   const row = card(player).locator('li', { hasText: `You called ${called}` });
   await expect(row.locator('[data-words]')).toHaveText('Flipped');
-  await expect(row).toContainText('The GM tells you how it landed.');
+  await expect(row).toContainText('The GM will tell you how it landed.');
   await expect(row.locator('[data-coin-face], [data-side]')).toHaveCount(0);
   const text = (await row.textContent()) ?? '';
   expect(text.replace(`You called ${called}`, '')).not.toMatch(/Heads|Tails|Critical|Success|Saved|Right|Wrong/);
@@ -76,12 +76,12 @@ test('a player\'s natural 20 asks heads or tails; the GM rules Right and is told
   await expect(gmWindow(gm)).toContainText(`${HUNTER} called Heads`);
   await expect(gmWindow(gm)).toContainText('STR check');
   await expect(gmWindow(gm)).toContainText('Natural 20');
-  await answerWindow(gm, 'Coin call', 'Right');
-  await expect(gmTold(gm)).toContainText(`${HUNTER} called Heads. It landed Heads: Critical success.`);
+  await answerWindow(gm, 'Coin call', 'Call was right');
+  await expect(gmTold(gm)).toContainText(`${HUNTER} called Heads. It landed Heads (Critical success).`);
   await flipped(player, 'Heads');
   await expect(player.locator('#view-dice [data-flag]')).toHaveText('Flipped');
   const log = (await save(gm)).log[0];
-  expect(log.text).toContain('Ruled Right: the coin landed Heads');
+  expect(log.text).toContain('Call was right. The coin landed Heads');
 });
 
 test('Wrong on a natural 1: the GM is told it landed on the other side, a critical failure, and the player\'s phone says only that it was flipped', async ({ device }) => {
@@ -90,8 +90,8 @@ test('Wrong on a natural 1: the GM is told it landed on the other side, a critic
   await check(player, 1);
   await call(player, 'Heads');
   await expect(gmWindow(gm)).toContainText('Natural 1');
-  await answerWindow(gm, 'Coin call', 'Wrong');
-  await expect(gmTold(gm)).toContainText(`${HUNTER} called Heads. It landed Tails: Critical failure.`);
+  await answerWindow(gm, 'Coin call', 'Call was wrong');
+  await expect(gmTold(gm)).toContainText(`${HUNTER} called Heads. It landed Tails (Critical failure).`);
   await flipped(player, 'Heads');
 });
 
@@ -100,8 +100,8 @@ test('Let the coin decide: the GM is told the true flip\'s side and what it mean
   await flipShows(gm, 'heads');
   await check(player, 20);
   await call(player, 'Tails');
-  await answerWindow(gm, 'Coin call', 'Let the coin decide');
-  await expect(gmTold(gm)).toContainText(`${HUNTER} called Tails. It landed Heads: Success.`);
+  await answerWindow(gm, 'Coin call', 'Flip randomly');
+  await expect(gmTold(gm)).toContainText(`${HUNTER} called Tails. It landed Heads (Success).`);
   await flipped(player, 'Tails');
 });
 
@@ -110,12 +110,12 @@ test('the player\'s phone never receives the side or the ruling: the room\'s mes
   await flipShows(gm, 'heads');
   await check(player, 20);
   await call(player, 'Heads');
-  await answerWindow(gm, 'Coin call', 'Right');
+  await answerWindow(gm, 'Coin call', 'Call was right');
   await flipped(player, 'Heads');
   await card(player).getByRole('button', { name: 'Close' }).tap();
   await check(player, 20);
   await call(player, 'Heads');
-  await answerWindow(gm, 'Coin call', 'Wrong');
+  await answerWindow(gm, 'Coin call', 'Call was wrong');
   await flipped(player, 'Heads');
 
   const events = (await (await player.request.get(`/api/rooms/${code}?after=0`, { headers: await roomHeaders(player) })).json()).events as any[];
@@ -135,7 +135,7 @@ test('on a 390 px phone the player\'s flipped coin card fits the screen beside t
   const { gm, player } = await room(device);
   await check(player, 20);
   await call(player, 'Heads');
-  await answerWindow(gm, 'Coin call', 'Right');
+  await answerWindow(gm, 'Coin call', 'Call was right');
   await flipped(player, 'Heads');
   await expect.poll(() => card(player).evaluate(el => el.getAnimations({ subtree: true }).filter(a => a.playState === 'running').length)).toBe(0);
   const box = await card(player).evaluate(el => {
@@ -153,14 +153,14 @@ test('a hunter in a running fight who rolls a natural 20 gets no coin', async ({
   const { gm, player } = await room(device);
   await go(gm, 'combat');
   const combat = gm.locator('#view-combat');
-  await combat.locator('[data-hsel]').selectOption({ label: `${HUNTER} (remote)` });
+  await combat.locator('[data-hsel]').selectOption({ label: `${HUNTER} (player phone)` });
   await combat.locator('[data-addh]').tap();
   await combat.locator('[data-qline]').fill('Cave Rat, E, brute');
   await combat.locator('[data-qadd]').tap();
   await combat.locator('[data-start]').tap();
   await expect.poll(() => player.evaluate(() => hunterApp.api.uses.onTable(hunterApp.store.active().id))).toBe(true);
   await check(player, 20);
-  await expect(player.locator('#view-dice [data-flag]')).toHaveText('Critical hit');
+  await expect(player.locator('#view-dice [data-flag]')).toHaveText('Critical success');
   await expect(card(player)).toBeHidden();
   expect((await save(player)).coins).toEqual([]);
 });
@@ -202,7 +202,7 @@ test('a reload on either phone while the coin is in the air keeps it in the air 
     await expect(gmWindow(gm)).toContainText(`${HUNTER} called Tails`);
   });
   await test.step('the GM\'s ruling still reaches the player, with no side', async () => {
-    await answerWindow(gm, 'Coin call', 'Right');
+    await answerWindow(gm, 'Coin call', 'Call was right');
     await flipped(player, 'Tails');
   });
 });
@@ -229,18 +229,18 @@ test('a GM who closes a coin call\'s window is not asked again until they tap Ru
     await expect(gmWindow(gm)).toHaveCount(0);
   });
   await test.step('Rule opens the window again; Later and a tap beside it each put it off again', async () => {
-    await putOff(gm).getByRole('button', { name: 'Rule' }).tap();
-    await answerWindow(gm, 'Coin call', 'Later');
+    await putOff(gm).getByRole('button', { name: 'Decide' }).tap();
+    await answerWindow(gm, 'Coin call', 'Decide later');
     await expect(putOff(gm)).toHaveCount(1);
-    await putOff(gm).getByRole('button', { name: 'Rule' }).tap();
+    await putOff(gm).getByRole('button', { name: 'Decide' }).tap();
     await expect(gmWindow(gm)).toBeVisible();
     await gmWindow(gm).tap({ position: { x: 4, y: 4 } });
     await expect(gmWindow(gm)).toHaveCount(0);
     await expect(putOff(gm)).toHaveCount(1);
   });
   await test.step('Rule, then Right: the player\'s coin is flipped and the card no longer offers the call', async () => {
-    await putOff(gm).getByRole('button', { name: 'Rule' }).tap();
-    await answerWindow(gm, 'Coin call', 'Right');
+    await putOff(gm).getByRole('button', { name: 'Decide' }).tap();
+    await answerWindow(gm, 'Coin call', 'Call was right');
     await flipped(player, 'Tails');
     await expect(putOff(gm)).toHaveCount(0);
     await expect(card(gm)).toBeHidden();
@@ -261,7 +261,7 @@ test('a call that arrives while another is put off opens its own window, and the
   await expect(gmWindow(gm)).toContainText(`${HUNTER} called Tails`);
   await expect(putOff(gm)).toHaveCount(1);
   await expect(putOff(gm)).toContainText(`${HUNTER} called Heads`);
-  await answerWindow(gm, 'Coin call', 'Wrong');
+  await answerWindow(gm, 'Coin call', 'Call was wrong');
   await expect(gmWindow(gm)).toHaveCount(0);
   await expect(putOff(gm)).toContainText(`${HUNTER} called Heads`);
 });

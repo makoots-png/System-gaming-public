@@ -66,9 +66,9 @@ export function register(app) {
   const open = new Set();
   // the room card's state line and connection line, by conn() (src/core/sync/connection.ts)
   const STATE = {
-    live: ['Live', 'Live.'], connecting: ['Connecting', 'Connecting to the room.'], reconnecting: ['Reconnecting', 'Reconnecting. The server does not answer yet.'],
-    notSent: ['Live', 'Live. The server has not taken your latest sheet.'], sheetTooBig: ['Live', 'Live. Your sheet is too big for the room: the GM does not see your changes.'], locked: ['Live', 'Live. Your hunter is claimed by another device.'],
-    tooBig: ['Live', 'Live. The fight is too big to share with the players.'], waiting: ['Live', 'Live. Sending what you did to the room.'],
+    live: ['Live', 'Live.'], connecting: ['Connecting', 'Connecting to the room.'], reconnecting: ['Reconnecting', 'Reconnecting. Waiting for the room server to respond.'],
+    notSent: ['Live', 'Live. Your latest sheet has not been saved to the room server yet.'], sheetTooBig: ['Live', 'Live. Your sheet is too large for the room, so the GM cannot see your changes.'], locked: ['Live', 'Live. Your hunter is claimed by another device.'],
+    tooBig: ['Live', 'Live. The fight is too large to share with players.'], waiting: ['Live', 'Live. Sending your changes to the room server.'],
     joining: ['Switching rooms', 'Joining another room.'], creating: ['Creating a room', 'Creating a new room.'],
   };
   const set = (n, t) => { if (n.textContent !== t) n.textContent = t; };
@@ -84,10 +84,10 @@ export function register(app) {
   const flash = (b, t) => { if (!b.dataset.lbl) b.dataset.lbl = b.textContent; b.textContent = t; clearTimeout(b._t); b._t = setTimeout(() => { b.textContent = b.dataset.lbl; }, 2000); };
   const setCode = (n, c) => { if (n.dataset.c === c) return; n.dataset.c = c; n.innerHTML = c ? `<span>${esc(c.slice(0, 3))}</span><span>${esc(c.slice(3))}</span>` : ''; };
   // a code checked as it is typed says what a failed join for it would (src/core/sync/taps.ts)
-  const chk = (r, code) => !r ? ['', 'Checking...'] : !r.ok ? ['bad', `✗ ${tapWords('net', code)}`] : !r.exists ? ['bad', `✗ ${tapWords('notfound', code)}`] : r.gm ? ['ok', '✓ You are GM of this room. Joining reopens it as GM.'] : ['ok', '✓ Room found.'];
+  const chk = (r, code) => !r ? ['', 'Checking...'] : !r.ok ? ['bad', `✗ ${tapWords('net', code)}`] : !r.exists ? ['bad', `✗ ${tapWords('notfound', code)}`] : r.gm ? ['ok', '✓ You are the GM of this room. You will rejoin as GM.'] : ['ok', '✓ Room found.'];
   const upper = (n, v) => { if (n.value === v) return; const a = n.selectionStart, e = n.selectionEnd, same = v.length === n.value.length; n.value = v; if (same && a != null) n.setSelectionRange(a, e); }; // keeps the caret when a letter is upper-cased mid-code
   const ERRS = ['err', 'lerr', 'cerr', 'gerr', 'kerr', 'ierr'], clearErrs = () => { for (const k of ERRS) q[k].textContent = ''; };
-  const ago = ms => { const s = Math.max(0, Math.round((Date.now() - ms) / 1000)); return s < 60 ? `${s} s ago` : s < 3600 ? `${Math.floor(s / 60)} min ago` : `${Math.floor(s / 3600)} h ago`; };
+  const ago = ms => { const s = Math.max(0, Math.round((Date.now() - ms) / 1000)); return s < 60 ? `${s} sec ago` : s < 3600 ? `${Math.floor(s / 60)} min ago` : `${Math.floor(s / 3600)} hr ago`; };
 
   const TPL = `
   <section class="win" data-invite hidden><span class="cb"></span><h2>Invite</h2>
@@ -112,7 +112,7 @@ export function register(app) {
       <div class="sys-err" role="alert" data-err></div>
     </section>
     <section class="win" data-s="create"><span class="cb"></span><h2>Create a room</h2>
-      <p class="rm-sub" data-path="gm">${esc(ROOM_PATH.gm)}</p><p class="rm-sub" data-gmonly>Only the GM creates a room. Creating one makes this phone the GM's.</p>
+      <p class="rm-sub" data-path="gm">${esc(ROOM_PATH.gm)}</p><p class="rm-sub" data-gmonly>Only the GM creates a room. Creating one sets this device as the GM.</p>
       <button type="button" class="primary rm-wide" data-create>Create room</button><div class="sys-err" role="alert" data-cerr></div>
     </section>
     <section class="win" data-s="rooms" hidden><span class="cb"></span><h2>Your rooms</h2><div data-roomshost="l"></div></section>
@@ -130,7 +130,7 @@ export function register(app) {
         <p class="rm-state" role="status" data-state><span class="rm-mark" aria-hidden="true"></span><span data-statetxt></span></p>
         <div class="rm-codeline"><div class="rm-code" data-roomcode></div><button type="button" data-copycode>Copy code</button></div>
         <div data-pahost="c"></div>
-        <div class="rm-sec" data-invitebox><h3>Invite players</h3><p class="rm-sub">A player joins with this code, by opening the link, or by scanning the QR code.</p><div data-sharehost="g"></div></div>
+        <div class="rm-sec" data-invitebox><h3>Invite players</h3><p class="rm-sub">Players can join with this code, the link, or the QR code.</p><div data-sharehost="g"></div></div>
       </section>
     </div>
     <div class="rm-r">
@@ -141,9 +141,9 @@ export function register(app) {
       <section class="win" data-wordsec hidden><span class="cb"></span><h2>Word to the GM</h2><div data-words></div></section>
       <section class="win" data-conncard><span class="cb"></span><h2>Connection</h2>
         <p data-conntext></p><p class="rm-sub" data-ago></p>
-        <p class="rm-sub" data-cl="off" hidden>This device is offline.</p><p class="rm-sub" data-cl="kept" hidden>Your changes are kept on this device and sent when it is back online.</p>
+        <p class="rm-sub" data-cl="off" hidden>This device is offline.</p><p class="rm-sub" data-cl="kept" hidden>Your changes are saved on this device and will send once you are back online.</p>
         <p class="rm-sub" data-cl="unsent" hidden>Your sheet is waiting to send.</p><p class="rm-sub" data-cl="locked" hidden>This hunter is claimed by another device. Ask the GM to release it.</p>
-        <button type="button" data-retry hidden>Try now</button>
+        <button type="button" data-retry hidden>Reconnect now</button>
       </section>
       <details class="win" data-tools><summary>GM tools</summary>
         <div class="rm-fields">
@@ -200,7 +200,7 @@ export function register(app) {
       else if (x.type === 'clearTimer') clearTimeout(pause);
       else if (x.type === 'ask') Y().check(x.code).then(answer => lobbyDo({ type: 'answered', of: x.of, code: x.code, answer }));
       else if (x.type === 'confirm') {
-        ui.confirm({ title: `Remove ${x.name}?`, body: [`${x.name} leaves the party board and any fight. Their device keeps the hunter and stops syncing with this room.`, app.api.trade.removeLine(x.key, x.name)].filter(Boolean).join(' '), danger: true, confirmLabel: 'Remove from room' })
+        ui.confirm({ title: `Remove ${x.name}?`, body: [`${x.name} will be removed from the party board and any active fight. Their device keeps their hunter but stops syncing with this room.`, app.api.trade.removeLine(x.key, x.name)].filter(Boolean).join(' '), danger: true, confirmLabel: 'Remove from room' })
           .then(yes => lobbyDo({ type: 'confirmed', key: x.key, room: x.room, yes: !!yes }));
       } else if (x.type === 'send') {
         // the room first: a removal the server did not take leaves the hunter in the fight as in the room
@@ -268,7 +268,7 @@ export function register(app) {
       const b = e.target.closest('button[data-gr]'); if (!b) return; q.gerr.textContent = '';
       const code = b.dataset.code; if (!Y().gmRooms().some(r => r.code === code)) return;
       if (b.dataset.gr === 'rejoin') asGM(code, q.gerr);
-      else if (await ui.confirm({ title: `Forget GM key for ${code}?`, body: (code === sy().room ? 'You stop being GM of this room now. ' : '') + 'This device will no longer be able to rejoin that room as GM unless you have the key saved elsewhere. The room itself is not deleted.', danger: true, confirmLabel: 'Forget key' })) {
+      else if (await ui.confirm({ title: `Forget GM key for ${code}?`, body: (code === sy().room ? 'You will stop being GM of this room. ' : '') + 'This device will no longer be able to rejoin that room as GM unless you have the key saved elsewhere. The room itself is not deleted.', danger: true, confirmLabel: 'Forget key' })) {
         Y().forgetKey(code);
       }
     });
@@ -315,7 +315,7 @@ export function register(app) {
     app.on('sync:room', e => { clearErrs(); lobbyDo({ type: 'room', code: e.to }); sched(); });
     app.on('sync:sheets', sched); app.on('sync:docs', sched); app.on('change', sched);
   }
-  const whyNot = c => (c.why === 'offline' ? 'the server did not answer. Check the connection and try again' : c.why === 'refused' ? `the room refused it (${c.reason})` : 'the server failed. Try again');
+  const whyNot = c => (c.why === 'offline' ? 'could not reach the server. Check your connection and try again' : c.why === 'refused' ? `the room server rejected it (${c.reason})` : 'the server returned an error. Try again');
   /** A GM's tap on a seat action; the lobby sends it once, in the room it was tapped in. */
   function seat(act, key) {
     const r = act === 'allow' ? Y().recentKicks().find(x => x.key === key) : Y().roster().find(x => x.key === key);
@@ -327,7 +327,7 @@ export function register(app) {
     if (x.act === 'remove') {
       const out = ok ? app.api.combat.removeRemote(x.key) : 0; open.delete(x.key);
       ui.toast('System', ok ? `Removed ${n} from the room${out ? ' and the fight' : ''}.` : `Could not remove ${n}: ${whyNot(c)}.`, { kind: ok ? 'info' : 'warn' });
-    } else if (x.act === 'release') ui.toast('System', ok ? 'Released. That hunter can now be claimed by its player\'s device.' : `Could not release: ${whyNot(c)}.`, { kind: ok ? 'info' : 'warn' });
+    } else if (x.act === 'release') ui.toast('System', ok ? 'Released. The player can now claim this hunter on a new device.' : `Could not release: ${whyNot(c)}.`, { kind: ok ? 'info' : 'warn' });
     else ui.toast('System', ok ? `${n} can rejoin now.` : `Could not allow ${n} back: ${whyNot(c)}.`, { kind: ok ? 'info' : 'warn' });
   }
   const sized = (svg, px) => svg.replace('<svg ', `<svg width="${px}" height="${px}" `);
@@ -344,7 +344,7 @@ export function register(app) {
     if (pend) {
       setCode(q.invcode, pend);
       const [k, t] = chk(ia, pend); q.invcheck.dataset.k = k; set(q.invcheck, t);
-      q.invnote.hidden = !code; set(q.invnote, code ? `You are in room ${code}. Joining ${pend} switches rooms.` : '');
+      q.invnote.hidden = !code; set(q.invnote, code ? `You are in room ${code}. Joining ${pend} will leave your current room.` : '');
       set(q.joininvite, code ? `Switch to ${pend}` : 'Join room');
       q.joininvite.disabled = busy(); q.joininvite.setAttribute('aria-busy', String(toward === pend));
     }
@@ -419,7 +419,7 @@ export function register(app) {
     const waits = k => (seatBusy(lobbyNow.seats, k, code) ? ' disabled aria-busy="true"' : ''), sig = JSON.stringify(rs) + [...open].join() + '|' + rs.map(r => waits(r.key)).join();
     if (q.roster.dataset.sig !== sig) {
       q.roster.dataset.sig = sig;
-      const st = r => r.state === 'online' ? 'online' : r.state === 'away' ? (r.seen === 'just now' || !r.seen ? 'away' : `away ${r.seen}`) : r.seen ? `last sync ${r.seen === 'just now' ? r.seen : r.seen + ' ago'}` : '';
+      const st = r => r.state === 'online' ? 'online' : r.state === 'away' ? (r.seen === 'now' || !r.seen ? 'away' : `away ${r.seen}`) : r.seen ? `last sync ${r.seen === 'now' ? 'a moment ago' : r.seen + ' ago'}` : '';
       q.roster.innerHTML = rs.map(r => { const o = open.has(r.key); return `<li class="rm-p"><div class="rm-prow"><span class="rm-pm" data-st="${r.state}" aria-hidden="true"></span><div class="rm-pi"><b>${esc(r.name)}</b><small>Lv ${esc(r.level)}${r.job ? ' · ' + esc(r.job) : ''}${st(r) ? ' · ' + esc(st(r)) : ''}</small></div><button type="button" data-manage="${esc(r.key)}" aria-expanded="${o}" aria-label="Manage ${esc(r.name)}">Manage</button></div>${o ? `<div class="rm-pact"><button type="button" class="danger" data-gmkick="${esc(r.key)}"${waits(r.key)}>Remove from room</button><button type="button" data-gmrelease="${esc(r.key)}"${waits(r.key)}>Release to a new device</button></div>` : ''}</li>`; }).join('');
     }
     const ks = A.recentKicks().filter(k => !rs.some(r => r.key === k.key)), ksig = JSON.stringify(ks) + '|' + ks.map(k => waits(k.key)).join();

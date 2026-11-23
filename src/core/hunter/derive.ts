@@ -109,13 +109,13 @@ export type SheetNumber = keyof Sheet;
 
 /** Each derived number's name on a screen, in the order the sheet shows them. */
 export const SHEET_LABELS: { readonly [K in SheetNumber]: string } = {
-  hpMax: 'Max HP', manaMax: 'Max mana', fatigueMax: 'Fatigue capacity', carry: 'Carry', weight: 'Gear weight',
-  speed: 'Speed', move: 'Move (tiles a round)', stride: 'Stride (tiles a turn)', armor: 'Armor', resist: 'Resist',
-  armorPen: 'Armor penetration (%)', resistPen: 'Magic penetration (%)', armorPenFlat: 'Lethality', resistPenFlat: 'Unravel', phys: 'Physical power', mag: 'Magical power', sup: 'Support power', react: 'Reaction',
-  aim: 'Accuracy', will: 'Will', critFaces: 'Crit faces (of d20)', critSize: 'Crit size', opening: 'Opening bonus',
-  tenacity: 'Tenacity', potency: 'Potency', threat: 'Threat multiplier', hold: 'Channel hold (share of max HP)',
-  costCut: 'Cost cut (share)', drain: 'Lifesteal (share)', haste: 'Ability haste',
-  healPower: 'Heal and shield power (share)', shieldDrain: 'Damage to shield (share)', shadows: 'Shadow capacity', sight: 'Sight level',
+  hpMax: 'Max HP', manaMax: 'Max mana', fatigueMax: 'Fatigue capacity', carry: 'Carry capacity', weight: 'Gear weight',
+  speed: 'Speed', move: 'Move (tiles per round)', stride: 'Stride (tiles per turn)', armor: 'Armor', resist: 'Resist',
+  armorPen: 'Armor penetration (%)', resistPen: 'Magic penetration (%)', armorPenFlat: 'Flat armor penetration', resistPenFlat: 'Flat magic penetration', phys: 'Physical power', mag: 'Magical power', sup: 'Support power', react: 'Reaction',
+  aim: 'Accuracy', will: 'Will', critFaces: 'Crit faces (of d20)', critSize: 'Crit multiplier', opening: 'Opening bonus',
+  tenacity: 'Tenacity', potency: 'Potency', threat: 'Threat multiplier', hold: 'Channel break threshold (% of max HP)',
+  costCut: 'Ability cost reduction', drain: 'Lifesteal', haste: 'Ability haste',
+  healPower: 'Heal and shield bonus', shieldDrain: 'Damage to shield', shadows: 'Shadow capacity', sight: 'Sight level',
 };
 
 /** What one worn item adds to the kit (design 2.3). Neck and rings weigh 0. */

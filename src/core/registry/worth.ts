@@ -180,15 +180,15 @@ export const landShare = (a: Pick<Ability, 'delivery'>, R: WorthRules): number =
 /** A block the bar has no rule for: an op kind, or a part of an ability. Each is named, never counted as 0. */
 export type Unweighed = OpKind | 'count' | 'charge' | 'reaction' | 'summon' | 'zone' | 'blink' | 'zoneAct' | 'end';
 const UNWEIGHED_WORDS: { readonly [U in Unweighed]: string } = {
-  count: 'a count it reads in a fight', charge: 'its channel\'s charge', reaction: 'its reaction', summon: 'its summon', zone: 'its field',
-  blink: 'its move', zoneAct: 'what it does to a field', end: 'its end, whose delay the ability sets',
-  damage: 'damage at once', heal: 'a heal at once', mana: 'mana', fatigue: 'fatigue', applyStatus: 'a status', cureStatus: 'a cure',
-  note: 'a note', speed: 'a speed change', delay: 'a delayed turn', hold: 'a hold', root: 'a root', taunt: 'a taunt', threat: 'threat',
-  shield: 'a shield', channel: 'a channel guard', staggerRate: 'a stagger change', stat: 'a stat change', refund: 'time back', aura: 'an aura',
-  spread: 'a spread', sheet: 'a sheet change', share: 'a damage share', untargetable: 'untargetable', invulnerable: 'invulnerable',
-  safeguard: 'a safeguard', edge: 'advantage', boost: 'a held die', hidden: 'stealth', alert: 'alert', shove: 'a push or pull',
-  move: 'moving stacks', hasten: 'a hasten', extra: 'an extra action', guard: 'a guard', negate: 'a negate', dispel: 'a dispel',
-  stayHidden: 'staying hidden', reveal: 'a reveal', stagger: 'a stagger', echo: 'an echo',
+  count: 'fight counts', charge: 'channel charge', reaction: 'its reaction', summon: 'its summon', zone: 'its field',
+  blink: 'its teleport', zoneAct: 'moving or resizing a field', end: 'its delayed end effect',
+  damage: 'instant damage', heal: 'instant healing', mana: 'mana', fatigue: 'fatigue', applyStatus: 'a status', cureStatus: 'a cure',
+  note: 'a note', speed: 'a speed change', delay: 'turn delay', hold: 'stun', root: 'rooting', taunt: 'a taunt', threat: 'threat',
+  shield: 'a shield', channel: 'channel protection', staggerRate: 'a stagger change', stat: 'a stat change', refund: 'turn-time refund', aura: 'an aura',
+  spread: 'status spreading', sheet: 'stat or defense changes', share: 'percent damage modifiers', untargetable: 'becoming untargetable', invulnerable: 'becoming invulnerable',
+  safeguard: 'blocking harmful statuses', edge: 'advantage', boost: 'saved die bonuses', hidden: 'stealth', alert: 'surprise immunity', shove: 'a push or pull',
+  move: 'moving stacks', hasten: 'turn-order speed-up', extra: 'an extra action', guard: 'a guard', negate: 'canceling a triggering ability', dispel: 'a dispel',
+  stayHidden: 'staying hidden', reveal: 'a reveal', stagger: 'a stagger', echo: 'copying statuses to a nearby ally or foe',
 };
 
 /** Whether a formula reads a count of the fight the bar cannot know (stacks, a field, rounds held, hits, kills, stacks spent, HP lost). */
@@ -396,10 +396,10 @@ const two = (n: number): string => n.toFixed(2);
  */
 export function worthLine(w: Worth): string {
   const missing = w.unweighed.map(u => UNWEIGHED_WORDS[u]);
-  const without = missing.length ? ` without ${listed(missing)}, which it cannot estimate: test ${missing.length > 1 ? 'them' : 'it'} in a fight` : '';
-  const line = `Worth ${two(w.worth)} of a standard action (budget ${two(w.budget)}${w.by ? `, as ${w.by} holds` : ''})${without}`;
-  const against = w.against ? ` Its scalers make it ${two(w.against.packs)} of its plain use against packs, ${two(w.against.boss)} against a boss.` : '';
-  if (!w.over) return `${line}.${against}`;
-  return `${line}. Stronger than its pace allows by ${Math.round((w.worth / w.budget - 1) * 100)}%.${against}`;
+  const without = missing.length ? ` Not estimated: ${listed(missing)}. Test ${missing.length > 1 ? 'them' : 'it'} in a fight.` : '';
+  const line = `Power rating: ${two(w.worth)} (target ${two(w.budget)} for this action speed${w.by ? `, matching ${w.by}` : ''}).`;
+  const against = w.against ? ` With scalers, it averages ${two(w.against.packs)}x against packs and ${two(w.against.boss)}x against a boss.` : '';
+  if (!w.over) return `${line}${without}${against}`;
+  return `${line}${without} Stronger than expected for this action speed by ${Math.round((w.worth / w.budget - 1) * 100)}%.${against}`;
 }
 const listed = (xs: readonly string[]): string => xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`;

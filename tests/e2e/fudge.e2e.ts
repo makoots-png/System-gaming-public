@@ -18,7 +18,7 @@ async function fightOn(device: (label: string) => Promise<{ page: Page }>, ratsT
   await go(gm, 'gm');
   await expect(gm.locator('#gm-board .gm-card.remote', { hasText: HUNTER })).toHaveCount(1);
   await go(gm, 'combat');
-  await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (remote)` });
+  await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (player phone)` });
   await combat(gm).locator('[data-addh]').tap();
   await combat(gm).locator('[data-qline]').fill(`${MONSTER}, E, brute`);
   await combat(gm).locator('[data-qadd]').tap();
@@ -61,8 +61,8 @@ test('the GM fudges the hunters +2 in three taps and the player\'s phone shows a
     await expect(block).toBeVisible();
     await block.locator('[data-fudge-side="party"]', { hasText: '+' }).tap();
     await block.locator('[data-fudge-side="party"]', { hasText: '+' }).tap();
-    await expect(block.locator('.cmb-step', { hasText: 'Hunters' }).locator('b')).toHaveText('+2');
-    await expect(block.locator('.cmb-step', { hasText: 'Foes' }).locator('b')).toHaveText('0');
+    await expect(block.locator('.cmb-step', { hasText: "All hunters' rolls" }).locator('b')).toHaveText('+2');
+    await expect(block.locator('.cmb-step', { hasText: "All foes' rolls" }).locator('b')).toHaveText('0');
     await expect(block.locator('.cmb-fdot')).toHaveCount(1);
     await expect(combat(gm).locator('[data-tools-open] .cmb-fdot')).toHaveCount(1);
     await expect(combat(gm).locator('[data-tools-open]')).toHaveAttribute('aria-label', 'Fight tools, fudge on');
@@ -90,7 +90,7 @@ test('the GM forces a foe\'s next roll to 20 and the card says so until that rol
     const card = combat(gm).locator('.cmb-card', { hasText: MONSTER });
     await card.locator('[data-fudge-force][data-face="20"]').tap();
     await expect(card.locator('[data-fudge-force][data-face="20"]')).toHaveAttribute('aria-pressed', 'true');
-    await expect(card.locator('[data-fudgeline]')).toContainText('Next roll 20');
+    await expect(card.locator('[data-fudgeline]')).toContainText('Next d20 forced: 20');
     await expect(combat(gm).locator('[data-tools-open] .cmb-fdot')).toHaveCount(1);
   });
   await test.step('the rat attacks, and its forced roll is spent: the card no longer says it', async () => {

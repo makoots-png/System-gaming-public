@@ -247,7 +247,7 @@ test('on a slow phone a player watches the GM\'s turn: the HUD takes the GM\'s h
   await expect(gm.locator('#gm-board .gm-card.remote', { hasText: 'Kai Feel' })).toHaveCount(1);
   const combat = gm.locator('#view-combat'), hud = player.locator('#view-combat');
   await go(gm, 'combat');
-  await combat.locator('[data-hsel]').selectOption({ label: 'Kai Feel (remote)' });
+  await combat.locator('[data-hsel]').selectOption({ label: 'Kai Feel (player phone)' });
   await combat.locator('[data-addh]').tap();
   await combat.locator('[data-qline]').fill('Cave Rat x4, E, brute');
   await combat.locator('[data-qadd]').tap();

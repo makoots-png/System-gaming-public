@@ -25,7 +25,7 @@ async function room(gm: Page, player: Page, hunter: string): Promise<string> {
 /** The GM's fight with the player's hunter and one rat, started from the builder; the turn is the hunter's. */
 async function fight(gm: Page, player: Page, hunter: string): Promise<void> {
   await go(gm, 'combat');
-  await combat(gm).locator('[data-hsel]').selectOption({ label: `${hunter} (remote)` });
+  await combat(gm).locator('[data-hsel]').selectOption({ label: `${hunter} (player phone)` });
   await combat(gm).locator('[data-addh]').tap();
   await combat(gm).locator('[data-qline]').fill('Cave Rat x1, E, brute');
   await combat(gm).locator('[data-qadd]').tap();
@@ -199,7 +199,7 @@ test('a phone turned to landscape shows the map and the hotbar, and Strike picke
   await room(gm, player, 'Lia Side');
   await gm.evaluate(() => hunterApp.store.update(() => {}, 'noop'));
   await go(gm, 'combat');
-  await combat(gm).locator('[data-hsel]').selectOption({ label: 'Lia Side (remote)' });
+  await combat(gm).locator('[data-hsel]').selectOption({ label: 'Lia Side (player phone)' });
   await combat(gm).locator('[data-addh]').tap();
   await combat(gm).locator('[data-qline]').fill('Cave Rat x1, E, brute');
   await combat(gm).locator('[data-qadd]').tap();

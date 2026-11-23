@@ -116,7 +116,7 @@ export function sessionStarted<S extends WorldParts>(save: S, backup: boolean, s
   const moved = advanceDay(save, 1, stamp);
   if ('ok' in moved) return moved;
   const session = save.world.session + 1;
-  const text = `${backup ? 'A backup was saved.' : 'No backup: this browser refused to store it.'} World day ${moved.day}.`;
+  const text = `${backup ? 'A backup was saved.' : 'No backup was saved because this browser blocked storage.'} World day ${moved.day}.`;
   const next = told({ ...moved.save, world: { ...moved.save.world, session } }, stamp, { kind: 'system', hunterId: null, title: `Session ${session} began`, text });
   return { ...moved, save: next, session };
 }

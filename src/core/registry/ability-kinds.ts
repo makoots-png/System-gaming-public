@@ -24,6 +24,7 @@ import type { Scaler, ScalerName } from './scalers.ts';
 
 /** The rule numbers this file reads: the paces' costs, the channel's ticks and the dice limits. */
 export type KindRules = Pick<Rules, 'fight' | 'dice'>;
+type ConditionLabels = Readonly<Record<string, { readonly label: string }>>;
 
 /** What a kind fills in. `dice` and `power` make its formula: `dice + power * phys` (or `mag`, or `sup`). */
 export type KindDefaults = {
@@ -115,8 +116,8 @@ export const gapOf = (type: AbilityEffect['type']): Gap => ({ mine: POWER[type].
  */
 export function checkGap(g: Gap): string | null {
   if (g.mine === g.theirs) return 'Pick two different stats for the gap.';
-  if (!(Number.isFinite(g.per) && g.per > 0)) return 'The bonus a point of gap must be above 0%.';
-  if (!(Number.isFinite(g.cap) && g.cap > 0)) return 'A gap needs a cap above 0%. Without one it adds nothing between equal stats and can kill in one hit when the stats are far apart.';
+  if (!(Number.isFinite(g.per) && g.per > 0)) return 'The bonus per point of stat gap must be above 0%.';
+  if (!(Number.isFinite(g.cap) && g.cap > 0)) return 'A stat gap needs a cap above 0%. Without a cap, a large gap between stats can kill in one hit.';
   return null;
 }
 
@@ -202,65 +203,66 @@ const roundsWord = (ticks: number, R: KindRules): string => { const n = roundsOf
  * range, then whether a target can move out of it in the time it takes to land, resists it with Discipline, or cannot
  * avoid it; then its channel. An ability on an ally or on the user is not avoided.
  */
-export function describeAbility(a: Pick<Ability, 'kind' | 'cost' | 'aim' | 'range' | 'shape' | 'delivery' | 'channel' | 'zone' | 'prices' | 'gates' | 'tags' | 'summon' | 'move' | 'react' | 'zoneAct'> & { readonly effect: Ability['effect']; readonly ops?: Ability['ops'] }, R: KindRules): string[] {
+export function describeAbility(a: Pick<Ability, 'kind' | 'cost' | 'aim' | 'range' | 'shape' | 'delivery' | 'channel' | 'zone' | 'prices' | 'gates' | 'tags' | 'summon' | 'move' | 'react' | 'zoneAct'> & { readonly effect: Ability['effect']; readonly ops?: Ability['ops'] }, R: KindRules & { readonly conditions?: ConditionLabels }): string[] {
   const s = a.shape, out: string[] = [];
   if (s.kind === 'self' || a.aim === 'self') out.push('Affects the user.');
   else if (s.kind === 'touch') out.push(`Hits one ${a.aim === 'ally' ? 'ally' : 'target'} up to ${tilesWord(a.range)} away.`);
-  else if (s.kind === 'line') out.push(`A line ${tilesWord(1 + 2 * s.width)} wide to a point up to ${tilesWord(a.range)} away, ${s.pierce ? 'through everyone on it' : 'stopping at the first body'}.`);
-  else out.push(`Hits everyone within ${tilesWord(s.radius)} of a point up to ${tilesWord(a.range)} away${s.ring ? `, and ${s.ring.share}% in a ring out to ${tilesWord(s.ring.outer)}` : ''}.`);
+  else if (s.kind === 'line') out.push(`Hits in a line ${tilesWord(1 + 2 * s.width)} wide up to ${tilesWord(a.range)} away, ${s.pierce ? 'passing through every target' : 'stopping at the first target'}.`);
+  else out.push(`Hits everyone within ${tilesWord(s.radius)} of a point up to ${tilesWord(a.range)} away${s.ring ? `, and for ${s.ring.share}% effect in an outer ring out to ${tilesWord(s.ring.outer)}` : ''}.`);
   const d = a.delivery;
   if (a.aim === 'ally' || a.aim === 'self') out.push('An ally does not avoid it.');
   else if (d.kind === 'sure') out.push('Cannot be avoided.');
-  else if (d.kind === 'direct') out.push('Resisted by Discipline: it does not travel, so the target cannot dodge it. The target\'s Will is compared with the user\'s Accuracy.');
-  else out.push(`Can be dodged: it lands ${roundsWord(d.windup, R)} after it is used${d.speed === 'instant' ? '' : `, then flies ${d.speed} tiles a round`}, and the target moves as far as its speed allows in that time.`);
+  else if (d.kind === 'direct') out.push('Resisted by Discipline. It does not travel, so the target cannot dodge it. The roll compares the target\'s Will with the user\'s Accuracy.');
+  else out.push(`Can be dodged. It lands ${roundsWord(d.windup, R)} after use${d.speed === 'instant' ? '' : `, then travels ${d.speed} tiles a round`}. The target can move as far as its speed allows before it hits.`);
   if (a.channel) {
     const F = R.fight;
     const grows = a.channel.growth === 'linear' ? `by ${F.channelLin * 100}% of its base a turn` : `${F.channelExp} times a turn`;
-    out.push(`Can be channeled: it grows ${grows}, up to a charge of ${a.channel.max}; a stun, a root, a taunt or a hard hit fires it early at ${F.breakShare * 100}% of its charge.`);
+    out.push(`Can be channeled. It grows ${grows}, up to ${a.channel.max} charge. A stun, root, taunt, or hard hit fires it early at ${F.breakShare * 100}% charge.`);
   }
   if (a.zone) {
     const z = a.zone, grows = z.grow && (z.around !== null || s.kind === 'radius')
       ? `, growing ${tilesWord(z.grow.step)} a round to ${tilesWord(Math.min(z.grow.cap, R.fight.fieldRadiusMax))} out` : '';
     const lasts = `${z.duration === null ? '' : ` for ${roundsWord(z.duration, R)}`}${grows}`;
     out.push(z.around === null
-      ? `Leaves ${z.name} where it lands${lasts}${z.endsWithOwner ? ', gone when its user goes down' : ''}: it acts on whoever stands in it.`
-      : `Leaves ${z.name} around its user${lasts}, ${tilesWord(Math.min(z.around, R.fight.fieldRadiusMax))} out. It moves with the user, ends when the user goes down, and acts on whoever stands in it.`);
+      ? `Leaves ${z.name} where it lands${lasts}${z.endsWithOwner ? ' and ends if the user reaches 0 HP' : ''}. It affects anyone standing in it.`
+      : `Leaves ${z.name} around the user${lasts}, reaching ${tilesWord(Math.min(z.around, R.fight.fieldRadiusMax))} out. It moves with the user, ends if the user reaches 0 HP, and affects anyone standing in it.`);
   }
   const f = formulaOf(a, R);
   if (f) for (const sc of scalersOf(f, R)?.scalers ?? []) out.push(scalerLine(sc, R));
   return [...out, ...kitLines(a, R)];
 }
-const priceLine = (p: Price): string => {
-  if (p.kind === 'hp') return `Costs ${p.amount.kind === 'flat' ? `${p.amount.n} HP` : `${Math.round(p.amount.share * 100)}% of your max HP`}. Refused at that HP or less.`;
-  if (p.kind === 'stacks') return `Costs ${p.take.kind === 'all' ? 'all' : p.take.n} ${p.key} ${p.from === 'self' ? 'of yours' : 'from each target'}.`;
+const statusName = (key: string, conditions?: ConditionLabels): string => conditions?.[key]?.label ?? key.replace(/-/g, ' ');
+const priceLine = (p: Price, conditions?: ConditionLabels): string => {
+  if (p.kind === 'hp') return `Costs ${p.amount.kind === 'flat' ? `${p.amount.n} HP` : `${Math.round(p.amount.share * 100)}% of your max HP`}. Cannot be used at that HP or less.`;
+  if (p.kind === 'stacks') return `Costs ${p.take.kind === 'all' ? 'all' : p.take.n} ${statusName(p.key, conditions)} ${p.take.kind !== 'all' && p.take.n === 1 ? 'stack' : 'stacks'} ${p.from === 'self' ? 'from you' : 'from each target'}.`;
   return `Ends ${p.take === 'one' ? 'one' : 'all'} of your ${p.name ?? 'fields'}.`;
 };
 /** One gate of an ability in words: "1 use a fight." */
-export const gateLine = (g: AbilityGate): string => g.kind === 'uses' ? `${g.n} use${g.n === 1 ? '' : 's'} a ${g.per}.` : g.kind === 'inside' ? `Only inside your ${g.zone}.`
-  : `Only while ${g.on === 'self' ? 'you hold' : 'the target holds'} ${g.atLeast > 1 ? `${g.atLeast} ` : ''}${g.key}.`;
+export const gateLine = (g: AbilityGate, conditions?: ConditionLabels): string => g.kind === 'uses' ? `${g.n} use${g.n === 1 ? '' : 's'} per ${g.per}.` : g.kind === 'inside' ? `Usable only inside your ${g.zone}.`
+  : `Usable only while ${g.on === 'self' ? 'you have' : 'the target has'} ${g.atLeast > 1 ? `${g.atLeast} ` : ''}${statusName(g.key, conditions)}.`;
 const WHEN_TEXT: { readonly [W in NonNullable<Ability['react']>['when']]: string } = {
-  before: 'before a foe\'s use lands on you', lethal: 'before a hit would take you to 0', after: 'after a foe\'s use lands on you', turn: 'before the turn of the body you name',
+  before: 'before a foe\'s ability lands on you', lethal: 'before a hit would drop you to 0 HP', after: 'after a foe\'s ability lands on you', turn: 'before a chosen target\'s turn',
 };
 /** Wave 2's parts of an ability in words (kits design 8.12): a blink or a swap, a reaction, a zone act. */
 function wave2Lines(a: Pick<Ability, 'range' | 'move' | 'react' | 'zoneAct'> & { readonly ops?: Ability['ops'] }, R: KindRules): string[] {
   const out: string[] = [];
-  if (a.move?.kind === 'blink') out.push(`Blinks to a tile you see within ${tilesWord(Math.min(a.range, R.fight.kit.blinkMax))}.`);
-  if (a.move?.kind === 'swap') out.push('Swaps places with the body it is aimed at.');
+  if (a.move?.kind === 'blink') out.push(`Teleports to a tile you can see within ${tilesWord(Math.min(a.range, R.fight.kit.blinkMax))}.`);
+  if (a.move?.kind === 'swap') out.push('Swaps places with the target.');
   if (a.react) {
     const guard = a.ops?.find(o => o.op === 'guard'), negate = a.ops?.some(o => o.op === 'negate');
     const who = a.react.reach > 0 && a.react.when !== 'turn' ? ` (or an ally within ${tilesWord(a.react.reach)})` : '';
-    const what = guard && guard.op === 'guard' ? `, take ${Math.round(guard.share * 100)}% off a strike` : negate ? ', the use does nothing more' : '';
-    out.push(`Reaction: ${WHEN_TEXT[a.react.when]}${who}${what}. Its time comes off your next turn.`);
+    const what = guard && guard.op === 'guard' ? `, reducing strike damage by ${Math.round(guard.share * 100)}%` : negate ? ', canceling the rest of the effect' : '';
+    out.push(`Reaction (${WHEN_TEXT[a.react.when]}${who}${what}). Its action time delays your next turn.`);
   }
-  if (a.zoneAct) out.push(a.zoneAct.act === 'shift' ? `Moves your ${a.zoneAct.name ?? 'zone'} up to ${tilesWord(a.zoneAct.by)} toward where it is aimed.` : `Widens your ${a.zoneAct.name ?? 'zone'} by ${tilesWord(a.zoneAct.by)}.`);
+  if (a.zoneAct) out.push(a.zoneAct.act === 'shift' ? `Moves your ${a.zoneAct.name ?? 'field'} up to ${tilesWord(a.zoneAct.by)} toward where you aim.` : `Widens your ${a.zoneAct.name ?? 'field'} by ${tilesWord(a.zoneAct.by)}.`);
   return out;
 }
 /** An ability's kit parts in words (kits design 5.1): its prices, its gates, its tags and its summon, then wave 2's. */
-function kitLines(a: Pick<Ability, 'prices' | 'gates' | 'tags' | 'summon' | 'range' | 'move' | 'react' | 'zoneAct'> & { readonly ops?: Ability['ops'] }, R: KindRules): string[] {
-  const out = [...(a.prices ?? []).map(priceLine), ...(a.gates ?? []).map(gateLine), ...wave2Lines(a, R)];
+function kitLines(a: Pick<Ability, 'prices' | 'gates' | 'tags' | 'summon' | 'range' | 'move' | 'react' | 'zoneAct'> & { readonly ops?: Ability['ops'] }, R: KindRules & { readonly conditions?: ConditionLabels }): string[] {
+  const out = [...(a.prices ?? []).map(p => priceLine(p, R.conditions)), ...(a.gates ?? []).map(g => gateLine(g, R.conditions)), ...wave2Lines(a, R)];
   if (a.tags?.length) out.push(`Tags: ${a.tags.join(', ')}.`);
   const m = a.summon;
-  if (m) out.push(`Summons a ${m.name} (${m.archetype}, your rank) for ${m.rounds} round${m.rounds === 1 ? '' : 's'}. ${R.fight.kit.summons} at most.`);
+  if (m) out.push(`Summons a ${m.name} (${m.archetype}, your rank) for ${m.rounds} round${m.rounds === 1 ? '' : 's'}. At most ${R.fight.kit.summons} active at once.`);
   return out;
 }
 

@@ -1,7 +1,7 @@
 // A reward the app would pay by itself, waiting for the GM (src/core/hunter/pending.ts; World rule 8, the owner, Nov 22:
 // rule d, "Yes"). Every state against every event; where each seat sends the reward; a reward never lost nor paid twice.
 import { describe, expect, test } from 'bun:test';
-import { ALONE, ENDED_KEPT, PENDING_EVENTS, PENDING_STATES, ROUTE, askOf, parsePending, pendingApproved, pendingHeard, pendingOf, pendingRefused, pendingStep, rewardSeatOf, selfPaid, selfPay, waitingIn } from '../src/core/hunter/pending.ts';
+import { ALONE, ENDED_KEPT, PENDING_EVENTS, PENDING_STATES, PENDING_WORDS, ROUTE, askOf, parsePending, pendingApproved, pendingHeard, pendingOf, pendingRefused, pendingStep, rewardSeatOf, selfPaid, selfPay, waitingIn } from '../src/core/hunter/pending.ts';
 import type { PendingEvent, PendingReward, PendingState, RewardSeat, SelfReward } from '../src/core/hunter/pending.ts';
 import { freshSave, newHunter, newRewards } from '../src/core/save.ts';
 import type { Save } from '../src/core/save.ts';
@@ -75,7 +75,7 @@ describe('a reward waiting for the GM', () => {
     const once = pendingHeard(save(), ask(), ROOM, LOG);
     expect(pendingHeard(once, ask(), ROOM, LOG)).toBe(once);
     expect(waitingIn(once, ROOM).map(p => p.id)).toEqual(['d-p1-1abc-wxyz']);
-    expect(once.log[0]).toMatchObject({ kind: 'award', title: 'Reward waiting', text: 'Mira: Quest complete: Ten Beasts' });
+    expect(once.log[0]).toMatchObject({ kind: 'award', title: PENDING_WORDS.logTitle, text: 'Mira: Quest complete: Ten Beasts' });
   });
 
   test('the GM approves an edited reward once: the record keeps what was approved, and a second approve or a refuse after it is refused', () => {

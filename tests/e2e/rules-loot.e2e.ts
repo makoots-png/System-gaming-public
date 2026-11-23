@@ -98,7 +98,7 @@ test('loot put off with Later survives the next fight: the Loot dropped window o
     await fightAndEnd(page, 'm901', 'Ember Rat');
     const win = page.locator('.sys-overlay.show', { hasText: 'Loot dropped' });
     await expect(win).toContainText('75 gold');
-    await expect(win).toContainText('The loot of 1 more fight waits after it.');
+    await expect(win).toContainText('Loot from 1 more fight is waiting after this.');
     expect(await goldWaiting(page)).toEqual([75, 40]);
   });
 
@@ -113,6 +113,6 @@ test('loot put off with Later survives the next fight: the Loot dropped window o
   await test.step('Award loot opens the Award form with the 40 gold, and its line names the loot it holds', async () => {
     await answerWindow(page, 'Loot dropped', 'Award loot');
     await expect(page.locator('#gm-gold')).toHaveValue('40');
-    await expect(page.locator('#gm-award-tie')).toHaveText('Fight loot: 40 gold. Send award gives it; fold Award to keep it for later.');
+    await expect(page.locator('#gm-award-tie')).toHaveText('Fight loot: 40 gold. Tap Send award to give it, or collapse the Award section to save it for later.');
   });
 });

@@ -131,7 +131,7 @@ export const SHOP_ITEMS: readonly ItemDef[] = [
   // is told to the GM. A crystal has no grade.
   ...RARITIES.map((rar): ItemDef => ({
     name: `Resurrection Crystal (${RULES.rarities[rar].rank})`, rar, type: 'consumable', effects: [], revive: true, tell: true,
-    desc: 'A dead hunter of its rank or lower who uses it comes back to life.',
+    desc: 'Use from your bag outside a fight while dead to come back to life, if your rank is this rank or lower.',
   })),
 ];
 
@@ -166,9 +166,9 @@ export const RECIPE_ITEMS: readonly ItemDef[] = [
   // action, so League's 40% spends 47.8 and the 0.59 points left hold 0.5% (item-stats.md, build note items-small).
   {
     name: 'Thornmail', rar: 'epic', grade: 1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: { vit: 1 },
-    desc: 'Heavy chest armor that adds 1 Vitality. A foe that strikes its wearer takes magic damage of 1 + 1% of the wearer\'s armor.',
+    desc: 'Heavy chest armor that adds 1 Vitality. When a foe strikes you, it takes magic damage equal to 1 + 1% of your armor.',
     worn: {
-      label: 'Thornmail', desc: 'Strikes against the wearer hurt the striker.', ops: [],
+      label: 'Thornmail', desc: 'Foes that strike you take magic damage.', ops: [],
       triggers: [{ on: 'struck', tag: null, to: 'other', limit: { kind: 'each' }, ops: [
         { op: 'damage', type: 'magical', amount: formula('1 + 0.01 * armor'), when: 'use' },
       ] }],
@@ -180,9 +180,9 @@ export const RECIPE_ITEMS: readonly ItemDef[] = [
   // A GM tags a skill "spell" for it to ready the blade.
   {
     name: 'Spellblade', rar: 'rare', type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', bonus: {},
-    desc: 'After its wearer uses an ability tagged "spell", the next hit deals 2 + 2% of Strength more physical damage.',
+    desc: 'After you use an ability tagged "spell", your next hit deals extra physical damage equal to 2 + 2% of your Strength.',
     worn: {
-      label: 'Spellblade', desc: 'A spell readies the next hit.', ops: [],
+      label: 'Spellblade', desc: 'Using a spell adds bonus physical damage to your next hit.', ops: [],
       triggers: [
         { on: 'used', tag: tag('spell'), to: 'self', limit: { kind: 'each' }, ops: [{ op: 'applyStatus', key: statusKey('spellblade-ready'), def: SPELLBLADE_READY, duration: null }] },
         { on: 'hitDealt', tag: null, to: 'other', limit: { kind: 'each' }, need: { kind: 'holds', key: statusKey('spellblade-ready') }, ops: [{ op: 'damage', type: 'physical', amount: formula('2 + 0.02 * str'), when: 'use' }] },
@@ -194,9 +194,9 @@ export const RECIPE_ITEMS: readonly ItemDef[] = [
   // heal would be unweighed (worth.ts reads no standing heal), so the heal is a trigger. `healPower` (unit 1) is not built.
   {
     name: "Healer's Charm", rar: 'rare', type: 'accessory', slot: 'neck', bonus: { pre: 2 },
-    desc: 'A charm that adds 2 Presence. Each kill its wearer makes heals it by 5% of its heal power.',
+    desc: 'A charm that adds 2 Presence. When you defeat a foe, you heal for 5% of your support power.',
     worn: {
-      label: "Healer's Charm", desc: 'A kill heals its wearer.', ops: [],
+      label: "Healer's Charm", desc: 'Defeating a foe heals you.', ops: [],
       triggers: [{ on: 'kill', tag: null, to: 'self', limit: { kind: 'each' }, ops: [{ op: 'heal', amount: formula('0.05 * sup'), when: 'use' }] }],
     },
   },
@@ -205,7 +205,7 @@ export const RECIPE_ITEMS: readonly ItemDef[] = [
   // against Rare+'s 3.71 to 4.43. The plan's `10 + 0.2 * hpmax` every 3 rounds spends 23.2 here.
   {
     name: 'Bulwark Ring', rar: 'rare', grade: 1, type: 'accessory', slot: 'ring1', bonus: {},
-    desc: 'Its wearer can use Bulwark in a fight: a shield of 10 + 5% of max HP, ready again after 8 rounds.',
+    desc: 'While worn, you can use Bulwark in a fight to gain a shield equal to 10 + 5% of your max HP. 8-round cooldown.',
     active: BULWARK,
   },
   // Lifeline Locket, Rare+: no bonus; a shield of `0.1 * hpmax` once a fight, when its wearer falls under 30% HP (the
@@ -213,9 +213,9 @@ export const RECIPE_ITEMS: readonly ItemDef[] = [
   // (`hpRate`), at `lowHp`'s rate of once a fight: 4.12 against Rare+'s 3.71 to 4.43. League's 30% of max HP spends 12.4.
   {
     name: 'Lifeline Locket', rar: 'rare', grade: 1, type: 'accessory', slot: 'neck', bonus: {},
-    desc: 'The first time in a fight its wearer falls under 30% HP, it gains a shield of 10% of its max HP.',
+    desc: 'The first time you drop under 30% HP in a fight, you gain a shield equal to 10% of your max HP.',
     worn: {
-      label: 'Lifeline Locket', desc: 'A shield when its wearer falls low.', ops: [],
+      label: 'Lifeline Locket', desc: 'Gain a shield when you drop under 30% HP.', ops: [],
       triggers: [{ on: 'lowHp', to: 'self', limit: { kind: 'fight', n: 1 }, ops: [{ op: 'shield', amount: formula('0.1 * hpmax') }] }],
     },
   },
@@ -223,8 +223,8 @@ export const RECIPE_ITEMS: readonly ItemDef[] = [
   // most max HP and costs the Vitality whose armor it is (item-budget.ts `SHEET_OP_COST`): 4.92 against Epic−'s top 5.10.
   {
     name: "Warden's Plate", rar: 'epic', grade: -1, type: 'armor', slot: 'chest', kit: 'heavy', bonus: {},
-    desc: 'Heavy chest armor. Its wearer has armor equal to 1.5% of max HP more.',
-    worn: { label: "Warden's Plate", desc: 'Armor grows with max HP.', ops: [{ op: 'sheet', key: 'armor', amount: formula('0.015 * hpmax') }] },
+    desc: 'Heavy chest armor. While worn, you gain extra armor equal to 1.5% of your max HP.',
+    worn: { label: "Warden's Plate", desc: 'Adds armor equal to 1.5% of max HP.', ops: [{ op: 'sheet', key: 'armor', amount: formula('0.015 * hpmax') }] },
   },
 ];
 

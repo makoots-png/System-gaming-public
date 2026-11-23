@@ -191,6 +191,6 @@ describe('what a phone says of a message it just posted', () => {
 
   test('a use reported to the GM says it was sent only while the room answers, and that it reaches the GM later otherwise', () => {
     expect([reportWords('live'), reportWords('reconnecting'), reportWords('waiting')])
-      .toEqual(['Sent to the GM.', 'It reaches the GM when the room answers.', 'It reaches the GM when the room answers.']);
+      .toEqual(['Sent to the GM.', 'Saved. The GM gets it when your phone reconnects to the room server.', 'Saved. The GM gets it once the room server confirms it.']);
   });
 });

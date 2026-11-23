@@ -117,7 +117,7 @@ export function settleEncounter(save: Save, plan: EncounterPlan, choice: 'award'
   const f: Fight | null = save.fight ?? null;
   if (!f || f.id !== plan.fightId || f.phase !== 'ended') return refuse('no-fight');
   const paid = pays(plan, choice);
-  const text = `${plan.dead.length} defeated, ${plan.xp} XP.${choice === 'award' ? ` Awarded ${plan.each} XP each.` : ''}`;
+  const text = `${plan.dead.length} foe${plan.dead.length === 1 ? '' : 's'} defeated, ${plan.xp} XP.${choice === 'award' ? ` Awarded ${plan.each} XP each.` : ''}`;
   const logged = encounterEnded(save, { gateId: plan.gateId, paid: paid ? plan.award : 0, text }, { at: day.at, cap: day.R.logCap });
   // who fought it stays on the gate, so its Clear offers them first after a reload too
   const fought = plan.payees.map(p => (p.kind === 'local' ? p.hid : p.key));
@@ -162,7 +162,7 @@ export function dropDealt(save: Save, fight: FightId): Save | Refused<'no-drop'>
   return loot ? { ...save, loot } : refuse('no-drop');
 }
 /** What a refused deal says: the drop was given or set aside already (another tab, a stale window). */
-export const LOOT_WORDS: { readonly 'no-drop': string } = { 'no-drop': 'That loot was given or set aside already.' };
+export const LOOT_WORDS: { readonly 'no-drop': string } = { 'no-drop': 'That loot was already given or set aside.' };
 /** The drop of fight `fight` while it waits; null once it was dealt with. */
 export const dropWaiting = (l: FightLoot, fight: FightId): Dropped | null => (l.at === 'waiting' ? l.drops.find(d => d.fight === fight) ?? null : null);
 /** The drop the Loot dropped window offers: the oldest waiting. Null when none waits. */

@@ -114,7 +114,7 @@ describe('the end of a fight', () => {
     expect(events(out.save)).toEqual([[ROOM, [KAI], 120]]);
     expect(out.save.fight).toBeNull();
     expect(out.save.fightRefs).toBeUndefined();
-    expect(out.save.log.map(l => l.text)).toContain('1 defeated, 60 XP. Awarded 120 XP each.');
+    expect(out.save.log.map(l => l.text)).toContain('1 foe defeated, 60 XP. Awarded 120 XP each.');
   });
 
   test('a fight settled is gone, so settling it again (a second tap, a stale window, a reload) is refused and changes nothing', () => {
@@ -132,7 +132,7 @@ describe('the end of a fight', () => {
     const s = inDen(), plan = planEncounter(s.fight as Ended, 'g-den', s, PARTY, xpOf), h = s.hunters[0]!;
     const out = ok(settleEncounter(s, plan, 'skip', { room: ROOM, events: [award(30)] }, DAY, NONE)).save;
     expect([out.gates[0]!.xpPaid, out.hunters[0]!.xp, events(out), out.fight]).toEqual([0, h.xp, [], null]);
-    expect(out.log[0]!.text).toBe('1 defeated, 60 XP.');
+    expect(out.log[0]!.text).toBe('1 foe defeated, 60 XP.');
   });
 
   test('what the fight dropped waits on the save after the settle, read back after a reload, until the GM gives it or sets it aside', () => {

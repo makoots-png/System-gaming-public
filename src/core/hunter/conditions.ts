@@ -27,7 +27,7 @@ export function putStatus<H extends Holding>(h: H, s: StatusIn, defs: Readonly<R
   return JSON.stringify(next) === JSON.stringify(h.conditions) ? refuse('unchanged') : { ...h, conditions: next };
 }
 /** What a status put on by hand says when `putStatus` refuses it as changing nothing (`ui.wrote`'s words). */
-export const PUT_WORDS: Readonly<Record<'unchanged', string>> = { unchanged: 'The hunter already has that status, as strong and as long.' };
+export const PUT_WORDS: Readonly<Record<'unchanged', string>> = { unchanged: 'The hunter already has that status at equal or greater strength and duration.' };
 /** The status of that key taken off. One the hunter does not hold is refused (`unchanged`). */
 export function dropStatus<H extends Holding>(h: H, key: string): H | Refused<'unchanged'> {
   return h.conditions.some(c => c.key === key) ? { ...h, conditions: h.conditions.filter(c => c.key !== key) } : refuse('unchanged');

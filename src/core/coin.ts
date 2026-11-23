@@ -142,7 +142,7 @@ export const VERDICTS =['critSuccess', 'success', 'saved', 'critFailure'] as con
 export type Verdict = (typeof VERDICTS)[number];
 /** The words the app shows for a landing. The GM narrates the rest; no number changes by it. */
 export const VERDICT_WORDS: { readonly [V in Verdict]: string } = {
-  critSuccess: 'Critical success', success: 'Success', saved: 'Saved', critFailure: 'Critical failure',
+  critSuccess: 'Critical success', success: 'Success', saved: 'Avoided critical failure', critFailure: 'Critical failure',
 };
 /** On a 20 a right call is a critical success and a wrong one a success; on a 1 a right call is saved and a wrong one a critical failure. */
 export function verdict(face: CoinNatural, called: CoinSide, landed: CoinSide): Verdict {
@@ -198,9 +198,9 @@ export type CoinSave = Pick<Save, 'coins' | 'calls' | 'log' | 'seq' | 'hunters'>
 export type CoinWhy = 'missing' | 'not-now';
 type Next<S> = S | Refused<CoinWhy>;
 /** The GM's three answers in the session log's ruling line. */
-export const RULING_WORDS: { readonly [R in Ruling]: string } = { right: 'Right', wrong: 'Wrong', coin: 'Let the coin decide' };
+export const RULING_WORDS: { readonly [R in Ruling]: string } = { right: 'Call was right', wrong: 'Call was wrong', coin: 'Flipped randomly' };
 const line = (title: string, text: string) => ({ kind: 'system' as const, hunterId: null, title, text });
-const landedLine = (c: Coin & { at: 'landed' }) => line(`Coin: ${c.who} called ${SIDE_WORDS[c.call]}`, `Natural ${c.face} for ${c.what}. The coin landed ${SIDE_WORDS[c.side]}: ${coinWords(c)}.`);
+const landedLine = (c: Coin & { at: 'landed' }) => line(`Coin: ${c.who} called ${SIDE_WORDS[c.call]}`, `Natural ${c.face} for ${c.what}. The coin landed ${SIDE_WORDS[c.side]}. ${coinWords(c)}.`);
 /** `coins` after `event` on roll `id`, or why not: the coin must be `at` before. */
 function stepAt(coins: readonly Coin[], id: RollId, at: CoinState, event: CoinEvent): readonly Coin[] | Refused<CoinWhy> {
   const c = coinOf(coins, id);
@@ -248,7 +248,7 @@ export function callRuled<S extends CoinSave>(save: S, id: RollId, ruling: Rulin
   if ('ok' in calls) return calls;
   const c = landedOf(calls, id);
   if (!c) return { ...save, calls };
-  return told({ ...save, calls }, stamp, line(`Coin: ${c.who} called ${SIDE_WORDS[c.call]}`, `Natural ${c.face} for ${c.what}. Ruled ${RULING_WORDS[ruling]}: the coin landed ${SIDE_WORDS[c.side]}.`));
+  return told({ ...save, calls }, stamp, line(`Coin: ${c.who} called ${SIDE_WORDS[c.call]}`, `Natural ${c.face} for ${c.what}. ${RULING_WORDS[ruling]}. The coin landed ${SIDE_WORDS[c.side]}.`));
 }
 
 // ── the GM's window for the calls (audit SMX-views-7) ──

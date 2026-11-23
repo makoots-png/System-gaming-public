@@ -472,7 +472,7 @@ export function register(app: SyncHost): void {
   function notice(id: LinkNotice, code: RoomCode | null): void {
     switch (id) {
       case 'gone': {
-        ui.toast('Sync', 'This room no longer exists, so this phone left it.', { kind: 'warn' });
+        ui.toast('Sync', 'This room no longer exists. You left the room.', { kind: 'warn' });
         if (!code) return;
         peeked.delete(code);
         // the room's offers step `roomGone` in the write that refuses its letters: a never-sent one gives its goods back
@@ -481,11 +481,11 @@ export function register(app: SyncHost): void {
         for (const n of ended.news) if (n.kind === 'toast') ui.toast('Trade', n.text);
         return;
       }
-      case 'keyLost': ui.toast('System', `The GM key for room ${code ?? ''} no longer works, so this phone left the room.`, { kind: 'warn' }); return;
+      case 'keyLost': ui.toast('System', `The GM key for room ${code ?? ''} no longer works. You left the room.`, { kind: 'warn' }); return;
       case 'removed': if (code) removalDo({ type: 'removed', room: code, hunter: bound()?.id ?? null }); return;
       case 'upgradeStuck': store.notify({ id: 'upgrade', text: STUCK_TEXT }); return;
       case 'notFound': if (code) peeked.delete(code); return;
-      case 'readOnly': ui.toast('System', code ? `This tab cannot save, so it left room ${code}. The save keeps the room: reload to go back in.` : 'This tab cannot save, so it stopped opening the room.', { kind: 'warn' }); return;
+      case 'readOnly': ui.toast('System', code ? `This tab cannot save, so you left room ${code}. Your room is still saved. Reload to rejoin.` : 'This tab cannot save, so it could not open the room.', { kind: 'warn' }); return;
       case 'keyRefused': case 'notAllowedBack': case 'unreachable': case 'serverError': case 'replaced': return;
     }
   }
@@ -554,7 +554,7 @@ export function register(app: SyncHost): void {
       if (joined !== null && ev && Date.parse(ev.at) < joined) lines.push(`Trade: ${n.text}`); else ui.toast('Trade', n.text);
     }
     if (lines.length) void ui.system({ tag: '! System', title: 'WHILE YOU WERE AWAY', kind: 'info', body: AWAY_BODY, lines });
-    if (landed?.fresh.length) ui.toast('Sync', 'A message from the GM could not be applied on this phone. It is kept and tried again.', { kind: 'warn' });
+    if (landed?.fresh.length) ui.toast('Sync', 'A message from the GM could not be applied. The app saved it and will try again.', { kind: 'warn' });
   }
   const skewFrom = (now: string): void => { const t = Date.parse(now); if (Number.isFinite(t)) srvSkew = t - Date.now(); };
   /** What the appliers in room-events.ts use of the app; read when an event arrives, after every module has registered. */
@@ -723,7 +723,7 @@ export function register(app: SyncHost): void {
     if (!flush('outbox-post', b => { const r = postIn(b, code, letter, key); dropped = r.dropped; return r.box; })) return { ok: false, why: 'noRoom' };
     // each message the full box let go is told to whoever waits on its id (a turn's hold: SMX-sync-4.3)
     for (const d of dropped) app.emit('sync:outbox', { id: d.id, at: 'dropped' });
-    if (dropped.length) ui.toast('Sync', `Too much is waiting for the room, so ${dropped.length === 1 ? 'the oldest message was' : `the ${dropped.length} oldest messages were`} dropped.`, { kind: 'warn' });
+    if (dropped.length) ui.toast('Sync', `Too many messages are waiting for the room server, so ${dropped.length === 1 ? 'the oldest message was' : `the ${dropped.length} oldest messages were`} dropped.`, { kind: 'warn' });
     return { ok: true, id: letter.kind === 'event' ? letter.event.payload.eid : `tomb ${letter.hid}`, dropped: dropped.length };
   }
   /**
@@ -758,7 +758,7 @@ export function register(app: SyncHost): void {
     if (ev.type === 'sent') app.emit('sync:outbox', { id: e.id, at: 'sent', seq: c.ok && isObj(c.data) && typeof c.data.seq === 'number' ? c.data.seq : null });
     if (ev.type === 'refused') {
       console.warn(`[sync] the room refused a ${e.letter.kind === 'event' ? e.letter.event.type : 'tombstone'}: ${ev.why}`);
-      ui.toast('Sync', `The room did not take ${e.letter.kind === 'event' ? WHAT_SENT[e.letter.event.type] ?? 'a message' : 'the removal of a deleted hunter'} (${ev.why}).`, { kind: 'warn' });
+      ui.toast('Sync', `The room server rejected ${e.letter.kind === 'event' ? WHAT_SENT[e.letter.event.type] ?? 'a message' : 'the removal of a deleted hunter'} (${ev.why}).`, { kind: 'warn' });
       app.emit('sync:outbox', { id: e.id, at: 'refused', why: ev.why });
     }
     emitStatus();
@@ -777,10 +777,10 @@ export function register(app: SyncHost): void {
   }
   /** A message as the player reads it when the room refuses it. */
   const WHAT_SENT: Partial<Record<RoomEvent['type'], string>> = {
-    used: 'a use you told the GM of', roll: 'a roll', questUpdate: 'a quest\'s progress', coinCall: 'a coin call', coinLand: 'a coin\'s ruling',
-    step: 'a step', cast: 'a use in the fight', pass: 'the end of a turn', arm: 'a reaction', award: 'an award', quest: 'a quest', chain: 'a Job Change',
-    soloRun: 'a solo run', soloAnswer: 'the answer to a solo run', stashAsk: 'a stash ask', stashAnswer: 'the answer to a stash ask',
-    word: 'your word to the GM', wordBack: 'your answer to a word', rewardAsk: 'a reward waiting for the GM',
+    used: 'a use report', roll: 'a roll', questUpdate: 'quest progress', coinCall: 'a coin call', coinLand: 'a coin ruling',
+    step: 'a step', cast: 'an ability use', pass: 'the end of a turn', arm: 'a reaction', award: 'an award', quest: 'a quest', chain: 'a Job Change',
+    soloRun: 'a solo run', soloAnswer: 'the answer to a solo run', stashAsk: 'a stash request', stashAnswer: 'a stash reply',
+    word: 'your word to the GM', wordBack: 'your answer to a word', rewardAsk: 'a reward request',
   };
   /** A hunter deleted on this phone leaves the GM's board: its sheet is replaced by a tombstone, through the outbox. */
   const forget = (hid: HunterId): void => { if (playerRoom()) postLetter({ kind: 'tomb', hid }, null); };
@@ -1025,7 +1025,7 @@ export function register(app: SyncHost): void {
   const agoS = (iso: string | null): string => {
     const t = Date.parse(iso || ''); if (!Number.isFinite(t)) return '';
     const m = Math.round((Date.now() + srvSkew - t) / 60000);
-    return m < 1 ? 'just now' : m < 60 ? `${m} min` : m < 1440 ? `${Math.round(m / 60)} h` : `${Math.round(m / 1440)} d`;
+    return m < 1 ? 'now' : m < 60 ? `${m} min` : m < 1440 ? `${Math.round(m / 60)} h` : `${Math.round(m / 1440)} d`;
   };
   /** The GM's list of sheets, online (polled in the last 15 s), away, or unknown when the server sent no presence. */
   function roster(): ReturnType<SyncApi['roster']> {

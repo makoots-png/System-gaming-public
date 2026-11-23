@@ -34,13 +34,13 @@ describe('what the player sees of a waiting run', () => {
     expect(shown(s)).toEqual([['g1', 'posted']]);
     const taken = withBox(askTaken(s, ev.payload.eid), b => step(b, ev.payload.eid, { type: 'sent' }));
     expect(shown(taken)).toEqual([['g1', 'taken']]);
-    expect(waitWords(taken.settings.sync.asked![0]!, [])).toBe('Cleared. Waiting for the GM\'s phone to pay it.');
+    expect(waitWords(taken.settings.sync.asked![0]!, [])).toBe('Cleared. Waiting for the GM to confirm it.');
     const refused = withBox(s, b => step(b, ev.payload.eid, { type: 'refused', why: 'bad event' }));
     expect(shown(refused)).toEqual([['g1', 'lost']]);
     expect(shownOf(refused.settings.sync.asked![0]!, refused.settings.sync.outbox!).why).toBe('refused');
     const dropped = withBox(s, b => step(b, ev.payload.eid, { type: 'drop' }));
     expect(shownOf(dropped.settings.sync.asked![0]!, dropped.settings.sync.outbox!)).toEqual({ state: 'lost', why: 'dropped' });
-    expect(waitWords(askedGone(taken, ROOM).settings.sync.asked![0]!, [])).toBe('The room is gone, so the run paid nothing. Its cost stays.');
+    expect(waitWords(askedGone(taken, ROOM).settings.sync.asked![0]!, [])).toBe('This room no longer exists, so you got no reward. Its cost is not refunded.');
   });
 
   test('the gates with a run waiting, by room and hunter: a lost run no longer holds its gate', () => {

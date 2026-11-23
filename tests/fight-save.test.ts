@@ -116,7 +116,7 @@ function bleedingKai(): Phone {
   return p;
 }
 const kai = (s: Save) => (s.fight as Running).rows.find(r => r.id === id('c2'))!;
-const settled = (s: Save) => (s.fight as Fight).log.filter(l => l.text.includes('Kai: Bleeding settles')).length;
+const settled = (s: Save) => (s.fight as Fight).log.filter(l => l.text.includes('Kai: Bleeding takes effect')).length;
 const vitalsFor = (s: Save) => (s.settings.sync.outbox ?? []).filter(e => e.key === `vitals ${KAI}`);
 
 describe('one fight command is one write', () => {

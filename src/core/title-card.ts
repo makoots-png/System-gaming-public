@@ -16,7 +16,7 @@ const plural = (n: number, w: string): string => `${n} ${w}${n === 1 ? '' : 's'}
 /** An ability's lines on a title's card: its name, what it does with the amount as the holder reads it, its ops, its wait and its gates. */
 function activeLines(a: Ability, rank: Rank, wearer: FormulaBody | null, R: Rules): string[] {
   const f = formulaOf(a, R), rounds = roundsOf(a.cost.cooldown, R, 'near');
-  const wait = [rounds ? `Ready again after ${plural(rounds, 'round')}.` : '', ...(a.gates ?? []).map(gateLine)].filter(Boolean).join(' ');
+  const wait = [rounds ? `Ready again after ${plural(rounds, 'round')}.` : '', ...(a.gates ?? []).map(g => gateLine(g, R.conditions))].filter(Boolean).join(' ');
   return [
     `Can use in a fight: ${a.name}`,
     ...(a.effect && f ? [`${EFFECT_WORD[a.effect.type]}: ${amountWords(f, wearer)}`] : []),

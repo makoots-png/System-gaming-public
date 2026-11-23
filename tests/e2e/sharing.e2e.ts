@@ -87,7 +87,7 @@ test('a GM copies the code for everything; on a second phone it shows what it ho
     await answerWindow(gm, 'Share custom content', 'Everything (5)');
     await answerWindow(gm, 'Share as', 'Show a code');
     const w = win(gm, 'Share code');
-    await expect(w).toContainText('This code holds 1 status, 1 item, 1 skill, 1 monster and 1 bundle.');
+    await expect(w).toContainText('This code contains 1 status, 1 item, 1 skill, 1 monster and 1 bundle.');
     await w.locator('[data-pack-copy]').tap();
     await expect(w.locator('[data-pack-copy]')).toHaveText('Copied');
     code = await gm.evaluate(() => navigator.clipboard.readText());
@@ -162,7 +162,7 @@ test('one item shared from the Workshop arrives alone with the status it applies
   await go(gm, 'workshop');
   await workshop(gm, 'item').locator('li', { hasText: 'Frost Bomb' }).locator('[data-act="more"]').tap();
   await gm.locator('.sys-overlay.show', { hasText: 'Frost Bomb' }).locator('.sys-actions button', { hasText: 'Share' }).tap();
-  await expect(win(gm, 'Share code')).toContainText('This code holds 1 status and 1 item.');
+  await expect(win(gm, 'Share code')).toContainText('This code contains 1 status and 1 item.');
   const code = await readCodeWindow(gm);
 
   const other = await freshGM(device);

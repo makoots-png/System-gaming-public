@@ -40,7 +40,7 @@ test('a save whose GM set the stat base or the curve\'s half to 0 loads with the
 
 test('a save whose GM allowed dice of a billion sides loads with 1000, so a formula of 1d1000000000 is refused as it is typed', () => {
   const R = loaded({ dice: { maxSides: 1e9 } });
-  expect(parseFormula('1d1000000000', R)).toEqual({ ok: false, error: '"1d1000000000" has dice of 1000000000 sides; a die has 2 to 1000.' });
+  expect(parseFormula('1d1000000000', R)).toEqual({ ok: false, error: '"1d1000000000" has 1000000000-sided dice. A die must have 2 to 1000 sides.' });
   expect(R.dice.maxSides).toBe(RULES.dice.maxSides);
 });
 
@@ -84,9 +84,9 @@ test('a GM\'s base value or a rarity\'s price factor is no rule: a price is its 
 
 test('the Rules editor\'s words for a number out of its domain name its bounds and why they are there', () => {
   const words = (ov: Record<string, unknown>) => parseOverrides(ov).refused.map(refusalWords);
-  expect(words({ fight: { round: 0 } })).toEqual(['fight.round: must be a whole number from 100 to 10000. Ticks in a round: under 100 the rounding of speed shows, 0 divides by 0.']);
-  expect(words({ fight: { kit: { scalerStep: 0 } } })).toEqual(['fight.kit.scalerStep: must be a number from 0.01 to 0.5. The search step of a suggested scale: 0 searches without end.']);
-  expect(words({ rankTable: { E: { dc: [10, 13, 160] } } })).toEqual(['rankTable.E.dc.2: must be a whole number from 1 to 100. A d20 check\'s DC: the S rank\'s hardest is 55, and past 100 no bonus reaches it.']);
+  expect(words({ fight: { round: 0 } })).toEqual(['fight.round: must be a whole number from 100 to 10000. Combat ticks per round. Must be at least 100 to avoid speed rounding errors.']);
+  expect(words({ fight: { kit: { scalerStep: 0 } } })).toEqual(['fight.kit.scalerStep: must be a number from 0.01 to 0.5. Step size used to suggest a conditional damage bonus. Must be above 0.']);
+  expect(words({ rankTable: { E: { dc: [10, 13, 160] } } })).toEqual(['rankTable.E.dc.2: must be a whole number from 1 to 100. DC for a d20 check. The hardest S-rank DC is 55, and nothing can reach past 100.']);
   expect(words({ solo: { pack: [3, 2] }, luck: 1, levelUpRestore: 'yes' })).toEqual(['solo.pack: must go from low to high.', 'Unknown rule: luck', 'levelUpRestore: must be true or false.']);
 });
 
@@ -115,7 +115,7 @@ test('a save whose GM set the apex share to 0.5 loads with 0.55, so a body with 
   const half = { stats: { str: 60, agi: 60, vit: 10, ins: 10, dis: 10, pre: 10, pow: 10, ctl: 10 }, rank: 'S' as const, pair: null, awakened: false };
   expect(keystonesOf(half, R.fight).filter(k => k.tier === 'apex')).toEqual([]);
   expect(parseOverrides({ fight: { keystone: { apexShare: 0.5 } } }).refused.map(refusalWords)).toEqual([
-    'fight.keystone.apexShare: must be a number from 0.51 to 0.9. The share a stat must be over for its apex: at 0.5 two stats could hold one each, past 0.9 a build with any second stat holds none.',
+    'fight.keystone.apexShare: must be a number from 0.51 to 0.9. Share of spent ability points one stat must exceed to earn its apex. Must be above 0.5 so only one stat can qualify.',
   ]);
 });
 

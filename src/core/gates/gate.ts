@@ -187,7 +187,7 @@ export type Countdown = { readonly words: string; readonly tone: 'over' | 'soon'
 /** The one countdown of a gate on `day`, read by the GM's card and a player's: a cleared or closed gate says so, whatever its day. */
 export function countdown(g: Pick<GateFields, 'breakDay'> & ({ status: Exclude<GateStatus, 'cleared'> } | { status: 'cleared'; clearedDay: number }), day: number): Countdown {
   const left = g.breakDay - day, open = g.status === 'detected' || g.status === 'raiding';
-  const words = g.status === 'cleared' ? `Cleared on day ${g.clearedDay}` : g.status === 'closed' ? 'Gate closed' : g.status === 'broken' ? `Broke on day ${g.breakDay}. Monsters are loose`
+  const words = g.status === 'cleared' ? `Cleared on day ${g.clearedDay}` : g.status === 'closed' ? 'Gate closed' : g.status === 'broken' ? `Broke on day ${g.breakDay}. Monsters are loose.`
     : left <= 0 ? 'Breaks today' : `Breaks in ${left} day${left === 1 ? '' : 's'}`;
   return { words, tone: g.status === 'broken' || (open && left <= 0) ? 'over' : open && left <= SOON_DAYS ? 'soon' : null };
 }

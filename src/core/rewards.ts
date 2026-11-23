@@ -204,19 +204,19 @@ const rounds = (n: number | null): string => (n ? ` (${n} round${n === 1 ? '' : 
 const titleWords = (t: RewardTitle): string => `${t.replaces ? `${t.name} (in place of ${t.replaces})` : t.name}${t.worn ? `, ${WORN_WORDS.line(t.worn.label)}` : ''}`;
 /** The reward editor's words for a title's worn status, and the reward line's. */
 export const WORN_WORDS = {
-  label: 'Worn in fights', none: 'None',
+  label: 'Passive status in fights', none: 'None',
   hint: 'While this is the hunter\'s active title, the status is on the hunter in every fight.',
-  line: (status: string): string => `worn in fights: ${status}`,
+  line: (status: string): string => `grants status in fights: ${status}`,
 } as const;
 /** The reward editor's words for a title's active: an ability of the library the hunter may use in a fight. */
 export const ACTIVE_WORDS = {
   label: 'Usable in fights', none: 'None',
-  hint: 'While this is the hunter\'s active title, the hunter can use this ability in a fight. The title keeps its own copy.',
+  hint: 'While this is the hunter\'s active title, they can use this ability in a fight. Editing the skill in your library later will not change this reward.',
 } as const;
 /** The reward editor's words for a title given in another's place. */
 export const REPLACES_WORDS = {
-  label: 'In place of',
-  hint: 'The hunter\'s title of this name becomes this one. If the hunter does not hold it, or this is empty, they get a new title.',
+  label: 'Replaces title (optional)',
+  hint: 'Replaces the hunter\'s existing title with this name. If they do not have it, or if this field is empty, they get a new title.',
 } as const;
 /** A reward status's label: its own def's, else the rules' status of its key, else the key. */
 const labelOf = (R: RewardRules, s: RewardStatus): string => s.def?.label ?? R.conditions[s.key]?.label ?? s.key;
@@ -249,7 +249,7 @@ export function grantLines(R: RewardRules, r: Rewards, more: GrantMore = {}): st
   const out: string[] = [];
   if (r.xp) out.push(amount(r.xp, 'XP'));
   const lost = more.level ? more.level.from - more.level.to : 0;
-  if (more.level && lost > 0) out.push(`Loses ${lost} level${lost === 1 ? '' : 's'}: now level ${more.level.to}`);
+  if (more.level && lost > 0) out.push(`Loses ${lost} level${lost === 1 ? '' : 's'} (now level ${more.level.to})`);
   if (r.gold) out.push(amount(r.gold, 'gold'));
   if (r.points) out.push(amount(r.points, points(r.points)));
   for (const i of r.items) out.push(`Item acquired: ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`);

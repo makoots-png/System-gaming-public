@@ -152,11 +152,11 @@ export function register(app) {
     for (const fx of of('staggered')) { const b = rowOf(fight(), fx.id); if (b) toast(`${b.name} is staggered and loses the next turn.`, 'warning'); }
     for (const fx of of('omen')) { const b = rowOf(fight(), fx.id), o = b && b.mythic && mythicScriptOf(b.mythic.script).omens[fx.omen]; if (b && o) toast(`${b.name} readies ${o.name}.`, 'warning'); }
     for (const fx of of('phased')) { const b = rowOf(fight(), fx.id), p = b && b.mythic && mythicScriptOf(b.mythic.script).phases[fx.phase]; if (p) toast(`Phase ${fx.phase + 1}: ${p.name}.`); }
-    for (const fx of of('answered')) { const said = (fight() ? fight().log : []).slice(0, 4).find(l => /is cancelled\.$|will land as /.test(l.text)); if (said && rowOf(fight(), fx.id)) toast(said.text); }
+    for (const fx of of('answered')) { const said = (fight() ? fight().log : []).slice(0, 4).find(l => /is canceled\.$|will land as /.test(l.text)); if (said && rowOf(fight(), fx.id)) toast(said.text); }
     for (const fx of asked ? [] : of('refused')) toast(REFUSAL_WORDS[fx.reason], 'warning');
     if (of('burst').length) lastBurst = { n: (lastBurst ? lastBurst.n : 0) + 1, ids: of('burst').map(x => x.id) };
     showEffects(effects, hpWas, readyWas);
-    if (of('ended').length && !cmds.some(x => x.type === 'end')) toast('The fight is over. End fight shows the summary.');
+    if (of('ended').length && !cmds.some(x => x.type === 'end')) toast('The fight is over. Tap End fight to see the summary.');
     return effects;
   }
   const refused = fx => fx.some(x => x.type === 'refused');
@@ -237,7 +237,7 @@ export function register(app) {
 
   // S06/F07: another GM device is already running the room's fight; replacing it needs a confirm.
   const otherGMLive = () => { const d = inRoomAsGM() && !fight() && A().sync.doc('fight'); const me = store.get().settings.deviceId; return !!(d && d.active && !d.ended && d.by && d.by !== me); };
-  const confirmReplace = () => ui.confirm({ title: 'A fight runs elsewhere', body: 'Another GM device is running a fight. Replace it?', danger: true, confirmLabel: 'Replace' });
+  const confirmReplace = () => ui.confirm({ title: 'Fight running on another device', body: 'Another GM device is running a fight. Replace it?', danger: true, confirmLabel: 'Replace' });
 
   /**
    * Rows join: a new fight in setup when there is none; while it runs each joins at its opening roll. `gate` links a new
@@ -326,10 +326,10 @@ export function register(app) {
     let aim = row.id;
     if (a.aim !== 'self') {
       const list = aims(spots(f), row.id, a, f.grid).filter(x => x.inRange && x.inShape);
-      if (!list.length) { toast(`Nobody in reach of ${a.name}. Step toward a foe first.`, 'warning'); return; }
+      if (!list.length) { toast(`Nobody in range of ${a.name}. Move closer to ${a.aim === 'ally' ? 'an ally' : 'a foe'} first.`, 'warning'); return; }
       const first = picks.get(row.id), sorted = [...list.filter(x => x.target.id === first), ...list.filter(x => x.target.id !== first)];
       if (b) b.disabled = true;
-      const id = await ui.system({ tag: '! Combat', title: `Use ${a.name} on…`, layout: 'list',
+      const id = await ui.system({ tag: '! Fight', title: `Use ${a.name} on…`, layout: 'list',
         actions: [...sorted.map((x, i) => ({ label: `${x.target.name} · ${x.dist} tile${x.dist === 1 ? '' : 's'}`, value: x.target.id, primary: i === 0 })), { label: 'Cancel', value: null, cancel: true }] });
       if (b) b.disabled = false;
       const t = id ? list.find(x => x.target.id === id) : null; if (!t) return;
@@ -426,7 +426,7 @@ export function register(app) {
     if (!adjust(r, { hp: heal ? a.n : -a.n })) return;
     const f = fight(), x = rowOf(f, r.id), after = x ? cardOf(f, x, rules()).hp : before;
     amounts.delete(r.id); if (inp) { inp.value = ''; inp.focus(); }
-    say(`${r.name} ${heal ? 'healed' : 'took'} ${Math.abs(after - before)} (asked ${a.n}). HP ${after}.`);
+    say(`${r.name} ${heal ? 'healed' : 'took'} ${Math.abs(after - before)} HP (entered ${a.n}). Current HP: ${after}.`);
   }
   const amounts = new Map();
   const $live = () => root && root.querySelector('[data-amtlive]');
@@ -461,7 +461,7 @@ export function register(app) {
     const lines = plan.dead.length || shown.banked ? plan.dead.map(r => `${r.name}: ${ui.fmt(r.xp)} XP`) : ['No monsters were defeated.'];
     if (shown.banked) lines.push(`Monsters removed from the fight: ${ui.fmt(shown.banked)} XP`);
     lines.push(`Total XP: ${ui.fmt(plan.xp)}`);
-    if (plan.covered) lines.push('The gate\'s XP is already paid.');
+    if (plan.covered) lines.push('The gate\'s XP has already been awarded.');
     else if (nPart) lines.push(`Each hunter receives ${ui.fmt(plan.each)} XP${plan.shared ? `, a share of the gate's XP for ${nPart} hunter${nPart === 1 ? '' : 's'}` : ''}.`);
     // what the defeated monsters drop (their bestiary entry's loot): listed here, given by the GM through the Award form
     const loot = lootOf(plan.dead.flatMap(r => { const m = links.monsters[r.id] ? A().bestiary.get(links.monsters[r.id]) : null; return m ? [m.loot] : []; }));
@@ -491,8 +491,8 @@ export function register(app) {
     if (pays(done, v) && remote.length && !settled.granted.length) {
       const names = remote.map(x => x.name).join(', '), s = remote.length === 1 ? 's' : '';
       const news = postNews(posts.events.length ? { ok: true } : { ok: false, why: posts.room ? 'notEvent' : 'noRoom' }, S.conn());
-      toast(news === 'sent' ? `XP sent to ${names}.` : news === 'waits' ? `${names} get${s} the XP when the room answers.`
-        : news === 'noRoom' ? `${names} need${s} a room for the XP: open one with the room button at the top.` : `Not sent to ${names}: the room would not take this award.`, news === 'sent' || news === 'waits' ? 'info' : 'warning');
+      toast(news === 'sent' ? `XP sent to ${names}.` : news === 'waits' ? `Saved. ${names} will get the XP once the room server confirms it.`
+        : news === 'noRoom' ? `${names} need${s} to be in a room to get XP. Use the room button at the top to create or reopen one.` : `Could not send XP to ${names}. The room server rejected the award.`, news === 'sent' || news === 'waits' ? 'info' : 'warning');
     }
     await party;
     await offerDrop();
@@ -506,8 +506,8 @@ export function register(app) {
     for (;;) {
       const loot = store.get().loot, d = lootOffered(loot); if (!d || !app.isGM()) return;
       const more = loot.at === 'waiting' ? loot.drops.length - 1 : 0;
-      const after = more ? ` The loot of ${more} more fight${more === 1 ? '' : 's'} waits after it.` : '';
-      const give = await ui.system({ tag: '! Fight', title: 'Loot dropped', kind: 'quest', body: `Award loot opens the Award form with it. Set aside gives it to nobody.${after}`, lines: [lootText(d)],
+      const after = more ? ` Loot from ${more} more fight${more === 1 ? '' : 's'} is waiting after this.` : '';
+      const give = await ui.system({ tag: '! Fight', title: 'Loot dropped', kind: 'quest', body: `Tap Award loot to open the Award form with this loot. Tap Set aside to skip awarding it.${after}`, lines: [lootText(d)],
         actions: [{ label: 'Later', value: null, cancel: true }, { label: 'Set aside', value: 'aside' }, { label: 'Award loot…', value: 'award', primary: true }] });
       // the Award form opens the drop this window offered, the oldest (gm.js `award.open`)
       if (give === 'award') return A().award.open({ ...newRewards(), gold: d.gold, items: d.items }, undefined, true);
@@ -530,9 +530,9 @@ export function register(app) {
       const r = A().hunter.granted(hid, g, { silent: true, popup: false });
       lines.push(`${h.name}: ${r.lines.join(', ') || 'no rewards'}`);
       const up = r.levelup && r.levelup.to ? r.levelup : null;
-      if (up) ups.push(`${h.name}: LEVEL UP → Lv ${up.to}${up.points > 0 ? ` (+${up.points} points)` : ''}`);
+      if (up) ups.push(`${h.name}: LEVEL UP → Lv ${up.to}${up.points > 0 ? ` (+${up.points} ability point${up.points === 1 ? '' : 's'})` : ''}`);
     }
-    return ui.system({ tag: '! Notification', kind: ups.length ? 'levelup' : 'quest', title: o.title || 'Party Rewards', body: o.body || '', lines: [...lines, ...ups],
+    return ui.system({ tag: '! Notification', kind: ups.length ? 'levelup' : 'quest', title: o.title || 'Party rewards', body: o.body || '', lines: [...lines, ...ups],
       actions: [{ label: 'Close', value: true, primary: true }] }).then(() => undefined);
   }
 
@@ -810,7 +810,7 @@ export function register(app) {
         fx = send({ type: 'zoneAdd', zone: { id: zoneId(store.id('z')), name: z.name, tiles, spares: z.spares, tier: z.tier, duration: z.until === null ? null : tick(Math.max(1, z.until - timeOf(f))), ops: z.ops } });
       }
       const no = fx.find(x => x.type === 'refused');
-      if (no && no.type === 'refused') toast(no.reason === 'taken' ? 'Someone stands there.' : no.reason === 'tooMany' ? `The map holds ${MAX_ZONES} fields at most.` : 'Nothing to change there.');
+      if (no && no.type === 'refused') toast(no.reason === 'taken' ? 'Someone is standing on that tile.' : no.reason === 'tooMany' ? `A map can have at most ${MAX_ZONES} fields.` : 'Nothing to change there.');
     },
     move: (to, dash) => { const c = cur(); if (c) send({ type: 'move', by: c.id, to, ...(dash ? { dash: true } : {}) }); },
     place: (id, to) => { send({ type: 'place', id, to }); },
@@ -842,20 +842,20 @@ export function register(app) {
    */
   const cardTemplate = ro => `<div data-attr="class:cls data-cid:key">
       <h3 data-part="head"></h3>
-      <div class="cmb-stats"><span>Speed <span data-text="speed"></span></span><span data-armor>Armor <span data-text="armor"></span></span><span>Resist <span data-text="resist"></span></span><span>Stride <span data-text="stride"></span></span><span data-show="shield">Shield <span data-text="shield"></span> · <span data-text="shieldLeft"></span> rounds</span></div>
+      <div class="cmb-stats"><span>Speed <span data-text="speed"></span></span><span data-armor>Armor <span data-text="armor"></span></span><span>Resist <span data-text="resist"></span></span><span>Move per step <span data-text="stride"></span></span><span data-show="shield">Shield <span data-text="shield"></span> · <span data-text="shieldLeftText"></span></span></div>
       ${ro ? '' : '<div class="slot" data-part="fudgeLine"></div>'}
       <div class="bar-row"><div class="bar-head"><span class="lbl">HP</span><span class="bar-nums"><span data-num="hp"></span> / <span data-text="hpMax"></span></span></div>
         <div class="cmb-hpwrap"><div class="bar bar-hp" data-fill="hpF">${motion.fillMarkup(0)}</div><div class="bar bar-shield" data-show="shieldF" data-fill="shieldF" aria-hidden="true">${motion.fillMarkup(0)}</div></div></div>
-      <div class="bar-row" data-show="staggerF"><div class="bar-head"><span class="lbl">Stagger</span><span class="bar-nums"><b class="cmb-stg" data-show="staggered">Staggered · loses <span data-text="staggered"></span> rounds</b><span data-num="staggerFill"></span> / <span data-text="staggerMax"></span></span></div><div class="bar bar-stagger" data-fill="staggerF">${motion.fillMarkup(0)}</div></div>
+      <div class="bar-row" data-show="staggerF"><div class="bar-head"><span class="lbl">Stagger</span><span class="bar-nums"><b class="cmb-stg" data-show="staggered">Staggered · loses <span data-text="staggeredText"></span></b><span data-num="staggerFill"></span> / <span data-text="staggerMax"></span></span></div><div class="bar bar-stagger" data-fill="staggerF">${motion.fillMarkup(0)}</div></div>
       <div class="slot" data-part="xtra"></div>
       ${bar('mp', 'Mana', 'mana')}
       ${bar('fat', 'Fatigue', 'fatigue')}
       ${ro ? '<div class="lbl">Statuses</div><p data-text="condText"></p>' : `<div class="cmb-line">
-        <label class="field sm"><span class="lbl">HP amount</span><input type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" spellcheck="false" placeholder="7 or +5" title="Enter = damage, Shift+Enter or +N = heal" aria-keyshortcuts="d" data-fk="amt" data-amt></label>
+        <label class="field sm"><span class="lbl" data-text="amtLabel">HP amount</span><input type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" spellcheck="false" placeholder="7 or +5" title="Press Enter to deal damage. Type +5 or press Shift+Enter to heal." aria-keyshortcuts="d" data-fk="amt" data-amt></label>
         <button type="button" class="danger" data-fk="dmg" data-dmg>Damage</button><button type="button" data-fk="heal" data-heal>Heal</button>
         <span class="slot" data-part="manaBtns"></span>
       </div>
-      <div class="cmb-quick" aria-label="Quick damage and heal">${[-1, -5, -10, 5, 10].map(quick).join('')}</div>
+      <div class="cmb-quick" aria-label="Quick damage and heal"><span class="lbl">Quick HP</span>${[-1, -5, -10, 5, 10].map(quick).join('')}</div>
       <div class="slot" data-part="actions"></div>
       <div class="lbl">Statuses</div><div class="cmb-conds" data-part="conds"></div><ul class="cmb-fx" data-part="fx" data-attr="hidden:noFx"></ul>
       <div class="cmb-line"><button type="button" data-fk="cforge" data-cforge title="Add status (S)" aria-keyshortcuts="s">+ Status</button></div>
@@ -871,7 +871,7 @@ export function register(app) {
    * @param {Body} r
    */
   function lifeActHtml(r) {
-    if (isUp(r)) return '<button type="button" data-fk="defeat" data-defeat>Mark defeated</button>';
+    if (isUp(r)) return `<button type="button" data-fk="defeat" data-defeat>${r.kind === 'hunter' ? 'Mark dead' : 'Mark defeated'}</button>`;
     if (rowLifeTakes(r, 'revive')) return '<button type="button" class="primary" data-fk="revive" data-revive>Revive</button>';
     return '';
   }
@@ -888,9 +888,13 @@ export function register(app) {
       ...Object.fromEntries(Object.entries(k).filter(([, v]) => v === null || typeof v !== 'object')),
       key: r.id, cls: `cmb-card${now ? ' turn' : ''}`,
       head: `${pic ? icon(pic) : ''}${esc(r.name)} ${ui.rankBadge(rankOf(r))}
-        ${now ? '<span class="cmb-tag now">Current turn</span>' : ''}<span class="cmb-tag">${esc(r.kind)}</span>${remote ? '<span class="cmb-tag now">remote</span>' : ''}${tag}`,
+        ${now ? '<span class="cmb-tag now">Current turn</span>' : ''}<span class="cmb-tag">${esc(r.kind)}</span>${remote ? '<span class="cmb-tag now">player phone</span>' : ''}${tag}`,
       staggerF: k.stagger ? share(k.stagger.fill, k.stagger.max) : null, staggerFill: k.stagger ? k.stagger.fill : 0, staggerMax: k.stagger ? k.stagger.max : 0,
-      staggered: k.stagger ? k.stagger.staggered : null, shieldF: k.shield !== null ? share(k.shield, k.hpMax) : null,
+      staggered: k.stagger ? k.stagger.staggered : null,
+      staggeredText: k.stagger && k.stagger.staggered != null ? `${k.stagger.staggered} round${k.stagger.staggered === 1 ? '' : 's'}` : '',
+      shieldF: k.shield !== null ? share(k.shield, k.hpMax) : null,
+      shieldLeftText: k.shieldLeft != null ? `${k.shieldLeft} round${k.shieldLeft === 1 ? '' : 's'}` : '',
+      amtLabel: k.manaMax > 0 ? 'HP / Mana' : 'HP amount',
       xtra: extrasHtml(f, r, k, ro),
       hpF: share(k.hp, k.hpMax), manaF: k.manaMax > 0 ? share(k.mana, k.manaMax) : null, fatigueF: k.fatigueMax > 0 ? share(k.fatigue, k.fatigueMax) : null,
     };
@@ -907,7 +911,7 @@ export function register(app) {
           return `<button type="button" class="cmb-ab" data-fk="ab-${esc(a.id)}" data-ab="${esc(a.id)}" aria-label="${wait ? `${esc(a.name)}, ${wait}` : `Use ${esc(a.name)}`}"${wait ? ' disabled' : ''}>${esc(label)}${wait ? `<small data-wait> · ${wait}</small>` : ''}</button>`;
         }).join('')}</div>
           ${foes.length ? `<div class="cmb-line"><label class="field row-full"><span class="lbl">Move</span><select data-fk="target" data-target>${foes.map(x => `<option value="${esc(x.target.id)}"${foe && foe.target.id === x.target.id ? ' selected' : ''}>${esc(x.target.name)} · ${x.dist} tile${x.dist === 1 ? '' : 's'}</option>`).join('')}</select></label>
-          <button type="button" data-fk="toward" data-toward${toward ? '' : ' disabled'} aria-label="Step toward ${esc(foe ? foe.target.name : '')}">Toward</button><button type="button" data-fk="away" data-away${away ? '' : ' disabled'} aria-label="Step away from ${esc(foe ? foe.target.name : '')}">Away</button></div>` : ''}`;
+          <button type="button" data-fk="toward" data-toward${toward ? '' : ' disabled'} aria-label="Step toward ${esc(foe ? foe.target.name : '')}">Step toward</button><button type="button" data-fk="away" data-away${away ? '' : ' disabled'} aria-label="Step away from ${esc(foe ? foe.target.name : '')}">Step away</button></div>` : ''}`;
       }
     }
     const monsterId = refs().monsters[r.id], entry = monsterId ? A().bestiary.get(monsterId) : null;
@@ -922,7 +926,7 @@ export function register(app) {
       // a status opens what it does under the chips (app.api.detail); its x takes it off
       conds: k.statuses.map(s => `<span class="chip${s.stacks ? ' stk' : ''}" data-chip="${esc(s.key)}"><button type="button" class="c-info" data-fk="ci-${esc(s.key)}"${A().detail.control('gm-card', `${r.id}|${s.key}`)}><span class="c-ic">${icon(statusIcon(s.key, s.def))}</span>${esc(s.def.label)}${s.stacks ? ` <b class="c-n" data-stacks="${s.stacks}" data-sk="${esc(`${r.id}:${s.key}`)}">${s.stacks}</b>` : ''}${s.def.end && s.rounds != null ? ` · in ${s.rounds} round${s.rounds === 1 ? '' : 's'}` : roundsText(s)}</button><button type="button" data-fk="rc-${esc(s.key)}" data-rc="${esc(s.key)}" aria-label="Remove ${esc(s.def.label)}">✕</button></span>`
         + A().detail.panel('gm-card', `${r.id}|${s.key}`, () => ({ kind: 'status', label: s.def.label, def: s.def, tier: s.source.tier, ...(s.stacks ? { stacks: s.stacks } : {}), left: s.rounds }))).join('') || '<span class="empty">No statuses.</span>',
-      fx: glance.map(([l, L]) => `<li><b>${esc(l)}</b>: ${esc(L.join('; '))}</li>`).join(''), noFx: !glance.length,
+      fx: glance.map(([l, L]) => `<li><b>${esc(l)}</b>: ${esc(L.join(', '))}</li>`).join(''), noFx: !glance.length,
       lifeAct: lifeActHtml(r),
       extract: extractors.map(x => `<button type="button" data-fk="extract-${esc(x.row.id)}" data-extract="${esc(x.row.id)}">${extractors.length > 1 ? `Extract (${esc(x.h.name)})` : 'Extract'}</button>`).join(''),
       removeLabel: `Remove ${r.name} from the fight`,
@@ -943,11 +947,11 @@ export function register(app) {
       const on = r.armed ? r.armed.ability : '', armedA = reacts.find(a => a.id === on), others = waitChoices(spots(f), r.id);
       const before = armedA && armedA.react.when === 'turn' && r.armed.on
         ? `<label class="field row-full"><span class="lbl">${esc(WAIT_WORDS.label)}</span><select data-fk="garm-on" data-garm-on>${others.map(x => `<option value="${esc(x.id)}"${x.id === r.armed.on ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>` : '';
-      out.push(`<div class="cmb-x react"><span>Reaction</span><div class="seg" role="group" aria-label="Reaction of ${esc(r.name)}">${[{ id: '', name: 'None' }, ...reacts].map(a => `<button type="button" data-fk="garm-${esc(a.id)}" data-garm="${esc(a.id)}" aria-pressed="${on === a.id}">${esc(a.name)}</button>`).join('')}</div>${r.armed ? `<b>${r.armed.spent ? 'Spent' : 'Ready'}</b>` : ''}${before}</div>`);
+      out.push(`<div class="cmb-x react"><span>Reaction</span><div class="seg" role="group" aria-label="Reaction of ${esc(r.name)}">${[{ id: '', name: 'No reaction' }, ...reacts].map(a => `<button type="button" data-fk="garm-${esc(a.id)}" data-garm="${esc(a.id)}" aria-pressed="${on === a.id}">${esc(a.name)}</button>`).join('')}</div>${r.armed ? `<b>${r.armed.spent ? 'Spent' : 'Ready'}</b>` : ''}${before}</div>`);
     }
     if (r.kind === 'summon') { const o = r.owner && rowOf(f, r.owner), left = k.summon; out.push(`<div class="cmb-x summon">Summoned by <b>${esc(o ? o.name : 'someone')}</b>${left !== null ? ` · ${left} round${left === 1 ? '' : 's'} left` : ''}</div>`); }
     const c = k.channel;
-    if (c) out.push(`<div class="cmb-x chan">${c.state === 'broken' ? 'Channel broken' : 'Channeling'} <b>${esc(c.name)}</b><span class="cmb-pips" data-charge="${c.charge}" aria-label="Charge ${c.charge} of ${c.max}">${Array.from({ length: c.max }, (_, i) => `<i${i < c.charge ? ' class="on"' : ''}></i>`).join('')}</span><span>×${c.factor}</span></div>`);
+    if (c) out.push(`<div class="cmb-x chan">${c.state === 'broken' ? 'Channel broken' : 'Channeling'} <b>${esc(c.name)}</b><span class="cmb-pips" data-charge="${c.charge}" aria-label="Charge ${c.charge} of ${c.max}">${Array.from({ length: c.max }, (_, i) => `<i${i < c.charge ? ' class="on"' : ''}></i>`).join('')}</span><span>Power ×${c.factor}</span></div>`);
     if (k.taunt) out.push(`<div class="cmb-x taunt">Taunted by <b>${esc(name(k.taunt.by))}</b>${k.taunt.left !== null ? ` · ${k.taunt.left} round${k.taunt.left === 1 ? '' : 's'}` : ''}</div>`);
     if (r.kind === 'monster') {
       const i = k.intent;
@@ -965,14 +969,14 @@ export function register(app) {
   /** The GM announces `r`'s next action: an ability, then a target among the rows its side would aim at (fight-view.ts `aims`). */
   async function setIntent(r) {
     const f = fight(); if (!f) return;
-    const aid = await ui.system({ tag: '! Combat', title: `${r.name} will use…`, layout: 'list',
+    const aid = await ui.system({ tag: '! Fight', title: `${r.name} will use…`, layout: 'list',
       actions: [...r.abilities.map((a, i) => ({ label: a.name, value: a.id, primary: i === 0 })), { label: 'Cancel', value: null, cancel: true }] });
     const a = aid && r.abilities.find(x => x.id === aid); if (!a) return;
     let aim = r.id;
     if (a.aim !== 'self') {
       const list = aims(spots(f), r.id, a, f.grid);
-      if (!list.length) { toast('Nobody to aim it at.', 'warning'); return; }
-      const id = await ui.system({ tag: '! Combat', title: `${a.name} at…`, layout: 'list',
+      if (!list.length) { toast('No valid targets.', 'warning'); return; }
+      const id = await ui.system({ tag: '! Fight', title: `${a.name} at…`, layout: 'list',
         actions: [...list.map((x, i) => ({ label: `${x.target.name} · ${x.dist} tile${x.dist === 1 ? '' : 's'}`, value: x.target.id, primary: i === 0 })), { label: 'Cancel', value: null, cancel: true }] });
       const t = id ? list.find(x => x.target.id === id) : null; if (!t) return;
       aim = a.aim === 'place' ? t.target.place : t.target.id;
@@ -995,7 +999,7 @@ export function register(app) {
       cls: `cmb-row${now ? ' cur' : ''}${fc && r.id === fc.id ? ' sel' : ''}${k.down ? ` down ${r.life.at}` : ''}`,
       label: `Select ${r.name}${now ? ', current turn' : ''}${word ? `, ${word}` : ''}`,
       init: running(f) && !k.down ? String(i + 1) : '',
-      lead: `<span class="cmb-nm">${now ? '▶ ' : ''}${badge || (pic ? icon(pic) : '')}${esc(r.name)}${isRemote(r) ? ' <small>(remote)</small>' : ''}</span>${cs ? `<span class="cmb-cs">${esc(cs)}</span>` : ''}${word ? `<span class="cmb-dn lw" data-life-at="${r.life.at}">${esc(word)}</span>` : ''}`,
+      lead: `<span class="cmb-nm">${now ? '▶ ' : ''}${badge || (pic ? icon(pic) : '')}${esc(r.name)}${isRemote(r) ? ' <small>(player phone)</small>' : ''}</span>${cs ? `<span class="cmb-cs">${esc(cs)}</span>` : ''}${word ? `<span class="cmb-dn lw" data-life-at="${r.life.at}">${esc(word)}</span>` : ''}`,
       hp: `${k.hp}/${k.hpMax}`, f: share(k.hp, k.hpMax),
     };
   }
@@ -1003,7 +1007,7 @@ export function register(app) {
   function mount(el) {
     root = el;
     A().detail.wire(el, render);
-    el.innerHTML = `<section class="win" aria-label="Combat tracker"><span class="cb"></span><h2>Combat</h2>
+    el.innerHTML = `<section class="win" aria-label="Fight tracker"><span class="cb"></span><h2>Fight</h2>
       <div class="cmb-bar" data-bar><div class="slot" data-part="head"></div><div class="slot" data-part="acts"></div></div>
       <p class="hp-amt-msg" data-amtlive role="status" aria-live="polite"></p>
       <div class="myth" data-mythic aria-label="Mythic"></div>
@@ -1011,7 +1015,7 @@ export function register(app) {
       <div class="cmb-tools" data-tools aria-label="Fight tools"><div class="cmb-toolshead"><b>Fight tools</b><span class="slot" data-toolacts></span><button type="button" class="quiet" data-toolsx>Close</button></div>
       <div class="cmb-fudge" data-fudge hidden></div>
       <div class="cmb-mythsw" data-mythsw hidden></div>
-      <div class="cmb-eyes" data-eyesrow hidden><span class="lbl" aria-hidden="true">See as</span><div class="seg" role="group" aria-label="See as" data-eyesseg></div></div>
+      <div class="cmb-eyes" data-eyesrow hidden><span class="lbl" aria-hidden="true">View map as</span><div class="seg" role="group" aria-label="View map as" data-eyesseg></div></div>
       <div data-buildwrap><details class="cmb-build" data-build open><summary>Add to the fight</summary><div class="cmb-bgrid">
         <fieldset><legend>Party hunters</legend><div class="add-row flush">
           <label class="field grow"><span class="lbl">Hunter</span><select data-hsel></select></label>
@@ -1023,8 +1027,8 @@ export function register(app) {
         <fieldset><legend>Summoned shadows</legend><div class="add-row flush">
           <label class="field grow"><span class="lbl">Shadow</span><select data-ssel></select></label>
           <button type="button" data-adds>Add shadow</button></div></fieldset>
-        <fieldset class="cmb-wide"><legend>Quick line</legend><form class="add-row flush" data-qform>
-          <label class="field grow"><span class="lbl">Quick line (name x3, rank, archetype)</span><input type="text" maxlength="200" data-qline placeholder="Mantis Drone x3, C, skirmisher" autocomplete="off"></label>
+        <fieldset class="cmb-wide"><legend>Quick add</legend><form class="add-row flush" data-qform>
+          <label class="field grow"><span class="lbl">Quick add (example: Goblin x3, E, skirmisher)</span><input type="text" maxlength="200" data-qline placeholder="Mantis Drone x3, C, skirmisher" autocomplete="off"></label>
           <button type="submit" class="primary" data-qadd>Add</button></form><p class="cmb-qerr" role="alert" data-qerr hidden></p></fieldset>
       </div></details></div>
       <div data-odds hidden></div>
@@ -1074,7 +1078,7 @@ export function register(app) {
       if (b.hasAttribute('data-odds-ask') || b.hasAttribute('data-odds-stop')) return; // the odds box's own (odds-box.js)
       if (b.dataset.resize && f) { // the map's size in a fight under way (design 4.8): the fight refuses to cut anyone off
         const k = b.dataset.resize, d = Number(b.dataset.d), no = send({ type: 'resize', w: f.grid.w + (k === 'w' ? d : 0), h: f.grid.h + (k === 'h' ? d : 0) }).find(x => x.type === 'refused');
-        if (no && no.type === 'refused') toast(no.reason === 'cutOff' ? 'Someone stands there, or a move is aimed there: the map cannot shrink past it.' : no.reason === 'offGrid' ? `A map is ${MAP_BOUNDS.size[0]} to ${MAP_BOUNDS.size[1]} tiles a side.` : 'Nothing to change.');
+        if (no && no.type === 'refused') toast(no.reason === 'cutOff' ? 'Cannot shrink the map past a combatant or targeted tile.' : no.reason === 'offGrid' ? `Map sides must be between ${MAP_BOUNDS.size[0]} and ${MAP_BOUNDS.size[1]} tiles.` : 'Nothing to change.');
         return;
       }
       if (b.matches('[data-addh],[data-addparty],[data-addm],[data-adds]') && otherGMLive() && !(await confirmReplace())) return;
@@ -1107,7 +1111,7 @@ export function register(app) {
       if (b.hasAttribute('data-next')) return next();
       if (b.hasAttribute('data-end')) { overTo({ at: 'none' }); return endEncounter(); }
       if (b.hasAttribute('data-clear')) {
-        if (await ui.confirm({ title: 'Clear the fight?', body: 'Everyone in it and its log are removed. Nobody gets XP.', danger: true, confirmLabel: 'Clear' })) { send({ type: 'clear' }); sel = null; }
+        if (await ui.confirm({ title: 'Clear the fight?', body: 'This removes everyone and clears the fight log. Nobody gets XP.', danger: true, confirmLabel: 'Clear' })) { send({ type: 'clear' }); sel = null; }
         return;
       }
       if (b.hasAttribute('data-addh')) {
@@ -1216,18 +1220,18 @@ export function register(app) {
    */
   function fudgeBlock(f) {
     if (!f || f.phase === 'ended' || !f.rows.length) return '';
-    return `<span class="lbl">Fudge${fudgeShown(f) ? '<i class="cmb-fdot" aria-hidden="true"></i><span class="sr-only"> on</span>' : ''}</span>`
-      + `<div class="cmb-fgroup" role="group" aria-label="Fudge">${weightStepper('Hunters', f.fudge.sides.party, 'data-fudge-side="party"', 'the hunters')}${weightStepper('Foes', f.fudge.sides.foe, 'data-fudge-side="foe"', 'the foes')}</div>`;
+    return `<span class="lbl">Fudge on dice rolls${fudgeShown(f) ? '<i class="cmb-fdot" aria-hidden="true"></i><span class="sr-only"> on</span>' : ''}</span>`
+      + `<div class="cmb-fgroup" role="group" aria-label="Fudge on dice rolls">${weightStepper('All hunters\' rolls', f.fudge.sides.party, 'data-fudge-side="party"', 'all hunters')}${weightStepper('All foes\' rolls', f.fudge.sides.foe, 'data-fudge-side="foe"', 'all foes')}</div>`;
   }
-  /** The line at the top of a card while its row has a weight or a forced next roll: "Fudge +2", "Next roll 20". */
+  /** The line at the top of a card while its row has a weight or a forced next roll: "Fudge +2", "Next d20 forced: 20". */
   const fudgeLine = k => (k.fudge !== 0 || k.forced !== null
-    ? `<div class="cmb-x" data-fudgeline>${k.fudge !== 0 ? `<b>Fudge ${signed(k.fudge)}</b>` : ''}${k.forced !== null ? `<b>Next roll ${k.forced}</b>` : ''}</div>` : '');
-  /** A card's own controls: the row's stepper and its Next roll choice. */
+    ? `<div class="cmb-x" data-fudgeline>${k.fudge !== 0 ? `<b>Fudge ${signed(k.fudge)}</b>` : ''}${k.forced !== null ? `<b>Next d20 forced: ${k.forced}</b>` : ''}</div>` : '');
+  /** A card's own controls: the row's stepper and its Force next d20 choice. */
   function fudgeCard(r, k) {
-    const face = [[20, '20'], [1, '1'], [null, 'Off']];
-    return `<div class="cmb-fgroup">${weightStepper('Fudge', k.fudgeOwn, `data-fudge-row="${esc(r.id)}"`, r.name)}</div>`
-      + `<div class="cmb-x"><span>Next roll</span><div class="seg" role="group" aria-label="Next roll of ${esc(r.name)}">${face.map(([v, l]) =>
-        `<button type="button" data-fk="fz-${l}" data-fudge-force="${esc(r.id)}" data-face="${v ?? ''}" aria-pressed="${k.forced === v}">${l}</button>`).join('')}</div></div>`;
+    const face = [[20, 'Natural 20', '20'], [1, 'Natural 1', '1'], [null, 'Don\'t force', 'Off']];
+    return `<div class="cmb-fgroup">${weightStepper(`Fudge on ${r.name}'s rolls`, k.fudgeOwn, `data-fudge-row="${esc(r.id)}"`, r.name)}</div>`
+      + `<div class="cmb-x"><span>Force ${esc(r.name)}'s next d20</span><div class="seg" role="group" aria-label="Force ${esc(r.name)}'s next d20">${face.map(([v, l, fk]) =>
+        `<button type="button" data-fk="fz-${fk}" data-fudge-force="${esc(r.id)}" data-face="${v ?? ''}" aria-pressed="${k.forced === v}">${l}</button>`).join('')}</div></div>`;
   }
 
   /**
@@ -1243,8 +1247,8 @@ export function register(app) {
   function barDesc(f, gm, elsewhere, mapMode, tools) {
     const n = f ? f.rows.length : 0, act = running(f), turn = act ? order(f, 8, rules()) : [];
     const head = act ? `Round ${turn.length ? turn[0].round : 1}<small>Turn: ${esc(turn.length ? turn[0].row.name : '-')}</small><small data-ahead>Next: ${turn.slice(1).map(t => esc(t.row.name)).join(' → ') || '-'}</small>`
-      : f && f.phase === 'ended' ? 'Fight over<small>End fight shows the summary</small>'
-        : n ? 'Ready to fight<small>Start fight to begin</small>' : 'No fight<small>Add hunters and monsters below</small>';
+      : f && f.phase === 'ended' ? 'Fight over<small>Tap End fight to see the summary</small>'
+        : n ? 'Ready to fight<small>Tap Start fight to begin</small>' : 'No fight<small>Add hunters and monsters below</small>';
     if (!gm) return n ? { tools: '', head: `${elsewhere}<div class="cmb-head">${head}<small>View only: the GM runs the fight.</small></div>`, acts: '<button type="button" data-dismiss data-localdismiss>Dismiss this fight</button>' }
       : { tools: '', head: `${elsewhere}<p class="empty" data-idle>The GM is not running a fight.</p>`, acts: '' };
     const seg = n && f.phase !== 'ended' ? `<div class="seg cmb-view" role="group" aria-label="Fight view">${FIGHT_VIEWS.map(v => `<button type="button" data-fk="fv-${v}" data-fview="${v}" aria-pressed="${fightView() === v}">${v === 'map' ? 'Map' : 'List'}</button>`).join('')}</div>` : '';
@@ -1253,16 +1257,16 @@ export function register(app) {
         head: `${elsewhere}<div class="cmb-head">Round ${turn.length ? turn[0].round : 1}</div>`,
         acts: `${seg}<button type="button" data-fk="tools" data-tools-open aria-expanded="${tools}"${fudgeShown(f) ? ' aria-label="Fight tools, fudge on"' : ''}>Fight tools${fudgeShown(f) ? '<i class="cmb-fdot" aria-hidden="true"></i>' : ''}</button>
         <button type="button" class="primary" data-fk="next" data-next aria-label="Next turn" title="Next turn (N)" aria-keyshortcuts="n">Next ▶</button>`,
-        tools: `${sizeSteps(f)}<button type="button" data-fk="end" data-end>End fight</button><button type="button" class="danger" data-fk="clear" data-clear aria-label="Clear the fight">Clear</button>`,
+        tools: `${sizeSteps(f)}<button type="button" data-fk="end" data-end>End fight</button><button type="button" class="danger" data-fk="clear" data-clear aria-label="Clear the fight">Clear fight</button>`,
       };
     }
     return {
       tools: '',
       head: `${elsewhere}<div class="cmb-head">${head}</div>`,
-      acts: `${seg}${f && f.phase === 'setup' && n ? `<div class="seg cmb-surp" role="group" aria-label="Surprised">${[['', 'None'], ['party', 'The party'], ['foe', 'The foes']].map(([v, l]) => `<button type="button" data-fk="surp-${v || 'none'}" data-surp="${v}" aria-pressed="${(surprised || '') === v}">${l}</button>`).join('')}</div>` : ''}${f && f.phase === 'setup' ? `<button type="button" class="primary" data-fk="start" data-start${n ? '' : ' disabled'}>Start fight</button>` : ''}
+      acts: `${seg}${f && f.phase === 'setup' && n ? `<div class="seg cmb-surp" role="group" aria-label="Surprised">${[['', 'No surprise'], ['party', 'Party surprised'], ['foe', 'Foes surprised']].map(([v, l]) => `<button type="button" data-fk="surp-${v || 'none'}" data-surp="${v}" aria-pressed="${(surprised || '') === v}">${l}</button>`).join('')}</div>` : ''}${f && f.phase === 'setup' ? `<button type="button" class="primary" data-fk="start" data-start${n ? '' : ' disabled'}>Start fight</button>` : ''}
       ${act ? '<button type="button" class="primary" data-fk="next" data-next aria-label="Next turn" title="Next turn (N)" aria-keyshortcuts="n">Next ▶</button>' : ''}
       <button type="button" data-fk="end" data-end${n ? '' : ' disabled'}>End fight</button>
-      <button type="button" class="danger" data-fk="clear" data-clear aria-label="Clear the fight"${f ? '' : ' disabled'}>Clear</button>`,
+      <button type="button" class="danger" data-fk="clear" data-clear aria-label="Clear the fight"${f ? '' : ' disabled'}>Clear fight</button>`,
     };
   }
 
@@ -1337,7 +1341,7 @@ export function register(app) {
     const mapMode = gm && !!f && running(f) && fightView() === 'map', tools = toolsShown(f, mapMode);
     // the builder's lists, while it shows (in Map view it is in the Fight tools sheet, which draws them when it opens)
     if (gm && (!mapMode || tools)) {
-      fillSelect($q('[data-hsel]'), pickables(s.hunters, remoteList()).map(p => [p.id, p.ref.kind === 'remote' ? `${p.name} (remote)` : p.name]), 'No hunters');
+      fillSelect($q('[data-hsel]'), pickables(s.hunters, remoteList()).map(p => [p.id, p.ref.kind === 'remote' ? `${p.name} (player phone)` : p.name]), 'No hunters');
       fillSelect($q('[data-msel]'), A().bestiary.list().map(m => [m.id, `${m.name} (${m.rank}${m.kind === 'normal' ? '' : ` ${m.kind}`})`]), 'No monsters');
       fillSelect($q('[data-ssel]'), s.hunters.flatMap(h => h.shadows.filter(x => x.summoned).map(x => [x.id, `${x.name} (${h.name})`])), 'No summoned shadows');
       // few jobs hold shadows: their block shows only while there is a summoned one to add
@@ -1446,7 +1450,7 @@ export function register(app) {
         if (sel !== c.id) { sel = c.id; render(); }
         click('.cmb-card.turn [data-ab]');
       } });
-    app.keys.add({ key: 'q', label: 'Quick line: add combatants', group: G, view: 'combat', gmOnly: true, when: inView,
+    app.keys.add({ key: 'q', label: 'Quick add: add combatants', group: G, view: 'combat', gmOnly: true, when: inView,
       run: () => { const b = $r('[data-build]'); if (b && !b.open) b.open = true; const i = $r('[data-qline]'); if (i) { i.focus(); i.scrollIntoView({ block: 'nearest' }); } } });
   }
 }

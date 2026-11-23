@@ -69,7 +69,7 @@ export const newChapterQuest = (): QuestFormDraft => ({
 /** What stops chapter `i`'s quest from saving, or '' (a Job Change quest gives a job; a half-written row is the form's to say). */
 function questProblem(q: ChapterQuestDraft, i: number): string {
   if (!q.title.trim()) return `Give chapter ${i + 1}'s quest a title.`;
-  if (q.kind === 'job' && !q.rewards.job) return `Chapter ${i + 1}'s quest: Choose a job for a job quest.`;
+  if (q.kind === 'job' && !q.rewards.job) return `Choose a job for the Chapter ${i + 1} Job Change quest.`;
   return '';
 }
 

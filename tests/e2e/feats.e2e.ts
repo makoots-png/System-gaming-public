@@ -2,6 +2,7 @@
 // earned in the write of the fact, told once, and told again after a reload until the player answers it.
 import type { Page } from '@playwright/test';
 import { test, expect, onboardGM, onboardPlayer, dismissAll, go, activeHunter, answerWindow } from './helpers.ts';
+import { FEATS_SWITCH_WORDS } from '../../src/core/hunter/chronicle-view.ts';
 
 const topWindow = (page: Page) => page.locator('.sys-overlay.show .sys-window').first();
 
@@ -81,7 +82,7 @@ test('the GM turns feats off in the GM view: a hunter who then finishes a sevent
     await go(gm, 'gm');
     await gm.locator('[data-tog="rules"]').tap();
     const off = gm.locator('[data-feats="off"]');
-    await expect(gm.locator('.gm-switch', { has: gm.locator('[data-feats]') })).toContainText('The System notices feats');
+    await expect(gm.locator('.gm-switch', { has: gm.locator('[data-feats]') })).toContainText(FEATS_SWITCH_WORDS.label);
     await expect(gm.locator('[data-feats="on"]')).toHaveAttribute('aria-pressed', 'true');
     await off.tap();
     await expect(off).toHaveAttribute('aria-pressed', 'true');

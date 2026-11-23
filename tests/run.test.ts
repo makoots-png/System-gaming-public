@@ -187,7 +187,7 @@ describe('a move is one write', () => {
     const m = ok(storyMove(gm(), R1, turnOn(FOR_BRAKK, [BRAKK]), CTX));
     expect(m.save.storyRuns).toEqual([m.run]);
     expect(m.save.hunters.map(h => h.chronicle.inbox)).toEqual([[], [{ kind: 'chapter', title: WAGER.chapters[0]!.words.title, line: WAGER.chapters[0]!.words.line }]]);
-    expect(m.save.log[0]).toMatchObject({ kind: 'story', hunterId: null, title: 'The wager', text: 'Turned on for Brakk. Chapter 1 (The bet) opened for Brakk.' });
+    expect(m.save.log[0]).toMatchObject({ kind: 'story', hunterId: null, title: 'The wager', text: 'Started for Brakk. Chapter 1 (The bet) opened for Brakk.' });
     expect(m.granted[0]!.g.window).toMatchObject({ tag: '! Story', title: WAGER.chapters[0]!.words.title, body: WAGER.chapters[0]!.words.line });
   });
 
@@ -227,7 +227,7 @@ describe('a move in the GM\'s room (unit 4)', () => {
     const [p, ...more] = posted(m.save);
     expect([more, p!.to, p!.words, p!.rewards, p!.quest?.dueAt, m.posted]).toEqual([[], [KAI_KEY], c.words, c.rewards, '2026-11-21T10:00:00.000Z', [KAI_KEY]]);
     expect(m.save.hunters[0]!.quests.find(q => q.title === 'Find it')!.dueAt, 'Mira\'s copy falls due at the same moment').toBe('2026-11-21T10:00:00.000Z');
-    expect(m.save.log[0]).toMatchObject({ kind: 'story', text: 'Turned on for Kai and Mira. Chapter 1 (The bet) opened for Kai and Mira.' });
+    expect(m.save.log[0]).toMatchObject({ kind: 'story', text: 'Started for Kai and Mira. Chapter 1 (The bet) opened for Kai and Mira.' });
     expect(ok(storyMove(withFirst(c), R1, e, IN_ROOM)).save.settings.sync.outbox, 'the step read twice, as grantWrite reads it, posts the same message').toEqual(m.save.settings.sync.outbox);
   });
 

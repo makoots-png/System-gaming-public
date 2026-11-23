@@ -225,7 +225,7 @@ function renderHeader() {
   const gm = role() === 'gm', inRoom = seat() !== 'alone', pill = $('mode-pill');
   if (pill.textContent !== (gm ? 'GM' : 'PLAYER')) pill.textContent = gm ? 'GM' : 'PLAYER'; // a write of the same text still lays the header out again
   pill.classList.toggle('gm', gm);
-  pill.setAttribute('aria-label', inRoom ? `Role in this room: ${gm ? 'GM' : 'Player'}. Activate to read why` : `Mode: ${gm ? 'GM' : 'Player'}. Activate to switch to ${gm ? 'Player' : 'GM'} mode`);
+  pill.setAttribute('aria-label', inRoom ? `Role in this room: ${gm ? 'GM' : 'Player'}. Tap to see why` : `Mode: ${gm ? 'GM' : 'Player'}. Tap to switch to ${gm ? 'Player' : 'GM'} mode`);
   document.body.dataset.mode = role();
   // banners
   const notes = store.notices(); const bs = JSON.stringify(notes);
@@ -248,14 +248,14 @@ $('hunter-sel').addEventListener('change', async e => {
   if (!(await app.api.sync.switchTo(sel.value))) sel.value = store.active().id;
 });
 
-const ROLE_IN_ROOM = { gm: 'You are the GM of this room.', player: 'You are a player in this room. The GM is the phone that opened it.' };
+const ROLE_IN_ROOM = { gm: 'You are the GM of this room.', player: 'You are a player in this room. Whoever created the room is the GM.' };
 $('mode-pill').addEventListener('click', async () => {
   // in a room the role comes from the room (core/role.ts): the pill explains it and changes nothing
   const at = seat();
   if (at !== 'alone') { ui.system({ tag: '! System', title: at === 'gm' ? 'GM' : 'Player', body: ROLE_IN_ROOM[at], actions: [{ label: 'Understood', value: null, primary: true }] }); return; }
   const toGM = role() !== 'gm';
   const ok = await ui.confirm({ title: toGM ? 'Switch to GM mode?' : 'Switch to Player mode?',
-    body: toGM ? 'GM mode unlocks XP grants, free stat edits and GM tools on this device.' : 'Player mode hides GM tools and direct XP grants.', confirmLabel: toGM ? 'Enter GM mode' : 'Enter Player mode' });
+    body: toGM ? 'GM mode unlocks XP grants, free stat edits, and GM tools on this device.' : 'Player mode hides GM tools and direct XP grants.', confirmLabel: toGM ? 'Enter GM mode' : 'Enter Player mode' });
   if (ok) ui.wrote('System', store.apply('mode', atSettings(x => chooseMode(x, toGM ? 'gm' : 'player')))); // alone, the phone chooses
 });
 
@@ -268,7 +268,7 @@ function showKeys() {
   const rows = app.keys.list();
   const digits = rows.filter(r => /^[1-9]$/.test(r.key));
   const rest = rows.filter(r => !/^[1-9]$/.test(r.key));
-  if (digits.length) rest.splice(rest.findIndex(r => r.key === '?') + 1, 0, { key: digits.length > 1 ? `1\u2013${digits.length}` : '1', label: 'Go to the Nth tab (top nav order)', group: 'Global' });
+  if (digits.length) rest.splice(rest.findIndex(r => r.key === '?') + 1, 0, { key: digits.length > 1 ? `1\u2013${digits.length}` : '1', label: 'Switch to tab by number', group: 'Global' });
   const groups = [...new Set(rest.map(r => r.group))];
   const html = groups.map(g => `<div class="lbl kbd-grp">${ui.esc(g)}</div><ul class="kbd-list">${rest.filter(r => r.group === g).map(r => `<li><kbd>${ui.esc(r.key)}</kbd><span class="kl">${ui.esc(r.label)}</span></li>`).join('')}</ul>`).join('');
   ui.system({ tag: '! System', title: 'KEYBOARD', size: 'form', html,

@@ -33,5 +33,5 @@ const count = (n: number): string => n.toLocaleString('en-US');
 /** Why a thing is too large to keep, in the words a maker shows, or null when it fits. */
 export function tooLarge(kind: SizedThing, thing: unknown): string | null {
   const size = bytesOf(thing), w = WORDS[kind];
-  return size <= THING_MAX[kind] ? null : `${w.it} is too large to save. It takes ${count(size)} bytes, and ${w.holds} holds at most ${count(THING_MAX[kind])}. ${w.way}`;
+  return size <= THING_MAX[kind] ? null : `${w.it} is too large to save. It uses ${count(size)} bytes, and the limit for ${w.holds} is ${count(THING_MAX[kind])} bytes. ${w.way}`;
 }

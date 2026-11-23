@@ -221,10 +221,10 @@ describe('the dice to roll and the average', () => {
 
   test('a lasting change reads only its bearer\'s own numbers: bareRefusal says what to write instead, and lets the rest through', () => {
     expect(['12', '0.1 * hpmax', '10 + 0.2 * hpmax - 1d4', 'floor(str / 2)'].map(t => bareRefusal(parse(t)))).toEqual([null, null, null, null]);
-    expect(bareRefusal(parse('0.1 * target.hpmax'))).toBe('A lasting change reads its bearer\'s own numbers: write hpmax, not target.hpmax.');
-    expect(bareRefusal(parse('max(str, target.str)'))).toBe('A lasting change reads its bearer\'s own numbers: write str, not target.str.');
+    expect(bareRefusal(parse('0.1 * target.hpmax'))).toBe('A lasting effect only reads its bearer\'s numbers. Write hpmax instead of target.hpmax.');
+    expect(bareRefusal(parse('max(str, target.str)'))).toBe('A lasting effect only reads its bearer\'s numbers. Write str instead of target.str.');
     expect(['charge', '2 * missing', 'stacks(pain)', 'kills'].map(t => bareRefusal(parse(t)))).toEqual(['charge', 'missing', 'stacks(pain)', 'kills']
-      .map(n => `A lasting change reads its bearer's own numbers: ${n} is read only in a use.`));
+      .map(n => `A lasting effect only reads its bearer's numbers. You can only use ${n} in an ability.`));
   });
 });
 
@@ -429,13 +429,13 @@ describe('what the parser refuses in a dice term, with what to write instead', (
     ['3d6>', '> needs a number: 3d6>5'],
     ['3d6<', '< needs a number: 3d6<5'],
     ['3d6=', '= needs a number: 3d6=5'],
-    ['2d20kh3', 'keeps 3 of 2 dice; write 1 to 2'],
-    ['4d6dl0', 'drops 0 of 4 dice; write 1 to 4'],
-    ['1d6r7', 'r7 is not a face of a d6'],
-    ['1d6!>7', '!>7 is not a face of a d6'],
-    ['3d6>0', '>0 is not a face of a d6'],
+    ['2d20kh3', 'keeps 3 of 2 dice. Use a number from 1 to 2'],
+    ['4d6dl0', 'drops 0 of 4 dice. Use a number from 1 to 4'],
+    ['1d6r7', 'r7 is not a face on a d6'],
+    ['1d6!>7', '!>7 is not a face on a d6'],
+    ['3d6>0', '>0 is not a face on a d6'],
     ['2d8r1ro2', 'mixes r and ro'],
-    ['3d6!!', '!! (compounding) is not read here'],
+    ['3d6!!', '!! (compounding) is not supported'],
     ['3d6!>5!', 'explodes twice'],
     ['4d6kh3dl1', 'keeps or drops twice'],
     ['3d6>4>5', 'counts successes twice'],
@@ -451,7 +451,7 @@ describe('what the parser refuses in a dice term, with what to write instead', (
 
   test('the rules\' dice limits hold for a term with modifiers and for d%: 1 to 50 dice of 2 to 1000 sides', () => {
     expect(refusal('51d20kh1')).toContain('"51d20kh1" rolls 51 dice');
-    expect(refusal('d1001!')).toContain('a die has 2 to 1000');
+    expect(refusal('d1001!')).toContain('A die must have 2 to 1000 sides');
     expect(parseFormula('50d%kh1', LIMITS).ok).toBe(true);
     expect(parseFormula('d%', { dice: { maxDice: 50, maxSides: 99 } }).ok).toBe(false);
   });
@@ -636,7 +636,7 @@ describe('a formula\'s size (notes-5-trade.md 12.3)', () => {
 
   test('a text pasted into a formula field that no formula needs is refused with its words, never walked', () => {
     const deep = '('.repeat(500_000) + '1' + ')'.repeat(500_000), long = '1+'.repeat(500_000) + '1';
-    expect(refusal(deep)).toBe('The brackets at character 201 are 201 deep. A formula has at most 200 parts, so it needs at most 200 brackets inside each other.');
+    expect(refusal(deep)).toBe('The parentheses at character 201 are 201 deep. A formula has at most 200 parts, so it needs at most 200 parentheses inside each other.');
     expect(refusal(long)).toBe('The formula has more than 200 parts, and a formula has at most 200. Each number, die, name, sign and face rolled again is a part.');
     expect(parseFormula('('.repeat(200) + '1' + ')'.repeat(200), LIMITS), 'brackets 200 deep around one part still read').toEqual({ ok: true, formula: { kind: 'number', value: 1 } });
   });

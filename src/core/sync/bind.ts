@@ -179,7 +179,7 @@ export type RemovedEffect =
 export type RemovedResult = { readonly state: RemovedNotice; readonly effects: readonly RemovedEffect[] };
 
 /** The words of a Rejoin the GM has not allowed yet (today's words, which the window's own Rejoin button explains). */
-export const NOT_BACK_YET = 'Not allowed back yet. Ask your GM to press Allow back.';
+export const NOT_BACK_YET = 'Not allowed back yet. Ask your GM to tap Allow back.';
 /**
  * A Rejoin that failed as `kind`: whether the window comes back to try again. Today's behaviour: it does where a second
  * try can work (the GM has not allowed the player back yet, or the server was not reached); a room that is gone, a

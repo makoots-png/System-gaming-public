@@ -196,7 +196,7 @@ export function register(app) {
       <div class="ob-form"><label class="field"><span class="lbl">Hunter name</span><input type="text" data-name data-focus maxlength="60" autocomplete="off" enterkeyhint="go" placeholder="Your hunter's name"></label>
         <div class="ob-err" role="alert" data-err></div></div>
       <div class="ob-act"><button type="button" class="primary" data-go>Join</button></div>
-      <button type="button" class="ob-skip" data-obmore>other options</button>`);
+      <button type="button" class="ob-skip" data-obmore>Other options</button>`);
     const q = s => w.querySelector(s), err = q('[data-err]'), nm = q('[data-name]');
     sy.check(code).then(r => { if (!w.isConnected) return; q('[data-check]').textContent = !r.ok ? why('net') : r.exists ? 'Room found.' : why('notfound', code); });
     // a check that answers after other options, or a second tap while one is out, is stale (onboarding.ts)
@@ -263,8 +263,8 @@ export function register(app) {
 
   function gm() {
     const w = step(`<div class="n-tag">! GM</div><h2 id="{id}">Run the game</h2>
-      <p>GM mode unlocks XP grants, free stat edits and GM tools on this device. How do you want to begin?</p>
-      <div class="ob-act"><button type="button" class="primary" data-focus data-starter>Load starter campaign</button><button type="button" data-blank>Blank</button></div>
+      <p>GM mode unlocks XP grants, free stat edits, and GM tools on this device. How do you want to start?</p>
+      <div class="ob-act"><button type="button" class="primary" data-focus data-starter>Load starter campaign</button><button type="button" data-blank>Start blank</button></div>
       <p class="ob-err" data-msg></p>
       <div class="ob-act"><button type="button" data-back>Back</button></div>
       <button type="button" class="ob-skip" data-skip>Skip</button>`);
@@ -272,7 +272,7 @@ export function register(app) {
     q('[data-starter]').addEventListener('click', () => {
       // a read-only tab's refusal is told by go; any other is the starter pack's own
       const g = go({ type: 'starter' }, starterStep(store, app));
-      if ('why' in g && g.why !== READ_ONLY) q('[data-msg]').textContent = 'Could not load the starter pack. Choose Blank instead.';
+      if ('why' in g && g.why !== READ_ONLY) q('[data-msg]').textContent = 'Could not load the starter campaign. Choose Start blank instead.';
     });
     q('[data-blank]').addEventListener('click', () => { go({ type: 'blank' }, both(owned('Hunter'), atSettings(st => chooseMode(st, 'gm')))); });
     q('[data-back]').addEventListener('click', () => go({ type: 'back' }));

@@ -24,9 +24,9 @@ const QUEST: FactOf<'quest'> = { kind: 'quest', end: 'done', qkind: 'side', from
 /** One fact of each kind, and the sentence it reads as. A kind added to facts.ts fails the typecheck here until it has both. */
 const SAMPLES: { readonly [K in FactKind]: readonly [FactOf<K>, string] } = {
   fight: [FIGHT, 'Won a fight in Goblin Den against 3 Goblins in 6 rounds, at 12% HP.'],
-  kill: [{ kind: 'kill', monster: 'Goblin Chief', rank: 'D', type: 'Goblin', mkind: 'boss', above: 1, hpPct: 40, payback: false, where: 'fight' }, 'Defeated Goblin Chief, a rank D boss, at 40% HP.'],
+  kill: [{ kind: 'kill', monster: 'Goblin Chief', rank: 'D', type: 'Goblin', mkind: 'boss', above: 1, hpPct: 40, payback: false, where: 'fight' }, 'Defeated Goblin Chief, a rank D boss, with 40% HP left.'],
   solo: [SOLO, 'Won a solo run in Ash Hollow (rank E) in 5 rounds, at 30% HP.'],
-  gate: [{ kind: 'gate', name: 'Goblin Den', rank: 'D', above: 1, toBreak: 2 }, 'Cleared Goblin Den, a rank D gate, 2 days before its break.'],
+  gate: [{ kind: 'gate', name: 'Goblin Den', rank: 'D', above: 1, toBreak: 2 }, 'Cleared Goblin Den, a rank D gate, 2 days before dungeon break.'],
   closed: [{ kind: 'closed', name: 'Ash Hollow', rank: 'E' }, 'The personal gate Ash Hollow (rank E) closed when its time ran out.'],
   quest: [QUEST, 'Completed the side quest Find it.'],
   daily: [{ kind: 'daily', streak: 7 }, 'Finished the day\'s daily quests, 7 days in a row.'],
@@ -39,7 +39,7 @@ const SAMPLES: { readonly [K in FactKind]: readonly [FactOf<K>, string] } = {
   title: [{ kind: 'title', name: 'Still Standing' }, 'Got the title Still Standing.'],
   feat: [{ kind: 'feat', key: 'threads-end', name: 'Thread\'s End', hidden: true }, 'Earned the hidden feat Thread\'s End.'],
   given: [{ kind: 'given', key: 'seed-held-the-mask', name: 'Held the Mask' }, 'The GM gave the award Held the Mask.'],
-  chapter: [{ kind: 'chapter', title: 'THE DEEP IS PATIENT', line: 'Nothing is asked.' }, 'A story window: THE DEEP IS PATIENT. Nothing is asked.'],
+  chapter: [{ kind: 'chapter', title: 'THE DEEP IS PATIENT', line: 'Nothing is asked.' }, 'Story: THE DEEP IS PATIENT. Nothing is asked.'],
   roll: [{ kind: 'roll', natural: 20 }, 'Rolled a natural 20 on a check.'],
   coin: [{ kind: 'coin', won: true }, 'Called the coin right.'],
   shop: [{ kind: 'shop', act: 'buy', item: 'Health Potion', rar: 'common', price: 40, goldAfter: 110 }, 'Bought Health Potion for 40 gold, with 110 gold left.'],
@@ -60,13 +60,13 @@ describe('one sentence a kind of fact', () => {
   });
 
   test('a fight says how it ended, where, against whom, in how many rounds and at what HP', () => {
-    expect(factLine({ ...FIGHT, outcome: 'lost', gate: '', names: 'Hobgoblin', rounds: 4, up: false, endPct: 0 })).toBe('Lost a fight against Hobgoblin in 4 rounds, down at the end.');
+    expect(factLine({ ...FIGHT, outcome: 'lost', gate: '', names: 'Hobgoblin', rounds: 4, up: false, endPct: 0 })).toBe('Lost a fight against Hobgoblin in 4 rounds, dead at the end.');
     expect(factLine({ ...FIGHT, outcome: 'ended', gate: '', names: '2 Wolves', rounds: 3, endPct: 80 })).toBe('The GM ended a fight against 2 Wolves after 3 rounds, at 80% HP.');
     expect(factLine({ ...FIGHT, gate: '', names: '', rounds: 1, endPct: 100 }), 'no gate and no names, one round').toBe('Won a fight in 1 round, at 100% HP.');
   });
 
   test('a solo run says its gate, its rounds and how the hunter came out of it', () => {
-    expect(factLine({ ...SOLO, outcome: 'lost', life: 'up' })).toBe('Lost a solo run in Ash Hollow (rank E) in 5 rounds and was up at its end.');
+    expect(factLine({ ...SOLO, outcome: 'lost', life: 'up' })).toBe('Lost a solo run in Ash Hollow (rank E) in 5 rounds and survived.');
     expect(factLine({ ...SOLO, outcome: 'lost', life: 'dead' })).toBe('Lost a solo run in Ash Hollow (rank E) in 5 rounds and died.');
     expect(factLine({ ...SOLO, outcome: 'stalled', rounds: 30 })).toBe('Retreated from a solo run in Ash Hollow (rank E) after 30 rounds, at 30% HP.');
   });
@@ -81,14 +81,14 @@ describe('one sentence a kind of fact', () => {
 
   test('the other kinds in their other forms: one of a thing is singular, a cost and a failure are said', () => {
     expect(factLine({ kind: 'gate', name: 'Ash Hollow', rank: 'E', above: 0, toBreak: null })).toBe('Cleared Ash Hollow, a rank E gate.');
-    expect(factLine({ kind: 'gate', name: 'Goblin Den', rank: 'D', above: 1, toBreak: 1 })).toBe('Cleared Goblin Den, a rank D gate, 1 day before its break.');
+    expect(factLine({ kind: 'gate', name: 'Goblin Den', rank: 'D', above: 1, toBreak: 1 })).toBe('Cleared Goblin Den, a rank D gate, 1 day before dungeon break.');
     expect(factLine({ ...QUEST, end: 'failed', qkind: 'urgent', title: 'Hold the door' })).toBe('Failed the urgent quest Hold the door.');
     expect(factLine({ ...QUEST, qkind: 'job', title: 'Step 1' })).toBe('Completed the Job Change quest Step 1.');
     expect(factLine({ kind: 'daily', streak: 1 })).toBe('Finished the day\'s daily quests, 1 day in a row.');
     expect(factLine({ kind: 'penaltyIssued', days: 1 })).toBe('Got the daily penalty for 1 missed day.');
-    expect(factLine({ kind: 'kill', monster: 'Rat', rank: 'E', type: 'Beast', mkind: 'normal', above: 0, hpPct: 100, payback: false, where: 'solo' })).toBe('Defeated Rat, a rank E monster, at 100% HP.');
+    expect(factLine({ kind: 'kill', monster: 'Rat', rank: 'E', type: 'Beast', mkind: 'normal', above: 0, hpPct: 100, payback: false, where: 'solo' })).toBe('Defeated Rat, a rank E monster, with 100% HP left.');
     expect(factLine({ kind: 'feat', key: 'uphill', name: 'Uphill', hidden: false })).toBe('Earned the feat Uphill.');
-    expect(factLine({ kind: 'chapter', title: 'IT WILL REMEMBER YOUR FACE', line: '' }), 'a window with no line').toBe('A story window: IT WILL REMEMBER YOUR FACE.');
+    expect(factLine({ kind: 'chapter', title: 'IT WILL REMEMBER YOUR FACE', line: '' }), 'a window with no line').toBe('Story: IT WILL REMEMBER YOUR FACE.');
     expect(factLine({ kind: 'coin', won: false })).toBe('Called the coin wrong.');
     expect(factLine({ kind: 'shop', act: 'sell', item: 'Iron Sword', rar: 'common', price: 60, goldAfter: 1170 })).toBe('Sold Iron Sword for 60 gold, with 1,170 gold left.');
   });
@@ -137,8 +137,8 @@ describe('the Chronicle panel as data', () => {
     const c = mira({ feats: { uphill: earned(1, 'Uphill'), 'threads-end': earned(5, 'Thread\'s End') } });
     const v = chronicleView(c, BOOK, RULES);
     expect(v.earned).toEqual([
-      { key: 'threads-end', name: 'Thread\'s End', hidden: true, desc: 'A fight won with 5% of max HP or less left, without going down in it.', when: 'Earned 2026-11-01.', gave: ['Title acquired: Still Standing'] },
-      { key: 'uphill', name: 'Uphill', hidden: false, desc: 'A monster above your rank, defeated.', when: 'Earned 2026-11-01.', gave: ['+1 ability point'] },
+      { key: 'threads-end', name: 'Thread\'s End', hidden: true, desc: def('threads-end').desc, when: 'Earned 2026-11-01.', gave: ['Title acquired: Still Standing'] },
+      { key: 'uphill', name: 'Uphill', hidden: false, desc: def('uphill').desc, when: 'Earned 2026-11-01.', gave: ['+1 ability point'] },
     ]);
   });
 
@@ -153,9 +153,9 @@ describe('the Chronicle panel as data', () => {
     const c = mira({ feats: { ratcatcher: shown(25), 'red-ledger': shown(9), 'sharp-eye': shown(10) } });
     const v = chronicleView(c, BOOK, RULES);
     expect(v.shown.slice(0, 3)).toEqual([
-      { key: 'red-ledger', name: 'Red Ledger', desc: 'Ten bosses defeated.', progress: 'Monsters defeated: 9 of 10.' },
-      { key: 'ratcatcher', name: 'Ratcatcher', desc: 'Fifty E-rank monsters defeated.', progress: 'Monsters defeated: 25 of 50.' },
-      { key: 'sharp-eye', name: 'Sharp Eye', desc: 'A hundred critical hits landed.', progress: 'Crits: 10 of 100.' },
+      { key: 'red-ledger', name: 'Red Ledger', desc: def('red-ledger').desc, progress: 'Monsters defeated: 9 of 10.' },
+      { key: 'ratcatcher', name: 'Ratcatcher', desc: def('ratcatcher').desc, progress: 'Monsters defeated: 25 of 50.' },
+      { key: 'sharp-eye', name: 'Sharp Eye', desc: def('sharp-eye').desc, progress: 'Crits: 10 of 100.' },
     ]);
     const startShown = BOOK.filter(([, d]) => d.show.at === 'start').map(([k]) => k);
     expect(v.shown.map(s => s.key).sort(), 'every feat shown from the start is listed, at 0 too').toEqual([...startShown].sort());

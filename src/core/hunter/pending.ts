@@ -194,30 +194,30 @@ export function selfPaid(s: Save, hid: HunterId, r: SelfReward, c: SelfPayCtx): 
 }
 
 // ── words ──
-const FROM_WORDS: { readonly [F in RewardFrom]: string } = { solo: 'Solo clear', quest: 'Quest complete', feat: 'Feat', clear: 'Gate clear' };
+const FROM_WORDS: { readonly [F in RewardFrom]: string } = { solo: 'Solo gate clear', quest: 'Quest complete', feat: 'Feat', clear: 'Gate clear' };
 /** Every line the GM and the player read of a waiting reward. */
 export const PENDING_WORDS = {
-  title: 'Waiting for you',
-  none: 'No reward waits for you.',
-  summary: (n: number): string => (n ? `${n} waiting` : ''),
+  title: 'Pending rewards',
+  none: 'No pending rewards.',
+  summary: (n: number): string => (n ? `${n} pending` : ''),
   /** In a window, in place of the reward's lines, on a phone where the reward waits. */
-  waits: 'Waiting for the GM',
+  waits: 'Waiting for GM approval',
   earned: (from: RewardFrom, what: string): string => (what ? `${FROM_WORDS[from]}: ${what}` : FROM_WORDS[from]),
   approve: 'Approve',
   edit: 'Edit',
   refuse: 'Refuse',
   /** The Award form's line while it holds a waiting reward. */
-  tie: (name: string, from: RewardFrom, what: string): string => `For ${name}: ${PENDING_WORDS.earned(from, what)}. Approve gives it to ${name}; fold Award to leave it waiting.`,
-  notify: (name: string): string => `A reward for ${name} waits for you.`,
-  approved: (name: string): string => `Approved for ${name}.`,
-  refused: (name: string): string => `Refused for ${name}.`,
-  logTitle: 'Reward waiting',
+  tie: (name: string, from: RewardFrom, what: string): string => `For ${name}: ${PENDING_WORDS.earned(from, what)}. Tap Approve to give it to ${name}, or collapse Award to leave it pending.`,
+  notify: (name: string): string => `${name} earned a reward that needs your approval.`,
+  approved: (name: string): string => `Approved reward for ${name}.`,
+  refused: (name: string): string => `Refused reward for ${name}.`,
+  logTitle: 'Pending reward',
   refusedLogTitle: 'Reward refused',
   heardLog: (name: string, from: RewardFrom, what: string): string => `${name}: ${PENDING_WORDS.earned(from, what)}`,
   refusedTitle: 'REWARD REFUSED',
-  refusedBody: (from: RewardFrom, what: string): string => `${PENDING_WORDS.earned(from, what)}. The GM did not give this reward.`,
+  refusedBody: (from: RewardFrom, what: string): string => `${PENDING_WORDS.earned(from, what)}. The GM refused this reward.`,
   approvedBody: (from: RewardFrom, what: string): string => `${PENDING_WORDS.earned(from, what)}. The GM approved your reward.`,
-  refusals: { 'no-reward': 'This reward is no longer waiting on this phone.', answered: 'This reward was answered already.' } satisfies { readonly [W in PendingRefusal]: string },
+  refusals: { 'no-reward': 'This reward is no longer pending on this phone.', answered: 'You already approved or refused this reward.' } satisfies { readonly [W in PendingRefusal]: string },
 } as const;
 
 // ── the save's reader ──

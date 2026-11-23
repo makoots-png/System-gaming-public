@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { test, expect, onboardGM, go, startGoblinDenFight, chooseList, PHONE } from './helpers.ts';
+import { ODDS_WORDS } from '../../src/core/combat/odds.ts';
 
 const odds = (page: Page) => page.locator('#view-combat [data-odds]');
 /** What the odds may not touch: the fight, the outbox, the log and the hunters, as the save holds them. */
@@ -25,7 +26,7 @@ test('the GM building a fight plays it out 100 times, sees the count as it goes,
 
   await test.step('the control says what it does, and asking shows the count as it plays', async () => {
     const ask = odds(page).locator('[data-odds-ask]');
-    await expect(ask).toHaveText('Play it out 100 times');
+    await expect(ask).toHaveText(ODDS_WORDS.ask);
     await ask.tap();
     await expect(odds(page).locator('[data-oddsprog]')).toContainText(/Playing \d+ of 100/);
   });
@@ -45,7 +46,7 @@ test('the GM building a fight plays it out 100 times, sees the count as it goes,
   await test.step('adding a monster marks the odds stale; playing again answers for the fight as it is', async () => {
     await page.locator('#view-combat [data-mcount]').fill('1');
     await page.locator('#view-combat [data-addm]').tap();
-    await expect(odds(page).locator('.odds-stale')).toHaveText('The fight changed since these odds. Play it out again to update them.');
+    await expect(odds(page).locator('.odds-stale')).toHaveText(ODDS_WORDS.stale);
     await odds(page).locator('[data-odds-ask]').tap();
     await expect(odds(page).locator('[data-oddsline]')).toHaveText(/^The party wins \d+% of 100 fights\./, { timeout: 60_000 });
     await expect(odds(page).locator('.odds-stale')).toHaveCount(0);
@@ -57,7 +58,7 @@ test('the GM stops a run of the odds and the control comes back', async ({ devic
   await buildFight(page);
   await odds(page).locator('[data-odds-ask]').tap();
   await odds(page).locator('[data-odds-stop]').tap();
-  await expect(odds(page).locator('[data-odds-ask]')).toHaveText('Play it out 100 times');
+  await expect(odds(page).locator('[data-odds-ask]')).toHaveText(ODDS_WORDS.ask);
   await expect(odds(page).locator('[data-oddsline]')).toHaveCount(0);
 });
 

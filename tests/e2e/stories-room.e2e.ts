@@ -76,7 +76,7 @@ async function turnOnFor(gm: Page, name: string, t = tapCounter()): Promise<numb
   await t.tap(section(gm).locator('[data-st-turnon]'));
   await t.tap(win.locator('[data-st-story]', { hasText: 'A debt' }));
   await t.tap(win.locator('[data-st-who]', { hasText: name }));
-  await t.tap(win.locator('[data-st-go]', { hasText: 'Turn on and open chapter 1' }));
+  await t.tap(win.locator('[data-st-go]', { hasText: 'Start and open chapter 1' }));
   await expect(card(gm)).toContainText(`For ${name}`);
   return t.count;
 }
@@ -87,7 +87,7 @@ test('the GM opens chapter 1 for a player\'s hunter; the player sees the window 
 
   await test.step('turned on for Kai in 4 taps; the GM is told it went', async () => {
     expect(await turnOnFor(gm, 'Kai Test')).toBe(4);
-    await expect(gm.locator('#toasts .toast', { hasText: 'Turned on A debt. Opened chapter 1 for Kai Test.' })).toBeVisible();
+    await expect(gm.locator('#toasts .toast', { hasText: 'Started A debt. Opened chapter 1 for Kai Test.' })).toBeVisible();
     expect(await runs(gm)).toEqual([{ chapter: 0, opens: 1 }]);
   });
 

@@ -1,5 +1,6 @@
 import { test, expect, openApp, onboardGM, onboardPlayer, go, dismissAll, startGoblinDenFight, chooseList, answerWindow, createRoom, PHONE, SMALL_PHONE } from './helpers.ts';
 import { EXAMPLE_STORIES } from '../../src/core/registry/stories.ts';
+import { WAYS_BACK } from '../../src/core/hunter/vitals.ts';
 import type { Locator } from '@playwright/test';
 
 test('on a phone, three toasts in a row show the last two above the bottom bar, and the bottom bar can still be tapped', async ({ device }) => {
@@ -110,7 +111,7 @@ test('on a 360 px phone a dead hunter\'s sheet shows Dead and the way back on th
   await go(player, 'status');
   const death = player.locator('#view-status [data-death]'), back = death.locator('[data-wayback]');
   await expect(death.locator('[data-life]')).toHaveText('Dead');
-  await expect(back).toHaveText('The GM\'s Revive or a Resurrection Crystal brings you back, with every status gone.');
+  await expect(back).toHaveText(`${WAYS_BACK} brings you back and removes every status.`);
   await expect(back).toBeInViewport({ ratio: 1 });
   const box = await back.boundingBox(), size = await back.evaluate(e => parseFloat(getComputedStyle(e).fontSize));
   expect(box!.x + box!.width, 'the line ends inside the screen').toBeLessThanOrEqual(360);
@@ -234,7 +235,7 @@ test('on the inventory, Store is the one filled button and is 44 px tall; Save c
   const player = (await device('player', { viewport: SMALL_PHONE })).page;
   await onboardPlayer(player, 'Mira Test');
   await go(player, 'status');
-  const store = player.getByRole('button', { name: 'Store', exact: true });
+  const store = player.getByRole('button', { name: 'Add to bag', exact: true });
   await store.scrollIntoViewIfNeeded();
   const box = await store.boundingBox();
   expect(box && box.height).toBeGreaterThanOrEqual(44);
@@ -827,7 +828,7 @@ for (const viewport of [SMALL_PHONE, PHONE]) {
 
     await test.step('the turn-on window, its list and then the story\'s step', async () => {
       await sec.locator('[data-st-turnon]').tap();
-      await expect(w.getByRole('heading', { name: 'Turn on a story' })).toBeVisible();
+      await expect(w.getByRole('heading', { name: 'Start a story' })).toBeVisible();
       expect(await audit('.st-ov [role=dialog]')).toEqual({ short: [], wide: false, page: 0 });
       await w.locator('[data-st-story]').tap();
       await w.locator('[data-st-who]').first().tap();
@@ -1020,7 +1021,7 @@ test('on a 390 px phone a player\'s Stash tab and the GM\'s stash list fit the w
   const bag = mira.locator('[data-panel="inventory"]');
   await bag.locator('[role=tab]', { hasText: 'Stash' }).tap();
   await expect(bag.locator('[data-tr-list="stash"] .tr-line')).toHaveCount(2, { timeout: 20_000 });
-  await expect(bag.locator('[data-tr-asof]')).toHaveText(/^As of \d\d:\d\d\.$/);
+  await expect(bag.locator('[data-tr-asof]')).toHaveText(/^Updated \d\d:\d\d\.$/);
   expect(await rows(bag, 'stash'), 'the player\'s lines').toEqual([fits, fits]);
   expect(await mira.evaluate(() => document.documentElement.scrollWidth), 'no sideways scroll on the player\'s phone').toBe(PHONE.width);
 

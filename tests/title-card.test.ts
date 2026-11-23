@@ -26,7 +26,7 @@ describe('a title card\'s powers', () => {
     expect(titlePowerLines({ active: GATED }, 'C', body, RULES)).toEqual([
       'Can use in a fight: Last Light',
       `Heals: 5 + 30% of max HP (now ${now})`,
-      'Ready again after 3 rounds. 1 use a fight.',
+      'Ready again after 3 rounds. 1 use per fight.',
     ]);
   });
 

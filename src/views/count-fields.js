@@ -12,6 +12,16 @@ import { RANKS } from '../core/rules.ts';
 
 export const KINDS = Object.keys(FACT_FIELDS);
 const OP_WORDS = { '>=': 'at least', '<=': 'at most', '=': 'is' };
+const PICK_LABELS = {
+  won: 'Won', lost: 'Lost', ended: 'Ended early', stalled: 'Stalled',
+  normal: 'Normal', elite: 'Elite', boss: 'Boss', mythic: 'Mythic',
+  fight: 'Fight', solo: 'Solo run', up: 'Alive', dead: 'Dead',
+  done: 'Completed', failed: 'Failed',
+  daily: 'Daily', main: 'Main', side: 'Side', job: 'Job Change', urgent: 'Urgent', penalty: 'Penalty',
+  gm: 'GM', system: 'The System', self: 'Player', item: 'Item', hand: 'Manual edit',
+  died: 'Died', raised: 'Revived', buy: 'Bought', sell: 'Sold',
+  common: 'Common', uncommon: 'Uncommon', rare: 'Rare', epic: 'Epic', legendary: 'Legendary',
+};
 
 // A condition is two rows: its field and Remove, then the comparison and the value; what is counted and of which field share a row.
 export const COUNT_CSS = `
@@ -26,7 +36,7 @@ const fieldsOf = kind => Object.entries(FACT_FIELDS[kind] || {});
 function valueHtml(spec, value) {
   const opt = (v, l) => `<option value="${esc(v)}"${String(value) === String(v) ? ' selected' : ''}>${esc(l)}</option>`;
   if (spec.t === 'rank') return `<select data-tv aria-label="Value">${RANKS.map(r => opt(r, r)).join('')}</select>`;
-  if (spec.t === 'pick') return `<select data-tv aria-label="Value">${spec.of.map(v => opt(v, v)).join('')}</select>`;
+  if (spec.t === 'pick') return `<select data-tv aria-label="Value">${spec.of.map(v => opt(v, PICK_LABELS[v] || v)).join('')}</select>`;
   if (spec.t === 'flag') return `<select data-tv aria-label="Value">${opt('true', 'yes')}${opt('false', 'no')}</select>`;
   return `<input data-tv aria-label="Value" ${spec.t === 'num' ? `type="number" inputmode="numeric" min="${spec.min}" max="${spec.max}"` : `type="text" maxlength="${spec.max}"`} value="${esc(value ?? '')}">`;
 }
@@ -47,7 +57,7 @@ function measureOptions(kind, of) {
 }
 /** The field select of measure `m` on kind `kind` (`measureFields`), `sel` chosen when it is one of them. */
 function measureField(id, kind, m, sel) {
-  return `<select id="${esc(id)}-mfield" data-mf aria-label="Of">${measureFields(kind, m).map(f => `<option value="${esc(f)}"${f === sel ? ' selected' : ''}>${esc(FACT_FIELDS[kind][f].label)}</option>`).join('')}</select>`;
+  return `<select id="${esc(id)}-mfield" data-mf aria-label="Field to count">${measureFields(kind, m).map(f => `<option value="${esc(f)}"${f === sel ? ' selected' : ''}>${esc(FACT_FIELDS[kind][f].label)}</option>`).join('')}</select>`;
 }
 /** A test row's value as its field's spec reads it. */
 function readValue(spec, raw) {
@@ -64,13 +74,13 @@ function readValue(spec, raw) {
  */
 export function countFields(box, o) {
   const id = o.id, rule = o.initial || { on: 'kill', where: [], measure: { of: 'facts' }, within: 'ever' };
-  box.innerHTML = `${field('What happened', `<select id="${esc(id)}-kind" data-ck>${KINDS.map(k => `<option value="${esc(k)}"${k === rule.on ? ' selected' : ''}>${esc(FACT_KIND_WORDS[k])}</option>`).join('')}</select>`)}
+  box.innerHTML = `${field('Event to track', `<select id="${esc(id)}-kind" data-ck>${KINDS.map(k => `<option value="${esc(k)}"${k === rule.on ? ' selected' : ''}>${esc(FACT_KIND_WORDS[k])}</option>`).join('')}</select>`)}
     <div class="lbl" id="${esc(id)}-tests-l">Only when</div>
     <div class="fm-tests" data-tests role="group" aria-labelledby="${esc(id)}-tests-l">${rule.where.map(t => testHtml(rule.on, t)).join('')}</div>
     <button type="button" data-tadd>Add a condition</button>
-    <div class="fm-row">${field('Count', `<select id="${esc(id)}-measure" data-cm>${measureOptions(rule.on, rule.measure.of)}</select>`)}
+    <div class="fm-row">${field('How to count', `<select id="${esc(id)}-measure" data-cm>${measureOptions(rule.on, rule.measure.of)}</select>`)}
       <span data-mfield>${rule.measure.of === 'facts' ? '' : measureField(id, rule.on, rule.measure.of, rule.measure.field)}</span></div>
-    ${o.within ? field('Within', `<select id="${esc(id)}-within" data-cw>${WITHINS.map(w => `<option value="${w}"${w === rule.within ? ' selected' : ''}>${esc(WITHIN_WORDS[w])}</option>`).join('')}</select>`) : ''}`;
+    ${o.within ? field('Time window', `<select id="${esc(id)}-within" data-cw>${WITHINS.map(w => `<option value="${w}"${w === rule.within ? ' selected' : ''}>${esc(WITHIN_WORDS[w])}</option>`).join('')}</select>`) : ''}`;
   const $ = sel => box.querySelector(sel);
   const kind = () => $('[data-ck]').value;
   const redrawMeasure = () => {

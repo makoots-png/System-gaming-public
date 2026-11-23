@@ -485,7 +485,7 @@ async function gmFight(g: Phone, p: Phone | null) {
   await step(g, 1, 'combat empty', async () => { await go(g, 'combat'); await shot(g, 'combat-empty'); });
   await step(g, 1, 'fight being built', async () => {
     await go(g, 'combat');
-    await combat.locator('[data-hsel]').selectOption({ label: `${HUNTER} (remote)` });
+    await combat.locator('[data-hsel]').selectOption({ label: `${HUNTER} (player phone)` });
     await press(g, combat.locator('[data-addh]'));
     await row(HUNTER).waitFor();
     const warden = await page.evaluate(() => (window as any).hunterApp.api.bestiary.list().find((m: any) => m.name === 'Ice Warden')?.id as string);

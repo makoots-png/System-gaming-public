@@ -1,7 +1,7 @@
 // A solo run and a hunter's personal gates (src/core/gates/solo.ts, personal.ts; notes-2-solo.md). A run's write is
 // checked against an end written by hand, so the expected sheet comes from the end itself: what the play left is what
 // the sheet holds, through the life machine for the death saves. The engine's own play is checked once end to end.
-import { ALONE, pendingApproved, pendingHeard, pendingOf, pendingRefused, waitingIn } from '../src/core/hunter/pending.ts';
+import { ALONE, PENDING_WORDS, pendingApproved, pendingHeard, pendingOf, pendingRefused, waitingIn } from '../src/core/hunter/pending.ts';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { RULES, rulesOf } from '../src/core/rules.ts';
 import type { StatusDef } from '../src/core/combat/effect-ops.ts';
@@ -115,7 +115,7 @@ describe('a run writes what the play left, in one write', () => {
     expect(hunter(dead.save).life).toEqual({ at: 'dead' });
     expect(hunter(dead.save).solo.gates.map(g => g.id), 'the gate stays').toEqual([personalGateId(1)]);
     expect(hunter(dead.save).xp).toBe(0);
-    expect(dead.save.log[0]!.text).toBe('Mira fell in "Goblin Warren" (E-rank) alone in 4 rounds and died.');
+    expect(dead.save.log[0]!.text).toBe('Mira failed to clear "Goblin Warren" (E-rank) alone in 4 rounds and died.');
   });
 
   test('a retreat pays its cost, keeps rests spent, and leaves the gate open', () => {
@@ -286,7 +286,7 @@ describe('personal-gate clear rewards wait for the GM in a room and pay at once 
     expect(sent.kind === 'event' && sent.event.type === 'system' && sent.event.payload).toMatchObject({
       to: [rec.to],
       title: 'REWARD REFUSED',
-      body: 'Solo clear: Goblin Warren. The GM did not give this reward.',
+      body: PENDING_WORDS.refusedBody('solo', 'Goblin Warren'),
     });
     expect([hunter(ran.save).xp, hunter(ran.save).gold, hunter(ran.save).items]).toEqual([0, 0, []]);
 
@@ -560,7 +560,7 @@ describe('a world gate open to solo runs, in a room', () => {
     expect(otherRoom, 'ended in another room').toEqual({ ok: false, why: 'moved' });
     const joined = soloRan(p, H1, WORLD, runOf(p, endOf('won', {})), NO_LOOT, { day, ready: ctx({ route: IN_ROOM, bound: H1, room: { targets, waiting: [] } }) });
     expect(joined, 'begun alone, ended in a room').toEqual({ ok: false, why: 'moved' });
-    expect(SOLO_REFUSAL_WORDS.moved).toBe('This phone joined or left a room while the run played, so the run paid nothing. Enter again.');
+    expect(SOLO_REFUSAL_WORDS.moved).toBe('You joined or left a room during the solo run, so you got no rewards. Try entering again.');
   });
 
   test('a personal gate is the hunter\'s own wherever the phone is: a run of it begun in a room and ended alone is written', () => {
@@ -667,7 +667,7 @@ describe('a world gate open to solo runs, in a room', () => {
     const s = gmSave(), lost = { ...paidRun, outcome: 'lost' as const, life: 'dead' as const };
     const r = ok(soloTaken(s, lost, soloPlan(s, lost, RULES), null, NO_LOOT, TAKEN));
     expect([r.gates[0]!.status, r.settings.sync.outbox ?? []]).toEqual(['raiding', []]);
-    expect(r.log[0]!.text).toBe('Mira fell in "Goblin Den" (E-rank) alone in 4 rounds and died.');
+    expect(r.log[0]!.text).toBe('Mira failed to clear "Goblin Den" (E-rank) alone in 4 rounds and died.');
     const stale = { kind: 'paid', due: 50, xp: 999, party: 4 } as const;
     expect(soloTaken(s, paidRun, stale, answerOf(s, stale), NO_LOOT, TAKEN)).toEqual({ ok: false, why: 'changed' });
     expect(soloPlan({ ...s, gates: [{ ...worldGate, status: 'closed' }] }, paidRun, RULES)).toEqual({ kind: 'refused', why: 'closed' });
@@ -808,7 +808,7 @@ describe('the first gate after the clock turns on is the even gate (lead-look-2-
 
 describe('the words of a solo run name the way back and speak to one hunter', () => {
   test('a dead hunter is told the GM\'s Revive or a Resurrection Crystal brings it back, at the door and after the run', () => {
-    expect(SOLO_REFUSAL_WORDS.dead).toBe('This hunter is dead. The GM\'s Revive or a Resurrection Crystal brings it back.');
+    expect(SOLO_REFUSAL_WORDS.dead).toBe(`This hunter is dead. ${WAYS_BACK} brings them back.`);
     const m = { hpMax: 40, manaMax: 10, fatigueMax: 100 }, up = { life: { at: 'up' as const, hp: 40 }, mana: 10, fatigue: 0, collapsed: false, used: {} };
     expect(runCostLines(up, { ...up, life: { at: 'dead' } }, m)).toContain(`You died. ${WAYS_BACK} brings you back.`);
   });
@@ -820,7 +820,7 @@ describe('the words of a solo run name the way back and speak to one hunter', ()
     expect(line.startsWith(confirm[0]!)).toBe(true);
     expect(confirm[0]).toBe('You clear it in 25% of 4 plays.');
     expect(line).toContain(confirm[2]!);
-    expect(confirm[2]).toBe('Dead in 50%.');
+    expect(confirm[2]).toBe('Reaches 0 HP in 50% of simulated fights.');
     expect(line).not.toContain('party');
   });
 });

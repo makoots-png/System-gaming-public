@@ -2105,3 +2105,108 @@ test('a view adds no new question of whether a fight holds a hunter: the step in
     .map(([file, n]) => `${file}: ${n} calls of fightOf, ${FIGHT_ASKS[file] ?? 0} listed. If the new call allows or refuses a write, put the refusal in the core step it guards (as grant.ts systemRaise refuses 'held', tested in tests/revive-standing.test.ts) and then raise this file's number in FIGHT_ASKS.`);
   expect(over).toEqual([]);
 });
+
+// The voice rules a machine can check (docs/guide/voice.md, the owner, Nov 22: "I shouldn't have to guess", "Don't be clever").
+// Each reads the words of every string and template literal in src/views, src/core, src/edge and src/app.js that reads as
+// prose, never comments or code. The rules that need judgment (personified UI, clever lines, unclear labels) are voice.md's.
+type Words = { file: string; line: number; text: string; part?: number };
+
+/** The string and template-literal text of a source file, with the line each starts on. A regex literal is skipped. */
+function literalsOf(file: string, src: string): Words[] {
+  const out: Words[] = [];
+  let i = 0, line = 1, prev = '', word = '', depth = 0;
+  const holes: number[] = []; // the brace depth at each open ${ of a template
+  const step = () => { if (src[i] === '\n') line++; i++; };
+  /** Reads template text from i (past the backtick or the closing brace of a hole) to the end of the template or the next hole. */
+  let part = 0;
+  const templateText = () => {
+    const start = line, at = part++; let buf = '';
+    while (i < src.length) {
+      const c = src[i]!;
+      if (c === '\\') { buf += src[i + 1] ?? ''; step(); step(); continue; }
+      if (c === '`') { step(); part = 0; break; }
+      if (c === '$' && src[i + 1] === '{') { step(); step(); holes.push(depth); depth++; break; }
+      buf += c; step();
+    }
+    out.push({ file, line: start, text: buf, part: at });
+  };
+  while (i < src.length) {
+    const c = src[i]!, n = src[i + 1];
+    if (c === '/' && n === '/') { while (i < src.length && src[i] !== '\n') step(); continue; }
+    if (c === '/' && n === '*') { step(); step(); while (i < src.length && !(src[i] === '*' && src[i + 1] === '/')) step(); step(); step(); continue; }
+    if (c === '"' || c === "'") {
+      const start = line; let buf = ''; step();
+      while (i < src.length && src[i] !== c && src[i] !== '\n') { if (src[i] === '\\') { buf += src[i + 1] ?? ''; step(); step(); continue; } buf += src[i]; step(); }
+      step(); out.push({ file, line: start, text: buf, part: holes.length ? 1 : 0 }); prev = 'x'; word = ''; continue;
+    }
+    if (c === '`') { step(); if (!holes.length) part = 0; templateText(); prev = 'x'; word = ''; continue; }
+    if (c === '/' && (prev === '' || /[(,=:[!&|?{};+\-*%<>~^]/.test(prev) || /^(return|typeof|case|in|of|void|yield|await)$/.test(word))) {
+      step(); let cls = false;
+      while (i < src.length && src[i] !== '\n') { const d = src[i]; if (d === '\\') { step(); step(); continue; } if (d === '[') cls = true; else if (d === ']') cls = false; else if (d === '/' && !cls) break; step(); }
+      step(); prev = 'x'; word = ''; continue;
+    }
+    if (c === '{') depth++;
+    if (c === '}') {
+      depth--;
+      if (holes.length && holes[holes.length - 1] === depth) { holes.pop(); step(); templateText(); prev = 'x'; word = ''; continue; }
+    }
+    if (/[A-Za-z_$0-9]/.test(c)) word = /[A-Za-z_$0-9]/.test(prev) ? word + c : c;
+    if (!/\s/.test(c)) prev = c;
+    step();
+  }
+  return out;
+}
+
+const looksLikeProse = (t: string): boolean => {
+  const s = t.replace(/<[^>]*>/g, ' ').replace(/&[a-z]+;|&#\d+;/g, ' ').trim();
+  if (!/[A-Za-z]{2,}\s+[A-Za-z]{2,}/.test(s)) return false;
+  if (/[{}]|(^|[\s;])[a-z-]+:\s*[^\s;]+;/.test(s)) return false; // a style sheet or a style attribute
+  if (/=>|\bfunction\b|\bconst\b|\breturn\b|===/.test(s)) return false; // code inside a string
+  return true;
+};
+
+async function proseLiterals(): Promise<Words[]> {
+  const files = [
+    ...(await readdir(`${ROOT}/src`, { recursive: true })).filter(n => /^(views|core|edge)\/.*\.(ts|js)$/.test(n) && !n.endsWith('.d.ts')),
+    'app.js',
+  ].sort();
+  const all: Words[] = [];
+  for (const name of files) {
+    const src = await Bun.file(`${ROOT}/src/${name}`).text();
+    let tagged = false; // a template whose first text is a console tag ([sync], [server]) is a log line in every part
+    for (const w of literalsOf(`src/${name}`, src)) {
+      if (w.part === 0) tagged = /^\[\w+\]/.test(w.text);
+      if (tagged) continue;
+      const text = w.text.replace(/&mdash;|&#8212;/g, '\u2014').replace(/&ndash;/g, '\u2013').replace(/&[a-z]+;|&#\d+;/g, ' ');
+      for (const piece of text.split(/<[^>]*>/)) if (looksLikeProse(piece)) all.push({ ...w, text: piece.replace(/\s+/g, ' ').trim() });
+    }
+  }
+  return all;
+}
+const said = (hits: Words[]) => hits.map(h => `${h.file}:${h.line}: ${h.text.slice(0, 120)}`);
+
+test('the literal reader of the voice rules finds strings and template text, and skips comments and regexes', () => {
+  const found = literalsOf('x.ts', "// a comment — here\nconst a = 'One two';\nconst r = /a;b/;\nconst t = `Hi ${n ? 'Big one' : 'x'} there friend`;\n");
+  expect(found.map(f => f.text)).toEqual(['One two', 'Hi ', 'Big one', 'x', ' there friend']);
+});
+
+test('no em dash in a player- or GM-facing string (voice.md: use a period, comma, colon or parentheses)', async () => {
+  const hits = (await proseLiterals()).filter(w => /\u2014|\s\u2013\s|\s--\s/.test(w.text));
+  expect(said(hits), 'write a period, comma, colon or parentheses; a range is "1 to 10"').toEqual([]);
+});
+
+test('no semicolon joins two clauses in a player- or GM-facing string (voice.md: write two sentences)', async () => {
+  const hits = (await proseLiterals()).filter(w => /[A-Za-z0-9)"'.]\s*;\s+[A-Za-z]/.test(w.text));
+  expect(said(hits), 'split the clauses into two sentences').toEqual([]);
+});
+
+test('no "just" in a player- or GM-facing string (voice.md: filler)', async () => {
+  const hits = (await proseLiterals()).filter(w => /\bjust\b/i.test(w.text));
+  expect(said(hits), 'cut "just", or say the exact thing ("right before", "only")').toEqual([]);
+});
+
+const BRITISH = /\b(colou?r(?<=colour)\w*|centre\w*|defence\w*|armour\w*|harbour\w*|honour\w*|favour\w*|behaviour\w*|cancell(ed|ing)|travell(ed|ing)|levell(ed|ing)|labell(ed|ing)|modell(ed|ing)|realis(e|ed|es|ing)|recognis(e|ed|es|ing)|organis(e|ed|es|ing)|apologis(e|ed|es|ing)|analys(e|ed|es|ing)|grey\w*|catalogue\w*|licence|offence|metre\w*|theatre|labour\w*|rumour\w*|valour|splendour|armoury|judgement\w*|programme\w*|whilst|amongst|learnt|spelt|dreamt|fulfil|enrol|vigour|rigour|odour|saviour|neighbour\w*|flavour\w*|humour\w*|mould\w*|plough\w*|sceptic\w*|tyres?|jewellery|marvellous|practis(e|ed|es|ing))\b/i;
+test('a player- or GM-facing string uses American spelling (voice.md: color, center, defense, armor, canceled)', async () => {
+  const hits = (await proseLiterals()).filter(w => BRITISH.test(w.text));
+  expect(said(hits), 'spell it the American way').toEqual([]);
+});

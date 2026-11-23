@@ -354,27 +354,27 @@ group('the item maker\'s spend line (economy design 2.4)', () => {
   const line = (it: ItemTemplate, grade: Grade) => spendLine(itemSpend(it, RULES)!, RULES, it.rar, grade);
   const plus4 = gear('rare', { bonus: { ins: 4 } });
 
-  test('a spend inside its grade says the points and what the grade holds: "Spends 4.0 points. Rare+ holds 3.7 to 4.4."', () => {
-    expect(line(plus4, 1)).toEqual({ words: 'Spends 4.0 points. Rare+ holds 3.7 to 4.4.', over: false });
-    expect(line(gear('rare', { bonus: { ins: 2 } }), -1)).toEqual({ words: 'Spends 2.0 points. Rare− holds up to 3.1.', over: false });
+  test('a spend inside its grade says the points and what the grade holds: "Uses 4.0 budget points. Rare+ range is 3.7 to 4.4."', () => {
+    expect(line(plus4, 1)).toEqual({ words: 'Uses 4.0 budget points. Rare+ range is 3.7 to 4.4.', over: false });
+    expect(line(gear('rare', { bonus: { ins: 2 } }), -1)).toEqual({ words: 'Uses 2.0 budget points. Rare− range is up to 3.1.', over: false });
   });
 
   test('a grade under the spend warns and names the grade that holds it; it never refuses', () => {
-    expect(line(plus4, 0)).toEqual({ words: 'Spends 4.0 points, more than Rare holds (3.1 to 3.7): this is Rare+ (3.7 to 4.4).', over: true });
+    expect(line(plus4, 0)).toEqual({ words: 'Uses 4.0 budget points, above Rare (3.1 to 3.7). Matches Rare+ (3.7 to 4.4).', over: true });
   });
 
   test('a grade above the spend suggests the grade that holds it, with no warning', () => {
-    expect(line(gear('rare', { bonus: { ins: 1 } }), 1)).toEqual({ words: 'Spends 1.0 points. Rare+ holds 3.7 to 4.4; this is Rare− (up to 3.1).', over: false });
+    expect(line(gear('rare', { bonus: { ins: 1 } }), 1)).toEqual({ words: 'Uses 1.0 budget points. Rare+ range is 3.7 to 4.4. Matches Rare− (up to 3.1).', over: false });
   });
 
   test('a spend past the tier\'s top says so whatever the grade: a GM\'s item is never fitted to the budget', () => {
-    expect(line(gear('rare', { bonus: { manaMax: 3 } }), 1)).toEqual({ words: 'Spends 6.0 points, past the top of Rare+ (4.4): stronger than any grade of Rare.', over: true });
+    expect(line(gear('rare', { bonus: { manaMax: 3 } }), 1)).toEqual({ words: 'Uses 6.0 budget points, above the Rare+ max (4.4). Stronger than any Rare grade.', over: true });
   });
 
   test('what the budget cannot weigh is named, with the words to test it in a fight: a worn status\'s standing op with no rule', () => {
     const hasted: StatusDef = { label: 'Hasted', desc: '', ops: [{ op: 'speed', pct: 10 }] };
     expect(line(gear('rare', { bonus: { ins: 4 }, worn: hasted }), 1)).toEqual({
-      words: 'Spends 4.0 points. Rare+ holds 3.7 to 4.4. Without what its worn status does that its worth line cannot weigh, which the budget cannot weigh: test it in a fight.',
+      words: 'Uses 4.0 budget points. Rare+ range is 3.7 to 4.4. Does not include unestimated worn status effects. Test it in a fight.',
       over: false,
     });
   });
@@ -461,7 +461,7 @@ group('what a held thing\'s powers spend (item-stats 6.5)', () => {
     const s = itemSpend(gear('rare', { active: taunting }), RULES)!;
     expect(s.unweighed).toEqual(['active']);
     expect(spendLine(s, RULES, 'rare', -1)).toEqual({
-      words: 'Spends 0.0 points. Rare− holds up to 3.1. Without what its active does that its worth line cannot weigh, which the budget cannot weigh: test it in a fight.',
+      words: 'Uses 0.0 budget points. Rare− range is up to 3.1. Does not include unestimated active ability effects. Test it in a fight.',
       over: false,
     });
   });
@@ -497,7 +497,7 @@ group('what a title spends (item-stats 6.7)', () => {
 
   test('a title with no band is weighed as an E title', () => {
     expect(titleSpend({ bonus: { hpMax: 10 } }, RULES)).toEqual(titleSpend({ bonus: { hpMax: 10 }, band: 'E' }, RULES));
-    expect(titleLine({ bonus: { str: 1 } }, RULES).words).toBe('Spends 1.0 of a rank E title\'s 1 point: fits rank E.');
+    expect(titleLine({ bonus: { str: 1 } }, RULES).words).toBe('Uses 1.0 of 1 budget point for a rank E title. Fits rank E.');
   });
 
   test('a D title of +1 Strength and a 30 HP shield once a fight spends the point and the shield\'s worth a use over the reference fight at D\'s rates', () => {
@@ -519,26 +519,26 @@ group('what a title spends (item-stats 6.7)', () => {
     expect(onceHealPoints(8, 'C')).toBeLessThanOrEqual(RULES.titleBudget.C);
     expect(titleSpend(lastLight, RULES).points).toBeCloseTo(onceHealPoints(8, 'C'), 9);
     expect(titleFit(lastLight, RULES)).toBe('C');
-    expect(titleLine(lastLight, RULES)).toEqual({ words: `Spends ${onceHealPoints(8, 'C').toFixed(1)} of a rank C title's 3 points: fits rank C.`, over: false });
+    expect(titleLine(lastLight, RULES)).toEqual({ words: `Uses ${onceHealPoints(8, 'C').toFixed(1)} of 3 budget points for a rank C title. Fits rank C.`, over: false });
   });
 
   test('over its band\'s budget is said, never refused: the line names the band it fits, or says no band holds it', () => {
     const hp = titleSpend({ bonus: { hpMax: 10 }, band: 'E' }, RULES).points;
     // 10 max HP weighs less on a higher rank's wearer: S's 2.5 HP a Vitality point make it 4, inside S's 5
     expect(titleFit({ bonus: { hpMax: 10 } }, RULES)).toBe('S');
-    expect(titleLine({ bonus: { hpMax: 10 } }, RULES)).toEqual({ words: `Spends ${hp.toFixed(1)} of a rank E title's 1 point: over, it fits rank S.`, over: true });
-    expect(titleLine({ bonus: { pre: 6 }, band: 'S' }, RULES)).toEqual({ words: 'Spends 6.0 of a rank S title\'s 5 points: over, past every band, rank S\'s 5 points too.', over: true });
+    expect(titleLine({ bonus: { hpMax: 10 } }, RULES)).toEqual({ words: `Uses ${hp.toFixed(1)} of 1 budget point for a rank E title. Over budget. Fits rank S.`, over: true });
+    expect(titleLine({ bonus: { pre: 6 }, band: 'S' }, RULES)).toEqual({ words: 'Uses 6.0 of 5 budget points for a rank S title. Over budget. Above every rank, including rank S (5 budget points).', over: true });
   });
 
   test('a title spending less than its band holds fits its band and names the lowest band that holds it', () => {
-    expect(titleLine({ bonus: { str: 2 }, band: 'D' }, RULES)).toEqual({ words: 'Spends 2.0 of a rank D title\'s 2 points: fits rank D.', over: false });
-    expect(titleLine({ bonus: { str: 2 }, band: 'B' }, RULES)).toEqual({ words: 'Spends 2.0 of a rank B title\'s 3 points: fits rank D.', over: false });
+    expect(titleLine({ bonus: { str: 2 }, band: 'D' }, RULES)).toEqual({ words: 'Uses 2.0 of 2 budget points for a rank D title. Fits rank D.', over: false });
+    expect(titleLine({ bonus: { str: 2 }, band: 'B' }, RULES)).toEqual({ words: 'Uses 2.0 of 3 budget points for a rank B title. Fits rank D.', over: false });
   });
 
   test('the title\'s line names an active it cannot weigh, with the words to test it in a fight', () => {
     const taunting = abilityOf('support', { id: abilityId('roar'), name: 'Roar', effect: null, ops: [{ op: 'threat', amount: 5 }] }, RULES);
     expect(titleLine({ bonus: { pre: 1 }, band: 'E', active: taunting }, RULES).words)
-      .toBe('Spends 1.0 of a rank E title\'s 1 point: fits rank E. Without what its active does that its worth line cannot weigh, which the budget cannot weigh: test it in a fight.');
+      .toBe('Uses 1.0 of 1 budget point for a rank E title. Fits rank E. Does not include unestimated active ability effects. Test it in a fight.');
   });
 
   test('every built-in title has a band and spends no more than its band\'s budget', () => {

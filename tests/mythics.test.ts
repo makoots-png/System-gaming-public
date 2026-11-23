@@ -272,7 +272,7 @@ describe('each script\'s shape, played on the reducer (design B.6, "The test to 
     const clock = MYTHICS['angel-of-the-last-trumpet'].phases[0].clock * RULES.fight.round, mine: string[] = [];
     for (const t of turns(f0, f => f.now >= clock)) {
       for (const l of t.said.filter(x => x.includes('The Final Note') && t.fight.now >= clock)) {
-        mine.push(l.startsWith('The Angel of the Last Trumpet is enraged: it readies The Final Note') ? 'readies' : l.startsWith('The Angel of the Last Trumpet uses The Final Note') ? 'lands' : l);
+        mine.push(l.startsWith('The Angel of the Last Trumpet is enraged and readies The Final Note') ? 'readies' : l.startsWith('The Angel of the Last Trumpet uses The Final Note') ? 'lands' : l);
       }
       if (mine.length >= 4) break;
     }
@@ -282,7 +282,7 @@ describe('each script\'s shape, played on the reducer (design B.6, "The test to 
   test('the Fourth Rider names the hunter lowest on HP', () => {
     const f0 = started(mythic('the-fourth-rider', place(5, 5)), hunter('A', place(8, 5), 0.9, 0), hunter('B', place(9, 7), 0.3, 0));
     for (const t of turns(f0, () => true)) {
-      if (t.said.includes('The Fourth Rider readies Named in the Book: it lands on its next turn.')) {
+      if (t.said.includes('The Fourth Rider readies Named in the Book. It lands on its next turn.')) {
         expect(standing(t.fight)).toMatchObject({ omen: 'named', aim: id('B') });
       }
       if (t.effects.some(e => e.type === 'used' && e.by === 'X' && e.ability === 'mythic-named')) {

@@ -172,7 +172,7 @@ export function register(app) {
     const name = pick.items[0] ? pick.items[0].name : 'gold';
     if (here()) {
       const w = store.apply('stash-put', s => stashPut(s, hid, pick, gateOf(hid), logAt()));
-      if (ui.wrote(W.tag, w, stashWordsOf(w, name))) ui.toast(W.tag, `In the stash: ${pickWords(pick)}.`);
+      if (ui.wrote(W.tag, w, stashWordsOf(w, name))) ui.toast(W.tag, `Added to stash: ${pickWords(pick)}.`);
       return;
     }
     const at = new Date().toISOString(), stamp = A().sync.stamp();

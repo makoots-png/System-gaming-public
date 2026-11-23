@@ -76,7 +76,7 @@ export type IconFrom = 'picked' | 'type' | 'archetype' | 'attack' | 'slot' | 're
 export type IconShown = { readonly key: IconKey; readonly from: IconFrom };
 const FROM_WORDS: { readonly [F in IconFrom]: string } = {
   picked: 'picked', type: 'from its type', archetype: 'from its archetype', attack: 'from its attack', slot: 'from its slot',
-  revive: 'as it revives', builtIn: 'the built-in\'s', effect: 'from its first effect', end: 'from its end', plain: 'the default',
+  revive: 'from its revive effect', builtIn: 'built-in default', effect: 'from its first effect', end: 'from its expiration effect', plain: 'default icon',
 };
 
 /**

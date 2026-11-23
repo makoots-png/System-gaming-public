@@ -488,7 +488,7 @@ function takerLine(c: Closed): string {
   switch (c.close) {
     case 'settled': { const gave = asideOf(c.record); return `You got ${goodsWords(c.gain)} from ${brakk}${noGoods(gave) ? '' : ` and gave ${goodsWords(gave)}`}.`; }
     case 'refused': return `You refused ${brakk}'s offer.${back}`;
-    case 'withdrawn': return noGoods(c.back) ? `${brakk} took back the offer of ${goodsWords(o.gives)}.` : `${brakk} took back the offer before your answer reached the room.${back}`;
+    case 'withdrawn': return noGoods(c.back) ? `${brakk} took back the offer of ${goodsWords(o.gives)}.` : `${brakk} took back the offer before your answer reached the room server.${back}`;
     case 'stopped': return `The GM stopped ${brakk}'s offer.${back}`;
     case 'void': return `${brakk}'s offer ended without a trade.${back}`;
     case 'recalled': case 'unsent': return `Your answer to ${brakk} was never sent.${back}`;
@@ -507,14 +507,14 @@ export function closeNews(c: Closed): OfferNews | null {
 /** What a giver's or taker's record says while it waits (the Offers tab). */
 export const STATE_WORDS: { readonly giver: { readonly [R in GiverRow]: (o: Offer) => string }; readonly taker: { readonly [R in TakerRow]: (o: Offer) => string } } = {
   giver: {
-    'posting-queued': () => 'Waiting for the room.', 'posting-tried': () => 'Waiting for the room.', open: o => `Waiting for ${o.names.to}.`,
+    'posting-queued': () => 'Waiting for the room server.', 'posting-tried': () => 'Waiting for the room server.', open: o => `Waiting for ${o.names.to}.`,
     'withdrawing-queued': o => `Taking back. If ${o.names.to} accepts first, it is theirs.`, 'withdrawing-tried': o => `Taking back. If ${o.names.to} accepts first, it is theirs.`,
     'withdrawing-taken': o => `Taking back. If ${o.names.to} accepts first, it is theirs.`, stranded: () => 'The room closed before this offer ended.',
   },
   taker: {
     offered: o => `${o.names.by} offers ${goodsWords(o.gives)}${forLine(o.asks, `your ${pickWords(o.asks)}`)}.`,
-    'accepting-queued': () => 'Accepted. Waiting for the room.', 'accepting-tried': () => 'Accepted. Waiting for the room.', 'accepting-taken': () => 'Accepted. Waiting for the room.',
-    'refusing-queued': () => 'Refused. Waiting for the room.', 'refusing-tried': () => 'Refused. Waiting for the room.', 'refusing-taken': () => 'Refused. Waiting for the room.',
+    'accepting-queued': () => 'Accepted. Waiting for the room server.', 'accepting-tried': () => 'Accepted. Waiting for the room server.', 'accepting-taken': () => 'Accepted. Waiting for the room server.',
+    'refusing-queued': () => 'Refused. Waiting for the room server.', 'refusing-tried': () => 'Refused. Waiting for the room server.', 'refusing-taken': () => 'Refused. Waiting for the room server.',
     stranded: () => 'The room closed before your answer was settled.',
   },
 };

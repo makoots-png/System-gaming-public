@@ -25,7 +25,7 @@ export const ofLife = (key: StateChip): boolean => key === 'dead';
 
 /** What a GM is told when a combat command tries to put a chip on or take it off. */
 export const CHIP_REFUSAL: Readonly<Record<StateChip, string>> = {
-  dead: 'Dead follows HP and ends with a revive.',
-  exhausted: 'Exhausted follows fatigue and lifts with a rest that leaves fatigue under the collapse share, or a gate\'s Clear.',
-  penalized: 'Penalized follows a missed daily and ends when its Penalty Zone quest is done.',
+  dead: 'Dead is set automatically when HP hits 0, and ends when the hunter is revived.',
+  exhausted: 'Exhausted is set automatically by high fatigue, and ends when a rest lowers fatigue below the threshold or when a gate is cleared.',
+  penalized: 'Penalized is set automatically after a missed daily quest, and ends when the Penalty Zone quest is completed.',
 };

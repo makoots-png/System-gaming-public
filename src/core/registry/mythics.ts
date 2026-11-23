@@ -32,7 +32,7 @@ const fury = (pct: number, name: string): MythicStatus => ({ key: statusKey(`myt
 /** Put on itself by each doom that lands, so the next lands harder: a fight past its clock ends. */
 const CRESCENDO: MythicStatus = {
   key: statusKey('mythic-crescendo'), def: {
-    label: 'Crescendo', desc: 'Each stack: 50% more damage.', ops: [{ op: 'share', on: 'dealt', pct: 50 }],
+    label: 'Crescendo', desc: 'Each stack adds 50% damage.', ops: [{ op: 'share', on: 'dealt', pct: 50 }],
     stack: { cap: 10, leave: { kind: 'never' }, keep: 'fight', threshold: null },
   },
 };
@@ -51,7 +51,7 @@ const halfGap = (from: 'armor' | 'resist', to: 'armor' | 'resist'): Formula => (
  */
 const EVEN_GUARD: MythicStatus = {
   key: statusKey('mythic-even-guard'), def: {
-    label: 'Even Guard', desc: 'Its armor and resist are each the mean of the two: no one kind of harm finds a gap.',
+    label: 'Even Guard', desc: 'Its armor and resist are each set to the average of the two, so physical and magic hits face the same defense.',
     ops: [{ op: 'sheet', key: 'armor', amount: halfGap('armor', 'resist') }, { op: 'sheet', key: 'resist', amount: halfGap('resist', 'armor') }],
   },
 };
@@ -59,9 +59,9 @@ const EVEN_GUARD: MythicStatus = {
  * Zaratan's Dive: no hit fills its bar, as no damage reaches its HP (a clock phase). Without it three cannons broke the
  * bar under the waves every other round and the Sea Rises never landed on them (row B4, sim-log.md "Mythic balance").
  */
-const UNDER_THE_WAVES: MythicStatus = { key: statusKey('mythic-under-the-waves'), def: { label: 'Under the Waves', desc: 'No hit fills its bar.', ops: [{ op: 'staggerRate', pct: -100 }] } };
+const UNDER_THE_WAVES: MythicStatus = { key: statusKey('mythic-under-the-waves'), def: { label: 'Under the Waves', desc: 'Hits do not fill its stagger bar.', ops: [{ op: 'staggerRate', pct: -100 }] } };
 /** Zaratan's shell, worn on the Shore and again once the Island Wakes. */
-const SHELL: MythicStatus = { key: statusKey('mythic-shell'), def: { label: 'Shell of a Thousand Years', desc: '30 more armor.', ops: [{ op: 'sheet', key: 'armor', amount: { kind: 'number', value: 30 } }] } };
+const SHELL: MythicStatus = { key: statusKey('mythic-shell'), def: { label: 'Shell of a Thousand Years', desc: 'Adds 30 armor.', ops: [{ op: 'sheet', key: 'armor', amount: { kind: 'number', value: 30 } }] } };
 
 /** Every script, by its id. `plain` is the script of a mythic that names none. */
 export const MYTHICS = {
@@ -71,7 +71,7 @@ export const MYTHICS = {
   // "Mythic balance").
   plain: mythicScript({
     name: 'A Mythic', hp: 0.98,
-    shape: 'Its own fight with a clock: once the clock runs out it overwhelms the whole field every other turn, harder each time.',
+    shape: 'Fights normally on a timer. Once the timer runs out, it uses Overwhelm on the whole field every other turn, dealing more damage each time.',
     moves: {
       overwhelm: { name: 'Overwhelm', kind: 'blast', type: 'physical', reach: 'field', range: 0, hits: 1.2, sure: true, applies: null, leaves: null, self: CRESCENDO },
     },
@@ -79,7 +79,7 @@ export const MYTHICS = {
       overwhelm: { name: 'Overwhelm', full: 'overwhelm', weak: null, aim: 'all', interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: 'none', shield: 'none', step: 'none' },
     },
     phases: [
-      { name: 'The Fight', line: 'It fights as it always has, and its clock is running.', from: 1, ends: 'gate', clock: 14, worn: [EVEN_GUARD], bar: 1, acts: 'every', rotation: [act] },
+      { name: 'The Fight', line: 'It fights normally while its phase timer counts down.', from: 1, ends: 'gate', clock: 14, worn: [EVEN_GUARD], bar: 1, acts: 'every', rotation: [act] },
     ],
     enraged: [omen('overwhelm')],
   }),
@@ -87,7 +87,7 @@ export const MYTHICS = {
   // "The fight should be a countdown to one note that ends it, with no way to survive the note."
   'angel-of-the-last-trumpet': mythicScript({
     name: 'The Angel of the Last Trumpet', hp: 1,
-    shape: 'A countdown: every phase is short, and when a clock runs out the Final Note comes every other turn.',
+    shape: 'Every phase has a short timer. When a timer runs out, it uses The Final Note every other turn.',
     moves: {
       // 1.0 at the farthest, not 0.55 at the crowd: the walk in stepped off the crowd's tile, and at 0.55 a party that
       // never stepped won 0.83 of the share of one that did (row B5, sim-log.md MY5 fifth pass)
@@ -121,13 +121,13 @@ export const MYTHICS = {
         interrupt: { by: ['hold'], outcome: 'weaken' }, stagger: 'none', burst: 'none', shield: 'none', step: 'none' },
     },
     phases: [
-      { name: 'The Trumpet Raised', line: 'It lifts the trumpet. Each phase is short: when a clock runs out, the Final Note begins.',
+      { name: 'The Trumpet Raised', line: 'It lifts the trumpet. Each phase has a short timer. When a timer runs out, it starts using The Final Note.',
         from: 1, ends: 'gate', clock: 4, worn: [], bar: 1,
         acts: ['Roll Up the Sky', 'Appointed Hour'], rotation: [act, omen('weighed'), act, omen('stars')] },
       { name: 'The First Breath', line: 'It draws breath. It is faster, and the note is closer.',
         from: 0.65, ends: 'gate', clock: 4, worn: [drawn(20, 'Drawn Breath')], bar: 1.25,
         acts: ['Roll Up the Sky', 'Appointed Hour'], rotation: [omen('breath'), act, omen('weighed'), act] },
-      { name: 'The Note', line: 'The trumpet sounds. Hold it still before the note to make the note smaller.',
+      { name: 'The Note', line: 'The trumpet sounds. Stun it before The Final Note to weaken the hit.',
         from: 0.3, ends: 'gate', clock: 2, worn: [drawn(20, 'Drawn Breath'), fury(25, 'Last Hour')], bar: 0.75,
         acts: ['Roll Up the Sky'], rotation: [act, omen('note')] },
     ],
@@ -137,7 +137,7 @@ export const MYTHICS = {
   // "The hunters stand on it, so it should be able to end the fight by going under."
   'zaratan-the-island-that-wakes': mythicScript({
     name: 'Zaratan, the Island That Wakes', hp: 0.92,
-    shape: 'The ground: each Sinking floods tiles for the rest of the fight, and in the Dive it can only be survived.',
+    shape: 'Each Sinking of the Shore floods tiles for the rest of the fight. During The Dive, you cannot hurt it and must survive until it surfaces.',
     moves: {
       // 1.0, not 0.5: leaving the tile it aims at cancels it (decision 43), so it is the cost of not answering, and at 0.5
       // the party that answered no omen won 0.027 of its fights against 0.070 (sim-log.md, MY5 fifth pass)
@@ -169,15 +169,15 @@ export const MYTHICS = {
       // The Trench on the Shore's second beat, its clock 5 to 4: the stun is the tank's, and the tank is most often dead by
       // the Island Wakes, so a Trench there met the stun 0.09 times a fight (row B5, 1.08 of B1); here 0.6. An answered
       // Trench buys the Shore 3 rounds (`answerTime`), so its clock is a round shorter (sim-log.md, "Mythic balance").
-      { name: 'The Shore', line: 'The island stirs. Where it sinks, the sea stays.',
+      { name: 'The Shore', line: 'The island stirs. Flooded tiles stay flooded for the rest of the fight.',
         from: 1, ends: 'gate', clock: 4, bar: 1, worn: [EVEN_GUARD, SHELL],
-        acts: ['Jaws Like a Harbour', 'Shell of a Thousand Years'], rotation: [act, omen('trench'), act, omen('sinking')] },
-      { name: 'The Dive', line: 'It dives. Damage does not reach it under the waves. Survive, and keep off the rising sea.',
+        acts: ['Jaws Like a Harbor', 'Shell of a Thousand Years'], rotation: [act, omen('trench'), act, omen('sinking')] },
+      { name: 'The Dive', line: 'It dives underwater and cannot take damage. Survive and stay off the flooded tiles.',
         ends: 'clock', clock: 4, worn: [EVEN_GUARD, UNDER_THE_WAVES], bar: 1,
         acts: [], rotation: [omen('rising')] },
       { name: 'The Island Wakes', line: 'It surfaces, awake. The shore is smaller now.',
         from: 0.55, ends: 'gate', clock: 5, bar: 1, worn: [EVEN_GUARD, SHELL, fury(20, 'Waking')],
-        acts: ['Jaws Like a Harbour', 'Shell of a Thousand Years'], rotation: [act, omen('trench'), act, omen('sinking')] },
+        acts: ['Jaws Like a Harbor', 'Shell of a Thousand Years'], rotation: [act, omen('trench'), act, omen('sinking')] },
     ],
     enraged: [omen('under')],
   }),
@@ -185,7 +185,7 @@ export const MYTHICS = {
   // "A hunter he names should die unless something outside the rules prevents it."
   'the-fourth-rider': mythicScript({
     name: 'The Fourth Rider', hp: 0.78,
-    shape: 'The names: he marks one hunter at a time to die, and the party saves them or loses them.',
+    shape: 'He marks one hunter at a time to die. The party must stop him or shield the target to save them.',
     moves: {
       'named': { name: 'Named in the Book', kind: 'curse', type: 'magical', reach: 0, range: 24, hits: 1.1, sure: true,
         applies: null, leaves: null, self: null },
@@ -212,7 +212,7 @@ export const MYTHICS = {
         interrupt: { by: [], outcome: 'none' }, stagger: 'none', burst: 'none', shield: 'none', step: 'none' },
     },
     phases: [
-      { name: 'The Pale Horse', line: 'He opens the book. The one he names will die unless the party stops him.',
+      { name: 'The Pale Horse', line: 'He opens the book. Stop him or shield the target before Named in the Book lands.',
         from: 1, ends: 'gate', clock: 5, worn: [], bar: 1,
         acts: ['Reaping Stroke', 'Not Yet'], rotation: [act, omen('named'), act] },
       { name: 'The Book Opens', line: 'He is never late, and he is faster now.',

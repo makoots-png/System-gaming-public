@@ -2,6 +2,7 @@
 // a player's counted quest completes on the player's phone, its reward waits in the GM's "Waiting for you" list, and the
 // GM edits and approves it, or refuses it. The player gets the approved reward once, across reloads of both phones.
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, answerWindow, waitingRow, type Page } from './helpers.ts';
+import { PENDING_WORDS } from '../../src/core/hunter/pending.ts';
 
 const HUNTER = 'Mira Test';
 const QUEST = 'Catch your breath';
@@ -39,7 +40,7 @@ async function restCompletes(player: Page): Promise<void> {
   await player.locator('#view-status [data-rest]').tap();
   const done = player.locator('.sys-overlay.show', { hasText: 'QUEST COMPLETE' });
   await expect(done).toBeVisible({ timeout: 15_000 });
-  await expect(done).toContainText('Waiting for the GM');
+  await expect(done).toContainText(PENDING_WORDS.waits);
   await expect(done).not.toContainText(`+${RULE_GOLD} gold`);
   await done.locator('.sys-actions button').first().tap();
 }
@@ -96,11 +97,11 @@ test('the GM refuses a reward waiting for a player: the player is told, and noth
   await restCompletes(player);
   const row = await waitingRow(gm, QUEST);
   await row.locator('[data-pw-refuse]').tap();
-  await expect(gm.locator('#gm-pw-msg')).toHaveText(`Refused for ${HUNTER}.`);
+  await expect(gm.locator('#gm-pw-msg')).toHaveText(PENDING_WORDS.refused(HUNTER));
   await expect(questRows(gm)).toHaveCount(0);
   const win = player.locator('.sys-overlay.show', { hasText: 'REWARD REFUSED' });
   await expect(win).toBeVisible({ timeout: 30_000 });
-  await expect(win).toContainText(`Quest complete: ${QUEST}. The GM did not give this reward.`);
+  await expect(win).toContainText(PENDING_WORDS.refusedBody('quest', QUEST));
   await dismissAll(player);
   await gm.reload();
   await go(gm, 'gm');

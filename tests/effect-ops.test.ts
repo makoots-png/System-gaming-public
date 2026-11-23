@@ -82,7 +82,7 @@ describe('what each op does to a sheet', () => {
   test('an aura and a spread say what they do, and read back through the op parser as they were written', () => {
     const aura: Op = { op: 'aura', radius: 2, on: 'allies' }, spread: Op = { op: 'spread', range: 1 };
     expect(describeStatus(def(aura, spread), null, RULES)).toEqual([
-      'Gives off its other effects to allies within 2 tiles', 'Spreads each round to anyone within 1 tile who fails to resist it, once a fight',
+      'Applies its other effects to allies within 2 tiles', 'Spreads each round to anyone within 1 tile who fails to resist it, once a fight',
     ]);
     expect([parseOp(aura, RULES), parseOp(spread, RULES)]).toEqual([aura, spread]);
     for (const bad of [{ ...aura, radius: 0 }, { ...aura, on: 'friends' }, { ...spread, range: 1.5 }, { op: 'spread' }]) expect(parseOp(bad, RULES)).toBeNull();
@@ -444,7 +444,7 @@ describe('a stacking status (kits design 1.1, table 2.1)', () => {
     const marked = stacking({ leave: { kind: 'round' }, threshold: { at: { kind: 'count', n: 3 }, to: { kind: 'bearer' }, then: 'spend', ops: [{ op: 'damage', type: 'magical', amount: f('2d8'), when: 'use' }] } },
       { op: 'damage', type: 'magical', amount: f('4'), when: 'turn' });
     expect(describeStatus(marked, 0, RULES)).toEqual([
-      'Stacks to 5. One leaves each round.', 'Each stack: 4 magical damage a round', 'At 3 stacks: Deals 2d8 magical damage. The stacks are spent.', 'Gone when the fight ends.',
+      'Stacks to 5. 1 stack expires each round.', 'Each stack: 4 magical damage a round', 'At 3 stacks: Deals 2d8 magical damage. The stacks are spent.', 'Removed when the fight ends.',
     ]);
   });
 
@@ -454,7 +454,7 @@ describe('a stacking status (kits design 1.1, table 2.1)', () => {
         { on: 'turnStart', to: { kind: 'area', radius: tiles(2), on: 'foes' }, limit: { kind: 'fight', n: 2 }, ops: [{ op: 'refund', pct: 50 }] }] };
     expect(describeStatus(hemo, 0, RULES)).toEqual([
       'When its bearer deals a hit: Marked on the other, every time.', 'When its bearer starts its turn: 50% of an action\'s time back on foes within 2 tiles, 2 times a fight.',
-      'When it ends: Deals 1d8 + mag magical damage. A cure cancels it.',
+      'When it ends: Deals 1d8 + mag magical damage. Curing this status cancels it.',
     ]);
   });
 });
@@ -549,7 +549,7 @@ describe('wave 2\'s ops as data (kits design 8.1 to 8.6, table 8.1)', () => {
     const lines = OPS.map(o => describeStatus({ label: 'x', desc: '', ops: [o] }, 0, RULES)[0]);
     expect(lines.every(l => typeof l === 'string' && l.length > 0)).toBe(true);
     expect(lines[2]).toBe('Damage taken +25%');
-    expect(lines[8]).toBe('Its next use against a foe: the target rolls twice and keeps the lower. Spent once used');
+    expect(lines[8]).toBe('On its next use against a foe, the target rolls twice and keeps the lower. Spent after one use');
     expect(lines[10]).toBe('Pulls each target 3 tiles toward you');
   });
 });
@@ -592,12 +592,12 @@ describe('the hidden op\'s fields and the stayHidden op (stealth design section 
 
   test('a hide says its level, where it may start and what ends it; a stayHidden says which end it keeps off', () => {
     expect(line({ op: 'hidden', level: 1, start: 'unseen', ends: ALL }))
-      .toBe('Hidden at stealth level 1: only a foe with that sight level or higher sees it. It hides only out of every foe\'s sight. It ends when it is hurt, is revealed or deals damage');
+      .toBe('Hidden at stealth level 1. Only a foe with that sight level or higher can see it. Can only hide while out of foes\' sight. Ends when it is hurt, is revealed or deals damage');
     expect(line({ op: 'hidden', level: [1, 1, 2, 2, 3, 5], start: 'anywhere', ends: { hurt: false, revealed: false, dealt: true } }))
-      .toBe('Hidden at stealth level 1 / 1 / 2 / 2 / 3 / 5, by rank E to S: only a foe with that sight level or higher sees it. It hides even in a foe\'s sight. It ends when it deals damage');
+      .toBe('Hidden at stealth level 1 / 1 / 2 / 2 / 3 / 5, by rank E to S. Only a foe with that sight level or higher can see it. Can hide even in foes\' sight. Ends when it deals damage');
     expect(line({ op: 'hidden', level: 4, start: 'unseen', ends: { hurt: false, revealed: false, dealt: false } }))
-      .toBe('Hidden at stealth level 4: only a foe with that sight level or higher sees it. It hides only out of every foe\'s sight. Only its time or a cure ends it');
-    expect(line({ op: 'hidden', level: 2, start: 'unseen', ends: { hurt: true, revealed: false, dealt: true } })).toMatch(/It ends when it is hurt or deals damage$/);
+      .toBe('Hidden at stealth level 4. Only a foe with that sight level or higher can see it. Can only hide while out of foes\' sight. Ends only when it expires or is cured');
+    expect(line({ op: 'hidden', level: 2, start: 'unseen', ends: { hurt: true, revealed: false, dealt: true } })).toMatch(/Ends when it is hurt or deals damage$/);
     expect([line({ op: 'stayHidden', on: 'hurt' }), line({ op: 'stayHidden', on: 'revealed' }), line({ op: 'stayHidden', on: 'dealt' })])
       .toEqual(['Stays hidden when it is hurt', 'Stays hidden when it is revealed', 'Stays hidden when it deals damage']);
   });
@@ -607,7 +607,7 @@ describe('the hidden op\'s fields and the stayHidden op (stealth design section 
     const flare: StatusDef = { label: 'Flare', desc: '', ops: [], triggers: [{ on: 'turnStart', to: { kind: 'area', radius: tiles(3), on: 'foes' }, limit: { kind: 'each' }, ops: [{ op: 'reveal' }] }],
       end: { ops: [{ op: 'reveal' }], cleanse: 'cancel' } };
     expect(parseStatusDef(JSON.parse(JSON.stringify(flare)), RULES)).toEqual(flare);
-    expect(line({ op: 'reveal' })).toBe('Reveals each body it lands on: a hide that ends when it is revealed ends');
+    expect(line({ op: 'reveal' })).toBe('Reveals each target it hits, ending stealth that breaks on reveal');
   });
 
   test('a sight op says the stealth it sees through, with no plus: sight levels do not add (ruling 8)', () => {
@@ -924,8 +924,8 @@ describe('the stagger op (keystones design A.7)', () => {
 
   test('each says what it does', () => {
     expect(describeStatus(def({ op: 'stagger', share: 0.25 }, { op: 'echo', radius: 2 }), 0, RULES)).toEqual([
-      'Fills 25% of the stagger bar of an elite or a boss it lands on',
-      'Echoes the status gained: it also goes on the nearest other one on that side within 2 tiles who lacks it, for as long. An echo does not echo',
+      'Fills 25% of an elite or boss target\'s stagger bar',
+      'Copies the gained status to the nearest other combatant on that side within 2 tiles who does not have it, for the same duration. Copied statuses do not copy again',
     ]);
   });
 

@@ -52,7 +52,7 @@ describe('the quick check\'s DC', () => {
 
   test('the keys are no DC and each rank\'s three levels, in the order the select lists them', () => {
     expect(DC_KEYS).toEqual(['none', ...RANKS.flatMap(r => [`${r}:0`, `${r}:1`, `${r}:2`])]);
-    expect(dcWords('none', RULES.rankTable)).toBe('No DC (just roll)');
+    expect(dcWords('none', RULES.rankTable)).toBe('No DC (roll only)');
     expect(dcWords('S:2', RULES.rankTable)).toBe('S Hard (DC 55)');
   });
 

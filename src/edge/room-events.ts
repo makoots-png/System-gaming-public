@@ -139,7 +139,7 @@ const APPLIERS: { readonly [K in EventType]: Applier<K> | typeof GM_ONLY_READS }
     if (app.hunter.fightOf({ hid: h.id })) return { save: s, tell: nothing };
     const was = h.level, next = sheetEdit(h, { type: 'life', event: { type: 'revive' } }, app.rules()); // the save is written into `h`, so the level before is kept here
     return isRefused(next) ? { save: s, tell: nothing }
-      : { save: withHunter(s, next), tell: () => app.toast('! System', `The GM has revived you. ${raisedLine(was, next.level)}.`, { kind: 'good' }) };
+      : { save: withHunter(s, next), tell: () => app.toast('! System', `The GM brought you back. ${raisedLine(was, next.level)}.`, { kind: 'good' }) };
   }) },
   // the chain machine refuses what does not apply (a second chain, a reissue of a chain that has not failed): nothing happens
   chain: { once: true, land: landChain },
@@ -228,7 +228,7 @@ function landSoloAnswer(p: PayloadOf<'soloAnswer'>, _hids: string[], app: ApplyD
     const closed = askAnswered(save, p.run);
     if (isRefused(closed)) return closed;
     if (p.verdict === 'refused') return { save: closed, tell: () => { app.system({ tag: '! Gate', title: p.why === 'stash-full' ? 'GATE NOT CLEARED' : 'GATE TAKEN', kind: 'warning', body: p.name, lines: [REFUSED_WORDS[p.why]] }); } };
-    return { save: closed, tell: () => { app.system({ tag: '! Gate', title: 'GATE CLEARED', kind: 'quest', body: `${p.name}: your solo run cleared it.`, lines: [PENDING_WORDS.waits] }); } };
+    return { save: closed, tell: () => { app.system({ tag: '! Gate', title: 'GATE CLEARED', kind: 'quest', body: `Your solo run cleared ${p.name}.`, lines: [PENDING_WORDS.waits] }); } };
   };
 }
 
@@ -262,9 +262,9 @@ function landAward(p: PayloadOf<'award'>, hids: string[], app: ApplyDeps): Land 
 
 /** A4: a death is a toast too; the sheet's death panel and the Dead chip say how to come back. */
 function fallen(app: ApplyDeps, before: Hunter, after: Hunter, reason: string): void {
-  if (before.life.at === 'up' && after.life.at === 'dead') diedTold(app, reason);
+  if (before.life.at === 'up' && after.life.at === 'dead') diedTold(app, reason, false);
 }
-const diedTold = (app: ApplyDeps, reason: string): void => app.toast('! Warning', `You are dead. ${reason || 'Your HP has reached 0.'} ${WAYS_BACK} brings you back.`, { kind: 'warn' });
+const diedTold = (app: ApplyDeps, reason: string, inFight: boolean): void => app.toast('! Warning', `You are dead. ${reason || 'Your HP has reached 0.'} ${inFight ? 'The GM\'s Revive brings you back during a fight.' : `${WAYS_BACK} brings you back.`}`, { kind: 'warn' });
 /**
  * What the GM's fight did to this phone's hunter's life, told from the lives before and after the `vitals` write
  * (vitals.ts `lifeNews`), so the words follow what the row's life did: a death, or a revive.
@@ -273,8 +273,8 @@ function fightLifeTold(app: ApplyDeps, before: Life, after: Life, reason: string
   const news = lifeNews(before, after);
   if (!news) return;
   switch (news.kind) {
-    case 'died': diedTold(app, reason); return;
-    case 'raised': app.toast('! System', `You are revived. ${raisedLine(levelBefore, levelAfter)}.`, { kind: 'good' }); return;
+    case 'died': diedTold(app, reason, true); return;
+    case 'raised': app.toast('! System', `You are back up. ${raisedLine(levelBefore, levelAfter)}.`, { kind: 'good' }); return;
   }
 }
 

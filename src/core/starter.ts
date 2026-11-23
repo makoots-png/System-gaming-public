@@ -97,5 +97,5 @@ export function starterCampaign(save: Save, made: StarterMade, stamp: Stamp, R: 
   };
   for (const g of made.gates) s = spawnGate(s, g.gate, g.monsters, stamp);
   return told(s, stamp, ...said, { kind: 'system', hunterId: null, title: 'Campaign begun',
-    text: 'Starter campaign loaded: 3 hunters, the Goblin Den (E) and a hidden Double Dungeon (D), and a 3-session quest arc.' });
+    text: 'Starter campaign loaded with 3 hunters, the Goblin Den (E), a hidden Double Dungeon (D), and 3 linked quests.' });
 }

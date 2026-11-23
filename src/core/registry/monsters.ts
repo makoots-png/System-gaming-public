@@ -75,7 +75,9 @@ export const MONSTER_KINDS = Object.keys(RULES.fight.kinds) as MonsterKind[];
 /** Every trait, in the order a monster keeps them and the maker shows them. */
 export const MONSTER_TRAITS = Object.keys(RULES.fight.traits) as MonsterTrait[];
 /** Each trait's name on a screen. */
-export const TRAIT_LABEL: { readonly [T in MonsterTrait]: string } = { frail: 'Frail', tough: 'Tough', slow: 'Slow', fast: 'Fast', armored: 'Armored', warded: 'Warded' };
+export const TRAIT_LABEL: { readonly [T in MonsterTrait]: string } = {
+  frail: 'Frail (low HP)', tough: 'Tough (high HP)', slow: 'Slow (low speed)', fast: 'Fast (high speed)', armored: 'Armored (high armor)', warded: 'Warded (high resist)',
+};
 
 /**
  * How a seed differs from its rank, archetype and kind: its tweak, a factor on its XP, whether a Necromancer may extract
@@ -100,10 +102,10 @@ const regenerating: readonly StartStatus[] = [{ key: 'regenerating' satisfies Bu
 
 export const SEEDS: readonly MonsterSeed[] = [
   ['goblin', 'Goblin', 'E', 'Humanoid', 'skirmisher', 'normal', {}, [],
-    ['Nimble Escape: bonus-action Disengage', 'Pack Tactics: advantage when an ally is adjacent'],
+    ['Nimble Escape: slips out of melee easily', 'Pack Tactics: advantage when an ally is adjacent'],
     'Green-skinned scavengers with rusted knives. They come in large groups in low-rank gates.'],
   ['goblin-shaman', 'Goblin Shaman', 'E', 'Humanoid', 'caster', 'normal', { hp: 0.7 }, [{ kind: 'curse', name: 'Hex Bolt', feet: 30 }],
-    ['Rally: allies within 30 ft gain +1 to hit'],
+    ['Rally: allies within 6 tiles gain +1 Accuracy'],
     'A goblin that casts curses.'],
   ['giant-centipede', 'Giant Centipede', 'E', 'Insect', 'skirmisher', 'normal', { hp: 1.2, stats: { ins: 4 } },
     [{ kind: 'curse', name: 'Venom Bite', feet: 5, applies: status('poisoned') }],
@@ -112,10 +114,10 @@ export const SEEDS: readonly MonsterSeed[] = [
   // Strength and Dexterity tie at 16: a brute.
   ['steel-fanged-lycan', 'Steel-fanged Lycan', 'D', 'Beast', 'brute', 'normal', { stats: { ins: 8 } },
     [{ kind: 'strike', name: 'Pounce', feet: 10, applies: status('prone', 1) }],
-    ['Steel Fangs: bites ignore 2 AC of armor', 'Howl: allies gain advantage on their next attack'],
+    ['Steel Fangs: bites ignore 2 Armor', 'Howl: allies gain advantage on their next attack'],
     'A werewolf with steel fangs.'],
   ['hobgoblin', 'Hobgoblin', 'D', 'Humanoid', 'brute', 'normal', { hp: 1.2 }, [{ kind: 'shield', name: 'Shield Wall' }],
-    ['Martial Advantage: +2d6 once per round'],
+    ['Formation Strike: deals +2d6 extra damage once per round when an ally is adjacent to the target'],
     'Goblin soldiers in iron armor.'],
   ['lizardman', 'Lizardman', 'D', 'Humanoid', 'brute', 'normal', { stats: { ins: 4 } }, [{ kind: 'strike', name: 'Spear Reach', feet: 10 }],
     ['Hold Breath: amphibious'],
@@ -152,7 +154,7 @@ export const SEEDS: readonly MonsterSeed[] = [
     'Regenerating brutes found deep in B-rank dungeons.'],
   ['vulcan', 'Vulcan', 'B', 'Demon', 'brute', 'boss', { hp: 0.9 },
     [{ kind: 'strike', name: 'Flame Whip', feet: 15, applies: status('burning') }, { kind: 'blast', name: 'Inferno', feet: 30, leaves: { name: 'Burning ground', rounds: 2, status: 'burning' } }],
-    ['Cinder Aura: 5 ft, 1d10 fire to adjacent enemies each round'],
+    ['Cinder Aura: deals 1d10 fire damage to adjacent foes (1 tile) each round'],
     'A demon lord of the volcanic gate who fights with fire.'],
   ['igris', 'Igris the Bloodred', 'A', 'Undead', 'brute', 'boss', { hp: 0.9, stats: { ins: 12 }, xp: 1.2, extractable: true },
     [{ kind: 'strike', name: 'Crimson Slash', heavy: true }],
@@ -160,25 +162,25 @@ export const SEEDS: readonly MonsterSeed[] = [
     'An undead knight in red armor who guards the Demon Castle.'],
   ['giant', 'Giant', 'A', 'Giant', 'brute', 'normal', { hp: 1.3, stats: { ins: -16 } },
     [{ kind: 'blast', name: 'Earthshaker', feet: 20, type: 'physical', applies: status('prone', 1) }, { kind: 'shot', name: 'Hurl Boulder', feet: 120 }],
-    ['Towering: attacks against Large or smaller allies have advantage'],
+    ['Towering: strikes against smaller targets have advantage'],
     'Colossal humanoids that guard A-rank vaults.'],
   ['ant-soldier', 'Ant Soldier', 'A', 'Insect', 'brute', 'normal', { hp: 0.8, stats: { ins: 12 } }, [],
-    ['Mandible Shear: crit on 19-20', 'Carapace: resistance to piercing', 'Hive Mind: shares initiative with other ants'],
+    ['Mandible Shear: expanded crit range', 'Carapace: resistance to piercing', 'Hive Mind: coordinates turns with nearby ants'],
     'Chitinous soldiers of the ant nest.'],
   ['ant-royal-guard', 'Ant Royal Guard', 'A', 'Insect', 'brute', 'elite', { hp: 1, stats: { ins: 12 } }, [{ kind: 'strike', name: 'Scythe Arms', heavy: true }],
     ['Sacrifice: redirects an attack aimed at the king to itself'],
     'Elite bodyguards of the ant king.'],
   ['beru', 'Beru the Ant King', 'S', 'Insect', 'brute', 'boss', { hp: 0.8, stats: { ins: 8 }, xp: 1.25, statuses: regenerating },
     [{ kind: 'curse', name: 'Venom Mandibles', feet: 5, applies: status('paralyzed') }],
-    ['Regeneration: 25 HP per round', 'Flight: 60 ft fly', 'Ant King\'s Command: summons 1d6 Ant Soldiers', 'Extractable: legendary shadow'],
+    ['Regeneration: 25 HP per round', 'Flight: flies up to 12 tiles per round', 'Ant King\'s Command: summons 1d6 Ant Soldiers', 'Extractable: legendary shadow'],
     'The king of the ant nest.'],
   ['kamish', 'Kamish', 'S', 'Dragon', 'brute', 'boss', { hp: 1.5, stats: { ins: 8 }, xp: 1.5 },
     [{ kind: 'blast', name: 'Dragon Breath', feet: 90 }, { kind: 'curse', name: 'Frightful Presence', applies: status('frightened') },
       { kind: 'blast', name: 'Wing Gust', feet: 40, type: 'physical', applies: status('prone', 1) }],
-    ['Flight: 120 ft fly', 'Scale Armor: resistance to non-magical damage'],
+    ['Flight: flies up to 24 tiles per round', 'Scale Armor: resistance to non-magical damage'],
     'A dragon that burned half a continent.'],
   ['baran', 'Baran', 'S', 'Demon', 'brute', 'boss', { hp: 0.9, xp: 1.2 }, [{ kind: 'curse', name: 'Demon Monarch\'s Presence', applies: status('frightened') }],
-    ['Ice Domain: 30 ft cold aura, 3d10 per round', 'Dark Command: calls 1d4 Demon Knights', 'Blink: teleport 30 ft as a bonus action'],
+    ['Ice Domain: 30 ft cold aura, 3d10 per round', 'Dark Command: calls 1d4 Demon Knights', 'Teleport: moves up to 6 tiles in an instant'],
     'Demon king of the frozen castle.'],
   // The mythics of design B.6, each playing its script (registry/mythics.ts). An ability of the draft's row that is one
   // of its script's moves is the script's and is not listed here.
@@ -187,13 +189,13 @@ export const SEEDS: readonly MonsterSeed[] = [
     ['It has held the trumpet to its lips since the beginning and waits for the word.'],
     'A figure whose feet stand on the earth and whose head is above the sky, with a great horn raised. When it blows, everything is over.'],
   ['zaratan-the-island-that-wakes', 'Zaratan, the Island That Wakes', 'S', 'Aquatic', 'brute', 'mythic', { script: 'zaratan-the-island-that-wakes' },
-    [{ kind: 'strike', name: 'Jaws Like a Harbour', feet: 30, heavy: true, applies: status('restrained') }, { kind: 'shield', name: 'Shell of a Thousand Years' }],
+    [{ kind: 'strike', name: 'Jaws Like a Harbor', feet: 30, heavy: true, applies: status('restrained') }, { kind: 'shield', name: 'Shell of a Thousand Years' }],
     ['The fight takes place on its back, and it can dive.'],
-    'A sea turtle so large that forests and ruins stand on its shell. Sailors land on it and light fires, and then it remembers the deep.'],
+    'A sea turtle so large that forests and ruins stand on its shell. Sailors land on it and light fires, and then it dives back into the sea.'],
   ['the-fourth-rider', 'The Fourth Rider', 'S', 'Spirit', 'skirmisher', 'mythic', { script: 'the-fourth-rider' },
     [{ kind: 'strike', name: 'Reaping Stroke', feet: 20, heavy: true }, { kind: 'shield', name: 'Not Yet' }],
     ['He comes for everyone in the end and has never been late.'],
-    'A thin rider on a horse the colour of a corpse, with the grave following behind him. He does not hurry.'],
+    'A thin rider on a horse the color of a corpse. He does not hurry.'],
 ];
 
 /**

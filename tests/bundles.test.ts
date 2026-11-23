@@ -46,7 +46,7 @@ describe('the shelf of awards for roleplay', () => {
   });
 
   test('the shelf says what each gives in one line: a title with its bonus, a boon with what it lets the player do', () => {
-    expect(givesLine(newRewards(), RULES)).toBe('Only the System\'s line.');
+    expect(givesLine(newRewards(), RULES)).toBe('System message only.');
     const scar = BUILT_IN_BUNDLES.find(b => b.key === 'seed-scar-tissue')!, steady = BUILT_IN_BUNDLES.find(b => b.key === 'seed-steady-under-weight')!;
     expect(givesLine(scar.rewards, RULES)).toBe('Title: Scar Tissue (+1 DIS)');
     expect(givesLine(steady.rewards, RULES)).toBe('Boon: Once, roll one of your d20s again and keep the second roll.');

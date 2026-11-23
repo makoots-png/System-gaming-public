@@ -755,7 +755,7 @@ test('a player sees no Delete on the Penalty Zone quest that holds their penalty
     await expect(penalizedChip(page)).toHaveCount(1);
     await (await penaltyCards(page, 'active')).locator('[data-del]').tap();
     await expect(windowTitle(page)).toHaveText('Delete quest?');
-    await expect(topWindow(page)).toContainText(`Deleting it lifts ${name}'s penalty.`);
+    await expect(topWindow(page)).toContainText(`Deleting it clears ${name}'s penalty.`);
     await topWindow(page).locator('.sys-actions button', { hasText: 'Delete' }).tap();
     await expect(page.locator('.sys-overlay.show')).toHaveCount(0);
     await expect(await penaltyCards(page, 'active')).toHaveCount(0);

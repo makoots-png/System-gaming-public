@@ -484,7 +484,7 @@ group('the Resurrection Crystal (notes-2b-crystal.md)', () => {
   });
 
   test('its card says what it does', () => {
-    expect(describeItem(RULES, crystal())).toEqual(['Brings its dead user back at 1 HP, outside a fight.']);
+    expect(describeItem(RULES, crystal())).toEqual(['Revives a dead hunter at 1 HP (outside a fight).']);
   });
 });
 

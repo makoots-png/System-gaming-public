@@ -34,7 +34,7 @@ async function angelFight(
   await go(gm, 'gm');
   await expect(gm.locator('#gm-board .gm-card.remote', { hasText: HUNTER })).toHaveCount(1);
   await go(gm, 'combat');
-  await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (remote)` });
+  await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (player phone)` });
   await combat(gm).locator('[data-addh]').tap();
   const label = await combat(gm).locator('[data-msel] option', { hasText: script.name }).first().textContent();
   await combat(gm).locator('[data-msel]').selectOption({ label: label ?? '' });

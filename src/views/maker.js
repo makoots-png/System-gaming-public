@@ -83,12 +83,12 @@ function readBonus(root) {
 const KIND_LABEL = {
   damage: 'Damage', heal: 'Heal', mana: 'Mana', fatigue: 'Fatigue', shield: 'Shield', speed: 'Speed %', delay: 'Delay next turn', stat: 'Stat',
   hold: 'Cannot act (stun)', root: 'Cannot move (root)', taunt: 'Taunt', threat: 'Threat', channel: 'Channel', staggerRate: 'Stagger fill %',
-  refund: 'Extra-turn chance', applyStatus: 'Apply status', cureStatus: 'Cure status', note: 'Note', aura: 'Aura around the bearer', spread: 'Spreads to others',
-  sheet: 'Armor, crit or range', share: 'Damage or healing %', untargetable: 'Cannot be aimed at', invulnerable: 'Cannot drop under 1 HP',
-  safeguard: 'Blocks harmful statuses', edge: 'Rolls twice (advantage)', boost: 'Held die', hidden: 'Hidden (stealth)', alert: 'Never surprised',
-  shove: 'Push or pull', move: 'Move stacks', hasten: 'Hasten their turn', extra: 'Another action', guard: 'Guard (reaction)',
-  negate: 'Negate (reaction)', dispel: 'Cure harmful', stayHidden: 'Stays hidden', reveal: 'Reveal hidden',
-  stagger: 'Fill the stagger bar', echo: 'Echo to the nearest',
+  refund: 'Action time refund', applyStatus: 'Apply status', cureStatus: 'Cure status', note: 'Note', aura: 'Aura around the bearer', spread: 'Spreads to others',
+  sheet: 'Armor, crit, or range', share: 'Damage or healing %', untargetable: 'Cannot be aimed at', invulnerable: 'Cannot drop under 1 HP',
+  safeguard: 'Blocks harmful statuses', edge: 'Roll twice (advantage)', boost: 'Bonus die or number', hidden: 'Hidden (stealth)', alert: 'Never surprised',
+  shove: 'Push or pull', move: 'Move status stacks', hasten: 'Move turn sooner', extra: 'Extra action', guard: 'Guard (reaction)',
+  negate: 'Negate (reaction)', dispel: 'Cure harmful status', stayHidden: 'Stays hidden', reveal: 'Reveal hidden',
+  stagger: 'Fill the stagger bar', echo: 'Copy status to nearest',
 };
 /** Whom a status's aura reaches (effect-ops.ts `AURA_ON`). */
 const AURA_LABEL = [['all', 'Everyone'], ['allies', 'Allies'], ['foes', 'Foes']];
@@ -174,25 +174,25 @@ function amountLine(f) {
 const PLAIN_KINDS = ['hold', 'root', 'taunt', 'untargetable', 'invulnerable', 'safeguard', 'alert', 'extra', 'negate', 'reveal'];
 /** Where a hide may start (effect-ops.ts `HIDE_STARTS`), and the three events that may end it (`STEALTH_ENDS`), as the GM reads them. */
 const START_LABEL = [['unseen', 'Out of sight'], ['anywhere', 'Anywhere']];
-const STEALTH_END_LABEL = [['hurt', 'Hurt'], ['revealed', 'Revealed'], ['dealt', 'It deals damage']];
+const STEALTH_END_LABEL = [['hurt', 'Takes damage'], ['revealed', 'Revealed'], ['dealt', 'Deals damage']];
 /** The sheet numbers a `sheet` op changes (effect-ops.ts `SHEET_OP_KEYS`), as the GM reads them. */
 const SHEET_KEY_LABEL = [['armor', 'Armor'], ['resist', 'Resist'], ['armorPen', 'Armor penetration (%)'], ['resistPen', 'Magic penetration (%)'],
-  ['armorPenFlat', 'Lethality'], ['resistPenFlat', 'Unravel'], ['critFaces', 'Crit faces'], ['exposed', 'Faces foes crit it on'],
-  ['critSize', 'Crit size'], ['costCut', 'Cost cut (share)'], ['range', 'Range']];
-const SHARE_LABEL = [['dealt', 'Dealt'], ['taken', 'Taken'], ['healed', 'Healing'], ['shielded', 'Shields']];
-const SIDE_LABEL = [['attack', 'Its attacks'], ['defend', 'Its defense']];
-const KEEP_LABEL = [['better', 'Better for it'], ['worse', 'Worse for it']];
-const DIE_LABEL = [['die', 'A die'], ['face', 'A fixed number']];
+  ['armorPenFlat', 'Flat armor penetration'], ['resistPenFlat', 'Flat magic penetration'], ['critFaces', 'Crit range (+)'], ['exposed', 'Exposed (foes crit easier)'],
+  ['critSize', 'Crit damage multiplier'], ['costCut', 'Ability cost reduction'], ['range', 'Range']];
+const SHARE_LABEL = [['dealt', 'Damage dealt'], ['taken', 'Damage taken'], ['healed', 'Healing'], ['shielded', 'Shields']];
+const SIDE_LABEL = [['attack', 'Attacks'], ['defend', 'Defense']];
+const KEEP_LABEL = [['better', 'Advantage'], ['worse', 'Disadvantage']];
+const DIE_LABEL = [['die', 'Roll a die'], ['face', 'Fixed number']];
 const DIR_LABEL = [['away', 'Push'], ['toward', 'Pull']];
-const FROM_LABEL = [['user', 'From the user'], ['aim', 'From the aim']];
+const FROM_LABEL = [['user', 'Relative to user'], ['aim', 'Relative to target tile']];
 const MOVE_FROM_LABEL = [['user', 'User to target'], ['target', 'Target to user']];
-const WHICH_LABEL = [['first', 'The first'], ['all', 'Every one']];
+const WHICH_LABEL = [['first', 'One harmful status'], ['all', 'All harmful statuses']];
 /** A tag's form (fight-parse.ts `TAG_RE`): lower-case words joined by hyphens. */
 const TAG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const DAMAGE_TYPES = [['physical', 'Physical'], ['magical', 'Magical']];
-const WHEN_LABEL = [['turn', 'Each round'], ['use', 'Once, as it lands']];
-const CHANNEL_LABEL = [['protect', 'A hit does not break it'], ['break', 'Breaks it']];
-const RARITY_SHORT = { common: 'Com', uncommon: 'Unc', rare: 'Rare', epic: 'Epic', legendary: 'Leg', mythic: 'Myth' };
+const WHEN_LABEL = [['turn', 'Each round'], ['use', 'Once, when applied']];
+const CHANNEL_LABEL = [['protect', 'Protect channel from hits'], ['break', 'Break target\'s channel']];
+const RARITY_SHORT = { common: 'Common', uncommon: 'Uncommon', rare: 'Rare', epic: 'Epic', legendary: 'Legendary', mythic: 'Mythic' };
 /** The most rows an editor holds: a status, an item and an ability each read 12 ops. */
 const MAX_ROWS = 12;
 const NEW_STATUS = '__new';
@@ -341,7 +341,7 @@ function checkRow(r, item) {
     if (r.kind === 'hidden') return ok({ op: 'hidden', level: v, start: r.start, ends: { ...r.ends } });
     if (r.kind === 'refund') {
       const t = String(r.chance).trim(), c = Number(t);
-      if (!(t !== '' && Number.isInteger(c) && c >= 1 && c <= 100)) return fail('Write the chance, a whole number of percent from 1 to 100.');
+      if (!(t !== '' && Number.isInteger(c) && c >= 1 && c <= 100)) return fail('Enter a whole percentage from 1 to 100.');
       return ok({ op: 'refund', pct: v, chance: c });
     }
     return ok({ op: r.kind, [spec.key]: v });
@@ -350,7 +350,7 @@ function checkRow(r, item) {
   const K = R.fight.kit, wholeIn = (t, lo, hi) => { const x = String(t).trim(), n = Number(x); return x !== '' && Number.isInteger(n) && n >= lo && n <= hi ? n : null; };
   if (r.kind === 'edge') {
     const tag = r.side === 'attack' ? r.tag.trim().toLowerCase() : '';
-    if (tag && !(TAG_RE.test(tag) && tag.length <= K.tagLength)) return fail(`A tag is one word or words joined by hyphens, at most ${K.tagLength} letters. Leave it empty for any use.`);
+    if (tag && !(TAG_RE.test(tag) && tag.length <= K.tagLength)) return fail(`A tag must be one word or hyphenated words, up to ${K.tagLength} characters. Leave empty to match any ability.`);
     return ok({ op: 'edge', side: r.side, keep: r.edgeKeep, tag: tag || null, spend: !!r.spend });
   }
   if (r.kind === 'boost') {
@@ -364,7 +364,7 @@ function checkRow(r, item) {
   }
   if (r.kind === 'move') {
     const take = String(r.q).trim() === '' ? 'all' : wholeIn(r.q, 1, K.stackCap);
-    if (take === null) return fail(`Write the stacks it moves, from 1 to ${K.stackCap}. Leave it empty for all.`);
+    if (take === null) return fail(`Enter 1 to ${K.stackCap} stacks to move, or leave empty to move all.`);
     return ok({ op: 'move', key: r.moveKey, take, from: r.moveFrom, as: r.as || null });
   }
   if (r.kind === 'hasten' || r.kind === 'guard') {
@@ -375,12 +375,12 @@ function checkRow(r, item) {
   if (r.kind === 'stagger') {
     // the most of a bar one op fills (keystones A.7)
     const hi = Math.round(K.staggerOpMax * 1000) / 10, x = String(r.q).trim(), n = Number(x);
-    if (x === '' || !Number.isFinite(n) || n <= 0 || n > hi) return fail(`Write the share of the bar, a percent above 0 and at most ${hi}.`);
+    if (x === '' || !Number.isFinite(n) || n <= 0 || n > hi) return fail(`Enter a percentage above 0 and up to ${hi}.`);
     return ok({ op: 'stagger', share: n / 100 });
   }
   if (r.kind === 'echo') {
     const n = wholeIn(r.q, 1, R.fight.fieldRadiusMax);
-    return n === null ? fail(`Write the tiles it reaches, a whole number from 1 to ${R.fight.fieldRadiusMax}.`) : ok({ op: 'echo', radius: n });
+    return n === null ? fail(`Enter a whole number of tiles from 1 to ${R.fight.fieldRadiusMax}.`) : ok({ op: 'echo', radius: n });
   }
   if (r.kind === 'dispel') return ok({ op: 'dispel', which: r.which === 'all' ? 'all' : 'first' });
   if (r.kind === 'stayHidden') return ok({ op: 'stayHidden', on: r.stayOn });
@@ -388,12 +388,12 @@ function checkRow(r, item) {
   if (r.kind === 'aura' || r.kind === 'spread') {
     // the rules' widest aura and longest spread (design 4.8)
     const hi = r.kind === 'aura' ? R.fight.fieldRadiusMax : R.fight.spreadRangeMax, t = String(r.q).trim(), n = Number(t);
-    if (!(t !== '' && Number.isInteger(n) && n >= 1 && n <= hi)) return fail(`Write the tiles it reaches, a whole number from 1 to ${hi}.`);
+    if (!(t !== '' && Number.isInteger(n) && n >= 1 && n <= hi)) return fail(`Enter a whole number of tiles from 1 to ${hi}.`);
     return ok(r.kind === 'aura' ? { op: 'aura', radius: n, on: oneOf(r.on, ['all', 'allies', 'foes'], 'all') } : { op: 'spread', range: n });
   }
   if (r.kind === 'note') {
     const text = r.text.replace(/\s+/g, ' ').trim();
-    return text && text.length <= 200 ? ok({ op: 'note', text }) : fail('Write the note (at most 200 letters).');
+    return text && text.length <= 200 ? ok({ op: 'note', text }) : fail('Enter a note (up to 200 characters).');
   }
   if (!r.status) return fail('Pick a status.');
   const st = String(r.addStacks).trim(), stacks = st === '' ? undefined : wholeIn(st, 1, K.stackAdd);
@@ -409,7 +409,7 @@ function checkRow(r, item) {
     return ok({ op: 'applyStatus', key: r.status, def, duration: all, ...more });
   }
   const t = r.rounds.trim(), n = Number(t);
-  if (t !== '' && !(Number.isInteger(n) && n >= 1 && n <= 999)) return fail('Rounds go from 1 to 999. Leave it empty for until removed.');
+  if (t !== '' && !(Number.isInteger(n) && n >= 1 && n <= 999)) return fail('Rounds must be from 1 to 999. Leave empty so it lasts until removed.');
   return ok({ op: 'applyStatus', key: r.status, def, duration: t === '' ? null : n * R.fight.round, ...more });
 }
 
@@ -455,7 +455,7 @@ function effects(box, o) {
     /** A labelled group of buttons: a `div`, so a tap on its label presses none of them. */
     const group = (label, inner) => `<div class="field"><span class="lbl">${esc(label)}</span>${inner}</div>`;
     const K = rules().fight.kit, stacksIn = r.kind === 'applyStatus' || r.kind === 'cureStatus'
-      ? (stacking(r) || r.addStacks ? smallNum('addStacks', r.kind === 'applyStatus' ? 'Stacks it adds' : 'Stacks it takes', r.addStacks, { aria: `Stacks of effect ${i + 1}`, placeholder: r.kind === 'applyStatus' ? '1' : 'All' }) : '') : '';
+      ? (stacking(r) || r.addStacks ? smallNum('addStacks', r.kind === 'applyStatus' ? 'Stacks added' : 'Stacks removed', r.addStacks, { aria: `Stacks of effect ${i + 1}`, placeholder: r.kind === 'applyStatus' ? '1' : 'All' }) : '') : '';
     let body = '';
     if (formula || number) {
       if (r.mode === 'rank' && !one) body = `<div class="mk-tiers">${tierLabels.map(([short, full], t) => `<label class="mk-tier"><span>${esc(short)}</span>${input(`data-t="${t}"`, `${what} at ${full}`, r.tiers[t])}</label>`).join('')}</div>`;
@@ -470,12 +470,12 @@ function effects(box, o) {
     } else if (r.kind === 'applyStatus' && r.mode === 'rank') {
       const rounds = (attrs, label, value) => `<input type="number" min="1" max="999" step="1" inputmode="numeric" ${attrs} aria-label="${esc(label)}" value="${esc(value)}">`;
       body = `${statusSelect(r, i, !!o.newStatus)}<div class="mk-tiers">${tierLabels.map(([short, full], t) => `<label class="mk-tier"><span>${esc(short)}</span>${rounds(`data-t="${t}"`, `Rounds of effect ${i + 1} at ${full}`, r.tiers[t])}</label>`).join('')}</div>`;
-    } else if (r.kind === 'applyStatus') body = `<div class="mk-fx-two">${statusSelect(r, i, !!o.newStatus)}<input type="number" min="1" max="999" step="1" inputmode="numeric" data-f="rounds" aria-label="Rounds of effect ${i + 1}" placeholder="Rounds (∞)" value="${esc(r.rounds)}"></div>`;
+    } else if (r.kind === 'applyStatus') body = `<div class="mk-fx-two">${statusSelect(r, i, !!o.newStatus)}<input type="number" min="1" max="999" step="1" inputmode="numeric" data-f="rounds" aria-label="Rounds of effect ${i + 1}" placeholder="Until removed" value="${esc(r.rounds)}"></div>`;
     else if (r.kind === 'cureStatus') body = statusSelect(r, i, false);
     else if (r.kind === 'edge') {
       body = `${segF('side', `Which rolls of effect ${i + 1}`, SIDE_LABEL, r.side)}${segF('edgeKeep', `Which die is kept, effect ${i + 1}`, KEEP_LABEL, r.edgeKeep)}
-        ${r.side === 'attack' ? `<label class="field"><span class="lbl">Only uses tagged (optional)</span><input type="text" maxlength="${K.tagLength}" autocomplete="off" spellcheck="false" data-f="tag" aria-label="Tag of effect ${i + 1}" placeholder="any use" value="${esc(r.tag)}"></label>` : ''}
-        <label class="mk-check"><input type="checkbox" data-f="spend"${r.spend ? ' checked' : ''}><span>Spent once used</span></label>`;
+        ${r.side === 'attack' ? `<label class="field"><span class="lbl">Only abilities tagged (optional)</span><input type="text" maxlength="${K.tagLength}" autocomplete="off" spellcheck="false" data-f="tag" aria-label="Tag of effect ${i + 1}" placeholder="any ability" value="${esc(r.tag)}"></label>` : ''}
+        <label class="mk-check"><input type="checkbox" data-f="spend"${r.spend ? ' checked' : ''}><span>Consumed after one roll</span></label>`;
     } else if (r.kind === 'boost') body = `${segF('side', `Which rolls of effect ${i + 1}`, SIDE_LABEL, r.side)}${segF('dieMode', `Die of effect ${i + 1}`, DIE_LABEL, r.dieMode)}${smallNum('q', r.dieMode === 'die' ? 'Sides' : 'Number', r.q, { aria: `Die of effect ${i + 1}` })}`;
     else if (r.kind === 'shove') body = `${segF('dir', `Push or pull, effect ${i + 1}`, DIR_LABEL, r.dir)}${segF('from', `From where, effect ${i + 1}`, FROM_LABEL, r.from)}${smallNum('q', 'Tiles', r.q, { aria: `Tiles of effect ${i + 1}` })}`;
     else if (r.kind === 'move') {
@@ -483,15 +483,15 @@ function effects(box, o) {
       body = `<select data-f="moveKey" data-pick aria-label="What effect ${i + 1} moves">${opt('harmful', 'The first harmful status', r.moveKey)}${opt('event', 'The status that set it off', r.moveKey)}${list.map(([k, l]) => opt(k, l, r.moveKey)).join('')}</select>
         ${segF('moveFrom', `Which way, effect ${i + 1}`, MOVE_FROM_LABEL, r.moveFrom)}
         <div class="mk-two">${smallNum('q', 'Stacks', r.q, { aria: `Stacks effect ${i + 1} moves`, placeholder: 'All' })}<label class="field"><span class="lbl">Arrives as</span><select data-f="as" data-pick aria-label="Effect ${i + 1} arrives as">${opt('', 'The same status', r.as)}${list.map(([k, l]) => opt(k, l, r.as)).join('')}</select></label></div>`;
-    } else if (r.kind === 'hasten' || r.kind === 'guard') body = smallNum('q', r.kind === 'hasten' ? 'Sooner by (% of your action)' : 'Takes off the strike (%)', r.q, { aria: `Percent of effect ${i + 1}`, decimal: true });
-    else if (r.kind === 'stagger') body = `${smallNum('q', 'Of the bar (%)', r.q, { aria: `Share of the stagger bar, effect ${i + 1}`, decimal: true })}<p class="mk-avg">Only an elite or a boss has a bar. One effect fills at most ${Math.round(K.staggerOpMax * 100)}% of it.</p>`;
-    else if (r.kind === 'echo') body = `${smallNum('q', 'Out to (tiles)', r.q, { aria: `Reach of effect ${i + 1}` })}${idle(r) ? '<p class="mk-fx-err" role="note">Does nothing here: an echo acts only in a trigger on a status gained or imposed.</p>' : ''}<p class="mk-avg">Only in a trigger set off when a status is gained or imposed: that status also goes on the nearest other one on that side who lacks it, for as long. It does not echo again.</p>`;
+    } else if (r.kind === 'hasten' || r.kind === 'guard') body = smallNum('q', r.kind === 'hasten' ? 'Move turn sooner (%)' : 'Damage reduced (%)', r.q, { aria: `Percent of effect ${i + 1}`, decimal: true });
+    else if (r.kind === 'stagger') body = `${smallNum('q', 'Stagger bar fill (%)', r.q, { aria: `Share of the stagger bar, effect ${i + 1}`, decimal: true })}<p class="mk-avg">Only elite and boss monsters have a stagger bar. One effect can fill at most ${Math.round(K.staggerOpMax * 100)}% of it.</p>`;
+    else if (r.kind === 'echo') body = `${smallNum('q', 'Range (tiles)', r.q, { aria: `Reach of effect ${i + 1}` })}${idle(r) ? '<p class="mk-fx-err" role="note">Does nothing here. Echo only works in a trigger for gaining or applying a status.</p>' : ''}<p class="mk-avg">Works only in a trigger when a status is gained or applied. Copies that status with the same duration onto the nearest ally or foe on that side who does not have it. It does not chain.</p>`;
     else if (r.kind === 'dispel') body = segF('which', `Which harmful statuses, effect ${i + 1}`, WHICH_LABEL, r.which);
     else if (r.kind === 'stayHidden') body = group('Stays hidden when', segF('stayOn', `What effect ${i + 1} keeps from ending a hide`, STEALTH_END_LABEL, r.stayOn));
     else if (r.kind === 'note') body = `<input type="text" maxlength="200" autocomplete="off" data-f="text" aria-label="Note of effect ${i + 1}" placeholder="What the GM rules on" value="${esc(r.text)}">`;
     else if (r.kind === 'channel') body = seg('data-channel', `Channel of effect ${i + 1}`, CHANNEL_LABEL, r.chMode);
     else if (r.kind === 'aura' || r.kind === 'spread') {
-      const tilesIn = `<label class="field"><span class="lbl">${r.kind === 'aura' ? 'Out to (tiles)' : 'Reaches (tiles)'}</span><input type="number" inputmode="numeric" step="1" min="1" data-f="q" aria-label="${r.kind === 'aura' ? 'Radius' : 'Reach'} of effect ${i + 1}" value="${esc(r.q)}"></label>`;
+      const tilesIn = `<label class="field"><span class="lbl">${r.kind === 'aura' ? 'Radius (tiles)' : 'Spread range (tiles)'}</span><input type="number" inputmode="numeric" step="1" min="1" data-f="q" aria-label="${r.kind === 'aura' ? 'Radius' : 'Reach'} of effect ${i + 1}" value="${esc(r.q)}"></label>`;
       body = r.kind === 'aura' ? `${seg('data-on', `Whom effect ${i + 1} reaches`, AURA_LABEL, r.on)}${tilesIn}` : tilesIn;
     }
     return `<div class="mk-fx" data-row="${i}">
@@ -634,19 +634,19 @@ function effects(box, o) {
 
 // ── the formula field ──
 /** What an ability's effect is, as the GM names it: aimed at Armor or Resist, a heal, a shield, or nothing. */
-const EFFECT_TYPES = [['physical', 'Armor'], ['magical', 'Resist'], ['heal', 'Heals'], ['shield', 'Shields'], ['none', 'Nothing']];
+const EFFECT_TYPES = [['physical', 'Physical damage'], ['magical', 'Magical damage'], ['heal', 'Heal'], ['shield', 'Shield'], ['none', 'None']];
 const DEFENCE_WORD = { physical: 'Armor', magical: 'Resist' };
 /** The kits' formula names (formula.ts, kits design 1.5) a chip inserts; KEY is the status picked beside them. */
 const FORMULA_NAMES = [
   ['target.stacks(KEY)', 'Its stacks on the target'], ['stacks(KEY)', 'Its stacks on you'], ['spent', 'Stacks this use spent'], ['field(KEY)', 'Its stacks on everyone'],
-  ['held(KEY)', 'Rounds you held it'], ['target.missing', 'Target\'s missing HP share'], ['missing', 'Your missing HP share'], ['hits', 'Bodies hit'], ['kills', 'Your kills this fight'],
+  ['held(KEY)', 'Rounds you held it'], ['target.missing', 'Target\'s missing HP share'], ['missing', 'Your missing HP share'], ['hits', 'Targets hit'], ['kills', 'Your kills this fight'],
 ];
 /** A lasting change in words on the maker's sample hunter (`SAMPLE_RANK`): `Armor: +10% of max HP (now 12)`. */
 const lastingLine = op => `On a sample rank ${SAMPLE_RANK} hunter: ${opLines([op], 0, rules(), sampleBody(SAMPLE_RANK, 'str', rules())).join('')}`;
 /** The averages line of a formula: at E, C and S on a same-rank brute, and after its Armor or Resist for a damage type. */
 function averagesLine(f, type, main) {
   const rows = averages(f, type, main, rules()), r = n => String(Math.round(n));
-  const dealt = rows.every(x => x.dealt !== null) ? `; after its ${DEFENCE_WORD[type]}: ${rows.map(x => r(x.dealt)).join(', ')}` : '';
+  const dealt = rows.every(x => x.dealt !== null) ? `. After ${DEFENCE_WORD[type]}: ${rows.map(x => r(x.dealt)).join(', ')}` : '';
   return `Average on a same-rank brute: ${rows.map(x => `${x.rank} ${r(x.average)}`).join(', ')}${dealt}`;
 }
 /**
@@ -676,7 +676,7 @@ function formulaField(box, o) {
     ${chips('ftype', EFFECT_TYPES.map(([v, l]) => [v, l]), type, { label: 'What it does' })}
     <div data-f-has><label class="field"><span class="lbl">Formula <span class="mk-edited" data-edited hidden>edited</span></span>
       <span class="mk-formula-row"><input type="text" data-formula autocomplete="off" spellcheck="false" aria-label="Formula" value="${esc(text)}">
-      <button type="button" class="quiet" data-reset hidden>Reset</button></span></label>
+      <button type="button" class="quiet" data-reset hidden>Reset formula</button></span></label>
     <p class="mk-fx-err" data-formula-err role="alert"></p>
     <p class="mk-avg" data-formula-avg></p>
     <details class="mk-group" data-group="ticks"><summary>Build the formula</summary><div class="mk-group-body">
@@ -685,13 +685,13 @@ function formulaField(box, o) {
       <div class="mk-gap" data-gap${gapOn ? '' : ' hidden'}>
         <label class="field"><span class="lbl">The user's</span><select data-gap="mine" aria-label="The user's stat">${statOpts(gap.mine, false)}</select></label>
         <label class="field"><span class="lbl">Over the target's</span><select data-gap="theirs" aria-label="The target's stat">${statOpts(gap.theirs, false)}</select></label>
-        <label class="field"><span class="lbl">% a point</span><input type="number" inputmode="decimal" step="any" data-gap="per" aria-label="Bonus a point, percent" value="${pct(gap.per)}"></label>
-        <label class="field"><span class="lbl">Cap %</span><input type="number" inputmode="decimal" step="any" data-gap="cap" aria-label="Cap, percent" value="${pct(gap.cap)}"></label>
+        <label class="field"><span class="lbl">Bonus % per stat point</span><input type="number" inputmode="decimal" step="any" data-gap="per" aria-label="Bonus a point, percent" value="${pct(gap.per)}"></label>
+        <label class="field"><span class="lbl">Max bonus (%)</span><input type="number" inputmode="decimal" step="any" data-gap="cap" aria-label="Cap, percent" value="${pct(gap.cap)}"></label>
       </div>
       <p class="mk-fx-err" data-gap-err role="alert"></p>
       <div class="lbl">More damage by HP (execute and similar)</div>
       <div class="mk-fxs" data-scalers></div>
-      <button type="button" class="mk-add" data-add-scaler>Add a scaler</button>
+      <button type="button" class="mk-add" data-add-scaler>Add an HP bonus</button>
     </div></details>
     <details class="mk-group" data-group="names"><summary>Insert a name: stacks, missing HP, kills</summary><div class="mk-group-body">
       <label class="field"><span class="lbl">Of the status</span><select data-name-key data-pick aria-label="Status the names read">${Object.entries(rules().conditions).filter(([k]) => !isStateChip(k)).map(([k, d]) => `<option value="${esc(k)}">${esc(String((d && d.label) || k))}</option>`).join('')}</select></label>
@@ -705,18 +705,21 @@ function formulaField(box, o) {
   const scErr = () => {
     for (const r of scRows) {
       const a = Number(r.start), b = Number(r.scale);
-      if (r.start.trim() === '' || !(a > 0 && a < 100)) return 'A start lies between 0 and 100%.';
-      if (r.scale.trim() === '' || !(b >= 0 && b <= 100)) return 'A scale goes from 0 to 100%.';
+      if (r.start.trim() === '' || !(a > 0 && a < 100)) return 'Start must be between 0% and 100%.';
+      if (r.scale.trim() === '' || !(b >= 0 && b <= 100)) return 'Scale must be from 0% to 100%.';
     }
     return null;
   };
   const scalersNow = () => (scErr() ? ticks.scalers : scRows.map(r => ({ measure: FAMILY[r.name].measure, dir: FAMILY[r.name].dir, start: Number(r.start) / 100, scale: Number(r.scale) / 100 })));
   function drawScalers() {
-    $('[data-scalers]').innerHTML = scRows.map((r, i) => `<div class="mk-fx" data-sc="${i}"><div class="mk-fx-top"><select data-sc-f="name" aria-label="Scaler ${i + 1}">${SCALER_CHOICES.map(c => `<option value="${c.name}"${c.name === r.name ? ' selected' : ''}>${esc(c.label)}</option>`).join('')}</select>
+    $('[data-scalers]').innerHTML = scRows.map((r, i) => {
+      const pair = FAMILY[r.name].measure === 'maxPair' || FAMILY[r.name].measure === 'hpPair';
+      return `<div class="mk-fx" data-sc="${i}"><div class="mk-fx-top"><select data-sc-f="name" aria-label="Scaler ${i + 1}">${SCALER_CHOICES.map(c => `<option value="${c.name}"${c.name === r.name ? ' selected' : ''}>${esc(c.label)}</option>`).join('')}</select>
       <button type="button" class="icon-btn" data-sc-rm aria-label="Remove scaler ${i + 1}">&times;</button></div>
-      <div class="mk-two"><label class="field"><span class="lbl">Starts at (%)</span><input type="number" inputmode="decimal" step="any" data-sc-f="start" aria-label="Scaler ${i + 1} starts at, percent" value="${esc(r.start)}"></label>
+      <div class="mk-two"><label class="field"><span class="lbl">${pair ? 'Starts at (target share %, 50 = equal)' : 'Starts at (% HP)'}</span><input type="number" inputmode="decimal" step="any" data-sc-f="start" aria-label="Scaler ${i + 1} starts at, percent" value="${esc(r.start)}"></label>
       <label class="field"><span class="lbl">Up to (+%)</span><input type="number" inputmode="decimal" step="any" data-sc-f="scale" aria-label="Scaler ${i + 1} up to, percent" value="${esc(r.scale)}"></label></div>
-      <button type="button" class="quiet" data-sc-reset>Reset to suggested</button></div>`).join('') + '<p class="mk-fx-err" data-sc-err role="alert"></p>';
+      <button type="button" class="quiet" data-sc-reset>Reset to suggested</button></div>`;
+    }).join('') + '<p class="mk-fx-err" data-sc-err role="alert"></p>';
     const add = $('[data-add-scaler]'); add.disabled = scRows.length >= K.scalers;
     $('[data-sc-err]').textContent = scErr() || '';
   }
@@ -826,43 +829,43 @@ function buildAbility(box, o) {
   box.innerHTML = `<div class="mk-ability">
     <div data-formula-box></div>
     <details class="mk-group" data-group="cost"><summary data-sum="cost"></summary><div class="mk-group-body">
-      <div class="lbl">Time it takes</div>${chips('pace', PACE_LABEL, paceOf(a.cost.time, R), { label: 'Time it takes' })}
+      <div class="lbl">Action speed</div>${chips('pace', PACE_LABEL, paceOf(a.cost.time, R), { label: 'Action speed' })}
       <div class="mk-two">${fieldNum('Fatigue', 'data-a="fatigue" min="0" max="1000"', a.cost.fatigue)}${fieldNum('Mana', 'data-a="mana" min="0" max="1000"', a.cost.mana)}</div>
       ${fieldNum('Cooldown (rounds)', 'id="skm-cd" data-a="cooldown" min="0" max="99"', Math.round(a.cost.cooldown / round))}
     </div></details>
     <details class="mk-group" data-group="reach"><summary data-sum="reach"></summary><div class="mk-group-body">
-      ${fieldNum('Range (tiles)', 'data-a="range" min="0" max="64"', a.range)}
+      ${fieldNum('Target range (tiles)', 'data-a="range" min="0" max="64"', a.range)}
       <div class="lbl">Shape</div>${chips('shape', SHAPE_LABEL, a.shape.kind === 'self' ? 'touch' : a.shape.kind, { label: 'Shape' })}
-      <div data-shape-f="touch">${fieldNum('Reach (tiles)', 'data-a="reach" min="0" max="64"', a.shape.kind === 'touch' ? a.shape.reach : a.range)}</div>
+      <div data-shape-f="touch">${fieldNum('Touch reach (tiles)', 'data-a="reach" min="0" max="64"', a.shape.kind === 'touch' ? a.shape.reach : a.range)}</div>
       <div data-shape-f="line" class="mk-two">${fieldNum('Width (tiles each side)', 'data-a="width" min="0" max="64"', a.shape.kind === 'line' ? a.shape.width : 0)}
-        <label class="mk-check"><input type="checkbox" data-a="pierce"${a.shape.kind === 'line' && a.shape.pierce ? ' checked' : ''}><span>Goes through bodies</span></label></div>
+        <label class="mk-check"><input type="checkbox" data-a="pierce"${a.shape.kind === 'line' && a.shape.pierce ? ' checked' : ''}><span>Pierces through targets</span></label></div>
       <div data-shape-f="radius">${fieldNum('Radius (tiles)', 'data-a="radius" min="0" max="64"', a.shape.kind === 'radius' ? a.shape.radius : 2)}
-        <label class="mk-check"><input type="checkbox" data-a="ring"${a.shape.kind === 'radius' && a.shape.ring ? ' checked' : ''}><span>An outer ring that takes part of it</span></label>
-        <div class="mk-two" data-ring-f>${fieldNum('Ring out to (tiles)', 'data-a="outer" min="0" max="64"', a.shape.kind === 'radius' && a.shape.ring ? a.shape.ring.outer : 3)}${fieldNum('Ring takes (%)', 'data-a="share" min="0" max="100"', a.shape.kind === 'radius' && a.shape.ring ? a.shape.ring.share : Math.round(R.fight.ringShare * 100))}</div></div>
+        <label class="mk-check"><input type="checkbox" data-a="ring"${a.shape.kind === 'radius' && a.shape.ring ? ' checked' : ''}><span>Add an outer splash ring</span></label>
+        <div class="mk-two" data-ring-f>${fieldNum('Outer ring radius (tiles)', 'data-a="outer" min="0" max="64"', a.shape.kind === 'radius' && a.shape.ring ? a.shape.ring.outer : 3)}${fieldNum('Outer ring damage (%)', 'data-a="share" min="0" max="100"', a.shape.kind === 'radius' && a.shape.ring ? a.shape.ring.share : Math.round(R.fight.ringShare * 100))}</div></div>
     </div></details>
     <details class="mk-group" data-group="avoid"><summary data-sum="avoid"></summary><div class="mk-group-body">
       ${chips('delivery', DELIVERY_LABEL, a.delivery.kind, { label: 'How it is avoided' })}
-      <div class="mk-two" data-travel-f>${fieldNum('Wind-up (rounds)', 'data-a="windup" min="0" max="10"', a.delivery.kind === 'travel' ? a.delivery.windup / round : 0.1, { decimal: true })}${fieldNum('Flies (tiles a round)', 'data-a="speed" min="1" max="1000"', a.delivery.kind === 'travel' && a.delivery.speed !== 'instant' ? a.delivery.speed : '', { placeholder: 'At once' })}</div>
+      <div class="mk-two" data-travel-f>${fieldNum('Wind-up (rounds)', 'data-a="windup" min="0" max="10"', a.delivery.kind === 'travel' ? a.delivery.windup / round : 0.1, { decimal: true })}${fieldNum('Projectile speed (tiles/round)', 'data-a="speed" min="1" max="1000"', a.delivery.kind === 'travel' && a.delivery.speed !== 'instant' ? a.delivery.speed : '', { placeholder: 'Instant' })}</div>
     </div></details>
     <details class="mk-group" data-group="zone"><summary data-sum="zone"></summary><div class="mk-group-body">
       <label class="mk-check"><input type="checkbox" data-a="zone"${a.zone ? ' checked' : ''}><span>Leaves a field</span></label>
       <div data-zone-f>${chips('zwhere', WHERE_LABEL, a.zone && a.zone.around !== null ? 'user' : 'lands', { label: 'Where it lies' })}
-        <div data-zaround-f>${fieldNum('Out to (tiles)', `data-a="zradius" min="1" max="${R.fight.fieldRadiusMax}"`, a.zone && a.zone.around !== null ? a.zone.around : R.fight.auraRadius)}</div>
+        <div data-zaround-f>${fieldNum('Radius (tiles)', `data-a="zradius" min="1" max="${R.fight.fieldRadiusMax}"`, a.zone && a.zone.around !== null ? a.zone.around : R.fight.auraRadius)}</div>
         <label class="field"><span class="lbl">Field name</span><input type="text" maxlength="40" data-a="zname" value="${esc(a.zone ? a.zone.name : 'Burning ground')}"></label>
-        ${fieldNum('Lasts (rounds)', 'data-a="zrounds" min="1" max="99"', a.zone && a.zone.duration !== null ? roundsOf(a.zone.duration, R, 'near') : 2, { placeholder: 'Until removed' })}
-        <label class="mk-check"><input type="checkbox" data-a="zowner"${a.zone && a.zone.endsWithOwner ? ' checked' : ''}><span>Gone when its user goes down</span></label>
+        ${fieldNum('Duration (rounds)', 'data-a="zrounds" min="1" max="99"', a.zone && a.zone.duration !== null ? roundsOf(a.zone.duration, R, 'near') : 2, { placeholder: 'Until removed' })}
+        <label class="mk-check"><input type="checkbox" data-a="zowner"${a.zone && a.zone.endsWithOwner ? ' checked' : ''}><span>Ends when its user is defeated</span></label>
         <label class="mk-check"><input type="checkbox" data-a="zgrow"${a.zone && a.zone.grow ? ' checked' : ''}><span>Grows each round</span></label>
-        <div class="mk-two" data-zgrow-f>${fieldNum('Grows by (tiles a round)', `data-a="zstep" min="1" max="${R.fight.fieldRadiusMax}"`, a.zone && a.zone.grow ? a.zone.grow.step : R.fight.fieldGrow)}${fieldNum('Up to (tiles out)', `data-a="zcap" min="1" max="${R.fight.fieldRadiusMax}"`, a.zone && a.zone.grow ? a.zone.grow.cap : R.fight.fieldRadiusMax)}</div>
-        <div class="mk-two">${fieldNum('Upkeep: fatigue a round', `data-a="zupf" min="0" max="${R.fight.kit.hpFlat}"`, a.zone && a.zone.upkeep ? a.zone.upkeep.fatigue : 0)}${fieldNum('Upkeep: mana a round', `data-a="zupm" min="0" max="${R.fight.kit.hpFlat}"`, a.zone && a.zone.upkeep ? a.zone.upkeep.mana : 0)}</div>
-        <label class="mk-check"><input type="checkbox" data-a="zend"${a.zone && a.zone.end ? ' checked' : ''}><span>Something lands when it ends, on time or early</span></label>
-        <div data-zend-f><div class="lbl">What lands on whoever stands in it then</div><div data-zend-fx></div><p class="mk-fx-err" data-zend-err role="alert"></p></div>
-        <div class="lbl">What it does to whoever stands in it</div><div data-zone-fx></div>
-        <div class="lbl">When something happens to one inside it</div><div data-ztrig></div></div>
+        <div class="mk-two" data-zgrow-f>${fieldNum('Grows by (tiles per round)', `data-a="zstep" min="1" max="${R.fight.fieldRadiusMax}"`, a.zone && a.zone.grow ? a.zone.grow.step : R.fight.fieldGrow)}${fieldNum('Max radius (tiles)', `data-a="zcap" min="1" max="${R.fight.fieldRadiusMax}"`, a.zone && a.zone.grow ? a.zone.grow.cap : R.fight.fieldRadiusMax)}</div>
+        <div class="mk-two">${fieldNum('Upkeep: fatigue per round', `data-a="zupf" min="0" max="${R.fight.kit.hpFlat}"`, a.zone && a.zone.upkeep ? a.zone.upkeep.fatigue : 0)}${fieldNum('Upkeep: mana per round', `data-a="zupm" min="0" max="${R.fight.kit.hpFlat}"`, a.zone && a.zone.upkeep ? a.zone.upkeep.mana : 0)}</div>
+        <label class="mk-check"><input type="checkbox" data-a="zend"${a.zone && a.zone.end ? ' checked' : ''}><span>Trigger an effect when the field ends</span></label>
+        <div data-zend-f><div class="lbl">Effects when the field ends</div><div data-zend-fx></div><p class="mk-fx-err" data-zend-err role="alert"></p></div>
+        <div class="lbl">Effects while standing in the field</div><div data-zone-fx></div>
+        <div class="lbl">Triggers for creatures inside the field</div><div data-ztrig></div></div>
     </div></details>
     <details class="mk-group" data-group="channel"><summary data-sum="channel"></summary><div class="mk-group-body">
       <label class="mk-check"><input type="checkbox" data-a="channel"${a.channel ? ' checked' : ''}><span>Can be channeled</span></label>
-      <div data-channel-f>${chips('growth', GROWTH_LABEL, a.channel ? a.channel.growth : 'linear', { label: 'Grows' })}
-        ${fieldNum('Most charge', `data-a="max" min="1" max="${R.fight.channelMax}"`, a.channel ? a.channel.max : R.fight.channelMax)}</div>
+      <div data-channel-f><div class="lbl">Charge scaling</div>${chips('growth', GROWTH_LABEL, a.channel ? a.channel.growth : 'linear', { label: 'Charge scaling' })}
+        ${fieldNum('Max charge', `data-a="max" min="1" max="${R.fight.channelMax}"`, a.channel ? a.channel.max : R.fight.channelMax)}</div>
     </div></details>
     <div class="mk-kit-ability" data-kit-ability></div></div>`;
   const $ = s => box.querySelector(s), val = k => $(`[data-a="${k}"]`).value, on = k => $(`[data-a="${k}"]`).checked;
@@ -874,7 +877,7 @@ function buildAbility(box, o) {
   const zendEditor = () => { if (zendFx === NO_END) zendFx = effects($('[data-zend-fx]'), { ops: a.zone && a.zone.end ? a.zone.end : [], kind: 'land' }); };
   if (a.zone && a.zone.end) zendEditor();
   /** What is wrong with the field's end, or '' (a ticked end with nothing in it lands nothing). */
-  const zendErr = () => (!on('zone') || !on('zend') ? '' : zendFx.blocked() ? 'Fix the effect above.' : zendFx.ops().length ? '' : 'Add what lands when it ends.');
+  const zendErr = () => (!on('zone') || !on('zend') ? '' : zendFx.blocked() ? 'Fix the effect above.' : zendFx.ops().length ? '' : 'Add at least one effect for when the field ends.');
   // the field's triggers (zones.ts `ZoneKit.triggers`): its hold carries them, so they fire for whoever stands in it
   const ztrig = triggerList($('[data-ztrig]'), a.zone && a.zone.triggers ? a.zone.triggers : [], { chips, picked, effects }, 'zt', 'one inside it');
   const ztrigErr = () => (on('zone') ? ztrig.read().err : '');
@@ -923,12 +926,12 @@ function buildAbility(box, o) {
     $('[data-zend-err]').textContent = zendErr();
     const pace = (PACE_LABEL.find(([p]) => p === paceOf(f.cost.time, R)) || PACE_LABEL[1])[1];
     const costs = [f.cost.fatigue ? `${f.cost.fatigue} fatigue` : '', f.cost.mana ? `${f.cost.mana} mana` : ''].filter(Boolean).join(', ') || 'free';
-    $('[data-sum="cost"]').textContent = `Cost: ${pace}, ${costs}${f.cost.cooldown ? `, every ${f.cost.cooldown / round} rounds` : ''}`;
+    $('[data-sum="cost"]').textContent = `Cost: ${pace}, ${costs}${f.cost.cooldown ? `, every ${f.cost.cooldown / round} round${f.cost.cooldown === round ? '' : 's'}` : ''}`;
     $('[data-sum="reach"]').textContent = `Reach: ${(SHAPE_LABEL.find(([s]) => s === shape) || SHAPE_LABEL[0])[1].toLowerCase()}, range ${f.range}`;
     $('[data-sum="avoid"]').textContent = `Avoided: ${(DELIVERY_LABEL.find(([d]) => d === f.delivery.kind) || DELIVERY_LABEL[0])[1].toLowerCase()}`;
     $('[data-sum="channel"]').textContent = f.channel ? `Channel: ${f.channel.growth}, up to ${f.channel.max}` : 'Channel: no';
     const z = zoneOf();
-    $('[data-sum="zone"]').textContent = z ? `Leaves ${z.name}${z.around === null ? '' : ' around the user'}${z.duration === null ? '' : ` for ${z.duration / round} round${z.duration === round ? '' : 's'}`}${z.grow ? `, growing to ${z.grow.cap} tiles` : ''}${z.upkeep ? ', with an upkeep' : ''}${z.end ? ', lands when it ends' : ''}${z.triggers ? `, ${z.triggers.length} trigger${z.triggers.length === 1 ? '' : 's'}` : ''}` : 'Leaves a field: no';
+    $('[data-sum="zone"]').textContent = z ? `Leaves ${z.name}${z.around === null ? '' : ' around the user'}${z.duration === null ? '' : ` for ${z.duration / round} round${z.duration === round ? '' : 's'}`}${z.grow ? `, growing to ${z.grow.cap} tiles` : ''}${z.upkeep ? ', with an upkeep' : ''}${z.end ? ', triggers when it ends' : ''}${z.triggers ? `, ${z.triggers.length} trigger${z.triggers.length === 1 ? '' : 's'}` : ''}` : 'Leaves a field: no';
   }
   const tell = () => { const f = read(); ff.set({ pace: paceOf(f.cost.time, R), channel: f.channel ? f.channel.growth : null }); draw(); };
   box.addEventListener('click', e => { if (e.target.closest('[data-chips="pace"],[data-chips="growth"],[data-chips="shape"],[data-chips="delivery"],[data-chips="zwhere"]')) tell(); });
@@ -1010,14 +1013,14 @@ function openMaker(o) {
       const s = draftStep(draft, e);
       draft = s.draft;
       if (s.then === 'close') finish(v);
-      else if (s.then === 'ask') void confirm({ title: 'Discard changes?', body: 'What you changed in this form is lost.', danger: true, confirmLabel: 'Discard' }).then(drop => step(drop ? 'dropped' : 'kept'));
+      else if (s.then === 'ask') void confirm({ title: 'Discard changes?', body: 'Your unsaved changes will be lost.', danger: true, confirmLabel: 'Discard' }).then(drop => step(drop ? 'dropped' : 'kept'));
     }
     const shell = {
       el: win,
       changed() {
         if (previewEl && body.preview) {
           const lines = body.preview() || [];
-          previewEl.innerHTML = `<div class="lbl">Preview</div>${lines.length ? `<ul class="mk-lines">${lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>` : '<p class="mk-none">No effects yet.</p>'}`;
+          previewEl.innerHTML = `<div class="lbl">Preview</div>${lines.length ? `<ul class="mk-lines">${lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>` : '<p class="mk-none">Nothing to preview yet.</p>'}`;
         }
         ok.disabled = !!(body.blocked && body.blocked());
       },
@@ -1155,8 +1158,8 @@ export function iconField(box, win, o) {
     if (picker === was) return;
     if (picker.at === 'open' && was.at === 'closed') {
       const root = h(`<div class="mk-ic-sheet"><div class="mk-ic-panel" role="group" aria-label="Pick an icon">
-        <div class="mk-ic-head"><span class="lbl">Pick an icon</span><button type="button" class="icon-btn" data-mk-look data-ic-shut aria-label="Close the icons">&times;</button></div>
-        <div class="seg mk-ic-groups" role="group" aria-label="Groups of icons">${pickerGroups(o.thing).map(g => `<button type="button" data-mk-look data-ic-group="${g}" aria-pressed="false">${esc(GROUP_WORDS[g])}</button>`).join('')}</div>
+        <div class="mk-ic-head"><span class="lbl">Pick an icon</span><button type="button" class="icon-btn" data-mk-look data-ic-shut aria-label="Close icon picker">&times;</button></div>
+        <div class="seg mk-ic-groups" role="group" aria-label="Icon categories">${pickerGroups(o.thing).map(g => `<button type="button" data-mk-look data-ic-group="${g}" aria-pressed="false">${esc(GROUP_WORDS[g])}</button>`).join('')}</div>
         <div class="mk-ic-grid" data-ic-grid></div></div></div>`);
       paint(root);
       box.appendChild(root); enter(root.firstElementChild); enter(root, 'fade'); sheetEl = root; root.addEventListener('keydown', onKey);

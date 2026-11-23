@@ -38,8 +38,8 @@ const KEPT = {
  * cap (`full`), another entry holds the name (`taken`, from `saveEntry` and rewards.ts `saveBundle`), or no name (`blank`).
  */
 export const savedWords = (kind: keyof typeof KEPT, name: string): Readonly<Record<'full' | 'taken' | 'blank', string>> => ({
-  full: `The library holds ${KEPT[kind].cap} ${KEPT[kind].many} at most. Delete one in the Workshop first.`,
-  taken: `The library has a ${KEPT[kind].one} named "${name}". Rename this one, or edit that one in the Workshop.`,
+  full: `Your library can store at most ${KEPT[kind].cap} ${KEPT[kind].many}. Delete one in the Workshop first.`,
+  taken: `You already have ${kind === 'item' ? 'an' : 'a'} ${KEPT[kind].one} named "${name}" in your library. Rename this one, or edit the existing one in the Workshop.`,
   blank: `Name the ${KEPT[kind].one}.`,
 });
 

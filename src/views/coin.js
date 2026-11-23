@@ -72,7 +72,7 @@ export function register(app) {
   }
   function sendLanding(body) {
     const S = sync();
-    if (!S || !S.post(S.event('coinLand', body), { key: `coin ${body.roll}` }).ok) ui.toast('Sync', 'Not in a room: the coin was not sent.', { kind: 'warn' });
+    if (!S || !S.post(S.event('coinLand', body), { key: `coin ${body.roll}` }).ok) ui.toast('Sync', 'Not in a room. The coin ruling was not sent.', { kind: 'warn' });
   }
 
   // ── a player's coins ──
@@ -111,7 +111,7 @@ export function register(app) {
 
   // ── the coin card (a player's phone, and any phone whose hunter rolled) ──
   const card = ui.h(`<section class="coin-card" data-coin-card aria-label="Coin call" hidden><ul class="coin-list" role="status" aria-live="polite"></ul>
-    <ul class="coin-later" aria-label="Coin calls put off"></ul></section>`);
+    <ul class="coin-later" aria-label="Coin calls to decide later"></ul></section>`);
   document.body.appendChild(card);
   /** The open dice tray's slot when the quick roll sheet or Dice view is on screen, else null (the card floats fixed on body). */
   function slot() {
@@ -139,12 +139,13 @@ export function register(app) {
   const coinFace = side => `<div class="coin-air"><div class="coin" data-coin-face${side ? ` data-side="${side}"` : ''}><span class="coin-h">${esc(SIDE_WORDS.heads)}</span><span class="coin-t">${esc(SIDE_WORDS.tails)}</span></div></div>`;
   function rowHtml(c) {
     const what = `<p class="coin-what">${esc(c.who)} · Natural ${c.face} · ${esc(c.what)}</p>`;
-    if (c.at === 'uncalled') return `<div class="coin-row"><h2>${esc(coinWords(c))}</h2>${what}
+    const stakes = c.face === 20 ? 'Call it right for a critical success, or wrong for a normal success.' : 'Call it right to avoid a critical failure.';
+    if (c.at === 'uncalled') return `<div class="coin-row"><h2>${esc(coinWords(c))}</h2>${what}<p class="coin-what">${stakes}</p>
       <div class="coin-pick"><button type="button" data-call="heads">${esc(SIDE_WORDS.heads)}</button><button type="button" data-call="tails">${esc(SIDE_WORDS.tails)}</button></div></div>`;
     if (c.at === 'called') return `<div class="coin-row">${coinFace(null)}<h2>You called ${esc(SIDE_WORDS[c.call])}</h2>${what}<p class="coin-words" data-words>${esc(coinWords(c))}</p></div>`;
     // no coin face: a face at rest shows a side
     if (c.at === 'ruled') return `<div class="coin-row"><h2>You called ${esc(SIDE_WORDS[c.call])}</h2>${what}<p class="coin-words" data-words>${esc(coinWords(c))}</p>
-      <p class="coin-what">The GM tells you how it landed.</p><button type="button" class="quiet coin-close" data-close>Close</button></div>`;
+      <p class="coin-what">The GM will tell you how it landed.</p><button type="button" class="quiet coin-close" data-close>Close</button></div>`;
     return `<div class="coin-row">${coinFace(c.side)}<h2>${esc(SIDE_WORDS[c.side])}</h2>${what}
       <p class="coin-words v-${verdict(c.face, c.call, c.side)}" data-words>${esc(coinWords(c))}</p>
       <button type="button" class="quiet coin-close" data-close>Close</button></div>`;
@@ -153,7 +154,7 @@ export function register(app) {
   const putOffCalls = () => coinPromptPutOff(prompt).map(id => coinOf(store.get().calls, id)).filter(c => c && c.at === 'called');
   function drawLater(calls) {
     const html = calls.map(c => `<li data-put-off="${esc(c.id)}"><p><b>${esc(c.who || 'A hunter')} called ${esc(SIDE_WORDS[c.call])}</b>Natural ${c.face} · ${esc(c.what || 'a check')}</p>
-      <button type="button" class="primary" data-rule>Rule</button></li>`).join('');
+      <button type="button" class="primary" data-rule>Decide</button></li>`).join('');
     if (laterList.innerHTML !== html) laterList.innerHTML = html;
   }
   function draw() {
@@ -218,9 +219,9 @@ export function register(app) {
     const c = coinOf(store.get().calls, id);
     if (!c || c.at !== 'called') { prompted({ type: 'putOff' }); seen(); return; }
     ui.system({ tag: '! Coin call', title: `${c.who || 'A hunter'} called ${SIDE_WORDS[c.call]}`, kind: 'info',
-      body: 'Was the call right? The player\'s phone shows only that the coin was flipped. Tell them how it landed.',
+      body: 'Did the player call it right? Their phone only shows that the coin was flipped, so tell them the result.',
       lines: [`Rolled for: ${c.what || 'a check'}`, `Natural ${c.face}`, `Called: ${SIDE_WORDS[c.call]}`],
-      actions: [{ label: 'Right', value: 'right' }, { label: 'Wrong', value: 'wrong' }, { label: 'Let the coin decide', value: 'coin' }, { label: 'Later', value: null, cancel: true }] })
+      actions: [{ label: 'Call was right', value: 'right' }, { label: 'Call was wrong', value: 'wrong' }, { label: 'Flip randomly', value: 'coin' }, { label: 'Decide later', value: null, cancel: true }] })
       .then(v => {
         const ruled = (v === 'right' || v === 'wrong' || v === 'coin') && rule(id, v);
         prompted({ type: ruled ? 'ruled' : 'putOff' });
@@ -237,7 +238,7 @@ export function register(app) {
     const side = landing(c.call, ruling, flip());
     if (!ui.wrote('! Coin call', store.apply('coin-rule', s => callRuled(s, id, ruling, side, stamp())))) return false;
     const now = coinOf(store.get().calls, id);
-    if (now && now.at === 'landed') ui.toast('! Coin call', `${now.who || 'A hunter'} called ${SIDE_WORDS[now.call]}. It landed ${SIDE_WORDS[now.side]}: ${coinWords(now)}.`, { kind: 'info' });
+    if (now && now.at === 'landed') ui.toast('! Coin call', `${now.who || 'A hunter'} called ${SIDE_WORDS[now.call]}. It landed ${SIDE_WORDS[now.side]} (${coinWords(now)}).`, { kind: 'info' });
     sendLanding(landingOf(c));
     return true;
   }
@@ -249,7 +250,7 @@ export function register(app) {
     if (held) return;
     // a call this tab cannot keep is not asked or notified: a read-only tab's banner says why
     if (!store.apply('coin-call', s => callTaken(s, { id: p.roll, hunter: { kind: 'remote', remote: p.by }, who: p.who, what: p.what, face: p.face, call: p.call })).ok) return;
-    void notifyHidden(`${p.who || 'A hunter'} called ${SIDE_WORDS[p.call]}`, `Natural ${p.face} for ${p.what}.`, p.eid);
+    void notifyHidden(`${p.who || 'A hunter'} called ${SIDE_WORDS[p.call]}`, `Natural ${p.face} for ${p.what || 'a check'}.`, p.eid);
   });
   app.on('change', seen);
   seen();

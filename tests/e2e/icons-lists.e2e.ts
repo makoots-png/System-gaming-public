@@ -113,8 +113,8 @@ test('a status on the GM card and on the player\'s table HUD starts with its pic
   await dismissAll(player, 4);
   await expect(gm.locator('#gm-board .gm-card.remote', { hasText: 'Kai Test' })).toHaveCount(1);
   await go(gm, 'combat');
-  await expect(gm.locator('#view-combat [data-hsel] option', { hasText: 'Kai Test (remote)' })).toHaveCount(1);
-  await gm.locator('#view-combat [data-hsel]').selectOption({ label: 'Kai Test (remote)' });
+  await expect(gm.locator('#view-combat [data-hsel] option', { hasText: 'Kai Test (player phone)' })).toHaveCount(1);
+  await gm.locator('#view-combat [data-hsel]').selectOption({ label: 'Kai Test (player phone)' });
   await gm.locator('#view-combat [data-addh]').tap();
   await gm.locator('#view-combat [data-qline]').fill('Cave Rat, E, brute');
   await gm.locator('#view-combat [data-qadd]').tap();

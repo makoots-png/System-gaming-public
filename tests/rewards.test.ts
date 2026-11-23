@@ -167,7 +167,7 @@ describe('a title\'s worn status in a reward', () => {
     const r = parseRewards({ title: { name: 'Iron Nerve', desc: '', bonus: { dis: 1 }, worn: STEADY } })!;
     expect(r.title!.worn).toMatchObject({ label: 'Steady' });
     expect(parseRewards({ title: { name: 'Iron Nerve', worn: 'junk' } })!.title).toEqual({ name: 'Iron Nerve', desc: '', bonus: {} });
-    expect(rewardLines(RULES, r)).toContain('Title: Iron Nerve, worn in fights: Steady');
+    expect(rewardLines(RULES, r)).toContain('Title: Iron Nerve, grants status in fights: Steady');
   });
 });
 
@@ -364,13 +364,13 @@ describe('a cost a reward takes away (a story\'s chapter, stories ruling 2)', ()
   test('XP taken below the level\'s start takes the level away, the window says so after the XP, and no level-up is told', () => {
     // level 2 costs 200 XP (xpPerLevel 100 times the level): level 3 with 10 XP, less 50, is level 2 with 160
     const g = given(holding({ level: 3, xp: 10, gold: 0, points: 0 }), { ...newRewards(), xp: -50 });
-    expect([after(g).level, after(g).xp, g.levelup, g.lines]).toEqual([2, 160, null, ['Loses 50 XP', 'Loses 1 level: now level 2']]);
+    expect([after(g).level, after(g).xp, g.levelup, g.lines]).toEqual([2, 160, null, ['Loses 50 XP', 'Loses 1 level (now level 2)']]);
   });
 
   test('XP taken past two levels\' starts says both levels', () => {
     // level 3 with 10 XP holds 100 + 200 + 10 = 310 XP since level 1; less 250 is 60, level 1 with 60
     const g = given(holding({ level: 3, xp: 10, gold: 0, points: 0 }), { ...newRewards(), xp: -250 });
-    expect([after(g).level, after(g).xp, g.lines]).toEqual([1, 60, ['Loses 250 XP', 'Loses 2 levels: now level 1']]);
+    expect([after(g).level, after(g).xp, g.lines]).toEqual([1, 60, ['Loses 250 XP', 'Loses 2 levels (now level 1)']]);
   });
 
   test('XP taken inside the level keeps the level, and the window has no level line', () => {

@@ -571,7 +571,7 @@ describe('lines from a monster: its intent, or the target its threat suggests', 
       expect([l!.kind, l!.to, l!.loops]).toEqual(['omen', place(1, 1), []]);
     });
     test('a weakened omen says so', () => {
-      expect(lines(boss({ standing: standing('breath', id('b'), 'faltering') }))[0]!.words!.what).toBe('Weakened: lands on its next turn');
+      expect(lines(boss({ standing: standing('breath', id('b'), 'faltering') }))[0]!.words!.what).toBe('Weakened. Lands on its next turn');
     });
     test('a move on the whole field, an aim the doc left out, and a calm mythic draw no line', () => {
       expect(lines(boss({ standing: standing('note', id('b')) }))).toEqual([]);

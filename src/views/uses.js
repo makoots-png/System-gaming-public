@@ -81,7 +81,7 @@ export function register(app) {
       if (t.kind !== 'post') return { ok: true, sent: false };
       const sy = app.api.sync;
       sy.flush();
-      if (sy.status() !== 'connected') ui.toast('Sync', `The GM is told about ${u.name} when the room answers.`, { kind: 'info' });
+      if (sy.status() !== 'connected') ui.toast('Sync', `Saved. The GM will be notified that you used ${u.name} when your phone reconnects to the room server.`, { kind: 'info' });
       return { ok: true, sent: true };
     },
     async report(hid, u) { return app.api.uses.told(hid, 'use-report', null, u); },
@@ -89,7 +89,7 @@ export function register(app) {
     hold: () => hold,
     async command(post, via = 'turn') {
       const send = holdTo({ kind: 'tap', via });
-      if (send === 'none') { ui.news('Your last move waits for the GM.', 'warning'); return null; }
+      if (send === 'none') { ui.news('Waiting for the GM to process your last action.', 'warning'); return null; }
       /** @type {import('../core/api.ts').Posting | null} */
       let r = null;
       try { r = await post(); } finally {
@@ -108,8 +108,8 @@ export function register(app) {
         if (given !== undefined) aim = typeof given === 'string' ? given : { x: given.x, y: given.y }; // the map picked it (map-view.ts)
         else if (a.aim !== 'self') {
           const list = aims(docSpots(t.doc.rows), t.me.id, a, openGrid(t.doc.grid.w, t.doc.grid.h)).filter(x => x.inRange && x.inShape);
-          if (!list.length) { ui.news(`Nobody in reach of ${a.name}. Step toward a foe first.`, 'warning'); return null; }
-          const id = await ui.system({ tag: '! Combat', title: `Use ${a.name} on…`, layout: 'list',
+          if (!list.length) { ui.news(`No targets in range of ${a.name}. Move closer to ${a.aim === 'ally' ? 'an ally' : 'a foe'} first.`, 'warning'); return null; }
+          const id = await ui.system({ tag: '! Fight', title: `Use ${a.name} on…`, layout: 'list',
             actions: [...list.map((x, i) => ({ label: `${x.target.name} · ${x.dist} tile${x.dist === 1 ? '' : 's'}`, value: x.target.id, primary: i === 0 })), { label: 'Cancel', value: null, cancel: true }] });
           const pick = id ? list.find(x => x.target.id === id) : null; if (!pick) return null;
           aim = a.aim === 'place' ? { x: pick.target.place.x, y: pick.target.place.y } : pick.target.id;

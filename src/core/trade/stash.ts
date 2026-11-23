@@ -97,11 +97,11 @@ export const STASH_REFUSAL_WORDS: { readonly [W in StashRefusal]: (name: string,
 export function stashTapWords(r: StashTapRefused, name: string): string {
   switch (r.why) {
     case 'gone': case 'short': case 'full': return STASH_REFUSAL_WORDS[r.why](name, r.have ?? 0);
-    case 'too-many': return `You have ${STASH_WAITING} stash asks waiting. Wait for the GM's phone to answer one.`;
-    case 'too-large': return 'These items are too large to send at once. Put in fewer.';
-    case 'no-room': return 'The stash is the GM\'s. Join a room with the room button at the top.';
-    case 'not-played': return 'Only the hunter you play in this room can use the stash there.';
-    case 'empty': return 'Pick something to put in.';
+    case 'too-many': return `You have ${STASH_WAITING} stash requests pending. Wait for one to finish first.`;
+    case 'too-large': return 'Too many items to send at once. Put in fewer.';
+    case 'no-room': return 'The party stash requires a room. Join a room with the room button at the top.';
+    case 'not-played': return 'Only the hunter you play in this room can use the party stash.';
+    case 'empty': return 'Select at least one item or some gold to put in.';
     default: return OFFER_REFUSAL_WORDS[r.why](r.short ?? NO_SHORT);
   }
 }
@@ -110,24 +110,25 @@ const askWords = (ask: StashAsk): string =>
   ask.kind === 'put' ? goodsWords(ask.goods) : ask.kind === 'gold' ? `${ask.gold} gold` : lineWords(ask.name, ask.qty);
 /** The name an answer's words use for what was asked: the line's name, or gold. */
 const askName = (ask: StashAsk): string => (ask.kind === 'take' ? ask.name : ask.kind === 'gold' ? 'gold' : goodsWords(ask.goods));
+const STASH_REFUSAL_REASON: { readonly [W in StashRefusal]: string } = { gone: 'out of stock', short: 'not enough left', full: 'stash full', off: 'trading off' };
 export const STASH_WORDS = {
   title: 'Party stash', chip: 'Party stash', put: 'Put in the stash', hint: 'Anyone in the room can take it out.',
   gold: (n: number): string => `Gold: ${n}`, takeTitle: (name: string): string => `Take ${name}`,
-  howMany: (n: number): string => `How many. The stash has ${n}.`, howMuch: (n: number): string => `How much. The stash has ${n} gold.`, empty: 'The stash is empty.', take: 'Take', takeGold: 'Take gold', remove: 'Remove', undo: 'Undo',
-  asOf: (time: string): string => `As of ${time}.`, order: 'The GM\'s phone answers in the order asks arrive.',
-  waiting: 'Waiting', waitingLine: 'Waiting for the GM\'s phone.',
-  stranded: 'The room did not take this, so the app cannot tell whether the stash has it. Look at the stash first.',
-  refused: 'The room did not take this ask.', takeBack: 'Take back', putAway: 'Put away',
+  howMany: (n: number): string => `How many? The stash has ${n}.`, howMuch: (n: number): string => `How much? The stash has ${n} gold.`, empty: 'The stash is empty.', take: 'Take', takeGold: 'Take gold', remove: 'Remove', undo: 'Undo',
+  asOf: (time: string): string => `Updated ${time}.`, order: 'Stash requests are processed in the order they arrive.',
+  waiting: 'Pending requests', waitingLine: 'Waiting for the GM\'s device to process this.',
+  stranded: 'The room server did not confirm this request, so the app cannot tell if it went into the stash. Check the stash first.',
+  refused: 'This request did not reach the room server.', takeBack: 'Take back', putAway: 'Dismiss',
   askLine: (w: Asked): string => (w.kind === 'stash' ? (w.ask.kind === 'put' ? `Put in: ${askWords(w.ask)}.` : `Take: ${askWords(w.ask)}.`) : ''),
   kept: (goods: Goods): string => `In the stash: ${goodsWords(goods)}.`,
   given: (goods: Goods): string => `From the stash: ${goodsWords(goods)}.`,
   back: (goods: Goods): string => ` Back in your bag: ${goodsWords(goods)}.`,
   putLog: (who: string, goods: Goods): string => `${who} put ${goodsWords(goods)} in the stash.`,
   takeLog: (who: string, goods: Goods): string => `${who} took ${goodsWords(goods)} from the stash.`,
-  refusedLog: (who: string, ask: StashAsk, why: StashRefusal): string => `${who} asked the stash for ${ask.kind === 'put' ? `room for ${askWords(ask)}` : askWords(ask)}: refused (${why}).`,
+  refusedLog: (who: string, ask: StashAsk, why: StashRefusal): string => `${who} could not ${ask.kind === 'put' ? `put ${askWords(ask)} in` : `take ${askWords(ask)} from`} the stash (${STASH_REFUSAL_REASON[why]}).`,
   removed: (it: Item): string => `You removed ${lineWords(it.name, it.qty)} from the stash.`,
-  removedGone: 'This line is no longer in the stash.',
-  summary: (lines: number): string => (lines ? `stash: ${lines} kind${lines === 1 ? '' : 's'}` : ''),
+  removedGone: 'This item is no longer in the stash.',
+  summary: (lines: number): string => (lines ? `Stash: ${lines} item${lines === 1 ? '' : 's'}` : ''),
 } as const;
 
 // ── here: one write on this phone ──

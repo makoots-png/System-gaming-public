@@ -267,8 +267,8 @@ describe('the way back from dead, named the same everywhere', () => {
     const crystals = SHOP_ITEMS.filter(d => d.type === 'consumable' && d.revive);
     expect(crystals.length).toBeGreaterThan(0);
     for (const c of crystals) expect(c.name).toMatch(/^Resurrection Crystal \([EDCBAS]\)$/);
-    expect(WAYS_BACK).toBe('The GM\'s Revive or a Resurrection Crystal');
-    expect(STATE_CHIP_DEFS.dead.desc).toBe(`HP reached 0. ${WAYS_BACK} brings the hunter back, with every status gone.`);
+    expect(WAYS_BACK).toBe('The GM\'s Revive, a System revive (outside a fight), or a Resurrection Crystal (outside a fight)');
+    expect(STATE_CHIP_DEFS.dead.desc).toBe(`HP reached 0. ${WAYS_BACK} can revive the hunter and clear all statuses.`);
   });
 });
 

@@ -66,7 +66,7 @@ test('a boon redeemed while the player\'s phone is offline waits on the phone, a
     await go(player, 'status');
     await player.locator('[data-panel="titles"] [data-redeem]').tap();
     await answerWindow(player, 'Redeem Free resurrection?', 'Redeem');
-    await expect(player.locator('#toasts .toast', { hasText: 'The GM is told about Free resurrection when the room answers.' })).toBeVisible();
+    await expect(player.locator('#toasts .toast', { hasText: 'Saved. The GM will be notified that you used Free resurrection when your phone reconnects to the room server.' })).toBeVisible();
     expect(await waiting()).toBe(1);
     expect(await useLines(gm)).toEqual([]);
   });
@@ -121,7 +121,7 @@ test('a player in the GM\'s fight throws a Frost Bomb from the bag on their turn
 
   await test.step('the GM runs a fight with the player\'s hunter and a rat, and the turn is the player\'s (setup)', async () => {
     await go(gm, 'combat');
-    await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (remote)` });
+    await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (player phone)` });
     await combat(gm).locator('[data-addh]').tap();
     await combat(gm).locator('[data-qline]').fill(`${MONSTER}, E, brute`);
     await combat(gm).locator('[data-qadd]').tap();
@@ -159,7 +159,7 @@ test('a player\'s Frost Bomb the GM\'s fight turns down stays in the bag: the pl
 
   await test.step('the GM runs a fight with the player\'s hunter and a rat, its turn the player\'s, before the player has the bomb', async () => {
     await go(gm, 'combat');
-    await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (remote)` });
+    await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (player phone)` });
     await combat(gm).locator('[data-addh]').tap();
     await combat(gm).locator('[data-qline]').fill(`${MONSTER}, E, brute`);
     await combat(gm).locator('[data-qadd]').tap();
@@ -236,7 +236,7 @@ test('a GM who allowed notifications gets one for a boon a player redeems while 
     const toggle = gm.locator('[data-tog="log"]');
     if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.tap();
     await gm.locator('#gm-notify').tap();
-    await expect(gm.locator('#gm-notify-state')).toContainText('On:');
+    await expect(gm.locator('#gm-notify-state')).toContainText('On.');
     await gm.evaluate(() => navigator.serviceWorker.ready);
   });
 

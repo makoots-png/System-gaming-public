@@ -156,11 +156,11 @@ describe('the odds of a fight', () => {
         end('lost', 7, { hp: 0, mana: 0, life: 'dead' }),
       ],
     });
-    expect(oddsLine(r, 'alone')).toBe('You clear it in 25% of 4 plays. Dead in 75%. About 7 rounds.');
+    expect(oddsLine(r, 'alone')).toBe('You clear it in 25% of 4 plays. Reaches 0 HP in 75% of simulated fights. About 7 rounds.');
     expect(oddsDetail(r, 'alone')[1]).toBe('The run fails in 75%.');
     expect([oddsLine(r, 'alone'), ...oddsDetail(r, 'alone')].join(' ')).not.toContain('party');
     const never = readOdds({ of: 1, fudge: false, rows: r.party, ends: [end('won', 3, { hp: 30, mana: 20 })] });
-    expect(oddsLine(never, 'alone')).toBe('You clear it in 100% of 1 plays. Never dead in these plays. About 3 rounds.');
+    expect(oddsLine(never, 'alone')).toBe('You clear it in 100% of 1 plays. Never reached 0 HP in these simulated fights. About 3 rounds.');
   });
 });
 

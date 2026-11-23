@@ -73,7 +73,7 @@ test('a removal the server does not take leaves the player in the fight as in th
   await expect(kaiCard(gm)).toHaveCount(1);
   await chooseList(gm);
   await go(gm, 'combat');
-  await gm.locator('#view-combat [data-hsel]').selectOption({ label: 'Kai Test (remote)' });
+  await gm.locator('#view-combat [data-hsel]').selectOption({ label: 'Kai Test (player phone)' });
   await gm.locator('#view-combat [data-addh]').tap();
   await expect.poll(() => inFight(gm)).toContain('Kai Test');
   const removal = (u: URL) => u.pathname.startsWith(`/api/rooms/${code}/sheets/`);
@@ -199,7 +199,7 @@ test('a GM whose key request fails does not turn into a player of their own room
       return route.continue();
     });
     await gm.locator(`${roomView} input[data-code]`).fill(code);
-    await expect(gm.locator(`${roomView} [data-check]`)).toContainText('You are GM of this room');
+    await expect(gm.locator(`${roomView} [data-check]`)).toContainText('You are the GM of this room');
     await gm.locator(`${roomView} [data-join]`).tap();
     await expect(gm.locator(`${roomView} [data-err]`)).toContainText('Could not reach the server');
   });
@@ -325,7 +325,7 @@ test('in a room the mode pill explains the role and does not change it', async (
     const before = await chosenMode(player);
     await expect(player.locator('#mode-pill')).toHaveText('PLAYER');
     await player.locator('#mode-pill').tap();
-    await expect(roleWindow(player)).toContainText('You are a player in this room. The GM is the phone that opened it.');
+    await expect(roleWindow(player)).toContainText('You are a player in this room. Whoever created the room is the GM.');
     await roleWindow(player).locator('button', { hasText: 'Understood' }).tap();
     await expect(roleWindow(player)).toHaveCount(0);
     await expect(player.locator('#mode-pill')).toHaveText('PLAYER');
@@ -488,7 +488,7 @@ test('a sheet the server refuses as too large shows as too big while the room st
     // a refusal for size is told as such (V4 `sheetTooBig`); Try now is not offered, as a retry sends the same sheet
     await expect(player.locator('#sync-pill [data-roompill]')).toHaveAttribute('data-conn', 'sheetTooBig');
     await go(player, 'room');
-    await expect(player.locator(`${roomView} [data-conntext]`)).toHaveText('Live. Your sheet is too big for the room: the GM does not see your changes.');
+    await expect(player.locator(`${roomView} [data-conntext]`)).toHaveText('Live. Your sheet is too large for the room, so the GM cannot see your changes.');
     await expect(player.locator(`${roomView} [data-retry]`)).toBeHidden();
     expect(await player.evaluate(() => hunterApp.api.sync.room())).toBe(code);
     await expect(kaiCard(gm)).toHaveCount(1);
@@ -509,7 +509,7 @@ test('a GM whose key stops working is told and leaves the room', async ({ device
   }, 'test-setup'), code);
   await openApp(gm);
 
-  await expect(gm.locator('#toasts .toast', { hasText: `The GM key for room ${code} no longer works, so this phone left the room.` })).toBeVisible();
+  await expect(gm.locator('#toasts .toast', { hasText: `The GM key for room ${code} no longer works. You left the room.` })).toBeVisible();
   await expect.poll(() => gm.evaluate(() => hunterApp.api.sync.room())).toBeNull();
   await go(gm, 'room');
   await expect(gm.locator(`${roomView} [data-lobby]`)).toBeVisible();
@@ -791,5 +791,5 @@ test('the GM releases a hunter whose phone\'s device id does not start with d-',
   expect(await gm.evaluate(() => hunterApp.api.sync.remoteSheets().map((s: any) => s.deviceId))).toEqual(['phone-7']);
   await gm.locator(`${roomView} [data-manage]`).tap();
   await gm.locator(`${roomView} [data-gmrelease]`).tap();
-  await expect(gm.locator('#toasts .toast', { hasText: 'Released. That hunter can now be claimed by its player\'s device.' })).toBeVisible();
+  await expect(gm.locator('#toasts .toast', { hasText: 'Released. The player can now claim this hunter on a new device.' })).toBeVisible();
 });

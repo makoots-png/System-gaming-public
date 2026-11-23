@@ -3,9 +3,12 @@
 // in a room with a world gate the GM opened to solo runs: the GM's phone online, offline, two players on one gate, and a
 // hunter who dies alone and is revived.
 import { shareEach } from '../../src/core/gates/pay.ts';
+import { OUTCOME_WORDS, REFUSED_WORDS } from '../../src/core/gates/solo.ts';
 import { PENDING_WORDS } from '../../src/core/hunter/pending.ts';
+import { WAYS_BACK } from '../../src/core/hunter/vitals.ts';
 import { RULES } from '../../src/core/rules.ts';
 import { seedMonsters } from '../../src/core/registry/monsters.ts';
+import { STOP_WAITING, WAIT_WORDS } from '../../src/core/sync/asked.ts';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, save, approveWaiting, waitingRow, type Page } from './helpers.ts';
 
 /** The hunter on `page` made strong enough to clear any E or D gate alone: every stat at 60, its HP full. */
@@ -23,7 +26,7 @@ async function enterAlone(page: Page): Promise<void> {
   const ask = page.locator('.sys-overlay.show', { hasText: 'ENTER ALONE?' });
   await expect(ask).toBeVisible({ timeout: 60_000 });
   await expect(ask).toContainText(/You clear it in \d+% of 100 plays\./);
-  await expect(ask).toContainText('The odds are 100 plays. Your run is one more, and it can go better or worse.');
+  await expect(ask).toContainText('These odds come from 100 simulated fights. Your solo run is a separate fight and can turn out better or worse.');
   await ask.locator('.sys-actions button', { hasText: 'Enter alone' }).tap();
 }
 
@@ -41,7 +44,7 @@ test('alone, the System opens a personal gate; the hunter reads its odds, enters
   await expect(page.locator('#gt-list'), 'under a personal gate the world list names itself').toHaveText('No world gates.');
   await expect(card.locator('[data-odds] .hint')).toHaveText('Plays this gate to the end 100 times by the rules and shows how often you clear it.');
   await card.locator('[data-odds-ask]').tap();
-  await expect(card.locator('[data-oddsline]')).toHaveText(/^You clear it in \d+% of 100 plays\. (Dead in \d+%|Never dead in these plays)\. About \d+ rounds?\.$/, { timeout: 60_000 });
+  await expect(card.locator('[data-oddsline]')).toHaveText(/^You clear it in \d+% of 100 plays\. (Reaches 0 HP in \d+% of simulated fights|Never reached 0 HP in these simulated fights)\. About \d+ rounds?\.$/, { timeout: 60_000 });
   await card.locator('[data-oddsline]').tap();
   await expect(card.locator('[data-dt-panel="odds"]')).toContainText(/Rounds: /);
   await expect(card.locator('[data-dt-panel="odds"]')).not.toContainText('party');
@@ -117,16 +120,16 @@ test('in a room, the GM opens a gate to solo runs; a player clears it alone, its
   const xp0 = lifetime(hunterOf(await save(kai!.page)));
   const due = await gm.page.evaluate(id => { const g = hunterApp.store.get().gates.find((x: any) => x.id === id); return g; }, den);
   await runDen(kai!.page);
-  const cleared = kai!.page.locator('.sys-overlay.show', { hasText: 'your solo run cleared it' });
+  const cleared = kai!.page.locator('.sys-overlay.show', { hasText: 'Your solo run cleared Goblin Den.' });
   await expect(cleared).toBeVisible({ timeout: 30_000 });
-  await expect(cleared).toContainText('Waiting for the GM');
+  await expect(cleared).toContainText(PENDING_WORDS.waits);
   await cleared.locator('.sys-actions button').first().tap();
   await expect.poll(async () => (await gm.page.evaluate(id => hunterApp.store.get().gates.find((x: any) => x.id === id).status, den))).toBe('cleared');
   expect(lifetime(hunterOf(await save(kai!.page))), 'nothing paid before the GM approves').toBe(xp0);
   await approveWaiting(gm.page, 'Kai');
   const paid = kai!.page.locator('.sys-overlay.show', { hasText: 'REWARD RECEIVED' });
   await expect(paid).toBeVisible({ timeout: 30_000 });
-  await expect(paid).toContainText('Solo clear: Goblin Den. The GM approved your reward.');
+  await expect(paid).toContainText(PENDING_WORDS.approvedBody('solo', 'Goblin Den'));
   await paid.locator('.sys-actions button').first().tap();
   await dismissAll(kai!.page);
   const gained = lifetime(hunterOf(await save(kai!.page))) - xp0, paidXp = await gm.page.evaluate(id => hunterApp.store.get().gates.find((x: any) => x.id === id).xpPaid, den);
@@ -140,11 +143,11 @@ test('with the GM\'s phone offline, the run waits for it, is answered when it is
   await gm.ctx.setOffline(true);
   const xp0 = lifetime(hunterOf(await save(kai!.page)));
   await runDen(kai!.page);
-  await expect(worldCard(kai!.page, 'Goblin Den')).toContainText('Cleared. Waiting for the GM\'s phone to pay it.', { timeout: 30_000 });
+  await expect(worldCard(kai!.page, 'Goblin Den')).toContainText(WAIT_WORDS.taken, { timeout: 30_000 });
   expect(lifetime(hunterOf(await save(kai!.page))), 'nothing paid while the GM\'s phone is away').toBe(xp0);
   await kai!.page.reload();
   await gm.ctx.setOffline(false);
-  const cleared = kai!.page.locator('.sys-overlay.show', { hasText: 'your solo run cleared it' });
+  const cleared = kai!.page.locator('.sys-overlay.show', { hasText: 'Your solo run cleared Goblin Den.' });
   await expect(cleared).toBeVisible({ timeout: 60_000 });
   await cleared.locator('.sys-actions button').first().tap();
   await gm.page.reload();
@@ -168,7 +171,7 @@ test('a run the room took and the GM\'s phone has not paid can be put away after
   await gm.ctx.setOffline(true);
   await runDen(kai!.page);
   const card = worldCard(kai!.page, 'Goblin Den');
-  await expect(card).toContainText('Cleared. Waiting for the GM\'s phone to pay it.', { timeout: 30_000 });
+  await expect(card).toContainText(WAIT_WORDS.taken, { timeout: 30_000 });
   const dismiss = card.locator('[data-solo-dismiss]');
   await expect(dismiss).toBeVisible();
   await expect(card.locator('[data-solo-enter]')).toHaveCount(0);
@@ -177,7 +180,7 @@ test('a run the room took and the GM\'s phone has not paid can be put away after
   await dismiss.tap();
   const ask = kai!.page.locator('.sys-overlay.show', { hasText: /stop waiting\?/i });
   await expect(ask).toBeVisible();
-  await expect(ask).toContainText('If the GM\'s phone pays this run later, it pays you nothing. Its cost stays, and you can enter the gate again.');
+  await expect(ask).toContainText(STOP_WAITING.body);
   await ask.locator('.sys-actions button', { hasText: 'Cancel' }).tap();
   await expect(card.locator('[data-solo-dismiss]'), 'Cancel keeps the run waiting').toBeVisible();
   await card.locator('[data-solo-dismiss]').tap();
@@ -201,13 +204,13 @@ test('two players clear one gate: the first clears it, the second is told it was
     await route.continue().catch(() => {});
   });
   await runDen(kai!.page);
-  const cleared = kai!.page.locator('.sys-overlay.show', { hasText: 'your solo run cleared it' });
+  const cleared = kai!.page.locator('.sys-overlay.show', { hasText: 'Your solo run cleared Goblin Den.' });
   await expect(cleared).toBeVisible({ timeout: 30_000 });
   await runDen(rei!.page);
   hear();
   const taken = rei!.page.locator('.sys-overlay.show', { hasText: 'GATE TAKEN' });
   await expect(taken).toBeVisible({ timeout: 30_000 });
-  await expect(taken).toContainText('Another hunter cleared this gate first. Your run\'s cost stays.');
+  await expect(taken).toContainText(REFUSED_WORDS.taken);
   expect(lifetime(hunterOf(await save(rei!.page))), 'the second run is paid nothing').toBe(reiXp);
   expect((await save(rei!.page)).settings.sync.asked ?? []).toEqual([]);
 });
@@ -235,7 +238,7 @@ test('a hunter who dies alone shows dead on the GM\'s board, and the GM\'s Reviv
   await ask.locator('.sys-actions button', { hasText: 'Enter alone' }).tap();
   const failed = kai!.page.locator('.sys-overlay.show', { hasText: 'RUN FAILED' });
   await expect(failed).toBeVisible({ timeout: 30_000 });
-  await expect(failed).toContainText('You died. The GM\'s Revive or a Resurrection Crystal brings you back.');
+  await expect(failed).toContainText(`You died. ${WAYS_BACK} brings you back.`);
   await failed.locator('.sys-actions button').first().tap();
   expect(hunterOf(await save(kai!.page)).life).toEqual({ at: 'dead' });
   await go(gm.page, 'gm');
@@ -243,7 +246,7 @@ test('a hunter who dies alone shows dead on the GM\'s board, and the GM\'s Reviv
   await expect(card).toContainText('Dead', { timeout: 30_000 });
   await card.locator('[data-grevive]').tap();
   await expect.poll(async () => hunterOf(await save(kai!.page)).life, { timeout: 30_000 }).toEqual({ at: 'up', hp: 1 });
-  await expect.poll(async () => (await save(gm.page)).log.some((l: any) => l.title === 'Solo run' && l.text.includes('Kai fell in "Goblin Den"') && l.text.endsWith('and died.'))).toBe(true);
+  await expect.poll(async () => (await save(gm.page)).log.some((l: any) => l.title === 'Solo run' && l.text.includes(`Kai ${OUTCOME_WORDS.lost.did} "Goblin Den"`) && l.text.endsWith('and died.'))).toBe(true);
 });
 
 // The player cannot try a bad run again: nothing on screen while the run plays tells how it goes (only the round and the
@@ -370,7 +373,7 @@ test('a player\'s odds of a room\'s solo gate play a status as the GM edited it,
   await expect(card).toContainText('Sleeper', { timeout: 30_000 });
   await test.step('with the built-in Stunned the goblins never act, so the hunter clears the gate in every play', async () => {
     await card.locator('[data-odds-ask]').tap();
-    await expect(card.locator('[data-oddsline]')).toHaveText(/^You clear it in 100% of 100 plays\. Never dead in these plays\./, { timeout: 60_000 });
+    await expect(card.locator('[data-oddsline]')).toHaveText(/^You clear it in 100% of 100 plays\. Never reached 0 HP in these simulated fights\./, { timeout: 60_000 });
   });
   await test.step('the GM makes Stunned hold nothing: the odds are marked stale, and played again the goblins strike', async () => {
     await gm.page.evaluate(() => hunterApp.store.update((d: any) => { d.library.statuses.stunned = { label: 'Stunned', desc: 'Only dazed.', ops: [] }; }, 'test-setup'));
@@ -434,7 +437,7 @@ test('in a room, a player\'s personal-gate clear waits for the GM, and approving
 
   const row = await waitingRow(gm.page, gateName);
   await expect(row).toContainText('Kai');
-  await expect(row).toContainText(`Solo clear: ${gateName}`);
+  await expect(row).toContainText(PENDING_WORDS.earned('solo', gateName));
   await expect(row).toContainText('+25 XP');
   const rec = await gm.page.evaluate(name => (hunterApp.store.get().settings.sync.pending ?? []).find((p: any) => p.at === 'waiting' && p.what === name), gateName);
   expect(rec.rewards.xp).toBe(25);
@@ -444,7 +447,7 @@ test('in a room, a player\'s personal-gate clear waits for the GM, and approving
 
   const win = kai!.page.locator('.sys-overlay.show', { hasText: 'REWARD RECEIVED' });
   await expect(win).toBeVisible({ timeout: 30_000 });
-  await expect(win).toContainText(`Solo clear: ${gateName}. The GM approved your reward.`);
+  await expect(win).toContainText(PENDING_WORDS.approvedBody('solo', gateName));
   await win.locator('.sys-actions button').first().tap();
   await dismissAll(kai!.page);
 
@@ -465,7 +468,7 @@ test('in a room, refusing a player\'s personal-gate clear tells the player and p
 
   const win = kai!.page.locator('.sys-overlay.show', { hasText: 'REWARD REFUSED' });
   await expect(win).toBeVisible({ timeout: 30_000 });
-  await expect(win).toContainText(`Solo clear: ${gateName}. The GM did not give this reward.`);
+  await expect(win).toContainText(PENDING_WORDS.refusedBody('solo', gateName));
   await win.locator('.sys-actions button').first().tap();
   await dismissAll(kai!.page);
 

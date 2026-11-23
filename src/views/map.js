@@ -206,9 +206,9 @@ export function register(app) {
         <p class="mp-news" data-news role="status" aria-live="polite" hidden></p>
         <p class="mp-sending" data-sending hidden></p>
         <p class="mp-seenas" data-seenas hidden></p>
-        <div class="mp-tools">${src.paint ? '<button type="button" class="mp-tog" data-painttog aria-pressed="false">Paint</button>' : ''}<button type="button" class="mp-tog" data-grid aria-pressed="false">Grid</button></div>
+        <div class="mp-tools">${src.paint ? '<button type="button" class="mp-tog" data-painttog aria-pressed="false" title="Paint terrain or fields">Paint</button>' : ''}<button type="button" class="mp-tog" data-grid aria-pressed="false" title="Toggle grid lines">Grid</button></div>
       </div>
-      <div class="mp-paint seg" data-paint role="group" aria-label="Paint with" hidden></div>
+      <div class="mp-paint seg" data-paint role="group" aria-label="Terrain and field brush" hidden></div>
       <div class="mp-dock"><div class="mp-now" data-now></div>
       <div class="mp-confirm" data-confirm hidden><p data-words role="status"></p><button type="button" data-cancel>Cancel</button><button type="button" class="primary" data-go></button></div></div>
       <div class="mp-dt" data-mapdt></div>
@@ -535,7 +535,7 @@ export function register(app) {
     function tokDesc(t, f) {
       const aim = f.kind === 'aim' ? f : null, inHit = aim && aim.aim && aim.aim.hit.includes(t.id), inRing = aim && aim.aim && aim.aim.ringed.includes(t.id);
       const area = aim && aim.ability.aim === 'place', can = aim && !area && aim.targets.includes(t.id), dim = aim && !area && !can && t.id !== scene.actor;
-      const mark = area && inHit ? 'Caught' : area && inRing ? 'Ring' : '', x = t.extras;
+      const mark = area && inHit ? 'Caught' : area && inRing ? 'Outer ring' : '', x = t.extras;
       const hp = t.ring.band ? t.ring.band : t.bars ? `HP ${t.bars.hp[0]} of ${t.bars.hp[1]}` : '';
       return {
         id: t.id, x: t.place.x, y: t.place.y, lbl: t.label, hasIcon: !!t.icon, noIcon: !t.icon, href: t.icon ? iconHref(t.icon) : null, letter: t.letter ?? '', noLetter: !t.letter, name: t.plate ? t.plate.text : '', noName: !t.plate, nameCls: t.plate ? `mp-name ${t.plate.side}${t.plate.span === 3 ? ' wide' : ''}` : 'mp-name', noDot: !t.statuses, ring: `--f:${t.ring.share.toFixed(3)}`,
@@ -671,7 +671,7 @@ export function register(app) {
     }
     /** The eyes the GM's map shows, named in its corner while they are one row's and not everything (map-view.ts `MapScene.eyes`). */
     function drawSeenAs() {
-      const box = $('[data-seenas]'), e = scene.eyes, text = e ? `Seen as ${e.name}${e.down ? ', down: sees only its side' : ''}` : '';
+      const box = $('[data-seenas]'), e = scene.eyes, text = e ? `Viewing as ${e.name}${e.down ? ' (defeated, sees allies only)' : ''}` : '';
       box.hidden = !e;
       if (box.textContent !== text) box.textContent = text;
     }
@@ -729,7 +729,7 @@ export function register(app) {
         else {
           on = f.aim.ok;
           const hit = f.aim.hit.map(name), ring = f.aim.ringed.map(name);
-          say = !f.aim.ok ? 'Out of reach.' : `${hit.length ? `Hits ${hit.join(', ')}` : 'Hits nobody'}.${ring.length ? ` In the ring: ${ring.join(', ')}.` : ''}`;
+          say = !f.aim.ok ? 'Out of reach.' : `${hit.length ? `Hits ${hit.join(', ')}` : 'Hits nobody'}.${ring.length ? ` In outer ring (reduced damage): ${ring.join(', ')}.` : ''}`;
         }
       }
       box.hidden = !show;

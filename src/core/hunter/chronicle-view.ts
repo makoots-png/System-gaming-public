@@ -27,24 +27,24 @@ const HOW_WORDS: { readonly [H in LifeHow]: string } = {
   fight: ' in a fight', gm: ' by the GM', item: ' with an item', system: ' by the System', hand: ' after a change by hand',
 };
 /** How a hunter came out of a lost solo run. */
-const AFTER_WORDS: { readonly [L in LifeState]: string } = { up: 'was up at its end', dead: 'died' };
+const AFTER_WORDS: { readonly [L in LifeState]: string } = { up: 'survived', dead: 'died' };
 /** A fight's foes and where it was: " in Goblin Den against 3 Goblins", each part left out when the fact has none. */
 const against = (f: FactOf<'fight'>): string => `${f.gate ? ` in ${f.gate}` : ''}${f.names ? ` against ${f.names}` : ''}`;
-/** How a hunter's row ended a fight: its HP share, or down. */
-const ended = (f: FactOf<'fight'>): string => (f.up ? `at ${n(f.endPct)}% HP` : 'down at the end');
+/** How a hunter's row ended a fight: its HP share, or dead. */
+const ended = (f: FactOf<'fight'>): string => (f.up ? `at ${n(f.endPct)}% HP` : 'dead at the end');
 
 /** One plain sentence for each kind of fact, saying what happened with its numbers. */
 export const FACT_LINES: { readonly [K in FactKind]: (f: FactOf<K>) => string } = {
   fight: f => (f.outcome === 'ended' ? `The GM ended a fight${against(f)} after ${count(f.rounds, 'round')}, ${ended(f)}.`
     : `${f.outcome === 'won' ? 'Won' : 'Lost'} a fight${against(f)} in ${count(f.rounds, 'round')}, ${ended(f)}.`),
-  kill: f => `Defeated ${f.monster}, a rank ${f.rank} ${f.mkind === 'normal' ? 'monster' : f.mkind}, at ${n(f.hpPct)}% HP.`,
+  kill: f => `Defeated ${f.monster}, a rank ${f.rank} ${f.mkind === 'normal' ? 'monster' : f.mkind}, with ${n(f.hpPct)}% HP left.`,
   solo: f => {
     const where = `a solo run in ${f.name} (rank ${f.rank})`;
     if (f.outcome === 'won') return `Won ${where} in ${count(f.rounds, 'round')}, at ${n(f.endPct)}% HP.`;
     if (f.outcome === 'stalled') return `Retreated from ${where} after ${count(f.rounds, 'round')}, at ${n(f.endPct)}% HP.`;
     return `Lost ${where} in ${count(f.rounds, 'round')} and ${AFTER_WORDS[f.life]}.`;
   },
-  gate: f => `Cleared ${f.name}, a rank ${f.rank} gate${f.toBreak === null ? '' : `, ${count(f.toBreak, 'day')} before its break`}.`,
+  gate: f => `Cleared ${f.name}, a rank ${f.rank} gate${f.toBreak === null ? '' : `, ${count(f.toBreak, 'day')} before dungeon break`}.`,
   closed: f => `The personal gate ${f.name} (rank ${f.rank}) closed when its time ran out.`,
   quest: f => `${f.end === 'done' ? 'Completed' : 'Failed'} the ${QUEST_WORDS[f.qkind]} quest ${f.title}.`,
   daily: f => `Finished the day's daily quests, ${count(f.streak, 'day')} in a row.`,
@@ -62,7 +62,7 @@ export const FACT_LINES: { readonly [K in FactKind]: (f: FactOf<K>) => string } 
   title: f => `Got the title ${f.name}.`,
   feat: f => `Earned the ${f.hidden ? 'hidden ' : ''}feat ${f.name}.`,
   given: f => `The GM gave the award ${f.name}.`,
-  chapter: f => `A story window: ${f.title}.${f.line ? ` ${f.line}` : ''}`,
+  chapter: f => `Story: ${f.title}.${f.line ? ` ${f.line}` : ''}`,
   roll: f => `Rolled a natural ${n(f.natural)} on a check.`,
   coin: f => `Called the coin ${f.won ? 'right' : 'wrong'}.`,
   shop: f => `${f.act === 'buy' ? 'Bought' : 'Sold'} ${f.item} for ${n(f.price)} gold, with ${n(f.goldAfter)} gold left.`,
@@ -139,7 +139,7 @@ export const CHRONICLE_WORDS = {
   /** The button's label while the panel is short, or '' when every list is shown whole. */
   showAll: (v: ChronicleView): string => { const m = more(v); return m.length ? `Show all: ${m.join(', ')}` : ''; },
   showLess: 'Show less',
-  pushed: `From the player's phone: its lifetime numbers, its ${PUSHED_FEATS} newest feats and its last ${PUSHED_FACTS} entries.`,
+  pushed: `From the player's phone: lifetime totals, ${PUSHED_FEATS} newest feats, and last ${PUSHED_FACTS} entries.`,
   close: 'Close',
 } as const;
 /** The GM board's line of a hunter's feats: how many it earned and the newest by name. */
@@ -151,7 +151,7 @@ export function boardLine(c: Pick<Chronicle, 'feats'>): string {
 }
 /** The GM's switch for every feat, its words, and the session log's line when it moves. */
 export const FEATS_SWITCH_WORDS = {
-  label: 'The System notices feats', on: 'On', off: 'Off',
+  label: 'Track feats', on: 'On', off: 'Off',
   hint: 'While this is off, no hunter at this table earns a feat and nothing counts toward one. Earned feats stay.',
   logTitle: 'Feats', logLine: (on: boolean): string => `Feats turned ${on ? 'on' : 'off'} for the table.`,
   workshopOff: 'Feats are turned off for the table. Turn them on in the GM view, under Rules editor.',

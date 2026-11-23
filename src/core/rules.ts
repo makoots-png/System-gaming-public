@@ -75,49 +75,49 @@ function domainsOf(spec: unknown, path: string, out: Map<string, Domain>): Map<s
 export const SOLO_BOUNDS = { hours: 168, held: 10, pack: 12 } as const;
 
 // Domains several rules share: one for each kind of number a table repeats by rank, kit, monster kind or ability kind.
-const LEVEL = wholeIn(MIN_LEVEL, MAX_LEVEL, 'a level a hunter can hold (hunter/level.ts)');
-const CHECK_BONUS = wholeIn(0, 30, 'a bonus on a d20 check: past 30 the die decides no DC');
-const DC = wholeIn(1, 100, 'a d20 check\'s DC: the S rank\'s hardest is 55, and past 100 no bonus reaches it');
-const MONSTER_XP = wholeIn(0, 1_000_000, 'XP a monster gives: a million is about the next level of a level 9999 hunter');
-const BREAK_DAYS = wholeIn(1, 365, 'days a gate stays open: under a day it breaks as it opens, a year is the longest a table plans');
-const GOLD = wholeIn(0, 1_000_000_000, 'gold: a billion is the bound of every gold a reward or a monster\'s loot reads');
-const WEIGHT = wholeIn(0, 1000, 'a chance weight against the others of its table: 0 never draws it, 1000 is 1000 times the smallest');
-const SUMMON_MANA = wholeIn(0, 1000, 'mana a summon costs: past every body\'s mana it cannot be paid, which a GM may want');
-const PACK = wholeIn(1, 26, 'monsters in a spawned pack: at least one, and a line of the roster holds at most 26 copies');
-const SHARE_OF_SPAWNS = wholeIn(0, 100, 'a percent of the personal gates\' spawns');
-const COST = wholeIn(10, 1000, 'hundredths of a standard action: under a tenth a body acts without end, past ten actions a turn is a fight');
-const STAT_CAP = wholeIn(0, 1000, 'the most a stat\'s capped curve gives: 0 turns the stat\'s part off');
-const SHARE = realIn(0, 1, 'a share of a whole: 0 is none of it, 1 all of it');
-const KIT_WEIGHT = wholeIn(0, 200, 'a kit\'s weight: 200 is four times the heaviest carry a body has');
-const KIT_GUARD = wholeIn(0, 1000, 'a kit\'s armor or resist: armor divides, so 1000 still lets a tenth of a hit through');
-const KIND_FACTOR = realIn(0.1, 20, 'a factor on a monster\'s HP or power: under 0.1 it is not there, past 20 no party scratches it');
-const KIND_GUARD = realIn(0.1, 20, 'a factor on a monster\'s armor or resist: under 0.1 it wears nothing, at 20 a C brute\'s armor lets under a tenth of a hit through');
-const KIND_STAGGER = realIn(0, 20, 'a stagger bar in same-rank hits: 0 is no bar, past 20 it never fills');
-const TRAIT_SPEED = wholeIn(-90, 200, 'a trait\'s percent on speed: -90 is a body that barely moves, 200 three times as fast (the speed range clamps both)');
-const KIND_XP = realIn(0, 100, 'a factor on the rank\'s XP: 0 pays none, 100 is a whole gate in one monster');
-const WINDUP = wholeIn(0, 10_000, 'ticks before a use lands: 0 is at once, ten rounds is past any fight\'s patience');
-const RANGE = wholeIn(0, 40, 'tiles a use reaches: 0 is the user\'s own tile, 40 is the largest map\'s side');
-const RADIUS = wholeIn(0, 20, 'tiles of an area\'s radius: 20 covers the largest map from its middle');
-const USE_FATIGUE = wholeIn(0, 100, 'fatigue one use costs: 100 is a whole base bar');
-const USE_MANA = wholeIn(0, 1000, 'mana one use costs: past every body\'s mana it cannot be paid');
-const COOLDOWN = wholeIn(0, 10_000, 'ticks before a use comes back: ten rounds is past any fight');
-const EVENT_RATE = realIn(0, 10, 'times an event happens a round: 10 is every tick of a crowd');
-const REF_ROUNDS = realIn(0.5, 50, 'rounds the reference party takes: a fight is 4 to 8, 50 is a siege');
-const REF_HP = realIn(0.05, 20, 'a monster\'s max HP over the user\'s: 20 is past any boss');
-const TIER_SHARE = realIn(0, 2, 'a share of the ability a kit replaces: 2 is twice it');
-const BURST = realIn(0, 10, 'bolts or curses a burst is worth: 10 is a fight in one go');
-const KEYSTONE_SPEND = realIn(0, 30, 'points one keystone may spend on its rank\'s sample wearer: 0 is a keystone that does nothing, 30 is every point a rank of ten levels gives');
-const TITLE_SPEND = realIn(0, 30, 'points a title may spend on its band\'s sample wearer: 0 says every title with a bonus is over, 30 is every point a rank of ten levels gives');
+const LEVEL = wholeIn(MIN_LEVEL, MAX_LEVEL, 'the allowed range for hunter levels');
+const CHECK_BONUS = wholeIn(0, 30, 'bonus added to a d20 check. Above 30, the die roll no longer matters');
+const DC = wholeIn(1, 100, 'DC for a d20 check. The hardest S-rank DC is 55, and nothing can reach past 100');
+const MONSTER_XP = wholeIn(0, 1_000_000, 'XP a monster gives. One million is roughly one level-up at the max level');
+const BREAK_DAYS = wholeIn(1, 365, 'days a gate stays open before dungeon break. Under 1 day it breaks immediately, and 365 is one full year');
+const GOLD = wholeIn(0, 1_000_000_000, 'gold amount. One billion is the maximum for rewards and monster loot');
+const WEIGHT = wholeIn(0, 1000, 'relative chance weight in this table. 0 means never chosen, and 1000 is the maximum');
+const SUMMON_MANA = wholeIn(0, 1000, 'mana cost to summon. High values can make a summon unpayable');
+const PACK = wholeIn(1, 26, 'number of monsters in a spawned pack. Must be at least 1 and at most 26');
+const SHARE_OF_SPAWNS = wholeIn(0, 100, 'percentage chance for personal gate spawns');
+const COST = wholeIn(10, 1000, 'action time in hundredths of a standard action. Under 10 causes rapid endless turns, and above 1000 makes one turn last ten actions');
+const STAT_CAP = wholeIn(0, 1000, 'maximum bonus from this stat curve. 0 disables this stat bonus');
+const SHARE = realIn(0, 1, 'fraction between 0 (none) and 1 (all)');
+const KIT_WEIGHT = wholeIn(0, 200, 'armor kit weight. 200 is four times the maximum base carry capacity');
+const KIT_GUARD = wholeIn(0, 1000, 'armor or magic resist for this kit. At 1000, attacks still deal about a tenth of their damage');
+const KIND_FACTOR = realIn(0.1, 20, 'multiplier on monster HP or power. Under 0.1 makes it negligible, and above 20 makes it unbeatable');
+const KIND_GUARD = realIn(0.1, 20, 'multiplier on monster armor or magic resist. Under 0.1 removes defense, and 20 blocks over 90% of damage');
+const KIND_STAGGER = realIn(0, 20, 'stagger bar size in standard hits at that rank. 0 disables stagger, and above 20 it is almost impossible to fill');
+const TRAIT_SPEED = wholeIn(-90, 200, 'percentage speed change from a trait. -90 slows nearly to a halt and 200 triples speed, within the speed limits');
+const KIND_XP = realIn(0, 100, 'multiplier on rank XP. 0 gives no XP, and 100 gives a full gate of XP per monster');
+const WINDUP = wholeIn(0, 10_000, 'wind-up time in ticks before an ability lands. 0 is instant, and 10,000 is ten full rounds');
+const RANGE = wholeIn(0, 40, 'ability range in tiles. 0 is the user\'s own tile, and 40 is the largest map width');
+const RADIUS = wholeIn(0, 20, 'area radius in tiles. 20 covers the entire largest map from the center');
+const USE_FATIGUE = wholeIn(0, 100, 'fatigue cost per use. 100 is a full base fatigue bar');
+const USE_MANA = wholeIn(0, 1000, 'mana cost per use. Very high values make the ability unpayable');
+const COOLDOWN = wholeIn(0, 10_000, 'cooldown in ticks before an ability is ready again. 10,000 is ten full rounds');
+const EVENT_RATE = realIn(0, 10, 'expected times this event happens per round, up to 10');
+const REF_ROUNDS = realIn(0.5, 50, 'expected rounds for the reference party. Most fights take 4 to 8 rounds, up to 50');
+const REF_HP = realIn(0.05, 20, 'ratio of monster max HP to user max HP, up to 20');
+const TIER_SHARE = realIn(0, 2, 'damage share compared to the base ability it replaces, up to 2');
+const BURST = realIn(0, 10, 'burst strength measured in standard spells, up to 10');
+const KEYSTONE_SPEND = realIn(0, 30, 'bonus-point budget for one keystone. 0 gives no bonus, and 30 equals ten full levels of ability points');
+const TITLE_SPEND = realIn(0, 30, 'bonus-point budget for a title of this rank. 0 flags every bonus as over budget, and 30 equals ten levels of ability points');
 const DIFFICULTY_LEVEL = wholeIn(1, 10, 'gate or boss difficulty level, 1 to 10');
 const DIFFICULTY_WIN_PCT = wholeIn(1, 99, 'expected three-hunter win chance in percent for one difficulty step');
 const DIFFICULTY_FACTOR = realIn(0.1, 20, 'combined HP-times-damage difficulty multiplier for one step or rank');
-const DIFFICULTY_SPLIT = realIn(0, 1, 'share of the difficulty factor placed on max HP: the rest goes to outgoing damage');
+const DIFFICULTY_SPLIT = realIn(0, 1, 'share of the difficulty multiplier applied to max HP. The rest applies to damage dealt');
 /** The points a build path's main and second stat take of each level's points (registry/paths.ts `alloc`). */
-export const PATH_ALLOC = wholeIn(0, 10, 'points a path puts in a stat for each the level gives: 0 is none, 10 is past every build');
+export const PATH_ALLOC = wholeIn(0, 10, 'auto-allocation weight for this stat per level. 0 puts no points here, up to 10');
 /** A perk's points on a bonus key (a title's bonus, a path tier's perk): the bound of every flat bonus a parser reads. */
-export const PERK_POINTS = wholeIn(-999, 999, 'a flat bonus: the bound of every flat number the kit parsers read (fight.kit.hpFlat)');
+export const PERK_POINTS = wholeIn(-999, 999, 'flat stat or sheet bonus, between -999 and 999');
 /** A daily objective's target. */
-export const OBJECTIVE_TARGET = realIn(0.1, 100_000, 'a daily target: above 0 so it can be met, 100000 is past any day\'s count');
+export const OBJECTIVE_TARGET = realIn(0.1, 100_000, 'target count for a daily quest objective. Must be above 0 and at most 100,000');
 
 /** A rule number whose rule is an open map: each entry of the map has this domain. `*` stands for any one key. */
 const OPEN_DOMAINS: ReadonlyArray<{ readonly re: RegExp; readonly domain: Domain }> = [
@@ -129,9 +129,9 @@ const OPEN_DOMAINS: ReadonlyArray<{ readonly re: RegExp; readonly domain: Domain
 const DAILY_REWARD_PARTS: Omit<Rewards, 'xp' | 'points' | 'gold'> = { items: [], title: null, job: null, skills: [], statuses: [], boons: [] };
 
 const SPEC = {
-  xpPerLevel: whole(100, 1, 1_000_000, 'XP to the next level is this times the level: 0 levels a hunter to the cap on 1 XP'),
-  pointsPerLevel: whole(3, 0, 20, 'stat points a level gives: 20 is a main stat\'s worth of a rank every level'),
-  streakBonusEvery: whole(7, 1, 365, 'days of a streak between its bonuses: a streak of 0 days divides by 0'),
+  xpPerLevel: whole(100, 1, 1_000_000, 'XP needed per level (multiplied by current level). At 0, a single XP point would reach max level'),
+  pointsPerLevel: whole(3, 0, 20, 'ability points gained on each level-up, from 0 to 20'),
+  streakBonusEvery: whole(7, 1, 365, 'daily streak days needed per bonus point. Must be at least 1'),
   levelUpRestore: true,
   rankLevels: { E: of(1, LEVEL), D: of(10, LEVEL), C: of(20, LEVEL), B: of(35, LEVEL), A: of(50, LEVEL), S: of(70, LEVEL) },
   rankBonus: { E: of(2, CHECK_BONUS), D: of(3, CHECK_BONUS), C: of(4, CHECK_BONUS), B: of(5, CHECK_BONUS), A: of(6, CHECK_BONUS), S: of(8, CHECK_BONUS) },
@@ -147,10 +147,10 @@ const SPEC = {
     S: { dc: each([45, 50, 55], DC), xp: of(8000, MONSTER_XP), breakDays: of(2, BREAK_DAYS) },
   },
   fatigue: {
-    penaltyAt: whole(50, 0, 1000, 'fatigue from which checks pay the penalty: past the largest bar (150) never'),
-    penalty: whole(2, 0, 20, 'taken off every check when tired: 20 is the whole d20'),
-    disAt: whole(80, 0, 1000, 'fatigue from which checks roll at a disadvantage: past the largest bar (150) never'),
-    collapseAt: whole(100, 0, 1000, 'fatigue at which a body collapses: past the largest bar (150) never'),
+    penaltyAt: whole(50, 0, 1000, 'fatigue level where check penalties start. Values above max fatigue disable the penalty'),
+    penalty: whole(2, 0, 20, 'penalty subtracted from checks when tired, from 0 to 20'),
+    disAt: whole(80, 0, 1000, 'fatigue level where checks roll with disadvantage. Values above max fatigue disable it'),
+    collapseAt: whole(100, 0, 1000, 'fatigue level where a hunter becomes exhausted. Values above max fatigue disable it'),
   },
   // A rest (the owner, Nov 22: "rests will give 25% of mana back, and 25% health back. exhausted will largely clear. They
   // should get 2x per dungeon"): `hp` and `mana` the share of the maximum given back, `fatigue` the share of the fatigue
@@ -159,9 +159,9 @@ const SPEC = {
   // ends for it (src/core/hunter/rests.ts). A Clear gives everything back (vitals.ts `cleared`).
   rest: {
     hp: of(0.25, SHARE), mana: of(0.25, SHARE), fatigue: of(0.75, SHARE),
-    perGate: whole(2, 0, 10, 'rests a hunter has in a gate: 0 is none, 10 is a rest after every fight of a long gate'),
+    perGate: whole(2, 0, 10, 'rests allowed per gate. 0 disables resting, up to 10'),
   },
-  penaltyCheck: whole(2, 0, 20, 'taken off every check while Penalized: 20 is the whole d20'),
+  penaltyCheck: whole(2, 0, 20, 'penalty subtracted from checks while Penalized, from 0 to 20'),
   dailyTemplate: {
     title: 'Strength Training', desc: 'Finish the daily training before the day resets.',
     objectives: [
@@ -170,8 +170,8 @@ const SPEC = {
     ],
     // What the daily quest gives, typed as a reward so a GM's override of its items, skills or title is one (overrides.ts).
     rewards: {
-      xp: whole(25, 0, 1_000_000, 'XP a daily gives: a million is about the next level of a level 9999 hunter'),
-      points: whole(1, 0, 20, 'stat points a daily gives: 20 is a level\'s worth and more every day'),
+      xp: whole(25, 0, 1_000_000, 'XP rewarded for completing the daily quest, up to 1,000,000'),
+      points: whole(1, 0, 20, 'ability points rewarded for completing the daily quest, from 0 to 20'),
       gold: of(0, GOLD),
       ...DAILY_REWARD_PARTS,
     },
@@ -209,19 +209,19 @@ const SPEC = {
   },
   // The economy (docs/agent-handoff/features/economy/design.md, each number's reason in its section). A price is a count
   // of Clears (`clearOf`); a world gate's gold and XP are a pot shared by the hunters paid.
-  gradeStep: real(1.5, 1, 1.8, 'a grade\'s factor on its tier\'s price: 1 prices a plus as a minus, past 1.8 a plus costs more than the next tier\'s minus (1.8 squared is under 3.25, the smallest step of the shipped ladder)'), // design 2.1: three grades make a tier, a factor of 3.25 to 4, so one grade is about its cube root
+  gradeStep: real(1.5, 1, 1.8, 'price multiplier between item grades in the same tier. At 1 all grades cost the same, and above 1.8 a top grade would cost more than the next tier'), // design 2.1: three grades make a tier, a factor of 3.25 to 4, so one grade is about its cube root
   saleShare: of(0.25, SHARE), // design 3: the Association buys an item back at a quarter of its price (the owner: "A quarter.")
   usedUpShare: of(0.5, SHARE), // design 2.2: a consumable is one use, so a Clear buys two of its rank
-  reviveClears: whole(10, 1, 1000, 'Clears of its rank a Resurrection Crystal costs: under 1 it costs less than a middle item of its rank, 1000 is out of any table\'s reach'), // design 5: a full set of its rank's middle gear
+  reviveClears: whole(10, 1, 1000, 'price of a Resurrection Crystal in same-rank gate clears, from 1 to 1000'), // design 5: a full set of its rank's middle gear
   // economy.md section 13 and world rule 6: the one System raise on debt owes ten Clears of the hunter's rank, what a
   // Resurrection Crystal of that rank costs, so a hunter past the free raise pays for a return as a crystal's buyer does
-  reviveDebtClears: whole(10, 1, 1000, 'Clears of its rank a System raise on debt owes: under 1 it owes less than a middle item of its rank, 1000 is out of any table\'s reach'),
+  reviveDebtClears: whole(10, 1, 1000, 'debt for a System revive in same-rank gate clears, from 1 to 1000'),
   reviveLevelShare: of(1 / 30, SHARE), // design 4.4, ruling 9: a raising takes this share of the level, rounded up, never below level 1 ("maybe 3.33% of your total level")
-  gateParty: whole(4, 1, 12, 'the hunters a world gate is made for: at least one, past 12 no table seats them'), // design 4.1: the session model's party; its gold and XP are a pot of this many shares
+  gateParty: whole(4, 1, 12, 'number of hunters a world gate payout is balanced for, from 1 to 12'), // design 4.1: the session model's party; its gold and XP are a pot of this many shares
   // design 2.3: the points an item may spend beyond its slot's free numbers
   itemBudget: {
-    share: real(0.5, 0, 2, 'the share of a hunter\'s points its gear may hold, over the slots: 0 leaves an item no budget, 2 is twice the hunter\'s own'), // half of what a hunter of the tier's rank holds at its first level, over the 10 slots
-    weaponStep: real(1, 0, 10, 'mean damage a weapon\'s free die gains a tier: 0 keeps every tier at the reference die, 10 is past any die\'s step'), // the free die rises by 1 mean damage a tier from 1d8
+    share: real(0.5, 0, 2, 'share of a hunter\'s ability points that a full set of gear can add. 0 gives items no bonus budget, up to 2'), // half of what a hunter of the tier's rank holds at its first level, over the 10 slots
+    weaponStep: real(1, 0, 10, 'average damage gained by a weapon\'s base die per tier, from 0 to 10'), // the free die rises by 1 mean damage a tier from 1d8
     // The foe a point of penetration is weighed against (balance plan section 9): a same-rank monster of this kind, a
     // brute's armor for the armor pair and a caster's resist for the resist pair. Penetration is worth more the thicker
     // the defence, so the foe is named; the elite sits between a pack's normal and a boss. One of `fight.kinds`
@@ -231,21 +231,21 @@ const SPEC = {
     // every this many rounds, so a point of haste gives a hundredth of a use more every this many rounds. 3 is the middle
     // of the built-in skills' cooldowns (Dagger Rush and Marked Shot 2, Mutilation, Sprint and Shield Wall 3, Stealth and
     // Mending Aura 4, Ruler's Authority 5).
-    cooldownRounds: real(3, 1, 20, 'rounds of the cooldown haste is weighed on: under 1 an ability is back each turn, 20 is past any fight'),
+    cooldownRounds: real(3, 1, 20, 'reference cooldown length in rounds used to value ability haste, from 1 to 20'),
   },
   // What a title may spend, in points on the sample wearer of its band (item-budget.ts `titleSpend`): the top of each
   // band of the ideas file (features/ideas-feats-titles-rewards.md section 4: E 1, D 2, C 2 to 3, B 3, A 4, S 5 and more).
   titleBudget: { E: of(1, TITLE_SPEND), D: of(2, TITLE_SPEND), C: of(3, TITLE_SPEND), B: of(3, TITLE_SPEND), A: of(4, TITLE_SPEND), S: of(5, TITLE_SPEND) },
   shadow: {
-    maxAttempts: whole(3, 1, 20, 'tries at one corpse: 0 would offer an Extract that cannot be tried'),
-    dcBase: of(10, DC), dcPerRank: whole(3, 0, 20, 'DC added for each rank the foe is above the hunter: 20 is the whole d20'),
-    bossDc: whole(5, 0, 50, 'DC added for a boss: 50 makes a boss out of reach of any bonus'), dcMin: of(5, DC),
+    maxAttempts: whole(3, 1, 20, 'shadow extraction attempts allowed per corpse. Must be at least 1'),
+    dcBase: of(10, DC), dcPerRank: whole(3, 0, 20, 'extra extraction DC per rank the monster is above the hunter, from 0 to 20'),
+    bossDc: whole(5, 0, 50, 'extra extraction DC for boss monsters, from 0 to 50'), dcMin: of(5, DC),
     summonMp: { E: of(1, SUMMON_MANA), D: of(2, SUMMON_MANA), C: of(4, SUMMON_MANA), B: of(8, SUMMON_MANA), A: of(16, SUMMON_MANA), S: of(32, SUMMON_MANA) },
   },
   gateSpawn: {
     rank: { E: of(40, WEIGHT), D: of(30, WEIGHT), C: of(15, WEIGHT), B: of(9, WEIGHT), A: of(5, WEIGHT), S: of(1, WEIGHT) },
     type: { normal: of(85, WEIGHT), red: of(10, WEIGHT), double: of(5, WEIGHT) },
-    redDcBonus: whole(3, 0, 20, 'DC a red gate adds: 20 is the whole d20'),
+    redDcBonus: whole(3, 0, 20, 'extra check DC inside a red gate, from 0 to 20'),
     regulars: { E: each([1, 3], PACK) }, // [min, max] pack size for a rank, any rank's in PACK (OPEN_DOMAINS); ranks not listed spawn 2-6
   },
   gateNames: ['Goblin Warren', 'Crimson Cavern', 'Frost Hollow', 'Sunken Temple', 'Ant Nest', 'Iron Fortress',
@@ -254,13 +254,13 @@ const SPEC = {
   // term this allows (100d1000!kh50) costs under a second, once, when a GM types it. maxSides: a d1000 is the largest die named.
   // Neither goes higher: the odds of a keep term list every face, so a billion sides is a list of a billion.
   dice: {
-    maxDice: whole(100, 1, 100, 'dice one term rolls: past 100 the exact odds of a keep term take seconds to work out'),
-    maxSides: whole(1000, 2, 1000, 'sides of the largest die: the odds list every face, so a d1000000000 eats the phone\'s memory'),
+    maxDice: whole(100, 1, 100, 'maximum dice allowed in a single roll term. Above 100 slows down odds calculation'),
+    maxSides: whole(1000, 2, 1000, 'maximum sides allowed on a single die, from 2 to 1000'),
   },
-  logCap: whole(200, 1, 1000, 'lines of the session log a save keeps: past 1000 the save outgrows a phone\'s storage'),
-  rollCap: whole(50, 1, 500, 'rolls the dice history keeps: past 500 it outgrows its screen and the save'),
-  backupCap: whole(8, 1, 20, 'backups kept, each a whole save: past 20 they fill a phone\'s storage'),
-  loadoutCap: whole(6, 0, 24, 'gear sets a hunter may save: 0 is none, 24 is the save\'s limit (repair.ts LIMITS.loadouts)'),
+  logCap: whole(200, 1, 1000, 'maximum session log entries stored in a save, from 1 to 1000'),
+  rollCap: whole(50, 1, 500, 'maximum dice rolls kept in history, from 1 to 500'),
+  backupCap: whole(8, 1, 20, 'maximum automatic save backups kept on the device, from 1 to 20'),
+  loadoutCap: whole(6, 0, 24, 'maximum saved gear loadouts per hunter, from 0 to 24'),
   // A hunter's personal gates, the System's (notes-2-solo.md section 7 has each number's reason): on, a spawn every
   // `hours`, at most `held` open at once (stays / hours, so a once-a-day player loses none), each open `stays` hours; a
   // spawn's rank one below, at, or one above the hunter's by `ranks` (percent), its pack `pack` normal monsters of that
@@ -268,11 +268,11 @@ const SPEC = {
   // level 1 pregen in about 40% of plays, so 2 is the hard gate and 3 is the party's (notes-2-solo.md section 16).
   solo: {
     personal: true,
-    hours: whole(8, 1, SOLO_BOUNDS.hours, 'hours between spawns: 0 spawns without end, a week is the longest'),
-    held: whole(3, 1, SOLO_BOUNDS.held, 'gates open at once: the sheet push carries at most 10'),
-    stays: whole(24, 1, SOLO_BOUNDS.hours, 'hours a gate stays open: under one it closes as it opens, a week is the longest'),
+    hours: whole(8, 1, SOLO_BOUNDS.hours, 'hours between personal gate spawns. Must be at least 1 hour and at most 1 week (168 hours)'),
+    held: whole(3, 1, SOLO_BOUNDS.held, 'maximum personal gates open at once, from 1 to 10'),
+    stays: whole(24, 1, SOLO_BOUNDS.hours, 'hours a personal gate stays open before closing, from 1 to 168'),
     ranks: { below: of(25, SHARE_OF_SPAWNS), same: of(60, SHARE_OF_SPAWNS), above: of(15, SHARE_OF_SPAWNS) },
-    pack: each([1, 2], wholeIn(1, SOLO_BOUNDS.pack, 'monsters in a personal gate: a lone hunter against more than 12 is no run')),
+    pack: each([1, 2], wholeIn(1, SOLO_BOUNDS.pack, 'number of monsters in a personal gate, from 1 to 12')),
     lootShare: of(0.25, SHARE), // economy design 4.2: a cleared personal gate pays a quarter of one hunter's share of a world gate (the owner: "A quarter.")
     // How much harder a solo run's fight is than the same fight at the table. The owner (Nov 21): "let's make auto runs 25%
     // harder than optimal gameplay clears. Have that factor into the odds given for the auto clears." The run is one
@@ -284,7 +284,7 @@ const SPEC = {
     // Measured (one play each, 3000 gates a rank, the six plain builds of tests/models/fight-sim.ts at the rank against
     // a personal gate rolled as soloTick rolls one, the S gate an A one as `pooled` makes it; se 0.9 points each): the
     // run's win chance at 1 then 1.25 is E 45.2% to 37.1%, C 42.7% to 34.7%, S 59.4% to 50.0%.
-    autoHarder: real(1.25, 1, 4, 'times the table\'s difficulty: under 1 a run is easier than the table, past 4 a foe has over twice its HP and deals over twice its damage'),
+    autoHarder: real(1.25, 1, 4, 'difficulty multiplier for solo runs compared to table fights, from 1 to 4'),
   },
   // feats (hunter/feats.ts): `on` is the GM's one switch for every feat the System notices; the room's `rules` doc carries it to the players
   feats: { on: true },
@@ -292,16 +292,16 @@ const SPEC = {
   // room's `rules` doc carries it to the players. Off refuses a new offer and an accept at the tap, never a refuse, a take
   // back, a stop or the read of an end (notes-5-trade.md 2.2)
   trade: { on: true },
-  build: { enabled: true, playerPick: true, respecGold: whole(5, 0, 1_000_000, 'a respec costs this times the level squared in gold: 0 is free') }, // respecGold: a player's own respec costs respecGold * level * level gold (GM mode is free)
+  build: { enabled: true, playerPick: true, respecGold: whole(5, 0, 1_000_000, 'gold cost multiplier for respec (multiplied by level squared). 0 makes respec free') }, // respecGold: a player's own respec costs respecGold * level * level gold (GM mode is free)
   paths: BUILT_IN_PATHS, // the build paths and their perks: src/core/registry/paths.ts; each `alloc` number in PATH_ALLOC (OPEN_DOMAINS), each perk in PERK_POINTS
   // The reworked fight's numbers (docs/agent-handoff/rw/design.md; scripts/rw-paper.ts prints the tables they make).
   // src/core/stats.ts, src/core/hunter/derive.ts, combat/timeline.ts and combat/space.ts read them. Each comment is the
   // reason for the value; the last words of each rule are the reason for its domain.
   fight: {
     // Time (design 1.2)
-    round: whole(1000, 100, 10_000, 'ticks in a round: under 100 the rounding of speed shows, 0 divides by 0'), // ticks in a round, the time a speed-100 combatant needs for one standard action; 1000 keeps rounding under 0.1%
+    round: whole(1000, 100, 10_000, 'combat ticks per round. Must be at least 100 to avoid speed rounding errors'), // ticks in a round, the time a speed-100 combatant needs for one standard action; 1000 keeps rounding under 0.1%
     cost: { quick: of(70, COST), standard: of(100, COST), heavy: of(150, COST) }, // hundredths of a standard action: two quick actions cost more than one standard, a heavy one half a turn more
-    moveCost: real(100 / 6, 1, 100, 'hundredths of a standard action a tile walked costs: a whole action a tile is a crawl'), // one tile walked: six tiles cost a standard action, so everyone walks `move` tiles a round
+    moveCost: real(100 / 6, 1, 100, 'movement time per tile in hundredths of a standard action, from 1 to 100'), // one tile walked: six tiles cost a standard action, so everyone walks `move` tiles a round
     // A dash (design 4.6) runs the whole `move` in one straight line, twice a stride, for `dashTime` hundredths of a
     // standard action (the lead's standard action) and twice a strike's fatigue: a charge is how a heavy fighter closes
     // on an archer, and it costs breath. A walk already covers 6 tiles in a standard action's time at any speed, so at
@@ -313,35 +313,35 @@ const SPEC = {
     // potions is a free heal every tick, and a whole action is the full turn he ruled out.
     consumableTime: of(50, COST),
     // at 40 a combatant still acts every 2.5 rounds, at 250 it acts 2.5 times a round
-    speedMin: whole(40, 10, 100, 'the slowest speed: 0 never acts, and above 100 the base speed is slowed'),
-    speedMax: whole(250, 100, 1000, 'the fastest speed: under 100 the base speed is cut, 1000 is ten turns a round'),
+    speedMin: whole(40, 10, 100, 'minimum combat speed. Must be above 0 so combatants can still take turns, and at most 100'),
+    speedMax: whole(250, 100, 1000, 'maximum combat speed, from 100 to 1000'),
     // Stats (design 2.1)
-    statBase: whole(10, 1, 100, 'every stat\'s start, the curve\'s divisor: 0 makes every stat not a number'), // every stat starts at 10
-    creationPoints: whole(12, 0, 100, 'free points at level 1: 100 is past an S build'), // free points at level 1, four levels' worth: enough for a main stat of 20 so an E build is a build
-    mainShare: real(2 / 3, 0.5, 1, 'a built body\'s share in its main stat: under half the second stat is the main'), // a built body (a monster, a shadow, a starter, the sim's builds) puts two points in its main stat for one in its second
-    effExp: real(0.8, 0.1, 1, 'the stat curve\'s power: 1 is a straight line, under 0.1 a stat does nothing'), // eff(s) = base * (s / base) ^ 0.8: doubling a stat gives 1.74 times, an S main stat is worth 9.8 base ones
-    half: whole(40, 1, 1000, 'points at which a capped curve gives half its cap: 0 divides by 0'), // every capped curve reaches half its cap at 40 effective points; a C main stat has 34
+    statBase: whole(10, 1, 100, 'starting value for each stat. Must be at least 1 because stat formulas divide by it'), // every stat starts at 10
+    creationPoints: whole(12, 0, 100, 'starting ability points at level 1, from 0 to 100'), // free points at level 1, four levels' worth: enough for a main stat of 20 so an E build is a build
+    mainShare: real(2 / 3, 0.5, 1, 'share of points a monster or starter build puts into its primary stat, from 0.5 to 1'), // a built body (a monster, a shadow, a starter, the sim's builds) puts two points in its main stat for one in its second
+    effExp: real(0.8, 0.1, 1, 'exponent for stat scaling. 1 is linear scaling, and under 0.1 makes stats almost flat'), // eff(s) = base * (s / base) ^ 0.8: doubling a stat gives 1.74 times, an S main stat is worth 9.8 base ones
+    half: whole(40, 1, 1000, 'stat points needed to reach half of a capped bonus. Must be at least 1'), // every capped curve reaches half its cap at 40 effective points; a C main stat has 34
     // The Sheet (design 2.2)
-    growthDiv: whole(24, 1, 1000, 'levels a body\'s growth is spread over: 0 divides by 0'), // g(level) = 1 + (level - 1) / 24: level carries most HP, so a fight is a similar number of hits at every rank
+    growthDiv: whole(24, 1, 1000, 'levels needed to double base HP growth. Must be at least 1'), // g(level) = 1 + (level - 1) / 24: level carries most HP, so a fight is a similar number of hits at every rank
     // hpMax = g * 45 * (1 + capped(x(vit), 0.9)): Vitality's share of HP is a share like every other, on the capped curve
     // with Agility's cap on speed (90%), so a tank's toughness and a speed build's turns grow with rank at the same rate:
     // 1.14 times at E, 1.41 at C, 1.62 at S, never 1.9. It was 45 + 0.5 * x(vit), uncapped: a tank 1.09 times as tough as
     // a speed build at E and 1.98 at S, which flipped tank against speed from 0.10 at C to 1.00 at S (sim-log.md, round two).
-    hpBase: whole(45, 1, 1000, 'a level 1 body\'s HP before Vitality: 0 is a body that is down'),
-    hpVitCap: real(0.9, 0, 5, 'Vitality\'s largest share of HP: 5 is six times the base'),
-    manaBase: whole(10, 0, 1000, 'mana before the will stat: 0 is a body with no mana'), manaCap: of(30, STAT_CAP), // mana counts big casts a dungeon, so it does not grow with rank: an S cannon has 31, three casts
-    fatigueBase: whole(100, 1, 1000, 'today\'s fatigue bar: 0 is a body that collapses at once'), fatigueCap: of(50, STAT_CAP), // today's 0 to 100 bar; Vitality makes a body last longer, not hit harder
-    carryBase: whole(20, 1, 1000, 'weight a base body carries, the load\'s divisor: 0 divides by 0'), carryCap: of(50, STAT_CAP), // weight is what Strength lets you wear
+    hpBase: whole(45, 1, 1000, 'base HP at level 1 before Vitality. Must be at least 1'),
+    hpVitCap: real(0.9, 0, 5, 'maximum HP bonus multiplier from Vitality, from 0 to 5'),
+    manaBase: whole(10, 0, 1000, 'base mana before stats, from 0 to 1000'), manaCap: of(30, STAT_CAP), // mana counts big casts a dungeon, so it does not grow with rank: an S cannon has 31, three casts
+    fatigueBase: whole(100, 1, 1000, 'base fatigue capacity. Must be at least 1'), fatigueCap: of(50, STAT_CAP), // today's 0 to 100 bar; Vitality makes a body last longer, not hit harder
+    carryBase: whole(20, 1, 1000, 'base carry capacity before Strength. Must be at least 1'), carryCap: of(50, STAT_CAP), // weight is what Strength lets you wear
     // free up to half the carry, then up to 35% slower at full carry: a heavy kit on a weak body costs a third of its turns
-    freeLoad: of(0.5, SHARE), loadSlow: real(0.35, 0, 0.9, 'the most a load slows: at 1 a loaded body never acts'),
+    freeLoad: of(0.5, SHARE), loadSlow: real(0.35, 0, 0.9, 'maximum speed reduction from heavy gear, up to 0.9'),
     // Strength lifts weight but does not shrink plate: weight over a base body's whole carry (`carryBase`, 20) is bulk, and
     // slows any wearer 2.5% a point, at most `loadSlow`. Only plate (32) has bulk: 12 points, 30% slower, so a tank runs
     // at 70 at C and at S alike (an S tank's Strength had lifted its load to 87, and it beat an S speed build in every
     // duel; sim-log.md, round four). The medium kit (18) and the light (8) have none.
-    bulkSlow: real(0.025, 0, 0.1, 'speed a point of bulk takes off: at 0.1 one point of bulk is a tenth'),
-    speedBase: whole(100, 10, 1000, 'a base body\'s speed: 100 is a standard action a round'), speedCap: of(90, STAT_CAP), // Agility alone takes a body to at most 190 before load
-    moveBase: whole(6, 1, 40, 'tiles a round at speed 100: 0 never moves, 40 is the largest map\'s side'), // tiles a round at speed 100: 30 feet, the pace the old text assumes
-    strideShare: real(0.5, 0.1, 1, 'the share of a move one command walks: under a tenth no step is taken'), // one move command walks at most half of `move`, so a turn is never one long walk
+    bulkSlow: real(0.025, 0, 0.1, 'speed reduction per point of heavy armor bulk, from 0 to 0.1'),
+    speedBase: whole(100, 10, 1000, 'base combat speed before Agility and gear weight. 100 equals one standard action per round'), speedCap: of(90, STAT_CAP), // Agility alone takes a body to at most 190 before load
+    moveBase: whole(6, 1, 40, 'base movement tiles per round at speed 100, from 1 to 40'), // tiles a round at speed 100: 30 feet, the pace the old text assumes
+    strideShare: real(0.5, 0.1, 1, 'share of full movement allowed in one move command, from 0.1 to 1'), // one move command walks at most half of `move`, so a turn is never one long walk
     armorVitCap: of(30, STAT_CAP), // gear carries most armor, so the tank pays weight for it; Vitality gives a little to every body
     resistDisCap: of(40, STAT_CAP), // the magical twin of armor, from the will stat, so the tank in plate is open to magic
     // Penetration in whole percent of the armor or resist a hit meets (rule 12, balance plan section 9). Control's curve
@@ -349,17 +349,17 @@ const SPEC = {
     // every bonus on it (an item's, a perk's, a status's), so armor always stops at least 40% of what it would; a bonus
     // passes Control's curve cap, never this one.
     penCap: of(40, STAT_CAP),
-    penMax: whole(60, 0, 100, 'the most armor or resist a hit\'s percent penetration ignores: at 100 a hit ignores all of it'),
-    powerK: real(0.6, 0.01, 10, 'damage a point of a power stat gives: under 0.01 nobody is hurt'), // phys, mag and sup are 0.6 * eff of their stat: uncapped, so damage keeps growing with rank
-    critFacesCap: whole(5, 0, 10, 'd20 faces a crit takes: past 10 half of every use is a crit'), // a crit is 5% to 30% of uses, never the 1 in 3 where it becomes the expected hit
-    critSizeBase: real(1.5, 1, 5, 'a crit\'s size: under 1 a crit hurts less than a hit'), critSizeCap: real(0.5, 0, 5, 'a crit\'s largest growth: 5 is six times a hit'), // a crit is 1.5 to 2 times: felt, and never more than today's double dice
-    openK: real(0.25, 0, 2, 'Instinct\'s share on the opening d20: 2 is twice its points'), openCap: whole(6, 0, 20, 'the most Instinct adds to the opening d20: 20 is the whole die'), // Instinct's opening bonus on the d20, capped at 6 so the die still decides 70% of the opening
+    penMax: whole(60, 0, 100, 'maximum percentage of armor or magic resist that penetration can ignore, from 0 to 100'),
+    powerK: real(0.6, 0.01, 10, 'power gained per effective point in a power stat, from 0.01 to 10'), // phys, mag and sup are 0.6 * eff of their stat: uncapped, so damage keeps growing with rank
+    critFacesCap: whole(5, 0, 10, 'maximum extra critical-hit faces added to the d20 by stats, from 0 to 10'), // a crit is 5% to 30% of uses, never the 1 in 3 where it becomes the expected hit
+    critSizeBase: real(1.5, 1, 5, 'base critical-hit damage multiplier. Must be at least 1'), critSizeCap: real(0.5, 0, 5, 'maximum extra critical-hit damage multiplier from stats, from 0 to 5'), // a crit is 1.5 to 2 times: felt, and never more than today's double dice
+    openK: real(0.25, 0, 2, 'opening roll bonus per point of Instinct, from 0 to 2'), openCap: whole(6, 0, 20, 'maximum opening roll bonus from Instinct, from 0 to 20'), // Instinct's opening bonus on the d20, capped at 6 so the die still decides 70% of the opening
     tenacityCap: of(60, STAT_CAP), // tenacity, from Strength and Discipline together; control lasts duration * (100 + potency) / (100 + tenacity): at most 37% shorter
     potencyCap: of(50, STAT_CAP), // mirrors tenacity, so equal investment cancels
-    threatCap: real(1, 0, 10, 'Presence\'s most on threat: 10 is eleven times'), // a Presence build draws up to twice the threat for the same damage
-    holdBase: real(0.15, 0.01, 1, 'the share of max HP one hit needs to break a channel: under 0.01 any tick breaks it'), holdCap: of(0.25, SHARE), // a single hit of hold * hpMax breaks a channel: a status tick never does, one real attack does
-    costCutCap: real(0.25, 0, 0.9, 'Control\'s most off a cost: at 1 every use is free'), // Control lowers costs, at most a quarter off
-    shadowPerEff: real(0.2, 0, 10, 'shadows a point of Presence holds: 10 is an army per point'), // shadow capacity = floor(0.2 * eff(pre)): 2 at base, 19 for an S Presence build
+    threatCap: real(1, 0, 10, 'maximum threat multiplier bonus from Presence, from 0 to 10'), // a Presence build draws up to twice the threat for the same damage
+    holdBase: real(0.15, 0.01, 1, 'base share of max HP a single hit must deal to break a channel, from 0.01 to 1'), holdCap: of(0.25, SHARE), // a single hit of hold * hpMax breaks a channel: a status tick never does, one real attack does
+    costCutCap: real(0.25, 0, 0.9, 'maximum ability cost reduction from Control, up to 0.9'), // Control lowers costs, at most a quarter off
+    shadowPerEff: real(0.2, 0, 10, 'shadow army capacity gained per effective point of Presence, from 0 to 10'), // shadow capacity = floor(0.2 * eff(pre)): 2 at base, 19 for an S Presence build
     // Kits (design 2.3): weight on the armour slots, the offhand and the weapon
     kits: {
       light: { weight: of(8, KIT_WEIGHT), armor: of(10, KIT_GUARD), resist: of(15, KIT_GUARD) }, // never slows anyone (8 is under half the smallest carry); robes carry a little resist
@@ -434,26 +434,26 @@ const SPEC = {
       warded: { hp: of(1, KIND_FACTOR), armor: of(1, KIND_GUARD), resist: of(1.5, KIND_GUARD), speed: of(0, TRAIT_SPEED), xp: of(1, KIND_XP) },
     },
     // Defence (design 3.1 rule 12)
-    armorK: whole(100, 1, 10_000, 'the armor curve\'s divisor: 0 makes a hit on bare skin not a number'), // dealt = raw * 100 / (100 + def): 60 armor takes 37% off, and no amount of armor makes a body immune
+    armorK: whole(100, 1, 10_000, 'divisor in the armor damage reduction formula. Must be at least 1'), // dealt = raw * 100 / (100 + def): 60 armor takes 37% off, and no amount of armor makes a body immune
     // The flat part of armor or resist: 3% of what is left after penetration comes off every hit before the percentage,
     // so a weak hit loses more than a strong one (the mirror of penetration's flat part). A C tank's 74 takes 2.2 off a
     // speed build's 14-point shot (15%) and off a bruiser's 30-point strike (7%). At 0 tank against speed at C was 0.49 of
     // duels (sim-log.md, round two); at 0.03 it is 0.80; at 0.06 it is 1.00, as a duel is near all or nothing.
-    armorFlat: real(0.03, 0, 0.5, 'the flat part of armor: at 0.5 armor 60 takes 30 off every hit'),
+    armorFlat: real(0.03, 0, 0.5, 'flat damage reduction per point of remaining armor or magic resist, from 0 to 0.5'),
     // Reaction (design 3.1 rules 8 and 9, 3.2)
-    reactK: real(0.25, 0, 2, 'edge a point of Reaction over Accuracy gives: 2 is two faces a point'), reactCap: whole(6, 0, 20, 'the most edge either way: 20 is the whole d20'), // edge = round(0.25 * (react - aim)), at most 6 either way, so the d20 always decides
+    reactK: real(0.25, 0, 2, 'reaction roll modifier per point of difference between Reaction and Accuracy, from 0 to 2'), reactCap: whole(6, 0, 20, 'maximum positive or negative modifier on a reaction roll, from 0 to 20'), // edge = round(0.25 * (react - aim)), at most 6 either way, so the d20 always decides
     // Reaction = 10 + x(ins) + reactAgi * x(agi): noticing the blow is Instinct, getting the body moving is Agility (the owner's
     // notes give Agility "speed and dodge"), and each counts once, the weight Instinct already had. Reaction is compared
     // with Accuracy, which is eff(ctl) uncapped, so it stays on the same curve; the edge's cap of 6 bounds it. With
     // Instinct alone a speed build had Reaction 10 and the cannon's Control cancelled its dodge: speed beat the cannon
     // 0.30 of duels at C (sim-log.md, round three).
-    reactAgi: real(1, 0, 5, 'Agility\'s weight in Reaction: 0 is Instinct alone'),
+    reactAgi: real(1, 0, 5, 'weight of Agility in the Reaction formula. 0 uses Instinct alone'),
     // A use with no travel is resisted on d20 + will edge of 12 or more, or a 20: 45% at equal Will and Accuracy, and 15%
     // to 75% at the edge's cap of 6 either way, so the die decides even against a caster's best Control, as it does for a
     // dodge. At 15 a C cannon's Control (edge -4) left its curse resisted 10% of the time and an S one's 5%, a natural 20
     // alone, and speed beat the cannon in 0.51 of duels at C once it cast Arc Bolt. At 11 (a coin flip at parity) the S
     // boss resisted enough of the cannon's bolts to last past 8 rounds (sim-log.md, round four).
-    resistDc: whole(12, 2, 21, 'the d20 a will resists on: 2 resists all but a 1, 21 only a natural 20'),
+    resistDc: whole(12, 2, 21, 'd20 target number needed to resist an instant effect, from 2 to 21'),
     resistedShare: of(0.5, SHARE), // a resisted use deals half and applies no status
     ringShare: of(0.5, SHARE), // the default share of damage in an area's outer ring
     // Ability kinds (design 3.3): the numbers each kind fills in when the maker starts one. A wind-up is ticks before the
@@ -464,7 +464,7 @@ const SPEC = {
       strike: { windup: of(100, WINDUP), range: of(1, RANGE), fatigue: of(8, USE_FATIGUE), mana: of(0, USE_MANA), cooldown: of(0, COOLDOWN) },
       // An arrow is dodged by a fast body about half the time and a normal one a fifth: 0.1 round, then 80 tiles a round (table 3.B).
       shot: {
-        windup: of(100, WINDUP), travel: whole(80, 1, 1000, 'tiles a round a shot flies: 0 never arrives'), range: of(12, RANGE),
+        windup: of(100, WINDUP), travel: whole(80, 1, 1000, 'projectile travel speed in tiles per round. Must be at least 1'), range: of(12, RANGE),
         fatigue: of(6, USE_FATIGUE), mana: of(0, USE_MANA), cooldown: of(0, COOLDOWN),
       },
       // A blast is a telegraph a fast body leaves and a slow one does not: a full round, nothing after it (table 3.C). At
@@ -484,11 +484,11 @@ const SPEC = {
     // for the next. The speed build spends about 72 in a 6-round fight: at 55 it is at 88 after two fights and at its
     // capacity in the third, and nobody is before it. At 50 it reached its capacity before the third fight in 15 dungeons
     // of 100 (sim-log.md, round three).
-    fightRest: whole(55, 0, 1000, 'fatigue back after a fight: past the largest bar every fight ends fresh'),
+    fightRest: whole(55, 0, 1000, 'fatigue recovered automatically after a fight ends, from 0 to 1000'),
     // Channel (design 4.1)
-    channelMax: whole(5, 1, 20, 'the most charge: at 0 a channel never fires, past 20 its tick outgrows any HP'), // charge grows one a turn and stops at 5
-    channelLin: real(0.5, 0, 5, 'the linear tick\'s growth a charge: 5 is 26 times at a charge of 5'), // the maker's linear tick: base * (1 + 0.5 * charge), 3.5 times at 5, the safe choice
-    channelExp: real(1.45, 1, 3, 'the exponential tick\'s growth a charge: under 1 it shrinks, 3 is 243 times at 5'), // the maker's exponential tick: base * 1.45 ^ charge, 6.4 times at 5, nearly a same-rank boss's HP
+    channelMax: whole(5, 1, 20, 'maximum channel charge stacks, from 1 to 20'), // charge grows one a turn and stops at 5
+    channelLin: real(0.5, 0, 5, 'damage multiplier added per charge for linear channel abilities, from 0 to 5'), // the maker's linear tick: base * (1 + 0.5 * charge), 3.5 times at 5, the safe choice
+    channelExp: real(1.45, 1, 3, 'growth base per charge for exponential channel abilities, from 1 to 3'), // the maker's exponential tick: base * 1.45 ^ charge, 6.4 times at 5, nearly a same-rank boss's HP
     breakShare: of(0.5, SHARE), // a broken channel fires at half its charge, rounded down
     // Threat (design 4.2)
     threatDecay: of(0.1, SHARE), // every entry falls 10% a round, so a hunter who stops attacking fades out in about 7 rounds
@@ -498,32 +498,32 @@ const SPEC = {
     // during a channel (51% before that armor), and a channel begun under its aim completed 0.086 at C over 1,200 fresh
     // seeds; at 1 it completes 0.208 (se 0.019), inside design 6's 10 to 25%, and no other row moves (sim-log.md).
     threatBeforeDefence: of(1, SHARE),
-    tauntBurst: real(2, 0, 10, 'times the gap to the leader a taunt adds: 10 holds a monster for the fight'), // a taunt adds twice the gap to the leader, the smallest rule that matters after the taunt ends
-    tauntRounds: whole(2, 0, 10, 'rounds a taunt holds: 10 is past any fight'), // one or two of the monster's turns: enough to pull it off a hunter about to die, short enough to keep taunting
+    tauntBurst: real(2, 0, 10, 'multiplier on threat lead added when taunting, from 0 to 10'), // a taunt adds twice the gap to the leader, the smallest rule that matters after the taunt ends
+    tauntRounds: whole(2, 0, 10, 'duration of a taunt in rounds, from 0 to 10'), // one or two of the monster's turns: enough to pull it off a hunter about to die, short enough to keep taunting
     // Stagger (design 4.3)
-    staggerWeak: real(1.5, 1, 5, 'a weak hit\'s weight on the bar: under 1 a chip counts less than its damage'), // a hit under a third of a same-rank hit fills 1.5 times its damage: chips help without being the way to kill
-    staggerCost: real(1.5, 0, 10, 'rounds a full bar pushes the monster\'s turn: 10 is past any fight'), // a full bar moves the monster's next turn to now + 1.5 rounds: it misses one turn and part of another
+    staggerWeak: real(1.5, 1, 5, 'stagger bar multiplier for small hits, from 1 to 5'), // a hit under a third of a same-rank hit fills 1.5 times its damage: chips help without being the way to kill
+    staggerCost: real(1.5, 0, 10, 'rounds a combatant\'s next turn is delayed when staggered, from 0 to 10'), // a full bar moves the monster's next turn to now + 1.5 rounds: it misses one turn and part of another
     staggerWeakBelow: of(1 / 3, SHARE), // a weak hit is under a third of a same-rank hit: a status tick or a chip build's quick hit
-    staggerRegrow: real(0.75, 0, 5, 'the bar\'s growth after a stagger: 5 makes the second bar six times the first'), // the bar's max grows 75% after each stagger, so a boss fight has one or two staggers: at 50% an S boss, about 24 same-rank hits long, filled a third bar in 3 fights of 10 (sim-log.md)
+    staggerRegrow: real(0.75, 0, 5, 'fractional increase to the stagger bar after each stagger, from 0 to 5'), // the bar's max grows 75% after each stagger, so a boss fight has one or two staggers: at 50% an S boss, about 24 same-rank hits long, filled a third bar in 3 fights of 10 (sim-log.md)
     // Shield (design 4.4)
-    shieldLife: whole(2, 0, 20, 'rounds a shield lasts: 20 is past any fight'), // rounds: a shield buys a turn, not a fight
+    shieldLife: whole(2, 0, 20, 'default duration of a shield in rounds, from 0 to 20'), // rounds: a shield buys a turn, not a fight
     // Space (design 5.1 to 5.3)
-    tileFeet: whole(5, 1, 100, 'feet a tile is: the feet of an ability are divided by it'), // 21 monster abilities already give distances in feet, and a portrait phone fits about 20 by 14 tiles
-    lineGap: whole(8, 1, 36, 'tiles between the default lines: both lines and their rows fit the largest map\'s side of 40'), // tiles between the two default lines: two or three turns of walking for a slow build, one for a fast one
-    lineBack: whole(2, 0, 10, 'rows behind the party\'s front line: 10 is a quarter of the largest map'), // rows behind the party's front line, so a reserve stands behind it; the foes' front at 10 leaves them 3 rows on a grid 14 high
+    tileFeet: whole(5, 1, 100, 'feet represented by one map tile. Must be at least 1'), // 21 monster abilities already give distances in feet, and a portrait phone fits about 20 by 14 tiles
+    lineGap: whole(8, 1, 36, 'starting tile gap between the party and monster lines, from 1 to 36'), // tiles between the two default lines: two or three turns of walking for a slow build, one for a fast one
+    lineBack: whole(2, 0, 10, 'rows behind the party front line for back-row positioning, from 0 to 10'), // rows behind the party's front line, so a reserve stands behind it; the foes' front at 10 leaves them 3 rows on a grid 14 high
     // a fight with no map: 100 by 70 feet, a room or a clearing
     grid: {
-      w: whole(20, GRID_SIDE[0], GRID_SIDE[1], 'tiles of the open arena\'s width: a map\'s bounds (space.ts GRID_SIDE)'),
-      h: whole(14, GRID_SIDE[0], GRID_SIDE[1], 'tiles of the open arena\'s height: a map\'s bounds (space.ts GRID_SIDE)'),
+      w: whole(20, GRID_SIDE[0], GRID_SIDE[1], 'default open arena width in tiles, within the map size limits'),
+      h: whole(14, GRID_SIDE[0], GRID_SIDE[1], 'default open arena height in tiles, within the map size limits'),
     },
     // The map (design 4.7 and 5.3)
     coverShare: of(0.25, SHARE), // a body in cover takes a quarter less from a use that travels to it: the d20's three-quarters cover, +5 to hit, is a quarter of the die
-    sight: whole(25, 1, 128, 'tiles the party sees in a fog: a map\'s bounds (maps.ts MAP_BOUNDS.sight)'), // tiles the party sees in a fog of war: the whole default arena from its corner (19 + 13 / 2 = 25 by the 5-10-5 count); a GM lowers it for a dark gate
+    sight: whole(25, 1, 128, 'default sight distance in tiles when fog of war is active, from 1 to 128'), // tiles the party sees in a fog of war: the whole default arena from its corner (19 + 13 / 2 = 25 by the 5-10-5 count); a GM lowers it for a dark gate
     // Stealth and sight (docs/agent-handoff/features/notes-7-stealth.md section 2): the sight level every body has before
     // a sight op raises it. 0, so a body with no sight content perceives no stealth above level 0, and sight is earned
     // from a class, an item or a flare: a curve on Instinct would let any hunter who spends points see every hide.
     stealth: {
-      sightBase: whole(0, Math.min(...LEVELS), Math.max(...LEVELS), 'a sight level, one per rank E to S (standing.ts LEVELS): a level past 5 cannot be written'),
+      sightBase: whole(0, Math.min(...LEVELS), Math.max(...LEVELS), 'default stealth detection level (0 to 5, matching ranks E to S)'),
       // The ambush (section 2, the owner's rulings 3 and 5): a use's hit from hiding on a target that does not perceive its
       // user deals this many times as much, in place of the attacker's edge hiding gave. It is one of the user's dealt
       // increases (rule 11c), so a dealt buff does not compound with it and `kit.shareCap` still bounds it. A hide is one
@@ -531,62 +531,62 @@ const SPEC = {
       // half the action and the turns no foe can pick its bearer pay the rest; at 2 the pair deals what two strikes deal
       // and those turns come free, so hiding beats striking outright. The worst heavy strike on a tank stays under design
       // 6's 60% of its HP: table 8.10.2b's 38% (with the old edge, larger than without it) times 1.5 is 57%.
-      ambush: real(1.5, 1, 2, 'times a hit from hiding: 1 is no ambush, at 2 a hide and a strike deal two strikes\' damage and hiding beats striking outright'),
+      ambush: real(1.5, 1, 2, 'damage multiplier for an attack from hiding. 1 disables the ambush bonus, up to 2'),
     },
     // Fields that move and spread (design 4.8)
     auraRadius: of(2, RADIUS), // an aura the maker starts: a blast's radius, so an aura and a blast read with the same ruler
     fieldRadiusMax: of(6, RADIUS), // the widest an aura or a growing field gets: 121 tiles, under half the default arena's 280, so there is somewhere to stand outside it
-    fieldGrow: whole(1, 0, 10, 'tiles of radius a growing field gains a round: 10 covers a map in two rounds'), // tiles of radius a growing field gains a round in the maker: a walker at move 6 outruns it
-    spreadRange: whole(1, 1, 10, 'tiles a sickness passes: 0 never passes'), // a sickness passes by touch: a body next to its bearer, diagonals too
-    spreadRangeMax: whole(3, 1, 10, 'the furthest a sickness passes: past 10 it is the whole fight'), // further than that it is an aura
+    fieldGrow: whole(1, 0, 10, 'radius tiles gained per round by a growing field, from 0 to 10'), // tiles of radius a growing field gains a round in the maker: a walker at move 6 outruns it
+    spreadRange: whole(1, 1, 10, 'default spread distance in tiles for spreading statuses, from 1 to 10'), // a sickness passes by touch: a body next to its bearer, diagonals too
+    spreadRangeMax: whole(3, 1, 10, 'maximum spread distance in tiles for spreading statuses, from 1 to 10'), // further than that it is an aura
     // Kits (docs/agent-handoff/kits/design.md sections 1.11, 3 and 8.0; `bun scripts/kits-paper.ts` prints the tables): the
     // caps every parser of the kit blocks reads, what the reducer stops at, and what the maker weighs a made thing against.
     // A cap's domain stops at a few times its value: each bounds a loop or a list the reducer walks every command.
     kit: {
-      stackCap: whole(20, 1, 99, 'the most stacks a def holds: two digits on a chip'), // the most stacks a def may hold: twice the largest cap a sheet writes (Baangs 9, Cold's threshold 5), and two digits on a chip
-      stackAdd: whole(3, 1, 20, 'the most stacks one op adds or cures: 0 adds none'), // the most stacks one op adds or cures: Anchor's "twice as fast" is 2; a third leaves room, a fourth is a threshold in one hit
-      triggers: whole(4, 0, 8, 'triggers on one status def: each is a line the GM reads, and the firings multiply'), // triggers on one status def: the most any kit item needs is 2 (Osteoporosis), and each one is a line the GM reads
-      triggerOps: whole(6, 1, 12, 'ops in one trigger: an item\'s effects list is 12'), // ops in one trigger, a threshold or an end: an item's effects list is 12, half of it is a full rule
-      depth: whole(2, 0, 4, 'trigger depth: each level multiplies the firings of one command'), // a trigger's ops raise further triggers to this depth: Parry, then Retribution's hit, then Void Knight's stack is 2
-      fires: whole(16, 1, 64, 'trigger firings in one command: the bound of the loop that fires them'), // trigger firings in one command, whatever the depth: 4 triggers on 4 statuses of the user is 16
-      fightUses: whole(10, 1, 99, 'uses an "n a fight" limit may have: two digits'), // the most uses an "n a fight" or "n a rest" limit may have: a fight is 4 to 8 rounds, so 10 is "every turn"
-      prices: whole(2, 0, 6, 'extra costs on one ability: each is a line of its card'), // extra costs on one ability: HP and a stack (Truth in Pain), or a stack and a zone (Soul Shatter)
-      gates: whole(3, 0, 6, 'conditions on one ability: each is a line of its card'), // conditions on one ability: a mode, stacks on the target and a use limit (Spirit Shackle)
-      hpShare: real(0.5, 0.01, 0.9, 'the largest HP price as a share: at 1 one use is a whole life'), // an HP price of at most half the max HP: past that one use is most of a life, and a heal must pay it back
-      hpShareMin: real(0.01, 0, 0.5, 'the smallest HP price as a share: 0.5 leaves no room under the largest'), // the smallest HP price as a share: 1%, under which a price is a rounding error
-      hpFlat: whole(999, 1, 9999, 'the bound of every flat number the parsers read: four digits'), // the bound of every flat number the parsers read (SKILL_BOUNDS.bonus)
-      tags: whole(3, 0, 10, 'tags on one ability: each is a word on its card'), // tags on one ability: Hwei's painting type and "ultimate" are two
-      tagLength: whole(20, 1, 60, 'letters in a tag: 60 is a line on a phone'), // a tag is a word the GM types: "disaster", "ultimate", "sword"
-      zonesPerOwner: whole(3, 1, 10, 'zones one body holds: the reducer walks them every move'), // zones one body holds at once: Einar starts at 3 boundaries; a fourth replaces the oldest
-      zoneAge: whole(1, 0, 10, 'rounds a zone stands before its end pays: 10 is past any fight'), // rounds a zone must stand before ending it pays its end: placing and popping in one turn would be a free blast
-      summons: whole(2, 0, 6, 'timed summons one body holds: each is a row of the order of turns'), // timed summons one body holds at once: two sprites; past that the order of turns is the summoner's alone
-      summonRounds: whole(5, 1, 20, 'the longest a summon stays: 20 is past any fight'), // the longest a summon stays: a fight is 4 to 8 rounds, and a summon for the whole fight is a hunter
-      fieldStacks: whole(60, 1, 300, 'stacks `field(key)` reads: fifteen bodies at the largest cap of 20'), // `field(key)` reads at most this: three bodies at the cap of 20
-      kills: whole(10, 1, 100, 'kills `kills` reads: 100 is past any fight'), // `kills` reads at most this: a pack is 3 to 6, a long fight 10
-      held: whole(10, 1, 100, 'rounds `held(key)` reads: 100 is past any fight'), // `held(key)` reads at most this many rounds: past a long fight
-      hits: whole(16, 1, 100, 'bodies `hits` reads: 100 is past any crowd'), // `hits` reads at most this many bodies: every zone's worth of a crowd
+      stackCap: whole(20, 1, 99, 'maximum stack limit allowed on a status, from 1 to 99'), // the most stacks a def may hold: twice the largest cap a sheet writes (Baangs 9, Cold's threshold 5), and two digits on a chip
+      stackAdd: whole(3, 1, 20, 'maximum stacks one effect can add or remove at once, from 1 to 20'), // the most stacks one op adds or cures: Anchor's "twice as fast" is 2; a third leaves room, a fourth is a threshold in one hit
+      triggers: whole(4, 0, 8, 'maximum triggers allowed on one status, from 0 to 8'), // triggers on one status def: the most any kit item needs is 2 (Osteoporosis), and each one is a line the GM reads
+      triggerOps: whole(6, 1, 12, 'maximum effects inside one trigger, threshold, or expiration, from 1 to 12'), // ops in one trigger, a threshold or an end: an item's effects list is 12, half of it is a full rule
+      depth: whole(2, 0, 4, 'maximum chain depth for nested triggers, from 0 to 4'), // a trigger's ops raise further triggers to this depth: Parry, then Retribution's hit, then Void Knight's stack is 2
+      fires: whole(16, 1, 64, 'maximum total trigger activations during one action, from 1 to 64'), // trigger firings in one command, whatever the depth: 4 triggers on 4 statuses of the user is 16
+      fightUses: whole(10, 1, 99, 'maximum uses allowed for per-fight or per-gate ability limits, from 1 to 99'), // the most uses an "n a fight" or "n a rest" limit may have: a fight is 4 to 8 rounds, so 10 is "every turn"
+      prices: whole(2, 0, 6, 'maximum extra costs allowed on one ability, from 0 to 6'), // extra costs on one ability: HP and a stack (Truth in Pain), or a stack and a zone (Soul Shatter)
+      gates: whole(3, 0, 6, 'maximum requirements allowed on one ability, from 0 to 6'), // conditions on one ability: a mode, stacks on the target and a use limit (Spirit Shackle)
+      hpShare: real(0.5, 0.01, 0.9, 'maximum HP cost as a share of max HP, from 0.01 to 0.9'), // an HP price of at most half the max HP: past that one use is most of a life, and a heal must pay it back
+      hpShareMin: real(0.01, 0, 0.5, 'minimum HP cost as a share of max HP, from 0 to 0.5'), // the smallest HP price as a share: 1%, under which a price is a rounding error
+      hpFlat: whole(999, 1, 9999, 'maximum flat number allowed in item and skill effects, from 1 to 9999'), // the bound of every flat number the parsers read (SKILL_BOUNDS.bonus)
+      tags: whole(3, 0, 10, 'maximum tags allowed on one ability, from 0 to 10'), // tags on one ability: Hwei's painting type and "ultimate" are two
+      tagLength: whole(20, 1, 60, 'maximum characters in an ability tag, from 1 to 60'), // a tag is a word the GM types: "disaster", "ultimate", "sword"
+      zonesPerOwner: whole(3, 1, 10, 'maximum active fields one combatant can own at once, from 1 to 10'), // zones one body holds at once: Einar starts at 3 boundaries; a fourth replaces the oldest
+      zoneAge: whole(1, 0, 10, 'minimum rounds a field must stay active before ending it triggers its expiration effect, from 0 to 10'), // rounds a zone must stand before ending it pays its end: placing and popping in one turn would be a free blast
+      summons: whole(2, 0, 6, 'maximum timed summons one combatant can have active at once, from 0 to 6'), // timed summons one body holds at once: two sprites; past that the order of turns is the summoner's alone
+      summonRounds: whole(5, 1, 20, 'maximum duration of a timed summon in rounds, from 1 to 20'), // the longest a summon stays: a fight is 4 to 8 rounds, and a summon for the whole fight is a hunter
+      fieldStacks: whole(60, 1, 300, 'maximum total status stacks counted by field(key) formulas, from 1 to 300'), // `field(key)` reads at most this: three bodies at the cap of 20
+      kills: whole(10, 1, 100, 'maximum kills counted by kills formulas, from 1 to 100'), // `kills` reads at most this: a pack is 3 to 6, a long fight 10
+      held: whole(10, 1, 100, 'maximum rounds counted by held(key) formulas, from 1 to 100'), // `held(key)` reads at most this many rounds: past a long fight
+      hits: whole(16, 1, 100, 'maximum targets counted by hits formulas, from 1 to 100'), // `hits` reads at most this many bodies: every zone's worth of a crowd
       // Wave 2 (kits design 8.1 to 8.7, kits-paper `KIT2`, table 8.1). Each bounds one block; the reason is beside it.
-      shareCap: real(0.5, 0, 0.9, 'how far a dealt or taken share moves from 1: at 1 a share of 0 makes a body immune'), // a use's dealt times taken share stays in 0.5 to 1.5: Brutalize's -50% healing is the sheet's largest share
+      shareCap: real(0.5, 0, 0.9, 'maximum damage-dealt or damage-taken modifier distance from 1, up to 0.9'), // a use's dealt times taken share stays in 0.5 to 1.5: Brutalize's -50% healing is the sheet's largest share
       // The most shield a body holds from its own damage dealt (shieldDrain), a share of its max HP: a fifth, so a hard
       // hitter holds at most one fifth of a bar more, about one same-rank hit, and the ceiling, not the share, bounds it.
-      shieldDrainMax: real(0.2, 0, 1, 'the most shield a body holds from its own damage: at 1 a second full bar'),
+      shieldDrainMax: real(0.2, 0, 1, 'maximum shield gained from dealing damage, as a share of max HP, from 0 to 1'),
       armorOp: of(60, KIT_GUARD), // a status moves armor or resist by at most a suit of plate's 60 (`kits.heavy`)
-      critFacesMax: whole(6, 0, 10, 'crit faces with a target\'s exposed ones: past 10 half of every use is a crit'), // crit faces plus a target's exposed faces stay at most 6: design 2.2's 30%, never the 1 in 3
-      critSizeMax: real(2, 1, 5, 'the largest crit size: under 1 a crit hurts less than a hit'), // crit size stays at most 2: design 2.2's "never more than double the dice"
+      critFacesMax: whole(6, 0, 10, 'maximum total critical-hit faces on a d20 including target debuffs, from 0 to 10'), // crit faces plus a target's exposed faces stay at most 6: design 2.2's 30%, never the 1 in 3
+      critSizeMax: real(2, 1, 5, 'maximum total critical-hit damage multiplier, from 1 to 5'), // crit size stays at most 2: design 2.2's "never more than double the dice"
       // A cost cut stays at `costCutCap`'s 0.25: mana is the dungeon's brake on blasts (design 6). The paper's separate
       // fatigue cut of 0.5 needs a second sheet number; one cut on both is the stricter reading (notes-build-3.md).
-      costCutMax: real(0.25, 0, 0.9, 'the most a status cuts a cost: at 1 every use is free'),
-      rangeAdd: whole(3, 0, 20, 'tiles a status adds to a range: 20 is half the largest map'), // tiles a status adds to its bearer's ranges of 2 or more: a curse's 8 to 11, still under a shot's 12
-      wardRounds: whole(1, 0, 10, 'rounds a ward lasts: 10 is past any fight'), // untargetable, invulnerable and safeguard last a round at most, and the first two reach a body once a fight
-      boostSides: whole(20, 2, 100, 'sides of a held die: a d100 is the largest a sheet names'), // a held die is at most a d20 (Expected Outcome)
-      shoveMax: whole(3, 0, 40, 'tiles one push moves a body: 40 is the largest map\'s side'), // tiles one push or pull moves a body: half a round's walk at move 6
+      costCutMax: real(0.25, 0, 0.9, 'maximum ability cost reduction from statuses and stats combined, up to 0.9'),
+      rangeAdd: whole(3, 0, 20, 'maximum extra range tiles a status can add, from 0 to 20'), // tiles a status adds to its bearer's ranges of 2 or more: a curse's 8 to 11, still under a shot's 12
+      wardRounds: whole(1, 0, 10, 'maximum duration of protective wards in rounds, from 0 to 10'), // untargetable, invulnerable and safeguard last a round at most, and the first two reach a body once a fight
+      boostSides: whole(20, 2, 100, 'maximum die size for a stored bonus die, from 2 to 100'), // a held die is at most a d20 (Expected Outcome)
+      shoveMax: whole(3, 0, 40, 'maximum tiles one push or pull can move a target, from 0 to 40'), // tiles one push or pull moves a body: half a round's walk at move 6
       // The most of a stagger bar one `stagger` op fills (keystones design A.7): half a bar, so no one op breaks a bar alone.
-      staggerOpMax: real(0.5, 0, 1, 'the share of a stagger bar one op fills: at 1 one op breaks a bar alone'),
+      staggerOpMax: real(0.5, 0, 1, 'maximum share of a stagger bar one effect can fill, from 0 to 1'),
       blinkMax: of(8, RANGE), // the longest blink: a curse's range, the gap between the default lines
       // The share of max HP under which a body is low (the Lifeline items' "under 30%"; item-stats design 3.1): a third of
       // a bar, about one same-rank hit from down, so a shield given there buys a turn.
-      lowHpAt: real(0.3, 0.05, 0.9, 'the share of max HP under which a body is low: at 0.9 one scratch'),
-      reactionsPerUse: whole(4, 0, 20, 'reactions one use sets off: the bound of the loop that fires them'), // reactions one use may set off: four targets of an area, one each
+      lowHpAt: real(0.3, 0.05, 0.9, 'share of max HP below which a combatant counts as low HP, from 0.05 to 0.9'),
+      reactionsPerUse: whole(4, 0, 20, 'maximum reactions triggered by a single action, from 0 to 20'), // reactions one use may set off: four targets of an area, one each
       // Parry's guard, the share a `before` reaction takes off a strike (kits table 8.10.3): the largest in steps of 0.05
       // with which no build armed with it all fight improves a duel against a striker by more than the tolerance. The
       // sheet's Parry (0.25 or 0.75 by a roll) takes about 0.5 off and lifts the speed build over the tank by 1.30 to 1.40.
@@ -596,13 +596,13 @@ const SPEC = {
       parry: of(0.3, SHARE),
       zoneMove: of(6, RANGE), // tiles one use moves a zone: a round's walk
       zoneGrow: of(2, RADIUS), // tiles of radius one use adds to a zone, to `fieldRadiusMax`
-      extraPerRound: whole(1, 0, 4, 'extra actions a body takes a round: past 4 the fastest build is the fight'), // extra actions (a refund to now) one body takes in a round of fight time: the fastest build stays under 4 turns to the tank's 1
-      surprise: whole(1, 0, 5, 'rounds a surprised side waits: 5 is most of a fight'), // rounds a surprised side's openings are pushed back
-      doArmed: whole(12, 0, 24, 'party rows the room doc names as armed: 24 keeps the doc in its cap'), // party rows whose armed reaction the room doc names: 4 hunters, 4 shadows, 4 summons
+      extraPerRound: whole(1, 0, 4, 'maximum extra actions one combatant can gain per round, from 0 to 4'), // extra actions (a refund to now) one body takes in a round of fight time: the fastest build stays under 4 turns to the tank's 1
+      surprise: whole(1, 0, 5, 'rounds a surprised side is delayed at the start of combat, from 0 to 5'), // rounds a surprised side's openings are pushed back
+      doArmed: whole(12, 0, 24, 'maximum party members whose armed reactions are synced to players, from 0 to 24'), // party rows whose armed reaction the room doc names: 4 hunters, 4 shadows, 4 summons
       // The maker warns past 1.08 times a pace's budget (design 3): the triangle's closest margin on paper is the cannon over
       // the tank at C, 1.081 (kits-paper table 3.1), so a made thing that adds more can flip that row by itself.
       tolerance: of(0.08, SHARE),
-      referenceRounds: whole(6, 1, 20, 'rounds of the reference fight: 0 divides by 0, 20 is past any fight'), // a status that lasts until removed is weighed over design 6's reference fight of 6 rounds
+      referenceRounds: whole(6, 1, 20, 'reference fight length in rounds used to value lasting statuses, from 1 to 20'), // a status that lasts until removed is weighed over design 6's reference fight of 6 rounds
       // The share of a delayed end a cure takes each round it waits (worth.ts `delayedShare`): no built-in monster cures or
       // dispels, and the simulation's foes never do, so the bar counts none; a GM whose foes cleanse raises it.
       cleanse: of(0, SHARE),
@@ -620,13 +620,13 @@ const SPEC = {
       },
       // The conditional scalers that replace the execute (design 8.0): the owner, Nov 14, "execute just does more dmg the lower
       // health people are". A scaler's bonus is 0 at its start and its scale at its end, linear between.
-      scalers: whole(2, 0, 4, 'scalers on one formula: past 4 nobody reads it at a glance'), // scalers on one formula: an execute and one counterpart; a third is a formula nobody reads at a glance
-      scaleCap: real(1, 0.05, 5, 'the most a scaler adds: 5 is six times the damage'), // the most a scaler adds: double the damage, a crit's largest size (critSizeBase + critSizeCap)
+      scalers: whole(2, 0, 4, 'maximum conditional damage scalers on one formula, from 0 to 4'), // scalers on one formula: an execute and one counterpart; a third is a formula nobody reads at a glance
+      scaleCap: real(1, 0.05, 5, 'maximum bonus multiplier a conditional scaler can add, from 0.05 to 5'), // the most a scaler adds: double the damage, a crit's largest size (critSizeBase + critSizeCap)
       scalerStart: of(0.5, SHARE), // where a suggested scaler activates: half of an HP share, or two equal bodies of a pair
-      scalerStep: real(0.05, 0.01, 0.5, 'the search step of a suggested scale: 0 searches without end'), // the suggested scale is searched in steps of 5%, the precision a GM reads off a slider
+      scalerStep: real(0.05, 0.01, 0.5, 'step size used to suggest a conditional damage bonus. Must be above 0'), // the suggested scale is searched in steps of 5%, the precision a GM reads off a slider
       // A pair's bonus is whole at 4 to 1: past a same-rank boss over a paper build at C and E (2.8 to 4, kits-paper table
       // 8.0.1), so a giant slayer is near its whole against a boss and not past it.
-      pairFull: real(4, 1.5, 20, 'the ratio at which a pair\'s bonus is whole: at 1 the bonus divides by 0'),
+      pairFull: real(4, 1.5, 20, 'stat ratio where a comparison scaler reaches full bonus. Must be above 1'),
       // The reference dungeon a scaler's suggestion and worth are taken over (design 8.0): at E, C and S, the rounds the
       // party of design table 6.2 takes on paper to clear a pack of three normal brutes and a boss (kits-paper table 3.2),
       // and a same-rank normal brute's and boss's max HP over the user's (table 8.0.1): the bruiser in the medium kit, whose
@@ -650,7 +650,7 @@ const SPEC = {
         // Hwei: Disaster Stroke at 0.75 adds a mark; two burst for 0.82 bolts on every foe within 2
         mark: { share: of(0.75, TIER_SHARE), burst: of(0.82, BURST) },
         // Einar: Violence spends all Pain, 6% more a Pain, used at 5
-        pain: { perStack: real(0.06, 0, 1, 'damage a Pain adds: 1 doubles it a stack'), spendAt: whole(5, 1, 20, 'Pain at which Violence is used: the stack cap of 20') },
+        pain: { perStack: real(0.06, 0, 1, 'bonus damage share added per Pain stack, from 0 to 1'), spendAt: whole(5, 1, 20, 'Pain stack threshold where Violence is used, from 1 to 20') },
         // Glas: Hemoplague, under Crimson Pact, ends 3 rounds later for 1.4 curses: design 3's number for it. No simulation
         // build plays the Pact yet (notes-worth.md); the bar weighs it at 0.50 SA at C, inside its budget with the Pact's
         // credit. It was 0.6 while worth.ts weighed a curse with no formula against a physical one.
@@ -667,11 +667,11 @@ const SPEC = {
       // a keystone, then on, as `mythic.scripts` does.
       on: false,
       // At most three stats can hold 30% (30% times 3 is 90%), so a mark names one of the hunter's few stats, never one of many.
-      markShare: real(0.3, 0.2, 0.5, 'the share of spent points that earns a stat its mark: under 0.2 five stats hold one, past 0.5 one stat at most'),
+      markShare: real(0.3, 0.2, 0.5, 'share of spent ability points needed to earn a stat mark, from 0.2 to 0.5'),
       // A quarter each: two stats holding half the points. Four even stats still earn their top pair.
-      pairShare: real(0.25, 0.15, 0.5, 'the share each of two stats needs for their confluence: under 0.15 six stats hold it, past 0.5 no two stats can'),
+      pairShare: real(0.25, 0.15, 0.5, 'share of spent ability points needed in each of two stats for a confluence, from 0.15 to 0.5'),
       // Over half, so one stat at most: two stats at 50% earn no apex.
-      apexShare: real(0.55, 0.51, 0.9, 'the share a stat must be over for its apex: at 0.5 two stats could hold one each, past 0.9 a build with any second stat holds none'),
+      apexShare: real(0.55, 0.51, 0.9, 'share of spent ability points one stat must exceed to earn its apex. Must be above 0.5 so only one stat can qualify'),
       // One tier for each rank step after E: the first sessions teach the sheet before keystones arrive, and the words
       // are plain ("at rank D", not "at 240 points"). Each is one of RANKS (overrides.ts reads it).
       markRank: 'D' as Rank, pairRank: 'C' as Rank, apexRank: 'B' as Rank,
@@ -698,7 +698,7 @@ const SPEC = {
       scripts: true,
       // Keystones A's promise: the share of a `stagger` op (A.7) a mythic's bar takes. Half: Worldbreaker's half bar is
       // then a quarter of a mythic's, so a stagger answer needs the party's hits too, never one ability.
-      staggerTaken: real(0.5, 0, 1, 'the share of a stagger op a mythic\'s bar takes: at 1 one op answers an omen alone'),
+      staggerTaken: real(0.5, 0, 1, 'share of a stagger effect applied to a mythic monster\'s stagger bar, from 0 to 1'),
       // An omen's announce and a phase change each take the mythic's turn: a standard action's time (timeline.ts
       // `paceCost`). The party gets about one turn each to answer, and the mythic does nothing else on that turn. One
       // of the paces (overrides.ts reads it).
@@ -710,8 +710,8 @@ const SPEC = {
       // decision 43's answers are turns a party plays only to answer, the party that answers none buys no time, and a
       // clock it cannot beat is one the answering party beats by answering. At 1 round the time bought moved no fight.
       answerTime: {
-        cancel: whole(3, 0, 20, 'rounds a cancelling answer winds a phase\'s clock back: 20 is the longest clock a script may hold'),
-        weaken: whole(3, 0, 20, 'rounds a weakening answer winds a phase\'s clock back: 20 is the longest clock a script may hold'),
+        cancel: whole(3, 0, 20, 'rounds added back to a mythic phase clock when an omen is canceled, from 0 to 20'),
+        weaken: whole(3, 0, 20, 'rounds added back to a mythic phase clock when an omen is weakened, from 0 to 20'),
       },
       // Decision 42: what a stagger or a burst answer asks, counted only from the omen's announce (mythic.ts
       // `answerMet`): `stagger` same-rank hits on its bar (its `hit`, so a bar grown by a break asks no more), `burst` a
@@ -722,20 +722,20 @@ const SPEC = {
       // Decision 43 left no script's omen answered by a hit (a hit is the turn a party plays anyway, so the answer was a
       // word); the rule stays for a party that holds a hit it can save (keystones' stagger ops, unit K5).
       answerReach: {
-        stagger: real(4, 0, 20, 'same-rank hits on its bar after an omen\'s announce a stagger answer asks: 0 is any hit after it, 20 is past anything a party lands in a window'),
-        burst: real(0.13, 0, 1, 'a share of its max HP lost after an omen\'s announce a burst answer asks: 0 is any hit after it, 1 is the whole of it'),
+        stagger: real(4, 0, 20, 'standard hits on the stagger bar needed after an omen warning to answer it, from 0 to 20'),
+        burst: real(0.13, 0, 1, 'share of max HP damage needed after an omen warning to answer it, from 0 to 1'),
       },
       // The bounds every script is checked against (tests/mythics.test.ts), each a least and a most.
       bounds: {
         // One phase (`plain`) to four. Row M1's fight is about 14 rounds; four phases leave each about 3, one omen
         // announced and landed and a turn to see the phase. A fifth would be over before the party read it.
-        phases: each([1, 4], wholeIn(1, 10, 'phases a script may hold: none is no fight, past 10 a phase is over before its first omen lands')),
+        phases: each([1, 4], wholeIn(1, 10, 'number of phases allowed in a mythic script, from 1 to 10')),
         // An omen takes a round to announce and land, so a clock under 2 rounds enrages a phase before its first omen
         // can be answered. Design B.8 bounds a mythic fight at 20 rounds: a clock past it never runs out in a fight.
-        clock: each([2, 20], wholeIn(1, 40, 'rounds a phase\'s clock may hold: 0 enrages it as it begins, 40 is a played fight\'s cap (play.ts CAP_ROUNDS)')),
+        clock: each([2, 20], wholeIn(1, 40, 'rounds allowed on a mythic phase clock, from 1 to 40')),
         // A move's hit in sample S hunters' max HP: 0 is a move of statuses only; past 4 a move kills every hunter
         // many times over, so a larger number says nothing more.
-        hits: each([0, 4], realIn(0, 10, 'a move\'s hit in sample S hunters\' max HP: 10 is a party of three thrice over')),
+        hits: each([0, 4], realIn(0, 10, 'mythic move damage measured in S-rank hunter max HP bars, from 0 to 10')),
       },
     },
     // Gate and boss difficulty slider (1 to 10, default 5; the owner, Nov 22, QD row 8).
@@ -866,10 +866,10 @@ export type Path = { name: string; alloc: Partial<Record<StatKey, number>>; tier
  * overrides hpMax and manaMax itself. A key read in hundredths says so with its %.
  */
 export const BONUS_LABELS: Readonly<Record<BonusKey, string>> = {
-  ...STAT_SHORT, hpMax: 'HP', manaMax: 'Mana', fatigueMax: 'Fatigue capacity', carry: 'Carry', speed: 'Speed', move: 'Move',
+  ...STAT_SHORT, hpMax: 'HP', manaMax: 'Mana', fatigueMax: 'Fatigue capacity', carry: 'Carry capacity', speed: 'Speed', move: 'Move',
   armorPen: '% Armor penetration', resistPen: '% Magic penetration',
-  armorPenFlat: 'Lethality', resistPenFlat: 'Unravel', react: 'Reaction', aim: 'Accuracy', will: 'Will', critFaces: 'Crit faces',
-  critSize: '% Crit size', opening: 'Opening', tenacity: 'Tenacity', potency: 'Potency', threat: '% Threat', hold: '% Channel hold', costCut: '% Cost cut',
+  armorPenFlat: 'Flat armor penetration', resistPenFlat: 'Flat magic penetration', react: 'Reaction', aim: 'Accuracy', will: 'Will', critFaces: 'Crit range (+)',
+  critSize: '% Crit multiplier', opening: 'Opening', tenacity: 'Tenacity', potency: 'Potency', threat: '% Threat', hold: '% Channel break threshold', costCut: '% Ability cost reduction',
   drain: '% Lifesteal', haste: 'Ability haste', healPower: '% Heal and shield power', shieldDrain: '% Damage to shield',
 };
 export const pathOf = (R: Rules, id: unknown): Path | null => {

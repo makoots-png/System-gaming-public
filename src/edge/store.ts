@@ -104,13 +104,13 @@ const LOAD_TEXT: { readonly [N in LoadNotice]: string } = {
 };
 const LIFE_TEXT: { readonly [N in LifeNotice]: string } = {
   newer: 'This save is from a newer version of the app. This tab shows it but cannot change it.',
-  otherTab: 'Another tab saved this campaign, so this tab stopped saving. Reload to go on. Anything this tab had not saved is in Backups.',
-  noStorage: 'Browser storage is unavailable; progress will not be saved.',
-  mineUnkept: 'Another tab saved this campaign, and storage is too full to keep this tab\'s unsaved changes in Backups. This tab still shows them but cannot save: export them from the Data tab now, then reload.',
-  loadUnkept: 'Your save could not be opened, and storage is too full to keep a copy of it in Backups, so this tab will not write over it. Free some storage and reload, or reset the campaign in the Data tab to start again without it.',
-  fightUnkept: 'The running fight in your save could not be read, and storage is too full to keep a copy of the save in Backups, so this tab shows everything else but will not write over it. Free some storage and reload.',
+  otherTab: 'Another tab saved this campaign, so this tab stopped saving. Reload to continue. Anything this tab had not saved is in Backups.',
+  noStorage: 'Browser storage is unavailable. Progress will not be saved.',
+  mineUnkept: 'Another tab saved this campaign. Storage is too full to back up this tab\'s unsaved changes. Export them from the Data tab now, then reload.',
+  loadUnkept: 'Your save could not be opened. Storage is too full to back it up, so this tab will not overwrite it. Free some storage and reload, or reset the campaign in the Data tab.',
+  fightUnkept: 'The running fight in your save could not be read. Storage is too full to back up your save, so this tab shows everything else without overwriting it. Free some storage and reload.',
   saveFailed: 'Saving failed (storage full or blocked). Export your data from the Data tab to avoid losing progress.',
-  deviceFailed: 'This phone\'s own settings, such as pinned abilities and the fight view, could not be kept: storage is full or blocked.',
+  deviceFailed: 'Could not save device settings, such as pinned abilities and the fight view. Storage is full or blocked.',
 };
 /** What load and `notify` raised: each stays until the page is left. */
 const raised: Notice[] = [];

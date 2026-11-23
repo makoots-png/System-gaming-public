@@ -27,7 +27,9 @@ import { IDLE, ODDS_FRAME_MS, oddsStep, progressOf } from '../core/combat/odds.t
 import { oddsSeed } from '../edge/roll.ts';
 import * as motion from './motion.ts';
 import { DOC_MAX } from '../core/protocol.ts';
-const STATUS_LABEL = { detected: 'Detected', raiding: 'Raiding', cleared: 'Cleared', broken: 'DUNGEON BREAK', closed: 'Closed' };
+const STATUS_LABEL = { detected: 'Detected', raiding: 'Raiding', cleared: 'Cleared', broken: 'Dungeon break', closed: 'Closed' };
+const TYPE_LABEL = { normal: 'Normal', red: 'Red', double: 'Double', break: 'Break' };
+const typeChip = t => (t === 'break' ? 'Dungeon break' : `${TYPE_LABEL[t] || t} gate`);
 /** A gate still to be cleared: detected, raiding or broken. The rest are listed under Finished gates. */
 const active = g => can(g, 'clear');
 
@@ -194,7 +196,7 @@ export function register(app) {
     S.flush();
     const all = plan.shares.length > 1, rewards = [`${ui.fmt(share.xp)} XP${all ? ' each' : ''}`];
     if (share.gold) rewards.push(`${ui.fmt(share.gold)} gold${all ? ' each' : ''}`);
-    for (const it of items) rewards.push(`${it.name} → ${taker ? taker.payee.name : 'nobody'}`);
+    for (const it of items) rewards.push(`${it.name} (to ${taker ? taker.payee.name : 'nobody'})`);
     const body = PRESET_WORDS.clearedBody(g.rank, g.name);
     const rlines = plan.shares.filter(x => x.payee.kind === 'remote').map(x => `${x.payee.name}: ${[x.xp && `+${ui.fmt(x.xp)} XP`, x.gold && `${ui.fmt(x.gold)} gold`, ...x.items.map(i => i.name)].filter(Boolean).join(', ') || 'no rewards'}`);
     if (settled.granted.length) { await api.combat.showParty(settled.granted, { title: PRESET_WORDS.clearedTitle, body, lines: rlines }); return true; }
@@ -250,7 +252,7 @@ export function register(app) {
       const key = `${code}|${n.kind}|${n.gate.id}`, g = n.gate; if (asking.has(key)) continue;
       asking.add(key);
       const shown = n.kind === 'appeared'
-        ? ui.system({ tag: '! Gate', kind: 'warning', title: 'A GATE HAS APPEARED', body: g.name, lines: [`Rank: ${g.rank}`, `Type: ${g.type} gate`, `Breaks on day ${g.breakDay}`], actions: ok })
+        ? ui.system({ tag: '! Gate', kind: 'warning', title: 'A GATE HAS APPEARED', body: g.name, lines: [`Rank: ${g.rank}`, `Type: ${typeChip(g.type)}`, `Breaks on day ${g.breakDay}`], actions: ok })
         : ui.system({ tag: '! Warning', kind: 'warning', title: 'GATE BREAK', body: `${g.rank}-rank gate has broken: ${g.name}`, lines: ['Its monsters are coming out of the gate.'], actions: ok });
       void shown.then(() => { asking.delete(key); store.tell(gateTold(told.campaign, code, n)); });
     }
@@ -466,8 +468,8 @@ export function register(app) {
       el.innerHTML = `<section class="win"><span class="cb"></span><h2>Gates</h2>
         <div class="gt-top"><div class="gt-day" id="gt-day" aria-live="polite"></div>
           <div class="gt-gm" data-gm><button type="button" data-act="day" data-n="-1" aria-label="Go back one day">◀ −1 day</button>
-            <button type="button" data-act="day" data-n="1">+1 day ▶</button>
-            <button type="button" data-act="day-n">Advance…</button></div></div>
+            <button type="button" data-act="day" data-n="1" aria-label="Advance one day">+1 day ▶</button>
+            <button type="button" data-act="day-n">Advance days…</button></div></div>
         <div class="gt-switch" data-gm><span class="lbl">${esc(SOLO_WORDS.switch)}</span>
           <div class="seg" role="group" aria-label="${esc(SOLO_WORDS.switch)}"><button type="button" data-act="solo-on">On</button><button type="button" data-act="solo-off">Off</button></div>
           ${ui.field(SOLO_WORDS.every, `<select name="solohours" data-solohours>${opts([2, 4, 6, 8, 12, 24].map(n => [String(n), `${n} hours`]))}</select>`)}</div>
@@ -488,7 +490,7 @@ export function register(app) {
       const soloLeft = () => (app.seat() === 'gm' ? soloShared().left : []);
       const sigOf = g => JSON.stringify([g, day(), app.isGM(), app.rules().fight.difficulty, (g.monsters || []).map(m => monsterOf(m.monsterId)?.name), monsterOf(g.bossId)?.name, soloLeft().includes(g.id)]);
       // the one countdown (gate.ts `countdown`), as a player's card reads it; a red gate open still adds its inside time
-      const timer = g => { const c = countdown(g, day()); return g.type === 'red' && active(g) && g.status !== 'broken' ? `${c.words} · inside time ×10` : c.words; };
+      const timer = g => { const c = countdown(g, day()); return g.type === 'red' && active(g) && g.status !== 'broken' ? `${c.words} · time inside runs 10x faster` : c.words; };
       const timerCls = g => countdown(g, day()).tone ?? '';
 
       function cardHtml(g) {
@@ -496,30 +498,30 @@ export function register(app) {
         const mons = g.monsters.map(m => { const mo = monsterOf(m.monsterId); return `<li><span class="cnt">×${esc(m.count)}</span><span>${esc(mo ? mo.name : 'Unknown monster')}</span>${mo ? `<span class="mx">${ui.fmt(monsterXp(mo, R))} XP · HP ${ui.fmt(monsterSheetOf(scaleMonsterForGate(mo, g, 'pack', R), R).hpMax)}</span>` : ''}</li>`; }).join('');
         const boss = g.bossId ? monsterOf(g.bossId) : null;
         const acts = !gm ? '' : [
-          can(g, 'enter') ? '<button type="button" data-act="enter" class="primary">Enter</button>' : '',
+          can(g, 'enter') ? '<button type="button" data-act="enter" class="primary">Mark as raiding</button>' : '',
           can(g, 'fightStarted') ? '<button type="button" data-act="encounter">Start fight</button>' : '',
           can(g, 'clear') && g.preset.at !== 'paid' ? `<button type="button" data-act="preset">${esc(PRESET_WORDS.button)}</button>` : '',
-          can(g, 'clear') ? '<button type="button" data-act="clear" class="primary">Clear</button>' : '',
+          can(g, 'clear') ? '<button type="button" data-act="clear" class="primary">Clear gate</button>' : '',
           '<button type="button" data-act="edit">Edit</button>',
-          can(g, 'close') ? '<button type="button" data-act="close">Close</button>' : '',
+          can(g, 'close') ? '<button type="button" data-act="close">Close gate</button>' : '',
           '<button type="button" data-act="delete" class="danger">Delete</button>',
         ].join('');
         const pLine = gm && g.preset.at !== 'none' ? `<div class="gt-notes" data-preset-summary>${esc(PRESET_WORDS.summary(g.preset, g.preset.at === 'paid', ui.fmt))}</div>` : '';
         const paidList = gm && g.preset.at === 'paid' && g.preset.items.some(i => i.checked)
           ? `<ul class="gt-mons" data-preset-paid aria-label="${esc(PRESET_WORDS.paidItemsLabel)}">${g.preset.items.filter(i => i.checked).map(i => `<li><span>${esc(i.item.name)}</span><span class="mx">${esc(PRESET_WORDS.itemWentTo(destName(i.to)))}</span></li>`).join('')}</ul>` : '';
         const cfg = app.rules().gateSpawn;
-        return `<article class="gate t-${esc(g.type)} s-${esc(g.status)}" data-id="${esc(g.id)}" aria-label="${esc(g.rank)}-rank ${esc(g.type)} gate ${esc(g.name)}">
+        return `<article class="gate t-${esc(g.type)} s-${esc(g.status)}" data-id="${esc(g.id)}" aria-label="${esc(g.rank)}-rank ${esc(typeChip(g.type))} ${esc(g.name)}">
           <div class="gt-head">${ui.rankBadge(g.rank)}<span class="gt-name">${esc(g.name)}</span>
-            <span class="gt-chip ty-${esc(g.type)}">${esc(g.type)} gate</span><span class="gt-chip st-${esc(g.status)}">${esc(STATUS_LABEL[g.status] || g.status)}</span></div>
-          ${g.type === 'red' ? `<div class="gt-red-banner" role="note">No exit until the boss falls · DCs +${esc(cfg.redDcBonus)}</div>` : ''}
-          ${g.type === 'double' && gm ? '<div class="gt-notes">Double gate: it holds a hidden second dungeon, which the GM reveals.</div>' : ''}
+            <span class="gt-chip ty-${esc(g.type)}">${esc(typeChip(g.type))}</span><span class="gt-chip st-${esc(g.status)}">${esc(STATUS_LABEL[g.status] || g.status)}</span></div>
+          ${g.type === 'red' ? `<div class="gt-red-banner" role="note">Red gate: no exit until the boss is defeated. Check difficulty (DC) +${esc(cfg.redDcBonus)}.</div>` : ''}
+          ${g.type === 'double' && gm ? '<div class="gt-notes">Double gate. Contains a hidden second dungeon for the GM to reveal.</div>' : ''}
           <div class="gt-timer ${timerCls(g)}">${esc(timer(g))}</div>
           <ul class="gt-mons" aria-label="Monsters">${mons || '<li class="empty">No regular monsters.</li>'}
             ${g.bossId ? `<li class="boss"><span>★ Boss</span><span>${esc(boss ? boss.name : 'Unknown boss')}</span>${boss ? `<span class="mx">${ui.fmt(monsterXp(boss, R))} XP · HP ${ui.fmt(monsterSheetOf(scaleMonsterForGate(boss, g, 'boss', R), R).hpMax)}</span>` : ''}</li>` : ''}</ul>
-          <div class="gt-notes">Total XP per hunter: ${ui.fmt(gateXp(g))}</div>
+          <div class="gt-notes" data-gate-xp>Gate XP per hunter (for ${app.rules().gateParty} hunters, higher for fewer): <span data-xp-val>${ui.fmt(gateXp(g))}</span></div>
           ${gm ? `<div class="gt-notes" data-diff-summary>${esc(DIFFICULTY_WORDS.cardSummary(g.difficulty, !!g.bossId, R))}</div>` : ''}
           ${pLine}${paidList}
-          ${gm && g.mapId && api.maps.get(g.mapId) ? `<div class="gt-notes">Battle map: ${esc(api.maps.get(g.mapId).name)}</div>` : ''}
+          ${gm && g.mapId && api.maps.get(g.mapId) ? `<div class="gt-notes">Map: ${esc(api.maps.get(g.mapId).name)}</div>` : ''}
           ${g.notes ? `<div class="gt-notes">${esc(g.notes)}</div>` : ''}
           ${gm && g.solo ? `<div class="gt-notes">${esc(SOLO_WORDS.open)}${soloLeft().includes(g.id) ? `. ${esc(SOLO_WORDS.tooBig)}` : ''}</div>` : ''}
           ${acts ? `<div class="gt-acts">${acts}</div>` : ''}
@@ -620,19 +622,19 @@ export function register(app) {
           <div class="lbl">Award to</div>
           <div class="grid2">${list.map(h => `<label class="gt-chk"><input type="checkbox" name="hid" value="${esc(h.id)}"${on.has(h.id) ? ' checked' : ''}><span>${esc(h.name)}</span></label>`).join('')}</div>
           ${ui.field('Loot item goes to', `<select name="to"><option value="">First selected hunter</option>${hunterOpts('')}</select>`)}
-          <div class="gt-notes">Each selected hunter gets <span data-clearxp>${xpEach(g, n)}</span> XP and <span data-cleargold>${goldEach(g, n)}</span> gold. The gate's XP and gold are shared: the fewer hunters, the more each${g.xpPaid > 0 ? `. Its fights already paid ${ui.fmt(g.xpPaid)} XP of the gate's XP` : ''}. Loot is rolled for a ${esc(g.rank)}-rank gate with a boss.</div>
+          <div class="gt-notes">Each selected hunter gets <span data-clearxp>${xpEach(g, n)}</span> XP and <span data-cleargold>${goldEach(g, n)}</span> gold. Fewer hunters get a larger share.${g.xpPaid > 0 ? ` Earlier fights in this gate already awarded ${ui.fmt(g.xpPaid)} XP.` : ''} Rolls ${esc(g.rank)}-rank boss loot (two item rolls).</div>
           <div class="gt-acts"><button type="button" data-act="cancel-panel">Cancel</button><button type="submit" class="primary">Confirm clear</button></div></form>`;
       }
       function editPanel(g) {
         const all = api.bestiary.list();
         const mopt = sel => all.map(m => `<option value="${esc(m.id)}"${m.id === sel ? ' selected' : ''}>${esc(m.name)} (${esc(m.rank)}${m.kind === 'normal' ? '' : `, ${m.kind}`})</option>`).join('');
         const row = m => `<div class="gt-mrow" data-mrow>${ui.field('Monster', `<select name="mid">${mopt(m.monsterId)}</select>`)}${ui.field('Count', `<input type="number" name="cnt" min="1" max="${MONSTER_BOUNDS.copies}" inputmode="numeric" value="${esc(m.count)}">`).replace('class="field"', 'class="field n"')}<button type="button" class="danger" data-act="rm-row" aria-label="Remove this monster">Remove</button></div>`;
-        const sOpt = (list, sel) => list.map(v => `<option value="${esc(v)}"${v === sel ? ' selected' : ''}>${esc(v)}</option>`).join('');
+        const sOpt = (list, sel, label = v => v) => list.map(v => `<option value="${esc(v)}"${v === sel ? ' selected' : ''}>${esc(label(v))}</option>`).join('');
         return `<form class="gt-panel" data-form="edit" aria-label="Edit gate">
           <div class="grid2">${ui.field('Name', `<input type="text" name="name" maxlength="60" value="${esc(g.name)}">`)}
             ${ui.field('Rank', `<select name="rank">${sOpt(RANKS, g.rank)}</select>`)}
-            ${ui.field('Type', `<select name="type">${sOpt(GATE_TYPES, g.type)}</select>`)}
-            ${ui.field('Status', `<select name="status">${sOpt(Object.keys(STATUS_LABEL), g.status)}</select>`)}
+            ${ui.field('Type', `<select name="type">${sOpt(GATE_TYPES, g.type, v => TYPE_LABEL[v] || v)}</select>`)}
+            ${ui.field('Status', `<select name="status">${sOpt(Object.keys(STATUS_LABEL), g.status, v => STATUS_LABEL[v] || v)}</select>`)}
             ${ui.field('Breaks on day', `<input type="number" name="breakDay" min="1" inputmode="numeric" value="${esc(g.breakDay)}">`)}</div>
           <div class="lbl">Monsters</div><div data-rows>${g.monsters.map(row).join('')}</div>
           <div><button type="button" data-act="add-row">+ Add monster</button></div>
@@ -648,14 +650,14 @@ export function register(app) {
 
       function sharedCard(g, d) {
         const c = countdown(g, d), t = c.words, cls = c.tone ?? '';
-        return `<article class="gate t-${esc(g.type)} s-${esc(g.status)}" data-id="${esc(g.id)}" aria-label="${esc(g.rank)}-rank ${esc(g.type)} gate ${esc(g.name)}">
+        return `<article class="gate t-${esc(g.type)} s-${esc(g.status)}" data-id="${esc(g.id)}" aria-label="${esc(g.rank)}-rank ${esc(typeChip(g.type))} ${esc(g.name)}">
           <div class="gt-head">${ui.rankBadge(g.rank)}<span class="gt-name">${esc(g.name)}</span>
-            <span class="gt-chip ty-${esc(g.type)}">${esc(g.type)} gate</span><span class="gt-chip st-${esc(g.status)}">${esc(STATUS_LABEL[g.status] || g.status)}</span></div>
-          ${g.type === 'red' ? '<div class="gt-red-banner" role="note">Red gate: no exit until the boss is defeated</div>' : ''}
+            <span class="gt-chip ty-${esc(g.type)}">${esc(typeChip(g.type))}</span><span class="gt-chip st-${esc(g.status)}">${esc(STATUS_LABEL[g.status] || g.status)}</span></div>
+          ${g.type === 'red' ? '<div class="gt-red-banner" role="note">Red gate: no exit until the boss is defeated.</div>' : ''}
           <div class="gt-timer ${cls}">${esc(t)}</div></article>`;
       }
       function renderShared(w, soloShown) {
-        q('#gt-day').textContent = `World Day ${w.day}`;
+        q('#gt-day').textContent = `World day ${w.day}`;
         const act = w.gates.filter(active), fin = w.gates.filter(g => !active(g));
         const put = (box, list, msg) => { const html = list.map(g => sharedCard(g, w.day)).join('') || `<p class="empty">${esc(msg)}</p>`; if (box.dataset.sig !== html) { box.dataset.sig = html; box.innerHTML = html; } };
         put(q('#gt-list'), act, worldEmptyWords(false, soloShown));
@@ -674,7 +676,7 @@ export function register(app) {
         const acts = away ? `<button type="button" data-solo-dismiss="${esc(waiting.id)}">${esc(SOLO_WORDS.dismiss)}</button>`
           : target ? `<button type="button" class="primary" data-solo-enter${mayEnter(runPhase) ? '' : ' disabled'}>${esc(SOLO_WORDS.enter)}</button>` : '';
         return { key: oddsKeyOf(gate, h.id), made, html: `<article class="gate solo" data-solo="${esc(gate.kind)}:${esc(gate.id)}" aria-label="${esc(rank)}-rank solo gate ${esc(name)}">
-          <div class="gt-head">${ui.rankBadge(rank)}<span class="gt-name">${esc(name)}</span><span class="gt-chip st-detected">${esc(gate.kind === 'personal' ? 'Personal' : 'Solo')}</span></div>
+          <div class="gt-head">${ui.rankBadge(rank)}<span class="gt-name">${esc(name)}</span><span class="gt-chip st-detected">${esc(gate.kind === 'personal' ? 'Personal gate' : 'Solo gate')}</span></div>
           ${sub ? `<div class="gt-timer">${esc(sub)}</div>` : ''}
           ${mons ? `<ul class="gt-mons" aria-label="Monsters">${mons}</ul>` : ''}
           <div data-odds hidden></div><div data-solorun${playingOn(runPhase, gate, h.id) ? '' : ' hidden'}></div>
@@ -715,7 +717,7 @@ export function register(app) {
         const w = sharedWorld();
         if (w) { cards.clear(); renderShared(w, soloShown); return; }
         for (const k of ['#gt-list', '#gt-done-list']) { const b = q(k); if (b.dataset.sig) { delete b.dataset.sig; b.replaceChildren(); } }
-        q('#gt-day').textContent = `World Day ${day()}`;
+        q('#gt-day').textContent = `World day ${day()}`;
         const gates = store.get().gates;
         // a panel asked for from another view (the fight's end): open, its card drawn again with it
         const ask = mounted.asked; mounted.asked = null;
@@ -766,7 +768,7 @@ export function register(app) {
         if (!app.isGM()) return;
         if (act === 'solo-on' || act === 'solo-off') { ui.wrote('Gates', store.apply('gm-rules', s => soloRuleSet(s, { personal: act === 'solo-on' }))); return; }
         if (act === 'day') ui.wrote('Gates', advanceDay(Number(b.dataset.n)));
-        else if (act === 'day-n') { const n = await ui.promptNum({ title: 'Advance world day', label: 'Days (negative goes back)', value: 5, min: -30, max: 365 }); if (n) ui.wrote('Gates', advanceDay(n)); }
+        else if (act === 'day-n') { const n = await ui.promptNum({ title: 'Advance world day', label: 'Days to advance (use a negative number to go back)', value: 5, min: -30, max: 365 }); if (n) ui.wrote('Gates', advanceDay(n)); }
         else if (act === 'enter') enter(id);
         else if (act === 'encounter') startEncounter(id);
         else if (act === 'clear' || act === 'edit') { openPanel.set(id, act); refresh(id); cards.get(id)?.querySelector('.gt-panel input,.gt-panel select')?.focus(); }
@@ -848,7 +850,7 @@ export function register(app) {
           const difficulty = parseDifficultyLevel(Number(f.difficulty?.value)) ?? undefined;
           const g = spawn({ rank: oneOf(f.rank.value, RANKS, undefined), type: oneOf(f.type.value, SPAWN_TYPES, undefined), difficulty });
           if (!g) return;
-          ui.toast('Gates', `${g.rank}-rank ${g.type} gate detected: ${g.name}`);
+          ui.toast('Gates', `Detected ${g.rank}-rank ${g.type} gate: ${g.name}.`);
           return;
         }
         const id = f.closest('.gate').dataset.id, kind = f.dataset.form;
@@ -879,7 +881,7 @@ export function register(app) {
   app.on('combat:end', async ({ fight, gateId }) => {
     const g = gateId ? gate(gateId) : null;
     if (!g || !can(g, 'clear') || !app.isGM()) return;
-    const pick = await ui.system({ tag: '! Notification', kind: 'quest', title: 'Gate cleared?', body: `Was "${g.name}" (${g.rank}-rank) cleared?`,
+    const pick = await ui.system({ tag: '! Notification', kind: 'quest', title: 'Gate cleared?', body: `Did the party clear "${g.name}" (${g.rank}-rank)?`,
       actions: [{ label: 'Not yet', value: null, cancel: true }, { label: 'Mark gate cleared', value: 'clear', primary: true }] });
     if (pick !== 'clear') return;
     mounted.asked = { id: g.id, mode: 'clear' };

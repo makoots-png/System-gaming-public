@@ -174,7 +174,7 @@ test('a player saves gear sets, swaps them in one tap, keeps them when the GM lo
   await test.step('a GM rule that lowers the cap keeps every saved set and only blocks new ones', async () => {
     await setRules(page, { loadoutCap: 2 });
     await expect(page.locator(`${panel} [data-losave]`)).toBeDisabled();
-    await expect(page.locator(`${panel} [data-losave]`)).toContainText('Full (2)');
+    await expect(page.locator(`${panel} [data-losave]`)).toContainText('Loadouts full (2)');
     await setRules(page, { loadoutCap: 1 });
     await expect(page.locator(`${panel} [data-loswap]`)).toHaveCount(2);
     await chip('Tank').tap();
@@ -199,12 +199,12 @@ test('a player saves gear sets, swaps them in one tap, keeps them when the GM lo
     await startLocalFight(page);
     await go(page, 'status');
     await page.locator(`${panel} [data-lofight]`).scrollIntoViewIfNeeded();
-    await expect(page.locator(`${panel} [data-lofight]`)).toHaveText('Gear cannot change during a fight.');
+    await expect(page.locator(`${panel} [data-lofight]`)).toHaveText('You cannot change gear during a fight.');
     await chip('Tank').tap();
-    await expect(toasts(page).filter({ hasText: 'Gear cannot change during a fight.' })).toHaveCount(1);
+    await expect(toasts(page).filter({ hasText: 'You cannot change gear during a fight.' })).toHaveCount(1);
     expect(await equipped()).toMatchObject({ weapon: gear.spear, chest: gear.robe });
     await page.locator(`${status}[data-panel=equipment] [data-unequip="weapon"]`).tap();
-    await expect(toasts(page).filter({ hasText: 'Gear cannot change during a fight.' })).toHaveCount(2);
+    await expect(toasts(page).filter({ hasText: 'Gear cannot change during a fight.' })).toHaveCount(1);
     expect((await equipped()).weapon).toBe(gear.spear);
     await endLocalFight(page);
     // a fight on this phone that holds no row of this hunter leaves its gear free (V10 CU1: it was refused)
@@ -262,7 +262,7 @@ test('a player chooses a path and perks, sees the stat change, finds locked rank
   await test.step('Auto-place spends the free points by the path weights', async () => {
     const before = await activeHunter(page);
     await page.locator(`${status}[data-bdauto]`).tap();
-    await tapWin(page, 'Place points');
+    await tapWin(page, 'Place ability points');
     await expect.poll(() => freePoints(page)).toBe(0);
     const after = await activeHunter(page);
     expect(after.derived.stats.str).toBe(before.derived.stats.str + 2);
@@ -336,9 +336,9 @@ test('a GM on their own hunter switches builds off and on, retunes a path, and r
 
   await test.step('Players pick: no shows the GM-picks note, and Reset build rules restores it', async () => {
     await gm.locator(`${status}[data-bdpp]`).tap();
-    await expect(gm.locator(`${status}[data-bdpp]`)).toContainText('Players pick: no');
+    await expect(gm.locator(`${status}[data-bdpp]`)).toContainText('Players choose perks: No');
     await gm.locator(`${status}[data-bdreset]`).tap();
-    await expect(gm.locator(`${status}[data-bdpp]`)).toContainText('Players pick: yes');
+    await expect(gm.locator(`${status}[data-bdpp]`)).toContainText('Players choose perks: Yes');
   });
 
   await test.step('a GM path override renames the path and changes the number on the sheet, and Reset build rules drops it', async () => {
@@ -443,7 +443,7 @@ test('build switches a GM sets reach the room, a player plays by them while thei
     await gm.locator('#view-room [data-leave]').tap();
     await expect.poll(() => gm.evaluate(() => hunterApp.api.sync.room())).toBeNull();
     await openBuild(gm);
-    await expect(gm.locator(`${status}[data-bdtoggle]`)).toContainText('Builds: off');
+    await expect(gm.locator(`${status}[data-bdtoggle]`)).toContainText('Build paths: Off');
     expect((await save(gm)).rulesOverrides.build.enabled).toBe(false);
   });
 });

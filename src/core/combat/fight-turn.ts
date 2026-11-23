@@ -167,7 +167,7 @@ export function ended(f: Fight, winner: Summary['winner'], fx: Fx, R: Rules): En
   const summary: Summary = { rounds: roundsOf(now, R, 'near'), winner, down: down.map(r => r.id), xp };
   fx.push({ type: 'ended', summary });
   const out: Ended = { phase: 'ended', id: f.id, grid: f.grid, zones: f.zones, fog: f.fog, rows: f.rows, log: f.log, banked: f.banked, had: f.had, now, summary };
-  return logged(out, line(`The fight ends${winner ? `: the ${winner === 'party' ? 'party' : 'foes'} won` : ''}.`), R);
+  return logged(out, line(`The fight ends${winner ? `. The ${winner === 'party' ? 'party' : 'foes'} won` : ''}.`), R);
 }
 
 /**
@@ -185,7 +185,7 @@ export function consequences(before: readonly Body[], after: Running, ctx: Ctx, 
       // a reactor down is unarmed (kits table 8.9.1)
       if (a.armed) a = withReact(a, reactStep(reactState(a), { type: 'down' }));
       if (a.kind !== 'hunter') fx.push({ type: 'defeated', id: a.id });
-      f = logged(f, line(`${a.name} is ${a.kind === 'hunter' ? 'down' : 'defeated'}.`, [a.id]), ctx.rules);
+      f = logged(f, line(`${a.name} is ${a.kind === 'hunter' ? 'dead' : 'defeated'}.`, [a.id]), ctx.rules);
     }
     if (!isUp(b) && isUp(a)) a = { ...a, at: tick(Math.max(a.at, f.now)) };
     if (a.place.x !== b.place.x || a.place.y !== b.place.y) fx.push({ type: 'moved', id: a.id, to: a.place });
@@ -197,7 +197,7 @@ export function consequences(before: readonly Body[], after: Running, ctx: Ctx, 
       fx.push({ type: 'staggered', id: a.id });
       f = logged(f, line(`${a.name} is staggered.`, [a.id]), ctx.rules);
     }
-    if (!heldAtGate(b) && heldAtGate(a)) f = logged(f, line(`${a.name} is held at the gate.`, [a.id]), ctx.rules);
+    if (!heldAtGate(b) && heldAtGate(a)) f = logged(f, line(`${a.name} stopped at its phase HP threshold.`, [a.id]), ctx.rules);
     const met = answered(f, before, a, ctx.rules, fx);
     f = withRow(met.fight, met.row);
   }
@@ -222,8 +222,8 @@ function answered(f: Running, before: readonly Body[], a: Body, R: Rules, fx: Fx
     if (isRefused(next)) continue;
     row = next;
     const weak = omen.weak === null ? null : script.moves[omen.weak]!;
-    const then = m.outcome === 'cancel' || !weak ? `${omen.name} is cancelled` : `${omen.name} will land as ${weak.name}`;
-    g = logged(g, line(`${answerWords(g, b, a, omen, m, R)}: ${then}.`, [a.id]), R);
+    const then = m.outcome === 'cancel' || !weak ? `${omen.name} is canceled` : `${omen.name} will land as ${weak.name}`;
+    g = logged(g, line(`${answerWords(g, b, a, omen, m, R)}. ${then}.`, [a.id]), R);
     fx.push({ type: 'answered', id: a.id, how: m.how, outcome: m.outcome });
   }
   return { fight: g, row };
@@ -237,9 +237,9 @@ function answerWords(f: Running, b: Body, a: Body, omen: Omen, m: MetAnswer, R: 
       const by = st?.source.id ? rowOf(f, st.source.id)?.name : undefined;
       return `${a.name} is ${(st?.def.label ?? 'held').toLowerCase()}${by && by !== a.name ? ` by ${by}` : ''}`;
     }
-    case 'stagger': return `${a.name} reels under the blows`;
+    case 'stagger': return `${a.name}'s stagger bar takes enough damage`;
     case 'burst': return `${a.name} loses ${Math.round(R.fight.mythic.answerReach.burst * 100)}% of its HP`;
-    case 'shield': return `${(s && s.at !== 'calm' ? aimedBody(s.aim, a.side, f.rows)?.name : undefined) ?? 'Its mark'} is shielded`;
+    case 'shield': return `${(s && s.at !== 'calm' ? aimedBody(s.aim, a.side, f.rows)?.name : undefined) ?? 'Its target'} is shielded`;
     case 'step': return `No one stands where ${omen.name} was aimed`;
     default: return m.how satisfies never;
   }
@@ -583,7 +583,7 @@ function scriptTurn(f: Running, row: Scripted<Body>, ctx: Ctx, fx: Fx): { fight:
   const x = mythicStepped<Body>(row, { type: 'announce', omen: beat.omen, aim: omenAim(omen.aim, full, row, f), hpAt: rowHp(row), barAt: bar });
   if (isRefused(x)) return { fight: f, spent: false };
   fx.push({ type: 'omen', id: row.id, omen: beat.omen });
-  const said = enraged(s, f.now, R) ? `${row.name} is enraged: it readies ${omen.name}, which lands on its next turn.` : `${row.name} readies ${omen.name}: it lands on its next turn.`;
+  const said = enraged(s, f.now, R) ? `${row.name} is enraged and readies ${omen.name}. It lands on its next turn.` : `${row.name} readies ${omen.name}. It lands on its next turn.`;
   return { fight: logged(withRow(f, acted({ ...x, intent: null }, f.now, paceCost(R.fight.mythic.turnPace, R.fight), R.fight)), line(said, [row.id]), R), spent: true };
 }
 
@@ -615,7 +615,7 @@ export function startTurn(f: Running, ctx: Ctx, fx: Fx): Running | Ended {
     if (standing(g).length < 2) { g = consequences(before, g, ctx, fx); continue; }
     const who = next(g.rows.filter(isUp))!;
     // the settle's S0 (kits table 2.4): a summon whose time is up leaves before it acts
-    if (timeUp(who, g.now)) { g = sentAway(g, [who], 'leaves: its time is up', ctx); continue; }
+    if (timeUp(who, g.now)) { g = sentAway(g, [who], 'leaves because its time is up', ctx); continue; }
     g = { ...g, currentId: who.id };
     const settled = settleRow(g, who, ctx, fx);
     g = consequences(before, settled.fight, ctx, fx);
@@ -624,7 +624,7 @@ export function startTurn(f: Running, ctx: Ctx, fx: Fx): Running | Ended {
     if (g.zones.some(z => z.upkeep && z.owner === who.id)) {
       const pay = payUpkeep(rowOf(g, who.id)!, g.zones, g.now, R), pre = g.rows;
       g = { ...withRow(g, pay.owner), zones: pay.zones };
-      for (const z of pay.lapsed) g = logged(g, line(`${z.name} ends: ${who.name} cannot pay its upkeep.`, [who.id], [z.id]), R);
+      for (const z of pay.lapsed) g = logged(g, line(`${z.name} ends because ${who.name} cannot pay its upkeep.`, [who.id], [z.id]), R);
       g = consequences(pre, g, ctx, fx);
     }
     // the settle's events (kits design 1.3.5, the settle's S3): statuses that ended by time, then the turn's start
@@ -637,7 +637,7 @@ export function startTurn(f: Running, ctx: Ctx, fx: Fx): Running | Ended {
     if (!found || !isUp(found)) continue;
     let row = found;
     if (held(row, g.now)) {
-      g = logged(withRow(g, acted(row, g.now, paceCost('standard', R.fight), R.fight)), line(`${row.name} is held and loses the turn.`, [row.id]), R);
+      g = logged(withRow(g, acted(row, g.now, paceCost('standard', R.fight), R.fight)), line(`${row.name} cannot act and loses the turn.`, [row.id]), R);
       continue;
     }
     // a mythic's script at its turn start (design B.3): its phase change or an announce spends the turn; an act beat goes on

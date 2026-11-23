@@ -116,7 +116,7 @@ test('a GM paints walls and a fire in the Workshop, saves the map, names it on a
     await card.locator('[data-act=edit]').tap();
     await card.locator('select[name=map]').selectOption({ label: 'Ash Crypt' });
     await card.locator('.gt-panel [type=submit]').tap();
-    await expect(card.locator('.gt-notes', { hasText: 'Battle map: Ash Crypt' })).toBeVisible();
+    await expect(card.locator('.gt-notes', { hasText: 'Map: Ash Crypt' })).toBeVisible();
     await card.locator('[data-act=encounter]').tap();
     const dlg = gm.locator('[aria-modal="true"]');
     for (const box of await dlg.locator('input[name=hid]').all()) await box.uncheck();
@@ -206,7 +206,7 @@ test('a GM whose Save as a new map is refused keeps the map maker open with the 
   await test.step('with the name cleared, Save as a new map says to name it, and the maker stays open with the wall', async () => {
     await maker(gm).locator('[data-name]').fill('');
     await maker(gm).locator('[data-asnew]').tap();
-    await expect(maker(gm).locator('[data-err]')).toHaveText('Name the map.');
+    await expect(maker(gm).locator('[data-err]')).toHaveText('Enter a name for the map.');
     await expect(cell(gm, 4, 4)).toHaveClass(/wall/);
     expect(await gm.evaluate(() => hunterApp.store.get().library.maps.map((m: any) => m.id))).toEqual(['mp901']);
   });
@@ -307,7 +307,7 @@ test('the GM widens the map from Fight tools mid-fight and the player\'s map gro
   await tools.locator('[data-resize="w"][data-d="-1"]').tap();
   await expect(tools.locator('[data-mapsize="w"]')).toHaveText('20');
   await tools.locator('[data-resize="w"][data-d="-1"]').tap();
-  await expect(gm.getByText('the map cannot shrink past it')).toBeVisible();
+  await expect(gm.getByText('Cannot shrink the map past a combatant or targeted tile.')).toBeVisible();
   await expect(tools.locator('[data-mapsize="w"]')).toHaveText('20');
   expect(await placeOf(gm, rat)).toEqual([19, 5]);
   await expect.poll(() => map(player).locator('[data-world]').evaluate(w => (w as HTMLElement).offsetWidth)).toBe(20 * 40);
@@ -330,7 +330,7 @@ test('a GM makes an aura skill; the player\'s hunter casts it, walks, and the al
     await skm.locator('[data-zone-fx] [data-row="0"] [data-f="q"]').fill('5');
     await skm.locator('[data-zone-fx] [data-row="0"] [data-when="use"]').tap();
     await expect(skm.locator('[data-sum="zone"]')).toHaveText('Leaves Healing light around the user for 2 rounds');
-    await expect(skm.locator('.mk-preview')).toContainText('Leaves Healing light around its user for 2 rounds, 2 tiles out');
+    await expect(skm.locator('.mk-preview')).toContainText('Leaves Healing light around the user for 2 rounds, reaching 2 tiles out');
     await skm.locator('[data-apply]').tap();
     await expect(skm).toHaveCount(0);
     const made = await gm.evaluate(() => hunterApp.store.get().library.skills.find((k: any) => k.name === 'Healing Light'));

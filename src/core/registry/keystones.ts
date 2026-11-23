@@ -69,13 +69,13 @@ const plain = (name: string, line: string, powers: Powers, bonus: Bonus = {}): K
 // ── Marks (rank D, a stat at 30% of the points spent) ──
 const MARK: { readonly [S in StatKey]: KeystoneMaker } = {
   str: () => {
-    const line = 'When your strike downs a foe, you get half your turn back (once a round).';
+    const line = 'When your strike defeats a foe, you get half your turn back (once a round).';
     return plain('Follow Through', line, { worn: worn('Follow Through', line, [], [
       { on: 'kill', tag: STRIKE, to: 'self', limit: ROUND, ops: [{ op: 'refund', pct: 50 }] },
     ]) });
   },
   agi: () => {
-    const line = 'When a foe\'s attack misses you, your next turn comes a third sooner (once a round).';
+    const line = 'When a foe\'s attack misses you, your next turn comes 33% sooner (once a round).';
     // A.6's quarter weighs 6.5, under the band: a third, 8.6.
     return plain('Slip Away', line, { worn: worn('Slip Away', line, [], [
       { on: 'avoided', tag: null, to: 'self', limit: ROUND, ops: [{ op: 'hasten', share: 0.33 }] },
@@ -89,14 +89,14 @@ const MARK: { readonly [S in StatKey]: KeystoneMaker } = {
     ]) });
   },
   ins: R => {
-    const line = 'A foe you hit is Read for a round: everyone\'s crits against it come on one more face.';
-    const read = worn('Read', 'Crits against it come on one more face.', [{ op: 'sheet', key: 'exposed', amount: 1 }]);
+    const line = 'A foe you hit is Read for 1 round. Everyone crits against it on one more die face.';
+    const read = worn('Read', 'Attacks against it crit on one more die face.', [{ op: 'sheet', key: 'exposed', amount: 1 }]);
     return plain('Read the Opening', line, { worn: worn('Read the Opening', line, [], [
       { on: 'hitDealt', tag: null, to: 'other', limit: EACH, ops: [apply('read', read, rounds(1, R))] },
     ]) });
   },
   dis: () => {
-    const line = 'Hits cannot break your channels, and control on you is shorter.';
+    const line = 'Hits cannot break your channels, and control statuses last less time on you.';
     // A point of tenacity is 2.3 points at D (item-budget.ts, fed by Strength and Discipline): A.6's 15 was 35, so 4
     // (9.2) and the guard, which is not weighed.
     return plain('Unbroken Focus', line, { worn: worn('Unbroken Focus', line, [{ op: 'channel', mode: 'protect' }]) }, { tenacity: 4 });
@@ -108,13 +108,13 @@ const MARK: { readonly [S in StatKey]: KeystoneMaker } = {
     ]) });
   },
   pow: () => {
-    const line = 'Each hit of a spell gives a Surge (up to 5). At 5, your next hit deals 30% more.';
-    const surging = worn('Surging', 'Its next hit deals 30% more.', [{ op: 'share', on: 'dealt', pct: 30 }]);
+    const line = 'Each spell hit gives you 1 Surge (up to 5). At 5, your next hit deals 30% more damage.';
+    const surging = worn('Surging', 'Its next hit deals 30% more damage.', [{ op: 'share', on: 'dealt', pct: 30 }]);
     // Surging goes with the next hit by its own trigger, not by a stack's leave: a leave on a hit dealt would take it
     // with the very hit whose fifth Surge put it on (triggers.ts `fire` runs the leaves after that event's triggers).
     const spent: StatusDef = { ...surging, triggers: [{ on: 'hitDealt', tag: null, to: 'self', limit: EACH, ops: [{ op: 'cureStatus', key: key('surging') }] }] };
     const surge: StatusDef = {
-      label: 'Surge', desc: 'At 5, all are spent and the next hit deals 30% more.', ops: [],
+      label: 'Surge', desc: 'At 5 stacks, all stacks are spent and the next hit deals 30% more damage.', ops: [],
       stack: stacking(5, { kind: 'never' }, { at: { kind: 'count', n: 5 }, to: { kind: 'bearer' }, then: 'spend', ops: [apply('surging', spent, null)] }),
     };
     return plain('Arcane Surge', line, { worn: worn('Arcane Surge', line, [], [
@@ -122,7 +122,7 @@ const MARK: { readonly [S in StatKey]: KeystoneMaker } = {
     ]) });
   },
   ctl: R => {
-    const line = 'When you put a harmful status on a foe, its next turn is pushed back a fifth of a round (once a round).';
+    const line = 'When you apply a harmful status to a foe, its next turn is delayed by 20% of a round (once a round).';
     return plain('Lockdown', line, { worn: worn('Lockdown', line, [], [
       { on: 'imposed', tag: null, to: 'other', limit: ROUND, ops: [{ op: 'delay', ticks: tick(Math.round(0.2 * R.fight.round)) }] },
     ]) });
@@ -132,7 +132,7 @@ const MARK: { readonly [S in StatKey]: KeystoneMaker } = {
 // ── Apexes (rank B, a stat over 55% of the points spent) ──
 const APEX: { readonly [S in StatKey]: KeystoneMaker } = {
   str: R => {
-    const line = 'Once every 4 rounds, Shatter: a blow that fills half a stagger bar.';
+    const line = 'Once every 4 rounds, you can use Shatter to fill half of a foe\'s stagger bar.';
     // A.6's double strike with the half bar weighs 82: a use is 2 SA of damage and 0.75 of a break (worth.ts
     // `breakWorth`). The half bar is the apex (A.7 built its op), so the damage goes: 0.75 SA a quarter of the rounds.
     const a = abilityOf('strike', { id: abilityId('keystone-shatter'), name: 'Shatter', effect: null, ops: [{ op: 'stagger', share: 0.5 }] }, R);
@@ -146,7 +146,7 @@ const APEX: { readonly [S in StatKey]: KeystoneMaker } = {
     ]) });
   },
   vit: R => {
-    const line = 'Once a fight, when you fall under 30% HP, you cannot drop below 1 HP until your next turn ends, and you heal 10% of max HP each round for 3 rounds.';
+    const line = 'Once a fight, if you drop under 30% HP, you cannot drop below 1 HP until your next turn ends. You also heal 10% of max HP each round for 3 rounds.';
     const undying = worn('Undying', 'Cannot drop below 1 HP.', [{ op: 'invulnerable' }]);
     const mending = worn('Mending', 'Heals 10% of max HP each round.', [{ op: 'heal', when: 'turn', amount: formula('0.1 * hpmax', R) }]);
     return plain('Undying', line, { worn: worn('Undying', line, [], [
@@ -154,14 +154,14 @@ const APEX: { readonly [S in StatKey]: KeystoneMaker } = {
     ]) });
   },
   ins: R => {
-    const line = 'You are never surprised. At the start of each of your turns you gain advantage on your next defence roll.';
-    const foresight: StatusDef = { label: 'Foresight', desc: 'Advantage on its next defence roll.', ops: [{ op: 'edge', side: 'defend', keep: 'better', tag: null, spend: true }], stack: stacking(1, { kind: 'never' }) };
+    const line = 'You are never surprised. At the start of each turn, you gain advantage on your next defense roll.';
+    const foresight: StatusDef = { label: 'Foresight', desc: 'Advantage on its next defense roll.', ops: [{ op: 'edge', side: 'defend', keep: 'better', tag: null, spend: true }], stack: stacking(1, { kind: 'never' }) };
     return plain('Foresight', line, { worn: worn('Foresight', line, [{ op: 'alert' }], [
       { on: 'turnStart', to: 'self', limit: EACH, ops: [apply('foresight', foresight, rounds(1, R))] },
     ]) });
   },
   dis: () => {
-    const line = 'At the start of each of your turns your oldest harmful status ends. Control on you is much shorter.';
+    const line = 'At the start of each turn, your oldest harmful status ends. Control statuses last much less time on you.';
     // A point of tenacity is 2.6 points at B: A.6's 40 was 103, so 9 (23); the dispel is not weighed.
     return plain('Mind Fortress', line, { worn: worn('Mind Fortress', line, [], [
       { on: 'turnStart', to: 'self', limit: EACH, ops: [{ op: 'dispel', which: 'first' }] },
@@ -172,7 +172,7 @@ const APEX: { readonly [S in StatKey]: KeystoneMaker } = {
     return plain('Sovereign', line, { worn: worn('Sovereign', line, [{ op: 'aura', radius: 3, on: 'allies' }, { op: 'share', on: 'dealt', pct: 10 }]) }, { shadows: 1 });
   },
   pow: R => {
-    const line = 'Once a fight: a 3-tile blast of magic, and the ground burns for 2 rounds.';
+    const line = 'Once a fight, you can cast a 3-tile magic blast that burns the ground for 2 rounds.';
     const blast = recommended('blast', defaultTicks('blast'), R).text;
     const a = abilityOf('blast', {
       id: abilityId('keystone-cataclysm'), name: 'Cataclysm', shape: { kind: 'radius', radius: tiles(3), ring: null },
@@ -194,16 +194,16 @@ const APEX: { readonly [S in StatKey]: KeystoneMaker } = {
 const awake = (k: Keystone, awakened: Powers): Keystone => ({ ...k, awakened });
 const CONFLUENCE: { readonly [P in StatPair]: KeystoneMaker } = {
   'str+agi': () => {
-    const line = 'Each move gives Momentum (up to 3). Your next hit deals 10% more for each, then it is spent.';
-    const momentum: StatusDef = { label: 'Momentum', desc: 'Each stack: 10% more damage on its next hit.', ops: [{ op: 'share', on: 'dealt', pct: 10 }], stack: stacking(3, { kind: 'event', event: 'hitDealt' }) };
+    const line = 'Each move gives you 1 Momentum (up to 3). Your next hit deals 10% more damage per stack, then all stacks are spent.';
+    const momentum: StatusDef = { label: 'Momentum', desc: 'Each stack adds 10% damage to its next hit.', ops: [{ op: 'share', on: 'dealt', pct: 10 }], stack: stacking(3, { kind: 'event', event: 'hitDealt' }) };
     return plain('Momentum', line, { worn: worn('Momentum', line, [], [
       { on: 'moved', to: 'self', limit: EACH, ops: [apply('momentum', momentum, null)] },
     ]) });
   },
   'str+vit': R => {
-    const line = 'You take 10% less damage. Once you fall under 30% HP you deal 20% more for the rest of the fight.';
+    const line = 'You take 10% less damage. Once you fall under 30% HP, you deal 20% more damage for the rest of the fight.';
     const rage = worn('Rage', 'Deals 20% more damage.', [{ op: 'share', on: 'dealt', pct: 20 }]);
-    const fed = 'When you down a foe, you heal 14% of your max HP.';
+    const fed = 'When you defeat a foe, you heal 14% of your max HP.';
     return awake(plain('Juggernaut', line, { worn: worn('Juggernaut', line, [{ op: 'share', on: 'taken', pct: -10 }], [
       { on: 'lowHp', to: 'self', limit: ONCE, ops: [apply('rage', rage, null)] },
     ]) }), { worn: worn('Juggernaut, awakened', fed, [], [
@@ -211,15 +211,15 @@ const CONFLUENCE: { readonly [P in StatPair]: KeystoneMaker } = {
     ]) });
   },
   'str+ins': R => {
-    const line = 'Your strikes deal more the lower the foe\'s HP: up to 40% of your physical power more on a foe near death.';
+    const line = 'Your strikes deal extra physical damage equal to 20% of your physical power, rising up to 40% as the foe nears 0 HP.';
     return plain('Executioner', line, { worn: worn('Executioner', line, [], [
       { on: 'hitDealt', tag: STRIKE, to: 'other', limit: EACH, ops: [{ op: 'damage', type: 'physical', amount: formula('0.2 * phys * 1 * (1 + 1 * max(0, min(1, (target.missing - 0.5) / 0.5)))', R) }] },
     ]) });
   },
   'str+dis': () => {
-    const line = 'Each hit you take gives Resolve (up to 5): 8% more damage and 2 Discipline each. Your next hit spends it all.';
+    const line = 'Each hit you take gives you 1 Resolve (up to 5). Each stack adds 8% damage and 2 Discipline until your next hit spends them.';
     const resolve: StatusDef = {
-      label: 'Resolve', desc: 'Each stack: 8% more damage and 2 Discipline, until its next hit.',
+      label: 'Resolve', desc: 'Each stack adds 8% damage and 2 Discipline until its next hit.',
       ops: [{ op: 'share', on: 'dealt', pct: 8 }, { op: 'stat', key: 'dis', amount: { kind: 'number', value: 2 } }], stack: stacking(5, { kind: 'event', event: 'hitDealt' }),
     };
     return plain('Unyielding Vow', line, { worn: worn('Unyielding Vow', line, [], [
@@ -227,14 +227,14 @@ const CONFLUENCE: { readonly [P in StatPair]: KeystoneMaker } = {
     ]) });
   },
   'str+pre': R => {
-    const line = 'When you down a foe, allies within 3 tiles deal 15% more damage for 2 rounds.';
+    const line = 'When you defeat a foe, allies within 3 tiles deal 15% more damage for 2 rounds.';
     const warcry = worn('Warcry', 'Deals 15% more damage.', [{ op: 'share', on: 'dealt', pct: 15 }]);
     return plain('Warlord', line, { worn: worn('Warlord', line, [], [
       { on: 'kill', tag: null, to: area(3, 'allies'), limit: EACH, ops: [apply('warcry', warcry, rounds(2, R))] },
     ]) });
   },
   'str+pow': R => {
-    const line = 'After you cast a spell, your next strike adds magic damage of an eighth of your magic power.';
+    const line = 'After you cast a spell, your next strike deals extra magic damage equal to 12.5% of your magic power.';
     // A.6's half of Power (31 at C, a whole strike) weighs 171. The bar counts Charged's strike for both its rounds,
     // where the cure ends it at the first: an eighth of magic power weighs 18 and plays about half that (K5).
     // Charged goes with the strike by its own trigger, not a stack's leave, so a spell's hit does not spend it.
@@ -249,8 +249,8 @@ const CONFLUENCE: { readonly [P in StatPair]: KeystoneMaker } = {
     ]) });
   },
   'str+ctl': R => {
-    const line = 'Your critical strikes break armor: the target loses 15 armor for 3 rounds, stacking twice.';
-    const broken: StatusDef = { label: 'Broken', desc: 'Each stack: 15 less armor.', ops: [{ op: 'sheet', key: 'armor', amount: { kind: 'number', value: -15 } }], stack: stacking(2, { kind: 'never' }) };
+    const line = 'Your critical strikes reduce the target\'s armor by 15 for 3 rounds. This stacks up to 2 times.';
+    const broken: StatusDef = { label: 'Broken', desc: 'Each stack reduces armor by 15.', ops: [{ op: 'sheet', key: 'armor', amount: { kind: 'number', value: -15 } }], stack: stacking(2, { kind: 'never' }) };
     return plain('Bonebreaker', line, { worn: worn('Bonebreaker', line, [], [
       { on: 'critDealt', tag: STRIKE, to: 'other', limit: EACH, ops: [apply('broken', broken, rounds(3, R))] },
     ]) });
@@ -284,7 +284,7 @@ const CONFLUENCE: { readonly [P in StatPair]: KeystoneMaker } = {
   },
   'agi+pow': () => {
     const line = 'Each spell you cast makes you 10% faster, up to 30%. One stack fades each round.';
-    const quick: StatusDef = { label: 'Quickened', desc: 'Each stack: 10% faster. One fades each round.', ops: [{ op: 'speed', pct: 10 }], stack: stacking(3, { kind: 'round' }) };
+    const quick: StatusDef = { label: 'Quickened', desc: 'Each stack adds 10% speed. One stack fades each round.', ops: [{ op: 'speed', pct: 10 }], stack: stacking(3, { kind: 'round' }) };
     return plain('Quickcast', line, { worn: worn('Quickcast', line, [], [
       { on: 'used', tag: SPELL, to: 'self', limit: EACH, ops: [apply('quickened', quick, null)] },
     ]) });
@@ -293,10 +293,10 @@ const CONFLUENCE: { readonly [P in StatPair]: KeystoneMaker } = {
     const line = 'Your hits slow a foe 15% for a round. A foe slowed three times is rooted.';
     const rooted = worn('Rooted', 'Cannot move.', [{ op: 'root' }]);
     const hobbled: StatusDef = {
-      label: 'Hobbled', desc: 'Each stack: 15% slower. At 3, it is rooted for a round.', ops: [{ op: 'speed', pct: -15 }],
+      label: 'Hobbled', desc: 'Each stack reduces speed by 15%. At 3 stacks, the target is rooted for 1 round.', ops: [{ op: 'speed', pct: -15 }],
       stack: stacking(3, { kind: 'never' }, { at: { kind: 'count', n: 3 }, to: { kind: 'bearer' }, then: 'spend', ops: [apply('rooted', rooted, rounds(1, R))] }),
     };
-    const pinned = 'Your hits push the foe\'s next turn back a fifth of a round (once a round).';
+    const pinned = 'Your hits delay the foe\'s next turn by 20% of a round (once a round).';
     return awake(plain('Hamstring', line, { worn: worn('Hamstring', line, [], [
       { on: 'hitDealt', tag: null, to: 'other', limit: EACH, ops: [apply('hobbled', hobbled, rounds(1, R))] },
     ]) }), { worn: worn('Hamstring, awakened', pinned, [], [
@@ -304,8 +304,8 @@ const CONFLUENCE: { readonly [P in StatPair]: KeystoneMaker } = {
     ]) });
   },
   'vit+ins': R => {
-    const line = 'You are never surprised. When you fall under 30% HP you gain a shield of 20% of max HP and advantage on your next defence roll.';
-    const braced: StatusDef = { label: 'Braced', desc: 'Advantage on its next defence roll.', ops: [{ op: 'edge', side: 'defend', keep: 'better', tag: null, spend: true }], stack: stacking(1, { kind: 'never' }) };
+    const line = 'You are never surprised. When you fall under 30% HP, you gain a shield of 20% of max HP and advantage on your next defense roll.';
+    const braced: StatusDef = { label: 'Braced', desc: 'Advantage on its next defense roll.', ops: [{ op: 'edge', side: 'defend', keep: 'better', tag: null, spend: true }], stack: stacking(1, { kind: 'never' }) };
     return plain('Danger Sense', line, { worn: worn('Danger Sense', line, [{ op: 'alert' }], [
       { on: 'lowHp', to: 'self', limit: ONCE, ops: [{ op: 'shield', amount: formula('0.2 * hpmax', R) }, apply('braced', braced, null)] },
     ]) });
@@ -314,7 +314,7 @@ const CONFLUENCE: { readonly [P in StatPair]: KeystoneMaker } = {
     const line = 'You take 10% less damage. Each round, the first hit you take gives you a shield of 5% of max HP.';
     // Tanker. A taunt is not weighed (worth.ts); the sim holds it.
     const taunted = worn('Taunted', 'Must aim at the one who taunted it.', [{ op: 'taunt' }]);
-    const hold = 'A foe that hits you is taunted to you for a round (once a round).';
+    const hold = 'A foe that hits you is taunted by you for 1 round (once a round).';
     return awake(plain('Stonewall', line, { worn: worn('Stonewall', line, [{ op: 'share', on: 'taken', pct: -10 }], [
       { on: 'struck', tag: null, to: 'self', limit: ROUND, ops: [{ op: 'shield', amount: formula('0.05 * hpmax', R) }] },
     ]) }), { worn: worn('Stonewall, awakened', hold, [], [
@@ -327,16 +327,16 @@ const CONFLUENCE: { readonly [P in StatPair]: KeystoneMaker } = {
   },
   // Lifesteal is rare: a confluence is one of the few ways to get it (A.6). A point of it is 0.45 points at C
   // (item-budget.ts `drainCost`) and one of max mana 2: A.6's 20 mana was 40, so 5 (14.5 with the drain).
-  'vit+pow': () => plain('Blood Magic', 'You heal 10% of the damage you deal, and you have 5 more mana.', {}, { drain: 10, manaMax: 5 }),
+  'vit+pow': () => plain('Blood Magic', 'You heal 10% of the damage you deal, and you gain 5 max mana.', {}, { drain: 10, manaMax: 5 }),
   'vit+ctl': R => {
     const line = 'A foe that hits you is slowed 20% for a round.';
-    const slowed = worn('Briar', '20% slower.', [{ op: 'speed', pct: -20 }]);
+    const slowed = worn('Briar', 'Speed reduced by 20%.', [{ op: 'speed', pct: -20 }]);
     return plain('Briar', line, { worn: worn('Briar', line, [], [
       { on: 'struck', tag: null, to: 'other', limit: EACH, ops: [apply('briar', slowed, rounds(1, R))] },
     ]) });
   },
   'ins+dis': () => {
-    const line = 'At the end of each turn you gain Stillness: advantage on your next attack. Moving ends it.';
+    const line = 'At the end of each turn, you gain Stillness, which gives advantage on your next attack. Moving ends it.';
     const still: StatusDef = { label: 'Stillness', desc: 'Advantage on its next attack. Moving ends it.', ops: [{ op: 'edge', side: 'attack', keep: 'better', tag: null, spend: true }], stack: stacking(1, { kind: 'event', event: 'moved' }) };
     return plain('Stillness', line, { worn: worn('Stillness', line, [], [
       { on: 'turnEnd', to: 'self', limit: EACH, ops: [apply('stillness', still, null)] },
@@ -350,7 +350,7 @@ const CONFLUENCE: { readonly [P in StatPair]: KeystoneMaker } = {
     ]) });
   },
   'ins+pow': R => {
-    const line = 'Your spells set the target burning: magic damage of a tenth of your magic power each round for 2 rounds.';
+    const line = 'Your spells burn the target for 2 rounds. It takes magic damage equal to 10% of your magic power each round.';
     // On a crit (0.05 a round) A.6's burn weighs 1.4: on every spell's hit, at half the burn.
     const seared = worn('Seared', 'Takes magic damage each round.', [{ op: 'damage', type: 'magical', when: 'turn', amount: formula('0.1 * mag', R) }]);
     return plain('Searing Insight', line, { worn: worn('Searing Insight', line, [], [
@@ -358,7 +358,7 @@ const CONFLUENCE: { readonly [P in StatPair]: KeystoneMaker } = {
     ]) });
   },
   'ins+ctl': () => {
-    const line = 'Your ranged abilities reach 2 tiles further, and you crit on one more face.';
+    const line = 'Your ranged abilities reach 2 tiles farther, and you crit on one more die face.';
     return plain('Deadeye', line, { worn: worn('Deadeye', line, [{ op: 'sheet', key: 'range', amount: 2 }, { op: 'sheet', key: 'critFaces', amount: { kind: 'number', value: 1 } }]) });
   },
   'dis+pre': () => {
@@ -369,8 +369,8 @@ const CONFLUENCE: { readonly [P in StatPair]: KeystoneMaker } = {
       { worn: worn('Oathkeeper, awakened', cleanse, [], [{ on: 'used', tag: SUPPORT, to: area(2, 'allies'), limit: ROUND, ops: [{ op: 'dispel', which: 'first' }] }]) });
   },
   'dis+pow': () => {
-    const line = 'Hits cannot break your channels, and after you release a channel your next hit deals 20% more.';
-    const gathered: StatusDef = { label: 'Gathered', desc: 'Its next hit deals 20% more.', ops: [{ op: 'share', on: 'dealt', pct: 20 }], stack: stacking(1, { kind: 'event', event: 'hitDealt' }) };
+    const line = 'Hits cannot break your channels. After you release a channel, your next hit deals 20% more damage.';
+    const gathered: StatusDef = { label: 'Gathered', desc: 'Its next hit deals 20% more damage.', ops: [{ op: 'share', on: 'dealt', pct: 20 }], stack: stacking(1, { kind: 'event', event: 'hitDealt' }) };
     return plain('Channeler', line, { worn: worn('Channeler', line, [{ op: 'channel', mode: 'protect' }], [
       { on: 'used', tag: CHANNEL_TAG, to: 'self', limit: EACH, ops: [apply('gathered', gathered, null)] },
     ]) });
@@ -383,7 +383,7 @@ const CONFLUENCE: { readonly [P in StatPair]: KeystoneMaker } = {
   },
   'pre+pow': R => {
     const line = 'Your heals and shields are 20% stronger, and each support ability you use gives you 10 mana.';
-    const drink = 'When you down a foe, allies within 3 tiles heal 14% of your max HP.';
+    const drink = 'When you defeat a foe, allies within 3 tiles heal 14% of your max HP.';
     return awake(plain('Conduit', line, { worn: worn('Conduit', line, [], [
       { on: 'used', tag: SUPPORT, to: 'self', limit: EACH, ops: [{ op: 'mana', amount: formula('10', R) }] },
     ]) }, { healPower: 20 }), { worn: worn('Conduit, awakened', drink, [], [
@@ -399,8 +399,8 @@ const CONFLUENCE: { readonly [P in StatPair]: KeystoneMaker } = {
   },
   'pow+ctl': () => {
     // A hundredth of cost cut is 2.6 points at C: A.6's 15% was 38, so 5% (13), with the resist pen's 1.8.
-    const line = 'Your spells ignore 15% of resist and cost 5% less.';
-    const flow = 'When your spell downs a foe, you get half your turn back (once a round).';
+    const line = 'Your magic ignores 15% of resist, and your abilities cost 5% less mana and fatigue.';
+    const flow = 'When your spell defeats a foe, you get half your turn back (once a round).';
     return awake(plain('Archmage', line, { worn: worn('Archmage', line, [{ op: 'sheet', key: 'resistPen', amount: { kind: 'number', value: 15 } }, { op: 'sheet', key: 'costCut', amount: { kind: 'number', value: 0.05 } }]) }),
       { worn: worn('Archmage, awakened', flow, [], [{ on: 'kill', tag: SPELL, to: 'self', limit: ROUND, ops: [{ op: 'refund', pct: 50 }] }]) });
   },

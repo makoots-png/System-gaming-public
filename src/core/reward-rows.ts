@@ -102,6 +102,6 @@ export function rowError(r: RewardRow): string {
   if (r.kind === 'title' && !r.name.trim()) return 'Name the title, or remove the row.';
   if (r.kind === 'boon' && !r.name.trim()) return 'Name the boon, or remove the row.';
   if (r.kind === 'job' && !r.job.trim()) return 'Name the job, or remove the row.';
-  if (r.kind === 'status' && r.rounds.trim() !== '' && !(whole(r.rounds) >= 1 && whole(r.rounds) <= REWARD_BOUNDS.rounds)) return `Rounds go from 1 to ${REWARD_BOUNDS.rounds}. Leave it empty for until removed.`;
+  if (r.kind === 'status' && r.rounds.trim() !== '' && !(whole(r.rounds) >= 1 && whole(r.rounds) <= REWARD_BOUNDS.rounds)) return `Rounds must be between 1 and ${REWARD_BOUNDS.rounds}. Leave empty so it lasts until removed.`;
   return '';
 }

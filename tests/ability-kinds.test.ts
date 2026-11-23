@@ -233,17 +233,17 @@ describe('an ability in sentences (the ability maker\'s preview)', () => {
   test('a blast says its area and ring and that a target can move out of it in the round it takes to land', () => {
     // RULES.fight.abilityKinds.blast: radius 2, ring to 3 at 50%, range 10, wound up 1000 ticks (a round)
     expect(describeAbility(of('blast'), RULES)).toEqual([
-      'Hits everyone within 2 tiles of a point up to 10 tiles away, and 50% in a ring out to 3 tiles.',
-      'Can be dodged: it lands 1 round after it is used, and the target moves as far as its speed allows in that time.',
+      'Hits everyone within 2 tiles of a point up to 10 tiles away, and for 50% effect in an outer ring out to 3 tiles.',
+      'Can be dodged. It lands 1 round after use. The target can move as far as its speed allows before it hits.',
     ]);
   });
 
   test('a curse is resisted by Discipline, a support is not avoided, and a channel says how it grows and breaks', () => {
-    expect(describeAbility(of('curse'), RULES)[1]).toBe('Resisted by Discipline: it does not travel, so the target cannot dodge it. The target\'s Will is compared with the user\'s Accuracy.');
+    expect(describeAbility(of('curse'), RULES)[1]).toBe('Resisted by Discipline. It does not travel, so the target cannot dodge it. The roll compares the target\'s Will with the user\'s Accuracy.');
     expect(describeAbility(of('support'), RULES)[1]).toBe('An ally does not avoid it.');
     expect(describeAbility({ ...of('shot'), delivery: { kind: 'sure' } }, RULES)[1]).toBe('Cannot be avoided.');
     // channelExp 1.45, channelMax 5, breakShare 0.5 (RULES.fight)
-    expect(describeAbility(of('blast', { channel: 'exponential' }), RULES)[2]).toBe('Can be channeled: it grows 1.45 times a turn, up to a charge of 5; a stun, a root, a taunt or a hard hit fires it early at 50% of its charge.');
+    expect(describeAbility(of('blast', { channel: 'exponential' }), RULES)[2]).toBe('Can be channeled. It grows 1.45 times a turn, up to 5 charge. A stun, root, taunt, or hard hit fires it early at 50% charge.');
   });
 
   test('a kit\'s prices, gates, tags and summon each say what they ask (kits design 5.1)', () => {
@@ -253,8 +253,8 @@ describe('an ability in sentences (the ability maker\'s preview)', () => {
       gates: [{ kind: 'holds', key: pact, on: 'self', atLeast: 1 }, { kind: 'uses', per: 'gate', n: 1 }] as const,
       summon: { name: 'Sprite', archetype: 'skirmisher', rounds: 2, statuses: [] } as const };
     expect(describeAbility(a, RULES).slice(2)).toEqual([
-      'Costs 10% of your max HP. Refused at that HP or less.', 'Costs all pain of yours.', 'Only while you hold crimson-pact.', '1 use a gate.',
-      'Tags: blood, ultimate.', `Summons a Sprite (skirmisher, your rank) for 2 rounds. ${RULES.fight.kit.summons} at most.`,
+      'Costs 10% of your max HP. Cannot be used at that HP or less.', 'Costs all pain stacks from you.', 'Usable only while you have crimson pact.', '1 use per gate.',
+      'Tags: blood, ultimate.', `Summons a Sprite (skirmisher, your rank) for 2 rounds. At most ${RULES.fight.kit.summons} active at once.`,
     ]);
   });
 });
@@ -325,7 +325,7 @@ describe('the conditional scalers, in place of the execute (kits design 8.0)', (
   test('the preview says each scaler: up to +100% against a target under half its HP; a giant slayer whole at 4 times yours', () => {
     const a = abilityOf('strike', { id: abilityId('x'), name: 'x', ticks: { scalers: [EXECUTE, { measure: 'maxPair', dir: 'over', start: 0.5, scale: 0.25 }] } }, RULES);
     expect(describeAbility(a, RULES).slice(-2)).toEqual([
-      'Up to +100% against a target under half of its HP.', 'Up to +25% against a target with more max HP than yours, all of it at 4 times yours.',
+      'Up to +100% against a target under half of its HP.', 'Up to +25% against a target with more max HP than yours, reaching max at 4 times yours.',
     ]);
   });
 });
@@ -333,9 +333,9 @@ describe('the conditional scalers, in place of the execute (kits design 8.0)', (
 describe('wave 2\'s parts of an ability in sentences (kits design 8.12)', () => {
   test('a blink, a reaction with its guard and a zone act each say what they do', () => {
     const of = (kind: AbilityKind) => abilityOf(kind, { id: abilityId(kind), name: kind }, RULES);
-    expect(describeAbility({ ...of('support'), aim: 'place', range: tiles(12), move: { kind: 'blink' } }, RULES)).toContain(`Blinks to a tile you see within ${RULES.fight.kit.blinkMax} tiles.`);
+    expect(describeAbility({ ...of('support'), aim: 'place', range: tiles(12), move: { kind: 'blink' } }, RULES)).toContain(`Teleports to a tile you can see within ${RULES.fight.kit.blinkMax} tiles.`);
     expect(describeAbility({ ...of('strike'), react: { when: 'before', reach: tiles(0) }, ops: [{ op: 'guard', share: 0.3 }] }, RULES))
-      .toContain('Reaction: before a foe\'s use lands on you, take 30% off a strike. Its time comes off your next turn.');
+      .toContain('Reaction (before a foe\'s ability lands on you, reducing strike damage by 30%). Its action time delays your next turn.');
     expect(describeAbility({ ...of('blast'), zoneAct: { act: 'grow', name: 'Aura', by: 2 } }, RULES)).toContain('Widens your Aura by 2 tiles.');
   });
 });

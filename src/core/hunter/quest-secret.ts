@@ -11,8 +11,8 @@ export const questReaches = (q: Pick<Quest, 'secret'>, n: number): boolean => !q
  * line on the quest's card and window, and the GM's mark on its lines (the Party quests, the session log, a toast).
  */
 export const SECRET_WORDS = {
-  box: 'Secret: only this hunter and you see it',
-  oneHunter: 'A secret quest goes to one hunter.',
+  box: 'Secret (only you and this hunter see it)',
+  oneHunter: 'A secret quest can only be sent to one hunter.',
   chip: 'Secret',
   line: 'Only you and the GM see this quest.',
   mark: '(secret)',

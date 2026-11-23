@@ -66,7 +66,7 @@ const SEED = {
   ],
   whisper: [
     'The System is watching.', 'You have not been forgotten.', 'The weak do not get to choose.', 'A new gate opens somewhere near you.',
-    'Level is only a number. Survival is the stat.', 'The Player is stronger than yesterday.', 'Rest. The next gate will not wait.',
+    'Your level will not save you from a stronger gate.', 'The Player is stronger than yesterday.', 'Rest. The next gate will not wait.',
     'Your shadow is longer than it should be.', 'Daily quest pending. Failure carries a penalty.', 'Arise.',
   ],
 };
@@ -75,10 +75,12 @@ const TABLES = [
   { id: 'urgent', label: 'Urgent quest generator' },
   { id: 'gate', label: 'Gate names' },
   { id: 'npc', label: 'NPC hunter names (Korean / Japanese)' },
-  { id: 'loot', label: 'Loot (rollLoot)', ranked: true, noEdit: true },
+  { id: 'loot', label: 'Random loot (by rank)', ranked: true, noEdit: true },
   { id: 'whisper', label: 'System whisper' },
 ];
 const SYS_KINDS = ['info', 'quest', 'warning', 'penalty', 'levelup', 'arise'];
+const SYS_KIND_LABEL = { info: 'Info', quest: 'Quest', warning: 'Warning', penalty: 'Penalty', levelup: 'Level up', arise: 'Arise' };
+const LOG_KIND_LABEL = { system: 'System', award: 'Awards', quest: 'Quests', gate: 'Gates', combat: 'Fights', rank: 'Ranks', use: 'Reported uses', story: 'Stories', trade: 'Trades', word: 'Player words', answer: 'GM answers' };
 // broadcast presets (System voice): [label, tag, kind, title, body]
 const PRESETS = [
   ['Emergency Quest', '! Emergency Quest', 'warning', 'EMERGENCY QUEST', 'An emergency quest has been issued. Failure to respond carries a penalty.'],
@@ -171,6 +173,7 @@ export function register(app) {
 .gm-chip.pen[data-life-at]{border-color:var(--life);color:var(--life)}.gm-chip.pen[data-life-at=dead]{background:rgba(255,77,94,.16)}
 .gm-chip.ok{border-color:var(--green);color:var(--green)}
 .gm-hp{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.gm-hp-lbl{flex:1 1 100%;margin-bottom:-2px}
 .gm-hp button{flex:1 1 44px;min-height:40px}
 .gm-hp [data-grevive]{flex:1 0 auto;padding-inline:14px} /* the life's one action keeps its whole word on a 390 px phone */
 .gm-chip.rm{display:inline-flex;align-items:center;gap:4px;padding-right:0}
@@ -211,10 +214,11 @@ export function register(app) {
 .gm-day{font-family:var(--font-display);font-weight:700;font-size:28px;color:var(--ice);text-shadow:0 0 14px rgba(77,216,255,.6)}
 .gm-room{margin:0 0 12px}.gm-room:empty{display:none}
 .gm-wtable{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin:0 0 12px}
+.gm-whint{flex:1 1 100%;margin:0;font-size:13px;color:var(--cyan-dim)}
 .gm-weight{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-top:8px}
 .gm-wstep{display:flex;flex-wrap:nowrap;align-items:center;gap:6px}.gm-wstep b{min-width:2.2em;text-align:center}
 .gm-wstep button{min-width:44px;min-height:44px;padding:0}
-.gm-wnext{display:flex;flex-wrap:nowrap;align-items:center;gap:6px}.gm-wnext .seg{margin:0}.gm-wnext .seg button{min-height:44px;min-width:44px}
+.gm-wnext{display:flex;flex-wrap:wrap;align-items:center;gap:6px}.gm-wnext .seg{margin:0}.gm-wnext .seg button{min-height:44px;min-width:44px}
 .gm-wline{display:flex;gap:10px;font-size:13px;color:var(--gold);margin:4px 0 0}
 .gm-wdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--gold);box-shadow:0 0 6px rgba(255,201,77,.7);margin-left:4px}
 .gm-rm-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px}
@@ -259,23 +263,24 @@ export function register(app) {
     const done = quests.filter(q => q.status === 'done').length;
     const active = (Array.isArray(h.quests) ? h.quests : []).filter(q => q && q.status === 'active').length;
     const activeChip = remote ? `<span class="gm-chip">${active} active quest${active === 1 ? '' : 's'}</span>` : '';
-    const dailyChip = quests.length ? `<span class="gm-chip ${done === quests.length ? 'ok' : ''}">Daily ${done}/${quests.length}</span>` : '<span class="gm-chip">No daily</span>';
-    const streak = h.daily && num(h.daily.streak) ? `<span class="gm-chip">Streak ${esc(int(h.daily.streak))}</span>` : '';
-    const pen = h.penalty ? `<span class="gm-chip pen">PENALTY${h.penalty.days ? ` ×${esc(int(h.penalty.days))}` : ''}</span>` : '';
+    const dailyChip = quests.length ? `<span class="gm-chip ${done === quests.length ? 'ok' : ''}">Daily ${done}/${quests.length}</span>` : '<span class="gm-chip">No daily quests</span>';
+    const streak = h.daily && num(h.daily.streak) ? `<span class="gm-chip">Daily streak ${esc(int(h.daily.streak))}</span>` : '';
+    const pen = h.penalty ? `<span class="gm-chip pen">Penalty${h.penalty.days ? ` (${esc(int(h.penalty.days))} day${int(h.penalty.days) === 1 ? '' : 's'})` : ''}</span>` : '';
     const bar = (cls, label, v, m) => `<div class="bar-row"><div class="bar-head"><span class="lbl">${label}</span><span class="bar-nums">${esc(ui.fmt(v))} / ${esc(ui.fmt(m))}</span></div><div class="bar bar-${cls}" role="progressbar" aria-label="${label}" aria-valuemin="0" aria-valuemax="${esc(m)}" aria-valuenow="${esc(v)}">${motion.fillMarkup(m > 0 ? v / m : 0)}</div></div>`;
     const hid = esc(remote ? key : h.id), path = A().build.label(h); // path name + active perks, validated against rules()
     return `<article class="gm-card${remote ? ' remote' : ''}" data-hid="${hid}">
       <h3>${ui.rankBadge(rank)}${A().identity.badge(h, 'sm')}<span>${esc(h.name)}</span></h3>
-      <div class="tagline">Lv ${esc(int(h.level) || 1)}${h.job ? ' · ' + esc(h.job) : ''}${path ? ` · <span data-gmpath>${esc(path)}</span>` : ''}${remote ? ' · remote' : ''}</div>
+      <div class="tagline">Lv ${esc(int(h.level) || 1)}${h.job ? ' · ' + esc(h.job) : ''}${path ? ` · <span data-gmpath>${esc(path)}</span>` : ''}${remote ? ' · player phone' : ''}</div>
       ${bar('hp', 'HP', v.hp, v.hpMax)}${bar('mana', 'Mana', v.mana, v.manaMax)}${bar('ft', 'Fatigue', ft, v.fatigueMax)}
       <div class="gm-chips">${ladder}${pen}${activeChip}${dailyChip}${streak}${cond}</div>${weightCard(h.name, wkey)}
       ${h.chronicle ? `<button type="button" class="gm-chron" data-gchron aria-label="${esc(CHRONICLE_WORDS.title)} of ${esc(h.name)}">${esc(boardLine(h.chronicle))}</button>` : ''}
       <div class="gm-hp" role="group" aria-label="Quick HP for ${esc(h.name)}">
+        <span class="lbl gm-hp-lbl">Quick HP</span>
         <button type="button" data-hp="-5" aria-label="Damage 5 to ${esc(h.name)}" title="Damage 5 to ${esc(h.name)}">−5</button><button type="button" data-hp="-1" aria-label="Damage 1 to ${esc(h.name)}" title="Damage 1 to ${esc(h.name)}">−1</button>
         <button type="button" data-hp="1" aria-label="Heal 1 to ${esc(h.name)}" title="Heal 1 to ${esc(h.name)}">+1</button><button type="button" data-hp="5" aria-label="Heal 5 to ${esc(h.name)}" title="Heal 5 to ${esc(h.name)}">+5</button>
-        ${revive}${remote ? `<button type="button" data-rstatus aria-label="Add status to ${esc(h.name)}" title="Add status to ${esc(h.name)}">Status</button>` : ''}<button type="button" data-hbuild aria-label="Build for ${esc(h.name)}">Build</button><button type="button" data-ggive aria-label="Give a bundle to ${esc(h.name)}">Give…</button></div>
+        ${revive}${remote ? `<button type="button" data-rstatus aria-label="Add status to ${esc(h.name)}" title="Add status to ${esc(h.name)}">+ Status</button>` : ''}<button type="button" data-hbuild aria-label="Build for ${esc(h.name)}">Build</button><button type="button" data-ggive aria-label="Give a bundle to ${esc(h.name)}">Give award…</button></div>
       <div class="hp-amt" role="group" aria-label="Type an HP amount for ${esc(h.name)}">
-        <label class="field"><span class="lbl">HP amount</span><input type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" spellcheck="false" placeholder="7 or +5" title="Enter = damage, Shift+Enter or +N = heal" data-gmamt aria-label="HP amount for ${esc(h.name)}"></label>
+        <label class="field"><span class="lbl">HP amount</span><input type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" spellcheck="false" placeholder="7 (or +5 to heal)" title="Press Enter to deal damage. Type +5 or press Shift+Enter to heal." data-gmamt aria-label="HP amount for ${esc(h.name)}"></label>
         <button type="button" class="danger" data-gmdmg aria-label="Damage ${esc(h.name)}">Damage</button><button type="button" data-gmheal aria-label="Heal ${esc(h.name)}">Heal</button></div>
     </article>`;
   };
@@ -285,26 +290,26 @@ export function register(app) {
   const signed = n => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '0');
   /** A stepper of the table weight: `attrs` names what it sets, each tap sets the value it shows plus or minus one. */
   const weightStepper = (label, n, attrs, name) => `<span class="gm-wstep"><span class="lbl">${esc(label)}</span>`
-    + `<button type="button" ${attrs} data-weigh-to="${n - 1}" aria-label="Lower the weight on ${esc(name)}">−</button><b>${signed(n)}</b>`
-    + `<button type="button" ${attrs} data-weigh-to="${n + 1}" aria-label="Raise the weight on ${esc(name)}">+</button></span>`;
+    + `<button type="button" ${attrs} data-weigh-to="${n - 1}" aria-label="Lower fudge on ${esc(name)}">−</button><b>${signed(n)}</b>`
+    + `<button type="button" ${attrs} data-weigh-to="${n + 1}" aria-label="Raise fudge on ${esc(name)}">+</button></span>`;
   /** The Party board's line for every hunter's weight. */
-  const weightTable = () => `<span class="lbl">Dice weight</span>${weightStepper('Hunters', S().tableWeight.hunters, 'data-weigh-scope="hunters"', 'the hunters\' dice')}`;
+  const weightTable = () => `${weightStepper('Fudge on all hunters\' rolls', S().tableWeight.hunters, 'data-weigh-scope="hunters"', 'all hunters\' rolls')}<p class="gm-whint">Hidden roll bias (secret from players). Positive numbers nudge dice higher. Negative numbers nudge them lower.</p>`;
   /**
    * A card's weight: the line that says what its hunter's dice read while any is on, the hunters' and its own added
-   * ("Weight +2", "Next roll 20"), then the stepper of its own and its Next roll choice.
+   * ("Fudge +2", "Next d20 forced to 20"), then the stepper of its own and its Force next d20 choice.
    */
   function weightCard(name, wkey) {
-    const tw = S().tableWeight, w = weightOf(tw, wkey), face = [[20, '20'], [1, '1'], [null, 'Off']];
-    const line = w.total !== 0 || w.force !== null ? `<div class="gm-wline" data-weightline>${w.total !== 0 ? `<b>Weight ${signed(w.total)}</b>` : ''}${w.force !== null ? `<b>Next roll ${w.force}</b>` : ''}</div>` : '';
-    return `${line}<div class="gm-weight" role="group" aria-label="Weight on ${esc(name)}'s dice">${weightStepper('Own', tw.own[wkey] ?? 0, `data-weigh-scope="own" data-weigh-key="${esc(wkey)}"`, `${name}'s dice`)}`
-      + `<span class="gm-wnext"><span class="lbl">Next roll</span><span class="seg" role="group" aria-label="Next roll of ${esc(name)}">${face.map(([f, l]) =>
+    const tw = S().tableWeight, w = weightOf(tw, wkey), face = [[20, 'Natural 20'], [1, 'Natural 1'], [null, 'Don\'t force']];
+    const line = w.total !== 0 || w.force !== null ? `<div class="gm-wline" data-weightline>${w.total !== 0 ? `<b>Fudge ${signed(w.total)}</b>` : ''}${w.force !== null ? `<b>Next d20 forced to ${w.force}</b>` : ''}</div>` : '';
+    return `${line}<div class="gm-weight" role="group" aria-label="Fudge on ${esc(name)}'s rolls">${weightStepper(`Fudge on ${name}'s rolls`, tw.own[wkey] ?? 0, `data-weigh-scope="own" data-weigh-key="${esc(wkey)}"`, `${name}'s rolls`)}`
+      + `<span class="gm-wnext"><span class="lbl">Force ${esc(name)}'s next d20</span><span class="seg" role="group" aria-label="Force ${esc(name)}'s next d20">${face.map(([f, l]) =>
         `<button type="button" data-weigh-force="${esc(wkey)}" data-face="${f ?? ''}" aria-pressed="${w.force === f}">${l}</button>`).join('')}</span></span></div>`;
   }
   /** The Party board's heading carries the gold dot while a hunter at the table has a weight or a forced roll. */
   function paintWeightDot() {
     const tog = root.querySelector('[data-tog="party"]'), on = weightOn(S().tableWeight, tableKeys()), dot = tog.querySelector('.gm-wdot');
     if (on === !!dot) return;
-    if (on) { tog.insertAdjacentHTML('beforeend', '<i class="gm-wdot" aria-hidden="true"></i>'); tog.setAttribute('aria-label', 'Party board, weight on'); }
+    if (on) { tog.insertAdjacentHTML('beforeend', '<i class="gm-wdot" aria-hidden="true"></i>'); tog.setAttribute('aria-label', 'Party board, fudge on'); }
     else { dot.remove(); tog.removeAttribute('aria-label'); }
   }
   /** The `weigh` messages of `bodies` (table-weight.ts `Weigh`), each under its hunter's key so a newer one takes the place of one still waiting. */
@@ -318,7 +323,7 @@ export function register(app) {
     const tw = S().tableWeight, after = weightStep(tw, e);
     if (after === tw) return;
     const events = weighEvents(weighsFor(tw, after, remotes().map(r => r.key)));
-    if (gmWrite('gm-weight', s => weighed(s, e), events, []) && tap && events.length && !goesNow()) say('#gm-board-msg', 'The weight reaches the players\' phones when the room answers.');
+    if (gmWrite('gm-weight', s => weighed(s, e), events, []) && tap && events.length && !goesNow()) say('#gm-board-msg', 'Saved. Players\' phones will get the fudge once the room server confirms it.');
   }
   const weighTap = e => weigh(e, true);
   /** The players' hunters this phone has sent their weight to since each joined the room (table-weight.ts `WeightsTold`). */
@@ -336,7 +341,7 @@ export function register(app) {
   }
 
   // the GM tab's room strip: state at a glance; the Room view (#/room) has the QR, link and the player list
-  const MARK = { live: '● live', connecting: '○ connecting', reconnecting: '! reconnecting' };
+  const MARK = { live: '● Live', connecting: '○ Connecting', reconnecting: '! Reconnecting' };
   function renderRoom() {
     const box = $('#gm-room'); if (!box) return;
     const sy = A().sync, st = sy.status(), cn = sy.conn();
@@ -345,13 +350,13 @@ export function register(app) {
     else if (!code) {
       // the last room when this phone holds its key, else the newest key in the ring; a room that is gone took its key with it (link.ts)
       const lr = sy.lastRoom(), rc = lr && lr.gm ? lr.code : sy.gmRooms()[0]?.code || '';
-      html = `<div class="gm-rm-none"><p>${rc ? 'No room open.' : 'No room yet.'}</p><div class="gm-rm-acts">${rc ? `<button type="button" class="primary" data-gmrejoin="${esc(rc)}">Open ${esc(rc)} as GM</button><button type="button" data-gmcreate>New room</button>` : '<button type="button" class="primary" data-gmcreate>Create room</button>'}</div></div>`;
+      html = `<div class="gm-rm-none"><p>${rc ? 'Not in a room.' : 'No room yet.'}</p><div class="gm-rm-acts">${rc ? `<button type="button" class="primary" data-gmrejoin="${esc(rc)}">Reopen ${esc(rc)} as GM</button><button type="button" data-gmcreate>New room</button>` : '<button type="button" class="primary" data-gmcreate>Create room</button>'}</div></div>`;
     } else {
       const rs = sy.roster();
       const on = rs.filter(r => r.state === 'online').length, away = rs.filter(r => r.state === 'away').length, unk = rs.some(r => r.state === 'unknown');
       const n = !rs.length ? '' : unk ? `${rs.length} player${rs.length === 1 ? '' : 's'}` : `${on} online${away ? `, ${away} away` : ''}`;
       html = `<div class="gm-rm-row"><b class="gm-rm-code" data-gmroomcode><span>${esc(code.slice(0, 3))}</span><span>${esc(code.slice(3))}</span></b>${MARK[cn] ? `<span class="gm-rm-st" data-conn="${esc(cn)}">${MARK[cn]}</span>` : ''}<span class="gm-rm-n" data-gmcount>${esc(n)}</span>
-        <div class="gm-rm-acts"><button type="button" class="${rs.length ? '' : 'primary'}" data-gminvite>Invite</button></div></div>${rs.length ? '' : '<p class="gm-rm-hint">No players yet. The Room view has the QR code and the link.</p>'}`;
+        <div class="gm-rm-acts"><button type="button" class="${rs.length ? '' : 'primary'}" data-gminvite>Invite</button></div></div>${rs.length ? '' : '<p class="gm-rm-hint">No players yet. Tap Invite to share the QR code or join link.</p>'}`;
     }
     if (box.dataset.sig !== html) { box.dataset.sig = html; box.innerHTML = html; }
   }
@@ -381,7 +386,7 @@ export function register(app) {
     const box = $('#gm-targets'), sig = items.map(i => i.id + i.name).join('|');
     if (box.dataset.sig !== sig) {
       box.dataset.sig = sig;
-      box.innerHTML = items.map(i => `<label class="gm-chk"><input type="checkbox" data-sel="${esc(i.id)}"><span>${esc(i.name)}${i.ref.kind === 'remote' ? ' (remote)' : ''}</span></label>`).join('');
+      box.innerHTML = items.map(i => `<label class="gm-chk"><input type="checkbox" data-sel="${esc(i.id)}"><span>${esc(i.name)}${i.ref.kind === 'remote' ? ' (player phone)' : ''}</span></label>`).join('');
     }
     box.querySelectorAll('input[data-sel]').forEach(c => { c.checked = sel.has(c.dataset.sel); });
     const all = $('#gm-all'); all.checked = items.length > 0 && sel.size === items.length;
@@ -410,7 +415,7 @@ export function register(app) {
   /** Why `sync.post` posted nothing (`noRoom`, `notEvent`), or null when it posted. */
   const whyNot = r => ('why' in r ? r.why : null);
   /** Why a message was not posted, for the line under the form. */
-  const notPosted = (r, who) => (whyNot(r) === 'noRoom' ? `${who}: create a room with the room button at the top to reach players' phones.` : `${who}: the room would not take this message.`);
+  const notPosted = (r, who) => (whyNot(r) === 'noRoom' ? `${who}. Create a room with the room button at the top to reach players' phones.` : `${who}. The room server rejected this message.`);
   const remoteName = key => sheetName(remotes(), key, 'hunter');
   /** A remote hunter's row in this phone's fight: it holds the hunter's HP and statuses until the fight ends, so the board's edit goes to it. */
   const fightRowOf = key => { const at = A().hunter.fightOf({ key }); return at && at.at === 'row' ? at.cid : null; };
@@ -422,7 +427,7 @@ export function register(app) {
     const p = postable('hp', { to: [key], hp: n, reason: 'GM' }), hp = `${n < 0 ? '−' : '+'}${Math.abs(n)} HP`;
     if (!p.ev) return say('#gm-board-msg', notPosted(p, `Not sent to ${name}`), true);
     if (!gmWrite('gm-hp', null, [p.ev], [line('system', `${n < 0 ? 'Damage' : 'Heal'} ${Math.abs(n)}`, name)])) return;
-    say('#gm-board-msg', goesNow() ? `Sent ${hp} to ${name}` : `${name} gets ${hp} when the room answers.`);
+    say('#gm-board-msg', goesNow() ? `Sent ${hp} to ${name}.` : `Saved. ${name} will get ${hp} once the room server confirms it.`);
   }
   /**
    * Revive of a player's dead hunter. One this phone's fight holds is revived there (the fight's `life` command), and its
@@ -434,18 +439,18 @@ export function register(app) {
     const p = postable('revive', { to: [key] });
     if (!p.ev) return say('#gm-board-msg', notPosted(p, `Not sent to ${name}`), true);
     if (!gmWrite('gm-revive', null, [p.ev], [line('system', 'Revive', name)])) return;
-    say('#gm-board-msg', goesNow() ? `Sent Revive to ${name}.` : `${name} is revived when the room answers.`);
+    say('#gm-board-msg', goesNow() ? `Sent Revive to ${name}.` : `Saved. ${name} will be revived once the room server confirms it.`);
   }
   /** One status put on (`add`) or taken off (`remove`) a player's hunter: on its row in this phone's fight, else posted. */
   function sendStatus(key, change, verb) { // verb(name) → confirmation line
     const name = remoteName(key), cid = fightRowOf(key), a = change.add;
     if (cid !== null) {
-      if (ui.wrote('GM', A().combat.status(cid, a ? { add: { key: a.key, def: a.def, rounds: a.rounds, tier: a.source.tier } } : { remove: change.remove }))) say('#gm-board-msg', verb(name));
+      if (ui.wrote('GM', A().combat.status(cid, a ? { add: { key: a.key, def: a.def, rounds: a.rounds, tier: a.source.tier } } : { remove: change.remove }))) say('#gm-board-msg', `${verb(name)}.`);
       return;
     }
     const r = roomPost('status', { to: [key], ...(a ? { add: [a] } : { remove: [change.remove] }) });
     if (!r.ok) return say('#gm-board-msg', notPosted(r, `Not sent to ${name}`), true);
-    say('#gm-board-msg', goesNow() ? verb(name) : `${verb(name)} when the room answers.`);
+    say('#gm-board-msg', goesNow() ? `${verb(name)}.` : `Saved. The status change for ${name} will sync once the room server confirms it.`);
   }
   async function addRemoteStatus(key) {
     const name = remoteName(key);
@@ -489,7 +494,7 @@ export function register(app) {
   function showTie() {
     const p = root && root.querySelector('#gm-award-tie'), d = tiedDrop(), w = waitingOf(), g = sendGives(awardDraft); if (!p) return;
     p.hidden = !d && !w && !g;
-    p.textContent = d ? `Fight loot: ${dropLine(d, ui.fmt)}. Send award gives it; fold Award to keep it for later.` : w ? PENDING_WORDS.tie(w.name, w.from, w.what)
+    p.textContent = d ? `Fight loot: ${dropLine(d, ui.fmt)}. Tap Send award to give it, or collapse the Award section to save it for later.` : w ? PENDING_WORDS.tie(w.name, w.from, w.what)
       : g ? SHELF_WORDS.tie(g.given.name, whoName(g.to)) : '';
     const go = root.querySelector('#gm-award-go'); if (go) go.textContent = w ? PENDING_WORDS.approve : g ? SHELF_WORDS.send : 'Send award';
   }
@@ -501,7 +506,7 @@ export function register(app) {
   function openDraft() {
     if (!draft({ type: 'drawn' })) return;
     open.award = true; applyOpen();
-    say('#gm-award-msg', waitingOf() ? '' : 'Pick who gets it, then Send award.');
+    say('#gm-award-msg', waitingOf() ? '' : 'Select who gets it, then tap Send award.');
     // after the view is shown (routing scrolls a newly shown view to its top)
     requestAnimationFrame(() => { const sec = root.querySelector('.gm-sec[data-sec="award"]'); if (sec) sec.scrollIntoView({ block: 'start' }); });
   }
@@ -517,7 +522,7 @@ export function register(app) {
     if (!local.length && !remote.length) return say('#gm-award-msg', 'Select at least one hunter.', true);
     if (editor.blocked()) return say('#gm-award-msg', UNFINISHED_ROWS, true);
     const rw = editor.value();
-    if (isEmptyReward(rw)) return say('#gm-award-msg', 'Add something to the reward: XP, gold, points or a row.', true);
+    if (isEmptyReward(rw)) return say('#gm-award-msg', 'Add something to the reward: XP, gold, ability points, or an item, skill, title, boon, or status.', true);
     if (sendAward(local, remote, rw, null, '#gm-award-msg', awardDraft)) draft({ type: 'sent' });
   }
   /** Who a waiting reward is for, as Send award takes it: this phone's hunter by id, a player's by sheet key. */
@@ -542,11 +547,11 @@ export function register(app) {
     const awards = [{ to: free, rewards: rw }, { to: held, rewards: rest }].filter(a => a.to.length && (bundle || !isEmptyReward(a.rewards)))
       .map(a => ({ to: a.to, p: postable('award', { ...a, ...(bundle ? { bundle } : {}), ...(earned ? { earned } : {}) }) }));
     const lost = remote.filter(k => awards.some(a => !a.p.ev && a.to.includes(k))), posted = remote.filter(k => !lost.includes(k));
-    const failed = !lost.length ? '' : awards.some(a => a.p.why === 'noRoom') ? `${andList(lost.map(remoteName))} need${lost.length === 1 ? 's' : ''} a room: open one with the room button at the top.` : `Not sent to ${andList(lost.map(remoteName))}: the room would not take this award.`;
+    const failed = !lost.length ? '' : awards.some(a => a.p.why === 'noRoom') ? `${andList(lost.map(remoteName))} need${lost.length === 1 ? 's' : ''} a room. Create or reopen one with the room button at the top.` : `Not sent to ${andList(lost.map(remoteName))}. The room server rejected this award.`;
     const deal = sendDeals(form, lost.length);
-    if (isRefused(deal)) { say(msg, `${failed} Nothing was sent, and the loot waits.`, true); return false; }
+    if (isRefused(deal)) { say(msg, `${failed} Nothing was sent, and the loot is still saved.`, true); return false; }
     // a waiting reward is approved only with its award: one the room would not take stays waiting, never lost
-    if (approves && lost.length) { say(msg, `${failed} Nothing was sent, and the reward waits.`, true); return false; }
+    if (approves && lost.length) { say(msg, `${failed} Nothing was sent, and the reward is still pending.`, true); return false; }
     const here = local.map(nameOf), away = posted.map(remoteName);
     const said = here.length || away.length ? [line('award', bundle ? 'GM gave' : earned ? 'GM approved' : 'GM award', `${earned ? `${PENDING_WORDS.earned(earned.from, earned.what)}: ` : ''}${bits} → ${[...here, ...away].join(', ')}`, local[0] || null)] : [];
     // every hunter of this phone granted, every player's award posted, the log line, and what this phone's fight holds
@@ -560,14 +565,14 @@ export function register(app) {
       if (isRefused(save)) return save;
       return { ...a, save, held: [...a.granted.map(({ hid, g }) => ({ who: { hid }, ...g.fight })), ...players] };
     });
-    if (isRefused(out)) { say(msg, out.why === 'no-drop' ? `${LOOT_WORDS['no-drop']} Nothing was sent.` : out.why === 'answered' || out.why === 'no-reward' ? PENDING_WORDS.refusals[out.why] : 'Not saved: nothing was sent.', true); return false; }
+    if (isRefused(out)) { say(msg, out.why === 'no-drop' ? `${LOOT_WORDS['no-drop']} Nothing was sent.` : out.why === 'answered' || out.why === 'no-reward' ? PENDING_WORDS.refusals[out.why] : 'Could not save. Nothing was sent.', true); return false; }
     if (events.length) A().sync.flush();
     // one System popup per hunter, queued by ui.system; a bundle's in its own words
     const words = bundle && bundle.window ? { title: bundle.window.title, body: bundle.window.line || bundle.name, tag: '! Reward', kind: 'quest' }
       : earned ? { title: 'REWARD RECEIVED', body: PENDING_WORDS.approvedBody(earned.from, earned.what), tag: '! Reward', kind: 'quest' } : undefined;
     for (const { hid, g } of out.granted) A().hunter.granted(hid, g, words);
     const sentTo = names => (names.length ? (earned ? PENDING_WORDS.approved(andList(names)) : `${bundle ? `Gave ${bundle.name} to` : 'Sent to'} ${andList(names)}.`) : '');
-    const waiting = away.length && !goesNow() ? `${andList(away)} get${away.length === 1 ? 's' : ''} it when the room answers.` : '';
+    const waiting = away.length && !goesNow() ? `Saved. ${andList(away)} will get it once the room server confirms it.` : '';
     say(msg, [waiting ? sentTo(here) : sentTo([...here, ...away]), waiting, failed].filter(Boolean).join(' '), !!lost.length);
     return true;
   }
@@ -601,7 +606,7 @@ export function register(app) {
     const key = parseSheetKey(id), heldIn = room();
     const give = () => {
       // a player's award goes to the room it was picked in, or not at all (SMX-gates-5.3b)
-      if (key && room() !== heldIn) return say(msg, `Not given: the room changed while ${given.name} was held.`, true);
+      if (key && room() !== heldIn) return say(msg, `Not given. The room changed before ${given.name} was sent.`, true);
       if (!sendAward(key ? [] : [id], key ? [key] : [], rw, given, msg)) return;
       recentMemory.write(recentGives(recentMemory.read(), given.key));
       then();
@@ -664,8 +669,8 @@ export function register(app) {
     const p = postable('system', { ...b, ...(only ? { to: remote } : {}) }), whom = only ? `${remote.length} selected hunter${remote.length === 1 ? '' : 's'}` : `room ${room()}`;
     if (!gmWrite('gm-broadcast', null, p.ev ? [p.ev] : [], said)) return;
     shown();
-    if (!p.ev) say('#gm-b-msg', p.why === 'noRoom' ? 'Shown here. To reach players\' phones, create a room with the room button at the top.' : 'Shown here. The room would not take this broadcast.', p.why !== 'noRoom');
-    else say('#gm-b-msg', goesNow() ? (only ? `Sent to ${whom}.` : `Shown here and sent to ${whom}.`) : `Shown here. Sent to ${whom} when the room answers.`);
+    if (!p.ev) say('#gm-b-msg', p.why === 'noRoom' ? 'Shown here. To reach players\' phones, create a room with the room button at the top.' : 'Shown here. The room server rejected this broadcast.', p.why !== 'noRoom');
+    else say('#gm-b-msg', goesNow() ? (only ? `Sent to ${whom}.` : `Shown here and sent to ${whom}.`) : `Shown here and saved. It will go to ${whom} once the room server confirms it.`);
   }
 
   // ── issue quest ──
@@ -673,16 +678,16 @@ export function register(app) {
     const why = questForm.check();
     if (why) return say('#gm-q-msg', why, true);
     const { local, remote } = picked(), secret = $('#gm-q-secret').checked;
-    if (!local.length && !remote.length) return say('#gm-q-msg', 'Select at least one hunter (Award section).', true);
+    if (!local.length && !remote.length) return say('#gm-q-msg', 'Select at least one hunter in the Award section.', true);
     if (!questReaches({ secret }, local.length + remote.length)) return say('#gm-q-msg', SECRET_WORDS.oneHunter, true);
     const v = questForm.value();
     // the offer the room carries and the draft a hunter here is issued are the same quest (quests.ts `questOffer`)
     const quest = questOffer({ ...v, secret }, v.dueHours !== null ? dueIn(v.dueHours, new Date()) : null), partial = { ...quest, from: /** @type {const} */ ('gm') };
     let msg = '';
-    if (local.length) { const ids = A().quests.issue(local, partial); msg = Array.isArray(ids) && ids.length ? `Issued to ${local.length} hunter${local.length === 1 ? '' : 's'}.` : 'The quest module did not accept the quest yet.'; }
+    if (local.length) { const ids = A().quests.issue(local, partial); msg = Array.isArray(ids) && ids.length ? `Issued to ${local.length} hunter${local.length === 1 ? '' : 's'}.` : 'Could not issue the quest. Try again.'; }
     if (remote.length) {
       const r = roomPost('quest', { to: remote, quest });
-      msg += !r.ok ? (whyNot(r) === 'noRoom' ? ' Remote hunters need a room.' : ' The room would not take this quest.') : goesNow() ? ` Sent to ${remote.length} remote.` : ` ${remote.length} remote get${remote.length === 1 ? 's' : ''} it when the room answers.`;
+      msg += !r.ok ? (whyNot(r) === 'noRoom' ? ' Create or reopen a room to send quests to players on other phones.' : ' The room server rejected this quest.') : goesNow() ? ` Sent to ${remote.length} player${remote.length === 1 ? '' : 's'} in the room.` : ` Saved. ${remote.length} player${remote.length === 1 ? '' : 's'} in the room will get it once the room server confirms it.`;
     }
     say('#gm-q-msg', msg.trim());
   }
@@ -690,8 +695,8 @@ export function register(app) {
   // ── session start: a backup, then the session count and the world day in one step (world.ts `sessionStarted`) ──
   function startSession() {
     const backup = store.backupNow('session'), r = A().gates.startSession(backup);
-    if (!r.ok) return say('#gm-s-msg', 'The session did not start: the world day did not move.', true);
-    say('#gm-s-msg', `Session ${r.session} began on day ${r.day}. ${backup ? 'A backup was saved.' : 'No backup: this browser refused to store it.'}`, !backup);
+    if (!r.ok) return say('#gm-s-msg', 'Could not start the session because the world day could not advance.', true);
+    say('#gm-s-msg', `Session ${r.session} began on day ${r.day}. ${backup ? 'A backup was saved.' : 'Could not save a backup in this browser.'}`, !backup);
   }
 
   // ── spawn gate / world day ──
@@ -700,11 +705,11 @@ export function register(app) {
     const difficulty = parseDifficultyLevel(Number($('#gm-g-diff')?.value)) ?? undefined;
     const g = A().gates.spawn({ rank: rank || undefined, type: type || undefined, name: name || undefined, difficulty });
     if (!g) return;
-    say('#gm-g-msg', `Gate spawned: ${g.rank}-rank ${g.type} "${g.name}", breaks on day ${g.breakDay}.`);
+    say('#gm-g-msg', `Spawned ${g.rank}-rank ${g.type} gate "${g.name}". It breaks on day ${g.breakDay}.`);
   }
   /** The world day moved by `n` (gates.js `advanceDay` writes its line); the day shown is redrawn by the change. */
   function advance(n) {
-    if (!A().gates.advanceDay(n).ok) say('#gm-g-msg', 'The world day did not move.', true);
+    if (!A().gates.advanceDay(n).ok) say('#gm-g-msg', 'Could not change the world day.', true);
   }
 
   // ── roll tables ──
@@ -748,7 +753,7 @@ export function register(app) {
       if (!fill) return;
       const was = questForm.value();
       questForm.set({ kind: 'urgent', title: fill.title, desc: fill.desc, rewards: { ...was.rewards, xp: fill.xp || 0 }, dueHours: was.dueHours ?? 24 });
-      open.quest = true; applyOpen(); say('#gm-q-msg', 'Filled from the roll table. Select hunters and issue it.'); $('#gm-qf [name=title]').scrollIntoView({ block: 'center' });
+      open.quest = true; applyOpen(); say('#gm-q-msg', 'Filled from the roll table. Select hunters in the Award section, then tap Issue quest.'); $('#gm-qf [name=title]').scrollIntoView({ block: 'center' });
     };
     addLog('system', `Roll: ${t.label}`, text);
   }
@@ -769,7 +774,7 @@ export function register(app) {
   const rulesJson = () => JSON.stringify(ovPublic(), null, 2);
   function saveRules() {
     const r = checkRules(); if (r.err) return liveRules();
-    if (!setOv(o => saveRuleNumbers(o, r.parsed), [line('system', 'Rules overrides saved', `${r.diff} setting(s) differ from defaults.`)])) return;
+    if (!setOv(o => saveRuleNumbers(o, r.parsed), [line('system', 'Rules overrides saved', `${r.diff} setting${r.diff === 1 ? '' : 's'} differ${r.diff === 1 ? 's' : ''} from the defaults.`)])) return;
     const ta = $('#gm-r-text'); ta.dataset.dirty = ''; ta.value = rulesJson();
     say('#gm-r-msg', `Saved. ${r.diff} setting${r.diff === 1 ? '' : 's'} overridden.`);
   }
@@ -787,7 +792,7 @@ export function register(app) {
   }
 
   // ── notifications (src/edge/notify.ts): a told use while this page is hidden ──
-  const NOTIFY_WORDS = { granted: 'On: a reward use shows a notification while this page is hidden.', denied: 'Blocked in this browser\'s settings.',
+  const NOTIFY_WORDS = { granted: 'On. Notifications appear for player reward uses, messages, and coin calls while this page is hidden.', denied: 'Blocked in this browser\'s settings.',
     default: 'Off.', unsupported: 'This browser cannot show notifications.' };
   const renderNotify = () => { const st = notifyState(), e = $('#gm-notify-state'); if (e) e.textContent = NOTIFY_WORDS[st]; const b = $('#gm-notify'); if (b) b.hidden = st === 'unsupported'; };
   async function askNotify() { await askToNotify(); renderNotify(); }
@@ -797,7 +802,7 @@ export function register(app) {
   function renderUses() {
     const n = unseenUses(), e = $('#gm-uses-n'), b = $('#gm-uses-go');
     e.textContent = String(n); e.hidden = !n;
-    b.setAttribute('aria-label', n ? `Reward uses, ${n} new` : 'Reward uses');
+    b.setAttribute('aria-label', n ? `Reported uses, ${n} new` : 'Reported uses');
   }
   /** One tap from the top: the Session log, unfolded and filtered to reward uses; they count as seen. */
   function openUses() {
@@ -849,22 +854,22 @@ export function register(app) {
       // Waiting for you opens with the page while a reward waits
       if (!('waiting' in open) && waitingHere().length) open.waiting = true;
       const rankOpts = RANKS.map(r => opt(r, `${r}-rank`)).join('');
-      el.innerHTML = `<nav class="gm-make" id="gm-make" aria-label="Make"><div class="gm-make-h"><span class="lbl">Make</span><button type="button" class="quiet" data-make="workshop">Workshop →</button></div>
+      el.innerHTML = `<nav class="gm-make" id="gm-make" aria-label="Make"><div class="gm-make-h"><span class="lbl">Make</span><button type="button" class="quiet" data-make="workshop">Open Workshop</button></div>
           <div class="gm-make-row">${MAKE.map(([k, l]) => `<button type="button" data-make="${k}" aria-label="Make ${l.toLowerCase()}">${l}</button>`).join('')}</div></nav>
         <div class="gm-uses" id="gm-uses">
-          <button type="button" class="gm-uses-go" id="gm-uses-go">Reward uses <span class="gm-uses-n" id="gm-uses-n" hidden></span></button>
-          <div class="gm-row"><button type="button" id="gm-notify">Notify me when a player uses a reward</button><span class="gm-msg" id="gm-notify-state" role="status"></span></div></div>` + [
-        section('cheat', 'GM cheat-sheet', `
+          <button type="button" class="gm-uses-go" id="gm-uses-go">Reported uses <span class="gm-uses-n" id="gm-uses-n" hidden></span></button>
+          <div class="gm-row"><button type="button" id="gm-notify">Turn on player notifications</button><span class="gm-msg" id="gm-notify-state" role="status"></span></div></div>` + [
+        section('cheat', 'GM cheat sheet', `
           <div class="gm-row"><button type="button" class="primary" id="gm-s-go">Start session</button></div>
           <div class="gm-msg" id="gm-s-msg" role="status"></div><div id="gm-cheat"></div>`),
-        section('party', 'Party board', `<div class="gm-room" id="gm-room"></div><div class="gm-wtable" id="gm-weight" role="group" aria-label="Dice weight"></div><div class="gm-cards" id="gm-board" aria-live="polite"></div><div class="gm-msg" id="gm-board-msg" role="status"></div>`),
+        section('party', 'Party board', `<div class="gm-room" id="gm-room"></div><div class="gm-wtable" id="gm-weight" role="group" aria-label="Fudge on all hunters' rolls"></div><div class="gm-cards" id="gm-board" aria-live="polite"></div><div class="gm-msg" id="gm-board-msg" role="status"></div>`),
         section('waiting', PENDING_WORDS.title, '<div class="gm-msg" id="gm-pw-msg" role="status"></div><ol class="gm-pw" id="gm-pw"></ol>', false, true),
         section('words', WORD_WORDS.gm.title, '<div id="gm-words"></div>', false, true),
         section('trade', 'Trades and stash', '<div id="gm-trade"></div>', false, true),
         section('stories', 'Stories', '<div id="gm-stories"></div>', false, true),
         section('award', 'Award', `
           <div class="lbl">Hunters <span id="gm-sel-sum-a" class="gm-sum"></span></div>
-          <div class="gm-targets"><label class="gm-chk"><input type="checkbox" id="gm-all"><span><strong>All</strong></span></label></div>
+          <div class="gm-targets"><label class="gm-chk"><input type="checkbox" id="gm-all"><span><strong>All hunters</strong></span></label></div>
           <div class="gm-targets" id="gm-targets"></div>
           <p class="gm-tie" id="gm-award-tie" hidden></p>
           <div class="gm-rw" id="gm-rw"></div>
@@ -873,7 +878,7 @@ export function register(app) {
           <div class="gm-grid">${sel_('gm-b-preset', 'Preset', '<option value="">Custom</option>' + PRESETS.map((p, i) => opt(i, p[0])).join(''))}</div>
           <div class="lbl" id="gm-b-to-l">Send to</div>
           <div class="gm-seg" role="radiogroup" aria-labelledby="gm-b-to-l"><label class="gm-chk"><input type="radio" name="gm-b-to" id="gm-b-to-all" value="all" checked><span>Everyone</span></label><label class="gm-chk"><input type="radio" name="gm-b-to" id="gm-b-to-sel" value="sel"><span>Selected hunters <span id="gm-sel-sum-b" class="gm-sum"></span></span></label></div>
-          <div class="gm-grid">${txt_('gm-b-tag', 'Tag', 'value="! Notification" maxlength="40"')}${sel_('gm-b-kind', 'Style', SYS_KINDS.map(k => opt(k)).join(''))}
+          <div class="gm-grid">${txt_('gm-b-tag', 'Banner tag', 'value="! Notification" maxlength="40"')}${sel_('gm-b-kind', 'Style', SYS_KINDS.map(k => opt(k, SYS_KIND_LABEL[k] || k)).join(''))}
             <div class="wide">${txt_('gm-b-title', 'Title', 'maxlength="80"')}</div>
             <div class="wide">${ui.field('Message', '<textarea id="gm-b-body" rows="3" maxlength="500"></textarea>')}</div></div>
           <div class="lbl">Preview</div>
@@ -881,36 +886,36 @@ export function register(app) {
           <div class="gm-row"><button type="button" class="primary" id="gm-b-go">Send broadcast</button></div>
           <div class="gm-msg" id="gm-b-msg" role="status"></div>`, false, true),
         section('quest', 'Issue quest', `
-          <p class="empty">Issues to the hunters selected in Award: <span id="gm-sel-sum-q"></span></p>
+          <p class="empty">Sends to the hunters selected in the Award section: <span id="gm-sel-sum-q"></span></p>
           <div id="gm-qf"></div>
           <label class="gm-chk"><input type="checkbox" id="gm-q-secret"><span>${esc(SECRET_WORDS.box)}</span></label>
           <div class="gm-row"><button type="button" class="primary" id="gm-q-go">Issue quest</button></div>
           <div class="gm-msg" id="gm-q-msg" role="status"></div>`, false, true),
         section('gate', 'Gates and world day', `
-          <div class="gm-grid">${sel_('gm-g-rank', 'Rank', `<option value="">Random</option>${rankOpts}`)}${sel_('gm-g-type', 'Type', '<option value="">Random</option>' + SPAWN_TYPES.map(k => opt(k)).join(''))}
+          <div class="gm-grid">${sel_('gm-g-rank', 'Rank', `<option value="">Random</option>${rankOpts}`)}${sel_('gm-g-type', 'Type', '<option value="">Random</option>' + SPAWN_TYPES.map(k => opt(k, k[0].toUpperCase() + k.slice(1))).join(''))}
             <div class="wide">${txt_('gm-g-name', 'Name (optional)', 'maxlength="60"')}</div>
             <div class="wide">${difficultySliderHtml({ idPrefix: 'gm-g', inputId: 'gm-g-diff', name: 'difficulty', label: DIFFICULTY_WORDS.gateLabel, level: app.rules().fight.difficulty.default, R: app.rules() })}</div></div>
           <div class="gm-row"><button type="button" class="primary" id="gm-g-go">Spawn gate</button></div>
           <div class="gm-msg" id="gm-g-msg" role="status"></div>
           <div class="lbl">World day</div>
-          <div class="gm-row"><span class="gm-day" id="gm-day" aria-live="polite">Day 1</span><button type="button" id="gm-d1">Advance 1 day</button><button type="button" id="gm-dn">Advance…</button></div>`),
+          <div class="gm-row"><span class="gm-day" id="gm-day" aria-live="polite">Day 1</span><button type="button" id="gm-d1">Advance 1 day</button><button type="button" id="gm-dn">Advance days…</button></div>`),
         section('tables', 'Roll tables', `
           <div class="gm-grid">${sel_('gm-t-sel', 'Table', TABLES.map(t => opt(t.id, t.label)).join(''))}<div id="gm-t-rank-f">${sel_('gm-t-rank', 'Rank', rankOpts)}</div></div>
           <div class="gm-row"><button type="button" class="primary" id="gm-t-go">Roll</button><button type="button" id="gm-t-use" hidden>Use in Issue quest</button></div>
-          <div class="gm-result" id="gm-t-out" role="status">Pick a table and roll.</div>
+          <div class="gm-result" id="gm-t-out" role="status">Choose a table, then tap Roll.</div>
           <div id="gm-t-edit">${ui.field('Table entries (one per line)', '<textarea id="gm-t-list" rows="6" spellcheck="false"></textarea>')}
-            <div class="gm-row"><button type="button" id="gm-t-save">Save list</button><button type="button" id="gm-t-reset">Reset to seed</button></div>
+            <div class="gm-row"><button type="button" id="gm-t-save">Save list</button><button type="button" id="gm-t-reset">Reset to defaults</button></div>
             <div class="gm-msg" id="gm-t-msg" role="status"></div></div>`),
         section('rules', 'Rules editor', `
           <div class="gm-switch"><span class="lbl" id="gm-feats-l">${esc(FEATS_SWITCH_WORDS.label)}</span>
             <div class="seg" role="group" aria-labelledby="gm-feats-l"><button type="button" data-feats="on">${esc(FEATS_SWITCH_WORDS.on)}</button><button type="button" data-feats="off">${esc(FEATS_SWITCH_WORDS.off)}</button></div>
             <p class="empty">${esc(FEATS_SWITCH_WORDS.hint)}</p></div>
-          <p class="empty">JSON overrides merged over the default rules, e.g. {"pointsPerLevel":5}. Unknown rules and wrong types are blocked.</p>
+          <p class="empty">Enter JSON overrides for the default rules, such as {"pointsPerLevel":5}. Unknown rules and invalid values are rejected.</p>
           ${ui.field('Rules overrides (JSON)', '<textarea id="gm-r-text" rows="9" spellcheck="false" autocomplete="off"></textarea>')}
           <div class="gm-msg" id="gm-r-msg" role="status"></div>
           <div class="gm-row"><button type="button" id="gm-r-val">Validate</button><button type="button" class="primary" id="gm-r-save">Save</button><button type="button" class="danger" id="gm-r-reset">Reset</button></div>`),
         section('log', 'Session log', `
-          <div class="gm-grid">${sel_('gm-l-kind', 'Kind', '<option value="">All</option>' + LOG_KINDS.map(k => opt(k)).join(''))}${txt_('gm-l-q', 'Search', 'maxlength="60"')}</div>
+          <div class="gm-grid">${sel_('gm-l-kind', 'Event type', '<option value="">All types</option>' + LOG_KINDS.map(k => opt(k, LOG_KIND_LABEL[k] || k[0].toUpperCase() + k.slice(1))).join(''))}${txt_('gm-l-q', 'Search', 'maxlength="60"')}</div>
           <div class="lbl" id="gm-l-count"></div><ul class="gm-log" id="gm-l-list" tabindex="0" aria-label="Session log entries"></ul>`),
       ].join('');
       wireDifficultyLive(el, () => app.rules());
@@ -1004,14 +1009,14 @@ export function register(app) {
         if (t.dataset.gchron !== undefined) { A().chronicle.open(t.closest('[data-hid]').dataset.hid); return; }
         if (t.dataset.feats) { switchFeats(t.dataset.feats === 'on'); return; }
         if (t.dataset.grevive !== undefined && t.closest('.gm-card.remote')) { sendRevive(t.closest('[data-hid]').dataset.hid); return; }
-        if (t.dataset.grevive !== undefined) { const hid = t.closest('[data-hid]').dataset.hid, was = (S().hunters.find(x => x.id === hid) || {}).level; if (ui.wrote('GM', A().hunter.revive(hid))) { const now = S().hunters.find(x => x.id === hid); say('#gm-board-msg', now ? `Revived ${now.name}. ${raisedLine(was, now.level)}.` : 'Revived hunter.'); } return; }
+        if (t.dataset.grevive !== undefined) { const hid = t.closest('[data-hid]').dataset.hid, was = (S().hunters.find(x => x.id === hid) || {}).level; if (ui.wrote('GM', A().hunter.revive(hid))) { const now = S().hunters.find(x => x.id === hid); say('#gm-board-msg', now ? `${now.name} is back up. ${raisedLine(was, now.level)}.` : 'Revived hunter.'); } return; }
         if (t.dataset.hp && t.closest('.gm-card.remote')) { sendHp(t.closest('[data-hid]').dataset.hid, int(t.dataset.hp)); return; }
         if (t.dataset.hp) { const hid = t.closest('[data-hid]').dataset.hid, n = int(t.dataset.hp); ui.wrote('GM', n < 0 ? A().hunter.damage(hid, -n) : A().hunter.heal(hid, n)); return; }
         const act = { 'gm-notify': askNotify, 'gm-uses-go': openUses, 'gm-award-go': doAward, 'gm-b-go': doBroadcast, 'gm-q-go': doIssue, 'gm-g-go': doSpawn, 'gm-s-go': startSession, 'gm-t-go': doRoll,
           'gm-d1': () => advance(1), 'gm-r-val': liveRules, 'gm-r-save': saveRules, 'gm-r-reset': resetRules,
           'gm-dn': async () => { const n = await ui.promptNum({ title: 'Advance world day', label: 'Days', value: 1, min: 1, max: 365 }); if (n) advance(n); },
-          'gm-t-save': () => { const l = lines($('#gm-t-list').value); if (!l.length) return say('#gm-t-msg', 'A table needs at least one line. Use Reset to restore the seed.', true); if (!saveList(tbl(), l)) return; $('#gm-t-list').dataset.dirty = ''; say('#gm-t-msg', `Saved ${l.length} entries.`); },
-          'gm-t-reset': () => { if (!resetList(tbl())) return; syncTableUi(true); say('#gm-t-msg', 'Reset to the seed list.'); } }[t.id];
+          'gm-t-save': () => { const l = lines($('#gm-t-list').value); if (!l.length) return say('#gm-t-msg', 'A table needs at least one line. Tap Reset to defaults to restore the original list.', true); if (!saveList(tbl(), l)) return; $('#gm-t-list').dataset.dirty = ''; say('#gm-t-msg', `Saved ${l.length} entries.`); },
+          'gm-t-reset': () => { if (!resetList(tbl())) return; syncTableUi(true); say('#gm-t-msg', 'Reset to the default list.'); } }[t.id];
         if (act) act();
       });
       el.addEventListener('change', e => {
@@ -1069,7 +1074,7 @@ export function register(app) {
     if (ev.type !== 'rewardAsk' || app.seat() !== 'gm' || !code) return;
     const p = ev.payload, log = { at: new Date().toISOString(), cap: app.rules().logCap };
     if (!A().sync.once(p.eid, s => pendingHeard(s, p, code, log))) return;
-    ui.toast('GM', PENDING_WORDS.notify(p.name || 'a hunter'), { kind: 'info' });
+    ui.toast('GM', PENDING_WORDS.notify(p.name || 'A hunter'), { kind: 'info' });
   });
   // a player's roll reached the Table feed: one that shows the forced face spends the force the GM set on that hunter's
   // next roll, and the spend goes to the player's phone like any change (table-weight.ts `showsForced`)

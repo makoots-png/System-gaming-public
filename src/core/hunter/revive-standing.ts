@@ -52,7 +52,7 @@ export const raiseOwes = (s: ReviveStanding, rank: Rank, R: Pick<Rules, 'loot' |
 // ── the words ──
 const gold = (n: number): string => `${n.toLocaleString('en-US')} gold`;
 /** The title of the System's window that offers the raise. */
-export const RAISE_TITLE = 'THE SYSTEM CAN RAISE YOU';
+export const RAISE_TITLE = 'THE SYSTEM CAN REVIVE YOU';
 /** What a hunter shows of itself to the words below. */
 type Raisable = { readonly reviveLeft: ReviveStanding; readonly rank: Rank; readonly level: number };
 type WordRules = Pick<Rules, 'loot' | 'reviveDebtClears' | 'reviveLevelShare'>;
@@ -63,35 +63,35 @@ type WordRules = Pick<Rules, 'loot' | 'reviveDebtClears' | 'reviveLevelShare'>;
 export function raiseOffer(h: Raisable, R: WordRules): { readonly body: string; readonly lines: readonly string[]; readonly rise: string } | null {
   if (!canRaise(h.reviveLeft)) return null;
   const to = levelAfterRaising(h.level, R), lost = h.level - to;
-  const rises = `You rise at ${REVIVE_HP} HP${lost > 0 ? ` at level ${to}, ${lost} level${lost === 1 ? '' : 's'} lost` : ''}, every status gone.`;
-  if (h.reviveLeft === 'free') return { body: 'You have died. The System raises a hunter once for free.', lines: ['Cost: nothing. This is your free raise.', rises], rise: 'Rise' };
+  const rises = `You revive at ${REVIVE_HP} HP${lost > 0 ? ` and level ${to} (${lost} level${lost === 1 ? '' : 's'} lost)` : ''}, with all statuses cleared.`;
+  if (h.reviveLeft === 'free') return { body: 'You have died. The System can revive you once for free.', lines: ['Cost: Free (one-time free revive).', rises], rise: 'Revive for free' };
   const owes = raiseOwes(h.reviveLeft, h.rank, R);
   return {
-    body: 'You have died. Your free raise is spent. The System will raise you once more, on debt.',
-    lines: [`Cost: a debt of ${gold(owes)}, ${R.reviveDebtClears} ${h.rank}-rank Clears.`, rises, 'After this, only a Resurrection Crystal or the GM brings you back.'],
-    rise: `Rise on debt: ${gold(owes)}`,
+    body: 'You have died. Your free revive is used. The System can revive you once more in exchange for debt.',
+    lines: [`Cost: ${gold(owes)} debt (${R.reviveDebtClears} rank ${h.rank} gate clears).`, rises, 'After this, only a Resurrection Crystal or the GM can revive you.'],
+    rise: `Revive on debt (${gold(owes)})`,
   };
 }
 /** The dead hunter's sheet line of what the System still does for it; `held` while a fight holds the hunter, which ends first. */
 export function raiseLine(h: Raisable, R: WordRules, held: boolean): string {
-  if (!canRaise(h.reviveLeft)) return 'The System will not raise you again.';
-  const what = h.reviveLeft === 'free' ? 'once for free' : `once more, on a debt of ${gold(raiseOwes(h.reviveLeft, h.rank, R))}`;
-  return held ? `Once the fight ends, the System can raise you ${what}.` : `The System can raise you ${what}.`;
+  if (!canRaise(h.reviveLeft)) return 'You have used all your System revives.';
+  const what = h.reviveLeft === 'free' ? 'once for free' : `once more for ${gold(raiseOwes(h.reviveLeft, h.rank, R))} debt`;
+  return held ? `Once the fight ends, the System can revive you ${what}.` : `The System can revive you ${what}.`;
 }
 /** The GM board's chip of a dead hunter's standing: whether the System can still raise it, and how. */
-export const RAISE_CHIPS: { readonly [S in ReviveStanding]: string } = { free: 'System raise: free', debt: 'System raise: on debt', none: 'No System raise' };
+export const RAISE_CHIPS: { readonly [S in ReviveStanding]: string } = { free: 'System revive: free', debt: 'System revive: on debt', none: 'No System revives left' };
 /** The session log's line when the System raised `name` (the `systemRaise` message, on the GM's phone). */
 export function raisedSaid(name: string, raise: Raise, owes: number): { readonly title: string; readonly text: string } {
   return {
-    title: `System raise: ${name}`,
-    text: raise === 'free' ? `The System raised ${name} for free. One raise on debt is left.` : `The System raised ${name} on a debt of ${gold(owes)}. No System raise is left.`,
+    title: `System revive: ${name}`,
+    text: raise === 'free' ? `The System revived ${name} for free. One revive on debt is left.` : `The System revived ${name} for ${gold(owes)} debt. No System revives left.`,
   };
 }
 /** The bag's line of what a hunter owes the System, or null when it owes nothing. */
-export const debtLine = (debt: number): string | null => (debt > 0 ? `Owed to the System for a raise on debt: ${gold(debt)}.` : null);
+export const debtLine = (debt: number): string | null => (debt > 0 ? `Debt owed to the System for reviving: ${gold(debt)}.` : null);
 /** A refused System raise, in the words a player reads. */
 export const RAISE_REFUSED: { readonly [Why in 'spent' | 'cannot' | 'held']: string } = {
-  spent: 'The System will not raise you again. Only a Resurrection Crystal or the GM brings you back.',
+  spent: 'You have used all your System revives. Only a Resurrection Crystal or the GM can revive you now.',
   cannot: 'You are not dead.',
-  held: 'The System raises you once the fight ends.',
+  held: 'You cannot use a System revive during a fight. Wait until the fight ends.',
 };

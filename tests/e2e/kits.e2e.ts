@@ -50,10 +50,10 @@ test('a GM makes Sanguine Resonance in the status maker: stacks to 10, a heal fo
     await g.locator('[data-chips="fgk-at"] [data-chip="formula"]').tap();
     await g.locator('[data-k="thF"]').fill('vit');
     await expect(g.locator('[data-th-fx] [data-row]'), 'what lands starts empty').toHaveCount(0);
-    await expect(g.locator('[data-stack-err]')).toHaveText('Add what lands at the count.');
+    await expect(g.locator('[data-stack-err]')).toHaveText('Add at least one effect for the stack trigger.');
     await g.locator('[data-th-fx] [data-quick] [data-q="damage"]').tap();
     await g.locator('[data-th-fx] [data-row="0"] [data-f="q"]').fill('3d6');
-    await expect(g.locator('[data-sum="stacks"]')).toHaveText('Stacks to 10; at vit: spent');
+    await expect(g.locator('[data-sum="stacks"]')).toHaveText('Stacks up to 10, at vit: spent');
   });
 
   await test.step('When: each time its bearer is struck, the other body heals 1d4', async () => {
@@ -63,7 +63,7 @@ test('a GM makes Sanguine Resonance in the status maker: stacks to 10, a heal fo
     await g.locator('[data-chips$="-to"] [data-chip="other"]').tap();
     await g.locator('[data-tfx] [data-quick] [data-q="heal"]').tap();
     await g.locator('[data-tfx] [data-row="0"] [data-f="q"]').fill('1d4');
-    await expect(g.locator('[data-sum="when"]')).toHaveText('When: 1 trigger');
+    await expect(g.locator('[data-sum="when"]')).toHaveText('Triggers: 1');
   });
 
   await test.step('the preview reads as rules a player understands', async () => {
@@ -71,7 +71,7 @@ test('a GM makes Sanguine Resonance in the status maker: stacks to 10, a heal fo
     await expect(preview).toContainText('Stacks to 10.');
     await expect(preview).toContainText('At vit stacks: Deals 3d6 magical damage. The stacks are spent.');
     await expect(preview).toContainText('When its bearer is struck: Heal: 1d4 on the other, every time.');
-    await expect(preview).toContainText('Gone when the fight ends.');
+    await expect(preview).toContainText('Removed when the fight ends.');
   });
 
   await test.step('saved, the library holds what the status reader reads back the same', async () => {
@@ -92,8 +92,8 @@ test('a GM makes Sanguine Resonance in the status maker: stacks to 10, a heal fo
     const [, before] = await libraryStatus(page, 'Resonance');
     await workshop(page, 'status').locator('ul.ws-list').first().locator('li', { hasText: 'Resonance' }).locator('.nm').tap();
     await expect(d).toBeVisible();
-    await expect(d.locator('[data-sum="stacks"]')).toHaveText('Stacks to 10; at vit: spent');
-    await expect(d.locator('[data-sum="when"]')).toHaveText('When: 1 trigger');
+    await expect(d.locator('[data-sum="stacks"]')).toHaveText('Stacks up to 10, at vit: spent');
+    await expect(d.locator('[data-sum="when"]')).toHaveText('Triggers: 1');
     await d.getByRole('button', { name: 'Save status' }).tap();
     await expect(d).toHaveCount(0);
     expect((await libraryStatus(page, 'Resonance'))[1]).toEqual(before);
@@ -111,8 +111,8 @@ test('a GM makes Hemoplague\'s mark in the status maker: 3 rounds of nothing, th
   await g.locator('[data-k="end"]').check();
   await g.locator('[data-end-fx] [data-quick] [data-q="damage"]').tap();
   await g.locator('[data-end-fx] [data-row="0"] [data-f="q"]').fill('4d6');
-  await expect(g.locator('[data-sum="end"]')).toHaveText('When it ends: 1 effect, a cure cancels it');
-  await expect(d.locator('.mk-preview')).toContainText('When it ends: Deals 4d6 magical damage. A cure cancels it.');
+  await expect(g.locator('[data-sum="end"]')).toHaveText('When it ends: 1 effect, curing cancels it');
+  await expect(d.locator('.mk-preview')).toContainText('When it ends: Deals 4d6 magical damage. Curing this status cancels it.');
   await d.getByRole('button', { name: 'Save status' }).tap();
   await expect(d).toHaveCount(0);
   const [, def] = await libraryStatus(page, 'Hemoplague');
@@ -209,7 +209,7 @@ test('a GM builds Glas\'s kit in the makers (Fester by the target\'s Resonance, 
     await expect(km.locator('[data-formula-err]')).toHaveText('');
     await applyRow('resonance', '2');
     await expect(km.locator('.mk-preview')).toContainText('Applies Resonance');
-    await expect(km.locator('[data-worth-line]')).toContainText('of a standard action');
+    await expect(km.locator('[data-worth-line]')).toContainText('Power rating:');
     await saveSkill();
   });
 
@@ -220,7 +220,7 @@ test('a GM builds Glas\'s kit in the makers (Fester by the target\'s Resonance, 
     const g = await openGroup(km, 'prices');
     await g.locator('[data-add="price"]').tap();
     await g.locator('[data-price="0"] [data-f="n"]').fill('50');
-    await expect(km.locator('[data-sum="prices"]')).toHaveText('Costs more: 1 cost');
+    await expect(km.locator('[data-sum="prices"]')).toHaveText('Extra costs: 1 cost');
     await applyRow('crimson-pact', '3');
     await expect(km.locator('.mk-preview')).toContainText('50% of your max HP');
     await saveSkill();
@@ -232,7 +232,7 @@ test('a GM builds Glas\'s kit in the makers (Fester by the target\'s Resonance, 
     const g = await openGroup(km, 'gates');
     await g.locator('[data-add="gate"]').tap();
     await g.locator('[data-gate="0"] [data-f="key"]').selectOption('crimson-pact');
-    await expect(km.locator('[data-sum="gates"]')).toHaveText('Only when: 1 condition');
+    await expect(km.locator('[data-sum="gates"]')).toHaveText('Requirements: 1 condition');
     await applyRow('hemoplague', '3');
     await saveSkill();
   });
@@ -425,10 +425,10 @@ test('a GM gives a field an upkeep and something that lands on who stands in it 
   await z.locator('[data-a="zupm"]').fill('2');
   await z.locator('[data-a="zend"]').check();
   await expect(z.locator('[data-zend-fx] [data-row]'), 'what lands starts empty').toHaveCount(0);
-  await expect(z.locator('[data-zend-err]')).toHaveText('Add what lands when it ends.');
+  await expect(z.locator('[data-zend-err]')).toHaveText('Add at least one effect for when the field ends.');
   await z.locator('[data-zend-fx] [data-quick] [data-q="damage"]').tap();
   await z.locator('[data-zend-fx] [data-row="0"] [data-f="q"]').fill('4d6');
-  await expect(z.locator('[data-sum="zone"]')).toContainText('with an upkeep, lands when it ends');
+  await expect(z.locator('[data-sum="zone"]')).toContainText('with an upkeep, triggers when it ends');
   await km.locator('[data-apply]').tap();
   await expect(km).toHaveCount(0);
   const zone = (await librarySkill(page, 'Boundary')).ability.zone;
@@ -474,7 +474,7 @@ test('a GM builds Einar\'s Harmony boundary: a field that gives one inside it a 
     await t.locator('[data-tfx] [data-row="0"] [data-f="kind"]').selectOption('applyStatus');
     await t.locator('[data-tfx] [data-row="0"] [data-f="status"]').selectOption('harmony');
     await t.locator('[data-tfx] [data-row="0"] [data-f="rounds"]').fill('5');
-    await expect(z.locator('[data-sum="zone"]')).toContainText('lands when it ends, 1 trigger');
+    await expect(z.locator('[data-sum="zone"]')).toContainText('triggers when it ends, 1 trigger');
     await km.locator('[data-apply]').tap();
     await expect(km).toHaveCount(0);
   });

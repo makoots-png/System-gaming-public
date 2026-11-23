@@ -42,9 +42,9 @@ export const SKILL_SEEDS: readonly SkillDef[] = [
   { name: 'Sprint', type: 'active', desc: 'You are Hasted for a round.' },
   { name: 'Bloodlust', type: 'passive', desc: 'Adds 1 Strength.', bonus: { str: 1 } },
   { name: 'Dagger Rush', type: 'active', desc: 'A quick dagger strike that rolls 2d4.' },
-  { name: 'Stealth', type: 'active', desc: 'You hide. You have advantage on Stealth checks until you attack.' },
+  { name: 'Stealth', type: 'active', desc: 'Hide out of sight. Attacks from hiding deal 1.5 times damage. Taking damage, dealing damage, or being revealed ends it.' },
   { name: 'Mutilation', type: 'active', desc: 'A strike that rolls 2d6.' },
-  { name: "Ruler's Authority", type: 'active', desc: 'Move or crush objects and foes within 30 ft with your mind.' },
+  { name: "Ruler's Authority", type: 'active', desc: 'Move or crush objects and foes within 6 tiles (30 ft) with your mind.' },
   { name: 'Shadow Exchange', type: 'active', desc: 'Swap places with one of your shadows.' },
   { name: 'Arise', type: 'active', desc: 'Raise a defeated monster as one of your shadows.' },
   { name: 'Mending Aura', type: 'active', desc: 'For three rounds, you and every ally near you heal each round. The area moves with you.' },
@@ -52,7 +52,7 @@ export const SKILL_SEEDS: readonly SkillDef[] = [
 
 /** The skills the starter campaign's three hunters begin with (src/views/starter.js), two each. */
 export const STARTER_SKILLS = {
-  shieldWall: { name: 'Shield Wall', type: 'active', desc: 'Put a shield on one ally within 30 ft.' },
+  shieldWall: { name: 'Shield Wall', type: 'active', desc: 'Put a shield on one ally in range.' },
   ironSkin: { name: 'Iron Skin', type: 'passive', desc: 'Adds 2 Vitality.', bonus: { vit: 2 } },
   markedShot: { name: 'Marked Shot', type: 'active', desc: 'A shot that rolls 1d6.' },
   trailsense: { name: 'Trailsense', type: 'passive', desc: 'You notice tracks and signs others miss, and a gate never surprises you.', bonus: {} },

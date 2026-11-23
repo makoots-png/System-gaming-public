@@ -42,7 +42,7 @@ describe('the yardstick: a recommended ability is worth its pace\'s budget', () 
       expect(w.budget).toBeCloseTo((7 + mag(rank)) / (4.5 + mag(rank)), 6);
       expect(w.by).toBe('Arc Bolt');
     }
-    expect(worthLine(abilityWorth(of('curse'), RULES))).toBe('Worth 1.00 of a standard action (budget 1.08, as Arc Bolt holds).');
+    expect(worthLine(abilityWorth(of('curse'), RULES))).toBe('Power rating: 1.00 (target 1.08 for this action speed, matching Arc Bolt).');
   });
 
   test('a curse with no formula of its own is weighed against a magical curse, its kind\'s, not a physical one', () => {
@@ -139,7 +139,7 @@ describe('the example kits sit inside the tolerance, and a GM\'s overreach is wa
     const slayer = abilityWorth(of('strike', { ticks: { scalers: [suggestScaler('strike', 'giantSlayer', RULES)] } }), RULES);
     expect(slayer.against!.boss).toBeGreaterThan(slayer.against!.packs);
     expect(slayer.against!.boss).toBeLessThanOrEqual(1 + RULES.fight.kit.tolerance + 1e-9);
-    expect(worthLine(slayer)).toContain(`against packs, ${slayer.against!.boss.toFixed(2)} against a boss.`);
+    expect(worthLine(slayer)).toContain(`against packs and ${slayer.against!.boss.toFixed(2)}x against a boss.`);
     expect(abilityWorth(of('strike'), RULES).against).toBeUndefined();
   });
 
@@ -197,8 +197,8 @@ describe('the example kits sit inside the tolerance, and a GM\'s overreach is wa
   });
 
   test('the worth line says the worth and the budget, and past the tolerance by how much', () => {
-    expect(worthLine({ worth: 1.04, budget: 1, over: false, unweighed: [] })).toBe('Worth 1.04 of a standard action (budget 1.00).');
-    expect(worthLine({ worth: 1.12, budget: 1, over: true, unweighed: [] })).toBe('Worth 1.12 of a standard action (budget 1.00). Stronger than its pace allows by 12%.');
+    expect(worthLine({ worth: 1.04, budget: 1, over: false, unweighed: [] })).toBe('Power rating: 1.04 (target 1.00 for this action speed).');
+    expect(worthLine({ worth: 1.12, budget: 1, over: true, unweighed: [] })).toBe('Power rating: 1.12 (target 1.00 for this action speed). Stronger than expected for this action speed by 12%.');
   });
 });
 
@@ -276,8 +276,8 @@ describe('what the bar cannot estimate it names, never counting it as 0', () => 
   });
 
   test('the line says what it weighed and what to test in a fight', () => {
-    expect(worthLine(abilityWorth(ability('Call Sprite'), RULES))).toBe('Worth 0.00 of a standard action (budget 1.00) without its summon, which it cannot estimate: test it in a fight.');
-    expect(worthLine({ worth: 0, budget: 0.7, over: false, unweighed: ['guard', 'reaction'] })).toBe('Worth 0.00 of a standard action (budget 0.70) without a guard and its reaction, which it cannot estimate: test them in a fight.');
+    expect(worthLine(abilityWorth(ability('Call Sprite'), RULES))).toBe('Power rating: 0.00 (target 1.00 for this action speed). Not estimated: its summon. Test it in a fight.');
+    expect(worthLine({ worth: 0, budget: 0.7, over: false, unweighed: ['guard', 'reaction'] })).toBe('Power rating: 0.00 (target 0.70 for this action speed). Not estimated: a guard and its reaction. Test them in a fight.');
   });
 
   test('a status alone weighs its per-round damage over the reference fight, whole, and names its stat change and its end', () => {

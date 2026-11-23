@@ -272,7 +272,7 @@ const upper = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 function moveLine(run: StoryRun, e: RunEvent, c: Chapter | null, names: (refs: readonly HunterRef[]) => string[]): Said {
   const to = 'to' in e ? andList(names(e.to)) : '';
   const text = e.type === 'turnOn'
-    ? `Turned on for ${run.who.at === 'table' ? 'the table' : andList(names(run.who.refs))}. ${upper(chapterName(0, c))} opened for ${to}.`
+    ? `Started for ${run.who.at === 'table' ? 'the whole party' : andList(names(run.who.refs))}. ${upper(chapterName(0, c))} opened for ${to}.`
     : e.type === 'open' ? `${upper(chapterName(e.chapter, c))} opened for ${to}.` : `Ended at chapter ${run.state.chapter + 1}.`;
   return { kind: 'story', hunterId: null, title: run.name, text };
 }
@@ -282,11 +282,11 @@ export const RUN_REFUSAL_WORDS: { readonly [K in RunRefusal]: (chapter: number) 
   running: () => 'This story is already running.',
   ended: () => 'This story has ended.',
   'no-run': () => 'This story is not running.',
-  moved: n => `This story was opened again meanwhile. It is at chapter ${n} now.`,
+  moved: n => `This story changed while the window was open. It is at chapter ${n} now.`,
   'no-chapter': n => `This story has no chapter ${n} now. It was changed in the Workshop.`,
   nobody: () => 'Pick at least one hunter.',
   'no-story': () => 'This story is no longer in your Workshop. You can end it.',
-  full: () => `${RUNNING_MAX} stories are running, the most at once. End one first.`,
+  full: () => `You can run at most ${RUNNING_MAX} stories at once. End one first.`,
   'too-large': n => `Chapter ${n} is too large to send to players' phones. Open it for this phone's hunters only, or give it fewer items in the Workshop.`,
 };
 
@@ -306,9 +306,9 @@ export const STORY_WORDS = {
   noStories: 'You have no stories yet. Make one in the Workshop.',
   newStory: 'New story',
   noneRunning: 'No story is running.',
-  turnOnButton: 'Turn on a story',
+  turnOnButton: 'Start a story',
   summary: (n: number) => (n ? `${n} running` : ''),
-  forWho: (who: Who, names: readonly string[]) => (who.at === 'table' ? 'For the table' : (names.length ? `For ${andList(names)}` : 'For hunters not at the table')),
+  forWho: (who: Who, names: readonly string[]) => (who.at === 'table' ? 'For the whole party' : (names.length ? `For ${andList(names)}` : 'For hunters not at the table')),
   at: (i: number, of: number, c: Pick<Chapter, 'name'> | null) => `Chapter ${i + 1} of ${of}${c && c.name ? `: ${c.name}` : ''}.`,
   note: (note: string) => `Your note: ${note}`,
   next: (i: number, c: Pick<Chapter, 'name' | 'words'>) => `Next: ${i + 1}. ${c.name ? `${c.name}. ` : ''}${c.words.title}.`,
@@ -326,20 +326,20 @@ export const STORY_WORDS = {
   playersSee: 'What the players see',
   yourNote: 'Your note',
   chapter: 'Chapter',
-  who: 'Who',
-  hasIt: 'has it',
+  who: 'Who gets this',
+  hasIt: 'already received',
   notHere: 'not at the table',
-  again: (names: readonly string[]) => `${andList(names)} ${names.length === 1 ? 'has' : 'have'} had this chapter. Opening it gives it again.`,
-  turnOnTitle: 'Turn on a story',
-  turnOnStory: (name: string) => `Turn on ${name}`,
-  table: 'The table',
+  again: (names: readonly string[]) => `${andList(names)} already received this chapter. Opening it sends it again.`,
+  turnOnTitle: 'Start a story',
+  turnOnStory: (name: string) => `Start ${name}`,
+  table: 'Whole party',
   chosen: 'Chosen hunters',
   already: (forWhos: readonly string[]) => `Already running ${andList(forWhos.map(f => f.charAt(0).toLowerCase() + f.slice(1)))}.`,
-  turnOnGo: 'Turn on and open chapter 1',
+  turnOnGo: 'Start and open chapter 1',
   opened: (i: number, names: readonly string[]) => `Opened chapter ${i + 1} for ${andList(names)}.`,
-  turnedOn: (name: string, names: readonly string[]) => `Turned on ${name}. Opened chapter 1 for ${andList(names)}.`,
-  skipped: (names: readonly string[]) => `Skipped ${andList(names)}: not at the table.`,
-  waits: (names: readonly string[]) => `${andList(names)} ${names.length === 1 ? 'gets' : 'get'} it when the room answers.`,
+  turnedOn: (name: string, names: readonly string[]) => `Started ${name}. Opened chapter 1 for ${andList(names)}.`,
+  skipped: (names: readonly string[]) => `Skipped ${andList(names)}. ${names.length === 1 ? 'That hunter is' : 'They are'} not at the table.`,
+  waits: (names: readonly string[]) => `Saved. ${andList(names)} will get it when your phone reconnects to the room server.`,
   running: 'running',
   openedMark: 'opened',
   notSaved: 'Not saved. Nothing was given.',

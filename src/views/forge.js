@@ -56,13 +56,13 @@ function openForge(opts) {
     build(el, shell) {
       el.innerHTML = `<div class="fg-cols${apply ? ' fg-ap' : ''}">${apply ? `<div class="fg-col">
         <div class="fg-row"><label class="field fg-rounds"><span class="lbl">Rounds</span><input type="number" min="1" max="999" inputmode="numeric" data-rounds value="3" autocomplete="off"></label>
-          <button type="button" class="fg-inf" data-inf aria-pressed="false" aria-label="Lasts until removed (infinite rounds)">∞</button></div>
-        ${rank ? `<div class="lbl">Strength</div><div data-strength>${M.chips('strength', RANKS.map(r => [r, r]), rank, { label: 'Strength' })}</div>` : ''}
-        ${chipKeys.length ? `<div class="lbl">Apply existing</div><div class="fg-chips" data-existing><div class="mk-chips" role="group" aria-label="Apply existing">${chipKeys.map(k => `<button type="button" class="mk-chip${lib.includes(k) ? ' lib' : ''}" data-chip="${esc(k)}" title="${esc(String((rulesNow[k] && rulesNow[k].desc) || ''))}">${esc(String((rulesNow[k] && rulesNow[k].label) || k))}</button>`).join('')}</div></div>` : ''}
+          <button type="button" class="fg-inf" data-inf aria-pressed="false" aria-label="Lasts until removed (no round limit)">Until removed</button></div>
+        ${rank ? `<div class="lbl">Power rank</div><div data-strength>${M.chips('strength', RANKS.map(r => [r, r]), rank, { label: 'Power rank' })}</div>` : ''}
+        ${chipKeys.length ? `<div class="lbl">Apply existing status</div><div class="fg-chips" data-existing><div class="mk-chips" role="group" aria-label="Apply existing status">${chipKeys.map(k => `<button type="button" class="mk-chip${lib.includes(k) ? ' lib' : ''}" data-chip="${esc(k)}" title="${esc(String((rulesNow[k] && rulesNow[k].desc) || ''))}">${esc(String((rulesNow[k] && rulesNow[k].label) || k))}</button>`).join('')}</div></div>` : ''}
         </div>` : ''}<div class="fg-col" data-newcol>
         <div class="fg-a1"><div class="lbl fg-new">${editKey ? 'Edit status' : 'New status'}</div>
         <label class="field"><span class="lbl">Name</span><input type="text" data-name maxlength="40" autocomplete="off" spellcheck="false" placeholder="e.g. Ember Mark"></label>
-        <label class="field"><span class="lbl">Description</span><input type="text" data-desc maxlength="200" autocomplete="off" placeholder="What the System says it does"></label>
+        <label class="field"><span class="lbl">Description</span><input type="text" data-desc maxlength="200" autocomplete="off" placeholder="Short description shown to players"></label>
         <div data-icon></div></div>
         <div class="fg-b" data-later><div class="lbl">Effects</div>
         <div class="fg-fx" data-fx></div>
@@ -142,7 +142,7 @@ export function register(app) {
 .fg-rounds{width:110px}
 .fg-chips{display:block}
 .fg-inf,.fg-win .fg-swatch{min-height:40px}
-.fg-inf{min-width:48px;font-size:20px}.fg-inf.on{border-color:var(--cyan);background:rgba(77,216,255,.18);color:var(--ice)}
+.fg-inf{min-width:48px;font-size:13px;padding:0 10px;white-space:nowrap}.fg-inf.on{border-color:var(--cyan);background:rgba(77,216,255,.18);color:var(--ice)}
 .fg-col>*{flex-shrink:0}  /* .fg-col is display:contents on a phone, so its children are the flex items of the maker's body */
 .fg-chips[data-existing]{max-height:140px;overflow-y:auto}
 .fg-chips[data-existing] .mk-chips{gap:6px}

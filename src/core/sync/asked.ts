@@ -162,15 +162,15 @@ export const waitingGates = (s: Pick<Save, 'settings'>, room: RoomCode, hid: str
 
 /** What a waiting run says on its gate's card. */
 export const WAIT_WORDS: { readonly [S in AskedState]: string } & { readonly lost: string; readonly gone: string } = {
-  posted: 'Cleared. Waiting for the room.',
-  taken: 'Cleared. Waiting for the GM\'s phone to pay it.',
-  lost: 'The room did not take this run, so it paid nothing. Its cost stays.',
-  gone: 'The room is gone, so the run paid nothing. Its cost stays.',
+  posted: 'Cleared. Waiting for the room server.',
+  taken: 'Cleared. Waiting for the GM to confirm it.',
+  lost: 'This run did not reach the room server, so you got no reward. Its cost is not refunded.',
+  gone: 'This room no longer exists, so you got no reward. Its cost is not refunded.',
 };
 /** The question before a taken run is put away: it gives up the pay. */
 export const STOP_WAITING = {
   title: 'Stop waiting?',
-  body: 'If the GM\'s phone pays this run later, it pays you nothing. Its cost stays, and you can enter the gate again.',
+  body: 'If the GM confirms this run later, you will get no reward. Its cost is not refunded, and you can enter the gate again.',
   confirm: 'Stop waiting',
 } as const;
 /** The words of run `w` as the player sees it. */

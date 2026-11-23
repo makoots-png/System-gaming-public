@@ -28,8 +28,8 @@ const WORN = Object.keys(AUTO_SLOT);
 const SLOT_LABEL = { weapon: 'Weapon', offhand: 'Off-hand', head: 'Head', chest: 'Chest', hands: 'Hands', legs: 'Legs', feet: 'Feet', neck: 'Neck', ring1: 'Ring 1', ring2: 'Ring 2' };
 /** The kinds of ability an item's wearer may be given (the skill maker's), and what each is called. */
 const ACTIVE_KINDS = /** @type {const} */ (['strike', 'shot', 'blast', 'curse', 'support']);
-const ACTIVE_LABEL = { strike: 'Strike', shot: 'Shot', blast: 'Blast', curse: 'Curse', support: 'Support' };
-const ATTACK_LABEL = { strike: 'Strike', shot: 'Shot' };
+const ACTIVE_LABEL = { strike: 'Strike (melee)', shot: 'Shot (ranged)', blast: 'Blast (area)', curse: 'Curse (spell)', support: 'Support (heal or shield)' };
+const ATTACK_LABEL = { strike: 'Strike (melee)', shot: 'Shot (ranged)' };
 const KITS = /** @type {const} */ ([['light', 'Light'], ['medium', 'Medium'], ['heavy', 'Heavy']]);
 /** The gear numbers of a worn item, each a field of the form. */
 const GEAR = [['weight', 'Weight'], ['armor', 'Armor'], ['resist', 'Resist']];
@@ -84,9 +84,9 @@ export function register(app) {
           ${M.chips('type', ITEM_TYPES.map(t => [t, TYPE_LABEL[t] || cap(t)]), type, { label: 'Type' })}
           <div class="lf-grid">
             ${ui.field('Rarity', `<select id="lf-rar">${TIERS.map(t => `<option value="${t}"${was && t === was.rar ? ' selected' : ''}>${cap(t)}</option>`).join('')}</select>`)}
-            ${ui.field('Qty', `<input type="number" id="lf-qty" inputmode="numeric" min="1" max="${ITEM_BOUNDS.qty}" value="${esc(was ? was.qty : 1)}">`)}
+            ${ui.field('Quantity', `<input type="number" id="lf-qty" inputmode="numeric" min="1" max="${ITEM_BOUNDS.qty}" value="${esc(was ? was.qty : 1)}">`)}
             <div class="wide">${ui.field('Value (gold)', `<input type="number" id="lf-value" inputmode="numeric" min="0" value="${esc(was && was.value !== undefined ? was.value : '')}">`)}</div>
-            <div class="wide"><div class="lbl">Grade</div>${M.chips('grade', GRADES.map(g => [String(g), gradeLabel(was ? was.rar : 'common', g)]), String(was && was.grade ? was.grade : 0), { label: 'Grade' })}</div>
+            <div class="wide"><div class="lbl">Item grade</div>${M.chips('grade', GRADES.map(g => [String(g), gradeLabel(was ? was.rar : 'common', g)]), String(was && was.grade ? was.grade : 0), { label: 'Item grade' })}</div>
             <div class="wide">${ui.field('Description', `<textarea id="lf-desc" maxlength="500">${esc(was ? was.desc : '')}</textarea>`)}</div>
           </div>
           <div class="lf-worn" data-weapon>
@@ -96,19 +96,19 @@ export function register(app) {
           </div>
           <div class="lf-worn" data-worn>
             ${ui.field('Slot', `<select id="lf-slot"><option value="">None</option>${rules().slots.map(s => `<option value="${s}">${SLOT_LABEL[s] || s}</option>`).join('')}</select>`)}
-            <div data-kit-w><div class="lbl">Fill with typical gear</div><div class="mk-chips" role="group" aria-label="Fill with typical gear">${KITS.map(([k, l]) => `<button type="button" class="mk-chip" data-kit="${k}">${esc(l)}</button>`).join('')}</div></div>
+            <div data-kit-w><div class="lbl">Fill with standard gear stats</div><div class="mk-chips" role="group" aria-label="Fill with standard gear stats">${KITS.map(([k, l]) => `<button type="button" class="mk-chip" data-kit="${k}">${esc(l)}</button>`).join('')}</div></div>
             <div class="lf-gear">${GEAR.map(([k, l]) => ui.field(l, `<input type="number" inputmode="numeric" min="0" data-gear="${k}" value="${esc(was ? (was[k] ?? '') : k === 'weight' ? '' : 0)}">`)).join('')}</div>
-            <div class="lbl">Bonus while worn</div>
+            <div class="lbl">Stat bonuses while equipped</div>
             ${M.bonus(was ? was.bonus : {})}
             <details class="mk-group" data-group="worn"><summary data-sum="worn"></summary><div class="mk-group-body">
-              <label class="lf-chk"><input type="checkbox" data-worn-on${was && was.worn ? ' checked' : ''}><span>In a fight, its wearer wears a status</span></label>
-              <div data-worn-f><div class="lbl">What the status does</div><div data-worn-fx></div><div data-worn-kit></div></div>
+              <label class="lf-chk"><input type="checkbox" data-worn-on${was && was.worn ? ' checked' : ''}><span>Grants a status while equipped in a fight</span></label>
+              <div data-worn-f><div class="lbl">Status effects</div><div data-worn-fx></div><div data-worn-kit></div></div>
             </div></details>
             <details class="mk-group" data-group="active"><summary data-sum="active"></summary><div class="mk-group-body">
-              <label class="lf-chk"><input type="checkbox" data-active-on${was && was.active ? ' checked' : ''}><span>In a fight, its wearer can use an ability</span></label>
+              <label class="lf-chk"><input type="checkbox" data-active-on${was && was.active ? ' checked' : ''}><span>Grants an active ability while equipped</span></label>
               <div class="lf-active-body" data-active-f>
-                <div class="lbl">Kind</div>
-                ${M.chips('akind', ACTIVE_KINDS.map(k => [k, ACTIVE_LABEL[k]]), wasActive ? wasActive.kind : 'support', { label: 'Kind' })}
+                <div class="lbl">Ability type</div>
+                ${M.chips('akind', ACTIVE_KINDS.map(k => [k, ACTIVE_LABEL[k]]), wasActive ? wasActive.kind : 'support', { label: 'Ability type' })}
                 <div data-active-self-w><div class="lbl">Affects</div>${M.chips('aaim', [['ally', 'An ally'], ['self', 'The user']], wasActive && wasActive.aim === 'self' ? 'self' : 'ally', { label: 'Affects' })}</div>
                 <div data-active-form></div>
                 <div class="lbl">Effects on each target</div><div data-active-fx></div>
@@ -122,7 +122,7 @@ export function register(app) {
           <div data-worth-box></div>
           <div data-mk-preview></div>
           <p class="lf-spend" data-spend hidden></p>
-          ${gm ? `<label class="lf-chk"><input type="checkbox" id="lf-tell"${was && was.tell ? ' checked' : ''}><span>Tell me when it is used</span></label>` : ''}
+          ${gm ? `<label class="lf-chk"><input type="checkbox" id="lf-tell"${was && was.tell ? ' checked' : ''}><span>Notify GM when used</span></label>` : ''}
           ${gm ? `<label class="lf-chk" data-revive-w><input type="checkbox" id="lf-revive"${was && was.revive ? ' checked' : ''}><span>${esc(REVIVE_TEXT)}</span></label>` : ''}
           ${library ? '<label class="lf-chk"><input type="checkbox" id="lf-save" checked><span>Save to library</span></label>' : ''}
           </div></div>`;
@@ -212,19 +212,19 @@ export function register(app) {
         const sync = () => {
           if (wornOn()) wornEditors();
           $('[data-worn-f]').hidden = !wornOn();
-          $('[data-sum="worn"]').textContent = wornOn() ? 'In a fight: wears a status' : 'In a fight: nothing more';
+          $('[data-sum="worn"]').textContent = wornOn() ? 'Fight status: set' : 'Fight status: none';
           if (activeOn()) { activeEditors(); activeForm.setKind(activeKind()); }
           $('[data-active-f]').hidden = !activeOn();
           $('[data-active-self-w]').hidden = activeKind() !== 'support';
-          $('[data-sum="active"]').textContent = activeOn() ? `Its wearer can use: ${ACTIVE_LABEL[activeKind()].toLowerCase()}` : 'Its wearer can use: nothing';
+          $('[data-sum="active"]').textContent = activeOn() ? `Wearer ability: ${ACTIVE_LABEL[activeKind()].toLowerCase()}` : 'Wearer ability: none';
           el.closest('.lf-win').classList.toggle('lf-unworn', !WORN.includes(type));
           $('[data-weapon]').hidden = type !== 'weapon';
           if (gm) $('[data-revive-w]').hidden = type !== 'consumable';
           if (!slotDirty) slotSel.value = AUTO_SLOT[type] || '';
           $('[data-kit-w]').hidden = !Object.hasOwn(KIT_SHARE, slotSel.value);
           for (const b of el.querySelectorAll('[data-chips="grade"] [data-chip]')) b.textContent = gradeLabel(rarity(), oneOf(Number(b.dataset.chip), GRADES, 0));
-          $('#lf-value').placeholder = `By the rule: ${valueOf({ rar: rarity(), type, grade: grade() }, rules())}`;
-          gearInput('weight').placeholder = `By the rule: ${weightOf({ type, dice: $('#lf-dice').value.trim() })}`;
+          $('#lf-value').placeholder = `Default: ${valueOf({ rar: rarity(), type, grade: grade() }, rules())}`;
+          gearInput('weight').placeholder = `Default: ${weightOf({ type, dice: $('#lf-dice').value.trim() })}`;
           // "Affects" only means something for an item that does something when used
           $('[data-target-w]').hidden = !effectsOf(formItem()).length;
         };
@@ -250,8 +250,8 @@ export function register(app) {
             return [
               it.type === 'weapon' && it.dice ? `${ATTACK_LABEL[it.attack]} with ${it.dice}` : '',
               worn ? `Weight ${weightOf(it)} · Armor ${it.armor} · Resist ${it.resist}` : '',
-              worn ? (sp => `A ${SAMPLE_WEARER.rank}-rank hunter in ${SAMPLE_WEARER.kit} gear: speed ${sp.bare}, ${sp.worn} with this on too`)(wornSpeed({ ...it, weight: weightOf(it) }, rules())) : '',
-              bonusText(it.bonus) && `Worn: ${bonusText(it.bonus)}`, ...lines(it),
+              worn ? (sp => `Sample ${SAMPLE_WEARER.rank}-rank hunter in ${SAMPLE_WEARER.kit} gear: speed ${sp.bare} normally, ${sp.worn} with this equipped`)(wornSpeed({ ...it, weight: weightOf(it) }, rules())) : '',
+              bonusText(it.bonus) && `Equipped: ${bonusText(it.bonus)}`, ...lines(it),
               ...(it.worn && worn ? describeStatus(it.worn, null, rules()).map(l => `In a fight: ${l}`) : []),
             ].filter(Boolean);
           },

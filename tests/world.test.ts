@@ -131,7 +131,7 @@ describe('a session started', () => {
     expect(titles(r.save)).toEqual(['Session 7 began', 'DUNGEON BREAK', 'World day']);
   });
   test('when the browser refused the backup, the line says so', () => {
-    expect(ok(sessionStarted(world(), false, stamp)).save.log[0]!.text).toBe('No backup: this browser refused to store it. World day 4.');
+    expect(ok(sessionStarted(world(), false, stamp)).save.log[0]!.text).toBe('No backup was saved because this browser blocked storage. World day 4.');
   });
 });
 

@@ -2,6 +2,7 @@
 // awards it to a player; the player uses its parts and the GM is told once; a later night the bundle goes out again from
 // the Workshop. Driven through the UI; the store sets up and reads.
 import type { Locator, Page } from '@playwright/test';
+import { SHELF_WORDS } from '../../src/core/registry/bundles.ts';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, answerWindow, openApp, openFeed, chooseList } from './helpers.ts';
 
 const HUNTER = 'Mira Test';
@@ -46,7 +47,7 @@ test('a GM builds a reward with an item to be told of, a new title, a status and
     await ed.locator('[data-add="boon"]').tap();
     await ed.locator('[data-kind="boon"] [data-f="name"]').fill(BOON.name);
     await ed.locator('[data-kind="boon"] [data-f="text"]').fill(BOON.text);
-    await expect(ed.locator('[data-kind="boon"]')).toContainText('The player redeems it from their sheet, and you are told.');
+    await expect(ed.locator('[data-kind="boon"]')).toContainText('A one-time custom favor the GM honors. When the player redeems it on their sheet, you get notified.');
     await expect(ed.locator('.rw-preview li')).toHaveText(['+100 XP', 'Item acquired: Health Potion', 'Title acquired: Wolf Slayer', 'Status: Hasted (3 rounds)', `Boon: ${BOON.name}`]);
   });
 
@@ -151,7 +152,7 @@ test('an award the GM gives while the GM\'s phone is offline waits on the GM\'s 
     await gm.fill('#gm-xp', '25');
     await gm.locator('#gm-targets label', { hasText: HUNTER }).tap();
     await gm.locator('#gm-award-go').tap();
-    await expect(gm.locator('#gm-award-msg')).toHaveText(`${HUNTER} gets it when the room answers.`);
+    await expect(gm.locator('#gm-award-msg')).toHaveText(`Saved. ${HUNTER} will get it once the room server confirms it.`);
     expect(await waiting()).toBe(1);
     expect(await xp()).toEqual(before);
   });
@@ -180,7 +181,7 @@ test('the GM awards Hasted to a player\'s hunter in the GM\'s running fight: the
     await go(gm, 'gm');
     await expect(gm.locator('#gm-board .gm-card.remote', { hasText: HUNTER })).toHaveCount(1);
     await go(gm, 'combat');
-    await combat.locator('[data-hsel]').selectOption({ label: `${HUNTER} (remote)` });
+    await combat.locator('[data-hsel]').selectOption({ label: `${HUNTER} (player phone)` });
     await combat.locator('[data-addh]').tap();
     await combat.locator('[data-qline]').fill('Cave Rat, E, brute');
     await combat.locator('[data-qadd]').tap();
@@ -220,7 +221,7 @@ async function answerWindowFill(page: Page, title: string, text: string) {
 test('in a room the GM gives an award for roleplay from a player\'s card in three taps: the award opens in the Award form to edit first, its Give is held two seconds under Undo, then the player\'s phone opens it in its own words, and both hunters\' chronicles remember it', async ({ device }) => {
   const gm = (await device('gm')).page, player = (await device('player')).page;
   const shelf = gm.locator('.sys-overlay.show.gs-ov');
-  const heldToast = (award: string) => gm.locator('#toasts .toast[data-held]', { hasText: `Given: ${award} to` });
+  const heldToast = (award: string) => gm.locator('#toasts .toast[data-held]', { hasText: `Gave ${award} to` });
 
   await test.step('a GM with a hunter of its own, and a player, in one room', async () => {
     await onboardGM(gm);
@@ -242,7 +243,7 @@ test('in a room the GM gives an award for roleplay from a player\'s card in thre
     await taps.tap(row);
     await expect(shelf).toHaveCount(0);
     await expect(gm.locator('#gm-pts')).toHaveValue('1');
-    await expect(gm.locator('#gm-award-tie')).toContainText(`Held the Mask for ${HUNTER}, from the shelf.`);
+    await expect(gm.locator('#gm-award-tie')).toContainText(SHELF_WORDS.tie('Held the Mask', HUNTER));
     await expect(heldToast('Held the Mask'), 'nothing is held before the Give').toHaveCount(0);
     await taps.tap(gm.locator('#gm-award-go', { hasText: 'Give' }));
     expect(taps.count).toBe(3);
@@ -279,7 +280,7 @@ test('in a room the GM gives an award for roleplay from a player\'s card in thre
     const own = gm.locator('#gm-board .gm-card:not(.remote)').first();
     await own.locator('[data-ggive]').tap();
     const recent = shelf.locator('[data-group="recent"]');
-    await expect(recent.locator('.gs-h')).toHaveText('Last given');
+    await expect(recent.locator('.gs-h')).toHaveText(SHELF_WORDS.recent);
     await expect(recent.locator('[data-give]')).toHaveCount(1);
     await expect(recent.locator('[data-give="seed-held-the-mask"]')).toBeVisible();
     await shelf.locator('[data-group="lie"] [data-give="seed-straight-face"]').tap();
@@ -294,7 +295,7 @@ test('in a room the GM gives an award for roleplay from a player\'s card in thre
 
 test('a held Give\'s Undo stays its whole two seconds while other notices come: the GM taps it after two more notices and nothing is given (the owner, Nov 22)', async ({ device }) => {
   const gm = (await device('gm')).page;
-  const shelf = gm.locator('.sys-overlay.show.gs-ov'), held = gm.locator('#toasts .toast[data-held]', { hasText: 'Given: Straight Face to' });
+  const shelf = gm.locator('.sys-overlay.show.gs-ov'), held = gm.locator('#toasts .toast[data-held]', { hasText: 'Gave Straight Face to' });
   await onboardGM(gm);
   await go(gm, 'gm');
   await test.step('Give… on the GM\'s own hunter, then Straight Face: a toast holds it with Undo', async () => {

@@ -559,7 +559,7 @@ describe('a channel\'s release lands as a use does (design 4.1)', () => {
     const out = reduce(r.fight, release('A', rolls({ M: 10 })), ctx);
     const dealt = rowHp(body(r.fight, 'M')) - rowHp(body(out.fight, 'M'));
     const said = running(out).log.find(l => l.text.includes('is released'))!;
-    expect([said.text.endsWith(`M caught ${dealt}.`), said.rows]).toEqual([true, [id('A'), id('M')]]);
+    expect([said.text.endsWith(`M hit ${dealt}.`), said.rows]).toEqual([true, [id('A'), id('M')]]);
     expect(out.effects.find(e => e.type === 'used')).toEqual({ type: 'used', by: id('A'), ability: WIND.id, line: said.text.replace(/^R\d+: /, '') });
   });
 });
@@ -1471,7 +1471,7 @@ describe('a zone on the ground: the kits\' upkeep, cap per owner and end (kits d
     expect([body(paid.fight, 'A').fatigue, running(paid).zones.length]).toEqual([RULES.fight.abilityKinds.support.fatigue + 10, 1]);
     const broke = play(...duel({ abilities: [keep] }), lay(keep), { type: 'adjust', id: id('A'), fatigue: 999 }, pass('M'));
     expect([running(broke).zones, rowHp(body(broke.fight, 'A'))]).toEqual([[], self(broke.fight).hpMax]);
-    expect(running(broke).log.some(l => l.text.includes('Boundary ends: '))).toBe(true);
+    expect(running(broke).log.some(l => l.text.includes('Boundary ends because '))).toBe(true);
   });
 
   test('a fourth zone of one owner evicts its oldest, with no end', () => {
@@ -1480,7 +1480,7 @@ describe('a zone on the ground: the kits\' upkeep, cap per owner and end (kits d
     const z = running(r).zones;
     expect(z.length).toBe(RULES.fight.kit.zonesPerOwner);
     expect(rowHp(body(r.fight, 'A'))).toBe(self(r.fight).hpMax);
-    expect(running(r).log.some(l => l.text.includes('Boundary gives way'))).toBe(true);
+    expect(running(r).log.some(l => l.text.includes('Boundary ends.'))).toBe(true);
   });
 
   test('its end lands on who stands in it when its time passes a round or more after it was laid; younger, nothing lands', () => {
@@ -1558,7 +1558,7 @@ describe('a timed summon (kits design 1.9, table 2.4)', () => {
     for (let i = 0; i < 12 && summons(fight).length; i++) fight = reduce(fight, pass(running({ fight }).currentId), ctx).fight;
     expect(summons(fight)).toEqual([]);
     expect(running({ fight }).now).toBeGreaterThanOrEqual(RULES.fight.round);
-    expect(running({ fight }).log.some(l => l.text.includes('Sprite leaves: its time is up'))).toBe(true);
+    expect(running({ fight }).log.some(l => l.text.includes('Sprite leaves because its time is up'))).toBe(true);
   });
 
   // Random play found it: the GM removed a summoner while its summon's turn ran, and the fight kept a current row it no longer held.
@@ -1759,7 +1759,7 @@ describe('wards and stealth (kits design 8.1 and 8.7, tables 8.9.4 and 8.9.5)', 
   });
 
   test('a hidden body\'s blast says more damage on the log than the same blast from a body that is seen (the ambush, rule 11c)', () => {
-    const said = (r: { fight: Fight | null }) => Number(/: M caught(?:, crit)? (\d+)\.$/.exec(running(r).log.find(l => /A uses boom/.test(l.text))!.text)![1]);
+    const said = (r: { fight: Fight | null }) => Number(/: M hit(?:, crit)? (\d+)\.$/.exec(running(r).log.find(l => /A uses boom/.test(l.text))!.text)![1]);
     const hidden = play(...hiding([BOOM]), pass('M'), atPlace('A', BOOM, place(0, 10), 'M'));
     const seen = play(add(row('A', 'party', { abilities: [HIT, HIDE, BOOM] }), row('M', 'foe')), wall, start(['A', 20], ['M', 10]), pass('A'), pass('M'), atPlace('A', BOOM, place(0, 10), 'M'));
     expect([said(seen), said(hidden)]).toEqual([hurtOf(seen.fight, 'M'), hurtOf(hidden.fight, 'M')]);
@@ -2163,7 +2163,7 @@ describe('a reaction (kits design 8.4, table 8.9.1)', () => {
     const o = hunterOrigin(), origin: Origin = o.kind === 'hunter' ? { ...o, build: { ...o.build, perks: { drain: 20 } } } : o;
     const r = play(add(row('A', 'party', { origin, hp: 5 }), row('M', 'foe')), start(['A', 20], ['M', 10]), hit('A', 'M'));
     const used = r.effects.find(e => e.type === 'used');
-    expect([rowHp(body(r.fight, 'A')), used && used.type === 'used' ? used.line : '']).toEqual([7, 'A uses hit: M caught 9, A drains 2.']);
+    expect([rowHp(body(r.fight, 'A')), used && used.type === 'used' ? used.line : '']).toEqual([7, 'A uses hit: M hit 9, A drains 2.']);
   });
 
   test('a turn reaction moves its reactor\'s turn before the named body\'s, and adds no turn', () => {
@@ -2266,7 +2266,7 @@ describe('surprise (kits design 8.7.5)', () => {
       { ...start(['A', 1], ['M', 20], ['N', 20]), surprised: 'foe' } as Command);
     expect(body(shocked.fight, 'M').at - body(plain.fight, 'M').at).toBe(RULES.fight.kit.surprise * RULES.fight.round);
     expect(body(shocked.fight, 'N').at).toBe(body(plain.fight, 'N').at);
-    expect(running(shocked).log.some(l => l.text.includes('the foes are surprised'))).toBe(true);
+    expect(running(shocked).log.some(l => l.text.includes('The foes are surprised'))).toBe(true);
   });
 });
 
@@ -2573,7 +2573,7 @@ describe('a mythic plays its script (notes-11-keystones.md, design B.3 and B.4)'
     const x = body(f0, 'X'), gate = Math.ceil(0.65 * x.sheet.hpMax);
     const held = running(go(f0, hit('A', 'X', KILL)));
     expect(rowHp(body(held, 'X')), 'a hit of any size leaves it at 65%').toBe(gate);
-    expect(logs(held)).toContain('The Angel of the Last Trumpet is held at the gate.');
+    expect(logs(held)).toContain('The Angel of the Last Trumpet stopped at its phase HP threshold.');
     const r = until(held, f => standing(f).phase === 1);
     expect(r.effects).toContainEqual({ type: 'phased', id: id('X'), phase: 1 });
     expect(logs(r.fight)).toContain('The Angel of the Last Trumpet enters The First Breath.');
@@ -2599,7 +2599,7 @@ describe('a mythic plays its script (notes-11-keystones.md, design B.3 and B.4)'
     const f0 = begun(mythic('angel-of-the-last-trumpet', place(5, 5)), hunter('A', place(8, 5)));
     const told = until(f0, omenUp);
     expect(told.effects).toContainEqual({ type: 'omen', id: id('X'), omen: 'weighed' });
-    expect(logs(told.fight)).toContain('The Angel of the Last Trumpet readies Weighed and Found Wanting: it lands on its next turn.');
+    expect(logs(told.fight)).toContain('The Angel of the Last Trumpet readies Weighed and Found Wanting. It lands on its next turn.');
     expect(standing(told.fight)).toMatchObject({ at: 'omen', omen: 'weighed', aim: id('A'), beat: 1 });
     expect(told.fight.currentId, 'announcing spent its turn').not.toBe(id('X'));
     const due = until(told.fight, turnOf('X')).fight;
@@ -2616,7 +2616,7 @@ describe('a mythic plays its script (notes-11-keystones.md, design B.3 and B.4)'
     const r = go(until(told.fight, turnOf('A')).fight, hit('A', 'X', STUN));
     expect(standing(r.fight).at).toBe('calm');
     expect(r.effects).toContainEqual({ type: 'answered', id: id('X'), how: 'interrupt', outcome: 'cancel' });
-    expect(logs(r.fight)).toContain('The Fourth Rider is stunned by A: Named in the Book is cancelled.');
+    expect(logs(r.fight)).toContain('The Fourth Rider is stunned by A. Named in the Book is canceled.');
   });
 
   test('an answered omen winds its phase\'s clock back by the rule\'s rounds, and a landed one does not', () => {
@@ -2644,7 +2644,7 @@ describe('a mythic plays its script (notes-11-keystones.md, design B.3 and B.4)'
     const r = go(f1, hit('B', 'A', GUARD));
     expect(standing(r.fight).at).toBe('calm');
     expect(r.effects).toContainEqual({ type: 'answered', id: id('X'), how: 'shield', outcome: 'cancel' });
-    expect(logs(r.fight)).toContain('A is shielded: Named in the Book is cancelled.');
+    expect(logs(r.fight)).toContain('A is shielded. Named in the Book is canceled.');
   });
 
   // Decision 43: Stars Fall aims at the tile of the hunter farthest from it, and leaving that tile cancels it. The
@@ -2662,7 +2662,7 @@ describe('a mythic plays its script (notes-11-keystones.md, design B.3 and B.4)'
     const r = go(f1, { type: 'move', by: id('A'), to: place(9, 5) });
     expect(standing(r.fight).at).toBe('calm');
     expect(r.effects).toContainEqual({ type: 'answered', id: id('X'), how: 'step', outcome: 'cancel' });
-    expect(logs(r.fight)).toContain('No one stands where Stars Fall was aimed: Stars Fall is cancelled.');
+    expect(logs(r.fight)).toContain('No one stands where Stars Fall was aimed. Stars Fall is canceled.');
   });
 
   test('an omen aimed at a body out of range finds no one', () => {
@@ -2671,7 +2671,7 @@ describe('a mythic plays its script (notes-11-keystones.md, design B.3 and B.4)'
     const away = running(go(told.fight, { type: 'place', id: id('A'), to: place(30, 5) }));
     const due = until(away, turnOf('X')).fight, hp = rowHp(body(due, 'A'));
     const r = go(due, landing(due));
-    expect(logs(r.fight)).toContain('Named in the Book finds no one.');
+    expect(logs(r.fight)).toContain('Named in the Book hits no one.');
     expect(rowHp(body(r.fight, 'A'))).toBe(hp);
     expect(standing(r.fight).at).toBe('calm');
     expect(running(r).currentId, 'the fizzle spent its turn').not.toBe(id('X'));
@@ -2721,7 +2721,7 @@ describe('a mythic plays its script (notes-11-keystones.md, design B.3 and B.4)'
     const told = until(begun(mythic('the-fourth-rider', place(5, 5)), hunter('A', place(8, 5))), omenUp);
     const beat = standing(told.fight).beat, r = go(told.fight, gm('drop'));
     expect(standing(r.fight)).toMatchObject({ at: 'calm', beat: beat + 1 });
-    expect(logs(r.fight)).toContain('The GM drops Named in the Book: The Fourth Rider lands nothing.');
+    expect(logs(r.fight)).toContain('The GM drops Named in the Book. Nothing lands.');
     refuses(r.fight, gm('drop'), 'noOmen');
     expect(runningState(until(running(r), turnOf('X')).fight).at, 'its next turn is an act beat').toBe('acting');
   });

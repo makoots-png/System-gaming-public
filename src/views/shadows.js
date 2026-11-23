@@ -118,20 +118,20 @@ export function register(app) {
     const total = summoned.reduce((a, s) => a + summonCost(s), 0);
     const cards = h.shadows.map(s => `<li class="sh-card${on(s) ? ' on' : ''}" data-sid="${esc(s.id)}">
       <h3>${esc(s.name)}</h3>
-      <div class="sh-meta">${ui.rankBadge(s.rank)}<span>${esc(s.grade)}</span><span>${esc(s.archetype)}</span><span>HP ${int(s.hp)} / ${hpMaxOf(s)}</span><span>Summon ${summonCost(s)} mana</span></div>
-      <div class="sh-row"><button type="button" class="${on(s) ? '' : 'primary'}" data-act="summon" aria-pressed="${on(s)}"${!on(s) && !can(h, s.id, { kind: 'summon' }) ? ' disabled title="At 0 HP it cannot be summoned: Full HP first"' : ''}>${on(s) ? 'Unsummon' : 'Summon'}</button>
-        <button type="button" data-act="rename">Rename</button><button type="button" data-act="heal">Full HP</button></div>
+      <div class="sh-meta">${ui.rankBadge(s.rank)}<span>${esc(s.grade)}</span><span>${esc(s.archetype ? s.archetype[0].toUpperCase() + s.archetype.slice(1) : '')}</span><span>HP ${int(s.hp)} / ${hpMaxOf(s)}</span><span>Summon ${summonCost(s)} mana</span></div>
+      <div class="sh-row"><button type="button" class="${on(s) ? '' : 'primary'}" data-act="summon" aria-pressed="${on(s)}"${!on(s) && !can(h, s.id, { kind: 'summon' }) ? ' disabled title="Cannot summon at 0 HP. Tap Heal to full first."' : ''}>${on(s) ? 'Unsummon' : 'Summon'}</button>
+        <button type="button" data-act="rename">Rename</button><button type="button" data-act="heal">Heal to full</button></div>
       <div class="sh-row"><button type="button" class="danger grow" data-act="release">Release</button></div>
       <label class="field"><span class="lbl">Notes</span><textarea data-notes maxlength="500">${esc(s.notes)}</textarea></label></li>`).join('');
-    return `<div class="sh-bar"><span class="sh-cap${used >= c ? ' full' : ''}" aria-label="Army capacity">${used} / ${c}</span><span>Summoned ${summoned.length} · total summon mana ${total} · mana ${int(A().hunter.sheet(h).mana)}</span></div>
-      ${used ? `<ul class="sh-grid" aria-label="Shadow army">${cards}</ul>` : '<p class="empty">No shadows yet. Defeat a monster in Combat, then press Extract.</p>'}`;
+    return `<div class="sh-bar"><span class="sh-cap${used >= c ? ' full' : ''}" aria-label="Army capacity">${used} / ${c}</span><span>Summoned: ${summoned.length} · Mana spent to summon: ${total} · Current mana: ${int(A().hunter.sheet(h).mana)}</span></div>
+      ${used ? `<ul class="sh-grid" aria-label="Shadow army">${cards}</ul>` : '<p class="empty">No shadows yet. Defeat a monster in a fight, then tap Extract.</p>'}`;
   }
 
   app.registerView({
     id: 'shadows', label: 'Shadows', icon: '☽', order: 50, when: () => app.isGM() || canExtract(store.active()) || store.active().shadows.length > 0, // a hunter the GM granted one sees its army too
     mount(el) {
       el.innerHTML = `<section class="win"><span class="cb"></span><h2>Shadow Army</h2><div data-shroster></div></section>
-        <section class="win" data-shgm hidden><span class="cb"></span><h2>GM: grant a shadow</h2><p class="hint">Adds a bestiary monster to the active hunter's army without a roll.</p>
+        <section class="win" data-shgm hidden><span class="cb"></span><h2>Grant a shadow (GM)</h2><p class="hint">Adds a bestiary monster to the active hunter's army without a roll.</p>
           <div class="sh-row"><label class="field grow"><span class="lbl">Monster</span><select data-shmsel></select></label><button type="button" class="primary" data-shgrant>Grant shadow</button></div></section>`;
       el.addEventListener('click', async e => {
         const b = e.target.closest('button'); if (!b) return;

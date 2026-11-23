@@ -11,10 +11,10 @@ const CSS = `.sync-pill{font-size:12px;padding:4px 9px;white-space:nowrap;displa
     .sp-mark{flex:0 0 auto;width:9px;height:9px;border-radius:50%;box-sizing:border-box;font-weight:700;line-height:1}[data-conn=ready] .sp-mark{display:none}[data-conn=connecting] .sp-mark,[data-conn=waiting] .sp-mark,[data-conn=creating] .sp-mark,[data-conn=joining] .sp-mark,[data-conn=upgrading] .sp-mark{border:2px solid currentColor}[data-conn=live] .sp-mark{background:currentColor;box-shadow:0 0 6px currentColor}[data-conn=unreachable] .sp-mark,[data-conn=reconnecting] .sp-mark,[data-conn=notSent] .sp-mark,[data-conn=locked] .sp-mark,[data-conn=tooBig] .sp-mark,[data-conn=sheetTooBig] .sp-mark{width:auto;height:auto;border-radius:0}`;
 /** The words after "Room CODE:" for a connection with a room. */
 const PILL_ROOM: Partial<Record<Connection, string>> = {
-  live: 'live', connecting: 'connecting', reconnecting: 'reconnecting, changes are kept on this device',
+  live: 'live', connecting: 'connecting', reconnecting: 'reconnecting, changes are saved on this device',
   notSent: 'live, your sheet is not sent yet', locked: 'live, your hunter is claimed by another device',
-  tooBig: 'live, the fight is too big to share', sheetTooBig: 'live, your sheet is too big for the room',
-  waiting: 'live, sending what you did',
+  tooBig: 'live, the fight is too large to share', sheetTooBig: 'live, your sheet is too large for the room',
+  waiting: 'live, sending your changes',
 };
 
 /** The pill, its tap and its CSS. Registered after src/edge/sync.ts, whose API it reads. */
@@ -40,7 +40,7 @@ export function register(app: App): void {
     const c = sync.conn(), code = sync.room() || '';
     const [txt, aria]: [string, string] | [] = c === 'off' ? []
       : c === 'ready' ? (app.isGM() ? ['Create room', 'Create a room'] : ['Join room', 'Join a room'])
-      : c === 'unreachable' ? ['Offline', 'Offline: the server does not answer, so you play on this device']
+      : c === 'unreachable' ? ['Offline', 'Offline. Could not reach the room server, so you are playing on this device.']
       : c === 'upgrading' ? updating()
       : (c === 'creating' || c === 'joining') && !code ? [c === 'creating' ? 'Creating' : 'Joining', c === 'creating' ? 'Creating a room' : 'Joining a room']
       : [code, `Room ${code}: ${PILL_ROOM[c] ?? (c === 'creating' ? 'creating a new room' : 'joining another room')}`];

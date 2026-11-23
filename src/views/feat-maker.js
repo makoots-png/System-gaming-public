@@ -32,12 +32,12 @@ export function featMaker(app, key) {
       const show = d ? d.show : { at: 'never' };
       const after = show.at === 'feat' ? /** @type {any} */ (show).key : null;
       body.innerHTML = `${field('Name', `<input type="text" id="fm-name" maxlength="${FEAT_BOUNDS.name}" autocomplete="off" value="${esc(d ? d.name : '')}">`)}
-        ${field('Window title', `<input type="text" id="fm-window" maxlength="${FEAT_BOUNDS.window}" autocomplete="off" value="${esc(d ? d.window : '')}">`)}
-        ${field('What the player reads', `<input type="text" id="fm-desc" maxlength="${FEAT_BOUNDS.desc}" autocomplete="off" value="${esc(d ? d.desc : '')}">`)}
-        <div class="lbl">Counts</div><div data-fm-count></div>
-        ${field('Earned at', `<input type="number" id="fm-reach" inputmode="numeric" min="1" max="${FEAT_BOUNDS.reach}" value="${esc(rule.reach)}">`)}
-        <div class="lbl">Within</div>${A.maker.chips('within', WITHINS.map(w => [w, WITHIN_WORDS[w]]), rule.within, { label: 'Within' })}
-        <div class="lbl">Shown to the player</div>${A.maker.chips('show', SHOWS, show.at, { label: 'Shown to the player' })}
+        ${field('Popup title', `<input type="text" id="fm-window" maxlength="${FEAT_BOUNDS.window}" autocomplete="off" value="${esc(d ? d.window : '')}">`)}
+        ${field('Description shown to players', `<input type="text" id="fm-desc" maxlength="${FEAT_BOUNDS.desc}" autocomplete="off" value="${esc(d ? d.desc : '')}">`)}
+        <div class="lbl">What this feat tracks</div><div data-fm-count></div>
+        ${field('Target count to earn', `<input type="number" id="fm-reach" inputmode="numeric" min="1" max="${FEAT_BOUNDS.reach}" value="${esc(rule.reach)}">`)}
+        <div class="lbl">Time window</div>${A.maker.chips('within', WITHINS.map(w => [w, WITHIN_WORDS[w]]), rule.within, { label: 'Time window' })}
+        <div class="lbl">When players can see this feat</div>${A.maker.chips('show', SHOWS, show.at, { label: 'When players can see this feat' })}
         <div data-show="count"${show.at === 'count' ? '' : ' hidden'}>${field('Shown once the count reaches', `<input type="number" id="fm-shown" inputmode="numeric" min="1" value="${esc(show.at === 'count' ? /** @type {any} */ (show).n : 1)}">`)}</div>
         <div data-show="feat"${show.at === 'feat' ? '' : ' hidden'}>${field('Shown once this feat is earned', `<select id="fm-after">${afterChoices(BUILT_IN_FEATS, lib.feats, key, after)
           .map(([k, n]) => `<option value="${esc(k)}"${k === after ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select>`)}</div>

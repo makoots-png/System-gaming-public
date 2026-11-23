@@ -16,7 +16,7 @@ import { UNFINISHED_ROWS, WORDS_BOUNDS } from '../core/rewards.ts';
 import { saveEntry, savedWords } from '../core/library.ts';
 import { atLibrary } from '../core/save-step.ts';
 
-const FOR = [['table', 'The table'], ['hunters', 'Chosen hunters']];
+const FOR = [['table', 'Whole party'], ['hunters', 'Chosen hunters']];
 const CSS = `
 .stm-chs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
 .stm-ch{border:1px solid var(--line);background:rgba(10,26,46,.55);min-width:0}
@@ -48,8 +48,8 @@ export function storyMaker(app, story) {
       /** @type {import('../core/api.ts').QuestFields | null} the open chapter's quest form, while "Issues a quest" is ticked */
       let quest = null;
       body.innerHTML = `${field('Name', `<input type="text" id="stm-name" maxlength="${STORY_BOUNDS.name}" autocomplete="off" value="${esc(story ? story.name : '')}">`)}
-        ${field('When to turn it on (only you see this)', `<input type="text" id="stm-when" maxlength="${STORY_BOUNDS.when}" autocomplete="off" value="${esc(story ? story.when : '')}">`)}
-        <div class="lbl">For</div>${A.maker.chips('for', FOR, story ? story.for : 'table', { label: 'For' })}
+        ${field('When to start (GM note only)', `<input type="text" id="stm-when" maxlength="${STORY_BOUNDS.when}" autocomplete="off" value="${esc(story ? story.when : '')}">`)}
+        <div class="lbl">Who sees this story</div>${A.maker.chips('for', FOR, story ? story.for : 'table', { label: 'Who sees this story' })}
         <div class="lbl">Chapters</div><ol class="stm-chs" data-chs></ol>
         <button type="button" data-chadd>Add a chapter</button>`;
       const $ = sel => body.querySelector(sel);
@@ -59,10 +59,10 @@ export function storyMaker(app, story) {
       function chapterHtml(c, i) {
         const on = i === open;
         return `<li class="stm-ch${on ? ' open' : ''}" data-ch="${i}"><button type="button" class="stm-line" data-chopen="${i}" aria-expanded="${on}">${esc(lineOf(c, i))}</button>${on ? `<div class="stm-chb">
-          ${field('Chapter name (only you see this)', `<input type="text" id="stm-cname" maxlength="${STORY_BOUNDS.chapterName}" autocomplete="off" value="${esc(c.name)}">`)}
-          ${field('Window title', `<input type="text" id="stm-wtitle" maxlength="${WORDS_BOUNDS.title}" autocomplete="off" value="${esc(c.words.title)}">`)}
-          ${field('What the players read', `<input type="text" id="stm-wline" maxlength="${WORDS_BOUNDS.line}" autocomplete="off" value="${esc(c.words.line)}">`)}
-          ${field('Note for you (only you see this)', `<textarea id="stm-note" rows="2" maxlength="${STORY_BOUNDS.note}">${esc(c.note)}</textarea>`)}
+          ${field('Chapter name (GM only)', `<input type="text" id="stm-cname" maxlength="${STORY_BOUNDS.chapterName}" autocomplete="off" value="${esc(c.name)}">`)}
+          ${field('Popup title shown to players', `<input type="text" id="stm-wtitle" maxlength="${WORDS_BOUNDS.title}" autocomplete="off" value="${esc(c.words.title)}">`)}
+          ${field('Message shown to players', `<input type="text" id="stm-wline" maxlength="${WORDS_BOUNDS.line}" autocomplete="off" value="${esc(c.words.line)}">`)}
+          ${field('GM note (only you see this)', `<textarea id="stm-note" rows="2" maxlength="${STORY_BOUNDS.note}">${esc(c.note)}</textarea>`)}
           <p class="stm-hint">What to ask the table, or when you think this chapter is done.</p>
           <div class="lbl">Reward</div><div data-stm-rw></div>
           <label class="field chk"><input type="checkbox" id="stm-hasq"${c.quest ? ' checked' : ''}><span>Issues a quest</span></label>
@@ -145,7 +145,7 @@ export function storyMaker(app, story) {
             shell.error(p.why); return undefined;
           }
           const why = quest ? quest.check() : '';
-          if (why) { shell.error(`Chapter ${open + 1}'s quest: ${why}`); return undefined; }
+          if (why) { shell.error(`Chapter ${open + 1} quest: ${why}`); return undefined; }
           const t = /** @type {import('../core/story/story.ts').StoryTemplate} */ (parseStory(r)), id = story ? story.id : store.id('st');
           if (!wrote('Workshop', store.apply('library-story', atLibrary(l => saveEntry(l, 'stories', { ...t, id }))), savedWords('story', t.name))) return undefined;
           return id;

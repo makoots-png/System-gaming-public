@@ -229,12 +229,12 @@ export function partitionPresetItems(
 // ── words ──
 /** Plain, literal words for the clear preset panel, card summary, clear hand-off, and refusals. */
 export const PRESET_WORDS = {
-  button: 'What this clear pays',
-  title: 'What this clear pays',
+  button: 'Set clear rewards',
+  title: 'Clear rewards',
   xpLabel: 'XP per hunter',
   goldLabel: 'Gold per hunter',
-  itemsLabel: 'Clear preset items',
-  payItem: (name: string): string => `Pay ${name}`,
+  itemsLabel: 'Items to give',
+  payItem: (name: string): string => `Give ${name}`,
   goesTo: 'Goes to',
   itemGoesTo: (dest: string): string => `goes to ${dest}`,
   itemWentTo: (dest: string): string => `went to ${dest}`,
@@ -245,18 +245,18 @@ export const PRESET_WORDS = {
   pickItem: 'Pick an item',
   newItem: 'New item…',
   reset: 'Reset to recommended',
-  clear: 'Remove clear preset',
+  clear: 'Remove clear rewards',
   closePanel: 'Close panel',
   cancelClear: 'Cancel clear',
   approveLater: 'Approve later',
-  edit: 'Edit clear preset',
-  noItems: 'This clear preset has no items.',
-  paidItemsLabel: 'Paid clear preset items',
-  clearItemsLabel: 'Clear preset items',
+  edit: 'Edit clear rewards',
+  noItems: 'No items in these clear rewards.',
+  paidItemsLabel: 'Given clear reward items',
+  clearItemsLabel: 'Clear reward items',
   clearedTitle: 'Gate cleared',
   clearedBody: (rank: string, name: string): string => `${rank}-rank gate cleared: ${name}`,
-  openWaiting: 'Open Waiting for you',
-  waitingLine: (n: number): string => `${n} reward${n === 1 ? ' waits' : 's wait'} in Waiting for you on the GM screen.`,
+  openWaiting: 'Open Pending rewards',
+  waitingLine: (n: number): string => `${n} reward${n === 1 ? ' is' : 's are'} in Pending rewards on the GM screen.`,
   stashedLine: (names: readonly string[]): string => `You put ${names.join(', ')} in the party stash.`,
   rewardedLine: (names: readonly string[]): string => `You rewarded ${names.join(', ')}.`,
   nobodyGotXpGold: 'You picked no hunters, so nobody got XP or gold.',
@@ -264,9 +264,9 @@ export const PRESET_WORDS = {
   clearNoteHead: 'Each selected hunter gets ',
   clearNoteMid: ' XP and ',
   clearNoteTail: (inRoom: boolean): string =>
-    ` gold from the clear preset. You do not roll loot for this clear.${inRoom ? ' You approve each hunter\'s share in Waiting for you on the GM screen.' : ''}`,
-  paidClearNote: 'You already paid this gate\'s clear preset. Tap Confirm clear to mark the gate cleared with no second reward.',
-  paidClearedLine: 'You already paid this gate\'s clear preset, so nobody got a second reward.',
+    ` gold from the clear rewards you set. No random loot is rolled for this clear.${inRoom ? ' Approve each hunter\'s share in Pending rewards on the GM screen.' : ''}`,
+  paidClearNote: 'You already gave this gate\'s clear rewards. Tap Confirm clear to mark the gate cleared without giving rewards again.',
+  paidClearedLine: 'You already gave this gate\'s clear rewards, so nobody got rewards again.',
   confirmNoHunters: {
     title: 'Clear with no rewards?',
     body: 'You picked no hunters, so nobody gets rewards.',
@@ -285,13 +285,13 @@ export const PRESET_WORDS = {
       ? ['nobody got XP or gold']
       : [`${fmt(p.xp)} XP`, `${fmt(p.gold)} gold`];
     if (itemPart) parts.push(itemPart);
-    return `${paid ? 'Clear preset paid' : 'Clear preset'}: ${parts.join(', ')}`;
+    return `${paid ? 'Clear rewards given' : 'Clear rewards'}: ${parts.join(', ')}`;
   },
   refusals: {
-    missing: 'That gate is no longer here.',
-    'gate-done': 'This gate is cleared or closed, so you cannot change its clear preset.',
-    refused: 'You cannot make this change now. The clear preset may already be paid, or it may hold all 20 items.',
-    'no-preset': 'This gate has no clear preset.',
+    missing: 'This gate no longer exists.',
+    'gate-done': 'This gate is cleared or closed, so you cannot change its clear rewards.',
+    refused: 'You cannot make this change now. The clear rewards may already be given, or the list already has 20 items.',
+    'no-preset': 'This gate has no clear rewards set.',
     'stash-full': 'The party stash is full. Take something out of the stash, or assign the items to hunters first.',
   },
 } as const;

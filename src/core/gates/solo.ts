@@ -164,19 +164,19 @@ export type SoloRefusal =
 /** What a refused run says, to the player who tapped (copy-tasks.md: why, and the way out). */
 export const SOLO_REFUSAL_WORDS: { readonly [R in SoloRefusal]: string } = {
   'no-hunter': 'This hunter is no longer on this phone.',
-  fight: 'A fight holds this hunter. Finish it first.',
-  dead: `This hunter is dead. ${WAYS_BACK} brings it back.`,
+  fight: 'This hunter is in a fight. Finish the fight first.',
+  dead: `This hunter is dead. ${WAYS_BACK} brings them back.`,
   collapsed: 'This hunter has collapsed from fatigue. Rest first.',
-  gone: 'This gate is gone.',
+  gone: 'This gate no longer exists.',
   closed: 'This gate has closed.',
   'not-solo': 'The GM has not opened this gate to solo runs.',
   off: 'Personal gates are off.',
   'not-played': 'Only the hunter you play in this room can enter its gates.',
-  waiting: 'Your run here is waiting for the GM\'s answer.',
+  waiting: 'Waiting for the GM to confirm your last solo run of this gate.',
   empty: 'This gate has no monsters.',
-  changed: 'Your hunter changed while the run played, so the run paid nothing. Enter again.',
-  moved: 'This phone joined or left a room while the run played, so the run paid nothing. Enter again.',
-  'stash-full': 'The party stash is full. Take something out of the stash or change the clear preset, then enter again.',
+  changed: 'Your hunter changed during the solo run, so you got no rewards. Try entering again.',
+  moved: 'You joined or left a room during the solo run, so you got no rewards. Try entering again.',
+  'stash-full': 'The party stash is full. Take something out of the stash or change the clear rewards, then enter again.',
 };
 
 /** What a run is played against: the gate's name and rank, its monsters as rows read them, each with its count, and the statuses they name. */
@@ -307,7 +307,7 @@ export function ranOn(h: Hunter, run: SoloRun, R: Rules): Hunter {
 /** The words of a run's outcome for one hunter: the System window's title and the log's verb. */
 export const OUTCOME_WORDS: { readonly [O in RunOutcome]: { readonly title: string; readonly did: string } } = {
   won: { title: 'GATE CLEARED', did: 'cleared' },
-  lost: { title: 'RUN FAILED', did: 'fell in' },
+  lost: { title: 'RUN FAILED', did: 'failed to clear' },
   stalled: { title: 'RETREAT', did: `retreated from` },
 };
 const LIFE_WORDS: { readonly [L in LifeState]: string } = { up: '', dead: ' and died' };
@@ -598,17 +598,17 @@ export function takenLine(save: Pick<Save, 'gates'>, p: SoloRunPayload, plan: So
 }
 /** The GM's log's words for a won run its phone did not pay. */
 const REFUSED_LINE: { readonly [W in SoloRefused]: string } = {
-  taken: 'Someone cleared it first, so the run paid nothing.',
-  closed: 'The gate closed first, so the run paid nothing.',
-  gone: 'The gate was gone, so the run paid nothing.',
-  'stash-full': 'The party stash was full, so the run paid nothing.',
+  taken: 'Another hunter cleared it first, so no rewards were given.',
+  closed: 'The gate closed first, so no rewards were given.',
+  gone: 'The gate no longer existed, so no rewards were given.',
+  'stash-full': 'The party stash was full, so no rewards were given.',
 };
 /** What the player's window says of a refused run (the answer's `why`). */
 export const REFUSED_WORDS: { readonly [W in SoloRefused]: string } = {
-  taken: 'Another hunter cleared this gate first. Your run\'s cost stays.',
-  closed: 'The GM closed this gate first. Your run\'s cost stays.',
-  gone: 'This gate is gone. Your run\'s cost stays.',
-  'stash-full': 'The party stash was full, so the GM\'s phone could not clear this gate. Ask the GM to clear space in the stash. Your run\'s cost stays.',
+  taken: 'Another hunter cleared this gate first. Your spent HP, mana, and fatigue are not refunded.',
+  closed: 'The GM closed this gate first. Your spent HP, mana, and fatigue are not refunded.',
+  gone: 'This gate no longer exists. Your spent HP, mana, and fatigue are not refunded.',
+  'stash-full': 'The party stash was full, so the GM could not clear this gate. Ask the GM to make room in the stash. Your spent HP, mana, and fatigue are not refunded.',
 };
 
 // ── the words a player reads (copy-tasks.md: the System's voice in a window's tag and title only) ──
@@ -616,20 +616,20 @@ const span = (s: { readonly low: number; readonly high: number }): string => (s.
 /** What the Gates view says of solo runs: its sections, its control, its run's count, its notes. */
 export const SOLO_WORDS = {
   personal: 'Personal gates',
-  room: 'Solo gates',
+  room: 'Room solo gates',
   enter: 'Enter alone',
   confirm: 'ENTER ALONE?',
   notNow: 'Not now',
   running: (round: number, moves: number): string => `Round ${round}, ${moves} move${moves === 1 ? '' : 's'} played`,
   open: 'Open to solo runs',
-  tooBig: 'Too many monsters to send to players. Open fewer gates to solo runs, or give this one fewer of your own monsters.',
+  tooBig: 'Too many custom monsters to sync to players. Open fewer gates to solo runs, or use fewer custom monsters in this gate.',
   none: 'No personal gate is open. The System opens one every few hours.',
   dismiss: 'Dismiss',
   switch: 'Personal gates',
   every: 'Hours between gates',
 } as const;
 /** The lines of a personal gate's news window ("A GATE HAS APPEARED"): its rank, that it is entered alone, when it closes. */
-export const personalNews = (g: Pick<PersonalGate, 'rank' | 'closesAt'>, nowMs: number): string[] => [`Rank: ${g.rank}`, 'A personal gate: enter it alone.', `${closesIn(g, nowMs)}.`];
+export const personalNews = (g: Pick<PersonalGate, 'rank' | 'closesAt'>, nowMs: number): string[] => [`Rank: ${g.rank}`, 'This is a personal gate. Enter it alone.', `${closesIn(g, nowMs)}.`];
 /** When a personal gate closes, from `nowMs`: in hours, or in minutes in its last hour. */
 export function closesIn(g: Pick<PersonalGate, 'closesAt'>, nowMs: number): string {
   const ms = Date.parse(g.closesAt) - nowMs;
@@ -645,10 +645,10 @@ export function soloConfirmLines(read: OddsRead): string[] {
   const me = read.party[0];
   const lines = [wonLine(read, 'alone')];
   if (me) {
-    lines.push(`HP left: ${span(me.hp)} of ${me.hpMax}, most often ${me.hp.mid}.`);
+    lines.push(`Expected HP left: ${span(me.hp)} of ${me.hpMax}, usually ${me.hp.mid}.`);
     lines.push(fateLine(me));
   }
-  lines.push(`The odds are ${read.of} plays. Your run is one more, and it can go better or worse.`);
+  lines.push(`These odds come from ${read.of} simulated fights. Your solo run is a separate fight and can turn out better or worse.`);
   return lines;
 }
 /** What a run cost, line by line: HP, mana and fatigue before and after, and how the hunter came out. */
@@ -656,7 +656,7 @@ export function runCostLines(before: Vitals, after: Vitals, m: Maxima): string[]
   const out = [`HP ${hpOf(before.life, m.hpMax)} to ${hpOf(after.life, m.hpMax)} of ${m.hpMax}`, `Mana ${manaOf(before, m)} to ${manaOf(after, m)} of ${m.manaMax}`,
     `Fatigue ${Math.min(before.fatigue, m.fatigueMax)} to ${Math.min(after.fatigue, m.fatigueMax)} of ${m.fatigueMax}`];
   if (after.life.at === 'dead') out.push(`You died. ${WAYS_BACK} brings you back.`);
-  if (after.collapsed && !before.collapsed) out.push('You have collapsed from exhaustion.');
+  if (after.collapsed && !before.collapsed) out.push('You collapsed from fatigue and are now Exhausted.');
   return out;
 }
 /** The room's personal gates' switch and hours set by the GM (`rulesOverrides.solo`), as one step for `store.apply`. */

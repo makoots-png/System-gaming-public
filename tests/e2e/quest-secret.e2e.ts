@@ -2,6 +2,7 @@
 // player's quest card): the GM gives one hunter a quest that the room seals, with its progress, to that hunter's phone
 // and the GM's. Another player's phone never holds it, in its save or in any answer the room gave it, even when it ends.
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, answerWindow } from './helpers.ts';
+import { SECRET_WORDS } from '../../src/core/hunter/quest-secret.ts';
 
 const TITLE = 'Unmask the traitor', CLUE = 'Clues found';
 
@@ -25,18 +26,18 @@ test('the GM gives Mira a secret quest: Mira sees it marked Secret, Brakk\'s pho
     await form.locator('[name=title]').fill(TITLE);
     await form.locator('[name=olabel]').fill(CLUE);
     await form.locator('[name=otarget]').fill('2');
-    await gm.getByLabel('Secret: only this hunter and you see it').check();
+    await gm.getByLabel(SECRET_WORDS.box).check();
     await gm.locator('[data-tog="award"]').tap();
-    for (const name of ['Mira (remote)', 'Brakk (remote)']) await gm.locator('#gm-targets label', { hasText: name }).tap();
+    for (const name of ['Mira (player phone)', 'Brakk (player phone)']) await gm.locator('#gm-targets label', { hasText: name }).tap();
     await gm.locator('#gm-q-go').tap();
-    await expect(gm.locator('#gm-q-msg')).toHaveText('A secret quest goes to one hunter.');
+    await expect(gm.locator('#gm-q-msg')).toHaveText(SECRET_WORDS.oneHunter);
     expect(await gm.evaluate(() => (hunterApp.store.get().settings.sync.outbox ?? []).filter((l: any) => l.letter.event?.type === 'quest').length)).toBe(0);
   });
 
   await test.step('with Brakk unpicked, Issue quest sends it to Mira alone', async () => {
-    await gm.locator('#gm-targets label', { hasText: 'Brakk (remote)' }).tap();
+    await gm.locator('#gm-targets label', { hasText: 'Brakk (player phone)' }).tap();
     await gm.locator('#gm-q-go').tap();
-    await expect(gm.locator('#gm-q-msg')).toHaveText(/^(Sent to 1 remote\.|1 remote gets it when the room answers\.)$/);
+    await expect(gm.locator('#gm-q-msg')).toHaveText(/^(Sent to 1 player in the room\.|Saved\. 1 player in the room will get it once the room server confirms it\.)$/);
   });
 
   await test.step('Mira\'s phone opens the quest with the Secret line, and her quest card shows the Secret chip and says only she and the GM see it', async () => {

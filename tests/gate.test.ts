@@ -264,7 +264,7 @@ describe('a gate\'s countdown, one rule for the GM and a player (implicit audit 
     const rows = ([['detected', 9], ['raiding', 7], ['detected', 5], ['cleared', 5], ['closed', 5], ['broken', 5]] as const).map(([s, b]) => countdown(at(s, b), 5));
     expect(rows).toEqual([
       { words: 'Breaks in 4 days', tone: null }, { words: 'Breaks in 2 days', tone: 'soon' }, { words: 'Breaks today', tone: 'over' },
-      { words: 'Cleared on day 4', tone: null }, { words: 'Gate closed', tone: null }, { words: 'Broke on day 5. Monsters are loose', tone: 'over' },
+      { words: 'Cleared on day 4', tone: null }, { words: 'Gate closed', tone: null }, { words: 'Broke on day 5. Monsters are loose.', tone: 'over' },
     ]);
   });
   test('a spawn gives a gate any type but break, which comes from a story', () => {

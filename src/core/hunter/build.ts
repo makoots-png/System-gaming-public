@@ -77,7 +77,7 @@ export function respec(h: Hunter, R: Rules, role: BuildRole, inFight: boolean): 
  * player (even with players-pick off). Answers the build and the reward line; a stale or repeated pick changes nothing.
  */
 export function buildAward(h: Hunter, spec: BuildChange, R: Rules): { build: Build; line: string } {
-  if (spec === 'respec') return { build: { path: null, picks: [] }, line: 'Path and perks cleared: choose a new path.' };
+  if (spec === 'respec') return { build: { path: null, picks: [] }, line: 'Path and perks cleared. Choose a new path.' };
   if ('tier' in spec) {
     const p = pathOf(R, h.build.path), t = spec.tier, c = spec.pick;
     if (!buildsOn(R) || !p || !Number.isInteger(t) || t !== h.build.picks.length || t >= tiersOpen(p, h.rank) || (c !== 0 && c !== 1)) return { build: h.build, line: '' };

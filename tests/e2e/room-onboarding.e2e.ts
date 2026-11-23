@@ -7,7 +7,7 @@ import { parseDeviceId } from '../../src/core/ids.ts';
 const SAVE_KEY = 'hunter-system-v4';
 const OB = '.ob-overlay';
 const NO_ROOM = /no room/i;
-const NOT_SAVED = 'Not saved: this tab cannot save right now. The banner at the top says why.';
+const NOT_SAVED = 'Not saved. This tab cannot save right now. Check the banner at the top for details.';
 
 /** A new install's save as a newer app wrote it: this app opens it read-only, and setup has not run. */
 function newerFreshSave(): string {
@@ -239,8 +239,8 @@ test('a new player who names a hunter sees Hunter created with three next steps,
   await expect(win).toContainText('Your hunter Nova Reed is ready.');
   const steps = await nextOf(phone);
   expect(steps.map(s => s.done)).toEqual([false, false, false]);
-  expect(steps[0]!.text).toMatch(/^Spend your \d+ ability points?: on the Status tab, tap \+ on a stat, then Confirm allocation\.$/);
-  expect(steps.slice(1).map(s => s.text)).toEqual(['Pick a path: on the Status tab, in the Build panel.', 'Join your GM\'s room: ask the GM for the room code or an invite link.']);
+  expect(steps[0]!.text).toMatch(/^Spend your \d+ ability points?\. On the Status tab, tap \+ on a stat, then tap Confirm allocation\.$/);
+  expect(steps.slice(1).map(s => s.text)).toEqual(['Pick a path in the Build panel on the Status tab.', 'Join your GM\'s room. Ask the GM for the room code or an invite link.']);
   await expect(win.locator('[data-objoin]')).toBeVisible();
 
   await win.locator('[data-obsheet]').tap();
@@ -275,7 +275,7 @@ test('a new GM sees Campaign ready, taps Create room and lands on the room\'s in
   await expect(win).toContainText(ROOM_IS);
   expect(await nextOf(gm)).toEqual([
     { text: 'Create a room.', done: false },
-    { text: 'Invite your players: share the room\'s code, link or QR code.', done: false },
+    { text: 'Invite your players. Share the room code, link, or QR code.', done: false },
   ]);
   await win.locator('[data-obcreate]').tap();
 
@@ -295,7 +295,7 @@ test('the ? guide lists this role\'s next steps and tips only: a player\'s, then
     await player.locator('#help-btn').tap();
     const win = await windowTitled(player, 'How it works');
     await expect(win).toContainText(ABOUT);
-    expect((await nextOf(player)).map(s => s.text.replace(/^Done: /, '').split(':')[0])).toEqual([expect.stringMatching(/^Spend your \d+ ability points?$/), 'Pick a path', 'Join your GM\'s room']);
+    expect((await nextOf(player)).map(s => s.text.replace(/^Done: /, '').split('.')[0])).toEqual([expect.stringMatching(/^Spend your \d+ ability points?$/), 'Pick a path in the Build panel on the Status tab', 'Join your GM\'s room']);
     for (const t of TIPS.player) await expect(win).toContainText(t);
     for (const t of TIPS.gm) await expect(win).not.toContainText(t);
   });
@@ -305,7 +305,7 @@ test('the ? guide lists this role\'s next steps and tips only: a player\'s, then
     await gm.locator('#help-btn').tap();
     const win = await windowTitled(gm, 'How it works');
     await expect(win).toContainText(ABOUT);
-    expect((await nextOf(gm)).map(s => s.text)).toEqual(['Create a room.', 'Invite your players: share the room\'s code, link or QR code.']);
+    expect((await nextOf(gm)).map(s => s.text)).toEqual(['Create a room.', 'Invite your players. Share the room code, link, or QR code.']);
     for (const t of TIPS.gm) await expect(win).toContainText(t);
     for (const t of TIPS.player) await expect(win).not.toContainText(t);
   });
@@ -328,7 +328,7 @@ test('a player who did not join taps Join a room and lands on the Room page, whi
   await expect(first).toContainText(ROOM_PATH.player);
   const create = lobby.locator('[data-s=create]');
   await expect(create.locator('h2')).toHaveText('Create a room');
-  await expect(create).toContainText('Only the GM creates a room. Creating one makes this phone the GM\'s.');
+  await expect(create).toContainText('Only the GM creates a room. Creating one sets this device as the GM.');
   await expect(create.locator('[data-create]')).toHaveText('Create room as GM');
 });
 
@@ -387,7 +387,7 @@ test('in a tab that cannot save, Join on an invite says it is not saved and the 
   await expect(phone.locator(`${OB} [data-go]`)).toHaveText('Join');
   await expect(phone.locator(`${OB} [data-go]`)).toBeEnabled();
   await expect(phone.locator(`${OB} [data-err]`)).toHaveText('');
-  await expect(phone.locator(`${OB} [data-obmore]`)).toHaveText('other options');
+  await expect(phone.locator(`${OB} [data-obmore]`)).toHaveText('Other options');
   await expect(phone.locator(`${OB} [data-name]`)).toHaveValue('Mira Vale');
   expect(await phone.evaluate(() => hunterApp.store.get().settings.onboarded)).toBe(false);
   const box = await phone.locator(`${OB} [role=dialog]`).boundingBox();

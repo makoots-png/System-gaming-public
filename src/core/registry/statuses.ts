@@ -25,14 +25,14 @@ const STATUSES = {
   burning: { label: 'Burning', desc: 'Takes magical damage every round.', ops: [
     { op: 'damage', type: 'magical', when: 'turn', amount: each(dice(1, 6), dice(2, 6), dice(3, 8), dice(4, 10), dice(5, 12), dice(7, 12)) },
   ] },
-  poisoned: { label: 'Poisoned', desc: 'Takes magical damage every round and has lower Control, so its Accuracy drops.', ops: [
+  poisoned: { label: 'Poisoned', desc: 'Takes magical damage every round and has lower Control, reducing Accuracy.', ops: [
     { op: 'damage', type: 'magical', when: 'turn', amount: each(dice(1, 4), dice(1, 4), dice(1, 6), dice(1, 8), dice(1, 10), dice(1, 12)) },
     { op: 'stat', key: 'ctl', amount: FOUR_N },
   ] },
   paralyzed: { label: 'Paralyzed', desc: 'Cannot move or act.', ops: [{ op: 'hold' }, { op: 'root' }] },
   stunned: { label: 'Stunned', desc: 'Cannot act.', ops: [{ op: 'hold' }] },
-  frightened: { label: 'Frightened', desc: 'Has lower Discipline, so its Will drops.', ops: [{ op: 'stat', key: 'dis', amount: FOUR_N }] },
-  blinded: { label: 'Blinded', desc: 'Has much lower Control, so its Accuracy drops.', ops: [{ op: 'stat', key: 'ctl', amount: each(num(-16), num(-24), num(-32), num(-40), num(-48), num(-64)) }] },
+  frightened: { label: 'Frightened', desc: 'Has lower Discipline, reducing Will.', ops: [{ op: 'stat', key: 'dis', amount: FOUR_N }] },
+  blinded: { label: 'Blinded', desc: 'Has much lower Control, reducing Accuracy.', ops: [{ op: 'stat', key: 'ctl', amount: each(num(-16), num(-24), num(-32), num(-40), num(-48), num(-64)) }] },
   slowed: { label: 'Slowed', desc: 'Moves and acts more slowly.', ops: [{ op: 'speed', pct: each(-20, -25, -30, -35, -40, -50) }] },
   hasted: { label: 'Hasted', desc: 'Moves and acts faster, and sometimes gets part of an action back.', ops: [
     { op: 'speed', pct: each(20, 25, 30, 35, 40, 50) },
@@ -45,12 +45,12 @@ const STATUSES = {
   invisible: { label: 'Invisible', desc: 'Hidden even in plain view. Being hurt, being revealed or dealing damage ends it.', ops: [
     { op: 'hidden', level: [0, 0, 1, 2, 3, 4], start: 'anywhere', ends: { hurt: true, revealed: true, dealt: true } },
   ] },
-  prone: { label: 'Prone', desc: 'Has lower Agility, so its Reaction drops.', ops: [{ op: 'stat', key: 'agi', amount: FOUR_N }] },
-  restrained: { label: 'Restrained', desc: 'Cannot move, and has lower Control, so its Accuracy drops.', ops: [{ op: 'root' }, { op: 'stat', key: 'ctl', amount: FOUR_N }] },
+  prone: { label: 'Prone', desc: 'Has lower Agility, reducing Reaction.', ops: [{ op: 'stat', key: 'agi', amount: FOUR_N }] },
+  restrained: { label: 'Restrained', desc: 'Cannot move, and has lower Control, reducing Accuracy.', ops: [{ op: 'root' }, { op: 'stat', key: 'ctl', amount: FOUR_N }] },
   stealth: { label: 'Stealth', desc: 'Hidden out of every foe\'s sight. Being hurt, being revealed or dealing damage ends it.', ops: [
     { op: 'hidden', level: [0, 0, 1, 2, 3, 4], start: 'unseen', ends: { hurt: true, revealed: true, dealt: true } },
   ] },
-  bloodlust: { label: 'Bloodlust', desc: 'Has lower Discipline, Strength and Power, so its Will drops and its hits do less damage.', ops: [
+  bloodlust: { label: 'Bloodlust', desc: 'Has lower Discipline, Strength and Power, reducing Will and damage dealt.', ops: [
     { op: 'stat', key: 'dis', amount: FOUR_N },
     { op: 'stat', key: 'str', amount: DAMAGE_N },
     { op: 'stat', key: 'pow', amount: DAMAGE_N },
@@ -79,7 +79,7 @@ export const STATUS_KEYS = Object.keys(STATUSES) as BuiltInStatus[];
  * statuses: no picker offers them, and a room message or combat command that adds or removes one is refused.
  */
 export const STATE_CHIP_DEFS: Readonly<Record<StateChip, StatusDef>> = {
-  dead: { label: 'Dead', desc: `HP reached 0. ${WAYS_BACK} brings the hunter back, with every status gone.`, ops: [] },
-  exhausted: { label: 'Exhausted', desc: 'Collapsed: cannot act until a rest or a gate\'s Clear lifts it.', ops: [] },
-  penalized: { label: 'Penalized', desc: 'Daily Quest failed: -2 to all checks until the Penalty Zone quest is done.', ops: [] },
+  dead: { label: 'Dead', desc: `HP reached 0. ${WAYS_BACK} can revive the hunter and clear all statuses.`, ops: [] },
+  exhausted: { label: 'Exhausted', desc: 'Collapsed. Cannot act until resting or clearing a gate.', ops: [] },
+  penalized: { label: 'Penalized', desc: 'Daily Quest failed. You take -2 to all checks until you finish the Penalty Zone quest.', ops: [] },
 };

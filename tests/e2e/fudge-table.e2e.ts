@@ -137,7 +137,7 @@ test('a forced 20 shows on both dice of an advantage roll and is gone on the nex
   const { gm, player, key, bonus } = await table(device);
   const card = gm.locator('#gm-board .gm-card.remote', { hasText: HUNTER });
   await force(gm, key, 20);
-  await expect(card.locator('[data-weightline]')).toHaveText('Next roll 20');
+  await expect(card.locator('[data-weightline]')).toHaveText('Next d20 forced to 20');
   await expect.poll(() => held(player)).toEqual({ total: 0, force: 20 });
   await test.step('the advantage roll reads 20 on both dice', async () => {
     await expectRoll(player, 'adv', [3, 8], [20, 20], bonus);

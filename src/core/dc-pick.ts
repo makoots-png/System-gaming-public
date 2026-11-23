@@ -68,7 +68,7 @@ const numberOf = (key: DcKey, table: Rules['rankTable']): number | null => {
 export const dcOf = (s: DcPick, table: Rules['rankTable']): number | null => numberOf(dcKeyOf(s), table);
 /** A choice's words in the select, its number read from `table`. */
 export function dcWords(key: DcKey, table: Rules['rankTable']): string {
-  if (key === 'none') return 'No DC (just roll)';
+  if (key === 'none') return 'No DC (roll only)';
   const { rank, level } = rankLevel(key);
   return `${rank} ${DC_LEVEL_WORDS[level]} (DC ${numberOf(key, table)})`;
 }

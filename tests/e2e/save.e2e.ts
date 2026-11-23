@@ -269,7 +269,7 @@ const free = (page: Page): Promise<void> => page.evaluate(() => { (window as any
 const storedName = async (page: Page): Promise<string> => JSON.parse((await stored(page, V4)) ?? 'null').hunters[0].name;
 const SAVE_FAILED = 'Saving failed';
 const OTHER_TAB = 'Another tab saved this campaign';
-const OWN_SETTINGS = 'own settings';
+const OWN_SETTINGS = 'device settings';
 const banner = (page: Page, text: string) => page.locator('#banners .banner', { hasText: text });
 
 test('storage full on a write: the player is told, the change stays on screen, and it is saved once storage has room', async ({ device }) => {
@@ -425,7 +425,7 @@ test('a save the app cannot open, when storage is too full to back it up, is nev
     };
   }, BACKUPS);
   await openApp(page);
-  await expect(banner(page, 'too full to keep a copy of it in Backups')).toHaveCount(1);
+  await expect(banner(page, 'Storage is too full to back it up')).toHaveCount(1);
   await expect(banner(page, 'unreadable')).toHaveCount(0);
   await go(page, 'status');
   await editIdentity(page, 'name', 'Written Over');
@@ -447,7 +447,7 @@ test('a save that opens whole but for its damaged fight, when storage is too ful
     };
   }, BACKUPS);
   await openApp(page);
-  await expect(banner(page, 'running fight in your save could not be read, and storage is too full')).toHaveCount(1);
+  await expect(banner(page, 'The running fight in your save could not be read. Storage is too full')).toHaveCount(1);
   await expect(banner(page, 'could not be opened')).toHaveCount(0);
   await go(page, 'status');
   await expect(page.locator('#view-status [data-idname]')).toHaveText('Intact Hero');

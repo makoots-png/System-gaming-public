@@ -19,7 +19,7 @@ export const EXAMPLE_STORIES: readonly ExampleStory[] = [
   {
     key: 'wager',
     story: {
-      name: 'The wager', when: 'The hunter brags, or wins a coin call it should have lost.', for: 'hunters',
+      name: 'The wager', when: 'The hunter brags, or wins a coin call they should have lost.', for: 'hunters',
       chapters: [
         chapter({
           name: 'The bet', words: { title: 'THE SYSTEM WILL TAKE THAT BET', line: 'The System bets that you will not win your next three solo runs.' },
@@ -28,7 +28,7 @@ export const EXAMPLE_STORIES: readonly ExampleStory[] = [
         chapter({
           name: 'The runs', words: { title: 'THE SYSTEM IS WATCHING THE NUMBERS', line: 'You lost a solo run. The System takes the stake.' },
           rewards: reward({ points: -1 }),
-          note: 'Open this chapter after each solo run the hunter loses. It takes 1 ability point. After three solo runs won, open chapter 3. After a run lost, you may open chapter 4.',
+          note: 'Open this chapter after each solo run the hunter loses to remove 1 ability point. After three solo run wins, open chapter 3. After a loss, you may open chapter 4.',
         }),
         chapter({
           name: 'Won', words: { title: 'THE SYSTEM PAYS', line: 'You won three solo runs.' },
@@ -37,7 +37,7 @@ export const EXAMPLE_STORIES: readonly ExampleStory[] = [
         }),
         chapter({
           name: 'Lost', words: { title: 'THE HOUSE KEEPS THE STAKE. DOUBLE OR NOTHING', line: 'The System offers one more solo run for twice the stake.' },
-          note: 'Ask the player whether they run once more. If they win, send a System broadcast that says the System lost the bet. If they lose, open chapter 2 twice. Then end the story.',
+          note: 'Ask the player if they want to run once more. If they win, send a System broadcast that says the System lost the bet. If they lose, open chapter 2 twice. Then end the story.',
         }),
       ],
     },

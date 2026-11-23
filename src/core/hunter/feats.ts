@@ -156,7 +156,7 @@ export function progressLine(def: FeatDef, s: FeatState): string {
 const KIND_WORDS: { readonly [K in keyof typeof FACT_FIELDS]: string } = {
   fight: 'Fights', kill: 'Monsters defeated', solo: 'Solo runs', gate: 'Gates cleared', closed: 'Personal gates closed', quest: 'Quests', daily: 'Dailies',
   streakLost: 'Streaks lost', penaltyIssued: 'Penalties', penaltyLifted: 'Penalties lifted', life: 'Life events', level: 'Levels', rank: 'Ranks', title: 'Titles',
-  feat: 'Feats', given: 'Awards', chapter: 'Story chapters', roll: 'Rolls', coin: 'Coin calls', shop: 'Trades', rest: 'Rests', used: 'Consumables used', shadow: 'Shadows',
+  feat: 'Feats', given: 'Awards', chapter: 'Story chapters', roll: 'Rolls', coin: 'Coin calls', shop: 'Shop purchases and sales', rest: 'Rests', used: 'Consumables used', shadow: 'Shadows',
 };
 /** The window of a feat earned: its title, the line under it, the reward's lines. */
 export const featWindow = (def: FeatDef, R: RewardRules): { readonly title: string; readonly body: string; readonly lines: string[] } =>
@@ -247,7 +247,7 @@ export function freeFeatKey(name: string, taken: (k: string) => boolean): FeatKe
 }
 
 /** Each window's words, for the maker's choice and a feat's rule line. */
-export const WITHIN_WORDS: { readonly [W in Within]: string } = { ever: 'Ever', row: 'In a row', session: 'In one session', day: 'In one day', rest: 'Between rests' };
+export const WITHIN_WORDS: { readonly [W in Within]: string } = { ever: 'All time', row: 'In a row', session: 'In one session', day: 'In one day', rest: 'Between rests' };
 /** What a measure counts, for the maker's choice. */
 export const MEASURE_WORDS: { readonly [M in CountMeasure['of']]: string } = { facts: 'Each time', sum: 'The total of', distinct: 'Different values of', max: 'The highest' };
 /** Each kind of fact a feat can count, in the maker's words. */

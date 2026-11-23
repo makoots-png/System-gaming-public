@@ -138,7 +138,7 @@ export function register(app) {
   function deathHtml(e, h) {
     const me = e && !e.ended ? meRow(e) : null, at = me ? me.life : h.life, word = lifeWord({ kind: 'hunter', life: at });
     if (!word) return '';
-    return `<div class="tb-death" data-life-at="${at.at}"><b class="lw" data-life-at="${at.at}">${esc(word)}</b><span>${esc(WAYS_BACK)} brings you back.</span></div>`;
+    return `<div class="tb-death" data-life-at="${at.at}"><b class="lw" data-life-at="${at.at}">${esc(word)}</b><span>${me ? "The GM's Revive brings you back during a fight." : `${esc(WAYS_BACK)} brings you back.`}</span></div>`;
   }
   const statusDef = c => app.api.effects.statusDef(c);
   const D = () => app.api.detail;
@@ -194,7 +194,7 @@ export function register(app) {
       <div class="tb-me" data-attr="hidden:noMe"><div class="bar-row"><div class="bar-head"><span class="lbl">HP</span><span class="bar-nums" data-text="hp"></span></div><div class="bar bar-hp" role="img" data-attr="aria-label:hpLabel" data-fill="hpF">${motion.fillMarkup(0)}</div></div>
         <div class="bar-row"><div class="bar-head"><span class="lbl">Mana</span><span class="bar-nums" data-text="mana"></span></div><div class="bar bar-mana" role="img" data-attr="aria-label:manaLabel" data-fill="manaF">${motion.fillMarkup(0)}</div></div>
         <div class="hp-amt" role="group" aria-label="Type an HP amount">
-          <label class="field"><span class="lbl">HP amount</span><input type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" spellcheck="false" placeholder="7 or +5" title="Enter = damage, Shift+Enter or +N = heal" data-tbamt aria-label="HP amount"></label>
+          <label class="field"><span class="lbl">HP amount</span><input type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" spellcheck="false" placeholder="7 or +5" title="Press Enter to deal damage. Type +5 or press Shift+Enter to heal." data-tbamt aria-label="HP amount"></label>
           <button type="button" class="danger" data-tbdmg>Damage</button><button type="button" data-tbheal>Heal</button>
           <p class="hp-amt-msg" data-tbmsg role="status" aria-live="polite"></p></div>
         <div class="slot" data-part="chips"></div></div>`;
@@ -271,7 +271,7 @@ export function register(app) {
       const wait = left > 0 ? ` disabled title="Ready in ${left} round${left === 1 ? '' : 's'}"` : '';
       return `<li><span class="tb-kn">${esc(a.name)}${left > 0 ? `<small data-wait>Ready in ${left} round${left === 1 ? '' : 's'}</small>` : ''}${ans ? `<small class="myth-tag">Answers the omen: ${esc(ans)}</small>` : ''}</span><button type="button" data-cast="${esc(a.id)}"${off || wait}${mine && !wait ? ` title="Use ${esc(a.name)}"` : ''}>Use</button></li>`;
     }).join('');
-    const mv = t.foe ? `<div class="tb-kact"><button type="button" data-step="1"${step(1) ? '' : ' disabled'}>Toward ${esc(t.foe.name)}</button><button type="button" data-step="-1"${step(-1) ? '' : ' disabled'}>Away</button></div>` : '';
+    const mv = t.foe ? `<div class="tb-kact"><button type="button" data-step="1"${step(1) ? '' : ' disabled'}>Move toward ${esc(t.foe.name)}</button><button type="button" data-step="-1"${step(-1) ? '' : ' disabled'}>Move away from ${esc(t.foe.name)}</button></div>` : '';
     const pass = mine && !t.me.down ? '<div class="tb-kact"><button type="button" data-pass>End turn</button></div>' : '';
     return `<section class="tb-acts" data-acts aria-label="Your actions"><div class="lbl">Abilities</div><ul class="tb-kl">${abil}</ul>${mv}${pass}</section>`;
   }
@@ -310,7 +310,7 @@ export function register(app) {
         const hl = heal || a.heal, before = hpNow();
         if (!ui.wrote('System', hl ? app.api.hunter.heal(h.id, a.n) : app.api.hunter.damage(h.id, a.n))) return;
         const after = hpNow(); inp.value = '';
-        paintHud(el); note(`${hl ? 'Healed' : 'Took'} ${Math.abs(after - before)} (asked ${a.n}). HP ${after}.`);
+        paintHud(el); note(`${hl ? 'Healed' : 'Took'} ${Math.abs(after - before)} HP (entered ${a.n}). Current HP: ${after}.`);
         if (keep) { const i = el.querySelector('[data-tbamt]'); if (i) i.focus(); }
       };
       el.addEventListener('keydown', ev => { if (ev.key === 'Enter' && ev.target.matches('[data-tbamt]')) { ev.preventDefault(); if (app.api.hunter.amountFromKey(ev, ev.target.value)) applyAmt(ev.shiftKey, true); } });
@@ -356,7 +356,7 @@ export function register(app) {
     const on = turn ? await waitOn(e, me, a) : null;
     if (turn && !on) return;
     const ok = S.post(S.event('arm', { by: S.myKey(h.id), ability, on })).ok;
-    ui.news(!ok ? 'Not in the room: the reaction was not armed.' : a ? `${a.name} is armed.` : 'Reaction disarmed.', ok ? 'good' : 'warn');
+    ui.news(!ok ? 'Not in a room. The reaction was not armed.' : a ? `${a.name} is armed.` : 'Reaction disarmed.', ok ? 'good' : 'warn');
   }
   /**
    * The row a reaction `a` of row `me` waits for before its turn, picked in a window of `waitChoices` (fight-view.ts);
@@ -364,7 +364,7 @@ export function register(app) {
    */
   async function waitOn(e, me, a) {
     const rows = waitChoices(docSpots(/** @type {import('../core/combat/fight-doc.ts').FightDocRow[]} */ (rowsOf(e))), me.id); if (!rows.length) return null;
-    const on = await ui.system({ tag: '! Combat', title: WAIT_WORDS.label, kind: 'info', body: WAIT_WORDS.body(a.name), layout: 'list',
+    const on = await ui.system({ tag: '! Fight', title: WAIT_WORDS.label, kind: 'info', body: WAIT_WORDS.body(a.name), layout: 'list',
       actions: [...rows.map((x, i) => ({ label: x.name, value: x.id, primary: i === 0 })), { label: 'Cancel', value: null, cancel: true }] });
     const now = encounter();
     return on && now && now.ended === false ? on : null;
@@ -375,7 +375,7 @@ export function register(app) {
     const e = encounter(), h = meHunter(e); if (!e || e.ended !== false || !h || !canAct(e)) return;
     const S = sync();
     void app.api.uses.command(() => S.post(S.event('pass', { by: S.myKey(h.id), at: e.now })))
-      .then(r => { if (r && !r.ok) ui.news('Not in the room: your turn was not ended.', 'warn'); });
+      .then(r => { if (r && !r.ok) ui.news('Not in a room. Your turn was not ended.', 'warn'); });
   }
   // ── the map (src/views/map.js) over the room's fight doc ──
   /** The token whose card is open over the map, and the map drawn in the HUD (null while the HUD shows no map). */
@@ -425,7 +425,7 @@ export function register(app) {
       const e = encounter(), h = meHunter(e); if (!e || e.ended !== false || !h || !canAct(e)) return;
       const S = sync();
       void app.api.uses.command(() => S.post(S.event('step', { by: S.myKey(h.id), place: { x: to.x, y: to.y }, at: e.now, dash })))
-        .then(r => { if (r && !r.ok) ui.news('Not in the room: the step was not sent.', 'warn'); });
+        .then(r => { if (r && !r.ok) ui.news('Not in a room. Your move was not sent.', 'warn'); });
     },
     place: null,
     use: (a, aim) => {
@@ -434,7 +434,7 @@ export function register(app) {
       // The map sends a consumable as a use, held as any use is (the List's goes through the bag: SMX-views-5.1)
       void app.api.uses.cast(h.id, a.id, aim);
     },
-    offTurn: () => ui.news(myTurn(encounter()) ? 'Waiting for the GM\'s phone to take your last move.' : 'It is not your turn.', 'warning'),
+    offTurn: () => ui.news(myTurn(encounter()) ? 'Waiting for the GM to process your last action.' : 'It is not your turn.', 'warning'),
     card: id => { cardId = id; refresh(); },
     waiting: () => waitsFor(encounter()),
   };
@@ -465,13 +465,13 @@ export function register(app) {
     if (r.kind === 'summon') out.push(`<div class="tb-x summon">Summoned by ${esc(ownerName(e, r))}${r.left !== null ? ` · ${r.left} round${r.left === 1 ? '' : 's'} left` : ''}</div>`);
     if (r.shield !== null) out.push(`<div class="tb-x shield">Shield ${r.shield}${r.shieldLeft !== null ? ` · ${r.shieldLeft} round${r.shieldLeft === 1 ? '' : 's'}` : ''}</div>`);
     if (r.kind === 'monster' && r.stagger) {
-      out.push(`<div class="tb-x stagger"><span>Stagger</span><span class="bar bar-stagger" role="img" aria-label="Stagger ${r.stagger.fill} of ${r.stagger.max}">${motion.fillMarkup(r.stagger.max ? r.stagger.fill / r.stagger.max : 0)}</span>${r.stagger.staggered !== null ? `<b>Staggered · loses ${r.stagger.staggered} rounds</b>` : ''}</div>`);
+      out.push(`<div class="tb-x stagger"><span>Stagger</span><span class="bar bar-stagger" role="img" aria-label="Stagger ${r.stagger.fill} of ${r.stagger.max}">${motion.fillMarkup(r.stagger.max ? r.stagger.fill / r.stagger.max : 0)}</span>${r.stagger.staggered !== null ? `<b>Staggered · loses ${r.stagger.staggered} round${r.stagger.staggered === 1 ? '' : 's'}</b>` : ''}</div>`);
     }
-    if (r.channel) out.push(`<div class="tb-x chan">${r.channel.state === 'broken' ? 'Channel broken' : 'Channeling'} ${esc(r.channel.name)} · charge ${r.channel.charge} of ${r.channel.max} · ×${r.channel.factor}</div>`);
+    if (r.channel) out.push(`<div class="tb-x chan">${r.channel.state === 'broken' ? 'Channel broken' : 'Channeling'} ${esc(r.channel.name)} · charge ${r.channel.charge} of ${r.channel.max} · Power ×${r.channel.factor}</div>`);
     if (r.taunt) out.push(`<div class="tb-x taunt">Taunted by ${esc(name(r.taunt.by))}${r.taunt.left !== null ? ` · ${r.taunt.left} round${r.taunt.left === 1 ? '' : 's'}` : ''}</div>`);
     if (r.kind === 'monster' && r.intent && !r.channel) {
       const v = r.intent.reveal;
-      out.push(`<div class="tb-x intent" data-intent>Intent: <b>${esc(r.intent.name)}</b> at ${esc(at(r.intent.target))}${v ? `<ul data-reveal>${v.lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>` : ' <small>(numbers hidden)</small>'}</div>`);
+      out.push(`<div class="tb-x intent" data-intent>Intent: <b>${esc(r.intent.name)}</b> at ${esc(at(r.intent.target))}${v ? `<ul data-reveal>${v.lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>` : ' <small>(details hidden by GM)</small>'}</div>`);
     } else if (r.kind === 'monster' && r.suggest && !r.channel) out.push(`<div class="tb-x suggest" data-suggest>Likely target: ${esc(name(r.suggest))}</div>`);
     return out.join('');
   }
@@ -481,7 +481,7 @@ export function register(app) {
     const s = (dir > 0 ? stepToward : stepAway)(t.spots, t.me.id, t.foe.id, t.me.stride, t.grid); if (!s) return;
     const S = sync();
     void app.api.uses.command(() => S.post(S.event('step', { by: S.myKey(h.id), place: { x: s.place.x, y: s.place.y }, at: e.now, dash: false })))
-      .then(r => { if (r && !r.ok) ui.news('Not in the room: the step was not sent.', 'warn'); });
+      .then(r => { if (r && !r.ok) ui.news('Not in a room. Your move was not sent.', 'warn'); });
   }
   /** The bursts of the doc just drawn: a burst at the bearer's token (or its row), and the count on its chips pops. */
   function playBursts(el) {
@@ -668,7 +668,7 @@ export function register(app) {
     const list = feedEl.querySelector('[data-tb-list]');
     const sig = JSON.stringify(feed.map(f => f.id));
     if (sig === feedSig) return; feedSig = sig;
-    if (!feed.length) { list.innerHTML = '<p class="empty">Player rolls, uses, quest updates and feats appear here.</p>'; return; }
+    if (!feed.length) { list.innerHTML = '<p class="empty">Player rolls, ability uses, quest updates, and feats appear here.</p>'; return; }
     list.innerHTML = `<ul class="tb-feed" aria-label="Table feed">${feed.map(f =>
       `<li class="${f.type === 'questUpdate' || f.type === 'used' ? 'q' : f.crit ? 'crit' : ''}" data-feed="${esc(f.id)}"><span class="tb-txt">${f.type === 'used' ? usedHtml(f) : esc(feedLine(f))}</span></li>`).join('')}</ul>`;
   }

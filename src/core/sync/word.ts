@@ -198,15 +198,15 @@ export const unseenWords = (s: Pick<Save, 'settings'>, room: RoomCode): number =
 /** Every line the player and the GM read of a word (notes-5-trade.md section 7). */
 export const WORD_WORDS = {
   title: 'Word to the GM',
-  privacy: 'Only the GM sees these. The room\'s server stores them.',
-  field: 'Your word',
+  privacy: 'Only the GM sees these. The room server stores them.',
+  field: 'Your word to the GM',
   send: 'Send to the GM',
   none: 'Nothing sent yet.',
   you: (time: string): string => `You, ${time}`,
   gmAt: (time: string): string => `GM, ${time}`,
-  shown: { waiting: 'Waiting for the room.', lost: 'The room did not take this word.', landed: 'Sent.', answered: '', read: '' } satisfies { readonly [S in MineShown]: string },
+  shown: { waiting: 'Waiting for the room server.', lost: 'This word did not reach the room server.', landed: 'Sent.', answered: '', read: '' } satisfies { readonly [S in MineShown]: string },
   refusals: {
-    'no-room': 'Words to the GM need a room.', empty: 'Write something first.', 'no-hunter': 'This hunter is no longer on this phone.',
+    'no-room': 'Join a room to send a word to the GM.', empty: 'Write something first.', 'no-hunter': 'This hunter is no longer on this phone.',
     'not-played': 'Only the hunter you play in this room can send a word.',
   } satisfies { readonly [W in WordRefusal]: string },
   windowTag: '! GM',
@@ -228,8 +228,8 @@ export const WORD_WORDS = {
     answerTitle: 'Answer to a word',
     answerLog: (name: string, text: string): string => `You to ${name}: ${text}`,
     refusals: {
-      'no-word': 'This word is no longer on this phone.', answered: 'This word has an answer already.', empty: 'Write something first.',
-      'no-room': 'Answers go in the room the word came from. Go back to that room first.',
+      'no-word': 'This word is no longer on this phone.', answered: 'You already answered this word.', empty: 'Write something first.',
+      'no-room': 'Go back to the room this word came from to answer it.',
     } satisfies { readonly [W in AnswerRefusal]: string },
   },
 } as const;

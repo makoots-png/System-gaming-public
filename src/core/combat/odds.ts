@@ -215,8 +215,8 @@ const VOICE: { readonly [V in OddsVoice]: { readonly won: (r: OddsRead) => strin
 };
 /** The share of fights won, in `voice`'s words: the first sentence of the line and of a solo run's confirm. */
 export const wonLine = (r: OddsRead, voice: OddsVoice): string => VOICE[voice].won(r);
-/** One row's chance to die, as a sentence: what a hunter alone reads after its chance to clear. */
-export const fateLine = (row: RowRead): string => (row.dead > 0 ? `Dead in ${pct(row.dead)}.` : 'Never dead in these plays.');
+/** One row's chance to reach 0 HP, as a sentence: what a hunter alone reads after its chance to clear. */
+export const fateLine = (row: RowRead): string => (row.dead > 0 ? `Reaches 0 HP in ${pct(row.dead)} of simulated fights.` : 'Never reached 0 HP in these simulated fights.');
 /** The control's hint under its button, in `voice`'s words. */
 export const oddsHint = (voice: OddsVoice): string => VOICE[voice].hint;
 
@@ -242,9 +242,9 @@ export function oddsDetail(r: OddsRead, voice: OddsVoice): string[] {
 }
 /** What the control says: its label, the count while it runs, the mark on an answer for a fight that changed since. */
 export const ODDS_WORDS = {
-  ask: `Play it out ${ODDS_RUNS} times`,
-  again: 'Play it out again',
+  ask: `Simulate ${ODDS_RUNS} fights`,
+  again: 'Simulate again',
   stop: 'Stop',
-  running: (done: number, of: number): string => `Playing ${done} of ${of}`,
-  stale: 'The fight changed since these odds. Play it out again to update them.',
+  running: (done: number, of: number): string => `Simulating ${done} of ${of}`,
+  stale: 'The fight changed since these odds were run. Tap Simulate again to update them.',
 } as const;

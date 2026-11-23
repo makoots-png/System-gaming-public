@@ -69,7 +69,7 @@ describe('what stops a story from saving', () => {
 
   test('a Job Change quest with no job in chapter 1, folded while chapter 2 is open: chapter 1 says to choose a job (SMX-gates-9.2)', () => {
     const folded = chapter('The offer', quest({ kind: 'job' }));
-    expect(storyProblem(story(folded, chapter('The price')))).toEqual({ why: 'Chapter 1\'s quest: Choose a job for a job quest.', at: 0, inQuest: true });
+    expect(storyProblem(story(folded, chapter('The price')))).toEqual({ why: 'Choose a job for the Chapter 1 Job Change quest.', at: 0, inQuest: true });
   });
 
   test('a Job Change quest that gives a job saves', () => {
@@ -77,7 +77,7 @@ describe('what stops a story from saving', () => {
   });
 
   test('the first chapter at fault is the one named, whatever its kind of fault', () => {
-    expect(storyProblem(story(chapter('One', quest({ kind: 'job' })), chapter('')))).toEqual({ why: 'Chapter 1\'s quest: Choose a job for a job quest.', at: 0, inQuest: true });
+    expect(storyProblem(story(chapter('One', quest({ kind: 'job' })), chapter('')))).toEqual({ why: 'Choose a job for the Chapter 1 Job Change quest.', at: 0, inQuest: true });
   });
 
   test('a chapter quest\'s "If it fails" cost is in what the parser reads from the draft (SMX-gates-9.1)', () => {

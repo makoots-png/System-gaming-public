@@ -1,5 +1,9 @@
 import type { Page } from '@playwright/test';
 import { RULES } from '../../src/core/rules.ts';
+import { parseOverrides, refusalWords } from '../../src/core/overrides.ts';
+import { restRefusalWords } from '../../src/core/hunter/rests.ts';
+import { RAISE_TITLE } from '../../src/core/hunter/revive-standing.ts';
+import { DIED_WORDS } from '../../src/core/hunter/vitals.ts';
 import { deathLine, naturalLines, pointsLine, soloLines, statBonusLine } from '../../src/core/rules-text.ts';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, openApp, tapIfShown, switchToPlayerMode, answerWindow, startGoblinDenFight, chooseList } from './helpers.ts';
 
@@ -91,7 +95,7 @@ test('At 0 HP the hunter is dead: the chip says the same word as the death panel
 
   await test.step('at 0 HP the chip and the death panel both read Dead, without a remove button', async () => {
     await hpTo0(p);
-    await answerWindow(p, 'THE SYSTEM CAN RAISE YOU', 'Not now');
+    await answerWindow(p, RAISE_TITLE, 'Not now');
     await expect(p.locator('#view-status [data-chips] [data-chip="dead"]')).toHaveText(/^\s*Dead/);
     await expect(lifeWord(p)).toHaveText('Dead');
     await expect(p.locator('#view-status [data-chips] [data-cond-del="dead"]')).toHaveCount(0);
@@ -332,7 +336,7 @@ test('the Rules editor names the bounds of a number out of its domain and why th
   await go(p, 'gm');
   await openSection(p, 'rules');
   await p.locator('#gm-r-text').fill('{"fight":{"round":0}}');
-  await expect(p.locator('#gm-r-msg')).toHaveText('fight.round: must be a whole number from 100 to 10000. Ticks in a round: under 100 the rounding of speed shows, 0 divides by 0.');
+  await expect(p.locator('#gm-r-msg')).toHaveText(refusalWords(parseOverrides({ fight: { round: 0 } }).refused[0]!));
 });
 
 test('The skill maker starts the formula at the kind\'s recommendation, unmarked: a Shot is the quick share of 1d8 + phys, and the card says how it is used', async ({ device }) => {
@@ -398,7 +402,7 @@ test('the sheet says what a step did: fatigue is "critically high" once, as it c
   await test.step('at 0 HP the sheet says the hunter is dead, once, with the ways back', async () => {
     await hpTo0(p);
     await expect(lifeWord(p)).toHaveText('Dead');
-    expect((await said()).filter(t => t.includes('You are dead'))).toEqual(['HP has reached 0. You are dead. The GM\'s Revive or a Resurrection Crystal brings you back.']);
+    expect((await said()).filter(t => t.includes('You are dead'))).toEqual([DIED_WORDS]);
   });
 });
 
@@ -421,7 +425,7 @@ test('A hunter at 0 HP is dead, a heal and a rest do not raise them, and the GM 
     const said = await recordToasts(p);
     await p.locator('#view-status [data-hp="5"]').first().tap();
     await p.locator('#view-status [data-rest]').tap();
-    await expect.poll(said).toContain('A dead hunter cannot rest. The GM\'s Revive or a Resurrection Crystal brings you back.');
+    await expect.poll(said).toContain(restRefusalWords(RULES).cannot);
     await expect(p.locator('#view-status [data-bar="hp"] [data-cur]')).toHaveText('0');
     await expect(panel.locator('[data-life]')).toHaveText('Dead');
     await expect(p.locator('#view-status [data-rests-left]')).toHaveText(`Rests left this gate: ${RULES.rest.perGate} of ${RULES.rest.perGate}.`);
@@ -480,7 +484,7 @@ test('A collapsed hunter stays Exhausted when fatigue drops by hand; a rest take
     for (let i = 1; i < n; i++) await p.locator('#view-status [data-rest]').tap();
     await expect(left).toHaveText(`Rests left this gate: 0 of ${n}.`);
     await p.locator('#view-status [data-rest]').tap();
-    await expect.poll(said).toContain(`No rest left: a hunter rests ${n} times a gate. Clearing the gate gives everything back.`);
+    await expect.poll(said).toContain(restRefusalWords(RULES).spent);
     await expect(left).toHaveText(`Rests left this gate: 0 of ${n}.`);
   });
 });
@@ -632,8 +636,8 @@ test('the rules reference says a timed status is paid at the start of its bearer
   await onboardPlayer(p, 'Kai Test');
   await dismissAll(p);
   await go(p, 'rules');
-  await expect(p.locator('#view-rules')).toContainText('per-round effects are paid at the start of the bearer\'s turn');
-  await expect(p.locator('#view-rules')).toContainText('a status ends when its rounds have passed');
+  await expect(p.locator('#view-rules')).toContainText('per-round effects apply at the start of the affected target\'s turn');
+  await expect(p.locator('#view-rules')).toContainText('the status ends once its rounds run out');
   await expect(p.locator('#view-rules')).not.toContainText('count down at the end');
 });
 
@@ -647,8 +651,8 @@ test('a player\'s rules page opens with How checks work and has no GM quick card
   await test.step('the stat line and the worked example state the same bonus for a score of 14, once', async () => {
     const checks = await p.locator('#rr-checks').innerText();
     expect(checks).toContain(statBonusLine(RULES));
-    expect(checks.split('the effective points are close to')).toHaveLength(2);
-    expect(checks).toMatch(/Strength 14 \([\d.]+ effective points above 10, so \+1\)/);
+    expect(checks.split('effective points are close to')).toHaveLength(2);
+    expect(checks).toMatch(/Strength 14 \([\d.]+ effective points above 10, for a \+1 stat bonus\)/);
     expect(checks).toContain('adds +1.');
     expect(checks).not.toContain('adds about 2');
   });
@@ -657,7 +661,7 @@ test('a player\'s rules page opens with How checks work and has no GM quick card
     await expect(p.locator('#view-rules')).toContainText(pointsLine());
     await expect(p.locator('#view-rules')).not.toContainText('or leave the Status view, to lock it in');
   });
-  await expect(p.locator('#view-rules')).toContainText('At 0 HP a hunter is dead.');
+  await expect(p.locator('#view-rules')).toContainText('At 0 HP, a hunter is dead.');
   await expect(p.locator('#view-rules')).toContainText(deathLine(RULES));
   await expect(p.locator('#view-rules')).not.toContainText('death save');
   await expect(p.locator('#view-rules')).not.toContainText('Unconscious');
@@ -682,8 +686,8 @@ test('the rules reference explains the eight stats, Armor and Resist, and the tu
   await expect(stats).toHaveCount(8);
   await expect(stats.first()).toContainText('Strength');
   // dealt = damage * 100 / (100 + defence) (RULES.fight.armorK); the heavy kit's 60 armor takes 38% off
-  await expect(p.locator('#rr-armor')).toContainText('60 armor takes 38% off');
-  await expect(p.locator('#rr-combat')).toContainText('Turns come by speed');
+  await expect(p.locator('#rr-armor')).toContainText('60 armor cuts damage by 38%');
+  await expect(p.locator('#rr-combat')).toContainText('Turn order uses speed');
 });
 
 test('a hunter who falls in a fight is Dead on the GM\'s card, which offers Revive, and the Revive stands it up at 1 HP', async ({ device }) => {
@@ -742,7 +746,7 @@ test('a player in a room at 0 HP reads Dead on their HUD in the GM\'s fight, wit
     await go(pl, 'combat');
     const row = pl.locator('#view-combat .tb-death');
     await expect(row.locator('b')).toHaveText('Dead');
-    await expect(row).toContainText('The GM\'s Revive or a Resurrection Crystal brings you back.');
+    await expect(row).toContainText('The GM\'s Revive brings you back during a fight.');
     await expect(row.locator('button')).toHaveCount(0);
   });
 });

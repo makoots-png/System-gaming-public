@@ -297,6 +297,6 @@ export const startingStats = <H extends Allocating>(h: H, stats: Partial<Stats>)
 /** What a player reads when + or − on a stat is refused (`raise`, `lower`). */
 export const ALLOCATION_WORDS: { readonly [W in 'no-points' | 'confirmed' | 'at-min']: string } = {
   'no-points': 'No points to spend.',
-  confirmed: 'Confirmed points stay. − takes back only a point you have not confirmed.',
+  confirmed: 'Confirmed points stay. Tap − to take back an unconfirmed point.',
   'at-min': `A stat goes no lower than ${STAT_MIN}.`,
 };

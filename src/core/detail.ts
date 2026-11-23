@@ -41,7 +41,7 @@ export type Thing =
 export type Detail = { readonly title: string; readonly about: string; readonly lines: readonly string[] };
 
 const ZONE_WORD: { readonly [T in ZoneTone]: string } = {
-  harm: 'Hurts whoever stands in it.', help: 'Helps whoever stands in it.', hinder: 'Slows or holds whoever stands in it.', plain: 'A field on the ground.',
+  harm: 'Hurts whoever stands in it.', help: 'Helps whoever stands in it.', hinder: 'Slows or restricts whoever stands in it.', plain: 'A field on the ground.',
 };
 const rounds = (n: number): string => `${n} round${n === 1 ? '' : 's'}`;
 /** A number as the sheet shows it: whole, or to two decimals. */

@@ -88,7 +88,7 @@ describe('a Resurrection Crystal used from the bag', () => {
     const u = ok(useItem(as({ at: 'dead' }), 'i1', [], RULES));
     expect(u.hunter.life).toEqual({ at: 'up', hp: REVIVE_HP });
     expect(u.hunter.life).toEqual(lifeAfter({ at: 'dead' }, { type: 'revive' }, hpMax(u.hunter)));
-    expect(u.lines).toEqual([`Up at ${REVIVE_HP} HP`]);
+    expect(u.lines).toEqual([`Revived at ${REVIVE_HP} HP`]);
     expect(u.hunter.items).toEqual([]);
   });
 
@@ -101,7 +101,7 @@ describe('a Resurrection Crystal used from the bag', () => {
   test('a hunter who is up is refused and keeps the crystal: it brings back only the dead', () => {
     expect(useItem(as({ at: 'up', hp: 5 }), 'i1', [], RULES)).toEqual({ ok: false, why: 'not-dead' });
     expect(USE_WORDS['not-dead']('Resurrection Crystal')).toBe('Resurrection Crystal only brings back a dead hunter. You still have it.');
-    expect(USE_WORDS.fight('Resurrection Crystal')).toBe('Use Resurrection Crystal after the fight.');
+    expect(USE_WORDS.fight('Resurrection Crystal')).toBe('You cannot use Resurrection Crystal during a fight. Use it after the fight ends.');
   });
 
   test('a poisoned hunter raised by a crystal has no status and is not killed again by the poison', () => {
@@ -122,7 +122,7 @@ describe('a Resurrection Crystal used from the bag', () => {
     const phoenix: ItemTemplate = { ...CRYSTAL, name: 'Phoenix Feather', effects: [{ op: 'heal', amount: { kind: 'number', value: 9 } }] };
     const u = ok(useItem({ ...holding(phoenix, 1), life: { at: 'dead' } }, 'i1', [[]], RULES));
     expect(u.hunter.life).toEqual({ at: 'up', hp: REVIVE_HP + 9 });
-    expect(u.lines).toEqual([`Up at ${REVIVE_HP} HP`, '+9 HP']);
+    expect(u.lines).toEqual([`Revived at ${REVIVE_HP} HP`, '+9 HP']);
   });
 });
 
@@ -164,9 +164,9 @@ describe('a crystal of a rank (economy design 5, the owner\'s ruling 4: "You hav
 
   test('a refused use says why and the way out, naming the crystal\'s rank and the hunter\'s', () => {
     expect(USE_WORDS['too-low']('Resurrection Crystal (C)', { upTo: 'C', name: 'Mina', rank: 'B' }))
-      .toBe('Resurrection Crystal (C) brings back a hunter of rank C or lower. Mina is rank B. You still have it. A B-rank crystal or higher, or the GM\'s Revive, brings Mina back.');
+      .toBe('Resurrection Crystal (C) only revives hunters of rank C or lower, and Mina is rank B. You still have it. Use a rank B or higher crystal, or ask the GM to revive Mina.');
     expect(USE_WORDS['too-low']('Resurrection Crystal (C)'), 'said with the name alone')
-      .toBe('Resurrection Crystal (C) does not reach this hunter\'s rank. You still have it. A crystal of the hunter\'s rank or higher, or the GM\'s Revive, brings the hunter back.');
+      .toBe('Resurrection Crystal (C) is too low rank for this hunter. You still have it. Use a crystal of their rank or higher, or ask the GM to revive them.');
   });
 
   test('a crystal given to a hunter above its rank is told to the giver, never refused: "Resurrection Crystal (C) cannot bring back Mina (rank B)."', () => {
@@ -185,7 +185,7 @@ describe('a raising costs levels (economy design 7.1 `reviveLevelShare`, the own
   test('a raising at level 31 by a crystal leaves level 29, and the use says so', () => {
     const u = ok(useItem(deadAt(31), 'i1', [], RULES));
     expect([u.hunter.level, u.hunter.rank, u.hunter.life]).toEqual([29, 'A', { at: 'up', hp: REVIVE_HP }]);
-    expect(u.lines).toEqual([`Up at ${REVIVE_HP} HP at level 29, 2 levels lost`]);
+    expect(u.lines).toEqual([`Revived at ${REVIVE_HP} HP and level 29 (2 levels lost)`]);
     expect(levelFacts(u.hunter), 'the level\'s fact, as every level change records').toEqual([{ kind: 'level', level: 29 }]);
   });
 
@@ -203,7 +203,7 @@ describe('a raising costs levels (economy design 7.1 `reviveLevelShare`, the own
 
   test('a hunter at level 1 is raised at level 1, and the use says only that it is up', () => {
     const u = ok(useItem(deadAt(1), 'i1', [], RULES));
-    expect([u.hunter.level, u.lines]).toEqual([1, [`Up at ${REVIVE_HP} HP`]]);
+    expect([u.hunter.level, u.lines]).toEqual([1, [`Revived at ${REVIVE_HP} HP`]]);
   });
 
   test('only a raising from death costs levels: a heal of a hunter who is up takes none', () => {

@@ -191,7 +191,7 @@ test('the chips a hunter\'s state draws have a label and no ops, and none of the
 test('a dead hunter wears the chip the death panel names, Dead, and its card says the ways back and the cleanse', () => {
   expect(chipDef('dead').label).toBe('Dead');
   expect(chipDef('dead').desc).toBe(STATE_CHIP_DEFS.dead.desc);
-  expect(chipDef('dead').desc).toMatch(/every status gone/);
+  expect(chipDef('dead').desc).toMatch(/clear all statuses/);
   // a chip that has nothing to do with the life reads as the registry names it
   expect(chipDef('penalized').label).toBe(STATE_CHIP_DEFS.penalized.label);
 });

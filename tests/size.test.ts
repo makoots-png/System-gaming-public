@@ -55,9 +55,9 @@ describe('one item, one status and one ability have a size (notes-5-trade.md 13,
 
   test('the words a maker shows give both numbers and a way out; a thing that fits has none', () => {
     const heavy = { name: 'Tome', desc: 'x'.repeat(8000) };
-    expect(tooLarge('item', heavy)).toBe(`This item is too large to save. It takes ${bytesOf(heavy).toLocaleString('en-US')} bytes, and an item holds at most 7,168. Remove an effect, or make its worn status smaller.`);
-    expect(tooLarge('status', { label: 'x'.repeat(6000) })).toBe('This status is too large to save. It takes 6,012 bytes, and a status holds at most 5,120. Remove an effect, or one of the things that happen when it stacks, triggers or ends.');
-    expect(tooLarge('ability', { name: 'x'.repeat(9000) })).toBe('This skill\'s ability is too large to save. It takes 9,011 bytes, and an ability holds at most 8,192. Remove an effect.');
+    expect(tooLarge('item', heavy)).toBe(`This item is too large to save. It uses ${bytesOf(heavy).toLocaleString('en-US')} bytes, and the limit for an item is 7,168 bytes. Remove an effect, or make its worn status smaller.`);
+    expect(tooLarge('status', { label: 'x'.repeat(6000) })).toBe('This status is too large to save. It uses 6,012 bytes, and the limit for a status is 5,120 bytes. Remove an effect, or one of the things that happen when it stacks, triggers or ends.');
+    expect(tooLarge('ability', { name: 'x'.repeat(9000) })).toBe('This skill\'s ability is too large to save. It uses 9,011 bytes, and the limit for an ability is 8,192 bytes. Remove an effect.');
     expect(tooLarge('item', { name: 'Potion' })).toBeNull();
   });
 

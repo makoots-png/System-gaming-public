@@ -36,15 +36,15 @@ export function questFields(app, box, o) {
   const root = document.createElement('div');
   root.className = 'qfx';
   root.innerHTML = `<div class="qfx-main">
-      <div class="row"><span data-kindf${fixedKind ? ' hidden' : ''}>${field('Kind', `<select name="kind">${kinds.map(k => `<option value="${k}">${esc(KIND_LABEL[k] || k)}</option>`).join('')}</select>`)}</span>
+      <div class="row"><span data-kindf${fixedKind ? ' hidden' : ''}>${field('Quest type', `<select name="kind">${kinds.map(k => `<option value="${k}">${esc(KIND_LABEL[k] || k)}</option>`).join('')}</select>`)}</span>
         ${field('Title', `<input type="text" name="title" maxlength="120" autocomplete="off">`)}</div>
       ${field('Description', `<textarea name="desc" maxlength="500" rows="2"></textarea>`)}
       <fieldset><legend>Objectives</legend><div data-objs></div><button type="button" data-oadd>+ Add objective</button></fieldset>
       ${hours ? `<div class="row">${field(dueLabel, `<input type="number" name="dueHours" min="0" max="999" step="any" inputmode="decimal">`)}</div>`
         : `<div data-duef hidden>${field('Due (urgent quests fail after this)', '<input type="datetime-local" name="dueAt">')}</div>`}
-      ${gm ? field('Penalty on failure', `<input type="text" name="penaltyText" maxlength="300" autocomplete="off">`) : ''}
+      ${gm ? field('Failure penalty note (shown to player)', `<input type="text" name="penaltyText" maxlength="300" autocomplete="off">`) : ''}
     </div>${gm ? `<div class="qfx-rw"><fieldset><legend>Rewards</legend><div data-rweditor></div></fieldset>
-      <fieldset><legend>${esc(FAIL_WORDS.legend)}</legend><p class="qfx-hint">${esc(FAIL_WORDS.hint)}</p><div data-failrw></div></fieldset></div>` : ''}`;
+      <fieldset><legend>${esc(FAIL_WORDS.legend)} (automatic deductions)</legend><p class="qfx-hint">${esc(FAIL_WORDS.hint)}</p><div data-failrw></div></fieldset></div>` : ''}`;
   box.appendChild(root);
   const $ = sel => root.querySelector(sel);
   const kindSel = $('[name=kind]'), titleIn = $('[name=title]'), descIn = $('[name=desc]'), objs = $('[data-objs]');
@@ -59,7 +59,7 @@ export function questFields(app, box, o) {
   function addObjRow(ob = { label: '', target: 1, progress: 0 }) {
     const n = Math.max(-1, ...[...objs.querySelectorAll('.objrow')].map(r => Number(r.dataset.oi))) + 1;
     const row = app.ui.h(`<div class="objrow-w"><div class="objrow" data-oi="${n}" data-progress="${esc(ob.progress)}"><span class="grow">${field('Objective', `<input type="text" name="olabel" maxlength="80" value="${esc(ob.label)}" autocomplete="off">`)}</span>
-      <span class="sm">${field('Target', `<input type="number" name="otarget" min="1" max="99999" value="${esc(ob.target)}">`)}</span>
+      <span class="sm">${field('Target count', `<input type="number" name="otarget" min="1" max="99999" value="${esc(ob.target)}">`)}</span>
       <button type="button" class="danger" data-orm aria-label="Remove objective">&times;</button></div>
       ${gm ? `<div class="qfx-by">${field(COUNTED_WORDS.label, `<select data-ocb><option value="hand">${esc(COUNTED_WORDS.hand)}</option><option value="system"${ob.count ? ' selected' : ''}>${esc(COUNTED_WORDS.system)}</option></select>`)}<div class="qfx-count" data-ocount></div></div>` : ''}</div>`);
     objs.appendChild(row);
@@ -107,7 +107,7 @@ export function questFields(app, box, o) {
   function check() {
     if (!titleIn.value.trim()) { titleIn.focus(); return 'Enter a title.'; }
     if ((rewards && rewards.blocked()) || (onFail && onFail.blocked())) return UNFINISHED_ROWS;
-    if (rewards && kindSel.value === 'job' && !rewards.value().job) { rewards.ensure('job'); return 'Choose a job for a job quest.'; }
+    if (rewards && kindSel.value === 'job' && !rewards.value().job) { rewards.ensure('job'); return 'Choose a job for a Job Change quest.'; }
     return '';
   }
 
@@ -128,9 +128,9 @@ export function questFields(app, box, o) {
 }
 
 /** The words of who counts an objective, on the GM's form. */
-export const COUNTED_WORDS = { label: 'Counted by', hand: 'You, by hand', system: 'The System', card: 'Counted by the System' };
+export const COUNTED_WORDS = { label: 'Counted by', hand: 'Manual (player or GM taps progress)', system: 'The System', card: 'Counted by the System' };
 /** The words of what failing costs, on the GM's form and a quest's card. */
-export const FAIL_WORDS = { legend: 'If it fails', hint: 'Given when the quest fails. A minus takes away, as -50 gold.' };
+export const FAIL_WORDS = { legend: 'If it fails', hint: 'Applied when the quest fails. Use a minus sign to subtract, like -50 gold.' };
 
 /** The form's look, once. @param {(id: string, text: string) => void} css */
 export function questFieldsCss(css) {

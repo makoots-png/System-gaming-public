@@ -73,7 +73,7 @@ describe('a rest', () => {
     for (let i = 0; i < N; i++) h = ok(rest(h));
     expect(h.restsTaken).toBe(N);
     expect(rest(h)).toEqual({ ok: false, why: 'spent' });
-    expect(restRefusalWords(RULES).spent).toBe(`No rest left: a hunter rests ${N} times a gate. Clearing the gate gives everything back.`);
+    expect(restRefusalWords(RULES).spent).toBe(`No rests left. A hunter can rest ${N} times per gate. Clearing the gate restores everything.`);
   });
 
   test('a dead hunter\'s rest is refused and changes nothing', () => {
@@ -111,8 +111,8 @@ describe('a gate\'s end', () => {
 describe('the Rules page', () => {
   test('says what a rest gives, how many a gate, and what a Clear gives back', () => {
     const [rest, perGate, dead] = restLines(RULES);
-    expect(rest).toBe(`A rest gives back 25% of your max HP and 25% of your max mana, never past the maximum, and takes 75% of your fatigue off. Exhausted lifts when the fatigue left is under ${RULES.fatigue.collapseAt}% of your capacity.`);
-    expect(perGate).toBe('You have 2 rests a gate. Clearing the gate gives everything back: full HP and mana, no fatigue, every use limited a gate, and your rests. A solo run\'s end starts your rests again.');
-    expect(dead).toBe(`A dead hunter cannot rest and gets nothing back from a Clear: ${WAYS_BACK} brings you back. No one rests during a fight.`);
+    expect(rest).toBe(`Resting restores 25% of your max HP and 25% of your max mana, up to your maximum. It also removes 75% of your fatigue. Exhausted ends once your remaining fatigue drops below ${RULES.fatigue.collapseAt}% of your capacity.`);
+    expect(perGate).toBe('You get 2 rests per gate. Clearing a gate restores full HP and mana, clears your fatigue, resets per-gate uses, and resets your rests. Finishing a solo run also resets your rests.');
+    expect(dead).toBe(`A dead hunter cannot rest and gains nothing from clearing a gate. ${WAYS_BACK} brings you back. You cannot rest during a fight.`);
   });
 });

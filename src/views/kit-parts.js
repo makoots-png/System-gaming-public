@@ -12,20 +12,20 @@ import { MAX_STATUSES } from '../core/combat/fight-types.ts';
 
 /** Each bearer event as the GM reads it, after "When its bearer"; the low share is the rule's (`kit.lowHpAt`). */
 const eventLabels = () => ({
-  hitDealt: 'deals a hit', struck: 'is struck', critDealt: 'crits', critTaken: 'takes a crit', kill: 'kills a foe', avoided: 'avoids a use',
-  turnStart: 'starts its turn', turnEnd: 'ends its turn', moved: 'moves', down: 'goes down',
+  hitDealt: 'deals a hit', struck: 'is struck', critDealt: 'crits', critTaken: 'takes a crit', kill: 'kills a foe', avoided: 'avoids an ability',
+  turnStart: 'starts its turn', turnEnd: 'ends its turn', moved: 'moves', down: 'reaches 0 HP',
   lowHp: `falls under ${Math.round(rules().fight.kit.lowHpAt * 100)}% HP`, imposed: 'puts a harmful status on a foe',
   statusGained: 'gains a status', statusEnded: 'loses a status', used: 'uses an ability tagged',
 });
 const TRIGGER_EVENTS = [...BEARER_EVENTS, 'statusGained', 'statusEnded', 'used'];
-const LEAVE_LABEL = [['never', 'Never'], ['round', 'One a round'], ['event', 'On an event']];
-const KEEP_LABEL = [['fight', 'Gone'], ['sheet', 'Kept on the sheet']];
-const AT_LABEL = [['count', 'A count'], ['formula', 'A formula']];
+const LEAVE_LABEL = [['never', 'Never'], ['round', 'One per round'], ['event', 'On an event']];
+const KEEP_LABEL = [['fight', 'Cleared'], ['sheet', 'Kept on sheet']];
+const AT_LABEL = [['count', 'Stack count'], ['formula', 'Formula']];
 const REACH_LABEL = [['bearer', 'The bearer'], ['area', 'An area']];
 const THEN_LABEL = [['spend', 'Spent'], ['keep', 'Kept']];
 const ON_LABEL = [['all', 'Everyone'], ['allies', 'Allies'], ['foes', 'Foes']];
-const LIMIT_LABEL = [['each', 'Every time'], ['round', 'Once a round'], ['fight', 'A number a fight']];
-const CLEANSE_LABEL = [['cancel', 'Cancels it'], ['land', 'Makes it happen now']];
+const LIMIT_LABEL = [['each', 'Every time'], ['round', 'Once per round'], ['fight', 'Limited per fight']];
+const CLEANSE_LABEL = [['cancel', 'Cancels the effect'], ['land', 'Triggers immediately']];
 const TAG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /** @type {readonly string[]} */
 const PARTY = PARTY_EVENTS;
@@ -53,14 +53,14 @@ export function triggerList(host, triggers, M, name, who) {
     el.className = 'mk-fx mk-trig';
     el.innerHTML = `<div class="mk-fx-top"><select data-tk="on" aria-label="When">${TRIGGER_EVENTS.map(e => opt(e, `When ${who} ${eventLabels()[e]}`, t ? t.on : 'hitDealt')).join('')}</select>
         <button type="button" class="icon-btn" data-rm-trig aria-label="Remove trigger">&times;</button></div>
-      <label class="field" data-tf="tag"><span class="lbl" data-tag-lbl>Only uses tagged (optional)</span><input type="text" maxlength="${K.tagLength}" autocomplete="off" spellcheck="false" data-tk="tag" aria-label="Tag" placeholder="sword" value="${esc(t && t.tag ? t.tag : '')}"></label>
+      <label class="field" data-tf="tag"><span class="lbl" data-tag-lbl>Only abilities tagged (optional)</span><input type="text" maxlength="${K.tagLength}" autocomplete="off" spellcheck="false" data-tk="tag" aria-label="Ability tag" placeholder="sword" value="${esc(t && t.tag ? t.tag : '')}"></label>
       <label class="field" data-tf="key"><span class="lbl">Which status</span><select data-tk="key" data-pick aria-label="Which status">${statuses().map(([k, l]) => opt(k, l, t && t.key)).join('')}</select></label>
       <div class="lbl">How often</div>${M.chips(`${id}-limit`, LIMIT_LABEL, limit.kind, { label: 'How often' })}
-      <div data-tf="n">${numIn(`data-tk="n" min="1" max="${K.fightUses}" aria-label="Times a fight"`, `Times a fight (1 to ${K.fightUses})`, limit.kind === 'fight' ? limit.n : 1)}</div>
-      <div class="lbl">Lands on</div>${M.chips(`${id}-to`, [['self', who === 'its bearer' ? 'Its bearer' : 'That body'], ['other', 'The other body'], ['area', 'An area']], typeof to === 'string' ? to : 'area', { label: 'Lands on' })}
-      <div class="mk-two" data-tf="area">${numIn(`data-tk="radius" min="1" max="${R.fight.fieldRadiusMax}" aria-label="Tiles out"`, 'Tiles out', typeof to === 'object' ? to.radius : 2)}
-        <div>${M.chips(`${id}-on`, ON_LABEL, typeof to === 'object' ? to.on : 'foes', { label: 'Whom it reaches' })}</div></div>
-      <div class="lbl">What lands</div><div data-tfx></div>
+      <div data-tf="n">${numIn(`data-tk="n" min="1" max="${K.fightUses}" aria-label="Uses per fight"`, `Uses per fight (1 to ${K.fightUses})`, limit.kind === 'fight' ? limit.n : 1)}</div>
+      <div class="lbl">Applies to</div>${M.chips(`${id}-to`, [['self', who === 'its bearer' ? 'The bearer' : 'That creature'], ['other', 'The other creature'], ['area', 'An area']], typeof to === 'string' ? to : 'area', { label: 'Applies to' })}
+      <div class="mk-two" data-tf="area">${numIn(`data-tk="radius" min="1" max="${R.fight.fieldRadiusMax}" aria-label="Radius in tiles"`, 'Radius (tiles)', typeof to === 'object' ? to.radius : 2)}
+        <div><div class="lbl">Affects</div>${M.chips(`${id}-on`, ON_LABEL, typeof to === 'object' ? to.on : 'foes', { label: 'Who it affects' })}</div></div>
+      <div class="lbl">Effects to apply</div><div data-tfx></div>
       <p class="mk-fx-err" data-terr role="alert"></p>`;
     host.querySelector('[data-trigs]').appendChild(el);
     const fx = M.effects(el.querySelector('[data-tfx]'), { ops: t ? t.ops : [], kind: 'land', event: t ? t.on : 'hitDealt' });
@@ -72,16 +72,16 @@ export function triggerList(host, triggers, M, name, who) {
     const q = s => t.el.querySelector(s), ev = q('[data-tk="on"]').value, party = PARTY.includes(ev);
     const lk = M.picked(t.el, `${t.id}-limit`) || 'each', toK = M.picked(t.el, `${t.id}-to`) || 'self';
     const n = Math.trunc(Number(q('[data-tk="n"]').value)), radius = Math.trunc(Number(q('[data-tk="radius"]').value));
-    if (lk === 'fight' && !(n >= 1 && n <= K.fightUses)) return { err: `Times a fight go from 1 to ${K.fightUses}.` };
-    if (toK === 'area' && !(radius >= 1 && radius <= R.fight.fieldRadiusMax)) return { err: `An area reaches 1 to ${R.fight.fieldRadiusMax} tiles.` };
-    if (toK === 'other' && !party) return { err: 'Only a hit, a crit, a kill, an avoid or a status put on a foe has another body. Pick that body or an area.' };
+    if (lk === 'fight' && !(n >= 1 && n <= K.fightUses)) return { err: `Uses per fight must be from 1 to ${K.fightUses}.` };
+    if (toK === 'area' && !(radius >= 1 && radius <= R.fight.fieldRadiusMax)) return { err: `Area radius must be from 1 to ${R.fight.fieldRadiusMax} tiles.` };
+    if (toK === 'other' && !party) return { err: `Only a hit, crit, kill, dodge, or applied status has another creature. Pick ${who === 'its bearer' ? 'The bearer' : 'That creature'} or An area.` };
     const tag = q('[data-tk="tag"]').value.trim().toLowerCase();
-    if (tag && !(TAG_RE.test(tag) && tag.length <= K.tagLength)) return { err: `A tag is one word or words joined by hyphens, at most ${K.tagLength} letters.` };
-    if (ev === 'used' && !tag) return { err: 'Write the tag of the abilities it answers.' };
+    if (tag && !(TAG_RE.test(tag) && tag.length <= K.tagLength)) return { err: `A tag must be one word or hyphenated words, up to ${K.tagLength} characters.` };
+    if (ev === 'used' && !tag) return { err: 'Enter the ability tag that triggers this.' };
     const ops = t.fx.ops();
     if (t.fx.blocked()) return { err: 'Fix the effect above.' };
-    if (!ops.length) return { err: 'Add what lands.' };
-    if (ops.length > K.triggerOps) return { err: `A trigger lands ${K.triggerOps} effects at most.` };
+    if (!ops.length) return { err: 'Add at least one effect.' };
+    if (ops.length > K.triggerOps) return { err: `A trigger can have at most ${K.triggerOps} effects.` };
     const limit = lk === 'fight' ? { kind: 'fight', n } : { kind: lk === 'round' ? 'round' : 'each' };
     const to = toK === 'area' ? { kind: 'area', radius, on: M.picked(t.el, `${t.id}-on`) || 'foes' } : toK;
     const base = { on: ev, to, limit, ops, ...(t.need ? { need: t.need } : {}) };
@@ -97,7 +97,7 @@ export function triggerList(host, triggers, M, name, who) {
       const ev = t.el.querySelector('[data-tk="on"]').value, party = PARTY.includes(ev);
       if (ev !== t.event) { t.event = ev; t.fx.setEvent(ev); }
       t.el.querySelector('[data-tf="tag"]').hidden = !(party || ev === 'used');
-      t.el.querySelector('[data-tag-lbl]').textContent = ev === 'used' ? 'Its tag' : 'Only uses tagged (optional)';
+      t.el.querySelector('[data-tag-lbl]').textContent = ev === 'used' ? 'Ability tag' : 'Only abilities tagged (optional)';
       t.el.querySelector('[data-tf="key"]').hidden = !(ev === 'statusGained' || ev === 'statusEnded');
       t.el.querySelector('[data-tf="n"]').hidden = M.picked(t.el, `${t.id}-limit`) !== 'fight';
       t.el.querySelector('[data-tf="area"]').hidden = M.picked(t.el, `${t.id}-to`) !== 'area';
@@ -105,7 +105,7 @@ export function triggerList(host, triggers, M, name, who) {
       if (other) other.hidden = !party;
     }
     const full = trigs.length >= K.triggers, add = host.querySelector('[data-add-trig]');
-    add.disabled = full; add.textContent = full ? `Add a trigger (${K.triggers} at most)` : 'Add a trigger';
+    add.disabled = full; add.textContent = full ? `Add a trigger (max ${K.triggers})` : 'Add a trigger';
   }
   host.addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b || !host.contains(b)) return;
@@ -143,34 +143,34 @@ export function statusBlocks(box, def, M, name) {
   const statuses = () => Object.entries(rules().conditions).filter(([k]) => !isStateChip(k)).map(([k, d]) => [k, String((d && d.label) || k)]);
   const opt = (v, l, cur) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(l)}</option>`;
   const numIn = (attr, label, value, o = {}) => `<label class="field"><span class="lbl">${esc(label)}</span><input type="number" inputmode="numeric" step="1" ${attr} value="${esc(value)}"${o.placeholder ? ` placeholder="${esc(o.placeholder)}"` : ''}></label>`;
-  const area = (pre, reach) => `<div class="mk-two" data-area="${pre}">${numIn(`data-k="${pre}-radius" min="1" max="${R.fight.fieldRadiusMax}" aria-label="Tiles out"`, 'Tiles out', reach && reach.kind !== 'bearer' && typeof reach === 'object' ? reach.radius : 2)}
-    <div>${M.chips(c(`${pre}-on`), ON_LABEL, reach && typeof reach === 'object' && reach.kind !== 'bearer' ? reach.on : 'foes', { label: 'Whom it reaches' })}</div></div>`;
+  const area = (pre, reach) => `<div class="mk-two" data-area="${pre}">${numIn(`data-k="${pre}-radius" min="1" max="${R.fight.fieldRadiusMax}" aria-label="Radius in tiles"`, 'Radius (tiles)', reach && reach.kind !== 'bearer' && typeof reach === 'object' ? reach.radius : 2)}
+    <div><div class="lbl">Affects</div>${M.chips(c(`${pre}-on`), ON_LABEL, reach && typeof reach === 'object' && reach.kind !== 'bearer' ? reach.on : 'foes', { label: 'Who it affects' })}</div></div>`;
   box.innerHTML = `
     <details class="mk-group" data-group="stacks"><summary data-sum="stacks"></summary><div class="mk-group-body">
-      <label class="mk-check"><input type="checkbox" data-k="stack"${st ? ' checked' : ''}><span>Stacks</span></label>
+      <label class="mk-check"><input type="checkbox" data-k="stack"${st ? ' checked' : ''}><span>Can stack</span></label>
       <div data-stack-f>
-        ${numIn(`data-k="cap" min="1" max="${K.stackCap}" aria-label="Most stacks"`, `Most stacks (1 to ${K.stackCap})`, st ? st.cap : 5)}
-        <div class="lbl">Stacks leave</div>${M.chips(c('leave'), LEAVE_LABEL, st ? st.leave.kind : 'never', { label: 'Stacks leave' })}
-        <label class="field" data-leave-ev><span class="lbl">All leave when its bearer</span><select data-k="leaveEvent" aria-label="Event the stacks leave on">${BEARER_EVENTS.map(e => opt(e, eventLabels()[e], st && st.leave.kind === 'event' ? st.leave.event : 'struck')).join('')}</select></label>
-        <div class="lbl">When the fight ends, the stacks are</div>${M.chips(c('keep'), KEEP_LABEL, st ? st.keep : 'fight', { label: 'When the fight ends' })}
-        <label class="mk-check"><input type="checkbox" data-k="th"${th ? ' checked' : ''}><span>Something happens at a count</span></label>
+        ${numIn(`data-k="cap" min="1" max="${K.stackCap}" aria-label="Max stacks"`, `Max stacks (1 to ${K.stackCap})`, st ? st.cap : 5)}
+        <div class="lbl">How stacks expire</div>${M.chips(c('leave'), LEAVE_LABEL, st ? st.leave.kind : 'never', { label: 'How stacks expire' })}
+        <label class="field" data-leave-ev><span class="lbl">All stacks expire when the bearer</span><select data-k="leaveEvent" aria-label="Event that clears stacks">${BEARER_EVENTS.map(e => opt(e, eventLabels()[e], st && st.leave.kind === 'event' ? st.leave.event : 'struck')).join('')}</select></label>
+        <div class="lbl">After the fight, stacks are</div>${M.chips(c('keep'), KEEP_LABEL, st ? st.keep : 'fight', { label: 'After the fight' })}
+        <label class="mk-check"><input type="checkbox" data-k="th"${th ? ' checked' : ''}><span>Trigger an effect at a stack count</span></label>
         <div data-th-f>
-          <div class="lbl">At</div>${M.chips(c('at'), AT_LABEL, th && th.at.kind === 'formula' ? 'formula' : 'count', { label: 'At' })}
-          <div data-at="count">${numIn('data-k="thN" min="1" aria-label="At this many stacks"', 'Stacks', th && th.at.kind === 'count' ? th.at.n : st ? st.cap : 5)}</div>
-          <label class="field" data-at="formula"><span class="lbl">Stacks, a formula over the bearer</span><input type="text" autocomplete="off" spellcheck="false" data-k="thF" aria-label="Stacks formula" placeholder="vit" value="${esc(th && th.at.kind === 'formula' ? printFormula(th.at.formula) : 'vit')}"></label>
-          <div class="lbl">Lands on</div>${M.chips(c('th-to'), REACH_LABEL, th && th.to.kind === 'area' ? 'area' : 'bearer', { label: 'Lands on' })}
+          <div class="lbl">Trigger at</div>${M.chips(c('at'), AT_LABEL, th && th.at.kind === 'formula' ? 'formula' : 'count', { label: 'Trigger at' })}
+          <div data-at="count">${numIn('data-k="thN" min="1" aria-label="Trigger stack count"', 'Stack count', th && th.at.kind === 'count' ? th.at.n : st ? st.cap : 5)}</div>
+          <label class="field" data-at="formula"><span class="lbl">Stack count formula</span><input type="text" autocomplete="off" spellcheck="false" data-k="thF" aria-label="Stack count formula" placeholder="vit" value="${esc(th && th.at.kind === 'formula' ? printFormula(th.at.formula) : 'vit')}"></label>
+          <div class="lbl">Applies to</div>${M.chips(c('th-to'), REACH_LABEL, th && th.to.kind === 'area' ? 'area' : 'bearer', { label: 'Applies to' })}
           ${area('th', th && th.to)}
-          <div class="lbl">What lands</div><div data-th-fx></div>
-          <div class="lbl">Then the stacks are</div>${M.chips(c('then'), THEN_LABEL, th ? th.then : 'spend', { label: 'Then the stacks are' })}
+          <div class="lbl">Effects to apply</div><div data-th-fx></div>
+          <div class="lbl">After triggering, stacks are</div>${M.chips(c('then'), THEN_LABEL, th ? th.then : 'spend', { label: 'After triggering' })}
         </div>
         <p class="mk-fx-err" data-stack-err role="alert"></p>
       </div>
     </div></details>
     <details class="mk-group" data-group="when"><summary data-sum="when"></summary><div class="mk-group-body" data-trig-list></div></details>
     <details class="mk-group" data-group="end"><summary data-sum="end"></summary><div class="mk-group-body">
-      <label class="mk-check"><input type="checkbox" data-k="end"${def && def.end ? ' checked' : ''}><span>Something lands when it ends</span></label>
+      <label class="mk-check"><input type="checkbox" data-k="end"${def && def.end ? ' checked' : ''}><span>Trigger an effect when this status ends</span></label>
       <div data-end-f><div data-end-fx></div>
-        <div class="lbl">A cure</div>${M.chips(c('cleanse'), CLEANSE_LABEL, def && def.end ? def.end.cleanse : 'cancel', { label: 'A cure' })}
+        <div class="lbl">If cured early</div>${M.chips(c('cleanse'), CLEANSE_LABEL, def && def.end ? def.end.cleanse : 'cancel', { label: 'If cured early' })}
         <p class="mk-fx-err" data-end-err role="alert"></p></div>
     </div></details>`;
   const $ = s => box.querySelector(s), on = k => $(`[data-k="${k}"]`).checked;
@@ -191,20 +191,20 @@ export function statusBlocks(box, def, M, name) {
     const out = /** @type {any} */ ({}), errs = { stack: '', end: '' };
     if (on('stack')) {
       const cap = Math.trunc(Number($('[data-k="cap"]').value)), leaveK = M.picked(box, c('leave')) || 'never';
-      if (!(cap >= 1 && cap <= K.stackCap)) errs.stack = `Most stacks go from 1 to ${K.stackCap}.`;
+      if (!(cap >= 1 && cap <= K.stackCap)) errs.stack = `Max stacks must be from 1 to ${K.stackCap}.`;
       const leave = leaveK === 'event' ? { kind: 'event', event: $('[data-k="leaveEvent"]').value } : { kind: leaveK };
       let threshold = null;
       if (on('th') && !errs.stack) {
         const atK = M.picked(box, c('at')) || 'count', n = Math.trunc(Number($('[data-k="thN"]').value));
         let at = null;
-        if (atK === 'count') { if (n >= 1 && n <= cap) at = { kind: 'count', n }; else errs.stack = `The count goes from 1 to the most stacks (${cap}).`; }
-        else { const p = parseFormula($('[data-k="thF"]').value, rules()); if ('error' in p) errs.stack = `The count: ${p.error}`; else at = { kind: 'formula', formula: p.formula }; }
+        if (atK === 'count') { if (n >= 1 && n <= cap) at = { kind: 'count', n }; else errs.stack = `Stack count must be from 1 to max stacks (${cap}).`; }
+        else { const p = parseFormula($('[data-k="thF"]').value, rules()); if ('error' in p) errs.stack = `Stack count: ${p.error}`; else at = { kind: 'formula', formula: p.formula }; }
         const toK = M.picked(box, c('th-to')) || 'bearer', radius = Math.trunc(Number($('[data-k="th-radius"]').value));
-        if (toK === 'area' && !(radius >= 1 && radius <= R.fight.fieldRadiusMax)) errs.stack = `An area reaches 1 to ${R.fight.fieldRadiusMax} tiles.`;
+        if (toK === 'area' && !(radius >= 1 && radius <= R.fight.fieldRadiusMax)) errs.stack = `Area radius must be from 1 to ${R.fight.fieldRadiusMax} tiles.`;
         const ops = thFx.ops();
         if (thFx.blocked()) errs.stack = errs.stack || 'Fix the effect above.';
-        else if (!ops.length) errs.stack = errs.stack || 'Add what lands at the count.';
-        else if (ops.length > K.triggerOps) errs.stack = errs.stack || `A count lands ${K.triggerOps} effects at most.`;
+        else if (!ops.length) errs.stack = errs.stack || 'Add at least one effect for the stack trigger.';
+        else if (ops.length > K.triggerOps) errs.stack = errs.stack || `A threshold can have at most ${K.triggerOps} effects.`;
         const to = toK === 'area' ? { kind: 'area', radius, on: M.picked(box, c('th-on')) || 'foes' } : { kind: 'bearer' };
         if (at) threshold = { at, to, ops, then: M.picked(box, c('then')) === 'keep' ? 'keep' : 'spend' };
       }
@@ -215,8 +215,8 @@ export function statusBlocks(box, def, M, name) {
     if (on('end')) {
       const ops = endFx.ops();
       if (endFx.blocked()) errs.end = 'Fix the effect above.';
-      else if (!ops.length) errs.end = 'Add what lands when it ends.';
-      else if (ops.length > K.triggerOps) errs.end = `It lands ${K.triggerOps} effects at most.`;
+      else if (!ops.length) errs.end = 'Add at least one effect for when the status ends.';
+      else if (ops.length > K.triggerOps) errs.end = `An end effect can have at most ${K.triggerOps} effects.`;
       out.end = { ops, cleanse: M.picked(box, c('cleanse')) === 'land' ? 'land' : 'cancel' };
     }
     $('[data-stack-err]').textContent = errs.stack;
@@ -237,9 +237,9 @@ export function statusBlocks(box, def, M, name) {
     $('[data-end-f]').hidden = !on('end');
     const { fields } = read(), s = fields.stack, nt = trigList.count();
     $('[data-sum="stacks"]').textContent = !s ? 'Stacks: no'
-      : `Stacks to ${s.cap}${s.leave.kind === 'round' ? ', one leaves a round' : s.leave.kind === 'event' ? `, all leave when its bearer ${eventLabels()[s.leave.event]}` : ''}${s.threshold ? `; at ${s.threshold.at.kind === 'count' ? s.threshold.at.n : printFormula(s.threshold.at.formula)}: ${s.threshold.then === 'spend' ? 'spent' : 'kept'}` : ''}`;
-    $('[data-sum="when"]').textContent = nt ? `When: ${nt} trigger${nt === 1 ? '' : 's'}` : 'When something happens: nothing';
-    $('[data-sum="end"]').textContent = fields.end ? `When it ends: ${fields.end.ops.length} effect${fields.end.ops.length === 1 ? '' : 's'}, a cure ${fields.end.cleanse === 'cancel' ? 'cancels it' : 'makes it happen at once'}` : 'When it ends: nothing';
+      : `Stacks up to ${s.cap}${s.leave.kind === 'round' ? ', 1 expires per round' : s.leave.kind === 'event' ? `, all expire when the bearer ${eventLabels()[s.leave.event]}` : ''}${s.threshold ? `, at ${s.threshold.at.kind === 'count' ? s.threshold.at.n : printFormula(s.threshold.at.formula)}: ${s.threshold.then === 'spend' ? 'spent' : 'kept'}` : ''}`;
+    $('[data-sum="when"]').textContent = nt ? `Triggers: ${nt}` : 'Triggers: none';
+    $('[data-sum="end"]').textContent = fields.end ? `When it ends: ${fields.end.ops.length} effect${fields.end.ops.length === 1 ? '' : 's'}, curing ${fields.end.cleanse === 'cancel' ? 'cancels it' : 'triggers it immediately'}` : 'When it ends: nothing';
   }
 
   box.addEventListener('click', e => {
@@ -263,10 +263,10 @@ export const kitPartsCss = `
 
 // ── the ability form's kits groups (design 5.1 and 8.12) ──
 const PRICE_LABEL = [['hp', 'HP'], ['stacks', 'Stacks'], ['zone', 'A field']];
-const GATE_LABEL = [['holds', 'Holds a status'], ['uses', 'Uses'], ['inside', 'Inside a field']];
-const MOVE_LABEL = [['none', 'None'], ['blink', 'Blink'], ['swap', 'Swap']];
+const GATE_LABEL = [['holds', 'Has a status'], ['uses', 'Use limit'], ['inside', 'Inside a field']];
+const MOVE_LABEL = [['none', 'None'], ['blink', 'Teleport'], ['swap', 'Swap places']];
 const REACT_LABEL = [['before', 'Before a hit'], ['lethal', 'Before a killing hit'], ['after', 'After a hit'], ['turn', 'Before a turn']];
-const ACT_LABEL = [['none', 'None'], ['shift', 'Moves it'], ['grow', 'Widens it']];
+const ACT_LABEL = [['none', 'None'], ['shift', 'Moves field'], ['grow', 'Widens field']];
 const ARCH_LABEL = [['brute', 'Brute'], ['skirmisher', 'Skirmisher'], ['caster', 'Caster']];
 /** The most starting statuses a summon has: as many as a fight row holds (fight-parse.ts `summonOf`). */
 const SUMMON_STATUSES = MAX_STATUSES;
@@ -310,14 +310,14 @@ export function abilityBlocks(box, a, M) {
 
   const priceHtml = (p, i) => `<div class="mk-fx" data-price="${i}"><div class="mk-fx-top"><select data-f="kind" data-i="${i}" data-list="price" aria-label="Cost ${i + 1}">${PRICE_LABEL.map(([v, l]) => opt(v, l, p.kind)).join('')}</select>
       <button type="button" class="icon-btn" data-rm="price" data-i="${i}" aria-label="Remove cost ${i + 1}">&times;</button></div>
-    ${p.kind === 'hp' ? `${seg('hpMode', i, `HP cost ${i + 1}`, [['share', 'A share of max HP'], ['flat', 'A number']], p.hpMode)}${numF('n', i, p.hpMode === 'share' ? `Percent of max HP (${K.hpShareMin * 100} to ${K.hpShare * 100})` : `HP (1 to ${K.hpFlat})`, p.n, { decimal: p.hpMode === 'share' })}`
-      : p.kind === 'stacks' ? `${statusSel('key', i, 'Of the status', p.key)}${seg('from', i, `Whose stacks, cost ${i + 1}`, [['self', 'Yours'], ['target', 'Each target\'s']], p.from)}${numF('take', i, 'Stacks', p.take, { placeholder: 'All' })}`
-      : `${textF('zone', i, 'Field name', p.zone, { placeholder: 'any of yours' })}${seg('zoneTake', i, `Which fields, cost ${i + 1}`, [['one', 'One'], ['all', 'All']], p.zoneTake)}`}
+    ${p.kind === 'hp' ? `${seg('hpMode', i, `HP cost ${i + 1}`, [['share', '% of max HP'], ['flat', 'Flat HP']], p.hpMode)}${numF('n', i, p.hpMode === 'share' ? `Percent of max HP (${K.hpShareMin * 100} to ${K.hpShare * 100})` : `HP (1 to ${K.hpFlat})`, p.n, { decimal: p.hpMode === 'share' })}`
+      : p.kind === 'stacks' ? `${statusSel('key', i, 'Status', p.key)}${seg('from', i, `Whose stacks, cost ${i + 1}`, [['self', 'User\'s stacks'], ['target', 'Target\'s stacks']], p.from)}${numF('take', i, 'Stacks to spend', p.take, { placeholder: 'All stacks' })}`
+      : `${textF('zone', i, 'Field name', p.zone, { placeholder: 'any of yours' })}${seg('zoneTake', i, `Which fields, cost ${i + 1}`, [['one', 'One field'], ['all', 'All fields']], p.zoneTake)}`}
     <p class="mk-fx-err" data-err role="alert"></p></div>`;
   const gateHtml = (g, i) => `<div class="mk-fx" data-gate="${i}"><div class="mk-fx-top"><select data-f="kind" data-i="${i}" data-list="gate" aria-label="Condition ${i + 1}">${GATE_LABEL.map(([v, l]) => opt(v, l, g.kind)).join('')}</select>
       <button type="button" class="icon-btn" data-rm="gate" data-i="${i}" aria-label="Remove condition ${i + 1}">&times;</button></div>
-    ${g.kind === 'holds' ? `${statusSel('key', i, 'The status', g.key)}${seg('on', i, `On whom, condition ${i + 1}`, [['self', 'On you'], ['target', 'On the target']], g.on)}${numF('n', i, 'At least (stacks)', g.n)}`
-      : g.kind === 'uses' ? `${numF('n', i, `Uses (1 to ${K.fightUses})`, g.n)}${seg('per', i, `Uses per, condition ${i + 1}`, [['fight', 'A fight'], ['gate', 'A gate']], g.per)}`
+    ${g.kind === 'holds' ? `${statusSel('key', i, 'Status', g.key)}${seg('on', i, `On whom, condition ${i + 1}`, [['self', 'On user'], ['target', 'On target']], g.on)}${numF('n', i, 'Minimum stacks', g.n)}`
+      : g.kind === 'uses' ? `${numF('n', i, `Uses (1 to ${K.fightUses})`, g.n)}${seg('per', i, `Uses per, condition ${i + 1}`, [['fight', 'Per fight'], ['gate', 'Per gate']], g.per)}`
       : textF('zone', i, 'Field name', g.zone, { placeholder: 'Aura' })}
     <p class="mk-fx-err" data-err role="alert"></p></div>`;
 
@@ -334,19 +334,19 @@ export function abilityBlocks(box, a, M) {
       <div class="mk-fxs" data-list="gate">${gates.map(gateHtml).join('')}</div>
       <button type="button" class="mk-add" data-add="gate"${gates.length >= K.gates ? ' disabled' : ''}>Add a condition</button></div></details>
     <details class="mk-group" data-group="tags"><summary data-sum="tags"></summary><div class="mk-group-body">
-      <label class="field"><span class="lbl">Tags, up to ${K.tags}, comma between</span><input type="text" maxlength="80" autocomplete="off" spellcheck="false" data-f="tags" aria-label="Tags" placeholder="blood, ultimate" value="${esc(st.tags)}"></label></div></details>
+      <label class="field"><span class="lbl">Tags (up to ${K.tags}, separated by commas)</span><input type="text" maxlength="80" autocomplete="off" spellcheck="false" data-f="tags" aria-label="Tags" placeholder="blood, ultimate" value="${esc(st.tags)}"></label></div></details>
     <details class="mk-group" data-group="moves"><summary data-sum="moves"></summary><div class="mk-group-body">
-      <div class="lbl">Moves its user</div>${seg('move', -1, 'Moves its user', MOVE_LABEL, st.move)}
-      <div class="lbl">Acts on one of its user's fields</div>${seg('act', -1, 'Acts on a field', ACT_LABEL, st.act)}
-      <div class="mk-two" data-act-f>${numF('by', -1, st.act === 'grow' ? `Tiles wider (1 to ${K.zoneGrow})` : `Tiles at most (1 to ${K.zoneMove})`, st.by)}${textF('actZone', -1, 'Field name', st.actZone, { placeholder: 'any of yours' })}</div></div></details>
+      <div class="lbl">User movement</div>${seg('move', -1, 'User movement', MOVE_LABEL, st.move)}
+      <div class="lbl">Change an active field</div>${seg('act', -1, 'Change an active field', ACT_LABEL, st.act)}
+      <div class="mk-two" data-act-f>${numF('by', -1, st.act === 'grow' ? `Expand by (1 to ${K.zoneGrow} tiles)` : `Max move distance (1 to ${K.zoneMove} tiles)`, st.by)}${textF('actZone', -1, 'Field name', st.actZone, { placeholder: 'any of yours' })}</div></div></details>
     <details class="mk-group" data-group="react"><summary data-sum="react"></summary><div class="mk-group-body">
-      <label class="mk-check"><input type="checkbox" data-f="react"${st.react ? ' checked' : ''}><span>A reaction: armed ahead, it fires by itself</span></label>
-      <div data-react-f>${seg('when', -1, 'When it fires', REACT_LABEL, st.when)}${numF('reach', -1, `Also guards allies within (tiles, 0 to ${R.fight.fieldRadiusMax})`, st.reach)}</div></div></details>
+      <label class="mk-check"><input type="checkbox" data-f="react"${st.react ? ' checked' : ''}><span>Reaction (arm ahead of time to trigger automatically)</span></label>
+      <div data-react-f><div class="lbl">When it triggers</div>${seg('when', -1, 'When it triggers', REACT_LABEL, st.when)}${numF('reach', -1, `Also protects allies within (0 to ${R.fight.fieldRadiusMax} tiles)`, st.reach)}</div></div></details>
     <details class="mk-group" data-group="summon"><summary data-sum="summon"></summary><div class="mk-group-body">
-      <label class="mk-check"><input type="checkbox" data-f="summon"${st.summon ? ' checked' : ''}><span>Summons a body that fights for its user</span></label>
-      <div data-summon-f>${textF('sName', -1, 'Its name', st.sName, { max: 40 })}${seg('arch', -1, 'Its body', ARCH_LABEL, st.arch)}${numF('sRounds', -1, `Rounds (1 to ${K.summonRounds})`, st.sRounds)}
-        <div class="lbl">It starts with</div><div class="mk-fxs" data-list="sstat">${sstats.map(sstatHtml).join('')}</div>
-        <button type="button" class="mk-add" data-add="sstat"${sstats.length >= SUMMON_STATUSES ? ' disabled' : ''}>Add a status it starts with</button></div></div></details>
+      <label class="mk-check"><input type="checkbox" data-f="summon"${st.summon ? ' checked' : ''}><span>Summons a creature to fight for the user</span></label>
+      <div data-summon-f>${textF('sName', -1, 'Summon name', st.sName, { max: 40 })}<div class="lbl">Summon role</div>${seg('arch', -1, 'Summon role', ARCH_LABEL, st.arch)}${numF('sRounds', -1, `Rounds (1 to ${K.summonRounds})`, st.sRounds)}
+        <div class="lbl">Starting statuses</div><div class="mk-fxs" data-list="sstat">${sstats.map(sstatHtml).join('')}</div>
+        <button type="button" class="mk-add" data-add="sstat"${sstats.length >= SUMMON_STATUSES ? ' disabled' : ''}>Add starting status</button></div></div></details>
     <p class="mk-fx-err" data-kit-err role="alert"></p>`;
     draw();
   }
@@ -355,24 +355,24 @@ export function abilityBlocks(box, a, M) {
   /** A price as its row holds it, or the words of what is wrong. */
   function readPrice(p) {
     if (p.kind === 'hp') {
-      if (p.hpMode === 'flat') { const n = wholeIn(p.n, 1, K.hpFlat); return n === null ? { err: `HP goes from 1 to ${K.hpFlat}.` } : { v: { kind: 'hp', amount: { kind: 'flat', n } } }; }
+      if (p.hpMode === 'flat') { const n = wholeIn(p.n, 1, K.hpFlat); return n === null ? { err: `HP must be from 1 to ${K.hpFlat}.` } : { v: { kind: 'hp', amount: { kind: 'flat', n } } }; }
       const n = Number(String(p.n).trim());
-      if (String(p.n).trim() === '' || !(n >= K.hpShareMin * 100 && n <= K.hpShare * 100)) return { err: `A share goes from ${pct(K.hpShareMin)}% to ${pct(K.hpShare)}% of max HP.` };
+      if (String(p.n).trim() === '' || !(n >= K.hpShareMin * 100 && n <= K.hpShare * 100)) return { err: `HP share must be from ${pct(K.hpShareMin)}% to ${pct(K.hpShare)}% of max HP.` };
       return { v: { kind: 'hp', amount: { kind: 'share', share: n / 100 } } };
     }
     if (p.kind === 'stacks') {
       if (!p.key) return { err: 'Pick a status.' };
       const take = String(p.take).trim() === '' ? { kind: 'all' } : (n => (n === null ? null : { kind: 'n', n }))(wholeIn(p.take, 1, K.stackCap));
-      return take ? { v: { kind: 'stacks', key: p.key, from: p.from, take } } : { err: `Stacks go from 1 to ${K.stackCap}. Leave it empty for all.` };
+      return take ? { v: { kind: 'stacks', key: p.key, from: p.from, take } } : { err: `Stacks must be from 1 to ${K.stackCap}. Leave it empty for all.` };
     }
     const name = p.zone.replace(/\s+/g, ' ').trim();
     return { v: { kind: 'zone', name: name || null, take: p.zoneTake } };
   }
   function readGate(g) {
-    if (g.kind === 'holds') { const n = wholeIn(g.n, 1, K.stackCap); return !g.key ? { err: 'Pick a status.' } : n === null ? { err: `At least 1 to ${K.stackCap}.` } : { v: { kind: 'holds', key: g.key, on: g.on, atLeast: n } }; }
-    if (g.kind === 'uses') { const n = wholeIn(g.n, 1, K.fightUses); return n === null ? { err: `Uses go from 1 to ${K.fightUses}.` } : { v: { kind: 'uses', per: g.per, n } }; }
+    if (g.kind === 'holds') { const n = wholeIn(g.n, 1, K.stackCap); return !g.key ? { err: 'Pick a status.' } : n === null ? { err: `Minimum stacks must be from 1 to ${K.stackCap}.` } : { v: { kind: 'holds', key: g.key, on: g.on, atLeast: n } }; }
+    if (g.kind === 'uses') { const n = wholeIn(g.n, 1, K.fightUses); return n === null ? { err: `Uses must be from 1 to ${K.fightUses}.` } : { v: { kind: 'uses', per: g.per, n } }; }
     const zone = g.zone.replace(/\s+/g, ' ').trim();
-    return zone ? { v: { kind: 'inside', zone } } : { err: 'Write the field\'s name.' };
+    return zone ? { v: { kind: 'inside', zone } } : { err: 'Enter the field name.' };
   }
   /** What the groups hold, each field absent when none, and the first error. */
   function read() {
@@ -385,26 +385,26 @@ export function abilityBlocks(box, a, M) {
     if (ps.length) out.prices = ps.flatMap(r => (r.v ? [r.v] : []));
     if (gs.length) out.gates = gs.flatMap(r => (r.v ? [r.v] : []));
     const tags = st.tags.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
-    if (tags.length > K.tags) groupErr(`${K.tags} tags at most.`);
-    else if (tags.some(t => !(TAG_RE.test(t) && t.length <= K.tagLength))) groupErr(`A tag is one word or words joined by hyphens, at most ${K.tagLength} letters.`);
+    if (tags.length > K.tags) groupErr(`Use at most ${K.tags} tags.`);
+    else if (tags.some(t => !(TAG_RE.test(t) && t.length <= K.tagLength))) groupErr(`A tag must be one word or hyphenated words, up to ${K.tagLength} characters.`);
     else if (tags.length) out.tags = [...new Set(tags)];
     if (st.move !== 'none') out.move = { kind: st.move };
     if (st.react) {
       const reach = wholeIn(st.reach, 0, R.fight.fieldRadiusMax);
-      if (reach === null) groupErr(`The reach goes from 0 to ${R.fight.fieldRadiusMax} tiles.`); else out.react = { when: st.when, reach };
+      if (reach === null) groupErr(`Reach must be from 0 to ${R.fight.fieldRadiusMax} tiles.`); else out.react = { when: st.when, reach };
     }
     if (st.summon) {
       const name = st.sName.replace(/\s+/g, ' ').trim(), rounds = wholeIn(st.sRounds, 1, K.summonRounds);
-      if (!name) groupErr('Give the summoned body a name.'); else if (rounds === null) groupErr(`Rounds go from 1 to ${K.summonRounds}.`);
+      if (!name) groupErr('Give the summon a name.'); else if (rounds === null) groupErr(`Rounds must be from 1 to ${K.summonRounds}.`);
       else {
-        const ss = sstats.map(x => { const r = wholeIn(x.rounds, 1, K.summonRounds); return !x.key ? { err: 'Pick a status.' } : r === null ? { err: `Rounds go from 1 to ${K.summonRounds}.` } : { v: { key: x.key, rounds: r } }; });
+        const ss = sstats.map(x => { const r = wholeIn(x.rounds, 1, K.summonRounds); return !x.key ? { err: 'Pick a status.' } : r === null ? { err: `Rounds must be from 1 to ${K.summonRounds}.` } : { v: { key: x.key, rounds: r } }; });
         ss.forEach((r, i) => { const el = box.querySelector(`[data-sstat="${i}"] [data-err]`); if (el) el.textContent = r.err || ''; if (r.err) rowErr(r.err); });
         out.summon = { name, archetype: st.arch, rounds, statuses: ss.flatMap(r => (r.v ? [r.v] : [])) };
       }
     }
     if (st.act !== 'none') {
       const by = wholeIn(st.by, 1, st.act === 'grow' ? K.zoneGrow : K.zoneMove), name = st.actZone.replace(/\s+/g, ' ').trim();
-      if (by === null) groupErr(`Tiles go from 1 to ${st.act === 'grow' ? K.zoneGrow : K.zoneMove}.`); else out.zoneAct = { act: st.act, name: name || null, by };
+      if (by === null) groupErr(`Tiles must be from 1 to ${st.act === 'grow' ? K.zoneGrow : K.zoneMove}.`); else out.zoneAct = { act: st.act, name: name || null, by };
     }
     const err = box.querySelector('[data-kit-err]');
     if (err) err.textContent = (errs.find(e => e.at === 'group') || { text: '' }).text;
@@ -416,10 +416,10 @@ export function abilityBlocks(box, a, M) {
     q('[data-summon-f]').hidden = !st.summon;
     q('[data-act-f]').hidden = st.act === 'none';
     const n = (k, w) => `${k} ${w}${k === 1 ? '' : 's'}`;
-    q('[data-sum="prices"]').textContent = prices.length ? `Costs more: ${n(prices.length, 'cost')}` : 'Costs more: nothing';
-    q('[data-sum="gates"]').textContent = gates.length ? `Only when: ${n(gates.length, 'condition')}` : 'Only when: always';
+    q('[data-sum="prices"]').textContent = prices.length ? `Extra costs: ${n(prices.length, 'cost')}` : 'Extra costs: none';
+    q('[data-sum="gates"]').textContent = gates.length ? `Requirements: ${n(gates.length, 'condition')}` : 'Requirements: none';
     q('[data-sum="tags"]').textContent = f.tags ? `Tags: ${f.tags.join(', ')}` : 'Tags: none';
-    q('[data-sum="moves"]').textContent = `Moves: ${st.move === 'none' ? 'no' : st.move}${st.act === 'none' ? '' : `; ${st.act === 'shift' ? 'moves' : 'widens'} a field`}`;
+    q('[data-sum="moves"]').textContent = `Movement: ${st.move === 'none' ? 'none' : st.move === 'blink' ? 'teleport' : 'swap places'}${st.act === 'none' ? '' : `, ${st.act === 'shift' ? 'moves' : 'widens'} a field`}`;
     q('[data-sum="react"]').textContent = st.react ? `Reaction: ${(REACT_LABEL.find(([w]) => w === st.when) || REACT_LABEL[0])[1].toLowerCase()}` : 'Reaction: no';
     q('[data-sum="summon"]').textContent = f.summon ? `Summons ${f.summon.name} for ${n(f.summon.rounds, 'round')}${f.summon.statuses.length ? `, starting with ${f.summon.statuses.length === 1 ? 'a status' : `${f.summon.statuses.length} statuses`}` : ''}` : 'Summons: no';
   }

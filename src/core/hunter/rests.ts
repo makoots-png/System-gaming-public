@@ -40,7 +40,7 @@ export function restStep(taken: number, e: RestEvent, R: Pick<Rules, 'rest'>): n
 
 /** The sheet's words for a refused rest: none left in this gate (`spent`), or the hunter is dead (`cannot`, vitals.ts `VITAL_TABLE`). */
 export const restRefusalWords = (R: Pick<Rules, 'rest'>): { readonly spent: string; readonly cannot: string } => ({
-  spent: `No rest left: a hunter rests ${R.rest.perGate} time${R.rest.perGate === 1 ? '' : 's'} a gate. Clearing the gate gives everything back.`,
+  spent: `No rests left. A hunter can rest ${R.rest.perGate} time${R.rest.perGate === 1 ? '' : 's'} per gate. Clearing the gate restores everything.`,
   cannot: `A dead hunter cannot rest. ${WAYS_BACK} brings you back.`,
 });
 /** The line under the Rest button: the rests left in this gate. */

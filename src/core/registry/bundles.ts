@@ -34,21 +34,21 @@ export const MOMENT_WORDS: { readonly [M in Moment]: string } = {
   rivalry: 'Played a rivalry with another hunter',
   joke: 'Brought back an old joke',
   spotlight: 'Helped another player\'s moment',
-  mind: 'Changed the hunter\'s mind',
+  mind: 'Changed their mind',
   owned: 'Owned a failure',
   comic: 'Was funny',
   goodbye: 'Said goodbye',
   secret: 'Kept a secret',
   promise: 'Made or kept a promise',
   mercy: 'Showed mercy',
-  fear: 'Played the hunter\'s fear',
-  any: 'Anything else',
+  fear: 'Played their fear',
+  any: 'Other moments',
 };
 /** Each moment's chip on the shelf: a few words that fit a chip at 360 px. */
 export const MOMENT_CHIPS: { readonly [M in Moment]: string } = {
-  hard: 'Stayed in character', sacrifice: 'Gave something up', lie: 'Told a good lie', kindness: 'Was kind at a cost', speech: 'Gave a speech', silence: 'Stayed silent', rivalry: 'Rivalry',
-  joke: 'Old joke', spotlight: 'Helped another player', mind: 'Changed its mind', owned: 'Owned a failure', comic: 'Was funny', goodbye: 'Said goodbye',
-  secret: 'Kept a secret', promise: 'Promise', mercy: 'Showed mercy', fear: 'Was afraid', any: 'Anything else',
+  hard: 'Stayed in character', sacrifice: 'Gave something up', lie: 'Told a good lie', kindness: 'Was kind at a cost', speech: 'Gave a speech', silence: 'Stayed silent', rivalry: 'Played a rivalry',
+  joke: 'Brought back a joke', spotlight: 'Helped another player', mind: 'Changed their mind', owned: 'Owned a failure', comic: 'Was funny', goodbye: 'Said goodbye',
+  secret: 'Kept a secret', promise: 'Made or kept a promise', mercy: 'Showed mercy', fear: 'Played their fear', any: 'Other moments',
 };
 
 /**
@@ -72,8 +72,8 @@ const HEALTH_POTION: ItemTemplate = itemOf(RULES, SHOP_ITEMS.find(d => d.name ==
 /** A31's item: worn, a status that gives its bearer a shield of a quarter of its max HP as each fight begins (a status's `shield` op lands with it). */
 const PUNCHLINE: ItemTemplate = parseItem({
   name: 'The Punchline', rar: 'legendary', type: 'accessory', slot: 'neck', value: 0,
-  desc: 'Given for a long-running joke that mattered in a serious scene. Worn, it gives you a shield as each fight begins.',
-  worn: { label: 'The Punchline', desc: 'A shield of a quarter of max HP as the fight begins.', ops: [{ op: 'shield', amount: { kind: 'binary', op: '/', left: { kind: 'sheet', whose: 'user', key: 'hpMax' }, right: { kind: 'number', value: 4 } } }] },
+  desc: 'Given for a long-running joke that mattered in a serious scene. While worn, you get a shield at the start of each fight.',
+  worn: { label: 'The Punchline', desc: 'Gain a shield equal to a quarter of your max HP at the start of the fight.', ops: [{ op: 'shield', amount: { kind: 'binary', op: '/', left: { kind: 'sheet', whose: 'user', key: 'hpMax' }, right: { kind: 'number', value: 4 } } }] },
 })!;
 /** A46's item: a thing exchanged at a goodbye, worth nothing to the shop. */
 const KEEPSAKE: ItemTemplate = parseItem({ name: 'Keepsake', rar: 'common', type: 'material', value: 0, desc: 'Something given at a goodbye. Name it and write what it is.' })!;
@@ -94,7 +94,7 @@ const ENTRIES: readonly Entry[] = [
   // A03 an E-rank title: 1 point (+1 Instinct)
   { key: 'seed-second-skin', moment: 'hard', when: 'Chose what the hunter would do over what was best for the player', name: 'Second Skin', rewards: title({ name: 'Second Skin', desc: 'Chose what the hunter would do over what was best for the player.', bonus: { ins: 1 } }), window: words('WHICH OF YOU IS SPEAKING', 'You chose what your hunter would do over what was best for you. You get the title Second Skin.') },
   // A04 RARE: an A-rank title (4 points: +2 Discipline, +2 Presence), and the GM's skill for the trait (a boon he honors once)
-  { key: 'seed-worn-smooth', moment: 'hard', rare: true, when: 'Played one trait for a whole arc, even when it cost the hunter', name: 'Worn Smooth', rewards: title({ name: 'Worn Smooth', desc: 'Played one trait for a whole arc, even when it cost the hunter.', bonus: { dis: 2, pre: 2 } }, { boons: [{ name: 'Your Trait', text: 'The GM writes a passive skill for the trait you played, and gives it to you.' }] }), window: words('THE ROLE HAS BECOME THE HUNTER', 'You played one trait for a whole arc, even when it cost your hunter. You get the title Worn Smooth, and the GM will write you a passive skill for that trait.') },
+  { key: 'seed-worn-smooth', moment: 'hard', rare: true, when: 'Played one trait for a whole story, even when it cost the hunter', name: 'Worn Smooth', rewards: title({ name: 'Worn Smooth', desc: 'Played one trait for a whole story, even when it cost the hunter.', bonus: { dis: 2, pre: 2 } }, { boons: [{ name: 'Your Trait', text: 'The GM writes a passive skill for the trait you played, and gives it to you.' }] }), window: words('THE ROLE HAS BECOME THE HUNTER', 'You played one trait for a whole story, even when it cost your hunter. You get the title Worn Smooth, and the GM will write you a passive skill for that trait.') },
 
   // ── gave something up ──
   // 1 ability point
@@ -104,13 +104,13 @@ const ENTRIES: readonly Entry[] = [
   // A05 a one-use boon: first pick of one loot roll
   { key: 'seed-weight-moved', moment: 'sacrifice', when: 'Gave an item or a share of loot to someone else', name: 'Weight Moved', rewards: boon('First Pick', 'At the next loot roll for your party, take one item before anyone else.'), window: words('THE SCALES MOVED', 'You gave an item or your share of loot to someone else. At the next loot roll, you pick one item first.') },
   // A06 a one-use boon: a shield of twice the level at one fight's start, which the GM puts on
-  { key: 'seed-the-door', moment: 'sacrifice', when: 'Stayed behind to fight so the others could escape', name: 'The Door', rewards: boon('Doorframe', 'In your next fight, the GM gives you a shield of twice your level at its start.'), window: words('SOMEONE HAS TO BE THE DOOR', 'You stayed behind so the others could escape. In your next fight, the GM gives you a shield of twice your level at the start.') },
+  { key: 'seed-the-door', moment: 'sacrifice', when: 'Stayed behind to fight so the others could escape', name: 'The Door', rewards: boon('Doorframe', 'At the start of your next fight, the GM gives you a shield equal to twice your level.'), window: words('SOMEONE HAS TO BE THE DOOR', 'You stayed behind so the others could escape. At the start of your next fight, the GM gives you a shield equal to twice your level.') },
   // A07 1 ability point and a one-use boon: a consequence softened once
-  { key: 'seed-paid-in-advance', moment: 'sacrifice', when: 'Chose a worse outcome for the hunter because it made a better story', name: 'Paid in Advance', rewards: points(1, { boons: [{ name: 'Credit', text: 'Once, ask the GM to soften one consequence, and he must.' }] }), window: words('PAYMENT RECEIVED BEFORE DELIVERY', 'You chose a worse outcome for your hunter because it made a better story. You get 1 ability point, and once you may ask the GM to soften one consequence.') },
+  { key: 'seed-paid-in-advance', moment: 'sacrifice', when: 'Chose a worse outcome for the hunter because it made a better story', name: 'Paid in Advance', rewards: points(1, { boons: [{ name: 'Credit', text: 'Once, ask the GM to soften one consequence, and they must.' }] }), window: words('PAYMENT RECEIVED BEFORE DELIVERY', 'You chose a worse outcome for your hunter because it made a better story. You get 1 ability point, and once you may ask the GM to soften one consequence.') },
   // RARE: 3 ability points and a B-rank title (3 points: +3 Vitality). One a campaign, for a sacrifice that changed it
-  { key: 'seed-spent-for-others', moment: 'sacrifice', rare: true, when: 'Gave up something big that changed the campaign', name: 'Spent for Others', rewards: title({ name: 'Spent for Others', desc: 'Gave up something that could not be given back, for the others.', bonus: { vit: 3 } }, { points: 3 }), window: words('THE SYSTEM WILL NOT FORGET THIS', 'You gave up something that changed the campaign. You get 3 ability points and the title Spent for Others.') },
+  { key: 'seed-spent-for-others', moment: 'sacrifice', rare: true, when: 'Gave up something big that changed the story', name: 'Spent for Others', rewards: title({ name: 'Spent for Others', desc: 'Gave up something that could not be given back, for the others.', bonus: { vit: 3 } }, { points: 3 }), window: words('THE SYSTEM WILL NOT FORGET THIS', 'You gave up something that changed the story. You get 3 ability points and the title Spent for Others.') },
   // A08 RARE: a B-rank title (3 points: +2 Vitality, +1 Presence) and a Revive the GM promises (the Revive stays his, as the ruling says)
-  { key: 'seed-ash-on-the-hands', moment: 'sacrifice', rare: true, when: 'Stayed behind at the risk of death so the others could get away', name: 'Ash on the Hands', rewards: title({ name: 'Ash on the Hands', desc: 'Stayed behind at the risk of its life so the others could get away.', bonus: { vit: 2, pre: 1 } }, { boons: [{ name: 'One Return', text: 'The GM will Revive you once, without a Resurrection Crystal.' }] }), window: words('THE SYSTEM WILL CARRY THIS ONE', 'You stayed behind at the risk of your life so the others could get away. You get the title Ash on the Hands, and the GM will Revive you once without a Resurrection Crystal.') },
+  { key: 'seed-ash-on-the-hands', moment: 'sacrifice', rare: true, when: 'Stayed behind at the risk of death so the others could get away', name: 'Ash on the Hands', rewards: title({ name: 'Ash on the Hands', desc: 'Stayed behind at the risk of their life so the others could get away.', bonus: { vit: 2, pre: 1 } }, { boons: [{ name: 'One Return', text: 'The GM will Revive you once, without a Resurrection Crystal.' }] }), window: words('THE SYSTEM WILL CARRY THIS ONE', 'You stayed behind at the risk of your life so the others could get away. You get the title Ash on the Hands, and the GM will Revive you once without a Resurrection Crystal.') },
 
   // ── told a good lie ──
   // nothing but the line: the lie was its own reward
@@ -120,7 +120,7 @@ const ENTRIES: readonly Entry[] = [
   // a one-use boon: a story kept alive once, no number moves
   { key: 'seed-second-story', moment: 'lie', when: 'Told a lie the hunter will have to keep telling', name: 'Second Story', rewards: boon('Second Story', 'Once, when a lie of yours is found out, one listener of your choice still believes it.'), window: words('THE STORY HOLDS', 'You told a lie your hunter will have to keep telling. Once, when one of your lies is found out, one listener of your choice still believes it.') },
   // A09 a one-use boon: a round bought from a monster that speaks
-  { key: 'seed-two-versions', moment: 'lie', when: 'Told a lie that fooled a stranger and half the table', name: 'Two Versions', rewards: boon('Stalling Tongue', 'Once, a lie told to a monster that speaks makes it wait one round before it acts.'), window: words('THE SYSTEM LOGGED TWO VERSIONS', 'You told a lie that fooled a stranger and half the table. Once, a lie you tell a monster that speaks makes it wait one round before it acts.') },
+  { key: 'seed-two-versions', moment: 'lie', when: 'Told a lie that fooled a stranger and half the table', name: 'Two Versions', rewards: boon('Stalling Tongue', 'Once, when you lie to a monster that speaks, it waits one round before acting.'), window: words('THE SYSTEM LOGGED TWO VERSIONS', 'You told a lie that fooled a stranger and half the table. Once, when you lie to a monster that speaks, it waits one round before acting.') },
   // A10 an E-rank title: 1 point (+1 Agility)
   { key: 'seed-borrowed-face', moment: 'lie', when: 'Pretended to be someone else for a whole scene', name: 'Borrowed Face', rewards: title({ name: 'Borrowed Face', desc: 'Pretended to be someone else for a whole scene, and nobody noticed.', bonus: { agi: 1 } }), window: words('IDENTITY UNCONFIRMED', 'You pretended to be someone else for a whole scene. You get the title Borrowed Face.') },
   // A11 1 ability point
@@ -146,11 +146,11 @@ const ENTRIES: readonly Entry[] = [
   // a held reroll given to an ally: the same size as the shelf's own reroll
   { key: 'seed-rallying-words', moment: 'speech', when: 'Said something that encouraged the others', name: 'Rallying Words', rewards: boon('Rallying Words', 'Once, after you speak, one ally of your choice rolls a d20 again and keeps the second roll.'), window: words('THEY WILL FOLLOW THAT', 'You said something that encouraged the others. Once, after you speak, one ally of your choice may roll a d20 again and keep the second roll.') },
   // RARE: 2 ability points and a C-rank title (3 points: +2 Presence, +1 Instinct). For the speech the campaign turns on
-  { key: 'seed-voice-of-the-gate', moment: 'speech', rare: true, when: 'Gave a speech that changed what happened in the campaign', name: 'Voice of the Gate', rewards: title({ name: 'Voice of the Gate', desc: 'Gave a speech that changed what happened in the campaign.', bonus: { pre: 2, ins: 1 } }, { points: 2 }), window: words('THE GATE HEARD YOU', 'Your speech changed what happened in the campaign. You get 2 ability points and the title Voice of the Gate.') },
+  { key: 'seed-voice-of-the-gate', moment: 'speech', rare: true, when: 'Gave a speech that changed what happened in the story', name: 'Voice of the Gate', rewards: title({ name: 'Voice of the Gate', desc: 'Gave a speech that changed what happened in the story.', bonus: { pre: 2, ins: 1 } }, { points: 2 }), window: words('THE GATE HEARD YOU', 'Your speech changed what happened in the story. You get 2 ability points and the title Voice of the Gate.') },
   // A17 a one-use boon: the speech quoted back later, no number moves
   { key: 'seed-quoted-back', moment: 'speech', when: 'Gave a speech that the players kept quoting', name: 'Quoted Back', rewards: boon('Quoted', 'In a later session, someone the GM picks quotes your speech back to you.'), window: words('SOMEONE WILL REMEMBER THIS', 'You gave a speech that the players kept quoting. In a later session, someone the GM picks will quote it back to you.') },
   // A18 a one-use boon: one fight's allies start Hasted for a round, which the GM puts on
-  { key: 'seed-banner', moment: 'speech', when: 'Gave a speech before a fight', name: 'Banner', rewards: boon('Banner', 'In that fight, every ally starts Hasted for 1 round. The GM puts it on.'), window: words('THEY WILL MARCH ON THAT', 'You gave a speech before a fight. In that fight, every ally starts Hasted for 1 round.') },
+  { key: 'seed-banner', moment: 'speech', when: 'Gave a speech before a fight', name: 'Banner', rewards: boon('Banner', 'In that fight, every ally starts Hasted for 1 round. The GM applies it.'), window: words('THEY WILL MARCH ON THAT', 'You gave a speech before a fight. In that fight, every ally starts Hasted for 1 round.') },
   // A19 an E-rank title: 1 point (+1 Discipline)
   { key: 'seed-eulogist', moment: 'speech', when: 'Gave a speech for someone who died', name: 'Eulogist', rewards: title({ name: 'Eulogist', desc: 'Gave a speech for someone who died.', bonus: { dis: 1 } }), window: words('THE DEAD WERE LISTENING', 'You gave a speech for someone who died. You get the title Eulogist.') },
 
@@ -170,7 +170,7 @@ const ENTRIES: readonly Entry[] = [
 
   // ── played a rivalry with another hunter ──
   // A24 a one-use boon, given to each rival: try what the rival just did, at once
-  { key: 'seed-measured-against', moment: 'rivalry', when: 'Played a rivalry with another hunter openly (give it to both)', name: 'Measured Against', rewards: boon('Answer', 'Once, when your rival succeeds at something, try the same thing at once.'), window: words('THE SYSTEM HAS STARTED A SECOND COLUMN', 'You played your rivalry with another hunter openly. Once, when your rival succeeds at something, you may try the same thing at once.') },
+  { key: 'seed-measured-against', moment: 'rivalry', when: 'Played a rivalry with another hunter openly (give it to both)', name: 'Measured Against', rewards: boon('Answer', 'Once, when your rival succeeds at something, you may try the same thing right away.'), window: words('THE SYSTEM HAS STARTED A SECOND COLUMN', 'You played your rivalry with another hunter openly. Once, when your rival succeeds at something, you may try the same thing right away.') },
   // A25 1 ability point
   { key: 'seed-second-place', moment: 'rivalry', when: 'Lost to the rival and showed that the hunter was upset', name: 'Second Place', rewards: points(1), window: words('SECOND PLACE', 'You lost to your rival and showed that your hunter was upset. You get 1 ability point.') },
   // A26 an E-rank title: 1 point (+1 Strength) to each rival; its link to the rival waits for a title that names another hunter
@@ -184,29 +184,29 @@ const ENTRIES: readonly Entry[] = [
   // A30 a one-use boon: a title the other players name, with no bonus (the GM writes it)
   { key: 'seed-running-gag', moment: 'joke', when: 'Kept one joke about the hunter going for weeks', name: 'Running Gag', rewards: boon('Running Gag', 'The other players name a title for you. The GM writes it, with no bonus.'), window: words('THE SYSTEM HAS BEEN FORCED TO ACKNOWLEDGE THIS', 'A joke about your hunter has gone on for weeks. The other players name a title for you, and the GM writes it, with no bonus.') },
   // A31 RARE: a legendary accessory whose worn status shields a quarter of max HP as each fight begins
-  { key: 'seed-the-punchline', moment: 'joke', rare: true, when: 'Made a long-running joke matter in a serious scene', name: 'The Punchline', rewards: { ...newRewards(), items: [PUNCHLINE] }, window: words('THE JOKE PAID OFF', 'Your long-running joke mattered in a serious scene. You get The Punchline, a necklace that gives you a shield as each fight begins.') },
+  { key: 'seed-the-punchline', moment: 'joke', rare: true, when: 'Made a long-running joke matter in a serious scene', name: 'The Punchline', rewards: { ...newRewards(), items: [PUNCHLINE] }, window: words('THE JOKE PAID OFF', 'Your long-running joke mattered in a serious scene. You get The Punchline. While you wear it, you get a shield at the start of each fight.') },
 
   // ── helped another player's moment ──
   // 1 ability point
   { key: 'seed-set-the-stage', moment: 'spotlight', when: 'Helped another player have a bigger moment', name: 'Set the Stage', rewards: points(1), window: words('YOU GAVE THEM THE SCENE', 'You helped another player have a bigger moment. You get 1 ability point.') },
   // a held reroll to give away: the same size as the shelf's own reroll
-  { key: 'seed-in-your-corner', moment: 'spotlight', when: 'Supported another hunter during its moment', name: 'In Your Corner', rewards: boon('In Your Corner', 'Once, when another hunter rolls a d20, let them roll it again and keep the second roll.'), window: words('SOMEONE HAS YOUR BACK', 'You supported another hunter during its moment. Once, when another hunter rolls a d20, you may let them roll it again and keep the second roll.') },
+  { key: 'seed-in-your-corner', moment: 'spotlight', when: 'Supported another hunter during their moment', name: 'In Your Corner', rewards: boon('In Your Corner', 'Once, when another hunter rolls a d20, let them roll it again and keep the second roll.'), window: words('SOMEONE HAS YOUR BACK', 'You supported another hunter during their moment. Once, when another hunter rolls a d20, you may let them roll it again and keep the second roll.') },
   // RARE: 2 ability points and a C-rank title (2 points: +2 Presence). For the player who made the table's favorite scene someone else's
   { key: 'seed-the-best-second', moment: 'spotlight', rare: true, when: 'Set up the table\'s favorite scene for another player', name: 'The Best Second', rewards: title({ name: 'The Best Second', desc: 'Set up the table\'s favorite scene for another player.', bonus: { pre: 2 } }, { points: 2 }), window: words('THE SYSTEM SAW WHO HELD THE LIGHT', 'You set up the table\'s favorite scene for another player. You get 2 ability points and the title The Best Second.') },
   // A32 a one-use boon: a near miss of another hunter's turned into a success, once
-  { key: 'seed-feed-line', moment: 'spotlight', when: 'Set up a moment for another hunter, then let it act', name: 'Feed Line', rewards: boon('Feed Line', 'Once, describe how another hunter succeeds at a roll that missed by 2 or less.'), window: words('THE SYSTEM CREDITS THE ASSIST', 'You set up a moment for another hunter and let it act. Once, when another hunter misses a roll by 2 or less, you may describe how it succeeds.') },
+  { key: 'seed-feed-line', moment: 'spotlight', when: 'Set up a moment for another hunter, then let them act', name: 'Feed Line', rewards: boon('Feed Line', 'Once, describe how another hunter succeeds at a roll that missed by 2 or less.'), window: words('THE SYSTEM CREDITS THE ASSIST', 'You set up a moment for another hunter and let them act. Once, when another hunter misses a roll by 2 or less, you may describe how they succeed.') },
   // A33 1 ability point
   { key: 'seed-gave-the-kill', moment: 'spotlight', when: 'Set up another hunter\'s finishing blow, in character', name: 'Gave the Kill', rewards: points(1), window: words('TWO NAMES ON ONE KILL', 'Another hunter landed the finishing blow because you set it up. You get 1 ability point.') },
   // A34 a held reroll
   { key: 'seed-lent-the-floor', moment: 'spotlight', when: 'Gave up a turn to talk so another player could finish a scene', name: 'Lent the Floor', rewards: boon('Lent the Floor', REROLL), window: words('YOU GAVE UP YOUR TURN', 'You gave up your turn to talk so another player could finish. You get one reroll of a d20.') },
   // A35 a one-use boon of information between players, no number moves
-  { key: 'seed-asked-the-question', moment: 'spotlight', when: 'Asked a question that brought out another hunter\'s past', name: 'Asked the Question', rewards: boon('Confidant', 'Once, the other hunter\'s player tells you one secret of its past, privately.'), window: words('THE RIGHT QUESTION', 'You asked a question that brought out another hunter\'s past. Once, that hunter\'s player tells you one secret of its past, privately.') },
+  { key: 'seed-asked-the-question', moment: 'spotlight', when: 'Asked a question that brought out another hunter\'s past', name: 'Asked the Question', rewards: boon('Confidant', 'Once, the other hunter\'s player tells you one secret from their past, privately.'), window: words('THE RIGHT QUESTION', 'You asked a question that brought out another hunter\'s past. Once, that hunter\'s player tells you one secret from their past, privately.') },
 
   // ── changed the hunter's mind ──
   // A36 1 ability point
   { key: 'seed-file-updated', moment: 'mind', when: 'Changed a belief the hunter held, for a reason the table saw', name: 'File Updated', rewards: points(1), window: words('THE SYSTEM HAS UPDATED YOUR FILE', 'Your hunter changed a belief, and the table saw why. You get 1 ability point.') },
   // A37 a one-use boon: a respec at no gold, before the next session
-  { key: 'seed-new-shape', moment: 'mind', when: 'Changed the hunter\'s mind in a way that changes how it fights', name: 'New Shape', rewards: boon('New Shape', 'One respec at no gold, taken before the next session or lost.'), window: words('THE OLD SHAPE NO LONGER FITS', 'Your hunter changed its mind in a way that changes how it fights. You get one respec at no gold. Take it before the next session or lose it.') },
+  { key: 'seed-new-shape', moment: 'mind', when: 'Changed the hunter\'s mind in a way that changes how they fight', name: 'New Shape', rewards: boon('New Shape', 'One free build respec (path and perks). Use it before the next session or you lose it.'), window: words('THE OLD SHAPE NO LONGER FITS', 'Your hunter changed their mind in a way that changes how they fight. You get one free build respec (path and perks). Use it before the next session or you lose it.') },
 
   // ── owned a failure ──
   // 1 ability point
@@ -216,7 +216,7 @@ const ENTRIES: readonly Entry[] = [
   // 50 XP: two dailies' worth of XP, and no ability point
   { key: 'seed-hard-lesson', moment: 'owned', when: 'Had the hunter learn from a failure in front of the table', name: 'Hard Lesson', rewards: xp(50), window: words('THE SYSTEM LOGGED A LESSON', 'Your hunter learned from a failure in front of the table. You get 50 XP.') },
   // A39 a one-use boon: one check of the same kind rolled twice, the better kept
-  { key: 'seed-fell-forward', moment: 'owned', when: 'Used a failure in the story instead of hiding it', name: 'Fell Forward', rewards: boon('Lesson Kept', 'On your next check of the same kind, roll twice and keep the better.'), window: words('THE SYSTEM KEEPS THE LESSON ON FILE', 'You used a failure in the story instead of hiding it. On your next check of the same kind, roll twice and keep the better roll.') },
+  { key: 'seed-fell-forward', moment: 'owned', when: 'Used a failure in the story instead of hiding it', name: 'Fell Forward', rewards: boon('Lesson Kept', 'On your next check of the same kind, roll twice and keep the higher roll.'), window: words('THE SYSTEM KEEPS THE LESSON ON FILE', 'You used a failure in the story instead of hiding it. On your next check of the same kind, roll twice and keep the higher roll.') },
   // A40 an E-rank title: 1 point (+1 Agility)
   { key: 'seed-scuffed', moment: 'owned', when: 'Described a failure so well the table asked to hear it again', name: 'Scuffed', rewards: title({ name: 'Scuffed', desc: 'Described a failure so well the table asked to hear it again.', bonus: { agi: 1 } }), window: words('THE SYSTEM REQUESTS A REPLAY', 'You described a failure so well the table asked to hear it again. You get the title Scuffed.') },
   // A41 1 ability point
@@ -248,7 +248,7 @@ const ENTRIES: readonly Entry[] = [
 
   // ── kept a secret ──
   // A48 a one-use boon: either answer pays 1 ability point, which the GM gives
-  { key: 'seed-locked-box', moment: 'secret', when: 'Kept a secret when others tried to learn it', name: 'Locked Box', rewards: boon('Locked Box', 'Once, the GM asks you privately whether to reveal it. Either answer pays 1 ability point.'), window: words('THE SYSTEM SEES ONLY THE LOCK', 'You kept a secret when others tried to learn it. Once, the GM will ask you privately whether to reveal it. Either answer pays 1 ability point.') },
+  { key: 'seed-locked-box', moment: 'secret', when: 'Kept a secret when others tried to learn it', name: 'Locked Box', rewards: boon('Locked Box', 'Once, the GM asks you privately whether to reveal it. You get 1 ability point either way.'), window: words('THE SYSTEM SEES ONLY THE LOCK', 'You kept a secret when others tried to learn it. Once, the GM will ask you privately whether to reveal it. You get 1 ability point either way.') },
   // A49 1 ability point
   { key: 'seed-knew-and-did-not-know', moment: 'secret', when: 'Played as if the hunter did not know what the player knew', name: 'Knew and Did Not Know', rewards: points(1), window: words('YOU KNEW. YOUR HUNTER DID NOT', 'You knew something your hunter did not, and you played as if you did not know it. You get 1 ability point.') },
   // A50 an E-rank title: 1 point (+1 Instinct)
@@ -266,17 +266,17 @@ const ENTRIES: readonly Entry[] = [
   // A55 1 ability point: less than the XP the mercy gave up, which the window says
   { key: 'seed-mercy-pays-odd', moment: 'mercy', when: 'Spared a foe, and the party lost the XP for it', name: 'Mercy Pays Odd', rewards: points(1), window: words('THE SYSTEM DID NOT REQUIRE THAT', 'You spared a foe and lost its XP. You get 1 ability point.') },
   // A56 RARE: an A-rank title (4 points: +3 Presence, +1 Discipline); the spared boss's life after is the GM's
-  { key: 'seed-open-palm', moment: 'mercy', rare: true, when: 'Spared a boss', name: 'Open Palm', rewards: title({ name: 'Open Palm', desc: 'Spared a boss that everyone expected it to kill.', bonus: { pre: 3, dis: 1 } }), window: words('THE SYSTEM HAS NO CATEGORY FOR THIS', 'You spared a boss, and it is still alive in the world. You get the title Open Palm.') },
+  { key: 'seed-open-palm', moment: 'mercy', rare: true, when: 'Spared a boss', name: 'Open Palm', rewards: title({ name: 'Open Palm', desc: 'Spared a boss that everyone expected them to kill.', bonus: { pre: 3, dis: 1 } }), window: words('THE SYSTEM HAS NO CATEGORY FOR THIS', 'You spared a boss, and it is still alive in the world. You get the title Open Palm.') },
 
   // ── played the hunter's fear ──
   // A57 a one-use boon: the first check against fear in the next fight rolls twice
-  { key: 'seed-shaking-hands', moment: 'fear', when: 'Played the hunter\'s fear before a fight', name: 'Shaking Hands', rewards: boon('Courage Owed', 'In the next fight, the first check against fear rolls twice and keeps the better.'), window: words('THE SYSTEM NOTED YOUR FEAR', 'You played your hunter\'s fear before a fight. In the next fight, your first check against fear rolls twice and keeps the better roll.') },
+  { key: 'seed-shaking-hands', moment: 'fear', when: 'Played the hunter\'s fear before a fight', name: 'Shaking Hands', rewards: boon('Courage Owed', 'In your next fight, roll twice on your first fear check and keep the higher roll.'), window: words('THE SYSTEM NOTED YOUR FEAR', 'You played your hunter\'s fear before a fight. In your next fight, roll twice on your first fear check and keep the higher roll.') },
   // A58 1 ability point
   { key: 'seed-came-back', moment: 'fear', when: 'Ran away, then came back', name: 'Came Back', rewards: points(1), window: words('YOU CAME BACK', 'You ran away, then came back. You get 1 ability point.') },
   // A59 an E-rank title: 1 point (+1 Discipline)
-  { key: 'seed-said-its-name', moment: 'fear', when: 'Said out loud what the hunter fears most', name: 'Said Its Name', rewards: title({ name: 'Knows Its Name', desc: 'Said out loud what it fears most.', bonus: { dis: 1 } }), window: words('THE FEAR HAS A NAME NOW', 'You said out loud what your hunter fears most. You get the title Knows Its Name.') },
+  { key: 'seed-said-its-name', moment: 'fear', when: 'Said out loud what the hunter fears most', name: 'Said Its Name', rewards: title({ name: 'Knows Its Name', desc: 'Said out loud what they fear most.', bonus: { dis: 1 } }), window: words('THE FEAR HAS A NAME NOW', 'You said out loud what your hunter fears most. You get the title Knows Its Name.') },
   // A60 RARE: a B-rank title (3 points: +2 Discipline, +1 Vitality) and 2 ability points
-  { key: 'seed-walked-in-anyway', moment: 'fear', rare: true, when: 'Entered the gate the hunter feared most', name: 'Walked In Anyway', rewards: title({ name: 'Walked In Anyway', desc: 'Entered the gate it feared most.', bonus: { dis: 2, vit: 1 } }, { points: 2 }), window: words('YOU WENT IN', 'You entered the gate you feared most. You get 2 ability points and the title Walked In Anyway.') },
+  { key: 'seed-walked-in-anyway', moment: 'fear', rare: true, when: 'Entered the gate the hunter feared most', name: 'Walked In Anyway', rewards: title({ name: 'Walked In Anyway', desc: 'Entered the gate they feared most.', bonus: { dis: 2, vit: 1 } }, { points: 2 }), window: words('YOU WENT IN', 'You entered the gate you feared most. You get 2 ability points and the title Walked In Anyway.') },
 
   // ── anything else ──
   // A62 nothing but the window: the window is the reward
@@ -301,19 +301,19 @@ export const recentGives = (v: unknown, key: string): string[] => [key, ...readR
 export const SHELF_WORDS = {
   tag: '! Award',
   title: (name: string): string => `GIVE TO ${name.toUpperCase()}`,
-  all: 'All',
-  recent: 'Last given',
-  own: 'Yours',
+  all: 'All awards',
+  recent: 'Recently given',
+  own: 'Bundles you saved',
   ownWhen: 'A bundle you saved',
   rare: 'Rare',
-  guide: 'How to use these',
-  chips: 'Show the awards for',
+  guide: 'How to give roleplay awards',
+  chips: 'Filter awards by moment',
   cancel: 'Cancel',
   toastTag: 'Award',
-  given: (award: string, name: string): string => `Given: ${award} to ${name}.`,
+  given: (award: string, name: string): string => `Gave ${award} to ${name}.`,
   undo: 'Undo',
   /** The Award form's line and its send while it holds an award picked on the shelf in a room (ruling 20). */
-  tie: (award: string, name: string): string => `${award} for ${name}, from the shelf. Edit it here; Give holds it under Undo.`,
+  tie: (award: string, name: string): string => `${award} for ${name}. Edit it here. Tap Give to send it. You can undo it right after.`,
   send: 'Give',
 } as const;
 
@@ -326,7 +326,7 @@ export function givesLine(r: Rewards, R: RewardRules): string {
   const parts = grantLines(R, { ...r, title: null, boons: [] }).map(l => l.replace(/^(Item|Skill) acquired: /, '$1: '));
   if (r.title) { const b = bonus(r.title.bonus); parts.push(`Title: ${r.title.name}${b ? ` (${b})` : ''}`); }
   for (const b of r.boons) parts.push(`Boon: ${b.text}`);
-  return parts.length ? parts.join(' · ') : 'Only the System\'s line.';
+  return parts.length ? parts.join(' · ') : 'System message only.';
 }
 
 /** "How to use these", from the shelf: when and how to give an award for roleplay (features/ideas-2-imaginative.md 3.19). */
@@ -337,7 +337,7 @@ export const GIVING_GUIDE: readonly string[] = [
   'Quiet players have fewer moments than loud players. Give a quiet player an award for one moment, and a loud player an award for their best one. Staying silent and keeping a secret are often what a quiet player does.',
   'When you give one, say what the player did, for example "the lie you told the guard". Saying "you are good at this" does not tell them what they did.',
   'Do not tell players ahead of time what an award is for. If a player does something only to get an award, give nothing for it.',
-  'Give a boon or a window more often than ability points or a title. Sometimes give Seen, which shows a window and gives nothing.',
+  'Give a boon or a System message more often than ability points or a title. Sometimes give Seen, which shows a System message with no reward.',
   'Give awards for helping another player\'s moment as often as for the moment itself.',
   'If you are not sure which award to give, give the smallest one.',
 ];

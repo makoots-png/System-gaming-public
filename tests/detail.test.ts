@@ -67,7 +67,7 @@ describe('detailOf', () => {
     const d = detailOf({ kind: 'number', key: 'hpMax', hunter: h }, RULES);
     expect(d.title).toMatch(/^Max HP \d+$/);
     expect(d.lines[0]).toBe(`Base ${RULES.fight.hpBase}`);
-    expect(d.lines).toContain('GM\'s change +5');
+    expect(d.lines).toContain('GM edit +5');
     expect(d.lines.every(l => !/ \+0$/.test(l))).toBe(true);
   });
 });

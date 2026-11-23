@@ -3,6 +3,11 @@
 // raises a hunter of its rank or lower, at a cost in levels; sold in the shop at its rank's price and never bought back;
 // given by the GM in any reward; the shop closed to the dead. Driven through the UI; the store sets up and reads.
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, type Page } from './helpers.ts';
+import { raisedLine } from '../../src/core/hunter/grant.ts';
+import { SHOP_CLOSED } from '../../src/core/hunter/inventory.ts';
+import { USE_WORDS } from '../../src/core/hunter/use.ts';
+import { WAYS_BACK } from '../../src/core/hunter/vitals.ts';
+import { REVIVE_TEXT } from '../../src/core/effects.ts';
 
 /**
  * The active hunter with `n` Resurrection Crystals of `rank` in its bag and `life`; personal gates off, so no gate's
@@ -32,10 +37,10 @@ test('a dead hunter alone reads the way back on the sheet, uses a Resurrection C
   await go(page, 'status');
   const death = page.locator('#view-status [data-death]');
   await expect(death.locator('[data-life]')).toHaveText('Dead');
-  await expect(death.locator('[data-wayback]')).toHaveText('The GM\'s Revive or a Resurrection Crystal brings you back, with every status gone.');
+  await expect(death.locator('[data-wayback]')).toHaveText(`${WAYS_BACK} brings you back and removes every status.`);
   await expect(crystalCard(page).locator('[data-sell]'), 'a crystal is not bought back').toHaveCount(0);
   await crystalCard(page).locator('[data-use]').tap();
-  await expect(page.locator('#toasts .toast').last()).toContainText('Resurrection Crystal (E) used: Up at 1 HP.');
+  await expect(page.locator('#toasts .toast').last()).toContainText(`Resurrection Crystal (E) used: ${raisedLine(1, 1)}.`);
   const h = await activeHunter(page);
   expect([h.life, crystals(h)]).toEqual([{ at: 'up', hp: 1 }, 0]);
   await expect(death).toBeHidden();
@@ -64,7 +69,7 @@ test('a dead B-rank hunter\'s C crystal is refused, saying the crystal is kept, 
   await holding(page, { at: 'dead' }, 1, 0, 'C');
   await go(page, 'status');
   await crystalCard(page).locator('[data-use]').tap();
-  await expect(page.locator('#toasts .toast').last()).toContainText('Resurrection Crystal (C) brings back a hunter of rank C or lower. Mira is rank B. You still have it.');
+  await expect(page.locator('#toasts .toast').last()).toContainText(USE_WORDS['too-low']('Resurrection Crystal (C)', { upTo: 'C', name: 'Mira', rank: 'B' }));
   const h = await activeHunter(page);
   expect([h.life, h.level, crystals(h)]).toEqual([{ at: 'dead' }, 31, 1]);
 });
@@ -77,7 +82,7 @@ test('a dead hunter at level 31 raised by a crystal of its rank stands at level 
   await holding(page, { at: 'dead' }, 1, 0, 'B');
   await go(page, 'status');
   await crystalCard(page).locator('[data-use]').tap();
-  await expect(page.locator('#toasts .toast').last()).toContainText('Resurrection Crystal (B) used: Up at 1 HP at level 29, 2 levels lost.');
+  await expect(page.locator('#toasts .toast').last()).toContainText(`Resurrection Crystal (B) used: ${raisedLine(31, 29)}.`);
   const h = await activeHunter(page);
   expect([h.life, h.level, h.rank, crystals(h)]).toEqual([{ at: 'up', hp: 1 }, 29, 'B', 0]);
 });
@@ -90,7 +95,7 @@ test('a GM who revives their own dead level-31 hunter from the board reads the l
   await go(page, 'gm');
   const name = (await activeHunter(page)).name;
   await page.locator('#gm-board .gm-card:not(.remote)', { hasText: name }).locator('[data-grevive]').tap();
-  await expect(page.locator('#gm-board-msg')).toHaveText(`Revived ${name}. Up at 1 HP at level 29, 2 levels lost.`);
+  await expect(page.locator('#gm-board-msg')).toHaveText(`Revived ${name}. ${raisedLine(31, 29)}.`);
   expect((await activeHunter(page)).level).toBe(29);
 });
 
@@ -107,7 +112,7 @@ test('a GM\'s Revive of a player\'s dead level-31 hunter tells the player the le
   const card = gm.locator('#gm-board .gm-card.remote', { hasText: 'Kai' });
   await expect(card).toContainText('Dead');
   await card.locator('[data-grevive]').tap();
-  await expect(player.locator('#toasts .toast').last()).toContainText('The GM has revived you. Up at 1 HP at level 29, 2 levels lost.');
+  await expect(player.locator('#toasts .toast').last()).toContainText(`The GM brought you back. ${raisedLine(31, 29)}.`);
   expect((await activeHunter(player)).level).toBe(29);
 });
 
@@ -140,7 +145,7 @@ test('a dead hunter opens the shop and reads that it is closed, with the ways ba
   await expect(page.locator('#view-status [data-item]').filter({ hasText: 'Health Potion' }), 'a potion, which a living hunter can sell').toBeVisible();
   await expect(page.locator('#view-status [data-sell]')).toHaveCount(0);
   await page.locator('#view-status [data-tab="shop"]').tap();
-  await expect(page.locator('#view-status [data-shop-closed]')).toHaveText('The shop is closed while you are dead. You cannot buy or sell. The GM\'s Revive or a Resurrection Crystal brings you back. The GM or another hunter can give you a Resurrection Crystal.');
+  await expect(page.locator('#view-status [data-shop-closed]')).toHaveText(SHOP_CLOSED);
   await expect(page.locator('#view-status [data-shopitem="Resurrection Crystal (E)"]'), 'the list still shows what the shop sells').toBeVisible();
   await expect(page.locator('#view-status [data-buy]')).toHaveCount(0);
   const h = await activeHunter(page);
@@ -185,7 +190,7 @@ test('a GM who edits the shop\'s S Resurrection Crystal to another price keeps i
   await item.locator('[data-shop-edit]').tap();
   const d = page.locator('.lf-overlay [role=dialog]');
   await expect(d.locator('#lf-revive')).toBeChecked();
-  await expect(d.locator('.mk-preview')).toContainText('Brings its dead user back at 1 HP, outside a fight.');
+  await expect(d.locator('.mk-preview')).toContainText(REVIVE_TEXT);
   await d.locator('#lf-value').fill('50000');
   await d.locator('[data-apply]').tap();
   await expect(d).toHaveCount(0);

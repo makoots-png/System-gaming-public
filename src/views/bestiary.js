@@ -195,18 +195,18 @@ export function register(app) {
   };
   const card = (m, gm, canAdd) => {
     const n = counts.get(m.id) || 1, id = esc(m.id), rec = recFor(m), i = m.synthetic ? m.info : infoOf(m);
-    const badge = !rec ? (gm ? '<span class="bst-tag">Not encountered</span>' : '') : `<span class="bst-tag cdx">Defeated ×${rec.kills} · first ${esc(dateOf(rec.firstAt))}</span>`;
+    const badge = !rec ? (gm ? '<span class="bst-tag">Not encountered</span>' : '') : `<span class="bst-tag cdx">Defeated ${rec.kills} time${rec.kills === 1 ? '' : 's'} · first seen ${esc(dateOf(rec.firstAt))}</span>`;
     const kind = m.kind || 'normal';
     // a card of the room's codex has no type or archetype to work a default from: it draws the picture its entry carries, or none (an entry from before the field)
     const pic = m.synthetic ? i.icon : monsterIcon(m);
     const attacks = m.synthetic ? i.abilities.map(a => `<li>${esc(a)}</li>`) : attacksOf(m).map(a => `<li><b>${esc(a.name)}</b> · ${esc(abilityLines(a, m.rank).slice(0, 1).join(''))}</li>`);
     return `<article class="bst-card${kind === 'boss' ? ' boss' : ''}" data-mid="${id}" aria-label="${esc(m.name)} stat block">
-      <div class="bst-h">${pic ? icon(pic, 'bst-ic') : ''}${ui.rankBadge(m.rank)}<span class="nm">${esc(m.name)}</span>${kind !== 'normal' ? `<span class="bst-tag ${kind}">${KIND_LABEL[kind]}</span>` : ''}${m.auto ? '<span class="bst-tag">Auto</span>' : m.custom ? '<span class="bst-tag">Custom</span>' : ''}${badge}</div>
+      <div class="bst-h">${pic ? icon(pic, 'bst-ic') : ''}${ui.rankBadge(m.rank)}<span class="nm">${esc(m.name)}</span>${kind !== 'normal' ? `<span class="bst-tag ${kind}">${KIND_LABEL[kind]}</span>` : ''}${m.auto ? '<span class="bst-tag">Auto-added</span>' : m.custom ? '<span class="bst-tag">Custom</span>' : ''}${badge}</div>
       ${m.type || !m.synthetic ? `<div class="lbl">${esc([m.type, m.synthetic ? '' : ARCH_LABEL[m.archetype], m.synthetic ? '' : traitWords(m)].filter(Boolean).join(' · '))}</div>` : ''}
       <div class="bst-vit"><div><span>HP</span><b>${ui.fmt(i.hpMax)}</b></div><div><span>Armor</span><b>${esc(i.armor)}</b></div><div><span>Resist</span><b>${esc(i.resist)}</b></div><div><span>Speed</span><b>${esc(i.speed)}</b></div>${m.synthetic ? '' : `<div><span>XP</span><b>${ui.fmt(monsterXp(m, app.rules()))}</b></div>`}</div>
       ${attacks.length ? `<ul class="bst-ab">${attacks.join('')}</ul>` : ''}
       ${!m.synthetic && m.notes.length ? `<ul class="bst-notes">${m.notes.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
-      ${m.synthetic ? '' : `<div class="bst-meta"><span class="${m.extractable ? 'y' : 'n'}">${m.extractable ? 'Extractable' : 'Not extractable'}</span></div>`}
+      ${m.synthetic ? '' : `<div class="bst-meta"><span class="${m.extractable ? 'y' : 'n'}">${m.extractable ? 'Can extract shadow' : 'Cannot extract shadow'}</span></div>`}
       ${m.desc ? `<p class="bst-desc">${esc(m.desc)}</p>` : ''}
       ${scriptLines(m)}
       <div class="bst-acts">
@@ -226,7 +226,7 @@ export function register(app) {
     const s = infoOf(m);
     return [
       `${m.rank}-rank ${KIND_LABEL[m.kind].toLowerCase()} ${ARCH_LABEL[m.archetype].toLowerCase()}${traitWords(m) ? ` (${traitWords(m).toLowerCase()})` : ''} · HP ${ui.fmt(s.hpMax)} · Armor ${s.armor} · Resist ${s.resist} · Speed ${s.speed} · XP ${ui.fmt(monsterXp(m, app.rules()))}`,
-      ...attacksOf(m).map(a => `${a.name}: ${abilityLines(a, m.rank).join('; ')}`),
+      ...attacksOf(m).map(a => `${a.name}: ${abilityLines(a, m.rank).join(', ')}`),
       m.statuses.length ? `Starts with: ${m.statuses.map(st => `${st.stacks ? `${st.stacks} ` : ''}${statusLabel(st.key)} (${st.rounds === null ? 'until removed' : `${st.rounds} round${st.rounds === 1 ? '' : 's'}`})`).join(', ')}` : '',
       m.loot.gold || m.loot.items.length ? `Drops: ${[m.loot.gold ? `${ui.fmt(m.loot.gold)} gold` : '', ...m.loot.items.map(i => `${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`)].filter(Boolean).join(', ')}` : '',
     ].filter(Boolean);
@@ -249,20 +249,21 @@ export function register(app) {
           ${M.chips('rank', RANKS.map(r => [r, r]), rank, { label: 'Rank' })}
           <div class="lbl">Archetype</div>
           ${M.chips('archetype', ARCHETYPE_LIST.map(a => [a, ARCH_LABEL[a]]), archetype, { label: 'Archetype' })}
-          <div class="lbl">Kind</div>
-          ${M.chips('kind', MONSTER_KINDS.map(k => [k, KIND_LABEL[k]]), kind, { label: 'Kind' })}
+          <div class="lbl">Monster tier</div>
+          ${M.chips('kind', MONSTER_KINDS.map(k => [k, KIND_LABEL[k]]), kind, { label: 'Monster tier' })}
           <div class="lbl">Traits</div>
           ${M.chips('traits', MONSTER_TRAITS.map(t => [t, TRAIT_LABEL[t]]), start.tweak.traits || [], { many: true, label: 'Traits' })}
-          ${M.chips('flags', [['extractable', 'Extractable']], start.extractable ? ['extractable'] : [], { many: true, label: 'Extractable' })}
+          <div class="lbl">Shadow extraction</div>
+          ${M.chips('flags', [['extractable', 'Can be extracted as a shadow']], start.extractable ? ['extractable'] : [], { many: true, label: 'Shadow extraction' })}
           <p class="enm-derived" data-derived aria-live="polite"></p>
           <div class="enm-grid">
             ${ui.field('XP', `<input type="number" inputmode="numeric" id="enm-xp" min="0" value="${esc(start.xp ?? '')}">`)}
-            ${ui.field('HP ×', `<input type="number" inputmode="decimal" id="enm-hp" min="0.1" max="${B.hp}" step="0.1" placeholder="1" value="${esc(start.tweak.hp ?? '')}">`)}
+            ${ui.field('HP multiplier', `<input type="number" inputmode="decimal" id="enm-hp" min="0.1" max="${B.hp}" step="0.1" placeholder="1" value="${esc(start.tweak.hp ?? '')}">`)}
             ${ui.field('Type', `<input type="text" id="enm-type" maxlength="40" autocomplete="off" placeholder="e.g. Beast" value="${esc(start.type)}">`)}
           </div>
           <div class="slot" data-later><div class="lbl">Abilities</div><ul class="enm-list" data-abilities></ul><div data-ability-add></div>
           ${ui.field('Notes (one per line)', `<textarea id="enm-notes" maxlength="4000">${esc(start.notes.join('\n'))}</textarea>`)}
-          <div class="lbl">Starts with</div><ul class="enm-list" data-statuses></ul><div data-status-add></div>
+          <div class="lbl">Starting statuses</div><ul class="enm-list" data-statuses></ul><div data-status-add></div>
           <div class="lbl">Loot</div>
           ${ui.field('Gold', `<input type="number" id="enm-gold" inputmode="numeric" min="0" value="${esc(start.loot.gold || '')}" placeholder="0">`)}
           <ul class="enm-list" data-items></ul><div data-item-add></div>
@@ -273,7 +274,7 @@ export function register(app) {
         const row = (label, i, kind, extra = '') => `<li><span class="nm">${esc(label)}</span>${extra}<button type="button" class="icon-btn" data-rm="${kind}" data-i="${i}" aria-label="Remove ${esc(label)}">&times;</button></li>`;
         const opt = (v, l) => `<option value="${esc(v)}">${esc(l)}</option>`;
         function lists() {
-          $('[data-abilities]').innerHTML = abilities.map((a, i) => row(a.name, i, 'ability', `<span class="meta">${esc(abilityLines(a, rank).join('; '))}</span><button type="button" class="quiet" data-edit-ability="${i}" aria-label="Edit ${esc(a.name)}">Edit</button>`)).join('');
+          $('[data-abilities]').innerHTML = abilities.map((a, i) => row(a.name, i, 'ability', `<span class="meta">${esc(abilityLines(a, rank).join(', '))}</span><button type="button" class="quiet" data-edit-ability="${i}" aria-label="Edit ${esc(a.name)}">Edit</button>`)).join('');
           $('[data-statuses]').innerHTML = statuses.map((st, i) => row(statusLabel(st.key), i, 'status',
             `<span class="enm-rounds"><input type="number" min="1" max="999" inputmode="numeric" data-rounds="${i}" aria-label="Rounds of ${esc(statusLabel(st.key))}" placeholder="Until removed" value="${st.rounds ?? ''}"><span class="unit">rounds</span>${stackCap(st.key) > 1
               ? `<input type="number" min="1" max="${stackCap(st.key)}" inputmode="numeric" data-stacks="${i}" aria-label="Stacks of ${esc(statusLabel(st.key))}" placeholder="1" value="${st.stacks ?? ''}"><span class="unit">stacks</span>` : ''}</span>`)).join('');
@@ -281,13 +282,13 @@ export function register(app) {
           const lib = store.get().library, have = new Set(abilities.map(a => a.name.toLowerCase()));
           const fullA = abilities.length >= B.abilities, fullT = statuses.length >= B.statuses, fullI = items.length >= B.lootItems;
           const fights = k => k.type === 'active' && !have.has(k.name.toLowerCase());
-          $('[data-ability-add]').innerHTML = `<select data-add="ability" data-pick aria-label="Add an ability from a skill"${fullA ? ' disabled' : ''}><option value="">${fullA ? `Add an ability (${B.abilities} at most)` : 'Add an ability…'}</option>
+          $('[data-ability-add]').innerHTML = `<select data-add="ability" data-pick aria-label="Add an ability from a skill"${fullA ? ' disabled' : ''}><option value="">${fullA ? `Add an ability (max ${B.abilities})` : 'Add an ability…'}</option>
             <optgroup label="Built-in">${SKILL_SEEDS.filter(fights).map(k => opt(`seed:${k.name}`, k.name)).join('')}</optgroup>
             ${lib.skills.some(fights) ? `<optgroup label="Library">${lib.skills.filter(fights).map(k => opt(`lib:${k.id}`, k.name)).join('')}</optgroup>` : ''}
             <option value="new">New skill…</option></select>`;
           const conds = Object.keys(app.rules().conditions).filter(k => !isStateChip(k) && !statuses.some(st => st.key === k));
-          $('[data-status-add]').innerHTML = `<select data-add="status" data-pick aria-label="Add a starting status"${fullT ? ' disabled' : ''}><option value="">${fullT ? `Add a status (${B.statuses} at most)` : 'Add a status…'}</option>${conds.map(k => opt(k, statusLabel(k))).join('')}</select>`;
-          $('[data-item-add]').innerHTML = `<select data-add="item" aria-label="Add a loot item"${fullI ? ' disabled' : ''}><option value="">${fullI ? `Add an item (${B.lootItems} at most)` : 'Add an item…'}</option>
+          $('[data-status-add]').innerHTML = `<select data-add="status" data-pick aria-label="Add a starting status"${fullT ? ' disabled' : ''}><option value="">${fullT ? `Add a status (max ${B.statuses})` : 'Add a status…'}</option>${conds.map(k => opt(k, statusLabel(k))).join('')}</select>`;
+          $('[data-item-add]').innerHTML = `<select data-add="item" aria-label="Add a loot item"${fullI ? ' disabled' : ''}><option value="">${fullI ? `Add an item (max ${B.lootItems})` : 'Add an item…'}</option>
             ${lib.items.length ? `<optgroup label="Library">${lib.items.map(it => opt(`lib:${it.id}`, it.name)).join('')}</optgroup>` : ''}<option value="new">New item…</option></select>`;
         }
         /** The tweak the form holds: its HP factor when one is typed (above 0, at most 10), the stat points it was made with, and the traits ticked. */
@@ -306,7 +307,7 @@ export function register(app) {
         });
         /** The body the rank, archetype, kind, HP factor and traits make, shown as the GM picks them; and the rule's XP a blank field takes. */
         const derived = () => {
-          $('#enm-xp').placeholder = `By the rule: ${xpOf(app.rules(), rank, kind, tweakOf().traits)}`;
+          $('#enm-xp').placeholder = `Default: ${xpOf(app.rules(), rank, kind, tweakOf().traits)}`;
           const s = infoOf({ rank, archetype, kind, tweak: tweakOf(), abilities: [] });
           $('[data-derived]').textContent = `HP ${ui.fmt(s.hpMax)} · Armor ${s.armor} · Resist ${s.resist} · Speed ${s.speed}`;
         };
@@ -395,7 +396,7 @@ export function register(app) {
         <span class="grow">${ui.field('Generate stat block: name', '<input type="text" name="name" maxlength="60" placeholder="e.g. Cave Stalker">')}</span>
         <span class="sm">${ui.field('Rank', `<select name="rank">${RANKS.map(r => `<option>${r}</option>`).join('')}</select>`)}</span>
         <span class="sm">${ui.field('Archetype', `<select name="archetype">${ARCHETYPE_LIST.map(a => `<option value="${a}">${ARCH_LABEL[a]}</option>`).join('')}</select>`)}</span>
-        <span class="sm">${ui.field('Kind', `<select name="kind">${MONSTER_KINDS.map(k => `<option value="${k}">${KIND_LABEL[k]}</option>`).join('')}</select>`)}</span>
+        <span class="sm">${ui.field('Monster tier', `<select name="kind">${MONSTER_KINDS.map(k => `<option value="${k}">${KIND_LABEL[k]}</option>`).join('')}</select>`)}</span>
         <button type="submit" class="primary">Generate stat block</button></form>`;
 
       $q('[data-q]').addEventListener('input', e => { f.q = e.target.value; render(el); });
@@ -448,7 +449,7 @@ export function register(app) {
           const m = get(b.dataset.merge); if (!m) return;
           const kin = codexKey(m.name, m.rank), opts = list().filter(x => x.id !== m.id).sort((a, c) => (codexKey(a.name, a.rank) === kin ? -1 : 0) - (codexKey(c.name, c.rank) === kin ? -1 : 0) || a.name.localeCompare(c.name));
           $q('[data-editor]').innerHTML = `<section class="win bst-ed" aria-label="Merge monster"><span class="cb"></span><h2>Merge ${esc(m.name)} (${esc(m.rank)})</h2>
-            <p class="bst-desc">Moves its kills into the chosen entry and removes ${esc(m.name)}.</p>
+            <p class="bst-desc">Moves defeat counts into the chosen monster and removes ${esc(m.name)}.</p>
             <form data-mform data-src="${esc(m.id)}"><div class="bst-form"><span class="wide">${ui.field('Merge into', `<select name="dst">${opts.map(x => `<option value="${esc(x.id)}">${esc(x.name)} (${esc(x.rank)})${x.custom ? ' · custom' : ''}</option>`).join('')}</select>`)}</span></div>
             <div class="data-actions"><button type="button" data-ecancel>Cancel</button><button type="submit" class="primary">Merge</button></div></form></section>`;
           $q('[data-editor]').scrollIntoView({ block: 'nearest' });
@@ -496,8 +497,8 @@ export function register(app) {
     const items = pool.filter(m => (!f.rank || m.rank === f.rank) && (!f.type || m.type === f.type) &&
       (!q || wordsOf(m).some(t => t.toLowerCase().includes(q))))
       .sort((a, b) => RANKS.indexOf(a.rank) - RANKS.indexOf(b.rank) || ((a.kind === 'boss') === (b.kind === 'boss') ? a.name.localeCompare(b.name) : a.kind === 'boss' ? 1 : -1));
-    el.querySelector('[data-count-line]').textContent = `${items.length} monster${items.length === 1 ? '' : 's'}${codexOnly && unknown ? ` · ${unknown} creature${unknown === 1 ? '' : 's'} still unknown` : ''}`;
-    const html = (items.length ? items.map(m => card(m, gm, runsFight(seat))).join('') : `<p class="empty">${codexOnly && !f.q && !f.rank && !f.type ? 'No creatures recorded yet. Defeat monsters to unlock their info.' : 'No monsters match this filter.'}</p>`) + (gm ? '|gm' : '');
+    el.querySelector('[data-count-line]').textContent = `${items.length} monster${items.length === 1 ? '' : 's'}${codexOnly && unknown ? ` · ${unknown} monster${unknown === 1 ? '' : 's'} still unknown` : ''}`;
+    const html = (items.length ? items.map(m => card(m, gm, runsFight(seat))).join('') : `<p class="empty">${codexOnly && !f.q && !f.rank && !f.type ? 'No monsters recorded yet. Defeat monsters to unlock their info.' : 'No monsters match this filter.'}</p>`) + (gm ? '|gm' : '');
     if (html !== lastHtml) { lastHtml = html; el.querySelector('[data-grid]').innerHTML = html.replace(/\|gm$/, ''); }
   }
 }

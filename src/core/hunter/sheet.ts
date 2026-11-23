@@ -155,7 +155,7 @@ export const hunterSheet = (h: SheetHunter, R: SheetRules): { stats: Stats; shee
 export const SOURCES = ['base', 'level', 'stats', 'gear', 'title', 'path', 'skills', 'keystone', 'gm', 'statuses'] as const;
 export type SheetSource = (typeof SOURCES)[number];
 export const SOURCE_LABELS: { readonly [K in SheetSource]: string } = {
-  base: 'Base', level: 'Level', stats: 'Stats', gear: 'Gear', title: 'Title', path: 'Path', skills: 'Passive skills', keystone: 'Keystones', gm: 'GM\'s change', statuses: 'Statuses',
+  base: 'Base', level: 'Level', stats: 'Stats', gear: 'Gear', title: 'Title', path: 'Path', skills: 'Passive skills', keystone: 'Keystones', gm: 'GM edit', statuses: 'Statuses',
 };
 /** One part of a sheet number: where it comes from and how much it adds. */
 export type Part = { readonly from: SheetSource; readonly amount: number };

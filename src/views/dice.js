@@ -37,7 +37,7 @@ const CSS = `
 .roll-out{text-align:center}
 .dx-checks{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
 .dx-checks button{display:flex;flex-direction:column;align-items:center;gap:0;padding:6px 4px}
-.dx-checks .cs{font-size:12px;letter-spacing:.2em;color:var(--cyan-dim)}
+.dx-checks .cs{font-size:12px;letter-spacing:.04em;color:var(--cyan-dim)}
 .dx-checks .cb2{font-family:var(--font-mono);font-size:16px;color:var(--ice)}
 .dx-log{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
 .dx-log li{border:1px solid var(--line);background:rgba(10,26,46,.55);padding:6px 10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -139,7 +139,7 @@ export function register(app) {
 
   // ── shared roller controls (used by the Dice view and the FAB sheet) ──
   /** A natural 20 or 1 is told at once, unless it called the coin: then the coin says what it means. */
-  const critToast = r => { if (r.coin) return; if (r.crit) ui.toast('System', 'Critical hit.'); else if (r.fumble) ui.toast('Warning', 'Critical failure.', { kind: 'warning' }); };
+  const critToast = r => { if (r.coin) return; if (r.crit) ui.toast('System', 'Critical success.'); else if (r.fumble) ui.toast('Warning', 'Critical failure.', { kind: 'warning' }); };
   const typedMemory = store.device('dice-typed');
   let recent = (v => (Array.isArray(v) ? v.filter(x => typeof x === 'string').slice(0, RECENT_MAX) : []))(typedMemory.read());
   const keep = () => typedMemory.write(recent);
@@ -149,21 +149,21 @@ export function register(app) {
       <div class="dice-btns">${DICE.map(d => `<button type="button" data-d="${d}" aria-label="Roll d${d}">d${d}</button>`).join('')}</div>
       <div class="mod-row">
         ${ui.field('Modifier', '<input type="number" data-mod value="0" min="-20" max="20" inputmode="numeric">')}
-        ${ui.field('Count', '<input type="number" data-n value="1" min="1" max="20" inputmode="numeric">')}
-        <div class="seg" role="group" aria-label="Advantage mode">
-          <button type="button" data-m="adv" aria-pressed="false">Adv</button><button type="button" data-m="" aria-pressed="true">Normal</button><button type="button" data-m="dis" aria-pressed="false">Dis</button>
-        </div>
+        ${ui.field('Dice count', '<input type="number" data-n value="1" min="1" max="20" inputmode="numeric">')}
+        <div class="field"><span class="lbl">Roll mode</span><div class="seg" role="group" aria-label="Roll mode">
+          <button type="button" data-m="adv" aria-pressed="false">Advantage</button><button type="button" data-m="" aria-pressed="true">Normal</button><button type="button" data-m="dis" aria-pressed="false">Disadvantage</button>
+        </div></div>
       </div>
       <div class="dx-row">
-        <div class="dx-expr">${ui.field('Type a roll', '<input type="text" data-expr maxlength="200" placeholder="/r 2d20kh1 + 4" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go">')}</div>
+        <div class="dx-expr">${ui.field('Type a roll', '<input type="text" data-expr maxlength="200" placeholder="2d6 + 3" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="go">')}</div>
         <button type="button" class="primary" data-go>Roll</button>
       </div>
       <div class="dx-err" data-err role="alert"></div>
       ${quickChecks ? '<div class="dx-recent" data-recent aria-label="Recent rolls"></div>' : ''}
-      ${quickChecks ? `<div class="lbl sec">Quick check <span data-who></span></div>
+      ${quickChecks ? `<div class="lbl sec">Quick stat check <span data-who></span></div>
         <div class="dx-row">${ui.field('Difficulty (DC)', '<select data-dc></select>')}</div>
         <div class="dx-checks" data-checks></div>` : ''}
-      <div class="roll-out"><div class="roll-total" data-total>&mdash;</div><div class="dx-flag" data-flag></div><div class="roll-detail" data-detail>Choose a die to roll</div></div>
+      <div class="roll-out"><div class="roll-total" data-total>&mdash;</div><div class="dx-flag" data-flag></div><div class="roll-detail" data-detail>Tap a die to roll.</div></div>
       <div class="dx-coin" data-coin-slot></div>`;
     const q = s => root.querySelector(s);
     const setErr = t => { q('[data-err]').textContent = t || ''; };
@@ -184,7 +184,7 @@ export function register(app) {
     };
     const clampIn = (inp, lo, hi) => {
       const raw = Math.trunc(Number(inp.value)) || 0, v = Math.min(hi, Math.max(lo, raw));
-      if (v !== raw || inp.value === '') setErr(`Value limited to ${lo} to ${hi}.`);
+      if (v !== raw || inp.value === '') setErr(`Enter a number from ${lo} to ${hi}.`);
       inp.value = v; return v;
     };
     root.addEventListener('click', e => {
@@ -218,7 +218,7 @@ export function register(app) {
       const v = last ? last.check : null, coin = last ? app.api.coin.of(last.id) : null;
       const detail = q('[data-detail]'), tail = last ? `${last.adv ? ' · advantage' : last.dis ? ' · disadvantage' : ''}${last.label ? ' · ' + esc(last.label) : ''}` : '';
       const sum = last ? sumLine(last) : '';
-      const words = last ? `${sum ? `<div class="dx-sum" data-sum>${esc(sum)}</div>` : ''}${esc(last.expr)} <span class="dx-faces">${shown.get(last.id) ?? `[${esc(last.rolls.join(', '))}]`}</span>${tail}` : 'Choose a die to roll';
+      const words = last ? `${sum ? `<div class="dx-sum" data-sum>${esc(sum)}</div>` : ''}${esc(last.expr)} <span class="dx-faces">${shown.get(last.id) ?? `[${esc(last.rolls.join(', '))}]`}</span>${tail}` : 'Tap a die to roll.';
       if (last && t.dataset.rid !== last.id && t.dataset.rid !== undefined && last.total >= 1 && !coin) {
         detail.textContent = '';
         void motion.tumble(t, last.total, highest(last.expr, last.total)).then(() => { if (t.dataset.rid === last.id) { detail.innerHTML = words; void motion.enter(detail, 'fade'); } });
@@ -226,8 +226,8 @@ export function register(app) {
       t.dataset.rid = last ? last.id : '';
       drawRecent();
       f.className = `dx-flag${last && last.crit ? ' crit' : last && last.fumble ? ' fail' : v ? (v.success ? ' ok' : ' fail') : ''}`;
-      // a roll that called the coin reads what the coin says, not "Critical hit"
-      f.textContent = coin ? coinWords(coin) : last && last.crit ? 'Critical hit' : last && last.fumble ? 'Critical failure' : v ? `${v.success ? 'Success' : 'Failure'} vs DC ${v.dc}` : '';
+      // a roll that called the coin reads what the coin says, not "Critical success"
+      f.textContent = coin ? coinWords(coin) : last && last.crit ? 'Critical success' : last && last.fumble ? 'Critical failure' : v ? `${v.success ? 'Success' : 'Failure'} against DC ${v.dc}` : '';
       if (!quickChecks) return;
       const h = store.active(), rt = rules().rankTable, sel = q('[data-dc]');
       // the options are drawn again only when the rank table's numbers change, so an open select is left alone
@@ -236,7 +236,7 @@ export function register(app) {
       if (sel.value !== dcKeyOf(dc)) sel.value = dcKeyOf(dc);
       q('[data-who]').textContent = '· ' + h.name;
       const bonus = app.api.hunter.sheet(h).checks.bonus;
-      const html = STAT_KEYS.map(k => { const lab = STAT_SHORT[k], alias = STAT_LABELS[k], b = bonus[k]; return `<button type="button" data-st="${esc(k)}" aria-label="${esc(alias)} check ${b >= 0 ? '+' : ''}${b}"><span class="cs">${esc(lab)}</span><span class="cb2">${b >= 0 ? '+' : ''}${b}</span></button>`; }).join('');
+      const html = STAT_KEYS.map(k => { const alias = STAT_LABELS[k], b = bonus[k]; return `<button type="button" data-st="${esc(k)}" aria-label="${esc(alias)} check ${b >= 0 ? '+' : ''}${b}"><span class="cs">${esc(alias)}</span><span class="cb2">${b >= 0 ? '+' : ''}${b}</span></button>`; }).join('');
       const box = q('[data-checks]'); if (box.dataset.sig !== html) { box.dataset.sig = html; box.innerHTML = html; }
     };
     if (quickChecks) q('[data-dc]').addEventListener('change', e => { dc = dcPickStep(dc, { kind: 'picked', key: oneOf(e.target.value, DC_KEYS, dcKeyOf(dc)) }); });
@@ -255,7 +255,7 @@ export function register(app) {
       viewInst = controls(el.querySelector('[data-roller]'), { quickChecks: true });
       el.querySelector('[data-clear]').addEventListener('click', async () => {
         if (!store.get().rolls.length) return;
-        if (await ui.confirm({ title: 'Clear roll log?', body: 'All logged rolls will be removed.', danger: true, confirmLabel: 'Clear log' })) ui.wrote('! Dice', store.apply('clear-rolls', clearRolls));
+        if (await ui.confirm({ title: 'Clear roll log?', body: 'This removes all rolls from your roll log.', danger: true, confirmLabel: 'Clear log' })) ui.wrote('! Dice', store.apply('clear-rolls', clearRolls));
       });
     },
     update(el) {
@@ -264,15 +264,15 @@ export function register(app) {
       el.querySelector('[data-count]').textContent = `${rs.length} / ${rules().rollCap} rolls`;
       if (hist.dataset.sig === sig) return; hist.dataset.sig = sig;
       hist.innerHTML = rs.length ? rs.map(r => `<li><span class="lt${r.crit ? ' crit' : r.fumble ? ' fail' : ''}">${esc(r.total)}</span>
-        <span class="lm"><b>${esc(r.expr)}</b> [${esc(r.rolls.join(', '))}] = ${esc(r.total)}${r.adv ? ' adv' : r.dis ? ' dis' : ''}${r.label ? '<br>' + esc(r.label) : ''}</span>
-        ${r.crit ? '<span class="dx-tag crit">Crit</span>' : r.fumble ? '<span class="dx-tag fumble">Fumble</span>' : ''}
+        <span class="lm"><b>${esc(r.expr)}</b> [${esc(r.rolls.join(', '))}] = ${esc(r.total)}${r.adv ? ' (advantage)' : r.dis ? ' (disadvantage)' : ''}${r.label ? '<br>' + esc(r.label) : ''}</span>
+        ${r.crit ? '<span class="dx-tag crit">Critical success</span>' : r.fumble ? '<span class="dx-tag fumble">Critical failure</span>' : ''}
         <span class="lw">${esc(r.who)} · ${esc(clock(r.at))}</span></li>`).join('') : '<li class="empty">No rolls yet.</li>';
     },
   });
 
   // ── floating d20 FAB + compact roll sheet (non-modal) ──
   const fab = ui.h('<button type="button" class="dx-fab" id="dice-fab" aria-label="Open dice roller" aria-expanded="false" aria-controls="dice-sheet">d20</button>');
-  const sheet = ui.h('<div class="dx-sheet" id="dice-sheet" role="dialog" aria-label="Quick dice roller" hidden><header><h2>Quick roll</h2><span><button type="button" data-full>Dice tab</button><button type="button" data-close aria-label="Close dice roller">&times;</button></span></header><div data-roller></div></div>');
+  const sheet = ui.h('<div class="dx-sheet" id="dice-sheet" role="dialog" aria-label="Quick dice roller" hidden><header><h2>Quick roll</h2><span><button type="button" data-full>Open Dice tab</button><button type="button" data-close aria-label="Close dice roller">&times;</button></span></header><div data-roller></div></div>');
   document.body.append(sheet, fab);
   sheetInst = controls(sheet.querySelector('[data-roller]'), { quickChecks: false });
   // where the bottom nav / rail is visible (phones, landscape phones) the nav's Dice tab is the opener and the FAB is display:none

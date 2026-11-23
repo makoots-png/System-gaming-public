@@ -100,7 +100,7 @@ function omenLine(m: MythicSeen | null, from: Place, at: (aim: CombatantId | Pla
   const to = at(typeof aimed === 'string' ? aimed : place(aimed.x, aimed.y));
   if (!to) return null;
   const area = found.move.kind === 'blast' ? (({ hit, ring }) => [...hit, ...ring])(tilesOf({ kind: 'radius', radius: tiles(found.move.reach), ring: null }, from, to, grid)) : null;
-  return { kind: 'omen', to, area, revealed: true, words: { name: found.omen.name, what: m.omen!.faltering ? 'Weakened: lands on its next turn' : 'Lands on its next turn' } };
+  return { kind: 'omen', to, area, revealed: true, words: { name: found.omen.name, what: m.omen!.faltering ? 'Weakened. Lands on its next turn' : 'Lands on its next turn' } };
 }
 const NO_EXTRAS: Extras = { shield: null, stagger: null, channel: null, taunted: false, reacted: false };
 

@@ -174,7 +174,7 @@ export type OfferRefusal =
 /** What a refusal says to the player who tapped, with how short it fell where it names a thing (copy-tasks.md: why, and the way out). */
 export const OFFER_REFUSAL_WORDS: { readonly [R in OfferRefusal]: (s: Shortfall) => string } = {
   off: () => 'Trading is off for this table.',
-  fight: () => 'A fight holds this hunter. Finish it first.',
+  fight: () => 'This hunter is in a fight. Finish the fight first.',
   'no-item': s => `You no longer have the ${s.name}.`,
   worn: s => `Take off the ${s.name} to give it.`,
   few: s => `You have ${lineWords(s.name, s.have)}. This needs ${s.need}.`,
@@ -183,7 +183,7 @@ export const OFFER_REFUSAL_WORDS: { readonly [R in OfferRefusal]: (s: Shortfall)
   'too-large': () => 'These items are too large to send in one offer. Give fewer.',
   'too-many': () => `You have ${OFFERS_OPEN} offers waiting. Take one back first.`,
   'not-open': () => 'This offer has already been answered.',
-  'no-room': () => 'Offers need a room. Join one with the room button at the top.',
+  'no-room': () => 'Join a room first using the room button at the top.',
   'not-played': () => 'Only the hunter you play in this room can trade there.',
   'no-hunter': () => 'This hunter is no longer on this phone.',
   'same-hunter': () => 'Pick another hunter to give to.',

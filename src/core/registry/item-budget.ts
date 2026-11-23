@@ -67,8 +67,8 @@ export const gradeOfSpend = (R: BudgetRules, rar: Rarity, points: number): Grade
 /** What an item carries that the budget has no measure for: a part of its worn status or of its active with no rule in worth.ts. */
 export type Unbudgeted = 'worn' | 'active';
 const UNBUDGETED_WORDS: { readonly [U in Unbudgeted]: string } = {
-  worn: 'what its worn status does that its worth line cannot weigh',
-  active: 'what its active does that its worth line cannot weigh',
+  worn: 'unestimated worn status effects',
+  active: 'unestimated active ability effects',
 };
 /** An item's spend in points beyond its slot's free numbers, and what it carries that the budget cannot weigh. */
 export type Spend = { readonly points: number; readonly unweighed: readonly Unbudgeted[] };
@@ -317,21 +317,21 @@ const one = (n: number): string => { const t = Math.abs(n).toFixed(1); return n 
 /** What a spend cannot weigh, in a sentence that leads with a space, or nothing when it weighs all of it. */
 function withoutWords(s: Spend): string {
   const missing = s.unweighed.map(u => UNBUDGETED_WORDS[u]);
-  return missing.length ? ` Without ${missing.join(' and ')}, which the budget cannot weigh: test ${missing.length > 1 ? 'them' : 'it'} in a fight.` : '';
+  return missing.length ? ` Does not include ${missing.join(' or ')}. Test ${missing.length > 1 ? 'them' : 'it'} in a fight.` : '';
 }
-/** A budget's points in words: "1 point", "2.5 points". */
-const pointsWords = (n: number): string => `${Number(n.toFixed(1))} point${n === 1 ? '' : 's'}`;
+/** A budget's points in words: "1 budget point", "2.5 budget points". */
+const pointsWords = (n: number): string => `${Number(n.toFixed(1))} budget point${n === 1 ? '' : 's'}`;
 /**
  * A title's spend line (item-stats 6.7): its spend against its band's budget, and the lowest band it fits (`titleFit`).
  * `over` when the spend is past its band's budget: said, never refused, as an item's line does, so an S title "and
- * more" is the GM's call. "Spends 1.2 of a rank E title's 1 point: over, it fits rank D."
+ * more" is the GM's call. "Uses 1.2 of 1 point for a rank E title. Over budget. Fits rank D."
  */
 export function titleLine(t: TitleSpendable, R: TitleRules): { readonly words: string; readonly over: boolean } {
   const band = bandOf(t), s = titleSpend(t, R), budget = R.titleBudget[band], fit = titleFit(t, R);
-  const spent = `Spends ${one(s.points)} of a rank ${band} title's ${pointsWords(budget)}`, without = withoutWords(s);
-  if (s.points <= budget + 1e-9) return { words: `${spent}: fits rank ${fit ?? band}.${without}`, over: false };
-  const where = fit === null ? `past every band, rank S's ${pointsWords(R.titleBudget.S)} too` : `it fits rank ${fit}`;
-  return { words: `${spent}: over, ${where}.${without}`, over: true };
+  const spent = `Uses ${one(s.points)} of ${pointsWords(budget)} for a rank ${band} title`, without = withoutWords(s);
+  if (s.points <= budget + 1e-9) return { words: `${spent}. Fits rank ${fit ?? band}.${without}`, over: false };
+  const where = fit === null ? `Above every rank, including rank S (${pointsWords(R.titleBudget.S)})` : `Fits rank ${fit}`;
+  return { words: `${spent}. Over budget. ${where}.${without}`, over: true };
 }
 const held = (b: GradeBand): string => (b.low === null ? `up to ${one(b.high)}` : `${one(b.low)} to ${one(b.high)}`);
 /**
@@ -341,9 +341,9 @@ const held = (b: GradeBand): string => (b.low === null ? `up to ${one(b.high)}` 
  */
 export function spendLine(s: Spend, R: BudgetRules, rar: Rarity, grade: Grade): { readonly words: string; readonly over: boolean } {
   const chosen = gradeBand(R, rar, grade), fit = gradeOfSpend(R, rar, s.points), label = (g: Grade): string => gradeLabel(rar, g);
-  const without = withoutWords(s), spent = `Spends ${one(s.points)} points`;
-  if (fit === null) return { words: `${spent}, past the top of ${label(1)} (${one(gradeBand(R, rar, 1).high)}): stronger than any grade of ${label(0)}.${without}`, over: true };
-  if (fit > grade) return { words: `${spent}, more than ${label(grade)} holds (${held(chosen)}): this is ${label(fit)} (${held(gradeBand(R, rar, fit))}).${without}`, over: true };
-  if (fit < grade) return { words: `${spent}. ${label(grade)} holds ${held(chosen)}; this is ${label(fit)} (${held(gradeBand(R, rar, fit))}).${without}`, over: false };
-  return { words: `${spent}. ${label(grade)} holds ${held(chosen)}.${without}`, over: false };
+  const without = withoutWords(s), spent = `Uses ${one(s.points)} budget points`;
+  if (fit === null) return { words: `${spent}, above the ${label(1)} max (${one(gradeBand(R, rar, 1).high)}). Stronger than any ${label(0)} grade.${without}`, over: true };
+  if (fit > grade) return { words: `${spent}, above ${label(grade)} (${held(chosen)}). Matches ${label(fit)} (${held(gradeBand(R, rar, fit))}).${without}`, over: true };
+  if (fit < grade) return { words: `${spent}. ${label(grade)} range is ${held(chosen)}. Matches ${label(fit)} (${held(gradeBand(R, rar, fit))}).${without}`, over: false };
+  return { words: `${spent}. ${label(grade)} range is ${held(chosen)}.${without}`, over: false };
 }

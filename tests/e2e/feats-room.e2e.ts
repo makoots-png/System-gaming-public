@@ -2,6 +2,7 @@
 // feats doc, and what the GM's phone saw of a player's hunter (a gate's Clear it was paid in) reaches its phone as the
 // room's `noted`, where the player's phone counts it and opens the feat's window once.
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, answerWindow, approveWaiting } from './helpers.ts';
+import { PENDING_WORDS } from '../../src/core/hunter/pending.ts';
 
 const FIRST_CLEAR = {
   name: 'First Clear', window: 'FIRST CLEAR', desc: 'A gate cleared.', show: { at: 'never' },
@@ -47,7 +48,7 @@ test('the GM\'s own feat reaches a player\'s phone, and the gate the GM clears f
     const feat = player.locator('.sys-overlay.show', { hasText: 'FIRST CLEAR' });
     await expect(feat).toBeVisible();
     await expect(feat).toContainText('A gate cleared.');
-    await expect(feat).toContainText('Waiting for the GM');
+    await expect(feat).toContainText(PENDING_WORDS.waits);
     await expect(feat).not.toContainText('+1 ability point');
     await feat.locator('.sys-actions button', { hasText: 'Understood' }).tap();
     const h = await activeHunter(player);

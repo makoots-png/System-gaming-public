@@ -113,7 +113,7 @@ describe('clear-preset adversarial repros', () => {
       xpPaid: 0,
       presetAt: 'paid',
       log: 'E-rank gate "Goblin Den" cleared. No one rewarded: +0 XP, 0 gold, Health Potion.',
-      summary: 'Clear preset paid: nobody got XP or gold, 1 item, 1 to the stash',
+      summary: 'Clear rewards given: nobody got XP or gold, 1 item, 1 to the stash',
     });
   });
 
@@ -300,7 +300,7 @@ describe('clear-preset adversarial repros', () => {
         summary: PRESET_WORDS.summary(paidPreset, true, String),
       }).toEqual({
         recordedTo: null,
-        summary: 'Clear preset paid: 200 XP, 100 gold, 1 item, 1 to the stash',
+        summary: 'Clear rewards given: 200 XP, 100 gold, 1 item, 1 to the stash',
       });
     }
   });

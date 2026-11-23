@@ -53,4 +53,4 @@ export function postNews(posted: PostAnswer, conn: Connection): PostNews {
   return GOES[conn] ? 'sent' : 'waits';
 }
 /** The words after a use reported to the GM was posted (`uses.told`'s `sent`): going now, or waiting for the room. */
-export const reportWords = (conn: Connection): string => (postNews({ ok: true }, conn) === 'sent' ? 'Sent to the GM.' : 'It reaches the GM when the room answers.');
+export const reportWords = (conn: Connection): string => (postNews({ ok: true }, conn) === 'sent' ? 'Sent to the GM.' : conn === 'waiting' ? 'Saved. The GM gets it once the room server confirms it.' : 'Saved. The GM gets it when your phone reconnects to the room server.');

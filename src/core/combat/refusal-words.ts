@@ -8,30 +8,30 @@ import type { TableRefusal } from './fight-doc.ts';
 
 /** What the GM reads when the fight refused a command (combat.js). */
 export const REFUSAL_WORDS: { readonly [R in Refusal]: string } = {
-  taunted: 'Taunted: it must aim at its taunter.', cooldown: 'Not ready yet.', mana: 'Not enough mana.', range: 'Out of reach.',
-  noTarget: 'Nobody there.', needsRoll: 'The dice did not match.', notNow: 'Not now.', notYourTurn: 'It is not their turn.', down: 'They are down.',
-  needBothSides: 'A fight needs someone up on each side.', tooMany: 'Too many in the fight.', duplicate: 'Already in the fight.', noPlace: 'No free place on the map.',
-  rooted: 'Rooted: cannot move.', blocked: 'The way is blocked.', tooFar: 'Too far for one move.', noMove: 'Already there.', taken: 'That place is taken.',
+  taunted: 'Taunted. It must aim at its taunter.', cooldown: 'Not ready yet.', mana: 'Not enough mana.', range: 'Out of reach.',
+  noTarget: 'Nobody there.', needsRoll: 'The dice did not match.', notNow: 'Not now.', notYourTurn: 'It is not their turn.', down: 'They are out of the fight.',
+  needBothSides: 'Each side needs someone still fighting.', tooMany: 'Too many in the fight.', duplicate: 'Already in the fight.', noPlace: 'No free place on the map.',
+  rooted: 'Rooted. Cannot move.', blocked: 'The way is blocked.', tooFar: 'Too far for one move.', noMove: 'Already there.', taken: 'That place is taken.',
   noChange: 'Nothing to change.', unknownAbility: 'They do not have that ability.', cutOff: 'Someone would be off the map.', noAttempts: 'No attempts left on this corpse.',
   gated: 'That cannot be used now.', noUses: 'No uses left.', hp: 'Not enough HP to pay for it.', stacks: 'Not enough stacks.',
-  extra: 'Only one extra action a round.', zone: 'They hold no field of that name.', seen: 'A foe sees them: they cannot hide.',
+  extra: 'Only one extra action a round.', zone: 'They have no field with that name.', seen: 'A foe sees them. They cannot hide.',
   offGrid: 'That is off the map.', unknown: 'Nobody by that name is in the fight.', noChannel: 'Nothing is being channeled.',
   notMonster: 'Only a monster can do that.', nothingDue: 'Nothing is due.', noIntent: 'No move was planned.',
-  notExtractor: 'Only a hunter in the fight whose job may extract can try.',
-  notHunter: 'Only a hunter\'s row can be refilled.',
-  lifeCannot: 'Not in this state: Revive is for the dead.',
-  fudgeValue: 'A fudge is a whole number of faces, and a forced roll is a 1 or a 20.',
-  notMythic: 'Only a mythic playing its script has phases and omens.', noOmen: 'No omen stands.',
-  omenStands: 'Its omen stands: it lands, is answered or is dropped first.', omenDue: 'Its omen is due: it lands its omen\'s move where it was aimed.',
-  lastPhase: 'This is its last phase: it ends when its HP reaches 0.', weakened: 'The omen is weakened already.',
+  notExtractor: 'Only a hunter in the fight whose job allows extraction can try.',
+  notHunter: 'Only a hunter can be refilled.',
+  lifeCannot: 'Only a dead hunter or defeated combatant can be revived.',
+  fudgeValue: 'Fudge must be a whole number, and a forced roll must be 1 or 20.',
+  notMythic: 'Only a scripted mythic monster has phases and omens.', noOmen: 'No omen is active.',
+  omenStands: 'An omen is already active. Resolve, cancel, or drop it first.', omenDue: 'Its omen is due. Resolve the omen move where it was aimed.',
+  lastPhase: 'This is the last phase. It ends when HP reaches 0.', weakened: 'The omen is already weakened.',
 };
 
 /** What a player reads when the GM's phone turned down their tap (table.js). */
 export const TABLE_REFUSAL_WORDS: { readonly [R in TableRefusal]: string } = {
   range: 'Out of reach. Step closer first.', notYourTurn: 'It is not your turn.', cooldown: 'Not ready yet.', mana: 'Not enough mana.',
-  taunted: 'You are taunted: aim at your taunter.', noTarget: 'Nobody is there.', unknownAbility: 'You did not have that when the fight began.',
-  down: 'You are down.', rooted: 'You are rooted and cannot move.', blocked: 'The way is blocked.', tooFar: 'Too far for one move.',
+  taunted: 'You are taunted. Aim at your taunter.', noTarget: 'Nobody is there.', unknownAbility: 'You did not have that when the fight began.',
+  down: 'You are out of the fight.', rooted: 'You are rooted and cannot move.', blocked: 'The way is blocked.', tooFar: 'Too far for one move.',
   noMove: 'You are already there.', offGrid: 'That is off the map.', taken: 'That place is taken.',
   gated: 'That cannot be used now.', noUses: 'No uses left.', hp: 'Not enough HP to pay for it.', stacks: 'Not enough stacks.',
-  zone: 'You have no field to end.', extra: 'Only one extra action a round.', seen: 'A foe sees you: you cannot hide.',
+  zone: 'You have no field to end.', extra: 'Only one extra action a round.', seen: 'A foe sees you. You cannot hide.',
 };

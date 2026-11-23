@@ -1,6 +1,8 @@
 import { RULES } from '../../src/core/rules.ts';
 import { abilityId } from '../../src/core/combat/ability-types.ts';
 import { abilityOf } from '../../src/core/registry/ability-kinds.ts';
+import { titleLine } from '../../src/core/registry/item-budget.ts';
+import { REPLACES_WORDS, WORN_WORDS } from '../../src/core/rewards.ts';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, answerWindow, startGoblinDenFight, chooseList, fightRow, type Page } from './helpers.ts';
 
 /** A GM and a player in one room, the player's card on the GM's party board. Answers both pages and the player's sheet key. */
@@ -181,8 +183,8 @@ test('the GM awards the title Square in place of Owed to the Deep: the hunter ke
   await test.step('the title row has In place of, and the preview names both titles', async () => {
     await ed.locator('[data-add="title"]').tap();
     await row.locator('[data-f="name"]').fill('Square');
-    await expect(row.locator('label.field', { hasText: 'In place of' })).toBeVisible();
-    await expect(row).toContainText('The hunter\'s title of this name becomes this one. If the hunter does not hold it, or this is empty, they get a new title.');
+    await expect(row.locator('label.field', { hasText: REPLACES_WORDS.label })).toBeVisible();
+    await expect(row).toContainText(REPLACES_WORDS.hint);
     await row.locator('[data-f="replaces"]').fill('Owed to the Deep');
     await row.locator('[data-bonus="hpMax"]').fill('10');
     await expect(ed.locator('.rw-preview')).toContainText('Title acquired: Square (in place of Owed to the Deep)');
@@ -203,7 +205,7 @@ test('the GM awards the title Square in place of Owed to the Deep: the hunter ke
     expect(h.derived.hpMax, 'from 10 less max HP to 10 more').toBe(hpMax + 20);
     await go(gm, 'status');
     const list = gm.locator('[data-panel="titles"] [data-tlist]');
-    await expect(list.locator('li', { hasText: 'Square' }).locator('[data-tset]')).toHaveText('Unset');
+    await expect(list.locator('li', { hasText: 'Square' }).locator('[data-tset]')).toHaveText('Deactivate');
     await expect(list.locator('li', { hasText: 'Owed to the Deep' })).toHaveCount(0);
   });
 });
@@ -221,16 +223,16 @@ test('the GM awards the title Steady Hand worn in fights as Hasted: once it is t
   await test.step('the title row has Worn in fights, and the preview names the status', async () => {
     await ed.locator('[data-add="title"]').tap();
     await row.locator('[data-f="name"]').fill('Steady Hand');
-    await expect(row.locator('label.field', { hasText: 'Worn in fights' })).toBeVisible();
-    await expect(row).toContainText('While this is the hunter\'s active title, the status is on the hunter in every fight.');
+    await expect(row.locator('label.field', { hasText: WORN_WORDS.label })).toBeVisible();
+    await expect(row).toContainText(WORN_WORDS.hint);
     await row.locator('[data-f="tworn"]').selectOption('hasted');
-    await expect(ed.locator('.rw-preview')).toContainText('Title acquired: Steady Hand, worn in fights: Hasted');
+    await expect(ed.locator('.rw-preview')).toContainText(`Title acquired: Steady Hand, ${WORN_WORDS.line('Hasted')}`);
   });
 
   await test.step('the award is sent, and the hunter\'s window names the worn status', async () => {
     await gm.locator('#gm-targets label', { hasText: name }).locator('input').check();
     await gm.locator('#gm-award-go').tap();
-    await expect(gm.locator('.sys-overlay.show', { hasText: 'Title acquired: Steady Hand, worn in fights: Hasted' })).toBeVisible();
+    await expect(gm.locator('.sys-overlay.show', { hasText: `Title acquired: Steady Hand, ${WORN_WORDS.line('Hasted')}` })).toBeVisible();
     await dismissAll(gm, 4);
   });
 
@@ -238,7 +240,7 @@ test('the GM awards the title Steady Hand worn in fights as Hasted: once it is t
     await go(gm, 'status');
     const li = gm.locator('[data-panel="titles"] [data-tlist] li', { hasText: 'Steady Hand' });
     await li.locator('[data-tset]').tap();
-    await expect(li.locator('[data-tset]')).toHaveText('Unset');
+    await expect(li.locator('[data-tset]')).toHaveText('Deactivate');
   });
 
   await test.step('in the Goblin Den fight the hunter\'s row is Hasted, a worn status, and the other hunters\' rows are not', async () => {
@@ -273,7 +275,7 @@ test('the GM awards a title of band C usable in fights as Second Wind: its card 
     await expect(row.locator('[data-band="E"]')).toHaveAttribute('aria-pressed', 'false');
     await row.locator('[data-f="tactive"]').selectOption({ label: 'Second Wind' });
     await expect(row.locator('[data-tinfo]')).toContainText('Can use in a fight: Second Wind');
-    await expect(row.locator('[data-tspend]')).toContainText(`of a rank C title's ${RULES.titleBudget.C} points`);
+    await expect(row.locator('[data-tspend]')).toHaveText(titleLine({ bonus: {}, band: 'C', active: wind }, RULES).words);
   });
 
   await test.step('the award is sent and the hunter holds a title of band C with the ability', async () => {
@@ -289,7 +291,7 @@ test('the GM awards a title of band C usable in fights as Second Wind: its card 
     const li = gm.locator('[data-panel="titles"] [data-tlist] li', { hasText: 'Last Light' });
     await expect(li.locator('.t-powers')).toContainText('Can use in a fight: Second Wind');
     await li.locator('[data-tset]').tap();
-    await expect(li.locator('[data-tset]')).toHaveText('Unset');
+    await expect(li.locator('[data-tset]')).toHaveText('Deactivate');
     await li.scrollIntoViewIfNeeded();
     const box = await li.evaluate(el => ({ scroll: el.scrollWidth, client: el.clientWidth }));
     expect(box.scroll).toBeLessThanOrEqual(box.client);
@@ -315,7 +317,7 @@ test('the GM folds an Award form holding a fight\'s 75 gold and later sends Brak
   await test.step('Award loot opens the form with the 75 gold, and the line naming the loot fits a 390 px phone', async () => {
     await answerWindow(gm, 'Loot dropped', 'Award loot');
     await expect(gm.locator('#gm-gold')).toHaveValue('75');
-    await expect(tie).toHaveText('Fight loot: 75 gold. Send award gives it; fold Award to keep it for later.');
+    await expect(tie).toHaveText('Fight loot: 75 gold. Tap Send award to give it. Close Award to save it for later.');
     await tie.scrollIntoViewIfNeeded();
     const box = await tie.evaluate(el => ({ scroll: el.scrollWidth, client: el.clientWidth, right: el.getBoundingClientRect().right, page: document.documentElement.clientWidth }));
     expect(box.scroll).toBeLessThanOrEqual(box.client);

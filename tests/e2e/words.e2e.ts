@@ -2,6 +2,7 @@
 // Room view, the GM answers it in "Words from players", and the answer opens a window once on the player's phone. Both
 // are sealed messages: another player's phone never holds either, in its save or in any answer the room gave it.
 import type { Page } from '@playwright/test';
+import { WORD_WORDS } from '../../src/core/sync/word.ts';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go } from './helpers.ts';
 
 const WORD = 'Can my shadow scout the gate before we go in?', ANSWER = 'Yes. Roll Perception when it comes back.';
@@ -23,15 +24,15 @@ test('Mira sends the GM a word and the GM answers; Brakk\'s phone never holds ei
     await go(mira, 'room');
     const sec = mira.locator('#view-room [data-wordsec]');
     await expect(sec).toBeVisible();
-    await expect(sec).toContainText('Only the GM sees these. The room\'s server stores them.');
+    await expect(sec).toContainText(WORD_WORDS.privacy);
     await expect(sec.locator('[data-wd-thread]')).toHaveText('Nothing sent yet.');
-    await sec.getByLabel('Your word').fill(WORD);
+    await sec.getByLabel(WORD_WORDS.field).fill(WORD);
     await sec.getByRole('button', { name: 'Send to the GM' }).tap();
     const line = sec.locator('.wd-line', { hasText: WORD });
     await expect(line).toBeVisible();
     await expect(line.locator('.wd-who')).toHaveText(/^You, \d\d:\d\d$/);
     await expect(line.locator('.wd-state')).toHaveText('Sent.', { timeout: 20_000 });
-    await expect(sec.getByLabel('Your word')).toHaveValue('');
+    await expect(sec.getByLabel(WORD_WORDS.field)).toHaveValue('');
   });
 
   await test.step('the GM hears it once: a toast, "1 new" on the section\'s head, the word with Answer, and a line of the session log', async () => {
@@ -94,7 +95,7 @@ test('a word with nothing written is not sent, and says so', async ({ device }) 
   await dismissAll(mira, 4);
   await go(mira, 'room');
   const sec = mira.locator('#view-room [data-wordsec]');
-  await sec.getByLabel('Your word').fill('   ');
+  await sec.getByLabel(WORD_WORDS.field).fill('   ');
   await sec.getByRole('button', { name: 'Send to the GM' }).tap();
   await expect(mira.locator('#toasts .toast', { hasText: 'Write something first.' })).toBeVisible();
   expect(await mira.evaluate(() => (hunterApp.store.get().settings.sync.words ?? []).length)).toBe(0);

@@ -76,8 +76,8 @@ export function rewardEditor(app, box, o = {}) {
     if (r.kind === 'item') {
       head = r.item ? `<span class="rw-nm">Item: ${esc(r.item.name)} <span class="rw-tag">${esc(r.item.rar)}</span></span>` : '<span class="rw-nm">Item</span>';
       body = !r.item ? itemPicker(i) : `<div class="rw-meta">${esc(itemMeta(r.item))}</div>
-        <div class="rw-two">${field('Qty', `<input type="number" min="1" max="${ITEM_BOUNDS.qty}" step="1" inputmode="numeric" data-f="qty" value="${esc(r.item.qty)}">`)}
-        <label class="rw-chk"><input type="checkbox" data-f="tell"${r.item.tell ? ' checked' : ''}><span>Tell me when used</span></label></div>`;
+        <div class="rw-two">${field('Quantity', `<input type="number" min="1" max="${ITEM_BOUNDS.qty}" step="1" inputmode="numeric" data-f="qty" value="${esc(r.item.qty)}">`)}
+        <label class="rw-chk"><input type="checkbox" data-f="tell"${r.item.tell ? ' checked' : ''}><span>Notify GM when used</span></label></div>`;
     } else if (r.kind === 'skill') {
       head = r.skill ? `<span class="rw-nm">Skill: ${esc(r.skill.name)} <span class="rw-tag">${esc(r.skill.type)}</span></span>` : '<span class="rw-nm">Skill</span>';
       body = r.skill ? `<div class="rw-meta">${esc(skillMeta(r.skill))}</div>` : skillPicker(i);
@@ -88,25 +88,26 @@ export function rewardEditor(app, box, o = {}) {
         ${field('Description', `<input type="text" maxlength="${REWARD_BOUNDS.titleDesc}" autocomplete="off" data-f="desc" value="${esc(r.desc)}">`)}
         ${field(REPLACES_WORDS.label, `<input type="text" maxlength="${REWARD_BOUNDS.title}" autocomplete="off" data-f="replaces" value="${esc(r.replaces)}">`)}
         <p class="rw-hint">${esc(REPLACES_WORDS.hint)}</p>
-        <div class="lbl">Bonus while the title is active</div><div data-tbonus>${app.api.maker.bonus(r.bonus)}</div>
+        <div class="lbl">Stat bonuses while title is active</div><div data-tbonus>${app.api.maker.bonus(r.bonus)}</div>
         ${field(WORN_WORDS.label, `<select data-f="tworn">${opt('', WORN_WORDS.none, !r.worn)}${r.worn && !wornKey(r.worn) ? opt('=', r.worn.label, true) : ''}${statusKeys().map(k => opt(k, rules().conditions[k].label || k, !!r.worn && wornKey(r.worn) === k)).join('')}</select>`)}
         <p class="rw-hint">${esc(WORN_WORDS.hint)}</p>
         ${field(ACTIVE_WORDS.label, `<select data-f="tactive">${opt('', ACTIVE_WORDS.none, !r.active)}${r.active && !activeKey(r.active) ? opt('=', r.active.name, true) : ''}${activeSkills().map(({ n, s }) => opt(`L:${n}`, s.name, !!r.active && activeKey(r.active) === `L:${n}`)).join('')}</select>`)}
         <p class="rw-hint">${esc(ACTIVE_WORDS.hint)}</p>
-        <div class="lbl" id="${esc(id)}-band">Band</div>
+        <div class="lbl" id="${esc(id)}-band">Title rank budget</div>
         <div class="mk-chips seg" role="group" aria-labelledby="${esc(id)}-band">${RANKS.map(k => `<button type="button" class="mk-chip" data-band="${k}" aria-pressed="${(r.band ?? 'E') === k}">${k}</button>`).join('')}</div>
+        <p class="rw-hint">Sets the suggested bonus budget for this rank. Does not restrict who can equip the title.</p>
         <div data-tinfo></div>`;
     } else if (r.kind === 'status') {
       const keys = statusKeys(); if (r.key && !keys.includes(r.key)) keys.push(r.key);
       const label = k => String((rules().conditions[k] && rules().conditions[k].label) || (r.def && r.key === k && r.def.label) || k);
       head = '<span class="rw-nm">Status</span>';
       body = `<div class="rw-two"><select data-f="key" aria-label="Status ${i + 1}">${keys.map(k => opt(k, label(k), k === r.key)).join('')}</select>
-        <input type="number" min="1" max="${REWARD_BOUNDS.rounds}" step="1" inputmode="numeric" data-f="rounds" aria-label="Rounds of status ${i + 1}" placeholder="Rounds (∞)" value="${esc(r.rounds)}"></div>`;
+        <input type="number" min="1" max="${REWARD_BOUNDS.rounds}" step="1" inputmode="numeric" data-f="rounds" aria-label="Rounds of status ${i + 1}" placeholder="Until removed" value="${esc(r.rounds)}"></div>`;
     } else if (r.kind === 'boon') {
       head = '<span class="rw-nm">Boon</span>';
       body = `${field('Boon name', `<input type="text" maxlength="${REWARD_BOUNDS.boonName}" autocomplete="off" data-f="name" value="${esc(r.name)}">`)}
-        ${field('What it gives', `<textarea rows="2" maxlength="${REWARD_BOUNDS.boonText}" data-f="text">${esc(r.text)}</textarea>`)}
-        <p class="rw-hint">The player redeems it from their sheet, and you are told.</p>`;
+        ${field('Effect description', `<textarea rows="2" maxlength="${REWARD_BOUNDS.boonText}" data-f="text">${esc(r.text)}</textarea>`)}
+        <p class="rw-hint">A one-time custom favor the GM honors. When the player redeems it on their sheet, you get notified.</p>`;
     } else {
       head = '<span class="rw-nm">Job</span>';
       body = field('Job', `<input type="text" maxlength="${REWARD_BOUNDS.job}" autocomplete="off" data-f="job" data-rw-job list="${esc(id)}-jobs" value="${esc(r.job)}">`);
@@ -127,9 +128,9 @@ export function rewardEditor(app, box, o = {}) {
     box.innerHTML = `<div class="rw">${bundleRow()}
       <div class="rw-nums">${field('XP', `<input type="number" step="1" inputmode="numeric" id="${esc(id)}-xp" data-n="xp" placeholder="0" value="${nums.xp || ''}">`)}
         ${field('Gold', `<input type="number" step="1" inputmode="numeric" id="${esc(id)}-gold" data-n="gold" placeholder="0" value="${nums.gold || ''}">`)}
-        ${field('Points', `<input type="number" step="1" inputmode="numeric" id="${esc(id)}-pts" data-n="points" placeholder="0" value="${nums.points || ''}">`)}</div>
+        ${field('Ability points', `<input type="number" step="1" inputmode="numeric" id="${esc(id)}-pts" data-n="points" placeholder="0" value="${nums.points || ''}">`)}</div>
       <div class="rw-rows">${rows.map(rowHtml).join('')}</div>
-      <div class="rw-add" role="group" aria-label="Add to the reward"><span class="lbl">Add</span>${ADD.map(([k, l]) => `<button type="button" class="mk-chip" data-add="${k}"${count(k) >= CAP[k] ? ` disabled title="${esc(full(k, l))}"` : ''}>${l}</button>`).join('')}</div>
+      <div class="rw-add" role="group" aria-label="Add to the reward"><span class="lbl">Add reward</span>${ADD.map(([k, l]) => `<button type="button" class="mk-chip" data-add="${k}"${count(k) >= CAP[k] ? ` disabled title="${esc(full(k, l))}"` : ''}>${l}</button>`).join('')}</div>
       ${ADD.some(([k]) => count(k) >= CAP[k]) ? `<p class="rw-hint" data-rw-full>${esc(ADD.filter(([k]) => count(k) >= CAP[k]).map(([k, l]) => full(k, l)).join(' '))}</p>` : ''}
       <datalist id="${esc(id)}-jobs">${rewardJobs(rules()).map(j => `<option value="${esc(j)}">`).join('')}</datalist>
       <div class="rw-preview" aria-live="polite"></div>
@@ -147,7 +148,7 @@ export function rewardEditor(app, box, o = {}) {
   /** The preview and the message line, redrawn on every change. */
   function paint() {
     const lines = grantLines(rules(), parseRewards(raw()) || newRewards()), p = box.querySelector('.rw-preview');
-    if (p) p.innerHTML = `<div class="lbl">The player sees</div>${lines.length ? `<ul class="mk-lines">${lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>` : '<p class="mk-none">Nothing yet.</p>'}`;
+    if (p) p.innerHTML = `<div class="lbl">Reward preview</div>${lines.length ? `<ul class="mk-lines">${lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>` : '<p class="mk-none">Nothing yet.</p>'}`;
     const info = box.querySelector('[data-tinfo]');
     if (info) {
       const t = parseRewards(raw())?.title ?? null;
@@ -189,7 +190,7 @@ export function rewardEditor(app, box, o = {}) {
     if (!name || !name.trim()) return;
     // saving again under a name the library holds replaces that bundle, after the GM says so (a bundle is saved by its id)
     const same = app.api.bundles.list().find(b => b.name.toLowerCase() === name.trim().toLowerCase());
-    if (same && !await ui.confirm({ title: 'Replace bundle?', body: `A bundle named "${same.name}" is saved. Replace it with this reward?`, confirmLabel: 'Replace' })) return;
+    if (same && !await ui.confirm({ title: 'Replace bundle?', body: `A bundle named "${same.name}" already exists. Replace it with this reward?`, confirmLabel: 'Replace' })) return;
     const r = app.api.bundles.save(name, rw, same ? same.id : null);
     if (!ui.wrote('Workshop', r, savedWords('bundle', name.trim()))) return;
     render(); const s = box.querySelector('[data-rw-bundle]'); if (s) s.value = r.id;
@@ -318,9 +319,9 @@ export function bundleMaker(app, b) {
     build(body, shell) {
       const w = b && b.window ? b.window : { title: '', line: '' };
       body.innerHTML = `${field('Name', `<input type="text" id="rwm-name" maxlength="60" autocomplete="off" value="${esc(b ? b.name : '')}">`)}
-        ${field('Window title', `<input type="text" id="rwm-wtitle" maxlength="${WORDS_BOUNDS.title}" autocomplete="off" placeholder="THE SYSTEM TOOK NOTE" value="${esc(w.title)}">`)}
-        ${field('Window line', `<input type="text" id="rwm-wline" maxlength="${WORDS_BOUNDS.line}" autocomplete="off" placeholder="What the System says when it is given" value="${esc(w.line)}">`)}
-        <p class="rw-hint">With a window title, the hunter sees these words when it is given, and the bundle may hold no reward.</p><div data-rwm-ed></div>`;
+        ${field('Popup title', `<input type="text" id="rwm-wtitle" maxlength="${WORDS_BOUNDS.title}" autocomplete="off" placeholder="THE SYSTEM TOOK NOTE" value="${esc(w.title)}">`)}
+        ${field('Popup message', `<input type="text" id="rwm-wline" maxlength="${WORDS_BOUNDS.line}" autocomplete="off" placeholder="Message shown to the player" value="${esc(w.line)}">`)}
+        <p class="rw-hint">If you set a popup title, the hunter sees this message when awarded, even if the bundle has no other rewards.</p><div data-rwm-ed></div>`;
       const ed = A.maker.rewards(body.querySelector('[data-rwm-ed]'), { initial: b ? b.rewards : undefined, bundles: false });
       return {
         blocked: () => ed.blocked(),
@@ -328,7 +329,7 @@ export function bundleMaker(app, b) {
           const name = body.querySelector('#rwm-name').value.trim(), rw = ed.value();
           const words = parseWords({ title: body.querySelector('#rwm-wtitle').value, line: body.querySelector('#rwm-wline').value });
           if (!name) { shell.error('Name the bundle.'); return undefined; }
-          if (isEmptyReward(rw) && !words) { shell.error('Add something to the reward, or a window title.'); return undefined; }
+          if (isEmptyReward(rw) && !words) { shell.error('Add something to the reward, or a popup title.'); return undefined; }
           // by its id: a rename is one write, and a name another reward holds is refused, never overwritten
           const saved = A.bundles.save(name, rw, b ? b.id : null, words);
           if (!app.ui.wrote('Workshop', saved, savedWords('bundle', name))) return undefined;

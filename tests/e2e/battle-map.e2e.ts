@@ -35,7 +35,7 @@ async function room(device: (label: string) => Promise<{ page: Page }>): Promise
  */
 async function fight(gm: Page, player: Page, ratAt: { x: number; y: number }[], brakkAt: { x: number; y: number } | null = null): Promise<{ kai: string; rats: string[] }> {
   await go(gm, 'combat');
-  await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (remote)` });
+  await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (player phone)` });
   await combat(gm).locator('[data-addh]').tap();
   if (brakkAt) { await combat(gm).locator('[data-hsel]').selectOption({ label: BRAKK }); await combat(gm).locator('[data-addh]').tap(); }
   await combat(gm).locator('[data-qline]').fill(`${MONSTER} x${ratAt.length}, E, brute`);
@@ -96,7 +96,7 @@ test('a player who taps the Fight tab as the GM\'s fight arrives is on the Fight
     });
   });
   await go(gm, 'combat');
-  await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (remote)` });
+  await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (player phone)` });
   await combat(gm).locator('[data-addh]').tap();
   await combat(gm).locator('[data-qline]').fill(`${MONSTER} x1, E, brute`);
   await combat(gm).locator('[data-qadd]').tap();
@@ -347,7 +347,7 @@ test('Cancel puts an aimed ability down and spends nothing', async ({ device }) 
 test('a GM\'s fight opens on the map, and while it runs the screen is the fight: Add to the fight and the log wait behind Fight tools', async ({ device }) => {
   const { gm, player } = await room(device);
   await go(gm, 'combat');
-  await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (remote)` });
+  await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (player phone)` });
   await combat(gm).locator('[data-addh]').tap();
   await combat(gm).locator('[data-qline]').fill(`${MONSTER} x1, E, brute`);
   await combat(gm).locator('[data-qadd]').tap();
@@ -384,7 +384,7 @@ test('a player who zoomed the map out in one fight finds the next fight on the s
     await combat(gm).locator('[data-tools-open]').tap();
     await combat(gm).getByRole('dialog', { name: 'Fight tools' }).locator('[data-clear]').tap();
     await answerWindow(gm, 'Clear the fight?', 'Clear');
-    await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (remote)` });
+    await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (player phone)` });
     await combat(gm).locator('[data-addh]').tap();
     await combat(gm).locator('[data-qline]').fill(`${MONSTER} x1, E, brute`);
     await combat(gm).locator('[data-qadd]').tap();
@@ -523,13 +523,13 @@ test('the GM taps See as a goblin and the hidden hunter it cannot see leaves the
   await combat(page).locator('[data-fview="map"]').tap();
   await expect(token(page, brakk)).toHaveClass(/\bhidden\b/);
   await combat(page).locator('[data-tools-open]').tap();
-  const seeAs = combat(page).getByRole('dialog', { name: 'Fight tools' }).getByRole('group', { name: 'See as' });
+  const seeAs = combat(page).getByRole('dialog', { name: 'Fight tools' }).getByRole('group', { name: 'View map as' });
   await expect(seeAs.getByRole('button', { name: 'Everything' })).toHaveAttribute('aria-pressed', 'true');
   await test.step(`seen as ${goblin}`, async () => {
     await seeAs.getByRole('button', { name: goblin, exact: true }).tap();
     await expect(seeAs.getByRole('button', { name: goblin, exact: true })).toHaveAttribute('aria-pressed', 'true');
     await expect(token(page, brakk)).toHaveCount(0);
-    await expect(map(page).locator('[data-seenas]')).toHaveText(`Seen as ${goblin}`);
+    await expect(map(page).locator('[data-seenas]')).toHaveText(`Viewing as ${goblin}`);
     expect(await page.evaluate(() => document.documentElement.scrollWidth), 'the See as row fits a 390 px phone').toBeLessThanOrEqual(390);
   });
   await test.step('seen as everything', async () => {
@@ -598,8 +598,8 @@ test('a blast aimed at a place marks who is caught and who is in its ring before
   await expect(map(gm).locator('[data-shade="splash"]')).toBeAttached();
   await expect(map(gm).locator('[data-shade="ring"]')).toBeAttached();
   await expect(token(gm, kai).locator('.mp-mark')).toHaveText('Caught');
-  await expect(token(gm, rats[0]!).locator('.mp-mark')).toHaveText('Ring');
-  await expect(map(gm).locator('[data-words]')).toHaveText(`Hits ${HUNTER}. In the ring: ${MONSTER}.`);
+  await expect(token(gm, rats[0]!).locator('.mp-mark')).toHaveText('Outer ring');
+  await expect(map(gm).locator('[data-words]')).toHaveText(`Hits ${HUNTER}. In outer ring (reduced damage): ${MONSTER}.`);
   await map(gm).locator('[data-go]').tap();
   await expect.poll(() => fightRow(gm, HUNTER).then(r => r.place.x !== 2 || r.place.y !== 2)).toBe(true);
   const escaped = await fightRow(gm, HUNTER).then(r => [r.place.x, r.place.y]);

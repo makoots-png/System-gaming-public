@@ -14,13 +14,13 @@ const step = (facts: FirstRunFacts, key: string) => nextSteps(facts, RULES).find
 describe('a new player\'s next steps', () => {
   test('a new player is told to spend points, pick a path and join the GM\'s room, in that order, none done', () => {
     expect(nextSteps(player(), RULES)).toEqual([
-      { key: 'points', done: false, words: 'Spend your 5 ability points: on the Status tab, tap + on a stat, then Confirm allocation.' },
-      { key: 'path', done: false, words: 'Pick a path: on the Status tab, in the Build panel.' },
-      { key: 'join', done: false, words: 'Join your GM\'s room: ask the GM for the room code or an invite link.' },
+      { key: 'points', done: false, words: 'Spend your 5 ability points. On the Status tab, tap + on a stat, then tap Confirm allocation.' },
+      { key: 'path', done: false, words: 'Pick a path in the Build panel on the Status tab.' },
+      { key: 'join', done: false, words: 'Join your GM\'s room. Ask the GM for the room code or an invite link.' },
     ]);
   });
   test('one point left is "1 ability point"; none left is done and says what a level gives', () => {
-    expect(step(player({ points: 1 }), 'points')?.words).toBe('Spend your 1 ability point: on the Status tab, tap + on a stat, then Confirm allocation.');
+    expect(step(player({ points: 1 }), 'points')?.words).toBe('Spend your 1 ability point. On the Status tab, tap + on a stat, then tap Confirm allocation.');
     expect(step(player({ points: 0 }), 'points')).toEqual({ key: 'points', done: true, words: 'Ability points spent. Each level gives 3 more.' });
   });
   test('the points a level gives are the rules\' own', () => {
@@ -44,13 +44,13 @@ describe('a new GM\'s next steps', () => {
   test('a GM with no room is told to create one, then invite players', () => {
     expect(nextSteps(gm(), RULES)).toEqual([
       { key: 'create', done: false, words: 'Create a room.' },
-      { key: 'invite', done: false, words: 'Invite your players: share the room\'s code, link or QR code.' },
+      { key: 'invite', done: false, words: 'Invite your players. Share the room code, link, or QR code.' },
     ]);
   });
   test('a room with no players: created is done, invite is not', () => {
     expect(nextSteps(gm({ room: CODE }), RULES)).toEqual([
       { key: 'create', done: true, words: 'Room ABC234 created.' },
-      { key: 'invite', done: false, words: 'Invite your players: share the room\'s code, link or QR code.' },
+      { key: 'invite', done: false, words: 'Invite your players. Share the room code, link, or QR code.' },
     ]);
   });
   test('one player joined and two players joined', () => {

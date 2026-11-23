@@ -8,13 +8,13 @@ import { describeStatus } from '../core/combat/effect-ops.ts';
 
 const STAT_USE = {
   str: 'Physical power, carry, tenacity (with Discipline)',
-  agi: 'Speed, Reaction (dodging what travels)',
+  agi: 'Speed, Reaction (dodging attacks)',
   vit: 'Max HP, fatigue capacity, a little armor',
   ins: 'Reaction, the opening roll, crits',
   dis: 'Will (resisting curses), resist, tenacity (with Strength), holding a channel',
   pre: 'Support power (heals and shields), threat, shadow capacity',
   pow: 'Magical power, max mana',
-  ctl: 'Accuracy, penetration, crit size, potency, a lower cost',
+  ctl: 'Accuracy, penetration, crit damage, potency, lower ability costs',
 };
 const fmtX = n => String(Math.round(n * 100) / 100);
 
@@ -67,11 +67,11 @@ export function cheatSheet() {
   const rows = RANKS.filter(r => R.rankTable[r]).map(r => { const t = R.rankTable[r];
     return `<tr><th scope="row">${esc(r)}</th>${t.dc.map(d => `<td>${esc(d)}</td>`).join('')}<td>${esc(fmtN(t.xp))}</td><td>${esc(sg(R.rankBonus[r]))}</td></tr>`; }).join('');
   const loot = RANKS.filter(r => R.loot[r]).map(r => { const w = R.loot[r].weights, tot = Object.values(w).reduce((a, b) => a + b, 0) || 1;
-    return `<li><b>${esc(r)}</b> ${Object.entries(w).map(([k, v]) => `${esc(k.slice(0, 4))} ${Math.round(100 * v / tot)}%`).join(' · ')}</li>`; }).join('');
+    return `<li><b>${esc(r)}</b> ${Object.entries(w).map(([k, v]) => `${esc(k[0].toUpperCase() + k.slice(1))} ${Math.round(100 * v / tot)}%`).join(' · ')}</li>`; }).join('');
   const cond = Object.entries(R.conditions).map(([k, c]) => { const fx = describeStatus(c, null, R).join('; ');
     return `<li><b>${esc((c && c.label) || k)}</b> ${esc((c && c.desc) || '')}${fx ? ` <span class="cs-fx">${esc(fx)}</span>` : ''}</li>`; }).join('');
   return `<div class="cs">
-    <table class="cs-t"><caption>DC, monster XP and rank bonus by rank</caption><thead><tr><th scope="col">Rank</th><th scope="col">Easy</th><th scope="col">Std</th><th scope="col">Hard</th><th scope="col">XP</th><th scope="col">Bonus</th></tr></thead><tbody>${rows}</tbody></table>
+    <table class="cs-t"><caption>DC, monster XP and rank bonus by rank</caption><thead><tr><th scope="col">Rank</th><th scope="col">Easy</th><th scope="col">Standard</th><th scope="col">Hard</th><th scope="col">XP</th><th scope="col">Bonus</th></tr></thead><tbody>${rows}</tbody></table>
     <h3>Loot odds by gate rank</h3><ul class="cs-l">${loot}</ul>
     <h3>Rests</h3><p>${esc(restLines(R).slice(0, 2).join(' '))}</p>
     <h3>Statuses</h3><ul class="cs-l">${cond}</ul></div>`;
@@ -111,112 +111,112 @@ export function register(app) {
           `Penalized (failed Daily Quest): −${R.penaltyCheck} to all checks.`,
           'Advantage: roll two d20 and keep the higher. Disadvantage: keep the lower.',
           ...naturalLines().map(esc)]),
-        `<div class="rr-ex rr"><b>Worked example.</b> A rank ${esc(ex.rank)} hunter with Strength ${ex.score} (${fmtX(ex.above)} effective points above ${F.statBase}, so ${sg(exMod)}) climbs a wall (${esc(dcNames[1])} ${esc(ex.rank)}-rank DC ${exDc}). Check bonus = ${sg(exMod)} + ${exRb} (rank) = ${sg(exMod + exRb)}. They need a ${need} or higher on the d20: a roll of ${need} gives ${need} ${sg(exMod + exRb)} = ${need + exMod + exRb} ≥ ${exDc}, success.</div>`,
+        `<div class="rr-ex rr"><b>Worked example.</b> A rank ${esc(ex.rank)} hunter with Strength ${ex.score} (${fmtX(ex.above)} effective points above ${F.statBase}, for a ${sg(exMod)} stat bonus) climbs a wall (${esc(dcNames[1])} ${esc(ex.rank)}-rank DC ${exDc}). Their check bonus is ${sg(exMod)} + ${exRb} (rank) = ${sg(exMod + exRb)}. They need a ${need} or higher on the d20. Rolling ${need} gives ${need} ${sg(exMod + exRb)} = ${need + exMod + exRb}, which meets DC ${exDc}.</div>`,
         `<h3>DC presets by rank</h3>` + table(['Rank', ...dcNames], RANKS.filter(r => rt[r]).map(r => [esc(r), ...rt[r].dc.map(esc)])),
       ] },
       { id: 'stats', title: 'The eight stats', body: [
-        p(`Every stat starts at ${F.statBase}. A new hunter has ${F.creationPoints} points to place, and ${R.pointsPerLevel} more each level.`),
+        p(`Every stat starts at ${F.statBase}. A new hunter has ${F.creationPoints} ability points to spend, and gains ${R.pointsPerLevel} more each level.`),
         table(['Stat', 'Short', 'What it gives'], STAT_KEYS.map(k => [esc(STAT_LABELS[k]), esc(STAT_SHORT[k]), esc(STAT_USE[k])])),
       ] },
       { id: 'curves', title: 'How a stat turns into numbers', body: [ul([
-        `<b>Effective points</b> = ${F.statBase} × (score / ${F.statBase}) ^ ${F.effExp}. Doubling a stat gives ${fmtX(Math.pow(2, F.effExp))} times the effective points, not twice as many, so points spread over several stats are worth about as much as points put in one.`,
-        `Physical, magical and support power are ${F.powerK} × the effective points of Strength, Power and Presence, with no cap: damage grows with rank.`,
-        `<b>A capped number</b> (carry, speed, max HP's share, armor and resist from stats, crits, tenacity and the rest) grows with the effective points above ${F.statBase} and reaches half its cap at ${F.half} of them. It never reaches the cap.`,
-        `<b>Tenacity</b> reads Strength and Discipline as one score, the square root of their product: equal scores count as that score, and one left at ${F.statBase} pulls the other far down. A control status on you lasts its duration × (100 + the caster's potency) / (100 + your tenacity).`,
+        `<b>Effective points</b> = ${F.statBase} × (score / ${F.statBase}) ^ ${F.effExp}. Doubling a stat gives ${fmtX(Math.pow(2, F.effExp))} times as many effective points, not double. Spreading points across several stats is worth about as much as focusing on one.`,
+        `Physical, magical, and support power equal ${F.powerK} × the effective points of Strength, Power, and Presence. These have no cap, so damage grows with rank.`,
+        `<b>Capped stats</b> (such as carry, speed, stat armor, resist, crits, and tenacity) grow from effective points above ${F.statBase}. They reach half their cap at ${F.half} effective points above ${F.statBase} and never reach the full cap.`,
+        `<b>Tenacity</b> combines Strength and Discipline using the square root of their product. Equal scores count as that same score, while leaving either stat at ${F.statBase} keeps tenacity low. Control statuses on you last their base duration × (100 + caster's potency) / (100 + your tenacity).`,
         `Max HP = ${F.hpBase} × (1 + (level − 1) / ${F.growthDiv}) × (1 + Vitality's capped share, up to ${F.hpVitCap * 100}%), plus bonuses. Most of it comes from level, so a fight takes about the same number of hits at every rank.`,
         `Max mana = ${F.manaBase} + Power's capped share (up to ${F.manaCap}). Fatigue capacity = ${F.fatigueBase} + Vitality's capped share (up to ${F.fatigueCap}).`,
-        'Bonuses come from the active title, worn items, the build path and passive skills. The Status view shows every number of your sheet.']),
+        'Bonuses come from your active title, equipped gear, build path, and passive skills. Open the Status view to see all your numbers.']),
       ] },
       { id: 'armor', title: 'Armor and Resist', body: [ul([
-        `<b>Armor</b> reduces physical damage and <b>Resist</b> reduces magical damage. Damage dealt = damage × ${F.armorK} / (${F.armorK} + defense): ${kit.heavy.armor} armor takes ${armorCutPct(R, kit.heavy.armor)}% off, and no amount makes a body immune.`,
-        `Before that, ${Math.round(F.armorFlat * 100)}% of the defense comes off every hit as a flat amount, so a weak hit loses more than a strong one.`,
-        `<b>Penetration</b> lowers the defense before any of this. Armor penetration works against armor and magic penetration against resist, each a percent of it: Control gives up to ${F.penCap}% of both, items and perks more, never past ${F.penMax}% in all. Then <b>Lethality</b> ignores that many points of armor and <b>Unravel</b> that many of resist, from items and perks.`,
-        `Gear gives most of it. A full set of gear: light weighs ${kit.light.weight} (armor ${kit.light.armor}, resist ${kit.light.resist}), medium ${kit.medium.weight} (${kit.medium.armor}, ${kit.medium.resist}), heavy ${kit.heavy.weight} (${kit.heavy.armor}, ${kit.heavy.resist}); its six pieces add up to that. A rarer piece has the same armor and resist as a common one: its rarity lets it hold more bonuses and raises its price. Weight over half your carry slows you, up to ${Math.round(F.loadSlow * 100)}% at full carry.`]),
+        `<b>Armor</b> reduces physical damage and <b>Resist</b> reduces magical damage. Damage dealt = damage × ${F.armorK} / (${F.armorK} + defense). For example, ${kit.heavy.armor} armor cuts damage by ${armorCutPct(R, kit.heavy.armor)}%, and no amount grants full immunity.`,
+        `Before that reduction, ${Math.round(F.armorFlat * 100)}% of your defense subtracts directly from each hit, so small hits lose more than large ones.`,
+        `<b>Penetration</b> reduces defense first. Armor penetration lowers armor and magic penetration lowers resist by a percentage. Control gives up to ${F.penCap}% of both, and items and perks can raise the total up to ${F.penMax}%. Next, <b>Lethality</b> ignores a flat amount of armor and <b>Unravel</b> ignores a flat amount of resist.`,
+        `Most defense comes from gear. A full six-piece set of light gear weighs ${kit.light.weight} (armor ${kit.light.armor}, resist ${kit.light.resist}). Medium weighs ${kit.medium.weight} (${kit.medium.armor}, ${kit.medium.resist}), and heavy weighs ${kit.heavy.weight} (${kit.heavy.armor}, ${kit.heavy.resist}). Higher-rarity gear has the same base armor and resist as common gear, but can have more bonuses and costs more. Carrying more than half your limit slows you, up to ${Math.round(F.loadSlow * 100)}% at full carry.`]),
       ] },
       { id: 'leveling', title: 'Leveling and points', body: [
         p(`XP needed to advance: <b>${esc(R.xpPerLevel)} × current level</b>. XP shows as progress within the current level.`),
         ul([`Level 1 → 2: ${fmt(xpToNext(1))} XP`, `Level 2 → 3: ${fmt(xpToNext(2))} XP`, `Level 9 → 10: ${fmt(xpToNext(9))} XP`, `Level 19 → 20: ${fmt(xpToNext(19))} XP`]),
-        ul([`Each level above 1 holds <b>${R.pointsPerLevel}</b> ability points. ${dailyPointsLine(R)}`,
-          'Losing a level takes its points back. Points already spent stay in your stats, so no new points come until your levels catch up.',
+        ul([`Each level above 1 gives <b>${R.pointsPerLevel}</b> ability points. ${dailyPointsLine(R)}`,
+          'Losing a level removes its ability points. Points you already spent stay in your stats, so you do not gain new points until your level catches back up.',
           esc(pointsLine()),
           R.levelUpRestore ? 'Reaching a level for the first time fully restores HP and mana. Regaining a lost level does not.' : 'Leveling up does not restore HP and mana.']),
       ] },
       { id: 'ranks', title: 'Ranks and re-evaluation', body: [
-        p('Rank is not automatic. When a hunter’s level reaches the next rank’s threshold, the Status window shows <b>Re-evaluation available</b>; the GM presses <b>Re-evaluate</b> to promote them.'),
+        p('Rank does not increase automatically. When a hunter\'s level reaches the next rank threshold, the Status window shows <b>Re-evaluation available</b>. Tap <b>Re-evaluate</b> to promote them.'),
         table(['Rank', 'Levels', 'Rank bonus'], RANKS.map((r, i) => [ui.rankBadge(r), `${esc(rl[r])}${i < RANKS.length - 1 ? '–' + rankEnd(i) : '+'}`, esc(sg(rb[r]))])),
       ] },
       { id: 'ranktable', title: 'Rank table', body: [
         p('DCs, a normal monster\'s XP and the days a gate stays open, by rank.'),
         table(['Rank', 'DC E/S/H', 'XP', 'Break days'], RANKS.filter(r => rt[r]).map(r => [esc(r), rt[r].dc.join('/'), fmt(rt[r].xp), rt[r].breakDays])),
-        ul(['A defeated monster\'s XP goes to the hunters who fought it: whole to each in a fight started from no gate, shared as the gate\'s pot in a fight started from a gate (see Gates).']),
+        ul(['Defeated monsters award XP to the hunters who fought them. Outside a gate, each hunter gets the full XP. Inside a gate, hunters split the gate\'s XP (see Gates).']),
       ] },
       { id: 'monsters', title: 'Monsters', body: [
-        p(`A monster is a hunter of its rank's first level with its points split 2 to 1 by its archetype: a brute Strength and Vitality in medium gear, a skirmisher Agility and Strength in light gear, a caster Power and Control in light gear, the same gear at every rank. Its kind multiplies its max HP, power, armor and resist, so a boss is tougher only by its own numbers; a stun, a push or a curse lands on an elite or a boss as on any monster.`),
-        table(['Kind', 'Max HP', 'Power', 'Armor', 'Resist', 'Stagger bar (hits)', 'XP'], Object.entries(F.kinds).map(([k, v]) => [esc(k), `×${v.hp}`, `×${v.power}`, `×${v.armor}`, `×${v.resist}`, v.stagger ? esc(v.stagger) : '—', `×${v.xp}`])),
-        p('A trait changes a monster\'s body on top of its kind: its max HP, armor and resist by a factor, its speed by a percent.'),
-        table(['Trait', 'Max HP', 'Armor', 'Resist', 'Speed', 'XP'], Object.entries(F.traits).map(([k, v]) => [esc(k), `×${v.hp}`, `×${v.armor}`, `×${v.resist}`, v.speed ? `${v.speed > 0 ? '+' : ''}${v.speed}%` : '—', `×${v.xp}`])),
-        p('Each monster attacks with its archetype\'s attack (a strike, a shot or a curse) and its own abilities. The monster maker shows the HP, armor, resist and speed its rank, archetype, kind and traits give.'),
+        p(`A monster starts with the stats of a hunter at the lowest level of its rank, split 2 to 1 by archetype. Brutes focus on Strength and Vitality in medium gear, skirmishers on Agility and Strength in light gear, and casters on Power and Control in light gear. Monster kind multiplies max HP, power, armor, and resist. Bosses are tougher because of these higher numbers, not immunity. Stuns, pushes, and curses work on elites and bosses the same way they work on normal monsters.`),
+        table(['Monster kind', 'Max HP', 'Power', 'Armor', 'Resist', 'Stagger bar (hits)', 'XP'], Object.entries(F.kinds).map(([k, v]) => [esc(k), `×${v.hp}`, `×${v.power}`, `×${v.armor}`, `×${v.resist}`, v.stagger ? esc(v.stagger) : '-', `×${v.xp}`])),
+        p('A trait modifies a monster on top of its kind. It multiplies max HP, armor, and resist, and shifts speed by a percentage.'),
+        table(['Trait', 'Max HP', 'Armor', 'Resist', 'Speed', 'XP'], Object.entries(F.traits).map(([k, v]) => [esc(k), `×${v.hp}`, `×${v.armor}`, `×${v.resist}`, v.speed ? `${v.speed > 0 ? '+' : ''}${v.speed}%` : '-', `×${v.xp}`])),
+        p('Each monster uses its archetype attack (strike, shot, or curse) plus its own abilities. The monster maker previews the HP, armor, resist, and speed for any rank, archetype, kind, and traits.'),
       ] },
       { id: 'daily', title: 'Daily quests and penalty', body: [
         p(`The daily cycle resets at ${esc(String(resetHour).padStart(2, '0'))}:00 local time. Default daily: <b>${esc(R.dailyTemplate.title)}</b>.`),
         ul(R.dailyTemplate.objectives.map(o => `${esc(o.label)}: ${esc(o.target)}`)),
-        p(`Rewards: ${esc(R.dailyTemplate.rewards.xp)} XP, ${esc(R.dailyTemplate.rewards.points)} point${R.dailyTemplate.rewards.points === 1 ? '' : 's'}. Completing all dailies raises your streak by 1.`),
+        p(`Rewards: ${esc(R.dailyTemplate.rewards.xp)} XP, ${esc(R.dailyTemplate.rewards.points)} ability point${R.dailyTemplate.rewards.points === 1 ? '' : 's'}. Completing all dailies raises your streak by 1.`),
         ul(['If the cycle changes with dailies unfinished, the System issues <b>one</b> penalty (even after several missed days) and the streak resets to 0.',
           `The Penalty Zone quest ("Survive for 4 hours") must be completed to clear the penalty. While penalized: −${R.penaltyCheck} to all checks.`]),
       ] },
       { id: 'rest', title: 'Fatigue and rests', body: [
-        ul([`Fatigue runs from 0 to your fatigue capacity. At ${R.fatigue.penaltyAt}% of it: −${R.fatigue.penalty} to all checks. At ${R.fatigue.disAt}%: disadvantage on checks. At ${R.fatigue.collapseAt}%: collapse (Exhausted, cannot act until a rest or a gate's Clear lifts it).`,
+        ul([`Fatigue runs from 0 to your fatigue capacity. At ${R.fatigue.penaltyAt}%, you take −${R.fatigue.penalty} to all checks. At ${R.fatigue.disAt}%, you have disadvantage on checks. At ${R.fatigue.collapseAt}%, you collapse and become Exhausted, unable to act until you rest or clear a gate.`,
           ...restLines(R).map(l => esc(l)),
           esc(deathLine(R))]),
       ] },
       { id: 'conditions', title: 'Statuses', body: [
-        table(['Status', 'Effect', 'Mechanics'], Object.keys(R.conditions).map(k => [esc(tr(k).label), esc(tr(k).desc), esc(describeStatus(tr(k), null, R).join('; ') || '—')])),
-        p('A number by rank is read at the rank of whoever put the status on.'),
+        table(['Status', 'Effect', 'Mechanics'], Object.keys(R.conditions).map(k => [esc(tr(k).label), esc(tr(k).desc), esc(describeStatus(tr(k), null, R).join('; ') || '-')])),
+        p('Numbers that scale by rank use the rank of whoever applied the status.'),
         '<h3>Hiding</h3>' + ul(stealthLines(R).map(esc)),
       ] },
-      { id: 'combat', title: 'Combat turn order', body: [
-        ul([`Turns come by <b>speed</b>, not in rounds that go around the table. A round is the time a body of speed 100 needs for one standard action; at speed 200 you act twice a round, at ${F.speedMin} once in ${fmtX(100 / F.speedMin)} rounds.`,
+      { id: 'combat', title: 'Fight turn order', body: [
+        ul([`Turn order uses <b>speed</b> instead of fixed table rounds. One round is the time a speed-100 fighter needs for one standard action. At speed 200 you act twice per round, and at speed ${F.speedMin} you act once every ${fmtX(100 / F.speedMin)} rounds.`,
           `Speed = ${F.speedBase} + Agility's capped share (up to ${F.speedCap}), slowed by the weight you carry, between ${F.speedMin} and ${F.speedMax}.`,
-          `What you do takes time: a quick action ${F.cost.quick}% of a standard one, a heavy one ${F.cost.heavy}%. Your next turn comes that much later.`,
-          'The fight opens with a d20 each, plus Instinct\'s opening bonus: the highest acts first.',
-          `A strike, a shot or a blast travels: the target\'s d20 plus its Reaction against your Accuracy decides whether it gets out of the way. A curse does not travel: the target\'s Will resists it on ${F.resistDc} or more.`,
-          'Timed statuses run in fight time: their per-round effects are paid at the start of the bearer\'s turn, for the time since they were last paid, and a status ends when its rounds have passed.']),
+          `Actions take time. A quick action takes ${F.cost.quick}% of a standard action, and a heavy action takes ${F.cost.heavy}%. Your next turn comes after that delay.`,
+          'Everyone starts a fight by rolling a d20 plus their Instinct opening bonus. The highest total acts first.',
+          `Strikes, shots, and blasts can be dodged. The target rolls a d20 plus Reaction against your Accuracy to avoid the hit. Curses cannot be dodged, so the target rolls Will and resists on ${F.resistDc} or higher.`,
+          'Timed statuses tick in fight time. Their per-round effects apply at the start of the affected target\'s turn based on elapsed time, and the status ends once its rounds run out.']),
       ] },
       ...(R.fight.mythic.scripts ? [{ id: 'mythic', title: 'How a mythic fights', body: mythicLines(R).map(l => p(esc(l))) }] : []),
       { id: 'skills', title: 'Skills and abilities', body: [
         ul([`<b>Active</b> skills are abilities of five kinds: a strike (reach ${F.abilityKinds.strike.range} tile), a shot (range ${F.abilityKinds.shot.range}), a blast (a radius at range ${F.abilityKinds.blast.range}), a curse (range ${F.abilityKinds.curse.range}) and a support (range ${F.abilityKinds.support.range}, on an ally or the user).`,
-          'Each kind has its cost in fatigue and mana, its pace and a formula for its damage, heal or shield. A cooldown is in rounds.',
-          `<b>Lifesteal</b>, from items and perks, heals you that share of the HP your abilities take from others, with no cap (150% heals half again what a hit took); what cuts your healing cuts it too. <b>Ability haste</b>, in points, divides every cooldown by 1 plus a hundredth of your haste: 100 haste halves a cooldown and 200 makes it a third, so each point gives the same extra uses and none takes a cooldown to nothing.`,
-          '<b>Passive</b> skills grant their bonus permanently.', 'Skill levels run 1–10; level 10 shows MAX. The GM raises levels.']),
+          'Each ability has a fatigue and mana cost, a speed, and a formula for damage, healing, or shields. Cooldowns are measured in rounds.',
+          `<b>Lifesteal</b> from items and perks heals you for that percentage of damage your abilities deal, with no cap (150% heals 1.5 times the damage dealt). Effects that reduce healing also reduce lifesteal. <b>Ability haste</b> divides cooldowns by 1 + (haste / 100). At 100 haste, cooldowns are halved, and at 200 haste they are one-third as long. Cooldowns never drop to zero.`,
+          '<b>Passive</b> skills grant their bonus permanently.', 'Skill levels run from 1 to 10. Level 10 shows MAX. Raise skill levels from the Skills panel.']),
       ] },
       { id: 'shadows', title: 'Shadows', body: [
         ul([`Only a Necromancer or Shadow Monarch (${R.extractJobs.map(esc).join(', ')}) can extract shadows from defeated monsters.`,
-          `Extraction: d20 + Presence check bonus vs DC = ${R.shadow.dcBase} + ${R.shadow.dcPerRank} × (monster rank − hunter rank) + ${R.shadow.bossDc} if a boss (minimum 5). Natural 20 always succeeds; natural 1 destroys the corpse. Max ${R.shadow.maxAttempts} attempts per corpse.`,
-          'Success: the ARISE window, then name the shadow. It keeps the body of the monster it was, its rank and archetype; its grade sets its kind (Normal a normal body, Elite and Knight an elite one, Commander and Marshal a boss\'s).',
+          `Extraction rolls d20 + Presence check bonus against DC ${R.shadow.dcBase} + ${R.shadow.dcPerRank} × (monster rank − hunter rank) + ${R.shadow.bossDc} for a boss (minimum 5). A natural 20 always succeeds. A natural 1 destroys the corpse. You get up to ${R.shadow.maxAttempts} attempts per corpse.`,
+          'On success, the ARISE window opens so you can name the shadow. The shadow keeps the monster\'s rank and archetype. Its grade sets its monster kind: Normal is normal, Elite and Knight are elite, and Commander and Marshal are boss.',
           `Army capacity = floor(${F.shadowPerEff} × Presence's effective points). Summon cost (mana per shadow): ${RANKS.map(r => `${esc(r)} ${esc(R.shadow.summonMp[r])}`).join(', ')}. Unsummoning is free.`]),
       ] },
       { id: 'gates', title: 'Gates', body: [
         table(['Type', 'Notes'], [['Normal', 'A standard dungeon. You may leave at any time.'],
-          ['Red', `No exit until the boss dies. DCs inside +${R.gateSpawn.redDcBonus}. Time inside runs ×10.`], ['Double', 'A hidden second dungeon; the GM reveals it.'],
-          ['Break', 'A gate not cleared by its break day: its monsters come out into the world.']]),
-        p(`Break day = day created + break days by rank (${RANKS.filter(r => rt[r]).map(r => `${esc(r)} ${rt[r].breakDays}`).join(', ')}). The world day advances only with the GM’s Advance day button.`),
+          ['Red', `No exit until the boss dies. DCs inside +${R.gateSpawn.redDcBonus}. Time inside runs ×10.`], ['Double', 'A hidden second dungeon. The GM reveals it.'],
+          ['Break', 'A gate that is not cleared by its break day. Its monsters break out into the world.']]),
+        p(`Break day = day created + break days by rank (${RANKS.filter(r => rt[r]).map(r => `${esc(r)} ${rt[r].breakDays}`).join(', ')}). The world day advances only with the GM's Advance day button.`),
         ...gatePayLines(R).map(l => p(esc(l))),
         ...soloLines(R).map(l => p(esc(l))),
       ] },
       { id: 'loot', title: 'Loot and rarity', body: [
-        table(['Tier', 'Price', 'Sells for'], saleRows(R).map(r => [`<span style="color:${esc(R.rarities[r.rar].color)}">${esc(r.rar)}</span>`, fmt(r.price), fmt(r.sell)])),
-        p(`Prices are in gold. ${esc(saleLine(R))} Equipment slots: ${R.slots.map(esc).join(', ')}.`),
-        p(`Gate-clear loot: gold plus one weighted item roll; the boss adds one more roll. The gold is rolled once a Clear and shared as the Gates section says, so each hunter of a party of ${esc(R.gateParty)} takes the roll.`),
+        table(['Rarity', 'Price', 'Sells for'], saleRows(R).map(r => [`<span style="color:${esc(R.rarities[r.rar].color)}">${esc(r.rar)}</span>`, fmt(r.price), fmt(r.sell)])),
+        p(`Prices are in gold. ${esc(saleLine(R))} Gear slots: ${R.slots.map(esc).join(', ')}.`),
+        p(`Clearing a gate awards gold plus one weighted item roll, and a boss adds one extra item roll. Gold is rolled once per clear and split using the Gates rules, so each hunter in a party of ${esc(R.gateParty)} gets the full rolled amount.`),
         table(['Rank', 'Gold', 'Item odds'], lootRows),
       ] },
       { id: 'gm', title: 'GM cheat-sheet', body: [
-        ul([`<b>Setting a DC:</b> use the rank table. Easy ${rt.E.dc[0]}, Standard ${rt.E.dc[1]}, Hard ${rt.E.dc[2]} at E-rank; scale up by the party’s rank.`,
-          '<b>Monster stats on the fly:</b> the Bestiary\'s Generate makes one from a rank, an archetype and a kind; the monster maker shows its HP, armor, resist and speed.',
-          `<b>Awarding XP:</b> use the monster XP column per defeated monster. A fight started from no gate gives each hunter the full amount; a fight started from a gate, and its Clear, share the gate's XP as its pot (see Gates). A hunter levels at ${esc(R.xpPerLevel)} × level.`,
-          `<b>Random gate:</b> rank odds ${RANKS.map(r => `${esc(r)} ${pct(R.gateSpawn.rank, r)}%`).join(', ')}; type ${Object.keys(R.gateSpawn.type).map(k => `${esc(k)} ${pct(R.gateSpawn.type, k)}%`).join(', ')}.`,
-          'Roll with the Dice tab or the d20 button; every roll is logged with who rolled it.',
-          'Tap the PLAYER pill in the header to switch to GM mode for XP grants, free stat edits, gate and fight tools. In a room the GM is the phone that opened it.',
-          'The GM can change any number on this page in the GM screen’s Rules editor, and the change shows here at once.']),
+        ul([`<b>Setting a DC:</b> use the rank table. E-rank uses Easy ${rt.E.dc[0]}, Standard ${rt.E.dc[1]}, and Hard ${rt.E.dc[2]}. Scale up for the party's rank.`,
+          '<b>Monster stats on the fly:</b> tap Generate in the Bestiary to build a monster from a rank, archetype, and kind. The monster maker previews its HP, armor, resist, and speed.',
+          `<b>Awarding XP:</b> use the monster XP column for each defeated monster. In a fight outside a gate, each hunter gets the full amount. In a fight inside a gate, hunters split the gate's XP (see Gates). A hunter levels up at ${esc(R.xpPerLevel)} × level.`,
+          `<b>Random gate:</b> rank odds ${RANKS.map(r => `${esc(r)} ${pct(R.gateSpawn.rank, r)}%`).join(', ')}. Type odds: ${Object.keys(R.gateSpawn.type).map(k => `${esc(k)} ${pct(R.gateSpawn.type, k)}%`).join(', ')}.`,
+          'Roll from the Dice tab or the d20 button. Every roll is logged with who rolled it.',
+          'Tap the PLAYER button at the top to switch to GM mode for XP grants, free stat edits, and gate and fight tools. In a room, the GM is the person who created it.',
+          'The GM can change any number on this page in the GM screen\'s Rules editor, and updates appear here right away.']),
       ] },
     ];
   }

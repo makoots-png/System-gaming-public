@@ -86,8 +86,8 @@ test('a GM runs a fight with a status on a player\'s hunter and both phones show
   await test.step('the GM builds an encounter with the player\'s hunter and two monsters', async () => {
     await go(gm, 'combat');
     const pick = combat(gm).locator('[data-hsel]');
-    await expect(pick.locator('option', { hasText: `${HUNTER} (remote)` })).toHaveCount(1);
-    await pick.selectOption({ label: `${HUNTER} (remote)` });
+    await expect(pick.locator('option', { hasText: `${HUNTER} (player phone)` })).toHaveCount(1);
+    await pick.selectOption({ label: `${HUNTER} (player phone)` });
     await tapCombat(gm, '[data-addh]');
     await expect(gmRow(gm, HUNTER)).toHaveCount(1);
     await combat(gm).locator('[data-qline]').fill(`${MONSTER} x2, E, brute`);
@@ -221,8 +221,8 @@ test('a GM\'s HP change to a player\'s hunter in a fight stays on the GM\'s card
     expect(startHp).toBeGreaterThan(5);
     await go(gm, 'combat');
     const pick = combat(gm).locator('[data-hsel]');
-    await expect(pick.locator('option', { hasText: `${HUNTER} (remote)` })).toHaveCount(1);
-    await pick.selectOption({ label: `${HUNTER} (remote)` });
+    await expect(pick.locator('option', { hasText: `${HUNTER} (player phone)` })).toHaveCount(1);
+    await pick.selectOption({ label: `${HUNTER} (player phone)` });
     await tapCombat(gm, '[data-addh]');
     await expect(gmRow(gm, HUNTER)).toContainText(`${startHp}/`);
     await gmSelect(gm, HUNTER);
@@ -265,7 +265,7 @@ test('a status the GM puts on a remote hunter in a fight shows the same scaled n
     await dismissAll(player, 4);
     await expect(gm.locator('#gm-board .gm-card.remote', { hasText: HUNTER })).toHaveCount(1);
     await go(gm, 'combat');
-    await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (remote)` });
+    await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (player phone)` });
     await tapCombat(gm, '[data-addh]');
     await combat(gm).locator('[data-qline]').fill(`${MONSTER}, B, brute`);
     await tapCombat(gm, '[data-qadd]');

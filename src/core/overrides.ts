@@ -219,7 +219,7 @@ export function parseOverrides(v: unknown): { overrides: Rec; refused: OverrideR
 /** What the Rules editor says of each reason an override was refused, after the rule's path. */
 export const OVERRIDE_REFUSAL_WORDS: Readonly<Record<Exclude<PlainReason, 'unknown'>, string>> = {
   object: 'must be an object', list: 'must be a list', number: 'must be a number', boolean: 'must be true or false', text: 'must be text',
-  statuses: 'statuses are made in the Workshop', entry: 'is not in the shape this rule\'s entries have', length: 'has the wrong number of entries',
+  statuses: 'statuses are made in the Workshop', entry: 'does not match the format for this rule', length: 'has the wrong number of entries',
   order: 'must go from low to high',
 };
 /**

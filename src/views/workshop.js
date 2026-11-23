@@ -25,17 +25,17 @@ import { storyMeta } from '../core/story/story.ts';
 import { STORY_WORDS, isRunning } from '../core/story/run.ts';
 
 const KINDS = [
-  ['status', 'Statuses', 'A status, such as Poisoned or Slowed, has effects and goes on a hunter or a monster.', 'New status'],
-  ['item', 'Items', 'An item is gear, a potion or loot that a hunter carries, wears or uses.', 'New item'],
-  ['skill', 'Skills', 'A skill is an ability a hunter or a monster uses in a fight: a strike, a shot, a blast, a curse or a support, which can hurt, heal, shield or put on a status.', 'New skill'],
-  ['monster', 'Monsters', 'A monster of your own: its rank, archetype and kind, its abilities, starting statuses and loot, for the Bestiary and a fight.', 'New monster'],
-  ['bundle', 'Bundles', 'A bundle is a reward you saved to give again: XP, gold, items, a title, skills, statuses and boons.', 'New bundle'],
-  ['map', 'Maps', 'A battle map: walls, cover, rough ground and pits, the fields that stay on it, where each side starts and the fog. A gate may name one.', 'New map'],
-  ['feat', 'Feats', 'A feat is something a hunter does that the game counts and rewards by itself, such as 100 beasts defeated. Make your own, or change or turn off a built-in one.', 'New feat'],
+  ['status', 'Statuses', 'A status, such as Poisoned or Slowed, adds effects to a hunter or monster.', 'New status'],
+  ['item', 'Items', 'An item is gear, a potion, or loot that a hunter carries, equips, or uses.', 'New item'],
+  ['skill', 'Skills', 'A skill is an ability a hunter or monster uses in a fight. It can deal damage, heal, shield, or apply a status.', 'New skill'],
+  ['monster', 'Monsters', 'Create a custom monster with its own rank, archetype, tier, abilities, starting statuses, and loot.', 'New monster'],
+  ['bundle', 'Bundles', 'A bundle is a saved reward you can give again, including XP, gold, items, titles, skills, statuses, or custom favors (boons).', 'New bundle'],
+  ['map', 'Maps', 'A map with walls, cover, rough ground, pits, lasting fields, starting spots, and fog. You can assign a map to a gate.', 'New map'],
+  ['feat', 'Feats', 'A feat tracks something a hunter does, like defeating 100 beasts, and rewards them automatically. Create your own, or edit or turn off a built-in feat.', 'New feat'],
   ['story', 'Stories', 'A story is a set of chapters that you open one at a time over several sessions. A chapter can show the players a window, give a reward and issue a quest. Nothing in a story happens until you open its chapter.', 'New story'],
 ];
 /** The fold of examples to copy under a section: its heading, by kind. */
-const EXAMPLES_LABEL = { status: 'Kit examples to copy', skill: 'Kit examples to copy', bundle: 'Awards for roleplay to copy', story: 'Stories to copy' };
+const EXAMPLES_LABEL = { status: 'Example statuses to copy', skill: 'Example skills to copy', bundle: 'Awards for roleplay to copy', story: 'Stories to copy' };
 /** Each section's kind in a pack (src/core/pack.ts). */
 const PACK_KIND = { status: 'statuses', item: 'items', skill: 'skills', monster: 'monsters', bundle: 'rewards', map: 'maps', feat: 'feats', story: 'stories' };
 
@@ -67,7 +67,7 @@ export function register(app) {
 `);
 
   // ── each kind's rows: [id, name, tag, meta, actions] ──
-  const ACTS = { edit: 'Edit', dup: 'Duplicate', del: 'Delete', reset: 'Reset', give: 'Give to…', award: 'Award…', turnOn: 'Turn on…', share: 'Share', off: 'Turn off', on: 'Turn on' };
+  const ACTS = { edit: 'Edit', dup: 'Duplicate', del: 'Delete', reset: 'Reset', give: 'Give to…', award: 'Award…', turnOn: 'Start story…', share: 'Share', off: 'Turn off', on: 'Turn on' };
   function rowsOf(kind) {
     const L = lib();
     if (kind === 'status') {
@@ -124,7 +124,7 @@ export function register(app) {
       const def = exampleStatuses(R)[id]; if (!def) return;
       const key = Object.hasOwn(L.statuses, id) || isBuiltIn(id) ? A().effects.slug(def.label, { ...R.conditions, ...L.statuses }) : id;
       const done = store.apply('library-example-status', atLibrary(l => saveStatus(l, key, def)));
-      if (ui.wrote('Workshop', done, { full: `The library holds ${LIMITS.libraryStatuses} statuses at most.` })) ui.toast('Workshop', `${def.label} is in your statuses.`);
+      if (ui.wrote('Workshop', done, { full: `Your library can hold at most ${LIMITS.libraryStatuses} statuses.` })) ui.toast('Workshop', `${def.label} is in your statuses.`);
       return;
     }
     if (kind === 'bundle') {
@@ -138,13 +138,13 @@ export function register(app) {
       const e = EXAMPLE_STORIES.find(x => x.key === id); if (!e) return;
       const name = namedLike(L.stories, e.story.name, null) ? copyName(e.story.name, L.stories.map(x => x.name), 60) : e.story.name;
       const done = store.apply('library-example-story', atLibrary(l => saveEntry(l, 'stories', { ...e.story, name, id: store.id('st') })));
-      if (ui.wrote('Workshop', done, { full: `You have ${LIMITS.libraryStories} stories, the most the Workshop holds.` })) ui.toast('Workshop', `${name} is in your stories.`);
+      if (ui.wrote('Workshop', done, { full: `You already have ${LIMITS.libraryStories} stories, which is the maximum.` })) ui.toast('Workshop', `${name} is in your stories.`);
       return;
     }
     const k = exampleSkills(R)[Number(id)]; if (!k) return;
     const name = namedLike(L.skills, k.name, null) ? copyName(k.name, L.skills.map(x => x.name), 60) : k.name;
     const done = store.apply('library-example-skill', atLibrary(l => saveEntry(l, 'skills', /** @type {any} */ ({ ...k, name, id: store.id('s') }))));
-    if (ui.wrote('Workshop', done, { full: `The library holds ${LIMITS.librarySkills} skills at most.` })) ui.toast('Workshop', `${name} is in your skills.`);
+    if (ui.wrote('Workshop', done, { full: `Your library can hold at most ${LIMITS.librarySkills} skills.` })) ui.toast('Workshop', `${name} is in your skills.`);
   }
 
   /** The "⋯" window of a row: its other actions, Delete and Reset as danger (each still asks before it acts). */
@@ -166,7 +166,7 @@ export function register(app) {
       ${built.length ? `<details class="ws-fold ws-built"><summary>Built-in statuses (${built.length})</summary><ul class="ws-list">${built.map(k => rowHtml([k, String(BUILT_IN_STATUSES[k].label), '', '', ['edit']])).join('')}</ul></details>` : ''}
       ${builtFeats.length ? `<details class="ws-fold ws-built"><summary>Built-in feats (${builtFeats.length})</summary><ul class="ws-list">${builtFeats.map(([k, d]) => rowHtml([k, d.name, '', d.desc, ['edit', 'off']])).join('')}</ul></details>` : ''}
       ${examplesHtml(kind)}
-      ${kind === 'monster' ? '<button type="button" class="ws-more" data-bestiary>Every monster in the Bestiary</button>' : ''}</section>`;
+      ${kind === 'monster' ? '<button type="button" class="ws-more" data-bestiary>Open Bestiary</button>' : ''}</section>`;
   }
 
   // ── what a button does ──
@@ -178,14 +178,14 @@ export function register(app) {
       const def = L.statuses[id];
       if (a === 'edit') return void await A().forge.status({ mode: 'library', edit: id });
       if (a === 'dup' && def) {
-        if (Object.keys(L.statuses).length >= LIMITS.libraryStatuses) return void ui.toast('Workshop', `The library holds ${LIMITS.libraryStatuses} statuses at most.`, { kind: 'warning' });
+        if (Object.keys(L.statuses).length >= LIMITS.libraryStatuses) return void ui.toast('Workshop', `Your library can hold at most ${LIMITS.libraryStatuses} statuses.`, { kind: 'warning' });
         const label = copyName(def.label || id, Object.values({ ...app.rules().conditions, ...L.statuses }).map(d => d.label), 40), key = A().effects.slug(label, { ...app.rules().conditions, ...L.statuses });
-        return void ui.wrote('Workshop', store.apply('library-status-dup', atLibrary(l => saveStatus(l, key, { ...def, label }))), { full: `The library holds ${LIMITS.libraryStatuses} statuses at most.` });
+        return void ui.wrote('Workshop', store.apply('library-status-dup', atLibrary(l => saveStatus(l, key, { ...def, label }))), { full: `Your library can hold at most ${LIMITS.libraryStatuses} statuses.` });
       }
       if ((a === 'del' || a === 'reset') && def) {
         const ok = a === 'reset'
-          ? await ui.confirm({ title: `Reset ${def.label || id}?`, body: `Restores the built-in ${BUILT_IN_STATUSES[id].label}. Statuses already applied keep the version they have.`, danger: true, confirmLabel: 'Reset' })
-          : await ui.confirm({ title: `Delete ${def.label || id}?`, body: 'Removes it from the pickers. Statuses already applied keep working.', danger: true, confirmLabel: 'Delete' });
+          ? await ui.confirm({ title: `Reset ${def.label || id}?`, body: `This restores the default ${BUILT_IN_STATUSES[id].label} status. Active copies already on combatants keep their current version.`, danger: true, confirmLabel: 'Reset' })
+          : await ui.confirm({ title: `Delete ${def.label || id}?`, body: 'This removes the status from your lists. Active copies already on combatants keep working.', danger: true, confirmLabel: 'Delete' });
         if (ok) ui.wrote('Workshop', store.apply('library-status-del', atLibrary(l => removeStatus(l, id))));
       }
       return;
@@ -196,11 +196,11 @@ export function register(app) {
       if (!d) return;
       if (a === 'off' || a === 'on' || a === 'dup') {
         const step = a === 'off' ? featOff : a === 'on' ? featOn : duplicateFeat;
-        ui.wrote('Workshop', store.apply(`library-feat-${a}`, atLibrary(l => step(l, id))), { full: `The library holds ${LIMITS.libraryFeats} feats at most.` });
+        ui.wrote('Workshop', store.apply(`library-feat-${a}`, atLibrary(l => step(l, id))), { full: `Your library can hold at most ${LIMITS.libraryFeats} feats.` });
         return;
       }
-      if (a === 'reset' && await ui.confirm({ title: `Reset ${d.name}?`, body: 'Restores the built-in feat as it shipped. What hunters have counted toward it stays.', danger: true, confirmLabel: 'Reset' })) ui.wrote('Workshop', store.apply('library-feat-reset', atLibrary(l => removeFeat(l, id))));
-      if (a === 'del' && await ui.confirm({ title: `Delete ${d.name}?`, body: 'Nothing counts toward it any more. A hunter who earned it keeps it.', danger: true, confirmLabel: 'Delete' })) ui.wrote('Workshop', store.apply('library-feat-del', atLibrary(l => removeFeat(l, id))));
+      if (a === 'reset' && await ui.confirm({ title: `Reset ${d.name}?`, body: 'This restores the default built-in feat. Hunters keep their current progress toward it.', danger: true, confirmLabel: 'Reset' })) ui.wrote('Workshop', store.apply('library-feat-reset', atLibrary(l => removeFeat(l, id))));
+      if (a === 'del' && await ui.confirm({ title: `Delete ${d.name}?`, body: 'Hunters stop tracking progress toward this feat. Anyone who already earned it keeps it.', danger: true, confirmLabel: 'Delete' })) ui.wrote('Workshop', store.apply('library-feat-del', atLibrary(l => removeFeat(l, id))));
       return;
     }
     if (kind === 'item') {
@@ -229,10 +229,10 @@ export function register(app) {
       if (a === 'award') return A().award.open(b.rewards, b.id);
       if (a === 'edit') return void await bundleMaker(app, b);
       if (a === 'dup') {
-        if (L.rewards.length >= LIMITS.libraryRewards) return void ui.toast('Workshop', `The library holds ${LIMITS.libraryRewards} bundles at most.`, { kind: 'warning' });
+        if (L.rewards.length >= LIMITS.libraryRewards) return void ui.toast('Workshop', `Your library can hold at most ${LIMITS.libraryRewards} bundles.`, { kind: 'warning' });
         { const name = copyName(b.name, L.rewards.map(x => x.name), 60); return void ui.wrote('Workshop', A().bundles.save(name, b.rewards, null, b.window || null), savedWords('bundle', name)); }
       }
-      if (a === 'del' && await ui.confirm({ title: 'Delete bundle?', body: `${b.name}. Rewards already given from it stay given.`, danger: true, confirmLabel: 'Delete' })) A().bundles.remove(b.id);
+      if (a === 'del' && await ui.confirm({ title: 'Delete bundle?', body: `${b.name}. Hunters keep any rewards already given from this bundle.`, danger: true, confirmLabel: 'Delete' })) A().bundles.remove(b.id);
       return;
     }
     if (kind === 'story') {
@@ -253,7 +253,7 @@ export function register(app) {
       if (!mp) return;
       if (a === 'edit') return void await A().maps.make(mp);
       if (a === 'dup') return void dup('maps', mp, 'mp', 40, LIMITS.libraryMaps);
-      if (a === 'del' && await ui.confirm({ title: 'Delete map?', body: `${mp.name}. A gate that names it fights on the open arena.`, danger: true, confirmLabel: 'Delete' })) A().maps.remove(mp.id);
+      if (a === 'del' && await ui.confirm({ title: 'Delete map?', body: `${mp.name}. Any gate using this map will use the open arena instead.`, danger: true, confirmLabel: 'Delete' })) A().maps.remove(mp.id);
       return;
     }
     const B = A().bestiary, m = id ? B.get(id) : null;
@@ -266,7 +266,7 @@ export function register(app) {
   /** A copy of a library entry under a new id and "(copy)" after its name; nothing at the cap, with a toast that says so. */
   function dup(list, x, prefix, n, cap) {
     const newId = store.id(prefix);
-    ui.wrote('Workshop', store.apply(`library-${list}-dup`, atLibrary(l => duplicateEntry(l, list, x.id, { newId, name: copyName(x.name, l[list].map(e => e.name), n) }))), { full: `The library holds ${cap} of these at most.` });
+    ui.wrote('Workshop', store.apply(`library-${list}-dup`, atLibrary(l => duplicateEntry(l, list, x.id, { newId, name: copyName(x.name, l[list].map(e => e.name), n) }))), { full: `Your library can hold at most ${cap} ${list}.` });
   }
 
   app.registerView({

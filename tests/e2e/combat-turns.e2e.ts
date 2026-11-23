@@ -100,7 +100,7 @@ test('a monster stunned on its turn loses it, and the turn goes to Brakk', async
   await tapCombat(page, '.cmb-card.turn [data-cforge]');
   await page.locator('.fg-overlay [data-existing] [data-chip="stunned"]').tap();
   await expect(currentRow(page)).toContainText('Brakk Ironhide');
-  await expect(logLines(page).filter({ hasText: `${goblin} is held and loses the turn.` })).toHaveCount(1);
+  await expect(logLines(page).filter({ hasText: `${goblin} cannot act and loses the turn.` })).toHaveCount(1);
   await expect(combat(page).locator('.cmb-row', { hasText: goblin }).locator('.cmb-cs')).toContainText('Stunned');
 });
 

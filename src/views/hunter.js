@@ -256,10 +256,10 @@ export function register(app) {
     // R01: delete a local hunter. Typed-name confirm, backup first; deleting the last one makes a fresh hunter instead of refusing
     async deleteHunter(hid) {
       const h = store.hunter(hid); if (!h) return false;
-      const typed = await ui.promptText({ title: `Delete ${h.name}?`, label: `Type ${h.name} to confirm. Everything they own goes too (a backup is saved first).`, value: '', maxlength: 60 });
+      const typed = await ui.promptText({ title: `Delete ${h.name}?`, label: `Type ${h.name} to confirm. This deletes all their items and data. A backup is saved first.`, value: '', maxlength: 60 });
       if (typed == null) return false;
       if (typed.replace(/\s+/g, ' ').trim().toLowerCase() !== String(h.name).replace(/\s+/g, ' ').trim().toLowerCase()) { ui.toast('Warning', 'The name did not match. Nothing was deleted.', { kind: 'warning' }); return false; }
-      if (!store.backupNow('pre-delete-hunter') && !(await ui.confirm({ title: 'No backup saved', body: `Storage is full, so no backup of ${h.name} could be kept. Delete anyway?`, danger: true, confirmLabel: 'Delete' }))) return false;
+      if (!store.backupNow('pre-delete-hunter') && !(await ui.confirm({ title: 'No backup saved', body: `Storage is full, so a backup of ${h.name} could not be saved. Delete anyway?`, danger: true, confirmLabel: 'Delete' }))) return false;
       // the last hunter goes only with the one that takes its place: Cancel on its name deletes nothing
       const last = store.get().hunters.length <= 1;
       const fresh = last ? await ui.promptText({ title: 'Create a new hunter', label: 'New hunter name', value: 'Hunter', maxlength: 60 }) : null;
@@ -276,7 +276,7 @@ export function register(app) {
       const n = Number(m[2]); if (!n) return null;
       return { n: Math.min(n, 99999), heal: m[1] === '+' };
     },
-    amountMsg(text) { return api.parseAmount(text) ? '' : /^\s*[+-]?\s*0+\s*$/.test(String(text ?? '').normalize('NFKC')) ? 'Amount must be at least 1' : 'Type a whole number: 7 damages, +5 heals, Shift+Enter heals.'; },
+    amountMsg(text) { return api.parseAmount(text) ? '' : /^\s*[+-]?\s*0+\s*$/.test(String(text ?? '').normalize('NFKC')) ? 'Amount must be at least 1' : 'Type a whole number. Enter deals damage, and +5 or Shift+Enter heals.'; },
     // one key contract for every HP box: Enter = damage, Shift+Enter or a leading '+' = heal; ignores IME composition. null = not a trigger key
     amountFromKey(e, text) {
       if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return null;
@@ -363,7 +363,7 @@ export function register(app) {
     if (rise !== true || store.hunter(hid)?.life.at !== 'dead') return;
     const w = api.systemRaise(hid);
     if (!ui.wrote('System', w, RAISE_REFUSED)) return;
-    ui.toast('System', `The System has raised you. ${raisedLine(w.from, w.to)}.`, { kind: 'good' });
+    ui.toast('System', `The System brought you back. ${raisedLine(w.from, w.to)}.`, { kind: 'good' });
   }
   /**
    * Opens the window by itself when this phone's active hunter is first offered the raise: at a death outside a fight, or
@@ -450,7 +450,7 @@ export function register(app) {
     mount(el) {
       el.innerHTML = `
         <div class="id-read" data-idread>
-          <button type="button" class="emb-btn" data-emblem aria-label="Emblem and color"><span data-emb></span><span>Look</span></button>
+          <button type="button" class="emb-btn" data-emblem aria-label="Emblem and color"><span data-emb></span><span>Emblem</span></button>
           <div class="id-who"><div class="id-name" data-idname>Hunter</div><div class="id-sub" data-idsub></div></div>
           <button type="button" data-idedit aria-expanded="false">Edit</button>
         </div>
@@ -470,14 +470,14 @@ export function register(app) {
         </div>
         ${bar('hp', 'HP', stepBtns('hp', [-5, -1, 1, 5, 'full']))}
         <div class="hp-amt" data-hpamt-row>
-          <label class="field"><span class="lbl">HP amount</span><input data-hpamt type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" spellcheck="false" placeholder="7 or +5" title="Enter = damage, Shift+Enter or +N = heal" aria-describedby="hp-amt-msg"></label>
+          <label class="field"><span class="lbl">HP amount</span><input data-hpamt type="text" inputmode="numeric" enterkeyhint="done" autocomplete="off" spellcheck="false" placeholder="7 or +5" title="Press Enter to deal damage. Type +5 or press Shift+Enter to heal." aria-describedby="hp-amt-msg"></label>
           <button type="button" class="danger" data-hpdmg>Damage</button><button type="button" data-hpheal>Heal</button>
           <p class="hp-amt-msg" id="hp-amt-msg" data-hpmsg role="status" aria-live="polite"></p>
         </div>
         <div class="death" data-death hidden>
           <b data-life></b>
           <button type="button" class="primary" data-revive hidden>Revive</button>
-          <button type="button" class="primary" data-raise hidden>Rise</button>
+          <button type="button" class="primary" data-raise hidden>Use System revive</button>
           <p class="note" data-wayback></p>
           <p class="note" data-raise-line></p>
         </div>
@@ -506,7 +506,7 @@ export function register(app) {
         const hl = heal || a.heal, before = sheetOf(h).hp;
         const w = lifeWrite(h.id, () => (hl ? api.heal(h.id, a.n) : api.damage(h.id, a.n))); if (!ui.wrote('System', w)) return;
         const hp = sheetOf(store.hunter(h.id)).hp;
-        msg.textContent = `${hl ? 'Healed' : 'Took'} ${Math.abs(hp - before)} (asked ${a.n}). HP ${hp}.`;
+        msg.textContent = `${hl ? 'Healed' : 'Took'} ${Math.abs(hp - before)} HP (entered ${a.n}). Current HP: ${hp}.`;
         diedToast(w);
         inp.value = ''; inp.focus();
       };
@@ -554,7 +554,7 @@ export function register(app) {
         if ('raise' in d) { void offerRaise(h.id); return; }
         if ('revive' in d && app.isGM()) {
           const was = h.level; // the store writes into the hunter a view holds, so the level before is read before the write
-          if (ui.wrote('System', api.revive(h.id))) return ui.toast('System', `${h.name} is revived. ${raisedLine(was, store.hunter(h.id).level)}.`);
+          if (ui.wrote('System', api.revive(h.id))) return ui.toast('System', `${h.name} is back up. ${raisedLine(was, store.hunter(h.id).level)}.`);
         }
       });
     },
@@ -605,7 +605,7 @@ export function register(app) {
     if (dead) {
       q('[data-life]').textContent = lifeWord({ kind: 'hunter', life });
       q('[data-revive]').hidden = !gm || !can(life, 'revive');
-      q('[data-wayback]').textContent = `${WAYS_BACK} brings you back, with every status gone.`;
+      q('[data-wayback]').textContent = `${WAYS_BACK} brings you back and removes every status.`;
       q('[data-raise-line]').textContent = raiseLine(h, r, !!fightOf({ hid: h.id }));
       q('[data-raise]').hidden = !raiseOpen(h);
     }
@@ -644,7 +644,7 @@ export function register(app) {
           <button type="button" class="primary" data-confirm hidden>Confirm allocation</button>
           <button type="button" data-grant hidden>+1 point</button>
         </div>
-        <p class="dv-note">Tap a stat to roll a check. Points can be undone with &minus; until you confirm.</p>`;
+        <p class="dv-note">Tap a stat to roll a check. Tap &minus; to undo points until you confirm.</p>`;
       el.addEventListener('click', e => {
         const b = e.target.closest('button'); if (!b) return;
         const d = b.dataset, h = store.active(), role = app.isGM() ? 'gm' : 'player';
@@ -685,7 +685,7 @@ export function register(app) {
   // ═══ Panel: Derived ═══
   const shown = v => Number(v).toLocaleString('en-US', { maximumFractionDigits: 1 });
   app.registerPanel({
-    view: 'status', id: 'derived', order: 14, title: 'Derived',
+    view: 'status', id: 'derived', order: 14, title: 'Combat stats',
     mount(el) {
       el.innerHTML = `<div class="derived" data-dv></div><div class="lbl dv-sub">Check bonus</div><div class="derived" data-cb></div><p class="dv-note" data-dnote></p>`;
       app.api.detail.wire(el, () => derived(el));
@@ -708,23 +708,23 @@ export function register(app) {
       if (c.dis) notes.push('Fatigue is high: disadvantage on checks.');
       if (c.penalty) notes.push(`Penalty Zone: ${sgn(-c.penalty)} to all checks.`);
       const n = el.querySelector('[data-dnote]');
-      n.textContent = notes.join(' ') || `A check's bonus is half the stat's effective points above 10, plus the rank bonus (${sgn(rankBonus)}).`;
+      n.textContent = notes.join(' ') || `Your check bonus is half the stat's effective points above 10, rounded down, plus your rank bonus (${sgn(rankBonus)}).`;
       n.classList.toggle('bad', notes.length > 0);
   }
 
   /** A boon the player redeems: after a confirm it leaves the hunter, and the GM is told (app.api.uses: the room, or this phone's log). */
   async function redeem(hid, id) {
     const b = store.hunter(hid)?.boons.find(x => x.id === id); if (!b) return;
-    if (!await ui.confirm({ title: `Redeem ${b.name}?`, body: `${b.text ? `${b.text} ` : ''}The GM is told, and the boon is used up.`, confirmLabel: 'Redeem' })) return;
+    if (!await ui.confirm({ title: `Redeem ${b.name}?`, body: `${b.text ? `${b.text} ` : ''}Using this boon notifies the GM and consumes it.`, confirmLabel: 'Redeem' })) return;
     // the boon leaves and the GM's report is written in one write (src/core/use-told.ts)
     if (!ui.wrote('System', app.api.uses.told(hid, 'boon-redeem', h => dropBoon(h, id), { what: 'boon', name: b.name, text: b.text, target: 'self', tell: true }))) return;
-    ui.toast('System', `${b.name} redeemed. The GM has been told.`);
+    ui.toast('System', `${b.name} redeemed. The GM was notified.`);
   }
 
   /** The GM takes a boon back from a hunter on this phone: nothing is reported, nobody used it. */
   async function removeBoon(hid, id) {
     const b = store.hunter(hid)?.boons.find(x => x.id === id); if (!b) return;
-    if (!await ui.confirm({ title: 'Remove boon?', body: `${b.name}. It is taken back, not redeemed: nobody is told.`, danger: true, confirmLabel: 'Remove' })) return;
+    if (!await ui.confirm({ title: 'Remove boon?', body: `Remove ${b.name} without redeeming it. The player is not notified.`, danger: true, confirmLabel: 'Remove' })) return;
     ui.wrote('! Hunter', onHunter(hid, 'boon-remove', h => dropBoon(h, id)));
   }
 
@@ -791,7 +791,7 @@ export function register(app) {
       setHTML(el.querySelector('[data-tlist]'), h.titles.length ? h.titles.map(t => `<li class="row-li${t.id === h.titleId ? ' on' : ''}" data-title="${esc(t.id)}">
           <div class="r-main"><div class="r-name">${esc(t.name)} ${t.id === h.titleId ? '<span class="tag-on">Active</span>' : ''}</div>
           <div class="r-sub">${esc(bonusText(t.bonus))}${t.desc ? ` &middot; ${esc(t.desc)}` : ''}</div>${powers(t)}</div>
-          <div class="r-acts"><button type="button" data-tset="${esc(t.id)}">${t.id === h.titleId ? 'Unset' : 'Set active'}</button>
+          <div class="r-acts"><button type="button" data-tset="${esc(t.id)}">${t.id === h.titleId ? 'Deactivate' : 'Set active'}</button>
           ${gm ? `<button type="button" data-tedit="${esc(t.id)}" aria-label="Edit title ${esc(t.name)}">Edit</button><button type="button" class="danger" data-tdel="${esc(t.id)}" aria-label="Delete title ${esc(t.name)}">&times;</button>` : ''}</div></li>`).join('')
         : '<li class="empty">No titles earned yet.</li>');
       el.querySelector('[data-boonwrap]').hidden = !h.boons.length;
@@ -843,7 +843,7 @@ export function register(app) {
   });
 
   // ═══ Panel: GM raw edits ═══
-  const RAW = [['level', 'Level', 1], ['xp', 'XP (in level)', 0], ['points', 'Ability points', 0], ['hpAdj', 'Max HP adj', null], ['manaAdj', 'Max mana adj', null], ['gold', 'Gold', 0]];
+  const RAW = [['level', 'Level', 1], ['xp', 'Current XP', 0], ['points', 'Ability points', 0], ['hpAdj', 'Max HP bonus', null], ['manaAdj', 'Max mana bonus', null], ['gold', 'Gold', 0]];
   function rawRefresh(el) {
     const h = store.active();
     for (const [k] of RAW) setVal(el.querySelector(`[data-raw="${k}"]`), k === 'points' ? available(h, rules()) : h[k]);
@@ -858,7 +858,7 @@ export function register(app) {
         ${RAW.map(([k, l]) => ui.field(l, `<input type="number" step="1" inputmode="numeric" data-raw="${k}">`)).join('')}
         ${STAT_KEYS.map(k => ui.field(`${STAT_SHORT[k]} (base)`, `<input type="number" step="1" min="1" inputmode="numeric" data-rawstat="${k}">`)).join('')}
         ${ui.field('Rank', `<select data-rawrank>${rules().rankLevels ? Object.keys(rules().rankLevels).map(r => `<option value="${r}">${r}</option>`).join('') : ''}</select>`)}
-      </div><p class="dv-note">Direct edits. Stat edits are confirmed immediately (no refunds).</p>`;
+      </div><p class="dv-note">Changes save immediately. Stat edits lock in right away and cannot be undone with the minus button.</p>`;
       el.addEventListener('change', e => {
         const i = e.target, h = store.active(); let v = Math.trunc(Number(i.value));
         // a refused edit is told, and the fields are drawn again from the save

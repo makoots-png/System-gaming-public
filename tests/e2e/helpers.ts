@@ -227,12 +227,12 @@ export async function createRoom(gm: Page): Promise<string> {
   return ((await shown.textContent()) ?? '').trim();
 }
 
-/** A gate on the GM's Gates tab, by name: its id and the "Total XP per hunter" its card shows. */
+/** A gate on the GM's Gates tab, by name: its id and the base gate XP its card shows. */
 export async function gateByName(page: Page, name: string): Promise<{ id: string; xp: number }> {
   await go(page, 'gates');
   const card = page.locator('#view-gates .gate').filter({ has: page.locator('.gt-name').getByText(name, { exact: true }) });
   const id = (await card.getAttribute('data-id')) ?? '';
-  const xp = Number((await card.locator('.gt-notes', { hasText: 'Total XP per hunter' }).innerText()).replace(/\D/g, ''));
+  const xp = Number((await card.locator('[data-xp-val]').innerText()).replace(/\D/g, ''));
   return { id, xp };
 }
 

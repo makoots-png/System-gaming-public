@@ -4,6 +4,8 @@
 // one proves they work in one room, one after the other, on what each phone shows.
 import type { Page } from '@playwright/test';
 import { RULES } from '../../src/core/rules.ts';
+import { STASH_WORDS } from '../../src/core/trade/stash.ts';
+import { restRefusalWords } from '../../src/core/hunter/rests.ts';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, chooseList, save, startGoblinDenFight } from './helpers.ts';
 
 const KAI = 'Kai Test', MIRA = 'Mira Test', FALLEN = 'Brakk Ironhide', POTION = 'Healing Potion';
@@ -129,7 +131,7 @@ test('a whole session: a death and a raising in a fight, a rest, a fudged roll, 
     for (let i = 1; i < n; i++) await mira.locator('#view-status [data-rest]').tap();
     await expect(left).toHaveText(`Rests left this gate: 0 of ${n}.`);
     await mira.locator('#view-status [data-rest]').tap();
-    await expect(mira.locator('#toasts .toast', { hasText: `No rest left: a hunter rests ${n} time${n === 1 ? '' : 's'} a gate.` }).first()).toBeVisible();
+    await expect(mira.locator('#toasts .toast', { hasText: restRefusalWords(RULES).spent }).first()).toBeVisible();
     await expect(left).toHaveText(`Rests left this gate: 0 of ${n}.`);
   });
 
@@ -149,11 +151,11 @@ test('a whole session: a death and a raising in a fight, a rest, a fudged roll, 
 
     const forceBtn = gm.locator(`[data-weigh-force="${key}"][data-face="20"]`);
     await forceBtn.tap();
-    await expect(gm.locator('#gm-board .gm-card.remote', { hasText: KAI }).locator('[data-weightline]')).toContainText('Next roll 20');
+    await expect(gm.locator('#gm-board .gm-card.remote', { hasText: KAI }).locator('[data-weightline]')).toContainText('Next d20 forced to 20');
     await expect.poll(() => kai.evaluate(() => { const w = hunterApp.store.get().settings.sync.weights; return w ? w.hunters[hunterApp.store.active().id]?.force ?? null : null; })).toBe(20);
     const forced = await strCheck(kai, 5);
     expect(forced).toEqual({ sum: `20 + ${bonus} = ${20 + bonus}`, total: String(20 + bonus), faces: '20' });
-    await expect(gm.locator('#gm-board .gm-card.remote', { hasText: KAI }).locator('[data-weightline]')).not.toContainText('Next roll');
+    await expect(gm.locator('#gm-board .gm-card.remote', { hasText: KAI }).locator('[data-weightline]')).not.toContainText('Next d20 forced');
   });
 
   await test.step('stage 4, a trade: Mira offers Kai a potion and Kai accepts it', async () => {
@@ -196,7 +198,7 @@ test('a whole session: a death and a raising in a fight, a rest, a fudged roll, 
     const toggle = gm.locator('[data-tog="trade"]');
     if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.tap();
     await expect(gm.locator('#gm-trade [data-tr-list="gm-stash"] .tr-offer')).toHaveCount(1);
-    await expect(gm.locator('#gm-hsum-trade')).toContainText('stash: 1 kind');
+    await expect(gm.locator('#gm-hsum-trade')).toContainText(STASH_WORDS.summary(1));
 
     const stashLine = (await bag(mira, 'Stash')).locator('[data-tr-list="stash"] .tr-line', { hasText: POTION });
     await expect(stashLine).toBeVisible({ timeout: 20_000 });

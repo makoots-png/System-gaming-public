@@ -18,6 +18,7 @@ const { esc } = ui;
 /** @param {unknown} v @returns {v is Record<string, unknown>} */
 const isObj = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const RANK_C = { E: '#9fb6c9', D: '#59e6a8', C: '#4dd8ff', B: '#4d8cff', A: '#c79bff', S: '#ffc94d' }; // = --rank-* in app.css
+const COLOR_NAMES = { '#4dd8ff': 'Cyan', '#59e6a8': 'Mint', '#ffc94d': 'Gold', '#ff6b3d': 'Orange', '#ff4d5e': 'Red', '#c79bff': 'Purple', '#4d8cff': 'Blue', '#ff7ad9': 'Pink', '#dff3ff': 'Ice white', '#9fb6c9': 'Silver' };
 const hexRgb = x => [1, 3, 5].map(i => parseInt(x.slice(i, i + 2), 16));
 const TOUCH = '@media (pointer:coarse),(max-width:720px)'; // = the app.css touch-sizing block: 44px targets only there
 
@@ -76,12 +77,12 @@ export function register(app) {
       <div class="lbl">Emblem</div>
       <div class="cz-grid" role="group" aria-label="Emblem">
         <button type="button" data-pe="" aria-pressed="${!pick.e}" aria-label="Initial">${badge({ ...store.hunter(pick.hid), emblem: '', color: pick.c }, 'sm')}</button>
-        ${iconsOf('emblem').map(k => `<button type="button" data-pe="${k}" aria-pressed="${pick.e === k}" aria-label="${k}">${badge({ emblem: k, color: pick.c, rank: (store.hunter(pick.hid) || {}).rank }, 'sm')}</button>`).join('')}
+        ${iconsOf('emblem').map(k => `<button type="button" data-pe="${k}" aria-pressed="${pick.e === k}" aria-label="${esc(iconDef(k).label)}">${badge({ emblem: k, color: pick.c, rank: (store.hunter(pick.hid) || {}).rank }, 'sm')}</button>`).join('')}
       </div>
       <div class="lbl">Color</div>
       <div class="cz-grid" role="group" aria-label="Color">
         <button type="button" data-pc="" aria-pressed="${!pick.c}" aria-label="Rank color"><span class="cz-sw" style="--sw:${RANK_C[(store.hunter(pick.hid) || {}).rank] || RANK_C.E}"></span></button>
-        ${HUNTER_COLORS.map(c => `<button type="button" data-pc="${c}" aria-pressed="${pick.c === c}" aria-label="Color ${c}"><span class="cz-sw" style="--sw:${c}"></span></button>`).join('')}
+        ${HUNTER_COLORS.map(c => `<button type="button" data-pc="${c}" aria-pressed="${pick.c === c}" aria-label="Color ${COLOR_NAMES[c] || c}"><span class="cz-sw" style="--sw:${c}"></span></button>`).join('')}
       </div></div>`;
   document.addEventListener('click', e => {
     const b = e.target.closest('.cz-pick [data-pe],.cz-pick [data-pc]'); if (!b) return;
@@ -131,12 +132,12 @@ export function register(app) {
     id: 'device', label: 'Device', icon: '◐', order: 98,
     mount(el) {
       el.innerHTML = `<section class="win"><span class="cb"></span><h2>Device</h2>
-        <p class="cz-note">These settings are for this phone only. Your save, a backup and the room never hold them.</p>
-        <div class="cz-sec"><h3>Accent</h3><div class="cz-grid" role="group" aria-label="Accent" data-acc></div></div>
+        <p class="cz-note">These settings stay on this device only. They are not included in saves, backups, or rooms.</p>
+        <div class="cz-sec"><h3>Accent color</h3><div class="cz-grid" role="group" aria-label="Accent color" data-acc></div></div>
         <div class="cz-sec"><h3>Text size</h3><div data-text></div></div>
-        <div class="cz-sec"><h3>Motion</h3><div data-motion></div><p class="cz-note">Follow device uses your phone's reduce-motion setting. Reduce keeps the screen still, and Full always moves.</p></div>
+        <div class="cz-sec"><h3>Motion</h3><div data-motion></div><p class="cz-note">Follow device matches your phone's reduce-motion setting. Reduce turns off animations, and Full keeps all animations on.</p></div>
         <div class="cz-sec"><h3>Feedback</h3>
-          <label class="cz-check"><input type="checkbox" data-pf="haptics"><span>Vibrate on a level up, your turn, a quest done and damage</span></label>
+          <label class="cz-check"><input type="checkbox" data-pf="haptics"><span>Vibrate on level up, your turn, quest completion, and damage</span></label>
           <p class="cz-note" data-novib hidden>This phone or browser cannot vibrate.</p>
           <label class="cz-check"><input type="checkbox" data-pf="sound"><span>Sound on</span></label></div>
       </section>`;
@@ -185,7 +186,7 @@ export function register(app) {
       const h = store.hunter(hid), l = h && h.loadouts.find(x => x.id === id); if (!l) return null;
       const skipped = [], kept = [];
       if (LO.inFight(hid)) {
-        ui.toast('Loadout', 'Gear cannot change during a fight.', { kind: 'warning' });
+        ui.toast('Loadout', 'You cannot change gear during a fight.', { kind: 'warning' });
         return { skipped, kept: [...rules().slots] };
       }
       if (!ui.wrote('Loadout', store.apply('loadout-swap', s => { const r = swapLoadout(s, hid, id, rules(), false); if ('save' in r) { skipped.push(...r.skipped); return r.save; } return r; }))) return null;
@@ -206,20 +207,20 @@ export function register(app) {
         { label: 'Delete', value: 'del', danger: true }, { label: 'Close', value: null, cancel: true }] });
     if (v === 'swap') LO.swap(hid, id);
     else if (v === 'ren') { const n = await ui.promptText({ title: 'Rename loadout', label: 'Name', value: l.name, maxlength: 24 }); if (n) ui.wrote('Loadout', LO.rename(hid, id, n), LOADOUT_WORDS); }
-    else if (v === 'ow') { if (await ui.confirm({ title: `Overwrite ${l.name}?`, body: 'It will hold the gear you have on now.', confirmLabel: 'Overwrite' })) ui.wrote('Loadout', LO.overwrite(hid, id), LOADOUT_WORDS); }
+    else if (v === 'ow') { if (await ui.confirm({ title: `Overwrite ${l.name}?`, body: 'This replaces the saved loadout with the gear you have equipped now.', confirmLabel: 'Overwrite' })) ui.wrote('Loadout', LO.overwrite(hid, id), LOADOUT_WORDS); }
     else if (v === 'del') { if (await ui.confirm({ title: `Delete ${l.name}?`, danger: true, confirmLabel: 'Delete' })) ui.wrote('Loadout', LO.remove(hid, id), LOADOUT_WORDS); }
   }
   app.registerPanel({
     view: 'status', id: 'loadouts', order: 46, title: 'Loadouts',
     mount(el) {
-      el.innerHTML = `<ul class="lo-list" data-lolist></ul><p class="cz-note" data-loempty>Save the gear you have on as a set, then swap it back in one tap.</p>
-        <div class="lo-acts"><button type="button" data-losave>Save current gear</button></div><p class="cz-note" data-lofight hidden>Gear cannot change during a fight.</p>`;
+      el.innerHTML = `<ul class="lo-list" data-lolist></ul><p class="cz-note" data-loempty>Save your equipped gear as a loadout so you can swap to it in one tap.</p>
+        <div class="lo-acts"><button type="button" data-losave>Save current gear</button></div><p class="cz-note" data-lofight hidden>You cannot change gear during a fight.</p>`;
       el.addEventListener('click', async e => {
         const b = e.target.closest('button'); if (!b) return; const hid = store.active().id;
         if (b.dataset.loswap) return LO.swap(hid, b.dataset.loswap);
         if (b.dataset.lomore) return manageLoadout(hid, b.dataset.lomore);
         if ('losave' in b.dataset) {
-          const n = await ui.promptText({ title: 'Save loadout', label: 'Name', value: `Set ${store.active().loadouts.length + 1}`, maxlength: 24 });
+          const n = await ui.promptText({ title: 'Save loadout', label: 'Name', value: `Loadout ${store.active().loadouts.length + 1}`, maxlength: 24 });
           if (n) ui.wrote('Loadout', LO.save(hid, n), LOADOUT_WORDS);
         }
       });
@@ -232,7 +233,7 @@ export function register(app) {
           <button type="button" class="lo-more" data-lomore="${esc(l.id)}" aria-label="Manage ${esc(l.name)}">⋯</button></li>`;
       }).join('');
       el.querySelector('[data-loempty]').hidden = h.loadouts.length > 0;
-      const sv = el.querySelector('[data-losave]'); sv.disabled = h.loadouts.length >= cap; sv.textContent = h.loadouts.length >= cap ? `Full (${cap})` : 'Save current gear';
+      const sv = el.querySelector('[data-losave]'); sv.disabled = h.loadouts.length >= cap; sv.textContent = h.loadouts.length >= cap ? `Loadouts full (${cap})` : 'Save current gear';
       el.querySelector('[data-lofight]').hidden = !LO.inFight(h.id);
     },
   });
@@ -285,7 +286,7 @@ export function register(app) {
         /** @type {import('../core/protocol.ts').BuildChange} */
         const build = isObj(v) ? { tier: Number(v.tier), pick: v.pick === 1 ? 1 : 0 } : v === 'respec' ? 'respec' : { path: String(v) };
         const ok = A().sync.post(A().sync.event('award', { to: [who.remote], rewards: { ...newRewards(), build } })).ok;
-        ui.toast('GM', ok ? 'Build change sent.' : 'Not in a room: nothing was sent.', { kind: ok ? 'info' : 'warning' });
+        ui.toast('GM', ok ? 'Build change sent.' : 'Not in a room. Nothing was sent.', { kind: ok ? 'info' : 'warning' });
       } else {
         const h = store.hunter(who.hunterId);
         ui.wrote('Build', isObj(v) ? BD.pick(who.hunterId, Number(v.tier), v.pick === 1 ? 1 : 0) : v === 'respec' ? BD.respec(who.hunterId) : BD.setPath(who.hunterId, v, true), h ? respecWords(h) : {});
@@ -308,7 +309,7 @@ export function register(app) {
   async function choosePath(hid, id) {
     const p = pathOf(rules(), id); if (!p) return;
     const rows = (p.tiers || []).map((t, i) => `<li><span>Rank ${RANKS[i] || '?'}</span><span>${esc(perkText(perkOf(p, i, 0)))} <i>or</i> ${esc(perkText(perkOf(p, i, 1)))}</span></li>`).join('');
-    const ok = await ui.system({ tag: '! Path', title: p.name || id, kind: 'info', body: 'You take one perk at each rank. The path stays until a respec, which costs gold.', html: `<ul class="bd-pv">${rows}</ul>`,
+    const ok = await ui.system({ tag: '! Path', title: p.name || id, kind: 'info', body: 'You pick one perk at each rank. Your path stays until you respec, which costs gold.', html: `<ul class="bd-pv">${rows}</ul>`,
       actions: [{ label: 'Cancel', value: false, cancel: true }, { label: 'Choose path', value: true, primary: true }] });
     if (ok === true) ui.wrote('Build', BD.setPath(hid, id));
   }
@@ -328,8 +329,8 @@ export function register(app) {
   }
   async function confirmAuto(hid) {
     const h = store.hunter(hid), plan = allocPlan(h); if (!Object.keys(plan).length) return;
-    const ok = await ui.system({ tag: '! Points', title: 'Auto-place points', kind: 'info', html: `<ul class="bd-pv">${deltaRows(h, plan)}</ul>`, body: 'You can still undo with − until you confirm.',
-      actions: [{ label: 'Cancel', value: false, cancel: true }, { label: 'Place points', value: true, primary: true }] });
+    const ok = await ui.system({ tag: '! Points', title: 'Auto-place ability points', kind: 'info', html: `<ul class="bd-pv">${deltaRows(h, plan)}</ul>`, body: 'You can still undo with the minus button until you confirm.',
+      actions: [{ label: 'Cancel', value: false, cancel: true }, { label: 'Place ability points', value: true, primary: true }] });
     if (ok === true) ui.wrote('Points', BD.auto(hid));
   }
   app.registerPanel({
@@ -353,7 +354,7 @@ export function register(app) {
     update(el) {
       const h = store.active(), R = rules(), p = pathOf(R, h.build.path), gm = app.isGM(), open = tiersOpen(p, h.rank);
       let html;
-      if (!on()) html = `<p class="cz-note bd-off">The GM has turned builds off. Your path is kept.</p>`;
+      if (!on()) html = `<p class="cz-note bd-off">The GM turned builds off. Your saved path is still kept.</p>`;
       else if (!p) html = `<p class="cz-note">Pick a path. Each rank unlocks one perk.</p>
         <div class="bd-paths">${Object.keys(R.paths || {}).filter(id => pathOf(R, id)).map(id => `<button type="button" data-bdpath="${esc(id)}"${canPick() ? '' : ' disabled'}><span>${esc(R.paths[id].name || id)}</span>
           <small>${esc(Object.keys(R.paths[id].alloc || {}).map(k => BONUS_LABELS[k] || k).join(' · '))}</small></button>`).join('')}</div>`;
@@ -366,12 +367,12 @@ export function register(app) {
               ${[0, 1].map(c => `<button type="button" data-bdtier="${i}" data-bdc="${c}" aria-pressed="${got === c}"${live ? '' : ' disabled'}>${esc(perkText(perkOf(p, i, c)))}</button>`).join('')}</li>`;
           }).join('')}</ol>
           ${canPick() ? '' : '<p class="cz-note">The GM picks perks in this game.</p>'}
-          <div class="bd-acts">${free > 0 && Object.keys(allocPlan(h)).length ? `<button type="button" data-bdauto>Auto-place ${free} point${free === 1 ? '' : 's'}</button>` : ''}${
+          <div class="bd-acts">${free > 0 && Object.keys(allocPlan(h)).length ? `<button type="button" data-bdauto>Auto-place ${free} ability point${free === 1 ? '' : 's'}</button>` : ''}${
             !gm && canPick() ? `<button type="button" data-bdbuy>Respec (${ui.fmt(respecCost(h))} gold)</button>` : ''}</div>`;
       }
       if (el._h !== html) { el._h = html; el.querySelector('[data-bd]').innerHTML = html; }
       el.querySelector('[data-bdgm]').innerHTML = gm ? `<button type="button" data-bdset>Set path</button><button type="button" data-bdrespec class="danger"${h.build.path ? '' : ' disabled'}>Respec</button>
-        <button type="button" data-bdtoggle aria-pressed="${on()}">Builds: ${on() ? 'on' : 'off'}</button><button type="button" data-bdpp aria-pressed="${B().playerPick !== false}">Players pick: ${B().playerPick !== false ? 'yes' : 'no'}</button>
+        <button type="button" data-bdtoggle aria-pressed="${on()}">Build paths: ${on() ? 'On' : 'Off'}</button><button type="button" data-bdpp aria-pressed="${B().playerPick !== false}">Players choose perks: ${B().playerPick !== false ? 'Yes' : 'No'}</button>
         <button type="button" data-bdreset>Reset build rules</button>` : '';
     },
   });

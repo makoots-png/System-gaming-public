@@ -26,7 +26,7 @@ async function angelFight(device: (label: string, o?: DeviceOptions) => Promise<
   await go(gm, 'combat');
   const sw = combat(gm).locator('[data-mythsw-btn]');
   await expect(sw).toHaveAttribute('aria-pressed', 'true');
-  await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (remote)` });
+  await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (player phone)` });
   await combat(gm).locator('[data-addh]').tap();
   const label = await combat(gm).locator('[data-msel] option', { hasText: script.name }).first().textContent();
   await combat(gm).locator('[data-msel]').selectOption({ label: label ?? '' });
@@ -52,7 +52,7 @@ test('a GM sees the Angel\'s omen and lands it with one tap', async ({ device })
   await expect(combat(gm).locator('.myth-title')).toHaveText(`OMEN: ${w.name}`);
   await expect(combat(gm).locator('.myth-when')).toHaveText(`Lands on its next turn, on ${HUNTER}.`);
   await expect(combat(gm).locator('.myth-name')).toHaveText(script.name);
-  await expect(combat(gm).locator('.myth-turn')).toHaveText(`${script.name}'s turn: the omen lands.`);
+  await expect(combat(gm).locator('.myth-turn')).toHaveText(`${script.name}'s turn. The omen lands.`);
   await shot(gm, 'gm-omen');
   await test.step('every phone reads the same omen, and the hunter it is aimed at is told', async () => {
     await expect(combat(player).locator('.myth-title')).toHaveText(`OMEN: ${w.name}`);

@@ -27,7 +27,7 @@ import { tooLarge } from '../core/size.ts';
 
 const BONUS_LABEL = { ...BONUS_LABELS, hpMax: 'Max HP', manaMax: 'Max mana' };
 const KINDS = /** @type {const} */ (['strike', 'shot', 'blast', 'curse', 'support']);
-const KIND_LABEL = { strike: 'Strike', shot: 'Shot', blast: 'Blast', curse: 'Curse', support: 'Support', none: 'No fight use' };
+const KIND_LABEL = { strike: 'Strike (melee)', shot: 'Shot (ranged)', blast: 'Blast (area)', curse: 'Curse (spell)', support: 'Support (heal or shield)', none: 'No fight use' };
 const AIM_LABEL = { foe: 'On a foe', ally: 'On an ally', self: 'On the user', place: 'On a place' };
 const EFFECT_LABEL = { physical: 'Physical damage', magical: 'Magical damage', heal: 'Heals', shield: 'Shield' };
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
@@ -105,17 +105,17 @@ export function register(app) {
           <div class="lbl">Type</div>
           ${M.chips('type', [['active', 'Active'], ['passive', 'Passive']], type, { label: 'Type' })}
           ${ui.field('Description', `<textarea id="skm-desc" maxlength="500">${esc(was ? was.desc : '')}</textarea>`)}
-          ${ui.field('Badge', `<input type="text" id="skm-label" maxlength="${SKILL_BOUNDS.label}" autocomplete="off" placeholder="Empty: its level (Lv.${was ? was.level : 1})" value="${esc(was && was.label ? was.label : '')}">`)}
+          ${ui.field('Custom label', `<input type="text" id="skm-label" maxlength="${SKILL_BOUNDS.label}" autocomplete="off" placeholder="Default: level (Lv.${was ? was.level : 1})" value="${esc(was && was.label ? was.label : '')}">`)}
           <div data-active>
-            <div class="lbl">Kind</div>
-            ${M.chips('kind', [...KINDS, 'none'].map(k => [k, KIND_LABEL[k]]), kind, { label: 'Kind' })}
+            <div class="lbl">Ability type</div>
+            ${M.chips('kind', [...KINDS, 'none'].map(k => [k, KIND_LABEL[k]]), kind, { label: 'Ability type' })}
             <div data-self-w><div class="lbl">Affects</div>${M.chips('aim', [['ally', 'An ally'], ['self', 'The user']], wasAbility && wasAbility.aim === 'self' ? 'self' : 'ally', { label: 'Affects' })}</div>
             <div data-ability-form></div>
           </div>
-          <div data-passive><div class="lbl">Bonus while known</div>${M.bonus(was && was.type === 'passive' ? was.bonus : {})}
+          <div data-passive><div class="lbl">Passive stat bonuses</div>${M.bonus(was && was.type === 'passive' ? was.bonus : {})}
             <details class="mk-group" data-group="worn"><summary data-sum="worn"></summary><div class="mk-group-body">
-              <label class="mk-check"><input type="checkbox" data-worn${wasWorn ? ' checked' : ''}><span>In a fight, its hunter wears a status</span></label>
-              <div data-worn-f><div class="lbl">What the status does</div><div data-worn-fx></div><div data-worn-kit></div></div>
+              <label class="mk-check"><input type="checkbox" data-worn${wasWorn ? ' checked' : ''}><span>Grants a status during a fight</span></label>
+              <div data-worn-f><div class="lbl">Status effects</div><div data-worn-fx></div><div data-worn-kit></div></div>
             </div></details></div>
           </div><div class="skm-col" data-later>
           <div data-active-fx><div class="lbl">Effects on each target</div><div data-fx></div></div>
@@ -172,7 +172,7 @@ export function register(app) {
           if (fight) form.setKind(oneOf(kind, KINDS, 'strike'));
           if ($('[data-worn]').checked) wornEditors();
           $('[data-worn-f]').hidden = !$('[data-worn]').checked;
-          $('[data-sum="worn"]').textContent = $('[data-worn]').checked ? 'In a fight: wears a status' : 'In a fight: nothing more';
+          $('[data-sum="worn"]').textContent = $('[data-worn]').checked ? 'Fight status: set' : 'Fight status: none';
         };
         /**
          * The worth line under the preview (worth.ts, kits design 5.1): an ability with the credit of the mode that opens it,
@@ -203,7 +203,7 @@ export function register(app) {
             const form = formSkill();
             if (!form.name) { shell.error('Give the skill a name.'); $('#skm-name').focus(); return undefined; }
             if (form.type === 'active' && form.ability && form.ability.react && !form.ability.ops.every(reactionMayHold)) {
-              shell.error('A reaction cannot push, pull or give an extra action. Take that effect off, or untick A reaction.'); return undefined;
+              shell.error('A reaction cannot push, pull, or grant an extra action. Remove that effect or uncheck Reaction.'); return undefined;
             }
             const big = form.type === 'active' ? (form.ability ? tooLarge('ability', form.ability) : null) : form.worn ? tooLarge('status', form.worn) : null;
             if (big) { shell.error(big); return undefined; }
@@ -242,7 +242,7 @@ export function register(app) {
     }
     if (remote.length) {
       const S = app.api.sync, sent = S.post(S.event('award', { to: remote, rewards: { ...newRewards(), skills: [k] } }));
-      if (!sent.ok) ui.toast('Warning', `Not in a room: ${k.name} was not sent to the players.`, { kind: 'warning' });
+      if (!sent.ok) ui.toast('Warning', `Not in a room. ${k.name} was not sent to the players.`, { kind: 'warning' });
       else names.push(...remote.map(key => sheetName(app.api.sync.remoteSheets(), key, 'a player')));
     }
     return names;
@@ -277,12 +277,12 @@ export function register(app) {
       ${s.desc ? `<div class="sk-desc">${esc(s.desc)}</div>` : ''}
       <div class="sk-acts">
         ${s.type === 'active' ? `<button type="button" data-use="${esc(s.id)}" aria-label="Use ${esc(s.name)}">Use</button>` : ''}
-        ${typeof s.perk === 'string' ? '<button type="button" data-jump="build">Build</button>' /* path skill: rebuilt from the build, never edited here */ : `<button type="button" data-lvup="${esc(s.id)}"${max ? ' disabled' : ''} aria-label="Level up ${esc(s.name)}">Lv +</button>
+        ${typeof s.perk === 'string' ? '<button type="button" data-jump="build">View in Build</button>' /* path skill: rebuilt from the build, never edited here */ : `<button type="button" data-lvup="${esc(s.id)}"${max ? ' disabled' : ''} aria-label="Level up ${esc(s.name)}">Level up</button>
         <button type="button" data-edit="${esc(s.id)}" aria-label="Edit ${esc(s.name)}">Edit</button>
         <button type="button" class="icon-btn danger" data-del="${esc(s.id)}" aria-label="Remove skill ${esc(s.name)}">&times;</button>`}
       </div></li>`;
   };
-  const cards = () => { const list = store.active().skills; return list.length ? list.map(card).join('') : '<li class="empty">No skills acquired.</li>'; };
+  const cards = () => { const list = store.active().skills; return list.length ? list.map(card).join('') : '<li class="empty">No skills yet.</li>'; };
   const acquired = (k, names) => ui.system({ tag: '! Notification', title: 'Skill acquired', kind: 'info', body: k.name,
     lines: [`${k.type === 'active' ? 'Active' : 'Passive'} skill · ${k.label || 'Lv.' + k.level}`, ...(names ? [`Given to: ${names.join(', ')}`] : [])] });
   /** What the player reads when a skill of `k`'s name is held already (skills-held.ts `held`). */

@@ -4,6 +4,8 @@ Every sentence the app shows follows this file. The wording pass (`final/notes-w
 
 ## The voice
 
+`docs/guide/voice.md` is the main style guide for every player- and GM-facing word. Read it first, and keep using the glossary below for exact game terms.
+
 **Plain first (the owner, Nov 19).** Of an award's line that read "The scene pushed and the hunter did not move": "such ai slop garbage! Don't be clever. Cleverness in player or gm facing text is the devil." This rule outranks every other line of this file:
 
 - Say what happened in the words you would use to a friend across the table. Who did what. "Stayed in character during a hard scene."

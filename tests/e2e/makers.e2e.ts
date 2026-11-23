@@ -4,7 +4,7 @@
 import type { Locator, Page } from '@playwright/test';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, answerWindow, startGoblinDenFight, openApp, chooseList } from './helpers.ts';
 import { RULES } from '../../src/core/rules.ts';
-import { itemSpend } from '../../src/core/registry/item-budget.ts';
+import { itemSpend, spendLine } from '../../src/core/registry/item-budget.ts';
 import type { ItemTemplate } from '../../src/core/registry/items.ts';
 import { baseStats } from '../../src/core/stats.ts';
 import type { StatKey } from '../../src/core/stats.ts';
@@ -19,12 +19,13 @@ import type { Ability } from '../../src/core/combat/ability-types.ts';
 import { modified, OP_KINDS, statusKey } from '../../src/core/combat/effect-ops.ts';
 import type { Origin, StatusDef } from '../../src/core/combat/effect-ops.ts';
 import { parseOp } from '../../src/core/combat/fight-parse.ts';
-import { formulaOf as formulaNow, abilityOf, defaultTicks, recommended, sampleBody } from '../../src/core/registry/ability-kinds.ts';
+import { formulaOf as formulaNow, abilityOf, defaultTicks, describeAbility, recommended, sampleBody } from '../../src/core/registry/ability-kinds.ts';
 import { fightId, reduce } from '../../src/core/combat/fight.ts';
 import type { Command, Ctx, Fight, NewRow } from '../../src/core/combat/fight.ts';
 import { UNFINISHED_ROWS, newRewards } from '../../src/core/rewards.ts';
 import { EXAMPLE_STORIES } from '../../src/core/registry/stories.ts';
 import { rowHp } from '../../src/core/combat/row-hp.ts';
+import { MONSTER_TRAITS, TRAIT_LABEL } from '../../src/core/registry/monsters.ts';
 import { iconsOf } from '../../src/core/registry/icons.ts';
 
 const combat = (page: Page) => page.locator('#view-combat');
@@ -156,7 +157,7 @@ test('from the Workshop, New status has no Rounds, no Apply existing and no Save
   await workshop(page, 'status').locator('[data-new]').tap();
   await expect(d.getByRole('heading', { name: 'New status' })).toBeVisible();
   await expect(d.getByLabel('Rounds', { exact: true })).toHaveCount(0);
-  await expect(d.getByText('Apply existing')).toHaveCount(0);
+  await expect(d.getByText('Apply existing status')).toHaveCount(0);
   await expect(d.getByText('Save to library')).toHaveCount(0);
   await expect(d.locator('.mk-actions button')).toHaveText(['Cancel', 'Save status']);
   await d.locator('[data-name]').fill('Ember Mark');
@@ -287,7 +288,7 @@ test('a GM makes epic gauntlets from the heavy kit with +2 STR; a hunter who wea
   await expect(d.locator('[data-gear="resist"]')).toHaveValue('6');
   await d.locator('[data-bonus="str"]').fill('2');
   await expect(d.locator('.mk-preview')).toContainText('Weight 3 · Armor 6 · Resist 6');
-  await expect(d.locator('.mk-preview')).toContainText('Worn: +2 STR');
+  await expect(d.locator('.mk-preview')).toContainText('Equipped: +2 STR');
   await d.locator('[data-apply]').tap();
   await expect(d).toHaveCount(0);
 
@@ -322,9 +323,9 @@ test('in the item maker a consumable shows no slot, no gear numbers and no bonus
   await d.locator('[data-chips="attack"] [data-chip="shot"]').tap();
   // a weapon of two or more dice weighs 4 (weaponWeight): left blank, the weight is the rule's, so a change of the dice moves it
   await expect(d.locator('[data-gear="weight"]')).toHaveValue('');
-  await expect(d.locator('[data-gear="weight"]')).toHaveAttribute('placeholder', 'By the rule: 4');
+  await expect(d.locator('[data-gear="weight"]')).toHaveAttribute('placeholder', 'Default: 4');
   await expect(d.locator('.mk-preview')).toContainText('Weight 4');
-  await expect(d.locator('.mk-preview')).toContainText('Shot with 2d6');
+  await expect(d.locator('.mk-preview')).toContainText('Shot (ranged) with 2d6');
   await d.locator('#lf-dice').fill('1d6');
   await expect(d.locator('.mk-preview')).toContainText('Weight 1');
 });
@@ -363,15 +364,15 @@ test('a GM grades an epic item Epic+: the price by the rule is gradeStep times t
     await d.locator('#lf-rar').selectOption('epic');
     await expect(grades.locator('[data-chip]')).toHaveText(['Epic−', 'Epic', 'Epic+']);
     await expect(grades.locator('[data-chip="0"]')).toHaveAttribute('aria-pressed', 'true');
-    await expect(value).toHaveAttribute('placeholder', `By the rule: ${Math.round(clearB)}`);
+    await expect(value).toHaveAttribute('placeholder', `Default: ${Math.round(clearB)}`);
   });
 
   await test.step('Epic+ costs gradeStep times the Clear, and as a consumable usedUpShare of that', async () => {
     await grades.locator('[data-chip="1"]').tap();
-    await expect(value).toHaveAttribute('placeholder', `By the rule: ${Math.round(clearB * RULES.gradeStep)}`);
+    await expect(value).toHaveAttribute('placeholder', `Default: ${Math.round(clearB * RULES.gradeStep)}`);
     await expect(d.locator('.mk-preview')).toContainText('Epic+');
     await d.locator('[data-chips="type"] [data-chip="consumable"]').tap();
-    await expect(value).toHaveAttribute('placeholder', `By the rule: ${Math.round(clearB * RULES.gradeStep * RULES.usedUpShare)}`);
+    await expect(value).toHaveAttribute('placeholder', `Default: ${Math.round(clearB * RULES.gradeStep * RULES.usedUpShare)}`);
     await d.locator('[data-chips="type"] [data-chip="material"]').tap();
     await d.locator('[data-apply]').tap();
     await expect(d).toHaveCount(0);
@@ -384,7 +385,7 @@ test('a GM grades an epic item Epic+: the price by the rule is gradeStep times t
     await go(page, 'workshop');
     await workshop(page, 'item').locator(`li[data-id="${saved.id}"] [data-act="edit"]`).tap();
     await expect(grades.locator('[data-chip="1"]')).toHaveAttribute('aria-pressed', 'true');
-    await expect(value).toHaveAttribute('placeholder', `By the rule: ${Math.round(clearB * RULES.gradeStep)}`);
+    await expect(value).toHaveAttribute('placeholder', `Default: ${Math.round(clearB * RULES.gradeStep)}`);
   });
 });
 
@@ -402,15 +403,18 @@ test('the item maker says what a rare weapon spends against its grade, names the
   await d.locator('[data-bonus="str"]').fill('2');
 
   await test.step('a weighed item: its points, what its grade holds, and the grade that holds it', async () => {
-    await expect(spend).toHaveText('Spends 2.0 points. Rare holds 3.1 to 3.7; this is Rare− (up to 3.1).');
+    const basePiece: ItemTemplate = { name: 'Fang', rar: 'rare', type: 'weapon', slot: 'weapon', qty: 1, dice: '1d12', attack: 'strike', bonus: { str: 2 }, desc: '', armor: 0, resist: 0 };
+    const s = itemSpend(basePiece, RULES)!;
+    await expect(spend).toHaveText(spendLine(s, RULES, 'rare', 0).words);
     await grades.locator('[data-chip="-1"]').tap();
-    await expect(spend).toHaveText('Spends 2.0 points. Rare− holds up to 3.1.');
+    await expect(spend).toHaveText(spendLine(s, RULES, 'rare', -1).words);
     await expect(spend).not.toHaveClass(/\bover\b/);
   });
 
   await test.step('past the tier\'s top it warns, and never stops the save', async () => {
+    const overPiece: ItemTemplate = { name: 'Fang', rar: 'rare', type: 'weapon', slot: 'weapon', qty: 1, dice: '1d12', attack: 'strike', bonus: { str: 6 }, desc: '', armor: 0, resist: 0 };
     await d.locator('[data-bonus="str"]').fill('6');
-    await expect(spend).toHaveText('Spends 6.0 points, past the top of Rare+ (4.4): stronger than any grade of Rare.');
+    await expect(spend).toHaveText(spendLine(itemSpend(overPiece, RULES)!, RULES, 'rare', -1).words);
     await expect(spend).toHaveClass(/\bover\b/);
     await d.locator('[data-bonus="str"]').fill('2');
   });
@@ -419,10 +423,10 @@ test('the item maker says what a rare weapon spends against its grade, names the
   // (0.59 a point at rare before package A, 0.66 at C after), and this step holds that the maker shows the rule's sum.
   await test.step('Lethality is weighed (balance plan section 9, on a same-rank foe in its kit at its tier): +2 Strength and 1 Lethality spend what the rule says, more than Strength alone', async () => {
     const piece: ItemTemplate = { name: 'Fang', rar: 'rare', type: 'weapon', slot: 'weapon', qty: 1, dice: '1d12', attack: 'strike', bonus: { str: 2, armorPenFlat: 1 }, desc: '', armor: 0, resist: 0 };
-    const points = itemSpend(piece, RULES)!.points;
-    expect(points).toBeGreaterThan(2);
+    const s = itemSpend(piece, RULES)!;
+    expect(s.points).toBeGreaterThan(2);
     await d.locator('[data-bonus="armorPenFlat"]').fill('1');
-    await expect(spend).toHaveText(`Spends ${points.toFixed(1)} points. Rare− holds up to 3.1.`);
+    await expect(spend).toHaveText(spendLine(s, RULES, 'rare', -1).words);
   });
 
   await test.step('a consumable has no budget, so no line', async () => {
@@ -443,7 +447,7 @@ test('on a 390 px phone the item maker\'s spend line, past the tier\'s top with 
   await d.locator('[data-bonus="str"]').fill('4');
   await d.locator('[data-bonus="armorPenFlat"]').fill('5');
   await d.locator('[data-bonus="resistPenFlat"]').fill('5');
-  await expect(spend).toContainText('stronger than any grade of Legendary');
+  await expect(spend).toContainText('Stronger than any Legendary grade');
   await spend.scrollIntoViewIfNeeded();
   const fit = await spend.evaluate(el => {
     const r = el.getBoundingClientRect();
@@ -500,7 +504,7 @@ test('a GM makes a skill from the Skills panel and gives it to a player in the r
   await dismissAll(player, 4);
   await go(player, 'status');
   // the shot kind: quick, at a foe, range 12 (RULES.fight.abilityKinds.shot)
-  await expect(player.locator('[data-panel="skills"] [data-skill]', { hasText: 'Ember Step' })).toContainText('Shot, quick · On a foe, 12 tiles');
+  await expect(player.locator('[data-panel="skills"] [data-skill]', { hasText: 'Ember Step' })).toContainText('Shot (ranged), quick · On a foe, 12 tiles');
 });
 
 test('the enemy maker shows the body a rank, an archetype and a kind make, and XP follows the rank and kind until the GM types one', async ({ device }) => {
@@ -518,10 +522,10 @@ test('the enemy maker shows the body a rank, an archetype and a kind make, and X
   await d.locator('[data-chips="rank"] [data-chip="C"]').tap();
   // a normal C monster's XP is the rank table's 250, a boss's three times it (RULES.fight.kinds); left blank, the rule's
   await expect(xp).toHaveValue('');
-  await expect(xp).toHaveAttribute('placeholder', 'By the rule: 250');
+  await expect(xp).toHaveAttribute('placeholder', 'Default: 250');
   const normal = await body();
   await d.locator('[data-chips="kind"] [data-chip="boss"]').tap();
-  await expect(xp).toHaveAttribute('placeholder', 'By the rule: 750');
+  await expect(xp).toHaveAttribute('placeholder', 'Default: 750');
   // a boss's HP factor over a normal monster's (RULES.fight.kinds: 2.8 over 0.6 since package A), within rounding
   const boss = await body();
   expect(Math.abs(boss.hp - normal.hp * RULES.fight.kinds.boss.hp / RULES.fight.kinds.normal.hp)).toBeLessThanOrEqual(3);
@@ -563,7 +567,7 @@ test('on a 390 px phone a GM ticks Slow and Armored in the enemy maker: the body
   await page.locator('#gm-make [data-make="monster"]').tap();
   await d.locator('#enm-name').fill('Iron Sloth');
   await d.locator('[data-chips="rank"] [data-chip="C"]').tap();
-  await expect(traits.locator('[data-chip]')).toHaveText(['Frail', 'Tough', 'Slow', 'Fast', 'Armored', 'Warded']);
+  await expect(traits.locator('[data-chip]')).toHaveText(MONSTER_TRAITS.map(t => TRAIT_LABEL[t]));
   const body = async () => {
     const m = /HP (\d+) · Armor (\d+) · Resist (\d+) · Speed (\d+)/.exec(await d.locator('[data-derived]').innerText());
     return { hp: Number(m![1]), armor: Number(m![2]), resist: Number(m![3]), speed: Number(m![4]) };
@@ -591,7 +595,7 @@ test('on a 390 px phone a GM ticks Slow and Armored in the enemy maker: the body
   expect(saved.tweak).toEqual({ traits: ['slow', 'armored'] });
   await go(page, 'bestiary');
   const card = page.locator(`#view-bestiary [data-mid="${saved.id}"]`);
-  await expect(card.locator('> .lbl')).toContainText('Brute · Slow, Armored');
+  await expect(card.locator('> .lbl')).toContainText(`Brute · ${TRAIT_LABEL.slow}, ${TRAIT_LABEL.armored}`);
   await expect(card.locator('.bst-vit')).toContainText(`Speed${ticked.speed}`);
 });
 
@@ -632,9 +636,9 @@ test('a GM makes the monster Ice Warden in at most 9 taps from the home screen: 
     await d.locator('[data-add="item"]').selectOption('lib:i900'); t.selected();
     const preview = d.locator('.mk-preview');
     await expect(preview).toContainText('C-rank normal caster');
-    await expect(preview).toContainText('Curse: Curse, standard · On a foe, 8 tiles');
+    await expect(preview).toContainText('Curse: Curse (spell), standard · On a foe, 8 tiles');
     // a monster's ability is read at its rank: Slowed at C is −30%
-    await expect(preview).toContainText('Frost Lance: Shot, quick · On a foe, 12 tiles; Costs 6 fatigue');
+    await expect(preview).toContainText('Frost Lance: Shot (ranged), quick · On a foe, 12 tiles, Costs 6 fatigue');
     await expect(preview).toContainText('Applies Slowed (2 rounds): Speed −30%');
     await expect(preview).toContainText('Starts with: Hasted (3 rounds)');
     await expect(preview).toContainText('Drops: 50 gold, Frost Shard');
@@ -678,7 +682,7 @@ test('a GM makes Frost Lance in at most 9 taps from the home screen: a shot that
     await d.locator('[data-row="0"] [data-f="rounds"]').fill('2');
     await expect(d.locator('[data-chips="give"] [data-chip]', { hasText: 'Brakk Ironhide' })).toHaveAttribute('aria-pressed', 'true');
     const preview = d.locator('.mk-preview');
-    await expect(preview).toContainText('Shot, quick · On a foe, 12 tiles');
+    await expect(preview).toContainText('Shot (ranged), quick · On a foe, 12 tiles');
     await expect(preview).toContainText('Applies Slowed (2 rounds): Speed −20% / −25% / −30% / −35% / −40% / −50%, by rank E to S');
     await t.tap(d.locator('[data-apply]'));
     await expect(d).toHaveCount(0);
@@ -709,14 +713,14 @@ test('in the skill maker a support reaches an ally or only the user, and another
   await d.locator('[data-chips="kind"] [data-chip="support"]').tap();
   await expect(affects).toBeVisible();
   // a support reaches an ally 6 tiles off (RULES.fight.abilityKinds.support) and shields 1.5 * sup (ability-kinds.ts)
-  await expect(d.locator('.mk-preview')).toContainText('Support, standard · On an ally, 6 tiles');
+  await expect(d.locator('.mk-preview')).toContainText('Support (heal or shield), standard · On an ally, 6 tiles');
   await expect(d.locator('[data-formula]')).toHaveValue('1.5 * sup');
   await expect(d.locator('[data-chips="ftype"] [data-chip="shield"]')).toHaveAttribute('aria-pressed', 'true');
   await affects.locator('[data-chip="self"]').tap();
-  await expect(d.locator('.mk-preview')).toContainText('Support, standard · On the user');
+  await expect(d.locator('.mk-preview')).toContainText('Support (heal or shield), standard · On the user');
   await d.locator('[data-chips="kind"] [data-chip="curse"]').tap();
   await expect(affects).toBeHidden();
-  await expect(d.locator('.mk-preview')).toContainText('Curse, standard · On a foe, 8 tiles');
+  await expect(d.locator('.mk-preview')).toContainText('Curse (spell), standard · On a foe, 8 tiles');
 });
 
 test('in the skill maker the form holds still after the GM types a formula, so a name chip tapped a moment later puts its name in', async ({ device }) => {
@@ -802,7 +806,7 @@ test('the Workshop says what an empty kind is, lists the GM\'s status, item, ski
   await onboardGM(page);
   await go(page, 'workshop');
   await test.step('with no skill made, the Skills section says what a skill is and shows New skill', async () => {
-    await expect(workshop(page, 'skill').locator('.ws-empty')).toHaveText('A skill is an ability a hunter or a monster uses in a fight: a strike, a shot, a blast, a curse or a support, which can hurt, heal, shield or put on a status.');
+    await expect(workshop(page, 'skill').locator('.ws-empty')).toHaveText('A skill is an ability a hunter or monster uses in a fight. It can deal damage, heal, shield, or apply a status.');
     await expect(workshop(page, 'skill').locator('[data-new]')).toHaveText('New skill');
   });
 
@@ -868,7 +872,7 @@ test('the skill maker refuses a reaction that would push: the GM is told why and
   await d.locator('[data-sum="react"]').tap();
   await d.locator('[data-f="react"]').check();
   await d.locator('[data-apply]').tap();
-  await expect(d.getByText('A reaction cannot push, pull or give an extra action.', { exact: false })).toBeVisible();
+  await expect(d.getByText('A reaction cannot push, pull, or grant an extra action.', { exact: false })).toBeVisible();
   expect(await page.evaluate(() => hunterApp.store.get().library.skills.length)).toBe(0);
 });
 
@@ -882,7 +886,7 @@ test('the Workshop\'s Bundles: New opens the reward editor alone, Duplicate copi
   const sec = workshop(page, 'bundle'), row = (name: string) => sec.locator('.ws-list li').filter({ has: page.locator('.nm', { hasText: new RegExp(`^${name.replace(/[()]/g, '\\$&')}$`) }) });
 
   await test.step('with none saved, the section says what a reward bundle is', async () => {
-    await expect(sec.locator('.ws-empty')).toContainText('A bundle is a reward you saved to give again');
+    await expect(sec.locator('.ws-empty')).toContainText('A bundle is a saved reward you can give again');
   });
 
   await test.step('New bundle: a name and 25 gold, saved, and listed with its line', async () => {
@@ -1026,7 +1030,7 @@ test('a GM ticks "scales with Power" and "aimed at Resist" and saves the recomme
     // magical damage meets Resist and its power is mag, 0.6 times the curve of Power (design 2.2, ability-kinds.ts)
     await expect(field).toHaveValue('1d8 + mag');
     await expect(d.locator('[data-edited]')).toBeHidden();
-    await expect(d.locator('[data-formula-avg]')).toContainText('after its Resist');
+    await expect(d.locator('[data-formula-avg]')).toContainText('After Resist:');
   });
 
   await test.step('typed over, the field is marked edited and Reset shows', async () => {
@@ -1160,8 +1164,9 @@ test('a GM makes a blast with a ring and a 1 round wind-up; in a fight a fast ta
   await d.locator('[data-group="avoid"] > summary').tap();
   await d.locator('[data-chips="delivery"] [data-chip="travel"]').tap();
   await d.locator('[data-a="windup"]').fill('1');
-  await expect(d.locator('.mk-preview')).toContainText('Hits everyone within 2 tiles of a point up to 10 tiles away, and 50% in a ring out to 3 tiles.');
-  await expect(d.locator('.mk-preview')).toContainText('Can be dodged: it lands 1 round after it is used');
+  const [reachLine, avoidLine] = describeAbility(abilityOf('blast', { id: abilityId('x'), name: 'x' }, RULES), RULES);
+  await expect(d.locator('.mk-preview')).toContainText(reachLine!);
+  await expect(d.locator('.mk-preview')).toContainText(avoidLine!);
   await d.locator('[data-apply]').tap();
   await expect(d).toHaveCount(0);
 
@@ -1321,9 +1326,9 @@ test('a GM makes a hide by rank that starts anywhere and that only damage it dea
     await expect(fx.locator('[data-f="q"]')).toHaveValue('0');
     await expect(fx.locator('[data-set="start"]')).toHaveText(['Out of sight', 'Anywhere']);
     await expect(fx.locator('[data-set="start"][aria-pressed="true"]')).toHaveText('Out of sight');
-    await expect(fx.locator('[data-end]')).toHaveText(['Hurt', 'Revealed', 'It deals damage']);
+    await expect(fx.locator('[data-end]')).toHaveText(['Takes damage', 'Revealed', 'Deals damage']);
     await expect(fx.locator('[data-end][aria-pressed="true"]')).toHaveCount(3);
-    await expect(d.locator('.mk-preview')).toContainText('It ends when it is hurt, is revealed or deals damage');
+    await expect(d.locator('.mk-preview')).toContainText('Ends when it is hurt, is revealed or deals damage');
   });
 
   await test.step('level 3 at rank S, Anywhere, and Hurt and Revealed off', async () => {
@@ -1334,7 +1339,7 @@ test('a GM makes a hide by rank that starts anywhere and that only damage it dea
     await fx.locator('[data-end="revealed"]').tap();
     await expect(fx.locator('[data-err]')).toHaveText('');
     await expect(d.locator('.mk-preview')).toContainText('Hidden at stealth level 0 / 0 / 0 / 0 / 0 / 3, by rank E to S');
-    await expect(d.locator('.mk-preview')).toContainText('It hides even in a foe\'s sight. It ends when it deals damage');
+    await expect(d.locator('.mk-preview')).toContainText('Can hide even in foes\' sight. Ends when it deals damage');
     await d.getByRole('button', { name: 'Save status' }).tap();
     await expect(d).toHaveCount(0);
   });
@@ -1350,7 +1355,7 @@ test('a GM makes a hide by rank that starts anywhere and that only damage it dea
     await expect(fx.locator('[data-t]')).toHaveCount(6);
     expect(await fx.locator('[data-t]').evaluateAll(els => els.map(e => (e as HTMLInputElement).value))).toEqual(['0', '0', '0', '0', '0', '3']);
     await expect(fx.locator('[data-set="start"][aria-pressed="true"]')).toHaveText('Anywhere');
-    await expect(fx.locator('[data-end][aria-pressed="true"]')).toHaveText(['It deals damage']);
+    await expect(fx.locator('[data-end][aria-pressed="true"]')).toHaveText(['Deals damage']);
     await d.locator('[data-cancel]').tap();
     await expect(d).toHaveCount(0);
   });
@@ -1369,7 +1374,7 @@ test('a GM makes Bulwark, armor of 10% of max HP: the row reads it on a sample h
 
   await test.step('the target\'s max HP is refused with what to write instead, and Save stays off', async () => {
     await fx.locator('[data-f="q"]').fill('0.1 * target.hpmax');
-    await expect(fx.locator('[data-err]')).toHaveText('A lasting change reads its bearer\'s own numbers: write hpmax, not target.hpmax.');
+    await expect(fx.locator('[data-err]')).toHaveText('A lasting effect only reads its bearer\'s numbers. Write hpmax instead of target.hpmax.');
     await expect(d.locator('[data-apply]')).toBeDisabled();
   });
 
@@ -1474,7 +1479,7 @@ test('in the skill maker "Add what lands when it ends" goes the moment an effect
   await d.locator('[data-group="zone"] > summary').tap();
   await d.locator('[data-a="zone"]').check();
   await d.locator('[data-a="zend"]').check();
-  await expect(err).toHaveText('Add what lands when it ends.');
+  await expect(err).toHaveText('Add at least one effect for when the field ends.');
   await expect(d.locator('[data-apply]')).toBeDisabled();
   await d.locator('[data-zend-fx] [data-q="damage"]').tap();
   await expect(err).toHaveText('');
@@ -1504,9 +1509,9 @@ test('a GM makes a feat for 2 Beasts defeated in a session, from the Workshop: t
     await expect(count).toHaveValue('facts');
     await expect(of).toHaveCount(0);
     await count.selectOption({ label: 'Different values of' });
-    await expect(of.locator('option')).toHaveText(['End', 'Kind', 'From', 'Title']);
+    await expect(of.locator('option')).toHaveText(['Quest outcome', 'Quest type', 'Given by', 'Title']);
     await of.selectOption({ label: 'Title' });
-    await expect(d.locator('.mk-preview')).toContainText('Different values of title: 1, ever.');
+    await expect(d.locator('.mk-preview')).toContainText('Different values of title: 1, all time.');
     await d.locator('#fm-kind').selectOption('fight');
     await expect(count.locator('option')).toHaveText(['Each time', 'The total of', 'Different values of', 'The highest']);
     await expect(count).toHaveValue('distinct');
@@ -1677,7 +1682,7 @@ test('a status too large to keep is refused whole when the GM saves it: the make
     await d.locator(`[data-row="${i}"] [data-f="text"]`).fill('\u0800'.repeat(200));
   }
   await d.locator('[data-apply]').tap();
-  await expect(d.locator('[data-err]').last()).toHaveText(/^This status is too large to save\. It takes [\d,]+ bytes, and a status holds at most 5,120\. Remove an effect, or one of the things that happen when it stacks, triggers or ends\.$/);
+  await expect(d.locator('[data-err]').last()).toHaveText(/^This status is too large to save\. It uses [\d,]+ bytes, and the limit for a status is 5,120 bytes\. Remove an effect, or one of the things that happen when it stacks, triggers or ends\.$/);
   await expect(d).toBeVisible();
   expect(await page.evaluate(() => Object.keys(hunterApp.store.get().library.statuses))).not.toContain('litany');
 
@@ -2009,7 +2014,7 @@ test('in the status maker opening the icons and closing them changes nothing, a 
 
   await test.step('the sheet opened and closed by Escape leaves the form untouched: Escape then closes the maker', async () => {
     await workshop(page, 'status').locator('[data-new]').tap();
-    await expect(iconOpen(d)).toHaveText('Status, the default');
+    await expect(iconOpen(d)).toHaveText('Status, default icon');
     await iconOpen(d).tap();
     await expect(iconSheet(d).locator('[data-ic-group]').first()).toHaveText('Status');
     await page.keyboard.press('Escape');

@@ -26,7 +26,7 @@ import { watched } from './sight.ts';
 import { counted, usesGates } from './uses.ts';
 import type { Aim } from './resolve.ts';
 import { combatantId } from './ability-types.ts';
-import type { Ability, CombatantId, Outcome } from './ability-types.ts';
+import type { Ability, Avoid, CombatantId, Outcome } from './ability-types.ts';
 import { channelCan, channelStep, released } from './fight-channel.ts';
 import { eventsOf, raised } from './triggers.ts';
 import { burstsOf, consequences, D20, ended, held, holdsSide, logged, marked, omenMove, overIf, partyView, phasedRow, giverOf, payDue, retaunted, rowOf, sentAway, sheetBacks, spreadTo, startTurn, triggered, unscriptedRow, untaunted, unwarded, withRow, zoneEnds } from './fight-turn.ts';
@@ -155,7 +155,7 @@ const start: Step<'setup', 'start'> = (f, cmd, ctx) => {
   const running: Running = { ...f, phase: 'running', rows, now: tick(0), currentId: rows[0]!.id, pending: [] };
   const fx: Fx = [];
   // who stands in a zone as the fight begins holds it from time 0
-  const begins = cmd.surprised ? `The fight begins: the ${cmd.surprised === 'party' ? 'party is' : 'foes are'} surprised.` : 'The fight begins.';
+  const begins = cmd.surprised ? `The fight begins. The ${cmd.surprised === 'party' ? 'party is' : 'foes are'} surprised.` : 'The fight begins.';
   return done(startTurn(consequences(rows, logged(running, line(begins), R), ctx, fx), ctx, fx), fx);
 };
 
@@ -249,6 +249,7 @@ type Landed = {
  * whose bodies, as a shove's, pay no entry (8.3.4, 8.5.5); the tally; its triggers (19b); the `after` reactions (19c);
  * then the next turn.
  */
+const AVOID_WORDS: { readonly [A in Avoid]: string } = { caught: 'hit', ring: 'outer ring', out: 'avoided', resisted: 'resisted' };
 function landed(f: Running, use: Landed, ctx: Ctx): Result {
   const R = ctx.rules, { a, u, rows, aim, at, taken } = use, reacted = use.r.reacted;
   // acting on a foe or a place ends the user's untargetable ward, after the use (kits design 8.1)
@@ -258,7 +259,7 @@ function landed(f: Running, use: Landed, ctx: Ctx): Result {
   const drank = drainWords({ healed: r.drained, stored: r.stored });
   const said = [
     ...reacted.said, ...reacted.lethal,
-    ...r.outcomes.map(o => `${rowOf(f, o.target)?.name ?? o.target} ${o.avoid === 'out' ? 'avoids it' : `${o.avoid}${o.crit ? ', crit' : ''}${o.dealt ? ` ${o.dealt}` : ''}`}`),
+    ...r.outcomes.map(o => `${rowOf(f, o.target)?.name ?? o.target} ${o.avoid === 'out' ? AVOID_WORDS.out : `${AVOID_WORDS[o.avoid]}${o.crit ? ', crit' : ''}${o.dealt ? ` ${o.dealt}` : ''}`}`),
     ...(drank ? [`${u.name} ${drank}`] : []),
     ...r.bursts.map(b => `${rowOf(f, b.bearer)?.name ?? b.bearer}'s ${b.label} goes off${b.landed.some(l => l.dealt) ? ` (${b.landed.map(l => `${rowOf(f, l.target)?.name ?? l.target} ${l.dealt}`).join(', ')})` : ''}`),
   ];
@@ -266,7 +267,7 @@ function landed(f: Running, use: Landed, ctx: Ctx): Result {
   const rest = f.zones.filter(z => !taken.includes(z));
   const left = leftZone(a, u, at, f.grid, f.now, rest, R);
   const placed = left ? placeZone(rest, left, R) : { zones: rest, evicted: [] };
-  const useLine = `${use.head}${said.length ? `: ${said.join(', ')}` : ''}${left ? `; ${left.name} covers the ground` : ''}${placed.evicted.length ? `; ${placed.evicted.map(z => z.name).join(', ')} gives way` : ''}.`;
+  const useLine = `${use.head}${said.length ? `: ${said.join(', ')}` : ''}.${left ? ` ${left.name} covers the ground.` : ''}${placed.evicted.length ? ` ${placed.evicted.map(z => z.name).join(', ')} ends.` : ''}`;
   const about = [u.id, ...reacted.about, ...r.outcomes.map(o => o.target), ...r.bursts.flatMap(b => [b.bearer, ...b.landed.map(l => l.target)])];
   const used0 = summoned(zoneEnds(logged({ ...f, rows: r.bodies, zones: placed.zones }, line(useLine, about, [...(left ? [left.id] : []), ...placed.evicted.map(z => z.id)]), R), landingOf(taken, f.now, R), rows, ctx), a, u.id, ctx);
   // a zone act (kits design 8.5.4): a zone moved or widened onto a body pays it no entry, as a forced move pays none (8.5.5)
@@ -288,7 +289,7 @@ function landed(f: Running, use: Landed, ctx: Ctx): Result {
 function summoned(f: Running, a: Ability, by: CombatantId, ctx: Ctx): Running {
   const R = ctx.rules, u = rowOf(f, by);
   if (!a.summon || !u || !isUp(u)) return f;
-  const g = sentAway(f, crowded(f.rows, u.id, R), 'leaves: a newer summon took its place', ctx);
+  const g = sentAway(f, crowded(f.rows, u.id, R), 'leaves because a newer summon took its place', ctx);
   if (g.rows.length >= MAX_ROWS) return g;
   const d = Math.max(g.grid.w, g.grid.h), spots: Place[] = [];
   for (let y = 0; y < g.grid.h; y++) for (let x = 0; x < g.grid.w; x++) if (Math.max(Math.abs(x - u.place.x), Math.abs(y - u.place.y)) <= d) spots.push(place(x, y));
@@ -586,7 +587,7 @@ const settleDue: Step<'running', 'settle'> = (f, cmd, ctx) => {
   const row = rowOf(f, cmd.id)!;
   const g = { ...withRow(f, payDue(row, p.due, cmd.dice, f.now, ctx.rules, giverOf(f, row.statuses, p.due.key))), pending: rest };
   const what = row.statuses.find(s => s.key === cmd.key || entryKey(s.key) === cmd.key)?.def.label ?? cmd.key;
-  return after(f, g, '', line(`${row.name}: ${what} settles.`, [row.id]), ctx, []);
+  return after(f, g, '', line(`${row.name}: ${what} takes effect.`, [row.id]), ctx, []);
 };
 
 /**
@@ -629,7 +630,7 @@ const landOmen: Step<'running', 'act'> = (f, cmd, ctx) => {
   if (isRefused(stood)) return refused(f, stood.why);
   if (r.ok === false) {
     const spent = acted(stood, f.now, m.ability.cost.time, R.fight);
-    return after(f, withRow(f, spent), u.id, line(`${m.ability.name} finds no one.`, [u.id]), ctx, []);
+    return after(f, withRow(f, spent), u.id, line(`${m.ability.name} hits no one.`, [u.id]), ctx, []);
   }
   const self = m.move.self;
   const me = self ? withStatuses(stood, applyStatus(stood.statuses, statusOn(self.def, { key: self.key, source: { id: u.id, tier: u.tier }, until: null, since: f.now, settledAt: f.now })), f.now, R) : stood;
@@ -653,7 +654,7 @@ function mythic(f: Running, cmd: Extract<Command, { type: 'mythic' }>, ctx: Ctx)
     const x = mythicStepped<Body>(u, { type: 'drop' });
     if (isRefused(x)) return refused(f, x.why);
     const omen = s.at === 'calm' ? '' : script.omens[s.omen]?.name ?? '';
-    return gmChange(f, x, line(`The GM drops ${omen}: ${u.name} lands nothing.`, [u.id]), ctx);
+    return gmChange(f, x, line(`The GM drops ${omen}. Nothing lands.`, [u.id]), ctx);
   }
   const x = phasedRow(u, 'gm', f.now, ctx.rules);
   if (isRefused(x)) return refused(f, x.why);

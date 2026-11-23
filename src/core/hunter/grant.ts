@@ -414,7 +414,7 @@ function raisedAt(h: Hunter, R: Rules): Hunter {
  */
 export function raisedLine(from: number, to: number): string {
   const lost = from - to;
-  return lost > 0 ? `Up at ${REVIVE_HP} HP at level ${to}, ${lost} level${lost === 1 ? '' : 's'} lost` : `Up at ${REVIVE_HP} HP`;
+  return lost > 0 ? `Revived at ${REVIVE_HP} HP and level ${to} (${lost} level${lost === 1 ? '' : 's'} lost)` : `Revived at ${REVIVE_HP} HP`;
 }
 
 // ── the System raise ──

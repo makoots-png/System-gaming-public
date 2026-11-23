@@ -3,6 +3,8 @@
 // 1 + floor(r x S), so r = (f - 0.5) / S shows f.
 import type { Page } from '@playwright/test';
 import { test, expect, onboardPlayer, dismissAll, go, save } from './helpers.ts';
+import { dcWords } from '../../src/core/dc-pick.ts';
+import { RULES } from '../../src/core/rules.ts';
 
 /** Types `text` in the Dice view's field and rolls it while the dice show `faces` (each a face of a d`sides`), in order. */
 async function typed(page: Page, text: string, faces: number[], sides: number): Promise<void> {
@@ -95,10 +97,11 @@ test.describe('the quick check\'s DC', () => {
   });
 
   test('No DC stays No DC when the GM changes the rank table', async () => {
-    await dc().selectOption({ label: 'No DC (just roll)' });
+    const none = dcWords('none', RULES.rankTable);
+    await dc().selectOption({ label: none });
     await setRules({ rankTable: { E: { dc: [11, 14, 17] } } });
     await expect(dc().locator('option', { hasText: 'E Standard' })).toHaveText('E Standard (DC 14)');
-    await expect(dc().locator('option:checked')).toHaveText('No DC (just roll)');
+    await expect(dc().locator('option:checked')).toHaveText(none);
     expect(await check()).toBeNull();
   });
 

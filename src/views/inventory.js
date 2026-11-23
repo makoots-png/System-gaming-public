@@ -87,7 +87,7 @@ export function register(app) {
    */
   async function throwOnTable(h, it) {
     const p = await app.api.uses.cast(h.id, itemAbilityId(it.id), undefined, 'bag');
-    if (p && p.ok) ui.toast('System', postNews(p, app.api.sync.conn()) === 'sent' ? `${it.name}: sent to the GM.` : `${it.name}: goes to the GM when the room answers.`);
+    if (p && p.ok) ui.toast('System', postNews(p, app.api.sync.conn()) === 'sent' ? `${it.name}: sent to the GM.` : `${it.name}: saved. The GM will get it once the room server confirms it.`);
   }
   /** Consumable `it` used by hunter `h` on itself outside a fight: its ops, the item spent and the report, in one write. */
   function useOnSelf(h, it, ops) {
@@ -224,7 +224,7 @@ export function register(app) {
           <form class="add-row" data-form>
             <span class="grow">${ui.field('Item name', '<input type="text" name="name" maxlength="60" placeholder="e.g. Iron Dagger" autocomplete="off">')}</span>
             <span class="md">${ui.field('Rarity', `<select name="rar">${TIERS.map(t => `<option value="${t}">${cap(t)}</option>`).join('')}</select>`)}</span>
-            <button type="submit" class="primary">Store</button>
+            <button type="submit" class="primary">Add to bag</button>
           </form>
         </div>
         <div data-pane="offers" hidden><div data-offers></div></div>
@@ -329,7 +329,7 @@ export function register(app) {
               ${eq ? '' : `<button type="button" data-give="${esc(i.id)}" aria-label="Give ${esc(i.name)}">Give</button>`}
               <button type="button" class="icon-btn danger" data-del="${esc(i.id)}" aria-label="Remove item ${esc(i.name)}">&times;</button>
             </div></li>`;
-        }).join('') : `<li class="empty">${h.items.length ? 'No items of that type.' : 'Inventory is empty.'}</li>`;
+        }).join('') : `<li class="empty">${h.items.length ? 'No items of that type.' : 'Your bag is empty.'}</li>`;
       } else if (tab === 'offers') app.api.trade.offers(el.querySelector('[data-offers]'), h.id);
       else if (tab === 'stash') app.api.trade.stash(el.querySelector('[data-stash]'), h.id);
       else {

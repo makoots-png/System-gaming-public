@@ -78,15 +78,15 @@ describe('the line that says why a thing shows its icon', () => {
     expect(words({ thing: 'item', item: { type: 'weapon', slot: 'weapon', attack: 'strike' } })).toBe('Sword, from its type');
     expect(words({ thing: 'item', item: { type: 'armor', slot: 'head' } })).toBe('Helm, from its slot');
     expect(words({ thing: 'item', item: { type: 'armor', slot: null } })).toBe('Chestplate, from its type');
-    expect(words({ thing: 'item', item: { type: 'consumable', slot: null, revive: true } })).toBe('Crystal, as it revives');
+    expect(words({ thing: 'item', item: { type: 'consumable', slot: null, revive: true } })).toBe('Crystal, from its revive effect');
     expect(words({ thing: 'item', item: { type: 'consumable', slot: null } })).toBe('Potion, from its type');
   });
 
   test('a status\'s default names the built-in it is, else its first effect, else its end, else the plain picture', () => {
-    expect(words(status('burning', { ops: [] }))).toBe('Flame, the built-in\'s');
+    expect(words(status('burning', { ops: [] }))).toBe('Flame, built-in default');
     expect(words(status('ember-mark', { ops: [{ op: 'heal', amount: { kind: 'number', value: 3 }, when: 'turn' }] }))).toBe('Heal, from its first effect');
-    expect(words(status('ember-mark', { ops: [], end: { ops: [], cleanse: 'land' } }))).toBe('Timer, from its end');
-    expect(words(status('ember-mark', { ops: [] }))).toBe('Status, the default');
+    expect(words(status('ember-mark', { ops: [], end: { ops: [], cleanse: 'land' } }))).toBe('Timer, from its expiration effect');
+    expect(words(status('ember-mark', { ops: [] }))).toBe('Status, default icon');
   });
 
   test('a monster\'s, an item\'s or a status\'s own icon in the subject is not the pick: only the pick passed is', () => {

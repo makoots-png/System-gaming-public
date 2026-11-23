@@ -6,6 +6,7 @@ import { tiles } from '../../src/core/combat/space.ts';
 import { abilityId } from '../../src/core/combat/ability-types.ts';
 import { abilityOf } from '../../src/core/registry/ability-kinds.ts';
 import { OUTBOX_MAX } from '../../src/core/sync/outbox.ts';
+import { TABLE_REFUSAL_WORDS } from '../../src/core/combat/refusal-words.ts';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, answerWindow, fightRow, openFeed, chooseList, openApp, type DeviceOptions, setupDoc } from './helpers.ts';
 
 const HUNTER = 'Kai Test', MONSTER = 'Cave Rat';
@@ -41,7 +42,7 @@ async function room(device: (label: string, o?: DeviceOptions) => Promise<{ page
  */
 async function fight(gm: Page, player: Page, ratAt: { x: number; y: number }, o: { ally?: boolean; others?: string[] } = {}) {
   await go(gm, 'combat');
-  const names = [`${HUNTER} (remote)`, ...(o.others ?? []).map(n => `${n} (remote)`), ...(o.ally ? [await gm.evaluate(() => hunterApp.store.active().name as string)] : [])];
+  const names = [`${HUNTER} (player phone)`, ...(o.others ?? []).map(n => `${n} (player phone)`), ...(o.ally ? [await gm.evaluate(() => hunterApp.store.active().name as string)] : [])];
   for (const label of names) {
     await combat(gm).locator('[data-hsel]').selectOption({ label });
     await combat(gm).locator('[data-addh]').tap();
@@ -102,7 +103,7 @@ test('a player\'s step on their turn moves their token on the GM\'s order', asyn
   // A body at speed 100 walks RULES.fight.moveBase (6) tiles a round and one move a stride, strideShare (half) of it: 3
   // steps. On the 5-10-5 map the nearest the rat at (2, 10) those reach is 5 tiles, from (1, 5), (2, 5) or (3, 5) (one
   // diagonal is free); a tie goes to the lowest y, then the lowest x (design 3.1 rule 8a), so (1, 5).
-  await expect(combat(player).locator('[data-step="1"]')).toHaveText(`Toward ${MONSTER}`);
+  await expect(combat(player).locator('[data-step="1"]')).toHaveText(`Move toward ${MONSTER}`);
   await combat(player).locator('[data-step="1"]').tap();
   await expect.poll(async () => (await fightRow(gm, HUNTER)).place, { timeout: 15_000 }).toEqual({ x: 1, y: 5 });
   await expect.poll(() => player.evaluate(n => hunterApp.api.sync.doc('fight').rows.find((r: any) => r.name === n).place, HUNTER)).toEqual({ x: 1, y: 5 });
@@ -212,7 +213,7 @@ test('the GM\'s card offers Revive on a dead player\'s hunter, and not while it 
   const card = combat(gm).locator('.cmb-card');
 
   await test.step('standing, the card offers Mark defeated and no Revive', async () => {
-    await expect(card.locator('[data-defeat]')).toHaveText('Mark defeated');
+    await expect(card.locator('[data-defeat]')).toHaveText('Mark dead');
     await expect(card.locator('[data-revive]')).toHaveCount(0);
   });
 
@@ -226,7 +227,7 @@ test('the GM\'s card offers Revive on a dead player\'s hunter, and not while it 
 
   await test.step('revived, the card stands again with Mark defeated', async () => {
     await card.locator('[data-revive]').tap();
-    await expect(card.locator('[data-defeat]')).toHaveText('Mark defeated');
+    await expect(card.locator('[data-defeat]')).toHaveText('Mark dead');
     await expect(card.locator('.cmb-tag.lw')).toHaveCount(0);
   });
 });
@@ -244,7 +245,7 @@ test.fixme('a player who died while the GM\'s phone was away stays dead when the
   await player.locator('#view-status [data-hpdmg]').tap();
   await expect.poll(() => player.evaluate(() => hunterApp.store.active().life)).toEqual(dead);
   await go(gm, 'combat');
-  for (const label of [`${HUNTER} (remote)`, await gm.evaluate(() => hunterApp.store.active().name as string)]) {
+  for (const label of [`${HUNTER} (player phone)`, await gm.evaluate(() => hunterApp.store.active().name as string)]) {
     await combat(gm).locator('[data-hsel]').selectOption({ label });
     await combat(gm).locator('[data-addh]').tap();
   }
@@ -300,7 +301,7 @@ test('a potion a player drinks on their turn heals their row on both phones, and
 test('a player\'s Strike at the wrong rat while taunted is turned down by the GM\'s phone, and the player reads why', async ({ device }) => {
   const { gm, player } = await room(device);
   await go(gm, 'combat');
-  await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (remote)` });
+  await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (player phone)` });
   await combat(gm).locator('[data-addh]').tap();
   await combat(gm).locator('[data-qline]').fill(`${MONSTER} x2, E, brute`);
   await combat(gm).locator('[data-qadd]').tap();
@@ -321,7 +322,7 @@ test('a player\'s Strike at the wrong rat while taunted is turned down by the GM
 
   await combat(player).locator('[data-cast="attack"]').tap();
   await answerWindow(player, /Use .+ on…/, `${MONSTER} B`);
-  await expect(player.locator('.toast', { hasText: 'You are taunted: aim at your taunter.' })).toBeVisible({ timeout: 15_000 });
+  await expect(player.locator('.toast', { hasText: TABLE_REFUSAL_WORDS.taunted })).toBeVisible({ timeout: 15_000 });
   expect((await fightRow(gm, `${MONSTER} B`)).hp).toBe(hp);
   await expect(combat(player).locator('.tb-mine')).toContainText('YOUR TURN');
 });
@@ -373,7 +374,7 @@ test('a player\'s End turn that a full outbox let go gives the turn back: End tu
       if (end()?.at === 'queued') hunterApp.api.dice.roll('1d20', { label: 'filler', hid: hunterApp.store.active().id });
       return end()?.at ?? 'gone';
     }), { timeout: 15_000 }).toBe('gone');
-    await expect(player.locator('.toast', { hasText: 'Too much is waiting for the room, so the oldest message was dropped.' })).toBeVisible();
+    await expect(player.locator('.toast', { hasText: 'Too many messages are waiting for the room server, so the oldest message was dropped.' })).toBeVisible();
     await expect(pass).toBeVisible();
     await expect(strike).toBeEnabled();
     await expect(combat(player).locator('.tb-mine')).toContainText('YOUR TURN');
@@ -439,7 +440,7 @@ test('a Use on the Skills panel holds the turn as the table does: a second Use a
   await test.step('a second Use on Jab and the potion\'s Use in the Bag send nothing, and the player reads that the last move waits', async () => {
     await go(player, 'status');
     await useJab.tap();
-    await expect(player.locator('.toast', { hasText: 'Your last move waits for the GM.' }).first()).toBeVisible();
+    await expect(player.locator('.toast', { hasText: 'Waiting for the GM to process your last action.' }).first()).toBeVisible();
     await expect(player.locator('.sys-overlay.show')).toHaveCount(0);
     await player.locator('[data-panel="inventory"] .inv-card', { hasText: 'Health Potion' }).getByRole('button', { name: 'Use Health Potion' }).tap();
     expect(await casts()).toBe(1);
@@ -495,7 +496,7 @@ test('the GM\'s phone offline awards the party\'s XP and reads that the player g
   await expect.poll(() => gm.evaluate(() => hunterApp.api.sync.status())).toBe('offline');
   await combat(gm).locator('[data-end]').first().tap();
   await answerWindow(gm, 'Fight over', 'Award XP to party');
-  await expect(gm.getByText(`${HUNTER} gets the XP when the room answers.`)).toBeVisible();
+  await expect(gm.getByText(`Saved. ${HUNTER} will get the XP once the room server confirms it.`)).toBeVisible();
   await expect(gm.getByText(`XP sent to ${HUNTER}.`)).toHaveCount(0);
 });
 
@@ -505,7 +506,7 @@ test('a player\'s cast lands with the dice the GM\'s phone rolled for each targe
   await player.evaluate(a => { const s = hunterApp.store; s.update(() => { s.active().skills.push({ id: s.id('s'), name: 'Boom', type: 'active', level: 1, label: null, desc: '', ability: a }); }, 'test-setup'); }, boom);
   await expect.poll(() => gm.evaluate(() => (hunterApp.api.sync.remoteSheets() as any[]).some(r => r.data.skills.some((k: any) => k.name === 'Boom')))).toBe(true);
   await go(gm, 'combat');
-  await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (remote)` });
+  await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (player phone)` });
   await combat(gm).locator('[data-addh]').tap();
   await combat(gm).locator('[data-qline]').fill(`${MONSTER}, E, brute, x2`);
   await combat(gm).locator('[data-qadd]').tap();
@@ -540,7 +541,7 @@ test('the GM extracts a fallen monster with a player\'s Necromancer, and the sha
   await go(gm, 'bestiary');
   await gm.locator('#view-bestiary [data-addc="m900"]').tap();
   await go(gm, 'combat');
-  await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (remote)` });
+  await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (player phone)` });
   await combat(gm).locator('[data-addh]').tap();
   await combat(gm).locator('.cmb-row:has-text("Frost Wolf") .cmb-pick').tap();
   await combat(gm).locator('.cmb-card [data-defeat]').tap();

@@ -159,7 +159,7 @@ export function abilityLines(a: Ability, R: KindRules): string[] {
   else if (sh.kind === 'line') out.push(`A line${sh.pierce ? ' that pierces' : ''}`);
   if (a.aim !== 'self') out.push(`Range ${a.range} tile${a.range === 1 ? '' : 's'}`);
   const d = a.delivery;
-  out.push(d.kind === 'travel' ? 'Avoided by moving out of it' : d.kind === 'direct' ? 'Discipline resists it' : 'Nothing avoids it');
+  out.push(d.kind === 'travel' ? 'Avoided by moving out of it' : d.kind === 'direct' ? 'Resisted with Discipline' : 'Cannot be avoided');
   return out.slice(0, ABILITY_LINES);
 }
 
@@ -245,7 +245,7 @@ export function waitChoices<S extends Pick<Spot, 'id' | 'side' | 'down'>>(rows: 
 /** The words of the choice of the row a reaction before a turn waits for: its label, and the window a player picks it in. */
 export const WAIT_WORDS = {
   label: 'Before the turn of',
-  body: (reaction: string): string => `${reaction} fires just before the turn of the one you pick.`,
+  body: (reaction: string): string => `${reaction} fires right before that target's turn.`,
 } as const;
 
 /** What aiming the ability at one candidate gives: its 5-10-5 distance, and whether rules 5 and 6 of resolve.ts let it be hit. */
@@ -347,10 +347,10 @@ const clockLeft = (m: MythicSeen, now: Tick, R: { readonly fight: Pick<Rules['fi
   const p = mythicScriptOf(m.script).phases[m.phase]!;
   return Math.max(0, Math.ceil((m.since + p.clock * R.fight.round - now) / R.fight.round));
 };
-/** How often the script's enraged rotation lands its doom: "every turn", "every other turn" or "N turns in M". */
+/** How often the script's enraged rotation lands its doom: "every other turn", "every N turns", or "N times in M turns". */
 function doomRate(script: MythicScript): string {
-  const r = script.enraged, k = r.filter(b => b.kind === 'omen').length;
-  return k === r.length ? 'every turn' : k * 2 === r.length ? 'every other turn' : `${k} turns in ${r.length}`;
+  const r = script.enraged, k = r.filter(b => b.kind === 'omen').length, turns = r.length + k;
+  return k * 2 === turns ? 'every other turn' : k === 1 ? `every ${turns} turns` : `${k} times in ${turns} turns`;
 }
 /** The names of the doom omens of the enraged rotation, in order, once each. */
 const doomNames = (script: MythicScript): string => [...new Set(script.enraged.flatMap(b => b.kind === 'omen' ? [script.omens[b.omen]!.name] : []))].join(' and ');
@@ -375,16 +375,16 @@ export function mythicStrip(m: MythicSeen, now: Tick, R: { readonly fight: Pick<
   const hpWord = m.hp ? `HP ${Math.round(m.hp.hp / m.hp.hpMax * 100)}%` : m.bandWord ?? 'HP unknown';
   let mark: MythicStrip['mark'], hp: string, clock: string;
   if (p.ends === 'clock') {
-    mark = 'clock'; hp = `${hpWord} · damage does not reach it`;
-    clock = out && next ? `Its next turn starts phase ${m.phase + 2}: ${next.name}.` : `Survive ${plural(Math.max(1, left), 'more round')}.`;
+    mark = 'clock'; hp = `${hpWord} · immune to damage`;
+    clock = out && next ? `Phase ${m.phase + 2} (${next.name}) starts on its next turn.` : `Survive ${plural(Math.max(1, left), 'more round')}.`;
   } else if (m.held === true) {
-    mark = 'held'; hp = `${hpWord} · held at the gate`;
-    clock = acted && next ? `Its next turn starts phase ${m.phase + 2}: ${next.name}.` : `Clock: ${plural(left, 'round')} left`;
+    mark = 'held'; hp = `${hpWord} · HP locked until next phase`;
+    clock = acted && next ? `Phase ${m.phase + 2} (${next.name}) starts on its next turn.` : `Clock: ${plural(left, 'round')} left`;
   } else if (out) {
-    mark = 'enraged'; hp = last ? `${hpWord} · last phase` : `${hpWord} · gate at ${Math.round(gate * 100)}%`;
+    mark = 'enraged'; hp = last ? `${hpWord} · last phase` : `${hpWord} · next phase at ${Math.round(gate * 100)}% HP`;
     clock = `Enraged: ${doomNames(script)} ${doomRate(script)}.`;
   } else {
-    mark = last ? 'last' : 'gate'; hp = last ? `${hpWord} · last phase` : `${hpWord} · gate at ${Math.round(gate * 100)}%`;
+    mark = last ? 'last' : 'gate'; hp = last ? `${hpWord} · last phase` : `${hpWord} · next phase at ${Math.round(gate * 100)}% HP`;
     clock = `Clock: ${plural(left, 'round')} left`;
   }
   return {
@@ -416,7 +416,7 @@ export function mythicHand(m: MythicSeen): MythicHand {
   const script = mythicScriptOf(m.script), omen = m.omen && script.omens[m.omen.key], next = script.phases[m.phase + 1];
   const to = next && next.ends === 'gate' ? ` Its HP drops to ${Math.round(next.from * 100)}%.` : '';
   return {
-    landTitle: omen ? `${script.name}'s turn: the omen lands.` : null, land: omen ? `Land ${omen.name}` : null, drop: omen ? 'Drop the omen' : null,
+    landTitle: omen ? `${script.name}'s turn. The omen lands.` : null, land: omen ? `Land ${omen.name}` : null, drop: omen ? 'Drop the omen' : null,
     next: next ? { label: 'Next phase', ask: `Move ${script.name} to ${next.name} now?${to}`, yes: 'Move it', no: 'Cancel' } : null,
   };
 }
@@ -455,12 +455,12 @@ export function omenBanner(m: MythicSeen, rows: readonly Named[], now: Tick, R: 
   };
   const by = omen.interrupt.by;
   if (by.length) say(omen.interrupt.outcome, `${listed(by.map(o => INTERRUPT_WORDS[o]))} it`);
-  say(omen.shield, aimedAtHunter(aim, m.id) ? 'Put a shield on the hunter it is aimed at' : 'Put a shield on a hunter standing on its centre tile');
-  say(omen.step, 'Leave its centre tile empty, so no hunter stands on it');
-  say(omen.stagger, `Land ${plural(reach.stagger, 'same-rank hit')} on its stagger bar`);
+  say(omen.shield, aimedAtHunter(aim, m.id) ? 'Put a shield on the hunter it is aimed at' : 'Put a shield on a hunter standing on its center tile');
+  say(omen.step, 'Leave its center tile empty, so no hunter stands on it');
+  say(omen.stagger, `Fill its stagger bar with heavy hits (${plural(reach.stagger, 'standard hit')} worth)`);
   say(omen.burst, `Take ${Math.round(reach.burst * 100)}% of its HP before it lands`);
-  lines.push(move.sure ? 'Nothing dodges it.' : move.kind === 'blast' ? 'Step out of the marked tiles to dodge it.' : 'Dodge it or resist it, like any attack.');
-  return { title: `${doom ? 'DOOM' : weakened ? 'OMEN, WEAKENED' : 'OMEN'}: ${omen.name}`, when: lands, answerHead: 'Answer it:', answers: lines, doom, weakened };
+  lines.push(move.sure ? 'Cannot be dodged or resisted.' : move.kind === 'blast' ? 'Step out of the marked tiles to dodge it.' : 'Dodge it or resist it, like any attack.');
+  return { title: `${doom ? 'DOOM' : weakened ? 'OMEN, WEAKENED' : 'OMEN'}: ${omen.name}`, when: lands, answerHead: 'How to counter it:', answers: lines, doom, weakened };
 }
 /** Whether an omen's aim names a hunter (a row), rather than a tile or the mythic itself. */
 const aimedAtHunter = (aim: Spot2 | CombatantId | null, self: CombatantId): boolean => typeof aim === 'string' && aim !== self;

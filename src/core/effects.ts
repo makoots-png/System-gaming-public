@@ -16,7 +16,7 @@ export { FULL_HEAL, healsFully };
 /** What this file reads of an item. */
 export type ItemEffects = { readonly rar: string; readonly grade?: Grade; readonly effects?: readonly Op[]; readonly revive?: true };
 /** What an item that revives says it does (src/core/hunter/use.ts `useItem`). */
-export const REVIVE_TEXT = `Brings its dead user back at ${REVIVE_HP} HP, outside a fight.`;
+export const REVIVE_TEXT = `Revives a dead hunter at ${REVIVE_HP} HP (outside a fight).`;
 
 /** Every op an item does when used. */
 export const effectsOf = (item: ItemEffects): Op[] => [...(item.effects ?? [])];

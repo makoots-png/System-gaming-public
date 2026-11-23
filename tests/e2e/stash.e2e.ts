@@ -2,6 +2,7 @@
 // Give window and take them out on the Bag's Stash tab; the GM's phone answers each ask in the order the room brings
 // them and lists the stash in "Trades and stash" with Remove, held under Undo. Driven through the UI; the store sets up and reads.
 import type { Page } from '@playwright/test';
+import { STASH_WORDS } from '../../src/core/trade/stash.ts';
 import { test, expect, type DeviceOptions, onboardGM, onboardPlayer, createRoom, dismissAll, go } from './helpers.ts';
 
 type Table = { gm: Page; mira: Page; eldrin: Page; gmCtx: import('@playwright/test').BrowserContext };
@@ -79,14 +80,14 @@ test('Mira puts two potions in the stash and Eldrin takes one', async ({ device 
     const sec = await gmSection(gm);
     await expect(sec.locator('[data-tr-list="gm-stash"] .tr-offer')).toHaveCount(1);
     await expect(sec.getByRole('button', { name: 'Remove: Healing Potion × 2' })).toBeVisible();
-    await expect(gm.locator('#gm-hsum-trade')).toHaveText('stash: 1 kind');
+    await expect(gm.locator('#gm-hsum-trade')).toHaveText(STASH_WORDS.summary(1));
   });
 
   await test.step('Eldrin takes one: the window asks how many, and the potion lands once the GM\'s phone answers', async () => {
     const line = await stashLine(eldrin, 'Healing Potion × 2');
     await line.getByRole('button', { name: 'Take: Healing Potion' }).tap();
     const win = eldrin.locator('.sys-overlay.show', { hasText: 'Take Healing Potion' });
-    await expect(win).toContainText('How many. The stash has 2.');
+    await expect(win).toContainText(STASH_WORDS.howMany(2));
     await win.getByRole('button', { name: 'Take' }).tap();
     await expect.poll(() => has(eldrin), { timeout: 20_000 }).toBe(1);
     await expect(eldrin.locator('#toasts .toast', { hasText: 'From the stash: 1 Healing Potion.' })).toBeVisible();
@@ -125,10 +126,10 @@ test('with the GM\'s phone away, the stash shows the time of what it shows, and 
   await line.getByRole('button', { name: 'Take: Healing Potion' }).tap();
   const waiting = eldrin.locator('[data-tr-list="asks"] .tr-offer');
   await expect(waiting).toContainText('Take: 1 Healing Potion.');
-  await expect(waiting.locator('.tr-state')).toHaveText('Waiting for the GM\'s phone.');
-  await expect(eldrin.locator('[data-panel="inventory"] .tr-hint', { hasText: 'The GM\'s phone answers in the order asks arrive.' })).toBeVisible();
+  await expect(waiting.locator('.tr-state')).toHaveText(STASH_WORDS.waitingLine);
+  await expect(eldrin.locator('[data-panel="inventory"] .tr-hint', { hasText: STASH_WORDS.order })).toBeVisible();
   const stored = await eldrin.evaluate(() => { const d = new Date(hunterApp.api.sync.docAt('stash')); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; });
-  await expect(eldrin.locator('[data-panel="inventory"] [data-tr-asof]'), 'the stash shows the time the room stored it').toHaveText(`As of ${stored}.`);
+  await expect(eldrin.locator('[data-panel="inventory"] [data-tr-asof]'), 'the stash shows the time the room stored it').toHaveText(STASH_WORDS.asOf(stored));
   await expect.poll(() => eldrin.evaluate(() => (hunterApp.store.get().settings.sync.asked ?? []).map((w: any) => w.state)), { timeout: 20_000 }).toEqual(['taken']);
   expect(await has(eldrin), 'nothing lands while the GM\'s phone is away').toBe(0);
 

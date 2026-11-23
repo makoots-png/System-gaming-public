@@ -49,7 +49,7 @@ const fmtX = (n: number): string => String(Math.round(n * 10) / 10);
 /** What a stat adds to a check, stated for the worked example's own score. */
 export function statBonusLine(R: Rules): string {
   const x = checkExample(R), base = R.fight.statBase;
-  return `Near ${base} the effective points are close to the score minus ${base}, and half of them, rounded down, is the bonus: a score of ${x.score} has about ${fmtX(x.above)} points above ${base} and adds ${sign(x.stat)}.`;
+  return `Near ${base}, effective points are close to the score minus ${base}. The check bonus is half of that, rounded down. For example, a score of ${x.score} has about ${fmtX(x.above)} points above ${base} and adds ${sign(x.stat)}.`;
 }
 
 /** The natural 20 and natural 1 of a check, and the coin they call outside a fight. Each word is the coin's own. */
@@ -57,13 +57,13 @@ export function naturalLines(): readonly string[] {
   const w = VERDICT_WORDS;
   return [
     'A natural 20 on the d20 succeeds whatever the total, and a natural 1 fails whatever the total.',
-    `Outside a fight, a natural 1 or 20 on a check also calls the coin: you call heads or tails. Alone the coin flips; in a room the GM decides how it lands and tells you at the table, and your phone shows only that it was flipped. On a 1, a right call reads ${w[verdict(1, 'heads', 'heads')]} and a wrong one ${w[verdict(1, 'heads', 'tails')]}. On a 20, a right call reads ${w[verdict(20, 'heads', 'heads')]} and a wrong one ${w[verdict(20, 'heads', 'tails')]}. The coin changes no number: the GM rules what it means.`,
+    `Outside a fight, a natural 1 or 20 on a check also triggers a coin flip, and you call heads or tails. When playing alone, the app flips the coin. In a room, the GM decides how it lands and tells you at the table, while your phone only shows that it was flipped. On a 1, a right call is ${w[verdict(1, 'heads', 'heads')]} and a wrong call is ${w[verdict(1, 'heads', 'tails')]}. On a 20, a right call is ${w[verdict(20, 'heads', 'heads')]} and a wrong call is ${w[verdict(20, 'heads', 'tails')]}. The coin does not change any numbers. The GM decides what it means.`,
   ];
 }
 
 /** How a stat's points are spent and locked in. */
 export function pointsLine(): string {
-  return 'Spend points with + on a stat. − takes back a point you have not confirmed. Confirm locks the points in; until then they wait, also after you leave the Status view. The GM can edit any stat, and that edit is confirmed at once.';
+  return 'Tap + on a stat to spend a point. Tap − to take back an unconfirmed point. Tap Confirm allocation to lock your points in. Until you confirm, they stay unconfirmed even if you leave the Status view. The GM can edit any stat, and those edits lock in right away.';
 }
 
 /** The level of the death line's worked example of a raising: one where the share of the shipped rule takes two levels. */
@@ -75,9 +75,9 @@ const RAISED_EXAMPLE = 31;
 export function restLines(R: Pick<Rules, 'rest' | 'fatigue'>): string[] {
   const pct = (share: number): string => `${Math.round(share * 10000) / 100}%`, n = R.rest.perGate;
   return [
-    `A rest gives back ${pct(R.rest.hp)} of your max HP and ${pct(R.rest.mana)} of your max mana, never past the maximum, and takes ${pct(R.rest.fatigue)} of your fatigue off. Exhausted lifts when the fatigue left is under ${R.fatigue.collapseAt}% of your capacity.`,
-    `You have ${n} rest${n === 1 ? '' : 's'} a gate. Clearing the gate gives everything back: full HP and mana, no fatigue, every use limited a gate, and your rests. A solo run's end starts your rests again.`,
-    `A dead hunter cannot rest and gets nothing back from a Clear: ${WAYS_BACK} brings you back. No one rests during a fight.`,
+    `Resting restores ${pct(R.rest.hp)} of your max HP and ${pct(R.rest.mana)} of your max mana, up to your maximum. It also removes ${pct(R.rest.fatigue)} of your fatigue. Exhausted ends once your remaining fatigue drops below ${R.fatigue.collapseAt}% of your capacity.`,
+    `You get ${n} rest${n === 1 ? '' : 's'} per gate. Clearing a gate restores full HP and mana, clears your fatigue, resets per-gate uses, and resets your rests. Finishing a solo run also resets your rests.`,
+    `A dead hunter cannot rest and gains nothing from clearing a gate. ${WAYS_BACK} brings you back. You cannot rest during a fight.`,
   ];
 }
 /**
@@ -87,12 +87,12 @@ export function restLines(R: Pick<Rules, 'rest' | 'fatigue'>): string[] {
  * by.
  */
 export function deathLine(R: Pick<Rules, 'reviveLevelShare'>): string {
-  const shop = shopOpen({ life: { at: 'dead' } }) ? '' : ' The shop is closed to a dead hunter, who can neither buy nor sell. The GM or another hunter can still give a dead hunter a Resurrection Crystal.';
+  const shop = shopOpen({ life: { at: 'dead' } }) ? '' : ' A dead hunter cannot buy or sell in the shop. The GM or another hunter can still give a dead hunter a Resurrection Crystal.';
   const pct = Math.round(R.reviveLevelShare * 10000) / 100, back = levelAfterRaising(RAISED_EXAMPLE, R);
   const cost = back < RAISED_EXAMPLE
-    ? ` A raising costs levels: ${pct}% of the hunter's level, rounded up, at least one and never below level 1, so a hunter who died at level ${RAISED_EXAMPLE} comes back at level ${back}.`
-    : ' A raising costs no levels.';
-  return `At 0 HP a hunter is dead. Healing and rest do not raise the dead: ${WAYS_BACK} does, at ${REVIVE_HP} HP, and takes off every status, so a poison does not kill the hunter again. A crystal is used from the bag, outside a fight.${cost}${shop}`;
+    ? ` Reviving costs ${pct}% of the hunter's level, rounded up (at least 1 level, never below level 1). For example, a hunter who died at level ${RAISED_EXAMPLE} comes back at level ${back}.`
+    : ' Reviving costs no levels.';
+  return `At 0 HP, a hunter is dead. Healing and resting cannot revive a dead hunter. ${WAYS_BACK} revives them with ${REVIVE_HP} HP and removes every status, so poison does not kill them again. Use a Resurrection Crystal from your bag outside a fight.${cost}${shop}`;
 }
 
 /**
@@ -103,22 +103,22 @@ export function deathLine(R: Pick<Rules, 'reviveLevelShare'>): string {
  */
 export function soloLines(R: Pick<Rules, 'solo'>): readonly string[] {
   const S = R.solo, root = Math.round(Math.sqrt(S.autoHarder) * 100) / 100;
-  const harder = S.autoHarder > 1 ? ` So its foes are ${pct(S.autoHarder - 1)} harder than at the table: each has ${root} times its HP and deals ${root} times its damage.` : '';
+  const harder = S.autoHarder > 1 ? ` Foes in a solo run are ${pct(S.autoHarder - 1)} stronger than in table play. Each has ${root} times its normal HP and deals ${root} times its normal damage.` : '';
   return [
-    `A solo run plays one fight to its end on the rules, each side as well as it can.${harder} Before it, the odds show how ${ODDS_RUNS} plays of that fight went; the run is one more play and can go better or worse. What it leaves of HP, mana and fatigue stays. A hunter can die alone. A run with no winner by round ${CAP_ROUNDS} is a retreat: its cost stays and the gate stays open.`,
+    `A solo run simulates the fight automatically using the game rules.${harder} Before you start, the odds show the results of ${ODDS_RUNS} simulated fights. Your solo run is a separate fight and can turn out better or worse. Your remaining HP, mana, and fatigue carry over after the run, and your hunter can die. If neither side wins by round ${CAP_ROUNDS}, you retreat. Your spent HP, mana, and fatigue stay used, and the gate stays open.`,
     ...(S.personal
-      ? [`The System opens a personal gate every ${S.hours} hours, at most ${S.held} at once. Each closes ${S.stays} hours after it opens, cleared or not.`,
-        `The first gate after personal gates start for a hunter (a new hunter, one revived, or personal gates turned back on) holds one monster of the hunter's own rank. The rest hold ${S.pack[0]} to ${S.pack[1]}, one rank below the hunter's to one above.`,
-        `A cleared personal gate pays ${pct(S.lootShare)} of the loot a world gate of its rank rolls: ${pct(S.lootShare)} of the gold, rounded down, and an item ${pct(S.lootShare)} of the time. A world gate run alone pays as a world gate.`]
+      ? [`The System opens a personal gate every ${S.hours} hours, up to ${S.held} at a time. Each gate closes ${S.stays} hours after opening, whether cleared or not.`,
+        `Your first personal gate (as a new hunter, after reviving, or after personal gates turn back on) has one monster of your rank. Later personal gates have ${S.pack[0]} to ${S.pack[1]} monsters, ranging from one rank below yours to one rank above.`,
+        `Clearing a personal gate gives ${pct(S.lootShare)} of the loot of a same-rank world gate. You get ${pct(S.lootShare)} of the gold, rounded down, and a ${pct(S.lootShare)} chance for an item. Running a world gate solo gives full world-gate loot.`]
       : ['Personal gates are off.']),
   ];
 }
 
 /** Each event that may end a hide, in words (effect-ops.ts `STEALTH_ENDS`; the owner's rulings 2 and 6). */
 const HIDE_END_WORDS: { readonly [E in StealthEnd]: string } = {
-  hurt: 'its bearer loses HP',
-  revealed: 'it is revealed, by a reveal such as a Flare\'s or by a hit from an area or from a use aimed at a place',
-  dealt: 'its bearer\'s own use or reaction deals damage to a foe (not a field or a status it left earlier)',
+  hurt: 'the hidden target loses HP',
+  revealed: 'a reveal ability (like Flare), an area effect, or a targeted tile hit reveals it',
+  dealt: 'the hidden target deals damage to a foe with an ability or reaction (not from an earlier field or status)',
 };
 /** The highest stealth level a foe of `sight` sees, by the one sight rule (sight.ts `perceives`), or null when it sees no hide. */
 const seenUpTo = (sight: Level): Level | null => {
@@ -136,10 +136,10 @@ export function stealthLines(R: Pick<Rules, 'fight'>): readonly string[] {
   const ambush = Math.round(ambushShare({ statuses: [] }, { statuses: [] }, R) * 100) / 100;
   const ends = STEALTH_ENDS.map(e => HIDE_END_WORDS[e]);
   return [
-    `A hidden body is hidden from each foe whose sight level is at its stealth level or lower. Everyone's sight level starts at ${base}, so a foe with no sight from a skill, an item or a status sees ${atBase === null ? 'no hidden body' : `a body hidden at level ${atBase} or lower`}; a foe with sight level ${SIGHT_EXAMPLE} sees ${atExample === null ? 'no hidden body' : `a body hidden at level ${atExample} or lower`}. Its own side always sees it.`,
-    'A foe cannot aim at a hidden body it does not see. An area, or a use aimed at a place, still catches it, and that hit reveals it.',
-    `A hit from hiding on a foe that does not see you deals ×${ambush} damage. It does not add to another damage increase: only the larger counts.`,
-    `A hide ends when its time runs out, when a cure removes it, or on any of these its status names: ${ends.slice(0, -1).join('; ')}; or ${ends.at(-1)}.`,
+    `A foe cannot see a hidden target if the foe's sight level is equal to or lower than the target's stealth level. Everyone starts at sight level ${base}. A foe with no extra sight from skills, items, or statuses sees ${atBase === null ? 'no hidden targets' : `targets hidden at level ${atBase} or lower`}. A foe with sight level ${SIGHT_EXAMPLE} sees ${atExample === null ? 'no hidden targets' : `targets hidden at level ${atExample} or lower`}. Allies always see hidden allies.`,
+    'A foe cannot target a hidden hunter or monster it cannot see. Area attacks and abilities aimed at a tile still hit it and reveal it.',
+    `Hitting a foe that cannot see you from hiding deals ×${ambush} damage. This does not stack with other damage multipliers. Only the largest multiplier applies.`,
+    `Hiding ends when its duration runs out, when a cure removes it, or when one of its status triggers happens: ${ends.slice(0, -1).join(', ')}, or ${ends.at(-1)}.`,
   ];
 }
 
@@ -155,12 +155,12 @@ const pct = (share: number): string => `${Math.round(share * 1000) / 10}%`;
 /** How an item that sets no price is priced and sold: the rank that prices each rarity, and the shares of `usedUpShare` and `saleShare`. */
 export function saleLine(R: Pick<Rules, 'rarities' | 'usedUpShare' | 'saleShare'>): string {
   const ranks = RARITIES.map(rar => `${rar} ${R.rarities[rar].rank}`).join(', ');
-  return `An item that sets no price costs one Clear of its tier's rank, the middle of that rank's gate-clear gold in the table below (${ranks}); a consumable costs ${pct(R.usedUpShare)} of that, rounded. The Association buys an item back at ${pct(R.saleShare)} of its price, rounded down, at least 1 gold.`;
+  return `An item with no custom price costs the middle gold value of a gate clear for its rarity's rank (${ranks}). A consumable costs ${pct(R.usedUpShare)} of that amount, rounded. You can sell items back to the Association for ${pct(R.saleShare)} of their price, rounded down, with a minimum of 1 gold.`;
 }
 
 /** What completing every daily gives: the daily quest's own points (the template a new hunter's daily is made from), and the streak's. */
 export function dailyPointsLine(R: Pick<Rules, 'dailyTemplate' | 'streakBonusEvery'>): string {
-  return `Completing every daily in a cycle grants +${R.dailyTemplate.rewards.points}, and every ${R.streakBonusEvery}-day streak grants +1 more.`;
+  return `Completing all daily quests in a cycle gives +${R.dailyTemplate.rewards.points} ability point${R.dailyTemplate.rewards.points === 1 ? '' : 's'}, and every ${R.streakBonusEvery}-day streak gives +1 more.`;
 }
 
 /** The percent of a hit's size a body of `armor` takes off, before the flat part: what `afterDefence` (combat/land.ts) does with `armorK`. */
@@ -174,10 +174,10 @@ export const armorCutPct = (R: Pick<Rules, 'fight'>, armor: number): number => M
 export function gatePayLines(R: Pick<Rules, 'gateParty'>): readonly string[] {
   const P = R.gateParty, n = Array.from({ length: P + 2 }, (_, i) => i + 1);
   return [
-    `A world gate is made for a party of ${P}. What it pays, its gold roll and its XP alike, is a pot of ${P} shares split evenly among the hunters it pays, rounded down: the fewer hunters, the more each, and past ${P} hunters the pot itself shrinks.`,
+    `A world gate is sized for a party of ${P}. Its total gold and XP equal ${P} shares split evenly among the hunters in the gate, rounded down. Fewer hunters get more each. With more than ${P} hunters, the total reward shrinks.`,
     `Each hunter's share of 100: ${n.map(k => `${shareEach(100, k, P)} ${k === 1 ? 'alone' : `of ${k}`}`).join(', ')}.`,
-    'A fight started from a gate pays its XP the same way, out of the gate\'s XP; its Clear pays the rest. A fight started from no gate pays each hunter the whole XP of what went down.',
-    `A solo run of a world gate is a party of one: ${P} times the gold roll and ${P} times the XP.`,
+    'A fight inside a gate splits monster XP the same way from the gate total, and clearing the gate awards the rest. A fight outside a gate gives each hunter the full XP for every defeated monster.',
+    `Running a world gate solo counts as a party of one, giving ${P} times the gold roll and ${P} times the XP.`,
   ];
 }
 
@@ -203,10 +203,10 @@ export const iconCreditLine = (): string =>
 export function mythicLines(R: Pick<Rules, 'fight'>): readonly string[] {
   const M = R.fight.mythic, t = M.answerTime, rounds = (n: number): string => `${n} round${n === 1 ? '' : 's'}`;
   return [
-    'A mythic fights in phases. Each phase holds part of its HP: damage past it is lost, and the next phase starts on the mythic\'s next turn. A Dive phase holds none, and ends when its clock runs out.',
-    'Before its biggest moves it announces an omen one turn ahead. The banner says what is coming, at whom or which tiles, and each way to answer it.',
-    `A hit does not answer an omen. A stun or a root on the mythic, a shield on the hunter it is aimed at, or a step off the tile it is aimed at, so no hunter stands on it, can cancel it or make it smaller. An answer winds a phase's clock back ${rounds(t.cancel)} when it cancels and ${rounds(t.weaken)} when it makes the move smaller, never past the phase's start.`,
-    'A phase that runs past its clock makes the mythic enraged: its doom comes on the turns the strip names.',
+    'A mythic monster fights in phases. Each phase has its own HP pool. Extra damage past a phase break does not carry over, and the next phase starts on the mythic\'s next turn. A Dive phase has no HP pool and ends when its timer runs out.',
+    'Before its biggest moves, a mythic announces an omen one turn ahead. The omen banner lists the move, its targets or tiles, and how you can answer it.',
+    `A single ordinary hit does not answer an omen. Depending on the omen, you can cancel or weaken it by applying a control status (such as stun, root, or taunt), shielding the targeted hunter, stepping off the targeted tile, filling its stagger bar, or dealing heavy burst damage. Answering an omen extends the phase timer by ${rounds(t.cancel)} if canceled or ${rounds(t.weaken)} if weakened, up to the phase's starting limit.`,
+    'If a phase runs past its timer, the mythic becomes enraged and uses its doom move on the schedule shown in the status bar.',
   ];
 }
 
@@ -218,5 +218,5 @@ export function mythicCodexLines(script: MythicScript): readonly string[] {
 /** The GM's switch for mythic scripts, its words, and the session log's line when it moves. */
 export const MYTHIC_SWITCH_WORDS = {
   label: 'Mythics fight in phases', on: 'On', off: 'Off',
-  hint: 'While this is off, a mythic fights like any other monster. A fight already running keeps the way it began.',
+  hint: 'When off, mythic monsters fight like normal monsters. Fights already in progress do not change.',
 } as const;

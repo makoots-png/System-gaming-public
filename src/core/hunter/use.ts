@@ -129,12 +129,12 @@ export type ItemUseRefusal = 'no-item' | 'nothing' | 'not-dead' | 'too-low' | 'f
  */
 export const USE_WORDS: { readonly [W in ItemUseRefusal]: (name: string, low?: TooLow) => string } = {
   'no-item': name => `${name} is no longer in the bag.`,
-  nothing: name => `${name}: nothing to restore.`,
+  nothing: name => `${name} would have no effect right now. You still have it.`,
   'not-dead': name => `${name} only brings back a dead hunter. You still have it.`,
   'too-low': (name, low) => (low
-    ? `${name} brings back a hunter of rank ${low.upTo} or lower. ${low.name} is rank ${low.rank}. You still have it. A ${low.rank}-rank crystal or higher, or the GM's Revive, brings ${low.name} back.`
-    : `${name} does not reach this hunter's rank. You still have it. A crystal of the hunter's rank or higher, or the GM's Revive, brings the hunter back.`),
-  fight: name => `Use ${name} after the fight.`,
+    ? `${name} only revives hunters of rank ${low.upTo} or lower, and ${low.name} is rank ${low.rank}. You still have it. Use a rank ${low.rank} or higher crystal, or ask the GM to revive ${low.name}.`
+    : `${name} is too low rank for this hunter. You still have it. Use a crystal of their rank or higher, or ask the GM to revive them.`),
+  fight: name => `You cannot use ${name} during a fight. Use it after the fight ends.`,
 };
 /** `USE_WORDS` said of `name` (and `low`, a crystal too low): the words of a refused use for `ui.wrote`. */
 export const useWords = (name: string, low?: TooLow): Readonly<Record<ItemUseRefusal, string>> => ({

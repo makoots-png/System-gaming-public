@@ -26,14 +26,14 @@ export type ScalerName = 'execute' | 'opener' | 'desperate' | 'steady' | 'giantS
 
 /** The closed family of eight, each a measure and a direction, with its name and what its sentence says it is against. */
 export const FAMILY: { readonly [N in ScalerName]: { readonly measure: Measure; readonly dir: Dir; readonly label: string; readonly words: (start: number, R: ScalerRules) => string } } = {
-  execute: { measure: 'target', dir: 'under', label: 'Execute', words: s => `against a target under ${share(s)} of its HP` },
-  opener: { measure: 'target', dir: 'over', label: 'Opener', words: s => `against a target over ${share(s)} of its HP` },
-  desperate: { measure: 'user', dir: 'under', label: 'Desperate', words: s => `while you are under ${share(s)} of your HP` },
-  steady: { measure: 'user', dir: 'over', label: 'Steady', words: s => `while you are over ${share(s)} of your HP` },
-  giantSlayer: { measure: 'maxPair', dir: 'over', label: 'Giant slayer', words: (s, R) => `against a target with more max HP than ${pair(s, 'over', R)}` },
-  cull: { measure: 'maxPair', dir: 'under', label: 'Cull', words: (s, R) => `against a target with less max HP than ${pair(s, 'under', R)}` },
-  underdog: { measure: 'hpPair', dir: 'over', label: 'Underdog', words: (s, R) => `against a target with more HP left than ${pair(s, 'over', R)}` },
-  bully: { measure: 'hpPair', dir: 'under', label: 'Bully', words: (s, R) => `against a target with less HP left than ${pair(s, 'under', R)}` },
+  execute: { measure: 'target', dir: 'under', label: 'Bonus vs low-HP target', words: s => `against a target under ${share(s)} of its HP` },
+  opener: { measure: 'target', dir: 'over', label: 'Bonus vs high-HP target', words: s => `against a target over ${share(s)} of its HP` },
+  desperate: { measure: 'user', dir: 'under', label: 'Bonus while you are low HP', words: s => `while you are under ${share(s)} of your HP` },
+  steady: { measure: 'user', dir: 'over', label: 'Bonus while you are high HP', words: s => `while you are over ${share(s)} of your HP` },
+  giantSlayer: { measure: 'maxPair', dir: 'over', label: 'Bonus vs higher max HP', words: (s, R) => `against a target with more max HP than ${pair(s, 'over', R)}` },
+  cull: { measure: 'maxPair', dir: 'under', label: 'Bonus vs lower max HP', words: (s, R) => `against a target with less max HP than ${pair(s, 'under', R)}` },
+  underdog: { measure: 'hpPair', dir: 'over', label: 'Bonus vs higher current HP', words: (s, R) => `against a target with more HP left than ${pair(s, 'over', R)}` },
+  bully: { measure: 'hpPair', dir: 'under', label: 'Bonus vs lower current HP', words: (s, R) => `against a target with less HP left than ${pair(s, 'under', R)}` },
 };
 export const SCALER_NAMES = Object.keys(FAMILY) as readonly ScalerName[];
 export const nameOf = (s: Pick<Scaler, 'measure' | 'dir'>): ScalerName => SCALER_NAMES.find(n => FAMILY[n].measure === s.measure && FAMILY[n].dir === s.dir)!;
@@ -45,7 +45,7 @@ const share = (s: number): string => (s === 0.5 ? 'half' : `${Math.round(s * 100
 function pair(start: number, dir: Dir, R: ScalerRules): string {
   const ratio = (x: number): number => Math.round(x / (1 - x) * 100) / 100, full = R.fight.kit.pairFull;
   const from = start === 0.5 ? 'yours' : `${ratio(start)} times yours`;
-  return `${from}, all of it at ${dir === 'over' ? `${full} times yours` : `a ${full}th of yours`}`;
+  return `${from}, reaching max at ${dir === 'over' ? `${full} times yours` : `1/${full} of yours`}`;
 }
 
 /** Where a measure's bonus is whole: a share at 0 (under) or 1 (over), a pair at 1 to `pairFull` or `pairFull` to 1. */

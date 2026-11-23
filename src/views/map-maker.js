@@ -13,7 +13,7 @@ import { oneOf } from '../core/one-of.ts';
 import { atLibrary } from '../core/save-step.ts';
 import { removeEntry, saveById, savedWords } from '../core/library.ts';
 
-const TERRAIN_WORD = { floor: 'Floor', wall: 'Wall', cover: 'Cover', rough: 'Rough', pit: 'Pit' };
+const TERRAIN_WORD = { floor: 'Floor', wall: 'Wall', cover: 'Cover', rough: 'Rough ground', pit: 'Pit' };
 const SIDE_WORD = { party: 'Party start', foe: 'Foe start' };
 const TILE = 22;
 
@@ -66,11 +66,11 @@ export function register(app) {
         const step = (k, label) => `<span class="mpm-step"><span class="lbl">${label}</span><button type="button" class="icon-btn" data-step="${k}" data-d="-1" aria-label="Fewer ${k === 'w' ? 'columns' : 'rows'}">−</button><b data-size="${k}"></b><button type="button" class="icon-btn" data-step="${k}" data-d="1" aria-label="More ${k === 'w' ? 'columns' : 'rows'}">+</button></span>`;
         el.innerHTML = `<label class="field"><span class="lbl">Name</span><input type="text" maxlength="${MAP_BOUNDS.name}" data-name value="${esc(st.name)}" autocomplete="off"></label>
           <div class="mpm-size">${step('w', 'Width')}${step('h', 'Height')}</div>
-          <div class="lbl">Brush</div><div class="mpm-brush seg" role="group" aria-label="Brush" data-brushes></div>
-          <div class="mpm-scroll"><div class="mpm-grid" data-grid data-mk-paint role="grid" aria-label="The map: tap or drag to paint"></div></div>
+          <div class="lbl">Paint tool</div><div class="mpm-brush seg" role="group" aria-label="Paint tool" data-brushes></div>
+          <div class="mpm-scroll"><div class="mpm-grid" data-grid data-mk-paint role="grid" aria-label="Map grid: tap or drag to paint"></div></div>
           <div class="mpm-zone" data-zonebox hidden></div>
-          <label class="mk-check"><input type="checkbox" data-fog${st.fog ? ' checked' : ''}><span>Fog of war: the party sees only what is in its sight</span></label>
-          <label class="field"><span class="lbl">Sight (tiles)</span><input type="number" min="${MAP_BOUNDS.sight[0]}" max="${MAP_BOUNDS.sight[1]}" inputmode="numeric" data-sight value="${st.sight}"></label>
+          <label class="mk-check"><input type="checkbox" data-fog${st.fog ? ' checked' : ''}><span>Fog of war (party only sees within sight range)</span></label>
+          <label class="field"><span class="lbl">Sight range (tiles)</span><input type="number" min="${MAP_BOUNDS.sight[0]}" max="${MAP_BOUNDS.sight[1]}" inputmode="numeric" data-sight value="${st.sight}"></label>
           ${m ? '<button type="button" data-asnew>Save as a new map</button>' : ''}`;
         const $ = s => el.querySelector(s), grid = $('[data-grid]');
         const zoneOf = i => st.zones.findIndex(z => z.tiles.has(i));
@@ -102,7 +102,7 @@ export function register(app) {
           const box = $('[data-zonebox]'), z = brush.startsWith('zone:') ? st.zones[zoneAt] : null;
           box.hidden = !z; if (!z) { eff = null; box.innerHTML = ''; return; }
           box.innerHTML = `<div class="mpm-zrow"><label class="field"><span class="lbl">Field name</span><input type="text" maxlength="40" data-zname value="${esc(z.name)}"></label>
-            <button type="button" class="danger" data-delzone>Remove field</button></div><div class="lbl">What it does to whoever stands in it</div><div data-zfx></div>`;
+            <button type="button" class="danger" data-delzone>Remove field</button></div><div class="lbl">Effects while standing in this field</div><div data-zfx></div>`;
           eff = M.effects($('[data-zfx]'), { ops: z.ops, kind: 'status' });
         }
         function paint(i) {
@@ -172,7 +172,7 @@ export function register(app) {
          */
         function saveAs(id) {
           const map = parseBattleMap(raw(id), app.rules());
-          if (!map) { shell.error('Name the map.'); return undefined; }
+          if (!map) { shell.error('Enter a name for the map.'); return undefined; }
           // a write refused (the library full, another tab took over, a newer save) saved nothing: the maker stays open and says so
           if (!ui.wrote('Workshop', store.apply('library-map', atLibrary(l => saveById(l, 'maps', map))), savedWords('map', map.name))) return undefined;
           return map;
@@ -183,9 +183,9 @@ export function register(app) {
             const ground = TERRAINS.filter(t => t !== 'floor' && n(t)).map(t => `${n(t)} ${TERRAIN_WORD[t].toLowerCase()}`);
             return [
               `${st.w} by ${st.h} tiles${ground.length ? `: ${ground.join(', ')}` : ', all floor'}`,
-              ...st.zones.filter(z => z.tiles.size).map(z => `${z.name || 'Field'}: ${z.tiles.size} tile${z.tiles.size === 1 ? '' : 's'}, ${(app.api.effects.describe({ label: z.name, desc: '', ops: z.ops }) || []).join('; ') || 'does nothing'}`),
-              `Starts: ${read.starts.party.length} for the party, ${read.starts.foe.length} for foes${read.starts.party.length + read.starts.foe.length ? '' : ' (the default lines)'}`,
-              st.fog ? `Fog of war, sight ${st.sight} tiles` : 'No fog: the party sees the whole map',
+              ...st.zones.filter(z => z.tiles.size).map(z => `${z.name || 'Field'}: ${z.tiles.size} tile${z.tiles.size === 1 ? '' : 's'}, ${(app.api.effects.describe({ label: z.name, desc: '', ops: z.ops }) || []).join(', ') || 'does nothing'}`),
+              `Starting spots: ${read.starts.party.length} for party, ${read.starts.foe.length} for foes${read.starts.party.length + read.starts.foe.length ? '' : ' (uses default rows)'}`,
+              st.fog ? `Fog of war, sight ${st.sight} tiles` : 'No fog (party sees the whole map)',
             ];
           },
           blocked: () => !st.name.trim() || !!(eff && eff.blocked()),

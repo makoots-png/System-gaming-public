@@ -95,7 +95,7 @@ describe('a player asks, the GM\'s phone answers in the order asks arrive', () =
     const m = ok(stashLanded(mira.save, first.a)), e = ok(stashLanded(eldrin.save, second.a));
     expect([potions(hunter(m.save)), potions(hunter(e.save))]).toEqual([4, 3]);
     expect([m.text, e.text]).toEqual(['From the stash: 1 Healing Potion.', 'The stash has no Healing Potion left.']);
-    expect(second.save.log.slice(0, 2).map(l => l.text)).toEqual(['Eldrin asked the stash for 1 Healing Potion: refused (gone).', 'Mira took 1 Healing Potion from the stash.']);
+    expect(second.save.log.slice(0, 2).map(l => l.text)).toEqual(['Eldrin could not take 1 Healing Potion from the stash (out of stock).', 'Mira took 1 Healing Potion from the stash.']);
   });
 
   test('a put waits aside in its ask until the GM\'s phone keeps it; no phone shows a take as its own before the answer', () => {

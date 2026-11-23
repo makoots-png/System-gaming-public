@@ -4,6 +4,7 @@
 // RULES.fight) and the GM's own fight.
 import type { Page } from '@playwright/test';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, fightRow, chooseList, setupDoc, answerWindow } from './helpers.ts';
+import { WAIT_WORDS } from '../../src/core/combat/fight-view.ts';
 
 const HUNTER = 'Kai Extra', BRAKK = 'Brakk Ironhide', RAT = 'Cave Rat', BOSS = 'Cerberus';
 const combat = (page: Page) => page.locator('#view-combat');
@@ -31,7 +32,7 @@ async function extrasFight(device: (label: string) => Promise<{ page: Page }>, s
   await go(gm, 'gm');
   await expect(gm.locator('#gm-board .gm-card.remote', { hasText: HUNTER })).toHaveCount(1);
   await go(gm, 'combat');
-  await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (remote)` });
+  await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (player phone)` });
   await combat(gm).locator('[data-addh]').tap();
   await combat(gm).locator('[data-hsel]').selectOption({ label: BRAKK });
   await combat(gm).locator('[data-addh]').tap();
@@ -142,7 +143,7 @@ test('a shield on the player\'s hunter shows its amount and rounds on both phone
   await map(gm).locator('[data-go]').tap();
   await expect.poll(() => fightRow(gm, HUNTER).then(r => r.shield)).toBeNull();
   // the log says what the hit dealt before the shield; the HP lost is that less the 4 the shield took
-  const dealt = await gm.evaluate(name => Number(/caught(?:, crit)? (\d+)/.exec(hunterApp.store.get().fight.log.find((l: { text: string }) => l.text.includes(`${name} caught`))?.text ?? '')?.[1]), HUNTER);
+  const dealt = await gm.evaluate(name => Number(/hit(?:, crit)? (\d+)/.exec(hunterApp.store.get().fight.log.find((l: { text: string }) => l.text.includes(`${name} hit`))?.text ?? '')?.[1]), HUNTER);
   expect(dealt).toBeGreaterThan(4);
   await expect.poll(() => fightRow(gm, HUNTER).then(r => hp - r.hp)).toBe(dealt - 4);
   for (const p of [gm, player]) await expect(token(p, ids.kai).locator('.mp-shield')).toBeHidden();
@@ -291,8 +292,8 @@ test('a player arms a reaction before a turn on the hotbar, picks whose turn it 
   const { gm, player, ids } = await kitsFight(device, { id: 'ambush', name: 'Ambush', when: 'turn' });
   const slot = map(player).locator('[data-hot] [data-arm="ambush"]');
   await slot.tap();
-  const win = player.locator('.sys-overlay.show', { hasText: 'Before the turn of' });
-  await expect(win).toContainText('Ambush fires just before the turn of the one you pick.');
+  const win = player.locator('.sys-overlay.show', { hasText: WAIT_WORDS.label });
+  await expect(win).toContainText(WAIT_WORDS.body('Ambush'));
   await test.step('the window offers the rows the GM\'s card offers, the other side\'s first', async () => {
     await expect(win.locator('.sys-actions button.primary')).toHaveCount(1);
     await expect(win.locator('.sys-actions button', { hasText: BRAKK })).toHaveCount(1);

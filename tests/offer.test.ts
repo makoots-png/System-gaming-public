@@ -317,7 +317,7 @@ describe('two phones settle through the room', () => {
         expect([bag(sa.save), gold(sa.save), bag(sb.save), gold(sb.save)]).toEqual([['Token 2', 'Token 3'], 120, ['Token 1', 'Token 11', 'Token 12'], 30]);
       } else {
         expect([bag(sa.save), gold(sa.save), bag(sb.save), gold(sb.save)]).toEqual([['Token 1', 'Token 2', 'Token 3'], 100, ['Token 11', 'Token 12'], 50]);
-        expect(sb.news).toEqual([{ kind: 'toast', offer: id, text: 'Brakk took back the offer before your answer reached the room. Back in your bag: 20 gold.' }]);
+        expect(sb.news).toEqual([{ kind: 'toast', offer: id, text: 'Brakk took back the offer before your answer reached the room server. Back in your bag: 20 gold.' }]);
       }
     });
   }

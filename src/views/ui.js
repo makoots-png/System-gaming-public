@@ -7,7 +7,7 @@ export const h = html => { const t = document.createElement('template'); t.inner
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const fmt = n => (Number.isFinite(Number(n)) ? Number(n).toLocaleString('en-US') : '0');
 /** What a maker says when the store refused its write (another tab took over, a newer app's save): nothing was saved. */
-export const NOT_SAVED = 'Not saved: this tab cannot save right now. The banner at the top says why.';
+export const NOT_SAVED = 'Not saved. This tab cannot save right now. Check the banner at the top for details.';
 export const rankBadge = rank => `<span class="rank-badge rank-${esc(rank)}" title="Rank ${esc(rank)}">${esc(rank)}</span>`;
 export const field = (label, inputHtml) => `<label class="field"><span class="lbl">${esc(label)}</span>${inputHtml}</label>`;
 import { dismiss, enter } from './motion.ts';
@@ -351,7 +351,10 @@ function show(/** @type {SystemWin} */ w) {
       const n = Number(v);
       if (v === '' || !Number.isFinite(n)) { err.textContent = 'Enter a number.'; input.focus(); return; }
       if ((o.form.min !== undefined && n < o.form.min) || (o.form.max !== undefined && n > o.form.max)) {
-        err.textContent = `Enter a value from ${o.form.min ?? '-∞'} to ${o.form.max ?? '∞'}.`; input.focus(); return;
+        const lo = o.form.min, hi = o.form.max;
+        err.textContent = lo !== undefined && hi !== undefined ? `Enter a value from ${lo} to ${hi}.`
+          : lo !== undefined ? `Enter a value of at least ${lo}.` : `Enter a value of at most ${hi}.`;
+        input.focus(); return;
       }
       return done(n);
     }

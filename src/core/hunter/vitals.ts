@@ -267,7 +267,7 @@ export function vitalChipsOf(v: Pick<Vitals, 'life' | 'collapsed'>): VitalChip[]
  * The ways back from dead, as every place that tells a dead hunter names them (the sheet, the toast of a death, a solo run,
  * the Dead chip, the Rules page): one name each, the GM's button and the item.
  */
-export const WAYS_BACK = 'The GM\'s Revive or a Resurrection Crystal';
+export const WAYS_BACK = 'The GM\'s Revive, a System revive (outside a fight), or a Resurrection Crystal (outside a fight)';
 /** The toast when a change takes a hunter's HP to 0. */
 export const DIED_WORDS = `HP has reached 0. You are dead. ${WAYS_BACK} brings you back.`;
 

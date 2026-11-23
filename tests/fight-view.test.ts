@@ -406,7 +406,7 @@ describe('a mythic on the table (notes-11-keystones.md B.5, unit MY7)', () => {
         const b = omenBanner(seen(id0, { omen: { key, faltering: false, aim: id('Mira') } }), names, tick(0), R)!;
         const outcomes = b.answers.filter(l => l.endsWith('cancels it') || l.endsWith('weakens it'));
         expect(outcomes).toHaveLength(live(o).length);
-        expect(b.answerHead).toBe('Answer it:');
+        expect(b.answerHead).toBe('How to counter it:');
         const inPhase = mythicScriptOf(id0).phases[0]!.rotation.some(x => x.kind === 'omen' && x.omen === key);
         const inDoom = mythicScriptOf(id0).enraged.some(x => x.kind === 'omen' && x.omen === key);
         expect(b.title).toBe(`${inDoom && !inPhase ? 'DOOM' : 'OMEN'}: ${o.name}`);
@@ -439,9 +439,9 @@ describe('a mythic on the table (notes-11-keystones.md B.5, unit MY7)', () => {
     const m = seen('angel-of-the-last-trumpet', { omen: { key: beat.omen, faltering: false, aim: id('Boss') } });
     expect(omenBanner(m, names, late, R)!.title).toBe(`DOOM: ${script.omens[beat.omen]!.name}`);
   });
-  test('Nothing dodges a sure move, and a blast says to step out of its tiles', () => {
+  test('Cannot be dodged or resisted on a sure move, and a blast says to step out of its tiles', () => {
     const sure = omenBanner(seen('angel-of-the-last-trumpet', { omen: { key: 'note' as OmenKey, faltering: false, aim: id('Boss') } }), names, tick(0), R)!;
-    expect(sure.answers).toContain('Nothing dodges it.');
+    expect(sure.answers).toContain('Cannot be dodged or resisted.');
     const blast = omenBanner(seen('angel-of-the-last-trumpet', { omen: { key: 'stars' as OmenKey, faltering: false, aim: { x: 1, y: 1 } } }), names, tick(0), R)!;
     expect(blast.answers).toContain('Step out of the marked tiles to dodge it.');
   });
@@ -452,25 +452,24 @@ describe('a mythic on the table (notes-11-keystones.md B.5, unit MY7)', () => {
     expect(at(0).clock).toBe(`Clock: ${clock} rounds left`);
     expect(at(clock - 1).clock).toBe('Clock: 1 round left');
     expect(at(0).phase).toBe(`Phase 1 of ${script.phases.length}: ${script.phases[0]!.name}`);
-    expect(at(0).hp).toBe(`HP 58% · gate at ${Math.round(bandOf(script, 0).gate * 100)}%`);
+    expect(at(0).hp).toBe(`HP 58% · next phase at ${Math.round(bandOf(script, 0).gate * 100)}% HP`);
   });
   test('the strip says held at the gate and what its next turn does', () => {
     const script = mythicScriptOf('angel-of-the-last-trumpet');
     const s = mythicStrip(seen('angel-of-the-last-trumpet', { held: true, hp: { hp: 650, hpMax: 1000 } }), tick(0), R);
-    expect(s.hp).toBe('HP 65% · held at the gate');
-    expect(s.clock).toBe(`Its next turn starts phase 2: ${script.phases[1]!.name}.`);
+    expect(s.hp).toBe('HP 65% · HP locked until next phase');
+    expect(s.clock).toBe(`Phase 2 (${script.phases[1]!.name}) starts on its next turn.`);
   });
   test('the strip says enraged once a gate phase runs past its clock, and names the doom', () => {
     const script = mythicScriptOf('angel-of-the-last-trumpet'), late = tick(R.fight.round * (script.phases[0]!.clock + 1));
     const s = mythicStrip(seen('angel-of-the-last-trumpet'), late, R);
     expect(s.mark).toBe('enraged');
-    const every = script.enraged.every(b => b.kind === 'omen') ? 'every turn' : 'every other turn';
-    expect(s.clock).toBe(`Enraged: ${script.omens['note' as OmenKey]!.name} ${every}.`);
+    expect(s.clock).toBe(`Enraged: ${script.omens['note' as OmenKey]!.name} every other turn.`);
   });
-  test('a clock phase says damage does not reach it and counts the rounds to survive', () => {
+  test('a clock phase says immune to damage and counts the rounds to survive', () => {
     const script = mythicScriptOf('zaratan-the-island-that-wakes'), dive = script.phases[1]!;
     const s = mythicStrip(seen('zaratan-the-island-that-wakes', { phase: 1, beat: 0 }), tick(0), R);
-    expect(s.hp).toBe('HP 58% · damage does not reach it');
+    expect(s.hp).toBe('HP 58% · immune to damage');
     expect(s.clock).toBe(`Survive ${dive.clock} more rounds.`);
     expect(s.note).toBe(dive.line);
   });
@@ -519,7 +518,7 @@ describe('the GM\'s hand on a mythic (unit MY7)', () => {
   const seen = (o: Partial<MythicSeen> = {}): MythicSeen => ({ id: id('Boss'), name: 'Boss', script: 'angel-of-the-last-trumpet', phase: 0, beat: 1, since: tick(0), omen: null, hp: { hp: 100, hpMax: 100 }, bandWord: null, held: false, ...o });
   test('on its turn with an omen standing the GM lands it or drops it', () => {
     const h = mythicHand(seen({ omen: { key: 'weighed' as OmenKey, faltering: false, aim: id('Mira') } }));
-    expect([h.landTitle, h.land, h.drop]).toEqual([`${script.name}'s turn: the omen lands.`, 'Land Weighed and Found Wanting', 'Drop the omen']);
+    expect([h.landTitle, h.land, h.drop]).toEqual([`${script.name}'s turn. The omen lands.`, 'Land Weighed and Found Wanting', 'Drop the omen']);
   });
   test('with no omen standing there is nothing to land or drop, and Next phase asks what its HP drops to', () => {
     const h = mythicHand(seen());

@@ -878,7 +878,7 @@ function opLine(o: Op, tier: number | null, R: DescribeRules, wearer: FormulaBod
     case 'applyStatus': {
       const lasts = o.duration === null ? null : num(o.duration, n => roundsText(roundsOf(n, R, 'near')));
       const inner = opLines(o.def.ops, tier, R);
-      return `Applies ${o.def.label}${lasts ? ` (${lasts.text}${rank(lasts)})` : ''}${inner.length ? `: ${inner.join('; ')}` : ''}`;
+      return `Applies ${o.def.label}${lasts ? ` (${lasts.text}${rank(lasts)})` : ''}${inner.length ? `: ${inner.join(', ')}` : ''}`;
     }
     case 'cureStatus': return `Cures ${o.stacks === undefined ? '' : `${o.stacks} of `}${R.conditions[o.key]?.label ?? o.key}`;
     case 'note': return o.text;
@@ -886,7 +886,7 @@ function opLine(o: Op, tier: number | null, R: DescribeRules, wearer: FormulaBod
     case 'delay': { const d = num(o.ticks, n => roundsText(roundsOf(n, R, 'near'))); return `Next turn ${d.text} later${rank(d)}`; }
     case 'hold': return 'Cannot act';
     case 'root': return 'Cannot move';
-    case 'taunt': return 'Must attack the one who taunted it';
+    case 'taunt': return 'Must attack its taunter';
     case 'threat': { const t = num(o.amount, n => signed(n)); return `${t.text} threat${rank(t)}`; }
     case 'shield': return `Shield: ${amountWords(o.amount, wearer)}`;
     case 'channel': return o.mode === 'protect' ? 'A hit does not break a channel' : 'Breaks a channel';
@@ -896,7 +896,7 @@ function opLine(o: Op, tier: number | null, R: DescribeRules, wearer: FormulaBod
       const p = num(o.pct, n => `${n}%`);
       return `${o.chance}% chance to get ${p.text} of an action's time back${rank(p)}`;
     }
-    case 'aura': return `Gives off its other effects to ${o.on === 'all' ? 'everyone' : o.on} within ${o.radius} tile${o.radius === 1 ? '' : 's'}`;
+    case 'aura': return `Applies its other effects to ${o.on === 'all' ? 'everyone' : o.on} within ${o.radius} tile${o.radius === 1 ? '' : 's'}`;
     case 'spread': return `Spreads each round to anyone within ${o.range} tile${o.range === 1 ? '' : 's'} who fails to resist it, once a fight`;
     case 'sheet': {
       if (isFormulaSheetOp(o)) { const a = amount(o.amount); return `${SHEET_ADD_TEXT[o.key]}: ${signedWords(a.text)}${rank(a)}`; }
@@ -904,25 +904,25 @@ function opLine(o: Op, tier: number | null, R: DescribeRules, wearer: FormulaBod
       const n = num(o.amount, signed); return `${SHEET_ADD_TEXT[o.key]} ${n.text}${rank(n)}`;
     }
     case 'share': { const p = num(o.pct, n => `${signed(n)}%`); return `${SHARE_TEXT[o.on]} ${p.text}${rank(p)}`; }
-    case 'untargetable': return 'Foes cannot aim at it or hit it with an area, for a round, once a fight. Acting on a foe ends it';
-    case 'invulnerable': return 'Damage does not take it under 1 HP, for a round, once a fight';
-    case 'safeguard': return 'A harmful status from a foe does nothing, for a round';
+    case 'untargetable': return 'Foes cannot target it or hit it with area abilities for 1 round, once per fight. Acting against a foe ends it';
+    case 'invulnerable': return 'Damage cannot drop HP below 1 for 1 round, once per fight';
+    case 'safeguard': return 'Blocks harmful statuses from foes for 1 round';
     case 'edge': {
-      const who = o.side === 'attack' ? `Its next use against a foe${o.tag ? ` tagged ${o.tag}` : ''}: the target rolls twice and keeps the ${o.keep === 'better' ? 'lower' : 'higher'}`
-        : `A use against it: it rolls twice and keeps the ${o.keep === 'better' ? 'higher' : 'lower'}`;
-      return `${who}${o.spend ? '. Spent once used' : ''}`;
+      const who = o.side === 'attack' ? `On its next use against a foe${o.tag ? ` tagged ${o.tag}` : ''}, the target rolls twice and keeps the ${o.keep === 'better' ? 'lower' : 'higher'}`
+        : `When targeted by an ability, it rolls twice and keeps the ${o.keep === 'better' ? 'higher' : 'lower'}`;
+      return `${who}${o.spend ? '. Spent after one use' : ''}`;
     }
     case 'boost': {
       const die = o.die.kind === 'die' ? `a d${o.die.sides}` : `${o.die.n}`;
-      return o.side === 'attack' ? `Its next use against a foe: each target's die is lowered by ${die}` : `The next use against it: its die is raised by ${die}`;
+      return o.side === 'attack' ? `On its next use against a foe, each target's roll is lowered by ${die}` : `On the next ability against it, its roll is raised by ${die}`;
     }
     case 'hidden': {
       const l = num(o.level, n => `${n}`), ends = STEALTH_ENDS.filter(e => o.ends[e]).map(e => STEALTH_END_TEXT[e]);
-      const ended = ends.length ? `It ends when it ${ends.length > 1 ? `${ends.slice(0, -1).join(', ')} or ${ends.at(-1)}` : ends[0]}` : 'Only its time or a cure ends it';
-      return `Hidden at stealth level ${l.text}${rank(l)}: only a foe with that sight level or higher sees it. ${HIDE_START_TEXT[o.start]}. ${ended}`;
+      const ended = ends.length ? `Ends when it ${ends.length > 1 ? `${ends.slice(0, -1).join(', ')} or ${ends.at(-1)}` : ends[0]}` : 'Ends only when it expires or is cured';
+      return `Hidden at stealth level ${l.text}${rank(l)}. Only a foe with that sight level or higher can see it. ${HIDE_START_TEXT[o.start]}. ${ended}`;
     }
     case 'stayHidden': return `Stays hidden when it ${STEALTH_END_TEXT[o.on]}`;
-    case 'reveal': return 'Reveals each body it lands on: a hide that ends when it is revealed ends';
+    case 'reveal': return 'Reveals each target it hits, ending stealth that breaks on reveal';
     case 'alert': return 'Never surprised';
     case 'shove': return `${o.dir === 'away' ? 'Pushes' : 'Pulls'} each target ${o.tiles} tile${o.tiles === 1 ? '' : 's'} ${o.dir === 'away' ? 'away from' : 'toward'} ${o.from === 'user' ? 'you' : 'the center'}`;
     case 'move': {
@@ -931,23 +931,23 @@ function opLine(o: Op, tier: number | null, R: DescribeRules, wearer: FormulaBod
     }
     case 'hasten': return `The target's next turn comes ${Math.round(o.share * 100)}% of your action sooner`;
     case 'extra': return 'Take another action at once, once a round';
-    case 'guard': return `Takes ${Math.round(o.share * 100)}% off the strike it answers`;
-    case 'negate': return 'The use it answers does nothing more';
+    case 'guard': return `Reduces damage from the triggering strike by ${Math.round(o.share * 100)}%`;
+    case 'negate': return 'Cancels the triggering ability';
     case 'dispel': return o.which === 'first' ? 'Cures the first harmful status' : 'Cures every harmful status';
-    case 'stagger': return `Fills ${Math.round(o.share * 100)}% of the stagger bar of an elite or a boss it lands on`;
-    case 'echo': return `Echoes the status gained: it also goes on the nearest other one on that side within ${o.radius} tile${o.radius === 1 ? '' : 's'} who lacks it, for as long. An echo does not echo`;
+    case 'stagger': return `Fills ${Math.round(o.share * 100)}% of an elite or boss target's stagger bar`;
+    case 'echo': return `Copies the gained status to the nearest other combatant on that side within ${o.radius} tile${o.radius === 1 ? '' : 's'} who does not have it, for the same duration. Copied statuses do not copy again`;
     default: return o satisfies never;
   }
 }
 
 const SHEET_ADD_TEXT: { readonly [K in Exclude<SheetOpKey, SheetLevelKey>]: string } = {
-  armor: 'Armor', resist: 'Resist', armorPen: 'Armor penetration (%)', resistPen: 'Magic penetration (%)', armorPenFlat: 'Lethality', resistPenFlat: 'Unravel', critFaces: 'Crit faces', exposed: 'Faces a foe crits it on', critSize: 'Crit size',
-  costCut: 'Cost cut (share)', range: 'Range of 2 or more',
+  armor: 'Armor', resist: 'Resist', armorPen: 'Armor penetration (%)', resistPen: 'Magic penetration (%)', armorPenFlat: 'Flat armor penetration', resistPenFlat: 'Flat magic penetration', critFaces: 'Crit range (+)', exposed: 'Faces a foe crits it on', critSize: 'Crit multiplier',
+  costCut: 'Ability cost reduction', range: 'Range of 2 or more',
 };
 /** A sheet level's words, read before its level and "or under": a level is no amount added, the highest source is the level (ruling 8). */
 const SHEET_LEVEL_TEXT: { readonly [K in SheetLevelKey]: string } = { sight: 'Sees foes hidden at stealth level' };
 const STEALTH_END_TEXT: { readonly [E in StealthEnd]: string } = { hurt: 'is hurt', revealed: 'is revealed', dealt: 'deals damage' };
-const HIDE_START_TEXT: { readonly [S in HideStart]: string } = { unseen: 'It hides only out of every foe\'s sight', anywhere: 'It hides even in a foe\'s sight' };
+const HIDE_START_TEXT: { readonly [S in HideStart]: string } = { unseen: 'Can only hide while out of foes\' sight', anywhere: 'Can hide even in foes\' sight' };
 const SHARE_TEXT: { readonly [K in ShareOn]: string } = { dealt: 'Damage dealt', taken: 'Damage taken', healed: 'Healing received', shielded: 'Shields received' };
 
 /**
@@ -974,7 +974,7 @@ const lowHpText = (R: DescribeRules): string => `falls under ${Math.round(R.figh
 type Words = string | ((R: DescribeRules) => string);
 const worded = (w: Words, R: DescribeRules): string => (typeof w === 'string' ? w : w(R));
 const EVENT_TEXT: { readonly [K in Trigger['on']]: Words } = {
-  hitDealt: 'deals a hit', struck: 'is struck', critDealt: 'crits', critTaken: 'takes a crit', kill: 'kills', avoided: 'avoids a use', down: 'goes down',
+  hitDealt: 'deals a hit', struck: 'is struck', critDealt: 'crits', critTaken: 'takes a crit', kill: 'kills', avoided: 'avoids an ability', down: 'drops to 0 HP',
   turnStart: 'starts its turn', turnEnd: 'ends its turn', moved: 'moves', statusGained: 'gains', statusEnded: 'loses', used: 'uses an ability tagged',
   lowHp: lowHpText, imposed: 'puts a harmful status on a foe',
 };
@@ -985,11 +985,11 @@ function triggerLine(t: Trigger, tier: number | null, R: DescribeRules): string 
   const where = t.to === 'self' ? '' : t.to === 'other' ? ' on the other' : reachText(t.to);
   const often = t.limit.kind === 'each' ? 'every time' : t.limit.kind === 'round' ? 'once a round' : `${t.limit.n} time${t.limit.n === 1 ? '' : 's'} a fight`;
   const need = !t.need ? '' : t.need.kind === 'holds' ? ` Only while it holds ${R.conditions[t.need.key]?.label ?? t.need.key}.` : ` Only inside ${t.need.zone}.`;
-  return `When its bearer ${what}: ${t.ops.map(o => landLine(o, tier, R)).join('; ')}${where}, ${often}.${need}`;
+  return `When its bearer ${what}: ${t.ops.map(o => landLine(o, tier, R)).join(', ')}${where}, ${often}.${need}`;
 }
-/** A delayed effect in words (kits design 5.1): "When it ends: Deals 1d8 + mag magical damage. A cure cancels it." */
+/** A delayed effect in words (kits design 5.1): "When it ends: Deals 1d8 + mag magical damage. Curing this status cancels it." */
 const endLine = (e: End, tier: number | null, R: DescribeRules): string =>
-  `When it ends: ${e.ops.map(o => landLine(o, tier, R)).join('; ')}. ${e.cleanse === 'cancel' ? 'A cure cancels it.' : 'A cure makes it happen at once.'}`;
+  `When it ends: ${e.ops.map(o => landLine(o, tier, R)).join(', ')}. ${e.cleanse === 'cancel' ? 'Curing this status cancels it.' : 'Curing this status triggers it right away.'}`;
 /** What a status does apart from its triggers and end: its ops, and a stacking one's count and threshold. */
 function describeStack(def: StatusDef, tier: number | null, R: DescribeRules): string[] {
   if (!isStacking(def)) return opLines(def.ops, tier, R);
@@ -999,15 +999,15 @@ function describeStack(def: StatusDef, tier: number | null, R: DescribeRules): s
     const at = t.at.kind === 'count' ? `${t.at.n} stack${t.at.n === 1 ? '' : 's'}` : `${printFormula(t.at.formula)} stacks`;
     const where = reachText(t.to);
     const lines = t.ops.map(o => landLine(o, tier, R));
-    out.push(`At ${at}${where}: ${lines.join('; ')}. ${t.then === 'spend' ? 'The stacks are spent.' : 'The stacks stay.'}`);
+    out.push(`At ${at}${where}: ${lines.join(', ')}. ${t.then === 'spend' ? 'The stacks are spent.' : 'The stacks stay.'}`);
   }
-  if (st.keep === 'fight') out.push('Gone when the fight ends.');
+  if (st.keep === 'fight') out.push('Removed when the fight ends.');
   return out;
 }
 const LEAVE_TEXT: { readonly [K in 'never' | 'round' | BearerEvent]: Words } = {
-  never: '', round: ' One leaves each round.', hitDealt: ' All leave when its bearer deals a hit.', struck: ' All leave when its bearer is struck.',
-  critDealt: ' All leave when its bearer crits.', critTaken: ' All leave when its bearer takes a crit.', kill: ' All leave when its bearer kills.',
-  avoided: ' All leave when its bearer avoids a use.', turnStart: ' All leave at its bearer\'s turn start.', turnEnd: ' All leave at its bearer\'s turn end.',
-  moved: ' All leave when its bearer moves.', down: ' All leave when its bearer goes down.',
-  lowHp: R => ` All leave when its bearer ${lowHpText(R)}.`, imposed: ' All leave when its bearer puts a harmful status on a foe.',
+  never: '', round: ' 1 stack expires each round.', hitDealt: ' All stacks expire when the bearer deals a hit.', struck: ' All stacks expire when the bearer is struck.',
+  critDealt: ' All stacks expire when the bearer crits.', critTaken: ' All stacks expire when the bearer takes a crit.', kill: ' All stacks expire when the bearer kills.',
+  avoided: ' All stacks expire when the bearer avoids an ability.', turnStart: ' All stacks expire at the bearer\'s turn start.', turnEnd: ' All stacks expire at the bearer\'s turn end.',
+  moved: ' All stacks expire when the bearer moves.', down: ' All stacks expire when the bearer drops to 0 HP.',
+  lowHp: R => ` All stacks expire when the bearer ${lowHpText(R)}.`, imposed: ' All stacks expire when the bearer puts a harmful status on a foe.',
 };

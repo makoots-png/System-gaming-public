@@ -4,15 +4,16 @@
 // The debt is RULES.reviveDebtClears Clears of the hunter's rank (economy.md section 13).
 import type { Page } from '@playwright/test';
 import { RULES, clearOf } from '../../src/core/rules.ts';
+import { RAISE_CHIPS, RAISE_TITLE, debtLine, raiseLine, raiseOffer, raisedSaid } from '../../src/core/hunter/revive-standing.ts';
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, chooseList } from './helpers.ts';
 
 const HUNTER = 'Kai Test', MONSTER = 'Cave Rat';
 const combat = (page: Page) => page.locator('#view-combat');
-const raiseWindow = (page: Page) => page.locator('.sys-overlay.show', { hasText: 'THE SYSTEM CAN RAISE YOU' });
+const raiseWindow = (page: Page) => page.locator('.sys-overlay.show', { hasText: RAISE_TITLE });
 const hunter = (page: Page) => page.evaluate(() => { const h = hunterApp.store.active(); return { life: h.life, reviveLeft: h.reviveLeft, debt: h.debt, level: h.level }; });
 /** The player's hunter dead outside any fight (setup: a fall the GM applied by hand). */
 const dies = (player: Page) => player.evaluate(() => hunterApp.store.update(() => { hunterApp.store.active().life = { at: 'dead' }; }, 'test-setup'));
-const gmLog = (gm: Page) => gm.evaluate(() => hunterApp.store.get().log.filter((l: any) => l.title.startsWith('System raise')).map((l: any) => l.text) as string[]);
+const gmLog = (gm: Page) => gm.evaluate(() => hunterApp.store.get().log.filter((l: any) => l.title.startsWith('System revive')).map((l: any) => l.text) as string[]);
 const gold = (n: number) => `${n.toLocaleString('en-US')} gold`;
 
 test('a player\'s hunter killed in the GM\'s fight is offered the System raise once the fight ends: free, then on a debt of ten Clears, then never, and the GM\'s log hears each', async ({ device }) => {
@@ -29,7 +30,7 @@ test('a player\'s hunter killed in the GM\'s fight is offered the System raise o
 
   await test.step('the GM\'s fight takes the hunter to 0 HP: dead, and no raise is offered while the fight holds it', async () => {
     await go(gm, 'combat');
-    for (const label of [`${HUNTER} (remote)`, await gm.evaluate(() => hunterApp.store.active().name as string)]) {
+    for (const label of [`${HUNTER} (player phone)`, await gm.evaluate(() => hunterApp.store.active().name as string)]) {
       await combat(gm).locator('[data-hsel]').selectOption({ label });
       await combat(gm).locator('[data-addh]').tap();
     }
@@ -39,7 +40,7 @@ test('a player\'s hunter killed in the GM\'s fight is offered the System raise o
     await gm.evaluate(n => { const r = hunterApp.store.get().fight.rows.find((x: any) => x.name === n); hunterApp.api.combat.adjust(r.id, { hp: -9999 }); }, HUNTER);
     await expect.poll(async () => (await hunter(player)).life, { timeout: 15_000 }).toEqual({ at: 'dead' });
     await go(player, 'status');
-    await expect(player.locator('#view-status [data-raise-line]')).toHaveText('Once the fight ends, the System can raise you once for free.');
+    await expect(player.locator('#view-status [data-raise-line]')).toHaveText(raiseLine({ reviveLeft: 'free', rank: 'E', level: 1 }, RULES, true));
     await expect(player.locator('#view-status [data-raise]')).toBeHidden();
     await expect(raiseWindow(player)).toHaveCount(0);
   });
@@ -49,39 +50,41 @@ test('a player\'s hunter killed in the GM\'s fight is offered the System raise o
     await dismissAll(gm);
     const win = raiseWindow(player);
     await expect(win).toBeVisible({ timeout: 15_000 });
-    await expect(win).toContainText('Cost: nothing. This is your free raise.');
-    await win.locator('.sys-actions button', { hasText: 'Rise' }).tap();
+    const freeOffer = raiseOffer({ reviveLeft: 'free', rank: 'E', level: 1 }, RULES)!;
+    await expect(win).toContainText(freeOffer.lines[0]!);
+    await win.locator('.sys-actions button', { hasText: freeOffer.rise }).tap();
     await expect(win).toHaveCount(0);
     await expect.poll(async () => (await hunter(player)).life).toEqual({ at: 'up', hp: 1 });
     expect(await hunter(player)).toMatchObject({ reviveLeft: 'debt', debt: 0 });
-    await expect.poll(() => gmLog(gm), { timeout: 15_000 }).toEqual([`The System raised ${HUNTER} for free. One raise on debt is left.`]);
+    await expect.poll(() => gmLog(gm), { timeout: 15_000 }).toEqual([raisedSaid(HUNTER, 'free', 0).text]);
   });
 
   const owes = RULES.reviveDebtClears * clearOf(RULES, 'E');
   await test.step('the second death: the window names the debt, Rise on debt raises and owes it', async () => {
     await dies(player);
     const win = raiseWindow(player);
+    const debtOffer = raiseOffer({ reviveLeft: 'debt', rank: 'E', level: 1 }, RULES)!;
     await expect(win).toBeVisible();
-    await expect(win).toContainText(`Cost: a debt of ${gold(owes)}, ${RULES.reviveDebtClears} E-rank Clears.`);
-    await expect(win).toContainText('After this, only a Resurrection Crystal or the GM brings you back.');
-    await win.locator('.sys-actions button', { hasText: `Rise on debt: ${gold(owes)}` }).tap();
+    await expect(win).toContainText(debtOffer.lines[0]!);
+    await expect(win).toContainText(debtOffer.lines[2]!);
+    await win.locator('.sys-actions button', { hasText: debtOffer.rise }).tap();
     await expect(win).toHaveCount(0);
     await expect.poll(async () => (await hunter(player)).life).toEqual({ at: 'up', hp: 1 });
     expect(await hunter(player)).toMatchObject({ reviveLeft: 'none', debt: owes });
     await go(player, 'inventory');
-    await expect(player.locator('[data-debt]')).toHaveText(`Owed to the System for a raise on debt: ${gold(owes)}.`);
-    await expect.poll(() => gmLog(gm), { timeout: 15_000 }).toContain(`The System raised ${HUNTER} on a debt of ${gold(owes)}. No System raise is left.`);
+    await expect(player.locator('[data-debt]')).toHaveText(debtLine(owes)!);
+    await expect.poll(() => gmLog(gm), { timeout: 15_000 }).toContain(raisedSaid(HUNTER, 'debt', owes).text);
   });
 
   await test.step('the third death: no raise is offered, the sheet says so, and the GM\'s card shows it', async () => {
     await dies(player);
     await go(player, 'status');
-    await expect(player.locator('#view-status [data-raise-line]')).toHaveText('The System will not raise you again.');
+    await expect(player.locator('#view-status [data-raise-line]')).toHaveText(raiseLine({ reviveLeft: 'none', rank: 'E', level: 1 }, RULES, false));
     await expect(player.locator('#view-status [data-raise]')).toBeHidden();
     await expect(raiseWindow(player)).toHaveCount(0);
     expect((await hunter(player)).life).toEqual({ at: 'dead' });
     await go(gm, 'gm');
-    await expect(gm.locator('#gm-board .gm-card.remote', { hasText: HUNTER }).locator('[data-raise-chip]')).toHaveText('No System raise', { timeout: 15_000 });
+    await expect(gm.locator('#gm-board .gm-card.remote', { hasText: HUNTER }).locator('[data-raise-chip]')).toHaveText(RAISE_CHIPS.none, { timeout: 15_000 });
   });
 });
 
@@ -102,7 +105,7 @@ test('a death from the GM\'s fight that reaches the player\'s phone before the f
 
   await test.step('the GM\'s fight kills the hunter while the room holds no doc of it: no raise is offered, and none can be taken', async () => {
     await go(gm, 'combat');
-    for (const label of [`${HUNTER} (remote)`, await gm.evaluate(() => hunterApp.store.active().name as string)]) {
+    for (const label of [`${HUNTER} (player phone)`, await gm.evaluate(() => hunterApp.store.active().name as string)]) {
       await combat(gm).locator('[data-hsel]').selectOption({ label });
       await combat(gm).locator('[data-addh]').tap();
     }
@@ -113,7 +116,7 @@ test('a death from the GM\'s fight that reaches the player\'s phone before the f
     await expect.poll(async () => (await hunter(player)).life, { timeout: 15_000 }).toEqual({ at: 'dead' });
     expect(await player.evaluate(() => hunterApp.api.sync.doc('fight'))).toBeNull();
     await go(player, 'status');
-    await expect(player.locator('#view-status [data-raise-line]')).toHaveText('Once the fight ends, the System can raise you once for free.');
+    await expect(player.locator('#view-status [data-raise-line]')).toHaveText(raiseLine({ reviveLeft: 'free', rank: 'E', level: 1 }, RULES, true));
     await expect(player.locator('#view-status [data-raise]')).toBeHidden();
     await expect(raiseWindow(player)).toHaveCount(0);
     expect(await player.evaluate(() => hunterApp.api.hunter.systemRaise(hunterApp.store.active().id))).toMatchObject({ ok: false, why: 'held' });
@@ -141,10 +144,10 @@ test('Not now leaves the hunter dead, and Rise on the sheet opens the window aga
   await expect(win).toHaveCount(0);
   expect((await hunter(player)).life).toEqual({ at: 'dead' });
   await go(player, 'status');
-  await expect(player.locator('#view-status [data-raise-line]')).toHaveText('The System can raise you once for free.');
+  await expect(player.locator('#view-status [data-raise-line]')).toHaveText(raiseLine({ reviveLeft: 'free', rank: 'E', level: 1 }, RULES, false));
   await player.locator('#view-status [data-raise]').tap();
   await expect(win).toBeVisible();
-  await win.locator('.sys-actions button', { hasText: 'Rise' }).tap();
+  await win.locator('.sys-actions button', { hasText: raiseOffer({ reviveLeft: 'free', rank: 'E', level: 1 }, RULES)!.rise }).tap();
   await expect.poll(async () => (await hunter(player)).life).toEqual({ at: 'up', hp: 1 });
   await expect(player.locator('#view-status [data-death]')).toBeHidden();
 });

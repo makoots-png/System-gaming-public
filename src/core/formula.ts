@@ -150,7 +150,7 @@ const KEYED = ['stacks', 'field', 'held'] as const;
 type Keyed = (typeof KEYED)[number];
 /** The longest status key (effect-ops.ts `STATUS_KEY_RE`). */
 const KEY_MAX = 40;
-const NAME_HINT = `A name is a stat (${STAT_KEYS.join(', ')}), a sheet number such as phys, mag, sup, hpMax or armor, charge, missing, hits, kills or spent, or stacks(key), field(key) or held(key) of a status; target.name reads the target's.`;
+const NAME_HINT = `Use a stat (${STAT_KEYS.join(', ')}), a sheet value (like phys for physical power, mag for magic, sup for support, hpMax, or armor), charge, missing (missing HP share), hits, kills, spent, or stacks(key), field(key), or held(key). Add target. in front to read the target's value.`;
 
 type Token =
   | { readonly t: 'number'; readonly value: number; readonly at: number; readonly text: string }
@@ -174,7 +174,7 @@ function tokenize(text: string): Token[] | string {
     if (i >= text.length) return tokens;
     re.lastIndex = i;
     const m = re.exec(text);
-    if (!m) return `Cannot read "${text[i]}" at character ${i + 1}. A formula uses numbers, dice such as 2d6 or 2d20kh1, names, + - * / ^, min, max, floor, ceil, round, abs and brackets.`;
+    if (!m) return `Cannot read "${text[i]}" at character ${i + 1}. A formula uses numbers, dice such as 2d6 or 2d20kh1, names, + - * / ^, min, max, floor, ceil, round, abs and parentheses.`;
     const at = i + 1, word = m[0];
     if (m[1] !== undefined && m[2] !== undefined) {
       const target = m[1].startsWith('target.'), name = (target ? m[1].slice('target.'.length) : m[1]) as Keyed;
@@ -211,7 +211,7 @@ function readMods(term: string, mods: string, count: number, sides: number): Dic
     if (!m) return null;
     i = POINT.lastIndex;
     const c: Compare = { op: (m[1] || '=') as Compare['op'], n: Number(m[2]) };
-    return c.n >= 1 && c.n <= sides ? c : `"${term}": ${what}${pointText(c)} is not a face of a d${sides}; a face is 1 to ${sides}.`;
+    return c.n >= 1 && c.n <= sides ? c : `"${term}": ${what}${pointText(c)} is not a face on a d${sides}. Use a number from 1 to ${sides}.`;
   };
   while (i < mods.length) {
     MOD.lastIndex = i;
@@ -220,35 +220,35 @@ function readMods(term: string, mods: string, count: number, sides: number): Dic
     i = MOD.lastIndex;
     const name = m[0].toLowerCase();
     if (name === 'r' || name === 'ro') {
-      if (once !== undefined && once !== (name === 'ro')) return `"${term}" mixes r and ro: roll a die again every time (r) or once (ro), not both.`;
+      if (once !== undefined && once !== (name === 'ro')) return `"${term}" mixes r and ro. Use r to reroll every time or ro to reroll once, not both.`;
       once = name === 'ro';
       const c = point(name);
       if (c === null) return `${name} needs a face: 2d8${name}1 or 2d8${name}<2.`;
       if (typeof c === 'string') return c;
       if (!on.some(x => x.op === c.op && x.n === c.n)) on.push(c);
     } else if (name === '!') {
-      if (mods[i] === '!') return `"${term}": !! (compounding) is not read here; write ! to explode, as in 3d6!.`;
-      if (explode) return `"${term}" explodes twice; write one !, as in 3d6! or 3d6!>5.`;
+      if (mods[i] === '!') return `"${term}": !! (compounding) is not supported. Write ! to explode, as in 3d6!.`;
+      if (explode) return `"${term}" explodes twice. Write one !, as in 3d6! or 3d6!>5.`;
       const c = point('!');
       if (typeof c === 'string') return c;
       explode = c ?? { op: '=', n: sides };
     } else if (name === '>' || name === '<' || name === '=') {
-      if (success) return `"${term}" counts successes twice; write one, as in 3d6>5.`;
+      if (success) return `"${term}" counts successes twice. Write one condition, as in 3d6>5.`;
       WHOLE.lastIndex = i;
       const n = WHOLE.exec(mods);
       if (!n) return `${name} needs a number: 3d6${name}5.`;
       i = WHOLE.lastIndex;
       success = { op: name, n: Number(n[0]) };
-      if (success.n < 1 || success.n > sides) return `"${term}": ${name}${success.n} is not a face of a d${sides}; a face is 1 to ${sides}.`;
+      if (success.n < 1 || success.n > sides) return `"${term}": ${name}${success.n} is not a face on a d${sides}. Use a number from 1 to ${sides}.`;
     } else {
       const how: Cut['how'] = name === 'k' ? 'kh' : name === 'd' ? 'dl' : name as Cut['how'];
-      if (cut) return `"${term}" keeps or drops twice; a term keeps or drops once, as in 4d6kh3.`;
+      if (cut) return `"${term}" keeps or drops twice. Use only one keep or drop modifier, as in 4d6kh3.`;
       WHOLE.lastIndex = i;
       const n = WHOLE.exec(mods);
       if (!n) return `${name} needs a number: ${CUT_EXAMPLE[how]}.`;
       i = WHOLE.lastIndex;
       cut = { how, n: Number(n[0]) };
-      if (cut.n < 1 || cut.n > count) return `"${term}": ${name}${cut.n} ${how[0] === 'k' ? 'keeps' : 'drops'} ${cut.n} of ${count} dice; write 1 to ${count}.`;
+      if (cut.n < 1 || cut.n > count) return `"${term}": ${name}${cut.n} ${how[0] === 'k' ? 'keeps' : 'drops'} ${cut.n} of ${count} dice. Use a number from 1 to ${count}.`;
     }
   }
   const out: { -readonly [K in keyof DiceMods]: DiceMods[K] } = {};
@@ -310,7 +310,7 @@ function tooBig(tokens: readonly Token[]): string | null {
   for (const t of tokens) {
     if (t.t === 'sym' && (t.text === '(' || t.text === ')' || t.text === ',')) {
       depth += t.text === '(' ? 1 : t.text === ')' ? -1 : 0;
-      if (depth > FORMULA_PARTS) return `The brackets at character ${t.at} are ${depth} deep. A formula has at most ${FORMULA_PARTS} parts, so it needs at most ${FORMULA_PARTS} brackets inside each other.`;
+      if (depth > FORMULA_PARTS) return `The parentheses at character ${t.at} are ${depth} deep. A formula has at most ${FORMULA_PARTS} parts, so it needs at most ${FORMULA_PARTS} parentheses inside each other.`;
     } else if (++parts > FORMULA_PARTS) return TOO_MANY_PARTS;
   }
   return null;
@@ -375,8 +375,8 @@ export function parseFormula(text: string, rules: FormulaRules): ParsedFormula {
       case 'number': return { kind: 'number', value: tok.value };
       case 'dice': {
         const { maxDice, maxSides } = rules.dice;
-        if (tok.count < 1 || tok.count > maxDice) refuse(`"${tok.text}" rolls ${tok.count} dice; a formula rolls 1 to ${maxDice} at once.`);
-        if (tok.sides < 2 || tok.sides > maxSides) refuse(`"${tok.text}" has dice of ${tok.sides} sides; a die has 2 to ${maxSides}.`);
+        if (tok.count < 1 || tok.count > maxDice) refuse(`"${tok.text}" rolls ${tok.count} dice. A formula can roll 1 to ${maxDice} dice at once.`);
+        if (tok.sides < 2 || tok.sides > maxSides) refuse(`"${tok.text}" has ${tok.sides}-sided dice. A die must have 2 to ${maxSides} sides.`);
         const mods = readMods(tok.text, tok.mods, tok.count, tok.sides);
         if (typeof mods === 'string') return refuse(mods);
         const dice = { kind: 'dice', count: tok.count, sides: tok.sides } as const;
@@ -384,7 +384,7 @@ export function parseFormula(text: string, rules: FormulaRules): ParsedFormula {
       }
       case 'word': return word(tok);
       case 'keyed': {
-        if (tok.target && tok.name !== 'stacks') refuse(`"${tok.text}" at character ${tok.at}: ${tok.name} is read for the whole fight or the user; write ${tok.name}(${tok.key}).`);
+        if (tok.target && tok.name !== 'stacks') refuse(`"${tok.text}" at character ${tok.at}: ${tok.name} cannot use target. Write ${tok.name}(${tok.key}).`);
         if (tok.key.length > KEY_MAX) refuse(`"${tok.key}" at character ${tok.at} is longer than a status's key (${KEY_MAX} characters).`);
         const key = tok.key as StatusKey;
         if (tok.name === 'stacks') return { kind: 'stacks', whose: tok.target ? 'target' : 'user', key };
@@ -403,7 +403,7 @@ export function parseFormula(text: string, rules: FormulaRules): ParsedFormula {
     if (fn) {
       need('(', `Write ${fn} as ${fn}(a).`);
       const arg = expr();
-      need(')', `Write ${fn} as ${fn}(a), with one part in the brackets.`);
+      need(')', `Write ${fn} as ${fn}(a), with one part in the parentheses.`);
       return { kind: 'fn', fn, arg };
     }
     if (lower === 'min' || lower === 'max') {
@@ -419,17 +419,17 @@ export function parseFormula(text: string, rules: FormulaRules): ParsedFormula {
     const name = whose === 'target' ? tail! : tail === undefined ? head : null;
     const found = name === null ? undefined : NAMES.get(name);
     if (found === undefined) {
-      const keyed = (KEYED as readonly string[]).includes(name ?? '') ? `Write ${name}(key), the key of a status in brackets.` : null;
+      const keyed = (KEYED as readonly string[]).includes(name ?? '') ? `Write ${name}(key), the key of a status in parentheses.` : null;
       const hint = keyed ?? NAME_HINT;
       return refuse(`Unknown name "${tok.text}" at character ${tok.at}. ${hint}`);
     }
     if (found.kind === 'charge') {
-      if (whose === 'target') refuse(`"${tok.text}" at character ${tok.at}: charge is the user's own channel; write charge.`);
+      if (whose === 'target') refuse(`"${tok.text}" at character ${tok.at}: charge belongs to the user. Write charge.`);
       return { kind: 'charge' };
     }
     if (found.kind === 'missing') return { kind: 'missing', whose };
     if (found.kind === 'count') {
-      if (whose === 'target') refuse(`"${tok.text}" at character ${tok.at}: ${found.name} is the use's own count; write ${found.name}.`);
+      if (whose === 'target') refuse(`"${tok.text}" at character ${tok.at}: ${found.name} cannot use target. Write ${found.name}.`);
       return { kind: 'count', name: found.name };
     }
     return found.kind === 'stat' ? { kind: 'stat', whose, key: found.key } : { kind: 'sheet', whose, key: found.key };
@@ -529,10 +529,10 @@ export function bareRefusal(f: Formula): string | null {
     case 'number': case 'dice': return null;
     case 'stat': case 'sheet': {
       const name = f.kind === 'sheet' ? f.key.toLowerCase() : f.key;
-      return f.whose === 'user' ? null : `A lasting change reads its bearer's own numbers: write ${name}, not target.${name}.`;
+      return f.whose === 'user' ? null : `A lasting effect only reads its bearer's numbers. Write ${name} instead of target.${name}.`;
     }
     case 'charge': case 'missing': case 'stacks': case 'field': case 'held': case 'count':
-      return `A lasting change reads its bearer's own numbers: ${printFormula(f)} is read only in a use.`;
+      return `A lasting effect only reads its bearer's numbers. You can only use ${printFormula(f)} in an ability.`;
     case 'negate': case 'fn': return bareRefusal(f.arg);
     case 'binary': case 'min': case 'max': return bareRefusal(f.left) ?? bareRefusal(f.right);
     default: return f satisfies never;

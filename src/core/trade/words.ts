@@ -15,7 +15,7 @@ export const TRADE_WORDS = {
   howMany: 'How many', have: (n: number): string => `You have ${n}.`, gold: 'Gold', haveGold: (n: number): string => `You have ${n} gold.`,
   to: 'To', inRoom: 'In the room', onPhone: 'On this phone', nobody: 'No other hunter to give to.',
   ask: 'Ask in return', fromBag: (name: string): string => `From ${name}'s bag`,
-  hint: (name: string): string => `${name} accepts or refuses. Your things wait aside until then.`,
+  hint: (name: string): string => `${name} can accept or refuse. Your items and gold stay set aside until then.`,
   offerTo: (name: string): string => `Offer to ${name}`, giveTo: (name: string): string => `Give to ${name}`,
   offered: (name: string, what: BagPick): string => `You offered ${name} ${pickWords(what)}. See your Bag, under Offers.`,
   handed: (from: string, to: string, what: BagPick): string => `${from} gave ${to} ${pickWords(what)}.`,
@@ -30,8 +30,8 @@ export const TRADE_WORDS = {
   // the GM view's "Trades and stash" section
   trading: 'Trading', on: 'On', off: 'Off', open: 'Open offers', noOpen: 'No open offers.', stop: 'Stop',
   gmLine: (o: Offer): string => `${o.names.by} offers ${o.names.to} ${goodsWords(o.gives)}${forWords(o.asks)}.`,
-  stopping: 'Stopped. Waiting for the room.',
+  stopping: 'Stopped. Waiting for the room server.',
   stopped: (o: Offer): string => `Stopped ${o.names.by}'s offer to ${o.names.to}.`,
-  summary: (open: number): string => (open ? `${open} open` : ''),
-  removeLine: (name: string): string => `${name}'s open offers stay put aside until ${name} is back in the room. Stop them first to give ${name}'s things back on its next visit.`,
+  summary: (open: number): string => (open ? `${open} open offer${open === 1 ? '' : 's'}` : ''),
+  removeLine: (name: string): string => `${name}'s open offers stay set aside until ${name} returns to the room. Stop them first to return ${name}'s items and gold on their next visit.`,
 } as const;

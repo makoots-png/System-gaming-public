@@ -171,9 +171,10 @@ export function register(app) {
   /** The `chain` message to a player's hunter. Their phone's chain machine decides; the GM sees the result in the party quests. */
   async function sendChain(key, job, kind) {
     const S = app.api.sync, r = S.post(S.event('chain', { to: [key], job, kind })), news = postNews(r, S.conn());
-    const what = kind === 'issue' ? 'quest' : kind === 'reissue' ? 'reissue' : 'abandon';
-    ui.toast('! Quest', news === 'sent' ? `Job Change ${what} sent (${job}).` : news === 'waits' ? `Job Change ${what} (${job}) goes when the room answers.`
-      : news === 'noRoom' ? 'Not in a room. Nothing was sent.' : 'The room would not take this Job Change.', { kind: news === 'sent' || news === 'waits' ? 'info' : 'warn' });
+    const sentMsg = kind === 'issue' ? `Job Change quest sent (${job}).` : kind === 'reissue' ? `Job Change reissue sent (${job}).` : `Job Change abandoned (${job}).`;
+    const waitMsg = kind === 'issue' ? `Saved. Job Change quest (${job}) will send once the room server confirms it.` : kind === 'reissue' ? `Saved. Job Change reissue (${job}) will send once the room server confirms it.` : `Saved. Job Change abandon request (${job}) will send once the room server confirms it.`;
+    ui.toast('! Quest', news === 'sent' ? sentMsg : news === 'waits' ? waitMsg
+      : news === 'noRoom' ? 'Not in a room. Nothing was sent.' : 'The room server rejected this Job Change.', { kind: news === 'sent' || news === 'waits' ? 'info' : 'warn' });
   }
 
   // ── player→GM progress (questUpdate, only for from:'gm' quests, only on a player device in a room) ──
@@ -334,7 +335,7 @@ export function register(app) {
     for (const p of out.penalties) {
       ui.system({ tag: '! Penalty', kind: 'penalty', title: 'PENALTY',
         body: `${many ? `${p.name}: ` : ''}You have failed to complete the Daily Quest. You will be transported to the Penalty Zone.`,
-        lines: [...(p.days > 1 ? [`Days missed: ${p.days}`] : []), 'Streak reset to 0', 'Penalized: -2 to all checks until the Penalty Zone is cleared'] });
+        lines: [...(p.days > 1 ? [`Days missed: ${p.days}`] : []), 'Streak reset to 0', `Penalized: -${app.rules().penaltyCheck} to all checks until the Penalty Zone is cleared`] });
     }
     for (const f of out.failed) {
       ui.system({ tag: '! Quest', kind: 'warning', title: 'QUEST FAILED', body: `${many ? `${f.name}: ` : ''}${f.title}: the time limit has expired.`, ...(f.granted.lines.length ? { rewards: f.granted.lines } : {}) });
@@ -392,7 +393,7 @@ export function register(app) {
     const pending = tracked(h) && h.quests.some(q => q.kind === 'daily' && q.status === 'active');
     warn.hidden = !pending; warn.classList.toggle('show', pending);
     const m = Math.floor(left / 60000);
-    warn.textContent = `⚠ Daily quest incomplete. Penalty in ${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
+    warn.textContent = `⚠ Daily quest incomplete. Penalty in ${Math.floor(m / 60)}h ${pad(m % 60)}m`;
   }
 
   /**
@@ -465,8 +466,8 @@ export function register(app) {
       if (to.length && !api.issue(to, { ...partial, from: gm ? 'gm' : 'self' }).length) return;
       if (keys.length) {
         const S = app.api.sync, r = S.post(S.event('quest', { to: keys, quest: questOffer(partial, dueAt) })), news = postNews(r, S.conn()), n = `${keys.length} player${keys.length === 1 ? '' : 's'}`;
-        ui.toast('! Quest', news === 'sent' ? `Quest sent to ${n}.` : news === 'waits' ? `The quest goes to ${n} when the room answers.`
-          : news === 'noRoom' ? 'Not in a room. Quest not sent.' : 'The room would not take this quest.', { kind: news === 'sent' || news === 'waits' ? 'info' : 'warn' });
+        ui.toast('! Quest', news === 'sent' ? `Quest sent to ${n}.` : news === 'waits' ? `Saved. The quest will go to ${n} once the room server confirms it.`
+          : news === 'noRoom' ? 'Not in a room. Quest not sent.' : 'The room server rejected this quest.', { kind: news === 'sent' || news === 'waits' ? 'info' : 'warn' });
       }
     }
     formMoved(el, { type: 'saved' });
@@ -481,7 +482,7 @@ export function register(app) {
     const now = store.hunter(hid)?.quests.find(x => x.id === qid); if (!now) return;
     sendUpdate(hid, now, now.status);
     if (!was && now.objectives.every(x => x.progress >= x.target)) {
-      if (await ui.confirm({ title: 'Complete quest?', body: `All objectives are full: ${now.title}`, confirmLabel: 'Complete' })) complete(hid, qid);
+      if (await ui.confirm({ title: 'Complete quest?', body: `All objectives are complete: ${now.title}`, confirmLabel: 'Complete' })) complete(hid, qid);
     }
   }
 
@@ -490,7 +491,7 @@ export function register(app) {
     const sent = new Set();
     for (;;) {
       const others = store.get().hunters.filter(x => x.id !== store.active().id);
-      if (!others.length) { ui.toast('! Quest', 'No other hunters to issue to.'); return; }
+      if (!others.length) { ui.toast('! Quest', 'There are no other hunters to issue this to.'); return; }
       const v = await ui.system({ tag: '! Issue', title: 'Issue to…', body: src.title, layout: 'list',
         actions: [...others.map(x => ({ label: `${sent.has(x.id) ? '✓ ' : ''}${x.name}`, value: x.id })), { label: 'Done', value: null, cancel: true }] });
       if (!v) return;
@@ -540,7 +541,7 @@ export function register(app) {
         <div class="pq" data-party hidden></div>
         <form class="qf" data-form hidden novalidate>
           <h3 class="lbl" data-ftitle>New quest</h3>
-          <div data-preset hidden><button type="button" data-jobpreset>Job Change</button></div>
+          <div data-preset hidden><button type="button" data-jobpreset>Fill Job Change preset</button></div>
           <div data-qfields></div>
           <fieldset data-who hidden><legend>Assign to</legend><div class="recips" data-whobox></div></fieldset>
           <div class="qf-err" role="alert"></div>
@@ -589,7 +590,7 @@ export function register(app) {
         }
         if (d.del) {
           const q = find(d.del), pardon = q && h.penalty && h.penalty.questId === q.id;
-          if (q && await ui.confirm({ title: 'Delete quest?', body: pardon ? `${q.title}. Deleting it lifts ${h.name}'s penalty.` : q.title, danger: true, confirmLabel: 'Delete' })) deleteQuest(h.id, q.id);
+          if (q && await ui.confirm({ title: 'Delete quest?', body: pardon ? `${q.title}. Deleting it clears ${h.name}'s penalty.` : q.title, danger: true, confirmLabel: 'Delete' })) deleteQuest(h.id, q.id);
           return;
         }
         const qid = d.od || d.oi || d.os, i = Number(d.i);
@@ -612,7 +613,7 @@ export function register(app) {
       };
       const a = document.activeElement, keep = a && el.contains(a) && !a.closest('form') && Object.entries(a.dataset).map(([k, v]) => `[data-${k.replace(/[A-Z]/g, c => '-' + c.toLowerCase())}="${CSS.escape(v)}"]`).join('');
       el.querySelector('[data-tabs]').innerHTML = TABS.map(([k, l]) => `<button type="button" role="tab" data-tab="${k}" aria-selected="${tab === k}">${l}<span class="n">${sets[k].length}</span></button>`).join('');
-      const empty = { active: 'No active quests.', daily: 'No daily quests. Add one with + New quest (kind: Daily).', done: 'No completed quests yet.', failed: 'No failed quests.' };
+      const empty = { active: 'No active quests.', daily: 'No daily quests. Tap + New quest and choose Daily to add one.', done: 'No completed quests yet.', failed: 'No failed quests.' };
       el.querySelector('[data-list]').innerHTML = sets[tab].length ? sets[tab].map(q => cardHtml(q, gm, h)).join('') : `<li class="empty">${empty[tab]}</li>`;
       // an objective's bar fills from what it showed before the list was drawn again (motion.ts `fillTo`)
       for (const b of el.querySelectorAll('[data-qbar]')) { const k = b.dataset.qbar, f = Number(b.dataset.f); void fillTo(b, f, { from: barsWas.get(k) ?? f, trail: false }); barsWas.set(k, f); }

@@ -74,7 +74,7 @@ describe('the System raise: the life, the standing and the debt in one write', (
     expect([h.life, h.conditions, h.reviveLeft, h.debt]).toEqual([{ at: 'up', hp: REVIVE_HP }, [], 'debt', 0]);
     // ruling 9: a raising takes a thirtieth of the level, rounded up: 31 / 30 is 1.03, so two levels
     expect([r.raise, r.owes, r.from, r.to]).toEqual(['free', 0, 31, 29]);
-    expect(raisedLine(r.from, r.to)).toBe(`Up at ${REVIVE_HP} HP at level 29, 2 levels lost`);
+    expect(raisedLine(r.from, r.to)).toBe(`Revived at ${REVIVE_HP} HP and level 29 (2 levels lost)`);
   });
 
   test('the second raise owes ten Clears of the hunter\'s rank and leaves no System raise', () => {
@@ -139,24 +139,24 @@ describe('what the System says of its raise', () => {
   test('the free raise costs nothing and says where the hunter rises; the raise on debt names its gold and Clears on its button', () => {
     // ruling 9: a thirtieth of level 31, rounded up, is 2 levels
     expect(raiseOffer(at('free'), RULES)).toEqual({
-      body: 'You have died. The System raises a hunter once for free.',
-      lines: ['Cost: nothing. This is your free raise.', `You rise at ${REVIVE_HP} HP at level 29, 2 levels lost, every status gone.`],
-      rise: 'Rise',
+      body: 'You have died. The System can revive you once for free.',
+      lines: ['Cost: Free (one-time free revive).', `You revive at ${REVIVE_HP} HP and level 29 (2 levels lost), with all statuses cleared.`],
+      rise: 'Revive for free',
     });
     const debt = raiseOffer(at('debt', 'C', 1), RULES)!;
-    expect(debt.lines).toEqual(['Cost: a debt of 12,500 gold, 10 C-rank Clears.', `You rise at ${REVIVE_HP} HP, every status gone.`, 'After this, only a Resurrection Crystal or the GM brings you back.']);
-    expect(debt.rise).toBe('Rise on debt: 12,500 gold');
+    expect(debt.lines).toEqual(['Cost: 12,500 gold debt (10 rank C gate clears).', `You revive at ${REVIVE_HP} HP, with all statuses cleared.`, 'After this, only a Resurrection Crystal or the GM can revive you.']);
+    expect(debt.rise).toBe('Revive on debt (12,500 gold)');
     expect(raiseOffer(at('none'), RULES)).toBeNull();
   });
 
   test('the sheet says what is left, and that a fight holding the hunter ends first', () => {
-    expect(raiseLine(at('free'), RULES, false)).toBe('The System can raise you once for free.');
-    expect(raiseLine(at('debt'), RULES, true)).toBe('Once the fight ends, the System can raise you once more, on a debt of 1,000 gold.');
-    expect(raiseLine(at('none'), RULES, false)).toBe('The System will not raise you again.');
+    expect(raiseLine(at('free'), RULES, false)).toBe('The System can revive you once for free.');
+    expect(raiseLine(at('debt'), RULES, true)).toBe('Once the fight ends, the System can revive you once more for 1,000 gold debt.');
+    expect(raiseLine(at('none'), RULES, false)).toBe('You have used all your System revives.');
   });
 
   test('the GM\'s log and the bag say who was raised and what is owed', () => {
-    expect(raisedSaid('Mira', 'debt', 1000)).toEqual({ title: 'System raise: Mira', text: 'The System raised Mira on a debt of 1,000 gold. No System raise is left.' });
-    expect([debtLine(0), debtLine(1000)]).toEqual([null, 'Owed to the System for a raise on debt: 1,000 gold.']);
+    expect(raisedSaid('Mira', 'debt', 1000)).toEqual({ title: 'System revive: Mira', text: 'The System revived Mira for 1,000 gold debt. No System revives left.' });
+    expect([debtLine(0), debtLine(1000)]).toEqual([null, 'Debt owed to the System for reviving: 1,000 gold.']);
   });
 });

@@ -108,7 +108,7 @@ describe('the GM\'s ruling and what the landing means', () => {
     const words = (face: 1 | 20, call: CoinSide, side: CoinSide): string => VERDICT_WORDS[verdict(face, call, side)];
     expect(words(20, 'heads', 'heads')).toBe('Critical success');
     expect(words(20, 'heads', 'tails')).toBe('Success');
-    expect(words(1, 'tails', 'tails')).toBe('Saved');
+    expect(words(1, 'tails', 'tails')).toBe('Avoided critical failure');
     expect(words(1, 'tails', 'heads')).toBe('Critical failure');
   });
 
@@ -242,7 +242,7 @@ describe('the save\'s coins and calls (the steps coin.js applies)', () => {
     if (isRefused(ruled)) throw new Error(ruled.why);
     expect(coinOf(ruled.coins, id)).toEqual({ ...fields(), at: 'ruled', call: 'heads' });
     expect([ruled.log[0]!.title, ruled.log[0]!.text]).toEqual([`Coin: ${fields().who} called Heads`, `Natural ${fields().face} for ${fields().what}. The GM flipped the coin.`]);
-    expect(JSON.stringify(ruled.log)).not.toMatch(/Tails|Right|Wrong|Critical|Success|Saved/);
+    expect(JSON.stringify(ruled.log)).not.toMatch(/Tails|Right|Wrong|Critical|Success|Saved|Avoided/);
     expect(ruled.hunters[0]!.chronicle.inbox).toEqual([]);
     expect(coinRuled(ruled, id, stamp)).toEqual({ ok: false, why: 'not-now' });
   });
@@ -254,7 +254,7 @@ describe('the save\'s coins and calls (the steps coin.js applies)', () => {
     const ruled = callRuled(held, id, 'right', 'tails', stamp);
     if (isRefused(ruled)) throw new Error(ruled.why);
     expect(coinOf(ruled.calls, id)).toMatchObject({ at: 'landed', side: 'tails' });
-    expect(ruled.log[0]!.text).toBe(`Natural ${fields().face} for ${fields().what}. Ruled Right: the coin landed Tails.`);
+    expect(ruled.log[0]!.text).toBe(`Natural ${fields().face} for ${fields().what}. Call was right. The coin landed Tails.`);
     expect(callRuled(ruled, id, 'wrong', 'heads', stamp)).toEqual({ ok: false, why: 'not-now' });
   });
   test('a step on a roll nobody holds is refused', () => {

@@ -3,6 +3,7 @@
 // GM can stop an offer and turn trading off. Driven through the UI; the store sets up and reads.
 import type { Page } from '@playwright/test';
 import { test, expect, type DeviceOptions, onboardGM, onboardPlayer, createRoom, dismissAll, go, answerWindow, gmRoomHeaders } from './helpers.ts';
+import { STATE_WORDS } from '../../src/core/trade/offer.ts';
 
 type Line = { name: string; qty?: number; slot?: string };
 type Table = { gm: Page; brakk: Page; mira: Page; code: string };
@@ -216,7 +217,7 @@ test('Mira\'s phone offline accepts later and gets it', async ({ device }) => {
   await mira.context().setOffline(true);
   await expect.poll(() => mira.evaluate(() => hunterApp.api.sync.status())).toBe('offline');
   await line.getByRole('button', { name: 'Accept' }).tap();
-  await expect(line.locator('.tr-state')).toHaveText('Accepted. Waiting for the room.');
+  await expect(line.locator('.tr-state')).toHaveText(STATE_WORDS.taker['accepting-queued'](null as never));
   const ends = async () => ((await (await gm.request.get(`/api/rooms/${code}?after=0`, { headers: await gmRoomHeaders(gm, code) })).json()).events ?? []).filter((e: any) => e.type === 'offerEnd').length;
   expect(await ends(), 'the room has no answer while Mira\'s phone is offline').toBe(0);
   expect(await has(mira, 'Healing Potion'), 'nothing lands while the phone is offline').toBe(0);

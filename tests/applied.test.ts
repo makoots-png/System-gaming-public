@@ -24,7 +24,8 @@ import { parseItem } from '../src/core/registry/items.ts';
 import { REVIVE_HP } from '../src/core/hunter/vitals.ts';
 import type { Life } from '../src/core/hunter/vitals.ts';
 import { useItem } from '../src/core/hunter/use.ts';
-import { soloAnswerBody, soloPlan, soloTaken } from '../src/core/gates/solo.ts';
+import { REFUSED_WORDS, soloAnswerBody, soloPlan, soloTaken } from '../src/core/gates/solo.ts';
+import { PENDING_WORDS } from '../src/core/hunter/pending.ts';
 import type { SoloRunPayload } from '../src/core/protocol.ts';
 import { noticed } from '../src/core/hunter/noticed.ts';
 import { den } from './models/gate-events.ts';
@@ -289,7 +290,7 @@ describe('a hunter\'s life in the GM\'s fight reaches its sheet in the fight\'s 
     const p = phone({ fight: true });
     p.receive(1, 'vitals', { ...totals({ at: 'dead' }), reason: 'Goblin hits Kai' });
     expect(p.hunter.life).toEqual({ at: 'dead' });
-    expect(p.toasts).toEqual(['You are dead. Goblin hits Kai The GM\'s Revive or a Resurrection Crystal brings you back.']);
+    expect(p.toasts).toEqual(['You are dead. Goblin hits Kai The GM\'s Revive brings you back during a fight.']);
     expect(lifeFacts(p.hunter).at(-1)).toEqual({ news: 'died', how: 'fight' });
   });
 
@@ -309,7 +310,7 @@ describe('a hunter\'s life in the GM\'s fight reaches its sheet in the fight\'s 
     const p = phone({ fight: true, life: { at: 'dead' } });
     p.receive(1, 'vitals', totals({ at: 'up', hp: REVIVE_HP }));
     expect(p.hunter.life).toEqual({ at: 'up', hp: REVIVE_HP });
-    expect(p.toasts).toEqual([`You are revived. ${raisedLine(1, 1)}.`]);
+    expect(p.toasts).toEqual([`You are back up. ${raisedLine(1, 1)}.`]);
     expect(lifeFacts(p.hunter).at(-1)).toEqual({ news: 'raised', how: 'gm' });
   });
 
@@ -317,7 +318,7 @@ describe('a hunter\'s life in the GM\'s fight reaches its sheet in the fight\'s 
     const p = phone({ fight: true, level: 30, life: { at: 'dead' } });
     p.receive(1, 'vitals', totals({ at: 'up', hp: REVIVE_HP }));
     expect(p.hunter.level).toBeLessThan(30);
-    expect(p.toasts).toEqual([`You are revived. ${raisedLine(30, p.hunter.level)}.`]);
+    expect(p.toasts).toEqual([`You are back up. ${raisedLine(30, p.hunter.level)}.`]);
   });
 
   test('the row\'s HP is written within the sheet\'s own maximum', () => {
@@ -658,7 +659,7 @@ describe('the GM\'s answer to a solo run lands whole, once a run (notes-2-solo.m
     p.receive(1, 'soloAnswer', PAID);
     expect([p.hunter.xp, p.hunter.gold]).toEqual([before.xp, before.gold]);
     expect([p.asked, p.applied]).toEqual([[], [e(1)]]);
-    expect(p.windows.map(w => [w.title, w.lines])).toEqual([['GATE CLEARED', ['Waiting for the GM']]]);
+    expect(p.windows.map(w => [w.title, w.lines])).toEqual([['GATE CLEARED', [PENDING_WORDS.waits]]]);
   });
 
   test('a second answer to the same run (a second GM phone, or the same one again) gives nothing', () => {
@@ -673,7 +674,7 @@ describe('the GM\'s answer to a solo run lands whole, once a run (notes-2-solo.m
     const p = phone({ asked: [waiting()] }), xp = p.hunter.xp;
     p.receive(1, 'soloAnswer', { ...PAID, verdict: 'refused', why: 'taken' });
     expect([p.asked, p.hunter.xp]).toEqual([[], xp]);
-    expect(p.windows.map(w => [w.title, w.lines])).toEqual([['GATE TAKEN', ['Another hunter cleared this gate first. Your run\'s cost stays.']]]);
+    expect(p.windows.map(w => [w.title, w.lines])).toEqual([['GATE TAKEN', [REFUSED_WORDS.taken]]]);
     const q = phone();
     q.receive(1, 'soloAnswer', PAID);
     expect([q.hunter.xp, q.shown, q.windows]).toEqual([xp, [], []]);

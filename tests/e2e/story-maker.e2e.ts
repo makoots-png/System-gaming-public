@@ -71,7 +71,7 @@ test('a folded chapter\'s Job Change quest with no job is refused at Save: the m
 
   await test.step('Save is refused: chapter 1 opens with its quest, the maker says to choose a job, and nothing is saved', async () => {
     await maker(page).getByRole('button', { name: 'Save story' }).tap();
-    await expect(maker(page).locator('.mk-err')).toHaveText('Chapter 1\'s quest: Choose a job for a job quest.');
+    await expect(maker(page).locator('.mk-err')).toHaveText('Choose a job for chapter 1\'s job quest.');
     await expect(maker(page).locator('[data-chopen="0"]')).toHaveAttribute('aria-expanded', 'true');
     await expect(quest(page).locator('[name=title]')).toHaveValue('Walk the new path');
     expect(await stories(page)).toEqual([]);

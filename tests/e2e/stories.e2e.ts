@@ -3,6 +3,7 @@
 import type { Locator, Page } from '@playwright/test';
 import { test, expect, onboardGM, go, answerWindow } from './helpers.ts';
 import { EXAMPLE_STORIES } from '../../src/core/registry/stories.ts';
+import { RUN_REFUSAL_WORDS, STORY_WORDS } from '../../src/core/story/run.ts';
 
 /** Taps through the UI and counts them: what the GM's thumb does. Typing is not a tap. */
 function tapCounter() {
@@ -54,13 +55,13 @@ test('a GM alone turns on The wager for one hunter and sees its first window; op
 
   await test.step('turned on for Brakk in 4 taps: Turn on a story, the story, Brakk, Turn on and open chapter 1; Brakk sees chapter 1\'s window', async () => {
     await t.tap(section(page).locator('[data-st-turnon]'));
-    await expect(win.getByRole('heading', { name: 'Turn on a story' })).toBeVisible();
+    await expect(win.getByRole('heading', { name: 'Start a story' })).toBeVisible();
     await t.tap(win.locator('[data-st-story]', { hasText: 'The wager' }));
-    await expect(win.getByRole('heading', { name: 'Turn on The wager' })).toBeVisible();
+    await expect(win.getByRole('heading', { name: 'Start The wager' })).toBeVisible();
     await expect(win.locator('[data-st-for="hunters"]')).toHaveAttribute('aria-pressed', 'true');
     await expect(win.locator('.st-prev')).toContainText('THE SYSTEM WILL TAKE THAT BET');
     await t.tap(win.locator('[data-st-who]', { hasText: 'Brakk Ironhide' }));
-    await t.tap(win.locator('[data-st-go]', { hasText: 'Turn on and open chapter 1' }));
+    await t.tap(win.locator('[data-st-go]', { hasText: 'Start and open chapter 1' }));
     expect(t.count).toBe(4);
     await answerWindow(page, 'THE SYSTEM WILL TAKE THAT BET');
     await expect(card(page)).toContainText('For Brakk Ironhide');
@@ -85,8 +86,8 @@ test('a GM alone turns on The wager for one hunter and sees its first window; op
     t.reset();
     await t.tap(card(page).locator('[data-st-open]', { hasText: 'Open chapter 3' }));
     await t.tap(win.locator('[data-st-ch="1"]'));
-    await expect(win.locator('[data-st-who]', { hasText: 'Brakk Ironhide' })).toHaveText('Brakk Ironhide · has it');
-    await expect(win).toContainText('Brakk Ironhide has had this chapter. Opening it gives it again.');
+    await expect(win.locator('[data-st-who]', { hasText: 'Brakk Ironhide' })).toHaveText(`Brakk Ironhide · ${STORY_WORDS.hasIt}`);
+    await expect(win).toContainText(STORY_WORDS.again(['Brakk Ironhide']));
     await t.tap(win.locator('[data-st-go]', { hasText: 'Open chapter 2' }));
     expect(t.count).toBe(3);
     await answerWindow(page, 'THE SYSTEM IS WATCHING THE NUMBERS');
@@ -147,7 +148,7 @@ test('a story for the table: on in 3 taps for everyone here, a late hunter ticke
     await t.tap(win.locator('[data-st-go]'));
     expect(t.count).toBe(3);
     await answerEach(page, 'THE SYSTEM WILL TAKE THAT BET', names.length);
-    await expect(card(page)).toContainText('For the table');
+    await expect(card(page)).toContainText('For the whole party');
     for (const n of names) expect(await chapterFacts(page, await hunterId(page, n))).toBe(1);
   });
 
@@ -169,7 +170,7 @@ test('a story for the table: on in 3 taps for everyone here, a late hunter ticke
     const pts = await pointsOf(page, brakk);
     await page.evaluate(() => hunterApp.store.update((d: any) => { d.storyRuns[0].opens += 1; }, 'test-setup'));
     await win.locator('[data-st-go]').tap();
-    await expect(win.locator('[data-st-err]')).toHaveText('This story was opened again meanwhile. It is at chapter 1 now.');
+    await expect(win.locator('[data-st-err]')).toHaveText(RUN_REFUSAL_WORDS.moved(1));
     expect([await pointsOf(page, brakk), (await runs(page))[0]!.state.chapter]).toEqual([pts, 0]);
     await win.locator('[data-st-cancel]').tap();
     await expect(win).toHaveCount(0);
@@ -180,7 +181,7 @@ test('a story for the table: on in 3 taps for everyone here, a late hunter ticke
     await page.locator('.sys-overlay.show .sys-actions button', { hasText: 'End story' }).tap();
     await card(page).locator('[data-st-open]').tap();
     await win.locator('[data-st-go]').tap();
-    await expect(page.locator('#toasts .toast', { hasText: 'This story was opened again meanwhile. It is at chapter 2 now.' })).toBeVisible();
+    await expect(page.locator('#toasts .toast', { hasText: RUN_REFUSAL_WORDS.moved(2) })).toBeVisible();
     await expect(card(page).locator('.st-at')).toContainText('Chapter 2 of 4');
     expect((await runs(page))[0]!.state).toEqual({ at: 'running', chapter: 1 });
     await answerEach(page, 'THE SYSTEM IS WATCHING THE NUMBERS', names.length + 1);
@@ -211,7 +212,7 @@ test('from the Workshop, Turn on… opens the story at its own step: on for one 
 
   await test.step('Turn on…, Brakk, Turn on and open chapter 1', async () => {
     await t.tap(row.getByRole('button', { name: 'Turn on The wager' }));
-    await expect(win.getByRole('heading', { name: 'Turn on The wager' })).toBeVisible();
+    await expect(win.getByRole('heading', { name: 'Start The wager' })).toBeVisible();
     await t.tap(win.locator('[data-st-who]', { hasText: 'Brakk Ironhide' }));
     await t.tap(win.locator('[data-st-go]'));
     expect(t.count).toBe(3);
