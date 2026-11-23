@@ -24,6 +24,12 @@ import { newGate } from '../src/core/gates/gate.ts';
 import type { Gate, GateId } from '../src/core/gates/gate.ts';
 import type { Monster } from '../src/core/registry/monsters.ts';
 import { BUILT_IN_STATUSES } from '../src/core/registry/statuses.ts';
+import { keystoneOf } from '../src/core/registry/keystones.ts';
+import { freeStatusKey } from '../src/core/combat/effect-ops.ts';
+import type { StatusDef } from '../src/core/combat/effect-ops.ts';
+import { STAT_KEYS } from '../src/core/stats.ts';
+import { STAT_PAIRS } from '../src/core/hunter/keystones.ts';
+import type { KeystoneKey } from '../src/core/hunter/keystones.ts';
 import { DOC_AHEAD, DOC_DEFS_MAX, DOC_MYTHICS, DOC_LOG, DOC_ROWS, DOC_STATUSES, DOC_TILES_MAX, DOC_ZONE_RUNS, fightWire, packBits } from '../src/core/combat/fight-doc.ts';
 import { MAX_ZONES } from '../src/core/combat/zones.ts';
 import { LOG_LINE_MAX, MAX_STATUSES } from '../src/core/combat/fight-types.ts';
@@ -1037,15 +1043,35 @@ describe('the fight doc', () => {
   });
 
   /**
-   * The worst case of the doc on the wire (protocol.ts `DOC_MAX`'s arithmetic), as the design sizes it: ${DOC_ROWS} monster
-   * rows, each with a 60-character name, the six longest built-in statuses at tier S with their counts, a shield, a stagger
-   * with its stagger, a taunt, a channel and a revealed intent of four 80-character lines; a full log, a 40 by 40 map with
-   * its fog, 16 zones, and every list of ids at its bound; an icon on every row (the registry's longest key). `table` is the second shape it can take: the doc's table of defs
-   * at `DOC_DEFS_MAX`, and every other status named inline because its def is not the table's.
+   * The worst case of the doc on the wire (protocol.ts `DOC_MAX`'s arithmetic): 4 hunters with their largest awakened
+   * keystone builds (5 worn keystones each), 4 hunter-like enemy rows (worst-case monster shape) with 4 longest-key
+   * keystones each, and 22 worst-case monster rows (including `DOC_MYTHICS` mythics in an omen), totaling `DOC_ROWS`
+   * rows. Each row also carries a 60-character name, the six longest built-in statuses at tier S with their counts, a
+   * shield, a taunt, a channel, and the registry's longest icon; each monster row adds a stagger bar and a revealed
+   * intent of four 80-character lines. `table` fills `wire.defs` to `DOC_DEFS_MAX` with row 0's GM defs so every other
+   * row's built-ins travel inline while all shipped keystone defs reconstruct on read.
    */
   /** The longest key of the registry: an icon on every row is the worst the doc can carry (each row carries its picture, row-icon.ts `rowIcon`). */
   const LONGEST_ICON = [...ICON_KEYS].sort((a, b) => b.length - a.length)[0]!;
-  function worstDoc(table: boolean) {
+  const ksEntry = (def: StatusDef) => ({ key: freeStatusKey(def.label, () => false), label: def.label, left: null, tier: 5, def });
+  const ksOf = (keys: readonly KeystoneKey[], awakened = false) => keys.flatMap(k => {
+    const made = keystoneOf(k, RULES);
+    return [...(made.worn ? [ksEntry(made.worn)] : []), ...(awakened && k.tier === 'confluence' && made.awakened?.worn ? [ksEntry(made.awakened.worn)] : [])];
+  });
+  /** Four valid awakened S-rank hunter builds that each hold 5 worn keystones (2 marks, confluence, awakened, apex). */
+  const HUNTER_KEYSTONES = [
+    ksOf([{ tier: 'mark', stat: 'agi' }, { tier: 'mark', stat: 'ins' }, { tier: 'confluence', pair: 'agi+ins' }, { tier: 'apex', stat: 'ins' }], true),
+    ksOf([{ tier: 'mark', stat: 'agi' }, { tier: 'mark', stat: 'ctl' }, { tier: 'confluence', pair: 'agi+ctl' }, { tier: 'apex', stat: 'agi' }], true),
+    ksOf([{ tier: 'mark', stat: 'vit' }, { tier: 'mark', stat: 'dis' }, { tier: 'confluence', pair: 'vit+dis' }, { tier: 'apex', stat: 'vit' }], true),
+    ksOf([{ tier: 'mark', stat: 'dis' }, { tier: 'mark', stat: 'pre' }, { tier: 'confluence', pair: 'dis+pre' }, { tier: 'apex', stat: 'dis' }], true),
+  ] as const;
+  /** The four longest-key base keystones a hunter-like enemy row can carry on the wire. */
+  const ENEMY_KEYSTONES = [
+    ...STAT_KEYS.flatMap(stat => (['mark', 'apex'] as const).flatMap(tier => { const w = keystoneOf({ tier, stat }, RULES).worn; return w ? [ksEntry(w)] : []; })),
+    ...STAT_PAIRS.flatMap(pair => { const w = keystoneOf({ tier: 'confluence', pair }, RULES).worn; return w ? [ksEntry(w)] : []; }),
+  ].sort((a, b) => b.key.length - a.key.length).slice(0, 4);
+
+  function worstDoc(table: boolean, allEnemyKeystones = false) {
     const six = Object.entries(BUILT_IN_STATUSES).sort((a, b) => b[1].label.length - a[1].label.length).slice(0, 6);
     const id = (i: number) => `m-${String(i).padStart(2, '0')}`;
     /** A GM's own def of about `n` characters under a built-in's name, so it fills the table: its longest description and ops of a damage of 1. */
@@ -1055,18 +1081,34 @@ describe('the fight doc', () => {
       return { label, desc: 'd'.repeat(Math.max(0, Math.min(500, n - JSON.stringify(bare).length))), ops };
     };
     const fill = Math.floor((DOC_DEFS_MAX - 2) / 6) - 16;
-    const worst = (i: number) => ({
+    const baseStatuses = (i: number, extra: readonly ReturnType<typeof ksEntry>[] = []) => [
+      ...six.map(([key, def]) => ({ key, label: def.label, left: 12.3, stacks: RULES.fight.kit.stackCap, tier: 5, def: table && i === 0 ? big(def.label, fill) : def })),
+      ...extra,
+    ];
+    const worstMonster = (i: number, extra: readonly ReturnType<typeof ksEntry>[] = []) => ({
       ...GOBLIN_ROW, id: id(i), name: 'n'.repeat(60), place: { x: 63, y: 63 }, at: 1234567, speed: 123.45, band: 'critical',
-      statuses: six.map(([key, def]) => ({ key, label: def.label, left: 12.3, stacks: RULES.fight.kit.stackCap, tier: 5, def: table && i === 0 ? big(def.label, fill) : def })),
-      shield: 99999, shieldLeft: 12.3, icon: LONGEST_ICON,
+      statuses: baseStatuses(i, extra), shield: 99999, shieldLeft: 12.3, icon: LONGEST_ICON,
       channel: { ability: 'a'.repeat(40), name: 'c'.repeat(60), charge: 99, max: 99, state: 'holding', factor: 99999.99 }, taunt: { by: 'm-31', left: 12.3 },
       intent: { name: 'i'.repeat(60), target: { x: 63, y: 63 }, reveal: { lines: many(4, () => 'l'.repeat(80)), radius: 63, outer: 63 } },
       stagger: { fill: 12345, max: 99999, staggered: 1.5 }, suggest: 'm-31',
     });
+    const worstHunter = (i: number, extra: readonly ReturnType<typeof ksEntry>[]) => ({
+      id: id(i), name: 'n'.repeat(60), side: 'party', key: `d-${'a'.repeat(30)}:h${i}`, place: { x: 63, y: 63 }, at: 1234567, speed: 123.45, band: 'critical',
+      statuses: baseStatuses(i, extra), shield: 99999, shieldLeft: 12.3, icon: LONGEST_ICON,
+      channel: { ability: 'a'.repeat(40), name: 'c'.repeat(60), charge: 99, max: 99, state: 'holding', factor: 99999.99 }, taunt: { by: 'm-31', left: 12.3 },
+      kind: 'hunter', life: { at: 'up' }, hp: 99999, hpMax: 99999, stride: 64, move: 64,
+    });
     /** A mythic in an omen: the longest script id and omen key the registry holds, the phase it ends in, an aim at a tile, a beat and a time of seven digits. */
     const longest = MYTHIC_IDS.map(sid => omensOf(mythicScriptOf(sid)).map(([k]) => ({ sid, k }))).flat().sort((a, b) => b.sid.length + b.k.length - a.sid.length - a.k.length)[0]!;
     const standing = { state: 'omen', script: longest.sid, phase: mythicScriptOf(longest.sid).phases.length - 1, beat: 1234567, since: 1234567, omen: longest.k, aim: { x: 63, y: 63 }, band: 'critical' };
-    const rows = many(DOC_ROWS, worst).map((r, i) => i < DOC_MYTHICS ? { ...r, standing } : r);
+    const rows = allEnemyKeystones
+      ? many(DOC_ROWS, i => worstMonster(i, ENEMY_KEYSTONES)).map((r, i) => i < DOC_MYTHICS ? { ...r, standing } : r)
+      : many(DOC_ROWS, i => {
+        if (i < DOC_MYTHICS) return { ...worstMonster(i), standing };
+        if (i < DOC_MYTHICS + 4) return worstMonster(i, ENEMY_KEYSTONES);
+        if (i < DOC_MYTHICS + 8) return worstHunter(i, HUNTER_KEYSTONES[i - DOC_MYTHICS - 4]!);
+        return worstMonster(i);
+      });
     return {
       ...LIVE, by: `d-${'a'.repeat(37)}`, id: `f-${'x'.repeat(20)}`, now: 1234567, currentId: 'm-00', ahead: many(DOC_AHEAD, id),
       grid: { w: 40, h: 40, tiles: '#'.repeat(DOC_TILES_MAX), lit: '1'.repeat(DOC_TILES_MAX) },
@@ -1095,6 +1137,10 @@ describe('the fight doc', () => {
       if (table) {
         expect(read.rows[0].statuses.map((s: Raw) => s.def), 'the current row\'s defs are in the table').toEqual(doc.rows[0]!.statuses.map(s => s.def));
         expect(read.rows[1].statuses.every((s: Raw) => s.def === undefined), 'a status whose def is not the table\'s is named inline').toBe(true);
+        const ksRows = read.rows.slice(DOC_MYTHICS, DOC_MYTHICS + 8) as Raw[];
+        const ksDefs = ksRows.flatMap((r: Raw) => r.statuses.slice(6).map((s: Raw) => s.def));
+        expect(ksDefs, 'every keystone chip on the 4 hunters and 4 hunter-like enemies reconstructs with its full def even when wire.defs is full').toHaveLength(36);
+        expect(ksDefs.every(Boolean)).toBe(true);
       } else expect(read).toEqual(doc as never);
       expect(JSON.stringify(wire.defs ?? {}).length).toBeLessThanOrEqual(DOC_DEFS_MAX);
       expect(JSON.stringify(wire).length).toBeLessThanOrEqual(DOC_MAX * 8 / 9);
@@ -1102,11 +1148,26 @@ describe('the fight doc', () => {
     const mine = (read: Raw) => read.rows.filter((r: Raw) => r.standing).length;
     expect(mine(DOCS.fight(copy(fightWire(worstDoc(false) as never))) as Raw), 'the worst doc holds its mythics in an omen and they come back').toBe(DOC_MYTHICS);
     expect(LONGEST_ICON.length, 'the longest key the registry holds fits ICON_KEY_MAX').toBeLessThanOrEqual(ICON_KEY_MAX);
-    const row = worstDoc(false).rows[0]!, wireRow = (r: Raw) => JSON.stringify((fightWire({ ...worstDoc(false), rows: [r] } as never) as Raw).rows[0]).length;
-    const hunter = { ...row, kind: 'hunter', key: KEY, life: { at: 'dead' }, intent: undefined, stagger: undefined, suggest: undefined, hp: 99999, hpMax: 99999, stride: 64, move: 64 };
-    expect(wireRow(hunter), 'a worst-case hunter row is no longer than the worst-case monster row').toBeLessThanOrEqual(wireRow(row));
-    const summon = { ...hunter, kind: 'summon', key: null, life: { at: 'dead' }, owner: 'm-31', left: 12345.6 };
-    expect(wireRow(summon), 'a worst-case summon row is no longer than the worst-case monster row').toBeLessThanOrEqual(wireRow(row));
+    const monsterRow = worstDoc(false).rows[0]!, hunterRow = worstDoc(false).rows[DOC_MYTHICS + 4]!;
+    const wireRow = (r: Raw) => JSON.stringify((fightWire({ ...worstDoc(false), rows: [r] } as never) as Raw).rows[0]).length;
+    expect(wireRow(hunterRow), 'a worst-case awakened hunter row with 5 keystones is no longer than the worst-case monster row').toBeLessThanOrEqual(wireRow(monsterRow));
+    const summon = { ...hunterRow, kind: 'summon', key: null, life: { at: 'dead' }, owner: 'm-31', left: 12345.6, statuses: monsterRow.statuses };
+    expect(wireRow(summon), 'a worst-case summon row is no longer than the worst-case monster row').toBeLessThanOrEqual(wireRow(monsterRow));
+  });
+
+  // Measured bytes for 30 worst-case monster rows all carrying 4 longest-key keystones (120 chips): 51,308 with built-in defs and 58,181 with a full defs table.
+  test(`30 keystone-holding enemy rows fit under DOC_MAX (${DOC_MAX}) at 51,308 / 58,181 bytes with every keystone def reconstructed`, () => {
+    for (const table of [false, true]) {
+      const doc = worstDoc(table, true), wire = copy(fightWire(doc as never)) as Raw;
+      const bytes = JSON.stringify(wire).length;
+      console.info(`30 keystone-holding enemy rows (${table ? 'full defs table' : 'built-in defs'}): ${bytes} bytes of ${DOC_MAX}`);
+      const read = DOCS.fight(wire) as Raw;
+      expect(bytes).toBeLessThanOrEqual(DOC_MAX);
+      expect(JSON.stringify(wire.defs ?? {}).length).toBeLessThanOrEqual(DOC_DEFS_MAX);
+      const ksDefs = (read.rows as Raw[]).flatMap(r => r.statuses.slice(6).map((s: Raw) => s.def));
+      expect(ksDefs).toHaveLength(DOC_ROWS * 4);
+      expect(ksDefs.every(Boolean)).toBe(true);
+    }
   });
 
 });

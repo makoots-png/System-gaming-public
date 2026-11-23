@@ -733,3 +733,5 @@ ts	phase	decision	why	evidence	result
 2026-11-23T04:45Z	features	(neon) Landed plain-copy-e2e on lead-backlog: the full browser suite passes locally (577/0). The public run for plain-copy + row-32 + plain-copy-e2e is next.
 2026-11-23T04:58Z	ops	(neon) Merged PR 82 to main (8abb4f65): plain-copy, plain-copy-e2e, row 32, row 34 status. Public run 45113715680 green in all 8 jobs.
 2026-11-23T05:37Z	ops	(neon) Landed correct-copy-guard: tests/e2e-copy.test.ts catches stale e2e words in about 1 second, and AGENTS.md requires the full browser suite for copy changes.
+2026-11-23T05:50Z	ops	(neon) Merged PR 83 to main (f90f0581): correct-copy-guard. Public run 45118948389 green.
+2026-11-23T06:25Z	features	(neon) Landed K7 on lead-backlog: keystone status defs ride by key on the fight doc wire, with the switch still off.

@@ -4,7 +4,11 @@
 // server's `DOC_MAX` (protocol.ts). Pure; the edge passes the phone, the time stamp and the sheet keys. The doc's reader is in
 // `DOCS` of src/core/protocol.ts and reads it with the bounds exported here. A new field is a member of `FightDoc` or
 // `FightDocRow`, its line in `fightDoc` or `docRow`, and a case in tests/fight-doc.test.ts.
+import { RULES } from '../rules.ts';
 import type { Rules } from '../rules.ts';
+import { STAT_KEYS } from '../stats.ts';
+import { STAT_PAIRS } from '../hunter/keystones.ts';
+import { keystoneOf } from '../registry/keystones.ts';
 import { parseSheetKey } from '../ids.ts';
 import type { DeviceId, SheetKey } from '../ids.ts';
 import { ahead, roundsOf, tick } from './timeline.ts';
@@ -16,7 +20,8 @@ import type { ZoneId, ZoneTone } from './zones.ts';
 import type { AbilityId, CombatantId, HunterId } from './ability-types.ts';
 import { stacked } from './op-amount.ts';
 import { isUp, rowHp } from './row-hp.ts';
-import type { Body, StatusDef, StatusKey } from './effect-ops.ts';
+import { freeStatusKey } from './effect-ops.ts';
+import type { Body, LandOp, StatusDef, StatusKey } from './effect-ops.ts';
 import type { FoeLifeState } from './row-life.ts';
 import type { IconKey } from '../registry/icons.ts';
 import { rowIcon } from './row-icon.ts';
@@ -417,13 +422,60 @@ function docStanding(s: MythicStanding, hpMax: number, shownIds: ReadonlySet<str
 
 const aimOf = (aim: Place | CombatantId): CombatantId | DocPlace => typeof aim === 'string' ? aim : { x: aim.x, y: aim.y };
 
+// ── shipped keystone defs: reconstructed on read instead of carried in wire.defs ──
+/** One shipped keystone status def and its key-sorted canonical JSON for wire matching. */
+type ShippedDef = { readonly def: StatusDef; readonly json: string };
+/** Key-sorted canonical JSON so a fresh def from registry/keystones.ts matches one reordered by parseStatusDef. */
+const canonicalJson = (v: unknown): string => JSON.stringify(v, (_k, x: unknown) =>
+  (x !== null && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : x));
+/**
+ * Every status def shipped by KEYSTONES under RULES: the 41 base worn defs, 7 awakened worn defs, and 23 child
+ * statuses applied by their triggers, thresholds, and ends, keyed by canonical StatusKey. Derived once from KEYSTONES.
+ */
+function buildKeystoneStatusDefs(): ReadonlyMap<StatusKey, ShippedDef> {
+  const out = new Map<StatusKey, ShippedDef>();
+  const recordOps = (ops: readonly LandOp[]): void => {
+    for (const op of ops) if (op.op === 'applyStatus') record(op.key, op.def);
+  };
+  const record = (key: StatusKey, def: StatusDef): void => {
+    if (!out.has(key)) out.set(key, { def, json: canonicalJson(def) });
+    for (const tr of def.triggers ?? []) recordOps(tr.ops);
+    if ('stack' in def && def.stack?.threshold) recordOps(def.stack.threshold.ops);
+    if (def.end) recordOps(def.end.ops);
+  };
+  const recordWorn = (def: StatusDef | undefined): void => {
+    if (def) record(freeStatusKey(def.label, () => false), def);
+  };
+  for (const stat of STAT_KEYS) {
+    recordWorn(keystoneOf({ tier: 'mark', stat }, RULES).worn);
+    recordWorn(keystoneOf({ tier: 'apex', stat }, RULES).worn);
+  }
+  for (const pair of STAT_PAIRS) {
+    const k = keystoneOf({ tier: 'confluence', pair }, RULES);
+    recordWorn(k.worn);
+    recordWorn(k.awakened?.worn);
+  }
+  return out;
+}
+const KEYSTONE_STATUS_DEFS: ReadonlyMap<StatusKey, ShippedDef> = buildKeystoneStatusDefs();
+/** The shipped keystone StatusDef for `key` under `RULES`, or null when `key` is not a shipped keystone status. */
+export function keystoneStatusDef(key: StatusKey): StatusDef | null {
+  return KEYSTONE_STATUS_DEFS.get(key)?.def ?? null;
+}
+/** Whether `def` matches the shipped keystone StatusDef under `key` by key-sorted canonical JSON. */
+function isShippedKeystoneDef(key: StatusKey, def: StatusDef): boolean {
+  const shipped = KEYSTONE_STATUS_DEFS.get(key);
+  return shipped !== undefined && shipped.json === canonicalJson(def);
+}
+
 // ── the wire: the doc as the room stores and sends it ──
 /**
- * The most characters the doc's table of status defs takes. Each status a row the doc carries holds sends its def once, by
- * key, the current row's first, then in the rows' order, while the table fits; a status whose def did not fit, or whose
- * def differs from the one already in the table under its key, carries its label instead, and a player's phone shows its
- * count and rounds only. 6,000 holds the 16 built-ins (3,183 characters) with the five kit examples (2,206); the doc's
- * worst case with the table full is in `DOC_MAX`'s arithmetic (protocol.ts).
+ * The most characters the doc's table of status defs takes. Each non-shipped status a row carries sends its def once,
+ * by key, the current row's first, then in the rows' order, while the table fits. Shipped keystone defs matching
+ * `RULES` are omitted from `defs` and reconstructed on read (`keystoneStatusDef`), while any overridden or colliding
+ * keystone def falls back to `defs`. A status whose def did not fit, or whose def differs from the one in `defs` under
+ * its key, carries its label instead. 6,000 holds the 16 built-ins (3,183 characters) with the five kit examples
+ * (2,206). The doc's worst case with the table full is in `DOC_MAX`'s arithmetic (protocol.ts).
  */
 export const DOC_DEFS_MAX = 6000;
 /**
@@ -444,7 +496,7 @@ export function fightWire(d: FightDoc): Record<string, unknown> {
     ...(Object.keys(defs).length ? { defs } : {}),
   };
 }
-/** Each status's def once by key, the current row's first, at most `DOC_DEFS_MAX` characters of JSON. */
+/** Each non-shipped status's def once by key, the current row's first, at most `DOC_DEFS_MAX` characters of JSON. */
 function defsOf(d: FightDoc & { ended: false }): Record<string, StatusDef> {
   const out: Record<string, StatusDef> = {}, tried = new Set<string>();
   let used = 2;
@@ -452,16 +504,21 @@ function defsOf(d: FightDoc & { ended: false }): Record<string, StatusDef> {
   for (const s of rows.flatMap(r => r.statuses)) {
     if (!s.def || tried.has(s.key)) continue;
     tried.add(s.key);
+    if (isShippedKeystoneDef(s.key, s.def)) continue;
     const n = JSON.stringify(s.key).length + JSON.stringify(s.def).length + 2;
     if (used + n <= DOC_DEFS_MAX) { out[s.key] = s.def; used += n; }
   }
   return out;
 }
 const unlessNull = <K extends string, V>(k: K, v: V | null): { [P in K]?: V } => (v === null ? {} : { [k]: v }) as { [P in K]?: V };
-/** Whether the table's def under `s`'s key is `s`'s own: two rows may hold one key with two defs (an ability's def as written). */
-const inTable = (s: DocStatus, defs: Record<string, StatusDef>): boolean => !!s.def && Object.hasOwn(defs, s.key) && JSON.stringify(defs[s.key]) === JSON.stringify(s.def);
+/** Whether `s.def` matches what `DOCS.fight` resolves under `s.key` when `b` is left out: `defs[s.key]` first, else shipped keystone. */
+function knownDef(s: DocStatus, defs: Readonly<Record<string, StatusDef>>): boolean {
+  if (!s.def) return false;
+  if (Object.hasOwn(defs, s.key)) return canonicalJson(defs[s.key]) === canonicalJson(s.def);
+  return isShippedKeystoneDef(s.key, s.def);
+}
 function statusWire(s: DocStatus, defs: Record<string, StatusDef>): Record<string, unknown> {
-  return { k: s.key, ...(inTable(s, defs) ? {} : { b: s.label }), ...unlessNull('l', s.left), ...(s.stacks !== undefined ? { n: s.stacks } : {}), ...(s.tier ? { t: s.tier } : {}) };
+  return { k: s.key, ...(knownDef(s, defs) ? {} : { b: s.label }), ...unlessNull('l', s.left), ...(s.stacks !== undefined ? { n: s.stacks } : {}), ...(s.tier ? { t: s.tier } : {}) };
 }
 /**
  * A row on the wire. Its names: i id, n name, s side, k sheet key, p place, a at, v speed, b band, st statuses, sh shield,

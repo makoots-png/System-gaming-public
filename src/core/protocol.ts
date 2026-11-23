@@ -42,7 +42,7 @@ import type { Fight, FightId, ForcedFace } from './combat/fight-types.ts';
 import { tick } from './combat/timeline.ts';
 import { FOE_LIFE_STATES } from './combat/row-life.ts';
 import type { Tick } from './combat/timeline.ts';
-import { BANDS, DOC_AHEAD, DOC_DEFS_MAX, DOC_INTENT_LINES, DOC_LOG, DOC_MYTHICS, DOC_READY, DOC_ROWS, DOC_STATUSES, DOC_TILES_MAX, DOC_ZONE_RUNS, INTENT_LINE_MAX, TABLE_REFUSALS, UNSEEN, fightWire, unpackBits } from './combat/fight-doc.ts';
+import { BANDS, DOC_AHEAD, DOC_DEFS_MAX, DOC_INTENT_LINES, DOC_LOG, DOC_MYTHICS, DOC_READY, DOC_ROWS, DOC_STATUSES, DOC_TILES_MAX, DOC_ZONE_RUNS, INTENT_LINE_MAX, TABLE_REFUSALS, UNSEEN, fightWire, keystoneStatusDef, unpackBits } from './combat/fight-doc.ts';
 import type { Band, DocBurst, DocChannel, DocGrid, DocIntent, DocStanding, DocPlace, DocTaunt, DocRefusal, DocStatus, DocZone, FightDoc, FightDocRow } from './combat/fight-doc.ts';
 import { TERRAIN, TERRAINS } from './combat/space.ts';
 import { MYTHIC_STATES } from './combat/mythic.ts';
@@ -794,6 +794,13 @@ export type { Band, DocRefusal, FightDoc, FightDocRow, TableRefusal } from './co
  * `standingWire`: the longest script id and omen key, an aim at a tile, a beat and a time of seven digits) is 105 characters:
  * the doc carries at most `DOC_MYTHICS` (4) of them, 420 more, so the worst case is 54,611 (measured by the test), 500 to
  * spare under the eight ninths. One standing a row for all 18 monsters would be 1,890: over.
+ * Keystones (unit K7): the 71 shipped keystone status defs (41 base worn, 7 awakened worn, and 23 child statuses) are
+ * omitted from `wire.defs` when they match `RULES` and reconstructed on read (`keystoneStatusDef`), costing 0 bytes in
+ * `defs` and only their status refs on rows (119 characters for 4 longest-key monster keystones, 166 for 5 awakened
+ * hunter keystones). With 4 awakened hunters holding 5 keystones each, 4 hunter-like enemy rows holding 4 keystones
+ * each, and 22 monsters (4 mythics), the worst case is 47,103 (built-in defs) and 53,976 (full defs table), leaving
+ * 1,135 to spare under 55,111. Even 30 keystone-holding enemy rows fit under `DOC_MAX` at 51,308 (built-in) and 58,181
+ * (full defs table).
  */
 export const DOC_MAX = 62000;
 /**
@@ -910,12 +917,12 @@ function docDefs(v: unknown): Record<string, StatusDef> {
   return out;
 }
 /**
- * A status on the wire: k key, b label (only when its def is not the doc's table's under its key; else the def is that
- * one), l rounds left, n stacks, t its source's tier.
+ * A status on the wire: k key, b label (only when its def is neither in the doc's `defs` table nor a shipped keystone
+ * def matching `RULES`), l rounds left, n stacks, t its source's tier.
  */
 function docStatus(v: unknown, defs: Record<string, StatusDef>): DocStatus {
   const o = obj(v), key = keyOf(own(o, 'k')), named = own(o, 'b'), stacks = own(o, 'n');
-  const def = named === undefined ? (Object.hasOwn(defs, key) ? defs[key]! : refuse()) : undefined;
+  const def = named === undefined ? (Object.hasOwn(defs, key) ? defs[key]! : keystoneStatusDef(key) ?? refuse()) : undefined;
   const out = {
     key, label: def ? def.label : filled(NAME_MAX)(named), left: opt(own(o, 'l'), num(0, MAX_TOTAL), null),
     tier: opt(own(o, 't'), int(0, RANKS.length - 1), 0), ...(def ? { def } : {}),

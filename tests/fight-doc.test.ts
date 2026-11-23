@@ -13,8 +13,13 @@ import type { Side } from '../src/core/combat/space.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 import { abilityId, combatantId, hunterId } from '../src/core/combat/ability-types.ts';
 import { parseSheetKey } from '../src/core/ids.ts';
-import { modified, shadowId, statusKey } from '../src/core/combat/effect-ops.ts';
-import type { Body, Origin, StackDef, Status } from '../src/core/combat/effect-ops.ts';
+import { freeStatusKey, modified, shadowId, statusKey, statusOn } from '../src/core/combat/effect-ops.ts';
+import type { Body, Origin, StackDef, Status, StatusDef } from '../src/core/combat/effect-ops.ts';
+import { hunterRow, monsterRows } from '../src/core/combat/rows.ts';
+import type { RowHunter, RowMonster } from '../src/core/combat/rows.ts';
+import { keystoneOf } from '../src/core/registry/keystones.ts';
+import { parseFight } from '../src/core/combat/fight-parse.ts';
+import { withKeystones } from './fixtures/keystone-rules.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
 import { fightId, line, reduce } from '../src/core/combat/fight.ts';
 import type { Command, Ctx, Fight, NewRow } from '../src/core/combat/fight.ts';
@@ -598,5 +603,122 @@ describe('a mythic on the table (notes-11-keystones.md, design B.3 and B.10, uni
       expect(rider, JSON.stringify(bad)).toBeDefined();
       expect(rider, JSON.stringify(bad)).not.toHaveProperty('standing');
     }
+  });
+});
+
+describe('keystones on the table (notes-11-keystones.md, design A.9 and A.10, unit K7)', () => {
+  const ON = withKeystones(RULES);
+  const statsOf = (o: Partial<Record<'str' | 'agi' | 'vit' | 'ins' | 'dis' | 'pre' | 'pow' | 'ctl', number>> = {}) =>
+    ({ str: 10, agi: 10, vit: 10, ins: 10, dis: 10, pre: 10, pow: 10, ctl: 10, ...o });
+  const mkHunter = (i: number, name: string, o: Partial<RowHunter>): RowHunter => ({
+    id: `h${i}`, name, stats: statsOf(), level: 70, rank: 'S', life: { at: 'up', hp: 999 }, mana: 99, fatigue: 0, penalty: null,
+    hpAdj: 0, manaAdj: 0, titleId: null, titles: [], items: [], equipped: { weapon: null }, build: { path: null, picks: [] }, skills: [],
+    conditions: [], ...o,
+  });
+  const mkBoss: RowMonster = { name: 'Dragon', rank: 'S', archetype: 'brute', kind: 'boss', tweak: {}, abilities: [], statuses: [] };
+  const wireOf = (f: Fight, R = RULES) => JSON.parse(JSON.stringify(fightWire(live(fightDoc(f, R, docCtx()))))) as Record<string, unknown>;
+  const roundTrip = (f: Fight, R = RULES) => live(DOCS.fight(wireOf(f, R)) as FightDoc);
+
+  test('with RULES.fight.keystone.on off, a fight doc carries no keystone statuses and produces the same wire output as before', () => {
+    expect(RULES.fight.keystone.on).toBe(false);
+    const focused = hunterRow(mkHunter(1, 'Fighter', { stats: statsOf({ str: 70, vit: 50 }), job: 'Fighter', jobDone: 'Fighter' }), id('c1'), RULES);
+    const spread = hunterRow(mkHunter(1, 'Fighter', { stats: statsOf({ str: 25, agi: 25, vit: 25, ins: 25, dis: 25, pre: 25, pow: 25, ctl: 25 }), job: 'Fighter', jobDone: 'Fighter' }), id('c1'), RULES);
+    const boss = monsterRows(mkBoss, [id('m1')], RULES);
+    const fFocused = reduce(null, { type: 'add', fightId: fightId('f-off'), rows: [focused, ...boss], openings: [] }, { rules: RULES }).fight!;
+    const fSpread = reduce(null, { type: 'add', fightId: fightId('f-off'), rows: [spread, ...boss], openings: [] }, { rules: RULES }).fight!;
+    const wFocused = wireOf(fFocused, RULES), wSpread = wireOf(fSpread, RULES);
+    expect(wFocused).not.toHaveProperty('defs');
+    expect((wFocused.rows as Record<string, unknown>[]).every(r => !('st' in r))).toBe(true);
+    // Strip the hunter's stat-derived HP/speed differences and check the wire structure has no keystone fields
+    const clearStats = (w: Record<string, unknown>) => ({ ...w, rows: (w.rows as Record<string, unknown>[]).map(({ h: _h, hm: _hm, v: _v, r: _r, m: _m, ...rest }) => rest) });
+    expect(JSON.stringify(clearStats(wFocused))).toBe(JSON.stringify(clearStats(wSpread)));
+  });
+
+  test('a player\'s phone receives every keystone chip with its full def for a 4-hunter S-rank awakened party and an S-rank boss without filling wire defs', () => {
+    const party = [
+      hunterRow(mkHunter(1, 'Fighter', { stats: statsOf({ str: 70, vit: 50 }), job: 'Fighter', jobDone: 'Fighter' }), id('c1'), ON),
+      hunterRow(mkHunter(2, 'Assassin', { stats: statsOf({ agi: 70, ins: 50 }), job: 'Assassin', jobDone: 'Assassin' }), id('c2'), ON),
+      hunterRow(mkHunter(3, 'Mage', { stats: statsOf({ pow: 70, ctl: 50 }), job: 'Mage', jobDone: 'Mage' }), id('c3'), ON),
+      hunterRow(mkHunter(4, 'Healer', { stats: statsOf({ dis: 70, pre: 50 }), job: 'Healer', jobDone: 'Healer' }), id('c4'), ON),
+    ];
+    const boss = monsterRows(mkBoss, [id('m1')], ON);
+    const f = reduce(null, { type: 'add', fightId: fightId('f-ks'), rows: [...party, ...boss], openings: [] }, { rules: ON }).fight!;
+    const doc = live(fightDoc(f, ON, docCtx()));
+    const wire = wireOf(f, ON);
+    const read = live(DOCS.fight(wire) as FightDoc);
+    expect(wire, 'shipped keystone defs take 0 bytes in wire.defs').not.toHaveProperty('defs');
+    expect(read).toEqual(doc);
+    const totalChips = read.rows.reduce((n, r) => n + r.statuses.length, 0);
+    expect(totalChips).toBe(21);
+    expect(read.rows.every(r => r.statuses.every(s => s.def !== undefined))).toBe(true);
+    // Server stores DOCS.fight(wire) and re-wires it on GET: verify idempotence
+    expect(JSON.stringify(fightWire(read))).toBe(JSON.stringify(wire));
+  });
+
+  test('keystone child statuses applied in a fight round-trip with their full def and take no room in wire defs', () => {
+    const surgeTrigger = keystoneOf({ tier: 'mark', stat: 'pow' }, RULES).worn!.triggers![0]!.ops[0]!;
+    const hobbledTrigger = keystoneOf({ tier: 'confluence', pair: 'agi+ctl' }, RULES).worn!.triggers![0]!.ops[0]!;
+    const undyingOps = keystoneOf({ tier: 'apex', stat: 'vit' }, RULES).worn!.triggers![0]!.ops;
+    if (surgeTrigger.op !== 'applyStatus' || hobbledTrigger.op !== 'applyStatus') throw new Error('expected applyStatus');
+    const surgingOp = 'stack' in surgeTrigger.def && surgeTrigger.def.stack?.threshold?.ops[0];
+    const mendingOp = undyingOps[1];
+    if (!surgingOp || surgingOp.op !== 'applyStatus' || !mendingOp || mendingOp.op !== 'applyStatus') throw new Error('expected child applyStatus');
+
+    const childStatus = (key: Status['key'], def: StatusDef, stacks?: number): Status =>
+      statusOn(def, { key, source: { id: id('A'), tier: 5 }, until: null, since: tick(0), settledAt: tick(0) }, stacks);
+    const base = play(add(row('A', 'party'), row('M', 'foe')), start(['A', 20], ['M', 10]));
+    const withChildren = withBody(base, 'A', {
+      statuses: [
+        childStatus(surgeTrigger.key, surgeTrigger.def, 3),
+        childStatus(surgingOp.key, surgingOp.def),
+        childStatus(hobbledTrigger.key, hobbledTrigger.def, 2),
+        childStatus(mendingOp.key, mendingOp.def),
+      ],
+    });
+    // Also check after parseFight, which reorders `when` and `then` keys on these defs
+    const reloaded = parseFight(JSON.parse(JSON.stringify(withChildren)), RULES)!;
+    for (const f of [withChildren, reloaded]) {
+      const doc = live(fightDoc(f, RULES, docCtx()));
+      const wire = wireOf(f, RULES);
+      expect(wire, 'child keystone defs omit wire.defs even after parseFight key reordering').not.toHaveProperty('defs');
+      const read = live(DOCS.fight(wire) as FightDoc);
+      expect(read).toEqual(doc);
+      expect(JSON.stringify(fightWire(read))).toBe(JSON.stringify(wire));
+    }
+  });
+
+  test('a GM override that changes a keystone\'s numbers still ships the full def in wire defs', () => {
+    const altRound = withKeystones({ ...RULES, fight: { ...RULES.fight, round: 2000 } });
+    const insHunter = hunterRow(mkHunter(1, 'Scout', { stats: statsOf({ ins: 70 }), rank: 'D' }), id('c1'), altRound);
+    const f = reduce(null, { type: 'add', fightId: fightId('f-ov'), rows: [insHunter], openings: [] }, { rules: altRound }).fight!;
+    const wire = wireOf(f, altRound) as { defs?: Record<string, StatusDef>; rows: { st?: Record<string, unknown>[] }[] };
+    const read = roundTrip(f, altRound);
+    expect(wire.defs && Object.keys(wire.defs), 'overridden round duration ships in wire.defs, not by key alone').toEqual(['read-the-opening']);
+    const triggerOp = read.rows[0]!.statuses[0]!.def!.triggers![0]!.ops[0]!;
+    expect(triggerOp.op === 'applyStatus' && triggerOp.duration).toBe(tick(2000));
+
+    // A GM custom status under a keystone's key shadows the shipped keystone when it fits, and never borrows it when defs is full
+    const gmMomentum: StatusDef = { label: 'Momentum', desc: 'GM custom version.', ops: [{ op: 'speed', pct: 50 }] };
+    const shippedMomentum = keystoneOf({ tier: 'confluence', pair: 'str+agi' }, RULES).worn!;
+    const momentumKey = freeStatusKey(shippedMomentum.label, () => false);
+    const base = play(add(row('A', 'party'), row('B', 'party'), row('M', 'foe')), start(['A', 20], ['B', 15], ['M', 10]));
+    const shadowed = withBody(withBody(base, 'A', { statuses: [statusOn(gmMomentum, { key: momentumKey, source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0) })] }),
+      'B', { statuses: [statusOn(shippedMomentum, { key: momentumKey, source: { id: id('B'), tier: 5 }, until: null, since: tick(0), settledAt: tick(0), worn: true })] });
+    const shadowWire = wireOf(shadowed, RULES) as { defs?: Record<string, StatusDef> };
+    const shadowRead = roundTrip(shadowed, RULES);
+    expect(shadowWire.defs?.[momentumKey]).toEqual(gmMomentum);
+    expect(rowIn(shadowRead, 'A').statuses[0]!.def).toEqual(gmMomentum);
+    expect(rowIn(shadowRead, 'B').statuses[0]!.def, 'shadowed row carries inline label rather than the GM custom def').toBeUndefined();
+
+    // When wire.defs is full (12 fillers of 496 bytes = 5,954 of 6,000), a GM custom status under a keystone key cannot fit, sends inline b, and reads with def === undefined
+    const pad = (i: number): StatusDef => ({ label: `Fill ${String(i).padStart(2, '0')}`, desc: 'd'.repeat(450), ops: [] });
+    const fillers = Array.from({ length: 12 }, (_, i): Status => statusOn(pad(i), { key: statusKey(`fill-${String(i).padStart(2, '0')}`), source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0) }));
+    const crowded = withBody(withBody(base, 'A', { statuses: fillers }),
+      'B', { statuses: [statusOn(gmMomentum, { key: momentumKey, source: { id: null, tier: 0 }, until: null, since: tick(0), settledAt: tick(0) })] });
+    const crowdedWire = wireOf(crowded, RULES) as { defs?: Record<string, StatusDef> };
+    expect(crowdedWire.defs && Object.hasOwn(crowdedWire.defs, momentumKey), 'gmMomentum overflowed wire.defs').toBe(false);
+    const crowdedRead = roundTrip(crowded, RULES);
+    expect(rowIn(crowdedRead, 'B').statuses[0]!.def, 'overflowed custom status never borrows the shipped keystone def').toBeUndefined();
+    expect(rowIn(crowdedRead, 'B').statuses[0]!.label).toBe('Momentum');
   });
 });

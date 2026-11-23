@@ -98,8 +98,8 @@ None.
 
 ### `src/core/combat/fight-doc.ts`
 
-- Imports: `src/core/combat/fight-turn.ts`, `src/core/combat/fight-view.ts`, `src/core/combat/land.ts`, `src/core/combat/mythic.ts`, `src/core/combat/op-amount.ts`, `src/core/combat/row-hp.ts`, `src/core/combat/row-icon.ts`, `src/core/combat/sight.ts`, `src/core/combat/space.ts`, `src/core/combat/standing.ts`, `src/core/combat/timeline.ts`, `src/core/combat/zones.ts`, `src/core/hunter/vitals.ts`, `src/core/ids.ts`
-- Imports types from: `src/core/combat/ability-types.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/fight-types.ts`, `src/core/combat/mythic-types.ts`, `src/core/combat/row-life.ts`, `src/core/registry/icons.ts`, `src/core/rules.ts`
+- Imports: `src/core/combat/effect-ops.ts`, `src/core/combat/fight-turn.ts`, `src/core/combat/fight-view.ts`, `src/core/combat/land.ts`, `src/core/combat/mythic.ts`, `src/core/combat/op-amount.ts`, `src/core/combat/row-hp.ts`, `src/core/combat/row-icon.ts`, `src/core/combat/sight.ts`, `src/core/combat/space.ts`, `src/core/combat/standing.ts`, `src/core/combat/timeline.ts`, `src/core/combat/zones.ts`, `src/core/hunter/keystones.ts`, `src/core/hunter/vitals.ts`, `src/core/ids.ts`, `src/core/registry/keystones.ts`, `src/core/rules.ts`, `src/core/stats.ts`
+- Imports types from: `src/core/combat/ability-types.ts`, `src/core/combat/fight-types.ts`, `src/core/combat/mythic-types.ts`, `src/core/combat/row-life.ts`, `src/core/registry/icons.ts`
 - Imported by: `src/core/combat/fight-view.ts`, `src/core/combat/map-view.ts`, `src/core/combat/refusal-words.ts`, `src/core/combat/table-news.ts`, `src/core/protocol.ts`, `src/views/combat.js`
 
 ### `src/core/combat/fight-facts.ts`
@@ -525,7 +525,7 @@ None.
 ### `src/core/hunter/keystones.ts`
 
 - Imports: `src/core/hunter/progress.ts`, `src/core/registry/jobs.ts`, `src/core/rules.ts`, `src/core/stats.ts`
-- Imported by: `src/core/combat/rows.ts`, `src/core/hunter/sheet.ts`, `src/core/registry/jobs.ts`, `src/core/registry/keystones.ts`
+- Imported by: `src/core/combat/fight-doc.ts`, `src/core/combat/rows.ts`, `src/core/hunter/sheet.ts`, `src/core/registry/jobs.ts`, `src/core/registry/keystones.ts`
 
 ### `src/core/hunter/level.ts`
 
@@ -741,7 +741,7 @@ None.
 
 - Imports: `src/core/combat/ability-types.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/space.ts`, `src/core/combat/timeline.ts`, `src/core/formula.ts`, `src/core/registry/ability-kinds.ts`
 - Imports types from: `src/core/combat/triggers.ts`, `src/core/hunter/derive.ts`, `src/core/hunter/keystones.ts`, `src/core/registry/powers.ts`, `src/core/rules.ts`, `src/core/stats.ts`
-- Imported by: `src/core/combat/rows.ts`, `src/core/hunter/sheet.ts`
+- Imported by: `src/core/combat/fight-doc.ts`, `src/core/combat/rows.ts`, `src/core/hunter/sheet.ts`
 
 ### `src/core/registry/kit-examples.ts`
 
@@ -895,7 +895,7 @@ None.
 
 ### `src/core/stats.ts`
 
-- Imported by: `src/core/api.ts`, `src/core/combat/ability-types.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/fight-parse.ts`, `src/core/combat/rows.ts`, `src/core/formula.ts`, `src/core/hunter/derive.ts`, `src/core/hunter/hunter.ts`, `src/core/hunter/keystones.ts`, `src/core/hunter/progress.ts`, `src/core/hunter/sheet.ts`, `src/core/registry/ability-kinds.ts`, `src/core/registry/item-budget.ts`, `src/core/registry/keystones.ts`, `src/core/registry/monsters.ts`, `src/core/registry/paths.ts`, `src/core/registry/worth.ts`, `src/core/rules-text.ts`, `src/core/rules.ts`, `src/core/starter.ts`, `src/views/dice.js`, `src/views/hunter.js`, `src/views/maker.js`, `src/views/rulesref.js`
+- Imported by: `src/core/api.ts`, `src/core/combat/ability-types.ts`, `src/core/combat/effect-ops.ts`, `src/core/combat/fight-doc.ts`, `src/core/combat/fight-parse.ts`, `src/core/combat/rows.ts`, `src/core/formula.ts`, `src/core/hunter/derive.ts`, `src/core/hunter/hunter.ts`, `src/core/hunter/keystones.ts`, `src/core/hunter/progress.ts`, `src/core/hunter/sheet.ts`, `src/core/registry/ability-kinds.ts`, `src/core/registry/item-budget.ts`, `src/core/registry/keystones.ts`, `src/core/registry/monsters.ts`, `src/core/registry/paths.ts`, `src/core/registry/worth.ts`, `src/core/rules-text.ts`, `src/core/rules.ts`, `src/core/starter.ts`, `src/views/dice.js`, `src/views/hunter.js`, `src/views/maker.js`, `src/views/rulesref.js`
 
 ### `src/core/status-refs.ts`
 
