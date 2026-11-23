@@ -124,6 +124,7 @@ export function register(app) {
           <p class="lf-spend" data-spend hidden></p>
           ${gm ? `<label class="lf-chk"><input type="checkbox" id="lf-tell"${was && was.tell ? ' checked' : ''}><span>Notify GM when used</span></label>` : ''}
           ${gm ? `<label class="lf-chk" data-revive-w><input type="checkbox" id="lf-revive"${was && was.revive ? ' checked' : ''}><span>${esc(REVIVE_TEXT)}</span></label>` : ''}
+          ${gm ? `<label class="lf-chk" data-rank-cap-w><input type="checkbox" id="lf-rank-cap"${was && was.rankCap ? ' checked' : ''}><span>Limit to hunters of this rarity's rank or lower</span></label>` : ''}
           ${library ? '<label class="lf-chk"><input type="checkbox" id="lf-save" checked><span>Save to library</span></label>' : ''}
           </div></div>`;
         const $ = s => el.querySelector(s), slotSel = $('#lf-slot');
@@ -195,8 +196,9 @@ export function register(app) {
           const effects = fx.ops(); if (effects.length) out.effects = effects;
           if (effectsOf(out).length && M.picked(el, 'target') === 'other') out.target = 'other';
           if (gm ? $('#lf-tell').checked : was && was.tell) out.tell = true;
-          // only a GM makes an item revive; a player's edit of one keeps it (the GM decides how many exist)
+          // only a GM makes an item revive or rank-capped; a player's edit of one keeps it
           if (type === 'consumable' && (gm ? $('#lf-revive').checked : was && was.revive)) out.revive = true;
+          if (type === 'consumable' && (gm ? $('#lf-rank-cap').checked : was && was.rankCap)) out.rankCap = true;
           if (worn && wornOn()) out.worn = { label: out.name || 'Item', desc: wasWorn ? wasWorn.desc : '', ops: wornFx.ops(), ...(wasWorn && wasWorn.color ? { color: wasWorn.color } : {}), ...wornKit.fields() };
           else if (!worn && was && was.worn && same) out.worn = was.worn;
           if (worn && activeOn()) { const a = activeOf(out.name); if (a) out.active = a; }
@@ -219,11 +221,15 @@ export function register(app) {
           $('[data-sum="active"]').textContent = activeOn() ? `Wearer ability: ${ACTIVE_LABEL[activeKind()].toLowerCase()}` : 'Wearer ability: none';
           el.closest('.lf-win').classList.toggle('lf-unworn', !WORN.includes(type));
           $('[data-weapon]').hidden = type !== 'weapon';
-          if (gm) $('[data-revive-w]').hidden = type !== 'consumable';
+          if (gm) {
+            $('[data-revive-w]').hidden = type !== 'consumable';
+            $('[data-rank-cap-w]').hidden = type !== 'consumable';
+          }
           if (!slotDirty) slotSel.value = AUTO_SLOT[type] || '';
           $('[data-kit-w]').hidden = !Object.hasOwn(KIT_SHARE, slotSel.value);
           for (const b of el.querySelectorAll('[data-chips="grade"] [data-chip]')) b.textContent = gradeLabel(rarity(), oneOf(Number(b.dataset.chip), GRADES, 0));
-          $('#lf-value').placeholder = `Default: ${valueOf({ rar: rarity(), type, grade: grade() }, rules())}`;
+          const revivesOn = type === 'consumable' && (gm ? $('#lf-revive').checked : was && was.revive);
+          $('#lf-value').placeholder = `Default: ${valueOf({ rar: rarity(), type, grade: grade(), effects: fx.ops(), ...(revivesOn ? { revive: true } : {}) }, rules())}`;
           gearInput('weight').placeholder = `Default: ${weightOf({ type, dice: $('#lf-dice').value.trim() })}`;
           // "Affects" only means something for an item that does something when used
           $('[data-target-w]').hidden = !effectsOf(formItem()).length;

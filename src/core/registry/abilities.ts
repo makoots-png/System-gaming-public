@@ -17,6 +17,8 @@ import { isUseOp, statusKey } from '../combat/effect-ops.ts';
 import { atTier } from '../combat/op-amount.ts';
 import type { Op, StatusDef, UseOp } from '../combat/effect-ops.ts';
 import { itemSource } from '../effects.ts';
+import { RANKS } from '../rules.ts';
+import type { Rules } from '../rules.ts';
 import type { Archetype } from '../hunter/derive.ts';
 import type { ItemId } from '../ids.ts';
 import type { BuiltInStatus } from './statuses.ts';
@@ -192,7 +194,7 @@ export function monsterAbility(spec: MonsterSpec, R: MonsterRules): Ability {
 // ── a consumable used in a fight, and a held thing's active ──
 
 /** What `itemAbility` reads of an item: a consumable, used on its user or (`target: 'other'`) on another. */
-export type ThrownItem = { readonly id: ItemId; readonly name: string; readonly rar: string; readonly target?: 'self' | 'other'; readonly effects?: readonly Op[] };
+export type ThrownItem = { readonly id: ItemId; readonly name: string; readonly rar: string; readonly target?: 'self' | 'other'; readonly effects?: readonly Op[]; readonly rankCap?: true };
 /** The id of the ability of the item with id `itemId`: the room's `cast` names an ability in at most 40 characters. */
 export const itemAbilityId = (itemId: string): AbilityId => abilityId(`item-${itemId}`.slice(0, 40));
 /**
@@ -214,7 +216,7 @@ export const itemOfAbility = (a: Pick<Ability, 'item'>): ItemId | null => a.item
  * item's rarity tier, and its other ops (statuses, cures, notes) land on the target. Mana and fatigue ops are the
  * user's own, so only an item for its user carries them. Null when nothing is left to do.
  */
-export function itemAbility(item: ThrownItem, R: KindRules): Ability | null {
+export function itemAbility(item: ThrownItem, R: KindRules & Pick<Rules, 'rarities'>): Ability | null {
   const tier = itemSource(item).tier, effects = item.effects ?? [], self = item.target !== 'other';
   const damage = self ? undefined : effects.find(o => o.op === 'damage'), heal = effects.find(o => o.op === 'heal');
   const effect: AbilityEffect | null = damage?.op === 'damage' ? { type: damage.type, by: 'hand', formula: atTier(damage.amount, tier) }
@@ -223,5 +225,7 @@ export function itemAbility(item: ThrownItem, R: KindRules): Ability | null {
   if (effect === null && ops.length === 0) return null;
   const kind = self || effect?.type === 'heal' ? 'support' : 'curse';
   const base = abilityOf(kind, { id: itemAbilityId(item.id), name: item.name, effect, ops, delivery: { kind: 'sure' }, ...(self ? { aim: 'self', shape: { kind: 'self' }, range: tiles(0) } : {}) }, R);
-  return { ...base, item: item.id, cost: { fatigue: 0, mana: 0, time: cost(R.fight.consumableTime), cooldown: tick(0) } };
+  const maxRank = self && item.rankCap ? R.rarities[item.rar as keyof Rules['rarities']]?.rank : undefined;
+  const maxTier = maxRank ? RANKS.indexOf(maxRank) : undefined;
+  return { ...base, item: item.id, ...(maxTier !== undefined && maxTier >= 0 ? { maxTier } : {}), cost: { fatigue: 0, mana: 0, time: cost(R.fight.consumableTime), cooldown: tick(0) } };
 }

@@ -963,7 +963,7 @@ test('on a 390 px phone the reward editor with a row of each kind scrolls only u
   if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.tap();
   const ed = page.locator('#gm-rw');
   for (const k of ['item', 'title', 'skill', 'status', 'boon', 'job']) await ed.locator(`[data-add="${k}"]`).tap();
-  await ed.locator('[data-kind="item"] [data-f="pick"]').selectOption({ label: 'Health Potion (common)' });
+  await ed.locator('[data-kind="item"] [data-f="pick"]').selectOption({ label: 'Health Potion (E) (common)' });
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   const short = await ed.evaluate(box => [...box.querySelectorAll('button, input:not([type=checkbox]), select, .rw-chk')]
     .filter(el => (el as HTMLElement).offsetParent !== null && el.getBoundingClientRect().height < 44)

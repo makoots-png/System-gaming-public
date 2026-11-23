@@ -37,7 +37,7 @@ test('a GM builds a reward with an item to be told of, a new title, a status and
     await unfold(gm, 'award');
     await gm.fill('#gm-xp', '100');
     await ed.locator('[data-add="item"]').tap();
-    await ed.locator('[data-kind="item"] [data-f="pick"]').selectOption({ label: 'Health Potion (common)' });
+    await ed.locator('[data-kind="item"] [data-f="pick"]').selectOption({ label: 'Health Potion (E) (common)' });
     await ed.locator('[data-kind="item"] [data-f="tell"]').check();
     await ed.locator('[data-add="title"]').tap();
     await ed.locator('[data-kind="title"] [data-f="name"]').fill('Wolf Slayer');
@@ -48,7 +48,7 @@ test('a GM builds a reward with an item to be told of, a new title, a status and
     await ed.locator('[data-kind="boon"] [data-f="name"]').fill(BOON.name);
     await ed.locator('[data-kind="boon"] [data-f="text"]').fill(BOON.text);
     await expect(ed.locator('[data-kind="boon"]')).toContainText('A one-time custom favor the GM honors. When the player redeems it on their sheet, you get notified.');
-    await expect(ed.locator('.rw-preview li')).toHaveText(['+100 XP', 'Item acquired: Health Potion', 'Title acquired: Wolf Slayer', 'Status: Hasted (3 rounds)', `Boon: ${BOON.name}`]);
+    await expect(ed.locator('.rw-preview li')).toHaveText(['+100 XP', 'Item acquired: Health Potion (E)', 'Title acquired: Wolf Slayer', 'Status: Hasted (3 rounds)', `Boon: ${BOON.name}`]);
   });
 
   await test.step('Save as bundle… keeps it as "Wolf hunt"', async () => {
@@ -65,7 +65,7 @@ test('a GM builds a reward with an item to be told of, a new title, a status and
     await expect(gm.locator('#gm-award-msg')).toHaveText(`Sent to ${HUNTER}.`);
     const win = player.locator('.sys-overlay.show', { hasText: 'REWARD RECEIVED' });
     await expect(win).toBeVisible({ timeout: 15_000 });
-    for (const line of ['+100 XP', 'Item acquired: Health Potion', 'Title acquired: Wolf Slayer', 'Status: Hasted (3 rounds)', `Boon: ${BOON.name}`]) await expect(win).toContainText(line);
+    for (const line of ['+100 XP', 'Item acquired: Health Potion (E)', 'Title acquired: Wolf Slayer', 'Status: Hasted (3 rounds)', `Boon: ${BOON.name}`]) await expect(win).toContainText(line);
     await dismissAll(player, 6);
     await go(player, 'status');
     const titles = player.locator('[data-panel="titles"]');
@@ -73,7 +73,7 @@ test('a GM builds a reward with an item to be told of, a new title, a status and
     await expect(player.locator('#view-status [data-chips]')).toContainText('Hasted · 3 rounds');
     await expect(titles.locator('[data-boons] li', { hasText: BOON.name })).toContainText(BOON.text);
     const h = await activeHunter(player);
-    expect(h.items.filter((i: any) => i.name === 'Health Potion' && i.tell)).toHaveLength(1);
+    expect(h.items.filter((i: any) => i.name === 'Health Potion (E)' && i.tell)).toHaveLength(1);
   });
 
   await test.step('the player redeems the boon: it leaves the sheet, and the GM gets the feed row, the toast, a count of 1 and one log line', async () => {
@@ -96,9 +96,9 @@ test('a GM builds a reward with an item to be told of, a new title, a status and
       hunterApp.api.hunter.damage(h.id, 10);
       s.update(() => { s.active().items.push({ id: s.id('i'), name: 'Trail Ration', type: 'consumable', rar: 'common', qty: 1, effects: [{ op: 'note', text: 'Tastes like dust.' }] }); }, 'test-setup');
     });
-    await player.locator('#view-status [data-panel="inventory"] button[aria-label="Use Health Potion"]').tap();
+    await player.locator('#view-status [data-panel="inventory"] button[aria-label="Use Health Potion (E)"]').tap();
     await expect.poll(() => useLines(gm), { timeout: 15_000 }).toHaveLength(2);
-    expect((await useLines(gm))[0]).toMatch(new RegExp(`^${HUNTER} used Item: Health Potion \\| `));
+    expect((await useLines(gm))[0]).toMatch(new RegExp(`^${HUNTER} used Item: Health Potion \\(E\\) \\| `));
     await player.locator('#view-status [data-panel="inventory"] button[aria-label="Use Trail Ration"]').tap();
     await expect.poll(() => gm.evaluate(n => (hunterApp.api.sync.remoteSheets()[0].data.items as any[]).some(i => i.name === n), 'Trail Ration'), { timeout: 15_000 }).toBe(false);
     expect(await useLines(gm)).toHaveLength(2);

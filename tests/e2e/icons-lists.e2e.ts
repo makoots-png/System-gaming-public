@@ -89,7 +89,7 @@ test('a hunter\'s potion, in the hotbar\'s drawer on the map, shows the picture 
   await onboardGM(gm);
   const item = await gm.evaluate(() => {
     const brakk = hunterApp.store.get().hunters.find((h: any) => h.name === 'Brakk Ironhide');
-    return hunterApp.api.inventory.addItem(brakk.id, hunterApp.api.inventory.itemTemplates().find((t: any) => t.name === 'Health Potion')).id;
+    return hunterApp.api.inventory.addItem(brakk.id, hunterApp.api.inventory.itemTemplates().find((t: any) => t.name === 'Health Potion (E)')).id;
   });
   await chooseList(gm);
   await startGoblinDenFight(gm);

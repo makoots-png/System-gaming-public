@@ -1259,12 +1259,13 @@ describe('the other room docs', () => {
 
     test('the shipped economy comes through as it went', () => {
       expect(DOCS.rules(copy(doc))).toEqual(doc);
-      expect(Object.keys(doc).sort()).toEqual(['borrowCapPrices', 'build', 'feats', 'gateParty', 'gradeStep', 'keystone', 'loot', 'mythic', 'priceBase', 'rarities', 'reviveDebtBurn', 'reviveDebtPrices', 'reviveDebtShare', 'reviveDebtXpRate', 'reviveLevelShare', 'revivePrices', 'saleShare', 'solo', 'trade', 'usedUpShare']);
+      expect(Object.keys(doc).sort()).toEqual(['borrowCapPrices', 'build', 'elixirPrices', 'feats', 'gateParty', 'gradeStep', 'keystone', 'loot', 'mythic', 'priceBase', 'rarities', 'reviveDebtBurn', 'reviveDebtPrices', 'reviveDebtShare', 'reviveDebtXpRate', 'reviveLevelShare', 'revivePrices', 'saleShare', 'solo', 'trade', 'usedUpShare']);
     });
 
     test('a rule number past its domain is read at the domain\'s end, and a whole rule whole', () => {
       const SHARES = ['saleShare', 'usedUpShare', 'reviveDebtXpRate', 'reviveLevelShare'] as const;
       for (const k of SHARES) expect([read({ [k]: -1 })![k], read({ [k]: 2 })![k]], k).toEqual([domainOf(k)!.least, domainOf(k)!.most]);
+      expect([read({ elixirPrices: -1 })!.elixirPrices, read({ elixirPrices: 999 })!.elixirPrices]).toEqual([domainOf('elixirPrices')!.least, domainOf('elixirPrices')!.most]);
       expect([read({ borrowCapPrices: -1 })!.borrowCapPrices, read({ borrowCapPrices: 9 })!.borrowCapPrices]).toEqual([domainOf('borrowCapPrices')!.least, domainOf('borrowCapPrices')!.most]);
       expect([read({ reviveDebtShare: -1, reviveDebtBurn: 0 })!.reviveDebtShare, read({ reviveDebtShare: 2, reviveDebtBurn: 0 })!.reviveDebtShare]).toEqual([domainOf('reviveDebtShare')!.least, domainOf('reviveDebtShare')!.most]);
       expect([read({ reviveDebtBurn: -1, reviveDebtShare: 0 })!.reviveDebtBurn, read({ reviveDebtBurn: 2, reviveDebtShare: 0 })!.reviveDebtBurn]).toEqual([domainOf('reviveDebtBurn')!.least, domainOf('reviveDebtBurn')!.most]);
@@ -1284,6 +1285,7 @@ describe('the other room docs', () => {
         ['a share that is text', () => read({ saleShare: '0.25' })],
         ['no grade step', () => read({ gradeStep: undefined })],
         ['no used-up share', () => read({ usedUpShare: undefined })],
+        ['no elixirPrices', () => read({ elixirPrices: undefined })],
         ['no revivePrices', () => read({ revivePrices: undefined })],
         ['no reviveDebtPrices', () => read({ reviveDebtPrices: undefined })],
         ['no share of clear gold paid toward debt', () => read({ reviveDebtShare: undefined })],

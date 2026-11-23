@@ -7,8 +7,9 @@ import type { Op } from '../src/core/combat/effect-ops.ts';
 import { parseFormula } from '../src/core/formula.ts';
 import { tick } from '../src/core/combat/timeline.ts';
 import { BUILT_IN_STATUSES } from '../src/core/registry/statuses.ts';
-import { describeItem, effectsOf, gmSource, gradeLabel, itemOps, itemSource } from '../src/core/effects.ts';
-import { GRADES, ITEM_TYPES, KIT_SHARE, LOOT_ITEMS, RARITIES, RECIPE_ITEMS, SHOP_ITEMS, STARTER_GEAR, itemOf, parseItem, ITEM_BOUNDS, piece, priceOf, wornSpeed, defaultShop, builtInItems, lootPool, valueOf, weightOf, weaponWeight } from '../src/core/registry/items.ts';
+import { RANK_CAP_TEXT, describeItem, effectsOf, gmSource, gradeLabel, itemOps, itemSource } from '../src/core/effects.ts';
+import { sellPrice } from '../src/core/hunter/inventory.ts';
+import { GRADES, ITEM_TYPES, KIT_SHARE, LOOT_ITEMS, RARITIES, RECIPE_ITEMS, SHOP_ITEMS, STARTER_GEAR, isFullHealItem, itemOf, parseItem, ITEM_BOUNDS, piece, priceOf, wornSpeed, defaultShop, builtInItems, lootPool, valueOf, weightOf, weaponWeight } from '../src/core/registry/items.ts';
 import type { Grade, ItemDef, ItemTemplate, Rarity } from '../src/core/registry/items.ts';
 import { parseStatusDef } from '../src/core/combat/fight-parse.ts';
 import { abilityId } from '../src/core/combat/ability-types.ts';
@@ -90,13 +91,13 @@ for (const [list, defs] of LISTS) {
         expect(parseItem(copy(item))).toEqual(item);
       });
 
-      test('its price is the one it sets by hand, or the rule\'s: its rarity\'s rank base price times gradeStep to its grade, an item that revives revivePrices of it, another consumable usedUpShare of it, rounded', () => {
+      test('its price is the one it sets by hand, or the rule\'s: its rarity\'s rank base price times gradeStep to its grade, an item that revives revivePrices of it, a full-heal elixirPrices of it, another consumable usedUpShare of it, rounded', () => {
         if (def.value !== undefined) {
           expect(Number.isInteger(def.value) && def.value > 0).toBe(true);
           expect(item.value).toBe(def.value);
         } else {
           expect(item.value, 'priced by the rule as it is read, not stored').toBeUndefined();
-          const factor = def.type === 'consumable' ? (def.revive ? RULES.revivePrices : RULES.usedUpShare) : 1;
+          const factor = def.type === 'consumable' ? (def.revive ? RULES.revivePrices : isFullHealItem(item) ? RULES.elixirPrices : RULES.usedUpShare) : 1;
           expect(valueOf(item, RULES)).toBe(Math.round(basePrice(RULES, RANK_OF[def.rar]) * RULES.gradeStep ** (def.grade ?? 0) * factor));
         }
       });
@@ -127,11 +128,42 @@ group('the price ladder (priceBase decoupled from gate clear gold)', () => {
     expect(priceOf(richLoot, 'rare')).toBe(priceOf(RULES, 'rare'));
   });
 
-  test('an unpriced consumable costs usedUpShare of its rank\'s base price, rounded: a common potion 50, an uncommon one 163, an epic one 2,500', () => {
+  test('an unpriced consumable costs usedUpShare (0.35) of its rank\'s base price, rounded: a common potion 35, an uncommon one 114, an epic one 1,750', () => {
     const potion = (rar: Rarity) => parseItem({ name: 'Draught', rar, type: 'consumable' })!;
+    expect(RULES.usedUpShare).toBe(0.35);
     for (const rar of RARITIES) expect([rar, valueOf(potion(rar), RULES)]).toEqual([rar, Math.round(basePrice(RULES, RANK_OF[rar]) * RULES.usedUpShare)]);
+    expect([valueOf(potion('common'), RULES), valueOf(potion('uncommon'), RULES), valueOf(potion('epic'), RULES)]).toEqual([35, 114, 1750]);
     expect(valueOf(potion('common'), { ...RULES, usedUpShare: 0.2 }), 'it follows a GM\'s share').toBe(Math.round(basePrice(RULES, 'E') * 0.2));
     expect(valueOf(parseItem({ name: 'Draught', rar: 'common', type: 'material' })!, RULES), 'a thing that is not used up costs the whole base price').toBe(basePrice(RULES, 'E'));
+  });
+
+  test('the rank-tiered shop potions (Health Potion, Mana Potion, Stamina Tonic, Elixir of Life) span E to S at 0.35x and 1.0x priceBase', () => {
+    expect(RULES.elixirPrices).toBe(1);
+    const stdPrices = [35, 114, 438, 1750, 6650, 26250];
+    const elixirPrices = [100, 325, 1250, 5000, 19000, 75000];
+    for (const line of ['Health Potion', 'Mana Potion', 'Stamina Tonic']) {
+      expect(RANKS.map(r => valueOf(of(`${line} (${r})`), RULES)), line).toEqual(stdPrices);
+      for (const r of RANKS) expect(of(`${line} (${r})`).rankCap, `${line} (${r})`).toBe(true);
+    }
+    expect(RANKS.map(r => valueOf(of(`Elixir of Life (${r})`), RULES))).toEqual(elixirPrices);
+    for (const r of RANKS) expect([of(`Elixir of Life (${r})`).rankCap, isFullHealItem(of(`Elixir of Life (${r})`))]).toEqual([true, true]);
+    expect(valueOf(of('Elixir of Life (C)'), { ...RULES, elixirPrices: 1.5 })).toBe(1875);
+    expect(SHOP_ITEMS.some(d => d.name === 'Greater Health Potion')).toBe(false);
+  });
+
+  test('legacy un-tiered potions in saved bags always sell for less than what the player paid before potion-prices', () => {
+    const oldBottles: readonly [string, ItemTemplate, number][] = [
+      ['Health Potion', parseItem({ name: 'Health Potion', rar: 'common', type: 'consumable', effects: [{ op: 'heal', amount: number(30), when: 'use' }] })!, 50],
+      ['Greater Health Potion', parseItem({ name: 'Greater Health Potion', rar: 'uncommon', type: 'consumable', effects: [{ op: 'heal', amount: number(150), when: 'use' }] })!, 163],
+      ['Mana Potion', parseItem({ name: 'Mana Potion', rar: 'common', type: 'consumable', effects: [{ op: 'mana', amount: number(4), when: 'use' }] })!, 50],
+      ['Stamina Tonic', parseItem({ name: 'Stamina Tonic', rar: 'common', type: 'consumable', effects: [{ op: 'fatigue', amount: number(-25), when: 'use' }] })!, 50],
+      ['Elixir of Life', parseItem({ name: 'Elixir of Life', rar: 'epic', type: 'consumable', effects: [{ op: 'heal', amount: FULL_HEAL, when: 'use' }] })!, 2500],
+    ];
+    for (const [name, bottle, oldBuy] of oldBottles) {
+      const sell = sellPrice(bottle, RULES);
+      expect(sell, `${name} sells for ${sell}g < old buy ${oldBuy}g`).toBeLessThan(oldBuy);
+    }
+    expect(sellPrice(oldBottles[4]![1], RULES), 'legacy epic Elixir sells for 1,250g (< 2,500g old buy)').toBe(1250);
   });
 
   test('every built-in item is priced by the rule, the Resurrection Crystals too: none keeps a price set by hand', () => {
@@ -191,11 +223,10 @@ group('the grade: a minus, a middle and a plus inside a tier (economy design 2.1
     expect(pairs).toEqual([[150, 217], [488, 833], [1875, 3333], [7500, 12667], [28500, 50000]]);
   });
 
-  test('a graded consumable costs usedUpShare of its graded base price, rounded once: an Uncommon− potion 108, not 109', () => {
-    // 325 / 1.5 × 0.5 is 108.33; rounding the graded price first (217) and then halving it would give 108.5, so 109
+  test('a graded consumable costs usedUpShare of its graded base price, rounded once: an Uncommon− potion 76, a Common+ 53', () => {
     expect(valueOf(thing('uncommon', -1, 'consumable'), RULES)).toBe(Math.round(basePrice(RULES, 'D') / RULES.gradeStep * RULES.usedUpShare));
-    expect(valueOf(thing('uncommon', -1, 'consumable'), RULES)).toBe(108);
-    expect(valueOf(thing('common', 1, 'consumable'), RULES)).toBe(75);
+    expect(valueOf(thing('uncommon', -1, 'consumable'), RULES)).toBe(76);
+    expect(valueOf(thing('common', 1, 'consumable'), RULES)).toBe(53);
   });
 
   test('a GM\'s gradeStep moves a graded price and leaves the middle where it was', () => {
@@ -275,10 +306,13 @@ group('the items as plan section 3.3 restates them', () => {
     expect(of('Knight Killer')).not.toHaveProperty('penFlat');
   });
 
-  test('a Mana Potion of 20 old MP restores 4 mana, the Elixir of Life heals fully and the Stamina Tonic removes 25 fatigue', () => {
-    expect(of('Mana Potion').effects).toEqual([{ op: 'mana', amount: number(4), when: 'use' }]);
-    expect(of('Elixir of Life').effects).toEqual([{ op: 'heal', amount: FULL_HEAL, when: 'use' }]);
-    expect(of('Stamina Tonic').effects).toEqual([{ op: 'fatigue', amount: number(-25), when: 'use' }]);
+  test('a Mana Potion restores 4 mana, an Elixir of Life heals fully, a Stamina Tonic removes 25 fatigue, and a Health Potion heals 50% of max HP', () => {
+    expect(of('Mana Potion (E)').effects).toEqual([{ op: 'mana', amount: number(4), when: 'use' }]);
+    expect(of('Elixir of Life (E)').effects).toEqual([{ op: 'heal', amount: FULL_HEAL, when: 'use' }]);
+    expect(of('Stamina Tonic (E)').effects).toEqual([{ op: 'fatigue', amount: number(-25), when: 'use' }]);
+    const halfHp = parseFormula('0.5 * hpmax', RULES);
+    if (!halfHp.ok) throw new Error(halfHp.error);
+    expect(of('Health Potion (E)').effects).toEqual([{ op: 'heal', amount: halfHp.formula, when: 'use' }]);
   });
 
   test('old MP bonuses are a fifth as max mana: the Mana Talisman\'s 5 is 1, the Monarch\'s Scepter\'s 50 is 10 beside Power 6', () => {
@@ -309,9 +343,13 @@ group('an item card', () => {
     expect(describeItem(RULES, burning('common'))).toEqual(['Applies Burning (3 rounds): 1d6 magical damage a round']);
   });
 
-  test('a worn item does nothing through ops; what it adds is its bonus and gear numbers', () => {
+  test('a worn item does nothing through ops; a rank-capped potion shows its rank cap line and ops', () => {
     expect(itemOps(of('Ring of Vitality'), 'equip')).toEqual([]);
-    expect(itemOps(of('Health Potion'), 'use')).toEqual([{ op: 'heal', amount: number(30), when: 'use' }]);
+    const halfHp = parseFormula('0.5 * hpmax', RULES);
+    if (!halfHp.ok) throw new Error(halfHp.error);
+    expect(itemOps(of('Health Potion (E)'), 'use')).toEqual([{ op: 'heal', amount: halfHp.formula, when: 'use' }]);
+    expect(describeItem(RULES, of('Health Potion (E)'))[0]).toBe(RANK_CAP_TEXT);
+    expect(describeItem(RULES, of('Resurrection Crystal (E)'))).not.toContain(RANK_CAP_TEXT);
   });
 });
 
@@ -421,9 +459,12 @@ group('parseItem: an item from a save, a room message, a form or an import', () 
     }
   });
 
-  test('an item the GM is told about keeps tell; any other value leaves it out', () => {
+  test('an item the GM is told about keeps tell; a rank-capped consumable keeps rankCap and anything else leaves it out', () => {
     expect(parseItem(plain({ tell: true }))!.tell).toBe(true);
     for (const tell of [false, 'yes', 1, null]) expect(parseItem(plain({ tell }))).not.toHaveProperty('tell');
+    expect(parseItem(plain({ type: 'consumable', rankCap: true }))!.rankCap).toBe(true);
+    expect(parseItem(plain({ type: 'weapon', rankCap: true }))).not.toHaveProperty('rankCap');
+    for (const rankCap of [false, 'yes', 1, null]) expect(parseItem(plain({ type: 'consumable', rankCap }))).not.toHaveProperty('rankCap');
   });
 });
 
@@ -480,10 +521,11 @@ group('the Resurrection Crystal (notes-2b-crystal.md)', () => {
     expect(parseItem({ name: 'Draught', type: 'consumable', revive: 'yes' })).not.toHaveProperty('revive');
   });
 
-  test('no loot roll can drop it: the GM decides how many exist, while the reward editor still offers it', () => {
+  test('no loot roll can drop crystals or rank-capped shop consumables: the reward editor still offers them, and every rarity keeps gear/materials', () => {
     expect(builtInItems(RULES).some(i => i.revive)).toBe(true);
-    expect(lootPool(RULES).some(i => i.revive || i.name.startsWith('Resurrection Crystal'))).toBe(false);
-    expect(lootPool(RULES).length, 'the six crystals left out').toBe(builtInItems(RULES).length - 6);
+    expect(builtInItems(RULES).some(i => i.rankCap)).toBe(true);
+    expect(lootPool(RULES).some(i => i.revive || i.rankCap || i.name.startsWith('Resurrection Crystal'))).toBe(false);
+    expect(lootPool(RULES).length, '6 crystals and 24 rank-capped shop consumables left out').toBe(builtInItems(RULES).length - 30);
   });
 
   test('its card says what it does', () => {

@@ -174,5 +174,9 @@ describe('an override of a list rule', () => {
     expect(parseOverrides({ borrowCapPrices: 5.1 }).refused.map(r => [r.path, r.reason])).toEqual([['borrowCapPrices', 'range']]);
     expect(parseOverrides({ priceBase: { C: 2000 } })).toEqual({ overrides: { priceBase: { C: 2000 } }, refused: [] });
     expect(parseOverrides({ priceBase: { C: -1, Z: 100 } }).refused.map(r => [r.path, r.reason])).toEqual([['priceBase.C', 'range'], ['priceBase.Z', 'unknown']]);
+    expect(parseOverrides({ elixirPrices: 0 })).toEqual({ overrides: { elixirPrices: 0 }, refused: [] });
+    expect(parseOverrides({ elixirPrices: 2.5 })).toEqual({ overrides: { elixirPrices: 2.5 }, refused: [] });
+    expect(parseOverrides({ elixirPrices: -0.1 }).refused.map(r => [r.path, r.reason])).toEqual([['elixirPrices', 'range']]);
+    expect(parseOverrides({ elixirPrices: 101 }).refused.map(r => [r.path, r.reason])).toEqual([['elixirPrices', 'range']]);
   });
 });

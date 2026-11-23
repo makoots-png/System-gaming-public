@@ -845,6 +845,7 @@ export type RoomRules = {
   gradeStep: number;
   saleShare: number;
   usedUpShare: number;
+  elixirPrices: number;
   revivePrices: number;
   reviveDebtPrices: number;
   reviveDebtShare: number;
@@ -1222,7 +1223,7 @@ function roomKeystone(v: unknown): RoomRules['keystone'] {
 /** The room's rules doc: every field required but the feats and trading switches (on when absent) and the mythic and keystone switches (off when absent). */
 function roomRulesDoc(o: Rec): RoomRules {
   const b = obj(own(o, 'build')), so = obj(own(o, 'solo')), ra = obj(own(o, 'rarities')), pb = obj(own(o, 'priceBase')), lo = obj(own(o, 'loot'));
-  const rule = (k: 'gradeStep' | 'saleShare' | 'usedUpShare' | 'revivePrices' | 'reviveDebtPrices' | 'reviveDebtShare' | 'reviveDebtBurn' | 'reviveDebtXpRate' | 'borrowCapPrices' | 'reviveLevelShare' | 'gateParty'): number => ruleNumber(k)(own(o, k));
+  const rule = (k: 'gradeStep' | 'saleShare' | 'usedUpShare' | 'elixirPrices' | 'revivePrices' | 'reviveDebtPrices' | 'reviveDebtShare' | 'reviveDebtBurn' | 'reviveDebtXpRate' | 'borrowCapPrices' | 'reviveLevelShare' | 'gateParty'): number => ruleNumber(k)(own(o, k));
   const reviveDebtShare = rule('reviveDebtShare'), reviveDebtBurn = rule('reviveDebtBurn');
   if (reviveDebtShare + reviveDebtBurn > 1 + 1e-9) return refuse();
   return {
@@ -1237,6 +1238,7 @@ function roomRulesDoc(o: Rec): RoomRules {
     gradeStep: rule('gradeStep'),
     saleShare: rule('saleShare'),
     usedUpShare: rule('usedUpShare'),
+    elixirPrices: rule('elixirPrices'),
     revivePrices: rule('revivePrices'),
     reviveDebtPrices: rule('reviveDebtPrices'),
     reviveDebtShare,

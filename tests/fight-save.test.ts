@@ -216,7 +216,7 @@ describe('who a fight holds (fightHold): one answer for the sheet, the gear, a r
 });
 
 describe('an item used in the fight leaves its bag in the write that takes the use', () => {
-  const POTION = { ...itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Health Potion')!), name: 'Red Draught' };
+  const POTION = { ...itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Health Potion (E)')!), name: 'Red Draught' };
   /** This phone's hunter (c1) and Kai (c2), each with two Red Draughts (i5, a Health Potion of its own name) and 10 HP down, and a goblin (c3); c1 goes first, then Kai. */
   function potionFight(): Phone {
     const s0 = gmSave(), h = putItem({ ...s0.hunters[0]!, life: { at: 'up' as const, hp: 1 } }, { ...POTION, qty: 2 }, iid('i5'));
@@ -252,11 +252,21 @@ describe('an item used in the fight leaves its bag in the write that takes the u
     expect(spentPosts(p.save).map(x => [x.key, x.payload.to, x.payload.item])).toEqual([[null, [KAI], 'i5']]);
   });
 
-  test('a use the fight refuses (not that row\'s turn) writes nothing: no potion leaves and nothing is sent', () => {
+  test('a use the fight refuses (not that row\'s turn, or rank above the bottle\'s cap) writes nothing: no potion leaves and nothing is sent', () => {
     const p = potionFight(), was = JSON.stringify(p.save);
     expect(act(p, 'c2')).toEqual({ ok: false, why: 'refused' });
     expect(JSON.stringify(p.save)).toBe(was);
     expect(spentPosts(p.save)).toEqual([]);
+
+    // Rank B hunter drinking a rank-E capped bottle is refused tooLow in core, spending no bottle
+    const s0 = gmSave(), high = putItem({ ...s0.hunters[0]!, rank: 'B' as const, life: { at: 'up' as const, hp: 1 } }, { ...POTION, qty: 2 }, iid('i5'));
+    const hp2: Phone = { save: { ...s0, hunters: [high] }, room: [], events: 0 };
+    write(hp2, { type: 'add', fightId: fightId('f2'), rows: [hunterRow(high, id('c1'), RULES), goblin()], openings: [] });
+    write(hp2, { type: 'start', openings: [{ id: id('c1'), d20: 20, tie: 0 }, { id: id('c3'), d20: 10, tie: 0 }] });
+    const beforeHigh = JSON.stringify(hp2.save);
+    expect(act(hp2, 'c1')).toEqual({ ok: false, why: 'refused' });
+    expect(JSON.stringify(hp2.save)).toBe(beforeHigh);
+    expect(potions(hp2.save)).toBe(2);
   });
 
   test('a potion this phone\'s hunter no longer holds is refused whole: the fight does not heal for free', () => {

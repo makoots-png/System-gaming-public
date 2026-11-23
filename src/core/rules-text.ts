@@ -186,10 +186,10 @@ export function saleRows(R: PriceRules & Pick<Rules, 'saleShare'>): readonly Sal
 }
 
 const pct = (share: number): string => `${Math.round(share * 1000) / 10}%`;
-/** How an item that sets no price is priced and sold: the rank that prices each rarity, and the shares of `usedUpShare` and `saleShare`. */
-export function saleLine(R: Pick<Rules, 'rarities' | 'usedUpShare' | 'saleShare'>): string {
+/** How an item that sets no price is priced and sold: the rank that prices each rarity, and the shares of `usedUpShare`, `elixirPrices`, and `saleShare`. */
+export function saleLine(R: Pick<Rules, 'rarities' | 'usedUpShare' | 'elixirPrices' | 'saleShare'>): string {
   const ranks = RARITIES.map(rar => `${rar} ${R.rarities[rar].rank}`).join(', ');
-  return `An item with no custom price costs the standard price for its rarity's rank (${ranks}), shown in the table above. A consumable costs ${pct(R.usedUpShare)} of that amount, rounded. You can sell items back to the Association for ${pct(R.saleShare)} of their price, rounded down, with a minimum of 1 gold.`;
+  return `An item with no custom price costs the standard price for its rarity's rank (${ranks}), shown in the table above. A standard consumable costs ${pct(R.usedUpShare)} of that amount, rounded. A full-heal consumable costs ${pct(R.elixirPrices)} of that amount, rounded. You can use a rank-capped potion or Elixir of Life only if your rank is at or below its rarity's rank. You can sell items back to the Association for ${pct(R.saleShare)} of their price, rounded down, with a minimum of 1 gold.`;
 }
 /** How shop borrowing works (inventory.ts `buyPlan`, revive-standing.ts `borrowCap`), from the room's rules. */
 export function borrowLine(R: Pick<Rules, 'borrowCapPrices' | 'priceBase' | 'loot' | 'reviveDebtShare' | 'reviveDebtBurn' | 'reviveDebtXpRate'>): string {

@@ -139,10 +139,10 @@ test('a dead hunter opens the shop and reads that it is closed, with the ways ba
   await holding(page, { at: 'dead' }, 0, 100000);
   await page.evaluate(() => hunterApp.store.update((d: any) => {
     const h = d.hunters.find((x: any) => x.id === d.settings.activeHunterId) ?? d.hunters[0];
-    h.items.push({ ...hunterApp.api.inventory.itemTemplates().find((i: any) => i.name === 'Health Potion'), id: hunterApp.store.id('i'), qty: 1 });
+    h.items.push({ ...hunterApp.api.inventory.itemTemplates().find((i: any) => i.name === 'Health Potion (E)'), id: hunterApp.store.id('i'), qty: 1 });
   }, 'test-setup'));
   await go(page, 'status');
-  await expect(page.locator('#view-status [data-item]').filter({ hasText: 'Health Potion' }), 'a potion, which a living hunter can sell').toBeVisible();
+  await expect(page.locator('#view-status [data-item]').filter({ hasText: 'Health Potion (E)' }), 'a potion, which a living hunter can sell').toBeVisible();
   await expect(page.locator('#view-status [data-sell]')).toHaveCount(0);
   await page.locator('#view-status [data-tab="shop"]').tap();
   await expect(page.locator('#view-status [data-shop-closed]')).toHaveText(SHOP_CLOSED);

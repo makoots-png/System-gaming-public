@@ -68,7 +68,7 @@ const boon = (name: string, text: string, extra: Partial<Rewards> = {}): Rewards
 const title = (t: RewardTitle, extra: Partial<Rewards> = {}): Rewards => ({ ...newRewards(), ...extra, title: t });
 /** The held reroll of the shelf: a d20 rolled again, once, the second kept. */
 const REROLL = 'Once, roll one of your d20s again and keep the second roll.';
-const HEALTH_POTION: ItemTemplate = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Health Potion')!);
+const HEALTH_POTION: ItemTemplate = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Health Potion (E)')!);
 /** A31's item: worn, a status that gives its bearer a shield of a quarter of its max HP as each fight begins (a status's `shield` op lands with it). */
 const PUNCHLINE: ItemTemplate = parseItem({
   name: 'The Punchline', rar: 'legendary', type: 'accessory', slot: 'neck', value: 0,
@@ -135,8 +135,8 @@ const ENTRIES: readonly Entry[] = [
   { key: 'seed-soft-spot', moment: 'kindness', when: 'Was kind to someone when it cost the hunter a lot', name: 'Soft Spot', rewards: title({ name: 'Soft Spot', desc: 'Was kind to someone when it cost a lot.', bonus: { hpMax: 10 } }), window: words('A SOFT SPOT', 'You were kind to someone when it cost your hunter a lot. You get the title Soft Spot.') },
   // A13 a one-use boon: someone helped returns with one piece of help the GM picks (it took the place of the first shelf's "Remembered", the same gift)
   { key: 'seed-a-strangers-lamp', moment: 'kindness', when: 'Helped someone who could give nothing back', name: 'A Stranger\'s Lamp', rewards: boon('A Stranger\'s Lamp', 'Once in a gate, someone you helped appears with one piece of help the GM picks.'), window: words('A STRANGER HAS YOUR NAME', 'You helped someone who could give nothing back. Once in a gate, someone you helped will appear with help the GM picks.') },
-  // A14 1 ability point and a Health Potion: what the kindness cost, put back
-  { key: 'seed-mended', moment: 'kindness', when: 'Used the hunter\'s own rest, gold or potion on someone else', name: 'Mended', rewards: points(1, { items: [HEALTH_POTION] }), window: words('THE SYSTEM PAID YOU BACK', 'You used your own rest, gold or potion on someone else. You get 1 ability point and a Health Potion.') },
+  // A14 1 ability point and a Health Potion (E): what the kindness cost, put back
+  { key: 'seed-mended', moment: 'kindness', when: 'Used the hunter\'s own rest, gold or potion on someone else', name: 'Mended', rewards: points(1, { items: [HEALTH_POTION] }), window: words('THE SYSTEM PAID YOU BACK', 'You used your own rest, gold or potion on someone else. You get 1 ability point and a Health Potion (E).') },
   // A15 an E-rank title: 1 point (+1 Presence)
   { key: 'seed-kindling', moment: 'kindness', when: 'Looked after the others and went without', name: 'Kindling', rewards: title({ name: 'Kindling', desc: 'Looked after the others and went without.', bonus: { pre: 1 } }), window: words('YOU GAVE MORE THAN YOU HAD', 'You looked after the others and went without. You get the title Kindling.') },
 

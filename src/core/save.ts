@@ -609,7 +609,7 @@ export function dailyQuest(id: QuestId, R: Rules, env: ParseEnv): Quest {
 }
 /** The built-in skills and items Sung Jin-Woo starts with (src/core/registry/skills.ts and items.ts), by name. */
 const STARTER_SKILL_NAMES: readonly string[] = ['Sprint', 'Bloodlust'];
-const STARTER_ITEM_NAMES: readonly string[] = ["Kasaka's Venom Fang", 'Health Potion'];
+const STARTER_ITEM_NAMES: readonly string[] = ["Kasaka's Venom Fang", 'Health Potion (E)'];
 /** The hunter a new profile starts with: base stats and the creation points unspent. Takes its ids from `save.seq`. */
 export function starterHunter(save: Save, env: ParseEnv): Hunter {
   const R = rulesOf(save.rulesOverrides, save.library.statuses);

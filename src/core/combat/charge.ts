@@ -19,11 +19,12 @@ import { stackStep } from './stacks.ts';
 import { usesOf } from './uses.ts';
 
 /**
- * Why rules 3 to 4 refuse a use. `gated`: a gate of rule 3b does not hold; `noUses`: its uses a fight or a gate are
+ * Why rules 3 to 4 refuse a use. `tooLow`: a rank-capped consumable whose tier is below the user's rank (`Ability.maxTier`);
+ * `gated`: a gate of rule 3b does not hold; `noUses`: its uses a fight or a gate are
  * spent (table 2.3); `hp`: an HP price would take the user to 0 or less; `stacks`: the user holds fewer stacks than a
  * price asks (kits design 1.4).
  */
-export type ChargeRefusal = 'cooldown' | 'gated' | 'noUses' | 'mana' | 'hp' | 'stacks';
+export type ChargeRefusal = 'tooLow' | 'cooldown' | 'gated' | 'noUses' | 'mana' | 'hp' | 'stacks';
 
 const samePlace = (a: Place, b: Place): boolean => a.x === b.x && a.y === b.y;
 
@@ -101,6 +102,7 @@ export function payCost(a: Ability, user: Body): Body | null {
  * is refused and charged as a use is.
  */
 export function charged(a: Ability, user: Body, bodies: readonly Body[], at: Place, now: Tick, R: OpRules): { user: Body; spent: number } | ChargeRefusal {
+  if (a.maxTier !== undefined && user.tier > a.maxTier) return 'tooLow';
   if (onCooldown(a, user, now)) return 'cooldown';
   const gate = gated(a, user, bodies, at);
   if (gate) return gate;

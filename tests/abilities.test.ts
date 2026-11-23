@@ -27,7 +27,7 @@ import { ARCHETYPE_ATTACKS, ATTACK_ID, SKILL_ABILITIES, itemAbility, itemAbility
 import type { BuiltInSkill, SkillRules, Weapon } from '../src/core/registry/abilities.ts';
 import { parseAbility, parseFight } from '../src/core/combat/fight-parse.ts';
 import { fightId, reduce } from '../src/core/combat/fight.ts';
-import { hunterRow } from '../src/core/combat/rows.ts';
+import { hunterRow, monsterRows } from '../src/core/combat/rows.ts';
 import { newHunter } from '../src/core/save.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
 
@@ -264,7 +264,7 @@ describe('a consumable used in a fight', () => {
     };
   };
   const drink = (name: string, u: Body): Body => {
-    const def = item(name), a = itemAbility({ id: iid('p0'), name, rar: def.rar, effects: def.type === 'consumable' ? def.effects : [] }, R)!;
+    const def = item(name), a = itemAbility({ id: iid('p0'), name, rar: def.rar, ...(def.type === 'consumable' && def.rankCap ? { rankCap: true as const } : {}), effects: def.type === 'consumable' ? def.effects : [] }, R)!;
     const r = resolve(a, u, [u], u.id, openGrid(20, 14), { dice: { [u.id]: [] }, react: {} }, NOW, R);
     if (!r.ok) throw new Error(r.reason);
     return r.bodies.find(b => b.id === u.id)!;
@@ -314,12 +314,30 @@ describe('a consumable used in a fight', () => {
 
   test('drunk in a fight, the shop\'s potions do what their text says to the drinker\'s row', () => {
     const me = hunterBody(10, 0, 40);
-    // "Restores 30 HP", "Restores 4 mana", "Removes 25 fatigue" (items.ts), each within the row's maximum
-    expect(rowHp(drink('Health Potion', me))).toBe(40);
-    expect(drink('Mana Potion', me).mana).toBe(Math.min(4, me.sheet.manaMax));
-    expect(drink('Stamina Tonic', me).fatigue).toBe(15);
-    expect(drink('Stamina Tonic', hunterBody(10, 0, 5)).fatigue).toBe(0);
-    expect(rowHp(drink('Elixir of Life', me))).toBe(me.sheet.hpMax);
+    // Health Potion heals 50% of max HP (round(0.5 * 45) = 23 -> 33), Mana Potion +4 mana, Stamina Tonic -25 fatigue, Elixir full HP
+    expect(rowHp(drink('Health Potion (E)', me))).toBe(10 + Math.round(0.5 * me.sheet.hpMax));
+    expect(drink('Mana Potion (E)', me).mana).toBe(Math.min(4, me.sheet.manaMax));
+    expect(drink('Stamina Tonic (E)', me).fatigue).toBe(15);
+    expect(drink('Stamina Tonic (E)', hunterBody(10, 0, 5)).fatigue).toBe(0);
+    expect(rowHp(drink('Elixir of Life (E)', me))).toBe(me.sheet.hpMax);
+  });
+
+  test('a rank-capped self consumable carries maxTier from its rarity rank, stripped by parseAbility, and reduce refuses a higher-rank drinker with tooLow', () => {
+    const capped = itemAbility({ id: iid('p9'), name: 'Health Potion (D)', rar: 'uncommon', rankCap: true, effects: [{ op: 'heal', amount: num(30), when: 'use' }] }, RULES)!;
+    expect(capped.maxTier).toBe(1);
+    expect(parseAbility(JSON.parse(JSON.stringify(capped)), RULES)!.maxTier).toBeUndefined();
+    const bomb = itemAbility({ id: iid('b9'), name: 'Bomb', rar: 'common', rankCap: true, target: 'other', effects: [{ op: 'damage', type: 'physical', amount: num(6), when: 'use' }] }, RULES)!;
+    expect(bomb.maxTier).toBeUndefined();
+    const legacy = itemAbility({ id: iid('p8'), name: 'Health Potion', rar: 'common', effects: [{ op: 'heal', amount: num(30), when: 'use' }] }, RULES)!;
+    expect(legacy.maxTier).toBeUndefined();
+
+    const high = { ...hunterRow({ ...newHunter(RULES), id: 'h1', name: 'Mina', rank: 'B', life: { at: 'up', hp: 10 } }, combatantId('c1'), RULES), abilities: [capped] };
+    const foe = monsterRows(seedMonsters(RULES)[0]!, [combatantId('c2')], RULES)[0]!;
+    const setup = reduce(null, { type: 'add', fightId: fightId('f-cap'), rows: [high, foe], openings: [] }, { rules: RULES }).fight!;
+    const running = reduce(setup, { type: 'start', openings: [{ id: combatantId('c1'), d20: 20, tie: 0 }, { id: combatantId('c2'), d20: 1, tie: 0 }] }, { rules: RULES }).fight!;
+    const res = reduce(running, { type: 'act', by: combatantId('c1'), ability: capped.id, aim: combatantId('c1'), rolls: { dice: {}, react: {} } }, { rules: RULES });
+    expect(res.effects).toEqual([{ type: 'refused', reason: 'tooLow' }]);
+    expect(rowHp(res.fight!.rows.find(r => r.id === combatantId('c1'))!)).toBe(10);
   });
 
   test('a consumable whose effects are only the kits\' newer use ops is still usable in a fight, and carries each of them', () => {

@@ -14,9 +14,11 @@ import type { Grade } from './registry/items.ts';
 export { FULL_HEAL, healsFully };
 
 /** What this file reads of an item. */
-export type ItemEffects = { readonly rar: string; readonly grade?: Grade; readonly effects?: readonly Op[]; readonly revive?: true };
+export type ItemEffects = { readonly rar: string; readonly grade?: Grade; readonly effects?: readonly Op[]; readonly revive?: true; readonly rankCap?: true };
 /** What an item that revives says it does (src/core/hunter/use.ts `useItem`). */
 export const REVIVE_TEXT = `Revives a dead hunter at ${REVIVE_HP} HP (outside a fight).`;
+/** What a rank-capped consumable says on its detail card (src/core/hunter/use.ts `usableAtRank`). */
+export const RANK_CAP_TEXT = 'For hunters of this rarity\'s rank or lower.';
 
 /** Every op an item does when used. */
 export const effectsOf = (item: ItemEffects): Op[] => [...(item.effects ?? [])];
@@ -48,7 +50,12 @@ export const gradeLabel = (rar: string, grade: Grade): string => `${rar[0]!.toUp
  * HP (now 34)".
  */
 export function describeItem(R: DescribeRules, item: ItemEffects, ops: readonly Op[] = effectsOf(item), wearer: FormulaBody | null = null): string[] {
-  return [...(item.grade ? [gradeLabel(item.rar, item.grade)] : []), ...(item.revive ? [REVIVE_TEXT] : []), ...opLines(ops, itemSource(item).tier, R, wearer)];
+  return [
+    ...(item.grade ? [gradeLabel(item.rar, item.grade)] : []),
+    ...(item.revive ? [REVIVE_TEXT] : []),
+    ...(item.rankCap && !item.revive ? [RANK_CAP_TEXT] : []),
+    ...opLines(ops, itemSource(item).tier, R, wearer),
+  ];
 }
 
 /** An op with an amount: what a use outside a fight rolls and applies to a hunter. */

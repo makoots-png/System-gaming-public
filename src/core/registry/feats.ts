@@ -47,7 +47,7 @@ const ENTRIES: readonly (readonly [string, FeatDef])[] = [
   ['uphill', feat('Uphill', 'A HIGHER RANK HAS FALLEN', 'Defeat a monster above your rank.', SHOWN, facts('kill', [atLeast('above', 1)]), 1, points(1))],
   // F13: a won fight of twenty rounds
   ['the-long-round', feat('The Long Round', 'YOU OUTLASTED IT', 'Win a fight lasting 20 rounds or more.', HIDDEN,
-    facts('fight', [WON, atLeast('rounds', 20)]), 1, title('Outlasted', 'C', 'Won a fight lasting 20 rounds or more.', { vit: 2 }, { items: [item('Stamina Tonic', 2)] }))],
+    facts('fight', [WON, atLeast('rounds', 20)]), 1, title('Outlasted', 'C', 'Won a fight lasting 20 rounds or more.', { vit: 2 }, { items: [item('Stamina Tonic (C)', 2)] }))],
   // F17
   ['ratcatcher', feat('Ratcatcher', 'SOMEONE HAS TO', 'Defeat 50 E-rank monsters.', SHOWN, facts('kill', [is('rank', 'E')]), 50,
     title('Ratcatcher', 'E', 'Defeated fifty E-rank monsters.', { ins: 1 }))],
@@ -89,7 +89,7 @@ const ENTRIES: readonly (readonly [string, FeatDef])[] = [
     facts('solo', [WON, atMost('rounds', 3), atLeast('above', 0)]), 1, title('In and Out', 'C', 'Cleared a gate of your rank or higher alone in three rounds or fewer.', { agi: 2 }))],
   // F38
   ['by-a-thread', feat('By a Thread', 'YOU WALKED OUT. BARELY', 'Clear a gate alone with 5% of max HP or less left.', HIDDEN,
-    facts('solo', [WON, is('life', 'up'), atMost('endPct', 5)]), 1, { ...newRewards(), points: 1, items: [item('Greater Health Potion')] })],
+    facts('solo', [WON, is('life', 'up'), atMost('endPct', 5)]), 1, { ...newRewards(), points: 1, items: [item('Elixir of Life (E)')] })],
   // F40
   ['trespasser', feat('Trespasser', 'YOU WERE NOT INVITED', 'Clear a gate above your rank alone.', HIDDEN, facts('solo', [WON, atLeast('above', 1)]), 1,
     title('Trespasser', 'C', 'Cleared a gate above your rank alone.', { ins: 1, agi: 1 }))],

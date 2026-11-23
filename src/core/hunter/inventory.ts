@@ -42,7 +42,7 @@ type SaleRules = PriceRules & Pick<Rules, 'saleShare'>;
 const DISTINGUISHES: Record<keyof Item, boolean> = {
   id: false, qty: false, slot: false,
   name: true, rar: true, grade: true, type: true, dice: true, bonus: true, value: true, weight: true, armor: true, resist: true,
-  icon: true, effects: true, target: true, tell: true, worn: true, active: true, revive: true,
+  icon: true, effects: true, target: true, tell: true, worn: true, active: true, revive: true, rankCap: true,
   // `icon` tells two things apart: a GM who gave two potions two pictures wants them told apart in the bag, and merging
   // them would lose one pick (loot's `lootOf` already compares every field but the count).
   // Waits on the owner's ruling SMX-rules-5.3 ("items that differ in description or attack do not stack"): as the app

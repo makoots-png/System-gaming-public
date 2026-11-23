@@ -9,6 +9,7 @@ import type { TableRefusal } from './fight-doc.ts';
 /** What the GM reads when the fight refused a command (combat.js). */
 export const REFUSAL_WORDS: { readonly [R in Refusal]: string } = {
   taunted: 'Taunted. It must aim at its taunter.', cooldown: 'Not ready yet.', mana: 'Not enough mana.', range: 'Out of reach.',
+  tooLow: 'Their rank is too high for that consumable. Use one of their rank or higher.',
   noTarget: 'Nobody there.', needsRoll: 'The dice did not match.', notNow: 'Not now.', notYourTurn: 'It is not their turn.', down: 'They are out of the fight.',
   needBothSides: 'Each side needs someone still fighting.', tooMany: 'Too many in the fight.', duplicate: 'Already in the fight.', noPlace: 'No free place on the map.',
   rooted: 'Rooted. Cannot move.', blocked: 'The way is blocked.', tooFar: 'Too far for one move.', noMove: 'Already there.', taken: 'That place is taken.',
@@ -34,4 +35,5 @@ export const TABLE_REFUSAL_WORDS: { readonly [R in TableRefusal]: string } = {
   noMove: 'You are already there.', offGrid: 'That is off the map.', taken: 'That place is taken.',
   gated: 'That cannot be used now.', noUses: 'No uses left.', hp: 'Not enough HP to pay for it.', stacks: 'Not enough stacks.',
   zone: 'You have no field to end.', extra: 'Only one extra action a round.', seen: 'A foe sees you. You cannot hide.',
+  tooLow: 'Your rank is too high for that consumable. Use one of your rank or higher.',
 };

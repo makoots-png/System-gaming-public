@@ -752,3 +752,6 @@ ts	phase	decision	why	evidence	result
 2026-11-23T18:02Z	features	(neon) Landed fightsim-timeout on lead-backlog: fight-sim budgets judged on CPU time.
 2026-11-23T18:19Z	ops	(neon) Merged PR 93 (fightsim-timeout) to main (44a742d8).
 2026-11-23T19:25Z	features	(neon) Landed clear-gold on lead-backlog: table B gold, priceBase, revive debt 6x priceBase (about 5 clears).
+2026-11-23T19:39Z	ops	(neon) Merged PR 94 (clear-gold) to main (7fc51dac).
+2026-11-23T20:09Z	ops	(neon) the owner's from-scratch rulings (Nov 23 18:08): slug ids build, fight-rule lock no, generated docs untracked.
+2026-11-23T21:16Z	features	(neon) Landed potion-prices on lead-backlog: rank-tiered potions 0.35x, Elixir 1.0x priceBase.

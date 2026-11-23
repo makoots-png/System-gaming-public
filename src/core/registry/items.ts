@@ -5,7 +5,7 @@
 // lives here; save.ts re-exports it. A worn item's grade is the one its spend reads (item-budget.ts, economy design 2.5):
 // most built-in gear is plain for its tier, so its minus. Six are past their tier's top and kept as they are at its plus
 // (the owner's ruling 6, "Keep them."); tests/item-budget.test.ts names them, so a seventh fails it.
-import { FULL_HEAL } from '../combat/effect-ops.ts';
+import { FULL_HEAL, healsFully } from '../combat/effect-ops.ts';
 import type { Op } from '../combat/effect-ops.ts';
 import { parseOp } from '../combat/fight-parse.ts';
 import { withinSize } from '../size.ts';
@@ -80,6 +80,12 @@ export type Item = {
    * buy it back (inventory.ts `sellable`) and no loot roll drops it (`lootPool`): the GM decides how many exist.
    */
   revive?: true;
+  /**
+   * Used on its own user, it works only for hunters of its rarity's rank or lower (`usableAtRank` in use.ts, and
+   * `Ability.maxTier` in charge.ts). Only a consumable holds it. Loot rolls skip it (`lootPool`), so higher-rank gates
+   * never flood drops with unusable lower-rank bottles.
+   */
+  rankCap?: true;
 } & Powers;
 
 /** The types a hunter wears (`parseItem` keeps powers on these alone): a consumable is used, and the rest are carried. */
@@ -101,23 +107,37 @@ export type ItemDef =
   | Common & Powers & { type: 'weapon'; slot: 'weapon'; dice: string; attack: Attack; bonus?: ItemBonus }
   | Common & Powers & { type: 'armor'; slot: ArmorSlot; kit: Kit; bonus?: ItemBonus }
   | Common & Powers & { type: 'accessory'; slot: 'neck' | 'ring1' | 'ring2'; bonus: ItemBonus }
-  | Common & { type: 'consumable'; effects: Op[]; revive?: true; tell?: true }
+  | Common & { type: 'consumable'; effects: Op[]; revive?: true; rankCap?: true; tell?: true }
   | Common & { type: 'material' | 'key' | 'misc' };
 
-// What a consumable does when used (plan section 3.3): its old `heal` heals that many HP, its old `restoreMp` restores a
-// fifth as mana (max mana is a fifth of the old MP), its old `fatigue` removes that much fatigue.
+// What a consumable does when used: a Health Potion heals 50% of max HP (`HALF_HP`), Mana Potion restores 4 mana,
+// Stamina Tonic removes 25 fatigue, and Elixir of Life heals fully (`FULL_HEAL`).
 const num = (value: number): Formula => ({ kind: 'number', value });
-const heal = (hp: number): Op => ({ op: 'heal', amount: num(hp), when: 'use' });
+const HALF_HP: Formula = { kind: 'binary', op: '*', left: num(0.5), right: { kind: 'sheet', whose: 'user', key: 'hpMax' } };
+const heal = (amount: number | Formula): Op => ({ op: 'heal', amount: typeof amount === 'number' ? num(amount) : amount, when: 'use' });
 const mana = (n: number): Op => ({ op: 'mana', amount: num(n), when: 'use' });
 const rest = (fatigue: number): Op => ({ op: 'fatigue', amount: num(-fatigue), when: 'use' });
+const rankedConsumables = (make: (rar: Rarity, rank: string) => ItemDef): ItemDef[] =>
+  RARITIES.map(rar => make(rar, RULES.rarities[rar].rank));
 
 /** The shop's stock until the GM edits the shop. Each is priced by the rule (`valueOf`). */
 export const SHOP_ITEMS: readonly ItemDef[] = [
-  { name: 'Health Potion', rar: 'common', type: 'consumable', effects: [heal(30)], desc: 'Restores 30 HP.' },
-  { name: 'Greater Health Potion', rar: 'uncommon', type: 'consumable', effects: [heal(150)], desc: 'Restores 150 HP.' },
-  { name: 'Mana Potion', rar: 'common', type: 'consumable', effects: [mana(4)], desc: 'Restores 4 mana.' },
-  { name: 'Elixir of Life', rar: 'epic', type: 'consumable', effects: [{ op: 'heal', amount: FULL_HEAL, when: 'use' }], desc: 'Fully restores HP.' },
-  { name: 'Stamina Tonic', rar: 'common', type: 'consumable', effects: [rest(25)], desc: 'Removes 25 fatigue.' },
+  ...rankedConsumables((rar, rank) => ({
+    name: `Health Potion (${rank})`, rar, type: 'consumable', rankCap: true, effects: [heal(HALF_HP)],
+    desc: `Restores 50% of max HP. For hunters of rank ${rank} or lower.`,
+  })),
+  ...rankedConsumables((rar, rank) => ({
+    name: `Mana Potion (${rank})`, rar, type: 'consumable', rankCap: true, effects: [mana(4)],
+    desc: `Restores 4 mana. For hunters of rank ${rank} or lower.`,
+  })),
+  ...rankedConsumables((rar, rank) => ({
+    name: `Stamina Tonic (${rank})`, rar, type: 'consumable', rankCap: true, effects: [rest(25)],
+    desc: `Removes 25 fatigue. For hunters of rank ${rank} or lower.`,
+  })),
+  ...rankedConsumables((rar, rank) => ({
+    name: `Elixir of Life (${rank})`, rar, type: 'consumable', rankCap: true, effects: [heal(FULL_HEAL)],
+    desc: `Fully restores HP. For hunters of rank ${rank} or lower.`,
+  })),
   { name: 'Iron Dagger', rar: 'common', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d4', attack: 'strike', desc: 'A plain iron dagger.' },
   { name: "Hunter's Leather", rar: 'common', grade: -1, type: 'armor', slot: 'chest', kit: 'light', desc: 'Light leather armor for the chest.' },
   { name: 'Steel Longsword', rar: 'common', grade: -1, type: 'weapon', slot: 'weapon', dice: '1d8', attack: 'strike', desc: 'A plain steel sword.' },
@@ -129,8 +149,8 @@ export const SHOP_ITEMS: readonly ItemDef[] = [
   // One Resurrection Crystal of each rank (economy design section 5, the owner's ruling 4): its rarity's rank is the rank it
   // raises up to, and its price `revivePrices` times that rank's `priceBase`. The GM tells the table how common they are; its use
   // is told to the GM. A crystal has no grade.
-  ...RARITIES.map((rar): ItemDef => ({
-    name: `Resurrection Crystal (${RULES.rarities[rar].rank})`, rar, type: 'consumable', effects: [], revive: true, tell: true,
+  ...rankedConsumables((rar, rank) => ({
+    name: `Resurrection Crystal (${rank})`, rar, type: 'consumable', effects: [], revive: true, tell: true,
     desc: 'Use from your bag outside a fight while dead to come back to life, if your rank is this rank or lower.',
   })),
 ];
@@ -273,19 +293,25 @@ export type ItemTemplate = Omit<Item, 'id'>;
 
 /**
  * The rules a price reads: the base prices by rank (`priceBaseOf`), each rarity's rank, a grade's factor, the share a
- * consumable costs, and the base-price multiple an item that revives costs (`revivePrices`).
+ * standard consumable costs, the base-price multiple a full-heal consumable costs (`elixirPrices`), and the multiple an
+ * item that revives costs (`revivePrices`).
  */
-export type PriceRules = Pick<Rules, 'priceBase' | 'rarities' | 'gradeStep' | 'usedUpShare' | 'revivePrices'>;
-/** What a price reads of an item: its rarity, its type (a consumable is used up), its grade, whether it revives, and a price typed by hand. */
-export type Priced = Pick<Item, 'rar' | 'type'> & Partial<Pick<Item, 'value' | 'grade' | 'revive'>>;
+export type PriceRules = Pick<Rules, 'priceBase' | 'rarities' | 'gradeStep' | 'usedUpShare' | 'elixirPrices' | 'revivePrices'>;
+/** What a price reads of an item: its rarity, its type (a consumable is used up), its grade, whether it revives, its effects (for full heals), and a price typed by hand. */
+export type Priced = Pick<Item, 'rar' | 'type'> & Partial<Pick<Item, 'value' | 'grade' | 'revive' | 'effects'>>;
+/** Whether `i` has an immediate full-heal op at its rarity's tier (priced by `elixirPrices` instead of `usedUpShare`). */
+export const isFullHealItem = (i: Pick<Priced, 'rar' | 'effects'>): boolean => {
+  const tier = Math.max(0, RARITIES.indexOf(i.rar));
+  return (i.effects ?? []).some(o => o.op === 'heal' && o.when !== 'turn' && healsFully(o.amount, tier));
+};
 /** The base price of the rarity's rank (`priceBaseOf`) times `gradeStep` to the grade, before rounding. */
 const graded = (R: Pick<Rules, 'priceBase' | 'rarities' | 'gradeStep'>, rar: Rarity, grade: Grade): number => priceBaseOf(R, R.rarities[rar].rank) * R.gradeStep ** grade;
 /**
- * What an item's use does to its price, times its graded base price: an item that revives costs `revivePrices` of it
- * (a full set of its rank's middle gear), another consumable `usedUpShare`, and anything kept the whole.
+ * What an item's use does to its price, times its graded base price: an item that revives costs `revivePrices` of it,
+ * a full-heal consumable `elixirPrices`, another consumable `usedUpShare`, and anything kept the whole.
  */
-const useFactor = (i: Pick<Priced, 'type' | 'revive'>, R: Pick<Rules, 'usedUpShare' | 'revivePrices'>): number =>
-  (i.type !== 'consumable' ? 1 : i.revive ? R.revivePrices : R.usedUpShare);
+const useFactor = (i: Pick<Priced, 'rar' | 'type' | 'revive' | 'effects'>, R: Pick<Rules, 'usedUpShare' | 'elixirPrices' | 'revivePrices'>): number =>
+  (i.type !== 'consumable' ? 1 : i.revive ? R.revivePrices : isFullHealItem(i) ? R.elixirPrices : R.usedUpShare);
 /**
  * An item's price: the one it was given, else the rule's: the base price of its rarity's rank times `gradeStep` to its
  * grade (`priceOf`), times what its use makes it worth (`useFactor`), rounded once.
@@ -310,10 +336,11 @@ export const priceOf = (R: Pick<Rules, 'priceBase' | 'rarities' | 'gradeStep'>, 
 export const defaultShop = (R: Rules): ItemTemplate[] => SHOP_ITEMS.map(d => itemOf(R, d));
 export const builtInItems = (R: Rules): ItemTemplate[] => [...SHOP_ITEMS, ...LOOT_ITEMS].map(d => itemOf(R, d));
 /**
- * What a loot roll draws from (a gate's Clear, a solo run, the GM's roll table): the built-in items without one that
- * revives. The owner, Nov 18: "GM determines resurrection", so a crystal comes from the shop or the GM's hand, never a roll.
+ * What a loot roll draws from (a gate's Clear, a solo run, the GM's roll table): the built-in items without reviving
+ * items (the owner, Nov 18: "GM determines resurrection") and without rank-capped shop consumables, so higher-rank gates
+ * never flood loot drops with unusable lower-rank bottles (the GM can still give any built-in item through Award).
  */
-export const lootPool = (R: Rules): ItemTemplate[] => builtInItems(R).filter(i => !i.revive);
+export const lootPool = (R: Rules): ItemTemplate[] => builtInItems(R).filter(i => !i.revive && !i.rankCap);
 
 /**
  * One number of a kit split over its six pieces by their shares (`KIT_SHARE`) so the six add up to it exactly: each piece
@@ -375,7 +402,7 @@ export function itemOf(R: Rules, def: ItemDef): ItemTemplate {
       return { ...unweighed, slot: def.slot, dice: def.dice, attack: def.attack, bonus: { ...def.bonus }, ...powersOf(def) };
     case 'armor': return { ...base, slot: def.slot, bonus: { ...def.bonus }, ...piece(def.kit, def.slot, R), ...powersOf(def) };
     case 'accessory': return { ...base, slot: def.slot, bonus: { ...def.bonus }, ...powersOf(def) };
-    case 'consumable': return { ...base, slot: null, bonus: {}, ...(def.effects.length ? { effects: [...def.effects] } : {}), ...(def.revive ? { revive: true } : {}), ...(def.tell ? { tell: true } : {}) };
+    case 'consumable': return { ...base, slot: null, bonus: {}, ...(def.effects.length ? { effects: [...def.effects] } : {}), ...(def.revive ? { revive: true } : {}), ...(def.rankCap ? { rankCap: true } : {}), ...(def.tell ? { tell: true } : {}) };
     default: return { ...base, slot: null, bonus: {} };
   }
 }
@@ -430,6 +457,7 @@ export function parseItem(v: unknown): ItemTemplate | null {
   if (v.target === 'other') out.target = 'other';
   if (v.tell === true) out.tell = true;
   if (v.revive === true && out.type === 'consumable') out.revive = true;
+  if (v.rankCap === true && out.type === 'consumable') out.rankCap = true;
   const powers = WORN_TYPES.includes(out.type) ? parsePowers(v) : {};
   // refused whole for its size, never cut: an item without the power or the effect it was made with is another item
   if (powers === null) return null;

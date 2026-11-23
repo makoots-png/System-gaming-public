@@ -69,13 +69,13 @@ test('a hunter can borrow in the shop up to the rank cap with plain confirmation
   });
 
   await test.step('Refused borrows state exact cap and available amount, borrowing off, and 0% payoff', async () => {
-    // Greater Health Potion is 163 gold, above remaining 93 gold of the 150 gold E-rank limit.
-    const ghp = player.locator('#view-status [data-shopitem="Greater Health Potion"]');
-    await expect(ghp.locator('[data-buy]')).toBeVisible();
-    await expect(ghp.locator('[data-buy]')).toHaveAttribute('aria-disabled', 'true');
-    await ghp.locator('[data-buy]').tap({ force: true });
+    // Health Potion (D) is 114 gold, above remaining 93 gold of the 150 gold E-rank limit.
+    const dhp = player.locator('#view-status [data-shopitem="Health Potion (D)"]');
+    await expect(dhp.locator('[data-buy]')).toBeVisible();
+    await expect(dhp.locator('[data-buy]')).toHaveAttribute('aria-disabled', 'true');
+    await dhp.locator('[data-buy]').tap({ force: true });
     await expect(player.locator('#toasts .toast').last()).toContainText(
-      BUY_WORDS['over-cap']({ name: 'Greater Health Potion', rank: 'E', price: 163, have: 0, need: 163, debt: 57, cap: 150, available: 93 }),
+      BUY_WORDS['over-cap']({ name: 'Health Potion (D)', rank: 'E', price: 114, have: 0, need: 114, debt: 57, cap: 150, available: 93 }),
     );
 
     // GM sets borrowCapPrices to 0 -> syncs to player, hides credit line, refuses with borrow-off.
@@ -84,11 +84,11 @@ test('a hunter can borrow in the shop up to the rank cap with plain confirmation
     });
     await expect.poll(() => player.evaluate(() => hunterApp.rules().borrowCapPrices), { timeout: 15_000 }).toBe(0);
     await expect(player.locator('#view-status [data-shop-credit]')).toBeHidden();
-    const potion = player.locator('#view-status [data-shopitem="Health Potion"]');
+    const potion = player.locator('#view-status [data-shopitem="Health Potion (E)"]');
     await expect(potion.locator('[data-buy]')).toHaveAttribute('aria-disabled', 'true');
     await potion.locator('[data-buy]').tap({ force: true });
     await expect(player.locator('#toasts .toast').last()).toContainText(
-      BUY_WORDS['borrow-off']({ name: 'Health Potion', rank: 'E', price: 50, have: 0, need: 50, debt: 57, cap: 0, available: 0 }),
+      BUY_WORDS['borrow-off']({ name: 'Health Potion (E)', rank: 'E', price: 35, have: 0, need: 35, debt: 57, cap: 0, available: 0 }),
     );
 
     // GM re-enables borrowCapPrices (1.5) but sets reviveDebtShare to 0 -> paused notice and no-payoff refusal.
@@ -100,7 +100,7 @@ test('a hunter can borrow in the shop up to the rank cap with plain confirmation
     await expect(potion.locator('[data-buy]')).toHaveAttribute('aria-disabled', 'true');
     await potion.locator('[data-buy]').tap({ force: true });
     await expect(player.locator('#toasts .toast').last()).toContainText(
-      BUY_WORDS['no-payoff']({ name: 'Health Potion', rank: 'E', price: 50, have: 0, need: 50, debt: 57, cap: 150, available: 93 }),
+      BUY_WORDS['no-payoff']({ name: 'Health Potion (E)', rank: 'E', price: 35, have: 0, need: 35, debt: 57, cap: 150, available: 93 }),
     );
 
     // Restore defaults.
@@ -171,13 +171,13 @@ test('a System revive ignores the borrow cap, stacks on shop debt, blocks furthe
     h.reviveLeft = 'debt';
   }, 'test-setup'));
 
-  // Borrow 50 gold for a Health Potion first, then die and take System revive on debt (+1,000 -> 1,050 total).
+  // Borrow 35 gold for a Health Potion (E) first, then die and take System revive on debt (+600 -> 635 total).
   await go(player, 'status');
   await player.locator('#view-status [data-tab="shop"]').tap();
-  const potion = player.locator('#view-status [data-shopitem="Health Potion"]');
+  const potion = player.locator('#view-status [data-shopitem="Health Potion (E)"]');
   await potion.locator('[data-buy]').tap();
-  await confirmWin(player).locator('.sys-actions button', { hasText: BORROW_WORDS.confirmBtn(50) }).tap();
-  await expect.poll(async () => (await activeHunter(player)).debt).toBe(50);
+  await confirmWin(player).locator('.sys-actions button', { hasText: BORROW_WORDS.confirmBtn(35) }).tap();
+  await expect.poll(async () => (await activeHunter(player)).debt).toBe(35);
 
   await player.evaluate(() => hunterApp.store.update(() => { hunterApp.store.active().life = { at: 'dead' }; }, 'test-setup'));
   const debtOffer = raiseOffer({ reviveLeft: 'debt', rank: 'E', level: 1 }, RULES)!;
@@ -185,17 +185,17 @@ test('a System revive ignores the borrow cap, stacks on shop debt, blocks furthe
   await raiseWin(player).locator('.sys-actions button', { hasText: debtOffer.rise }).tap();
   await expect(raiseWin(player)).toHaveCount(0);
 
-  const owes = 50 + raiseOwes('debt', 'E', RULES);
+  const owes = 35 + raiseOwes('debt', 'E', RULES);
   expect(await activeHunter(player)).toMatchObject({ life: { at: 'up', hp: 1 }, reviveLeft: 'none', debt: owes });
 
-  // Now owing 1,050 (over the 150 E-rank cap), borrowing another Health Potion is refused.
+  // Now owing 635 (over the 150 E-rank cap), borrowing another Health Potion (E) is refused.
   await expect(player.locator('#view-status [data-shop-credit]')).toHaveText(
     shopCreditLine({ life: { at: 'up' }, gold: 0, debt: owes, rank: 'E' }, RULES)!,
   );
   await expect(potion.locator('[data-buy]')).toHaveAttribute('aria-disabled', 'true');
   await potion.locator('[data-buy]').tap({ force: true });
   await expect(player.locator('#toasts .toast').last()).toContainText(
-    BUY_WORDS['over-cap']({ name: 'Health Potion', rank: 'E', price: 50, have: 0, need: 50, debt: owes, cap: 150, available: 0 }),
+    BUY_WORDS['over-cap']({ name: 'Health Potion (E)', rank: 'E', price: 35, have: 0, need: 35, debt: owes, cap: 150, available: 0 }),
   );
 
   // Rules page includes the live borrow line.

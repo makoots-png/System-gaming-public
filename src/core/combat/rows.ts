@@ -44,8 +44,8 @@ import { mythicStart } from './mythic.ts';
 import { MAX_ABILITIES, MAX_STATUSES, NAME_MAX } from './fight-types.ts';
 import type { NewRow } from './fight-types.ts';
 
-/** The rule numbers a row reads: the hunter's sheet and the kinds of the abilities it is given. */
-export type RowRules = SheetRules & KindRules;
+/** The rule numbers a row reads: the hunter's sheet, the kinds of the abilities it is given, and rarities (for rank-capped consumables). */
+export type RowRules = SheetRules & KindRules & Pick<Rules, 'rarities'>;
 /** The statuses a monster may start with, by key: the built-ins with the GM's laid over them (`rulesOf`). */
 export type StatusDefs = Readonly<Partial<Record<string, StatusDef>>>;
 
@@ -57,7 +57,7 @@ export type RowSkill = { readonly type: 'active'; readonly ability: Ability | nu
  */
 export type RowItem = SheetItem & {
   readonly name: string; readonly dice?: string; readonly attack?: Weapon['attack'];
-  readonly type?: string; readonly rar?: string; readonly qty?: number; readonly target?: 'other'; readonly effects?: readonly Op[];
+  readonly type?: string; readonly rar?: string; readonly qty?: number; readonly target?: 'other'; readonly effects?: readonly Op[]; readonly rankCap?: true;
 } & Readonly<Powers>;
 /** The fields of a schema 4 hunter a row reads, on this phone or from a parsed remote sheet. */
 export type RowHunter = Omit<SheetHunter, 'skills' | 'items' | 'conditions' | 'titles'> & {
@@ -147,7 +147,9 @@ export function hunterAbilities(h: RowHunter, R: RowRules): Ability[] {
   const thrown = h.items.flatMap(i => {
     // a bag item is spent by its id, so one whose id does not read as an item's (a player's sheet keeps ids as sent) is no use in a fight
     const id = parseSaveId<'i'>(i.id);
-    const a = id !== null && i.type === 'consumable' && (i.qty ?? 0) > 0 ? itemAbility({ id, name: i.name, rar: i.rar ?? 'common', target: i.target === 'other' ? 'other' : 'self', effects: i.effects ?? [] }, R) : null;
+    const a = id !== null && i.type === 'consumable' && (i.qty ?? 0) > 0
+      ? itemAbility({ id, name: i.name, rar: i.rar ?? 'common', target: i.target === 'other' ? 'other' : 'self', effects: i.effects ?? [], ...(i.rankCap ? { rankCap: true as const } : {}) }, R)
+      : null;
     return a ? [a] : [];
   });
   const held = heldPowers(h, R).flatMap(({ powers: { active } }): Ability[] => {

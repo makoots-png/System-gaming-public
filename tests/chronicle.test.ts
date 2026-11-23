@@ -173,9 +173,9 @@ describe('each fact is recorded by its one writer, in that thing\'s write', () =
   });
 
   test('a consumable used up, a check\'s natural 20, a shadow risen', () => {
-    const potion = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Health Potion')!);
+    const potion = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Health Potion (E)')!);
     const hurt = putItem(mira({ life: { at: 'up', hp: 1 } }), potion, iid('i5'));
-    expect(inbox(ok(useItem(hurt, 'i5', [], RULES)).hunter)).toEqual([{ kind: 'used', item: 'Health Potion', rar: potion.rar }]);
+    expect(inbox(ok(useItem(hurt, 'i5', [], RULES)).hunter)).toEqual([{ kind: 'used', item: 'Health Potion (E)', rar: potion.rar }]);
     const check = { ...newRollEntry(), hid: H1, kind: 'check' as const, natural: 20 };
     expect(inbox(ok(rolled(check, RULES)(saveOf(mira()))).hunters[0]!)).toEqual([{ kind: 'roll', natural: 20 }]);
     expect(inbox(ok(rolled({ ...check, natural: 14 }, RULES)(saveOf(mira()))).hunters[0]!), 'neither 1 nor 20').toEqual([]);

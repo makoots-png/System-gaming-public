@@ -611,21 +611,21 @@ test('a blast aimed at a place marks who is caught and who is in its ring before
 
 test('a player uses a Health Potion from the More drawer on the map: one leaves the bag and their HP rises on both phones', async ({ device }) => {
   const { gm, player } = await room(device);
-  // the shop's Health Potion (items.ts SHOP_ITEMS), two of them in the player's bag
+  // the shop's Health Potion (E) (items.ts SHOP_ITEMS), two of them in the player's bag
   await player.evaluate(() => {
-    const potion = hunterApp.api.inventory.shop().find((i: any) => i.name === 'Health Potion');
+    const potion = hunterApp.api.inventory.shop().find((i: any) => i.name === 'Health Potion (E)');
     hunterApp.api.inventory.addItem(hunterApp.store.active().id, { ...potion, qty: 2 });
   });
   await expect.poll(() => gm.evaluate(name => (hunterApp.api.sync.remoteSheets().find((r: any) => r.data && r.data.name === name)?.data.items ?? [])
-    .some((i: any) => i.name === 'Health Potion'), HUNTER)).toBe(true);
+    .some((i: any) => i.name === 'Health Potion (E)'), HUNTER)).toBe(true);
   await fight(gm, player, [{ x: 10, y: 10 }]);
   await gm.evaluate(name => hunterApp.store.update((d: any) => { const r = d.fight.rows.find((x: any) => x.name === name); r.life = { at: 'up', hp: r.life.hp - 25 }; }, 'test-setup'), HUNTER);
   const hp = (await fightRow(gm, HUNTER)).hp;
-  const potions = () => player.evaluate(() => hunterApp.store.active().items.find((i: any) => i.name === 'Health Potion')?.qty ?? 0);
+  const potions = () => player.evaluate(() => hunterApp.store.active().items.find((i: any) => i.name === 'Health Potion (E)')?.qty ?? 0);
   const had = await potions();
   expect(had).toBeGreaterThan(0);
   await map(player).locator('[data-more]').tap();
-  await map(player).locator('[data-drawer] .mp-hb', { hasText: 'Health Potion' }).tap();
+  await map(player).locator('[data-drawer] .mp-hb', { hasText: 'Health Potion (E)' }).tap();
   await expect(map(player).locator('[data-go]')).toBeEnabled();
   await map(player).locator('[data-go]').tap();
   await expect.poll(potions).toBe(had - 1);

@@ -13,7 +13,7 @@ export const EID = 'd-gm1-mabc12xyz';
 export const OFFER = 'd-player1-mabc12xyz', END = `${OFFER}-e`;
 
 /** A potion as gm.js sends it from the item library (without its id): the shop's, as parseItem reads it, two of them. */
-export const POTION = { ...copy(parseItem(SHOP_ITEMS.find(i => i.name === 'Health Potion')!)!), qty: 2 };
+export const POTION = { ...copy(parseItem(SHOP_ITEMS.find(i => i.name === 'Health Potion (E)')!)!), qty: 2 };
 /** A burning status as the fight's def holds it: 2 magical damage at each turn start. */
 export const BURNING = { label: 'Burning', desc: 'On fire.', ops: [{ op: 'damage', type: 'magical', amount: { kind: 'number', value: 2 }, when: 'turn' }] };
 /** A title as the GM's award carries it: its bonus travels with it. */

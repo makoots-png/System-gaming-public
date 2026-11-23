@@ -596,13 +596,14 @@ function abilityOf(v: unknown, R: Rules): Ability | null {
   const gates = v.gates === undefined ? undefined : all(v.gates, K.gates, x => gateOf(x, R));
   const summon = v.summon === undefined ? undefined : summonOf(v.summon, R);
   const w2 = abilityWave2(v, R), item = v.item === undefined ? undefined : parseSaveId<'i'>(v.item);
+  const maxTier = v.maxTier === undefined ? undefined : whole(v.maxTier, 0, RANKS.length - 1);
   if (!id || name === null || !kind || !aim || fatigue === null || mana === null || time === null || cooldown === null || range === null
-    || !shape || !delivery || foesOnly === null || !ops || zone === null || tags === null || prices === null || gates === null || summon === null || !w2 || item === null) return null;
+    || !shape || !delivery || foesOnly === null || !ops || zone === null || tags === null || prices === null || gates === null || summon === null || !w2 || item === null || maxTier === null) return null;
   if (w2.react && !ops.every(reactionMayHold)) return null;
   return {
     id: abilityId(id), name, kind, cost: { fatigue, mana, time: cost(time), cooldown }, aim, range, shape, delivery, foesOnly, effect, ops,
     channel, ...(zone ? { zone } : {}), ...(tags ? { tags } : {}), ...(prices ? { prices } : {}), ...(gates ? { gates } : {}),
-    ...(summon ? { summon } : {}), ...w2, ...(item ? { item } : {}),
+    ...(summon ? { summon } : {}), ...w2, ...(item ? { item } : {}), ...(maxTier === undefined ? {} : { maxTier }),
   };
 }
 /**
@@ -668,8 +669,8 @@ function summonOf(v: unknown, R: Rules): Summon | null {
  */
 function abilityRead(v: unknown, R: Rules): Ability | null {
   const a = abilityOf(v, R);
-  if (!a || a.item === undefined) return a;
-  const { item: _item, ...own } = a;
+  if (!a || (a.item === undefined && a.maxTier === undefined)) return a;
+  const { item: _item, maxTier: _maxTier, ...own } = a;
   return own;
 }
 /** `abilityRead`, with an ability past its size (size.ts `THING_MAX.ability`) refused whole. */

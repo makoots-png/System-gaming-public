@@ -215,7 +215,8 @@ const SPEC = {
   // The economy: item prices, crystals, revive debt, and borrow limits multiply `priceBase`; a world gate's gold and XP are a pot shared by the hunters paid.
   gradeStep: real(1.5, 1, 1.8, 'price multiplier between item grades in the same tier. At 1 all grades cost the same, and above 1.8 a top grade would cost more than the next tier'), // design 2.1: three grades make a tier, a factor of 3.25 to 4, so one grade is about its cube root
   saleShare: of(0.25, SHARE), // design 3: the Association buys an item back at a quarter of its price (the owner: "A quarter.")
-  usedUpShare: of(0.5, SHARE), // design 2.2: a consumable is one use (unit 2 updates potion pricing)
+  usedUpShare: of(0.35, SHARE), // crystal-economy.md section 1 (the owner, Nov 23): rank-capped combat staples cost 35% of priceBase
+  elixirPrices: real(1, 0, 100, 'price of a full-heal consumable in multiples of priceBase, from 0 to 100'), // crystal-economy.md section 1 (the owner, Nov 23): rank-capped Elixir of Life costs 1.0x priceBase
   revivePrices: whole(10, 1, 1000, 'price of a Resurrection Crystal in multiples of priceBase, from 1 to 1000'), // design 5: a full set of its rank's middle gear
   // the owner (Nov 23, qd row 72): System revive debt pays off in about 5 gate clears for a party of 4 under gold table B
   // and the 50/25/25 split. 6 multiples of priceBase averages 5.09 clears across E to S (4.16 to 5.86).

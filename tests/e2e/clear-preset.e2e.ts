@@ -71,9 +71,9 @@ test('GM pre-sets a room gate clear, players never see it early, and clearing ro
   await rows.nth(0).locator('select[data-pto]').selectOption(kaiKey);
   await rows.nth(1).locator('input[data-pchk]').uncheck();
 
-  // Add a built-in/shop item (Health Potion) left at Party stash
+  // Add a built-in/shop item (Health Potion (E)) left at Party stash
   const addSelect = pform.locator('[data-padd-pick]');
-  const potionOpt = await addSelect.locator('option', { hasText: 'Health Potion' }).first().getAttribute('value');
+  const potionOpt = await addSelect.locator('option', { hasText: 'Health Potion (E)' }).first().getAttribute('value');
   expect(potionOpt).toBeTruthy();
   await addSelect.selectOption(potionOpt!);
   await pform.locator('[data-act=preset-add]').tap();
@@ -117,7 +117,7 @@ test('GM pre-sets a room gate clear, players never see it early, and clearing ro
   await expect(cform.locator('[data-cleargold]')).toHaveText(customGold.toLocaleString('en-US'));
   await expect(cform.locator('[data-clearitems]')).toContainText(row1Name);
   await expect(cform.locator('[data-clearitems]')).toContainText(PRESET_WORDS.itemGoesTo('Kai Preset'));
-  await expect(cform.locator('[data-clearitems]')).toContainText('Health Potion');
+  await expect(cform.locator('[data-clearitems]')).toContainText('Health Potion (E)');
   await expect(cform.locator('[data-clearitems]')).toContainText(PRESET_WORDS.itemGoesTo(PRESET_WORDS.stash));
   await cform.scrollIntoViewIfNeeded();
   await snap(gm, 'clear-panel-preset-390.png');
@@ -134,9 +134,9 @@ test('GM pre-sets a room gate clear, players never see it early, and clearing ro
   await expect(waitRow).toContainText(earnedLabel);
   await expect(waitRow).toContainText(row1Name);
 
-  // Stash already holds Health Potion; Kai has not received XP or gold before GM approves
+  // Stash already holds Health Potion (E); Kai has not received XP or gold before GM approves
   const stashNames = await gm.evaluate(() => hunterApp.store.get().stash.items.map((i: any) => i.name));
-  expect(stashNames).toContain('Health Potion');
+  expect(stashNames).toContain('Health Potion (E)');
   const kaiBeforeApprove = await activeHunter(player);
   expect(hunterTotalXp(kaiBeforeApprove)).toBe(hunterTotalXp(kaiBefore));
   expect(kaiBeforeApprove.gold).toBe(kaiBefore.gold);

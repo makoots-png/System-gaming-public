@@ -251,7 +251,7 @@ describe('a new hunter', () => {
     const [sprint, bloodlust] = h.skills;
     expect(sprint!.type === 'active' && sprint!.ability?.name).toBe('Sprint');
     expect(bloodlust!.type === 'passive' && bloodlust!.bonus).toEqual({ str: 1 });
-    expect(h.items.map(i => [i.name, i.type, i.attack ?? null])).toEqual([["Kasaka's Venom Fang", 'weapon', 'strike'], ['Health Potion', 'consumable', null]]);
+    expect(h.items.map(i => [i.name, i.type, i.attack ?? null])).toEqual([["Kasaka's Venom Fang", 'weapon', 'strike'], ['Health Potion (E)', 'consumable', null]]);
     expect(new Set([...h.skills, ...h.items].map(x => x.id)).size).toBe(4);
   });
 });

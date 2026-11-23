@@ -24,7 +24,7 @@ import { day, dev } from './fixtures/ids.ts';
 const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 const many = <T>(n: number, make: (i: number) => T): T[] => Array.from({ length: n }, (_, i) => make(i));
 const BIG = 'x'.repeat(100_000);
-const POTION: ItemTemplate = { ...itemOf(RULES, SHOP_ITEMS.find(i => i.name === 'Health Potion')!), qty: 2 };
+const POTION: ItemTemplate = { ...itemOf(RULES, SHOP_ITEMS.find(i => i.name === 'Health Potion (E)')!), qty: 2 };
 const SLASH = { ...skillOf(SKILL_SEEDS.find(k => k.name === 'Mutilation')!, RULES), name: 'Slash' };
 /** A reward that uses every field, as a GM would build one. */
 const FULL: Rewards = {
@@ -198,13 +198,13 @@ describe('a title by name', () => {
 describe('a reward in words', () => {
   test('one line a part, a gain with a plus and a cost in words, a status by its label and how long it lasts', () => {
     expect(rewardLines(RULES, FULL)).toEqual([
-      '+250 XP', '+2 ability points', 'Loses 40 gold', 'Item: Health Potion ×2', 'Title: Gatebreaker', 'Job: Ranger', 'Skill: Slash',
+      '+250 XP', '+2 ability points', 'Loses 40 gold', 'Item: Health Potion (E) ×2', 'Title: Gatebreaker', 'Job: Ranger', 'Skill: Slash',
       'Status: Hasted (3 rounds)', 'Status: Blessed', 'Boon: Free resurrection',
     ]);
   });
   test('the reward window says what was acquired, with a build change after the items', () => {
     expect(grantLines(RULES, { ...FULL, xp: 1500 }, { build: 'Path: Vanguard' })).toEqual([
-      '+1,500 XP', 'Loses 40 gold', '+2 ability points', 'Item acquired: Health Potion ×2', 'Path: Vanguard', 'Title acquired: Gatebreaker', 'Job: Ranger',
+      '+1,500 XP', 'Loses 40 gold', '+2 ability points', 'Item acquired: Health Potion (E) ×2', 'Path: Vanguard', 'Title acquired: Gatebreaker', 'Job: Ranger',
       'Skill acquired: Slash', 'Status: Hasted (3 rounds)', 'Status: Blessed', 'Boon: Free resurrection',
     ]);
     expect(grantLines(RULES, { ...newRewards(), points: 1, statuses: [{ key: statusKey('hasted'), rounds: 1 }] })).toEqual(['+1 ability point', 'Status: Hasted (1 round)']);
@@ -220,7 +220,7 @@ describe('a reward given (src/core/hunter/grant.ts)', () => {
     return g;
   };
   const hunter = (s: Save): Hunter => s.hunters[0]!;
-  const potions = (h: Hunter): number => h.items.filter(i => i.name === 'Health Potion').reduce((n, i) => n + i.qty, 0);
+  const potions = (h: Hunter): number => h.items.filter(i => i.name === 'Health Potion (E)').reduce((n, i) => n + i.qty, 0);
 
   test('every part of a reward is on the hunter in the one save it answers, and the save it was given is unchanged', () => {
     const save = fresh(), before = JSON.stringify(save), h = hunter(save);

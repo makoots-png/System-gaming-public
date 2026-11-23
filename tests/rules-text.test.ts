@@ -153,7 +153,7 @@ describe('the death line', () => {
 
   test('the shop is closed to the dead, as the line says: a dead hunter\'s purchase and sale are refused, a living one\'s are not', () => {
     expect(line).toContain('A dead hunter cannot buy or sell in the shop. The GM or another hunter can still give a dead hunter a Resurrection Crystal.');
-    const potion = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Health Potion')!);
+    const potion = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Health Potion (E)')!);
     const rich = { ...putItem(newHunter(RULES), potion, 'i1' as never), gold: 1000 };
     expect(buy({ ...rich, life: { at: 'dead' } }, potion, 'i2' as never, RULES)).toEqual({ ok: false, why: 'dead' });
     expect(sell({ ...rich, life: { at: 'dead' } }, 'i1', 1, RULES)).toEqual({ ok: false, why: 'dead' });
@@ -208,12 +208,17 @@ describe('the Rules page states what the game pays', () => {
   test('the sale line names the rank that prices each rarity and the shares a consumable costs and a sale pays, and follows a GM\'s change', () => {
     const line = saleLine(RULES);
     expect(line).toContain('common E, uncommon D, rare C, epic B, legendary A, mythic S');
-    expect(line).toContain('A consumable costs 50% of that amount');
+    expect(line).toContain('A standard consumable costs 35% of that amount');
+    expect(line).toContain('A full-heal consumable costs 100% of that amount');
+    expect(line).toContain('rank-capped potion or Elixir of Life');
     expect(line).toContain('sell items back to the Association for 25% of their price');
-    expect(saleLine({ ...RULES, saleShare: 0.4, usedUpShare: 0.3 })).toContain('costs 30% of that amount');
-    expect(saleLine({ ...RULES, saleShare: 0.4, usedUpShare: 0.3 })).toContain('for 40% of their price');
-    const potion = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Greater Health Potion')!);
-    expect(valueOf(potion, RULES), 'what the line says of a consumable is what the shop asks').toBe(Math.round(priceOf(RULES, 'uncommon') * 0.5));
+    expect(saleLine({ ...RULES, saleShare: 0.4, usedUpShare: 0.3, elixirPrices: 1.5 })).toContain('costs 30% of that amount');
+    expect(saleLine({ ...RULES, saleShare: 0.4, usedUpShare: 0.3, elixirPrices: 1.5 })).toContain('full-heal consumable costs 150% of that amount');
+    expect(saleLine({ ...RULES, saleShare: 0.4, usedUpShare: 0.3, elixirPrices: 1.5 })).toContain('for 40% of their price');
+    const potion = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Health Potion (D)')!);
+    expect(valueOf(potion, RULES), 'what the line says of a standard consumable is what the shop asks').toBe(Math.round(priceOf(RULES, 'uncommon') * 0.35));
+    const elixir = itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Elixir of Life (B)')!);
+    expect(valueOf(elixir, RULES), 'what the line says of a full-heal consumable is what the shop asks').toBe(Math.round(priceOf(RULES, 'epic') * 1));
   });
   test('the daily line gives the points the daily quest template pays, and follows a changed template', () => {
     const R = { ...RULES, dailyTemplate: { ...RULES.dailyTemplate, rewards: { ...RULES.dailyTemplate.rewards, points: 4 } } };

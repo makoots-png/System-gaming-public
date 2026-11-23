@@ -3,7 +3,7 @@
 // tiered crystal, sessions to afford, and the pace of ranks by party size. Run: bun docs/agent-handoff/features/economy/measure.ts
 import { RANKS, RULES, clearOf, priceBaseOf } from '../../../../src/core/rules.ts';
 import type { Rank } from '../../../../src/core/rules.ts';
-import { LOOT_ITEMS, RARITIES, SAMPLE_WEARER, SHOP_ITEMS, STARTER_GEAR, itemOf } from '../../../../src/core/registry/items.ts';
+import { LOOT_ITEMS, RARITIES, SAMPLE_WEARER, SHOP_ITEMS, STARTER_GEAR, isFullHealItem, itemOf } from '../../../../src/core/registry/items.ts';
 import type { ItemDef, Rarity } from '../../../../src/core/registry/items.ts';
 import { kitGear, pointsAt, sheetOf, split } from '../../../../src/core/hunter/derive.ts';
 import { referenceBody } from '../../../../src/core/registry/worth.ts';
@@ -16,7 +16,7 @@ const rankOf = (rar: Rarity): Rank => RULES.rarities[rar].rank;
 const clear = (rar: Rarity): number => priceBaseOf(RULES, rankOf(rar));
 const gearOf = (d: ItemDef): boolean => d.type === 'weapon' || d.type === 'armor' || d.type === 'accessory';
 const ALL: readonly ItemDef[] = [...SHOP_ITEMS, ...LOOT_ITEMS];
-const pool: readonly ItemDef[] = ALL.filter(d => !(d.type === 'consumable' && d.revive));
+const pool: readonly ItemDef[] = ALL.filter(d => !(d.type === 'consumable' && (d.revive || d.rankCap)));
 
 // ── 2. the item's spend (design section 2.3): points, read on the item maker's sample wearer at the tier's rank ──
 type Conv = { hp: number; mana: number; phys: number; armor: number; sa: number };
@@ -63,14 +63,15 @@ const TODAY: Econ = {
   price: d => TODAY_HAND[d.name] ?? 10 * 10 * TODAY_MULT[d.rar],
 };
 const gradeFactor = (g: number): number => RULES.gradeStep ** g;
-/** A design price: the Clear of the rarity's rank, times the grade's factor, times `usedUpShare` for a consumable. */
-const designPrice = (rar: Rarity, g: number, consumable: boolean): number => r0(clear(rar) * gradeFactor(g) * (consumable ? RULES.usedUpShare : 1));
+/** A design price: the Clear of the rarity's rank, times the grade's factor, times `usedUpShare` (or `elixirPrices` for full-heal) for a consumable. */
+const designPrice = (rar: Rarity, g: number, consumable: boolean, fullHeal = false): number =>
+  r0(clear(rar) * gradeFactor(g) * (consumable ? (fullHeal ? RULES.elixirPrices : RULES.usedUpShare) : 1));
 /** What each of `n` hunters takes of a world gate's `amount` (a gold roll or its XP): the pot is `gateParty` times it, cut by party / n past the party. */
 const shareEach = (amount: number, n: number): number => Math.floor(amount * RULES.gateParty * Math.min(1, RULES.gateParty / n) / n);
 const goldEach = (r: Rank, n: number): number => shareEach(goldMean(r), n);
 const DESIGN_ECON: Econ = {
   name: 'design', sale: RULES.saleShare, soloShare: RULES.solo.lootShare, goldEach,
-  price: d => designPrice(d.rar, gearOf(d) ? gradeOf(d).grade : 0, d.type === 'consumable'),
+  price: d => designPrice(d.rar, gearOf(d) ? gradeOf(d).grade : 0, d.type === 'consumable', d.type === 'consumable' && isFullHealItem({ rar: d.rar, effects: d.effects })),
 };
 
 /** The mean price of one pick of rank `r`'s loot table: a rarity by its weight, then an item of it, each as likely. */

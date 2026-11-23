@@ -1,5 +1,5 @@
 // inventory.js (U05): inventory, equipment, gold, shop and loot tables. Publishes app.api.inventory.
-import { BONUS_KEYS, BONUS_LABELS, TIERS, rules } from '../edge/rules.ts';
+import { BONUS_KEYS, BONUS_LABELS, RANKS, TIERS, rules } from '../edge/rules.ts';
 import { ITEM_TYPES, SLOTS } from '../core/save.ts';
 import { oneOf } from '../core/one-of.ts';
 import { itemOps, itemSource } from '../core/effects.ts';
@@ -230,7 +230,10 @@ export function register(app) {
         <div data-pane="offers" hidden><div data-offers></div></div>
         <div data-pane="stash" hidden><div data-stash></div></div>
         <div data-pane="shop" hidden>
-          <div class="inv-bar"><button type="button" class="gm-only" data-shop-add hidden>Add shop item</button><button type="button" class="gm-only" data-shop-reset hidden>Reset shop</button></div>
+          <div class="inv-bar">
+            ${ui.field('Filter by rank', `<select name="shop-rank"><option value="all">All ranks</option>${RANKS.map(r => `<option value="${r}">Rank ${r}</option>`).join('')}</select>`)}
+            <button type="button" class="gm-only" data-shop-add hidden>Add shop item</button><button type="button" class="gm-only" data-shop-reset hidden>Reset shop</button>
+          </div>
           <p class="empty" role="note" data-shop-closed hidden></p>
           <p class="note" data-shop-credit hidden></p>
           <ul class="plain" data-shoplist></ul>
@@ -256,6 +259,7 @@ export function register(app) {
       app.api.detail.wire(el, () => renderInvBody(el));
       el.querySelector('[role=tablist]').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) setTab(oneOf(b.dataset.tab, BAG_TABS, 'items')); });
       el.querySelector('[name=filter]').addEventListener('change', () => renderInvBody(el));
+      el.querySelector('[name=shop-rank]').addEventListener('change', () => renderInvBody(el));
 
       $q('[data-form]').addEventListener('submit', e => {
         e.preventDefault();
@@ -352,7 +356,9 @@ export function register(app) {
         const creditText = shopCreditLine(h, R);
         credit.hidden = !creditText;
         credit.textContent = creditText ?? '';
-        el.querySelector('[data-shoplist]').innerHTML = shopList().map((t, n) => {
+        const shopAll = shopList(), rankFilter = el.querySelector('[name=shop-rank]').value;
+        const shown = shopAll.map((t, n) => ({ t, n })).filter(({ t }) => rankFilter === 'all' || (R.rarities[t.rar] && R.rarities[t.rar].rank === rankFilter));
+        el.querySelector('[data-shoplist]').innerHTML = shown.map(({ t, n }) => {
           const price = valueOf(t, R), plan = buyPlan(h, t, R);
           const blocked = isRefused(plan), borrows = !blocked && plan.borrow > 0;
           const label = borrows ? BORROW_WORDS.btnBorrow : BORROW_WORDS.btnBuy;
@@ -361,7 +367,7 @@ export function register(app) {
             ${itemDetail('inv-shop', String(n), t)}${metaLine(t) ? `<div class="meta">${metaLine(t)}</div>` : ''}
             <div class="acts">${open ? `<button type="button" data-buy="${n}" aria-label="${aria}"${blocked ? ' aria-disabled="true"' : ''}>${esc(label)}</button>` : ''}
               ${gm ? `<button type="button" data-shop-edit="${n}" aria-label="Edit shop item ${esc(t.name)}">Edit</button><button type="button" class="icon-btn danger" data-shop-del="${n}" aria-label="Remove ${esc(t.name)} from shop">&times;</button>` : ''}</div></li>`;
-        }).join('') || '<li class="empty">The shop is empty.</li>';
+        }).join('') || `<li class="empty">${shopAll.length ? 'No shop items of that rank.' : 'The shop is empty.'}</li>`;
       }
   }
 }

@@ -1,7 +1,7 @@
 // A thing used on its user outside a fight (src/core/hunter/use.ts) and how the GM is told of it in the same write
 // (src/core/use-told.ts). Each use is one answer: what it did and the item gone, or a refusal that changes nothing.
 import { describe, expect, test } from 'bun:test';
-import { USE_WORDS, revives, spendItem, tooLowLine, useDice, useItem, useOn } from '../src/core/hunter/use.ts';
+import { USE_WORDS, revives, spendItem, tooLowLine, tooLowOf, usableAtRank, useDice, useItem, useOn } from '../src/core/hunter/use.ts';
 import { toldStep } from '../src/core/use-told.ts';
 import { RARITIES, SHOP_ITEMS, itemOf } from '../src/core/registry/items.ts';
 import type { ItemTemplate, Rarity } from '../src/core/registry/items.ts';
@@ -27,7 +27,7 @@ import { dev, hid as hidOf, iid, jcid, lid, qid, room } from './fixtures/ids.ts'
 
 const ok = <T extends object>(v: T | Refused): T => { if (isRefused(v)) throw new Error(`refused: ${v.why}`); return v as T; };
 const shop = (name: string): ItemTemplate => itemOf(RULES, SHOP_ITEMS.find(d => d.name === name)!);
-const POTION = shop('Health Potion'), MANA = shop('Mana Potion');
+const POTION = shop('Health Potion (E)'), MANA = shop('Mana Potion (E)');
 const hpMax = (h: Hunter): number => hunterSheet(h, RULES).sheet.hpMax;
 /** A hunter with `n` of `item` (id i1) in the bag, `hp` below its maximum. */
 function holding(item: ItemTemplate, n: number, down = 0): Hunter {
@@ -149,7 +149,7 @@ describe('a crystal of a rank (economy design 5, the owner\'s ruling 4: "You hav
       const item = { rar, revive: true as const };
       expect([rar, RANKS.filter(rank => revives(item, rank, RULES))]).toEqual([rar, RANKS.slice(0, RANKS.indexOf(RANK_OF[rar]) + 1)]);
     }
-    expect(RANKS.some(rank => revives(shop('Health Potion'), rank, RULES))).toBe(false);
+    expect(RANKS.some(rank => revives(shop('Health Potion (E)'), rank, RULES))).toBe(false);
   });
 
   test('the rank a crystal reaches is its rarity\'s rank as the GM\'s rules have it: a rare crystal read as B raises a B', () => {
@@ -172,7 +172,54 @@ describe('a crystal of a rank (economy design 5, the owner\'s ruling 4: "You hav
   test('a crystal given to a hunter above its rank is told to the giver, never refused: "Resurrection Crystal (C) cannot bring back Mina (rank B)."', () => {
     expect(tooLowLine(C, { name: 'Mina', rank: 'B' }, RULES)).toBe('Resurrection Crystal (C) cannot bring back Mina (rank B).');
     expect(tooLowLine(C, { name: 'Mina', rank: 'C' }, RULES), 'it reaches her').toBeNull();
-    expect(tooLowLine(shop('Health Potion'), { name: 'Mina', rank: 'S' }, RULES), 'not a crystal').toBeNull();
+    expect(tooLowLine({ name: 'Legacy Potion', rar: 'common' }, { name: 'Mina', rank: 'S' }, RULES), 'not rank-capped').toBeNull();
+    expect(tooLowLine(shop('Health Potion (D)'), { name: 'Mina', rank: 'B' }, RULES), 'rank-capped potion too low').toBe('Health Potion (D) is rank D and has no effect on Mina (rank B).');
+    expect(tooLowLine(shop('Health Potion (B)'), { name: 'Mina', rank: 'B' }, RULES), 'rank-capped potion at rank').toBeNull();
+  });
+});
+
+describe('rank-capped potions and legacy bottles outside a fight', () => {
+  const RANK_OF: Readonly<Record<Rarity, Rank>> = { common: 'E', uncommon: 'D', rare: 'C', epic: 'B', legendary: 'A', mythic: 'S' };
+  const potionC = shop('Health Potion (C)');
+  const hurt = (item: ItemTemplate, rank: Rank, down = 30): Hunter => ({ ...holding(item, 2, down), rank, name: 'Mina' });
+
+  test('usableAtRank allows uncapped items at any rank and caps rankCap consumables at their rarity rank', () => {
+    expect(RANKS.every(rank => usableAtRank({ rar: 'common' }, rank, RULES))).toBe(true);
+    for (const rar of RARITIES) {
+      expect([rar, RANKS.filter(rank => usableAtRank({ rar, rankCap: true }, rank, RULES))]).toEqual([rar, RANKS.slice(0, RANKS.indexOf(RANK_OF[rar]) + 1)]);
+    }
+  });
+
+  test('a rank-capped Health Potion heals 50% of max HP at or below its rank and refuses higher ranks without spending the bottle', () => {
+    for (const rank of ['E', 'D', 'C'] as const) {
+      const h = hurt(potionC, rank, 40), want = Math.min(40, Math.round(0.5 * hpMax(h)));
+      const u = ok(useItem(h, 'i1', [[]], RULES));
+      expect([rank, u.lines, qty(u.hunter)]).toEqual([rank, [`+${want} HP`], 1]);
+    }
+    for (const rank of ['B', 'A', 'S'] as const) {
+      const h = hurt(potionC, rank, 40), before = structuredClone(h);
+      expect([rank, useItem(h, 'i1', [[]], RULES)]).toEqual([rank, { ok: false, why: 'too-low' }]);
+      expect(h).toEqual(before);
+    }
+  });
+
+  test('a refused rank-capped potion uses plain non-personified words naming both ranks and keeping the bottle', () => {
+    const low = tooLowOf(shop('Health Potion (D)'), { name: 'Mina', rank: 'B' }, RULES);
+    expect(low).toEqual({ upTo: 'D', name: 'Mina', rank: 'B', revive: false });
+    expect(USE_WORDS['too-low']('Health Potion (D)', low))
+      .toBe('Health Potion (D) is a rank D consumable. Mina is rank B, so it has no effect. You still have it. Use a rank B or higher consumable.');
+  });
+
+  test('a GM override of rarities.*.rank moves which ranks a rank-capped potion works on', () => {
+    const R = { ...RULES, rarities: { ...RULES.rarities, rare: { ...RULES.rarities.rare, rank: 'B' as const } } };
+    expect(ok(useItem(hurt(potionC, 'B', 20), 'i1', [[]], R)).lines).toEqual(['+20 HP']);
+    expect(useItem(hurt(potionC, 'A', 20), 'i1', [[]], R)).toEqual({ ok: false, why: 'too-low' });
+  });
+
+  test('a legacy un-tiered potion in a saved bag has no rankCap and still works for a rank S hunter', () => {
+    const legacy: ItemTemplate = { name: 'Health Potion', rar: 'common', type: 'consumable', slot: null, qty: 1, dice: '', bonus: {}, desc: 'Restores 30 HP.', armor: 0, resist: 0, effects: [{ op: 'heal', amount: { kind: 'number', value: 30 }, when: 'use' }] };
+    const u = ok(useItem(hurt(legacy, 'S', 20), 'i1', [[]], RULES));
+    expect([u.lines, qty(u.hunter)]).toEqual([['+20 HP'], 1]);
   });
 });
 

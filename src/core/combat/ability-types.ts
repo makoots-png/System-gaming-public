@@ -90,6 +90,11 @@ export type Ability = {
    * fight row's abilities hold it; a skill's or a monster's never does (`parseAbility`). Absent for every other ability.
    */
   readonly item?: ItemId;
+  /**
+   * Highest user tier (0 E to 5 S) that may use this item ability (`charge.ts` `tooLow`): set by `itemAbility` for
+   * self-used rank-capped consumables, stripped by `parseAbility` on skills and monsters. Absent when uncapped.
+   */
+  readonly maxTier?: number;
 };
 /** A blink to a free tile the user sees within the ability's range (at most `kit.blinkMax`), or a swap of places with the body aimed at. */
 export type AbilityMove = { readonly kind: 'blink' } | { readonly kind: 'swap' };

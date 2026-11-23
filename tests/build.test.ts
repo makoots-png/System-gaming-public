@@ -6,6 +6,7 @@ import type { Hunter, Item, Save } from '../src/core/save.ts';
 import { RULES, rulesOf } from '../src/core/rules.ts';
 import type { Rules } from '../src/core/rules.ts';
 import { parseItem, priceOf, valueOf, RARITIES } from '../src/core/registry/items.ts';
+import { FULL_HEAL } from '../src/core/combat/effect-ops.ts';
 import { sellPrice } from '../src/core/hunter/inventory.ts';
 import { DOCS, WIRES } from '../src/core/protocol.ts';
 import type { RoomRules } from '../src/core/protocol.ts';
@@ -152,7 +153,8 @@ describe('the room carries the economy', () => {
     expect(priceOf(own, 'rare'), 'out of the room: the shipped priceBase.C of 1250').toBe(1250);
     for (const rar of RARITIES.filter(r => r !== 'rare')) expect(priceOf(inRoom, rar), rar).toBe(priceOf(own, rar));
     expect(valueOf({ rar: 'rare', type: 'weapon' }, inRoom), 'the shop\'s price of a rare weapon').toBe(2000);
-    expect(valueOf({ rar: 'rare', type: 'consumable' }, inRoom), 'a rare consumable: the shipped used-up share, a half, of 2000').toBe(1000);
+    expect(valueOf({ rar: 'rare', type: 'consumable' }, inRoom), 'a rare consumable: the shipped used-up share, 0.35, of 2000').toBe(700);
+    expect(valueOf({ rar: 'rare', type: 'consumable', effects: [{ op: 'heal', amount: FULL_HEAL }] }, inRoom), 'a rare full-heal consumable: elixirPrices (1.0) of 2000').toBe(2000);
   });
 
   test('a player\'s sale pays the GM\'s sale share', () => {
@@ -168,6 +170,7 @@ describe('the room carries the economy', () => {
     ['the grade step', { gradeStep: 1.2 }, R => R.gradeStep, 1.2],
     ['the sale share', { saleShare: 0.5 }, R => R.saleShare, 0.5],
     ['a used-up item\'s share', { usedUpShare: 0.3 }, R => R.usedUpShare, 0.3],
+    ['the base-price multiple a full-heal consumable costs', { elixirPrices: 1.5 }, R => R.elixirPrices, 1.5],
     ['the base-price multiple a reviving item costs', { revivePrices: 20 }, R => R.revivePrices, 20],
     ['the base-price multiple a System raise on debt owes', { reviveDebtPrices: 5 }, R => R.reviveDebtPrices, 5],
     ['the share of gate clear gold paid toward debt', { reviveDebtShare: 0.25 }, R => R.reviveDebtShare, 0.25],

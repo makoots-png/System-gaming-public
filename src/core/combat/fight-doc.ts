@@ -185,6 +185,8 @@ export const TABLE_REFUSALS = [
   'gated', 'noUses', 'hp', 'stacks', 'zone',
   // wave 2's (kits design 8.6, 8.7): a second extra action in a round, a hide while a foe sees the tile
   'extra', 'seen',
+  // rank-capped consumables (potion-prices): the user's rank is above the consumable's rank
+  'tooLow',
 ] as const satisfies readonly Refusal[];
 export type TableRefusal = (typeof TABLE_REFUSALS)[number];
 /**

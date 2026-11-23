@@ -158,7 +158,7 @@ const zoneSpec = fields<ZoneSpec>({ name: none, duration: none, ops, endsWithOwn
 const summon = fields<Summon>({ name: none, archetype: none, rounds: none, statuses: list(fields<Summon['statuses'][number]>({ key, rounds: none })) });
 const ability = fields<Ability>({
   id: none, name: none, kind: none, cost: none, aim: none, range: none, shape: none, delivery: none, foesOnly: none, effect, ops, channel: none,
-  zone: zoneSpec, tags: none, prices: list(price), gates: list(gate), summon, move: none, react: none, zoneAct: none, item: none,
+  zone: zoneSpec, tags: none, prices: list(price), gates: list(gate), summon, move: none, react: none, zoneAct: none, item: none, maxTier: none,
 });
 
 // ── the GM's things ──
@@ -167,7 +167,7 @@ const POWERS = { worn: statusDef, active: ability } as const;
 /** An item: what its use does and its powers while worn. */
 export const item: Walk<ItemTemplate> = fields<ItemTemplate>({
   name: none, rar: none, grade: none, type: none, slot: none, qty: none, dice: none, bonus: none, value: none, weight: none, desc: none, armor: none,
-  resist: none, attack: none, icon: none, effects: ops, target: none, tell: none, revive: none, ...POWERS,
+  resist: none, attack: none, icon: none, effects: ops, target: none, tell: none, revive: none, rankCap: none, ...POWERS,
 });
 const SKILL_PARTS = { name: none, level: none, label: none, desc: none, type: none } as const;
 const activeSkill = fields<Extract<SkillTemplate, { type: 'active' }>>({ ...SKILL_PARTS, ability });

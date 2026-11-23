@@ -138,11 +138,17 @@ describe('a run writes what the play left, in one write', () => {
     expect(hunter(wonWorld.save).restsTaken, 'a win on a world gate resets restsTaken').toBe(0);
   });
 
-  test('the items a run used leave the bag, one per use', () => {
-    const potion = { ...itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Health Potion')!), qty: 3 };
+  test('the items a run used leave the bag, one per use; a rank-capped potion below the hunter\'s rank is never spent in a solo run', () => {
+    const potion = { ...itemOf(RULES, SHOP_ITEMS.find(d => d.name === 'Health Potion (E)')!), qty: 3 };
     const s = alone({ ...putItem(mira({ solo: { clock: { at: 'off' }, gates: [pgate(1)] } }), potion, iid('i5')) });
     const r = ok(soloRan(s, H1, PERSONAL, runOf(s, endOf('won', {}, [{ by: ME, item: iid('i5') }, { by: ME, item: iid('i5') }])), NO_LOOT, { day, ready: ctx() }));
     expect(hunter(r.save).items.find(i => i.id === iid('i5'))!.qty).toBe(1);
+
+    // A B-rank hunter injured in a solo fight never drinks a rank-E capped Health Potion (E)
+    const highHunter = putItem(mira({ rank: 'B', life: { at: 'up', hp: 5 }, solo: { clock: { at: 'off' }, gates: [pgate(1)] } }), potion, iid('i5'));
+    const highSave = { ...alone(), hunters: [highHunter] };
+    const run = played(highSave, PERSONAL, 7);
+    expect(run.end.spent.some(x => x.item === iid('i5'))).toBe(false);
   });
 
   test('a run is written whole or not at all: a hunter gone, a gate gone, or a hunter changed while it played', () => {

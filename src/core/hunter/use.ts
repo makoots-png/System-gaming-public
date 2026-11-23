@@ -94,46 +94,58 @@ export function useOn(h: Hunter, ops: readonly Op[], source: Source, rolls: read
   return lines.length ? { hunter: x, lines } : refuse('nothing');
 }
 
-// ── the crystal's rank ──
-/** The rank an item that revives raises up to: its rarity's rank as the rules have it (`rarities.*.rank`, GM-editable). */
-const reachOf = (item: Pick<Item, 'rar'>, R: Pick<Rules, 'rarities'>): Rank => R.rarities[item.rar].rank;
+// ── rank-capped consumables (Resurrection Crystals and rank-tiered potions) ──
+/** The rank a crystal or rank-capped consumable reaches up to: its rarity's rank (`rarities.*.rank`, GM-editable). */
+export const reachOf = (item: Pick<Item, 'rar'>, R: Pick<Rules, 'rarities'>): Rank => R.rarities[item.rar].rank;
+/**
+ * Whether `item` can be used on a hunter of `rank`: uncapped items always can; a crystal (`revive`) or rank-capped
+ * consumable (`rankCap`) only works for hunters of its rarity's rank or lower.
+ */
+export const usableAtRank = (item: Pick<Item, 'rar'> & Partial<Pick<Item, 'revive' | 'rankCap'>>, rank: Rank, R: Pick<Rules, 'rarities'>): boolean =>
+  (!item.revive && !item.rankCap) || RANKS.indexOf(rank) <= RANKS.indexOf(reachOf(item, R));
 /**
  * Whether `item` raises a dead hunter of `rank`: it revives, and `rank` is at or below the rank of its rarity (economy
  * design 5: the crystal's rank is its rarity's, so no crystal can say one rank and cost another).
  */
 export const revives = (item: Pick<Item, 'rar' | 'revive'>, rank: Rank, R: Pick<Rules, 'rarities'>): boolean =>
-  item.revive === true && RANKS.indexOf(rank) <= RANKS.indexOf(reachOf(item, R));
+  item.revive === true && usableAtRank(item, rank, R);
 
-/** A crystal too low for a hunter, for the words of its refusal: the rank it raises up to, the hunter's name and rank. */
-export type TooLow = { readonly upTo: Rank; readonly name: string; readonly rank: Rank };
+/** A consumable too low for a hunter, for the words of its refusal: the rank it reaches up to, the hunter's name and rank, and whether it revives. */
+export type TooLow = { readonly upTo: Rank; readonly name: string; readonly rank: Rank; readonly revive?: boolean };
 /** `item` too low for `h`, as `USE_WORDS['too-low']` says it. */
-export const tooLowOf = (item: Pick<Item, 'rar'>, h: Pick<Hunter, 'name' | 'rank'>, R: Pick<Rules, 'rarities'>): TooLow =>
-  ({ upTo: reachOf(item, R), name: h.name, rank: h.rank });
+export const tooLowOf = (item: Pick<Item, 'rar' | 'revive'>, h: Pick<Hunter, 'name' | 'rank'>, R: Pick<Rules, 'rarities'>): TooLow =>
+  ({ upTo: reachOf(item, R), name: h.name, rank: h.rank, revive: item.revive === true });
 /**
- * What the giver of `item` reads when it goes to `to` and cannot raise them (`revives` false): "Resurrection Crystal (C)
- * cannot bring back Mina (rank B)." Null when it can, or when it does not revive. A hand-over or an offer of a crystal
- * says it and is never refused by it: the goods are the receiver's to keep or pass on (economy design 5). No screen
- * confirms a trade yet, so no view reads it.
+ * What the giver of `item` reads when it goes to `to` and cannot affect them (`revives` / `usableAtRank` false).
+ * Null when it can, or when it is not rank-capped. A hand-over or an offer says it and is never refused by it.
  */
-export const tooLowLine = (item: Pick<Item, 'name' | 'rar' | 'revive'>, to: Pick<Hunter, 'name' | 'rank'>, R: Pick<Rules, 'rarities'>): string | null =>
-  (item.revive && !revives(item, to.rank, R) ? `${item.name} cannot bring back ${to.name} (rank ${to.rank}).` : null);
+export const tooLowLine = (item: Pick<Item, 'name' | 'rar' | 'revive' | 'rankCap'>, to: Pick<Hunter, 'name' | 'rank'>, R: Pick<Rules, 'rarities'>): string | null => {
+  if (item.revive && !revives(item, to.rank, R)) return `${item.name} cannot bring back ${to.name} (rank ${to.rank}).`;
+  if (item.rankCap && !usableAtRank(item, to.rank, R)) return `${item.name} is rank ${reachOf(item, R)} and has no effect on ${to.name} (rank ${to.rank}).`;
+  return null;
+};
 
 /**
  * Why a use outside a fight is refused: the consumable is not held, nothing would change, it revives and the user is not
- * dead, it revives and the user's rank is above its own (`revives`), or a fight holds the user (the caller's).
+ * dead, the user's rank is above its cap (`usableAtRank`), or a fight holds the user (the caller's).
  */
 export type ItemUseRefusal = 'no-item' | 'nothing' | 'not-dead' | 'too-low' | 'fight';
 /**
- * What a refused use says, with the item's name (copy-tasks.md: why, and the way out). A crystal too low names its rank
- * and the hunter's from `low` (`tooLowOf`); said with the name alone, it names neither.
+ * What a refused use says, with the item's name (copy-tasks.md: why, and the way out). A capped consumable too low
+ * names its rank and the hunter's from `low` (`tooLowOf`).
  */
 export const USE_WORDS: { readonly [W in ItemUseRefusal]: (name: string, low?: TooLow) => string } = {
   'no-item': name => `${name} is no longer in the bag.`,
   nothing: name => `${name} would have no effect right now. You still have it.`,
   'not-dead': name => `${name} only brings back a dead hunter. You still have it.`,
-  'too-low': (name, low) => (low
-    ? `${name} only revives hunters of rank ${low.upTo} or lower, and ${low.name} is rank ${low.rank}. You still have it. Use a rank ${low.rank} or higher crystal, or ask the GM to revive ${low.name}.`
-    : `${name} is too low rank for this hunter. You still have it. Use a crystal of their rank or higher, or ask the GM to revive them.`),
+  'too-low': (name, low) => {
+    if (low && low.revive === false) {
+      return `${name} is a rank ${low.upTo} consumable. ${low.name} is rank ${low.rank}, so it has no effect. You still have it. Use a rank ${low.rank} or higher consumable.`;
+    }
+    return low
+      ? `${name} only revives hunters of rank ${low.upTo} or lower, and ${low.name} is rank ${low.rank}. You still have it. Use a rank ${low.rank} or higher crystal, or ask the GM to revive ${low.name}.`
+      : `${name} is too low rank for this hunter. You still have it. Use a crystal of their rank or higher, or ask the GM to revive them.`;
+  },
   fight: name => `You cannot use ${name} during a fight. Use it after the fight ends.`,
 };
 /** `USE_WORDS` said of `name` (and `low`, a crystal too low): the words of a refused use for `ui.wrote`. */
@@ -173,6 +185,8 @@ export function useItem(h: Hunter, itemId: string, rolls: readonly (readonly num
     if (isRefused(up)) return refuse('not-dead');
     if (!revives(item, h.rank, R)) return refuse('too-low');
     from = up; lines.push(raisedLine(h.level, up.level));
+  } else if (!usableAtRank(item, h.rank, R)) {
+    return refuse('too-low');
   }
   const u = useOn(from, itemOps(item, 'use'), itemSource(item), rolls, R);
   if (isRefused(u) && !lines.length) return u;
