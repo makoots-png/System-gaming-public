@@ -1215,6 +1215,41 @@ describe('the other room docs', () => {
     expect(withRoomRules(ownOff, rules).fight.mythic.staggerTaken, 'the rest of the mythic rules stay the phone\'s').toBe(RULES.fight.mythic.staggerTaken);
   });
 
+  test('the room carries the keystone switch', () => {
+    const rules = roomRulesOf(RULES);
+    const shippedKs = {
+      on: false,
+      markShare: RULES.fight.keystone.markShare,
+      pairShare: RULES.fight.keystone.pairShare,
+      apexShare: RULES.fight.keystone.apexShare,
+      markRank: RULES.fight.keystone.markRank,
+      pairRank: RULES.fight.keystone.pairRank,
+      apexRank: RULES.fight.keystone.apexRank,
+    };
+    expect(rules.keystone, 'the shipped switch is off with shipped thresholds').toEqual(shippedKs);
+    const custom = { ...rules, keystone: { on: true, markShare: 0.35, pairShare: 0.2, apexShare: 0.6, markRank: 'C' as const, pairRank: 'B' as const, apexRank: 'A' as const } };
+    expect(DOCS.rules(copy(rules))!.keystone).toEqual(shippedKs);
+    expect(DOCS.rules(copy(custom))!.keystone).toEqual(custom.keystone);
+
+    const { keystone: _none, ...older } = rules;
+    expect(DOCS.rules(copy(older))!.keystone, 'a doc without keystone reads as off with shipped thresholds').toEqual(shippedKs);
+    for (const bad of [{ on: 'yes' }, { on: 1 }, {}]) expect(DOCS.rules(copy({ ...rules, keystone: bad }))!.keystone.on, JSON.stringify(bad)).toBe(false);
+    for (const bad of [null, 'on']) expect(DOCS.rules(copy({ ...rules, keystone: bad })), JSON.stringify(bad)).toBeNull();
+    expect(DOCS.rules(copy({ ...rules, keystone: { on: true, markShare: 0.05, apexShare: 0.99 } }))!.keystone).toMatchObject({
+      on: true,
+      markShare: domainOf('fight.keystone.markShare')!.least,
+      apexShare: domainOf('fight.keystone.apexShare')!.most,
+    });
+    expect(DOCS.rules(copy({ ...rules, keystone: { on: true, markRank: 'Z' } }))).toBeNull();
+
+    const gmOn: Rules = { ...RULES, fight: { ...RULES.fight, keystone: { ...RULES.fight.keystone, ...custom.keystone } } };
+    expect(roomRulesOf(gmOn).keystone).toEqual(custom.keystone);
+    const overlaid = withRoomRules(RULES, custom);
+    expect(overlaid.fight.keystone).toMatchObject(custom.keystone);
+    expect(overlaid.fight.keystone.budget, 'the rest of the keystone rules stay the phone\'s').toEqual(RULES.fight.keystone.budget);
+    expect(withRoomRules(gmOn, rules).fight.keystone.on, 'a room with keystones off turns a player\'s own off').toBe(false);
+  });
+
   describe('the room\'s rules carry the economy, each number read in its rule\'s domain', () => {
     const doc = roomRulesOf(RULES);
     /** The doc with `patch` over it, through JSON as the wire carries it: a field set to undefined is not there. */
@@ -1224,7 +1259,7 @@ describe('the other room docs', () => {
 
     test('the shipped economy comes through as it went', () => {
       expect(DOCS.rules(copy(doc))).toEqual(doc);
-      expect(Object.keys(doc).sort()).toEqual(['borrowCapClears', 'build', 'feats', 'gateParty', 'gradeStep', 'loot', 'mythic', 'rarities', 'reviveClears', 'reviveDebtBurn', 'reviveDebtClears', 'reviveDebtShare', 'reviveDebtXpRate', 'reviveLevelShare', 'saleShare', 'solo', 'trade', 'usedUpShare']);
+      expect(Object.keys(doc).sort()).toEqual(['borrowCapClears', 'build', 'feats', 'gateParty', 'gradeStep', 'keystone', 'loot', 'mythic', 'rarities', 'reviveClears', 'reviveDebtBurn', 'reviveDebtClears', 'reviveDebtShare', 'reviveDebtXpRate', 'reviveLevelShare', 'saleShare', 'solo', 'trade', 'usedUpShare']);
     });
 
     test('a rule number past its domain is read at the domain\'s end, and a whole rule whole', () => {

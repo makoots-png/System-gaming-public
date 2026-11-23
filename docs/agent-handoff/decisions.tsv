@@ -744,3 +744,5 @@ ts	phase	decision	why	evidence	result
 2026-11-23T14:05Z	features	(neon) Landed debt-quarter on lead-backlog: debt clear gold split 1/2 debt, 1/4 hunter, 1/4 lost; 0.25x XP while owing.
 2026-11-23T14:34Z	ops	(neon) Merged PR 88 (debt-quarter) and PR 89 (AGENTS.md verify-first rule) to main (8d3d4b31).
 2026-11-23T15:25Z	features	(neon) Landed borrow on lead-backlog: shop borrowing up to 1.5 same-rank clears on the shared System debt.
+2026-11-23T15:39Z	ops	(neon) Merged PR 90 (borrow) to main (e01f6b7b).
+2026-11-23T16:29Z	features	(neon) Landed keystones-6 on lead-backlog: keystone screens, GM switch, Rules words (off by default).

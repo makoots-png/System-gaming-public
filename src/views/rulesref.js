@@ -3,7 +3,7 @@
 import { RANKS, RULES, rules } from '../edge/rules.ts';
 import { xpToNext as xpToNextOf } from '../core/rules.ts';
 import { STAT_KEYS, STAT_LABELS, STAT_SHORT } from '../core/stats.ts';
-import { ICON_CREDIT, armorCutPct, borrowLine, checkExample, deathLine, gatePayLines, restLines, iconCreditLine, mythicLines, naturalLines, pointsLine, saleLine, saleRows, dailyPointsLine, soloLines, statBonusLine, stealthLines } from '../core/rules-text.ts';
+import { ICON_CREDIT, KEYSTONE_WORDS, armorCutPct, borrowLine, checkExample, deathLine, gatePayLines, restLines, iconCreditLine, keystoneLines, mythicLines, naturalLines, pointsLine, saleLine, saleRows, dailyPointsLine, soloLines, statBonusLine, stealthLines } from '../core/rules-text.ts';
 import { describeStatus } from '../core/combat/effect-ops.ts';
 
 const STAT_USE = {
@@ -119,13 +119,14 @@ export function register(app) {
         table(['Stat', 'Short', 'What it gives'], STAT_KEYS.map(k => [esc(STAT_LABELS[k]), esc(STAT_SHORT[k]), esc(STAT_USE[k])])),
       ] },
       { id: 'curves', title: 'How a stat turns into numbers', body: [ul([
-        `<b>Effective points</b> = ${F.statBase} × (score / ${F.statBase}) ^ ${F.effExp}. Doubling a stat gives ${fmtX(Math.pow(2, F.effExp))} times as many effective points, not double. Spreading points across several stats is worth about as much as focusing on one.`,
+        `<b>Effective points</b> = ${F.statBase} × (score / ${F.statBase}) ^ ${F.effExp}. Doubling a stat gives ${fmtX(Math.pow(2, F.effExp))} times as many effective points, not double. ${keystoneLines(R).length ? esc(keystoneLines(R).join(' ')) : 'Spreading points across several stats is worth about as much as focusing on one.'}`,
         `Physical, magical, and support power equal ${F.powerK} × the effective points of Strength, Power, and Presence. These have no cap, so damage grows with rank.`,
         `<b>Capped stats</b> (such as carry, speed, stat armor, resist, crits, and tenacity) grow from effective points above ${F.statBase}. They reach half their cap at ${F.half} effective points above ${F.statBase} and never reach the full cap.`,
         `<b>Tenacity</b> combines Strength and Discipline using the square root of their product. Equal scores count as that same score, while leaving either stat at ${F.statBase} keeps tenacity low. Control statuses on you last their base duration × (100 + caster's potency) / (100 + your tenacity).`,
         `Max HP = ${F.hpBase} × (1 + (level − 1) / ${F.growthDiv}) × (1 + Vitality's capped share, up to ${F.hpVitCap * 100}%), plus bonuses. Most of it comes from level, so a fight takes about the same number of hits at every rank.`,
         `Max mana = ${F.manaBase} + Power's capped share (up to ${F.manaCap}). Fatigue capacity = ${F.fatigueBase} + Vitality's capped share (up to ${F.fatigueCap}).`,
         'Bonuses come from your active title, equipped gear, build path, and passive skills. Open the Status view to see all your numbers.']),
+        ...(keystoneLines(R).length ? [p(`<button type="button" data-rr-ks>${esc(KEYSTONE_WORDS.browseAll)}</button>`)] : []),
       ] },
       { id: 'armor', title: 'Armor and Resist', body: [ul([
         `<b>Armor</b> reduces physical damage and <b>Resist</b> reduces magical damage. Damage dealt = damage × ${F.armorK} / (${F.armorK} + defense). For example, ${kit.heavy.armor} armor cuts damage by ${armorCutPct(R, kit.heavy.armor)}%, and no amount grants full immunity.`,
@@ -255,6 +256,9 @@ export function register(app) {
       el.querySelector('[data-rr-toc]').addEventListener('click', e => {
         const a = e.target.closest('a'); if (!a) return; e.preventDefault();
         const t = el.querySelector(a.getAttribute('data-to')); if (t) t.scrollIntoView({ block: 'start' });
+      });
+      el.querySelector('[data-rr-body]').addEventListener('click', e => {
+        if (e.target.closest('[data-rr-ks]')) app.go('keystones');
       });
     },
     update(el) {

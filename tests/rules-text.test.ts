@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { mythicLines, mythicCodexLines, armorCutPct, borrowLine, checkExample, dailyPointsLine, deathLine, gatePayLines, iconCreditLine, ICON_CREDIT, naturalLines, pointsLine, saleLine, saleRows, soloLines, statBonusLine, stealthLines } from '../src/core/rules-text.ts';
+import { KEYSTONE_WORDS, keystoneCodexEntries, keystoneConfirmLine, keystoneLines, keystoneNextLine, keystoneShareAria, keystoneShareText, mythicLines, mythicCodexLines, armorCutPct, borrowLine, checkExample, dailyPointsLine, deathLine, gatePayLines, iconCreditLine, ICON_CREDIT, naturalLines, pointsLine, saleLine, saleRows, soloLines, statBonusLine, stealthLines } from '../src/core/rules-text.ts';
+import { keystoneDiff, keystoneReach, nearestKeystone } from '../src/core/hunter/keystones.ts';
+import { keystoneSwitched } from '../src/core/hunter/build.ts';
+import { BUILT_IN_JOBS, JOB_NAMES } from '../src/core/registry/jobs.ts';
+import { statsBy } from '../src/core/stats.ts';
+import type { StatKey } from '../src/core/stats.ts';
 import { afterDefence } from '../src/core/combat/land.ts';
 import { sellPrice } from '../src/core/hunter/inventory.ts';
 import { CAP_ROUNDS } from '../src/core/combat/play.ts';
@@ -311,5 +316,101 @@ describe('how a mythic fights (unit MY7)', () => {
     const on = mythicSwitched({ rulesOverrides: off }, true).rulesOverrides;
     expect(parseOverrides(on).refused).toEqual([]);
     expect(on).toEqual({ trade: { on: false }, fight: { mythic: { answerTime: { cancel: 2 }, scripts: true } } });
+  });
+});
+
+describe('keystones words and rules (unit K6)', () => {
+  const ksOn = (patch: Partial<Rules['fight']['keystone']> = {}): Rules => ({
+    ...RULES,
+    fight: { ...RULES.fight, keystone: { ...RULES.fight.keystone, on: true, ...patch } },
+  });
+  const built = (points: Partial<Record<StatKey, number>>): Stats => statsBy(k => RULES.fight.statBase + (points[k] ?? 0));
+
+  test('the Rules page states each keystone share from the rules', () => {
+    const text = keystoneLines(ksOn()).join(' ');
+    expect(text).toContain('30%');
+    expect(text).toContain('rank D');
+    expect(text).toContain('25%');
+    expect(text).toContain('rank C');
+    expect(text).toContain('over 55%');
+    expect(text).toContain('rank B');
+
+    const moved = keystoneLines(ksOn({ markShare: 0.35, markRank: 'C', pairShare: 0.2, pairRank: 'B', apexShare: 0.6, apexRank: 'A' })).join(' ');
+    expect(moved).toContain('35%');
+    expect(moved).toContain('rank C');
+    expect(moved).toContain('20%');
+    expect(moved).toContain('rank B');
+    expect(moved).toContain('over 60%');
+    expect(moved).toContain('rank A');
+  });
+
+  test('keystoneLines returns nothing while keystones are off', () => {
+    expect(RULES.fight.keystone.on).toBe(false);
+    expect(keystoneLines(RULES)).toEqual([]);
+  });
+
+  test('keystoneConfirmLine names earned and lost keystones with the Confirm allocation label', () => {
+    const R = ksOn();
+    const earn = keystoneDiff(
+      { stats: built({ str: 29, agi: 25, vit: 25, ins: 21 }), rank: 'D', pair: null, awakened: false },
+      { stats: built({ str: 31, agi: 25, vit: 25, ins: 21 }), rank: 'D', pair: null, awakened: false },
+      R.fight,
+    );
+    expect(keystoneConfirmLine(earn, R)).toBe(`Tap ${KEYSTONE_WORDS.confirmAction} to earn Follow Through (Mark of Strength).`);
+
+    const lose = keystoneDiff(
+      { stats: built({ str: 30, agi: 70 }), rank: 'D', pair: null, awakened: false },
+      { stats: built({ str: 30, agi: 80 }), rank: 'D', pair: null, awakened: false },
+      R.fight,
+    );
+    expect(keystoneConfirmLine(lose, R)).toBe(`Tap ${KEYSTONE_WORDS.confirmAction} to lose Follow Through (Mark of Strength).`);
+    expect(keystoneConfirmLine(earn, RULES)).toBe('');
+    expect(keystoneShareText(0.314)).toBe('31% of points');
+    expect(keystoneShareAria(0.314)).toBe('31% of your spent ability points');
+  });
+
+  test('keystoneNextLine states what the nearest mark, confluence, or apex needs', () => {
+    const R = ksOn();
+    expect(keystoneNextLine(null, R, 0)).toContain('30%');
+    expect(keystoneNextLine(null, R, 0)).toContain('rank D');
+
+    const nearMark = keystoneReach({ stats: built({ str: 27, agi: 20, vit: 20, ins: 20, dis: 13 }), rank: 'D', pair: null, awakened: false }, R.fight);
+    expect(keystoneNextLine(nearestKeystone(nearMark, R.fight), R, nearMark.totalSpent))
+      .toBe('You have 27% of your ability points in Strength. At 30%, you earn Follow Through.');
+
+    const nearConfRank = keystoneReach({ stats: built({ str: 40, dis: 35, agi: 25 }), rank: 'D', pair: null, awakened: false }, R.fight);
+    expect(keystoneNextLine(nearestKeystone(nearConfRank, R.fight), R, nearConfRank.totalSpent))
+      .toBe('Rank C opens your Confluence of Strength and Discipline: Unyielding Vow.');
+
+    const nearConfShare = keystoneReach({ stats: built({ str: 45, agi: 20, vit: 20, ins: 15 }), rank: 'C', pair: null, awakened: false }, R.fight);
+    expect(keystoneNextLine(nearestKeystone(nearConfShare, R.fight), R, nearConfShare.totalSpent))
+      .toBe('You have 20% of your ability points in Agility. At 25% alongside Strength, you earn Momentum.');
+
+    const nearApex = keystoneReach({ stats: built({ str: 52, agi: 48 }), rank: 'B', pair: null, awakened: false }, R.fight);
+    expect(keystoneNextLine(nearestKeystone(nearApex, R.fight), R, nearApex.totalSpent))
+      .toBe('You have 52% of your ability points in Strength. Over 55%, you earn Worldbreaker.');
+  });
+
+  test('keystoneCodexEntries lists all 44 keystones with job pairs and awakened lines', () => {
+    const entries = keystoneCodexEntries(ksOn());
+    expect(entries).toHaveLength(44);
+    expect(entries.filter(e => e.key.tier === 'mark')).toHaveLength(8);
+    expect(entries.filter(e => e.key.tier === 'confluence')).toHaveLength(28);
+    expect(entries.filter(e => e.key.tier === 'apex')).toHaveLength(8);
+    for (const job of JOB_NAMES) {
+      const match = entries.find(e => e.key.tier === 'confluence' && e.key.pair === BUILT_IN_JOBS[job].pair);
+      expect(match?.jobs).toContain(job);
+      expect(match?.awakenedLine).toBeTruthy();
+    }
+  });
+
+  test('keystoneSwitched writes fight.keystone.on and keeps the other overrides', async () => {
+    const { parseOverrides } = await import('../src/core/overrides.ts');
+    const on = keystoneSwitched({ rulesOverrides: { trade: { on: false }, fight: { keystone: { markShare: 0.35 } } } }, true).rulesOverrides;
+    expect(parseOverrides(on).refused).toEqual([]);
+    expect(on).toEqual({ trade: { on: false }, fight: { keystone: { markShare: 0.35, on: true } } });
+    const off = keystoneSwitched({ rulesOverrides: on }, false).rulesOverrides;
+    expect(parseOverrides(off).refused).toEqual([]);
+    expect(off).toEqual({ trade: { on: false }, fight: { keystone: { markShare: 0.35, on: false } } });
   });
 });

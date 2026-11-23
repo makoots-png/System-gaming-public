@@ -837,6 +837,8 @@ export type RoomRules = {
   trade: { on: boolean };
   /** The GM's mythic switch (`RULES.fight.mythic.scripts`): a doc without it reads as off, so a room from before scripts plays none. */
   mythic: { scripts: boolean };
+  /** The GM's keystone switch and thresholds (`RULES.fight.keystone`): a doc without it reads as off with shipped shares and ranks. */
+  keystone: { on: boolean; markShare: number; pairShare: number; apexShare: number; markRank: Rank; pairRank: Rank; apexRank: Rank };
   /** The rank whose Clear prices each rarity an item can carry (`RARITIES`); its color stays the phone's own. */
   rarities: RoomRarities;
   gradeStep: number;
@@ -1200,7 +1202,20 @@ function lootRank<K extends Rank>(v: unknown, rank: K): Rules['loot'][K] {
   const weights = Object.fromEntries(Object.keys(shipped).map(k => [k, ruleNumber(`loot.${rank}.weights.${k}`)(own(w, k))]));
   return { gold: goldRange(own(o, 'gold'), `loot.${rank}.gold`), weights } as Rules['loot'][K]; // the shipped table's keys, each read
 }
-/** The room's rules doc: every field required but the feats and trading switches (on when absent) and the mythic switch (off when absent). */
+/** The room's keystone switch and earning rules: absent reads as off with shipped shares and ranks. */
+function roomKeystone(v: unknown): RoomRules['keystone'] {
+  const ks = obj(opt(v, x => x, {})), d = RULES.fight.keystone;
+  return {
+    on: own(ks, 'on') === true,
+    markShare: opt(own(ks, 'markShare'), ruleNumber('fight.keystone.markShare'), d.markShare),
+    pairShare: opt(own(ks, 'pairShare'), ruleNumber('fight.keystone.pairShare'), d.pairShare),
+    apexShare: opt(own(ks, 'apexShare'), ruleNumber('fight.keystone.apexShare'), d.apexShare),
+    markRank: opt(own(ks, 'markRank'), choiceOf(RANKS), d.markRank),
+    pairRank: opt(own(ks, 'pairRank'), choiceOf(RANKS), d.pairRank),
+    apexRank: opt(own(ks, 'apexRank'), choiceOf(RANKS), d.apexRank),
+  };
+}
+/** The room's rules doc: every field required but the feats and trading switches (on when absent) and the mythic and keystone switches (off when absent). */
 function roomRulesDoc(o: Rec): RoomRules {
   const b = obj(own(o, 'build')), so = obj(own(o, 'solo')), ra = obj(own(o, 'rarities')), lo = obj(own(o, 'loot'));
   const rule = (k: 'gradeStep' | 'saleShare' | 'usedUpShare' | 'reviveClears' | 'reviveDebtClears' | 'reviveDebtShare' | 'reviveDebtBurn' | 'reviveDebtXpRate' | 'borrowCapClears' | 'reviveLevelShare' | 'gateParty'): number => ruleNumber(k)(own(o, k));
@@ -1212,6 +1227,7 @@ function roomRulesDoc(o: Rec): RoomRules {
     feats: { on: own(obj(opt(own(o, 'feats'), v => v, {})), 'on') !== false },
     trade: { on: own(obj(opt(own(o, 'trade'), v => v, {})), 'on') !== false },
     mythic: { scripts: own(obj(opt(own(o, 'mythic'), v => v, {})), 'scripts') === true },
+    keystone: roomKeystone(own(o, 'keystone')),
     rarities: eachRarity(r => ({ rank: choiceOf(RANKS)(own(obj(own(ra, r)), 'rank')) })),
     gradeStep: rule('gradeStep'),
     saleShare: rule('saleShare'),

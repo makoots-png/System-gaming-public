@@ -2,7 +2,14 @@
 // that play it, so the page cannot drift from the game (tests/rules-text.test.ts pins each one). Pure. The page itself
 // is src/views/rulesref.js, which keeps its layout and calls these.
 import type { Rank, Rules } from './rules.ts';
-import { above } from './stats.ts';
+import { STAT_KEYS, STAT_LABELS, STAT_SHORT, above } from './stats.ts';
+import type { StatKey } from './stats.ts';
+import { STAT_PAIRS, keystoneKeyId, statsOfPair } from './hunter/keystones.ts';
+import type { KeystoneDiff, KeystoneKey, KeystoneTier, NearestKeystone } from './hunter/keystones.ts';
+import { keystoneOf } from './registry/keystones.ts';
+import type { Keystone, KeystoneRegistryRules } from './registry/keystones.ts';
+import { BUILT_IN_JOBS, JOB_NAMES } from './registry/jobs.ts';
+import type { JobName } from './registry/jobs.ts';
 import { statBonus } from './hunter/sheet.ts';
 import { VERDICT_WORDS, verdict } from './coin.ts';
 import { CAP_ROUNDS } from './combat/play.ts';
@@ -244,3 +251,160 @@ export const MYTHIC_SWITCH_WORDS = {
   label: 'Mythics fight in phases', on: 'On', off: 'Off',
   hint: 'When off, mythic monsters fight like normal monsters. Fights already in progress do not change.',
 } as const;
+
+/** The GM's switch for keystones, shown in the Build panel. */
+export const KEYSTONE_SWITCH_WORDS = {
+  label: 'Keystones', on: 'On', off: 'Off',
+  hint: 'When on, hunters earn keystones by focusing ability points in one or two stats.',
+} as const;
+
+/** Static labels and headings for keystone screens so views and browser tests share one word table. */
+export const KEYSTONE_WORDS = {
+  panelTitle: 'Keystones',
+  codexTitle: 'Keystones',
+  browseAll: 'Browse all 44 keystones',
+  noneEarned: 'No keystones earned yet.',
+  earnedBadge: 'Earned',
+  awakenedBadge: 'Awakened',
+  tierAll: 'All',
+  tierMarks: 'Marks',
+  tierConfluences: 'Confluences',
+  tierApexes: 'Apexes',
+  statFilterLabel: 'Stat',
+  statAll: 'All stats',
+  searchLabel: 'Search keystones',
+  searchPlaceholder: 'Name, stat, or effect',
+  noMatch: 'No keystones match that filter.',
+  jobPairPrefix: 'Job pair: ',
+  awakenedPrefix: 'Awakened (after Job Change): ',
+  confirmAction: 'Confirm allocation',
+} as const;
+
+/** One entry of the Keystones codex view, built from the registry and rules. */
+export type KeystoneCodexEntry = {
+  readonly id: string;
+  readonly key: KeystoneKey;
+  readonly name: string;
+  readonly line: string;
+  readonly tierLabel: string;
+  readonly requirement: string;
+  readonly stats: readonly StatKey[];
+  readonly jobs: readonly JobName[];
+  readonly awakenedLine: string | null;
+};
+
+const joinAnd = (items: readonly string[]): string =>
+  items.length <= 1 ? (items[0] ?? '') : items.length === 2 ? `${items[0]} and ${items[1]}` : `${items.slice(0, -1).join(', ')}, and ${items.at(-1)}`;
+
+/** Whole-percent share shown inside an allocation stat cell ("31% of points"). */
+export const keystoneShareText = (share: number): string => `${Math.round(share * 100)}% of points`;
+/** Full accessible description for a stat's share ("31% of your spent ability points"). */
+export const keystoneShareAria = (share: number): string => `${Math.round(share * 100)}% of your spent ability points`;
+
+/** Human-readable tier and stat label ("Mark of Strength", "Confluence of Strength and Discipline", "Apex of Strength"). */
+export function keystoneTierLabel(key: KeystoneKey): string {
+  if (key.tier === 'confluence') {
+    const [a, b] = statsOfPair(key.pair);
+    return `Confluence of ${STAT_LABELS[a]} and ${STAT_LABELS[b]}`;
+  }
+  return `${key.tier === 'mark' ? 'Mark' : 'Apex'} of ${STAT_LABELS[key.stat]}`;
+}
+
+/** Plain description of a confluence's awakened powers, or null when a keystone has none. */
+export function keystoneAwakenedLine(k: Keystone): string | null {
+  if (!k.awakened) return null;
+  return k.awakened.worn?.desc || k.awakened.active?.name || null;
+}
+
+/** Confirm bar preview line naming keystones gained or lost by pending points; empty when unchanged or off. */
+export function keystoneConfirmLine(diff: KeystoneDiff, R: KeystoneRegistryRules & Pick<Rules, 'fight'>): string {
+  if (!R.fight.keystone.on) return '';
+  const nameOf = (key: KeystoneKey): string => `${keystoneOf(key, R).name} (${keystoneTierLabel(key)})`;
+  const earned = diff.earned.map(nameOf), lost = diff.lost.map(nameOf);
+  if (!earned.length && !lost.length) return '';
+  if (earned.length && lost.length) return `Tap ${KEYSTONE_WORDS.confirmAction} to earn ${joinAnd(earned)} and lose ${joinAnd(lost)}.`;
+  return earned.length ? `Tap ${KEYSTONE_WORDS.confirmAction} to earn ${joinAnd(earned)}.` : `Tap ${KEYSTONE_WORDS.confirmAction} to lose ${joinAnd(lost)}.`;
+}
+
+/** The sheet's nearest-unearned keystone line, derived from `nearestKeystone` and the active rules. */
+export function keystoneNextLine(nearest: NearestKeystone | null, R: KeystoneRegistryRules & Pick<Rules, 'fight'>, totalSpent: number): string {
+  const K = R.fight.keystone;
+  if (!K.on) return '';
+  if (totalSpent === 0) return `Spend ability points to earn keystones. Put ${pct(K.markShare)} in one stat to earn its Mark at rank ${K.markRank}.`;
+  if (!nearest) return '';
+  if (nearest.kind === 'stat') {
+    const { stat, current, next } = nearest, ks = keystoneOf(next.key, R);
+    if (next.shareMet && !next.rankMet) return `Rank ${next.rank} opens your ${keystoneTierLabel(next.key)}: ${ks.name}.`;
+    const cur = Math.round(current * 100), need = pct(next.share), cmp = next.key.tier === 'apex' ? `Over ${need}` : `At ${need}`;
+    return next.rankMet
+      ? `You have ${cur}% of your ability points in ${STAT_LABELS[stat]}. ${cmp}, you earn ${ks.name}.`
+      : `You have ${cur}% of your ability points in ${STAT_LABELS[stat]}. ${cmp} and at rank ${next.rank}, you earn ${ks.name}.`;
+  }
+  const { reach } = nearest, ks = keystoneOf(reach.key, R), [a, b] = reach.stats, [sa, sb] = reach.shares;
+  if (reach.shareMet && !reach.rankMet) return `Rank ${reach.rank} opens your ${keystoneTierLabel(reach.key)}: ${ks.name}.`;
+  const need = pct(reach.share), curA = Math.round(sa * 100), curB = Math.round(sb * 100);
+  if (reach.rankMet) {
+    if (sa >= reach.share && sb < reach.share) return `You have ${curB}% of your ability points in ${STAT_LABELS[b]}. At ${need} alongside ${STAT_LABELS[a]}, you earn ${ks.name}.`;
+    if (sb >= reach.share && sa < reach.share) return `You have ${curA}% of your ability points in ${STAT_LABELS[a]}. At ${need} alongside ${STAT_LABELS[b]}, you earn ${ks.name}.`;
+    return `You have ${curA}% in ${STAT_LABELS[a]} and ${curB}% in ${STAT_LABELS[b]}. At ${need} in each, you earn ${ks.name}.`;
+  }
+  return `You have ${curA}% in ${STAT_LABELS[a]} and ${curB}% in ${STAT_LABELS[b]}. At ${need} in each and rank ${reach.rank}, you earn ${ks.name}.`;
+}
+
+/**
+ * The Rules page lines for keystones (notes-11-keystones.md A.4, unit K6): empty while `fight.keystone.on` is off so no
+ * player sees keystone words before the switch is on. Each share and rank is read live from `R.fight.keystone`.
+ */
+export function keystoneLines(R: Pick<Rules, 'fight'>): readonly string[] {
+  const K = R.fight.keystone;
+  if (!K.on) return [];
+  return [
+    'Spreading points across several stats is worth about as much as focusing on one on the sheet.',
+    `Put ${pct(K.markShare)} of your spent ability points in one stat to earn its Mark at rank ${K.markRank}.`,
+    `Put ${pct(K.pairShare)} in each of your two highest stats (or your job's pair) to earn their Confluence at rank ${K.pairRank}.`,
+    `Put over ${pct(K.apexShare)} in one stat to earn its Apex at rank ${K.apexRank}.`,
+  ];
+}
+
+/** Section header condition line for one tier in the Keystones codex view. */
+export function keystoneTierCondition(tier: KeystoneTier, R: Pick<Rules, 'fight'>): string {
+  const K = R.fight.keystone;
+  if (tier === 'mark') return `Rank ${K.markRank} or higher, and ${pct(K.markShare)} of your spent ability points in one stat.`;
+  if (tier === 'confluence') return `Rank ${K.pairRank} or higher, and ${pct(K.pairShare)} in each of your two highest stats (or your job's pair).`;
+  return `Rank ${K.apexRank} or higher, and over ${pct(K.apexShare)} of your spent ability points in one stat.`;
+}
+
+/** Filtered count line for the Keystones codex view ("44 keystones" or "8 of 44 keystones"). */
+export const keystoneCountLine = (shown: number, total: number): string =>
+  shown === total ? `${total} keystone${total === 1 ? '' : 's'}` : `${shown} of ${total} keystones`;
+
+/** All 44 keystones with their condition badge, job links, and awakened lines for the Keystones codex view. */
+export function keystoneCodexEntries(R: KeystoneRegistryRules & Pick<Rules, 'fight'>): readonly KeystoneCodexEntry[] {
+  const K = R.fight.keystone;
+  const jobsFor = (pair: string): JobName[] => JOB_NAMES.filter(j => BUILT_IN_JOBS[j].pair === pair);
+  const keys: KeystoneKey[] = [
+    ...STAT_KEYS.map(stat => ({ tier: 'mark' as const, stat })),
+    ...STAT_PAIRS.map(pair => ({ tier: 'confluence' as const, pair })),
+    ...STAT_KEYS.map(stat => ({ tier: 'apex' as const, stat })),
+  ];
+  return keys.map(key => {
+    const ks = keystoneOf(key, R);
+    const stats = key.tier === 'confluence' ? statsOfPair(key.pair) : [key.stat];
+    const requirement = key.tier === 'mark'
+      ? `${STAT_SHORT[key.stat]} · ${pct(K.markShare)} · Rank ${K.markRank}`
+      : key.tier === 'confluence'
+        ? `${STAT_SHORT[stats[0]!]} + ${STAT_SHORT[stats[1]!]} · ${pct(K.pairShare)} each · Rank ${K.pairRank}`
+        : `${STAT_SHORT[key.stat]} · over ${pct(K.apexShare)} · Rank ${K.apexRank}`;
+    return {
+      id: keystoneKeyId(key),
+      key,
+      name: ks.name,
+      line: ks.line,
+      tierLabel: keystoneTierLabel(key),
+      requirement,
+      stats,
+      jobs: key.tier === 'confluence' ? jobsFor(key.pair) : [],
+      awakenedLine: keystoneAwakenedLine(ks),
+    };
+  });
+}

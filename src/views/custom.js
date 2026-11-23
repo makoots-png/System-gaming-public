@@ -10,7 +10,8 @@ import { atHunter, atSettings, refuse } from '../core/save-step.ts';
 import { withSound } from '../core/settings.ts';
 import { withBadge } from '../core/hunter/identity.ts';
 import { LOADOUT_WORDS, fits, loadoutCap, overwriteLoadout, removeLoadout, renameLoadout, saveLoadout, swapLoadout } from '../core/hunter/loadouts.ts';
-import { choosePath as pathChosen, mayPick, perkText, pickPerk, respec as respecHunter, respecBlock as respecWhy, respecCost as respecGold, buildRuleSet, buildRulesReset, roomRulesOf } from '../core/hunter/build.ts';
+import { choosePath as pathChosen, mayPick, perkText, pickPerk, respec as respecHunter, respecBlock as respecWhy, respecCost as respecGold, buildRuleSet, buildRulesReset, keystoneSwitched, roomRulesOf } from '../core/hunter/build.ts';
+import { KEYSTONE_SWITCH_WORDS } from '../core/rules-text.ts';
 import { autoSpend } from '../core/hunter/sheet.ts';
 import { newRewards } from '../core/rewards.ts';
 
@@ -336,7 +337,7 @@ export function register(app) {
   app.registerPanel({
     view: 'status', id: 'build', order: 13, title: 'Build', jump: 'Build',
     mount(el) {
-      el.innerHTML = '<div data-bd></div><div class="bd-acts" data-bdgm></div>';
+      el.innerHTML = '<div data-bd></div><div class="bd-acts" data-bdgm></div><p class="cz-note" data-ksgm-hint hidden></p>';
       el.addEventListener('click', e => {
         const b = e.target.closest('button'); if (!b) return; const d = b.dataset, hid = store.active().id;
         if (d.bdpath) return choosePath(hid, d.bdpath);
@@ -348,6 +349,7 @@ export function register(app) {
         if ('bdrespec' in d) return ui.confirm({ title: 'Respec this hunter?', body: 'Path and perks are cleared. Ability points are not refunded.', danger: true, confirmLabel: 'Respec' }).then(ok => ok && ui.wrote('Build', BD.respec(hid)));
         if ('bdtoggle' in d) return BD.setRule({ enabled: !on() });
         if ('bdpp' in d) return BD.setRule({ playerPick: B().playerPick === false });
+        if ('kstoggle' in d) { ui.wrote('GM', store.apply('gm-rules', s => keystoneSwitched(s, !rules().fight.keystone.on))); return; }
         if ('bdreset' in d) return BD.resetRules();
       });
     },
@@ -371,9 +373,14 @@ export function register(app) {
             !gm && canPick() ? `<button type="button" data-bdbuy>Respec (${ui.fmt(respecCost(h))} gold)</button>` : ''}</div>`;
       }
       if (el._h !== html) { el._h = html; el.querySelector('[data-bd]').innerHTML = html; }
+      const ksOn = R.fight.keystone.on, KW = KEYSTONE_SWITCH_WORDS;
       el.querySelector('[data-bdgm]').innerHTML = gm ? `<button type="button" data-bdset>Set path</button><button type="button" data-bdrespec class="danger"${h.build.path ? '' : ' disabled'}>Respec</button>
         <button type="button" data-bdtoggle aria-pressed="${on()}">Build paths: ${on() ? 'On' : 'Off'}</button><button type="button" data-bdpp aria-pressed="${B().playerPick !== false}">Players choose perks: ${B().playerPick !== false ? 'Yes' : 'No'}</button>
+        <button type="button" data-kstoggle aria-pressed="${ksOn}">${esc(KW.label)}: ${ksOn ? KW.on : KW.off}</button>
         <button type="button" data-bdreset>Reset build rules</button>` : '';
+      const kh = el.querySelector('[data-ksgm-hint]');
+      kh.hidden = !gm;
+      kh.textContent = gm ? KW.hint : '';
     },
   });
   // the Path skill card's "Build" button lives in .panels, outside hunter.js's jump-chip listener

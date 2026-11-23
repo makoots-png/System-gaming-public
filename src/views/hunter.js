@@ -8,6 +8,11 @@ import { fightHold, heldLines } from '../core/combat/fight-save.ts';
 import { combatantId, hunterId } from '../core/combat/ability-types.ts';
 import { titlePowerLines } from '../core/title-card.ts';
 import { checksOf, fitted, hunterSheet, setAdjust, setMaximum } from '../core/hunter/sheet.ts';
+import { keystoneBasis, keystoneDiff, keystoneReach, keystonesOf, nearestKeystone } from '../core/hunter/keystones.ts';
+import { keystoneOf } from '../core/registry/keystones.ts';
+import {
+  KEYSTONE_WORDS, keystoneAwakenedLine, keystoneConfirmLine, keystoneNextLine, keystoneShareAria, keystoneShareText, keystoneTierLabel,
+} from '../core/rules-text.ts';
 import { ALLOCATION_WORDS, allocated, available, confirm, hasPending, lower, plusPoint, raise, setPoints, setStat } from '../core/hunter/progress.ts';
 import { TOLD, atHunter, atLibrary, both, isRefused, orKeep, refuse } from '../core/save-step.ts';
 import { dropBoon, giveTitle, nameActiveTitle, rankStanding, reevaluate as reevaluated, removeTitle, rename, setJob, setRank, toggleTitle, writeTitle, cleanName } from '../core/hunter/record.ts';
@@ -72,6 +77,19 @@ const CSS = `
 .stat .s-roll span{display:block}
 .stat .s-bonus{font-family:var(--font-mono);font-size:14px;color:var(--green);margin-left:4px;font-weight:400}
 .stat .s-bonus:empty{display:none}
+.stat .s-share{display:block;font-size:calc(11px*var(--ts));color:var(--cyan-dim);margin-top:2px;line-height:1.2}
+.stat .s-share[hidden]{display:none}
+.ap-ks{margin:6px 0 0;font-size:calc(13px*var(--ts));color:var(--gold);overflow-wrap:anywhere}
+.ap-ks[hidden]{display:none}
+.ks-list{list-style:none;margin:0 0 8px;padding:0;display:flex;flex-direction:column;gap:8px}
+.ks-item{border:1px solid var(--line);background:rgba(10,26,46,.55);padding:8px 12px}
+.ks-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.ks-name{font-weight:600;color:var(--ice)}
+.ks-tier{font-size:12px;color:var(--cyan-dim)}
+.ks-line{margin:4px 0 0;font-size:13px;color:var(--ice);overflow-wrap:anywhere}
+.ks-awake{margin:4px 0 0;padding-left:8px;border-left:2px solid var(--gold);font-size:13px;color:var(--ice);overflow-wrap:anywhere}
+.ks-next{margin:6px 0 8px;font-size:13px;color:var(--cyan-dim);overflow-wrap:anywhere}
+.ks-next[hidden]{display:none}
 .derived{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
 .dv{border:1px solid var(--line);background:rgba(10,26,46,.6);padding:6px 10px;text-align:center}
 button.dv{display:block;width:100%;min-height:var(--control-h);color:inherit;font:inherit}
@@ -418,11 +436,19 @@ export function register(app) {
 @media (min-width:721px) and (max-width:1099px) and (max-height:500px){[data-panel]{scroll-margin-top:12px}}`;
     document.head.appendChild(st);
   }
+  /** Syncs the Status view's jump chips with the panels currently visible (`when()` may flip with room rules). */
+  const drawJumps = nav => {
+    const items = app.jumps('status'), sig = items.map(j => `${j.id}:${j.label}`).join('|');
+    if (nav.dataset.sig === sig) return;
+    nav.dataset.sig = sig;
+    nav.innerHTML = items.map(j => `<button type="button" data-jump="${ui.esc(j.id)}">${ui.esc(j.label)}</button>`).join('');
+  };
   app.registerView({ id: 'status', label: 'Status', icon: '◈', order: 10,
     mount(el) {
-      el.insertAdjacentHTML('afterbegin', `<nav class="jump-chips" aria-label="Jump to section">${app.jumps('status').map(j => `<button type="button" data-jump="${ui.esc(j.id)}">${ui.esc(j.label)}</button>`).join('')}</nav>`);
+      el.insertAdjacentHTML('afterbegin', '<nav class="jump-chips" aria-label="Jump to section"></nav>');
       // A15: the row fades at the edge it can still scroll toward, so a player sees there is more than "Stats … Ge…".
       const nav = el.querySelector('.jump-chips');
+      drawJumps(nav);
       const fades = () => {
         const more = nav.scrollWidth - nav.clientWidth;
         nav.classList.toggle('fade-l', nav.scrollLeft > 4);
@@ -437,6 +463,10 @@ export function register(app) {
         const t = document.querySelector(`#view-status [data-panel="${b.dataset.jump}"]`);
         if (t) t.scrollIntoView({ behavior: ui.reduced() ? 'auto' : 'smooth', block: 'start' });
       });
+    },
+    update(el) {
+      const nav = el.querySelector('.jump-chips');
+      if (nav) drawJumps(nav);
     } });
   const setHTML = (el, html) => { if (el._h !== html) { el._h = html; el.innerHTML = html; } };
   const setVal = (i, v) => { if (i && document.activeElement !== i && i.value !== String(v)) i.value = v; };
@@ -633,6 +663,7 @@ export function register(app) {
         <span class="s-name">${label}</span><span class="s-alias">${alias}</span>
         <span class="s-val"><span data-v>10</span> <small class="s-bonus" data-b></small></span><span class="s-mod">+0</span>
       </button>
+      <span class="s-share" data-share hidden></span>
       <div class="s-btns">
         <button type="button" data-st="${k}" data-dir="-1" aria-label="Decrease ${alias}">&minus;</button>
         <button type="button" data-st="${k}" data-dir="1" aria-label="Increase ${alias}">+</button>
@@ -644,9 +675,10 @@ export function register(app) {
       el.innerHTML = `<div class="stats">${STAT_KEYS.map(statCell).join('')}</div>
         <div class="ap-row">
           <span class="lbl">Ability points</span><span class="ap-num" data-ap>0</span>
-          <button type="button" class="primary" data-confirm hidden>Confirm allocation</button>
+          <button type="button" class="primary" data-confirm hidden>${esc(KEYSTONE_WORDS.confirmAction)}</button>
           <button type="button" data-grant hidden>+1 point</button>
         </div>
+        <p class="ap-ks" data-confirm-ks hidden aria-live="polite"></p>
         <p class="dv-note">Tap a stat to roll a check. Tap &minus; to undo points until you confirm.</p>`;
       el.addEventListener('click', e => {
         const b = e.target.closest('button'); if (!b) return;
@@ -668,20 +700,67 @@ export function register(app) {
       });
     },
     update(el) {
-      const h = store.active(), d = sheetOf(h), gm = app.isGM(), role = gm ? 'gm' : 'player', points = available(h, rules()), put = allocated(h);
-      for (const k of STAT_KEYS) {
+      const h = store.active(), R = rules(), d = sheetOf(h), gm = app.isGM(), role = gm ? 'gm' : 'player', points = available(h, R), put = allocated(h);
+      const ksOn = R.fight.keystone.on, basis = keystoneBasis(h), reach = keystoneReach(basis, R.fight);
+      STAT_KEYS.forEach((k, i) => {
         const c = el.querySelector(`.stat[data-k="${k}"]`), delta = d.stats[k] - put[k], b = d.checks.bonus[k];
         c.querySelector('[data-v]').textContent = d.stats[k];
         c.querySelector('[data-b]').textContent = delta ? `(${sgn(delta)})` : '';
         c.querySelector('.s-mod').textContent = sgn(b);
+        const sh = c.querySelector('[data-share]');
+        if (ksOn) {
+          const share = reach.stats[i].share;
+          sh.hidden = false;
+          sh.textContent = keystoneShareText(share);
+          sh.setAttribute('aria-label', keystoneShareAria(share));
+        } else {
+          sh.hidden = true;
+          sh.textContent = '';
+          sh.removeAttribute('aria-label');
+        }
         const [minus, plus] = c.querySelectorAll('.s-btns button');
         minus.disabled = isRefused(lower(h, k, role));
-        plus.disabled = isRefused(raise(h, k, role, rules()));
+        plus.disabled = isRefused(raise(h, k, role, R));
         c.querySelector('.s-roll').setAttribute('aria-label', `Roll ${STAT_SHORT[k]} check (${STAT_LABELS[k]}), bonus ${sgn(b)}`);
-      }
+      });
       el.querySelector('[data-ap]').textContent = points;
-      el.querySelector('[data-confirm]').hidden = !hasPending(h);
+      const pending = hasPending(h);
+      el.querySelector('[data-confirm]').hidden = !pending;
       el.querySelector('[data-grant]').hidden = !gm;
+      const ksLine = ksOn && pending ? keystoneConfirmLine(keystoneDiff(keystoneBasis({ ...h, pending: {} }), basis, R.fight), R) : '';
+      const ksEl = el.querySelector('[data-confirm-ks]');
+      ksEl.hidden = !ksLine;
+      ksEl.textContent = ksLine;
+    },
+  });
+
+  // ═══ Panel: Keystones (shown only while `fight.keystone.on` is on) ═══
+  app.registerPanel({
+    view: 'status', id: 'keystones', order: 12.5, title: KEYSTONE_WORDS.panelTitle, jump: KEYSTONE_WORDS.panelTitle,
+    when: () => rules().fight.keystone.on,
+    mount(el) {
+      el.innerHTML = `<ul class="ks-list" data-ks-held></ul>
+        <p class="empty" data-ks-empty hidden></p>
+        <p class="ks-next" data-ks-next hidden></p>
+        <div class="bar-ctrl"><button type="button" data-ks-codex>${esc(KEYSTONE_WORDS.browseAll)}</button></div>`;
+      el.addEventListener('click', e => {
+        if (e.target.closest('[data-ks-codex]')) app.go('keystones');
+      });
+    },
+    update(el) {
+      const h = store.active(), R = rules(), basis = keystoneBasis(h);
+      const held = keystonesOf(basis, R.fight), reach = keystoneReach(basis, R.fight);
+      setHTML(el.querySelector('[data-ks-held]'), held.map(key => {
+        const ks = keystoneOf(key, R), aw = key.tier === 'confluence' && basis.awakened ? keystoneAwakenedLine(ks) : null;
+        return `<li class="ks-item"><div class="ks-head"><span class="ks-name">${esc(ks.name)}${aw ? ` <span class="tag-on">${esc(KEYSTONE_WORDS.awakenedBadge)}</span>` : ''}</span><span class="ks-tier">${esc(keystoneTierLabel(key))}</span></div><p class="ks-line">${esc(ks.line)}</p>${aw ? `<p class="ks-awake">${esc(aw)}</p>` : ''}</li>`;
+      }).join(''));
+      const empty = el.querySelector('[data-ks-empty]');
+      empty.hidden = held.length > 0;
+      empty.textContent = held.length ? '' : KEYSTONE_WORDS.noneEarned;
+      const next = keystoneNextLine(nearestKeystone(reach, R.fight), R, reach.totalSpent);
+      const nx = el.querySelector('[data-ks-next]');
+      nx.hidden = !next;
+      nx.textContent = next;
     },
   });
 

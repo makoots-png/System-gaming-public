@@ -3,7 +3,7 @@
 // rank B for a stat over 55%. A build is written as the points it put above the base of 10, so each expected keystone
 // is read off its shares by hand.
 import { describe, expect, test } from 'bun:test';
-import { STAT_PAIRS, keystoneBasis, keystoneReach, keystonesOf, pairOf, statsOfPair } from '../src/core/hunter/keystones.ts';
+import { STAT_PAIRS, keystoneBasis, keystoneDiff, keystoneReach, keystonesOf, nearestKeystone, pairOf, statsOfPair } from '../src/core/hunter/keystones.ts';
 import type { KeystoneBasis, KeystoneHunter, KeystoneKey, StatPair } from '../src/core/hunter/keystones.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
 import type { SheetCondition, SheetHunter } from '../src/core/hunter/sheet.ts';
@@ -99,7 +99,10 @@ test('each tier waits for its rank: marks at D, the confluence at C, the apex at
 test('with the room\'s switch off no body holds a keystone', () => {
   const off = { ...F, keystone: { ...F.keystone, on: false } };
   expect(keystonesOf(body({ str: 60, agi: 40 }, 'S'), off)).toEqual([]);
-  expect(keystoneReach(body({ str: 60, agi: 40 }, 'S'), off).every(r => r.next === null)).toBe(true);
+  const reach = keystoneReach(body({ str: 60, agi: 40 }, 'S'), off);
+  expect(reach.stats.every(r => r.next === null)).toBe(true);
+  expect(reach.confluence).toBeNull();
+  expect(nearestKeystone(reach, off)).toBeNull();
 });
 
 test('a stat edited under the base spent no points', () => {
@@ -108,11 +111,68 @@ test('a stat edited under the base spent no points', () => {
 
 test('the sheet\'s reach names each stat\'s share and the next keystone it lacks, with the share and rank it asks', () => {
   const reach = keystoneReach(body({ str: 60, agi: 27, vit: 13 }, 'C'), F);
-  expect(reach.map(r => r.stat)).toEqual([...STAT_KEYS]);
-  expect(reach[0]).toEqual({ stat: 'str', share: 0.6, next: { key: apex('str'), share: 0.55, rank: 'B', shareMet: true, rankMet: false } });
-  expect(reach[1]).toEqual({ stat: 'agi', share: 0.27, next: { key: mark('agi'), share: 0.3, rank: 'D', shareMet: false, rankMet: true } });
-  expect(reach[7]).toEqual({ stat: 'ctl', share: 0, next: { key: mark('ctl'), share: 0.3, rank: 'D', shareMet: false, rankMet: true } });
-  expect(keystoneReach(body({ str: 100 }, 'S'), F)[0]).toEqual({ stat: 'str', share: 1, next: null });
+  expect(reach.totalSpent).toBe(100);
+  expect(reach.stats.map(r => r.stat)).toEqual([...STAT_KEYS]);
+  expect(reach.stats[0]).toEqual({ stat: 'str', share: 0.6, next: { key: apex('str'), share: 0.55, rank: 'B', shareMet: true, rankMet: false } });
+  expect(reach.stats[1]).toEqual({ stat: 'agi', share: 0.27, next: { key: mark('agi'), share: 0.3, rank: 'D', shareMet: false, rankMet: true } });
+  expect(reach.stats[7]).toEqual({ stat: 'ctl', share: 0, next: { key: mark('ctl'), share: 0.3, rank: 'D', shareMet: false, rankMet: true } });
+  expect(reach.confluence).toBeNull();
+  expect(keystoneReach(body({ str: 100 }, 'S'), F).stats[0]).toEqual({ stat: 'str', share: 1, next: null });
+});
+
+test('keystoneReach reports what a confluence needs, preferring the job\'s pair when closer or tied', () => {
+  const waitingRank = keystoneReach(body({ str: 40, dis: 35, agi: 25 }, 'D'), F);
+  expect(waitingRank.confluence).toEqual({
+    key: confluence('str', 'dis'), stats: ['str', 'dis'], shares: [0.4, 0.35],
+    share: 0.25, rank: 'C', shareMet: true, rankMet: false, fromJob: false,
+  });
+
+  const waitingShare = keystoneReach(body({ str: 45, agi: 20, vit: 20, ins: 15 }, 'C'), F);
+  expect(waitingShare.confluence).toEqual({
+    key: confluence('str', 'agi'), stats: ['str', 'agi'], shares: [0.45, 0.2],
+    share: 0.25, rank: 'C', shareMet: false, rankMet: true, fromJob: false,
+  });
+
+  const jobPreferred = keystoneReach(body({ str: 45, agi: 20, vit: 20, ins: 15 }, 'C', 'str+vit'), F);
+  expect(jobPreferred.confluence).toEqual({
+    key: confluence('str', 'vit'), stats: ['str', 'vit'], shares: [0.45, 0.2],
+    share: 0.25, rank: 'C', shareMet: false, rankMet: true, fromJob: true,
+  });
+
+  expect(keystoneReach(body({}, 'C'), F).confluence).toBeNull();
+  expect(keystoneReach(body({}, 'C', 'pow+ctl'), F).confluence).toEqual({
+    key: confluence('pow', 'ctl'), stats: ['pow', 'ctl'], shares: [0, 0],
+    share: 0.25, rank: 'C', shareMet: false, rankMet: true, fromJob: true,
+  });
+});
+
+test('nearestKeystone picks a rank-gated keystone before a share-gated one, and returns null when no points are spent', () => {
+  expect(nearestKeystone(keystoneReach(body({}, 'D'), F), F)).toBeNull();
+  const rankGated = nearestKeystone(keystoneReach(body({ str: 40, dis: 35, agi: 25 }, 'D'), F), F);
+  expect(rankGated?.kind).toBe('confluence');
+  if (rankGated?.kind === 'confluence') expect(rankGated.reach.key).toEqual(confluence('str', 'dis'));
+
+  const shareMark = nearestKeystone(keystoneReach(body({ str: 27, agi: 20, vit: 20, ins: 20, dis: 13 }, 'D'), F), F);
+  expect(shareMark?.kind).toBe('stat');
+  if (shareMark?.kind === 'stat') expect(shareMark.next.key).toEqual(mark('str'));
+
+  const shareConfluence = nearestKeystone(keystoneReach(body({ str: 45, agi: 20, vit: 20, ins: 15 }, 'C'), F), F);
+  expect(shareConfluence?.kind).toBe('confluence');
+  if (shareConfluence?.kind === 'confluence') expect(shareConfluence.reach.key).toEqual(confluence('str', 'agi'));
+
+  const shareApex = nearestKeystone(keystoneReach(body({ str: 52, agi: 48 }, 'B'), F), F);
+  expect(shareApex?.kind).toBe('stat');
+  if (shareApex?.kind === 'stat') expect(shareApex.next.key).toEqual(apex('str'));
+});
+
+test('keystoneDiff lists keystones earned and lost by pending points', () => {
+  const before = body({ str: 29, agi: 25, vit: 25, ins: 21 }, 'D');
+  const after = body({ str: 31, agi: 25, vit: 25, ins: 21 }, 'D');
+  expect(keystoneDiff(before, after, F)).toEqual({ earned: [mark('str')], lost: [] });
+
+  const heldStr = body({ str: 30, agi: 70 }, 'D');
+  const diluted = body({ str: 30, agi: 80 }, 'D');
+  expect(keystoneDiff(heldStr, diluted, F)).toEqual({ earned: [], lost: [mark('str')] });
 });
 
 describe('the pairs of stats', () => {

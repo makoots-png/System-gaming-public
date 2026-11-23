@@ -104,11 +104,21 @@ export function withoutBuildRules(o: Overrides): Overrides {
 export const buildRuleSet = <S extends Pick<Save, 'rulesOverrides'>>(save: S, patch: { enabled?: boolean; playerPick?: boolean }): S => ({ ...save, rulesOverrides: withBuildRule(save.rulesOverrides, patch) });
 /** The save back on the default build and path rules (`withoutBuildRules`), as one step for `store.apply`. */
 export const buildRulesReset = <S extends Pick<Save, 'rulesOverrides'>>(save: S): S => ({ ...save, rulesOverrides: withoutBuildRules(save.rulesOverrides) });
-/** The mythic rules a room's switch is laid over: the phone's own, with the room's `scripts`. */
-const mythicOver = (R: Rules, room: RoomRules) => ({ mythic: { ...R.fight.mythic, ...room.mythic } });
+/** The save with the GM's keystone switch (`fight.keystone.on`) set to `on`, keeping all other overrides. */
+export function keystoneSwitched<S extends Pick<Save, 'rulesOverrides'>>(save: S, on: boolean): S {
+  const ov = isObj(save.rulesOverrides) ? save.rulesOverrides : {};
+  const fight = isObj(ov.fight) ? ov.fight : {};
+  const ks = isObj(fight.keystone) ? fight.keystone : {};
+  return { ...save, rulesOverrides: { ...ov, fight: { ...fight, keystone: { ...ks, on } } } };
+}
+/** The fight switches a room carries over the phone's own: mythic scripts and keystone earning rules. */
+const fightOver = (R: Rules, room: RoomRules) => ({
+  mythic: { ...R.fight.mythic, ...room.mythic },
+  keystone: { ...R.fight.keystone, ...room.keystone },
+});
 /**
  * The rules a player's phone plays by while in a room: its own, with the room's (the GM's `rules` doc, `RoomRules`) over
- * them: the build switches, the personal gates' switch, hours and loot share, the feats', trading's and mythic switches, and the economy, so a price is the GM's on
+ * them: the build switches, the personal gates' switch, hours and loot share, the feats', trading's, mythic and keystone rules, and the economy, so a price is the GM's on
  * every phone. A rarity takes the room's rank and keeps the phone's color. Nothing is copied into the player's save, so
  * the player's own rules are theirs again once the room is left.
  */
@@ -120,7 +130,7 @@ export function withRoomRules(R: Rules, room: RoomRules | null): Rules {
     solo: { ...R.solo, ...room.solo },
     feats: { ...R.feats, ...room.feats },
     trade: { ...R.trade, ...room.trade },
-    fight: { ...R.fight, ...mythicOver(R, room) },
+    fight: { ...R.fight, ...fightOver(R, room) },
     rarities: { ...R.rarities, ...eachRarity(r => ({ ...R.rarities[r], rank: room.rarities[r].rank })) },
     gradeStep: room.gradeStep,
     saleShare: room.saleShare,
@@ -143,6 +153,15 @@ export const roomRulesOf = (R: Rules): RoomRules => ({
   feats: { on: R.feats.on },
   trade: { on: R.trade.on },
   mythic: { scripts: R.fight.mythic.scripts },
+  keystone: {
+    on: R.fight.keystone.on,
+    markShare: R.fight.keystone.markShare,
+    pairShare: R.fight.keystone.pairShare,
+    apexShare: R.fight.keystone.apexShare,
+    markRank: R.fight.keystone.markRank,
+    pairRank: R.fight.keystone.pairRank,
+    apexRank: R.fight.keystone.apexRank,
+  },
   rarities: eachRarity(r => ({ rank: R.rarities[r].rank })),
   gradeStep: R.gradeStep,
   saleShare: R.saleShare,
