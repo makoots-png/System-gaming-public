@@ -137,6 +137,8 @@ export function storeStep(l: StoreLife, e: StoreEvent): StoreStep {
 export const mayChange = (l: StoreLife): boolean => l.at === 'ready' || l.at === 'noStorage';
 /** The refusal `store.apply` answers in a read-only tab. */
 export const READ_ONLY = 'read-only';
+/** What a screen says when the store refused its write (another tab took over, a newer app's save): nothing was saved. */
+export const NOT_SAVED = 'Not saved. This tab cannot save right now. Check the banner at the top for details.';
 
 /** Whether this phone's own memory (prefs, device memory) was kept at its last write. */
 export type DeviceLife = 'kept' | 'failing';

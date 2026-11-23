@@ -4,6 +4,7 @@
 import type { Page } from '@playwright/test';
 import { test, expect, onboardGM, go } from './helpers.ts';
 import { newRewards } from '../../src/core/rewards.ts';
+import { newChapter, newChapterQuest, storyProblem } from '../../src/core/draft.ts';
 
 const maker = (page: Page) => page.locator('.stm-overlay [role=dialog]');
 const quest = (page: Page) => maker(page).locator('[data-stm-q]');
@@ -71,7 +72,8 @@ test('a folded chapter\'s Job Change quest with no job is refused at Save: the m
 
   await test.step('Save is refused: chapter 1 opens with its quest, the maker says to choose a job, and nothing is saved', async () => {
     await maker(page).getByRole('button', { name: 'Save story' }).tap();
-    await expect(maker(page).locator('.mk-err')).toHaveText('Choose a job for chapter 1\'s job quest.');
+    const missingJob = storyProblem({ name: 'The new path', when: '', for: 'hunters', chapters: [{ ...newChapter(), words: { title: 'A path opens', line: '' }, quest: { ...newChapterQuest(), kind: 'job', title: 'Walk the new path' } }] })!.why;
+    await expect(maker(page).locator('.mk-err')).toHaveText(missingJob);
     await expect(maker(page).locator('[data-chopen="0"]')).toHaveAttribute('aria-expanded', 'true');
     await expect(quest(page).locator('[name=title]')).toHaveValue('Walk the new path');
     expect(await stories(page)).toEqual([]);

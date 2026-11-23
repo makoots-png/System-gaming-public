@@ -2216,3 +2216,54 @@ centered at `1.00` on default level 5.
 
 Added wall time for the 16 D1 to D5 rows: ~35.2 s (1.2 s to 3.1 s per row, well under `BUDGET_MS = 30,000`).
 
+## Worldbreaker, the Strength apex (unit row-32, Nov 23)
+
+the owner approved Neon's change on questionable-decisions row 32: restore damage to Worldbreaker (`KEYSTONES.apex.str` in
+`src/core/registry/keystones.ts`) with a smaller stagger share inside the 25-point apex budget (20 to 30 band at rank B,
+weighed by `itemSpend` / `powersSpend`).
+
+### All 8 apexes measured at rank B (pack, difficulty-5 boss, duels) and rank S (all 4 mythic scripts)
+
+Each apex is added to its natural party slot (`withApex` in `tests/models/fight-sim.ts`) and compared as a delta over
+the same party without that apex. Pack: 3 normal brutes at B (200 fights, % fewer rounds). Boss D5: difficulty-5 brute
+boss at B (300 fights, win rate delta). Mythics: mean win rate across all 4 scripts (`plain`, `angel-of-the-last-trumpet`,
+`zaratan-the-island-that-wakes`, `the-fourth-rider`) at S (300 fights per script, 500 for the final pick). Duels: 1v1
+against `tank`, `speed`, and `cannon` across both openings at B (600 duels).
+
+| Apex (holder) | Budget (B) | Pack B rounds (fast%) | Boss D5 B WR (delta) | Mythic S mean WR (delta) | Mythic S (p / a / z / r) | Duel B WR (delta) |
+|---|---|---|---|---|---|---|
+| Baseline (`tank`, `bruiser`, `cannon`) | 0.0 | 3.85 r | 74.0% | 7.2% | 8.7 / 7.0 / 6.3 / 6.7 | 86.5% |
+| STR Worldbreaker, **before** (`effect: null`, 0.50 stagger, cd 4) | 22.4 | 3.85 r (+0.0%) | 54.3% (-19.7pp) | 1.9% (-5.3pp) | 0.0 / 4.0 / 0.3 / 3.3 | 86.5% (+0.0pp) |
+| STR Worldbreaker, **after** (`1.15 * strike`, 0.15 stagger, cd 6) | 27.4 | 3.78 r (+1.8%) | 88.0% (+14.0pp) | 9.7% (+2.5pp) | 14.3 / 10.7 / 5.7 / 8.0 | 87.7% (+1.2pp) |
+| AGI Afterimage (`speed`) | 0.0 + worn | 3.31 r (+7.6%) | 91.3% (+39.7pp) | 13.4% (+12.9pp) | 37.3 / 8.0 / 7.7 / 0.7 | 86.0% (+48.7pp) |
+| VIT Undying (`tank`) | 24.3 + worn | 3.85 r (+0.0%) | 77.3% (+3.3pp) | 12.6% (+5.4pp) | 23.3 / 9.7 / 7.7 / 9.7 | 78.8% (+28.0pp) |
+| INS Foresight (`bruiser`) | 0.0 + worn | 3.86 r (-0.3%) | 75.3% (+1.3pp) | 7.5% (+0.3pp) | 8.3 / 9.7 / 5.0 / 7.0 | 91.3% (+4.8pp) |
+| DIS Mind Fortress (`tank`) | 23.1 + worn | 3.85 r (+0.0%) | 74.0% (+0.0pp) | 6.2% (-1.0pp) | 8.7 / 7.0 / 1.7 / 7.3 | 50.8% (+0.0pp) |
+| PRE Sovereign (`tank` in MIXED) | 0.0 + worn/shd | 3.57 r (+7.4%) | 89.3% (+15.3pp) | 16.1% (+8.9pp) | 31.0 / 18.3 / 7.7 / 7.3 | 67.7% (+16.8pp) |
+| POW Cataclysm (`cannon`) | 29.9 + active | 3.60 r (+6.4%) | 73.7% (-0.3pp) | 7.9% (+0.7pp) | 8.3 / 9.7 / 6.7 / 7.0 | 56.5% (+2.8pp) |
+| CTL Puppeteer (`status`) | 0.0 + worn | 4.37 r (+15.0%) | 96.7% (+0.0pp) | 54.3% (+0.0pp) | 93.7 / 43.0 / 32.7 / 47.7 | 67.5% (+0.0pp) |
+
+### Worldbreaker candidate sweep (within the 20 to 30 point apex band, N=300; N=400/500 for the final four)
+
+| Candidate | Budget (B) | Pack B fast% | Boss D5 B WR (delta) | Mythic S mean WR (delta) | Duel B delta |
+|---|---|---|---|---|---|
+| **1.15x + 0.15 stagger, cd 6 (kept)** | **27.4** | **+1.8%** | **87.5% (+12.7pp, N=400)** | **9.5% (+2.9pp, N=500)** | **+1.2pp** |
+| 1.15x + 0.20 stagger, cd 7 | 24.8 | +1.8% | 88.3% (+13.5pp, N=400) | 11.3% (+4.8pp, N=500) | +1.2pp |
+| 1.20x + 0.15 stagger, cd 8 | 21.3 | +1.9% | 89.5% (+14.7pp, N=400) | 9.8% (+3.3pp, N=500) | +1.2pp |
+| 1.20x + 0.20 stagger, cd 8 | 22.4 | +1.9% | 90.3% (+15.5pp, N=400) | 10.0% (+3.4pp, N=500) | +1.2pp |
+| 1.20x + 0.15 stagger, cd 6 | 28.4 | +1.9% | 91.0% (+17.0pp, N=300) | 11.2% (+4.0pp, N=300) | +1.2pp |
+| 1.25x + 0.25 stagger, cd 8 | 24.3 | +2.0% | 93.7% (+19.7pp, N=300) | 12.3% (+5.1pp, N=300) | +1.5pp |
+| 1.50x + 0.20 stagger, cd 8 | 26.9 | +2.9% | 95.7% (+21.7pp, N=300) | 15.5% (+8.3pp, N=300) | +1.8pp |
+
+Why `1.15 * (1d8 + phys)` + `0.15` stagger on a 6-round cooldown:
+- At rank B (`1d8 + phys` ≈ 29.9), `1.15x` deals 34.4 average damage, beating both Strike (29.9) and Mutilation (32.4), so a Strength hunter uses it on normal packs and in duels instead of skipping it.
+- On a 4-round cooldown, 1.0 SA alone already spends 29.9 points, leaving no room for damage and stagger together; raising the cooldown to 6 rounds puts 1.15 SA damage + 0.225 SA stagger at 27.4 points (inside 25 ± 20%).
+- Stays below Sovereign (+15.3pp) and Afterimage (+39.7pp) on difficulty-5 bosses, and below Undying (+5.4pp), Sovereign (+8.9pp), and Afterimage (+12.9pp) on mythics.
+
+### New simulation rows (`tests/fight-sim.test.ts`, W1 to W3)
+
+- `W1` (pack at B, paired over 150 runs): `0.069` rounds faster (se `0.027`, `3.879` over `3.809`), bound `0.010 to 0.500`.
+- `W2` (difficulty-5 boss at B, 300 runs): `0.880` win share (se `0.019`, mean `9.5` rounds), bound `0.780 to 0.940`.
+- `W3` (mean across all 4 mythics at S, 200 runs each = 800 fights): `0.101` win share (se `0.011`; `plain 0.145`, `angel 0.110`, `zaratan 0.075`, `rider 0.075`), bound `0.060 to 0.140`.
+
+

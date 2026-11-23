@@ -6,14 +6,13 @@ export const h = html => { const t = document.createElement('template'); t.inner
 /** @type {(sel: string, root?: ParentNode) => ViewElement | null} */
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const fmt = n => (Number.isFinite(Number(n)) ? Number(n).toLocaleString('en-US') : '0');
-/** What a maker says when the store refused its write (another tab took over, a newer app's save): nothing was saved. */
-export const NOT_SAVED = 'Not saved. This tab cannot save right now. Check the banner at the top for details.';
 export const rankBadge = rank => `<span class="rank-badge rank-${esc(rank)}" title="Rank ${esc(rank)}">${esc(rank)}</span>`;
 export const field = (label, inputHtml) => `<label class="field"><span class="lbl">${esc(label)}</span>${inputHtml}</label>`;
 import { dismiss, enter } from './motion.ts';
 import { store } from '../edge/store.ts';
 import { reported } from '../edge/report.ts';
-import { READ_ONLY } from '../core/store-life.ts';
+import { NOT_SAVED, READ_ONLY } from '../core/store-life.ts';
+export { NOT_SAVED };
 import { TOLD } from '../core/save-step.ts';
 import { NO_WINDOWS, anyOpen, keyWindow, openSheet, openSystem, windowId, windowStep } from '../core/windows.ts';
 import { NOT_HELD, heldKey, heldStep } from '../core/held.ts';

@@ -4,10 +4,10 @@
 // follows the write stops, and the player is told by the refusal's kind (ui.js `wrote`, its words `NOT_SAVED`).
 import { freshSave } from '../../src/core/save.ts';
 import { parseDeviceId } from '../../src/core/ids.ts';
+import { NOT_SAVED } from '../../src/core/store-life.ts';
 import { test, expect, openApp, onboardPlayer, dismissAll, go, save, answerWindow, type Page } from './helpers.ts';
 
 const V4 = 'hunter-system-v4';
-const NOT_SAVED = 'Not saved: this tab cannot save right now. The banner at the top says why.';
 const env = { now: new Date(), newDeviceId: () => parseDeviceId('d-e2e-readonly')!, newDeviceToken: () => 'test-device-token-0123456789abcd' };
 
 /**

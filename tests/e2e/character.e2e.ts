@@ -153,7 +153,7 @@ test('A GM sees a remote hunter at 0 HP as Dead with no remove button, on the bo
   await test.step('the remote combat card shows Dead and offers no status to remove for it', async () => {
     await go(gm, 'combat');
     const key = await gm.evaluate(() => {
-      const o = [...document.querySelectorAll('#view-combat [data-hsel] option')].find(x => (x.textContent ?? '').endsWith('(remote)')); // the player's hunter as the GM reads it
+      const o = [...document.querySelectorAll('#view-combat [data-hsel] option')].find(x => (x.textContent ?? '').endsWith('(player phone)')); // the player's hunter as the GM reads it
       return o && (o as HTMLOptionElement).value;
     });
     expect(key, 'remote hunter offered in Add hunter').toBeTruthy();
@@ -354,7 +354,7 @@ test('The skill maker starts the formula at the kind\'s recommendation, unmarked
   await expect(maker.locator('[data-edited]')).toBeHidden();
   await maker.locator('[data-apply]').tap();
   await answerWindow(p, 'Skill acquired');
-  await expect(p.locator('#view-status [data-skill]', { hasText: 'Twin Fang' })).toContainText('Shot, quick · On a foe, 12 tiles');
+  await expect(p.locator('#view-status [data-skill]', { hasText: 'Twin Fang' })).toContainText('Shot (ranged), quick · On a foe, 12 tiles');
 });
 
 test('A missed daily shows one Penalized chip without a remove button and -2 on checks once', async ({ device }) => {
@@ -733,7 +733,7 @@ test('a player in a room at 0 HP reads Dead on their HUD in the GM\'s fight, wit
     await go(gm, 'combat');
     await expect(gm.locator('#view-combat [data-hsel] option', { hasText: 'Kai Test' })).toHaveCount(1);
     const key = await gm.evaluate(() => {
-      const o = [...document.querySelectorAll('#view-combat [data-hsel] option')].find(x => (x.textContent ?? '').endsWith('(remote)')); // the player's hunter as the GM reads it
+      const o = [...document.querySelectorAll('#view-combat [data-hsel] option')].find(x => (x.textContent ?? '').endsWith('(player phone)')); // the player's hunter as the GM reads it
       return o && (o as HTMLOptionElement).value;
     });
     await addToCombat(gm, key!);

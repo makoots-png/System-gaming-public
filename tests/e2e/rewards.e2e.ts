@@ -317,7 +317,7 @@ test('the GM folds an Award form holding a fight\'s 75 gold and later sends Brak
   await test.step('Award loot opens the form with the 75 gold, and the line naming the loot fits a 390 px phone', async () => {
     await answerWindow(gm, 'Loot dropped', 'Award loot');
     await expect(gm.locator('#gm-gold')).toHaveValue('75');
-    await expect(tie).toHaveText('Fight loot: 75 gold. Tap Send award to give it. Close Award to save it for later.');
+    await expect(tie).toHaveText('Fight loot: 75 gold. Tap Send award to give it, or collapse the Award section to save it for later.');
     await tie.scrollIntoViewIfNeeded();
     const box = await tie.evaluate(el => ({ scroll: el.scrollWidth, client: el.clientWidth, right: el.getBoundingClientRect().right, page: document.documentElement.clientWidth }));
     expect(box.scroll).toBeLessThanOrEqual(box.client);

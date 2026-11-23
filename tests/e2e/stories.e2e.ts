@@ -211,7 +211,7 @@ test('from the Workshop, Turn on… opens the story at its own step: on for one 
   const row = page.locator('#view-workshop [data-ws="story"] li[data-id]:not([data-example])', { hasText: 'The wager' }), win = storyWin(page);
 
   await test.step('Turn on…, Brakk, Turn on and open chapter 1', async () => {
-    await t.tap(row.getByRole('button', { name: 'Turn on The wager' }));
+    await t.tap(row.getByRole('button', { name: 'Start story The wager' }));
     await expect(win.getByRole('heading', { name: 'Start The wager' })).toBeVisible();
     await t.tap(win.locator('[data-st-who]', { hasText: 'Brakk Ironhide' }));
     await t.tap(win.locator('[data-st-go]'));

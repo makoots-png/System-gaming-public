@@ -3,6 +3,7 @@
 // room's `noted`, where the player's phone counts it and opens the feat's window once.
 import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, activeHunter, answerWindow, approveWaiting } from './helpers.ts';
 import { PENDING_WORDS } from '../../src/core/hunter/pending.ts';
+import { CHRONICLE_WORDS } from '../../src/core/hunter/chronicle-view.ts';
 
 const FIRST_CLEAR = {
   name: 'First Clear', window: 'FIRST CLEAR', desc: 'A gate cleared.', show: { at: 'never' },
@@ -90,7 +91,7 @@ test('the GM\'s own feat reaches a player\'s phone, and the gate the GM clears f
     await line.tap();
     const win = gm.locator('.sys-overlay.show', { has: gm.locator('.chr-win') });
     await expect(win.locator('.sys-title')).toHaveText('Mira Test');
-    await expect(win).toContainText('From the player\'s phone: its lifetime numbers, its 40 newest feats and its last 8 entries.');
+    await expect(win).toContainText(CHRONICLE_WORDS.pushed);
     const feat = win.locator('[data-chr-earned="first-clear"]');
     await expect(feat).toContainText('First Clear');
     await expect(feat).toContainText('Hidden');

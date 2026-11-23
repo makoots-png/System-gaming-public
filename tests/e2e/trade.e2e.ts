@@ -4,6 +4,7 @@
 import type { Page } from '@playwright/test';
 import { test, expect, type DeviceOptions, onboardGM, onboardPlayer, createRoom, dismissAll, go, answerWindow, gmRoomHeaders } from './helpers.ts';
 import { STATE_WORDS } from '../../src/core/trade/offer.ts';
+import { TRADE_WORDS } from '../../src/core/trade/words.ts';
 
 type Line = { name: string; qty?: number; slot?: string };
 type Table = { gm: Page; brakk: Page; mira: Page; code: string };
@@ -158,7 +159,7 @@ test('the GM stops an offer and the potion goes back', async ({ device }) => {
   if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.tap();
   const open = gm.locator('#gm-trade .tr-offer', { hasText: 'Brakk offers Mira 1 Healing Potion.' });
   await expect(open).toBeVisible({ timeout: 20_000 });
-  await expect(gm.locator('#gm-hsum-trade')).toHaveText('1 open');
+  await expect(gm.locator('#gm-hsum-trade')).toHaveText(TRADE_WORDS.summary(1));
   await open.getByRole('button', { name: /^Stop/ }).tap();
   await expect(gm.locator('#toasts .toast', { hasText: 'Stopped Brakk\'s offer to Mira.' })).toBeVisible();
 

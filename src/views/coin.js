@@ -45,7 +45,9 @@ const CSS = `
 .coin-later p{flex:1 1 auto;min-width:0;margin:0;font-size:13px;color:var(--cyan-dim)}
 .coin-later b{display:block;font-size:15px;color:var(--ice)}
 .coin-later button{flex:0 0 auto;min-height:44px;min-width:72px}
-@media (max-width:720px){.coin-card{bottom:calc(var(--nav-h) + var(--sab) + 8px)}}
+body:has(>.coin-card:not([hidden])){padding-bottom:calc(300px + var(--sab))}
+html:has(body>.coin-card:not([hidden])){scroll-padding-bottom:calc(300px + var(--sab))}
+@media (max-width:720px){.coin-card{bottom:calc(var(--nav-h) + var(--sab) + 8px)}body:has(>.coin-card:not([hidden])){padding-bottom:calc(var(--nav-h) + var(--sab) + 230px)}html:has(body>.coin-card:not([hidden])){scroll-padding-bottom:calc(var(--nav-h) + var(--sab) + 230px)}}
 [data-coin-slot]:empty{display:none}
 [data-coin-slot] .coin-card{position:static;width:min(380px,100%);max-height:none;margin:10px auto 0;box-shadow:none}`;
 

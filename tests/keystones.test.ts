@@ -8,6 +8,7 @@ import type { KeystoneBasis, KeystoneHunter, KeystoneKey, StatPair } from '../sr
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
 import type { SheetCondition, SheetHunter } from '../src/core/hunter/sheet.ts';
 import { statusKey } from '../src/core/combat/effect-ops.ts';
+import { tick } from '../src/core/combat/timeline.ts';
 import { stepQuest } from '../src/core/hunter/job-chain.ts';
 import { chained, deleteQuest } from '../src/core/hunter/quests.ts';
 import { isRefused } from '../src/core/save-step.ts';
@@ -237,5 +238,18 @@ describe('the registry of keystones (design A.6)', () => {
       const awakens = key.tier === 'confluence' && named.has(key.pair);
       expect([k.name, k.awakened !== null]).toEqual([k.name, awakens]);
     }
+  });
+
+  test('Worldbreaker deals physical strike damage alongside its smaller stagger share within the apex budget', () => {
+    const wb = keystoneOf(apex('str'), RULES);
+    expect(wb.name).toBe('Worldbreaker');
+    expect(wb.active?.name).toBe('Shatter');
+    expect(wb.active?.effect?.type).toBe('physical');
+    expect(wb.active?.ops).toEqual([{ op: 'stagger', share: 0.15 }]);
+    expect(wb.active?.cost.cooldown).toBe(tick(6 * RULES.fight.round));
+    const spend = spendOf(wb, wb.bonus, F.keystone.apexRank);
+    expect(spend.unweighed).toEqual([]);
+    expect(spend.points).toBeGreaterThanOrEqual(F.keystone.budget.apex * (1 - BAND));
+    expect(spend.points).toBeLessThanOrEqual(F.keystone.budget.apex * (1 + BAND));
   });
 });

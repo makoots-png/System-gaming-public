@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { test, expect, onboardGM, go, startGoblinDenFight, chooseList, PHONE } from './helpers.ts';
-import { ODDS_WORDS } from '../../src/core/combat/odds.ts';
+import { ODDS_RUNS, ODDS_WORDS } from '../../src/core/combat/odds.ts';
 
 const odds = (page: Page) => page.locator('#view-combat [data-odds]');
 /** What the odds may not touch: the fight, the outbox, the log and the hunters, as the save holds them. */
@@ -28,7 +28,7 @@ test('the GM building a fight plays it out 100 times, sees the count as it goes,
     const ask = odds(page).locator('[data-odds-ask]');
     await expect(ask).toHaveText(ODDS_WORDS.ask);
     await ask.tap();
-    await expect(odds(page).locator('[data-oddsprog]')).toContainText(/Playing \d+ of 100/);
+    await expect(odds(page).locator('[data-oddsprog]')).toContainText(new RegExp(ODDS_WORDS.running(0, ODDS_RUNS).replace('0', '\\d+')));
   });
 
   await test.step('the answer is one line with the party\'s chance, who goes down most and the rounds', async () => {

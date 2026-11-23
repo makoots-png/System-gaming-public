@@ -21,11 +21,12 @@ import { interval, paceCost, tick, walkCost } from '../../src/core/combat/timeli
 import type { Tick } from '../../src/core/combat/timeline.ts';
 import { abilityId, combatantId } from '../../src/core/combat/ability-types.ts';
 import type { Ability } from '../../src/core/combat/ability-types.ts';
-import { modified, statusKey } from '../../src/core/combat/effect-ops.ts';
+import { freeStatusKey, modified, statusKey, statusOn } from '../../src/core/combat/effect-ops.ts';
 import type { Body, Op, Origin, StackDef, Status, Tiers, UseOp } from '../../src/core/combat/effect-ops.ts';
 import { formulaOf, abilityOf } from '../../src/core/registry/ability-kinds.ts';
-import { ARCHETYPE_ATTACKS, ATTACK_ID, SKILL_ABILITIES, weaponAttack } from '../../src/core/registry/abilities.ts';
+import { ARCHETYPE_ATTACKS, ATTACK_ID, SKILL_ABILITIES, weaponAttack, wornAbilityId } from '../../src/core/registry/abilities.ts';
 import type { BuiltInSkill } from '../../src/core/registry/abilities.ts';
+import { keystoneOf } from '../../src/core/registry/keystones.ts';
 import { STARTER_GEAR } from '../../src/core/registry/items.ts';
 import type { Rarity } from '../../src/core/registry/items.ts';
 import { itemSpend, middleBudget } from '../../src/core/registry/item-budget.ts';
@@ -440,6 +441,60 @@ function hunterOn(a: Archetype, rank: Rank, id: string, build: SheetBasis, R: Ru
   const origin: Origin = { kind: 'hunter', build };
   const row = newRow(id, id, 'party', 'hunter', origin, tierOf(rank), BUILDS[a].uses(builtIns(R), abilities(R)), R), worn = BUILDS[a].worn?.() ?? [];
   return { row: worn.length ? { ...row, statuses: worn } : row, policy: BUILDS[a].policy };
+}
+
+/**
+ * Adds the Apex keystone of `stat` at `rank` to a sim hunter row (its bonus, worn status and active ability), wrapping
+ * the row's policy so active apexes (`Shatter`, `Cataclysm`) are played when ready.
+ */
+export function withApex(s: SimRow, stat: StatKey, rank: Rank, R: Rules = RULES): SimRow {
+  const k = keystoneOf({ tier: 'apex', stat }, R);
+  const origin: Origin = s.row.origin.kind === 'hunter'
+    ? {
+        ...s.row.origin,
+        build: {
+          ...s.row.origin.build,
+          perks: (Object.keys(k.bonus) as (keyof typeof k.bonus)[]).reduce<Record<string, number>>((acc, bk) => {
+            const v = k.bonus[bk];
+            if (typeof v === 'number') acc[bk] = (acc[bk] ?? 0) + v;
+            return acc;
+          }, { ...s.row.origin.build.perks }),
+        },
+      }
+    : s.row.origin;
+  const keys = new Set(s.row.statuses.map(x => x.key as string));
+  const worn: Status[] = k.worn
+    ? [statusOn(k.worn, { key: freeStatusKey(k.worn.label, x => keys.has(x)), source: { id: s.row.id, tier: tierOf(rank) }, until: null, since: tick(0), settledAt: tick(0), worn: true })]
+    : [];
+  const statuses = [...s.row.statuses, ...worn];
+  const active = k.active ? [{ ...k.active, id: wornAbilityId(k.active.id) }] : [];
+  const rowAbilities = [...s.row.abilities, ...active];
+  const { sheet } = modified(origin, statuses, R);
+  const row: NewRow = { ...s.row, origin, statuses, abilities: rowAbilities, life: { at: 'up', hp: sheet.hpMax }, mana: sheet.manaMax };
+
+  let policy = s.policy;
+  if (k.active?.id === abilityId('keystone-shatter')) {
+    const shatterId = wornAbilityId(k.active.id), hasDamage = k.active.effect !== null, base = s.policy;
+    policy = (f, me, plan, rr) => {
+      const sh = me.abilities.find(a => a.id === shatterId), target = taunter(f, me) ?? nearest(me, foesOf(f, me));
+      if (sh && target && usable(f, me, sh, target.place) && (hasDamage || target.stagger !== null)) return { type: 'act', ability: sh, aim: target.id };
+      return base(f, me, plan, rr);
+    };
+  } else if (k.active?.id === abilityId('keystone-cataclysm')) {
+    const catId = wornAbilityId(k.active.id), base = s.policy;
+    policy = (f, me, plan, rr) => {
+      const cat = me.abilities.find(a => a.id === catId);
+      if (cat && !(me.used?.[cat.id])) {
+        const foes = foesOf(f, me), forced = taunter(f, me);
+        const picks = (forced ? [forced] : foes).filter(t => usable(f, me, cat, t.place) && !hitsAlly(f, me, cat, t.place))
+          .map(t => ({ t, n: inShape(cat.shape, me.place, t.place, f.grid, foes).hit.length }))
+          .sort((a, b) => b.n - a.n || rowHp(a.t) - rowHp(b.t));
+        if (picks[0]) return { type: 'act', ability: cat, aim: picks[0].t.place };
+      }
+      return base(f, me, plan, rr);
+    };
+  }
+  return { row, policy };
 }
 
 // ── penetration's fairness (balance plan section 9, rows P1 and P2) ──

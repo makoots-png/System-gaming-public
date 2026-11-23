@@ -95,7 +95,7 @@ test('a GM who revives their own dead level-31 hunter from the board reads the l
   await go(page, 'gm');
   const name = (await activeHunter(page)).name;
   await page.locator('#gm-board .gm-card:not(.remote)', { hasText: name }).locator('[data-grevive]').tap();
-  await expect(page.locator('#gm-board-msg')).toHaveText(`Revived ${name}. ${raisedLine(31, 29)}.`);
+  await expect(page.locator('#gm-board-msg')).toHaveText(`${name} is back up. ${raisedLine(31, 29)}.`);
   expect((await activeHunter(page)).level).toBe(29);
 });
 

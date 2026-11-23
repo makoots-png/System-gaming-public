@@ -132,11 +132,19 @@ const MARK: { readonly [S in StatKey]: KeystoneMaker } = {
 // ── Apexes (rank B, a stat over 55% of the points spent) ──
 const APEX: { readonly [S in StatKey]: KeystoneMaker } = {
   str: R => {
-    const line = 'Once every 4 rounds, you can use Shatter to fill half of a foe\'s stagger bar.';
-    // A.6's double strike with the half bar weighs 82: a use is 2 SA of damage and 0.75 of a break (worth.ts
-    // `breakWorth`). The half bar is the apex (A.7 built its op), so the damage goes: 0.75 SA a quarter of the rounds.
-    const a = abilityOf('strike', { id: abilityId('keystone-shatter'), name: 'Shatter', effect: null, ops: [{ op: 'stagger', share: 0.5 }] }, R);
-    return plain('Worldbreaker', line, { active: { ...a, cost: { ...a.cost, cooldown: rounds(4, R) } } });
+    const line = 'Once every 6 rounds, you can use Shatter to strike a foe for 15% more damage and fill 15% of its stagger bar.';
+    // Row 32 (unit row-32): `effect: null` with 0.5 stagger on a 4-round cooldown dealt nothing in packs or duels and
+    // hurt win rates on bosses (-19.7pp at difficulty 5) and mythics (-5.3pp mean). Restoring 1.15x strike damage with
+    // 0.15 stagger on a 6-round cooldown weighs 27.4 points at rank B (within the 25 ± 20% apex budget), beats Strike
+    // and Mutilation in packs (+1.8% faster) and duels (+1.2pp), and sits inside the other apexes' band on difficulty-5
+    // bosses (+12.7pp, under Sovereign's +15.3pp) and mythics (+2.9pp mean, under Undying's +5.4pp and Sovereign's +8.9pp).
+    const strike = recommended('strike', defaultTicks('strike'), R).text;
+    const a = abilityOf('strike', {
+      id: abilityId('keystone-shatter'), name: 'Shatter',
+      effect: { type: 'physical', by: 'hand', formula: formula(`1.15 * (${strike})`, R) },
+      ops: [{ op: 'stagger', share: 0.15 }],
+    }, R);
+    return plain('Worldbreaker', line, { active: { ...a, cost: { ...a.cost, cooldown: rounds(6, R) } } });
   },
   agi: R => {
     const line = 'You take 20% more turns. When you avoid a hit, foes cannot aim at you until you act.';

@@ -65,7 +65,7 @@ async function playerIsTold(player: Page, text: string | RegExp) {
 
 test('a GM runs a fight with a status on a player\'s hunter and both phones show the same HP and conditions', async ({ device }) => {
   const gm = (await device('gm', { viewport: PHONE })).page, player = (await device('player', { viewport: SMALL_PHONE })).page;
-  const poisonLine = gmLog(gm).filter({ hasText: new RegExp(`^R\\d+: ${HUNTER}: Poisoned settles\\.$`) });
+  const poisonLine = gmLog(gm).filter({ hasText: new RegExp(`^R\\d+: ${HUNTER}: Poisoned takes effect\\.$`) });
   const kaiHp = async () => (await fightRow(gm, HUNTER)).hp as number;
   let startHp = 0;
 

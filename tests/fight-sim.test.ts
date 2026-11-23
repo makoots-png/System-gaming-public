@@ -64,7 +64,7 @@ import { reduce, fightId } from '../src/core/combat/fight.ts';
 import type { Fight } from '../src/core/combat/fight.ts';
 import { diceOf } from '../src/core/formula.ts';
 import type { Place } from '../src/core/combat/space.ts';
-import { BUILDS, KIT_BUILDS, MONSTER_ABILITY, PLAIN_OF, SIM_RANKS, abilities, answering, blastsAllowed, controlPolicy, hunter, monster, playDungeon, playFight, rng, scripted, scriptsOff, scriptsOn, spending, turnsPolicy, wave2 } from './models/fight-sim.ts';
+import { BUILDS, KIT_BUILDS, MONSTER_ABILITY, PLAIN_OF, SIM_RANKS, abilities, answering, blastsAllowed, controlPolicy, hunter, monster, playDungeon, playFight, rng, scripted, scriptsOff, scriptsOn, spending, turnsPolicy, wave2, withApex } from './models/fight-sim.ts';
 import type { Archetype, FightRecord, KitBuild, PenBuild, PenSpend, Plan, SimRow } from './models/fight-sim.ts';
 import { MYTHICS, MYTHIC_IDS, omensOf } from '../src/core/registry/mythics.ts';
 import type { MythicScriptId } from '../src/core/registry/mythics.ts';
@@ -507,6 +507,37 @@ const DIFFICULTY_ROWS: readonly Row[] = [
     measure: () => anyDead('mixed v pack d10 C', vsScaledPack('C', 10), RUNS.tenth), low: 0.20, high: 1, lever: 'difficulty.pack[9]' },
 ];
 
+// ── Worldbreaker, the Strength apex (QD row 32, unit row-32): rows W1 to W3 ──
+const worldbreakerParty = (rank: Rank): SimRow[] => party(MIXED, rank).map(s => (s.row.id === 'bruiser' ? withApex(s, 'str', rank) : s));
+const vsWorldbreakerPack = (rank: Rank) => (seed: number): FightRecord[] => [playFight({ rows: [...worldbreakerParty(rank), ...pack(rank)] }, seed)];
+const vsWorldbreakerBossD5 = (rank: Rank) => (seed: number): FightRecord[] => {
+  const scale = difficultyFactor('boss', rank, 5, RULES);
+  return [playFight({ rows: [...worldbreakerParty(rank), monster(rank, 'brute', 'boss', 'boss', RULES, [], scale)] }, seed)];
+};
+const vsWorldbreakerScript = (id: MythicScriptId) => (seed: number): FightRecord[] => {
+  const rows = worldbreakerParty('S').map(s => answering(s.row.id === 'tank' ? { ...s, row: { ...s.row, abilities: [...s.row.abilities, abilities().stun] } } : s));
+  return [playFight({ rows: [...rows, scripted(id, SCRIPTED)], rules: SCRIPTED }, seed)];
+};
+const WORLDBREAKER_MYTHIC_RUNS = 200;
+const WORLDBREAKER_ROWS: readonly Row[] = [
+  { name: 'W1 Worldbreaker clears a same-rank pack faster than without it at B', setup: 'worldbreaker v pack B', runs: 2 * RUNS.tenth,
+    measure: () => roundsOver(runsOf('mixed v pack B', vsPack(MIXED, 'B'), RUNS.tenth), runsOf('worldbreaker v pack B', vsWorldbreakerPack('B'), RUNS.tenth)),
+    low: 0.01, high: 0.5, lever: 'KEYSTONES.apex.str (damage, cooldown)' },
+  { name: 'W2 Worldbreaker lifts a party against a difficulty 5 boss inside the apex band (78 to 94%) at B', setup: 'worldbreaker v boss d5 B', runs: RUNS.quarter,
+    measure: () => wins('worldbreaker v boss d5 B', vsWorldbreakerBossD5('B'), RUNS.quarter),
+    low: 0.78, high: 0.94, lever: 'KEYSTONES.apex.str (damage, stagger share, cooldown)' },
+  { name: 'W3 Worldbreaker keeps a party\'s mean win share across mythics inside the apex band (6 to 14%) at S', setup: 'worldbreaker v mythics S', runs: MYTHIC_IDS.length * WORLDBREAKER_MYTHIC_RUNS,
+    measure: () => {
+      const ms = MYTHIC_IDS.map(id => ({ id, m: wins(`worldbreaker v ${id} S`, vsWorldbreakerScript(id), WORLDBREAKER_MYTHIC_RUNS) }));
+      return {
+        value: mean(ms.map(x => x.m.value)),
+        se: Math.sqrt(ms.reduce((n, x) => n + x.m.se ** 2, 0)) / ms.length,
+        note: ms.map(x => `${x.id} ${fmt(x.m.value)}`).join(', '),
+      };
+    },
+    low: 0.06, high: 0.14, lever: 'KEYSTONES.apex.str (damage, stagger share, cooldown)' },
+];
+
 const ROWS: readonly Row[] = [
   ...triangle('C'), ...triangle('S'), ...atE,
   ...partyRows('C'), ...partyRows('S'),
@@ -542,6 +573,7 @@ const ROWS: readonly Row[] = [
   ...PEN_ROWS,
   ...SCRIPT_ROWS,
   ...DIFFICULTY_ROWS,
+  ...WORLDBREAKER_ROWS,
 ];
 
 /**

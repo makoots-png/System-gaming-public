@@ -43,7 +43,7 @@ type Ground = { walls?: [number, number][]; fire?: [number, number][]; fog?: boo
  */
 async function fightOn(gm: Page, player: Page, ground: Ground): Promise<{ kai: string; rat: string }> {
   await go(gm, 'combat');
-  await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (remote)` });
+  await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (player phone)` });
   await combat(gm).locator('[data-addh]').tap();
   await combat(gm).locator('[data-qline]').fill(`${MONSTER}, E, brute`);
   await combat(gm).locator('[data-qadd]').tap();
@@ -122,7 +122,7 @@ test('a GM paints walls and a fire in the Workshop, saves the map, names it on a
     for (const box of await dlg.locator('input[name=hid]').all()) await box.uncheck();
     await dlg.locator('input[name=roll]').uncheck();
     await dlg.locator('[data-apply]').tap();
-    await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (remote)` });
+    await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (player phone)` });
     await combat(gm).locator('[data-addh]').tap();
     await combat(gm).locator('[data-start]').tap();
     const f = await gm.evaluate(() => hunterApp.store.get().fight);
@@ -370,7 +370,7 @@ test('a GM makes an aura skill; the player\'s hunter casts it, walks, and the al
 test('a rat given the Plague passes it to the rat beside it once a round has passed, and it never comes back to the first', async ({ device }) => {
   const { gm, player } = await room(device);
   await go(gm, 'combat');
-  await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (remote)` });
+  await combat(gm).locator('[data-hsel]').selectOption({ label: `${HUNTER} (player phone)` });
   await combat(gm).locator('[data-addh]').tap();
   await combat(gm).locator('[data-qline]').fill(`${MONSTER} x2, E, brute`);
   await combat(gm).locator('[data-qadd]').tap();

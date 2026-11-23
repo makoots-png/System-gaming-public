@@ -3,8 +3,10 @@
 import type { Page } from '@playwright/test';
 import { test, expect, onboardGM, onboardPlayer, dismissAll, go, activeHunter, answerWindow } from './helpers.ts';
 import { FEATS_SWITCH_WORDS } from '../../src/core/hunter/chronicle-view.ts';
+import { BUILT_IN_FEATS } from '../../src/core/registry/feats.ts';
 
 const topWindow = (page: Page) => page.locator('.sys-overlay.show .sys-window').first();
+const EARLY_RISER = BUILT_IN_FEATS.find(([k]) => k === 'early-riser')![1];
 
 test('a player who finishes the daily seven days running sees SEVEN DAYS once, again after a reload until answered, and the title it gives', async ({ device }) => {
   const page = (await device('player')).page;
@@ -30,7 +32,7 @@ test('a player who finishes the daily seven days running sees SEVEN DAYS once, a
     await answerWindow(page, 'DAILY QUEST COMPLETE');
     const feat = page.locator('.sys-overlay.show', { hasText: 'SEVEN DAYS' });
     await expect(feat).toBeVisible();
-    await expect(feat).toContainText('The daily quest finished seven days running.');
+    await expect(feat).toContainText(EARLY_RISER.desc);
     await expect(feat).toContainText('Title acquired: Early Riser');
     const h = await activeHunter(page);
     expect(h.chronicle.feats['early-riser'].at).toBe('earned');
@@ -56,7 +58,7 @@ test('a player who finishes the daily seven days running sees SEVEN DAYS once, a
     const panel = page.locator('#view-status [data-panel="chronicle"]');
     const feat = panel.locator('[data-chr-earned="early-riser"]');
     await expect(feat).toContainText('Early Riser');
-    await expect(feat).toContainText('The daily quest finished seven days running.');
+    await expect(feat).toContainText(EARLY_RISER.desc);
     await expect(feat).toContainText('Title acquired: Early Riser');
     await expect(panel.locator('.chr-nums div', { hasText: 'Feats' }).locator('dd')).toHaveText('1');
     const facts = panel.locator('.chr-facts li');
