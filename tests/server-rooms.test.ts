@@ -158,12 +158,13 @@ describe('who is the GM', () => {
 describe('events', () => {
   test('GM events reach a player in order and paging by "after" skips seen ones', async () => {
     const { code, gm } = await newRoom();
+    expect((await call('PUT', `/api/rooms/${code}/sheets/${PLAYER}:h1`, { headers: token(PLAYER), body: sheetOf(PLAYER, 'Kai') })).status).toBe(200);
     const first = await call('POST', `/api/rooms/${code}/events`, { headers: gm, body: { from: 'gm', type: 'system', payload: system('one') } });
     const second = await call('POST', `/api/rooms/${code}/events`, { headers: gm, body: { from: 'gm', type: 'award', payload: award(50) } });
     expect([first.body.seq, second.body.seq]).toEqual([1, 2]);
-    const all = await call('GET', `/api/rooms/${code}`);
+    const all = await call('GET', `/api/rooms/${code}?d=${PLAYER}`, { headers: token(PLAYER) });
     expect(all.body.events.map((e: any) => [e.seq, e.type])).toEqual([[1, 'system'], [2, 'award']]);
-    const later = await call('GET', `/api/rooms/${code}?after=1`);
+    const later = await call('GET', `/api/rooms/${code}?after=1&d=${PLAYER}`, { headers: token(PLAYER) });
     expect(later.body.events.map((e: any) => e.seq)).toEqual([2]);
   });
 
@@ -227,11 +228,11 @@ describe('events', () => {
   });
 
   test('a player cannot land the coin of their own call, and the room keeps only the call', async () => {
-    const { code } = await newRoom();
+    const { code, gm } = await newRoom();
     expect((await call('POST', `/api/rooms/${code}/events`, { headers: token('p1'), body: { from: PLAYER, type: 'coinCall', payload: coinCall } })).status).toBe(200);
     const r = await call('POST', `/api/rooms/${code}/events`, { headers: token('p1'), body: { from: PLAYER, type: 'coinLand', payload: coinLand } });
     expect(r).toEqual({ status: 403, body: { error: 'gm only' } });
-    expect((await call('GET', `/api/rooms/${code}`)).body.events.map((e: any) => e.type)).toEqual(['coinCall']);
+    expect((await call('GET', `/api/rooms/${code}`, { headers: gm })).body.events.map((e: any) => e.type)).toEqual(['coinCall']);
   });
 
   test('the GM lands a coin', async () => {
@@ -301,8 +302,9 @@ describe('events', () => {
 
   test('the room keeps the parsed event: a field the type does not have never reaches a player', async () => {
     const { code, gm } = await newRoom();
+    expect((await call('PUT', `/api/rooms/${code}/sheets/${PLAYER}:h1`, { headers: token(PLAYER), body: sheetOf(PLAYER, 'Kai') })).status).toBe(200);
     await call('POST', `/api/rooms/${code}/events`, { headers: gm, body: { from: 'gm', type: 'award', payload: { ...award(50), v: 2, junk: 'x'.repeat(1000) } } });
-    const [ev] = (await call('GET', `/api/rooms/${code}`)).body.events;
+    const [ev] = (await call('GET', `/api/rooms/${code}?d=${PLAYER}`, { headers: token(PLAYER) })).body.events;
     expect(ev.payload).toEqual({ eid: 'd-gm-e2', to: [`${PLAYER}:h1`], rewards: { xp: 50, points: 0, gold: 0, crystal: 0, items: [], title: null, job: null, skills: [], statuses: [], boons: [] } });
   });
 

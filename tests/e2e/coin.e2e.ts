@@ -2,7 +2,7 @@
 // tails; the GM rules in a System window and sees the side, and the player's phone hears only that the coin was flipped
 // (the owner, Nov 21: the GM says the outcome at the table).
 import type { Page } from '@playwright/test';
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, answerWindow, openApp, roomHeaders, save, PHONE, SMALL_PHONE } from './helpers.ts';
+import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, answerWindow, openApp, gmRoomHeaders, save, PHONE, SMALL_PHONE } from './helpers.ts';
 
 const HUNTER = 'Kai Test';
 const card = (page: Page) => page.locator('[data-coin-card]');
@@ -118,7 +118,7 @@ test('the player\'s phone never receives the side or the ruling: the room\'s mes
   await answerWindow(gm, 'Coin call', 'Call was wrong');
   await flipped(player, 'Heads');
 
-  const events = (await (await player.request.get(`/api/rooms/${code}?after=0`, { headers: await roomHeaders(player) })).json()).events as any[];
+  const events = (await (await gm.request.get(`/api/rooms/${code}?after=0`, { headers: await gmRoomHeaders(gm, code) })).json()).events as any[];
   const landings = events.filter(e => e.type === 'coinLand').map(e => e.payload);
   expect(landings.map(p => Object.keys(p).sort())).toEqual([['eid', 'roll'], ['eid', 'roll']]);
   expect(events.map(e => e.type).filter(t => t.startsWith('coin'))).toEqual(['coinCall', 'coinLand', 'coinCall', 'coinLand']);

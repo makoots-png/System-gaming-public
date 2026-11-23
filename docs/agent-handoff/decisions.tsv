@@ -759,3 +759,5 @@ ts	phase	decision	why	evidence	result
 2026-11-23T22:24Z	economy	crystal-balance landed on lead-backlog: mana crystal balance, gate drops (12% unsigned salvage), Bureau/Stair/Helix exchange; full unit 6822 and browser 590 green
 2026-11-23T22:38Z	ops	PR 96 (crystal-balance) merged to main
 2026-11-23T22:40Z	economy	debt-shape landed on lead-backlog: per-rank revive debt E5 D5 C5 B6 A7 S7 x priceBase (Neon's pick); unit 6823 and browser 590 green
+2026-11-23T22:56Z	ops	PR 97 (debt-shape) merged to main
+2026-11-23T23:33Z	sync	vis-fix landed on lead-backlog: every addressed room event sealed to the GM and named phones (EventDef.audience required); unit 6831 and browser 590 green

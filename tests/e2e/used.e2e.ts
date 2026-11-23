@@ -1,4 +1,4 @@
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, answerWindow, openApp, type Page, type DeviceOptions, chooseList, setupDoc } from './helpers.ts';
+import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, answerWindow, openApp, gmRoomHeaders, type Page, type DeviceOptions, chooseList, setupDoc } from './helpers.ts';
 
 const HUNTER = 'Mira Test', MONSTER = 'Cave Rat';
 const combat = (page: Page) => page.locator('#view-combat');
@@ -257,8 +257,7 @@ test('without the GM\'s permission no notification is asked for, and the log lin
   await hideAndRecord(gm);
   await redeem(player);
   const code = await gm.evaluate(() => hunterApp.api.sync.room());
-  const build = await gm.evaluate(() => hunterApp.build as string);
-  await expect.poll(async () => (await (await player.request.get(`/api/rooms/${code}?after=0`, { headers: { 'X-Hunter-Build': build } })).json()).events.some((e: any) => e.type === 'used')).toBe(true);
+  await expect.poll(async () => (await (await gm.request.get(`/api/rooms/${code}?after=0`, { headers: await gmRoomHeaders(gm, code) })).json()).events.some((e: any) => e.type === 'used')).toBe(true);
   await gm.evaluate(() => window.dispatchEvent(new Event('online')));
   await expect.poll(() => useLines(gm)).toEqual([`${HUNTER} used Boon: Free resurrection | ${BOON.text}`]);
   expect(await shown(gm)).toEqual([]);

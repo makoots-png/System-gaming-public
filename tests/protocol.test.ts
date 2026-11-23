@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { ICON_KEYS, ICON_KEY_MAX } from '../src/core/registry/icons.ts';
 import { DOCS, DOC_MAX, NOTED_MAX, STASH_LINES, EVENTS, EVENT_TYPES, newEvent, newEventId, onTurn, parseDocName, parseEvent, parseRoomState, parseSheet, SHEET_MAX, sentAgain, speaksFor, stampTime, standsFor, useRoute } from '../src/core/protocol.ts';
 import { endEvent, isSealed } from '../src/core/protocol.ts';
-import { FACE_LINES, WORD_MAX, hunterFace, parseServedSheet, servedTo, sheetFor } from '../src/core/protocol.ts';
-import type { RoomEvent, RoomViewer } from '../src/core/protocol.ts';
+import { FACE_LINES, WORD_MAX, hunterFace, parseDeviceId, parseServedSheet, servedPage, servedTo, sheetFor } from '../src/core/protocol.ts';
+import type { EventAudience, PayloadOf, RoomEvent, RoomViewer } from '../src/core/protocol.ts';
 import { GOODS_GOLD_MAX, GOODS_LINES, OFFER_MAX, goodsSize } from '../src/core/trade/goods.ts';
 import { stashDoc, stashFits } from '../src/core/trade/stash.ts';
 import type { Item } from '../src/core/registry/items.ts';
@@ -74,12 +74,14 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
   const offer = event('offer', { eid: 'd-kai-mo1', by: KAI, to: [MIRA], names: { by: 'Kai', to: 'Mira' }, gives: { gold: 5, items: [] }, asks: { gold: 0, items: [] } });
   const stop = event('offerStop', { eid: 'd-kai-mo1-e', to: [KAI, MIRA], offer: 'd-kai-mo1' });
   const award = event('award', { eid: 'd-gm-a1', to: [MIRA], rewards: { xp: 5 } });
+  const coinLand = event('coinLand', { eid: 'd-gm-cl1', roll: 'd-mira:r1' });
 
-  test('a sealed message reaches the GM and the phones of the hunters it names; an unsealed one reaches every phone', () => {
+  test('a sealed message reaches the GM and the phones of the hunters it names, and a room-audience message reaches every phone', () => {
     for (const ev of [offer, stop]) {
       expect([GM, phone('d-kai'), phone('d-mira'), phone('d-eldrin'), ANYONE].map(v => servedTo(ev, v))).toEqual([true, true, true, false, false]);
     }
-    expect([GM, phone('d-kai'), phone('d-mira'), phone('d-eldrin'), ANYONE].map(v => servedTo(award, v))).toEqual([true, true, true, true, true]);
+    expect([GM, phone('d-kai'), phone('d-mira'), phone('d-eldrin'), ANYONE].map(v => servedTo(award, v))).toEqual([true, false, true, false, false]);
+    expect([GM, phone('d-kai'), phone('d-mira'), phone('d-eldrin'), ANYONE].map(v => servedTo(coinLand, v))).toEqual([true, true, true, true, true]);
   });
 
   test('a System whisper to one hunter reaches the GM and that hunter\'s phone only; a System message to the room reaches every phone (SMX-sync-5.2)', () => {
@@ -89,11 +91,91 @@ describe('what each phone gets of the room (notes-5-trade.md 4.1)', () => {
     expect([GM, phone('d-kai'), phone('d-mira'), phone('d-eldrin'), ANYONE].map(v => servedTo(broadcast, v))).toEqual([true, true, true, true, true]);
   });
 
-  test('a secret quest and its progress reach the GM and its hunter\'s phone only; a quest that is not secret, and its progress, reach every phone', () => {
+  test('a quest and its progress reach the GM and its hunter\'s phone only, secret or not', () => {
     const quest = (secret: boolean) => event('quest', { eid: 'd-gm-q1', to: [MIRA], quest: { kind: 'side', title: 'The traitor', secret } });
     const update = (secret: boolean) => event('questUpdate', { eid: 'd-mira-qu1', by: MIRA, name: 'Mira', questId: 'q4', title: 'The traitor', kind: 'side', status: 'active', objectives: [], secret });
-    for (const ev of [quest(true), update(true)]) expect([GM, phone('d-kai'), phone('d-mira'), phone('d-eldrin'), ANYONE].map(v => servedTo(ev, v))).toEqual([true, false, true, false, false]);
-    for (const ev of [quest(false), update(false)]) expect([GM, phone('d-kai'), phone('d-mira'), phone('d-eldrin'), ANYONE].map(v => servedTo(ev, v))).toEqual([true, true, true, true, true]);
+    for (const ev of [quest(true), update(true), quest(false), update(false)]) {
+      expect([GM, phone('d-kai'), phone('d-mira'), phone('d-eldrin'), ANYONE].map(v => servedTo(ev, v))).toEqual([true, false, true, false, false]);
+    }
+  });
+
+  test('EventAudience enforces that a named audience requires by or to at compile time', () => {
+    const okAward: EventAudience<PayloadOf<'award'>> = 'named';
+    const okRoll: EventAudience<PayloadOf<'roll'>> = 'named';
+    const okStash: EventAudience<PayloadOf<'stashAnswer'>> = 'named';
+    const okSystem: EventAudience<PayloadOf<'system'>> = p => (p.to === undefined ? 'room' : 'named');
+    const okCoin: EventAudience<PayloadOf<'coinLand'>> = 'room';
+    // @ts-expect-error coinLand has neither by nor to, so 'named' must not compile
+    const badCoin: EventAudience<PayloadOf<'coinLand'>> = 'named';
+    // @ts-expect-error system has optional to, so bare 'named' must not compile
+    const badSystem: EventAudience<PayloadOf<'system'>> = 'named';
+    expect([okAward, okRoll, okStash, typeof okSystem, okCoin, badCoin, badSystem].length).toBe(7);
+  });
+
+  test('servedPage never moves next past an unread sealed event naming the claimed device, including a by event (44c014b6)', () => {
+    const devs = ['d-kai', 'd-mira', 'd-eldrin'] as const;
+    const keys = { 'd-kai': KAI, 'd-mira': MIRA, 'd-eldrin': 'd-eldrin:h1' as SheetKey };
+    const mk = (seq: number, kind: number): RoomEvent & { seq: number } => {
+      const eid = `d-t-e${seq}`;
+      switch (kind) {
+        case 0: return { ...event('system', { eid, title: `Open ${seq}` }), seq };
+        case 1: return { ...event('coinLand', { eid, roll: `d-mira:r${seq}` }), seq };
+        case 2: return { ...event('award', { eid, to: [MIRA], rewards: { xp: 1 } }), seq };
+        case 3: return { ...event('roll', { eid, by: MIRA, name: 'Mira', total: 14 }), seq };
+        case 4: return { ...event('step', { eid, by: MIRA, place: { x: 1, y: 1 }, at: seq }), seq };
+        case 5: return { ...event('award', { eid, to: [KAI], rewards: { xp: 1 } }), seq };
+        default: return { ...event('used', { eid, by: keys['d-eldrin'], who: 'Eldrin', what: 'boon', name: 'B', text: '', target: 'self', tell: true }), seq };
+      }
+    };
+    const miraDev = parseDeviceId('d-mira')!;
+
+    // Explicit by-event stopping point: Mira's own roll stops an unproven catch-up poll, then proven polls catch up completely.
+    const byStream = [mk(1, 0), mk(2, 5), mk(3, 3), mk(4, 2), mk(5, 0)];
+    const unproven = servedPage({ events: byStream, next: 5, more: false }, ANYONE, miraDev);
+    expect([unproven.events.map(e => e.seq), unproven.next, unproven.more]).toEqual([[1], 2, false]);
+    const rest = servedPage({ events: byStream.filter(e => e.seq > unproven.next), next: 5, more: false }, phone('d-mira'), miraDev);
+    expect([rest.events.map(e => e.seq), rest.next, rest.more]).toEqual([[3, 4, 5], 5, false]);
+
+    // Property test over 200 deterministic random streams, page sizes, and unproven -> proven handoffs.
+    let seed = 0x51a7c0de;
+    const nextInt = (n: number): number => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % n; };
+    for (let trial = 0; trial < 200; trial++) {
+      const len = 1 + nextInt(25);
+      const pageSize = 1 + nextInt(10);
+      const stream = Array.from({ length: len }, (_, i) => mk(i + 1, nextInt(7)));
+      const claim = parseDeviceId(devs[nextInt(devs.length)]!)!;
+      const provenViewer = phone(claim);
+      const seenSeqs: number[] = [];
+      let cursor = 0;
+      const unprovenPolls = 1 + nextInt(4);
+      // Phase 1: poll unproven (rejoining before sheet push binds slot).
+      for (let p = 0; p < unprovenPolls; p++) {
+        const slice = stream.filter(e => e.seq > cursor).slice(0, pageSize);
+        const rawNext = slice.length ? slice.at(-1)!.seq : cursor;
+        const more = slice.length > 0 && rawNext < len;
+        const ans = servedPage({ events: slice, next: rawNext, more }, ANYONE, claim);
+        for (const ev of ans.events) seenSeqs.push(ev.seq);
+        // Invariant: cursor never passes any sealed event addressed to claim that was not returned.
+        const skippedMine = stream.filter(e => e.seq > cursor && e.seq <= ans.next && isSealed(e) && servedTo(e, provenViewer));
+        expect(skippedMine).toEqual([]);
+        cursor = ans.next;
+        if (!ans.more) break;
+      }
+      // Phase 2: sheet push succeeds and phone is proven. Paging to completion delivers every event visible to claim with zero gaps or duplicates.
+      for (let guard = 0; guard < len + 5; guard++) {
+        const slice = stream.filter(e => e.seq > cursor).slice(0, pageSize);
+        if (!slice.length) break;
+        const rawNext = slice.at(-1)!.seq;
+        const more = rawNext < len;
+        const ans = servedPage({ events: slice, next: rawNext, more }, provenViewer, claim);
+        for (const ev of ans.events) seenSeqs.push(ev.seq);
+        cursor = ans.next;
+        if (!ans.more) break;
+      }
+      const expected = stream.filter(e => servedTo(e, provenViewer)).map(e => e.seq);
+      expect(seenSeqs).toEqual(expected);
+      expect(cursor).toBe(len);
+    }
   });
 
   const items = Array.from({ length: FACE_LINES + 2 }, (_, i) => ({ ...itemOf(RULES, SHOP_ITEMS[0]!), id: `i${i + 1}` as never, name: `Thing ${i + 1}`, qty: i + 1 }));
@@ -1563,9 +1645,15 @@ describe('an offer between two hunters, and its one end', () => {
     for (const to of [[KEY], [KEY, KEY], [KEY, OTHER, 'd-x:h1'], [KEY, 'bad key']]) expect(payload('offerStop', { ...valid('offerStop'), to })).toBeNull();
   });
 
-  test('an offer, its end and the GM\'s stop are sealed to the GM and the two hunters (the lead\'s ruling 1), a stash ask and its answer to the GM and the asking hunter, a story\'s chapter to the GM and the hunters it is for, a table weight to the GM and its hunter, and a reward asked of the GM to the GM and its hunter; nothing else is (a System message to the room is not; one to named hunters is, and a secret quest and its progress are, above)', () => {
-    const sealed = EVENT_TYPES.filter(t => isSealed(parseEvent(t, valid(t))!)).sort();
-    expect(sealed).toEqual(['chapter', 'offer', 'offerEnd', 'offerStop', 'rewardAsk', 'stashAnswer', 'stashAsk', 'weigh', 'word', 'wordBack']);
+  test('every addressed event type is sealed, only coinLand and a room-wide system broadcast are unsealed, and every sealed event names at least one phone', () => {
+    const unsealed = EVENT_TYPES.filter(t => !isSealed(parseEvent(t, valid(t))!)).sort();
+    expect(unsealed).toEqual(['coinLand', 'system']);
+    const devs = [KEY, OTHER].map(k => ({ kind: 'phone' as const, device: parseDeviceId(k.split(':')[0]!)! }));
+    for (const t of EVENT_TYPES) {
+      const ev = parseEvent(t, valid(t))!;
+      if (!isSealed(ev)) continue;
+      expect(devs.some(v => servedTo(ev, v)), `${t} is sealed and must name at least one phone`).toBe(true);
+    }
   });
 
   /**

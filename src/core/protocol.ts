@@ -262,7 +262,7 @@ export type AwardPayload = Base & { to: SheetKey[]; rewards: Rewards & { build?:
  * the GM and that hunter's phone.
  */
 export type RewardAskPayload = Base & { by: SheetKey; name: string; from: AskFrom; what: string; rewards: Rewards };
-/** A quest the GM issues to the hunters of `to`. Sealed when the quest is secret: then `to` names one hunter. */
+/** A quest the GM issues to the hunters of `to`. Always sealed (`audience: 'named'`), and a secret quest names only one hunter. */
 export type QuestPayload = Base & { to: SheetKey[]; quest: QuestOffer };
 /** HP, mana and fatigue changes the GM taps on the board: negative is damage (or rest, for fatigue). */
 export type HpPayload = Base & { to: SheetKey[]; hp: number; mana: number; fatigue: number; reason: string };
@@ -301,7 +301,7 @@ export type RevivePayload = Base & { to: SheetKey[] };
 export type RollPayload = Base & {
   by: SheetKey; name: string; label: string; expr: string; total: number; rolls: number[]; crit: boolean; fumble: boolean;
 };
-/** A player's progress on a quest the GM issued. `secret`, copied from the quest: sealed, so only the GM gets it. */
+/** A player's progress on a quest the GM issued. Always sealed (`audience: 'named'`), and `secret` is copied from the quest for the GM's label. */
 export type QuestUpdatePayload = Base & {
   by: SheetKey; name: string; questId: string; title: string; kind: QuestKind; status: QuestStatus; objectives: Objective[]; secret: boolean;
 };
@@ -460,25 +460,35 @@ function endBase(o: Rec): Base & { offer: OfferId } {
 const otherOf = (o: Rec, by: SheetKey): [SheetKey] => { const to = toList(own(o, 'to')); return to.length === 1 && to[0] !== by ? [to[0]!] : refuse(); };
 /** A payload of an offer or an end within `OFFER_MAX` bytes. */
 const withinOffer = <T>(p: T): T => (goodsSize(p) > OFFER_MAX ? refuse() : p);
-/** Sealed to the GM and the hunters an event names (lead's ruling 1 of notes-5-trade.md 10). */
-const always = (): boolean => true;
 const reason = (o: Rec): string => opt(own(o, 'reason'), text(120), '');
 const hpDelta = (o: Rec, k: string): number => opt(own(o, k), int(-MAX_HP, MAX_HP), 0);
 /** Where a waiting reward came from and its words. */
 const earned = (o: Rec): EarnedBy => ({ from: choiceOf(REWARD_FROM)(own(o, 'from')), what: opt(own(o, 'what'), text(EARNED_WHAT_MAX), '') });
 /** Where a player's rewardAsk came from and its words. */
 const asked = (o: Rec): { from: AskFrom; what: string } => ({ from: choiceOf(ASK_FROM)(own(o, 'from')), what: opt(own(o, 'what'), text(EARNED_WHAT_MAX), '') });
+/** Who receives a stored event. `'named'` reaches only the GM and the phones named by `by` or `to`. `'room'` reaches every viewer. */
+export type Audience = 'named' | 'room';
 /**
- * One event type: who may send it, and its payload's reader. `gmOnly`: only the room's GM key may send it. `ownSheet`: it
- * speaks for the hunter in its `by`, so the server takes it only from the phone that hunter belongs to.
+ * Required audience for payload `P`: `'named'` compiles only when `P` carries `by` or `to` (`toList` refuses an empty list and
+ * `sheetKey` parses `by`, so a `'named'` event always names someone).
+ */
+export type EventAudience<P> =
+  [P] extends [{ by: SheetKey } | { to: readonly SheetKey[] }]
+    ? Audience | ((payload: P) => Audience)
+    : 'to' extends keyof P
+      ? [NonNullable<P['to']>] extends [readonly SheetKey[]]
+        ? 'room' | ((payload: P) => Audience)
+        : 'room'
+      : 'room';
+/**
+ * One event type: who may send it, who receives it, and its payload's reader. `gmOnly`: only the room's GM key may send it.
+ * `ownSheet`: it speaks for the hunter in its `by`, so the server takes it only from the phone that hunter belongs to.
  */
 type EventDef<K extends EventType> = {
-  readonly gmOnly: boolean; readonly ownSheet: boolean; readonly read: (payload: Rec) => Payloads[K];
-  /**
-   * Whether a stored event of the type reaches only the GM and the phones of the hunters its `by` and `to` name; absent, never.
-   * The server's poll reads it through `servedTo` (notes-5-trade.md 4.1).
-   */
-  readonly sealed?: (payload: Payloads[K]) => boolean;
+  readonly gmOnly: boolean; readonly ownSheet: boolean;
+  /** Required audience (`'named'` or `'room'`, or a function of the payload). The server's poll reads it through `servedTo`. */
+  readonly audience: EventAudience<Payloads[K]>;
+  readonly read: (payload: Rec) => Payloads[K];
   /**
    * What a message of the type stands for, when a newer one takes an older one's place: a fight's totals for one hunter.
    * Absent, each message stands for itself. The GM's outbox keeps one waiting per key (combat.js), and a player's phone
@@ -489,26 +499,26 @@ type EventDef<K extends EventType> = {
 
 /** Every event type. A type missing here does not compile. */
 const DEFS: { readonly [K in EventType]: EventDef<K> } = {
-  offer: { gmOnly: false, ownSheet: true, sealed: always, read: o => {
+  offer: { gmOnly: false, ownSheet: true, audience: 'named', read: o => {
     const eid = need(parseEventId(own(o, 'eid'))), by = sheetKey(own(o, 'by')), names = obj(own(o, 'names')), gives = need(parseGoods(own(o, 'gives')));
     if (parseOfferId(eid) === null || noGoods(gives)) return refuse();
     return withinOffer({
       eid, by, to: otherOf(o, by), names: { by: text(60)(own(names, 'by')), to: text(60)(own(names, 'to')) }, gives, asks: need(parseBagPick(own(o, 'asks'))),
     });
   } },
-  offerEnd: { gmOnly: false, ownSheet: true, sealed: always, read: o => {
+  offerEnd: { gmOnly: false, ownSheet: true, audience: 'named', read: o => {
     const b = endBase(o), by = sheetKey(own(o, 'by')), how = choiceOf(END_HOWS)(own(o, 'how')), gives = need(parseGoods(own(o, 'gives')));
     if (how !== 'accept' && !noGoods(gives)) return refuse();
     return withinOffer({ ...b, by, to: otherOf(o, by), how, gives });
   } },
-  offerStop: { gmOnly: true, ownSheet: false, sealed: always, read: o => {
+  offerStop: { gmOnly: true, ownSheet: false, audience: 'named', read: o => {
     const b = endBase(o), raw = own(o, 'to'), to = Array.isArray(raw) && raw.length === 2 ? raw.map(sheetKey) : refuse();
     return to[0] === to[1] ? refuse() : { ...b, to: [to[0]!, to[1]!] };
   } },
-  stashAsk: { gmOnly: false, ownSheet: true, sealed: always, read: o => withinOffer({
+  stashAsk: { gmOnly: false, ownSheet: true, audience: 'named', read: o => withinOffer({
     ...base(o), by: sheetKey(own(o, 'by')), name: opt(own(o, 'name'), text(NAME_MAX), ''), ask: need(parseStashAsk(own(o, 'ask'))),
   }) },
-  stashAnswer: { gmOnly: true, ownSheet: false, sealed: always, read: o => {
+  stashAnswer: { gmOnly: true, ownSheet: false, audience: 'named', read: o => {
     const to = toList(own(o, 'to')), b = { ...base(o), to: to.length === 1 ? [to[0]!] as [SheetKey] : refuse(), ask: need(parseEventId(own(o, 'ask'))) };
     switch (choiceOf(['kept', 'given', 'refused'] as const)(own(o, 'verdict'))) {
       case 'kept': return { ...b, verdict: 'kept' as const };
@@ -518,63 +528,63 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
   } },
   // SMX-sync-5.2: a System whisper (one with `to`) is sealed to the GM and the hunters it names (the owner, Nov 22: "Yes");
   // a broadcast to the room is not
-  system: { gmOnly: true, ownSheet: false, sealed: p => p.to !== undefined, read: o => {
+  system: { gmOnly: true, ownSheet: false, audience: p => (p.to === undefined ? 'room' : 'named'), read: o => {
     const to = own(o, 'to');
     return { ...base(o), ...(to === undefined ? {} : { to: toList(to) }), tag: opt(own(o, 'tag'), text(40), '! Notification'),
       title: filled(120)(own(o, 'title')), body: opt(own(o, 'body'), text(1000), ''), kind: opt(own(o, 'kind'), choiceOf(SYSTEM_KINDS), 'info') };
   } },
-  award: { gmOnly: true, ownSheet: false, read: o => {
+  award: { gmOnly: true, ownSheet: false, audience: 'named', read: o => {
     const r = obj(own(o, 'rewards')), build = own(r, 'build'), given = own(o, 'bundle'), why = own(o, 'earned');
     return {
       ...base(o), to: toList(own(o, 'to')), rewards: { ...rewards(r), ...(build === undefined ? {} : { build: buildChange(build) }) }, ...(given === undefined ? {} : { bundle: givenBundle(given) }),
       ...(why === undefined ? {} : { earned: earned(obj(why)) }),
     };
   } },
-  rewardAsk: { gmOnly: false, ownSheet: true, sealed: always, read: o => ({
+  rewardAsk: { gmOnly: false, ownSheet: true, audience: 'named', read: o => ({
     ...base(o), by: sheetKey(own(o, 'by')), name: opt(own(o, 'name'), text(NAME_MAX), ''), ...asked(o), rewards: rewards(own(o, 'rewards')),
   }) },
-  quest: { gmOnly: true, ownSheet: false, sealed: p => p.quest.secret, read: o => ({ ...base(o), ...questTo(o) }) },
-  hp: { gmOnly: true, ownSheet: false, read: o => ({ ...base(o), to: toList(own(o, 'to')), hp: hpDelta(o, 'hp'), mana: hpDelta(o, 'mana'), fatigue: hpDelta(o, 'fatigue'), reason: reason(o) }) },
-  vitals: { gmOnly: true, ownSheet: false, standsFor: p => `vitals ${p.to[0]}`, read: o => {
+  quest: { gmOnly: true, ownSheet: false, audience: 'named', read: o => ({ ...base(o), ...questTo(o) }) },
+  hp: { gmOnly: true, ownSheet: false, audience: 'named', read: o => ({ ...base(o), to: toList(own(o, 'to')), hp: hpDelta(o, 'hp'), mana: hpDelta(o, 'mana'), fatigue: hpDelta(o, 'fatigue'), reason: reason(o) }) },
+  vitals: { gmOnly: true, ownSheet: false, audience: 'named', standsFor: p => `vitals ${p.to[0]}`, read: o => {
     const to = toList(own(o, 'to')), total = (k: string): number => int(0, MAX_TOTAL)(own(o, k));
     return {
       ...base(o), to: to.length === 1 ? [to[0]!] : refuse(), fight: fightId(id(own(o, 'fight'))), life: need(parseLife(own(o, 'life'), MAX_TOTAL)), mana: total('mana'), fatigue: total('fatigue'),
       statuses: listOf(own(o, 'statuses'), MAX_STATUSES, sheetStatus), reason: reason(o),
     };
   } },
-  spent: { gmOnly: true, ownSheet: false, read: o => {
+  spent: { gmOnly: true, ownSheet: false, audience: 'named', read: o => {
     const to = toList(own(o, 'to'));
     return { ...base(o), to: to.length === 1 ? [to[0]!] : refuse(), item: need(parseSaveId<'i'>(own(o, 'item'))) };
   } },
-  status: { gmOnly: true, ownSheet: false, read: o => ({
+  status: { gmOnly: true, ownSheet: false, audience: 'named', read: o => ({
     ...base(o), to: toList(own(o, 'to')), add: opt(own(o, 'add'), v => listOf(v, MAX_STATUS_CHANGES, sheetStatus), []),
     remove: opt(own(o, 'remove'), v => listOf(v, MAX_STATUS_CHANGES, changeableKey), []), reason: reason(o),
   }) },
-  revive: { gmOnly: true, ownSheet: false, read: o => ({ ...base(o), to: toList(own(o, 'to')) }) },
-  roll: { gmOnly: false, ownSheet: true, read: o => ({
+  revive: { gmOnly: true, ownSheet: false, audience: 'named', read: o => ({ ...base(o), to: toList(own(o, 'to')) }) },
+  roll: { gmOnly: false, ownSheet: true, audience: 'named', read: o => ({
     ...base(o), by: sheetKey(own(o, 'by')), name: opt(own(o, 'name'), text(60), ''), label: opt(own(o, 'label'), text(60), ''),
     expr: opt(own(o, 'expr'), text(60), ''), total: int(-MAX_ROLL, MAX_ROLL)(own(o, 'total')),
     rolls: opt(own(o, 'rolls'), v => listOf(v, MAX_ROLLS, int(-MAX_ROLL, MAX_ROLL)), []), crit: opt(own(o, 'crit'), bool, false),
     fumble: opt(own(o, 'fumble'), bool, false),
   }) },
-  questUpdate: { gmOnly: false, ownSheet: true, sealed: p => p.secret, read: o => ({
+  questUpdate: { gmOnly: false, ownSheet: true, audience: 'named', read: o => ({
     ...base(o), by: sheetKey(own(o, 'by')), name: opt(own(o, 'name'), text(60), ''), questId: id(own(o, 'questId')), title: opt(own(o, 'title'), text(120), ''),
     kind: choiceOf(QUEST_KINDS)(own(o, 'kind')), status: choiceOf(QUEST_STATUSES)(own(o, 'status')),
     objectives: opt(own(o, 'objectives'), v => listOf(v, MAX_OBJECTIVES, objective), []), secret: opt(own(o, 'secret'), bool, false),
   }) },
-  chain: { gmOnly: true, ownSheet: false, read: o => {
+  chain: { gmOnly: true, ownSheet: false, audience: 'named', read: o => {
     const job = own(o, 'job');
     return { ...base(o), to: toList(own(o, 'to')), job: isJobName(job) ? job : refuse(), kind: choiceOf(CHAIN_KINDS)(own(o, 'kind')) };
   } },
-  used: { gmOnly: false, ownSheet: true, read: o => ({
+  used: { gmOnly: false, ownSheet: true, audience: 'named', read: o => ({
     ...base(o), by: sheetKey(own(o, 'by')), who: opt(own(o, 'who'), text(60), ''), what: choiceOf(USED_WHAT)(own(o, 'what')), name: filled(60)(own(o, 'name')),
     text: opt(own(o, 'text'), text(200), ''), target: opt(own(o, 'target'), choiceOf(USED_TARGETS), 'self'), tell: opt(own(o, 'tell'), bool, false),
   }) },
-  systemRaise: { gmOnly: false, ownSheet: true, read: o => ({
+  systemRaise: { gmOnly: false, ownSheet: true, audience: 'named', read: o => ({
     ...base(o), by: sheetKey(own(o, 'by')), name: filled(60)(own(o, 'name')), raise: choiceOf(RAISES)(own(o, 'raise')), owes: int(0, RAISE_OWES_MAX)(own(o, 'owes')),
   }) },
-  step: { gmOnly: false, ownSheet: true, read: o => ({ ...base(o), by: sheetKey(own(o, 'by')), place: tile(own(o, 'place')), at: time0(own(o, 'at')), dash: opt(own(o, 'dash'), bool, false) }) },
-  cast: { gmOnly: false, ownSheet: true, read: o => {
+  step: { gmOnly: false, ownSheet: true, audience: 'named', read: o => ({ ...base(o), by: sheetKey(own(o, 'by')), place: tile(own(o, 'place')), at: time0(own(o, 'at')), dash: opt(own(o, 'dash'), bool, false) }) },
+  cast: { gmOnly: false, ownSheet: true, audience: 'named', read: o => {
     const ability = own(o, 'ability');
     return {
       ...base(o), by: sheetKey(own(o, 'by')),
@@ -582,8 +592,8 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
       aim: aim(own(o, 'aim')), at: time0(own(o, 'at')),
     };
   } },
-  pass: { gmOnly: false, ownSheet: true, read: o => ({ ...base(o), by: sheetKey(own(o, 'by')), at: time0(own(o, 'at')) }) },
-  arm: { gmOnly: false, ownSheet: true, read: o => {
+  pass: { gmOnly: false, ownSheet: true, audience: 'named', read: o => ({ ...base(o), by: sheetKey(own(o, 'by')), at: time0(own(o, 'at')) }) },
+  arm: { gmOnly: false, ownSheet: true, audience: 'named', read: o => {
     const ability = own(o, 'ability'), on = own(o, 'on');
     const id = (v: unknown, max: number) => typeof v === 'string' && v.length > 0 && v.length <= max ? v : refuse();
     return {
@@ -591,43 +601,43 @@ const DEFS: { readonly [K in EventType]: EventDef<K> } = {
       on: on === null || on === undefined ? null : rowId(on),
     };
   } },
-  coinCall: { gmOnly: false, ownSheet: true, read: o => ({
+  coinCall: { gmOnly: false, ownSheet: true, audience: 'named', read: o => ({
     ...base(o), by: sheetKey(own(o, 'by')), roll: roll(own(o, 'roll')), who: opt(own(o, 'who'), text(COIN_TEXT_MAX), ''),
     what: opt(own(o, 'what'), text(COIN_TEXT_MAX), ''), face: need(faceOf(own(o, 'face'))), call: side(own(o, 'call')),
   }) },
-  coinLand: { gmOnly: true, ownSheet: false, read: o => ({ ...base(o), roll: roll(own(o, 'roll')) }) },
-  shadow: { gmOnly: true, ownSheet: false, read: o => {
+  coinLand: { gmOnly: true, ownSheet: false, audience: 'room', read: o => ({ ...base(o), roll: roll(own(o, 'roll')) }) },
+  shadow: { gmOnly: true, ownSheet: false, audience: 'named', read: o => {
     const to = toList(own(o, 'to'));
     return { ...base(o), to: to.length === 1 ? [to[0]!] : refuse(), shadow: shadowOrigin(own(o, 'shadow')) };
   } },
-  soloRun: { gmOnly: false, ownSheet: true, read: o => ({
+  soloRun: { gmOnly: false, ownSheet: true, audience: 'named', read: o => ({
     ...base(o), by: sheetKey(own(o, 'by')), gate: need(parseGateId(own(o, 'gate'))), name: opt(own(o, 'name'), text(NAME_MAX), ''),
     outcome: choiceOf(RUN_OUTCOMES)(own(o, 'outcome')), rounds: num(0, CAP_ROUNDS + 1)(own(o, 'rounds')), life: choiceOf(LIFE_STATES)(own(o, 'life')),
   }) },
-  noted: { gmOnly: true, ownSheet: false, read: o => {
+  noted: { gmOnly: true, ownSheet: false, audience: 'named', read: o => {
     const to = toList(own(o, 'to')), raw = own(o, 'facts');
     if (to.length !== 1 || !Array.isArray(raw) || raw.length > NOTED_MAX) return refuse();
     return { ...base(o), to: [to[0]!] as [SheetKey], facts: raw.flatMap(f => parseFact(f) ?? []) };
   } },
-  soloAnswer: { gmOnly: true, ownSheet: false, read: o => {
+  soloAnswer: { gmOnly: true, ownSheet: false, audience: 'named', read: o => {
     const to = toList(own(o, 'to'));
     const b = { ...base(o), to: to.length === 1 ? [to[0]!] as [SheetKey] : refuse(), run: need(parseEventId(own(o, 'run'))), gate: need(parseGateId(own(o, 'gate'))), name: opt(own(o, 'name'), text(WORLD_NAME_MAX), '') };
     return choiceOf(['cleared', 'refused'] as const)(own(o, 'verdict')) === 'cleared'
       ? { ...b, verdict: 'cleared' as const }
       : { ...b, verdict: 'refused' as const, why: choiceOf(SOLO_REFUSED)(own(o, 'why')) };
   } },
-  chapter: { gmOnly: true, ownSheet: false, sealed: always, read: o => {
+  chapter: { gmOnly: true, ownSheet: false, audience: 'named', read: o => {
     const q = own(o, 'quest'), to = toList(own(o, 'to')), quest = q === null || q === undefined ? null : questOffer(q);
     return quest && !questReaches(quest, to.length) ? refuse() : { ...base(o), to, words: need(parseWords(own(o, 'words'))), rewards: rewards(own(o, 'rewards')), quest };
   } },
-  word: { gmOnly: false, ownSheet: true, sealed: always, read: o => ({
+  word: { gmOnly: false, ownSheet: true, audience: 'named', read: o => ({
     ...base(o), by: sheetKey(own(o, 'by')), name: opt(own(o, 'name'), text(NAME_MAX), ''), text: filled(WORD_MAX)(own(o, 'text')),
   }) },
-  wordBack: { gmOnly: true, ownSheet: false, sealed: always, read: o => {
+  wordBack: { gmOnly: true, ownSheet: false, audience: 'named', read: o => {
     const to = toList(own(o, 'to'));
     return { ...base(o), to: to.length === 1 ? [to[0]!] : refuse(), re: plainEid(own(o, 're')), text: filled(WORD_MAX)(own(o, 'text')) };
   } },
-  weigh: { gmOnly: true, ownSheet: false, sealed: always, standsFor: p => `weigh ${p.to[0]}`, read: o => {
+  weigh: { gmOnly: true, ownSheet: false, audience: 'named', standsFor: p => `weigh ${p.to[0]}`, read: o => {
     const to = toList(own(o, 'to'));
     return { ...base(o), to: to.length === 1 ? [to[0]!] : refuse(), total: int(-WEIGHT_MAX, WEIGHT_MAX)(own(o, 'total')), force: nullOr(forcedFace)(own(o, 'force')) };
   } },
@@ -652,7 +662,9 @@ export const EVENTS: { readonly [K in EventType]: EventEntry<K> } = {
 };
 function entry<K extends EventType>(type: K): EventEntry<K> {
   const def: EventDef<K> = DEFS[type];
-  return { gmOnly: def.gmOnly, ownSheet: def.ownSheet, parse: payload => attempt(() => def.read(obj(payload))), sealed: def.sealed ?? (() => false), standsFor: def.standsFor ?? null };
+  const a = def.audience;
+  const sealed: (p: Payloads[K]) => boolean = typeof a === 'function' ? p => a(p) === 'named' : () => a === 'named';
+  return { gmOnly: def.gmOnly, ownSheet: def.ownSheet, parse: payload => attempt(() => def.read(obj(payload))), sealed, standsFor: def.standsFor ?? null };
 }
 /** What a message stands for, when a newer one of the same takes its place (`EventDef.standsFor`); null when it stands for itself. */
 export function standsFor(ev: RoomEvent): string | null {
@@ -662,7 +674,7 @@ export function standsFor(ev: RoomEvent): string | null {
 }
 /** The hunter an event speaks for, when its type is `ownSheet`: the server takes it only from that hunter's phone. Else null. */
 export const speaksFor = (ev: RoomEvent): SheetKey | null => (EVENTS[ev.type].ownSheet && 'by' in ev.payload ? ev.payload.by : null);
-/** Whether a stored event is sealed: it reaches only the GM and the phones of the hunters it names (`EventDef.sealed`). */
+/** Whether a stored event is sealed (`EventDef.audience` is `'named'`): it reaches only the GM and the phones of the hunters it names. */
 export function isSealed(ev: RoomEvent): boolean {
   // EVENTS pairs each type with the seal of its own payload.
   const sealed = EVENTS[ev.type].sealed as (p: RoomEvent['payload']) => boolean;
