@@ -3,7 +3,7 @@
 // A run is one play of the odds engine (odds.ts, play.ts) of one hunter, as its row joins a fight, against a gate's
 // monsters, with a seed the edge drew: no fight is shown and none is stored. What the play left on the hunter's row is
 // written to its sheet through the writers each part already has (`sheetEdit`'s totals,
-// `spendItem`, `setShadowHp`), and the gate is paid as a Clear pays (`settleClear`, `grant`, `gateXp`, `xpDue`), a world
+// `spendItem`, `setShadowHp`), and the gate is paid as a Clear pays (`settleClear`, `selfPay`, `gateXp`, `xpDue`), a world
 // gate's as a Clear for a party of one (pay.ts `shareEach`), in one step for `store.apply` (`soloRan`): all of it or none. The outcome is the engine's `RunOutcome`: `won` the gate is
 // cleared, `lost` the hunter fell, `stalled` a retreat at the time cap.
 //
@@ -23,8 +23,8 @@ import { isRefused, refuse } from '../save-step.ts';
 import type { Refused } from '../save-step.ts';
 import { told } from '../session-log.ts';
 import type { Said, Stamp } from '../session-log.ts';
-import { grant, idsFrom, noteFacts, sheetEdit } from '../hunter/grant.ts';
-import type { Day, Granted } from '../hunter/grant.ts';
+import { idsFrom, noteFacts, sheetEdit } from '../hunter/grant.ts';
+import type { Day, Granted, grant } from '../hunter/grant.ts';
 import { spendItem } from '../hunter/use.ts';
 import { setShadowHp } from '../hunter/shadows.ts';
 import { WAYS_BACK, hpOf, manaOf } from '../hunter/vitals.ts';
@@ -53,7 +53,8 @@ import { enteredAlone, worldOrder } from './world.ts';
 import { gateFact, settleClear, shareEach } from './pay.ts';
 import type { Seat } from '../role.ts';
 import { EARNED_WHAT_MAX, WORLD_NAME_MAX, newEvent } from '../protocol.ts';
-import { pendingHeard } from '../hunter/pending.ts';
+import { pendingHeard, rewardSeatOf, selfPay } from '../hunter/pending.ts';
+import type { RewardSeat } from '../hunter/pending.ts';
 import { stashCanHold, stashDeposit } from '../trade/stash.ts';
 import { isActivePreset, partitionPresetItems, payGatePreset } from './preset.ts';
 import { difficultyFactor, effectiveBossLevel, effectiveGateLevel, scaleMonsterForGate, scaleRowMonster } from './difficulty.ts';
@@ -322,15 +323,17 @@ export type Ran = {
 };
 /**
  * What `soloRan` reads besides the save: the moment and the readiness context as the phone stands at the write; for a
- * player's run of a room's gate the `soloRun` message the view made from `soloRunBody` (its id is the run's).
+ * player's run of a room's gate the `soloRun` message the view made from `soloRunBody` (its id is the run's); and where
+ * the phone sits for a personal gate's reward (defaults to the save's room fields, `rewardSeatOf`).
  */
-export type RanCtx = { readonly day: Day; readonly ready: ReadyCtx; readonly event?: RoomEvent | null };
+export type RanCtx = { readonly day: Day; readonly ready: ReadyCtx; readonly event?: RoomEvent | null; readonly seat?: RewardSeat; readonly grant?: typeof grant };
 
 const vitalsOf = (h: Hunter): Vitals => ({ life: h.life, mana: h.mana, fatigue: h.fatigue, collapsed: h.collapsed, used: h.used });
 
 /**
  * Hunter `hid`'s run `run` of `gate` written, in one step: the run's log line, the hunter as the play left it (`ranOn`),
- * then the gate: a personal gate cleared leaves the list and pays its roster's XP (`gateXp`) and `loot` (`grant`); a
+ * then the gate: a personal gate cleared leaves the list and routes its roster's XP (`gateXp`) and `loot` through
+ * `selfPay` (paid at once alone, asked of the GM in a room as a player, kept waiting in the GM's save as the GM); a
  * world gate cleared on this phone is its Clear for this one hunter (`settleClear`, its XP due and `loot`); a world gate
  * the hunter fell in or retreated from is entered when detected (`enteredAlone`). Refused whole when a world gate's run
  * no longer has the route it started on (`moved`: the phone joined or left a room), the run may no longer be written
@@ -364,9 +367,9 @@ export function soloRan(save: Save, hid: string, gate: SoloGate, run: SoloRun, l
       const g = h.solo.gates.find(x => x.id === gate.id)!, seeds = seedMonsters(R);
       xp = gateXp({ monsters: [...g.monsters], bossId: null }, id => { const m = seeds.find(x => x.id === id); return m ? monsterXp(m, R) : 0; });
       s = { ...s, hunters: s.hunters.map(x => (x.id === h.id ? { ...x, solo: { ...x.solo, gates: x.solo.gates.filter(y => y.id !== gate.id) } } : x)) };
-      const g2 = grant(s, h.id, rewards(xp, loot.gold), null, { ...c.day, vitals: 'sheet' });
-      if (isRefused(g2)) return g2;
-      s = g2.save; granted = g2;
+      const paid = selfPay(s, h.id, { from: 'solo', what: g.name, seed: `personal ${h.id} ${g.id}`, rewards: rewards(xp, loot.gold) }, { ...c.day, seat: c.seat ?? rewardSeatOf(save), ...(c.grant ? { grant: c.grant } : {}) });
+      if (isRefused(paid)) return paid;
+      s = paid.save; granted = paid.granted;
     }
   } else if (run.route === 'local') {
     if (outcome === 'won') {

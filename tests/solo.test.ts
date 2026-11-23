@@ -1,7 +1,7 @@
 // A solo run and a hunter's personal gates (src/core/gates/solo.ts, personal.ts; notes-2-solo.md). A run's write is
 // checked against an end written by hand, so the expected sheet comes from the end itself: what the play left is what
 // the sheet holds, through the life machine for the death saves. The engine's own play is checked once end to end.
-import { pendingOf } from '../src/core/hunter/pending.ts';
+import { ALONE, pendingApproved, pendingHeard, pendingOf, pendingRefused, waitingIn } from '../src/core/hunter/pending.ts';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { RULES, rulesOf } from '../src/core/rules.ts';
 import type { StatusDef } from '../src/core/combat/effect-ops.ts';
@@ -10,7 +10,7 @@ import { seedMonsters } from '../src/core/registry/monsters.ts';
 import type { Rules } from '../src/core/rules.ts';
 import { freshSave, newHunter } from '../src/core/save.ts';
 import type { Hunter, ParseEnv, Save } from '../src/core/save.ts';
-import { isRefused } from '../src/core/save-step.ts';
+import { isRefused, refuse } from '../src/core/save-step.ts';
 import type { Refused } from '../src/core/save-step.ts';
 import { abilityId, combatantId } from '../src/core/combat/ability-types.ts';
 import { IDLE, ODDS_RUNS, oddsLine, oddsStep, readOdds } from '../src/core/combat/odds.ts';
@@ -28,11 +28,12 @@ import type { OddsRun, RowEnd, RunEnd, Weighed } from '../src/core/combat/odds.t
 import type { OddsApi } from '../src/core/api.ts';
 import { SOLO_REFUSAL_WORDS, pooled, runCostLines, soloConfirmLines, soloAnswerBody, soloDoc, soloFight, soloKey, soloPlan, soloRan, soloReady, soloRoute, soloRunBody, soloTaken, soloTargets, soloTick } from '../src/core/gates/solo.ts';
 import { worldDoc } from '../src/core/gates/world.ts';
-import { DOCS, DOC_MAX, newEvent } from '../src/core/protocol.ts';
+import { DOCS, DOC_MAX, newEvent, parseEvent } from '../src/core/protocol.ts';
 import type { ReadyCtx, SoloGate, SoloRoute, SoloRun, SoloTarget } from '../src/core/gates/solo.ts';
 import { newSolo, parseSolo, personalGateId, soloTracked, soloWake } from '../src/core/gates/personal.ts';
 import type { PersonalGate } from '../src/core/gates/personal.ts';
 import { soloRank } from '../src/core/gates/spawn.ts';
+import { grant } from '../src/core/hunter/grant.ts';
 import { WAYS_BACK } from '../src/core/hunter/vitals.ts';
 import { hunterSheet } from '../src/core/hunter/sheet.ts';
 import { nextWake } from '../src/core/hunter/quests.ts';
@@ -45,7 +46,7 @@ import { putItem } from '../src/core/hunter/inventory.ts';
 import { seedId } from '../src/core/ids.ts';
 import type { GateId, HunterId, MonsterId } from '../src/core/ids.ts';
 import { den } from './models/gate-events.ts';
-import { dev, hid, iid, room, skid } from './fixtures/ids.ts';
+import { dev, gmKey, hid, iid, room, skid } from './fixtures/ids.ts';
 import { lifeAt } from './fixtures/life.ts';
 import type { Life } from '../src/core/hunter/vitals.ts';
 
@@ -171,6 +172,128 @@ describe('a run writes what the play left, in one write', () => {
 
   test('a player in a room settles a room\'s gate in that room, never on its own phone; alone or the GM, on this phone', () => {
     expect([soloRoute('alone', null), soloRoute('gm', ROOM), soloRoute('player', ROOM)]).toEqual(['local', 'local', { room: ROOM }]);
+  });
+});
+
+describe('personal-gate clear rewards wait for the GM in a room and pay at once alone (row 51)', () => {
+  const inRoom = (s: Save, asGm = false): Save => ({
+    ...s,
+    settings: { ...s.settings, sync: { ...s.settings.sync, room: ROOM, gmKey: asGm ? gmKey('gm-key-test-0123456789abcdef') : null } },
+  });
+  const loot = { gold: 45, items: [itemOf(RULES, SHOP_ITEMS[0]!)] };
+  const log = { at: AT, cap: RULES.logCap };
+  const stamp = { device: dev('d-gm'), now: NOW, rand: 0.4 };
+
+  test('a lone phone pays XP, gold and items at once, with no room ask or waiting record', () => {
+    const s = alone();
+    const r = ok(soloRan(s, H1, PERSONAL, runOf(s, endOf('won', {})), loot, { day, ready: ctx(), seat: ALONE }));
+    const h = hunter(r.save);
+    expect([r.xp, h.xp, h.gold]).toEqual([25, 25, 45]);
+    expect(h.items.map(i => i.name)).toContain(SHOP_ITEMS[0]!.name);
+    expect(r.granted?.lines).toContain('+25 XP');
+    expect(r.save.settings.sync.outbox ?? []).toEqual([]);
+    expect(pendingOf(r.save)).toEqual([]);
+  });
+
+  test('a lone personal-gate clear whose grant is refused writes nothing and the gate stays', () => {
+    const s = alone();
+    const res = soloRan(s, H1, PERSONAL, runOf(s, endOf('won', {})), loot, { day, ready: ctx(), seat: ALONE, grant: () => refuse('no-hunter') });
+    expect(res).toEqual({ ok: false, why: 'no-hunter' });
+    expect(hunter(s).solo.gates.map(g => g.id)).toEqual([personalGateId(1)]);
+    expect([hunter(s).xp, hunter(s).gold, hunter(s).items]).toEqual([0, 0, []]);
+    expect(s.log.filter(l => l.title === 'Solo run')).toEqual([]);
+  });
+
+  test('a room player\'s personal-gate clear removes the gate, pays nothing at once, and posts a sealed rewardAsk for the GM', () => {
+    const s = inRoom(alone({ restsTaken: RULES.rest.perGate }), false);
+    const r = ok(soloRan(s, H1, PERSONAL, runOf(s, endOf('won', {})), loot, { day, ready: ctx() }));
+    const h = hunter(r.save), max = hunterSheet(h, RULES).sheet;
+    expect(h.solo.gates).toEqual([]);
+    expect([h.life, h.mana, h.fatigue, h.restsTaken]).toEqual([{ at: 'up', hp: max.hpMax }, max.manaMax, 0, 0]);
+    expect([r.xp, h.xp, h.gold, h.items]).toEqual([25, 0, 0, []]);
+    expect(r.granted).toBeNull();
+    expect(pendingOf(r.save)).toEqual([]);
+
+    const out = r.save.settings.sync.outbox ?? [];
+    expect(out).toHaveLength(1);
+    const letter = out[0]!.letter;
+    expect(letter.kind).toBe('event');
+    if (letter.kind !== 'event' || letter.event.type !== 'rewardAsk') throw new Error('expected rewardAsk');
+    expect(letter.event.payload).toMatchObject({
+      by: `${ENV.newDeviceId()}:${H1}`,
+      name: 'Mira',
+      from: 'solo',
+      what: 'Goblin Warren',
+      rewards: { xp: 25, gold: 45, items: [loot.items[0]] },
+    });
+    expect(parseEvent('rewardAsk', JSON.parse(JSON.stringify(letter.event.payload)))).toEqual(letter.event);
+  });
+
+  test('the GM\'s own hunter\'s personal-gate clear in a room waits in the GM\'s "Waiting for you" list and pays nothing at once', () => {
+    const s = inRoom(alone(), true);
+    const r = ok(soloRan(s, H1, PERSONAL, runOf(s, endOf('won', {})), loot, { day, ready: ctx() }));
+    const h = hunter(r.save);
+    expect(h.solo.gates).toEqual([]);
+    expect([h.xp, h.gold, h.items]).toEqual([0, 0, []]);
+    expect(r.granted).toBeNull();
+    expect(r.save.settings.sync.outbox ?? []).toEqual([]);
+    const waited = waitingIn(r.save, ROOM);
+    expect(waited).toHaveLength(1);
+    expect(waited[0]).toMatchObject({
+      room: ROOM,
+      to: `${ENV.newDeviceId()}:${H1}`,
+      name: 'Mira',
+      from: 'solo',
+      what: 'Goblin Warren',
+      at: 'waiting',
+      rewards: { xp: 25, gold: 45, items: [loot.items[0]] },
+    });
+  });
+
+  test('approving a player\'s waiting personal-gate clear pays exactly what the run earned, once', () => {
+    const playerStart = inRoom(alone(), false);
+    const ran = ok(soloRan(playerStart, H1, PERSONAL, runOf(playerStart, endOf('won', {})), loot, { day, ready: ctx() }));
+    const letter = ran.save.settings.sync.outbox![0]!.letter;
+    if (letter.kind !== 'event' || letter.event.type !== 'rewardAsk') throw new Error('expected rewardAsk');
+
+    const gmStart = inRoom(freshSave({ ...ENV, newDeviceId: () => dev('d-gm') }, { onboarded: true }), true);
+    const heard = pendingHeard(gmStart, letter.event.payload, ROOM, log);
+    const rec = waitingIn(heard, ROOM)[0]!;
+    expect([rec.from, rec.what, rec.rewards.xp, rec.rewards.gold, rec.rewards.items.map(i => i.name)]).toEqual(['solo', 'Goblin Warren', 25, 45, [SHOP_ITEMS[0]!.name]]);
+
+    const approved = ok(pendingApproved(heard, rec.id, rec.rewards));
+    expect(waitingIn(approved, ROOM)).toEqual([]);
+    expect(pendingApproved(approved, rec.id, rec.rewards)).toEqual({ ok: false, why: 'answered' });
+
+    const paid = ok(grant(ran.save, H1, rec.rewards, null, { ...day, vitals: 'sheet' }));
+    const h = hunter(paid.save);
+    expect([h.xp, h.gold, h.items.map(i => i.name)]).toEqual([25, 45, [SHOP_ITEMS[0]!.name]]);
+  });
+
+  test('refusing a waiting personal-gate clear pays nothing and tells a player\'s phone without telling the GM\'s own', () => {
+    const playerStart = inRoom(alone(), false);
+    const ran = ok(soloRan(playerStart, H1, PERSONAL, runOf(playerStart, endOf('won', {})), loot, { day, ready: ctx() }));
+    const letter = ran.save.settings.sync.outbox![0]!.letter;
+    if (letter.kind !== 'event' || letter.event.type !== 'rewardAsk') throw new Error('expected rewardAsk');
+
+    const gmStart = inRoom(freshSave({ ...ENV, newDeviceId: () => dev('d-gm') }, { onboarded: true }), true);
+    const heard = pendingHeard(gmStart, letter.event.payload, ROOM, log);
+    const rec = waitingIn(heard, ROOM)[0]!;
+    const refused = ok(pendingRefused(heard, rec.id, { stamp, log }));
+    expect(waitingIn(refused, ROOM)).toEqual([]);
+    expect(pendingOf(refused)[0]!.at).toBe('refused');
+    const sent = refused.settings.sync.outbox![0]!.letter;
+    expect(sent.kind === 'event' && sent.event.type === 'system' && sent.event.payload).toMatchObject({
+      to: [rec.to],
+      title: 'REWARD REFUSED',
+      body: 'Solo clear: Goblin Warren. The GM did not give this reward.',
+    });
+    expect([hunter(ran.save).xp, hunter(ran.save).gold, hunter(ran.save).items]).toEqual([0, 0, []]);
+
+    const gmOwn = ok(soloRan(inRoom(alone(), true), H1, PERSONAL, runOf(inRoom(alone(), true), endOf('won', {})), loot, { day, ready: ctx() }));
+    const ownRefused = ok(pendingRefused(gmOwn.save, waitingIn(gmOwn.save, ROOM)[0]!.id, { stamp, log }));
+    expect(ownRefused.settings.sync.outbox ?? []).toEqual([]);
+    expect([hunter(ownRefused).xp, hunter(ownRefused).gold, hunter(ownRefused).items]).toEqual([0, 0, []]);
   });
 });
 

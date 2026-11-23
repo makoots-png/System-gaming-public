@@ -3,9 +3,10 @@
 // in a room with a world gate the GM opened to solo runs: the GM's phone online, offline, two players on one gate, and a
 // hunter who dies alone and is revived.
 import { shareEach } from '../../src/core/gates/pay.ts';
+import { PENDING_WORDS } from '../../src/core/hunter/pending.ts';
 import { RULES } from '../../src/core/rules.ts';
 import { seedMonsters } from '../../src/core/registry/monsters.ts';
-import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, save, approveWaiting, type Page } from './helpers.ts';
+import { test, expect, onboardGM, onboardPlayer, createRoom, dismissAll, go, save, approveWaiting, waitingRow, type Page } from './helpers.ts';
 
 /** The hunter on `page` made strong enough to clear any E or D gate alone: every stat at 60, its HP full. */
 const strong = (page: Page) => page.evaluate(() => hunterApp.store.update((d: any) => {
@@ -389,4 +390,85 @@ test('the GM turns personal gates off for the room: a player\'s gates stop, and 
   await expect(kai!.page.locator('#view-gates .gt-solo')).not.toContainText('Personal gates');
   expect((await save(kai!.page)).rulesOverrides.solo, 'the room\'s switch is never written to the player\'s save').toBeUndefined();
   expect((await save(gm.page)).rulesOverrides.solo).toEqual({ personal: false });
+});
+
+/** Sets the player's first personal gate to one goblin and clears it alone; returns the gate's name. */
+async function clearPersonalInRoom(page: Page): Promise<string> {
+  const name = await page.evaluate(() => {
+    let gateName = '';
+    hunterApp.store.update((d: any) => {
+      const h = d.hunters.find((x: any) => x.id === d.settings.activeHunterId) ?? d.hunters[0];
+      h.solo.gates[0].monsters = [{ monsterId: 'seed:goblin', count: 1 }];
+      gateName = h.solo.gates[0].name;
+    }, 'test-setup');
+    return gateName;
+  });
+  const card = page.locator('#view-gates .gate.solo[data-solo^="personal:"]').first();
+  await card.locator('[data-solo-enter]').tap();
+  const ask = page.locator('.sys-overlay.show', { hasText: 'ENTER ALONE?' });
+  await expect(ask).toBeVisible({ timeout: 60_000 });
+  await ask.locator('.sys-actions button', { hasText: 'Enter alone' }).tap();
+  const done = page.locator('.sys-overlay.show', { hasText: 'GATE CLEARED' });
+  await expect(done).toBeVisible({ timeout: 30_000 });
+  await expect(done).toContainText(PENDING_WORDS.waits);
+  await expect(done).not.toContainText('+25 XP');
+  await done.locator('.sys-actions button').first().tap();
+  return name;
+}
+
+/** Bag quantities by item name, so stackable drops compare cleanly with existing inventory. */
+const bagCounts = (items: any[]): Record<string, number> => {
+  const out: Record<string, number> = {};
+  for (const i of items) out[i.name] = (out[i.name] ?? 0) + (i.qty ?? 1);
+  return out;
+};
+
+test('in a room, a player\'s personal-gate clear waits for the GM, and approving it pays exactly what the run earned', async ({ device }) => {
+  const { gm, players: [kai] } = await roomWithSoloDen(device, ['Kai']);
+  const before = hunterOf(await save(kai!.page)), xp0 = lifetime(before), gold0 = before.gold, bag0 = bagCounts(before.items);
+  const gateName = await clearPersonalInRoom(kai!.page);
+
+  const mid = hunterOf(await save(kai!.page));
+  expect(mid.solo.gates, 'the cleared personal gate leaves the list').toHaveLength(0);
+  expect([lifetime(mid), mid.gold, bagCounts(mid.items)], 'nothing paid before the GM approves').toEqual([xp0, gold0, bag0]);
+
+  const row = await waitingRow(gm.page, gateName);
+  await expect(row).toContainText('Kai');
+  await expect(row).toContainText(`Solo clear: ${gateName}`);
+  await expect(row).toContainText('+25 XP');
+  const rec = await gm.page.evaluate(name => (hunterApp.store.get().settings.sync.pending ?? []).find((p: any) => p.at === 'waiting' && p.what === name), gateName);
+  expect(rec.rewards.xp).toBe(25);
+
+  await row.locator('[data-pw-approve]').tap();
+  await expect(gm.page.locator('#gm-pw [data-pw]', { hasText: gateName })).toHaveCount(0);
+
+  const win = kai!.page.locator('.sys-overlay.show', { hasText: 'REWARD RECEIVED' });
+  await expect(win).toBeVisible({ timeout: 30_000 });
+  await expect(win).toContainText(`Solo clear: ${gateName}. The GM approved your reward.`);
+  await win.locator('.sys-actions button').first().tap();
+  await dismissAll(kai!.page);
+
+  const after = hunterOf(await save(kai!.page));
+  expect(lifetime(after)).toBe(xp0 + rec.rewards.xp);
+  expect(after.gold).toBe(gold0 + rec.rewards.gold);
+  expect(bagCounts(after.items)).toEqual(bagCounts([...before.items, ...rec.rewards.items]));
+});
+
+test('in a room, refusing a player\'s personal-gate clear tells the player and pays nothing', async ({ device }) => {
+  const { gm, players: [kai] } = await roomWithSoloDen(device, ['Kai']);
+  const before = hunterOf(await save(kai!.page)), xp0 = lifetime(before), gold0 = before.gold, bag0 = bagCounts(before.items);
+  const gateName = await clearPersonalInRoom(kai!.page);
+
+  const row = await waitingRow(gm.page, gateName);
+  await row.locator('[data-pw-refuse]').tap();
+  await expect(gm.page.locator('#gm-pw [data-pw]', { hasText: gateName })).toHaveCount(0);
+
+  const win = kai!.page.locator('.sys-overlay.show', { hasText: 'REWARD REFUSED' });
+  await expect(win).toBeVisible({ timeout: 30_000 });
+  await expect(win).toContainText(`Solo clear: ${gateName}. The GM did not give this reward.`);
+  await win.locator('.sys-actions button').first().tap();
+  await dismissAll(kai!.page);
+
+  const after = hunterOf(await save(kai!.page));
+  expect([lifetime(after), after.gold, bagCounts(after.items)]).toEqual([xp0, gold0, bag0]);
 });

@@ -19,6 +19,7 @@ import { advanceDay as advanceWorld, closeGate, deleteGate, editGate, enterGate,
 import { gateNews, gateTold, hunterNews } from '../core/told.ts';
 import { stepTime } from '../core/day.ts';
 import { OUTCOME_WORDS, SOLO_REFUSAL_WORDS, SOLO_WORDS, closesIn, personalNews, runCostLines, soloAnswerBody, soloConfirmLines, soloDoc, soloFight, soloKey, soloPlan, soloRan, soloReady, soloRoute, soloRuleSet, soloRunBody, soloTaken, soloTargets, soloTick, takenLine } from '../core/gates/solo.ts';
+import { PENDING_WORDS, rewardWaits } from '../core/hunter/pending.ts';
 import { byClosing } from '../core/gates/personal.ts';
 import { STOP_WAITING, askDismissed, mayDismiss, shownOf, waitWords, waitingGates } from '../core/sync/asked.ts';
 import { NO_RUN, mayEnter, playingOn, runPhaseStep } from '../core/gates/solo-run.ts';
@@ -372,13 +373,14 @@ export function register(app) {
     const w = store.apply('solo-run', s => { const r = soloRan(s, hid, gate, runOf, loot, { day: dayNow(), ready: readyCtx(hid), event }); if (isRefused(r)) return r; done.ran = r; return r.save; });
     if (!ui.wrote('! Gate', w, SOLO_REFUSAL_WORDS)) return;
     const ran = done.ran;
-    if (toRoom) sync().flush();
+    const personalWaits = gate.kind === 'personal' && ran.outcome === 'won' && !ran.granted && rewardWaits(app.seat()) && (ran.xp > 0 || loot.gold > 0 || loot.items.length > 0);
+    if (toRoom || personalWaits) sync().flush();
     runMoved({ type: 'wrote' });
     const h = store.hunter(hid), m = h ? api.hunter.sheet(h).sheet : { hpMax: 0, manaMax: 0, fatigueMax: 0 };
     const sy = store.get().settings.sync, waiting = event && (sy.asked || []).find(x => x.id === event.payload.eid);
     await ui.system({ tag: '! Gate', kind: ran.outcome === 'won' ? 'quest' : 'warning', title: OUTCOME_WORDS[ran.outcome].title,
       body: waiting ? `${ready.target.name}. ${waitWords(waiting, sy.outbox || [])}` : ready.target.name,
-      lines: runCostLines(ran.before, ran.after, m), rewards: ran.granted ? ran.granted.lines : [] });
+      lines: runCostLines(ran.before, ran.after, m), rewards: ran.granted ? ran.granted.lines : personalWaits ? [PENDING_WORDS.waits] : [] });
     if (ran.granted) api.hunter.granted(hid, ran.granted, { popup: false });
   }
 

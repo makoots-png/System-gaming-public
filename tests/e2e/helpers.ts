@@ -186,9 +186,10 @@ export async function go(page: Page, view: string): Promise<void> {
  */
 export async function waitingRow(gm: Page, name: string): Promise<Locator> {
   await go(gm, 'gm');
+  const row = gm.locator('#gm-pw [data-pw]', { hasText: name }).first();
+  await expect(row).toHaveCount(1, { timeout: 30_000 });
   const tog = gm.locator('[data-tog="waiting"]');
   if ((await tog.getAttribute('aria-expanded')) !== 'true') await tog.tap();
-  const row = gm.locator('#gm-pw [data-pw]', { hasText: name }).first();
   await expect(row).toBeVisible({ timeout: 30_000 });
   return row;
 }

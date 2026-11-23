@@ -21,15 +21,15 @@ export const pending = machine<PendingState, PendingEvent>({
   kindsOf: s => [s],
   views: [{
     title: 'A reward the app would pay by itself waits for the GM\'s edit and approval',
-    note: `World rule 8: "every System message and every reward must be editable and approved by the GM before players see it." The owner, Nov 22, rule d: "Yes" to a room solo clear, a counted quest, a feat and a Give… from the shelf. Where a reward goes is by the phone's seat (\`ROUTE\`): alone ${ROUTE.alone} (no GM to ask, so it is paid at once), a player's phone ${ROUTE.player} (the \`rewardAsk\` message), the GM's phone ${ROUTE.gm} (this record in its save). The GM edits freely, above what the rule pays too. Approved and refused are ends: a second approve pays nothing.`,
+    note: `World rule 8: "every System message and every reward must be editable and approved by the GM before players see it." The owner, Nov 22, rule d: "Yes" to a room solo clear, a counted quest, a feat and a Give… from the shelf (and Nov 22 row 51: personal-gate clears too). Where a reward goes is by the phone's seat (\`ROUTE\`): alone ${ROUTE.alone} (no GM to ask, so it is paid at once), a player's phone ${ROUTE.player} (the \`rewardAsk\` message), the GM's phone ${ROUTE.gm} (this record in its save). The GM edits freely, above what the rule pays too. Approved and refused are ends: a second approve pays nothing.`,
     hides: '',
     state: s => LABEL[s],
     step: e => STEP[e.type],
   }],
   where: [
     ['The union', '`PendingReward`, `PendingEvent` and `PENDING_STATES` in `src/core/hunter/pending.ts`; the records are `settings.sync.pending` in the GM\'s save'],
-    ['What changes it', '`pendingStep(record, event)` and its `TABLE`; `pendingHeard`, `pendingApproved`, `pendingRefused` on the save; `selfPaid` routes a reward by `ROUTE`'],
-    ['Who calls it', '`noticed.ts` (a feat, a counted quest), `soloTaken` in `src/core/gates/solo.ts` (a won run), the GM view\'s "Waiting for you" list and its Approve through Send award (`src/views/gm.js`)'],
+    ['What changes it', '`pendingStep(record, event)` and its `TABLE`; `pendingHeard`, `pendingApproved`, `pendingRefused` on the save; `selfPay` / `selfPaid` route a reward by `ROUTE`'],
+    ['Who calls it', '`noticed.ts` (a feat, a counted quest), `soloRan` (a cleared personal gate) and `soloTaken` (a won room run) in `src/core/gates/solo.ts`, the GM view\'s "Waiting for you" list and its Approve through Send award (`src/views/gm.js`)'],
     ['The test to copy', '`tests/pending.test.ts`'],
     ['The recipe', 'docs/guide/room-sync.md, "A room message"'],
   ],

@@ -138,7 +138,8 @@ function noticeHunter(save: Save, hid: HunterId, c: NoticeCtx, now: FactStamp): 
       }
       put(record({ ...now, chronicle: { ...now.chronicle, feats } }, { kind: 'feat', key, name: def.name, hidden: def.show.at === 'never' }));
       // ruling 20: in a room the feat's reward waits for the GM; it is earned at once all the same
-      s = selfPaid(s, hid, { from: 'feat', what: def.name, seed: `feat ${hid} ${key}`, rewards: def.rewards }, { ...c, seat: c.seat ?? ALONE });
+      const paid = selfPaid(s, hid, { from: 'feat', what: def.name, seed: `feat ${hid} ${key}`, rewards: def.rewards }, { ...c, seat: c.seat ?? ALONE });
+      if (!isRefused(paid)) s = paid;
     }
   }
   return s;
@@ -176,10 +177,13 @@ function countQuests(save: Save, hid: HunterId, f: Fact, stamp: FactStamp, c: No
     // a room, and its window says so in place of the reward's lines (quests.js `tellDone`)
     const done = questDone(s, hid, q.id, { at: c.at, today: c.today, R: c.R, by: 'system' });
     if (isRefused(done)) continue;
-    s = done.save;
-    const ended = s.hunters.find(x => x.id === hid)?.quests.find(x => x.id === q.id), seat = c.seat ?? ALONE;
-    if (ROOM_HEARS.counted && seat.seat === 'player' && reportsProgress(q, 'player') && ended?.status === 'done') s = questEnded(s, hid, ended, { at: c.at, room: seat.room });
-    s = selfPaid(s, hid, { from: 'quest', what: q.title, seed: `quest ${hid} ${q.id}`, rewards: done.rewards }, { ...c, seat });
+    const ended = done.save.hunters.find(x => x.id === hid)?.quests.find(x => x.id === q.id), seat = c.seat ?? ALONE;
+    const withEnd = ROOM_HEARS.counted && seat.seat === 'player' && reportsProgress(q, 'player') && ended?.status === 'done'
+      ? questEnded(done.save, hid, ended, { at: c.at, room: seat.room })
+      : done.save;
+    const paid = selfPaid(withEnd, hid, { from: 'quest', what: q.title, seed: `quest ${hid} ${q.id}`, rewards: done.rewards }, { ...c, seat });
+    if (isRefused(paid)) continue;
+    s = paid;
   }
   return s;
 }

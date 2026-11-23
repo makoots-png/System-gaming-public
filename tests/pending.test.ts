@@ -1,17 +1,17 @@
 // A reward the app would pay by itself, waiting for the GM (src/core/hunter/pending.ts; World rule 8, the owner, Nov 22:
 // rule d, "Yes"). Every state against every event; where each seat sends the reward; a reward never lost nor paid twice.
 import { describe, expect, test } from 'bun:test';
-import { ENDED_KEPT, PENDING_EVENTS, PENDING_STATES, ROUTE, askOf, parsePending, pendingApproved, pendingHeard, pendingOf, pendingRefused, pendingStep, selfPaid, waitingIn } from '../src/core/hunter/pending.ts';
+import { ALONE, ENDED_KEPT, PENDING_EVENTS, PENDING_STATES, ROUTE, askOf, parsePending, pendingApproved, pendingHeard, pendingOf, pendingRefused, pendingStep, rewardSeatOf, selfPaid, selfPay, waitingIn } from '../src/core/hunter/pending.ts';
 import type { PendingEvent, PendingReward, PendingState, RewardSeat, SelfReward } from '../src/core/hunter/pending.ts';
 import { freshSave, newHunter, newRewards } from '../src/core/save.ts';
 import type { Save } from '../src/core/save.ts';
 import { RULES } from '../src/core/rules.ts';
-import { isRefused } from '../src/core/save-step.ts';
+import { isRefused, refuse } from '../src/core/save-step.ts';
 import type { Refused } from '../src/core/save-step.ts';
 import { parseEventId, sheetKeyOf } from '../src/core/ids.ts';
 import type { EventId, SheetKey } from '../src/core/ids.ts';
 import { parseEvent } from '../src/core/protocol.ts';
-import { day, dev, hid, room } from './fixtures/ids.ts';
+import { day, dev, gmKey, hid, room } from './fixtures/ids.ts';
 
 const ok = <T>(r: T | Refused): T => { if (isRefused(r)) throw new Error(`refused: ${r.why}`); return r as T; };
 const AT = '2026-11-22T10:00:00.000Z';
@@ -44,31 +44,31 @@ describe('a reward waiting for the GM', () => {
 
   test('alone the reward is paid at once (no GM to ask); a player\'s phone asks the GM and pays nothing; the GM\'s phone keeps it waiting and pays nothing', () => {
     expect(ROUTE).toEqual({ alone: 'pay', player: 'ask', gm: 'wait' });
-    const alone = selfPaid(save(), H1, QUEST, ctx({ seat: 'alone' }));
+    const alone = ok(selfPaid(save(), H1, QUEST, ctx({ seat: 'alone' })));
     expect(alone.hunters[0]!.gold).toBe(140);
     expect(alone.settings.sync.outbox ?? []).toEqual([]);
     expect(pendingOf(alone)).toEqual([]);
 
-    const player = selfPaid(save(), H1, QUEST, ctx({ seat: 'player', room: ROOM }));
+    const player = ok(selfPaid(save(), H1, QUEST, ctx({ seat: 'player', room: ROOM })));
     expect(player.hunters[0]!.gold).toBe(100);
     const letters = (player.settings.sync.outbox ?? []).map(e => (e.letter.kind === 'event' ? e.letter.event : null));
     expect(letters.map(e => e?.type)).toEqual(['rewardAsk']);
     expect(letters[0]!.payload).toMatchObject({ by: sheetKeyOf(ME, H1), name: 'Mira', from: 'quest', what: 'Ten Beasts', rewards: GOLD });
     expect(pendingOf(player)).toEqual([]);
 
-    const gm = selfPaid(save(), H1, QUEST, ctx({ seat: 'gm', room: ROOM }));
+    const gm = ok(selfPaid(save(), H1, QUEST, ctx({ seat: 'gm', room: ROOM })));
     expect(gm.hunters[0]!.gold).toBe(100);
     expect(gm.settings.sync.outbox ?? []).toEqual([]);
     expect(waitingIn(gm, ROOM).map(p => [p.to, p.from, p.what, p.rewards.gold])).toEqual([[sheetKeyOf(ME, H1), 'quest', 'Ten Beasts', 40]]);
   });
 
   test('the same reward earned again in one write is one ask and one record; an empty reward goes nowhere', () => {
-    const player = selfPaid(selfPaid(save(), H1, QUEST, ctx({ seat: 'player', room: ROOM })), H1, QUEST, ctx({ seat: 'player', room: ROOM }));
+    const player = ok(selfPaid(ok(selfPaid(save(), H1, QUEST, ctx({ seat: 'player', room: ROOM }))), H1, QUEST, ctx({ seat: 'player', room: ROOM })));
     expect(player.settings.sync.outbox ?? []).toHaveLength(1);
-    const gm = selfPaid(selfPaid(save(), H1, QUEST, ctx({ seat: 'gm', room: ROOM })), H1, QUEST, ctx({ seat: 'gm', room: ROOM }));
+    const gm = ok(selfPaid(ok(selfPaid(save(), H1, QUEST, ctx({ seat: 'gm', room: ROOM }))), H1, QUEST, ctx({ seat: 'gm', room: ROOM })));
     expect(pendingOf(gm)).toHaveLength(1);
     const empty = { ...QUEST, rewards: newRewards() };
-    for (const seat of [{ seat: 'alone' }, { seat: 'player', room: ROOM }, { seat: 'gm', room: ROOM }] as const) expect(selfPaid(save(), H1, empty, ctx(seat))).toEqual(save());
+    for (const seat of [{ seat: 'alone' }, { seat: 'player', room: ROOM }, { seat: 'gm', room: ROOM }] as const) expect(ok(selfPaid(save(), H1, empty, ctx(seat)))).toEqual(save());
   });
 
   test('a player\'s ask heard twice is one record, with one log line', () => {
@@ -97,7 +97,7 @@ describe('a reward waiting for the GM', () => {
     expect(sent[0]!.payload).toMatchObject({ to: [PLAYER], title: 'REWARD REFUSED' });
     expect(refused.log[0]).toMatchObject({ title: 'Reward refused', text: 'Mira: Quest complete: Ten Beasts' });
 
-    const own = selfPaid(save(), H1, QUEST, ctx({ seat: 'gm', room: ROOM }));
+    const own = ok(selfPaid(save(), H1, QUEST, ctx({ seat: 'gm', room: ROOM })));
     const ownRefused = ok(pendingRefused(own, pendingOf(own)[0]!.id, c));
     expect(ownRefused.settings.sync.outbox ?? []).toEqual([]);
     expect(ownRefused.hunters[0]!.gold).toBe(100);
@@ -130,5 +130,36 @@ describe('a reward waiting for the GM', () => {
     expect(waitingIn(s, ROOM)[0]!.from).toBe('clear');
     expect(s.log[0]!.text).toBe('Mira: Gate clear: Goblin Den');
     expect(parsePending(JSON.parse(JSON.stringify(pendingOf(s))))).toEqual([...pendingOf(s)]);
+  });
+
+  test('rewardSeatOf reads alone, player and gm from the save; selfPay returns granted only when paid alone', () => {
+    const base = save();
+    expect(rewardSeatOf(base)).toEqual(ALONE);
+    const asPlayer: Save = { ...base, settings: { ...base.settings, sync: { ...base.settings.sync, room: ROOM, gmKey: null } } };
+    expect(rewardSeatOf(asPlayer)).toEqual({ seat: 'player', room: ROOM });
+    const asGm: Save = { ...base, settings: { ...base.settings, sync: { ...base.settings.sync, room: ROOM, gmKey: gmKey('gm-key-test-0123456789abcdef') } } };
+    expect(rewardSeatOf(asGm)).toEqual({ seat: 'gm', room: ROOM });
+
+    const paidAlone = ok(selfPay(base, H1, QUEST, ctx(ALONE)));
+    expect(paidAlone.granted?.lines).toContain('+40 gold');
+    expect(paidAlone.save.hunters[0]!.gold).toBe(140);
+
+    const paidPlayer = ok(selfPay(asPlayer, H1, QUEST, ctx({ seat: 'player', room: ROOM })));
+    expect(paidPlayer.granted).toBeNull();
+    expect(paidPlayer.save.hunters[0]!.gold).toBe(100);
+
+    const paidGm = ok(selfPay(asGm, H1, QUEST, ctx({ seat: 'gm', room: ROOM })));
+    expect(paidGm.granted).toBeNull();
+    expect(paidGm.save.hunters[0]!.gold).toBe(100);
+  });
+
+  test('selfPay and selfPaid hand back a refused grant or absent hunter instead of silently keeping the save', () => {
+    const missing = hid('h9');
+    for (const seat of [ALONE, { seat: 'player', room: ROOM }, { seat: 'gm', room: ROOM }] as const) {
+      expect(selfPay(save(), missing, QUEST, ctx(seat))).toEqual({ ok: false, why: 'no-hunter' });
+      expect(selfPaid(save(), missing, QUEST, ctx(seat))).toEqual({ ok: false, why: 'no-hunter' });
+    }
+    const refusedGrant = selfPay(save(), H1, QUEST, { ...ctx(ALONE), grant: () => refuse('no-hunter') });
+    expect(refusedGrant).toEqual({ ok: false, why: 'no-hunter' });
   });
 });

@@ -1,8 +1,9 @@
 // pending.ts: a reward the app would pay by itself, waiting for the GM (World rule 8; the owner, Nov 22, rule d: "Yes").
 // Pure.
 //
-// Four rewards used to reach a hunter with no one's say: a won solo run of a room's gate, a quest the System completed,
-// a feat earned (and a bundle given from Give…'s shelf, which now opens the Award form instead: award.ts, held.ts).
+// Four rewards used to reach a hunter with no one's say: a won solo run (a room's gate or a personal gate), a quest the
+// System completed, a feat earned (and a bundle given from Give…'s shelf, which now opens the Award form instead:
+// award.ts, held.ts).
 // Each is now routed by where the phone sits (`ROUTE`): alone it pays at once, as before, since no GM is there to ask;
 // a player's phone asks the GM with the `rewardAsk` message (protocol.ts) and pays nothing; the GM's phone keeps a
 // record waiting in its save (`settings.sync.pending`), from a player's ask or from its own hunters, until the GM edits,
@@ -18,6 +19,7 @@ import { deviceOf, hunterIdOf, parseEventId, parseRoomCode, parseSheetKey, sheet
 import type { EventId, HunterId, RoomCode, SheetKey } from '../ids.ts';
 import { isEmptyReward, parseRewards } from '../rewards.ts';
 import type { Rewards } from '../rewards.ts';
+import { seatOf } from '../role.ts';
 import type { Seat } from '../role.ts';
 import type { Rules, Save } from '../save.ts';
 import { isRefused, refuse } from '../save-step.ts';
@@ -28,6 +30,7 @@ import { atOutbox, post } from '../sync/outbox.ts';
 import { timeOf } from '../day.ts';
 import type { DayKey } from '../day.ts';
 import { grant, idShare } from './grant.ts';
+import type { Granted } from './grant.ts';
 
 /**
  * Where a reward the app pays by itself goes, by the phone's seat: paid at once (`pay`), asked of the GM's phone
@@ -146,6 +149,11 @@ export const localHunter = (s: Pick<Save, 'settings'>, p: Pick<PendingReward, 't
 /** Where the phone sits for a reward: alone, or in room `room` as a player or as its GM. */
 export type RewardSeat = { readonly seat: 'alone' } | { readonly seat: 'player' | 'gm'; readonly room: RoomCode };
 export const ALONE: RewardSeat = { seat: 'alone' };
+/** Where the phone sits for a reward by the save's room fields: alone, or in `room` as a player or as its GM. */
+export function rewardSeatOf(s: Pick<Save, 'settings'>): RewardSeat {
+  const room = s.settings.sync.room, seat = seatOf(s.settings, room);
+  return room && seat !== 'alone' ? { seat, room } : ALONE;
+}
 /** What earned a reward by itself, and the reward. */
 export type SelfReward = { readonly from: AskFrom; readonly what: string; readonly seed: string; readonly rewards: Rewards };
 /** The ask of hunter `hid` for `r` at `at`: its id made from `r.seed`, so the same reward asked twice is one message. */
@@ -155,18 +163,34 @@ export function askOf(s: Save, hid: HunterId, r: SelfReward, at: string): (RoomE
   const ev = newEvent('rewardAsk', { by: sheetKeyOf(device, hid), name: h.name, from: r.from, what: r.what.slice(0, EARNED_WHAT_MAX), rewards: r.rewards }, { device, now: Date.parse(at), rand: idShare(r.seed) });
   return ev && ev.type === 'rewardAsk' ? ev : null;
 }
+/** What `selfPay` wrote: the next save, and what `grant` did when paid at once (null when it waits or is empty). */
+export type SelfPaid = { readonly save: Save; readonly granted: Granted | null };
+/** What `selfPay` reads besides the save and reward: the write's moment, the rules, the phone's seat, and the grant step (defaults to `grant`). */
+export type SelfPayCtx = {
+  readonly at: string; readonly today: DayKey; readonly R: Rules; readonly seat: RewardSeat;
+  readonly grant?: typeof grant;
+};
 /**
  * Reward `r` earned by hunter `hid` with no one's say, routed by `ROUTE`, in the write that earned it: paid at once by
- * `grant` alone; asked of the GM in the room's outbox on a player's phone; kept waiting in this save on the GM's phone.
- * An empty reward goes nowhere.
+ * `grant` alone (answering what `grant` did, or its refusal); asked of the GM in the room's outbox on a player's phone;
+ * kept waiting in this save on the GM's phone. Refused (`no-hunter`) when the hunter is absent. An empty reward goes nowhere.
  */
-export function selfPaid(s: Save, hid: HunterId, r: SelfReward, c: { readonly at: string; readonly today: DayKey; readonly R: Rules; readonly seat: RewardSeat }): Save {
-  if (isEmptyReward(r.rewards)) return s;
+export function selfPay(s: Save, hid: HunterId, r: SelfReward, c: SelfPayCtx): SelfPaid | Refused<'no-hunter'> {
+  if (isEmptyReward(r.rewards)) return { save: s, granted: null };
   const route = ROUTE[c.seat.seat], room = c.seat.seat === 'alone' ? null : c.seat.room;
-  if (route === 'pay') { const g = grant(s, hid, r.rewards, null, { at: c.at, today: c.today, R: c.R, vitals: 'sheet' }); return isRefused(g) ? s : g.save; }
+  if (route === 'pay') {
+    const g = (c.grant ?? grant)(s, hid, r.rewards, null, { at: c.at, today: c.today, R: c.R, vitals: 'sheet' });
+    return isRefused(g) ? g : { save: g.save, granted: g };
+  }
+  if (!s.hunters.some(x => x.id === hid)) return refuse('no-hunter');
   const ev = room ? askOf(s, hid, r, c.at) : null;
-  if (!ev || !room) return s;
-  return route === 'ask' ? atOutbox(b => post(b, room, { kind: 'event', event: ev }).box)(s) : pendingHeard(s, ev.payload, room, { at: c.at, cap: c.R.logCap });
+  if (!ev || !room) return { save: s, granted: null };
+  return { save: route === 'ask' ? atOutbox(b => post(b, room, { kind: 'event', event: ev }).box)(s) : pendingHeard(s, ev.payload, room, { at: c.at, cap: c.R.logCap }), granted: null };
+}
+/** As `selfPay`, answering only the next save, or its refusal. */
+export function selfPaid(s: Save, hid: HunterId, r: SelfReward, c: SelfPayCtx): Save | Refused<'no-hunter'> {
+  const paid = selfPay(s, hid, r, c);
+  return isRefused(paid) ? paid : paid.save;
 }
 
 // ── words ──
