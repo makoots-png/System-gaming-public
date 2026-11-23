@@ -16,6 +16,7 @@ import type { Grid, Place, Side } from './space.ts';
 import { acted, delayed, extraNow, extraStep, interval, notBefore, refunded, tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
 import type { Ability, Avoid, CombatantId, Outcome } from './ability-types.ts';
+import type { LifeState } from '../hunter/vitals.ts';
 import { isUp, rowHp } from './row-hp.ts';
 import { removeStatus, shielded, shieldOn, withStatuses } from './effect-ops.ts';
 import { atTier, countOn, stacked } from './op-amount.ts';
@@ -486,11 +487,19 @@ export function ready(a: Ability, user: Body, bodies: readonly Body[], aim: Aim,
 }
 
 /**
- * Rule 2: whether `user` may pick `t` as its target: `t` is not warded from it (standing.ts `warded`, the untargetable
- * ward), and the user's side perceives it in `seen` (sight.ts `perceivedBy`: a hidden body only by a sight above its
- * level; in a fog only within the fog's sight of a body of the side, the owner's rulings 1 and 7).
+ * Rule 2: whether a body can be aimed at by an ability: only a body that is up. A dead body is never offered as a target
+ * and a pick aimed at one is refused (no ability raises the dead; only the GM's `revive` command does, row-life.ts). The
+ * one rule for `pickable` here and `aims` in fight-view.ts.
  */
-const pickable = (t: Body, user: Body, seen: Lookout): boolean => !warded(t, user.side) && perceivedBy(user.side, t, seen);
+export const canAimAt = (target: { readonly life: { readonly at: LifeState } } | { readonly down: boolean }): boolean =>
+  'life' in target ? isUp(target) : !target.down;
+
+/**
+ * Rule 2: whether `user` may pick `t` as its target: `t` can be aimed at (`canAimAt`), is not warded from it (standing.ts
+ * `warded`, the untargetable ward), and the user's side perceives it in `seen` (sight.ts `perceivedBy`: a hidden body
+ * only by a sight above its level; in a fog only within the fog's sight of a body of the side, the owner's rulings 1 and 7).
+ */
+const pickable = (t: Body, user: Body, seen: Lookout): boolean => canAimAt(t) && !warded(t, user.side) && perceivedBy(user.side, t, seen);
 
 /**
  * Whether a use may be made now as far as anything but its dice decides: `ready` (rules 2 to 5), then for an ally

@@ -13,7 +13,7 @@ import type { Ability, AbilityKind, Outcome } from '../src/core/combat/ability-t
 import { modified, statusKey, statusOn } from '../src/core/combat/effect-ops.ts';
 import type { Body, Op, Origin, StackDef, Status, StatusDef, UseOp } from '../src/core/combat/effect-ops.ts';
 import { abilityOf } from '../src/core/registry/ability-kinds.ts';
-import { afterDefence, needs, resolve } from '../src/core/combat/resolve.ts';
+import { afterDefence, needs, resolve, usable } from '../src/core/combat/resolve.ts';
 import type { Aim, Resolved, Rolls } from '../src/core/combat/resolve.ts';
 import { rng } from './models/fight-play.ts';
 import { rowHp } from '../src/core/combat/row-hp.ts';
@@ -763,6 +763,21 @@ describe('who a use may pick and who it catches: the one sight rule (notes-7-ste
     expect(picked(u, [u, t])).toEqual({ ok: false, reason: 'noTarget' });
     const r = run(blast, u, [u, t], t.place, rolls({ t: [] }, { t: 1 }));
     expect([r.outcomes, find(r.bodies, 't')]).toEqual([[], t]);
+  });
+
+  test('picking a dead ally or a dead foe is refused noTarget, and usable is false', () => {
+    const healer = body('u', hunterOrigin('support'), place(5, 5), 'party');
+    const deadAlly = body('a', hunterOrigin('tank'), place(6, 5), 'party', { hp: 0 });
+    const deadFoeHunter = body('f', hunterOrigin('tank'), place(6, 6), 'foe', { hp: 0 });
+    const deadMonster = body('m', monsterOrigin('brute'), place(4, 5), 'foe', { hp: 0 });
+    const heal = ability('support', { effect: { type: 'heal', by: 'hand', formula: formula('20') } });
+    const hit = ability('strike', {}, '10');
+    const all = [healer, deadAlly, deadFoeHunter, deadMonster];
+    expect(resolve(heal, healer, all, deadAlly.id, GRID, rolls({ a: [] }), NOW, RULES)).toEqual({ ok: false, reason: 'noTarget' });
+    expect(usable(heal, healer, all, deadAlly.id, GRID, NOW, RULES)).toBe(false);
+    expect(needs(heal, healer, all, deadAlly.id, GRID, NOW, RULES)).toEqual({ dice: {}, react: [], refund: false });
+    expect(resolve(hit, healer, all, deadFoeHunter.id, GRID, rolls({ f: [] }, { f: 10 }), NOW, RULES)).toEqual({ ok: false, reason: 'noTarget' });
+    expect(resolve(hit, healer, all, deadMonster.id, GRID, rolls({ m: [] }, { m: 10 }), NOW, RULES)).toEqual({ ok: false, reason: 'noTarget' });
   });
 });
 

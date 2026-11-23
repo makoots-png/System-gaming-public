@@ -15,10 +15,11 @@ export const FULL: CiPlan = { unit: true, browser: 'all', lag: true, why: '' };
 
 /**
  * The lead's notes: nothing is built from them, and no test opens one (the lint "no test opens a file under
- * docs/agent-handoff/" holds that), so a push of notes alone cannot change a unit test's result. A `.ts` file there
- * is typechecked (tsconfig.json), so the typecheck still runs.
+ * docs/agent-handoff/" holds that), so a push of notes alone cannot change a unit test's result.
+ * `questionable-decisions.md` is the one exception: `tests/qd-rows.test.ts` checks its row numbers, so edits to it run
+ * unit tests via `isUnitOnly`. A `.ts` file under `docs/agent-handoff/` is still typechecked (`tsconfig.json`).
  */
-const isNotes = (f: string): boolean => f.startsWith('docs/agent-handoff/');
+const isNotes = (f: string): boolean => f.startsWith('docs/agent-handoff/') && f !== 'docs/agent-handoff/questionable-decisions.md';
 /**
  * Files only the typecheck and the unit tests read: a unit test and its models, the charts' scripts and the two docs a
  * unit test compares against them, the guide, and the CI's own scripts. No browser test imports any of them (the
@@ -26,7 +27,7 @@ const isNotes = (f: string): boolean => f.startsWith('docs/agent-handoff/');
  */
 const isUnitOnly = (f: string): boolean =>
   /^tests\/[^/]+\.test\.ts$/.test(f) || f.startsWith('tests/models/') || f.startsWith('scripts/charts/')
-  || ['scripts/statecharts.ts', 'scripts/deps.ts', 'scripts/ci.ts', 'scripts/ci-plan.ts', 'docs/state-machines.md', 'docs/dependency-map.md', 'AGENTS.md', 'README.md'].includes(f)
+  || ['scripts/statecharts.ts', 'scripts/deps.ts', 'scripts/ci.ts', 'scripts/ci-plan.ts', 'docs/state-machines.md', 'docs/dependency-map.md', 'docs/agent-handoff/questionable-decisions.md', 'AGENTS.md', 'README.md'].includes(f)
   || f.startsWith('.githooks/')
   // the guide's area files: read by coding agents and by the lint that checks AGENTS.md names them, never served or read by a browser test
   || f.startsWith('docs/guide/')

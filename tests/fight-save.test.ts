@@ -397,12 +397,12 @@ describe('an award to hunters this phone\'s fight holds is one write: the award,
     stillDead(p);
   });
 
-  test('an ally\'s healing salve thrown at a dead hunter\'s row leaves it at 0 HP, as the dead sheet refuses the heal', () => {
+  test('an ally\'s healing salve thrown at a dead hunter\'s row is refused noTarget and leaves it at 0 HP', () => {
     const p = deadRow(), f = p.save.fight as Running;
     const salve = itemAbility({ id: iid('i8'), name: 'Salve', rar: 'common', target: 'other', effects: [{ op: 'heal', amount: num(20), when: 'use' }] }, RULES)!;
     p.save = { ...p.save, fight: { ...f, rows: f.rows.map(r => (r.id === id('c2') ? { ...r, abilities: [...r.abilities, salve] } : r)) } };
     const r = write(p, { type: 'act', by: id('c2'), ability: salve.id, aim: id('c1'), rolls: { dice: {}, react: {} }, force: true });
-    expect(r.effects.filter(x => x.type === 'refused'), 'the fight takes the use').toEqual([]);
+    expect(r.effects.filter(x => x.type === 'refused'), 'a dead body cannot be aimed at (row 18)').toEqual([{ type: 'refused', reason: 'noTarget' }]);
     stillDead(p);
   });
 

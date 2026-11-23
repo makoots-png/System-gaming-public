@@ -14,7 +14,7 @@ export const REST_STATES = ['left', 'spent'] as const;
 export type RestState = (typeof REST_STATES)[number];
 /**
  * A rest taken; a gate the hunter was paid for cleared (everything back, vitals.ts `cleared`); a gate left without its
- * Clear (a solo run lost or retreated from): the count starts again, nothing else comes back.
+ * Clear (a solo run lost; a retreat leaves the gate open and keeps its rests): the count starts again, nothing else comes back.
  */
 export type RestEvent = { readonly type: 'rest' } | { readonly type: 'cleared' } | { readonly type: 'gateLeft' };
 export type RestEventType = RestEvent['type'];

@@ -116,12 +116,24 @@ describe('a run writes what the play left, in one write', () => {
     expect(dead.save.log[0]!.text).toBe('Mira fell in "Goblin Warren" (E-rank) alone in 4 rounds and died.');
   });
 
-  test('a retreat pays its cost and leaves the gate open', () => {
+  test('a retreat pays its cost, keeps rests spent, and leaves the gate open', () => {
     const s = alone({ restsTaken: RULES.rest.perGate }), r = ok(soloRan(s, H1, PERSONAL, runOf(s, { ...endOf('stalled', { hp: 2, fatigue: 60 }), rounds: 40 }), NO_LOOT, { day, ready: ctx() }));
     expect([hunter(r.save).life, hunter(r.save).fatigue]).toEqual([{ at: 'up', hp: 2 }, 60]);
-    expect(hunter(r.save).restsTaken, 'the gate ended for the hunter: its rests start again').toBe(0);
+    expect(hunter(r.save).restsTaken, 'a retreat leaves the gate open, so rests taken stay spent').toBe(RULES.rest.perGate);
     expect(hunter(r.save).solo.gates).toHaveLength(1);
     expect(r.save.log[0]!.text).toBe('Mira retreated from "Goblin Warren" (E-rank) alone after 40 rounds.');
+  });
+
+  test('solo run rests: a retreat keeps restsTaken on personal and world gates, while a win and a loss reset it', () => {
+    const s = alone({ restsTaken: RULES.rest.perGate });
+    const retreatedWorld = ok(soloRan(s, H1, WORLD, runOf(s, { ...endOf('stalled', { hp: 5 }), rounds: 40 }), NO_LOOT, { day, ready: ctx() }));
+    expect(hunter(retreatedWorld.save).restsTaken, 'retreat from a world gate keeps restsTaken').toBe(RULES.rest.perGate);
+    const lostPersonal = ok(soloRan(s, H1, PERSONAL, runOf(s, endOf('lost', { hp: 0 })), NO_LOOT, { day, ready: ctx() }));
+    expect(hunter(lostPersonal.save).restsTaken, 'a loss on a personal gate resets restsTaken').toBe(0);
+    const lostWorld = ok(soloRan(s, H1, WORLD, runOf(s, endOf('lost', { hp: 0 })), NO_LOOT, { day, ready: ctx() }));
+    expect(hunter(lostWorld.save).restsTaken, 'a loss on a world gate resets restsTaken').toBe(0);
+    const wonWorld = ok(soloRan(s, H1, WORLD, runOf(s, endOf('won', {})), NO_LOOT, { day, ready: ctx() }));
+    expect(hunter(wonWorld.save).restsTaken, 'a win on a world gate resets restsTaken').toBe(0);
   });
 
   test('the items a run used leave the bag, one per use', () => {

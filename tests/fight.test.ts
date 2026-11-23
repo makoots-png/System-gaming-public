@@ -771,8 +771,8 @@ describe('a row\'s life: every change of a row\'s HP goes through its life (row-
     refuses(play(...dead()).fight, adjust('A', { hp: 10 }), 'noChange');
   });
 
-  test('an ally\'s heal leaves a dead hunter dead', () => {
-    expect(lifeOf(play(...dead(), mended('A')), 'A')).toEqual(DEAD);
+  test('an ally\'s heal on a dead hunter is refused noTarget and leaves it dead', () => {
+    refuses(play(...dead()).fight, mended('A'), 'noTarget');
   });
 
   test('a paid heal (a healing ground\'s entry) leaves a dead hunter dead', () => {

@@ -4,6 +4,8 @@ the owner, Nov 22: "Nothing waits on me for tonight keep working, be bold my fri
 
 Every call a lead made that he might have made otherwise, newest last. Each says what was decided, why, and the one thing to tell a lead to undo it. The same list is the Google Doc "Hunter System: questionable decisions" (id `1Bg6o4g2n_CtvoxHB9ey0tgdYoyN8H-29P_n95yo2GWg`; add a row there with the Docs connector, read it with Drive `read_file_content` when he says he answered in it); a lead adds a row to both in the turn it decides.
 
+Row numbers before `## Neon review` must run 1 to N with no duplicates and no gaps. `tests/qd-rows.test.ts` checks this and fails with the bad numbers.
+
 Neon reviewed every row on Nov 22, 2026 (commit 9ab2aa71). Input is under each row, labeled Neon (Nov 22). Fable's text is unchanged.
 
 ## Decided while he was away (Nov 22, night)
@@ -26,6 +28,8 @@ Status (Nov 22, checked against the code): this row is out of date. The Dice vie
 Neon (Nov 22): change. Severity: medium. Confidence: high. Evidence: read. Wording: clean. Do not reset `restsTaken` when a solo run ends in a retreat (`outcome === 'stalled'` in `src/core/gates/solo.ts`). A retreat leaves the gate open, so calling `gateLeft` on retreat breaks the two-rests-per-gate limit (Row 4) and lets a hunter refresh rests without finishing a gate. Wins (Clear) and losses (death, matching Row 20) can keep resetting it.
 
 The owner (Nov 22): apply Neon's change as a unit (scored under the rule of 6 where it is not a state machine).
+
+Status (Nov 22): built in unit rulings-18-19. A solo retreat leaves `restsTaken` as it was, while a win and a loss still reset it.
 20. **A dead hunter's rest count also starts again at a Clear.** It gets no HP, mana or uses back (his rule), but the count belongs to the gate, so the next gate starts with two. Undo: "a dead hunter keeps its rests spent".
 Neon (Nov 22): agree. Severity: low. Confidence: high. Evidence: read. Wording: clean. Resetting `restsTaken` on a Clear even for a dead hunter (`src/core/hunter/grant.ts`) while withholding HP, mana, fatigue, and ability uses respects the owner's death rule and ensures that once revived, the hunter enters the next gate with two rests. See Row 4 and Row 19.
 21. **The keystones design is accepted as written** (`features/notes-11-keystones.md`, design A): a stat holding 30% of the points a hunter spent earns a Mark at rank D, the two highest stats at 25% each a Confluence at rank C, a stat over 55% an Apex at rank B; 44 powers; earned by the points with no tap; gear never counts; elites, bosses and mythics earn them too, shadows never. This is how "specialising must pay" is built. Undo: "no keystones", or name the part to change (the shares, the ranks, monsters holding them).
@@ -175,7 +179,7 @@ Neon (Nov 22): change. Severity: low. Confidence: high. Evidence: read. Wording:
 
 The owner (Nov 22): apply Neon's change as a unit (scored under the rule of 6 where it is not a state machine).
 
-Status (Nov 22, checked against the code): the row is slightly off. `landUse` in `src/core/combat/resolve.ts` refuses the pick with `noTarget`; it does not spend the turn. Neon's change (take dead bodies out of the aims) is approved and planned as a unit.
+Status (Nov 22): built in unit rulings-18-19. Dead bodies are left out of `aims` and refused by `pickable` through one rule (`canAimAt` in `src/core/combat/resolve.ts`).
 
 ## Neon review (Nov 22)
 

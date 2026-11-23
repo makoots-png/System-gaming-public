@@ -337,8 +337,8 @@ export function soloRan(save: Save, hid: string, gate: SoloGate, run: SoloRun, l
   const { h, target } = ready;
   if (soloKey(h) !== run.from) return refuse('changed');
   const outcome = run.end.outcome, stamp: Stamp = { at: c.day.at, cap: R.logCap };
-  // the run's end ends the gate for the hunter, cleared or not: its rests a gate start again (rests.ts `gateLeft`)
-  const ended = ranOn(h, run, R), left = sheetEdit(ended, { type: 'gateLeft' }, R), ran = isRefused(left) ? ended : left;
+  // a win or a loss ends the gate for the hunter so its rests start again (rests.ts `gateLeft`); a retreat leaves the gate open, so its rests stay spent
+  const ended = ranOn(h, run, R), left = outcome === 'stalled' ? ended : sheetEdit(ended, { type: 'gateLeft' }, R), ran = isRefused(left) ? ended : left;
   const max = hunterSheet(ran, R).sheet.hpMax, above = rankIdx(target.rank) - rankIdx(h.rank);
   // the run's end is a fact of the chronicle (chronicle.ts), and a personal gate cleared a gate's, which gives everything
   // back (grant.ts `noteFacts`; a world gate's is its Clear's, settleClear in pay.ts)

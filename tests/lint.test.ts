@@ -2004,8 +2004,10 @@ test('AGENTS.md is an index of at most 150 lines that names every file of docs/g
 test('no test opens a file under docs/agent-handoff/', async () => {
   // A push of only the lead's notes runs the typecheck and no unit test (`planOf`, scripts/ci-plan.ts). That holds only
   // while no test can read a note: here, no file of tests/ or scripts/ nor server.ts names the folder outside a comment,
-  // and none lists docs/ as a whole. src/ is left out: core touches no file and the views run in a browser. To read a
-  // note from a test, move what the test needs into docs/guide/ or tests/fixtures/, or take the branch out of `planOf`.
+  // and none lists docs/ as a whole, except `tests/qd-rows.test.ts` reading `docs/agent-handoff/questionable-decisions.md`
+  // (excluded from `isNotes` in scripts/ci-plan.ts so edits to it run unit tests). src/ is left out: core touches no file
+  // and the views run in a browser. To read another note from a test, move what the test needs into docs/guide/ or
+  // tests/fixtures/, or take it out of `isNotes` in `planOf`.
   const NAMES_IT: Readonly<Record<string, string>> = {
     'scripts/ci-plan.ts': 'tells a push of notes by its paths; it opens nothing',
     'tests/ci-plan.test.ts': 'gives the plan paths as text; it opens nothing',
@@ -2017,11 +2019,12 @@ test('no test opens a file under docs/agent-handoff/', async () => {
   const names = (text: string) => /agent-handoff/.test(text);
   const opens = (text: string) => /\b(Bun\.file|readFile\w*|readdir\w*|import|require|fetch|open\w*|createReadStream)\s*\(|\bfrom\s+['"]/.test(text);
   const wholeDocs = (text: string) => /readdir\w*\([^)]*\bdocs\/?['"`]/.test(text);
+  const readsQd = (line: Line) => line.file === 'tests/qd-rows.test.ts' && /docs\/agent-handoff\/questionable-decisions\.md/.test(line.text) && !wholeDocs(line.text);
   expect(opens("const t = await Bun.file(`${ROOT}/docs/agent-handoff/handoff.md`).text();") && names('docs/agent-handoff/handoff.md'), 'the rule sees a read').toBe(true);
   expect(wholeDocs("await readdir(`${ROOT}/docs`, { recursive: true })"), 'the rule sees docs/ listed whole').toBe(true);
   expect(wholeDocs("await readdir(`${ROOT}/docs/guide`)"), 'the rule lets a named folder of docs/ be listed').toBe(false);
-  const outside = code.filter(line => names(line.text) && !(line.file in NAMES_IT));
-  const reads = code.filter(line => line.file !== 'tests/lint.test.ts' && ((names(line.text) && opens(line.text)) || wholeDocs(line.text)));
+  const outside = code.filter(line => names(line.text) && !(line.file in NAMES_IT) && !readsQd(line));
+  const reads = code.filter(line => line.file !== 'tests/lint.test.ts' && !readsQd(line) && ((names(line.text) && opens(line.text)) || wholeDocs(line.text)));
   expect(report(outside), 'this file names docs/agent-handoff/ outside a comment. If it opens nothing there, add it to NAMES_IT with why; if it reads a note, see the comment above').toEqual([]);
   expect(report(reads), 'a test or a script reads the notes, so a push of notes could change a test: see the comment above').toEqual([]);
 });

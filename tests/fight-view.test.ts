@@ -231,10 +231,17 @@ describe('aims: whom an ability can aim at', () => {
     expect(aims(spots, id('A'), self, GRID).map(a => [a.target.id, a.dist, a.inRange, a.inShape])).toEqual([['A', 0, true, true]]);
   });
 
-  test('an ally ability offers its user\'s side on the map, a dead hunter among them, and no shadow gone at 0 nor any foe', () => {
+  test('an ally ability offers its user\'s side that is up, leaving out a dead hunter, a shadow gone at 0 and any foe', () => {
     const spots = [spot('A', 'party', 0, 0), spot('Dead', 'party', 2, 0, { down: true }), spot('Shade', 'party', 1, 0, { kind: 'shadow', down: true }),
       spot('Far', 'party', 9, 0), spot('M', 'foe', 1, 1)];
-    expect(aims(spots, id('A'), ability('support'), GRID).map(a => [a.target.id, a.dist, a.inRange])).toEqual([['A', 0, true], ['Dead', 2, true], ['Far', 9, false]]);
+    expect(aims(spots, id('A'), ability('support'), GRID).map(a => [a.target.id, a.dist, a.inRange])).toEqual([['A', 0, true], ['Far', 9, false]]);
+  });
+
+  test('a foe ability and a self ability leave out a dead hunter as well', () => {
+    const spots = [spot('A', 'party', 0, 0), spot('DeadFoe', 'foe', 1, 0, { kind: 'hunter', down: true }), spot('LiveFoe', 'foe', 1, 1)];
+    expect(aims(spots, id('A'), STRIKE, GRID).map(a => a.target.id)).toEqual(['LiveFoe']);
+    const self = { ...ability('support'), aim: 'self' } as const;
+    expect(aims([spot('Dead', 'party', 0, 0, { down: true })], id('Dead'), self, GRID)).toEqual([]);
   });
 
   test('an unknown user has nothing to aim at', () => {

@@ -12,7 +12,7 @@ import { clockOut, enraged, heldAtGate } from './mythic.ts';
 import type { MythicState } from './mythic.ts';
 import type { AnswerOutcome, Interrupt, MythicMove, MythicScript, MythicScriptId, MythicStanding, Omen, OmenAim, OmenKey } from './mythic-types.ts';
 import type { DocStanding } from './fight-doc.ts';
-import { inRange, whoIsIn } from './resolve.ts';
+import { canAimAt, inRange, whoIsIn } from './resolve.ts';
 import type { Grid, Place, MoveReach, Side, Tiles } from './space.ts';
 import { acted, ahead, paceCost, roundOf, roundsOf, tick } from './timeline.ts';
 import type { Tick } from './timeline.ts';
@@ -254,18 +254,18 @@ export type AimAt<T extends Spot> = { readonly target: T; readonly dist: Tiles; 
 export type Aiming = Pick<Ability, 'aim' | 'range' | 'shape' | 'foesOnly'>;
 
 /**
- * The bodies `by` can aim `a` at, nearest first (then in the order given): itself for a self ability, its side on the map
- * (itself and a hunter lying down among them) for an ally one, the other side on the map for a foe or place one. Rule 5:
- * in range when the distance is at most the range. Rule 6: in the shape when the use aimed at its tile covers it, among
- * the bodies on the map (the user's side left out of a `foesOnly` use), so a line that does not pierce stops at the first
- * body and a wall stops a line. A self or ally use takes its one target. Taunt (rule 2) is the reducer's alone: a spot
- * carries no statuses.
+ * The bodies `by` can aim `a` at, nearest first (then in the order given): itself for a self ability, its side for an ally
+ * one, the other side for a foe or place one, each admitted by resolve.ts `canAimAt` (only bodies that are up; dead
+ * bodies are never offered). Rule 5: in range when the distance is at most the range. Rule 6: in the shape when the use
+ * aimed at its tile covers it, among the bodies on the map (the user's side left out of a `foesOnly` use), so a line that
+ * does not pierce stops at the first body and a wall stops a line. A self or ally use takes its one target. Taunt (rule 2)
+ * is the reducer's alone: a spot carries no statuses.
  */
 export function aims<T extends Spot>(spots: readonly T[], by: CombatantId, a: Aiming, grid: Grid): AimAt<T>[] {
   const user = spots.find(s => s.id === by);
   if (!user) return [];
   const map = spots.filter(onMap);
-  const candidates = a.aim === 'self' ? [user] : map.filter(s => (a.aim === 'ally') === (s.side === user.side));
+  const candidates = (a.aim === 'self' ? [user] : map.filter(s => (a.aim === 'ally') === (s.side === user.side))).filter(canAimAt);
   const covers = (t: T): boolean => {
     const { hit, ring } = whoIsIn(a, user, map, t.place, grid);
     return hit.includes(t) || ring.includes(t);
